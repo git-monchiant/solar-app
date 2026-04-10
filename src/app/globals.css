@@ -2,25 +2,59 @@
 
 :root {
   --background: #ffffff;
-  --foreground: #171717;
+  --foreground: #1b1b1b;
+  --primary: #1ed0c7;
+  --primary-dark: #18b5ad;
+  --secondary: #ccab14;
+  --accent: #f8aa00;
+  --gray: #757474;
+  --gray-light: #f5f5f5;
+  --danger: #ef4444;
+  --success: #22c55e;
+  --warning: #f59e0b;
 }
 
 @theme inline {
   --color-background: var(--background);
   --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
-}
-
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
-  }
+  --color-primary: var(--primary);
+  --color-primary-dark: var(--primary-dark);
+  --color-secondary: var(--secondary);
+  --color-accent: var(--accent);
+  --color-gray: var(--gray);
+  --color-gray-light: var(--gray-light);
+  --color-danger: var(--danger);
+  --color-success: var(--success);
+  --color-warning: var(--warning);
 }
 
 body {
   background: var(--background);
   color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  -webkit-tap-highlight-color: transparent;
+  overscroll-behavior: none;
+  padding-bottom: env(safe-area-inset-bottom);
+}
+
+/* Mobile-friendly touch targets */
+button, a, input, select, textarea {
+  min-height: 44px;
+}
+
+input, select, textarea {
+  font-size: 16px; /* ป้องกัน iOS zoom เมื่อ focus */
+}
+
+/* Safe area for header */
+.safe-top {
+  padding-top: env(safe-area-inset-top, 0px);
+}
+
+@keyframes slide-up {
+  from { transform: translateY(100%); }
+  to { transform: translateY(0); }
+}
+.animate-slide-up {
+  animation: slide-up 0.2s ease-out;
 }
