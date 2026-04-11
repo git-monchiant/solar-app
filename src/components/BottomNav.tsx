@@ -1,7 +1,6 @@
 "use client";
 
 import Link from "next/link";
-import Image from "next/image";
 import { usePathname } from "next/navigation";
 
 const navItems = [
@@ -32,8 +31,8 @@ export default function BottomNav() {
 
   return (
     <>
-      <nav className="fixed bottom-0 left-0 right-0 bg-white border-t border-gray-200 z-50 md:hidden">
-        <div className="flex justify-around items-center h-16">
+      <nav className="fixed inset-x-0 bottom-0 bg-white border-t border-gray-200 z-50 md:hidden">
+        <div className="flex justify-around items-center h-20">
           {navItems.map((item) => {
             const isActive = pathname.startsWith(item.href);
             return (
@@ -47,14 +46,12 @@ export default function BottomNav() {
         </div>
       </nav>
       <aside className="hidden md:flex fixed left-0 top-0 bottom-0 w-64 bg-white border-r border-gray-200 flex-col z-50">
-        <div className="px-5 py-5 border-b border-gray-100">
-          <div className="flex items-center gap-3">
-            <Image src="/logo-sena.png" alt="Sena Solar" width={40} height={40} />
-            <div>
-              <div className="font-bold text-sm">Solar Sales</div>
-              <div className="text-xs text-gray">SENA SOLAR ENERGY</div>
-            </div>
-          </div>
+        <div className="h-16 px-5 border-b border-gray-100 bg-white flex items-center">
+          <img
+            src="https://senasolarenergy.com/wp-content/uploads/2022/04/logo_senasolarenergy.png"
+            alt="Sena Solar Energy"
+            className="h-9 w-auto"
+          />
         </div>
         <nav className="flex-1 px-3 py-4 space-y-1">
           {navItems.map((item) => {

@@ -47,12 +47,13 @@ export async function POST(request: NextRequest) {
         VALUES (@full_name, @phone, @project_id, @house_number, @customer_type, @interested_package_id, @source, @payment_type, @requirement, @note, 'registered')
       `);
 
-    // Auto-log lead created
+    // Auto-log lead created (register/walk-in is the first contact)
     const leadId = result.recordset[0].id;
     await db.request()
       .input("lead_id", sql.Int, leadId)
       .input("source", sql.NVarChar(30), body.source || "walk-in")
-      .query(`INSERT INTO lead_activities (lead_id, activity_type, title) VALUES (@lead_id, 'note', 'Lead created (' + @source + ')')`);
+      .input("note", sql.NVarChar(sql.MAX), body.note || body.requirement || null)
+      .query(`INSERT INTO lead_activities (lead_id, activity_type, title, note) VALUES (@lead_id, 'lead_created', 'Lead created (' + @source + ')', @note)`);
 
     return NextResponse.json(result.recordset[0], { status: 201 });
   } catch (error) {

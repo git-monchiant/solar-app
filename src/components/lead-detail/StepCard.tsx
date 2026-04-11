@@ -50,9 +50,6 @@ export default function StepCard({ status, leadId, hasBooking, paymentType, fina
         {status === "registered" && (
           <button onClick={() => onAddActivity("call")} className={`flex-1 py-2.5 rounded-xl text-sm font-semibold text-white ${config.color}`}>Log Contact</button>
         )}
-        {status === "visited" && (
-          <button onClick={() => onAddActivity("visit")} className={`flex-1 py-2.5 rounded-xl text-sm font-semibold text-white ${config.color}`}>Log Visit</button>
-        )}
         {status === "booked" && !hasBooking && (
           <Link href={`/bookings/new?lead_id=${leadId}`} className={`flex-1 py-2.5 rounded-xl text-sm font-semibold text-white text-center ${config.color}`}>Create Booking</Link>
         )}

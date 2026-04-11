@@ -1,5 +1,17 @@
 import type { Metadata, Viewport } from "next";
+import localFont from "next/font/local";
 import "./globals.css";
+
+const dbHeavent = localFont({
+  src: [
+    { path: "../../public/fonts/db_heavent_li_v3.2-webfont.woff", weight: "300", style: "normal" },
+    { path: "../../public/fonts/db_heavent_v3.2-webfont.woff", weight: "400", style: "normal" },
+    { path: "../../public/fonts/db_heavent_med_v3.2-webfont.woff", weight: "500", style: "normal" },
+    { path: "../../public/fonts/db_heavent_bd_v3.2-webfont.woff", weight: "700", style: "normal" },
+  ],
+  variable: "--font-db-heavent",
+  display: "swap",
+});
 
 export const metadata: Metadata = {
   title: "Solar Sales App",
@@ -27,8 +39,8 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html lang="th" className="h-full">
-      <body className="h-full bg-gray-light">{children}</body>
+    <html lang="th" className={`h-full ${dbHeavent.variable}`}>
+      <body className="h-full bg-white font-sans">{children}</body>
     </html>
   );
 }

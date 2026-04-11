@@ -11,7 +11,7 @@ interface Props {
 
 export default function QuickActionBar({ leadId, phone, hasBooking, canCreateBooking, onAddActivity }: Props) {
   return (
-    <div className="fixed bottom-16 md:bottom-0 left-0 right-0 md:left-64 bg-white border-t border-gray-200 z-40 px-3 py-2">
+    <div className="fixed left-0 right-0 md:left-64 above-nav bg-white border-t border-gray-200 z-40 px-3 py-2">
       <div className="flex items-center gap-2">
         <button onClick={() => onAddActivity("note")}
           className="flex-1 flex items-center justify-center gap-1.5 py-2.5 rounded-xl bg-gray-light text-sm font-medium active:bg-gray-200 transition-colors">

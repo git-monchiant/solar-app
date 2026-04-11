@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { getDb, sql } from "@/lib/db";
 
 const statusLabels: Record<string, string> = {
-  registered: "Registered", visited: "Walk-In", booked: "Booked",
+  registered: "Register/Walk-In", booked: "Booked",
   survey: "Survey", quoted: "Quotation", purchased: "Purchased",
   installed: "Installed", lost: "Lost",
 };
@@ -99,6 +99,42 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
     if (body.assigned_staff !== undefined) {
       sets.push("assigned_staff = @assigned_staff");
       request.input("assigned_staff", sql.NVarChar(100), body.assigned_staff);
+    }
+    if (body.survey_date !== undefined) {
+      sets.push("survey_date = @survey_date");
+      request.input("survey_date", sql.Date, body.survey_date ? new Date(body.survey_date) : null);
+    }
+    if (body.monthly_bill !== undefined) {
+      sets.push("monthly_bill = @monthly_bill");
+      request.input("monthly_bill", sql.Int, body.monthly_bill);
+    }
+    if (body.electrical_phase !== undefined) {
+      sets.push("electrical_phase = @electrical_phase");
+      request.input("electrical_phase", sql.NVarChar(20), body.electrical_phase);
+    }
+    if (body.wants_battery !== undefined) {
+      sets.push("wants_battery = @wants_battery");
+      request.input("wants_battery", sql.NVarChar(20), body.wants_battery);
+    }
+    if (body.roof_shape !== undefined) {
+      sets.push("roof_shape = @roof_shape");
+      request.input("roof_shape", sql.NVarChar(20), body.roof_shape);
+    }
+    if (body.appliances !== undefined) {
+      sets.push("appliances = @appliances");
+      request.input("appliances", sql.NVarChar(200), Array.isArray(body.appliances) ? body.appliances.join(",") : body.appliances);
+    }
+    if (body.ac_units !== undefined) {
+      sets.push("ac_units = @ac_units");
+      request.input("ac_units", sql.NVarChar(200), body.ac_units);
+    }
+    if (body.peak_usage !== undefined) {
+      sets.push("peak_usage = @peak_usage");
+      request.input("peak_usage", sql.NVarChar(20), body.peak_usage);
+    }
+    if (body.primary_reason !== undefined) {
+      sets.push("primary_reason = @primary_reason");
+      request.input("primary_reason", sql.NVarChar(50), body.primary_reason);
     }
 
     if (sets.length === 0) {

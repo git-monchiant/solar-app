@@ -18,17 +18,25 @@ export default function BookingsPage() {
 
   return (
     <div>
-      <Header title="Bookings" subtitle="Booked customers" rightContent={
-        <span className="bg-white/20 rounded-full px-3 py-1 text-sm font-medium">{leads.length}</span>
-      } />
+      <Header
+        title="Bookings"
+        subtitle="Booked customers"
+        rightContent={
+          <span className="text-[10px] font-semibold uppercase tracking-wider px-2 py-0.5 rounded border bg-gray-50 text-gray-600 border-gray-200 font-mono tabular-nums">
+            {leads.length}
+          </span>
+        }
+      />
 
-      <div className="p-4 space-y-2">
+      <div className="p-3 space-y-2">
         {loading ? (
-          <div className="flex items-center justify-center py-16"><div className="w-10 h-10 border-3 border-primary/30 border-t-primary rounded-full animate-spin" /></div>
+          <div className="flex items-center justify-center py-16">
+            <div className="w-10 h-10 border-3 border-gray-200 border-t-gray-900 rounded-full animate-spin" />
+          </div>
         ) : leads.length === 0 ? (
-          <div className="text-center py-16 text-gray">
-            <div className="font-medium">No bookings yet</div>
-            <div className="text-sm text-gray/60 mt-1">Bookings will appear here when deals are closed</div>
+          <div className="text-center py-16 text-gray-400">
+            <div className="text-sm font-medium">No bookings yet</div>
+            <div className="text-xs mt-1">Bookings will appear here when deals are closed</div>
           </div>
         ) : (
           leads.map((l) => <LeadCard key={l.id} lead={l} />)

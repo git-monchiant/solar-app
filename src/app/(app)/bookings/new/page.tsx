@@ -1,14 +1,16 @@
 "use client";
 
 import { apiFetch } from "@/lib/api";
-
 import { useEffect, useState, Suspense } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
-import Link from "next/link";
 import Header from "@/components/Header";
 
 interface Lead { id: number; full_name: string; phone: string; project_name: string; house_number: string; }
 interface Package { id: number; name: string; price: number; }
+
+const fieldCard = "rounded-lg bg-white border border-gray-200 p-3";
+const fieldLabel = "text-[10px] font-semibold tracking-wider uppercase text-gray-400 block mb-1.5";
+const fieldInput = "w-full h-10 px-3 rounded-lg border border-gray-200 text-sm focus:outline-none focus:border-primary transition-colors";
 
 function BookingForm() {
   const router = useRouter();
@@ -20,7 +22,10 @@ function BookingForm() {
   const [form, setForm] = useState({ lead_id: preLeadId, package_id: "", note: "" });
 
   useEffect(() => {
-    Promise.all([apiFetch("/api/leads"), apiFetch("/api/packages")]).then(([l, p]) => { setLeads(l); setPackages(p); });
+    Promise.all([apiFetch("/api/leads"), apiFetch("/api/packages")]).then(([l, p]) => {
+      setLeads(l);
+      setPackages(p);
+    });
   }, []);
 
   const selectedPackage = packages.find((p) => p.id === parseInt(form.package_id));
@@ -31,52 +36,87 @@ function BookingForm() {
     if (!form.lead_id || !form.package_id) return;
     setSaving(true);
     try {
-      const res = await apiFetch("/api/bookings", {
-        method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ lead_id: parseInt(form.lead_id), package_id: parseInt(form.package_id), total_price: selectedPackage?.price || 0, note: form.note }),
+      await apiFetch("/api/bookings", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          lead_id: parseInt(form.lead_id),
+          package_id: parseInt(form.package_id),
+          total_price: selectedPackage?.price || 0,
+          note: form.note,
+        }),
       });
       router.push("/pipeline");
-    } catch (err) { console.error(err); }
-    finally { setSaving(false); }
+    } catch (err) {
+      console.error(err);
+    } finally {
+      setSaving(false);
+    }
   };
 
   return (
-    <form onSubmit={handleSubmit} className="p-4 md:p-6 space-y-4">
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-        <div>
-          <label className="block text-sm font-semibold mb-1.5 text-foreground/80">Customer *</label>
-          <select value={form.lead_id} onChange={(e) => setForm({ ...form, lead_id: e.target.value })} required
-            className="w-full px-4 py-3.5 rounded-xl border border-gray-200 bg-white focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary transition-all appearance-none">
-            <option value="">Select customer</option>
-            {leads.map((l) => <option key={l.id} value={l.id}>{l.full_name} {l.house_number ? `(${l.house_number})` : ""}</option>)}
-          </select>
-        </div>
-        <div>
-          <label className="block text-sm font-semibold mb-1.5 text-foreground/80">Package *</label>
-          <select value={form.package_id} onChange={(e) => setForm({ ...form, package_id: e.target.value })} required
-            className="w-full px-4 py-3.5 rounded-xl border border-gray-200 bg-white focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary transition-all appearance-none">
-            <option value="">Select package</option>
-            {packages.map((p) => <option key={p.id} value={p.id}>{p.name} — {formatPrice(p.price)} THB</option>)}
-          </select>
-        </div>
+    <form onSubmit={handleSubmit} className="p-3 md:p-6 space-y-2">
+      <div className={fieldCard}>
+        <label className={fieldLabel}>Customer <span className="text-red-500">*</span></label>
+        <select
+          value={form.lead_id}
+          onChange={(e) => setForm({ ...form, lead_id: e.target.value })}
+          required
+          className={fieldInput + " appearance-none bg-white"}
+        >
+          <option value="">— เลือกลูกค้า —</option>
+          {leads.map((l) => (
+            <option key={l.id} value={l.id}>
+              {l.full_name} {l.house_number ? `(${l.house_number})` : ""}
+            </option>
+          ))}
+        </select>
+      </div>
+
+      <div className={fieldCard}>
+        <label className={fieldLabel}>Package <span className="text-red-500">*</span></label>
+        <select
+          value={form.package_id}
+          onChange={(e) => setForm({ ...form, package_id: e.target.value })}
+          required
+          className={fieldInput + " appearance-none bg-white"}
+        >
+          <option value="">— เลือกแพ็คเกจ —</option>
+          {packages.map((p) => (
+            <option key={p.id} value={p.id}>
+              {p.name} — {formatPrice(p.price)} THB
+            </option>
+          ))}
+        </select>
       </div>
 
       {selectedPackage && (
-        <div className="bg-primary/5 rounded-xl p-4 text-center">
-          <div className="text-sm text-gray">Total Price</div>
-          <div className="text-3xl font-bold text-primary">{formatPrice(selectedPackage.price)} <span className="text-lg">THB</span></div>
+        <div className="rounded-lg bg-gradient-to-br from-primary to-primary-dark text-white p-4 flex items-baseline justify-between shadow-sm shadow-primary/20">
+          <span className="text-[10px] font-semibold tracking-wider uppercase text-white/70">Total Price</span>
+          <span className="text-xl font-bold font-mono tabular-nums">
+            {formatPrice(selectedPackage.price)}
+            <span className="text-xs font-semibold text-white/70 ml-1">THB</span>
+          </span>
         </div>
       )}
 
-      <div>
-        <label className="block text-sm font-semibold mb-1.5 text-foreground/80">Note</label>
-        <textarea value={form.note} onChange={(e) => setForm({ ...form, note: e.target.value })} placeholder="Additional details" rows={3}
-          className="w-full px-4 py-3.5 rounded-xl border border-gray-200 bg-white focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary transition-all resize-none" />
+      <div className={fieldCard}>
+        <label className={fieldLabel}>Note</label>
+        <textarea
+          value={form.note}
+          onChange={(e) => setForm({ ...form, note: e.target.value })}
+          placeholder="รายละเอียดเพิ่มเติม"
+          rows={3}
+          className="w-full px-3 py-2 rounded-lg border border-gray-200 text-sm focus:outline-none focus:border-primary transition-colors resize-none"
+        />
       </div>
 
-      <button type="submit" disabled={saving || !form.lead_id || !form.package_id}
-        className="w-full md:w-auto md:px-12 py-4 bg-gradient-to-r from-primary to-primary-dark text-white rounded-xl font-bold text-base active:scale-[0.98] disabled:opacity-50 transition-all shadow-lg shadow-primary/20">
-        {saving ? "Creating..." : "Create Booking"}
+      <button
+        type="submit"
+        disabled={saving || !form.lead_id || !form.package_id}
+        className="w-full h-11 rounded-lg text-sm font-semibold text-white bg-gradient-to-r from-primary to-primary-dark hover:brightness-110 disabled:opacity-50 disabled:cursor-not-allowed transition-colors mt-3"
+      >
+        {saving ? "Creating…" : "Create Booking"}
       </button>
     </form>
   );
@@ -84,9 +124,9 @@ function BookingForm() {
 
 export default function NewBookingPage() {
   return (
-    <div className="max-w-2xl mx-auto">
+    <div className="max-w-2xl mx-auto pb-8">
       <Header title="New Booking" backHref="/bookings" />
-      <Suspense fallback={<div className="p-4 text-center text-gray">Loading...</div>}>
+      <Suspense fallback={<div className="p-4 text-center text-gray-400 text-sm">Loading…</div>}>
         <BookingForm />
       </Suspense>
     </div>

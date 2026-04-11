@@ -19,7 +19,7 @@ export async function POST(req: NextRequest) {
 
     await writeFile(filepath, buffer);
 
-    return NextResponse.json({ url: `/uploads/${filename}` });
+    return NextResponse.json({ url: `/api/files/${filename}` });
   } catch (error) {
     console.error("Upload error:", error);
     return NextResponse.json({ error: "Upload failed" }, { status: 500 });
@@ -29,11 +29,16 @@ export async function POST(req: NextRequest) {
 export async function DELETE(req: NextRequest) {
   try {
     const fileUrl = req.nextUrl.searchParams.get("file");
-    if (!fileUrl || !fileUrl.startsWith("/uploads/")) {
+    if (!fileUrl) {
       return NextResponse.json({ error: "Invalid file" }, { status: 400 });
     }
 
-    const filepath = path.join(process.cwd(), "public", fileUrl);
+    const filename = fileUrl.replace(/^\/api\/files\//, "").replace(/^\/uploads\//, "");
+    if (!filename || filename.includes("/") || filename.includes("..")) {
+      return NextResponse.json({ error: "Invalid file" }, { status: 400 });
+    }
+
+    const filepath = path.join(process.cwd(), "public", "uploads", filename);
     await unlink(filepath).catch(() => {});
 
     return NextResponse.json({ deleted: true });
