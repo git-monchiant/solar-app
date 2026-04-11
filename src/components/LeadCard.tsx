@@ -40,68 +40,47 @@ export default function LeadCard({ lead, compact }: { lead: LeadData; compact?: 
       href={`/leads/${lead.id}`}
       className="block rounded-lg bg-white border border-gray-200 hover:border-gray-300 transition-colors"
     >
-      <div className="p-3">
-        {/* Row 1: Name + badges */}
-        <div className="flex items-center gap-1.5 mb-1.5">
-          <div className={`w-2 h-2 rounded-full shrink-0 ${config.color}`} />
-          <span className="font-bold text-sm text-gray-900 truncate flex-1">{lead.full_name}</span>
-          {isUpgrade && (
-            <span className="text-[10px] font-semibold uppercase tracking-wider px-1.5 py-0.5 rounded border bg-purple-50 text-purple-700 border-purple-600/15">
-              UPG
-            </span>
-          )}
-          <span className="text-[10px] font-semibold uppercase tracking-wider px-1.5 py-0.5 rounded border bg-gray-50 text-gray-600 border-gray-200">
-            {lead.source === "event" ? "Event" : "Walk"}
-          </span>
-          {aging > 0 && (
-            <span
-              className={`text-[10px] font-semibold uppercase tracking-wider px-1.5 py-0.5 rounded border ${
-                aging > 7
-                  ? "bg-red-50 text-red-700 border-red-600/15"
-                  : aging > 3
-                  ? "bg-amber-50 text-amber-700 border-amber-600/15"
-                  : "bg-gray-50 text-gray-600 border-gray-200"
-              }`}
-            >
-              {aging}d
-            </span>
-          )}
-          <span className={`text-[10px] font-semibold uppercase tracking-wider px-1.5 py-0.5 rounded text-white shrink-0 ${config.color}`}>
+      <div className="p-4">
+        {/* Row 1: Name + status pill */}
+        <div className="flex items-center justify-between gap-2 mb-1">
+          <div className="font-bold text-base text-gray-900 truncate">
+            {lead.full_name}
+            {isUpgrade && <span className="ml-1.5 text-xs font-semibold text-purple-600">·UPGRADE</span>}
+          </div>
+          <span className={`shrink-0 text-xs font-semibold uppercase tracking-wider px-2.5 py-1 rounded-md text-white ${config.color}`}>
             {config.label}
           </span>
         </div>
 
-        {/* Row 2: meta */}
-        <div className="flex flex-wrap gap-x-2.5 gap-y-0.5 text-xs text-gray-500 ml-3.5">
+        {/* Row 2: meta inline */}
+        <div className="text-sm text-gray-500 truncate">
           {lead.phone && <span className="font-mono tabular-nums">{lead.phone}</span>}
+          {lead.phone && lead.project_name && " · "}
           {lead.project_name && <span>{lead.project_name}</span>}
-          {lead.house_number && <span className="font-mono tabular-nums">#{lead.house_number}</span>}
-          {lead.package_name && (
-            <span className="font-semibold text-gray-700">
-              {lead.package_name}
-              {lead.package_price > 0 && ` (${formatPrice(lead.package_price)})`}
-            </span>
-          )}
+          {(lead.phone || lead.project_name) && lead.house_number && " · "}
+          {lead.house_number && <span className="font-mono tabular-nums">{lead.house_number}</span>}
+          {aging > 0 && <span className="text-gray-400"> · {aging} วัน</span>}
         </div>
 
-        {/* Row 3: Last activity / note / follow-up / booking */}
-        {!compact && (
-          <div className="ml-3.5 mt-1 space-y-0.5">
-            {lead.last_activity_note && (
-              <div className="text-xs text-gray-500 italic line-clamp-1">&ldquo;{lead.last_activity_note}&rdquo;</div>
-            )}
+        {/* Row 3: package */}
+        {lead.package_name && (
+          <div className="text-sm text-gray-700 truncate mt-1">{lead.package_name}</div>
+        )}
+
+        {/* Row 4: warning + booking (only if present) */}
+        {!compact && (lead.next_follow_up || lead.booking_number || (lead.status === "lost" && lead.revisit_date)) && (
+          <div className="mt-2 space-y-0.5">
             {lead.next_follow_up && (
-              <div className={`text-xs font-medium ${isOverdue ? "text-red-600" : "text-amber-600"}`}>
-                Follow-up: {formatDate(lead.next_follow_up)}
-                {isOverdue && " (overdue)"}
+              <div className={`text-sm font-medium ${isOverdue ? "text-red-600" : "text-amber-600"}`}>
+                {isOverdue ? "เลยกำหนด" : "นัด"} {formatDate(lead.next_follow_up)}
               </div>
             )}
             {lead.status === "lost" && lead.revisit_date && (
-              <div className="text-xs text-blue-600 font-medium">Revisit: {formatDate(lead.revisit_date)}</div>
+              <div className="text-sm text-blue-600 font-medium">นัดกลับ {formatDate(lead.revisit_date)}</div>
             )}
             {lead.booking_number && (
-              <div className="text-xs font-semibold text-emerald-700 font-mono tabular-nums">
-                {lead.booking_number} — {formatPrice(lead.booking_price || 0)} THB
+              <div className="text-sm font-semibold text-emerald-700 font-mono tabular-nums">
+                {lead.booking_number} · {formatPrice(lead.booking_price || 0)} ฿
               </div>
             )}
           </div>

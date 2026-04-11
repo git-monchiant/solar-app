@@ -68,7 +68,7 @@ export default function TodayPage() {
             <div className="text-[10px] font-semibold tracking-wider uppercase text-white/60 leading-tight">
               {new Date().toLocaleDateString("en-US", { weekday: "long", month: "long", day: "numeric" })}
             </div>
-            <h1 className="text-base font-bold tracking-tight leading-tight mt-0.5 truncate">
+            <h1 className="text-2xl font-bold tracking-tight leading-tight mt-0.5 truncate">
               {tab === "today"
                 ? totalActions > 0 ? `${totalActions} actions today` : "All caught up!"
                 : `All Leads (${allLeads.length})`}
