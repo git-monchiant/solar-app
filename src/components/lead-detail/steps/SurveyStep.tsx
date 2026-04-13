@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import { apiFetch } from "@/lib/api";
 import type { StepCommonProps, Package } from "./types";
 import SurveyForm from "./SurveyForm";
+import CalendarPicker from "@/components/CalendarPicker";
 
 const formatDate = (d: string) =>
   new Date(d).toLocaleDateString("th-TH", { day: "numeric", month: "short", year: "numeric" });
@@ -217,105 +218,17 @@ export default function SurveyStep({ lead, state, refresh, packages }: Props) {
 
   // Reschedule mode — calendar picker
   if (rescheduling) {
-    const today = new Date(); today.setHours(0, 0, 0, 0);
-    const months = [
-      new Date(today.getFullYear(), today.getMonth(), 1),
-      new Date(today.getFullYear(), today.getMonth() + 1, 1),
-    ];
-    const WEEKDAYS = ["อา", "จ", "อ", "พ", "พฤ", "ศ", "ส"];
     return (
       <div className="space-y-3">
         <div className="text-xs font-semibold tracking-wider uppercase text-gray-400">เลื่อนนัดสำรวจ</div>
-        <div className="grid grid-cols-2 gap-2">
-          {months.map(monthStart => {
-            const monthLabel = monthStart.toLocaleDateString("th-TH", { month: "long" });
-            const firstDayOfWeek = monthStart.getDay();
-            const daysInMonth = new Date(monthStart.getFullYear(), monthStart.getMonth() + 1, 0).getDate();
-            return (
-              <div key={monthStart.toISOString()}>
-                <div className="text-xs font-semibold text-gray-700 mb-1 text-center">{monthLabel}</div>
-                <div className="grid grid-cols-7 mb-0.5">
-                  {WEEKDAYS.map((w, i) => (
-                    <div key={w} className={`text-xs text-center font-semibold py-0.5 ${i === 0 || i === 6 ? "text-red-400" : "text-gray-400"}`}>{w}</div>
-                  ))}
-                </div>
-                <div className="grid grid-cols-7">
-                  {Array.from({ length: firstDayOfWeek }).map((_, i) => <div key={`pad-${i}`} className="h-9" />)}
-                  {Array.from({ length: daysInMonth }).map((_, i) => {
-                    const d = new Date(monthStart.getFullYear(), monthStart.getMonth(), i + 1);
-                    const iso = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
-                    const selected = newDate === iso;
-                    const isPast = d < today;
-                    const isToday = d.getTime() === today.getTime();
-                    const isWeekend = d.getDay() === 0 || d.getDay() === 6;
-                    const counts = surveyCountByDate[iso];
-                    const isFull = !!(counts && counts.morning > 0 && counts.afternoon > 0);
-                    const isPartial = !!(counts && (counts.morning > 0 || counts.afternoon > 0) && !isFull);
-                    const disabled = isPast || isFull;
-                    let bookedClass = "";
-                    if (!isPast && !selected) {
-                      if (isFull) bookedClass = "bg-red-100 text-red-500 line-through";
-                      else if (isPartial) bookedClass = "bg-amber-100 text-amber-700";
-                    }
-                    return (
-                      <div key={iso} className="h-9 flex items-center justify-center">
-                        <button
-                          type="button"
-                          disabled={disabled}
-                          onClick={() => { setNewDate(iso); setNewSlot(""); }}
-                          style={{ minHeight: 0 }}
-                          className={`w-8 h-8 rounded-full flex items-center justify-center text-sm leading-none font-semibold transition-all ${
-                            selected
-                              ? "bg-active text-white shadow-sm shadow-active/30"
-                              : isPast
-                              ? "text-gray-300 cursor-not-allowed"
-                              : bookedClass
-                              ? bookedClass + (isFull ? " cursor-not-allowed" : " hover:brightness-95")
-                              : isToday
-                              ? "bg-active-light text-active ring-1 ring-active/30 hover:bg-active hover:text-white"
-                              : `${isWeekend ? "text-red-500" : "text-gray-700"} hover:bg-active-light hover:text-active`
-                          }`}
-                        >
-                          {d.getDate()}
-                        </button>
-                      </div>
-                    );
-                  })}
-                </div>
-              </div>
-            );
-          })}
-        </div>
-
-        {newDate && (
-          <div className="pt-3 border-t border-gray-100">
-            <div className="text-xs font-semibold tracking-wider uppercase text-gray-400 mb-2">ช่วงเวลานัด</div>
-            <div className="grid grid-cols-3 gap-2">
-              {SURVEY_TIME_SLOTS.map(s => {
-                const selected = newSlot === s.value;
-                const counts = surveyCountByDate[newDate];
-                const taken = !!(counts && (s.value === "morning" ? counts.morning > 0 : counts.afternoon > 0));
-                return (
-                  <button
-                    key={s.value}
-                    type="button"
-                    disabled={taken}
-                    onClick={() => setNewSlot(s.value)}
-                    className={`flex items-center justify-center gap-1.5 py-2.5 px-3 rounded-lg border transition-all ${
-                      selected
-                        ? "bg-active border-active text-white shadow-sm shadow-active/20"
-                        : taken
-                        ? "bg-gray-100 border-gray-200 text-gray-400 cursor-not-allowed"
-                        : "bg-white border-gray-200 hover:border-active/40 text-gray-700"
-                    }`}
-                  >
-                    <span className="text-[15px] font-bold font-mono tabular-nums">{s.time}</span>
-                  </button>
-                );
-              })}
-            </div>
-          </div>
-        )}
+        <CalendarPicker
+          date={newDate}
+          timeSlot={newSlot}
+          onDateChange={setNewDate}
+          onTimeSlotChange={setNewSlot}
+          showSurveySlots
+          excludeLeadId={lead.id}
+        />
 
         {newDate && newSlot && (
           <div className="rounded-lg bg-active-light border border-active/20 p-3 flex items-center gap-2">

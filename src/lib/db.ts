@@ -9,6 +9,7 @@ const config: sql.config = {
   options: {
     trustServerCertificate: true,
     encrypt: false,
+    useUTC: false,
   },
 };
 

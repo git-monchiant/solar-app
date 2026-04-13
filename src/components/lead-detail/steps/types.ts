@@ -38,6 +38,9 @@ export interface Lead {
   pre_bill_photo_url: string | null;
   interested_package_id: number | null;
   interested_package_ids: string | null;
+  line_id: string | null;
+  line_slip_url: string | null;
+  waiting_slip: boolean;
   survey_time_slot: string | null;
   survey_confirmed: boolean;
   pre_residence_type: string | null;

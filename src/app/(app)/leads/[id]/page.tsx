@@ -41,6 +41,11 @@ export default function LeadDetailPage({ params }: { params: Promise<{ id: strin
   const [modalType, setModalType] = useState<ActivityType | null>(null);
   const [showLostModal, setShowLostModal] = useState(false);
   const [tab, setTab] = useState<"info" | "log">("info");
+  const [showLineModal, setShowLineModal] = useState(false);
+  const [pendingLineUsers, setPendingLineUsers] = useState<{ id: number; display_name: string; picture_url: string | null; line_user_id: string; lead_id: number | null }[]>([]);
+  const [linkingLine, setLinkingLine] = useState(false);
+  const [confirmLineUser, setConfirmLineUser] = useState<{ id: number; display_name: string; picture_url: string | null } | null>(null);
+  const [lineSearch, setLineSearch] = useState("");
 
   const fetchLead = useCallback(() => {
     apiFetch(`/api/leads/${id}`).then(setLead).catch(console.error).finally(() => setLoadingLead(false));
@@ -184,6 +189,25 @@ export default function LeadDetailPage({ params }: { params: Promise<{ id: strin
             </svg>
           </Link>
           <h1 className="flex-1 min-w-0 text-2xl font-bold tracking-tight leading-tight text-gray-900 truncate">{lead.full_name}</h1>
+          {/* LINE link button */}
+          <button
+            type="button"
+            onClick={() => {
+              if (lead.line_id) return;
+              apiFetch("/api/line-users").then((data: typeof pendingLineUsers) => {
+                setPendingLineUsers(data.filter(u => !u.lead_id));
+                setShowLineModal(true);
+              });
+            }}
+            style={{ minHeight: 0 }}
+            className={`shrink-0 w-11 h-11 rounded-full flex items-center justify-center active:scale-95 transition-all ${
+              lead.line_id
+                ? "bg-emerald-500 text-white shadow-lg shadow-emerald-500/40"
+                : "bg-white text-gray-500 shadow border border-gray-200 hover:border-active/40 hover:text-active"
+            }`}
+          >
+            <svg className="w-5 h-5" viewBox="0 0 24 24" fill="currentColor"><path d="M19.365 9.863c.349 0 .63.285.63.631 0 .345-.281.63-.63.63H17.61v1.125h1.755c.349 0 .63.283.63.63 0 .344-.281.629-.63.629h-2.386c-.345 0-.627-.285-.627-.629V8.108c0-.345.282-.63.63-.63h2.386c.346 0 .627.285.627.63 0 .349-.281.63-.63.63H17.61v1.125h1.755zm-3.855 3.016c0 .27-.174.51-.432.596-.064.021-.133.031-.199.031-.211 0-.391-.09-.51-.25l-2.443-3.317v2.94c0 .344-.279.629-.631.629-.346 0-.626-.285-.626-.629V8.108c0-.27.173-.51.43-.595.064-.022.134-.032.2-.032.211 0 .391.09.51.25l2.44 3.317V8.108c0-.345.282-.63.63-.63.345 0 .63.285.63.63v4.771zm-5.741 0c0 .344-.282.629-.631.629-.345 0-.627-.285-.627-.629V8.108c0-.345.282-.63.63-.63.346 0 .628.285.628.63v4.771zm-2.466.629H4.917c-.345 0-.63-.285-.63-.629V8.108c0-.345.285-.63.63-.63.348 0 .63.285.63.63v4.141h1.756c.348 0 .629.283.629.63 0 .344-.282.629-.629.629M24 10.314C24 4.943 18.615.572 12 .572S0 4.943 0 10.314c0 4.811 4.27 8.842 10.035 9.608.391.082.923.258 1.058.59.12.301.079.766.038 1.08l-.164 1.02c-.045.301-.24 1.186 1.049.645 1.291-.539 6.916-4.078 9.436-6.975C23.176 14.393 24 12.458 24 10.314" /></svg>
+          </button>
           {lead.phone && (
             <a
               href={`tel:${lead.phone}`}
@@ -389,26 +413,20 @@ export default function LeadDetailPage({ params }: { params: Promise<{ id: strin
         <div className="fixed left-0 right-0 md:left-64 above-nav bg-white border-t border-gray-100 z-40 px-3 py-2 flex gap-2">
           <button
             onClick={() => setModalType("note")}
-            className="flex-1 flex items-center justify-center gap-1 py-2.5 rounded-xl bg-gray-100 text-sm font-medium"
+            className="flex-1 flex items-center justify-center gap-1.5 py-2.5 rounded-xl bg-gray-100 text-sm font-semibold active:bg-gray-200 transition-colors"
           >
+            <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+              <path strokeLinecap="round" strokeLinejoin="round" d="M16.862 4.487l1.687-1.688a1.875 1.875 0 112.652 2.652L10.582 16.07a4.5 4.5 0 01-1.897 1.13L6 18l.8-2.685a4.5 4.5 0 011.13-1.897l8.932-8.931z" />
+            </svg>
             Note
           </button>
           <button
-            onClick={() => setModalType("call")}
-            className="flex-1 flex items-center justify-center gap-1 py-2.5 rounded-xl bg-blue-50 text-blue-700 text-sm font-medium"
-          >
-            Call
-          </button>
-          <button
-            onClick={() => setModalType("visit")}
-            className="flex-1 flex items-center justify-center gap-1 py-2.5 rounded-xl bg-violet-50 text-violet-700 text-sm font-medium"
-          >
-            Visit
-          </button>
-          <button
             onClick={() => setModalType("follow_up")}
-            className="flex-1 flex items-center justify-center gap-1 py-2.5 rounded-xl bg-amber-50 text-amber-700 text-sm font-medium"
+            className="flex-1 flex items-center justify-center gap-1.5 py-2.5 rounded-xl bg-amber-50 text-amber-700 text-sm font-semibold active:bg-amber-100 transition-colors"
           >
+            <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+              <path strokeLinecap="round" strokeLinejoin="round" d="M12 6v6h4.5m4.5 0a9 9 0 11-18 0 9 9 0 0118 0z" />
+            </svg>
             Follow-up
           </button>
         </div>
@@ -423,6 +441,100 @@ export default function LeadDetailPage({ params }: { params: Promise<{ id: strin
         />
       )}
       {showLostModal && <LostModal leadId={lead.id} onClose={() => setShowLostModal(false)} onSaved={refresh} />}
+
+      {/* LINE map modal */}
+      {showLineModal && (
+        <div className="fixed inset-0 z-[60] flex items-end md:items-center justify-center">
+          <div className="absolute inset-0 bg-black/30" onClick={() => setShowLineModal(false)} />
+          <div className="relative bg-white rounded-t-2xl md:rounded-2xl w-full md:max-w-sm p-5 pb-8 md:pb-5 animate-slide-up max-h-[70vh] overflow-y-auto">
+            <div className="flex items-center justify-between mb-4">
+              <h3 className="font-bold text-lg">เชื่อม LINE</h3>
+              <button onClick={() => setShowLineModal(false)} style={{ minHeight: 0 }} className="text-gray-400 hover:text-gray-600 p-1">
+                <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" /></svg>
+              </button>
+            </div>
+            {confirmLineUser ? (
+              <div className="space-y-4">
+                <div className="flex flex-col items-center py-4">
+                  {confirmLineUser.picture_url ? (
+                    <img src={confirmLineUser.picture_url} alt="" className="w-16 h-16 rounded-full object-cover mb-2" style={{ minHeight: 0 }} />
+                  ) : (
+                    <div className="w-16 h-16 rounded-full bg-gray-200 flex items-center justify-center mb-2" style={{ minHeight: 0 }}>
+                      <svg className="w-8 h-8 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M15.75 6a3.75 3.75 0 11-7.5 0 3.75 3.75 0 017.5 0zM4.501 20.118a7.5 7.5 0 0114.998 0" /></svg>
+                    </div>
+                  )}
+                  <div className="text-base font-bold text-gray-900">{confirmLineUser.display_name}</div>
+                  <div className="text-xs text-gray-400 mt-1">เชื่อมกับ <span className="font-semibold text-gray-700">{lead.full_name}</span></div>
+                  <div className="text-xs text-amber-600 mt-2">⚠ เชื่อมได้ครั้งเดียว ไม่สามารถเปลี่ยนได้</div>
+                </div>
+                <div className="flex gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setConfirmLineUser(null)}
+                    className="flex-1 py-3 rounded-xl text-sm font-semibold bg-white border border-gray-200 text-gray-700"
+                  >
+                    ยกเลิก
+                  </button>
+                  <button
+                    type="button"
+                    disabled={linkingLine}
+                    onClick={async () => {
+                      setLinkingLine(true);
+                      try {
+                        await apiFetch(`/api/line-users/${confirmLineUser.id}`, {
+                          method: "PATCH",
+                          headers: { "Content-Type": "application/json" },
+                          body: JSON.stringify({ lead_id: lead.id }),
+                        });
+                        refresh();
+                        setShowLineModal(false);
+                        setConfirmLineUser(null);
+                      } finally {
+                        setLinkingLine(false);
+                      }
+                    }}
+                    className="flex-1 py-3 rounded-xl text-sm font-semibold bg-primary text-white disabled:opacity-50"
+                  >
+                    {linkingLine ? "กำลังเชื่อม..." : "ยืนยัน"}
+                  </button>
+                </div>
+              </div>
+            ) : pendingLineUsers.length === 0 ? (
+              <div className="text-center py-8 text-gray-400 text-sm">ไม่มี LINE user ที่รอเชื่อม</div>
+            ) : (
+              <div className="space-y-2">
+                <input
+                  type="text"
+                  value={lineSearch}
+                  onChange={e => setLineSearch(e.target.value)}
+                  placeholder="ค้นหาชื่อ LINE..."
+                  className="w-full h-10 px-3 rounded-lg border border-gray-200 text-sm focus:outline-none focus:border-primary mb-2"
+                />
+                {pendingLineUsers.filter(u => !lineSearch || (u.display_name || "").toLowerCase().includes(lineSearch.toLowerCase())).map(u => (
+                  <button
+                    key={u.id}
+                    type="button"
+                    onClick={() => setConfirmLineUser(u)}
+                    className="w-full flex items-center gap-3 p-3 rounded-xl border border-gray-200 hover:border-active/40 hover:bg-active-light transition-all text-left"
+                  >
+                    {u.picture_url ? (
+                      <img src={u.picture_url} alt="" className="w-10 h-10 rounded-full object-cover shrink-0" style={{ minHeight: 0 }} />
+                    ) : (
+                      <div className="w-10 h-10 rounded-full bg-gray-200 flex items-center justify-center shrink-0" style={{ minHeight: 0 }}>
+                        <svg className="w-5 h-5 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M15.75 6a3.75 3.75 0 11-7.5 0 3.75 3.75 0 017.5 0zM4.501 20.118a7.5 7.5 0 0114.998 0" /></svg>
+                      </div>
+                    )}
+                    <div className="flex-1 min-w-0">
+                      <div className="text-sm font-semibold text-gray-900 truncate">{u.display_name || "LINE User"}</div>
+                      <div className="text-xs text-gray-400 font-mono truncate">{u.line_user_id.slice(0, 20)}...</div>
+                    </div>
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
+        </div>
+      )}
     </div>
   );
 }

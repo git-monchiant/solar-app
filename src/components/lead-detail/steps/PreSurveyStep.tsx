@@ -5,6 +5,7 @@ import { apiFetch } from "@/lib/api";
 import { PAYMENT_TYPES, FINANCE_STATUSES } from "@/lib/statuses";
 import type { Lead, Package, StepCommonProps } from "./types";
 import PreSurveyForm from "./PreSurveyForm";
+import CalendarPicker from "@/components/CalendarPicker";
 
 const DEPOSIT_AMOUNT = 1000;
 
@@ -177,11 +178,52 @@ export default function PreSurveyStep({ lead, state, refresh, packages }: Props)
   const [bookingSaved, setBookingSaved] = useState(false);
   const [confirmingSaved, setConfirmingSaved] = useState(false);
   const [qrDataUrl, setQrDataUrl] = useState<string | null>(null);
-  const [slipPreview, setSlipPreview] = useState<string | null>(null);
-  const [uploadedSlipUrl, setUploadedSlipUrl] = useState<string | null>(null);
-  const [verifyStatus, setVerifyStatus] = useState<"idle" | "verifying" | "verified" | "failed">("idle");
+  const [slipPreview, setSlipPreview] = useState<string | null>(lead.line_slip_url ?? null);
+  const [uploadedSlipUrl, setUploadedSlipUrl] = useState<string | null>(lead.line_slip_url ?? null);
+  const [verifyStatus, setVerifyStatus] = useState<"idle" | "verifying" | "verified" | "failed">(lead.line_slip_url ? "verified" : "idle");
   const [surveyDate, setSurveyDate] = useState<string>(lead.survey_date ? lead.survey_date.slice(0, 10) : "");
   const [surveyTimeSlot, setSurveyTimeSlot] = useState<string>(lead.survey_time_slot ?? "");
+
+  const [lineSending, setLineSending] = useState<string | null>(null);
+  const [lineSent, setLineSent] = useState<string | null>(null);
+  const [lineConfirmType, setLineConfirmType] = useState<"qr" | "link" | null>(null);
+
+
+  const sendViaLine = async (type: "qr" | "link") => {
+    if (!lead.line_id) return;
+    setLineConfirmType(null);
+    setLineSending(type);
+    try {
+      const origin = typeof window !== "undefined" ? window.location.origin : "";
+      const payUrl = `${origin}/pay/${lead.id}`;
+      const qrFullUrl = `${origin}/api/qr?amount=${DEPOSIT_AMOUNT}&format=full&name=${encodeURIComponent(lead.full_name)}`;
+      const messages = type === "qr"
+        ? [
+            { type: "image", originalContentUrl: qrFullUrl, previewImageUrl: qrFullUrl },
+          ]
+        : [
+            { type: "text", text: `ชำระค่าจอง Survey ${formatPrice(DEPOSIT_AMOUNT)} บาท\n\nลิ้งค์ชำระเงิน:\n${payUrl}` },
+          ];
+      await apiFetch("/api/line/send", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ lead_id: lead.id, messages }),
+      });
+      // Mark waiting_slip
+      await apiFetch(`/api/leads/${lead.id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ waiting_slip: true }),
+      });
+      setLineSent(type);
+      setTimeout(() => setLineSent(null), 3000);
+    } catch {
+      setLineSent("error");
+      setTimeout(() => setLineSent(null), 3000);
+    } finally {
+      setLineSending(null);
+    }
+  };
 
   const hasBooking = !!lead.booking_number;
   const paymentLabel = PAYMENT_TYPES.find(p => p.value === lead.payment_type)?.label;
@@ -327,8 +369,13 @@ export default function PreSurveyStep({ lead, state, refresh, packages }: Props)
       });
       const { url } = await uploadRes.json();
       setUploadedSlipUrl(url);
-      await new Promise(r => setTimeout(r, 1500));
-      setVerifyStatus("verified");
+      const verifyRes = await fetch("/api/verify-slip", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", "ngrok-skip-browser-warning": "true" },
+        body: JSON.stringify({ imageUrl: url }),
+      });
+      const { is_slip } = await verifyRes.json();
+      setVerifyStatus(is_slip ? "verified" : "failed");
     } catch (err) {
       console.error(err);
       setVerifyStatus("failed");
@@ -605,118 +652,21 @@ export default function PreSurveyStep({ lead, state, refresh, packages }: Props)
     <div className="space-y-2">
       <PreSurveyForm lead={lead} refresh={refresh} packages={packages} onPackageChange={setBookingPkg} />
 
-      {/* Survey date picker — first appointment, captured during pre-survey */}
+      {/* Survey date picker — first appointment */}
       <div className="rounded-lg border border-active/15 bg-white/60 p-4 mt-2">
-          <label className="text-xs font-semibold tracking-wider uppercase text-gray-400 block mb-2">
-            Survey Appointment <span className="text-red-500">*</span>
-          </label>
-          {(() => {
-            const today = new Date(); today.setHours(0, 0, 0, 0);
-            const months = [
-              new Date(today.getFullYear(), today.getMonth(), 1),
-              new Date(today.getFullYear(), today.getMonth() + 1, 1),
-            ];
-            const WEEKDAYS = ["อา", "จ", "อ", "พ", "พฤ", "ศ", "ส"];
-            return (
-              <div className="grid grid-cols-2 gap-2">
-                {months.map(monthStart => {
-                  const monthLabel = monthStart.toLocaleDateString("th-TH", { month: "long" });
-                  const firstDayOfWeek = monthStart.getDay();
-                  const daysInMonth = new Date(monthStart.getFullYear(), monthStart.getMonth() + 1, 0).getDate();
-                  return (
-                    <div key={monthStart.toISOString()}>
-                      <div className="text-xs font-semibold text-gray-700 mb-1 text-center">{monthLabel}</div>
-                      <div className="grid grid-cols-7 mb-0.5">
-                        {WEEKDAYS.map((w, i) => (
-                          <div key={w} className={`text-xs text-center font-semibold py-0.5 ${i === 0 || i === 6 ? "text-red-400" : "text-gray-400"}`}>{w}</div>
-                        ))}
-                      </div>
-                      <div className="grid grid-cols-7">
-                        {Array.from({ length: firstDayOfWeek }).map((_, i) => <div key={`pad-${i}`} className="h-9" />)}
-                        {Array.from({ length: daysInMonth }).map((_, i) => {
-                          const d = new Date(monthStart.getFullYear(), monthStart.getMonth(), i + 1);
-                          const iso = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
-                          const selected = surveyDate === iso;
-                          const isPast = d < today;
-                          const isToday = d.getTime() === today.getTime();
-                          const isWeekend = d.getDay() === 0 || d.getDay() === 6;
-                          const counts = surveyCountByDate[iso];
-                          const isFull = !!(counts && counts.morning > 0 && counts.afternoon > 0);
-                          const isPartial = !!(counts && (counts.morning > 0 || counts.afternoon > 0) && !isFull);
-                          const disabled = isPast || isFull;
-                          let bookedClass = "";
-                          if (!isPast && !selected) {
-                            if (isFull) bookedClass = "bg-red-100 text-red-500 line-through";
-                            else if (isPartial) bookedClass = "bg-amber-100 text-amber-700";
-                          }
-                          return (
-                            <div key={iso} className="h-9 flex items-center justify-center">
-                              <button
-                                type="button"
-                                disabled={disabled}
-                                onClick={() => { setSurveyDate(iso); setSurveyTimeSlot(""); }}
-                                style={{ minHeight: 0 }}
-                                className={`w-8 h-8 rounded-full flex items-center justify-center text-sm leading-none font-semibold transition-all ${
-                                  selected
-                                    ? "bg-active text-white shadow-sm shadow-active/30"
-                                    : isPast
-                                    ? "text-gray-300 cursor-not-allowed"
-                                    : bookedClass
-                                    ? bookedClass + (isFull ? " cursor-not-allowed" : " hover:brightness-95")
-                                    : isToday
-                                    ? "bg-active-light text-active ring-1 ring-active/30 hover:bg-active hover:text-white"
-                                    : `${isWeekend ? "text-red-500" : "text-gray-700"} hover:bg-active-light hover:text-active`
-                                }`}
-                              >
-                                {d.getDate()}
-                              </button>
-                            </div>
-                          );
-                        })}
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
-            );
-          })()}
-          {/* Legend */}
-          <div className="flex items-center justify-center gap-4 mt-2 text-[11px] text-gray-500">
-            <span className="inline-flex items-center gap-1"><span className="w-1.5 h-1.5 rounded-full bg-amber-500" /> มีนัดบางช่วง</span>
-            <span className="inline-flex items-center gap-1"><span className="w-1.5 h-1.5 rounded-full bg-red-500" /> เต็มทั้งวัน</span>
-          </div>
-          {/* Time slot picker */}
-          {surveyDate && (
-            <div className="mt-4 pt-3 border-t border-gray-100">
-              <div className="text-xs font-semibold tracking-wider uppercase text-gray-400 mb-2">ช่วงเวลานัด <span className="text-red-500">*</span></div>
-              <div className="grid grid-cols-3 gap-2">
-                {SURVEY_TIME_SLOTS.map(s => {
-                  const selected = surveyTimeSlot === s.value;
-                  const counts = surveyCountByDate[surveyDate];
-                  const taken = !!(counts && (s.value === "morning" ? counts.morning > 0 : counts.afternoon > 0));
-                  return (
-                    <button
-                      key={s.value}
-                      type="button"
-                      disabled={taken}
-                      onClick={() => setSurveyTimeSlot(s.value)}
-                      className={`flex items-center justify-center gap-1.5 py-2.5 px-3 rounded-lg border transition-all ${
-                        selected
-                          ? "bg-active border-active text-white shadow-sm shadow-active/20"
-                          : taken
-                          ? "bg-gray-100 border-gray-200 text-gray-400 cursor-not-allowed"
-                          : "bg-white border-gray-200 hover:border-active/40 text-gray-700"
-                      }`}
-                    >
-                      <span className="text-[15px] font-bold font-mono tabular-nums">{s.time}</span>
-                    </button>
-                  );
-                })}
-              </div>
-            </div>
-          )}
-          <div className="text-xs text-gray-500 mt-2">นัดครั้งแรก · เลื่อนนัดทำได้ในขั้น Survey</div>
-        </div>
+        <label className="text-xs font-semibold tracking-wider uppercase text-gray-400 block mb-2">
+          Survey Appointment <span className="text-red-500">*</span>
+        </label>
+        <CalendarPicker
+          date={surveyDate}
+          timeSlot={surveyTimeSlot}
+          onDateChange={setSurveyDate}
+          onTimeSlotChange={setSurveyTimeSlot}
+          showSurveySlots
+          required
+        />
+        <div className="text-xs text-gray-500 mt-2">นัดครั้งแรก · เลื่อนนัดทำได้ในขั้น Survey</div>
+      </div>
 
       {/* ชำระค่าจอง Survey — QR / Payment Link tabs */}
       <div className="rounded-lg bg-white/60 border border-active/15 p-4 mt-2">
@@ -755,32 +705,20 @@ export default function PreSurveyStep({ lead, state, refresh, packages }: Props)
             <div className="w-8 h-8 border-3 border-gray-200 border-t-active rounded-full animate-spin" />
           </div>
         )}
-        {paymentTab === "qr" && qrDataUrl && (
+        {paymentTab === "qr" && (
           <div className="space-y-3">
             <div className="max-w-[280px] mx-auto">
-              <div className="relative">
-                <img src="/templates/thaiqr.png" alt="Thai QR Payment" className="w-full" />
-                <img
-                  src={qrDataUrl}
-                  alt="PromptPay QR"
-                  className="absolute"
-                  style={{ top: "115px", left: "30px", width: "calc(100% - 60px)" }}
-                />
-              </div>
-              <div className="bg-white rounded-b-xl border border-t-0 border-gray-200 px-4 py-3 text-center">
-                <div className="text-xs font-semibold tracking-wider uppercase text-gray-400">ค่ามัดจำ</div>
-                <div className="text-2xl font-bold font-mono tabular-nums">
-                  {formatPrice(DEPOSIT_AMOUNT)}
-                  <span className="text-sm text-gray-400 ml-1">THB</span>
-                </div>
-                <div className="text-xs text-gray-500 mt-1">PromptPay: 085-909-9890</div>
-              </div>
+              <img src={`/api/qr?amount=${DEPOSIT_AMOUNT}&format=full&name=${encodeURIComponent(lead.full_name)}&_=${Date.now()}`} alt="Thai QR Payment" className="w-full rounded-xl border border-gray-200" />
             </div>
             <button
               type="button"
-              className="w-full h-11 rounded-lg text-sm font-semibold text-white bg-gradient-to-r from-primary to-primary-dark hover:brightness-110 transition-all shadow-sm shadow-primary/20"
+              disabled={lineSending === "qr" || !lead.line_id}
+              onClick={() => setLineConfirmType("qr")}
+              className={`w-full h-11 rounded-lg text-sm font-semibold transition-all shadow-sm flex items-center justify-center gap-2 ${
+                lineSent === "qr" ? "bg-emerald-500 text-white" : lineSent === "error" ? "bg-red-500 text-white" : !lead.line_id ? "bg-gray-200 text-gray-400 cursor-not-allowed" : "text-white bg-gradient-to-r from-primary to-primary-dark hover:brightness-110 shadow-primary/20"
+              }`}
             >
-              ส่ง QR ให้ลูกค้า
+              {lineSending === "qr" ? "กำลังส่ง..." : lineSent === "qr" ? "✓ ส่งแล้ว" : lineSent === "error" ? "ส่งไม่สำเร็จ" : !lead.line_id ? "ยังไม่ได้เชื่อม LINE" : "ส่ง QR ให้ลูกค้า"}
             </button>
           </div>
         )}
@@ -813,9 +751,13 @@ export default function PreSurveyStep({ lead, state, refresh, packages }: Props)
             </div>
             <button
               type="button"
-              className="w-full h-11 rounded-lg text-sm font-semibold text-white bg-gradient-to-r from-primary to-primary-dark hover:brightness-110 transition-all shadow-sm shadow-primary/20"
+              disabled={lineSending === "link" || !lead.line_id}
+              onClick={() => setLineConfirmType("link")}
+              className={`w-full h-11 rounded-lg text-sm font-semibold transition-all shadow-sm flex items-center justify-center gap-2 ${
+                lineSent === "link" ? "bg-emerald-500 text-white" : lineSent === "error" ? "bg-red-500 text-white" : !lead.line_id ? "bg-gray-200 text-gray-400 cursor-not-allowed" : "text-white bg-gradient-to-r from-primary to-primary-dark hover:brightness-110 shadow-primary/20"
+              }`}
             >
-              ส่งลิ้งค์ให้ลูกค้า
+              {lineSending === "link" ? "กำลังส่ง..." : lineSent === "link" ? "✓ ส่งแล้ว" : lineSent === "error" ? "ส่งไม่สำเร็จ" : !lead.line_id ? "ยังไม่ได้เชื่อม LINE" : "ส่งลิ้งค์ให้ลูกค้า"}
             </button>
           </div>
         )}
@@ -886,6 +828,39 @@ export default function PreSurveyStep({ lead, state, refresh, packages }: Props)
         </button>
       )}
 
+      {/* LINE send confirm modal */}
+      {lineConfirmType && (
+        <div className="fixed inset-0 z-[60] flex items-center justify-center">
+          <div className="absolute inset-0 bg-black/30" onClick={() => setLineConfirmType(null)} />
+          <div className="relative bg-white rounded-2xl w-[85%] max-w-sm p-5 animate-slide-up text-center">
+            <div className="w-12 h-12 rounded-full bg-emerald-100 flex items-center justify-center mx-auto mb-3">
+              <svg className="w-6 h-6 text-emerald-600" viewBox="0 0 24 24" fill="currentColor"><path d="M19.365 9.863c.349 0 .63.285.63.631 0 .345-.281.63-.63.63H17.61v1.125h1.755c.349 0 .63.283.63.63 0 .344-.281.629-.63.629h-2.386c-.345 0-.627-.285-.627-.629V8.108c0-.345.282-.63.63-.63h2.386c.346 0 .627.285.627.63 0 .349-.281.63-.63.63H17.61v1.125h1.755zm-3.855 3.016c0 .27-.174.51-.432.596-.064.021-.133.031-.199.031-.211 0-.391-.09-.51-.25l-2.443-3.317v2.94c0 .344-.279.629-.631.629-.346 0-.626-.285-.626-.629V8.108c0-.27.173-.51.43-.595.064-.022.134-.032.2-.032.211 0 .391.09.51.25l2.44 3.317V8.108c0-.345.282-.63.63-.63.345 0 .63.285.63.63v4.771zm-5.741 0c0 .344-.282.629-.631.629-.345 0-.627-.285-.627-.629V8.108c0-.345.282-.63.63-.63.346 0 .628.285.628.63v4.771zm-2.466.629H4.917c-.345 0-.63-.285-.63-.629V8.108c0-.345.285-.63.63-.63.348 0 .63.285.63.63v4.141h1.756c.348 0 .629.283.629.63 0 .344-.282.629-.629.629M24 10.314C24 4.943 18.615.572 12 .572S0 4.943 0 10.314c0 4.811 4.27 8.842 10.035 9.608.391.082.923.258 1.058.59.12.301.079.766.038 1.08l-.164 1.02c-.045.301-.24 1.186 1.049.645 1.291-.539 6.916-4.078 9.436-6.975C23.176 14.393 24 12.458 24 10.314" /></svg>
+            </div>
+            <div className="text-base font-bold text-gray-900 mb-1">
+              ส่ง{lineConfirmType === "qr" ? " QR" : "ลิ้งค์ชำระเงิน"}ให้ลูกค้า?
+            </div>
+            <div className="text-sm text-gray-500 mb-4">
+              ส่งไปยัง LINE ของ <span className="font-semibold text-gray-700">{lead.full_name}</span>
+            </div>
+            <div className="flex gap-2">
+              <button
+                type="button"
+                onClick={() => setLineConfirmType(null)}
+                className="flex-1 py-2.5 rounded-xl text-sm font-semibold bg-white border border-gray-200 text-gray-700"
+              >
+                ยกเลิก
+              </button>
+              <button
+                type="button"
+                onClick={() => sendViaLine(lineConfirmType)}
+                className="flex-1 py-2.5 rounded-xl text-sm font-semibold bg-emerald-500 text-white hover:bg-emerald-600"
+              >
+                ส่งเลย
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

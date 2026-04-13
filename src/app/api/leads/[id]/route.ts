@@ -88,6 +88,10 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
       sets.push("house_reg_photo_url = @house_reg_photo_url");
       request.input("house_reg_photo_url", sql.NVarChar(500), body.house_reg_photo_url);
     }
+    if (body.waiting_slip !== undefined) {
+      sets.push("waiting_slip = @waiting_slip");
+      request.input("waiting_slip", sql.Bit, body.waiting_slip ? 1 : 0);
+    }
     if (body.interested_package_ids !== undefined) {
       sets.push("interested_package_ids = @interested_package_ids");
       request.input("interested_package_ids", sql.NVarChar(200), body.interested_package_ids);
