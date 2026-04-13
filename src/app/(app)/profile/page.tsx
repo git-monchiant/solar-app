@@ -30,7 +30,7 @@ export default function ProfilePage() {
           </Link>
           <div className="flex-1 min-w-0">
             <h1 className="text-base font-bold tracking-tight">Profile</h1>
-            <p className="text-[10px] font-semibold tracking-wider uppercase text-white/60 mt-0.5">Account & Settings</p>
+            <p className="text-xs font-semibold tracking-wider uppercase text-white/60 mt-0.5">Account & Settings</p>
           </div>
         </div>
 
@@ -41,7 +41,7 @@ export default function ProfilePage() {
           </div>
           <div className="mt-3 text-lg font-bold tracking-tight">{mockUser.full_name}</div>
           <div className="mt-0.5 flex items-center gap-1.5 text-xs text-white/75">
-            <span className="bg-white/15 px-2 py-0.5 rounded-full text-[11px] font-semibold">{mockUser.team}</span>
+            <span className="bg-white/15 px-2 py-0.5 rounded-full text-xs font-semibold">{mockUser.team}</span>
             <span>·</span>
             <span>{mockUser.role}</span>
           </div>
@@ -53,7 +53,7 @@ export default function ProfilePage() {
         <div className="p-3 space-y-2">
           {/* Contact info */}
           <div className="rounded-lg bg-white border border-gray-200 p-3">
-            <label className="text-[11px] font-semibold tracking-wider uppercase text-gray-400 block mb-2">Contact</label>
+            <label className="text-xs font-semibold tracking-wider uppercase text-gray-400 block mb-2">Contact</label>
             <div className="space-y-2">
               <div className="flex items-center gap-2.5">
                 <div className="w-8 h-8 rounded-md bg-primary/10 text-primary flex items-center justify-center shrink-0">
@@ -62,7 +62,7 @@ export default function ProfilePage() {
                   </svg>
                 </div>
                 <div className="flex-1">
-                  <div className="text-[10px] font-semibold tracking-wider uppercase text-gray-400">Phone</div>
+                  <div className="text-xs font-semibold tracking-wider uppercase text-gray-400">Phone</div>
                   <div className="text-sm font-semibold text-gray-900 font-mono tabular-nums">{mockUser.phone}</div>
                 </div>
               </div>
@@ -73,7 +73,7 @@ export default function ProfilePage() {
                   </svg>
                 </div>
                 <div className="flex-1">
-                  <div className="text-[10px] font-semibold tracking-wider uppercase text-gray-400">Email</div>
+                  <div className="text-xs font-semibold tracking-wider uppercase text-gray-400">Email</div>
                   <div className="text-sm font-semibold text-gray-900">{mockUser.email}</div>
                 </div>
               </div>
@@ -84,7 +84,7 @@ export default function ProfilePage() {
                   </svg>
                 </div>
                 <div className="flex-1">
-                  <div className="text-[10px] font-semibold tracking-wider uppercase text-gray-400">Username</div>
+                  <div className="text-xs font-semibold tracking-wider uppercase text-gray-400">Username</div>
                   <div className="text-sm font-semibold text-gray-900 font-mono">@{mockUser.username}</div>
                 </div>
               </div>
@@ -93,19 +93,19 @@ export default function ProfilePage() {
 
           {/* Stats mock */}
           <div className="rounded-lg bg-white border border-gray-200 p-3">
-            <label className="text-[11px] font-semibold tracking-wider uppercase text-gray-400 block mb-2">This Month</label>
+            <label className="text-xs font-semibold tracking-wider uppercase text-gray-400 block mb-2">This Month</label>
             <div className="grid grid-cols-3 gap-2">
               <div className="text-center p-2 rounded-md bg-gray-50">
                 <div className="text-xl font-bold font-mono tabular-nums text-gray-900">12</div>
-                <div className="text-[10px] font-semibold tracking-wider uppercase text-gray-400 mt-0.5">New</div>
+                <div className="text-xs font-semibold tracking-wider uppercase text-gray-400 mt-0.5">New</div>
               </div>
               <div className="text-center p-2 rounded-md bg-gray-50">
                 <div className="text-xl font-bold font-mono tabular-nums text-primary">4</div>
-                <div className="text-[10px] font-semibold tracking-wider uppercase text-gray-400 mt-0.5">Booked</div>
+                <div className="text-xs font-semibold tracking-wider uppercase text-gray-400 mt-0.5">Booked</div>
               </div>
               <div className="text-center p-2 rounded-md bg-gray-50">
                 <div className="text-xl font-bold font-mono tabular-nums text-emerald-600">2</div>
-                <div className="text-[10px] font-semibold tracking-wider uppercase text-gray-400 mt-0.5">Won</div>
+                <div className="text-xs font-semibold tracking-wider uppercase text-gray-400 mt-0.5">Won</div>
               </div>
             </div>
           </div>
@@ -113,7 +113,7 @@ export default function ProfilePage() {
           {/* Meta */}
           <div className="rounded-lg bg-white border border-gray-200 p-3">
             <div className="flex items-center justify-between">
-              <span className="text-[10px] font-semibold tracking-wider uppercase text-gray-400">Joined</span>
+              <span className="text-xs font-semibold tracking-wider uppercase text-gray-400">Joined</span>
               <span className="text-xs font-semibold text-gray-700">{formatDate(mockUser.joined_at)}</span>
             </div>
           </div>

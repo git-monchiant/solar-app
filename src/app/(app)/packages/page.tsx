@@ -2,7 +2,7 @@
 
 import { apiFetch } from "@/lib/api";
 import { useEffect, useState } from "react";
-import Header from "@/components/Header";
+import ListPageHeader from "@/components/ListPageHeader";
 
 interface Package {
   id: number;
@@ -26,34 +26,43 @@ export default function PackagesPage() {
   const [packages, setPackages] = useState<Package[]>([]);
   const [tab, setTab] = useState<"solar" | "battery">("solar");
   const [loading, setLoading] = useState(true);
+  const [search, setSearch] = useState("");
 
   useEffect(() => {
     apiFetch("/api/packages").then(setPackages).catch(console.error).finally(() => setLoading(false));
   }, []);
 
-  const displayed = packages.filter((p) => (tab === "solar" ? !p.has_battery : p.has_battery));
+  const displayed = packages
+    .filter((p) => (tab === "solar" ? !p.has_battery : p.has_battery))
+    .filter((p) => {
+      if (!search.trim()) return true;
+      const q = search.toLowerCase();
+      return (
+        p.name?.toLowerCase().includes(q) ||
+        p.inverter_brand?.toLowerCase().includes(q) ||
+        p.battery_brand?.toLowerCase().includes(q) ||
+        String(p.kwp).includes(q)
+      );
+    });
   const formatPrice = (n: number) => new Intl.NumberFormat("th-TH").format(n);
+
+  const TABS = [
+    { key: "solar" as const, label: "Solar Rooftop", count: packages.filter((p) => !p.has_battery).length },
+    { key: "battery" as const, label: "With Battery", count: packages.filter((p) => p.has_battery).length },
+  ];
 
   return (
     <div className="max-w-5xl mx-auto">
-      <Header title="Solar Rooftop Packages" subtitle="SENA SOLAR ENERGY" />
-
-      <div className="flex bg-white border-b border-gray-100 sticky top-0 z-[5]">
-        {[
-          { key: "solar" as const, label: "Solar Rooftop" },
-          { key: "battery" as const, label: "With Battery" },
-        ].map((t) => (
-          <button
-            key={t.key}
-            onClick={() => setTab(t.key)}
-            className={`flex-1 py-3 text-sm font-semibold border-b-2 transition-colors ${
-              tab === t.key ? "text-active border-active" : "text-gray-500 border-transparent"
-            }`}
-          >
-            {t.label}
-          </button>
-        ))}
-      </div>
+      <ListPageHeader
+        title="Solar Rooftop Packages"
+        subtitle="SENA SOLAR ENERGY"
+        search={search}
+        onSearchChange={setSearch}
+        searchPlaceholder="ค้นหา kWp, brand, name..."
+        tabs={TABS.map((t) => ({ key: t.key, label: t.label, count: t.count }))}
+        activeTab={tab}
+        onTabChange={(k) => setTab(k as "solar" | "battery")}
+      />
 
       <div className="p-3 md:p-6">
         {loading ? (

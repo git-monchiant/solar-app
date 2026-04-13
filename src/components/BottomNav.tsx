@@ -39,7 +39,7 @@ export default function BottomNav() {
               <Link key={item.href} href={item.href}
                 className={`flex flex-col items-center justify-center w-full h-full gap-0.5 transition-colors ${isActive ? "text-primary" : "text-gray"}`}>
                 {item.icon}
-                <span className="text-xs font-medium">{item.label}</span>
+                <span className="text-xs font-semibold uppercase tracking-wider">{item.label}</span>
               </Link>
             );
           })}
@@ -58,7 +58,7 @@ export default function BottomNav() {
             const isActive = pathname.startsWith(item.href);
             return (
               <Link key={item.href} href={item.href}
-                className={`flex items-center gap-3 px-4 py-3 rounded-xl font-medium text-sm transition-colors ${isActive ? "bg-primary/10 text-primary" : "text-gray hover:bg-gray-50"}`}>
+                className={`flex items-center gap-3 px-4 py-3 rounded-xl text-xs font-semibold uppercase tracking-wider transition-colors ${isActive ? "bg-primary/10 text-primary" : "text-gray hover:bg-gray-50"}`}>
                 {item.icon} {item.label}
               </Link>
             );

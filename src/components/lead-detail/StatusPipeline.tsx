@@ -20,7 +20,7 @@ export default function StatusPipeline({ currentStatus, onChangeStatus }: Props)
           return (
             <div key={s} className="flex items-center flex-1 last:flex-none">
               <button onClick={() => onChangeStatus(s)}
-                className={`w-7 h-7 rounded-full flex items-center justify-center shrink-0 transition-all text-[10px] font-bold ${
+                className={`w-7 h-7 rounded-full flex items-center justify-center shrink-0 transition-all text-xs font-bold ${
                   isCurrent ? `${config.color} text-white ring-2 ring-offset-1 ring-${config.color}` :
                   isPast ? `${config.color} text-white` :
                   "bg-gray-200 text-gray/50"

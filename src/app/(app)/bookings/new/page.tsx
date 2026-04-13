@@ -9,7 +9,7 @@ interface Lead { id: number; full_name: string; phone: string; project_name: str
 interface Package { id: number; name: string; price: number; }
 
 const fieldCard = "rounded-lg bg-white border border-gray-200 p-3";
-const fieldLabel = "text-[10px] font-semibold tracking-wider uppercase text-gray-400 block mb-1.5";
+const fieldLabel = "text-xs font-semibold tracking-wider uppercase text-gray-400 block mb-1.5";
 const fieldInput = "w-full h-10 px-3 rounded-lg border border-gray-200 text-sm focus:outline-none focus:border-primary transition-colors";
 
 function BookingForm() {
@@ -92,7 +92,7 @@ function BookingForm() {
 
       {selectedPackage && (
         <div className="rounded-lg bg-gradient-to-br from-primary to-primary-dark text-white p-4 flex items-baseline justify-between shadow-sm shadow-primary/20">
-          <span className="text-[10px] font-semibold tracking-wider uppercase text-white/70">Total Price</span>
+          <span className="text-xs font-semibold tracking-wider uppercase text-white/70">Total Price</span>
           <span className="text-xl font-bold font-mono tabular-nums">
             {formatPrice(selectedPackage.price)}
             <span className="text-xs font-semibold text-white/70 ml-1">THB</span>

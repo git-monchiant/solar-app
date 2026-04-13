@@ -41,20 +41,20 @@
 
 /* Font sizes — must be in non-inline @theme to be picked up by Tailwind v4 utility generation */
 @theme {
-  --text-xs: 18px;
-  --text-xs--line-height: 24px;
-  --text-sm: 20px;
-  --text-sm--line-height: 28px;
-  --text-base: 22px;
-  --text-base--line-height: 30px;
-  --text-lg: 26px;
-  --text-lg--line-height: 34px;
-  --text-xl: 30px;
-  --text-xl--line-height: 38px;
-  --text-2xl: 36px;
-  --text-2xl--line-height: 44px;
-  --text-3xl: 42px;
-  --text-3xl--line-height: 50px;
+  --text-xs: 20px;
+  --text-xs--line-height: 26px;
+  --text-sm: 22px;
+  --text-sm--line-height: 30px;
+  --text-base: 24px;
+  --text-base--line-height: 32px;
+  --text-lg: 28px;
+  --text-lg--line-height: 36px;
+  --text-xl: 32px;
+  --text-xl--line-height: 40px;
+  --text-2xl: 38px;
+  --text-2xl--line-height: 46px;
+  --text-3xl: 44px;
+  --text-3xl--line-height: 52px;
 }
 
 html, body {
@@ -113,3 +113,7 @@ input, select, textarea {
 .animate-slide-up {
   animation: slide-up 0.2s ease-out;
 }
+
+/* Hide scrollbar but keep scrollable */
+.scrollbar-hide::-webkit-scrollbar { display: none; }
+.scrollbar-hide { -ms-overflow-style: none; scrollbar-width: none; }

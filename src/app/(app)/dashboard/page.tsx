@@ -42,15 +42,15 @@ export default function DashboardPage() {
         {/* Summary Cards */}
         <div className="grid grid-cols-2 md:grid-cols-3 gap-2 md:gap-3">
           <div className="rounded-lg bg-white border border-gray-200 p-3">
-            <div className="text-[10px] font-semibold tracking-wider uppercase text-gray-400">Total Leads</div>
+            <div className="text-xs font-semibold tracking-wider uppercase text-gray-400">Total Leads</div>
             <div className="text-2xl font-bold font-mono tabular-nums text-gray-900 mt-1">{data.total_leads}</div>
           </div>
           <div className="rounded-lg bg-white border border-gray-200 p-3">
-            <div className="text-[10px] font-semibold tracking-wider uppercase text-gray-400">Bookings</div>
+            <div className="text-xs font-semibold tracking-wider uppercase text-gray-400">Bookings</div>
             <div className="text-2xl font-bold font-mono tabular-nums text-gray-900 mt-1">{data.total_bookings}</div>
           </div>
           <div className="rounded-lg bg-gradient-to-br from-primary to-primary-dark text-white border border-primary shadow-sm shadow-primary/20 p-3 col-span-2 md:col-span-1">
-            <div className="text-[10px] font-semibold tracking-wider uppercase text-white/70">Total Value</div>
+            <div className="text-xs font-semibold tracking-wider uppercase text-white/70">Total Value</div>
             <div className="text-2xl font-bold font-mono tabular-nums mt-1">
               {formatPrice(data.total_booking_value)}
               <span className="text-xs font-semibold text-white/70 ml-1">THB</span>
@@ -62,7 +62,7 @@ export default function DashboardPage() {
           {/* Status Breakdown */}
           {data.status_breakdown.length > 0 && (
             <div className="rounded-lg bg-white border border-gray-200 p-4">
-              <div className="text-[10px] font-semibold tracking-wider uppercase text-gray-400 mb-3">Lead Status</div>
+              <div className="text-xs font-semibold tracking-wider uppercase text-gray-400 mb-3">Lead Status</div>
               <div className="space-y-2.5">
                 {data.status_breakdown.map((s) => {
                   const pct = totalByStatus > 0 ? (s.count / totalByStatus) * 100 : 0;
@@ -89,7 +89,7 @@ export default function DashboardPage() {
           {/* Recent Leads */}
           {data.recent_leads.length > 0 && (
             <div className="rounded-lg bg-white border border-gray-200 p-4">
-              <div className="text-[10px] font-semibold tracking-wider uppercase text-gray-400 mb-3">Recent Leads</div>
+              <div className="text-xs font-semibold tracking-wider uppercase text-gray-400 mb-3">Recent Leads</div>
               <div className="space-y-2">
                 {data.recent_leads.map((l) => {
                   const cfg = STATUS_CONFIG[l.status];
@@ -100,9 +100,9 @@ export default function DashboardPage() {
                       </div>
                       <div className="flex-1 min-w-0">
                         <div className="text-xs font-semibold text-gray-900 truncate">{l.full_name}</div>
-                        {l.project_name && <div className="text-[10px] text-gray-500 truncate">{l.project_name}</div>}
+                        {l.project_name && <div className="text-xs text-gray-500 truncate">{l.project_name}</div>}
                       </div>
-                      <span className={`text-[9px] font-semibold uppercase tracking-wider px-1.5 py-0.5 rounded text-white shrink-0 ${cfg?.color || "bg-gray-400"}`}>
+                      <span className={`text-xs font-semibold uppercase tracking-wider px-1.5 py-0.5 rounded text-white shrink-0 ${cfg?.color || "bg-gray-400"}`}>
                         {cfg?.label || l.status}
                       </span>
                     </div>

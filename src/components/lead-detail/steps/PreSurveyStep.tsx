@@ -1,9 +1,10 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { apiFetch } from "@/lib/api";
 import { PAYMENT_TYPES, FINANCE_STATUSES } from "@/lib/statuses";
 import type { Lead, Package, StepCommonProps } from "./types";
+import PreSurveyForm from "./PreSurveyForm";
 
 const DEPOSIT_AMOUNT = 1000;
 
@@ -96,8 +97,22 @@ const PEAK_USAGE = [
   { value: "both", label: "ทั้งสองช่วง" },
 ];
 
+const SURVEY_TIME_SLOTS = [
+  { value: "morning", label: "เช้า", time: "09:00 - 12:00" },
+  { value: "afternoon", label: "บ่าย", time: "13:00 - 16:00" },
+];
+
+const RESIDENCE_TYPES = [
+  { value: "detached", label: "บ้านเดี่ยว" },
+  { value: "townhome", label: "ทาวน์โฮม" },
+  { value: "townhouse", label: "ทาวน์เฮาส์" },
+  { value: "home_office", label: "โฮมออฟฟิศ" },
+  { value: "shophouse", label: "อาคารพาณิชย์" },
+  { value: "other", label: "อื่นๆ" },
+];
+
 const chipBtn = (selected: boolean) =>
-  `h-10 px-3 rounded-lg text-xs font-semibold border transition-all cursor-pointer ${
+  `h-9 px-3 rounded-lg text-[15px] font-semibold border transition-all cursor-pointer ${
     selected
       ? "bg-active text-white border-active shadow-sm shadow-active/20"
       : "bg-white text-gray-600 border-gray-200 hover:border-active/40 hover:text-active"
@@ -111,7 +126,7 @@ const InfoRow = ({
   value: React.ReactNode;
 }) => (
   <div className="flex flex-col gap-0.5 py-2 border-b border-gray-100 last:border-0">
-    <span className="text-[10px] font-semibold tracking-wider uppercase text-gray-400">{label}</span>
+    <span className="text-xs font-semibold tracking-wider uppercase text-gray-400">{label}</span>
     <span className="text-sm font-medium text-gray-800">{value}</span>
   </div>
 );
@@ -123,18 +138,38 @@ interface Props extends StepCommonProps {
 
 export default function PreSurveyStep({ lead, state, refresh, packages }: Props) {
   // Pre-survey form fields
-  const [monthlyBill, setMonthlyBill] = useState<number | undefined>(lead.monthly_bill ?? undefined);
-  const [electricalPhase, setElectricalPhase] = useState<string>(lead.electrical_phase ?? "");
-  const [wantsBattery, setWantsBattery] = useState<string>(lead.wants_battery ?? "");
-  const [roofShape, setRoofShape] = useState<string>(lead.roof_shape ?? "");
-  const [appliances, setAppliances] = useState<string[]>(
-    lead.appliances ? lead.appliances.split(",").filter(Boolean) : []
+  const [monthlyBill, setMonthlyBill] = useState<number | undefined>(lead.pre_monthly_bill ?? undefined);
+  const [electricalPhase, setElectricalPhase] = useState<string>(lead.pre_electrical_phase ?? "");
+  const [wantsBattery, setWantsBattery] = useState<string>(lead.pre_wants_battery ?? "");
+  const [roofShape, setRoofShape] = useState<string>(lead.pre_roof_shape ?? "");
+  const [pre_appliances, setAppliances] = useState<string[]>(
+    lead.pre_appliances ? lead.pre_appliances.split(",").filter(Boolean) : []
   );
-  const [acUnits, setAcUnits] = useState<Record<number, number>>(parseAcUnits(lead.ac_units));
-  const [peakUsage, setPeakUsage] = useState<string>(lead.peak_usage ?? "");
+  const [acUnits, setAcUnits] = useState<Record<number, number>>(parseAcUnits(lead.pre_ac_units));
+  const [peakUsage, setPeakUsage] = useState<string>(lead.pre_peak_usage ?? "");
+  const [billPhotoUrl, setBillPhotoUrl] = useState<string | null>(lead.pre_bill_photo_url ?? null);
+  const [billUploading, setBillUploading] = useState(false);
+  const [residenceType, setResidenceType] = useState<string>(lead.pre_residence_type ?? "");
+  const [scheduledSurveys, setScheduledSurveys] = useState<{ id: number; full_name: string; survey_date: string; survey_time_slot: string | null }[]>([]);
+
+  useEffect(() => {
+    apiFetch("/api/surveys/scheduled")
+      .then((data) => setScheduledSurveys(data))
+      .catch(console.error);
+  }, [lead.id]);
+
+  // date -> { morning, afternoon, total }
+  const surveyCountByDate = scheduledSurveys.reduce<Record<string, { morning: number; afternoon: number; total: number }>>((acc, s) => {
+    const key = s.survey_date.slice(0, 10);
+    if (!acc[key]) acc[key] = { morning: 0, afternoon: 0, total: 0 };
+    if (s.survey_time_slot === "morning") acc[key].morning++;
+    else if (s.survey_time_slot === "afternoon") acc[key].afternoon++;
+    acc[key].total++;
+    return acc;
+  }, {});
 
   // Booking form state
-  const [bookingPkg, setBookingPkg] = useState("");
+  const [bookingPkg, setBookingPkg] = useState(lead.interested_package_id ? String(lead.interested_package_id) : "");
   const [bookingPayment, setBookingPayment] = useState(lead.payment_type ?? "transfer");
   const [paymentTab, setPaymentTab] = useState<"qr" | "link">("qr");
   const [linkCopied, setLinkCopied] = useState(false);
@@ -146,6 +181,7 @@ export default function PreSurveyStep({ lead, state, refresh, packages }: Props)
   const [uploadedSlipUrl, setUploadedSlipUrl] = useState<string | null>(null);
   const [verifyStatus, setVerifyStatus] = useState<"idle" | "verifying" | "verified" | "failed">("idle");
   const [surveyDate, setSurveyDate] = useState<string>(lead.survey_date ? lead.survey_date.slice(0, 10) : "");
+  const [surveyTimeSlot, setSurveyTimeSlot] = useState<string>(lead.survey_time_slot ?? "");
 
   const hasBooking = !!lead.booking_number;
   const paymentLabel = PAYMENT_TYPES.find(p => p.value === lead.payment_type)?.label;
@@ -165,29 +201,49 @@ export default function PreSurveyStep({ lead, state, refresh, packages }: Props)
     }
   }, [wantsBattery]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // Generate QR
+  // Generate QR (deposit is always 1000 THB regardless of payment method)
   useEffect(() => {
-    if (bookingPayment === "transfer") {
-      apiFetch(`/api/qr?amount=${DEPOSIT_AMOUNT}`)
-        .then((data: { qrDataUrl: string }) => setQrDataUrl(data.qrDataUrl))
-        .catch(console.error);
-    } else {
-      setQrDataUrl(null);
+    apiFetch(`/api/qr?amount=${DEPOSIT_AMOUNT}`)
+      .then((data: { qrDataUrl: string }) => setQrDataUrl(data.qrDataUrl))
+      .catch(console.error);
+  }, []);
+
+  // Auto-save pre-survey fields on change (debounced)
+  const isFirstAutosave = useRef(true);
+  useEffect(() => {
+    if (isFirstAutosave.current) {
+      isFirstAutosave.current = false;
+      return;
     }
-  }, [bookingPayment]);
+    const t = setTimeout(() => {
+      apiFetch(`/api/leads/${lead.id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          ...preSurveyPayload(),
+          interested_package_id: bookingPkg ? parseInt(bookingPkg) : null,
+          survey_date: surveyDate || null,
+          survey_time_slot: surveyTimeSlot || null,
+        }),
+      }).catch(console.error);
+    }, 600);
+    return () => clearTimeout(t);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [monthlyBill, electricalPhase, wantsBattery, roofShape, pre_appliances, acUnits, peakUsage, bookingPkg, surveyDate, surveyTimeSlot, residenceType]);
 
   const toggleAppliance = (v: string) => {
     setAppliances(prev => (prev.includes(v) ? prev.filter(a => a !== v) : [...prev, v]));
   };
 
   const preSurveyPayload = () => ({
-    monthly_bill: monthlyBill ?? null,
-    electrical_phase: electricalPhase || null,
-    wants_battery: wantsBattery || null,
-    roof_shape: roofShape || null,
-    appliances: appliances.length ? appliances.join(",") : null,
-    ac_units: stringifyAcUnits(acUnits),
-    peak_usage: peakUsage || null,
+    pre_monthly_bill: monthlyBill ?? null,
+    pre_electrical_phase: electricalPhase || null,
+    pre_wants_battery: wantsBattery || null,
+    pre_roof_shape: roofShape || null,
+    pre_appliances: pre_appliances.length ? pre_appliances.join(",") : null,
+    pre_ac_units: stringifyAcUnits(acUnits),
+    pre_peak_usage: peakUsage || null,
+    pre_residence_type: residenceType || null,
   });
 
   const updateAcCount = (btu: number, delta: number) => {
@@ -195,6 +251,54 @@ export default function PreSurveyStep({ lead, state, refresh, packages }: Props)
   };
 
   const totalAcUnits = Object.values(acUnits).reduce((a, b) => a + b, 0);
+
+  const handleBillPhotoCapture = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setBillUploading(true);
+    try {
+      if (billPhotoUrl) {
+        fetch(`/api/upload?file=${encodeURIComponent(billPhotoUrl)}`, {
+          method: "DELETE",
+          headers: { "ngrok-skip-browser-warning": "true" },
+        }).catch(() => {});
+      }
+      const fd = new FormData();
+      fd.append("file", file);
+      const uploadRes = await fetch("/api/upload", {
+        method: "POST",
+        body: fd,
+        headers: { "ngrok-skip-browser-warning": "true" },
+      });
+      const { url } = await uploadRes.json();
+      setBillPhotoUrl(url);
+      await apiFetch(`/api/leads/${lead.id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ pre_bill_photo_url: url }),
+      });
+      refresh();
+    } catch (err) {
+      console.error(err);
+    } finally {
+      setBillUploading(false);
+    }
+  };
+
+  const handleBillPhotoRemove = async () => {
+    if (!billPhotoUrl) return;
+    fetch(`/api/upload?file=${encodeURIComponent(billPhotoUrl)}`, {
+      method: "DELETE",
+      headers: { "ngrok-skip-browser-warning": "true" },
+    }).catch(() => {});
+    setBillPhotoUrl(null);
+    await apiFetch(`/api/leads/${lead.id}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ pre_bill_photo_url: null }),
+    });
+    refresh();
+  };
 
   const handleSlipCapture = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -263,7 +367,7 @@ export default function PreSurveyStep({ lead, state, refresh, packages }: Props)
       await apiFetch(`/api/leads/${lead.id}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ status: "survey", survey_date: surveyDate }),
+        body: JSON.stringify({ status: "survey", survey_date: surveyDate, survey_time_slot: surveyTimeSlot, next_follow_up: null }),
       });
       refresh();
     } catch (err) {
@@ -330,106 +434,167 @@ export default function PreSurveyStep({ lead, state, refresh, packages }: Props)
 
   // Display when booking already exists (done state, viewing)
   if (hasBooking) {
+    const acMap = parseAcUnits(lead.pre_ac_units);
+    const acTotal = Object.values(acMap).reduce((a, b) => a + b, 0);
+    const applianceList = (lead.pre_appliances || "").split(",").filter(Boolean).map(v => APPLIANCES.find(a => a.value === v)?.label || v);
+    const roofLabel = ROOF_SHAPES.find(r => r.value === lead.pre_roof_shape)?.label;
+    const phaseLabel = ELECTRICAL_PHASES.find(p => p.value === lead.pre_electrical_phase)?.label;
+    const batteryLabel = BATTERY_OPTIONS.find(b => b.value === lead.pre_wants_battery)?.label;
+    const peakLabel = PEAK_USAGE.find(p => p.value === lead.pre_peak_usage)?.label;
+    const residenceLabel = RESIDENCE_TYPES.find(r => r.value === lead.pre_residence_type)?.label;
+
     return (
-      <div className="space-y-5">
-        {/* Hero */}
-        <div className="flex items-start justify-between gap-4 -mx-1">
-          <div className="min-w-0">
-            <div className="text-[10px] font-semibold tracking-wider uppercase text-gray-400 mb-1">Deposit Reference</div>
-            <div className="text-xl font-bold font-mono tabular-nums text-gray-900 tracking-tight">{lead.booking_number}</div>
-            {lead.package_name && <div className="text-xs text-gray-500 mt-1 truncate">{lead.package_name}</div>}
-            {lead.package_price && (
-              <div className="text-[11px] text-gray-400 mt-0.5 font-mono tabular-nums">
-                est. {formatPrice(lead.package_price)} THB
+      <details className="group">
+        <summary className="flex items-center gap-2 cursor-pointer list-none py-1">
+          <span className={`inline-flex items-center gap-1 text-xs font-semibold uppercase tracking-wider px-2 py-0.5 rounded-md border shrink-0 ${
+            lead.confirmed
+              ? "bg-emerald-50 text-emerald-700 border-emerald-600/15"
+              : "bg-amber-50 text-amber-700 border-amber-600/15"
+          }`}>
+            <span className={`w-1.5 h-1.5 rounded-full ${lead.confirmed ? "bg-emerald-500" : "bg-amber-500"}`} />
+            {lead.confirmed ? "ชำระแล้ว" : "รอชำระ"}
+          </span>
+          {lead.survey_date && (
+            <span className="text-sm font-bold text-gray-900">
+              นัด {formatDate(lead.survey_date)}
+              {lead.survey_time_slot && (
+                <span className="ml-1 font-mono tabular-nums">
+                  {SURVEY_TIME_SLOTS.find(s => s.value === lead.survey_time_slot)?.time || lead.survey_time_slot}
+                </span>
+              )}
+            </span>
+          )}
+          <span className="flex-1" />
+          <svg className="w-4 h-4 text-gray-400 transition-transform group-open:rotate-180 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
+            <path strokeLinecap="round" strokeLinejoin="round" d="M19.5 8.25l-7.5 7.5-7.5-7.5" />
+          </svg>
+        </summary>
+
+        <div className="mt-3 pt-3 border-t border-gray-100 space-y-3">
+          {/* Booking details */}
+          <div className="space-y-1.5 text-sm">
+            {lead.package_name && (
+              <div className="flex justify-between gap-3">
+                <span className="text-xs text-gray-400">แพ็คเกจ</span>
+                <span className="font-semibold text-gray-800 text-right truncate">{lead.package_name}</span>
+              </div>
+            )}
+            {paymentLabel && (
+              <div className="flex justify-between gap-3">
+                <span className="text-xs text-gray-400">การชำระเงิน</span>
+                <span className="font-semibold text-gray-800">{paymentLabel}</span>
               </div>
             )}
           </div>
-          <div className="text-right shrink-0">
-            <div className="text-[10px] font-semibold tracking-wider uppercase text-gray-400 mb-1">Deposit Paid</div>
-            <div className="text-xl font-bold font-mono tabular-nums text-gray-900 tracking-tight">
-              {formatPrice(lead.booking_price || 0)}
-              <span className="text-xs font-semibold text-gray-400 ml-1">THB</span>
+
+          {/* Pre-survey questionnaire data */}
+          <dl className="grid grid-cols-2 gap-x-4 gap-y-2 text-sm pt-3 border-t border-gray-100 mb-0">
+            {residenceLabel && (
+              <div>
+                <dt className="text-xs text-gray-400">ประเภทบ้าน</dt>
+                <dd className="font-semibold text-gray-800">{residenceLabel}</dd>
+              </div>
+            )}
+            {lead.pre_monthly_bill != null && (
+              <div>
+                <dt className="text-xs text-gray-400">ค่าไฟต่อเดือน</dt>
+                <dd className="font-semibold text-gray-800 font-mono tabular-nums">{formatPrice(lead.pre_monthly_bill)} บาท</dd>
+              </div>
+            )}
+            {phaseLabel && (
+              <div>
+                <dt className="text-xs text-gray-400">ระบบไฟ</dt>
+                <dd className="font-semibold text-gray-800">{phaseLabel}</dd>
+              </div>
+            )}
+            {peakLabel && (
+              <div>
+                <dt className="text-xs text-gray-400">ช่วงเวลาที่ใช้ไฟสูงสุด</dt>
+                <dd className="font-semibold text-gray-800">{peakLabel}</dd>
+              </div>
+            )}
+            {batteryLabel && (
+              <div>
+                <dt className="text-xs text-gray-400">แบตเตอรี่</dt>
+                <dd className="font-semibold text-gray-800">{batteryLabel}</dd>
+              </div>
+            )}
+            {roofLabel && (
+              <div>
+                <dt className="text-xs text-gray-400">ทรงหลังคา</dt>
+                <dd className="font-semibold text-gray-800">{roofLabel}</dd>
+              </div>
+            )}
+            {acTotal > 0 && (
+              <div className="col-span-2">
+                <dt className="text-xs text-gray-400">แอร์ ({acTotal} เครื่อง)</dt>
+                <dd className="font-semibold text-gray-800 flex flex-wrap gap-1.5 mt-0.5">
+                  {AC_BTU_SIZES.filter(b => acMap[b] > 0).map(b => (
+                    <span key={b} className="inline-flex items-center px-2 py-0.5 rounded bg-gray-100 text-xs font-mono tabular-nums">
+                      {b.toLocaleString()} BTU × {acMap[b]}
+                    </span>
+                  ))}
+                </dd>
+              </div>
+            )}
+            {applianceList.length > 0 && (
+              <div className="col-span-2">
+                <dt className="text-xs text-gray-400">เครื่องใช้ไฟฟ้าอื่นๆ</dt>
+                <dd className="font-semibold text-gray-800 flex flex-wrap gap-1.5 mt-0.5">
+                  {applianceList.map(a => (
+                    <span key={a} className="inline-flex items-center px-2 py-0.5 rounded bg-gray-100 text-xs">{a}</span>
+                  ))}
+                </dd>
+              </div>
+            )}
+            {lead.pre_bill_photo_url && (
+              <div className="col-span-2">
+                <dt className="text-xs text-gray-400 mb-1">บิลค่าไฟ</dt>
+                <dd>
+                  <a href={lead.pre_bill_photo_url} target="_blank" rel="noreferrer">
+                    <img src={lead.pre_bill_photo_url} alt="Bill" className="h-20 rounded-lg border border-gray-200" />
+                  </a>
+                </dd>
+              </div>
+            )}
+          </dl>
+
+          {/* Slip preview */}
+          {lead.slip_url && (
+            <div className="pt-3 border-t border-gray-100">
+              <div className="text-xs text-gray-400 mb-2">สลิปโอนเงิน</div>
+              <a href={lead.slip_url} target="_blank" className="block">
+                <img src={lead.slip_url} alt="Slip" className="w-full max-w-[200px] rounded-lg border border-gray-200" />
+              </a>
             </div>
-            <div className="mt-1.5 flex justify-end">
-              <span
-                className={`inline-flex items-center gap-1 text-[10px] font-semibold uppercase tracking-wider px-2 py-0.5 rounded-md border ${
-                  lead.confirmed
-                    ? "bg-emerald-50 text-emerald-700 border-emerald-600/15"
-                    : "bg-amber-50 text-amber-700 border-amber-600/15"
-                }`}
+          )}
+
+          {/* Action */}
+          <div className="pt-3 border-t border-gray-100">
+            {lead.confirmed ? (
+              <a
+                href={`/api/receipt?booking_id=${lead.booking_id}`}
+                target="_blank"
+                className="w-full h-11 px-4 rounded-lg text-sm font-semibold flex items-center justify-center gap-2 bg-primary text-white hover:bg-primary-dark transition-colors"
               >
-                <span className={`w-1.5 h-1.5 rounded-full ${lead.confirmed ? "bg-emerald-500" : "bg-amber-500"}`} />
-                {lead.confirmed ? "Paid" : "Pending"}
-              </span>
-            </div>
-          </div>
-        </div>
-
-        {lead.survey_date && (
-          <div className="flex items-center gap-2 px-3 py-2 rounded-lg bg-violet-50 border border-violet-600/15">
-            <svg className="w-4 h-4 text-violet-600 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-              <path strokeLinecap="round" strokeLinejoin="round" d="M6.75 3v2.25M17.25 3v2.25M3 18.75V7.5a2.25 2.25 0 012.25-2.25h13.5A2.25 2.25 0 0121 7.5v11.25m-18 0A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75m-18 0v-7.5A2.25 2.25 0 015.25 9h13.5A2.25 2.25 0 0121 11.25v7.5" />
-            </svg>
-            <div className="text-xs flex-1">
-              <span className="text-[10px] font-semibold tracking-wider uppercase text-violet-600/70">Survey Scheduled</span>
-              <div className="font-semibold text-violet-900">{formatDate(lead.survey_date)}</div>
-            </div>
-          </div>
-        )}
-
-        {(paymentLabel || financeConfig) && (
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-6 pt-1 border-t border-gray-100">
-            {paymentLabel && <InfoRow label="Payment Method" value={paymentLabel} />}
-            {financeConfig && (
-              <InfoRow
-                label="Finance Status"
-                value={
-                  <span className={`inline-flex text-[11px] font-semibold px-2 py-0.5 rounded ${financeConfig.color}`}>
-                    {financeConfig.label}
-                  </span>
-                }
-              />
+                <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M3 16.5v2.25A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75V16.5M16.5 12L12 16.5m0 0L7.5 12m4.5 4.5V3" />
+                </svg>
+                ดาวน์โหลดใบเสร็จ
+                <span className="text-xs font-medium text-white/60 ml-1">PDF</span>
+              </a>
+            ) : (
+              <button
+                onClick={confirmDraftBooking}
+                disabled={confirmingSaved || !surveyDate}
+                className="w-full h-11 px-4 rounded-lg text-sm font-semibold flex items-center justify-center gap-2 bg-primary text-white hover:bg-primary-dark disabled:opacity-50 transition-colors"
+              >
+                {confirmingSaved ? "กำลังยืนยัน…" : !surveyDate ? "เลือกวันนัดก่อน" : "ยืนยันและเปิดขั้นสำรวจ"}
+              </button>
             )}
           </div>
-        )}
-
-        {lead.slip_url && (
-          <div className="pt-1">
-            <div className="text-[10px] font-semibold tracking-wider uppercase text-gray-400 mb-2">Payment Slip</div>
-            <a href={lead.slip_url} target="_blank" className="block">
-              <img
-                src={lead.slip_url}
-                alt="Payment slip"
-                className="w-full max-w-[180px] rounded-lg border border-gray-200 hover:border-primary/30 transition-colors"
-              />
-            </a>
-          </div>
-        )}
-
-        <div className="pt-1">
-          {lead.confirmed ? (
-            <a
-              href={`/api/receipt?booking_id=${lead.booking_id}`}
-              target="_blank"
-              className="w-full h-11 px-4 rounded-lg text-sm font-semibold flex items-center justify-center gap-2 bg-primary text-white hover:bg-primary-dark transition-colors"
-            >
-              <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                <path strokeLinecap="round" strokeLinejoin="round" d="M3 16.5v2.25A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75V16.5M16.5 12L12 16.5m0 0L7.5 12m4.5 4.5V3" />
-              </svg>
-              Download Receipt
-              <span className="text-[10px] font-medium text-white/60 ml-1">PDF</span>
-            </a>
-          ) : (
-            <button
-              onClick={confirmDraftBooking}
-              disabled={confirmingSaved || !surveyDate}
-              className="w-full h-11 px-4 rounded-lg text-sm font-semibold flex items-center justify-center gap-2 bg-primary text-white hover:bg-primary-dark disabled:opacity-50 transition-colors"
-            >
-              {confirmingSaved ? "Confirming…" : !surveyDate ? "Set Survey Date to Continue" : "Confirm & Unlock Survey"}
-            </button>
-          )}
         </div>
-      </div>
+      </details>
     );
   }
 
@@ -438,187 +603,125 @@ export default function PreSurveyStep({ lead, state, refresh, packages }: Props)
 
   return (
     <div className="space-y-2">
-      {/* 1. Air Conditioners — per BTU counts */}
-      <div className="rounded-lg bg-white border border-gray-200 p-3">
-        <div className="flex items-center justify-between mb-0.5">
-          <label className="text-xs font-semibold text-gray-900">Air Conditioners</label>
-          {totalAcUnits > 0 && (
-            <span className="text-[10px] font-semibold text-emerald-700 bg-emerald-50 border border-emerald-600/15 px-1.5 py-0.5 rounded">
-              รวม {totalAcUnits} เครื่อง
-            </span>
-          )}
-        </div>
-        <div className="text-[10px] text-gray-500 mb-2">ระบุจำนวนเครื่องตามขนาด BTU</div>
-        <div className="space-y-1.5">
-          {AC_BTU_SIZES.map(btu => {
-            const count = acUnits[btu] || 0;
+      <PreSurveyForm lead={lead} refresh={refresh} packages={packages} onPackageChange={setBookingPkg} />
+
+      {/* Survey date picker — first appointment, captured during pre-survey */}
+      <div className="rounded-lg border border-active/15 bg-white/60 p-4 mt-2">
+          <label className="text-xs font-semibold tracking-wider uppercase text-gray-400 block mb-2">
+            Survey Appointment <span className="text-red-500">*</span>
+          </label>
+          {(() => {
+            const today = new Date(); today.setHours(0, 0, 0, 0);
+            const months = [
+              new Date(today.getFullYear(), today.getMonth(), 1),
+              new Date(today.getFullYear(), today.getMonth() + 1, 1),
+            ];
+            const WEEKDAYS = ["อา", "จ", "อ", "พ", "พฤ", "ศ", "ส"];
             return (
-              <div key={btu} className="flex items-center justify-between gap-3">
-                <span className="text-sm font-medium text-gray-700 font-mono tabular-nums">
-                  {btu.toLocaleString()} <span className="text-xs text-gray-400 font-sans">BTU</span>
-                </span>
-                <div className="flex items-center gap-2">
-                  <button
-                    type="button"
-                    onClick={() => updateAcCount(btu, -1)}
-                    disabled={count === 0}
-                    className="w-9 h-9 rounded-md border border-gray-200 text-gray-600 text-lg font-semibold disabled:opacity-30 disabled:cursor-not-allowed hover:border-gray-400 transition-colors"
-                  >
-                    −
-                  </button>
-                  <span className="w-8 text-center text-sm font-bold tabular-nums text-gray-900">{count}</span>
-                  <button
-                    type="button"
-                    onClick={() => updateAcCount(btu, 1)}
-                    className="w-9 h-9 rounded-md border border-gray-200 text-gray-600 text-lg font-semibold hover:border-gray-400 transition-colors"
-                  >
-                    +
-                  </button>
-                </div>
+              <div className="grid grid-cols-2 gap-2">
+                {months.map(monthStart => {
+                  const monthLabel = monthStart.toLocaleDateString("th-TH", { month: "long" });
+                  const firstDayOfWeek = monthStart.getDay();
+                  const daysInMonth = new Date(monthStart.getFullYear(), monthStart.getMonth() + 1, 0).getDate();
+                  return (
+                    <div key={monthStart.toISOString()}>
+                      <div className="text-xs font-semibold text-gray-700 mb-1 text-center">{monthLabel}</div>
+                      <div className="grid grid-cols-7 mb-0.5">
+                        {WEEKDAYS.map((w, i) => (
+                          <div key={w} className={`text-xs text-center font-semibold py-0.5 ${i === 0 || i === 6 ? "text-red-400" : "text-gray-400"}`}>{w}</div>
+                        ))}
+                      </div>
+                      <div className="grid grid-cols-7">
+                        {Array.from({ length: firstDayOfWeek }).map((_, i) => <div key={`pad-${i}`} className="h-9" />)}
+                        {Array.from({ length: daysInMonth }).map((_, i) => {
+                          const d = new Date(monthStart.getFullYear(), monthStart.getMonth(), i + 1);
+                          const iso = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+                          const selected = surveyDate === iso;
+                          const isPast = d < today;
+                          const isToday = d.getTime() === today.getTime();
+                          const isWeekend = d.getDay() === 0 || d.getDay() === 6;
+                          const counts = surveyCountByDate[iso];
+                          const isFull = !!(counts && counts.morning > 0 && counts.afternoon > 0);
+                          const isPartial = !!(counts && (counts.morning > 0 || counts.afternoon > 0) && !isFull);
+                          const disabled = isPast || isFull;
+                          let bookedClass = "";
+                          if (!isPast && !selected) {
+                            if (isFull) bookedClass = "bg-red-100 text-red-500 line-through";
+                            else if (isPartial) bookedClass = "bg-amber-100 text-amber-700";
+                          }
+                          return (
+                            <div key={iso} className="h-9 flex items-center justify-center">
+                              <button
+                                type="button"
+                                disabled={disabled}
+                                onClick={() => { setSurveyDate(iso); setSurveyTimeSlot(""); }}
+                                style={{ minHeight: 0 }}
+                                className={`w-8 h-8 rounded-full flex items-center justify-center text-sm leading-none font-semibold transition-all ${
+                                  selected
+                                    ? "bg-active text-white shadow-sm shadow-active/30"
+                                    : isPast
+                                    ? "text-gray-300 cursor-not-allowed"
+                                    : bookedClass
+                                    ? bookedClass + (isFull ? " cursor-not-allowed" : " hover:brightness-95")
+                                    : isToday
+                                    ? "bg-active-light text-active ring-1 ring-active/30 hover:bg-active hover:text-white"
+                                    : `${isWeekend ? "text-red-500" : "text-gray-700"} hover:bg-active-light hover:text-active`
+                                }`}
+                              >
+                                {d.getDate()}
+                              </button>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  );
+                })}
               </div>
             );
-          })}
-        </div>
-      </div>
-
-      {/* 2. Main Appliances */}
-      <div className="rounded-lg bg-white border border-gray-200 p-3">
-        <label className="text-[11px] font-semibold tracking-wider uppercase text-gray-400 block mb-2">Main Appliances</label>
-        <div className="grid grid-cols-3 gap-2">
-          {APPLIANCES.map(a => (
-            <button key={a.value} type="button" onClick={() => toggleAppliance(a.value)} className={chipBtn(appliances.includes(a.value))}>
-              {a.label}
-            </button>
-          ))}
-        </div>
-      </div>
-
-      {/* 2. Monthly bill */}
-      <div className="rounded-lg bg-white border border-gray-200 p-3">
-        <label className="text-[11px] font-semibold tracking-wider uppercase text-gray-400 block mb-2">Monthly Electricity Bill</label>
-        <div className="relative">
-          <input
-            type="number"
-            inputMode="numeric"
-            value={monthlyBill ?? ""}
-            onChange={e => setMonthlyBill(e.target.value ? parseInt(e.target.value) : undefined)}
-            placeholder="เช่น 3,500"
-            className="w-full h-10 pl-3 pr-14 rounded-lg border border-gray-200 text-sm font-mono tabular-nums focus:outline-none focus:border-primary"
-          />
-          <span className="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-gray-400 font-medium">บาท</span>
-        </div>
-      </div>
-
-      {/* 3. Peak usage */}
-      <div className="rounded-lg bg-white border border-gray-200 p-3">
-        <label className="text-[11px] font-semibold tracking-wider uppercase text-gray-400 block mb-2">Peak Usage</label>
-        <div className="grid grid-cols-3 gap-2">
-          {PEAK_USAGE.map(p => (
-            <button key={p.value} type="button" onClick={() => setPeakUsage(p.value)} className={chipBtn(peakUsage === p.value)}>
-              {p.label}
-            </button>
-          ))}
-        </div>
-      </div>
-
-      {/* 4. Electrical phase */}
-      <div className="rounded-lg bg-white border border-gray-200 p-3">
-        <label className="text-[11px] font-semibold tracking-wider uppercase text-gray-400 block mb-2">ระบบไฟปัจจุบัน</label>
-        <div className="grid grid-cols-3 gap-2">
-          {ELECTRICAL_PHASES.map(p => (
-            <button key={p.value} type="button" onClick={() => setElectricalPhase(p.value)} className={chipBtn(electricalPhase === p.value)}>
-              {p.label}
-            </button>
-          ))}
-        </div>
-      </div>
-
-      {/* 5. Roof shape */}
-      <div className="rounded-lg bg-white border border-gray-200 p-3">
-        <label className="text-[11px] font-semibold tracking-wider uppercase text-gray-400 block mb-2.5">ทรงหลังคา · Roof Shape</label>
-        <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
-          {ROOF_SHAPES.map(r => {
-            const selected = roofShape === r.value;
-            return (
-              <button
-                key={r.value}
-                type="button"
-                onClick={() => setRoofShape(r.value)}
-                className={`flex flex-col items-center justify-center gap-1.5 py-3 px-2 rounded-lg border transition-colors cursor-pointer ${
-                  selected
-                    ? "bg-active border-active text-white"
-                    : "bg-white border-gray-200 text-gray-600 hover:border-active/40"
-                }`}
-              >
-                {r.svg}
-                <span className="text-sm font-semibold">{r.label}</span>
-              </button>
-            );
-          })}
-        </div>
-      </div>
-
-      {/* 6. Battery */}
-      <div className="rounded-lg bg-white border border-gray-200 p-3">
-        <label className="text-[11px] font-semibold tracking-wider uppercase text-gray-400 block mb-2">ต้องการแบตเตอรี่</label>
-        <div className="grid grid-cols-3 gap-2">
-          {BATTERY_OPTIONS.map(b => (
-            <button key={b.value} type="button" onClick={() => setWantsBattery(b.value)} className={chipBtn(wantsBattery === b.value)}>
-              {b.label}
-            </button>
-          ))}
-        </div>
-      </div>
-
-      {/* Package selection */}
-      <div className="pt-2">
-        <label className="text-xs font-semibold text-gray-700 block mb-2">
-          Select Package <span className="text-red-500">*</span>
-          {wantsBattery === "yes" && <span className="ml-2 text-[10px] font-medium text-gray-400 normal-case">· กรอง: มีแบตเตอรี่</span>}
-          {wantsBattery === "no" && <span className="ml-2 text-[10px] font-medium text-gray-400 normal-case">· กรอง: ไม่มีแบตเตอรี่</span>}
-        </label>
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-2">
-          {filteredPackages.length === 0 && (
-            <div className="col-span-full text-center py-6 text-xs text-gray-400 border border-dashed border-gray-200 rounded-xl">
-              ไม่มีแพ็คเกจที่ตรงกับที่เลือก
+          })()}
+          {/* Legend */}
+          <div className="flex items-center justify-center gap-4 mt-2 text-[11px] text-gray-500">
+            <span className="inline-flex items-center gap-1"><span className="w-1.5 h-1.5 rounded-full bg-amber-500" /> มีนัดบางช่วง</span>
+            <span className="inline-flex items-center gap-1"><span className="w-1.5 h-1.5 rounded-full bg-red-500" /> เต็มทั้งวัน</span>
+          </div>
+          {/* Time slot picker */}
+          {surveyDate && (
+            <div className="mt-4 pt-3 border-t border-gray-100">
+              <div className="text-xs font-semibold tracking-wider uppercase text-gray-400 mb-2">ช่วงเวลานัด <span className="text-red-500">*</span></div>
+              <div className="grid grid-cols-3 gap-2">
+                {SURVEY_TIME_SLOTS.map(s => {
+                  const selected = surveyTimeSlot === s.value;
+                  const counts = surveyCountByDate[surveyDate];
+                  const taken = !!(counts && (s.value === "morning" ? counts.morning > 0 : counts.afternoon > 0));
+                  return (
+                    <button
+                      key={s.value}
+                      type="button"
+                      disabled={taken}
+                      onClick={() => setSurveyTimeSlot(s.value)}
+                      className={`flex items-center justify-center gap-1.5 py-2.5 px-3 rounded-lg border transition-all ${
+                        selected
+                          ? "bg-active border-active text-white shadow-sm shadow-active/20"
+                          : taken
+                          ? "bg-gray-100 border-gray-200 text-gray-400 cursor-not-allowed"
+                          : "bg-white border-gray-200 hover:border-active/40 text-gray-700"
+                      }`}
+                    >
+                      <span className="text-[15px] font-bold font-mono tabular-nums">{s.time}</span>
+                    </button>
+                  );
+                })}
+              </div>
             </div>
           )}
-          {filteredPackages.map(p => {
-            const selected = bookingPkg === String(p.id);
-            return (
-              <button
-                key={p.id}
-                onClick={() => setBookingPkg(String(p.id))}
-                className={`text-left rounded-xl p-3 border-2 transition-all ${
-                  selected ? "border-active bg-active-light" : "border-gray-100 bg-white"
-                }`}
-              >
-                <div className="flex items-center justify-between">
-                  <div>
-                    <div className="text-sm font-bold">{p.name}</div>
-                    <div className="text-xs text-gray-500 mt-0.5 flex flex-wrap gap-x-3">
-                      {p.solar_panels && <span>{p.solar_panels} panels</span>}
-                      {p.inverter_brand && <span>{p.inverter_brand} {p.inverter_kw}kW</span>}
-                      {p.has_battery && <span>Battery {p.battery_kwh}kWh</span>}
-                      <span>{p.warranty_years}yr warranty</span>
-                    </div>
-                    {p.monthly_saving > 0 && <div className="text-xs text-emerald-600 mt-0.5">Save ~{formatPrice(p.monthly_saving)}/mo</div>}
-                  </div>
-                  <div className="text-right shrink-0 ml-3">
-                    <div className="text-lg font-bold font-mono tabular-nums">{formatPrice(p.price)}</div>
-                    <div className="text-[10px] text-gray-400">THB</div>
-                  </div>
-                </div>
-              </button>
-            );
-          })}
+          <div className="text-xs text-gray-500 mt-2">นัดครั้งแรก · เลื่อนนัดทำได้ในขั้น Survey</div>
         </div>
-      </div>
 
       {/* ชำระค่าจอง Survey — QR / Payment Link tabs */}
-      <div className="rounded-lg bg-white border border-gray-200 p-4 mt-2">
+      <div className="rounded-lg bg-white/60 border border-active/15 p-4 mt-2">
         <label className="text-sm font-semibold text-gray-900 block mb-0.5">ชำระค่าจอง Survey</label>
-        <div className="text-[11px] text-gray-500 mb-3">ค่ามัดจำ {formatPrice(DEPOSIT_AMOUNT)} บาท</div>
+        <div className="text-xs text-gray-500 mb-3">ค่ามัดจำ {formatPrice(DEPOSIT_AMOUNT)} บาท</div>
 
         {/* Tabs — underline style */}
         <div className="flex border-b border-gray-200 mb-4 -mx-4 px-4">
@@ -647,6 +750,11 @@ export default function PreSurveyStep({ lead, state, refresh, packages }: Props)
         </div>
 
         {/* Tab content: QR */}
+        {paymentTab === "qr" && !qrDataUrl && (
+          <div className="flex items-center justify-center py-10">
+            <div className="w-8 h-8 border-3 border-gray-200 border-t-active rounded-full animate-spin" />
+          </div>
+        )}
         {paymentTab === "qr" && qrDataUrl && (
           <div className="space-y-3">
             <div className="max-w-[280px] mx-auto">
@@ -660,12 +768,12 @@ export default function PreSurveyStep({ lead, state, refresh, packages }: Props)
                 />
               </div>
               <div className="bg-white rounded-b-xl border border-t-0 border-gray-200 px-4 py-3 text-center">
-                <div className="text-[10px] font-semibold tracking-wider uppercase text-gray-400">Deposit</div>
+                <div className="text-xs font-semibold tracking-wider uppercase text-gray-400">ค่ามัดจำ</div>
                 <div className="text-2xl font-bold font-mono tabular-nums">
                   {formatPrice(DEPOSIT_AMOUNT)}
                   <span className="text-sm text-gray-400 ml-1">THB</span>
                 </div>
-                <div className="text-[10px] text-gray-500 mt-1">PromptPay: 085-909-9890</div>
+                <div className="text-xs text-gray-500 mt-1">PromptPay: 085-909-9890</div>
               </div>
             </div>
             <button
@@ -680,12 +788,12 @@ export default function PreSurveyStep({ lead, state, refresh, packages }: Props)
         {/* Tab content: Payment Link */}
         {paymentTab === "link" && (
           <div className="space-y-3">
-            <div className="text-[11px] text-gray-500">
+            <div className="text-xs text-gray-500">
               ส่งลิ้งค์นี้ให้ลูกค้าเปิดบนมือถือ เพื่อสแกน QR และชำระเงินได้ด้วยตนเอง
             </div>
             <div className="flex items-center gap-2 p-3 rounded-lg bg-gray-50 border border-gray-200">
               <div className="flex-1 min-w-0">
-                <div className="text-[10px] font-semibold tracking-wider uppercase text-gray-400">Payment URL</div>
+                <div className="text-xs font-semibold tracking-wider uppercase text-gray-400">ลิ้งค์ชำระเงิน</div>
                 <div className="text-xs font-mono text-gray-800 truncate mt-0.5">
                   {typeof window !== "undefined" ? `${window.location.origin}/pay/${lead.id}` : `/pay/${lead.id}`}
                 </div>
@@ -714,9 +822,7 @@ export default function PreSurveyStep({ lead, state, refresh, packages }: Props)
       </div>
 
       {/* Slip upload */}
-      {bookingPayment === "transfer" && (
-        <>
-          <input type="file" accept="image/*" onChange={handleSlipCapture} className="hidden" id="booking-slip" />
+      <input type="file" accept="image/*" onChange={handleSlipCapture} className="hidden" id="booking-slip" />
           {slipPreview && (
             <div className="relative rounded-xl overflow-hidden border border-gray-200 max-w-[280px] mx-auto mt-2">
               <img src={slipPreview} alt="Slip" className="w-full" />
@@ -737,7 +843,7 @@ export default function PreSurveyStep({ lead, state, refresh, packages }: Props)
               htmlFor="booking-slip"
               className="w-full h-11 px-4 rounded-lg text-sm font-semibold flex items-center justify-center gap-2 cursor-pointer bg-white border border-gray-200 text-gray-700 hover:border-gray-400 transition-colors"
             >
-              Upload Payment Slip
+              อัปโหลดสลิปโอนเงิน
             </label>
           )}
           {verifyStatus === "verifying" && (
@@ -748,13 +854,13 @@ export default function PreSurveyStep({ lead, state, refresh, packages }: Props)
           )}
           {verifyStatus === "verified" && (
             <div className="w-full h-9 rounded-lg text-xs font-semibold text-emerald-700 bg-emerald-50 border border-emerald-600/15 flex items-center justify-center gap-1">
-              ✓ Slip Verified
+              ✓ ตรวจสลิปแล้ว
             </div>
           )}
           {verifyStatus === "failed" && (
             <div className="space-y-2">
               <div className="w-full h-11 rounded-lg text-sm font-semibold text-white bg-red-500 flex items-center justify-center">
-                Verification Failed
+                ตรวจสลิปไม่ผ่าน
               </div>
               <button
                 onClick={() => {
@@ -764,38 +870,19 @@ export default function PreSurveyStep({ lead, state, refresh, packages }: Props)
                 }}
                 className="w-full h-9 rounded-lg text-xs text-gray-600 border border-gray-200"
               >
-                Try Again
+                ลองอีกครั้ง
               </button>
             </div>
           )}
-        </>
-      )}
-
-      {/* Survey date picker */}
-      {bookingPkg && bookingPayment && (
-        <div className="rounded-lg border border-gray-200 bg-white p-4 mt-2">
-          <label className="text-[11px] font-semibold tracking-wider uppercase text-gray-400 block mb-2">
-            Survey Appointment <span className="text-red-500">*</span>
-          </label>
-          <input
-            type="date"
-            value={surveyDate}
-            min={new Date().toISOString().slice(0, 10)}
-            onChange={e => setSurveyDate(e.target.value)}
-            className="w-full h-10 px-3 rounded-lg border border-gray-200 text-sm font-medium focus:outline-none focus:border-primary"
-          />
-          <div className="text-[11px] text-gray-500 mt-1.5">ต้องระบุเพื่อปลดล็อคขั้นตอนการสำรวจพื้นที่</div>
-        </div>
-      )}
 
       {/* Confirm actions */}
-      {bookingPayment === "transfer" && verifyStatus === "verified" && (
+      {verifyStatus === "verified" && (
         <button
           onClick={confirmWithSlip}
-          disabled={bookingSaving || !surveyDate}
+          disabled={bookingSaving || !surveyDate || !surveyTimeSlot}
           className="w-full h-11 rounded-lg text-sm font-semibold text-white bg-gradient-to-r from-primary to-primary-dark hover:brightness-110 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
         >
-          {bookingSaving ? "Saving…" : !surveyDate ? "Set Survey Date to Continue" : "Confirm & Unlock Survey"}
+          {bookingSaving ? "กำลังบันทึก…" : !surveyDate ? "เลือกวันนัด" : !surveyTimeSlot ? "เลือกช่วงเวลา" : "ยืนยันและเปิดขั้นสำรวจ"}
         </button>
       )}
 

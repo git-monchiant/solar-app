@@ -47,7 +47,7 @@ export default function ActivityItem({ activity, isLast }: { activity: Activity;
           <div className="rounded-xl bg-primary/5 border border-primary/10 p-3">
             <div className="flex items-center justify-between mb-2">
               <span className="text-sm font-bold text-primary">Lead Created</span>
-              <span className="text-[10px] bg-primary/10 text-primary font-semibold px-2 py-0.5 rounded-full">{source}</span>
+              <span className="text-xs bg-primary/10 text-primary font-semibold px-2 py-0.5 rounded-full">{source}</span>
             </div>
             <div className="space-y-1 text-xs text-gray">
               <div className="flex items-center gap-1.5">

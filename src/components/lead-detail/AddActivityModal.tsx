@@ -11,6 +11,8 @@ const typeLabels: Record<ActivityType, string> = {
   follow_up: "Follow Up",
 };
 
+const WEEKDAYS = ["อา", "จ", "อ", "พ", "พฤ", "ศ", "ส"];
+
 interface Props {
   activityType: ActivityType;
   leadId: number;
@@ -61,17 +63,67 @@ export default function AddActivityModal({ activityType, leadId, onClose, onSave
           </button>
         </div>
 
-        {activityType === "follow_up" && (
-          <div className="mb-3">
-            <label className="block text-sm font-semibold mb-1">Follow-up Date</label>
-            <input
-              type="date"
-              value={followUpDate}
-              onChange={(e) => setFollowUpDate(e.target.value)}
-              className="w-full px-4 py-3 rounded-xl border border-gray-200 bg-white focus:outline-none focus:border-primary text-sm"
-            />
-          </div>
-        )}
+        {activityType === "follow_up" && (() => {
+          const today = new Date(); today.setHours(0, 0, 0, 0);
+          const months = [
+            new Date(today.getFullYear(), today.getMonth(), 1),
+            new Date(today.getFullYear(), today.getMonth() + 1, 1),
+          ];
+          return (
+            <div className="mb-3">
+              <label className="block text-sm font-semibold mb-2">Follow-up Date</label>
+              <div className="grid grid-cols-2 gap-2">
+                {months.map(monthStart => {
+                  const monthLabel = monthStart.toLocaleDateString("th-TH", { month: "long" });
+                  const firstDayOfWeek = monthStart.getDay();
+                  const daysInMonth = new Date(monthStart.getFullYear(), monthStart.getMonth() + 1, 0).getDate();
+                  return (
+                    <div key={monthStart.toISOString()}>
+                      <div className="text-xs font-semibold text-gray-700 mb-1 text-center">{monthLabel}</div>
+                      <div className="grid grid-cols-7 mb-0.5">
+                        {WEEKDAYS.map((w, i) => (
+                          <div key={w} className={`text-xs text-center font-semibold py-0.5 ${i === 0 || i === 6 ? "text-red-400" : "text-gray-400"}`}>{w}</div>
+                        ))}
+                      </div>
+                      <div className="grid grid-cols-7">
+                        {Array.from({ length: firstDayOfWeek }).map((_, i) => <div key={`pad-${i}`} className="h-9" />)}
+                        {Array.from({ length: daysInMonth }).map((_, i) => {
+                          const d = new Date(monthStart.getFullYear(), monthStart.getMonth(), i + 1);
+                          const iso = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+                          const selected = followUpDate === iso;
+                          const isPast = d < today;
+                          const isToday = d.getTime() === today.getTime();
+                          const isWeekend = d.getDay() === 0 || d.getDay() === 6;
+                          return (
+                            <div key={iso} className="h-9 flex items-center justify-center">
+                              <button
+                                type="button"
+                                disabled={isPast}
+                                onClick={() => setFollowUpDate(iso)}
+                                style={{ minHeight: 0 }}
+                                className={`w-8 h-8 rounded-full flex items-center justify-center text-sm leading-none font-semibold transition-all ${
+                                  selected
+                                    ? "bg-active text-white shadow-sm shadow-active/30"
+                                    : isPast
+                                    ? "text-gray-300 cursor-not-allowed"
+                                    : isToday
+                                    ? "bg-active-light text-active ring-1 ring-active/30 hover:bg-active hover:text-white"
+                                    : `${isWeekend ? "text-red-500" : "text-gray-700"} hover:bg-active-light hover:text-active`
+                                }`}
+                              >
+                                {d.getDate()}
+                              </button>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          );
+        })()}
 
         <div className="mb-4">
           <label className="block text-sm font-semibold mb-1">Note</label>

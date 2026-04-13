@@ -64,7 +64,7 @@ export default function PublicPayPage({ params }: { params: Promise<{ id: string
             alt="Sena Solar Energy"
             className="h-10 w-auto mx-auto mb-2"
           />
-          <div className="text-[10px] font-semibold tracking-wider uppercase text-white/70">Payment Request</div>
+          <div className="text-xs font-semibold tracking-wider uppercase text-white/70">Payment Request</div>
           <div className="text-base font-bold mt-0.5">ชำระค่าจอง Survey</div>
         </div>
 
@@ -83,7 +83,7 @@ export default function PublicPayPage({ params }: { params: Promise<{ id: string
           <div className="bg-white border border-gray-200 border-t-0 rounded-b-xl p-6">
             {/* Customer info */}
             <div className="pb-4 border-b border-gray-100">
-              <div className="text-[10px] font-semibold tracking-wider uppercase text-gray-400">Customer</div>
+              <div className="text-xs font-semibold tracking-wider uppercase text-gray-400">Customer</div>
               <div className="text-base font-bold text-gray-900 mt-0.5">{lead.full_name}</div>
               {(lead.project_name || lead.house_number) && (
                 <div className="text-xs text-gray-500 mt-0.5">
@@ -111,17 +111,17 @@ export default function PublicPayPage({ params }: { params: Promise<{ id: string
 
             {/* Amount */}
             <div className="text-center py-3 border-t border-gray-100">
-              <div className="text-[10px] font-semibold tracking-wider uppercase text-gray-400">Amount</div>
+              <div className="text-xs font-semibold tracking-wider uppercase text-gray-400">Amount</div>
               <div className="text-3xl font-bold font-mono tabular-nums text-gray-900 mt-1">
                 {formatPrice(DEPOSIT_AMOUNT)}
                 <span className="text-base font-semibold text-gray-400 ml-1">THB</span>
               </div>
-              <div className="text-[11px] text-gray-500 mt-1">PromptPay · 085-909-9890</div>
+              <div className="text-xs text-gray-500 mt-1">PromptPay · 085-909-9890</div>
             </div>
 
             {/* Instructions */}
             <div className="mt-4 p-3 rounded-lg bg-amber-50 border border-amber-200">
-              <div className="text-[11px] font-semibold text-amber-800 mb-1">วิธีการชำระเงิน</div>
+              <div className="text-xs font-semibold text-amber-800 mb-1">วิธีการชำระเงิน</div>
               <ol className="text-xs text-amber-700 space-y-0.5 list-decimal list-inside">
                 <li>เปิดแอพธนาคาร / PromptPay</li>
                 <li>สแกน QR ด้านบน</li>
@@ -133,7 +133,7 @@ export default function PublicPayPage({ params }: { params: Promise<{ id: string
           </div>
         )}
 
-        <div className="text-center mt-4 text-[11px] text-gray-400">
+        <div className="text-center mt-4 text-xs text-gray-400">
           SENA SOLAR ENERGY · Secure Payment
         </div>
       </div>

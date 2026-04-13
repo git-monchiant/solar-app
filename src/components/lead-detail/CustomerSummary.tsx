@@ -49,7 +49,7 @@ export default function CustomerSummary({ lead }: { lead: Lead }) {
             {lead.phone && <span>{lead.phone}</span>}
             {lead.project_name && <span>{lead.project_name}</span>}
             {lead.house_number && <span>#{lead.house_number}</span>}
-            <span className="text-[10px] font-medium bg-gray-100 px-1.5 py-0.5 rounded">{lead.source === "event" ? "Event" : "Walk-in"}</span>
+            <span className="text-xs font-medium bg-gray-100 px-1.5 py-0.5 rounded">{lead.source === "event" ? "Event" : "Walk-in"}</span>
           </div>
         </div>
         <div className="flex items-center gap-2 shrink-0">

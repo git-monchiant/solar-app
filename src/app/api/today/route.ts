@@ -5,8 +5,43 @@ export async function GET() {
   try {
     const db = await getDb();
 
-    const [overdue, today, untouched, stats] = await Promise.all([
-      // Overdue follow-ups
+    const [newLeads, overdueBooking, followUpToday, followUpOverdue, stats] = await Promise.all([
+      // 1. Lead ใหม่รอจอง (registered + no booking + < 2 days)
+      db.request().query(`
+        SELECT l.*, p.name as project_name, pk.name as package_name,
+               (SELECT TOP 1 note FROM lead_activities WHERE lead_id = l.id ORDER BY created_at DESC) as last_activity_note
+        FROM leads l
+        LEFT JOIN projects p ON l.project_id = p.id
+        LEFT JOIN packages pk ON l.interested_package_id = pk.id
+        WHERE l.status = 'registered'
+          AND NOT EXISTS (SELECT 1 FROM bookings WHERE lead_id = l.id)
+          AND l.created_at >= DATEADD(day, -2, GETDATE())
+        ORDER BY l.created_at DESC
+      `),
+      // 2. เกินกำหนดจอง (registered + no booking + > 2 days)
+      db.request().query(`
+        SELECT l.*, p.name as project_name, pk.name as package_name,
+               (SELECT TOP 1 note FROM lead_activities WHERE lead_id = l.id ORDER BY created_at DESC) as last_activity_note
+        FROM leads l
+        LEFT JOIN projects p ON l.project_id = p.id
+        LEFT JOIN packages pk ON l.interested_package_id = pk.id
+        WHERE l.status = 'registered'
+          AND NOT EXISTS (SELECT 1 FROM bookings WHERE lead_id = l.id)
+          AND l.created_at < DATEADD(day, -2, GETDATE())
+        ORDER BY l.created_at ASC
+      `),
+      // 3. นัดติดตามวันนี้
+      db.request().query(`
+        SELECT l.*, p.name as project_name, pk.name as package_name,
+               (SELECT TOP 1 note FROM lead_activities WHERE lead_id = l.id ORDER BY created_at DESC) as last_activity_note
+        FROM leads l
+        LEFT JOIN projects p ON l.project_id = p.id
+        LEFT JOIN packages pk ON l.interested_package_id = pk.id
+        WHERE l.next_follow_up = CAST(GETDATE() AS DATE)
+          AND l.status NOT IN ('installed', 'lost')
+        ORDER BY l.created_at DESC
+      `),
+      // 4. เลยกำหนดติดตาม (overdue follow-up)
       db.request().query(`
         SELECT l.*, p.name as project_name, pk.name as package_name,
                (SELECT TOP 1 note FROM lead_activities WHERE lead_id = l.id ORDER BY created_at DESC) as last_activity_note
@@ -16,27 +51,6 @@ export async function GET() {
         WHERE l.next_follow_up < CAST(GETDATE() AS DATE)
           AND l.status NOT IN ('installed', 'lost')
         ORDER BY l.next_follow_up ASC
-      `),
-      // Today's follow-ups + revisits
-      db.request().query(`
-        SELECT l.*, p.name as project_name, pk.name as package_name,
-               (SELECT TOP 1 note FROM lead_activities WHERE lead_id = l.id ORDER BY created_at DESC) as last_activity_note
-        FROM leads l
-        LEFT JOIN projects p ON l.project_id = p.id
-        LEFT JOIN packages pk ON l.interested_package_id = pk.id
-        WHERE (l.next_follow_up = CAST(GETDATE() AS DATE)
-               OR (l.status = 'lost' AND l.revisit_date = CAST(GETDATE() AS DATE)))
-        ORDER BY l.created_at DESC
-      `),
-      // New leads with no activities (except "Lead created")
-      db.request().query(`
-        SELECT l.*, p.name as project_name, pk.name as package_name
-        FROM leads l
-        LEFT JOIN projects p ON l.project_id = p.id
-        LEFT JOIN packages pk ON l.interested_package_id = pk.id
-        WHERE l.status = 'registered'
-          AND (SELECT COUNT(*) FROM lead_activities WHERE lead_id = l.id AND activity_type != 'note') = 0
-        ORDER BY l.created_at DESC
       `),
       // Quick stats
       db.request().query(`
@@ -49,9 +63,10 @@ export async function GET() {
     ]);
 
     return NextResponse.json({
-      overdue: overdue.recordset,
-      today: today.recordset,
-      untouched: untouched.recordset,
+      newLeads: newLeads.recordset,
+      overdueBooking: overdueBooking.recordset,
+      followUpToday: followUpToday.recordset,
+      followUpOverdue: followUpOverdue.recordset,
       stats: stats.recordset[0],
     });
   } catch (error) {

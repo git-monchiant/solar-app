@@ -4,12 +4,15 @@ import { apiFetch } from "@/lib/api";
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import LeadCard, { LeadData } from "@/components/LeadCard";
+import LeadGroupList from "@/components/LeadGroupList";
+import ListPageHeader from "@/components/ListPageHeader";
 import { STATUSES, STATUS_CONFIG } from "@/lib/statuses";
 
 interface TodayData {
-  overdue: LeadData[];
-  today: LeadData[];
-  untouched: LeadData[];
+  newLeads: LeadData[];
+  overdueBooking: LeadData[];
+  followUpToday: LeadData[];
+  followUpOverdue: LeadData[];
   stats: { pipeline: number; won: number; lost: number; new_this_week: number };
 }
 
@@ -21,6 +24,7 @@ export default function TodayPage() {
   const [search, setSearch] = useState("");
   const [filterStatus, setFilterStatus] = useState("all");
   const [filterSource, setFilterSource] = useState("all");
+  const [filterOpen, setFilterOpen] = useState(false);
 
   useEffect(() => {
     Promise.all([
@@ -57,131 +61,131 @@ export default function TodayPage() {
   }
 
   const d = todayData!;
-  const totalActions = d.overdue.length + d.today.length + d.untouched.length;
+  const totalActions = d.newLeads.length + d.overdueBooking.length + d.followUpToday.length + d.followUpOverdue.length;
 
   return (
     <div>
-      {/* Top bar — fixed h-16 gradient, aligns with sidebar logo */}
-      <div className="bg-gradient-to-br from-primary to-primary-dark text-white sticky top-0 z-10" style={{ paddingTop: "env(safe-area-inset-top, 0px)" }}>
-        <div className="h-16 px-4 flex items-center gap-3">
-          <div className="flex-1 min-w-0">
-            <div className="text-[10px] font-semibold tracking-wider uppercase text-white/60 leading-tight">
-              {new Date().toLocaleDateString("en-US", { weekday: "long", month: "long", day: "numeric" })}
+      <ListPageHeader
+        title={tab === "today" ? (totalActions > 0 ? `${totalActions} actions today` : "All caught up") : `${allLeads.length} leads`}
+        subtitle={new Date().toLocaleDateString("en-US", { weekday: "long", month: "short", day: "numeric" })}
+        search={search}
+        onSearchChange={(v) => { setSearch(v); if (v) setTab("allleads"); }}
+        searchPlaceholder="ค้นหาชื่อ, เบอร์, บ้านเลขที่..."
+        tabs={[
+          { key: "today", label: "Today", count: totalActions },
+          { key: "allleads", label: "All Leads", count: allLeads.length },
+        ]}
+        activeTab={tab}
+        onTabChange={(k) => setTab(k as "today" | "allleads")}
+        tabsRight={tab === "allleads" ? (
+          <button
+            type="button"
+            onClick={() => setFilterOpen(true)}
+            style={{ minHeight: 0 }}
+            className={`flex items-center gap-1 px-2.5 py-1.5 rounded-md text-xs font-semibold transition-all ${
+              filterStatus !== "all" || filterSource !== "all"
+                ? "bg-active text-white"
+                : "text-gray-500 hover:text-gray-700"
+            }`}
+          >
+            <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+              <path strokeLinecap="round" strokeLinejoin="round" d="M10.5 6h9.75M10.5 6a1.5 1.5 0 11-3 0m3 0a1.5 1.5 0 10-3 0M3.75 6H7.5m3 12h9.75m-9.75 0a1.5 1.5 0 01-3 0m3 0a1.5 1.5 0 00-3 0m-3.75 0H7.5m9-6h3.75m-3.75 0a1.5 1.5 0 01-3 0m3 0a1.5 1.5 0 00-3 0m-9.75 0h9.75" />
+            </svg>
+          </button>
+        ) : undefined}
+      />
+
+      {/* Filter popup — allleads only */}
+      {filterOpen && tab === "allleads" && (
+        <div className="fixed inset-0 z-[60] flex items-center justify-center">
+          <div className="absolute inset-0 bg-black/30" onClick={() => setFilterOpen(false)} />
+          <div className="relative bg-white rounded-2xl w-[85%] max-w-sm p-4 animate-slide-up space-y-3">
+            <div className="flex items-center justify-between">
+              <span className="text-sm font-bold text-gray-900">Filter</span>
+              {(filterStatus !== "all" || filterSource !== "all") && (
+                <button type="button" onClick={() => { setFilterStatus("all"); setFilterSource("all"); }} style={{ minHeight: 0 }} className="text-xs text-active font-semibold">ล้าง</button>
+              )}
             </div>
-            <h1 className="text-2xl font-bold tracking-tight leading-tight mt-0.5 truncate">
-              {tab === "today"
-                ? totalActions > 0 ? `${totalActions} actions today` : "All caught up!"
-                : `All Leads (${allLeads.length})`}
-            </h1>
-          </div>
-          <Link
-            href="/profile"
-            className="rounded-full bg-white/15 backdrop-blur-sm ring-2 ring-white/30 flex items-center justify-center shrink-0 hover:bg-white/25 transition-colors shadow-sm shadow-black/10"
-            style={{ width: "2.5rem", height: "2.5rem", minHeight: "2.5rem" }}
-          >
-            <svg className="w-5 h-5 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-              <path strokeLinecap="round" strokeLinejoin="round" d="M15.75 6a3.75 3.75 0 11-7.5 0 3.75 3.75 0 017.5 0zM4.501 20.118a7.5 7.5 0 0114.998 0A17.933 17.933 0 0112 21.75c-2.676 0-5.216-.584-7.499-1.632z" />
-            </svg>
-          </Link>
-        </div>
-      </div>
-
-      {/* Sub-header — search + tabs on white (below the 64px top bar) */}
-      <div className="bg-white border-b border-gray-100">
-        <div className="px-4 py-2">
-          <div className="relative">
-            <svg className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-              <path strokeLinecap="round" strokeLinejoin="round" d="M21 21l-5.197-5.197m0 0A7.5 7.5 0 105.196 5.196a7.5 7.5 0 0010.607 10.607z" />
-            </svg>
-            <input
-              type="text"
-              value={search}
-              onChange={(e) => { setSearch(e.target.value); if (e.target.value) setTab("allleads"); }}
-              placeholder="Search name, phone, house..."
-              className="w-full h-10 pl-9 pr-3 rounded-lg border border-gray-200 bg-white text-sm placeholder-gray-400 focus:outline-none focus:border-active transition-colors"
-            />
-          </div>
-        </div>
-        <div className="flex">
-          <button
-            onClick={() => setTab("today")}
-            className={`flex-1 py-3 text-sm font-semibold border-b-2 transition-colors ${
-              tab === "today" ? "text-active border-active" : "text-gray-500 border-transparent"
-            }`}
-          >
-            Today {totalActions > 0 && `(${totalActions})`}
-          </button>
-          <button
-            onClick={() => setTab("allleads")}
-            className={`flex-1 py-3 text-sm font-semibold border-b-2 transition-colors ${
-              tab === "allleads" ? "text-active border-active" : "text-gray-500 border-transparent"
-            }`}
-          >
-            All Leads ({allLeads.length})
-          </button>
-        </div>
-      </div>
-
-      {/* Filters — allleads only */}
-      {tab === "allleads" && (
-        <div className="px-3 py-2 bg-white border-b border-gray-100">
-          <div className="flex gap-2">
-            <select
-              value={filterStatus}
-              onChange={(e) => setFilterStatus(e.target.value)}
-              className="flex-1 h-10 px-3 rounded-lg border border-gray-200 bg-white text-sm appearance-none focus:outline-none focus:border-primary"
-            >
-              <option value="all">All Status</option>
-              {allStatuses.map((s) => <option key={s} value={s}>{STATUS_CONFIG[s]?.label || s}</option>)}
-            </select>
-            <select
-              value={filterSource}
-              onChange={(e) => setFilterSource(e.target.value)}
-              className="flex-1 h-10 px-3 rounded-lg border border-gray-200 bg-white text-sm appearance-none focus:outline-none focus:border-primary"
-            >
-              <option value="all">All Source</option>
-              <option value="walk-in">Walk-in</option>
-              <option value="event">Event</option>
-            </select>
+            <div>
+              <div className="text-xs font-semibold text-gray-400 mb-2">Status</div>
+              <div className="flex flex-wrap gap-1.5">
+                {[{ key: "all", label: "All" }, ...allStatuses.map(s => ({ key: s, label: STATUS_CONFIG[s]?.label || s }))].map(s => (
+                  <button key={s.key} type="button" onClick={() => setFilterStatus(s.key)} style={{ minHeight: 0 }}
+                    className={`px-3 py-1.5 rounded-full text-xs font-semibold transition-all ${
+                      filterStatus === s.key ? "bg-active text-white" : "bg-gray-100 text-gray-600"
+                    }`}
+                  >{s.label}</button>
+                ))}
+              </div>
+            </div>
+            <div>
+              <div className="text-xs font-semibold text-gray-400 mb-2">Source</div>
+              <div className="flex flex-wrap gap-1.5">
+                {[{ key: "all", label: "All" }, { key: "walk-in", label: "Walk-in" }, { key: "event", label: "Event" }].map(s => (
+                  <button key={s.key} type="button" onClick={() => setFilterSource(s.key)} style={{ minHeight: 0 }}
+                    className={`px-3 py-1.5 rounded-full text-xs font-semibold transition-all ${
+                      filterSource === s.key ? "bg-active text-white" : "bg-gray-100 text-gray-600"
+                    }`}
+                  >{s.label}</button>
+                ))}
+              </div>
+            </div>
+            <button type="button" onClick={() => setFilterOpen(false)}
+              className="w-full h-10 rounded-xl text-sm font-semibold bg-gray-900 text-white mt-1"
+            >ตกลง</button>
           </div>
         </div>
       )}
 
       {/* Content */}
-      <div className="p-3 space-y-4">
+      <div className="p-4 space-y-5">
         {tab === "today" ? (
           <>
-            {d.overdue.length > 0 && (
+            {d.overdueBooking.length > 0 && (
               <section>
-                <div className="flex items-center gap-2 mb-2 px-1">
-                  <span className="w-2 h-2 bg-red-500 rounded-full" />
-                  <h2 className="text-xs font-bold tracking-wider uppercase text-red-600">Overdue ({d.overdue.length})</h2>
+                <div className="flex items-center justify-between mb-3 px-1">
+                  <h2 className="text-xs font-bold tracking-wider uppercase text-red-600">เกินกำหนดจอง</h2>
+                  <span className="text-xs font-semibold text-red-600 bg-red-50 px-2 py-0.5 rounded-full">{d.overdueBooking.length}</span>
                 </div>
-                <div className="space-y-2">{d.overdue.map((l) => <LeadCard key={l.id} lead={l} />)}</div>
+                <div className="space-y-3">{d.overdueBooking.map((l) => <LeadCard key={l.id} lead={l} />)}</div>
               </section>
             )}
-            {d.today.length > 0 && (
+            {d.followUpOverdue.length > 0 && (
               <section>
-                <div className="flex items-center gap-2 mb-2 px-1">
-                  <span className="w-2 h-2 bg-amber-500 rounded-full" />
-                  <h2 className="text-xs font-bold tracking-wider uppercase text-amber-600">Today ({d.today.length})</h2>
+                <div className="flex items-center justify-between mb-3 px-1">
+                  <h2 className="text-xs font-bold tracking-wider uppercase text-red-600">เลยกำหนดติดตาม</h2>
+                  <span className="text-xs font-semibold text-red-600 bg-red-50 px-2 py-0.5 rounded-full">{d.followUpOverdue.length}</span>
                 </div>
-                <div className="space-y-2">{d.today.map((l) => <LeadCard key={l.id} lead={l} />)}</div>
+                <div className="space-y-3">{d.followUpOverdue.map((l) => <LeadCard key={l.id} lead={l} />)}</div>
               </section>
             )}
-            {d.untouched.length > 0 && (
+            {d.followUpToday.length > 0 && (
               <section>
-                <div className="flex items-center gap-2 mb-2 px-1">
-                  <span className="w-2 h-2 bg-blue-500 rounded-full" />
-                  <h2 className="text-xs font-bold tracking-wider uppercase text-blue-600">New — Not Contacted ({d.untouched.length})</h2>
+                <div className="flex items-center justify-between mb-3 px-1">
+                  <h2 className="text-xs font-bold tracking-wider uppercase text-amber-600">นัดติดตามวันนี้</h2>
+                  <span className="text-xs font-semibold text-amber-600 bg-amber-50 px-2 py-0.5 rounded-full">{d.followUpToday.length}</span>
                 </div>
-                <div className="space-y-2">{d.untouched.map((l) => <LeadCard key={l.id} lead={l} compact />)}</div>
+                <div className="space-y-3">{d.followUpToday.map((l) => <LeadCard key={l.id} lead={l} />)}</div>
+              </section>
+            )}
+            {d.newLeads.length > 0 && (
+              <section>
+                <div className="flex items-center justify-between mb-3 px-1">
+                  <h2 className="text-xs font-bold tracking-wider uppercase text-blue-600">Lead ใหม่รอจอง</h2>
+                  <span className="text-xs font-semibold text-blue-600 bg-blue-50 px-2 py-0.5 rounded-full">{d.newLeads.length}</span>
+                </div>
+                <div className="space-y-3">{d.newLeads.map((l) => <LeadCard key={l.id} lead={l} compact />)}</div>
               </section>
             )}
             {totalActions === 0 && (
-              <div className="text-center py-12 text-gray-400">
-                <div className="text-sm font-medium">No pending actions</div>
-                <div className="text-xs mt-1">Switch to All Leads to see everything</div>
+              <div className="text-center py-16">
+                <div className="w-16 h-16 mx-auto rounded-full bg-emerald-50 flex items-center justify-center mb-3">
+                  <svg className="w-8 h-8 text-emerald-500" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M4.5 12.75l6 6 9-13.5" />
+                  </svg>
+                </div>
+                <div className="text-base font-semibold text-gray-900">All caught up!</div>
+                <div className="text-sm text-gray-500 mt-1">ไม่มีงานที่ต้องทำวันนี้</div>
               </div>
             )}
           </>
@@ -189,18 +193,18 @@ export default function TodayPage() {
           <>
             {grouped.length === 0 ? (
               <div className="text-center py-16 text-gray-400 text-sm">
-                {search ? "No results" : "No leads yet"}
+                {search ? "ไม่พบผลลัพธ์" : "ยังไม่มี lead"}
               </div>
             ) : (
               grouped.map((g) => (
                 <section key={g.status}>
-                  <div className="flex items-center gap-2 mb-2 px-1">
-                    <span className={`w-1.5 h-1.5 rounded-full ${g.config.color}`} />
+                  <div className="flex items-center justify-between mb-3 px-1">
                     <h2 className={`text-xs font-bold tracking-wider uppercase ${g.config.text}`}>
-                      {g.config.label} ({g.leads.length})
+                      {g.config.label}
                     </h2>
+                    <span className={`text-xs font-semibold ${g.config.text} ${g.config.bg} px-2 py-0.5 rounded-full`}>{g.leads.length}</span>
                   </div>
-                  <div className="space-y-2">{g.leads.map((l) => <LeadCard key={l.id} lead={l} />)}</div>
+                  <div className="space-y-3">{g.leads.map((l) => <LeadCard key={l.id} lead={l} />)}</div>
                 </section>
               ))
             )}
@@ -208,10 +212,10 @@ export default function TodayPage() {
         )}
       </div>
 
-      {/* FAB */}
+      {/* FAB — primary teal */}
       <Link
         href="/leads/new"
-        className="fixed bottom-24 right-4 md:bottom-6 md:right-6 w-14 h-14 bg-gradient-to-br from-primary to-primary-dark text-white rounded-full shadow-lg shadow-primary/30 flex items-center justify-center hover:brightness-110 transition-all z-20"
+        className="fixed bottom-24 right-5 md:bottom-6 md:right-6 w-14 h-14 bg-gradient-to-b from-primary via-primary to-primary rounded-full shadow-lg shadow-primary/30 flex items-center justify-center hover:bg-primary-dark transition-all z-20"
       >
         <svg className="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
           <path strokeLinecap="round" strokeLinejoin="round" d="M12 4.5v15m7.5-7.5h-15" />
