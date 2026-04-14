@@ -17,7 +17,7 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ id:
       .query(`
         SELECT l.*, p.name as project_name, pk.name as package_name, pk.price as package_price,
                u.full_name as assigned_name,
-               b.id as booking_id, b.booking_number, b.total_price as booking_price, b.status as booking_status, b.slip_url, b.payment_confirmed, b.confirmed
+               b.id as booking_id, b.booking_number, b.total_price as booking_price, b.status as booking_status, b.payment_confirmed, b.confirmed, b.package_id as booked_package_id, b.created_at as booking_date
         FROM leads l
         LEFT JOIN projects p ON l.project_id = p.id
         LEFT JOIN packages pk ON l.interested_package_id = pk.id
@@ -88,10 +88,6 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
       sets.push("house_reg_photo_url = @house_reg_photo_url");
       request.input("house_reg_photo_url", sql.NVarChar(500), body.house_reg_photo_url);
     }
-    if (body.waiting_slip !== undefined) {
-      sets.push("waiting_slip = @waiting_slip");
-      request.input("waiting_slip", sql.Bit, body.waiting_slip ? 1 : 0);
-    }
     if (body.interested_package_ids !== undefined) {
       sets.push("interested_package_ids = @interested_package_ids");
       request.input("interested_package_ids", sql.NVarChar(200), body.interested_package_ids);
@@ -99,6 +95,14 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
     if (body.phone !== undefined) {
       sets.push("phone = @phone");
       request.input("phone", sql.NVarChar(20), body.phone);
+    }
+    if (body.installation_address !== undefined) {
+      sets.push("installation_address = @installation_address");
+      request.input("installation_address", sql.NVarChar(500), body.installation_address);
+    }
+    if (body.full_name !== undefined) {
+      sets.push("full_name = @full_name");
+      request.input("full_name", sql.NVarChar(200), body.full_name);
     }
     if (body.lost_reason !== undefined) {
       sets.push("lost_reason = @lost_reason");
@@ -286,6 +290,10 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
     if (body.pre_bill_photo_url !== undefined) {
       sets.push("pre_bill_photo_url = @pre_bill_photo_url");
       request.input("pre_bill_photo_url", sql.NVarChar(500), body.pre_bill_photo_url);
+    }
+    if (body.slip_url !== undefined) {
+      sets.push("slip_url = @slip_url");
+      request.input("slip_url", sql.NVarChar(500), body.slip_url);
     }
 
     if (sets.length === 0) {

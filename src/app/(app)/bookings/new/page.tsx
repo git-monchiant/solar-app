@@ -5,7 +5,7 @@ import { useEffect, useState, Suspense } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import Header from "@/components/Header";
 
-interface Lead { id: number; full_name: string; phone: string; project_name: string; house_number: string; }
+interface Lead { id: number; full_name: string; phone: string; project_name: string; installation_address: string; }
 interface Package { id: number; name: string; price: number; }
 
 const fieldCard = "rounded-lg bg-white border border-gray-200 p-3";
@@ -67,7 +67,7 @@ function BookingForm() {
           <option value="">— เลือกลูกค้า —</option>
           {leads.map((l) => (
             <option key={l.id} value={l.id}>
-              {l.full_name} {l.house_number ? `(${l.house_number})` : ""}
+              {l.full_name} {l.installation_address ? `(${l.installation_address})` : ""}
             </option>
           ))}
         </select>

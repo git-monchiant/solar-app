@@ -38,7 +38,7 @@ export default function BookingsPage() {
     return (
       l.full_name?.toLowerCase().includes(q) ||
       l.phone?.toLowerCase().includes(q) ||
-      l.house_number?.toLowerCase().includes(q) ||
+      l.installation_address?.toLowerCase().includes(q) ||
       l.booking_number?.toLowerCase().includes(q) ||
       l.project_name?.toLowerCase().includes(q)
     );

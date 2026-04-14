@@ -6,14 +6,13 @@ interface Lead {
   full_name: string;
   phone: string;
   project_name: string;
-  house_number: string;
+  installation_address: string;
   customer_type: string;
   source: string;
   package_name: string;
   package_price: number;
   contact_date: string;
   next_follow_up: string | null;
-  payment_method: string | null;
   payment_type: string | null;
   finance_status: string | null;
   requirement: string | null;
@@ -48,7 +47,7 @@ export default function CustomerSummary({ lead }: { lead: Lead }) {
           <div className="flex items-center gap-2 text-xs text-gray mt-0.5 flex-wrap">
             {lead.phone && <span>{lead.phone}</span>}
             {lead.project_name && <span>{lead.project_name}</span>}
-            {lead.house_number && <span>#{lead.house_number}</span>}
+            {lead.installation_address && <span>#{lead.installation_address}</span>}
             <span className="text-xs font-medium bg-gray-100 px-1.5 py-0.5 rounded">{lead.source === "event" ? "Event" : "Walk-in"}</span>
           </div>
         </div>
@@ -71,7 +70,7 @@ export default function CustomerSummary({ lead }: { lead: Lead }) {
             { label: "Package", value: lead.package_name, extra: lead.package_price > 0 ? ` (${formatPrice(lead.package_price)} THB)` : "", color: "text-primary" },
             { label: "Type", value: lead.customer_type },
             { label: "Requirement", value: lead.requirement },
-            { label: "Payment", value: lead.payment_type === "cash" ? "Cash" : lead.payment_type === "home_equity" ? "Home Equity" : lead.payment_type === "finance" ? "Finance" : lead.payment_method, color: "text-green-600" },
+            { label: "Payment", value: lead.payment_type === "cash" ? "Cash" : lead.payment_type === "home_equity" ? "Home Equity" : lead.payment_type === "finance" ? "Finance" : lead.payment_type, color: "text-green-600" },
             { label: "Finance Status", value: lead.finance_status === "pending" ? "Pending" : lead.finance_status === "approved" ? "Approved" : lead.finance_status === "rejected" ? "Rejected" : null, color: lead.finance_status === "approved" ? "text-green-600" : lead.finance_status === "rejected" ? "text-red-600" : "text-amber-600" },
             { label: "Contact Date", value: lead.contact_date ? formatDate(lead.contact_date) : null },
             { label: "Follow Up", value: lead.next_follow_up ? formatDate(lead.next_follow_up) : null, color: "text-red-500" },

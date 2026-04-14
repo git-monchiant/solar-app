@@ -10,7 +10,7 @@ interface Lead {
   full_name: string;
   phone: string;
   project_name: string;
-  house_number: string;
+  installation_address: string;
   package_name: string;
   confirmed: boolean;
   payment_confirmed: boolean;
@@ -85,11 +85,11 @@ export default function PublicPayPage({ params }: { params: Promise<{ id: string
             <div className="pb-4 border-b border-gray-100">
               <div className="text-xs font-semibold tracking-wider uppercase text-gray-400">Customer</div>
               <div className="text-base font-bold text-gray-900 mt-0.5">{lead.full_name}</div>
-              {(lead.project_name || lead.house_number) && (
+              {(lead.project_name || lead.installation_address) && (
                 <div className="text-xs text-gray-500 mt-0.5">
                   {lead.project_name}
-                  {lead.project_name && lead.house_number && " · "}
-                  {lead.house_number && <span className="font-mono">{lead.house_number}</span>}
+                  {lead.project_name && lead.installation_address && " · "}
+                  {lead.installation_address && <span className="font-mono">{lead.installation_address}</span>}
                 </div>
               )}
             </div>

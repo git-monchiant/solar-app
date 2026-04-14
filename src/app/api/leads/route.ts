@@ -68,7 +68,7 @@ export async function POST(request: NextRequest) {
       .input("full_name", sql.NVarChar(200), body.full_name)
       .input("phone", sql.NVarChar(20), body.phone || null)
       .input("project_id", sql.Int, projectId)
-      .input("house_number", sql.NVarChar(50), body.house_number || null)
+      .input("installation_address", sql.NVarChar(50), body.installation_address || null)
       .input("customer_type", sql.NVarChar(50), body.customer_type || null)
       .input("interested_package_id", sql.Int, body.interested_package_id || null)
       .input("source", sql.NVarChar(30), body.source || "walk-in")
@@ -80,9 +80,9 @@ export async function POST(request: NextRequest) {
       .input("id_card_photo_url", sql.NVarChar(500), body.id_card_photo_url || null)
       .input("house_reg_photo_url", sql.NVarChar(500), body.house_reg_photo_url || null)
       .query(`
-        INSERT INTO leads (full_name, phone, project_id, house_number, customer_type, interested_package_id, source, payment_type, requirement, note, id_card_number, id_card_address, id_card_photo_url, house_reg_photo_url, status)
+        INSERT INTO leads (full_name, phone, project_id, installation_address, customer_type, interested_package_id, source, payment_type, requirement, note, id_card_number, id_card_address, id_card_photo_url, house_reg_photo_url, status)
         OUTPUT INSERTED.*
-        VALUES (@full_name, @phone, @project_id, @house_number, @customer_type, @interested_package_id, @source, @payment_type, @requirement, @note, @id_card_number, @id_card_address, @id_card_photo_url, @house_reg_photo_url, 'registered')
+        VALUES (@full_name, @phone, @project_id, @installation_address, @customer_type, @interested_package_id, @source, @payment_type, @requirement, @note, @id_card_number, @id_card_address, @id_card_photo_url, @house_reg_photo_url, 'registered')
       `);
 
     // Auto-log lead created (register/walk-in is the first contact)

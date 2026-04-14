@@ -8,7 +8,7 @@ export interface LeadData {
   project_name: string;
   package_name: string;
   package_price: number;
-  house_number: string;
+  installation_address: string;
   customer_type: string;
   status: string;
   source: string;
@@ -67,15 +67,15 @@ export default function LeadCard({ lead, compact }: { lead: LeadData; compact?: 
         </div>
 
         {/* Location */}
-        {(lead.project_name || lead.house_number) && (
+        {(lead.project_name || lead.installation_address) && (
           <div className="flex items-center gap-1.5 text-sm text-gray-500 mb-2">
             <svg className="w-4 h-4 shrink-0 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
               <path strokeLinecap="round" strokeLinejoin="round" d="M15 10.5a3 3 0 11-6 0 3 3 0 016 0zM19.5 10.5c0 7.142-7.5 11.25-7.5 11.25S4.5 17.642 4.5 10.5a7.5 7.5 0 1115 0z" />
             </svg>
             <span className="truncate">
               {lead.project_name}
-              {lead.project_name && lead.house_number && " · "}
-              {lead.house_number && <span className="font-mono tabular-nums">{lead.house_number}</span>}
+              {lead.project_name && lead.installation_address && " · "}
+              {lead.installation_address && <span className="font-mono tabular-nums">{lead.installation_address}</span>}
             </span>
           </div>
         )}

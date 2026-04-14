@@ -42,7 +42,7 @@ export default function TodayPage() {
     if (filterSource !== "all" && l.source !== filterSource) return false;
     if (search.trim()) {
       const q = search.toLowerCase();
-      return l.full_name?.toLowerCase().includes(q) || l.phone?.toLowerCase().includes(q) || l.house_number?.toLowerCase().includes(q);
+      return l.full_name?.toLowerCase().includes(q) || l.phone?.toLowerCase().includes(q) || l.installation_address?.toLowerCase().includes(q);
     }
     return true;
   });

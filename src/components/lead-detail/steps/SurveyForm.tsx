@@ -199,11 +199,20 @@ export default function SurveyForm({ lead, refresh }: Props) {
             <div className={subLabel}>ประเภทบ้านพักอาศัย</div>
             <div className="grid grid-cols-3 gap-2">
               {RESIDENCE_TYPES.map(r => (
-                <button key={r.value} type="button" onClick={() => setResidenceType(r.value)} className={chipBtn(residenceType === r.value)}>
+                <button key={r.value} type="button" onClick={() => setResidenceType(r.value)} className={chipBtn(residenceType === r.value || (r.value === "other" && residenceType.startsWith("other")))}>
                   {r.label}
                 </button>
               ))}
             </div>
+            {residenceType.startsWith("other") && (
+              <input
+                type="text"
+                placeholder="ระบุประเภทบ้าน..."
+                value={residenceType.startsWith("other:") ? residenceType.slice(6) : ""}
+                onChange={e => setResidenceType(e.target.value ? `other:${e.target.value}` : "other")}
+                className="w-full mt-2 h-10 px-3 rounded-lg border border-gray-200 text-sm focus:outline-none focus:border-active"
+              />
+            )}
           </div>
           <div>
             <div className={subLabel}>จำนวนชั้น</div>

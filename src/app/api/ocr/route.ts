@@ -33,7 +33,7 @@ export async function POST(request: NextRequest) {
   "id_card_number": "เลขบัตรประชาชน 13 หลัก",
   "id_card_address": "ที่อยู่",
   "phone": "เบอร์โทร",
-  "house_number": "ที่อยู่ติดตั้ง (บ้านเลขที่ ซอย ถนน ตำบล อำเภอ จังหวัด)",
+  "installation_address": "ที่อยู่ติดตั้ง (บ้านเลขที่ ซอย ถนน ตำบล อำเภอ จังหวัด)",
   "meter_number": "เลขมิเตอร์ไฟฟ้า",
   "ca_number": "เลขผู้ใช้ไฟ CA"
 }`

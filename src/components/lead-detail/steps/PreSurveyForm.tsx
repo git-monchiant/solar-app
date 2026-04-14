@@ -132,10 +132,18 @@ export default function PreSurveyForm({ lead, refresh, packages = [], hideReside
     lead.interested_package_ids ? lead.interested_package_ids.split(",").filter(Boolean) : lead.interested_package_id ? [String(lead.interested_package_id)] : []
   );
   const togglePkg = (id: string) => {
-    setSelectedPkgs(prev => prev.includes(id) ? prev.filter(p => p !== id) : [...prev, id]);
+    setSelectedPkgs(prev => {
+      const next = prev.includes(id) ? prev.filter(p => p !== id) : [...prev, id];
+      onPackageChange?.(next[0] || "");
+      return next;
+    });
   };
 
   const filteredPackages = packages.filter(p => {
+    if (p.phase !== 0) {
+      if (electricalPhase === "1_phase" && p.phase === 3) return false;
+      if (electricalPhase === "3_phase" && p.phase === 1) return false;
+    }
     if (wantsBattery === "yes") return p.has_battery;
     if (wantsBattery === "no") return !p.has_battery;
     return true;
@@ -170,7 +178,6 @@ export default function PreSurveyForm({ lead, refresh, packages = [], hideReside
           pre_wants_battery: wantsBattery || null,
           pre_ac_units: stringifyAcUnits(acUnits),
           pre_appliances: pre_appliances.length ? pre_appliances.join(",") : null,
-          pre_roof_shape: roofShape || null,
           interested_package_ids: selectedPkgs.length ? selectedPkgs.join(",") : null,
           interested_package_id: selectedPkgs.length ? parseInt(selectedPkgs[0]) : null,
         }),
@@ -178,7 +185,7 @@ export default function PreSurveyForm({ lead, refresh, packages = [], hideReside
     }, 600);
     return () => clearTimeout(t);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [residenceType, monthlyBill, peakUsage, electricalPhase, wantsBattery, acUnits, pre_appliances, roofShape, selectedPkgs]);
+  }, [residenceType, monthlyBill, peakUsage, electricalPhase, wantsBattery, acUnits, pre_appliances, selectedPkgs]);
 
   const handleBillPhotoCapture = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -226,202 +233,133 @@ export default function PreSurveyForm({ lead, refresh, packages = [], hideReside
     refresh();
   };
 
+  const sectionCls = "rounded-lg bg-white/60 border border-active/15 p-3";
+  const sectionTitle = "text-xs font-semibold text-gray-400 uppercase tracking-wider mb-2";
+  const fieldLabel = "text-xs text-gray-500 block mb-1.5";
+
   return (
     <div className="space-y-2">
-      {/* 0. Residence type */}
+      {/* บ้าน */}
       {!hideResidence && (
-        <div className="rounded-lg bg-white/60 border border-active/15 p-3">
-          <label className="text-xs font-semibold tracking-wider uppercase text-gray-400 block mb-2">ประเภทบ้านพักอาศัย</label>
+        <div className={sectionCls}>
+          <div className={sectionTitle}>บ้าน</div>
+          <label className={fieldLabel}>ประเภทบ้านพักอาศัย</label>
           <div className="grid grid-cols-3 gap-2">
             {RESIDENCE_TYPES.map(r => (
-              <button key={r.value} type="button" onClick={() => setResidenceType(r.value)} className={chipBtn(residenceType === r.value)}>
+              <button key={r.value} type="button" onClick={() => setResidenceType(r.value)} className={chipBtn(residenceType === r.value || (r.value === "other" && residenceType.startsWith("other")))}>
                 {r.label}
               </button>
             ))}
           </div>
+          {residenceType.startsWith("other") && (
+            <input type="text" placeholder="ระบุประเภทบ้าน..." value={residenceType.startsWith("other:") ? residenceType.slice(6) : ""} onChange={e => setResidenceType(e.target.value ? `other:${e.target.value}` : "other")} className="w-full mt-2 h-10 px-3 rounded-lg border border-gray-200 text-sm focus:outline-none focus:border-active" />
+          )}
         </div>
       )}
 
-      {/* การใช้ไฟฟ้า — bill + peak time */}
-      <div className="rounded-lg bg-white/60 border border-active/15 p-3">
-        <div className="text-sm font-bold text-gray-800 mb-3">การใช้ไฟฟ้า</div>
-        <div className="space-y-4">
+      {/* การใช้ไฟฟ้า */}
+      <div className={sectionCls}>
+        <div className={sectionTitle}>การใช้ไฟฟ้า</div>
+        <div className="space-y-3">
           <div>
-            <div className="text-xs font-semibold tracking-wider uppercase text-gray-400 block mb-2">ค่าไฟต่อเดือน</div>
+            <label className={fieldLabel}>ค่าไฟต่อเดือน</label>
             <div className="flex gap-2">
               <div className="relative flex-1">
-                <input
-                  type="number"
-                  inputMode="numeric"
-                  value={monthlyBill ?? ""}
-                  onChange={e => setMonthlyBill(e.target.value ? parseInt(e.target.value) : undefined)}
-                  placeholder="เช่น 3,500"
-                  className="w-full h-10 pl-3 pr-14 rounded-lg border border-gray-200 text-sm font-mono tabular-nums focus:outline-none focus:border-primary"
-                />
+                <input type="number" inputMode="numeric" value={monthlyBill ?? ""} onChange={e => setMonthlyBill(e.target.value ? parseInt(e.target.value) : undefined)} placeholder="เช่น 3,500" className="w-full h-10 pl-3 pr-14 rounded-lg border border-gray-200 text-sm font-mono tabular-nums focus:outline-none focus:border-primary" />
                 <span className="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-gray-400 font-medium">บาท</span>
               </div>
               <input type="file" accept="image/*" capture="environment" onChange={handleBillPhotoCapture} className="hidden" id={`bill-photo-${lead.id}`} />
-              <label
-                htmlFor={`bill-photo-${lead.id}`}
-                className="shrink-0 h-10 w-10 rounded-lg border border-gray-200 bg-white flex items-center justify-center cursor-pointer hover:border-active/40 hover:text-active text-gray-500 transition-colors"
-              >
-                {billUploading ? (
-                  <div className="w-4 h-4 border-2 border-gray-300 border-t-active rounded-full animate-spin" />
-                ) : (
-                  <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                    <path strokeLinecap="round" strokeLinejoin="round" d="M3 9a2 2 0 012-2h.93a2 2 0 001.664-.89l.812-1.22A2 2 0 0110.07 4h3.86a2 2 0 011.664.89l.812 1.22A2 2 0 0018.07 7H19a2 2 0 012 2v9a2 2 0 01-2 2H5a2 2 0 01-2-2V9z" />
-                    <path strokeLinecap="round" strokeLinejoin="round" d="M15 13a3 3 0 11-6 0 3 3 0 016 0z" />
-                  </svg>
-                )}
+              <label htmlFor={`bill-photo-${lead.id}`} className="shrink-0 h-10 w-10 rounded-lg border border-gray-200 bg-white flex items-center justify-center cursor-pointer hover:border-active/40 hover:text-active text-gray-500 transition-colors">
+                {billUploading ? <div className="w-4 h-4 border-2 border-gray-300 border-t-active rounded-full animate-spin" /> : <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M3 9a2 2 0 012-2h.93a2 2 0 001.664-.89l.812-1.22A2 2 0 0110.07 4h3.86a2 2 0 011.664.89l.812 1.22A2 2 0 0018.07 7H19a2 2 0 012 2v9a2 2 0 01-2 2H5a2 2 0 01-2-2V9z" /><path strokeLinecap="round" strokeLinejoin="round" d="M15 13a3 3 0 11-6 0 3 3 0 016 0z" /></svg>}
               </label>
             </div>
             {billPhotoUrl && (
               <div className="mt-2 relative inline-block">
-                <a href={billPhotoUrl} target="_blank" rel="noreferrer">
-                  <img src={billPhotoUrl} alt="Bill" className="h-20 rounded-lg border border-gray-200" />
-                </a>
-                <button
-                  type="button"
-                  onClick={handleBillPhotoRemove}
-                  className="absolute -top-1.5 -right-1.5 w-5 h-5 rounded-full bg-red-500 text-white flex items-center justify-center text-xs shadow"
-                >
-                  ×
-                </button>
+                <a href={billPhotoUrl} target="_blank" rel="noreferrer"><img src={billPhotoUrl} alt="Bill" className="h-20 rounded-lg border border-gray-200" /></a>
+                <button type="button" onClick={handleBillPhotoRemove} className="absolute -top-1.5 -right-1.5 w-5 h-5 rounded-full bg-red-500 text-white flex items-center justify-center text-xs shadow">×</button>
               </div>
             )}
           </div>
           <div>
-            <div className="text-xs font-semibold tracking-wider uppercase text-gray-400 block mb-2">ช่วงเวลาที่ใช้ไฟสูงสุด</div>
+            <label className={fieldLabel}>ช่วงเวลาที่ใช้ไฟสูงสุด</label>
             <div className="grid grid-cols-3 gap-2">
               {PEAK_USAGE.map(p => (
-                <button key={p.value} type="button" onClick={() => setPeakUsage(p.value)} className={chipBtn(peakUsage === p.value)}>
-                  {p.label}
-                </button>
+                <button key={p.value} type="button" onClick={() => setPeakUsage(p.value)} className={chipBtn(peakUsage === p.value)}>{p.label}</button>
+              ))}
+            </div>
+          </div>
+          <div>
+            <label className={fieldLabel}>ระบบไฟปัจจุบัน</label>
+            <div className="grid grid-cols-3 gap-2">
+              {ELECTRICAL_PHASES.map(p => (
+                <button key={p.value} type="button" onClick={() => { setElectricalPhase(p.value); setSelectedPkgs([]); }} className={chipBtn(electricalPhase === p.value)}>{p.label}</button>
               ))}
             </div>
           </div>
         </div>
       </div>
 
-      {/* 3. Electrical phase */}
-      <div className="rounded-lg bg-white/60 border border-active/15 p-3">
-        <label className="text-xs font-semibold tracking-wider uppercase text-gray-400 block mb-2">ระบบไฟปัจจุบัน</label>
-        <div className="grid grid-cols-3 gap-2">
-          {ELECTRICAL_PHASES.map(p => (
-            <button key={p.value} type="button" onClick={() => setElectricalPhase(p.value)} className={chipBtn(electricalPhase === p.value)}>
-              {p.label}
-            </button>
-          ))}
+
+      {/* เครื่องใช้ไฟฟ้า */}
+      <div className={sectionCls}>
+        <div className={sectionTitle}>เครื่องใช้ไฟฟ้า</div>
+        <div className="space-y-3">
+          <div>
+            <label className={fieldLabel}>ต้องการแบตเตอรี่</label>
+            <div className="grid grid-cols-3 gap-2">
+              {BATTERY_OPTIONS.map(b => (
+                <button key={b.value} type="button" onClick={() => { setWantsBattery(b.value); setSelectedPkgs([]); }} className={chipBtn(wantsBattery === b.value)}>{b.label}</button>
+              ))}
+            </div>
+          </div>
+          <div>
+            <div className="flex items-center justify-between mb-0.5">
+              <label className={fieldLabel}>เครื่องปรับอากาศ</label>
+              {totalAcUnits > 0 && <span className="text-xs font-semibold text-emerald-700 bg-emerald-50 border border-emerald-600/15 px-1.5 py-0.5 rounded">รวม {totalAcUnits} เครื่อง</span>}
+            </div>
+            <div className="space-y-1.5">
+              {AC_BTU_SIZES.map(btu => {
+                const count = acUnits[btu] || 0;
+                return (
+                  <div key={btu} className="flex items-center justify-between gap-3">
+                    <span className="text-sm font-medium text-gray-700 font-mono tabular-nums">{btu.toLocaleString()} <span className="text-xs text-gray-400 font-sans">BTU</span></span>
+                    <div className="flex items-center gap-2">
+                      <button type="button" onClick={() => updateAcCount(btu, -1)} disabled={count === 0} className="w-9 h-9 rounded-md border border-gray-200 text-gray-600 text-lg font-semibold disabled:opacity-30 disabled:cursor-not-allowed hover:border-gray-400">−</button>
+                      <span className="w-8 text-center text-sm font-bold tabular-nums text-gray-900">{count}</span>
+                      <button type="button" onClick={() => updateAcCount(btu, 1)} className="w-9 h-9 rounded-md border border-gray-200 text-gray-600 text-lg font-semibold hover:border-gray-400">+</button>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+          <div>
+            <label className={fieldLabel}>เครื่องใช้ไฟฟ้าอื่นๆ</label>
+            <div className="grid grid-cols-3 gap-2">
+              {APPLIANCES.map(a => (
+                <button key={a.value} type="button" onClick={() => toggleAppliance(a.value)} className={chipBtn(pre_appliances.includes(a.value))}>{a.label}</button>
+              ))}
+            </div>
+          </div>
         </div>
       </div>
 
-      {/* 5. เครื่องปรับอากาศ */}
-      <div className="rounded-lg bg-white/60 border border-active/15 p-3">
-        <div className="flex items-center justify-between mb-0.5">
-          <label className="text-xs font-semibold tracking-wider uppercase text-gray-400">เครื่องปรับอากาศ</label>
-          {totalAcUnits > 0 && (
-            <span className="text-xs font-semibold text-emerald-700 bg-emerald-50 border border-emerald-600/15 px-1.5 py-0.5 rounded">
-              รวม {totalAcUnits} เครื่อง
-            </span>
-          )}
-        </div>
-        <div className="text-xs text-gray-500 mb-2">ระบุจำนวนเครื่องตามขนาด BTU</div>
-        <div className="space-y-1.5">
-          {AC_BTU_SIZES.map(btu => {
-            const count = acUnits[btu] || 0;
-            return (
-              <div key={btu} className="flex items-center justify-between gap-3">
-                <span className="text-sm font-medium text-gray-700 font-mono tabular-nums">
-                  {btu.toLocaleString()} <span className="text-xs text-gray-400 font-sans">BTU</span>
-                </span>
-                <div className="flex items-center gap-2">
-                  <button type="button" onClick={() => updateAcCount(btu, -1)} disabled={count === 0} className="w-9 h-9 rounded-md border border-gray-200 text-gray-600 text-lg font-semibold disabled:opacity-30 disabled:cursor-not-allowed hover:border-gray-400">−</button>
-                  <span className="w-8 text-center text-sm font-bold tabular-nums text-gray-900">{count}</span>
-                  <button type="button" onClick={() => updateAcCount(btu, 1)} className="w-9 h-9 rounded-md border border-gray-200 text-gray-600 text-lg font-semibold hover:border-gray-400">+</button>
-                </div>
-              </div>
-            );
-          })}
-        </div>
-      </div>
-
-      {/* 6. เครื่องใช้ไฟฟ้าอื่นๆ */}
-      <div className="rounded-lg bg-white/60 border border-active/15 p-3">
-        <label className="text-xs font-semibold tracking-wider uppercase text-gray-400 block mb-2">เครื่องใช้ไฟฟ้าอื่นๆ</label>
-        <div className="grid grid-cols-3 gap-2">
-          {APPLIANCES.map(a => (
-            <button key={a.value} type="button" onClick={() => toggleAppliance(a.value)} className={chipBtn(pre_appliances.includes(a.value))}>
-              {a.label}
-            </button>
-          ))}
-        </div>
-      </div>
-
-      {/* 7. Roof shape */}
-      <div className="rounded-lg bg-white/60 border border-active/15 p-3">
-        <label className="text-xs font-semibold tracking-wider uppercase text-gray-400 block mb-2.5">ทรงหลังคา · Roof Shape</label>
-        <div className="grid grid-cols-3 gap-2">
-          {ROOF_SHAPES.map(r => {
-            const selected = roofShape === r.value;
-            return (
-              <button
-                key={r.value}
-                type="button"
-                onClick={() => setRoofShape(r.value)}
-                className={`flex flex-col items-center justify-center gap-1.5 py-3 px-2 rounded-lg border transition-colors cursor-pointer ${
-                  selected
-                    ? "bg-active border-active text-white"
-                    : "bg-white border-gray-200 text-gray-600 hover:border-active/40"
-                }`}
-              >
-                {r.svg}
-                <span className="text-[15px] font-semibold">{r.label}</span>
-              </button>
-            );
-          })}
-        </div>
-      </div>
-
-      {/* Battery */}
-      <div className="rounded-lg bg-white/60 border border-active/15 p-3">
-        <label className="text-xs font-semibold tracking-wider uppercase text-gray-400 block mb-2">ต้องการแบตเตอรี่</label>
-        <div className="grid grid-cols-3 gap-2">
-          {BATTERY_OPTIONS.map(b => (
-            <button key={b.value} type="button" onClick={() => { setWantsBattery(b.value); setSelectedPkgs([]); }} className={chipBtn(wantsBattery === b.value)}>
-              {b.label}
-            </button>
-          ))}
-        </div>
-      </div>
-
-      {/* Package selection */}
+      {/* แพ็คเกจ */}
       {packages.length > 0 && (
-        <div className="rounded-lg bg-white/60 border border-active/15 p-3">
-          <label className="text-xs font-semibold tracking-wider uppercase text-gray-400 block mb-2">
-            Package
-            {wantsBattery === "yes" && <span className="ml-2 text-xs font-medium text-gray-400 normal-case">· กรอง: มีแบตเตอรี่</span>}
-            {wantsBattery === "no" && <span className="ml-2 text-xs font-medium text-gray-400 normal-case">· กรอง: ไม่มีแบตเตอรี่</span>}
-          </label>
+        <div className={sectionCls}>
+          <div className={sectionTitle}>
+            แพ็คเกจ
+            {wantsBattery === "yes" && <span className="ml-2 text-xs font-medium text-gray-400 normal-case">· มีแบตเตอรี่</span>}
+            {wantsBattery === "no" && <span className="ml-2 text-xs font-medium text-gray-400 normal-case">· ไม่มีแบตเตอรี่</span>}
+          </div>
           <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
             {filteredPackages.length === 0 && (
-              <div className="col-span-full text-center py-6 text-xs text-gray-400 border border-dashed border-gray-200 rounded-xl">
-                ไม่มีแพ็คเกจที่ตรงกับที่เลือก
-              </div>
+              <div className="col-span-full text-center py-6 text-xs text-gray-400 border border-dashed border-gray-200 rounded-xl">ไม่มีแพ็คเกจที่ตรงกับที่เลือก</div>
             )}
             {filteredPackages.map(p => {
               const selected = selectedPkgs.includes(String(p.id));
               return (
-                <button
-                  key={p.id}
-                  type="button"
-                  onClick={() => {
-                    togglePkg(String(p.id));
-                    onPackageChange?.(String(p.id));
-                  }}
-                  className={`text-left rounded-xl p-3 border-2 transition-all ${
-                    selected ? "border-active bg-active-light" : "border-gray-100 bg-white"
-                  }`}
-                >
+                <button key={p.id} type="button" onClick={() => togglePkg(String(p.id))} className={`text-left rounded-xl p-3 border-2 transition-all ${selected ? "border-active bg-active-light" : "border-gray-100 bg-white"}`}>
                   <div className="flex items-center justify-between gap-2">
                     <div className="min-w-0">
                       <div className="text-sm font-bold truncate">{p.name}</div>

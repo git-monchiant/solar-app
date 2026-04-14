@@ -5,7 +5,7 @@ export async function GET() {
   try {
     const db = await getDb();
     const result = await db.request().query(`
-      SELECT b.*, l.full_name as lead_name, l.phone as lead_phone, l.house_number,
+      SELECT b.*, l.full_name as lead_name, l.phone as lead_phone, l.installation_address,
              p.name as package_name, p.price as package_price,
              pr.name as project_name,
              u.full_name as created_by_name
@@ -30,10 +30,10 @@ export async function POST(request: NextRequest) {
 
     // Generate booking number: SM-YYNNN
     const year = new Date().getFullYear().toString().slice(-2);
-    const countResult = await db.request().query(`
-      SELECT COUNT(*) as cnt FROM bookings WHERE booking_number LIKE 'SM-${year}%'
+    const maxResult = await db.request().query(`
+      SELECT MAX(CAST(RIGHT(booking_number, 3) AS INT)) as max_num FROM bookings WHERE booking_number LIKE 'SM-${year}%'
     `);
-    const nextNum = (countResult.recordset[0].cnt + 1).toString().padStart(3, "0");
+    const nextNum = ((maxResult.recordset[0].max_num || 0) + 1).toString().padStart(3, "0");
     const bookingNumber = `SM-${year}${nextNum}`;
 
     const result = await db

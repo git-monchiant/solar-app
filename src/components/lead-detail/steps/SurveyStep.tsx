@@ -14,6 +14,26 @@ const SURVEY_TIME_SLOTS = [
   { value: "afternoon", label: "บ่าย", time: "13:00 - 16:00" },
 ];
 
+const RESIDENCE_MAP: Record<string, string> = { detached: "บ้านเดี่ยว", townhome: "ทาวน์โฮม", townhouse: "ทาวน์เฮาส์", home_office: "โฮมออฟฟิศ", shophouse: "อาคารพาณิชย์" };
+const ROOF_MATERIAL_MAP: Record<string, string> = { concrete_tile: "กระเบื้องคอนกรีต", clay_tile: "กระเบื้องดินเผา", metal_sheet: "เมทัลชีท", concrete_slab: "พื้นคอนกรีต" };
+const PEAK_MAP: Record<string, string> = { morning: "ช่วงเช้า", afternoon: "ช่วงบ่าย", both: "ทั้งสองช่วง" };
+const SHADING_MAP: Record<string, string> = { none: "ไม่มี", light: "เล็กน้อย", moderate: "ปานกลาง", heavy: "มาก" };
+const ROOF_AGE_MAP: Record<string, string> = { new: "ใหม่ (< 5 ปี)", mid: "กลาง (5-15 ปี)", old: "เก่า (> 15 ปี)" };
+const APPLIANCE_MAP: Record<string, string> = { ev: "EV Charger", pool_pump: "ปั๊มสระ", water_heater: "เครื่องทำน้ำร้อน", elevator: "ลิฟต์" };
+const AC_BTU_SIZES = [9000, 12000, 18000, 24000];
+
+function parseAcUnits(s: string | null): Record<number, number> {
+  const map: Record<number, number> = {};
+  AC_BTU_SIZES.forEach(b => { map[b] = 0; });
+  if (!s) return map;
+  s.split(",").forEach(pair => {
+    const [bStr, cStr] = pair.split(":");
+    const btu = parseInt(bStr); const count = parseInt(cStr);
+    if (!isNaN(btu) && !isNaN(count) && AC_BTU_SIZES.includes(btu)) map[btu] = count;
+  });
+  return map;
+}
+
 interface Props extends StepCommonProps {
   onAddActivity: (type: string) => void;
   packages: Package[];
@@ -147,16 +167,19 @@ export default function SurveyStep({ lead, state, refresh, packages }: Props) {
   };
 
   if (state === "done") {
-    const formatDate = (d: string) =>
-      new Date(d).toLocaleDateString("th-TH", { day: "numeric", month: "short", year: "numeric" });
     const slotTime = SURVEY_TIME_SLOTS.find(s => s.value === lead.survey_time_slot)?.time;
+    const residenceLabel = lead.survey_residence_type?.startsWith("other:") ? lead.survey_residence_type.slice(6) : RESIDENCE_MAP[lead.survey_residence_type || ""];
+    const acMap = parseAcUnits(lead.survey_ac_units);
+    const acTotal = Object.values(acMap).reduce((a, b) => a + b, 0);
+    const applianceList = (lead.survey_appliances || "").split(",").filter(Boolean).map(v => APPLIANCE_MAP[v] || v);
+
     return (
       <details className="group">
         <summary className="flex items-center gap-2 cursor-pointer list-none py-1">
-          <span className="text-sm font-semibold text-emerald-700">สำรวจเสร็จสิ้นแล้ว</span>
           {lead.survey_date && (
-            <span className="text-sm text-gray-600">
-              · {formatDate(lead.survey_date)} {slotTime && slotTime}
+            <span className="text-sm font-bold text-gray-900 leading-tight">
+              <span className="block">สำรวจ {new Date(lead.survey_date).toLocaleDateString("th-TH", { weekday: "short", day: "numeric", month: "short", year: "numeric" })}</span>
+              {slotTime && <span className="block font-mono tabular-nums text-xs text-gray-500">{slotTime}</span>}
             </span>
           )}
           <span className="flex-1" />
@@ -164,43 +187,80 @@ export default function SurveyStep({ lead, state, refresh, packages }: Props) {
             <path strokeLinecap="round" strokeLinejoin="round" d="M19.5 8.25l-7.5 7.5-7.5-7.5" />
           </svg>
         </summary>
-        <div className="mt-3 pt-3 border-t border-gray-100 space-y-2 text-sm">
-          {lead.survey_electrical_phase && (
-            <div className="flex justify-between"><span className="text-gray-400">ระบบไฟ</span><span className="font-semibold text-gray-800">{lead.survey_electrical_phase === "1_phase" ? "1 เฟส" : "3 เฟส"}</span></div>
+        <div className="mt-3 pt-3 border-t border-gray-100 space-y-4 text-sm">
+
+          {/* บ้าน · หลังคา */}
+          {(residenceLabel || lead.survey_floors != null || lead.survey_roof_material || lead.survey_roof_orientation || lead.survey_roof_area_m2 || lead.survey_roof_tilt != null || lead.survey_shading || lead.survey_roof_age) && (
+            <div className="border-l-3 border-amber-400 pl-3">
+              <div className="text-xs font-bold text-amber-600 uppercase mb-1">บ้าน · หลังคา</div>
+              <div className="space-y-0.5">
+                {residenceLabel && <div className="flex justify-between"><span className="text-gray-400">ประเภทบ้าน</span><span className="font-semibold text-gray-800">{residenceLabel}</span></div>}
+                {lead.survey_floors != null && <div className="flex justify-between"><span className="text-gray-400">จำนวนชั้น</span><span className="font-semibold text-gray-800">{lead.survey_floors}</span></div>}
+                {lead.survey_roof_material && <div className="flex justify-between"><span className="text-gray-400">วัสดุหลังคา</span><span className="font-semibold text-gray-800">{ROOF_MATERIAL_MAP[lead.survey_roof_material] || lead.survey_roof_material}</span></div>}
+                {lead.survey_roof_orientation && <div className="flex justify-between"><span className="text-gray-400">ทิศหลังคา</span><span className="font-semibold text-gray-800">{lead.survey_roof_orientation}</span></div>}
+                {lead.survey_roof_area_m2 && <div className="flex justify-between"><span className="text-gray-400">พื้นที่</span><span className="font-semibold text-gray-800">{lead.survey_roof_area_m2} m²</span></div>}
+                {lead.survey_roof_tilt != null && <div className="flex justify-between"><span className="text-gray-400">ความชัน</span><span className="font-semibold text-gray-800">{lead.survey_roof_tilt}°</span></div>}
+                {lead.survey_shading && <div className="flex justify-between"><span className="text-gray-400">ร่มเงา</span><span className="font-semibold text-gray-800">{SHADING_MAP[lead.survey_shading] || lead.survey_shading}</span></div>}
+                {lead.survey_roof_age && <div className="flex justify-between"><span className="text-gray-400">อายุหลังคา</span><span className="font-semibold text-gray-800">{ROOF_AGE_MAP[lead.survey_roof_age] || lead.survey_roof_age}</span></div>}
+              </div>
+            </div>
           )}
-          {lead.survey_grid_type && (
-            <div className="flex justify-between"><span className="text-gray-400">เชื่อมต่อ</span><span className="font-semibold text-gray-800">{lead.survey_grid_type === "on_grid" ? "On-Grid" : lead.survey_grid_type === "hybrid" ? "Hybrid" : "Off-Grid"}</span></div>
+
+          {/* การใช้ไฟฟ้า */}
+          {(lead.survey_electrical_phase || lead.survey_monthly_bill != null || lead.survey_peak_usage || lead.survey_grid_type || lead.survey_utility || lead.survey_meter_size || lead.survey_ca_number || lead.survey_db_distance_m != null) && (
+            <div className="border-l-3 border-blue-400 pl-3">
+              <div className="text-xs font-bold text-blue-600 uppercase mb-1">การใช้ไฟฟ้า</div>
+              <div className="space-y-0.5">
+                {lead.survey_electrical_phase && <div className="flex justify-between"><span className="text-gray-400">ระบบไฟ</span><span className="font-semibold text-gray-800">{lead.survey_electrical_phase === "1_phase" ? "1 เฟส" : "3 เฟส"}</span></div>}
+                {lead.survey_monthly_bill != null && <div className="flex justify-between"><span className="text-gray-400">ค่าไฟ/เดือน</span><span className="font-semibold text-gray-800 font-mono">{lead.survey_monthly_bill.toLocaleString()} บาท</span></div>}
+                {lead.survey_peak_usage && <div className="flex justify-between"><span className="text-gray-400">ช่วงใช้ไฟสูงสุด</span><span className="font-semibold text-gray-800">{PEAK_MAP[lead.survey_peak_usage] || lead.survey_peak_usage}</span></div>}
+                {lead.survey_grid_type && <div className="flex justify-between"><span className="text-gray-400">เชื่อมต่อ</span><span className="font-semibold text-gray-800">{lead.survey_grid_type === "on_grid" ? "On-Grid" : lead.survey_grid_type === "hybrid" ? "Hybrid" : "Off-Grid"}</span></div>}
+                {lead.survey_utility && <div className="flex justify-between"><span className="text-gray-400">การไฟฟ้า</span><span className="font-semibold text-gray-800">{lead.survey_utility}</span></div>}
+                {lead.survey_meter_size && <div className="flex justify-between"><span className="text-gray-400">มิเตอร์</span><span className="font-semibold text-gray-800">{lead.survey_meter_size.replace("_", "(") + ") A"}</span></div>}
+                {lead.survey_ca_number && <div className="flex justify-between"><span className="text-gray-400">เลข CA</span><span className="font-semibold text-gray-800 font-mono">{lead.survey_ca_number}</span></div>}
+                {lead.survey_db_distance_m != null && <div className="flex justify-between"><span className="text-gray-400">ระยะ MDB</span><span className="font-semibold text-gray-800">{lead.survey_db_distance_m} เมตร</span></div>}
+              </div>
+            </div>
           )}
-          {lead.survey_utility && (
-            <div className="flex justify-between"><span className="text-gray-400">การไฟฟ้า</span><span className="font-semibold text-gray-800">{lead.survey_utility}</span></div>
+
+          {/* เครื่องใช้ไฟฟ้า */}
+          {(acTotal > 0 || applianceList.length > 0) && (
+            <div className="border-l-3 border-violet-400 pl-3">
+              <div className="text-xs font-bold text-violet-600 uppercase mb-1">เครื่องใช้ไฟฟ้า</div>
+              {acTotal > 0 && (
+                <div className="mb-1.5">
+                  <span className="text-xs text-gray-400">แอร์ ({acTotal} เครื่อง)</span>
+                  <div className="flex flex-wrap gap-1.5 mt-1">
+                    {AC_BTU_SIZES.filter(b => acMap[b] > 0).map(b => (
+                      <span key={b} className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-violet-50 text-xs font-mono text-violet-700">
+                        {b.toLocaleString()} BTU <span className="font-bold">× {acMap[b]}</span>
+                      </span>
+                    ))}
+                  </div>
+                </div>
+              )}
+              {applianceList.length > 0 && (
+                <div className="flex flex-wrap gap-1.5">
+                  {applianceList.map(a => (
+                    <span key={a} className="px-2 py-0.5 rounded-md bg-gray-100 text-xs text-gray-600">{a}</span>
+                  ))}
+                </div>
+              )}
+            </div>
           )}
-          {lead.survey_meter_size && (
-            <div className="flex justify-between"><span className="text-gray-400">มิเตอร์</span><span className="font-semibold text-gray-800">{lead.survey_meter_size.replace("_", "(") + ") A"}</span></div>
-          )}
-          {lead.survey_ca_number && (
-            <div className="flex justify-between"><span className="text-gray-400">เลข CA</span><span className="font-semibold text-gray-800 font-mono">{lead.survey_ca_number}</span></div>
-          )}
-          {lead.survey_roof_material && (
-            <div className="flex justify-between"><span className="text-gray-400">วัสดุหลังคา</span><span className="font-semibold text-gray-800">{lead.survey_roof_material}</span></div>
-          )}
-          {lead.survey_roof_orientation && (
-            <div className="flex justify-between"><span className="text-gray-400">ทิศหลังคา</span><span className="font-semibold text-gray-800">{lead.survey_roof_orientation}</span></div>
-          )}
-          {lead.survey_roof_area_m2 && (
-            <div className="flex justify-between"><span className="text-gray-400">พื้นที่หลังคา</span><span className="font-semibold text-gray-800">{lead.survey_roof_area_m2} m²</span></div>
-          )}
-          {lead.survey_monthly_bill != null && (
-            <div className="flex justify-between"><span className="text-gray-400">ค่าไฟ/เดือน</span><span className="font-semibold text-gray-800 font-mono">{lead.survey_monthly_bill.toLocaleString()} บาท</span></div>
-          )}
+
+          {/* บันทึก */}
           {lead.survey_note && (
-            <div className="pt-2 border-t border-gray-100">
-              <div className="text-gray-400 mb-1">บันทึก Survey</div>
+            <div className="border-l-3 border-gray-300 pl-3">
+              <div className="text-xs font-bold text-gray-400 uppercase mb-1">บันทึก</div>
               <div className="text-gray-800">{lead.survey_note}</div>
             </div>
           )}
+
+          {/* รูปถ่าย */}
           {lead.survey_photos && (
-            <div className="pt-2 border-t border-gray-100">
-              <div className="text-gray-400 mb-1">รูปถ่าย</div>
+            <div className="border-l-3 border-gray-300 pl-3">
+              <div className="text-xs font-bold text-gray-400 uppercase mb-1.5">รูปถ่าย</div>
               <div className="grid grid-cols-3 gap-2">
                 {lead.survey_photos.split(",").filter(Boolean).map(url => (
                   <a key={url} href={url} target="_blank" rel="noreferrer">

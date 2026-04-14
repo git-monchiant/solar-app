@@ -138,19 +138,28 @@ interface Props extends StepCommonProps {
 }
 
 export default function PreSurveyStep({ lead, state, refresh, packages }: Props) {
-  // Pre-survey form fields
-  const [monthlyBill, setMonthlyBill] = useState<number | undefined>(lead.pre_monthly_bill ?? undefined);
-  const [electricalPhase, setElectricalPhase] = useState<string>(lead.pre_electrical_phase ?? "");
-  const [wantsBattery, setWantsBattery] = useState<string>(lead.pre_wants_battery ?? "");
-  const [roofShape, setRoofShape] = useState<string>(lead.pre_roof_shape ?? "");
-  const [pre_appliances, setAppliances] = useState<string[]>(
-    lead.pre_appliances ? lead.pre_appliances.split(",").filter(Boolean) : []
-  );
-  const [acUnits, setAcUnits] = useState<Record<number, number>>(parseAcUnits(lead.pre_ac_units));
-  const [peakUsage, setPeakUsage] = useState<string>(lead.pre_peak_usage ?? "");
-  const [billPhotoUrl, setBillPhotoUrl] = useState<string | null>(lead.pre_bill_photo_url ?? null);
-  const [billUploading, setBillUploading] = useState(false);
-  const [residenceType, setResidenceType] = useState<string>(lead.pre_residence_type ?? "");
+  const [regName, setRegName] = useState(lead.full_name || "");
+  const [regIdCard, setRegIdCard] = useState(lead.id_card_number || "");
+  const [regAddress, setRegAddress] = useState(lead.id_card_address || "");
+  const [regHouseNumber, setRegHouseNumber] = useState(lead.installation_address || "");
+  const [regProject, setRegProject] = useState(lead.project_name || "");
+  const isFirstRegSave = useRef(true);
+  useEffect(() => {
+    if (isFirstRegSave.current) { isFirstRegSave.current = false; return; }
+    const t = setTimeout(() => {
+      apiFetch(`/api/leads/${lead.id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          full_name: regName || undefined,
+          id_card_number: regIdCard || undefined,
+          id_card_address: regAddress || undefined,
+          installation_address: regHouseNumber || undefined,
+        }),
+      }).catch(console.error);
+    }, 600);
+    return () => clearTimeout(t);
+  }, [regName, regIdCard, regAddress, regHouseNumber]); // eslint-disable-line react-hooks/exhaustive-deps
   const [scheduledSurveys, setScheduledSurveys] = useState<{ id: number; full_name: string; survey_date: string; survey_time_slot: string | null }[]>([]);
 
   useEffect(() => {
@@ -178,9 +187,9 @@ export default function PreSurveyStep({ lead, state, refresh, packages }: Props)
   const [bookingSaved, setBookingSaved] = useState(false);
   const [confirmingSaved, setConfirmingSaved] = useState(false);
   const [qrDataUrl, setQrDataUrl] = useState<string | null>(null);
-  const [slipPreview, setSlipPreview] = useState<string | null>(lead.line_slip_url ?? null);
-  const [uploadedSlipUrl, setUploadedSlipUrl] = useState<string | null>(lead.line_slip_url ?? null);
-  const [verifyStatus, setVerifyStatus] = useState<"idle" | "verifying" | "verified" | "failed">(lead.line_slip_url ? "verified" : "idle");
+  const [slipPreview, setSlipPreview] = useState<string | null>(lead.slip_url ?? null);
+  const [uploadedSlipUrl, setUploadedSlipUrl] = useState<string | null>(lead.slip_url ?? null);
+  const [verifyStatus, setVerifyStatus] = useState<"idle" | "verifying" | "verified" | "failed">(lead.slip_url ? "verified" : "idle");
   const [surveyDate, setSurveyDate] = useState<string>(lead.survey_date ? lead.survey_date.slice(0, 10) : "");
   const [surveyTimeSlot, setSurveyTimeSlot] = useState<string>(lead.survey_time_slot ?? "");
 
@@ -209,12 +218,6 @@ export default function PreSurveyStep({ lead, state, refresh, packages }: Props)
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ lead_id: lead.id, messages }),
       });
-      // Mark waiting_slip
-      await apiFetch(`/api/leads/${lead.id}`, {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ waiting_slip: true }),
-      });
       setLineSent(type);
       setTimeout(() => setLineSent(null), 3000);
     } catch {
@@ -229,19 +232,6 @@ export default function PreSurveyStep({ lead, state, refresh, packages }: Props)
   const paymentLabel = PAYMENT_TYPES.find(p => p.value === lead.payment_type)?.label;
   const financeConfig = FINANCE_STATUSES.find(f => f.value === lead.finance_status);
 
-  // Filter packages by battery preference
-  const filteredPackages = packages.filter(p => {
-    if (wantsBattery === "yes") return p.has_battery;
-    if (wantsBattery === "no") return !p.has_battery;
-    return true;
-  });
-
-  // Clear pkg if filtered out
-  useEffect(() => {
-    if (bookingPkg && !filteredPackages.find(p => String(p.id) === bookingPkg)) {
-      setBookingPkg("");
-    }
-  }, [wantsBattery]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Generate QR (deposit is always 1000 THB regardless of payment method)
   useEffect(() => {
@@ -262,8 +252,6 @@ export default function PreSurveyStep({ lead, state, refresh, packages }: Props)
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          ...preSurveyPayload(),
-          interested_package_id: bookingPkg ? parseInt(bookingPkg) : null,
           survey_date: surveyDate || null,
           survey_time_slot: surveyTimeSlot || null,
         }),
@@ -271,80 +259,11 @@ export default function PreSurveyStep({ lead, state, refresh, packages }: Props)
     }, 600);
     return () => clearTimeout(t);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [monthlyBill, electricalPhase, wantsBattery, roofShape, pre_appliances, acUnits, peakUsage, bookingPkg, surveyDate, surveyTimeSlot, residenceType]);
-
-  const toggleAppliance = (v: string) => {
-    setAppliances(prev => (prev.includes(v) ? prev.filter(a => a !== v) : [...prev, v]));
-  };
-
-  const preSurveyPayload = () => ({
-    pre_monthly_bill: monthlyBill ?? null,
-    pre_electrical_phase: electricalPhase || null,
-    pre_wants_battery: wantsBattery || null,
-    pre_roof_shape: roofShape || null,
-    pre_appliances: pre_appliances.length ? pre_appliances.join(",") : null,
-    pre_ac_units: stringifyAcUnits(acUnits),
-    pre_peak_usage: peakUsage || null,
-    pre_residence_type: residenceType || null,
-  });
-
-  const updateAcCount = (btu: number, delta: number) => {
-    setAcUnits(prev => ({ ...prev, [btu]: Math.max(0, (prev[btu] || 0) + delta) }));
-  };
-
-  const totalAcUnits = Object.values(acUnits).reduce((a, b) => a + b, 0);
-
-  const handleBillPhotoCapture = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-    setBillUploading(true);
-    try {
-      if (billPhotoUrl) {
-        fetch(`/api/upload?file=${encodeURIComponent(billPhotoUrl)}`, {
-          method: "DELETE",
-          headers: { "ngrok-skip-browser-warning": "true" },
-        }).catch(() => {});
-      }
-      const fd = new FormData();
-      fd.append("file", file);
-      const uploadRes = await fetch("/api/upload", {
-        method: "POST",
-        body: fd,
-        headers: { "ngrok-skip-browser-warning": "true" },
-      });
-      const { url } = await uploadRes.json();
-      setBillPhotoUrl(url);
-      await apiFetch(`/api/leads/${lead.id}`, {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ pre_bill_photo_url: url }),
-      });
-      refresh();
-    } catch (err) {
-      console.error(err);
-    } finally {
-      setBillUploading(false);
-    }
-  };
-
-  const handleBillPhotoRemove = async () => {
-    if (!billPhotoUrl) return;
-    fetch(`/api/upload?file=${encodeURIComponent(billPhotoUrl)}`, {
-      method: "DELETE",
-      headers: { "ngrok-skip-browser-warning": "true" },
-    }).catch(() => {});
-    setBillPhotoUrl(null);
-    await apiFetch(`/api/leads/${lead.id}`, {
-      method: "PATCH",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ pre_bill_photo_url: null }),
-    });
-    refresh();
-  };
+  }, [surveyDate, surveyTimeSlot]);
 
   const handleSlipCapture = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
-    if (!file || !bookingPkg) return;
+    if (!file) return;
     setVerifyStatus("verifying");
 
     if (uploadedSlipUrl) {
@@ -369,6 +288,11 @@ export default function PreSurveyStep({ lead, state, refresh, packages }: Props)
       });
       const { url } = await uploadRes.json();
       setUploadedSlipUrl(url);
+      apiFetch(`/api/leads/${lead.id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ slip_url: url }),
+      }).catch(console.error);
       const verifyRes = await fetch("/api/verify-slip", {
         method: "POST",
         headers: { "Content-Type": "application/json", "ngrok-skip-browser-warning": "true" },
@@ -390,7 +314,7 @@ export default function PreSurveyStep({ lead, state, refresh, packages }: Props)
       await apiFetch(`/api/leads/${lead.id}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ payment_type: bookingPayment, ...preSurveyPayload() }),
+        body: JSON.stringify({ payment_type: bookingPayment }),
       });
       const bookingRes = await apiFetch("/api/bookings", {
         method: "POST",
@@ -432,7 +356,7 @@ export default function PreSurveyStep({ lead, state, refresh, packages }: Props)
       await apiFetch(`/api/leads/${lead.id}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ payment_type: bookingPayment, ...preSurveyPayload() }),
+        body: JSON.stringify({ payment_type: bookingPayment }),
       });
       await apiFetch("/api/bookings", {
         method: "POST",
@@ -488,131 +412,153 @@ export default function PreSurveyStep({ lead, state, refresh, packages }: Props)
     const phaseLabel = ELECTRICAL_PHASES.find(p => p.value === lead.pre_electrical_phase)?.label;
     const batteryLabel = BATTERY_OPTIONS.find(b => b.value === lead.pre_wants_battery)?.label;
     const peakLabel = PEAK_USAGE.find(p => p.value === lead.pre_peak_usage)?.label;
-    const residenceLabel = RESIDENCE_TYPES.find(r => r.value === lead.pre_residence_type)?.label;
+    const residenceLabel = lead.pre_residence_type?.startsWith("other:") ? lead.pre_residence_type.slice(6) : RESIDENCE_TYPES.find(r => r.value === lead.pre_residence_type)?.label;
 
     return (
       <details className="group">
         <summary className="flex items-center gap-2 cursor-pointer list-none py-1">
-          <span className={`inline-flex items-center gap-1 text-xs font-semibold uppercase tracking-wider px-2 py-0.5 rounded-md border shrink-0 ${
-            lead.confirmed
-              ? "bg-emerald-50 text-emerald-700 border-emerald-600/15"
-              : "bg-amber-50 text-amber-700 border-amber-600/15"
-          }`}>
-            <span className={`w-1.5 h-1.5 rounded-full ${lead.confirmed ? "bg-emerald-500" : "bg-amber-500"}`} />
-            {lead.confirmed ? "ชำระแล้ว" : "รอชำระ"}
-          </span>
           {lead.survey_date && (
-            <span className="text-sm font-bold text-gray-900">
-              นัด {formatDate(lead.survey_date)}
+            <span className="text-sm font-bold text-gray-900 leading-tight">
+              <span className="block">นัด {new Date(lead.survey_date).toLocaleDateString("th-TH", { weekday: "short", day: "numeric", month: "short", year: "numeric" })}</span>
               {lead.survey_time_slot && (
-                <span className="ml-1 font-mono tabular-nums">
+                <span className="block font-mono tabular-nums text-xs text-gray-500">
                   {SURVEY_TIME_SLOTS.find(s => s.value === lead.survey_time_slot)?.time || lead.survey_time_slot}
                 </span>
               )}
             </span>
           )}
           <span className="flex-1" />
+          {lead.booking_id && (
+            <a
+              href={`/api/receipt?booking_id=${lead.booking_id}`}
+              target="_blank"
+              rel="noreferrer"
+              onClick={e => e.stopPropagation()}
+              className="inline-flex items-center gap-1 text-xs font-semibold text-primary hover:text-primary-dark shrink-0 mr-2"
+            >
+              <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                <path strokeLinecap="round" strokeLinejoin="round" d="M3 16.5v2.25A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75V16.5M16.5 12L12 16.5m0 0L7.5 12m4.5 4.5V3" />
+              </svg>
+              PDF
+            </a>
+          )}
           <svg className="w-4 h-4 text-gray-400 transition-transform group-open:rotate-180 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
             <path strokeLinecap="round" strokeLinejoin="round" d="M19.5 8.25l-7.5 7.5-7.5-7.5" />
           </svg>
         </summary>
 
-        <div className="mt-3 pt-3 border-t border-gray-100 space-y-3">
-          {/* Booking details */}
-          <div className="space-y-1.5 text-sm">
-            {lead.package_name && (
-              <div className="flex justify-between gap-3">
-                <span className="text-xs text-gray-400">แพ็คเกจ</span>
-                <span className="font-semibold text-gray-800 text-right truncate">{lead.package_name}</span>
-              </div>
-            )}
-            {paymentLabel && (
-              <div className="flex justify-between gap-3">
-                <span className="text-xs text-gray-400">การชำระเงิน</span>
-                <span className="font-semibold text-gray-800">{paymentLabel}</span>
-              </div>
-            )}
-          </div>
+        <div className="mt-3 pt-3 border-t border-gray-100 space-y-4 text-sm">
 
-          {/* Pre-survey questionnaire data */}
-          <dl className="grid grid-cols-2 gap-x-4 gap-y-2 text-sm pt-3 border-t border-gray-100 mb-0">
-            {residenceLabel && (
-              <div>
-                <dt className="text-xs text-gray-400">ประเภทบ้าน</dt>
-                <dd className="font-semibold text-gray-800">{residenceLabel}</dd>
+          {/* แพ็คเกจที่สนใจ */}
+          {(() => {
+            const pkgIds = lead.interested_package_ids ? lead.interested_package_ids.split(",").map(Number) : [];
+            const bookedId = lead.interested_package_id || lead.booked_package_id;
+            const selectedPkgs = pkgIds.length > 0
+              ? packages.filter(p => pkgIds.includes(p.id))
+              : bookedId ? packages.filter(p => p.id === bookedId) : [];
+            return selectedPkgs.length > 0 ? (
+              <div className="border-l-3 border-primary pl-3">
+                <div className="text-xs font-bold text-primary uppercase mb-1">แพ็คเกจที่สนใจ</div>
+                {selectedPkgs.map(p => (
+                  <div key={p.id} className="flex justify-between">
+                    <span className="text-gray-800">{p.name}</span>
+                    <span className="font-semibold text-gray-800 font-mono">{formatPrice(p.price)}</span>
+                  </div>
+                ))}
+                {batteryLabel && (
+                  <div className="flex justify-between mt-1 pt-1 border-t border-gray-100">
+                    <span className="text-gray-400">แบตเตอรี่</span>
+                    <span className="font-semibold text-gray-800">{batteryLabel}</span>
+                  </div>
+                )}
               </div>
-            )}
-            {lead.pre_monthly_bill != null && (
-              <div>
-                <dt className="text-xs text-gray-400">ค่าไฟต่อเดือน</dt>
-                <dd className="font-semibold text-gray-800 font-mono tabular-nums">{formatPrice(lead.pre_monthly_bill)} บาท</dd>
+            ) : null;
+          })()}
+
+          {/* บ้าน */}
+          {residenceLabel && (
+            <div className="border-l-3 border-amber-400 pl-3">
+              <div className="text-xs font-bold text-amber-600 uppercase mb-1">บ้าน</div>
+              <div className="flex justify-between"><span className="text-gray-400">ประเภทบ้าน</span><span className="font-semibold text-gray-800">{residenceLabel}</span></div>
+            </div>
+          )}
+
+          {/* การใช้ไฟฟ้า */}
+          {(phaseLabel || peakLabel || lead.pre_monthly_bill != null) && (
+            <div className="border-l-3 border-blue-400 pl-3">
+              <div className="text-xs font-bold text-blue-600 uppercase mb-1">การใช้ไฟฟ้า</div>
+              <div className="space-y-0.5">
+                {lead.pre_monthly_bill != null && <div className="flex justify-between"><span className="text-gray-400">ค่าไฟต่อเดือน</span><span className="font-semibold text-gray-800 font-mono">{formatPrice(lead.pre_monthly_bill)} บาท</span></div>}
+                {phaseLabel && <div className="flex justify-between"><span className="text-gray-400">ระบบไฟ</span><span className="font-semibold text-gray-800">{phaseLabel}</span></div>}
+                {peakLabel && <div className="flex justify-between"><span className="text-gray-400">ช่วงใช้ไฟสูงสุด</span><span className="font-semibold text-gray-800">{peakLabel}</span></div>}
               </div>
-            )}
-            {phaseLabel && (
-              <div>
-                <dt className="text-xs text-gray-400">ระบบไฟ</dt>
-                <dd className="font-semibold text-gray-800">{phaseLabel}</dd>
-              </div>
-            )}
-            {peakLabel && (
-              <div>
-                <dt className="text-xs text-gray-400">ช่วงเวลาที่ใช้ไฟสูงสุด</dt>
-                <dd className="font-semibold text-gray-800">{peakLabel}</dd>
-              </div>
-            )}
-            {batteryLabel && (
-              <div>
-                <dt className="text-xs text-gray-400">แบตเตอรี่</dt>
-                <dd className="font-semibold text-gray-800">{batteryLabel}</dd>
-              </div>
-            )}
-            {roofLabel && (
-              <div>
-                <dt className="text-xs text-gray-400">ทรงหลังคา</dt>
-                <dd className="font-semibold text-gray-800">{roofLabel}</dd>
-              </div>
-            )}
-            {acTotal > 0 && (
-              <div className="col-span-2">
-                <dt className="text-xs text-gray-400">แอร์ ({acTotal} เครื่อง)</dt>
-                <dd className="font-semibold text-gray-800 flex flex-wrap gap-1.5 mt-0.5">
-                  {AC_BTU_SIZES.filter(b => acMap[b] > 0).map(b => (
-                    <span key={b} className="inline-flex items-center px-2 py-0.5 rounded bg-gray-100 text-xs font-mono tabular-nums">
-                      {b.toLocaleString()} BTU × {acMap[b]}
-                    </span>
-                  ))}
-                </dd>
-              </div>
-            )}
-            {applianceList.length > 0 && (
-              <div className="col-span-2">
-                <dt className="text-xs text-gray-400">เครื่องใช้ไฟฟ้าอื่นๆ</dt>
-                <dd className="font-semibold text-gray-800 flex flex-wrap gap-1.5 mt-0.5">
+            </div>
+          )}
+
+          {/* เครื่องใช้ไฟฟ้า */}
+          {(acTotal > 0 || applianceList.length > 0) && (
+            <div className="border-l-3 border-violet-400 pl-3">
+              <div className="text-xs font-bold text-violet-600 uppercase mb-1">เครื่องใช้ไฟฟ้า</div>
+              {acTotal > 0 && (
+                <div className="mb-1.5">
+                  <span className="text-xs text-gray-400">แอร์ ({acTotal} เครื่อง)</span>
+                  <div className="flex flex-wrap gap-1.5 mt-1">
+                    {AC_BTU_SIZES.filter(b => acMap[b] > 0).map(b => (
+                      <span key={b} className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-violet-50 text-xs font-mono text-violet-700">
+                        {b.toLocaleString()} BTU <span className="font-bold">× {acMap[b]}</span>
+                      </span>
+                    ))}
+                  </div>
+                </div>
+              )}
+              {applianceList.length > 0 && (
+                <div className="flex flex-wrap gap-1.5">
                   {applianceList.map(a => (
-                    <span key={a} className="inline-flex items-center px-2 py-0.5 rounded bg-gray-100 text-xs">{a}</span>
+                    <span key={a} className="px-2 py-0.5 rounded-md bg-gray-100 text-xs text-gray-600">{a}</span>
                   ))}
-                </dd>
-              </div>
-            )}
-            {lead.pre_bill_photo_url && (
-              <div className="col-span-2">
-                <dt className="text-xs text-gray-400 mb-1">บิลค่าไฟ</dt>
-                <dd>
-                  <a href={lead.pre_bill_photo_url} target="_blank" rel="noreferrer">
-                    <img src={lead.pre_bill_photo_url} alt="Bill" className="h-20 rounded-lg border border-gray-200" />
-                  </a>
-                </dd>
-              </div>
-            )}
-          </dl>
+                </div>
+              )}
+            </div>
+          )}
 
-          {/* Slip preview */}
-          {lead.slip_url && (
-            <div className="pt-3 border-t border-gray-100">
-              <div className="text-xs text-gray-400 mb-2">สลิปโอนเงิน</div>
-              <a href={lead.slip_url} target="_blank" className="block">
-                <img src={lead.slip_url} alt="Slip" className="w-full max-w-[200px] rounded-lg border border-gray-200" />
-              </a>
+          {/* การชำระเงิน · เอกสาร */}
+          {(paymentLabel || lead.pre_bill_photo_url || lead.slip_url) && (
+            <div className="border-l-3 border-gray-300 pl-3">
+              <div className="text-xs font-bold text-gray-400 uppercase mb-1">เงินมัดจำ · เอกสาร</div>
+              {paymentLabel && (
+                <div className="flex justify-between">
+                  <span className="text-gray-400">วิธีชำระ</span>
+                  <span className="font-semibold text-emerald-600">{paymentLabel}</span>
+                </div>
+              )}
+              {lead.booking_date && (
+                <div className="flex justify-between">
+                  <span className="text-gray-400">วันที่ชำระ</span>
+                  <span className="font-semibold text-gray-800">{new Date(lead.booking_date).toLocaleDateString("th-TH", { day: "numeric", month: "short", year: "numeric" })}</span>
+                </div>
+              )}
+              {lead.booking_price != null && (
+                <div className="flex justify-between">
+                  <span className="text-gray-400">จำนวนเงิน</span>
+                  <span className="font-semibold text-gray-800 font-mono">{formatPrice(lead.booking_price)} บาท</span>
+                </div>
+              )}
+              {(lead.pre_bill_photo_url || lead.slip_url) && (
+                <div className="flex gap-3 mt-1.5">
+                  {lead.pre_bill_photo_url && (
+                    <a href={lead.pre_bill_photo_url} target="_blank" rel="noreferrer">
+                      <div className="text-xs text-gray-400 mb-0.5">บิลค่าไฟ</div>
+                      <img src={lead.pre_bill_photo_url} alt="Bill" className="h-16 rounded-lg border border-gray-200" />
+                    </a>
+                  )}
+                  {lead.slip_url && (
+                    <a href={lead.slip_url} target="_blank" rel="noreferrer">
+                      <div className="text-xs text-gray-400 mb-0.5">หลักฐานการชำระเงิน</div>
+                      <img src={lead.slip_url} alt="Slip" className="h-16 rounded-lg border border-gray-200" />
+                    </a>
+                  )}
+                </div>
+              )}
             </div>
           )}
 
@@ -631,13 +577,50 @@ export default function PreSurveyStep({ lead, state, refresh, packages }: Props)
                 <span className="text-xs font-medium text-white/60 ml-1">PDF</span>
               </a>
             ) : (
-              <button
-                onClick={confirmDraftBooking}
-                disabled={confirmingSaved || !surveyDate}
-                className="w-full h-11 px-4 rounded-lg text-sm font-semibold flex items-center justify-center gap-2 bg-primary text-white hover:bg-primary-dark disabled:opacity-50 transition-colors"
-              >
-                {confirmingSaved ? "กำลังยืนยัน…" : !surveyDate ? "เลือกวันนัดก่อน" : "ยืนยันและเปิดขั้นสำรวจ"}
-              </button>
+              <>
+                <div className="rounded-lg border border-active/15 bg-white/60 p-3 space-y-2.5 mb-2">
+                  <div className="text-xs font-semibold text-gray-400 uppercase tracking-wider">ข้อมูลจดทะเบียน</div>
+                  <div>
+                    <label className="text-xs text-gray-500 block mb-1">ชื่อ-นามสกุล</label>
+                    <input type="text" value={regName} onChange={e => setRegName(e.target.value)} className="w-full h-10 px-3 rounded-lg border border-gray-200 text-sm focus:outline-none focus:border-primary" />
+                  </div>
+                  <div>
+                    <label className="text-xs text-gray-500 block mb-1">เลขบัตรประชาชน</label>
+                    <input type="text" inputMode="numeric" maxLength={13} value={regIdCard} onChange={e => setRegIdCard(e.target.value.replace(/\D/g, "").slice(0, 13))} placeholder="13 หลัก" className="w-full h-10 px-3 rounded-lg border border-gray-200 text-sm font-mono tabular-nums focus:outline-none focus:border-primary" />
+                  </div>
+                  <div>
+                    <label className="text-xs text-gray-500 block mb-1">ที่อยู่ตามบัตรประชาชน</label>
+                    <textarea value={regAddress} onChange={e => setRegAddress(e.target.value)} rows={2} className="w-full px-3 py-2 rounded-lg border border-gray-200 text-sm focus:outline-none focus:border-primary resize-none" />
+                  </div>
+                  <div>
+                    <label className="text-xs text-gray-500 block mb-1">โครงการ</label>
+                    <div className="w-full h-10 px-3 rounded-lg border border-gray-200 bg-gray-50 text-sm flex items-center text-gray-700">{regProject || "-"}</div>
+                  </div>
+                  <div>
+                    <label className="text-xs text-gray-500 block mb-1">ที่อยู่ติดตั้ง</label>
+                    <textarea value={regHouseNumber} onChange={e => setRegHouseNumber(e.target.value)} rows={2} className="w-full px-3 py-2 rounded-lg border border-gray-200 text-sm focus:outline-none focus:border-primary resize-none" />
+                  </div>
+                </div>
+                <button
+                  onClick={async () => {
+                    await apiFetch(`/api/leads/${lead.id}`, {
+                      method: "PATCH",
+                      headers: { "Content-Type": "application/json" },
+                      body: JSON.stringify({
+                        full_name: regName || undefined,
+                        id_card_number: regIdCard || undefined,
+                        id_card_address: regAddress || undefined,
+                        installation_address: regHouseNumber || undefined,
+                      }),
+                    });
+                    confirmDraftBooking();
+                  }}
+                  disabled={confirmingSaved || !surveyDate}
+                  className="w-full h-11 px-4 rounded-lg text-sm font-semibold flex items-center justify-center gap-2 bg-primary text-white hover:bg-primary-dark disabled:opacity-50 transition-colors"
+                >
+                  {confirmingSaved ? "กำลังยืนยัน…" : !surveyDate ? "เลือกวันนัดก่อน" : "ยืนยันและเปิดขั้นสำรวจ"}
+                </button>
+              </>
             )}
           </div>
         </div>
@@ -773,6 +756,11 @@ export default function PreSurveyStep({ lead, state, refresh, packages }: Props)
                   setSlipPreview(null);
                   setUploadedSlipUrl(null);
                   setVerifyStatus("idle");
+                  apiFetch(`/api/leads/${lead.id}`, {
+                    method: "PATCH",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({ slip_url: null }),
+                  }).catch(console.error);
                 }}
                 className="absolute top-2 right-2 w-8 h-8 bg-black/50 rounded-full text-white flex items-center justify-center text-sm"
               >
@@ -817,10 +805,49 @@ export default function PreSurveyStep({ lead, state, refresh, packages }: Props)
             </div>
           )}
 
+      {/* Registration info before confirm */}
+      {verifyStatus === "verified" && (
+        <div className="rounded-lg border border-active/15 bg-white/60 p-3 space-y-2.5">
+          <div className="text-xs font-semibold text-gray-400 uppercase tracking-wider">ข้อมูลจดทะเบียน</div>
+          <div>
+            <label className="text-xs text-gray-500 block mb-1">ชื่อ-นามสกุล</label>
+            <input type="text" value={regName} onChange={e => setRegName(e.target.value)} className="w-full h-10 px-3 rounded-lg border border-gray-200 text-sm focus:outline-none focus:border-primary" />
+          </div>
+          <div>
+            <label className="text-xs text-gray-500 block mb-1">เลขบัตรประชาชน</label>
+            <input type="text" inputMode="numeric" maxLength={13} value={regIdCard} onChange={e => setRegIdCard(e.target.value.replace(/\D/g, "").slice(0, 13))} placeholder="13 หลัก" className="w-full h-10 px-3 rounded-lg border border-gray-200 text-sm font-mono tabular-nums focus:outline-none focus:border-primary" />
+          </div>
+          <div>
+            <label className="text-xs text-gray-500 block mb-1">ที่อยู่ตามบัตรประชาชน</label>
+            <textarea value={regAddress} onChange={e => setRegAddress(e.target.value)} rows={2} className="w-full px-3 py-2 rounded-lg border border-gray-200 text-sm focus:outline-none focus:border-primary resize-none" />
+          </div>
+          <div>
+            <label className="text-xs text-gray-500 block mb-1">โครงการ</label>
+            <input type="text" value={regProject} onChange={e => setRegProject(e.target.value)} className="w-full h-10 px-3 rounded-lg border border-gray-200 text-sm focus:outline-none focus:border-primary" />
+          </div>
+          <div>
+            <label className="text-xs text-gray-500 block mb-1">ที่อยู่ติดตั้ง</label>
+            <textarea value={regHouseNumber} onChange={e => setRegHouseNumber(e.target.value)} rows={2} className="w-full px-3 py-2 rounded-lg border border-gray-200 text-sm focus:outline-none focus:border-primary resize-none" />
+          </div>
+        </div>
+      )}
+
       {/* Confirm actions */}
       {verifyStatus === "verified" && (
         <button
-          onClick={confirmWithSlip}
+          onClick={async () => {
+            await apiFetch(`/api/leads/${lead.id}`, {
+              method: "PATCH",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({
+                full_name: regName || undefined,
+                id_card_number: regIdCard || undefined,
+                id_card_address: regAddress || undefined,
+                installation_address: regHouseNumber || undefined,
+              }),
+            });
+            confirmWithSlip();
+          }}
           disabled={bookingSaving || !surveyDate || !surveyTimeSlot}
           className="w-full h-11 rounded-lg text-sm font-semibold text-white bg-gradient-to-r from-primary to-primary-dark hover:brightness-110 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
         >

@@ -43,7 +43,7 @@ export default function NewLeadPage() {
   const [packages, setPackages] = useState<Package[]>([]);
   const [saving, setSaving] = useState(false);
   const [form, setForm] = useState({
-    full_name: "", phone: "", project_id: "", house_number: "",
+    full_name: "", phone: "", project_id: "", installation_address: "",
     customer_type: "ลูกค้าใหม่ยังไม่มีโซล่า", interested_package_id: "", note: "",
     source: "walk-in", payment_type: "", requirement: "",
     id_card_number: "", id_card_address: "",
@@ -74,7 +74,7 @@ export default function NewLeadPage() {
           );
           const data = await res.json();
           if (data.display_name) {
-            setForm(prev => ({ ...prev, house_number: data.display_name }));
+            setForm(prev => ({ ...prev, installation_address: data.display_name }));
           }
         } finally {
           setLocating(false);
@@ -163,7 +163,7 @@ export default function NewLeadPage() {
                 ...(data.id_card_number ? { id_card_number: data.id_card_number } : {}),
                 ...(data.id_card_address ? { id_card_address: data.id_card_address } : {}),
                 ...(data.phone ? { phone: data.phone } : {}),
-                ...(data.house_number ? { house_number: data.house_number } : {}),
+                ...(data.installation_address ? { installation_address: data.installation_address } : {}),
               }));
             }
             setOcrStatus("done");
@@ -282,8 +282,8 @@ export default function NewLeadPage() {
             <div>
               <label className={fieldLabel}>ที่อยู่ติดตั้ง</label>
               <textarea
-                value={form.house_number}
-                onChange={e => setForm({ ...form, house_number: e.target.value })}
+                value={form.installation_address}
+                onChange={e => setForm({ ...form, installation_address: e.target.value })}
                 placeholder="ที่อยู่"
                 rows={2}
                 className={fieldTextarea}
