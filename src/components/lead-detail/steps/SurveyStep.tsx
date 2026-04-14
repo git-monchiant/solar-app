@@ -37,9 +37,15 @@ function parseAcUnits(s: string | null): Record<number, number> {
 interface Props extends StepCommonProps {
   onAddActivity: (type: string) => void;
   packages: Package[];
+  expanded?: boolean;
+  onToggle?: () => void;
 }
 
-export default function SurveyStep({ lead, state, refresh, packages }: Props) {
+export default function SurveyStep({ lead, state, refresh, packages, expanded, onToggle }: Props) {
+  const [subStep, setSubStep] = useState(0);
+  const [selectedPkg, setSelectedPkg] = useState<string>(lead.interested_package_id ? String(lead.interested_package_id) : "");
+  const [surveyBattery, setSurveyBattery] = useState<string>(lead.survey_wants_battery ?? "");
+  const [surveyPhase, setSurveyPhase] = useState<string>(lead.survey_electrical_phase ?? "");
   const [rescheduling, setRescheduling] = useState(false);
   const [newDate, setNewDate] = useState<string>(lead.survey_date ? lead.survey_date.slice(0, 10) : "");
   const [newSlot, setNewSlot] = useState<string>(lead.survey_time_slot ?? "");
@@ -47,8 +53,6 @@ export default function SurveyStep({ lead, state, refresh, packages }: Props) {
   const [surveyNote, setSurveyNote] = useState<string>(lead.survey_note ?? "");
   const [surveyPhotos, setSurveyPhotos] = useState<string[]>(lead.survey_photos ? lead.survey_photos.split(",").filter(Boolean) : []);
   const [photoUploading, setPhotoUploading] = useState(false);
-  const [scheduledSurveys, setScheduledSurveys] = useState<{ id: number; survey_date: string; survey_time_slot: string | null }[]>([]);
-
   // Auto-save survey note (debounced)
   useEffect(() => {
     if (!lead.survey_confirmed) return;
@@ -63,20 +67,7 @@ export default function SurveyStep({ lead, state, refresh, packages }: Props) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [surveyNote]);
 
-  useEffect(() => {
-    if (!rescheduling) return;
-    apiFetch("/api/surveys/scheduled")
-      .then((data) => setScheduledSurveys(data.filter((s: { id: number }) => s.id !== lead.id)))
-      .catch(console.error);
-  }, [rescheduling, lead.id]);
 
-  const surveyCountByDate = scheduledSurveys.reduce<Record<string, { morning: number; afternoon: number }>>((acc, s) => {
-    const key = s.survey_date.slice(0, 10);
-    if (!acc[key]) acc[key] = { morning: 0, afternoon: 0 };
-    if (s.survey_time_slot === "morning") acc[key].morning++;
-    else if (s.survey_time_slot === "afternoon") acc[key].afternoon++;
-    return acc;
-  }, {});
 
   const slotLabel = SURVEY_TIME_SLOTS.find(s => s.value === lead.survey_time_slot)?.time ?? lead.survey_time_slot;
 
@@ -173,9 +164,9 @@ export default function SurveyStep({ lead, state, refresh, packages }: Props) {
     const acTotal = Object.values(acMap).reduce((a, b) => a + b, 0);
     const applianceList = (lead.survey_appliances || "").split(",").filter(Boolean).map(v => APPLIANCE_MAP[v] || v);
 
-    return (
-      <details className="group">
-        <summary className="flex items-center gap-2 cursor-pointer list-none py-1">
+    return (<>
+      <div onClick={() => onToggle?.()} className="cursor-pointer">
+        <div className="flex items-center gap-2 py-1">
           {lead.survey_date && (
             <span className="text-sm font-bold text-gray-900 leading-tight">
               <span className="block">สำรวจ {new Date(lead.survey_date).toLocaleDateString("th-TH", { weekday: "short", day: "numeric", month: "short", year: "numeric" })}</span>
@@ -183,11 +174,12 @@ export default function SurveyStep({ lead, state, refresh, packages }: Props) {
             </span>
           )}
           <span className="flex-1" />
-          <svg className="w-4 h-4 text-gray-400 transition-transform group-open:rotate-180 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
+          <svg className={`w-4 h-4 text-gray-400 transition-transform shrink-0 ${expanded ? "rotate-180" : ""}`} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
             <path strokeLinecap="round" strokeLinejoin="round" d="M19.5 8.25l-7.5 7.5-7.5-7.5" />
           </svg>
-        </summary>
-        <div className="mt-3 pt-3 border-t border-gray-100 space-y-4 text-sm">
+        </div>
+      </div>
+      {expanded && <div className="mt-3 pt-3 border-t border-gray-100 space-y-4 text-sm">
 
           {/* บ้าน · หลังคา */}
           {(residenceLabel || lead.survey_floors != null || lead.survey_roof_material || lead.survey_roof_orientation || lead.survey_roof_area_m2 || lead.survey_roof_tilt != null || lead.survey_shading || lead.survey_roof_age) && (
@@ -218,6 +210,7 @@ export default function SurveyStep({ lead, state, refresh, packages }: Props) {
                 {lead.survey_utility && <div className="flex justify-between"><span className="text-gray-400">การไฟฟ้า</span><span className="font-semibold text-gray-800">{lead.survey_utility}</span></div>}
                 {lead.survey_meter_size && <div className="flex justify-between"><span className="text-gray-400">มิเตอร์</span><span className="font-semibold text-gray-800">{lead.survey_meter_size.replace("_", "(") + ") A"}</span></div>}
                 {lead.survey_ca_number && <div className="flex justify-between"><span className="text-gray-400">เลข CA</span><span className="font-semibold text-gray-800 font-mono">{lead.survey_ca_number}</span></div>}
+                {lead.survey_wants_battery && <div className="flex justify-between"><span className="text-gray-400">แบตเตอรี่</span><span className="font-semibold text-gray-800">{lead.survey_wants_battery === "yes" ? "ต้องการ" : lead.survey_wants_battery === "no" ? "ไม่ต้องการ" : "ยังไม่แน่ใจ"}</span></div>}
                 {lead.survey_db_distance_m != null && <div className="flex justify-between"><span className="text-gray-400">ระยะ MDB</span><span className="font-semibold text-gray-800">{lead.survey_db_distance_m} เมตร</span></div>}
               </div>
             </div>
@@ -270,8 +263,8 @@ export default function SurveyStep({ lead, state, refresh, packages }: Props) {
               </div>
             </div>
           )}
-        </div>
-      </details>
+        </div>}
+      </>
     );
   }
   if (state !== "active") return null;
@@ -339,131 +332,202 @@ export default function SurveyStep({ lead, state, refresh, packages }: Props) {
     );
   }
 
-  // Default mode — show appointment + (after confirm) verify pre-survey + note + photos
+  // Default mode — wizard sub-steps
+  const SURVEY_SUB = lead.survey_confirmed
+    ? ["นัด", "บ้าน", "ไฟฟ้า", "แพ็คเกจ", "บันทึก", "ยืนยัน"]
+    : ["นัด"];
+
   return (
-    <div className="space-y-3">
-      <div className={`flex items-center gap-2.5 px-3 py-2.5 rounded-lg border ${lead.survey_confirmed ? "bg-emerald-50 border-emerald-600/15" : "bg-active-light border-active/20"}`}>
-        <svg className={`w-4 h-4 shrink-0 ${lead.survey_confirmed ? "text-emerald-600" : "text-active"}`} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-          <path strokeLinecap="round" strokeLinejoin="round" d="M6.75 3v2.25M17.25 3v2.25M3 18.75V7.5a2.25 2.25 0 012.25-2.25h13.5A2.25 2.25 0 0121 7.5v11.25" />
-        </svg>
-        <div className="flex-1 flex items-baseline gap-1.5 flex-wrap min-w-0">
-          <span className={`text-xs font-semibold tracking-wider uppercase ${lead.survey_confirmed ? "text-emerald-700/70" : "text-active/70"}`}>
-            {lead.survey_confirmed ? "ยืนยันแล้ว" : "นัดหมายแล้ว"}
-          </span>
-          {lead.survey_date && (
-            <span className={`text-sm font-bold ${lead.survey_confirmed ? "text-emerald-900" : "text-active"}`}>
-              {formatDate(lead.survey_date)}
-              {slotLabel && <span className="ml-1 font-mono tabular-nums">{slotLabel}</span>}
-            </span>
+    <div>
+      {/* Step indicator */}
+      {lead.survey_confirmed && (
+        <div className="flex items-center gap-1 mb-3">
+          {SURVEY_SUB.map((label, i) => (
+            <button key={i} type="button" onClick={() => { setSubStep(i); setTimeout(() => document.querySelector("[data-step-active]")?.scrollIntoView({ behavior: "smooth", block: "start" }), 100); }} className="flex-1 flex flex-col items-center gap-1 cursor-pointer">
+              <div className={`h-1 w-full rounded-full transition-colors ${i <= subStep ? "bg-active" : "bg-gray-200"}`} />
+              <span className={`text-xs font-semibold transition-colors ${i === subStep ? "text-active" : i < subStep ? "text-gray-500" : "text-gray-300"}`}>{label}</span>
+            </button>
+          ))}
+        </div>
+      )}
+
+      {/* Step 1: นัดหมาย */}
+      {subStep === 0 && (
+        <div className="space-y-3">
+          <div className={`flex items-center gap-2.5 px-3 py-2.5 rounded-lg border ${lead.survey_confirmed ? "bg-emerald-50 border-emerald-600/15" : "bg-active-light border-active/20"}`}>
+            <svg className={`w-4 h-4 shrink-0 ${lead.survey_confirmed ? "text-emerald-600" : "text-active"}`} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+              <path strokeLinecap="round" strokeLinejoin="round" d="M6.75 3v2.25M17.25 3v2.25M3 18.75V7.5a2.25 2.25 0 012.25-2.25h13.5A2.25 2.25 0 0121 7.5v11.25" />
+            </svg>
+            <div className="flex-1 flex items-baseline gap-1.5 flex-wrap min-w-0">
+              <span className={`text-xs font-semibold tracking-wider uppercase ${lead.survey_confirmed ? "text-emerald-700/70" : "text-active/70"}`}>
+                {lead.survey_confirmed ? "ยืนยันแล้ว" : "นัดหมายแล้ว"}
+              </span>
+              {lead.survey_date && (
+                <span className={`text-sm font-bold ${lead.survey_confirmed ? "text-emerald-900" : "text-active"}`}>
+                  {formatDate(lead.survey_date)}
+                  {slotLabel && <span className="ml-1 font-mono tabular-nums">{slotLabel}</span>}
+                </span>
+              )}
+            </div>
+            <button type="button" onClick={() => setRescheduling(true)} className={`shrink-0 text-xs font-semibold uppercase tracking-wider px-2.5 py-1 rounded-md border transition-colors ${lead.survey_confirmed ? "border-emerald-600/20 text-emerald-700 hover:bg-emerald-100" : "border-active/30 text-active hover:bg-active/10"}`}>
+              Reschedule
+            </button>
+          </div>
+          {!lead.survey_confirmed && (
+            <button onClick={confirmAppointment} disabled={saving} className="w-full h-11 rounded-lg text-sm font-semibold text-white bg-gradient-to-r from-primary to-primary-dark hover:brightness-110 disabled:opacity-50 transition-colors">
+              {saving ? "…" : "ยืนยันนัดหมาย"}
+            </button>
           )}
         </div>
-        <button
-          type="button"
-          onClick={() => setRescheduling(true)}
-          className={`shrink-0 text-xs font-semibold uppercase tracking-wider px-2.5 py-1 rounded-md border transition-colors ${
-            lead.survey_confirmed
-              ? "border-emerald-600/20 text-emerald-700 hover:bg-emerald-100"
-              : "border-active/30 text-active hover:bg-active/10"
-          }`}
-        >
-          Reschedule
-        </button>
-      </div>
+      )}
 
-      {!lead.survey_confirmed ? (
-        <button
-          onClick={confirmAppointment}
-          disabled={saving}
-          className="w-full h-11 rounded-lg text-sm font-semibold text-white bg-gradient-to-r from-primary to-primary-dark hover:brightness-110 disabled:opacity-50 transition-colors"
-        >
-          {saving ? "…" : "ยืนยันนัดหมาย"}
-        </button>
-      ) : (
-        <>
-          {/* Re-confirm pre-survey questionnaire on-site */}
-          <div className="pt-2">
-            <div className="text-xs font-semibold tracking-wider uppercase text-gray-500 mb-2 px-1">
-              ตรวจยืนยันข้อมูลหน้างาน
+      {/* Step 4: แพ็คเกจ */}
+      {lead.survey_confirmed && subStep === 3 && (
+        <div className="rounded-lg bg-white/60 border border-active/15 p-3 space-y-3">
+          <div>
+            <div className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-2">ต้องการแบตเตอรี่ + Upgrade</div>
+            <div className="grid grid-cols-3 gap-2">
+              {[{ value: "no", label: "ไม่ต้องการ" }, { value: "yes", label: "ต้องการ" }, { value: "maybe", label: "ยังไม่แน่ใจ" }, { value: "upgrade", label: "+ Upgrade" }].map(b => (
+                <button key={b.value} type="button" onClick={() => {
+                  setSurveyBattery(b.value);
+                  setSelectedPkg("");
+                  apiFetch(`/api/leads/${lead.id}`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ survey_wants_battery: b.value, interested_package_id: null }) }).catch(console.error);
+                }} className={`h-9 rounded-lg text-xs font-semibold border transition-all ${surveyBattery === b.value ? "bg-active text-white border-active" : "bg-white text-gray-600 border-gray-200"}`}>
+                  {b.label}
+                </button>
+              ))}
             </div>
-            <SurveyForm lead={lead} refresh={refresh} />
           </div>
 
-          {/* Survey note */}
-          <div className="rounded-lg bg-white/60 border border-active/15 p-3 mt-2">
+          <div className="text-xs font-semibold text-gray-400 uppercase tracking-wider">ยืนยันแพ็คเกจที่จะติดตั้ง (1 รายการ)</div>
+          {(() => {
+            const phase = surveyPhase === "3_phase" ? 3 : surveyPhase === "1_phase" ? 1 : 0;
+            const battery = surveyBattery;
+            const availablePkgs = packages.filter(p => {
+              if (p.phase !== 0 && phase !== 0 && p.phase !== phase) return false;
+              if (battery === "upgrade") return p.is_upgrade;
+              if (battery === "yes") return p.has_battery && !p.is_upgrade;
+              if (battery === "no") return !p.has_battery && !p.is_upgrade;
+              if (battery === "maybe") return !p.is_upgrade;
+              return true;
+            });
+            return availablePkgs.length > 0 ? (
+              <div className="grid grid-cols-1 gap-2">
+                {availablePkgs.map(p => {
+                  const selected = selectedPkg === String(p.id);
+                  return (
+                    <button key={p.id} type="button" onClick={() => {
+                      setSelectedPkg(String(p.id));
+                      apiFetch(`/api/leads/${lead.id}`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ interested_package_id: p.id }) }).catch(console.error);
+                    }} className={`text-left rounded-xl p-3 border-2 transition-all ${selected ? "border-active bg-active-light" : "border-gray-100 bg-white"}`}>
+                      <div className="flex items-center justify-between gap-2">
+                        <div className="min-w-0">
+                          <div className="text-sm font-bold truncate flex items-center gap-1.5">
+                            {p.is_upgrade && <span className="text-xs font-bold text-blue-600 bg-blue-50 px-2 py-0.5 rounded uppercase shrink-0">UPGRADE</span>}
+                            {p.name}
+                          </div>
+                          <div className="text-xs text-gray-500 mt-0.5 flex flex-wrap gap-x-3">
+                            {p.solar_panels > 0 && <span>{p.solar_panels} panels</span>}
+                            {p.inverter_brand && <span>{p.inverter_brand} {p.inverter_kw}kW</span>}
+                            {p.has_battery && <span>Battery {p.battery_kwh}kWh</span>}
+                            {p.is_upgrade && p.solar_panels === 0 && <span>เพิ่มแบตอย่างเดียว</span>}
+                            <span className="inline-flex items-center gap-0.5 ml-1">
+                              <svg className={`w-3.5 h-3.5 ${p.has_panel ? "text-amber-500" : "text-gray-300"}`} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M12 3v2.25m6.364.386l-1.591 1.591M21 12h-2.25m-.386 6.364l-1.591-1.591M12 18.75V21m-4.773-4.227l-1.591 1.591M5.25 12H3m4.227-4.773L5.636 5.636M15.75 12a3.75 3.75 0 11-7.5 0 3.75 3.75 0 017.5 0z" /></svg>
+                              <svg className={`w-3.5 h-3.5 ${p.has_inverter ? "text-violet-500" : "text-gray-300"}`} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M3.75 13.5l10.5-11.25L12 10.5h8.25L9.75 21.75 12 13.5H3.75z" /></svg>
+                              <svg className={`w-3.5 h-3.5 ${p.has_battery ? "text-green-500 fill-green-500" : "text-gray-300"}`} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M21 10.5h.375c.621 0 1.125.504 1.125 1.125v2.25c0 .621-.504 1.125-1.125 1.125H21M3.75 18h15A2.25 2.25 0 0021 15.75v-6a2.25 2.25 0 00-2.25-2.25h-15A2.25 2.25 0 001.5 9.75v6A2.25 2.25 0 003.75 18z" /></svg>
+                            </span>
+                          </div>
+                        </div>
+                        <div className="text-right shrink-0">
+                          <div className="text-sm font-bold font-mono tabular-nums">{p.price.toLocaleString()}</div>
+                          <div className="text-xs text-gray-400">THB</div>
+                        </div>
+                      </div>
+                    </button>
+                  );
+                })}
+              </div>
+            ) : <div className="text-center py-6 text-xs text-gray-400">ไม่มีแพ็คเกจ</div>;
+          })()}
+        </div>
+      )}
+
+      {/* Step 2: บ้าน · หลังคา */}
+      {lead.survey_confirmed && subStep === 1 && (
+        <SurveyForm lead={lead} refresh={refresh} section="house" />
+      )}
+
+      {/* Step 3: ระบบไฟฟ้า */}
+      {lead.survey_confirmed && subStep === 2 && (
+        <SurveyForm lead={lead} refresh={refresh} section="electrical" onPhaseChange={(phase) => { setSurveyPhase(phase); setSelectedPkg(""); apiFetch(`/api/leads/${lead.id}`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ interested_package_id: null }) }).catch(console.error); }} />
+      )}
+
+      {/* Step 5: บันทึก + รูปถ่าย */}
+      {lead.survey_confirmed && subStep === 4 && (
+        <div className="space-y-3">
+          <div className="rounded-lg bg-white/60 border border-active/15 p-3">
             <label className="text-xs font-semibold tracking-wider uppercase text-gray-400 block mb-2">บันทึก Survey</label>
-            <textarea
-              value={surveyNote}
-              onChange={e => setSurveyNote(e.target.value)}
-              placeholder="บันทึกหน้างาน เช่น สภาพหลังคา, ข้อจำกัด, ข้อแนะนำ..."
-              rows={3}
-              className="w-full px-3 py-2 rounded-lg border border-gray-200 bg-white text-sm focus:outline-none focus:border-primary resize-none"
-            />
+            <textarea value={surveyNote} onChange={e => setSurveyNote(e.target.value)} placeholder="บันทึกหน้างาน เช่น สภาพหลังคา, ข้อจำกัด, ข้อแนะนำ..." rows={3} className="w-full px-3 py-2 rounded-lg border border-gray-200 bg-white text-sm focus:outline-none focus:border-primary resize-none" />
           </div>
-
-          {/* Extra photos */}
           <div className="rounded-lg bg-white/60 border border-active/15 p-3">
             <div className="flex items-center justify-between mb-2">
               <label className="text-xs font-semibold tracking-wider uppercase text-gray-400">รูปถ่ายเพิ่มเติม</label>
-              {surveyPhotos.length > 0 && (
-                <span className="text-xs text-gray-500">{surveyPhotos.length} รูป</span>
-              )}
+              {surveyPhotos.length > 0 && <span className="text-xs text-gray-500">{surveyPhotos.length} รูป</span>}
             </div>
-            <input
-              type="file"
-              accept="image/*"
-              multiple
-              capture="environment"
-              onChange={handlePhotoCapture}
-              className="hidden"
-              id={`survey-photos-${lead.id}`}
-            />
+            <input type="file" accept="image/*" multiple capture="environment" onChange={handlePhotoCapture} className="hidden" id={`survey-photos-${lead.id}`} />
             {surveyPhotos.length > 0 && (
               <div className="grid grid-cols-3 gap-2 mb-2">
                 {surveyPhotos.map(url => (
                   <div key={url} className="relative aspect-square">
-                    <a href={url} target="_blank" rel="noreferrer">
-                      <img src={url} alt="Survey" className="w-full h-full object-cover rounded-lg border border-gray-200" />
-                    </a>
-                    <button
-                      type="button"
-                      onClick={() => removePhoto(url)}
-                      className="absolute -top-1.5 -right-1.5 w-5 h-5 rounded-full bg-red-500 text-white flex items-center justify-center text-xs shadow"
-                    >
-                      ×
-                    </button>
+                    <a href={url} target="_blank" rel="noreferrer"><img src={url} alt="Survey" className="w-full h-full object-cover rounded-lg border border-gray-200" /></a>
+                    <button type="button" onClick={() => removePhoto(url)} className="absolute -top-1.5 -right-1.5 w-5 h-5 rounded-full bg-red-500 text-white flex items-center justify-center text-xs shadow">×</button>
                   </div>
                 ))}
               </div>
             )}
-            <label
-              htmlFor={`survey-photos-${lead.id}`}
-              className="w-full h-10 rounded-lg border border-dashed border-gray-300 bg-white flex items-center justify-center gap-2 cursor-pointer hover:border-active/40 hover:text-active text-gray-500 text-sm transition-colors"
-            >
-              {photoUploading ? (
-                <>
-                  <div className="w-4 h-4 border-2 border-gray-300 border-t-active rounded-full animate-spin" />
-                  กำลังอัปโหลด…
-                </>
-              ) : (
-                <>
-                  <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                    <path strokeLinecap="round" strokeLinejoin="round" d="M3 9a2 2 0 012-2h.93a2 2 0 001.664-.89l.812-1.22A2 2 0 0110.07 4h3.86a2 2 0 011.664.89l.812 1.22A2 2 0 0018.07 7H19a2 2 0 012 2v9a2 2 0 01-2 2H5a2 2 0 01-2-2V9z" />
-                    <path strokeLinecap="round" strokeLinejoin="round" d="M15 13a3 3 0 11-6 0 3 3 0 016 0z" />
-                  </svg>
-                  เพิ่มรูปถ่าย
-                </>
-              )}
+            <label htmlFor={`survey-photos-${lead.id}`} className="w-full h-10 rounded-lg border border-dashed border-gray-300 bg-white flex items-center justify-center gap-2 cursor-pointer hover:border-active/40 hover:text-active text-gray-500 text-sm transition-colors">
+              {photoUploading ? (<><div className="w-4 h-4 border-2 border-gray-300 border-t-active rounded-full animate-spin" /> กำลังอัปโหลด…</>) : (<><svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M3 9a2 2 0 012-2h.93a2 2 0 001.664-.89l.812-1.22A2 2 0 0110.07 4h3.86a2 2 0 011.664.89l.812 1.22A2 2 0 0018.07 7H19a2 2 0 012 2v9a2 2 0 01-2 2H5a2 2 0 01-2-2V9z" /><path strokeLinecap="round" strokeLinejoin="round" d="M15 13a3 3 0 11-6 0 3 3 0 016 0z" /></svg> เพิ่มรูปถ่าย</>)}
             </label>
           </div>
+        </div>
+      )}
 
-          <button
-            onClick={markDone}
-            disabled={saving}
-            className="w-full h-11 mt-2 rounded-lg text-sm font-semibold text-white bg-gradient-to-r from-primary to-primary-dark hover:brightness-110 disabled:opacity-50 transition-colors"
-          >
+      {/* Step 6: ยืนยัน */}
+      {lead.survey_confirmed && subStep === 5 && (
+        <div className="space-y-3">
+          <div className="text-center py-4">
+            <div className="w-14 h-14 rounded-full bg-emerald-50 flex items-center justify-center mx-auto mb-3">
+              <svg className="w-7 h-7 text-emerald-600" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}><path strokeLinecap="round" strokeLinejoin="round" d="M4.5 12.75l6 6 9-13.5" /></svg>
+            </div>
+            <div className="text-sm font-bold text-gray-800">ข้อมูลสำรวจครบถ้วน</div>
+            <div className="text-xs text-gray-500 mt-1">กดปุ่มด้านล่างเพื่อจบขั้นตอนสำรวจ</div>
+          </div>
+          <button onClick={markDone} disabled={saving} className="w-full h-11 rounded-lg text-sm font-semibold text-white bg-gradient-to-r from-primary to-primary-dark hover:brightness-110 disabled:opacity-50 transition-colors">
             สำรวจเสร็จสิ้น
           </button>
-        </>
+        </div>
+      )}
+
+      {/* Navigation */}
+      {lead.survey_confirmed && subStep < 5 && (
+        <div className="flex gap-2 mt-3">
+          {subStep > 0 && (
+            <button type="button" onClick={() => { setSubStep(subStep - 1); setTimeout(() => document.querySelector("[data-step-active]")?.scrollIntoView({ behavior: "smooth", block: "start" }), 100); }} className="flex-1 h-11 rounded-lg text-sm font-semibold border border-gray-200 text-gray-600 hover:bg-gray-50 transition-colors flex items-center justify-center gap-1">
+              <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M15.75 19.5L8.25 12l7.5-7.5" /></svg>
+              ย้อนกลับ
+            </button>
+          )}
+          <button type="button" onClick={() => { setSubStep(subStep + 1); setTimeout(() => document.querySelector("[data-step-active]")?.scrollIntoView({ behavior: "smooth", block: "start" }), 100); }} className="flex-1 h-11 rounded-lg text-sm font-semibold text-white bg-active hover:brightness-110 transition-colors flex items-center justify-center gap-1">
+            ถัดไป
+            <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M8.25 4.5l7.5 7.5-7.5 7.5" /></svg>
+          </button>
+        </div>
+      )}
+      {lead.survey_confirmed && subStep === 5 && (
+        <button type="button" onClick={() => { setSubStep(subStep - 1); setTimeout(() => document.querySelector("[data-step-active]")?.scrollIntoView({ behavior: "smooth", block: "start" }), 100); }} className="w-full h-9 mt-2 rounded-lg text-xs text-gray-500 border border-gray-200 hover:bg-gray-50 transition-colors flex items-center justify-center gap-1">
+          <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M15.75 19.5L8.25 12l7.5-7.5" /></svg>
+          ย้อนกลับ
+        </button>
       )}
     </div>
   );

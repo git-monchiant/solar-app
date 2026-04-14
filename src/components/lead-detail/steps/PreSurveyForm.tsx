@@ -67,6 +67,7 @@ const BATTERY_OPTIONS = [
   { value: "no", label: "ไม่ต้องการ" },
   { value: "yes", label: "ต้องการ" },
   { value: "maybe", label: "ยังไม่แน่ใจ" },
+  { value: "upgrade", label: "+ Upgrade" },
 ];
 
 const APPLIANCES = [
@@ -112,10 +113,12 @@ interface Props {
   refresh: () => void;
   packages?: Package[];
   hideResidence?: boolean;
+  hidePackages?: boolean;
+  onlyPackages?: boolean;
   onPackageChange?: (pkgId: string) => void;
 }
 
-export default function PreSurveyForm({ lead, refresh, packages = [], hideResidence, onPackageChange }: Props) {
+export default function PreSurveyForm({ lead, refresh, packages = [], hideResidence, hidePackages, onlyPackages, onPackageChange }: Props) {
   const [residenceType, setResidenceType] = useState<string>(lead.pre_residence_type ?? "");
   const [monthlyBill, setMonthlyBill] = useState<number | undefined>(lead.pre_monthly_bill ?? undefined);
   const [peakUsage, setPeakUsage] = useState<string>(lead.pre_peak_usage ?? "");
@@ -144,8 +147,10 @@ export default function PreSurveyForm({ lead, refresh, packages = [], hideReside
       if (electricalPhase === "1_phase" && p.phase === 3) return false;
       if (electricalPhase === "3_phase" && p.phase === 1) return false;
     }
-    if (wantsBattery === "yes") return p.has_battery;
-    if (wantsBattery === "no") return !p.has_battery;
+    if (wantsBattery === "upgrade") return p.is_upgrade;
+    if (wantsBattery === "yes") return p.has_battery && !p.is_upgrade;
+    if (wantsBattery === "no") return !p.has_battery && !p.is_upgrade;
+    if (wantsBattery === "maybe") return !p.is_upgrade;
     return true;
   });
 
@@ -167,20 +172,21 @@ export default function PreSurveyForm({ lead, refresh, packages = [], hideReside
       return;
     }
     const t = setTimeout(() => {
+      const payload = {
+            pre_residence_type: residenceType || null,
+            pre_monthly_bill: monthlyBill ?? null,
+            pre_peak_usage: peakUsage || null,
+            pre_electrical_phase: electricalPhase || null,
+            pre_wants_battery: wantsBattery || null,
+            pre_ac_units: stringifyAcUnits(acUnits),
+            pre_appliances: pre_appliances.length ? pre_appliances.join(",") : null,
+            interested_package_ids: selectedPkgs.length ? selectedPkgs.join(",") : null,
+            interested_package_id: selectedPkgs.length ? parseInt(selectedPkgs[0]) : null,
+          };
       apiFetch(`/api/leads/${lead.id}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          pre_residence_type: residenceType || null,
-          pre_monthly_bill: monthlyBill ?? null,
-          pre_peak_usage: peakUsage || null,
-          pre_electrical_phase: electricalPhase || null,
-          pre_wants_battery: wantsBattery || null,
-          pre_ac_units: stringifyAcUnits(acUnits),
-          pre_appliances: pre_appliances.length ? pre_appliances.join(",") : null,
-          interested_package_ids: selectedPkgs.length ? selectedPkgs.join(",") : null,
-          interested_package_id: selectedPkgs.length ? parseInt(selectedPkgs[0]) : null,
-        }),
+        body: JSON.stringify(payload),
       }).catch(console.error);
     }, 600);
     return () => clearTimeout(t);
@@ -241,7 +247,7 @@ export default function PreSurveyForm({ lead, refresh, packages = [], hideReside
     <div className="space-y-2">
       {/* บ้าน */}
       {!hideResidence && (
-        <div className={sectionCls}>
+        <div className={`${sectionCls} ${onlyPackages ? "hidden" : ""}`}>
           <div className={sectionTitle}>บ้าน</div>
           <label className={fieldLabel}>ประเภทบ้านพักอาศัย</label>
           <div className="grid grid-cols-3 gap-2">
@@ -258,7 +264,7 @@ export default function PreSurveyForm({ lead, refresh, packages = [], hideReside
       )}
 
       {/* การใช้ไฟฟ้า */}
-      <div className={sectionCls}>
+      <div className={`${sectionCls} ${onlyPackages ? "hidden" : ""}`}>
         <div className={sectionTitle}>การใช้ไฟฟ้า</div>
         <div className="space-y-3">
           <div>
@@ -301,17 +307,8 @@ export default function PreSurveyForm({ lead, refresh, packages = [], hideReside
 
 
       {/* เครื่องใช้ไฟฟ้า */}
-      <div className={sectionCls}>
-        <div className={sectionTitle}>เครื่องใช้ไฟฟ้า</div>
+      <div className={`${sectionCls} ${onlyPackages ? "hidden" : ""}`}>
         <div className="space-y-3">
-          <div>
-            <label className={fieldLabel}>ต้องการแบตเตอรี่</label>
-            <div className="grid grid-cols-3 gap-2">
-              {BATTERY_OPTIONS.map(b => (
-                <button key={b.value} type="button" onClick={() => { setWantsBattery(b.value); setSelectedPkgs([]); }} className={chipBtn(wantsBattery === b.value)}>{b.label}</button>
-              ))}
-            </div>
-          </div>
           <div>
             <div className="flex items-center justify-between mb-0.5">
               <label className={fieldLabel}>เครื่องปรับอากาศ</label>
@@ -344,9 +341,17 @@ export default function PreSurveyForm({ lead, refresh, packages = [], hideReside
         </div>
       </div>
 
-      {/* แพ็คเกจ */}
+      {/* แบตเตอรี่ + แพ็คเกจ */}
       {packages.length > 0 && (
-        <div className={sectionCls}>
+        <div className={`${sectionCls} ${hidePackages ? "hidden" : ""}`}>
+          <div className="mb-3">
+            <label className={fieldLabel}>ต้องการแบตเตอรี่ + Upgrade</label>
+            <div className="grid grid-cols-3 gap-2">
+              {BATTERY_OPTIONS.map(b => (
+                <button key={b.value} type="button" onClick={() => { setWantsBattery(b.value); setSelectedPkgs([]); }} className={chipBtn(wantsBattery === b.value)}>{b.label}</button>
+              ))}
+            </div>
+          </div>
           <div className={sectionTitle}>
             แพ็คเกจ
             {wantsBattery === "yes" && <span className="ml-2 text-xs font-medium text-gray-400 normal-case">· มีแบตเตอรี่</span>}
@@ -362,11 +367,20 @@ export default function PreSurveyForm({ lead, refresh, packages = [], hideReside
                 <button key={p.id} type="button" onClick={() => togglePkg(String(p.id))} className={`text-left rounded-xl p-3 border-2 transition-all ${selected ? "border-active bg-active-light" : "border-gray-100 bg-white"}`}>
                   <div className="flex items-center justify-between gap-2">
                     <div className="min-w-0">
-                      <div className="text-sm font-bold truncate">{p.name}</div>
+                      <div className="text-sm font-bold truncate flex items-center gap-1.5">
+                        {p.is_upgrade && <span className="text-xs font-bold text-blue-600 bg-blue-50 px-2 py-0.5 rounded uppercase shrink-0">UPGRADE</span>}
+                        {p.name}
+                      </div>
                       <div className="text-xs text-gray-500 mt-0.5 flex flex-wrap gap-x-3">
-                        {p.solar_panels && <span>{p.solar_panels} panels</span>}
+                        {p.solar_panels > 0 && <span>{p.solar_panels} panels</span>}
                         {p.inverter_brand && <span>{p.inverter_brand} {p.inverter_kw}kW</span>}
                         {p.has_battery && <span>Battery {p.battery_kwh}kWh</span>}
+                        {p.is_upgrade && p.solar_panels === 0 && <span>เพิ่มแบตอย่างเดียว</span>}
+                        <span className="inline-flex items-center gap-0.5 ml-1">
+                          <svg className={`w-3.5 h-3.5 ${p.has_panel ? "text-amber-500" : "text-gray-300"}`} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M12 3v2.25m6.364.386l-1.591 1.591M21 12h-2.25m-.386 6.364l-1.591-1.591M12 18.75V21m-4.773-4.227l-1.591 1.591M5.25 12H3m4.227-4.773L5.636 5.636M15.75 12a3.75 3.75 0 11-7.5 0 3.75 3.75 0 017.5 0z" /></svg>
+                          <svg className={`w-3.5 h-3.5 ${p.has_inverter ? "text-violet-500" : "text-gray-300"}`} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M3.75 13.5l10.5-11.25L12 10.5h8.25L9.75 21.75 12 13.5H3.75z" /></svg>
+                          <svg className={`w-3.5 h-3.5 ${p.has_battery ? "text-green-500 fill-green-500" : "text-gray-300"}`} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M21 10.5h.375c.621 0 1.125.504 1.125 1.125v2.25c0 .621-.504 1.125-1.125 1.125H21M3.75 18h15A2.25 2.25 0 0021 15.75v-6a2.25 2.25 0 00-2.25-2.25h-15A2.25 2.25 0 001.5 9.75v6A2.25 2.25 0 003.75 18z" /></svg>
+                        </span>
                       </div>
                     </div>
                     <div className="text-right shrink-0">

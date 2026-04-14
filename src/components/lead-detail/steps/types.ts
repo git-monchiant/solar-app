@@ -101,6 +101,9 @@ export interface Package {
   price: number;
   monthly_installment: string;
   monthly_saving: number;
+  is_upgrade: boolean;
+  has_panel: boolean;
+  has_inverter: boolean;
   warranty_years: number;
 }
 

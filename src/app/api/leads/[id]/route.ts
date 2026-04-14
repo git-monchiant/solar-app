@@ -317,8 +317,8 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
         .input("old_status", sql.NVarChar(30), oldStatus)
         .input("new_status", sql.NVarChar(30), body.status)
         .query(`
-          INSERT INTO lead_activities (lead_id, activity_type, title, old_status, new_status)
-          VALUES (@lead_id, @activity_type, @title, @old_status, @new_status)
+          INSERT INTO lead_activities (lead_id, activity_type, title, old_status, new_status, created_by)
+          VALUES (@lead_id, @activity_type, @title, @old_status, @new_status, 1)
         `);
     }
 

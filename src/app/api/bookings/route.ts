@@ -62,8 +62,8 @@ export async function POST(request: NextRequest) {
       .input("title", sql.NVarChar(200), `Booking created: ${bookingNumber}`)
       .input("note", sql.NVarChar(sql.MAX), body.note || null)
       .query(`
-        INSERT INTO lead_activities (lead_id, activity_type, title, note)
-        VALUES (@lead_id, 'booking_created', @title, @note)
+        INSERT INTO lead_activities (lead_id, activity_type, title, note, created_by)
+        VALUES (@lead_id, 'booking_created', @title, @note, 1)
       `);
 
     return NextResponse.json(result.recordset[0], { status: 201 });

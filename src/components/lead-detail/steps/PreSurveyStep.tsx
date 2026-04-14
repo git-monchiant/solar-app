@@ -135,14 +135,18 @@ const InfoRow = ({
 interface Props extends StepCommonProps {
   packages: Package[];
   lead: Lead;
+  expanded?: boolean;
+  onToggle?: () => void;
 }
 
-export default function PreSurveyStep({ lead, state, refresh, packages }: Props) {
+export default function PreSurveyStep({ lead, state, refresh, packages, expanded, onToggle }: Props) {
   const [regName, setRegName] = useState(lead.full_name || "");
   const [regIdCard, setRegIdCard] = useState(lead.id_card_number || "");
   const [regAddress, setRegAddress] = useState(lead.id_card_address || "");
   const [regHouseNumber, setRegHouseNumber] = useState(lead.installation_address || "");
   const [regProject, setRegProject] = useState(lead.project_name || "");
+  const [subStep, setSubStep] = useState(0);
+  const [lightboxUrl, setLightboxUrl] = useState<string | null>(null);
   const isFirstRegSave = useRef(true);
   useEffect(() => {
     if (isFirstRegSave.current) { isFirstRegSave.current = false; return; }
@@ -414,9 +418,9 @@ export default function PreSurveyStep({ lead, state, refresh, packages }: Props)
     const peakLabel = PEAK_USAGE.find(p => p.value === lead.pre_peak_usage)?.label;
     const residenceLabel = lead.pre_residence_type?.startsWith("other:") ? lead.pre_residence_type.slice(6) : RESIDENCE_TYPES.find(r => r.value === lead.pre_residence_type)?.label;
 
-    return (
-      <details className="group">
-        <summary className="flex items-center gap-2 cursor-pointer list-none py-1">
+    return (<>
+      <div onClick={() => onToggle?.()} className="cursor-pointer">
+        <div className="flex items-center gap-2 py-1">
           {lead.survey_date && (
             <span className="text-sm font-bold text-gray-900 leading-tight">
               <span className="block">นัด {new Date(lead.survey_date).toLocaleDateString("th-TH", { weekday: "short", day: "numeric", month: "short", year: "numeric" })}</span>
@@ -434,7 +438,7 @@ export default function PreSurveyStep({ lead, state, refresh, packages }: Props)
               target="_blank"
               rel="noreferrer"
               onClick={e => e.stopPropagation()}
-              className="inline-flex items-center gap-1 text-xs font-semibold text-primary hover:text-primary-dark shrink-0 mr-2"
+              className="inline-flex items-center gap-1 text-xs font-semibold text-primary hover:text-primary-dark shrink-0 mr-4"
             >
               <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
                 <path strokeLinecap="round" strokeLinejoin="round" d="M3 16.5v2.25A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75V16.5M16.5 12L12 16.5m0 0L7.5 12m4.5 4.5V3" />
@@ -442,12 +446,12 @@ export default function PreSurveyStep({ lead, state, refresh, packages }: Props)
               PDF
             </a>
           )}
-          <svg className="w-4 h-4 text-gray-400 transition-transform group-open:rotate-180 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
+          <svg className={`w-4 h-4 text-gray-400 transition-transform shrink-0 ${expanded ? "rotate-180" : ""}`} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
             <path strokeLinecap="round" strokeLinejoin="round" d="M19.5 8.25l-7.5 7.5-7.5-7.5" />
           </svg>
-        </summary>
+        </div>
 
-        <div className="mt-3 pt-3 border-t border-gray-100 space-y-4 text-sm">
+        {expanded && <div className="mt-3 pt-3 border-t border-gray-100 space-y-4 text-sm">
 
           {/* แพ็คเกจที่สนใจ */}
           {(() => {
@@ -460,9 +464,17 @@ export default function PreSurveyStep({ lead, state, refresh, packages }: Props)
               <div className="border-l-3 border-primary pl-3">
                 <div className="text-xs font-bold text-primary uppercase mb-1">แพ็คเกจที่สนใจ</div>
                 {selectedPkgs.map(p => (
-                  <div key={p.id} className="flex justify-between">
-                    <span className="text-gray-800">{p.name}</span>
-                    <span className="font-semibold text-gray-800 font-mono">{formatPrice(p.price)}</span>
+                  <div key={p.id} className="flex items-center justify-between">
+                    <span className="text-gray-800 flex items-center gap-1.5">
+                      {p.name}
+                      {p.is_upgrade && <span className="text-xs font-bold text-blue-600 bg-blue-50 px-2 py-0.5 rounded uppercase shrink-0">UPGRADE</span>}
+                      <span className="inline-flex items-center gap-0.5 ml-1">
+                        <svg className={`w-3 h-3 ${p.has_panel ? "text-amber-500" : "text-gray-300"}`} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M12 3v2.25m6.364.386l-1.591 1.591M21 12h-2.25m-.386 6.364l-1.591-1.591M12 18.75V21m-4.773-4.227l-1.591 1.591M5.25 12H3m4.227-4.773L5.636 5.636M15.75 12a3.75 3.75 0 11-7.5 0 3.75 3.75 0 017.5 0z" /></svg>
+                        <svg className={`w-3 h-3 ${p.has_inverter ? "text-violet-500" : "text-gray-300"}`} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M3.75 13.5l10.5-11.25L12 10.5h8.25L9.75 21.75 12 13.5H3.75z" /></svg>
+                        <svg className={`w-3 h-3 ${p.has_battery ? "text-green-500 fill-green-500" : "text-gray-300"}`} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M21 10.5h.375c.621 0 1.125.504 1.125 1.125v2.25c0 .621-.504 1.125-1.125 1.125H21M3.75 18h15A2.25 2.25 0 0021 15.75v-6a2.25 2.25 0 00-2.25-2.25h-15A2.25 2.25 0 001.5 9.75v6A2.25 2.25 0 003.75 18z" /></svg>
+                      </span>
+                    </span>
+                    <span className="font-semibold text-gray-800 font-mono shrink-0">{formatPrice(p.price)}</span>
                   </div>
                 ))}
                 {batteryLabel && (
@@ -546,16 +558,16 @@ export default function PreSurveyStep({ lead, state, refresh, packages }: Props)
               {(lead.pre_bill_photo_url || lead.slip_url) && (
                 <div className="flex gap-3 mt-1.5">
                   {lead.pre_bill_photo_url && (
-                    <a href={lead.pre_bill_photo_url} target="_blank" rel="noreferrer">
+                    <button type="button" onClick={() => setLightboxUrl(lead.pre_bill_photo_url)} className="text-left">
                       <div className="text-xs text-gray-400 mb-0.5">บิลค่าไฟ</div>
                       <img src={lead.pre_bill_photo_url} alt="Bill" className="h-16 rounded-lg border border-gray-200" />
-                    </a>
+                    </button>
                   )}
                   {lead.slip_url && (
-                    <a href={lead.slip_url} target="_blank" rel="noreferrer">
+                    <button type="button" onClick={() => setLightboxUrl(lead.slip_url)} className="text-left">
                       <div className="text-xs text-gray-400 mb-0.5">หลักฐานการชำระเงิน</div>
                       <img src={lead.slip_url} alt="Slip" className="h-16 rounded-lg border border-gray-200" />
-                    </a>
+                    </button>
                   )}
                 </div>
               )}
@@ -623,36 +635,61 @@ export default function PreSurveyStep({ lead, state, refresh, packages }: Props)
               </>
             )}
           </div>
+        </div>}
+      </div>
+      {lightboxUrl && (
+        <div className="fixed inset-0 z-[70] flex items-center justify-center bg-black/70" onClick={() => setLightboxUrl(null)}>
+          <button onClick={() => setLightboxUrl(null)} className="absolute top-4 right-4 w-10 h-10 rounded-full bg-black/50 text-white flex items-center justify-center text-xl safe-top">✕</button>
+          <img src={lightboxUrl} alt="Preview" className="max-w-[90vw] max-h-[85vh] object-contain rounded-lg" />
         </div>
-      </details>
+      )}
+      </>
     );
   }
 
   // Active editing state
   if (state !== "active") return null;
 
-  return (
-    <div className="space-y-2">
-      <PreSurveyForm lead={lead} refresh={refresh} packages={packages} onPackageChange={setBookingPkg} />
+  const SUB_STEPS = ["ข้อมูล", "แพ็คเกจ", "นัดสำรวจ", "ชำระเงิน", "ยืนยัน"];
 
-      {/* Survey date picker — first appointment */}
-      <div className="rounded-lg border border-active/15 bg-white/60 p-4 mt-2">
-        <label className="text-xs font-semibold tracking-wider uppercase text-gray-400 block mb-2">
-          Survey Appointment <span className="text-red-500">*</span>
-        </label>
-        <CalendarPicker
-          date={surveyDate}
-          timeSlot={surveyTimeSlot}
-          onDateChange={setSurveyDate}
-          onTimeSlotChange={setSurveyTimeSlot}
-          showSurveySlots
-          required
-        />
-        <div className="text-xs text-gray-500 mt-2">นัดครั้งแรก · เลื่อนนัดทำได้ในขั้น Survey</div>
+  return (
+    <div>
+      {/* Step indicator */}
+      <div className="flex items-center gap-1 mb-3">
+        {SUB_STEPS.map((label, i) => (
+          <button key={i} type="button" onClick={() => setSubStep(i)} className="flex-1 flex flex-col items-center gap-1 cursor-pointer">
+            <div className={`h-1 w-full rounded-full transition-colors ${i <= subStep ? "bg-active" : "bg-gray-200"}`} />
+            <span className={`text-xs font-semibold transition-colors ${i === subStep ? "text-active" : i < subStep ? "text-gray-500" : "text-gray-300"}`}>{label}</span>
+          </button>
+        ))}
       </div>
 
-      {/* ชำระค่าจอง Survey — QR / Payment Link tabs */}
-      <div className="rounded-lg bg-white/60 border border-active/15 p-4 mt-2">
+      {/* Step 1+2: single PreSurveyForm instance, CSS toggle sections */}
+      <div className={subStep <= 1 ? "" : "hidden"}>
+        <PreSurveyForm lead={lead} refresh={refresh} packages={packages} hidePackages={subStep !== 1} onlyPackages={subStep === 1} onPackageChange={setBookingPkg} />
+      </div>
+
+      {/* Step 3: นัดสำรวจ */}
+      {subStep === 2 && (
+        <div className="rounded-lg border border-active/15 bg-white/60 p-4">
+          <label className="text-xs font-semibold tracking-wider uppercase text-gray-400 block mb-2">
+            Survey Appointment <span className="text-red-500">*</span>
+          </label>
+          <CalendarPicker
+            date={surveyDate}
+            timeSlot={surveyTimeSlot}
+            onDateChange={setSurveyDate}
+            onTimeSlotChange={setSurveyTimeSlot}
+            showSurveySlots
+            required
+          />
+          <div className="text-xs text-gray-500 mt-2">นัดครั้งแรก · เลื่อนนัดทำได้ในขั้น Survey</div>
+        </div>
+      )}
+
+      {/* Step 4: ชำระเงิน */}
+      {subStep === 3 && (<>
+      <div className="rounded-lg bg-white/60 border border-active/15 p-4">
         <label className="text-sm font-semibold text-gray-900 block mb-0.5">ชำระค่าจอง Survey</label>
         <div className="text-xs text-gray-500 mb-3">ค่ามัดจำ {formatPrice(DEPOSIT_AMOUNT)} บาท</div>
 
@@ -804,9 +841,10 @@ export default function PreSurveyStep({ lead, state, refresh, packages }: Props)
               </button>
             </div>
           )}
+      </>)}
 
-      {/* Registration info before confirm */}
-      {verifyStatus === "verified" && (
+      {/* Step 5: ยืนยัน */}
+      {subStep === 4 && (
         <div className="rounded-lg border border-active/15 bg-white/60 p-3 space-y-2.5">
           <div className="text-xs font-semibold text-gray-400 uppercase tracking-wider">ข้อมูลจดทะเบียน</div>
           <div>
@@ -832,8 +870,8 @@ export default function PreSurveyStep({ lead, state, refresh, packages }: Props)
         </div>
       )}
 
-      {/* Confirm actions */}
-      {verifyStatus === "verified" && (
+      {/* Confirm action — step 5 */}
+      {subStep === 4 && (
         <button
           onClick={async () => {
             await apiFetch(`/api/leads/${lead.id}`, {
@@ -848,11 +886,41 @@ export default function PreSurveyStep({ lead, state, refresh, packages }: Props)
             });
             confirmWithSlip();
           }}
-          disabled={bookingSaving || !surveyDate || !surveyTimeSlot}
+          disabled={bookingSaving || !surveyDate || !surveyTimeSlot || !uploadedSlipUrl}
           className="w-full h-11 rounded-lg text-sm font-semibold text-white bg-gradient-to-r from-primary to-primary-dark hover:brightness-110 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
         >
-          {bookingSaving ? "กำลังบันทึก…" : !surveyDate ? "เลือกวันนัด" : !surveyTimeSlot ? "เลือกช่วงเวลา" : "ยืนยันและเปิดขั้นสำรวจ"}
+          {bookingSaving ? "กำลังบันทึก…" : !surveyDate ? "เลือกวันนัดก่อน" : !surveyTimeSlot ? "เลือกช่วงเวลา" : !uploadedSlipUrl ? "อัปโหลดสลิปก่อน" : "ยืนยันและเปิดขั้นสำรวจ"}
         </button>
+      )}
+
+      {/* Navigation buttons */}
+      {subStep < 4 && (
+        <div className="flex gap-2 mt-3">
+          {subStep > 0 && (
+            <button type="button" onClick={() => { setSubStep(subStep - 1); setTimeout(() => document.querySelector("[data-step-active]")?.scrollIntoView({ behavior: "smooth", block: "start" }), 100); }} className="flex-1 h-11 rounded-lg text-sm font-semibold border border-gray-200 text-gray-600 hover:bg-gray-50 transition-colors flex items-center justify-center gap-1">
+              <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M15.75 19.5L8.25 12l7.5-7.5" /></svg>
+              ย้อนกลับ
+            </button>
+          )}
+          <button type="button" onClick={() => { setSubStep(subStep + 1); setTimeout(() => document.querySelector("[data-step-active]")?.scrollIntoView({ behavior: "smooth", block: "start" }), 100); }} className="flex-1 h-11 rounded-lg text-sm font-semibold text-white bg-active hover:brightness-110 transition-colors flex items-center justify-center gap-1">
+            ถัดไป
+            <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M8.25 4.5l7.5 7.5-7.5 7.5" /></svg>
+          </button>
+        </div>
+      )}
+      {subStep === 4 && subStep > 0 && (
+        <button type="button" onClick={() => { setSubStep(subStep - 1); setTimeout(() => document.querySelector("[data-step-active]")?.scrollIntoView({ behavior: "smooth", block: "start" }), 100); }} className="w-full h-9 mt-2 rounded-lg text-xs text-gray-500 border border-gray-200 hover:bg-gray-50 transition-colors flex items-center justify-center gap-1">
+          <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M15.75 19.5L8.25 12l7.5-7.5" /></svg>
+          ย้อนกลับ
+        </button>
+      )}
+
+      {/* Image lightbox */}
+      {lightboxUrl && (
+        <div className="fixed inset-0 z-[70] flex items-center justify-center bg-black/70" onClick={() => setLightboxUrl(null)}>
+          <button onClick={() => setLightboxUrl(null)} className="absolute top-4 right-4 w-10 h-10 rounded-full bg-black/50 text-white flex items-center justify-center text-xl safe-top">✕</button>
+          <img src={lightboxUrl} alt="Preview" className="max-w-[90vw] max-h-[85vh] object-contain rounded-lg" />
+        </div>
       )}
 
       {/* LINE send confirm modal */}

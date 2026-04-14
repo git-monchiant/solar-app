@@ -48,6 +48,8 @@ export default function LeadDetailPage({ params }: { params: Promise<{ id: strin
   const [confirmLineUser, setConfirmLineUser] = useState<{ id: number; display_name: string; picture_url: string | null } | null>(null);
   const [lineSearch, setLineSearch] = useState("");
   const [showProfileModal, setShowProfileModal] = useState(false);
+  const [preSurveyExpanded, setPreSurveyExpanded] = useState(false);
+  const [surveyExpanded, setSurveyExpanded] = useState(false);
 
   const fetchLead = useCallback(() => {
     apiFetch(`/api/leads/${id}`).then(setLead).catch(console.error).finally(() => setLoadingLead(false));
@@ -113,7 +115,7 @@ export default function LeadDetailPage({ params }: { params: Promise<{ id: strin
     4: "SOLAR",
   };
 
-  const CardWrapper = ({ stepIdx, title, icon, children }: { stepIdx: number; title: string; icon: string; children: React.ReactNode }) => {
+  const CardWrapper = ({ stepIdx, title, icon, children, onHeaderClick }: { stepIdx: number; title: string; icon: string; children: React.ReactNode; onHeaderClick?: () => void }) => {
     const state = cardState(stepIdx);
     const stepNum = String(stepIdx + 1).padStart(2, "0");
     const team = STEP_TEAMS[stepIdx];
@@ -134,17 +136,11 @@ export default function LeadDetailPage({ params }: { params: Promise<{ id: strin
 
     return (
       <div data-step-active={state === "active" ? "" : undefined} className={`group relative rounded-2xl overflow-hidden transition-all ${container}`}>
-        <div className="flex items-center gap-3 px-5 py-4">
+        <div className={`flex items-center gap-3 px-5 py-4 ${onHeaderClick ? "cursor-pointer" : ""}`} onClick={onHeaderClick}>
           <div className={`w-10 h-10 rounded-xl flex items-center justify-center shrink-0 ${iconBox}`}>
-            {state === "done" ? (
-              <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={3}>
-                <path strokeLinecap="round" strokeLinejoin="round" d="M4.5 12.75l6 6 9-13.5" />
-              </svg>
-            ) : (
-              <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.8}>
-                <path strokeLinecap="round" strokeLinejoin="round" d={icon} />
-              </svg>
-            )}
+            <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.8}>
+              <path strokeLinecap="round" strokeLinejoin="round" d={icon} />
+            </svg>
           </div>
 
           <div className="flex-1 min-w-0">
@@ -286,14 +282,15 @@ export default function LeadDetailPage({ params }: { params: Promise<{ id: strin
             {/* Latest Contact — ข้อมูลการติดต่อล่าสุด */}
             {(() => {
               // DB-first: every contact event lives in lead_activities (including register/walk-in)
-              const contactTypes = ["call", "visit", "follow_up", "note", "lead_created"];
-              const latest = activities.find(a => contactTypes.includes(a.activity_type));
+              const latest = activities[0];
               const typeMap: Record<string, { label: string; color: string }> = {
-                note: { label: "โน้ต", color: "bg-gray-500" },
-                call: { label: "โทร", color: "bg-blue-500" },
-                visit: { label: "เยี่ยม", color: "bg-purple-500" },
-                follow_up: { label: "ติดตาม", color: "bg-amber-500" },
-                lead_created: { label: "ลงทะเบียน", color: "bg-primary" },
+                note: { label: "โน้ต", color: "bg-emerald-500" },
+                call: { label: "โทร", color: "bg-emerald-500" },
+                visit: { label: "เยี่ยม", color: "bg-emerald-500" },
+                follow_up: { label: "ติดตาม", color: "bg-emerald-500" },
+                lead_created: { label: "ลงทะเบียน", color: "bg-emerald-500" },
+                status_change: { label: "สถานะ", color: "bg-emerald-500" },
+                booking_created: { label: "จอง", color: "bg-emerald-500" },
               };
 
               const headerLabel = latest
@@ -343,8 +340,9 @@ export default function LeadDetailPage({ params }: { params: Promise<{ id: strin
               stepIdx={0}
               title="Pre-Survey"
               icon="M9 12.75L11.25 15 15 9.75m-3-7.036A11.959 11.959 0 013.598 6 11.99 11.99 0 003 9.749c0 5.592 3.824 10.29 9 11.623 5.176-1.333 9-6.03 9-11.622 0-1.31-.21-2.571-.598-3.751h-.152c-3.196 0-6.1-1.248-8.25-3.285z"
+              onHeaderClick={cardState(0) === "done" ? () => setPreSurveyExpanded(!preSurveyExpanded) : undefined}
             >
-              <PreSurveyStep lead={lead} state={cardState(0)} refresh={refresh} packages={packages} />
+              <PreSurveyStep lead={lead} state={cardState(0)} refresh={refresh} packages={packages} expanded={preSurveyExpanded} onToggle={() => setPreSurveyExpanded(!preSurveyExpanded)} />
             </CardWrapper>
 
             {/* Step 02: Survey */}
@@ -352,8 +350,9 @@ export default function LeadDetailPage({ params }: { params: Promise<{ id: strin
               stepIdx={1}
               title="Survey"
               icon="M15 10.5a3 3 0 11-6 0 3 3 0 016 0zM19.5 10.5c0 7.142-7.5 11.25-7.5 11.25S4.5 17.642 4.5 10.5a7.5 7.5 0 1115 0z"
+              onHeaderClick={cardState(1) === "done" ? () => setSurveyExpanded(!surveyExpanded) : undefined}
             >
-              <SurveyStep lead={lead} state={cardState(1)} refresh={refresh} onAddActivity={t => setModalType(t as ActivityType)} packages={packages} />
+              <SurveyStep lead={lead} state={cardState(1)} refresh={refresh} onAddActivity={t => setModalType(t as ActivityType)} packages={packages} expanded={surveyExpanded} onToggle={() => setSurveyExpanded(!surveyExpanded)} />
             </CardWrapper>
 
             {/* Step 03: Quotation */}

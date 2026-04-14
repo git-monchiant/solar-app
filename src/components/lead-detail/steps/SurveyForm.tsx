@@ -111,9 +111,11 @@ function stringifyAcUnits(map: Record<number, number>): string | null {
 interface Props {
   lead: Lead;
   refresh: () => void;
+  section?: "house" | "electrical" | "all";
+  onPhaseChange?: (phase: string) => void;
 }
 
-export default function SurveyForm({ lead, refresh }: Props) {
+export default function SurveyForm({ lead, refresh, section = "all", onPhaseChange }: Props) {
   // Must-have on-site
   const [roofMaterial, setRoofMaterial] = useState<string>(lead.survey_roof_material ?? "");
   const [roofOrientations, setRoofOrientations] = useState<string[]>(
@@ -192,8 +194,7 @@ export default function SurveyForm({ lead, refresh }: Props) {
   return (
     <div className="space-y-2">
       {/* Residence — type + floors */}
-      <div className={card}>
-        <div className="text-sm font-bold text-gray-800 mb-3">บ้าน</div>
+      {(section === "all" || section === "house") && <><div className={card}>
         <div className="space-y-4">
           <div>
             <div className={subLabel}>ประเภทบ้านพักอาศัย</div>
@@ -225,11 +226,10 @@ export default function SurveyForm({ lead, refresh }: Props) {
             </div>
           </div>
         </div>
-      </div>
+      </div></>}
 
       {/* การใช้ไฟฟ้า — bill + peak time */}
-      <div className={card}>
-        <div className="text-sm font-bold text-gray-800 mb-3">การใช้ไฟฟ้า</div>
+      {(section === "all" || section === "house") && <><div className={card}>
         <div className="space-y-4">
           <div>
             <div className={subLabel}>ค่าไฟต่อเดือน</div>
@@ -256,11 +256,10 @@ export default function SurveyForm({ lead, refresh }: Props) {
             </div>
           </div>
         </div>
-      </div>
+      </div></>}
 
       {/* Roof — must-have on-site fields in one card */}
-      <div className={card}>
-        <div className="text-sm font-bold text-gray-800 mb-3">หลังคา (วัดหน้างาน)</div>
+      {(section === "all" || section === "house") && <><div className={card}>
         <div className="space-y-4">
           <div>
             <div className={subLabel}>วัสดุหลังคา</div>
@@ -332,11 +331,10 @@ export default function SurveyForm({ lead, refresh }: Props) {
             </div>
           </div>
         </div>
-      </div>
+      </div></>}
 
       {/* Electrical — phase + grid + utility + CA + meter + DB distance */}
-      <div className={card}>
-        <div className="text-sm font-bold text-gray-800 mb-3">ระบบไฟฟ้า</div>
+      {(section === "all" || section === "electrical") && <><div className={card}>
         <div className="space-y-4">
           <div>
             <div className={subLabel}>ระบบไฟ</div>
@@ -347,6 +345,7 @@ export default function SurveyForm({ lead, refresh }: Props) {
               ].map(p => (
                 <button key={p.value} type="button" onClick={() => {
                   setElectricalPhase(p.value);
+                  onPhaseChange?.(p.value);
                   const valid = METER_SIZES[p.value]?.some(m => m.value === meterSize);
                   if (!valid) setMeterSize("");
                 }} className={chipBtn(electricalPhase === p.value)}>
@@ -416,11 +415,10 @@ export default function SurveyForm({ lead, refresh }: Props) {
             </div>
           </div>
         </div>
-      </div>
+      </div></>}
 
       {/* ข้อมูลเพิ่มเติม — AC + Other appliances */}
-      <div className={card}>
-        <div className="text-sm font-bold text-gray-800 mb-3">ข้อมูลเพิ่มเติม</div>
+      {(section === "all" || section === "electrical") && <><div className={card}>
         <div className="space-y-4">
           <div>
             <div className="flex items-center justify-between mb-0.5">
@@ -462,7 +460,7 @@ export default function SurveyForm({ lead, refresh }: Props) {
             </div>
           </div>
         </div>
-      </div>
+      </div></>}
     </div>
   );
 }

@@ -91,7 +91,7 @@ export async function POST(request: NextRequest) {
       .input("lead_id", sql.Int, leadId)
       .input("source", sql.NVarChar(30), body.source || "walk-in")
       .input("note", sql.NVarChar(sql.MAX), body.note || body.requirement || null)
-      .query(`INSERT INTO lead_activities (lead_id, activity_type, title, note) VALUES (@lead_id, 'lead_created', 'Lead created (' + @source + ')', @note)`);
+      .query(`INSERT INTO lead_activities (lead_id, activity_type, title, note, created_by) VALUES (@lead_id, 'lead_created', 'Lead created (' + @source + ')', @note, 1)`);
 
     // Backfill project district/province if missing (fire-and-forget, don't block response)
     if (body.project_id) {

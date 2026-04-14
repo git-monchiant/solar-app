@@ -50,9 +50,9 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
       .input("note", sql.NVarChar(sql.MAX), body.note || null)
       .input("follow_up_date", sql.DateTime2, body.follow_up_date ? new Date(body.follow_up_date) : null)
       .query(`
-        INSERT INTO lead_activities (lead_id, activity_type, title, note, follow_up_date)
+        INSERT INTO lead_activities (lead_id, activity_type, title, note, follow_up_date, created_by)
         OUTPUT INSERTED.*
-        VALUES (@lead_id, @activity_type, @title, @note, @follow_up_date)
+        VALUES (@lead_id, @activity_type, @title, @note, @follow_up_date, 1)
       `);
 
     // Update lead's next_follow_up if follow_up type
