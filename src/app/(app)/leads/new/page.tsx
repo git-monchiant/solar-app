@@ -39,9 +39,9 @@ export default function NewLeadPage() {
   };
 
   return (
-    <div className="max-w-2xl mx-auto pb-8">
+    <div className="mx-auto pb-8 max-w-2xl lg:max-w-full">
       <Header title="New Lead" backHref="/pipeline" />
-      <div className="p-3 md:p-6">
+      <div className="p-3 md:p-6 lg:px-10 min-h-[calc(100dvh-64px)]">
         <CustomerWizard
           values={form}
           onChange={patch => setForm(prev => ({ ...prev, ...(patch as Record<string, unknown>) } as typeof prev))}

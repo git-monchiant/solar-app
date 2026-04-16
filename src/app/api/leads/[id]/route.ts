@@ -17,12 +17,14 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ id:
       .query(`
         SELECT l.*, p.name as project_name, pk.name as package_name, pk.price as package_price,
                u.full_name as assigned_name,
-               b.id as booking_id, b.booking_number, b.total_price as booking_price, b.status as booking_status, b.payment_confirmed, b.confirmed, b.package_id as booked_package_id, b.created_at as booking_date
+               b.id as booking_id, b.booking_number, b.total_price as booking_price, b.status as booking_status, b.payment_confirmed, b.confirmed, b.package_id as booked_package_id, b.created_at as booking_date,
+               lu.display_name as line_display_name, lu.picture_url as line_picture_url
         FROM leads l
         LEFT JOIN projects p ON l.project_id = p.id
         LEFT JOIN packages pk ON l.interested_package_id = pk.id
         LEFT JOIN users u ON l.assigned_user_id = u.id
         LEFT JOIN bookings b ON b.lead_id = l.id
+        LEFT JOIN line_users lu ON lu.line_user_id = l.line_id
         WHERE l.id = @id
       `);
 

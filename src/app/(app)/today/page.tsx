@@ -5,6 +5,7 @@ import { useEffect, useState } from "react";
 import Link from "next/link";
 import LeadCard, { LeadData } from "@/components/LeadCard";
 import ListPageHeader from "@/components/ListPageHeader";
+import NewLeadModal from "@/components/NewLeadModal";
 import { useActiveRoles, hasRole } from "@/lib/roles";
 
 interface TodayData {
@@ -30,6 +31,7 @@ export default function TodayPage() {
   const [scheduledSurveys, setScheduledSurveys] = useState<{ id: number; full_name: string; event_date: string; time_slot: string | null; event_type: string; status: string; zone: string | null }[]>([]);
   const [zones, setZones] = useState<{ id: number; name: string }[]>([]);
   const [selectedZone, setSelectedZone] = useState<string>("all");
+  const [showNewLead, setShowNewLead] = useState(false);
   const { activeRoles } = useActiveRoles();
 
   useEffect(() => {
@@ -368,14 +370,19 @@ export default function TodayPage() {
       </div>
 
       {/* FAB — primary teal */}
-      <Link
-        href="/leads/new"
+      <button
+        type="button"
+        onClick={() => setShowNewLead(true)}
         className="fixed bottom-24 right-5 md:bottom-6 md:right-6 w-14 h-14 bg-gradient-to-b from-primary via-primary to-primary rounded-full shadow-lg shadow-primary/30 flex items-center justify-center hover:bg-primary-dark transition-all z-20"
       >
         <svg className="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
           <path strokeLinecap="round" strokeLinejoin="round" d="M12 4.5v15m7.5-7.5h-15" />
         </svg>
-      </Link>
+      </button>
+
+      {showNewLead && (
+        <NewLeadModal onClose={() => setShowNewLead(false)} />
+      )}
     </div>
   );
 }

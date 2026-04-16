@@ -3,6 +3,7 @@
 import { apiFetch } from "@/lib/api";
 import { useEffect, useState } from "react";
 import Header from "@/components/Header";
+import NewLeadModal from "@/components/NewLeadModal";
 
 interface LineUser {
   id: number;
@@ -22,10 +23,13 @@ const formatDate = (d: string) =>
 export default function LineUsersPage() {
   const [users, setUsers] = useState<LineUser[]>([]);
   const [loading, setLoading] = useState(true);
+  const [newLeadForLine, setNewLeadForLine] = useState<LineUser | null>(null);
 
-  useEffect(() => {
+  const fetchUsers = () => {
     apiFetch("/api/line-users").then(setUsers).catch(console.error).finally(() => setLoading(false));
-  }, []);
+  };
+
+  useEffect(() => { fetchUsers(); }, []);
 
   return (
     <div>
@@ -72,7 +76,10 @@ export default function LineUsersPage() {
                           {u.lead_name} {u.lead_phone && <span className="text-gray-400 font-mono text-xs ml-1">{u.lead_phone}</span>}
                         </a>
                       ) : (
-                        <span className="text-gray-400">ยังไม่ได้ map</span>
+                        <button type="button" onClick={() => setNewLeadForLine(u)} className="inline-flex items-center gap-1 text-active font-semibold hover:underline cursor-pointer">
+                          <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}><path strokeLinecap="round" strokeLinejoin="round" d="M12 4.5v15m7.5-7.5h-15" /></svg>
+                          สร้าง Lead
+                        </button>
                       )}
                     </td>
                     <td className="px-4 py-3 text-xs text-gray-500">
@@ -96,6 +103,16 @@ export default function LineUsersPage() {
           </div>
         )}
       </div>
+
+      {newLeadForLine && (
+        <NewLeadModal
+          onClose={() => setNewLeadForLine(null)}
+          onCreated={fetchUsers}
+          linkLineUserId={newLeadForLine.id}
+          linkLineDisplayName={newLeadForLine.display_name || undefined}
+          linkLinePictureUrl={newLeadForLine.picture_url}
+        />
+      )}
     </div>
   );
 }

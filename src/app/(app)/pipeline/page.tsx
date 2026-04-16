@@ -1,9 +1,10 @@
 "use client";
 
 import { apiFetch } from "@/lib/api";
-import { useEffect, useState } from "react";
+import { useEffect, useState, useCallback } from "react";
 import ListPageHeader from "@/components/ListPageHeader";
 import LeadCard, { type LeadData } from "@/components/LeadCard";
+import NewLeadModal from "@/components/NewLeadModal";
 import { useActiveRoles, hasRole } from "@/lib/roles";
 
 interface Lead {
@@ -50,10 +51,13 @@ export default function PipelinePage() {
     if (saved && TAB_STATUSES[saved] !== undefined) setTab(saved);
   }, []);
   const [search, setSearch] = useState("");
+  const [showNewLead, setShowNewLead] = useState(false);
 
-  useEffect(() => {
+  const fetchLeads = useCallback(() => {
     apiFetch("/api/leads").then(setLeads).catch(console.error).finally(() => setLoading(false));
   }, []);
+
+  useEffect(() => { fetchLeads(); }, [fetchLeads]);
 
   const filtered = leads
     .filter(l => {
@@ -93,8 +97,8 @@ export default function PipelinePage() {
         tabs={TABS}
         activeTab={tab}
         onTabChange={(k) => { setTab(k as TabKey); localStorage.setItem("pipelineTab", k); }}
-        actionHref="/leads/new"
         actionLabel="+ New Lead"
+        onAction={() => setShowNewLead(true)}
       />
 
       <div className="p-3 md:p-4">
@@ -112,6 +116,10 @@ export default function PipelinePage() {
           </div>
         )}
       </div>
+
+      {showNewLead && (
+        <NewLeadModal onClose={() => setShowNewLead(false)} onCreated={fetchLeads} />
+      )}
     </div>
   );
 }

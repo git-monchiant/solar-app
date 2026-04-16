@@ -21,6 +21,7 @@ interface Props {
   tabsRight?: React.ReactNode;
   actionHref?: string;
   actionLabel?: string;
+  onAction?: () => void;
 }
 
 export default function ListPageHeader({
@@ -33,6 +34,8 @@ export default function ListPageHeader({
   activeTab,
   onTabChange,
   tabsRight,
+  actionLabel,
+  onAction,
 }: Props) {
   const tabsRef = useRef<HTMLDivElement>(null);
   const activeRef = useRef<HTMLButtonElement>(null);
@@ -49,9 +52,9 @@ export default function ListPageHeader({
 
   return (
     <Header title={title} subtitle={subtitle}>
-      {/* Search */}
-      <div className="px-5 pb-3">
-        <div className="relative">
+      {/* Search + Action */}
+      <div className="px-5 pb-3 flex gap-2">
+        <div className="relative flex-1">
           <svg className="absolute left-3.5 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
             <path strokeLinecap="round" strokeLinejoin="round" d="M21 21l-5.197-5.197m0 0A7.5 7.5 0 105.196 5.196a7.5 7.5 0 0010.607 10.607z" />
           </svg>
@@ -63,6 +66,15 @@ export default function ListPageHeader({
             className="w-full h-11 pl-11 pr-4 rounded-full border border-white/30 bg-white/30 backdrop-blur-sm text-sm text-gray-800 placeholder-gray-500 focus:outline-none focus:bg-white/60 focus:border-white/60 transition-all"
           />
         </div>
+        {actionLabel && onAction && (
+          <button
+            type="button"
+            onClick={onAction}
+            className="shrink-0 h-11 px-4 rounded-full bg-white/30 backdrop-blur-sm border border-white/30 text-sm font-semibold text-gray-800 hover:bg-white/60 transition-all"
+          >
+            {actionLabel}
+          </button>
+        )}
       </div>
 
       {/* Tabs */}
