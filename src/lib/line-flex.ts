@@ -25,7 +25,7 @@ export function buildPaymentFlex({ origin, title, amount, name, actionLabel, act
           {
             type: "box", layout: "horizontal", alignItems: "center", spacing: "sm",
             contents: [
-              { type: "image", url: `${origin}/logo-sena.png`, size: "md", aspectRatio: "3:1", aspectMode: "fit", flex: 0 },
+              { type: "image", url: `${origin}/logos/logo-sena.png`, size: "md", aspectRatio: "3:1", aspectMode: "fit", flex: 0 },
               { type: "text", text: `  ${title}`, size: "sm", color: "#1ed0c7", weight: "bold" },
             ],
           },

@@ -17,7 +17,7 @@ interface Props {
   leadId: number;
   leadName: string;
   onClose: () => void;
-  onLinked: () => void;
+  onLinked: (linked: { display_name: string; picture_url: string | null }) => void;
 }
 
 export default function LinePickerModal({ leadId, leadName, onClose, onLinked }: Props) {
@@ -42,7 +42,7 @@ export default function LinePickerModal({ leadId, leadName, onClose, onLinked }:
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ lead_id: leadId }),
       });
-      onLinked();
+      onLinked({ display_name: user.display_name || "", picture_url: user.picture_url });
       onClose();
     } finally {
       setLinking(false);

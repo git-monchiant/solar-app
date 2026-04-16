@@ -454,7 +454,7 @@ export default function LeadDetailPage({ params }: { params: Promise<{ id: strin
           leadId={lead.id}
           leadName={lead.full_name}
           onClose={() => setShowLineModal(false)}
-          onLinked={refresh}
+          onLinked={() => refresh()}
         />
       )}
 

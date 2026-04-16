@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import { apiFetch } from "@/lib/api";
 import CustomerInfoForm from "@/components/CustomerInfoForm";
 import ErrorPopup from "@/components/ErrorPopup";
+import LineIcon from "@/components/icons/LineIcon";
 
 export interface CustomerWizardValues {
   full_name?: string;
@@ -92,7 +93,6 @@ const fieldTextarea = "w-full px-3 py-2.5 rounded-lg border border-gray-200 text
 
 const formatPrice = (n: number) => new Intl.NumberFormat("th-TH").format(n);
 
-const LINE_ICON = <svg className="w-4 h-4" viewBox="0 0 24 24" fill="currentColor"><path d="M19.365 9.863c.349 0 .63.285.63.631 0 .345-.281.63-.63.63H17.61v1.125h1.755c.349 0 .63.283.63.63 0 .344-.281.629-.63.629h-2.386c-.345 0-.627-.285-.627-.629V8.108c0-.345.282-.63.627-.63h2.386c.349 0 .63.285.63.63 0 .349-.281.63-.63.63H17.61v1.125h1.755zm-3.855 3.016c0 .27-.174.51-.432.596-.064.021-.133.031-.199.031-.211 0-.391-.09-.51-.25l-2.443-3.317v2.94c0 .344-.279.629-.631.629-.346 0-.626-.285-.626-.629V8.108c0-.271.173-.508.43-.595.06-.023.136-.033.194-.033.195 0 .375.104.495.254l2.462 3.33V8.108c0-.345.282-.63.63-.63.345 0 .63.285.63.63v4.771zm-5.741 0c0 .344-.282.629-.631.629-.345 0-.627-.285-.627-.629V8.108c0-.345.282-.63.627-.63.349 0 .631.285.631.63v4.771zm-2.466.629H4.917c-.345 0-.63-.285-.63-.629V8.108c0-.345.285-.63.63-.63.348 0 .63.285.63.63v4.141h1.756c.348 0 .629.283.629.63 0 .344-.281.629-.629.629M24 10.314C24 4.943 18.615.572 12 .572S0 4.943 0 10.314c0 4.811 4.27 8.842 10.035 9.608.391.082.923.258 1.058.59.12.301.079.766.038 1.08l-.164 1.02c-.045.301-.24 1.186 1.049.645 1.291-.539 6.916-4.078 9.436-6.975C23.176 14.393 24 12.458 24 10.314" /></svg>;
 
 export default function CustomerWizard({ values, onChange, onSubmit, submitLabel = "บันทึก", saving, lineProfile, linePending, onLinkLine }: Props) {
   const [subStep, setSubStep] = useState(0);
@@ -150,7 +150,7 @@ export default function CustomerWizard({ values, onChange, onSubmit, submitLabel
                   {lineProfile.picture_url ? (
                     <img src={lineProfile.picture_url} alt="" className="w-10 h-10 rounded-full object-cover shrink-0" />
                   ) : (
-                    <div className="w-10 h-10 rounded-full bg-[#06C755] flex items-center justify-center shrink-0 text-white">{LINE_ICON}</div>
+                    <div className="w-10 h-10 rounded-full bg-[#06C755] flex items-center justify-center shrink-0 text-white"><LineIcon /></div>
                   )}
                   <div className="flex-1 min-w-0">
                     <div className="text-sm font-bold text-gray-900">{lineProfile.display_name}</div>
@@ -162,7 +162,7 @@ export default function CustomerWizard({ values, onChange, onSubmit, submitLabel
                 <div className={fieldCard}>
                   <label className={fieldLabel}>LINE Profile</label>
                   <button type="button" onClick={onLinkLine} className="flex items-center gap-3 w-full text-left hover:opacity-70 transition-opacity cursor-pointer">
-                    <div className="w-10 h-10 rounded-full bg-gray-100 flex items-center justify-center shrink-0 text-gray-400">{LINE_ICON}</div>
+                    <div className="w-10 h-10 rounded-full bg-gray-100 flex items-center justify-center shrink-0 text-gray-400"><LineIcon /></div>
                     <div className="flex-1 min-w-0">
                       <div className="text-sm font-medium text-gray-500">ยังไม่ได้เชื่อม LINE</div>
                       <div className="text-xs text-gray-400">กดเพื่อเลือก LINE user</div>

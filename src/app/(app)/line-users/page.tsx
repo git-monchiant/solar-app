@@ -108,9 +108,11 @@ export default function LineUsersPage() {
         <NewLeadModal
           onClose={() => setNewLeadForLine(null)}
           onCreated={fetchUsers}
-          linkLineUserId={newLeadForLine.id}
-          linkLineDisplayName={newLeadForLine.display_name || undefined}
-          linkLinePictureUrl={newLeadForLine.picture_url}
+          linkLine={{
+            userId: newLeadForLine.id,
+            displayName: newLeadForLine.display_name || "",
+            pictureUrl: newLeadForLine.picture_url,
+          }}
         />
       )}
     </div>

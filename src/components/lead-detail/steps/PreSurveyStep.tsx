@@ -199,7 +199,20 @@ export default function PreSurveyStep({ lead, state, refresh, packages, expanded
   const [bookingPkg, setBookingPkg] = useState(lead.interested_package_id ? String(lead.interested_package_id) : "");
   const [bookingPayment, setBookingPayment] = useState(lead.payment_type ?? "transfer");
   const [paymentTab, setPaymentTab] = useState<"qr" | "link">("qr");
+  const [qrEnabled, setQrEnabled] = useState(true);
+  const [linkEnabled, setLinkEnabled] = useState(true);
   const [linkCopied, setLinkCopied] = useState(false);
+
+  useEffect(() => {
+    if (lead.slip_url) return;
+    apiFetch("/api/settings").then((s: Record<string, string>) => {
+      const qr = s.payment_qr_enabled !== "false";
+      const link = s.payment_link_enabled !== "false";
+      setQrEnabled(qr);
+      setLinkEnabled(link);
+      if (!qr && link) setPaymentTab("link");
+    }).catch(console.error);
+  }, [lead.slip_url]);
   const [bookingSaving, setBookingSaving] = useState(false);
   const [bookingSaved, setBookingSaved] = useState(false);
   const [confirmingSaved, setConfirmingSaved] = useState(false);
@@ -759,39 +772,41 @@ export default function PreSurveyStep({ lead, state, refresh, packages, expanded
         <label className="text-sm font-semibold text-gray-900 block mb-0.5">ชำระค่าจอง Survey</label>
         <div className="text-xs text-gray-500 mb-3">ค่ามัดจำ {formatPrice(DEPOSIT_AMOUNT)} บาท</div>
 
-        {/* Tabs — underline style */}
-        <div className="flex border-b border-gray-200 mb-4 -mx-4 px-4">
-          <button
-            type="button"
-            onClick={() => setPaymentTab("qr")}
-            className={`flex-1 pb-2.5 text-sm font-semibold border-b-2 -mb-px transition-colors cursor-pointer ${
-              paymentTab === "qr"
-                ? "text-active border-active"
-                : "text-gray-400 border-transparent hover:text-gray-600"
-            }`}
-          >
-            Thai QR
-          </button>
-          <button
-            type="button"
-            onClick={() => setPaymentTab("link")}
-            className={`flex-1 pb-2.5 text-sm font-semibold border-b-2 -mb-px transition-colors cursor-pointer ${
-              paymentTab === "link"
-                ? "text-active border-active"
-                : "text-gray-400 border-transparent hover:text-gray-600"
-            }`}
-          >
-            Payment Link
-          </button>
-        </div>
+        {/* Tabs — underline style (hide if only one enabled) */}
+        {qrEnabled && linkEnabled && (
+          <div className="flex border-b border-gray-200 mb-4 -mx-4 px-4">
+            <button
+              type="button"
+              onClick={() => setPaymentTab("qr")}
+              className={`flex-1 pb-2.5 text-sm font-semibold border-b-2 -mb-px transition-colors cursor-pointer ${
+                paymentTab === "qr"
+                  ? "text-active border-active"
+                  : "text-gray-400 border-transparent hover:text-gray-600"
+              }`}
+            >
+              Thai QR
+            </button>
+            <button
+              type="button"
+              onClick={() => setPaymentTab("link")}
+              className={`flex-1 pb-2.5 text-sm font-semibold border-b-2 -mb-px transition-colors cursor-pointer ${
+                paymentTab === "link"
+                  ? "text-active border-active"
+                  : "text-gray-400 border-transparent hover:text-gray-600"
+              }`}
+            >
+              Payment Link
+            </button>
+          </div>
+        )}
 
         {/* Tab content: QR */}
-        {paymentTab === "qr" && !qrDataUrl && (
+        {qrEnabled && paymentTab === "qr" && !qrDataUrl && (
           <div className="flex items-center justify-center py-10">
             <div className="w-8 h-8 border-3 border-gray-200 border-t-active rounded-full animate-spin" />
           </div>
         )}
-        {paymentTab === "qr" && (
+        {qrEnabled && paymentTab === "qr" && (
           <div className="space-y-3">
             <div className="max-w-[280px] mx-auto">
               <img src={`/api/qr?amount=${DEPOSIT_AMOUNT}&format=full&name=${encodeURIComponent(lead.full_name)}&_=${Date.now()}`} alt="Thai QR Payment" className="w-full rounded-xl border border-gray-200" />
@@ -810,7 +825,7 @@ export default function PreSurveyStep({ lead, state, refresh, packages, expanded
         )}
 
         {/* Tab content: Payment Link */}
-        {paymentTab === "link" && (
+        {linkEnabled && paymentTab === "link" && (
           <div className="space-y-3">
             <div className="text-xs text-gray-500">
               ส่งลิ้งค์นี้ให้ลูกค้าเปิดบนมือถือ เพื่อสแกน QR และชำระเงินได้ด้วยตนเอง

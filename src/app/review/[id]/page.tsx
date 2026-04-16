@@ -60,7 +60,7 @@ export default function ReviewPage() {
             ))}
           </div>
           <div className="mt-6">
-            <img src="/logo-sena.png" alt="Sena Solar" className="h-8 mx-auto opacity-50" />
+            <img src="/logos/logo-sena.png" alt="Sena Solar" className="h-8 mx-auto opacity-50" />
           </div>
         </div>
       </div>
@@ -71,7 +71,7 @@ export default function ReviewPage() {
     <div className="min-h-screen bg-gray-50 flex items-center justify-center p-4">
       <div className="bg-white rounded-2xl shadow-lg max-w-sm w-full p-8">
         <div className="text-center mb-6">
-          <img src="/logo-sena.png" alt="Sena Solar" className="h-10 mx-auto mb-4" />
+          <img src="/logos/logo-sena.png" alt="Sena Solar" className="h-10 mx-auto mb-4" />
           <div className="text-lg font-bold text-gray-900">ประเมินการติดตั้ง</div>
           <div className="text-sm text-gray-500 mt-1">กรุณาให้คะแนนการติดตั้ง Solar Rooftop</div>
         </div>

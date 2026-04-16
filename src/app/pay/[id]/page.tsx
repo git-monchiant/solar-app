@@ -14,22 +14,31 @@ interface Lead {
   package_name: string;
   confirmed: boolean;
   payment_confirmed: boolean;
+  slip_url: string | null;
 }
 
 export default function PublicPayPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = use(params);
   const [lead, setLead] = useState<Lead | null>(null);
   const [qrDataUrl, setQrDataUrl] = useState<string | null>(null);
+  const [qrEnabled, setQrEnabled] = useState(true);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
     Promise.all([
       fetch(`/api/leads/${id}`, { headers: { "ngrok-skip-browser-warning": "true" } }).then(r => r.json()),
       fetch(`/api/qr?amount=${DEPOSIT_AMOUNT}`, { headers: { "ngrok-skip-browser-warning": "true" } }).then(r => r.json()),
+      fetch(`/api/settings`, { headers: { "ngrok-skip-browser-warning": "true" } }).then(r => r.json()),
     ])
-      .then(([leadData, qrData]) => {
+      .then(([leadData, qrData, settings]) => {
         setLead(leadData);
         setQrDataUrl(qrData.qrDataUrl);
+        // Lock payment methods once customer starts/completes payment — settings only affect new transactions
+        if (leadData.payment_confirmed || leadData.slip_url) {
+          setQrEnabled(true);
+        } else {
+          setQrEnabled(settings.payment_qr_enabled !== "false");
+        }
       })
       .catch(console.error)
       .finally(() => setLoading(false));
@@ -95,7 +104,7 @@ export default function PublicPayPage({ params }: { params: Promise<{ id: string
             </div>
 
             {/* QR */}
-            {qrDataUrl && (
+            {qrEnabled && qrDataUrl && (
               <div className="py-5">
                 <div className="relative max-w-[260px] mx-auto">
                   <img src="/templates/thaiqr.png" alt="Thai QR Payment" className="w-full" />

@@ -21,7 +21,7 @@ export default function LoginPage() {
       {/* Left/Top: Brand section */}
       <div className="flex-1 bg-gradient-to-br from-primary via-primary-dark to-primary flex flex-col items-center justify-center px-6 py-12 md:py-0">
         <div className="bg-white/10 backdrop-blur-sm rounded-3xl p-6 mb-6">
-          <Image src="/logo-sena-white.png" alt="Sena Solar Energy" width={120} height={120} className="opacity-90" />
+          <Image src="/logos/logo-sena-white.png" alt="Sena Solar Energy" width={120} height={120} className="opacity-90" />
         </div>
         <h1 className="text-2xl font-bold text-white">Solar Sales</h1>
         <p className="text-white/60 text-sm mt-1">SENA SOLAR ENERGY</p>

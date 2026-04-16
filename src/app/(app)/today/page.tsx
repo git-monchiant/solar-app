@@ -86,10 +86,10 @@ export default function TodayPage() {
   const isSales = hasRole(activeRoles, "sales");
   const isSolar = hasRole(activeRoles, "solar");
   const allTabs = [
-    isSales && { key: "sales", label: "Sales", count: salesCount },
-    isSales && { key: "sales_solar", label: "Sales-Solar", count: salesSolarCount },
-    isSolar && { key: "solar", label: "Solar", count: solarCount },
-    { key: "calendar", label: "Calendar" },
+    isSales && { key: "sales", label: "ติดตามลูกค้า", count: salesCount },
+    isSales && { key: "sales_solar", label: "งานที่ต้องติดตาม", count: salesSolarCount },
+    isSolar && { key: "solar", label: "ทีมโซลาร์", count: solarCount },
+    { key: "calendar", label: "ปฏิทิน" },
   ].filter(Boolean) as { key: string; label: string; count?: number }[];
 
   return (

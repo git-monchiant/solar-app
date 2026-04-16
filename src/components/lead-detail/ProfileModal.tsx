@@ -122,13 +122,8 @@ export default function ProfileModal({ leadId, onClose, onSaved }: Props) {
           leadId={leadId}
           leadName={form.full_name}
           onClose={() => setShowLinePicker(false)}
-          onLinked={() => {
-            // Re-fetch lead to get updated line profile
-            apiFetch(`/api/leads/${leadId}`).then((lead) => {
-              if (lead.line_display_name) {
-                setLineProfile({ display_name: lead.line_display_name, picture_url: lead.line_picture_url || null });
-              }
-            }).catch(console.error);
+          onLinked={(linked) => {
+            setLineProfile(linked);
             onSaved();
           }}
         />

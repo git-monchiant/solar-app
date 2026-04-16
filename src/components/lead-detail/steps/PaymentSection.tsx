@@ -26,8 +26,21 @@ interface Props {
 }
 
 export default function PaymentSection({ amount, leadId, leadName, lineId, slipUrl, slipField, onConfirm, confirmLabel, confirmDisabled, saving, hideConfirm, onSlipUploaded, paymentTitle, paymentNote, details }: Props) {
+  const [qrEnabled, setQrEnabled] = useState(true);
+  const [linkEnabled, setLinkEnabled] = useState(true);
   const [paymentTab, setPaymentTab] = useState<"qr" | "link">("qr");
   const [linkCopied, setLinkCopied] = useState(false);
+
+  useEffect(() => {
+    if (slipUrl) return;
+    apiFetch("/api/settings").then((s: Record<string, string>) => {
+      const qr = s.payment_qr_enabled !== "false";
+      const link = s.payment_link_enabled !== "false";
+      setQrEnabled(qr);
+      setLinkEnabled(link);
+      if (!qr && link) setPaymentTab("link");
+    }).catch(console.error);
+  }, [slipUrl]);
   const [slipPreview, setSlipPreview] = useState<string | null>(slipUrl);
   const [uploadedSlipUrl, setUploadedSlipUrl] = useState<string | null>(slipUrl);
   const [verifyStatus, setVerifyStatus] = useState<"idle" | "verifying" | "verified" | "failed">(slipUrl ? "verified" : "idle");
@@ -107,20 +120,22 @@ export default function PaymentSection({ amount, leadId, leadName, lineId, slipU
 
   return (
     <div className="space-y-3">
-      {/* Tabs */}
-      <div className="flex border-b border-gray-200 -mx-3 px-3">
-        <button type="button" onClick={() => setPaymentTab("qr")}
-          className={`flex-1 pb-2.5 text-sm font-semibold border-b-2 -mb-px transition-colors cursor-pointer ${paymentTab === "qr" ? "text-active border-active" : "text-gray-400 border-transparent hover:text-gray-600"}`}>
-          Thai QR
-        </button>
-        <button type="button" onClick={() => setPaymentTab("link")}
-          className={`flex-1 pb-2.5 text-sm font-semibold border-b-2 -mb-px transition-colors cursor-pointer ${paymentTab === "link" ? "text-active border-active" : "text-gray-400 border-transparent hover:text-gray-600"}`}>
-          Payment Link
-        </button>
-      </div>
+      {/* Tabs (hide if only one enabled) */}
+      {qrEnabled && linkEnabled && (
+        <div className="flex border-b border-gray-200 -mx-3 px-3">
+          <button type="button" onClick={() => setPaymentTab("qr")}
+            className={`flex-1 pb-2.5 text-sm font-semibold border-b-2 -mb-px transition-colors cursor-pointer ${paymentTab === "qr" ? "text-active border-active" : "text-gray-400 border-transparent hover:text-gray-600"}`}>
+            Thai QR
+          </button>
+          <button type="button" onClick={() => setPaymentTab("link")}
+            className={`flex-1 pb-2.5 text-sm font-semibold border-b-2 -mb-px transition-colors cursor-pointer ${paymentTab === "link" ? "text-active border-active" : "text-gray-400 border-transparent hover:text-gray-600"}`}>
+            Payment Link
+          </button>
+        </div>
+      )}
 
       {/* QR Tab */}
-      {paymentTab === "qr" && (
+      {qrEnabled && paymentTab === "qr" && (
         <div className="space-y-3">
           <div className="max-w-[280px] mx-auto">
             <img src={`/api/qr?amount=${amount}&format=full&name=${encodeURIComponent(leadName)}&_=${Date.now()}`} alt="Thai QR Payment" className="w-full rounded-xl border border-gray-200" />
@@ -135,7 +150,7 @@ export default function PaymentSection({ amount, leadId, leadName, lineId, slipU
       )}
 
       {/* Link Tab */}
-      {paymentTab === "link" && (
+      {linkEnabled && paymentTab === "link" && (
         <div className="space-y-3">
           <div className="text-xs text-gray-500">ส่งลิ้งค์นี้ให้ลูกค้าเปิดบนมือถือ เพื่อสแกน QR และชำระเงินได้ด้วยตนเอง</div>
           <div className="flex items-center gap-2 p-3 rounded-lg bg-gray-50 border border-gray-200">

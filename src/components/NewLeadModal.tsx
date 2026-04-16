@@ -5,16 +5,20 @@ import { useRouter } from "next/navigation";
 import { apiFetch } from "@/lib/api";
 import CustomerWizard from "@/components/CustomerWizard";
 
+export interface LineLinkInfo {
+  userId: number;
+  displayName: string;
+  pictureUrl: string | null;
+}
+
 interface Props {
   onClose: () => void;
   onCreated?: () => void;
   /** If provided, auto-link this LINE user to the new lead after save */
-  linkLineUserId?: number;
-  linkLineDisplayName?: string;
-  linkLinePictureUrl?: string | null;
+  linkLine?: LineLinkInfo;
 }
 
-export default function NewLeadModal({ onClose, onCreated, linkLineUserId, linkLineDisplayName, linkLinePictureUrl }: Props) {
+export default function NewLeadModal({ onClose, onCreated, linkLine }: Props) {
   const router = useRouter();
   const [saving, setSaving] = useState(false);
   const [form, setForm] = useState({
@@ -41,9 +45,8 @@ export default function NewLeadModal({ onClose, onCreated, linkLineUserId, linkL
           interested_package_id: form.interested_package_id ? parseInt(form.interested_package_id) : null,
         }),
       });
-      // Auto-link LINE user if specified
-      if (linkLineUserId && result?.id) {
-        await apiFetch(`/api/line-users/${linkLineUserId}`, {
+      if (linkLine && result?.id) {
+        await apiFetch(`/api/line-users/${linkLine.userId}`, {
           method: "PATCH",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ lead_id: result.id }),
@@ -75,8 +78,8 @@ export default function NewLeadModal({ onClose, onCreated, linkLineUserId, linkL
             onChange={patch => setForm(prev => ({ ...prev, ...(patch as Record<string, unknown>) } as typeof prev))}
             onSubmit={handleSubmit}
             saving={saving}
-            lineProfile={linkLineDisplayName ? { display_name: linkLineDisplayName, picture_url: linkLinePictureUrl ?? null } : undefined}
-            linePending={!!linkLineUserId}
+            lineProfile={linkLine ? { display_name: linkLine.displayName, picture_url: linkLine.pictureUrl } : undefined}
+            linePending={!!linkLine}
           />
         </div>
       </div>
