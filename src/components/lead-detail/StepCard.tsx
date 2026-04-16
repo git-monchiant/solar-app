@@ -13,7 +13,7 @@ interface Props {
 }
 
 export default function StepCard({ status, leadId, hasBooking, paymentType, financeStatus, onNext, onLost, onAddActivity }: Props) {
-  const config = STATUS_CONFIG[status] || STATUS_CONFIG.registered;
+  const config = STATUS_CONFIG[status] || STATUS_CONFIG.register;
   const idx = STATUSES.indexOf(status as typeof STATUSES[number]);
   const isLast = idx === STATUSES.length - 1;
   const isLost = status === "lost";
@@ -47,7 +47,7 @@ export default function StepCard({ status, leadId, hasBooking, paymentType, fina
       )}
 
       <div className="flex gap-2">
-        {status === "registered" && (
+        {status === "register" && (
           <button onClick={() => onAddActivity("call")} className={`flex-1 py-2.5 rounded-xl text-sm font-semibold text-white ${config.color}`}>Log Contact</button>
         )}
         {status === "booked" && !hasBooking && (
@@ -56,13 +56,13 @@ export default function StepCard({ status, leadId, hasBooking, paymentType, fina
         {status === "survey" && (
           <button onClick={() => onAddActivity("follow_up")} className={`flex-1 py-2.5 rounded-xl text-sm font-semibold text-white ${config.color}`}>Schedule Survey</button>
         )}
-        {status === "quoted" && (
+        {status === "quote" && (
           <Link href="/packages" className={`flex-1 py-2.5 rounded-xl text-sm font-semibold text-white text-center ${config.color}`}>Show Package</Link>
         )}
-        {status === "purchased" && (
-          <div className="flex-1 py-2.5 rounded-xl text-sm font-semibold text-green-700 text-center bg-green-100">Purchased</div>
+        {status === "order" && (
+          <div className="flex-1 py-2.5 rounded-xl text-sm font-semibold text-green-700 text-center bg-green-100">รออนุมัติ/ชำระ</div>
         )}
-        {status === "installed" && (
+        {status === "install" && (
           <div className="flex-1 py-2.5 rounded-xl text-sm font-semibold text-emerald-700 text-center bg-emerald-100">Completed!</div>
         )}
         {isLost && (
@@ -75,7 +75,7 @@ export default function StepCard({ status, leadId, hasBooking, paymentType, fina
           </button>
         )}
 
-        {!isLost && status !== "installed" && (
+        {!isLost && status !== "install" && (
           <button onClick={onLost} className="py-2.5 px-4 rounded-xl text-sm font-medium text-red-500 border border-red-200 bg-white">Lost</button>
         )}
       </div>

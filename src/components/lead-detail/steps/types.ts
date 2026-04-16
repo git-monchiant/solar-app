@@ -47,6 +47,7 @@ export interface Lead {
   line_id: string | null;
   survey_time_slot: string | null;
   survey_confirmed: boolean;
+  zone: string | null;
   pre_residence_type: string | null;
   survey_note: string | null;
   survey_photos: string | null;
@@ -76,6 +77,30 @@ export interface Lead {
   survey_shading: string | null;
   survey_roof_age: string | null;
   survey_roof_tilt: number | null;
+  // Quotation
+  quotation_note: string | null;
+  quotation_files: string | null;
+  quotation_amount: number | null;
+  // Purchase
+  order_total: number | null;
+  order_pct_before: number | null;
+  order_pct_after: number | null;
+  order_before_paid: boolean;
+  order_before_slip: string | null;
+  order_after_paid: boolean;
+  order_after_slip: string | null;
+  install_date: string | null;
+  install_photos: string | null;
+  install_note: string | null;
+  install_extra_note: string | null;
+  install_extra_cost: number | null;
+  install_completed_at: string | null;
+  review_sent: boolean;
+  review_rating: number | null;
+  review_quality: number | null;
+  review_service: number | null;
+  review_punctuality: number | null;
+  review_comment: string | null;
 }
 
 export interface Panel {

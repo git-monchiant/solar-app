@@ -37,6 +37,7 @@ export default function AddActivityModal({ activityType, leadId, onClose, onSave
           activity_type: activityType === "follow_up" ? (followUpMethod || "follow_up") : "note",
           note: note.trim() || null,
           follow_up_date: nextFollowUpDate || null,
+          contact_date: followUpDate || null,
         }),
       });
       onSaved();

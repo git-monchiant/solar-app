@@ -83,7 +83,7 @@ export default function PackagesPage() {
         ) : (
           <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-3">
             {displayed.map((pkg) => (
-              <div key={pkg.id} className="rounded-xl bg-white border border-gray-200 overflow-hidden hover:border-primary/40 hover:shadow-sm transition-all">
+              <div key={pkg.id} className="rounded-xl bg-white border border-gray-300 overflow-hidden hover:border-primary/40 hover:shadow-sm transition-all">
                 {/* Hero */}
                 <div className="bg-gradient-to-br from-primary/5 to-primary/10 px-4 py-3 flex flex-wrap items-center gap-1.5">
                   <span className="text-base font-bold text-primary">{pkg.name}</span>

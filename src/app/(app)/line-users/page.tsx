@@ -17,7 +17,7 @@ interface LineUser {
 }
 
 const formatDate = (d: string) =>
-  new Date(d).toLocaleDateString("th-TH", { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" });
+  new Date(String(d).slice(0, 19)).toLocaleDateString("th-TH", { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" });
 
 export default function LineUsersPage() {
   const [users, setUsers] = useState<LineUser[]>([]);

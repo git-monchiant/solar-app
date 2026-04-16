@@ -31,7 +31,7 @@ export default function CalendarPicker({
   excludeLeadId,
   required = false,
 }: Props) {
-  const [surveys, setSurveys] = useState<{ id: number; survey_date: string; survey_time_slot: string | null }[]>([]);
+  const [surveys, setSurveys] = useState<{ id: number; event_date?: string; time_slot?: string | null; event_type?: string; survey_date?: string; survey_time_slot?: string | null }[]>([]);
 
   useEffect(() => {
     if (!showSurveySlots) return;
@@ -41,10 +41,16 @@ export default function CalendarPicker({
   }, [showSurveySlots, excludeLeadId]);
 
   const surveyCountByDate = surveys.reduce<Record<string, { morning: number; afternoon: number }>>((acc, s) => {
-    const key = s.survey_date.slice(0, 10);
+    const dateRaw = s.event_date || s.survey_date;
+    const slot = s.time_slot ?? s.survey_time_slot;
+    if (!dateRaw) return acc;
+    // Include both survey and install events — both occupy the day
+    const key = dateRaw.slice(0, 10);
     if (!acc[key]) acc[key] = { morning: 0, afternoon: 0 };
-    if (s.survey_time_slot === "morning") acc[key].morning++;
-    else if (s.survey_time_slot === "afternoon") acc[key].afternoon++;
+    if (slot === "morning") acc[key].morning++;
+    else if (slot === "afternoon") acc[key].afternoon++;
+    // Install events (no slot) occupy both — blocks the day
+    else { acc[key].morning++; acc[key].afternoon++; }
     return acc;
   }, {});
 
@@ -92,7 +98,13 @@ export default function CalendarPicker({
                       <button
                         type="button"
                         disabled={disabled}
-                        onClick={() => { onDateChange(iso); onTimeSlotChange(""); }}
+                        onClick={() => {
+                          onDateChange(iso);
+                          // Keep time slot if it doesn't conflict; clear only if the slot is already taken
+                          const c = surveyCountByDate[iso];
+                          const conflict = !!(c && timeSlot && (timeSlot === "morning" ? c.morning > 0 : c.afternoon > 0));
+                          if (conflict) onTimeSlotChange("");
+                        }}
                         style={{ minHeight: 0 }}
                         className={`w-8 h-8 rounded-full flex items-center justify-center text-sm leading-none font-semibold transition-all ${
                           selected
@@ -117,8 +129,8 @@ export default function CalendarPicker({
         })}
       </div>
 
-      {/* Time slot */}
-      {showTimeSlot && date && (
+      {/* Time slot — always visible */}
+      {showTimeSlot && (
         <div className="mt-2 pt-2 border-t border-gray-100">
           <div className="text-xs font-semibold tracking-wider uppercase text-gray-400 mb-2">
             ช่วงเวลา {required && <span className="text-red-500">*</span>}
@@ -126,7 +138,7 @@ export default function CalendarPicker({
           <div className="grid grid-cols-3 gap-2">
             {TIME_SLOTS.map(s => {
               const selected = timeSlot === s.value;
-              const counts = showSurveySlots ? surveyCountByDate[date] : null;
+              const counts = date && showSurveySlots ? surveyCountByDate[date] : null;
               const taken = !!(counts && (s.value === "morning" ? counts.morning > 0 : counts.afternoon > 0));
               return (
                 <button
@@ -139,7 +151,7 @@ export default function CalendarPicker({
                       ? "bg-active border-active text-white shadow-sm shadow-active/20"
                       : taken
                       ? "bg-gray-100 border-gray-200 text-gray-400 cursor-not-allowed"
-                      : "bg-white border-gray-200 hover:border-active/40 text-gray-700"
+                      : "bg-white border-gray-300 text-gray-900 hover:border-active hover:text-active"
                   }`}
                 >
                   <span className="text-[15px] font-bold font-mono tabular-nums">{s.time}</span>

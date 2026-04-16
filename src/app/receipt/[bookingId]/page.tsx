@@ -44,8 +44,17 @@ export default function ReceiptPage() {
   const qr = `/api/qr?amount=${d.total_price}&format=image&name=${encodeURIComponent(d.full_name)}`;
 
   return (
-    <div className="bg-white min-h-screen print:min-h-0">
-      <style>{`@page { size: A4; margin: 0; } @media print { body { margin: 0; } }`}</style>
+    <div className="bg-white min-h-screen print:min-h-0 receipt-root">
+      <style>{`
+        @page { size: A4; margin: 0; }
+        @media print { body { margin: 0; } }
+        .receipt-root { font-size: 14px; line-height: 1.4; font-weight: 400; }
+        .receipt-root .text-xs { font-size: 12px !important; line-height: 16px !important; }
+        .receipt-root .text-sm { font-size: 14px !important; line-height: 20px !important; }
+        .receipt-root .text-base { font-size: 16px !important; line-height: 24px !important; }
+        .receipt-root .text-lg { font-size: 18px !important; line-height: 28px !important; }
+        .receipt-root .text-xl { font-size: 20px !important; line-height: 28px !important; }
+      `}</style>
       <div className="max-w-[210mm] mx-auto flex flex-col" id="receipt">
         {/* Header */}
         <div className="bg-primary text-white px-8 py-4 text-center">
@@ -56,12 +65,12 @@ export default function ReceiptPage() {
 
         <div className="px-10 pt-4 pb-3 flex flex-col flex-1">
           {/* Title */}
-          <div className="text-center font-bold text-lg tracking-widest uppercase mb-2">SOLAR ROOFTOP BOOKING / TEMPORARY RECEIPT</div>
+          <div className="text-center font-bold text-lg tracking-wide uppercase mb-2">SOLAR ROOFTOP BOOKING / TEMPORARY RECEIPT</div>
 
           {/* Receipt info */}
           <div className="flex justify-between text-sm text-gray-500 mb-3">
             <span>RECEIPT NO: {d.booking_number}</span>
-            <span>DATE: {new Date(d.created_at).toLocaleDateString("th-TH", { day: "numeric", month: "long", year: "numeric", timeZone: "Asia/Bangkok" })}</span>
+            <span>DATE: {new Date(String(d.created_at).slice(0, 10) + "T12:00:00").toLocaleDateString("th-TH", { day: "numeric", month: "long", year: "numeric" })}</span>
           </div>
           <hr className="border-gray-200 mb-4" />
 
@@ -101,11 +110,11 @@ export default function ReceiptPage() {
           </table>
 
           {/* Package options */}
-          <div className="pl-3 mb-3 space-y-1">
+          <div className="pl-3 mb-2 space-y-0.5">
             {d.packages.map(p => (
-              <div key={p.id} className="flex items-center gap-2 text-sm text-gray-600">
-                <span className="w-4 h-4 border border-gray-400 inline-flex items-center justify-center text-xs leading-none font-bold">✓</span>
-                Solar Rooftop {p.kwp} kWp — Stand Price {fmt(p.price)} THB
+              <div key={p.id} className="flex items-center gap-1.5 text-sm text-gray-600">
+                <span className="w-4 h-4 border border-gray-400 inline-flex items-center justify-center text-[10px] leading-none font-bold">✓</span>
+                {p.kwp > 0 ? `Solar Rooftop ${p.kwp} kWp` : p.name} — {fmt(p.price)} THB
               </div>
             ))}
           </div>
@@ -113,7 +122,7 @@ export default function ReceiptPage() {
           {/* Survey date */}
           {d.survey_date && (
             <div className="bg-yellow-100 py-2 px-4 font-bold text-sm mb-4">
-              SURVEY DATE: {new Date(d.survey_date + "T00:00:00+07:00").toLocaleDateString("th-TH", { day: "numeric", month: "long", year: "numeric", timeZone: "Asia/Bangkok" })} {slotMap[d.survey_time_slot || ""] || ""}
+              SURVEY DATE: {(() => { const dt = new Date(String(d.survey_date).slice(0, 10) + "T12:00:00"); return dt.toLocaleDateString("th-TH", { day: "numeric", month: "long", year: "numeric" }); })()} {slotMap[d.survey_time_slot || ""] || ""}
             </div>
           )}
 
@@ -127,7 +136,7 @@ export default function ReceiptPage() {
 
           {/* Remarks */}
           <div className="bg-gray-50 border border-gray-100 rounded px-3 py-2 mb-4">
-            <div className="text-[9px] text-gray-400 leading-snug">
+            <div className="text-[11px] text-gray-400 leading-snug">
               <b>REMARKS:</b> 1. ราคาดังกล่าวเป็นราคามาตรฐานสำหรับระบบ Solar Rooftop ติดตั้งในบ้านพักอาศัย (มีเฟสไฟฟ้า 1 เฟส) ทั้งนี้ ในกรณีที่มีการก่อสร้างหรือโครงสร้างพิเศษเพิ่มเติม ทางบริษัทขอสงวนสิทธิ์ในการพิจารณาเสนอราคาใหม่ตามความเหมาะสม 2. กรณีไม่สามารถดำเนินการติดตั้งได้ บริษัทฯ จะทำการคืนเงินจองให้แก่ลูกค้าเต็มจำนวน กรณีสามารถดำเนินการติดตั้งได้ เงินจำนวน 1,000 บาท จะนำไปหักเป็นส่วนลดค่าระบบ Solar ทั้งนี้ หากลูกค้าเป็นฝ่ายยกเลิก บริษัทฯ ขอสงวนสิทธิ์ไม่คืนเงินในทุกกรณี
             </div>
           </div>
@@ -136,9 +145,9 @@ export default function ReceiptPage() {
           <div className="flex gap-5 items-start mb-4">
             <div className="shrink-0">
               <img src={qr} alt="QR" className="w-14 h-14" />
-              <div className="text-[7px] text-gray-400 mt-0.5">Scan to pay via PromptPay</div>
+              <div className="text-[9px] text-gray-400 mt-0.5">Scan to pay via PromptPay</div>
             </div>
-            <div className="text-[10px] text-gray-500 space-y-0.5 pt-0.5">
+            <div className="text-xs text-gray-500 space-y-0.5 pt-0.5">
               <div>TRANSFER TO: {CO.bankName}</div>
               <div>ACCOUNT NO: {CO.bankAcc}</div>
               <div>BANK: {CO.bank}</div>
@@ -148,7 +157,7 @@ export default function ReceiptPage() {
 
 
           {/* Signature */}
-          <div className="flex justify-around mb-3 text-[10px] text-gray-500">
+          <div className="flex justify-around mb-3 mt-10 text-xs text-gray-500">
             <div className="text-center">
               <div className="w-44 border-b border-gray-300 mb-1" />
               <div>SIGNATURE</div>
@@ -162,7 +171,7 @@ export default function ReceiptPage() {
           </div>
 
           {/* Footer */}
-          <div className="text-center text-[9px] text-gray-400 border-t border-gray-100 pt-2">
+          <div className="text-center text-[11px] text-gray-400 border-t border-gray-100 pt-2">
             {CO.address} | Tel: {CO.phone}
           </div>
         </div>

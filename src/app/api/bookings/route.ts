@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getDb, sql } from "@/lib/db";
+import { getDb, sql, fixDates } from "@/lib/db";
 
 export async function GET() {
   try {
@@ -16,7 +16,7 @@ export async function GET() {
       LEFT JOIN users u ON b.created_by = u.id
       ORDER BY b.created_at DESC
     `);
-    return NextResponse.json(result.recordset);
+    return NextResponse.json(fixDates(result.recordset));
   } catch (error) {
     console.error("GET /api/bookings error:", error);
     return NextResponse.json({ error: "Failed to fetch bookings" }, { status: 500 });
@@ -55,7 +55,7 @@ export async function POST(request: NextRequest) {
       .input("lead_id", sql.Int, body.lead_id)
       .query(`UPDATE leads SET status = 'booked', updated_at = GETDATE() WHERE id = @lead_id`);
 
-    // Auto-log booking created as activity
+    // Auto-log booking created + status change
     await db
       .request()
       .input("lead_id", sql.Int, body.lead_id)
@@ -64,6 +64,13 @@ export async function POST(request: NextRequest) {
       .query(`
         INSERT INTO lead_activities (lead_id, activity_type, title, note, created_by)
         VALUES (@lead_id, 'booking_created', @title, @note, 1)
+      `);
+    await db
+      .request()
+      .input("lead_id", sql.Int, body.lead_id)
+      .query(`
+        INSERT INTO lead_activities (lead_id, activity_type, title, old_status, new_status, created_by)
+        VALUES (@lead_id, 'status_change', 'Status: รอติดตาม → Booked', 'register', 'booked', 1)
       `);
 
     return NextResponse.json(result.recordset[0], { status: 201 });

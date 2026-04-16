@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getDb, sql } from "@/lib/db";
+import { getDb, sql, fixDates } from "@/lib/db";
 import { geocodeThaiPlace } from "@/lib/geocode";
 
 async function maybeGeocodeProject(projectId: number) {
@@ -23,7 +23,7 @@ export async function GET() {
   try {
     const db = await getDb();
     const result = await db.request().query(`
-      SELECT l.*, p.name as project_name, pk.name as package_name, pk.price as package_price,
+      SELECT l.*, p.name as project_name, p.district, p.province, pk.name as package_name, pk.price as package_price,
              u.full_name as assigned_name,
              b.booking_number, b.total_price as booking_price, b.status as booking_status,
              (SELECT TOP 1 note FROM lead_activities WHERE lead_id = l.id AND note IS NOT NULL ORDER BY created_at DESC) as last_activity_note,
@@ -35,7 +35,7 @@ export async function GET() {
       LEFT JOIN bookings b ON b.lead_id = l.id
       ORDER BY l.created_at DESC
     `);
-    return NextResponse.json(result.recordset);
+    return NextResponse.json(fixDates(result.recordset));
   } catch (error) {
     console.error("GET /api/leads error:", error);
     return NextResponse.json({ error: "Failed to fetch leads" }, { status: 500 });
@@ -82,7 +82,7 @@ export async function POST(request: NextRequest) {
       .query(`
         INSERT INTO leads (full_name, phone, project_id, installation_address, customer_type, interested_package_id, source, payment_type, requirement, note, id_card_number, id_card_address, id_card_photo_url, house_reg_photo_url, status)
         OUTPUT INSERTED.*
-        VALUES (@full_name, @phone, @project_id, @installation_address, @customer_type, @interested_package_id, @source, @payment_type, @requirement, @note, @id_card_number, @id_card_address, @id_card_photo_url, @house_reg_photo_url, 'registered')
+        VALUES (@full_name, @phone, @project_id, @installation_address, @customer_type, @interested_package_id, @source, @payment_type, @requirement, @note, @id_card_number, @id_card_address, @id_card_photo_url, @house_reg_photo_url, 'register')
       `);
 
     // Auto-log lead created (register/walk-in is the first contact)

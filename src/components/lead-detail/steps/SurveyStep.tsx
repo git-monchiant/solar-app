@@ -5,9 +5,11 @@ import { apiFetch } from "@/lib/api";
 import type { StepCommonProps, Package } from "./types";
 import SurveyForm from "./SurveyForm";
 import CalendarPicker from "@/components/CalendarPicker";
+import ErrorPopup from "@/components/ErrorPopup";
+import { validateSurvey } from "@/lib/step-validators";
 
 const formatDate = (d: string) =>
-  new Date(d).toLocaleDateString("th-TH", { day: "numeric", month: "short", year: "numeric" });
+  new Date(String(d).slice(0, 10) + "T12:00:00").toLocaleDateString("th-TH", { day: "numeric", month: "short", year: "numeric" });
 
 const SURVEY_TIME_SLOTS = [
   { value: "morning", label: "เช้า", time: "09:00 - 12:00" },
@@ -43,9 +45,10 @@ interface Props extends StepCommonProps {
 
 export default function SurveyStep({ lead, state, refresh, packages, expanded, onToggle }: Props) {
   const [subStep, setSubStep] = useState(0);
+  const [nextError, setNextError] = useState<string | null>(null);
   const [selectedPkg, setSelectedPkg] = useState<string>(lead.interested_package_id ? String(lead.interested_package_id) : "");
-  const [surveyBattery, setSurveyBattery] = useState<string>(lead.survey_wants_battery ?? "");
-  const [surveyPhase, setSurveyPhase] = useState<string>(lead.survey_electrical_phase ?? "");
+  const [surveyBattery, setSurveyBattery] = useState<string>(lead.survey_wants_battery ?? lead.pre_wants_battery ?? "");
+  const [surveyPhase, setSurveyPhase] = useState<string>(lead.survey_electrical_phase ?? lead.pre_electrical_phase ?? "");
   const [rescheduling, setRescheduling] = useState(false);
   const [newDate, setNewDate] = useState<string>(lead.survey_date ? lead.survey_date.slice(0, 10) : "");
   const [newSlot, setNewSlot] = useState<string>(lead.survey_time_slot ?? "");
@@ -149,7 +152,7 @@ export default function SurveyStep({ lead, state, refresh, packages, expanded, o
       await apiFetch(`/api/leads/${lead.id}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ status: "quoted" }),
+        body: JSON.stringify({ status: "quote" }),
       });
       refresh();
     } finally {
@@ -169,7 +172,7 @@ export default function SurveyStep({ lead, state, refresh, packages, expanded, o
         <div className="flex items-center gap-2 py-1">
           {lead.survey_date && (
             <span className="text-sm font-bold text-gray-900 leading-tight">
-              <span className="block">สำรวจ {new Date(lead.survey_date).toLocaleDateString("th-TH", { weekday: "short", day: "numeric", month: "short", year: "numeric" })}</span>
+              <span className="block">สำรวจ {new Date(String(lead.survey_date).slice(0, 10) + "T12:00:00").toLocaleDateString("th-TH", { weekday: "short", day: "numeric", month: "short", year: "numeric" })}</span>
               {slotTime && <span className="block font-mono tabular-nums text-xs text-gray-500">{slotTime}</span>}
             </span>
           )}
@@ -241,6 +244,25 @@ export default function SurveyStep({ lead, state, refresh, packages, expanded, o
               )}
             </div>
           )}
+
+          {/* แพ็คเกจที่เลือก */}
+          {lead.interested_package_id && (() => {
+            const pkg = packages.find(p => p.id === lead.interested_package_id);
+            if (!pkg) return null;
+            return (
+              <div className="border-l-3 border-emerald-400 pl-3">
+                <div className="text-xs font-bold text-emerald-600 uppercase mb-1">แพ็คเกจที่เลือก</div>
+                <div className="space-y-0.5">
+                  <div className="flex justify-between"><span className="text-gray-400">ชื่อ</span><span className="font-semibold text-gray-800">{pkg.name}</span></div>
+                  <div className="flex justify-between"><span className="text-gray-400">kWp</span><span className="font-semibold text-gray-800">{pkg.kwp}</span></div>
+                  {pkg.solar_panels > 0 && <div className="flex justify-between"><span className="text-gray-400">แผง</span><span className="font-semibold text-gray-800">{pkg.solar_panels} × {pkg.panel_watt}W</span></div>}
+                  {pkg.inverter_kw > 0 && <div className="flex justify-between"><span className="text-gray-400">Inverter</span><span className="font-semibold text-gray-800">{pkg.inverter_brand} {pkg.inverter_kw}kW</span></div>}
+                  {pkg.has_battery && <div className="flex justify-between"><span className="text-gray-400">Battery</span><span className="font-semibold text-gray-800">{pkg.battery_kwh}kWh {pkg.battery_brand || ""}</span></div>}
+                  <div className="flex justify-between"><span className="text-gray-400">ราคา</span><span className="font-semibold text-gray-800 font-mono">{pkg.price.toLocaleString()} บาท</span></div>
+                </div>
+              </div>
+            );
+          })()}
 
           {/* บันทึก */}
           {lead.survey_note && (
@@ -339,15 +361,39 @@ export default function SurveyStep({ lead, state, refresh, packages, expanded, o
 
   return (
     <div>
+      {/* Gates for each sub-step */}
+      {(() => { return null; })()}
       {/* Step indicator */}
       {lead.survey_confirmed && (
         <div className="flex items-center gap-1 mb-3">
-          {SURVEY_SUB.map((label, i) => (
-            <button key={i} type="button" onClick={() => { setSubStep(i); setTimeout(() => document.querySelector("[data-step-active]")?.scrollIntoView({ behavior: "smooth", block: "start" }), 100); }} className="flex-1 flex flex-col items-center gap-1 cursor-pointer">
-              <div className={`h-1 w-full rounded-full transition-colors ${i <= subStep ? "bg-active" : "bg-gray-200"}`} />
-              <span className={`text-xs font-semibold transition-colors ${i === subStep ? "text-active" : i < subStep ? "text-gray-500" : "text-gray-300"}`}>{label}</span>
-            </button>
-          ))}
+          {SURVEY_SUB.map((label, i) => {
+            const gates: Record<number, string[]> = {
+              0: ["survey_confirmed"],
+              1: ["survey_residence_type", "survey_floors", "survey_roof_material", "survey_roof_orientation", "survey_roof_area_m2", "survey_roof_tilt", "survey_shading", "survey_roof_age"],
+              2: ["survey_electrical_phase", "survey_monthly_bill", "survey_peak_usage", "survey_grid_type", "survey_utility", "survey_meter_size", "survey_ca_number", "survey_db_distance_m"],
+              3: ["survey_wants_battery", "interested_package_id"],
+              4: ["survey_note", "survey_photos"],
+              5: [],
+            };
+            const goTo = () => {
+              if (i <= subStep) { setNextError(null); setSubStep(i); setTimeout(() => document.querySelector("[data-step-active]")?.scrollIntoView({ behavior: "smooth", block: "start" }), 100); return; }
+              const v = validateSurvey(lead);
+              const missingHere = v.missing.filter(m => (gates[subStep] || []).includes(m.field));
+              if (missingHere.length > 0) {
+                setNextError(missingHere.map(m => m.label).join(", "));
+                return;
+              }
+              setNextError(null);
+              setSubStep(i);
+              setTimeout(() => document.querySelector("[data-step-active]")?.scrollIntoView({ behavior: "smooth", block: "start" }), 100);
+            };
+            return (
+              <button key={i} type="button" onClick={goTo} className="flex-1 flex flex-col items-center gap-1 cursor-pointer">
+                <div className={`h-1 w-full rounded-full transition-colors ${i <= subStep ? "bg-active" : "bg-gray-200"}`} />
+                <span className={`text-xs font-semibold transition-colors ${i === subStep ? "text-active" : i < subStep ? "text-gray-500" : "text-gray-300"}`}>{label}</span>
+              </button>
+            );
+          })}
         </div>
       )}
 
@@ -509,26 +555,48 @@ export default function SurveyStep({ lead, state, refresh, packages, expanded, o
       )}
 
       {/* Navigation */}
-      {lead.survey_confirmed && subStep < 5 && (
-        <div className="flex gap-2 mt-3">
-          {subStep > 0 && (
-            <button type="button" onClick={() => { setSubStep(subStep - 1); setTimeout(() => document.querySelector("[data-step-active]")?.scrollIntoView({ behavior: "smooth", block: "start" }), 100); }} className="flex-1 h-11 rounded-lg text-sm font-semibold border border-gray-200 text-gray-600 hover:bg-gray-50 transition-colors flex items-center justify-center gap-1">
-              <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M15.75 19.5L8.25 12l7.5-7.5" /></svg>
-              ย้อนกลับ
+      {lead.survey_confirmed && subStep < 5 && (() => {
+        const gates: Record<number, string[]> = {
+          0: ["survey_confirmed"],
+          1: ["survey_residence_type", "survey_floors", "survey_roof_material", "survey_roof_orientation", "survey_roof_area_m2", "survey_roof_tilt", "survey_shading", "survey_roof_age"],
+          2: ["survey_electrical_phase", "survey_monthly_bill", "survey_peak_usage", "survey_grid_type", "survey_utility", "survey_meter_size", "survey_ca_number", "survey_db_distance_m"],
+          3: ["survey_wants_battery", "interested_package_id"],
+          4: ["survey_note", "survey_photos"],
+        };
+        const handleNext = () => {
+          const v = validateSurvey(lead);
+          const missingHere = v.missing.filter(m => (gates[subStep] || []).includes(m.field));
+          if (missingHere.length > 0) {
+            setNextError(missingHere.map(m => m.label).join(", "));
+            return;
+          }
+          setNextError(null);
+          setSubStep(subStep + 1);
+          setTimeout(() => document.querySelector("[data-step-active]")?.scrollIntoView({ behavior: "smooth", block: "start" }), 100);
+        };
+        return (
+          <div className="flex gap-2 mt-3">
+            {subStep > 0 && (
+              <button type="button" onClick={() => { setNextError(null); setSubStep(subStep - 1); setTimeout(() => document.querySelector("[data-step-active]")?.scrollIntoView({ behavior: "smooth", block: "start" }), 100); }} className="flex-1 h-11 rounded-lg text-sm font-semibold border border-gray-200 text-gray-600 hover:bg-gray-50 transition-colors flex items-center justify-center gap-1">
+                <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M15.75 19.5L8.25 12l7.5-7.5" /></svg>
+                ย้อนกลับ
+              </button>
+            )}
+            <button type="button" onClick={handleNext} className="flex-1 h-11 rounded-lg text-sm font-semibold text-white bg-active hover:brightness-110 transition-colors flex items-center justify-center gap-1">
+              ถัดไป
+              <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M8.25 4.5l7.5 7.5-7.5 7.5" /></svg>
             </button>
-          )}
-          <button type="button" onClick={() => { setSubStep(subStep + 1); setTimeout(() => document.querySelector("[data-step-active]")?.scrollIntoView({ behavior: "smooth", block: "start" }), 100); }} className="flex-1 h-11 rounded-lg text-sm font-semibold text-white bg-active hover:brightness-110 transition-colors flex items-center justify-center gap-1">
-            ถัดไป
-            <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M8.25 4.5l7.5 7.5-7.5 7.5" /></svg>
-          </button>
-        </div>
-      )}
+          </div>
+        );
+      })()}
       {lead.survey_confirmed && subStep === 5 && (
         <button type="button" onClick={() => { setSubStep(subStep - 1); setTimeout(() => document.querySelector("[data-step-active]")?.scrollIntoView({ behavior: "smooth", block: "start" }), 100); }} className="w-full h-9 mt-2 rounded-lg text-xs text-gray-500 border border-gray-200 hover:bg-gray-50 transition-colors flex items-center justify-center gap-1">
           <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M15.75 19.5L8.25 12l7.5-7.5" /></svg>
           ย้อนกลับ
         </button>
       )}
+
+      <ErrorPopup message={nextError} onClose={() => setNextError(null)} />
     </div>
   );
 }

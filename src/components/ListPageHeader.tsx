@@ -19,6 +19,8 @@ interface Props {
   activeTab: string;
   onTabChange: (key: string) => void;
   tabsRight?: React.ReactNode;
+  actionHref?: string;
+  actionLabel?: string;
 }
 
 export default function ListPageHeader({
@@ -77,7 +79,7 @@ export default function ListPageHeader({
           >
             {t.label}
             {t.count !== undefined && (
-              <span className="ml-1 text-xs text-gray-400 normal-case">{t.count}</span>
+              <span className="ml-1 text-xs text-gray-400 normal-case">({t.count})</span>
             )}
           </button>
         ))}

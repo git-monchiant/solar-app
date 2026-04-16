@@ -6,12 +6,17 @@ import { PAYMENT_TYPES, FINANCE_STATUSES } from "@/lib/statuses";
 import type { Lead, Package, StepCommonProps } from "./types";
 import PreSurveyForm from "./PreSurveyForm";
 import CalendarPicker from "@/components/CalendarPicker";
+import { buildPaymentFlex } from "@/lib/line-flex";
+import LineConfirmModal from "@/components/LineConfirmModal";
+import { validatePreSurvey } from "@/lib/step-validators";
+import ErrorPopup from "@/components/ErrorPopup";
+import CustomerInfoForm from "@/components/CustomerInfoForm";
 
 const DEPOSIT_AMOUNT = 1000;
 
 const formatPrice = (n: number) => new Intl.NumberFormat("th-TH").format(n);
 const formatDate = (d: string) =>
-  new Date(d).toLocaleDateString("th-TH", { day: "numeric", month: "short", year: "numeric" });
+  new Date(String(d).slice(0, 10) + "T12:00:00").toLocaleDateString("th-TH", { day: "numeric", month: "short", year: "numeric" });
 
 const ROOF_SHAPES: { value: string; label: string; svg: React.ReactNode }[] = [
   {
@@ -146,6 +151,8 @@ export default function PreSurveyStep({ lead, state, refresh, packages, expanded
   const [regHouseNumber, setRegHouseNumber] = useState(lead.installation_address || "");
   const [regProject, setRegProject] = useState(lead.project_name || "");
   const [subStep, setSubStep] = useState(0);
+  const [nextError, setNextError] = useState<string | null>(null);
+  const [formDraft, setFormDraft] = useState<Partial<Lead>>({});
   const [lightboxUrl, setLightboxUrl] = useState<string | null>(null);
   const isFirstRegSave = useRef(true);
   useEffect(() => {
@@ -155,15 +162,18 @@ export default function PreSurveyStep({ lead, state, refresh, packages, expanded
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          full_name: regName || undefined,
-          id_card_number: regIdCard || undefined,
-          id_card_address: regAddress || undefined,
-          installation_address: regHouseNumber || undefined,
+          full_name: regName ? regName.slice(0, 200) : undefined,
+          id_card_number: regIdCard ? regIdCard.slice(0, 13) : undefined,
+          id_card_address: regAddress ? regAddress.slice(0, 500) : undefined,
+          installation_address: regHouseNumber ? regHouseNumber.slice(0, 500) : undefined,
         }),
       }).catch(console.error);
     }, 600);
     return () => clearTimeout(t);
   }, [regName, regIdCard, regAddress, regHouseNumber]); // eslint-disable-line react-hooks/exhaustive-deps
+  const [zone, setZone] = useState<string>(lead.zone ?? "");
+  const [zones, setZones] = useState<{ id: number; name: string; color: string }[]>([]);
+  useEffect(() => { apiFetch("/api/zones").then(setZones).catch(console.error); }, []);
   const [scheduledSurveys, setScheduledSurveys] = useState<{ id: number; full_name: string; survey_date: string; survey_time_slot: string | null }[]>([]);
 
   useEffect(() => {
@@ -174,10 +184,13 @@ export default function PreSurveyStep({ lead, state, refresh, packages, expanded
 
   // date -> { morning, afternoon, total }
   const surveyCountByDate = scheduledSurveys.reduce<Record<string, { morning: number; afternoon: number; total: number }>>((acc, s) => {
-    const key = s.survey_date.slice(0, 10);
+    const date = (s as unknown as { event_date?: string; survey_date?: string }).event_date || (s as unknown as { survey_date?: string }).survey_date;
+    const slot = (s as unknown as { time_slot?: string; survey_time_slot?: string }).time_slot || (s as unknown as { survey_time_slot?: string }).survey_time_slot;
+    if (!date) return acc;
+    const key = date.slice(0, 10);
     if (!acc[key]) acc[key] = { morning: 0, afternoon: 0, total: 0 };
-    if (s.survey_time_slot === "morning") acc[key].morning++;
-    else if (s.survey_time_slot === "afternoon") acc[key].afternoon++;
+    if (slot === "morning") acc[key].morning++;
+    else if (slot === "afternoon") acc[key].afternoon++;
     acc[key].total++;
     return acc;
   }, {});
@@ -210,13 +223,13 @@ export default function PreSurveyStep({ lead, state, refresh, packages, expanded
       const origin = typeof window !== "undefined" ? window.location.origin : "";
       const payUrl = `${origin}/pay/${lead.id}`;
       const qrFullUrl = `${origin}/api/qr?amount=${DEPOSIT_AMOUNT}&format=full&name=${encodeURIComponent(lead.full_name)}`;
-      const messages = type === "qr"
-        ? [
-            { type: "image", originalContentUrl: qrFullUrl, previewImageUrl: qrFullUrl },
-          ]
-        : [
-            { type: "text", text: `ชำระค่าจอง Survey ${formatPrice(DEPOSIT_AMOUNT)} บาท\n\nลิ้งค์ชำระเงิน:\n${payUrl}` },
-          ];
+      const flexMsg = buildPaymentFlex({
+        origin, title: "ชำระค่ามัดจำ", amount: DEPOSIT_AMOUNT, name: lead.full_name,
+        actionLabel: "ชำระเงิน", actionUrl: payUrl,
+        note: "ค่ามัดจำสำรวจพื้นที่ติดตั้ง Solar Rooftop",
+        qrUrl: type === "qr" ? qrFullUrl : undefined,
+      });
+      const messages = [flexMsg];
       await apiFetch("/api/line/send", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -423,7 +436,7 @@ export default function PreSurveyStep({ lead, state, refresh, packages, expanded
         <div className="flex items-center gap-2 py-1">
           {lead.survey_date && (
             <span className="text-sm font-bold text-gray-900 leading-tight">
-              <span className="block">นัด {new Date(lead.survey_date).toLocaleDateString("th-TH", { weekday: "short", day: "numeric", month: "short", year: "numeric" })}</span>
+              <span className="block">นัด {new Date(String(lead.survey_date).slice(0, 10) + "T12:00:00").toLocaleDateString("th-TH", { weekday: "short", day: "numeric", month: "short", year: "numeric" })}</span>
               {lead.survey_time_slot && (
                 <span className="block font-mono tabular-nums text-xs text-gray-500">
                   {SURVEY_TIME_SLOTS.find(s => s.value === lead.survey_time_slot)?.time || lead.survey_time_slot}
@@ -433,18 +446,16 @@ export default function PreSurveyStep({ lead, state, refresh, packages, expanded
           )}
           <span className="flex-1" />
           {lead.booking_id && (
-            <a
-              href={`/api/receipt?booking_id=${lead.booking_id}`}
-              target="_blank"
-              rel="noreferrer"
-              onClick={e => e.stopPropagation()}
-              className="inline-flex items-center gap-1 text-xs font-semibold text-primary hover:text-primary-dark shrink-0 mr-4"
-            >
-              <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                <path strokeLinecap="round" strokeLinejoin="round" d="M3 16.5v2.25A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75V16.5M16.5 12L12 16.5m0 0L7.5 12m4.5 4.5V3" />
-              </svg>
-              PDF
-            </a>
+            <span className="inline-flex items-center gap-2 shrink-0 mr-4">
+              <a href={`/api/receipt?booking_id=${lead.booking_id}&format=pdf`} target="_blank" rel="noreferrer" onClick={e => e.stopPropagation()} className="inline-flex items-center gap-1 text-xs font-semibold text-primary hover:text-primary-dark">
+                <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M3 16.5v2.25A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75V16.5M16.5 12L12 16.5m0 0L7.5 12m4.5 4.5V3" /></svg>
+                PDF
+              </a>
+              <button type="button" onClick={e => { e.stopPropagation(); setLightboxUrl(`/api/receipt?booking_id=${lead.booking_id}`); }} className="inline-flex items-center gap-1 text-xs font-semibold text-emerald-600 hover:text-emerald-700">
+                <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M2.25 15.75l5.159-5.159a2.25 2.25 0 013.182 0l5.159 5.159m-1.5-1.5l1.409-1.41a2.25 2.25 0 013.182 0l2.909 2.91M3.75 21h16.5a2.25 2.25 0 002.25-2.25V5.25A2.25 2.25 0 0020.25 3H3.75A2.25 2.25 0 001.5 5.25v13.5A2.25 2.25 0 003.75 21z" /></svg>
+                PNG
+              </button>
+            </span>
           )}
           <svg className={`w-4 h-4 text-gray-400 transition-transform shrink-0 ${expanded ? "rotate-180" : ""}`} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
             <path strokeLinecap="round" strokeLinejoin="round" d="M19.5 8.25l-7.5 7.5-7.5-7.5" />
@@ -546,7 +557,7 @@ export default function PreSurveyStep({ lead, state, refresh, packages, expanded
               {lead.booking_date && (
                 <div className="flex justify-between">
                   <span className="text-gray-400">วันที่ชำระ</span>
-                  <span className="font-semibold text-gray-800">{new Date(lead.booking_date).toLocaleDateString("th-TH", { day: "numeric", month: "short", year: "numeric" })}</span>
+                  <span className="font-semibold text-gray-800">{new Date(String(lead.booking_date).slice(0, 10) + "T12:00:00").toLocaleDateString("th-TH", { day: "numeric", month: "short", year: "numeric" })}</span>
                 </div>
               )}
               {lead.booking_price != null && (
@@ -577,17 +588,16 @@ export default function PreSurveyStep({ lead, state, refresh, packages, expanded
           {/* Action */}
           <div className="pt-3 border-t border-gray-100">
             {lead.confirmed ? (
-              <a
-                href={`/api/receipt?booking_id=${lead.booking_id}`}
-                target="_blank"
-                className="w-full h-11 px-4 rounded-lg text-sm font-semibold flex items-center justify-center gap-2 bg-primary text-white hover:bg-primary-dark transition-colors"
-              >
-                <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                  <path strokeLinecap="round" strokeLinejoin="round" d="M3 16.5v2.25A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75V16.5M16.5 12L12 16.5m0 0L7.5 12m4.5 4.5V3" />
-                </svg>
-                ดาวน์โหลดใบเสร็จ
-                <span className="text-xs font-medium text-white/60 ml-1">PDF</span>
-              </a>
+              <div className="flex gap-2 w-full">
+                <a href={`/api/receipt?booking_id=${lead.booking_id}&format=pdf`} target="_blank" className="flex-1 h-11 px-4 rounded-lg text-sm font-semibold flex items-center justify-center gap-2 bg-primary text-white hover:bg-primary-dark transition-colors">
+                  <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M3 16.5v2.25A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75V16.5M16.5 12L12 16.5m0 0L7.5 12m4.5 4.5V3" /></svg>
+                  PDF
+                </a>
+                <button type="button" onClick={() => setLightboxUrl(`/api/receipt?booking_id=${lead.booking_id}`)} className="flex-1 h-11 px-4 rounded-lg text-sm font-semibold flex items-center justify-center gap-2 bg-emerald-600 text-white hover:bg-emerald-700 transition-colors">
+                  <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M2.25 15.75l5.159-5.159a2.25 2.25 0 013.182 0l5.159 5.159m-1.5-1.5l1.409-1.41a2.25 2.25 0 013.182 0l2.909 2.91M3.75 21h16.5a2.25 2.25 0 002.25-2.25V5.25A2.25 2.25 0 0020.25 3H3.75A2.25 2.25 0 001.5 5.25v13.5A2.25 2.25 0 003.75 21z" /></svg>
+                  PNG
+                </button>
+              </div>
             ) : (
               <>
                 <div className="rounded-lg border border-active/15 bg-white/60 p-3 space-y-2.5 mb-2">
@@ -638,9 +648,28 @@ export default function PreSurveyStep({ lead, state, refresh, packages, expanded
         </div>}
       </div>
       {lightboxUrl && (
-        <div className="fixed inset-0 z-[70] flex items-center justify-center bg-black/70" onClick={() => setLightboxUrl(null)}>
+        <div className="fixed inset-0 z-[70] flex flex-col items-center justify-center bg-black/70" onClick={() => setLightboxUrl(null)}>
           <button onClick={() => setLightboxUrl(null)} className="absolute top-4 right-4 w-10 h-10 rounded-full bg-black/50 text-white flex items-center justify-center text-xl safe-top">✕</button>
-          <img src={lightboxUrl} alt="Preview" className="max-w-[90vw] max-h-[85vh] object-contain rounded-lg" />
+          <img src={lightboxUrl} alt="Preview" className="max-w-[90vw] max-h-[78vh] object-contain rounded-lg" onClick={e => e.stopPropagation()} />
+          <button type="button" onClick={async (e) => {
+            e.stopPropagation();
+            try {
+              const res = await fetch(lightboxUrl);
+              const blob = await res.blob();
+              const file = new File([blob], "receipt.png", { type: "image/png" });
+              if (navigator.share && navigator.canShare?.({ files: [file] })) {
+                await navigator.share({ files: [file] });
+              } else {
+                const url = URL.createObjectURL(blob);
+                const a = document.createElement("a");
+                a.href = url; a.download = "receipt.png"; a.click();
+                URL.revokeObjectURL(url);
+              }
+            } catch {}
+          }} className="mt-4 inline-flex items-center gap-2 px-6 py-3 rounded-full bg-white text-gray-900 text-sm font-semibold shadow-lg hover:bg-gray-100 transition-colors">
+            <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M3 16.5v2.25A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75V16.5M16.5 12L12 16.5m0 0L7.5 12m4.5 4.5V3" /></svg>
+            บันทึกรูป
+          </button>
         </div>
       )}
       </>
@@ -656,21 +685,57 @@ export default function PreSurveyStep({ lead, state, refresh, packages, expanded
     <div>
       {/* Step indicator */}
       <div className="flex items-center gap-1 mb-3">
-        {SUB_STEPS.map((label, i) => (
-          <button key={i} type="button" onClick={() => setSubStep(i)} className="flex-1 flex flex-col items-center gap-1 cursor-pointer">
-            <div className={`h-1 w-full rounded-full transition-colors ${i <= subStep ? "bg-active" : "bg-gray-200"}`} />
-            <span className={`text-xs font-semibold transition-colors ${i === subStep ? "text-active" : i < subStep ? "text-gray-500" : "text-gray-300"}`}>{label}</span>
-          </button>
-        ))}
+        {SUB_STEPS.map((label, i) => {
+          const goTo = () => {
+            // Going back: always allow
+            if (i <= subStep) { setNextError(null); setSubStep(i); return; }
+            // Going forward: validate only current step gate
+            const gates: Record<number, string[]> = {
+              0: ["full_name", "phone", "installation_address", "pre_residence_type", "pre_monthly_bill", "pre_peak_usage", "pre_electrical_phase"],
+              1: ["pre_wants_battery", "interested_package_ids"],
+              2: ["survey_date", "survey_time_slot"],
+              3: [],
+            };
+            const v = validatePreSurvey({ ...lead, ...formDraft, survey_date: surveyDate || lead.survey_date, survey_time_slot: surveyTimeSlot || lead.survey_time_slot });
+            const missingHere = v.missing.filter(m => (gates[subStep] || []).includes(m.field));
+            if (subStep === 3 && !uploadedSlipUrl) missingHere.push({ field: "slip", label: "กรุณาอัปโหลดสลิปชำระเงิน" });
+            if (missingHere.length > 0) {
+              setNextError(missingHere.map(m => m.label).join(", "));
+              return;
+            }
+            setNextError(null);
+            setSubStep(i);
+          };
+          return (
+            <button key={i} type="button" onClick={goTo} className="flex-1 flex flex-col items-center gap-1 cursor-pointer">
+              <div className={`h-1 w-full rounded-full transition-colors ${i <= subStep ? "bg-active" : "bg-gray-200"}`} />
+              <span className={`text-xs font-semibold transition-colors ${i === subStep ? "text-active" : i < subStep ? "text-gray-500" : "text-gray-300"}`}>{label}</span>
+            </button>
+          );
+        })}
       </div>
 
       {/* Step 1+2: single PreSurveyForm instance, CSS toggle sections */}
       <div className={subStep <= 1 ? "" : "hidden"}>
-        <PreSurveyForm lead={lead} refresh={refresh} packages={packages} hidePackages={subStep !== 1} onlyPackages={subStep === 1} onPackageChange={setBookingPkg} />
+        <PreSurveyForm lead={lead} refresh={refresh} packages={packages} hidePackages={subStep !== 1} onlyPackages={subStep === 1} onPackageChange={setBookingPkg} onFormChange={setFormDraft} />
       </div>
 
       {/* Step 3: นัดสำรวจ */}
       {subStep === 2 && (
+        <div className="space-y-2">
+        <div className="rounded-lg border border-active/15 bg-white/60 p-4">
+          <label className="text-xs font-semibold tracking-wider uppercase text-gray-400 block mb-2">Zone</label>
+          <div className="grid grid-cols-1 gap-2">
+            {zones.map(z => (
+              <button key={z.id} type="button" onClick={() => {
+                setZone(z.name);
+                apiFetch(`/api/leads/${lead.id}`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ zone: z.name }) }).catch(console.error);
+              }} className={`w-full h-10 rounded-lg text-sm font-semibold border transition-all text-left px-4 ${zone === z.name ? "bg-active text-white border-active" : "bg-white text-gray-600 border-gray-200"}`}>
+                {z.name}
+              </button>
+            ))}
+          </div>
+        </div>
         <div className="rounded-lg border border-active/15 bg-white/60 p-4">
           <label className="text-xs font-semibold tracking-wider uppercase text-gray-400 block mb-2">
             Survey Appointment <span className="text-red-500">*</span>
@@ -684,6 +749,7 @@ export default function PreSurveyStep({ lead, state, refresh, packages, expanded
             required
           />
           <div className="text-xs text-gray-500 mt-2">นัดครั้งแรก · เลื่อนนัดทำได้ในขั้น Survey</div>
+        </div>
         </div>
       )}
 
@@ -845,69 +911,123 @@ export default function PreSurveyStep({ lead, state, refresh, packages, expanded
 
       {/* Step 5: ยืนยัน */}
       {subStep === 4 && (
-        <div className="rounded-lg border border-active/15 bg-white/60 p-3 space-y-2.5">
-          <div className="text-xs font-semibold text-gray-400 uppercase tracking-wider">ข้อมูลจดทะเบียน</div>
-          <div>
-            <label className="text-xs text-gray-500 block mb-1">ชื่อ-นามสกุล</label>
-            <input type="text" value={regName} onChange={e => setRegName(e.target.value)} className="w-full h-10 px-3 rounded-lg border border-gray-200 text-sm focus:outline-none focus:border-primary" />
-          </div>
-          <div>
-            <label className="text-xs text-gray-500 block mb-1">เลขบัตรประชาชน</label>
-            <input type="text" inputMode="numeric" maxLength={13} value={regIdCard} onChange={e => setRegIdCard(e.target.value.replace(/\D/g, "").slice(0, 13))} placeholder="13 หลัก" className="w-full h-10 px-3 rounded-lg border border-gray-200 text-sm font-mono tabular-nums focus:outline-none focus:border-primary" />
-          </div>
-          <div>
-            <label className="text-xs text-gray-500 block mb-1">ที่อยู่ตามบัตรประชาชน</label>
-            <textarea value={regAddress} onChange={e => setRegAddress(e.target.value)} rows={2} className="w-full px-3 py-2 rounded-lg border border-gray-200 text-sm focus:outline-none focus:border-primary resize-none" />
-          </div>
-          <div>
-            <label className="text-xs text-gray-500 block mb-1">โครงการ</label>
-            <input type="text" value={regProject} onChange={e => setRegProject(e.target.value)} className="w-full h-10 px-3 rounded-lg border border-gray-200 text-sm focus:outline-none focus:border-primary" />
-          </div>
-          <div>
-            <label className="text-xs text-gray-500 block mb-1">ที่อยู่ติดตั้ง</label>
-            <textarea value={regHouseNumber} onChange={e => setRegHouseNumber(e.target.value)} rows={2} className="w-full px-3 py-2 rounded-lg border border-gray-200 text-sm focus:outline-none focus:border-primary resize-none" />
+        <div className="space-y-2">
+          {/* OCR scan helper */}
+          <CustomerInfoForm
+            values={{}}
+            onChange={(patch) => {
+              // Skip full_name — customer name is set earlier; don't overwrite from OCR here
+              if (patch.id_card_number) setRegIdCard(patch.id_card_number);
+              if (patch.id_card_address) setRegAddress(patch.id_card_address);
+              if (patch.installation_address) setRegHouseNumber(patch.installation_address);
+            }}
+            fields={[]}
+            showScan
+          />
+          <div className="rounded-lg border border-active/15 bg-white/60 p-3 space-y-2.5">
+            <div className="text-xs font-semibold text-gray-400 uppercase tracking-wider">ข้อมูลจดทะเบียน</div>
+            <div>
+              <label className="text-xs text-gray-500 block mb-1">ชื่อ-นามสกุล</label>
+              <input type="text" value={regName} onChange={e => setRegName(e.target.value)} className="w-full h-10 px-3 rounded-lg border border-gray-200 text-sm focus:outline-none focus:border-primary" />
+            </div>
+            <div>
+              <label className="text-xs text-gray-500 block mb-1">เลขบัตรประชาชน</label>
+              <input type="text" inputMode="numeric" maxLength={13} value={regIdCard} onChange={e => setRegIdCard(e.target.value.replace(/\D/g, "").slice(0, 13))} placeholder="13 หลัก" className="w-full h-10 px-3 rounded-lg border border-gray-200 text-sm font-mono tabular-nums focus:outline-none focus:border-primary" />
+            </div>
+            <div>
+              <label className="text-xs text-gray-500 block mb-1">ที่อยู่ตามบัตรประชาชน</label>
+              <textarea value={regAddress} onChange={e => setRegAddress(e.target.value)} rows={2} className="w-full px-3 py-2 rounded-lg border border-gray-200 text-sm focus:outline-none focus:border-primary resize-none" />
+            </div>
+            <div>
+              <label className="text-xs text-gray-500 block mb-1">โครงการ</label>
+              <input type="text" value={regProject} onChange={e => setRegProject(e.target.value)} className="w-full h-10 px-3 rounded-lg border border-gray-200 text-sm focus:outline-none focus:border-primary" />
+            </div>
+            <div>
+              <label className="text-xs text-gray-500 block mb-1">ที่อยู่ติดตั้ง</label>
+              <textarea value={regHouseNumber} onChange={e => setRegHouseNumber(e.target.value)} rows={2} className="w-full px-3 py-2 rounded-lg border border-gray-200 text-sm focus:outline-none focus:border-primary resize-none" />
+            </div>
           </div>
         </div>
       )}
 
       {/* Confirm action — step 5 */}
       {subStep === 4 && (
-        <button
-          onClick={async () => {
-            await apiFetch(`/api/leads/${lead.id}`, {
-              method: "PATCH",
-              headers: { "Content-Type": "application/json" },
-              body: JSON.stringify({
-                full_name: regName || undefined,
-                id_card_number: regIdCard || undefined,
-                id_card_address: regAddress || undefined,
-                installation_address: regHouseNumber || undefined,
-              }),
-            });
-            confirmWithSlip();
-          }}
-          disabled={bookingSaving || !surveyDate || !surveyTimeSlot || !uploadedSlipUrl}
-          className="w-full h-11 rounded-lg text-sm font-semibold text-white bg-gradient-to-r from-primary to-primary-dark hover:brightness-110 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
-        >
-          {bookingSaving ? "กำลังบันทึก…" : !surveyDate ? "เลือกวันนัดก่อน" : !surveyTimeSlot ? "เลือกช่วงเวลา" : !uploadedSlipUrl ? "อัปโหลดสลิปก่อน" : "ยืนยันและเปิดขั้นสำรวจ"}
-        </button>
-      )}
-
-      {/* Navigation buttons */}
-      {subStep < 4 && (
-        <div className="flex gap-2 mt-3">
-          {subStep > 0 && (
-            <button type="button" onClick={() => { setSubStep(subStep - 1); setTimeout(() => document.querySelector("[data-step-active]")?.scrollIntoView({ behavior: "smooth", block: "start" }), 100); }} className="flex-1 h-11 rounded-lg text-sm font-semibold border border-gray-200 text-gray-600 hover:bg-gray-50 transition-colors flex items-center justify-center gap-1">
-              <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M15.75 19.5L8.25 12l7.5-7.5" /></svg>
-              ย้อนกลับ
-            </button>
-          )}
-          <button type="button" onClick={() => { setSubStep(subStep + 1); setTimeout(() => document.querySelector("[data-step-active]")?.scrollIntoView({ behavior: "smooth", block: "start" }), 100); }} className="flex-1 h-11 rounded-lg text-sm font-semibold text-white bg-active hover:brightness-110 transition-colors flex items-center justify-center gap-1">
-            ถัดไป
-            <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M8.25 4.5l7.5 7.5-7.5 7.5" /></svg>
+        <div className="space-y-2">
+          <button
+            onClick={async () => {
+              const missing: string[] = [];
+              if (!regName) missing.push("ชื่อ-นามสกุล");
+              if (!regIdCard || regIdCard.length !== 13) missing.push("เลขบัตรประชาชน (13 หลัก)");
+              if (!regAddress) missing.push("ที่อยู่ตามบัตร");
+              if (!regHouseNumber) missing.push("ที่อยู่ติดตั้ง");
+              if (!uploadedSlipUrl) missing.push("กรุณาอัปโหลดสลิปชำระเงิน");
+              if (!surveyDate) missing.push("วันนัดสำรวจ");
+              if (!surveyTimeSlot) missing.push("ช่วงเวลา");
+              if (missing.length > 0) {
+                setNextError(missing.join(", "));
+                return;
+              }
+              setNextError(null);
+              await apiFetch(`/api/leads/${lead.id}`, {
+                method: "PATCH",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({
+                  full_name: regName || undefined,
+                  id_card_number: regIdCard || undefined,
+                  id_card_address: regAddress || undefined,
+                  installation_address: regHouseNumber || undefined,
+                }),
+              });
+              confirmWithSlip();
+            }}
+            disabled={bookingSaving}
+            className="w-full h-11 rounded-lg text-sm font-semibold text-white bg-gradient-to-r from-primary to-primary-dark hover:brightness-110 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+          >
+            {bookingSaving ? "กำลังบันทึก…" : "ยืนยันและเปิดขั้นสำรวจ"}
           </button>
         </div>
       )}
+
+      {/* Navigation buttons */}
+      {subStep < 4 && (() => {
+        const stepGate: Record<number, string[]> = {
+          0: ["full_name", "phone", "installation_address", "pre_residence_type", "pre_monthly_bill", "pre_peak_usage", "pre_electrical_phase"],
+          1: ["pre_wants_battery", "interested_package_ids"],
+          2: ["survey_date", "survey_time_slot"],
+          3: [],
+        };
+        const handleNext = () => {
+          const v = validatePreSurvey({ ...lead, ...formDraft, survey_date: surveyDate || lead.survey_date, survey_time_slot: surveyTimeSlot || lead.survey_time_slot });
+          const missingHere = v.missing.filter(m => stepGate[subStep]?.includes(m.field));
+          // Step 3 (ชำระเงิน): ต้องอัปโหลดสลิปก่อน
+          if (subStep === 3 && !uploadedSlipUrl) {
+            missingHere.push({ field: "slip", label: "กรุณาอัปโหลดสลิปชำระเงิน" });
+          }
+          if (missingHere.length > 0) {
+            setNextError(missingHere.map(m => m.label).join(", "));
+            return;
+          }
+          setNextError(null);
+          setSubStep(subStep + 1);
+          setTimeout(() => document.querySelector("[data-step-active]")?.scrollIntoView({ behavior: "smooth", block: "start" }), 100);
+        };
+        return (
+          <div className="mt-3 space-y-2">
+            <div className="flex gap-2">
+              {subStep > 0 && (
+                <button type="button" onClick={() => { setNextError(null); setSubStep(subStep - 1); setTimeout(() => document.querySelector("[data-step-active]")?.scrollIntoView({ behavior: "smooth", block: "start" }), 100); }} className="flex-1 h-11 rounded-lg text-sm font-semibold border border-gray-200 text-gray-600 hover:bg-gray-50 transition-colors flex items-center justify-center gap-1">
+                  <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M15.75 19.5L8.25 12l7.5-7.5" /></svg>
+                  ย้อนกลับ
+                </button>
+              )}
+              <button type="button" onClick={handleNext} className="flex-1 h-11 rounded-lg text-sm font-semibold text-white bg-active hover:brightness-110 transition-colors flex items-center justify-center gap-1">
+                ถัดไป
+                <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M8.25 4.5l7.5 7.5-7.5 7.5" /></svg>
+              </button>
+            </div>
+          </div>
+        );
+      })()}
       {subStep === 4 && subStep > 0 && (
         <button type="button" onClick={() => { setSubStep(subStep - 1); setTimeout(() => document.querySelector("[data-step-active]")?.scrollIntoView({ behavior: "smooth", block: "start" }), 100); }} className="w-full h-9 mt-2 rounded-lg text-xs text-gray-500 border border-gray-200 hover:bg-gray-50 transition-colors flex items-center justify-center gap-1">
           <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M15.75 19.5L8.25 12l7.5-7.5" /></svg>
@@ -917,45 +1037,32 @@ export default function PreSurveyStep({ lead, state, refresh, packages, expanded
 
       {/* Image lightbox */}
       {lightboxUrl && (
-        <div className="fixed inset-0 z-[70] flex items-center justify-center bg-black/70" onClick={() => setLightboxUrl(null)}>
+        <div className="fixed inset-0 z-[70] flex flex-col items-center justify-center bg-black/70" onClick={() => setLightboxUrl(null)}>
           <button onClick={() => setLightboxUrl(null)} className="absolute top-4 right-4 w-10 h-10 rounded-full bg-black/50 text-white flex items-center justify-center text-xl safe-top">✕</button>
-          <img src={lightboxUrl} alt="Preview" className="max-w-[90vw] max-h-[85vh] object-contain rounded-lg" />
+          <img src={lightboxUrl} alt="Preview" className="max-w-[90vw] max-h-[78vh] object-contain rounded-lg" onClick={e => e.stopPropagation()} />
+          <a
+            href={lightboxUrl}
+            download={`receipt.png`}
+            onClick={e => e.stopPropagation()}
+            className="mt-4 inline-flex items-center gap-2 px-6 py-3 rounded-full bg-white text-gray-900 text-sm font-semibold shadow-lg hover:bg-gray-100 transition-colors"
+          >
+            <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M3 16.5v2.25A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75V16.5M16.5 12L12 16.5m0 0L7.5 12m4.5 4.5V3" /></svg>
+            บันทึกรูป
+          </a>
         </div>
       )}
 
       {/* LINE send confirm modal */}
       {lineConfirmType && (
-        <div className="fixed inset-0 z-[60] flex items-center justify-center">
-          <div className="absolute inset-0 bg-black/30" onClick={() => setLineConfirmType(null)} />
-          <div className="relative bg-white rounded-2xl w-[85%] max-w-sm p-5 animate-slide-up text-center">
-            <div className="w-12 h-12 rounded-full bg-emerald-100 flex items-center justify-center mx-auto mb-3">
-              <svg className="w-6 h-6 text-emerald-600" viewBox="0 0 24 24" fill="currentColor"><path d="M19.365 9.863c.349 0 .63.285.63.631 0 .345-.281.63-.63.63H17.61v1.125h1.755c.349 0 .63.283.63.63 0 .344-.281.629-.63.629h-2.386c-.345 0-.627-.285-.627-.629V8.108c0-.345.282-.63.63-.63h2.386c.346 0 .627.285.627.63 0 .349-.281.63-.63.63H17.61v1.125h1.755zm-3.855 3.016c0 .27-.174.51-.432.596-.064.021-.133.031-.199.031-.211 0-.391-.09-.51-.25l-2.443-3.317v2.94c0 .344-.279.629-.631.629-.346 0-.626-.285-.626-.629V8.108c0-.27.173-.51.43-.595.064-.022.134-.032.2-.032.211 0 .391.09.51.25l2.44 3.317V8.108c0-.345.282-.63.63-.63.345 0 .63.285.63.63v4.771zm-5.741 0c0 .344-.282.629-.631.629-.345 0-.627-.285-.627-.629V8.108c0-.345.282-.63.63-.63.346 0 .628.285.628.63v4.771zm-2.466.629H4.917c-.345 0-.63-.285-.63-.629V8.108c0-.345.285-.63.63-.63.348 0 .63.285.63.63v4.141h1.756c.348 0 .629.283.629.63 0 .344-.282.629-.629.629M24 10.314C24 4.943 18.615.572 12 .572S0 4.943 0 10.314c0 4.811 4.27 8.842 10.035 9.608.391.082.923.258 1.058.59.12.301.079.766.038 1.08l-.164 1.02c-.045.301-.24 1.186 1.049.645 1.291-.539 6.916-4.078 9.436-6.975C23.176 14.393 24 12.458 24 10.314" /></svg>
-            </div>
-            <div className="text-base font-bold text-gray-900 mb-1">
-              ส่ง{lineConfirmType === "qr" ? " QR" : "ลิ้งค์ชำระเงิน"}ให้ลูกค้า?
-            </div>
-            <div className="text-sm text-gray-500 mb-4">
-              ส่งไปยัง LINE ของ <span className="font-semibold text-gray-700">{lead.full_name}</span>
-            </div>
-            <div className="flex gap-2">
-              <button
-                type="button"
-                onClick={() => setLineConfirmType(null)}
-                className="flex-1 py-2.5 rounded-xl text-sm font-semibold bg-white border border-gray-200 text-gray-700"
-              >
-                ยกเลิก
-              </button>
-              <button
-                type="button"
-                onClick={() => sendViaLine(lineConfirmType)}
-                className="flex-1 py-2.5 rounded-xl text-sm font-semibold bg-emerald-500 text-white hover:bg-emerald-600"
-              >
-                ส่งเลย
-              </button>
-            </div>
-          </div>
-        </div>
+        <LineConfirmModal
+          name={lead.full_name}
+          description={lineConfirmType === "qr" ? "ส่ง QR ชำระเงิน" : "ส่งลิ้งค์ชำระเงิน"}
+          onCancel={() => setLineConfirmType(null)}
+          onConfirm={() => sendViaLine(lineConfirmType)}
+        />
       )}
+
+      <ErrorPopup message={nextError} onClose={() => setNextError(null)} />
     </div>
   );
 }

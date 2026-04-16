@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { getDb } from "@/lib/db";
+import { getDb, fixDates } from "@/lib/db";
 
 export async function GET() {
   try {
@@ -17,25 +17,25 @@ export async function GET() {
       recentLeads,
       topProjects,
       recentActivities,
+      activityHeatmap,
     ] = await Promise.all([
       db.request().query(`
         SELECT
           (SELECT COUNT(*) FROM leads) as total_leads,
           (SELECT COUNT(*) FROM bookings) as total_bookings,
           (SELECT ISNULL(SUM(total_price), 0) FROM bookings) as total_booking_value,
-          (SELECT COUNT(*) FROM leads WHERE status = 'purchased') as total_won
+          (SELECT COUNT(*) FROM leads WHERE status = 'order') as total_won
       `),
       db.request().input("first_day", firstDay).query(`
         SELECT
           (SELECT COUNT(*) FROM leads WHERE created_at >= @first_day) as new_leads,
-          (SELECT COUNT(*) FROM bookings WHERE created_at >= @first_day) as bookings,
-          (SELECT ISNULL(SUM(total_price), 0) FROM bookings WHERE created_at >= @first_day) as booking_value,
-          (SELECT COUNT(*) FROM leads WHERE status = 'purchased' AND updated_at >= @first_day) as won
+          (SELECT COUNT(*) FROM leads WHERE status = 'closed' AND install_completed_at >= @first_day) as closed_count,
+          (SELECT ISNULL(SUM(ISNULL(order_total,0) + ISNULL(install_extra_cost,0)), 0) FROM leads WHERE status = 'closed' AND install_completed_at >= @first_day) as closed_value
       `),
       db.request().input("lm_start", lastMonthFirst).input("lm_end", lastMonthEnd).query(`
         SELECT
           (SELECT COUNT(*) FROM leads WHERE created_at >= @lm_start AND created_at <= @lm_end) as new_leads,
-          (SELECT COUNT(*) FROM bookings WHERE created_at >= @lm_start AND created_at <= @lm_end) as bookings
+          (SELECT COUNT(*) FROM leads WHERE status = 'closed' AND install_completed_at >= @lm_start AND install_completed_at <= @lm_end) as closed_count
       `),
       db.request().query(`SELECT status, COUNT(*) as count FROM leads GROUP BY status`),
       db.request().query(`
@@ -44,7 +44,7 @@ export async function GET() {
         ORDER BY l.created_at DESC
       `),
       db.request().query(`
-        SELECT TOP 5 p.name, COUNT(*) as lead_count, SUM(CASE WHEN l.status = 'purchased' THEN 1 ELSE 0 END) as won
+        SELECT TOP 5 p.name, COUNT(*) as lead_count, SUM(CASE WHEN l.status = 'order' THEN 1 ELSE 0 END) as won
         FROM leads l JOIN projects p ON l.project_id = p.id
         GROUP BY p.name ORDER BY lead_count DESC
       `),
@@ -54,6 +54,27 @@ export async function GET() {
         JOIN leads l ON la.lead_id = l.id
         LEFT JOIN users u ON la.created_by = u.id
         ORDER BY la.created_at DESC
+      `),
+      db.request().query(`
+        SELECT CAST(la.created_at AS DATE) as day, la.lead_id, l.full_name, la.activity_type,
+               COALESCE(
+                 (SELECT TOP 1 new_status FROM lead_activities
+                  WHERE lead_id = la.lead_id AND activity_type = 'status_change'
+                    AND created_at <= DATEADD(day, 1, CAST(la.created_at AS DATE))
+                  ORDER BY created_at DESC),
+                 'register'
+               ) as lead_status,
+               (SELECT COUNT(*) FROM lead_activities WHERE lead_id = la.lead_id AND created_at <= DATEADD(day, 1, CAST(la.created_at AS DATE))) as total_activities,
+               CASE WHEN EXISTS (
+                 SELECT 1 FROM lead_activities
+                 WHERE lead_id = la.lead_id AND activity_type = 'payment_confirmed'
+                   AND CAST(created_at AS DATE) = CAST(la.created_at AS DATE)
+               ) THEN 1 ELSE 0 END as has_paid
+        FROM lead_activities la
+        JOIN leads l ON la.lead_id = l.id
+        WHERE la.created_at >= DATEFROMPARTS(YEAR(GETDATE()), MONTH(GETDATE()), 1)
+          AND la.created_at < DATEADD(MONTH, 1, DATEFROMPARTS(YEAR(GETDATE()), MONTH(GETDATE()), 1))
+        ORDER BY day, la.created_at ASC
       `),
     ]);
 
@@ -70,9 +91,10 @@ export async function GET() {
       this_month: tm,
       last_month: lm,
       status_breakdown: statusBreakdown.recordset,
-      recent_leads: recentLeads.recordset,
+      recent_leads: fixDates(recentLeads.recordset),
       top_projects: topProjects.recordset,
-      recent_activities: recentActivities.recordset,
+      recent_activities: fixDates(recentActivities.recordset),
+      activity_heatmap: fixDates(activityHeatmap.recordset),
     });
   } catch (error) {
     console.error("GET /api/dashboard error:", error);

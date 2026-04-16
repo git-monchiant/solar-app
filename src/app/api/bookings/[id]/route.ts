@@ -39,12 +39,15 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
       const booking = result.recordset[0];
       await db.request()
         .input("lead_id", sql.Int, booking.lead_id)
-        .query(`UPDATE leads SET status = 'purchased', updated_at = GETDATE() WHERE id = @lead_id`);
+        .query(`UPDATE leads SET status = 'order', updated_at = GETDATE() WHERE id = @lead_id`);
       await db.request()
         .input("lead_id", sql.Int, booking.lead_id)
-        .input("title", sql.NVarChar(200), `Payment confirmed: ${booking.booking_number}`)
+        .input("title", sql.NVarChar(200), `ลูกค้าโอนเงินมัดจำ ${booking.booking_number}`)
         .input("slip_url", sql.NVarChar(sql.MAX), body.slip_url || null)
-        .query(`INSERT INTO lead_activities (lead_id, activity_type, title, note, created_by) VALUES (@lead_id, 'status_change', @title, @slip_url, 1)`);
+        .query(`INSERT INTO lead_activities (lead_id, activity_type, title, note, created_by) VALUES (@lead_id, 'payment_confirmed', @title, @slip_url, 1)`);
+      await db.request()
+        .input("lead_id", sql.Int, booking.lead_id)
+        .query(`INSERT INTO lead_activities (lead_id, activity_type, title, old_status, new_status, created_by) VALUES (@lead_id, 'status_change', 'Status: Booked → รออนุมัติ/ชำระ', 'booked', 'order', 1)`);
     }
 
     return NextResponse.json(result.recordset[0]);

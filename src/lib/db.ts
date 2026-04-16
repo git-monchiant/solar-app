@@ -23,3 +23,22 @@ export async function getDb(): Promise<sql.ConnectionPool> {
 }
 
 export { sql };
+
+export function fixDates<T extends Record<string, unknown>>(rows: T[]): T[] {
+  return rows.map(row => {
+    const fixed = { ...row };
+    for (const key of Object.keys(fixed)) {
+      const val = fixed[key];
+      if (val instanceof Date) {
+        const y = val.getFullYear();
+        const m = String(val.getMonth() + 1).padStart(2, "0");
+        const d = String(val.getDate()).padStart(2, "0");
+        const h = String(val.getHours()).padStart(2, "0");
+        const min = String(val.getMinutes()).padStart(2, "0");
+        const s = String(val.getSeconds()).padStart(2, "0");
+        (fixed as Record<string, unknown>)[key] = `${y}-${m}-${d}T${h}:${min}:${s}`;
+      }
+    }
+    return fixed;
+  });
+}

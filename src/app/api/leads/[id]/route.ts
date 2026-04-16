@@ -1,10 +1,10 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getDb, sql } from "@/lib/db";
+import { getDb, sql, fixDates } from "@/lib/db";
 
 const statusLabels: Record<string, string> = {
-  registered: "Register/Walk-In", booked: "Booked",
-  survey: "Survey", quoted: "Quotation", purchased: "Purchased",
-  installed: "Installed", lost: "Lost",
+  register: "รอติดตาม",
+  survey: "สำรวจหน้างาน", quote: "รอใบเสนอราคา", order: "รออนุมัติ/ชำระ",
+  install: "กำลังติดตั้ง", closed: "ติดตั้งเรียบร้อย", lost: "ยกเลิก",
 };
 
 export async function GET(_req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
@@ -29,7 +29,7 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ id:
     if (result.recordset.length === 0) {
       return NextResponse.json({ error: "Lead not found" }, { status: 404 });
     }
-    return NextResponse.json(result.recordset[0]);
+    return NextResponse.json(fixDates(result.recordset)[0]);
   } catch (error) {
     console.error("GET /api/leads/[id] error:", error);
     return NextResponse.json({ error: "Failed to fetch lead" }, { status: 500 });
@@ -110,7 +110,7 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
     }
     if (body.revisit_date !== undefined) {
       sets.push("revisit_date = @revisit_date");
-      request.input("revisit_date", sql.Date, body.revisit_date ? new Date(body.revisit_date) : null);
+      request.input("revisit_date", sql.Date, body.revisit_date ? new Date(body.revisit_date + "T12:00:00") : null);
     }
     if (body.source !== undefined) {
       sets.push("source = @source");
@@ -134,15 +134,19 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
     }
     if (body.survey_date !== undefined) {
       sets.push("survey_date = @survey_date");
-      request.input("survey_date", sql.Date, body.survey_date ? new Date(body.survey_date) : null);
+      request.input("survey_date", sql.Date, body.survey_date ? new Date(body.survey_date + "T12:00:00") : null);
     }
     if (body.next_follow_up !== undefined) {
       sets.push("next_follow_up = @next_follow_up");
-      request.input("next_follow_up", sql.Date, body.next_follow_up ? new Date(body.next_follow_up) : null);
+      request.input("next_follow_up", sql.Date, body.next_follow_up ? new Date(body.next_follow_up + "T12:00:00") : null);
     }
     if (body.survey_time_slot !== undefined) {
       sets.push("survey_time_slot = @survey_time_slot");
       request.input("survey_time_slot", sql.NVarChar(20), body.survey_time_slot);
+    }
+    if (body.zone !== undefined) {
+      sets.push("zone = @zone");
+      request.input("zone", sql.NVarChar(100), body.zone);
     }
     if (body.survey_confirmed !== undefined) {
       sets.push("survey_confirmed = @survey_confirmed");
@@ -155,6 +159,93 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
     if (body.survey_note !== undefined) {
       sets.push("survey_note = @survey_note");
       request.input("survey_note", sql.NVarChar(sql.MAX), body.survey_note);
+    }
+    if (body.quotation_note !== undefined) {
+      sets.push("quotation_note = @quotation_note");
+      request.input("quotation_note", sql.NVarChar(sql.MAX), body.quotation_note);
+    }
+    if (body.quotation_files !== undefined) {
+      sets.push("quotation_files = @quotation_files");
+      request.input("quotation_files", sql.NVarChar(sql.MAX), body.quotation_files);
+    }
+    if (body.quotation_amount !== undefined) {
+      sets.push("quotation_amount = @quotation_amount");
+      request.input("quotation_amount", sql.Decimal(12, 2), body.quotation_amount);
+    }
+    if (body.order_total !== undefined) {
+      sets.push("order_total = @order_total");
+      request.input("order_total", sql.Decimal(12, 2), body.order_total);
+    }
+    if (body.order_pct_before !== undefined) {
+      sets.push("order_pct_before = @order_pct_before");
+      request.input("order_pct_before", sql.Int, body.order_pct_before);
+    }
+    if (body.order_pct_after !== undefined) {
+      sets.push("order_pct_after = @order_pct_after");
+      request.input("order_pct_after", sql.Int, body.order_pct_after);
+    }
+    if (body.order_before_paid !== undefined) {
+      sets.push("order_before_paid = @order_before_paid");
+      request.input("order_before_paid", sql.Bit, body.order_before_paid);
+    }
+    if (body.order_before_slip !== undefined) {
+      sets.push("order_before_slip = @order_before_slip");
+      request.input("order_before_slip", sql.NVarChar(sql.MAX), body.order_before_slip);
+    }
+    if (body.order_after_paid !== undefined) {
+      sets.push("order_after_paid = @order_after_paid");
+      request.input("order_after_paid", sql.Bit, body.order_after_paid);
+    }
+    if (body.order_after_slip !== undefined) {
+      sets.push("order_after_slip = @order_after_slip");
+      request.input("order_after_slip", sql.NVarChar(sql.MAX), body.order_after_slip);
+    }
+    if (body.install_date !== undefined) {
+      sets.push("install_date = @install_date");
+      request.input("install_date", sql.Date, body.install_date ? new Date(body.install_date + "T12:00:00") : null);
+    }
+    if (body.install_photos !== undefined) {
+      sets.push("install_photos = @install_photos");
+      request.input("install_photos", sql.NVarChar(sql.MAX), body.install_photos);
+    }
+    if (body.install_note !== undefined) {
+      sets.push("install_note = @install_note");
+      request.input("install_note", sql.NVarChar(sql.MAX), body.install_note);
+    }
+    if (body.install_extra_note !== undefined) {
+      sets.push("install_extra_note = @install_extra_note");
+      request.input("install_extra_note", sql.NVarChar(sql.MAX), body.install_extra_note);
+    }
+    if (body.install_extra_cost !== undefined) {
+      sets.push("install_extra_cost = @install_extra_cost");
+      request.input("install_extra_cost", sql.Decimal(12, 2), body.install_extra_cost);
+    }
+    if (body.install_completed_at !== undefined) {
+      sets.push("install_completed_at = GETDATE()");
+    }
+    if (body.review_sent !== undefined) {
+      sets.push("review_sent = @review_sent");
+      request.input("review_sent", sql.Bit, body.review_sent);
+    }
+    if (body.review_rating !== undefined) {
+      sets.push("review_rating = @review_rating");
+      request.input("review_rating", sql.Int, body.review_rating);
+    }
+    if (body.review_quality !== undefined) {
+      sets.push("review_quality = @review_quality");
+      request.input("review_quality", sql.Int, body.review_quality);
+    }
+    if (body.review_service !== undefined) {
+      sets.push("review_service = @review_service");
+      request.input("review_service", sql.Int, body.review_service);
+    }
+    if (body.review_punctuality !== undefined) {
+      sets.push("review_punctuality = @review_punctuality");
+      request.input("review_punctuality", sql.Int, body.review_punctuality);
+    }
+    if (body.review_comment !== undefined) {
+      sets.push("review_comment = @review_comment");
+      request.input("review_comment", sql.NVarChar(sql.MAX), body.review_comment);
     }
     if (body.survey_photos !== undefined) {
       sets.push("survey_photos = @survey_photos");
@@ -306,23 +397,30 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
       UPDATE leads SET ${sets.join(", ")} OUTPUT INSERTED.* WHERE id = @id
     `);
 
-    // Auto-log status change as activity
+    // Auto-log status change as activity (with duplicate prevention)
     if (body.status !== undefined && oldStatus && oldStatus !== body.status) {
-      const oldLabel = statusLabels[oldStatus] || oldStatus;
-      const newLabel = statusLabels[body.status] || body.status;
-      await db.request()
+      const dup = await db.request()
         .input("lead_id", sql.Int, leadId)
-        .input("activity_type", sql.NVarChar(30), "status_change")
-        .input("title", sql.NVarChar(200), `Status: ${oldLabel} → ${newLabel}`)
         .input("old_status", sql.NVarChar(30), oldStatus)
         .input("new_status", sql.NVarChar(30), body.status)
-        .query(`
-          INSERT INTO lead_activities (lead_id, activity_type, title, old_status, new_status, created_by)
-          VALUES (@lead_id, @activity_type, @title, @old_status, @new_status, 1)
-        `);
+        .query(`SELECT TOP 1 id FROM lead_activities WHERE lead_id = @lead_id AND activity_type = 'status_change' AND old_status = @old_status AND new_status = @new_status AND created_at > DATEADD(SECOND, -30, GETDATE())`);
+      if (dup.recordset.length === 0) {
+        const oldLabel = statusLabels[oldStatus] || oldStatus;
+        const newLabel = statusLabels[body.status] || body.status;
+        await db.request()
+          .input("lead_id", sql.Int, leadId)
+          .input("activity_type", sql.NVarChar(30), "status_change")
+          .input("title", sql.NVarChar(200), `Status: ${oldLabel} → ${newLabel}`)
+          .input("old_status", sql.NVarChar(30), oldStatus)
+          .input("new_status", sql.NVarChar(30), body.status)
+          .query(`
+            INSERT INTO lead_activities (lead_id, activity_type, title, old_status, new_status, created_by)
+            VALUES (@lead_id, @activity_type, @title, @old_status, @new_status, 1)
+          `);
+      }
     }
 
-    return NextResponse.json(result.recordset[0]);
+    return NextResponse.json(fixDates(result.recordset)[0]);
   } catch (error) {
     console.error("PATCH /api/leads/[id] error:", error);
     return NextResponse.json({ error: "Failed to update lead" }, { status: 500 });

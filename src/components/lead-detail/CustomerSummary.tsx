@@ -25,7 +25,7 @@ interface Lead {
 const formatPrice = (n: number) => new Intl.NumberFormat("th-TH").format(n);
 const formatDate = (d: string) => {
   if (!d) return "";
-  return new Date(d).toLocaleDateString("th-TH", { day: "numeric", month: "short", year: "numeric" });
+  return new Date(String(d).slice(0, 10) + "T12:00:00").toLocaleDateString("th-TH", { day: "numeric", month: "short", year: "numeric" });
 };
 
 export default function CustomerSummary({ lead }: { lead: Lead }) {

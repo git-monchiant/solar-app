@@ -17,11 +17,12 @@ import InstalledStep from "@/components/lead-detail/steps/InstalledStep";
 import type { Lead, Package, CardStateKind } from "@/components/lead-detail/steps/types";
 
 const formatDate = (d: string) =>
-  new Date(d).toLocaleDateString("th-TH", { day: "numeric", month: "short", year: "numeric" });
+  new Date(String(d).slice(0, 10) + "T12:00:00").toLocaleDateString("th-TH", { day: "numeric", month: "short", year: "numeric" });
 
-const STEP_ORDER = ["booked", "survey", "quoted", "purchased", "installed"];
+const STEP_ORDER = ["register", "survey", "quote", "order", "install"];
 
 function stepIndex(status: string) {
+  if (status === "closed") return STEP_ORDER.length;
   return STEP_ORDER.indexOf(status);
 }
 
@@ -71,17 +72,16 @@ export default function LeadDetailPage({ params }: { params: Promise<{ id: strin
   }, [fetchLead, fetchActivities]);
 
   // Auto-scroll to active step when lead status changes or on first load
-  const lastStatus = useRef<string | null>(null);
+  const hasScrolled = useRef(false);
   useEffect(() => {
-    if (!lead || tab !== "info") return;
-    if (lastStatus.current === lead.status) return;
-    lastStatus.current = lead.status;
+    if (!lead || tab !== "info" || hasScrolled.current) return;
     const t = setTimeout(() => {
       const el = document.querySelector("[data-step-active]") as HTMLElement | null;
       if (el) {
+        hasScrolled.current = true;
         el.scrollIntoView({ behavior: "smooth", block: "start" });
       }
-    }, 150);
+    }, 300);
     return () => clearTimeout(t);
   }, [lead, tab]);
 
@@ -115,7 +115,7 @@ export default function LeadDetailPage({ params }: { params: Promise<{ id: strin
     4: "SOLAR",
   };
 
-  const CardWrapper = ({ stepIdx, title, icon, children, onHeaderClick }: { stepIdx: number; title: string; icon: string; children: React.ReactNode; onHeaderClick?: () => void }) => {
+  const CardWrapper = ({ stepIdx, title, doneTitle, icon, children, onHeaderClick }: { stepIdx: number; title: string; doneTitle?: string; icon: string; children: React.ReactNode; onHeaderClick?: () => void }) => {
     const state = cardState(stepIdx);
     const stepNum = String(stepIdx + 1).padStart(2, "0");
     const team = STEP_TEAMS[stepIdx];
@@ -124,7 +124,7 @@ export default function LeadDetailPage({ params }: { params: Promise<{ id: strin
       state === "active"
         ? "bg-active-light border border-active shadow-sm shadow-active/10 ring-1 ring-active/20"
         : state === "done"
-        ? "bg-white border border-gray-200"
+        ? "bg-white border border-gray-300"
         : "bg-gray-50 border border-dashed border-gray-200 pointer-events-none";
 
     const iconBox =
@@ -148,7 +148,7 @@ export default function LeadDetailPage({ params }: { params: Promise<{ id: strin
               Step {stepNum} · {team}
             </div>
             <div className={`text-base font-bold leading-tight tracking-tight mt-1 ${state === "locked" ? "text-gray-400" : "text-gray-900"}`}>
-              {title}
+              {state === "done" && doneTitle ? doneTitle : title}
             </div>
           </div>
 
@@ -181,11 +181,11 @@ export default function LeadDetailPage({ params }: { params: Promise<{ id: strin
       <div className="bg-gradient-to-b from-primary via-primary/50 to-white safe-top sticky top-0 z-10">
         {/* Top row: back + name + call */}
         <div className="pl-3 pr-5 pt-3 flex items-center gap-2">
-          <Link href="/today" className="p-2 rounded-full text-gray-700 hover:bg-white/40 transition-colors shrink-0">
+          <button type="button" onClick={() => window.history.back()} className="p-2 rounded-full text-gray-700 hover:bg-white/40 transition-colors shrink-0" style={{ minHeight: 0 }}>
             <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
               <path strokeLinecap="round" strokeLinejoin="round" d="M15.75 19.5L8.25 12l7.5-7.5" />
             </svg>
-          </Link>
+          </button>
           <div className="flex-1 min-w-0 flex items-center gap-1">
             <h1 className="text-2xl font-bold tracking-tight leading-tight text-gray-900 truncate">{lead.full_name}</h1>
             <button type="button" onClick={() => setShowProfileModal(true)} className="shrink-0 w-8 h-8 rounded-full hover:bg-gray-100 flex items-center justify-center text-gray-400 hover:text-primary transition-colors" style={{ minHeight: 0 }}>
@@ -306,7 +306,7 @@ export default function LeadDetailPage({ params }: { params: Promise<{ id: strin
               return (
                 <button
                   onClick={() => setModalType("note")}
-                  className="w-full text-left rounded-2xl bg-white border border-gray-200 hover:border-gray-300 hover:shadow-sm transition-all"
+                  className="w-full text-left rounded-2xl bg-white border border-gray-300 hover:border-gray-400 hover:shadow-sm transition-all"
                 >
                   <div className="p-5">
                     <div className="flex items-center gap-3 mb-2">
@@ -349,6 +349,7 @@ export default function LeadDetailPage({ params }: { params: Promise<{ id: strin
             <CardWrapper
               stepIdx={1}
               title="Survey"
+              doneTitle="Survey Done"
               icon="M15 10.5a3 3 0 11-6 0 3 3 0 016 0zM19.5 10.5c0 7.142-7.5 11.25-7.5 11.25S4.5 17.642 4.5 10.5a7.5 7.5 0 1115 0z"
               onHeaderClick={cardState(1) === "done" ? () => setSurveyExpanded(!surveyExpanded) : undefined}
             >
@@ -359,6 +360,7 @@ export default function LeadDetailPage({ params }: { params: Promise<{ id: strin
             <CardWrapper
               stepIdx={2}
               title="Quotation"
+              doneTitle="Quotation Done"
               icon="M12 6v12m-3-2.818l.879.659c1.171.879 3.07.879 4.242 0 1.172-.879 1.172-2.303 0-3.182C13.536 12.219 12.768 12 12 12c-.725 0-1.45-.22-2.003-.659-1.106-.879-1.106-2.303 0-3.182s2.9-.879 4.006 0l.415.33M21 12a9 9 0 11-18 0 9 9 0 0118 0z"
             >
               <QuotationStep lead={lead} state={cardState(2)} refresh={refresh} packages={packages} />
@@ -367,7 +369,8 @@ export default function LeadDetailPage({ params }: { params: Promise<{ id: strin
             {/* Step 04: Purchased */}
             <CardWrapper
               stepIdx={3}
-              title="Purchased"
+              title="Approval & Payment"
+              doneTitle="Approved & Paid"
               icon="M9 12.75L11.25 15 15 9.75M21 12a9 9 0 11-18 0 9 9 0 0118 0z"
             >
               <PurchasedStep lead={lead} state={cardState(3)} refresh={refresh} />
@@ -376,7 +379,8 @@ export default function LeadDetailPage({ params }: { params: Promise<{ id: strin
             {/* Step 05: Installed */}
             <CardWrapper
               stepIdx={4}
-              title="Installed"
+              title="Install"
+              doneTitle="Install Done"
               icon="M11.42 15.17l-5.658-5.66a2.122 2.122 0 010-3l1.532-1.532a2.122 2.122 0 013 0L15.953 10.637a2.122 2.122 0 010 3l-1.532 1.532a2.122 2.122 0 01-3 0z"
             >
               <InstalledStep lead={lead} state={cardState(4)} refresh={refresh} />
@@ -400,7 +404,7 @@ export default function LeadDetailPage({ params }: { params: Promise<{ id: strin
             )}
 
             {/* Lost action */}
-            {!isLost && lead.status !== "installed" && (
+            {!isLost && lead.status !== "install" && lead.status !== "closed" && (
               <button
                 onClick={() => setShowLostModal(true)}
                 className="w-full py-3 rounded-xl text-sm text-red-400 border border-red-200 bg-white"
@@ -454,7 +458,7 @@ export default function LeadDetailPage({ params }: { params: Promise<{ id: strin
       {showLineModal && (
         <div className="fixed inset-0 z-[60] flex items-end md:items-center justify-center">
           <div className="absolute inset-0 bg-black/30" onClick={() => setShowLineModal(false)} />
-          <div className="relative bg-white rounded-t-2xl md:rounded-2xl w-full md:max-w-sm p-5 pb-8 md:pb-5 animate-slide-up max-h-[70vh] overflow-y-auto">
+          <div className="relative bg-white rounded-t-2xl md:rounded-2xl w-full md:max-w-3xl p-5 pb-8 md:pb-5 animate-slide-up max-h-[70vh] overflow-y-auto">
             <div className="flex items-center justify-between mb-4">
               <h3 className="font-bold text-lg">เชื่อม LINE</h3>
               <button onClick={() => setShowLineModal(false)} style={{ minHeight: 0 }} className="text-gray-400 hover:text-gray-600 p-1">
@@ -510,14 +514,15 @@ export default function LeadDetailPage({ params }: { params: Promise<{ id: strin
             ) : pendingLineUsers.length === 0 ? (
               <div className="text-center py-8 text-gray-400 text-sm">ไม่มี LINE user ที่รอเชื่อม</div>
             ) : (
-              <div className="space-y-2">
+              <div>
                 <input
                   type="text"
                   value={lineSearch}
                   onChange={e => setLineSearch(e.target.value)}
                   placeholder="ค้นหาชื่อ LINE..."
-                  className="w-full h-10 px-3 rounded-lg border border-gray-200 text-sm focus:outline-none focus:border-primary mb-2"
+                  className="w-full h-10 px-3 rounded-lg border border-gray-200 text-sm focus:outline-none focus:border-primary mb-3"
                 />
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-2">
                 {pendingLineUsers.filter(u => !lineSearch || (u.display_name || "").toLowerCase().includes(lineSearch.toLowerCase())).map(u => (
                   <button
                     key={u.id}
@@ -541,6 +546,7 @@ export default function LeadDetailPage({ params }: { params: Promise<{ id: strin
                     </div>
                   </button>
                 ))}
+                </div>
               </div>
             )}
           </div>

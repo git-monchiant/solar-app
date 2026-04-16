@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getDb, sql } from "@/lib/db";
+import { getDb, sql, fixDates } from "@/lib/db";
 
 const titleMap: Record<string, string> = {
   call: "Called customer",
@@ -22,7 +22,7 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ id:
         WHERE la.lead_id = @lead_id
         ORDER BY la.created_at DESC
       `);
-    return NextResponse.json(result.recordset);
+    return NextResponse.json(fixDates(result.recordset));
   } catch (error) {
     console.error("GET activities error:", error);
     return NextResponse.json({ error: "Failed to fetch activities" }, { status: 500 });
@@ -38,28 +38,31 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
 
     const activityType = body.activity_type || "note";
     let title = titleMap[activityType] || "Activity";
-    if (activityType === "follow_up" && body.follow_up_date) {
+    if (body.follow_up_date) {
       title = `Scheduled follow-up for ${new Date(body.follow_up_date).toLocaleDateString("th-TH", { day: "numeric", month: "short" })}`;
     }
 
-    const result = await db
-      .request()
+    const request = db.request()
       .input("lead_id", sql.Int, leadId)
       .input("activity_type", sql.NVarChar(30), activityType)
       .input("title", sql.NVarChar(200), title)
       .input("note", sql.NVarChar(sql.MAX), body.note || null)
-      .input("follow_up_date", sql.DateTime2, body.follow_up_date ? new Date(body.follow_up_date) : null)
-      .query(`
-        INSERT INTO lead_activities (lead_id, activity_type, title, note, follow_up_date, created_by)
-        OUTPUT INSERTED.*
-        VALUES (@lead_id, @activity_type, @title, @note, @follow_up_date, 1)
-      `);
+      .input("follow_up_date", sql.DateTime2, body.follow_up_date ? new Date(body.follow_up_date + "T12:00:00") : null);
 
-    // Update lead's next_follow_up if follow_up type
-    if (activityType === "follow_up" && body.follow_up_date) {
+    const hasContactDate = !!body.contact_date;
+    if (hasContactDate) request.input("created_at", sql.DateTime2, new Date(body.contact_date + "T12:00:00"));
+
+    const result = await request.query(`
+      INSERT INTO lead_activities (lead_id, activity_type, title, note, follow_up_date, created_by${hasContactDate ? ", created_at" : ""})
+      OUTPUT INSERTED.*
+      VALUES (@lead_id, @activity_type, @title, @note, @follow_up_date, 1${hasContactDate ? ", @created_at" : ""})
+    `);
+
+    // Update lead's next_follow_up whenever a follow-up date is provided
+    if (body.follow_up_date) {
       await db.request()
         .input("lead_id", sql.Int, leadId)
-        .input("next_follow_up", sql.Date, new Date(body.follow_up_date))
+        .input("next_follow_up", sql.Date, new Date(body.follow_up_date + "T12:00:00"))
         .query(`UPDATE leads SET next_follow_up = @next_follow_up, updated_at = GETDATE() WHERE id = @lead_id`);
     }
 

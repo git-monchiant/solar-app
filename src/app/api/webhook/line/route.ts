@@ -78,12 +78,24 @@ export async function POST(request: NextRequest) {
       if (event.type === "message" && event.message.type === "text") {
         const profile = await getLineProfile(userId);
         await upsertLineUser(userId, profile?.displayName, profile?.pictureUrl);
+        const db = await getDb();
+        await db.request()
+          .input("line_user_id", sql.NVarChar(100), userId)
+          .input("message_type", sql.NVarChar(30), "text")
+          .input("text", sql.NVarChar(sql.MAX), event.message.text || null)
+          .input("message_id", sql.NVarChar(100), event.message.id || null)
+          .query(`INSERT INTO line_messages (line_user_id, message_type, text, message_id) VALUES (@line_user_id, @message_type, @text, @message_id)`);
       }
 
       // Image message — log only
       if (event.type === "message" && event.message.type === "image") {
-        console.log("LINE IMAGE received from:", userId);
         await upsertLineUser(userId);
+        const db = await getDb();
+        await db.request()
+          .input("line_user_id", sql.NVarChar(100), userId)
+          .input("message_type", sql.NVarChar(30), "image")
+          .input("message_id", sql.NVarChar(100), event.message.id || null)
+          .query(`INSERT INTO line_messages (line_user_id, message_type, message_id) VALUES (@line_user_id, @message_type, @message_id)`);
       }
     }
 

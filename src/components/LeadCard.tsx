@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { useState, useEffect } from "react";
 import { STATUS_CONFIG } from "@/lib/statuses";
 
 export interface LeadData {
@@ -22,30 +23,38 @@ export interface LeadData {
   booking_number: string | null;
   booking_price: number | null;
   booking_status: string | null;
+  order_total: number | null;
+  install_date: string | null;
+  install_completed_at: string | null;
   created_at: string;
   survey_date: string | null;
   survey_time_slot: string | null;
   line_id: string | null;
+  district: string | null;
+  province: string | null;
+  zone?: string | null;
 }
 
 const formatPrice = (n: number) => new Intl.NumberFormat("th-TH").format(n);
-const formatDate = (d: string) => new Date(d).toLocaleDateString("th-TH", { day: "numeric", month: "short" });
+const formatDate = (d: string) => new Date(String(d).slice(0, 10) + "T12:00:00").toLocaleDateString("th-TH", { day: "numeric", month: "short" });
 const SURVEY_TIME_LABEL: Record<string, string> = {
   morning: "09:00 - 12:00",
   afternoon: "13:00 - 16:00",
 };
 
 export default function LeadCard({ lead, compact }: { lead: LeadData; compact?: boolean }) {
-  const config = STATUS_CONFIG[lead.status] || STATUS_CONFIG.registered;
-  const startDate = lead.contact_date || lead.created_at;
-  const aging = startDate ? Math.floor((Date.now() - new Date(startDate).getTime()) / 86400000) : 0;
+  const config = STATUS_CONFIG[lead.status] || STATUS_CONFIG.register;
   const isUpgrade = lead.customer_type?.includes("Upgrade") || lead.customer_type?.includes("เดิม");
-  const isOverdue = lead.next_follow_up && new Date(lead.next_follow_up) < new Date();
+  const [now, setNow] = useState<number | null>(null);
+  useEffect(() => { setNow(Date.now()); }, []);
+  const startDate = lead.contact_date || lead.created_at;
+  const aging = now && startDate ? Math.floor((now - new Date(startDate).getTime()) / 86400000) : 0;
+  const isOverdue = now && lead.next_follow_up && new Date(String(lead.next_follow_up).slice(0, 10) + "T12:00:00").getTime() < now;
 
   return (
     <Link
       href={`/leads/${lead.id}`}
-      className="block rounded-2xl bg-white border border-gray-200 hover:border-gray-300 hover:shadow-sm transition-all"
+      className="block rounded-2xl bg-white border border-gray-300 shadow-sm hover:border-gray-400 hover:shadow-md transition-all"
     >
       <div className="p-5">
         {/* Header: name + status */}
@@ -74,8 +83,9 @@ export default function LeadCard({ lead, compact }: { lead: LeadData; compact?: 
             </svg>
             <span className="truncate">
               {lead.project_name}
-              {lead.project_name && lead.installation_address && " · "}
-              {lead.installation_address && <span className="font-mono tabular-nums">{lead.installation_address}</span>}
+              {(lead.district || lead.province) && (
+                <span className="text-gray-400"> · {[lead.district, lead.province].filter(Boolean).join(", ")}</span>
+              )}
             </span>
           </div>
         )}
@@ -90,42 +100,59 @@ export default function LeadCard({ lead, compact }: { lead: LeadData; compact?: 
           </div>
         )}
 
-        {/* Survey appointment */}
-        {lead.survey_date && (
-          <div className="flex items-center gap-1.5 text-sm text-gray-700 font-medium mt-1">
-            <svg className="w-4 h-4 shrink-0 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-              <path strokeLinecap="round" strokeLinejoin="round" d="M6.75 3v2.25M17.25 3v2.25M3 18.75V7.5a2.25 2.25 0 012.25-2.25h13.5A2.25 2.25 0 0121 7.5v11.25" />
-            </svg>
-            <span className="font-bold text-gray-900">{formatDate(lead.survey_date)}</span>
-            {lead.survey_time_slot && (
-              <span className="font-mono tabular-nums text-gray-600">
-                · {SURVEY_TIME_LABEL[lead.survey_time_slot] || lead.survey_time_slot}
-              </span>
-            )}
-          </div>
-        )}
+        {/* Latest milestone date: ส่งมอบ → นัดติดตั้ง → นัด survey */}
+        {(() => {
+          let showDate: string | null = null;
+          let label = "";
+          let showTime = false;
+          if (lead.install_completed_at) {
+            showDate = lead.install_completed_at;
+            label = "ส่งมอบ";
+          } else if (lead.install_date) {
+            showDate = lead.install_date;
+            label = "นัดติดตั้ง";
+          } else if (lead.survey_date) {
+            showDate = lead.survey_date;
+            label = "นัด Survey";
+            showTime = true;
+          }
+          if (!showDate) return null;
+          return (
+            <div className="flex items-center gap-1.5 text-sm text-gray-700 font-medium mt-1">
+              <svg className="w-4 h-4 shrink-0 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                <path strokeLinecap="round" strokeLinejoin="round" d="M6.75 3v2.25M17.25 3v2.25M3 18.75V7.5a2.25 2.25 0 012.25-2.25h13.5A2.25 2.25 0 0121 7.5v11.25" />
+              </svg>
+              <span className="font-bold text-gray-900">{formatDate(showDate)}</span>
+              {showTime && lead.survey_time_slot ? (
+                <span className="font-mono tabular-nums text-gray-600">
+                  · {SURVEY_TIME_LABEL[lead.survey_time_slot] || lead.survey_time_slot}
+                </span>
+              ) : (
+                <span className="text-xs text-gray-500">· {label}</span>
+              )}
+            </div>
+          );
+        })()}
 
-        {/* Footer: meta + warnings */}
+        {/* Footer: meta + zone */}
         <div className="mt-4 pt-3 border-t border-gray-100 flex items-center justify-between gap-2">
-          <div className="flex items-center gap-2 text-xs text-gray-400">
+          <div className="flex items-center gap-2 text-xs text-gray-400 flex-wrap">
             {isUpgrade && (
               <span className="font-semibold text-purple-600 uppercase tracking-wider">Upgrade</span>
             )}
-            {isUpgrade && aging > 0 && <span>·</span>}
             {aging > 0 && <span>{aging} วันแล้ว</span>}
+            {!compact && lead.next_follow_up && (
+              <span className={`font-semibold ${isOverdue ? "text-red-600" : "text-amber-600"}`}>
+                · {isOverdue ? "Overdue" : "Follow-up"} {formatDate(lead.next_follow_up)}
+              </span>
+            )}
+            {!compact && lead.booking_number && (
+              <span className="font-semibold text-emerald-700 font-mono tabular-nums">· {formatPrice(((lead.status === "closed" || lead.status === "install") && lead.order_total) ? lead.order_total : (lead.booking_price || 0))} ฿</span>
+            )}
           </div>
-          {!compact && lead.next_follow_up && (
-            <div className={`flex items-center gap-1.5 text-xs font-semibold ${isOverdue ? "text-red-600" : "text-amber-600"}`}>
-              <svg className="w-3.5 h-3.5" fill="currentColor" viewBox="0 0 24 24">
-                <circle cx="12" cy="12" r="10" />
-              </svg>
-              <span className="uppercase tracking-wider">{isOverdue ? "Overdue" : "Follow-up"}</span>
-              <span className="text-gray-500 normal-case font-normal">{formatDate(lead.next_follow_up)}</span>
-            </div>
-          )}
-          {!compact && lead.booking_number && !lead.next_follow_up && (
-            <div className="text-xs font-semibold text-emerald-700 font-mono tabular-nums">
-              {formatPrice(lead.booking_price || 0)} ฿
+          {lead.zone && (
+            <div className="text-xs text-gray-400 truncate shrink-0">
+              {lead.zone}
             </div>
           )}
         </div>

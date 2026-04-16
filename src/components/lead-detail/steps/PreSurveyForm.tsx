@@ -116,9 +116,10 @@ interface Props {
   hidePackages?: boolean;
   onlyPackages?: boolean;
   onPackageChange?: (pkgId: string) => void;
+  onFormChange?: (data: Partial<Lead>) => void;
 }
 
-export default function PreSurveyForm({ lead, refresh, packages = [], hideResidence, hidePackages, onlyPackages, onPackageChange }: Props) {
+export default function PreSurveyForm({ lead, refresh, packages = [], hideResidence, hidePackages, onlyPackages, onPackageChange, onFormChange }: Props) {
   const [residenceType, setResidenceType] = useState<string>(lead.pre_residence_type ?? "");
   const [monthlyBill, setMonthlyBill] = useState<number | undefined>(lead.pre_monthly_bill ?? undefined);
   const [peakUsage, setPeakUsage] = useState<string>(lead.pre_peak_usage ?? "");
@@ -134,12 +135,11 @@ export default function PreSurveyForm({ lead, refresh, packages = [], hideReside
   const [selectedPkgs, setSelectedPkgs] = useState<string[]>(
     lead.interested_package_ids ? lead.interested_package_ids.split(",").filter(Boolean) : lead.interested_package_id ? [String(lead.interested_package_id)] : []
   );
+  const MAX_PKGS = 3;
   const togglePkg = (id: string) => {
-    setSelectedPkgs(prev => {
-      const next = prev.includes(id) ? prev.filter(p => p !== id) : [...prev, id];
-      onPackageChange?.(next[0] || "");
-      return next;
-    });
+    const next = selectedPkgs.includes(id) ? selectedPkgs.filter(p => p !== id) : selectedPkgs.length >= MAX_PKGS ? selectedPkgs : [...selectedPkgs, id];
+    setSelectedPkgs(next);
+    onPackageChange?.(next[0] || "");
   };
 
   const filteredPackages = packages.filter(p => {
@@ -183,6 +183,7 @@ export default function PreSurveyForm({ lead, refresh, packages = [], hideReside
             interested_package_ids: selectedPkgs.length ? selectedPkgs.join(",") : null,
             interested_package_id: selectedPkgs.length ? parseInt(selectedPkgs[0]) : null,
           };
+      onFormChange?.(payload as Partial<Lead>);
       apiFetch(`/api/leads/${lead.id}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
@@ -248,8 +249,7 @@ export default function PreSurveyForm({ lead, refresh, packages = [], hideReside
       {/* บ้าน */}
       {!hideResidence && (
         <div className={`${sectionCls} ${onlyPackages ? "hidden" : ""}`}>
-          <div className={sectionTitle}>บ้าน</div>
-          <label className={fieldLabel}>ประเภทบ้านพักอาศัย</label>
+          <label className={fieldLabel}>ประเภทบ้านพักอาศัย <span className="text-red-500">*</span></label>
           <div className="grid grid-cols-3 gap-2">
             {RESIDENCE_TYPES.map(r => (
               <button key={r.value} type="button" onClick={() => setResidenceType(r.value)} className={chipBtn(residenceType === r.value || (r.value === "other" && residenceType.startsWith("other")))}>
@@ -268,7 +268,7 @@ export default function PreSurveyForm({ lead, refresh, packages = [], hideReside
         <div className={sectionTitle}>การใช้ไฟฟ้า</div>
         <div className="space-y-3">
           <div>
-            <label className={fieldLabel}>ค่าไฟต่อเดือน</label>
+            <label className={fieldLabel}>ค่าไฟต่อเดือน <span className="text-red-500">*</span></label>
             <div className="flex gap-2">
               <div className="relative flex-1">
                 <input type="number" inputMode="numeric" value={monthlyBill ?? ""} onChange={e => setMonthlyBill(e.target.value ? parseInt(e.target.value) : undefined)} placeholder="เช่น 3,500" className="w-full h-10 pl-3 pr-14 rounded-lg border border-gray-200 text-sm font-mono tabular-nums focus:outline-none focus:border-primary" />
@@ -287,7 +287,7 @@ export default function PreSurveyForm({ lead, refresh, packages = [], hideReside
             )}
           </div>
           <div>
-            <label className={fieldLabel}>ช่วงเวลาที่ใช้ไฟสูงสุด</label>
+            <label className={fieldLabel}>ช่วงเวลาที่ใช้ไฟสูงสุด <span className="text-red-500">*</span></label>
             <div className="grid grid-cols-3 gap-2">
               {PEAK_USAGE.map(p => (
                 <button key={p.value} type="button" onClick={() => setPeakUsage(p.value)} className={chipBtn(peakUsage === p.value)}>{p.label}</button>
@@ -295,7 +295,7 @@ export default function PreSurveyForm({ lead, refresh, packages = [], hideReside
             </div>
           </div>
           <div>
-            <label className={fieldLabel}>ระบบไฟปัจจุบัน</label>
+            <label className={fieldLabel}>ระบบไฟปัจจุบัน <span className="text-red-500">*</span></label>
             <div className="grid grid-cols-3 gap-2">
               {ELECTRICAL_PHASES.map(p => (
                 <button key={p.value} type="button" onClick={() => { setElectricalPhase(p.value); setSelectedPkgs([]); }} className={chipBtn(electricalPhase === p.value)}>{p.label}</button>
@@ -345,7 +345,7 @@ export default function PreSurveyForm({ lead, refresh, packages = [], hideReside
       {packages.length > 0 && (
         <div className={`${sectionCls} ${hidePackages ? "hidden" : ""}`}>
           <div className="mb-3">
-            <label className={fieldLabel}>ต้องการแบตเตอรี่ + Upgrade</label>
+            <label className={fieldLabel}>ต้องการแบตเตอรี่ + Upgrade <span className="text-red-500">*</span></label>
             <div className="grid grid-cols-3 gap-2">
               {BATTERY_OPTIONS.map(b => (
                 <button key={b.value} type="button" onClick={() => { setWantsBattery(b.value); setSelectedPkgs([]); }} className={chipBtn(wantsBattery === b.value)}>{b.label}</button>

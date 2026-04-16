@@ -1,101 +1,64 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import { apiFetch } from "@/lib/api";
-import type { StepCommonProps, Panel, Package } from "./types";
+import type { StepCommonProps, Package } from "./types";
+import ErrorPopup from "@/components/ErrorPopup";
 
-const formatPrice = (n: number) => new Intl.NumberFormat("th-TH").format(n);
-
-const INVERTER_GROUPS = [
-  { phase: "1_phase", phaseLabel: "1-Phase", model: "SUN2000-L1", sizes: [3, 4, 5, 6] },
-  { phase: "3_phase", phaseLabel: "3-Phase", model: "SUN2000-M1", sizes: [5, 6, 8, 10] },
-];
+const formatDate = (d: string) =>
+  new Date(String(d).slice(0, 10) + "T12:00:00").toLocaleDateString("th-TH", { day: "numeric", month: "short", year: "numeric" });
 
 interface Props extends StepCommonProps {
   packages: Package[];
 }
 
-export default function QuotationStep({ lead, state, refresh, packages: allPackages }: Props) {
-  // Defaults: prefer survey_* values, otherwise derive from pre-survey package
-  const prePkg = allPackages.find(p => p.id === lead.interested_package_id);
-  const pkgPhase = prePkg?.phase === 3 ? "3_phase" : prePkg?.phase === 1 ? "1_phase" : null;
-  const pkgInverter = prePkg?.inverter_brand && prePkg?.inverter_kw
-    ? `${prePkg.phase === 3 ? "SUN2000-M1" : "SUN2000-L1"} ${prePkg.inverter_kw}kW`
-    : null;
-  const pkgBatteryKwh = prePkg?.has_battery ? Math.round(prePkg.battery_kwh) : prePkg ? 0 : null;
-
-  const [phase, setPhase] = useState<string>(lead.survey_electrical_phase ?? lead.pre_electrical_phase ?? pkgPhase ?? "1_phase");
-  const [inverter, setInverter] = useState<string>(lead.survey_inverter ?? pkgInverter ?? "");
-  const [batteryKwh, setBatteryKwh] = useState<number | null>(
-    lead.survey_battery_kwh ?? (lead.pre_wants_battery === "no" ? 0 : pkgBatteryKwh)
-  );
-  const [panels, setPanels] = useState<Panel[]>([]);
-  const [panelId, setPanelId] = useState<number | "">(lead.survey_panel_id ?? "");
-  const [panelCount, setPanelCount] = useState<number | "">(lead.survey_panel_count ?? "");
+export default function QuotationStep({ lead, state, refresh }: Props) {
+  const [files, setFiles] = useState<File[]>([]);
+  const [note, setNote] = useState(lead.quotation_note || "");
+  const [amount, setAmount] = useState<number>(lead.quotation_amount || 0);
   const [saving, setSaving] = useState(false);
+  const [uploading, setUploading] = useState(false);
+  const [nextError, setNextError] = useState<string | null>(null);
 
-  useEffect(() => {
-    apiFetch("/api/panels").then((list: Panel[]) => {
-      setPanels(list);
-      // Pre-fill panel based on package (closest watt match) if nothing selected yet
-      if (!panelId && prePkg?.panel_watt && list.length) {
-        const match = list.reduce((best, p) => (
-          Math.abs(p.watt - prePkg.panel_watt) < Math.abs(best.watt - prePkg.panel_watt) ? p : best
-        ), list[0]);
-        setPanelId(match.id);
-        if (!panelCount && prePkg.solar_panels) setPanelCount(prePkg.solar_panels);
-      }
-    }).catch(console.error);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  const uploadFiles = async (): Promise<string> => {
+    if (files.length === 0) return lead.quotation_files || "";
+    setUploading(true);
+    try {
+      const year = new Date().getFullYear().toString().slice(-2);
+      const qtNumber = `QT-${year}${String(lead.id).padStart(4, "0")}`;
+      const formData = new FormData();
+      formData.append("file", files[0]);
+      formData.append("lead_id", String(lead.id));
+      formData.append("type", "quotation");
+      formData.append("filename", qtNumber);
+      const res = await apiFetch("/api/upload", { method: "POST", body: formData });
+      return res.url || "";
+    } finally {
+      setUploading(false);
+    }
+  };
 
-  const selectedPanel = panels.find(p => p.id === panelId);
-  const calcKwp = selectedPanel && typeof panelCount === "number" && panelCount > 0
-    ? (selectedPanel.watt * panelCount) / 1000
-    : 0;
-
-  const inverterKw = (() => {
-    const m = inverter.match(/(\d+)kW/);
-    return m ? parseInt(m[1]) : 0;
-  })();
-
-  // Auto-save all selections (debounced)
-  useEffect(() => {
-    if (state !== "active") return;
-    const t = setTimeout(() => {
-      apiFetch(`/api/leads/${lead.id}`, {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          survey_electrical_phase: phase || null,
-          survey_inverter: inverter || null,
-          survey_battery_kwh: batteryKwh,
-          survey_wants_battery: batteryKwh === null ? null : batteryKwh === 0 ? "no" : "yes",
-          survey_panel_id: panelId || null,
-          survey_panel_count: typeof panelCount === "number" ? panelCount : null,
-        }),
-      }).catch(console.error);
-    }, 600);
-    return () => clearTimeout(t);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [phase, inverter, batteryKwh, panelId, panelCount]);
-
-  // Clear inverter if it doesn't match the new phase
-  useEffect(() => {
-    if (!inverter) return;
-    const matchingGroup = INVERTER_GROUPS.find(g => g.phase === phase);
-    const stillValid = matchingGroup && inverter.startsWith(matchingGroup.model);
-    if (!stillValid) setInverter("");
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [phase]);
-
-  const markSent = async () => {
+  const send = async () => {
+    const missing: string[] = [];
+    if (!amount || amount <= 0) missing.push("ยอดใบเสนอราคา");
+    if (files.length === 0 && !lead.quotation_files) missing.push("ไฟล์ใบเสนอราคา");
+    if (!note) missing.push("บันทึกถึงทีมขาย");
+    if (missing.length > 0) {
+      setNextError(missing.join(", "));
+      return;
+    }
     setSaving(true);
     try {
+      const url = await uploadFiles();
       await apiFetch(`/api/leads/${lead.id}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ status: "purchased" }),
+        body: JSON.stringify({
+          status: "order",
+          quotation_note: note || null,
+          quotation_files: url || null,
+          quotation_amount: amount || null,
+        }),
       });
       refresh();
     } finally {
@@ -105,11 +68,39 @@ export default function QuotationStep({ lead, state, refresh, packages: allPacka
 
   if (state === "done") {
     return (
-      <div className="text-sm">
-        <span className="text-emerald-700 font-semibold">ส่งใบเสนอราคาแล้ว</span>
-        {selectedPanel && typeof panelCount === "number" && (
-          <span className="text-gray-500"> — {selectedPanel.brand} {selectedPanel.watt}W × {panelCount} ({calcKwp.toFixed(2)} kWp)</span>
+      <div className="space-y-3 text-sm">
+        <div className="flex items-center justify-between">
+          <span className="text-emerald-700 font-semibold">ส่งใบเสนอราคาแล้ว</span>
+          {lead.quotation_amount && <span className="text-lg font-bold font-mono tabular-nums text-gray-900">{new Intl.NumberFormat("th-TH").format(lead.quotation_amount)} บาท</span>}
+        </div>
+
+        {lead.quotation_note && (
+          <div className="border-l-3 border-gray-300 pl-3">
+            <div className="text-xs font-bold text-gray-400 uppercase mb-1">บันทึก</div>
+            <div className="text-gray-800 whitespace-pre-wrap">{lead.quotation_note}</div>
+          </div>
         )}
+
+        {lead.quotation_files && (() => {
+          const url = lead.quotation_files;
+          const isImage = /\.(jpg|jpeg|png|gif|webp)$/i.test(url);
+          const fileName = url.split("/").pop() || "ไฟล์ใบเสนอราคา";
+          return (
+            <div className="border-l-3 border-orange-400 pl-3">
+              <div className="text-xs font-bold text-orange-600 uppercase mb-1.5">ไฟล์ใบเสนอราคา</div>
+              {isImage ? (
+                <a href={url} target="_blank" rel="noreferrer">
+                  <img src={url} alt={fileName} className="w-full max-w-xs rounded-lg border border-gray-200" />
+                </a>
+              ) : (
+                <a href={url} target="_blank" rel="noreferrer" className="flex items-center gap-2 px-3 py-2 rounded-lg bg-gray-50 border border-gray-200 hover:bg-gray-100 transition-colors">
+                  <svg className="w-5 h-5 text-gray-400 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M19.5 14.25v-2.625a3.375 3.375 0 00-3.375-3.375h-1.5A1.125 1.125 0 0113.5 7.125v-1.5a3.375 3.375 0 00-3.375-3.375H8.25m2.25 0H5.625c-.621 0-1.125.504-1.125 1.125v17.25c0 .621.504 1.125 1.125 1.125h12.75c.621 0 1.125-.504 1.125-1.125V11.25a9 9 0 00-9-9z" /></svg>
+                  <span className="text-sm text-primary font-semibold truncate">{fileName}</span>
+                </a>
+              )}
+            </div>
+          );
+        })()}
       </div>
     );
   }
@@ -117,196 +108,75 @@ export default function QuotationStep({ lead, state, refresh, packages: allPacka
   if (state !== "active") return null;
 
   return (
-    <div className="space-y-2">
-      {/* Electrical phase */}
-      <div className="rounded-lg bg-white/60 border border-active/15 p-3">
-        <label className="text-xs font-semibold tracking-wider uppercase text-gray-400 block mb-2">เลือกระบบไฟ</label>
-        <div className="grid grid-cols-3 gap-2">
-          {[
-            { value: "1_phase", label: "1 เฟส" },
-            { value: "3_phase", label: "3 เฟส" },
-          ].map(p => {
-            const selected = phase === p.value;
-            return (
-              <button
-                key={p.value}
-                type="button"
-                onClick={() => setPhase(p.value)}
-                className={`h-10 px-3 rounded-lg text-[15px] font-semibold border transition-all ${
-                  selected
-                    ? "bg-active text-white border-active shadow-sm shadow-active/20"
-                    : "bg-white text-gray-700 border-gray-200 hover:border-active/40"
-                }`}
-              >
-                {p.label}
-              </button>
-            );
-          })}
-        </div>
+    <div className="space-y-3">
+      {/* Note */}
+      <div>
+        <label className="text-xs font-semibold tracking-wider uppercase text-gray-400 block mb-1">บันทึกถึงทีมขาย <span className="text-red-500">*</span></label>
+        <textarea
+          value={note}
+          onChange={e => setNote(e.target.value)}
+          placeholder="รายละเอียดใบเสนอราคา, หมายเหตุ..."
+          rows={3}
+          className="w-full px-3 py-2 rounded-lg border border-gray-200 text-sm focus:outline-none focus:border-primary resize-none"
+        />
       </div>
 
-      {/* Inverter */}
-      <div className="rounded-lg bg-white/60 border border-active/15 p-3">
-        <label className="text-xs font-semibold tracking-wider uppercase text-gray-400 block mb-3">เลือก Inverter</label>
-        {!phase ? (
-          <div className="text-xs text-gray-400 text-center py-3">เลือกระบบไฟก่อน</div>
-        ) : (
-          <div className="space-y-3">
-            {INVERTER_GROUPS.filter(g => g.phase === phase).map(g => (
-              <div key={g.phase}>
-                <div className="text-xs font-semibold text-gray-600 mb-1.5">
-                  {g.phaseLabel} <span className="text-gray-400 font-mono">· {g.model}</span>
+      {/* File upload */}
+      <div>
+        <label className="text-xs font-semibold tracking-wider uppercase text-gray-400 block mb-1">แนบไฟล์ <span className="text-red-500">*</span></label>
+        <label className="flex items-center justify-center gap-2 px-4 py-3 rounded-lg border-2 border-dashed border-gray-300 hover:border-primary cursor-pointer transition-colors">
+          <svg className="w-5 h-5 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M12 16.5V9.75m0 0l3 3m-3-3l-3 3M6.75 19.5a4.5 4.5 0 01-1.41-8.775 5.25 5.25 0 0110.233-2.33 3 3 0 013.758 3.848A3.752 3.752 0 0118 19.5H6.75z" /></svg>
+          <span className="text-sm text-gray-500">เลือกไฟล์ (รูป, PDF, เอกสาร)</span>
+          <input
+            type="file"
+            accept="image/*,.pdf,.doc,.docx,.xls,.xlsx"
+            className="hidden"
+            onChange={e => {
+              if (e.target.files?.[0]) setFiles([e.target.files[0]]);
+            }}
+          />
+        </label>
+
+        {/* File list */}
+        {files.length > 0 && (
+          <div className="mt-2 space-y-1">
+            {files.map((f, i) => (
+              <div key={i} className="flex items-center justify-between gap-2 text-sm text-gray-700 px-3 py-2 rounded-lg bg-gray-50 border border-gray-200">
+                <div className="flex items-center gap-2 min-w-0">
+                  <svg className="w-4 h-4 text-primary shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M19.5 14.25v-2.625a3.375 3.375 0 00-3.375-3.375h-1.5A1.125 1.125 0 0113.5 7.125v-1.5a3.375 3.375 0 00-3.375-3.375H8.25m2.25 0H5.625c-.621 0-1.125.504-1.125 1.125v17.25c0 .621.504 1.125 1.125 1.125h12.75c.621 0 1.125-.504 1.125-1.125V11.25a9 9 0 00-9-9z" /></svg>
+                  <span className="truncate">{f.name}</span>
                 </div>
-                <div className="grid grid-cols-3 gap-2">
-                  {g.sizes.map(kw => {
-                    const value = `${g.model} ${kw}kW`;
-                    const selected = inverter === value;
-                    return (
-                      <button
-                        key={kw}
-                        type="button"
-                        onClick={() => setInverter(value)}
-                        className={`h-10 rounded-lg text-[15px] font-bold font-mono tabular-nums border transition-all ${
-                          selected
-                            ? "bg-active text-white border-active shadow-sm shadow-active/20"
-                            : "bg-white text-gray-700 border-gray-200 hover:border-active/40"
-                        }`}
-                      >
-                        {kw}kW
-                      </button>
-                    );
-                  })}
-                </div>
+                <button type="button" onClick={() => setFiles(prev => prev.filter((_, j) => j !== i))} className="text-red-400 hover:text-red-600 shrink-0" style={{ minHeight: 0 }}>✕</button>
               </div>
             ))}
           </div>
         )}
       </div>
 
-      {/* PV Module + count grid */}
-      <div className="rounded-lg bg-white/60 border border-active/15 p-3">
-        <label className="text-xs font-semibold tracking-wider uppercase text-gray-400 block mb-2">เลือกแผง PV</label>
-        <div className="grid grid-cols-3 gap-2">
-          {panels.map(p => {
-            const selected = panelId === p.id;
-            return (
-              <button
-                key={p.id}
-                type="button"
-                onClick={() => setPanelId(p.id)}
-                className={`text-left rounded-lg p-2.5 border-2 transition-all ${
-                  selected ? "border-active bg-active-light" : "border-gray-200 bg-white hover:border-active/40"
-                }`}
-              >
-                <div className="text-sm font-bold text-gray-900 truncate">{p.brand}</div>
-                {p.model && <div className="text-xs text-gray-500 truncate">{p.model}</div>}
-                <div className="flex items-baseline gap-1.5 mt-1">
-                  <span className="text-base font-bold font-mono tabular-nums text-active">{p.watt}W</span>
-                  {p.tier && <span className="text-[10px] text-gray-400">{p.tier}</span>}
-                </div>
-              </button>
-            );
-          })}
-        </div>
-
-        {selectedPanel && inverterKw > 0 && (() => {
-          const minCount = Math.max(1, Math.ceil((inverterKw * 0.80 * 1000) / selectedPanel.watt));
-          const counts = Array.from({ length: 15 }, (_, i) => minCount + i);
-          const tierClass = (dcAc: number) => {
-            if (dcAc <= 0.85) return "bg-amber-100 border-amber-400 text-amber-800";
-            if (dcAc <= 1.50) return "text-emerald-700 border-gray-200 bg-white";
-            return "text-orange-500 border-gray-200 bg-white";
-          };
-          return (
-            <div className="mt-3">
-              <div className="text-xs text-gray-500 mb-2">
-                จำนวนแผง <span className="font-semibold text-gray-700">{selectedPanel.brand} {selectedPanel.watt}W</span>
-              </div>
-              <div className="grid grid-cols-3 gap-2">
-                {counts.map(c => {
-                  const kwp = (c * selectedPanel.watt) / 1000;
-                  const dcAc = kwp / inverterKw;
-                  const selected = panelCount === c;
-                  const base = tierClass(dcAc);
-                  return (
-                    <button
-                      key={c}
-                      type="button"
-                      onClick={() => setPanelCount(c)}
-                      className={`flex flex-col items-center py-2 rounded-lg border-2 transition-all ${
-                        selected ? "bg-active border-active text-white shadow-sm shadow-active/30" : base
-                      }`}
-                    >
-                      <span className="text-base font-bold tabular-nums">{c}</span>
-                      <span className={`text-[10px] ${selected ? "text-white/70" : "text-gray-400"}`}>แผง</span>
-                      <span className={`text-xs font-bold tabular-nums mt-0.5 ${selected ? "text-white" : ""}`}>{kwp.toFixed(1)} kWp</span>
-                      <span className={`text-[10px] tabular-nums mt-0.5 ${selected ? "text-white/80" : "opacity-70"}`}>DC:AC {dcAc.toFixed(2)}</span>
-                    </button>
-                  );
-                })}
-              </div>
-              {calcKwp > 0 && (
-                <div className="mt-3 flex items-center justify-between gap-2 px-3 py-2 rounded-lg bg-gray-50 border border-gray-200">
-                  <div className="text-sm font-bold tabular-nums text-gray-900">
-                    {calcKwp.toFixed(2)} kWp
-                    <span className="ml-2 text-xs font-normal text-gray-500">ผลิตไฟ ~{Math.round(calcKwp * 4)} หน่วย/วัน</span>
-                  </div>
-                  <div className="text-xs font-semibold tabular-nums text-gray-600">
-                    DC:AC {(calcKwp / inverterKw).toFixed(2)}
-                  </div>
-                </div>
-              )}
-            </div>
-          );
-        })()}
-        {(!selectedPanel || inverterKw === 0) && calcKwp === 0 && (
-          <div className="mt-2 text-xs text-gray-400 text-center py-2">เลือกแผงและ inverter เพื่อดูจำนวนแผงที่เหมาะสม</div>
-        )}
+      {/* Amount */}
+      <div>
+        <label className="text-xs font-semibold tracking-wider uppercase text-gray-400 block mb-1">มูลค่าตามใบเสนอราคา (บาท) <span className="text-red-500">*</span></label>
+        <input type="number" value={amount || ""} onChange={e => setAmount(parseFloat(e.target.value) || 0)} placeholder="0"
+          className="w-full h-14 px-3 rounded-lg border border-gray-200 text-2xl font-bold font-mono focus:outline-none focus:border-primary" />
       </div>
 
-      {/* Battery */}
-      <div className="rounded-lg bg-white/60 border border-active/15 p-3">
-        <label className="text-xs font-semibold tracking-wider uppercase text-gray-400 block mb-2">แบตเตอรี่</label>
-        <div className="grid grid-cols-3 gap-2">
-          {[
-            { value: 0, label: "ไม่ต้องการ" },
-            { value: 5, label: "5 kWh" },
-            { value: 10, label: "10 kWh" },
-            { value: 15, label: "15 kWh" },
-          ].map(b => {
-            const selected = batteryKwh === b.value;
-            return (
-              <button
-                key={b.value}
-                type="button"
-                onClick={() => setBatteryKwh(b.value)}
-                className={`h-10 px-2 rounded-lg text-[14px] font-semibold border transition-all ${
-                  selected
-                    ? "bg-active text-white border-active shadow-sm shadow-active/20"
-                    : "bg-white text-gray-700 border-gray-200 hover:border-active/40"
-                }`}
-              >
-                {b.label}
-              </button>
-            );
-          })}
-        </div>
-      </div>
-
-      {/* Generate quotation */}
+      {/* Send button */}
       <button
-        onClick={markSent}
-        disabled={saving || !inverter || !panelId || !panelCount}
-        className="w-full h-11 mt-2 rounded-lg text-sm font-semibold text-white bg-gradient-to-r from-primary to-primary-dark hover:brightness-110 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+        onClick={send}
+        disabled={saving || uploading || !amount}
+        className="w-full h-11 mt-1 rounded-lg text-sm font-semibold text-white bg-gradient-to-r from-primary to-primary-dark hover:brightness-110 disabled:opacity-50 transition-colors flex items-center justify-center gap-2"
       >
-        {saving ? "…" : "ออกใบเสนอราคา"}
+        {saving || uploading ? (
+          <><div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" /> กำลังส่ง...</>
+        ) : (
+          <>
+            <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M6 12L3.269 3.126A59.768 59.768 0 0121.485 12 59.77 59.77 0 013.27 20.876L5.999 12zm0 0h7.5" /></svg>
+            ส่งใบเสนอราคาให้ทีมขาย
+          </>
+        )}
       </button>
 
-      {(lead.package_name || lead.package_price) && (
-        <div className="text-xs text-gray-400 text-center pt-1">
-          แพ็คเกจ pre-survey: {lead.package_name} {lead.package_price ? `(${formatPrice(lead.package_price)} THB)` : ""}
-        </div>
-      )}
+      <ErrorPopup message={nextError} onClose={() => setNextError(null)} />
     </div>
   );
 }

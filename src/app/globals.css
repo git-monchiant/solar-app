@@ -45,6 +45,8 @@
   --text-xs--line-height: 26px;
   --text-sm: 22px;
   --text-sm--line-height: 30px;
+  --text-md: 23px;
+  --text-md--line-height: 31px;
   --text-base: 24px;
   --text-base--line-height: 32px;
   --text-lg: 28px;
@@ -66,13 +68,40 @@ html, body {
 body {
   background: var(--background);
   color: var(--foreground);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
   -webkit-tap-highlight-color: transparent;
   overscroll-behavior: none;
+  font-weight: 500;
 }
 
 /* Mobile-friendly touch targets */
-button, a, input, select, textarea {
-  min-height: 44px;
+@media (max-width: 767px) {
+  button, a, input, select, textarea {
+    min-height: 44px;
+  }
+}
+
+/* Desktop: slightly smaller than mobile but still readable for DB Heavent */
+@media (min-width: 768px) {
+  :root {
+    --text-xs: 15px;
+    --text-xs--line-height: 20px;
+    --text-sm: 17px;
+    --text-sm--line-height: 24px;
+    --text-md: 18px;
+    --text-md--line-height: 25px;
+    --text-base: 19px;
+    --text-base--line-height: 26px;
+    --text-lg: 22px;
+    --text-lg--line-height: 30px;
+    --text-xl: 26px;
+    --text-xl--line-height: 34px;
+    --text-2xl: 30px;
+    --text-2xl--line-height: 38px;
+    --text-3xl: 36px;
+    --text-3xl--line-height: 44px;
+  }
 }
 
 /* Pointer cursor on interactive elements (desktop) */
@@ -84,8 +113,10 @@ button:disabled {
   cursor: not-allowed;
 }
 
-input, select, textarea {
-  font-size: 18px; /* ป้องกัน iOS zoom เมื่อ focus + min readable */
+input:not([type="checkbox"]):not([type="radio"]):not([type="file"]):not([type="date"]), textarea {
+  font-size: var(--text-sm);
+  line-height: var(--text-sm--line-height);
+  background: var(--background);
 }
 
 /* Safe area helpers */

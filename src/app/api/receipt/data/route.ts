@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getDb, sql } from "@/lib/db";
+import { getDb, sql, fixDates } from "@/lib/db";
 
 export async function GET(req: NextRequest) {
   const bookingId = req.nextUrl.searchParams.get("booking_id");
@@ -38,7 +38,7 @@ export async function GET(req: NextRequest) {
       packages = [{ id: b.package_id, name: b.package_name, kwp: b.kwp, price: b.package_price }];
     }
 
-    return NextResponse.json({ ...b, packages });
+    return NextResponse.json({ ...fixDates([b])[0], packages });
   } catch (error) {
     console.error("Receipt data error:", error);
     return NextResponse.json({ error: "Failed" }, { status: 500 });

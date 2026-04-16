@@ -14,7 +14,8 @@ export async function POST(req: NextRequest) {
     const buffer = Buffer.from(bytes);
 
     const ext = file.name.split(".").pop() || "jpg";
-    const filename = `doc_${Date.now()}.${ext}`;
+    const customName = formData.get("filename") as string | null;
+    const filename = customName ? `${customName}.${ext}` : `doc_${Date.now()}.${ext}`;
     const filepath = path.join(process.cwd(), "public", "uploads", filename);
 
     await writeFile(filepath, buffer);
