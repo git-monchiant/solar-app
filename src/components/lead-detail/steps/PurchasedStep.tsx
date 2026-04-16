@@ -9,6 +9,7 @@ import { buildPaymentFlex } from "@/lib/line-flex";
 import LineConfirmModal from "@/components/LineConfirmModal";
 import ErrorPopup from "@/components/ErrorPopup";
 import CustomerInfoForm from "@/components/CustomerInfoForm";
+import FallbackImage from "@/components/FallbackImage";
 
 const fmt = (n: number) => new Intl.NumberFormat("th-TH").format(n);
 const formatDate = (d: string) =>
@@ -16,7 +17,12 @@ const formatDate = (d: string) =>
 
 const SUB_STEPS = ["ราคา", "ส่งลูกค้า", "นัดหมาย", "ชำระเงิน", "ยืนยัน"];
 
-export default function PurchasedStep({ lead, state, refresh }: StepCommonProps) {
+interface Props extends StepCommonProps {
+  expanded?: boolean;
+  onToggle?: () => void;
+}
+
+export default function PurchasedStep({ lead, state, refresh, expanded, onToggle }: Props) {
   const [subStep, setSubStep] = useState(0);
   const [nextError, setNextError] = useState<string | null>(null);
   const [total, setTotal] = useState<number>(lead.order_total || lead.quotation_amount || 0);
@@ -86,35 +92,46 @@ export default function PurchasedStep({ lead, state, refresh }: StepCommonProps)
     const doneRemaining = doneTotal - donePaid;
 
     return (
-      <div className="space-y-3 text-sm">
+      <div className="text-sm">
+      <div onClick={() => onToggle?.()} className="flex items-center gap-2 py-1 cursor-pointer">
+        <span className="text-sm font-semibold text-gray-900">
+          {lead.install_date ? `กำหนดเข้าติดตั้ง ${formatDate(lead.install_date)}` : "ยืนยันการชำระ"}
+        </span>
+        <span className="flex-1" />
+        <svg className={`w-4 h-4 text-gray-400 transition-transform shrink-0 ${expanded ? "rotate-180" : ""}`} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
+          <path strokeLinecap="round" strokeLinejoin="round" d="M19.5 8.25l-7.5 7.5-7.5-7.5" />
+        </svg>
+      </div>
+      {expanded && (
+      <div className="space-y-3 mt-3 pt-3 border-t border-gray-100">
         {doneTotal > 0 && (
-          <div className="border-l-3 border-blue-400 pl-3">
-            <div className="text-xs font-bold text-blue-600 uppercase mb-1">ยอดรวม</div>
-            <div className="text-lg font-bold font-mono tabular-nums text-gray-900">{fmt(doneTotal)} บาท</div>
-            <div className="space-y-1 mt-2">
-              <div className="flex justify-between pt-1">
-                <span className="text-gray-500">ชำระแล้ว</span>
-                <span className="font-bold font-mono tabular-nums text-emerald-700">{fmt(donePaid)} บาท</span>
-              </div>
-              {doneRemaining > 0 && (
-                <div className="flex justify-between">
-                  <span className="text-gray-500">รอรับชำระหลังติดตั้ง</span>
-                  <span className="font-bold font-mono tabular-nums text-amber-600">{fmt(doneRemaining)} บาท</span>
-                </div>
-              )}
-              {lead.booking_price && (
-                <div className="flex justify-between">
-                  <span className="text-gray-500">หักมัดจำ</span>
-                  <span className="font-mono tabular-nums text-gray-500">-{fmt(lead.booking_price)} บาท</span>
-                </div>
-              )}
-              {lead.booking_price && doneRemaining > 0 && (
-                <div className="flex justify-between border-t border-gray-100 pt-1">
-                  <span className="font-semibold text-gray-700">ยอดสุทธิหลังติดตั้ง</span>
-                  <span className="font-bold font-mono tabular-nums text-gray-900">{fmt(doneRemaining - (lead.booking_price || 0))} บาท</span>
-                </div>
-              )}
+          <div className="space-y-1">
+            <div className="flex justify-between">
+              <span className="text-gray-700 font-semibold">ยอดรวม</span>
+              <span className="font-bold font-mono tabular-nums text-gray-900">{fmt(doneTotal)} บาท</span>
             </div>
+            <div className="flex justify-between text-xs">
+              <span className="text-gray-400">ชำระก่อนติดตั้ง {donePctBefore}%</span>
+              <span className="font-mono tabular-nums text-gray-400">{fmt(doneAmtBefore)} บาท</span>
+            </div>
+            {donePctAfter > 0 && (
+              <div className="flex justify-between text-xs">
+                <span className="text-gray-400">ชำระหลังติดตั้ง</span>
+                <span className="font-mono tabular-nums text-gray-400">{fmt(doneAmtAfter)} บาท</span>
+              </div>
+            )}
+            {lead.booking_price ? (
+              <>
+                <div className="flex justify-between text-xs">
+                  <span className="text-gray-400">หักมัดจำ</span>
+                  <span className="font-mono tabular-nums text-gray-400">-{fmt(lead.booking_price)} บาท</span>
+                </div>
+                <div className="flex justify-between border-t border-gray-100 pt-1 mt-1">
+                  <span className="text-gray-700 font-semibold">{donePctAfter > 0 ? "ยอดชำระหลังติดตั้งสุทธิ" : "ยอดชำระสุทธิ"}</span>
+                  <span className="font-bold font-mono tabular-nums text-gray-900">{fmt((donePctAfter > 0 ? doneAmtAfter : doneTotal) - (lead.booking_price || 0))} บาท</span>
+                </div>
+              </>
+            ) : null}
           </div>
         )}
         {lead.install_date && (
@@ -123,6 +140,32 @@ export default function PurchasedStep({ lead, state, refresh }: StepCommonProps)
             <div className="font-semibold text-gray-800">{formatDate(lead.install_date)}</div>
           </div>
         )}
+
+        {lead.order_before_slip && (
+          <div className="border-l-3 border-violet-400 pl-3">
+            <div className="flex items-center justify-between mb-1.5">
+              <div className="text-xs font-bold text-violet-600 uppercase">สลิปก่อนติดตั้ง</div>
+              <div className="text-sm font-bold font-mono tabular-nums text-gray-900">{fmt(doneAmtBefore)} บาท</div>
+            </div>
+            <a href={lead.order_before_slip} target="_blank" rel="noreferrer">
+              <FallbackImage src={lead.order_before_slip} alt="" className="max-h-48 rounded-lg border border-gray-200 hover:opacity-80 transition" fallbackLabel="สลิปหาย" />
+            </a>
+          </div>
+        )}
+
+        {(lead.full_name || lead.id_card_number || lead.id_card_address || lead.installation_address) && (
+          <div className="border-l-3 border-gray-300 pl-3">
+            <div className="text-xs font-bold text-gray-400 uppercase mb-1">ข้อมูลขออนุญาตติดตั้ง</div>
+            <div className="space-y-0.5">
+              {lead.full_name && <div className="flex justify-between"><span className="text-gray-400">ชื่อ-นามสกุล</span><span className="text-gray-800 text-right">{lead.full_name}</span></div>}
+              {lead.id_card_number && <div className="flex justify-between"><span className="text-gray-400">เลขบัตร ปชช.</span><span className="font-mono tabular-nums text-gray-800">{lead.id_card_number}</span></div>}
+              {lead.id_card_address && <div className="flex flex-col"><span className="text-gray-400">ที่อยู่ตามบัตร</span><span className="text-gray-800">{lead.id_card_address}</span></div>}
+              {lead.installation_address && <div className="flex flex-col"><span className="text-gray-400">ที่อยู่ติดตั้ง</span><span className="text-gray-800">{lead.installation_address}</span></div>}
+            </div>
+          </div>
+        )}
+      </div>
+      )}
       </div>
     );
   }
@@ -138,7 +181,6 @@ export default function PurchasedStep({ lead, state, refresh }: StepCommonProps)
             const missing: string[] = [];
             if (from === 0 && (!total || total <= 0)) missing.push("ยอดรวม");
             if (from === 0 && (pctBefore === null || pctBefore === undefined)) missing.push("% ชำระก่อนติดตั้ง");
-            if (from === 1 && !lineSent && !(lead as unknown as { order_line_sent?: boolean }).order_line_sent) missing.push("ส่งใบเสนอราคาทาง LINE");
             if (from === 2 && !installDate) missing.push("วันนัดติดตั้ง");
             if (from === 3 && !beforeSlipDone) missing.push("กรุณาอัปโหลดสลิปชำระงวดแรก");
             if (from === 3 && !beforePaidLocal) missing.push("ยืนยันรับชำระงวดแรก");
@@ -218,7 +260,7 @@ export default function PurchasedStep({ lead, state, refresh }: StepCommonProps)
         <div className="space-y-3">
           <div>
             <label className="text-xs font-semibold tracking-wider uppercase text-gray-400 block mb-1">กำหนดเข้าติดตั้ง</label>
-            <CalendarPicker date={installDate} timeSlot="" onDateChange={setInstallDate} onTimeSlotChange={() => {}} showTimeSlot={false} />
+            <CalendarPicker date={installDate} timeSlot="" onDateChange={setInstallDate} onTimeSlotChange={() => {}} showTimeSlot={false} showSurveySlots excludeLeadId={lead.id} />
           </div>
         </div>
       )}
@@ -266,10 +308,17 @@ export default function PurchasedStep({ lead, state, refresh }: StepCommonProps)
                 <span>-{fmt(lead.booking_price)} บาท</span>
               </div>
             )}
-            <div className="flex justify-between text-sm font-semibold border-t border-gray-200 pt-1">
-              <span className="text-gray-600">ยอดชำระหลังติดตั้งสุทธิ</span>
-              <span className="font-bold font-mono text-gray-900">{fmt(amountAfter - (lead.booking_price || 0))} บาท</span>
-            </div>
+            {pctBefore >= 100 ? (
+              <div className="flex justify-between text-sm font-semibold border-t border-gray-200 pt-1">
+                <span className="text-gray-600">ยอดชำระสุทธิ</span>
+                <span className="font-bold font-mono text-gray-900">{fmt(total - (lead.booking_price || 0))} บาท</span>
+              </div>
+            ) : (
+              <div className="flex justify-between text-sm font-semibold border-t border-gray-200 pt-1">
+                <span className="text-gray-600">ยอดชำระหลังติดตั้งสุทธิ</span>
+                <span className="font-bold font-mono text-gray-900">{fmt(amountAfter - (lead.booking_price || 0))} บาท</span>
+              </div>
+            )}
           </div>
 
           <button
@@ -348,15 +397,15 @@ export default function PurchasedStep({ lead, state, refresh }: StepCommonProps)
             <div className="rounded-lg bg-white border border-gray-200 p-3">
               <div className="text-xs font-bold text-gray-400 uppercase mb-3">ชำระก่อนติดตั้ง</div>
               <PaymentSection
+                paymentTitle="ชำระก่อนติดตั้ง"
+                amountLabel={pctAfter > 0 ? "งวด 1/2" : "ชำระเต็มจำนวน"}
                 amount={amountBefore}
                 leadId={lead.id}
                 leadName={lead.full_name}
                 lineId={lead.line_id}
                 slipUrl={lead.order_before_slip}
                 slipField="order_before_slip"
-                hideConfirm
-                onSlipUploaded={() => setBeforeSlipDone(true)}
-                paymentTitle={`ชำระก่อนติดตั้ง`}
+                onVerified={() => setBeforeSlipDone(true)}
                 details={[
                   { label: `ยอดชำระ (งวด 1/${pctAfter > 0 ? "2" : "1"})`, value: `฿${fmt(amountBefore)}` },
                 ]}
@@ -374,15 +423,15 @@ export default function PurchasedStep({ lead, state, refresh }: StepCommonProps)
             <div className="rounded-lg bg-white border border-gray-200 p-3">
               <div className="text-xs font-bold text-gray-400 uppercase mb-3">ชำระหลังติดตั้ง</div>
               <PaymentSection
+                paymentTitle="ชำระหลังติดตั้ง"
+                amountLabel="งวด 2/2"
                 amount={amountAfter - (lead.booking_price || 0)}
                 leadId={lead.id}
                 leadName={lead.full_name}
                 lineId={lead.line_id}
                 slipUrl={lead.order_after_slip}
                 slipField="order_after_slip"
-                hideConfirm
-                onSlipUploaded={() => setAfterSlipDone(true)}
-                paymentTitle="ชำระหลังติดตั้ง"
+                onVerified={() => setAfterSlipDone(true)}
                 details={[
                   { label: "ยอดคงค้าง (งวด 2/2)", value: `฿${fmt(amountAfter)}` },
                   ...(lead.booking_price ? [{ label: "หักมัดจำ", value: `-฿${fmt(lead.booking_price)}` }] : []),
@@ -468,7 +517,6 @@ export default function PurchasedStep({ lead, state, refresh }: StepCommonProps)
             const missing: string[] = [];
             if (subStep === 0 && (!total || total <= 0)) missing.push("ยอดรวม");
             if (subStep === 0 && (pctBefore === null || pctBefore === undefined)) missing.push("% ชำระก่อนติดตั้ง");
-            if (subStep === 1 && !lineSent && !(lead as unknown as { order_line_sent?: boolean }).order_line_sent) missing.push("ส่งใบเสนอราคาทาง LINE");
             if (subStep === 2 && !installDate) missing.push("วันนัดติดตั้ง");
             if (subStep === 3 && !beforeSlipDone) missing.push("กรุณาอัปโหลดสลิปชำระงวดแรก");
             if (subStep === 3 && !beforePaidLocal) missing.push("ยืนยันรับชำระงวดแรก");

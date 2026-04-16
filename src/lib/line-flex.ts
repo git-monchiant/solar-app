@@ -10,9 +10,13 @@ interface FlexPaymentProps {
   details?: { label: string; value: string }[];
   note?: string;
   qrUrl?: string;
+  issuedAt?: Date;
 }
 
-export function buildPaymentFlex({ origin, title, amount, name, actionLabel, actionUrl, details, note, qrUrl }: FlexPaymentProps) {
+const fmtTime = (d: Date) => d.toLocaleString("th-TH", { day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit" });
+
+export function buildPaymentFlex({ origin, title, amount, name, actionLabel, actionUrl, details, note, qrUrl, issuedAt }: FlexPaymentProps) {
+  const now = issuedAt ?? new Date();
   return {
     type: "flex" as const,
     altText: `${title} - ${fmt(amount)} บาท`,
@@ -36,13 +40,14 @@ export function buildPaymentFlex({ origin, title, amount, name, actionLabel, act
           }] : []),
           { type: "separator", color: "#f0f0f0" },
           ...(details || []).map(d => ({
-            type: "box" as const, layout: "horizontal" as const,
+            type: "box" as const, layout: "horizontal" as const, spacing: "sm" as const,
             contents: [
-              { type: "text" as const, text: d.label, size: "xxs" as const, color: "#999999" as const, flex: 3 },
-              { type: "text" as const, text: d.value, size: "xxs" as const, color: "#555555" as const, align: "end" as const, flex: 2 },
+              { type: "text" as const, text: d.label, size: "xxs" as const, color: "#999999" as const, flex: 0 },
+              { type: "text" as const, text: d.value, size: "xs" as const, color: "#333333" as const, align: "end" as const, wrap: true, flex: 1 },
             ],
           })),
           ...(note ? [{ type: "text" as const, text: note, size: "xxs" as const, color: "#999999" as const, wrap: true }] : []),
+          { type: "text" as const, text: `ออกเมื่อ ${fmtTime(now)}`, size: "xxs" as const, color: "#b8860b" as const, margin: "sm" as const },
           ...(!qrUrl ? [{
             type: "button" as const, style: "primary" as const, color: "#1ed0c7", height: "sm" as const, margin: "md" as const,
             action: { type: "uri" as const, label: actionLabel, uri: actionUrl },

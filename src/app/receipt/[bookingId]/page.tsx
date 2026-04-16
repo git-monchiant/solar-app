@@ -41,8 +41,6 @@ export default function ReceiptPage() {
 
   if (!d) return <div className="flex items-center justify-center h-screen"><div className="w-8 h-8 border-2 border-primary/30 border-t-primary rounded-full animate-spin" /></div>;
 
-  const qr = `/api/qr?amount=${d.total_price}&format=image&name=${encodeURIComponent(d.full_name)}`;
-
   return (
     <div className="bg-white min-h-screen print:min-h-0 receipt-root">
       <style>{`
@@ -141,18 +139,12 @@ export default function ReceiptPage() {
             </div>
           </div>
 
-          {/* QR + Bank info */}
-          <div className="flex gap-5 items-start mb-4">
-            <div className="shrink-0">
-              <img src={qr} alt="QR" className="w-14 h-14" />
-              <div className="text-[9px] text-gray-400 mt-0.5">Scan to pay via PromptPay</div>
-            </div>
-            <div className="text-xs text-gray-500 space-y-0.5 pt-0.5">
-              <div>TRANSFER TO: {CO.bankName}</div>
-              <div>ACCOUNT NO: {CO.bankAcc}</div>
-              <div>BANK: {CO.bank}</div>
-              <div>PROMPTPAY: {CO.ppId.replace(/(\d{3})(\d{3})(\d{4})/, "$1-$2-$3")}</div>
-            </div>
+          {/* Bank info */}
+          <div className="text-xs text-gray-500 space-y-0.5 mb-4">
+            <div>TRANSFER TO: {CO.bankName}</div>
+            <div>ACCOUNT NO: {CO.bankAcc}</div>
+            <div>BANK: {CO.bank}</div>
+            <div>PROMPTPAY TAX ID: {CO.taxId}</div>
           </div>
 
 

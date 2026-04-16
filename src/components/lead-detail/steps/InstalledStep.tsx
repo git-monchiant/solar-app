@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import { apiFetch } from "@/lib/api";
 import type { StepCommonProps } from "./types";
+import FallbackImage from "@/components/FallbackImage";
 import PaymentSection from "./PaymentSection";
 import LineConfirmModal from "@/components/LineConfirmModal";
 import ErrorPopup from "@/components/ErrorPopup";
@@ -14,7 +15,12 @@ const formatDate = (d: string) =>
 
 const SUB_STEPS = ["ส่งมอบ", "สรุป คชจ.", "เก็บเงิน", "ประเมิน"];
 
-export default function InstalledStep({ lead, state, refresh }: StepCommonProps) {
+interface Props extends StepCommonProps {
+  expanded?: boolean;
+  onToggle?: () => void;
+}
+
+export default function InstalledStep({ lead, state, refresh, expanded, onToggle }: Props) {
   const [subStep, setSubStep] = useState(0);
   const [nextError, setNextError] = useState<string | null>(null);
   const [photos, setPhotos] = useState<string[]>(lead.install_photos ? lead.install_photos.split(",").filter(Boolean) : []);
@@ -126,8 +132,18 @@ export default function InstalledStep({ lead, state, refresh }: StepCommonProps)
 
   if (state === "done") {
     return (
-      <div className="space-y-3 text-sm">
-        <div className="text-emerald-700 font-semibold">ติดตั้งเสร็จสิ้น</div>
+      <div className="text-sm">
+      <div onClick={() => onToggle?.()} className="flex items-center gap-2 py-1 cursor-pointer">
+        <span className="text-sm font-semibold text-emerald-700">
+          ติดตั้งเสร็จสิ้น{lead.install_completed_at ? ` · ${formatDate(lead.install_completed_at)}` : ""}
+        </span>
+        <span className="flex-1" />
+        <svg className={`w-4 h-4 text-gray-400 transition-transform shrink-0 ${expanded ? "rotate-180" : ""}`} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
+          <path strokeLinecap="round" strokeLinejoin="round" d="M19.5 8.25l-7.5 7.5-7.5-7.5" />
+        </svg>
+      </div>
+      {expanded && (
+      <div className="space-y-3 mt-3 pt-3 border-t border-gray-100">
 
         {/* Dates */}
         <div className="grid grid-cols-2 gap-2">
@@ -152,7 +168,7 @@ export default function InstalledStep({ lead, state, refresh }: StepCommonProps)
             <div className="grid grid-cols-3 gap-2">
               {photos.map((url, i) => (
                 <a key={i} href={url} target="_blank" rel="noreferrer">
-                  <img src={url} alt="" className="w-full aspect-square object-cover rounded-lg border border-gray-200 hover:opacity-80 transition" />
+                  <FallbackImage src={url} alt="" className="w-full aspect-square object-cover rounded-lg border border-gray-200 hover:opacity-80 transition" />
                 </a>
               ))}
             </div>
@@ -215,7 +231,7 @@ export default function InstalledStep({ lead, state, refresh }: StepCommonProps)
           <div className="border-l-3 border-violet-400 pl-3">
             <div className="text-xs font-bold text-violet-600 uppercase mb-1.5">สลิปหลังติดตั้ง</div>
             <a href={lead.order_after_slip} target="_blank" rel="noreferrer">
-              <img src={lead.order_after_slip} alt="" className="max-h-48 rounded-lg border border-gray-200 hover:opacity-80 transition" />
+              <FallbackImage src={lead.order_after_slip} alt="" className="max-h-48 rounded-lg border border-gray-200 hover:opacity-80 transition" fallbackLabel="สลิปหาย" />
             </a>
           </div>
         )}
@@ -245,6 +261,8 @@ export default function InstalledStep({ lead, state, refresh }: StepCommonProps)
         ) : lead.review_sent ? (
           <div className="text-xs text-gray-400 italic">ส่งแบบประเมินแล้ว — รอลูกค้าให้คะแนน</div>
         ) : null}
+      </div>
+      )}
       </div>
     );
   }
@@ -372,15 +390,15 @@ export default function InstalledStep({ lead, state, refresh }: StepCommonProps)
               <span className="text-lg font-bold font-mono tabular-nums text-gray-900">{fmt(remainingAmount + extraCost)} บาท</span>
             </div>
             <PaymentSection
+              paymentTitle="ชำระหลังติดตั้ง"
+              amountLabel="งวด 2/2"
               amount={remainingAmount + extraCost}
               leadId={lead.id}
               leadName={lead.full_name}
               lineId={lead.line_id}
               slipUrl={lead.order_after_slip}
               slipField="order_after_slip"
-              hideConfirm
-              onSlipUploaded={() => setAfterSlipDone(true)}
-              paymentTitle="ชำระหลังติดตั้ง"
+              onVerified={() => setAfterSlipDone(true)}
               details={[
                 { label: "ยอดคงค้าง (งวด 2/2)", value: `฿${fmt(orderTotal - Math.round(orderTotal * pctBefore / 100))}` },
                 ...(extraCost > 0 ? [{ label: extraNote || "ค่าใช้จ่ายเพิ่มเติม", value: `+฿${fmt(extraCost)}` }] : []),

@@ -87,10 +87,12 @@ export default function CalendarPicker({
                   const counts = surveyCountByDate[iso];
                   const isFull = !!(counts && counts.morning > 0 && counts.afternoon > 0);
                   const isPartial = !!(counts && (counts.morning > 0 || counts.afternoon > 0) && !isFull);
-                  const disabled = isPast || (showSurveySlots && isFull);
+                  // Full-day events (install) block any day with existing booking
+                  const fullDayEvent = !showTimeSlot;
+                  const disabled = isPast || (showSurveySlots && (isFull || (fullDayEvent && isPartial)));
                   let bookedClass = "";
                   if (!isPast && !selected && showSurveySlots) {
-                    if (isFull) bookedClass = "bg-red-100 text-red-500";
+                    if (isFull || (fullDayEvent && isPartial)) bookedClass = "bg-red-100 text-red-500";
                     else if (isPartial) bookedClass = "bg-amber-100 text-amber-700";
                   }
                   return (

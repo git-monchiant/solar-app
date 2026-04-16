@@ -48,6 +48,9 @@ export default function LeadDetailPage({ params }: { params: Promise<{ id: strin
   const [showProfileModal, setShowProfileModal] = useState(false);
   const [preSurveyExpanded, setPreSurveyExpanded] = useState(false);
   const [surveyExpanded, setSurveyExpanded] = useState(false);
+  const [quotationExpanded, setQuotationExpanded] = useState(false);
+  const [purchasedExpanded, setPurchasedExpanded] = useState(false);
+  const [installedExpanded, setInstalledExpanded] = useState(false);
 
   const fetchLead = useCallback(() => {
     apiFetch(`/api/leads/${id}`).then(setLead).catch(console.error).finally(() => setLoadingLead(false));
@@ -357,7 +360,7 @@ export default function LeadDetailPage({ params }: { params: Promise<{ id: strin
               doneTitle="Quotation Done"
               icon="M12 6v12m-3-2.818l.879.659c1.171.879 3.07.879 4.242 0 1.172-.879 1.172-2.303 0-3.182C13.536 12.219 12.768 12 12 12c-.725 0-1.45-.22-2.003-.659-1.106-.879-1.106-2.303 0-3.182s2.9-.879 4.006 0l.415.33M21 12a9 9 0 11-18 0 9 9 0 0118 0z"
             >
-              <QuotationStep lead={lead} state={cardState(2)} refresh={refresh} packages={packages} />
+              <QuotationStep lead={lead} state={cardState(2)} refresh={refresh} packages={packages} expanded={quotationExpanded} onToggle={() => setQuotationExpanded(!quotationExpanded)} />
             </CardWrapper>
 
             {/* Step 04: Purchased */}
@@ -367,7 +370,7 @@ export default function LeadDetailPage({ params }: { params: Promise<{ id: strin
               doneTitle="Approved & Paid"
               icon="M9 12.75L11.25 15 15 9.75M21 12a9 9 0 11-18 0 9 9 0 0118 0z"
             >
-              <PurchasedStep lead={lead} state={cardState(3)} refresh={refresh} />
+              <PurchasedStep lead={lead} state={cardState(3)} refresh={refresh} expanded={purchasedExpanded} onToggle={() => setPurchasedExpanded(!purchasedExpanded)} />
             </CardWrapper>
 
             {/* Step 05: Installed */}
@@ -377,7 +380,7 @@ export default function LeadDetailPage({ params }: { params: Promise<{ id: strin
               doneTitle="Install Done"
               icon="M11.42 15.17l-5.658-5.66a2.122 2.122 0 010-3l1.532-1.532a2.122 2.122 0 013 0L15.953 10.637a2.122 2.122 0 010 3l-1.532 1.532a2.122 2.122 0 01-3 0z"
             >
-              <InstalledStep lead={lead} state={cardState(4)} refresh={refresh} />
+              <InstalledStep lead={lead} state={cardState(4)} refresh={refresh} expanded={installedExpanded} onToggle={() => setInstalledExpanded(!installedExpanded)} />
             </CardWrapper>
 
             {/* Lost banner */}

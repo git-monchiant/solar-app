@@ -4,15 +4,18 @@ import { useState } from "react";
 import { apiFetch } from "@/lib/api";
 import type { StepCommonProps, Package } from "./types";
 import ErrorPopup from "@/components/ErrorPopup";
+import FallbackImage from "@/components/FallbackImage";
 
 const formatDate = (d: string) =>
   new Date(String(d).slice(0, 10) + "T12:00:00").toLocaleDateString("th-TH", { day: "numeric", month: "short", year: "numeric" });
 
 interface Props extends StepCommonProps {
   packages: Package[];
+  expanded?: boolean;
+  onToggle?: () => void;
 }
 
-export default function QuotationStep({ lead, state, refresh }: Props) {
+export default function QuotationStep({ lead, state, refresh, expanded, onToggle }: Props) {
   const [files, setFiles] = useState<File[]>([]);
   const [note, setNote] = useState(lead.quotation_note || "");
   const [amount, setAmount] = useState<number>(lead.quotation_amount || 0);
@@ -68,11 +71,23 @@ export default function QuotationStep({ lead, state, refresh }: Props) {
 
   if (state === "done") {
     return (
-      <div className="space-y-3 text-sm">
-        <div className="flex items-center justify-between">
-          <span className="text-emerald-700 font-semibold">ส่งใบเสนอราคาแล้ว</span>
-          {lead.quotation_amount && <span className="text-lg font-bold font-mono tabular-nums text-gray-900">{new Intl.NumberFormat("th-TH").format(lead.quotation_amount)} บาท</span>}
-        </div>
+      <div className="text-sm">
+      <div onClick={() => onToggle?.()} className="flex items-center gap-2 py-1 cursor-pointer">
+        <span className="text-sm font-semibold text-emerald-700">ส่งใบเสนอราคาแล้ว{typeof lead.quotation_amount === "number" ? ` · ${new Intl.NumberFormat("th-TH").format(lead.quotation_amount)} บาท` : ""}</span>
+        <span className="flex-1" />
+        <svg className={`w-4 h-4 text-gray-400 transition-transform shrink-0 ${expanded ? "rotate-180" : ""}`} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
+          <path strokeLinecap="round" strokeLinejoin="round" d="M19.5 8.25l-7.5 7.5-7.5-7.5" />
+        </svg>
+      </div>
+      {expanded && (
+      <div className="space-y-3 mt-3 pt-3 border-t border-gray-100">
+
+        {typeof lead.quotation_amount === "number" && (
+          <div className="border-l-3 border-blue-400 pl-3">
+            <div className="text-xs font-bold text-blue-600 uppercase mb-1">มูลค่าตามใบเสนอราคา</div>
+            <div className="text-lg font-bold font-mono tabular-nums text-gray-900">{new Intl.NumberFormat("th-TH").format(lead.quotation_amount)} บาท</div>
+          </div>
+        )}
 
         {lead.quotation_note && (
           <div className="border-l-3 border-gray-300 pl-3">
@@ -90,7 +105,7 @@ export default function QuotationStep({ lead, state, refresh }: Props) {
               <div className="text-xs font-bold text-orange-600 uppercase mb-1.5">ไฟล์ใบเสนอราคา</div>
               {isImage ? (
                 <a href={url} target="_blank" rel="noreferrer">
-                  <img src={url} alt={fileName} className="w-full max-w-xs rounded-lg border border-gray-200" />
+                  <FallbackImage src={url} alt={fileName} className="w-full max-w-xs aspect-video rounded-lg border border-gray-200" fallbackLabel="ไฟล์หาย" />
                 </a>
               ) : (
                 <a href={url} target="_blank" rel="noreferrer" className="flex items-center gap-2 px-3 py-2 rounded-lg bg-gray-50 border border-gray-200 hover:bg-gray-100 transition-colors">
@@ -101,6 +116,8 @@ export default function QuotationStep({ lead, state, refresh }: Props) {
             </div>
           );
         })()}
+      </div>
+      )}
       </div>
     );
   }

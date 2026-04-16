@@ -2,47 +2,45 @@
 
 import { useEffect, useState, use } from "react";
 
-const DEPOSIT_AMOUNT = 1000;
-const formatPrice = (n: number) => new Intl.NumberFormat("th-TH").format(n);
-
-interface Lead {
-  id: number;
-  full_name: string;
-  phone: string;
-  project_name: string;
-  installation_address: string;
-  package_name: string;
-  confirmed: boolean;
-  payment_confirmed: boolean;
-  slip_url: string | null;
-}
+const fmt = (n: number) => new Intl.NumberFormat("th-TH").format(n);
+const headers = { "ngrok-skip-browser-warning": "true" };
 
 export default function PublicPayPage({ params }: { params: Promise<{ id: string }> }) {
-  const { id } = use(params);
-  const [lead, setLead] = useState<Lead | null>(null);
-  const [qrDataUrl, setQrDataUrl] = useState<string | null>(null);
-  const [qrEnabled, setQrEnabled] = useState(true);
+  const { id: token } = use(params);
+
+  const [customerName, setCustomerName] = useState<string>("");
+  const [amount, setAmount] = useState<number>(0);
+  const [qrDataUrl, setQrDataUrl] = useState<string>("");
+  const [taxId, setTaxId] = useState<string>("");
+  const [companyFull, setCompanyFull] = useState<string>("SENA SOLAR ENERGY CO., LTD.");
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    Promise.all([
-      fetch(`/api/leads/${id}`, { headers: { "ngrok-skip-browser-warning": "true" } }).then(r => r.json()),
-      fetch(`/api/qr?amount=${DEPOSIT_AMOUNT}`, { headers: { "ngrok-skip-browser-warning": "true" } }).then(r => r.json()),
-      fetch(`/api/settings`, { headers: { "ngrok-skip-browser-warning": "true" } }).then(r => r.json()),
-    ])
-      .then(([leadData, qrData, settings]) => {
-        setLead(leadData);
-        setQrDataUrl(qrData.qrDataUrl);
-        // Lock payment methods once customer starts/completes payment — settings only affect new transactions
-        if (leadData.payment_confirmed || leadData.slip_url) {
-          setQrEnabled(true);
-        } else {
-          setQrEnabled(settings.payment_qr_enabled !== "false");
-        }
-      })
-      .catch(console.error)
-      .finally(() => setLoading(false));
-  }, [id]);
+    (async () => {
+      try {
+        const tokRes = await fetch(`/api/pay-tokens/${token}`, { headers });
+        if (!tokRes.ok) { setError("ไม่พบข้อมูลการชำระเงิน"); setLoading(false); return; }
+        const tok = await tokRes.json() as { customer_name: string; amount: number };
+        setCustomerName(tok.customer_name || "");
+        setAmount(tok.amount || 0);
+
+        const [settings, qr] = await Promise.all([
+          fetch(`/api/settings`, { headers }).then(r => r.ok ? r.json() : {}) as Promise<Record<string, string>>,
+          fetch(`/api/qr?amount=${tok.amount}`, { headers }).then(r => r.ok ? r.json() : null) as Promise<{ qrDataUrl?: string } | null>,
+        ]);
+        if (settings.promptpay_tax_id) setTaxId(settings.promptpay_tax_id);
+        if (settings.company_name) setCompanyFull(settings.company_name);
+        if (qr?.qrDataUrl) setQrDataUrl(qr.qrDataUrl);
+        else setError("สร้าง QR ไม่สำเร็จ");
+      } catch (e) {
+        console.error(e);
+        setError("เกิดข้อผิดพลาด");
+      } finally {
+        setLoading(false);
+      }
+    })();
+  }, [token]);
 
   if (loading) {
     return (
@@ -52,11 +50,11 @@ export default function PublicPayPage({ params }: { params: Promise<{ id: string
     );
   }
 
-  if (!lead) {
+  if (error) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-gray-50 p-4">
         <div className="text-center">
-          <div className="text-lg font-bold text-gray-900 mb-1">ไม่พบข้อมูล</div>
+          <div className="text-lg font-bold text-gray-900 mb-1">{error}</div>
           <div className="text-sm text-gray-500">กรุณาติดต่อเจ้าหน้าที่</div>
         </div>
       </div>
@@ -66,84 +64,29 @@ export default function PublicPayPage({ params }: { params: Promise<{ id: string
   return (
     <div className="min-h-screen bg-gray-50 py-8 px-4">
       <div className="max-w-md mx-auto">
-        {/* Logo header */}
-        <div className="rounded-t-xl bg-gradient-to-br from-primary to-primary-dark text-white px-6 py-5 text-center">
-          <img
-            src="https://senasolarenergy.com/wp-content/uploads/2023/03/SENA-SOLAR-ENERGY_logo-white-1.png"
-            alt="Sena Solar Energy"
-            className="h-10 w-auto mx-auto mb-2"
-          />
-          <div className="text-xs font-semibold tracking-wider uppercase text-white/70">Payment Request</div>
-          <div className="text-base font-bold mt-0.5">ชำระค่าจอง Survey</div>
-        </div>
-
-        {/* Paid state */}
-        {lead.payment_confirmed ? (
-          <div className="bg-white border border-gray-200 border-t-0 rounded-b-xl p-6 text-center">
-            <div className="w-16 h-16 mx-auto rounded-full bg-emerald-50 flex items-center justify-center mb-3">
-              <svg className="w-8 h-8 text-emerald-600" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
-                <path strokeLinecap="round" strokeLinejoin="round" d="M4.5 12.75l6 6 9-13.5" />
-              </svg>
-            </div>
-            <div className="text-lg font-bold text-gray-900">ชำระเงินแล้ว</div>
-            <div className="text-sm text-gray-500 mt-1">ขอบคุณที่ใช้บริการ Sena Solar Energy</div>
+        <div className="bg-white rounded-2xl shadow-sm border border-gray-200 overflow-hidden">
+          <div className="bg-gradient-to-br from-primary to-primary-dark text-white p-5 text-center">
+            <div className="text-xs font-semibold uppercase tracking-wider opacity-80">{companyFull}</div>
+            <div className="text-lg font-bold mt-1">ชำระเงิน</div>
+            {customerName && <div className="text-sm opacity-90 mt-0.5">{customerName}</div>}
           </div>
-        ) : (
-          <div className="bg-white border border-gray-200 border-t-0 rounded-b-xl p-6">
-            {/* Customer info */}
-            <div className="pb-4 border-b border-gray-100">
-              <div className="text-xs font-semibold tracking-wider uppercase text-gray-400">Customer</div>
-              <div className="text-base font-bold text-gray-900 mt-0.5">{lead.full_name}</div>
-              {(lead.project_name || lead.installation_address) && (
-                <div className="text-xs text-gray-500 mt-0.5">
-                  {lead.project_name}
-                  {lead.project_name && lead.installation_address && " · "}
-                  {lead.installation_address && <span className="font-mono">{lead.installation_address}</span>}
-                </div>
-              )}
-            </div>
 
-            {/* QR */}
-            {qrEnabled && qrDataUrl && (
-              <div className="py-5">
-                <div className="relative max-w-[260px] mx-auto">
-                  <img src="/templates/thaiqr.png" alt="Thai QR Payment" className="w-full" />
-                  <img
-                    src={qrDataUrl}
-                    alt="PromptPay QR"
-                    className="absolute"
-                    style={{ top: "108px", left: "28px", width: "calc(100% - 56px)" }}
-                  />
-                </div>
-              </div>
-            )}
+          <div className="p-5 border-b border-gray-100 text-center">
+            <div className="text-xs font-semibold tracking-wider uppercase text-gray-400">ยอดชำระ</div>
+            <div className="text-3xl font-bold font-mono tabular-nums text-gray-900 mt-1">{fmt(amount)} <span className="text-base font-medium text-gray-500">บาท</span></div>
+          </div>
 
-            {/* Amount */}
-            <div className="text-center py-3 border-t border-gray-100">
-              <div className="text-xs font-semibold tracking-wider uppercase text-gray-400">Amount</div>
-              <div className="text-3xl font-bold font-mono tabular-nums text-gray-900 mt-1">
-                {formatPrice(DEPOSIT_AMOUNT)}
-                <span className="text-base font-semibold text-gray-400 ml-1">THB</span>
-              </div>
-              <div className="text-xs text-gray-500 mt-1">PromptPay · 085-909-9890</div>
-            </div>
-
-            {/* Instructions */}
-            <div className="mt-4 p-3 rounded-lg bg-amber-50 border border-amber-200">
-              <div className="text-xs font-semibold text-amber-800 mb-1">วิธีการชำระเงิน</div>
-              <ol className="text-xs text-amber-700 space-y-0.5 list-decimal list-inside">
-                <li>เปิดแอพธนาคาร / PromptPay</li>
-                <li>สแกน QR ด้านบน</li>
-                <li>ตรวจสอบชื่อผู้รับและจำนวนเงิน</li>
-                <li>ยืนยันการโอน</li>
-                <li>แจ้งสลิปกลับให้เจ้าหน้าที่</li>
-              </ol>
+          <div className="p-5 flex flex-col items-center">
+            {qrDataUrl && <img src={qrDataUrl} alt="PromptPay QR" className="w-full max-w-[320px]" />}
+            <div className="text-center mt-3">
+              <div className="text-xs font-semibold text-gray-700">PromptPay</div>
+              <div className="text-[11px] text-gray-500 font-mono tabular-nums mt-0.5">Tax ID: {taxId}</div>
             </div>
           </div>
-        )}
 
-        <div className="text-center mt-4 text-xs text-gray-400">
-          SENA SOLAR ENERGY · Secure Payment
+          <div className="px-5 pb-5 pt-3 border-t border-gray-100 text-center text-xs text-gray-500">
+            สแกน QR นี้ด้วยแอปธนาคาร<br />หลังโอนแล้วกรุณาส่งสลิปกลับทาง LINE
+          </div>
         </div>
       </div>
     </div>

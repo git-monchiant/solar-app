@@ -5,11 +5,11 @@ import { apiFetch } from "@/lib/api";
 import { PAYMENT_TYPES, FINANCE_STATUSES } from "@/lib/statuses";
 import type { Lead, Package, StepCommonProps } from "./types";
 import PreSurveyForm from "./PreSurveyForm";
+import PaymentSection from "./PaymentSection";
 import CalendarPicker from "@/components/CalendarPicker";
-import { buildPaymentFlex } from "@/lib/line-flex";
-import LineConfirmModal from "@/components/LineConfirmModal";
 import { validatePreSurvey } from "@/lib/step-validators";
 import ErrorPopup from "@/components/ErrorPopup";
+import FallbackImage from "@/components/FallbackImage";
 import CustomerInfoForm from "@/components/CustomerInfoForm";
 
 const DEPOSIT_AMOUNT = 1000;
@@ -154,6 +154,8 @@ export default function PreSurveyStep({ lead, state, refresh, packages, expanded
   const [nextError, setNextError] = useState<string | null>(null);
   const [formDraft, setFormDraft] = useState<Partial<Lead>>({});
   const [lightboxUrl, setLightboxUrl] = useState<string | null>(null);
+  const [receiptModal, setReceiptModal] = useState<{ type: "pdf" | "png"; bookingId: number } | null>(null);
+  const [receiptSaving, setReceiptSaving] = useState(false);
   const isFirstRegSave = useRef(true);
   useEffect(() => {
     if (isFirstRegSave.current) { isFirstRegSave.current = false; return; }
@@ -198,77 +200,19 @@ export default function PreSurveyStep({ lead, state, refresh, packages, expanded
   // Booking form state
   const [bookingPkg, setBookingPkg] = useState(lead.interested_package_id ? String(lead.interested_package_id) : "");
   const [bookingPayment, setBookingPayment] = useState(lead.payment_type ?? "transfer");
-  const [paymentTab, setPaymentTab] = useState<"qr" | "link">("qr");
-  const [qrEnabled, setQrEnabled] = useState(true);
-  const [linkEnabled, setLinkEnabled] = useState(true);
-  const [linkCopied, setLinkCopied] = useState(false);
-
-  useEffect(() => {
-    if (lead.slip_url) return;
-    apiFetch("/api/settings").then((s: Record<string, string>) => {
-      const qr = s.payment_qr_enabled !== "false";
-      const link = s.payment_link_enabled !== "false";
-      setQrEnabled(qr);
-      setLinkEnabled(link);
-      if (!qr && link) setPaymentTab("link");
-    }).catch(console.error);
-  }, [lead.slip_url]);
   const [bookingSaving, setBookingSaving] = useState(false);
   const [bookingSaved, setBookingSaved] = useState(false);
   const [confirmingSaved, setConfirmingSaved] = useState(false);
-  const [qrDataUrl, setQrDataUrl] = useState<string | null>(null);
-  const [slipPreview, setSlipPreview] = useState<string | null>(lead.slip_url ?? null);
-  const [uploadedSlipUrl, setUploadedSlipUrl] = useState<string | null>(lead.slip_url ?? null);
-  const [verifyStatus, setVerifyStatus] = useState<"idle" | "verifying" | "verified" | "failed">(lead.slip_url ? "verified" : "idle");
+  // Payment verification state — PaymentSection owns upload/verify and calls onVerified(url).
+  // url may be "" when KBank authorized the payment but the slip file is unavailable.
+  const [slipVerifiedUrl, setSlipVerifiedUrl] = useState<string | null>(lead.slip_url ?? null);
+  const [paymentVerified, setPaymentVerified] = useState<boolean>(!!lead.slip_url);
   const [surveyDate, setSurveyDate] = useState<string>(lead.survey_date ? lead.survey_date.slice(0, 10) : "");
   const [surveyTimeSlot, setSurveyTimeSlot] = useState<string>(lead.survey_time_slot ?? "");
-
-  const [lineSending, setLineSending] = useState<string | null>(null);
-  const [lineSent, setLineSent] = useState<string | null>(null);
-  const [lineConfirmType, setLineConfirmType] = useState<"qr" | "link" | null>(null);
-
-
-  const sendViaLine = async (type: "qr" | "link") => {
-    if (!lead.line_id) return;
-    setLineConfirmType(null);
-    setLineSending(type);
-    try {
-      const origin = typeof window !== "undefined" ? window.location.origin : "";
-      const payUrl = `${origin}/pay/${lead.id}`;
-      const qrFullUrl = `${origin}/api/qr?amount=${DEPOSIT_AMOUNT}&format=full&name=${encodeURIComponent(lead.full_name)}`;
-      const flexMsg = buildPaymentFlex({
-        origin, title: "ชำระค่ามัดจำ", amount: DEPOSIT_AMOUNT, name: lead.full_name,
-        actionLabel: "ชำระเงิน", actionUrl: payUrl,
-        note: "ค่ามัดจำสำรวจพื้นที่ติดตั้ง Solar Rooftop",
-        qrUrl: type === "qr" ? qrFullUrl : undefined,
-      });
-      const messages = [flexMsg];
-      await apiFetch("/api/line/send", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ lead_id: lead.id, messages }),
-      });
-      setLineSent(type);
-      setTimeout(() => setLineSent(null), 3000);
-    } catch {
-      setLineSent("error");
-      setTimeout(() => setLineSent(null), 3000);
-    } finally {
-      setLineSending(null);
-    }
-  };
 
   const hasBooking = !!lead.booking_number;
   const paymentLabel = PAYMENT_TYPES.find(p => p.value === lead.payment_type)?.label;
   const financeConfig = FINANCE_STATUSES.find(f => f.value === lead.finance_status);
-
-
-  // Generate QR (deposit is always 1000 THB regardless of payment method)
-  useEffect(() => {
-    apiFetch(`/api/qr?amount=${DEPOSIT_AMOUNT}`)
-      .then((data: { qrDataUrl: string }) => setQrDataUrl(data.qrDataUrl))
-      .catch(console.error);
-  }, []);
 
   // Auto-save pre-survey fields on change (debounced)
   const isFirstAutosave = useRef(true);
@@ -291,54 +235,10 @@ export default function PreSurveyStep({ lead, state, refresh, packages, expanded
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [surveyDate, surveyTimeSlot]);
 
-  const handleSlipCapture = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-    setVerifyStatus("verifying");
-
-    if (uploadedSlipUrl) {
-      fetch(`/api/upload?file=${encodeURIComponent(uploadedSlipUrl)}`, {
-        method: "DELETE",
-        headers: { "ngrok-skip-browser-warning": "true" },
-      }).catch(() => {});
-      setUploadedSlipUrl(null);
-    }
-
-    const reader = new FileReader();
-    reader.onload = ev => setSlipPreview(ev.target?.result as string);
-    reader.readAsDataURL(file);
-
-    try {
-      const formData = new FormData();
-      formData.append("file", file);
-      const uploadRes = await fetch("/api/upload", {
-        method: "POST",
-        headers: { "ngrok-skip-browser-warning": "true" },
-        body: formData,
-      });
-      const { url } = await uploadRes.json();
-      setUploadedSlipUrl(url);
-      apiFetch(`/api/leads/${lead.id}`, {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ slip_url: url }),
-      }).catch(console.error);
-      const verifyRes = await fetch("/api/verify-slip", {
-        method: "POST",
-        headers: { "Content-Type": "application/json", "ngrok-skip-browser-warning": "true" },
-        body: JSON.stringify({ imageUrl: url }),
-      });
-      const { is_slip } = await verifyRes.json();
-      setVerifyStatus(is_slip ? "verified" : "failed");
-    } catch (err) {
-      console.error(err);
-      setVerifyStatus("failed");
-    }
-  };
 
   // Transfer: slip verified → create booking + confirm + advance
   const confirmWithSlip = async () => {
-    if (!bookingPkg || !uploadedSlipUrl || !surveyDate) return;
+    if (!bookingPkg || !paymentVerified || !surveyDate) return;
     setBookingSaving(true);
     try {
       await apiFetch(`/api/leads/${lead.id}`, {
@@ -359,7 +259,7 @@ export default function PreSurveyStep({ lead, state, refresh, packages, expanded
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          slip_url: uploadedSlipUrl,
+          slip_url: slipVerifiedUrl || null,
           payment_confirmed: true,
           confirmed: true,
           status: "ชำระแล้ว",
@@ -415,9 +315,9 @@ export default function PreSurveyStep({ lead, state, refresh, packages, expanded
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           confirmed: true,
-          slip_url: uploadedSlipUrl,
-          payment_confirmed: !!uploadedSlipUrl,
-          status: uploadedSlipUrl ? "ชำระแล้ว" : "รอชำระ",
+          slip_url: slipVerifiedUrl || null,
+          payment_confirmed: paymentVerified,
+          status: paymentVerified ? "ชำระแล้ว" : "รอชำระ",
         }),
       });
       await apiFetch(`/api/leads/${lead.id}`, {
@@ -460,11 +360,11 @@ export default function PreSurveyStep({ lead, state, refresh, packages, expanded
           <span className="flex-1" />
           {lead.booking_id && (
             <span className="inline-flex items-center gap-2 shrink-0 mr-4">
-              <a href={`/api/receipt?booking_id=${lead.booking_id}&format=pdf`} target="_blank" rel="noreferrer" onClick={e => e.stopPropagation()} className="inline-flex items-center gap-1 text-xs font-semibold text-primary hover:text-primary-dark">
-                <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M3 16.5v2.25A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75V16.5M16.5 12L12 16.5m0 0L7.5 12m4.5 4.5V3" /></svg>
+              <button type="button" onClick={e => { e.stopPropagation(); setReceiptModal({ type: "pdf", bookingId: lead.booking_id! }); }} className="inline-flex items-center gap-1 text-xs font-semibold text-primary hover:text-primary-dark">
+                <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M19.5 14.25v-2.625a3.375 3.375 0 00-3.375-3.375h-1.5A1.125 1.125 0 0113.5 7.125v-1.5a3.375 3.375 0 00-3.375-3.375H8.25m2.25 0H5.625c-.621 0-1.125.504-1.125 1.125v17.25c0 .621.504 1.125 1.125 1.125h12.75c.621 0 1.125-.504 1.125-1.125V11.25a9 9 0 00-9-9z" /></svg>
                 PDF
-              </a>
-              <button type="button" onClick={e => { e.stopPropagation(); setLightboxUrl(`/api/receipt?booking_id=${lead.booking_id}`); }} className="inline-flex items-center gap-1 text-xs font-semibold text-emerald-600 hover:text-emerald-700">
+              </button>
+              <button type="button" onClick={e => { e.stopPropagation(); setReceiptModal({ type: "png", bookingId: lead.booking_id! }); }} className="inline-flex items-center gap-1 text-xs font-semibold text-emerald-600 hover:text-emerald-700">
                 <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M2.25 15.75l5.159-5.159a2.25 2.25 0 013.182 0l5.159 5.159m-1.5-1.5l1.409-1.41a2.25 2.25 0 013.182 0l2.909 2.91M3.75 21h16.5a2.25 2.25 0 002.25-2.25V5.25A2.25 2.25 0 0020.25 3H3.75A2.25 2.25 0 001.5 5.25v13.5A2.25 2.25 0 003.75 21z" /></svg>
                 PNG
               </button>
@@ -584,13 +484,13 @@ export default function PreSurveyStep({ lead, state, refresh, packages, expanded
                   {lead.pre_bill_photo_url && (
                     <button type="button" onClick={() => setLightboxUrl(lead.pre_bill_photo_url)} className="text-left">
                       <div className="text-xs text-gray-400 mb-0.5">บิลค่าไฟ</div>
-                      <img src={lead.pre_bill_photo_url} alt="Bill" className="h-16 rounded-lg border border-gray-200" />
+                      <FallbackImage src={lead.pre_bill_photo_url} alt="Bill" className="h-16 w-16 rounded-lg border border-gray-200" fallbackLabel="บิลหาย" />
                     </button>
                   )}
                   {lead.slip_url && (
                     <button type="button" onClick={() => setLightboxUrl(lead.slip_url)} className="text-left">
                       <div className="text-xs text-gray-400 mb-0.5">หลักฐานการชำระเงิน</div>
-                      <img src={lead.slip_url} alt="Slip" className="h-16 rounded-lg border border-gray-200" />
+                      <FallbackImage src={lead.slip_url} alt="Slip" className="h-16 w-16 rounded-lg border border-gray-200" fallbackLabel="สลิปหาย" />
                     </button>
                   )}
                 </div>
@@ -602,11 +502,11 @@ export default function PreSurveyStep({ lead, state, refresh, packages, expanded
           <div className="pt-3 border-t border-gray-100">
             {lead.confirmed ? (
               <div className="flex gap-2 w-full">
-                <a href={`/api/receipt?booking_id=${lead.booking_id}&format=pdf`} target="_blank" className="flex-1 h-11 px-4 rounded-lg text-sm font-semibold flex items-center justify-center gap-2 bg-primary text-white hover:bg-primary-dark transition-colors">
-                  <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M3 16.5v2.25A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75V16.5M16.5 12L12 16.5m0 0L7.5 12m4.5 4.5V3" /></svg>
+                <button type="button" onClick={() => setReceiptModal({ type: "pdf", bookingId: lead.booking_id! })} className="flex-1 h-11 px-4 rounded-lg text-sm font-semibold flex items-center justify-center gap-2 bg-primary text-white hover:bg-primary-dark transition-colors">
+                  <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M19.5 14.25v-2.625a3.375 3.375 0 00-3.375-3.375h-1.5A1.125 1.125 0 0113.5 7.125v-1.5a3.375 3.375 0 00-3.375-3.375H8.25m2.25 0H5.625c-.621 0-1.125.504-1.125 1.125v17.25c0 .621.504 1.125 1.125 1.125h12.75c.621 0 1.125-.504 1.125-1.125V11.25a9 9 0 00-9-9z" /></svg>
                   PDF
-                </a>
-                <button type="button" onClick={() => setLightboxUrl(`/api/receipt?booking_id=${lead.booking_id}`)} className="flex-1 h-11 px-4 rounded-lg text-sm font-semibold flex items-center justify-center gap-2 bg-emerald-600 text-white hover:bg-emerald-700 transition-colors">
+                </button>
+                <button type="button" onClick={() => setReceiptModal({ type: "png", bookingId: lead.booking_id! })} className="flex-1 h-11 px-4 rounded-lg text-sm font-semibold flex items-center justify-center gap-2 bg-emerald-600 text-white hover:bg-emerald-700 transition-colors">
                   <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M2.25 15.75l5.159-5.159a2.25 2.25 0 013.182 0l5.159 5.159m-1.5-1.5l1.409-1.41a2.25 2.25 0 013.182 0l2.909 2.91M3.75 21h16.5a2.25 2.25 0 002.25-2.25V5.25A2.25 2.25 0 0020.25 3H3.75A2.25 2.25 0 001.5 5.25v13.5A2.25 2.25 0 003.75 21z" /></svg>
                   PNG
                 </button>
@@ -664,25 +564,54 @@ export default function PreSurveyStep({ lead, state, refresh, packages, expanded
         <div className="fixed inset-0 z-[70] flex flex-col items-center justify-center bg-black/70" onClick={() => setLightboxUrl(null)}>
           <button onClick={() => setLightboxUrl(null)} className="absolute top-4 right-4 w-10 h-10 rounded-full bg-black/50 text-white flex items-center justify-center text-xl safe-top">✕</button>
           <img src={lightboxUrl} alt="Preview" className="max-w-[90vw] max-h-[78vh] object-contain rounded-lg" onClick={e => e.stopPropagation()} />
-          <button type="button" onClick={async (e) => {
-            e.stopPropagation();
-            try {
-              const res = await fetch(lightboxUrl);
-              const blob = await res.blob();
-              const file = new File([blob], "receipt.png", { type: "image/png" });
-              if (navigator.share && navigator.canShare?.({ files: [file] })) {
-                await navigator.share({ files: [file] });
-              } else {
-                const url = URL.createObjectURL(blob);
-                const a = document.createElement("a");
-                a.href = url; a.download = "receipt.png"; a.click();
-                URL.revokeObjectURL(url);
+        </div>
+      )}
+      {receiptModal && (
+        <div className="fixed inset-0 z-[70] bg-black/70 flex flex-col safe-top" onClick={() => setReceiptModal(null)}>
+          <div className="flex items-center justify-between px-4 py-3 shrink-0">
+            <div className="text-white text-sm font-semibold">ใบเสร็จ {lead.booking_number || `#${receiptModal.bookingId}`}</div>
+            <button type="button" onClick={() => setReceiptModal(null)} className="w-10 h-10 rounded-full bg-black/50 text-white flex items-center justify-center text-xl">✕</button>
+          </div>
+          <div className="flex-1 overflow-auto px-4 pb-4 flex items-start justify-center" onClick={e => e.stopPropagation()}>
+            <img src={`/api/receipt?booking_id=${receiptModal.bookingId}`} alt="Receipt" className="w-full max-w-[794px] rounded-lg bg-white shadow-xl" />
+          </div>
+          <div className="px-4 py-3 shrink-0 flex justify-center safe-bottom" onClick={e => e.stopPropagation()}>
+            <button type="button" disabled={receiptSaving} onClick={async () => {
+              const isPdf = receiptModal.type === "pdf";
+              const ext = isPdf ? "pdf" : "png";
+              const mime = isPdf ? "application/pdf" : "image/png";
+              const url = isPdf ? `/api/receipt?booking_id=${receiptModal.bookingId}&format=pdf` : `/api/receipt?booking_id=${receiptModal.bookingId}`;
+              const label = lead.booking_number || `booking_${receiptModal.bookingId}`;
+              setReceiptSaving(true);
+              try {
+                const res = await fetch(url);
+                const blob = await res.blob();
+                const file = new File([blob], `${label}.${ext}`, { type: mime });
+                if (navigator.share && navigator.canShare?.({ files: [file] })) {
+                  await navigator.share({ files: [file] });
+                } else {
+                  const objUrl = URL.createObjectURL(blob);
+                  const a = document.createElement("a");
+                  a.href = objUrl; a.download = `${label}.${ext}`; a.click();
+                  URL.revokeObjectURL(objUrl);
+                }
+              } catch {} finally {
+                setReceiptSaving(false);
               }
-            } catch {}
-          }} className="mt-4 inline-flex items-center gap-2 px-6 py-3 rounded-full bg-white text-gray-900 text-sm font-semibold shadow-lg hover:bg-gray-100 transition-colors">
-            <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M3 16.5v2.25A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75V16.5M16.5 12L12 16.5m0 0L7.5 12m4.5 4.5V3" /></svg>
-            บันทึกรูป
-          </button>
+            }} className="inline-flex items-center gap-2 px-6 py-3 rounded-full bg-white text-gray-900 text-sm font-semibold shadow-lg hover:bg-gray-100 disabled:opacity-70 disabled:cursor-wait transition-colors min-w-[160px] justify-center">
+              {receiptSaving ? (
+                <>
+                  <div className="w-5 h-5 border-2 border-gray-300 border-t-gray-900 rounded-full animate-spin" />
+                  กำลังเตรียม…
+                </>
+              ) : (
+                <>
+                  <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M3 16.5v2.25A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75V16.5M16.5 12L12 16.5m0 0L7.5 12m4.5 4.5V3" /></svg>
+                  บันทึก {receiptModal.type === "pdf" ? "PDF" : "รูป"}
+                </>
+              )}
+            </button>
+          </div>
         </div>
       )}
       </>
@@ -711,7 +640,7 @@ export default function PreSurveyStep({ lead, state, refresh, packages, expanded
             };
             const v = validatePreSurvey({ ...lead, ...formDraft, survey_date: surveyDate || lead.survey_date, survey_time_slot: surveyTimeSlot || lead.survey_time_slot });
             const missingHere = v.missing.filter(m => (gates[subStep] || []).includes(m.field));
-            if (subStep === 3 && !uploadedSlipUrl) missingHere.push({ field: "slip", label: "กรุณาอัปโหลดสลิปชำระเงิน" });
+            if (subStep === 3 && !paymentVerified) missingHere.push({ field: "slip", label: "กรุณาอัปโหลดสลิปชำระเงิน" });
             if (missingHere.length > 0) {
               setNextError(missingHere.map(m => m.label).join(", "));
               return;
@@ -767,162 +696,22 @@ export default function PreSurveyStep({ lead, state, refresh, packages, expanded
       )}
 
       {/* Step 4: ชำระเงิน */}
-      {subStep === 3 && (<>
-      <div className="rounded-lg bg-white/60 border border-active/15 p-4">
-        <label className="text-sm font-semibold text-gray-900 block mb-0.5">ชำระค่าจอง Survey</label>
-        <div className="text-xs text-gray-500 mb-3">ค่ามัดจำ {formatPrice(DEPOSIT_AMOUNT)} บาท</div>
-
-        {/* Tabs — underline style (hide if only one enabled) */}
-        {qrEnabled && linkEnabled && (
-          <div className="flex border-b border-gray-200 mb-4 -mx-4 px-4">
-            <button
-              type="button"
-              onClick={() => setPaymentTab("qr")}
-              className={`flex-1 pb-2.5 text-sm font-semibold border-b-2 -mb-px transition-colors cursor-pointer ${
-                paymentTab === "qr"
-                  ? "text-active border-active"
-                  : "text-gray-400 border-transparent hover:text-gray-600"
-              }`}
-            >
-              Thai QR
-            </button>
-            <button
-              type="button"
-              onClick={() => setPaymentTab("link")}
-              className={`flex-1 pb-2.5 text-sm font-semibold border-b-2 -mb-px transition-colors cursor-pointer ${
-                paymentTab === "link"
-                  ? "text-active border-active"
-                  : "text-gray-400 border-transparent hover:text-gray-600"
-              }`}
-            >
-              Payment Link
-            </button>
-          </div>
-        )}
-
-        {/* Tab content: QR */}
-        {qrEnabled && paymentTab === "qr" && !qrDataUrl && (
-          <div className="flex items-center justify-center py-10">
-            <div className="w-8 h-8 border-3 border-gray-200 border-t-active rounded-full animate-spin" />
-          </div>
-        )}
-        {qrEnabled && paymentTab === "qr" && (
-          <div className="space-y-3">
-            <div className="max-w-[280px] mx-auto">
-              <img src={`/api/qr?amount=${DEPOSIT_AMOUNT}&format=full&name=${encodeURIComponent(lead.full_name)}&_=${Date.now()}`} alt="Thai QR Payment" className="w-full rounded-xl border border-gray-200" />
-            </div>
-            <button
-              type="button"
-              disabled={lineSending === "qr" || !lead.line_id}
-              onClick={() => setLineConfirmType("qr")}
-              className={`w-full h-11 rounded-lg text-sm font-semibold transition-all shadow-sm flex items-center justify-center gap-2 ${
-                lineSent === "qr" ? "bg-emerald-500 text-white" : lineSent === "error" ? "bg-red-500 text-white" : !lead.line_id ? "bg-gray-200 text-gray-400 cursor-not-allowed" : "text-white bg-gradient-to-r from-primary to-primary-dark hover:brightness-110 shadow-primary/20"
-              }`}
-            >
-              {lineSending === "qr" ? "กำลังส่ง..." : lineSent === "qr" ? "✓ ส่งแล้ว" : lineSent === "error" ? "ส่งไม่สำเร็จ" : !lead.line_id ? "ยังไม่ได้เชื่อม LINE" : "ส่ง QR ให้ลูกค้า"}
-            </button>
-          </div>
-        )}
-
-        {/* Tab content: Payment Link */}
-        {linkEnabled && paymentTab === "link" && (
-          <div className="space-y-3">
-            <div className="text-xs text-gray-500">
-              ส่งลิ้งค์นี้ให้ลูกค้าเปิดบนมือถือ เพื่อสแกน QR และชำระเงินได้ด้วยตนเอง
-            </div>
-            <div className="flex items-center gap-2 p-3 rounded-lg bg-gray-50 border border-gray-200">
-              <div className="flex-1 min-w-0">
-                <div className="text-xs font-semibold tracking-wider uppercase text-gray-400">ลิ้งค์ชำระเงิน</div>
-                <div className="text-xs font-mono text-gray-800 truncate mt-0.5">
-                  {typeof window !== "undefined" ? `${window.location.origin}/pay/${lead.id}` : `/pay/${lead.id}`}
-                </div>
-              </div>
-              <button
-                type="button"
-                onClick={() => {
-                  const url = `${window.location.origin}/pay/${lead.id}`;
-                  navigator.clipboard.writeText(url);
-                  setLinkCopied(true);
-                  setTimeout(() => setLinkCopied(false), 2000);
-                }}
-                className="shrink-0 h-9 px-3 rounded-md text-xs font-semibold bg-active text-white hover:brightness-110 transition-all cursor-pointer"
-              >
-                {linkCopied ? "Copied ✓" : "Copy"}
-              </button>
-            </div>
-            <button
-              type="button"
-              disabled={lineSending === "link" || !lead.line_id}
-              onClick={() => setLineConfirmType("link")}
-              className={`w-full h-11 rounded-lg text-sm font-semibold transition-all shadow-sm flex items-center justify-center gap-2 ${
-                lineSent === "link" ? "bg-emerald-500 text-white" : lineSent === "error" ? "bg-red-500 text-white" : !lead.line_id ? "bg-gray-200 text-gray-400 cursor-not-allowed" : "text-white bg-gradient-to-r from-primary to-primary-dark hover:brightness-110 shadow-primary/20"
-              }`}
-            >
-              {lineSending === "link" ? "กำลังส่ง..." : lineSent === "link" ? "✓ ส่งแล้ว" : lineSent === "error" ? "ส่งไม่สำเร็จ" : !lead.line_id ? "ยังไม่ได้เชื่อม LINE" : "ส่งลิ้งค์ให้ลูกค้า"}
-            </button>
-          </div>
-        )}
-      </div>
-
-      {/* Slip upload */}
-      <input type="file" accept="image/*" onChange={handleSlipCapture} className="hidden" id="booking-slip" />
-          {slipPreview && (
-            <div className="relative rounded-xl overflow-hidden border border-gray-200 max-w-[280px] mx-auto mt-2">
-              <img src={slipPreview} alt="Slip" className="w-full" />
-              <button
-                onClick={() => {
-                  setSlipPreview(null);
-                  setUploadedSlipUrl(null);
-                  setVerifyStatus("idle");
-                  apiFetch(`/api/leads/${lead.id}`, {
-                    method: "PATCH",
-                    headers: { "Content-Type": "application/json" },
-                    body: JSON.stringify({ slip_url: null }),
-                  }).catch(console.error);
-                }}
-                className="absolute top-2 right-2 w-8 h-8 bg-black/50 rounded-full text-white flex items-center justify-center text-sm"
-              >
-                ✕
-              </button>
-            </div>
-          )}
-          {verifyStatus === "idle" && (
-            <label
-              htmlFor="booking-slip"
-              className="w-full h-11 px-4 rounded-lg text-sm font-semibold flex items-center justify-center gap-2 cursor-pointer bg-white border border-gray-200 text-gray-700 hover:border-gray-400 transition-colors"
-            >
-              อัปโหลดสลิปโอนเงิน
-            </label>
-          )}
-          {verifyStatus === "verifying" && (
-            <div className="w-full h-11 rounded-lg text-sm font-semibold text-white bg-amber-500 flex items-center justify-center gap-2">
-              <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
-              Verifying…
-            </div>
-          )}
-          {verifyStatus === "verified" && (
-            <div className="w-full h-9 rounded-lg text-xs font-semibold text-emerald-700 bg-emerald-50 border border-emerald-600/15 flex items-center justify-center gap-1">
-              ✓ ตรวจสลิปแล้ว
-            </div>
-          )}
-          {verifyStatus === "failed" && (
-            <div className="space-y-2">
-              <div className="w-full h-11 rounded-lg text-sm font-semibold text-white bg-red-500 flex items-center justify-center">
-                ตรวจสลิปไม่ผ่าน
-              </div>
-              <button
-                onClick={() => {
-                  setVerifyStatus("idle");
-                  setSlipPreview(null);
-                  setUploadedSlipUrl(null);
-                }}
-                className="w-full h-9 rounded-lg text-xs text-gray-600 border border-gray-200"
-              >
-                ลองอีกครั้ง
-              </button>
-            </div>
-          )}
-      </>)}
+      {subStep === 3 && (
+        <div className="rounded-lg bg-white/60 border border-active/15 p-4">
+          <PaymentSection
+            paymentTitle="ชำระค่าจอง Survey"
+            amountLabel="ค่ามัดจำ"
+            amount={DEPOSIT_AMOUNT}
+            leadId={lead.id}
+            leadName={lead.full_name}
+            lineId={lead.line_id}
+            slipUrl={lead.slip_url ?? null}
+            slipField="slip_url"
+            paymentNote="ค่ามัดจำสำรวจพื้นที่ติดตั้ง Solar Rooftop"
+            onVerified={(url) => { setSlipVerifiedUrl(url || null); setPaymentVerified(true); }}
+          />
+        </div>
+      )}
 
       {/* Step 5: ยืนยัน */}
       {subStep === 4 && (
@@ -975,7 +764,7 @@ export default function PreSurveyStep({ lead, state, refresh, packages, expanded
               if (!regIdCard || regIdCard.length !== 13) missing.push("เลขบัตรประชาชน (13 หลัก)");
               if (!regAddress) missing.push("ที่อยู่ตามบัตร");
               if (!regHouseNumber) missing.push("ที่อยู่ติดตั้ง");
-              if (!uploadedSlipUrl) missing.push("กรุณาอัปโหลดสลิปชำระเงิน");
+              if (!paymentVerified) missing.push("กรุณาอัปโหลดสลิปชำระเงิน");
               if (!surveyDate) missing.push("วันนัดสำรวจ");
               if (!surveyTimeSlot) missing.push("ช่วงเวลา");
               if (missing.length > 0) {
@@ -1015,7 +804,7 @@ export default function PreSurveyStep({ lead, state, refresh, packages, expanded
           const v = validatePreSurvey({ ...lead, ...formDraft, survey_date: surveyDate || lead.survey_date, survey_time_slot: surveyTimeSlot || lead.survey_time_slot });
           const missingHere = v.missing.filter(m => stepGate[subStep]?.includes(m.field));
           // Step 3 (ชำระเงิน): ต้องอัปโหลดสลิปก่อน
-          if (subStep === 3 && !uploadedSlipUrl) {
+          if (subStep === 3 && !paymentVerified) {
             missingHere.push({ field: "slip", label: "กรุณาอัปโหลดสลิปชำระเงิน" });
           }
           if (missingHere.length > 0) {
@@ -1050,31 +839,12 @@ export default function PreSurveyStep({ lead, state, refresh, packages, expanded
         </button>
       )}
 
-      {/* Image lightbox */}
+      {/* Image lightbox (bill photo / slip preview) */}
       {lightboxUrl && (
         <div className="fixed inset-0 z-[70] flex flex-col items-center justify-center bg-black/70" onClick={() => setLightboxUrl(null)}>
           <button onClick={() => setLightboxUrl(null)} className="absolute top-4 right-4 w-10 h-10 rounded-full bg-black/50 text-white flex items-center justify-center text-xl safe-top">✕</button>
           <img src={lightboxUrl} alt="Preview" className="max-w-[90vw] max-h-[78vh] object-contain rounded-lg" onClick={e => e.stopPropagation()} />
-          <a
-            href={lightboxUrl}
-            download={`receipt.png`}
-            onClick={e => e.stopPropagation()}
-            className="mt-4 inline-flex items-center gap-2 px-6 py-3 rounded-full bg-white text-gray-900 text-sm font-semibold shadow-lg hover:bg-gray-100 transition-colors"
-          >
-            <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M3 16.5v2.25A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75V16.5M16.5 12L12 16.5m0 0L7.5 12m4.5 4.5V3" /></svg>
-            บันทึกรูป
-          </a>
         </div>
-      )}
-
-      {/* LINE send confirm modal */}
-      {lineConfirmType && (
-        <LineConfirmModal
-          name={lead.full_name}
-          description={lineConfirmType === "qr" ? "ส่ง QR ชำระเงิน" : "ส่งลิ้งค์ชำระเงิน"}
-          onCancel={() => setLineConfirmType(null)}
-          onConfirm={() => sendViaLine(lineConfirmType)}
-        />
       )}
 
       <ErrorPopup message={nextError} onClose={() => setNextError(null)} />

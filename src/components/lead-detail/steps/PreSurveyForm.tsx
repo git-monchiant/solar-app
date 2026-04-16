@@ -164,7 +164,23 @@ export default function PreSurveyForm({ lead, refresh, packages = [], hideReside
     setAcUnits(prev => ({ ...prev, [btu]: Math.max(0, (prev[btu] || 0) + delta) }));
   };
 
-  // Auto-save (debounced)
+  // Sync parent state immediately so validation sees latest values
+  useEffect(() => {
+    onFormChange?.({
+      pre_residence_type: residenceType || null,
+      pre_monthly_bill: monthlyBill ?? null,
+      pre_peak_usage: peakUsage || null,
+      pre_electrical_phase: electricalPhase || null,
+      pre_wants_battery: wantsBattery || null,
+      pre_ac_units: stringifyAcUnits(acUnits),
+      pre_appliances: pre_appliances.length ? pre_appliances.join(",") : null,
+      interested_package_ids: selectedPkgs.length ? selectedPkgs.join(",") : null,
+      interested_package_id: selectedPkgs.length ? parseInt(selectedPkgs[0]) : null,
+    } as Partial<Lead>);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [residenceType, monthlyBill, peakUsage, electricalPhase, wantsBattery, acUnits, pre_appliances, selectedPkgs]);
+
+  // Auto-save to DB (debounced)
   const isFirstAutosave = useRef(true);
   useEffect(() => {
     if (isFirstAutosave.current) {
@@ -172,22 +188,20 @@ export default function PreSurveyForm({ lead, refresh, packages = [], hideReside
       return;
     }
     const t = setTimeout(() => {
-      const payload = {
-            pre_residence_type: residenceType || null,
-            pre_monthly_bill: monthlyBill ?? null,
-            pre_peak_usage: peakUsage || null,
-            pre_electrical_phase: electricalPhase || null,
-            pre_wants_battery: wantsBattery || null,
-            pre_ac_units: stringifyAcUnits(acUnits),
-            pre_appliances: pre_appliances.length ? pre_appliances.join(",") : null,
-            interested_package_ids: selectedPkgs.length ? selectedPkgs.join(",") : null,
-            interested_package_id: selectedPkgs.length ? parseInt(selectedPkgs[0]) : null,
-          };
-      onFormChange?.(payload as Partial<Lead>);
       apiFetch(`/api/leads/${lead.id}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(payload),
+        body: JSON.stringify({
+          pre_residence_type: residenceType || null,
+          pre_monthly_bill: monthlyBill ?? null,
+          pre_peak_usage: peakUsage || null,
+          pre_electrical_phase: electricalPhase || null,
+          pre_wants_battery: wantsBattery || null,
+          pre_ac_units: stringifyAcUnits(acUnits),
+          pre_appliances: pre_appliances.length ? pre_appliances.join(",") : null,
+          interested_package_ids: selectedPkgs.length ? selectedPkgs.join(",") : null,
+          interested_package_id: selectedPkgs.length ? parseInt(selectedPkgs[0]) : null,
+        }),
       }).catch(console.error);
     }, 600);
     return () => clearTimeout(t);

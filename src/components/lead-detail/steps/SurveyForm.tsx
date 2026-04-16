@@ -113,9 +113,10 @@ interface Props {
   refresh: () => void;
   section?: "house" | "electrical" | "all";
   onPhaseChange?: (phase: string) => void;
+  onFormChange?: (data: Partial<Lead>) => void;
 }
 
-export default function SurveyForm({ lead, refresh, section = "all", onPhaseChange }: Props) {
+export default function SurveyForm({ lead, refresh, section = "all", onPhaseChange, onFormChange }: Props) {
   // Must-have on-site
   const [roofMaterial, setRoofMaterial] = useState<string>(lead.survey_roof_material ?? "");
   const [roofOrientations, setRoofOrientations] = useState<string[]>(
@@ -152,7 +153,32 @@ export default function SurveyForm({ lead, refresh, section = "all", onPhaseChan
   const toggleAppliance = (v: string) => setAppliances(prev => prev.includes(v) ? prev.filter(a => a !== v) : [...prev, v]);
   const updateAc = (btu: number, delta: number) => setAcUnits(prev => ({ ...prev, [btu]: Math.max(0, (prev[btu] || 0) + delta) }));
 
-  // Auto-save
+  // Sync parent state immediately so validation sees latest values
+  useEffect(() => {
+    onFormChange?.({
+      survey_roof_material: roofMaterial || null,
+      survey_roof_orientation: roofOrientations.length ? roofOrientations.join(",") : null,
+      survey_floors: floors,
+      survey_roof_area_m2: typeof roofArea === "number" ? roofArea : null,
+      survey_grid_type: gridType || null,
+      survey_utility: utility || null,
+      survey_ca_number: caNumber || null,
+      survey_meter_size: meterSize || null,
+      survey_db_distance_m: typeof dbDistance === "number" ? dbDistance : null,
+      survey_shading: shading || null,
+      survey_roof_age: roofAge || null,
+      survey_roof_tilt: roofTilt,
+      survey_residence_type: residenceType || null,
+      survey_monthly_bill: typeof monthlyBill === "number" ? monthlyBill : null,
+      survey_peak_usage: peakUsage || null,
+      survey_appliances: appliances.length ? appliances.join(",") : null,
+      survey_ac_units: stringifyAcUnits(acUnits),
+      survey_electrical_phase: electricalPhase || null,
+    } as Partial<Lead>);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [roofMaterial, roofOrientations, floors, roofArea, gridType, utility, caNumber, meterSize, dbDistance, shading, roofAge, roofTilt, residenceType, monthlyBill, peakUsage, appliances, acUnits, electricalPhase]);
+
+  // Auto-save to DB (debounced)
   const isFirst = useRef(true);
   useEffect(() => {
     if (isFirst.current) { isFirst.current = false; return; }

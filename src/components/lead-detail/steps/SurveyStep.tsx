@@ -2,11 +2,12 @@
 
 import { useEffect, useState } from "react";
 import { apiFetch } from "@/lib/api";
-import type { StepCommonProps, Package } from "./types";
+import type { StepCommonProps, Package, Lead } from "./types";
 import SurveyForm from "./SurveyForm";
 import CalendarPicker from "@/components/CalendarPicker";
 import ErrorPopup from "@/components/ErrorPopup";
 import { validateSurvey } from "@/lib/step-validators";
+import FallbackImage from "@/components/FallbackImage";
 
 const formatDate = (d: string) =>
   new Date(String(d).slice(0, 10) + "T12:00:00").toLocaleDateString("th-TH", { day: "numeric", month: "short", year: "numeric" });
@@ -46,6 +47,7 @@ interface Props extends StepCommonProps {
 export default function SurveyStep({ lead, state, refresh, packages, expanded, onToggle }: Props) {
   const [subStep, setSubStep] = useState(0);
   const [nextError, setNextError] = useState<string | null>(null);
+  const [formDraft, setFormDraft] = useState<Partial<Lead>>({});
   const [selectedPkg, setSelectedPkg] = useState<string>(lead.interested_package_id ? String(lead.interested_package_id) : "");
   const [surveyBattery, setSurveyBattery] = useState<string>(lead.survey_wants_battery ?? lead.pre_wants_battery ?? "");
   const [surveyPhase, setSurveyPhase] = useState<string>(lead.survey_electrical_phase ?? lead.pre_electrical_phase ?? "");
@@ -279,7 +281,7 @@ export default function SurveyStep({ lead, state, refresh, packages, expanded, o
               <div className="grid grid-cols-3 gap-2">
                 {lead.survey_photos.split(",").filter(Boolean).map(url => (
                   <a key={url} href={url} target="_blank" rel="noreferrer">
-                    <img src={url} alt="Survey" className="w-full aspect-square object-cover rounded-lg border border-gray-200" />
+                    <FallbackImage src={url} alt="Survey" className="w-full aspect-square object-cover rounded-lg border border-gray-200" fallbackLabel="รูปหาย" />
                   </a>
                 ))}
               </div>
@@ -377,7 +379,7 @@ export default function SurveyStep({ lead, state, refresh, packages, expanded, o
             };
             const goTo = () => {
               if (i <= subStep) { setNextError(null); setSubStep(i); setTimeout(() => document.querySelector("[data-step-active]")?.scrollIntoView({ behavior: "smooth", block: "start" }), 100); return; }
-              const v = validateSurvey(lead);
+              const v = validateSurvey({ ...lead, ...formDraft, survey_note: surveyNote || lead.survey_note, survey_photos: surveyPhotos.length ? surveyPhotos.join(",") : lead.survey_photos, survey_wants_battery: surveyBattery || lead.survey_wants_battery, survey_electrical_phase: surveyPhase || lead.survey_electrical_phase, interested_package_id: selectedPkg ? parseInt(selectedPkg) : lead.interested_package_id });
               const missingHere = v.missing.filter(m => (gates[subStep] || []).includes(m.field));
               if (missingHere.length > 0) {
                 setNextError(missingHere.map(m => m.label).join(", "));
@@ -500,12 +502,12 @@ export default function SurveyStep({ lead, state, refresh, packages, expanded, o
 
       {/* Step 2: บ้าน · หลังคา */}
       {lead.survey_confirmed && subStep === 1 && (
-        <SurveyForm lead={lead} refresh={refresh} section="house" />
+        <SurveyForm lead={lead} refresh={refresh} section="house" onFormChange={setFormDraft} />
       )}
 
       {/* Step 3: ระบบไฟฟ้า */}
       {lead.survey_confirmed && subStep === 2 && (
-        <SurveyForm lead={lead} refresh={refresh} section="electrical" onPhaseChange={(phase) => { setSurveyPhase(phase); setSelectedPkg(""); apiFetch(`/api/leads/${lead.id}`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ interested_package_id: null }) }).catch(console.error); }} />
+        <SurveyForm lead={lead} refresh={refresh} section="electrical" onFormChange={setFormDraft} onPhaseChange={(phase) => { setSurveyPhase(phase); setSelectedPkg(""); apiFetch(`/api/leads/${lead.id}`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ interested_package_id: null }) }).catch(console.error); }} />
       )}
 
       {/* Step 5: บันทึก + รูปถ่าย */}
@@ -564,7 +566,7 @@ export default function SurveyStep({ lead, state, refresh, packages, expanded, o
           4: ["survey_note", "survey_photos"],
         };
         const handleNext = () => {
-          const v = validateSurvey(lead);
+          const v = validateSurvey({ ...lead, ...formDraft, survey_note: surveyNote || lead.survey_note, survey_photos: surveyPhotos.length ? surveyPhotos.join(",") : lead.survey_photos, survey_wants_battery: surveyBattery || lead.survey_wants_battery, survey_electrical_phase: surveyPhase || lead.survey_electrical_phase, interested_package_id: selectedPkg ? parseInt(selectedPkg) : lead.interested_package_id });
           const missingHere = v.missing.filter(m => (gates[subStep] || []).includes(m.field));
           if (missingHere.length > 0) {
             setNextError(missingHere.map(m => m.label).join(", "));
