@@ -21,6 +21,7 @@ interface Props {
   tabsRight?: React.ReactNode;
   actionHref?: string;
   actionLabel?: string;
+  actionIcon?: React.ReactNode;
   onAction?: () => void;
 }
 
@@ -35,6 +36,7 @@ export default function ListPageHeader({
   onTabChange,
   tabsRight,
   actionLabel,
+  actionIcon,
   onAction,
 }: Props) {
   const tabsRef = useRef<HTMLDivElement>(null);
@@ -73,6 +75,15 @@ export default function ListPageHeader({
             className="shrink-0 h-11 px-4 rounded-full bg-white/30 backdrop-blur-sm border border-white/30 text-sm font-semibold text-gray-800 hover:bg-white/60 transition-all"
           >
             {actionLabel}
+          </button>
+        )}
+        {actionIcon && onAction && (
+          <button
+            type="button"
+            onClick={onAction}
+            className="shrink-0 w-11 h-11 text-gray-700 hover:text-gray-900 transition-colors flex items-center justify-center"
+          >
+            {actionIcon}
           </button>
         )}
       </div>

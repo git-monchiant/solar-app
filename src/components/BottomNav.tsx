@@ -2,13 +2,40 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { useActiveRoles, hasRole } from "@/lib/roles";
+import { useActiveRoles, hasRole, Role } from "@/lib/roles";
 
-const navItems = [
+type NavItem = {
+  href: string;
+  label: string;
+  icon: React.ReactNode;
+  roles?: Role[];
+  desktopOnly?: boolean;
+};
+
+const navItems: NavItem[] = [
   {
     href: "/today",
     label: "Today",
     icon: <svg className="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M2.25 12l8.954-8.955c.44-.439 1.152-.439 1.591 0L21.75 12M4.5 9.75v10.125c0 .621.504 1.125 1.125 1.125H9.75v-4.875c0-.621.504-1.125 1.125-1.125h2.25c.621 0 1.125.504 1.125 1.125V21h4.125c.621 0 1.125-.504 1.125-1.125V9.75M8.25 21h8.25" /></svg>,
+  },
+  {
+    href: "/seeker",
+    label: "Seeker",
+    roles: ["leadsseeker"],
+    icon: <svg className="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M15 10.5a3 3 0 11-6 0 3 3 0 016 0z" /><path strokeLinecap="round" strokeLinejoin="round" d="M19.5 10.5c0 7.142-7.5 11.25-7.5 11.25S4.5 17.642 4.5 10.5a7.5 7.5 0 1115 0z" /></svg>,
+  },
+  {
+    href: "/seeker/dashboard",
+    label: "Dashboard",
+    roles: ["leadsseeker"],
+    icon: <svg className="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M3 13.125C3 12.504 3.504 12 4.125 12h2.25c.621 0 1.125.504 1.125 1.125v6.75C7.5 20.496 6.996 21 6.375 21h-2.25A1.125 1.125 0 013 19.875v-6.75zM9.75 8.625c0-.621.504-1.125 1.125-1.125h2.25c.621 0 1.125.504 1.125 1.125v11.25c0 .621-.504 1.125-1.125 1.125h-2.25a1.125 1.125 0 01-1.125-1.125V8.625zM16.5 4.125c0-.621.504-1.125 1.125-1.125h2.25C20.496 3 21 3.504 21 4.125v15.75c0 .621-.504 1.125-1.125 1.125h-2.25a1.125 1.125 0 01-1.125-1.125V4.125z" /></svg>,
+  },
+  {
+    href: "/seeker/map",
+    label: "Seeker Map",
+    roles: ["leadsseeker"],
+    desktopOnly: true,
+    icon: <svg className="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M9 6.75V15m0-8.25l-4.5-2.25v10.5L9 17.25m0-10.5l6 3m0 6.75l4.5 2.25V8.25L15 6m0 10.5V6m0 0l-6-3" /></svg>,
   },
   {
     href: "/pipeline",
@@ -31,13 +58,19 @@ export default function BottomNav() {
   const pathname = usePathname();
   const { activeRoles } = useActiveRoles();
   const isAdmin = hasRole(activeRoles, "admin");
+  const seekerMode = activeRoles.includes("leadsseeker") && !activeRoles.includes("sales") && !activeRoles.includes("solar");
+  const visibleItems = navItems.filter((item) => {
+    if (seekerMode) return item.href === "/seeker" || item.href === "/seeker/dashboard" || item.href === "/seeker/map" || item.href === "/profile";
+    return !item.roles || hasRole(activeRoles, ...item.roles);
+  });
+  const visibleMobile = visibleItems.filter((i) => !i.desktopOnly);
 
   return (
     <>
       <nav className="fixed inset-x-0 bottom-0 bg-white border-t border-gray-200 z-50 md:hidden">
         <div className="flex justify-around items-center h-20">
-          {navItems.map((item) => {
-            const isActive = pathname.startsWith(item.href);
+          {visibleMobile.map((item) => {
+            const isActive = item.href === "/seeker" ? pathname === "/seeker" : pathname.startsWith(item.href);
             return (
               <Link key={item.href} href={item.href}
                 className={`flex flex-col items-center justify-center w-full h-full gap-0.5 transition-colors ${isActive ? "text-primary" : "text-gray"}`}>
@@ -57,8 +90,11 @@ export default function BottomNav() {
           />
         </div>
         <nav className="flex-1 px-3 py-4 space-y-1">
-          {navItems.map((item) => {
-            const isActive = item.href === "/packages" ? pathname === "/packages" : pathname.startsWith(item.href);
+          {visibleItems.map((item) => {
+            const isActive =
+              item.href === "/packages" ? pathname === "/packages" :
+              item.href === "/seeker" ? pathname === "/seeker" :
+              pathname.startsWith(item.href);
             return (
               <Link key={item.href} href={item.href}
                 className={`flex items-center gap-3 px-4 py-3 rounded-xl text-xs font-semibold uppercase tracking-wider transition-colors ${isActive ? "bg-primary/10 text-primary" : "text-gray hover:bg-gray-50"}`}>
@@ -66,7 +102,7 @@ export default function BottomNav() {
               </Link>
             );
           })}
-          {isAdmin && <div className="pt-3 mt-3 border-t border-gray-100">
+          {isAdmin && !seekerMode && <div className="pt-3 mt-3 border-t border-gray-100">
             <Link href="/dashboard"
               className={`flex items-center gap-3 px-4 py-3 rounded-xl text-xs font-semibold uppercase tracking-wider transition-colors ${pathname.startsWith("/dashboard") ? "bg-primary/10 text-primary" : "text-gray hover:bg-gray-50"}`}>
               <svg className="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M3 13.125C3 12.504 3.504 12 4.125 12h2.25c.621 0 1.125.504 1.125 1.125v6.75C7.5 20.496 6.996 21 6.375 21h-2.25A1.125 1.125 0 013 19.875v-6.75zM9.75 8.625c0-.621.504-1.125 1.125-1.125h2.25c.621 0 1.125.504 1.125 1.125v11.25c0 .621-.504 1.125-1.125 1.125h-2.25a1.125 1.125 0 01-1.125-1.125V8.625zM16.5 4.125c0-.621.504-1.125 1.125-1.125h2.25C20.496 3 21 3.504 21 4.125v15.75c0 .621-.504 1.125-1.125 1.125h-2.25a1.125 1.125 0 01-1.125-1.125V4.125z" /></svg>

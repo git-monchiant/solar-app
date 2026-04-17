@@ -1,6 +1,6 @@
 #!/bin/bash
 # Build then restart without killing ngrok
-cd /Users/monchiant/sena-projects/solar-app
+cd "$(dirname "$0")"
 npx next build
 # Kill only next server, not ngrok
 lsof -ti:3700 -sTCP:LISTEN | xargs kill 2>/dev/null

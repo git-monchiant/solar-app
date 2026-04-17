@@ -3,13 +3,14 @@
 import { useEffect, useState } from "react";
 import { apiFetch } from "./api";
 
-export type Role = "admin" | "sales" | "solar";
-export const ALL_ROLES: Role[] = ["admin", "sales", "solar"];
+export type Role = "admin" | "sales" | "solar" | "leadsseeker";
+export const ALL_ROLES: Role[] = ["admin", "sales", "solar", "leadsseeker"];
 
 export const ROLE_LABEL: Record<Role, string> = {
   admin: "Admin",
   sales: "Sales",
   solar: "Solar",
+  leadsseeker: "Leads Seeker",
 };
 
 const STORAGE_KEY = "activeRoles";
