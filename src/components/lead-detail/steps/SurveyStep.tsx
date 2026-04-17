@@ -4,7 +4,7 @@ import { useEffect, useState } from "react";
 import { apiFetch } from "@/lib/api";
 import type { StepCommonProps, Package, Lead } from "./types";
 import SurveyForm from "./SurveyForm";
-import CalendarPicker from "@/components/CalendarPicker";
+import AppointmentRescheduler from "@/components/AppointmentRescheduler";
 import ErrorPopup from "@/components/ErrorPopup";
 import { validateSurvey } from "@/lib/step-validators";
 import FallbackImage from "@/components/FallbackImage";
@@ -52,8 +52,6 @@ export default function SurveyStep({ lead, state, refresh, packages, expanded, o
   const [surveyBattery, setSurveyBattery] = useState<string>(lead.survey_wants_battery ?? lead.pre_wants_battery ?? "");
   const [surveyPhase, setSurveyPhase] = useState<string>(lead.survey_electrical_phase ?? lead.pre_electrical_phase ?? "");
   const [rescheduling, setRescheduling] = useState(false);
-  const [newDate, setNewDate] = useState<string>(lead.survey_date ? lead.survey_date.slice(0, 10) : "");
-  const [newSlot, setNewSlot] = useState<string>(lead.survey_time_slot ?? "");
   const [saving, setSaving] = useState(false);
   const [surveyNote, setSurveyNote] = useState<string>(lead.survey_note ?? "");
   const [surveyPhotos, setSurveyPhotos] = useState<string[]>(lead.survey_photos ? lead.survey_photos.split(",").filter(Boolean) : []);
@@ -132,20 +130,14 @@ export default function SurveyStep({ lead, state, refresh, packages, expanded, o
     }
   };
 
-  const saveReschedule = async () => {
-    if (!newDate || !newSlot) return;
-    setSaving(true);
-    try {
-      await apiFetch(`/api/leads/${lead.id}`, {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ survey_date: newDate, survey_time_slot: newSlot, survey_confirmed: false }),
-      });
-      setRescheduling(false);
-      refresh();
-    } finally {
-      setSaving(false);
-    }
+  const saveReschedule = async ({ date, slot }: { date: string; slot: string }) => {
+    await apiFetch(`/api/leads/${lead.id}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ survey_date: date, survey_time_slot: slot, survey_confirmed: false }),
+    });
+    setRescheduling(false);
+    refresh();
   };
 
   const markDone = async () => {
@@ -293,66 +285,18 @@ export default function SurveyStep({ lead, state, refresh, packages, expanded, o
   }
   if (state !== "active") return null;
 
-  // Reschedule mode — calendar picker
   if (rescheduling) {
     return (
-      <div className="space-y-3">
-        <div className="text-xs font-semibold tracking-wider uppercase text-gray-400">เลื่อนนัดสำรวจ</div>
-        <CalendarPicker
-          date={newDate}
-          timeSlot={newSlot}
-          onDateChange={setNewDate}
-          onTimeSlotChange={setNewSlot}
-          showSurveySlots
-          excludeLeadId={lead.id}
-        />
-
-        {newDate && newSlot && (
-          <div className="rounded-lg bg-active-light border border-active/20 p-3 flex items-center gap-2">
-            <svg className="w-5 h-5 text-active shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-              <path strokeLinecap="round" strokeLinejoin="round" d="M6.75 3v2.25M17.25 3v2.25M3 18.75V7.5a2.25 2.25 0 012.25-2.25h13.5A2.25 2.25 0 0121 7.5v11.25" />
-            </svg>
-            <div className="flex-1 min-w-0">
-              <div className="text-xs text-active/70">เลื่อนเป็น</div>
-              <div className="text-sm font-bold text-active">
-                {formatDate(newDate)}
-                <span className="ml-1.5 font-mono tabular-nums">{SURVEY_TIME_SLOTS.find(s => s.value === newSlot)?.time}</span>
-              </div>
-            </div>
-          </div>
-        )}
-        <div className="flex gap-2 pt-1">
-          <button
-            type="button"
-            onClick={() => { setRescheduling(false); setNewDate(lead.survey_date ? lead.survey_date.slice(0, 10) : ""); setNewSlot(lead.survey_time_slot ?? ""); }}
-            className="flex-1 h-11 rounded-lg text-sm font-semibold bg-white border border-gray-200 text-gray-700 hover:border-gray-400"
-          >
-            ยกเลิก
-          </button>
-          <button
-            type="button"
-            onClick={saveReschedule}
-            disabled={!newDate || !newSlot || saving}
-            className="flex-[2] h-11 rounded-lg text-sm font-bold text-white bg-active hover:bg-active-dark disabled:opacity-40 disabled:cursor-not-allowed shadow-sm shadow-active/30 flex items-center justify-center gap-2"
-          >
-            {saving ? (
-              <>
-                <div className="w-4 h-4 border-2 border-white/40 border-t-white rounded-full animate-spin" />
-                กำลังบันทึก…
-              </>
-            ) : !newDate || !newSlot ? (
-              "เลือกวันและเวลา"
-            ) : (
-              <>
-                <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
-                  <path strokeLinecap="round" strokeLinejoin="round" d="M4.5 12.75l6 6 9-13.5" />
-                </svg>
-                ยืนยันเลื่อนนัด
-              </>
-            )}
-          </button>
-        </div>
-      </div>
+      <AppointmentRescheduler
+        title="เลื่อนนัดสำรวจ"
+        currentDate={lead.survey_date}
+        currentSlot={lead.survey_time_slot}
+        showTimeSlot
+        timeSlots={SURVEY_TIME_SLOTS.map(s => ({ value: s.value, label: s.label, time: s.time }))}
+        excludeLeadId={lead.id}
+        onCancel={() => setRescheduling(false)}
+        onSave={saveReschedule}
+      />
     );
   }
 

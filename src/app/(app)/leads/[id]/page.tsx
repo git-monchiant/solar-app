@@ -5,22 +5,25 @@ import { useEffect, useState, use, useCallback, useRef } from "react";
 import Link from "next/link";
 import ActivityTimeline from "@/components/lead-detail/ActivityTimeline";
 import AddActivityModal, { ActivityType } from "@/components/lead-detail/AddActivityModal";
+import AssignOwnerButton from "@/components/AssignOwnerButton";
 import LostModal from "@/components/lead-detail/LostModal";
 import ProfileModal from "@/components/lead-detail/ProfileModal";
 import LinePickerModal from "@/components/LinePickerModal";
 import Header from "@/components/Header";
 import { Activity } from "@/components/lead-detail/ActivityItem";
-import PreSurveyStep from "@/components/lead-detail/steps/PreSurveyStep";
+import RegisterStep from "@/components/lead-detail/steps/RegisterStep";
 import SurveyStep from "@/components/lead-detail/steps/SurveyStep";
-import QuotationStep from "@/components/lead-detail/steps/QuotationStep";
-import PurchasedStep from "@/components/lead-detail/steps/PurchasedStep";
-import InstalledStep from "@/components/lead-detail/steps/InstalledStep";
+import QuoteStep from "@/components/lead-detail/steps/QuoteStep";
+import OrderStep from "@/components/lead-detail/steps/OrderStep";
+import InstallStep from "@/components/lead-detail/steps/InstallStep";
+import WarrantyStep from "@/components/lead-detail/steps/WarrantyStep";
+import GridTieStep from "@/components/lead-detail/steps/GridTieStep";
 import type { Lead, Package, CardStateKind } from "@/components/lead-detail/steps/types";
 
 const formatDate = (d: string) =>
   new Date(String(d).slice(0, 10) + "T12:00:00").toLocaleDateString("th-TH", { day: "numeric", month: "short", year: "numeric" });
 
-const STEP_ORDER = ["register", "survey", "quote", "order", "install"];
+const STEP_ORDER = ["register", "survey", "quote", "order", "install", "warranty", "gridtie"];
 
 function stepIndex(status: string) {
   if (status === "closed") return STEP_ORDER.length;
@@ -46,11 +49,13 @@ export default function LeadDetailPage({ params }: { params: Promise<{ id: strin
   const [tab, setTab] = useState<"info" | "log">("info");
   const [showLineModal, setShowLineModal] = useState(false);
   const [showProfileModal, setShowProfileModal] = useState(false);
-  const [preSurveyExpanded, setPreSurveyExpanded] = useState(false);
+  const [registerExpanded, setRegisterExpanded] = useState(false);
   const [surveyExpanded, setSurveyExpanded] = useState(false);
-  const [quotationExpanded, setQuotationExpanded] = useState(false);
-  const [purchasedExpanded, setPurchasedExpanded] = useState(false);
-  const [installedExpanded, setInstalledExpanded] = useState(false);
+  const [quoteExpanded, setQuoteExpanded] = useState(false);
+  const [orderExpanded, setOrderExpanded] = useState(false);
+  const [installExpanded, setInstallExpanded] = useState(false);
+  const [warrantyExpanded, setWarrantyExpanded] = useState(false);
+  const [gridTieExpanded, setGridTieExpanded] = useState(false);
 
   const fetchLead = useCallback(() => {
     apiFetch(`/api/leads/${id}`).then(setLead).catch(console.error).finally(() => setLoadingLead(false));
@@ -113,6 +118,8 @@ export default function LeadDetailPage({ params }: { params: Promise<{ id: strin
     2: "SOLAR",
     3: "SMARTIFY",
     4: "SOLAR",
+    5: "SOLAR",
+    6: "SOLAR",
   };
 
   const CardWrapper = ({ stepIdx, title, doneTitle, icon, children, onHeaderClick }: { stepIdx: number; title: string; doneTitle?: string; icon: string; children: React.ReactNode; onHeaderClick?: () => void }) => {
@@ -301,9 +308,9 @@ export default function LeadDetailPage({ params }: { params: Promise<{ id: strin
               const isEmpty = !bodyText;
 
               return (
-                <button
+                <div
                   onClick={() => setModalType("note")}
-                  className="w-full text-left rounded-2xl bg-white border border-gray-300 hover:border-gray-400 hover:shadow-sm transition-all"
+                  className="relative w-full text-left rounded-2xl bg-white border border-gray-300 hover:border-gray-400 hover:shadow-sm transition-all cursor-pointer"
                 >
                   <div className="p-5">
                     <div className="flex items-center gap-3 mb-2">
@@ -328,7 +335,16 @@ export default function LeadDetailPage({ params }: { params: Promise<{ id: strin
                       </div>
                     )}
                   </div>
-                </button>
+                  <div className="absolute bottom-3 right-3" onClick={(e) => e.stopPropagation()}>
+                    <AssignOwnerButton
+                      leadId={lead.id}
+                      assignedUserId={lead.assigned_user_id}
+                      assignedName={lead.assigned_name}
+                      onChanged={refresh}
+                      size="md"
+                    />
+                  </div>
+                </div>
               );
             })()}
 
@@ -337,9 +353,9 @@ export default function LeadDetailPage({ params }: { params: Promise<{ id: strin
               stepIdx={0}
               title="Pre-Survey"
               icon="M9 12.75L11.25 15 15 9.75m-3-7.036A11.959 11.959 0 013.598 6 11.99 11.99 0 003 9.749c0 5.592 3.824 10.29 9 11.623 5.176-1.333 9-6.03 9-11.622 0-1.31-.21-2.571-.598-3.751h-.152c-3.196 0-6.1-1.248-8.25-3.285z"
-              onHeaderClick={cardState(0) === "done" ? () => setPreSurveyExpanded(!preSurveyExpanded) : undefined}
+              onHeaderClick={cardState(0) === "done" ? () => setRegisterExpanded(!registerExpanded) : undefined}
             >
-              <PreSurveyStep lead={lead} state={cardState(0)} refresh={refresh} packages={packages} expanded={preSurveyExpanded} onToggle={() => setPreSurveyExpanded(!preSurveyExpanded)} />
+              <RegisterStep lead={lead} state={cardState(0)} refresh={refresh} packages={packages} expanded={registerExpanded} onToggle={() => setRegisterExpanded(!registerExpanded)} />
             </CardWrapper>
 
             {/* Step 02: Survey */}
@@ -360,7 +376,7 @@ export default function LeadDetailPage({ params }: { params: Promise<{ id: strin
               doneTitle="Quotation Done"
               icon="M12 6v12m-3-2.818l.879.659c1.171.879 3.07.879 4.242 0 1.172-.879 1.172-2.303 0-3.182C13.536 12.219 12.768 12 12 12c-.725 0-1.45-.22-2.003-.659-1.106-.879-1.106-2.303 0-3.182s2.9-.879 4.006 0l.415.33M21 12a9 9 0 11-18 0 9 9 0 0118 0z"
             >
-              <QuotationStep lead={lead} state={cardState(2)} refresh={refresh} packages={packages} expanded={quotationExpanded} onToggle={() => setQuotationExpanded(!quotationExpanded)} />
+              <QuoteStep lead={lead} state={cardState(2)} refresh={refresh} packages={packages} expanded={quoteExpanded} onToggle={() => setQuoteExpanded(!quoteExpanded)} />
             </CardWrapper>
 
             {/* Step 04: Purchased */}
@@ -370,7 +386,7 @@ export default function LeadDetailPage({ params }: { params: Promise<{ id: strin
               doneTitle="Approved & Paid"
               icon="M9 12.75L11.25 15 15 9.75M21 12a9 9 0 11-18 0 9 9 0 0118 0z"
             >
-              <PurchasedStep lead={lead} state={cardState(3)} refresh={refresh} expanded={purchasedExpanded} onToggle={() => setPurchasedExpanded(!purchasedExpanded)} />
+              <OrderStep lead={lead} state={cardState(3)} refresh={refresh} expanded={orderExpanded} onToggle={() => setOrderExpanded(!orderExpanded)} />
             </CardWrapper>
 
             {/* Step 05: Installed */}
@@ -380,7 +396,29 @@ export default function LeadDetailPage({ params }: { params: Promise<{ id: strin
               doneTitle="Install Done"
               icon="M11.42 15.17l-5.658-5.66a2.122 2.122 0 010-3l1.532-1.532a2.122 2.122 0 013 0L15.953 10.637a2.122 2.122 0 010 3l-1.532 1.532a2.122 2.122 0 01-3 0z"
             >
-              <InstalledStep lead={lead} state={cardState(4)} refresh={refresh} expanded={installedExpanded} onToggle={() => setInstalledExpanded(!installedExpanded)} />
+              <InstallStep lead={lead} state={cardState(4)} refresh={refresh} expanded={installExpanded} onToggle={() => setInstallExpanded(!installExpanded)} />
+            </CardWrapper>
+
+            {/* Step 06: Warranty */}
+            <CardWrapper
+              stepIdx={5}
+              title="Warranty"
+              doneTitle="Warranty Issued"
+              icon="M9 12.75L11.25 15 15 9.75m-3-7.036A11.959 11.959 0 013.598 6 11.99 11.99 0 003 9.749c0 5.592 3.824 10.29 9 11.623 5.176-1.333 9-6.03 9-11.622 0-1.31-.21-2.571-.598-3.751h-.152c-3.196 0-6.1-1.248-8.25-3.285z"
+              onHeaderClick={cardState(5) === "done" ? () => setWarrantyExpanded(!warrantyExpanded) : undefined}
+            >
+              <WarrantyStep lead={lead} state={cardState(5)} refresh={refresh} packages={packages} expanded={warrantyExpanded} onToggle={() => setWarrantyExpanded(!warrantyExpanded)} />
+            </CardWrapper>
+
+            {/* Step 07: Grid-Tie (ขอขนานไฟ) */}
+            <CardWrapper
+              stepIdx={6}
+              title="ขอขนานไฟ"
+              doneTitle="ขนานไฟสำเร็จ"
+              icon="M3.75 13.5l10.5-11.25L12 10.5h8.25L9.75 21.75 12 13.5H3.75z"
+              onHeaderClick={cardState(6) === "done" ? () => setGridTieExpanded(!gridTieExpanded) : undefined}
+            >
+              <GridTieStep lead={lead} state={cardState(6)} refresh={refresh} expanded={gridTieExpanded} onToggle={() => setGridTieExpanded(!gridTieExpanded)} />
             </CardWrapper>
 
             {/* Lost banner */}
@@ -401,7 +439,7 @@ export default function LeadDetailPage({ params }: { params: Promise<{ id: strin
             )}
 
             {/* Lost action */}
-            {!isLost && lead.status !== "install" && lead.status !== "closed" && (
+            {!isLost && lead.status !== "install" && lead.status !== "warranty" && lead.status !== "gridtie" && lead.status !== "closed" && (
               <button
                 onClick={() => setShowLostModal(true)}
                 className="w-full py-3 rounded-xl text-sm text-red-400 border border-red-200 bg-white"

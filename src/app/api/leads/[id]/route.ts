@@ -4,7 +4,8 @@ import { getDb, sql, fixDates } from "@/lib/db";
 const statusLabels: Record<string, string> = {
   register: "รอติดตาม",
   survey: "สำรวจหน้างาน", quote: "รอใบเสนอราคา", order: "รออนุมัติ/ชำระ",
-  install: "กำลังติดตั้ง", closed: "ติดตั้งเรียบร้อย", lost: "ยกเลิก",
+  install: "กำลังติดตั้ง", warranty: "ออกใบรับประกัน", gridtie: "ขอขนานไฟ",
+  closed: "ติดตั้งเรียบร้อย", lost: "ยกเลิก",
 };
 
 export async function GET(_req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
@@ -134,6 +135,10 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
       sets.push("assigned_staff = @assigned_staff");
       request.input("assigned_staff", sql.NVarChar(100), body.assigned_staff);
     }
+    if (body.assigned_user_id !== undefined) {
+      sets.push("assigned_user_id = @assigned_user_id");
+      request.input("assigned_user_id", sql.Int, body.assigned_user_id);
+    }
     if (body.survey_date !== undefined) {
       sets.push("survey_date = @survey_date");
       request.input("survey_date", sql.Date, body.survey_date ? new Date(body.survey_date + "T12:00:00") : null);
@@ -205,6 +210,14 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
     if (body.install_date !== undefined) {
       sets.push("install_date = @install_date");
       request.input("install_date", sql.Date, body.install_date ? new Date(body.install_date + "T12:00:00") : null);
+    }
+    if (body.install_time_slot !== undefined) {
+      sets.push("install_time_slot = @install_time_slot");
+      request.input("install_time_slot", sql.NVarChar(20), body.install_time_slot);
+    }
+    if (body.install_confirmed !== undefined) {
+      sets.push("install_confirmed = @install_confirmed");
+      request.input("install_confirmed", sql.Bit, body.install_confirmed ? 1 : 0);
     }
     if (body.install_photos !== undefined) {
       sets.push("install_photos = @install_photos");
@@ -387,6 +400,71 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
     if (body.slip_url !== undefined) {
       sets.push("slip_url = @slip_url");
       request.input("slip_url", sql.NVarChar(500), body.slip_url);
+    }
+    // Warranty (step 06)
+    if (body.warranty_inverter_sn !== undefined) {
+      sets.push("warranty_inverter_sn = @warranty_inverter_sn");
+      request.input("warranty_inverter_sn", sql.NVarChar(100), body.warranty_inverter_sn);
+    }
+    if (body.warranty_doc_no !== undefined) {
+      sets.push("warranty_doc_no = @warranty_doc_no");
+      request.input("warranty_doc_no", sql.NVarChar(30), body.warranty_doc_no);
+    }
+    if (body.warranty_start_date !== undefined) {
+      sets.push("warranty_start_date = @warranty_start_date");
+      request.input("warranty_start_date", sql.Date, body.warranty_start_date ? new Date(body.warranty_start_date + "T12:00:00") : null);
+    }
+    if (body.warranty_end_date !== undefined) {
+      sets.push("warranty_end_date = @warranty_end_date");
+      request.input("warranty_end_date", sql.Date, body.warranty_end_date ? new Date(body.warranty_end_date + "T12:00:00") : null);
+    }
+    if (body.warranty_issued_at !== undefined) {
+      sets.push("warranty_issued_at = GETDATE()");
+    }
+    if (body.warranty_doc_url !== undefined) {
+      sets.push("warranty_doc_url = @warranty_doc_url");
+      request.input("warranty_doc_url", sql.NVarChar(500), body.warranty_doc_url);
+    }
+    if (body.warranty_customer_signature_url !== undefined) {
+      sets.push("warranty_customer_signature_url = @warranty_customer_signature_url");
+      request.input("warranty_customer_signature_url", sql.NVarChar(500), body.warranty_customer_signature_url);
+    }
+    // Grid-tie / ขอขนานไฟ (step 07)
+    if (body.grid_utility !== undefined) {
+      sets.push("grid_utility = @grid_utility");
+      request.input("grid_utility", sql.NVarChar(10), body.grid_utility);
+    }
+    if (body.grid_app_no !== undefined) {
+      sets.push("grid_app_no = @grid_app_no");
+      request.input("grid_app_no", sql.NVarChar(50), body.grid_app_no);
+    }
+    if (body.grid_erc_submitted_date !== undefined) {
+      sets.push("grid_erc_submitted_date = @grid_erc_submitted_date");
+      request.input("grid_erc_submitted_date", sql.Date, body.grid_erc_submitted_date ? new Date(body.grid_erc_submitted_date + "T12:00:00") : null);
+    }
+    if (body.grid_submitted_date !== undefined) {
+      sets.push("grid_submitted_date = @grid_submitted_date");
+      request.input("grid_submitted_date", sql.Date, body.grid_submitted_date ? new Date(body.grid_submitted_date + "T12:00:00") : null);
+    }
+    if (body.grid_inspection_date !== undefined) {
+      sets.push("grid_inspection_date = @grid_inspection_date");
+      request.input("grid_inspection_date", sql.Date, body.grid_inspection_date ? new Date(body.grid_inspection_date + "T12:00:00") : null);
+    }
+    if (body.grid_approved_date !== undefined) {
+      sets.push("grid_approved_date = @grid_approved_date");
+      request.input("grid_approved_date", sql.Date, body.grid_approved_date ? new Date(body.grid_approved_date + "T12:00:00") : null);
+    }
+    if (body.grid_meter_changed_date !== undefined) {
+      sets.push("grid_meter_changed_date = @grid_meter_changed_date");
+      request.input("grid_meter_changed_date", sql.Date, body.grid_meter_changed_date ? new Date(body.grid_meter_changed_date + "T12:00:00") : null);
+    }
+    if (body.grid_permit_doc_url !== undefined) {
+      sets.push("grid_permit_doc_url = @grid_permit_doc_url");
+      request.input("grid_permit_doc_url", sql.NVarChar(500), body.grid_permit_doc_url);
+    }
+    if (body.grid_note !== undefined) {
+      sets.push("grid_note = @grid_note");
+      request.input("grid_note", sql.NVarChar(sql.MAX), body.grid_note);
     }
 
     if (sets.length === 0) {

@@ -1,6 +1,7 @@
-import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { useState, useEffect } from "react";
 import { STATUS_CONFIG } from "@/lib/statuses";
+import AssignOwnerButton from "./AssignOwnerButton";
 
 export interface LeadData {
   id: number;
@@ -23,7 +24,10 @@ export interface LeadData {
   booking_number: string | null;
   booking_price: number | null;
   booking_status: string | null;
+  quotation_amount: number | null;
   order_total: number | null;
+  assigned_user_id: number | null;
+  assigned_name: string | null;
   install_date: string | null;
   install_completed_at: string | null;
   created_at: string;
@@ -42,7 +46,8 @@ const SURVEY_TIME_LABEL: Record<string, string> = {
   afternoon: "13:00 - 16:00",
 };
 
-export default function LeadCard({ lead, compact }: { lead: LeadData; compact?: boolean }) {
+export default function LeadCard({ lead, compact, onAssignChange }: { lead: LeadData; compact?: boolean; onAssignChange?: () => void }) {
+  const router = useRouter();
   const config = STATUS_CONFIG[lead.status] || STATUS_CONFIG.register;
   const isUpgrade = lead.customer_type?.includes("Upgrade") || lead.customer_type?.includes("เดิม");
   const [now, setNow] = useState<number | null>(null);
@@ -52,9 +57,12 @@ export default function LeadCard({ lead, compact }: { lead: LeadData; compact?: 
   const isOverdue = now && lead.next_follow_up && new Date(String(lead.next_follow_up).slice(0, 10) + "T12:00:00").getTime() < now;
 
   return (
-    <Link
-      href={`/leads/${lead.id}`}
-      className="block rounded-2xl bg-white border border-gray-300 shadow-sm hover:border-gray-400 hover:shadow-md transition-all"
+    <div
+      role="button"
+      tabIndex={0}
+      onClick={() => router.push(`/leads/${lead.id}`)}
+      onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); router.push(`/leads/${lead.id}`); } }}
+      className="block rounded-2xl bg-white border border-gray-300 shadow-sm hover:border-gray-400 hover:shadow-md transition-all cursor-pointer"
     >
       <div className="p-5">
         {/* Header: name + status */}
@@ -137,6 +145,12 @@ export default function LeadCard({ lead, compact }: { lead: LeadData; compact?: 
         {/* Footer: meta + zone */}
         <div className="mt-4 pt-3 border-t border-gray-100 flex items-center justify-between gap-2">
           <div className="flex items-center gap-2 text-xs text-gray-400 flex-wrap">
+            <AssignOwnerButton
+              leadId={lead.id}
+              assignedUserId={lead.assigned_user_id}
+              assignedName={lead.assigned_name}
+              onChanged={onAssignChange}
+            />
             {isUpgrade && (
               <span className="font-semibold text-purple-600 uppercase tracking-wider">Upgrade</span>
             )}
@@ -146,9 +160,21 @@ export default function LeadCard({ lead, compact }: { lead: LeadData; compact?: 
                 · {isOverdue ? "Overdue" : "Follow-up"} {formatDate(lead.next_follow_up)}
               </span>
             )}
-            {!compact && lead.booking_number && (
-              <span className="font-semibold text-emerald-700 font-mono tabular-nums">· {formatPrice(((lead.status === "closed" || lead.status === "install") && lead.order_total) ? lead.order_total : (lead.booking_price || 0))} ฿</span>
-            )}
+            {!compact && lead.booking_number && (() => {
+              // Show the most relevant amount based on stage:
+              // order/install/warranty/gridtie/closed → order_total (or quotation_amount fallback)
+              // quote → quotation_amount
+              // earlier → booking_price
+              const later = ["order", "install", "warranty", "gridtie", "closed"].includes(lead.status);
+              const amount = later
+                ? (lead.order_total || lead.quotation_amount || lead.booking_price || 0)
+                : lead.status === "quote"
+                ? (lead.quotation_amount || lead.booking_price || 0)
+                : (lead.booking_price || 0);
+              return (
+                <span className="font-semibold text-emerald-700 font-mono tabular-nums">· {formatPrice(amount)} ฿</span>
+              );
+            })()}
           </div>
           {lead.zone && (
             <div className="text-xs text-gray-400 truncate shrink-0">
@@ -157,6 +183,6 @@ export default function LeadCard({ lead, compact }: { lead: LeadData; compact?: 
           )}
         </div>
       </div>
-    </Link>
+    </div>
   );
 }

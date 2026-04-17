@@ -7,21 +7,22 @@ import FallbackImage from "@/components/FallbackImage";
 import PaymentSection from "./PaymentSection";
 import LineConfirmModal from "@/components/LineConfirmModal";
 import ErrorPopup from "@/components/ErrorPopup";
+import AppointmentRescheduler from "@/components/AppointmentRescheduler";
 import { buildPaymentFlex } from "@/lib/line-flex";
 
 const fmt = (n: number) => new Intl.NumberFormat("th-TH").format(n);
 const formatDate = (d: string) =>
   new Date(String(d).slice(0, 10) + "T12:00:00").toLocaleDateString("th-TH", { day: "numeric", month: "short", year: "numeric" });
 
-const SUB_STEPS = ["ส่งมอบ", "สรุป คชจ.", "เก็บเงิน", "ประเมิน"];
+const SUB_STEPS = ["นัด", "ส่งมอบ", "สรุป คชจ.", "เก็บเงิน", "ประเมิน"];
 
 interface Props extends StepCommonProps {
   expanded?: boolean;
   onToggle?: () => void;
 }
 
-export default function InstalledStep({ lead, state, refresh, expanded, onToggle }: Props) {
-  const [subStep, setSubStep] = useState(0);
+export default function InstallStep({ lead, state, refresh, expanded, onToggle }: Props) {
+  const [subStep, setSubStep] = useState(lead.install_confirmed ? 1 : 0);
   const [nextError, setNextError] = useState<string | null>(null);
   const [photos, setPhotos] = useState<string[]>(lead.install_photos ? lead.install_photos.split(",").filter(Boolean) : []);
   const [note, setNote] = useState(lead.install_note || "");
@@ -33,6 +34,7 @@ export default function InstalledStep({ lead, state, refresh, expanded, onToggle
   const [reviewSending, setReviewSending] = useState(false);
   const [afterSlipDone, setAfterSlipDone] = useState(!!lead.order_after_slip);
   const [afterPaidLocal, setAfterPaidLocal] = useState(!!lead.order_after_paid);
+  const [rescheduling, setRescheduling] = useState(false);
 
   // Auto-save note
   useEffect(() => {
@@ -90,6 +92,27 @@ export default function InstalledStep({ lead, state, refresh, expanded, onToggle
       });
       refresh();
     } finally { setSaving(false); }
+  };
+
+  const confirmAppointment = async () => {
+    setSaving(true);
+    try {
+      await apiFetch(`/api/leads/${lead.id}`, {
+        method: "PATCH", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ install_confirmed: true }),
+      });
+      refresh();
+      setSubStep(1);
+    } finally { setSaving(false); }
+  };
+
+  const saveReschedule = async ({ date }: { date: string; slot: string }) => {
+    await apiFetch(`/api/leads/${lead.id}`, {
+      method: "PATCH", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ install_date: date, install_confirmed: false }),
+    });
+    setRescheduling(false);
+    refresh();
   };
 
   const confirmAfterPayment = async () => {
@@ -269,6 +292,20 @@ export default function InstalledStep({ lead, state, refresh, expanded, onToggle
 
   if (state !== "active") return null;
 
+
+  if (rescheduling) {
+    return (
+      <AppointmentRescheduler
+        title="เลื่อนนัดติดตั้ง"
+        currentDate={lead.install_date}
+        showTimeSlot={false}
+        excludeLeadId={lead.id}
+        onCancel={() => setRescheduling(false)}
+        onSave={saveReschedule}
+      />
+    );
+  }
+
   return (
     <div>
       {/* Step indicator */}
@@ -276,13 +313,15 @@ export default function InstalledStep({ lead, state, refresh, expanded, onToggle
         {SUB_STEPS.map((label, i) => {
           const gateCheck = (from: number): string[] => {
             const missing: string[] = [];
-            if (from === 0 && photos.length === 0) missing.push("ภาพส่งมอบ");
-            if (from === 0 && !note) missing.push("บันทึกการส่งมอบ");
-            if (from === 2 && remainingAmount + extraCost > 0 && !afterSlipDone) missing.push("กรุณาอัปโหลดสลิปชำระงวดหลัง");
-            if (from === 2 && remainingAmount + extraCost > 0 && !afterPaidLocal) missing.push("ยืนยันรับชำระงวดหลัง");
+            if (from === 0 && !lead.install_confirmed) missing.push("ยืนยันนัดติดตั้ง");
+            if (from === 1 && photos.length === 0) missing.push("ภาพส่งมอบ");
+            if (from === 1 && !note) missing.push("บันทึกการส่งมอบ");
+            if (from === 3 && remainingAmount + extraCost > 0 && !afterSlipDone) missing.push("กรุณาอัปโหลดสลิปชำระงวดหลัง");
+            if (from === 3 && remainingAmount + extraCost > 0 && !afterPaidLocal) missing.push("ยืนยันรับชำระงวดหลัง");
             return missing;
           };
           const goTo = () => {
+            if (i > 0 && !lead.install_confirmed) { setNextError("ยืนยันนัดติดตั้งก่อน"); return; }
             if (i <= subStep) { setNextError(null); setSubStep(i); scrollToStep(); return; }
             const missing = gateCheck(subStep);
             if (missing.length > 0) { setNextError(missing.join(", ")); return; }
@@ -297,8 +336,40 @@ export default function InstalledStep({ lead, state, refresh, expanded, onToggle
         })}
       </div>
 
-      {/* Step 0: ส่งมอบ */}
+      {/* Step 0: นัด — appointment confirmation */}
       {subStep === 0 && (
+        <div className="space-y-3">
+          <div className={`flex items-center gap-2.5 px-3 py-2.5 rounded-lg border ${lead.install_confirmed ? "bg-emerald-50 border-emerald-600/15" : "bg-active-light border-active/20"}`}>
+            <svg className={`w-4 h-4 shrink-0 ${lead.install_confirmed ? "text-emerald-600" : "text-active"}`} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+              <path strokeLinecap="round" strokeLinejoin="round" d="M6.75 3v2.25M17.25 3v2.25M3 18.75V7.5a2.25 2.25 0 012.25-2.25h13.5A2.25 2.25 0 0121 7.5v11.25" />
+            </svg>
+            <div className="flex-1 flex items-baseline gap-1.5 flex-wrap min-w-0">
+              <span className={`text-xs font-semibold tracking-wider uppercase ${lead.install_confirmed ? "text-emerald-700/70" : "text-active/70"}`}>
+                {lead.install_confirmed ? "ยืนยันแล้ว" : "นัดหมายแล้ว"}
+              </span>
+              {lead.install_date ? (
+                <span className={`text-sm font-bold ${lead.install_confirmed ? "text-emerald-900" : "text-active"}`}>
+                  {formatDate(lead.install_date)}
+                </span>
+              ) : (
+                <span className="text-sm text-gray-500 italic">ยังไม่ได้นัด</span>
+              )}
+            </div>
+            <button type="button" onClick={() => setRescheduling(true)} className={`shrink-0 text-xs font-semibold uppercase tracking-wider px-2.5 py-1 rounded-md border transition-colors ${lead.install_confirmed ? "border-emerald-600/20 text-emerald-700 hover:bg-emerald-100" : "border-active/30 text-active hover:bg-active/10"}`}>
+              {lead.install_date ? "Reschedule" : "เลือกวัน"}
+            </button>
+          </div>
+          {!lead.install_confirmed && lead.install_date && (
+            <button onClick={confirmAppointment} disabled={saving}
+              className="w-full h-11 rounded-lg text-sm font-semibold text-white bg-gradient-to-r from-primary to-primary-dark hover:brightness-110 disabled:opacity-50 transition-colors">
+              {saving ? "..." : "ยืนยันนัดติดตั้ง"}
+            </button>
+          )}
+        </div>
+      )}
+
+      {/* Step 1: ส่งมอบ */}
+      {subStep === 1 && (
         <div className="space-y-3">
           <div>
             <label className="text-xs font-semibold tracking-wider uppercase text-gray-400 block mb-2">ภาพส่งมอบ</label>
@@ -326,8 +397,8 @@ export default function InstalledStep({ lead, state, refresh, expanded, onToggle
         </div>
       )}
 
-      {/* Step 1: สรุปค่าใช้จ่าย */}
-      {subStep === 1 && (
+      {/* Step 2: สรุปค่าใช้จ่าย */}
+      {subStep === 2 && (
         <div className="space-y-3">
           <div className="rounded-lg bg-gray-50 border border-gray-200 p-3 space-y-1.5">
             <div className="text-xs font-bold text-gray-400 uppercase mb-2">สรุปค่าใช้จ่าย</div>
@@ -381,8 +452,8 @@ export default function InstalledStep({ lead, state, refresh, expanded, onToggle
         </div>
       )}
 
-      {/* Step 2: เก็บเงินคงค้าง */}
-      {subStep === 2 && (
+      {/* Step 3: เก็บเงินคงค้าง */}
+      {subStep === 3 && (
         <div className="space-y-3">
           <div className="rounded-lg bg-white border border-gray-200 p-3">
             <div className="flex items-center justify-between mb-3">
@@ -416,8 +487,8 @@ export default function InstalledStep({ lead, state, refresh, expanded, onToggle
         </div>
       )}
 
-      {/* Step 3: ส่งประเมิน */}
-      {subStep === 3 && (
+      {/* Step 4: ส่งประเมิน */}
+      {subStep === 4 && (
         <div className="space-y-3">
           {!lead.review_sent ? (
             <>
@@ -455,7 +526,7 @@ export default function InstalledStep({ lead, state, refresh, expanded, onToggle
               try {
                 await apiFetch(`/api/leads/${lead.id}`, {
                   method: "PATCH", headers: { "Content-Type": "application/json" },
-                  body: JSON.stringify({ status: "closed", install_completed_at: true }),
+                  body: JSON.stringify({ status: "warranty", install_completed_at: true }),
                 });
                 refresh();
               } finally { setSaving(false); }
@@ -463,27 +534,25 @@ export default function InstalledStep({ lead, state, refresh, expanded, onToggle
             disabled={saving}
             className="w-full h-11 rounded-lg text-sm font-semibold text-white bg-gradient-to-r from-emerald-500 to-emerald-600 hover:brightness-110 disabled:opacity-50 transition-colors flex items-center justify-center gap-2"
           >
-            <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M9 12.75L11.25 15 15 9.75M21 12a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
-            {saving ? "กำลังปิดงาน..." : "ปิดงาน — ติดตั้งเสร็จสิ้น"}
+            <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M9 5l7 7-7 7" /></svg>
+            {saving ? "กำลังบันทึก..." : "ถัดไป: ออกใบรับประกัน"}
           </button>
         </div>
       )}
 
       {/* Navigation buttons */}
-      {subStep < 3 && (
+      {subStep > 0 && subStep < 4 && (
         <div className="flex gap-2 mt-3">
-          {subStep > 0 && (
-            <button type="button" onClick={() => { setNextError(null); setSubStep(subStep - 1); scrollToStep(); }} className="flex-1 h-11 rounded-lg text-sm font-semibold border border-gray-200 text-gray-600 hover:bg-gray-50 transition-colors flex items-center justify-center gap-1">
-              <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M15.75 19.5L8.25 12l7.5-7.5" /></svg>
-              ย้อนกลับ
-            </button>
-          )}
+          <button type="button" onClick={() => { setNextError(null); setSubStep(subStep - 1); scrollToStep(); }} className="flex-1 h-11 rounded-lg text-sm font-semibold border border-gray-200 text-gray-600 hover:bg-gray-50 transition-colors flex items-center justify-center gap-1">
+            <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M15.75 19.5L8.25 12l7.5-7.5" /></svg>
+            ย้อนกลับ
+          </button>
           <button type="button" onClick={() => {
             const missing: string[] = [];
-            if (subStep === 0 && photos.length === 0) missing.push("ภาพส่งมอบ");
-            if (subStep === 0 && !note) missing.push("บันทึกการส่งมอบ");
-            if (subStep === 2 && remainingAmount + extraCost > 0 && !afterSlipDone) missing.push("กรุณาอัปโหลดสลิปชำระงวดหลัง");
-            if (subStep === 2 && remainingAmount + extraCost > 0 && !afterPaidLocal) missing.push("ยืนยันรับชำระงวดหลัง");
+            if (subStep === 1 && photos.length === 0) missing.push("ภาพส่งมอบ");
+            if (subStep === 1 && !note) missing.push("บันทึกการส่งมอบ");
+            if (subStep === 3 && remainingAmount + extraCost > 0 && !afterSlipDone) missing.push("กรุณาอัปโหลดสลิปชำระงวดหลัง");
+            if (subStep === 3 && remainingAmount + extraCost > 0 && !afterPaidLocal) missing.push("ยืนยันรับชำระงวดหลัง");
             if (missing.length > 0) { setNextError(missing.join(", ")); return; }
             setNextError(null);
             setSubStep(subStep + 1); scrollToStep();
@@ -493,7 +562,7 @@ export default function InstalledStep({ lead, state, refresh, expanded, onToggle
           </button>
         </div>
       )}
-      {subStep === 3 && (
+      {subStep === 4 && (
         <button type="button" onClick={() => { setSubStep(subStep - 1); scrollToStep(); }} className="w-full h-9 mt-2 rounded-lg text-xs text-gray-500 border border-gray-200 hover:bg-gray-50 transition-colors flex items-center justify-center gap-1">
           <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M15.75 19.5L8.25 12l7.5-7.5" /></svg>
           ย้อนกลับ

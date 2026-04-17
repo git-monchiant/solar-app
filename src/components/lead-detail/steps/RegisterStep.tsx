@@ -144,7 +144,7 @@ interface Props extends StepCommonProps {
   onToggle?: () => void;
 }
 
-export default function PreSurveyStep({ lead, state, refresh, packages, expanded, onToggle }: Props) {
+export default function RegisterStep({ lead, state, refresh, packages, expanded, onToggle }: Props) {
   const [regName, setRegName] = useState(lead.full_name || "");
   const [regIdCard, setRegIdCard] = useState(lead.id_card_number || "");
   const [regAddress, setRegAddress] = useState(lead.id_card_address || "");

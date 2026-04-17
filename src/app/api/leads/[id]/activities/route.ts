@@ -66,6 +66,16 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
         .query(`UPDATE leads SET next_follow_up = @next_follow_up, updated_at = GETDATE() WHERE id = @lead_id`);
     }
 
+    // Auto-assign owner: whoever adds a contact activity (call/visit/note/follow_up)
+    // becomes the current owner — always overwrites the previous owner.
+    const CURRENT_USER_ID = 1; // TODO: replace with session user when auth is wired
+    if (["call", "visit", "note", "follow_up"].includes(activityType)) {
+      await db.request()
+        .input("lead_id", sql.Int, leadId)
+        .input("user_id", sql.Int, CURRENT_USER_ID)
+        .query(`UPDATE leads SET assigned_user_id = @user_id, updated_at = GETDATE() WHERE id = @lead_id`);
+    }
+
     return NextResponse.json(result.recordset[0], { status: 201 });
   } catch (error) {
     console.error("POST activity error:", error);

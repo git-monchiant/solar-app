@@ -16,6 +16,8 @@ export interface Lead {
   finance_status: string | null;
   requirement: string | null;
   assigned_staff: string | null;
+  assigned_user_id: number | null;
+  assigned_name: string | null;
   booking_id: number | null;
   booked_package_id: number | null;
   booking_date: string | null;
@@ -90,6 +92,8 @@ export interface Lead {
   order_after_paid: boolean;
   order_after_slip: string | null;
   install_date: string | null;
+  install_time_slot: string | null;
+  install_confirmed: boolean;
   install_photos: string | null;
   install_note: string | null;
   install_extra_note: string | null;
@@ -101,6 +105,24 @@ export interface Lead {
   review_service: number | null;
   review_punctuality: number | null;
   review_comment: string | null;
+  // Warranty (step 06)
+  warranty_inverter_sn: string | null;
+  warranty_doc_no: string | null;
+  warranty_start_date: string | null;
+  warranty_end_date: string | null;
+  warranty_issued_at: string | null;
+  warranty_doc_url: string | null;
+  warranty_customer_signature_url: string | null;
+  // Grid-tie / ขอขนานไฟ (step 07)
+  grid_utility: string | null;
+  grid_app_no: string | null;
+  grid_erc_submitted_date: string | null;
+  grid_submitted_date: string | null;
+  grid_inspection_date: string | null;
+  grid_approved_date: string | null;
+  grid_meter_changed_date: string | null;
+  grid_permit_doc_url: string | null;
+  grid_note: string | null;
 }
 
 export interface Panel {

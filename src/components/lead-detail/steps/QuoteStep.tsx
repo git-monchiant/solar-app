@@ -15,7 +15,7 @@ interface Props extends StepCommonProps {
   onToggle?: () => void;
 }
 
-export default function QuotationStep({ lead, state, refresh, expanded, onToggle }: Props) {
+export default function QuoteStep({ lead, state, refresh, expanded, onToggle }: Props) {
   const [files, setFiles] = useState<File[]>([]);
   const [note, setNote] = useState(lead.quotation_note || "");
   const [amount, setAmount] = useState<number>(lead.quotation_amount || 0);

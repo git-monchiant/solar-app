@@ -22,10 +22,19 @@ interface Props extends StepCommonProps {
   onToggle?: () => void;
 }
 
-export default function PurchasedStep({ lead, state, refresh, expanded, onToggle }: Props) {
+export default function OrderStep({ lead, state, refresh, expanded, onToggle }: Props) {
   const [subStep, setSubStep] = useState(0);
   const [nextError, setNextError] = useState<string | null>(null);
   const [total, setTotal] = useState<number>(lead.order_total || lead.quotation_amount || 0);
+
+  // Sync total with latest quotation_amount when it becomes available (user might arrive from QuoteStep
+  // after quotation_amount was just saved; useState default only captures first render).
+  useEffect(() => {
+    if (!lead.order_total && lead.quotation_amount && total !== lead.quotation_amount) {
+      setTotal(lead.quotation_amount);
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [lead.quotation_amount, lead.order_total]);
   const [pctBefore, setPctBefore] = useState<number>(lead.order_pct_before ?? 100);
   const [installDate, setInstallDate] = useState(lead.install_date ? String(lead.install_date).slice(0, 10) : "");
   const [saving, setSaving] = useState(false);

@@ -24,7 +24,7 @@ interface Lead {
   booking_number: string | null;
 }
 
-type TabKey = "all" | "pre_survey" | "survey" | "quotation" | "order" | "install" | "closed" | "lost";
+type TabKey = "all" | "pre_survey" | "survey" | "quotation" | "order" | "install" | "warranty" | "gridtie" | "closed" | "lost";
 
 const TAB_STATUSES: Record<TabKey, string[]> = {
   all: [],
@@ -33,6 +33,8 @@ const TAB_STATUSES: Record<TabKey, string[]> = {
   quotation: ["quote"],
   order: ["order"],
   install: ["install"],
+  warranty: ["warranty"],
+  gridtie: ["gridtie"],
   closed: ["closed"],
   lost: ["lost"],
 };
@@ -79,6 +81,8 @@ export default function PipelinePage() {
     { key: "quotation",  label: "รอใบเสนอราคา",      roles: ["solar"] },
     { key: "order",      label: "รออนุมัติ/ชำระ",    roles: ["sales"] },
     { key: "install",    label: "กำลังติดตั้ง",      roles: ["solar"] },
+    { key: "warranty",   label: "ออกใบรับประกัน",    roles: ["solar"] },
+    { key: "gridtie",    label: "ขอขนานไฟ",          roles: ["solar"] },
     { key: "closed",     label: "ติดตั้งเรียบร้อย",  roles: ["sales", "solar"] },
     { key: "lost",       label: "ยกเลิก",            roles: ["sales"] },
   ];
