@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { getDb, sql, fixDates } from "@/lib/db";
 
 // Data for the unified payment-request document (ใบแจ้งโอนเงิน).
-// Looked up via the lead's pay_token so the URL never exposes lead_id or amount.
+// Looked up via the lead's pre_pay_token so the URL never exposes lead_id or amount.
 export async function GET(_req: NextRequest, { params }: { params: Promise<{ token: string }> }) {
   const { token } = await params;
   if (!token || token.length < 10) return NextResponse.json({ error: "invalid token" }, { status: 404 });
@@ -12,11 +12,11 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ tok
       SELECT l.id, l.full_name, l.phone, l.installation_address, l.id_card_address, l.id_card_number,
              l.survey_date, l.survey_time_slot, l.install_date, l.install_completed_at,
              l.interested_package_ids, l.interested_package_id,
-             l.contact_date, l.created_at, l.pay_amount, l.pay_description, l.pay_installment, l.status,
+             l.contact_date, l.created_at, l.pre_pay_amount, l.pre_pay_description, l.pre_pay_installment, l.status,
              pr.name as project_name
       FROM leads l
       LEFT JOIN projects pr ON l.project_id = pr.id
-      WHERE l.pay_token = @token
+      WHERE l.pre_pay_token = @token
     `);
     if (r.recordset.length === 0) return NextResponse.json({ error: "not found" }, { status: 404 });
     const l = r.recordset[0];
@@ -35,13 +35,13 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ tok
       packages = pkgResult.recordset;
     }
 
-    const amount = l.pay_amount != null ? Number(l.pay_amount) : 0;
+    const amount = l.pre_pay_amount != null ? Number(l.pre_pay_amount) : 0;
 
     return NextResponse.json({
       ...fixDates([l])[0],
       amount,
-      description: l.pay_description || "",
-      installment: l.pay_installment || "",
+      description: l.pre_pay_description || "",
+      installment: l.pre_pay_installment || "",
       packages,
       is_pre_survey: isPreSurvey,
       reference_no: `INV-${String(l.id).padStart(5, "0")}-${new Date().getFullYear()}`,

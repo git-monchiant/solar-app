@@ -198,7 +198,7 @@ export default function PaymentSection({
 
       if (!slipData.is_slip || !amountOk) {
         // Failed: point uploadedSlipUrl at the tmp file so ✕ can clean it up,
-        // but do NOT delete or overwrite the previously-saved slip in DB/lead.slip_url.
+        // but do NOT delete or overwrite the previously-saved slip in DB/lead.pre_slip_url.
         setUploadedSlipUrl(tmpUrl);
         setVerifyError(!slipData.is_slip
           ? "ไม่ใช่สลิปโอนเงิน"

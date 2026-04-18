@@ -9,14 +9,14 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ tok
   try {
     const db = await getDb();
     const r = await db.request().input("token", sql.NVarChar(64), token)
-      .query(`SELECT id, full_name, pay_amount, pay_description FROM leads WHERE pay_token = @token`);
+      .query(`SELECT id, full_name, pre_pay_amount, pre_pay_description FROM leads WHERE pre_pay_token = @token`);
     if (r.recordset.length === 0) return NextResponse.json({ error: "not found" }, { status: 404 });
     const row = r.recordset[0];
     return NextResponse.json({
       lead_id: row.id,
       customer_name: row.full_name,
-      amount: row.pay_amount != null ? Number(row.pay_amount) : 0,
-      description: row.pay_description || null,
+      amount: row.pre_pay_amount != null ? Number(row.pre_pay_amount) : 0,
+      description: row.pre_pay_description || null,
     });
   } catch (e) {
     console.error("GET /api/pay-tokens/[token] error:", e);

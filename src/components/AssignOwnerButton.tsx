@@ -22,9 +22,17 @@ interface Props {
 
 function initialsOf(name: string | null | undefined): string {
   if (!name) return "?";
-  const parts = name.trim().split(/\s+/);
-  if (parts.length === 1) return parts[0].slice(0, 2).toUpperCase();
-  return (parts[0][0] + parts[1][0]).toUpperCase();
+  // For Thai (non-Latin) names, a single char reads clearer in a small circle.
+  // For Latin names, show up to 2 chars.
+  const trimmed = name.trim();
+  const isLatin = /^[A-Za-z\s]+$/.test(trimmed);
+  if (isLatin) {
+    const parts = trimmed.split(/\s+/);
+    if (parts.length === 1) return parts[0].slice(0, 2).toUpperCase();
+    return (parts[0][0] + parts[1][0]).toUpperCase();
+  }
+  // Thai: first character of first word
+  return trimmed[0] || "?";
 }
 
 function colorOf(id: number | null): string {
@@ -81,7 +89,7 @@ export default function AssignOwnerButton({ leadId, assignedUserId, assignedName
     }
   };
 
-  const sizePx = size === "md" ? "w-8 h-8 text-[11px]" : "w-6 h-6 text-[10px]";
+  const sizePx = size === "md" ? "w-9 h-9 text-[13px]" : "w-6 h-6 text-[10px]";
   const assigned = !!localUserId;
 
   return (

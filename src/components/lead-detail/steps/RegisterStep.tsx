@@ -205,8 +205,8 @@ export default function RegisterStep({ lead, state, refresh, packages, expanded,
   const [confirmingSaved, setConfirmingSaved] = useState(false);
   // Payment verification state — PaymentSection owns upload/verify and calls onVerified(url).
   // url may be "" when KBank authorized the payment but the slip file is unavailable.
-  const [slipVerifiedUrl, setSlipVerifiedUrl] = useState<string | null>(lead.slip_url ?? null);
-  const [paymentVerified, setPaymentVerified] = useState<boolean>(!!lead.slip_url);
+  const [slipVerifiedUrl, setSlipVerifiedUrl] = useState<string | null>(lead.pre_slip_url ?? null);
+  const [paymentVerified, setPaymentVerified] = useState<boolean>(!!lead.pre_slip_url);
   const [surveyDate, setSurveyDate] = useState<string>(lead.survey_date ? lead.survey_date.slice(0, 10) : "");
   const [surveyTimeSlot, setSurveyTimeSlot] = useState<string>(lead.survey_time_slot ?? "");
 
@@ -259,7 +259,7 @@ export default function RegisterStep({ lead, state, refresh, packages, expanded,
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          slip_url: slipVerifiedUrl || null,
+          pre_slip_url: slipVerifiedUrl || null,
           payment_confirmed: true,
           confirmed: true,
           status: "ชำระแล้ว",
@@ -315,7 +315,7 @@ export default function RegisterStep({ lead, state, refresh, packages, expanded,
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           confirmed: true,
-          slip_url: slipVerifiedUrl || null,
+          pre_slip_url: slipVerifiedUrl || null,
           payment_confirmed: paymentVerified,
           status: paymentVerified ? "ชำระแล้ว" : "รอชำระ",
         }),
@@ -458,7 +458,7 @@ export default function RegisterStep({ lead, state, refresh, packages, expanded,
           )}
 
           {/* การชำระเงิน · เอกสาร */}
-          {(paymentLabel || lead.pre_bill_photo_url || lead.slip_url) && (
+          {(paymentLabel || lead.pre_bill_photo_url || lead.pre_slip_url) && (
             <div className="border-l-3 border-gray-300 pl-3">
               <div className="text-xs font-bold text-gray-400 uppercase mb-1">เงินมัดจำ · เอกสาร</div>
               {paymentLabel && (
@@ -479,7 +479,7 @@ export default function RegisterStep({ lead, state, refresh, packages, expanded,
                   <span className="font-semibold text-gray-800 font-mono">{formatPrice(lead.booking_price)} บาท</span>
                 </div>
               )}
-              {(lead.pre_bill_photo_url || lead.slip_url) && (
+              {(lead.pre_bill_photo_url || lead.pre_slip_url) && (
                 <div className="flex gap-3 mt-1.5">
                   {lead.pre_bill_photo_url && (
                     <button type="button" onClick={() => setLightboxUrl(lead.pre_bill_photo_url)} className="text-left">
@@ -487,10 +487,10 @@ export default function RegisterStep({ lead, state, refresh, packages, expanded,
                       <FallbackImage src={lead.pre_bill_photo_url} alt="Bill" className="h-16 w-16 rounded-lg border border-gray-200" fallbackLabel="บิลหาย" />
                     </button>
                   )}
-                  {lead.slip_url && (
-                    <button type="button" onClick={() => setLightboxUrl(lead.slip_url)} className="text-left">
+                  {lead.pre_slip_url && (
+                    <button type="button" onClick={() => setLightboxUrl(lead.pre_slip_url)} className="text-left">
                       <div className="text-xs text-gray-400 mb-0.5">หลักฐานการชำระเงิน</div>
-                      <FallbackImage src={lead.slip_url} alt="Slip" className="h-16 w-16 rounded-lg border border-gray-200" fallbackLabel="สลิปหาย" />
+                      <FallbackImage src={lead.pre_slip_url} alt="Slip" className="h-16 w-16 rounded-lg border border-gray-200" fallbackLabel="สลิปหาย" />
                     </button>
                   )}
                 </div>
@@ -705,8 +705,8 @@ export default function RegisterStep({ lead, state, refresh, packages, expanded,
             leadId={lead.id}
             leadName={lead.full_name}
             lineId={lead.line_id}
-            slipUrl={lead.slip_url ?? null}
-            slipField="slip_url"
+            slipUrl={lead.pre_slip_url ?? null}
+            slipField="pre_slip_url"
             paymentNote="ค่ามัดจำสำรวจพื้นที่ติดตั้ง Solar Rooftop"
             onVerified={(url) => { setSlipVerifiedUrl(url || null); setPaymentVerified(true); }}
           />

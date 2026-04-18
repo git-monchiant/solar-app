@@ -19,18 +19,18 @@ export async function POST(req: NextRequest) {
 
     const db = await getDb();
     const existing = await db.request().input("id", sql.Int, leadId)
-      .query(`SELECT pay_token, pay_amount, pay_description, pay_installment FROM leads WHERE id = @id`);
+      .query(`SELECT pre_pay_token, pre_pay_amount, pre_pay_description, pre_pay_installment FROM leads WHERE id = @id`);
     if (existing.recordset.length === 0) {
       return NextResponse.json({ error: "Lead not found" }, { status: 404 });
     }
     const row = existing.recordset[0];
-    const currentAmount = row.pay_amount != null ? Number(row.pay_amount) : null;
-    const currentDesc = row.pay_description ?? null;
-    const currentInst = row.pay_installment ?? null;
+    const currentAmount = row.pre_pay_amount != null ? Number(row.pre_pay_amount) : null;
+    const currentDesc = row.pre_pay_description ?? null;
+    const currentInst = row.pre_pay_installment ?? null;
 
     let token: string;
-    if (row.pay_token && currentAmount === amt && currentDesc === desc && currentInst === inst) {
-      token = row.pay_token;
+    if (row.pre_pay_token && currentAmount === amt && currentDesc === desc && currentInst === inst) {
+      token = row.pre_pay_token;
     } else {
       token = genToken();
       await db.request()
@@ -39,7 +39,7 @@ export async function POST(req: NextRequest) {
         .input("amount", sql.Decimal(12, 2), amt)
         .input("description", sql.NVarChar(200), desc)
         .input("installment", sql.NVarChar(50), inst)
-        .query(`UPDATE leads SET pay_token = @token, pay_amount = @amount, pay_description = @description, pay_installment = @installment WHERE id = @id`);
+        .query(`UPDATE leads SET pre_pay_token = @token, pre_pay_amount = @amount, pre_pay_description = @description, pre_pay_installment = @installment WHERE id = @id`);
     }
 
     return NextResponse.json({ token, url: `/pay/${token}` });

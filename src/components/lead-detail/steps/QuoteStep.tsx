@@ -141,7 +141,7 @@ export default function QuoteStep({ lead, state, refresh, expanded, onToggle }: 
       {/* File upload */}
       <div>
         <label className="text-xs font-semibold tracking-wider uppercase text-gray-400 block mb-1">แนบไฟล์ <span className="text-red-500">*</span></label>
-        <label className="flex items-center justify-center gap-2 px-4 py-3 rounded-lg border-2 border-dashed border-gray-300 hover:border-primary cursor-pointer transition-colors">
+        <label className="flex items-center justify-center gap-2 px-4 py-3 rounded-lg border border-gray-200 bg-gray-50 hover:border-primary hover:bg-primary/5 cursor-pointer transition-colors">
           <svg className="w-5 h-5 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M12 16.5V9.75m0 0l3 3m-3-3l-3 3M6.75 19.5a4.5 4.5 0 01-1.41-8.775 5.25 5.25 0 0110.233-2.33 3 3 0 013.758 3.848A3.752 3.752 0 0118 19.5H6.75z" /></svg>
           <span className="text-sm text-gray-500">เลือกไฟล์ (รูป, PDF, เอกสาร)</span>
           <input

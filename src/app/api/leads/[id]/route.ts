@@ -397,9 +397,9 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
       sets.push("pre_bill_photo_url = @pre_bill_photo_url");
       request.input("pre_bill_photo_url", sql.NVarChar(500), body.pre_bill_photo_url);
     }
-    if (body.slip_url !== undefined) {
-      sets.push("slip_url = @slip_url");
-      request.input("slip_url", sql.NVarChar(500), body.slip_url);
+    if (body.pre_slip_url !== undefined) {
+      sets.push("pre_slip_url = @pre_slip_url");
+      request.input("pre_slip_url", sql.NVarChar(500), body.pre_slip_url);
     }
     // Warranty (step 06)
     if (body.warranty_inverter_sn !== undefined) {

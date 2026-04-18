@@ -23,7 +23,7 @@ export interface Lead {
   booking_date: string | null;
   booking_number: string | null;
   booking_price: number | null;
-  slip_url: string | null;
+  pre_slip_url: string | null;
   payment_confirmed: boolean;
   id_card_number: string | null;
   id_card_address: string | null;

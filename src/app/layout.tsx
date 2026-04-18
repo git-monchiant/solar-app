@@ -17,6 +17,10 @@ export const metadata: Metadata = {
   title: "Solar Sales App",
   description: "Sena Solar Energy - Sales Management",
   manifest: "/manifest.json",
+  icons: {
+    icon: "/icons/icon-192.png",
+    apple: "/icons/icon-192.png",
+  },
   appleWebApp: {
     capable: true,
     statusBarStyle: "black-translucent",
