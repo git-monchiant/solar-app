@@ -45,17 +45,9 @@ export default function LoginPage() {
     <div className="min-h-screen bg-[#FAFAF7] flex flex-col">
       <main className="flex-1 flex items-center justify-center px-4 py-10">
         <div className="w-full max-w-[380px]">
-          {/* Brand mark — centered above card */}
-          <div className="flex flex-col items-center mb-8">
-            <div className="relative">
-              <div className="w-12 h-12 rounded-xl bg-primary flex items-center justify-center shadow-sm shadow-primary/30">
-                <Image src="/logos/logo-sena-white.png" alt="" width={28} height={28} />
-              </div>
-              <div className="absolute -inset-1 rounded-xl bg-primary/20 -z-10 blur-md" />
-            </div>
-            <div className="mt-4 text-[15px] md:text-[13px] font-semibold text-gray-500 tracking-[0.12em] uppercase">
-              Sena Solar
-            </div>
+          {/* Brand mark — SENA SOLAR logo */}
+          <div className="flex justify-center mb-8">
+            <Image src="/logos/logo-sena.png" alt="SENA SOLAR ENERGY" width={220} height={66} priority />
           </div>
 
           {/* Card */}

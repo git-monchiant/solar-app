@@ -3,8 +3,8 @@
 import { apiFetch } from "@/lib/api";
 import { useState } from "react";
 import { useRouter } from "next/navigation";
-import Header from "@/components/Header";
-import CustomerWizard from "@/components/CustomerWizard";
+import Header from "@/components/layout/Header";
+import CustomerWizard from "@/components/customer/CustomerWizard";
 
 export default function NewLeadPage() {
   const router = useRouter();

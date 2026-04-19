@@ -2,7 +2,7 @@
 
 import { apiFetch } from "@/lib/api";
 import { useEffect, useState } from "react";
-import ListPageHeader from "@/components/ListPageHeader";
+import ListPageHeader from "@/components/layout/ListPageHeader";
 
 interface Package {
   id: number;

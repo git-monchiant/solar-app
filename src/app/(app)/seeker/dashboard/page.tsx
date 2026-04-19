@@ -2,7 +2,7 @@
 
 import { apiFetch } from "@/lib/api";
 import { useEffect, useMemo, useState } from "react";
-import Header from "@/components/Header";
+import Header from "@/components/layout/Header";
 
 type Prospect = {
   id: number;

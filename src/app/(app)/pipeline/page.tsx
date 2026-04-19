@@ -2,8 +2,8 @@
 
 import { apiFetch } from "@/lib/api";
 import { useEffect, useState, useCallback } from "react";
-import ListPageHeader from "@/components/ListPageHeader";
-import LeadCard, { type LeadData } from "@/components/LeadCard";
+import ListPageHeader from "@/components/layout/ListPageHeader";
+import LeadCard, { type LeadData } from "@/components/lead/LeadCard";
 import { useActiveRoles, hasRole } from "@/lib/roles";
 
 interface Lead {

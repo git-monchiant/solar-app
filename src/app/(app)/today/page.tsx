@@ -3,11 +3,11 @@
 import { apiFetch } from "@/lib/api";
 import { useEffect, useState } from "react";
 import Link from "next/link";
-import LeadCard, { LeadData } from "@/components/LeadCard";
-import ListPageHeader from "@/components/ListPageHeader";
-import NewLeadModal from "@/components/NewLeadModal";
+import LeadCard, { LeadData } from "@/components/lead/LeadCard";
+import ListPageHeader from "@/components/layout/ListPageHeader";
+import NewLeadModal from "@/components/modal/NewLeadModal";
 import { useActiveRoles, hasRole } from "@/lib/roles";
-import { getStatusLabel } from "@/lib/statuses";
+import { getStatusLabel } from "@/lib/constants/statuses";
 
 interface TodayData {
   newLeads: LeadData[];

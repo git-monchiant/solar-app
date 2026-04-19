@@ -4,8 +4,8 @@ import { apiFetch } from "@/lib/api";
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
-import Header from "@/components/Header";
-import { STATUS_CONFIG } from "@/lib/statuses";
+import Header from "@/components/layout/Header";
+import { STATUS_CONFIG } from "@/lib/constants/statuses";
 
 interface DashboardData {
   total_leads: number;

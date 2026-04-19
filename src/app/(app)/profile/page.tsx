@@ -1,7 +1,7 @@
 "use client";
 import { useEffect, useState } from "react";
 import { apiFetch } from "@/lib/api";
-import Header from "@/components/Header";
+import Header from "@/components/layout/Header";
 
 interface UserProfile {
   id: number;

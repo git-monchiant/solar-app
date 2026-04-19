@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { apiFetch } from "@/lib/api";
-import Header from "@/components/Header";
+import Header from "@/components/layout/Header";
 import { useMe, ROLE_LABEL, ALL_ROLES, type Role } from "@/lib/roles";
 
 type Settings = Record<string, string>;

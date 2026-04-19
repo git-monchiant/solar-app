@@ -2,8 +2,8 @@
 
 import { apiFetch } from "@/lib/api";
 import { useEffect, useState } from "react";
-import Header from "@/components/Header";
-import NewLeadModal from "@/components/NewLeadModal";
+import Header from "@/components/layout/Header";
+import NewLeadModal from "@/components/modal/NewLeadModal";
 
 interface LineUser {
   id: number;
