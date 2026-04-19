@@ -11,6 +11,9 @@ import { validatePreSurvey } from "@/lib/step-validators";
 import ErrorPopup from "@/components/ErrorPopup";
 import FallbackImage from "@/components/FallbackImage";
 import CustomerInfoForm from "@/components/CustomerInfoForm";
+import StepLayout from "../StepLayout";
+import ReceiptButtons from "../ReceiptButtons";
+import { useSubStep } from "@/lib/useSubStep";
 
 const DEPOSIT_AMOUNT = 1000;
 
@@ -150,12 +153,11 @@ export default function RegisterStep({ lead, state, refresh, packages, expanded,
   const [regAddress, setRegAddress] = useState(lead.id_card_address || "");
   const [regHouseNumber, setRegHouseNumber] = useState(lead.installation_address || "");
   const [regProject, setRegProject] = useState(lead.project_name || "");
-  const [subStep, setSubStep] = useState(0);
+  const REG_SUB_STEPS = ["ข้อมูล", "แพ็คเกจ", "นัดสำรวจ", "ชำระเงิน", "ยืนยัน"];
+  const [subStep, setSubStep] = useSubStep(`registerSubStep_${lead.id}`, 0, REG_SUB_STEPS.length);
   const [nextError, setNextError] = useState<string | null>(null);
   const [formDraft, setFormDraft] = useState<Partial<Lead>>({});
   const [lightboxUrl, setLightboxUrl] = useState<string | null>(null);
-  const [receiptModal, setReceiptModal] = useState<{ type: "pdf" | "png"; bookingId: number } | null>(null);
-  const [receiptSaving, setReceiptSaving] = useState(false);
   const isFirstRegSave = useRef(true);
   useEffect(() => {
     if (isFirstRegSave.current) { isFirstRegSave.current = false; return; }
@@ -236,7 +238,7 @@ export default function RegisterStep({ lead, state, refresh, packages, expanded,
   }, [surveyDate, surveyTimeSlot]);
 
 
-  // Transfer: slip verified → create booking + confirm + advance
+  // Transfer: slip verified → create booking + confirm + record payment row + advance
   const confirmWithSlip = async () => {
     if (!bookingPkg || !paymentVerified || !surveyDate) return;
     setBookingSaving(true);
@@ -265,6 +267,22 @@ export default function RegisterStep({ lead, state, refresh, packages, expanded,
           status: "ชำระแล้ว",
         }),
       });
+      // Record the deposit as a payments transaction row (atomic: also switches
+      // lead.pre_slip_url to /api/payments/:id and sets payment_confirmed).
+      try {
+        await apiFetch("/api/payments", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            lead_id: lead.id,
+            step_no: 0,
+            slip_field: "pre_slip_url",
+            doc_no: bookingRes.booking_number ?? null,
+            amount: DEPOSIT_AMOUNT,
+            description: "ค่ามัดจำสำรวจพื้นที่ติดตั้ง Solar Rooftop",
+          }),
+        });
+      } catch (e) { console.error("payments row failed:", e); }
       await apiFetch(`/api/leads/${lead.id}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
@@ -344,38 +362,26 @@ export default function RegisterStep({ lead, state, refresh, packages, expanded,
     const peakLabel = PEAK_USAGE.find(p => p.value === lead.pre_peak_usage)?.label;
     const residenceLabel = lead.pre_residence_type?.startsWith("other:") ? lead.pre_residence_type.slice(6) : RESIDENCE_TYPES.find(r => r.value === lead.pre_residence_type)?.label;
 
-    return (<>
-      <div onClick={() => onToggle?.()} className="cursor-pointer">
-        <div className="flex items-center gap-2 py-1">
-          {lead.survey_date && (
-            <span className="text-sm font-bold text-gray-900 leading-tight">
-              <span className="block">นัด {new Date(String(lead.survey_date).slice(0, 10) + "T12:00:00").toLocaleDateString("th-TH", { weekday: "short", day: "numeric", month: "short", year: "numeric" })}</span>
-              {lead.survey_time_slot && (
-                <span className="block font-mono tabular-nums text-xs text-gray-500">
-                  {SURVEY_TIME_SLOTS.find(s => s.value === lead.survey_time_slot)?.time || lead.survey_time_slot}
-                </span>
-              )}
-            </span>
-          )}
-          <span className="flex-1" />
-          {lead.booking_id && (
-            <span className="inline-flex items-center gap-2 shrink-0 mr-4">
-              <button type="button" onClick={e => { e.stopPropagation(); setReceiptModal({ type: "pdf", bookingId: lead.booking_id! }); }} className="inline-flex items-center gap-1 text-xs font-semibold text-primary hover:text-primary-dark">
-                <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M19.5 14.25v-2.625a3.375 3.375 0 00-3.375-3.375h-1.5A1.125 1.125 0 0113.5 7.125v-1.5a3.375 3.375 0 00-3.375-3.375H8.25m2.25 0H5.625c-.621 0-1.125.504-1.125 1.125v17.25c0 .621.504 1.125 1.125 1.125h12.75c.621 0 1.125-.504 1.125-1.125V11.25a9 9 0 00-9-9z" /></svg>
-                PDF
-              </button>
-              <button type="button" onClick={e => { e.stopPropagation(); setReceiptModal({ type: "png", bookingId: lead.booking_id! }); }} className="inline-flex items-center gap-1 text-xs font-semibold text-emerald-600 hover:text-emerald-700">
-                <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M2.25 15.75l5.159-5.159a2.25 2.25 0 013.182 0l5.159 5.159m-1.5-1.5l1.409-1.41a2.25 2.25 0 013.182 0l2.909 2.91M3.75 21h16.5a2.25 2.25 0 002.25-2.25V5.25A2.25 2.25 0 0020.25 3H3.75A2.25 2.25 0 001.5 5.25v13.5A2.25 2.25 0 003.75 21z" /></svg>
-                PNG
-              </button>
-            </span>
-          )}
-          <svg className={`w-4 h-4 text-gray-400 transition-transform shrink-0 ${expanded ? "rotate-180" : ""}`} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
-            <path strokeLinecap="round" strokeLinejoin="round" d="M19.5 8.25l-7.5 7.5-7.5-7.5" />
-          </svg>
-        </div>
+    const doneHeaderContent = (
+      <>
+        {lead.survey_date && (
+          <span className="text-sm font-bold text-gray-900 leading-tight flex-1">
+            <span className="block">นัด {new Date(String(lead.survey_date).slice(0, 10) + "T12:00:00").toLocaleDateString("th-TH", { weekday: "short", day: "numeric", month: "short", year: "numeric" })}</span>
+            {lead.survey_time_slot && (
+              <span className="block font-mono tabular-nums text-xs text-gray-500">
+                {SURVEY_TIME_SLOTS.find(s => s.value === lead.survey_time_slot)?.time || lead.survey_time_slot}
+              </span>
+            )}
+          </span>
+        )}
+        {!lead.survey_date && <span className="flex-1" />}
+        {lead.booking_id && (
+          <div className="mr-4"><ReceiptButtons leadId={lead.id} stage="booking" fileLabel={lead.booking_number || `booking_${lead.booking_id}`} compact /></div>
+        )}
+      </>
+    );
 
-        {expanded && <div className="mt-3 pt-3 border-t border-gray-100 space-y-4 text-sm">
+    const renderDoneContent = () => (<>
 
           {/* แพ็คเกจที่สนใจ */}
           {(() => {
@@ -484,13 +490,13 @@ export default function RegisterStep({ lead, state, refresh, packages, expanded,
                   {lead.pre_bill_photo_url && (
                     <button type="button" onClick={() => setLightboxUrl(lead.pre_bill_photo_url)} className="text-left">
                       <div className="text-xs text-gray-400 mb-0.5">บิลค่าไฟ</div>
-                      <FallbackImage src={lead.pre_bill_photo_url} alt="Bill" className="h-16 w-16 rounded-lg border border-gray-200" fallbackLabel="บิลหาย" />
+                      <FallbackImage src={lead.pre_bill_photo_url} alt="Bill" className="max-h-40 max-w-full object-contain bg-gray-50 rounded-lg border border-gray-200 hover:opacity-80 transition" fallbackLabel="บิลหาย" />
                     </button>
                   )}
                   {lead.pre_slip_url && (
                     <button type="button" onClick={() => setLightboxUrl(lead.pre_slip_url)} className="text-left">
                       <div className="text-xs text-gray-400 mb-0.5">หลักฐานการชำระเงิน</div>
-                      <FallbackImage src={lead.pre_slip_url} alt="Slip" className="h-16 w-16 rounded-lg border border-gray-200" fallbackLabel="สลิปหาย" />
+                      <FallbackImage src={lead.pre_slip_url} alt="Slip" className="max-h-40 max-w-full object-contain bg-gray-50 rounded-lg border border-gray-200 hover:opacity-80 transition" fallbackLabel="สลิปหาย" />
                     </button>
                   )}
                 </div>
@@ -501,16 +507,7 @@ export default function RegisterStep({ lead, state, refresh, packages, expanded,
           {/* Action */}
           <div className="pt-3 border-t border-gray-100">
             {lead.confirmed ? (
-              <div className="flex gap-2 w-full">
-                <button type="button" onClick={() => setReceiptModal({ type: "pdf", bookingId: lead.booking_id! })} className="flex-1 h-11 px-4 rounded-lg text-sm font-semibold flex items-center justify-center gap-2 bg-primary text-white hover:bg-primary-dark transition-colors">
-                  <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M19.5 14.25v-2.625a3.375 3.375 0 00-3.375-3.375h-1.5A1.125 1.125 0 0113.5 7.125v-1.5a3.375 3.375 0 00-3.375-3.375H8.25m2.25 0H5.625c-.621 0-1.125.504-1.125 1.125v17.25c0 .621.504 1.125 1.125 1.125h12.75c.621 0 1.125-.504 1.125-1.125V11.25a9 9 0 00-9-9z" /></svg>
-                  PDF
-                </button>
-                <button type="button" onClick={() => setReceiptModal({ type: "png", bookingId: lead.booking_id! })} className="flex-1 h-11 px-4 rounded-lg text-sm font-semibold flex items-center justify-center gap-2 bg-emerald-600 text-white hover:bg-emerald-700 transition-colors">
-                  <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M2.25 15.75l5.159-5.159a2.25 2.25 0 013.182 0l5.159 5.159m-1.5-1.5l1.409-1.41a2.25 2.25 0 013.182 0l2.909 2.91M3.75 21h16.5a2.25 2.25 0 002.25-2.25V5.25A2.25 2.25 0 0020.25 3H3.75A2.25 2.25 0 001.5 5.25v13.5A2.25 2.25 0 003.75 21z" /></svg>
-                  PNG
-                </button>
-              </div>
+              <ReceiptButtons leadId={lead.id} stage="booking" fileLabel={lead.booking_number || `booking_${lead.booking_id}`} />
             ) : (
               <>
                 <div className="rounded-lg border border-active/15 bg-white/60 p-3 space-y-2.5 mb-2">
@@ -558,105 +555,55 @@ export default function RegisterStep({ lead, state, refresh, packages, expanded,
               </>
             )}
           </div>
-        </div>}
-      </div>
+        </>);
+
+    return (<>
+      <StepLayout
+        state="done"
+        doneHeader={doneHeaderContent}
+        renderDone={renderDoneContent}
+        expanded={expanded}
+        onToggle={onToggle}
+      />
       {lightboxUrl && (
         <div className="fixed inset-0 z-[70] flex flex-col items-center justify-center bg-black/70" onClick={() => setLightboxUrl(null)}>
           <button onClick={() => setLightboxUrl(null)} className="absolute top-4 right-4 w-10 h-10 rounded-full bg-black/50 text-white flex items-center justify-center text-xl safe-top">✕</button>
           <img src={lightboxUrl} alt="Preview" className="max-w-[90vw] max-h-[78vh] object-contain rounded-lg" onClick={e => e.stopPropagation()} />
         </div>
       )}
-      {receiptModal && (
-        <div className="fixed inset-0 z-[70] bg-black/70 flex flex-col safe-top" onClick={() => setReceiptModal(null)}>
-          <div className="flex items-center justify-between px-4 py-3 shrink-0">
-            <div className="text-white text-sm font-semibold">ใบเสร็จ {lead.booking_number || `#${receiptModal.bookingId}`}</div>
-            <button type="button" onClick={() => setReceiptModal(null)} className="w-10 h-10 rounded-full bg-black/50 text-white flex items-center justify-center text-xl">✕</button>
-          </div>
-          <div className="flex-1 overflow-auto px-4 pb-4 flex items-start justify-center" onClick={e => e.stopPropagation()}>
-            <img src={`/api/receipt?booking_id=${receiptModal.bookingId}`} alt="Receipt" className="w-full max-w-[794px] rounded-lg bg-white shadow-xl" />
-          </div>
-          <div className="px-4 py-3 shrink-0 flex justify-center safe-bottom" onClick={e => e.stopPropagation()}>
-            <button type="button" disabled={receiptSaving} onClick={async () => {
-              const isPdf = receiptModal.type === "pdf";
-              const ext = isPdf ? "pdf" : "png";
-              const mime = isPdf ? "application/pdf" : "image/png";
-              const url = isPdf ? `/api/receipt?booking_id=${receiptModal.bookingId}&format=pdf` : `/api/receipt?booking_id=${receiptModal.bookingId}`;
-              const label = lead.booking_number || `booking_${receiptModal.bookingId}`;
-              setReceiptSaving(true);
-              try {
-                const res = await fetch(url);
-                const blob = await res.blob();
-                const file = new File([blob], `${label}.${ext}`, { type: mime });
-                if (navigator.share && navigator.canShare?.({ files: [file] })) {
-                  await navigator.share({ files: [file] });
-                } else {
-                  const objUrl = URL.createObjectURL(blob);
-                  const a = document.createElement("a");
-                  a.href = objUrl; a.download = `${label}.${ext}`; a.click();
-                  URL.revokeObjectURL(objUrl);
-                }
-              } catch {} finally {
-                setReceiptSaving(false);
-              }
-            }} className="inline-flex items-center gap-2 px-6 py-3 rounded-full bg-white text-gray-900 text-sm font-semibold shadow-lg hover:bg-gray-100 disabled:opacity-70 disabled:cursor-wait transition-colors min-w-[160px] justify-center">
-              {receiptSaving ? (
-                <>
-                  <div className="w-5 h-5 border-2 border-gray-300 border-t-gray-900 rounded-full animate-spin" />
-                  กำลังเตรียม…
-                </>
-              ) : (
-                <>
-                  <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M3 16.5v2.25A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75V16.5M16.5 12L12 16.5m0 0L7.5 12m4.5 4.5V3" /></svg>
-                  บันทึก {receiptModal.type === "pdf" ? "PDF" : "รูป"}
-                </>
-              )}
-            </button>
-          </div>
-        </div>
-      )}
       </>
     );
   }
 
-  // Active editing state
-  if (state !== "active") return null;
-
-  const SUB_STEPS = ["ข้อมูล", "แพ็คเกจ", "นัดสำรวจ", "ชำระเงิน", "ยืนยัน"];
+  const handleSubStepChange = (i: number) => {
+    if (i <= subStep) { setNextError(null); setSubStep(i); return; }
+    const gates: Record<number, string[]> = {
+      0: ["full_name", "phone", "installation_address", "pre_residence_type", "pre_monthly_bill", "pre_peak_usage", "pre_electrical_phase"],
+      1: ["pre_wants_battery", "interested_package_ids"],
+      2: ["survey_date", "survey_time_slot"],
+      3: [],
+    };
+    const v = validatePreSurvey({ ...lead, ...formDraft, survey_date: surveyDate || lead.survey_date, survey_time_slot: surveyTimeSlot || lead.survey_time_slot });
+    const missingHere = v.missing.filter(m => (gates[subStep] || []).includes(m.field));
+    if (subStep === 3 && !paymentVerified) missingHere.push({ field: "slip", label: "กรุณาอัปโหลดสลิปชำระเงิน" });
+    if (missingHere.length > 0) {
+      setNextError(missingHere.map(m => m.label).join(", "));
+      return;
+    }
+    setNextError(null);
+    setSubStep(i);
+  };
 
   return (
-    <div>
-      {/* Step indicator */}
-      <div className="flex items-center gap-1 mb-3">
-        {SUB_STEPS.map((label, i) => {
-          const goTo = () => {
-            // Going back: always allow
-            if (i <= subStep) { setNextError(null); setSubStep(i); return; }
-            // Going forward: validate only current step gate
-            const gates: Record<number, string[]> = {
-              0: ["full_name", "phone", "installation_address", "pre_residence_type", "pre_monthly_bill", "pre_peak_usage", "pre_electrical_phase"],
-              1: ["pre_wants_battery", "interested_package_ids"],
-              2: ["survey_date", "survey_time_slot"],
-              3: [],
-            };
-            const v = validatePreSurvey({ ...lead, ...formDraft, survey_date: surveyDate || lead.survey_date, survey_time_slot: surveyTimeSlot || lead.survey_time_slot });
-            const missingHere = v.missing.filter(m => (gates[subStep] || []).includes(m.field));
-            if (subStep === 3 && !paymentVerified) missingHere.push({ field: "slip", label: "กรุณาอัปโหลดสลิปชำระเงิน" });
-            if (missingHere.length > 0) {
-              setNextError(missingHere.map(m => m.label).join(", "));
-              return;
-            }
-            setNextError(null);
-            setSubStep(i);
-          };
-          return (
-            <button key={i} type="button" onClick={goTo} className="flex-1 flex flex-col items-center gap-1 cursor-pointer">
-              <div className={`h-1 w-full rounded-full transition-colors ${i <= subStep ? "bg-active" : "bg-gray-200"}`} />
-              <span className={`text-xs font-semibold transition-colors ${i === subStep ? "text-active" : i < subStep ? "text-gray-500" : "text-gray-300"}`}>{label}</span>
-            </button>
-          );
-        })}
-      </div>
-
+    <StepLayout
+      state={state}
+      subSteps={REG_SUB_STEPS}
+      subStep={subStep}
+      onSubStepChange={handleSubStepChange}
+      expanded={expanded}
+      onToggle={onToggle}
+      doneHeader={null}
+    >
       {/* Step 1+2: single PreSurveyForm instance, CSS toggle sections */}
       <div className={subStep <= 1 ? "" : "hidden"}>
         <PreSurveyForm lead={lead} refresh={refresh} packages={packages} hidePackages={subStep !== 1} onlyPackages={subStep === 1} onPackageChange={setBookingPkg} onFormChange={setFormDraft} />
@@ -848,6 +795,6 @@ export default function RegisterStep({ lead, state, refresh, packages, expanded,
       )}
 
       <ErrorPopup message={nextError} onClose={() => setNextError(null)} />
-    </div>
+    </StepLayout>
   );
 }

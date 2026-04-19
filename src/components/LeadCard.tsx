@@ -1,6 +1,6 @@
 import { useRouter } from "next/navigation";
 import { useState, useEffect } from "react";
-import { STATUS_CONFIG } from "@/lib/statuses";
+import { STATUS_CONFIG, getStatusLabel } from "@/lib/statuses";
 import AssignOwnerButton from "./AssignOwnerButton";
 
 export interface LeadData {
@@ -79,7 +79,7 @@ export default function LeadCard({ lead, compact, onAssignChange }: { lead: Lead
             </div>
           </div>
           <span className={`shrink-0 text-xs font-semibold uppercase tracking-wide px-2.5 py-0.5 rounded-full text-white ${config.color}`}>
-            {config.label}
+            {getStatusLabel(lead)}
           </span>
         </div>
 

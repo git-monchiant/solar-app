@@ -20,11 +20,8 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ id:
     }
     const lead = fixDates(leadResult.recordset)[0];
 
-    // Get package info — prefer booked package, fall back to interested
-    const bookingResult = await db.request()
-      .input("lead_id", sql.Int, parseInt(id))
-      .query(`SELECT TOP 1 package_id FROM bookings WHERE lead_id = @lead_id ORDER BY id DESC`);
-    const bookedPkgId = bookingResult.recordset[0]?.package_id || lead.interested_package_id;
+    // Package: prefer booked (lead.pre_package_id), fall back to interested.
+    const bookedPkgId = lead.pre_package_id || lead.interested_package_id;
 
     let pkg = null;
     if (bookedPkgId) {

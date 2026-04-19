@@ -5,6 +5,8 @@ import { apiFetch } from "@/lib/api";
 import type { StepCommonProps } from "./types";
 import FallbackImage from "@/components/FallbackImage";
 import ErrorPopup from "@/components/ErrorPopup";
+import StepLayout from "../StepLayout";
+import { compressImage } from "@/lib/compressImage";
 
 const formatDate = (d: string | null) => {
   if (!d) return "—";
@@ -55,8 +57,9 @@ export default function GridTieStep({ lead, state, refresh, expanded, onToggle }
   const uploadPermit = async (file: File) => {
     setUploading(true);
     try {
+      const compressed = await compressImage(file).catch(() => file);
       const fd = new FormData();
-      fd.append("file", file);
+      fd.append("file", compressed);
       fd.append("filename", `gridtie_permit_${lead.id}`);
       const res = await apiFetch("/api/upload", { method: "POST", body: fd });
       if (res.url) {
@@ -94,51 +97,41 @@ export default function GridTieStep({ lead, state, refresh, expanded, onToggle }
     } finally { setClosing(false); }
   };
 
-  if (state === "done") {
-    return (
-      <div className="text-sm">
-        <div onClick={() => onToggle?.()} className="flex items-center gap-2 py-1 cursor-pointer">
-          <span className="text-sm font-semibold text-emerald-700">
-            ขนานไฟสำเร็จ{lead.grid_meter_changed_date ? ` · ${formatDate(lead.grid_meter_changed_date)}` : ""}
-          </span>
-          <span className="flex-1" />
-          <svg className={`w-4 h-4 text-gray-400 transition-transform shrink-0 ${expanded ? "rotate-180" : ""}`} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
-            <path strokeLinecap="round" strokeLinejoin="round" d="M19.5 8.25l-7.5 7.5-7.5-7.5" />
-          </svg>
-        </div>
-        {expanded && (
-          <div className="space-y-2 mt-3 pt-3 border-t border-gray-100">
-            <div className="grid grid-cols-2 gap-2 text-xs">
-              <Info label="การไฟฟ้า" value={lead.grid_utility} />
-              <Info label="เลขที่คำขอ" value={lead.grid_app_no} mono />
-              <Info label="ยื่น ERC" value={formatDate(lead.grid_erc_submitted_date)} />
-              <Info label="ยื่น กฟน./กฟภ." value={formatDate(lead.grid_submitted_date)} />
-              <Info label="วันนัดตรวจ" value={formatDate(lead.grid_inspection_date)} />
-              <Info label="วันอนุมัติ" value={formatDate(lead.grid_approved_date)} />
-              <Info label="เปลี่ยนมิเตอร์" value={formatDate(lead.grid_meter_changed_date)} />
-            </div>
-            {lead.grid_permit_doc_url && (
-              <a href={lead.grid_permit_doc_url} target="_blank" rel="noreferrer"
-                 className="flex items-center justify-center gap-2 w-full h-10 rounded-lg bg-gray-100 hover:bg-gray-200 text-sm font-semibold text-gray-700">
-                <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" /></svg>
-                ดูใบอนุญาต
-              </a>
-            )}
-            {lead.grid_note && (
-              <div className="border-l-3 border-gray-300 pl-3 text-sm">
-                <div className="text-xs font-bold text-gray-400 uppercase mb-1">หมายเหตุ</div>
-                <div className="text-gray-800 whitespace-pre-wrap">{lead.grid_note}</div>
-              </div>
-            )}
-          </div>
-        )}
+  const renderDoneContent = () => (
+    <>
+      <div className="grid grid-cols-2 gap-2 text-xs">
+        <Info label="การไฟฟ้า" value={lead.grid_utility} />
+        <Info label="เลขที่คำขอ" value={lead.grid_app_no} mono />
+        <Info label="ยื่น ERC" value={formatDate(lead.grid_erc_submitted_date)} />
+        <Info label="ยื่น กฟน./กฟภ." value={formatDate(lead.grid_submitted_date)} />
+        <Info label="วันนัดตรวจ" value={formatDate(lead.grid_inspection_date)} />
+        <Info label="วันอนุมัติ" value={formatDate(lead.grid_approved_date)} />
+        <Info label="เปลี่ยนมิเตอร์" value={formatDate(lead.grid_meter_changed_date)} />
       </div>
-    );
-  }
-
-  if (state !== "active") return null;
+      {lead.grid_permit_doc_url && (
+        <a href={lead.grid_permit_doc_url} target="_blank" rel="noreferrer"
+           className="flex items-center justify-center gap-2 w-full h-10 rounded-lg bg-gray-100 hover:bg-gray-200 text-sm font-semibold text-gray-700">
+          <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" /></svg>
+          ดูใบอนุญาต
+        </a>
+      )}
+      {lead.grid_note && (
+        <div className="border-l-3 border-gray-300 pl-3 text-sm">
+          <div className="text-xs font-bold text-gray-400 uppercase mb-1">หมายเหตุ</div>
+          <div className="text-gray-800 whitespace-pre-wrap">{lead.grid_note}</div>
+        </div>
+      )}
+    </>
+  );
 
   return (
+    <StepLayout
+      state={state}
+      expanded={expanded}
+      onToggle={onToggle}
+      doneHeader={<span className="text-sm font-semibold text-emerald-700">ขนานไฟสำเร็จ{lead.grid_meter_changed_date ? ` · ${formatDate(lead.grid_meter_changed_date)}` : ""}</span>}
+      renderDone={renderDoneContent}
+    >
     <div className="space-y-3">
       {/* Utility + App No */}
       <div className="grid grid-cols-2 gap-2">
@@ -179,7 +172,7 @@ export default function GridTieStep({ lead, state, refresh, expanded, onToggle }
                 <span className="text-sm text-gray-700 flex-1">ใบอนุญาต.pdf</span>
               </a>
             ) : (
-              <FallbackImage src={permitUrl} alt="" className="max-h-40 rounded-lg border border-gray-200" />
+              <FallbackImage src={permitUrl} alt="" className="max-h-40 max-w-full object-contain bg-gray-50 rounded-lg border border-gray-200 hover:opacity-80 transition" />
             )}
             <button onClick={removePermit} className="absolute top-1 right-1 w-6 h-6 bg-black/60 rounded-full text-white flex items-center justify-center text-xs" style={{ minHeight: 0 }}>✕</button>
           </div>
@@ -208,6 +201,7 @@ export default function GridTieStep({ lead, state, refresh, expanded, onToggle }
 
       <ErrorPopup message={nextError} onClose={() => setNextError(null)} />
     </div>
+    </StepLayout>
   );
 }
 

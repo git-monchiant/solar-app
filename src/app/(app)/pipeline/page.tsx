@@ -78,7 +78,7 @@ export default function PipelinePage() {
     { key: "survey",     label: "สำรวจหน้างาน",      roles: ["solar"] },
     { key: "quotation",  label: "รอใบเสนอราคา",      roles: ["solar"] },
     { key: "order",      label: "รออนุมัติ/ชำระ",    roles: ["sales"] },
-    { key: "install",    label: "กำลังติดตั้ง",      roles: ["solar"] },
+    { key: "install",    label: "ติดตั้ง",            roles: ["solar"] },
     { key: "warranty",   label: "ออกใบรับประกัน",    roles: ["solar"] },
     { key: "gridtie",    label: "ขอขนานไฟ",          roles: ["solar"] },
     { key: "closed",     label: "ติดตั้งเรียบร้อย",  roles: ["sales", "solar"] },

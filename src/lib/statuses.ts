@@ -14,6 +14,19 @@ export const STATUS_CONFIG: Record<string, { label: string; color: string; bg: s
   lost:          { label: "ยกเลิก",         color: "bg-red-400",     bg: "bg-red-50",     text: "text-red-700",     icon: "M6 18L18 6M6 6l12 12",  description: "Lost — set revisit date",               action: "Set Revisit" },
 };
 
+export function getStatusLabel(lead: { status: string; install_date?: string | null; event_date?: string | null }): string {
+  if (lead.status === "install") {
+    const date = lead.event_date || lead.install_date;
+    if (date) {
+      const today = new Date();
+      const todayStr = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, "0")}-${String(today.getDate()).padStart(2, "0")}`;
+      const jobDate = String(date).slice(0, 10);
+      if (jobDate > todayStr) return "รอติดตั้ง";
+    }
+  }
+  return STATUS_CONFIG[lead.status]?.label ?? STATUS_CONFIG.register.label;
+}
+
 export const PAYMENT_TYPES = [
   { value: "transfer", label: "โอนเงิน" },
   { value: "credit_card", label: "บัตรเครดิต" },

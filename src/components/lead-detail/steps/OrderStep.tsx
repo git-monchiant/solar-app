@@ -10,6 +10,9 @@ import LineConfirmModal from "@/components/LineConfirmModal";
 import ErrorPopup from "@/components/ErrorPopup";
 import CustomerInfoForm from "@/components/CustomerInfoForm";
 import FallbackImage from "@/components/FallbackImage";
+import StepLayout from "../StepLayout";
+import ReceiptButtons from "../ReceiptButtons";
+import { useSubStep } from "@/lib/useSubStep";
 
 const fmt = (n: number) => new Intl.NumberFormat("th-TH").format(n);
 const formatDate = (d: string) =>
@@ -23,7 +26,7 @@ interface Props extends StepCommonProps {
 }
 
 export default function OrderStep({ lead, state, refresh, expanded, onToggle }: Props) {
-  const [subStep, setSubStep] = useState(0);
+  const [subStep, setSubStep] = useSubStep(`orderSubStep_${lead.id}`, 0, SUB_STEPS.length);
   const [nextError, setNextError] = useState<string | null>(null);
   const [total, setTotal] = useState<number>(lead.order_total || lead.quotation_amount || 0);
 
@@ -71,145 +74,139 @@ export default function OrderStep({ lead, state, refresh, expanded, onToggle }: 
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [total, pctBefore, installDate]);
 
-  const confirmBefore = async () => {
-    setSaving(true);
-    try {
-      await apiFetch(`/api/leads/${lead.id}`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ order_before_paid: true }) });
-      setBeforePaidLocal(true);
-    } finally { setSaving(false); }
+  // PaymentSection writes the payments row + flips the paid flag itself. Parent just
+  // reacts after the fact — tracks local UI state and refreshes the lead.
+  const onBeforeConfirmed = async () => {
+    setBeforePaidLocal(true);
+    // Full-amount payment: no second installment, advance straight to install.
+    if (pctBefore >= 100) {
+      try { await apiFetch(`/api/leads/${lead.id}`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ status: "install" }) }); } catch {}
+    }
+    refresh();
   };
-
-  const confirmAfter = async () => {
-    setSaving(true);
-    try {
-      await apiFetch(`/api/leads/${lead.id}`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ order_after_paid: true, status: "install" }) });
-      refresh();
-    } finally { setSaving(false); }
+  const onAfterConfirmed = async () => {
+    try { await apiFetch(`/api/leads/${lead.id}`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ status: "install" }) }); } catch {}
+    refresh();
   };
 
   const scrollToStep = () => {
     setTimeout(() => document.querySelector("[data-step-active]")?.scrollIntoView({ behavior: "smooth", block: "start" }), 100);
   };
 
-  if (state === "done") {
-    const doneTotal = lead.order_total || 0;
-    const donePctBefore = lead.order_pct_before ?? 100;
-    const donePctAfter = 100 - donePctBefore;
-    const doneAmtBefore = Math.round(doneTotal * donePctBefore / 100);
-    const doneAmtAfter = doneTotal - doneAmtBefore;
-    const donePaid = (lead.order_before_paid ? doneAmtBefore : 0) + (lead.order_after_paid ? doneAmtAfter : 0);
-    const doneRemaining = doneTotal - donePaid;
+  const doneTotal = lead.order_total || 0;
+  const donePctBefore = lead.order_pct_before ?? 100;
+  const donePctAfter = 100 - donePctBefore;
+  const doneAmtBefore = Math.round(doneTotal * donePctBefore / 100);
+  const doneAmtAfter = doneTotal - doneAmtBefore;
 
-    return (
-      <div className="text-sm">
-      <div onClick={() => onToggle?.()} className="flex items-center gap-2 py-1 cursor-pointer">
-        <span className="text-sm font-semibold text-gray-900">
-          {lead.install_date ? `กำหนดเข้าติดตั้ง ${formatDate(lead.install_date)}` : "ยืนยันการชำระ"}
-        </span>
-        <span className="flex-1" />
-        <svg className={`w-4 h-4 text-gray-400 transition-transform shrink-0 ${expanded ? "rotate-180" : ""}`} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
-          <path strokeLinecap="round" strokeLinejoin="round" d="M19.5 8.25l-7.5 7.5-7.5-7.5" />
-        </svg>
-      </div>
-      {expanded && (
-      <div className="space-y-3 mt-3 pt-3 border-t border-gray-100">
-        {doneTotal > 0 && (
-          <div className="space-y-1">
-            <div className="flex justify-between">
-              <span className="text-gray-700 font-semibold">ยอดรวม</span>
-              <span className="font-bold font-mono tabular-nums text-gray-900">{fmt(doneTotal)} บาท</span>
-            </div>
+  const renderDoneContent = () => (
+    <>
+      {doneTotal > 0 && (
+        <div className="space-y-1">
+          <div className="flex justify-between">
+            <span className="text-gray-700 font-semibold">ยอดรวม</span>
+            <span className="font-bold font-mono tabular-nums text-gray-900">{fmt(doneTotal)} บาท</span>
+          </div>
+          <div className="flex justify-between text-xs">
+            <span className="text-gray-400">ชำระก่อนติดตั้ง {donePctBefore}%</span>
+            <span className="font-mono tabular-nums text-gray-400">{fmt(doneAmtBefore)} บาท</span>
+          </div>
+          {donePctAfter > 0 && (
             <div className="flex justify-between text-xs">
-              <span className="text-gray-400">ชำระก่อนติดตั้ง {donePctBefore}%</span>
-              <span className="font-mono tabular-nums text-gray-400">{fmt(doneAmtBefore)} บาท</span>
+              <span className="text-gray-400">ชำระหลังติดตั้ง</span>
+              <span className="font-mono tabular-nums text-gray-400">{fmt(doneAmtAfter)} บาท</span>
             </div>
-            {donePctAfter > 0 && (
+          )}
+          {lead.booking_price ? (
+            <>
               <div className="flex justify-between text-xs">
-                <span className="text-gray-400">ชำระหลังติดตั้ง</span>
-                <span className="font-mono tabular-nums text-gray-400">{fmt(doneAmtAfter)} บาท</span>
+                <span className="text-gray-400">หักมัดจำ</span>
+                <span className="font-mono tabular-nums text-gray-400">-{fmt(lead.booking_price)} บาท</span>
               </div>
-            )}
-            {lead.booking_price ? (
-              <>
-                <div className="flex justify-between text-xs">
-                  <span className="text-gray-400">หักมัดจำ</span>
-                  <span className="font-mono tabular-nums text-gray-400">-{fmt(lead.booking_price)} บาท</span>
-                </div>
-                <div className="flex justify-between border-t border-gray-100 pt-1 mt-1">
-                  <span className="text-gray-700 font-semibold">{donePctAfter > 0 ? "ยอดชำระหลังติดตั้งสุทธิ" : "ยอดชำระสุทธิ"}</span>
-                  <span className="font-bold font-mono tabular-nums text-gray-900">{fmt((donePctAfter > 0 ? doneAmtAfter : doneTotal) - (lead.booking_price || 0))} บาท</span>
-                </div>
-              </>
-            ) : null}
-          </div>
-        )}
-        {lead.install_date && (
-          <div className="border-l-3 border-amber-400 pl-3">
-            <div className="text-xs font-bold text-amber-600 uppercase mb-1">กำหนดเข้าติดตั้ง</div>
-            <div className="font-semibold text-gray-800">{formatDate(lead.install_date)}</div>
-          </div>
-        )}
-
-        {lead.order_before_slip && (
-          <div className="border-l-3 border-violet-400 pl-3">
-            <div className="flex items-center justify-between mb-1.5">
-              <div className="text-xs font-bold text-violet-600 uppercase">สลิปก่อนติดตั้ง</div>
-              <div className="text-sm font-bold font-mono tabular-nums text-gray-900">{fmt(doneAmtBefore)} บาท</div>
-            </div>
-            <a href={lead.order_before_slip} target="_blank" rel="noreferrer">
-              <FallbackImage src={lead.order_before_slip} alt="" className="max-h-48 rounded-lg border border-gray-200 hover:opacity-80 transition" fallbackLabel="สลิปหาย" />
-            </a>
-          </div>
-        )}
-
-        {(lead.full_name || lead.id_card_number || lead.id_card_address || lead.installation_address) && (
-          <div className="border-l-3 border-gray-300 pl-3">
-            <div className="text-xs font-bold text-gray-400 uppercase mb-1">ข้อมูลขออนุญาตติดตั้ง</div>
-            <div className="space-y-0.5">
-              {lead.full_name && <div className="flex justify-between"><span className="text-gray-400">ชื่อ-นามสกุล</span><span className="text-gray-800 text-right">{lead.full_name}</span></div>}
-              {lead.id_card_number && <div className="flex justify-between"><span className="text-gray-400">เลขบัตร ปชช.</span><span className="font-mono tabular-nums text-gray-800">{lead.id_card_number}</span></div>}
-              {lead.id_card_address && <div className="flex flex-col"><span className="text-gray-400">ที่อยู่ตามบัตร</span><span className="text-gray-800">{lead.id_card_address}</span></div>}
-              {lead.installation_address && <div className="flex flex-col"><span className="text-gray-400">ที่อยู่ติดตั้ง</span><span className="text-gray-800">{lead.installation_address}</span></div>}
-            </div>
-          </div>
-        )}
-      </div>
+              <div className="flex justify-between border-t border-gray-100 pt-1 mt-1">
+                <span className="text-gray-700 font-semibold">{donePctAfter > 0 ? "ยอดชำระหลังติดตั้งสุทธิ" : "ยอดชำระสุทธิ"}</span>
+                <span className="font-bold font-mono tabular-nums text-gray-900">{fmt((donePctAfter > 0 ? doneAmtAfter : doneTotal) - (lead.booking_price || 0))} บาท</span>
+              </div>
+            </>
+          ) : null}
+        </div>
       )}
-      </div>
-    );
-  }
+      {lead.install_date && (
+        <div className="border-l-3 border-amber-400 pl-3">
+          <div className="text-xs font-bold text-amber-600 uppercase mb-1">กำหนดเข้าติดตั้ง</div>
+          <div className="font-semibold text-gray-800">{formatDate(lead.install_date)}</div>
+        </div>
+      )}
 
-  if (state !== "active") return null;
+      {lead.order_before_slip && (
+        <div className="border-l-3 border-violet-400 pl-3">
+          <div className="flex items-center justify-between mb-1.5">
+            <div className="text-xs font-bold text-violet-600 uppercase">สลิปก่อนติดตั้ง</div>
+            <div className="text-sm font-bold font-mono tabular-nums text-gray-900">{fmt(doneAmtBefore)} บาท</div>
+          </div>
+          <a href={lead.order_before_slip} target="_blank" rel="noreferrer">
+            <FallbackImage src={lead.order_before_slip} alt="" className="max-h-40 max-w-full object-contain bg-gray-50 rounded-lg border border-gray-200 hover:opacity-80 transition" fallbackLabel="สลิปหาย" />
+          </a>
+        </div>
+      )}
+
+
+      {(lead.full_name || lead.id_card_number || lead.id_card_address || lead.installation_address) && (
+        <div className="border-l-3 border-gray-300 pl-3">
+          <div className="text-xs font-bold text-gray-400 uppercase mb-1">ข้อมูลขออนุญาตติดตั้ง</div>
+          <div className="space-y-0.5">
+            {lead.full_name && <div className="flex justify-between"><span className="text-gray-400">ชื่อ-นามสกุล</span><span className="text-gray-800 text-right">{lead.full_name}</span></div>}
+            {lead.id_card_number && <div className="flex justify-between"><span className="text-gray-400">เลขบัตร ปชช.</span><span className="font-mono tabular-nums text-gray-800">{lead.id_card_number}</span></div>}
+            {lead.id_card_address && <div className="flex flex-col"><span className="text-gray-400">ที่อยู่ตามบัตร</span><span className="text-gray-800">{lead.id_card_address}</span></div>}
+            {lead.installation_address && <div className="flex flex-col"><span className="text-gray-400">ที่อยู่ติดตั้ง</span><span className="text-gray-800">{lead.installation_address}</span></div>}
+          </div>
+        </div>
+      )}
+
+      {lead.order_before_paid && (
+        <div className="pt-3 border-t border-gray-100">
+          <ReceiptButtons leadId={lead.id} stage="order_before" fileLabel={`${lead.booking_number || `lead_${lead.id}`}_before`} />
+        </div>
+      )}
+    </>
+  );
+
+  const gateCheck = (from: number): string[] => {
+    const missing: string[] = [];
+    if (from === 0 && (!total || total <= 0)) missing.push("ยอดรวม");
+    if (from === 0 && (pctBefore === null || pctBefore === undefined)) missing.push("% ชำระก่อนติดตั้ง");
+    if (from === 2 && !installDate) missing.push("วันนัดติดตั้ง");
+    if (from === 3 && !beforeSlipDone) missing.push("กรุณาอัปโหลดสลิปชำระงวดแรก");
+    if (from === 3 && !beforePaidLocal) missing.push("ยืนยันรับชำระงวดแรก");
+    return missing;
+  };
+  const handleSubStepChange = (n: number) => {
+    if (n > subStep) {
+      const missing = gateCheck(subStep);
+      if (missing.length > 0) { setNextError(missing.join(", ")); return; }
+    }
+    setNextError(null);
+    setSubStep(n);
+  };
 
   return (
-    <div>
-      {/* Step indicator */}
-      <div className="flex items-center gap-1 mb-3">
-        {SUB_STEPS.map((label, i) => {
-          const gateCheck = (from: number): string[] => {
-            const missing: string[] = [];
-            if (from === 0 && (!total || total <= 0)) missing.push("ยอดรวม");
-            if (from === 0 && (pctBefore === null || pctBefore === undefined)) missing.push("% ชำระก่อนติดตั้ง");
-            if (from === 2 && !installDate) missing.push("วันนัดติดตั้ง");
-            if (from === 3 && !beforeSlipDone) missing.push("กรุณาอัปโหลดสลิปชำระงวดแรก");
-            if (from === 3 && !beforePaidLocal) missing.push("ยืนยันรับชำระงวดแรก");
-            return missing;
-          };
-          const goTo = () => {
-            if (i <= subStep) { setNextError(null); setSubStep(i); scrollToStep(); return; }
-            const missing = gateCheck(subStep);
-            if (missing.length > 0) { setNextError(missing.join(", ")); return; }
-            setNextError(null); setSubStep(i); scrollToStep();
-          };
-          return (
-            <button key={i} type="button" onClick={goTo} className="flex-1 flex flex-col items-center gap-1 cursor-pointer">
-              <div className={`h-1 w-full rounded-full transition-colors ${i <= subStep ? "bg-active" : "bg-gray-200"}`} />
-              <span className={`text-xs font-semibold transition-colors ${i === subStep ? "text-active" : i < subStep ? "text-gray-500" : "text-gray-300"}`}>{label}</span>
-            </button>
-          );
-        })}
-      </div>
-
+    <StepLayout
+      state={state}
+      subSteps={SUB_STEPS}
+      subStep={subStep}
+      onSubStepChange={handleSubStepChange}
+      expanded={expanded}
+      onToggle={onToggle}
+      doneHeader={
+        <>
+          <span className="text-sm font-semibold text-gray-900 flex-1">{lead.install_date ? `กำหนดเข้าติดตั้ง ${formatDate(lead.install_date)}` : "ยืนยันการชำระ"}</span>
+          {lead.order_before_paid && (
+            <div className="mr-4"><ReceiptButtons leadId={lead.id} stage="order_before" fileLabel={`${lead.booking_number || `lead_${lead.id}`}_before`} compact /></div>
+          )}
+        </>
+      }
+      renderDone={renderDoneContent}
+    >
       {/* Step 0: ใบเสนอราคา */}
       {subStep === 0 && (
         <div className="space-y-3">
@@ -414,6 +411,11 @@ export default function OrderStep({ lead, state, refresh, expanded, onToggle }: 
                 lineId={lead.line_id}
                 slipUrl={lead.order_before_slip}
                 slipField="order_before_slip"
+                stepNo={3}
+                description={pctAfter > 0 ? `ชำระก่อนติดตั้ง งวด 1/2 (${pctBefore}%)` : "ชำระเต็มจำนวน ก่อนติดตั้ง"}
+                docNo={lead.booking_number}
+                confirmed={beforePaidLocal}
+                onConfirmed={onBeforeConfirmed}
                 onVerified={() => setBeforeSlipDone(true)}
                 details={[
                   { label: `ยอดชำระ (งวด 1/${pctAfter > 0 ? "2" : "1"})`, value: `฿${fmt(amountBefore)}` },
@@ -440,6 +442,11 @@ export default function OrderStep({ lead, state, refresh, expanded, onToggle }: 
                 lineId={lead.line_id}
                 slipUrl={lead.order_after_slip}
                 slipField="order_after_slip"
+                stepNo={4}
+                description="ชำระหลังติดตั้ง งวด 2/2"
+                docNo={lead.booking_number}
+                confirmed={!!lead.order_after_paid}
+                onConfirmed={onAfterConfirmed}
                 onVerified={() => setAfterSlipDone(true)}
                 details={[
                   { label: "ยอดคงค้าง (งวด 2/2)", value: `฿${fmt(amountAfter)}` },
@@ -498,17 +505,15 @@ export default function OrderStep({ lead, state, refresh, expanded, onToggle }: 
                     id_card_number: regIdCard || undefined,
                     id_card_address: regAddress || undefined,
                     installation_address: regInstallAddr || undefined,
-                    order_before_paid: true,
-                    status: "install",
                   }),
                 });
                 refresh();
               } finally { setSaving(false); }
             }}
             disabled={saving}
-            className={`w-full h-11 rounded-lg text-sm font-semibold text-white bg-gradient-to-r from-primary to-primary-dark hover:brightness-110 disabled:opacity-50 transition-colors ${!beforeSlipDone ? "hidden" : ""}`}
+            className="w-full h-11 rounded-lg text-sm font-semibold text-white bg-gradient-to-r from-primary to-primary-dark hover:brightness-110 disabled:opacity-50 transition-colors"
           >
-            {saving ? "กำลังบันทึก..." : "ยืนยันข้อมูลและรับชำระเงิน"}
+            {saving ? "กำลังบันทึก..." : "บันทึกข้อมูลขออนุญาต"}
           </button>
         </div>
       )}
@@ -546,6 +551,6 @@ export default function OrderStep({ lead, state, refresh, expanded, onToggle }: 
       )}
 
       <ErrorPopup message={nextError} onClose={() => setNextError(null)} />
-    </div>
+    </StepLayout>
   );
 }

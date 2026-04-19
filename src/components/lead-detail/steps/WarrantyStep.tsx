@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from "react";
 import { apiFetch } from "@/lib/api";
 import type { StepCommonProps, Package } from "./types";
 import ErrorPopup from "@/components/ErrorPopup";
+import StepLayout from "../StepLayout";
 
 const formatDate = (d: string | null) => {
   if (!d) return "—";
@@ -161,49 +162,39 @@ export default function WarrantyStep({ lead, state, refresh, packages, expanded,
     } finally { setIssuing(false); }
   };
 
-  if (state === "done") {
-    return (
-      <div className="text-sm">
-        <div onClick={() => onToggle?.()} className="flex items-center gap-2 py-1 cursor-pointer">
-          <span className="text-sm font-semibold text-emerald-700">
-            ออกใบรับประกัน · {lead.warranty_doc_no}
-          </span>
-          <span className="flex-1" />
-          <svg className={`w-4 h-4 text-gray-400 transition-transform shrink-0 ${expanded ? "rotate-180" : ""}`} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
-            <path strokeLinecap="round" strokeLinejoin="round" d="M19.5 8.25l-7.5 7.5-7.5-7.5" />
-          </svg>
-        </div>
-        {expanded && (
-          <div className="space-y-2 mt-3 pt-3 border-t border-gray-100">
-            <div className="grid grid-cols-2 gap-2 text-xs">
-              <Info label="เลขที่เอกสาร" value={lead.warranty_doc_no} />
-              <Info label="Inverter SN" value={lead.warranty_inverter_sn} mono />
-              <Info label="เริ่มประกัน" value={formatDate(lead.warranty_start_date)} />
-              <Info label="สิ้นสุด" value={formatDate(lead.warranty_end_date)} />
-            </div>
-            {lead.warranty_doc_url && (
-              <a
-                href={lead.warranty_doc_url}
-                target="_blank"
-                rel="noreferrer"
-                className="flex items-center justify-center gap-2 w-full h-10 rounded-lg bg-gray-100 hover:bg-gray-200 text-sm font-semibold text-gray-700 transition-colors"
-              >
-                <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" /></svg>
-                ดูไฟล์ PDF
-              </a>
-            )}
-          </div>
-        )}
+  const renderDoneContent = () => (
+    <>
+      <div className="grid grid-cols-2 gap-2 text-xs">
+        <Info label="เลขที่เอกสาร" value={lead.warranty_doc_no} />
+        <Info label="Inverter SN" value={lead.warranty_inverter_sn} mono />
+        <Info label="เริ่มประกัน" value={formatDate(lead.warranty_start_date)} />
+        <Info label="สิ้นสุด" value={formatDate(lead.warranty_end_date)} />
       </div>
-    );
-  }
-
-  if (state !== "active") return null;
+      {lead.warranty_doc_url && (
+        <a
+          href={lead.warranty_doc_url}
+          target="_blank"
+          rel="noreferrer"
+          className="flex items-center justify-center gap-2 w-full h-10 rounded-lg bg-gray-100 hover:bg-gray-200 text-sm font-semibold text-gray-700 transition-colors"
+        >
+          <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" /></svg>
+          ดูไฟล์ PDF
+        </a>
+      )}
+    </>
+  );
 
   const previewUrl = `/warranty/${lead.id}`;
   const pdfUrl = `/api/warranty/${lead.id}`;
 
   return (
+    <StepLayout
+      state={state}
+      expanded={expanded}
+      onToggle={onToggle}
+      doneHeader={<span className="text-sm font-semibold text-emerald-700">ออกใบรับประกัน · {lead.warranty_doc_no}</span>}
+      renderDone={renderDoneContent}
+    >
     <div className="space-y-3">
       {/* Doc no */}
       <div>
@@ -299,6 +290,7 @@ export default function WarrantyStep({ lead, state, refresh, packages, expanded,
 
       <ErrorPopup message={nextError} onClose={() => setNextError(null)} />
     </div>
+    </StepLayout>
   );
 }
 

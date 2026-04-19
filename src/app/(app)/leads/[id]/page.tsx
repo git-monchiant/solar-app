@@ -19,6 +19,8 @@ import InstallStep from "@/components/lead-detail/steps/InstallStep";
 import WarrantyStep from "@/components/lead-detail/steps/WarrantyStep";
 import GridTieStep from "@/components/lead-detail/steps/GridTieStep";
 import type { Lead, Package, CardStateKind } from "@/components/lead-detail/steps/types";
+import { usePullToRefresh } from "@/lib/usePullToRefresh";
+import PullToRefreshIndicator from "@/components/PullToRefreshIndicator";
 
 const formatDate = (d: string) =>
   new Date(String(d).slice(0, 10) + "T12:00:00").toLocaleDateString("th-TH", { day: "numeric", month: "short", year: "numeric" });
@@ -75,6 +77,14 @@ export default function LeadDetailPage({ params }: { params: Promise<{ id: strin
     fetchLead();
     fetchActivities();
   }, [fetchLead, fetchActivities]);
+
+  const scrollRef = useRef<HTMLDivElement>(null);
+  const { pullY, refreshing } = usePullToRefresh(scrollRef, async () => {
+    await Promise.all([
+      apiFetch(`/api/leads/${id}`).then(setLead).catch(console.error),
+      apiFetch(`/api/leads/${id}/activities`).then(setActivities).catch(console.error),
+    ]);
+  });
 
   // Auto-scroll to active step when lead status changes or on first load
   const hasScrolled = useRef(false);
@@ -168,11 +178,17 @@ export default function LeadDetailPage({ params }: { params: Promise<{ id: strin
               Active
             </span>
           )}
-          {state === "done" && (
-            <span className="inline-flex items-center gap-1 text-xs font-semibold uppercase tracking-wider text-emerald-600 shrink-0">
-              ✓ {stepIdx === 0 ? "Paid" : "Done"}
-            </span>
-          )}
+          {state === "done" && (() => {
+            const paidStep =
+              (stepIdx === 0 && (lead.payment_confirmed || lead.pre_slip_url)) ||
+              (stepIdx === 3 && lead.order_before_paid) ||
+              (stepIdx === 4 && lead.order_after_paid);
+            return (
+              <span className={`inline-flex items-center gap-1 text-xs font-semibold uppercase tracking-wider shrink-0 ${paidStep ? "text-emerald-600" : "text-teal-600"}`}>
+                ✓ {paidStep ? "Paid" : "Done"}
+              </span>
+            );
+          })()}
         </div>
 
         {state !== "locked" && (
@@ -280,7 +296,8 @@ export default function LeadDetailPage({ params }: { params: Promise<{ id: strin
       </div>
 
       {/* Content */}
-      <div className="flex-1 overflow-y-auto pb-20">
+      <div ref={scrollRef} className="flex-1 overflow-y-auto pb-20 relative" style={{ overscrollBehaviorY: "contain" }}>
+        <PullToRefreshIndicator pullY={pullY} refreshing={refreshing} />
         {tab === "info" ? (
           <div className="p-4 space-y-3">
             {/* Latest Contact — ข้อมูลการติดต่อล่าสุด */}

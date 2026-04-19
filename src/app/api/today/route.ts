@@ -15,7 +15,7 @@ export async function GET() {
         LEFT JOIN packages pk ON l.interested_package_id = pk.id
         LEFT JOIN users u ON l.assigned_user_id = u.id
         WHERE l.status = 'register'
-          AND NOT EXISTS (SELECT 1 FROM bookings WHERE lead_id = l.id)
+          AND l.pre_doc_no IS NULL
           AND l.created_at >= DATEADD(day, -2, GETDATE())
           AND (l.next_follow_up IS NULL OR CAST(l.next_follow_up AS DATE) < CAST(GETDATE() AS DATE))
         ORDER BY COALESCE(l.contact_date, l.created_at) ASC
@@ -29,7 +29,7 @@ export async function GET() {
         LEFT JOIN packages pk ON l.interested_package_id = pk.id
         LEFT JOIN users u ON l.assigned_user_id = u.id
         WHERE l.status = 'register'
-          AND NOT EXISTS (SELECT 1 FROM bookings WHERE lead_id = l.id)
+          AND l.pre_doc_no IS NULL
           AND l.created_at < DATEADD(day, -2, GETDATE())
           AND (l.next_follow_up IS NULL OR CAST(l.next_follow_up AS DATE) < CAST(GETDATE() AS DATE))
         ORDER BY COALESCE(l.contact_date, l.created_at) ASC

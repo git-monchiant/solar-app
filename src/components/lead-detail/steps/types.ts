@@ -98,6 +98,7 @@ export interface Lead {
   install_note: string | null;
   install_extra_note: string | null;
   install_extra_cost: number | null;
+  install_customer_signature_url: string | null;
   install_completed_at: string | null;
   review_sent: boolean;
   review_rating: number | null;

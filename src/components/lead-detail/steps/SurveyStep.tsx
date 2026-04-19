@@ -8,6 +8,9 @@ import AppointmentRescheduler from "@/components/AppointmentRescheduler";
 import ErrorPopup from "@/components/ErrorPopup";
 import { validateSurvey } from "@/lib/step-validators";
 import FallbackImage from "@/components/FallbackImage";
+import StepLayout from "../StepLayout";
+import { useSubStep } from "@/lib/useSubStep";
+import { compressImage } from "@/lib/compressImage";
 
 const formatDate = (d: string) =>
   new Date(String(d).slice(0, 10) + "T12:00:00").toLocaleDateString("th-TH", { day: "numeric", month: "short", year: "numeric" });
@@ -45,7 +48,9 @@ interface Props extends StepCommonProps {
 }
 
 export default function SurveyStep({ lead, state, refresh, packages, expanded, onToggle }: Props) {
-  const [subStep, setSubStep] = useState(0);
+  const SURVEY_SUB_FULL = ["นัด", "บ้าน", "ไฟฟ้า", "แพ็คเกจ", "บันทึก", "ยืนยัน"];
+  const SURVEY_SUB = lead.survey_confirmed ? SURVEY_SUB_FULL : ["นัด"];
+  const [subStep, setSubStep] = useSubStep(`surveySubStep_${lead.id}`, 0, SURVEY_SUB.length);
   const [nextError, setNextError] = useState<string | null>(null);
   const [formDraft, setFormDraft] = useState<Partial<Lead>>({});
   const [selectedPkg, setSelectedPkg] = useState<string>(lead.interested_package_id ? String(lead.interested_package_id) : "");
@@ -91,8 +96,9 @@ export default function SurveyStep({ lead, state, refresh, packages, expanded, o
     try {
       const uploaded: string[] = [];
       for (const file of files) {
+        const compressed = await compressImage(file).catch(() => file);
         const fd = new FormData();
-        fd.append("file", file);
+        fd.append("file", compressed);
         const res = await fetch("/api/upload", {
           method: "POST",
           body: fd,
@@ -154,29 +160,26 @@ export default function SurveyStep({ lead, state, refresh, packages, expanded, o
     }
   };
 
+  const slotTime = SURVEY_TIME_SLOTS.find(s => s.value === lead.survey_time_slot)?.time;
+
+  const doneHeaderContent = (
+    <>
+      {lead.survey_date ? (
+        <span className="text-sm font-bold text-gray-900 leading-tight flex-1">
+          <span className="block">สำรวจ {new Date(String(lead.survey_date).slice(0, 10) + "T12:00:00").toLocaleDateString("th-TH", { weekday: "short", day: "numeric", month: "short", year: "numeric" })}</span>
+          {slotTime && <span className="block font-mono tabular-nums text-xs text-gray-500">{slotTime}</span>}
+        </span>
+      ) : <span className="flex-1" />}
+    </>
+  );
+
   if (state === "done") {
-    const slotTime = SURVEY_TIME_SLOTS.find(s => s.value === lead.survey_time_slot)?.time;
     const residenceLabel = lead.survey_residence_type?.startsWith("other:") ? lead.survey_residence_type.slice(6) : RESIDENCE_MAP[lead.survey_residence_type || ""];
     const acMap = parseAcUnits(lead.survey_ac_units);
     const acTotal = Object.values(acMap).reduce((a, b) => a + b, 0);
     const applianceList = (lead.survey_appliances || "").split(",").filter(Boolean).map(v => APPLIANCE_MAP[v] || v);
 
-    return (<>
-      <div onClick={() => onToggle?.()} className="cursor-pointer">
-        <div className="flex items-center gap-2 py-1">
-          {lead.survey_date && (
-            <span className="text-sm font-bold text-gray-900 leading-tight">
-              <span className="block">สำรวจ {new Date(String(lead.survey_date).slice(0, 10) + "T12:00:00").toLocaleDateString("th-TH", { weekday: "short", day: "numeric", month: "short", year: "numeric" })}</span>
-              {slotTime && <span className="block font-mono tabular-nums text-xs text-gray-500">{slotTime}</span>}
-            </span>
-          )}
-          <span className="flex-1" />
-          <svg className={`w-4 h-4 text-gray-400 transition-transform shrink-0 ${expanded ? "rotate-180" : ""}`} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
-            <path strokeLinecap="round" strokeLinejoin="round" d="M19.5 8.25l-7.5 7.5-7.5-7.5" />
-          </svg>
-        </div>
-      </div>
-      {expanded && <div className="mt-3 pt-3 border-t border-gray-100 space-y-4 text-sm">
+    const renderDoneContent = () => (<>
 
           {/* บ้าน · หลังคา */}
           {(residenceLabel || lead.survey_floors != null || lead.survey_roof_material || lead.survey_roof_orientation || lead.survey_roof_area_m2 || lead.survey_roof_tilt != null || lead.survey_shading || lead.survey_roof_age) && (
@@ -279,8 +282,16 @@ export default function SurveyStep({ lead, state, refresh, packages, expanded, o
               </div>
             </div>
           )}
-        </div>}
-      </>
+    </>);
+
+    return (
+      <StepLayout
+        state="done"
+        doneHeader={doneHeaderContent}
+        renderDone={renderDoneContent}
+        expanded={expanded}
+        onToggle={onToggle}
+      />
     );
   }
   if (state !== "active") return null;
@@ -300,49 +311,36 @@ export default function SurveyStep({ lead, state, refresh, packages, expanded, o
     );
   }
 
-  // Default mode — wizard sub-steps
-  const SURVEY_SUB = lead.survey_confirmed
-    ? ["นัด", "บ้าน", "ไฟฟ้า", "แพ็คเกจ", "บันทึก", "ยืนยัน"]
-    : ["นัด"];
+  const handleSubStepChange = (i: number) => {
+    if (i <= subStep) { setNextError(null); setSubStep(i); return; }
+    const gates: Record<number, string[]> = {
+      0: ["survey_confirmed"],
+      1: ["survey_residence_type", "survey_floors", "survey_roof_material", "survey_roof_orientation", "survey_roof_area_m2", "survey_roof_tilt", "survey_shading", "survey_roof_age"],
+      2: ["survey_electrical_phase", "survey_monthly_bill", "survey_peak_usage", "survey_grid_type", "survey_utility", "survey_meter_size", "survey_ca_number", "survey_db_distance_m"],
+      3: ["survey_wants_battery", "interested_package_id"],
+      4: ["survey_note", "survey_photos"],
+      5: [],
+    };
+    const v = validateSurvey({ ...lead, ...formDraft, survey_note: surveyNote || lead.survey_note, survey_photos: surveyPhotos.length ? surveyPhotos.join(",") : lead.survey_photos, survey_wants_battery: surveyBattery || lead.survey_wants_battery, survey_electrical_phase: surveyPhase || lead.survey_electrical_phase, interested_package_id: selectedPkg ? parseInt(selectedPkg) : lead.interested_package_id });
+    const missingHere = v.missing.filter(m => (gates[subStep] || []).includes(m.field));
+    if (missingHere.length > 0) {
+      setNextError(missingHere.map(m => m.label).join(", "));
+      return;
+    }
+    setNextError(null);
+    setSubStep(i);
+  };
 
   return (
-    <div>
-      {/* Gates for each sub-step */}
-      {(() => { return null; })()}
-      {/* Step indicator */}
-      {lead.survey_confirmed && (
-        <div className="flex items-center gap-1 mb-3">
-          {SURVEY_SUB.map((label, i) => {
-            const gates: Record<number, string[]> = {
-              0: ["survey_confirmed"],
-              1: ["survey_residence_type", "survey_floors", "survey_roof_material", "survey_roof_orientation", "survey_roof_area_m2", "survey_roof_tilt", "survey_shading", "survey_roof_age"],
-              2: ["survey_electrical_phase", "survey_monthly_bill", "survey_peak_usage", "survey_grid_type", "survey_utility", "survey_meter_size", "survey_ca_number", "survey_db_distance_m"],
-              3: ["survey_wants_battery", "interested_package_id"],
-              4: ["survey_note", "survey_photos"],
-              5: [],
-            };
-            const goTo = () => {
-              if (i <= subStep) { setNextError(null); setSubStep(i); setTimeout(() => document.querySelector("[data-step-active]")?.scrollIntoView({ behavior: "smooth", block: "start" }), 100); return; }
-              const v = validateSurvey({ ...lead, ...formDraft, survey_note: surveyNote || lead.survey_note, survey_photos: surveyPhotos.length ? surveyPhotos.join(",") : lead.survey_photos, survey_wants_battery: surveyBattery || lead.survey_wants_battery, survey_electrical_phase: surveyPhase || lead.survey_electrical_phase, interested_package_id: selectedPkg ? parseInt(selectedPkg) : lead.interested_package_id });
-              const missingHere = v.missing.filter(m => (gates[subStep] || []).includes(m.field));
-              if (missingHere.length > 0) {
-                setNextError(missingHere.map(m => m.label).join(", "));
-                return;
-              }
-              setNextError(null);
-              setSubStep(i);
-              setTimeout(() => document.querySelector("[data-step-active]")?.scrollIntoView({ behavior: "smooth", block: "start" }), 100);
-            };
-            return (
-              <button key={i} type="button" onClick={goTo} className="flex-1 flex flex-col items-center gap-1 cursor-pointer">
-                <div className={`h-1 w-full rounded-full transition-colors ${i <= subStep ? "bg-active" : "bg-gray-200"}`} />
-                <span className={`text-xs font-semibold transition-colors ${i === subStep ? "text-active" : i < subStep ? "text-gray-500" : "text-gray-300"}`}>{label}</span>
-              </button>
-            );
-          })}
-        </div>
-      )}
-
+    <StepLayout
+      state={state}
+      subSteps={SURVEY_SUB}
+      subStep={subStep}
+      onSubStepChange={handleSubStepChange}
+      expanded={expanded}
+      onToggle={onToggle}
+      doneHeader={null}
+    >
       {/* Step 1: นัดหมาย */}
       {subStep === 0 && (
         <div className="space-y-3">
@@ -543,6 +541,6 @@ export default function SurveyStep({ lead, state, refresh, packages, expanded, o
       )}
 
       <ErrorPopup message={nextError} onClose={() => setNextError(null)} />
-    </div>
+    </StepLayout>
   );
 }

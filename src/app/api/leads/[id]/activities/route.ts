@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getDb, sql, fixDates } from "@/lib/db";
+import { getUserIdFromReq } from "@/lib/auth";
 
 const titleMap: Record<string, string> = {
   call: "Called customer",
@@ -35,6 +36,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
     const body = await req.json();
     const db = await getDb();
     const leadId = parseInt(id);
+    const userId = getUserIdFromReq(req) ?? 1;
 
     const activityType = body.activity_type || "note";
     let title = titleMap[activityType] || "Activity";
@@ -52,10 +54,11 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
     const hasContactDate = !!body.contact_date;
     if (hasContactDate) request.input("created_at", sql.DateTime2, new Date(body.contact_date + "T12:00:00"));
 
+    request.input("created_by", sql.Int, userId);
     const result = await request.query(`
       INSERT INTO lead_activities (lead_id, activity_type, title, note, follow_up_date, created_by${hasContactDate ? ", created_at" : ""})
       OUTPUT INSERTED.*
-      VALUES (@lead_id, @activity_type, @title, @note, @follow_up_date, 1${hasContactDate ? ", @created_at" : ""})
+      VALUES (@lead_id, @activity_type, @title, @note, @follow_up_date, @created_by${hasContactDate ? ", @created_at" : ""})
     `);
 
     // Update lead's next_follow_up whenever a follow-up date is provided
@@ -68,11 +71,10 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
 
     // Auto-assign owner: whoever adds a contact activity (call/visit/note/follow_up)
     // becomes the current owner — always overwrites the previous owner.
-    const CURRENT_USER_ID = 1; // TODO: replace with session user when auth is wired
     if (["call", "visit", "note", "follow_up"].includes(activityType)) {
       await db.request()
         .input("lead_id", sql.Int, leadId)
-        .input("user_id", sql.Int, CURRENT_USER_ID)
+        .input("user_id", sql.Int, userId)
         .query(`UPDATE leads SET assigned_user_id = @user_id, updated_at = GETDATE() WHERE id = @lead_id`);
     }
 

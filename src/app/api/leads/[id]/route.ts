@@ -18,13 +18,17 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ id:
       .query(`
         SELECT l.*, p.name as project_name, pk.name as package_name, pk.price as package_price,
                u.full_name as assigned_name,
-               b.id as booking_id, b.booking_number, b.total_price as booking_price, b.status as booking_status, b.payment_confirmed, b.confirmed, b.package_id as booked_package_id, b.created_at as booking_date,
+               l.pre_doc_no as booking_number,
+               l.pre_total_price as booking_price,
+               l.pre_package_id as booked_package_id,
+               l.pre_booked_at as booking_date,
+               CASE WHEN l.pre_doc_no IS NOT NULL THEN l.id ELSE NULL END as booking_id,
+               CASE WHEN l.pre_doc_no IS NOT NULL THEN 1 ELSE 0 END as confirmed,
                lu.display_name as line_display_name, lu.picture_url as line_picture_url
         FROM leads l
         LEFT JOIN projects p ON l.project_id = p.id
         LEFT JOIN packages pk ON l.interested_package_id = pk.id
         LEFT JOIN users u ON l.assigned_user_id = u.id
-        LEFT JOIN bookings b ON b.lead_id = l.id
         LEFT JOIN line_users lu ON lu.line_user_id = l.line_id
         WHERE l.id = @id
       `);
@@ -235,6 +239,10 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
       sets.push("install_extra_cost = @install_extra_cost");
       request.input("install_extra_cost", sql.Decimal(12, 2), body.install_extra_cost);
     }
+    if (body.install_customer_signature_url !== undefined) {
+      sets.push("install_customer_signature_url = @install_customer_signature_url");
+      request.input("install_customer_signature_url", sql.NVarChar(500), body.install_customer_signature_url);
+    }
     if (body.install_completed_at !== undefined) {
       sets.push("install_completed_at = GETDATE()");
     }
@@ -400,6 +408,30 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
     if (body.pre_slip_url !== undefined) {
       sets.push("pre_slip_url = @pre_slip_url");
       request.input("pre_slip_url", sql.NVarChar(500), body.pre_slip_url);
+    }
+    if (body.pre_doc_no !== undefined) {
+      sets.push("pre_doc_no = @pre_doc_no");
+      request.input("pre_doc_no", sql.NVarChar(20), body.pre_doc_no);
+    }
+    if (body.pre_total_price !== undefined) {
+      sets.push("pre_total_price = @pre_total_price");
+      request.input("pre_total_price", sql.Decimal(12, 2), body.pre_total_price);
+    }
+    if (body.pre_package_id !== undefined) {
+      sets.push("pre_package_id = @pre_package_id");
+      request.input("pre_package_id", sql.Int, body.pre_package_id);
+    }
+    if (body.pre_note !== undefined) {
+      sets.push("pre_note = @pre_note");
+      request.input("pre_note", sql.NVarChar(sql.MAX), body.pre_note);
+    }
+    if (body.pre_booked_at !== undefined) {
+      sets.push("pre_booked_at = @pre_booked_at");
+      request.input("pre_booked_at", sql.DateTime2, body.pre_booked_at ? new Date(body.pre_booked_at) : null);
+    }
+    if (body.payment_confirmed !== undefined) {
+      sets.push("payment_confirmed = @payment_confirmed");
+      request.input("payment_confirmed", sql.Bit, body.payment_confirmed ? 1 : 0);
     }
     // Warranty (step 06)
     if (body.warranty_inverter_sn !== undefined) {

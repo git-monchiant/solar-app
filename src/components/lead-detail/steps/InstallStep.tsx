@@ -1,20 +1,22 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { apiFetch } from "@/lib/api";
 import type { StepCommonProps } from "./types";
 import FallbackImage from "@/components/FallbackImage";
 import PaymentSection from "./PaymentSection";
-import LineConfirmModal from "@/components/LineConfirmModal";
 import ErrorPopup from "@/components/ErrorPopup";
 import AppointmentRescheduler from "@/components/AppointmentRescheduler";
-import { buildPaymentFlex } from "@/lib/line-flex";
+import StepLayout from "../StepLayout";
+import ReceiptButtons from "../ReceiptButtons";
+import { useSubStep } from "@/lib/useSubStep";
+import { compressImage } from "@/lib/compressImage";
 
 const fmt = (n: number) => new Intl.NumberFormat("th-TH").format(n);
 const formatDate = (d: string) =>
   new Date(String(d).slice(0, 10) + "T12:00:00").toLocaleDateString("th-TH", { day: "numeric", month: "short", year: "numeric" });
 
-const SUB_STEPS = ["นัด", "ส่งมอบ", "สรุป คชจ.", "เก็บเงิน", "ประเมิน"];
+const SUB_STEPS = ["นัด", "รูปภาพ", "สรุป คชจ.", "เก็บเงิน", "ส่งมอบ"];
 
 interface Props extends StepCommonProps {
   expanded?: boolean;
@@ -22,7 +24,7 @@ interface Props extends StepCommonProps {
 }
 
 export default function InstallStep({ lead, state, refresh, expanded, onToggle }: Props) {
-  const [subStep, setSubStep] = useState(lead.install_confirmed ? 1 : 0);
+  const [subStep, setSubStep] = useSubStep(`installSubStep_${lead.id}`, lead.install_confirmed ? 1 : 0, SUB_STEPS.length);
   const [nextError, setNextError] = useState<string | null>(null);
   const [photos, setPhotos] = useState<string[]>(lead.install_photos ? lead.install_photos.split(",").filter(Boolean) : []);
   const [note, setNote] = useState(lead.install_note || "");
@@ -30,11 +32,18 @@ export default function InstallStep({ lead, state, refresh, expanded, onToggle }
   const [saving, setSaving] = useState(false);
   const [extraCost, setExtraCost] = useState<number>(lead.install_extra_cost || 0);
   const [extraNote, setExtraNote] = useState(lead.install_extra_note || "");
-  const [reviewConfirm, setReviewConfirm] = useState(false);
-  const [reviewSending, setReviewSending] = useState(false);
   const [afterSlipDone, setAfterSlipDone] = useState(!!lead.order_after_slip);
   const [afterPaidLocal, setAfterPaidLocal] = useState(!!lead.order_after_paid);
   const [rescheduling, setRescheduling] = useState(false);
+  const [signatureUrl, setSignatureUrl] = useState<string | null>(lead.install_customer_signature_url);
+  const [fullscreen, setFullscreen] = useState(false);
+  const [hasDrawn, setHasDrawn] = useState(false);
+  const [sigSaving, setSigSaving] = useState(false);
+  const inlineCanvasRef = useRef<HTMLCanvasElement>(null);
+  const inlineDrawingRef = useRef(false);
+  const fsCanvasRef = useRef<HTMLCanvasElement>(null);
+  const fsDrawingRef = useRef(false);
+  const [fsHasDrawn, setFsHasDrawn] = useState(false);
 
   // Auto-save note
   useEffect(() => {
@@ -58,8 +67,9 @@ export default function InstallStep({ lead, state, refresh, expanded, onToggle }
   const uploadPhoto = async (file: File) => {
     setUploading(true);
     try {
+      const compressed = await compressImage(file).catch(() => file);
       const formData = new FormData();
-      formData.append("file", file);
+      formData.append("file", compressed);
       formData.append("lead_id", String(lead.id));
       formData.append("type", "install");
       const res = await apiFetch("/api/upload", { method: "POST", body: formData });
@@ -115,100 +125,252 @@ export default function InstallStep({ lead, state, refresh, expanded, onToggle }
     refresh();
   };
 
-  const confirmAfterPayment = async () => {
+  // PaymentSection writes the payments row + flips order_after_paid itself. This callback
+  // only mirrors the state locally and refreshes.
+  const onAfterConfirmed = () => { setAfterPaidLocal(true); refresh(); };
+
+  // Inline canvas setup + load existing signature
+  useEffect(() => {
+    const c = inlineCanvasRef.current;
+    if (!c || state !== "active" || subStep !== 4) return;
+    const ctx = c.getContext("2d");
+    if (!ctx) return;
+    ctx.lineWidth = 2;
+    ctx.lineCap = "round";
+    ctx.strokeStyle = "#111";
+    if (signatureUrl && !hasDrawn) {
+      const img = new Image();
+      img.onload = () => {
+        ctx.clearRect(0, 0, c.width, c.height);
+        ctx.drawImage(img, 0, 0, c.width, c.height);
+        setHasDrawn(true);
+      };
+      img.src = signatureUrl;
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [state, subStep, signatureUrl]);
+
+  const getInlineCoords = (e: React.PointerEvent<HTMLCanvasElement>) => {
+    const c = inlineCanvasRef.current!;
+    const rect = c.getBoundingClientRect();
+    return {
+      x: (e.clientX - rect.left) * (c.width / rect.width),
+      y: (e.clientY - rect.top) * (c.height / rect.height),
+    };
+  };
+  const onInlineDown = (e: React.PointerEvent<HTMLCanvasElement>) => {
+    e.preventDefault();
+    const ctx = inlineCanvasRef.current?.getContext("2d"); if (!ctx) return;
+    inlineDrawingRef.current = true;
+    const { x, y } = getInlineCoords(e);
+    ctx.beginPath(); ctx.moveTo(x, y);
+  };
+  const onInlineMove = (e: React.PointerEvent<HTMLCanvasElement>) => {
+    if (!inlineDrawingRef.current) return;
+    const ctx = inlineCanvasRef.current?.getContext("2d"); if (!ctx) return;
+    const { x, y } = getInlineCoords(e);
+    ctx.lineTo(x, y); ctx.stroke();
+    if (!hasDrawn) setHasDrawn(true);
+  };
+  const autoSaveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const scheduleAutoSave = () => {
+    if (autoSaveTimerRef.current) clearTimeout(autoSaveTimerRef.current);
+    autoSaveTimerRef.current = setTimeout(() => { autoSaveSignature(); }, 1200);
+  };
+  const cancelAutoSave = () => {
+    if (autoSaveTimerRef.current) {
+      clearTimeout(autoSaveTimerRef.current);
+      autoSaveTimerRef.current = null;
+    }
+  };
+  useEffect(() => { return () => cancelAutoSave(); }, []);
+
+  const onInlineUp = () => {
+    inlineDrawingRef.current = false;
+    if (hasDrawn && !sigSaving) scheduleAutoSave();
+  };
+  const clearInline = () => {
+    cancelAutoSave();
+    const c = inlineCanvasRef.current; if (!c) return;
+    c.getContext("2d")?.clearRect(0, 0, c.width, c.height);
+    setHasDrawn(false);
+  };
+
+  // Open fullscreen: seed fullscreen canvas from inline (or existing signature URL)
+  useEffect(() => {
+    if (!fullscreen) return;
+    const fs = fsCanvasRef.current;
+    if (!fs) return;
+    fs.width = window.innerHeight;
+    fs.height = window.innerWidth;
+    const ctx = fs.getContext("2d");
+    if (!ctx) return;
+    ctx.lineWidth = 3;
+    ctx.lineCap = "round";
+    ctx.strokeStyle = "#111";
+    ctx.clearRect(0, 0, fs.width, fs.height);
+    setFsHasDrawn(false);
+    // Seed: prefer current inline drawing, fall back to saved signatureUrl
+    const inline = inlineCanvasRef.current;
+    if (inline && hasDrawn) {
+      ctx.drawImage(inline, 0, 0, fs.width, fs.height);
+    } else if (signatureUrl) {
+      const img = new Image();
+      img.crossOrigin = "anonymous";
+      img.onload = () => ctx.drawImage(img, 0, 0, fs.width, fs.height);
+      img.src = signatureUrl;
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [fullscreen]);
+
+  const fsCoords = (e: React.PointerEvent<HTMLCanvasElement>) => {
+    const c = fsCanvasRef.current!;
+    const parent = c.parentElement!;
+    const rect = parent.getBoundingClientRect();
+    const wcx = rect.left + rect.width / 2;
+    const wcy = rect.top + rect.height / 2;
+    const vx = e.clientX - wcx;
+    const vy = e.clientY - wcy;
+    // Inverse rotate(90deg): local = (vy, -vx)
+    const lx = vy;
+    const ly = -vx;
+    const ww = c.offsetWidth;
+    const wh = c.offsetHeight;
+    const cx = (lx + ww / 2) * (c.width / ww);
+    const cy = (ly + wh / 2) * (c.height / wh);
+    return { x: cx, y: cy };
+  };
+
+  const onFsDown = (e: React.PointerEvent<HTMLCanvasElement>) => {
+    e.preventDefault();
+    const ctx = fsCanvasRef.current?.getContext("2d"); if (!ctx) return;
+    fsDrawingRef.current = true;
+    const { x, y } = fsCoords(e);
+    ctx.beginPath(); ctx.moveTo(x, y);
+  };
+  const onFsMove = (e: React.PointerEvent<HTMLCanvasElement>) => {
+    if (!fsDrawingRef.current) return;
+    const ctx = fsCanvasRef.current?.getContext("2d"); if (!ctx) return;
+    const { x, y } = fsCoords(e);
+    ctx.lineTo(x, y); ctx.stroke();
+    if (!fsHasDrawn) setFsHasDrawn(true);
+  };
+  const onFsUp = () => { fsDrawingRef.current = false; };
+  const onFsClear = () => {
+    const c = fsCanvasRef.current; if (!c) return;
+    c.getContext("2d")?.clearRect(0, 0, c.width, c.height);
+    setFsHasDrawn(false);
+  };
+  // Fullscreen "เสร็จ" → copy fullscreen canvas back to inline, then auto-save + advance
+  const onFsDone = () => {
+    const fs = fsCanvasRef.current;
+    const inline = inlineCanvasRef.current;
+    let drew = false;
+    if (fs && inline && fsHasDrawn) {
+      const ctx = inline.getContext("2d");
+      if (ctx) {
+        ctx.clearRect(0, 0, inline.width, inline.height);
+        ctx.drawImage(fs, 0, 0, inline.width, inline.height);
+      }
+      setHasDrawn(true);
+      drew = true;
+    }
+    setFullscreen(false);
+    if (drew) {
+      setTimeout(() => { autoSaveSignature(); }, 50);
+    }
+  };
+
+  const uploadInlineSignature = async (): Promise<string | null> => {
+    const c = inlineCanvasRef.current;
+    if (!c || !hasDrawn) return signatureUrl;
+    return new Promise((resolve) => {
+      c.toBlob(async (blob) => {
+        if (!blob) return resolve(null);
+        const fd = new FormData();
+        const stamp = Date.now();
+        fd.append("file", new File([blob], `install_sig_${lead.id}_${stamp}.png`, { type: "image/png" }));
+        fd.append("filename", `install_sig_${lead.id}_${stamp}`);
+        const res = await apiFetch("/api/upload", { method: "POST", body: fd });
+        resolve(res.url || null);
+      }, "image/png");
+    });
+  };
+
+  const autoSaveSignature = async () => {
+    if (sigSaving) return;
+    setSigSaving(true);
+    try {
+      const url = await uploadInlineSignature();
+      if (url) setSignatureUrl(url);
+      await apiFetch(`/api/leads/${lead.id}`, {
+        method: "PATCH", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ install_customer_signature_url: url }),
+      });
+    } finally { setSigSaving(false); }
+  };
+
+  const closeStep = async () => {
     setSaving(true);
     try {
       await apiFetch(`/api/leads/${lead.id}`, {
         method: "PATCH", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ order_after_paid: true }),
-      });
-      setAfterPaidLocal(true);
-    } finally { setSaving(false); }
-  };
-
-  const sendReview = async () => {
-    setReviewConfirm(false);
-    setReviewSending(true);
-    try {
-      const origin = typeof window !== "undefined" ? window.location.origin : "";
-      const reviewUrl = `${origin}/review/${lead.id}`;
-      const messages = [buildPaymentFlex({
-        origin, title: "ประเมินการติดตั้ง", amount: 0, name: lead.full_name,
-        actionLabel: "ให้คะแนน", actionUrl: reviewUrl,
-        note: "ขอบคุณที่ใช้บริการ Sena Solar Energy\nกรุณาให้คะแนนการติดตั้งของเรา",
-      })];
-      await apiFetch("/api/line/send", {
-        method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ lead_id: lead.id, messages }),
-      });
-      await apiFetch(`/api/leads/${lead.id}`, {
-        method: "PATCH", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ review_sent: true }),
+        body: JSON.stringify({
+          install_completed_at: true,
+          status: "warranty",
+        }),
       });
       refresh();
-    } finally { setReviewSending(false); }
+    } finally { setSaving(false); }
   };
 
   const scrollToStep = () => {
     setTimeout(() => document.querySelector("[data-step-active]")?.scrollIntoView({ behavior: "smooth", block: "start" }), 100);
   };
 
-  if (state === "done") {
-    return (
-      <div className="text-sm">
-      <div onClick={() => onToggle?.()} className="flex items-center gap-2 py-1 cursor-pointer">
-        <span className="text-sm font-semibold text-emerald-700">
-          ติดตั้งเสร็จสิ้น{lead.install_completed_at ? ` · ${formatDate(lead.install_completed_at)}` : ""}
-        </span>
-        <span className="flex-1" />
-        <svg className={`w-4 h-4 text-gray-400 transition-transform shrink-0 ${expanded ? "rotate-180" : ""}`} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
-          <path strokeLinecap="round" strokeLinejoin="round" d="M19.5 8.25l-7.5 7.5-7.5-7.5" />
-        </svg>
+  const renderDoneContent = () => (
+    <>
+      {/* Dates */}
+      <div className="grid grid-cols-2 gap-2">
+        {lead.install_date && (
+          <div className="rounded-lg bg-gray-50 border border-gray-200 p-2.5">
+            <div className="text-xs font-bold text-gray-400 uppercase mb-0.5">นัดติดตั้ง</div>
+            <div className="font-semibold text-gray-800 text-sm">{formatDate(lead.install_date)}</div>
+          </div>
+        )}
+        {lead.install_completed_at && (
+          <div className="rounded-lg bg-emerald-50 border border-emerald-200 p-2.5">
+            <div className="text-xs font-bold text-emerald-600 uppercase mb-0.5">ส่งมอบ</div>
+            <div className="font-semibold text-emerald-700 text-sm">{formatDate(lead.install_completed_at)}</div>
+          </div>
+        )}
       </div>
-      {expanded && (
-      <div className="space-y-3 mt-3 pt-3 border-t border-gray-100">
 
-        {/* Dates */}
-        <div className="grid grid-cols-2 gap-2">
-          {lead.install_date && (
-            <div className="rounded-lg bg-gray-50 border border-gray-200 p-2.5">
-              <div className="text-xs font-bold text-gray-400 uppercase mb-0.5">นัดติดตั้ง</div>
-              <div className="font-semibold text-gray-800 text-sm">{formatDate(lead.install_date)}</div>
-            </div>
-          )}
-          {lead.install_completed_at && (
-            <div className="rounded-lg bg-emerald-50 border border-emerald-200 p-2.5">
-              <div className="text-xs font-bold text-emerald-600 uppercase mb-0.5">ส่งมอบ</div>
-              <div className="font-semibold text-emerald-700 text-sm">{formatDate(lead.install_completed_at)}</div>
-            </div>
-          )}
+      {/* Photos */}
+      {photos.length > 0 && (
+        <div className="border-l-3 border-emerald-400 pl-3">
+          <div className="text-xs font-bold text-emerald-600 uppercase mb-1.5">ภาพส่งมอบ ({photos.length})</div>
+          <div className="grid grid-cols-3 gap-2">
+            {photos.map((url, i) => (
+              <a key={i} href={url} target="_blank" rel="noreferrer">
+                <FallbackImage src={url} alt="" className="w-full aspect-square object-cover rounded-lg border border-gray-200 hover:opacity-80 transition" />
+              </a>
+            ))}
+          </div>
         </div>
+      )}
 
-        {/* Photos */}
-        {photos.length > 0 && (
-          <div className="border-l-3 border-emerald-400 pl-3">
-            <div className="text-xs font-bold text-emerald-600 uppercase mb-1.5">ภาพส่งมอบ ({photos.length})</div>
-            <div className="grid grid-cols-3 gap-2">
-              {photos.map((url, i) => (
-                <a key={i} href={url} target="_blank" rel="noreferrer">
-                  <FallbackImage src={url} alt="" className="w-full aspect-square object-cover rounded-lg border border-gray-200 hover:opacity-80 transition" />
-                </a>
-              ))}
-            </div>
-          </div>
-        )}
+      {lead.install_note && (
+        <div className="border-l-3 border-gray-300 pl-3">
+          <div className="text-xs font-bold text-gray-400 uppercase mb-1">บันทึกการส่งมอบ</div>
+          <div className="text-gray-800 whitespace-pre-wrap">{lead.install_note}</div>
+        </div>
+      )}
 
-        {lead.install_note && (
-          <div className="border-l-3 border-gray-300 pl-3">
-            <div className="text-xs font-bold text-gray-400 uppercase mb-1">บันทึกการส่งมอบ</div>
-            <div className="text-gray-800 whitespace-pre-wrap">{lead.install_note}</div>
-          </div>
-        )}
-
-        {/* Cost summary */}
-        <div className="border-l-3 border-blue-400 pl-3">
-          <div className="text-xs font-bold text-blue-600 uppercase mb-1.5">สรุปค่าใช้จ่าย</div>
-          <div className="space-y-1.5">
+      {/* Cost summary */}
+      <div className="border-l-3 border-blue-400 pl-3">
+        <div className="text-xs font-bold text-blue-600 uppercase mb-1.5">สรุปค่าใช้จ่าย</div>
+        <div className="space-y-1.5">
           <div className="flex justify-between text-sm">
             <span className="text-gray-500">มูลค่างาน (ใบเสนอราคา)</span>
             <span className="font-mono text-gray-800">{fmt(orderTotal)} ฿</span>
@@ -246,52 +408,63 @@ export default function InstallStep({ lead, state, refresh, expanded, onToggle }
             <span className="text-gray-900">มูลค่างานรวม</span>
             <span className="font-mono text-emerald-700">{fmt(orderTotal + (lead.install_extra_cost || 0))} ฿</span>
           </div>
-          </div>
         </div>
-
-        {/* Slip */}
-        {lead.order_after_slip && (
-          <div className="border-l-3 border-violet-400 pl-3">
-            <div className="text-xs font-bold text-violet-600 uppercase mb-1.5">สลิปหลังติดตั้ง</div>
-            <a href={lead.order_after_slip} target="_blank" rel="noreferrer">
-              <FallbackImage src={lead.order_after_slip} alt="" className="max-h-48 rounded-lg border border-gray-200 hover:opacity-80 transition" fallbackLabel="สลิปหาย" />
-            </a>
-          </div>
-        )}
-
-        {/* Review */}
-        {lead.review_rating ? (
-          <div className="border-l-3 border-amber-400 pl-3">
-            <div className="text-xs font-bold text-amber-600 uppercase mb-2">คะแนนจากลูกค้า</div>
-            <div className="space-y-1.5">
-              {[
-                { label: "คุณภาพงาน", value: lead.review_quality },
-                { label: "การบริการ", value: lead.review_service },
-                { label: "ตรงต่อเวลา", value: lead.review_punctuality },
-              ].filter(r => r.value).map(r => (
-                <div key={r.label} className="flex items-center justify-between">
-                  <span className="text-gray-500 text-xs">{r.label}</span>
-                  <div className="flex gap-0.5">
-                    {[1,2,3,4,5].map(s => (
-                      <span key={s} className={`text-sm ${s <= r.value! ? "text-amber-400" : "text-gray-200"}`}>★</span>
-                    ))}
-                  </div>
-                </div>
-              ))}
-            </div>
-            {lead.review_comment && <div className="text-gray-600 mt-2 text-xs italic">"{lead.review_comment}"</div>}
-          </div>
-        ) : lead.review_sent ? (
-          <div className="text-xs text-gray-400 italic">ส่งแบบประเมินแล้ว — รอลูกค้าให้คะแนน</div>
-        ) : null}
       </div>
+
+      {/* Slip */}
+      {lead.order_after_slip && (
+        <div className="border-l-3 border-violet-400 pl-3">
+          <div className="text-xs font-bold text-violet-600 uppercase mb-1.5">สลิปหลังติดตั้ง</div>
+          <a href={lead.order_after_slip} target="_blank" rel="noreferrer">
+            <FallbackImage src={lead.order_after_slip} alt="" className="max-h-40 max-w-full object-contain bg-gray-50 rounded-lg border border-gray-200 hover:opacity-80 transition" fallbackLabel="สลิปหาย" />
+          </a>
+        </div>
       )}
-      </div>
-    );
-  }
 
-  if (state !== "active") return null;
 
+      {/* Customer signature */}
+      {lead.install_customer_signature_url && (
+        <div className="border-l-3 border-emerald-400 pl-3">
+          <div className="text-xs font-bold text-emerald-600 uppercase mb-1.5">ลายเซ็นลูกค้า (รับงาน)</div>
+          <a href={lead.install_customer_signature_url} target="_blank" rel="noreferrer">
+            <FallbackImage src={lead.install_customer_signature_url} alt="ลายเซ็น" className="max-h-40 max-w-full object-contain bg-white rounded-lg border border-gray-200 hover:opacity-80 transition" />
+          </a>
+        </div>
+      )}
+
+      {/* Review */}
+      {lead.review_rating ? (
+        <div className="border-l-3 border-amber-400 pl-3">
+          <div className="text-xs font-bold text-amber-600 uppercase mb-2">คะแนนจากลูกค้า</div>
+          <div className="space-y-1.5">
+            {[
+              { label: "คุณภาพงาน", value: lead.review_quality },
+              { label: "การบริการ", value: lead.review_service },
+              { label: "ตรงต่อเวลา", value: lead.review_punctuality },
+            ].filter(r => r.value).map(r => (
+              <div key={r.label} className="flex items-center justify-between">
+                <span className="text-gray-500 text-xs">{r.label}</span>
+                <div className="flex gap-0.5">
+                  {[1,2,3,4,5].map(s => (
+                    <span key={s} className={`text-sm ${s <= r.value! ? "text-amber-400" : "text-gray-200"}`}>★</span>
+                  ))}
+                </div>
+              </div>
+            ))}
+          </div>
+          {lead.review_comment && <div className="text-gray-600 mt-2 text-xs italic">&quot;{lead.review_comment}&quot;</div>}
+        </div>
+      ) : lead.review_sent ? (
+        <div className="text-xs text-gray-400 italic">ส่งแบบประเมินแล้ว — รอลูกค้าให้คะแนน</div>
+      ) : null}
+
+      {lead.order_after_paid && (
+        <div className="pt-3 border-t border-gray-100">
+          <ReceiptButtons leadId={lead.id} stage="order_after" fileLabel={`${lead.booking_number || `lead_${lead.id}`}_after`} />
+        </div>
+      )}
+    </>
+  );
 
   if (rescheduling) {
     return (
@@ -307,35 +480,23 @@ export default function InstallStep({ lead, state, refresh, expanded, onToggle }
   }
 
   return (
-    <div>
-      {/* Step indicator */}
-      <div className="flex items-center gap-1 mb-3">
-        {SUB_STEPS.map((label, i) => {
-          const gateCheck = (from: number): string[] => {
-            const missing: string[] = [];
-            if (from === 0 && !lead.install_confirmed) missing.push("ยืนยันนัดติดตั้ง");
-            if (from === 1 && photos.length === 0) missing.push("ภาพส่งมอบ");
-            if (from === 1 && !note) missing.push("บันทึกการส่งมอบ");
-            if (from === 3 && remainingAmount + extraCost > 0 && !afterSlipDone) missing.push("กรุณาอัปโหลดสลิปชำระงวดหลัง");
-            if (from === 3 && remainingAmount + extraCost > 0 && !afterPaidLocal) missing.push("ยืนยันรับชำระงวดหลัง");
-            return missing;
-          };
-          const goTo = () => {
-            if (i > 0 && !lead.install_confirmed) { setNextError("ยืนยันนัดติดตั้งก่อน"); return; }
-            if (i <= subStep) { setNextError(null); setSubStep(i); scrollToStep(); return; }
-            const missing = gateCheck(subStep);
-            if (missing.length > 0) { setNextError(missing.join(", ")); return; }
-            setNextError(null); setSubStep(i); scrollToStep();
-          };
-          return (
-            <button key={i} type="button" onClick={goTo} className="flex-1 flex flex-col items-center gap-1 cursor-pointer">
-              <div className={`h-1 w-full rounded-full transition-colors ${i <= subStep ? "bg-active" : "bg-gray-200"}`} />
-              <span className={`text-xs font-semibold transition-colors ${i === subStep ? "text-active" : i < subStep ? "text-gray-500" : "text-gray-300"}`}>{label}</span>
-            </button>
-          );
-        })}
-      </div>
-
+    <StepLayout
+      state={state}
+      subSteps={SUB_STEPS}
+      subStep={subStep}
+      onSubStepChange={(n) => { setNextError(null); setSubStep(n); }}
+      expanded={expanded}
+      onToggle={onToggle}
+      doneHeader={
+        <>
+          <span className="text-sm font-semibold text-emerald-700 flex-1">ติดตั้งเสร็จสิ้น{lead.install_completed_at ? ` · ${formatDate(lead.install_completed_at)}` : ""}</span>
+          {lead.order_after_paid && (
+            <div className="mr-4"><ReceiptButtons leadId={lead.id} stage="order_after" fileLabel={`${lead.booking_number || `lead_${lead.id}`}_after`} compact /></div>
+          )}
+        </>
+      }
+      renderDone={renderDoneContent}
+    >
       {/* Step 0: นัด — appointment confirmation */}
       {subStep === 0 && (
         <div className="space-y-3">
@@ -432,7 +593,7 @@ export default function InstallStep({ lead, state, refresh, expanded, onToggle }
 
           <div>
             <label className="text-xs font-semibold tracking-wider uppercase text-gray-400 block mb-1">ค่าใช้จ่ายเพิ่มเติม (บาท)</label>
-            <input type="number" value={extraCost || ""} onChange={e => setExtraCost(parseFloat(e.target.value) || 0)} placeholder="0"
+            <input type="number" min="0" inputMode="numeric" value={extraCost || ""} onChange={e => setExtraCost(Math.max(0, parseFloat(e.target.value) || 0))} placeholder="0"
               className="w-full h-12 px-3 rounded-lg border border-gray-200 text-lg font-bold font-mono focus:outline-none focus:border-primary" />
           </div>
 
@@ -469,6 +630,11 @@ export default function InstallStep({ lead, state, refresh, expanded, onToggle }
               lineId={lead.line_id}
               slipUrl={lead.order_after_slip}
               slipField="order_after_slip"
+              stepNo={4}
+              description={extraCost > 0 ? `ชำระหลังติดตั้ง งวด 2/2 + ${extraNote || "ค่าเพิ่มเติม"}` : "ชำระหลังติดตั้ง งวด 2/2"}
+              docNo={lead.booking_number}
+              confirmed={afterPaidLocal || !!lead.order_after_paid}
+              onConfirmed={onAfterConfirmed}
               onVerified={() => setAfterSlipDone(true)}
               details={[
                 { label: "ยอดคงค้าง (งวด 2/2)", value: `฿${fmt(orderTotal - Math.round(orderTotal * pctBefore / 100))}` },
@@ -477,66 +643,114 @@ export default function InstallStep({ lead, state, refresh, expanded, onToggle }
                 { label: "ยอดที่ต้องชำระ", value: `฿${fmt(remainingAmount + extraCost)}` },
               ]}
             />
-            {afterSlipDone && !afterPaidLocal && (
-              <button onClick={confirmAfterPayment} disabled={saving}
-                className="w-full h-11 mt-3 rounded-lg text-sm font-semibold text-white bg-gradient-to-r from-primary to-primary-dark hover:brightness-110 disabled:opacity-50 transition-colors">
-                {saving ? "กำลังยืนยัน..." : "ยืนยันรับชำระเงิน"}
-              </button>
-            )}
           </div>
         </div>
       )}
 
-      {/* Step 4: ส่งประเมิน */}
+      {/* Step 4: ลงนามรับงาน */}
       {subStep === 4 && (
         <div className="space-y-3">
-          {!lead.review_sent ? (
-            <>
-              <div className="text-center py-4">
-                <div className="w-16 h-16 mx-auto rounded-full bg-amber-50 flex items-center justify-center mb-3">
-                  <span className="text-3xl">⭐</span>
+          <div className="text-xs font-semibold tracking-wider uppercase text-gray-400">ลายเซ็นลูกค้า (ยืนยันรับงาน)</div>
+
+          <div className="space-y-2">
+            <div className="relative bg-white border-2 border-dashed border-gray-300 rounded-lg overflow-hidden" style={{ touchAction: "none" }}>
+              <canvas
+                ref={inlineCanvasRef}
+                width={600}
+                height={220}
+                className="w-full h-44 cursor-crosshair"
+                onPointerDown={onInlineDown}
+                onPointerMove={onInlineMove}
+                onPointerUp={onInlineUp}
+                onPointerLeave={onInlineUp}
+              />
+              {!hasDrawn && (
+                <div className="absolute inset-0 flex items-center justify-center text-gray-300 text-sm pointer-events-none">
+                  ให้ลูกค้าเซ็นชื่อที่นี่
                 </div>
-                <div className="text-base font-bold text-gray-900">ส่งแบบประเมินให้ลูกค้า</div>
-                <div className="text-sm text-gray-500 mt-1">ส่ง link ประเมินความพึงพอใจทาง LINE</div>
-              </div>
-              <button
-                onClick={() => setReviewConfirm(true)}
-                disabled={reviewSending || !lead.line_id}
-                className={`w-full h-11 rounded-lg text-sm font-semibold transition-all shadow-sm flex items-center justify-center gap-2 ${
-                  !lead.line_id ? "bg-gray-200 text-gray-400 cursor-not-allowed" : "text-white bg-gradient-to-r from-primary to-primary-dark hover:brightness-110 shadow-primary/20"
-                }`}
-              >
-                <svg className="w-5 h-5" viewBox="0 0 24 24" fill="currentColor"><path d="M19.365 9.863c.349 0 .63.285.63.631 0 .345-.281.63-.63.63H17.61v1.125h1.755c.349 0 .63.283.63.63 0 .344-.281.629-.63.629h-2.386c-.345 0-.627-.285-.627-.629V8.108c0-.345.282-.63.63-.63h2.386c.346 0 .627.285.627.63 0 .349-.281.63-.63.63H17.61v1.125h1.755zm-3.855 3.016c0 .27-.174.51-.432.596-.064.021-.133.031-.199.031-.211 0-.391-.09-.51-.25l-2.443-3.317v2.94c0 .344-.279.629-.631.629-.346 0-.626-.285-.626-.629V8.108c0-.27.173-.51.43-.595.064-.022.134-.032.2-.032.211 0 .391.09.51.25l2.44 3.317V8.108c0-.345.282-.63.63-.63.345 0 .63.285.63.63v4.771zm-5.741 0c0 .344-.282.629-.631.629-.345 0-.627-.285-.627-.629V8.108c0-.345.282-.63.63-.63.346 0 .628.285.628.63v4.771zm-2.466.629H4.917c-.345 0-.63-.285-.63-.629V8.108c0-.345.285-.63.63-.63.348 0 .63.285.63.63v4.141h1.756c.348 0 .629.283.629.63 0 .344-.282.629-.629.629M24 10.314C24 4.943 18.615.572 12 .572S0 4.943 0 10.314c0 4.811 4.27 8.842 10.035 9.608.391.082.923.258 1.058.59.12.301.079.766.038 1.08l-.164 1.02c-.045.301-.24 1.186 1.049.645 1.291-.539 6.916-4.078 9.436-6.975C23.176 14.393 24 12.458 24 10.314" /></svg>
-                {reviewSending ? "กำลังส่ง..." : !lead.line_id ? "ยังไม่ได้เชื่อม LINE" : "ส่งแบบประเมินให้ลูกค้า"}
-              </button>
-            </>
-          ) : (
-            <div className="text-center py-4">
-              <div className="w-16 h-16 mx-auto rounded-full bg-emerald-50 flex items-center justify-center mb-3">
-                <svg className="w-8 h-8 text-emerald-500" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M4.5 12.75l6 6 9-13.5" /></svg>
-              </div>
-              <div className="text-base font-bold text-gray-900">ส่งแบบประเมินแล้ว</div>
-              <div className="text-sm text-gray-400 mt-1">{lead.review_rating ? "ลูกค้าประเมินเรียบร้อย" : "รอลูกค้าให้คะแนน"}</div>
+              )}
             </div>
-          )}
+            <div className="flex gap-2">
+              <button
+                type="button"
+                onClick={clearInline}
+                disabled={!hasDrawn}
+                className="flex-1 h-10 rounded-lg text-xs font-semibold text-gray-600 border border-gray-200 hover:bg-gray-50 disabled:opacity-40"
+              >
+                ล้าง
+              </button>
+              <button
+                type="button"
+                onClick={() => setFullscreen(true)}
+                className="flex-1 h-10 rounded-lg text-xs font-semibold text-gray-700 border border-gray-300 hover:bg-gray-50 flex items-center justify-center gap-1.5"
+              >
+                <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M3.75 3.75v4.5m0-4.5h4.5m-4.5 0L9 9M3.75 20.25v-4.5m0 4.5h4.5m-4.5 0L9 15M20.25 3.75h-4.5m4.5 0v4.5m0-4.5L15 9m5.25 11.25h-4.5m4.5 0v-4.5m0 4.5L15 15" />
+                </svg>
+                ขยายเต็มจอ
+              </button>
+            </div>
+          </div>
 
           <button
-            onClick={async () => {
-              setSaving(true);
-              try {
-                await apiFetch(`/api/leads/${lead.id}`, {
-                  method: "PATCH", headers: { "Content-Type": "application/json" },
-                  body: JSON.stringify({ status: "warranty", install_completed_at: true }),
-                });
-                refresh();
-              } finally { setSaving(false); }
-            }}
+            onClick={closeStep}
             disabled={saving}
             className="w-full h-11 rounded-lg text-sm font-semibold text-white bg-gradient-to-r from-emerald-500 to-emerald-600 hover:brightness-110 disabled:opacity-50 transition-colors flex items-center justify-center gap-2"
           >
             <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M9 5l7 7-7 7" /></svg>
-            {saving ? "กำลังบันทึก..." : "ถัดไป: ออกใบรับประกัน"}
+            {saving ? "กำลังยืนยัน..." : "ยืนยันส่งมอบงาน"}
           </button>
+        </div>
+      )}
+
+      {/* Fullscreen landscape signature pad */}
+      {fullscreen && (
+        <div className="fixed inset-0 z-[9999] bg-white overflow-hidden" style={{ touchAction: "none" }}>
+          <div
+            className="absolute"
+            style={{
+              width: "100vh",
+              height: "100vw",
+              top: "50%",
+              left: "50%",
+              transform: "translate(-50%, -50%) rotate(90deg)",
+            }}
+          >
+            <canvas
+              ref={fsCanvasRef}
+              className="block w-full h-full cursor-crosshair"
+              style={{ touchAction: "none" }}
+              onPointerDown={onFsDown}
+              onPointerMove={onFsMove}
+              onPointerUp={onFsUp}
+              onPointerLeave={onFsUp}
+            />
+            {!fsHasDrawn && !signatureUrl && !hasDrawn && (
+              <div className="absolute inset-0 flex items-center justify-center text-gray-300 text-base pointer-events-none">
+                ให้ลูกค้าเซ็นชื่อที่นี่
+              </div>
+            )}
+            <div className="absolute top-4 right-4 flex gap-2">
+              <button
+                onClick={onFsClear}
+                className="h-10 px-4 rounded-lg text-sm font-semibold text-gray-700 border border-gray-300 bg-white/90 backdrop-blur hover:bg-white"
+              >
+                ล้าง
+              </button>
+              <button
+                onClick={() => setFullscreen(false)}
+                className="h-10 px-4 rounded-lg text-sm font-semibold text-gray-700 border border-gray-300 bg-white/90 backdrop-blur hover:bg-white"
+              >
+                ยกเลิก
+              </button>
+              <button
+                onClick={onFsDone}
+                className="h-10 px-5 rounded-lg text-sm font-semibold text-white bg-emerald-500 hover:brightness-110"
+              >
+                เสร็จ
+              </button>
+            </div>
+          </div>
         </div>
       )}
 
@@ -548,12 +762,6 @@ export default function InstallStep({ lead, state, refresh, expanded, onToggle }
             ย้อนกลับ
           </button>
           <button type="button" onClick={() => {
-            const missing: string[] = [];
-            if (subStep === 1 && photos.length === 0) missing.push("ภาพส่งมอบ");
-            if (subStep === 1 && !note) missing.push("บันทึกการส่งมอบ");
-            if (subStep === 3 && remainingAmount + extraCost > 0 && !afterSlipDone) missing.push("กรุณาอัปโหลดสลิปชำระงวดหลัง");
-            if (subStep === 3 && remainingAmount + extraCost > 0 && !afterPaidLocal) missing.push("ยืนยันรับชำระงวดหลัง");
-            if (missing.length > 0) { setNextError(missing.join(", ")); return; }
             setNextError(null);
             setSubStep(subStep + 1); scrollToStep();
           }} className="flex-1 h-11 rounded-lg text-sm font-semibold text-white bg-active hover:brightness-110 transition-colors flex items-center justify-center gap-1">
@@ -569,17 +777,7 @@ export default function InstallStep({ lead, state, refresh, expanded, onToggle }
         </button>
       )}
 
-      {/* LINE confirm modal */}
-      {reviewConfirm && (
-        <LineConfirmModal
-          name={lead.full_name}
-          description="ส่งแบบประเมินความพึงพอใจ"
-          onCancel={() => setReviewConfirm(false)}
-          onConfirm={sendReview}
-        />
-      )}
-
       <ErrorPopup message={nextError} onClose={() => setNextError(null)} />
-    </div>
+    </StepLayout>
   );
 }

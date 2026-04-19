@@ -18,6 +18,16 @@ interface Props {
   paymentNote?: string;
   details?: { label: string; value: string }[];
   onVerified?: (url: string) => void;
+  /** Renders a "ยืนยันรับชำระเงิน" button below the slip upload area. When clicked,
+   * POSTs to /api/payments to write the transaction row and switch the lead's slip URL
+   * to point at the new /api/payments/:id. Parent's onConfirmed is called after for refresh. */
+  stepNo?: number;
+  description?: string;
+  docNo?: string | null;
+  /** If true, the confirm button shows a "ยืนยันแล้ว" state and is disabled. */
+  confirmed?: boolean;
+  onConfirmed?: () => void;
+  confirmLabel?: string;
   // Optional public-facing document URL (receipt PDF). If set, LINE flex button links to it
   // instead of the default /pay/<token> payment page.
   docUrl?: string;
@@ -48,8 +58,40 @@ export default function PaymentSection({
   paymentNote,
   details,
   onVerified,
+  stepNo,
+  description,
+  docNo,
+  confirmed,
+  onConfirmed,
+  confirmLabel,
   docUrl,
 }: Props) {
+  const [confirming, setConfirming] = useState(false);
+  const [confirmError, setConfirmError] = useState<string | null>(null);
+  const handleConfirm = async () => {
+    if (stepNo === undefined || confirming || confirmed) return;
+    setConfirming(true);
+    setConfirmError(null);
+    try {
+      await apiFetch("/api/payments", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          lead_id: leadId,
+          step_no: stepNo,
+          slip_field: slipField,
+          doc_no: docNo ?? null,
+          amount,
+          description: description ?? null,
+        }),
+      });
+      onConfirmed?.();
+    } catch (e) {
+      setConfirmError(e instanceof Error ? e.message : "ยืนยันไม่สำเร็จ");
+    } finally {
+      setConfirming(false);
+    }
+  };
   const [settings, setSettings] = useState<Settings>({});
   const [tab, setTab] = useState<"qr" | "link" | "bank">("qr");
   const [bankCopied, setBankCopied] = useState<"number" | "name" | null>(null);
@@ -422,6 +464,35 @@ export default function PaymentSection({
           <div className="w-full mt-2 rounded-lg text-sm font-semibold text-white bg-red-500 flex items-center justify-center text-center px-3 py-2.5">
             {verifyError || "ตรวจสลิปไม่ผ่าน"} · กดกากบาทเพื่อลบแล้วลองใหม่
           </div>
+        )}
+        {stepNo !== undefined && (
+          <>
+            <button
+              type="button"
+              disabled={confirmed || confirming || verifyStatus !== "verified"}
+              onClick={handleConfirm}
+              className="w-full h-11 mt-2 rounded-lg text-sm font-semibold text-white bg-gradient-to-r from-primary to-primary-dark hover:brightness-110 disabled:opacity-40 disabled:cursor-not-allowed transition-colors flex items-center justify-center gap-1.5"
+            >
+              {confirmed ? (
+                <>
+                  <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M4.5 12.75l6 6 9-13.5" />
+                  </svg>
+                  ยืนยันรับชำระแล้ว
+                </>
+              ) : confirming ? (
+                <>
+                  <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                  กำลังยืนยัน…
+                </>
+              ) : (
+                confirmLabel || "ยืนยันรับชำระเงิน"
+              )}
+            </button>
+            {confirmError && (
+              <div className="mt-2 text-xs text-red-600 text-center">{confirmError}</div>
+            )}
+          </>
         )}
       </div>
 

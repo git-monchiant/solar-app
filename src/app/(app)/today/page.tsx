@@ -7,6 +7,7 @@ import LeadCard, { LeadData } from "@/components/LeadCard";
 import ListPageHeader from "@/components/ListPageHeader";
 import NewLeadModal from "@/components/NewLeadModal";
 import { useActiveRoles, hasRole } from "@/lib/roles";
+import { getStatusLabel } from "@/lib/statuses";
 
 interface TodayData {
   newLeads: LeadData[];
@@ -339,7 +340,7 @@ export default function TodayPage() {
                                       survey:  { bg: "bg-violet-100 hover:bg-violet-200",   bar: "bg-violet-500",  label: "สำรวจหน้างาน" },
                                       quote:   { bg: "bg-orange-100 hover:bg-orange-200",   bar: "bg-orange-500",  label: "รอใบเสนอราคา" },
                                       order:   { bg: "bg-green-100 hover:bg-green-200",     bar: "bg-green-500",   label: j.event_type === "install" ? "นัดติดตั้ง" : "รออนุมัติ/ชำระ" },
-                                      install: { bg: "bg-emerald-100 hover:bg-emerald-200", bar: "bg-emerald-500", label: "กำลังติดตั้ง" },
+                                      install: { bg: "bg-emerald-100 hover:bg-emerald-200", bar: "bg-emerald-500", label: getStatusLabel(j) },
                                     };
                                     const c = STATUS_COLOR[j.status] || { bg: "bg-gray-100 hover:bg-gray-200", bar: "bg-gray-400", label: j.status };
                                     return (

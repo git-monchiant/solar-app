@@ -25,14 +25,14 @@ export async function GET() {
     const result = await db.request().query(`
       SELECT l.*, p.name as project_name, p.district, p.province, pk.name as package_name, pk.price as package_price,
              u.full_name as assigned_name,
-             b.booking_number, b.total_price as booking_price, b.status as booking_status,
+             l.pre_doc_no as booking_number,
+             l.pre_total_price as booking_price,
              (SELECT TOP 1 note FROM lead_activities WHERE lead_id = l.id AND note IS NOT NULL ORDER BY created_at DESC) as last_activity_note,
              (SELECT TOP 1 created_at FROM lead_activities WHERE lead_id = l.id ORDER BY created_at DESC) as last_activity_date
       FROM leads l
       LEFT JOIN projects p ON l.project_id = p.id
       LEFT JOIN packages pk ON l.interested_package_id = pk.id
       LEFT JOIN users u ON l.assigned_user_id = u.id
-      LEFT JOIN bookings b ON b.lead_id = l.id
       ORDER BY l.created_at DESC
     `);
     return NextResponse.json(fixDates(result.recordset));

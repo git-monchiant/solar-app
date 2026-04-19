@@ -22,8 +22,8 @@ export async function GET() {
       db.request().query(`
         SELECT
           (SELECT COUNT(*) FROM leads) as total_leads,
-          (SELECT COUNT(*) FROM bookings) as total_bookings,
-          (SELECT ISNULL(SUM(total_price), 0) FROM bookings) as total_booking_value,
+          (SELECT COUNT(*) FROM leads WHERE pre_doc_no IS NOT NULL) as total_bookings,
+          (SELECT ISNULL(SUM(pre_total_price), 0) FROM leads WHERE pre_doc_no IS NOT NULL) as total_booking_value,
           (SELECT COUNT(*) FROM leads WHERE status = 'order') as total_won
       `),
       db.request().input("first_day", firstDay).query(`

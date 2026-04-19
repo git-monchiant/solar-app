@@ -44,7 +44,7 @@ const CO = {
 
 const fmt = (d: string | null) => {
   if (!d) return "—";
-  return new Date(d.slice(0, 10) + "T12:00:00").toLocaleDateString("th-TH", { day: "numeric", month: "short", year: "numeric" });
+  return new Date(d.slice(0, 10) + "T12:00:00").toLocaleDateString("th-TH", { day: "numeric", month: "long", year: "numeric" });
 };
 const fmtLong = (d: string | null) => {
   if (!d) return "……………………….";
