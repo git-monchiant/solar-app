@@ -30,14 +30,15 @@ export async function POST(request: NextRequest) {
     });
 
     if (!res.ok) {
-      const err = await res.json();
+      const err = await res.json().catch(() => ({}));
       console.error("LINE send error:", err);
-      return NextResponse.json({ error: "LINE send failed" }, { status: 500 });
+      return NextResponse.json({ error: "LINE send failed", detail: err }, { status: 500 });
     }
 
     return NextResponse.json({ ok: true });
   } catch (error) {
     console.error("POST /api/line/send error:", error);
-    return NextResponse.json({ error: "Failed" }, { status: 500 });
+    const message = error instanceof Error ? error.message : String(error);
+    return NextResponse.json({ error: "Failed", detail: message }, { status: 500 });
   }
 }

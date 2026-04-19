@@ -104,11 +104,30 @@ export default function PaymentSection({
   const [lineSent, setLineSent] = useState<string | null>(null);
   const [lineConfirmType, setLineConfirmType] = useState<"qr" | "link" | "bank" | null>(null);
 
-  // Slip upload + Gemini verify
-  const [slipPreview, setSlipPreview] = useState<string | null>(slipUrl);
-  const [uploadedSlipUrl, setUploadedSlipUrl] = useState<string | null>(slipUrl);
-  const [verifyStatus, setVerifyStatus] = useState<"idle" | "verifying" | "verified" | "failed">(slipUrl ? "verified" : "idle");
+  // Slip upload + Gemini verify.
+  // Initial state prefers the prop from parent (lead.pre_slip_url), but falls back to a
+  // per-(lead, field) cache in localStorage. This self-heals the case where the user
+  // uploaded a slip in this session, then navigated sub-steps (PaymentSection unmounts);
+  // on remount the parent's lead prop may still be stale, but the cache carries us through.
+  const cacheKey = `slip:${leadId}:${slipField}`;
+  const initialSlip = slipUrl || (typeof window !== "undefined" ? localStorage.getItem(cacheKey) : null);
+  const [slipPreview, setSlipPreview] = useState<string | null>(initialSlip);
+  const [uploadedSlipUrl, setUploadedSlipUrl] = useState<string | null>(initialSlip);
+  const [verifyStatus, setVerifyStatus] = useState<"idle" | "verifying" | "verified" | "failed">(initialSlip ? "verified" : "idle");
   const [verifyError, setVerifyError] = useState<string | null>(null);
+
+  // When the parent eventually refreshes and delivers the real slipUrl, sync it in and
+  // drop the cache — DB is now the source of truth again.
+  useEffect(() => {
+    if (verifyStatus === "verifying") return;
+    if (slipUrl && slipUrl !== uploadedSlipUrl) {
+      setSlipPreview(slipUrl);
+      setUploadedSlipUrl(slipUrl);
+      setVerifyStatus("verified");
+      setVerifyError(null);
+      try { localStorage.removeItem(cacheKey); } catch {}
+    }
+  }, [slipUrl]); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
     apiFetch("/api/settings").then((s: Settings) => {
@@ -261,17 +280,28 @@ export default function PaymentSection({
       fetch(`/api/upload?file=${encodeURIComponent(tmpUrl)}`, { method: "DELETE", headers: { "ngrok-skip-browser-warning": "true" } }).catch(() => {});
 
       // 5. PATCH the lead's slip field with the new DB URL (replaces the previous one
-      //    server-side only AFTER we have a verified replacement — safe).
-      apiFetch(`/api/leads/${leadId}`, {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ [slipField]: dbUrl }),
-      }).catch(console.error);
+      //    server-side only AFTER we have a verified replacement — safe). Await so we can
+      //    then trigger a parent refresh before the user navigates away, guaranteeing the
+      //    slip is readable from lead.pre_slip_url on any re-render.
+      try {
+        await apiFetch(`/api/leads/${leadId}`, {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ [slipField]: dbUrl }),
+        });
+      } catch (e) { console.error(e); }
 
       setUploadedSlipUrl(dbUrl);
       setSlipPreview(dbUrl);
       setVerifyStatus("verified");
       onVerified?.(dbUrl);
+
+      // Self-heal on remount: if user navigates sub-steps, PaymentSection unmounts and
+      // the parent's `lead` prop is stale (no refresh fired). Cache the dbUrl per
+      // (leadId, slipField) so a fresh mount can recover the slip without relying on parent.
+      try {
+        localStorage.setItem(`slip:${leadId}:${slipField}`, dbUrl);
+      } catch {}
     } catch {
       // Never clear saved state on error — just mark the current attempt as failed.
       setVerifyStatus("failed");
@@ -318,8 +348,8 @@ export default function PaymentSection({
     <div className="space-y-3">
       <PaymentHeader title={paymentTitle} amount={amount} amountLabel={amountLabel} />
 
-      {/* Tabs (hide if only one enabled) */}
-      {[qrEnabled, linkEnabled, bankEnabled].filter(Boolean).length > 1 && (
+      {/* Tabs (hide if only one enabled, or when confirmed — payment is locked) */}
+      {!confirmed && [qrEnabled, linkEnabled, bankEnabled].filter(Boolean).length > 1 && (
         <div className="flex border-b border-gray-200 -mx-3 px-3">
           {qrEnabled && (
             <button type="button" onClick={() => setTab("qr")}
@@ -343,7 +373,7 @@ export default function PaymentSection({
       )}
 
       {/* Thai QR Tab */}
-      {qrEnabled && tab === "qr" && (
+      {!confirmed && qrEnabled && tab === "qr" && (
         <div className="space-y-3">
           <div className="max-w-[280px] mx-auto">
             {qrLoading ? (
@@ -371,7 +401,7 @@ export default function PaymentSection({
       )}
 
       {/* Payment Link Tab */}
-      {linkEnabled && tab === "link" && (
+      {!confirmed && linkEnabled && tab === "link" && (
         <div className="space-y-3">
           <div className="text-xs text-gray-500">ส่งลิ้งค์นี้ให้ลูกค้าเปิดบนมือถือเพื่อสแกน QR</div>
           <div className="p-3 rounded-lg bg-gray-50 border border-gray-200">
@@ -394,7 +424,7 @@ export default function PaymentSection({
       )}
 
       {/* Bank Account Tab */}
-      {bankEnabled && tab === "bank" && (
+      {!confirmed && bankEnabled && tab === "bank" && (
         <div className="space-y-3">
           <div className="p-4 rounded-lg bg-gray-50 border border-gray-200 space-y-3">
             <div>
@@ -436,8 +466,8 @@ export default function PaymentSection({
       )}
 
       {/* Slip upload + Gemini verify */}
-      <div className="pt-2 border-t border-gray-100">
-        <input type="file" accept="image/*" onChange={handleSlipCapture} className="hidden" id={slipInputId} />
+      <div className={confirmed ? "" : "pt-2 border-t border-gray-100"}>
+        <input type="file" accept="image/*" onChange={handleSlipCapture} className="hidden" id={slipInputId} disabled={confirmed} />
         {slipPreview && (
           <div className={`relative rounded-xl overflow-hidden border max-w-[280px] mx-auto mt-2 ${verifyStatus === "failed" ? "border-red-500 ring-2 ring-red-500/30" : "border-gray-200"}`}>
             <img src={slipPreview} alt="Slip" className="w-full" />
@@ -465,20 +495,26 @@ export default function PaymentSection({
             {verifyError || "ตรวจสลิปไม่ผ่าน"} · กดกากบาทเพื่อลบแล้วลองใหม่
           </div>
         )}
-        {stepNo !== undefined && (
+        {/* Confirm button: hidden until slip is verified. Once confirmed it stays visible
+         * as a locked state so the user has clear feedback that the payment is recorded. */}
+        {stepNo !== undefined && (verifyStatus === "verified" || confirmed) && (
           <>
             <button
               type="button"
               disabled={confirmed || confirming || verifyStatus !== "verified"}
               onClick={handleConfirm}
-              className="w-full h-11 mt-2 rounded-lg text-sm font-semibold text-white bg-gradient-to-r from-primary to-primary-dark hover:brightness-110 disabled:opacity-40 disabled:cursor-not-allowed transition-colors flex items-center justify-center gap-1.5"
+              className={`w-full h-11 mt-2 rounded-lg text-sm font-semibold transition-colors flex items-center justify-center gap-1.5 ${
+                confirmed
+                  ? "bg-emerald-50 text-emerald-700 border border-emerald-600/20 cursor-default"
+                  : "text-white bg-gradient-to-r from-primary to-primary-dark hover:brightness-110 disabled:opacity-40 disabled:cursor-not-allowed"
+              }`}
             >
               {confirmed ? (
                 <>
                   <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
                     <path strokeLinecap="round" strokeLinejoin="round" d="M4.5 12.75l6 6 9-13.5" />
                   </svg>
-                  ยืนยันรับชำระแล้ว
+                  ยืนยันรับชำระแล้ว · ล็อค
                 </>
               ) : confirming ? (
                 <>
