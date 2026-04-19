@@ -5,6 +5,7 @@ import { apiFetch } from "@/lib/api";
 import LineConfirmModal from "@/components/modal/LineConfirmModal";
 import PaymentHeader from "./PaymentHeader";
 import { buildPaymentFlex } from "@/lib/utils/line-flex";
+import { useMe } from "@/lib/roles";
 
 interface Props {
   paymentTitle: string;
@@ -26,7 +27,7 @@ interface Props {
   docNo?: string | null;
   /** If true, the confirm button shows a "ยืนยันแล้ว" state and is disabled. */
   confirmed?: boolean;
-  onConfirmed?: () => void;
+  onConfirmed?: () => Promise<unknown> | void;
   confirmLabel?: string;
   // Optional public-facing document URL (receipt PDF). If set, LINE flex button links to it
   // instead of the default /pay/<token> payment page.
@@ -94,7 +95,10 @@ export default function PaymentSection({
           description: description ?? null,
         }),
       });
-      onConfirmed?.();
+      // Await parent's onConfirmed so the confirm button's spinner stays visible
+      // until the lead re-fetches — button → confirmed banner transition in a
+      // single render, no flicker.
+      await onConfirmed?.();
     } catch (e) {
       setConfirmError(e instanceof Error ? e.message : "ยืนยันไม่สำเร็จ");
     } finally {
@@ -103,6 +107,21 @@ export default function PaymentSection({
   };
   const [settings, setSettings] = useState<Settings>({});
   const [tab, setTab] = useState<"qr" | "link" | "bank">("qr");
+  const { me } = useMe();
+  const isAdmin = me?.roles?.includes("admin") ?? false;
+  const [undoing, setUndoing] = useState(false);
+  const handleUndo = async () => {
+    if (!confirm("ยืนยันการถอย payment นี้?\n(จะลบ slip + ปลดสถานะ + ต้อง upload สลิปใหม่)")) return;
+    if (!slipUrl?.startsWith("/api/payments/")) return;
+    const payId = slipUrl.split("/").pop();
+    setUndoing(true);
+    try {
+      await apiFetch(`/api/payments/${payId}`, { method: "DELETE" });
+      onConfirmed?.();
+    } catch (e) {
+      alert("ถอยไม่สำเร็จ: " + (e instanceof Error ? e.message : "error"));
+    } finally { setUndoing(false); }
+  };
   const [bankCopied, setBankCopied] = useState<"number" | "name" | null>(null);
   const [qrDataUrl, setQrDataUrl] = useState<string | null>(null);
   const [qrLoading, setQrLoading] = useState(true);
@@ -256,6 +275,8 @@ export default function PaymentSection({
       // 1. Upload temp copy to disk so Gemini can fetch it by URL
       const uploadForm = new FormData();
       uploadForm.append("file", file);
+      uploadForm.append("lead_id", String(leadId));
+      uploadForm.append("type", `slip_step${stepNo ?? 0}`);
       const uploadRes = await fetch("/api/upload", { method: "POST", headers: { "ngrok-skip-browser-warning": "true" }, body: uploadForm });
       const { url: tmpUrl } = await uploadRes.json();
       log("upload_tmp_ok", { tmp_url: tmpUrl });
@@ -268,19 +289,16 @@ export default function PaymentSection({
         body: JSON.stringify({ imageUrl: tmpUrl }),
       });
       const slipData = await verifyRes.json();
-      const amountOk = typeof slipData.amount === "number" && Math.abs(slipData.amount - amount) < 0.01;
 
-      if (!slipData.is_slip || !amountOk) {
+      if (!slipData.is_slip) {
         log("verify_fail", {
           tmp_url: tmpUrl, expected_amount: amount, gemini: slipData,
-          reason: !slipData.is_slip ? "not_a_slip" : "amount_mismatch",
+          reason: "not_a_slip",
         });
         // Failed: point uploadedSlipUrl at the tmp file so ✕ can clean it up,
         // but do NOT delete or overwrite the previously-saved slip in DB/lead.pre_slip_url.
         setUploadedSlipUrl(tmpUrl);
-        setVerifyError(!slipData.is_slip
-          ? "ไม่ใช่สลิปโอนเงิน"
-          : `ยอดไม่ตรง (สลิป ${slipData.amount ?? "?"} / ต้องโอน ${amount})`);
+        setVerifyError("ไม่ใช่สลิปโอนเงิน");
         setVerifyStatus("failed");
         return;
       }
@@ -378,7 +396,7 @@ export default function PaymentSection({
     <div className="space-y-3">
       <PaymentHeader title={paymentTitle} amount={amount} amountLabel={amountLabel} />
 
-      {/* Tabs (hide if only one enabled, or when confirmed — payment is locked) */}
+      {/* Tabs (hide if only one enabled) */}
       {[qrEnabled, linkEnabled, bankEnabled].filter(Boolean).length > 1 && (
         <div className="flex border-b border-gray-200 -mx-3 px-3">
           {qrEnabled && (
@@ -402,27 +420,20 @@ export default function PaymentSection({
         </div>
       )}
 
-      {/* Thai QR Tab */}
+      {/* Thai QR Tab — real QR flow not live yet; show a plain black placeholder
+         so sales know to forward the QR to the customer themselves. */}
       {qrEnabled && tab === "qr" && (
         <div className="space-y-3">
           <div className="max-w-[280px] mx-auto">
-            {qrLoading ? (
-              <div className="aspect-square rounded-xl border border-gray-200 flex items-center justify-center">
-                <div className="w-8 h-8 border-3 border-gray-200 border-t-primary rounded-full animate-spin" />
+            <div className="rounded-xl border border-gray-200 bg-white p-4 flex flex-col items-center gap-2">
+              <div className="w-full aspect-square bg-black rounded-lg flex items-center justify-center">
+                <span className="text-white text-sm font-semibold tracking-wider uppercase">WAIT PROMPTPAY</span>
               </div>
-            ) : qrError ? (
-              <div className="aspect-square rounded-xl border border-red-200 bg-red-50 flex items-center justify-center text-sm font-semibold text-red-600 p-4 text-center">
-                {qrError}
+              <div className="text-center">
+                <div className="text-xs font-semibold text-gray-700">{companyFull}</div>
+                <div className="text-[11px] text-gray-500 font-mono tabular-nums mt-0.5">PromptPay Tax ID: {taxId}</div>
               </div>
-            ) : qrDataUrl ? (
-              <div className="rounded-xl border border-gray-200 bg-white p-4 flex flex-col items-center gap-2">
-                <img src={qrDataUrl} alt="PromptPay QR" className="w-full" />
-                <div className="text-center">
-                  <div className="text-xs font-semibold text-gray-700">{companyFull}</div>
-                  <div className="text-[11px] text-gray-500 font-mono tabular-nums mt-0.5">PromptPay Tax ID: {taxId}</div>
-                </div>
-              </div>
-            ) : null}
+            </div>
           </div>
           <button type="button" disabled={confirmed || lineSending === "qr" || !lineId} onClick={() => setLineConfirmType("qr")} className={lineBtnClass("qr")}>
             {lineBtnLabel("qr")}
@@ -530,7 +541,19 @@ export default function PaymentSection({
           <div className="w-full h-11 mt-2 rounded-lg text-sm font-semibold text-emerald-700 bg-emerald-50 border border-emerald-600/15 flex items-center justify-center gap-1">✓ ตรวจสลิปแล้ว</div>
         )}
         {confirmed && (
-          <div className="w-full h-11 mt-2 rounded-lg text-sm font-semibold text-emerald-700 bg-emerald-50 border border-emerald-600/15 flex items-center justify-center gap-1">✓ ยืนยันการชำระเงินเรียบร้อย</div>
+          <div className="mt-2 space-y-2">
+            <div className="w-full h-11 rounded-lg text-sm font-semibold text-emerald-700 bg-emerald-50 border border-emerald-600/15 flex items-center justify-center gap-1">✓ ยืนยันการชำระเงินเรียบร้อย</div>
+            {isAdmin && slipUrl?.startsWith("/api/payments/") && (
+              <button
+                type="button"
+                disabled={undoing}
+                onClick={handleUndo}
+                className="w-full h-9 rounded-lg text-xs font-semibold text-red-600 border border-red-200 hover:bg-red-50 disabled:opacity-50 transition-colors flex items-center justify-center gap-1.5"
+              >
+                {undoing ? "กำลังถอย…" : "↺ ถอย payment (admin)"}
+              </button>
+            )}
+          </div>
         )}
         {verifyStatus === "failed" && (
           <div className="w-full mt-2 rounded-lg text-sm font-semibold text-white bg-red-500 flex items-center justify-center text-center px-3 py-2.5">

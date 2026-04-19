@@ -170,6 +170,7 @@ export default function CustomerInfoForm({
   const uploadDoc = async (file: File): Promise<string | null> => {
     const fd = new FormData();
     fd.append("file", file);
+    fd.append("filename", `ocr_scan_${Date.now()}`);
     try {
       const res = await fetch("/api/upload", { method: "POST", body: fd, headers: { "ngrok-skip-browser-warning": "true" } });
       const { url } = await res.json();

@@ -9,8 +9,8 @@ import { STATUS_CONFIG } from "@/lib/constants/statuses";
 
 interface DashboardData {
   total_leads: number;
-  total_bookings: number;
-  total_booking_value: number;
+  total_deposits: number;
+  total_deposit_value: number;
   total_won: number;
   conversion_rate: number;
   this_month: { new_leads: number; closed_count: number; closed_value: number };
@@ -50,13 +50,17 @@ export default function DashboardPage() {
   if (!data) return <div className="text-center py-12 text-gray-400 text-sm">Unable to load data</div>;
 
   const countsByStatus = Object.fromEntries(data.status_breakdown.map(s => [s.status, s.count]));
+  // Order follows the actual status flow in code: install → warranty → gridtie → closed.
+  // See InstallStep.tsx (→warranty), WarrantyStep.tsx (→gridtie), GridTieStep.tsx (→closed).
   const pipelineSteps: { status: string; label: string; color: string; count: number }[] = [
-    { status: "register", label: "รอติดตาม",         color: "bg-sky-500",     count: countsByStatus["register"] || 0 },
+    { status: "pre_survey", label: "รอติดตาม",         color: "bg-sky-500",     count: countsByStatus["pre_survey"] || 0 },
     { status: "survey",     label: "สำรวจหน้างาน",       color: "bg-violet-500",  count: countsByStatus["survey"] || 0 },
-    { status: "quote",     label: "รอใบเสนอราคา",       color: "bg-orange-500",  count: countsByStatus["quote"] || 0 },
-    { status: "order",  label: "รออนุมัติ/ชำระ",     color: "bg-green-500",   count: countsByStatus["order"] || 0 },
-    { status: "install",  label: "กำลังติดตั้ง",       color: "bg-emerald-500", count: countsByStatus["install"] || 0 },
-    { status: "closed",     label: "ติดตั้งเรียบร้อย",   color: "bg-teal-500",    count: countsByStatus["closed"] || 0 },
+    { status: "quote",      label: "รอใบเสนอราคา",       color: "bg-orange-500",  count: countsByStatus["quote"] || 0 },
+    { status: "order",      label: "รออนุมัติ/ชำระ",     color: "bg-green-500",   count: countsByStatus["order"] || 0 },
+    { status: "install",    label: "กำลังติดตั้ง",       color: "bg-emerald-500", count: countsByStatus["install"] || 0 },
+    { status: "closed",     label: "ส่งมอบแล้ว",   color: "bg-teal-500",    count: countsByStatus["closed"] || 0 },
+    { status: "warranty",   label: "ออกใบรับประกัน",     color: "bg-cyan-500",    count: countsByStatus["warranty"] || 0 },
+    { status: "gridtie",    label: "ขอขนานไฟ",           color: "bg-amber-500",   count: countsByStatus["gridtie"] || 0 },
     { status: "lost",       label: "ยกเลิก",             color: "bg-red-400",     count: countsByStatus["lost"] || 0 },
   ];
   const totalByStatus = data.status_breakdown.reduce((sum, s) => sum + s.count, 0);
@@ -68,9 +72,10 @@ export default function DashboardPage() {
       <div className="p-3 md:p-6 space-y-3">
         {/* KPI Cards — 5 tiles with icons */}
         {(() => {
-          const followCount = countsByStatus["register"] || 0;
+          const followCount = countsByStatus["pre_survey"] || 0;
           const inProgress = (countsByStatus["survey"] || 0) + (countsByStatus["quote"] || 0) + (countsByStatus["order"] || 0) + (countsByStatus["install"] || 0);
-          const closedCount = countsByStatus["closed"] || 0;
+          // "Installed" = install step done (status moves on to warranty → gridtie → closed).
+          const installedCount = (countsByStatus["warranty"] || 0) + (countsByStatus["gridtie"] || 0) + (countsByStatus["closed"] || 0);
           const closedValue = Number(data.this_month.closed_value || 0);
           const fmtMoney = (v: number) => v >= 1000000 ? `฿${(v / 1000000).toFixed(1)}M` : v >= 1000 ? `฿${Math.round(v / 1000)}K` : `฿${fmt(v)}`;
 
@@ -99,7 +104,7 @@ export default function DashboardPage() {
             },
             {
               label: "ติดตั้งเสร็จ",
-              value: String(closedCount),
+              value: String(installedCount),
               sub: `+${data.this_month.closed_count || 0} เดือนนี้`,
               trend: { current: data.this_month.closed_count || 0, previous: data.last_month.closed_count || 0 },
               iconBg: "bg-emerald-50", iconColor: "text-emerald-600",
@@ -321,7 +326,7 @@ function ActivityChart({ data }: { data: { day: string; lead_id: number; full_na
                     onMouseEnter={e => {
                       const r = e.currentTarget.getBoundingClientRect();
                       const isFollow = ["follow_up","call","visit","note"].includes(b.actType);
-                      const statusLabel: Record<string,string> = { register: "รอติดตาม", survey: "สำรวจหน้างาน", quote: "รอใบเสนอราคา", order: "รออนุมัติ/ชำระ", install: "กำลังติดตั้ง", closed: "ติดตั้งเรียบร้อย", lost: "ยกเลิก" };
+                      const statusLabel: Record<string,string> = { pre_survey: "รอติดตาม", survey: "สำรวจหน้างาน", quote: "รอใบเสนอราคา", order: "รออนุมัติ/ชำระ", install: "กำลังติดตั้ง", closed: "ส่งมอบแล้ว", lost: "ยกเลิก" };
                       const label = isFollow ? "ติดตาม" : (statusLabel[b.status] || b.status);
                       setTooltip({ x: r.left + r.width / 2, y: r.top - 4, text: `${b.name} · ${label} · ${b.total} ครั้ง` });
                     }}
@@ -348,7 +353,7 @@ function ActivityChart({ data }: { data: { day: string; lead_id: number; full_na
         <div className="flex items-center gap-3 text-[10px] text-gray-400">
           <div className="flex items-center gap-1">
             <div className="w-[10px] h-[10px] rounded-sm bg-sky-400" />
-            <span>Register</span>
+            <span>Pre-Survey</span>
           </div>
           <div className="flex items-center gap-1">
             <div className="w-[10px] h-[10px] rounded-sm bg-primary" />

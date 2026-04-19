@@ -11,7 +11,7 @@ import { getStatusLabel } from "@/lib/constants/statuses";
 
 interface TodayData {
   newLeads: LeadData[];
-  overdueBooking: LeadData[];
+  overduePreSurvey: LeadData[];
   followUpToday: LeadData[];
   followUpOverdue: LeadData[];
   followUpUpcoming: LeadData[];
@@ -68,7 +68,7 @@ export default function TodayPage() {
     followUpOverdue: filterLeads(raw.followUpOverdue),
     followUpToday: filterLeads(raw.followUpToday),
     newLeads: filterLeads(raw.newLeads),
-    overdueBooking: filterLeads(raw.overdueBooking),
+    overduePreSurvey: filterLeads(raw.overduePreSurvey),
     followUpUpcoming: filterLeads(raw.followUpUpcoming),
     surveyToday: filterLeads(raw.surveyToday),
     surveyPending: filterLeads(raw.surveyPending),
@@ -78,7 +78,7 @@ export default function TodayPage() {
     recentlyClosed: filterLeads(raw.recentlyClosed || []),
   };
 
-  const followupCount = d.followUpOverdue.length + d.followUpToday.length + d.newLeads.length + d.overdueBooking.length + d.followUpUpcoming.length;
+  const followupCount = d.followUpOverdue.length + d.followUpToday.length + d.newLeads.length + d.overduePreSurvey.length + d.followUpUpcoming.length;
   const orderCount = d.installPending.length;
   const salesCount = followupCount + orderCount;
   const solarCount = d.surveyToday.length + d.surveyPending.length + d.quotationPending.length + d.installing.length;
@@ -88,7 +88,7 @@ export default function TodayPage() {
   const isSolar = hasRole(activeRoles, "solar");
   const allTabs = [
     isSales && { key: "sales", label: "ติดตามลูกค้า", count: salesCount },
-    isSales && { key: "sales_solar", label: "งานที่ต้องติดตาม", count: salesSolarCount },
+    isSales && { key: "sales_solar", label: "ติดตามงาน", count: salesSolarCount },
     isSolar && { key: "solar", label: "ทีมโซลาร์", count: solarCount },
     { key: "calendar", label: "ปฏิทิน" },
   ].filter(Boolean) as { key: string; label: string; count?: number }[];
@@ -152,13 +152,13 @@ export default function TodayPage() {
                 <div className="space-y-3">{d.newLeads.map((l) => <LeadCard key={l.id} lead={l} compact />)}</div>
               </section>
             )}
-            {d.overdueBooking.length > 0 && (
+            {d.overduePreSurvey.length > 0 && (
               <section>
                 <div className="flex items-center justify-between mb-3 px-1">
                   <h2 className="text-xs font-bold tracking-wider uppercase text-red-600">Leads ที่ต้องติดตาม</h2>
-                  <span className="text-xs font-semibold text-red-600 bg-red-50 px-2 py-0.5 rounded-full">{d.overdueBooking.length}</span>
+                  <span className="text-xs font-semibold text-red-600 bg-red-50 px-2 py-0.5 rounded-full">{d.overduePreSurvey.length}</span>
                 </div>
-                <div className="space-y-3">{d.overdueBooking.map((l) => <LeadCard key={l.id} lead={l} />)}</div>
+                <div className="space-y-3">{d.overduePreSurvey.map((l) => <LeadCard key={l.id} lead={l} />)}</div>
               </section>
             )}
             {d.followUpUpcoming.length > 0 && (

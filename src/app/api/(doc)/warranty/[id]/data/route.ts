@@ -20,13 +20,14 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ id:
     }
     const lead = fixDates(leadResult.recordset)[0];
 
-    // Package: prefer booked (lead.pre_package_id), fall back to interested.
-    const bookedPkgId = lead.pre_package_id || lead.interested_package_id;
+    // Use the package confirmed at Survey (lead.interested_package_id is overwritten
+    // by the survey team's final pick).
+    const pkgId = lead.interested_package_id;
 
     let pkg = null;
-    if (bookedPkgId) {
+    if (pkgId) {
       const pkgResult = await db.request()
-        .input("pid", sql.Int, bookedPkgId)
+        .input("pid", sql.Int, pkgId)
         .query(`SELECT * FROM packages WHERE id = @pid`);
       pkg = pkgResult.recordset[0] || null;
     }

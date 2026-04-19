@@ -221,6 +221,8 @@ export default function PreSurveyForm({ lead, refresh, packages = [], hideReside
       }
       const fd = new FormData();
       fd.append("file", file);
+      fd.append("lead_id", String(lead.id));
+      fd.append("type", "bill");
       const uploadRes = await fetch("/api/upload", {
         method: "POST",
         body: fd,

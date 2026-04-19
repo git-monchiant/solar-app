@@ -33,7 +33,6 @@ export default function InstallStep({ lead, state, refresh, expanded, onToggle }
   const [extraCost, setExtraCost] = useState<number>(lead.install_extra_cost || 0);
   const [extraNote, setExtraNote] = useState(lead.install_extra_note || "");
   const [afterSlipDone, setAfterSlipDone] = useState(!!lead.order_after_slip);
-  const [afterPaidLocal, setAfterPaidLocal] = useState(!!lead.order_after_paid);
   const [rescheduling, setRescheduling] = useState(false);
   const [signatureUrl, setSignatureUrl] = useState<string | null>(lead.install_customer_signature_url);
   const [fullscreen, setFullscreen] = useState(false);
@@ -61,7 +60,7 @@ export default function InstallStep({ lead, state, refresh, expanded, onToggle }
   const pctBefore = lead.order_pct_before ?? 100;
   const orderTotal = lead.order_total || 0;
   const remainingAmount = pctBefore < 100
-    ? orderTotal - Math.round(orderTotal * pctBefore / 100) - (lead.booking_price || 0)
+    ? orderTotal - Math.round(orderTotal * pctBefore / 100) - (lead.pre_total_price || 0)
     : 0;
 
   const uploadPhoto = async (file: File) => {
@@ -100,7 +99,7 @@ export default function InstallStep({ lead, state, refresh, expanded, onToggle }
         method: "PATCH", headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ install_note: note || null, install_completed_at: true }),
       });
-      refresh();
+      await refresh();
     } finally { setSaving(false); }
   };
 
@@ -111,8 +110,8 @@ export default function InstallStep({ lead, state, refresh, expanded, onToggle }
         method: "PATCH", headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ install_confirmed: true }),
       });
-      refresh();
       setSubStep(1);
+      await refresh();
     } finally { setSaving(false); }
   };
 
@@ -127,7 +126,12 @@ export default function InstallStep({ lead, state, refresh, expanded, onToggle }
 
   // PaymentSection writes the payments row + flips order_after_paid itself. This callback
   // only mirrors the state locally and refreshes.
-  const onAfterConfirmed = () => { setAfterPaidLocal(true); refresh(); };
+  const onAfterConfirmed = async () => {
+    // Advance subStep sync → PaymentSection unmount → no img re-fetch flicker.
+    // subStep 4 = ส่งมอบ
+    setSubStep(4);
+    await refresh();
+  };
 
   // Inline canvas setup + load existing signature
   useEffect(() => {
@@ -194,6 +198,13 @@ export default function InstallStep({ lead, state, refresh, expanded, onToggle }
     const c = inlineCanvasRef.current; if (!c) return;
     c.getContext("2d")?.clearRect(0, 0, c.width, c.height);
     setHasDrawn(false);
+    if (signatureUrl) {
+      setSignatureUrl(null);
+      apiFetch(`/api/leads/${lead.id}`, {
+        method: "PATCH", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ install_customer_signature_url: null }),
+      }).catch(console.error);
+    }
   };
 
   // Open fullscreen: seed fullscreen canvas from inline (or existing signature URL)
@@ -260,6 +271,13 @@ export default function InstallStep({ lead, state, refresh, expanded, onToggle }
     const c = fsCanvasRef.current; if (!c) return;
     c.getContext("2d")?.clearRect(0, 0, c.width, c.height);
     setFsHasDrawn(false);
+    if (signatureUrl) {
+      setSignatureUrl(null);
+      apiFetch(`/api/leads/${lead.id}`, {
+        method: "PATCH", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ install_customer_signature_url: null }),
+      }).catch(console.error);
+    }
   };
   // Fullscreen "เสร็จ" → copy fullscreen canvas back to inline, then auto-save + advance
   const onFsDone = () => {
@@ -320,7 +338,7 @@ export default function InstallStep({ lead, state, refresh, expanded, onToggle }
           status: "warranty",
         }),
       });
-      refresh();
+      await refresh();
     } finally { setSaving(false); }
   };
 
@@ -375,17 +393,17 @@ export default function InstallStep({ lead, state, refresh, expanded, onToggle }
             <span className="text-gray-500">มูลค่างาน (ใบเสนอราคา)</span>
             <span className="font-mono text-gray-800">{fmt(orderTotal)} ฿</span>
           </div>
-          {lead.booking_price ? (
+          {lead.pre_total_price ? (
             <div className="flex justify-between text-sm">
-              <span className="text-gray-500">งวดมัดจำ</span>
-              <span className="font-mono text-gray-800">{fmt(lead.booking_price)} ฿</span>
+              <span className="text-gray-500">ค่าสำรวจ</span>
+              <span className="font-mono text-gray-800">{fmt(lead.pre_total_price)} ฿</span>
             </div>
           ) : null}
           {pctBefore < 100 ? (
             <>
               <div className="flex justify-between text-sm">
                 <span className="text-gray-500">งวด 1/2 (ก่อนติดตั้ง {pctBefore}%)</span>
-                <span className="font-mono text-gray-800">{fmt(Math.round(orderTotal * pctBefore / 100) - (lead.booking_price || 0))} ฿</span>
+                <span className="font-mono text-gray-800">{fmt(Math.round(orderTotal * pctBefore / 100) - (lead.pre_total_price || 0))} ฿</span>
               </div>
               <div className="flex justify-between text-sm">
                 <span className="text-gray-500">งวด 2/2 (หลังติดตั้ง)</span>
@@ -395,7 +413,7 @@ export default function InstallStep({ lead, state, refresh, expanded, onToggle }
           ) : (
             <div className="flex justify-between text-sm">
               <span className="text-gray-500">ชำระเต็มจำนวน</span>
-              <span className="font-mono text-gray-800">{fmt(orderTotal - (lead.booking_price || 0))} ฿</span>
+              <span className="font-mono text-gray-800">{fmt(orderTotal - (lead.pre_total_price || 0))} ฿</span>
             </div>
           )}
           {(lead.install_extra_cost || 0) > 0 && (
@@ -460,7 +478,7 @@ export default function InstallStep({ lead, state, refresh, expanded, onToggle }
 
       {lead.order_after_paid && (
         <div className="pt-3 border-t border-gray-100">
-          <ReceiptButtons leadId={lead.id} stage="order_after" fileLabel={`${lead.booking_number || `lead_${lead.id}`}_after`} />
+          <ReceiptButtons leadId={lead.id} stage="order_after" fileLabel={`${lead.pre_doc_no || `lead_${lead.id}`}_after`} />
         </div>
       )}
     </>
@@ -491,7 +509,7 @@ export default function InstallStep({ lead, state, refresh, expanded, onToggle }
         <>
           <span className="text-sm font-semibold text-emerald-700 flex-1">ติดตั้งเสร็จสิ้น{lead.install_completed_at ? ` · ${formatDate(lead.install_completed_at)}` : ""}</span>
           {lead.order_after_paid && (
-            <div className="mr-4"><ReceiptButtons leadId={lead.id} stage="order_after" fileLabel={`${lead.booking_number || `lead_${lead.id}`}_after`} compact /></div>
+            <div className="mr-4"><ReceiptButtons leadId={lead.id} stage="order_after" fileLabel={`${lead.pre_doc_no || `lead_${lead.id}`}_after`} compact /></div>
           )}
         </>
       }
@@ -577,10 +595,10 @@ export default function InstallStep({ lead, state, refresh, expanded, onToggle }
                 <span>{fmt(orderTotal - Math.round(orderTotal * pctBefore / 100))}</span>
               </div>
             </>)}
-            {lead.booking_price && (
+            {lead.pre_total_price && (
               <div className="flex justify-between text-xs text-gray-400">
-                <span>หักมัดจำ</span>
-                <span>-{fmt(lead.booking_price)}</span>
+                <span>หักค่าสำรวจ</span>
+                <span>-{fmt(lead.pre_total_price)}</span>
               </div>
             )}
             <div className="flex justify-between text-sm font-semibold border-t border-gray-200 pt-1.5">
@@ -632,14 +650,14 @@ export default function InstallStep({ lead, state, refresh, expanded, onToggle }
               slipField="order_after_slip"
               stepNo={4}
               description={extraCost > 0 ? `ชำระหลังติดตั้ง งวด 2/2 + ${extraNote || "ค่าเพิ่มเติม"}` : "ชำระหลังติดตั้ง งวด 2/2"}
-              docNo={lead.booking_number}
-              confirmed={afterPaidLocal || !!lead.order_after_paid}
+              docNo={lead.pre_doc_no ? `${lead.pre_doc_no}-2` : null}
+              confirmed={!!lead.order_after_paid}
               onConfirmed={onAfterConfirmed}
               onVerified={() => setAfterSlipDone(true)}
               details={[
                 { label: "ยอดคงค้าง (งวด 2/2)", value: `฿${fmt(orderTotal - Math.round(orderTotal * pctBefore / 100))}` },
                 ...(extraCost > 0 ? [{ label: extraNote || "ค่าใช้จ่ายเพิ่มเติม", value: `+฿${fmt(extraCost)}` }] : []),
-                ...(lead.booking_price ? [{ label: "หักมัดจำ", value: `-฿${fmt(lead.booking_price)}` }] : []),
+                ...(lead.pre_total_price ? [{ label: "หักค่าสำรวจ", value: `-฿${fmt(lead.pre_total_price)}` }] : []),
                 { label: "ยอดที่ต้องชำระ", value: `฿${fmt(remainingAmount + extraCost)}` },
               ]}
             />
@@ -653,7 +671,7 @@ export default function InstallStep({ lead, state, refresh, expanded, onToggle }
           <div className="text-xs font-semibold tracking-wider uppercase text-gray-400">ลายเซ็นลูกค้า (ยืนยันรับงาน)</div>
 
           <div className="space-y-2">
-            <div className="relative bg-white border-2 border-dashed border-gray-300 rounded-lg overflow-hidden" style={{ touchAction: "none" }}>
+            <div className="relative bg-white border border-gray-200 rounded-lg overflow-hidden" style={{ touchAction: "none" }}>
               <canvas
                 ref={inlineCanvasRef}
                 width={600}
@@ -694,8 +712,8 @@ export default function InstallStep({ lead, state, refresh, expanded, onToggle }
 
           <button
             onClick={closeStep}
-            disabled={saving}
-            className="w-full h-11 rounded-lg text-sm font-semibold text-white bg-gradient-to-r from-emerald-500 to-emerald-600 hover:brightness-110 disabled:opacity-50 transition-colors flex items-center justify-center gap-2"
+            disabled={saving || (!hasDrawn && !signatureUrl)}
+            className="w-full h-11 rounded-lg text-sm font-semibold text-white bg-gradient-to-r from-emerald-500 to-emerald-600 hover:brightness-110 disabled:from-gray-300 disabled:to-gray-300 disabled:cursor-not-allowed transition-colors flex items-center justify-center gap-2"
           >
             <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M9 5l7 7-7 7" /></svg>
             {saving ? "กำลังยืนยัน..." : "ยืนยันส่งมอบงาน"}
@@ -755,12 +773,14 @@ export default function InstallStep({ lead, state, refresh, expanded, onToggle }
       )}
 
       {/* Navigation buttons */}
-      {subStep > 0 && subStep < 4 && (
+      {lead.install_confirmed && subStep < 4 && (
         <div className="flex gap-2 mt-3">
-          <button type="button" onClick={() => { setNextError(null); setSubStep(subStep - 1); scrollToStep(); }} className="flex-1 h-11 rounded-lg text-sm font-semibold border border-gray-200 text-gray-600 hover:bg-gray-50 transition-colors flex items-center justify-center gap-1">
-            <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M15.75 19.5L8.25 12l7.5-7.5" /></svg>
-            ย้อนกลับ
-          </button>
+          {subStep > 0 && (
+            <button type="button" onClick={() => { setNextError(null); setSubStep(subStep - 1); scrollToStep(); }} className="flex-1 h-11 rounded-lg text-sm font-semibold border border-gray-200 text-gray-600 hover:bg-gray-50 transition-colors flex items-center justify-center gap-1">
+              <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M15.75 19.5L8.25 12l7.5-7.5" /></svg>
+              ย้อนกลับ
+            </button>
+          )}
           <button type="button" onClick={() => {
             setNextError(null);
             setSubStep(subStep + 1); scrollToStep();

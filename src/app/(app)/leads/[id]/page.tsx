@@ -11,7 +11,7 @@ import ProfileModal from "@/components/lead/detail/ProfileModal";
 import LinePickerModal from "@/components/modal/LinePickerModal";
 import Header from "@/components/layout/Header";
 import { Activity } from "@/components/lead/detail/ActivityItem";
-import RegisterStep from "@/components/lead/detail/steps/RegisterStep";
+import PreSurveyStep from "@/components/lead/detail/steps/PreSurveyStep";
 import SurveyStep from "@/components/lead/detail/steps/SurveyStep";
 import QuoteStep from "@/components/lead/detail/steps/QuoteStep";
 import OrderStep from "@/components/lead/detail/steps/OrderStep";
@@ -25,7 +25,7 @@ import PullToRefreshIndicator from "@/components/ui/PullToRefreshIndicator";
 const formatDate = (d: string) =>
   new Date(String(d).slice(0, 10) + "T12:00:00").toLocaleDateString("th-TH", { day: "numeric", month: "short", year: "numeric" });
 
-const STEP_ORDER = ["register", "survey", "quote", "order", "install", "warranty", "gridtie"];
+const STEP_ORDER = ["pre_survey", "survey", "quote", "order", "install", "warranty", "gridtie"];
 
 function stepIndex(status: string) {
   if (status === "closed") return STEP_ORDER.length;
@@ -51,7 +51,7 @@ export default function LeadDetailPage({ params }: { params: Promise<{ id: strin
   const [tab, setTab] = useState<"info" | "log">("info");
   const [showLineModal, setShowLineModal] = useState(false);
   const [showProfileModal, setShowProfileModal] = useState(false);
-  const [registerExpanded, setRegisterExpanded] = useState(false);
+  const [preSurveyExpanded, setPreSurveyExpanded] = useState(false);
   const [surveyExpanded, setSurveyExpanded] = useState(false);
   const [quoteExpanded, setQuoteExpanded] = useState(false);
   const [orderExpanded, setOrderExpanded] = useState(false);
@@ -60,11 +60,11 @@ export default function LeadDetailPage({ params }: { params: Promise<{ id: strin
   const [gridTieExpanded, setGridTieExpanded] = useState(false);
 
   const fetchLead = useCallback(() => {
-    apiFetch(`/api/leads/${id}`).then(setLead).catch(console.error).finally(() => setLoadingLead(false));
+    return apiFetch(`/api/leads/${id}`).then(setLead).catch(console.error).finally(() => setLoadingLead(false));
   }, [id]);
   const fetchActivities = useCallback(() => {
     setLoadingAct(true);
-    apiFetch(`/api/leads/${id}/activities`).then(setActivities).catch(console.error).finally(() => setLoadingAct(false));
+    return apiFetch(`/api/leads/${id}/activities`).then(setActivities).catch(console.error).finally(() => setLoadingAct(false));
   }, [id]);
 
   useEffect(() => {
@@ -74,8 +74,7 @@ export default function LeadDetailPage({ params }: { params: Promise<{ id: strin
   }, [fetchLead, fetchActivities]);
 
   const refresh = useCallback(() => {
-    fetchLead();
-    fetchActivities();
+    return Promise.all([fetchLead(), fetchActivities()]);
   }, [fetchLead, fetchActivities]);
 
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -111,12 +110,12 @@ export default function LeadDetailPage({ params }: { params: Promise<{ id: strin
 
   const isLost = lead.status === "lost";
   const isUpgrade = lead.customer_type?.includes("Upgrade") || lead.customer_type?.includes("เดิม");
-  const hasBooking = !!lead.booking_number;
+  const hasPreSurveyDone = lead.status !== "pre_survey";
   const currentStep = stepIndex(lead.status);
 
   const cardState = (stepIdx: number): CardStateKind => {
     if (isLost) return "locked";
-    if (stepIdx === 0) return hasBooking ? "done" : "active";
+    if (stepIdx === 0) return hasPreSurveyDone ? "done" : "active";
     if (stepIdx < currentStep) return "done";
     if (stepIdx === currentStep) return "active";
     return "locked";
@@ -184,7 +183,7 @@ export default function LeadDetailPage({ params }: { params: Promise<{ id: strin
               (stepIdx === 3 && lead.order_before_paid) ||
               (stepIdx === 4 && lead.order_after_paid);
             return (
-              <span className={`inline-flex items-center gap-1 text-xs font-semibold uppercase tracking-wider shrink-0 ${paidStep ? "text-emerald-600" : "text-teal-600"}`}>
+              <span className={`inline-flex items-center gap-1 text-xs font-semibold uppercase tracking-wider shrink-0 ${paidStep ? "text-blue-600" : "text-teal-600"}`}>
                 ✓ {paidStep ? "Paid" : "Done"}
               </span>
             );
@@ -311,7 +310,7 @@ export default function LeadDetailPage({ params }: { params: Promise<{ id: strin
                 follow_up: { label: "ติดตาม", color: "bg-emerald-500" },
                 lead_created: { label: "ลงทะเบียน", color: "bg-emerald-500" },
                 status_change: { label: "สถานะ", color: "bg-emerald-500" },
-                booking_created: { label: "จอง", color: "bg-emerald-500" },
+                presurvey_doc_created: { label: "เปิดเลขเอกสาร", color: "bg-emerald-500" },
               };
 
               const headerLabel = latest
@@ -370,9 +369,9 @@ export default function LeadDetailPage({ params }: { params: Promise<{ id: strin
               stepIdx={0}
               title="Pre-Survey"
               icon="M9 12.75L11.25 15 15 9.75m-3-7.036A11.959 11.959 0 013.598 6 11.99 11.99 0 003 9.749c0 5.592 3.824 10.29 9 11.623 5.176-1.333 9-6.03 9-11.622 0-1.31-.21-2.571-.598-3.751h-.152c-3.196 0-6.1-1.248-8.25-3.285z"
-              onHeaderClick={cardState(0) === "done" ? () => setRegisterExpanded(!registerExpanded) : undefined}
+              onHeaderClick={cardState(0) === "done" ? () => setPreSurveyExpanded(!preSurveyExpanded) : undefined}
             >
-              <RegisterStep lead={lead} state={cardState(0)} refresh={refresh} packages={packages} expanded={registerExpanded} onToggle={() => setRegisterExpanded(!registerExpanded)} />
+              <PreSurveyStep lead={lead} state={cardState(0)} refresh={refresh} packages={packages} expanded={preSurveyExpanded} onToggle={() => setPreSurveyExpanded(!preSurveyExpanded)} />
             </CardWrapper>
 
             {/* Step 02: Survey */}

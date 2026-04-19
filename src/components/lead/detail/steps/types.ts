@@ -18,11 +18,7 @@ export interface Lead {
   assigned_staff: string | null;
   assigned_user_id: number | null;
   assigned_name: string | null;
-  booking_id: number | null;
-  booked_package_id: number | null;
-  booking_date: string | null;
-  booking_number: string | null;
-  booking_price: number | null;
+  pre_package_id: number | null;
   pre_slip_url: string | null;
   payment_confirmed: boolean;
   id_card_number: string | null;
@@ -114,6 +110,21 @@ export interface Lead {
   warranty_issued_at: string | null;
   warranty_doc_url: string | null;
   warranty_customer_signature_url: string | null;
+  warranty_inverter_cert_url: string | null;
+  warranty_panel_cert_url: string | null;
+  warranty_panel_serials_url: string | null;
+  warranty_other_docs_url: string | null;
+  warranty_system_size_kwp: number | null;
+  warranty_panel_count: number | null;
+  warranty_panel_watt: number | null;
+  warranty_panel_brand: string | null;
+  warranty_inverter_brand: string | null;
+  warranty_inverter_kw: number | null;
+  warranty_battery_brand: string | null;
+  warranty_battery_kwh: number | null;
+  warranty_has_battery: boolean | null;
+  warranty_inverter_sn_photo_url: string | null;
+  warranty_batteries: string | null;
   // Grid-tie / ขอขนานไฟ (step 07)
   grid_utility: string | null;
   grid_app_no: string | null;
@@ -160,5 +171,5 @@ export type CardStateKind = "done" | "active" | "locked";
 export interface StepCommonProps {
   lead: Lead;
   state: CardStateKind;
-  refresh: () => void;
+  refresh: () => Promise<unknown> | void;
 }

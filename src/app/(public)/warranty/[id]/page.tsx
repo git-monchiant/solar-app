@@ -28,6 +28,16 @@ interface Data {
     warranty_end_date: string | null;
     warranty_issued_at: string | null;
     warranty_customer_signature_url: string | null;
+    install_customer_signature_url: string | null;
+    warranty_system_size_kwp: number | null;
+    warranty_panel_count: number | null;
+    warranty_panel_watt: number | null;
+    warranty_panel_brand: string | null;
+    warranty_inverter_brand: string | null;
+    warranty_inverter_kw: number | null;
+    warranty_battery_brand: string | null;
+    warranty_battery_kwh: number | null;
+    warranty_has_battery: boolean | null;
   };
   package: Pkg | null;
 }
@@ -62,13 +72,24 @@ export default function WarrantyPage() {
   if (!d) return <div className="flex items-center justify-center h-screen"><div className="w-8 h-8 border-2 border-primary/30 border-t-primary animate-spin" /></div>;
 
   const { lead, package: pkg } = d;
-  const hasBattery = !!pkg?.has_battery;
+  // Prefer warranty_* equipment snapshot (entered by staff to reflect actual
+  // installed equipment); fall back to the package for older leads.
+  const sysKwp = lead.warranty_system_size_kwp ?? pkg?.kwp ?? null;
+  const pnlCount = lead.warranty_panel_count ?? pkg?.solar_panels ?? null;
+  const pnlWatt = lead.warranty_panel_watt ?? pkg?.panel_watt ?? null;
+  const pnlBrand = lead.warranty_panel_brand ?? "";
+  const invBrand = lead.warranty_inverter_brand ?? pkg?.inverter_brand ?? "";
+  const invKw = lead.warranty_inverter_kw ?? pkg?.inverter_kw ?? null;
+  const battBrand = lead.warranty_battery_brand ?? pkg?.battery_brand ?? "";
+  const battKwh = lead.warranty_battery_kwh ?? pkg?.battery_kwh ?? null;
+  const hasBattery = lead.warranty_has_battery ?? !!pkg?.has_battery;
+
   const defaultDocNo = `SSE${new Date().getFullYear().toString().slice(-2)}${String(lead.id).padStart(4, "0")}`;
   const docNo = lead.warranty_doc_no || defaultDocNo;
-  const sizeSpec = pkg ? `${pkg.kwp} kWp` : "—";
-  const panelSpec = pkg ? `${pkg.solar_panels} แผง × ${pkg.panel_watt}W` : "—";
-  const inverterSpec = pkg ? `${pkg.inverter_brand || ""} ${pkg.inverter_kw}kW` : "—";
-  const batterySpec = pkg && hasBattery ? `${pkg.battery_brand || ""} ${pkg.battery_kwh}kWh` : "—";
+  const sizeSpec = sysKwp != null ? `${sysKwp} kWp` : "—";
+  const panelSpec = pnlCount && pnlWatt ? `${pnlCount} แผง × ${pnlWatt}W${pnlBrand ? ` · ${pnlBrand}` : ""}` : "—";
+  const inverterSpec = invBrand || invKw != null ? `${invBrand} ${invKw != null ? `${invKw}kW` : ""}`.trim() : "—";
+  const batterySpec = hasBattery ? `${battBrand}${battKwh != null ? ` ${battKwh}kWh` : ""}`.trim() || "—" : "—";
 
   return (
     <div className="bg-gray-100 min-h-screen py-4 print:py-0 print:bg-white">
@@ -115,19 +136,19 @@ export default function WarrantyPage() {
               <td>
                 {/* Ref + Date */}
                 <div className="tbody-pull-up px-5 py-2.5 flex justify-between items-center border-b border-gray-100">
-                  <span className="text-[12px] text-gray-500">เลขที่: <span className="text-gray-900 font-bold text-[18px] tracking-wider ml-1">{docNo}</span></span>
-                  <span className="text-[12px] text-gray-500">วันที่ออก: <span className="text-gray-800 font-semibold">{fmt(lead.warranty_issued_at) || fmt(lead.warranty_start_date)}</span></span>
+                  <span className="text-[12px] text-gray-500">DOCUMENT NO: <span className="text-gray-900 font-bold text-[18px] tracking-wider ml-1">{docNo}</span></span>
+                  <span className="text-[12px] text-gray-500">DATE: <span className="text-gray-800 font-semibold">{fmt(lead.warranty_issued_at || lead.warranty_start_date)}</span></span>
                 </div>
 
                 {/* Body */}
                 <div className="px-5 py-4 flex flex-col gap-4 leading-[1.55]">
                   <div className="avoid-break">
-                    <div className="text-[10px] font-bold uppercase tracking-wider text-gray-400 mb-1">ลูกค้า</div>
-                    <div className="text-[15px] font-bold text-gray-900">{lead.full_name}</div>
-                    <div className="text-[12px] text-gray-600 mt-1 space-y-0.5">
-                      {lead.phone && <div>โทร. {lead.phone}</div>}
-                      {lead.project_name && <div>โครงการ {lead.project_name}</div>}
-                      {lead.installation_address && <div>ที่อยู่ติดตั้ง {lead.installation_address}</div>}
+                    <div className="text-[10px] font-bold uppercase tracking-wider text-gray-400 mb-1.5">CUSTOMER INFORMATION</div>
+                    <div className="grid grid-cols-[70px_1fr] gap-y-1 text-[12px]">
+                      <span className="text-gray-400">NAME</span><span className="text-gray-900 font-semibold">{lead.full_name}</span>
+                      {lead.phone && (<><span className="text-gray-400">PHONE</span><span className="text-gray-800">{lead.phone}</span></>)}
+                      {lead.project_name && (<><span className="text-gray-400">PROJECT</span><span className="text-gray-800">{lead.project_name}</span></>)}
+                      {lead.installation_address && (<><span className="text-gray-400">ADDRESS</span><span className="text-gray-800">{lead.installation_address}</span></>)}
                     </div>
                   </div>
 
@@ -136,15 +157,15 @@ export default function WarrantyPage() {
                       <div className="text-[10px] font-bold uppercase tracking-wider text-gray-400">ระบบผลิตไฟฟ้าพลังงานแสงอาทิตย์ (บนหลังคา)</div>
                     </div>
                     <div className="px-4 py-3 grid grid-cols-2 gap-x-4 gap-y-2">
-                      <Spec label="ขนาดติดตั้ง" value={sizeSpec} />
-                      <Spec label="แผงโซลาร์เซลล์" value={panelSpec} />
-                      <Spec label="อินเวอร์เตอร์" value={inverterSpec} />
-                      {hasBattery && <Spec label="แบตเตอรี่" value={batterySpec} />}
+                      <Spec label="SYSTEM SIZE" value={sizeSpec} />
+                      <Spec label="SOLAR PANELS" value={panelSpec} />
+                      <Spec label="INVERTER" value={inverterSpec} />
+                      {hasBattery && <Spec label="BATTERY" value={batterySpec} />}
                       <Spec label="INVERTER SERIAL NUMBER" value={lead.warranty_inverter_sn || "—"} />
                       <Spec label="ON-SITE SERVICE" value="ล้างแผง / ตรวจเช็คระบบ 4 ครั้ง / 2 ปี" />
                     </div>
                     <div className="px-4 py-3 bg-active-light/30 flex items-end justify-between border-t border-gray-200">
-                      <div className="text-[11px] uppercase tracking-wider text-gray-500">ระยะเวลารับประกันการติดตั้ง 2 ปี</div>
+                      <div className="text-[11px] uppercase tracking-wider text-gray-500">WARRANTY PERIOD · ระยะเวลารับประกันการติดตั้ง 2 ปี</div>
                       <div className="text-[13px] font-bold text-gray-900">
                         {fmtLong(lead.warranty_start_date)} <span className="text-gray-400 mx-1">—</span> {fmtLong(lead.warranty_end_date)}
                       </div>
@@ -231,7 +252,7 @@ export default function WarrantyPage() {
                   </p>
 
                   <div className="flex justify-around gap-8 mt-4 avoid-break">
-                    <SignatureBox label="ลูกค้า" name={lead.full_name} signatureUrl={lead.warranty_customer_signature_url} />
+                    <SignatureBox label="ลูกค้า" name={lead.full_name} signatureUrl={lead.warranty_customer_signature_url || lead.install_customer_signature_url} />
                     <SignatureBox label={CO.nameTh} name="" />
                   </div>
                 </div>

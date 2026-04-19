@@ -66,7 +66,7 @@ export function validateOrder(lead: Partial<Lead>): ValidationResult {
     { field: "order_total", label: "ยอดรวม" },
     { field: "order_pct_before", label: "% ชำระก่อนติดตั้ง" },
     { field: "install_date", label: "วันนัดติดตั้ง" },
-    { field: "order_before_paid", label: "ชำระมัดจำ/งวดแรก", test: v => v === true },
+    { field: "order_before_paid", label: "ชำระงวดแรก", test: v => v === true },
     { field: "order_before_slip", label: "กรุณาอัปโหลดสลิปโอนงวดแรก" },
     { field: "id_card_number", label: "เลขบัตรประชาชน" },
     { field: "id_card_address", label: "ที่อยู่ตามบัตร" },

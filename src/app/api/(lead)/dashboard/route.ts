@@ -22,20 +22,24 @@ export async function GET() {
       db.request().query(`
         SELECT
           (SELECT COUNT(*) FROM leads) as total_leads,
-          (SELECT COUNT(*) FROM leads WHERE pre_doc_no IS NOT NULL) as total_bookings,
-          (SELECT ISNULL(SUM(pre_total_price), 0) FROM leads WHERE pre_doc_no IS NOT NULL) as total_booking_value,
+          (SELECT COUNT(*) FROM leads WHERE pre_doc_no IS NOT NULL) as total_deposits,
+          (SELECT ISNULL(SUM(pre_total_price), 0) FROM leads WHERE pre_doc_no IS NOT NULL) as total_deposit_value,
           (SELECT COUNT(*) FROM leads WHERE status = 'order') as total_won
       `),
+      // Revenue is recognized the moment an install is completed (status moves to
+      // warranty → gridtie → closed after that). Filtering on status='closed' would
+      // under-count real business done in the month. Use install_completed_at as
+      // the single source of truth for "installed this month".
       db.request().input("first_day", firstDay).query(`
         SELECT
           (SELECT COUNT(*) FROM leads WHERE created_at >= @first_day) as new_leads,
-          (SELECT COUNT(*) FROM leads WHERE status = 'closed' AND install_completed_at >= @first_day) as closed_count,
-          (SELECT ISNULL(SUM(ISNULL(order_total,0) + ISNULL(install_extra_cost,0)), 0) FROM leads WHERE status = 'closed' AND install_completed_at >= @first_day) as closed_value
+          (SELECT COUNT(*) FROM leads WHERE install_completed_at >= @first_day) as closed_count,
+          (SELECT ISNULL(SUM(ISNULL(order_total,0) + ISNULL(install_extra_cost,0)), 0) FROM leads WHERE install_completed_at >= @first_day) as closed_value
       `),
       db.request().input("lm_start", lastMonthFirst).input("lm_end", lastMonthEnd).query(`
         SELECT
           (SELECT COUNT(*) FROM leads WHERE created_at >= @lm_start AND created_at <= @lm_end) as new_leads,
-          (SELECT COUNT(*) FROM leads WHERE status = 'closed' AND install_completed_at >= @lm_start AND install_completed_at <= @lm_end) as closed_count
+          (SELECT COUNT(*) FROM leads WHERE install_completed_at >= @lm_start AND install_completed_at <= @lm_end) as closed_count
       `),
       db.request().query(`SELECT status, COUNT(*) as count FROM leads GROUP BY status`),
       db.request().query(`
@@ -62,7 +66,7 @@ export async function GET() {
                   WHERE lead_id = la.lead_id AND activity_type = 'status_change'
                     AND created_at <= DATEADD(day, 1, CAST(la.created_at AS DATE))
                   ORDER BY created_at DESC),
-                 'register'
+                 'pre_survey'
                ) as lead_status,
                (SELECT COUNT(*) FROM lead_activities WHERE lead_id = la.lead_id AND created_at <= DATEADD(day, 1, CAST(la.created_at AS DATE))) as total_activities,
                CASE WHEN EXISTS (
@@ -84,8 +88,8 @@ export async function GET() {
 
     return NextResponse.json({
       total_leads: t.total_leads,
-      total_bookings: t.total_bookings,
-      total_booking_value: t.total_booking_value,
+      total_deposits: t.total_deposits,
+      total_deposit_value: t.total_deposit_value,
       total_won: t.total_won,
       conversion_rate: t.total_leads > 0 ? Math.round((t.total_won / t.total_leads) * 100) : 0,
       this_month: tm,

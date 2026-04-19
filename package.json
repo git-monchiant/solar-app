@@ -13,6 +13,8 @@
     "jspdf": "^4.2.1",
     "mssql": "^12.2.1",
     "next": "16.2.3",
+    "pdf-lib": "^1.17.1",
+    "pdfjs-dist": "^5.6.205",
     "promptpay-qr": "^0.5.0",
     "puppeteer": "^24.41.0",
     "qrcode": "^1.5.4",

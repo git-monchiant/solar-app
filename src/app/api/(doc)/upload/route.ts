@@ -15,7 +15,11 @@ export async function POST(req: NextRequest) {
 
     const ext = file.name.split(".").pop() || "jpg";
     const customName = formData.get("filename") as string | null;
-    const filename = customName ? `${customName}.${ext}` : `doc_${Date.now()}.${ext}`;
+    const leadId = formData.get("lead_id") as string | null;
+    const type = formData.get("type") as string | null;
+    const safe = (s: string) => s.replace(/[^A-Za-z0-9_-]/g, "_");
+    const built = leadId && type ? `lead${safe(leadId)}_${safe(type)}_${Date.now()}` : null;
+    const filename = `${customName ? safe(customName) : built ?? `doc_${Date.now()}`}.${ext}`;
     const filepath = path.join(process.cwd(), "public", "uploads", filename);
 
     await writeFile(filepath, buffer);

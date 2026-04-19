@@ -99,6 +99,7 @@ export default function SurveyStep({ lead, state, refresh, packages, expanded, o
         const compressed = await compressImage(file).catch(() => file);
         const fd = new FormData();
         fd.append("file", compressed);
+        fd.append("filename", `lead${lead.id}_survey_${Date.now()}`);
         const res = await fetch("/api/upload", {
           method: "POST",
           body: fd,
@@ -130,7 +131,7 @@ export default function SurveyStep({ lead, state, refresh, packages, expanded, o
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ survey_confirmed: true }),
       });
-      refresh();
+      await refresh();
     } finally {
       setSaving(false);
     }
@@ -154,7 +155,7 @@ export default function SurveyStep({ lead, state, refresh, packages, expanded, o
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ status: "quote" }),
       });
-      refresh();
+      await refresh();
     } finally {
       setSaving(false);
     }

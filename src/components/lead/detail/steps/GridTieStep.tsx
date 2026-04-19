@@ -93,7 +93,7 @@ export default function GridTieStep({ lead, state, refresh, expanded, onToggle }
         method: "PATCH", headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ status: "closed" }),
       });
-      refresh();
+      await refresh();
     } finally { setClosing(false); }
   };
 

@@ -2,10 +2,10 @@ import { NextRequest, NextResponse } from "next/server";
 import { getDb, sql, fixDates } from "@/lib/db";
 
 const statusLabels: Record<string, string> = {
-  register: "รอติดตาม",
+  pre_survey: "รอติดตาม",
   survey: "สำรวจหน้างาน", quote: "รอใบเสนอราคา", order: "รออนุมัติ/ชำระ",
   install: "กำลังติดตั้ง", warranty: "ออกใบรับประกัน", gridtie: "ขอขนานไฟ",
-  closed: "ติดตั้งเรียบร้อย", lost: "ยกเลิก",
+  closed: "ส่งมอบแล้ว", lost: "ยกเลิก",
 };
 
 export async function GET(_req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
@@ -18,12 +18,6 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ id:
       .query(`
         SELECT l.*, p.name as project_name, pk.name as package_name, pk.price as package_price,
                u.full_name as assigned_name,
-               l.pre_doc_no as booking_number,
-               l.pre_total_price as booking_price,
-               l.pre_package_id as booked_package_id,
-               l.pre_booked_at as booking_date,
-               CASE WHEN l.pre_doc_no IS NOT NULL THEN l.id ELSE NULL END as booking_id,
-               CASE WHEN l.pre_doc_no IS NOT NULL THEN 1 ELSE 0 END as confirmed,
                lu.display_name as line_display_name, lu.picture_url as line_picture_url
         FROM leads l
         LEFT JOIN projects p ON l.project_id = p.id
@@ -460,6 +454,66 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
     if (body.warranty_customer_signature_url !== undefined) {
       sets.push("warranty_customer_signature_url = @warranty_customer_signature_url");
       request.input("warranty_customer_signature_url", sql.NVarChar(500), body.warranty_customer_signature_url);
+    }
+    if (body.warranty_inverter_cert_url !== undefined) {
+      sets.push("warranty_inverter_cert_url = @warranty_inverter_cert_url");
+      request.input("warranty_inverter_cert_url", sql.NVarChar(500), body.warranty_inverter_cert_url);
+    }
+    if (body.warranty_panel_cert_url !== undefined) {
+      sets.push("warranty_panel_cert_url = @warranty_panel_cert_url");
+      request.input("warranty_panel_cert_url", sql.NVarChar(500), body.warranty_panel_cert_url);
+    }
+    if (body.warranty_panel_serials_url !== undefined) {
+      sets.push("warranty_panel_serials_url = @warranty_panel_serials_url");
+      request.input("warranty_panel_serials_url", sql.NVarChar(500), body.warranty_panel_serials_url);
+    }
+    if (body.warranty_other_docs_url !== undefined) {
+      sets.push("warranty_other_docs_url = @warranty_other_docs_url");
+      request.input("warranty_other_docs_url", sql.NVarChar(sql.MAX), body.warranty_other_docs_url);
+    }
+    if (body.warranty_inverter_sn_photo_url !== undefined) {
+      sets.push("warranty_inverter_sn_photo_url = @warranty_inverter_sn_photo_url");
+      request.input("warranty_inverter_sn_photo_url", sql.NVarChar(500), body.warranty_inverter_sn_photo_url);
+    }
+    if (body.warranty_system_size_kwp !== undefined) {
+      sets.push("warranty_system_size_kwp = @warranty_system_size_kwp");
+      request.input("warranty_system_size_kwp", sql.Decimal(6, 2), body.warranty_system_size_kwp);
+    }
+    if (body.warranty_panel_count !== undefined) {
+      sets.push("warranty_panel_count = @warranty_panel_count");
+      request.input("warranty_panel_count", sql.Int, body.warranty_panel_count);
+    }
+    if (body.warranty_panel_watt !== undefined) {
+      sets.push("warranty_panel_watt = @warranty_panel_watt");
+      request.input("warranty_panel_watt", sql.Int, body.warranty_panel_watt);
+    }
+    if (body.warranty_panel_brand !== undefined) {
+      sets.push("warranty_panel_brand = @warranty_panel_brand");
+      request.input("warranty_panel_brand", sql.NVarChar(100), body.warranty_panel_brand);
+    }
+    if (body.warranty_inverter_brand !== undefined) {
+      sets.push("warranty_inverter_brand = @warranty_inverter_brand");
+      request.input("warranty_inverter_brand", sql.NVarChar(100), body.warranty_inverter_brand);
+    }
+    if (body.warranty_inverter_kw !== undefined) {
+      sets.push("warranty_inverter_kw = @warranty_inverter_kw");
+      request.input("warranty_inverter_kw", sql.Decimal(6, 2), body.warranty_inverter_kw);
+    }
+    if (body.warranty_battery_brand !== undefined) {
+      sets.push("warranty_battery_brand = @warranty_battery_brand");
+      request.input("warranty_battery_brand", sql.NVarChar(100), body.warranty_battery_brand);
+    }
+    if (body.warranty_battery_kwh !== undefined) {
+      sets.push("warranty_battery_kwh = @warranty_battery_kwh");
+      request.input("warranty_battery_kwh", sql.Decimal(6, 2), body.warranty_battery_kwh);
+    }
+    if (body.warranty_has_battery !== undefined) {
+      sets.push("warranty_has_battery = @warranty_has_battery");
+      request.input("warranty_has_battery", sql.Bit, body.warranty_has_battery ? 1 : 0);
+    }
+    if (body.warranty_batteries !== undefined) {
+      sets.push("warranty_batteries = @warranty_batteries");
+      request.input("warranty_batteries", sql.NVarChar(sql.MAX), body.warranty_batteries);
     }
     // Grid-tie / ขอขนานไฟ (step 07)
     if (body.grid_utility !== undefined) {

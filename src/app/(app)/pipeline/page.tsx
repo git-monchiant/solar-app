@@ -17,17 +17,18 @@ interface Lead {
   contact_date: string;
   created_at: string;
   survey_date: string | null;
+  install_date: string | null;
   next_follow_up: string | null;
   package_name: string | null;
   package_price: number | null;
-  booking_number: string | null;
+  pre_doc_no: string | null;
 }
 
 type TabKey = "all" | "pre_survey" | "survey" | "quotation" | "order" | "install" | "warranty" | "gridtie" | "closed" | "lost";
 
 const TAB_STATUSES: Record<TabKey, string[]> = {
   all: [],
-  pre_survey: ["register", "booked"],
+  pre_survey: ["pre_survey"],
   survey: ["survey"],
   quotation: ["quote"],
   order: ["order"],
@@ -59,6 +60,19 @@ export default function PipelinePage() {
 
   useEffect(() => { fetchLeads(); }, [fetchLeads]);
 
+  // For survey/install tabs, sort by the scheduled appointment date ascending so
+  // the upcoming jobs appear first (nulls at the end). Other tabs keep the
+  // API's default ordering.
+  const sortByApptDate = (field: "survey_date" | "install_date") =>
+    (a: Lead, b: Lead) => {
+      const av = a[field] ? String(a[field]).slice(0, 10) : "";
+      const bv = b[field] ? String(b[field]).slice(0, 10) : "";
+      if (!av && !bv) return 0;
+      if (!av) return 1;
+      if (!bv) return -1;
+      return av.localeCompare(bv);
+    };
+
   const filtered = leads
     .filter(l => {
       if (tab === "all") return true;
@@ -68,7 +82,8 @@ export default function PipelinePage() {
       if (!search.trim()) return true;
       const q = search.toLowerCase();
       return l.full_name?.toLowerCase().includes(q) || l.phone?.includes(q) || l.project_name?.toLowerCase().includes(q) || l.installation_address?.toLowerCase().includes(q);
-    });
+    })
+    .sort(tab === "survey" ? sortByApptDate("survey_date") : tab === "install" ? sortByApptDate("install_date") : () => 0);
 
   const countFor = (key: TabKey) => key === "all" ? leads.length : leads.filter(l => TAB_STATUSES[key].includes(l.status)).length;
 
@@ -81,7 +96,7 @@ export default function PipelinePage() {
     { key: "install",    label: "ติดตั้ง",            roles: ["solar"] },
     { key: "warranty",   label: "ออกใบรับประกัน",    roles: ["solar"] },
     { key: "gridtie",    label: "ขอขนานไฟ",          roles: ["solar"] },
-    { key: "closed",     label: "ติดตั้งเรียบร้อย",  roles: ["sales", "solar"] },
+    { key: "closed",     label: "ส่งมอบแล้ว",  roles: ["sales", "solar"] },
     { key: "lost",       label: "ยกเลิก",            roles: ["sales"] },
   ];
   const TABS = ALL_TABS

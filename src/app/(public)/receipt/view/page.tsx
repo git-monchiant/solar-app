@@ -3,8 +3,8 @@ import { useEffect, useState, Suspense } from "react";
 import { useSearchParams } from "next/navigation";
 
 interface ReceiptData {
-  stage: "booking" | "order_before" | "order_after";
-  booking_number: string;
+  stage: "deposit" | "order_before" | "order_after";
+  receipt_no: string;
   created_at: string;
   total_price: number;
   description: string;
@@ -37,7 +37,7 @@ const fmt = (n: number) => new Intl.NumberFormat("en-US", { minimumFractionDigit
 const slotMap: Record<string, string> = { am: "9:00 - 12:00", morning: "9:00 - 12:00", pm: "13:00 - 16:00", afternoon: "13:00 - 16:00" };
 
 const STAGE_TITLE: Record<string, string> = {
-  booking: "SOLAR ROOFTOP BOOKING / TEMPORARY RECEIPT",
+  deposit: "SOLAR ROOFTOP SURVEY / TEMPORARY RECEIPT",
   order_before: "SOLAR ROOFTOP INSTALLATION / PRE-INSTALLATION RECEIPT",
   order_after: "SOLAR ROOFTOP INSTALLATION / FINAL PAYMENT RECEIPT",
 };
@@ -49,17 +49,15 @@ function ReceiptContent() {
   useEffect(() => {
     const qs = new URLSearchParams();
     const leadId = params.get("lead_id");
-    const bookingId = params.get("booking_id");
-    const stage = params.get("stage") || "booking";
+    const stage = params.get("stage") || "deposit";
     if (leadId) qs.set("lead_id", leadId);
-    if (bookingId) qs.set("booking_id", bookingId);
     qs.set("stage", stage);
     fetch(`/api/receipt/data?${qs.toString()}`).then(r => r.json()).then(setD).catch(console.error);
   }, [params]);
 
   if (!d) return <div className="flex items-center justify-center h-screen"><div className="w-8 h-8 border-2 border-primary/30 border-t-primary rounded-full animate-spin" /></div>;
 
-  const showSurvey = d.stage === "booking";
+  const showSurvey = d.stage === "deposit";
 
   return (
     <div className="bg-white min-h-screen print:min-h-0 receipt-root">
@@ -84,7 +82,7 @@ function ReceiptContent() {
           <div className="text-center font-bold text-lg tracking-wide uppercase mb-2">{STAGE_TITLE[d.stage]}</div>
 
           <div className="flex justify-between text-sm text-gray-500 mb-3">
-            <span>RECEIPT NO: {d.booking_number}</span>
+            <span>RECEIPT NO: {d.receipt_no}</span>
             <span>DATE: {new Date(String(d.created_at).slice(0, 10) + "T12:00:00").toLocaleDateString("th-TH", { day: "numeric", month: "long", year: "numeric" })}</span>
           </div>
           <hr className="border-gray-200 mb-4" />
@@ -159,7 +157,7 @@ function ReceiptContent() {
             </div>
           </div>
 
-          {d.stage === "booking" && (
+          {d.stage === "deposit" && (
             <div className="bg-gray-50 border border-gray-100 rounded px-3 py-2 mb-4">
               <div className="text-[11px] text-gray-400 leading-snug">
                 <b>REMARKS:</b> 1. ราคาดังกล่าวเป็นราคามาตรฐานสำหรับระบบ Solar Rooftop ติดตั้งในบ้านพักอาศัย (มีเฟสไฟฟ้า 1 เฟส) ทั้งนี้ ในกรณีที่มีการก่อสร้างหรือโครงสร้างพิเศษเพิ่มเติม ทางบริษัทขอสงวนสิทธิ์ในการพิจารณาเสนอราคาใหม่ตามความเหมาะสม 2. กรณีไม่สามารถดำเนินการติดตั้งได้ บริษัทฯ จะทำการคืนเงินจองให้แก่ลูกค้าเต็มจำนวน กรณีสามารถดำเนินการติดตั้งได้ เงินจำนวน 1,000 บาท จะนำไปหักเป็นส่วนลดค่าระบบ Solar ทั้งนี้ หากลูกค้าเป็นฝ่ายยกเลิก บริษัทฯ ขอสงวนสิทธิ์ไม่คืนเงินในทุกกรณี

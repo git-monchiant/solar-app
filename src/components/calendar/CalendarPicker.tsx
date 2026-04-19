@@ -87,7 +87,7 @@ export default function CalendarPicker({
                   const counts = surveyCountByDate[iso];
                   const isFull = !!(counts && counts.morning > 0 && counts.afternoon > 0);
                   const isPartial = !!(counts && (counts.morning > 0 || counts.afternoon > 0) && !isFull);
-                  // Full-day events (install) block any day with existing booking
+                  // Full-day events (install) block any day already scheduled
                   const fullDayEvent = !showTimeSlot;
                   const disabled = isPast || (showSurveySlots && (isFull || (fullDayEvent && isPartial)));
                   let bookedClass = "";

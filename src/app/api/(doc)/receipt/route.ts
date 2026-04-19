@@ -2,15 +2,14 @@ import { NextRequest, NextResponse } from "next/server";
 import puppeteer from "puppeteer";
 
 export async function GET(req: NextRequest) {
-  const bookingId = req.nextUrl.searchParams.get("booking_id");
   const leadId = req.nextUrl.searchParams.get("lead_id");
-  const stage = req.nextUrl.searchParams.get("stage") || (bookingId ? "booking" : null);
+  const stage = req.nextUrl.searchParams.get("stage") || "deposit";
 
-  if (!bookingId && !leadId) {
-    return NextResponse.json({ error: "Missing booking_id or lead_id" }, { status: 400 });
+  if (!leadId) {
+    return NextResponse.json({ error: "Missing lead_id" }, { status: 400 });
   }
 
-  const identifier = leadId ? `lead-${leadId}-${stage}` : `booking-${bookingId}`;
+  const identifier = `lead-${leadId}-${stage}`;
 
   try {
     const port = process.env.PORT || 3700;
@@ -19,9 +18,8 @@ export async function GET(req: NextRequest) {
     await page.emulateTimezone("Asia/Bangkok");
 
     const qs = new URLSearchParams();
-    if (leadId) qs.set("lead_id", leadId);
-    if (bookingId) qs.set("booking_id", bookingId);
-    if (stage) qs.set("stage", stage);
+    qs.set("lead_id", leadId);
+    qs.set("stage", stage);
     const url = `http://localhost:${port}/receipt/view?${qs.toString()}`;
     await page.goto(url, { waitUntil: "networkidle0", timeout: 15000 });
     await page.waitForSelector("#receipt table", { timeout: 10000 });

@@ -5,13 +5,12 @@ import Link from "next/link";
 import Header from "@/components/layout/Header";
 
 interface Payment {
-  id: number;
-  booking_number: string;
-  total_price: number;
-  booking_status: string;
-  payment_confirmed: boolean;
-  booking_date: string;
   lead_id: number;
+  pre_doc_no: string;
+  deposit_price: number;
+  status: string;
+  payment_confirmed: boolean;
+  pre_booked_at: string;
   full_name: string;
   phone: string;
   payment_type: string | null;
@@ -26,7 +25,7 @@ interface Payment {
 
 interface ReportData {
   payments: Payment[];
-  summary: { total_bookings: number; total_value: number; confirmed: number; pending: number };
+  summary: { total_deposits: number; total_value: number; confirmed: number; pending: number };
 }
 
 const fmt = (n: number) => new Intl.NumberFormat("th-TH").format(n);
@@ -54,21 +53,21 @@ export default function ReportPage() {
   const filtered = paidPayments.filter(p => {
     if (search.trim()) {
       const q = search.toLowerCase();
-      if (!p.full_name?.toLowerCase().includes(q) && !p.phone?.includes(q) && !p.booking_number?.toLowerCase().includes(q) && !p.project_name?.toLowerCase().includes(q)) return false;
+      if (!p.full_name?.toLowerCase().includes(q) && !p.phone?.includes(q) && !p.pre_doc_no?.toLowerCase().includes(q) && !p.project_name?.toLowerCase().includes(q)) return false;
     }
     if (filterProject !== "all" && p.project_name !== filterProject) return false;
     if (dateFrom) {
-      const d = String(p.booking_date).slice(0, 10);
+      const d = String(p.pre_booked_at).slice(0, 10);
       if (d < dateFrom) return false;
     }
     if (dateTo) {
-      const d = String(p.booking_date).slice(0, 10);
+      const d = String(p.pre_booked_at).slice(0, 10);
       if (d > dateTo) return false;
     }
     return true;
   });
 
-  const filteredTotal = filtered.reduce((sum, p) => sum + (p.total_price || 0), 0);
+  const filteredTotal = filtered.reduce((sum, p) => sum + (p.deposit_price || 0), 0);
 
   return (
     <div>
@@ -89,7 +88,7 @@ export default function ReportPage() {
 
         {/* Filters */}
         <div className="bg-white rounded-xl border border-gray-300 p-4 space-y-3">
-          <input type="text" value={search} onChange={e => setSearch(e.target.value)} placeholder="ค้นหาชื่อ, เบอร์, booking number..." className="w-full h-10 px-3 rounded-lg border border-gray-200 text-sm focus:outline-none focus:border-primary" />
+          <input type="text" value={search} onChange={e => setSearch(e.target.value)} placeholder="ค้นหาชื่อ, เบอร์, เลขเอกสาร..." className="w-full h-10 px-3 rounded-lg border border-gray-200 text-sm focus:outline-none focus:border-primary" />
           <div className="flex flex-wrap gap-2">
             <select value={filterProject} onChange={e => setFilterProject(e.target.value)} className="h-9 px-3 rounded-lg border border-gray-200 text-xs bg-white focus:outline-none focus:border-primary">
               <option value="all">ทุกโครงการ</option>
@@ -117,7 +116,7 @@ export default function ReportPage() {
             <table className="w-full text-sm">
               <thead>
                 <tr className="bg-gray-50 text-xs text-gray-500 uppercase">
-                  <th className="text-left px-4 py-2 font-semibold">Booking</th>
+                  <th className="text-left px-4 py-2 font-semibold">Doc No</th>
                   <th className="text-left px-4 py-2 font-semibold">ชื่อลูกค้า</th>
                   <th className="text-left px-4 py-2 font-semibold">โครงการ</th>
                   <th className="text-left px-4 py-2 font-semibold">แพ็คเกจ</th>
@@ -128,16 +127,16 @@ export default function ReportPage() {
               </thead>
               <tbody className="divide-y divide-gray-100">
                 {filtered.map(p => (
-                  <tr key={p.id} className="hover:bg-gray-50 transition-colors">
-                    <td className="px-4 py-3 font-mono text-xs text-gray-600">{p.booking_number}</td>
+                  <tr key={p.lead_id} className="hover:bg-gray-50 transition-colors">
+                    <td className="px-4 py-3 font-mono text-xs text-gray-600">{p.pre_doc_no}</td>
                     <td className="px-4 py-3">
                       <Link href={`/leads/${p.lead_id}`} className="text-sm font-semibold text-gray-900 hover:text-primary">{p.full_name}</Link>
                     </td>
                     <td className="px-4 py-3 text-xs text-gray-500">{p.project_name || "—"}</td>
                     <td className="px-4 py-3 text-xs text-gray-500">{p.package_name || "—"}</td>
                     <td className="px-4 py-3 text-xs text-gray-500">{paymentLabels[p.payment_type || ""] || p.payment_type || "—"}</td>
-                    <td className="px-4 py-3 text-right font-mono tabular-nums font-semibold text-gray-900">{fmt(p.total_price)}</td>
-                    <td className="px-4 py-3 text-xs text-gray-500">{fmtDate(p.booking_date)}</td>
+                    <td className="px-4 py-3 text-right font-mono tabular-nums font-semibold text-gray-900">{fmt(p.deposit_price)}</td>
+                    <td className="px-4 py-3 text-xs text-gray-500">{fmtDate(p.pre_booked_at)}</td>
                   </tr>
                 ))}
               </tbody>
@@ -147,7 +146,7 @@ export default function ReportPage() {
           {/* Mobile Cards */}
           <div className="md:hidden divide-y divide-gray-100">
             {data.payments.map(p => (
-              <Link key={p.id} href={`/leads/${p.lead_id}`} className="block px-4 py-3 hover:bg-gray-50 transition-colors">
+              <Link key={p.lead_id} href={`/leads/${p.lead_id}`} className="block px-4 py-3 hover:bg-gray-50 transition-colors">
                 <div className="flex items-center justify-between mb-1">
                   <span className="text-sm font-semibold text-gray-900">{p.full_name}</span>
                   <span className={`text-[10px] font-bold uppercase px-2 py-0.5 rounded-full ${p.payment_confirmed ? "bg-emerald-50 text-emerald-700" : "bg-amber-50 text-amber-700"}`}>
@@ -156,13 +155,13 @@ export default function ReportPage() {
                 </div>
                 <div className="flex items-center justify-between">
                   <div className="text-xs text-gray-500">
-                    <span className="font-mono">{p.booking_number}</span>
+                    <span className="font-mono">{p.pre_doc_no}</span>
                     {p.project_name && <span> · {p.project_name}</span>}
                   </div>
-                  <span className="text-sm font-bold font-mono tabular-nums text-gray-900">{fmt(p.total_price)}</span>
+                  <span className="text-sm font-bold font-mono tabular-nums text-gray-900">{fmt(p.deposit_price)}</span>
                 </div>
                 <div className="text-xs text-gray-400 mt-0.5">
-                  {fmtDate(p.booking_date)} · {paymentLabels[p.payment_type || ""] || p.payment_type || "—"}
+                  {fmtDate(p.pre_booked_at)} · {paymentLabels[p.payment_type || ""] || p.payment_type || "—"}
                   {p.zone && <span> · {p.zone}</span>}
                 </div>
               </Link>

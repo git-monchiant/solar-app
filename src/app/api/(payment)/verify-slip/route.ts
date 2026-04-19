@@ -17,6 +17,12 @@ export async function POST(request: NextRequest) {
     const { imageUrl } = await request.json();
     if (!imageUrl) return NextResponse.json({ is_slip: false });
 
+    // Temporary bypass: Gemini quota is tight, skip verification — trust upload.
+    // Re-enable by unsetting SKIP_VERIFY_SLIP (or deleting this block).
+    if (process.env.SKIP_VERIFY_SLIP === "1") {
+      return NextResponse.json({ is_slip: true, amount: null, recipient_name: null, recipient_account: null, sender_name: null, sender_account: null, bank: null, datetime: null, reference: null });
+    }
+
     const apiKey = process.env.GEMINI_API_KEY;
     if (!apiKey) return NextResponse.json({ is_slip: false, error: "No API key" });
 
@@ -71,9 +77,13 @@ export async function POST(request: NextRequest) {
       }),
     });
 
-    const geminiData: { candidates?: Array<{ content?: { parts?: Array<{ text?: string }> } }> } = await geminiRes.json();
+    const geminiData: { candidates?: Array<{ content?: { parts?: Array<{ text?: string }> }; finishReason?: string }>; error?: { code?: number; message?: string; status?: string }; promptFeedback?: unknown } = await geminiRes.json();
     const textContent = geminiData.candidates?.[0]?.content?.parts?.[0]?.text || "";
-    console.log("[verify-slip] Gemini raw:", textContent);
+    if (!textContent) {
+      console.error("[verify-slip] Gemini empty response:", JSON.stringify(geminiData).slice(0, 500));
+    } else {
+      console.log("[verify-slip] Gemini raw:", textContent);
+    }
 
     const cleaned = textContent.replace(/```json|```/g, "").trim();
     const jsonMatch = cleaned.match(/\{[\s\S]*\}/);

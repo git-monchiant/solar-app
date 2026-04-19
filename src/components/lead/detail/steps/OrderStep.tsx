@@ -43,7 +43,6 @@ export default function OrderStep({ lead, state, refresh, expanded, onToggle }: 
   const [saving, setSaving] = useState(false);
   const [beforeSlipDone, setBeforeSlipDone] = useState(!!lead.order_before_slip);
   const [afterSlipDone, setAfterSlipDone] = useState(!!lead.order_after_slip);
-  const [beforePaidLocal, setBeforePaidLocal] = useState(!!lead.order_before_paid);
   const [lineSending, setLineSending] = useState(false);
   const [lineSent, setLineSent] = useState(false);
   const [lineConfirm, setLineConfirm] = useState(false);
@@ -77,16 +76,19 @@ export default function OrderStep({ lead, state, refresh, expanded, onToggle }: 
   // PaymentSection writes the payments row + flips the paid flag itself. Parent just
   // reacts after the fact — tracks local UI state and refreshes the lead.
   const onBeforeConfirmed = async () => {
-    setBeforePaidLocal(true);
-    // Full-amount payment: no second installment, advance straight to install.
+    // Advance subStep sync so PaymentSection unmounts immediately —
+    // re-mounting with new slipUrl would force the browser to re-fetch
+    // the slip image, causing a visible flicker.
+    setSubStep(4);
     if (pctBefore >= 100) {
       try { await apiFetch(`/api/leads/${lead.id}`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ status: "install" }) }); } catch {}
     }
-    refresh();
+    await refresh();
   };
   const onAfterConfirmed = async () => {
+    setSubStep(4);
     try { await apiFetch(`/api/leads/${lead.id}`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ status: "install" }) }); } catch {}
-    refresh();
+    await refresh();
   };
 
   const scrollToStep = () => {
@@ -117,15 +119,15 @@ export default function OrderStep({ lead, state, refresh, expanded, onToggle }: 
               <span className="font-mono tabular-nums text-gray-400">{fmt(doneAmtAfter)} บาท</span>
             </div>
           )}
-          {lead.booking_price ? (
+          {lead.pre_total_price ? (
             <>
               <div className="flex justify-between text-xs">
-                <span className="text-gray-400">หักมัดจำ</span>
-                <span className="font-mono tabular-nums text-gray-400">-{fmt(lead.booking_price)} บาท</span>
+                <span className="text-gray-400">หักค่าสำรวจ</span>
+                <span className="font-mono tabular-nums text-gray-400">-{fmt(lead.pre_total_price)} บาท</span>
               </div>
               <div className="flex justify-between border-t border-gray-100 pt-1 mt-1">
                 <span className="text-gray-700 font-semibold">{donePctAfter > 0 ? "ยอดชำระหลังติดตั้งสุทธิ" : "ยอดชำระสุทธิ"}</span>
-                <span className="font-bold font-mono tabular-nums text-gray-900">{fmt((donePctAfter > 0 ? doneAmtAfter : doneTotal) - (lead.booking_price || 0))} บาท</span>
+                <span className="font-bold font-mono tabular-nums text-gray-900">{fmt((donePctAfter > 0 ? doneAmtAfter : doneTotal) - (lead.pre_total_price || 0))} บาท</span>
               </div>
             </>
           ) : null}
@@ -165,7 +167,7 @@ export default function OrderStep({ lead, state, refresh, expanded, onToggle }: 
 
       {lead.order_before_paid && (
         <div className="pt-3 border-t border-gray-100">
-          <ReceiptButtons leadId={lead.id} stage="order_before" fileLabel={`${lead.booking_number || `lead_${lead.id}`}_before`} />
+          <ReceiptButtons leadId={lead.id} stage="order_before" fileLabel={`${lead.pre_doc_no || `lead_${lead.id}`}_before`} />
         </div>
       )}
     </>
@@ -177,7 +179,7 @@ export default function OrderStep({ lead, state, refresh, expanded, onToggle }: 
     if (from === 0 && (pctBefore === null || pctBefore === undefined)) missing.push("% ชำระก่อนติดตั้ง");
     if (from === 2 && !installDate) missing.push("วันนัดติดตั้ง");
     if (from === 3 && !beforeSlipDone) missing.push("กรุณาอัปโหลดสลิปชำระงวดแรก");
-    if (from === 3 && !beforePaidLocal) missing.push("ยืนยันรับชำระงวดแรก");
+    if (from === 3 && !lead.order_before_paid) missing.push("ยืนยันรับชำระงวดแรก");
     return missing;
   };
   const handleSubStepChange = (n: number) => {
@@ -201,7 +203,7 @@ export default function OrderStep({ lead, state, refresh, expanded, onToggle }: 
         <>
           <span className="text-sm font-semibold text-gray-900 flex-1">{lead.install_date ? `กำหนดเข้าติดตั้ง ${formatDate(lead.install_date)}` : "ยืนยันการชำระ"}</span>
           {lead.order_before_paid && (
-            <div className="mr-4"><ReceiptButtons leadId={lead.id} stage="order_before" fileLabel={`${lead.booking_number || `lead_${lead.id}`}_before`} compact /></div>
+            <div className="mr-4"><ReceiptButtons leadId={lead.id} stage="order_before" fileLabel={`${lead.pre_doc_no || `lead_${lead.id}`}_before`} compact /></div>
           )}
         </>
       }
@@ -308,21 +310,21 @@ export default function OrderStep({ lead, state, refresh, expanded, onToggle }: 
                 <span>{fmt(amountAfter)} บาท</span>
               </div>
             </>)}
-            {lead.booking_price && (
+            {lead.pre_total_price && (
               <div className="flex justify-between text-xs text-gray-400">
-                <span>หักมัดจำ</span>
-                <span>-{fmt(lead.booking_price)} บาท</span>
+                <span>หักค่าสำรวจ</span>
+                <span>-{fmt(lead.pre_total_price)} บาท</span>
               </div>
             )}
             {pctBefore >= 100 ? (
               <div className="flex justify-between text-sm font-semibold border-t border-gray-200 pt-1">
                 <span className="text-gray-600">ยอดชำระสุทธิ</span>
-                <span className="font-bold font-mono text-gray-900">{fmt(total - (lead.booking_price || 0))} บาท</span>
+                <span className="font-bold font-mono text-gray-900">{fmt(total - (lead.pre_total_price || 0))} บาท</span>
               </div>
             ) : (
               <div className="flex justify-between text-sm font-semibold border-t border-gray-200 pt-1">
                 <span className="text-gray-600">ยอดชำระหลังติดตั้งสุทธิ</span>
-                <span className="font-bold font-mono text-gray-900">{fmt(amountAfter - (lead.booking_price || 0))} บาท</span>
+                <span className="font-bold font-mono text-gray-900">{fmt(amountAfter - (lead.pre_total_price || 0))} บาท</span>
               </div>
             )}
           </div>
@@ -351,14 +353,14 @@ export default function OrderStep({ lead, state, refresh, expanded, onToggle }: 
                   const origin = typeof window !== "undefined" ? window.location.origin : "";
                   const fileUrl = lead.quotation_files || "";
                   const downloadUrl = `${origin}${fileUrl}`;
-                  const netAfter = amountAfter - (lead.booking_price || 0);
+                  const netAfter = amountAfter - (lead.pre_total_price || 0);
                   const details: { label: string; value: string }[] = [];
                   if (pctBefore < 100) {
                     details.push({ label: `ก่อนติดตั้ง ${pctBefore}%`, value: `฿${fmt(amountBefore)}` });
                     details.push({ label: "หลังติดตั้ง", value: `฿${fmt(amountAfter)}` });
                   }
-                  if (lead.booking_price) {
-                    details.push({ label: "หักมัดจำ", value: `-฿${fmt(lead.booking_price)}` });
+                  if (lead.pre_total_price) {
+                    details.push({ label: "หักค่าสำรวจ", value: `-฿${fmt(lead.pre_total_price)}` });
                     details.push({ label: "ยอดสุทธิหลังติดตั้ง", value: `฿${fmt(netAfter)}` });
                   }
                   const messages = [buildPaymentFlex({
@@ -399,63 +401,29 @@ export default function OrderStep({ lead, state, refresh, expanded, onToggle }: 
           </div>
 
           {/* ชำระก่อนติดตั้ง */}
-          {!beforePaidLocal ? (
-            <div className="rounded-lg bg-white border border-gray-200 p-3">
-              <div className="text-xs font-bold text-gray-400 uppercase mb-3">ชำระก่อนติดตั้ง</div>
-              <PaymentSection
-                paymentTitle="ชำระก่อนติดตั้ง"
-                amountLabel={pctAfter > 0 ? "งวด 1/2" : "ชำระเต็มจำนวน"}
-                amount={amountBefore}
-                leadId={lead.id}
-                leadName={lead.full_name}
-                lineId={lead.line_id}
-                slipUrl={lead.order_before_slip}
-                slipField="order_before_slip"
-                stepNo={3}
-                description={pctAfter > 0 ? `ชำระก่อนติดตั้ง งวด 1/2 (${pctBefore}%)` : "ชำระเต็มจำนวน ก่อนติดตั้ง"}
-                docNo={lead.booking_number}
-                confirmed={beforePaidLocal}
-                onConfirmed={onBeforeConfirmed}
-                onVerified={() => setBeforeSlipDone(true)}
-                details={[
-                  { label: `ยอดชำระ (งวด 1/${pctAfter > 0 ? "2" : "1"})`, value: `฿${fmt(amountBefore)}` },
-                ]}
-              />
-            </div>
-          ) : (
-            <div className="rounded-lg bg-emerald-50 border border-emerald-200 p-3 text-sm text-emerald-700 font-semibold flex items-center gap-2">
-              <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M4.5 12.75l6 6 9-13.5" /></svg>
-              ชำระก่อนติดตั้งแล้ว ({fmt(amountBefore)} บาท)
-            </div>
-          )}
+          <div className="rounded-lg bg-white border border-gray-200 p-3">
+            <PaymentSection
+              paymentTitle="ชำระก่อนติดตั้ง"
+              amountLabel={pctAfter > 0 ? "งวด 1/2" : "ชำระเต็มจำนวน"}
+              amount={amountBefore}
+              leadId={lead.id}
+              leadName={lead.full_name}
+              lineId={lead.line_id}
+              slipUrl={lead.order_before_slip}
+              slipField="order_before_slip"
+              stepNo={3}
+              description={pctAfter > 0 ? `ชำระก่อนติดตั้ง งวด 1/2 (${pctBefore}%)` : "ชำระเต็มจำนวน ก่อนติดตั้ง"}
+              docNo={lead.pre_doc_no ? `${lead.pre_doc_no}-1` : null}
+              confirmed={!!lead.order_before_paid}
+              onConfirmed={onBeforeConfirmed}
+              onVerified={() => setBeforeSlipDone(true)}
+              details={[
+                { label: `ยอดชำระ (งวด 1/${pctAfter > 0 ? "2" : "1"})`, value: `฿${fmt(amountBefore)}` },
+              ]}
+            />
+          </div>
 
-          {/* ชำระหลังติดตั้ง */}
-          {pctAfter > 0 && beforePaidLocal && !lead.order_after_paid && (
-            <div className="rounded-lg bg-white border border-gray-200 p-3">
-              <div className="text-xs font-bold text-gray-400 uppercase mb-3">ชำระหลังติดตั้ง</div>
-              <PaymentSection
-                paymentTitle="ชำระหลังติดตั้ง"
-                amountLabel="งวด 2/2"
-                amount={amountAfter - (lead.booking_price || 0)}
-                leadId={lead.id}
-                leadName={lead.full_name}
-                lineId={lead.line_id}
-                slipUrl={lead.order_after_slip}
-                slipField="order_after_slip"
-                stepNo={4}
-                description="ชำระหลังติดตั้ง งวด 2/2"
-                docNo={lead.booking_number}
-                confirmed={!!lead.order_after_paid}
-                onConfirmed={onAfterConfirmed}
-                onVerified={() => setAfterSlipDone(true)}
-                details={[
-                  { label: "ยอดคงค้าง (งวด 2/2)", value: `฿${fmt(amountAfter)}` },
-                  ...(lead.booking_price ? [{ label: "หักมัดจำ", value: `-฿${fmt(lead.booking_price)}` }] : []),
-                  { label: "ยอดที่ต้องชำระ", value: `฿${fmt(amountAfter - (lead.booking_price || 0))}` },
-                ]}
-              />
-            </div>
-          )}
+          {/* ชำระหลังติดตั้ง — moved to InstallStep (เก็บเงิน subStep) */}
         </div>
       )}
 
@@ -505,15 +473,16 @@ export default function OrderStep({ lead, state, refresh, expanded, onToggle }: 
                     id_card_number: regIdCard || undefined,
                     id_card_address: regAddress || undefined,
                     installation_address: regInstallAddr || undefined,
+                    status: "install",
                   }),
                 });
-                refresh();
+                await refresh();
               } finally { setSaving(false); }
             }}
             disabled={saving}
             className="w-full h-11 rounded-lg text-sm font-semibold text-white bg-gradient-to-r from-primary to-primary-dark hover:brightness-110 disabled:opacity-50 transition-colors"
           >
-            {saving ? "กำลังบันทึก..." : "บันทึกข้อมูลขออนุญาต"}
+            {saving ? "กำลังบันทึก..." : "บันทึกและไปขั้นตอนติดตั้ง"}
           </button>
         </div>
       )}
@@ -533,7 +502,7 @@ export default function OrderStep({ lead, state, refresh, expanded, onToggle }: 
             if (subStep === 0 && (pctBefore === null || pctBefore === undefined)) missing.push("% ชำระก่อนติดตั้ง");
             if (subStep === 2 && !installDate) missing.push("วันนัดติดตั้ง");
             if (subStep === 3 && !beforeSlipDone) missing.push("กรุณาอัปโหลดสลิปชำระงวดแรก");
-            if (subStep === 3 && !beforePaidLocal) missing.push("ยืนยันรับชำระงวดแรก");
+            if (subStep === 3 && !lead.order_before_paid) missing.push("ยืนยันรับชำระงวดแรก");
             if (missing.length > 0) { setNextError(missing.join(", ")); return; }
             setNextError(null);
             setSubStep(subStep + 1); scrollToStep();

@@ -25,8 +25,6 @@ export async function GET() {
     const result = await db.request().query(`
       SELECT l.*, p.name as project_name, p.district, p.province, pk.name as package_name, pk.price as package_price,
              u.full_name as assigned_name,
-             l.pre_doc_no as booking_number,
-             l.pre_total_price as booking_price,
              (SELECT TOP 1 note FROM lead_activities WHERE lead_id = l.id AND note IS NOT NULL ORDER BY created_at DESC) as last_activity_note,
              (SELECT TOP 1 created_at FROM lead_activities WHERE lead_id = l.id ORDER BY created_at DESC) as last_activity_date
       FROM leads l
@@ -82,7 +80,7 @@ export async function POST(request: NextRequest) {
       .query(`
         INSERT INTO leads (full_name, phone, project_id, installation_address, customer_type, interested_package_id, source, payment_type, requirement, note, id_card_number, id_card_address, id_card_photo_url, house_reg_photo_url, status)
         OUTPUT INSERTED.*
-        VALUES (@full_name, @phone, @project_id, @installation_address, @customer_type, @interested_package_id, @source, @payment_type, @requirement, @note, @id_card_number, @id_card_address, @id_card_photo_url, @house_reg_photo_url, 'register')
+        VALUES (@full_name, @phone, @project_id, @installation_address, @customer_type, @interested_package_id, @source, @payment_type, @requirement, @note, @id_card_number, @id_card_address, @id_card_photo_url, @house_reg_photo_url, 'pre_survey')
       `);
 
     // Auto-log lead created (register/walk-in is the first contact)

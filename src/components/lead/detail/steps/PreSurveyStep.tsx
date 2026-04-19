@@ -147,14 +147,14 @@ interface Props extends StepCommonProps {
   onToggle?: () => void;
 }
 
-export default function RegisterStep({ lead, state, refresh, packages, expanded, onToggle }: Props) {
+export default function PreSurveyStep({ lead, state, refresh, packages, expanded, onToggle }: Props) {
   const [regName, setRegName] = useState(lead.full_name || "");
   const [regIdCard, setRegIdCard] = useState(lead.id_card_number || "");
   const [regAddress, setRegAddress] = useState(lead.id_card_address || "");
   const [regHouseNumber, setRegHouseNumber] = useState(lead.installation_address || "");
   const [regProject, setRegProject] = useState(lead.project_name || "");
   const REG_SUB_STEPS = ["ข้อมูล", "แพ็คเกจ", "นัดสำรวจ", "ชำระเงิน", "ยืนยัน"];
-  const [subStep, setSubStep] = useSubStep(`registerSubStep_${lead.id}`, 0, REG_SUB_STEPS.length);
+  const [subStep, setSubStep] = useSubStep(`preSurveySubStep_${lead.id}`, 0, REG_SUB_STEPS.length);
   const [nextError, setNextError] = useState<string | null>(null);
   const [formDraft, setFormDraft] = useState<Partial<Lead>>({});
   const [lightboxUrl, setLightboxUrl] = useState<string | null>(null);
@@ -199,11 +199,11 @@ export default function RegisterStep({ lead, state, refresh, packages, expanded,
     return acc;
   }, {});
 
-  // Booking form state
-  const [bookingPkg, setBookingPkg] = useState(lead.interested_package_id ? String(lead.interested_package_id) : "");
-  const [bookingPayment, setBookingPayment] = useState(lead.payment_type ?? "transfer");
-  const [bookingSaving, setBookingSaving] = useState(false);
-  const [bookingSaved, setBookingSaved] = useState(false);
+  // Pre-survey form state
+  const [selectedPkg, setSelectedPkg] = useState(lead.interested_package_id ? String(lead.interested_package_id) : "");
+  const [paymentMethod, setPaymentMethod] = useState(lead.payment_type ?? "transfer");
+  const [confirmSaving, setConfirmSaving] = useState(false);
+  const [confirmSaved, setConfirmSaved] = useState(false);
   const [confirmingSaved, setConfirmingSaved] = useState(false);
   // Payment verification state — PaymentSection owns upload/verify and calls onVerified(url).
   // url may be "" when KBank authorized the payment but the slip file is unavailable.
@@ -212,7 +212,10 @@ export default function RegisterStep({ lead, state, refresh, packages, expanded,
   const [surveyDate, setSurveyDate] = useState<string>(lead.survey_date ? lead.survey_date.slice(0, 10) : "");
   const [surveyTimeSlot, setSurveyTimeSlot] = useState<string>(lead.survey_time_slot ?? "");
 
-  const hasBooking = !!lead.booking_number;
+  // Pre-Survey step is "done" once status advances past 'pre_survey' (the user
+  // submitted the ID-info form at subStep 4, which PATCHes status='survey').
+  const hasPreSurveyDone = lead.status !== "pre_survey";
+  const hasReceipt = !!lead.pre_doc_no || !!lead.payment_confirmed;
   const paymentLabel = PAYMENT_TYPES.find(p => p.value === lead.payment_type)?.label;
   const financeConfig = FINANCE_STATUSES.find(f => f.value === lead.finance_status);
 
@@ -238,75 +241,54 @@ export default function RegisterStep({ lead, state, refresh, packages, expanded,
   }, [surveyDate, surveyTimeSlot]);
 
 
-  // Transfer: slip verified → book + record payment row + advance to survey
+  // subStep 4 final confirm: advance status to 'survey' + save payment_type.
+  // Payment row is already written by PaymentSection at subStep 3 (confirm slip),
+  // and pre_doc_no is already created by onConfirmed — no need to redo them.
   const confirmWithSlip = async () => {
-    if (!bookingPkg || !paymentVerified || !surveyDate) return;
-    setBookingSaving(true);
+    if (!selectedPkg || !paymentVerified || !surveyDate) return;
+    setConfirmSaving(true);
     try {
       await apiFetch(`/api/leads/${lead.id}`, {
         method: "PATCH", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ payment_type: bookingPayment }),
+        body: JSON.stringify({
+          payment_type: paymentMethod,
+          status: "survey",
+          survey_date: surveyDate,
+          survey_time_slot: surveyTimeSlot,
+          next_follow_up: null,
+        }),
       });
-      // Book — generates pre_doc_no and sets pre_* fields + status=booked
-      const book = await apiFetch(`/api/leads/${lead.id}/book`, {
-        method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ package_id: parseInt(bookingPkg), total_price: DEPOSIT_AMOUNT }),
-      });
-      // Mark slip verified + confirm payment
-      await apiFetch(`/api/leads/${lead.id}`, {
-        method: "PATCH", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ pre_slip_url: slipVerifiedUrl || null, payment_confirmed: true }),
-      });
-      // Record the deposit as a payments transaction row (atomic: also switches
-      // lead.pre_slip_url to /api/payments/:id and sets payment_confirmed).
-      try {
-        await apiFetch("/api/payments", {
-          method: "POST", headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            lead_id: lead.id,
-            step_no: 0,
-            slip_field: "pre_slip_url",
-            doc_no: book?.doc_no ?? null,
-            amount: DEPOSIT_AMOUNT,
-            description: "ค่ามัดจำสำรวจพื้นที่ติดตั้ง Solar Rooftop",
-          }),
-        });
-      } catch (e) { console.error("payments row failed:", e); }
-      await apiFetch(`/api/leads/${lead.id}`, {
-        method: "PATCH", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ status: "survey", survey_date: surveyDate, survey_time_slot: surveyTimeSlot, next_follow_up: null }),
-      });
-      refresh();
+      await refresh();
     } catch (err) {
       console.error(err);
     } finally {
-      setBookingSaving(false);
+      setConfirmSaving(false);
     }
   };
 
   // Non-transfer: save draft (book only, no payment yet)
-  const saveBookingDraft = async () => {
-    if (!bookingPkg) return;
-    setBookingSaving(true);
+  const savePreSurveyDraft = async () => {
+    if (!selectedPkg) return;
+    setConfirmSaving(true);
     try {
       await apiFetch(`/api/leads/${lead.id}`, {
         method: "PATCH", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ payment_type: bookingPayment }),
+        body: JSON.stringify({ payment_type: paymentMethod }),
       });
       await apiFetch(`/api/leads/${lead.id}/book`, {
         method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ package_id: parseInt(bookingPkg), total_price: DEPOSIT_AMOUNT }),
+        body: JSON.stringify({ package_id: parseInt(selectedPkg), total_price: DEPOSIT_AMOUNT }),
       });
-      setBookingSaved(true);
-      refresh();
+      setConfirmSaved(true);
+      await refresh();
     } catch (err) {
       console.error(err);
     } finally {
-      setBookingSaving(false);
+      setConfirmSaving(false);
     }
   };
 
-  const confirmDraftBooking = async () => {
+  const confirmDraftPreSurvey = async () => {
     if (!surveyDate) return;
     setConfirmingSaved(true);
     try {
@@ -319,7 +301,7 @@ export default function RegisterStep({ lead, state, refresh, packages, expanded,
           survey_date: surveyDate,
         }),
       });
-      refresh();
+      await refresh();
     } catch (err) {
       console.error(err);
     } finally {
@@ -327,8 +309,8 @@ export default function RegisterStep({ lead, state, refresh, packages, expanded,
     }
   };
 
-  // Display when booking already exists (done state, viewing)
-  if (hasBooking) {
+  // Display when pre-survey is done (viewing)
+  if (hasPreSurveyDone) {
     const acMap = parseAcUnits(lead.pre_ac_units);
     const acTotal = Object.values(acMap).reduce((a, b) => a + b, 0);
     const applianceList = (lead.pre_appliances || "").split(",").filter(Boolean).map(v => APPLIANCES.find(a => a.value === v)?.label || v);
@@ -351,8 +333,8 @@ export default function RegisterStep({ lead, state, refresh, packages, expanded,
           </span>
         )}
         {!lead.survey_date && <span className="flex-1" />}
-        {lead.booking_id && (
-          <div className="mr-4"><ReceiptButtons leadId={lead.id} stage="booking" fileLabel={lead.booking_number || `booking_${lead.booking_id}`} compact /></div>
+        {hasReceipt && (
+          <div className="mr-4"><ReceiptButtons leadId={lead.id} stage="deposit" fileLabel={lead.pre_doc_no || `lead_${lead.id}_deposit`} compact /></div>
         )}
       </>
     );
@@ -362,7 +344,7 @@ export default function RegisterStep({ lead, state, refresh, packages, expanded,
           {/* แพ็คเกจที่สนใจ */}
           {(() => {
             const pkgIds = lead.interested_package_ids ? lead.interested_package_ids.split(",").map(Number) : [];
-            const bookedId = lead.interested_package_id || lead.booked_package_id;
+            const bookedId = lead.interested_package_id || lead.pre_package_id;
             const selectedPkgs = pkgIds.length > 0
               ? packages.filter(p => pkgIds.includes(p.id))
               : bookedId ? packages.filter(p => p.id === bookedId) : [];
@@ -442,23 +424,23 @@ export default function RegisterStep({ lead, state, refresh, packages, expanded,
           {/* การชำระเงิน · เอกสาร */}
           {(paymentLabel || lead.pre_bill_photo_url || lead.pre_slip_url) && (
             <div className="border-l-3 border-gray-300 pl-3">
-              <div className="text-xs font-bold text-gray-400 uppercase mb-1">เงินมัดจำ · เอกสาร</div>
+              <div className="text-xs font-bold text-gray-400 uppercase mb-1">ค่าสำรวจ · เอกสาร</div>
               {paymentLabel && (
                 <div className="flex justify-between">
                   <span className="text-gray-400">วิธีชำระ</span>
                   <span className="font-semibold text-emerald-600">{paymentLabel}</span>
                 </div>
               )}
-              {lead.booking_date && (
+              {lead.pre_booked_at && (
                 <div className="flex justify-between">
                   <span className="text-gray-400">วันที่ชำระ</span>
-                  <span className="font-semibold text-gray-800">{new Date(String(lead.booking_date).slice(0, 10) + "T12:00:00").toLocaleDateString("th-TH", { day: "numeric", month: "short", year: "numeric" })}</span>
+                  <span className="font-semibold text-gray-800">{new Date(String(lead.pre_booked_at).slice(0, 10) + "T12:00:00").toLocaleDateString("th-TH", { day: "numeric", month: "short", year: "numeric" })}</span>
                 </div>
               )}
-              {lead.booking_price != null && (
+              {lead.pre_total_price != null && (
                 <div className="flex justify-between">
                   <span className="text-gray-400">จำนวนเงิน</span>
-                  <span className="font-semibold text-gray-800 font-mono">{formatPrice(lead.booking_price)} บาท</span>
+                  <span className="font-semibold text-gray-800 font-mono">{formatPrice(lead.pre_total_price)} บาท</span>
                 </div>
               )}
               {(lead.pre_bill_photo_url || lead.pre_slip_url) && (
@@ -482,8 +464,8 @@ export default function RegisterStep({ lead, state, refresh, packages, expanded,
 
           {/* Action */}
           <div className="pt-3 border-t border-gray-100">
-            {lead.confirmed ? (
-              <ReceiptButtons leadId={lead.id} stage="booking" fileLabel={lead.booking_number || `booking_${lead.booking_id}`} />
+            {hasReceipt ? (
+              <ReceiptButtons leadId={lead.id} stage="deposit" fileLabel={lead.pre_doc_no || `lead_${lead.id}_deposit`} />
             ) : (
               <>
                 <div className="rounded-lg border border-active/15 bg-white/60 p-3 space-y-2.5 mb-2">
@@ -521,7 +503,7 @@ export default function RegisterStep({ lead, state, refresh, packages, expanded,
                         installation_address: regHouseNumber || undefined,
                       }),
                     });
-                    confirmDraftBooking();
+                    confirmDraftPreSurvey();
                   }}
                   disabled={confirmingSaved || !surveyDate}
                   className="w-full h-11 px-4 rounded-lg text-sm font-semibold flex items-center justify-center gap-2 bg-primary text-white hover:bg-primary-dark disabled:opacity-50 transition-colors"
@@ -582,7 +564,7 @@ export default function RegisterStep({ lead, state, refresh, packages, expanded,
     >
       {/* Step 1+2: single PreSurveyForm instance, CSS toggle sections */}
       <div className={subStep <= 1 ? "" : "hidden"}>
-        <PreSurveyForm lead={lead} refresh={refresh} packages={packages} hidePackages={subStep !== 1} onlyPackages={subStep === 1} onPackageChange={setBookingPkg} onFormChange={setFormDraft} />
+        <PreSurveyForm lead={lead} refresh={refresh} packages={packages} hidePackages={subStep !== 1} onlyPackages={subStep === 1} onPackageChange={setSelectedPkg} onFormChange={setFormDraft} />
       </div>
 
       {/* Step 3: นัดสำรวจ */}
@@ -623,18 +605,30 @@ export default function RegisterStep({ lead, state, refresh, packages, expanded,
         <div className="rounded-lg bg-white/60 border border-active/15 p-4">
           <PaymentSection
             paymentTitle="ชำระค่าจอง Survey"
-            amountLabel="ค่ามัดจำ"
+            amountLabel="ค่าสำรวจ"
             amount={DEPOSIT_AMOUNT}
             leadId={lead.id}
             leadName={lead.full_name}
             lineId={lead.line_id}
             slipUrl={lead.pre_slip_url ?? null}
             slipField="pre_slip_url"
-            paymentNote="ค่ามัดจำสำรวจพื้นที่ติดตั้ง Solar Rooftop"
+            paymentNote="ค่าสำรวจพื้นที่ติดตั้ง Solar Rooftop"
             stepNo={1}
-            description="ค่ามัดจำ Survey"
+            description="ค่าสำรวจ"
+            docNo={lead.pre_doc_no ? `${lead.pre_doc_no}-0` : null}
             confirmed={!!lead.payment_confirmed}
-            onConfirmed={refresh}
+            onConfirmed={() => {
+              // Advance subStep sync so user sees ID form immediately. /book
+              // fires in background (fire-and-forget) and the final refresh
+              // happens when user submits subStep 4 — avoids mid-flow flicker.
+              setSubStep(4);
+              if (!lead.pre_doc_no && selectedPkg) {
+                apiFetch(`/api/leads/${lead.id}/book`, {
+                  method: "POST", headers: { "Content-Type": "application/json" },
+                  body: JSON.stringify({ package_id: parseInt(selectedPkg), total_price: DEPOSIT_AMOUNT }),
+                }).catch(e => console.error("auto pre_doc_no failed:", e));
+              }
+            }}
             onVerified={(url) => { setSlipVerifiedUrl(url || null); setPaymentVerified(true); }}
           />
         </div>
@@ -658,15 +652,15 @@ export default function RegisterStep({ lead, state, refresh, packages, expanded,
           <div className="rounded-lg border border-active/15 bg-white/60 p-3 space-y-2.5">
             <div className="text-xs font-semibold text-gray-400 uppercase tracking-wider">ข้อมูลจดทะเบียน</div>
             <div>
-              <label className="text-xs text-gray-500 block mb-1">ชื่อ-นามสกุล</label>
+              <label className="text-xs text-gray-500 block mb-1">ชื่อ-นามสกุล <span className="text-red-500">*</span></label>
               <input type="text" value={regName} onChange={e => setRegName(e.target.value)} className="w-full h-10 px-3 rounded-lg border border-gray-200 text-sm focus:outline-none focus:border-primary" />
             </div>
             <div>
-              <label className="text-xs text-gray-500 block mb-1">เลขบัตรประชาชน</label>
+              <label className="text-xs text-gray-500 block mb-1">เลขบัตรประชาชน <span className="text-red-500">*</span></label>
               <input type="text" inputMode="numeric" maxLength={13} value={regIdCard} onChange={e => setRegIdCard(e.target.value.replace(/\D/g, "").slice(0, 13))} placeholder="13 หลัก" className="w-full h-10 px-3 rounded-lg border border-gray-200 text-sm font-mono tabular-nums focus:outline-none focus:border-primary" />
             </div>
             <div>
-              <label className="text-xs text-gray-500 block mb-1">ที่อยู่ตามบัตรประชาชน</label>
+              <label className="text-xs text-gray-500 block mb-1">ที่อยู่ตามบัตรประชาชน <span className="text-red-500">*</span></label>
               <textarea value={regAddress} onChange={e => setRegAddress(e.target.value)} rows={2} className="w-full px-3 py-2 rounded-lg border border-gray-200 text-sm focus:outline-none focus:border-primary resize-none" />
             </div>
             <div>
@@ -674,7 +668,7 @@ export default function RegisterStep({ lead, state, refresh, packages, expanded,
               <input type="text" value={regProject} onChange={e => setRegProject(e.target.value)} className="w-full h-10 px-3 rounded-lg border border-gray-200 text-sm focus:outline-none focus:border-primary" />
             </div>
             <div>
-              <label className="text-xs text-gray-500 block mb-1">ที่อยู่ติดตั้ง</label>
+              <label className="text-xs text-gray-500 block mb-1">ที่อยู่ติดตั้ง <span className="text-red-500">*</span></label>
               <textarea value={regHouseNumber} onChange={e => setRegHouseNumber(e.target.value)} rows={2} className="w-full px-3 py-2 rounded-lg border border-gray-200 text-sm focus:outline-none focus:border-primary resize-none" />
             </div>
           </div>
@@ -699,22 +693,33 @@ export default function RegisterStep({ lead, state, refresh, packages, expanded,
                 return;
               }
               setNextError(null);
-              await apiFetch(`/api/leads/${lead.id}`, {
-                method: "PATCH",
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({
-                  full_name: regName || undefined,
-                  id_card_number: regIdCard || undefined,
-                  id_card_address: regAddress || undefined,
-                  installation_address: regHouseNumber || undefined,
-                }),
-              });
-              confirmWithSlip();
+              setConfirmSaving(true);
+              try {
+                await apiFetch(`/api/leads/${lead.id}`, {
+                  method: "PATCH",
+                  headers: { "Content-Type": "application/json" },
+                  body: JSON.stringify({
+                    full_name: regName || undefined,
+                    id_card_number: regIdCard || undefined,
+                    id_card_address: regAddress || undefined,
+                    installation_address: regHouseNumber || undefined,
+                    payment_type: paymentMethod,
+                    status: "survey",
+                    survey_date: surveyDate,
+                    survey_time_slot: surveyTimeSlot,
+                    next_follow_up: null,
+                  }),
+                });
+                // Wait for lead to refetch before releasing the spinner so the
+                // button stays in "loading" state all the way until the card
+                // actually transitions to done — no flicker of re-enabled button.
+                await refresh();
+              } finally { setConfirmSaving(false); }
             }}
-            disabled={bookingSaving}
+            disabled={confirmSaving}
             className="w-full h-11 rounded-lg text-sm font-semibold text-white bg-gradient-to-r from-primary to-primary-dark hover:brightness-110 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
           >
-            {bookingSaving ? "กำลังบันทึก…" : "ยืนยันและเปิดขั้นสำรวจ"}
+            {confirmSaving ? "กำลังบันทึก…" : "ยืนยันและเปิดขั้นสำรวจ"}
           </button>
         </div>
       )}

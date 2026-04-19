@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { getDb, fixDates } from "@/lib/db";
 
 // Returns all upcoming/active survey appointments so the calendar
-// can show occupied slots and prevent double-booking.
+// can show occupied slots and prevent double-scheduling.
 export async function GET() {
   try {
     const db = await getDb();

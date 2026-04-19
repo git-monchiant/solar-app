@@ -21,9 +21,8 @@ export interface LeadData {
   lost_reason: string | null;
   last_activity_note: string | null;
   last_activity_date: string | null;
-  booking_number: string | null;
-  booking_price: number | null;
-  booking_status: string | null;
+  pre_doc_no: string | null;
+  pre_total_price: number | null;
   quotation_amount: number | null;
   order_total: number | null;
   assigned_user_id: number | null;
@@ -48,7 +47,7 @@ const SURVEY_TIME_LABEL: Record<string, string> = {
 
 export default function LeadCard({ lead, compact, onAssignChange }: { lead: LeadData; compact?: boolean; onAssignChange?: () => void }) {
   const router = useRouter();
-  const config = STATUS_CONFIG[lead.status] || STATUS_CONFIG.register;
+  const config = STATUS_CONFIG[lead.status] || STATUS_CONFIG.pre_survey;
   const isUpgrade = lead.customer_type?.includes("Upgrade") || lead.customer_type?.includes("เดิม");
   const [now, setNow] = useState<number | null>(null);
   useEffect(() => { setNow(Date.now()); }, []);
@@ -160,17 +159,17 @@ export default function LeadCard({ lead, compact, onAssignChange }: { lead: Lead
                 · {isOverdue ? "Overdue" : "Follow-up"} {formatDate(lead.next_follow_up)}
               </span>
             )}
-            {!compact && lead.booking_number && (() => {
+            {!compact && lead.pre_doc_no && (() => {
               // Show the most relevant amount based on stage:
               // order/install/warranty/gridtie/closed → order_total (or quotation_amount fallback)
               // quote → quotation_amount
-              // earlier → booking_price
+              // earlier → pre_total_price (deposit)
               const later = ["order", "install", "warranty", "gridtie", "closed"].includes(lead.status);
               const amount = later
-                ? (lead.order_total || lead.quotation_amount || lead.booking_price || 0)
+                ? (lead.order_total || lead.quotation_amount || lead.pre_total_price || 0)
                 : lead.status === "quote"
-                ? (lead.quotation_amount || lead.booking_price || 0)
-                : (lead.booking_price || 0);
+                ? (lead.quotation_amount || lead.pre_total_price || 0)
+                : (lead.pre_total_price || 0);
               return (
                 <span className="font-semibold text-emerald-700 font-mono tabular-nums">· {formatPrice(amount)} ฿</span>
               );

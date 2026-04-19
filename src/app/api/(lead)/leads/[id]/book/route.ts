@@ -3,8 +3,8 @@ import { getDb, sql } from "@/lib/db";
 
 // POST /api/leads/[id]/book
 // Body: { package_id, total_price, note? }
-// Replaces the legacy /api/bookings POST. Generates pre_doc_no (SM-YYNNN),
-// writes lead.pre_* fields, and logs booking_created + status_change activities.
+// Generates pre_doc_no (SM-YYNNN) and writes lead.pre_* fields. Status is
+// left unchanged here — the caller advances it when the full flow is complete.
 export async function POST(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   try {
     const { id } = await params;
@@ -29,12 +29,6 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
     const nextNum = ((maxRes.recordset[0].max_num || 0) + 1).toString().padStart(3, "0");
     const docNo = `SM-${year}${nextNum}`;
 
-    // Read current status for the activity log
-    const cur = await db.request().input("id", sql.Int, leadId)
-      .query(`SELECT status FROM leads WHERE id = @id`);
-    if (cur.recordset.length === 0) return NextResponse.json({ error: "Lead not found" }, { status: 404 });
-    const oldStatus = cur.recordset[0].status as string;
-
     await db.request()
       .input("id", sql.Int, leadId)
       .input("doc_no", sql.NVarChar(20), docNo)
@@ -48,29 +42,18 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
             pre_total_price = @total_price,
             pre_note = @note,
             pre_booked_at = GETDATE(),
-            status = 'booked',
             updated_at = GETDATE()
         WHERE id = @id
       `);
 
     await db.request()
       .input("lead_id", sql.Int, leadId)
-      .input("title", sql.NVarChar(200), `Booking created: ${docNo}`)
+      .input("title", sql.NVarChar(200), `Pre-survey doc created: ${docNo}`)
       .input("note", sql.NVarChar(sql.MAX), body.note ?? null)
       .query(`
         INSERT INTO lead_activities (lead_id, activity_type, title, note, created_by)
-        VALUES (@lead_id, 'booking_created', @title, @note, 1)
+        VALUES (@lead_id, 'presurvey_doc_created', @title, @note, 1)
       `);
-    if (oldStatus !== "booked") {
-      await db.request()
-        .input("lead_id", sql.Int, leadId)
-        .input("old", sql.NVarChar(30), oldStatus)
-        .input("new_", sql.NVarChar(30), "booked")
-        .query(`
-          INSERT INTO lead_activities (lead_id, activity_type, title, old_status, new_status, created_by)
-          VALUES (@lead_id, 'status_change', 'Status change', @old, @new_, 1)
-        `);
-    }
 
     return NextResponse.json({ doc_no: docNo, lead_id: leadId }, { status: 201 });
   } catch (e) {

@@ -5,8 +5,8 @@ export async function GET() {
   try {
     const db = await getDb();
 
-    const [newLeads, overdueBooking, followUpToday, followUpOverdue, surveyToday, surveyPending, quotationPending, installPending, followUpUpcoming, installing, recentlyClosed, stats] = await Promise.all([
-      // 1. Lead ใหม่รอจอง (register + no booking + < 2 days)
+    const [newLeads, overduePreSurvey, followUpToday, followUpOverdue, surveyToday, surveyPending, quotationPending, installPending, followUpUpcoming, installing, recentlyClosed, stats] = await Promise.all([
+      // 1. Lead ใหม่รอจอง (pre_survey + no pre_doc_no + < 2 days)
       db.request().query(`
         SELECT l.*, p.name as project_name, p.district, p.province, pk.name as package_name, u.full_name as assigned_name,
                (SELECT TOP 1 note FROM lead_activities WHERE lead_id = l.id ORDER BY created_at DESC) as last_activity_note
@@ -14,13 +14,13 @@ export async function GET() {
         LEFT JOIN projects p ON l.project_id = p.id
         LEFT JOIN packages pk ON l.interested_package_id = pk.id
         LEFT JOIN users u ON l.assigned_user_id = u.id
-        WHERE l.status = 'register'
+        WHERE l.status = 'pre_survey'
           AND l.pre_doc_no IS NULL
           AND l.created_at >= DATEADD(day, -2, GETDATE())
           AND (l.next_follow_up IS NULL OR CAST(l.next_follow_up AS DATE) < CAST(GETDATE() AS DATE))
         ORDER BY COALESCE(l.contact_date, l.created_at) ASC
       `),
-      // 2. เกินกำหนดจอง (register + no booking + > 2 days)
+      // 2. เกินกำหนดจอง (pre_survey + no pre_doc_no + > 2 days)
       db.request().query(`
         SELECT l.*, p.name as project_name, p.district, p.province, pk.name as package_name, u.full_name as assigned_name,
                (SELECT TOP 1 note FROM lead_activities WHERE lead_id = l.id ORDER BY created_at DESC) as last_activity_note
@@ -28,7 +28,7 @@ export async function GET() {
         LEFT JOIN projects p ON l.project_id = p.id
         LEFT JOIN packages pk ON l.interested_package_id = pk.id
         LEFT JOIN users u ON l.assigned_user_id = u.id
-        WHERE l.status = 'register'
+        WHERE l.status = 'pre_survey'
           AND l.pre_doc_no IS NULL
           AND l.created_at < DATEADD(day, -2, GETDATE())
           AND (l.next_follow_up IS NULL OR CAST(l.next_follow_up AS DATE) < CAST(GETDATE() AS DATE))
@@ -143,7 +143,7 @@ export async function GET() {
 
     return NextResponse.json({
       newLeads: fixDates(newLeads.recordset),
-      overdueBooking: fixDates(overdueBooking.recordset),
+      overduePreSurvey: fixDates(overduePreSurvey.recordset),
       followUpToday: fixDates(followUpToday.recordset),
       followUpOverdue: fixDates(followUpOverdue.recordset),
       surveyToday: fixDates(surveyToday.recordset),

@@ -21,8 +21,8 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ tok
     if (r.recordset.length === 0) return NextResponse.json({ error: "not found" }, { status: 404 });
     const l = r.recordset[0];
 
-    // Pre-survey (status=register): show all interested packages. Later steps: show the chosen one.
-    const isPreSurvey = l.status === "register";
+    // Pre-survey (status=pre_survey): show all interested packages. Later steps: show the chosen one.
+    const isPreSurvey = l.status === "pre_survey";
     const pkgIds = isPreSurvey
       ? (l.interested_package_ids ? l.interested_package_ids.split(",").map(Number).filter(Boolean) : (l.interested_package_id ? [l.interested_package_id] : []))
       : (l.interested_package_id ? [l.interested_package_id] : []);

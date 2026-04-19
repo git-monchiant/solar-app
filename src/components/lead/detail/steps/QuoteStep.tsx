@@ -66,7 +66,7 @@ export default function QuoteStep({ lead, state, refresh, expanded, onToggle }: 
           quotation_amount: amount || null,
         }),
       });
-      refresh();
+      await refresh();
     } finally {
       setSaving(false);
     }

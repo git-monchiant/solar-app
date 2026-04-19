@@ -17,8 +17,8 @@ interface Lead {
   finance_status: string | null;
   requirement: string | null;
   assigned_staff: string | null;
-  booking_number: string | null;
-  booking_price: number | null;
+  pre_doc_no: string | null;
+  pre_total_price: number | null;
   created_at: string;
 }
 
@@ -75,7 +75,7 @@ export default function CustomerSummary({ lead }: { lead: Lead }) {
             { label: "Contact Date", value: lead.contact_date ? formatDate(lead.contact_date) : null },
             { label: "Follow Up", value: lead.next_follow_up ? formatDate(lead.next_follow_up) : null, color: "text-red-500" },
             { label: "Staff", value: lead.assigned_staff },
-            { label: "Booking", value: lead.booking_number, extra: lead.booking_price ? ` — ${formatPrice(lead.booking_price)} THB` : "" },
+            { label: "Pre-Survey Doc", value: lead.pre_doc_no, extra: lead.pre_total_price ? ` — ${formatPrice(lead.pre_total_price)} THB` : "" },
           ].filter(r => r.value).map(r => (
             <div key={r.label} className="flex justify-between">
               <span className="text-gray">{r.label}</span>

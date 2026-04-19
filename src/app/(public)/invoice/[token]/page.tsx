@@ -77,12 +77,12 @@ export default function InvoicePage() {
         <div className="px-5 py-4 flex-1 flex flex-col gap-4">
           {/* Customer card */}
           <div>
-            <div className="text-[10px] font-bold uppercase tracking-wider text-gray-400 mb-1">ลูกค้า</div>
-            <div className="text-[15px] font-bold text-gray-900">{d.full_name}</div>
-            <div className="text-[12px] text-gray-600 mt-1 space-y-0.5">
-              {d.phone && <div>โทร. {d.phone}</div>}
-              {d.project_name && <div>โครงการ {d.project_name}</div>}
-              {d.installation_address && <div className="truncate">ที่อยู่ {d.installation_address}</div>}
+            <div className="text-[10px] font-bold uppercase tracking-wider text-gray-400 mb-1.5">CUSTOMER INFORMATION</div>
+            <div className="grid grid-cols-[70px_1fr] gap-y-1 text-[12px]">
+              <span className="text-gray-400">NAME</span><span className="text-gray-900 font-semibold">{d.full_name}</span>
+              {d.phone && (<><span className="text-gray-400">PHONE</span><span className="text-gray-800">{d.phone}</span></>)}
+              {d.project_name && (<><span className="text-gray-400">PROJECT</span><span className="text-gray-800">{d.project_name}</span></>)}
+              {d.installation_address && (<><span className="text-gray-400">ADDRESS</span><span className="text-gray-800 truncate">{d.installation_address}</span></>)}
             </div>
           </div>
 
