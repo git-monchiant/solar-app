@@ -28,6 +28,9 @@ interface Props {
   /** If true, the confirm button shows a "ยืนยันแล้ว" state and is disabled. */
   confirmed?: boolean;
   onConfirmed?: () => Promise<unknown> | void;
+  /** Fires after a successful undo (rollback). Separate from onConfirmed so parents
+   * can refresh without advancing sub-step. */
+  onUndone?: () => Promise<unknown> | void;
   confirmLabel?: string;
   // Optional public-facing document URL (receipt PDF). If set, LINE flex button links to it
   // instead of the default /pay/<token> payment page.
@@ -64,6 +67,7 @@ export default function PaymentSection({
   docNo,
   confirmed,
   onConfirmed,
+  onUndone,
   confirmLabel,
   docUrl,
 }: Props) {
@@ -117,7 +121,7 @@ export default function PaymentSection({
     setUndoing(true);
     try {
       await apiFetch(`/api/payments/${payId}`, { method: "DELETE" });
-      onConfirmed?.();
+      await onUndone?.();
     } catch (e) {
       alert("ถอยไม่สำเร็จ: " + (e instanceof Error ? e.message : "error"));
     } finally { setUndoing(false); }

@@ -84,7 +84,7 @@ schema:
         }),
       });
 
-    const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/gemini-flash-latest:generateContent?key=${apiKey}`;
+    const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${apiKey}`;
     let geminiRes: Response | null = null;
     let geminiData: { error?: { code?: number; status?: string }; candidates?: Array<{ content?: { parts?: Array<{ text?: string }> } }> } = {};
     for (let attempt = 0; attempt < 3; attempt++) {

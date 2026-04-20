@@ -63,7 +63,7 @@ export async function POST(request: NextRequest) {
 
 ห้ามใส่ markdown ห้ามใส่ code block return JSON ดิบเท่านั้น`;
 
-    const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/gemini-flash-latest:generateContent?key=${apiKey}`;
+    const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${apiKey}`;
     const geminiRes = await fetch(endpoint, {
       method: "POST",
       headers: { "Content-Type": "application/json" },

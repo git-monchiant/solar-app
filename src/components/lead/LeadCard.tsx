@@ -25,6 +25,7 @@ export interface LeadData {
   pre_total_price: number | null;
   quotation_amount: number | null;
   order_total: number | null;
+  install_extra_cost: number | null;
   assigned_user_id: number | null;
   assigned_name: string | null;
   install_date: string | null;
@@ -165,11 +166,12 @@ export default function LeadCard({ lead, compact, onAssignChange }: { lead: Lead
               // quote → quotation_amount
               // earlier → pre_total_price (deposit)
               const later = ["order", "install", "warranty", "gridtie", "closed"].includes(lead.status);
-              const amount = later
+              const base = later
                 ? (lead.order_total || lead.quotation_amount || lead.pre_total_price || 0)
                 : lead.status === "quote"
                 ? (lead.quotation_amount || lead.pre_total_price || 0)
                 : (lead.pre_total_price || 0);
+              const amount = later ? base + (lead.install_extra_cost || 0) : base;
               return (
                 <span className="font-semibold text-emerald-700 font-mono tabular-nums">· {formatPrice(amount)} ฿</span>
               );

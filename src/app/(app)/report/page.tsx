@@ -4,15 +4,23 @@ import { useEffect, useState } from "react";
 import Link from "next/link";
 import Header from "@/components/layout/Header";
 
-interface Payment {
+interface Installment {
+  id: number;
+  step_no: number;
+  slip_field: string;
+  doc_no: string | null;
+  amount: number;
+  description: string | null;
+  confirmed_at: string;
+  confirmed_by: string | null;
+}
+
+interface ReportRow {
   lead_id: number;
   pre_doc_no: string;
-  deposit_price: number;
-  status: string;
-  payment_confirmed: boolean;
-  pre_booked_at: string;
   full_name: string;
   phone: string;
+  status: string;
   payment_type: string | null;
   zone: string | null;
   project_name: string | null;
@@ -21,24 +29,54 @@ interface Payment {
   package_name: string | null;
   kwp: number | null;
   created_by_name: string | null;
+  pre_booked_at: string;
+  total_value: number;
+  received: number;
+  outstanding: number;
+  installments: Installment[];
 }
 
 interface ReportData {
-  payments: Payment[];
-  summary: { total_deposits: number; total_value: number; confirmed: number; pending: number };
+  rows: ReportRow[];
+  summary: { count: number; total_value: number; received: number; outstanding: number };
 }
 
-const fmt = (n: number) => new Intl.NumberFormat("th-TH").format(n);
+const fmt = (n: number) => new Intl.NumberFormat("th-TH").format(Math.round(n));
 const fmtDate = (d: string) => new Date(String(d).slice(0, 10) + "T12:00:00").toLocaleDateString("th-TH", { day: "numeric", month: "short", year: "numeric" });
+const fmtDateTime = (d: string) => new Date(d).toLocaleString("th-TH", { day: "numeric", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit" });
 const paymentLabels: Record<string, string> = { transfer: "โอนเงิน", cash: "เงินสด", credit_card: "บัตรเครดิต", home_equity: "Home Equity", finance: "สินเชื่อ" };
+const stepLabels: Record<number, string> = { 0: "มัดจำ", 1: "ค่าสำรวจ", 3: "งวด 1/2", 4: "งวด 2/2" };
+
+function toCsv(rows: ReportRow[]): string {
+  const header = ["เลขเอกสาร", "ลูกค้า", "เบอร์", "โครงการ", "แพ็คเกจ", "ช่องทาง", "มูลค่ารวม", "รับแล้ว", "ค้างรับ", "วันที่ทำสัญญา", "รายละเอียดการรับเงิน"];
+  const lines = rows.map(r => [
+    r.pre_doc_no,
+    r.full_name,
+    r.phone || "",
+    r.project_name || "",
+    r.package_name || "",
+    paymentLabels[r.payment_type || ""] || r.payment_type || "",
+    r.total_value,
+    r.received,
+    r.outstanding,
+    r.pre_booked_at ? String(r.pre_booked_at).slice(0, 10) : "",
+    r.installments.map(i => `${stepLabels[i.step_no] || `step${i.step_no}`}: ${fmt(i.amount)} (${String(i.confirmed_at).slice(0,10)})`).join(" | "),
+  ].map(v => {
+    const s = String(v ?? "");
+    return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
+  }).join(","));
+  return "\ufeff" + [header.join(","), ...lines].join("\n");
+}
 
 export default function ReportPage() {
   const [data, setData] = useState<ReportData | null>(null);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState("");
   const [filterProject, setFilterProject] = useState("all");
+  const [filterStatus, setFilterStatus] = useState<"all" | "outstanding" | "settled">("all");
   const [dateFrom, setDateFrom] = useState("");
   const [dateTo, setDateTo] = useState("");
+  const [expanded, setExpanded] = useState<Set<number>>(new Set());
 
   useEffect(() => {
     apiFetch("/api/report/payments").then(setData).catch(console.error).finally(() => setLoading(false));
@@ -47,125 +85,235 @@ export default function ReportPage() {
   if (loading) return <div className="flex items-center justify-center h-full py-20"><div className="w-10 h-10 border-3 border-gray-200 border-t-primary rounded-full animate-spin" /></div>;
   if (!data) return <div className="text-center py-12 text-gray-400 text-sm">Unable to load data</div>;
 
-  const paidPayments = data.payments.filter(p => p.payment_confirmed);
-  const projects = [...new Set(paidPayments.map(p => p.project_name).filter(Boolean))] as string[];
+  const projects = [...new Set(data.rows.map(r => r.project_name).filter(Boolean))] as string[];
 
-  const filtered = paidPayments.filter(p => {
+  const filtered = data.rows.filter(r => {
     if (search.trim()) {
       const q = search.toLowerCase();
-      if (!p.full_name?.toLowerCase().includes(q) && !p.phone?.includes(q) && !p.pre_doc_no?.toLowerCase().includes(q) && !p.project_name?.toLowerCase().includes(q)) return false;
+      if (!r.full_name?.toLowerCase().includes(q) && !r.phone?.includes(q) && !r.pre_doc_no?.toLowerCase().includes(q) && !r.project_name?.toLowerCase().includes(q)) return false;
     }
-    if (filterProject !== "all" && p.project_name !== filterProject) return false;
-    if (dateFrom) {
-      const d = String(p.pre_booked_at).slice(0, 10);
-      if (d < dateFrom) return false;
-    }
-    if (dateTo) {
-      const d = String(p.pre_booked_at).slice(0, 10);
-      if (d > dateTo) return false;
+    if (filterProject !== "all" && r.project_name !== filterProject) return false;
+    if (filterStatus === "outstanding" && r.outstanding <= 0) return false;
+    if (filterStatus === "settled" && r.outstanding > 0) return false;
+    if (dateFrom || dateTo) {
+      const d = r.pre_booked_at ? String(r.pre_booked_at).slice(0, 10) : "";
+      if (dateFrom && d < dateFrom) return false;
+      if (dateTo && d > dateTo) return false;
     }
     return true;
   });
 
-  const filteredTotal = filtered.reduce((sum, p) => sum + (p.deposit_price || 0), 0);
+  const rollup = filtered.reduce(
+    (acc, r) => {
+      acc.total_value += r.total_value;
+      acc.received += r.received;
+      acc.outstanding += r.outstanding;
+      return acc;
+    },
+    { total_value: 0, received: 0, outstanding: 0 },
+  );
+
+  const toggle = (id: number) => {
+    setExpanded(prev => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id); else next.add(id);
+      return next;
+    });
+  };
+
+  const downloadCsv = () => {
+    const csv = toCsv(filtered);
+    const blob = new Blob([csv], { type: "text/csv;charset=utf-8" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `report_${new Date().toISOString().slice(0, 10)}.csv`;
+    a.click();
+    URL.revokeObjectURL(url);
+  };
 
   return (
     <div>
-      <Header title="Report" subtitle="PAYMENT REPORT" />
+      <Header title="Report" subtitle="รายงานรับชำระเงิน (บัญชี)" />
 
       <div className="p-3 md:p-6 space-y-3">
         {/* Summary */}
-        <div className="grid grid-cols-2 gap-2">
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
           <div className="rounded-xl bg-white border border-gray-300 p-4">
             <div className="text-xs font-semibold uppercase tracking-wider text-gray-400">รายการ</div>
             <div className="text-2xl font-bold font-mono tabular-nums text-gray-900 mt-1">{filtered.length}</div>
           </div>
-          <div className="rounded-xl bg-gradient-to-br from-primary to-primary-dark text-white p-4">
-            <div className="text-xs font-semibold uppercase tracking-wider text-white/70">รวม</div>
-            <div className="text-2xl font-bold font-mono tabular-nums mt-1">{fmt(filteredTotal)}</div>
+          <div className="rounded-xl bg-white border border-gray-300 p-4">
+            <div className="text-xs font-semibold uppercase tracking-wider text-gray-400">มูลค่ารวม</div>
+            <div className="text-xl md:text-2xl font-bold font-mono tabular-nums text-gray-900 mt-1">{fmt(rollup.total_value)}</div>
+          </div>
+          <div className="rounded-xl bg-gradient-to-br from-emerald-500 to-emerald-600 text-white p-4">
+            <div className="text-xs font-semibold uppercase tracking-wider text-white/70">รับแล้ว</div>
+            <div className="text-xl md:text-2xl font-bold font-mono tabular-nums mt-1">{fmt(rollup.received)}</div>
+          </div>
+          <div className="rounded-xl bg-gradient-to-br from-amber-500 to-amber-600 text-white p-4">
+            <div className="text-xs font-semibold uppercase tracking-wider text-white/70">ค้างรับ</div>
+            <div className="text-xl md:text-2xl font-bold font-mono tabular-nums mt-1">{fmt(rollup.outstanding)}</div>
           </div>
         </div>
 
         {/* Filters */}
         <div className="bg-white rounded-xl border border-gray-300 p-4 space-y-3">
-          <input type="text" value={search} onChange={e => setSearch(e.target.value)} placeholder="ค้นหาชื่อ, เบอร์, เลขเอกสาร..." className="w-full h-10 px-3 rounded-lg border border-gray-200 text-sm focus:outline-none focus:border-primary" />
+          <input type="text" value={search} onChange={e => setSearch(e.target.value)} placeholder="ค้นหาชื่อ, เบอร์, เลขเอกสาร, โครงการ..." className="w-full h-10 px-3 rounded-lg border border-gray-200 text-sm focus:outline-none focus:border-primary" />
           <div className="flex flex-wrap gap-2">
             <select value={filterProject} onChange={e => setFilterProject(e.target.value)} className="h-9 px-3 rounded-lg border border-gray-200 text-xs bg-white focus:outline-none focus:border-primary">
               <option value="all">ทุกโครงการ</option>
               {projects.map(p => <option key={p} value={p}>{p}</option>)}
+            </select>
+            <select value={filterStatus} onChange={e => setFilterStatus(e.target.value as "all" | "outstanding" | "settled")} className="h-9 px-3 rounded-lg border border-gray-200 text-xs bg-white focus:outline-none focus:border-primary">
+              <option value="all">สถานะทั้งหมด</option>
+              <option value="outstanding">ยังค้างรับ</option>
+              <option value="settled">ครบแล้ว</option>
             </select>
             <div className="flex items-center gap-1">
               <input type="date" value={dateFrom} onChange={e => setDateFrom(e.target.value)} className="h-9 px-2 rounded-lg border border-gray-200 text-xs bg-white focus:outline-none focus:border-primary" />
               <span className="text-xs text-gray-400">—</span>
               <input type="date" value={dateTo} onChange={e => setDateTo(e.target.value)} className="h-9 px-2 rounded-lg border border-gray-200 text-xs bg-white focus:outline-none focus:border-primary" />
             </div>
-            {(search || filterProject !== "all" || dateFrom || dateTo) && (
-              <button type="button" onClick={() => { setSearch(""); setFilterProject("all"); setDateFrom(""); setDateTo(""); }} className="h-9 px-3 rounded-lg text-xs font-semibold text-red-600 border border-red-200 hover:bg-red-50" style={{ minHeight: 0 }}>ล้าง</button>
+            {(search || filterProject !== "all" || filterStatus !== "all" || dateFrom || dateTo) && (
+              <button type="button" onClick={() => { setSearch(""); setFilterProject("all"); setFilterStatus("all"); setDateFrom(""); setDateTo(""); }} className="h-9 px-3 rounded-lg text-xs font-semibold text-red-600 border border-red-200 hover:bg-red-50" style={{ minHeight: 0 }}>ล้าง</button>
             )}
+            <button type="button" onClick={downloadCsv} className="h-9 px-3 rounded-lg text-xs font-semibold text-white bg-primary hover:bg-primary-dark ml-auto" style={{ minHeight: 0 }}>Export CSV</button>
           </div>
         </div>
 
-        {/* Payment List */}
+        {/* Transaction List */}
         <div className="bg-white rounded-xl border border-gray-300 overflow-hidden">
           <div className="px-4 py-3 border-b border-gray-200">
-            <div className="text-xs font-semibold uppercase tracking-wider text-gray-400">รายการรับชำระเงิน</div>
+            <div className="text-xs font-semibold uppercase tracking-wider text-gray-400">รายการสัญญา ({filtered.length})</div>
           </div>
 
-          {/* Desktop Table */}
+          {/* Desktop */}
           <div className="hidden md:block overflow-x-auto">
             <table className="w-full text-sm">
               <thead>
                 <tr className="bg-gray-50 text-xs text-gray-500 uppercase">
-                  <th className="text-left px-4 py-2 font-semibold">Doc No</th>
-                  <th className="text-left px-4 py-2 font-semibold">ชื่อลูกค้า</th>
+                  <th className="w-8"></th>
+                  <th className="text-left px-4 py-2 font-semibold">เอกสาร</th>
+                  <th className="text-left px-4 py-2 font-semibold">ลูกค้า</th>
                   <th className="text-left px-4 py-2 font-semibold">โครงการ</th>
-                  <th className="text-left px-4 py-2 font-semibold">แพ็คเกจ</th>
-                  <th className="text-left px-4 py-2 font-semibold">การชำระ</th>
-                  <th className="text-right px-4 py-2 font-semibold">จำนวนเงิน</th>
-                  <th className="text-left px-4 py-2 font-semibold">วันที่ชำระ</th>
+                  <th className="text-right px-4 py-2 font-semibold">มูลค่ารวม</th>
+                  <th className="text-right px-4 py-2 font-semibold">รับแล้ว</th>
+                  <th className="text-right px-4 py-2 font-semibold">ค้างรับ</th>
+                  <th className="text-left px-4 py-2 font-semibold">เริ่ม</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-100">
-                {filtered.map(p => (
-                  <tr key={p.lead_id} className="hover:bg-gray-50 transition-colors">
-                    <td className="px-4 py-3 font-mono text-xs text-gray-600">{p.pre_doc_no}</td>
-                    <td className="px-4 py-3">
-                      <Link href={`/leads/${p.lead_id}`} className="text-sm font-semibold text-gray-900 hover:text-primary">{p.full_name}</Link>
-                    </td>
-                    <td className="px-4 py-3 text-xs text-gray-500">{p.project_name || "—"}</td>
-                    <td className="px-4 py-3 text-xs text-gray-500">{p.package_name || "—"}</td>
-                    <td className="px-4 py-3 text-xs text-gray-500">{paymentLabels[p.payment_type || ""] || p.payment_type || "—"}</td>
-                    <td className="px-4 py-3 text-right font-mono tabular-nums font-semibold text-gray-900">{fmt(p.deposit_price)}</td>
-                    <td className="px-4 py-3 text-xs text-gray-500">{fmtDate(p.pre_booked_at)}</td>
-                  </tr>
-                ))}
+                {filtered.map(r => {
+                  const isOpen = expanded.has(r.lead_id);
+                  const settled = r.outstanding <= 0 && r.received > 0;
+                  return (
+                    <>
+                      <tr key={r.lead_id} className="hover:bg-gray-50 transition-colors cursor-pointer" onClick={() => toggle(r.lead_id)}>
+                        <td className="px-2 py-3 text-gray-400 text-center">{isOpen ? "▾" : "▸"}</td>
+                        <td className="px-4 py-3 font-mono text-xs text-gray-600">{r.pre_doc_no}</td>
+                        <td className="px-4 py-3">
+                          <Link href={`/leads/${r.lead_id}`} onClick={e => e.stopPropagation()} className="text-sm font-semibold text-gray-900 hover:text-primary">{r.full_name}</Link>
+                          <div className="text-xs text-gray-400">{r.package_name || ""}{r.kwp ? ` · ${r.kwp} kWp` : ""}</div>
+                        </td>
+                        <td className="px-4 py-3 text-xs text-gray-500">{r.project_name || "—"}</td>
+                        <td className="px-4 py-3 text-right font-mono tabular-nums font-semibold text-gray-900">{fmt(r.total_value)}</td>
+                        <td className="px-4 py-3 text-right font-mono tabular-nums text-emerald-700">{fmt(r.received)}</td>
+                        <td className={`px-4 py-3 text-right font-mono tabular-nums font-bold ${settled ? "text-gray-400" : "text-amber-600"}`}>{settled ? "—" : fmt(r.outstanding)}</td>
+                        <td className="px-4 py-3 text-xs text-gray-500">{r.pre_booked_at ? fmtDate(r.pre_booked_at) : "—"}</td>
+                      </tr>
+                      {isOpen && (
+                        <tr key={`${r.lead_id}-detail`} className="bg-gray-50">
+                          <td></td>
+                          <td colSpan={7} className="px-4 py-3">
+                            {r.installments.length === 0 ? (
+                              <div className="text-xs text-gray-400">ยังไม่มีรายการรับเงิน</div>
+                            ) : (
+                              <table className="w-full text-xs">
+                                <thead>
+                                  <tr className="text-gray-400 uppercase">
+                                    <th className="text-left py-1 font-semibold">งวด</th>
+                                    <th className="text-left py-1 font-semibold">รายละเอียด</th>
+                                    <th className="text-left py-1 font-semibold">เลขเอกสาร</th>
+                                    <th className="text-left py-1 font-semibold">ผู้ยืนยัน</th>
+                                    <th className="text-right py-1 font-semibold">จำนวน</th>
+                                    <th className="text-left py-1 font-semibold pl-4">วันเวลา</th>
+                                  </tr>
+                                </thead>
+                                <tbody>
+                                  {r.installments.map(i => (
+                                    <tr key={i.id} className="border-t border-gray-200">
+                                      <td className="py-1 font-semibold text-gray-700">{stepLabels[i.step_no] || `step ${i.step_no}`}</td>
+                                      <td className="py-1 text-gray-600">{i.description || "—"}</td>
+                                      <td className="py-1 font-mono text-gray-500">{i.doc_no || "—"}</td>
+                                      <td className="py-1 text-gray-500">{i.confirmed_by || "—"}</td>
+                                      <td className="py-1 text-right font-mono tabular-nums font-semibold text-emerald-700">{fmt(i.amount)}</td>
+                                      <td className="py-1 text-gray-500 pl-4">{fmtDateTime(i.confirmed_at)}</td>
+                                    </tr>
+                                  ))}
+                                </tbody>
+                              </table>
+                            )}
+                          </td>
+                        </tr>
+                      )}
+                    </>
+                  );
+                })}
               </tbody>
             </table>
           </div>
 
-          {/* Mobile Cards */}
+          {/* Mobile */}
           <div className="md:hidden divide-y divide-gray-100">
-            {data.payments.map(p => (
-              <Link key={p.lead_id} href={`/leads/${p.lead_id}`} className="block px-4 py-3 hover:bg-gray-50 transition-colors">
-                <div className="flex items-center justify-between mb-1">
-                  <span className="text-sm font-semibold text-gray-900">{p.full_name}</span>
-                  <span className={`text-[10px] font-bold uppercase px-2 py-0.5 rounded-full ${p.payment_confirmed ? "bg-emerald-50 text-emerald-700" : "bg-amber-50 text-amber-700"}`}>
-                    {p.payment_confirmed ? "PAID" : "PENDING"}
-                  </span>
+            {filtered.map(r => {
+              const isOpen = expanded.has(r.lead_id);
+              const settled = r.outstanding <= 0 && r.received > 0;
+              return (
+                <div key={r.lead_id}>
+                  <button type="button" onClick={() => toggle(r.lead_id)} className="w-full text-left px-4 py-3 hover:bg-gray-50 transition-colors">
+                    <div className="flex items-center justify-between mb-1">
+                      <Link href={`/leads/${r.lead_id}`} onClick={e => e.stopPropagation()} className="text-sm font-semibold text-gray-900">{r.full_name}</Link>
+                      <span className={`text-[10px] font-bold uppercase px-2 py-0.5 rounded-full ${settled ? "bg-emerald-50 text-emerald-700" : "bg-amber-50 text-amber-700"}`}>
+                        {settled ? "PAID" : "ค้าง"}
+                      </span>
+                    </div>
+                    <div className="text-xs text-gray-500 font-mono">{r.pre_doc_no}{r.project_name ? ` · ${r.project_name}` : ""}</div>
+                    <div className="mt-1 grid grid-cols-3 gap-1 text-xs">
+                      <div>
+                        <div className="text-gray-400">รวม</div>
+                        <div className="font-mono font-semibold text-gray-900">{fmt(r.total_value)}</div>
+                      </div>
+                      <div>
+                        <div className="text-gray-400">รับแล้ว</div>
+                        <div className="font-mono font-semibold text-emerald-700">{fmt(r.received)}</div>
+                      </div>
+                      <div>
+                        <div className="text-gray-400">ค้าง</div>
+                        <div className={`font-mono font-bold ${settled ? "text-gray-400" : "text-amber-600"}`}>{settled ? "—" : fmt(r.outstanding)}</div>
+                      </div>
+                    </div>
+                  </button>
+                  {isOpen && (
+                    <div className="px-4 pb-3 bg-gray-50 space-y-2">
+                      {r.installments.length === 0 ? (
+                        <div className="text-xs text-gray-400 py-2">ยังไม่มีรายการรับเงิน</div>
+                      ) : r.installments.map(i => (
+                        <div key={i.id} className="flex items-start justify-between gap-2 py-1 text-xs">
+                          <div className="flex-1 min-w-0">
+                            <div className="font-semibold text-gray-700">{stepLabels[i.step_no] || `step ${i.step_no}`}</div>
+                            <div className="text-gray-500 truncate">{i.description || "—"}</div>
+                            <div className="text-gray-400">{fmtDateTime(i.confirmed_at)}</div>
+                          </div>
+                          <div className="font-mono font-semibold text-emerald-700 tabular-nums shrink-0">{fmt(i.amount)}</div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
                 </div>
-                <div className="flex items-center justify-between">
-                  <div className="text-xs text-gray-500">
-                    <span className="font-mono">{p.pre_doc_no}</span>
-                    {p.project_name && <span> · {p.project_name}</span>}
-                  </div>
-                  <span className="text-sm font-bold font-mono tabular-nums text-gray-900">{fmt(p.deposit_price)}</span>
-                </div>
-                <div className="text-xs text-gray-400 mt-0.5">
-                  {fmtDate(p.pre_booked_at)} · {paymentLabels[p.payment_type || ""] || p.payment_type || "—"}
-                  {p.zone && <span> · {p.zone}</span>}
-                </div>
-              </Link>
-            ))}
+              );
+            })}
+            {filtered.length === 0 && <div className="px-4 py-8 text-center text-sm text-gray-400">ไม่พบรายการ</div>}
           </div>
         </div>
       </div>

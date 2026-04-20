@@ -617,19 +617,22 @@ export default function PreSurveyStep({ lead, state, refresh, packages, expanded
             description="ค่าสำรวจ"
             docNo={lead.pre_doc_no ? `${lead.pre_doc_no}-0` : null}
             confirmed={!!lead.payment_confirmed}
-            onConfirmed={() => {
-              // Advance subStep sync so user sees ID form immediately. /book
-              // fires in background (fire-and-forget) and the final refresh
-              // happens when user submits subStep 4 — avoids mid-flow flicker.
+            onConfirmed={async () => {
+              // Advance subStep sync first so PaymentSection unmounts before refresh
+              // lands — keeps the slip image from re-fetching mid-flow.
               setSubStep(4);
               if (!lead.pre_doc_no && selectedPkg) {
-                apiFetch(`/api/leads/${lead.id}/book`, {
-                  method: "POST", headers: { "Content-Type": "application/json" },
-                  body: JSON.stringify({ package_id: parseInt(selectedPkg), total_price: DEPOSIT_AMOUNT }),
-                }).catch(e => console.error("auto pre_doc_no failed:", e));
+                try {
+                  await apiFetch(`/api/leads/${lead.id}/book`, {
+                    method: "POST", headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({ package_id: parseInt(selectedPkg), total_price: DEPOSIT_AMOUNT }),
+                  });
+                } catch (e) { console.error("auto pre_doc_no failed:", e); }
               }
+              await refresh();
             }}
             onVerified={(url) => { setSlipVerifiedUrl(url || null); setPaymentVerified(true); }}
+            onUndone={refresh}
           />
         </div>
       )}

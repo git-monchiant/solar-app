@@ -1,8 +1,28 @@
 import { NextRequest, NextResponse } from "next/server";
+import { readdir, unlink } from "fs/promises";
+import path from "path";
 import { getDb, sql } from "@/lib/db";
 
 export const runtime = "nodejs";
 export const maxDuration = 30;
+
+// Remove every temp slip file on disk that belongs to this lead+step. After a
+// confirmed payment the canonical copy lives in payments.slip_data, so any
+// `lead<id>_slip_step<n>_<ts>.<ext>` leftovers in public/uploads/ are orphans.
+async function cleanupTempSlips(leadId: number, stepNo: number) {
+  const dir = path.join(process.cwd(), "public", "uploads");
+  const prefix = `lead${leadId}_slip_step${stepNo}_`;
+  try {
+    const files = await readdir(dir);
+    await Promise.all(
+      files
+        .filter((f) => f.startsWith(prefix))
+        .map((f) => unlink(path.join(dir, f)).catch(() => {})),
+    );
+  } catch {
+    // dir missing or unreadable — nothing to clean
+  }
+}
 
 // Maps slip_field (column on leads) → paid flag (column on leads).
 const PAID_FLAG: Record<string, string> = {
@@ -72,6 +92,8 @@ export async function POST(req: NextRequest) {
       .query(`UPDATE leads SET ${slipField} = @url, ${paidFlag} = 1, updated_at = GETDATE() WHERE id = @lead_id`);
 
     await db.request().input("id", sql.Int, slip.id).query(`DELETE FROM slip_files WHERE id = @id`);
+
+    await cleanupTempSlips(leadId, stepNo);
 
     return NextResponse.json({ id: paymentId, url: paymentUrl });
   } catch (e) {

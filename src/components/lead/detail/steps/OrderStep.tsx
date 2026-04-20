@@ -416,6 +416,7 @@ export default function OrderStep({ lead, state, refresh, expanded, onToggle }: 
               docNo={lead.pre_doc_no ? `${lead.pre_doc_no}-1` : null}
               confirmed={!!lead.order_before_paid}
               onConfirmed={onBeforeConfirmed}
+              onUndone={refresh}
               onVerified={() => setBeforeSlipDone(true)}
               details={[
                 { label: `ยอดชำระ (งวด 1/${pctAfter > 0 ? "2" : "1"})`, value: `฿${fmt(amountBefore)}` },

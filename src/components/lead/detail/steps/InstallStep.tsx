@@ -653,6 +653,7 @@ export default function InstallStep({ lead, state, refresh, expanded, onToggle }
               docNo={lead.pre_doc_no ? `${lead.pre_doc_no}-2` : null}
               confirmed={!!lead.order_after_paid}
               onConfirmed={onAfterConfirmed}
+              onUndone={refresh}
               onVerified={() => setAfterSlipDone(true)}
               details={[
                 { label: "ยอดคงค้าง (งวด 2/2)", value: `฿${fmt(orderTotal - Math.round(orderTotal * pctBefore / 100))}` },
