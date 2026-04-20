@@ -1,13 +1,29 @@
 "use client";
 
 import { useState } from "react";
+import ImageLightbox, { LightboxImage } from "./ImageLightbox";
 
 interface Props extends React.ImgHTMLAttributes<HTMLImageElement> {
   fallbackLabel?: string;
+  /** Open a fullscreen lightbox on click. Defaults to true. */
+  zoomable?: boolean;
+  /** Optional gallery this image belongs to — lightbox will expose prev/next. */
+  gallery?: LightboxImage[];
+  /** Index inside gallery that corresponds to this image. */
+  galleryIndex?: number;
+  /** Label shown in the lightbox header when no gallery is supplied. */
+  lightboxLabel?: string;
 }
 
-export default function FallbackImage({ src, alt, fallbackLabel = "ไม่พบรูป", className = "", ...rest }: Props) {
+export default function FallbackImage({
+  src, alt, fallbackLabel = "ไม่พบรูป", className = "",
+  zoomable = true, gallery, galleryIndex, lightboxLabel,
+  onClick: onClickProp,
+  ...rest
+}: Props) {
   const [failed, setFailed] = useState(false);
+  const [open, setOpen] = useState(false);
+  const [index, setIndex] = useState(galleryIndex ?? 0);
 
   if (failed || !src) {
     return (
@@ -21,5 +37,36 @@ export default function FallbackImage({ src, alt, fallbackLabel = "ไม่พ�
     );
   }
 
-  return <img {...rest} src={src} alt={alt} className={className} onError={() => setFailed(true)} />;
+  const handleClick: React.MouseEventHandler<HTMLImageElement> = (e) => {
+    onClickProp?.(e);
+    if (!zoomable || e.defaultPrevented) return;
+    e.stopPropagation();
+    setIndex(galleryIndex ?? 0);
+    setOpen(true);
+  };
+
+  const images: LightboxImage[] = gallery && gallery.length > 0
+    ? gallery
+    : [{ url: String(src), label: lightboxLabel ?? (typeof alt === "string" ? alt : undefined) }];
+
+  return (
+    <>
+      <img
+        {...rest}
+        src={src}
+        alt={alt}
+        className={`${className} ${zoomable ? "cursor-zoom-in" : ""}`}
+        onError={() => setFailed(true)}
+        onClick={handleClick}
+      />
+      {open && (
+        <ImageLightbox
+          images={images}
+          index={index}
+          onIndexChange={setIndex}
+          onClose={() => setOpen(false)}
+        />
+      )}
+    </>
+  );
 }

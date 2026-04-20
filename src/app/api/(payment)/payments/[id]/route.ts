@@ -1,22 +1,72 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getDb, sql } from "@/lib/db";
+import { requireAdmin, requireAuth } from "@/lib/auth";
 
 export const runtime = "nodejs";
 
-// GET /api/payments/<id>  → serve slip BLOB (fallback when /api/slips/<id> is gone)
-export async function GET(_req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
+const MAX_SLIPS = 5;
+
+// GET /api/payments/<id>
+//   default                  → serve slot 1 binary (backward compatible)
+//   ?slot=<n>                → serve slot n binary (2..MAX_SLIPS)
+//   ?list=1                  → return JSON list of non-empty slots
+export async function GET(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
   const payId = parseInt(id);
   if (!payId) return NextResponse.json({ error: "Invalid id" }, { status: 400 });
+  const { searchParams } = new URL(req.url);
+  // Image bytes are embedded via <img src=...> tags that can't send custom
+  // headers, so the binary branch stays public. The ?list=1 JSON branch is
+  // fetched via apiFetch and is gated.
+  if (searchParams.get("list")) {
+    const gate = await requireAuth(req);
+    if (gate.error) return gate.error;
+  }
+
   try {
     const db = await getDb();
+
+    if (searchParams.get("list")) {
+      const cols = ["id"];
+      for (let i = 1; i <= MAX_SLIPS; i++) {
+        const suffix = i === 1 ? "" : `_${i}`;
+        cols.push(`slip_mime${suffix}`, `slip_filename${suffix}`, `DATALENGTH(slip_data${suffix}) AS bytes_${i}`);
+      }
+      const r = await db.request().input("id", sql.Int, payId)
+        .query(`SELECT ${cols.join(", ")} FROM payments WHERE id = @id`);
+      if (r.recordset.length === 0) return NextResponse.json({ error: "Not found" }, { status: 404 });
+      const row = r.recordset[0];
+      const slots: Array<{ slot: number; url: string; mime: string; filename: string | null; bytes: number }> = [];
+      for (let i = 1; i <= MAX_SLIPS; i++) {
+        const suffix = i === 1 ? "" : `_${i}`;
+        const bytes = row[`bytes_${i}`];
+        if (bytes && bytes > 0) {
+          slots.push({
+            slot: i,
+            url: i === 1 ? `/api/payments/${payId}` : `/api/payments/${payId}?slot=${i}`,
+            mime: row[`slip_mime${suffix}`] || "image/jpeg",
+            filename: row[`slip_filename${suffix}`] || null,
+            bytes,
+          });
+        }
+      }
+      return NextResponse.json({ slots });
+    }
+
+    const slot = parseInt(searchParams.get("slot") || "1");
+    if (slot < 1 || slot > MAX_SLIPS) {
+      return NextResponse.json({ error: "Invalid slot" }, { status: 400 });
+    }
+    const suffix = slot === 1 ? "" : `_${slot}`;
     const r = await db.request().input("id", sql.Int, payId)
-      .query(`SELECT slip_data, slip_mime FROM payments WHERE id = @id`);
-    if (r.recordset.length === 0) return NextResponse.json({ error: "Not found" }, { status: 404 });
+      .query(`SELECT slip_data${suffix} AS data, slip_mime${suffix} AS mime FROM payments WHERE id = @id`);
+    if (r.recordset.length === 0 || !r.recordset[0].data) {
+      return NextResponse.json({ error: "Not found" }, { status: 404 });
+    }
     const row = r.recordset[0];
-    return new NextResponse(row.slip_data, {
+    return new NextResponse(row.data, {
       headers: {
-        "Content-Type": row.slip_mime || "image/jpeg",
+        "Content-Type": row.mime || "image/jpeg",
         "Cache-Control": "private, max-age=3600",
       },
     });
@@ -27,7 +77,7 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ id:
 }
 
 // DELETE /api/payments/<id>  → atomic undo of a confirmed payment:
-//   1) delete payments row (BLOB goes with it)
+//   1) delete payments row (all slots go with it)
 //   2) clear lead paid flag + slip URL
 //   3) for pre_slip_url: also clear pre_doc_no/pre_total_price/pre_package_id/pre_booked_at
 //   4) revert status if it advanced past the stage
@@ -37,7 +87,9 @@ const PAID_FLAG: Record<string, string> = {
   order_before_slip: "order_before_paid",
   order_after_slip: "order_after_paid",
 };
-export async function DELETE(_req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
+export async function DELETE(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
+  const gate = await requireAdmin(req);
+  if (gate.error) return gate.error;
   const { id } = await params;
   const payId = parseInt(id);
   if (!payId) return NextResponse.json({ error: "Invalid id" }, { status: 400 });

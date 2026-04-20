@@ -10,6 +10,7 @@ import LineConfirmModal from "@/components/modal/LineConfirmModal";
 import ErrorPopup from "@/components/ui/ErrorPopup";
 import CustomerInfoForm from "@/components/customer/CustomerInfoForm";
 import FallbackImage from "@/components/ui/FallbackImage";
+import PaymentSlipsThumbs from "@/components/payment/PaymentSlipsThumbs";
 import StepLayout from "../StepLayout";
 import ReceiptButtons from "../ReceiptButtons";
 import { useSubStep } from "@/lib/hooks/useSubStep";
@@ -146,9 +147,7 @@ export default function OrderStep({ lead, state, refresh, expanded, onToggle }: 
             <div className="text-xs font-bold text-violet-600 uppercase">สลิปก่อนติดตั้ง</div>
             <div className="text-sm font-bold font-mono tabular-nums text-gray-900">{fmt(doneAmtBefore)} บาท</div>
           </div>
-          <a href={lead.order_before_slip} target="_blank" rel="noreferrer">
-            <FallbackImage src={lead.order_before_slip} alt="" className="max-h-40 max-w-full object-contain bg-gray-50 rounded-lg border border-gray-200 hover:opacity-80 transition" fallbackLabel="สลิปหาย" />
-          </a>
+          <PaymentSlipsThumbs slipUrl={lead.order_before_slip} label="สลิปก่อนติดตั้ง" />
         </div>
       )}
 

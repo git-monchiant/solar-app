@@ -85,18 +85,35 @@ schema:
       });
 
     const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${apiKey}`;
+    // Per-attempt timeout so a hung connection can't exceed the route's maxDuration.
+    // 15s * 3 attempts = 45s worst case, well under Next's 60s default.
+    const fetchWithTimeout = async (ms: number) => {
+      const ctrl = new AbortController();
+      const t = setTimeout(() => ctrl.abort(), ms);
+      try {
+        return await fetch(endpoint, { ...buildRequest(), signal: ctrl.signal });
+      } finally {
+        clearTimeout(t);
+      }
+    };
     let geminiRes: Response | null = null;
     let geminiData: { error?: { code?: number; status?: string }; candidates?: Array<{ content?: { parts?: Array<{ text?: string }> } }> } = {};
+    let lastError: unknown = null;
     for (let attempt = 0; attempt < 3; attempt++) {
-      geminiRes = await fetch(endpoint, buildRequest());
-      geminiData = await geminiRes.json();
-      if (geminiRes.ok) break;
-      const status = geminiData.error?.code;
-      if (status !== 503 && status !== 429) break;
+      try {
+        geminiRes = await fetchWithTimeout(15_000);
+        geminiData = await geminiRes.json();
+        if (geminiRes.ok) break;
+        const status = geminiData.error?.code;
+        if (status !== 503 && status !== 429) break;
+      } catch (e) {
+        lastError = e;
+        geminiRes = null;
+      }
       await new Promise(r => setTimeout(r, 1500 * (attempt + 1)));
     }
     if (!geminiRes || !geminiRes.ok) {
-      console.error("Gemini API error:", JSON.stringify(geminiData));
+      console.error("Gemini API error:", lastError || JSON.stringify(geminiData));
       return NextResponse.json({ data: {}, error: "Gemini error", details: geminiData });
     }
     const textContent = geminiData.candidates?.[0]?.content?.parts?.[0]?.text || "";

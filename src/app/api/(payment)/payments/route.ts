@@ -2,13 +2,23 @@ import { NextRequest, NextResponse } from "next/server";
 import { readdir, unlink } from "fs/promises";
 import path from "path";
 import { getDb, sql } from "@/lib/db";
+import { requireAdmin, requireAuth } from "@/lib/auth";
 
 export const runtime = "nodejs";
 export const maxDuration = 30;
 
+const MAX_SLIPS = 5;
+
+// Maps slip_field (column on leads) → paid flag (column on leads).
+const PAID_FLAG: Record<string, string> = {
+  pre_slip_url: "payment_confirmed",
+  order_before_slip: "order_before_paid",
+  order_after_slip: "order_after_paid",
+};
+
 // Remove every temp slip file on disk that belongs to this lead+step. After a
-// confirmed payment the canonical copy lives in payments.slip_data, so any
-// `lead<id>_slip_step<n>_<ts>.<ext>` leftovers in public/uploads/ are orphans.
+// confirmed payment the canonical copies live in payments.slip_data/slip_data_2..5,
+// so any `lead<id>_slip_step<n>_<ts>.<ext>` leftovers in public/uploads/ are orphans.
 async function cleanupTempSlips(leadId: number, stepNo: number) {
   const dir = path.join(process.cwd(), "public", "uploads");
   const prefix = `lead${leadId}_slip_step${stepNo}_`;
@@ -24,21 +34,17 @@ async function cleanupTempSlips(leadId: number, stepNo: number) {
   }
 }
 
-// Maps slip_field (column on leads) → paid flag (column on leads).
-const PAID_FLAG: Record<string, string> = {
-  pre_slip_url: "payment_confirmed",
-  order_before_slip: "order_before_paid",
-  order_after_slip: "order_after_paid",
-};
-
 // POST /api/payments
 // Body: { lead_id, step_no, slip_field, doc_no?, amount, description?, confirmed_by? }
 // Atomic confirm:
-//   1. Copy latest slip_files row for (lead_id, slip_field) → new payments row
-//   2. PATCH lead: [slip_field] = /api/payments/:id, [paid_flag] = 1
-//   3. DELETE the staging slip_files row
-// After this the slip lives in payments only; the lead URL points at it.
+//   1. SELECT all slip_files rows for (lead_id, slip_field), ordered by id — up to MAX_SLIPS
+//   2. INSERT payments row populating slot 1..N columns (slip_data_<N>, etc.)
+//   3. PATCH lead: [slip_field] = /api/payments/:id, [paid_flag] = 1
+//   4. DELETE the staging slip_files rows
+//   5. Clean temp slip files left on disk
 export async function POST(req: NextRequest) {
+  const gate = await requireAuth(req);
+  if (gate.error) return gate.error;
   try {
     const body = await req.json();
     const leadId = parseInt(String(body.lead_id || 0));
@@ -52,50 +58,82 @@ export async function POST(req: NextRequest) {
     if (!paidFlag) {
       return NextResponse.json({ error: `Unknown slip_field: ${slipField}` }, { status: 400 });
     }
-    const db = await getDb();
+    const pool = await getDb();
 
-    const slipRes = await db.request()
-      .input("lead_id", sql.Int, leadId)
-      .input("slip_field", sql.NVarChar(50), slipField)
-      .query(`
-        SELECT TOP 1 id, data, mime, filename FROM slip_files
-        WHERE lead_id = @lead_id AND slip_field = @slip_field
-        ORDER BY id DESC
-      `);
-    if (slipRes.recordset.length === 0) {
-      return NextResponse.json({ error: "Slip not found — upload and verify first" }, { status: 400 });
-    }
-    const slip = slipRes.recordset[0];
+    // Atomic commit: SELECT staging → INSERT payment → UPDATE lead → DELETE staging.
+    // Any failure rolls back so the lead flag never flips while staging lingers.
+    const tx = new sql.Transaction(pool);
+    await tx.begin();
+    let paymentId: number;
+    let slipCount: number;
+    try {
+      const slipRes = await new sql.Request(tx)
+        .input("lead_id", sql.Int, leadId)
+        .input("slip_field", sql.NVarChar(50), slipField)
+        .query(`
+          SELECT TOP (${MAX_SLIPS}) id, data, mime, filename FROM slip_files
+          WHERE lead_id = @lead_id AND slip_field = @slip_field
+          ORDER BY id ASC
+        `);
+      if (slipRes.recordset.length === 0) {
+        await tx.rollback();
+        return NextResponse.json({ error: "Slip not found — upload and verify first" }, { status: 400 });
+      }
+      slipCount = slipRes.recordset.length;
 
-    const insertRes = await db.request()
-      .input("lead_id", sql.Int, leadId)
-      .input("step_no", sql.Int, stepNo)
-      .input("slip_field", sql.NVarChar(50), slipField)
-      .input("doc_no", sql.NVarChar(50), body.doc_no ?? null)
-      .input("amount", sql.Decimal(12, 2), amount)
-      .input("description", sql.NVarChar(200), body.description ?? null)
-      .input("slip_data", sql.VarBinary(sql.MAX), slip.data)
-      .input("slip_mime", sql.NVarChar(50), slip.mime || "image/jpeg")
-      .input("slip_filename", sql.NVarChar(200), slip.filename || null)
-      .input("confirmed_by", sql.NVarChar(100), body.confirmed_by ?? null)
-      .query(`
-        INSERT INTO payments (lead_id, step_no, slip_field, doc_no, amount, description, slip_data, slip_mime, slip_filename, confirmed_by)
+      const insertReq = new sql.Request(tx)
+        .input("lead_id", sql.Int, leadId)
+        .input("step_no", sql.Int, stepNo)
+        .input("slip_field", sql.NVarChar(50), slipField)
+        .input("doc_no", sql.NVarChar(50), body.doc_no ?? null)
+        .input("amount", sql.Decimal(12, 2), amount)
+        .input("description", sql.NVarChar(200), body.description ?? null)
+        .input("confirmed_by", sql.NVarChar(100), body.confirmed_by ?? null);
+
+      const slotCols: string[] = ["slip_data", "slip_mime", "slip_filename"];
+      const slotParams: string[] = ["@slip_data", "@slip_mime", "@slip_filename"];
+      for (let i = 0; i < MAX_SLIPS; i++) {
+        const slip = slipRes.recordset[i] ?? null;
+        const suffix = i === 0 ? "" : `_${i + 1}`;
+        insertReq
+          .input(`slip_data${suffix}`, sql.VarBinary(sql.MAX), slip?.data ?? null)
+          .input(`slip_mime${suffix}`, sql.NVarChar(50), slip?.mime ?? null)
+          .input(`slip_filename${suffix}`, sql.NVarChar(200), slip?.filename ?? null);
+        if (i > 0) {
+          slotCols.push(`slip_data${suffix}`, `slip_mime${suffix}`, `slip_filename${suffix}`);
+          slotParams.push(`@slip_data${suffix}`, `@slip_mime${suffix}`, `@slip_filename${suffix}`);
+        }
+      }
+
+      const insertRes = await insertReq.query(`
+        INSERT INTO payments (lead_id, step_no, slip_field, doc_no, amount, description, ${slotCols.join(", ")}, confirmed_by)
         OUTPUT INSERTED.id
-        VALUES (@lead_id, @step_no, @slip_field, @doc_no, @amount, @description, @slip_data, @slip_mime, @slip_filename, @confirmed_by)
+        VALUES (@lead_id, @step_no, @slip_field, @doc_no, @amount, @description, ${slotParams.join(", ")}, @confirmed_by)
       `);
-    const paymentId = insertRes.recordset[0].id;
-    const paymentUrl = `/api/payments/${paymentId}`;
+      paymentId = insertRes.recordset[0].id;
+      const paymentUrl = `/api/payments/${paymentId}`;
 
-    await db.request()
-      .input("lead_id", sql.Int, leadId)
-      .input("url", sql.NVarChar(200), paymentUrl)
-      .query(`UPDATE leads SET ${slipField} = @url, ${paidFlag} = 1, updated_at = GETDATE() WHERE id = @lead_id`);
+      await new sql.Request(tx)
+        .input("lead_id", sql.Int, leadId)
+        .input("url", sql.NVarChar(200), paymentUrl)
+        .query(`UPDATE leads SET ${slipField} = @url, ${paidFlag} = 1, updated_at = GETDATE() WHERE id = @lead_id`);
 
-    await db.request().input("id", sql.Int, slip.id).query(`DELETE FROM slip_files WHERE id = @id`);
+      await new sql.Request(tx)
+        .input("lead_id", sql.Int, leadId)
+        .input("slip_field", sql.NVarChar(50), slipField)
+        .query(`DELETE FROM slip_files WHERE lead_id = @lead_id AND slip_field = @slip_field`);
 
+      await tx.commit();
+    } catch (e) {
+      try { await tx.rollback(); } catch {}
+      throw e;
+    }
+
+    // Filesystem cleanup outside the DB transaction — best-effort, orphans on
+    // failure are harmless (just disk bytes).
     await cleanupTempSlips(leadId, stepNo);
 
-    return NextResponse.json({ id: paymentId, url: paymentUrl });
+    return NextResponse.json({ id: paymentId, url: `/api/payments/${paymentId}`, slip_count: slipCount });
   } catch (e) {
     console.error("POST /api/payments error:", e);
     return NextResponse.json({ error: e instanceof Error ? e.message : "Failed" }, { status: 500 });
@@ -104,6 +142,8 @@ export async function POST(req: NextRequest) {
 
 // GET /api/payments?lead_id=X[&step_no=Y]
 export async function GET(req: NextRequest) {
+  const gate = await requireAuth(req);
+  if (gate.error) return gate.error;
   try {
     const { searchParams } = new URL(req.url);
     const leadId = parseInt(searchParams.get("lead_id") || "0");
@@ -130,6 +170,8 @@ export async function GET(req: NextRequest) {
 // Rollback: remove all payment rows for (lead_id, step_no). Also clears the lead's
 // slip URL + paid flag so data is consistent after rolling back a step.
 export async function DELETE(req: NextRequest) {
+  const gate = await requireAdmin(req);
+  if (gate.error) return gate.error;
   try {
     const { searchParams } = new URL(req.url);
     const leadId = parseInt(searchParams.get("lead_id") || "0");

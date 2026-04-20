@@ -1,0 +1,45 @@
+# docker-compose for UAT deployment.
+# Runs the Next.js app on macvlan IP 172.22.22.105 port 80 so the Nginx gateway
+# (172.22.22.103) can proxy_pass to it. MSSQL stays on the LAN at 172.41.1.73.
+
+services:
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: solar-app:latest
+    container_name: solar-app
+    restart: unless-stopped
+
+    # Credentials + API keys come from a `.env` file next to this compose file.
+    # Keep .env out of git — drop it on the server manually.
+    env_file:
+      - .env
+
+    # Uploads persist across `docker compose up -d --build`. Bind to a host
+    # directory so backups / manual inspection stay easy.
+    volumes:
+      - ./uploads:/app/public/uploads
+
+    networks:
+      solar-lan:
+        # Reserved by Infrastructure Team. DO NOT change — Nginx gateway proxies here.
+        ipv4_address: 172.22.22.105
+
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost/api/me", "--header", "x-user-id: 0"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 30s
+
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+networks:
+  solar-lan:
+    external: true
+    name: optimus_vlan2222

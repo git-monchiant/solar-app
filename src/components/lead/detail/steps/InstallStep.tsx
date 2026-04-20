@@ -5,12 +5,14 @@ import { apiFetch } from "@/lib/api";
 import type { StepCommonProps } from "./types";
 import FallbackImage from "@/components/ui/FallbackImage";
 import PaymentSection from "@/components/payment/PaymentSection";
+import PaymentSlipsThumbs from "@/components/payment/PaymentSlipsThumbs";
 import ErrorPopup from "@/components/ui/ErrorPopup";
 import AppointmentRescheduler from "@/components/calendar/AppointmentRescheduler";
 import StepLayout from "../StepLayout";
 import ReceiptButtons from "../ReceiptButtons";
 import { useSubStep } from "@/lib/hooks/useSubStep";
 import { compressImage } from "@/lib/utils/compressImage";
+import { buildAppointmentFlex } from "@/lib/utils/line-flex";
 
 const fmt = (n: number) => new Intl.NumberFormat("th-TH").format(n);
 const formatDate = (d: string) =>
@@ -103,6 +105,31 @@ export default function InstallStep({ lead, state, refresh, expanded, onToggle }
     } finally { setSaving(false); }
   };
 
+  const [notifyLine, setNotifyLine] = useState(true);
+  const [resending, setResending] = useState(false);
+  const [resendResult, setResendResult] = useState<null | "ok" | "err">(null);
+
+  const buildInstallMessage = () => {
+    if (!lead.install_date) return null;
+    const origin = typeof window !== "undefined" ? window.location.origin : "";
+    return buildAppointmentFlex({
+      origin,
+      kind: "install",
+      name: lead.full_name,
+      date: lead.install_date,
+      address: lead.installation_address,
+      project: lead.project_name,
+      packageLabel: lead.package_name,
+      documents: [
+        "สำเนาบัตรประชาชน",
+        "สำเนาทะเบียนบ้าน",
+        "บิลค่าไฟฟ้าล่าสุด",
+        "หนังสือยินยอมให้ใช้สถานที่ (ถ้าชื่อมิเตอร์ไม่ตรง)",
+        "หนังสือมอบอำนาจ (ถ้าให้บริษัทยื่นแทน)",
+      ],
+    });
+  };
+
   const confirmAppointment = async () => {
     setSaving(true);
     try {
@@ -110,9 +137,40 @@ export default function InstallStep({ lead, state, refresh, expanded, onToggle }
         method: "PATCH", headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ install_confirmed: true }),
       });
+      if (notifyLine && lead.line_id) {
+        const msg = buildInstallMessage();
+        if (msg) {
+          apiFetch("/api/line/send", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ lead_id: lead.id, messages: [msg] }),
+          }).catch(console.error);
+        }
+      }
       setSubStep(1);
       await refresh();
     } finally { setSaving(false); }
+  };
+
+  const resendInstallLine = async () => {
+    if (!lead.line_id) return;
+    const msg = buildInstallMessage();
+    if (!msg) return;
+    setResending(true);
+    setResendResult(null);
+    try {
+      await apiFetch("/api/line/send", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ lead_id: lead.id, messages: [msg] }),
+      });
+      setResendResult("ok");
+    } catch {
+      setResendResult("err");
+    } finally {
+      setResending(false);
+      setTimeout(() => setResendResult(null), 3000);
+    }
   };
 
   const saveReschedule = async ({ date }: { date: string; slot: string }) => {
@@ -370,9 +428,14 @@ export default function InstallStep({ lead, state, refresh, expanded, onToggle }
           <div className="text-xs font-bold text-emerald-600 uppercase mb-1.5">ภาพส่งมอบ ({photos.length})</div>
           <div className="grid grid-cols-3 gap-2">
             {photos.map((url, i) => (
-              <a key={i} href={url} target="_blank" rel="noreferrer">
-                <FallbackImage src={url} alt="" className="w-full aspect-square object-cover rounded-lg border border-gray-200 hover:opacity-80 transition" />
-              </a>
+              <FallbackImage
+                key={i}
+                src={url}
+                alt=""
+                className="w-full aspect-square object-cover rounded-lg border border-gray-200 hover:opacity-80 transition"
+                gallery={photos.map((u, idx) => ({ url: u, label: `ภาพส่งมอบ ${idx + 1} / ${photos.length}` }))}
+                galleryIndex={i}
+              />
             ))}
           </div>
         </div>
@@ -433,9 +496,7 @@ export default function InstallStep({ lead, state, refresh, expanded, onToggle }
       {lead.order_after_slip && (
         <div className="border-l-3 border-violet-400 pl-3">
           <div className="text-xs font-bold text-violet-600 uppercase mb-1.5">สลิปหลังติดตั้ง</div>
-          <a href={lead.order_after_slip} target="_blank" rel="noreferrer">
-            <FallbackImage src={lead.order_after_slip} alt="" className="max-h-40 max-w-full object-contain bg-gray-50 rounded-lg border border-gray-200 hover:opacity-80 transition" fallbackLabel="สลิปหาย" />
-          </a>
+          <PaymentSlipsThumbs slipUrl={lead.order_after_slip} label="สลิปหลังติดตั้ง" />
         </div>
       )}
 
@@ -539,9 +600,39 @@ export default function InstallStep({ lead, state, refresh, expanded, onToggle }
             </button>
           </div>
           {!lead.install_confirmed && lead.install_date && (
-            <button onClick={confirmAppointment} disabled={saving}
-              className="w-full h-11 rounded-lg text-sm font-semibold text-white bg-gradient-to-r from-primary to-primary-dark hover:brightness-110 disabled:opacity-50 transition-colors">
-              {saving ? "..." : "ยืนยันนัดติดตั้ง"}
+            <div className="space-y-2">
+              {lead.line_id && (
+                <label className="flex items-center gap-2 text-xs text-gray-600 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={notifyLine}
+                    onChange={(e) => setNotifyLine(e.target.checked)}
+                    className="w-4 h-4 accent-primary"
+                  />
+                  <span>ส่งยืนยันนัดติดตั้งทาง LINE</span>
+                </label>
+              )}
+              <button onClick={confirmAppointment} disabled={saving}
+                className="w-full h-11 rounded-lg text-sm font-semibold text-white bg-gradient-to-r from-primary to-primary-dark hover:brightness-110 disabled:opacity-50 transition-colors">
+                {saving ? "..." : "ยืนยันนัดติดตั้ง"}
+              </button>
+            </div>
+          )}
+          {lead.install_confirmed && lead.line_id && (
+            <button
+              type="button"
+              onClick={resendInstallLine}
+              disabled={resending}
+              className={`w-full h-10 rounded-lg text-xs font-semibold transition-colors flex items-center justify-center gap-1.5 ${
+                resendResult === "ok" ? "bg-emerald-500 text-white"
+                : resendResult === "err" ? "bg-red-500 text-white"
+                : "text-gray-700 border border-gray-200 hover:bg-gray-50"
+              }`}
+            >
+              {resending ? "กำลังส่ง…"
+                : resendResult === "ok" ? "✓ ส่งแล้ว"
+                : resendResult === "err" ? "ส่งไม่สำเร็จ"
+                : "ส่งยืนยันทาง LINE อีกครั้ง"}
             </button>
           )}
         </div>
@@ -555,8 +646,14 @@ export default function InstallStep({ lead, state, refresh, expanded, onToggle }
             <div className="grid grid-cols-3 gap-2 mb-2">
               {photos.map((url, i) => (
                 <div key={i} className="relative">
-                  <img src={url} alt="" className="w-full aspect-square object-cover rounded-lg border border-gray-200" />
-                  <button onClick={() => removePhoto(i)} className="absolute top-1 right-1 w-6 h-6 bg-black/50 rounded-full text-white flex items-center justify-center text-xs" style={{ minHeight: 0 }}>✕</button>
+                  <FallbackImage
+                    src={url}
+                    alt=""
+                    className="w-full aspect-square object-cover rounded-lg border border-gray-200"
+                    gallery={photos.map((u, idx) => ({ url: u, label: `รูปติดตั้ง ${idx + 1} / ${photos.length}` }))}
+                    galleryIndex={i}
+                  />
+                  <button onClick={(e) => { e.stopPropagation(); removePhoto(i); }} className="absolute top-1 right-1 w-6 h-6 bg-black/50 rounded-full text-white flex items-center justify-center text-xs z-10" style={{ minHeight: 0 }}>✕</button>
                 </div>
               ))}
             </div>

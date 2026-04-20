@@ -1,6 +1,6 @@
 "use client";
 import { apiFetch } from "@/lib/api";
-import { useEffect, useState } from "react";
+import { Fragment, useEffect, useState } from "react";
 import Link from "next/link";
 import Header from "@/components/layout/Header";
 
@@ -208,8 +208,8 @@ export default function ReportPage() {
                   const isOpen = expanded.has(r.lead_id);
                   const settled = r.outstanding <= 0 && r.received > 0;
                   return (
-                    <>
-                      <tr key={r.lead_id} className="hover:bg-gray-50 transition-colors cursor-pointer" onClick={() => toggle(r.lead_id)}>
+                    <Fragment key={r.lead_id}>
+                      <tr className="hover:bg-gray-50 transition-colors cursor-pointer" onClick={() => toggle(r.lead_id)}>
                         <td className="px-2 py-3 text-gray-400 text-center">{isOpen ? "▾" : "▸"}</td>
                         <td className="px-4 py-3 font-mono text-xs text-gray-600">{r.pre_doc_no}</td>
                         <td className="px-4 py-3">
@@ -223,7 +223,7 @@ export default function ReportPage() {
                         <td className="px-4 py-3 text-xs text-gray-500">{r.pre_booked_at ? fmtDate(r.pre_booked_at) : "—"}</td>
                       </tr>
                       {isOpen && (
-                        <tr key={`${r.lead_id}-detail`} className="bg-gray-50">
+                        <tr className="bg-gray-50">
                           <td></td>
                           <td colSpan={7} className="px-4 py-3">
                             {r.installments.length === 0 ? (
@@ -257,7 +257,7 @@ export default function ReportPage() {
                           </td>
                         </tr>
                       )}
-                    </>
+                    </Fragment>
                   );
                 })}
               </tbody>

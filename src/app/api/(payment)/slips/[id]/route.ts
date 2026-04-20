@@ -1,9 +1,12 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getDb, sql } from "@/lib/db";
+import { requireAuth } from "@/lib/auth";
 
 export const runtime = "nodejs";
 
 // GET /api/slips/<id>  → serve binary
+// NOTE: <img src=...> can't send custom headers, so this remains public. If we
+// later switch to cookie/session auth the middleware can gate it uniformly.
 export async function GET(_req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
   const slipId = parseInt(id);
@@ -27,7 +30,9 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ id:
 }
 
 // DELETE /api/slips/<id>  → remove record
-export async function DELETE(_req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
+export async function DELETE(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
+  const gate = await requireAuth(req);
+  if (gate.error) return gate.error;
   const { id } = await params;
   const slipId = parseInt(id);
   if (!slipId) return NextResponse.json({ error: "Invalid id" }, { status: 400 });

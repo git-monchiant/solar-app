@@ -11,6 +11,7 @@ import FallbackImage from "@/components/ui/FallbackImage";
 import StepLayout from "../StepLayout";
 import { useSubStep } from "@/lib/hooks/useSubStep";
 import { compressImage } from "@/lib/utils/compressImage";
+import { buildAppointmentFlex } from "@/lib/utils/line-flex";
 
 const formatDate = (d: string) =>
   new Date(String(d).slice(0, 10) + "T12:00:00").toLocaleDateString("th-TH", { day: "numeric", month: "short", year: "numeric" });
@@ -123,6 +124,25 @@ export default function SurveyStep({ lead, state, refresh, packages, expanded, o
     await persistPhotos(surveyPhotos.filter(u => u !== url));
   };
 
+  const [notifyLine, setNotifyLine] = useState(true);
+  const [resending, setResending] = useState(false);
+  const [resendResult, setResendResult] = useState<null | "ok" | "err">(null);
+
+  const buildSurveyMessage = () => {
+    if (!lead.survey_date) return null;
+    const origin = typeof window !== "undefined" ? window.location.origin : "";
+    return buildAppointmentFlex({
+      origin,
+      kind: "survey",
+      name: lead.full_name,
+      date: lead.survey_date,
+      timeSlot: lead.survey_time_slot,
+      address: lead.installation_address,
+      project: lead.project_name,
+      documents: ["บิลค่าไฟฟ้าล่าสุด"],
+    });
+  };
+
   const confirmAppointment = async () => {
     setSaving(true);
     try {
@@ -131,9 +151,40 @@ export default function SurveyStep({ lead, state, refresh, packages, expanded, o
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ survey_confirmed: true }),
       });
+      if (notifyLine && lead.line_id) {
+        const msg = buildSurveyMessage();
+        if (msg) {
+          apiFetch("/api/line/send", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ lead_id: lead.id, messages: [msg] }),
+          }).catch(console.error);
+        }
+      }
       await refresh();
     } finally {
       setSaving(false);
+    }
+  };
+
+  const resendAppointmentLine = async () => {
+    if (!lead.line_id) return;
+    const msg = buildSurveyMessage();
+    if (!msg) return;
+    setResending(true);
+    setResendResult(null);
+    try {
+      await apiFetch("/api/line/send", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ lead_id: lead.id, messages: [msg] }),
+      });
+      setResendResult("ok");
+    } catch {
+      setResendResult("err");
+    } finally {
+      setResending(false);
+      setTimeout(() => setResendResult(null), 3000);
     }
   };
 
@@ -275,11 +326,21 @@ export default function SurveyStep({ lead, state, refresh, packages, expanded, o
             <div className="border-l-3 border-gray-300 pl-3">
               <div className="text-xs font-bold text-gray-400 uppercase mb-1.5">รูปถ่าย</div>
               <div className="grid grid-cols-3 gap-2">
-                {lead.survey_photos.split(",").filter(Boolean).map(url => (
-                  <a key={url} href={url} target="_blank" rel="noreferrer">
-                    <FallbackImage src={url} alt="Survey" className="w-full aspect-square object-cover rounded-lg border border-gray-200" fallbackLabel="รูปหาย" />
-                  </a>
-                ))}
+                {(() => {
+                  const urls = lead.survey_photos.split(",").filter(Boolean);
+                  const gallery = urls.map((u, i) => ({ url: u, label: `รูปสำรวจ ${i + 1} / ${urls.length}` }));
+                  return urls.map((url, idx) => (
+                    <FallbackImage
+                      key={url}
+                      src={url}
+                      alt="Survey"
+                      className="w-full aspect-square object-cover rounded-lg border border-gray-200"
+                      fallbackLabel="รูปหาย"
+                      gallery={gallery}
+                      galleryIndex={idx}
+                    />
+                  ));
+                })()}
               </div>
             </div>
           )}
@@ -365,8 +426,38 @@ export default function SurveyStep({ lead, state, refresh, packages, expanded, o
             </button>
           </div>
           {!lead.survey_confirmed && (
-            <button onClick={confirmAppointment} disabled={saving} className="w-full h-11 rounded-lg text-sm font-semibold text-white bg-gradient-to-r from-primary to-primary-dark hover:brightness-110 disabled:opacity-50 transition-colors">
-              {saving ? "…" : "ยืนยันนัดหมาย"}
+            <div className="space-y-2">
+              {lead.line_id && (
+                <label className="flex items-center gap-2 text-xs text-gray-600 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={notifyLine}
+                    onChange={(e) => setNotifyLine(e.target.checked)}
+                    className="w-4 h-4 accent-primary"
+                  />
+                  <span>ส่งยืนยันนัดหมายทาง LINE</span>
+                </label>
+              )}
+              <button onClick={confirmAppointment} disabled={saving} className="w-full h-11 rounded-lg text-sm font-semibold text-white bg-gradient-to-r from-primary to-primary-dark hover:brightness-110 disabled:opacity-50 transition-colors">
+                {saving ? "…" : "ยืนยันนัดหมาย"}
+              </button>
+            </div>
+          )}
+          {lead.survey_confirmed && lead.line_id && (
+            <button
+              type="button"
+              onClick={resendAppointmentLine}
+              disabled={resending}
+              className={`w-full h-10 rounded-lg text-xs font-semibold transition-colors flex items-center justify-center gap-1.5 ${
+                resendResult === "ok" ? "bg-emerald-500 text-white"
+                : resendResult === "err" ? "bg-red-500 text-white"
+                : "text-gray-700 border border-gray-200 hover:bg-gray-50"
+              }`}
+            >
+              {resending ? "กำลังส่ง…"
+                : resendResult === "ok" ? "✓ ส่งแล้ว"
+                : resendResult === "err" ? "ส่งไม่สำเร็จ"
+                : "ส่งยืนยันทาง LINE อีกครั้ง"}
             </button>
           )}
         </div>
@@ -468,9 +559,15 @@ export default function SurveyStep({ lead, state, refresh, packages, expanded, o
             <input type="file" accept="image/*" multiple capture="environment" onChange={handlePhotoCapture} className="hidden" id={`survey-photos-${lead.id}`} />
             {surveyPhotos.length > 0 && (
               <div className="grid grid-cols-3 gap-2 mb-2">
-                {surveyPhotos.map(url => (
+                {surveyPhotos.map((url, idx) => (
                   <div key={url} className="relative aspect-square">
-                    <a href={url} target="_blank" rel="noreferrer"><img src={url} alt="Survey" className="w-full h-full object-cover rounded-lg border border-gray-200" /></a>
+                    <FallbackImage
+                      src={url}
+                      alt="Survey"
+                      className="w-full h-full object-cover rounded-lg border border-gray-200"
+                      gallery={surveyPhotos.map((u, i) => ({ url: u, label: `รูปสำรวจ ${i + 1} / ${surveyPhotos.length}` }))}
+                      galleryIndex={idx}
+                    />
                     <button type="button" onClick={() => removePhoto(url)} className="absolute -top-1.5 -right-1.5 w-5 h-5 rounded-full bg-red-500 text-white flex items-center justify-center text-xs shadow">×</button>
                   </div>
                 ))}

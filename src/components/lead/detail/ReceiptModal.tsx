@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import FallbackImage from "@/components/ui/FallbackImage";
 import PdfPreview from "./PdfPreview";
 
 export type ReceiptStage = "deposit" | "order_before" | "order_after";
@@ -68,7 +69,7 @@ export default function ReceiptModal({ leadId, stage, fileLabel, type, onClose }
           <PdfPreview pdfUrl={apiUrl(leadId, stage, "pdf")} />
         ) : (
           <div className="flex items-start justify-center">
-            <img src={apiUrl(leadId, stage)} alt="Receipt" className="w-full max-w-[794px] rounded-lg bg-white shadow-xl" />
+            <FallbackImage src={apiUrl(leadId, stage)} alt="Receipt" lightboxLabel="ใบเสร็จ" className="w-full max-w-[794px] rounded-lg bg-white shadow-xl" />
           </div>
         )}
       </div>

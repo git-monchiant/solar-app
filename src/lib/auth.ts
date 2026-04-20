@@ -1,5 +1,6 @@
-import { NextRequest } from "next/server";
+import { NextRequest, NextResponse } from "next/server";
 import { scryptSync, randomBytes, timingSafeEqual } from "crypto";
+import { getDb, sql } from "@/lib/db";
 
 // Password hash format: "scrypt:<saltHex>:<hashHex>"  (scrypt N=16384, r=8, p=1)
 export function hashPassword(plain: string): string {
@@ -26,4 +27,30 @@ export function getUserIdFromReq(req: NextRequest): number | null {
   if (!h) return null;
   const n = parseInt(h);
   return Number.isFinite(n) && n > 0 ? n : null;
+}
+
+// Route guards — return either `{ userId }` or `{ error }`. Callers early-return
+// on `error`. Keeps the auth+authz check to a single line at the top of handlers.
+export async function requireAuth(req: NextRequest):
+  Promise<{ userId: number; error?: undefined } | { error: NextResponse; userId?: undefined }> {
+  const userId = getUserIdFromReq(req);
+  if (!userId) return { error: NextResponse.json({ error: "Not authenticated" }, { status: 401 }) };
+  return { userId };
+}
+
+export async function requireAdmin(req: NextRequest):
+  Promise<{ userId: number; error?: undefined } | { error: NextResponse; userId?: undefined }> {
+  const userId = getUserIdFromReq(req);
+  if (!userId) return { error: NextResponse.json({ error: "Not authenticated" }, { status: 401 }) };
+  const db = await getDb();
+  const r = await db.request().input("id", sql.Int, userId).query(
+    `SELECT u.role,
+            (SELECT COUNT(*) FROM user_roles WHERE user_id = u.id AND role = 'admin') AS ur_admin
+     FROM users u WHERE u.id = @id`
+  );
+  const row = r.recordset[0];
+  if (!row || (row.role !== "admin" && row.ur_admin === 0)) {
+    return { error: NextResponse.json({ error: "Admin only" }, { status: 403 }) };
+  }
+  return { userId };
 }

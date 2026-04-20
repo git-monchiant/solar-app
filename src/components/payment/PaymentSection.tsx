@@ -1,11 +1,14 @@
 "use client";
 
-import { useEffect, useState } from "react";
-import { apiFetch } from "@/lib/api";
+import { useEffect, useRef, useState } from "react";
+import { apiFetch, getUserIdHeader } from "@/lib/api";
 import LineConfirmModal from "@/components/modal/LineConfirmModal";
+import ImageLightbox from "@/components/ui/ImageLightbox";
 import PaymentHeader from "./PaymentHeader";
 import { buildPaymentFlex } from "@/lib/utils/line-flex";
 import { useMe } from "@/lib/roles";
+
+const MAX_SLIPS = 5;
 
 interface Props {
   paymentTitle: string;
@@ -20,8 +23,9 @@ interface Props {
   details?: { label: string; value: string }[];
   onVerified?: (url: string) => void;
   /** Renders a "ยืนยันรับชำระเงิน" button below the slip upload area. When clicked,
-   * POSTs to /api/payments to write the transaction row and switch the lead's slip URL
-   * to point at the new /api/payments/:id. Parent's onConfirmed is called after for refresh. */
+   * POSTs to /api/payments to write the transaction row (with all staged slips bundled
+   * into slip_data/slip_data_2..5) and switch the lead's slip URL to point at the new
+   * /api/payments/:id. Parent's onConfirmed is called after for refresh. */
   stepNo?: number;
   description?: string;
   docNo?: string | null;
@@ -50,6 +54,17 @@ type Settings = {
   bank_account_name?: string;
 };
 
+type SlipStatus = "verifying" | "verified" | "failed";
+interface SlipEntry {
+  key: string;            // stable React key (slip_files id, payment slot, or tmp-<ts>)
+  url: string;            // image URL (or data: for local preview)
+  status: SlipStatus;
+  error?: string;
+  slipFilesId?: number;   // staging row id — needed for DELETE /api/slips/:id
+  tempFileUrl?: string;   // /api/files/<name> during verify; cleaned after success/fail
+  filename?: string;
+}
+
 export default function PaymentSection({
   paymentTitle,
   amountLabel,
@@ -76,43 +91,76 @@ export default function PaymentSection({
 
   // Fire-and-forget audit log — never blocks user flow.
   const log = (action: string, details?: Record<string, unknown>) => {
-    fetch("/api/payment-logs", {
+    apiFetch("/api/payment-logs", {
       method: "POST",
-      headers: { "Content-Type": "application/json", "ngrok-skip-browser-warning": "true" },
+      headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ lead_id: leadId, slip_field: slipField, step_no: stepNo, action, details }),
     }).catch(() => {});
   };
-  const handleConfirm = async () => {
-    if (stepNo === undefined || confirming || confirmed) return;
-    setConfirming(true);
-    setConfirmError(null);
-    try {
-      await apiFetch("/api/payments", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          lead_id: leadId,
-          step_no: stepNo,
-          slip_field: slipField,
-          doc_no: docNo ?? null,
-          amount,
-          description: description ?? null,
-        }),
-      });
-      // Await parent's onConfirmed so the confirm button's spinner stays visible
-      // until the lead re-fetches — button → confirmed banner transition in a
-      // single render, no flicker.
-      await onConfirmed?.();
-    } catch (e) {
-      setConfirmError(e instanceof Error ? e.message : "ยืนยันไม่สำเร็จ");
-    } finally {
-      setConfirming(false);
-    }
-  };
+
   const [settings, setSettings] = useState<Settings>({});
   const [tab, setTab] = useState<"qr" | "link" | "bank">("qr");
   const { me } = useMe();
   const isAdmin = me?.roles?.includes("admin") ?? false;
+
+  const [slips, setSlips] = useState<SlipEntry[]>([]);
+  const [slipsLoaded, setSlipsLoaded] = useState(false);
+  const [lightbox, setLightbox] = useState<{ url: string; index: number } | null>(null);
+  const verifiedFiredRef = useRef(false);
+
+  // Initial load of current slips. When confirmed, read confirmed slot list from the
+  // payment record. Otherwise read the staging list from slip_files. A 404 on the
+  // payment list (e.g. user just hit ถอย, parent hasn't refreshed slipUrl yet) is
+  // expected — clear local state and let the next render with fresh props re-load.
+  useEffect(() => {
+    let cancelled = false;
+    const load = async () => {
+      try {
+        if (confirmed && slipUrl?.startsWith("/api/payments/")) {
+          const payId = slipUrl.split("/").pop();
+          const res = await fetch(`/api/payments/${payId}?list=1`, {
+            headers: { "ngrok-skip-browser-warning": "true", ...getUserIdHeader() },
+          });
+          if (cancelled) return;
+          if (res.status === 404) {
+            setSlips([]);
+            return;
+          }
+          if (!res.ok) throw new Error(`API error: ${res.status}`);
+          const data = await res.json() as { slots: Array<{ slot: number; url: string; filename: string | null }> };
+          if (cancelled) return;
+          setSlips(data.slots.map((s) => ({
+            key: `slot-${s.slot}`,
+            url: s.url,
+            status: "verified" as const,
+            filename: s.filename ?? undefined,
+          })));
+        } else {
+          const res = await apiFetch(`/api/slips?lead_id=${leadId}&slip_field=${encodeURIComponent(slipField)}`) as { slips: Array<{ id: number; url: string; filename: string | null }> };
+          if (cancelled) return;
+          const list = res.slips.map((s) => ({
+            key: `slip-${s.id}`,
+            url: s.url,
+            status: "verified" as const,
+            slipFilesId: s.id,
+            filename: s.filename ?? undefined,
+          }));
+          setSlips(list);
+          if (list.length > 0 && !verifiedFiredRef.current) {
+            verifiedFiredRef.current = true;
+            onVerified?.(list[0].url);
+          }
+        }
+      } catch (e) {
+        console.error("load slips failed:", e);
+      } finally {
+        if (!cancelled) setSlipsLoaded(true);
+      }
+    };
+    load();
+    return () => { cancelled = true; };
+  }, [leadId, slipField, confirmed, slipUrl]); // eslint-disable-line react-hooks/exhaustive-deps
+
   const [undoing, setUndoing] = useState(false);
   const handleUndo = async () => {
     if (!confirm("ยืนยันการถอย payment นี้?\n(จะลบ slip + ปลดสถานะ + ต้อง upload สลิปใหม่)")) return;
@@ -126,7 +174,7 @@ export default function PaymentSection({
       alert("ถอยไม่สำเร็จ: " + (e instanceof Error ? e.message : "error"));
     } finally { setUndoing(false); }
   };
-  const [bankCopied, setBankCopied] = useState<"number" | "name" | null>(null);
+  const [bankCopied, setBankCopied] = useState<"number" | "name" | "all" | null>(null);
   const [qrDataUrl, setQrDataUrl] = useState<string | null>(null);
   const [qrLoading, setQrLoading] = useState(true);
   const [qrError, setQrError] = useState<string | null>(null);
@@ -135,31 +183,6 @@ export default function PaymentSection({
   const [lineSending, setLineSending] = useState<string | null>(null);
   const [lineSent, setLineSent] = useState<string | null>(null);
   const [lineConfirmType, setLineConfirmType] = useState<"qr" | "link" | "bank" | null>(null);
-
-  // Slip upload + Gemini verify.
-  // Initial state prefers the prop from parent (lead.pre_slip_url), but falls back to a
-  // per-(lead, field) cache in localStorage. This self-heals the case where the user
-  // uploaded a slip in this session, then navigated sub-steps (PaymentSection unmounts);
-  // on remount the parent's lead prop may still be stale, but the cache carries us through.
-  const cacheKey = `slip:${leadId}:${slipField}`;
-  const initialSlip = slipUrl || (typeof window !== "undefined" ? localStorage.getItem(cacheKey) : null);
-  const [slipPreview, setSlipPreview] = useState<string | null>(initialSlip);
-  const [uploadedSlipUrl, setUploadedSlipUrl] = useState<string | null>(initialSlip);
-  const [verifyStatus, setVerifyStatus] = useState<"idle" | "verifying" | "verified" | "failed">(initialSlip ? "verified" : "idle");
-  const [verifyError, setVerifyError] = useState<string | null>(null);
-
-  // When the parent eventually refreshes and delivers the real slipUrl, sync it in and
-  // drop the cache — DB is now the source of truth again.
-  useEffect(() => {
-    if (verifyStatus === "verifying") return;
-    if (slipUrl && slipUrl !== uploadedSlipUrl) {
-      setSlipPreview(slipUrl);
-      setUploadedSlipUrl(slipUrl);
-      setVerifyStatus("verified");
-      setVerifyError(null);
-      try { localStorage.removeItem(cacheKey); } catch {}
-    }
-  }, [slipUrl]); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
     apiFetch("/api/settings").then((s: Settings) => {
@@ -249,32 +272,24 @@ export default function PaymentSection({
     }
   };
 
-  // Slip capture → verify (Gemini: is_slip + amount matches) → save to DB
-  // IMPORTANT: never silently clear the previously saved slip/status. Only update state
-  // after the new attempt has fully passed and been stored.
-  const handleSlipCapture = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-    e.target.value = "";
+  // Upload one slip: temp disk → Gemini verify → persist to slip_files staging.
+  // Appends to slips[]; never replaces existing verified entries.
+  const addSlip = async (file: File) => {
+    if (confirmed) return;
+    if (slips.length >= MAX_SLIPS) return;
 
-    log("upload_start", { filename: file.name, size: file.size, mime: file.type, expected_amount: amount, current_saved: uploadedSlipUrl });
-
-    // Keep only the latest file: if previous attempt was a temp disk file (failed/unverified),
-    // delete it now. A verified DB-backed slip (/api/slips/…) is left in place and replaced
-    // later by the upsert in /api/slips POST only when the new attempt succeeds.
-    const prevTmp = uploadedSlipUrl && !uploadedSlipUrl.startsWith("/api/slips/") ? uploadedSlipUrl : null;
-    if (prevTmp) {
-      fetch(`/api/upload?file=${encodeURIComponent(prevTmp)}`, { method: "DELETE", headers: { "ngrok-skip-browser-warning": "true" } }).catch(() => {});
-    }
-
-    setVerifyStatus("verifying");
-    setVerifyError(null);
-
-    // Show preview of the new attempt locally (doesn't touch saved state).
+    const tempKey = `tmp-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
     const reader = new FileReader();
-    reader.onload = ev => setSlipPreview(ev.target?.result as string);
-    reader.readAsDataURL(file);
+    const dataUrlPromise = new Promise<string>((resolve) => {
+      reader.onload = (ev) => resolve(ev.target?.result as string);
+      reader.readAsDataURL(file);
+    });
+    const previewUrl = await dataUrlPromise;
 
+    setSlips((prev) => [...prev, { key: tempKey, url: previewUrl, status: "verifying" }]);
+    log("upload_start", { filename: file.name, size: file.size, mime: file.type, expected_amount: amount, current_count: slips.length });
+
+    let tmpUrl: string | null = null;
     try {
       // 1. Upload temp copy to disk so Gemini can fetch it by URL
       const uploadForm = new FormData();
@@ -282,11 +297,11 @@ export default function PaymentSection({
       uploadForm.append("lead_id", String(leadId));
       uploadForm.append("type", `slip_step${stepNo ?? 0}`);
       const uploadRes = await fetch("/api/upload", { method: "POST", headers: { "ngrok-skip-browser-warning": "true" }, body: uploadForm });
-      const { url: tmpUrl } = await uploadRes.json();
+      const uploadJson = await uploadRes.json();
+      tmpUrl = uploadJson.url as string;
       log("upload_tmp_ok", { tmp_url: tmpUrl });
 
-      // 2. Verify with Gemini: is_slip + amount matches expected
-      log("verify_start", { tmp_url: tmpUrl, expected_amount: amount });
+      // 2. Verify with Gemini
       const verifyRes = await fetch("/api/verify-slip", {
         method: "POST",
         headers: { "Content-Type": "application/json", "ngrok-skip-browser-warning": "true" },
@@ -295,86 +310,88 @@ export default function PaymentSection({
       const slipData = await verifyRes.json();
 
       if (!slipData.is_slip) {
-        log("verify_fail", {
-          tmp_url: tmpUrl, expected_amount: amount, gemini: slipData,
-          reason: "not_a_slip",
-        });
-        // Failed: point uploadedSlipUrl at the tmp file so ✕ can clean it up,
-        // but do NOT delete or overwrite the previously-saved slip in DB/lead.pre_slip_url.
-        setUploadedSlipUrl(tmpUrl);
-        setVerifyError("ไม่ใช่สลิปโอนเงิน");
-        setVerifyStatus("failed");
+        log("verify_fail", { tmp_url: tmpUrl, expected_amount: amount, gemini: slipData });
+        setSlips((prev) => prev.map((s) => s.key === tempKey ? { ...s, status: "failed" as const, error: "ไม่ใช่สลิปโอนเงิน", tempFileUrl: tmpUrl ?? undefined } : s));
         return;
       }
       log("verify_success", { tmp_url: tmpUrl, expected_amount: amount, gemini: slipData });
 
-      // 3. Verified → persist file to DB (survives disk wipes)
+      // 3. Persist to staging (slip_files)
       const storeForm = new FormData();
       storeForm.append("file", file);
       storeForm.append("lead_id", String(leadId));
       storeForm.append("slip_field", slipField);
-      const storeRes = await apiFetch("/api/slips", { method: "POST", body: storeForm });
-      const dbUrl: string = storeRes.url;
+      const storeRes = await apiFetch("/api/slips", { method: "POST", body: storeForm }) as { id: number; url: string };
 
       // 4. Cleanup temp disk file
-      fetch(`/api/upload?file=${encodeURIComponent(tmpUrl)}`, { method: "DELETE", headers: { "ngrok-skip-browser-warning": "true" } }).catch(() => {});
+      if (tmpUrl) {
+        fetch(`/api/upload?file=${encodeURIComponent(tmpUrl)}`, { method: "DELETE", headers: { "ngrok-skip-browser-warning": "true" } }).catch(() => {});
+      }
 
-      // 5. PATCH the lead's slip field with the new DB URL (replaces the previous one
-      //    server-side only AFTER we have a verified replacement — safe). Await so we can
-      //    then trigger a parent refresh before the user navigates away, guaranteeing the
-      //    slip is readable from lead.pre_slip_url on any re-render.
-      try {
-        await apiFetch(`/api/leads/${leadId}`, {
-          method: "PATCH",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ [slipField]: dbUrl }),
-        });
-      } catch (e) { console.error(e); }
+      log("slip_saved", { db_url: storeRes.url });
+      setSlips((prev) => prev.map((s) => s.key === tempKey
+        ? { key: `slip-${storeRes.id}`, url: storeRes.url, status: "verified" as const, slipFilesId: storeRes.id, filename: file.name }
+        : s));
 
-      log("slip_saved", { db_url: dbUrl });
-
-      setUploadedSlipUrl(dbUrl);
-      setSlipPreview(dbUrl);
-      setVerifyStatus("verified");
-      onVerified?.(dbUrl);
-
-      // Self-heal on remount: if user navigates sub-steps, PaymentSection unmounts and
-      // the parent's `lead` prop is stale (no refresh fired). Cache the dbUrl per
-      // (leadId, slipField) so a fresh mount can recover the slip without relying on parent.
-      try {
-        localStorage.setItem(`slip:${leadId}:${slipField}`, dbUrl);
-      } catch {}
-    } catch {
-      // Never clear saved state on error — just mark the current attempt as failed.
-      setVerifyStatus("failed");
-      setVerifyError("ตรวจสลิปไม่สำเร็จ");
+      if (!verifiedFiredRef.current) {
+        verifiedFiredRef.current = true;
+        onVerified?.(storeRes.url);
+      }
+    } catch (e) {
+      console.error("addSlip failed:", e);
+      setSlips((prev) => prev.map((s) => s.key === tempKey ? { ...s, status: "failed" as const, error: "ตรวจสลิปไม่สำเร็จ", tempFileUrl: tmpUrl ?? undefined } : s));
     }
   };
 
-  // Only called when the user explicitly taps the ✕. Guarded so verified slips can't
-  // be accidentally wiped — the ✕ button itself is already hidden when verified.
-  const removeSlip = async () => {
-    if (confirmed) return; // once confirmed, slip is locked — only unconfirm can clear it
-    log("slip_removed", { removed_url: uploadedSlipUrl, status: verifyStatus });
-    if (uploadedSlipUrl) {
-      if (uploadedSlipUrl.startsWith("/api/slips/")) {
-        fetch(uploadedSlipUrl, { method: "DELETE", headers: { "ngrok-skip-browser-warning": "true" } }).catch(() => {});
-        // Also clear lead.pre_slip_url (or whichever slipField) so parent's refresh
-        // doesn't re-populate the verified state from stale DB pointer.
-        fetch(`/api/leads/${leadId}`, {
-          method: "PATCH",
-          headers: { "Content-Type": "application/json", "ngrok-skip-browser-warning": "true" },
-          body: JSON.stringify({ [slipField]: null }),
-        }).catch(() => {});
-      } else {
-        fetch(`/api/upload?file=${encodeURIComponent(uploadedSlipUrl)}`, { method: "DELETE", headers: { "ngrok-skip-browser-warning": "true" } }).catch(() => {});
-      }
+  const handleSlipCapture = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    e.target.value = "";
+    addSlip(file);
+  };
+
+  // Remove a single slip. Staging rows DELETE /api/slips/:id; failed-temp entries
+  // just clean the disk file. Confirmed slots (after ยืนยัน) can't be removed —
+  // use ถอย payment to rollback the entire row.
+  const removeSlip = async (entry: SlipEntry) => {
+    if (confirmed) return;
+    log("slip_removed", { key: entry.key, url: entry.url, status: entry.status });
+    if (entry.slipFilesId) {
+      fetch(`/api/slips/${entry.slipFilesId}`, { method: "DELETE", headers: { "ngrok-skip-browser-warning": "true", ...getUserIdHeader() } }).catch(() => {});
+    } else if (entry.tempFileUrl) {
+      fetch(`/api/upload?file=${encodeURIComponent(entry.tempFileUrl)}`, { method: "DELETE", headers: { "ngrok-skip-browser-warning": "true" } }).catch(() => {});
     }
-    setSlipPreview(null);
-    setUploadedSlipUrl(null);
-    setVerifyStatus("idle");
-    setVerifyError(null);
-    try { localStorage.removeItem(`slip:${leadId}:${slipField}`); } catch {}
+    setSlips((prev) => prev.filter((s) => s.key !== entry.key));
+  };
+
+  const verifiedCount = slips.filter((s) => s.status === "verified").length;
+  const anyVerifying = slips.some((s) => s.status === "verifying");
+  const canAddMore = !confirmed && slips.length < MAX_SLIPS;
+  const canConfirm = !confirmed && verifiedCount > 0 && !anyVerifying;
+
+  const handleConfirm = async () => {
+    if (stepNo === undefined || confirming || confirmed || !canConfirm) return;
+    setConfirming(true);
+    setConfirmError(null);
+    try {
+      await apiFetch("/api/payments", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          lead_id: leadId,
+          step_no: stepNo,
+          slip_field: slipField,
+          doc_no: docNo ?? null,
+          amount,
+          description: description ?? null,
+        }),
+      });
+      await onConfirmed?.();
+    } catch (e) {
+      setConfirmError(e instanceof Error ? e.message : "ยืนยันไม่สำเร็จ");
+    } finally {
+      setConfirming(false);
+    }
   };
 
   const slipInputId = `slip-${slipField}`;
@@ -424,14 +441,16 @@ export default function PaymentSection({
         </div>
       )}
 
-      {/* Thai QR Tab — real QR flow not live yet; show a plain black placeholder
-         so sales know to forward the QR to the customer themselves. */}
+      {/* Thai QR Tab */}
       {qrEnabled && tab === "qr" && (
         <div className="space-y-3">
           <div className="max-w-[280px] mx-auto">
             <div className="rounded-xl border border-gray-200 bg-white p-4 flex flex-col items-center gap-2">
               <div className="w-full aspect-square bg-black rounded-lg flex items-center justify-center">
-                <span className="text-white text-sm font-semibold tracking-wider uppercase">WAIT PROMPTPAY</span>
+                {qrLoading ? <span className="text-white text-xs tracking-wider">LOADING…</span>
+                 : qrError ? <span className="text-white text-xs">{qrError}</span>
+                 : qrDataUrl ? <img src={qrDataUrl} alt="PromptPay QR" className="w-full h-full object-contain p-2 bg-white rounded-lg" />
+                 : <span className="text-white text-sm font-semibold tracking-wider uppercase">NO QR</span>}
               </div>
               <div className="text-center">
                 <div className="text-xs font-semibold text-gray-700">{companyFull}</div>
@@ -519,33 +538,77 @@ export default function PaymentSection({
         </div>
       )}
 
-      {/* Slip upload + Gemini verify */}
+      {/* Slip upload — up to MAX_SLIPS grid */}
       <div className={confirmed ? "" : "pt-2 border-t border-gray-100"}>
-        <input type="file" accept="image/*" onChange={handleSlipCapture} className="hidden" id={slipInputId} disabled={confirmed} />
-        {slipPreview && (
-          <div className={`relative rounded-xl overflow-hidden border max-w-[280px] mx-auto mt-2 ${verifyStatus === "failed" ? "border-red-500 ring-2 ring-red-500/30" : "border-gray-200"}`}>
-            <img src={slipPreview} alt="Slip" className="w-full" />
-            {!confirmed && (
-              <button type="button" onClick={removeSlip}
-                className="absolute top-2 right-2 w-8 h-8 bg-black/50 rounded-full text-white flex items-center justify-center text-sm" style={{ minHeight: 0 }}>✕</button>
-            )}
+        <input type="file" accept="image/*" onChange={handleSlipCapture} className="hidden" id={slipInputId} disabled={confirmed || !canAddMore} />
+
+        <div className="flex items-center justify-between mb-2">
+          <div className="text-xs font-semibold tracking-wider uppercase text-gray-400">
+            สลิปโอนเงิน <span className="font-mono tabular-nums">{slips.length}/{MAX_SLIPS}</span>
           </div>
-        )}
-        {verifyStatus === "idle" && (
-          <label htmlFor={slipInputId} className="w-full h-11 px-4 rounded-lg text-sm font-semibold flex items-center justify-center gap-2 cursor-pointer bg-white border border-gray-200 text-gray-700 hover:border-gray-400 transition-colors mt-2">
+          {!confirmed && verifiedCount > 0 && (
+            <div className="text-xs font-semibold text-emerald-700">✓ ตรวจแล้ว {verifiedCount}</div>
+          )}
+        </div>
+
+        {slips.length === 0 && slipsLoaded && !confirmed && (
+          <label htmlFor={slipInputId} className="w-full h-11 px-4 rounded-lg text-sm font-semibold flex items-center justify-center gap-2 cursor-pointer bg-white border border-gray-200 text-gray-700 hover:border-gray-400 transition-colors">
             กรุณาอัปโหลดสลิปโอนเงิน
           </label>
         )}
-        {verifyStatus === "verifying" && (
-          <div className="w-full h-11 rounded-lg text-sm font-semibold text-white bg-amber-500 flex items-center justify-center gap-2 mt-2">
-            <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" /> กำลังตรวจสลิป…
+
+        {slips.length > 0 && (
+          <div className="grid grid-cols-3 md:grid-cols-5 gap-2">
+            {slips.map((s, idx) => (
+              <div key={s.key} className={`relative rounded-lg overflow-hidden border aspect-square bg-gray-50 ${
+                s.status === "failed" ? "border-red-500 ring-1 ring-red-500/30"
+                : s.status === "verifying" ? "border-amber-400"
+                : "border-gray-200"
+              }`}>
+                <button
+                  type="button"
+                  onClick={() => setLightbox({ url: s.url, index: idx })}
+                  className="absolute inset-0 w-full h-full p-0 border-0 cursor-zoom-in"
+                  aria-label={`ดูสลิป ${idx + 1}`}
+                  style={{ minHeight: 0 }}
+                >
+                  <img src={s.url} alt={s.filename || `slip ${idx + 1}`} className="w-full h-full object-cover pointer-events-none" />
+                </button>
+                <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
+                  <span className="text-white font-bold font-mono tabular-nums text-5xl md:text-6xl leading-none drop-shadow-[0_2px_6px_rgba(0,0,0,0.9)]">
+                    {idx + 1}
+                  </span>
+                </div>
+                {s.status === "verifying" && (
+                  <div className="absolute inset-0 bg-black/40 flex items-center justify-center pointer-events-none">
+                    <div className="w-6 h-6 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                  </div>
+                )}
+                {s.status === "verified" && (
+                  <div className="absolute bottom-1 left-1 w-5 h-5 rounded-full bg-emerald-500 text-white flex items-center justify-center text-[10px] font-bold pointer-events-none">✓</div>
+                )}
+                {s.status === "failed" && (
+                  <div className="absolute inset-x-0 bottom-0 bg-red-500/90 text-white text-[10px] font-semibold text-center py-0.5 px-1 truncate pointer-events-none" title={s.error}>{s.error || "ไม่ผ่าน"}</div>
+                )}
+                {!confirmed && (
+                  <button type="button" onClick={(e) => { e.stopPropagation(); removeSlip(s); }}
+                    className="absolute top-1 right-1 w-6 h-6 bg-black/60 rounded-full text-white flex items-center justify-center text-xs z-10" style={{ minHeight: 0 }}>✕</button>
+                )}
+              </div>
+            ))}
+            {canAddMore && (
+              <label htmlFor={slipInputId} className="rounded-lg border-2 border-dashed border-gray-300 aspect-square flex flex-col items-center justify-center gap-1 text-gray-400 hover:border-primary hover:text-primary transition-colors cursor-pointer">
+                <svg className="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.8}>
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M12 4.5v15m7.5-7.5h-15" />
+                </svg>
+                <span className="text-[10px] font-semibold uppercase tracking-wider">เพิ่มสลิป</span>
+              </label>
+            )}
           </div>
         )}
-        {verifyStatus === "verified" && !confirmed && (
-          <div className="w-full h-11 mt-2 rounded-lg text-sm font-semibold text-emerald-700 bg-emerald-50 border border-emerald-600/15 flex items-center justify-center gap-1">✓ ตรวจสลิปแล้ว</div>
-        )}
+
         {confirmed && (
-          <div className="mt-2 space-y-2">
+          <div className="mt-3 space-y-2">
             <div className="w-full h-11 rounded-lg text-sm font-semibold text-emerald-700 bg-emerald-50 border border-emerald-600/15 flex items-center justify-center gap-1">✓ ยืนยันการชำระเงินเรียบร้อย</div>
             {isAdmin && slipUrl?.startsWith("/api/payments/") && (
               <button
@@ -559,20 +622,15 @@ export default function PaymentSection({
             )}
           </div>
         )}
-        {verifyStatus === "failed" && (
-          <div className="w-full mt-2 rounded-lg text-sm font-semibold text-white bg-red-500 flex items-center justify-center text-center px-3 py-2.5">
-            {verifyError || "ตรวจสลิปไม่ผ่าน"} · กดกากบาทเพื่อลบแล้วลองใหม่
-          </div>
-        )}
-        {/* Confirm button — shown only until confirmed. Once confirmed the button hides;
-         * the banner above reflects "ยืนยันการชำระเงินเรียบร้อย". */}
-        {stepNo !== undefined && verifyStatus === "verified" && !confirmed && (
+
+        {/* Confirm button — enabled once at least 1 slip verified and none verifying */}
+        {stepNo !== undefined && !confirmed && slips.length > 0 && (
           <>
             <button
               type="button"
-              disabled={confirming}
+              disabled={!canConfirm || confirming}
               onClick={handleConfirm}
-              className="w-full h-11 mt-2 rounded-lg text-sm font-semibold transition-colors flex items-center justify-center gap-1.5 text-white bg-gradient-to-r from-primary to-primary-dark hover:brightness-110 disabled:opacity-40 disabled:cursor-not-allowed"
+              className="w-full h-11 mt-3 rounded-lg text-sm font-semibold transition-colors flex items-center justify-center gap-1.5 text-white bg-gradient-to-r from-primary to-primary-dark hover:brightness-110 disabled:opacity-40 disabled:cursor-not-allowed"
             >
               {confirming ? (
                 <>
@@ -580,15 +638,28 @@ export default function PaymentSection({
                   กำลังยืนยัน…
                 </>
               ) : (
-                confirmLabel || "ยืนยันรับชำระเงิน"
+                `${confirmLabel || "ยืนยันรับชำระเงิน"}${verifiedCount > 1 ? ` (${verifiedCount} สลิป)` : ""}`
               )}
             </button>
             {confirmError && (
               <div className="mt-2 text-xs text-red-600 text-center">{confirmError}</div>
             )}
+            {anyVerifying && (
+              <div className="mt-2 text-xs text-amber-600 text-center">กำลังตรวจสลิป… รอสักครู่</div>
+            )}
           </>
         )}
       </div>
+
+      {/* Slip lightbox */}
+      {lightbox && (
+        <ImageLightbox
+          images={slips.map((s, i) => ({ url: s.url, label: `สลิป ${i + 1} / ${slips.length}` }))}
+          index={lightbox.index}
+          onIndexChange={(i) => setLightbox({ url: slips[i].url, index: i })}
+          onClose={() => setLightbox(null)}
+        />
+      )}
 
       {/* LINE confirm modal */}
       {lineConfirmType && (

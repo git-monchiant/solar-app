@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import { apiFetch } from "@/lib/api";
 import ErrorPopup from "@/components/ui/ErrorPopup";
+import FallbackImage from "@/components/ui/FallbackImage";
 
 export type CustomerField =
   | "full_name"
@@ -422,8 +423,8 @@ export default function CustomerInfoForm({
                 <input type="file" accept="image/*" capture="environment" onChange={e => handleDocUpload(e, "id_card_photo_url")} className="hidden" id="cif-id-card-upload" />
                 {values.id_card_photo_url ? (
                   <div className="relative inline-block">
-                    <a href={values.id_card_photo_url} target="_blank" rel="noreferrer"><img src={values.id_card_photo_url} alt="ID Card" className="h-20 rounded-lg border border-gray-200" /></a>
-                    <button type="button" onClick={() => onChange({ id_card_photo_url: null })} className="absolute -top-1.5 -right-1.5 w-5 h-5 rounded-full bg-red-500 text-white flex items-center justify-center text-xs shadow">×</button>
+                    <FallbackImage src={values.id_card_photo_url} alt="ID Card" lightboxLabel="บัตรประชาชน" className="h-20 rounded-lg border border-gray-200" />
+                    <button type="button" onClick={(e) => { e.stopPropagation(); onChange({ id_card_photo_url: null }); }} className="absolute -top-1.5 -right-1.5 w-5 h-5 rounded-full bg-red-500 text-white flex items-center justify-center text-xs shadow z-10">×</button>
                   </div>
                 ) : (
                   <label htmlFor="cif-id-card-upload" className="w-full h-10 rounded-lg border border-dashed border-gray-300 bg-white flex items-center justify-center gap-2 cursor-pointer hover:border-active/40 hover:text-active text-gray-500 text-sm">
@@ -438,8 +439,8 @@ export default function CustomerInfoForm({
                 <input type="file" accept="image/*" capture="environment" onChange={e => handleDocUpload(e, "house_reg_photo_url")} className="hidden" id="cif-house-reg-upload" />
                 {values.house_reg_photo_url ? (
                   <div className="relative inline-block">
-                    <a href={values.house_reg_photo_url} target="_blank" rel="noreferrer"><img src={values.house_reg_photo_url} alt="House Reg" className="h-20 rounded-lg border border-gray-200" /></a>
-                    <button type="button" onClick={() => onChange({ house_reg_photo_url: null })} className="absolute -top-1.5 -right-1.5 w-5 h-5 rounded-full bg-red-500 text-white flex items-center justify-center text-xs shadow">×</button>
+                    <FallbackImage src={values.house_reg_photo_url} alt="House Reg" lightboxLabel="ทะเบียนบ้าน" className="h-20 rounded-lg border border-gray-200" />
+                    <button type="button" onClick={(e) => { e.stopPropagation(); onChange({ house_reg_photo_url: null }); }} className="absolute -top-1.5 -right-1.5 w-5 h-5 rounded-full bg-red-500 text-white flex items-center justify-center text-xs shadow z-10">×</button>
                   </div>
                 ) : (
                   <label htmlFor="cif-house-reg-upload" className="w-full h-10 rounded-lg border border-dashed border-gray-300 bg-white flex items-center justify-center gap-2 cursor-pointer hover:border-active/40 hover:text-active text-gray-500 text-sm">

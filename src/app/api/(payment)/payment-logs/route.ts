@@ -1,10 +1,14 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getDb, sql, fixDates } from "@/lib/db";
+import { requireAuth } from "@/lib/auth";
 
 // POST /api/payment-logs
-// Body: { lead_id, slip_field?, step_no?, action, details?, user_id? }
-// Fire-and-forget from PaymentSection — never blocks user flow.
+// Body: { lead_id, slip_field?, step_no?, action, details? }
+// Fire-and-forget from PaymentSection — never blocks user flow. user_id is
+// derived from the auth header, not the body, so the caller can't spoof it.
 export async function POST(req: NextRequest) {
+  const gate = await requireAuth(req);
+  if (gate.error) return gate.error;
   try {
     const body = await req.json();
     const leadId = parseInt(body.lead_id);
@@ -14,7 +18,7 @@ export async function POST(req: NextRequest) {
     }
     const slipField = body.slip_field ? String(body.slip_field).slice(0, 50) : null;
     const stepNo = body.step_no != null ? parseInt(body.step_no) : null;
-    const userId = body.user_id != null ? parseInt(body.user_id) : null;
+    const userId = gate.userId;
     const details = body.details ? JSON.stringify(body.details) : null;
     const ua = (req.headers.get("user-agent") || "").slice(0, 400);
 
@@ -40,6 +44,8 @@ export async function POST(req: NextRequest) {
 
 // GET /api/payment-logs?lead_id=... — recent logs for one lead (for debugging UI)
 export async function GET(req: NextRequest) {
+  const gate = await requireAuth(req);
+  if (gate.error) return gate.error;
   try {
     const leadId = parseInt(req.nextUrl.searchParams.get("lead_id") || "");
     if (!leadId) return NextResponse.json({ error: "lead_id required" }, { status: 400 });

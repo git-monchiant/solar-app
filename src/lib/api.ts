@@ -1,6 +1,6 @@
 // Logged-in user id lives in localStorage and is forwarded as x-user-id header
 // on every API call so the server can attribute actions to the right person.
-function getUserIdHeader(): Record<string, string> {
+export function getUserIdHeader(): Record<string, string> {
   if (typeof window === "undefined") return {};
   const id = window.localStorage.getItem("userId");
   return id ? { "x-user-id": id } : {};

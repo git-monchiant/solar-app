@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { writeFile, unlink } from "fs/promises";
 import path from "path";
+import { randomBytes } from "crypto";
 
 export async function POST(req: NextRequest) {
   try {
@@ -18,8 +19,11 @@ export async function POST(req: NextRequest) {
     const leadId = formData.get("lead_id") as string | null;
     const type = formData.get("type") as string | null;
     const safe = (s: string) => s.replace(/[^A-Za-z0-9_-]/g, "_");
-    const built = leadId && type ? `lead${safe(leadId)}_${safe(type)}_${Date.now()}` : null;
-    const filename = `${customName ? safe(customName) : built ?? `doc_${Date.now()}`}.${ext}`;
+    // Random 6-hex suffix makes filenames collision-proof even if two uploads
+    // from the same lead/type land in the same millisecond.
+    const rand = randomBytes(3).toString("hex");
+    const built = leadId && type ? `lead${safe(leadId)}_${safe(type)}_${Date.now()}_${rand}` : null;
+    const filename = `${customName ? safe(customName) : built ?? `doc_${Date.now()}_${rand}`}.${ext}`;
     const filepath = path.join(process.cwd(), "public", "uploads", filename);
 
     await writeFile(filepath, buffer);

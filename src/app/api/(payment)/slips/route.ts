@@ -1,11 +1,57 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getDb, sql } from "@/lib/db";
+import { requireAuth } from "@/lib/auth";
 
 export const runtime = "nodejs";
 export const maxDuration = 30;
 
+const MAX_SLIPS = 5;
+
+// GET /api/slips?lead_id=<id>&slip_field=<field>
+// List staging slips for a (lead, slip_field) pair. Used by PaymentSection to
+// render up to MAX_SLIPS slot thumbnails before confirm.
+export async function GET(req: NextRequest) {
+  const gate = await requireAuth(req);
+  if (gate.error) return gate.error;
+  try {
+    const { searchParams } = new URL(req.url);
+    const leadId = parseInt(searchParams.get("lead_id") || "0");
+    const slipField = searchParams.get("slip_field") || "";
+    if (!leadId || !slipField) {
+      return NextResponse.json({ error: "lead_id and slip_field required" }, { status: 400 });
+    }
+    const db = await getDb();
+    const r = await db.request()
+      .input("lead_id", sql.Int, leadId)
+      .input("slip_field", sql.NVarChar(50), slipField)
+      .query(`
+        SELECT id, mime, filename, uploaded_at, DATALENGTH(data) AS bytes
+        FROM slip_files
+        WHERE lead_id = @lead_id AND slip_field = @slip_field
+        ORDER BY id ASC
+      `);
+    return NextResponse.json({
+      slips: r.recordset.map((row) => ({
+        id: row.id,
+        url: `/api/slips/${row.id}`,
+        mime: row.mime,
+        filename: row.filename,
+        bytes: row.bytes,
+        uploaded_at: row.uploaded_at,
+      })),
+    });
+  } catch (e) {
+    console.error("GET /api/slips error:", e);
+    return NextResponse.json({ error: e instanceof Error ? e.message : "Failed" }, { status: 500 });
+  }
+}
+
 // POST /api/slips   multipart: file, lead_id, slip_field  → { id, url }
+// Append semantics: up to MAX_SLIPS rows per (lead_id, slip_field). Each new verified
+// upload creates a new slot. Rejects when the cap is already reached.
 export async function POST(req: NextRequest) {
+  const gate = await requireAuth(req);
+  if (gate.error) return gate.error;
   try {
     const form = await req.formData();
     const file = form.get("file") as File | null;
@@ -17,12 +63,13 @@ export async function POST(req: NextRequest) {
     const bytes = Buffer.from(await file.arrayBuffer());
     const db = await getDb();
 
-    // Upsert semantics: only 1 row per (lead_id, slip_field). A new verified
-    // upload replaces the previous one so /api/slips/<old_id> URLs retire cleanly.
-    await db.request()
+    const countRes = await db.request()
       .input("lead_id", sql.Int, leadId)
       .input("slip_field", sql.NVarChar(50), slipField)
-      .query(`DELETE FROM slip_files WHERE lead_id = @lead_id AND slip_field = @slip_field`);
+      .query(`SELECT COUNT(*) AS n FROM slip_files WHERE lead_id = @lead_id AND slip_field = @slip_field`);
+    if ((countRes.recordset[0]?.n ?? 0) >= MAX_SLIPS) {
+      return NextResponse.json({ error: `Max ${MAX_SLIPS} slips per payment` }, { status: 400 });
+    }
 
     const result = await db.request()
       .input("lead_id", sql.Int, leadId)

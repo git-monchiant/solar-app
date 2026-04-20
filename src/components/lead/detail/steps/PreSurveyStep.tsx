@@ -6,6 +6,7 @@ import { PAYMENT_TYPES, FINANCE_STATUSES } from "@/lib/constants/statuses";
 import type { Lead, Package, StepCommonProps } from "./types";
 import PreSurveyForm from "./PreSurveyForm";
 import PaymentSection from "@/components/payment/PaymentSection";
+import PaymentSlipsThumbs from "@/components/payment/PaymentSlipsThumbs";
 import CalendarPicker from "@/components/calendar/CalendarPicker";
 import { validatePreSurvey } from "@/lib/constants/step-validators";
 import ErrorPopup from "@/components/ui/ErrorPopup";
@@ -157,7 +158,6 @@ export default function PreSurveyStep({ lead, state, refresh, packages, expanded
   const [subStep, setSubStep] = useSubStep(`preSurveySubStep_${lead.id}`, 0, REG_SUB_STEPS.length);
   const [nextError, setNextError] = useState<string | null>(null);
   const [formDraft, setFormDraft] = useState<Partial<Lead>>({});
-  const [lightboxUrl, setLightboxUrl] = useState<string | null>(null);
   const isFirstRegSave = useRef(true);
   useEffect(() => {
     if (isFirstRegSave.current) { isFirstRegSave.current = false; return; }
@@ -446,16 +446,16 @@ export default function PreSurveyStep({ lead, state, refresh, packages, expanded
               {(lead.pre_bill_photo_url || lead.pre_slip_url) && (
                 <div className="flex gap-3 mt-1.5">
                   {lead.pre_bill_photo_url && (
-                    <button type="button" onClick={() => setLightboxUrl(lead.pre_bill_photo_url)} className="text-left">
+                    <div>
                       <div className="text-xs text-gray-400 mb-0.5">บิลค่าไฟ</div>
-                      <FallbackImage src={lead.pre_bill_photo_url} alt="Bill" className="max-h-40 max-w-full object-contain bg-gray-50 rounded-lg border border-gray-200 hover:opacity-80 transition" fallbackLabel="บิลหาย" />
-                    </button>
+                      <FallbackImage src={lead.pre_bill_photo_url} alt="Bill" lightboxLabel="บิลค่าไฟ" className="max-h-40 max-w-full object-contain bg-gray-50 rounded-lg border border-gray-200 hover:opacity-80 transition" fallbackLabel="บิลหาย" />
+                    </div>
                   )}
                   {lead.pre_slip_url && (
-                    <button type="button" onClick={() => setLightboxUrl(lead.pre_slip_url)} className="text-left">
+                    <div>
                       <div className="text-xs text-gray-400 mb-0.5">หลักฐานการชำระเงิน</div>
-                      <FallbackImage src={lead.pre_slip_url} alt="Slip" className="max-h-40 max-w-full object-contain bg-gray-50 rounded-lg border border-gray-200 hover:opacity-80 transition" fallbackLabel="สลิปหาย" />
-                    </button>
+                      <PaymentSlipsThumbs slipUrl={lead.pre_slip_url} label="หลักฐานการชำระเงิน" />
+                    </div>
                   )}
                 </div>
               )}
@@ -523,12 +523,6 @@ export default function PreSurveyStep({ lead, state, refresh, packages, expanded
         expanded={expanded}
         onToggle={onToggle}
       />
-      {lightboxUrl && (
-        <div className="fixed inset-0 z-[70] flex flex-col items-center justify-center bg-black/70" onClick={() => setLightboxUrl(null)}>
-          <button onClick={() => setLightboxUrl(null)} className="absolute top-4 right-4 w-10 h-10 rounded-full bg-black/50 text-white flex items-center justify-center text-xl safe-top">✕</button>
-          <img src={lightboxUrl} alt="Preview" className="max-w-[90vw] max-h-[78vh] object-contain rounded-lg" onClick={e => e.stopPropagation()} />
-        </div>
-      )}
       </>
     );
   }
@@ -772,14 +766,6 @@ export default function PreSurveyStep({ lead, state, refresh, packages, expanded
           <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M15.75 19.5L8.25 12l7.5-7.5" /></svg>
           ย้อนกลับ
         </button>
-      )}
-
-      {/* Image lightbox (bill photo / slip preview) */}
-      {lightboxUrl && (
-        <div className="fixed inset-0 z-[70] flex flex-col items-center justify-center bg-black/70" onClick={() => setLightboxUrl(null)}>
-          <button onClick={() => setLightboxUrl(null)} className="absolute top-4 right-4 w-10 h-10 rounded-full bg-black/50 text-white flex items-center justify-center text-xl safe-top">✕</button>
-          <img src={lightboxUrl} alt="Preview" className="max-w-[90vw] max-h-[78vh] object-contain rounded-lg" onClick={e => e.stopPropagation()} />
-        </div>
       )}
 
       <ErrorPopup message={nextError} onClose={() => setNextError(null)} />

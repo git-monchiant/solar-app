@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import { apiFetch } from "@/lib/api";
+import FallbackImage from "@/components/ui/FallbackImage";
 import type { Lead, Package } from "./types";
 
 const formatPrice = (n: number) => new Intl.NumberFormat("th-TH").format(n);
@@ -297,8 +298,8 @@ export default function PreSurveyForm({ lead, refresh, packages = [], hideReside
             </div>
             {billPhotoUrl && (
               <div className="mt-2 relative inline-block">
-                <a href={billPhotoUrl} target="_blank" rel="noreferrer"><img src={billPhotoUrl} alt="Bill" className="h-20 rounded-lg border border-gray-200" /></a>
-                <button type="button" onClick={handleBillPhotoRemove} className="absolute -top-1.5 -right-1.5 w-5 h-5 rounded-full bg-red-500 text-white flex items-center justify-center text-xs shadow">×</button>
+                <FallbackImage src={billPhotoUrl} alt="Bill" lightboxLabel="บิลค่าไฟ" className="h-20 rounded-lg border border-gray-200" />
+                <button type="button" onClick={(e) => { e.stopPropagation(); handleBillPhotoRemove(); }} className="absolute -top-1.5 -right-1.5 w-5 h-5 rounded-full bg-red-500 text-white flex items-center justify-center text-xs shadow z-10">×</button>
               </div>
             )}
           </div>
