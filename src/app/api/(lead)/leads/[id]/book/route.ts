@@ -1,11 +1,14 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getDb, sql } from "@/lib/db";
+import { requireAuth } from "@/lib/auth";
 
 // POST /api/leads/[id]/book
 // Body: { package_id, total_price, note? }
 // Generates pre_doc_no (SM-YYNNN) and writes lead.pre_* fields. Status is
 // left unchanged here — the caller advances it when the full flow is complete.
 export async function POST(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
+  const gate = await requireAuth(req);
+  if (gate.error) return gate.error;
   try {
     const { id } = await params;
     const leadId = parseInt(id);

@@ -1,7 +1,10 @@
-import { NextResponse } from "next/server";
+import { NextRequest, NextResponse } from "next/server";
 import { getDb } from "@/lib/db";
+import { requireAuth } from "@/lib/auth";
 
-export async function GET() {
+export async function GET(req: NextRequest) {
+  const gate = await requireAuth(req);
+  if (gate.error) return gate.error;
   try {
     const db = await getDb();
     const result = await db.request().query(

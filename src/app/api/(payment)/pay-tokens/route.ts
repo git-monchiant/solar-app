@@ -1,12 +1,15 @@
 import { NextRequest, NextResponse } from "next/server";
 import crypto from "crypto";
 import { getDb, sql } from "@/lib/db";
+import { requireAuth } from "@/lib/auth";
 
 const genToken = () => crypto.randomBytes(16).toString("hex");
 
 // POST /api/pay-tokens  { lead_id, amount, description? } -> { token, url }
 // Reuses the lead's existing token when amount + description haven't changed.
 export async function POST(req: NextRequest) {
+  const gate = await requireAuth(req);
+  if (gate.error) return gate.error;
   try {
     const { lead_id, amount, description, installment } = await req.json();
     const leadId = parseInt(lead_id);

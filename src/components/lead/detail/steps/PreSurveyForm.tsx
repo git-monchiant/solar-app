@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { apiFetch } from "@/lib/api";
+import { apiFetch, getUserIdHeader } from "@/lib/api";
 import FallbackImage from "@/components/ui/FallbackImage";
 import type { Lead, Package } from "./types";
 
@@ -217,7 +217,7 @@ export default function PreSurveyForm({ lead, refresh, packages = [], hideReside
       if (billPhotoUrl) {
         fetch(`/api/upload?file=${encodeURIComponent(billPhotoUrl)}`, {
           method: "DELETE",
-          headers: { "ngrok-skip-browser-warning": "true" },
+          headers: { "ngrok-skip-browser-warning": "true", ...getUserIdHeader() },
         }).catch(() => {});
       }
       const fd = new FormData();
@@ -227,7 +227,7 @@ export default function PreSurveyForm({ lead, refresh, packages = [], hideReside
       const uploadRes = await fetch("/api/upload", {
         method: "POST",
         body: fd,
-        headers: { "ngrok-skip-browser-warning": "true" },
+        headers: { "ngrok-skip-browser-warning": "true", ...getUserIdHeader() },
       });
       const { url } = await uploadRes.json();
       setBillPhotoUrl(url);
@@ -246,7 +246,7 @@ export default function PreSurveyForm({ lead, refresh, packages = [], hideReside
     if (!billPhotoUrl) return;
     fetch(`/api/upload?file=${encodeURIComponent(billPhotoUrl)}`, {
       method: "DELETE",
-      headers: { "ngrok-skip-browser-warning": "true" },
+      headers: { "ngrok-skip-browser-warning": "true", ...getUserIdHeader() },
     }).catch(() => {});
     setBillPhotoUrl(null);
     await apiFetch(`/api/leads/${lead.id}`, {

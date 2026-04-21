@@ -1,9 +1,12 @@
-import { NextResponse } from "next/server";
+import { NextRequest, NextResponse } from "next/server";
 import { getDb, fixDates } from "@/lib/db";
+import { requireAuth } from "@/lib/auth";
 
 // Returns all upcoming/active survey appointments so the calendar
 // can show occupied slots and prevent double-scheduling.
-export async function GET() {
+export async function GET(req: NextRequest) {
+  const gate = await requireAuth(req);
+  if (gate.error) return gate.error;
   try {
     const db = await getDb();
     const result = await db.request().query(`

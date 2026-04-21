@@ -1,6 +1,9 @@
-import { NextResponse } from "next/server";
+import { NextRequest, NextResponse } from "next/server";
+import { requireAuth } from "@/lib/auth";
 
-export async function GET(req: Request) {
+export async function GET(req: NextRequest) {
+  const gate = await requireAuth(req);
+  if (gate.error) return gate.error;
   const url = new URL(req.url);
   const q = url.searchParams.get("q");
   if (!q) return NextResponse.json({ error: "missing q" }, { status: 400 });

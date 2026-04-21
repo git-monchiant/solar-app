@@ -1,7 +1,10 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getDb, sql, fixDates } from "@/lib/db";
+import { requireAuth } from "@/lib/auth";
 
 export async function GET(req: NextRequest) {
+  const gate = await requireAuth(req);
+  if (gate.error) return gate.error;
   try {
     const db = await getDb();
     const all = req.nextUrl.searchParams.get("all");
@@ -17,6 +20,8 @@ export async function GET(req: NextRequest) {
 }
 
 export async function POST(req: NextRequest) {
+  const gate = await requireAuth(req);
+  if (gate.error) return gate.error;
   try {
     const body = await req.json();
     const db = await getDb();

@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { apiFetch } from "@/lib/api";
+import { apiFetch, getUserIdHeader } from "@/lib/api";
 import type { StepCommonProps, Package } from "./types";
 import ErrorPopup from "@/components/ui/ErrorPopup";
 import FallbackImage from "@/components/ui/FallbackImage";
@@ -106,7 +106,7 @@ export default function WarrantyStep({ lead, state, refresh, packages, expanded,
       if (!up.url) return;
       const ocr = await apiFetch("/api/ocr-serial", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ imageUrl: up.url }) });
       if (ocr?.serial) updateBatt(i, { serial: ocr.serial });
-      fetch(`/api/upload?file=${encodeURIComponent(up.url)}`, { method: "DELETE" }).catch(() => {});
+      fetch(`/api/upload?file=${encodeURIComponent(up.url)}`, { method: "DELETE", headers: { ...getUserIdHeader() } }).catch(() => {});
     } finally { setBattSnScanning(null); }
   };
 
@@ -126,7 +126,7 @@ export default function WarrantyStep({ lead, state, refresh, packages, expanded,
       });
       if (ocr?.serial) setSn(ocr.serial);
       // Clean up tmp file (we only needed the text)
-      fetch(`/api/upload?file=${encodeURIComponent(up.url)}`, { method: "DELETE" }).catch(() => {});
+      fetch(`/api/upload?file=${encodeURIComponent(up.url)}`, { method: "DELETE", headers: { ...getUserIdHeader() } }).catch(() => {});
     } finally { setSnScanning(false); }
   };
   const scrollToStep = () => {
@@ -198,12 +198,12 @@ export default function WarrantyStep({ lead, state, refresh, packages, expanded,
     const colMap = { inverter: "warranty_inverter_cert_url", panel: "warranty_panel_cert_url", serials: "warranty_panel_serials_url" };
     const url = urlMap[field];
     if (!url) return;
-    fetch(`/api/upload?file=${encodeURIComponent(url)}`, { method: "DELETE" }).catch(() => {});
+    fetch(`/api/upload?file=${encodeURIComponent(url)}`, { method: "DELETE", headers: { ...getUserIdHeader() } }).catch(() => {});
     setterMap[field](null);
     await apiFetch(`/api/leads/${lead.id}`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ [colMap[field]]: null }) });
   };
   const removeOtherDoc = async (url: string) => {
-    fetch(`/api/upload?file=${encodeURIComponent(url)}`, { method: "DELETE" }).catch(() => {});
+    fetch(`/api/upload?file=${encodeURIComponent(url)}`, { method: "DELETE", headers: { ...getUserIdHeader() } }).catch(() => {});
     const next = otherDocs.filter(u => u !== url);
     setOtherDocs(next);
     await apiFetch(`/api/leads/${lead.id}`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ warranty_other_docs_url: next.length ? next.join(",") : null }) });

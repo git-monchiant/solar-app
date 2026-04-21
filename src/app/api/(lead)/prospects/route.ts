@@ -1,7 +1,10 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getDb, sql, fixDates } from "@/lib/db";
+import { requireAuth } from "@/lib/auth";
 
 export async function GET(req: NextRequest) {
+  const gate = await requireAuth(req);
+  if (gate.error) return gate.error;
   try {
     const projectId = req.nextUrl.searchParams.get("project_id");
     const projectName = req.nextUrl.searchParams.get("project_name");
@@ -46,6 +49,8 @@ export async function GET(req: NextRequest) {
 }
 
 export async function POST(req: NextRequest) {
+  const gate = await requireAuth(req);
+  if (gate.error) return gate.error;
   try {
     const body = await req.json();
     const db = await getDb();

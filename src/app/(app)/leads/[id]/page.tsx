@@ -216,17 +216,31 @@ export default function LeadDetailPage({ params }: { params: Promise<{ id: strin
               </svg>
             </button>
           </div>
-          {/* LINE link button */}
+          {/* LINE link button — connected: click to unmap; not connected: open picker */}
           <button
             type="button"
-            onClick={() => {
-              if (lead.line_id) return;
+            onClick={async () => {
+              if (lead.line_id) {
+                if (!confirm("ต้องการยกเลิกการเชื่อม LINE ของลูกค้ารายนี้หรือไม่?")) return;
+                try {
+                  await apiFetch(`/api/leads/${lead.id}`, {
+                    method: "PATCH",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({ line_id: null }),
+                  });
+                  await refresh();
+                } catch (e) {
+                  alert("ยกเลิกไม่สำเร็จ: " + (e instanceof Error ? e.message : "error"));
+                }
+                return;
+              }
               setShowLineModal(true);
             }}
+            title={lead.line_id ? "คลิกเพื่อยกเลิกการเชื่อม LINE" : "เชื่อมกับ LINE ลูกค้า"}
             style={{ minHeight: 0 }}
             className={`shrink-0 w-11 h-11 rounded-full flex items-center justify-center active:scale-95 transition-all ${
               lead.line_id
-                ? "bg-emerald-500 text-white shadow-lg shadow-emerald-500/40"
+                ? "bg-emerald-500 text-white shadow-lg shadow-emerald-500/40 hover:bg-emerald-600"
                 : "bg-white text-gray-500 shadow border border-gray-200 hover:border-active/40 hover:text-active"
             }`}
           >

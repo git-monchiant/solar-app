@@ -16,8 +16,8 @@ interface StepLayoutProps {
   doneHeader: ReactNode;
   /** Content revealed when done state is expanded. */
   renderDone?: () => ReactNode;
-  /** Active-state content. */
-  children: ReactNode;
+  /** Active-state content. Not needed when state is "done" (uses renderDone). */
+  children?: ReactNode;
 }
 
 function scrollToActive() {

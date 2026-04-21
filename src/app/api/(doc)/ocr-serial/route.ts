@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { requireAuth } from "@/lib/auth";
 
 // POST /api/ocr-serial
 // Body: { imageUrl }
@@ -6,6 +7,8 @@ import { NextRequest, NextResponse } from "next/server";
 // Uses Gemini Vision to read the serial number printed/etched on an inverter or
 // panel label. Returns the raw alphanumeric string with no formatting.
 export async function POST(request: NextRequest) {
+  const gate = await requireAuth(request);
+  if (gate.error) return gate.error;
   try {
     const { imageUrl } = await request.json();
     if (!imageUrl) return NextResponse.json({ error: "No imageUrl" }, { status: 400 });

@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getDb, sql, fixDates } from "@/lib/db";
+import { requireAuth } from "@/lib/auth";
 
 const statusLabels: Record<string, string> = {
   pre_survey: "รอติดตาม",
@@ -8,7 +9,9 @@ const statusLabels: Record<string, string> = {
   closed: "ส่งมอบแล้ว", lost: "ยกเลิก",
 };
 
-export async function GET(_req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
+export async function GET(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
+  const gate = await requireAuth(req);
+  if (gate.error) return gate.error;
   try {
     const { id } = await params;
     const db = await getDb();
@@ -38,6 +41,8 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ id:
 }
 
 export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
+  const gate = await requireAuth(req);
+  if (gate.error) return gate.error;
   try {
     const { id } = await params;
     const body = await req.json();

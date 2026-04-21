@@ -1,7 +1,10 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getDb, sql } from "@/lib/db";
+import { requireAuth } from "@/lib/auth";
 
-export async function GET() {
+export async function GET(req: NextRequest) {
+  const gate = await requireAuth(req);
+  if (gate.error) return gate.error;
   try {
     const db = await getDb();
     const result = await db.request().query(`SELECT [key], value FROM app_settings`);
@@ -15,6 +18,8 @@ export async function GET() {
 }
 
 export async function PATCH(req: NextRequest) {
+  const gate = await requireAuth(req);
+  if (gate.error) return gate.error;
   try {
     const body = await req.json() as Record<string, string | boolean>;
     const db = await getDb();

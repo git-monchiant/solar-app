@@ -10,6 +10,9 @@ services:
     image: solar-app:latest
     container_name: solar-app
     restart: unless-stopped
+    # Run as host's optimus-dev uid so files written to the bind-mounted
+    # uploads volume stay readable/writable from the host side.
+    user: "1001:1001"
 
     # Credentials + API keys come from a `.env` file next to this compose file.
     # Keep .env out of git — drop it on the server manually.

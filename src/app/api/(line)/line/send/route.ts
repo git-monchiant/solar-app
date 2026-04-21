@@ -1,9 +1,12 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getDb, sql } from "@/lib/db";
+import { requireAuth } from "@/lib/auth";
 
 const CHANNEL_ACCESS_TOKEN = process.env.LINE_CHANNEL_ACCESS_TOKEN || "";
 
 export async function POST(request: NextRequest) {
+  const gate = await requireAuth(request);
+  if (gate.error) return gate.error;
   try {
     const { lead_id, messages } = await request.json();
     if (!lead_id || !messages?.length) {

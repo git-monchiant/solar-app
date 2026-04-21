@@ -7,12 +7,18 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ toke
 
   try {
     const port = process.env.PORT || 3700;
-    const browser = await puppeteer.launch({ headless: true, args: ["--no-sandbox"], env: { ...process.env, TZ: "Asia/Bangkok" } });
+    const browser = await puppeteer.launch({
+      headless: true,
+      executablePath: process.env.PUPPETEER_EXECUTABLE_PATH || undefined,
+      args: ["--no-sandbox", "--disable-setuid-sandbox", "--disable-dev-shm-usage", "--disable-gpu", "--disable-crash-reporter", "--no-zygote", "--single-process"],
+      env: { ...process.env, TZ: "Asia/Bangkok" },
+    });
     const page = await browser.newPage();
     await page.emulateTimezone("Asia/Bangkok");
 
     await page.goto(`http://localhost:${port}/invoice/${token}`, { waitUntil: "networkidle0", timeout: 15000 });
     await page.waitForSelector("#receipt", { timeout: 10000 });
+    await page.evaluate(() => (document as unknown as { fonts: { ready: Promise<unknown> } }).fonts.ready);
 
     const format = req.nextUrl.searchParams.get("format") || "image";
 

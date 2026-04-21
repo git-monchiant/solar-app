@@ -20,6 +20,10 @@ export interface Lead {
   assigned_name: string | null;
   pre_package_id: number | null;
   pre_slip_url: string | null;
+  pre_doc_no: string | null;
+  pre_total_price: number | null;
+  pre_booked_at: string | null;
+  ca_number: string | null;
   payment_confirmed: boolean;
   id_card_number: string | null;
   id_card_address: string | null;

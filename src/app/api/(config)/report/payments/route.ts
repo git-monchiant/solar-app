@@ -1,11 +1,14 @@
-import { NextResponse } from "next/server";
+import { NextRequest, NextResponse } from "next/server";
 import { getDb, fixDates } from "@/lib/db";
+import { requireAuth } from "@/lib/auth";
 
 // Per-lead transaction rollup for the accounting report.
 // Total value = order_total + install_extra_cost (fallback to pre_total_price when no order yet).
 // Received = sum(payments.amount) per lead; each payment row is an installment line item.
 // Outstanding = total - received.
-export async function GET() {
+export async function GET(req: NextRequest) {
+  const gate = await requireAuth(req);
+  if (gate.error) return gate.error;
   try {
     const db = await getDb();
 

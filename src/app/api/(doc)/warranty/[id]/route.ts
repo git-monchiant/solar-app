@@ -45,12 +45,18 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
 
   try {
     const port = process.env.PORT || 3700;
-    const browser = await puppeteer.launch({ headless: true, args: ["--no-sandbox"], env: { ...process.env, TZ: "Asia/Bangkok" } });
+    const browser = await puppeteer.launch({
+      headless: true,
+      executablePath: process.env.PUPPETEER_EXECUTABLE_PATH || undefined,
+      args: ["--no-sandbox", "--disable-setuid-sandbox", "--disable-dev-shm-usage", "--disable-gpu", "--disable-crash-reporter", "--no-zygote", "--single-process"],
+      env: { ...process.env, TZ: "Asia/Bangkok" },
+    });
     const page = await browser.newPage();
     await page.emulateTimezone("Asia/Bangkok");
 
     await page.goto(`http://localhost:${port}/warranty/${id}`, { waitUntil: "networkidle0", timeout: 15000 });
     await page.waitForSelector("#warranty", { timeout: 10000 });
+    await page.evaluate(() => (document as unknown as { fonts: { ready: Promise<unknown> } }).fonts.ready);
 
     const coverBytes = await page.pdf({
       format: "A4",

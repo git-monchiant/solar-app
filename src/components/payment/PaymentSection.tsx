@@ -296,7 +296,7 @@ export default function PaymentSection({
       uploadForm.append("file", file);
       uploadForm.append("lead_id", String(leadId));
       uploadForm.append("type", `slip_step${stepNo ?? 0}`);
-      const uploadRes = await fetch("/api/upload", { method: "POST", headers: { "ngrok-skip-browser-warning": "true" }, body: uploadForm });
+      const uploadRes = await fetch("/api/upload", { method: "POST", headers: { "ngrok-skip-browser-warning": "true", ...getUserIdHeader() }, body: uploadForm });
       const uploadJson = await uploadRes.json();
       tmpUrl = uploadJson.url as string;
       log("upload_tmp_ok", { tmp_url: tmpUrl });
@@ -304,7 +304,7 @@ export default function PaymentSection({
       // 2. Verify with Gemini
       const verifyRes = await fetch("/api/verify-slip", {
         method: "POST",
-        headers: { "Content-Type": "application/json", "ngrok-skip-browser-warning": "true" },
+        headers: { "Content-Type": "application/json", "ngrok-skip-browser-warning": "true", ...getUserIdHeader() },
         body: JSON.stringify({ imageUrl: tmpUrl }),
       });
       const slipData = await verifyRes.json();
@@ -325,7 +325,7 @@ export default function PaymentSection({
 
       // 4. Cleanup temp disk file
       if (tmpUrl) {
-        fetch(`/api/upload?file=${encodeURIComponent(tmpUrl)}`, { method: "DELETE", headers: { "ngrok-skip-browser-warning": "true" } }).catch(() => {});
+        fetch(`/api/upload?file=${encodeURIComponent(tmpUrl)}`, { method: "DELETE", headers: { "ngrok-skip-browser-warning": "true", ...getUserIdHeader() } }).catch(() => {});
       }
 
       log("slip_saved", { db_url: storeRes.url });
@@ -359,7 +359,7 @@ export default function PaymentSection({
     if (entry.slipFilesId) {
       fetch(`/api/slips/${entry.slipFilesId}`, { method: "DELETE", headers: { "ngrok-skip-browser-warning": "true", ...getUserIdHeader() } }).catch(() => {});
     } else if (entry.tempFileUrl) {
-      fetch(`/api/upload?file=${encodeURIComponent(entry.tempFileUrl)}`, { method: "DELETE", headers: { "ngrok-skip-browser-warning": "true" } }).catch(() => {});
+      fetch(`/api/upload?file=${encodeURIComponent(entry.tempFileUrl)}`, { method: "DELETE", headers: { "ngrok-skip-browser-warning": "true", ...getUserIdHeader() } }).catch(() => {});
     }
     setSlips((prev) => prev.filter((s) => s.key !== entry.key));
   };

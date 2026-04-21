@@ -2,13 +2,30 @@ import { NextRequest, NextResponse } from "next/server";
 import { writeFile, unlink } from "fs/promises";
 import path from "path";
 import { randomBytes } from "crypto";
+import { requireAuth } from "@/lib/auth";
+
+const MAX_UPLOAD_BYTES = 20 * 1024 * 1024; // 20 MB
+const ALLOWED_MIME = [
+  "image/jpeg", "image/png", "image/webp", "image/heic", "image/gif",
+  "application/pdf",
+];
 
 export async function POST(req: NextRequest) {
+  const gate = await requireAuth(req);
+  if (gate.error) return gate.error;
   try {
     const formData = await req.formData();
     const file = formData.get("file") as File;
     if (!file) {
       return NextResponse.json({ error: "No file" }, { status: 400 });
+    }
+
+    // Reject anything that isn't an image or PDF — no .html / .js / .exe / etc.
+    if (!ALLOWED_MIME.includes(file.type)) {
+      return NextResponse.json({ error: `Unsupported file type: ${file.type}` }, { status: 400 });
+    }
+    if (file.size > MAX_UPLOAD_BYTES) {
+      return NextResponse.json({ error: "File too large (max 20 MB)" }, { status: 413 });
     }
 
     const bytes = await file.arrayBuffer();
@@ -36,6 +53,8 @@ export async function POST(req: NextRequest) {
 }
 
 export async function DELETE(req: NextRequest) {
+  const gate = await requireAuth(req);
+  if (gate.error) return gate.error;
   try {
     const fileUrl = req.nextUrl.searchParams.get("file");
     if (!fileUrl) {

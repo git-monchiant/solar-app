@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { requireAuth } from "@/lib/auth";
 
 interface SlipData {
   is_slip: boolean;
@@ -13,6 +14,8 @@ interface SlipData {
 }
 
 export async function POST(request: NextRequest) {
+  const gate = await requireAuth(request);
+  if (gate.error) return gate.error;
   try {
     const { imageUrl } = await request.json();
     if (!imageUrl) return NextResponse.json({ is_slip: false });

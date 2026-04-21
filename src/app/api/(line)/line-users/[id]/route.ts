@@ -1,7 +1,10 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getDb, sql } from "@/lib/db";
+import { requireAuth } from "@/lib/auth";
 
 export async function PATCH(request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
+  const gate = await requireAuth(request);
+  if (gate.error) return gate.error;
   try {
     const { id } = await params;
     const body = await request.json();

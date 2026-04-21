@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getDb, sql, fixDates } from "@/lib/db";
 import { geocodeThaiPlace } from "@/lib/utils/geocode";
+import { requireAuth } from "@/lib/auth";
 
 async function maybeGeocodeProject(projectId: number) {
   const db = await getDb();
@@ -19,7 +20,9 @@ async function maybeGeocodeProject(projectId: number) {
     .query(`UPDATE projects SET district = COALESCE(district, @district), province = COALESCE(province, @province) WHERE id = @id`);
 }
 
-export async function GET() {
+export async function GET(req: NextRequest) {
+  const gate = await requireAuth(req);
+  if (gate.error) return gate.error;
   try {
     const db = await getDb();
     const result = await db.request().query(`
@@ -41,6 +44,8 @@ export async function GET() {
 }
 
 export async function POST(request: NextRequest) {
+  const gate = await requireAuth(request);
+  if (gate.error) return gate.error;
   try {
     const body = await request.json();
     const db = await getDb();

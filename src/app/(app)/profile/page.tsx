@@ -1,5 +1,6 @@
 "use client";
 import { useEffect, useState } from "react";
+import { useRouter } from "next/navigation";
 import { apiFetch } from "@/lib/api";
 import Header from "@/components/layout/Header";
 
@@ -15,11 +16,22 @@ interface UserProfile {
 }
 
 export default function ProfilePage() {
+  const router = useRouter();
   const [user, setUser] = useState<UserProfile | null>(null);
 
   useEffect(() => {
     apiFetch("/api/me").then(setUser).catch(console.error);
   }, []);
+
+  const logout = () => {
+    if (!confirm("ออกจากระบบใช่หรือไม่?")) return;
+    if (typeof window !== "undefined") {
+      localStorage.removeItem("userId");
+      localStorage.removeItem("userName");
+      localStorage.removeItem("activeRoles");
+    }
+    router.replace("/login");
+  };
 
   if (!user) return <div className="flex items-center justify-center h-screen"><div className="w-10 h-10 border-3 border-primary/30 border-t-primary rounded-full animate-spin" /></div>;
 
@@ -103,6 +115,18 @@ export default function ProfilePage() {
             <svg className="w-4 h-4 text-gray-400 ml-auto" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M8.25 4.5l7.5 7.5-7.5 7.5" /></svg>
           </a>
         </div>
+
+        {/* Logout */}
+        <button
+          type="button"
+          onClick={logout}
+          className="mt-6 w-full flex items-center justify-center gap-2 bg-white rounded-xl border border-red-200 p-4 text-red-600 font-semibold hover:bg-red-50 transition-colors"
+        >
+          <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+            <path strokeLinecap="round" strokeLinejoin="round" d="M15.75 9V5.25A2.25 2.25 0 0013.5 3h-6a2.25 2.25 0 00-2.25 2.25v13.5A2.25 2.25 0 007.5 21h6a2.25 2.25 0 002.25-2.25V15M12 9l-3 3m0 0l3 3m-3-3h12.75" />
+          </svg>
+          <span>ออกจากระบบ</span>
+        </button>
       </div>
     </div>
   );

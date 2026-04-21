@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { requireAuth } from "@/lib/auth";
 
 const FIELD_HINTS: Record<string, string> = {
   full_name: "ชื่อ-สกุลของบุคคล/ผู้ใช้ไฟ/ผู้ถือบัตร ภาษาไทย (ไม่ต้องใส่คำนำหน้า นาย/นาง/นางสาว)",
@@ -14,6 +15,8 @@ const FIELD_HINTS: Record<string, string> = {
 };
 
 export async function POST(request: NextRequest) {
+  const gate = await requireAuth(request);
+  if (gate.error) return gate.error;
   try {
     const { imageUrl, fields } = await request.json();
     if (!imageUrl) return NextResponse.json({ error: "No imageUrl" }, { status: 400 });

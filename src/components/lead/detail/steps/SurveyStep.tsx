@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { apiFetch } from "@/lib/api";
+import { apiFetch, getUserIdHeader } from "@/lib/api";
 import type { StepCommonProps, Package, Lead } from "./types";
 import SurveyForm from "./SurveyForm";
 import AppointmentRescheduler from "@/components/calendar/AppointmentRescheduler";
@@ -104,7 +104,7 @@ export default function SurveyStep({ lead, state, refresh, packages, expanded, o
         const res = await fetch("/api/upload", {
           method: "POST",
           body: fd,
-          headers: { "ngrok-skip-browser-warning": "true" },
+          headers: { "ngrok-skip-browser-warning": "true", ...getUserIdHeader() },
         });
         const { url } = await res.json();
         uploaded.push(url);
@@ -119,7 +119,7 @@ export default function SurveyStep({ lead, state, refresh, packages, expanded, o
   const removePhoto = async (url: string) => {
     fetch(`/api/upload?file=${encodeURIComponent(url)}`, {
       method: "DELETE",
-      headers: { "ngrok-skip-browser-warning": "true" },
+      headers: { "ngrok-skip-browser-warning": "true", ...getUserIdHeader() },
     }).catch(() => {});
     await persistPhotos(surveyPhotos.filter(u => u !== url));
   };

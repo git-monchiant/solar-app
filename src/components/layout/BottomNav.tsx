@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useActiveRoles, hasRole, Role } from "@/lib/roles";
-import LogoSolarPanel from "./LogoSolarPanel";
+import LogoSolarPanel from "@/components/brand/LogoSolarPanel";
 
 type NavItem = {
   href: string;

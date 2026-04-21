@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { apiFetch } from "@/lib/api";
+import { apiFetch, getUserIdHeader } from "@/lib/api";
 import ErrorPopup from "@/components/ui/ErrorPopup";
 import FallbackImage from "@/components/ui/FallbackImage";
 
@@ -173,7 +173,7 @@ export default function CustomerInfoForm({
     fd.append("file", file);
     fd.append("filename", `ocr_scan_${Date.now()}`);
     try {
-      const res = await fetch("/api/upload", { method: "POST", body: fd, headers: { "ngrok-skip-browser-warning": "true" } });
+      const res = await fetch("/api/upload", { method: "POST", body: fd, headers: { "ngrok-skip-browser-warning": "true", ...getUserIdHeader() } });
       const { url } = await res.json();
       return url;
     } catch { return null; }
@@ -192,7 +192,7 @@ export default function CustomerInfoForm({
       console.log("[OCR] request", { imageUrl: url, fields: requestedKeys });
       const ocrRes = await fetch("/api/ocr", {
         method: "POST",
-        headers: { "Content-Type": "application/json", "ngrok-skip-browser-warning": "true" },
+        headers: { "Content-Type": "application/json", "ngrok-skip-browser-warning": "true", ...getUserIdHeader() },
         body: JSON.stringify({ imageUrl: url, fields: requestedKeys }),
       });
       const ocrJson = await ocrRes.json();
