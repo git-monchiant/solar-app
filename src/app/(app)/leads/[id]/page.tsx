@@ -50,6 +50,8 @@ export default function LeadDetailPage({ params }: { params: Promise<{ id: strin
   const [showLostModal, setShowLostModal] = useState(false);
   const [tab, setTab] = useState<"info" | "log">("info");
   const [showLineModal, setShowLineModal] = useState(false);
+  const [showUnmapLine, setShowUnmapLine] = useState(false);
+  const [unmapping, setUnmapping] = useState(false);
   const [showProfileModal, setShowProfileModal] = useState(false);
   const [preSurveyExpanded, setPreSurveyExpanded] = useState(false);
   const [surveyExpanded, setSurveyExpanded] = useState(false);
@@ -216,25 +218,12 @@ export default function LeadDetailPage({ params }: { params: Promise<{ id: strin
               </svg>
             </button>
           </div>
-          {/* LINE link button — connected: click to unmap; not connected: open picker */}
+          {/* LINE link button — connected: open unmap modal; not connected: open picker */}
           <button
             type="button"
-            onClick={async () => {
-              if (lead.line_id) {
-                if (!confirm("ต้องการยกเลิกการเชื่อม LINE ของลูกค้ารายนี้หรือไม่?")) return;
-                try {
-                  await apiFetch(`/api/leads/${lead.id}`, {
-                    method: "PATCH",
-                    headers: { "Content-Type": "application/json" },
-                    body: JSON.stringify({ line_id: null }),
-                  });
-                  await refresh();
-                } catch (e) {
-                  alert("ยกเลิกไม่สำเร็จ: " + (e instanceof Error ? e.message : "error"));
-                }
-                return;
-              }
-              setShowLineModal(true);
+            onClick={() => {
+              if (lead.line_id) setShowUnmapLine(true);
+              else setShowLineModal(true);
             }}
             title={lead.line_id ? "คลิกเพื่อยกเลิกการเชื่อม LINE" : "เชื่อมกับ LINE ลูกค้า"}
             style={{ minHeight: 0 }}
@@ -527,6 +516,56 @@ export default function LeadDetailPage({ params }: { params: Promise<{ id: strin
           onClose={() => setShowLineModal(false)}
           onLinked={() => refresh()}
         />
+      )}
+
+      {/* LINE unmap confirm modal */}
+      {showUnmapLine && (
+        <div className="fixed inset-0 z-[60] flex items-center justify-center">
+          <div className="absolute inset-0 bg-black/30" onClick={() => !unmapping && setShowUnmapLine(false)} />
+          <div className="relative bg-white rounded-2xl w-[85%] max-w-sm p-5 animate-slide-up text-center">
+            <button
+              type="button"
+              onClick={() => !unmapping && setShowUnmapLine(false)}
+              disabled={unmapping}
+              className="absolute top-3 right-3 w-8 h-8 rounded-full text-gray-400 hover:bg-gray-100 flex items-center justify-center disabled:opacity-40"
+              aria-label="ปิด"
+              style={{ minHeight: 0 }}
+            >
+              ✕
+            </button>
+            <div className="w-12 h-12 rounded-full bg-red-100 flex items-center justify-center mx-auto mb-3">
+              <svg className="w-6 h-6 text-red-600" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                <path strokeLinecap="round" strokeLinejoin="round" d="M18.364 18.364A9 9 0 005.636 5.636m12.728 12.728L5.636 5.636m12.728 12.728L5.636 5.636" />
+              </svg>
+            </div>
+            <div className="text-base font-bold mb-1">ยกเลิกการเชื่อม LINE?</div>
+            <div className="text-sm text-gray-500 mb-1">{lead.full_name}</div>
+            <div className="text-xs text-gray-400 mb-3">หลังยกเลิก จะส่ง LINE ให้ลูกค้ารายนี้ไม่ได้จนกว่าจะเชื่อมใหม่</div>
+            <button
+              type="button"
+              onClick={async () => {
+                setUnmapping(true);
+                try {
+                  await apiFetch(`/api/leads/${lead.id}`, {
+                    method: "PATCH",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({ line_id: null }),
+                  });
+                  await refresh();
+                  setShowUnmapLine(false);
+                } catch (e) {
+                  alert("ยกเลิกไม่สำเร็จ: " + (e instanceof Error ? e.message : "error"));
+                } finally {
+                  setUnmapping(false);
+                }
+              }}
+              disabled={unmapping}
+              className="w-full py-3 rounded-xl text-sm font-semibold bg-red-500 text-white hover:bg-red-600 disabled:opacity-50 transition-colors"
+            >
+              {unmapping ? "กำลังยกเลิก…" : "ยกเลิกการเชื่อม"}
+            </button>
+          </div>
+        </div>
       )}
 
       {showProfileModal && (
