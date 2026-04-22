@@ -8,19 +8,23 @@ interface LineUser {
   display_name: string;
   picture_url: string | null;
   line_user_id: string;
-  lead_id: number | null;
   created_at: string | null;
   last_message_at: string | null;
+  linked_leads_count: number;
+  linked_prospects_count: number;
 }
 
+type Target =
+  | { type: "lead"; id: number; label: string }
+  | { type: "prospect"; id: number; label: string };
+
 interface Props {
-  leadId: number;
-  leadName: string;
+  target: Target;
   onClose: () => void;
   onLinked: (linked: { display_name: string; picture_url: string | null }) => void;
 }
 
-export default function LinePickerModal({ leadId, leadName, onClose, onLinked }: Props) {
+export default function LinePickerModal({ target, onClose, onLinked }: Props) {
   const [users, setUsers] = useState<LineUser[]>([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState("");
@@ -29,7 +33,7 @@ export default function LinePickerModal({ leadId, leadName, onClose, onLinked }:
 
   useEffect(() => {
     apiFetch("/api/line-users").then((data: LineUser[]) => {
-      setUsers(data.filter(u => !u.lead_id));
+      setUsers(data);
       setLoading(false);
     }).catch(() => setLoading(false));
   }, []);
@@ -37,10 +41,13 @@ export default function LinePickerModal({ leadId, leadName, onClose, onLinked }:
   const handleLink = async (user: LineUser) => {
     setLinking(true);
     try {
+      const body = target.type === "lead"
+        ? { lead_id: target.id }
+        : { prospect_id: target.id };
       await apiFetch(`/api/line-users/${user.id}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ lead_id: leadId }),
+        body: JSON.stringify(body),
       });
       onLinked({ display_name: user.display_name || "", picture_url: user.picture_url });
       onClose();
@@ -75,8 +82,12 @@ export default function LinePickerModal({ leadId, leadName, onClose, onLinked }:
                 </div>
               )}
               <div className="text-base font-bold text-gray-900">{confirm.display_name}</div>
-              <div className="text-xs text-gray-400 mt-1">เชื่อมกับ <span className="font-semibold text-gray-700">{leadName}</span></div>
-              <div className="text-xs text-amber-600 mt-2">เชื่อมได้ครั้งเดียว ไม่สามารถเปลี่ยนได้</div>
+              <div className="text-xs text-gray-400 mt-1">เชื่อมกับ <span className="font-semibold text-gray-700">{target.label}</span></div>
+              {(confirm.linked_leads_count + confirm.linked_prospects_count) > 0 && (
+                <div className="text-xs text-amber-600 mt-2">
+                  LINE นี้ถูกใช้อยู่แล้วกับ {confirm.linked_leads_count} lead · {confirm.linked_prospects_count} prospect — ยืนยันจะเพิ่มซ้ำ
+                </div>
+              )}
             </div>
             <div className="flex gap-2">
               <button type="button" onClick={() => setConfirm(null)} className="flex-1 py-3 rounded-xl text-sm font-semibold bg-white border border-gray-200 text-gray-700">
@@ -92,7 +103,7 @@ export default function LinePickerModal({ leadId, leadName, onClose, onLinked }:
             <div className="w-8 h-8 border-2 border-primary/30 border-t-primary rounded-full animate-spin" />
           </div>
         ) : users.length === 0 ? (
-          <div className="text-center py-8 text-gray-400 text-sm">ไม่มี LINE user ที่รอเชื่อม</div>
+          <div className="text-center py-8 text-gray-400 text-sm">ยังไม่มี LINE user ในระบบ</div>
         ) : (
           <div>
             <input
@@ -118,10 +129,33 @@ export default function LinePickerModal({ leadId, leadName, onClose, onLinked }:
                     </div>
                   )}
                   <div className="flex-1 min-w-0">
-                    <div className="text-sm font-semibold text-gray-900 truncate">{u.display_name || "LINE User"}</div>
-                    <div className="text-xs text-gray-400 truncate">
-                      {u.created_at ? `เพิ่มเมื่อ ${new Date(u.created_at).toLocaleDateString("th-TH", { day: "numeric", month: "short" })}` : ""}
-                      {u.last_message_at ? ` · ล่าสุด ${new Date(u.last_message_at).toLocaleDateString("th-TH", { day: "numeric", month: "short" })}` : ""}
+                    <div className="flex items-start gap-2">
+                      <div className="flex-1 min-w-0">
+                        <div className="text-sm font-semibold text-gray-900 truncate">{u.display_name || "LINE User"}</div>
+                        <div className="text-xs text-gray-400 truncate">
+                          {u.created_at
+                            ? new Date(String(u.created_at).slice(0, 19)).toLocaleString("th-TH", { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" })
+                            : ""}
+                        </div>
+                      </div>
+                      {(u.linked_leads_count + u.linked_prospects_count) > 0 && (
+                        <div className="shrink-0 flex flex-col items-end text-xs leading-snug">
+                          {u.linked_leads_count > 0 && (
+                            <div className="flex items-center gap-1.5 text-gray-600">
+                              <span>{u.linked_leads_count}</span>
+                              <span className="text-gray-400">Lead</span>
+                              <span className="w-1.5 h-1.5 rounded-full bg-blue-500" />
+                            </div>
+                          )}
+                          {u.linked_prospects_count > 0 && (
+                            <div className="flex items-center gap-1.5 text-gray-600">
+                              <span>{u.linked_prospects_count}</span>
+                              <span className="text-gray-400">Prospect</span>
+                              <span className="w-1.5 h-1.5 rounded-full bg-emerald-500" />
+                            </div>
+                          )}
+                        </div>
+                      )}
                     </div>
                   </div>
                 </button>

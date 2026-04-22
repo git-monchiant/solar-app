@@ -51,6 +51,8 @@ export async function POST(req: NextRequest) {
     const stepNo = parseInt(String(body.step_no ?? -1));
     const slipField = String(body.slip_field || "");
     const amount = parseFloat(String(body.amount || 0));
+    const methodRaw = body.payment_method ? String(body.payment_method) : "";
+    const paymentMethod = ["qr", "link", "bank_transfer"].includes(methodRaw) ? methodRaw : null;
     if (!leadId || stepNo < 0 || !slipField || !amount) {
       return NextResponse.json({ error: "lead_id, step_no, slip_field, amount required" }, { status: 400 });
     }
@@ -81,6 +83,20 @@ export async function POST(req: NextRequest) {
       }
       slipCount = slipRes.recordset.length;
 
+      // Snapshot the Ref1 that was embedded in the QR at confirm time, so audits
+      // can match the slip back to this payment even if the prefix changes later.
+      // Only populated when the QR is Bill Payment mode — Credit Transfer QRs
+      // have no Ref field.
+      const settingsRes = await new sql.Request(tx).query(`
+        SELECT [key], value FROM app_settings
+        WHERE [key] IN ('promptpay_mode', 'promptpay_ref1')
+      `);
+      const sMap: Record<string, string> = {};
+      for (const row of settingsRes.recordset) sMap[row.key] = row.value || "";
+      const ref1Value = (sMap.promptpay_mode === "bill_payment" && sMap.promptpay_ref1)
+        ? `${sMap.promptpay_ref1}L${leadId}S${stepNo}`.slice(0, 20)
+        : null;
+
       const insertReq = new sql.Request(tx)
         .input("lead_id", sql.Int, leadId)
         .input("step_no", sql.Int, stepNo)
@@ -88,7 +104,9 @@ export async function POST(req: NextRequest) {
         .input("doc_no", sql.NVarChar(50), body.doc_no ?? null)
         .input("amount", sql.Decimal(12, 2), amount)
         .input("description", sql.NVarChar(200), body.description ?? null)
-        .input("confirmed_by", sql.NVarChar(100), body.confirmed_by ?? null);
+        .input("confirmed_by", sql.NVarChar(100), body.confirmed_by ?? null)
+        .input("ref1", sql.NVarChar(50), ref1Value)
+        .input("payment_method", sql.NVarChar(20), paymentMethod);
 
       const slotCols: string[] = ["slip_data", "slip_mime", "slip_filename"];
       const slotParams: string[] = ["@slip_data", "@slip_mime", "@slip_filename"];
@@ -106,9 +124,9 @@ export async function POST(req: NextRequest) {
       }
 
       const insertRes = await insertReq.query(`
-        INSERT INTO payments (lead_id, step_no, slip_field, doc_no, amount, description, ${slotCols.join(", ")}, confirmed_by)
+        INSERT INTO payments (lead_id, step_no, slip_field, doc_no, amount, description, ${slotCols.join(", ")}, confirmed_by, ref1, payment_method)
         OUTPUT INSERTED.id
-        VALUES (@lead_id, @step_no, @slip_field, @doc_no, @amount, @description, ${slotParams.join(", ")}, @confirmed_by)
+        VALUES (@lead_id, @step_no, @slip_field, @doc_no, @amount, @description, ${slotParams.join(", ")}, @confirmed_by, @ref1, @payment_method)
       `);
       paymentId = insertRes.recordset[0].id;
       const paymentUrl = `/api/payments/${paymentId}`;
@@ -151,7 +169,7 @@ export async function GET(req: NextRequest) {
     const stepNo = searchParams.get("step_no");
     const db = await getDb();
     const request = db.request().input("lead_id", sql.Int, leadId);
-    let q = `SELECT id, lead_id, step_no, slip_field, doc_no, amount, description, slip_mime, slip_filename, confirmed_by, confirmed_at
+    let q = `SELECT id, lead_id, step_no, slip_field, doc_no, amount, description, slip_mime, slip_filename, confirmed_by, confirmed_at, ref1, payment_method
              FROM payments WHERE lead_id = @lead_id`;
     if (stepNo !== null) {
       request.input("step_no", sql.Int, parseInt(stepNo));

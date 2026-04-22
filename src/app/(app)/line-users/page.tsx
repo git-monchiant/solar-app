@@ -18,7 +18,7 @@ interface LineUser {
 }
 
 const formatDate = (d: string) =>
-  new Date(String(d).slice(0, 19)).toLocaleDateString("th-TH", { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" });
+  new Date(String(d).slice(0, 19)).toLocaleString("th-TH", { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" });
 
 export default function LineUsersPage() {
   const [users, setUsers] = useState<LineUser[]>([]);
@@ -50,7 +50,7 @@ export default function LineUsersPage() {
                   <th className="text-left px-4 py-3 text-xs font-semibold text-gray-400 uppercase tracking-wider">User</th>
                   <th className="text-left px-4 py-3 text-xs font-semibold text-gray-400 uppercase tracking-wider">LINE ID</th>
                   <th className="text-left px-4 py-3 text-xs font-semibold text-gray-400 uppercase tracking-wider">Mapped Lead</th>
-                  <th className="text-left px-4 py-3 text-xs font-semibold text-gray-400 uppercase tracking-wider">Last Active</th>
+                  <th className="text-left px-4 py-3 text-xs font-semibold text-gray-400 uppercase tracking-wider">Added</th>
                   <th className="text-left px-4 py-3 text-xs font-semibold text-gray-400 uppercase tracking-wider">Status</th>
                 </tr>
               </thead>
@@ -83,7 +83,7 @@ export default function LineUsersPage() {
                       )}
                     </td>
                     <td className="px-4 py-3 text-xs text-gray-500">
-                      {u.last_message_at ? formatDate(u.last_message_at) : formatDate(u.created_at)}
+                      {formatDate(u.created_at)}
                     </td>
                     <td className="px-4 py-3">
                       {u.lead_id ? (

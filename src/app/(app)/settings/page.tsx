@@ -7,7 +7,7 @@ import Header from "@/components/layout/Header";
 import { useMe, ROLE_LABEL, ALL_ROLES, type Role } from "@/lib/roles";
 
 type Settings = Record<string, string>;
-type Tab = "general" | "users";
+type Tab = "general" | "payment_config" | "users";
 
 type UserRow = {
   id: number;
@@ -44,6 +44,7 @@ export default function SettingsPage() {
       <div className="p-4 md:p-6 max-w-4xl">
         <div className="flex items-center gap-1 border-b border-gray-200 mb-4">
           <TabBtn active={tab === "general"} onClick={() => setTab("general")} label="ทั่วไป" />
+          <TabBtn active={tab === "payment_config"} onClick={() => setTab("payment_config")} label="ตั้งค่า QR" />
           {isAdmin && <TabBtn active={tab === "users"} onClick={() => setTab("users")} label="ผู้ใช้งาน" />}
           <div className="flex-1" />
           <div className="pb-2 pr-1">
@@ -58,6 +59,7 @@ export default function SettingsPage() {
         </div>
 
         {tab === "general" && <GeneralTab />}
+        {tab === "payment_config" && <PaymentConfigTab />}
         {tab === "users" && isAdmin && <UsersTab currentUserId={me?.id ?? 0} />}
       </div>
     </div>
@@ -238,6 +240,123 @@ function GeneralTab() {
                 </div>
               );
             })}
+          </div>
+        )}
+      </section>
+    </div>
+  );
+}
+
+function PaymentConfigTab() {
+  const [modeInput, setModeInput] = useState<"credit_transfer" | "bill_payment">("credit_transfer");
+  const [billerIdInput, setBillerIdInput] = useState("");
+  const [ref1Input, setRef1Input] = useState("");
+  const [ref2Input, setRef2Input] = useState("");
+  const [merchantNameInput, setMerchantNameInput] = useState("");
+  const [terminalInput, setTerminalInput] = useState("");
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+  const [savedAt, setSavedAt] = useState<number | null>(null);
+
+  useEffect(() => {
+    apiFetch("/api/settings").then((s: Settings) => {
+      setModeInput(s.promptpay_mode === "credit_transfer" ? "credit_transfer" : "bill_payment");
+      setBillerIdInput(s.promptpay_biller_id || "010753700001716");
+      setRef1Input(s.promptpay_ref1 || "87UX");
+      setRef2Input(s.promptpay_ref2 || "86289573");
+      setMerchantNameInput(s.promptpay_merchant_name || "Digio");
+      setTerminalInput(s.promptpay_terminal || "SDGO862842802640220");
+    }).catch(console.error).finally(() => setLoading(false));
+  }, []);
+
+  const save = async () => {
+    if (modeInput === "bill_payment") {
+      if (!billerIdInput || !ref1Input) { alert("Bill Payment mode ต้องมี Biller ID และ Ref1"); return; }
+    }
+    setSaving(true);
+    try {
+      await apiFetch("/api/settings", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          promptpay_mode: modeInput,
+          promptpay_biller_id: billerIdInput,
+          promptpay_ref1: ref1Input,
+          promptpay_ref2: ref2Input,
+          promptpay_merchant_name: merchantNameInput,
+          promptpay_terminal: terminalInput,
+        }),
+      });
+      setSavedAt(Date.now());
+      setTimeout(() => setSavedAt(null), 2000);
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <div className="space-y-4">
+      <section className="bg-white rounded-xl border border-gray-200 overflow-hidden">
+        <div className="px-5 py-4 border-b border-gray-100">
+          <h2 className="text-sm font-bold text-gray-900">QR Mode</h2>
+          <p className="text-xs text-gray-500 mt-0.5">เลือกวิธีสร้าง QR — Credit Transfer (Tax ID) หรือ Bill Payment (Biller ID ผ่าน Digio/bank)</p>
+        </div>
+        {loading ? (
+          <div className="flex items-center justify-center py-12">
+            <div className="w-8 h-8 border-2 border-primary/30 border-t-primary rounded-full animate-spin" />
+          </div>
+        ) : (
+          <div className="p-5 space-y-4">
+            <div>
+              <label className="text-xs font-semibold tracking-wider uppercase text-gray-400 block mb-1">Mode</label>
+              <select value={modeInput} onChange={e => setModeInput(e.target.value as "credit_transfer" | "bill_payment")}
+                className="w-full h-10 px-3 rounded-lg border border-gray-200 text-sm focus:outline-none focus:border-primary">
+                <option value="credit_transfer">Credit Transfer (Tax ID)</option>
+                <option value="bill_payment">Bill Payment (Biller ID)</option>
+              </select>
+            </div>
+            {modeInput === "bill_payment" && (
+              <>
+                <div>
+                  <label className="text-xs font-semibold tracking-wider uppercase text-gray-400 block mb-1">Biller ID (15 หลัก)</label>
+                  <input type="text" value={billerIdInput}
+                    onChange={e => setBillerIdInput(e.target.value.replace(/\D/g, "").slice(0, 15))}
+                    placeholder="010753700001716"
+                    className="w-full h-10 px-3 rounded-lg border border-gray-200 text-sm font-mono tabular-nums focus:outline-none focus:border-primary" />
+                </div>
+                <div>
+                  <label className="text-xs font-semibold tracking-wider uppercase text-gray-400 block mb-1">Ref1 (merchant code)</label>
+                  <input type="text" value={ref1Input} onChange={e => setRef1Input(e.target.value.toUpperCase().slice(0, 20))}
+                    placeholder="87UX"
+                    className="w-full h-10 px-3 rounded-lg border border-gray-200 text-sm font-mono focus:outline-none focus:border-primary" />
+                </div>
+                <div>
+                  <label className="text-xs font-semibold tracking-wider uppercase text-gray-400 block mb-1">Ref2 (customer/terminal ref — optional)</label>
+                  <input type="text" value={ref2Input} onChange={e => setRef2Input(e.target.value.toUpperCase().slice(0, 20))}
+                    placeholder="86289573"
+                    className="w-full h-10 px-3 rounded-lg border border-gray-200 text-sm font-mono focus:outline-none focus:border-primary" />
+                </div>
+                <div>
+                  <label className="text-xs font-semibold tracking-wider uppercase text-gray-400 block mb-1">Merchant Name (tag 59, max 25)</label>
+                  <input type="text" value={merchantNameInput} onChange={e => setMerchantNameInput(e.target.value.slice(0, 25))}
+                    placeholder="Digio"
+                    className="w-full h-10 px-3 rounded-lg border border-gray-200 text-sm focus:outline-none focus:border-primary" />
+                </div>
+                <div>
+                  <label className="text-xs font-semibold tracking-wider uppercase text-gray-400 block mb-1">Terminal (tag 62/07 — optional)</label>
+                  <input type="text" value={terminalInput} onChange={e => setTerminalInput(e.target.value.slice(0, 32))}
+                    placeholder="SDGO862842802640220"
+                    className="w-full h-10 px-3 rounded-lg border border-gray-200 text-sm font-mono focus:outline-none focus:border-primary" />
+                </div>
+              </>
+            )}
+            <div className="flex items-center gap-3 pt-1">
+              <button type="button" onClick={save} disabled={saving}
+                className="h-10 px-5 rounded-lg text-sm font-semibold text-white bg-primary hover:bg-primary-dark disabled:opacity-50 transition-colors">
+                {saving ? "กำลังบันทึก..." : "บันทึก"}
+              </button>
+              {savedAt && <span className="text-xs font-semibold text-emerald-600">✓ บันทึกแล้ว</span>}
+            </div>
           </div>
         )}
       </section>

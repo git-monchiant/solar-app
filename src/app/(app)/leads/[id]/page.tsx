@@ -19,8 +19,6 @@ import InstallStep from "@/components/lead/detail/steps/InstallStep";
 import WarrantyStep from "@/components/lead/detail/steps/WarrantyStep";
 import GridTieStep from "@/components/lead/detail/steps/GridTieStep";
 import type { Lead, Package, CardStateKind } from "@/components/lead/detail/steps/types";
-import { usePullToRefresh } from "@/lib/hooks/usePullToRefresh";
-import PullToRefreshIndicator from "@/components/ui/PullToRefreshIndicator";
 
 const formatDate = (d: string) =>
   new Date(String(d).slice(0, 10) + "T12:00:00").toLocaleDateString("th-TH", { day: "numeric", month: "short", year: "numeric" });
@@ -80,12 +78,6 @@ export default function LeadDetailPage({ params }: { params: Promise<{ id: strin
   }, [fetchLead, fetchActivities]);
 
   const scrollRef = useRef<HTMLDivElement>(null);
-  const { pullY, refreshing } = usePullToRefresh(scrollRef, async () => {
-    await Promise.all([
-      apiFetch(`/api/leads/${id}`).then(setLead).catch(console.error),
-      apiFetch(`/api/leads/${id}/activities`).then(setActivities).catch(console.error),
-    ]);
-  });
 
   // Auto-scroll to active step when lead status changes or on first load
   const hasScrolled = useRef(false);
@@ -299,7 +291,6 @@ export default function LeadDetailPage({ params }: { params: Promise<{ id: strin
 
       {/* Content */}
       <div ref={scrollRef} className="flex-1 overflow-y-auto pb-20 relative" style={{ overscrollBehaviorY: "contain" }}>
-        <PullToRefreshIndicator pullY={pullY} refreshing={refreshing} />
         {tab === "info" ? (
           <div className="p-4 space-y-3">
             {/* Latest Contact — ข้อมูลการติดต่อล่าสุด */}
@@ -511,8 +502,7 @@ export default function LeadDetailPage({ params }: { params: Promise<{ id: strin
       {/* LINE map modal */}
       {showLineModal && (
         <LinePickerModal
-          leadId={lead.id}
-          leadName={lead.full_name}
+          target={{ type: "lead", id: lead.id, label: lead.full_name }}
           onClose={() => setShowLineModal(false)}
           onLinked={() => refresh()}
         />

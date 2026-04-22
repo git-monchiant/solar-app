@@ -40,10 +40,12 @@ function Trend({ current, previous, suffix = "" }: { current: number; previous: 
 
 export default function DashboardPage() {
   const [data, setData] = useState<DashboardData | null>(null);
+  const [lineUsers, setLineUsers] = useState<{ created_at: string }[]>([]);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
     apiFetch("/api/dashboard").then(setData).catch(console.error).finally(() => setLoading(false));
+    apiFetch("/api/line-users").then(setLineUsers).catch(console.error);
   }, []);
 
   if (loading) return <div className="flex items-center justify-center h-full py-20"><div className="w-10 h-10 border-3 border-gray-200 border-t-primary rounded-full animate-spin" /></div>;
@@ -144,6 +146,12 @@ export default function DashboardPage() {
         <div className="rounded-xl bg-white border border-gray-300 p-4">
           <div className="text-xs font-semibold uppercase tracking-wider text-gray-400 mb-3">การติดตามลูกค้า <span className="normal-case text-gray-300">({new Date().toLocaleDateString("th-TH", { month: "long", year: "numeric" })})</span></div>
           <ActivityChart data={data.activity_heatmap} />
+        </div>
+
+        {/* LINE OA growth */}
+        <div className="rounded-xl bg-white border border-gray-300 p-4">
+          <div className="text-xs font-semibold uppercase tracking-wider text-gray-400 mb-3">Add LINE OA รายวัน <span className="normal-case text-gray-300">({new Date().toLocaleDateString("th-TH", { month: "long", year: "numeric" })})</span></div>
+          <LineGrowthChart users={lineUsers} />
         </div>
 
         <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
@@ -373,6 +381,59 @@ function ActivityChart({ data }: { data: { day: string; lead_id: number; full_na
           {tooltip.text}
         </div>
       )}
+    </div>
+  );
+}
+
+function LineGrowthChart({ users }: { users: { created_at: string }[] }) {
+  const today = new Date();
+  const year = today.getFullYear();
+  const month = today.getMonth();
+  const daysInMonth = new Date(year, month + 1, 0).getDate();
+
+  const counts: number[] = new Array(daysInMonth).fill(0);
+  for (const u of users) {
+    const d = new Date(String(u.created_at).slice(0, 19));
+    if (isNaN(d.getTime())) continue;
+    if (d.getFullYear() !== year || d.getMonth() !== month) continue;
+    const day = d.getDate();
+    if (day >= 1 && day <= daysInMonth) counts[day - 1]++;
+  }
+
+  const maxCount = Math.max(...counts, 1);
+  const chartH = maxCount * 20 + 20;
+
+  const yTicks: number[] = [];
+  const step = Math.max(1, Math.ceil(maxCount / 4));
+  for (let i = 0; i <= maxCount; i += step) yTicks.push(i);
+  if (!yTicks.includes(maxCount)) yTicks.push(maxCount);
+
+  const totalMonth = counts.reduce((a, b) => a + b, 0);
+
+  return (
+    <div>
+      <div className="flex">
+        <div className="flex flex-col-reverse justify-between pr-2" style={{ height: chartH }}>
+          {yTicks.map((t) => (
+            <div key={t} className="text-[10px] text-gray-400 text-right leading-none">{t}</div>
+          ))}
+        </div>
+        <div className="flex-1 flex items-end gap-[3px] border-l border-b border-gray-200" style={{ height: chartH }}>
+          {counts.map((c, i) => (
+            <div key={i} className="flex-1 flex flex-col-reverse gap-[2px] items-stretch" style={{ height: "100%" }}>
+              {Array.from({ length: c }).map((_, j) => (
+                <div key={j} className="rounded-sm bg-emerald-500" style={{ height: 18 }} title={`${i + 1} · ${c} คน`} />
+              ))}
+            </div>
+          ))}
+        </div>
+      </div>
+      <div className="flex gap-[3px] mt-1 ml-6">
+        {counts.map((_, i) => (
+          <div key={i} className="flex-1 text-center text-[10px] text-gray-400 truncate">{i + 1}</div>
+        ))}
+      </div>
+      <div className="mt-2 text-xs text-gray-400">รวมเดือนนี้ {totalMonth} คน · 1 block = 1 user</div>
     </div>
   );
 }

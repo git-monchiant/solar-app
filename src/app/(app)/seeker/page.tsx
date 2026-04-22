@@ -1,8 +1,10 @@
 "use client";
 
 import { apiFetch } from "@/lib/api";
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
 import ListPageHeader from "@/components/layout/ListPageHeader";
+import LinePickerModal from "@/components/modal/LinePickerModal";
 
 type Prospect = {
   id: number;
@@ -17,7 +19,7 @@ type Prospect = {
   installed_kw: number | null;
   installed_product: string | null;
   ev_charger: string | null;
-  interest: "interested" | "not_interested" | "not_home" | null;
+  interest: "interested" | "not_interested" | "not_home" | "undecided" | null;
   interest_type: "new" | "upgrade" | null;
   note: string | null;
   visited_by_name: string | null;
@@ -25,6 +27,10 @@ type Prospect = {
   visit_count: number | null;
   visit_lat: number | null;
   visit_lng: number | null;
+  line_id: string | null;
+  contact_time: string | null;
+  interest_reasons: string | null;
+  interest_reason_note: string | null;
   created_at: string;
 };
 
@@ -72,17 +78,23 @@ function compareHouse(a: Prospect, b: Prospect): number {
 function cardStatus(p: Prospect): CardStatusKey {
   if (p.interest === "interested") return "interested";
   if (p.interest === "not_interested") return "not_interested";
-  if (p.interest === "not_home" || p.visited_at || (p.note && p.note.trim())) return "contacted";
+  if (p.interest === "not_home" || p.interest === "undecided" || p.visited_at || (p.note && p.note.trim())) return "contacted";
   return "pending";
 }
 
 function hasExistingSolar(p: Prospect): boolean {
   const s = (p.existing_solar || "").trim();
-  if (s && !/^(ไม่มี|ยังไม่มี|no|none|-)$/i.test(s)) return true;
+  if (s && !/^(ไม่มี|ยังไม่มี|no|none|-)/i.test(s)) return true;
   if (p.installed_kw != null && p.installed_kw > 0) return true;
   if (p.installed_product && p.installed_product.trim()) return true;
   return false;
 }
+
+function hasEvCharger(p: Prospect): boolean {
+  const s = (p.ev_charger || "").trim();
+  return !!s && !/^ไม่มี/i.test(s);
+}
+
 
 function SolarIcon() {
   return (
@@ -98,35 +110,64 @@ function SolarIcon() {
   );
 }
 
+function LineIcon() {
+  return (
+    <svg className="w-4 h-4 text-emerald-500 shrink-0" viewBox="0 0 24 24" fill="currentColor" aria-label="เชื่อม LINE แล้ว">
+      <title>เชื่อม LINE แล้ว</title>
+      <path d="M19.365 9.863c.349 0 .63.285.63.631 0 .345-.281.63-.63.63H17.61v1.125h1.755c.349 0 .63.283.63.63 0 .344-.281.629-.63.629h-2.386c-.345 0-.627-.285-.627-.629V8.108c0-.345.282-.63.63-.63h2.386c.346 0 .627.285.627.63 0 .349-.281.63-.63.63H17.61v1.125h1.755zm-3.855 3.016c0 .27-.174.51-.432.596-.064.021-.133.031-.199.031-.211 0-.391-.09-.51-.25l-2.443-3.317v2.94c0 .344-.279.629-.631.629-.346 0-.626-.285-.626-.629V8.108c0-.27.173-.51.43-.595.064-.022.134-.032.2-.032.211 0 .391.09.51.25l2.44 3.317V8.108c0-.345.282-.63.63-.63.345 0 .63.285.63.63v4.771zm-5.741 0c0 .344-.282.629-.631.629-.345 0-.627-.285-.627-.629V8.108c0-.345.282-.63.63-.63.346 0 .628.285.628.63v4.771zm-2.466.629H4.917c-.345 0-.63-.285-.63-.629V8.108c0-.345.285-.63.63-.63.348 0 .63.285.63.63v4.141h1.756c.348 0 .629.283.629.63 0 .344-.282.629-.629.629M24 10.314C24 4.943 18.615.572 12 .572S0 4.943 0 10.314c0 4.811 4.27 8.842 10.035 9.608.391.082.923.258 1.058.59.12.301.079.766.038 1.08l-.164 1.02c-.045.301-.24 1.186 1.049.645 1.291-.539 6.916-4.078 9.436-6.975C23.176 14.393 24 12.458 24 10.314" />
+    </svg>
+  );
+}
+
+type ProjectCard = {
+  name: string;
+  assignee: string | null;
+  prospect_count: number;
+  interested_count: number;
+  not_interested_count: number;
+  pending_count: number;
+  visited_count: number;
+};
+
 export default function SeekerPage() {
   const [prospects, setProspects] = useState<Prospect[]>([]);
-  const [allProjects, setAllProjects] = useState<string[]>([]);
+  const [projectCards, setProjectCards] = useState<ProjectCard[]>([]);
   const [loading, setLoading] = useState(true);
+  const [projectsLoading, setProjectsLoading] = useState(true);
   const [tab, setTab] = useState<"all" | "pending" | "contacted" | "interested" | "not_interested">("all");
   const [search, setSearch] = useState<string>("");
-  const [projectFilter, setProjectFilter] = useState<string>("");
-  const [projectPickerOpen, setProjectPickerOpen] = useState(false);
+  const router = useRouter();
+  const searchParams = useSearchParams();
+  const projectFilter = searchParams.get("project") || "";
+  const setProjectFilter = (name: string) => {
+    if (name) router.push(`/seeker?project=${encodeURIComponent(name)}`);
+    else router.push("/seeker");
+  };
+  const [projectSearch, setProjectSearch] = useState<string>("");
   const [editing, setEditing] = useState<Prospect | null>(null);
   const [hydrated, setHydrated] = useState(false);
+
+  const fetchProjects = useCallback(async () => {
+    try {
+      const list: ProjectCard[] = await apiFetch("/api/projects?has_prospects=1");
+      setProjectCards(list);
+    } catch (e) {
+      console.error(e);
+    }
+  }, []);
 
   useEffect(() => {
     if (typeof window !== "undefined") {
       setSearch(localStorage.getItem("seekerSearch") || "");
-      setProjectFilter(localStorage.getItem("seekerProjectFilter") || "");
     }
     setHydrated(true);
-    apiFetch("/api/projects")
-      .then((list: { name: string }[]) => setAllProjects(list.map((p) => p.name)))
-      .catch(console.error);
-  }, []);
+    fetchProjects().finally(() => setProjectsLoading(false));
+  }, [fetchProjects]);
 
   useEffect(() => {
     if (!hydrated) return;
-    if (typeof window !== "undefined") {
-      if (projectFilter) localStorage.setItem("seekerProjectFilter", projectFilter);
-      else localStorage.removeItem("seekerProjectFilter");
-    }
-    refresh(projectFilter);
+    if (projectFilter) refresh(projectFilter);
+    else { setProspects([]); setLoading(false); }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [projectFilter, hydrated]);
 
@@ -147,15 +188,11 @@ export default function SeekerPage() {
       .finally(() => setLoading(false));
   }
 
-  const projectOptions = useMemo(() => {
-    const set = new Set<string>();
-    for (const name of allProjects) if (name) set.add(name);
-    for (const p of prospects) {
-      const n = typeof p.project_name === "string" ? p.project_name.trim() : "";
-      if (n) set.add(n);
-    }
-    return Array.from(set).sort((a, b) => a.localeCompare(b, "th"));
-  }, [prospects, allProjects]);
+  const filteredProjects = useMemo(() => {
+    const q = projectSearch.trim().toLowerCase();
+    if (!q) return projectCards;
+    return projectCards.filter((p) => p.name.toLowerCase().includes(q));
+  }, [projectCards, projectSearch]);
 
   const scopedByProject = useMemo(() => {
     if (!projectFilter) return prospects;
@@ -187,20 +224,26 @@ export default function SeekerPage() {
     return [...list].sort(compareHouse);
   }, [scopedByProject, tab, search]);
 
+  if (!projectFilter) {
+    return (
+      <ProjectLanding
+        projects={filteredProjects}
+        loading={projectsLoading}
+        search={projectSearch}
+        onSearchChange={setProjectSearch}
+        onSelect={setProjectFilter}
+      />
+    );
+  }
+
   return (
     <div>
       <ListPageHeader
-        title="Leads Seeker"
-        subtitle="เดินหาลูกค้า"
+        title={projectFilter}
+        subtitle="LEADS SEEKER"
         search={search}
         onSearchChange={setSearch}
-        searchPlaceholder={projectFilter ? `ค้นหาใน ${projectFilter}` : "ค้นหาบ้านเลขที่/ชื่อ/เบอร์..."}
-        actionIcon={
-          <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-            <path strokeLinecap="round" strokeLinejoin="round" d="M3 5.25h18M6 12h12m-9 6.75h6" />
-          </svg>
-        }
-        onAction={() => setProjectPickerOpen(true)}
+        searchPlaceholder="ค้นหาบ้านเลขที่/ชื่อ/เบอร์..."
         tabs={[
           { key: "all", label: "ทั้งหมด", count: counts.all },
           { key: "pending", label: "ยังไม่เยี่ยม", count: counts.pending },
@@ -230,40 +273,70 @@ export default function SeekerPage() {
                   className={`text-left rounded-xl border px-4 py-3 hover:shadow-sm transition-all relative ${CARD_STATUS[status].card}`}
                   style={{ contentVisibility: "auto", containIntrinsicSize: "90px" }}
                 >
-                  {(() => {
-                    const count = p.visit_count ?? 0;
-                    if (status === "interested") {
-                      if (p.interest_type === "upgrade") {
-                        return (
-                          <span className="absolute top-2 right-2 text-[11px] text-blue-700 uppercase tracking-wider font-bold">
-                            Upgrade
-                          </span>
-                        );
-                      }
-                      return null;
-                    }
-                    if (status === "pending") return null;
-                    return (
-                      <span className={`absolute top-2 right-2 text-[10px] px-2 py-0.5 rounded-full border ${CARD_STATUS[status].badge}`}>
-                        {CARD_STATUS[status].label}
-                        {status === "contacted" && count > 0 && (
-                          <span className="ml-1 font-bold">×{count}</span>
-                        )}
-                      </span>
-                    );
-                  })()}
-                  <div className="text-base font-bold text-gray-900 leading-tight flex items-center gap-1.5">
+                  <div className="flex items-center gap-1.5">
                     <svg className="w-4 h-4 text-gray-500 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
                       <path strokeLinecap="round" strokeLinejoin="round" d="M2.25 12l8.954-8.955c.44-.439 1.152-.439 1.591 0L21.75 12M4.5 9.75v10.125c0 .621.504 1.125 1.125 1.125H9.75v-4.875c0-.621.504-1.125 1.125-1.125h2.25c.621 0 1.125.504 1.125 1.125V21h4.125c.621 0 1.125-.504 1.125-1.125V9.75" />
                     </svg>
-                    <span>{p.house_number || "-"}</span>
-                    {hasExistingSolar(p) && <SolarIcon />}
+                    <span className="text-base font-bold text-gray-900 leading-tight truncate">{p.house_number || "-"}</span>
+                    {p.line_id && <LineIcon />}
+                    <div className="ml-auto flex items-center gap-1 shrink-0">
+                      {(() => {
+                        const count = p.visit_count ?? 0;
+                        if (status === "interested" && p.interest_type === "upgrade") {
+                          return (
+                            <span className="text-[10px] text-blue-700 uppercase tracking-wider font-bold mr-1">Upgrade</span>
+                          );
+                        }
+                        if (status === "contacted" || status === "not_interested") {
+                          return (
+                            <span className={`text-[10px] px-1.5 py-0.5 rounded-full border mr-1 ${CARD_STATUS[status].badge}`}>
+                              {CARD_STATUS[status].label}
+                              {status === "contacted" && count > 0 && (
+                                <span className="ml-1 font-bold">×{count}</span>
+                              )}
+                            </span>
+                          );
+                        }
+                        return null;
+                      })()}
+                      <span className={hasExistingSolar(p) ? "text-blue-600" : "text-gray-300"} title={hasExistingSolar(p) ? "มี Solar" : "ยังไม่มี Solar"}>
+                        <svg className="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.8}>
+                          <path d="M4 18L6.5 6h11L20 18H4z" strokeLinejoin="round" />
+                          <path d="M4 18h16" strokeLinecap="round" />
+                          <path d="M12 6v12" />
+                          <path d="M5.2 12h13.6" />
+                          <path d="M7.2 9h9.6" />
+                          <path d="M4.6 15h14.8" />
+                        </svg>
+                      </span>
+                      <span className={hasEvCharger(p) ? "text-purple-600" : "text-gray-300"} title={hasEvCharger(p) ? "มี EV Charger" : "ยังไม่มี EV Charger"}>
+                        <svg className="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.8}>
+                          <path d="M4 17V8a2 2 0 012-2h8a2 2 0 012 2v9" strokeLinecap="round" strokeLinejoin="round" />
+                          <path d="M3 17h12" strokeLinecap="round" />
+                          <path d="M16 11h2a2 2 0 012 2v3a1.5 1.5 0 01-3 0v-1" strokeLinecap="round" strokeLinejoin="round" />
+                          <path d="M9 9l-2 4h3l-1 3" strokeLinecap="round" strokeLinejoin="round" />
+                        </svg>
+                      </span>
+                    </div>
                   </div>
-                  <div className="mt-1 text-sm text-gray-800 truncate">
-                    {p.full_name || <span className="text-gray-400">ไม่มีชื่อ</span>}
-                  </div>
-                  <div className="mt-0.5 text-sm text-gray-500 font-mono">
-                    {p.phone || <span className="text-gray-300">-</span>}
+                  {p.full_name && (
+                    <div className="mt-1 text-xs text-gray-600 truncate flex items-center gap-1">
+                      <svg className="w-3.5 h-3.5 text-gray-400 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                        <path strokeLinecap="round" strokeLinejoin="round" d="M15.75 6a3.75 3.75 0 11-7.5 0 3.75 3.75 0 017.5 0zM4.501 20.118a7.5 7.5 0 0114.998 0" />
+                      </svg>
+                      <span className="truncate">{p.full_name}</span>
+                    </div>
+                  )}
+                  {hasExistingSolar(p) && (
+                    <div className="mt-1 text-xs text-blue-700 font-semibold truncate">
+                      Solar: {p.installed_kw != null && p.installed_kw > 0 ? `${p.installed_kw} kW` : (p.existing_solar || p.installed_product || "ติดแล้ว")}
+                    </div>
+                  )}
+                  <div className="mt-1 text-sm text-gray-500 font-mono flex items-center gap-1">
+                    <svg className="w-3.5 h-3.5 text-gray-400 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                      <path strokeLinecap="round" strokeLinejoin="round" d="M2.25 6.75c0 8.284 6.716 15 15 15h2.25a2.25 2.25 0 002.25-2.25v-1.372c0-.516-.351-.966-.852-1.091l-4.423-1.106c-.44-.11-.902.055-1.173.417l-.97 1.293c-.282.376-.769.542-1.21.38a12.035 12.035 0 01-7.143-7.143c-.162-.441.004-.928.38-1.21l1.293-.97c.363-.271.527-.734.417-1.173L6.963 3.102a1.125 1.125 0 00-1.091-.852H4.5A2.25 2.25 0 002.25 4.5v2.25z" />
+                    </svg>
+                    <span>{p.phone || <span className="text-gray-300">-</span>}</span>
                   </div>
                 </button>
               );
@@ -280,30 +353,205 @@ export default function SeekerPage() {
             setEditing(null);
             refresh();
           }}
+          onRefresh={() => refresh()}
         />
       )}
 
-      {projectPickerOpen && (
-        <ProjectPickerModal
-          value={projectFilter}
-          options={projectOptions}
-          onChange={(v) => {
-            setProjectFilter(v);
-            setProjectPickerOpen(false);
-          }}
-          onClose={() => setProjectPickerOpen(false)}
-        />
-      )}
     </div>
   );
 }
 
-function VisitModal({ prospect, onClose, onSaved }: { prospect: Prospect; onClose: () => void; onSaved: () => void }) {
+const FAV_KEY = "seekerFavorites";
+
+function ProjectLanding({
+  projects,
+  loading,
+  search,
+  onSearchChange,
+  onSelect,
+}: {
+  projects: ProjectCard[];
+  loading: boolean;
+  search: string;
+  onSearchChange: (v: string) => void;
+  onSelect: (name: string) => void;
+}) {
+  const [favs, setFavs] = useState<Set<string>>(new Set());
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const saved = localStorage.getItem(FAV_KEY);
+    if (saved) {
+      try { setFavs(new Set(JSON.parse(saved))); } catch {}
+    }
+  }, []);
+
+  const toggleFav = (name: string) => {
+    setFavs((prev) => {
+      const next = new Set(prev);
+      if (next.has(name)) next.delete(name);
+      else next.add(name);
+      if (typeof window !== "undefined") {
+        localStorage.setItem(FAV_KEY, JSON.stringify([...next]));
+      }
+      return next;
+    });
+  };
+
+  const sortedProjects = useMemo(() => {
+    return [...projects].sort((a, b) => {
+      const fa = favs.has(a.name), fb = favs.has(b.name);
+      if (fa && !fb) return -1;
+      if (!fa && fb) return 1;
+      return a.name.localeCompare(b.name, "th");
+    });
+  }, [projects, favs]);
+  return (
+    <div>
+      <ListPageHeader
+        title="Leads Seeker"
+        subtitle="เลือกโครงการ"
+        search={search}
+        onSearchChange={onSearchChange}
+        searchPlaceholder="ค้นหาโครงการ..."
+        tabs={[]}
+        activeTab=""
+        onTabChange={() => {}}
+      />
+
+      <div className="px-3 md:px-5 py-3">
+        {loading ? (
+          <div className="flex items-center justify-center py-16">
+            <div className="w-8 h-8 border-3 border-gray-200 border-t-gray-900 rounded-full animate-spin" />
+          </div>
+        ) : projects.length === 0 ? (
+          <div className="text-center text-gray-400 text-sm py-16">ไม่มีโครงการ</div>
+        ) : (
+          <div className="bg-white rounded-2xl border border-gray-200 overflow-hidden">
+            <div className="divide-y divide-gray-200">
+              {sortedProjects.map((p) => {
+                const total = p.prospect_count || 0;
+                const contacted = Math.max(0, total - p.interested_count - p.not_interested_count - p.pending_count);
+                const pct = total === 0 ? 0 : Math.round(((total - p.pending_count) / total) * 100);
+                const segments = [
+                  { key: "interested", count: p.interested_count, color: "bg-green-500", label: "สนใจ" },
+                  { key: "contacted", count: contacted, color: "bg-amber-400", label: "กำลังติดต่อ" },
+                  { key: "not_interested", count: p.not_interested_count, color: "bg-red-400", label: "ไม่สนใจ" },
+                  { key: "pending", count: p.pending_count, color: "bg-gray-200", label: "ยังไม่เยี่ยม" },
+                ];
+                const isFav = favs.has(p.name);
+                return (
+                  <div key={p.name} className="flex items-stretch hover:bg-gray-50 transition-colors">
+                    <button
+                      type="button"
+                      onClick={(e) => { e.stopPropagation(); toggleFav(p.name); }}
+                      aria-label={isFav ? "เอาออกจาก favorites" : "เพิ่มใน favorites"}
+                      className="shrink-0 pl-3 pr-1.5 flex items-center text-gray-300 hover:text-amber-400 cursor-pointer"
+                    >
+                      {isFav ? (
+                        <svg className="w-5 h-5 text-amber-400" viewBox="0 0 24 24" fill="currentColor">
+                          <path d="M11.48 3.499a.562.562 0 011.04 0l2.125 5.111a.563.563 0 00.475.345l5.518.442c.499.04.701.663.321.988l-4.204 3.602a.563.563 0 00-.182.557l1.285 5.385a.562.562 0 01-.84.61l-4.725-2.885a.563.563 0 00-.586 0L6.982 20.54a.562.562 0 01-.84-.61l1.285-5.386a.562.562 0 00-.182-.557l-4.204-3.602a.563.563 0 01.321-.988l5.518-.442a.563.563 0 00.475-.345L11.48 3.5z" />
+                        </svg>
+                      ) : (
+                        <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.8}>
+                          <path strokeLinecap="round" strokeLinejoin="round" d="M11.48 3.499a.562.562 0 011.04 0l2.125 5.111a.563.563 0 00.475.345l5.518.442c.499.04.701.663.321.988l-4.204 3.602a.563.563 0 00-.182.557l1.285 5.385a.562.562 0 01-.84.61l-4.725-2.885a.563.563 0 00-.586 0L6.982 20.54a.562.562 0 01-.84-.61l1.285-5.386a.562.562 0 00-.182-.557l-4.204-3.602a.563.563 0 01.321-.988l5.518-.442a.563.563 0 00.475-.345L11.48 3.5z" />
+                        </svg>
+                      )}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => onSelect(p.name)}
+                      className="flex-1 text-left py-3 pr-4 min-w-0 cursor-pointer"
+                    >
+                      <div className="flex items-center justify-between gap-2">
+                        <div className="flex items-center gap-2 min-w-0 flex-1">
+                          <svg className="w-4 h-4 text-gray-500 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                            <path strokeLinecap="round" strokeLinejoin="round" d="M3 9.75L12 3l9 6.75V21a1.5 1.5 0 01-1.5 1.5H16.5v-6.75a1.5 1.5 0 00-1.5-1.5h-6a1.5 1.5 0 00-1.5 1.5V22.5H4.5A1.5 1.5 0 013 21V9.75z" />
+                          </svg>
+                          <div className="min-w-0">
+                            <div className="text-sm font-semibold text-gray-900 truncate">{p.name}</div>
+                          </div>
+                        </div>
+                        <div className="text-sm font-semibold text-gray-700 shrink-0">{pct}%</div>
+                      </div>
+                      <div className="mt-2 flex h-2 rounded-full overflow-hidden bg-gray-100">
+                        {segments.map((s) =>
+                          s.count > 0 ? (
+                            <div key={s.key} className={`${s.color} transition-all`} style={{ width: `${(s.count / total) * 100}%` }} title={`${s.label} ${s.count}`} />
+                          ) : null
+                        )}
+                      </div>
+                      <div className="mt-1.5 text-xs text-gray-500 flex flex-wrap gap-x-3 gap-y-0.5">
+                        <span>ทั้งหมด {total}</span>
+                        {p.interested_count > 0 && <span className="text-green-600">สนใจ {p.interested_count}</span>}
+                        {contacted > 0 && <span className="text-amber-600">กำลังติดต่อ {contacted}</span>}
+                        {p.not_interested_count > 0 && <span className="text-red-600">ไม่สนใจ {p.not_interested_count}</span>}
+                        {p.pending_count > 0 && <span className="text-gray-500">ยังไม่เยี่ยม {p.pending_count}</span>}
+                      </div>
+                    </button>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function VisitModal({ prospect, onClose, onSaved, onRefresh }: { prospect: Prospect; onClose: () => void; onSaved: () => void; onRefresh: () => void }) {
+  const [modalTab, setModalTab] = useState<"visit" | "reasons" | "line">("visit");
   const [interest, setInterest] = useState<Prospect["interest"]>(prospect.interest);
   const [interestType, setInterestType] = useState<Prospect["interest_type"]>(prospect.interest_type);
   const [note, setNote] = useState(prospect.note || "");
-  const [projectName, setProjectName] = useState(prospect.project_name || "");
+  const [contactName, setContactName] = useState(prospect.full_name || "");
+  const [contactHours, setContactHours] = useState<number[]>(() => {
+    if (!prospect.contact_time) return [];
+    return prospect.contact_time
+      .split(",")
+      .map((s) => parseInt(s.trim()))
+      .filter((n) => !isNaN(n) && n >= 8 && n <= 19);
+  });
+  const [reasonCodes, setReasonCodes] = useState<string[]>(() =>
+    prospect.interest_reasons ? prospect.interest_reasons.split(",").map((s) => s.trim()).filter(Boolean) : []
+  );
+  const [reasonNote, setReasonNote] = useState(prospect.interest_reason_note || "");
+  const [reasonsSavedAt, setReasonsSavedAt] = useState<number | null>(null);
+  const reasonsInitRef = useRef(true);
+
+  // Auto-save reasons tab: debounced PATCH whenever chips or note change.
+  useEffect(() => {
+    if (reasonsInitRef.current) { reasonsInitRef.current = false; return; }
+    const timer = setTimeout(async () => {
+      try {
+        await apiFetch(`/api/prospects/${prospect.id}`, {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            interest_reasons: reasonCodes.length ? reasonCodes.join(",") : null,
+            interest_reason_note: reasonNote.trim() || null,
+          }),
+        });
+        setReasonsSavedAt(Date.now());
+        setTimeout(() => setReasonsSavedAt(null), 1500);
+      } catch (e) {
+        console.error("auto-save reasons failed", e);
+      }
+    }, 600);
+    return () => clearTimeout(timer);
+  }, [reasonCodes, reasonNote, prospect.id]);
   const [saving, setSaving] = useState(false);
+  const [linePickerOpen, setLinePickerOpen] = useState(false);
+  const [linkedLine, setLinkedLine] = useState<{ display_name: string; picture_url: string | null } | null>(null);
+
+  useEffect(() => {
+    if (!prospect.line_id) return;
+    apiFetch("/api/line-users").then((data: Array<{ line_user_id: string; display_name: string; picture_url: string | null }>) => {
+      const match = data.find((u) => u.line_user_id === prospect.line_id);
+      if (match) setLinkedLine({ display_name: match.display_name || "", picture_url: match.picture_url });
+    }).catch(() => {});
+  }, [prospect.line_id]);
 
   function getLocation(): Promise<{ lat: number; lng: number } | null> {
     return new Promise((resolve) => {
@@ -327,7 +575,8 @@ function VisitModal({ prospect, onClose, onSaved }: { prospect: Prospect; onClos
           interest,
           interest_type: interest === "interested" ? interestType : null,
           note,
-          project_name: projectName.trim() || null,
+          full_name: contactName.trim() || null,
+          contact_time: contactHours.length ? [...contactHours].sort((a, b) => a - b).join(",") : null,
           visit_lat: loc?.lat ?? null,
           visit_lng: loc?.lng ?? null,
         }),
@@ -341,112 +590,232 @@ function VisitModal({ prospect, onClose, onSaved }: { prospect: Prospect; onClos
     }
   }
 
-  const buttons: { key: NonNullable<Prospect["interest"]>; label: string; color: string }[] = [
-    { key: "interested", label: "สนใจ", color: "bg-green-600 border-green-600 text-white" },
-    { key: "not_interested", label: "ไม่สนใจ", color: "bg-red-500 border-red-500 text-white" },
-    { key: "not_home", label: "ไม่อยู่บ้าน", color: "bg-gray-500 border-gray-500 text-white" },
+  type VisitChoice = {
+    key: string;
+    label: string;
+    interest: NonNullable<Prospect["interest"]>;
+    type: Prospect["interest_type"];
+    color: string;
+  };
+  const visitChoices: VisitChoice[] = [
+    { key: "interested-new", label: "สนใจ - ติดตั้ง", interest: "interested", type: "new", color: "bg-green-600 border-green-600 text-white" },
+    { key: "interested-upgrade", label: "สนใจ - Upgrade", interest: "interested", type: "upgrade", color: "bg-blue-600 border-blue-600 text-white" },
+    { key: "undecided", label: "ยังไม่ตัดสินใจ", interest: "undecided", type: null, color: "bg-amber-500 border-amber-500 text-white" },
+    { key: "not_home", label: "ไม่อยู่บ้าน", interest: "not_home", type: null, color: "bg-amber-500 border-amber-500 text-white" },
+    { key: "not_interested", label: "ไม่สนใจ", interest: "not_interested", type: null, color: "bg-red-500 border-red-500 text-white" },
   ];
 
   const hasRecord = !!(prospect.interest || prospect.visited_at || (prospect.note && prospect.note.trim()));
+  const action = hasRecord ? "แก้ไขการเยี่ยม" : "บันทึกการเยี่ยม";
+  const flagItems = [
+    {
+      key: "solar",
+      on: hasExistingSolar(prospect),
+      onCls: "text-blue-600",
+      title: hasExistingSolar(prospect) ? "มี Solar" : "ยังไม่มี Solar",
+      icon: (
+        <svg className="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.8}>
+          <path d="M4 18L6.5 6h11L20 18H4z" strokeLinejoin="round" />
+          <path d="M4 18h16" strokeLinecap="round" />
+          <path d="M12 6v12" />
+          <path d="M5.2 12h13.6" />
+          <path d="M7.2 9h9.6" />
+          <path d="M4.6 15h14.8" />
+        </svg>
+      ),
+    },
+    {
+      key: "ev",
+      on: hasEvCharger(prospect),
+      onCls: "text-purple-600",
+      title: hasEvCharger(prospect) ? "มี EV Charger" : "ยังไม่มี EV Charger",
+      icon: (
+        <svg className="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.8}>
+          <path d="M4 17V8a2 2 0 012-2h8a2 2 0 012 2v9" strokeLinecap="round" strokeLinejoin="round" />
+          <path d="M3 17h12" strokeLinecap="round" />
+          <path d="M16 11h2a2 2 0 012 2v3a1.5 1.5 0 01-3 0v-1" strokeLinecap="round" strokeLinejoin="round" />
+          <path d="M9 9l-2 4h3l-1 3" strokeLinecap="round" strokeLinejoin="round" />
+        </svg>
+      ),
+    },
+  ];
+  const title = (
+    <>
+      <span className="truncate">
+        {prospect.house_number ? `${prospect.house_number} · ${action}` : action}
+      </span>
+      <span className="flex items-center gap-1.5 shrink-0">
+        {flagItems.map((i) => (
+          <span key={i.key} title={i.title} className={i.on ? i.onCls : "text-gray-300"}>
+            {i.icon}
+          </span>
+        ))}
+      </span>
+    </>
+  );
 
   return (
-    <Modal onClose={onClose} title={hasRecord ? "แก้ไขการเยี่ยม" : "บันทึกการเยี่ยม"}>
-      <div className="space-y-4">
-        <div className="bg-gray-50 rounded-lg p-3 text-sm">
-          <div className="font-semibold text-gray-900">
-            {prospect.house_number || "-"} {prospect.full_name && `· ${prospect.full_name}`}
-          </div>
-          <div className="mt-1 text-xs text-gray-500 space-y-0.5">
-            {prospect.project_name && <div>โครงการ: {prospect.project_name}</div>}
-            {prospect.phone && <div>โทร: {prospect.phone}</div>}
-            {prospect.app_status && <div>App Sen Prop: {prospect.app_status}</div>}
-            {prospect.existing_solar && <div>Solar เดิม: {prospect.existing_solar}</div>}
-            {prospect.installed_kw != null && <div>ขนาด: {prospect.installed_kw} kW</div>}
-            {prospect.installed_product && <div>ผลิตภัณฑ์: {prospect.installed_product}</div>}
-            {prospect.ev_charger && <div>EV Charger: {prospect.ev_charger}</div>}
-            {prospect.visited_at && (
-              <div className="text-amber-700">
-                เยี่ยมล่าสุด: {formatThaiDateTime(prospect.visited_at)}
-                {prospect.visited_by_name && ` · โดย ${prospect.visited_by_name}`}
-                {prospect.visit_count != null && prospect.visit_count > 1 && ` · ×${prospect.visit_count}`}
-              </div>
-            )}
-            {prospect.visit_lat != null && prospect.visit_lng != null && (
-              <a
-                href={`https://www.google.com/maps?q=${prospect.visit_lat},${prospect.visit_lng}`}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="inline-flex items-center gap-1 text-blue-600 hover:underline"
-              >
-                <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                  <path strokeLinecap="round" strokeLinejoin="round" d="M15 10.5a3 3 0 11-6 0 3 3 0 016 0z" />
-                  <path strokeLinecap="round" strokeLinejoin="round" d="M19.5 10.5c0 7.142-7.5 11.25-7.5 11.25S4.5 17.642 4.5 10.5a7.5 7.5 0 1115 0z" />
-                </svg>
-                ตำแหน่งที่บันทึก (เปิด Google Maps)
-              </a>
-            )}
-          </div>
-        </div>
+    <Modal onClose={onClose} title={title}>
+      <div className="flex border-b border-gray-200 -mx-5 px-5 mb-4">
+        <button
+          type="button"
+          onClick={() => setModalTab("visit")}
+          className={`flex-1 pb-2.5 text-sm font-semibold border-b-2 -mb-px transition-colors ${
+            modalTab === "visit" ? "text-primary border-primary" : "text-gray-400 border-transparent hover:text-gray-600"
+          }`}
+        >
+          การเยี่ยม
+        </button>
+        <button
+          type="button"
+          onClick={() => setModalTab("reasons")}
+          className={`flex-1 pb-2.5 text-sm font-semibold border-b-2 -mb-px transition-colors ${
+            modalTab === "reasons" ? "text-primary border-primary" : "text-gray-400 border-transparent hover:text-gray-600"
+          }`}
+        >
+          เหตุผล
+        </button>
+        <button
+          type="button"
+          onClick={() => setModalTab("line")}
+          className={`flex-1 pb-2.5 text-sm font-semibold border-b-2 -mb-px transition-colors inline-flex items-center justify-center gap-1.5 ${
+            modalTab === "line" ? "text-primary border-primary" : "text-gray-400 border-transparent hover:text-gray-600"
+          }`}
+        >
+          {linkedLine && (
+            <span className="w-4 h-4 rounded-full bg-emerald-500 flex items-center justify-center">
+              <svg className="w-2.5 h-2.5 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={4}>
+                <path strokeLinecap="round" strokeLinejoin="round" d="M4.5 12.75l6 6 9-13.5" />
+              </svg>
+            </span>
+          )}
+          Add LINE
+        </button>
+      </div>
 
+      <div className="min-h-[560px]">
+      {modalTab === "line" ? (
+        <div className="flex flex-col items-center gap-3 py-4">
+          <img src="/logos/logo-sena.png" alt="SENA SOLAR" className="h-10 w-auto" />
+          <div className="text-sm text-gray-700">ให้ลูกค้าสแกนเพื่อเพิ่ม LINE</div>
+          <img src="/api/line-qr" alt="LINE QR" className="w-64 h-64 rounded-lg border-4 border-[#06C755] p-1 bg-white" />
+          <div className="text-xs font-semibold text-gray-700">SENA SOLAR ENERGY</div>
+
+          <div className="w-64 mt-2">
+            {linkedLine ? (
+              <div className="w-full">
+                <div className="text-[11px] font-semibold uppercase tracking-wider text-gray-400 mb-1.5">LINE Profile</div>
+                <div className="flex items-center gap-3 p-3 rounded-xl border border-gray-200 bg-white">
+                  {linkedLine.picture_url ? (
+                    <img src={linkedLine.picture_url} alt="" className="w-10 h-10 rounded-full object-cover shrink-0" />
+                  ) : (
+                    <div className="w-10 h-10 rounded-full bg-gray-200 shrink-0" />
+                  )}
+                  <div className="flex-1 min-w-0">
+                    <div className="text-sm font-semibold text-gray-900 truncate">{linkedLine.display_name || "LINE User"}</div>
+                    <div className="text-xs text-emerald-600">● เชื่อมแล้ว</div>
+                  </div>
+                  <button
+                    type="button"
+                    title="ยกเลิกการเชื่อม"
+                    onClick={async () => {
+                      if (!confirm("ยกเลิกการเชื่อม LINE ของบ้านนี้?")) return;
+                      await apiFetch(`/api/prospects/${prospect.id}`, {
+                        method: "PATCH",
+                        headers: { "Content-Type": "application/json" },
+                        body: JSON.stringify({ line_id: null }),
+                      });
+                      setLinkedLine(null);
+                      onRefresh();
+                    }}
+                    className="shrink-0 w-8 h-8 rounded-lg flex items-center justify-center text-gray-400 hover:text-red-600 hover:bg-red-50 transition-colors"
+                  >
+                    <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                      <path strokeLinecap="round" strokeLinejoin="round" d="M14.74 9l-.346 9m-4.788 0L9.26 9m9.968-3.21c.342.052.682.107 1.022.166m-1.022-.165L18.16 19.673a2.25 2.25 0 01-2.244 2.077H8.084a2.25 2.25 0 01-2.244-2.077L4.772 5.79m14.456 0a48.108 48.108 0 00-3.478-.397m-12 .562c.34-.059.68-.114 1.022-.165m0 0a48.11 48.11 0 013.478-.397m7.5 0v-.916c0-1.18-.91-2.164-2.09-2.201a51.964 51.964 0 00-3.32 0c-1.18.037-2.09 1.022-2.09 2.201v.916m7.5 0a48.667 48.667 0 00-7.5 0" />
+                    </svg>
+                  </button>
+                </div>
+              </div>
+            ) : (
+              <button
+                type="button"
+                onClick={() => setLinePickerOpen(true)}
+                className="w-full inline-flex items-center justify-center gap-1 text-sm text-gray-500 hover:text-gray-800 py-2"
+              >
+                <span className="w-5 h-5 rounded-full border border-gray-300 flex items-center justify-center text-base leading-none">+</span>
+                เลือก LINE ของลูกค้า
+              </button>
+            )}
+          </div>
+
+          {linePickerOpen && (
+            <LinePickerModal
+              target={{ type: "prospect", id: prospect.id, label: prospect.house_number || contactName || "บ้านนี้" }}
+              onClose={() => setLinePickerOpen(false)}
+              onLinked={(linked) => { setLinkedLine(linked); onRefresh(); }}
+            />
+          )}
+        </div>
+      ) : (
+      <>
+      <div className="space-y-4">
+        {modalTab === "visit" && <>
         <div>
           <div className="text-xs font-semibold uppercase tracking-wider text-gray-500 mb-2">ผลการเยี่ยม</div>
-          <div className="grid grid-cols-3 gap-2">
-            {buttons.map((b) => {
-              const active = interest === b.key;
+          <div className="grid grid-cols-2 gap-2">
+            {visitChoices.map((c) => {
+              const active = interest === c.interest && interestType === c.type;
               return (
                 <button
-                  key={b.key}
-                  onClick={() => setInterest(b.key)}
-                  className={`h-11 rounded-lg border text-sm font-semibold transition-all ${
-                    active ? b.color : "bg-white border-gray-300 text-gray-700 hover:border-gray-400"
+                  key={c.key}
+                  type="button"
+                  onClick={() => {
+                    setInterest(c.interest);
+                    setInterestType(c.type);
+                  }}
+                  className={`h-11 rounded-lg border text-sm font-semibold transition-colors ${
+                    active ? c.color : "bg-white border-gray-300 text-gray-700 hover:border-gray-400"
                   }`}
                 >
-                  {b.label}
+                  {c.label}
                 </button>
               );
             })}
           </div>
         </div>
 
-        <div>
-          <div className="text-xs font-semibold uppercase tracking-wider text-gray-500 mb-2">ประเภท (ถ้าสนใจ)</div>
-          <div className="grid grid-cols-2 gap-2">
-            <button
-              onClick={() => {
-                setInterestType("new");
-                setInterest("interested");
-              }}
-              className={`h-11 rounded-lg border text-sm font-semibold transition-all ${
-                interest === "interested" && interestType === "new"
-                  ? "bg-primary border-primary text-white"
-                  : "bg-white border-gray-300 text-gray-700 hover:border-gray-400"
-              }`}
-            >
-              ติดตั้งใหม่
-            </button>
-            <button
-              onClick={() => {
-                setInterestType("upgrade");
-                setInterest("interested");
-              }}
-              className={`h-11 rounded-lg border text-sm font-semibold transition-all ${
-                interest === "interested" && interestType === "upgrade"
-                  ? "bg-amber-500 border-amber-500 text-white"
-                  : "bg-white border-gray-300 text-gray-700 hover:border-gray-400"
-              }`}
-            >
-              Upgrade
-            </button>
-          </div>
-        </div>
-
-        <Field label="โครงการ">
+        <Field label="Contact Person (ชื่อคนที่เจอ)">
           <input
-            value={projectName}
-            onChange={(e) => setProjectName(e.target.value)}
-            placeholder="เช่น เสนา วิลล์ - คลอง 1"
+            value={contactName}
+            onChange={(e) => setContactName(e.target.value)}
+            placeholder="ชื่อเจ้าของ / คนที่พบที่บ้านเลขที่นี้"
             className="w-full h-11 px-3 rounded-lg border border-gray-300 bg-white text-sm"
           />
+          <div className="mt-1 text-[11px] text-gray-400">ชื่อในระบบเป็นข้อมูลเก่า แก้ตามคนที่เจอจริงได้</div>
+        </Field>
+
+        <Field label="ช่วงเวลาที่สะดวกให้ติดต่อ">
+          <div className="grid grid-cols-6 gap-1.5">
+            {Array.from({ length: 12 }, (_, i) => i + 8).map((h) => {
+              const on = contactHours.includes(h);
+              return (
+                <button
+                  key={h}
+                  type="button"
+                  onClick={() =>
+                    setContactHours((prev) => (prev.includes(h) ? prev.filter((x) => x !== h) : [...prev, h]))
+                  }
+                  className={`h-9 rounded-lg text-xs font-semibold tabular-nums transition-colors ${
+                    on
+                      ? "bg-primary text-white border border-primary"
+                      : "bg-white text-gray-700 border border-gray-300 hover:border-gray-400"
+                  }`}
+                >
+                  {h}:00
+                </button>
+              );
+            })}
+          </div>
         </Field>
 
         <Field label="บันทึก (optional)">
@@ -457,28 +826,87 @@ function VisitModal({ prospect, onClose, onSaved }: { prospect: Prospect; onClos
             className="w-full px-3 py-2 rounded-lg border border-gray-300 bg-white text-sm resize-none"
           />
         </Field>
+        </>}
+
+        {modalTab === "reasons" && <>
+        <div>
+          <div className="text-xs font-semibold uppercase tracking-wider text-gray-500 mb-2">เหตุผลที่สนใจ (เลือกได้หลายข้อ)</div>
+          <div className="grid grid-cols-2 gap-2">
+            {[
+              { code: "save_bill", label: "ประหยัดค่าไฟ" },
+              { code: "sell_back", label: "ขายไฟคืน" },
+              { code: "tax_deduction", label: "ใช้ลดหย่อนภาษี" },
+              { code: "daytime_usage", label: "เปิดแอร์ทั้งวัน" },
+              { code: "pet_ac", label: "เปิดแอร์ให้สัตว์เลี้ยง" },
+              { code: "elderly_care", label: "ดูแลผู้สูงอายุ/ผู้ป่วย" },
+              { code: "has_ev", label: "ชาร์จรถ EV" },
+              { code: "environment", label: "รักสิ่งแวดล้อม" },
+              { code: "home_business", label: "เปิดร้านที่บ้าน" },
+              { code: "other", label: "อื่นๆ" },
+            ].map((r) => {
+              const on = reasonCodes.includes(r.code);
+              return (
+                <button
+                  key={r.code}
+                  type="button"
+                  onClick={() =>
+                    setReasonCodes((prev) => (prev.includes(r.code) ? prev.filter((x) => x !== r.code) : [...prev, r.code]))
+                  }
+                  className={`h-11 rounded-lg border text-sm font-semibold transition-colors ${
+                    on
+                      ? "bg-primary text-white border-primary"
+                      : "bg-white text-gray-700 border-gray-300 hover:border-gray-400"
+                  }`}
+                >
+                  {r.label}
+                </button>
+              );
+            })}
+          </div>
+        </div>
+
+        <Field label="รายละเอียด / อื่นๆ (optional)">
+          <textarea
+            value={reasonNote}
+            onChange={(e) => setReasonNote(e.target.value)}
+            rows={3}
+            placeholder="เหตุผลเพิ่มเติม หรือรายละเอียดจากลูกค้า..."
+            className="w-full px-3 py-2 rounded-lg border border-gray-300 bg-white text-sm resize-none"
+          />
+        </Field>
+        </>}
       </div>
 
-      <div className="mt-4 flex gap-2">
-        <button
-          onClick={onClose}
-          className="flex-1 h-11 rounded-lg border border-gray-300 text-sm font-semibold text-gray-700 hover:bg-gray-50"
-        >
-          ยกเลิก
-        </button>
-        <button
-          onClick={save}
-          disabled={saving}
-          className="flex-1 h-11 rounded-lg bg-primary text-white text-sm font-semibold disabled:opacity-50"
-        >
-          {saving ? "กำลังบันทึก..." : "บันทึก"}
-        </button>
+      {modalTab === "visit" && (
+        <div className="mt-4 flex gap-2">
+          <button
+            onClick={onClose}
+            className="flex-1 h-11 rounded-lg border border-gray-300 text-sm font-semibold text-gray-700 hover:bg-gray-50"
+          >
+            ยกเลิก
+          </button>
+          <button
+            onClick={save}
+            disabled={saving}
+            className="flex-1 h-11 rounded-lg bg-primary text-white text-sm font-semibold disabled:opacity-50"
+          >
+            {saving ? "กำลังบันทึก..." : "บันทึก"}
+          </button>
+        </div>
+      )}
+      {modalTab === "reasons" && (
+        <div className="mt-4 text-center text-xs text-gray-400">
+          {reasonsSavedAt ? "✓ บันทึกอัตโนมัติแล้ว" : "บันทึกอัตโนมัติเมื่อแก้ไข"}
+        </div>
+      )}
+      </>
+      )}
       </div>
     </Modal>
   );
 }
 
-function Modal({ title, children, onClose }: { title: string; children: React.ReactNode; onClose: () => void }) {
+function Modal({ title, children, onClose }: { title: React.ReactNode; children: React.ReactNode; onClose: () => void }) {
   return (
     <div className="fixed inset-0 z-50 bg-black/50 flex items-stretch md:items-center justify-center md:p-4" onClick={onClose}>
       <div
@@ -491,9 +919,9 @@ function Modal({ title, children, onClose }: { title: string; children: React.Re
         }}
         onClick={(e) => e.stopPropagation()}
       >
-        <div className="flex items-center justify-between mb-4">
-          <h2 className="text-lg font-bold text-gray-900">{title}</h2>
-          <button onClick={onClose} className="p-2 -mr-2 rounded-full hover:bg-gray-100 text-gray-500">
+        <div className="flex items-center justify-between mb-4 gap-2">
+          <h2 className="text-lg font-bold text-gray-900 flex items-center gap-2 min-w-0">{title}</h2>
+          <button onClick={onClose} className="p-2 -mr-2 rounded-full hover:bg-gray-100 text-gray-500 shrink-0">
             <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
               <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
             </svg>
@@ -503,13 +931,6 @@ function Modal({ title, children, onClose }: { title: string; children: React.Re
       </div>
     </div>
   );
-}
-
-function formatThaiDateTime(iso: string): string {
-  const d = new Date(iso);
-  if (isNaN(d.getTime())) return iso;
-  const pad = (n: number) => String(n).padStart(2, "0");
-  return `${pad(d.getDate())}/${pad(d.getMonth() + 1)}/${d.getFullYear() + 543} ${pad(d.getHours())}:${pad(d.getMinutes())}`;
 }
 
 function Field({ label, children }: { label: string; children: React.ReactNode }) {

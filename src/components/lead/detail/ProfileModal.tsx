@@ -119,8 +119,7 @@ export default function ProfileModal({ leadId, onClose, onSaved }: Props) {
 
       {showLinePicker && (
         <LinePickerModal
-          leadId={leadId}
-          leadName={form.full_name}
+          target={{ type: "lead", id: leadId, label: form.full_name }}
           onClose={() => setShowLinePicker(false)}
           onLinked={(linked) => {
             setLineProfile(linked);

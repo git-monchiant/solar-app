@@ -45,6 +45,7 @@ type Settings = {
   promptpay_qr_enabled?: string;
   promptpay_link_enabled?: string;
   promptpay_tax_id?: string;
+  promptpay_biller_id?: string;
   company_name?: string;
   company_short_name?: string;
   bank_account_enabled?: string;
@@ -176,6 +177,7 @@ export default function PaymentSection({
   };
   const [bankCopied, setBankCopied] = useState<"number" | "name" | "all" | null>(null);
   const [qrDataUrl, setQrDataUrl] = useState<string | null>(null);
+  const [qrMode, setQrMode] = useState<"credit_transfer" | "bill_payment">("credit_transfer");
   const [qrLoading, setQrLoading] = useState(true);
   const [qrError, setQrError] = useState<string | null>(null);
   const [payToken, setPayToken] = useState<string>("");
@@ -200,11 +202,17 @@ export default function PaymentSection({
     if (amount <= 0) return;
     setQrLoading(true);
     setQrError(null);
-    apiFetch(`/api/qr?amount=${amount}`)
-      .then((d: { qrDataUrl: string }) => setQrDataUrl(d.qrDataUrl))
+    const params = new URLSearchParams({ amount: String(amount) });
+    if (leadId) params.set("lead_id", String(leadId));
+    if (stepNo) params.set("step_no", String(stepNo));
+    apiFetch(`/api/qr?${params.toString()}`)
+      .then((d: { qrDataUrl: string; mode?: "credit_transfer" | "bill_payment" }) => {
+        setQrDataUrl(d.qrDataUrl);
+        if (d.mode) setQrMode(d.mode);
+      })
       .catch((err) => { console.error(err); setQrError("สร้าง QR ไม่สำเร็จ"); })
       .finally(() => setQrLoading(false));
-  }, [amount]);
+  }, [amount, leadId, stepNo]);
 
   // Ensure a pay token exists for (lead_id, amount, description, installment) so URLs can hide the amount
   useEffect(() => {
@@ -384,6 +392,7 @@ export default function PaymentSection({
           doc_no: docNo ?? null,
           amount,
           description: description ?? null,
+          payment_method: tab === "bank" ? "bank_transfer" : tab,
         }),
       });
       await onConfirmed?.();
@@ -454,7 +463,11 @@ export default function PaymentSection({
               </div>
               <div className="text-center">
                 <div className="text-xs font-semibold text-gray-700">{companyFull}</div>
-                <div className="text-[11px] text-gray-500 font-mono tabular-nums mt-0.5">PromptPay Tax ID: {taxId}</div>
+                <div className="text-[11px] text-gray-500 font-mono tabular-nums mt-0.5">
+                  {qrMode === "bill_payment"
+                    ? `Bill Payment · Biller ${settings.promptpay_biller_id || ""}`
+                    : `PromptPay Tax ID: ${taxId}`}
+                </div>
               </div>
             </div>
           </div>

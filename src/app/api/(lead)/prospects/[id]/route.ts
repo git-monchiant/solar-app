@@ -81,6 +81,22 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
       sets.push("visited_by = @visited_by");
       request.input("visited_by", sql.Int, body.visited_by);
     }
+    if (body.line_id !== undefined) {
+      sets.push("line_id = @line_id");
+      request.input("line_id", sql.NVarChar(100), body.line_id);
+    }
+    if (body.contact_time !== undefined) {
+      sets.push("contact_time = @contact_time");
+      request.input("contact_time", sql.NVarChar(100), body.contact_time);
+    }
+    if (body.interest_reasons !== undefined) {
+      sets.push("interest_reasons = @interest_reasons");
+      request.input("interest_reasons", sql.NVarChar(500), body.interest_reasons);
+    }
+    if (body.interest_reason_note !== undefined) {
+      sets.push("interest_reason_note = @interest_reason_note");
+      request.input("interest_reason_note", sql.NVarChar(sql.MAX), body.interest_reason_note);
+    }
 
     if (sets.length === 0) {
       return NextResponse.json({ error: "No fields to update" }, { status: 400 });

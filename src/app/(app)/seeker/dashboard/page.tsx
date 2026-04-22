@@ -1,6 +1,6 @@
 "use client";
 
-import { apiFetch } from "@/lib/api";
+import { apiFetch, getUserIdHeader } from "@/lib/api";
 import { useEffect, useMemo, useState } from "react";
 import Header from "@/components/layout/Header";
 
@@ -13,13 +13,14 @@ type Prospect = {
   existing_solar: string | null;
   installed_kw: number | null;
   installed_product: string | null;
-  interest: "interested" | "not_interested" | "not_home" | null;
+  interest: "interested" | "not_interested" | "not_home" | "undecided" | null;
   interest_type: "new" | "upgrade" | null;
   note: string | null;
   visited_at: string | null;
   visited_by_name: string | null;
   visit_lat: number | null;
   visit_lng: number | null;
+  line_id: string | null;
 };
 
 type StatusKey = "pending" | "contacted" | "interested" | "not_interested";
@@ -33,7 +34,7 @@ function cardStatus(p: Prospect): StatusKey {
 
 function hasExistingSolar(p: Prospect): boolean {
   const s = typeof p.existing_solar === "string" ? p.existing_solar.trim() : "";
-  if (s && !/^(ไม่มี|ยังไม่มี|no|none|-)$/i.test(s)) return true;
+  if (s && !/^(ไม่มี|ยังไม่มี|no|none|-)/i.test(s)) return true;
   if (p.installed_kw != null && p.installed_kw > 0) return true;
   if (p.installed_product && p.installed_product.trim()) return true;
   return false;
@@ -87,8 +88,11 @@ export default function SeekerDashboardPage() {
       interested: 0,
       interested_new: 0,
       interested_upgrade: 0,
+      undecided: 0,
+      not_home: 0,
       not_interested: 0,
-      upgrade_candidates: 0,
+      has_solar: 0,
+      line_linked: 0,
     };
     for (const p of scoped) {
       const st = cardStatus(p);
@@ -97,7 +101,10 @@ export default function SeekerDashboardPage() {
         if (p.interest_type === "upgrade") s.interested_upgrade++;
         else if (p.interest_type === "new") s.interested_new++;
       }
-      if (hasExistingSolar(p)) s.upgrade_candidates++;
+      if (p.interest === "undecided") s.undecided++;
+      if (p.interest === "not_home") s.not_home++;
+      if (hasExistingSolar(p)) s.has_solar++;
+      if (p.line_id) s.line_linked++;
     }
     return s;
   }, [scoped]);
@@ -151,6 +158,70 @@ export default function SeekerDashboardPage() {
           </div>
         ) : (
           <>
+            {/* Top KPI row */}
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+              <KpiCard icon="home" label="ทั้งหมด" value={stats.total.toLocaleString("en")} suffix="บ้าน" tint="gray" />
+              <KpiCard icon="check" label="เยี่ยมแล้ว" value={`${coverage}%`} suffix={`${stats.total - stats.pending} / ${stats.total}`} tint="blue" />
+              <KpiCard icon="heart" label="สนใจ" value={stats.interested.toLocaleString("en")} suffix={stats.total > 0 ? `${Math.round((stats.interested / stats.total) * 100)}%` : "0%"} tint="green" />
+              <KpiCard icon="line" label="Add LINE OA" value={stats.line_linked.toLocaleString("en")} suffix={stats.total > 0 ? `${Math.round((stats.line_linked / stats.total) * 100)}%` : "0%"} tint="emerald" />
+            </div>
+
+            {/* Interest breakdown: donut + legend */}
+            <div className="bg-white rounded-2xl border border-gray-200 p-4 relative">
+              <button
+                type="button"
+                onClick={async () => {
+                  const res = await fetch("/api/report/seeker-pdf", { headers: { ...getUserIdHeader() } });
+                  if (!res.ok) { alert("โหลด PDF ไม่สำเร็จ"); return; }
+                  const blob = await res.blob();
+                  const url = URL.createObjectURL(blob);
+                  const a = document.createElement("a");
+                  a.href = url;
+                  a.download = `seeker_report_${new Date().toISOString().slice(0, 10)}.pdf`;
+                  document.body.appendChild(a);
+                  a.click();
+                  a.remove();
+                  URL.revokeObjectURL(url);
+                }}
+                className="absolute top-3 right-3 inline-flex items-center gap-1 h-8 px-2 rounded-lg text-gray-400 hover:text-primary hover:bg-primary/5 transition-colors"
+                title="ดาวน์โหลดรายงาน PDF"
+                aria-label="ดาวน์โหลดรายงาน PDF"
+              >
+                <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M3 16.5v2.25A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75V16.5M16.5 12L12 16.5m0 0L7.5 12m4.5 4.5V3" />
+                </svg>
+                <span className="text-xs font-semibold">PDF</span>
+              </button>
+              <div className="text-xs font-semibold uppercase tracking-wider text-gray-500 mb-3">สถานะการนำเสนอ</div>
+              <div className="flex items-center gap-4">
+                <InterestDonut
+                  segments={[
+                    { value: stats.interested_new, color: "#16a34a" },
+                    { value: stats.interested_upgrade, color: "#2563eb" },
+                    { value: stats.undecided, color: "#f59e0b" },
+                    { value: stats.not_home, color: "#9ca3af" },
+                    { value: stats.not_interested, color: "#dc2626" },
+                    { value: stats.pending, color: "#e5e7eb" },
+                  ]}
+                  total={stats.total}
+                />
+                <div className="flex-1 min-w-0 text-xs space-y-1.5">
+                  <LegendRow color="#16a34a" label="สนใจ-ติดตั้ง" value={stats.interested_new} total={stats.total} />
+                  <LegendRow color="#2563eb" label="สนใจ-Upgrade" value={stats.interested_upgrade} total={stats.total} />
+                  <LegendRow color="#f59e0b" label="ยังไม่ตัดสินใจ" value={stats.undecided} total={stats.total} />
+                  <LegendRow color="#9ca3af" label="ไม่อยู่บ้าน" value={stats.not_home} total={stats.total} />
+                  <LegendRow color="#dc2626" label="ไม่สนใจ" value={stats.not_interested} total={stats.total} />
+                  <LegendRow color="#e5e7eb" label="ยังไม่ระบุ" value={stats.pending} total={stats.total} />
+                </div>
+              </div>
+            </div>
+
+            {/* Adoption mini-bars */}
+            <div className="grid grid-cols-2 gap-3">
+              <AdoptionBar label="Solar Adoption" value={stats.has_solar} total={stats.total} color="bg-amber-500" icon="solar" iconColor="text-amber-500" />
+              <AdoptionBar label="LINE OA" value={stats.line_linked} total={stats.total} color="bg-emerald-500" icon="line" iconColor="text-emerald-500" />
+            </div>
+
             {/* Coverage progress */}
             <div className="bg-white rounded-2xl border border-gray-200 p-4">
               <div className="flex items-baseline justify-between mb-2">
@@ -165,33 +236,6 @@ export default function SeekerDashboardPage() {
               </div>
             </div>
 
-            {/* Stat cards */}
-            <div className="grid grid-cols-2 gap-3">
-              <StatCard label="ทั้งหมด" value={stats.total} color="bg-gray-50 text-gray-700" />
-              <StatCard label="ยังไม่เยี่ยม" value={stats.pending} color="bg-white text-gray-700 border border-gray-200" />
-              <StatCard label="กำลังติดต่อ" value={stats.contacted} color="bg-amber-50 text-amber-700" />
-              <StatCard label="ไม่สนใจ" value={stats.not_interested} color="bg-red-50 text-red-700" />
-            </div>
-
-            {/* Interested breakdown */}
-            <div className="bg-green-50 rounded-2xl p-4">
-              <div className="flex items-baseline justify-between">
-                <div className="text-xs font-semibold uppercase tracking-wider text-green-700">สนใจ</div>
-                <div className="text-3xl font-bold text-green-700">{stats.interested}</div>
-              </div>
-              <div className="mt-3 grid grid-cols-2 gap-2">
-                <div className="bg-white rounded-lg px-3 py-2">
-                  <div className="text-xs text-gray-500">ติดตั้งใหม่</div>
-                  <div className="text-xl font-bold text-primary">{stats.interested_new}</div>
-                </div>
-                <div className="bg-white rounded-lg px-3 py-2">
-                  <div className="text-xs text-gray-500">Upgrade</div>
-                  <div className="text-xl font-bold text-amber-600">{stats.interested_upgrade}</div>
-                </div>
-              </div>
-            </div>
-
-            <StatCard label="ติด Solar แล้ว (upgrade candidate)" value={stats.upgrade_candidates} color="bg-amber-50 text-amber-700" />
 
             {/* By project */}
             <div className="bg-white rounded-2xl border border-gray-200 overflow-hidden">
@@ -330,6 +374,131 @@ function StatCard({ label, value, color }: { label: string; value: number; color
       <div className="text-xs font-semibold uppercase tracking-wider opacity-80">{label}</div>
       <div className="mt-1 text-3xl font-bold">{value}</div>
     </div>
+  );
+}
+
+const KPI_TINTS: Record<string, { bg: string; icon: string }> = {
+  gray: { bg: "bg-gray-50", icon: "text-gray-500" },
+  blue: { bg: "bg-blue-50", icon: "text-blue-600" },
+  green: { bg: "bg-green-50", icon: "text-green-600" },
+  emerald: { bg: "bg-emerald-50", icon: "text-emerald-600" },
+};
+
+function KpiCard({ icon, label, value, suffix, tint }: { icon: "home" | "check" | "heart" | "line"; label: string; value: string; suffix: string; tint: keyof typeof KPI_TINTS }) {
+  const t = KPI_TINTS[tint];
+  return (
+    <div className={`rounded-2xl p-4 ${t.bg}`}>
+      <div className="flex items-center gap-2 mb-1">
+        <span className={t.icon}>{renderKpiIcon(icon)}</span>
+        <div className="text-[11px] font-semibold uppercase tracking-wider text-gray-500">{label}</div>
+      </div>
+      <div className="text-2xl md:text-3xl font-bold text-gray-900 tabular-nums leading-tight">{value}</div>
+      <div className="text-[11px] text-gray-500 mt-0.5">{suffix}</div>
+    </div>
+  );
+}
+
+function renderKpiIcon(kind: "home" | "check" | "heart" | "line") {
+  const cls = "w-4 h-4";
+  if (kind === "home") return (
+    <svg className={cls} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+      <path strokeLinecap="round" strokeLinejoin="round" d="M3 9.75L12 3l9 6.75V21a1.5 1.5 0 01-1.5 1.5h-15A1.5 1.5 0 013 21V9.75z" />
+    </svg>
+  );
+  if (kind === "check") return (
+    <svg className={cls} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
+      <path strokeLinecap="round" strokeLinejoin="round" d="M4.5 12.75l6 6 9-13.5" />
+    </svg>
+  );
+  if (kind === "heart") return (
+    <svg className={cls} fill="currentColor" viewBox="0 0 24 24">
+      <path d="M11.645 20.91a.75.75 0 01-1.29 0C5.393 15.986 2.25 12.99 2.25 8.25 2.25 5.35 4.35 3 7.125 3c1.8 0 3.3.93 4.125 2.34A4.74 4.74 0 0115.375 3c2.775 0 4.875 2.35 4.875 5.25 0 4.74-3.143 7.736-8.105 12.66z" />
+    </svg>
+  );
+  return (
+    <svg className={cls} viewBox="0 0 24 24" fill="currentColor">
+      <path d="M19.365 9.863c.349 0 .63.285.63.631 0 .345-.281.63-.63.63H17.61v1.125h1.755c.349 0 .63.283.63.63 0 .344-.281.629-.63.629h-2.386c-.345 0-.627-.285-.627-.629V8.108c0-.345.282-.63.63-.63h2.386c.346 0 .627.285.627.63 0 .349-.281.63-.63.63H17.61v1.125h1.755zM24 10.314C24 4.943 18.615.572 12 .572S0 4.943 0 10.314c0 4.811 4.27 8.842 10.035 9.608.391.082.923.258 1.058.59.12.301.079.766.038 1.08l-.164 1.02c-.045.301-.24 1.186 1.049.645 1.291-.539 6.916-4.078 9.436-6.975C23.176 14.393 24 12.458 24 10.314" />
+    </svg>
+  );
+}
+
+function InterestDonut({ segments, total }: { segments: { value: number; color: string }[]; total: number }) {
+  const size = 120, r = 48, cx = 60, cy = 60, C = 2 * Math.PI * r;
+  let offset = 0;
+  return (
+    <svg width={size} height={size} viewBox={`0 0 ${size} ${size}`} className="shrink-0">
+      <circle cx={cx} cy={cy} r={r} fill="none" stroke="#f3f4f6" strokeWidth="14" />
+      {total > 0 && segments.map((s, i) => {
+        if (s.value === 0) return null;
+        const len = (s.value / total) * C;
+        const el = (
+          <circle
+            key={i}
+            cx={cx}
+            cy={cy}
+            r={r}
+            fill="none"
+            stroke={s.color}
+            strokeWidth="14"
+            strokeDasharray={`${len} ${C - len}`}
+            strokeDashoffset={-offset}
+            transform={`rotate(-90 ${cx} ${cy})`}
+          />
+        );
+        offset += len;
+        return el;
+      })}
+      <text x={cx} y={cy - 2} textAnchor="middle" className="fill-gray-900" fontSize="18" fontWeight="700">{total}</text>
+      <text x={cx} y={cy + 14} textAnchor="middle" className="fill-gray-500" fontSize="9">หลัง</text>
+    </svg>
+  );
+}
+
+function LegendRow({ color, label, value, total }: { color: string; label: string; value: number; total: number }) {
+  const pct = total === 0 ? 0 : Math.round((value / total) * 100);
+  return (
+    <div className="flex items-center gap-2">
+      <span className="w-2.5 h-2.5 rounded-sm shrink-0" style={{ background: color }} />
+      <span className="flex-1 truncate text-gray-700">{label}</span>
+      <span className="font-bold text-gray-900 tabular-nums">{value}</span>
+      <span className="text-gray-400 tabular-nums w-8 text-right">{pct}%</span>
+    </div>
+  );
+}
+
+function AdoptionBar({ label, value, total, color, icon, iconColor }: { label: string; value: number; total: number; color: string; icon?: "solar" | "line"; iconColor?: string }) {
+  const pct = total === 0 ? 0 : Math.round((value / total) * 100);
+  return (
+    <div className="bg-white rounded-2xl border border-gray-200 p-4">
+      <div className="flex items-center justify-between mb-2">
+        <div className="flex items-center gap-1.5 min-w-0">
+          {icon && <span className={`shrink-0 ${iconColor || "text-gray-500"}`}>{renderAdoptionIcon(icon)}</span>}
+          <div className="text-xs font-semibold uppercase tracking-wider text-gray-500 truncate">{label}</div>
+        </div>
+        <div className="text-lg font-bold text-gray-900 tabular-nums shrink-0">{pct}%</div>
+      </div>
+      <div className="h-2 bg-gray-100 rounded-full overflow-hidden">
+        <div className={`h-full ${color} transition-all`} style={{ width: `${pct}%` }} />
+      </div>
+      <div className="mt-1.5 text-[11px] text-gray-500 tabular-nums">{value.toLocaleString("en")} / {total.toLocaleString("en")}</div>
+    </div>
+  );
+}
+
+function renderAdoptionIcon(kind: "solar" | "line") {
+  if (kind === "line") return (
+    <svg className="w-4 h-4" viewBox="0 0 24 24" fill="currentColor">
+      <path d="M19.365 9.863c.349 0 .63.285.63.631 0 .345-.281.63-.63.63H17.61v1.125h1.755c.349 0 .63.283.63.63 0 .344-.281.629-.63.629h-2.386c-.345 0-.627-.285-.627-.629V8.108c0-.345.282-.63.63-.63h2.386c.346 0 .627.285.627.63 0 .349-.281.63-.63.63H17.61v1.125h1.755zm-3.855 3.016c0 .27-.174.51-.432.596-.064.021-.133.031-.199.031-.211 0-.391-.09-.51-.25l-2.443-3.317v2.94c0 .344-.279.629-.631.629-.346 0-.626-.285-.626-.629V8.108c0-.27.173-.51.43-.595.064-.022.134-.032.2-.032.211 0 .391.09.51.25l2.44 3.317V8.108c0-.345.282-.63.63-.63.345 0 .63.285.63.63v4.771zm-5.741 0c0 .344-.282.629-.631.629-.345 0-.627-.285-.627-.629V8.108c0-.345.282-.63.63-.63.346 0 .628.285.628.63v4.771zm-2.466.629H4.917c-.345 0-.63-.285-.63-.629V8.108c0-.345.285-.63.63-.63.348 0 .63.285.63.63v4.141h1.756c.348 0 .629.283.629.63 0 .344-.282.629-.629.629M24 10.314C24 4.943 18.615.572 12 .572S0 4.943 0 10.314c0 4.811 4.27 8.842 10.035 9.608.391.082.923.258 1.058.59.12.301.079.766.038 1.08l-.164 1.02c-.045.301-.24 1.186 1.049.645 1.291-.539 6.916-4.078 9.436-6.975C23.176 14.393 24 12.458 24 10.314" />
+    </svg>
+  );
+  return (
+    <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.8}>
+      <path d="M4 18L6.5 6h11L20 18H4z" strokeLinejoin="round" />
+      <path d="M4 18h16" strokeLinecap="round" />
+      <path d="M12 6v12" />
+      <path d="M5.2 12h13.6" />
+      <path d="M7.2 9h9.6" />
+    </svg>
   );
 }
 
