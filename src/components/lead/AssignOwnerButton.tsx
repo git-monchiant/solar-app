@@ -20,10 +20,8 @@ interface Props {
   size?: "sm" | "md";
 }
 
-function initialsOf(name: string | null | undefined): string {
-  if (!name) return "?";
-  // For Thai (non-Latin) names, a single char reads clearer in a small circle.
-  // For Latin names, show up to 2 chars.
+function initialsOf(name: string | null | undefined): string | null {
+  if (!name) return null;
   const trimmed = name.trim();
   const isLatin = /^[A-Za-z\s]+$/.test(trimmed);
   if (isLatin) {
@@ -31,8 +29,9 @@ function initialsOf(name: string | null | undefined): string {
     if (parts.length === 1) return parts[0].slice(0, 2).toUpperCase();
     return (parts[0][0] + parts[1][0]).toUpperCase();
   }
-  // Thai: first character of first word
-  return trimmed[0] || "?";
+  // Thai / non-Latin: many leading characters (เ แ โ ใ ไ ำ vowel marks, etc.)
+  // render unrecognizably in a small circle. Use an icon instead.
+  return null;
 }
 
 function colorOf(id: number | null): string {
@@ -90,7 +89,14 @@ export default function AssignOwnerButton({ leadId, assignedUserId, assignedName
   };
 
   const sizePx = size === "md" ? "w-9 h-9 text-[13px]" : "w-6 h-6 text-[10px]";
+  const iconSize = size === "md" ? "w-5 h-5" : "w-3.5 h-3.5";
   const assigned = !!localUserId;
+  const initials = initialsOf(localName);
+  const personIcon = (
+    <svg className={iconSize} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+      <path strokeLinecap="round" strokeLinejoin="round" d="M15.75 6a3.75 3.75 0 11-7.5 0 3.75 3.75 0 017.5 0zM4.501 20.118a7.5 7.5 0 0114.998 0" />
+    </svg>
+  );
 
   return (
     <div className="relative" ref={ref} onClick={(e) => { e.preventDefault(); e.stopPropagation(); }}>
@@ -105,7 +111,7 @@ export default function AssignOwnerButton({ leadId, assignedUserId, assignedName
         title={assigned ? `Owner: ${localName}` : "Assign owner"}
         style={{ minHeight: 0 }}
       >
-        {assigned ? initialsOf(localName) : (
+        {assigned ? (initials ?? personIcon) : (
           <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
             <path strokeLinecap="round" strokeLinejoin="round" d="M12 4.5v15m7.5-7.5h-15" />
           </svg>
@@ -125,7 +131,11 @@ export default function AssignOwnerButton({ leadId, assignedUserId, assignedName
               className="w-full flex items-center gap-2 px-3 py-2 hover:bg-gray-50 text-left"
             >
               <span className={`w-6 h-6 rounded-full ${colorOf(me.id)} text-white text-[10px] font-bold flex items-center justify-center shrink-0`}>
-                {initialsOf(me.full_name)}
+                {initialsOf(me.full_name) ?? (
+                  <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M15.75 6a3.75 3.75 0 11-7.5 0 3.75 3.75 0 017.5 0zM4.501 20.118a7.5 7.5 0 0114.998 0" />
+                  </svg>
+                )}
               </span>
               <span className="text-sm font-semibold text-gray-800">Me — {me.full_name}</span>
             </button>
@@ -143,7 +153,11 @@ export default function AssignOwnerButton({ leadId, assignedUserId, assignedName
                   className={`w-full flex items-center gap-2 px-3 py-2 hover:bg-gray-50 text-left ${u.id === localUserId ? "bg-primary/5" : ""}`}
                 >
                   <span className={`w-6 h-6 rounded-full ${colorOf(u.id)} text-white text-[10px] font-bold flex items-center justify-center shrink-0`}>
-                    {initialsOf(u.full_name)}
+                    {initialsOf(u.full_name) ?? (
+                      <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                        <path strokeLinecap="round" strokeLinejoin="round" d="M15.75 6a3.75 3.75 0 11-7.5 0 3.75 3.75 0 017.5 0zM4.501 20.118a7.5 7.5 0 0114.998 0" />
+                      </svg>
+                    )}
                   </span>
                   <span className="flex-1 text-sm text-gray-700 truncate">{u.full_name}</span>
                   {u.id === localUserId && (

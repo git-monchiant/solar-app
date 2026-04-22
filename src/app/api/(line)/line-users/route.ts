@@ -14,7 +14,7 @@ export async function GET(req: NextRequest) {
         (SELECT COUNT(*) FROM leads WHERE line_id = lu.line_user_id) as linked_leads_count,
         (SELECT COUNT(*) FROM prospects WHERE line_id = lu.line_user_id) as linked_prospects_count
       FROM line_users lu
-      ORDER BY lu.last_message_at DESC
+      ORDER BY lu.created_at DESC
     `);
     return NextResponse.json(result.recordset);
   } catch (error) {

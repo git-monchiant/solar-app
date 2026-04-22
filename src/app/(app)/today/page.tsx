@@ -146,7 +146,7 @@ export default function TodayPage() {
             {d.newLeads.length > 0 && (
               <section>
                 <div className="flex items-center justify-between mb-3 px-1">
-                  <h2 className="text-xs font-bold tracking-wider uppercase text-blue-600">Lead ใหม่รอจอง</h2>
+                  <h2 className="text-xs font-bold tracking-wider uppercase text-blue-600">Lead ใหม่ยังไม่มีการติดต่อ</h2>
                   <span className="text-xs font-semibold text-blue-600 bg-blue-50 px-2 py-0.5 rounded-full">{d.newLeads.length}</span>
                 </div>
                 <div className="space-y-3">{d.newLeads.map((l) => <LeadCard key={l.id} lead={l} compact />)}</div>

@@ -7,6 +7,7 @@ import ImageLightbox from "@/components/ui/ImageLightbox";
 import PaymentHeader from "./PaymentHeader";
 import { buildPaymentFlex } from "@/lib/utils/line-flex";
 import { useMe } from "@/lib/roles";
+import { useDialog } from "@/components/ui/Dialog";
 
 const MAX_SLIPS = 5;
 
@@ -102,6 +103,7 @@ export default function PaymentSection({
   const [settings, setSettings] = useState<Settings>({});
   const [tab, setTab] = useState<"qr" | "link" | "bank">("qr");
   const { me } = useMe();
+  const dialog = useDialog();
   const isAdmin = me?.roles?.includes("admin") ?? false;
 
   const [slips, setSlips] = useState<SlipEntry[]>([]);
@@ -164,7 +166,13 @@ export default function PaymentSection({
 
   const [undoing, setUndoing] = useState(false);
   const handleUndo = async () => {
-    if (!confirm("ยืนยันการถอย payment นี้?\n(จะลบ slip + ปลดสถานะ + ต้อง upload สลิปใหม่)")) return;
+    const ok = await dialog.confirm({
+      title: "ถอย payment",
+      message: "ยืนยันการถอย payment นี้?\nจะลบ slip + ปลดสถานะ + ต้อง upload สลิปใหม่",
+      variant: "danger",
+      confirmText: "ถอย payment",
+    });
+    if (!ok) return;
     if (!slipUrl?.startsWith("/api/payments/")) return;
     const payId = slipUrl.split("/").pop();
     setUndoing(true);
@@ -172,7 +180,11 @@ export default function PaymentSection({
       await apiFetch(`/api/payments/${payId}`, { method: "DELETE" });
       await onUndone?.();
     } catch (e) {
-      alert("ถอยไม่สำเร็จ: " + (e instanceof Error ? e.message : "error"));
+      dialog.alert({
+        title: "ถอยไม่สำเร็จ",
+        message: e instanceof Error ? e.message : "เกิดข้อผิดพลาด",
+        variant: "danger",
+      });
     } finally { setUndoing(false); }
   };
   const [bankCopied, setBankCopied] = useState<"number" | "name" | "all" | null>(null);

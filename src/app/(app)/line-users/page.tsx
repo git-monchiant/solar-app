@@ -17,8 +17,11 @@ interface LineUser {
   last_message_at: string | null;
 }
 
+// Parse full ISO string (including Z) so JS correctly reads it as UTC then
+// converts to the user's local timezone. Stripping Z via slice() would make
+// JS treat it as naive local time and shift the display by +7h in Bangkok.
 const formatDate = (d: string) =>
-  new Date(String(d).slice(0, 19)).toLocaleString("th-TH", { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" });
+  new Date(d).toLocaleString("th-TH", { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit", timeZone: "Asia/Bangkok" });
 
 export default function LineUsersPage() {
   const [users, setUsers] = useState<LineUser[]>([]);

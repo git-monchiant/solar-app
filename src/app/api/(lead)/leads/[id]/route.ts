@@ -122,6 +122,14 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
       sets.push("revisit_date = @revisit_date");
       request.input("revisit_date", sql.Date, body.revisit_date ? new Date(body.revisit_date + "T12:00:00") : null);
     }
+    if (body.project_id !== undefined) {
+      sets.push("project_id = @project_id");
+      request.input("project_id", sql.Int, body.project_id);
+    }
+    if (body.customer_type !== undefined) {
+      sets.push("customer_type = @customer_type");
+      request.input("customer_type", sql.NVarChar(50), body.customer_type);
+    }
     if (body.source !== undefined) {
       sets.push("source = @source");
       request.input("source", sql.NVarChar(30), body.source);
@@ -571,13 +579,6 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
     const result = await request.query(`
       UPDATE leads SET ${sets.join(", ")} OUTPUT INSERTED.* WHERE id = @id
     `);
-
-    // When line_id is cleared, also clear the reverse reference on line_users
-    // so the mapping is truly unmapped (avoids orphan lookup back to this lead).
-    if (body.line_id === null) {
-      await db.request().input("lead_id", sql.Int, leadId)
-        .query(`UPDATE line_users SET lead_id = NULL WHERE lead_id = @lead_id`);
-    }
 
     // Auto-log status change as activity (with duplicate prevention)
     if (body.status !== undefined && oldStatus && oldStatus !== body.status) {

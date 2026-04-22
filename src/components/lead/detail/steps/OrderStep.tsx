@@ -53,8 +53,17 @@ export default function OrderStep({ lead, state, refresh, expanded, onToggle }: 
   const [regInstallAddr, setRegInstallAddr] = useState(lead.installation_address || "");
 
   const pctAfter = 100 - pctBefore;
-  const amountBefore = total > 0 ? Math.round(total * pctBefore / 100) : 0;
-  const amountAfter = total > 0 ? total - amountBefore : 0;
+  // Single-installment (pctBefore = 100): customer already paid the deposit
+  // (pre_total_price) at pre-survey, so the remaining before-install payment
+  // is total − deposit. For split installments (pctBefore < 100) the deposit
+  // is deducted on the งวด 2/2 line in InstallStep instead.
+  const depositPaid = lead.pre_total_price || 0;
+  const amountBefore = total > 0
+    ? (pctBefore >= 100
+        ? Math.max(0, total - depositPaid)
+        : Math.round(total * pctBefore / 100))
+    : 0;
+  const amountAfter = total > 0 && pctBefore < 100 ? total - Math.round(total * pctBefore / 100) : 0;
 
   // Auto-save selections
   useEffect(() => {
@@ -175,6 +184,9 @@ export default function OrderStep({ lead, state, refresh, expanded, onToggle }: 
   const gateCheck = (from: number): string[] => {
     const missing: string[] = [];
     if (from === 0 && (!total || total <= 0)) missing.push("ยอดรวม");
+    if (from === 0 && depositPaid > 0 && total > 0 && total < depositPaid) {
+      missing.push(`ยอดต้องไม่ต่ำกว่าค่าสำรวจ (฿${fmt(depositPaid)})`);
+    }
     if (from === 0 && (pctBefore === null || pctBefore === undefined)) missing.push("% ชำระก่อนติดตั้ง");
     if (from === 2 && !installDate) missing.push("วันนัดติดตั้ง");
     if (from === 3 && !beforeSlipDone) missing.push("กรุณาอัปโหลดสลิปชำระงวดแรก");
@@ -235,7 +247,17 @@ export default function OrderStep({ lead, state, refresh, expanded, onToggle }: 
           <div>
             <label className="text-xs font-semibold tracking-wider uppercase text-gray-400 block mb-1">จำนวนเงินตามใบเสนอราคา (บาท)</label>
             <input type="number" value={total || ""} onChange={e => setTotal(parseFloat(e.target.value) || 0)} placeholder="0"
-              className="w-full h-14 px-3 rounded-lg border border-gray-200 text-2xl font-bold font-mono focus:outline-none focus:border-primary" />
+              min={depositPaid || 0}
+              className={`w-full h-14 px-3 rounded-lg border text-2xl font-bold font-mono focus:outline-none ${
+                depositPaid > 0 && total > 0 && total < depositPaid
+                  ? "border-red-400 focus:border-red-500"
+                  : "border-gray-200 focus:border-primary"
+              }`} />
+            {depositPaid > 0 && total > 0 && total < depositPaid && (
+              <div className="text-xs text-red-600 mt-1">
+                ต้องไม่ต่ำกว่าค่าสำรวจที่จ่ายแล้ว (฿{fmt(depositPaid)})
+              </div>
+            )}
           </div>
 
           <div>
@@ -318,12 +340,12 @@ export default function OrderStep({ lead, state, refresh, expanded, onToggle }: 
             {pctBefore >= 100 ? (
               <div className="flex justify-between text-sm font-semibold border-t border-gray-200 pt-1">
                 <span className="text-gray-600">ยอดชำระสุทธิ</span>
-                <span className="font-bold font-mono text-gray-900">{fmt(total - (lead.pre_total_price || 0))} บาท</span>
+                <span className="font-bold font-mono text-gray-900">{fmt(Math.max(0, total - (lead.pre_total_price || 0)))} บาท</span>
               </div>
             ) : (
               <div className="flex justify-between text-sm font-semibold border-t border-gray-200 pt-1">
                 <span className="text-gray-600">ยอดชำระหลังติดตั้งสุทธิ</span>
-                <span className="font-bold font-mono text-gray-900">{fmt(amountAfter - (lead.pre_total_price || 0))} บาท</span>
+                <span className="font-bold font-mono text-gray-900">{fmt(Math.max(0, amountAfter - (lead.pre_total_price || 0)))} บาท</span>
               </div>
             )}
           </div>
@@ -350,17 +372,29 @@ export default function OrderStep({ lead, state, refresh, expanded, onToggle }: 
                 setLineSending(true);
                 try {
                   const origin = typeof window !== "undefined" ? window.location.origin : "";
-                  const fileUrl = lead.quotation_files || "";
-                  const downloadUrl = `${origin}${fileUrl}`;
-                  const netAfter = amountAfter - (lead.pre_total_price || 0);
+                  // quotation_files is CSV of URLs — LINE button needs a single valid
+                  // URI, so pick the first file only.
+                  const firstFile = (lead.quotation_files || "").split(",").filter(Boolean)[0] || "";
+                  const downloadUrl = firstFile.startsWith("http") ? firstFile : `${origin}${firstFile}`;
+                  const deposit = lead.pre_total_price || 0;
                   const details: { label: string; value: string }[] = [];
+                  details.push({ label: "ยอดรวม", value: `฿${fmt(total)}` });
                   if (pctBefore < 100) {
+                    // Split installment: breakdown + deposit is deducted on the
+                    // "after install" line.
                     details.push({ label: `ก่อนติดตั้ง ${pctBefore}%`, value: `฿${fmt(amountBefore)}` });
-                    details.push({ label: "หลังติดตั้ง", value: `฿${fmt(amountAfter)}` });
-                  }
-                  if (lead.pre_total_price) {
-                    details.push({ label: "หักค่าสำรวจ", value: `-฿${fmt(lead.pre_total_price)}` });
-                    details.push({ label: "ยอดสุทธิหลังติดตั้ง", value: `฿${fmt(netAfter)}` });
+                    details.push({ label: `หลังติดตั้ง ${pctAfter}%`, value: `฿${fmt(amountAfter)}` });
+                    if (deposit > 0) {
+                      details.push({ label: "หักค่าสำรวจ (งวด 2)", value: `-฿${fmt(deposit)}` });
+                      details.push({ label: "ยอดสุทธิหลังติดตั้ง", value: `฿${fmt(Math.max(0, amountAfter - deposit))}` });
+                    }
+                  } else {
+                    // Single installment: customer already paid the deposit at
+                    // pre-survey, so remaining = total − deposit.
+                    if (deposit > 0) {
+                      details.push({ label: "หักค่าสำรวจ", value: `-฿${fmt(deposit)}` });
+                    }
+                    details.push({ label: "ยอดที่ต้องชำระ", value: `฿${fmt(Math.max(0, total - deposit))}` });
                   }
                   const messages = [buildPaymentFlex({
                     origin, title: "ใบเสนอราคา", amount: total, name: lead.full_name,
@@ -418,7 +452,13 @@ export default function OrderStep({ lead, state, refresh, expanded, onToggle }: 
               onUndone={refresh}
               onVerified={() => setBeforeSlipDone(true)}
               details={[
-                { label: `ยอดชำระ (งวด 1/${pctAfter > 0 ? "2" : "1"})`, value: `฿${fmt(amountBefore)}` },
+                ...(pctBefore >= 100 && depositPaid > 0
+                  ? [
+                      { label: "ยอดเต็ม", value: `฿${fmt(total)}` },
+                      { label: "หักค่าสำรวจ", value: `-฿${fmt(depositPaid)}` },
+                      { label: "ยอดที่ต้องชำระ", value: `฿${fmt(amountBefore)}` },
+                    ]
+                  : [{ label: `ยอดชำระ (งวด 1/${pctAfter > 0 ? "2" : "1"})`, value: `฿${fmt(amountBefore)}` }]),
               ]}
             />
           </div>

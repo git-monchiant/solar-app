@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { apiFetch } from "@/lib/api";
 import Header from "@/components/layout/Header";
 import { useMe, ROLE_LABEL, ALL_ROLES, type Role } from "@/lib/roles";
+import { useDialog } from "@/components/ui/Dialog";
 
 type Settings = Record<string, string>;
 type Tab = "general" | "payment_config" | "users";
@@ -25,6 +26,7 @@ type UserRow = {
 export default function SettingsPage() {
   const router = useRouter();
   const { me } = useMe();
+  const dialog = useDialog();
   const isAdmin = (me?.roles || []).includes("admin");
   const [tab, setTab] = useState<Tab>("general");
 
@@ -79,6 +81,7 @@ function TabBtn({ active, onClick, label }: { active: boolean; onClick: () => vo
 }
 
 function GeneralTab() {
+  const dialog = useDialog();
   const [settings, setSettings] = useState<Settings>({});
   const [taxIdInput, setTaxIdInput] = useState("");
   const [companyInput, setCompanyInput] = useState("");
@@ -130,12 +133,12 @@ function GeneralTab() {
   };
 
   const saveTaxId = async () => {
-    if (!/^\d{13}$/.test(taxIdInput)) { alert("Tax ID ต้องเป็นตัวเลข 13 หลัก"); return; }
+    if (!/^\d{13}$/.test(taxIdInput)) { dialog.alert({ title: "Tax ID ไม่ถูกต้อง", message: "Tax ID ต้องเป็นตัวเลข 13 หลัก", variant: "warning" }); return; }
     await patch({ promptpay_tax_id: taxIdInput, company_name: companyInput });
   };
 
   const saveBank = async () => {
-    if (!bankInput || !bankNumberInput || !bankNameInput) { alert("กรุณากรอกธนาคาร / เลขบัญชี / ชื่อบัญชี"); return; }
+    if (!bankInput || !bankNumberInput || !bankNameInput) { dialog.alert({ title: "ข้อมูลไม่ครบ", message: "กรุณากรอกธนาคาร / เลขบัญชี / ชื่อบัญชี", variant: "warning" }); return; }
     await patch({
       bank_account_bank: bankInput,
       bank_account_branch: bankBranchInput,
@@ -248,6 +251,7 @@ function GeneralTab() {
 }
 
 function PaymentConfigTab() {
+  const dialog = useDialog();
   const [modeInput, setModeInput] = useState<"credit_transfer" | "bill_payment">("credit_transfer");
   const [billerIdInput, setBillerIdInput] = useState("");
   const [ref1Input, setRef1Input] = useState("");
@@ -271,7 +275,7 @@ function PaymentConfigTab() {
 
   const save = async () => {
     if (modeInput === "bill_payment") {
-      if (!billerIdInput || !ref1Input) { alert("Bill Payment mode ต้องมี Biller ID และ Ref1"); return; }
+      if (!billerIdInput || !ref1Input) { dialog.alert({ title: "ข้อมูลไม่ครบ", message: "Bill Payment mode ต้องมี Biller ID และ Ref1", variant: "warning" }); return; }
     }
     setSaving(true);
     try {
@@ -365,6 +369,7 @@ function PaymentConfigTab() {
 }
 
 function UsersTab({ currentUserId }: { currentUserId: number }) {
+  const dialog = useDialog();
   const [users, setUsers] = useState<UserRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [editing, setEditing] = useState<UserRow | "new" | null>(null);
@@ -456,6 +461,7 @@ function UserEditor({ user, currentUserId, onClose, onSaved }: {
   onClose: () => void;
   onSaved: () => void;
 }) {
+  const dialog = useDialog();
   const isNew = !user;
   const [username, setUsername] = useState(user?.username || "");
   const [fullName, setFullName] = useState(user?.full_name || "");
@@ -507,7 +513,13 @@ function UserEditor({ user, currentUserId, onClose, onSaved }: {
   const deactivate = async () => {
     if (!user) return;
     if (user.id === currentUserId) { setError("ไม่สามารถปิดบัญชีตัวเอง"); return; }
-    if (!confirm(`ปิดการใช้งานผู้ใช้ ${user.username}?`)) return;
+    const ok = await dialog.confirm({
+      title: "ปิดการใช้งานผู้ใช้",
+      message: `ปิดการใช้งานผู้ใช้ ${user.username}?`,
+      variant: "danger",
+      confirmText: "ปิดการใช้งาน",
+    });
+    if (!ok) return;
     setSaving(true);
     try {
       await apiFetch(`/api/users/${user.id}`, { method: "DELETE" });

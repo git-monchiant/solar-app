@@ -54,7 +54,10 @@ export default function SurveyStep({ lead, state, refresh, packages, expanded, o
   const [subStep, setSubStep] = useSubStep(`surveySubStep_${lead.id}`, 0, SURVEY_SUB.length);
   const [nextError, setNextError] = useState<string | null>(null);
   const [formDraft, setFormDraft] = useState<Partial<Lead>>({});
-  const [selectedPkg, setSelectedPkg] = useState<string>(lead.interested_package_id ? String(lead.interested_package_id) : "");
+  const [selectedPkgs, setSelectedPkgs] = useState<string[]>(
+    lead.interested_package_ids ? lead.interested_package_ids.split(",").filter(Boolean) : lead.interested_package_id ? [String(lead.interested_package_id)] : []
+  );
+  const MAX_PKGS = 3;
   const [surveyBattery, setSurveyBattery] = useState<string>(lead.survey_wants_battery ?? lead.pre_wants_battery ?? "");
   const [surveyPhase, setSurveyPhase] = useState<string>(lead.survey_electrical_phase ?? lead.pre_electrical_phase ?? "");
   const [rescheduling, setRescheduling] = useState(false);
@@ -383,7 +386,7 @@ export default function SurveyStep({ lead, state, refresh, packages, expanded, o
       4: ["survey_note", "survey_photos"],
       5: [],
     };
-    const v = validateSurvey({ ...lead, ...formDraft, survey_note: surveyNote || lead.survey_note, survey_photos: surveyPhotos.length ? surveyPhotos.join(",") : lead.survey_photos, survey_wants_battery: surveyBattery || lead.survey_wants_battery, survey_electrical_phase: surveyPhase || lead.survey_electrical_phase, interested_package_id: selectedPkg ? parseInt(selectedPkg) : lead.interested_package_id });
+    const v = validateSurvey({ ...lead, ...formDraft, survey_note: surveyNote || lead.survey_note, survey_photos: surveyPhotos.length ? surveyPhotos.join(",") : lead.survey_photos, survey_wants_battery: surveyBattery || lead.survey_wants_battery, survey_electrical_phase: surveyPhase || lead.survey_electrical_phase, interested_package_id: selectedPkgs.length ? parseInt(selectedPkgs[0]) : lead.interested_package_id });
     const missingHere = v.missing.filter(m => (gates[subStep] || []).includes(m.field));
     if (missingHere.length > 0) {
       setNextError(missingHere.map(m => m.label).join(", "));
@@ -472,8 +475,8 @@ export default function SurveyStep({ lead, state, refresh, packages, expanded, o
               {[{ value: "no", label: "ไม่ต้องการ" }, { value: "yes", label: "ต้องการ" }, { value: "maybe", label: "ยังไม่แน่ใจ" }, { value: "upgrade", label: "+ Upgrade" }].map(b => (
                 <button key={b.value} type="button" onClick={() => {
                   setSurveyBattery(b.value);
-                  setSelectedPkg("");
-                  apiFetch(`/api/leads/${lead.id}`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ survey_wants_battery: b.value, interested_package_id: null }) }).catch(console.error);
+                  setSelectedPkgs([]);
+                  apiFetch(`/api/leads/${lead.id}`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ survey_wants_battery: b.value, interested_package_ids: null, interested_package_id: null }) }).catch(console.error);
                 }} className={`h-9 rounded-lg text-xs font-semibold border transition-all ${surveyBattery === b.value ? "bg-active text-white border-active" : "bg-white text-gray-600 border-gray-200"}`}>
                   {b.label}
                 </button>
@@ -481,7 +484,7 @@ export default function SurveyStep({ lead, state, refresh, packages, expanded, o
             </div>
           </div>
 
-          <div className="text-xs font-semibold text-gray-400 uppercase tracking-wider">ยืนยันแพ็คเกจที่จะติดตั้ง (1 รายการ)</div>
+          <div className="text-xs font-semibold text-gray-400 uppercase tracking-wider">ยืนยันแพ็คเกจที่จะติดตั้ง (สูงสุด {MAX_PKGS} รายการ)</div>
           {(() => {
             const phase = surveyPhase === "3_phase" ? 3 : surveyPhase === "1_phase" ? 1 : 0;
             const battery = surveyBattery;
@@ -496,11 +499,22 @@ export default function SurveyStep({ lead, state, refresh, packages, expanded, o
             return availablePkgs.length > 0 ? (
               <div className="grid grid-cols-1 gap-2">
                 {availablePkgs.map(p => {
-                  const selected = selectedPkg === String(p.id);
+                  const idStr = String(p.id);
+                  const selected = selectedPkgs.includes(idStr);
                   return (
                     <button key={p.id} type="button" onClick={() => {
-                      setSelectedPkg(String(p.id));
-                      apiFetch(`/api/leads/${lead.id}`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ interested_package_id: p.id }) }).catch(console.error);
+                      const next = selected
+                        ? selectedPkgs.filter(x => x !== idStr)
+                        : selectedPkgs.length >= MAX_PKGS ? selectedPkgs : [...selectedPkgs, idStr];
+                      setSelectedPkgs(next);
+                      apiFetch(`/api/leads/${lead.id}`, {
+                        method: "PATCH",
+                        headers: { "Content-Type": "application/json" },
+                        body: JSON.stringify({
+                          interested_package_ids: next.length ? next.join(",") : null,
+                          interested_package_id: next.length ? parseInt(next[0]) : null,
+                        }),
+                      }).catch(console.error);
                     }} className={`text-left rounded-xl p-3 border-2 transition-all ${selected ? "border-active bg-active-light" : "border-gray-100 bg-white"}`}>
                       <div className="flex items-center justify-between gap-2">
                         <div className="min-w-0">
@@ -541,7 +555,7 @@ export default function SurveyStep({ lead, state, refresh, packages, expanded, o
 
       {/* Step 3: ระบบไฟฟ้า */}
       {lead.survey_confirmed && subStep === 2 && (
-        <SurveyForm lead={lead} refresh={refresh} section="electrical" onFormChange={setFormDraft} onPhaseChange={(phase) => { setSurveyPhase(phase); setSelectedPkg(""); apiFetch(`/api/leads/${lead.id}`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ interested_package_id: null }) }).catch(console.error); }} />
+        <SurveyForm lead={lead} refresh={refresh} section="electrical" onFormChange={setFormDraft} onPhaseChange={(phase) => { setSurveyPhase(phase); setSelectedPkgs([]); apiFetch(`/api/leads/${lead.id}`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ interested_package_ids: null, interested_package_id: null }) }).catch(console.error); }} />
       )}
 
       {/* Step 5: บันทึก + รูปถ่าย */}
@@ -606,7 +620,7 @@ export default function SurveyStep({ lead, state, refresh, packages, expanded, o
           4: ["survey_note", "survey_photos"],
         };
         const handleNext = () => {
-          const v = validateSurvey({ ...lead, ...formDraft, survey_note: surveyNote || lead.survey_note, survey_photos: surveyPhotos.length ? surveyPhotos.join(",") : lead.survey_photos, survey_wants_battery: surveyBattery || lead.survey_wants_battery, survey_electrical_phase: surveyPhase || lead.survey_electrical_phase, interested_package_id: selectedPkg ? parseInt(selectedPkg) : lead.interested_package_id });
+          const v = validateSurvey({ ...lead, ...formDraft, survey_note: surveyNote || lead.survey_note, survey_photos: surveyPhotos.length ? surveyPhotos.join(",") : lead.survey_photos, survey_wants_battery: surveyBattery || lead.survey_wants_battery, survey_electrical_phase: surveyPhase || lead.survey_electrical_phase, interested_package_id: selectedPkgs.length ? parseInt(selectedPkgs[0]) : lead.interested_package_id });
           const missingHere = v.missing.filter(m => (gates[subStep] || []).includes(m.field));
           if (missingHere.length > 0) {
             setNextError(missingHere.map(m => m.label).join(", "));

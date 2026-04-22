@@ -3,6 +3,7 @@
 import { apiFetch, getUserIdHeader } from "@/lib/api";
 import { useEffect, useMemo, useState } from "react";
 import Header from "@/components/layout/Header";
+import { useDialog } from "@/components/ui/Dialog";
 
 type Prospect = {
   id: number;
@@ -41,6 +42,7 @@ function hasExistingSolar(p: Prospect): boolean {
 }
 
 export default function SeekerDashboardPage() {
+  const dialog = useDialog();
   const [prospects, setProspects] = useState<Prospect[]>([]);
   const [allProjects, setAllProjects] = useState<string[]>([]);
   const [loading, setLoading] = useState(true);
@@ -172,7 +174,7 @@ export default function SeekerDashboardPage() {
                 type="button"
                 onClick={async () => {
                   const res = await fetch("/api/report/seeker-pdf", { headers: { ...getUserIdHeader() } });
-                  if (!res.ok) { alert("โหลด PDF ไม่สำเร็จ"); return; }
+                  if (!res.ok) { dialog.alert({ title: "โหลดไม่สำเร็จ", message: "โหลด PDF ไม่สำเร็จ", variant: "danger" }); return; }
                   const blob = await res.blob();
                   const url = URL.createObjectURL(blob);
                   const a = document.createElement("a");

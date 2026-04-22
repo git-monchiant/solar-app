@@ -31,6 +31,18 @@ export default function LoginPage() {
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || "Sign in failed");
+
+      // If this is a different user than last time, wipe all user-scoped state
+      // so we don't leak the previous user's role selection, tabs, favorites, etc.
+      const prevId = localStorage.getItem("userId");
+      if (prevId && String(data.id) !== prevId) {
+        const keepKeys = new Set(["userId", "userName"]); // userName about to be overwritten below
+        for (let i = localStorage.length - 1; i >= 0; i--) {
+          const k = localStorage.key(i);
+          if (!k || keepKeys.has(k)) continue;
+          localStorage.removeItem(k);
+        }
+      }
       localStorage.setItem("userId", String(data.id));
       localStorage.setItem("userName", data.full_name || data.username);
       router.replace("/today");

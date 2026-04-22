@@ -4,6 +4,7 @@ import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { apiFetch } from "@/lib/api";
 import CustomerWizard from "@/components/customer/CustomerWizard";
+import ModalCloseButton from "@/components/ui/ModalCloseButton";
 
 export interface LineLinkInfo {
   userId: number;
@@ -67,9 +68,7 @@ export default function NewLeadModal({ onClose, onCreated, linkLine }: Props) {
       <div className="relative bg-white w-full h-full md:max-w-[90vw] md:max-h-[90vh] md:rounded-2xl overflow-y-auto md:animate-slide-up flex flex-col">
         <div className="sticky top-0 bg-white border-b border-gray-100 px-5 py-4 pt-[max(1rem,env(safe-area-inset-top,1rem))] flex items-center justify-between z-10 shrink-0">
           <h2 className="text-lg font-bold text-gray-900 truncate">New Lead{form.full_name.trim() ? ` — ${form.full_name.trim()}` : ""}</h2>
-          <button onClick={onClose} className="w-8 h-8 rounded-full hover:bg-gray-100 flex items-center justify-center text-gray-400 shrink-0">
-            <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" /></svg>
-          </button>
+          <ModalCloseButton onClick={onClose} />
         </div>
 
         <div className="px-5 py-4 lg:px-10 flex-1 min-h-0">

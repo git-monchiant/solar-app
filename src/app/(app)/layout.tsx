@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import BottomNav from "@/components/layout/BottomNav";
+import { DialogProvider } from "@/components/ui/Dialog";
 
 export default function AppLayout({ children }: { children: React.ReactNode }) {
   const router = useRouter();
@@ -26,11 +27,13 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
   }
 
   return (
-    <div className="flex h-full bg-gray-50">
-      <BottomNav />
-      <main className="flex-1 overflow-y-auto pb-20 md:pb-0 md:ml-64">
-        {children}
-      </main>
-    </div>
+    <DialogProvider>
+      <div className="flex h-full bg-gray-50">
+        <BottomNav />
+        <main className="flex-1 overflow-y-auto pb-20 md:pb-0 md:ml-64">
+          {children}
+        </main>
+      </div>
+    </DialogProvider>
   );
 }

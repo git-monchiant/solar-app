@@ -47,6 +47,8 @@ export interface Lead {
   interested_package_id: number | null;
   interested_package_ids: string | null;
   line_id: string | null;
+  line_display_name?: string | null;
+  line_picture_url?: string | null;
   survey_time_slot: string | null;
   survey_confirmed: boolean;
   zone: string | null;

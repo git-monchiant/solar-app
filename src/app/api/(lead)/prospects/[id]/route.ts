@@ -24,6 +24,10 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
       sets.push("house_number = @house_number");
       request.input("house_number", sql.NVarChar(50), body.house_number);
     }
+    if (body.lead_id !== undefined) {
+      sets.push("lead_id = @lead_id");
+      request.input("lead_id", sql.Int, body.lead_id);
+    }
     if (body.full_name !== undefined) {
       sets.push("full_name = @full_name");
       request.input("full_name", sql.NVarChar(200), body.full_name);

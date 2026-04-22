@@ -82,10 +82,12 @@ export async function POST(request: NextRequest) {
       .input("id_card_address", sql.NVarChar(500), body.id_card_address || null)
       .input("id_card_photo_url", sql.NVarChar(500), body.id_card_photo_url || null)
       .input("house_reg_photo_url", sql.NVarChar(500), body.house_reg_photo_url || null)
+      .input("pre_appliances", sql.NVarChar(200), body.pre_appliances || null)
+      .input("line_id", sql.NVarChar(100), body.line_id || null)
       .query(`
-        INSERT INTO leads (full_name, phone, project_id, installation_address, customer_type, interested_package_id, source, payment_type, requirement, note, id_card_number, id_card_address, id_card_photo_url, house_reg_photo_url, status)
+        INSERT INTO leads (full_name, phone, project_id, installation_address, customer_type, interested_package_id, source, payment_type, requirement, note, id_card_number, id_card_address, id_card_photo_url, house_reg_photo_url, pre_appliances, line_id, status)
         OUTPUT INSERTED.*
-        VALUES (@full_name, @phone, @project_id, @installation_address, @customer_type, @interested_package_id, @source, @payment_type, @requirement, @note, @id_card_number, @id_card_address, @id_card_photo_url, @house_reg_photo_url, 'pre_survey')
+        VALUES (@full_name, @phone, @project_id, @installation_address, @customer_type, @interested_package_id, @source, @payment_type, @requirement, @note, @id_card_number, @id_card_address, @id_card_photo_url, @house_reg_photo_url, @pre_appliances, @line_id, 'pre_survey')
       `);
 
     // Auto-log lead created (register/walk-in is the first contact)

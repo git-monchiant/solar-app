@@ -110,9 +110,9 @@ async function resetDb() {
     console.log(`  ${label} deleted: ${d.rowsAffected[0]}`);
   }
 
-  // Re-map lookups live on line_users, so clear its lead_id ref too.
-  const lu = await pool.request().query(`UPDATE line_users SET lead_id = NULL WHERE lead_id IS NOT NULL`);
-  console.log(`  line_users unmapped: ${lu.rowsAffected[0]}`);
+  // line_users no longer stores a reverse lead_id column (schema change at
+  // sql/078_line_users_profile_only.sql). Mapping lives only on leads.line_id,
+  // which is already cleared above.
 
   await pool.close();
 }

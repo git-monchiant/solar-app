@@ -3,6 +3,7 @@ import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { apiFetch } from "@/lib/api";
 import Header from "@/components/layout/Header";
+import { useDialog } from "@/components/ui/Dialog";
 
 interface UserProfile {
   id: number;
@@ -17,14 +18,21 @@ interface UserProfile {
 
 export default function ProfilePage() {
   const router = useRouter();
+  const dialog = useDialog();
   const [user, setUser] = useState<UserProfile | null>(null);
 
   useEffect(() => {
     apiFetch("/api/me").then(setUser).catch(console.error);
   }, []);
 
-  const logout = () => {
-    if (!confirm("ออกจากระบบใช่หรือไม่?")) return;
+  const logout = async () => {
+    const ok = await dialog.confirm({
+      title: "ออกจากระบบ",
+      message: "ออกจากระบบใช่หรือไม่?",
+      variant: "danger",
+      confirmText: "ออกจากระบบ",
+    });
+    if (!ok) return;
     if (typeof window !== "undefined") {
       localStorage.removeItem("userId");
       localStorage.removeItem("userName");
