@@ -9,7 +9,10 @@ import ErrorPopup from "@/components/ui/ErrorPopup";
 import { validateSurvey } from "@/lib/constants/step-validators";
 import FallbackImage from "@/components/ui/FallbackImage";
 import StepLayout from "../StepLayout";
+import SignaturePad from "../SignaturePad";
+import SurveyPdfModal from "../SurveyPdfModal";
 import { useSubStep } from "@/lib/hooks/useSubStep";
+import { useIsMobile } from "@/lib/hooks/useIsMobile";
 import { compressImage } from "@/lib/utils/compressImage";
 import { buildAppointmentFlex } from "@/lib/utils/line-flex";
 
@@ -21,12 +24,29 @@ const SURVEY_TIME_SLOTS = [
   { value: "afternoon", label: "บ่าย", time: "13:00 - 16:00" },
 ];
 
-const RESIDENCE_MAP: Record<string, string> = { detached: "บ้านเดี่ยว", townhome: "ทาวน์โฮม", townhouse: "ทาวน์เฮาส์", home_office: "โฮมออฟฟิศ", shophouse: "อาคารพาณิชย์" };
-const ROOF_MATERIAL_MAP: Record<string, string> = { concrete_tile: "กระเบื้องคอนกรีต", clay_tile: "กระเบื้องดินเผา", metal_sheet: "เมทัลชีท", concrete_slab: "พื้นคอนกรีต" };
-const PEAK_MAP: Record<string, string> = { morning: "ช่วงเช้า", afternoon: "ช่วงบ่าย", both: "ทั้งสองช่วง" };
-const SHADING_MAP: Record<string, string> = { none: "ไม่มี", light: "เล็กน้อย", moderate: "ปานกลาง", heavy: "มาก" };
-const ROOF_AGE_MAP: Record<string, string> = { new: "ใหม่ (< 5 ปี)", mid: "กลาง (5-15 ปี)", old: "เก่า (> 15 ปี)" };
-const APPLIANCE_MAP: Record<string, string> = { ev: "EV Charger", pool_pump: "ปั๊มสระ", water_heater: "เครื่องทำน้ำร้อน", elevator: "ลิฟต์" };
+const ROOF_MATERIAL_MAP: Record<string, string> = {
+  cpac_tile: "CPAC", old_tile: "ลอนคู่",
+  "metal_sheet:bolt": "เมทัลชีท ยึดน็อต", "metal_sheet:clip": "เมทัลชีท คลิปล็อก",
+  concrete: "ดาดฟ้าคอนกรีต",
+};
+const ORIENTATION_MAP: Record<string, string> = { north: "เหนือ", south: "ใต้", east: "ตะวันออก", west: "ตะวันตก" };
+const SHADING_MAP: Record<string, string> = { none: "ไม่มี", partial: "บางช่วง", heavy: "ตลอดวัน" };
+const METER_MAP: Record<string, string> = { "5_15": "5(15) A", "15_45": "15(45) A", "30_100": "30(100) A" };
+const MDB_SLOTS_MAP: Record<string, string> = { has_slot: "มีช่องว่าง", full: "เต็ม" };
+const BREAKER_MAP: Record<string, string> = { plug_on: "Plug On", screw: "ขันยึดสกรู" };
+const ROOF_STRUCTURE_MAP: Record<string, string> = { steel: "เหล็ก", wood: "ไม้", aluminum: "อลูมิเนียม" };
+const INVERTER_LOC_MAP: Record<string, string> = { indoor: "ในร่ม", outdoor: "นอกอาคาร" };
+const WIFI_MAP: Record<string, string> = { good: "ดีมาก", fair: "พอใช้", none: "ยังไม่มี" };
+const ACCESS_MAP: Record<string, string> = { ladder: "บันไดพาด", scaffold: "นั่งร้าน", crane: "รถกระเช้า" };
+const APPLIANCE_MAP: Record<string, string> = { water_heater: "เครื่องทำน้ำอุ่น", ev: "ที่ชาร์จรถ EV" };
+const BATTERY_MAP: Record<string, string> = { yes: "Solar + Battery", no: "On Grid", upgrade: "Upgrade", maybe: "ยังไม่แน่ใจ" };
+const PHASE_MAP: Record<string, string> = { "1_phase": "1 เฟส", "3_phase": "3 เฟส" };
+
+function otherLabel(raw: string | null, map: Record<string, string>): string {
+  if (!raw) return "—";
+  if (raw.startsWith("other:")) return raw.slice(6) || "อื่นๆ";
+  return map[raw] || raw;
+}
 const AC_BTU_SIZES = [9000, 12000, 18000, 24000];
 
 function parseAcUnits(s: string | null): Record<number, number> {
@@ -49,7 +69,7 @@ interface Props extends StepCommonProps {
 }
 
 export default function SurveyStep({ lead, state, refresh, packages, expanded, onToggle }: Props) {
-  const SURVEY_SUB_FULL = ["นัด", "บ้าน", "ไฟฟ้า", "แพ็คเกจ", "บันทึก", "ยืนยัน"];
+  const SURVEY_SUB_FULL = ["นัด", "ไฟฟ้า", "หลังคา", "เตรียม", "ยืนยัน"];
   const SURVEY_SUB = lead.survey_confirmed ? SURVEY_SUB_FULL : ["นัด"];
   const [subStep, setSubStep] = useSubStep(`surveySubStep_${lead.id}`, 0, SURVEY_SUB.length);
   const [nextError, setNextError] = useState<string | null>(null);
@@ -59,12 +79,22 @@ export default function SurveyStep({ lead, state, refresh, packages, expanded, o
   );
   const MAX_PKGS = 3;
   const [surveyBattery, setSurveyBattery] = useState<string>(lead.survey_wants_battery ?? lead.pre_wants_battery ?? "");
+  const [recommendedKw, setRecommendedKw] = useState<number | null>(lead.survey_recommended_kw ?? null);
+  const [panelCount, setPanelCount] = useState<number | "">(lead.survey_panel_count ?? "");
   const [surveyPhase, setSurveyPhase] = useState<string>(lead.survey_electrical_phase ?? lead.pre_electrical_phase ?? "");
   const [rescheduling, setRescheduling] = useState(false);
   const [saving, setSaving] = useState(false);
   const [surveyNote, setSurveyNote] = useState<string>(lead.survey_note ?? "");
   const [surveyPhotos, setSurveyPhotos] = useState<string[]>(lead.survey_photos ? lead.survey_photos.split(",").filter(Boolean) : []);
   const [photoUploading, setPhotoUploading] = useState(false);
+  const [pdfPreviewOpen, setPdfPreviewOpen] = useState(false);
+  const isMobile = useIsMobile();
+  // Mobile → in-app modal preview. Desktop → new tab (native PDF viewer).
+  const openPdf = (e?: React.MouseEvent) => {
+    e?.stopPropagation();
+    if (isMobile) setPdfPreviewOpen(true);
+    else window.open(`/api/survey/${lead.id}`, "_blank", "noreferrer");
+  };
   // Auto-save survey note (debounced)
   useEffect(() => {
     if (!lead.survey_confirmed) return;
@@ -225,138 +255,199 @@ export default function SurveyStep({ lead, state, refresh, packages, expanded, o
           {slotTime && <span className="block font-mono tabular-nums text-xs text-gray-500">{slotTime}</span>}
         </span>
       ) : <span className="flex-1" />}
+      <button
+        type="button"
+        onClick={openPdf}
+        className="mr-4 inline-flex items-center gap-1 text-xs font-semibold text-primary hover:text-primary-dark shrink-0"
+      >
+        <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" /></svg>
+        ใบสำรวจ
+      </button>
     </>
   );
 
   if (state === "done") {
-    const residenceLabel = lead.survey_residence_type?.startsWith("other:") ? lead.survey_residence_type.slice(6) : RESIDENCE_MAP[lead.survey_residence_type || ""];
-    const acMap = parseAcUnits(lead.survey_ac_units);
-    const acTotal = Object.values(acMap).reduce((a, b) => a + b, 0);
     const applianceList = (lead.survey_appliances || "").split(",").filter(Boolean).map(v => APPLIANCE_MAP[v] || v);
+    const pkgIds = (lead.interested_package_ids || "").split(",").map(s => parseInt(s.trim())).filter(n => !isNaN(n));
+    const selectedPackages: Package[] = pkgIds.length
+      ? pkgIds.map(id => packages.find(p => p.id === id)).filter((p): p is Package => !!p)
+      : lead.interested_package_id ? [packages.find(p => p.id === lead.interested_package_id)].filter((p): p is Package => !!p) : [];
+    const photoSlots = [
+      { url: lead.survey_photo_building_url, label: "อาคาร" },
+      { url: lead.survey_photo_roof_structure_url, label: "โครงหลังคา" },
+      { url: lead.survey_photo_mdb_url, label: "ตู้ MDB" },
+      { url: lead.survey_photo_inverter_point_url, label: "จุด Inverter" },
+    ];
 
     const renderDoneContent = () => (<>
 
-          {/* บ้าน · หลังคา */}
-          {(residenceLabel || lead.survey_floors != null || lead.survey_roof_material || lead.survey_roof_orientation || lead.survey_roof_area_m2 || lead.survey_roof_tilt != null || lead.survey_shading || lead.survey_roof_age) && (
-            <div className="border-l-3 border-amber-400 pl-3">
-              <div className="text-xs font-bold text-amber-600 uppercase mb-1">บ้าน · หลังคา</div>
-              <div className="space-y-0.5">
-                {residenceLabel && <div className="flex justify-between"><span className="text-gray-400">ประเภทบ้าน</span><span className="font-semibold text-gray-800">{residenceLabel}</span></div>}
-                {lead.survey_floors != null && <div className="flex justify-between"><span className="text-gray-400">จำนวนชั้น</span><span className="font-semibold text-gray-800">{lead.survey_floors}</span></div>}
-                {lead.survey_roof_material && <div className="flex justify-between"><span className="text-gray-400">วัสดุหลังคา</span><span className="font-semibold text-gray-800">{ROOF_MATERIAL_MAP[lead.survey_roof_material] || lead.survey_roof_material}</span></div>}
-                {lead.survey_roof_orientation && <div className="flex justify-between"><span className="text-gray-400">ทิศหลังคา</span><span className="font-semibold text-gray-800">{lead.survey_roof_orientation}</span></div>}
-                {lead.survey_roof_area_m2 && <div className="flex justify-between"><span className="text-gray-400">พื้นที่</span><span className="font-semibold text-gray-800">{lead.survey_roof_area_m2} m²</span></div>}
-                {lead.survey_roof_tilt != null && <div className="flex justify-between"><span className="text-gray-400">ความชัน</span><span className="font-semibold text-gray-800">{lead.survey_roof_tilt}°</span></div>}
-                {lead.survey_shading && <div className="flex justify-between"><span className="text-gray-400">ร่มเงา</span><span className="font-semibold text-gray-800">{SHADING_MAP[lead.survey_shading] || lead.survey_shading}</span></div>}
-                {lead.survey_roof_age && <div className="flex justify-between"><span className="text-gray-400">อายุหลังคา</span><span className="font-semibold text-gray-800">{ROOF_AGE_MAP[lead.survey_roof_age] || lead.survey_roof_age}</span></div>}
-              </div>
-            </div>
-          )}
+      {/* 1. ระบบไฟฟ้า */}
+      <div className="border-l-3 border-blue-400 pl-3">
+        <div className="text-xs font-bold text-blue-600 uppercase mb-1.5">ระบบไฟฟ้า</div>
+        <div className="space-y-0.5 text-sm">
+          <DoneRow label="มิเตอร์" value={lead.survey_meter_size ? METER_MAP[lead.survey_meter_size] || lead.survey_meter_size : "—"} />
+          <DoneRow label="ระบบไฟ" value={lead.survey_electrical_phase ? PHASE_MAP[lead.survey_electrical_phase] || lead.survey_electrical_phase : "—"} />
+          <DoneGroup label="แรงดัน" items={[
+            { label: "L-N", value: lead.survey_voltage_ln != null ? `${lead.survey_voltage_ln} V` : "—" },
+            { label: "L-L", value: lead.survey_voltage_ll != null ? `${lead.survey_voltage_ll} V` : "—" },
+          ]} />
+          <DoneRow label="ค่าไฟ/เดือน" value={lead.survey_monthly_bill != null ? `${lead.survey_monthly_bill.toLocaleString()} บาท` : "—"} />
+          <DoneGroup label="ตู้ MDB" items={[
+            { label: "ยี่ห้อ", value: lead.survey_mdb_brand || "—" },
+            { label: "รุ่น", value: lead.survey_mdb_model || "—" },
+            { label: "ช่องว่าง", value: lead.survey_mdb_slots ? MDB_SLOTS_MAP[lead.survey_mdb_slots] || lead.survey_mdb_slots : "—" },
+          ]} />
+          <DoneRow label="ชนิดเบรกเกอร์" value={otherLabel(lead.survey_breaker_type, BREAKER_MAP)} />
+          <DoneGroup label="Cable" items={[
+            { label: "PV → Inverter", value: lead.survey_panel_to_inverter_m != null ? `${lead.survey_panel_to_inverter_m} m` : "—" },
+            { label: "Inverter → MDB", value: lead.survey_db_distance_m != null ? `${lead.survey_db_distance_m} m` : "—" },
+          ]} />
+          <DoneRow label="เครื่องใช้พิเศษ" value={applianceList.length ? applianceList.join(" · ") : "—"} />
+        </div>
+      </div>
 
-          {/* การใช้ไฟฟ้า */}
-          {(lead.survey_electrical_phase || lead.survey_monthly_bill != null || lead.survey_peak_usage || lead.survey_grid_type || lead.survey_utility || lead.survey_meter_size || lead.survey_ca_number || lead.survey_db_distance_m != null) && (
-            <div className="border-l-3 border-blue-400 pl-3">
-              <div className="text-xs font-bold text-blue-600 uppercase mb-1">การใช้ไฟฟ้า</div>
-              <div className="space-y-0.5">
-                {lead.survey_electrical_phase && <div className="flex justify-between"><span className="text-gray-400">ระบบไฟ</span><span className="font-semibold text-gray-800">{lead.survey_electrical_phase === "1_phase" ? "1 เฟส" : "3 เฟส"}</span></div>}
-                {lead.survey_monthly_bill != null && <div className="flex justify-between"><span className="text-gray-400">ค่าไฟ/เดือน</span><span className="font-semibold text-gray-800 font-mono">{lead.survey_monthly_bill.toLocaleString()} บาท</span></div>}
-                {lead.survey_peak_usage && <div className="flex justify-between"><span className="text-gray-400">ช่วงใช้ไฟสูงสุด</span><span className="font-semibold text-gray-800">{PEAK_MAP[lead.survey_peak_usage] || lead.survey_peak_usage}</span></div>}
-                {lead.survey_grid_type && <div className="flex justify-between"><span className="text-gray-400">เชื่อมต่อ</span><span className="font-semibold text-gray-800">{lead.survey_grid_type === "on_grid" ? "On-Grid" : lead.survey_grid_type === "hybrid" ? "Hybrid" : "Off-Grid"}</span></div>}
-                {lead.survey_utility && <div className="flex justify-between"><span className="text-gray-400">การไฟฟ้า</span><span className="font-semibold text-gray-800">{lead.survey_utility}</span></div>}
-                {lead.survey_meter_size && <div className="flex justify-between"><span className="text-gray-400">มิเตอร์</span><span className="font-semibold text-gray-800">{lead.survey_meter_size.replace("_", "(") + ") A"}</span></div>}
-                {lead.survey_ca_number && <div className="flex justify-between"><span className="text-gray-400">เลข CA</span><span className="font-semibold text-gray-800 font-mono">{lead.survey_ca_number}</span></div>}
-                {lead.survey_wants_battery && <div className="flex justify-between"><span className="text-gray-400">แบตเตอรี่</span><span className="font-semibold text-gray-800">{lead.survey_wants_battery === "yes" ? "ต้องการ" : lead.survey_wants_battery === "no" ? "ไม่ต้องการ" : "ยังไม่แน่ใจ"}</span></div>}
-                {lead.survey_db_distance_m != null && <div className="flex justify-between"><span className="text-gray-400">ระยะ MDB</span><span className="font-semibold text-gray-800">{lead.survey_db_distance_m} เมตร</span></div>}
-              </div>
-            </div>
-          )}
+      {/* 2. หลังคา · โครงสร้างบ้าน */}
+      <div className="border-l-3 border-amber-400 pl-3">
+        <div className="text-xs font-bold text-amber-600 uppercase mb-1.5">หลังคา · โครงสร้างบ้าน</div>
+        <div className="space-y-0.5 text-sm">
+          <DoneRow label="จำนวนชั้น" value={lead.survey_floors != null ? `${lead.survey_floors} ชั้น` : "—"} />
+          <DoneRow label="วัสดุหลังคา" value={lead.survey_roof_material ? ROOF_MATERIAL_MAP[lead.survey_roof_material] || lead.survey_roof_material : "—"} />
+          <DoneRow label="ทิศทางหลังคา" value={lead.survey_roof_orientation ? ORIENTATION_MAP[lead.survey_roof_orientation] || lead.survey_roof_orientation : "—"} />
+          <DoneRow label="ความชัน" value={lead.survey_roof_tilt != null ? `${lead.survey_roof_tilt}°` : "—"} />
+          <DoneGroup label="ขนาดหลังคา" items={[
+            { label: "พื้นที่", value: lead.survey_roof_area_m2 != null ? `${lead.survey_roof_area_m2} m²` : "—" },
+            { label: "W × L", value: lead.survey_roof_width_m != null && lead.survey_roof_length_m != null ? `${lead.survey_roof_width_m} × ${lead.survey_roof_length_m} m` : "—" },
+          ]} />
+          <DoneRow label="โครงสร้างหลังคา" value={lead.survey_roof_structure ? ROOF_STRUCTURE_MAP[lead.survey_roof_structure] || lead.survey_roof_structure : "—"} />
+          <DoneRow label="เงาบัง" value={lead.survey_shading ? SHADING_MAP[lead.survey_shading] || lead.survey_shading : "—"} />
+        </div>
+      </div>
 
-          {/* เครื่องใช้ไฟฟ้า */}
-          {(acTotal > 0 || applianceList.length > 0) && (
-            <div className="border-l-3 border-violet-400 pl-3">
-              <div className="text-xs font-bold text-violet-600 uppercase mb-1">เครื่องใช้ไฟฟ้า</div>
-              {acTotal > 0 && (
-                <div className="mb-1.5">
-                  <span className="text-xs text-gray-400">แอร์ ({acTotal} เครื่อง)</span>
-                  <div className="flex flex-wrap gap-1.5 mt-1">
-                    {AC_BTU_SIZES.filter(b => acMap[b] > 0).map(b => (
-                      <span key={b} className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-violet-50 text-xs font-mono text-violet-700">
-                        {b.toLocaleString()} BTU <span className="font-bold">× {acMap[b]}</span>
-                      </span>
-                    ))}
+      {/* 3. การเตรียมการติดตั้ง */}
+      <div className="border-l-3 border-violet-400 pl-3">
+        <div className="text-xs font-bold text-violet-600 uppercase mb-1.5">การเตรียมการติดตั้ง</div>
+        <div className="space-y-0.5 text-sm">
+          <DoneRow label="ตำแหน่ง Inverter" value={lead.survey_inverter_location ? INVERTER_LOC_MAP[lead.survey_inverter_location] || lead.survey_inverter_location : "—"} />
+          <DoneRow label="สัญญาณ Wi-Fi" value={lead.survey_wifi_signal ? WIFI_MAP[lead.survey_wifi_signal] || lead.survey_wifi_signal : "—"} />
+          <DoneRow label="วิธีขึ้นหลังคา" value={lead.survey_access_method ? ACCESS_MAP[lead.survey_access_method] || lead.survey_access_method : "—"} />
+        </div>
+      </div>
+
+      {/* 4. ขนาดระบบที่เสนอ + packages */}
+      <div className="border-l-3 border-emerald-400 pl-3">
+        <div className="text-xs font-bold text-emerald-600 uppercase mb-1.5">ขนาดระบบที่เสนอ</div>
+        <div className="space-y-0.5 text-sm">
+          <DoneRow label="ขนาดแนะนำ" value={lead.survey_recommended_kw != null ? `${lead.survey_recommended_kw} kWp` : "—"} />
+          <DoneRow label="จำนวน Panel" value={lead.survey_panel_count != null ? `${lead.survey_panel_count} แผง` : "—"} />
+          <DoneRow label="ระบบ" value={otherLabel(lead.survey_wants_battery, BATTERY_MAP)} />
+        </div>
+        {selectedPackages.length > 0 && (
+          <div className="mt-2 space-y-1.5">
+            {selectedPackages.map(pkg => (
+              <div key={pkg.id} className="rounded-lg border border-emerald-200 bg-white p-2">
+                <div className="flex items-center justify-between gap-2">
+                  <div className="text-sm font-bold text-gray-900 flex items-center gap-1.5">
+                    {pkg.is_upgrade && <span className="text-[10px] font-bold text-blue-600 bg-blue-50 px-1.5 py-0.5 rounded uppercase">UPGRADE</span>}
+                    {pkg.name}
                   </div>
+                  <div className="text-sm font-bold font-mono tabular-nums">{pkg.price.toLocaleString()} ฿</div>
                 </div>
-              )}
-              {applianceList.length > 0 && (
-                <div className="flex flex-wrap gap-1.5">
-                  {applianceList.map(a => (
-                    <span key={a} className="px-2 py-0.5 rounded-md bg-gray-100 text-xs text-gray-600">{a}</span>
-                  ))}
-                </div>
-              )}
-            </div>
-          )}
-
-          {/* แพ็คเกจที่เลือก */}
-          {lead.interested_package_id && (() => {
-            const pkg = packages.find(p => p.id === lead.interested_package_id);
-            if (!pkg) return null;
-            return (
-              <div className="border-l-3 border-emerald-400 pl-3">
-                <div className="text-xs font-bold text-emerald-600 uppercase mb-1">แพ็คเกจที่เลือก</div>
-                <div className="space-y-0.5">
-                  <div className="flex justify-between"><span className="text-gray-400">ชื่อ</span><span className="font-semibold text-gray-800">{pkg.name}</span></div>
-                  <div className="flex justify-between"><span className="text-gray-400">kWp</span><span className="font-semibold text-gray-800">{pkg.kwp}</span></div>
-                  {pkg.solar_panels > 0 && <div className="flex justify-between"><span className="text-gray-400">แผง</span><span className="font-semibold text-gray-800">{pkg.solar_panels} × {pkg.panel_watt}W</span></div>}
-                  {pkg.inverter_kw > 0 && <div className="flex justify-between"><span className="text-gray-400">Inverter</span><span className="font-semibold text-gray-800">{pkg.inverter_brand} {pkg.inverter_kw}kW</span></div>}
-                  {pkg.has_battery && <div className="flex justify-between"><span className="text-gray-400">Battery</span><span className="font-semibold text-gray-800">{pkg.battery_kwh}kWh {pkg.battery_brand || ""}</span></div>}
-                  <div className="flex justify-between"><span className="text-gray-400">ราคา</span><span className="font-semibold text-gray-800 font-mono">{pkg.price.toLocaleString()} บาท</span></div>
+                <div className="text-xs text-gray-500 mt-0.5 flex flex-wrap gap-x-2">
+                  <span>{pkg.kwp} kWp</span>
+                  {pkg.solar_panels > 0 && <span>· {pkg.solar_panels} × {pkg.panel_watt}W</span>}
+                  {pkg.inverter_kw > 0 && <span>· {pkg.inverter_brand} {pkg.inverter_kw}kW</span>}
+                  {pkg.has_battery && <span>· Battery {pkg.battery_kwh}kWh</span>}
                 </div>
               </div>
-            );
-          })()}
+            ))}
+          </div>
+        )}
+      </div>
 
-          {/* บันทึก */}
-          {lead.survey_note && (
-            <div className="border-l-3 border-gray-300 pl-3">
-              <div className="text-xs font-bold text-gray-400 uppercase mb-1">บันทึก</div>
-              <div className="text-gray-800">{lead.survey_note}</div>
-            </div>
-          )}
+      {/* 5. บันทึกผู้สำรวจ */}
+      {lead.survey_note && (
+        <div className="border-l-3 border-gray-300 pl-3">
+          <div className="text-xs font-bold text-gray-500 uppercase mb-1.5">บันทึกผู้สำรวจ</div>
+          <div className="text-sm text-gray-800 whitespace-pre-wrap">{lead.survey_note}</div>
+        </div>
+      )}
 
-          {/* รูปถ่าย */}
-          {lead.survey_photos && (
-            <div className="border-l-3 border-gray-300 pl-3">
-              <div className="text-xs font-bold text-gray-400 uppercase mb-1.5">รูปถ่าย</div>
-              <div className="grid grid-cols-3 gap-2">
-                {(() => {
-                  const urls = lead.survey_photos.split(",").filter(Boolean);
-                  const gallery = urls.map((u, i) => ({ url: u, label: `รูปสำรวจ ${i + 1} / ${urls.length}` }));
-                  return urls.map((url, idx) => (
-                    <FallbackImage
-                      key={url}
-                      src={url}
-                      alt="Survey"
-                      className="w-full aspect-square object-cover rounded-lg border border-gray-200"
-                      fallbackLabel="รูปหาย"
-                      gallery={gallery}
-                      galleryIndex={idx}
-                    />
-                  ));
-                })()}
+      {/* 6. ลายเซ็นลูกค้า */}
+      {lead.survey_customer_signature_url && (
+        <div className="border-l-3 border-gray-300 pl-3">
+          <div className="text-xs font-bold text-gray-500 uppercase mb-1.5">ลายเซ็นลูกค้า</div>
+          <div className="bg-white border border-gray-200 rounded-lg p-3 flex justify-center">
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img src={lead.survey_customer_signature_url} alt="signature" className="max-h-20 object-contain" />
+          </div>
+        </div>
+      )}
+
+      {/* 7. Photo Checklist — 4 named slots */}
+      <div className="border-l-3 border-gray-300 pl-3">
+        <div className="text-xs font-bold text-gray-500 uppercase mb-1.5">Photo Checklist</div>
+        <div className="grid grid-cols-2 gap-2">
+          {photoSlots.map(p => (
+            <div key={p.label} className="rounded-lg overflow-hidden border border-gray-200 bg-white">
+              <div className="aspect-[4/3] bg-gray-50 flex items-center justify-center overflow-hidden">
+                {p.url ? (
+                  <FallbackImage src={p.url} alt={p.label} className="w-full h-full object-cover" fallbackLabel="รูปหาย" />
+                ) : (
+                  <span className="text-[10px] text-gray-300">— ไม่มีรูป —</span>
+                )}
               </div>
+              <div className="px-2 py-1 text-[10px] font-semibold uppercase tracking-wider text-gray-500 text-center">{p.label}</div>
             </div>
-          )}
+          ))}
+        </div>
+      </div>
+
+      {/* 8. รูปถ่ายเพิ่มเติม */}
+      {lead.survey_photos && (
+        <div className="border-l-3 border-gray-300 pl-3">
+          <div className="text-xs font-bold text-gray-500 uppercase mb-1.5">รูปถ่ายเพิ่มเติม</div>
+          <div className="grid grid-cols-3 gap-2">
+            {(() => {
+              const urls = lead.survey_photos.split(",").filter(Boolean);
+              const gallery = urls.map((u, i) => ({ url: u, label: `รูปสำรวจ ${i + 1} / ${urls.length}` }));
+              return urls.map((url, idx) => (
+                <FallbackImage
+                  key={url}
+                  src={url}
+                  alt="Survey"
+                  className="w-full aspect-square object-cover rounded-lg border border-gray-200"
+                  fallbackLabel="รูปหาย"
+                  gallery={gallery}
+                  galleryIndex={idx}
+                />
+              ));
+            })()}
+          </div>
+        </div>
+      )}
+
+      {/* PDF download */}
+      <button
+        type="button"
+        onClick={openPdf}
+        className="flex items-center justify-center gap-2 w-full h-11 rounded-lg bg-primary hover:bg-primary-dark text-sm font-semibold text-white transition-colors"
+      >
+        <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" /></svg>
+        ใบสำรวจหน้างาน (PDF)
+      </button>
     </>);
 
     return (
-      <StepLayout
-        state="done"
-        doneHeader={doneHeaderContent}
-        renderDone={renderDoneContent}
-        expanded={expanded}
-        onToggle={onToggle}
-      />
+      <>
+        {pdfPreviewOpen && <SurveyPdfModal leadId={lead.id} onClose={() => setPdfPreviewOpen(false)} />}
+        <StepLayout
+          state="done"
+          doneHeader={doneHeaderContent}
+          renderDone={renderDoneContent}
+          expanded={expanded}
+          onToggle={onToggle}
+        />
+      </>
     );
   }
   if (state !== "active") return null;
@@ -380,11 +471,8 @@ export default function SurveyStep({ lead, state, refresh, packages, expanded, o
     if (i <= subStep) { setNextError(null); setSubStep(i); return; }
     const gates: Record<number, string[]> = {
       0: ["survey_confirmed"],
-      1: ["survey_residence_type", "survey_floors", "survey_roof_material", "survey_roof_orientation", "survey_roof_area_m2", "survey_roof_tilt", "survey_shading", "survey_roof_age"],
-      2: ["survey_electrical_phase", "survey_monthly_bill", "survey_peak_usage", "survey_grid_type", "survey_utility", "survey_meter_size", "survey_ca_number", "survey_db_distance_m"],
-      3: ["survey_wants_battery", "interested_package_id"],
-      4: ["survey_note", "survey_photos"],
-      5: [],
+      // All other steps unblocked while the PDF layout is being iterated.
+      1: [], 2: [], 3: [], 4: [], 5: [],
     };
     const v = validateSurvey({ ...lead, ...formDraft, survey_note: surveyNote || lead.survey_note, survey_photos: surveyPhotos.length ? surveyPhotos.join(",") : lead.survey_photos, survey_wants_battery: surveyBattery || lead.survey_wants_battery, survey_electrical_phase: surveyPhase || lead.survey_electrical_phase, interested_package_id: selectedPkgs.length ? parseInt(selectedPkgs[0]) : lead.interested_package_id });
     const missingHere = v.missing.filter(m => (gates[subStep] || []).includes(m.field));
@@ -466,13 +554,33 @@ export default function SurveyStep({ lead, state, refresh, packages, expanded, o
         </div>
       )}
 
-      {/* Step 4: แพ็คเกจ */}
-      {lead.survey_confirmed && subStep === 3 && (
+      {/* Step 4: ยืนยัน — ขนาดที่ติดตั้งได้ + แพ็คเกจ */}
+      {lead.survey_confirmed && subStep === 4 && (
         <div className="rounded-lg bg-white/60 border border-active/15 p-3 space-y-3">
           <div>
-            <div className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-2">ต้องการแบตเตอรี่ + Upgrade</div>
-            <div className="grid grid-cols-3 gap-2">
-              {[{ value: "no", label: "ไม่ต้องการ" }, { value: "yes", label: "ต้องการ" }, { value: "maybe", label: "ยังไม่แน่ใจ" }, { value: "upgrade", label: "+ Upgrade" }].map(b => (
+            <div className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-2">ขนาดที่ติดตั้งได้เหมาะสม (kWp)</div>
+            <div className="grid grid-cols-4 gap-2">
+              {[3, 5, 7, 10].map(kw => (
+                <button
+                  key={kw}
+                  type="button"
+                  onClick={() => {
+                    const next = recommendedKw === kw ? null : kw;
+                    setRecommendedKw(next);
+                    apiFetch(`/api/leads/${lead.id}`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ survey_recommended_kw: next }) }).catch(console.error);
+                  }}
+                  className={`h-9 rounded-lg text-sm font-semibold border transition-all ${recommendedKw === kw ? "bg-active text-white border-active" : "bg-white text-gray-600 border-gray-200"}`}
+                >
+                  {kw} kWp
+                </button>
+              ))}
+            </div>
+          </div>
+
+          <div>
+            <div className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-2">ระบบ</div>
+            <div className="grid grid-cols-2 gap-2">
+              {[{ value: "no", label: "On Grid" }, { value: "yes", label: "Solar+Battery" }, { value: "upgrade", label: "+ Upgrade" }].map(b => (
                 <button key={b.value} type="button" onClick={() => {
                   setSurveyBattery(b.value);
                   setSelectedPkgs([]);
@@ -482,9 +590,41 @@ export default function SurveyStep({ lead, state, refresh, packages, expanded, o
                 </button>
               ))}
             </div>
+            <input
+              type="text"
+              placeholder="อื่นๆ ระบุ..."
+              value={surveyBattery.startsWith("other:") ? surveyBattery.slice(6) : ""}
+              onChange={e => {
+                const v = e.target.value ? `other:${e.target.value}` : "";
+                setSurveyBattery(v);
+                setSelectedPkgs([]);
+                apiFetch(`/api/leads/${lead.id}`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ survey_wants_battery: v || null, interested_package_ids: null, interested_package_id: null }) }).catch(console.error);
+              }}
+              onFocus={() => { if (!surveyBattery.startsWith("other")) setSurveyBattery("other:"); }}
+              className={`w-full mt-2 h-10 px-3 rounded-lg border text-sm focus:outline-none ${surveyBattery.startsWith("other") ? "border-active bg-active-light" : "border-gray-200 bg-white"}`}
+            />
           </div>
 
-          <div className="text-xs font-semibold text-gray-400 uppercase tracking-wider">ยืนยันแพ็คเกจที่จะติดตั้ง (สูงสุด {MAX_PKGS} รายการ)</div>
+          <div>
+            <div className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-2">จำนวน Panel</div>
+            <div className="relative">
+              <input
+                type="number"
+                inputMode="numeric"
+                value={panelCount === "" ? "" : panelCount}
+                onChange={e => {
+                  const v = e.target.value ? parseInt(e.target.value) : "";
+                  setPanelCount(v);
+                  apiFetch(`/api/leads/${lead.id}`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ survey_panel_count: typeof v === "number" ? v : null }) }).catch(console.error);
+                }}
+                placeholder="เช่น 10"
+                className="w-full h-10 pl-3 pr-14 rounded-lg border border-gray-200 bg-white text-sm font-mono tabular-nums focus:outline-none focus:border-primary"
+              />
+              <span className="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-gray-400 font-medium pointer-events-none">แผง</span>
+            </div>
+          </div>
+
+          <div className="text-xs font-semibold text-gray-400 uppercase tracking-wider">Package ที่เหมาะสม</div>
           {(() => {
             const phase = surveyPhase === "3_phase" ? 3 : surveyPhase === "1_phase" ? 1 : 0;
             const battery = surveyBattery;
@@ -545,22 +685,39 @@ export default function SurveyStep({ lead, state, refresh, packages, expanded, o
               </div>
             ) : <div className="text-center py-6 text-xs text-gray-400">ไม่มีแพ็คเกจ</div>;
           })()}
+
+          {/* ลายเซ็นลูกค้า */}
+          <div>
+            <div className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-2">ลายเซ็นลูกค้า</div>
+            <SignaturePad
+              leadId={lead.id}
+              fieldName="survey_customer_signature_url"
+              initialUrl={lead.survey_customer_signature_url}
+            />
+          </div>
+
+          {/* Confirm — สำรวจเสร็จสิ้น */}
+          <button onClick={markDone} disabled={saving} className="w-full h-11 rounded-lg text-sm font-semibold text-white bg-gradient-to-r from-primary to-primary-dark hover:brightness-110 disabled:opacity-50 transition-colors flex items-center justify-center gap-2">
+            <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}><path strokeLinecap="round" strokeLinejoin="round" d="M4.5 12.75l6 6 9-13.5" /></svg>
+            {saving ? "กำลังบันทึก…" : "สำรวจเสร็จสิ้น"}
+          </button>
         </div>
       )}
 
-      {/* Step 2: บ้าน · หลังคา */}
+      {/* Step 1: ระบบไฟฟ้า (PDF section 2) */}
       {lead.survey_confirmed && subStep === 1 && (
-        <SurveyForm lead={lead} refresh={refresh} section="house" onFormChange={setFormDraft} />
-      )}
-
-      {/* Step 3: ระบบไฟฟ้า */}
-      {lead.survey_confirmed && subStep === 2 && (
         <SurveyForm lead={lead} refresh={refresh} section="electrical" onFormChange={setFormDraft} onPhaseChange={(phase) => { setSurveyPhase(phase); setSelectedPkgs([]); apiFetch(`/api/leads/${lead.id}`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ interested_package_ids: null, interested_package_id: null }) }).catch(console.error); }} />
       )}
 
-      {/* Step 5: บันทึก + รูปถ่าย */}
-      {lead.survey_confirmed && subStep === 4 && (
+      {/* Step 2: หลังคา · บ้าน (PDF section 3) */}
+      {lead.survey_confirmed && subStep === 2 && (
+        <SurveyForm lead={lead} refresh={refresh} section="house" onFormChange={setFormDraft} />
+      )}
+
+      {/* Step 3: การเตรียมการติดตั้ง + บันทึก + รูปถ่าย */}
+      {lead.survey_confirmed && subStep === 3 && (
         <div className="space-y-3">
+          <SurveyForm lead={lead} refresh={refresh} section="prep" onFormChange={setFormDraft} />
           <div className="rounded-lg bg-white/60 border border-active/15 p-3">
             <label className="text-xs font-semibold tracking-wider uppercase text-gray-400 block mb-2">บันทึก Survey</label>
             <textarea value={surveyNote} onChange={e => setSurveyNote(e.target.value)} placeholder="บันทึกหน้างาน เช่น สภาพหลังคา, ข้อจำกัด, ข้อแนะนำ..." rows={3} className="w-full px-3 py-2 rounded-lg border border-gray-200 bg-white text-sm focus:outline-none focus:border-primary resize-none" />
@@ -594,30 +751,11 @@ export default function SurveyStep({ lead, state, refresh, packages, expanded, o
         </div>
       )}
 
-      {/* Step 6: ยืนยัน */}
-      {lead.survey_confirmed && subStep === 5 && (
-        <div className="space-y-3">
-          <div className="text-center py-4">
-            <div className="w-14 h-14 rounded-full bg-emerald-50 flex items-center justify-center mx-auto mb-3">
-              <svg className="w-7 h-7 text-emerald-600" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}><path strokeLinecap="round" strokeLinejoin="round" d="M4.5 12.75l6 6 9-13.5" /></svg>
-            </div>
-            <div className="text-sm font-bold text-gray-800">ข้อมูลสำรวจครบถ้วน</div>
-            <div className="text-xs text-gray-500 mt-1">กดปุ่มด้านล่างเพื่อจบขั้นตอนสำรวจ</div>
-          </div>
-          <button onClick={markDone} disabled={saving} className="w-full h-11 rounded-lg text-sm font-semibold text-white bg-gradient-to-r from-primary to-primary-dark hover:brightness-110 disabled:opacity-50 transition-colors">
-            สำรวจเสร็จสิ้น
-          </button>
-        </div>
-      )}
-
       {/* Navigation */}
-      {lead.survey_confirmed && subStep < 5 && (() => {
+      {lead.survey_confirmed && subStep < 4 && (() => {
         const gates: Record<number, string[]> = {
           0: ["survey_confirmed"],
-          1: ["survey_residence_type", "survey_floors", "survey_roof_material", "survey_roof_orientation", "survey_roof_area_m2", "survey_roof_tilt", "survey_shading", "survey_roof_age"],
-          2: ["survey_electrical_phase", "survey_monthly_bill", "survey_peak_usage", "survey_grid_type", "survey_utility", "survey_meter_size", "survey_ca_number", "survey_db_distance_m"],
-          3: ["survey_wants_battery", "interested_package_id"],
-          4: ["survey_note", "survey_photos"],
+          1: [], 2: [], 3: [],
         };
         const handleNext = () => {
           const v = validateSurvey({ ...lead, ...formDraft, survey_note: surveyNote || lead.survey_note, survey_photos: surveyPhotos.length ? surveyPhotos.join(",") : lead.survey_photos, survey_wants_battery: surveyBattery || lead.survey_wants_battery, survey_electrical_phase: surveyPhase || lead.survey_electrical_phase, interested_package_id: selectedPkgs.length ? parseInt(selectedPkgs[0]) : lead.interested_package_id });
@@ -645,7 +783,7 @@ export default function SurveyStep({ lead, state, refresh, packages, expanded, o
           </div>
         );
       })()}
-      {lead.survey_confirmed && subStep === 5 && (
+      {lead.survey_confirmed && subStep === 4 && (
         <button type="button" onClick={() => { setSubStep(subStep - 1); setTimeout(() => document.querySelector("[data-step-active]")?.scrollIntoView({ behavior: "smooth", block: "start" }), 100); }} className="w-full h-9 mt-2 rounded-lg text-xs text-gray-500 border border-gray-200 hover:bg-gray-50 transition-colors flex items-center justify-center gap-1">
           <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M15.75 19.5L8.25 12l7.5-7.5" /></svg>
           ย้อนกลับ
@@ -654,5 +792,30 @@ export default function SurveyStep({ lead, state, refresh, packages, expanded, o
 
       <ErrorPopup message={nextError} onClose={() => setNextError(null)} />
     </StepLayout>
+  );
+}
+
+function DoneRow({ label, value }: { label: string; value: string | number }) {
+  return (
+    <div className="flex items-baseline justify-between gap-2">
+      <span className="text-xs text-gray-400 shrink-0">{label}</span>
+      <span className="font-semibold text-gray-800 text-right">{value}</span>
+    </div>
+  );
+}
+
+function DoneGroup({ label, items }: { label: string; items: { label: string; value: string }[] }) {
+  return (
+    <div className="flex items-baseline justify-between gap-2">
+      <span className="text-xs text-gray-400 shrink-0">{label}</span>
+      <div className="text-right flex flex-wrap items-baseline justify-end gap-x-3 gap-y-0.5">
+        {items.map((it, i) => (
+          <span key={i} className="inline-flex items-baseline gap-1.5 whitespace-nowrap">
+            <span className="text-xs text-gray-400">{it.label}</span>
+            <span className="font-semibold text-gray-800">{it.value}</span>
+          </span>
+        ))}
+      </div>
+    </div>
   );
 }

@@ -10,6 +10,7 @@ import SignaturePad from "../SignaturePad";
 import WarrantyModal from "../WarrantyModal";
 import LineConfirmModal from "@/components/modal/LineConfirmModal";
 import { useSubStep } from "@/lib/hooks/useSubStep";
+import { useIsMobile } from "@/lib/hooks/useIsMobile";
 import { buildWarrantyFlex } from "@/lib/utils/line-flex";
 
 const SUB_STEPS = ["ข้อมูล", "แบตเตอรี่", "เอกสาร", "ลายเซ็น", "ยืนยัน"];
@@ -55,6 +56,14 @@ export default function WarrantyStep({ lead, state, refresh, packages, expanded,
   const [lineSent, setLineSent] = useState(false);
   const [lineConfirm, setLineConfirm] = useState(false);
   const [previewOpen, setPreviewOpen] = useState(false);
+  const isMobile = useIsMobile();
+  // Mobile → in-app modal (PdfPreview). Desktop → new tab (native PDF viewer
+  // lets them scroll multi-page + search).
+  const openWarranty = (e?: React.MouseEvent) => {
+    e?.stopPropagation();
+    if (isMobile) setPreviewOpen(true);
+    else if (lead.warranty_doc_url) window.open(lead.warranty_doc_url, "_blank", "noreferrer");
+  };
 
   // Equipment snapshot — editable; defaults from the surveyed package, but staff
   // can change to reflect what was actually installed on-site.
@@ -293,21 +302,27 @@ export default function WarrantyStep({ lead, state, refresh, packages, expanded,
         <Info label="สิ้นสุด" value={formatDate(lead.warranty_end_date)} />
       </div>
       {lead.warranty_doc_url && (
-        <a
-          href={lead.warranty_doc_url}
-          target="_blank"
-          rel="noreferrer"
+        <button
+          type="button"
+          onClick={openWarranty}
           className="flex items-center justify-center gap-2 w-full h-11 rounded-lg bg-primary hover:bg-primary-dark text-sm font-semibold text-white transition-colors"
         >
           <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" /></svg>
           ใบรับประกัน
-        </a>
+        </button>
       )}
     </>
   );
 
 
   return (
+    <>
+    {/* Modal lives outside StepLayout so it stays mounted when the step
+        switches between active + done states (done uses renderDone and
+        skips the children tree where the modal used to live). */}
+    {previewOpen && (
+      <WarrantyModal leadId={lead.id} docNo={docNo || lead.warranty_doc_no || ""} onClose={() => setPreviewOpen(false)} />
+    )}
     <StepLayout
       state={state}
       expanded={expanded}
@@ -316,18 +331,16 @@ export default function WarrantyStep({ lead, state, refresh, packages, expanded,
         <>
           <span className="text-sm font-semibold text-emerald-700 flex-1">ออกใบรับประกัน · {lead.warranty_doc_no}</span>
           {lead.warranty_doc_url && (
-            <a
-              href={lead.warranty_doc_url}
-              target="_blank"
-              rel="noreferrer"
-              onClick={e => e.stopPropagation()}
+            <button
+              type="button"
+              onClick={openWarranty}
               className="mr-4 inline-flex items-center gap-1 text-xs font-semibold text-primary hover:text-primary-dark shrink-0"
             >
               <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
                 <path strokeLinecap="round" strokeLinejoin="round" d="M19.5 14.25v-2.625a3.375 3.375 0 00-3.375-3.375h-1.5A1.125 1.125 0 0113.5 7.125v-1.5a3.375 3.375 0 00-3.375-3.375H8.25m2.25 0H5.625c-.621 0-1.125.504-1.125 1.125v17.25c0 .621.504 1.125 1.125 1.125h12.75c.621 0 1.125-.504 1.125-1.125V11.25a9 9 0 00-9-9z" />
               </svg>
               PDF
-            </a>
+            </button>
           )}
         </>
       }
@@ -513,10 +526,6 @@ export default function WarrantyStep({ lead, state, refresh, packages, expanded,
             <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M8.25 4.5l7.5 7.5-7.5 7.5" /></svg>
           </button>
 
-          {previewOpen && (
-            <WarrantyModal leadId={lead.id} docNo={docNo} onClose={() => setPreviewOpen(false)} />
-          )}
-
           {lineConfirm && (
             <LineConfirmModal
               name={lead.full_name}
@@ -575,6 +584,7 @@ export default function WarrantyStep({ lead, state, refresh, packages, expanded,
       <ErrorPopup message={nextError} onClose={() => setNextError(null)} />
     </div>
     </StepLayout>
+    </>
   );
 }
 

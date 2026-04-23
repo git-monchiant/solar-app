@@ -53,9 +53,21 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
     let oldStatus: string | null = null;
     if (body.status !== undefined) {
       const current = await db.request().input("id", sql.Int, leadId)
-        .query(`SELECT status FROM leads WHERE id = @id`);
+        .query(`SELECT status, payment_confirmed FROM leads WHERE id = @id`);
       if (current.recordset.length > 0) {
         oldStatus = current.recordset[0].status;
+        // Guard: can't move forward from pre_survey → survey (or beyond)
+        // without a confirmed payment. The body may set payment_confirmed in
+        // the same PATCH, so accept that too.
+        const ADVANCED = new Set(["survey", "quote", "order", "install", "warranty", "gridtie", "closed"]);
+        const movingForward = oldStatus === "pre_survey" && ADVANCED.has(body.status);
+        const willBePaid = body.payment_confirmed === true || current.recordset[0].payment_confirmed === true;
+        if (movingForward && !willBePaid) {
+          return NextResponse.json(
+            { error: "ต้องยืนยันชำระเงิน (payment_confirmed) ก่อนจึงจะเลื่อนไปขั้น survey ได้" },
+            { status: 400 }
+          );
+        }
       }
     }
 
@@ -285,10 +297,6 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
       sets.push("survey_photos = @survey_photos");
       request.input("survey_photos", sql.NVarChar(sql.MAX), body.survey_photos);
     }
-    if (body.survey_inverter !== undefined) {
-      sets.push("survey_inverter = @survey_inverter");
-      request.input("survey_inverter", sql.NVarChar(100), body.survey_inverter);
-    }
     if (body.survey_electrical_phase !== undefined) {
       sets.push("survey_electrical_phase = @survey_electrical_phase");
       request.input("survey_electrical_phase", sql.NVarChar(20), body.survey_electrical_phase);
@@ -297,38 +305,17 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
       sets.push("survey_wants_battery = @survey_wants_battery");
       request.input("survey_wants_battery", sql.NVarChar(20), body.survey_wants_battery);
     }
-    if (body.survey_battery_kwh !== undefined) {
-      sets.push("survey_battery_kwh = @survey_battery_kwh");
-      request.input("survey_battery_kwh", sql.Int, body.survey_battery_kwh);
-    }
-    if (body.survey_panel_id !== undefined) {
-      sets.push("survey_panel_id = @survey_panel_id");
-      request.input("survey_panel_id", sql.Int, body.survey_panel_id);
-    }
     if (body.survey_panel_count !== undefined) {
       sets.push("survey_panel_count = @survey_panel_count");
       request.input("survey_panel_count", sql.Int, body.survey_panel_count);
-    }
-    // Survey duplicates of pre_*
-    if (body.survey_residence_type !== undefined) {
-      sets.push("survey_residence_type = @survey_residence_type");
-      request.input("survey_residence_type", sql.NVarChar(30), body.survey_residence_type);
     }
     if (body.survey_monthly_bill !== undefined) {
       sets.push("survey_monthly_bill = @survey_monthly_bill");
       request.input("survey_monthly_bill", sql.Int, body.survey_monthly_bill);
     }
-    if (body.survey_peak_usage !== undefined) {
-      sets.push("survey_peak_usage = @survey_peak_usage");
-      request.input("survey_peak_usage", sql.NVarChar(20), body.survey_peak_usage);
-    }
     if (body.survey_appliances !== undefined) {
       sets.push("survey_appliances = @survey_appliances");
       request.input("survey_appliances", sql.NVarChar(200), Array.isArray(body.survey_appliances) ? body.survey_appliances.join(",") : body.survey_appliances);
-    }
-    if (body.survey_ac_units !== undefined) {
-      sets.push("survey_ac_units = @survey_ac_units");
-      request.input("survey_ac_units", sql.NVarChar(200), body.survey_ac_units);
     }
     // Must-have on-site
     if (body.survey_roof_material !== undefined) {
@@ -347,18 +334,6 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
       sets.push("survey_roof_area_m2 = @survey_roof_area_m2");
       request.input("survey_roof_area_m2", sql.Int, body.survey_roof_area_m2);
     }
-    if (body.survey_grid_type !== undefined) {
-      sets.push("survey_grid_type = @survey_grid_type");
-      request.input("survey_grid_type", sql.NVarChar(20), body.survey_grid_type);
-    }
-    if (body.survey_utility !== undefined) {
-      sets.push("survey_utility = @survey_utility");
-      request.input("survey_utility", sql.NVarChar(10), body.survey_utility);
-    }
-    if (body.survey_ca_number !== undefined) {
-      sets.push("survey_ca_number = @survey_ca_number");
-      request.input("survey_ca_number", sql.NVarChar(20), body.survey_ca_number);
-    }
     if (body.survey_meter_size !== undefined) {
       sets.push("survey_meter_size = @survey_meter_size");
       request.input("survey_meter_size", sql.NVarChar(20), body.survey_meter_size);
@@ -372,13 +347,88 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
       sets.push("survey_shading = @survey_shading");
       request.input("survey_shading", sql.NVarChar(20), body.survey_shading);
     }
-    if (body.survey_roof_age !== undefined) {
-      sets.push("survey_roof_age = @survey_roof_age");
-      request.input("survey_roof_age", sql.NVarChar(20), body.survey_roof_age);
-    }
     if (body.survey_roof_tilt !== undefined) {
       sets.push("survey_roof_tilt = @survey_roof_tilt");
       request.input("survey_roof_tilt", sql.Int, body.survey_roof_tilt);
+    }
+    // PDF — section 2 (Electrical)
+    if (body.survey_voltage_ln !== undefined) {
+      sets.push("survey_voltage_ln = @survey_voltage_ln");
+      request.input("survey_voltage_ln", sql.Decimal(6, 2), body.survey_voltage_ln);
+    }
+    if (body.survey_voltage_ll !== undefined) {
+      sets.push("survey_voltage_ll = @survey_voltage_ll");
+      request.input("survey_voltage_ll", sql.Decimal(6, 2), body.survey_voltage_ll);
+    }
+    if (body.survey_mdb_brand !== undefined) {
+      sets.push("survey_mdb_brand = @survey_mdb_brand");
+      request.input("survey_mdb_brand", sql.NVarChar(100), body.survey_mdb_brand);
+    }
+    if (body.survey_mdb_model !== undefined) {
+      sets.push("survey_mdb_model = @survey_mdb_model");
+      request.input("survey_mdb_model", sql.NVarChar(100), body.survey_mdb_model);
+    }
+    if (body.survey_mdb_slots !== undefined) {
+      sets.push("survey_mdb_slots = @survey_mdb_slots");
+      request.input("survey_mdb_slots", sql.NVarChar(100), body.survey_mdb_slots);
+    }
+    if (body.survey_breaker_type !== undefined) {
+      sets.push("survey_breaker_type = @survey_breaker_type");
+      request.input("survey_breaker_type", sql.NVarChar(50), body.survey_breaker_type);
+    }
+    if (body.survey_panel_to_inverter_m !== undefined) {
+      sets.push("survey_panel_to_inverter_m = @survey_panel_to_inverter_m");
+      request.input("survey_panel_to_inverter_m", sql.Decimal(6, 2), body.survey_panel_to_inverter_m);
+    }
+    // PDF — section 3 (Roof structure)
+    if (body.survey_roof_structure !== undefined) {
+      sets.push("survey_roof_structure = @survey_roof_structure");
+      request.input("survey_roof_structure", sql.NVarChar(50), body.survey_roof_structure);
+    }
+    if (body.survey_roof_width_m !== undefined) {
+      sets.push("survey_roof_width_m = @survey_roof_width_m");
+      request.input("survey_roof_width_m", sql.Decimal(6, 2), body.survey_roof_width_m);
+    }
+    if (body.survey_roof_length_m !== undefined) {
+      sets.push("survey_roof_length_m = @survey_roof_length_m");
+      request.input("survey_roof_length_m", sql.Decimal(6, 2), body.survey_roof_length_m);
+    }
+    // PDF — section 4 (Installation planning)
+    if (body.survey_inverter_location !== undefined) {
+      sets.push("survey_inverter_location = @survey_inverter_location");
+      request.input("survey_inverter_location", sql.NVarChar(30), body.survey_inverter_location);
+    }
+    if (body.survey_wifi_signal !== undefined) {
+      sets.push("survey_wifi_signal = @survey_wifi_signal");
+      request.input("survey_wifi_signal", sql.NVarChar(30), body.survey_wifi_signal);
+    }
+    if (body.survey_access_method !== undefined) {
+      sets.push("survey_access_method = @survey_access_method");
+      request.input("survey_access_method", sql.NVarChar(30), body.survey_access_method);
+    }
+    if (body.survey_photo_building_url !== undefined) {
+      sets.push("survey_photo_building_url = @survey_photo_building_url");
+      request.input("survey_photo_building_url", sql.NVarChar(500), body.survey_photo_building_url);
+    }
+    if (body.survey_photo_roof_structure_url !== undefined) {
+      sets.push("survey_photo_roof_structure_url = @survey_photo_roof_structure_url");
+      request.input("survey_photo_roof_structure_url", sql.NVarChar(500), body.survey_photo_roof_structure_url);
+    }
+    if (body.survey_photo_mdb_url !== undefined) {
+      sets.push("survey_photo_mdb_url = @survey_photo_mdb_url");
+      request.input("survey_photo_mdb_url", sql.NVarChar(500), body.survey_photo_mdb_url);
+    }
+    if (body.survey_photo_inverter_point_url !== undefined) {
+      sets.push("survey_photo_inverter_point_url = @survey_photo_inverter_point_url");
+      request.input("survey_photo_inverter_point_url", sql.NVarChar(500), body.survey_photo_inverter_point_url);
+    }
+    if (body.survey_recommended_kw !== undefined) {
+      sets.push("survey_recommended_kw = @survey_recommended_kw");
+      request.input("survey_recommended_kw", sql.Decimal(5, 1), body.survey_recommended_kw);
+    }
+    if (body.survey_customer_signature_url !== undefined) {
+      sets.push("survey_customer_signature_url = @survey_customer_signature_url");
+      request.input("survey_customer_signature_url", sql.NVarChar(500), body.survey_customer_signature_url);
     }
     if (body.pre_monthly_bill !== undefined) {
       sets.push("pre_monthly_bill = @pre_monthly_bill");

@@ -208,7 +208,9 @@ export default function PreSurveyStep({ lead, state, refresh, packages, expanded
   // Payment verification state — PaymentSection owns upload/verify and calls onVerified(url).
   // url may be "" when KBank authorized the payment but the slip file is unavailable.
   const [slipVerifiedUrl, setSlipVerifiedUrl] = useState<string | null>(lead.pre_slip_url ?? null);
-  const [paymentVerified, setPaymentVerified] = useState<boolean>(!!lead.pre_slip_url);
+  // paymentVerified = actual confirmation (not just slip upload). Derive from
+  // lead.payment_confirmed in DB so a stray slip in staging can't unlock Next.
+  const [paymentVerified, setPaymentVerified] = useState<boolean>(!!lead.payment_confirmed);
   const [surveyDate, setSurveyDate] = useState<string>(lead.survey_date ? lead.survey_date.slice(0, 10) : "");
   const [surveyTimeSlot, setSurveyTimeSlot] = useState<string>(lead.survey_time_slot ?? "");
 
@@ -290,6 +292,14 @@ export default function PreSurveyStep({ lead, state, refresh, packages, expanded
 
   const confirmDraftPreSurvey = async () => {
     if (!surveyDate) return;
+    // Guard: never advance to "survey" without a verified payment.
+    // Without this, a stray call (admin action, old flow, direct client
+    // PATCH) can move status forward with payment_confirmed=false and no
+    // slip — which is how lead #30 got to survey without paying.
+    if (!paymentVerified) {
+      setNextError("กรุณายืนยันชำระเงินก่อนเปิดขั้นสำรวจ");
+      return;
+    }
     setConfirmingSaved(true);
     try {
       await apiFetch(`/api/leads/${lead.id}`, {
@@ -375,11 +385,26 @@ export default function PreSurveyStep({ lead, state, refresh, packages, expanded
             ) : null;
           })()}
 
-          {/* บ้าน */}
-          {residenceLabel && (
+          {/* ข้อมูลลูกค้า · ที่อยู่ติดตั้ง */}
+          {(lead.customer_type || lead.installation_address || lead.project_name) && (
+            <div className="border-l-3 border-indigo-400 pl-3">
+              <div className="text-xs font-bold text-indigo-600 uppercase mb-1">ข้อมูลลูกค้า</div>
+              <div className="space-y-0.5">
+                {lead.customer_type && <div className="flex justify-between"><span className="text-gray-400">ประเภทลูกค้า</span><span className="font-semibold text-gray-800">{lead.customer_type}</span></div>}
+                {lead.project_name && <div className="flex justify-between"><span className="text-gray-400">โครงการ</span><span className="font-semibold text-gray-800 text-right">{lead.project_name}</span></div>}
+                {lead.installation_address && <div className="flex justify-between gap-2"><span className="text-gray-400 shrink-0">บ้านเลขที่</span><span className="font-semibold text-gray-800 text-right">{lead.installation_address}</span></div>}
+              </div>
+            </div>
+          )}
+
+          {/* บ้าน + หลังคา */}
+          {(residenceLabel || roofLabel) && (
             <div className="border-l-3 border-amber-400 pl-3">
               <div className="text-xs font-bold text-amber-600 uppercase mb-1">บ้าน</div>
-              <div className="flex justify-between"><span className="text-gray-400">ประเภทบ้าน</span><span className="font-semibold text-gray-800">{residenceLabel}</span></div>
+              <div className="space-y-0.5">
+                {residenceLabel && <div className="flex justify-between"><span className="text-gray-400">ประเภทบ้าน</span><span className="font-semibold text-gray-800">{residenceLabel}</span></div>}
+                {roofLabel && <div className="flex justify-between"><span className="text-gray-400">รูปทรงหลังคา</span><span className="font-semibold text-gray-800">{roofLabel}</span></div>}
+              </div>
             </div>
           )}
 
@@ -421,40 +446,76 @@ export default function PreSurveyStep({ lead, state, refresh, packages, expanded
             </div>
           )}
 
-          {/* การชำระเงิน · เอกสาร */}
-          {(paymentLabel || lead.pre_bill_photo_url || lead.pre_slip_url) && (
-            <div className="border-l-3 border-gray-300 pl-3">
-              <div className="text-xs font-bold text-gray-400 uppercase mb-1">ค่าสำรวจ · เอกสาร</div>
-              {paymentLabel && (
-                <div className="flex justify-between">
-                  <span className="text-gray-400">วิธีชำระ</span>
-                  <span className="font-semibold text-emerald-600">{paymentLabel}</span>
-                </div>
-              )}
+          {/* การชำระเงิน · เอกสาร — always rendered in the done view so
+              survey team can verify payment happened. Shows "—" for any
+              missing field rather than hiding the whole section. */}
+          <div className="border-l-3 border-emerald-400 pl-3">
+            <div className="text-xs font-bold text-emerald-600 uppercase mb-1">ค่าสำรวจ · เอกสาร</div>
+            <div className="space-y-0.5">
+              <div className="flex justify-between">
+                <span className="text-gray-400">จำนวนเงิน</span>
+                <span className="font-semibold text-gray-800 font-mono tabular-nums">
+                  {lead.pre_total_price != null ? `${formatPrice(lead.pre_total_price)} บาท` : "—"}
+                </span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-gray-400">วิธีชำระ</span>
+                <span className="font-semibold text-emerald-600">{paymentLabel || "—"}</span>
+              </div>
               {lead.pre_booked_at && (
                 <div className="flex justify-between">
                   <span className="text-gray-400">วันที่ชำระ</span>
                   <span className="font-semibold text-gray-800">{new Date(String(lead.pre_booked_at).slice(0, 10) + "T12:00:00").toLocaleDateString("th-TH", { day: "numeric", month: "short", year: "numeric" })}</span>
                 </div>
               )}
-              {lead.pre_total_price != null && (
-                <div className="flex justify-between">
-                  <span className="text-gray-400">จำนวนเงิน</span>
-                  <span className="font-semibold text-gray-800 font-mono">{formatPrice(lead.pre_total_price)} บาท</span>
-                </div>
-              )}
-              {(lead.pre_bill_photo_url || lead.pre_slip_url) && (
+              <div className="flex justify-between">
+                <span className="text-gray-400">สถานะ</span>
+                <span className={`font-semibold ${lead.payment_confirmed ? "text-emerald-600" : "text-amber-600"}`}>
+                  {lead.payment_confirmed ? "ยืนยันแล้ว" : "ยังไม่ยืนยัน"}
+                </span>
+              </div>
+            </div>
+            {(lead.pre_bill_photo_url || lead.pre_slip_url) && (
+              <div className="flex gap-3 mt-2">
+                {lead.pre_bill_photo_url && (
+                  <div>
+                    <div className="text-xs text-gray-400 mb-0.5">บิลค่าไฟ</div>
+                    <FallbackImage src={lead.pre_bill_photo_url} alt="Bill" lightboxLabel="บิลค่าไฟ" className="max-h-40 max-w-full object-contain bg-gray-50 rounded-lg border border-gray-200 hover:opacity-80 transition" fallbackLabel="บิลหาย" />
+                  </div>
+                )}
+                {lead.pre_slip_url && (
+                  <div>
+                    <div className="text-xs text-gray-400 mb-0.5">สลิปชำระเงิน</div>
+                    <PaymentSlipsThumbs slipUrl={lead.pre_slip_url} label="สลิปชำระเงิน" />
+                  </div>
+                )}
+              </div>
+            )}
+            {!lead.pre_slip_url && (
+              <div className="mt-2 text-xs text-amber-600">⚠ ไม่มีไฟล์สลิปในระบบ</div>
+            )}
+          </div>
+
+          {/* ข้อมูลจดทะเบียน · เอกสาร */}
+          {(lead.id_card_number || lead.id_card_address || lead.id_card_photo_url || lead.house_reg_photo_url) && (
+            <div className="border-l-3 border-teal-400 pl-3">
+              <div className="text-xs font-bold text-teal-600 uppercase mb-1">ข้อมูลจดทะเบียน</div>
+              <div className="space-y-0.5">
+                {lead.id_card_number && <div className="flex justify-between gap-2"><span className="text-gray-400 shrink-0">เลขบัตรประชาชน</span><span className="font-semibold text-gray-800 font-mono tabular-nums">{lead.id_card_number}</span></div>}
+                {lead.id_card_address && <div className="flex justify-between gap-2"><span className="text-gray-400 shrink-0">ที่อยู่ตามบัตร</span><span className="font-semibold text-gray-800 text-right break-words max-w-[65%]">{lead.id_card_address}</span></div>}
+              </div>
+              {(lead.id_card_photo_url || lead.house_reg_photo_url) && (
                 <div className="flex gap-3 mt-1.5">
-                  {lead.pre_bill_photo_url && (
+                  {lead.id_card_photo_url && (
                     <div>
-                      <div className="text-xs text-gray-400 mb-0.5">บิลค่าไฟ</div>
-                      <FallbackImage src={lead.pre_bill_photo_url} alt="Bill" lightboxLabel="บิลค่าไฟ" className="max-h-40 max-w-full object-contain bg-gray-50 rounded-lg border border-gray-200 hover:opacity-80 transition" fallbackLabel="บิลหาย" />
+                      <div className="text-xs text-gray-400 mb-0.5">บัตรประชาชน</div>
+                      <FallbackImage src={lead.id_card_photo_url} alt="ID card" lightboxLabel="บัตรประชาชน" className="max-h-32 max-w-full object-contain bg-gray-50 rounded-lg border border-gray-200 hover:opacity-80 transition" fallbackLabel="ไม่มีไฟล์" />
                     </div>
                   )}
-                  {lead.pre_slip_url && (
+                  {lead.house_reg_photo_url && (
                     <div>
-                      <div className="text-xs text-gray-400 mb-0.5">หลักฐานการชำระเงิน</div>
-                      <PaymentSlipsThumbs slipUrl={lead.pre_slip_url} label="หลักฐานการชำระเงิน" />
+                      <div className="text-xs text-gray-400 mb-0.5">ทะเบียนบ้าน</div>
+                      <FallbackImage src={lead.house_reg_photo_url} alt="House reg" lightboxLabel="ทะเบียนบ้าน" className="max-h-32 max-w-full object-contain bg-gray-50 rounded-lg border border-gray-200 hover:opacity-80 transition" fallbackLabel="ไม่มีไฟล์" />
                     </div>
                   )}
                 </div>
@@ -462,57 +523,25 @@ export default function PreSurveyStep({ lead, state, refresh, packages, expanded
             </div>
           )}
 
-          {/* Action */}
-          <div className="pt-3 border-t border-gray-100">
-            {hasReceipt ? (
+          {/* บันทึก · ข้อความจากฝ่ายขาย */}
+          {(lead.requirement || lead.note) && (
+            <div className="border-l-3 border-gray-400 pl-3">
+              <div className="text-xs font-bold text-gray-500 uppercase mb-1">บันทึก</div>
+              {lead.requirement && <div className="text-sm text-gray-800 whitespace-pre-wrap break-words mb-1">{lead.requirement}</div>}
+              {lead.note && <div className="text-xs text-gray-500 whitespace-pre-wrap break-words">{lead.note}</div>}
+            </div>
+          )}
+
+          {/* Action — only the receipt buttons once pre-survey is done.
+              Editable registration form no longer belongs here: the status
+              has already moved forward, so exposing inputs + "ยืนยันและเปิด
+              ขั้นสำรวจ" again is misleading. ID/project info is read-only
+              in the "ข้อมูลจดทะเบียน" section above. */}
+          {hasReceipt && (
+            <div className="pt-3 border-t border-gray-100">
               <ReceiptButtons leadId={lead.id} stage="deposit" fileLabel={lead.pre_doc_no || `lead_${lead.id}_deposit`} />
-            ) : (
-              <>
-                <div className="rounded-lg border border-active/15 bg-white/60 p-3 space-y-2.5 mb-2">
-                  <div className="text-xs font-semibold text-gray-400 uppercase tracking-wider">ข้อมูลจดทะเบียน</div>
-                  <div>
-                    <label className="text-xs text-gray-500 block mb-1">ชื่อ-นามสกุล</label>
-                    <input type="text" value={regName} onChange={e => setRegName(e.target.value)} className="w-full h-10 px-3 rounded-lg border border-gray-200 text-sm focus:outline-none focus:border-primary" />
-                  </div>
-                  <div>
-                    <label className="text-xs text-gray-500 block mb-1">เลขบัตรประชาชน</label>
-                    <input type="text" inputMode="numeric" maxLength={13} value={regIdCard} onChange={e => setRegIdCard(e.target.value.replace(/\D/g, "").slice(0, 13))} placeholder="13 หลัก" className="w-full h-10 px-3 rounded-lg border border-gray-200 text-sm font-mono tabular-nums focus:outline-none focus:border-primary" />
-                  </div>
-                  <div>
-                    <label className="text-xs text-gray-500 block mb-1">ที่อยู่ตามบัตรประชาชน</label>
-                    <textarea value={regAddress} onChange={e => setRegAddress(e.target.value)} rows={2} className="w-full px-3 py-2 rounded-lg border border-gray-200 text-sm focus:outline-none focus:border-primary resize-none" />
-                  </div>
-                  <div>
-                    <label className="text-xs text-gray-500 block mb-1">โครงการ</label>
-                    <div className="w-full h-10 px-3 rounded-lg border border-gray-200 bg-gray-50 text-sm flex items-center text-gray-700">{regProject || "-"}</div>
-                  </div>
-                  <div>
-                    <label className="text-xs text-gray-500 block mb-1">ที่อยู่ติดตั้ง</label>
-                    <textarea value={regHouseNumber} onChange={e => setRegHouseNumber(e.target.value)} rows={2} className="w-full px-3 py-2 rounded-lg border border-gray-200 text-sm focus:outline-none focus:border-primary resize-none" />
-                  </div>
-                </div>
-                <button
-                  onClick={async () => {
-                    await apiFetch(`/api/leads/${lead.id}`, {
-                      method: "PATCH",
-                      headers: { "Content-Type": "application/json" },
-                      body: JSON.stringify({
-                        full_name: regName || undefined,
-                        id_card_number: regIdCard || undefined,
-                        id_card_address: regAddress || undefined,
-                        installation_address: regHouseNumber || undefined,
-                      }),
-                    });
-                    confirmDraftPreSurvey();
-                  }}
-                  disabled={confirmingSaved || !surveyDate}
-                  className="w-full h-11 px-4 rounded-lg text-sm font-semibold flex items-center justify-center gap-2 bg-primary text-white hover:bg-primary-dark disabled:opacity-50 transition-colors"
-                >
-                  {confirmingSaved ? "กำลังยืนยัน…" : !surveyDate ? "เลือกวันนัดก่อน" : "ยืนยันและเปิดขั้นสำรวจ"}
-                </button>
-              </>
-            )}
-          </div>
+            </div>
+          )}
         </>);
 
     return (<>
@@ -536,8 +565,15 @@ export default function PreSurveyStep({ lead, state, refresh, packages, expanded
       3: [],
     };
     const v = validatePreSurvey({ ...lead, ...formDraft, survey_date: surveyDate || lead.survey_date, survey_time_slot: surveyTimeSlot || lead.survey_time_slot });
-    const missingHere = v.missing.filter(m => (gates[subStep] || []).includes(m.field));
-    if (subStep === 3 && !paymentVerified) missingHere.push({ field: "slip", label: "กรุณาอัปโหลดสลิปชำระเงิน" });
+    // Validate every step between current and target — not just the current
+    // one — so jumping ahead by tab click can't skip intermediate gates.
+    const requiredFields = new Set<string>();
+    for (let s = subStep; s < i; s++) {
+      for (const f of gates[s] || []) requiredFields.add(f);
+    }
+    const missingHere = v.missing.filter(m => requiredFields.has(m.field));
+    // Payment gate fires whenever target step is past the payment step (3).
+    if (i > 3 && subStep <= 3 && !paymentVerified) missingHere.push({ field: "slip", label: (slipVerifiedUrl ? "กรุณายืนยันชำระเงิน" : "กรุณาอัปโหลดสลิปชำระเงิน") });
     if (missingHere.length > 0) {
       setNextError(missingHere.map(m => m.label).join(", "));
       return;
@@ -612,9 +648,10 @@ export default function PreSurveyStep({ lead, state, refresh, packages, expanded
             docNo={lead.pre_doc_no ? `${lead.pre_doc_no}-0` : null}
             confirmed={!!lead.payment_confirmed}
             onConfirmed={async () => {
-              // Advance subStep sync first so PaymentSection unmounts before refresh
-              // lands — keeps the slip image from re-fetching mid-flow.
-              setSubStep(4);
+              // User clicked the real "ยืนยันรับชำระเงิน" button — this is
+              // the only moment we flip paymentVerified so Next can unlock.
+              // Stay on this sub-step; user clicks "ถัดไป" when they're ready.
+              setPaymentVerified(true);
               if (!lead.pre_doc_no && selectedPkg) {
                 try {
                   await apiFetch(`/api/leads/${lead.id}/book`, {
@@ -623,9 +660,29 @@ export default function PreSurveyStep({ lead, state, refresh, packages, expanded
                   });
                 } catch (e) { console.error("auto pre_doc_no failed:", e); }
               }
+              // Always mirror the deposit amount + timestamp onto the lead row
+              // so the done-view payment summary can read them without
+              // re-querying the payments table. Without this, leads that
+              // skipped the /book path (e.g. seeker syncs that didn't pick a
+              // package) end up with pre_total_price/booked_at = null even
+              // after payment is confirmed.
+              if (lead.pre_total_price == null) {
+                try {
+                  await apiFetch(`/api/leads/${lead.id}`, {
+                    method: "PATCH", headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({
+                      pre_total_price: DEPOSIT_AMOUNT,
+                      pre_booked_at: new Date().toISOString(),
+                    }),
+                  });
+                } catch (e) { console.error("mirror payment meta failed:", e); }
+              }
               await refresh();
             }}
-            onVerified={(url) => { setSlipVerifiedUrl(url || null); setPaymentVerified(true); }}
+            // onVerified fires on slip upload (staging) — not a real confirmation.
+            // Track the URL so the lead eventually stores pre_slip_url, but do
+            // NOT set paymentVerified here.
+            onVerified={(url) => { setSlipVerifiedUrl(url || null); }}
             onUndone={refresh}
           />
         </div>
@@ -682,7 +739,7 @@ export default function PreSurveyStep({ lead, state, refresh, packages, expanded
               if (!regIdCard || regIdCard.length !== 13) missing.push("เลขบัตรประชาชน (13 หลัก)");
               if (!regAddress) missing.push("ที่อยู่ตามบัตร");
               if (!regHouseNumber) missing.push("ที่อยู่ติดตั้ง");
-              if (!paymentVerified) missing.push("กรุณาอัปโหลดสลิปชำระเงิน");
+              if (!paymentVerified) missing.push((slipVerifiedUrl ? "กรุณายืนยันชำระเงิน" : "กรุณาอัปโหลดสลิปชำระเงิน"));
               if (!surveyDate) missing.push("วันนัดสำรวจ");
               if (!surveyTimeSlot) missing.push("ช่วงเวลา");
               if (missing.length > 0) {
@@ -734,7 +791,7 @@ export default function PreSurveyStep({ lead, state, refresh, packages, expanded
           const missingHere = v.missing.filter(m => stepGate[subStep]?.includes(m.field));
           // Step 3 (ชำระเงิน): ต้องอัปโหลดสลิปก่อน
           if (subStep === 3 && !paymentVerified) {
-            missingHere.push({ field: "slip", label: "กรุณาอัปโหลดสลิปชำระเงิน" });
+            missingHere.push({ field: "slip", label: (slipVerifiedUrl ? "กรุณายืนยันชำระเงิน" : "กรุณาอัปโหลดสลิปชำระเงิน") });
           }
           if (missingHere.length > 0) {
             setNextError(missingHere.map(m => m.label).join(", "));

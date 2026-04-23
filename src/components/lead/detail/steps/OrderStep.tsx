@@ -85,18 +85,15 @@ export default function OrderStep({ lead, state, refresh, expanded, onToggle }: 
 
   // PaymentSection writes the payments row + flips the paid flag itself. Parent just
   // reacts after the fact — tracks local UI state and refreshes the lead.
+  // Payment confirmations stay on the current sub-step — user advances
+  // manually via "ถัดไป" so they see the state flip before moving on.
   const onBeforeConfirmed = async () => {
-    // Advance subStep sync so PaymentSection unmounts immediately —
-    // re-mounting with new slipUrl would force the browser to re-fetch
-    // the slip image, causing a visible flicker.
-    setSubStep(4);
     if (pctBefore >= 100) {
       try { await apiFetch(`/api/leads/${lead.id}`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ status: "install" }) }); } catch {}
     }
     await refresh();
   };
   const onAfterConfirmed = async () => {
-    setSubStep(4);
     try { await apiFetch(`/api/leads/${lead.id}`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ status: "install" }) }); } catch {}
     await refresh();
   };

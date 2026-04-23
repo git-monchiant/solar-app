@@ -55,32 +55,46 @@ export interface Lead {
   pre_residence_type: string | null;
   survey_note: string | null;
   survey_photos: string | null;
-  survey_inverter: string | null;
   survey_electrical_phase: string | null;
   survey_wants_battery: string | null;
-  survey_battery_kwh: number | null;
-  survey_panel_id: number | null;
   survey_panel_count: number | null;
-  // Survey duplicates of pre_*
-  survey_residence_type: string | null;
   survey_monthly_bill: number | null;
-  survey_peak_usage: string | null;
   survey_appliances: string | null;
-  survey_ac_units: string | null;
   // Must-have on-site
   survey_roof_material: string | null;
   survey_roof_orientation: string | null;
   survey_floors: number | null;
   survey_roof_area_m2: number | null;
-  survey_grid_type: string | null;
-  survey_utility: string | null;
-  survey_ca_number: string | null;
   survey_meter_size: string | null;
   survey_db_distance_m: number | null;
   // Nice-to-have on-site
   survey_shading: string | null;
-  survey_roof_age: string | null;
   survey_roof_tilt: number | null;
+  // PDF — section 2 (Electrical)
+  survey_voltage_ln: number | null;
+  survey_voltage_ll: number | null;
+  survey_mdb_brand: string | null;
+  survey_mdb_model: string | null;
+  survey_mdb_slots: string | null;
+  survey_breaker_type: string | null;
+  survey_panel_to_inverter_m: number | null;
+  // PDF — section 3 (Roof structure)
+  survey_roof_structure: string | null;
+  survey_roof_width_m: number | null;
+  survey_roof_length_m: number | null;
+  // PDF — section 4 (Installation planning)
+  survey_inverter_location: string | null;
+  survey_wifi_signal: string | null;
+  survey_access_method: string | null;
+  // PDF — §5 Photo Checklist (named slots)
+  survey_photo_building_url: string | null;
+  survey_photo_roof_structure_url: string | null;
+  survey_photo_mdb_url: string | null;
+  survey_photo_inverter_point_url: string | null;
+  // PDF §7 — recommended install size after walking the site
+  survey_recommended_kw: number | null;
+  // PDF §7 — customer signature
+  survey_customer_signature_url: string | null;
   // Quotation
   quotation_note: string | null;
   quotation_files: string | null;

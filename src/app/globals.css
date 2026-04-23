@@ -148,3 +148,62 @@ input:not([type="checkbox"]):not([type="radio"]):not([type="file"]):not([type="d
 /* Hide scrollbar but keep scrollable */
 .scrollbar-hide::-webkit-scrollbar { display: none; }
 .scrollbar-hide { -ms-overflow-style: none; scrollbar-width: none; }
+
+/* Form controls don't inherit font-family from the body by default —
+   browser user-agent stylesheets give them a system font (Helvetica /
+   Times on Safari, Arial on Chrome). Force them to match the body so
+   text size/look is consistent across labels and inputs everywhere. */
+input,
+textarea,
+select,
+button {
+  font-family: inherit;
+}
+
+/* Softer placeholder across all inputs/textarea — lighter gray, slightly
+   thinner so labels still dominate. */
+input::placeholder,
+textarea::placeholder {
+  color: #cbd5e1;   /* tailwind slate-300 */
+  font-weight: 400;
+  opacity: 1;
+}
+
+/* Input with inline prefix/suffix labels — like "W [12.5] m" or "L-N [220] V".
+   Usage:
+     <div className="input-affix">
+       <span className="input-affix-left">W</span>
+       <input className="input-affix-input pl-10 pr-8" />
+       <span className="input-affix-right">m</span>
+     </div>
+   Extend pl/pr in input to match the affix widths. */
+.input-affix {
+  position: relative;
+}
+.input-affix-left {
+  position: absolute;
+  left: 0.75rem;
+  top: 50%;
+  transform: translateY(-50%);
+  font-size: 0.875rem;     /* sm */
+  font-weight: 800;
+  color: rgb(75 85 99);    /* gray-600 */
+  pointer-events: none;
+  letter-spacing: 0.025em;
+}
+.input-affix-right {
+  position: absolute;
+  right: 0.75rem;
+  top: 50%;
+  transform: translateY(-50%);
+  font-size: 0.75rem;
+  font-weight: 500;
+  color: rgb(156 163 175); /* gray-400 */
+  pointer-events: none;
+}
+.input-affix-input {
+  /* font-family comes from the global input/textarea/select/button rule
+     above — numbers aligned in tabular-nums so digits line up. */
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+}

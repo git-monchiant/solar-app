@@ -182,12 +182,9 @@ export default function InstallStep({ lead, state, refresh, expanded, onToggle }
     refresh();
   };
 
-  // PaymentSection writes the payments row + flips order_after_paid itself. This callback
-  // only mirrors the state locally and refreshes.
+  // PaymentSection writes the payments row + flips order_after_paid itself.
+  // Stay on the current sub-step — user clicks "ถัดไป" to proceed.
   const onAfterConfirmed = async () => {
-    // Advance subStep sync → PaymentSection unmount → no img re-fetch flicker.
-    // subStep 4 = ส่งมอบ
-    setSubStep(4);
     await refresh();
   };
 

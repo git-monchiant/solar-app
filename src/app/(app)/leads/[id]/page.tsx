@@ -20,11 +20,22 @@ import WarrantyStep from "@/components/lead/detail/steps/WarrantyStep";
 import GridTieStep from "@/components/lead/detail/steps/GridTieStep";
 import type { Lead, Package, CardStateKind } from "@/components/lead/detail/steps/types";
 import { useDialog } from "@/components/ui/Dialog";
+import { useIsMobile } from "@/lib/hooks/useIsMobile";
 
 const formatDate = (d: string) =>
   new Date(String(d).slice(0, 10) + "T12:00:00").toLocaleDateString("th-TH", { day: "numeric", month: "short", year: "numeric" });
 
 const STEP_ORDER = ["pre_survey", "survey", "quote", "order", "install", "warranty", "gridtie"];
+
+const STEP_TEAMS: Record<number, string> = {
+  0: "SMARTIFY",
+  1: "SOLAR",
+  2: "SOLAR",
+  3: "SMARTIFY",
+  4: "SOLAR",
+  5: "SOLAR",
+  6: "SOLAR",
+};
 
 function stepIndex(status: string) {
   if (status === "closed") return STEP_ORDER.length;
@@ -37,6 +48,133 @@ const InfoRow = ({ label, value, mono = false, accent = false }: { label: string
     <span className={`text-sm ${mono ? "font-mono tabular-nums" : ""} ${accent ? "font-bold text-gray-900" : "font-medium text-gray-800"}`}>{value}</span>
   </div>
 );
+
+// Top-level stable component: children keep the same React tree position across
+// fullscreen toggles, so in-progress form state (textareas, inputs) is preserved.
+// Fullscreen is CSS-only (position:fixed) — no portal, no duplication.
+function StepCard({
+  stepIdx,
+  state,
+  title,
+  doneTitle,
+  icon,
+  lead,
+  isMobile,
+  fullscreen,
+  setFullscreen,
+  onHeaderClick,
+  children,
+}: {
+  stepIdx: number;
+  state: CardStateKind;
+  title: string;
+  doneTitle?: string;
+  icon: string;
+  lead: Lead;
+  isMobile: boolean;
+  fullscreen: boolean;
+  setFullscreen: (v: boolean) => void;
+  onHeaderClick?: () => void;
+  children: React.ReactNode;
+}) {
+  const stepNum = String(stepIdx + 1).padStart(2, "0");
+  const team = STEP_TEAMS[stepIdx];
+
+  const container = state === "active"
+    ? "bg-active-light border border-active shadow-sm shadow-active/10 ring-1 ring-active/20"
+    : state === "done"
+    ? "bg-white border border-gray-300"
+    : "bg-gray-50 border border-dashed border-gray-200 pointer-events-none";
+
+  const iconBox = state === "active"
+    ? "bg-active text-white"
+    : state === "done"
+    ? "bg-emerald-500 text-white"
+    : "bg-white text-gray-300 ring-1 ring-inset ring-gray-200";
+
+  const inlineClick = fullscreen
+    ? undefined
+    : state === "active" && isMobile
+      ? () => setFullscreen(true)
+      : onHeaderClick;
+  const headerClickable = !!inlineClick;
+
+  const header = (
+    <div
+      className={`flex items-center gap-3 px-5 py-4 ${headerClickable ? "cursor-pointer" : ""}`}
+      onClick={inlineClick}
+    >
+      <div className={`w-10 h-10 rounded-xl flex items-center justify-center shrink-0 ${iconBox}`}>
+        <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.8}>
+          <path strokeLinecap="round" strokeLinejoin="round" d={icon} />
+        </svg>
+      </div>
+      <div className="flex-1 min-w-0">
+        <div className={`text-xs font-semibold tracking-wider uppercase leading-none ${state === "locked" ? "text-gray-300" : "text-gray-400"}`}>
+          Step {stepNum} · {team}
+        </div>
+        <div className={`text-base font-bold leading-tight tracking-tight mt-1 ${state === "locked" ? "text-gray-400" : "text-gray-900"}`}>
+          {state === "done" && doneTitle ? doneTitle : title}
+        </div>
+      </div>
+      {state === "active" && (
+        <div className="flex items-center gap-2 shrink-0">
+          <button
+            type="button"
+            onClick={(e) => { e.stopPropagation(); setFullscreen(!fullscreen); }}
+            aria-label={fullscreen ? "ปิดเต็มจอ" : "เปิดเต็มจอ"}
+            className="md:hidden w-7 h-7 rounded-md text-gray-500 hover:text-active hover:bg-active/5 flex items-center justify-center transition-colors"
+            title={fullscreen ? "ปิดเต็มจอ" : "เปิดเต็มจอ"}
+            style={{ minHeight: 0 }}
+          >
+            {fullscreen ? (
+              <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
+              </svg>
+            ) : (
+              <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                <path strokeLinecap="round" strokeLinejoin="round" d="M3.75 3.75v4.5m0-4.5h4.5m-4.5 0L9 9M3.75 20.25v-4.5m0 4.5h4.5m-4.5 0L9 15M20.25 3.75h-4.5m4.5 0v4.5m0-4.5L15 9m5.25 11.25h-4.5m4.5 0v-4.5m0 4.5L15 15" />
+              </svg>
+            )}
+          </button>
+          <span className="inline-flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wider text-active">
+            <span className="relative flex w-2 h-2">
+              <span className="absolute inline-flex h-full w-full rounded-full bg-active opacity-60 animate-ping" />
+              <span className="relative inline-flex rounded-full h-2 w-2 bg-active" />
+            </span>
+            Active
+          </span>
+        </div>
+      )}
+      {state === "done" && (() => {
+        const paidStep =
+          (stepIdx === 0 && (lead.payment_confirmed || lead.pre_slip_url)) ||
+          (stepIdx === 3 && lead.order_before_paid) ||
+          (stepIdx === 4 && lead.order_after_paid);
+        return (
+          <span className={`inline-flex items-center gap-1 text-xs font-semibold uppercase tracking-wider shrink-0 ${paidStep ? "text-blue-600" : "text-teal-600"}`}>
+            ✓ {paidStep ? "Paid" : "Done"}
+          </span>
+        );
+      })()}
+    </div>
+  );
+
+  const rootCls = fullscreen
+    ? "fixed inset-0 z-[9999] bg-white flex flex-col safe-top"
+    : `group relative rounded-2xl overflow-hidden transition-all ${container}`;
+  const bodyCls = fullscreen
+    ? "flex-1 overflow-y-auto p-4 safe-bottom"
+    : "px-5 pb-5 pt-3 border-t border-gray-100";
+  const headerWrapCls = fullscreen ? "shrink-0 border-b border-gray-100" : "";
+
+  return (
+    <div data-step-active={state === "active" ? "" : undefined} className={rootCls}>
+      <div className={headerWrapCls}>{header}</div>
+      {state !== "locked" && <div className={bodyCls}>{children}</div>}
+    </div>
+  );
+}
 
 export default function LeadDetailPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = use(params);
@@ -52,6 +190,15 @@ export default function LeadDetailPage({ params }: { params: Promise<{ id: strin
   const [showLineModal, setShowLineModal] = useState(false);
   const [showUnmapLine, setShowUnmapLine] = useState(false);
   const [unmapping, setUnmapping] = useState(false);
+  // Which step is expanded to full-screen on mobile (null = none).
+  const [fullscreenStep, setFullscreenStep] = useState<number | null>(null);
+  const isMobile = useIsMobile();
+  useEffect(() => {
+    if (fullscreenStep === null) return;
+    const prev = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    return () => { document.body.style.overflow = prev; };
+  }, [fullscreenStep]);
   const [showProfileModal, setShowProfileModal] = useState(false);
   const [preSurveyExpanded, setPreSurveyExpanded] = useState(false);
   const [surveyExpanded, setSurveyExpanded] = useState(false);
@@ -78,6 +225,16 @@ export default function LeadDetailPage({ params }: { params: Promise<{ id: strin
   const refresh = useCallback(() => {
     return Promise.all([fetchLead(), fetchActivities()]);
   }, [fetchLead, fetchActivities]);
+
+  // Refresh lead data whenever fullscreen card closes so the underlying
+  // inline card reflects edits made inside the portal.
+  const prevFullscreenStep = useRef<number | null>(null);
+  useEffect(() => {
+    if (prevFullscreenStep.current !== null && fullscreenStep === null) {
+      refresh();
+    }
+    prevFullscreenStep.current = fullscreenStep;
+  }, [fullscreenStep, refresh]);
 
   const scrollRef = useRef<HTMLDivElement>(null);
 
@@ -120,81 +277,14 @@ export default function LeadDetailPage({ params }: { params: Promise<{ id: strin
     return "locked";
   };
 
-  const STEP_TEAMS: Record<number, string> = {
-    0: "SMARTIFY",
-    1: "SOLAR",
-    2: "SOLAR",
-    3: "SMARTIFY",
-    4: "SOLAR",
-    5: "SOLAR",
-    6: "SOLAR",
-  };
-
-  const CardWrapper = ({ stepIdx, title, doneTitle, icon, children, onHeaderClick }: { stepIdx: number; title: string; doneTitle?: string; icon: string; children: React.ReactNode; onHeaderClick?: () => void }) => {
-    const state = cardState(stepIdx);
-    const stepNum = String(stepIdx + 1).padStart(2, "0");
-    const team = STEP_TEAMS[stepIdx];
-
-    const container =
-      state === "active"
-        ? "bg-active-light border border-active shadow-sm shadow-active/10 ring-1 ring-active/20"
-        : state === "done"
-        ? "bg-white border border-gray-300"
-        : "bg-gray-50 border border-dashed border-gray-200 pointer-events-none";
-
-    const iconBox =
-      state === "active"
-        ? "bg-active text-white"
-        : state === "done"
-        ? "bg-emerald-500 text-white"
-        : "bg-white text-gray-300 ring-1 ring-inset ring-gray-200";
-
-    return (
-      <div data-step-active={state === "active" ? "" : undefined} className={`group relative rounded-2xl overflow-hidden transition-all ${container}`}>
-        <div className={`flex items-center gap-3 px-5 py-4 ${onHeaderClick ? "cursor-pointer" : ""}`} onClick={onHeaderClick}>
-          <div className={`w-10 h-10 rounded-xl flex items-center justify-center shrink-0 ${iconBox}`}>
-            <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.8}>
-              <path strokeLinecap="round" strokeLinejoin="round" d={icon} />
-            </svg>
-          </div>
-
-          <div className="flex-1 min-w-0">
-            <div className={`text-xs font-semibold tracking-wider uppercase leading-none ${state === "locked" ? "text-gray-300" : "text-gray-400"}`}>
-              Step {stepNum} · {team}
-            </div>
-            <div className={`text-base font-bold leading-tight tracking-tight mt-1 ${state === "locked" ? "text-gray-400" : "text-gray-900"}`}>
-              {state === "done" && doneTitle ? doneTitle : title}
-            </div>
-          </div>
-
-          {state === "active" && (
-            <span className="inline-flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wider text-active shrink-0">
-              <span className="relative flex w-2 h-2">
-                <span className="absolute inline-flex h-full w-full rounded-full bg-active opacity-60 animate-ping" />
-                <span className="relative inline-flex rounded-full h-2 w-2 bg-active" />
-              </span>
-              Active
-            </span>
-          )}
-          {state === "done" && (() => {
-            const paidStep =
-              (stepIdx === 0 && (lead.payment_confirmed || lead.pre_slip_url)) ||
-              (stepIdx === 3 && lead.order_before_paid) ||
-              (stepIdx === 4 && lead.order_after_paid);
-            return (
-              <span className={`inline-flex items-center gap-1 text-xs font-semibold uppercase tracking-wider shrink-0 ${paidStep ? "text-blue-600" : "text-teal-600"}`}>
-                ✓ {paidStep ? "Paid" : "Done"}
-              </span>
-            );
-          })()}
-        </div>
-
-        {state !== "locked" && (
-          <div className="px-5 pb-5 pt-3 border-t border-gray-100">{children}</div>
-        )}
-      </div>
-    );
-  };
+  const stepProps = (stepIdx: number) => ({
+    stepIdx,
+    state: cardState(stepIdx),
+    lead: lead!,
+    isMobile,
+    fullscreen: fullscreenStep === stepIdx,
+    setFullscreen: (v: boolean) => setFullscreenStep(v ? stepIdx : null),
+  });
 
   return (
     <div className="flex flex-col h-full">
@@ -364,77 +454,77 @@ export default function LeadDetailPage({ params }: { params: Promise<{ id: strin
             })()}
 
             {/* Step 01: Pre-Survey */}
-            <CardWrapper
-              stepIdx={0}
+            <StepCard
+              {...stepProps(0)}
               title="Pre-Survey"
               icon="M9 12.75L11.25 15 15 9.75m-3-7.036A11.959 11.959 0 013.598 6 11.99 11.99 0 003 9.749c0 5.592 3.824 10.29 9 11.623 5.176-1.333 9-6.03 9-11.622 0-1.31-.21-2.571-.598-3.751h-.152c-3.196 0-6.1-1.248-8.25-3.285z"
               onHeaderClick={cardState(0) === "done" ? () => setPreSurveyExpanded(!preSurveyExpanded) : undefined}
             >
               <PreSurveyStep lead={lead} state={cardState(0)} refresh={refresh} packages={packages} expanded={preSurveyExpanded} onToggle={() => setPreSurveyExpanded(!preSurveyExpanded)} />
-            </CardWrapper>
+            </StepCard>
 
             {/* Step 02: Survey */}
-            <CardWrapper
-              stepIdx={1}
+            <StepCard
+              {...stepProps(1)}
               title="Survey"
               doneTitle="Survey Done"
               icon="M15 10.5a3 3 0 11-6 0 3 3 0 016 0zM19.5 10.5c0 7.142-7.5 11.25-7.5 11.25S4.5 17.642 4.5 10.5a7.5 7.5 0 1115 0z"
               onHeaderClick={cardState(1) === "done" ? () => setSurveyExpanded(!surveyExpanded) : undefined}
             >
               <SurveyStep lead={lead} state={cardState(1)} refresh={refresh} onAddActivity={t => setModalType(t as ActivityType)} packages={packages} expanded={surveyExpanded} onToggle={() => setSurveyExpanded(!surveyExpanded)} />
-            </CardWrapper>
+            </StepCard>
 
             {/* Step 03: Quotation */}
-            <CardWrapper
-              stepIdx={2}
+            <StepCard
+              {...stepProps(2)}
               title="Quotation"
               doneTitle="Quotation Done"
               icon="M12 6v12m-3-2.818l.879.659c1.171.879 3.07.879 4.242 0 1.172-.879 1.172-2.303 0-3.182C13.536 12.219 12.768 12 12 12c-.725 0-1.45-.22-2.003-.659-1.106-.879-1.106-2.303 0-3.182s2.9-.879 4.006 0l.415.33M21 12a9 9 0 11-18 0 9 9 0 0118 0z"
             >
               <QuoteStep lead={lead} state={cardState(2)} refresh={refresh} packages={packages} expanded={quoteExpanded} onToggle={() => setQuoteExpanded(!quoteExpanded)} />
-            </CardWrapper>
+            </StepCard>
 
             {/* Step 04: Purchased */}
-            <CardWrapper
-              stepIdx={3}
+            <StepCard
+              {...stepProps(3)}
               title="Approval & Payment"
               doneTitle="Approved & Paid"
               icon="M9 12.75L11.25 15 15 9.75M21 12a9 9 0 11-18 0 9 9 0 0118 0z"
             >
               <OrderStep lead={lead} state={cardState(3)} refresh={refresh} expanded={orderExpanded} onToggle={() => setOrderExpanded(!orderExpanded)} />
-            </CardWrapper>
+            </StepCard>
 
             {/* Step 05: Installed */}
-            <CardWrapper
-              stepIdx={4}
+            <StepCard
+              {...stepProps(4)}
               title="Install"
               doneTitle="Install Done"
               icon="M11.42 15.17l-5.658-5.66a2.122 2.122 0 010-3l1.532-1.532a2.122 2.122 0 013 0L15.953 10.637a2.122 2.122 0 010 3l-1.532 1.532a2.122 2.122 0 01-3 0z"
             >
               <InstallStep lead={lead} state={cardState(4)} refresh={refresh} expanded={installExpanded} onToggle={() => setInstallExpanded(!installExpanded)} />
-            </CardWrapper>
+            </StepCard>
 
             {/* Step 06: Warranty */}
-            <CardWrapper
-              stepIdx={5}
+            <StepCard
+              {...stepProps(5)}
               title="Warranty"
               doneTitle="Warranty Issued"
               icon="M9 12.75L11.25 15 15 9.75m-3-7.036A11.959 11.959 0 013.598 6 11.99 11.99 0 003 9.749c0 5.592 3.824 10.29 9 11.623 5.176-1.333 9-6.03 9-11.622 0-1.31-.21-2.571-.598-3.751h-.152c-3.196 0-6.1-1.248-8.25-3.285z"
               onHeaderClick={cardState(5) === "done" ? () => setWarrantyExpanded(!warrantyExpanded) : undefined}
             >
               <WarrantyStep lead={lead} state={cardState(5)} refresh={refresh} packages={packages} expanded={warrantyExpanded} onToggle={() => setWarrantyExpanded(!warrantyExpanded)} />
-            </CardWrapper>
+            </StepCard>
 
             {/* Step 07: Grid-Tie (ขอขนานไฟ) */}
-            <CardWrapper
-              stepIdx={6}
+            <StepCard
+              {...stepProps(6)}
               title="ขอขนานไฟ"
               doneTitle="ขนานไฟสำเร็จ"
               icon="M3.75 13.5l10.5-11.25L12 10.5h8.25L9.75 21.75 12 13.5H3.75z"
               onHeaderClick={cardState(6) === "done" ? () => setGridTieExpanded(!gridTieExpanded) : undefined}
             >
               <GridTieStep lead={lead} state={cardState(6)} refresh={refresh} expanded={gridTieExpanded} onToggle={() => setGridTieExpanded(!gridTieExpanded)} />
-            </CardWrapper>
+            </StepCard>
 
             {/* Lost banner */}
             {isLost && (
