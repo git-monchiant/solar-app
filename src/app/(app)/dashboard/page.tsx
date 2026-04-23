@@ -64,6 +64,7 @@ export default function DashboardPage() {
     { status: "warranty",   label: "ออกใบรับประกัน",     color: "bg-cyan-500",    count: countsByStatus["warranty"] || 0 },
     { status: "gridtie",    label: "ขอขนานไฟ",           color: "bg-amber-500",   count: countsByStatus["gridtie"] || 0 },
     { status: "lost",       label: "ยกเลิก",             color: "bg-red-400",     count: countsByStatus["lost"] || 0 },
+    { status: "returned",   label: "ส่งกลับ Seeker",     color: "bg-amber-500",   count: countsByStatus["returned"] || 0 },
   ];
   const totalByStatus = data.status_breakdown.reduce((sum, s) => sum + s.count, 0);
 
@@ -334,7 +335,7 @@ function ActivityChart({ data }: { data: { day: string; lead_id: number; full_na
                     onMouseEnter={e => {
                       const r = e.currentTarget.getBoundingClientRect();
                       const isFollow = ["follow_up","call","visit","note"].includes(b.actType);
-                      const statusLabel: Record<string,string> = { pre_survey: "รอติดตาม", survey: "สำรวจหน้างาน", quote: "รอใบเสนอราคา", order: "รออนุมัติ/ชำระ", install: "กำลังติดตั้ง", closed: "ส่งมอบแล้ว", lost: "ยกเลิก" };
+                      const statusLabel: Record<string,string> = { pre_survey: "รอติดตาม", survey: "สำรวจหน้างาน", quote: "รอใบเสนอราคา", order: "รออนุมัติ/ชำระ", install: "กำลังติดตั้ง", closed: "ส่งมอบแล้ว", lost: "ยกเลิก", returned: "ส่งกลับ Seeker" };
                       const label = isFollow ? "ติดตาม" : (statusLabel[b.status] || b.status);
                       setTooltip({ x: r.left + r.width / 2, y: r.top - 4, text: `${b.name} · ${label} · ${b.total} ครั้ง` });
                     }}

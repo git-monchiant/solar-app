@@ -5,6 +5,8 @@ import { getUserIdFromReq } from "@/lib/auth";
 const titleMap: Record<string, string> = {
   call: "Called customer",
   visit: "Visited customer",
+  line: "Contacted via LINE",
+  other: "Other contact",
   note: "Added a note",
   follow_up: "Scheduled follow-up",
 };

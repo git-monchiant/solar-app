@@ -101,6 +101,14 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
       sets.push("interest_reason_note = @interest_reason_note");
       request.input("interest_reason_note", sql.NVarChar(sql.MAX), body.interest_reason_note);
     }
+    if (body.interest_sizes !== undefined) {
+      sets.push("interest_sizes = @interest_sizes");
+      request.input("interest_sizes", sql.NVarChar(100), body.interest_sizes);
+    }
+    if (body.returned_at !== undefined) {
+      sets.push("returned_at = @returned_at");
+      request.input("returned_at", sql.DateTime2, body.returned_at);
+    }
 
     if (sets.length === 0) {
       return NextResponse.json({ error: "No fields to update" }, { status: 400 });

@@ -6,7 +6,7 @@ const statusLabels: Record<string, string> = {
   pre_survey: "รอติดตาม",
   survey: "สำรวจหน้างาน", quote: "รอใบเสนอราคา", order: "รออนุมัติ/ชำระ",
   install: "กำลังติดตั้ง", warranty: "ออกใบรับประกัน", gridtie: "ขอขนานไฟ",
-  closed: "ส่งมอบแล้ว", lost: "ยกเลิก",
+  closed: "ส่งมอบแล้ว", lost: "ยกเลิก", returned: "ส่งกลับ Seeker",
 };
 
 export async function GET(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {

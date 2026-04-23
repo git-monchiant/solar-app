@@ -34,9 +34,12 @@ export default function RoleSwitcher() {
     if (next.length === 0) return;
     setActiveRoles(next);
     setOpen(false);
-    // Force a full refresh so every cached fetch + role-gated render re-runs
-    // with the new role set — avoids stale lists/menus from the previous role.
-    if (typeof window !== "undefined") window.location.reload();
+    // Route through "/" so it redirects to the landing page appropriate for
+    // the new role (/seeker for seeker-only, /today for sales). A plain
+    // reload() would keep the user on the current URL, which may no longer
+    // be valid for the new role — e.g. switching to seeker but staying on
+    // /today still shows the sales list because /today has no role filter.
+    if (typeof window !== "undefined") window.location.href = "/";
   };
 
   return (

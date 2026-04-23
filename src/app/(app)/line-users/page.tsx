@@ -5,14 +5,30 @@ import { useEffect, useState } from "react";
 import Header from "@/components/layout/Header";
 import NewLeadModal from "@/components/modal/NewLeadModal";
 
+interface LinkedLead {
+  id: number;
+  full_name: string;
+  phone: string | null;
+  status: string;
+}
+
+interface LinkedProspect {
+  id: number;
+  house_number: string | null;
+  full_name: string | null;
+  project_name: string | null;
+  lead_id: number | null;
+}
+
 interface LineUser {
   id: number;
   line_user_id: string;
   display_name: string | null;
   picture_url: string | null;
-  lead_id: number | null;
-  lead_name: string | null;
-  lead_phone: string | null;
+  linked_leads: LinkedLead[];
+  linked_prospects: LinkedProspect[];
+  linked_leads_count: number;
+  linked_prospects_count: number;
   created_at: string;
   last_message_at: string | null;
 }
@@ -74,10 +90,29 @@ export default function LineUsersPage() {
                     </td>
                     <td className="px-4 py-3 font-mono text-xs text-gray-500 truncate max-w-[150px]">{u.line_user_id}</td>
                     <td className="px-4 py-3">
-                      {u.lead_id ? (
-                        <a href={`/leads/${u.lead_id}`} className="text-active font-semibold hover:underline">
-                          {u.lead_name} {u.lead_phone && <span className="text-gray-400 font-mono text-xs ml-1">{u.lead_phone}</span>}
-                        </a>
+                      {(u.linked_leads.length > 0 || u.linked_prospects.length > 0) ? (
+                        <div className="flex flex-wrap gap-1.5">
+                          {u.linked_leads.map(l => (
+                            <a
+                              key={`l${l.id}`}
+                              href={`/leads/${l.id}`}
+                              title={`Lead: ${l.full_name}${l.phone ? ` · ${l.phone}` : ""}`}
+                              className="inline-flex items-center px-2 py-0.5 rounded-full bg-blue-50 border border-blue-200 text-blue-700 text-xs font-semibold hover:bg-blue-100 transition-colors"
+                            >
+                              L#{l.id}
+                            </a>
+                          ))}
+                          {u.linked_prospects.filter(p => !p.lead_id).map(p => (
+                            <a
+                              key={`p${p.id}`}
+                              href={p.project_name ? `/seeker?project=${encodeURIComponent(p.project_name)}` : "/seeker"}
+                              title={`Prospect: ${p.house_number || "-"}${p.full_name ? ` · ${p.full_name}` : ""}${p.project_name ? ` · ${p.project_name}` : ""}`}
+                              className="inline-flex items-center px-2 py-0.5 rounded-full bg-violet-50 border border-violet-200 text-violet-700 text-xs font-semibold hover:bg-violet-100 transition-colors"
+                            >
+                              P#{p.id}
+                            </a>
+                          ))}
+                        </div>
                       ) : (
                         <button type="button" onClick={() => setNewLeadForLine(u)} className="inline-flex items-center gap-1 text-active font-semibold hover:underline cursor-pointer">
                           <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}><path strokeLinecap="round" strokeLinejoin="round" d="M12 4.5v15m7.5-7.5h-15" /></svg>
@@ -89,7 +124,7 @@ export default function LineUsersPage() {
                       {formatDate(u.created_at)}
                     </td>
                     <td className="px-4 py-3">
-                      {u.lead_id ? (
+                      {(u.linked_leads.length > 0 || u.linked_prospects.length > 0) ? (
                         <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-semibold bg-emerald-50 text-emerald-700 border border-emerald-200">
                           <span className="w-1.5 h-1.5 rounded-full bg-emerald-500" /> Mapped
                         </span>

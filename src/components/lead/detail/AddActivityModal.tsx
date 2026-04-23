@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { apiFetch } from "@/lib/api";
 import DateSlider from "@/components/ui/DateSlider";
 import CalendarPicker from "@/components/calendar/CalendarPicker";
 import ModalCloseButton from "@/components/ui/ModalCloseButton";
@@ -23,18 +24,22 @@ interface Props {
 
 export default function AddActivityModal({ activityType, leadId, onClose, onSaved }: Props) {
   const [note, setNote] = useState("");
-  const [followUpDate, setFollowUpDate] = useState("");
+  const [followUpDate, setFollowUpDate] = useState(() => {
+    const d = new Date();
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+  });
   const [followUpMethod, setFollowUpMethod] = useState("");
   const [nextFollowUpDate, setNextFollowUpDate] = useState("");
   const [nextPickerOpen, setNextPickerOpen] = useState(false);
+  const [sendBackToSeeker, setSendBackToSeeker] = useState(false);
   const [saving, setSaving] = useState(false);
 
   const handleSubmit = async () => {
     setSaving(true);
     try {
-      await fetch(`/api/leads/${leadId}/activities`, {
+      await apiFetch(`/api/leads/${leadId}/activities`, {
         method: "POST",
-        headers: { "Content-Type": "application/json", "ngrok-skip-browser-warning": "true" },
+        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           activity_type: activityType === "follow_up" ? (followUpMethod || "follow_up") : "note",
           note: note.trim() || null,
@@ -42,6 +47,13 @@ export default function AddActivityModal({ activityType, leadId, onClose, onSave
           contact_date: followUpDate || null,
         }),
       });
+      if (sendBackToSeeker && activityType === "follow_up") {
+        await apiFetch(`/api/leads/${leadId}/return-to-prospect`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ reason: note.trim() || null }),
+        });
+      }
       onSaved();
       onClose();
     } catch (err) {
@@ -98,14 +110,18 @@ export default function AddActivityModal({ activityType, leadId, onClose, onSave
         <div className="flex-1 overflow-y-auto space-y-3 pb-4">
           {/* วันที่ติดตาม — DateSlider */}
           <div>
-            <div className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-1 px-5">วันที่ติดตาม</div>
+            <div className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-1 px-5">
+              วันที่ติดตาม <span className="text-red-500">*</span>
+            </div>
             <DateSlider date={followUpDate} onDateChange={setFollowUpDate} pastDays={15} futureDays={0} />
           </div>
 
-          {/* วิธีติดตาม + Note — same row feeling */}
+          {/* ช่องทางติดต่อ + Note — same row feeling */}
           <div className="px-5 flex gap-2">
             <div className="flex-1">
-              <div className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-1">วิธี</div>
+              <div className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-1">
+                ช่องทางติดต่อ <span className="text-red-500">*</span>
+              </div>
               <div className="flex flex-wrap gap-1.5">
                 {FOLLOW_UP_METHODS.map(m => (
                   <button
@@ -127,7 +143,9 @@ export default function AddActivityModal({ activityType, leadId, onClose, onSave
           </div>
 
           <div className="px-5">
-            <div className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-1">Note</div>
+            <div className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-1">
+              Note <span className="text-red-500">*</span>
+            </div>
             <textarea
               value={note}
               onChange={(e) => setNote(e.target.value)}
@@ -135,6 +153,22 @@ export default function AddActivityModal({ activityType, leadId, onClose, onSave
               rows={2}
               className="w-full px-3 py-2 rounded-lg border border-gray-200 bg-white focus:outline-none focus:border-primary text-sm resize-none"
             />
+          </div>
+
+          {/* ส่งกลับทีม Lead Seeker — ติดต่อไม่ได้เลย */}
+          <div className="px-5">
+            <label className={`flex items-start gap-3 p-3 rounded-lg border transition-colors cursor-pointer ${sendBackToSeeker ? "border-amber-300 bg-amber-50" : "border-gray-200 bg-white hover:border-gray-300"}`}>
+              <input
+                type="checkbox"
+                checked={sendBackToSeeker}
+                onChange={(e) => setSendBackToSeeker(e.target.checked)}
+                className="mt-0.5 w-4 h-4 rounded border-gray-300 accent-amber-500 shrink-0"
+              />
+              <div className="flex-1 min-w-0">
+                <div className="text-sm font-semibold text-gray-800">ส่งกลับทีม Lead Seeker</div>
+                <div className="text-[11px] text-gray-500 mt-0.5">โปรดระบุเหตุผลส่งกลับใน NOTE</div>
+              </div>
+            </label>
           </div>
 
           {/* นัดติดตามครั้งถัดไป — collapsed by default */}
@@ -193,13 +227,29 @@ export default function AddActivityModal({ activityType, leadId, onClose, onSave
 
         {/* Submit — pinned at bottom so it's never clipped by the viewport */}
         <div className="shrink-0 px-5 pt-3 pb-10 border-t border-gray-100 bg-white" style={{ paddingBottom: "max(2.5rem, env(safe-area-inset-bottom))" }}>
+          {(() => {
+            const canSubmit = !saving && !!followUpMethod && !!followUpDate && !!note.trim();
+            return (
           <button
             onClick={handleSubmit}
-            disabled={saving || !followUpMethod}
-            className="w-full py-3 bg-primary text-white rounded-xl font-bold text-sm active:scale-[0.98] disabled:opacity-50 transition-all"
+            disabled={!canSubmit}
+            className={`w-full py-3 rounded-xl font-bold text-sm text-white active:scale-[0.98] transition-all flex items-center justify-center gap-2 ${
+              !canSubmit
+                ? "bg-gray-300 cursor-not-allowed"
+                : sendBackToSeeker
+                ? "bg-amber-500 hover:bg-amber-600"
+                : "bg-primary"
+            }`}
           >
-            {saving ? "กำลังบันทึก..." : "บันทึก"}
+            {saving ? (
+              <>
+                <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                <span>{sendBackToSeeker ? "กำลังส่งกลับ…" : "กำลังบันทึก…"}</span>
+              </>
+            ) : sendBackToSeeker ? "บันทึกและส่งข้อมูลไปยัง Lead Seeker" : "บันทึก"}
           </button>
+            );
+          })()}
         </div>
       </div>
     </div>

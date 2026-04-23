@@ -34,6 +34,8 @@ type Prospect = {
   contact_time: string | null;
   interest_reasons: string | null;
   interest_reason_note: string | null;
+  interest_sizes: string | null;
+  returned_at: string | null;
   created_at: string;
 };
 
@@ -83,6 +85,14 @@ function cardStatus(p: Prospect): CardStatusKey {
   if (p.interest === "not_interested") return "not_interested";
   if (p.interest === "not_home" || p.interest === "undecided" || p.visited_at || (p.note && p.note.trim())) return "contacted";
   return "pending";
+}
+
+// Returned from sales: sales explicitly sent this back via the
+// "return to seeker" flow. Uses a dedicated flag so seeker can edit fields
+// freely (auto-save) without flipping the card out of the "returned" bucket —
+// the flag is only cleared when seeker clicks the orange sync button.
+function isReturnedProspect(p: Prospect): boolean {
+  return !!p.lead_id && !!p.returned_at;
 }
 
 function hasExistingSolar(p: Prospect): boolean {
@@ -137,7 +147,7 @@ export default function SeekerPage() {
   const [projectCards, setProjectCards] = useState<ProjectCard[]>([]);
   const [loading, setLoading] = useState(true);
   const [projectsLoading, setProjectsLoading] = useState(true);
-  const [tab, setTab] = useState<"all" | "pending" | "contacted" | "interested" | "not_interested">("all");
+  const [tab, setTab] = useState<"all" | "todo" | "returned" | "interested" | "not_interested">("todo");
   const [search, setSearch] = useState<string>("");
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -205,17 +215,26 @@ export default function SeekerPage() {
   }, [prospects, projectFilter]);
 
   const counts = useMemo(() => {
-    const c = { all: scopedByProject.length, pending: 0, contacted: 0, interested: 0, not_interested: 0 };
+    const c = { all: scopedByProject.length, todo: 0, returned: 0, interested: 0, not_interested: 0 };
     for (const p of scopedByProject) {
+      if (isReturnedProspect(p)) { c.returned++; continue; }
       const s = cardStatus(p);
-      c[s]++;
+      if (s === "pending" || s === "contacted") c.todo++;
+      else if (s === "interested") c.interested++;
+      else if (s === "not_interested") c.not_interested++;
     }
     return c;
   }, [scopedByProject]);
 
   const filtered = useMemo(() => {
     let list = scopedByProject;
-    if (tab !== "all") list = list.filter((p) => cardStatus(p) === tab);
+    if (tab === "returned") list = list.filter((p) => isReturnedProspect(p));
+    else if (tab === "todo") list = list.filter((p) => {
+      if (isReturnedProspect(p)) return false;
+      const s = cardStatus(p);
+      return s === "pending" || s === "contacted";
+    });
+    else if (tab !== "all") list = list.filter((p) => !isReturnedProspect(p) && cardStatus(p) === tab);
     const q = search.trim().toLowerCase();
     if (q) {
       list = list.filter(
@@ -251,8 +270,8 @@ export default function SeekerPage() {
         searchPlaceholder="ค้นหาบ้านเลขที่/ชื่อ/เบอร์..."
         tabs={[
           { key: "all", label: "ทั้งหมด", count: counts.all },
-          { key: "pending", label: "ยังไม่เยี่ยม", count: counts.pending },
-          { key: "contacted", label: "กำลังติดต่อ", count: counts.contacted },
+          { key: "todo", label: "อยู่ระหว่างดำเนินการ", count: counts.todo },
+          { key: "returned", label: "ถูกส่งกลับ", count: counts.returned },
           { key: "interested", label: "สนใจ", count: counts.interested },
           { key: "not_interested", label: "ไม่สนใจ", count: counts.not_interested },
         ]}
@@ -271,8 +290,11 @@ export default function SeekerPage() {
           <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
             {filtered.map((p) => {
               const status = cardStatus(p);
-              const isSynced = !!p.lead_id;
-              const cardClass = isSynced
+              const isReturned = isReturnedProspect(p);
+              const isSynced = !!p.lead_id && !isReturned;
+              const cardClass = isReturned
+                ? "bg-amber-100 border-amber-400 hover:border-amber-500"
+                : isSynced
                 ? "bg-blue-100 border-blue-300 hover:border-blue-500"
                 : CARD_STATUS[status].card;
               return (
@@ -293,6 +315,13 @@ export default function SeekerPage() {
                       </div>
                     </div>
                     {(() => {
+                      if (isReturned) {
+                        return (
+                          <span className="shrink-0 text-[10px] px-1.5 py-0.5 rounded-full border whitespace-nowrap bg-amber-200 text-amber-900 border-amber-400 font-semibold">
+                            ส่งกลับ #{p.lead_id}
+                          </span>
+                        );
+                      }
                       if (isSynced) {
                         return (
                           <span className="shrink-0 text-[10px] px-1.5 py-0.5 rounded-full border whitespace-nowrap bg-blue-200 text-blue-800 border-blue-300 font-semibold">
@@ -604,6 +633,9 @@ function VisitModal({ prospect, onClose, onSaved, onRefresh }: { prospect: Prosp
     prospect.interest_reasons ? prospect.interest_reasons.split(",").map((s) => s.trim()).filter(Boolean) : []
   );
   const [reasonNote, setReasonNote] = useState(prospect.interest_reason_note || "");
+  const [sizeCodes, setSizeCodes] = useState<string[]>(() =>
+    prospect.interest_sizes ? prospect.interest_sizes.split(",").map((s) => s.trim()).filter(Boolean) : []
+  );
   const [reasonsSavedAt, setReasonsSavedAt] = useState<number | null>(null);
   const reasonsInitRef = useRef(true);
 
@@ -618,6 +650,7 @@ function VisitModal({ prospect, onClose, onSaved, onRefresh }: { prospect: Prosp
           body: JSON.stringify({
             interest_reasons: reasonCodes.length ? reasonCodes.join(",") : null,
             interest_reason_note: reasonNote.trim() || null,
+            interest_sizes: sizeCodes.length ? sizeCodes.join(",") : null,
           }),
         });
         setReasonsSavedAt(Date.now());
@@ -627,7 +660,7 @@ function VisitModal({ prospect, onClose, onSaved, onRefresh }: { prospect: Prosp
       }
     }, 600);
     return () => clearTimeout(timer);
-  }, [reasonCodes, reasonNote, prospect.id]);
+  }, [reasonCodes, reasonNote, sizeCodes, prospect.id]);
 
   // Auto-save visit + line tab fields (interest, note, contact, house number).
   // Skips GPS — that's only captured when user explicitly "visits" (on mount).
@@ -665,6 +698,13 @@ function VisitModal({ prospect, onClose, onSaved, onRefresh }: { prospect: Prosp
   const [leadIdLocal, setLeadIdLocal] = useState<number | null>(prospect.lead_id);
   const [linePickerOpen, setLinePickerOpen] = useState(false);
   const [linkedLine, setLinkedLine] = useState<{ display_name: string; picture_url: string | null } | null>(null);
+  const [returnInfo, setReturnInfo] = useState<{ note: string | null; created_by_name: string | null; created_at: string } | null>(null);
+  const [returnBackNote, setReturnBackNote] = useState("");
+  // Local mirror of prospect.returned_at so the UI flips out of the returned
+  // state immediately after the seeker clicks "ส่งข้อมูลกลับไปที่ลีด" —
+  // without waiting for the parent list to re-fetch and re-render this modal
+  // with fresh props.
+  const [localReturnedAt, setLocalReturnedAt] = useState<string | null>(prospect.returned_at);
 
   useEffect(() => {
     if (!prospect.line_id) return;
@@ -673,6 +713,26 @@ function VisitModal({ prospect, onClose, onSaved, onRefresh }: { prospect: Prosp
       if (match) setLinkedLine({ display_name: match.display_name || "", picture_url: match.picture_url });
     }).catch(() => {});
   }, [prospect.line_id]);
+
+  // Auto-fill contact name from the LINE display name when we have no name yet.
+  // Runs both on initial fetch (pre-existing line_id) and when the user picks a
+  // LINE profile from the picker.
+  useEffect(() => {
+    if (linkedLine?.display_name && !contactName.trim()) {
+      setContactName(linkedLine.display_name);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [linkedLine]);
+
+  // If this prospect was returned from sales, fetch the latest
+  // returned_to_prospect activity so we can show the reason on STEP-3.
+  useEffect(() => {
+    if (!prospect.lead_id || !localReturnedAt) { setReturnInfo(null); return; }
+    apiFetch(`/api/leads/${prospect.lead_id}/activities`).then((acts: Array<{ activity_type: string; note: string | null; created_by_name: string | null; created_at: string }>) => {
+      const r = acts.find((a) => a.activity_type === "returned_to_prospect");
+      if (r) setReturnInfo({ note: r.note, created_by_name: r.created_by_name, created_at: r.created_at });
+    }).catch(() => {});
+  }, [prospect.lead_id, localReturnedAt]);
 
   function getLocation(): Promise<{ lat: number; lng: number } | null> {
     return new Promise((resolve) => {
@@ -997,17 +1057,49 @@ function VisitModal({ prospect, onClose, onSaved, onRefresh }: { prospect: Prosp
           </div>
         </div>
 
+        {interest === "interested" && (
+          <Field label="ขนาดที่สนใจ (เลือกได้หลายข้อ)">
+            <div className="flex flex-wrap gap-2">
+              {[
+                { code: "3", label: "3 kW" },
+                { code: "5", label: "5 kW" },
+                { code: "7", label: "7 kW" },
+                { code: "10", label: "10 kW" },
+                { code: "bat", label: "+ Battery" },
+              ].map((s) => {
+                const on = sizeCodes.includes(s.code);
+                return (
+                  <button
+                    key={s.code}
+                    type="button"
+                    onClick={() =>
+                      setSizeCodes((prev) => (prev.includes(s.code) ? prev.filter((x) => x !== s.code) : [...prev, s.code]))
+                    }
+                    className={`h-9 px-3.5 rounded-lg border text-sm font-semibold transition-colors ${on
+                      ? s.code === "bat"
+                        ? "bg-green-600 border-green-600 text-white"
+                        : "bg-primary border-primary text-white"
+                      : "bg-white border-gray-200 text-gray-600 hover:border-gray-400"}`}
+                  >
+                    {s.label}
+                  </button>
+                );
+              })}
+            </div>
+          </Field>
+        )}
+
         <Field label="เหตุผลที่สนใจ (เลือกได้หลายข้อ)">
-          <div className="grid grid-cols-2 gap-2">
+          <div className="flex flex-wrap gap-1.5">
             {[
               { code: "save_bill", label: "ประหยัดค่าไฟ" },
               { code: "sell_back", label: "ขายไฟคืน" },
-              { code: "tax_deduction", label: "ใช้ลดหย่อนภาษี" },
+              { code: "tax_deduction", label: "ลดหย่อนภาษี" },
               { code: "daytime_usage", label: "เปิดแอร์ทั้งวัน" },
-              { code: "pet_ac", label: "เปิดแอร์ให้สัตว์เลี้ยง" },
-              { code: "elderly_care", label: "ดูแลผู้สูงอายุ/ผู้ป่วย" },
-              { code: "has_ev", label: "ชาร์จรถ EV" },
-              { code: "environment", label: "รักสิ่งแวดล้อม" },
+              { code: "pet_ac", label: "แอร์ให้สัตว์เลี้ยง" },
+              { code: "elderly_care", label: "ดูแลผู้สูงอายุ" },
+              { code: "has_ev", label: "ชาร์จ EV" },
+              { code: "environment", label: "รักษ์โลก" },
               { code: "home_business", label: "เปิดร้านที่บ้าน" },
               { code: "other", label: "อื่นๆ" },
             ].map((r) => {
@@ -1019,7 +1111,7 @@ function VisitModal({ prospect, onClose, onSaved, onRefresh }: { prospect: Prosp
                   onClick={() =>
                     setReasonCodes((prev) => (prev.includes(r.code) ? prev.filter((x) => x !== r.code) : [...prev, r.code]))
                   }
-                  className={`h-11 rounded-lg border text-sm font-semibold transition-colors ${
+                  className={`h-7 px-2.5 rounded-full border text-xs font-semibold transition-colors ${
                     on
                       ? "bg-primary text-white border-primary"
                       : "bg-white text-gray-700 border-gray-300 hover:border-gray-400"
@@ -1036,7 +1128,7 @@ function VisitModal({ prospect, onClose, onSaved, onRefresh }: { prospect: Prosp
           <textarea
             value={note}
             onChange={(e) => setNote(e.target.value)}
-            rows={3}
+            rows={2}
             placeholder="รายละเอียดเพิ่มเติม / เหตุผลอื่นๆ จากลูกค้า..."
             className="w-full px-3 py-2 rounded-lg border border-gray-300 bg-white text-sm resize-none"
           />
@@ -1044,6 +1136,28 @@ function VisitModal({ prospect, onClose, onSaved, onRefresh }: { prospect: Prosp
         </>}
 
         {modalTab === "reasons" && <>
+        {returnInfo && (
+          <div className="rounded-xl border border-amber-300 bg-amber-50 p-3">
+            <div className="flex items-start gap-2">
+              <svg className="w-5 h-5 text-amber-600 shrink-0 mt-0.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                <path strokeLinecap="round" strokeLinejoin="round" d="M9 15L3 9m0 0l6-6M3 9h12a6 6 0 010 12h-3" />
+              </svg>
+              <div className="flex-1 min-w-0">
+                <div className="text-xs font-bold text-amber-900">ถูกส่งกลับจากทีมขาย</div>
+                <div className="text-xs text-amber-700 mt-0.5">
+                  {returnInfo.created_by_name || "Sales"}
+                  {" · "}
+                  {new Date(returnInfo.created_at).toLocaleDateString("th-TH", { day: "numeric", month: "short", year: "numeric" })}
+                </div>
+                {returnInfo.note ? (
+                  <div className="mt-2 text-sm text-gray-800 whitespace-pre-wrap break-words">{returnInfo.note}</div>
+                ) : (
+                  <div className="mt-2 text-xs italic text-amber-600">ไม่ได้ระบุเหตุผล</div>
+                )}
+              </div>
+            </div>
+          </div>
+        )}
         <Field label="เวลาที่สะดวกให้ติดต่อ">
           <div className="grid grid-cols-6 gap-1.5">
             {Array.from({ length: 12 }, (_, i) => i + 8).map((h) => {
@@ -1074,28 +1188,46 @@ function VisitModal({ prospect, onClose, onSaved, onRefresh }: { prospect: Prosp
           const hasContact = !!(phone.trim() || prospect.line_id);
           const isInterested = interest === "interested";
           const canCreate = isInterested && hasContact;
+          const isReturnedHere = !!localReturnedAt && !!leadIdLocal;
           const reason = !isInterested
             ? "ต้องเลือก \"สนใจ - ติดตั้ง\" หรือ \"สนใจ - Upgrade\" ก่อน"
             : !hasContact
               ? "ต้องมีเบอร์โทรหรือ LINE อย่างน้อย 1 อย่าง"
               : "";
           return (
-        <div className="pt-2 border-t border-gray-100">
+        <div className="pt-2 border-t border-gray-100 space-y-2">
+          {isReturnedHere && (
+            <div>
+              <label className="text-xs font-semibold uppercase tracking-wider text-amber-700 block mb-1">
+                บันทึกให้ทีมขาย <span className="text-red-500">*</span>
+              </label>
+              <textarea
+                value={returnBackNote}
+                onChange={(e) => setReturnBackNote(e.target.value)}
+                rows={3}
+                placeholder="เช่น ติดต่อได้แล้ว เปลี่ยนเบอร์ใหม่ 089-xxx, นัดทีมขายโทรตอนบ่าย 2..."
+                className="w-full px-3 py-2 rounded-lg border border-amber-300 bg-amber-50 focus:outline-none focus:border-amber-500 text-sm resize-none"
+              />
+              <div className="text-[11px] text-amber-600 mt-1">ข้อความนี้จะไปเป็น activity บนลีดให้ทีมขายเห็น</div>
+            </div>
+          )}
           <button
             type="button"
-            disabled={creatingLead || !canCreate}
-            title={reason || undefined}
+            disabled={creatingLead || !canCreate || (isReturnedHere && !returnBackNote.trim())}
+            title={reason || (isReturnedHere && !returnBackNote.trim() ? "กรอกบันทึกให้ทีมขายก่อน" : undefined)}
             onClick={async () => {
               if (creatingLead || !canCreate) return;
               const hasExistingLead = !!leadIdLocal;
-              const confirmMsg = hasExistingLead
+              const confirmMsg = isReturnedHere
+                ? `ส่งข้อมูลกลับไปให้ทีมขายติดตามต่อ (ลีด #${leadIdLocal})?`
+                : hasExistingLead
                 ? "ซิงก์ข้อมูลล่าสุดไปที่ลีดเดิม?"
                 : "สร้างข้อมูลลีดให้ฝ่ายขายจากบ้านหลังนี้?";
               const ok = await dialog.confirm({
-                title: hasExistingLead ? "ซิงก์ข้อมูลไปที่ลีด" : "สร้างข้อมูลลีด",
+                title: isReturnedHere ? "ส่งกลับให้ทีมขาย" : hasExistingLead ? "ซิงก์ข้อมูลไปที่ลีด" : "สร้างข้อมูลลีด",
                 message: confirmMsg,
-                variant: hasExistingLead ? "info" : "success",
-                confirmText: hasExistingLead ? "ซิงก์ข้อมูล" : "สร้างลีด",
+                variant: isReturnedHere ? "warning" : hasExistingLead ? "info" : "success",
+                confirmText: isReturnedHere ? "ส่งกลับให้ทีมขาย" : hasExistingLead ? "ซิงก์ข้อมูล" : "สร้างลีด",
               });
               if (!ok) return;
               setCreatingLead(true);
@@ -1114,7 +1246,9 @@ function VisitModal({ prospect, onClose, onSaved, onRefresh }: { prospect: Prosp
                     : "",
                   prospect.existing_solar && !hasExistingSolar(prospect) ? `Solar: ${prospect.existing_solar}` : "",
                 ].filter(Boolean);
+                const sizeLabel = (c: string) => (c === "bat" ? "+Battery" : `${c} kW`);
                 const requirement = [
+                  sizeCodes.length ? `ขนาดที่สนใจ: ${sizeCodes.map(sizeLabel).join(", ")}` : "",
                   reasonCodes.length ? `เหตุผลที่สนใจ: ${reasonCodes.join(", ")}` : "",
                   reasonNote ? `รายละเอียด: ${reasonNote}` : "",
                   contactHours.length ? `ติดต่อได้: ${[...contactHours].sort((a,b)=>a-b).map(h=>`${h}:00`).join(", ")}` : "",
@@ -1137,10 +1271,15 @@ function VisitModal({ prospect, onClose, onSaved, onRefresh }: { prospect: Prosp
                 let leadId: number;
                 if (hasExistingLead && leadIdLocal) {
                   // Sync existing lead — overwrite fields with latest prospect data.
+                  // If the lead was previously returned, reactivate it by moving
+                  // status back to 'pre_survey' so sales picks it up again.
+                  const syncPayload = isReturnedHere
+                    ? { ...payload, status: "pre_survey" }
+                    : payload;
                   await apiFetch(`/api/leads/${leadIdLocal}`, {
                     method: "PATCH",
                     headers: { "Content-Type": "application/json" },
-                    body: JSON.stringify(payload),
+                    body: JSON.stringify(syncPayload),
                   });
                   leadId = leadIdLocal;
                 } else {
@@ -1163,9 +1302,44 @@ function VisitModal({ prospect, onClose, onSaved, onRefresh }: { prospect: Prosp
                   }
                 }
                 if (leadId) setLeadIdLocal(leadId);
+                if (isReturnedHere) {
+                  // Log as an "other" contact activity so it appears in the
+                  // lead's log with the standard styling, but prefix the note
+                  // with a clear marker so sales sees why this lead came back
+                  // into their queue.
+                  if (returnBackNote.trim()) {
+                    try {
+                      await apiFetch(`/api/leads/${leadId}/activities`, {
+                        method: "POST",
+                        headers: { "Content-Type": "application/json" },
+                        body: JSON.stringify({
+                          activity_type: "other",
+                          note: `ลีดถูกส่งกลับมาที่ทีมขายอีกครั้ง · ${returnBackNote.trim()}`,
+                        }),
+                      });
+                    } catch {}
+                  }
+                  // Clear the returned flag on the prospect so the card drops
+                  // out of the "ถูกส่งกลับ" tab and back into the normal blue
+                  // "LEAD #N" synced state.
+                  try {
+                    await apiFetch(`/api/prospects/${prospect.id}`, {
+                      method: "PATCH",
+                      headers: { "Content-Type": "application/json" },
+                      body: JSON.stringify({ returned_at: null }),
+                    });
+                  } catch {}
+                  setReturnInfo(null);
+                  setReturnBackNote("");
+                  setLocalReturnedAt(null);
+                }
                 onRefresh();
                 dialog.toast({
-                  message: hasExistingLead ? `ซิงก์ลีด #${leadId} สำเร็จ` : `สร้างลีด #${leadId} สำเร็จ`,
+                  message: isReturnedHere
+                    ? `ส่งข้อมูลลีด #${leadId} กลับให้ทีมขายแล้ว`
+                    : hasExistingLead
+                    ? `ซิงก์ลีด #${leadId} สำเร็จ`
+                    : `สร้างลีด #${leadId} สำเร็จ`,
                   variant: "success",
                 });
               } catch (e) {
@@ -1179,15 +1353,24 @@ function VisitModal({ prospect, onClose, onSaved, onRefresh }: { prospect: Prosp
               }
             }}
             className={`w-full h-11 rounded-lg text-sm font-semibold disabled:opacity-60 disabled:cursor-not-allowed transition-colors flex items-center justify-center gap-2 ${
-              leadIdLocal
+              isReturnedHere
+                ? "bg-amber-500 text-white hover:bg-amber-600"
+                : leadIdLocal
                 ? "bg-indigo-50 text-indigo-700 border border-indigo-200 hover:bg-indigo-100"
                 : "bg-emerald-600 text-white hover:bg-emerald-700"
             }`}
           >
             {creatingLead ? (
               <>
-                <div className={`w-4 h-4 border-2 rounded-full animate-spin ${leadIdLocal ? "border-indigo-300 border-t-indigo-700" : "border-white/30 border-t-white"}`} />
-                {leadIdLocal ? "กำลังซิงก์…" : "กำลังสร้าง…"}
+                <div className={`w-4 h-4 border-2 rounded-full animate-spin ${isReturnedHere ? "border-white/30 border-t-white" : leadIdLocal ? "border-indigo-300 border-t-indigo-700" : "border-white/30 border-t-white"}`} />
+                {isReturnedHere ? "กำลังส่งกลับ…" : leadIdLocal ? "กำลังซิงก์…" : "กำลังสร้าง…"}
+              </>
+            ) : isReturnedHere ? (
+              <>
+                <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M13 7l5 5m0 0l-5 5m5-5H6" />
+                </svg>
+                <span>ส่งข้อมูลกลับไปที่ลีด #{leadIdLocal}</span>
               </>
             ) : leadIdLocal ? (
               <>
@@ -1211,7 +1394,9 @@ function VisitModal({ prospect, onClose, onSaved, onRefresh }: { prospect: Prosp
           <div className="mt-1.5 text-[11px] text-gray-400">
             {!canCreate
               ? reason
-              : leadIdLocal
+              : isReturnedHere
+                ? "กลับไปเป็นลีดใหม่ ทีมขายจะได้เห็นในรายการอีกครั้ง"
+                : leadIdLocal
                 ? `ลีดนี้สร้างแล้ว — กดอีกครั้งเพื่อซิงก์ข้อมูลล่าสุด`
                 : "ข้อมูลลูกค้าจะถูกส่งต่อให้ฝ่ายขายสำรวจพื้นที่"}
           </div>

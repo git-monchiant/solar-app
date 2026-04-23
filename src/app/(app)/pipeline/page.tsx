@@ -36,7 +36,7 @@ const TAB_STATUSES: Record<TabKey, string[]> = {
   warranty: ["warranty"],
   gridtie: ["gridtie"],
   closed: ["closed"],
-  lost: ["lost"],
+  lost: ["lost", "returned"],
 };
 
 export default function PipelinePage() {
@@ -97,7 +97,7 @@ export default function PipelinePage() {
     { key: "warranty",   label: "ออกใบรับประกัน",    roles: ["solar"] },
     { key: "gridtie",    label: "ขอขนานไฟ",          roles: ["solar"] },
     { key: "closed",     label: "ส่งมอบแล้ว",  roles: ["sales", "solar"] },
-    { key: "lost",       label: "ยกเลิก",            roles: ["sales"] },
+    { key: "lost",       label: "ยกเลิกและส่งกลับ",  roles: ["sales"] },
   ];
   const TABS = ALL_TABS
     .filter(t => isAdmin || t.roles.some(r => (r === "sales" && isSales) || (r === "solar" && isSolar)))

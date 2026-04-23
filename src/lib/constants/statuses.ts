@@ -1,5 +1,5 @@
 export const STATUSES = ["pre_survey", "survey", "quote", "order", "install", "warranty", "gridtie", "closed"] as const;
-export type Status = (typeof STATUSES)[number] | "lost";
+export type Status = (typeof STATUSES)[number] | "lost" | "returned";
 
 export const STATUS_CONFIG: Record<string, { label: string; color: string; bg: string; text: string; icon: string; description: string; action: string }> = {
   pre_survey:  { label: "รอติดตาม",     color: "bg-sky-500",     bg: "bg-sky-50",     text: "text-sky-700",     icon: "M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0z",  description: "Registered or walked in — first contact",      action: "Log Contact" },
@@ -11,6 +11,7 @@ export const STATUS_CONFIG: Record<string, { label: string; color: string; bg: s
   gridtie:     { label: "ขอขนานไฟ",       color: "bg-amber-500",   bg: "bg-amber-50",   text: "text-amber-700",   icon: "M3.75 13.5l10.5-11.25L12 10.5h8.25L9.75 21.75 12 13.5H3.75z",  description: "Grid-tie application",                 action: "Track Grid-Tie" },
   closed:        { label: "ส่งมอบแล้ว", color: "bg-teal-500",    bg: "bg-teal-50",    text: "text-teal-700",    icon: "M4.5 12.75l6 6 9-13.5",  description: "Job closed — all done",                action: "Closed" },
   lost:          { label: "ยกเลิก",         color: "bg-red-400",     bg: "bg-red-50",     text: "text-red-700",     icon: "M6 18L18 6M6 6l12 12",  description: "Lost — set revisit date",               action: "Set Revisit" },
+  returned:      { label: "ส่งกลับ Seeker", color: "bg-amber-500",   bg: "bg-amber-50",   text: "text-amber-700",   icon: "M9 15L3 9m0 0l6-6M3 9h12a6 6 0 010 12h-3",  description: "Returned — seeker follows up again",    action: "Returned" },
 };
 
 export function getStatusLabel(lead: { status: string; install_date?: string | null; event_date?: string | null }): string {
