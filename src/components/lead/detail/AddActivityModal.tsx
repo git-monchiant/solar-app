@@ -18,11 +18,14 @@ const FOLLOW_UP_METHODS = [
 interface Props {
   activityType: ActivityType;
   leadId: number;
+  /** Show "ส่งกลับ Seeker" option — only when lead is still returnable
+   * (came from prospect AND hasn't advanced past pre-survey / paid deposit). */
+  canSendBack?: boolean;
   onClose: () => void;
   onSaved: () => void;
 }
 
-export default function AddActivityModal({ activityType, leadId, onClose, onSaved }: Props) {
+export default function AddActivityModal({ activityType, leadId, canSendBack = false, onClose, onSaved }: Props) {
   const [note, setNote] = useState("");
   const [followUpDate, setFollowUpDate] = useState(() => {
     const d = new Date();
@@ -155,21 +158,23 @@ export default function AddActivityModal({ activityType, leadId, onClose, onSave
             />
           </div>
 
-          {/* ส่งกลับทีม Lead Seeker — ติดต่อไม่ได้เลย */}
-          <div className="px-5">
-            <label className={`flex items-start gap-3 p-3 rounded-lg border transition-colors cursor-pointer ${sendBackToSeeker ? "border-amber-300 bg-amber-50" : "border-gray-200 bg-white hover:border-gray-300"}`}>
-              <input
-                type="checkbox"
-                checked={sendBackToSeeker}
-                onChange={(e) => setSendBackToSeeker(e.target.checked)}
-                className="mt-0.5 w-4 h-4 rounded border-gray-300 accent-amber-500 shrink-0"
-              />
-              <div className="flex-1 min-w-0">
-                <div className="text-sm font-semibold text-gray-800">ส่งกลับทีม Lead Seeker</div>
-                <div className="text-[11px] text-gray-500 mt-0.5">โปรดระบุเหตุผลส่งกลับใน NOTE</div>
-              </div>
-            </label>
-          </div>
+          {/* ส่งกลับทีม Lead Seeker — เฉพาะ lead ที่ยัง pre-survey + มาจาก prospect */}
+          {canSendBack && (
+            <div className="px-5">
+              <label className={`flex items-start gap-3 p-3 rounded-lg border transition-colors cursor-pointer ${sendBackToSeeker ? "border-amber-300 bg-amber-50" : "border-gray-200 bg-white hover:border-gray-300"}`}>
+                <input
+                  type="checkbox"
+                  checked={sendBackToSeeker}
+                  onChange={(e) => setSendBackToSeeker(e.target.checked)}
+                  className="mt-0.5 w-4 h-4 rounded border-gray-300 accent-amber-500 shrink-0"
+                />
+                <div className="flex-1 min-w-0">
+                  <div className="text-sm font-semibold text-gray-800">ส่งกลับทีม Lead Seeker</div>
+                  <div className="text-[11px] text-gray-500 mt-0.5">โปรดระบุเหตุผลส่งกลับใน NOTE</div>
+                </div>
+              </label>
+            </div>
+          )}
 
           {/* นัดติดตามครั้งถัดไป — collapsed by default */}
           <div className="px-5">

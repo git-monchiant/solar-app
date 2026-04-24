@@ -56,6 +56,9 @@ export async function GET(req: NextRequest) {
     const beforeAmount = Math.round(orderTotal * pctBefore / 100);
     const afterAmount = orderTotal - beforeAmount;
     const extraCost = Number(l.install_extra_cost || 0);
+    // Distribute deposit credit: งวด 2 first, spillover to งวด 1.
+    const creditAfter = Math.min(afterAmount, depositPrice);
+    const creditBefore = Math.min(beforeAmount, depositPrice - creditAfter);
 
     type LineItem = { label: string; amount: number };
     let totalPrice = 0;
@@ -73,16 +76,20 @@ export async function GET(req: NextRequest) {
       receiptNumber = `${l.pre_doc_no || fallbackDocNo}-0`;
       receiptDate = l.pre_booked_at || new Date().toISOString();
     } else if (stageParam === "order_before") {
-      // Full pre-install portion (deposit is credited to the final payment, not this one)
-      totalPrice = beforeAmount;
+      // Pre-install portion. Deposit normally credits to งวด 2, but if งวด 2
+      // can't absorb it all, spillover lands here.
+      totalPrice = beforeAmount - creditBefore;
       description = `งวดที่ 1/2 · ชำระก่อนติดตั้ง ${pctBefore}%`;
       lineItems = [{ label: description, amount: beforeAmount }];
+      if (creditBefore > 0) {
+        lineItems.push({ label: `หักค่าสำรวจ (ส่วนที่เหลือ)`, amount: -creditBefore });
+      }
       receiptNumber = `${l.pre_doc_no || fallbackDocNo}-1`;
       receiptDate = new Date().toISOString();
     } else if (stageParam === "order_after") {
-      // Final payment = remaining portion + extra cost − deposit credit
+      // Final payment = remaining portion + extra cost − deposit credit (capped to งวด 2)
       const pctAfter = 100 - pctBefore;
-      totalPrice = afterAmount + extraCost - depositPrice;
+      totalPrice = afterAmount + extraCost - creditAfter;
       description = `งวดที่ 2/2 · ชำระหลังติดตั้ง ${pctAfter}%`;
       lineItems = [{ label: description, amount: afterAmount }];
       if (extraCost > 0) {
@@ -90,8 +97,8 @@ export async function GET(req: NextRequest) {
         const extraNote = (l.install_extra_note || "").trim();
         if (extraNote) remarks = `ค่าใช้จ่ายเพิ่มเติม ${extraNote}`;
       }
-      if (depositPrice > 0) {
-        lineItems.push({ label: `หักค่าสำรวจ (${fmt0(depositPrice)} บาท)`, amount: -depositPrice });
+      if (creditAfter > 0) {
+        lineItems.push({ label: `หักค่าสำรวจ (${fmt0(creditAfter)} บาท)`, amount: -creditAfter });
       }
       receiptNumber = `${l.pre_doc_no || fallbackDocNo}-2`;
       receiptDate = l.install_completed_at || new Date().toISOString();

@@ -61,9 +61,12 @@ export default function InstallStep({ lead, state, refresh, expanded, onToggle }
 
   const pctBefore = lead.order_pct_before ?? 100;
   const orderTotal = lead.order_total || 0;
-  const remainingAmount = pctBefore < 100
-    ? orderTotal - Math.round(orderTotal * pctBefore / 100) - (lead.pre_total_price || 0)
-    : 0;
+  // After-amount net of deposit credit. Deposit deducts from งวด 2 first; if it
+  // exceeds งวด 2, the extra credit was already applied to งวด 1 (OrderStep) so
+  // งวด 2 just floors at 0 here.
+  const afterRaw = pctBefore < 100 ? orderTotal - Math.round(orderTotal * pctBefore / 100) : 0;
+  const depositCredit = Math.min(afterRaw, lead.pre_total_price || 0);
+  const remainingAmount = Math.max(0, afterRaw - depositCredit);
 
   const uploadPhoto = async (file: File) => {
     setUploading(true);
@@ -459,21 +462,28 @@ export default function InstallStep({ lead, state, refresh, expanded, onToggle }
               <span className="font-mono text-gray-800">{fmt(lead.pre_total_price)} ฿</span>
             </div>
           ) : null}
-          {pctBefore < 100 ? (
-            <>
-              <div className="flex justify-between text-sm">
-                <span className="text-gray-500">งวด 1/2 (ก่อนติดตั้ง {pctBefore}%)</span>
-                <span className="font-mono text-gray-800">{fmt(Math.round(orderTotal * pctBefore / 100) - (lead.pre_total_price || 0))} ฿</span>
-              </div>
-              <div className="flex justify-between text-sm">
-                <span className="text-gray-500">งวด 2/2 (หลังติดตั้ง)</span>
-                <span className="font-mono text-gray-800">{fmt(orderTotal - Math.round(orderTotal * pctBefore / 100))} ฿</span>
-              </div>
-            </>
-          ) : (
+          {pctBefore < 100 ? (() => {
+            const dep = lead.pre_total_price || 0;
+            const beforeAmt = Math.round(orderTotal * pctBefore / 100);
+            const afterAmt = orderTotal - beforeAmt;
+            const credAfter = Math.min(afterAmt, dep);
+            const credBefore = Math.min(beforeAmt, dep - credAfter);
+            return (
+              <>
+                <div className="flex justify-between text-sm">
+                  <span className="text-gray-500">งวด 1/2 (ก่อนติดตั้ง {pctBefore}%)</span>
+                  <span className="font-mono text-gray-800">{fmt(beforeAmt - credBefore)} ฿</span>
+                </div>
+                <div className="flex justify-between text-sm">
+                  <span className="text-gray-500">งวด 2/2 (หลังติดตั้ง)</span>
+                  <span className="font-mono text-gray-800">{fmt(afterAmt - credAfter)} ฿</span>
+                </div>
+              </>
+            );
+          })() : (
             <div className="flex justify-between text-sm">
               <span className="text-gray-500">ชำระเต็มจำนวน</span>
-              <span className="font-mono text-gray-800">{fmt(orderTotal - (lead.pre_total_price || 0))} ฿</span>
+              <span className="font-mono text-gray-800">{fmt(Math.max(0, orderTotal - (lead.pre_total_price || 0)))} ฿</span>
             </div>
           )}
           {(lead.install_extra_cost || 0) > 0 && (

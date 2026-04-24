@@ -588,6 +588,7 @@ export default function LeadDetailPage({ params }: { params: Promise<{ id: strin
         <AddActivityModal
           activityType={modalType}
           leadId={lead.id}
+          canSendBack={!!lead.from_prospect && lead.status === "pre_survey" && !lead.payment_confirmed}
           onClose={() => setModalType(null)}
           onSaved={refresh}
         />
