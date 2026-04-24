@@ -1,0 +1,11 @@
+import sql from 'mssql';
+const pool = await sql.connect({ server: '172.41.1.73', port: 1433, user: 'monchiant', password: 'monchiant', database: 'solardb', options: { encrypt: false, trustServerCertificate: true } });
+const l = await pool.request().query(`UPDATE leads SET line_id = NULL WHERE line_id IS NOT NULL`);
+const p = await pool.request().query(`UPDATE prospects SET line_id = NULL WHERE line_id IS NOT NULL`);
+console.log('leads unmapped:', l.rowsAffected[0]);
+console.log('prospects unmapped:', p.rowsAffected[0]);
+const a = await pool.request().query(`SELECT COUNT(*) AS n FROM leads WHERE line_id IS NOT NULL`);
+const b = await pool.request().query(`SELECT COUNT(*) AS n FROM prospects WHERE line_id IS NOT NULL`);
+console.log('remaining leads w/ line_id:', a.recordset[0].n);
+console.log('remaining prospects w/ line_id:', b.recordset[0].n);
+await pool.close();

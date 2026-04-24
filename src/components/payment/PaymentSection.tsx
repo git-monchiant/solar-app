@@ -54,6 +54,7 @@ type Settings = {
   bank_account_branch?: string;
   bank_account_number?: string;
   bank_account_name?: string;
+  other_payment_enabled?: string;
 };
 
 type SlipStatus = "verifying" | "verified" | "failed";
@@ -101,13 +102,15 @@ export default function PaymentSection({
   };
 
   const [settings, setSettings] = useState<Settings>({});
-  const [tab, setTab] = useState<"qr" | "link" | "bank">("qr");
+  const [tab, setTab] = useState<"qr" | "link" | "bank" | "other">("qr");
+  const [otherMethod, setOtherMethod] = useState("");
   const { me } = useMe();
   const dialog = useDialog();
   const isAdmin = me?.roles?.includes("admin") ?? false;
 
   const [slips, setSlips] = useState<SlipEntry[]>([]);
   const [slipsLoaded, setSlipsLoaded] = useState(false);
+  const [confirmedMethod, setConfirmedMethod] = useState<string | null>(null);
   const [lightbox, setLightbox] = useState<{ url: string; index: number } | null>(null);
   const verifiedFiredRef = useRef(false);
 
@@ -130,7 +133,7 @@ export default function PaymentSection({
             return;
           }
           if (!res.ok) throw new Error(`API error: ${res.status}`);
-          const data = await res.json() as { slots: Array<{ slot: number; url: string; filename: string | null }> };
+          const data = await res.json() as { slots: Array<{ slot: number; url: string; filename: string | null }>; payment_method: string | null; description: string | null };
           if (cancelled) return;
           setSlips(data.slots.map((s) => ({
             key: `slot-${s.slot}`,
@@ -138,6 +141,16 @@ export default function PaymentSection({
             status: "verified" as const,
             filename: s.filename ?? undefined,
           })));
+          setConfirmedMethod(data.payment_method);
+          // Extract "ชำระโดย: …" note from the stored description so the textarea
+          // re-populates after refresh (otherMethod state is component-local).
+          if (data.description) {
+            const m = data.description.match(/ชำระโดย:\s*(.+)$/);
+            if (m) setOtherMethod(m[1].trim());
+          }
+          // Snap active tab to the confirmed method so user sees ✓ on the right one.
+          if (data.payment_method === "bank_transfer") setTab("bank");
+          else if (data.payment_method === "qr" || data.payment_method === "link" || data.payment_method === "other") setTab(data.payment_method);
         } else {
           const res = await apiFetch(`/api/slips?lead_id=${leadId}&slip_field=${encodeURIComponent(slipField)}`) as { slips: Array<{ id: number; url: string; filename: string | null }> };
           if (cancelled) return;
@@ -204,8 +217,10 @@ export default function PaymentSection({
       const qr = s.promptpay_qr_enabled !== "false";
       const link = s.promptpay_link_enabled !== "false";
       const bank = s.bank_account_enabled !== "false";
+      const other = s.other_payment_enabled === "true";
       if (!qr && link) setTab("link");
       else if (!qr && !link && bank) setTab("bank");
+      else if (!qr && !link && !bank && other) setTab("other");
     }).catch(console.error);
   }, []);
 
@@ -239,6 +254,7 @@ export default function PaymentSection({
   const qrEnabled = settings.promptpay_qr_enabled !== "false";
   const linkEnabled = settings.promptpay_link_enabled !== "false";
   const bankEnabled = settings.bank_account_enabled !== "false";
+  const otherEnabled = settings.other_payment_enabled === "true";
   const taxId = settings.promptpay_tax_id || "";
   const companyShort = settings.company_short_name || "SENA SOLAR";
   const companyFull = settings.company_name || "SENA SOLAR ENERGY CO., LTD.";
@@ -367,7 +383,39 @@ export default function PaymentSection({
     const file = e.target.files?.[0];
     if (!file) return;
     e.target.value = "";
-    addSlip(file);
+    if (tab === "other") addSlipDirect(file);
+    else addSlip(file);
+  };
+
+  // "Other" payment method bypasses OCR verify — upload the file and stage it
+  // directly as a verified slip so the confirm button enables immediately.
+  const addSlipDirect = async (file: File) => {
+    if (confirmed) return;
+    if (slips.length >= MAX_SLIPS) return;
+    const tempKey = `tmp-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+    const reader = new FileReader();
+    const dataUrl = await new Promise<string>(resolve => {
+      reader.onload = ev => resolve(ev.target?.result as string);
+      reader.readAsDataURL(file);
+    });
+    setSlips(prev => [...prev, { key: tempKey, url: dataUrl, status: "verifying" }]);
+    try {
+      const form = new FormData();
+      form.append("file", file);
+      form.append("lead_id", String(leadId));
+      form.append("slip_field", slipField);
+      const storeRes = await apiFetch("/api/slips", { method: "POST", body: form }) as { id: number; url: string };
+      setSlips(prev => prev.map(s => s.key === tempKey
+        ? { key: `slip-${storeRes.id}`, url: storeRes.url, status: "verified" as const, slipFilesId: storeRes.id, filename: file.name }
+        : s));
+      if (!verifiedFiredRef.current) {
+        verifiedFiredRef.current = true;
+        onVerified?.(storeRes.url);
+      }
+    } catch (e) {
+      console.error("addSlipDirect failed:", e);
+      setSlips(prev => prev.map(s => s.key === tempKey ? { ...s, status: "failed" as const, error: "อัปโหลดไม่สำเร็จ" } : s));
+    }
   };
 
   // Remove a single slip. Staging rows DELETE /api/slips/:id; failed-temp entries
@@ -387,13 +435,16 @@ export default function PaymentSection({
   const verifiedCount = slips.filter((s) => s.status === "verified").length;
   const anyVerifying = slips.some((s) => s.status === "verifying");
   const canAddMore = !confirmed && slips.length < MAX_SLIPS;
-  const canConfirm = !confirmed && verifiedCount > 0 && !anyVerifying;
+  const canConfirm = !confirmed && verifiedCount > 0 && !anyVerifying && (tab !== "other" || otherMethod.trim().length > 0);
 
   const handleConfirm = async () => {
     if (stepNo === undefined || confirming || confirmed || !canConfirm) return;
     setConfirming(true);
     setConfirmError(null);
     try {
+      const desc = tab === "other" && otherMethod.trim()
+        ? `${description ?? ""}${description ? " · " : ""}ชำระโดย: ${otherMethod.trim()}`.trim()
+        : description;
       await apiFetch("/api/payments", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -403,7 +454,7 @@ export default function PaymentSection({
           slip_field: slipField,
           doc_no: docNo ?? null,
           amount,
-          description: description ?? null,
+          description: desc ?? null,
           payment_method: tab === "bank" ? "bank_transfer" : tab,
         }),
       });
@@ -439,28 +490,43 @@ export default function PaymentSection({
       <PaymentHeader title={paymentTitle} amount={amount} amountLabel={amountLabel} />
 
       {/* Tabs (hide if only one enabled) */}
-      {[qrEnabled, linkEnabled, bankEnabled].filter(Boolean).length > 1 && (
-        <div className="flex border-b border-gray-200 -mx-3 px-3">
-          {qrEnabled && (
-            <button type="button" onClick={() => setTab("qr")}
-              className={`flex-1 pb-2.5 text-sm font-semibold border-b-2 -mb-px transition-colors cursor-pointer ${tab === "qr" ? "text-active border-active" : "text-gray-400 border-transparent hover:text-gray-600"}`}>
-              Thai QR
-            </button>
-          )}
-          {linkEnabled && (
-            <button type="button" onClick={() => setTab("link")}
-              className={`flex-1 pb-2.5 text-sm font-semibold border-b-2 -mb-px transition-colors cursor-pointer ${tab === "link" ? "text-active border-active" : "text-gray-400 border-transparent hover:text-gray-600"}`}>
-              Payment Link
-            </button>
-          )}
-          {bankEnabled && (
-            <button type="button" onClick={() => setTab("bank")}
-              className={`flex-1 pb-2.5 text-sm font-semibold border-b-2 -mb-px transition-colors cursor-pointer ${tab === "bank" ? "text-active border-active" : "text-gray-400 border-transparent hover:text-gray-600"}`}>
-              Bank Account
-            </button>
-          )}
-        </div>
-      )}
+      {[qrEnabled, linkEnabled, bankEnabled, otherEnabled].filter(Boolean).length > 1 && (() => {
+        const methodForTab: Record<string, string> = { qr: "qr", link: "link", bank: "bank_transfer", other: "other" };
+        const CheckBadge = () => (
+          <svg className="w-4 h-4 text-emerald-500 mr-1 shrink-0" fill="currentColor" viewBox="0 0 20 20" aria-label="ชำระแล้ว">
+            <path fillRule="evenodd" clipRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" />
+          </svg>
+        );
+        const tabBtnCls = (t: string) => `flex-1 pb-2.5 text-sm font-semibold border-b-2 -mb-px transition-colors cursor-pointer inline-flex items-center justify-center ${tab === t ? "text-active border-active" : "text-gray-400 border-transparent hover:text-gray-600"}`;
+        return (
+          <div className="flex border-b border-gray-200 -mx-3 px-3">
+            {qrEnabled && (
+              <button type="button" onClick={() => setTab("qr")} className={tabBtnCls("qr")}>
+                {confirmedMethod === methodForTab.qr && <CheckBadge />}
+                Thai QR
+              </button>
+            )}
+            {linkEnabled && (
+              <button type="button" onClick={() => setTab("link")} className={tabBtnCls("link")}>
+                {confirmedMethod === methodForTab.link && <CheckBadge />}
+                Payment Link
+              </button>
+            )}
+            {bankEnabled && (
+              <button type="button" onClick={() => setTab("bank")} className={tabBtnCls("bank")}>
+                {confirmedMethod === methodForTab.bank && <CheckBadge />}
+                Bank Account
+              </button>
+            )}
+            {otherEnabled && (
+              <button type="button" onClick={() => setTab("other")} className={tabBtnCls("other")}>
+                {confirmedMethod === methodForTab.other && <CheckBadge />}
+                อื่นๆ
+              </button>
+            )}
+          </div>
+        );
+      })()}
 
       {/* Thai QR Tab */}
       {qrEnabled && tab === "qr" && (
@@ -563,22 +629,39 @@ export default function PaymentSection({
         </div>
       )}
 
+      {/* Other Method Tab — free-text method + direct file upload (no OCR verify) */}
+      {otherEnabled && tab === "other" && (
+        <div className="space-y-3">
+          <div>
+            <label className="text-xs font-semibold tracking-wider uppercase text-gray-400 block mb-1">ชำระโดย / รายละเอียด</label>
+            <textarea
+              value={otherMethod}
+              onChange={e => setOtherMethod(e.target.value)}
+              placeholder="กรุณาระบุช่องทางการจ่ายเงินที่ทำกับลูกค้า"
+              disabled={confirmed}
+              rows={5}
+              className="w-full px-3 py-2 rounded-lg border border-gray-200 text-sm focus:outline-none focus:border-active disabled:bg-gray-50"
+            />
+          </div>
+        </div>
+      )}
+
       {/* Slip upload — up to MAX_SLIPS grid */}
       <div className={confirmed ? "" : "pt-2 border-t border-gray-100"}>
         <input type="file" accept="image/*" onChange={handleSlipCapture} className="hidden" id={slipInputId} disabled={confirmed || !canAddMore} />
 
         <div className="flex items-center justify-between mb-2">
           <div className="text-xs font-semibold tracking-wider uppercase text-gray-400">
-            สลิปโอนเงิน <span className="font-mono tabular-nums">{slips.length}/{MAX_SLIPS}</span>
+            {tab === "other" ? "หลักฐานการชำระ" : "สลิปโอนเงิน"} <span className="font-mono tabular-nums">{slips.length}/{MAX_SLIPS}</span>
           </div>
-          {!confirmed && verifiedCount > 0 && (
+          {!confirmed && verifiedCount > 0 && tab !== "other" && (
             <div className="text-xs font-semibold text-emerald-700">✓ ตรวจแล้ว {verifiedCount}</div>
           )}
         </div>
 
         {slips.length === 0 && slipsLoaded && !confirmed && (
           <label htmlFor={slipInputId} className="w-full h-11 px-4 rounded-lg text-sm font-semibold flex items-center justify-center gap-2 cursor-pointer bg-white border border-gray-200 text-gray-700 hover:border-gray-400 transition-colors">
-            กรุณาอัปโหลดสลิปโอนเงิน
+            {tab === "other" ? "อัปโหลดหลักฐานการชำระ" : "กรุณาอัปโหลดสลิปโอนเงิน"}
           </label>
         )}
 

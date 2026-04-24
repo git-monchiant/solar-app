@@ -172,6 +172,9 @@ export default function SurveyForm({ lead, refresh, section = "all", onPhaseChan
       if (url) {
         setLocal(url);
         await apiFetch(`/api/leads/${lead.id}`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ [field]: url }) });
+        // Refresh parent so the validator's gate check sees the new URL — without
+        // this, lead.survey_photo_*_url stays null in memory and "ถัดไป" fails.
+        refresh();
       }
     } finally { setUploadingSlot(null); }
   };
@@ -183,34 +186,46 @@ export default function SurveyForm({ lead, refresh, section = "all", onPhaseChan
   );
   const toggleAppliance = (v: string) => setAppliances(prev => prev.includes(v) ? prev.filter(a => a !== v) : [...prev, v]);
 
-  // Payload builder — shared between onFormChange (validation) and auto-save.
-  const buildPayload = (): Partial<Lead> => ({
-    survey_roof_material: roofMaterial || null,
-    survey_roof_orientation: roofOrientations.length ? roofOrientations.join(",") : null,
-    survey_floors: floors,
-    survey_roof_area_m2: typeof roofArea === "number" ? roofArea : null,
-    survey_meter_size: meterSize || null,
-    survey_db_distance_m: typeof dbDistance === "number" ? dbDistance : null,
-    survey_shading: shading || null,
-    survey_roof_tilt: roofTilt,
-    survey_monthly_bill: typeof monthlyBill === "number" ? monthlyBill : null,
-    survey_appliances: appliances.length ? appliances.join(",") : null,
-    survey_electrical_phase: electricalPhase || null,
-    // PDF extensions
-    survey_voltage_ln: typeof voltageLN === "number" ? voltageLN : null,
-    survey_voltage_ll: typeof voltageLL === "number" ? voltageLL : null,
-    survey_mdb_brand: mdbBrand || null,
-    survey_mdb_model: mdbModel || null,
-    survey_mdb_slots: mdbSlots || null,
-    survey_breaker_type: breakerType || null,
-    survey_panel_to_inverter_m: typeof panelToInverterM === "number" ? panelToInverterM : null,
-    survey_roof_structure: roofStructure || null,
-    survey_roof_width_m: typeof roofWidth === "number" ? roofWidth : null,
-    survey_roof_length_m: typeof roofLength === "number" ? roofLength : null,
-    survey_inverter_location: inverterLocation || null,
-    survey_wifi_signal: wifiSignal || null,
-    survey_access_method: accessMethod || null,
-  });
+  // Payload builder — returns ONLY fields relevant to the current section.
+  // Critical: SurveyForm is mounted per-subStep, and state inits from lead
+  // prop (which may be stale if parent hasn't refreshed). Sending all fields
+  // would overwrite the previous section's saved values with stale NULLs.
+  const buildPayload = (): Partial<Lead> => {
+    const electrical = {
+      survey_meter_size: meterSize || null,
+      survey_electrical_phase: electricalPhase || null,
+      survey_voltage_ln: typeof voltageLN === "number" ? voltageLN : null,
+      survey_voltage_ll: typeof voltageLL === "number" ? voltageLL : null,
+      survey_monthly_bill: typeof monthlyBill === "number" ? monthlyBill : null,
+      survey_mdb_brand: mdbBrand || null,
+      survey_mdb_model: mdbModel || null,
+      survey_mdb_slots: mdbSlots || null,
+      survey_breaker_type: breakerType || null,
+      survey_panel_to_inverter_m: typeof panelToInverterM === "number" ? panelToInverterM : null,
+      survey_db_distance_m: typeof dbDistance === "number" ? dbDistance : null,
+      survey_appliances: appliances.length ? appliances.join(",") : null,
+    };
+    const house = {
+      survey_roof_material: roofMaterial || null,
+      survey_roof_orientation: roofOrientations.length ? roofOrientations.join(",") : null,
+      survey_floors: floors,
+      survey_roof_area_m2: typeof roofArea === "number" ? roofArea : null,
+      survey_roof_tilt: roofTilt,
+      survey_roof_width_m: typeof roofWidth === "number" ? roofWidth : null,
+      survey_roof_length_m: typeof roofLength === "number" ? roofLength : null,
+      survey_roof_structure: roofStructure || null,
+      survey_shading: shading || null,
+    };
+    const prep = {
+      survey_inverter_location: inverterLocation || null,
+      survey_wifi_signal: wifiSignal || null,
+      survey_access_method: accessMethod || null,
+    };
+    if (section === "electrical") return electrical;
+    if (section === "house") return house;
+    if (section === "prep") return prep;
+    return { ...electrical, ...house, ...prep };
+  };
 
   // Sync parent state immediately so validation sees latest values
   useEffect(() => {
@@ -218,20 +233,44 @@ export default function SurveyForm({ lead, refresh, section = "all", onPhaseChan
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [roofMaterial, roofOrientations, floors, roofArea, meterSize, dbDistance, shading, roofTilt, monthlyBill, appliances, electricalPhase, voltageLN, voltageLL, mdbBrand, mdbModel, mdbSlots, breakerType, panelToInverterM, roofStructure, roofWidth, roofLength, inverterLocation, wifiSignal, accessMethod]);
 
-  // Auto-save to DB (debounced)
+  // Auto-save to DB (debounced). Pending payload lives in a ref so it can
+  // flush on unmount — otherwise navigating between SurveyForm sections within
+  // 600ms of a change cancels the save and loses data.
   const isFirst = useRef(true);
+  const pendingRef = useRef<{ payload: Partial<Lead>; timer: ReturnType<typeof setTimeout> } | null>(null);
   useEffect(() => {
     if (isFirst.current) { isFirst.current = false; return; }
-    const t = setTimeout(() => {
+    const payload = buildPayload();
+    if (pendingRef.current) clearTimeout(pendingRef.current.timer);
+    const timer = setTimeout(() => {
       apiFetch(`/api/leads/${lead.id}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(buildPayload()),
+        body: JSON.stringify(payload),
       }).catch(console.error);
+      pendingRef.current = null;
     }, 600);
-    return () => clearTimeout(t);
+    pendingRef.current = { payload, timer };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [roofMaterial, roofOrientations, floors, roofArea, meterSize, dbDistance, shading, roofTilt, monthlyBill, appliances, electricalPhase, voltageLN, voltageLL, mdbBrand, mdbModel, mdbSlots, breakerType, panelToInverterM, roofStructure, roofWidth, roofLength, inverterLocation, wifiSignal, accessMethod]);
+
+  // Flush any pending debounced save when this section unmounts (e.g. user
+  // navigates subStep before the 600ms timer fires).
+  useEffect(() => {
+    return () => {
+      if (pendingRef.current) {
+        clearTimeout(pendingRef.current.timer);
+        const payload = pendingRef.current.payload;
+        pendingRef.current = null;
+        apiFetch(`/api/leads/${lead.id}`, {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(payload),
+        }).catch(console.error);
+      }
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   const card = "rounded-lg bg-white/60 border border-active/15 p-3";
   const label = "text-xs font-semibold tracking-wider uppercase text-gray-400 block mb-2";

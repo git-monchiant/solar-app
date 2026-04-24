@@ -51,6 +51,8 @@ export interface Lead {
   line_picture_url?: string | null;
   survey_time_slot: string | null;
   survey_confirmed: boolean;
+  survey_lat: number | null;
+  survey_lng: number | null;
   zone: string | null;
   pre_residence_type: string | null;
   survey_note: string | null;

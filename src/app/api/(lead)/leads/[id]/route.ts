@@ -430,6 +430,14 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
       sets.push("survey_customer_signature_url = @survey_customer_signature_url");
       request.input("survey_customer_signature_url", sql.NVarChar(500), body.survey_customer_signature_url);
     }
+    if (body.survey_lat !== undefined) {
+      sets.push("survey_lat = @survey_lat");
+      request.input("survey_lat", sql.Decimal(10, 7), body.survey_lat);
+    }
+    if (body.survey_lng !== undefined) {
+      sets.push("survey_lng = @survey_lng");
+      request.input("survey_lng", sql.Decimal(10, 7), body.survey_lng);
+    }
     if (body.pre_monthly_bill !== undefined) {
       sets.push("pre_monthly_bill = @pre_monthly_bill");
       request.input("pre_monthly_bill", sql.Int, body.pre_monthly_bill);

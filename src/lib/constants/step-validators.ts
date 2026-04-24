@@ -31,26 +31,41 @@ export function validatePreSurvey(lead: Partial<Lead>): ValidationResult {
 export function validateSurvey(lead: Partial<Lead>): ValidationResult {
   return check(lead, [
     { field: "survey_confirmed", label: "ยืนยันนัดสำรวจ", test: v => v === true },
-    { field: "survey_residence_type", label: "ประเภทบ้าน" },
+    // Electrical
+    { field: "survey_meter_size", label: "ขนาดมิเตอร์" },
+    { field: "survey_electrical_phase", label: "ระบบไฟ" },
+    { field: "survey_voltage_ln", label: "แรงดัน L-N" },
+    { field: "survey_voltage_ll", label: "แรงดัน L-L" },
+    { field: "survey_monthly_bill", label: "ค่าไฟ/เดือน" },
+    { field: "survey_mdb_slots", label: "ช่องว่างใน MDB" },
+    { field: "survey_breaker_type", label: "ชนิดเบรกเกอร์" },
+    { field: "survey_panel_to_inverter_m", label: "Cable PV→Inverter" },
+    { field: "survey_db_distance_m", label: "Cable Inverter→MDB" },
+    // Roof / house
     { field: "survey_floors", label: "จำนวนชั้น" },
     { field: "survey_roof_material", label: "วัสดุหลังคา" },
     { field: "survey_roof_orientation", label: "ทิศหลังคา" },
-    { field: "survey_roof_area_m2", label: "พื้นที่หลังคา" },
     { field: "survey_roof_tilt", label: "ความชันหลังคา" },
-    { field: "survey_shading", label: "ร่มเงา" },
-    { field: "survey_roof_age", label: "อายุหลังคา" },
-    { field: "survey_electrical_phase", label: "ระบบไฟ" },
-    { field: "survey_monthly_bill", label: "ค่าไฟ/เดือน" },
-    { field: "survey_peak_usage", label: "ช่วงใช้ไฟสูงสุด" },
-    { field: "survey_grid_type", label: "ประเภทเชื่อมต่อ" },
-    { field: "survey_utility", label: "การไฟฟ้า" },
-    { field: "survey_meter_size", label: "ขนาดมิเตอร์" },
-    { field: "survey_ca_number", label: "เลข CA" },
-    { field: "survey_db_distance_m", label: "ระยะ MDB" },
-    { field: "survey_wants_battery", label: "แบตเตอรี่/Upgrade" },
-    { field: "interested_package_id", label: "แพ็กเกจที่เลือก" },
-    { field: "survey_note", label: "บันทึกสำรวจ" },
-    { field: "survey_photos", label: "รูปถ่ายหน้างาน", test: v => typeof v === "string" && v.split(",").filter(Boolean).length > 0 },
+    { field: "survey_roof_area_m2", label: "พื้นที่หลังคา" },
+    { field: "survey_roof_width_m", label: "ความกว้างหลังคา" },
+    { field: "survey_roof_length_m", label: "ความยาวหลังคา" },
+    { field: "survey_roof_structure", label: "โครงสร้างหลังคา" },
+    { field: "survey_shading", label: "เงาบัง" },
+    // Installation planning
+    { field: "survey_inverter_location", label: "ตำแหน่ง Inverter" },
+    { field: "survey_wifi_signal", label: "สัญญาณ Wi-Fi" },
+    { field: "survey_access_method", label: "วิธีขึ้นหลังคา" },
+    // Photo Checklist (4 named slots)
+    { field: "survey_photo_building_url", label: "รูปอาคาร" },
+    { field: "survey_photo_roof_structure_url", label: "รูปโครงหลังคา" },
+    { field: "survey_photo_mdb_url", label: "รูปตู้ MDB" },
+    { field: "survey_photo_inverter_point_url", label: "รูปจุดติดตั้ง Inverter" },
+    // Recommendation + signature (final tab)
+    { field: "survey_recommended_kw", label: "ขนาดที่แนะนำ (kWp)" },
+    { field: "survey_panel_count", label: "จำนวน Panel" },
+    { field: "survey_wants_battery", label: "ระบบ (On Grid / Battery / Upgrade)" },
+    { field: "interested_package_id", label: "แพ็คเกจที่เสนอ" },
+    { field: "survey_customer_signature_url", label: "ลายเซ็นลูกค้า" },
   ]);
 }
 

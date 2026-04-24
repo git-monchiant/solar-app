@@ -27,7 +27,7 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
     const db = await getDb();
 
     if (searchParams.get("list")) {
-      const cols = ["id"];
+      const cols = ["id", "payment_method", "description"];
       for (let i = 1; i <= MAX_SLIPS; i++) {
         const suffix = i === 1 ? "" : `_${i}`;
         cols.push(`slip_mime${suffix}`, `slip_filename${suffix}`, `DATALENGTH(slip_data${suffix}) AS bytes_${i}`);
@@ -50,7 +50,7 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
           });
         }
       }
-      return NextResponse.json({ slots });
+      return NextResponse.json({ slots, payment_method: row.payment_method || null, description: row.description || null });
     }
 
     const slot = parseInt(searchParams.get("slot") || "1");

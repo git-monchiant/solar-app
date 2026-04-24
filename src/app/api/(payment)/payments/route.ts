@@ -52,7 +52,7 @@ export async function POST(req: NextRequest) {
     const slipField = String(body.slip_field || "");
     const amount = parseFloat(String(body.amount || 0));
     const methodRaw = body.payment_method ? String(body.payment_method) : "";
-    const paymentMethod = ["qr", "link", "bank_transfer"].includes(methodRaw) ? methodRaw : null;
+    const paymentMethod = ["qr", "link", "bank_transfer", "other"].includes(methodRaw) ? methodRaw : null;
     if (!leadId || stepNo < 0 || !slipField || !amount) {
       return NextResponse.json({ error: "lead_id, step_no, slip_field, amount required" }, { status: 400 });
     }

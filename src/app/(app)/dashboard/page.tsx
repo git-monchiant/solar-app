@@ -394,7 +394,8 @@ function LineGrowthChart({ users }: { users: { created_at: string }[] }) {
 
   const counts: number[] = new Array(daysInMonth).fill(0);
   for (const u of users) {
-    const d = new Date(String(u.created_at).slice(0, 19));
+    // Keep the Z — parse as UTC so getDate() returns the user's local day.
+    const d = new Date(String(u.created_at));
     if (isNaN(d.getTime())) continue;
     if (d.getFullYear() !== year || d.getMonth() !== month) continue;
     const day = d.getDate();

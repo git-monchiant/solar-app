@@ -1,6 +1,7 @@
 "use client";
 import { useEffect, useState } from "react";
 import { useParams } from "next/navigation";
+import QRCode from "qrcode";
 
 interface Pkg {
   id: number;
@@ -27,6 +28,8 @@ interface Lead {
   assigned_name: string | null;
   survey_date: string | null;
   survey_time_slot: string | null;
+  survey_lat: number | null;
+  survey_lng: number | null;
   survey_note: string | null;
   survey_photos: string | null;
   // Electrical
@@ -118,10 +121,19 @@ function otherLabel(raw: string | null, map: Record<string, string>): string {
 export default function SurveyPdfPage() {
   const { id } = useParams();
   const [d, setD] = useState<Data | null>(null);
+  const [locQr, setLocQr] = useState<string | null>(null);
 
   useEffect(() => {
     fetch(`/api/survey/${id}/data`).then(r => r.json()).then(setD).catch(console.error);
   }, [id]);
+
+  useEffect(() => {
+    if (!d?.lead.survey_lat || !d?.lead.survey_lng) { setLocQr(null); return; }
+    const mapsUrl = `https://www.google.com/maps?q=${d.lead.survey_lat},${d.lead.survey_lng}`;
+    QRCode.toDataURL(mapsUrl, { width: 360, margin: 1 })
+      .then(setLocQr)
+      .catch(err => { console.error("QR gen failed", err); setLocQr(null); });
+  }, [d?.lead.survey_lat, d?.lead.survey_lng]);
 
   if (!d) return <div className="flex items-center justify-center h-screen"><div className="w-8 h-8 border-2 border-primary/30 border-t-primary animate-spin" /></div>;
 
@@ -192,12 +204,21 @@ export default function SurveyPdfPage() {
                   {/* ข้อมูลลูกค้า */}
                   <div className="avoid-break">
                     <div className="text-[16px] font-bold uppercase tracking-wider text-black mb-2">CUSTOMER INFORMATION · ข้อมูลลูกค้า</div>
-                    <div className="grid grid-cols-[110px_1fr_110px_1fr] gap-x-3 gap-y-1.5 text-[15px] text-black">
-                      <span className="font-medium">ชื่อลูกค้า</span><span>{lead.full_name || "—"}</span>
-                      <span className="font-medium">เบอร์โทร</span><span>{lead.phone || "—"}</span>
-                      {lead.project_name && (<><span className="font-medium">โครงการ</span><span className="col-span-3">{lead.project_name}</span></>)}
-                      {lead.installation_address && (<><span className="font-medium">ที่อยู่ติดตั้ง</span><span className="col-span-3">{lead.installation_address}</span></>)}
-                      {lead.assigned_name && (<><span className="font-medium">ผู้สำรวจ</span><span className="col-span-3">{lead.assigned_name}</span></>)}
+                    <div className="flex items-start gap-4">
+                      <div className="flex-1 grid grid-cols-[110px_1fr] gap-x-3 gap-y-1.5 text-[15px] text-black">
+                        <span className="font-medium">ชื่อลูกค้า</span><span>{lead.full_name || "—"}</span>
+                        <span className="font-medium">เบอร์โทร</span><span>{lead.phone || "—"}</span>
+                        {lead.project_name && (<><span className="font-medium">โครงการ</span><span>{lead.project_name}</span></>)}
+                        {lead.installation_address && (<><span className="font-medium">ที่อยู่ติดตั้ง</span><span>{lead.installation_address}</span></>)}
+                        {lead.assigned_name && (<><span className="font-medium">ผู้สำรวจ</span><span>{lead.assigned_name}</span></>)}
+                      </div>
+                      {locQr && (
+                        <div className="shrink-0 text-center">
+                          {/* eslint-disable-next-line @next/next/no-img-element */}
+                          <img src={locQr} alt="Location QR" className="w-[120px] h-[120px] border border-gray-300 rounded" />
+                          <div className="text-[10px] font-semibold uppercase tracking-wider text-black mt-1">QR แผนที่ Location</div>
+                        </div>
+                      )}
                     </div>
                   </div>
 

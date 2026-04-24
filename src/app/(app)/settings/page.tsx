@@ -124,11 +124,13 @@ function GeneralTab() {
   };
 
   const toggle = async (key: string) => {
-    const next = !isOn(key);
+    const current = key === "other_payment_enabled" ? settings[key] === "true" : isOn(key);
+    const next = !current;
     const qrOn = key === "promptpay_qr_enabled" ? next : isOn("promptpay_qr_enabled");
     const linkOn = key === "promptpay_link_enabled" ? next : isOn("promptpay_link_enabled");
     const bankOn = key === "bank_account_enabled" ? next : isOn("bank_account_enabled");
-    if (!qrOn && !linkOn && !bankOn) return;
+    const otherOn = key === "other_payment_enabled" ? next : settings["other_payment_enabled"] === "true";
+    if (!qrOn && !linkOn && !bankOn && !otherOn) return;
     await patch({ [key]: next });
   };
 
@@ -227,8 +229,10 @@ function GeneralTab() {
               { key: "promptpay_qr_enabled", label: "Thai QR", description: "QR code สำหรับสแกนชำระผ่าน PromptPay" },
               { key: "promptpay_link_enabled", label: "Payment Link", description: "ลิ้งค์หน้าชำระเงินส่งให้ลูกค้า" },
               { key: "bank_account_enabled", label: "Bank Account", description: "บัญชีธนาคารสำหรับลูกค้าโอนตรง" },
+              { key: "other_payment_enabled", label: "อื่นๆ", description: "ช่องทางอื่น (เงินสด/เช็ค/...) — ระบุวิธีเป็น text + อัปโหลดหลักฐาน ไม่ต้องตรวจสลิปอัตโนมัติ" },
             ].map(t => {
-              const on = isOn(t.key);
+              // "other_payment_enabled" defaults to OFF (opt-in). Others default to ON unless "false".
+              const on = t.key === "other_payment_enabled" ? settings[t.key] === "true" : isOn(t.key);
               return (
                 <div key={t.key} className="px-5 py-4 flex items-center gap-4">
                   <div className="flex-1 min-w-0">
