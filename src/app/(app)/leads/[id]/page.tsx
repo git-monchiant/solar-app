@@ -1,6 +1,7 @@
 "use client";
 
 import { apiFetch } from "@/lib/api";
+import { stripThaiTitle } from "@/lib/utils/name";
 import { useEffect, useState, use, useCallback, useRef } from "react";
 import Link from "next/link";
 import ActivityTimeline from "@/components/lead/detail/ActivityTimeline";
@@ -209,11 +210,24 @@ export default function LeadDetailPage({ params }: { params: Promise<{ id: strin
   const [gridTieExpanded, setGridTieExpanded] = useState(false);
 
   const fetchLead = useCallback(() => {
-    return apiFetch(`/api/leads/${id}`).then(setLead).catch(console.error).finally(() => setLoadingLead(false));
+    return apiFetch(`/api/leads/${id}`)
+      .then(setLead)
+      .catch((e: unknown) => {
+        // 404 = deleted lead — fall through to "Not found" UI silently.
+        const msg = e instanceof Error ? e.message : String(e);
+        if (!/API error: 404/.test(msg)) console.error(e);
+      })
+      .finally(() => setLoadingLead(false));
   }, [id]);
   const fetchActivities = useCallback(() => {
     setLoadingAct(true);
-    return apiFetch(`/api/leads/${id}/activities`).then(setActivities).catch(console.error).finally(() => setLoadingAct(false));
+    return apiFetch(`/api/leads/${id}/activities`)
+      .then(setActivities)
+      .catch((e: unknown) => {
+        const msg = e instanceof Error ? e.message : String(e);
+        if (!/API error: 404/.test(msg)) console.error(e);
+      })
+      .finally(() => setLoadingAct(false));
   }, [id]);
 
   useEffect(() => {
@@ -298,7 +312,7 @@ export default function LeadDetailPage({ params }: { params: Promise<{ id: strin
             </svg>
           </button>
           <div className="flex-1 min-w-0 flex items-center gap-1">
-            <h1 className="text-2xl font-bold tracking-tight leading-tight text-gray-900 truncate">{lead.full_name}</h1>
+            <h1 className="text-2xl font-bold tracking-tight leading-tight text-gray-900 truncate">{stripThaiTitle(lead.full_name)}</h1>
             <button type="button" onClick={() => setShowProfileModal(true)} className="shrink-0 w-8 h-8 rounded-full hover:bg-gray-100 flex items-center justify-center text-gray-400 hover:text-primary transition-colors" style={{ minHeight: 0 }}>
               <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
                 <path strokeLinecap="round" strokeLinejoin="round" d="M17.982 18.725A7.488 7.488 0 0012 15.75a7.488 7.488 0 00-5.982 2.975m11.963 0a9 9 0 10-11.963 0m11.963 0A8.966 8.966 0 0112 21a8.966 8.966 0 01-5.982-2.275M15 9.75a3 3 0 11-6 0 3 3 0 016 0z" />
@@ -335,14 +349,8 @@ export default function LeadDetailPage({ params }: { params: Promise<{ id: strin
           )}
         </div>
 
-        {/* Meta */}
+        {/* Meta — order: project (under name), source/upgrade badges, phone */}
         <div className="px-5 pb-3 pt-1 space-y-1">
-          <div className="text-xs text-gray-600 leading-tight flex items-center gap-1.5 flex-wrap">
-            <span className="font-mono tabular-nums">{lead.phone}</span>
-            <span className="text-gray-300">·</span>
-            <span>{lead.source === "event" ? "Event" : "Walk-in"}</span>
-            {isUpgrade && (<><span className="text-gray-300">·</span><span className="font-semibold text-purple-600">Upgrade</span></>)}
-          </div>
           {(lead.project_name || lead.installation_address || lead.contact_date) && (
             <div className="text-xs text-gray-600 leading-tight flex items-center gap-1.5 min-w-0">
               <svg className="w-3.5 h-3.5 text-gray-400 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
@@ -350,7 +358,9 @@ export default function LeadDetailPage({ params }: { params: Promise<{ id: strin
                 <path strokeLinecap="round" strokeLinejoin="round" d="M15 11a3 3 0 11-6 0 3 3 0 016 0z" />
               </svg>
               <span className="truncate">
-                {[lead.project_name, lead.installation_address].filter(Boolean).join(" ")}
+                {lead.installation_address && <span className="font-bold text-gray-900">{lead.installation_address}</span>}
+                {lead.installation_address && lead.project_name && <span className="text-gray-300"> · </span>}
+                {lead.project_name}
                 {lead.contact_date && (() => {
                   const aging = Math.floor((Date.now() - new Date(lead.contact_date).getTime()) / 86400000);
                   const toneText = aging >= 14 ? "text-red-600" : aging >= 7 ? "text-amber-600" : "text-emerald-600";
@@ -365,6 +375,40 @@ export default function LeadDetailPage({ params }: { params: Promise<{ id: strin
               </span>
             </div>
           )}
+          <div className="text-xs text-gray-600 leading-tight flex items-center gap-1.5 flex-wrap">
+            {lead.phone && (
+              <>
+                <svg className="w-3.5 h-3.5 text-gray-400 shrink-0" fill="currentColor" viewBox="0 0 24 24">
+                  <path d="M6.62 10.79a15.05 15.05 0 006.59 6.59l2.2-2.2a1 1 0 011.05-.24c1.12.37 2.33.57 3.57.57a1 1 0 011 1V20a1 1 0 01-1 1A17 17 0 013 4a1 1 0 011-1h3.5a1 1 0 011 1c0 1.24.2 2.45.57 3.57a1 1 0 01-.24 1.05l-2.21 2.17z" />
+                </svg>
+                <span className="font-mono tabular-nums">{lead.phone}</span>
+                <span className="text-gray-300">·</span>
+              </>
+            )}
+            <span className="inline-flex items-center gap-1">
+              {lead.source === "event" ? (
+                <svg className="w-3.5 h-3.5 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
+                </svg>
+              ) : (
+                <svg className="w-3.5 h-3.5 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M15.75 6a3.75 3.75 0 11-7.5 0 3.75 3.75 0 017.5 0zM4.501 20.118a7.5 7.5 0 0114.998 0" />
+                </svg>
+              )}
+              {lead.source === "event" ? "Event" : "Walk-in"}
+            </span>
+            {isUpgrade && (
+              <>
+                <span className="text-gray-300">·</span>
+                <span className="inline-flex items-center gap-1 font-semibold text-purple-600">
+                  <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M4.5 10.5L12 3m0 0l7.5 7.5M12 3v18" />
+                  </svg>
+                  Upgrade
+                </span>
+              </>
+            )}
+          </div>
         </div>
 
         {/* Tabs */}

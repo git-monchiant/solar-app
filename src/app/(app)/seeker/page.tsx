@@ -36,8 +36,40 @@ type Prospect = {
   interest_reason_note: string | null;
   interest_sizes: string | null;
   returned_at: string | null;
+  contacts: string | null;
+  line_display_name: string | null;
+  line_picture_url: string | null;
   created_at: string;
 };
+
+export type Contact = { name: string | null; phone: string | null };
+
+// Strip Thai title prefixes at the start of a name (นาย/นาง/นางสาว/น.ส./ด.ช./ด.ญ.).
+// Longer prefixes first so "นางสาว" matches before "นาง".
+export function stripThaiTitle(s: string | null | undefined): string | null {
+  if (!s) return null;
+  const cleaned = s
+    .trim()
+    .replace(/^(นางสาว|นาง|นาย|น\.ส\.?|ด\.ช\.?|ด\.ญ\.?)\s*/u, "")
+    .trim();
+  return cleaned || null;
+}
+
+export function parseContacts(raw: string | null): Contact[] {
+  if (!raw) return [];
+  try {
+    const arr = JSON.parse(raw);
+    if (!Array.isArray(arr)) return [];
+    return arr
+      .map((c): Contact => ({
+        name: typeof c?.name === "string" ? c.name : null,
+        phone: typeof c?.phone === "string" ? c.phone : null,
+      }))
+      .filter((c) => c.name || c.phone);
+  } catch {
+    return [];
+  }
+}
 
 type CardStatusKey = "pending" | "contacted" | "interested" | "not_interested";
 
@@ -147,7 +179,7 @@ export default function SeekerPage() {
   const [projectCards, setProjectCards] = useState<ProjectCard[]>([]);
   const [loading, setLoading] = useState(true);
   const [projectsLoading, setProjectsLoading] = useState(true);
-  const [tab, setTab] = useState<"all" | "todo" | "returned" | "interested" | "not_interested">("todo");
+  const [tab, setTab] = useState<"all" | "todo" | "returned" | "interested" | "not_interested">("all");
   const [search, setSearch] = useState<string>("");
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -261,7 +293,7 @@ export default function SeekerPage() {
   }
 
   return (
-    <div>
+    <div className="flex flex-col h-full overflow-hidden">
       <ListPageHeader
         title={projectFilter}
         subtitle="LEADS SEEKER"
@@ -279,7 +311,7 @@ export default function SeekerPage() {
         onTabChange={(k) => setTab(k as typeof tab)}
       />
 
-      <div className="px-3 md:px-5 py-3">
+      <div className="px-3 md:px-5 py-3 flex-1 overflow-y-auto">
         {loading ? (
           <div className="flex items-center justify-center py-16">
             <div className="w-8 h-8 border-3 border-gray-200 border-t-gray-900 rounded-full animate-spin" />
@@ -342,17 +374,23 @@ export default function SeekerPage() {
                     })()}
                   </div>
 
-                  {/* Row 2: name — single line, ellipsis if too long */}
-                  {p.full_name && (
-                    <div className="text-xs text-gray-600 leading-snug flex items-center gap-1 min-w-0">
-                      <svg className="w-3.5 h-3.5 text-indigo-500 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                        <path strokeLinecap="round" strokeLinejoin="round" d="M15.75 6a3.75 3.75 0 11-7.5 0 3.75 3.75 0 017.5 0zM4.501 20.118a7.5 7.5 0 0114.998 0" />
-                      </svg>
-                      <span className="truncate min-w-0" title={p.full_name}>{p.full_name}</span>
-                    </div>
-                  )}
+                  {/* Row 2: primary name + "และอีก N คน" trailing text for extras */}
+                  {p.full_name && (() => {
+                    const others = Math.max(0, parseContacts(p.contacts).length - 1);
+                    return (
+                      <div className="text-xs text-gray-600 leading-snug flex items-center gap-1 min-w-0">
+                        <svg className="w-3.5 h-3.5 text-indigo-500 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                          <path strokeLinecap="round" strokeLinejoin="round" d="M15.75 6a3.75 3.75 0 11-7.5 0 3.75 3.75 0 017.5 0zM4.501 20.118a7.5 7.5 0 0114.998 0" />
+                        </svg>
+                        <span className="truncate min-w-0" title={p.full_name}>{p.full_name}</span>
+                        {others > 0 && (
+                          <span className="shrink-0 text-indigo-600 font-semibold">(+{others})</span>
+                        )}
+                      </div>
+                    );
+                  })()}
 
-                  {/* Row 3: contact channels — phone number, LINE logo (comma-separated) */}
+                  {/* Row 3: primary phone + LINE icon */}
                   {(p.phone || p.line_id) && (
                     <div className="text-xs text-gray-600 font-mono tabular-nums flex items-center gap-1.5 min-w-0">
                       <svg className="w-3.5 h-3.5 text-emerald-600 shrink-0" fill="currentColor" viewBox="0 0 24 24">
@@ -520,7 +558,7 @@ function ProjectLanding({
     });
   }, [projects, favs]);
   return (
-    <div>
+    <div className="flex flex-col h-full overflow-hidden">
       <ListPageHeader
         title="Leads Seeker"
         subtitle="เลือกโครงการ"
@@ -532,7 +570,7 @@ function ProjectLanding({
         onTabChange={() => {}}
       />
 
-      <div className="px-3 md:px-5 py-3">
+      <div className="px-3 md:px-5 py-3 flex-1 overflow-y-auto">
         {loading ? (
           <div className="flex items-center justify-center py-16">
             <div className="w-8 h-8 border-3 border-gray-200 border-t-gray-900 rounded-full animate-spin" />
@@ -615,13 +653,75 @@ function ProjectLanding({
 
 function VisitModal({ prospect, onClose, onSaved, onRefresh }: { prospect: Prospect; onClose: () => void; onSaved: () => void; onRefresh: () => void }) {
   const dialog = useDialog();
-  const [modalTab, setModalTab] = useState<"visit" | "reasons" | "line">("line");
+  const [modalTab, setModalTab] = useState<"line" | "people" | "visit" | "reasons">("line");
   const [interest, setInterest] = useState<Prospect["interest"]>(prospect.interest);
   const [interestType, setInterestType] = useState<Prospect["interest_type"]>(prospect.interest_type);
   const [note, setNote] = useState(prospect.note || "");
-  const [contactName, setContactName] = useState(prospect.full_name || "");
   const [houseNumber, setHouseNumber] = useState(prospect.house_number || "");
-  const [phone, setPhone] = useState(prospect.phone || "");
+  // Contacts: everyone living at this house. The primary contact is mirrored
+  // server-side into legacy full_name / phone. We keep `contacts` in stable
+  // insertion order and track `primaryIdx` separately so marking someone as
+  // primary doesn't visually reorder the list — the gold border just moves.
+  const [contacts, setContacts] = useState<Contact[]>(() => {
+    const parsed = parseContacts(prospect.contacts);
+    if (parsed.length > 0) return parsed;
+    const fallback: Contact = {
+      name: prospect.full_name || null,
+      phone: prospect.phone || null,
+    };
+    return fallback.name || fallback.phone ? [fallback] : [{ name: null, phone: null }];
+  });
+  const [primaryIdx, setPrimaryIdx] = useState(0);
+  const contactName = contacts[0]?.name || "";
+  const setContactName = (v: string) =>
+    setContacts((prev) => {
+      const next = prev.length ? [...prev] : [{ name: null, phone: null }];
+      next[0] = { ...next[0], name: v || null };
+      return next;
+    });
+  const cleanContacts = useMemo(() => {
+    // Reorder so the marked primary goes to index 0 for serialization
+    // (server mirrors contacts[0] → full_name/phone). Display order is
+    // preserved by rendering `contacts` directly, not this array.
+    const primary = contacts[primaryIdx];
+    const reordered = primary
+      ? [primary, ...contacts.filter((_, i) => i !== primaryIdx)]
+      : [...contacts];
+    return reordered
+      .map((c) => ({ name: stripThaiTitle(c.name), phone: (c.phone || "").trim() || null }))
+      .filter((c) => c.name || c.phone);
+  }, [contacts, primaryIdx]);
+  const contactsJson = useMemo(() => JSON.stringify(cleanContacts), [cleanContacts]);
+  const addContact = (c: Contact) =>
+    setContacts((prev) => [...prev, c]);
+  const updateContact = (i: number, patch: Partial<Contact>) =>
+    setContacts((prev) => prev.map((c, idx) => (idx === i ? { ...c, ...patch } : c)));
+  const promoteContact = (i: number) =>
+    setContacts((prev) => {
+      if (i <= 0 || i >= prev.length) return prev;
+      const next = [...prev];
+      const [picked] = next.splice(i, 1);
+      next.unshift(picked);
+      return next;
+    });
+  // Inline "add resident" form shown at the bottom of the contacts list.
+  const [addingOpen, setAddingOpen] = useState(false);
+  const [addName, setAddName] = useState("");
+  const [addPhone, setAddPhone] = useState("");
+  const canSubmitAdd = !!(addName.trim() || addPhone.trim());
+  const submitAddContact = () => {
+    if (!canSubmitAdd) return;
+    addContact({ name: stripThaiTitle(addName), phone: addPhone.trim() || null });
+    setAddName("");
+    setAddPhone("");
+    setAddingOpen(false);
+  };
+  const cancelAddContact = () => {
+    setAddName("");
+    setAddPhone("");
+    setAddingOpen(false);
+  };
+
   const [contactHours, setContactHours] = useState<number[]>(() => {
     if (!prospect.contact_time) return [];
     return prospect.contact_time
@@ -664,25 +764,50 @@ function VisitModal({ prospect, onClose, onSaved, onRefresh }: { prospect: Prosp
 
   // Auto-save visit + line tab fields (interest, note, contact, house number).
   // Skips GPS — that's only captured when user explicitly "visits" (on mount).
-  const visitInitRef = useRef(true);
+  // Snapshot the initial prospect values so we only PATCH fields that actually
+  // changed; otherwise a spurious effect fire (e.g. React StrictMode remount
+  // preserving our guard ref) would send `interest` back to the server, which
+  // treats any `interest` in the body as a visit event.
+  const initialVisitRef = useRef({
+    interest: prospect.interest ?? null,
+    interest_type: prospect.interest_type ?? null,
+    note: prospect.note || "",
+    house_number: prospect.house_number || "",
+    contact_time: prospect.contact_time || "",
+    contactsJson,
+  });
   const [visitSavedAt, setVisitSavedAt] = useState<number | null>(null);
   useEffect(() => {
-    if (visitInitRef.current) { visitInitRef.current = false; return; }
     const timer = setTimeout(async () => {
+      const init = initialVisitRef.current;
+      const nextHouse = houseNumber.trim();
+      const nextContactTime = contactHours.length ? [...contactHours].sort((a, b) => a - b).join(",") : "";
+      const nextInterestType = interest === "interested" ? interestType : null;
+
+      const patch: Record<string, unknown> = {};
+      if (interest !== init.interest) patch.interest = interest;
+      if (nextInterestType !== init.interest_type) patch.interest_type = nextInterestType;
+      if (note !== init.note) patch.note = note;
+      if (nextHouse !== init.house_number) patch.house_number = nextHouse || null;
+      if (nextContactTime !== init.contact_time) patch.contact_time = nextContactTime || null;
+      if (contactsJson !== init.contactsJson) patch.contacts = cleanContacts;
+
+      if (Object.keys(patch).length === 0) return;
+
       try {
         await apiFetch(`/api/prospects/${prospect.id}`, {
           method: "PATCH",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            interest,
-            interest_type: interest === "interested" ? interestType : null,
-            note,
-            full_name: contactName.trim() || null,
-            house_number: houseNumber.trim() || null,
-            phone: phone.trim() || null,
-            contact_time: contactHours.length ? [...contactHours].sort((a, b) => a - b).join(",") : null,
-          }),
+          body: JSON.stringify(patch),
         });
+        initialVisitRef.current = {
+          interest,
+          interest_type: nextInterestType,
+          note,
+          house_number: nextHouse,
+          contact_time: nextContactTime,
+          contactsJson,
+        };
         setVisitSavedAt(Date.now());
         setTimeout(() => setVisitSavedAt(null), 1500);
         onRefresh();
@@ -692,12 +817,21 @@ function VisitModal({ prospect, onClose, onSaved, onRefresh }: { prospect: Prosp
     }, 600);
     return () => clearTimeout(timer);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [interest, interestType, note, contactName, houseNumber, phone, contactHours, prospect.id]);
+  }, [interest, interestType, note, houseNumber, contactHours, contactsJson, prospect.id]);
   const [saving, setSaving] = useState(false);
   const [creatingLead, setCreatingLead] = useState(false);
+  // When >1 contact lives at this house, seeker must pick ONE for the lead.
+  const [leadContactIdx, setLeadContactIdx] = useState(0);
   const [leadIdLocal, setLeadIdLocal] = useState<number | null>(prospect.lead_id);
   const [linePickerOpen, setLinePickerOpen] = useState(false);
-  const [linkedLine, setLinkedLine] = useState<{ display_name: string; picture_url: string | null } | null>(null);
+  // Seed from JOIN data (line_display_name / line_picture_url) when present,
+  // so the card renders the profile on first paint instead of flashing the
+  // "เลือก LINE" button and then swapping after an async fetch.
+  const [linkedLine, setLinkedLine] = useState<{ display_name: string; picture_url: string | null } | null>(
+    prospect.line_id && (prospect.line_display_name || prospect.line_picture_url)
+      ? { display_name: prospect.line_display_name || "", picture_url: prospect.line_picture_url }
+      : null
+  );
   const [returnInfo, setReturnInfo] = useState<{ note: string | null; created_by_name: string | null; created_at: string } | null>(null);
   const [returnBackNote, setReturnBackNote] = useState("");
   // Local mirror of prospect.returned_at so the UI flips out of the returned
@@ -707,11 +841,12 @@ function VisitModal({ prospect, onClose, onSaved, onRefresh }: { prospect: Prosp
   const [localReturnedAt, setLocalReturnedAt] = useState<string | null>(prospect.returned_at);
 
   useEffect(() => {
-    if (!prospect.line_id) return;
-    apiFetch("/api/line-users").then((data: Array<{ line_user_id: string; display_name: string; picture_url: string | null }>) => {
-      const match = data.find((u) => u.line_user_id === prospect.line_id);
-      if (match) setLinkedLine({ display_name: match.display_name || "", picture_url: match.picture_url });
+    // Skip fetch if the JOIN already gave us profile data on mount.
+    if (!prospect.line_id || linkedLine) return;
+    apiFetch(`/api/line-users?line_user_id=${encodeURIComponent(prospect.line_id)}`).then((u: { display_name: string; picture_url: string | null } | null) => {
+      if (u) setLinkedLine({ display_name: u.display_name || "", picture_url: u.picture_url });
     }).catch(() => {});
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [prospect.line_id]);
 
   // Auto-fill contact name from the LINE display name when we have no name yet.
@@ -756,7 +891,7 @@ function VisitModal({ prospect, onClose, onSaved, onRefresh }: { prospect: Prosp
           interest,
           interest_type: interest === "interested" ? interestType : null,
           note,
-          full_name: contactName.trim() || null,
+          contacts: cleanContacts,
           house_number: houseNumber.trim() || null,
           contact_time: contactHours.length ? [...contactHours].sort((a, b) => a - b).join(",") : null,
           visit_lat: loc?.lat ?? null,
@@ -888,7 +1023,16 @@ function VisitModal({ prospect, onClose, onSaved, onRefresh }: { prospect: Prosp
               </svg>
             </span>
           )}
-          STEP-1
+          Line
+        </button>
+        <button
+          type="button"
+          onClick={() => setModalTab("people")}
+          className={`flex-1 pb-2.5 text-sm font-semibold border-b-2 -mb-px transition-colors ${
+            modalTab === "people" ? "text-primary border-primary" : "text-gray-400 border-transparent hover:text-gray-600"
+          }`}
+        >
+          สมาชิก
         </button>
         <button
           type="button"
@@ -897,7 +1041,7 @@ function VisitModal({ prospect, onClose, onSaved, onRefresh }: { prospect: Prosp
             modalTab === "visit" ? "text-primary border-primary" : "text-gray-400 border-transparent hover:text-gray-600"
           }`}
         >
-          STEP-2
+          ความสนใจ
         </button>
         <button
           type="button"
@@ -906,122 +1050,81 @@ function VisitModal({ prospect, onClose, onSaved, onRefresh }: { prospect: Prosp
             modalTab === "reasons" ? "text-primary border-primary" : "text-gray-400 border-transparent hover:text-gray-600"
           }`}
         >
-          STEP-3
+          ส่งต่อ
         </button>
       </div>
 
-      <div className="min-h-[560px]">
+      <div className="flex-1">
       {modalTab === "line" ? (
-        <div className="flex flex-col items-center gap-3 py-4">
-          {/* 1. QR */}
-          <div className="flex items-center gap-2">
-            <span className="text-sm text-gray-700">ให้ลูกค้าสแกนเพื่อเพิ่ม LINE</span>
-            <img src="/logos/logo-sena.png" alt="SENA SOLAR" className="h-6 w-auto" />
-          </div>
-          <img src="/api/line-qr" alt="LINE QR" className="w-44 h-44 rounded-lg border-4 border-[#06C755] p-1 bg-white" />
-          <div className="text-xs font-semibold text-gray-700">SENA SOLAR ENERGY</div>
+        <div className="flex flex-col items-center gap-6 py-6">
+          <img src="/logos/logo-sena.png" alt="SENA SOLAR" className="h-12 w-auto" />
 
-          {/* 2. Mapping — link LINE user to this prospect */}
-          <div className="w-full max-w-xs mt-2">
+          {/* QR block — single clean card, no heavy borders */}
+          <div className="flex flex-col items-center gap-3">
+            <div className="text-xs font-medium tracking-wider uppercase text-gray-400">
+              สแกนเพื่อเพิ่ม LINE
+            </div>
+            <img
+              src="/api/line-qr"
+              alt="LINE QR"
+              className="w-56 h-56 rounded-2xl p-3 bg-white ring-1 ring-gray-200"
+            />
+          </div>
+
+          {/* Linked profile or picker — minimal row */}
+          <div className="w-56">
             {linkedLine ? (
-              <div className="w-full">
-                <div className="text-[11px] font-semibold uppercase tracking-wider text-gray-400 mb-1.5">LINE Profile</div>
-                <div className="flex items-center gap-3 p-3 rounded-xl border border-gray-200 bg-white">
-                  {linkedLine.picture_url ? (
-                    <img src={linkedLine.picture_url} alt="" className="w-10 h-10 rounded-full object-cover shrink-0" />
-                  ) : (
-                    <div className="w-10 h-10 rounded-full bg-gray-200 shrink-0" />
-                  )}
-                  <div className="flex-1 min-w-0">
-                    <div className="text-sm font-semibold text-gray-900 truncate">{linkedLine.display_name || "LINE User"}</div>
-                    <div className="text-xs text-emerald-600">● เชื่อมแล้ว</div>
+              <div className="flex items-center gap-2.5 py-1.5">
+                {linkedLine.picture_url ? (
+                  <img src={linkedLine.picture_url} alt="" className="w-9 h-9 rounded-full object-cover shrink-0" />
+                ) : (
+                  <div className="w-9 h-9 rounded-full bg-gray-200 shrink-0" />
+                )}
+                <div className="flex-1 min-w-0">
+                  <div className="text-sm font-medium text-gray-900 truncate">{linkedLine.display_name || "LINE User"}</div>
+                  <div className="inline-flex items-center gap-0.5 text-[10px] text-[#06C755] font-medium">
+                    <svg className="w-3 h-3" fill="currentColor" viewBox="0 0 24 24"><path d="M9 16.17l-3.88-3.88a1 1 0 10-1.41 1.41l4.58 4.59a1 1 0 001.42 0l10.59-10.59a1 1 0 10-1.41-1.41L9 16.17z" /></svg>
+                    เชื่อมกับบ้านนี้แล้ว
                   </div>
-                  <button
-                    type="button"
-                    title="ยกเลิกการเชื่อม"
-                    onClick={async () => {
-                      const ok = await dialog.confirm({
-                        title: "ยกเลิกการเชื่อม LINE",
-                        message: "ยกเลิกการเชื่อม LINE ของบ้านนี้?",
-                        variant: "danger",
-                        confirmText: "ยกเลิกการเชื่อม",
-                      });
-                      if (!ok) return;
-                      await apiFetch(`/api/prospects/${prospect.id}`, {
-                        method: "PATCH",
-                        headers: { "Content-Type": "application/json" },
-                        body: JSON.stringify({ line_id: null }),
-                      });
-                      setLinkedLine(null);
-                      onRefresh();
-                    }}
-                    className="shrink-0 w-8 h-8 rounded-lg flex items-center justify-center text-gray-400 hover:text-red-600 hover:bg-red-50 transition-colors"
-                  >
-                    <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                      <path strokeLinecap="round" strokeLinejoin="round" d="M14.74 9l-.346 9m-4.788 0L9.26 9m9.968-3.21c.342.052.682.107 1.022.166m-1.022-.165L18.16 19.673a2.25 2.25 0 01-2.244 2.077H8.084a2.25 2.25 0 01-2.244-2.077L4.772 5.79m14.456 0a48.108 48.108 0 00-3.478-.397m-12 .562c.34-.059.68-.114 1.022-.165m0 0a48.11 48.11 0 013.478-.397m7.5 0v-.916c0-1.18-.91-2.164-2.09-2.201a51.964 51.964 0 00-3.32 0c-1.18.037-2.09 1.022-2.09 2.201v.916m7.5 0a48.667 48.667 0 00-7.5 0" />
-                    </svg>
-                  </button>
                 </div>
+                <button
+                  type="button"
+                  title="ยกเลิกการเชื่อม"
+                  onClick={async () => {
+                    const ok = await dialog.confirm({
+                      title: "ยกเลิกการเชื่อม LINE",
+                      message: "ยกเลิกการเชื่อม LINE ของบ้านนี้?",
+                      variant: "danger",
+                      confirmText: "ยกเลิกการเชื่อม",
+                    });
+                    if (!ok) return;
+                    await apiFetch(`/api/prospects/${prospect.id}`, {
+                      method: "PATCH",
+                      headers: { "Content-Type": "application/json" },
+                      body: JSON.stringify({ line_id: null }),
+                    });
+                    setLinkedLine(null);
+                    onRefresh();
+                  }}
+                  className="shrink-0 w-7 h-7 rounded-lg flex items-center justify-center text-gray-300 hover:text-red-600 hover:bg-red-50 transition-colors"
+                >
+                  <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M14.74 9l-.346 9m-4.788 0L9.26 9m9.968-3.21c.342.052.682.107 1.022.166m-1.022-.165L18.16 19.673a2.25 2.25 0 01-2.244 2.077H8.084a2.25 2.25 0 01-2.244-2.077L4.772 5.79m14.456 0a48.108 48.108 0 00-3.478-.397m-12 .562c.34-.059.68-.114 1.022-.165m0 0a48.11 48.11 0 013.478-.397m7.5 0v-.916c0-1.18-.91-2.164-2.09-2.201a51.964 51.964 0 00-3.32 0c-1.18.037-2.09 1.022-2.09 2.201v.916m7.5 0a48.667 48.667 0 00-7.5 0" />
+                  </svg>
+                </button>
               </div>
             ) : (
               <button
                 type="button"
                 onClick={() => setLinePickerOpen(true)}
-                className="w-full inline-flex items-center justify-start gap-1 text-sm text-gray-500 hover:text-gray-800 py-2"
+                className="w-full inline-flex items-center justify-center gap-2 h-10 rounded-lg border border-gray-200 bg-white text-[#06C755] text-sm font-medium hover:bg-gray-50 active:scale-[0.98] transition"
               >
-                <span className="w-5 h-5 rounded-full border border-gray-300 flex items-center justify-center text-base leading-none">+</span>
-                เลือก LINE ของลูกค้า
+                <svg className="w-4 h-4 shrink-0" viewBox="0 0 24 24" fill="currentColor">
+                  <path d="M19.365 9.863c.349 0 .63.285.63.631 0 .345-.281.63-.63.63H17.61v1.125h1.755c.349 0 .63.283.63.63 0 .344-.281.629-.63.629h-2.386c-.345 0-.627-.285-.627-.629V8.108c0-.345.282-.63.63-.63h2.386c.346 0 .627.285.627.63 0 .349-.281.63-.63.63H17.61v1.125h1.755zm-3.855 3.016c0 .27-.174.51-.432.596-.064.021-.133.031-.199.031-.211 0-.391-.09-.51-.25l-2.443-3.317v2.94c0 .344-.279.629-.631.629-.346 0-.626-.285-.626-.629V8.108c0-.27.173-.51.43-.595.064-.022.134-.032.2-.032.211 0 .391.09.51.25l2.44 3.317V8.108c0-.345.282-.63.63-.63.345 0 .63.285.63.63v4.771zm-5.741 0c0 .344-.282.629-.631.629-.345 0-.627-.285-.627-.629V8.108c0-.345.282-.63.63-.63.346 0 .628.285.628.63v4.771zm-2.466.629H4.917c-.345 0-.63-.285-.63-.629V8.108c0-.345.285-.63.63-.63.348 0 .63.285.63.63v4.141h1.756c.348 0 .629.283.629.63 0 .344-.282.629-.629.629M24 10.314C24 4.943 18.615.572 12 .572S0 4.943 0 10.314c0 4.811 4.27 8.842 10.035 9.608.391.082.923.258 1.058.59.12.301.079.766.038 1.08l-.164 1.02c-.045.301-.24 1.186 1.049.645 1.291-.539 6.916-4.078 9.436-6.975C23.176 14.393 24 12.458 24 10.314" />
+                </svg>
+                + Add Profile
               </button>
             )}
-          </div>
-
-          {/* 3. Input — house number + contact name + phone (with prefix icons) */}
-          <div className="w-full max-w-xs space-y-2">
-            <div>
-              <label className="text-xs font-semibold uppercase tracking-wider text-gray-500 block mb-1">บ้านเลขที่</label>
-              <div className="relative">
-                <svg className="w-4 h-4 text-primary absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                  <path strokeLinecap="round" strokeLinejoin="round" d="M2.25 12l8.954-8.955c.44-.439 1.152-.439 1.591 0L21.75 12M4.5 9.75v10.125c0 .621.504 1.125 1.125 1.125H9.75v-4.875c0-.621.504-1.125 1.125-1.125h2.25c.621 0 1.125.504 1.125 1.125V21h4.125c.621 0 1.125-.504 1.125-1.125V9.75" />
-                </svg>
-                <input
-                  type="text"
-                  value={houseNumber}
-                  onChange={(e) => setHouseNumber(e.target.value)}
-                  placeholder="เช่น 52/167"
-                  className="w-full h-10 pl-9 pr-3 rounded-lg border border-gray-200 text-sm focus:outline-none focus:border-primary"
-                />
-              </div>
-            </div>
-            <div>
-              <label className="text-xs font-semibold uppercase tracking-wider text-gray-500 block mb-1">ชื่อผู้ติดต่อ</label>
-              <div className="relative">
-                <svg className="w-4 h-4 text-indigo-500 absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                  <path strokeLinecap="round" strokeLinejoin="round" d="M15.75 6a3.75 3.75 0 11-7.5 0 3.75 3.75 0 017.5 0zM4.501 20.118a7.5 7.5 0 0114.998 0" />
-                </svg>
-                <input
-                  type="text"
-                  value={contactName}
-                  onChange={(e) => setContactName(e.target.value)}
-                  placeholder="ชื่อ-นามสกุล"
-                  className="w-full h-10 pl-9 pr-3 rounded-lg border border-gray-200 text-sm focus:outline-none focus:border-primary"
-                />
-              </div>
-            </div>
-            <div>
-              <label className="text-xs font-semibold uppercase tracking-wider text-gray-500 block mb-1">เบอร์โทร</label>
-              <div className="relative">
-                <svg className="w-4 h-4 text-emerald-600 absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none" fill="currentColor" viewBox="0 0 24 24">
-                  <path d="M6.62 10.79a15.05 15.05 0 006.59 6.59l2.2-2.2a1 1 0 011.05-.24c1.12.37 2.33.57 3.57.57a1 1 0 011 1V20a1 1 0 01-1 1A17 17 0 013 4a1 1 0 011-1h3.5a1 1 0 011 1c0 1.24.2 2.45.57 3.57a1 1 0 01-.24 1.05l-2.21 2.17z" />
-                </svg>
-                <input
-                  type="tel"
-                  value={phone}
-                  onChange={(e) => setPhone(e.target.value)}
-                  placeholder="เช่น 089-xxx-xxxx"
-                  className="w-full h-10 pl-9 pr-3 rounded-lg border border-gray-200 text-sm font-mono tabular-nums focus:outline-none focus:border-primary"
-                />
-              </div>
-            </div>
           </div>
 
           {linePickerOpen && (
@@ -1031,6 +1134,128 @@ function VisitModal({ prospect, onClose, onSaved, onRefresh }: { prospect: Prosp
               onLinked={(linked) => { setLinkedLine(linked); onRefresh(); }}
             />
           )}
+        </div>
+      ) : modalTab === "people" ? (
+        <div className="flex flex-col gap-4 py-2">
+          <div>
+            <label className="text-xs font-semibold uppercase tracking-wider text-gray-500 block mb-2">บ้านเลขที่</label>
+            <div className="relative">
+              <svg className="w-4 h-4 text-primary absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                <path strokeLinecap="round" strokeLinejoin="round" d="M2.25 12l8.954-8.955c.44-.439 1.152-.439 1.591 0L21.75 12M4.5 9.75v10.125c0 .621.504 1.125 1.125 1.125H9.75v-4.875c0-.621.504-1.125 1.125-1.125h2.25c.621 0 1.125.504 1.125 1.125V21h4.125c.621 0 1.125-.504 1.125-1.125V9.75" />
+              </svg>
+              <input
+                type="text"
+                value={houseNumber}
+                onChange={(e) => setHouseNumber(e.target.value)}
+                placeholder="เช่น 52/167"
+                className="w-full h-10 pl-9 pr-3 rounded-lg border border-gray-200 text-sm focus:outline-none focus:border-primary"
+              />
+            </div>
+          </div>
+          <div>
+            <div className="text-xs font-semibold uppercase tracking-wider text-gray-500 block mb-2">
+              กรุณาเลือกผู้ติดต่อหลัก
+            </div>
+            <div className="space-y-2.5">
+              {contacts.map((c, i) => {
+                const isPrimary = i === primaryIdx;
+                return (
+                <div
+                  key={i}
+                  onClick={() => { if (!isPrimary) setPrimaryIdx(i); }}
+                  className={`rounded-xl border-2 bg-white p-2 space-y-1.5 transition-colors ${
+                    isPrimary
+                      ? "border-amber-400 cursor-default"
+                      : "border-gray-200 cursor-pointer hover:border-gray-300"
+                  }`}
+                >
+                  <div className="relative">
+                    <svg className="w-4 h-4 text-indigo-500 absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                      <path strokeLinecap="round" strokeLinejoin="round" d="M15.75 6a3.75 3.75 0 11-7.5 0 3.75 3.75 0 017.5 0zM4.501 20.118a7.5 7.5 0 0114.998 0" />
+                    </svg>
+                    <input
+                      type="text"
+                      value={c.name || ""}
+                      onChange={(e) => updateContact(i, { name: e.target.value || null })}
+                      placeholder="ชื่อ-นามสกุล"
+                      className={`w-full h-10 pl-9 rounded-lg border border-gray-200 bg-white text-sm focus:outline-none focus:border-primary ${
+                        isPrimary ? "pr-24" : "pr-3"
+                      }`}
+                    />
+                    {isPrimary && (
+                      <span className="absolute right-2 top-1/2 -translate-y-1/2 pointer-events-none text-[11px] font-semibold text-amber-600 bg-amber-50 border border-amber-200 px-1.5 py-0.5 rounded">
+                        ผู้ติดต่อหลัก
+                      </span>
+                    )}
+                  </div>
+                  <div className="relative">
+                    <svg className="w-4 h-4 text-emerald-600 absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none" fill="currentColor" viewBox="0 0 24 24">
+                      <path d="M6.62 10.79a15.05 15.05 0 006.59 6.59l2.2-2.2a1 1 0 011.05-.24c1.12.37 2.33.57 3.57.57a1 1 0 011 1V20a1 1 0 01-1 1A17 17 0 013 4a1 1 0 011-1h3.5a1 1 0 011 1c0 1.24.2 2.45.57 3.57a1 1 0 01-.24 1.05l-2.21 2.17z" />
+                    </svg>
+                    <input
+                      type="tel"
+                      value={c.phone || ""}
+                      onChange={(e) => updateContact(i, { phone: e.target.value || null })}
+                      placeholder="เบอร์โทร"
+                      className="w-full h-10 pl-9 pr-3 rounded-lg border border-gray-200 bg-white text-sm font-mono tabular-nums focus:outline-none focus:border-primary"
+                    />
+                  </div>
+                </div>
+                );
+              })}
+              {addingOpen ? (
+                <div className="rounded-xl border border-dashed border-primary/40 bg-primary/5 p-3 space-y-2">
+                  <div className="text-[11px] font-medium text-primary">เพิ่มผู้อยู่อาศัยใหม่</div>
+                  <div className="relative">
+                    <svg className="w-4 h-4 text-indigo-500 absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                      <path strokeLinecap="round" strokeLinejoin="round" d="M15.75 6a3.75 3.75 0 11-7.5 0 3.75 3.75 0 017.5 0zM4.501 20.118a7.5 7.5 0 0114.998 0" />
+                    </svg>
+                    <input
+                      type="text"
+                      value={addName}
+                      onChange={(e) => setAddName(e.target.value)}
+                      onKeyDown={(e) => { if (e.key === "Enter") submitAddContact(); if (e.key === "Escape") cancelAddContact(); }}
+                      autoFocus
+                      placeholder="ชื่อ-นามสกุล"
+                      className="w-full h-10 pl-9 pr-3 rounded-lg border border-gray-200 bg-white text-sm focus:outline-none focus:border-primary"
+                    />
+                  </div>
+                  <div className="relative">
+                    <svg className="w-4 h-4 text-emerald-600 absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none" fill="currentColor" viewBox="0 0 24 24">
+                      <path d="M6.62 10.79a15.05 15.05 0 006.59 6.59l2.2-2.2a1 1 0 011.05-.24c1.12.37 2.33.57 3.57.57a1 1 0 011 1V20a1 1 0 01-1 1A17 17 0 013 4a1 1 0 011-1h3.5a1 1 0 011 1c0 1.24.2 2.45.57 3.57a1 1 0 01-.24 1.05l-2.21 2.17z" />
+                    </svg>
+                    <input
+                      type="tel"
+                      value={addPhone}
+                      onChange={(e) => setAddPhone(e.target.value)}
+                      onKeyDown={(e) => { if (e.key === "Enter") submitAddContact(); if (e.key === "Escape") cancelAddContact(); }}
+                      placeholder="เบอร์โทร (ไม่บังคับ)"
+                      className="w-full h-10 pl-9 pr-3 rounded-lg border border-gray-200 bg-white text-sm font-mono tabular-nums focus:outline-none focus:border-primary"
+                    />
+                  </div>
+                  <div className="flex justify-end gap-2 pt-1">
+                    <button type="button" onClick={cancelAddContact} className="h-8 px-3 rounded-lg text-sm text-gray-600 hover:bg-gray-100">
+                      ยกเลิก
+                    </button>
+                    <button type="button" onClick={submitAddContact} disabled={!canSubmitAdd} className="h-8 px-3 rounded-lg bg-primary text-white text-sm font-semibold disabled:opacity-40 disabled:cursor-not-allowed hover:bg-primary/90">
+                      เพิ่ม
+                    </button>
+                  </div>
+                </div>
+              ) : (
+                <button
+                  type="button"
+                  onClick={() => setAddingOpen(true)}
+                  className="w-full h-11 inline-flex items-center justify-center gap-1.5 rounded-xl border border-dashed border-gray-300 text-sm text-gray-500 font-medium hover:text-primary hover:border-primary hover:bg-primary/5"
+                >
+                  <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M12 4.5v15m7.5-7.5h-15" />
+                  </svg>
+                  เพิ่มผู้อยู่อาศัย
+                </button>
+              )}
+            </div>
+          </div>
         </div>
       ) : (
       <>
@@ -1158,34 +1383,46 @@ function VisitModal({ prospect, onClose, onSaved, onRefresh }: { prospect: Prosp
             </div>
           </div>
         )}
-        <Field label="เวลาที่สะดวกให้ติดต่อ">
-          <div className="grid grid-cols-6 gap-1.5">
-            {Array.from({ length: 12 }, (_, i) => i + 8).map((h) => {
-              const on = contactHours.includes(h);
-              return (
-                <button
-                  key={h}
-                  type="button"
-                  onClick={() =>
-                    setContactHours((prev) => (prev.includes(h) ? prev.filter((x) => x !== h) : [...prev, h]))
-                  }
-                  className={`h-9 rounded-lg text-xs font-semibold tabular-nums transition-colors ${
-                    on
-                      ? "bg-primary text-white border border-primary"
-                      : "bg-white text-gray-700 border border-gray-300 hover:border-gray-400"
-                  }`}
-                >
-                  {h}:00
-                </button>
-              );
-            })}
+        <Field label="เวลาที่สะดวกให้ติดต่อลูกค้า">
+          <div className="space-y-2">
+            {([
+              { label: "เช้า", hours: [8, 9, 10, 11, 12] },
+              { label: "บ่าย", hours: [13, 14, 15, 16, 17, 18, 19] },
+            ] as const).map((group) => (
+              <div key={group.label}>
+                <div className="text-[11px] font-medium text-gray-400 mb-1">{group.label}</div>
+                <div className="grid grid-cols-4 gap-1.5">
+                  {group.hours.map((h) => {
+                    const on = contactHours.includes(h);
+                    return (
+                      <button
+                        key={h}
+                        type="button"
+                        onClick={() =>
+                          setContactHours((prev) => (prev.includes(h) ? prev.filter((x) => x !== h) : [...prev, h]))
+                        }
+                        className={`h-9 rounded-lg text-xs font-semibold tabular-nums transition-colors ${
+                          on
+                            ? "bg-primary text-white border border-primary"
+                            : "bg-white text-gray-700 border border-gray-300 hover:border-gray-400"
+                        }`}
+                      >
+                        {h}:00
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+            ))}
           </div>
           <div className="mt-1.5 text-[11px] text-gray-400">เลือกได้หลายช่วง — ใช้เตือนเวลาติดตามต่อ</div>
         </Field>
 
-        {/* Convert prospect → lead for the sales team */}
+        {/* Convert prospect → lead for the sales team — always uses the
+            primary contact (cleanContacts[0], mirrored from primaryIdx). */}
         {(() => {
-          const hasContact = !!(phone.trim() || prospect.line_id);
+          const picked = cleanContacts[0] || { name: null, phone: null };
+          const hasContact = !!(picked.phone || prospect.line_id);
           const isInterested = interest === "interested";
           const canCreate = isInterested && hasContact;
           const isReturnedHere = !!localReturnedAt && !!leadIdLocal;
@@ -1256,8 +1493,8 @@ function VisitModal({ prospect, onClose, onSaved, onRefresh }: { prospect: Prosp
                 ].filter(Boolean).join("\n");
                 const preAppliances = hasEvCharger(prospect) ? "ev" : null;
                 const payload = {
-                  full_name: (contactName || prospect.full_name || prospect.house_number || "ลูกค้าจาก Seeker").trim(),
-                  phone: phone.trim() || prospect.phone || null,
+                  full_name: (picked.name || prospect.full_name || prospect.house_number || "ลูกค้าจาก Seeker").trim(),
+                  phone: picked.phone || prospect.phone || null,
                   project_id: prospect.project_id || null,
                   installation_address: houseNumber.trim() || prospect.house_number || null,
                   customer_type: customerType,
@@ -1352,8 +1589,10 @@ function VisitModal({ prospect, onClose, onSaved, onRefresh }: { prospect: Prosp
                 setCreatingLead(false);
               }
             }}
-            className={`w-full h-11 rounded-lg text-sm font-semibold disabled:opacity-60 disabled:cursor-not-allowed transition-colors flex items-center justify-center gap-2 ${
-              isReturnedHere
+            className={`w-full h-11 rounded-lg text-sm font-semibold disabled:cursor-not-allowed transition-colors flex items-center justify-center gap-2 ${
+              !canCreate
+                ? "bg-gray-200 text-gray-500"
+                : isReturnedHere
                 ? "bg-amber-500 text-white hover:bg-amber-600"
                 : leadIdLocal
                 ? "bg-indigo-50 text-indigo-700 border border-indigo-200 hover:bg-indigo-100"
@@ -1410,6 +1649,42 @@ function VisitModal({ prospect, onClose, onSaved, onRefresh }: { prospect: Prosp
       )}
       </div>
 
+      {/* Step navigation — mirrors the PreSurvey sub-step footer */}
+      {(() => {
+        const order: Array<typeof modalTab> = ["line", "people", "visit", "reasons"];
+        const idx = order.indexOf(modalTab);
+        const prev = idx > 0 ? order[idx - 1] : null;
+        const next = idx >= 0 && idx < order.length - 1 ? order[idx + 1] : null;
+        return (
+          <div className="mt-4 flex gap-2">
+            {prev && (
+              <button
+                type="button"
+                onClick={() => setModalTab(prev)}
+                className="flex-1 h-11 rounded-lg text-sm font-semibold border border-gray-200 text-gray-600 hover:bg-gray-50 transition-colors flex items-center justify-center gap-1"
+              >
+                <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M15.75 19.5L8.25 12l7.5-7.5" />
+                </svg>
+                ย้อนกลับ
+              </button>
+            )}
+            {next && (
+              <button
+                type="button"
+                onClick={() => setModalTab(next)}
+                className="flex-1 h-11 rounded-lg text-sm font-semibold text-white bg-amber-500 hover:bg-amber-600 transition-colors flex items-center justify-center gap-1"
+              >
+                ถัดไป
+                <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M8.25 4.5l7.5 7.5-7.5 7.5" />
+                </svg>
+              </button>
+            )}
+          </div>
+        );
+      })()}
+
     </Modal>
   );
 }
@@ -1418,7 +1693,7 @@ function Modal({ title, children, onClose }: { title: React.ReactNode; children:
   return (
     <div className="fixed inset-0 z-50 bg-black/50 flex items-stretch md:items-center justify-center md:p-4" onClick={onClose}>
       <div
-        className="bg-white w-full md:max-w-md md:rounded-2xl md:max-h-[90vh] overflow-y-auto flex flex-col"
+        className="bg-white w-full md:max-w-md md:rounded-2xl md:h-[720px] md:max-h-[90vh] overflow-y-auto flex flex-col"
         style={{
           paddingTop: "max(1.25rem, env(safe-area-inset-top))",
           paddingBottom: "max(1.25rem, env(safe-area-inset-bottom))",

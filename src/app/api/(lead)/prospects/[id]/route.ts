@@ -109,6 +109,33 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
       sets.push("returned_at = @returned_at");
       request.input("returned_at", sql.DateTime2, body.returned_at);
     }
+    // Multi-person households: `contacts` is a JSON array of {name, phone}.
+    // When sent, we also mirror contacts[0] into full_name/phone so existing
+    // list/map/search queries that read those columns keep working unchanged.
+    if (body.contacts !== undefined) {
+      const arr = Array.isArray(body.contacts) ? body.contacts : null;
+      const clean = arr
+        ? arr
+            .map((c: { name?: string | null; phone?: string | null }) => ({
+              name: (c?.name ?? "").toString().trim() || null,
+              phone: (c?.phone ?? "").toString().trim() || null,
+            }))
+            .filter((c: { name: string | null; phone: string | null }) => c.name || c.phone)
+        : null;
+      const json = clean && clean.length > 0 ? JSON.stringify(clean) : null;
+      sets.push("contacts = @contacts");
+      request.input("contacts", sql.NVarChar(sql.MAX), json);
+      // Only mirror primary if client did not explicitly set full_name/phone
+      // in the same request (explicit overrides win).
+      if (body.full_name === undefined) {
+        sets.push("full_name = @full_name_from_contacts");
+        request.input("full_name_from_contacts", sql.NVarChar(200), clean?.[0]?.name ?? null);
+      }
+      if (body.phone === undefined) {
+        sets.push("phone = @phone_from_contacts");
+        request.input("phone_from_contacts", sql.NVarChar(20), clean?.[0]?.phone ?? null);
+      }
+    }
 
     if (sets.length === 0) {
       return NextResponse.json({ error: "No fields to update" }, { status: 400 });

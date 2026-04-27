@@ -9,6 +9,17 @@ export async function GET(req: NextRequest) {
   if (gate.error) return gate.error;
   try {
     const db = await getDb();
+    // Fast path: fetch a single profile by line_user_id.
+    // Used by the seeker modal to show the linked LINE profile without
+    // pulling the full registry + its lead/prospect enrichment.
+    const oneId = req.nextUrl.searchParams.get("line_user_id");
+    if (oneId) {
+      const { sql } = await import("@/lib/db");
+      const one = await db.request()
+        .input("id", sql.NVarChar(100), oneId)
+        .query(`SELECT TOP 1 line_user_id, display_name, picture_url FROM line_users WHERE line_user_id = @id`);
+      return NextResponse.json(one.recordset[0] ?? null);
+    }
     const result = await db.request().query(`
       SELECT lu.id, lu.line_user_id, lu.display_name, lu.picture_url, lu.created_at, lu.last_message_at,
         (SELECT COUNT(*) FROM leads WHERE line_id = lu.line_user_id) as linked_leads_count,

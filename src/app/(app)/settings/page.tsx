@@ -15,12 +15,14 @@ type UserRow = {
   username: string;
   full_name: string;
   team: string;
-  role: string;
   phone: string | null;
   email: string | null;
   is_active: boolean;
   created_at: string;
-  extra_roles: string | null;
+  roles: string[];
+  // Legacy fields tolerated but ignored — cleaned up once DB migration drops them.
+  role?: string;
+  extra_roles?: string | null;
 };
 
 export default function SettingsPage() {
@@ -35,6 +37,9 @@ export default function SettingsPage() {
       localStorage.removeItem("userId");
       localStorage.removeItem("userName");
       localStorage.removeItem("activeRoles");
+      // Hard reload clears module-level caches (useMe/useActiveRoles).
+      window.location.href = "/login";
+      return;
     }
     router.replace("/login");
   };
@@ -421,8 +426,11 @@ function UsersTab({ currentUserId }: { currentUserId: number }) {
                   <td className="px-4 py-3 font-mono text-xs">{u.username}</td>
                   <td className="px-4 py-3 font-semibold">{u.full_name}</td>
                   <td className="px-4 py-3">
-                    <span className="text-xs font-semibold px-2 py-0.5 rounded bg-gray-100 text-gray-700">{u.role}</span>
-                    {u.extra_roles && <span className="text-[10px] text-gray-400 ml-1">+{u.extra_roles.split(",").length}</span>}
+                    <div className="flex flex-wrap gap-1">
+                      {(u.roles || []).map(r => (
+                        <span key={r} className="text-[10px] font-semibold px-1.5 py-0.5 rounded bg-gray-100 text-gray-700">{r}</span>
+                      ))}
+                    </div>
                   </td>
                   <td className="px-4 py-3 text-xs text-gray-500 hidden md:table-cell">{u.team}</td>
                   <td className="px-4 py-3 text-xs text-gray-500 hidden lg:table-cell">{u.phone || "—"}</td>
@@ -470,38 +478,44 @@ function UserEditor({ user, currentUserId, onClose, onSaved }: {
   const [username, setUsername] = useState(user?.username || "");
   const [fullName, setFullName] = useState(user?.full_name || "");
   const [team, setTeam] = useState(user?.team || "Sen X PM");
-  const [role, setRole] = useState(user?.role || "sales");
   const [phone, setPhone] = useState(user?.phone || "");
   const [email, setEmail] = useState(user?.email || "");
   const [password, setPassword] = useState("");
   const [isActive, setIsActive] = useState(user?.is_active ?? true);
-  const initialExtra = user?.extra_roles ? user.extra_roles.split(",").filter(Boolean) as Role[] : [];
-  const [extraRoles, setExtraRoles] = useState<Role[]>(initialExtra);
+  const initialRoles: Role[] = (() => {
+    if (Array.isArray(user?.roles) && user.roles.length > 0) return user.roles as Role[];
+    if (user?.role) return [user.role as Role];
+    return ["sales"];
+  })();
+  const [roles, setRoles] = useState<Role[]>(initialRoles);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  const isDefaultAdmin = user?.username === "admin";
   const toggleRole = (r: Role) => {
-    setExtraRoles(prev => prev.includes(r) ? prev.filter(x => x !== r) : [...prev, r]);
+    // Lock `admin` role ON for the default admin user.
+    if (isDefaultAdmin && r === "admin") return;
+    setRoles(prev => prev.includes(r) ? prev.filter(x => x !== r) : [...prev, r]);
   };
 
   const save = async () => {
     if (!username || !fullName) { setError("กรุณากรอก username และชื่อ-สกุล"); return; }
     if (isNew && !password) { setError("กรุณาตั้งรหัสผ่านเริ่มต้น"); return; }
+    if (roles.length === 0) { setError("เลือก role อย่างน้อย 1 อัน"); return; }
     setSaving(true); setError(null);
     try {
       if (isNew) {
         await apiFetch("/api/users", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ username, password, full_name: fullName, team, role, phone, email, extra_roles: extraRoles }),
+          body: JSON.stringify({ username, password, full_name: fullName, team, phone, email, roles }),
         });
       } else {
         await apiFetch(`/api/users/${user!.id}`, {
           method: "PATCH",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
-            full_name: fullName, team, role, phone, email, is_active: isActive,
-            extra_roles: extraRoles,
+            full_name: fullName, team, phone, email, is_active: isActive, roles,
             ...(password ? { password } : {}),
           }),
         });
@@ -557,23 +571,17 @@ function UserEditor({ user, currentUserId, onClose, onSaved }: {
             <input type="password" value={password} onChange={e => setPassword(e.target.value)} autoComplete="new-password"
               className="w-full h-10 px-3 rounded-lg border border-gray-200 text-sm focus:outline-none focus:border-primary" />
           </Field>
-          <Field label="Role หลัก">
-            <select value={role} onChange={e => setRole(e.target.value)}
-              className="w-full h-10 px-3 rounded-lg border border-gray-200 text-sm focus:outline-none focus:border-primary">
-              <option value="admin">admin</option>
-              <option value="sales">sales</option>
-              <option value="solar">solar</option>
-              <option value="leadsseeker">leadsseeker</option>
-            </select>
-          </Field>
-          <Field label="Roles เพิ่มเติม">
+          <Field label="Roles (เลือกได้หลายอัน)">
             <div className="flex flex-wrap gap-2">
               {ALL_ROLES.map(r => {
-                const on = extraRoles.includes(r);
+                const on = roles.includes(r);
+                const locked = isDefaultAdmin && r === "admin";
                 return (
                   <button key={r} type="button" onClick={() => toggleRole(r)}
-                    className={`h-8 px-3 rounded-full text-xs font-semibold border transition-colors ${on ? "bg-primary text-white border-primary" : "bg-white text-gray-600 border-gray-200 hover:border-gray-400"}`}>
-                    {ROLE_LABEL[r]}
+                    disabled={locked}
+                    title={locked ? "user 'admin' ถูกล็อกให้มี role admin เสมอ" : undefined}
+                    className={`h-8 px-3 rounded-full text-xs font-semibold border transition-colors ${on ? "bg-primary text-white border-primary" : "bg-white text-gray-600 border-gray-200 hover:border-gray-400"} ${locked ? "opacity-70 cursor-not-allowed" : ""}`}>
+                    {ROLE_LABEL[r]}{locked && " 🔒"}
                   </button>
                 );
               })}
@@ -614,8 +622,13 @@ function UserEditor({ user, currentUserId, onClose, onSaved }: {
             className="h-10 px-5 rounded-lg text-sm font-semibold text-gray-600 border border-gray-200 hover:bg-gray-50">
             ยกเลิก
           </button>
-          <button type="button" onClick={save} disabled={saving}
-            className="h-10 px-5 rounded-lg text-sm font-semibold text-white bg-primary hover:bg-primary-dark disabled:opacity-50">
+          <button
+            type="button"
+            onClick={save}
+            disabled={saving || roles.length === 0}
+            title={roles.length === 0 ? "เลือก role อย่างน้อย 1 อัน" : undefined}
+            className="h-10 px-5 rounded-lg text-sm font-semibold text-white bg-primary hover:bg-primary-dark disabled:opacity-50 disabled:cursor-not-allowed"
+          >
             {saving ? "กำลังบันทึก..." : "บันทึก"}
           </button>
         </div>

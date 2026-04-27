@@ -1,6 +1,7 @@
 import { useRouter } from "next/navigation";
 import { useState, useEffect } from "react";
 import { STATUS_CONFIG, getStatusLabel } from "@/lib/constants/statuses";
+import { stripThaiTitle } from "@/lib/utils/name";
 import AssignOwnerButton from "./AssignOwnerButton";
 
 export interface LeadData {
@@ -69,7 +70,8 @@ export default function LeadCard({ lead, compact, onAssignChange }: { lead: Lead
         <div className="flex items-start justify-between gap-3 mb-3">
           <div className="flex-1 min-w-0">
             <div className="font-bold text-lg text-gray-900 truncate leading-tight">
-              {lead.full_name}
+              {lead.installation_address && <>{lead.installation_address} - </>}
+              {stripThaiTitle(lead.full_name)}
             </div>
             <div className="text-sm text-gray-500 truncate mt-0.5 font-mono tabular-nums flex items-center gap-1.5">
               {lead.phone}

@@ -91,6 +91,11 @@ function parseCSV(text) {
 }
 
 const trimOrNull = (v) => { const s = (v ?? '').trim(); return s ? s : null; };
+const stripThaiTitle = (v) => {
+  const s = (v ?? '').trim();
+  if (!s) return null;
+  return s.replace(/^(นางสาว|นาง|นาย|น\.ส\.?|ด\.ช\.?|ด\.ญ\.?)\s*/u, '').trim() || null;
+};
 const parseKw = (v) => { const s = (v ?? '').trim(); if (!s) return null; const m = s.match(/([0-9]+(?:\.[0-9]+)?)/); return m ? parseFloat(m[1]) : null; };
 const parseSeq = (v) => { const n = parseInt((v ?? '').trim(), 10); return Number.isFinite(n) ? n : null; };
 
@@ -197,32 +202,65 @@ if (CLEAR_ALL) {
   console.log(`Deleted prospects for project ${projectId}: ${del.rowsAffected[0] ?? 0} rows`);
 }
 
-// Import data rows using the dynamic column map
+// Import data rows using the dynamic column map.
+// Multiple rows with the same house_number represent multiple people living
+// at that house — collapse them into a single prospect with a `contacts` JSON
+// array. The first row for a house is the primary (mirrored into full_name /
+// phone). Other property columns (app_status, existing_solar, etc) come from
+// the first row too — if sheet has divergent values across rows for the same
+// house, the first row wins.
 const dataRows = rows.slice(HEADER_ROWS).filter(r => (r[COL.house_number] ?? '').trim());
 console.log(`Data rows to import: ${dataRows.length}`);
 
 const get = (r, idx) => (idx >= 0 ? r[idx] : undefined);
-let ok = 0, skip = 0;
+
+// Group by house_number (preserving first-seen order for primary pick).
+const houseMap = new Map();
 for (const r of dataRows) {
   const house_number = trimOrNull(get(r, COL.house_number));
-  if (!house_number) { skip++; continue; }
+  if (!house_number) continue;
+  if (!houseMap.has(house_number)) houseMap.set(house_number, []);
+  houseMap.get(house_number).push(r);
+}
+console.log(`Unique houses: ${houseMap.size}`);
+
+let ok = 0, packed = 0;
+for (const [house_number, groupRows] of houseMap) {
+  const first = groupRows[0];
+  // Build contacts array, dedup by (name|phone).
+  const seen = new Set();
+  const contacts = [];
+  for (const r of groupRows) {
+    const name = stripThaiTitle(get(r, COL.full_name));
+    const phone = normPhone(get(r, COL.phone));
+    if (!name && !phone) continue;
+    const key = `${name || ''}|${phone || ''}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    contacts.push({ name, phone });
+  }
+  const primary = contacts[0] || { name: null, phone: null };
+  const contactsJson = contacts.length > 0 ? JSON.stringify(contacts) : null;
+  if (contacts.length > 1) packed += contacts.length - 1;
+
   await pool.request()
     .input('project_id', sql.Int, projectId)
     .input('project_name', sql.NVarChar(200), PROJECT_NAME)
-    .input('seq', sql.Int, parseSeq(get(r, COL.seq)))
+    .input('seq', sql.Int, parseSeq(get(first, COL.seq)))
     .input('house_number', sql.NVarChar(50), house_number)
-    .input('full_name', sql.NVarChar(200), trimOrNull(get(r, COL.full_name)))
-    .input('phone', sql.NVarChar(20), normPhone(get(r, COL.phone)))
-    .input('app_status', sql.NVarChar(50), trimOrNull(get(r, COL.app_status)))
-    .input('existing_solar', sql.NVarChar(50), trimOrNull(get(r, COL.existing_solar)))
-    .input('installed_kw', sql.Decimal(8, 2), parseKw(get(r, COL.installed_kw)))
-    .input('installed_product', sql.NVarChar(200), trimOrNull(get(r, COL.installed_product)))
-    .input('ev_charger', sql.NVarChar(100), trimOrNull(get(r, COL.ev_charger)))
+    .input('full_name', sql.NVarChar(200), primary.name)
+    .input('phone', sql.NVarChar(20), primary.phone)
+    .input('app_status', sql.NVarChar(50), trimOrNull(get(first, COL.app_status)))
+    .input('existing_solar', sql.NVarChar(50), trimOrNull(get(first, COL.existing_solar)))
+    .input('installed_kw', sql.Decimal(8, 2), parseKw(get(first, COL.installed_kw)))
+    .input('installed_product', sql.NVarChar(200), trimOrNull(get(first, COL.installed_product)))
+    .input('ev_charger', sql.NVarChar(100), trimOrNull(get(first, COL.ev_charger)))
+    .input('contacts', sql.NVarChar(sql.MAX), contactsJson)
     .query(`
-      INSERT INTO prospects (project_id, project_name, seq, house_number, full_name, phone, app_status, existing_solar, installed_kw, installed_product, ev_charger)
-      VALUES (@project_id, @project_name, @seq, @house_number, @full_name, @phone, @app_status, @existing_solar, @installed_kw, @installed_product, @ev_charger)
+      INSERT INTO prospects (project_id, project_name, seq, house_number, full_name, phone, app_status, existing_solar, installed_kw, installed_product, ev_charger, contacts)
+      VALUES (@project_id, @project_name, @seq, @house_number, @full_name, @phone, @app_status, @existing_solar, @installed_kw, @installed_product, @ev_charger, @contacts)
     `);
   ok++;
 }
-console.log(`Imported: ${ok} · Skipped: ${skip}`);
+console.log(`Imported: ${ok} houses · extra contacts packed: ${packed}`);
 await pool.close();

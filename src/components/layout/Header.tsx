@@ -24,7 +24,14 @@ export default function Header({ title, subtitle, backHref, rightContent, hideAv
           </Link>
         )}
         <div className="flex-1 min-w-0">
-          <h1 className="text-lg font-bold tracking-tight leading-tight text-gray-900 truncate">{title}</h1>
+          <h1 className="text-lg font-bold tracking-tight leading-tight text-gray-900 truncate flex items-baseline gap-1.5">
+            {title}
+            {process.env.NEXT_PUBLIC_APP_VERSION && (
+              <span className="text-sm font-mono font-semibold text-gray-500 tracking-normal shrink-0">
+                v{process.env.NEXT_PUBLIC_APP_VERSION}
+              </span>
+            )}
+          </h1>
           {subtitle && <p className="text-xs font-semibold tracking-wider uppercase text-gray-400 leading-none mt-0.5 truncate">{subtitle}</p>}
         </div>
         <RoleSwitcher />

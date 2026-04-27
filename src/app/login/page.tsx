@@ -45,7 +45,10 @@ export default function LoginPage() {
       }
       localStorage.setItem("userId", String(data.id));
       localStorage.setItem("userName", data.full_name || data.username);
-      router.replace("/today");
+      // Full reload so module-level caches (useMe/useActiveRoles) from the
+      // previous session are discarded — SPA navigation alone leaves them
+      // holding the previous user's roles.
+      window.location.href = "/";
     } catch (e) {
       setError(e instanceof Error ? e.message : "Sign in failed");
     } finally {
@@ -140,7 +143,12 @@ export default function LoginPage() {
           <div className="mt-6 text-center text-[14px] md:text-[12px] text-gray-400">
             Having trouble?{" "}
             <a href="#" className="font-medium text-gray-600 hover:text-primary transition-colors">Contact admin</a>
-            <div className="mt-2 text-[12px] md:text-[11px]">© {new Date().getFullYear()} Sena Solar Energy</div>
+            <div className="mt-2 text-[12px] md:text-[11px]">
+              © {new Date().getFullYear()} Sena Solar Energy
+              {process.env.NEXT_PUBLIC_APP_VERSION && (
+                <span className="ml-2 font-mono">v{process.env.NEXT_PUBLIC_APP_VERSION}</span>
+              )}
+            </div>
           </div>
         </div>
       </main>

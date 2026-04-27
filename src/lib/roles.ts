@@ -61,9 +61,8 @@ export function useActiveRoles(): { activeRoles: Role[]; setActiveRoles: (r: Rol
       try {
         const parsed = JSON.parse(saved) as Role[];
         const valid = parsed.filter(r => me.roles.includes(r));
-        const withAdmin = me.roles.includes("admin") && !valid.includes("admin") ? ["admin" as Role, ...valid] : valid;
-        if (withAdmin.length > 0) {
-          cachedActiveRoles = withAdmin;
+        if (valid.length > 0) {
+          cachedActiveRoles = valid;
           emitRoles();
           return;
         }

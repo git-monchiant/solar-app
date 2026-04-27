@@ -37,6 +37,8 @@ export default function ProfilePage() {
       localStorage.removeItem("userId");
       localStorage.removeItem("userName");
       localStorage.removeItem("activeRoles");
+      window.location.href = "/login";
+      return;
     }
     router.replace("/login");
   };
@@ -87,25 +89,6 @@ export default function ProfilePage() {
                 <div className="text-xs text-gray-400 uppercase">Username</div>
                 <div className="text-sm font-semibold text-gray-900">@{user.username}</div>
               </div>
-            </div>
-          </div>
-        </div>
-
-        {/* This Month Stats */}
-        <div className="bg-white rounded-2xl border border-gray-200 p-5">
-          <div className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-3">This Month</div>
-          <div className="grid grid-cols-3 gap-3">
-            <div className="text-center py-3 rounded-xl bg-gray-50 border border-gray-100">
-              <div className="text-2xl font-bold text-gray-900">{user.stats.new_leads}</div>
-              <div className="text-xs text-gray-500 uppercase font-semibold mt-0.5">New</div>
-            </div>
-            <div className="text-center py-3 rounded-xl bg-gray-50 border border-gray-100">
-              <div className="text-2xl font-bold text-gray-900">{user.stats.booked}</div>
-              <div className="text-xs text-gray-500 uppercase font-semibold mt-0.5">Booked</div>
-            </div>
-            <div className="text-center py-3 rounded-xl bg-gray-50 border border-gray-100">
-              <div className="text-2xl font-bold text-gray-900">{user.stats.won}</div>
-              <div className="text-xs text-gray-500 uppercase font-semibold mt-0.5">Won</div>
             </div>
           </div>
         </div>

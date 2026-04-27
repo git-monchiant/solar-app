@@ -43,13 +43,13 @@ export async function requireAdmin(req: NextRequest):
   const userId = getUserIdFromReq(req);
   if (!userId) return { error: NextResponse.json({ error: "Not authenticated" }, { status: 401 }) };
   const db = await getDb();
-  const r = await db.request().input("id", sql.Int, userId).query(
-    `SELECT u.role,
-            (SELECT COUNT(*) FROM user_roles WHERE user_id = u.id AND role = 'admin') AS ur_admin
-     FROM users u WHERE u.id = @id`
-  );
-  const row = r.recordset[0];
-  if (!row || (row.role !== "admin" && row.ur_admin === 0)) {
+  const r = await db.request().input("id", sql.Int, userId)
+    .query(`SELECT roles FROM users WHERE id = @id`);
+  let roles: string[] = [];
+  if (r.recordset[0]?.roles) {
+    try { const p = JSON.parse(r.recordset[0].roles); if (Array.isArray(p)) roles = p; } catch {}
+  }
+  if (!roles.includes("admin")) {
     return { error: NextResponse.json({ error: "Admin only" }, { status: 403 }) };
   }
   return { userId };

@@ -1,38 +1,31 @@
 "use client";
 
 import { useState } from "react";
-import { useActiveRoles, useMe, ROLE_LABEL, type Role } from "@/lib/roles";
+import { useActiveRoles, ROLE_LABEL, type Role } from "@/lib/roles";
 
 export default function RoleSwitcher() {
   const { activeRoles, setActiveRoles, availableRoles } = useActiveRoles();
-  const { me } = useMe();
   const [open, setOpen] = useState(false);
   const [draft, setDraft] = useState<Role[]>(activeRoles);
 
+  // Users with only one role can't switch — no switcher shown.
   if (availableRoles.length <= 1) return null;
 
-  const visibleActive = activeRoles.filter(r => r !== "admin");
-  const visibleAvailable = availableRoles.filter(r => r !== "admin");
-  const label = visibleActive.length === visibleAvailable.length
+  const label = activeRoles.length === availableRoles.length
     ? "All roles"
-    : visibleActive.length === 0
-    ? "Admin only"
-    : visibleActive.map(r => ROLE_LABEL[r]).join(" · ");
+    : activeRoles.length === 0
+    ? "เลือก role"
+    : activeRoles.map(r => ROLE_LABEL[r]).join(" · ");
 
   const openModal = () => { setDraft(activeRoles); setOpen(true); };
 
   const toggle = (r: Role) => {
-    if (r === "admin") return; // admin locked on
     setDraft(prev => prev.includes(r) ? prev.filter(x => x !== r) : [...prev, r]);
   };
 
   const confirm = () => {
-    // If the user has the admin role, always keep it active so a bad
-    // selection can't lock them out of admin-only screens.
-    const hasAdmin = me?.roles?.includes("admin") ?? false;
-    const next = hasAdmin ? Array.from(new Set<Role>(["admin", ...draft])) : draft;
-    if (next.length === 0) return;
-    setActiveRoles(next);
+    if (draft.length === 0) return;
+    setActiveRoles(draft);
     setOpen(false);
     // Route through "/" so it redirects to the landing page appropriate for
     // the new role (/seeker for seeker-only, /today for sales). A plain
@@ -75,7 +68,7 @@ export default function RoleSwitcher() {
             <div className="text-base font-bold mb-1">เปลี่ยนมุมมอง (Role)</div>
             <div className="text-xs text-gray-400 mb-4">กด "ตกลง" เพื่อเปลี่ยน — หน้าจะ refresh ใหม่</div>
             <div className="space-y-1 mb-4">
-              {visibleAvailable.map(r => {
+              {availableRoles.map(r => {
                 const checked = draft.includes(r);
                 return (
                   <label key={r} className="flex items-center gap-3 px-3 py-2.5 rounded-lg hover:bg-gray-50 cursor-pointer border border-gray-200">

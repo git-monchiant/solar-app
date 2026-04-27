@@ -22,6 +22,7 @@ type Prospect = {
   visit_lat: number | null;
   visit_lng: number | null;
   line_id: string | null;
+  lead_id: number | null;
 };
 
 type StatusKey = "pending" | "contacted" | "interested" | "not_interested";
@@ -56,7 +57,7 @@ export default function SeekerDashboardPage() {
       .then(setProspects)
       .catch(console.error)
       .finally(() => setLoading(false));
-    apiFetch("/api/projects")
+    apiFetch("/api/projects?has_prospects=1")
       .then((list: { name: string }[]) => setAllProjects(list.map((p) => p.name)))
       .catch(console.error);
   }, []);
@@ -95,6 +96,7 @@ export default function SeekerDashboardPage() {
       not_interested: 0,
       has_solar: 0,
       line_linked: 0,
+      leads_created: 0,
     };
     for (const p of scoped) {
       const st = cardStatus(p);
@@ -107,6 +109,7 @@ export default function SeekerDashboardPage() {
       if (p.interest === "not_home") s.not_home++;
       if (hasExistingSolar(p)) s.has_solar++;
       if (p.line_id) s.line_linked++;
+      if (p.lead_id != null) s.leads_created++;
     }
     return s;
   }, [scoped]);
@@ -161,11 +164,12 @@ export default function SeekerDashboardPage() {
         ) : (
           <>
             {/* Top KPI row */}
-            <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+            <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
               <KpiCard icon="home" label="ทั้งหมด" value={stats.total.toLocaleString("en")} suffix="บ้าน" tint="gray" />
               <KpiCard icon="check" label="เยี่ยมแล้ว" value={`${coverage}%`} suffix={`${stats.total - stats.pending} / ${stats.total}`} tint="blue" />
               <KpiCard icon="heart" label="สนใจ" value={stats.interested.toLocaleString("en")} suffix={stats.total > 0 ? `${Math.round((stats.interested / stats.total) * 100)}%` : "0%"} tint="green" />
               <KpiCard icon="line" label="Add LINE OA" value={stats.line_linked.toLocaleString("en")} suffix={stats.total > 0 ? `${Math.round((stats.line_linked / stats.total) * 100)}%` : "0%"} tint="emerald" />
+              <KpiCard icon="lead" label="สร้างลีด" value={stats.leads_created.toLocaleString("en")} suffix={stats.interested > 0 ? `${Math.round((stats.leads_created / stats.interested) * 100)}% conversion` : "0%"} tint="amber" />
             </div>
 
             {/* Interest breakdown: donut + legend */}
@@ -384,9 +388,10 @@ const KPI_TINTS: Record<string, { bg: string; icon: string }> = {
   blue: { bg: "bg-blue-50", icon: "text-blue-600" },
   green: { bg: "bg-green-50", icon: "text-green-600" },
   emerald: { bg: "bg-emerald-50", icon: "text-emerald-600" },
+  amber: { bg: "bg-amber-50", icon: "text-amber-600" },
 };
 
-function KpiCard({ icon, label, value, suffix, tint }: { icon: "home" | "check" | "heart" | "line"; label: string; value: string; suffix: string; tint: keyof typeof KPI_TINTS }) {
+function KpiCard({ icon, label, value, suffix, tint }: { icon: "home" | "check" | "heart" | "line" | "lead"; label: string; value: string; suffix: string; tint: keyof typeof KPI_TINTS }) {
   const t = KPI_TINTS[tint];
   return (
     <div className={`rounded-2xl p-4 ${t.bg}`}>
@@ -400,7 +405,7 @@ function KpiCard({ icon, label, value, suffix, tint }: { icon: "home" | "check" 
   );
 }
 
-function renderKpiIcon(kind: "home" | "check" | "heart" | "line") {
+function renderKpiIcon(kind: "home" | "check" | "heart" | "line" | "lead") {
   const cls = "w-4 h-4";
   if (kind === "home") return (
     <svg className={cls} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
@@ -415,6 +420,11 @@ function renderKpiIcon(kind: "home" | "check" | "heart" | "line") {
   if (kind === "heart") return (
     <svg className={cls} fill="currentColor" viewBox="0 0 24 24">
       <path d="M11.645 20.91a.75.75 0 01-1.29 0C5.393 15.986 2.25 12.99 2.25 8.25 2.25 5.35 4.35 3 7.125 3c1.8 0 3.3.93 4.125 2.34A4.74 4.74 0 0115.375 3c2.775 0 4.875 2.35 4.875 5.25 0 4.74-3.143 7.736-8.105 12.66z" />
+    </svg>
+  );
+  if (kind === "lead") return (
+    <svg className={cls} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+      <path strokeLinecap="round" strokeLinejoin="round" d="M13 10V3L4 14h7v7l9-11h-7z" />
     </svg>
   );
   return (

@@ -9,14 +9,16 @@ export async function GET(req: NextRequest) {
 
     const db = await getDb();
     const user = await db.request().input("id", sql.Int, userId).query(`
-      SELECT id, username, full_name, team, role, phone, email FROM users WHERE id = @id AND is_active = 1
+      SELECT id, username, full_name, team, phone, email, roles FROM users WHERE id = @id AND is_active = 1
     `);
     if (user.recordset.length === 0) return NextResponse.json({ error: "User not found" }, { status: 404 });
 
-    const rolesRes = await db.request().input("id", sql.Int, userId).query(`
-      SELECT role FROM user_roles WHERE user_id = @id ORDER BY role
-    `);
-    const roles = rolesRes.recordset.map(r => r.role);
+    let roles: string[] = [];
+    if (user.recordset[0].roles) {
+      try { const parsed = JSON.parse(user.recordset[0].roles); if (Array.isArray(parsed)) roles = parsed; } catch {}
+    }
+    // Strip the JSON field from payload — client receives `roles: string[]`.
+    delete user.recordset[0].roles;
 
     const now = new Date();
     const firstDay = new Date(now.getFullYear(), now.getMonth(), 1);

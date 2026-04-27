@@ -12,7 +12,7 @@ export async function POST(req: NextRequest) {
     }
     const db = await getDb();
     const r = await db.request().input("username", sql.NVarChar(50), String(username))
-      .query(`SELECT id, username, full_name, team, role, phone, email, password_hash, is_active
+      .query(`SELECT id, username, full_name, team, phone, email, password_hash, is_active, roles
               FROM users WHERE username = @username`);
     if (r.recordset.length === 0) {
       return NextResponse.json({ error: "ชื่อผู้ใช้หรือรหัสผ่านไม่ถูกต้อง" }, { status: 401 });
@@ -24,15 +24,15 @@ export async function POST(req: NextRequest) {
     if (!verifyPassword(String(password), u.password_hash)) {
       return NextResponse.json({ error: "ชื่อผู้ใช้หรือรหัสผ่านไม่ถูกต้อง" }, { status: 401 });
     }
-    const rolesRes = await db.request().input("id", sql.Int, u.id)
-      .query(`SELECT role FROM user_roles WHERE user_id = @id ORDER BY role`);
-    const roles = rolesRes.recordset.map(x => x.role);
+    let roles: string[] = [];
+    if (u.roles) {
+      try { const p = JSON.parse(u.roles); if (Array.isArray(p)) roles = p; } catch {}
+    }
     return NextResponse.json({
       id: u.id,
       username: u.username,
       full_name: u.full_name,
       team: u.team,
-      role: u.role,
       phone: u.phone,
       email: u.email,
       roles,

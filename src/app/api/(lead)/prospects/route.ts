@@ -32,12 +32,15 @@ export async function GET(req: NextRequest) {
     const result = await request.query(`
       SELECT p.id, p.project_id, p.seq, p.house_number, p.full_name, p.phone,
              p.app_status, p.existing_solar, p.installed_kw, p.installed_product, p.ev_charger,
-             p.interest, p.interest_type, p.note, p.visited_by, p.visited_at, p.visit_count, p.visit_lat, p.visit_lng, p.line_id, p.contact_time, p.interest_reasons, p.interest_reason_note, p.interest_sizes, p.returned_at, p.lead_id, p.created_at, p.updated_at,
+             p.interest, p.interest_type, p.note, p.visited_by, p.visited_at, p.visit_count, p.visit_lat, p.visit_lng, p.line_id, p.contact_time, p.interest_reasons, p.interest_reason_note, p.interest_sizes, p.returned_at, p.lead_id, p.contacts, p.created_at, p.updated_at,
              COALESCE(NULLIF(p.project_name, N''), pr.name) as project_name,
-             u.full_name as visited_by_name
+             u.full_name as visited_by_name,
+             lu.display_name as line_display_name,
+             lu.picture_url as line_picture_url
       FROM prospects p
       LEFT JOIN projects pr ON p.project_id = pr.id
       LEFT JOIN users u ON p.visited_by = u.id
+      LEFT JOIN line_users lu ON lu.line_user_id = p.line_id
       ${whereSql}
       ORDER BY p.created_at DESC
     `);
