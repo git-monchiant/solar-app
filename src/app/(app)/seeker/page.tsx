@@ -7,6 +7,9 @@ import ListPageHeader from "@/components/layout/ListPageHeader";
 import LinePickerModal from "@/components/modal/LinePickerModal";
 import { useDialog } from "@/components/ui/Dialog";
 import ModalCloseButton from "@/components/ui/ModalCloseButton";
+import { CHANNELS, CHANNEL_BY_CODE, type ChannelCode } from "@/lib/constants/channels";
+import SourceTag from "@/components/SourceTag";
+import { getSourceStyle } from "@/lib/source-tag";
 
 type Prospect = {
   id: number;
@@ -37,12 +40,13 @@ type Prospect = {
   interest_sizes: string | null;
   returned_at: string | null;
   contacts: string | null;
+  channel: string | null;
   line_display_name: string | null;
   line_picture_url: string | null;
   created_at: string;
 };
 
-export type Contact = { name: string | null; phone: string | null };
+export type Contact = { name: string | null; phone: string | null; email?: string | null };
 
 // Strip Thai title prefixes at the start of a name (นาย/นาง/นางสาว/น.ส./ด.ช./ด.ญ.).
 // Longer prefixes first so "นางสาว" matches before "นาง".
@@ -80,7 +84,7 @@ const CARD_STATUS: Record<CardStatusKey, { label: string; card: string; badge: s
     badge: "",
   },
   contacted: {
-    label: "กำลังติดต่อ",
+    label: "ติดตาม",
     card: "bg-amber-100 border-amber-300 hover:border-amber-500",
     badge: "bg-amber-200 text-amber-800 border-amber-300",
   },
@@ -165,6 +169,7 @@ function LineIcon() {
 }
 
 type ProjectCard = {
+  id: number;
   name: string;
   assignee: string | null;
   prospect_count: number;
@@ -172,6 +177,7 @@ type ProjectCard = {
   not_interested_count: number;
   pending_count: number;
   visited_count: number;
+  channels: string | null; // comma-separated distinct channels of prospects in this project
 };
 
 export default function SeekerPage() {
@@ -183,11 +189,22 @@ export default function SeekerPage() {
   const [search, setSearch] = useState<string>("");
   const router = useRouter();
   const searchParams = useSearchParams();
-  const projectFilter = searchParams.get("project") || "";
-  const setProjectFilter = (name: string) => {
-    if (name) router.push(`/seeker?project=${encodeURIComponent(name)}`);
-    else router.push("/seeker");
+  // URL uses ?pid=N (project_id) — name lookup from projectCards. Filtering
+  // by id avoids false negatives when prospects.project_name has different
+  // spacing/dashes from projects.name.
+  const projectIdParam = searchParams.get("pid") || "";
+  const projectFilterId = projectIdParam ? parseInt(projectIdParam) : 0;
+  // Optional channel scope carried from the project-landing search — when
+  // present, the prospect list inside the project hides everything except
+  // prospects with this channel.
+  const channelFilter = searchParams.get("ch") || "";
+  const setProjectFilterId = (id: number, ch?: string | null) => {
+    if (id) {
+      const qs = ch ? `?pid=${id}&ch=${encodeURIComponent(ch)}` : `?pid=${id}`;
+      router.push(`/seeker${qs}`);
+    } else router.push("/seeker");
   };
+  const projectFilter = projectCards.find((p) => p.id === projectFilterId)?.name || "";
   const [projectSearch, setProjectSearch] = useState<string>("");
   const [editing, setEditing] = useState<Prospect | null>(null);
   const [hydrated, setHydrated] = useState(false);
@@ -213,10 +230,10 @@ export default function SeekerPage() {
 
   useEffect(() => {
     if (!hydrated) return;
-    if (projectFilter) refresh(projectFilter);
+    if (projectFilterId) refresh(projectFilterId);
     else { setProspects([]); setLoading(false); }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [projectFilter, hydrated]);
+  }, [projectFilterId, hydrated]);
 
   useEffect(() => {
     if (typeof window === "undefined") return;
@@ -224,27 +241,78 @@ export default function SeekerPage() {
     else localStorage.removeItem("seekerSearch");
   }, [search]);
 
-  function refresh(filter?: string) {
+  function refresh(filterId?: number) {
     setLoading(true);
-    const effective = filter ?? projectFilter;
+    const effective = filterId ?? projectFilterId;
     const qs = new URLSearchParams({ t: String(Date.now()) });
-    if (effective) qs.set("project_name", effective);
+    if (effective) qs.set("project_id", String(effective));
     apiFetch(`/api/prospects?${qs.toString()}`, { cache: "no-store" })
       .then(setProspects)
       .catch(console.error)
       .finally(() => setLoading(false));
   }
 
+  // When the project search text resolves to a known channel key (the1,
+  // senxpm, ...), we want both: (a) only include projects that have that
+  // channel, and (b) make their counts reflect ONLY prospects of that channel.
+  const matchedChannelKey = useMemo(() => {
+    const q = projectSearch.trim().toLowerCase();
+    if (!q) return null;
+    // Try to resolve via SourceTag normalization. Accept either the raw key
+    // (e.g. "the1") or the rendered label (e.g. "The1", "SENX PM").
+    for (const p of projectCards) {
+      if (!p.channels) continue;
+      for (const ch of p.channels.split(",").filter(Boolean)) {
+        const style = getSourceStyle(ch);
+        if (ch.toLowerCase() === q || style.label.toLowerCase() === q) return ch;
+        if (ch.toLowerCase().includes(q) || style.label.toLowerCase().includes(q)) return ch;
+      }
+    }
+    return null;
+  }, [projectCards, projectSearch]);
+
+  // If search matches a channel, fetch counts of prospects (per project) that
+  // have that channel — used to override the project card totals.
+  const [channelCounts, setChannelCounts] = useState<Record<number, number>>({});
+  useEffect(() => {
+    if (!matchedChannelKey) { setChannelCounts({}); return; }
+    apiFetch(`/api/prospects?channel=${encodeURIComponent(matchedChannelKey)}`).then((rows: Prospect[]) => {
+      const counts: Record<number, number> = {};
+      for (const r of rows) if (r.project_id != null) counts[r.project_id] = (counts[r.project_id] || 0) + 1;
+      setChannelCounts(counts);
+    }).catch(console.error);
+  }, [matchedChannelKey]);
+
   const filteredProjects = useMemo(() => {
     const q = projectSearch.trim().toLowerCase();
     if (!q) return projectCards;
+    if (matchedChannelKey) {
+      // Only projects that actually have prospects with this channel — and
+      // override prospect_count + interested/not_interested with channel-only
+      // counts so the card reflects what the user is searching for.
+      return projectCards
+        .filter((p) => (channelCounts[p.id] || 0) > 0)
+        .map((p) => ({
+          ...p,
+          prospect_count: channelCounts[p.id] || 0,
+          // Sub-status counts aren't channel-filtered here — easier to zero
+          // them out than show numbers that exceed prospect_count.
+          interested_count: 0,
+          not_interested_count: 0,
+          pending_count: channelCounts[p.id] || 0,
+          visited_count: 0,
+        }));
+    }
     return projectCards.filter((p) => p.name.toLowerCase().includes(q));
-  }, [projectCards, projectSearch]);
+  }, [projectCards, projectSearch, matchedChannelKey, channelCounts]);
 
   const scopedByProject = useMemo(() => {
-    if (!projectFilter) return prospects;
-    return prospects.filter((p) => (typeof p.project_name === "string" ? p.project_name : "") === projectFilter);
-  }, [prospects, projectFilter]);
+    if (!projectFilterId) return prospects;
+    let list = prospects.filter((p) => p.project_id === projectFilterId);
+    // Carry the channel filter from the project landing into the prospect list.
+    if (channelFilter) list = list.filter((p) => p.channel === channelFilter);
+    return list;
+  }, [prospects, projectFilterId, channelFilter]);
 
   const counts = useMemo(() => {
     const c = { all: scopedByProject.length, todo: 0, returned: 0, interested: 0, not_interested: 0 };
@@ -280,14 +348,14 @@ export default function SeekerPage() {
     return [...list].sort(compareHouse);
   }, [scopedByProject, tab, search]);
 
-  if (!projectFilter) {
+  if (!projectFilterId) {
     return (
       <ProjectLanding
         projects={filteredProjects}
         loading={projectsLoading}
         search={projectSearch}
         onSearchChange={setProjectSearch}
-        onSelect={setProjectFilter}
+        onSelect={(id) => setProjectFilterId(id, matchedChannelKey)}
       />
     );
   }
@@ -297,6 +365,7 @@ export default function SeekerPage() {
       <ListPageHeader
         title={projectFilter}
         subtitle="LEADS SEEKER"
+        backHref="/seeker"
         search={search}
         onSearchChange={setSearch}
         searchPlaceholder="ค้นหาบ้านเลขที่/ชื่อ/เบอร์..."
@@ -311,6 +380,18 @@ export default function SeekerPage() {
         onTabChange={(k) => setTab(k as typeof tab)}
       />
 
+      {channelFilter && (
+        <div className="px-3 md:px-5 pt-2 flex items-center gap-2 text-xs">
+          <span className="text-gray-500">กรองเฉพาะ:</span>
+          <SourceTag value={channelFilter} size="xs" />
+          <button
+            type="button"
+            onClick={() => router.push(`/seeker?pid=${projectFilterId}`)}
+            className="text-gray-400 hover:text-red-500 transition-colors"
+            title="ยกเลิกตัวกรอง"
+          >× ยกเลิก</button>
+        </div>
+      )}
       <div className="px-3 md:px-5 py-3 flex-1 overflow-y-auto">
         {loading ? (
           <div className="flex items-center justify-center py-16">
@@ -406,9 +487,19 @@ export default function SeekerPage() {
                     </div>
                   )}
 
-                  {/* Row 4: indicators (LINE / Solar / EV / Upgrade) — split equally */}
+                  {/* Row 4: indicators (Channel / Solar / EV / Upgrade) — split equally */}
                   {(() => {
                     const chips: React.ReactNode[] = [];
+                    if (p.channel) {
+                      const meta = CHANNEL_BY_CODE[p.channel];
+                      if (meta) {
+                        chips.push(
+                          <span key="channel" className="flex-1 flex items-center py-0.5">
+                            <SourceTag value={p.channel} size="xs" />
+                          </span>
+                        );
+                      }
+                    }
                     if (hasExistingSolar(p)) {
                       chips.push(
                         <span key="solar" className="flex-1 inline-flex items-center justify-start gap-1 text-xs font-semibold text-blue-700 py-0.5">
@@ -471,30 +562,45 @@ export default function SeekerPage() {
       <button
         type="button"
         disabled={creatingNew}
-        onClick={async () => {
-          if (creatingNew) return;
-          setCreatingNew(true);
-          try {
-            const projectId = scopedByProject.find((p) => p.project_id)?.project_id ?? null;
-            const created: Prospect = await apiFetch("/api/prospects", {
-              method: "POST",
-              headers: { "Content-Type": "application/json" },
-              body: JSON.stringify({
-                project_id: projectId,
-                project_name: projectFilter,
-              }),
-            });
-            setProspects((prev) => [created, ...prev]);
-            setEditing(created);
-          } catch (e) {
-            dialog.alert({
-              title: "สร้าง Prospect ไม่สำเร็จ",
-              message: e instanceof Error ? e.message : "เกิดข้อผิดพลาด",
-              variant: "danger",
-            });
-          } finally {
-            setCreatingNew(false);
-          }
+        onClick={() => {
+          // Don't POST yet — open the modal with a draft prospect (id=0).
+          // Auto-save inside VisitModal upgrades it to a real row only after
+          // the validation guard passes (house_number + LINE or phone+name).
+          setEditing({
+            id: 0,
+            project_id: projectFilterId || null,
+            project_name: projectFilter || null,
+            seq: null,
+            house_number: null,
+            full_name: null,
+            phone: null,
+            app_status: null,
+            existing_solar: null,
+            installed_kw: null,
+            installed_product: null,
+            ev_charger: null,
+            interest: null,
+            interest_type: null,
+            note: null,
+            visited_by: null,
+            visited_by_name: null,
+            visited_at: null,
+            visit_count: 0,
+            visit_lat: null,
+            visit_lng: null,
+            line_id: null,
+            line_display_name: null,
+            line_picture_url: null,
+            contact_time: null,
+            interest_reasons: null,
+            interest_reason_note: null,
+            interest_sizes: null,
+            returned_at: null,
+            lead_id: null,
+            contacts: null,
+            channel: null,
+            created_at: new Date().toISOString(),
+          } as Prospect);
         }}
         title="สร้าง Prospect ใหม่"
         className="fixed bottom-24 md:bottom-8 right-5 z-40 w-14 h-14 rounded-full bg-primary text-white shadow-lg hover:brightness-110 active:scale-95 transition-all flex items-center justify-center disabled:opacity-60"
@@ -525,7 +631,7 @@ function ProjectLanding({
   loading: boolean;
   search: string;
   onSearchChange: (v: string) => void;
-  onSelect: (name: string) => void;
+  onSelect: (id: number) => void;
 }) {
   const [favs, setFavs] = useState<Set<string>>(new Set());
 
@@ -586,7 +692,7 @@ function ProjectLanding({
                 const pct = total === 0 ? 0 : Math.round(((total - p.pending_count) / total) * 100);
                 const segments = [
                   { key: "interested", count: p.interested_count, color: "bg-green-500", label: "สนใจ" },
-                  { key: "contacted", count: contacted, color: "bg-amber-400", label: "กำลังติดต่อ" },
+                  { key: "contacted", count: contacted, color: "bg-amber-400", label: "ติดตาม" },
                   { key: "not_interested", count: p.not_interested_count, color: "bg-red-400", label: "ไม่สนใจ" },
                   { key: "pending", count: p.pending_count, color: "bg-gray-200", label: "ยังไม่เยี่ยม" },
                 ];
@@ -611,7 +717,7 @@ function ProjectLanding({
                     </button>
                     <button
                       type="button"
-                      onClick={() => onSelect(p.name)}
+                      onClick={() => onSelect(p.id)}
                       className="flex-1 text-left py-3 pr-4 min-w-0 cursor-pointer"
                     >
                       <div className="flex items-center justify-between gap-2">
@@ -635,7 +741,7 @@ function ProjectLanding({
                       <div className="mt-1.5 text-xs text-gray-500 flex flex-wrap gap-x-3 gap-y-0.5">
                         <span>ทั้งหมด {total}</span>
                         {p.interested_count > 0 && <span className="text-green-600">สนใจ {p.interested_count}</span>}
-                        {contacted > 0 && <span className="text-amber-600">กำลังติดต่อ {contacted}</span>}
+                        {contacted > 0 && <span className="text-amber-600">ติดตาม {contacted}</span>}
                         {p.not_interested_count > 0 && <span className="text-red-600">ไม่สนใจ {p.not_interested_count}</span>}
                         {p.pending_count > 0 && <span className="text-gray-500">ยังไม่เยี่ยม {p.pending_count}</span>}
                       </div>
@@ -658,6 +764,14 @@ function VisitModal({ prospect, onClose, onSaved, onRefresh }: { prospect: Prosp
   const [interestType, setInterestType] = useState<Prospect["interest_type"]>(prospect.interest_type);
   const [note, setNote] = useState(prospect.note || "");
   const [houseNumber, setHouseNumber] = useState(prospect.house_number || "");
+  // For draft prospects (clicked +, not yet POSTed), id is 0. After the first
+  // valid auto-save we POST and then mirror the new id locally for subsequent
+  // PATCHes — without re-mounting this modal.
+  const [prospectId, setProspectId] = useState<number>(prospect.id);
+  const isDraft = prospectId === 0;
+  const [channelCode, setChannelCode] = useState<ChannelCode | null>(
+    (prospect.channel as ChannelCode | null) || null
+  );
   // Contacts: everyone living at this house. The primary contact is mirrored
   // server-side into legacy full_name / phone. We keep `contacts` in stable
   // insertion order and track `primaryIdx` separately so marking someone as
@@ -688,8 +802,12 @@ function VisitModal({ prospect, onClose, onSaved, onRefresh }: { prospect: Prosp
       ? [primary, ...contacts.filter((_, i) => i !== primaryIdx)]
       : [...contacts];
     return reordered
-      .map((c) => ({ name: stripThaiTitle(c.name), phone: (c.phone || "").trim() || null }))
-      .filter((c) => c.name || c.phone);
+      .map((c) => ({
+        name: stripThaiTitle(c.name),
+        phone: (c.phone || "").trim() || null,
+        email: (c.email || "").trim() || null,
+      }))
+      .filter((c) => c.name || c.phone || c.email);
   }, [contacts, primaryIdx]);
   const contactsJson = useMemo(() => JSON.stringify(cleanContacts), [cleanContacts]);
   const addContact = (c: Contact) =>
@@ -740,11 +858,14 @@ function VisitModal({ prospect, onClose, onSaved, onRefresh }: { prospect: Prosp
   const reasonsInitRef = useRef(true);
 
   // Auto-save reasons tab: debounced PATCH whenever chips or note change.
+  // Gated on house_number being set — a prospect without a house number is
+  // considered incomplete and shouldn't accumulate side data.
   useEffect(() => {
     if (reasonsInitRef.current) { reasonsInitRef.current = false; return; }
+    if (!houseNumber.trim()) return;
     const timer = setTimeout(async () => {
       try {
-        await apiFetch(`/api/prospects/${prospect.id}`, {
+        await apiFetch(`/api/prospects/${prospectId}`, {
           method: "PATCH",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
@@ -760,7 +881,7 @@ function VisitModal({ prospect, onClose, onSaved, onRefresh }: { prospect: Prosp
       }
     }, 600);
     return () => clearTimeout(timer);
-  }, [reasonCodes, reasonNote, sizeCodes, prospect.id]);
+  }, [reasonCodes, reasonNote, sizeCodes, houseNumber, prospect.id]);
 
   // Auto-save visit + line tab fields (interest, note, contact, house number).
   // Skips GPS — that's only captured when user explicitly "visits" (on mount).
@@ -774,6 +895,7 @@ function VisitModal({ prospect, onClose, onSaved, onRefresh }: { prospect: Prosp
     note: prospect.note || "",
     house_number: prospect.house_number || "",
     contact_time: prospect.contact_time || "",
+    channel: (prospect.channel as ChannelCode | null) ?? null,
     contactsJson,
   });
   const [visitSavedAt, setVisitSavedAt] = useState<number | null>(null);
@@ -781,6 +903,12 @@ function VisitModal({ prospect, onClose, onSaved, onRefresh }: { prospect: Prosp
     const timer = setTimeout(async () => {
       const init = initialVisitRef.current;
       const nextHouse = houseNumber.trim();
+      // Require house_number + at least one way to reach the customer (LINE link
+      // or a contact with both name and phone). Empty shells / contactless
+      // prospects pollute the seeker board.
+      if (!nextHouse) return;
+      const hasContact = !!linkedLine || cleanContacts.some((c) => c.name && c.phone);
+      if (!hasContact) return;
       const nextContactTime = contactHours.length ? [...contactHours].sort((a, b) => a - b).join(",") : "";
       const nextInterestType = interest === "interested" ? interestType : null;
 
@@ -790,22 +918,55 @@ function VisitModal({ prospect, onClose, onSaved, onRefresh }: { prospect: Prosp
       if (note !== init.note) patch.note = note;
       if (nextHouse !== init.house_number) patch.house_number = nextHouse || null;
       if (nextContactTime !== init.contact_time) patch.contact_time = nextContactTime || null;
+      if (channelCode !== init.channel) patch.channel = channelCode;
       if (contactsJson !== init.contactsJson) patch.contacts = cleanContacts;
 
-      if (Object.keys(patch).length === 0) return;
+      if (Object.keys(patch).length === 0 && !isDraft) return;
 
       try {
-        await apiFetch(`/api/prospects/${prospect.id}`, {
-          method: "PATCH",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify(patch),
-        });
+        if (isDraft) {
+          // First save for a draft — POST to create the row. Pass everything
+          // we have so the server doesn't have to read the bare insert later.
+          const created = await apiFetch(`/api/prospects`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              project_id: prospect.project_id || null,
+              project_name: prospect.project_name || null,
+              house_number: nextHouse,
+              full_name: cleanContacts[0]?.name || null,
+              phone: cleanContacts[0]?.phone || null,
+              channel: channelCode || null,
+            }),
+          }) as Prospect;
+          setProspectId(created.id);
+          // Apply remaining fields via PATCH so all the contacts / note / interest
+          // also get persisted to the new row.
+          await apiFetch(`/api/prospects/${created.id}`, {
+            method: "PATCH",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              note,
+              contacts: cleanContacts,
+              contact_time: nextContactTime || null,
+              interest,
+              interest_type: nextInterestType,
+            }),
+          });
+        } else {
+          await apiFetch(`/api/prospects/${prospectId}`, {
+            method: "PATCH",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(patch),
+          });
+        }
         initialVisitRef.current = {
           interest,
           interest_type: nextInterestType,
           note,
           house_number: nextHouse,
           contact_time: nextContactTime,
+          channel: channelCode,
           contactsJson,
         };
         setVisitSavedAt(Date.now());
@@ -817,7 +978,7 @@ function VisitModal({ prospect, onClose, onSaved, onRefresh }: { prospect: Prosp
     }, 600);
     return () => clearTimeout(timer);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [interest, interestType, note, houseNumber, contactHours, contactsJson, prospect.id]);
+  }, [interest, interestType, note, houseNumber, contactHours, contactsJson, channelCode, prospectId, isDraft]);
   const [saving, setSaving] = useState(false);
   const [creatingLead, setCreatingLead] = useState(false);
   // When >1 contact lives at this house, seeker must pick ONE for the lead.
@@ -884,7 +1045,7 @@ function VisitModal({ prospect, onClose, onSaved, onRefresh }: { prospect: Prosp
     setSaving(true);
     try {
       const loc = await getLocation();
-      await apiFetch(`/api/prospects/${prospect.id}`, {
+      await apiFetch(`/api/prospects/${prospectId}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -991,17 +1152,44 @@ function VisitModal({ prospect, onClose, onSaved, onRefresh }: { prospect: Prosp
       ),
     },
   ];
+  const channelMeta = channelCode ? CHANNEL_BY_CODE[channelCode] : null;
   const title = (
     <>
-      <span className="truncate">
-        {houseNumber || "-"}
-      </span>
+      <div className="flex flex-col min-w-0 flex-1">
+        <div className="flex items-baseline gap-2 min-w-0">
+          {prospect.project_name && (
+            <span className="text-sm font-semibold text-gray-500 truncate leading-tight">
+              {prospect.project_name}
+            </span>
+          )}
+          {channelMeta && (
+            <span className="shrink-0 text-base font-bold uppercase tracking-wider text-gray-500">
+              ({channelMeta.label})
+            </span>
+          )}
+        </div>
+        <span className="truncate">
+          {houseNumber || <span className="text-gray-300">บ้านใหม่</span>}
+        </span>
+      </div>
       <span className="flex items-center gap-1.5 shrink-0">
         {flagItems.map((i) => (
           <span key={i.key} title={i.title} className={i.on ? i.onCls : "text-gray-300"}>
             {i.icon}
           </span>
         ))}
+        {cleanContacts[0]?.phone && (
+          <a
+            href={`tel:${cleanContacts[0].phone}`}
+            title={`โทร ${cleanContacts[0].phone}`}
+            onClick={(e) => e.stopPropagation()}
+            className="ml-1 w-9 h-9 rounded-full bg-emerald-50 text-emerald-600 hover:bg-emerald-100 flex items-center justify-center transition-colors"
+          >
+            <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+              <path strokeLinecap="round" strokeLinejoin="round" d="M2.25 6.75c0 8.284 6.716 15 15 15h2.25a2.25 2.25 0 002.25-2.25v-1.372c0-.516-.351-.966-.852-1.091l-4.423-1.106c-.44-.11-.902.055-1.173.417l-.97 1.293c-.282.376-.769.542-1.21.38a12.035 12.035 0 01-7.143-7.143c-.162-.441.004-.928.38-1.21l1.293-.97c.363-.271.527-.734.417-1.173L6.963 3.102a1.125 1.125 0 00-1.091-.852H4.5A2.25 2.25 0 002.25 4.5v2.25z" />
+            </svg>
+          </a>
+        )}
       </span>
     </>
   );
@@ -1056,18 +1244,18 @@ function VisitModal({ prospect, onClose, onSaved, onRefresh }: { prospect: Prosp
 
       <div className="flex-1">
       {modalTab === "line" ? (
-        <div className="flex flex-col items-center gap-6 py-6">
-          <img src="/logos/logo-sena.png" alt="SENA SOLAR" className="h-12 w-auto" />
+        <div className="flex flex-col items-center gap-3 py-2">
+          <img src="/logos/logo-sena.png" alt="SENA SOLAR" className="h-9 w-auto" />
 
           {/* QR block — single clean card, no heavy borders */}
-          <div className="flex flex-col items-center gap-3">
+          <div className="flex flex-col items-center gap-1.5">
             <div className="text-xs font-medium tracking-wider uppercase text-gray-400">
               สแกนเพื่อเพิ่ม LINE
             </div>
             <img
               src="/api/line-qr"
               alt="LINE QR"
-              className="w-56 h-56 rounded-2xl p-3 bg-white ring-1 ring-gray-200"
+              className="w-56 h-56 rounded-2xl p-2 bg-white ring-1 ring-gray-200"
             />
           </div>
 
@@ -1098,7 +1286,7 @@ function VisitModal({ prospect, onClose, onSaved, onRefresh }: { prospect: Prosp
                       confirmText: "ยกเลิกการเชื่อม",
                     });
                     if (!ok) return;
-                    await apiFetch(`/api/prospects/${prospect.id}`, {
+                    await apiFetch(`/api/prospects/${prospectId}`, {
                       method: "PATCH",
                       headers: { "Content-Type": "application/json" },
                       body: JSON.stringify({ line_id: null }),
@@ -1106,10 +1294,10 @@ function VisitModal({ prospect, onClose, onSaved, onRefresh }: { prospect: Prosp
                     setLinkedLine(null);
                     onRefresh();
                   }}
-                  className="shrink-0 w-7 h-7 rounded-lg flex items-center justify-center text-gray-300 hover:text-red-600 hover:bg-red-50 transition-colors"
+                  className="shrink-0 w-7 h-7 rounded-lg flex items-center justify-center text-red-600 hover:bg-red-50 transition-colors"
                 >
-                  <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                    <path strokeLinecap="round" strokeLinejoin="round" d="M14.74 9l-.346 9m-4.788 0L9.26 9m9.968-3.21c.342.052.682.107 1.022.166m-1.022-.165L18.16 19.673a2.25 2.25 0 01-2.244 2.077H8.084a2.25 2.25 0 01-2.244-2.077L4.772 5.79m14.456 0a48.108 48.108 0 00-3.478-.397m-12 .562c.34-.059.68-.114 1.022-.165m0 0a48.11 48.11 0 013.478-.397m7.5 0v-.916c0-1.18-.91-2.164-2.09-2.201a51.964 51.964 0 00-3.32 0c-1.18.037-2.09 1.022-2.09 2.201v.916m7.5 0a48.667 48.667 0 00-7.5 0" />
+                  <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
                   </svg>
                 </button>
               </div>
@@ -1127,17 +1315,10 @@ function VisitModal({ prospect, onClose, onSaved, onRefresh }: { prospect: Prosp
             )}
           </div>
 
-          {linePickerOpen && (
-            <LinePickerModal
-              target={{ type: "prospect", id: prospect.id, label: prospect.house_number || contactName || "บ้านนี้" }}
-              onClose={() => setLinePickerOpen(false)}
-              onLinked={(linked) => { setLinkedLine(linked); onRefresh(); }}
-            />
-          )}
-        </div>
-      ) : modalTab === "people" ? (
-        <div className="flex flex-col gap-4 py-2">
-          <div>
+          {/* House number sits right under the LINE link — it's the primary
+              identifier for the prospect, and auto-save is gated on it being
+              present, so we want it in the very first thing the seeker sees. */}
+          <div className="w-56">
             <label className="text-xs font-semibold uppercase tracking-wider text-gray-500 block mb-2">บ้านเลขที่</label>
             <div className="relative">
               <svg className="w-4 h-4 text-primary absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
@@ -1150,6 +1331,37 @@ function VisitModal({ prospect, onClose, onSaved, onRefresh }: { prospect: Prosp
                 placeholder="เช่น 52/167"
                 className="w-full h-10 pl-9 pr-3 rounded-lg border border-gray-200 text-sm focus:outline-none focus:border-primary"
               />
+            </div>
+          </div>
+
+          {linePickerOpen && (
+            <LinePickerModal
+              target={{ type: "prospect", id: prospect.id, label: prospect.house_number || contactName || "บ้านนี้" }}
+              onClose={() => setLinePickerOpen(false)}
+              onLinked={(linked) => { setLinkedLine(linked); onRefresh(); }}
+            />
+          )}
+        </div>
+      ) : modalTab === "people" ? (
+        <div className="flex flex-col gap-4 py-2">
+          <div>
+            <label className="text-xs font-semibold uppercase tracking-wider text-gray-500 block mb-2">ที่มา</label>
+            <div className="flex flex-wrap gap-1.5">
+              {CHANNELS.map((ch) => {
+                const active = channelCode === ch.code;
+                return (
+                  <button
+                    key={ch.code}
+                    type="button"
+                    onClick={() => setChannelCode(active ? null : ch.code)}
+                    className={`px-2.5 py-1 rounded-full text-xs font-semibold border transition-colors ${
+                      active ? ch.color : "bg-white text-gray-500 border-gray-200 hover:border-gray-300"
+                    }`}
+                  >
+                    {ch.label}
+                  </button>
+                );
+              })}
             </div>
           </div>
           <div>
@@ -1198,6 +1410,18 @@ function VisitModal({ prospect, onClose, onSaved, onRefresh }: { prospect: Prosp
                       onChange={(e) => updateContact(i, { phone: e.target.value || null })}
                       placeholder="เบอร์โทร"
                       className="w-full h-10 pl-9 pr-3 rounded-lg border border-gray-200 bg-white text-sm font-mono tabular-nums focus:outline-none focus:border-primary"
+                    />
+                  </div>
+                  <div className="relative">
+                    <svg className="w-4 h-4 text-amber-600 absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                      <path strokeLinecap="round" strokeLinejoin="round" d="M21.75 6.75v10.5a2.25 2.25 0 01-2.25 2.25h-15a2.25 2.25 0 01-2.25-2.25V6.75m19.5 0A2.25 2.25 0 0019.5 4.5h-15a2.25 2.25 0 00-2.25 2.25m19.5 0v.243a2.25 2.25 0 01-1.07 1.916l-7.5 4.615a2.25 2.25 0 01-2.36 0L3.32 8.91a2.25 2.25 0 01-1.07-1.916V6.75" />
+                    </svg>
+                    <input
+                      type="email"
+                      value={c.email || ""}
+                      onChange={(e) => updateContact(i, { email: e.target.value || null })}
+                      placeholder="อีเมล (ไม่บังคับ)"
+                      className="w-full h-10 pl-9 pr-3 rounded-lg border border-gray-200 bg-white text-sm focus:outline-none focus:border-primary"
                     />
                   </div>
                 </div>
@@ -1495,6 +1719,7 @@ function VisitModal({ prospect, onClose, onSaved, onRefresh }: { prospect: Prosp
                 const payload = {
                   full_name: (picked.name || prospect.full_name || prospect.house_number || "ลูกค้าจาก Seeker").trim(),
                   phone: picked.phone || prospect.phone || null,
+                  email: picked.email || null,
                   project_id: prospect.project_id || null,
                   installation_address: houseNumber.trim() || prospect.house_number || null,
                   customer_type: customerType,
@@ -1530,7 +1755,7 @@ function VisitModal({ prospect, onClose, onSaved, onRefresh }: { prospect: Prosp
                   // instead of duplicating.
                   if (leadId) {
                     try {
-                      await apiFetch(`/api/prospects/${prospect.id}`, {
+                      await apiFetch(`/api/prospects/${prospectId}`, {
                         method: "PATCH",
                         headers: { "Content-Type": "application/json" },
                         body: JSON.stringify({ lead_id: leadId }),
@@ -1560,7 +1785,7 @@ function VisitModal({ prospect, onClose, onSaved, onRefresh }: { prospect: Prosp
                   // out of the "ถูกส่งกลับ" tab and back into the normal blue
                   // "LEAD #N" synced state.
                   try {
-                    await apiFetch(`/api/prospects/${prospect.id}`, {
+                    await apiFetch(`/api/prospects/${prospectId}`, {
                       method: "PATCH",
                       headers: { "Content-Type": "application/json" },
                       body: JSON.stringify({ returned_at: null }),

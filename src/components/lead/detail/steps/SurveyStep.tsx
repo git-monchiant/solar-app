@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { apiFetch, getUserIdHeader } from "@/lib/api";
+import { useMe } from "@/lib/roles";
 import type { StepCommonProps, Package, Lead } from "./types";
 import SurveyForm from "./SurveyForm";
 import AppointmentRescheduler from "@/components/calendar/AppointmentRescheduler";
@@ -92,6 +93,18 @@ export default function SurveyStep({ lead, state, refresh, packages, expanded, o
   const [locError, setLocError] = useState<string | null>(null);
   const [locEditing, setLocEditing] = useState(false);
   const [locInput, setLocInput] = useState("");
+  const { me } = useMe();
+  // Default actual visit date = today, actual surveyor = current user when blank.
+  const todayIso = new Date().toISOString().slice(0, 10);
+  const [actualDate, setActualDate] = useState<string>(
+    lead.survey_actual_date ? String(lead.survey_actual_date).slice(0, 10) : todayIso
+  );
+  const [actualBy, setActualBy] = useState<string>(lead.survey_actual_by ?? "");
+  // Once /api/me resolves, fill actualBy if it's still blank (and the lead had no value).
+  useEffect(() => {
+    if (!actualBy && me?.full_name && !lead.survey_actual_by) setActualBy(me.full_name);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [me]);
   const isMobile = useIsMobile();
 
   const saveLocation = async (lat: number, lng: number) => {
@@ -180,6 +193,26 @@ export default function SurveyStep({ lead, state, refresh, packages, expanded, o
     return () => clearTimeout(t);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [surveyNote]);
+
+  // Auto-save actual visit fields (date + surveyor) so a refresh before clicking
+  // "สำรวจเสร็จสิ้น" doesn't lose the data.
+  useEffect(() => {
+    // Persist actual visit date/who whenever the user touches them — don't gate
+    // on survey_confirmed. Otherwise the defaults (today + current user) only
+    // exist in local state and validateSurvey reads stale null from `lead`.
+    const t = setTimeout(() => {
+      apiFetch(`/api/leads/${lead.id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          survey_actual_date: actualDate || null,
+          survey_actual_by: actualBy || null,
+        }),
+      }).catch(console.error);
+    }, 600);
+    return () => clearTimeout(t);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [actualDate, actualBy]);
 
 
 
@@ -328,7 +361,13 @@ export default function SurveyStep({ lead, state, refresh, packages, expanded, o
       await apiFetch(`/api/leads/${lead.id}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ status: "quote" }),
+        body: JSON.stringify({
+          status: "quote",
+          survey_actual_date: actualDate || null,
+          survey_actual_by: actualBy || null,
+          // Stamp the user who clicked "สำรวจเสร็จสิ้น" so PDFs can render their signature.
+          survey_completed_by: me?.id ?? null,
+        }),
       });
       await refresh();
     } finally {
@@ -371,6 +410,17 @@ export default function SurveyStep({ lead, state, refresh, packages, expanded, o
     ];
 
     const renderDoneContent = () => (<>
+
+      {/* 0. ข้อมูลการเข้าสำรวจจริง */}
+      {(lead.survey_actual_date || lead.survey_actual_by) && (
+        <div className="border-l-3 border-teal-400 pl-3">
+          <div className="text-xs font-bold text-teal-600 uppercase mb-1.5">เข้าสำรวจหน้างาน</div>
+          <div className="space-y-0.5 text-sm">
+            <DoneRow label="วันที่จริง" value={lead.survey_actual_date ? formatDate(lead.survey_actual_date) : "—"} />
+            <DoneRow label="ผู้สำรวจ" value={lead.survey_actual_by || "—"} />
+          </div>
+        </div>
+      )}
 
       {/* 1. ระบบไฟฟ้า */}
       <div className="border-l-3 border-blue-400 pl-3">
@@ -497,7 +547,7 @@ export default function SurveyStep({ lead, state, refresh, packages, expanded, o
       {lead.survey_photos && (
         <div className="border-l-3 border-gray-300 pl-3">
           <div className="text-xs font-bold text-gray-500 uppercase mb-1.5">รูปถ่ายเพิ่มเติม</div>
-          <div className="grid grid-cols-3 gap-2">
+          <div className="grid grid-cols-3 md:grid-cols-4 gap-2">
             {(() => {
               const urls = lead.survey_photos.split(",").filter(Boolean);
               const gallery = urls.map((u, i) => ({ url: u, label: `รูปสำรวจ ${i + 1} / ${urls.length}` }));
@@ -566,8 +616,9 @@ export default function SurveyStep({ lead, state, refresh, packages, expanded, o
         "survey_meter_size", "survey_electrical_phase",
         "survey_voltage_ln", "survey_voltage_ll",
         "survey_monthly_bill",
-        "survey_mdb_slots", "survey_breaker_type",
+        "survey_mdb_brand", "survey_mdb_model", "survey_mdb_slots", "survey_breaker_type",
         "survey_panel_to_inverter_m", "survey_db_distance_m",
+        "survey_appliances",
       ],
       2: [ // Roof / house
         "survey_floors", "survey_roof_material",
@@ -575,15 +626,29 @@ export default function SurveyStep({ lead, state, refresh, packages, expanded, o
         "survey_roof_area_m2", "survey_roof_width_m", "survey_roof_length_m",
         "survey_roof_structure", "survey_shading",
       ],
-      3: [ // Install planning + Photo Checklist
+      3: [ // Install planning + Photo Checklist + actual visit notes
         "survey_inverter_location", "survey_wifi_signal", "survey_access_method",
         "survey_photo_building_url", "survey_photo_roof_structure_url",
         "survey_photo_mdb_url", "survey_photo_inverter_point_url",
+        "survey_photos", "survey_note",
+        "survey_actual_date", "survey_actual_by",
+        "survey_lat", "survey_lng",
       ],
-      4: [], 5: [],
+      4: [ // Recommendation + signature
+        "survey_recommended_kw", "survey_panel_count", "survey_wants_battery",
+        "interested_package_id", "survey_customer_signature_url",
+      ],
+      5: [],
     };
-    const v = validateSurvey({ ...lead, ...formDraft, survey_note: surveyNote || lead.survey_note, survey_photos: surveyPhotos.length ? surveyPhotos.join(",") : lead.survey_photos, survey_wants_battery: surveyBattery || lead.survey_wants_battery, survey_electrical_phase: surveyPhase || lead.survey_electrical_phase, interested_package_id: selectedPkgs.length ? parseInt(selectedPkgs[0]) : lead.interested_package_id });
-    const missingHere = v.missing.filter(m => (gates[subStep] || []).includes(m.field));
+    const v = validateSurvey({ ...lead, ...formDraft, survey_note: surveyNote || lead.survey_note, survey_photos: surveyPhotos.length ? surveyPhotos.join(",") : lead.survey_photos, survey_wants_battery: surveyBattery || lead.survey_wants_battery, survey_electrical_phase: surveyPhase || lead.survey_electrical_phase, interested_package_id: selectedPkgs.length ? parseInt(selectedPkgs[0]) : lead.interested_package_id, survey_actual_date: actualDate || lead.survey_actual_date, survey_actual_by: actualBy || lead.survey_actual_by });
+    // Validate every step between current and target — jumping ahead by tab click
+    // shouldn't skip intermediate gates (e.g. user on subStep 1 jumping to 4 must
+    // still satisfy gates 1, 2, 3).
+    const requiredFields = new Set<string>();
+    for (let s = subStep; s < i; s++) {
+      for (const f of gates[s] || []) requiredFields.add(f);
+    }
+    const missingHere = v.missing.filter(m => requiredFields.has(m.field));
     if (missingHere.length > 0) {
       setNextError(missingHere.map(m => m.label).join(", "));
       return;
@@ -909,6 +974,20 @@ export default function SurveyStep({ lead, state, refresh, packages, expanded, o
             />
           </div>
 
+          {/* การสำรวจหน้างาน — วันและผู้สำรวจจริง */}
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <div className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-1.5">วันที่เข้าสำรวจจริง</div>
+              <input type="date" value={actualDate} onChange={e => setActualDate(e.target.value)}
+                className="w-full h-10 px-3 rounded-lg border border-gray-200 bg-white text-sm focus:outline-none focus:border-primary" />
+            </div>
+            <div>
+              <div className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-1.5">ผู้เข้าสำรวจ</div>
+              <input type="text" value={actualBy} onChange={e => setActualBy(e.target.value)}
+                className="w-full h-10 px-3 rounded-lg border border-gray-200 bg-white text-sm focus:outline-none focus:border-primary" />
+            </div>
+          </div>
+
           {/* Confirm — สำรวจเสร็จสิ้น */}
           <button onClick={markDone} disabled={saving} className="w-full h-11 rounded-lg text-sm font-semibold text-white bg-gradient-to-r from-primary to-primary-dark hover:brightness-110 disabled:opacity-50 transition-colors flex items-center justify-center gap-2">
             <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}><path strokeLinecap="round" strokeLinejoin="round" d="M4.5 12.75l6 6 9-13.5" /></svg>
@@ -942,7 +1021,7 @@ export default function SurveyStep({ lead, state, refresh, packages, expanded, o
             </div>
             <input type="file" accept="image/*" multiple capture="environment" onChange={handlePhotoCapture} className="hidden" id={`survey-photos-${lead.id}`} />
             {surveyPhotos.length > 0 && (
-              <div className="grid grid-cols-3 gap-2 mb-2">
+              <div className="grid grid-cols-3 md:grid-cols-4 gap-2 mb-2">
                 {surveyPhotos.map((url, idx) => (
                   <div key={url} className="relative aspect-square">
                     <FallbackImage
@@ -966,14 +1045,17 @@ export default function SurveyStep({ lead, state, refresh, packages, expanded, o
 
       {/* Navigation */}
       {lead.survey_confirmed && subStep < 4 && (() => {
+        // Keep this dict in sync with the gates in handleSubStepChange above —
+        // both should enforce the same required fields per sub-step.
         const gates: Record<number, string[]> = {
           0: ["survey_confirmed"],
           1: [
             "survey_meter_size", "survey_electrical_phase",
             "survey_voltage_ln", "survey_voltage_ll",
             "survey_monthly_bill",
-            "survey_mdb_slots", "survey_breaker_type",
+            "survey_mdb_brand", "survey_mdb_model", "survey_mdb_slots", "survey_breaker_type",
             "survey_panel_to_inverter_m", "survey_db_distance_m",
+            "survey_appliances",
           ],
           2: [
             "survey_floors", "survey_roof_material",
@@ -985,10 +1067,13 @@ export default function SurveyStep({ lead, state, refresh, packages, expanded, o
             "survey_inverter_location", "survey_wifi_signal", "survey_access_method",
             "survey_photo_building_url", "survey_photo_roof_structure_url",
             "survey_photo_mdb_url", "survey_photo_inverter_point_url",
+            "survey_photos", "survey_note",
+            "survey_actual_date", "survey_actual_by",
+            "survey_lat", "survey_lng",
           ],
         };
         const handleNext = () => {
-          const v = validateSurvey({ ...lead, ...formDraft, survey_note: surveyNote || lead.survey_note, survey_photos: surveyPhotos.length ? surveyPhotos.join(",") : lead.survey_photos, survey_wants_battery: surveyBattery || lead.survey_wants_battery, survey_electrical_phase: surveyPhase || lead.survey_electrical_phase, interested_package_id: selectedPkgs.length ? parseInt(selectedPkgs[0]) : lead.interested_package_id });
+          const v = validateSurvey({ ...lead, ...formDraft, survey_note: surveyNote || lead.survey_note, survey_photos: surveyPhotos.length ? surveyPhotos.join(",") : lead.survey_photos, survey_wants_battery: surveyBattery || lead.survey_wants_battery, survey_electrical_phase: surveyPhase || lead.survey_electrical_phase, interested_package_id: selectedPkgs.length ? parseInt(selectedPkgs[0]) : lead.interested_package_id, survey_actual_date: actualDate || lead.survey_actual_date, survey_actual_by: actualBy || lead.survey_actual_by });
           const missingHere = v.missing.filter(m => (gates[subStep] || []).includes(m.field));
           if (missingHere.length > 0) {
             setNextError(missingHere.map(m => m.label).join(", "));

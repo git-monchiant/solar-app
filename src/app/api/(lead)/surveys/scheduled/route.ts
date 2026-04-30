@@ -14,15 +14,22 @@ export async function GET(req: NextRequest) {
     // has that appointment on the calendar). Exclude terminal cancels so freed
     // slots come back to the pool.
     const result = await db.request().query(`
-      SELECT id, full_name, survey_date as event_date, survey_time_slot as time_slot, 'survey' as event_type, status, zone
+      SELECT id, full_name, house_number, survey_date as event_date, survey_time_slot as time_slot, 'survey' as event_type, status, zone
       FROM leads
       WHERE survey_date IS NOT NULL
         AND status NOT IN ('lost', 'returned')
       UNION ALL
-      SELECT id, full_name, install_date as event_date, NULL as time_slot, 'install' as event_type, status, zone
+      SELECT id, full_name, house_number, install_date as event_date, NULL as time_slot, 'install' as event_type, status, zone
       FROM leads
       WHERE install_date IS NOT NULL
         AND status NOT IN ('lost', 'returned')
+      UNION ALL
+      -- Free-form blocks ("other work") created via /api/calendar-blocks.
+      -- Negative id space so they don't collide with lead ids on the client.
+      SELECT (-id) as id, title as full_name, NULL as house_number,
+             block_date as event_date, time_slot, 'block' as event_type,
+             'block' as status, NULL as zone
+      FROM calendar_blocks
     `);
     return NextResponse.json(fixDates(result.recordset));
   } catch (error) {

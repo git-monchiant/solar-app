@@ -23,14 +23,25 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
 
     const db = await getDb();
 
-    // Generate SM-YYNNN doc number
-    const year = new Date().getFullYear().toString().slice(-2);
-    const maxRes = await db.request().query(`
-      SELECT MAX(CAST(RIGHT(pre_doc_no, 3) AS INT)) as max_num
-      FROM leads WHERE pre_doc_no LIKE 'SM-${year}%'
+    // Read configurable prefix + digits from app_settings (defaults: SM, 3).
+    const cfg = await db.request().query(`
+      SELECT [key], value FROM app_settings WHERE [key] IN ('doc_prefix_booking', 'doc_digits_booking')
     `);
-    const nextNum = ((maxRes.recordset[0].max_num || 0) + 1).toString().padStart(3, "0");
-    const docNo = `SM-${year}${nextNum}`;
+    const cfgMap: Record<string, string> = {};
+    for (const r of cfg.recordset) cfgMap[r.key] = r.value;
+    const prefix = (cfgMap["doc_prefix_booking"] || "SM").replace(/[^A-Z0-9]/gi, "").toUpperCase() || "SM";
+    const digits = Math.max(3, Math.min(5, parseInt(cfgMap["doc_digits_booking"] || "3") || 3));
+
+    // Generate {PREFIX}-YY{NNN...} with yearly counter reset.
+    const year = new Date().getFullYear().toString().slice(-2);
+    const maxRes = await db.request()
+      .input("like", sql.NVarChar(20), `${prefix}-${year}%`)
+      .query(`
+        SELECT MAX(CAST(RIGHT(pre_doc_no, ${digits}) AS INT)) as max_num
+        FROM leads WHERE pre_doc_no LIKE @like
+      `);
+    const nextNum = ((maxRes.recordset[0].max_num || 0) + 1).toString().padStart(digits, "0");
+    const docNo = `${prefix}-${year}${nextNum}`;
 
     await db.request()
       .input("id", sql.Int, leadId)

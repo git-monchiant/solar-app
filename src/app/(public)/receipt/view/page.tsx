@@ -20,6 +20,7 @@ interface ReceiptData {
   survey_date: string | null;
   survey_time_slot: string | null;
   packages: { id: number; name: string; kwp: number; price: number }[];
+  signer: { full_name: string; signature_url: string | null } | null;
 }
 
 const CO = {
@@ -50,8 +51,10 @@ function ReceiptContent() {
     const qs = new URLSearchParams();
     const leadId = params.get("lead_id");
     const stage = params.get("stage") || "deposit";
+    const userId = params.get("user_id");
     if (leadId) qs.set("lead_id", leadId);
     qs.set("stage", stage);
+    if (userId) qs.set("user_id", userId);
     fetch(`/api/receipt/data?${qs.toString()}`).then(r => r.json()).then(setD).catch(console.error);
   }, [params]);
 
@@ -172,16 +175,29 @@ function ReceiptContent() {
             <div>PROMPTPAY TAX ID: {CO.taxId}</div>
           </div>
 
+          {/* Same wrapper height (h-12) on both sides so the line baselines line up,
+              regardless of whether the signature image is rendered. */}
           <div className="flex justify-around mb-3 mt-10 text-xs text-gray-500">
             <div className="text-center">
-              <div className="w-44 border-b border-gray-300 mb-1" />
+              <div className="relative w-44 h-12 mb-1">
+                <div className="absolute inset-x-0 bottom-0 border-b border-gray-300" />
+              </div>
               <div>SIGNATURE</div>
               <div>(..............................................)</div>
             </div>
             <div className="text-center">
-              <div className="w-44 border-b border-gray-300 mb-1" />
+              <div className="relative w-44 h-12 mb-1">
+                {d.signer?.signature_url && (
+                  <img
+                    src={d.signer.signature_url}
+                    alt="signature"
+                    className="absolute inset-x-0 bottom-0 mx-auto max-h-12 object-contain"
+                  />
+                )}
+                <div className="absolute inset-x-0 bottom-0 border-b border-gray-300" />
+              </div>
               <div>RECEIVED BY</div>
-              <div>(..............................................)</div>
+              <div>({d.signer?.full_name || ".............................................."})</div>
             </div>
           </div>
 

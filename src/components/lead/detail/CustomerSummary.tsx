@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { getSourceStyle } from "@/lib/source-tag";
 
 interface Lead {
   full_name: string;
@@ -48,7 +49,7 @@ export default function CustomerSummary({ lead }: { lead: Lead }) {
             {lead.phone && <span>{lead.phone}</span>}
             {lead.project_name && <span>{lead.project_name}</span>}
             {lead.installation_address && <span>#{lead.installation_address}</span>}
-            <span className="text-xs font-medium bg-gray-100 px-1.5 py-0.5 rounded">{lead.source === "event" ? "Event" : "Walk-in"}</span>
+            {lead.source && <span className="text-xs font-medium bg-gray-100 px-1.5 py-0.5 rounded">{getSourceStyle(lead.source).label}</span>}
           </div>
         </div>
         <div className="flex items-center gap-2 shrink-0">

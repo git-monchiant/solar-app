@@ -8,6 +8,7 @@ const fmt0 = (n: number) => new Intl.NumberFormat("en-US").format(n);
 export async function GET(req: NextRequest) {
   const leadIdParam = req.nextUrl.searchParams.get("lead_id");
   const stageParam = (req.nextUrl.searchParams.get("stage") as Stage | null) || "deposit";
+  const userIdParam = req.nextUrl.searchParams.get("user_id");
 
   if (!leadIdParam) {
     return NextResponse.json({ error: "Missing lead_id" }, { status: 400 });
@@ -17,11 +18,20 @@ export async function GET(req: NextRequest) {
     const db = await getDb();
     const leadId = parseInt(leadIdParam);
 
+    // Signer = user who confirmed the matching payment stage. Fallback to current viewer.
+    const stageUserCol: Record<Stage, "payment_confirmed_by" | "order_before_paid_by" | "order_after_paid_by"> = {
+      deposit: "payment_confirmed_by",
+      order_before: "order_before_paid_by",
+      order_after: "order_after_paid_by",
+    };
+    let signer: { full_name: string; signature_url: string | null } | null = null;
+
     const leadRes = await db.request().input("id", sql.Int, leadId).query(`
       SELECT l.id, l.full_name, l.phone, l.installation_address, l.id_card_address, l.id_card_number,
              l.survey_date, l.survey_time_slot, l.interested_package_id, l.interested_package_ids,
              l.order_total, l.order_pct_before, l.install_extra_cost, l.install_extra_note, l.install_completed_at,
              l.pre_doc_no, l.pre_total_price, l.pre_booked_at, l.pre_package_id,
+             l.payment_confirmed_by, l.order_before_paid_by, l.order_after_paid_by,
              pr.name as project_name
       FROM leads l
       LEFT JOIN projects pr ON l.project_id = pr.id
@@ -29,6 +39,14 @@ export async function GET(req: NextRequest) {
     `);
     if (leadRes.recordset.length === 0) return NextResponse.json({ error: "Lead not found" }, { status: 404 });
     const l = leadRes.recordset[0];
+
+    // Resolve signer: prefer the user_id stamped at confirm-time; otherwise fall back to viewer.
+    const signerId = l[stageUserCol[stageParam]] || (userIdParam ? parseInt(userIdParam) : null);
+    if (signerId) {
+      const u = await db.request().input("id", sql.Int, signerId)
+        .query(`SELECT full_name, signature_url FROM users WHERE id = @id`);
+      if (u.recordset.length > 0) signer = u.recordset[0];
+    }
 
     // Prefer the survey-selected package (single). Fall back to pre-survey package
     // or the interested list (only for the deposit stage where multiple options may apply).
@@ -114,6 +132,7 @@ export async function GET(req: NextRequest) {
       receipt_no: receiptNumber,
       created_at: receiptDate,
       packages,
+      signer,
     });
   } catch (error) {
     console.error("Receipt data error:", error);

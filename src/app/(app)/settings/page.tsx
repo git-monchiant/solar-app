@@ -4,40 +4,28 @@ import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { apiFetch } from "@/lib/api";
 import Header from "@/components/layout/Header";
-import { useMe, ROLE_LABEL, ALL_ROLES, type Role } from "@/lib/roles";
-import { useDialog } from "@/components/ui/Dialog";
 
 type Settings = Record<string, string>;
-type Tab = "general" | "payment_config" | "users";
 
-type UserRow = {
-  id: number;
-  username: string;
-  full_name: string;
-  team: string;
-  phone: string | null;
-  email: string | null;
-  is_active: boolean;
-  created_at: string;
-  roles: string[];
-  // Legacy fields tolerated but ignored — cleaned up once DB migration drops them.
-  role?: string;
-  extra_roles?: string | null;
-};
+const DOC_TYPES: { key: string; label: string; description: string; defaultPrefix: string }[] = [
+  { key: "booking", label: "ใบจองคิว", description: "เกิดเมื่อยืนยัน Pre-Survey + จ่ายเงินจอง", defaultPrefix: "SM" },
+  { key: "quotation", label: "ใบเสนอราคา", description: "ออกหลังเสร็จ Survey", defaultPrefix: "QT" },
+  { key: "survey", label: "ใบสำรวจ", description: "เอกสารสำรวจหน้างาน", defaultPrefix: "SV" },
+  { key: "warranty", label: "ใบรับประกัน", description: "ออกเมื่อจบงานติดตั้ง", defaultPrefix: "SSE" },
+  { key: "receipt", label: "ใบเสร็จอย่างย่อ", description: "ใบรับเงินมัดจำ/งวด", defaultPrefix: "RC" },
+];
+
+type Tab = "running_numbers" | "gmail";
 
 export default function SettingsPage() {
   const router = useRouter();
-  const { me } = useMe();
-  const dialog = useDialog();
-  const isAdmin = (me?.roles || []).includes("admin");
-  const [tab, setTab] = useState<Tab>("general");
+  const [tab, setTab] = useState<Tab>("running_numbers");
 
   const logout = () => {
     if (typeof window !== "undefined") {
       localStorage.removeItem("userId");
       localStorage.removeItem("userName");
       localStorage.removeItem("activeRoles");
-      // Hard reload clears module-level caches (useMe/useActiveRoles).
       window.location.href = "/login";
       return;
     }
@@ -50,9 +38,8 @@ export default function SettingsPage() {
 
       <div className="p-4 md:p-6 max-w-4xl">
         <div className="flex items-center gap-1 border-b border-gray-200 mb-4">
-          <TabBtn active={tab === "general"} onClick={() => setTab("general")} label="ทั่วไป" />
-          <TabBtn active={tab === "payment_config"} onClick={() => setTab("payment_config")} label="ตั้งค่า QR" />
-          {isAdmin && <TabBtn active={tab === "users"} onClick={() => setTab("users")} label="ผู้ใช้งาน" />}
+          <TabBtn active={tab === "running_numbers"} onClick={() => setTab("running_numbers")} label="เลขเอกสาร" />
+          <TabBtn active={tab === "gmail"} onClick={() => setTab("gmail")} label="Gmail" />
           <div className="flex-1" />
           <div className="pb-2 pr-1">
             <button
@@ -65,9 +52,8 @@ export default function SettingsPage() {
           </div>
         </div>
 
-        {tab === "general" && <GeneralTab />}
-        {tab === "payment_config" && <PaymentConfigTab />}
-        {tab === "users" && isAdmin && <UsersTab currentUserId={me?.id ?? 0} />}
+        {tab === "running_numbers" && <RunningNumbersSection />}
+        {tab === "gmail" && <GmailSection />}
       </div>
     </div>
   );
@@ -85,15 +71,129 @@ function TabBtn({ active, onClick, label }: { active: boolean; onClick: () => vo
   );
 }
 
-function GeneralTab() {
-  const dialog = useDialog();
+type GmailStatus = { connected: boolean; email: string | null; connected_at: string | null };
+
+function GmailSection() {
+  const [status, setStatus] = useState<GmailStatus | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [busy, setBusy] = useState(false);
+
+  const load = () => {
+    setLoading(true);
+    apiFetch("/api/oauth/gmail/status").then(setStatus).catch(console.error).finally(() => setLoading(false));
+  };
+  useEffect(load, []);
+
+  const connect = async () => {
+    setBusy(true);
+    try {
+      const { url } = await apiFetch("/api/oauth/gmail/start") as { url: string };
+      window.location.href = url;
+    } catch (e) {
+      console.error(e);
+      setBusy(false);
+    }
+  };
+
+  const disconnect = async () => {
+    if (!confirm("ตัดการเชื่อม Gmail?")) return;
+    setBusy(true);
+    try {
+      await apiFetch("/api/oauth/gmail/status", { method: "DELETE" });
+      load();
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <section className="bg-white rounded-xl border border-gray-200 overflow-hidden">
+      <div className="px-5 py-4 border-b border-gray-100">
+        <h2 className="text-sm font-bold text-gray-900">Gmail Integration</h2>
+        <p className="text-xs text-gray-500 mt-0.5">เชื่อม Gmail บริษัทเพื่อดึง lead registration อัตโนมัติ (read-only)</p>
+      </div>
+      {loading ? (
+        <div className="flex items-center justify-center py-8">
+          <div className="w-6 h-6 border-2 border-primary/30 border-t-primary rounded-full animate-spin" />
+        </div>
+      ) : (
+        <div className="p-5">
+          {status?.connected ? (
+            <ConnectedView status={status} busy={busy} setBusy={setBusy} onDisconnect={disconnect} />
+          ) : (
+            <div className="flex items-center justify-between gap-3">
+              <div className="text-sm text-gray-500">ยังไม่ได้เชื่อม Gmail</div>
+              <button type="button" onClick={connect} disabled={busy}
+                className="h-10 px-5 rounded-lg text-sm font-semibold text-white bg-primary hover:bg-primary-dark disabled:opacity-50 transition-colors">
+                {busy ? "กำลังเปิด..." : "เชื่อม Gmail"}
+              </button>
+            </div>
+          )}
+        </div>
+      )}
+    </section>
+  );
+}
+
+function ConnectedView({ status, busy, setBusy, onDisconnect }: {
+  status: GmailStatus;
+  busy: boolean;
+  setBusy: (b: boolean) => void;
+  onDisconnect: () => void;
+}) {
+  const [result, setResult] = useState<{ imported: number; skipped: number; scanned: number } | null>(null);
+  const [err, setErr] = useState<string | null>(null);
+
+  const sync = async () => {
+    setBusy(true); setErr(null); setResult(null);
+    try {
+      const r = await apiFetch("/api/oauth/gmail/sync", { method: "POST" }) as { imported: number; skipped: number; scanned: number };
+      setResult(r);
+    } catch (e) {
+      setErr(e instanceof Error ? e.message : "Sync failed");
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <div className="space-y-3">
+      <div className="flex items-center gap-3">
+        <div className="w-10 h-10 rounded-full bg-emerald-50 text-emerald-600 flex items-center justify-center shrink-0">
+          <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
+            <path strokeLinecap="round" strokeLinejoin="round" d="M4.5 12.75l6 6 9-13.5" />
+          </svg>
+        </div>
+        <div className="flex-1 min-w-0">
+          <div className="text-sm font-semibold text-gray-900 truncate">{status.email}</div>
+          <div className="text-xs text-gray-500">
+            เชื่อมเมื่อ {status.connected_at ? new Date(status.connected_at).toLocaleString("th-TH") : "—"}
+          </div>
+        </div>
+        <button type="button" onClick={sync} disabled={busy}
+          className="h-9 px-4 rounded-lg text-xs font-semibold text-white bg-primary hover:bg-primary-dark disabled:opacity-50 transition-colors">
+          {busy ? "กำลัง sync..." : "Sync ตอนนี้"}
+        </button>
+        <button type="button" onClick={onDisconnect} disabled={busy}
+          className="h-9 px-3 rounded-lg text-xs font-semibold text-red-600 border border-red-200 hover:bg-red-50 disabled:opacity-50">
+          ตัด
+        </button>
+      </div>
+      {result && (
+        <div className="text-xs text-emerald-700 bg-emerald-50 border border-emerald-100 rounded-lg px-3 py-2">
+          ✓ Sync สำเร็จ — สแกน {result.scanned} ฉบับ, เพิ่ม lead ใหม่ {result.imported}, ข้าม (มีแล้ว) {result.skipped}
+        </div>
+      )}
+      {err && (
+        <div className="text-xs text-red-700 bg-red-50 border border-red-100 rounded-lg px-3 py-2">{err}</div>
+      )}
+    </div>
+  );
+}
+
+function RunningNumbersSection() {
   const [settings, setSettings] = useState<Settings>({});
-  const [taxIdInput, setTaxIdInput] = useState("");
-  const [companyInput, setCompanyInput] = useState("");
-  const [bankInput, setBankInput] = useState("");
-  const [bankBranchInput, setBankBranchInput] = useState("");
-  const [bankNumberInput, setBankNumberInput] = useState("");
-  const [bankNameInput, setBankNameInput] = useState("");
+  const [drafts, setDrafts] = useState<Record<string, { prefix: string; digits: number }>>({});
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [savedAt, setSavedAt] = useState<number | null>(null);
@@ -101,26 +201,45 @@ function GeneralTab() {
   useEffect(() => {
     apiFetch("/api/settings").then((s: Settings) => {
       setSettings(s);
-      setTaxIdInput(s.promptpay_tax_id || "");
-      setCompanyInput(s.company_name || "");
-      setBankInput(s.bank_account_bank || "");
-      setBankBranchInput(s.bank_account_branch || "");
-      setBankNumberInput(s.bank_account_number || "");
-      setBankNameInput(s.bank_account_name || "");
+      const d: Record<string, { prefix: string; digits: number }> = {};
+      for (const t of DOC_TYPES) {
+        d[t.key] = {
+          prefix: s[`doc_prefix_${t.key}`] || t.defaultPrefix,
+          digits: parseInt(s[`doc_digits_${t.key}`] || "3"),
+        };
+      }
+      setDrafts(d);
     }).catch(console.error).finally(() => setLoading(false));
   }, []);
 
-  const isOn = (key: string) => settings[key] !== "false";
+  const update = (key: string, patch: Partial<{ prefix: string; digits: number }>) => {
+    setDrafts(prev => ({ ...prev, [key]: { ...prev[key], ...patch } }));
+  };
 
-  const patch = async (payload: Record<string, string | boolean>) => {
+  const dirty = DOC_TYPES.some(t => {
+    const cur = drafts[t.key];
+    if (!cur) return false;
+    const savedPrefix = settings[`doc_prefix_${t.key}`] || t.defaultPrefix;
+    const savedDigits = parseInt(settings[`doc_digits_${t.key}`] || "3");
+    return cur.prefix !== savedPrefix || cur.digits !== savedDigits;
+  });
+
+  const save = async () => {
     setSaving(true);
     try {
+      const payload: Record<string, string> = {};
+      for (const t of DOC_TYPES) {
+        const cur = drafts[t.key];
+        if (!cur) continue;
+        payload[`doc_prefix_${t.key}`] = cur.prefix.trim() || t.defaultPrefix;
+        payload[`doc_digits_${t.key}`] = String(cur.digits);
+      }
       await apiFetch("/api/settings", {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(payload),
       });
-      setSettings(prev => ({ ...prev, ...Object.fromEntries(Object.entries(payload).map(([k, v]) => [k, String(v)])) }));
+      setSettings(prev => ({ ...prev, ...payload }));
       setSavedAt(Date.now());
       setTimeout(() => setSavedAt(null), 2000);
     } finally {
@@ -128,520 +247,67 @@ function GeneralTab() {
     }
   };
 
-  const toggle = async (key: string) => {
-    const current = key === "other_payment_enabled" ? settings[key] === "true" : isOn(key);
-    const next = !current;
-    const qrOn = key === "promptpay_qr_enabled" ? next : isOn("promptpay_qr_enabled");
-    const linkOn = key === "promptpay_link_enabled" ? next : isOn("promptpay_link_enabled");
-    const bankOn = key === "bank_account_enabled" ? next : isOn("bank_account_enabled");
-    const otherOn = key === "other_payment_enabled" ? next : settings["other_payment_enabled"] === "true";
-    if (!qrOn && !linkOn && !bankOn && !otherOn) return;
-    await patch({ [key]: next });
-  };
-
-  const saveTaxId = async () => {
-    if (!/^\d{13}$/.test(taxIdInput)) { dialog.alert({ title: "Tax ID ไม่ถูกต้อง", message: "Tax ID ต้องเป็นตัวเลข 13 หลัก", variant: "warning" }); return; }
-    await patch({ promptpay_tax_id: taxIdInput, company_name: companyInput });
-  };
-
-  const saveBank = async () => {
-    if (!bankInput || !bankNumberInput || !bankNameInput) { dialog.alert({ title: "ข้อมูลไม่ครบ", message: "กรุณากรอกธนาคาร / เลขบัญชี / ชื่อบัญชี", variant: "warning" }); return; }
-    await patch({
-      bank_account_bank: bankInput,
-      bank_account_branch: bankBranchInput,
-      bank_account_number: bankNumberInput,
-      bank_account_name: bankNameInput,
-    });
-  };
+  const yy = new Date().getFullYear().toString().slice(-2);
+  const preview = (prefix: string, digits: number) => `${prefix}-${yy}${"1".padStart(digits, "0")}`;
 
   return (
-    <div className="space-y-4">
-      <section className="bg-white rounded-xl border border-gray-200 overflow-hidden">
-        <div className="px-5 py-4 border-b border-gray-100">
-          <h2 className="text-sm font-bold text-gray-900">PromptPay</h2>
-          <p className="text-xs text-gray-500 mt-0.5">ข้อมูลผู้รับชำระเงิน</p>
+    <section className="bg-white rounded-xl border border-gray-200 overflow-hidden">
+      <div className="px-5 py-4 border-b border-gray-100 flex items-center justify-between">
+        <div>
+          <h2 className="text-sm font-bold text-gray-900">เลขเอกสารอัตโนมัติ</h2>
+          <p className="text-xs text-gray-500 mt-0.5">รูปแบบ: <span className="font-mono">PREFIX-YY{"NNN..."}</span> (รีเซ็ตเลขทุกปี)</p>
         </div>
-        {loading ? (
-          <div className="flex items-center justify-center py-12">
-            <div className="w-8 h-8 border-2 border-primary/30 border-t-primary rounded-full animate-spin" />
-          </div>
-        ) : (
-          <div className="p-5 space-y-4">
-            <div>
-              <label className="text-xs font-semibold tracking-wider uppercase text-gray-400 block mb-1">Tax ID (13 หลัก)</label>
-              <input type="text" inputMode="numeric" maxLength={13} value={taxIdInput}
-                onChange={e => setTaxIdInput(e.target.value.replace(/\D/g, "").slice(0, 13))}
-                placeholder="0000000000000"
-                className="w-full h-10 px-3 rounded-lg border border-gray-200 text-sm font-mono tabular-nums focus:outline-none focus:border-primary" />
-            </div>
-            <div>
-              <label className="text-xs font-semibold tracking-wider uppercase text-gray-400 block mb-1">ชื่อบริษัท</label>
-              <input type="text" value={companyInput} onChange={e => setCompanyInput(e.target.value)}
-                className="w-full h-10 px-3 rounded-lg border border-gray-200 text-sm focus:outline-none focus:border-primary" />
-            </div>
-            <div className="flex items-center gap-3 pt-1">
-              <button type="button" onClick={saveTaxId} disabled={saving}
-                className="h-10 px-5 rounded-lg text-sm font-semibold text-white bg-primary hover:bg-primary-dark disabled:opacity-50 transition-colors">
-                {saving ? "กำลังบันทึก..." : "บันทึก"}
-              </button>
-              {savedAt && <span className="text-xs font-semibold text-emerald-600">✓ บันทึกแล้ว</span>}
-            </div>
-          </div>
-        )}
-      </section>
+        {savedAt && <span className="text-xs font-semibold text-emerald-600">✓ บันทึกแล้ว</span>}
+      </div>
 
-      <section className="bg-white rounded-xl border border-gray-200 overflow-hidden">
-        <div className="px-5 py-4 border-b border-gray-100">
-          <h2 className="text-sm font-bold text-gray-900">บัญชีธนาคาร</h2>
-          <p className="text-xs text-gray-500 mt-0.5">สำหรับลูกค้าโอนตรงเข้าบัญชี</p>
+      {loading ? (
+        <div className="flex items-center justify-center py-12">
+          <div className="w-8 h-8 border-2 border-primary/30 border-t-primary rounded-full animate-spin" />
         </div>
-        {!loading && (
-          <div className="p-5 space-y-4">
-            <div>
-              <label className="text-xs font-semibold tracking-wider uppercase text-gray-400 block mb-1">ธนาคาร</label>
-              <input type="text" value={bankInput} onChange={e => setBankInput(e.target.value)} className="w-full h-10 px-3 rounded-lg border border-gray-200 text-sm focus:outline-none focus:border-primary" />
-            </div>
-            <div>
-              <label className="text-xs font-semibold tracking-wider uppercase text-gray-400 block mb-1">สาขา</label>
-              <input type="text" value={bankBranchInput} onChange={e => setBankBranchInput(e.target.value)} className="w-full h-10 px-3 rounded-lg border border-gray-200 text-sm focus:outline-none focus:border-primary" />
-            </div>
-            <div>
-              <label className="text-xs font-semibold tracking-wider uppercase text-gray-400 block mb-1">เลขบัญชี</label>
-              <input type="text" value={bankNumberInput} onChange={e => setBankNumberInput(e.target.value)} className="w-full h-10 px-3 rounded-lg border border-gray-200 text-sm font-mono tabular-nums focus:outline-none focus:border-primary" />
-            </div>
-            <div>
-              <label className="text-xs font-semibold tracking-wider uppercase text-gray-400 block mb-1">ชื่อบัญชี</label>
-              <input type="text" value={bankNameInput} onChange={e => setBankNameInput(e.target.value)} className="w-full h-10 px-3 rounded-lg border border-gray-200 text-sm focus:outline-none focus:border-primary" />
-            </div>
-            <div className="flex items-center gap-3 pt-1">
-              <button type="button" onClick={saveBank} disabled={saving}
-                className="h-10 px-5 rounded-lg text-sm font-semibold text-white bg-primary hover:bg-primary-dark disabled:opacity-50 transition-colors">
-                {saving ? "กำลังบันทึก..." : "บันทึก"}
-              </button>
-            </div>
-          </div>
-        )}
-      </section>
-
-      <section className="bg-white rounded-xl border border-gray-200 overflow-hidden">
-        <div className="px-5 py-4 border-b border-gray-100">
-          <h2 className="text-sm font-bold text-gray-900">ช่องทางการชำระเงิน</h2>
-          <p className="text-xs text-gray-500 mt-0.5">เปิด/ปิดช่องทางที่แสดงให้ลูกค้า</p>
-        </div>
-        {!loading && (
+      ) : (
+        <>
           <div className="divide-y divide-gray-100">
-            {[
-              { key: "promptpay_qr_enabled", label: "Thai QR", description: "QR code สำหรับสแกนชำระผ่าน PromptPay" },
-              { key: "promptpay_link_enabled", label: "Payment Link", description: "ลิ้งค์หน้าชำระเงินส่งให้ลูกค้า" },
-              { key: "bank_account_enabled", label: "Bank Account", description: "บัญชีธนาคารสำหรับลูกค้าโอนตรง" },
-              { key: "other_payment_enabled", label: "อื่นๆ", description: "ช่องทางอื่น (เงินสด/เช็ค/...) — ระบุวิธีเป็น text + อัปโหลดหลักฐาน ไม่ต้องตรวจสลิปอัตโนมัติ" },
-            ].map(t => {
-              // "other_payment_enabled" defaults to OFF (opt-in). Others default to ON unless "false".
-              const on = t.key === "other_payment_enabled" ? settings[t.key] === "true" : isOn(t.key);
+            {DOC_TYPES.map(t => {
+              const cur = drafts[t.key] || { prefix: t.defaultPrefix, digits: 3 };
               return (
-                <div key={t.key} className="px-5 py-4 flex items-center gap-4">
-                  <div className="flex-1 min-w-0">
+                <div key={t.key} className="px-5 py-4 grid grid-cols-1 md:grid-cols-[1fr,140px,120px,1fr] gap-3 md:gap-4 md:items-center">
+                  <div className="min-w-0">
                     <div className="text-sm font-semibold text-gray-900">{t.label}</div>
                     <div className="text-xs text-gray-500 mt-0.5">{t.description}</div>
                   </div>
-                  <button type="button" onClick={() => toggle(t.key)} disabled={saving}
-                    className={`shrink-0 relative w-12 h-7 rounded-full transition-colors cursor-pointer disabled:cursor-not-allowed disabled:opacity-60 ${on ? "bg-primary" : "bg-gray-300"}`}
-                    aria-label={`Toggle ${t.label}`}>
-                    <span className={`absolute top-0.5 left-0.5 w-6 h-6 rounded-full bg-white shadow transition-transform ${on ? "translate-x-5" : "translate-x-0"}`} />
-                  </button>
+                  <div>
+                    <label className="text-[10px] font-bold uppercase tracking-wider text-gray-400 block mb-1 md:hidden">Prefix</label>
+                    <input type="text" value={cur.prefix}
+                      onChange={e => update(t.key, { prefix: e.target.value.toUpperCase().replace(/[^A-Z0-9]/g, "").slice(0, 6) })}
+                      placeholder={t.defaultPrefix}
+                      className="w-full h-10 px-3 rounded-lg border border-gray-200 text-sm font-mono tracking-wider focus:outline-none focus:border-primary" />
+                  </div>
+                  <div>
+                    <label className="text-[10px] font-bold uppercase tracking-wider text-gray-400 block mb-1 md:hidden">Digits</label>
+                    <select value={cur.digits} onChange={e => update(t.key, { digits: parseInt(e.target.value) })}
+                      className="w-full h-10 px-3 rounded-lg border border-gray-200 text-sm focus:outline-none focus:border-primary">
+                      <option value={3}>3 หลัก</option>
+                      <option value={4}>4 หลัก</option>
+                      <option value={5}>5 หลัก</option>
+                    </select>
+                  </div>
+                  <div className="text-xs text-gray-500 md:text-right">
+                    <span className="md:hidden text-[10px] font-bold uppercase tracking-wider text-gray-400 mr-1">ตัวอย่าง</span>
+                    <span className="font-mono text-sm font-semibold text-gray-700">{preview(cur.prefix || t.defaultPrefix, cur.digits)}</span>
+                  </div>
                 </div>
               );
             })}
           </div>
-        )}
-      </section>
-    </div>
-  );
-}
-
-function PaymentConfigTab() {
-  const dialog = useDialog();
-  const [modeInput, setModeInput] = useState<"credit_transfer" | "bill_payment">("credit_transfer");
-  const [billerIdInput, setBillerIdInput] = useState("");
-  const [ref1Input, setRef1Input] = useState("");
-  const [ref2Input, setRef2Input] = useState("");
-  const [merchantNameInput, setMerchantNameInput] = useState("");
-  const [terminalInput, setTerminalInput] = useState("");
-  const [loading, setLoading] = useState(true);
-  const [saving, setSaving] = useState(false);
-  const [savedAt, setSavedAt] = useState<number | null>(null);
-
-  useEffect(() => {
-    apiFetch("/api/settings").then((s: Settings) => {
-      setModeInput(s.promptpay_mode === "credit_transfer" ? "credit_transfer" : "bill_payment");
-      setBillerIdInput(s.promptpay_biller_id || "010753700001716");
-      setRef1Input(s.promptpay_ref1 || "87UX");
-      setRef2Input(s.promptpay_ref2 || "86289573");
-      setMerchantNameInput(s.promptpay_merchant_name || "Digio");
-      setTerminalInput(s.promptpay_terminal || "SDGO862842802640220");
-    }).catch(console.error).finally(() => setLoading(false));
-  }, []);
-
-  const save = async () => {
-    if (modeInput === "bill_payment") {
-      if (!billerIdInput || !ref1Input) { dialog.alert({ title: "ข้อมูลไม่ครบ", message: "Bill Payment mode ต้องมี Biller ID และ Ref1", variant: "warning" }); return; }
-    }
-    setSaving(true);
-    try {
-      await apiFetch("/api/settings", {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          promptpay_mode: modeInput,
-          promptpay_biller_id: billerIdInput,
-          promptpay_ref1: ref1Input,
-          promptpay_ref2: ref2Input,
-          promptpay_merchant_name: merchantNameInput,
-          promptpay_terminal: terminalInput,
-        }),
-      });
-      setSavedAt(Date.now());
-      setTimeout(() => setSavedAt(null), 2000);
-    } finally {
-      setSaving(false);
-    }
-  };
-
-  return (
-    <div className="space-y-4">
-      <section className="bg-white rounded-xl border border-gray-200 overflow-hidden">
-        <div className="px-5 py-4 border-b border-gray-100">
-          <h2 className="text-sm font-bold text-gray-900">QR Mode</h2>
-          <p className="text-xs text-gray-500 mt-0.5">เลือกวิธีสร้าง QR — Credit Transfer (Tax ID) หรือ Bill Payment (Biller ID ผ่าน Digio/bank)</p>
-        </div>
-        {loading ? (
-          <div className="flex items-center justify-center py-12">
-            <div className="w-8 h-8 border-2 border-primary/30 border-t-primary rounded-full animate-spin" />
-          </div>
-        ) : (
-          <div className="p-5 space-y-4">
-            <div>
-              <label className="text-xs font-semibold tracking-wider uppercase text-gray-400 block mb-1">Mode</label>
-              <select value={modeInput} onChange={e => setModeInput(e.target.value as "credit_transfer" | "bill_payment")}
-                className="w-full h-10 px-3 rounded-lg border border-gray-200 text-sm focus:outline-none focus:border-primary">
-                <option value="credit_transfer">Credit Transfer (Tax ID)</option>
-                <option value="bill_payment">Bill Payment (Biller ID)</option>
-              </select>
-            </div>
-            {modeInput === "bill_payment" && (
-              <>
-                <div>
-                  <label className="text-xs font-semibold tracking-wider uppercase text-gray-400 block mb-1">Biller ID (15 หลัก)</label>
-                  <input type="text" value={billerIdInput}
-                    onChange={e => setBillerIdInput(e.target.value.replace(/\D/g, "").slice(0, 15))}
-                    placeholder="010753700001716"
-                    className="w-full h-10 px-3 rounded-lg border border-gray-200 text-sm font-mono tabular-nums focus:outline-none focus:border-primary" />
-                </div>
-                <div>
-                  <label className="text-xs font-semibold tracking-wider uppercase text-gray-400 block mb-1">Ref1 (merchant code)</label>
-                  <input type="text" value={ref1Input} onChange={e => setRef1Input(e.target.value.toUpperCase().slice(0, 20))}
-                    placeholder="87UX"
-                    className="w-full h-10 px-3 rounded-lg border border-gray-200 text-sm font-mono focus:outline-none focus:border-primary" />
-                </div>
-                <div>
-                  <label className="text-xs font-semibold tracking-wider uppercase text-gray-400 block mb-1">Ref2 (customer/terminal ref — optional)</label>
-                  <input type="text" value={ref2Input} onChange={e => setRef2Input(e.target.value.toUpperCase().slice(0, 20))}
-                    placeholder="86289573"
-                    className="w-full h-10 px-3 rounded-lg border border-gray-200 text-sm font-mono focus:outline-none focus:border-primary" />
-                </div>
-                <div>
-                  <label className="text-xs font-semibold tracking-wider uppercase text-gray-400 block mb-1">Merchant Name (tag 59, max 25)</label>
-                  <input type="text" value={merchantNameInput} onChange={e => setMerchantNameInput(e.target.value.slice(0, 25))}
-                    placeholder="Digio"
-                    className="w-full h-10 px-3 rounded-lg border border-gray-200 text-sm focus:outline-none focus:border-primary" />
-                </div>
-                <div>
-                  <label className="text-xs font-semibold tracking-wider uppercase text-gray-400 block mb-1">Terminal (tag 62/07 — optional)</label>
-                  <input type="text" value={terminalInput} onChange={e => setTerminalInput(e.target.value.slice(0, 32))}
-                    placeholder="SDGO862842802640220"
-                    className="w-full h-10 px-3 rounded-lg border border-gray-200 text-sm font-mono focus:outline-none focus:border-primary" />
-                </div>
-              </>
-            )}
-            <div className="flex items-center gap-3 pt-1">
-              <button type="button" onClick={save} disabled={saving}
-                className="h-10 px-5 rounded-lg text-sm font-semibold text-white bg-primary hover:bg-primary-dark disabled:opacity-50 transition-colors">
-                {saving ? "กำลังบันทึก..." : "บันทึก"}
-              </button>
-              {savedAt && <span className="text-xs font-semibold text-emerald-600">✓ บันทึกแล้ว</span>}
-            </div>
-          </div>
-        )}
-      </section>
-    </div>
-  );
-}
-
-function UsersTab({ currentUserId }: { currentUserId: number }) {
-  const dialog = useDialog();
-  const [users, setUsers] = useState<UserRow[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [editing, setEditing] = useState<UserRow | "new" | null>(null);
-
-  const load = () => {
-    setLoading(true);
-    apiFetch("/api/users").then(setUsers).catch(console.error).finally(() => setLoading(false));
-  };
-  useEffect(load, []);
-
-  return (
-    <div className="space-y-4">
-      <div className="flex items-center justify-between">
-        <div>
-          <h2 className="text-sm font-bold text-gray-900">ผู้ใช้งานระบบ</h2>
-          <p className="text-xs text-gray-500 mt-0.5">เพิ่ม/แก้ไข/ปิดการใช้งาน บัญชีผู้ใช้</p>
-        </div>
-        <button type="button" onClick={() => setEditing("new")}
-          className="h-10 px-4 rounded-lg text-sm font-semibold text-white bg-primary hover:bg-primary-dark transition-colors">
-          + เพิ่มผู้ใช้
-        </button>
-      </div>
-
-      <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
-        {loading ? (
-          <div className="flex items-center justify-center py-12">
-            <div className="w-8 h-8 border-2 border-primary/30 border-t-primary rounded-full animate-spin" />
-          </div>
-        ) : (
-          <table className="w-full text-sm">
-            <thead className="bg-gray-50 text-xs uppercase tracking-wider text-gray-500">
-              <tr>
-                <th className="px-4 py-3 text-left">Username</th>
-                <th className="px-4 py-3 text-left">ชื่อ-สกุล</th>
-                <th className="px-4 py-3 text-left">Role</th>
-                <th className="px-4 py-3 text-left hidden md:table-cell">Team</th>
-                <th className="px-4 py-3 text-left hidden lg:table-cell">เบอร์</th>
-                <th className="px-4 py-3 text-left">สถานะ</th>
-                <th className="px-4 py-3" />
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-gray-100">
-              {users.map(u => (
-                <tr key={u.id} className={u.is_active ? "" : "opacity-50"}>
-                  <td className="px-4 py-3 font-mono text-xs">{u.username}</td>
-                  <td className="px-4 py-3 font-semibold">{u.full_name}</td>
-                  <td className="px-4 py-3">
-                    <div className="flex flex-wrap gap-1">
-                      {(u.roles || []).map(r => (
-                        <span key={r} className="text-[10px] font-semibold px-1.5 py-0.5 rounded bg-gray-100 text-gray-700">{r}</span>
-                      ))}
-                    </div>
-                  </td>
-                  <td className="px-4 py-3 text-xs text-gray-500 hidden md:table-cell">{u.team}</td>
-                  <td className="px-4 py-3 text-xs text-gray-500 hidden lg:table-cell">{u.phone || "—"}</td>
-                  <td className="px-4 py-3">
-                    {u.is_active
-                      ? <span className="text-[10px] font-bold uppercase px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-700">Active</span>
-                      : <span className="text-[10px] font-bold uppercase px-2 py-0.5 rounded-full bg-gray-100 text-gray-500">Disabled</span>}
-                  </td>
-                  <td className="px-4 py-3 text-right">
-                    <button type="button" onClick={() => setEditing(u)}
-                      className="text-xs font-semibold text-primary hover:underline">
-                      แก้ไข
-                    </button>
-                  </td>
-                </tr>
-              ))}
-              {users.length === 0 && (
-                <tr><td colSpan={7} className="px-4 py-10 text-center text-sm text-gray-400">ยังไม่มีผู้ใช้</td></tr>
-              )}
-            </tbody>
-          </table>
-        )}
-      </div>
-
-      {editing && (
-        <UserEditor
-          user={editing === "new" ? null : editing}
-          currentUserId={currentUserId}
-          onClose={() => setEditing(null)}
-          onSaved={() => { setEditing(null); load(); }}
-        />
-      )}
-    </div>
-  );
-}
-
-function UserEditor({ user, currentUserId, onClose, onSaved }: {
-  user: UserRow | null;
-  currentUserId: number;
-  onClose: () => void;
-  onSaved: () => void;
-}) {
-  const dialog = useDialog();
-  const isNew = !user;
-  const [username, setUsername] = useState(user?.username || "");
-  const [fullName, setFullName] = useState(user?.full_name || "");
-  const [team, setTeam] = useState(user?.team || "Sen X PM");
-  const [phone, setPhone] = useState(user?.phone || "");
-  const [email, setEmail] = useState(user?.email || "");
-  const [password, setPassword] = useState("");
-  const [isActive, setIsActive] = useState(user?.is_active ?? true);
-  const initialRoles: Role[] = (() => {
-    if (Array.isArray(user?.roles) && user.roles.length > 0) return user.roles as Role[];
-    if (user?.role) return [user.role as Role];
-    return ["sales"];
-  })();
-  const [roles, setRoles] = useState<Role[]>(initialRoles);
-  const [saving, setSaving] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-
-  const isDefaultAdmin = user?.username === "admin";
-  const toggleRole = (r: Role) => {
-    // Lock `admin` role ON for the default admin user.
-    if (isDefaultAdmin && r === "admin") return;
-    setRoles(prev => prev.includes(r) ? prev.filter(x => x !== r) : [...prev, r]);
-  };
-
-  const save = async () => {
-    if (!username || !fullName) { setError("กรุณากรอก username และชื่อ-สกุล"); return; }
-    if (isNew && !password) { setError("กรุณาตั้งรหัสผ่านเริ่มต้น"); return; }
-    if (roles.length === 0) { setError("เลือก role อย่างน้อย 1 อัน"); return; }
-    setSaving(true); setError(null);
-    try {
-      if (isNew) {
-        await apiFetch("/api/users", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ username, password, full_name: fullName, team, phone, email, roles }),
-        });
-      } else {
-        await apiFetch(`/api/users/${user!.id}`, {
-          method: "PATCH",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            full_name: fullName, team, phone, email, is_active: isActive, roles,
-            ...(password ? { password } : {}),
-          }),
-        });
-      }
-      onSaved();
-    } catch (e) {
-      setError(e instanceof Error ? e.message : "บันทึกไม่สำเร็จ");
-    } finally {
-      setSaving(false);
-    }
-  };
-
-  const deactivate = async () => {
-    if (!user) return;
-    if (user.id === currentUserId) { setError("ไม่สามารถปิดบัญชีตัวเอง"); return; }
-    const ok = await dialog.confirm({
-      title: "ปิดการใช้งานผู้ใช้",
-      message: `ปิดการใช้งานผู้ใช้ ${user.username}?`,
-      variant: "danger",
-      confirmText: "ปิดการใช้งาน",
-    });
-    if (!ok) return;
-    setSaving(true);
-    try {
-      await apiFetch(`/api/users/${user.id}`, { method: "DELETE" });
-      onSaved();
-    } catch (e) {
-      setError(e instanceof Error ? e.message : "ล้มเหลว");
-    } finally {
-      setSaving(false);
-    }
-  };
-
-  return (
-    <div className="fixed inset-0 z-[9999] bg-black/40 flex items-end md:items-center justify-center p-0 md:p-4">
-      <div className="w-full md:max-w-lg bg-white rounded-t-2xl md:rounded-2xl shadow-xl max-h-[90vh] overflow-y-auto">
-        <div className="sticky top-0 bg-white px-5 py-3 border-b border-gray-100 flex items-center justify-between">
-          <div className="text-sm font-bold">{isNew ? "เพิ่มผู้ใช้ใหม่" : `แก้ไข: ${user?.full_name}`}</div>
-          <button type="button" onClick={onClose} className="text-gray-400 hover:text-gray-700 text-xl leading-none">✕</button>
-        </div>
-
-        <div className="p-5 space-y-3">
-          <Field label="Username">
-            <input type="text" value={username} disabled={!isNew}
-              onChange={e => setUsername(e.target.value)}
-              className="w-full h-10 px-3 rounded-lg border border-gray-200 text-sm font-mono focus:outline-none focus:border-primary disabled:bg-gray-50" />
-          </Field>
-          <Field label="ชื่อ-สกุล">
-            <input type="text" value={fullName} onChange={e => setFullName(e.target.value)}
-              className="w-full h-10 px-3 rounded-lg border border-gray-200 text-sm focus:outline-none focus:border-primary" />
-          </Field>
-          <Field label={isNew ? "รหัสผ่านเริ่มต้น" : "รหัสผ่านใหม่ (เว้นว่างถ้าไม่เปลี่ยน)"}>
-            <input type="password" value={password} onChange={e => setPassword(e.target.value)} autoComplete="new-password"
-              className="w-full h-10 px-3 rounded-lg border border-gray-200 text-sm focus:outline-none focus:border-primary" />
-          </Field>
-          <Field label="Roles (เลือกได้หลายอัน)">
-            <div className="flex flex-wrap gap-2">
-              {ALL_ROLES.map(r => {
-                const on = roles.includes(r);
-                const locked = isDefaultAdmin && r === "admin";
-                return (
-                  <button key={r} type="button" onClick={() => toggleRole(r)}
-                    disabled={locked}
-                    title={locked ? "user 'admin' ถูกล็อกให้มี role admin เสมอ" : undefined}
-                    className={`h-8 px-3 rounded-full text-xs font-semibold border transition-colors ${on ? "bg-primary text-white border-primary" : "bg-white text-gray-600 border-gray-200 hover:border-gray-400"} ${locked ? "opacity-70 cursor-not-allowed" : ""}`}>
-                    {ROLE_LABEL[r]}{locked && " 🔒"}
-                  </button>
-                );
-              })}
-            </div>
-          </Field>
-          <Field label="Team">
-            <input type="text" value={team} onChange={e => setTeam(e.target.value)}
-              className="w-full h-10 px-3 rounded-lg border border-gray-200 text-sm focus:outline-none focus:border-primary" />
-          </Field>
-          <Field label="เบอร์โทร">
-            <input type="tel" value={phone} onChange={e => setPhone(e.target.value)}
-              className="w-full h-10 px-3 rounded-lg border border-gray-200 text-sm focus:outline-none focus:border-primary" />
-          </Field>
-          <Field label="Email">
-            <input type="email" value={email} onChange={e => setEmail(e.target.value)}
-              className="w-full h-10 px-3 rounded-lg border border-gray-200 text-sm focus:outline-none focus:border-primary" />
-          </Field>
-
-          {!isNew && (
-            <label className="flex items-center gap-2 text-sm text-gray-700 pt-1">
-              <input type="checkbox" checked={isActive} onChange={e => setIsActive(e.target.checked)} />
-              เปิดการใช้งาน (active)
-            </label>
-          )}
-
-          {error && <div className="text-sm text-red-600 bg-red-50 border border-red-200 rounded-lg py-2 text-center">{error}</div>}
-        </div>
-
-        <div className="sticky bottom-0 bg-white px-5 py-3 border-t border-gray-100 flex items-center gap-2">
-          {!isNew && (
-            <button type="button" onClick={deactivate} disabled={saving}
-              className="h-10 px-4 rounded-lg text-sm font-semibold text-red-600 border border-red-200 hover:bg-red-50 disabled:opacity-50">
-              ปิดการใช้งาน
+          <div className="px-5 py-4 border-t border-gray-100 bg-gray-50/50 flex items-center gap-3">
+            <button type="button" onClick={save} disabled={saving || !dirty}
+              className="h-10 px-5 rounded-lg text-sm font-semibold text-white bg-primary hover:bg-primary-dark disabled:opacity-50 disabled:cursor-not-allowed transition-colors">
+              {saving ? "กำลังบันทึก..." : "บันทึก"}
             </button>
-          )}
-          <div className="flex-1" />
-          <button type="button" onClick={onClose}
-            className="h-10 px-5 rounded-lg text-sm font-semibold text-gray-600 border border-gray-200 hover:bg-gray-50">
-            ยกเลิก
-          </button>
-          <button
-            type="button"
-            onClick={save}
-            disabled={saving || roles.length === 0}
-            title={roles.length === 0 ? "เลือก role อย่างน้อย 1 อัน" : undefined}
-            className="h-10 px-5 rounded-lg text-sm font-semibold text-white bg-primary hover:bg-primary-dark disabled:opacity-50 disabled:cursor-not-allowed"
-          >
-            {saving ? "กำลังบันทึก..." : "บันทึก"}
-          </button>
-        </div>
-      </div>
-    </div>
-  );
-}
-
-function Field({ label, children }: { label: string; children: React.ReactNode }) {
-  return (
-    <div>
-      <label className="text-xs font-semibold tracking-wider uppercase text-gray-400 block mb-1">{label}</label>
-      {children}
-    </div>
+            {!dirty && <span className="text-xs text-gray-400">— ไม่มีการเปลี่ยนแปลง</span>}
+          </div>
+        </>
+      )}
+    </section>
   );
 }

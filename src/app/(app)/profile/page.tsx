@@ -4,6 +4,7 @@ import { useRouter } from "next/navigation";
 import { apiFetch } from "@/lib/api";
 import Header from "@/components/layout/Header";
 import { useDialog } from "@/components/ui/Dialog";
+import UserSignaturePad from "@/components/profile/UserSignaturePad";
 
 interface UserProfile {
   id: number;
@@ -13,6 +14,7 @@ interface UserProfile {
   role: string;
   phone: string | null;
   email: string | null;
+  signature_url: string | null;
   stats: { new_leads: number; booked: number; won: number };
 }
 
@@ -91,6 +93,16 @@ export default function ProfilePage() {
               </div>
             </div>
           </div>
+        </div>
+
+        {/* Signature */}
+        <div className="bg-white rounded-2xl border border-gray-200 p-5 mt-3">
+          <div className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-3">ลายเซ็น</div>
+          <UserSignaturePad
+            userId={user.id}
+            initialUrl={user.signature_url}
+            onSaved={(url) => setUser(prev => prev ? { ...prev, signature_url: url } : prev)}
+          />
         </div>
 
         {/* Quick Links */}

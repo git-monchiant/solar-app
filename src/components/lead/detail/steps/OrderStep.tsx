@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { apiFetch } from "@/lib/api";
+import { useMe } from "@/lib/roles";
 import type { StepCommonProps } from "./types";
 import CalendarPicker from "@/components/calendar/CalendarPicker";
 import PaymentSection from "@/components/payment/PaymentSection";
@@ -27,6 +28,7 @@ interface Props extends StepCommonProps {
 }
 
 export default function OrderStep({ lead, state, refresh, expanded, onToggle }: Props) {
+  const { me } = useMe();
   const [subStep, setSubStep] = useSubStep(`orderSubStep_${lead.id}`, 0, SUB_STEPS.length);
   const [nextError, setNextError] = useState<string | null>(null);
   const [total, setTotal] = useState<number>(lead.order_total || lead.quotation_amount || 0);
@@ -51,6 +53,12 @@ export default function OrderStep({ lead, state, refresh, expanded, onToggle }: 
   const [regIdCard, setRegIdCard] = useState(lead.id_card_number || "");
   const [regAddress, setRegAddress] = useState(lead.id_card_address || "");
   const [regInstallAddr, setRegInstallAddr] = useState(lead.installation_address || "");
+  const [financeBank, setFinanceBank] = useState(lead.finance_bank ?? "");
+  const [financeMonths, setFinanceMonths] = useState<string>(lead.finance_months != null ? String(lead.finance_months) : "");
+  const [financeMonthly, setFinanceMonthly] = useState<string>(lead.finance_monthly != null ? String(lead.finance_monthly) : "");
+  const [loanBank, setLoanBank] = useState(lead.finance_loan_bank ?? "");
+  const [loanAmount, setLoanAmount] = useState<string>(lead.finance_loan_amount != null ? String(lead.finance_loan_amount) : "");
+  const [loanDocs, setLoanDocs] = useState(lead.finance_documents ?? "");
 
   const pctAfter = 100 - pctBefore;
   // Single-installment (pctBefore = 100): customer already paid the deposit
@@ -84,25 +92,36 @@ export default function OrderStep({ lead, state, refresh, expanded, onToggle }: 
           order_pct_before: pctBefore,
           order_pct_after: pctAfter,
           install_date: installDate || null,
+          finance_bank: financeBank || null,
+          finance_months: financeMonths ? parseInt(financeMonths) : null,
+          finance_monthly: financeMonthly ? parseFloat(financeMonthly) : null,
+          finance_loan_bank: loanBank || null,
+          finance_loan_amount: loanAmount ? parseFloat(loanAmount) : null,
+          finance_documents: loanDocs || null,
         }),
       }).catch(console.error);
     }, 800);
     return () => clearTimeout(t);
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [total, pctBefore, installDate]);
+  }, [total, pctBefore, installDate, financeBank, financeMonths, financeMonthly, loanBank, loanAmount, loanDocs]);
 
   // PaymentSection writes the payments row + flips the paid flag itself. Parent just
   // reacts after the fact — tracks local UI state and refreshes the lead.
   // Payment confirmations stay on the current sub-step — user advances
   // manually via "ถัดไป" so they see the state flip before moving on.
   const onBeforeConfirmed = async () => {
-    if (pctBefore >= 100) {
-      try { await apiFetch(`/api/leads/${lead.id}`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ status: "install" }) }); } catch {}
+    const patch: Record<string, unknown> = {};
+    if (pctBefore >= 100) patch.status = "install";
+    if (me?.id) patch.order_before_paid_by = me.id;
+    if (Object.keys(patch).length) {
+      try { await apiFetch(`/api/leads/${lead.id}`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify(patch) }); } catch {}
     }
     await refresh();
   };
   const onAfterConfirmed = async () => {
-    try { await apiFetch(`/api/leads/${lead.id}`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ status: "install" }) }); } catch {}
+    const patch: Record<string, unknown> = { status: "install" };
+    if (me?.id) patch.order_after_paid_by = me.id;
+    try { await apiFetch(`/api/leads/${lead.id}`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify(patch) }); } catch {}
     await refresh();
   };
 
@@ -294,10 +313,19 @@ export default function OrderStep({ lead, state, refresh, expanded, onToggle }: 
 
           <div>
             <label className="text-xs font-semibold tracking-wider uppercase text-gray-400 block mb-2">จ่ายก่อนติดตั้ง (%)</label>
-            <div className="flex gap-2">
-              {[30, 40, 50, 60, 70, 80, 100].map(v => (
-                <button key={v} type="button" onClick={() => setPctBefore(v)}
-                  className={`flex-1 h-10 rounded-lg text-sm font-semibold border transition-all ${pctBefore === v ? "bg-active text-white border-active" : "bg-white text-gray-700 border-gray-200"}`}>
+            <div className="grid grid-cols-4 gap-1.5">
+              {[20, 30, 40, 50, 60, 70, 80, 100].map(v => (
+                <button
+                  key={v}
+                  type="button"
+                  onClick={() => setPctBefore(v)}
+                  style={{ minHeight: 0 }}
+                  className={`h-9 rounded-md text-xs font-semibold border transition-all ${
+                    pctBefore === v
+                      ? "bg-active text-white border-active shadow-sm shadow-active/20"
+                      : "bg-white text-gray-600 border-gray-200 hover:border-active/40 hover:text-active"
+                  }`}
+                >
                   {v}%
                 </button>
               ))}
@@ -313,6 +341,7 @@ export default function OrderStep({ lead, state, refresh, expanded, onToggle }: 
               </div>
             </div>
           </div>
+
         </div>
       )}
 

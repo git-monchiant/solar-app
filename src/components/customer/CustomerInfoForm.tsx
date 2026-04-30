@@ -23,6 +23,7 @@ export interface CustomerValues {
   project_id?: string | number | null;
   project_name?: string;
   installation_address?: string;
+  house_number?: string;
   id_card_number?: string;
   id_card_address?: string;
   id_card_photo_url?: string | null;
@@ -311,10 +312,10 @@ export default function CustomerInfoForm({
         </div>
       )}
 
-      {/* Name + Phone */}
+      {/* Name + Phone — stacked: name on top, phone below */}
       {(show("full_name") || show("phone")) && (
         <div className={fieldCard}>
-          <div className={show("full_name") && show("phone") ? "grid grid-cols-1 sm:grid-cols-2 gap-3" : ""}>
+          <div className="space-y-3">
             {show("full_name") && (
               <div>
                 <label className={fieldLabel}>ชื่อ-นามสกุล {req("full_name")}</label>
@@ -331,10 +332,21 @@ export default function CustomerInfoForm({
         </div>
       )}
 
-      {/* Project + Installation address */}
+      {/* ที่อยู่ติดตั้ง — primary identifying address group: บ้านเลขที่ + โครงการ + ที่อยู่ */}
       {(show("project") || show("installation_address")) && (
         <div className={fieldCard}>
-          <div className={show("project") && show("installation_address") ? "grid grid-cols-1 sm:grid-cols-2 gap-3" : ""}>
+          <div className="text-sm font-bold text-gray-700 mb-3 pb-2 border-b border-gray-100">ที่อยู่ติดตั้ง</div>
+          <div className="space-y-3">
+            <div>
+              <label className={fieldLabel}>บ้านเลขที่</label>
+              <input
+                type="text"
+                value={values.house_number ?? ""}
+                onChange={e => onChange({ house_number: e.target.value })}
+                placeholder="เช่น 123/45"
+                className={fieldInput}
+              />
+            </div>
             {show("project") && (
               <div className="relative">
                 <label className={fieldLabel}>โครงการ {req("project")}</label>
@@ -385,7 +397,7 @@ export default function CustomerInfoForm({
             )}
             {show("installation_address") && (
               <div>
-                <label className={fieldLabel}>ที่อยู่ติดตั้ง {req("installation_address")}</label>
+                <label className={fieldLabel}>ที่อยู่ {req("installation_address")}</label>
                 <textarea value={values.installation_address ?? ""} onChange={e => onChange({ installation_address: e.target.value })} placeholder="ที่อยู่" rows={2} className={fieldTextarea} />
                 <button type="button" onClick={handleGetLocation} disabled={locating} className="w-full h-9 mt-1.5 rounded-lg border border-gray-200 bg-white flex items-center justify-center gap-1.5 text-xs font-semibold text-gray-500 hover:border-active/40 hover:text-active transition-colors">
                   {locating ? <><div className="w-3.5 h-3.5 border-2 border-gray-300 border-t-active rounded-full animate-spin" /> กำลังหาตำแหน่ง…</> : <><svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M15 10.5a3 3 0 11-6 0 3 3 0 016 0zM19.5 10.5c0 7.142-7.5 11.25-7.5 11.25S4.5 17.642 4.5 10.5a7.5 7.5 0 1115 0z" /></svg> ใช้ตำแหน่งปัจจุบัน</>}

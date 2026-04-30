@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import { createPortal } from "react-dom";
 import PdfPreview from "./PdfPreview";
+import { useMe } from "@/lib/roles";
 
 export type ReceiptStage = "deposit" | "order_before" | "order_after";
 
@@ -19,15 +20,17 @@ const STAGE_TITLE: Record<ReceiptStage, string> = {
   order_after: "ใบเสร็จงวดหลังติดตั้ง",
 };
 
-function apiUrl(leadId: number, stage: ReceiptStage) {
+function apiUrl(leadId: number, stage: ReceiptStage, userId?: number) {
   const qs = new URLSearchParams({ lead_id: String(leadId), stage, format: "pdf" });
+  if (userId) qs.set("user_id", String(userId));
   return `/api/receipt?${qs.toString()}`;
 }
 
 export default function ReceiptModal({ leadId, stage, fileLabel, onClose }: Props) {
   const [saving, setSaving] = useState(false);
   const [mounted, setMounted] = useState(false);
-  const pdfUrl = apiUrl(leadId, stage);
+  const { me } = useMe();
+  const pdfUrl = apiUrl(leadId, stage, me?.id);
 
   // Render via portal at document.body so the full-screen overlay can't be
   // trapped by an ancestor's stacking context (e.g. when called from inside

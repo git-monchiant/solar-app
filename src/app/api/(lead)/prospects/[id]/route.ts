@@ -109,6 +109,10 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
       sets.push("returned_at = @returned_at");
       request.input("returned_at", sql.DateTime2, body.returned_at);
     }
+    if (body.channel !== undefined) {
+      sets.push("channel = @channel");
+      request.input("channel", sql.NVarChar(20), body.channel);
+    }
     // Multi-person households: `contacts` is a JSON array of {name, phone}.
     // When sent, we also mirror contacts[0] into full_name/phone so existing
     // list/map/search queries that read those columns keep working unchanged.

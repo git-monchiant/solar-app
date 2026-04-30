@@ -12,6 +12,7 @@ export interface ListPageTab {
 interface Props {
   title: string;
   subtitle?: string;
+  backHref?: string;
   search: string;
   onSearchChange: (value: string) => void;
   searchPlaceholder?: string;
@@ -28,6 +29,7 @@ interface Props {
 export default function ListPageHeader({
   title,
   subtitle,
+  backHref,
   search,
   onSearchChange,
   searchPlaceholder = "ค้นหา...",
@@ -53,7 +55,7 @@ export default function ListPageHeader({
   }, [activeTab]);
 
   return (
-    <Header title={title} subtitle={subtitle}>
+    <Header title={title} subtitle={subtitle} backHref={backHref}>
       {/* Search + Action */}
       <div className="px-5 pb-3 flex gap-2">
         <div className="relative flex-1">

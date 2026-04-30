@@ -6,7 +6,13 @@ function check(lead: Partial<Lead>, rules: { field: keyof Lead | string; label: 
   const missing: { field: string; label: string }[] = [];
   for (const r of rules) {
     const v = (lead as Record<string, unknown>)[r.field as string];
-    const ok = r.test ? r.test(v) : v !== null && v !== undefined && v !== "" && !(typeof v === "number" && v <= 0);
+    // Reject "other:" prefix without content — chip selections like roof/meter/etc.
+    // store "other:<text>" when user picks "อื่นๆ"; bare "other:" means they
+    // opened the slot but typed nothing.
+    const isEmptyOther = typeof v === "string" && /^other:?\s*$/.test(v);
+    const ok = r.test
+      ? r.test(v)
+      : v !== null && v !== undefined && v !== "" && !isEmptyOther && !(typeof v === "number" && v <= 0);
     if (!ok) missing.push({ field: r.field as string, label: r.label });
   }
   return { valid: missing.length === 0, missing };
@@ -31,16 +37,24 @@ export function validatePreSurvey(lead: Partial<Lead>): ValidationResult {
 export function validateSurvey(lead: Partial<Lead>): ValidationResult {
   return check(lead, [
     { field: "survey_confirmed", label: "ยืนยันนัดสำรวจ", test: v => v === true },
+    // Actual visit
+    { field: "survey_actual_date", label: "วันที่เข้าสำรวจจริง" },
+    { field: "survey_actual_by", label: "ผู้เข้าสำรวจ" },
+    { field: "survey_lat", label: "พิกัด (lat)" },
+    { field: "survey_lng", label: "พิกัด (lng)" },
     // Electrical
     { field: "survey_meter_size", label: "ขนาดมิเตอร์" },
     { field: "survey_electrical_phase", label: "ระบบไฟ" },
     { field: "survey_voltage_ln", label: "แรงดัน L-N" },
     { field: "survey_voltage_ll", label: "แรงดัน L-L" },
     { field: "survey_monthly_bill", label: "ค่าไฟ/เดือน" },
+    { field: "survey_mdb_brand", label: "ยี่ห้อ MDB" },
+    { field: "survey_mdb_model", label: "รุ่น MDB" },
     { field: "survey_mdb_slots", label: "ช่องว่างใน MDB" },
     { field: "survey_breaker_type", label: "ชนิดเบรกเกอร์" },
     { field: "survey_panel_to_inverter_m", label: "Cable PV→Inverter" },
     { field: "survey_db_distance_m", label: "Cable Inverter→MDB" },
+    { field: "survey_appliances", label: "เครื่องใช้พิเศษ" },
     // Roof / house
     { field: "survey_floors", label: "จำนวนชั้น" },
     { field: "survey_roof_material", label: "วัสดุหลังคา" },
@@ -60,11 +74,13 @@ export function validateSurvey(lead: Partial<Lead>): ValidationResult {
     { field: "survey_photo_roof_structure_url", label: "รูปโครงหลังคา" },
     { field: "survey_photo_mdb_url", label: "รูปตู้ MDB" },
     { field: "survey_photo_inverter_point_url", label: "รูปจุดติดตั้ง Inverter" },
+    { field: "survey_photos", label: "รูปถ่ายเพิ่มเติม", test: v => typeof v === "string" && v.split(",").filter(Boolean).length > 0 },
     // Recommendation + signature (final tab)
     { field: "survey_recommended_kw", label: "ขนาดที่แนะนำ (kWp)" },
     { field: "survey_panel_count", label: "จำนวน Panel" },
     { field: "survey_wants_battery", label: "ระบบ (On Grid / Battery / Upgrade)" },
     { field: "interested_package_id", label: "แพ็คเกจที่เสนอ" },
+    { field: "survey_note", label: "บันทึก Survey" },
     { field: "survey_customer_signature_url", label: "ลายเซ็นลูกค้า" },
   ]);
 }

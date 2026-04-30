@@ -3,6 +3,7 @@
 import { useState } from "react";
 import ReceiptModal, { type ReceiptStage } from "./ReceiptModal";
 import { useIsMobile } from "@/lib/hooks/useIsMobile";
+import { useMe } from "@/lib/roles";
 
 interface Props {
   leadId: number;
@@ -15,14 +16,17 @@ interface Props {
 export default function ReceiptButtons({ leadId, stage, fileLabel, compact }: Props) {
   const [open, setOpen] = useState(false);
   const isMobile = useIsMobile();
+  const { me } = useMe();
 
   // Mobile → in-app modal. Desktop → new tab with the native PDF viewer.
+  // user_id stamps the receipt with the signer's signature/name.
   const openReceipt = (e: React.MouseEvent) => {
     e.stopPropagation();
     if (isMobile) {
       setOpen(true);
     } else {
-      const url = `/api/receipt?lead_id=${leadId}&stage=${stage}&format=pdf`;
+      const u = me?.id ? `&user_id=${me.id}` : "";
+      const url = `/api/receipt?lead_id=${leadId}&stage=${stage}&format=pdf${u}`;
       window.open(url, "_blank", "noreferrer");
     }
   };

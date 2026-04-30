@@ -33,7 +33,7 @@ export default function ActivityItem({ activity, isLast }: { activity: Activity;
 
   // Special card for "Lead created"
   if (isCreated) {
-    const source = activity.title.includes("walk-in") ? "Walk-in" : activity.title.includes("event") ? "Event" : "—";
+    const source = activity.title.includes("walk-in") ? "SENX PM" : activity.title.includes("event") ? "Event" : "—";
     return (
       <div className="flex gap-3">
         <div className="flex flex-col items-center">

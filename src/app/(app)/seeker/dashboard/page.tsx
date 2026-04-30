@@ -1,65 +1,84 @@
 "use client";
 
 import { apiFetch, getUserIdHeader } from "@/lib/api";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import Header from "@/components/layout/Header";
 import { useDialog } from "@/components/ui/Dialog";
 
-type Prospect = {
+type StatusKey = "pending" | "contacted" | "interested" | "not_interested";
+
+type Totals = {
+  total: number;
+  pending: number;
+  contacted: number;
+  interested: number;
+  not_interested: number;
+  interested_new: number;
+  interested_upgrade: number;
+  undecided: number;
+  not_home: number;
+  has_solar: number;
+  line_linked: number;
+  leads_created: number;
+};
+
+type ByProject = { name: string; total: number; pending: number; contacted: number; interested: number; not_interested: number };
+
+type RecentVisit = {
   id: number;
   project_name: string | null;
   house_number: string | null;
   full_name: string | null;
-  phone: string | null;
-  existing_solar: string | null;
-  installed_kw: number | null;
-  installed_product: string | null;
-  interest: "interested" | "not_interested" | "not_home" | "undecided" | null;
-  interest_type: "new" | "upgrade" | null;
-  note: string | null;
   visited_at: string | null;
-  visited_by_name: string | null;
   visit_lat: number | null;
   visit_lng: number | null;
   line_id: string | null;
   lead_id: number | null;
+  status: StatusKey;
+  visited_by_name: string | null;
 };
 
-type StatusKey = "pending" | "contacted" | "interested" | "not_interested";
+type DailyRow = { day: string; interested: number; contacted: number; not_interested: number; pending: number };
 
-function cardStatus(p: Prospect): StatusKey {
-  if (p.interest === "interested") return "interested";
-  if (p.interest === "not_interested") return "not_interested";
-  if (p.interest === "not_home" || p.visited_at || (p.note && p.note.trim())) return "contacted";
-  return "pending";
-}
+type Summary = {
+  totals: Totals;
+  by_project: ByProject[];
+  recent_visits: RecentVisit[];
+  daily: DailyRow[];
+  project_options: string[];
+};
 
-function hasExistingSolar(p: Prospect): boolean {
-  const s = typeof p.existing_solar === "string" ? p.existing_solar.trim() : "";
-  if (s && !/^(ไม่มี|ยังไม่มี|no|none|-)/i.test(s)) return true;
-  if (p.installed_kw != null && p.installed_kw > 0) return true;
-  if (p.installed_product && p.installed_product.trim()) return true;
-  return false;
-}
+const EMPTY_TOTALS: Totals = {
+  total: 0, pending: 0, contacted: 0, interested: 0, not_interested: 0,
+  interested_new: 0, interested_upgrade: 0, undecided: 0, not_home: 0,
+  has_solar: 0, line_linked: 0, leads_created: 0,
+};
 
 export default function SeekerDashboardPage() {
   const dialog = useDialog();
-  const [prospects, setProspects] = useState<Prospect[]>([]);
-  const [allProjects, setAllProjects] = useState<string[]>([]);
+  const [summary, setSummary] = useState<Summary | null>(null);
   const [loading, setLoading] = useState(true);
   const [projectFilter, setProjectFilter] = useState<string>("");
   const [pickerOpen, setPickerOpen] = useState(false);
+  // StrictMode double-mounts in dev; ref short-circuits the second effect run.
+  const fetchedRef = useRef(false);
 
-  useEffect(() => {
-    const saved = typeof window !== "undefined" ? localStorage.getItem("seekerProjectFilter") : null;
-    if (saved) setProjectFilter(saved);
-    apiFetch(`/api/prospects?t=${Date.now()}`, { cache: "no-store" })
-      .then(setProspects)
+  function loadSummary(filter: string) {
+    setLoading(true);
+    const qs = filter ? `?project=${encodeURIComponent(filter)}` : "";
+    apiFetch(`/api/seeker-summary${qs}`, { cache: "no-store" })
+      .then((s: Summary) => setSummary(s))
       .catch(console.error)
       .finally(() => setLoading(false));
-    apiFetch("/api/projects?has_prospects=1")
-      .then((list: { name: string }[]) => setAllProjects(list.map((p) => p.name)))
-      .catch(console.error);
+  }
+
+  useEffect(() => {
+    if (fetchedRef.current) return;
+    fetchedRef.current = true;
+    const saved = typeof window !== "undefined" ? localStorage.getItem("seekerProjectFilter") : null;
+    const initial = saved || "";
+    if (saved) setProjectFilter(saved);
+    loadSummary(initial);
   }, []);
 
   useEffect(() => {
@@ -68,79 +87,18 @@ export default function SeekerDashboardPage() {
     else localStorage.removeItem("seekerProjectFilter");
   }, [projectFilter]);
 
-  const projectOptions = useMemo(() => {
-    const set = new Set<string>();
-    for (const n of allProjects) if (n) set.add(n);
-    for (const p of prospects) {
-      const n = typeof p.project_name === "string" ? p.project_name.trim() : "";
-      if (n) set.add(n);
-    }
-    return Array.from(set).sort((a, b) => a.localeCompare(b, "th"));
-  }, [prospects, allProjects]);
-
-  const scoped = useMemo(() => {
-    if (!projectFilter) return prospects;
-    return prospects.filter((p) => (typeof p.project_name === "string" ? p.project_name : "") === projectFilter);
-  }, [prospects, projectFilter]);
-
-  const stats = useMemo(() => {
-    const s = {
-      total: scoped.length,
-      pending: 0,
-      contacted: 0,
-      interested: 0,
-      interested_new: 0,
-      interested_upgrade: 0,
-      undecided: 0,
-      not_home: 0,
-      not_interested: 0,
-      has_solar: 0,
-      line_linked: 0,
-      leads_created: 0,
-    };
-    for (const p of scoped) {
-      const st = cardStatus(p);
-      s[st]++;
-      if (p.interest === "interested") {
-        if (p.interest_type === "upgrade") s.interested_upgrade++;
-        else if (p.interest_type === "new") s.interested_new++;
-      }
-      if (p.interest === "undecided") s.undecided++;
-      if (p.interest === "not_home") s.not_home++;
-      if (hasExistingSolar(p)) s.has_solar++;
-      if (p.line_id) s.line_linked++;
-      if (p.lead_id != null) s.leads_created++;
-    }
-    return s;
-  }, [scoped]);
-
-  const byProject = useMemo(() => {
-    const map = new Map<string, { total: number; pending: number; contacted: number; interested: number; not_interested: number }>();
-    for (const p of scoped) {
-      const key = (typeof p.project_name === "string" && p.project_name.trim()) || "— ไม่ระบุ —";
-      if (!map.has(key)) map.set(key, { total: 0, pending: 0, contacted: 0, interested: 0, not_interested: 0 });
-      const row = map.get(key)!;
-      row.total++;
-      row[cardStatus(p)]++;
-    }
-    return Array.from(map.entries())
-      .map(([name, v]) => ({ name, ...v }))
-      .sort((a, b) => b.total - a.total);
-  }, [scoped]);
-
-  const recentVisits = useMemo(() => {
-    return scoped
-      .filter((p) => p.visited_at)
-      .sort((a, b) => (a.visited_at! < b.visited_at! ? 1 : -1))
-      .slice(0, 10);
-  }, [scoped]);
+  const stats: Totals = summary?.totals || EMPTY_TOTALS;
+  const byProject: ByProject[] = summary?.by_project || [];
+  const recentVisits: RecentVisit[] = summary?.recent_visits || [];
+  const projectOptions: string[] = summary?.project_options || [];
+  const daily: DailyRow[] = summary?.daily || [];
 
   const coverage = stats.total === 0 ? 0 : Math.round(((stats.total - stats.pending) / stats.total) * 100);
 
   return (
     <div>
       <Header
-        title="Seeker Dashboard"
+        title="Seeker Insights"
         subtitle={projectFilter || "สรุปผลการเดินหา"}
         rightContent={
           <button
@@ -228,6 +186,14 @@ export default function SeekerDashboardPage() {
               <AdoptionBar label="LINE OA" value={stats.line_linked} total={stats.total} color="bg-emerald-500" icon="line" iconColor="text-emerald-500" />
             </div>
 
+            {/* Daily seeker activity — 1 block per house visited that day */}
+            <div className="bg-white rounded-2xl border border-gray-200 p-4">
+              <div className="text-xs font-semibold uppercase tracking-wider text-gray-500 mb-3">
+                การทำงานของ Seeker <span className="normal-case text-gray-300">(30 วันล่าสุด)</span>
+              </div>
+              <SeekerActivityChart daily={daily} />
+            </div>
+
             {/* Coverage progress */}
             <div className="bg-white rounded-2xl border border-gray-200 p-4">
               <div className="flex items-baseline justify-between mb-2">
@@ -302,7 +268,7 @@ export default function SeekerDashboardPage() {
               ) : (
                 <div className="divide-y divide-gray-100">
                   {recentVisits.map((p) => {
-                    const st = cardStatus(p);
+                    const st = p.status;
                     return (
                       <div key={p.id} className="px-4 py-3 flex items-center justify-between gap-3">
                         <div className="min-w-0 flex-1">
@@ -352,6 +318,7 @@ export default function SeekerDashboardPage() {
           onChange={(v) => {
             setProjectFilter(v);
             setPickerOpen(false);
+            loadSummary(v);
           }}
           onClose={() => setPickerOpen(false)}
         />
@@ -373,6 +340,140 @@ const BADGE_COLOR: Record<StatusKey, string> = {
   interested: "bg-green-100 text-green-700 border-green-200",
   not_interested: "bg-red-100 text-red-700 border-red-200",
 };
+
+function SeekerActivityChart({ daily }: { daily: DailyRow[] }) {
+  const [tooltip, setTooltip] = useState<{ x: number; y: number; text: string } | null>(null);
+
+  // Rolling 30-day window with 3 trailing future days — gives the latest
+  // bar visual breathing room and stops it from hugging the right edge.
+  const today = new Date();
+  const HISTORY = 30;
+  const FUTURE_PAD = 3;
+  const start = new Date(today.getFullYear(), today.getMonth(), today.getDate() - (HISTORY - 1));
+  const end = new Date(today.getFullYear(), today.getMonth(), today.getDate() + FUTURE_PAD);
+  const dayKeys: { key: string; label: string }[] = [];
+  for (let d = new Date(start); d <= end; d = new Date(d.getFullYear(), d.getMonth(), d.getDate() + 1)) {
+    const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+    dayKeys.push({ key, label: String(d.getDate()) });
+  }
+  const indexByKey = new Map(dayKeys.map((d, i) => [d.key, i]));
+
+  // First key renders at the BOTTOM of the bar (parent uses flex-col-reverse).
+  // Order: best outcome at bottom → unresolved at top.
+  const STATUS_KEYS: StatusKey[] = ["interested", "contacted", "not_interested", "pending"];
+  type DayCounts = Record<StatusKey, number> & { total: number };
+  const byDay: DayCounts[] = dayKeys.map(() => ({
+    interested: 0, contacted: 0, not_interested: 0, pending: 0, total: 0,
+  }));
+  for (const row of daily) {
+    const idx = indexByKey.get(row.day);
+    if (idx === undefined) continue;
+    byDay[idx].interested = row.interested || 0;
+    byDay[idx].contacted = row.contacted || 0;
+    byDay[idx].not_interested = row.not_interested || 0;
+    byDay[idx].pending = row.pending || 0;
+    byDay[idx].total = byDay[idx].interested + byDay[idx].contacted + byDay[idx].not_interested + byDay[idx].pending;
+  }
+
+  const maxLeads = Math.max(...byDay.map((d) => d.total), 1);
+  const chartH = 180;
+
+  const yTicks: number[] = [];
+  const step = Math.max(1, Math.ceil(maxLeads / 4));
+  for (let i = 0; i <= maxLeads; i += step) yTicks.push(i);
+  if (!yTicks.includes(maxLeads)) yTicks.push(maxLeads);
+
+  const STATUS_COLOR: Record<StatusKey, string> = {
+    interested: "bg-green-500",
+    not_interested: "bg-red-500",
+    contacted: "bg-sky-500",
+    pending: "bg-gray-200",
+  };
+  const STATUS_LABEL_LOCAL: Record<StatusKey, string> = {
+    interested: "สนใจ",
+    not_interested: "ไม่สนใจ",
+    contacted: "ติดตาม",
+    pending: "ยังไม่เยี่ยม",
+  };
+
+  const totalMonth = byDay.reduce((a, d) => a + d.total, 0);
+
+  return (
+    <div>
+      <div className="flex">
+        <div className="flex flex-col-reverse justify-between pr-2" style={{ height: chartH }}>
+          {yTicks.map((t) => (
+            <div key={t} className="text-[10px] text-gray-400 text-right leading-none">{t}</div>
+          ))}
+        </div>
+        <div className="flex-1 flex items-end gap-[3px] border-l border-b border-gray-200" style={{ height: chartH }}>
+          {byDay.map((d, i) => {
+            const visible = STATUS_KEYS.filter((k) => d[k] > 0);
+            const lab = dayKeys[i].label;
+            const tooltipText = d.total === 0
+              ? `${lab} · ไม่มีข้อมูล`
+              : `${lab} · รวม ${d.total} — ` + visible.map((k) => `${STATUS_LABEL_LOCAL[k]} ${d[k]}`).join(" · ");
+            const barH = (d.total / maxLeads) * chartH;
+            return (
+              <div
+                key={i}
+                className="flex-1 relative flex flex-col-reverse items-stretch cursor-default"
+                style={{ height: "100%" }}
+                onMouseEnter={(e) => {
+                  const r = e.currentTarget.getBoundingClientRect();
+                  setTooltip({ x: r.left + r.width / 2, y: r.top - 4, text: tooltipText });
+                }}
+                onMouseLeave={() => setTooltip(null)}
+              >
+                {STATUS_KEYS.map((k) => {
+                  const c = d[k];
+                  if (!c) return null;
+                  const h = (c / maxLeads) * chartH;
+                  return (
+                    <div key={k} className={`${STATUS_COLOR[k]} flex items-center justify-center`} style={{ height: h }}>
+                      {h >= 14 && (
+                        <span className="text-[10px] font-bold tabular-nums text-white leading-none">{c}</span>
+                      )}
+                    </div>
+                  );
+                })}
+                {d.total > 0 && (
+                  <span
+                    className="absolute left-0 right-0 text-center text-[10px] font-bold tabular-nums text-gray-700 pointer-events-none leading-none"
+                    style={{ bottom: barH + 2 }}
+                  >
+                    {d.total}
+                  </span>
+                )}
+              </div>
+            );
+          })}
+        </div>
+      </div>
+      <div className="flex gap-[3px] mt-1 ml-6">
+        {dayKeys.map((d, i) => (
+          <div key={i} className="flex-1 text-center text-[10px] text-gray-400 truncate">{d.label}</div>
+        ))}
+      </div>
+      <div className="flex items-center justify-between mt-2">
+        <span className="text-xs text-gray-400">รวม 30 วัน {totalMonth} หลัง · 1 แท่ง = 1 วัน</span>
+        <div className="flex items-center gap-3 text-[10px] text-gray-400">
+          <div className="flex items-center gap-1"><div className="w-[10px] h-[10px] rounded-sm bg-green-500" /><span>สนใจ</span></div>
+          <div className="flex items-center gap-1"><div className="w-[10px] h-[10px] rounded-sm bg-sky-500" /><span>ติดตาม</span></div>
+          <div className="flex items-center gap-1"><div className="w-[10px] h-[10px] rounded-sm bg-red-500" /><span>ไม่สนใจ</span></div>
+        </div>
+      </div>
+      {tooltip && (
+        <div
+          className="fixed z-50 px-3 py-1.5 rounded-lg bg-gray-900 text-white text-xs font-semibold shadow-lg pointer-events-none whitespace-nowrap"
+          style={{ left: tooltip.x, top: tooltip.y, transform: "translate(-50%, -100%)" }}
+        >
+          {tooltip.text}
+        </div>
+      )}
+    </div>
+  );
+}
 
 function StatCard({ label, value, color }: { label: string; value: number; color: string }) {
   return (
@@ -582,7 +683,7 @@ function ProjectPickerModal({
           {filtered.length === 0 ? (
             <div className="px-4 py-8 text-center text-sm text-gray-400">ไม่พบโครงการ</div>
           ) : (
-            filtered.map((name) => (
+            filtered.map((name: string) => (
               <button
                 key={name}
                 type="button"

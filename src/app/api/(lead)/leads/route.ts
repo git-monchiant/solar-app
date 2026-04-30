@@ -71,7 +71,7 @@ export async function POST(request: NextRequest) {
       .input("full_name", sql.NVarChar(200), body.full_name)
       .input("phone", sql.NVarChar(20), body.phone || null)
       .input("project_id", sql.Int, projectId)
-      .input("installation_address", sql.NVarChar(50), body.installation_address || null)
+      .input("installation_address", sql.NVarChar(500), body.installation_address || null)
       .input("customer_type", sql.NVarChar(50), body.customer_type || null)
       .input("interested_package_id", sql.Int, body.interested_package_id || null)
       .input("source", sql.NVarChar(30), body.source || "walk-in")
@@ -84,10 +84,46 @@ export async function POST(request: NextRequest) {
       .input("house_reg_photo_url", sql.NVarChar(500), body.house_reg_photo_url || null)
       .input("pre_appliances", sql.NVarChar(200), body.pre_appliances || null)
       .input("line_id", sql.NVarChar(100), body.line_id || null)
+      .input("house_number", sql.NVarChar(50), body.house_number || null)
+      // Pre-survey interest fields surfaced on the new-lead form
+      .input("pre_primary_reason", sql.NVarChar(50), body.pre_primary_reason || null)
+      .input("pre_peak_usage", sql.NVarChar(20), body.pre_peak_usage || null)
+      .input("pre_electrical_phase", sql.NVarChar(20), body.pre_electrical_phase || null)
+      .input("pre_wants_battery", sql.NVarChar(20), body.pre_wants_battery || null)
+      .input("pre_roof_shape", sql.NVarChar(20), body.pre_roof_shape || null)
+      .input("pre_residence_type", sql.NVarChar(30), body.pre_residence_type || null)
+      .input("pre_monthly_bill", sql.Int, body.monthly_bill ? parseInt(String(body.monthly_bill)) : null)
+      // Sheet-sync fields
+      .input("customer_code", sql.NVarChar(20), body.customer_code || null)
+      .input("seeker_type", sql.NVarChar(50), body.seeker_type || null)
+      .input("seeker_name", sql.NVarChar(200), body.seeker_name || null)
+      .input("customer_interest", sql.NVarChar(500), body.customer_interest || null)
+      .input("home_loan_status", sql.NVarChar(50), body.home_loan_status || null)
+      .input("project_note", sql.NVarChar(500), body.project_note || null)
+      // Electrical / utility
+      .input("meter_number", sql.NVarChar(30), body.meter_number || null)
       .query(`
-        INSERT INTO leads (full_name, phone, project_id, installation_address, customer_type, interested_package_id, source, payment_type, requirement, note, id_card_number, id_card_address, id_card_photo_url, house_reg_photo_url, pre_appliances, line_id, status)
+        INSERT INTO leads (
+          full_name, phone, project_id, installation_address, customer_type, interested_package_id,
+          source, payment_type, requirement, note,
+          id_card_number, id_card_address, id_card_photo_url, house_reg_photo_url,
+          pre_appliances, line_id, house_number,
+          pre_primary_reason, pre_peak_usage, pre_electrical_phase, pre_wants_battery,
+          pre_roof_shape, pre_residence_type, pre_monthly_bill,
+          customer_code, seeker_type, seeker_name, customer_interest, home_loan_status, project_note,
+          meter_number, status
+        )
         OUTPUT INSERTED.*
-        VALUES (@full_name, @phone, @project_id, @installation_address, @customer_type, @interested_package_id, @source, @payment_type, @requirement, @note, @id_card_number, @id_card_address, @id_card_photo_url, @house_reg_photo_url, @pre_appliances, @line_id, 'pre_survey')
+        VALUES (
+          @full_name, @phone, @project_id, @installation_address, @customer_type, @interested_package_id,
+          @source, @payment_type, @requirement, @note,
+          @id_card_number, @id_card_address, @id_card_photo_url, @house_reg_photo_url,
+          @pre_appliances, @line_id, @house_number,
+          @pre_primary_reason, @pre_peak_usage, @pre_electrical_phase, @pre_wants_battery,
+          @pre_roof_shape, @pre_residence_type, @pre_monthly_bill,
+          @customer_code, @seeker_type, @seeker_name, @customer_interest, @home_loan_status, @project_note,
+          @meter_number, 'pre_survey'
+        )
       `);
 
     // Auto-log lead created (register/walk-in is the first contact)

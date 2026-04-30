@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import { createPortal } from "react-dom";
 import PdfPreview from "./PdfPreview";
+import { useMe } from "@/lib/roles";
 
 interface Props {
   leadId: number;
@@ -13,8 +14,10 @@ interface Props {
 export default function WarrantyModal({ leadId, docNo, onClose }: Props) {
   const [saving, setSaving] = useState(false);
   const [mounted, setMounted] = useState(false);
+  const { me } = useMe();
   const fileLabel = `warranty_${docNo || leadId}`;
-  const pdfUrl = `/api/warranty/${leadId}`;
+  // Server resolves signer from lead.warranty_issued_by → assigned_user_id → ?user_id viewer.
+  const pdfUrl = me?.id ? `/api/warranty/${leadId}?user_id=${me.id}` : `/api/warranty/${leadId}`;
 
   useEffect(() => { setMounted(true); }, []);
 
@@ -71,7 +74,7 @@ export default function WarrantyModal({ leadId, docNo, onClose }: Props) {
               <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
                 <path strokeLinecap="round" strokeLinejoin="round" d="M3 16.5v2.25A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75V16.5M16.5 12L12 16.5m0 0L7.5 12m4.5 4.5V3" />
               </svg>
-              บันทึก PDF
+              บันทึกใบรับประกัน
             </>
           )}
         </button>

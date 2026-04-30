@@ -9,7 +9,7 @@ export async function GET(req: NextRequest) {
 
     const db = await getDb();
     const user = await db.request().input("id", sql.Int, userId).query(`
-      SELECT id, username, full_name, team, phone, email, roles FROM users WHERE id = @id AND is_active = 1
+      SELECT id, username, full_name, team, phone, email, signature_url, roles FROM users WHERE id = @id AND is_active = 1
     `);
     if (user.recordset.length === 0) return NextResponse.json({ error: "User not found" }, { status: 404 });
 

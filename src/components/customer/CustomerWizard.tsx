@@ -26,6 +26,22 @@ export interface CustomerWizardValues {
   ca_number?: string;
   meter_number?: string;
   monthly_bill?: string;
+  house_number?: string;
+  // Sheet-sync extras
+  customer_code?: string;
+  seeker_type?: string;
+  seeker_name?: string;
+  customer_interest?: string;
+  home_loan_status?: string;
+  project_note?: string;
+  // Pre-survey interest fields surfaced on new-lead form
+  pre_primary_reason?: string;
+  pre_peak_usage?: string;
+  pre_electrical_phase?: string;
+  pre_wants_battery?: string;
+  pre_roof_shape?: string;
+  pre_residence_type?: string;
+  pre_appliances?: string;
 }
 
 interface Project { id: number; name: string; district: string | null; province: string | null; }
@@ -51,11 +67,19 @@ interface Props {
   /** true = will be linked on save, not yet saved */
   linePending?: boolean;
   onLinkLine?: () => void;
+  /** "create" hides sheet-sync extras to keep new-lead step minimal; "edit" shows them. */
+  mode?: "create" | "edit";
 }
 
 const SOURCES = [
-  { value: "walk-in", label: "Walk-in" },
+  { value: "walk-in", label: "SENX PM" },
   { value: "event", label: "Event" },
+  { value: "ads", label: "Ads" },
+  { value: "the1", label: "The1" },
+  { value: "web", label: "Web" },
+  { value: "refer", label: "Refer" },
+  { value: "email", label: "Email" },
+  { value: "other", label: "Other" },
 ];
 const CUSTOMER_TYPES = [
   { value: "ลูกค้าใหม่ยังไม่มีโซล่า", label: "New" },
@@ -94,243 +118,257 @@ const fieldTextarea = "w-full px-3 py-2.5 rounded-lg border border-gray-200 text
 const formatPrice = (n: number) => new Intl.NumberFormat("th-TH").format(n);
 
 
-export default function CustomerWizard({ values, onChange, onSubmit, submitLabel = "บันทึก", saving, lineProfile, linePending, onLinkLine }: Props) {
-  const [subStep, setSubStep] = useState(0);
-  const [nextError, setNextError] = useState<string | null>(null);
-  const [projects, setProjects] = useState<Project[]>([]);
-  const [packages, setPackages] = useState<Package[]>([]);
-  const [wantsBattery, setWantsBattery] = useState<string>("maybe");
+// Option lists used by the comprehensive create form.
+const PRIMARY_REASONS = [
+  { value: "save_bill", label: "ประหยัดค่าไฟ" },
+  { value: "sell_back", label: "ขายไฟคืน" },
+  { value: "tax_deduction", label: "ลดหย่อนภาษี" },
+  { value: "daytime_usage", label: "เปิดแอร์ทั้งวัน" },
+  { value: "has_ev", label: "ชาร์จ EV" },
+  { value: "environment", label: "รักษ์โลก" },
+  { value: "home_business", label: "เปิดร้านที่บ้าน" },
+];
+const PEAK_USAGE_OPTIONS = [
+  { value: "day", label: "กลางวัน" },
+  { value: "night", label: "กลางคืน" },
+  { value: "both", label: "ทั้งสองช่วง" },
+];
+const ELECTRICAL_PHASE_OPTIONS = [
+  { value: "1_phase", label: "1 เฟส" },
+  { value: "3_phase", label: "3 เฟส" },
+];
+const BATTERY_WANT_OPTIONS = [
+  { value: "no", label: "ไม่ต้องการ" },
+  { value: "yes", label: "ต้องการ" },
+  { value: "maybe", label: "ยังไม่แน่ใจ" },
+];
+const ROOF_SHAPE_OPTIONS = [
+  { value: "gable", label: "หน้าจั่ว" },
+  { value: "hip", label: "ปั้นหยา" },
+  { value: "shed", label: "เพิงหมาแหงน" },
+  { value: "flat", label: "ทรงแบน" },
+];
+const RESIDENCE_TYPE_OPTIONS = [
+  { value: "detached", label: "บ้านเดี่ยว" },
+  { value: "townhome", label: "ทาวน์โฮม" },
+  { value: "townhouse", label: "ทาวน์เฮาส์" },
+  { value: "home_office", label: "โฮมออฟฟิศ" },
+  { value: "shophouse", label: "อาคารพาณิชย์" },
+];
+const APPLIANCE_OPTIONS = [
+  { value: "water_heater", label: "เครื่องทำน้ำอุ่น" },
+  { value: "ev", label: "ที่ชาร์จ EV" },
+];
 
+// Module-level so React keeps the same component identity across renders —
+// declaring these inside CreateProfileForm caused inputs to remount on every
+// keystroke (focus/value lost). Don't move these back inside.
+function FormCard({ title, children, className }: { title: string; children: React.ReactNode; className?: string }) {
+  return (
+    <div className={`${fieldCard} ${className ?? ""}`}>
+      <div className="text-sm font-bold text-gray-700 mb-3 pb-2 border-b border-gray-100">{title}</div>
+      <div className="space-y-3">{children}</div>
+    </div>
+  );
+}
+
+function FormField({ label, required, children, className }: { label: string; required?: boolean; children: React.ReactNode; className?: string }) {
+  return (
+    <div className={className}>
+      <label className="block text-xs font-bold uppercase tracking-wider text-gray-400 mb-1.5">
+        {label}{required && <span className="text-red-500 ml-0.5">*</span>}
+      </label>
+      {children}
+    </div>
+  );
+}
+
+// Comprehensive create form: all 35 fields in card-style sections matching the
+// rest of the app (rounded-lg bg-white border + uppercase labels + h-11 inputs).
+function CreateProfileForm({
+  values,
+  onChange,
+  projects,
+  lineProfile,
+  linePending,
+  onLinkLine,
+}: {
+  values: CustomerWizardValues;
+  onChange: (patch: Partial<CustomerWizardValues>) => void;
+  projects: Project[];
+  lineProfile?: LineProfileInfo | null;
+  linePending?: boolean;
+  onLinkLine?: () => void;
+}) {
+  const [projectText, setProjectText] = useState<string>(values.project_name || "");
+  const [projectFocused, setProjectFocused] = useState(false);
   useEffect(() => {
-    Promise.all([
-      apiFetch("/api/projects"),
-      apiFetch("/api/packages"),
-    ]).then(([p, pk]) => { setProjects(p); setPackages(pk); }).catch(console.error);
-  }, []);
+    if (values.project_name && values.project_name !== projectText) setProjectText(values.project_name);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [values.project_name]);
+  const projectSuggestions = projectFocused && projectText.length >= 1
+    ? projects.filter(p => p.name.toLowerCase().includes(projectText.toLowerCase())).slice(0, 8)
+    : [];
 
-  const filteredPackages = packages.filter(p => {
-    if (wantsBattery === "upgrade") return p.is_upgrade;
-    if (wantsBattery === "yes") return p.has_battery && !p.is_upgrade;
-    if (wantsBattery === "no") return !p.has_battery && !p.is_upgrade;
-    if (wantsBattery === "maybe") return !p.is_upgrade;
-    return true;
-  });
-
-  const goTo = (i: number) => { setNextError(null); setSubStep(i); };
+  const toggleAppliance = (v: string) => {
+    const set = new Set((values.pre_appliances || "").split(",").filter(Boolean));
+    if (set.has(v)) set.delete(v); else set.add(v);
+    onChange({ pre_appliances: Array.from(set).join(",") || "" });
+  };
+  const hasAppliance = (v: string) => (values.pre_appliances || "").split(",").includes(v);
 
   return (
-    <div className="flex flex-col space-y-3 lg:space-y-4 min-h-full">
-      {/* Step indicator — sticky on desktop */}
-      <div className="md:sticky md:top-0 md:z-10 md:bg-white md:pt-2 md:pb-3 md:-mt-2 flex items-center gap-1 mb-3 md:mb-0 lg:max-w-2xl">
-        {SUB_STEPS.map((label, i) => (
-          <button key={i} type="button" onClick={() => goTo(i)} className="flex-1 flex flex-col items-center gap-1 cursor-pointer">
-            <div className={`h-1 w-full rounded-full transition-colors ${i <= subStep ? "bg-active" : "bg-gray-200"}`} />
-            <span className={`text-xs font-semibold transition-colors ${i === subStep ? "text-active" : i < subStep ? "text-gray-500" : "text-gray-300"}`}>{label}</span>
-          </button>
-        ))}
-      </div>
-
-      {/* Step 0: ลูกค้า */}
-      {subStep === 0 && (
-        <div className="lg:grid lg:grid-cols-2 lg:gap-4 space-y-3 lg:space-y-0">
-          <div className="space-y-3">
-            <CustomerInfoForm
-              values={values}
-              onChange={onChange}
-              groups={["identity", "contact"]}
-              required={["full_name"]}
-              showScan
+    <div className="lg:max-w-4xl mx-auto max-w-xl space-y-3">
+      {/* Row 1: ติดต่อ + ที่อยู่ติดตั้ง */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-3 lg:items-start">
+        <FormCard title="ติดต่อ">
+          <FormField label="ชื่อ-นามสกุล" required>
+            <input
+              type="text"
+              value={values.full_name ?? ""}
+              onChange={e => onChange({ full_name: e.target.value })}
+              placeholder="ชื่อลูกค้า"
+              className={fieldInput}
             />
-            {/* LINE link status */}
-            {(lineProfile !== undefined) && (
-              lineProfile ? (
-                <div className={fieldCard}>
-                  <label className={fieldLabel}>LINE Profile</label>
-                  <div className="flex items-center gap-3">
+          </FormField>
+          <FormField label="เบอร์โทร">
+            <input
+              type="tel"
+              value={values.phone ?? ""}
+              onChange={e => onChange({ phone: e.target.value })}
+              placeholder="08x-xxx-xxxx"
+              className={fieldInput + " font-mono tabular-nums"}
+            />
+          </FormField>
+          {lineProfile !== undefined && (
+            <FormField label="LINE">
+              {lineProfile ? (
+                <div className="flex items-center gap-2 h-11 px-3 rounded-lg border border-gray-200 bg-white">
                   {lineProfile.picture_url ? (
-                    <img src={lineProfile.picture_url} alt="" className="w-10 h-10 rounded-full object-cover shrink-0" />
+                    <img src={lineProfile.picture_url} alt="" className="w-7 h-7 rounded-full object-cover shrink-0" />
                   ) : (
-                    <div className="w-10 h-10 rounded-full bg-[#06C755] flex items-center justify-center shrink-0 text-white"><LineIcon /></div>
+                    <div className="w-7 h-7 rounded-full bg-[#06C755] flex items-center justify-center shrink-0 text-white"><LineIcon /></div>
                   )}
-                  <div className="flex-1 min-w-0">
-                    <div className="text-sm font-bold text-gray-900">{lineProfile.display_name}</div>
-                    <div className={`text-xs font-semibold ${linePending ? "text-amber-500" : "text-[#06C755]"}`}>{linePending ? "รอเชื่อมเมื่อบันทึก" : "เชื่อม LINE แล้ว"}</div>
-                  </div>
-                  </div>
+                  <span className="text-sm font-medium text-gray-900 truncate flex-1 min-w-0">{lineProfile.display_name}</span>
+                  <span className={`text-[10px] font-bold uppercase tracking-wider px-1.5 py-0.5 rounded shrink-0 ${linePending ? "bg-amber-50 text-amber-600" : "bg-emerald-50 text-emerald-600"}`}>
+                    {linePending ? "รอเชื่อม" : "เชื่อมแล้ว"}
+                  </span>
                 </div>
               ) : onLinkLine ? (
-                <div className={fieldCard}>
-                  <label className={fieldLabel}>LINE Profile</label>
-                  <button type="button" onClick={onLinkLine} className="flex items-center gap-3 w-full text-left hover:opacity-70 transition-opacity cursor-pointer">
-                    <div className="w-10 h-10 rounded-full bg-gray-100 flex items-center justify-center shrink-0 text-gray-400"><LineIcon /></div>
-                    <div className="flex-1 min-w-0">
-                      <div className="text-sm font-medium text-gray-500">ยังไม่ได้เชื่อม LINE</div>
-                      <div className="text-xs text-gray-400">กดเพื่อเลือก LINE user</div>
-                    </div>
-                    <svg className="w-5 h-5 text-gray-300 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M12 4.5v15m7.5-7.5h-15" /></svg>
-                  </button>
-                </div>
-              ) : null
-            )}
-          </div>
-          <div className="space-y-3">
-            <div className={fieldCard}>
-              <label className={fieldLabel}>ที่มาของลูกค้า</label>
-              <div className="grid grid-cols-3 gap-2">
-                {SOURCES.map(s => (
-                  <button key={s.value} type="button" onClick={() => onChange({ source: s.value })} className={chipBtn(values.source === s.value)}>{s.label}</button>
-                ))}
-              </div>
-            </div>
-            <div className={fieldCard}>
-              <label className={fieldLabel}>ประเภทลูกค้า</label>
-              <div className="grid grid-cols-3 gap-2">
-                {CUSTOMER_TYPES.map(t => (
-                  <button key={t.value} type="button" onClick={() => onChange({ customer_type: t.value })} className={chipBtn(values.customer_type === t.value)}>{t.label}</button>
-                ))}
-              </div>
-            </div>
-            <CustomerInfoForm
-              values={values}
-              onChange={onChange}
-              groups={["project", "installation"]}
-              projects={projects}
-            />
-          </div>
-        </div>
-      )}
+                <button
+                  type="button"
+                  onClick={onLinkLine}
+                  className="w-full h-11 px-3 rounded-lg border border-dashed border-gray-300 bg-white flex items-center justify-center gap-2 text-sm font-semibold text-gray-500 hover:border-active hover:text-active transition-colors"
+                  style={{ minHeight: 0 }}
+                >
+                  <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M12 4.5v15m7.5-7.5h-15" /></svg>
+                  เชื่อม LINE user
+                </button>
+              ) : null}
+            </FormField>
+          )}
+        </FormCard>
 
-      {/* Step 1: แพ็คเกจ */}
-      {subStep === 1 && (
-        <div className="lg:grid lg:grid-cols-2 lg:gap-4 space-y-3 lg:space-y-0">
-          <div className="space-y-3">
-            <div className={fieldCard}>
-              <label className={fieldLabel}>แบตเตอรี่ + Upgrade</label>
-              <div className="grid grid-cols-3 gap-2">
-                {BATTERY_OPTIONS.map(b => (
-                  <button key={b.value} type="button" onClick={() => { setWantsBattery(b.value); onChange({ interested_package_id: "" }); }} className={chipBtn(wantsBattery === b.value)}>
-                    {b.label}
-                  </button>
-                ))}
-              </div>
-            </div>
-            <div className={fieldCard}>
-              <label className={fieldLabel}>แพ็คเกจที่สนใจ</label>
-              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-1 xl:grid-cols-2 gap-2">
-                {filteredPackages.length === 0 && (
-                  <div className="text-center py-6 text-xs text-gray-400 border border-dashed border-gray-200 rounded-xl">ไม่มีแพ็คเกจที่ตรงกับที่เลือก</div>
+        <FormCard title="ที่อยู่ติดตั้ง">
+          <div className="grid grid-cols-3 gap-2">
+            <FormField label="บ้านเลขที่">
+              <input
+                type="text"
+                value={values.house_number ?? ""}
+                onChange={e => onChange({ house_number: e.target.value })}
+                placeholder="123/45"
+                className={fieldInput}
+              />
+            </FormField>
+            <FormField label="โครงการ" className="col-span-2">
+              <div className="relative">
+                <input
+                  type="text"
+                  value={projectText}
+                  onChange={e => { setProjectText(e.target.value); onChange({ project_id: null, project_name: e.target.value }); }}
+                  onFocus={() => setProjectFocused(true)}
+                  onBlur={() => setTimeout(() => setProjectFocused(false), 200)}
+                  placeholder="พิมพ์ชื่อโครงการ..."
+                  className={fieldInput}
+                />
+                {projectSuggestions.length > 0 && (
+                  <div className="absolute z-20 left-0 right-0 top-full mt-1 bg-white border border-gray-200 rounded-lg shadow-lg max-h-48 overflow-y-auto">
+                    {projectSuggestions.map(p => (
+                      <button
+                        key={p.id}
+                        type="button"
+                        onMouseDown={e => e.preventDefault()}
+                        onClick={() => { setProjectText(p.name); onChange({ project_id: p.id, project_name: p.name }); setProjectFocused(false); }}
+                        className="w-full text-left px-3 py-2 hover:bg-active-light transition-colors"
+                      >
+                        <div className="text-sm text-gray-800">{p.name}</div>
+                        {(p.district || p.province) && <div className="text-xs text-gray-400">{[p.district, p.province].filter(Boolean).join(", ")}</div>}
+                      </button>
+                    ))}
+                  </div>
                 )}
-                {filteredPackages.map(p => {
-                  const selected = values.interested_package_id === String(p.id);
-                  return (
-                    <button key={p.id} type="button" onClick={() => onChange({ interested_package_id: selected ? "" : String(p.id) })} className={`text-left rounded-xl p-3 border-2 transition-all ${selected ? "border-active bg-active-light" : "border-gray-100 bg-white"}`}>
-                      <div className="flex items-center justify-between gap-2">
-                        <div className="min-w-0">
-                          <div className="text-sm font-bold truncate flex items-center gap-1.5">
-                            {p.is_upgrade && <span className="text-xs font-bold text-blue-600 bg-blue-50 px-2 py-0.5 rounded uppercase shrink-0">UPGRADE</span>}
-                            {p.name}
-                          </div>
-                          <div className="text-xs text-gray-500 mt-0.5 flex flex-wrap gap-x-3">
-                            {p.solar_panels > 0 && <span>{p.solar_panels} panels</span>}
-                            {p.inverter_brand && <span>{p.inverter_brand} {p.inverter_kw}kW</span>}
-                            {p.has_battery && <span>Battery {p.battery_kwh}kWh</span>}
-                          </div>
-                        </div>
-                        <div className="text-right shrink-0">
-                          <div className="text-sm font-bold font-mono tabular-nums">{formatPrice(p.price)}</div>
-                          <div className="text-xs text-gray-400">THB</div>
-                        </div>
-                      </div>
-                    </button>
-                  );
-                })}
               </div>
-            </div>
+            </FormField>
           </div>
-          <div className="space-y-3">
-            <div className={fieldCard}>
-              <label className={fieldLabel}>ความต้องการ</label>
-              <textarea value={values.requirement ?? ""} onChange={e => onChange({ requirement: e.target.value })} placeholder="เช่น สนใจ 5kWp, มีแอร์ 3 เครื่อง, อยาก charge EV" rows={2} className={fieldTextarea} />
+          <FormField label="ที่อยู่">
+            <textarea
+              value={values.installation_address ?? ""}
+              onChange={e => onChange({ installation_address: e.target.value })}
+              placeholder="ที่อยู่ติดตั้ง"
+              rows={2}
+              className={fieldTextarea}
+            />
+          </FormField>
+        </FormCard>
+      </div>
+
+      {/* Row 2: ที่มา / ประเภท */}
+      <FormCard title="ที่มา / ประเภทลูกค้า">
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-3">
+          <FormField label="ที่มา">
+            <div className="grid grid-cols-2 gap-2">
+              {SOURCES.map(s => (
+                <button key={s.value} type="button" onClick={() => onChange({ source: s.value })} className={chipBtn(values.source === s.value)} style={{ minHeight: 0 }}>{s.label}</button>
+              ))}
             </div>
-            <div className={fieldCard}>
-              <label className={fieldLabel}>หมายเหตุ</label>
-              <textarea value={values.note ?? ""} onChange={e => onChange({ note: e.target.value })} placeholder="รายละเอียดเพิ่มเติม" rows={3} className={fieldTextarea} />
+          </FormField>
+          <FormField label="ประเภทลูกค้า">
+            <div className="grid grid-cols-2 gap-2">
+              {CUSTOMER_TYPES.map(t => (
+                <button key={t.value} type="button" onClick={() => onChange({ customer_type: t.value })} className={chipBtn(values.customer_type === t.value)} style={{ minHeight: 0 }}>{t.label}</button>
+              ))}
             </div>
-            <div className={fieldCard}>
-              <label className={fieldLabel}>วิธีชำระเงิน</label>
-              <div className="grid grid-cols-3 gap-2">
-                {PAYMENT_TYPES.map(p => (
-                  <button key={p.value} type="button" onClick={() => onChange({ payment_type: p.value })} className={chipBtn(values.payment_type === p.value)}>{p.label}</button>
-                ))}
-              </div>
-            </div>
-          </div>
+          </FormField>
         </div>
-      )}
+      </FormCard>
+    </div>
+  );
+}
 
-      {/* Step 2: จดทะเบียน */}
-      {subStep === 2 && (
-        <div className="lg:grid lg:grid-cols-2 lg:gap-4 space-y-3 lg:space-y-0">
-          <CustomerInfoForm
-            values={values}
-            onChange={onChange}
-            groups={["id_card"]}
-          />
-          <CustomerInfoForm
-            values={values}
-            onChange={onChange}
-            groups={["documents"]}
-          />
-        </div>
-      )}
+// `mode` prop is accepted for backwards compatibility (callers still pass it)
+// but ignored — both create and edit render the same compact form now.
+export default function CustomerWizard({ values, onChange, onSubmit, submitLabel = "บันทึก", saving, lineProfile, linePending, onLinkLine }: Props) {
+  const [nextError, setNextError] = useState<string | null>(null);
+  const [projects, setProjects] = useState<Project[]>([]);
 
-      {/* Step 3: Others */}
-      {subStep === 3 && (
-        <div className="lg:grid lg:grid-cols-2 lg:gap-4 space-y-3 lg:space-y-0">
-          <div className="space-y-3">
-            <div className={fieldCard}>
-              <label className={fieldLabel}>การไฟฟ้า</label>
-              <div className="grid grid-cols-3 gap-2">
-                {UTILITY_PROVIDERS.map(u => (
-                  <button key={u.value} type="button" onClick={() => onChange({ utility_provider: u.value })} className={chipBtn(values.utility_provider === u.value)}>{u.label}</button>
-                ))}
-              </div>
-            </div>
-            <div className={fieldCard}>
-              <label className={fieldLabel}>เลขผู้ใช้ไฟ (CA)</label>
-              <input type="text" value={values.ca_number ?? ""} onChange={e => onChange({ ca_number: e.target.value })} placeholder="เช่น 02-001-932-0090" className={fieldInput + " font-mono tabular-nums"} />
-            </div>
-          </div>
-          <div className="space-y-3">
-            <div className={fieldCard}>
-              <label className={fieldLabel}>เลขมิเตอร์</label>
-              <input type="text" value={values.meter_number ?? ""} onChange={e => onChange({ meter_number: e.target.value })} placeholder="เลขมิเตอร์" className={fieldInput + " font-mono tabular-nums"} />
-            </div>
-            <div className={fieldCard}>
-              <label className={fieldLabel}>ค่าไฟรายเดือน (บาท)</label>
-              <input type="number" inputMode="numeric" value={values.monthly_bill ?? ""} onChange={e => onChange({ monthly_bill: e.target.value })} placeholder="เช่น 3500" className={fieldInput + " font-mono tabular-nums"} />
-            </div>
-          </div>
-        </div>
-      )}
+  useEffect(() => {
+    apiFetch("/api/projects").then(setProjects).catch(console.error);
+  }, []);
 
-      {/* Spacer pushes buttons to bottom when content is short */}
-      <div className="flex-1" />
+  return (
+    <div className="space-y-4">
+      <CreateProfileForm
+        values={values}
+        onChange={onChange}
+        projects={projects}
+        lineProfile={lineProfile}
+        linePending={linePending}
+        onLinkLine={onLinkLine}
+      />
 
-      {/* Navigation */}
-      <div className="flex gap-2 pt-2 lg:max-w-md">
-        {subStep > 0 && (
-          <button type="button" onClick={() => { setNextError(null); setSubStep(subStep - 1); }} className="flex-1 h-11 rounded-lg text-sm font-semibold border border-gray-200 text-gray-600 hover:bg-gray-50 transition-colors flex items-center justify-center gap-1">
-            <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M15.75 19.5L8.25 12l7.5-7.5" /></svg>
-            ย้อนกลับ
-          </button>
-        )}
-        {subStep < SUB_STEPS.length - 1 && (
-          <button type="button" onClick={() => goTo(subStep + 1)} className="flex-1 h-11 rounded-lg text-sm font-semibold text-white bg-active hover:brightness-110 transition-colors flex items-center justify-center gap-1">
-            ถัดไป
-            <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M8.25 4.5l7.5 7.5-7.5 7.5" /></svg>
-          </button>
-        )}
+      {/* Footer save button — single-button footer with top border separator,
+          matching AddActivityModal's pattern. */}
+      <div className="flex gap-2 mt-4 pt-4 border-t border-gray-100">
         <button type="button" onClick={onSubmit} disabled={saving} className="flex-1 h-11 rounded-lg text-sm font-semibold text-white bg-gradient-to-r from-primary to-primary-dark hover:brightness-110 disabled:opacity-50 transition-colors flex items-center justify-center gap-2">
           {saving ? "กำลังบันทึก…" : submitLabel}
         </button>

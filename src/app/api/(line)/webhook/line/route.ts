@@ -79,12 +79,33 @@ export async function POST(request: NextRequest) {
         const profile = await getLineProfile(userId);
         await upsertLineUser(userId, profile?.displayName, profile?.pictureUrl);
         const db = await getDb();
+        const text: string | null = event.message.text || null;
         await db.request()
           .input("line_user_id", sql.NVarChar(100), userId)
           .input("message_type", sql.NVarChar(30), "text")
-          .input("text", sql.NVarChar(sql.MAX), event.message.text || null)
+          .input("text", sql.NVarChar(sql.MAX), text)
           .input("message_id", sql.NVarChar(100), event.message.id || null)
           .query(`INSERT INTO line_messages (line_user_id, message_type, text, message_id) VALUES (@line_user_id, @message_type, @text, @message_id)`);
+
+        // Stamp the LINE user with whatever contact data we can scrape from
+        // this message — Thai mobile (0[6-9]XXXXXXXX) and a "บ้านเลขที่"
+        // mention. Latest match wins; never null out an existing value if the
+        // current message doesn't include one.
+        const phone = text?.match(/0[6-9]\d{8}/)?.[0];
+        const houseMatch = text?.match(/บ้านเลขที่[\s:]*([0-9]{1,5}(?:\/[0-9]{1,5})?(?:[\s,]*หมู่\s*[0-9]{1,3})?)/);
+        const house = houseMatch?.[1]?.trim();
+        if (phone) {
+          await db.request()
+            .input("line_user_id", sql.NVarChar(100), userId)
+            .input("phone", sql.NVarChar(20), phone)
+            .query(`UPDATE line_users SET phone = @phone WHERE line_user_id = @line_user_id`);
+        }
+        if (house) {
+          await db.request()
+            .input("line_user_id", sql.NVarChar(100), userId)
+            .input("house_number", sql.NVarChar(50), house)
+            .query(`UPDATE line_users SET house_number = @house_number WHERE line_user_id = @line_user_id`);
+        }
       }
 
       // Image message — log only

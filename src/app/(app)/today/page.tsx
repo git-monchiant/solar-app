@@ -31,7 +31,7 @@ export default function TodayPage() {
   const [search, setSearch] = useState("");
   const [scheduledSurveys, setScheduledSurveys] = useState<{ id: number; full_name: string; event_date: string; time_slot: string | null; event_type: string; status: string; zone: string | null }[]>([]);
   const [zones, setZones] = useState<{ id: number; name: string }[]>([]);
-  const [selectedZone, setSelectedZone] = useState<string>("all");
+  const [selectedZone, setSelectedZone] = useState<string>("กรุงเทพและปริมณฑล");
   const [showNewLead, setShowNewLead] = useState(false);
   const { activeRoles } = useActiveRoles();
 
@@ -48,7 +48,25 @@ export default function TodayPage() {
     }).catch(console.error).finally(() => setLoading(false));
   }, []);
 
-  if (loading) {
+  // If saved tab no longer valid for current role, fall back to first available.
+  // Skip while activeRoles is still loading (empty) — otherwise we'd downgrade a
+  // valid "sales" tab to "calendar" on first render before /api/me resolves.
+  useEffect(() => {
+    if (activeRoles.length === 0) return;
+    const isSales = hasRole(activeRoles, "sales");
+    const isSolar = hasRole(activeRoles, "solar");
+    const validKeys: string[] = [];
+    if (isSales) validKeys.push("sales", "sales_solar");
+    if (isSolar) validKeys.push("solar");
+    validKeys.push("calendar");
+    if (!validKeys.includes(tab)) {
+      const fallback = validKeys[0] as "sales" | "sales_solar" | "solar" | "calendar";
+      setTab(fallback);
+      localStorage.setItem("todayTab", fallback);
+    }
+  }, [activeRoles, tab]);
+
+  if (loading || activeRoles.length === 0) {
     return (
       <div className="flex items-center justify-center h-full">
         <div className="w-10 h-10 border-3 border-gray-200 border-t-gray-900 rounded-full animate-spin" />
@@ -60,8 +78,19 @@ export default function TodayPage() {
 
   const filterLeads = (leads: LeadData[]) => {
     if (!search.trim()) return leads;
-    const q = search.toLowerCase();
-    return leads.filter(l => l.full_name?.toLowerCase().includes(q) || l.phone?.includes(q) || l.project_name?.toLowerCase().includes(q));
+    const q = search.trim().toLowerCase();
+    return leads.filter(l =>
+      l.full_name?.toLowerCase().includes(q) ||
+      l.phone?.includes(q) ||
+      l.project_name?.toLowerCase().includes(q) ||
+      l.installation_address?.toLowerCase().includes(q) ||
+      l.house_number?.toLowerCase().includes(q) ||
+      l.email?.toLowerCase().includes(q) ||
+      l.source?.toLowerCase().includes(q) ||
+      l.note?.toLowerCase().includes(q) ||
+      l.assigned_name?.toLowerCase().includes(q) ||
+      l.pre_doc_no?.toLowerCase().includes(q)
+    );
   };
 
   const d = {
@@ -93,6 +122,9 @@ export default function TodayPage() {
     { key: "calendar", label: "ปฏิทิน" },
   ].filter(Boolean) as { key: string; label: string; count?: number }[];
 
+  // While effect re-syncs an invalid tab, render against an in-bounds key
+  const visibleTab = (allTabs.some(t => t.key === tab) ? tab : (allTabs[0]?.key ?? "calendar")) as "sales" | "sales_solar" | "solar" | "calendar";
+
   return (
     <div>
       <ListPageHeader
@@ -102,14 +134,14 @@ export default function TodayPage() {
         onSearchChange={setSearch}
         searchPlaceholder="ค้นหาชื่อ, เบอร์..."
         tabs={allTabs}
-        activeTab={tab}
+        activeTab={visibleTab}
         onTabChange={(k) => { setTab(k as "sales" | "sales_solar" | "solar" | "calendar"); localStorage.setItem("todayTab", k); }}
       />
 
       {/* Content */}
       <div className="p-4 space-y-5">
         {/* Sales Tab */}
-        {tab === "sales" && (
+        {visibleTab === "sales" && (
           <>
             {/* Order — top */}
             {d.installPending.length > 0 && (
@@ -186,7 +218,7 @@ export default function TodayPage() {
         )}
 
         {/* Sales-Solar Tab — sales follows up on solar team's progress */}
-        {tab === "sales_solar" && (
+        {visibleTab === "sales_solar" && (
           <>
             <div className="rounded-lg bg-blue-50 border border-blue-200 px-3 py-2 text-xs text-blue-800">
               รายการที่รอใบเสนอราคา — เร่ง Solar ให้รีบทำให้ลูกค้า
@@ -213,7 +245,7 @@ export default function TodayPage() {
         )}
 
         {/* Solar Tab */}
-        {tab === "solar" && (
+        {visibleTab === "solar" && (
           <>
             {d.surveyToday.length > 0 && (
               <section>
@@ -264,7 +296,7 @@ export default function TodayPage() {
         )}
 
         {/* Calendar Tab — list view with events per day */}
-        {tab === "calendar" && (() => {
+        {visibleTab === "calendar" && (() => {
           const today = new Date();
           const filtered = selectedZone === "all" ? scheduledSurveys : scheduledSurveys.filter(s => s.zone === selectedZone);
           const surveyByDate: Record<string, typeof scheduledSurveys> = {};

@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import { apiFetch } from "@/lib/api";
+import { useMe } from "@/lib/roles";
 import { PAYMENT_TYPES, FINANCE_STATUSES } from "@/lib/constants/statuses";
 import type { Lead, Package, StepCommonProps } from "./types";
 import PreSurveyForm from "./PreSurveyForm";
@@ -149,6 +150,7 @@ interface Props extends StepCommonProps {
 }
 
 export default function PreSurveyStep({ lead, state, refresh, packages, expanded, onToggle }: Props) {
+  const { me } = useMe();
   const [regName, setRegName] = useState(lead.full_name || "");
   const [regIdCard, setRegIdCard] = useState(lead.id_card_number || "");
   const [regAddress, setRegAddress] = useState(lead.id_card_address || "");
@@ -496,10 +498,10 @@ export default function PreSurveyStep({ lead, state, refresh, packages, expanded
             )}
           </div>
 
-          {/* ข้อมูลจดทะเบียน · เอกสาร */}
+          {/* ข้อมูลลูกค้าเพื่อออกใบเสร็จ · เอกสาร */}
           {(lead.id_card_number || lead.id_card_address || lead.id_card_photo_url || lead.house_reg_photo_url) && (
             <div className="border-l-3 border-teal-400 pl-3">
-              <div className="text-xs font-bold text-teal-600 uppercase mb-1">ข้อมูลจดทะเบียน</div>
+              <div className="text-xs font-bold text-teal-600 uppercase mb-1">ข้อมูลลูกค้าเพื่อออกใบเสร็จ</div>
               <div className="space-y-0.5">
                 {lead.id_card_number && <div className="flex justify-between gap-2"><span className="text-gray-400 shrink-0">เลขบัตรประชาชน</span><span className="font-semibold text-gray-800 font-mono tabular-nums">{lead.id_card_number}</span></div>}
                 {lead.id_card_address && <div className="flex justify-between gap-2"><span className="text-gray-400 shrink-0">ที่อยู่ตามบัตร</span><span className="font-semibold text-gray-800 text-right break-words max-w-[65%]">{lead.id_card_address}</span></div>}
@@ -536,7 +538,7 @@ export default function PreSurveyStep({ lead, state, refresh, packages, expanded
               Editable registration form no longer belongs here: the status
               has already moved forward, so exposing inputs + "ยืนยันและเปิด
               ขั้นสำรวจ" again is misleading. ID/project info is read-only
-              in the "ข้อมูลจดทะเบียน" section above. */}
+              in the "ข้อมูลลูกค้าเพื่อออกใบเสร็จ" section above. */}
           {hasReceipt && (
             <div className="pt-3 border-t border-gray-100">
               <ReceiptButtons leadId={lead.id} stage="deposit" fileLabel={lead.pre_doc_no || `lead_${lead.id}_deposit`} />
@@ -556,28 +558,9 @@ export default function PreSurveyStep({ lead, state, refresh, packages, expanded
     );
   }
 
+  // Sub-step navigation is unrestricted — users can move freely between sub-steps.
+  // All required-field validation is enforced at the final "ยืนยัน" button (sub-step 4).
   const handleSubStepChange = (i: number) => {
-    if (i <= subStep) { setNextError(null); setSubStep(i); return; }
-    const gates: Record<number, string[]> = {
-      0: ["full_name", "phone", "installation_address", "pre_residence_type", "pre_monthly_bill", "pre_peak_usage", "pre_electrical_phase"],
-      1: ["pre_wants_battery", "interested_package_ids"],
-      2: ["survey_date", "survey_time_slot"],
-      3: [],
-    };
-    const v = validatePreSurvey({ ...lead, ...formDraft, survey_date: surveyDate || lead.survey_date, survey_time_slot: surveyTimeSlot || lead.survey_time_slot });
-    // Validate every step between current and target — not just the current
-    // one — so jumping ahead by tab click can't skip intermediate gates.
-    const requiredFields = new Set<string>();
-    for (let s = subStep; s < i; s++) {
-      for (const f of gates[s] || []) requiredFields.add(f);
-    }
-    const missingHere = v.missing.filter(m => requiredFields.has(m.field));
-    // Payment gate fires whenever target step is past the payment step (3).
-    if (i > 3 && subStep <= 3 && !paymentVerified) missingHere.push({ field: "slip", label: (slipVerifiedUrl ? "กรุณายืนยันชำระเงิน" : "กรุณาอัปโหลดสลิปชำระเงิน") });
-    if (missingHere.length > 0) {
-      setNextError(missingHere.map(m => m.label).join(", "));
-      return;
-    }
     setNextError(null);
     setSubStep(i);
   };
@@ -677,6 +660,13 @@ export default function PreSurveyStep({ lead, state, refresh, packages, expanded
                   });
                 } catch (e) { console.error("mirror payment meta failed:", e); }
               }
+              // Stamp the user who confirmed payment so the receipt PDF can render their signature.
+              if (me?.id) {
+                apiFetch(`/api/leads/${lead.id}`, {
+                  method: "PATCH", headers: { "Content-Type": "application/json" },
+                  body: JSON.stringify({ payment_confirmed_by: me.id }),
+                }).catch(console.error);
+              }
               await refresh();
             }}
             // onVerified fires on slip upload (staging) — not a real confirmation.
@@ -704,14 +694,14 @@ export default function PreSurveyStep({ lead, state, refresh, packages, expanded
             showScan
           />
           <div className="rounded-lg border border-active/15 bg-white/60 p-3 space-y-2.5">
-            <div className="text-xs font-semibold text-gray-400 uppercase tracking-wider">ข้อมูลจดทะเบียน</div>
+            <div className="text-xs font-semibold text-gray-400 uppercase tracking-wider">ข้อมูลลูกค้าเพื่อออกใบเสร็จ</div>
             <div>
               <label className="text-xs text-gray-500 block mb-1">ชื่อ-นามสกุล <span className="text-red-500">*</span></label>
               <input type="text" value={regName} onChange={e => setRegName(e.target.value)} className="w-full h-10 px-3 rounded-lg border border-gray-200 text-sm focus:outline-none focus:border-primary" />
             </div>
             <div>
               <label className="text-xs text-gray-500 block mb-1">เลขบัตรประชาชน <span className="text-red-500">*</span></label>
-              <input type="text" inputMode="numeric" maxLength={13} value={regIdCard} onChange={e => setRegIdCard(e.target.value.replace(/\D/g, "").slice(0, 13))} placeholder="13 หลัก" className="w-full h-10 px-3 rounded-lg border border-gray-200 text-sm font-mono tabular-nums focus:outline-none focus:border-primary" />
+              <input type="text" value={regIdCard} onChange={e => setRegIdCard(e.target.value)} className="w-full h-10 px-3 rounded-lg border border-gray-200 text-sm font-mono tabular-nums focus:outline-none focus:border-primary" />
             </div>
             <div>
               <label className="text-xs text-gray-500 block mb-1">ที่อยู่ตามบัตรประชาชน <span className="text-red-500">*</span></label>
@@ -735,13 +725,21 @@ export default function PreSurveyStep({ lead, state, refresh, packages, expanded
           <button
             onClick={async () => {
               const missing: string[] = [];
-              if (!regName) missing.push("ชื่อ-นามสกุล");
-              if (!regIdCard || regIdCard.length !== 13) missing.push("เลขบัตรประชาชน (13 หลัก)");
+              // Sub-step 0/1 form fields — pulled from validatePreSurvey to keep the
+              // required-field list in one place (ประเภทบ้าน, ค่าไฟ, ช่วงไฟสูงสุด, เฟส, แบต, แพ็คเกจ).
+              const v = validatePreSurvey({
+                ...lead,
+                ...formDraft,
+                full_name: regName || lead.full_name,
+                installation_address: regHouseNumber || lead.installation_address,
+                survey_date: surveyDate || lead.survey_date,
+                survey_time_slot: surveyTimeSlot || lead.survey_time_slot,
+              });
+              for (const m of v.missing) missing.push(m.label);
+              // ยืนยัน-only fields (id card / payment slip)
+              if (!regIdCard) missing.push("เลขบัตรประชาชน");
               if (!regAddress) missing.push("ที่อยู่ตามบัตร");
-              if (!regHouseNumber) missing.push("ที่อยู่ติดตั้ง");
               if (!paymentVerified) missing.push((slipVerifiedUrl ? "กรุณายืนยันชำระเงิน" : "กรุณาอัปโหลดสลิปชำระเงิน"));
-              if (!surveyDate) missing.push("วันนัดสำรวจ");
-              if (!surveyTimeSlot) missing.push("ช่วงเวลา");
               if (missing.length > 0) {
                 setNextError(missing.join(", "));
                 return;
@@ -778,10 +776,10 @@ export default function PreSurveyStep({ lead, state, refresh, packages, expanded
         </div>
       )}
 
-      {/* Navigation buttons */}
+      {/* Navigation buttons — "ถัดไป" verifies the current sub-step's required fields. */}
       {subStep < 4 && (() => {
         const stepGate: Record<number, string[]> = {
-          0: ["full_name", "phone", "installation_address", "pre_residence_type", "pre_monthly_bill", "pre_peak_usage", "pre_electrical_phase"],
+          0: ["full_name", "phone", "pre_residence_type", "pre_monthly_bill", "pre_peak_usage", "pre_electrical_phase"],
           1: ["pre_wants_battery", "interested_package_ids"],
           2: ["survey_date", "survey_time_slot"],
           3: [],
@@ -789,7 +787,6 @@ export default function PreSurveyStep({ lead, state, refresh, packages, expanded
         const handleNext = () => {
           const v = validatePreSurvey({ ...lead, ...formDraft, survey_date: surveyDate || lead.survey_date, survey_time_slot: surveyTimeSlot || lead.survey_time_slot });
           const missingHere = v.missing.filter(m => stepGate[subStep]?.includes(m.field));
-          // Step 3 (ชำระเงิน): ต้องอัปโหลดสลิปก่อน
           if (subStep === 3 && !paymentVerified) {
             missingHere.push({ field: "slip", label: (slipVerifiedUrl ? "กรุณายืนยันชำระเงิน" : "กรุณาอัปโหลดสลิปชำระเงิน") });
           }

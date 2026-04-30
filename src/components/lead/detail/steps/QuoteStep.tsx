@@ -1,7 +1,8 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { apiFetch } from "@/lib/api";
+import { useMe } from "@/lib/roles";
 import type { StepCommonProps, Package } from "./types";
 import ErrorPopup from "@/components/ui/ErrorPopup";
 import FallbackImage from "@/components/ui/FallbackImage";
@@ -21,6 +22,14 @@ export default function QuoteStep({ lead, state, refresh, expanded, onToggle }: 
   const [files, setFiles] = useState<File[]>([]);
   const [note, setNote] = useState(lead.quotation_note || "");
   const [amount, setAmount] = useState<number>(lead.quotation_amount || 0);
+  const [docNo, setDocNo] = useState(lead.quotation_doc_no || "");
+  // sentDate is captured automatically on submit (current timestamp) — no UI input.
+  const [byName, setByName] = useState(lead.quotation_by || "");
+  const { me } = useMe();
+  useEffect(() => {
+    if (!byName && me?.full_name && !lead.quotation_by) setByName(me.full_name);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [me]);
   const [saving, setSaving] = useState(false);
   const [uploading, setUploading] = useState(false);
   const [nextError, setNextError] = useState<string | null>(null);
@@ -64,6 +73,10 @@ export default function QuoteStep({ lead, state, refresh, expanded, onToggle }: 
           quotation_note: note || null,
           quotation_files: url || null,
           quotation_amount: amount || null,
+          quotation_doc_no: docNo || null,
+          quotation_sent_date: new Date().toISOString().slice(0, 10),
+          quotation_by: byName || null,
+          quote_sent_by: me?.id ?? null,
         }),
       });
       await refresh();
@@ -78,6 +91,29 @@ export default function QuoteStep({ lead, state, refresh, expanded, onToggle }: 
         <div className="border-l-3 border-blue-400 pl-3">
           <div className="text-xs font-bold text-blue-600 uppercase mb-1">มูลค่าตามใบเสนอราคา</div>
           <div className="text-lg font-bold font-mono tabular-nums text-gray-900">{new Intl.NumberFormat("th-TH").format(lead.quotation_amount)} บาท</div>
+        </div>
+      )}
+
+      {(lead.quotation_doc_no || lead.quotation_sent_date || lead.quotation_by) && (
+        <div className="grid grid-cols-2 gap-x-4 gap-y-2">
+          {lead.quotation_doc_no && (
+            <div>
+              <div className="text-[11px] font-bold text-gray-400 uppercase tracking-wider">เลขที่ใบเสนอราคา</div>
+              <div className="text-sm font-medium text-gray-800 font-mono">{lead.quotation_doc_no}</div>
+            </div>
+          )}
+          {lead.quotation_sent_date && (
+            <div>
+              <div className="text-[11px] font-bold text-gray-400 uppercase tracking-wider">วันที่ส่ง</div>
+              <div className="text-sm font-medium text-gray-800">{formatDate(lead.quotation_sent_date)}</div>
+            </div>
+          )}
+          {lead.quotation_by && (
+            <div className="col-span-2">
+              <div className="text-[11px] font-bold text-gray-400 uppercase tracking-wider">ผู้จัดทำ</div>
+              <div className="text-sm font-medium text-gray-800">{lead.quotation_by}</div>
+            </div>
+          )}
         </div>
       )}
 
@@ -166,9 +202,28 @@ export default function QuoteStep({ lead, state, refresh, expanded, onToggle }: 
 
       {/* Amount */}
       <div>
-        <label className="text-xs font-semibold tracking-wider uppercase text-gray-400 block mb-1">มูลค่าตามใบเสนอราคา (บาท) <span className="text-red-500">*</span></label>
-        <input type="number" value={amount || ""} onChange={e => setAmount(parseFloat(e.target.value) || 0)} placeholder="0"
-          className="w-full h-14 px-3 rounded-lg border border-gray-200 text-2xl font-bold font-mono focus:outline-none focus:border-primary" />
+        <label className="text-xs font-semibold tracking-wider uppercase text-gray-400 block mb-1">มูลค่าตามใบเสนอราคา <span className="text-red-500">*</span></label>
+        <div className="relative">
+          <input type="text" inputMode="decimal" value={amount || ""}
+            onChange={e => setAmount(parseFloat(e.target.value.replace(/[^\d.]/g, "")) || 0)}
+            placeholder="0"
+            className="w-full h-14 pl-3 pr-16 rounded-lg border border-gray-200 text-2xl font-bold font-mono focus:outline-none focus:border-primary" />
+          <span className="absolute right-3 top-1/2 -translate-y-1/2 text-base font-semibold text-gray-400 pointer-events-none">บาท</span>
+        </div>
+      </div>
+
+      {/* Doc no / sent date / by */}
+      <div className="grid grid-cols-2 gap-3">
+        <div>
+          <label className="text-xs font-semibold tracking-wider uppercase text-gray-400 block mb-1">เลขที่ใบเสนอราคา</label>
+          <input type="text" value={docNo} onChange={e => setDocNo(e.target.value)}
+            className="w-full h-11 px-3 rounded-lg border border-gray-200 text-sm font-mono focus:outline-none focus:border-primary" />
+        </div>
+        <div>
+          <label className="text-xs font-semibold tracking-wider uppercase text-gray-400 block mb-1">ผู้จัดทำ</label>
+          <input type="text" value={byName} onChange={e => setByName(e.target.value)}
+            className="w-full h-11 px-3 rounded-lg border border-gray-200 text-sm focus:outline-none focus:border-primary" />
+        </div>
       </div>
 
       {/* Send button */}

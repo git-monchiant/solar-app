@@ -54,9 +54,16 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
     const page = await browser.newPage();
     await page.emulateTimezone("Asia/Bangkok");
 
-    await page.goto(`http://localhost:${port}/warranty/${id}`, { waitUntil: "networkidle0", timeout: 15000 });
+    const userId = req.nextUrl.searchParams.get("user_id");
+    const viewQs = userId ? `?user_id=${userId}` : "";
+    await page.goto(`http://localhost:${port}/warranty/${id}${viewQs}`, { waitUntil: "networkidle0", timeout: 15000 });
     await page.waitForSelector("#warranty", { timeout: 10000 });
     await page.evaluate(() => (document as unknown as { fonts: { ready: Promise<unknown> } }).fonts.ready);
+    // Wait for images (incl. signature) to fully decode
+    await page.evaluate(async () => {
+      const imgs = Array.from(document.images);
+      await Promise.all(imgs.map(img => img.complete ? Promise.resolve() : new Promise<void>(res => { img.onload = img.onerror = () => res(); })));
+    });
 
     const coverBytes = await page.pdf({
       format: "A4",

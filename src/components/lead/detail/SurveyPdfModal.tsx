@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import { createPortal } from "react-dom";
 import PdfPreview from "./PdfPreview";
+import { useMe } from "@/lib/roles";
 
 interface Props {
   leadId: number;
@@ -12,12 +13,16 @@ interface Props {
 export default function SurveyPdfModal({ leadId, onClose }: Props) {
   const [saving, setSaving] = useState(false);
   const [mounted, setMounted] = useState(false);
+  const { me } = useMe();
   const fileLabel = `survey_${leadId}`;
-  const pdfUrl = `/api/survey/${leadId}`;
+  // Server resolves signer from lead.survey_completed_by → assigned_user_id → ?user_id.
+  // Pass me.id as last-resort viewer fallback; no need to block render on it.
+  const pdfUrl = me?.id ? `/api/survey/${leadId}?user_id=${me.id}` : `/api/survey/${leadId}`;
 
   useEffect(() => { setMounted(true); }, []);
 
   const handleSave = async () => {
+    if (!pdfUrl) return;
     setSaving(true);
     try {
       const res = await fetch(pdfUrl);
@@ -51,7 +56,7 @@ export default function SurveyPdfModal({ leadId, onClose }: Props) {
         <button type="button" onClick={onClose} className="w-10 h-10 rounded-full bg-black/50 text-white flex items-center justify-center text-xl">✕</button>
       </div>
       <div className="flex-1 overflow-auto px-4 pb-4 min-h-0" onClick={e => e.stopPropagation()}>
-        <PdfPreview pdfUrl={pdfUrl} />
+        {pdfUrl ? <PdfPreview pdfUrl={pdfUrl} /> : <div className="flex items-center justify-center h-full text-white/60 text-sm">กำลังโหลด...</div>}
       </div>
       <div className="px-4 py-3 shrink-0 flex justify-center safe-bottom" onClick={e => e.stopPropagation()}>
         <button

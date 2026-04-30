@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import puppeteer from "puppeteer";
+import { getUserIdFromReq } from "@/lib/auth";
 
 export async function GET(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
@@ -18,9 +19,18 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
     const page = await browser.newPage();
     await page.emulateTimezone("Asia/Bangkok");
 
-    await page.goto(`http://localhost:${port}/survey/${id}`, { waitUntil: "networkidle0", timeout: 15000 });
+    // Prefer ?user_id from caller, fallback to whoever's authenticated.
+    const userId = req.nextUrl.searchParams.get("user_id") || (getUserIdFromReq(req)?.toString() ?? null);
+    const viewQs = userId ? `?user_id=${userId}` : "";
+    await page.goto(`http://localhost:${port}/survey/${id}${viewQs}`, { waitUntil: "networkidle0", timeout: 15000 });
     await page.waitForSelector("#survey", { timeout: 10000 });
     await page.evaluate(() => (document as unknown as { fonts: { ready: Promise<unknown> } }).fonts.ready);
+    // Wait for all images (incl. signature) to finish loading; networkidle0 alone
+    // can fire before <img> sources are decoded.
+    await page.evaluate(async () => {
+      const imgs = Array.from(document.images);
+      await Promise.all(imgs.map(img => img.complete ? Promise.resolve() : new Promise<void>(res => { img.onload = img.onerror = () => res(); })));
+    });
 
     const bytes = await page.pdf({
       format: "A4",

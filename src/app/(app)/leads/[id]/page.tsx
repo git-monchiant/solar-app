@@ -10,6 +10,7 @@ import AssignOwnerButton from "@/components/lead/AssignOwnerButton";
 import LostModal from "@/components/lead/detail/LostModal";
 import ProfileModal from "@/components/lead/detail/ProfileModal";
 import LinePickerModal from "@/components/modal/LinePickerModal";
+import { getSourceStyle } from "@/lib/source-tag";
 import Header from "@/components/layout/Header";
 import { Activity } from "@/components/lead/detail/ActivityItem";
 import PreSurveyStep from "@/components/lead/detail/steps/PreSurveyStep";
@@ -25,6 +26,102 @@ import { useIsMobile } from "@/lib/hooks/useIsMobile";
 
 const formatDate = (d: string) =>
   new Date(String(d).slice(0, 10) + "T12:00:00").toLocaleDateString("th-TH", { day: "numeric", month: "short", year: "numeric" });
+
+// Label maps for the Info tab (read-only customer-interest summary).
+const INFO_LABELS = {
+  peakUsage: { day: "กลางวัน", night: "กลางคืน", both: "ทั้งสองช่วง" } as Record<string, string>,
+  electricalPhase: { "1_phase": "1 เฟส", "3_phase": "3 เฟส" } as Record<string, string>,
+  battery: { yes: "ต้องการ", no: "ไม่ต้องการ", maybe: "ยังไม่แน่ใจ", upgrade: "Upgrade เพิ่มแบต" } as Record<string, string>,
+  roofShape: { gable: "หน้าจั่ว", hip: "ปั้นหยา", shed: "เพิงหมาแหงน", flat: "ทรงแบน" } as Record<string, string>,
+  residence: { detached: "บ้านเดี่ยว", townhome: "ทาวน์โฮม", townhouse: "ทาวน์เฮาส์", home_office: "โฮมออฟฟิศ", shophouse: "อาคารพาณิชย์" } as Record<string, string>,
+  payment: { cash: "เงินสด", finance: "ไฟแนนซ์", home_equity: "สินเชื่อบ้าน" } as Record<string, string>,
+  source: { "walk-in": "SENX PM", event: "Event" } as Record<string, string>,
+  primaryReason: {
+    save_bill: "ประหยัดค่าไฟ", sell_back: "ขายไฟคืน", tax_deduction: "ลดหย่อนภาษี",
+    daytime_usage: "เปิดแอร์ทั้งวัน", pet_ac: "แอร์ให้สัตว์เลี้ยง", elderly_care: "ดูแลผู้สูงอายุ",
+    has_ev: "ชาร์จ EV", environment: "รักษ์โลก", home_business: "เปิดร้านที่บ้าน", other: "อื่นๆ",
+  } as Record<string, string>,
+  appliances: { water_heater: "เครื่องทำน้ำอุ่น", ev: "ที่ชาร์จรถ EV" } as Record<string, string>,
+};
+
+const formatAcUnits = (s: string | null): string | null => {
+  if (!s) return null;
+  const parts = s.split(",").map(p => {
+    const [btu, count] = p.split(":").map(Number);
+    return !isNaN(btu) && count > 0 ? `${btu.toLocaleString()} BTU × ${count}` : null;
+  }).filter(Boolean);
+  return parts.length ? parts.join(" · ") : null;
+};
+
+const formatList = (s: string | null, labels: Record<string, string>): string | null => {
+  if (!s) return null;
+  return s.split(",").filter(Boolean).map(v => labels[v] || v).join(" · ");
+};
+
+const otherOrLabel = (v: string | null, labels: Record<string, string>): string | null => {
+  if (!v) return null;
+  if (v.startsWith("other:")) return v.slice(6) || null;
+  return labels[v] || v;
+};
+
+function InfoSection({
+  id,
+  title,
+  filled,
+  total,
+  open,
+  onToggle,
+  children,
+}: {
+  id: string;
+  title: string;
+  filled: number;
+  total: number;
+  open: boolean;
+  onToggle: (id: string) => void;
+  children: React.ReactNode;
+}) {
+  return (
+    <div>
+      <button
+        type="button"
+        onClick={() => onToggle(id)}
+        className="w-full flex items-center gap-2 px-1 py-1.5 hover:bg-gray-50 rounded transition-colors text-left"
+        style={{ minHeight: 0 }}
+      >
+        <svg
+          className={`w-3.5 h-3.5 text-gray-400 shrink-0 transition-transform ${open ? "rotate-90" : ""}`}
+          fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}
+        >
+          <path strokeLinecap="round" strokeLinejoin="round" d="M9 5l7 7-7 7" />
+        </svg>
+        <span className="text-sm font-semibold text-gray-700 flex-1 truncate">{title}</span>
+        <span className={`text-[11px] font-mono tabular-nums shrink-0 ${filled === 0 ? "text-gray-300" : filled === total ? "text-emerald-600" : "text-gray-400"}`}>
+          {filled}/{total}
+        </span>
+      </button>
+      {open && (
+        <div className="ml-1.5 pl-3 border-l border-gray-200 mt-0.5 mb-1">
+          {children}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function InfoLine({ label, value }: { label: string; value: React.ReactNode }) {
+  const empty = value == null || value === "" || value === false;
+  return (
+    <div className="flex items-baseline gap-3 py-1 text-sm">
+      <span className="text-gray-500 shrink-0 min-w-[7.5rem]">{label}</span>
+      <span className={`flex-1 ${empty ? "text-gray-300 italic" : "font-medium text-gray-800 whitespace-pre-wrap"}`}>
+        {empty ? "—" : value}
+      </span>
+    </div>
+  );
+}
+
+const isFilled = (v: unknown) => v != null && v !== "" && v !== false;
 
 const STEP_ORDER = ["pre_survey", "survey", "quote", "order", "install", "warranty", "gridtie"];
 
@@ -187,7 +284,11 @@ export default function LeadDetailPage({ params }: { params: Promise<{ id: strin
   const [loadingAct, setLoadingAct] = useState(true);
   const [modalType, setModalType] = useState<ActivityType | null>(null);
   const [showLostModal, setShowLostModal] = useState(false);
-  const [tab, setTab] = useState<"info" | "log">("info");
+  const [tab, setTab] = useState<"info" | "workflow" | "log">("workflow");
+  const [openSections, setOpenSections] = useState<Record<string, boolean>>({
+    contact: true, address: true, interest: true, usage: true, system: true, finance: true, source: true, note: true,
+  });
+  const toggleSection = (id: string) => setOpenSections(prev => ({ ...prev, [id]: !prev[id] }));
   const [showLineModal, setShowLineModal] = useState(false);
   const [showUnmapLine, setShowUnmapLine] = useState(false);
   const [unmapping, setUnmapping] = useState(false);
@@ -312,7 +413,9 @@ export default function LeadDetailPage({ params }: { params: Promise<{ id: strin
             </svg>
           </button>
           <div className="flex-1 min-w-0 flex items-center gap-1">
-            <h1 className="text-2xl font-bold tracking-tight leading-tight text-gray-900 truncate">{stripThaiTitle(lead.full_name)}</h1>
+            <h1 className="text-2xl font-bold tracking-tight leading-tight text-gray-900 truncate">
+              {lead.house_number ? `${lead.house_number} - ${stripThaiTitle(lead.full_name)}` : stripThaiTitle(lead.full_name)}
+            </h1>
             <button type="button" onClick={() => setShowProfileModal(true)} className="shrink-0 w-8 h-8 rounded-full hover:bg-gray-100 flex items-center justify-center text-gray-400 hover:text-primary transition-colors" style={{ minHeight: 0 }}>
               <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
                 <path strokeLinecap="round" strokeLinejoin="round" d="M17.982 18.725A7.488 7.488 0 0012 15.75a7.488 7.488 0 00-5.982 2.975m11.963 0a9 9 0 10-11.963 0m11.963 0A8.966 8.966 0 0112 21a8.966 8.966 0 01-5.982-2.275M15 9.75a3 3 0 11-6 0 3 3 0 016 0z" />
@@ -385,18 +488,14 @@ export default function LeadDetailPage({ params }: { params: Promise<{ id: strin
                 <span className="text-gray-300">·</span>
               </>
             )}
-            <span className="inline-flex items-center gap-1">
-              {lead.source === "event" ? (
-                <svg className="w-3.5 h-3.5 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                  <path strokeLinecap="round" strokeLinejoin="round" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
-                </svg>
-              ) : (
+            {lead.source && (
+              <span className="inline-flex items-center gap-1">
                 <svg className="w-3.5 h-3.5 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
                   <path strokeLinecap="round" strokeLinejoin="round" d="M15.75 6a3.75 3.75 0 11-7.5 0 3.75 3.75 0 017.5 0zM4.501 20.118a7.5 7.5 0 0114.998 0" />
                 </svg>
-              )}
-              {lead.source === "event" ? "Event" : "Walk-in"}
-            </span>
+                {getSourceStyle(lead.source).label}
+              </span>
+            )}
             {isUpgrade && (
               <>
                 <span className="text-gray-300">·</span>
@@ -414,15 +513,30 @@ export default function LeadDetailPage({ params }: { params: Promise<{ id: strin
         {/* Tabs */}
         <div className="flex px-5 gap-1">
           <button
-            onClick={() => setTab("info")}
-            className={`px-4 py-3 text-xs font-semibold uppercase tracking-wider border-b-2 -mb-px transition-colors ${tab === "info" ? "text-active border-active" : "text-gray-500 border-transparent hover:text-gray-700"}`}
+            onClick={() => setTab("workflow")}
+            className={`px-4 py-3 text-xs font-semibold uppercase tracking-wider border-b-2 -mb-px transition-colors inline-flex items-center gap-1.5 ${tab === "workflow" ? "text-active border-active" : "text-gray-500 border-transparent hover:text-gray-700"}`}
           >
+            <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+              <path strokeLinecap="round" strokeLinejoin="round" d="M3.75 6h16.5M3.75 12h16.5m-16.5 6h16.5" />
+            </svg>
+            Workflow
+          </button>
+          <button
+            onClick={() => setTab("info")}
+            className={`px-4 py-3 text-xs font-semibold uppercase tracking-wider border-b-2 -mb-px transition-colors inline-flex items-center gap-1.5 ${tab === "info" ? "text-active border-active" : "text-gray-500 border-transparent hover:text-gray-700"}`}
+          >
+            <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+              <path strokeLinecap="round" strokeLinejoin="round" d="M11.25 11.25l.041-.02a.75.75 0 011.063.852l-.708 2.836a.75.75 0 001.063.853l.041-.021M21 12a9 9 0 11-18 0 9 9 0 0118 0zm-9-3.75h.008v.008H12V8.25z" />
+            </svg>
             Info
           </button>
           <button
             onClick={() => setTab("log")}
-            className={`px-4 py-3 text-xs font-semibold uppercase tracking-wider border-b-2 -mb-px transition-colors ${tab === "log" ? "text-active border-active" : "text-gray-500 border-transparent hover:text-gray-700"}`}
+            className={`px-4 py-3 text-xs font-semibold uppercase tracking-wider border-b-2 -mb-px transition-colors inline-flex items-center gap-1.5 ${tab === "log" ? "text-active border-active" : "text-gray-500 border-transparent hover:text-gray-700"}`}
           >
+            <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+              <path strokeLinecap="round" strokeLinejoin="round" d="M12 6v6h4.5m4.5 0a9 9 0 11-18 0 9 9 0 0118 0z" />
+            </svg>
             Activity Log <span className="text-xs text-gray-400 ml-1 normal-case">{activities.length}</span>
           </button>
         </div>
@@ -431,6 +545,129 @@ export default function LeadDetailPage({ params }: { params: Promise<{ id: strin
       {/* Content */}
       <div ref={scrollRef} className="flex-1 overflow-y-auto pb-20 relative" style={{ overscrollBehaviorY: "contain" }}>
         {tab === "info" ? (
+          <div className="p-4">
+            {(() => {
+              const pkgIds = lead.interested_package_ids
+                ? lead.interested_package_ids.split(",").map(s => parseInt(s)).filter(n => !isNaN(n))
+                : lead.interested_package_id ? [lead.interested_package_id] : [];
+              const pkgNames = pkgIds.map(id => packages.find(p => p.id === id)?.name).filter(Boolean) as string[];
+
+              const lineStatus = lead.line_id
+                ? `${lead.line_display_name || "(ไม่มีชื่อ)"} · เชื่อมแล้ว`
+                : null;
+              const sections = [
+                {
+                  id: "contact",
+                  title: "ติดต่อ",
+                  rows: [
+                    { label: "LINE", value: lineStatus },
+                  ],
+                },
+                {
+                  id: "address",
+                  title: "ที่อยู่ติดตั้ง",
+                  rows: [
+                    { label: "บ้านเลขที่", value: lead.house_number },
+                    { label: "โครงการ", value: lead.project_name },
+                    { label: "ที่อยู่", value: lead.installation_address },
+                  ],
+                },
+                {
+                  id: "interest",
+                  title: "ความสนใจของลูกค้า",
+                  rows: [
+                    { label: "ความสนใจ", value: lead.customer_interest },
+                    { label: "ความต้องการ", value: lead.requirement },
+                    { label: "เหตุผลที่สนใจ", value: otherOrLabel(lead.pre_primary_reason, INFO_LABELS.primaryReason) },
+                    { label: "แพ็คเกจที่สนใจ", value: pkgNames.length ? pkgNames.join(" · ") : null },
+                  ],
+                },
+                {
+                  id: "usage",
+                  title: "ลักษณะการใช้ไฟ",
+                  rows: [
+                    { label: "ค่าไฟ / เดือน", value: lead.pre_monthly_bill ? `${lead.pre_monthly_bill.toLocaleString()} บาท` : null },
+                    { label: "ช่วงเวลาใช้ไฟ", value: lead.pre_peak_usage ? INFO_LABELS.peakUsage[lead.pre_peak_usage] : null },
+                    { label: "ระบบไฟฟ้า", value: lead.pre_electrical_phase ? INFO_LABELS.electricalPhase[lead.pre_electrical_phase] : null },
+                    { label: "แอร์", value: formatAcUnits(lead.pre_ac_units) },
+                    { label: "เครื่องใช้พิเศษ", value: formatList(lead.pre_appliances, INFO_LABELS.appliances) },
+                  ],
+                },
+                {
+                  id: "system",
+                  title: "ระบบที่ต้องการ",
+                  rows: [
+                    { label: "ต้องการแบตเตอรี่", value: lead.pre_wants_battery ? INFO_LABELS.battery[lead.pre_wants_battery] : null },
+                    { label: "ทรงหลังคา", value: lead.pre_roof_shape ? INFO_LABELS.roofShape[lead.pre_roof_shape] : null },
+                    { label: "ประเภทที่อยู่", value: otherOrLabel(lead.pre_residence_type, INFO_LABELS.residence) },
+                  ],
+                },
+                {
+                  id: "finance",
+                  title: "การเงิน",
+                  rows: [
+                    { label: "วิธีชำระ", value: lead.payment_type ? INFO_LABELS.payment[lead.payment_type] || lead.payment_type : null },
+                    { label: "สถานะบ้าน", value: lead.home_loan_status },
+                  ],
+                },
+                {
+                  id: "source",
+                  title: "ที่มา / Lead Seeker",
+                  rows: [
+                    { label: "แหล่งที่มา", value: lead.source ? INFO_LABELS.source[lead.source] || lead.source : null },
+                    { label: "ประเภทลูกค้า", value: lead.customer_type },
+                    { label: "Lead Seeker Type", value: lead.seeker_type },
+                    { label: "ชื่อ Lead Seeker", value: lead.seeker_name },
+                    { label: "หมายเหตุโครงการ", value: lead.project_note },
+                  ],
+                },
+                {
+                  id: "note",
+                  title: "หมายเหตุ",
+                  rows: [
+                    { label: "โน้ต", value: lead.note },
+                  ],
+                },
+              ];
+
+              const created = activities.find(a => a.activity_type === "lead_created");
+              const createdAt = created?.created_at ?? lead.created_at;
+              const createdBy = created?.created_by_name ?? null;
+              const createdAtFmt = createdAt
+                ? new Date(String(createdAt)).toLocaleString("th-TH", { day: "numeric", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit" })
+                : null;
+              return (
+                <div className="space-y-1">
+                  {sections.map(s => {
+                    // Hide empty rows so the tab reads as a real summary, not a blank checklist.
+                    const rows = s.rows.filter(r => isFilled(r.value));
+                    if (rows.length === 0) return null;
+                    return (
+                      <InfoSection
+                        key={s.id}
+                        id={s.id}
+                        title={s.title}
+                        filled={rows.length}
+                        total={rows.length}
+                        open={!!openSections[s.id]}
+                        onToggle={toggleSection}
+                      >
+                        {rows.map((r, i) => (
+                          <InfoLine key={i} label={r.label} value={r.value} />
+                        ))}
+                      </InfoSection>
+                    );
+                  })}
+                  {createdAtFmt && (
+                    <div className="pt-3 mt-2 border-t border-gray-100 text-xs text-gray-400">
+                      บันทึก{createdBy ? `โดย ${createdBy}` : ""} · {createdAtFmt}
+                    </div>
+                  )}
+                </div>
+              );
+            })()}
+          </div>
+        ) : tab === "workflow" ? (
           <div className="p-4 space-y-3">
             {/* Latest Contact — ข้อมูลการติดต่อล่าสุด */}
             {(() => {
@@ -605,7 +842,7 @@ export default function LeadDetailPage({ params }: { params: Promise<{ id: strin
       </div>
 
       {/* Footer quick actions */}
-      {tab === "info" && !isLost && (
+      {(tab === "info" || tab === "workflow") && !isLost && (
         <div className="fixed left-0 right-0 md:left-64 above-nav bg-white border-t border-gray-100 z-40 px-3 py-2 flex gap-2">
           <button
             onClick={() => setModalType("follow_up")}

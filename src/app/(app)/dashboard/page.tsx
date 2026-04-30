@@ -40,7 +40,7 @@ function Trend({ current, previous, suffix = "" }: { current: number; previous: 
 
 export default function DashboardPage() {
   const [data, setData] = useState<DashboardData | null>(null);
-  const [lineUsers, setLineUsers] = useState<{ created_at: string }[]>([]);
+  const [lineUsers, setLineUsers] = useState<{ created_at: string; phone: string | null; house_number: string | null }[]>([]);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
@@ -386,22 +386,29 @@ function ActivityChart({ data }: { data: { day: string; lead_id: number; full_na
   );
 }
 
-function LineGrowthChart({ users }: { users: { created_at: string }[] }) {
+function LineGrowthChart({ users }: { users: { created_at: string; phone: string | null; house_number: string | null }[] }) {
   const today = new Date();
   const year = today.getFullYear();
   const month = today.getMonth();
   const daysInMonth = new Date(year, month + 1, 0).getDate();
 
-  const counts: number[] = new Array(daysInMonth).fill(0);
+  // Bucket users into the day they joined. Each entry keeps its phone +
+  // house_number so the block can be colored individually (blue = shared
+  // phone or house number, green = neither). Sort ascending by created_at
+  // within a day so the EARLIEST add sits at the bottom of the stack (the
+  // chart uses flex-col-reverse, where the first child renders at the bottom).
+  const byDay: { phone: string | null; house_number: string | null; ts: number }[][] = Array.from({ length: daysInMonth }, () => []);
   for (const u of users) {
     // Keep the Z — parse as UTC so getDate() returns the user's local day.
     const d = new Date(String(u.created_at));
     if (isNaN(d.getTime())) continue;
     if (d.getFullYear() !== year || d.getMonth() !== month) continue;
     const day = d.getDate();
-    if (day >= 1 && day <= daysInMonth) counts[day - 1]++;
+    if (day >= 1 && day <= daysInMonth) byDay[day - 1].push({ phone: u.phone, house_number: u.house_number, ts: d.getTime() });
   }
+  for (const blocks of byDay) blocks.sort((a, b) => a.ts - b.ts);
 
+  const counts = byDay.map((b) => b.length);
   const maxCount = Math.max(...counts, 1);
   const chartH = maxCount * 20 + 20;
 
@@ -411,6 +418,10 @@ function LineGrowthChart({ users }: { users: { created_at: string }[] }) {
   if (!yTicks.includes(maxCount)) yTicks.push(maxCount);
 
   const totalMonth = counts.reduce((a, b) => a + b, 0);
+  const totalWithContact = users.filter((u) => {
+    const d = new Date(String(u.created_at));
+    return !isNaN(d.getTime()) && d.getFullYear() === year && d.getMonth() === month && (!!u.phone || !!u.house_number);
+  }).length;
 
   return (
     <div>
@@ -421,11 +432,20 @@ function LineGrowthChart({ users }: { users: { created_at: string }[] }) {
           ))}
         </div>
         <div className="flex-1 flex items-end gap-[3px] border-l border-b border-gray-200" style={{ height: chartH }}>
-          {counts.map((c, i) => (
+          {byDay.map((blocks, i) => (
             <div key={i} className="flex-1 flex flex-col-reverse gap-[2px] items-stretch" style={{ height: "100%" }}>
-              {Array.from({ length: c }).map((_, j) => (
-                <div key={j} className="rounded-sm bg-emerald-500" style={{ height: 18 }} title={`${i + 1} · ${c} คน`} />
-              ))}
+              {blocks.map((b, j) => {
+                const hasContact = !!b.phone || !!b.house_number;
+                const tip = [b.phone && `เบอร์ ${b.phone}`, b.house_number && `บ้าน ${b.house_number}`].filter(Boolean).join(" · ") || "ยังไม่มีข้อมูล";
+                return (
+                  <div
+                    key={j}
+                    className={`rounded-sm ${hasContact ? "bg-blue-600" : "bg-emerald-500"}`}
+                    style={{ height: 18 }}
+                    title={`${i + 1} · ${tip}`}
+                  />
+                );
+              })}
             </div>
           ))}
         </div>
@@ -435,7 +455,19 @@ function LineGrowthChart({ users }: { users: { created_at: string }[] }) {
           <div key={i} className="flex-1 text-center text-[10px] text-gray-400 truncate">{i + 1}</div>
         ))}
       </div>
-      <div className="mt-2 text-xs text-gray-400">รวมเดือนนี้ {totalMonth} คน · 1 block = 1 user</div>
+      <div className="flex items-center justify-between mt-2">
+        <span className="text-xs text-gray-400">รวมเดือนนี้ {totalMonth} คน · ให้ข้อมูล {totalWithContact} คน · 1 block = 1 user</span>
+        <div className="flex items-center gap-3 text-[10px] text-gray-400">
+          <div className="flex items-center gap-1">
+            <div className="w-[10px] h-[10px] rounded-sm bg-blue-600" />
+            <span>มีเบอร์/บ้านเลขที่</span>
+          </div>
+          <div className="flex items-center gap-1">
+            <div className="w-[10px] h-[10px] rounded-sm bg-emerald-500" />
+            <span>ยังไม่ให้ข้อมูล</span>
+          </div>
+        </div>
+      </div>
     </div>
   );
 }

@@ -16,12 +16,15 @@ interface LineUser {
 
 type Target =
   | { type: "lead"; id: number; label: string }
-  | { type: "prospect"; id: number; label: string };
+  | { type: "prospect"; id: number; label: string }
+  // "draft" = caller has no record yet (e.g. new-lead form). Picker just returns
+  // the chosen LINE user; caller links it after saving.
+  | { type: "draft"; label: string };
 
 interface Props {
   target: Target;
   onClose: () => void;
-  onLinked: (linked: { display_name: string; picture_url: string | null }) => void;
+  onLinked: (linked: { id: number; display_name: string; picture_url: string | null }) => void;
 }
 
 export default function LinePickerModal({ target, onClose, onLinked }: Props) {
@@ -41,15 +44,18 @@ export default function LinePickerModal({ target, onClose, onLinked }: Props) {
   const handleLink = async (user: LineUser) => {
     setLinking(true);
     try {
-      const body = target.type === "lead"
-        ? { lead_id: target.id }
-        : { prospect_id: target.id };
-      await apiFetch(`/api/line-users/${user.id}`, {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(body),
-      });
-      onLinked({ display_name: user.display_name || "", picture_url: user.picture_url });
+      // draft: no record yet — defer linking to caller (new-lead form saves first).
+      if (target.type !== "draft") {
+        const body = target.type === "lead"
+          ? { lead_id: target.id }
+          : { prospect_id: target.id };
+        await apiFetch(`/api/line-users/${user.id}`, {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(body),
+        });
+      }
+      onLinked({ id: user.id, display_name: user.display_name || "", picture_url: user.picture_url });
       onClose();
     } finally {
       setLinking(false);
@@ -63,7 +69,7 @@ export default function LinePickerModal({ target, onClose, onLinked }: Props) {
   return (
     <div className="fixed inset-0 z-[80] flex items-end md:items-center justify-center">
       <div className="absolute inset-0 bg-black/30" onClick={onClose} />
-      <div className="relative bg-white rounded-t-2xl md:rounded-2xl w-full md:max-w-3xl p-5 pb-8 md:pb-5 animate-slide-up max-h-[70vh] overflow-y-auto">
+      <div className="relative bg-white rounded-t-2xl md:rounded-2xl w-full md:max-w-lg p-5 pb-8 md:pb-5 animate-slide-up max-h-[70vh] overflow-y-auto">
         <div className="flex items-center justify-between mb-4">
           <h3 className="font-bold text-lg">เชื่อม LINE</h3>
           <button onClick={onClose} style={{ minHeight: 0 }} className="text-gray-400 hover:text-gray-600 p-1">
@@ -113,7 +119,7 @@ export default function LinePickerModal({ target, onClose, onLinked }: Props) {
               placeholder="ค้นหาชื่อ LINE..."
               className="w-full h-10 px-3 rounded-lg border border-gray-200 text-sm focus:outline-none focus:border-primary mb-3"
             />
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-2">
+            <div className="grid grid-cols-1 gap-2">
               {filtered.map(u => (
                 <button
                   key={u.id}

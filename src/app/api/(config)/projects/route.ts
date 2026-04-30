@@ -16,7 +16,8 @@ export async function GET(req: NextRequest) {
            (SELECT COUNT(*) FROM prospects pr WHERE pr.project_id = p.id
               AND pr.interest IS NULL AND pr.visited_at IS NULL
               AND (pr.note IS NULL OR pr.note = N'')) AS pending_count,
-           (SELECT COUNT(*) FROM prospects pr WHERE pr.project_id = p.id AND pr.visited_at IS NOT NULL) AS visited_count
+           (SELECT COUNT(*) FROM prospects pr WHERE pr.project_id = p.id AND pr.visited_at IS NOT NULL) AS visited_count,
+           STUFF((SELECT DISTINCT ',' + pr.channel FROM prospects pr WHERE pr.project_id = p.id AND pr.channel IS NOT NULL FOR XML PATH('')), 1, 1, '') AS channels
          FROM projects p
          WHERE p.is_active = 1
            AND EXISTS (SELECT 1 FROM prospects pr WHERE pr.project_id = p.id)

@@ -125,7 +125,7 @@ export default function PreSurveyForm({ lead, refresh, packages = [], hideReside
   const [monthlyBill, setMonthlyBill] = useState<number | undefined>(lead.pre_monthly_bill ?? undefined);
   const [peakUsage, setPeakUsage] = useState<string>(lead.pre_peak_usage ?? "");
   const [electricalPhase, setElectricalPhase] = useState<string>(lead.pre_electrical_phase ?? "");
-  const [wantsBattery, setWantsBattery] = useState<string>(lead.pre_wants_battery ?? "");
+  const [wantsBattery, setWantsBattery] = useState<string>(lead.pre_wants_battery ?? "maybe");
   const [acUnits, setAcUnits] = useState<Record<number, number>>(parseAcUnits(lead.pre_ac_units));
   const [pre_appliances, setAppliances] = useState<string[]>(
     lead.pre_appliances ? lead.pre_appliances.split(",").filter(Boolean) : []
@@ -323,38 +323,12 @@ export default function PreSurveyForm({ lead, refresh, packages = [], hideReside
       </div>
 
 
-      {/* เครื่องใช้ไฟฟ้า */}
+      {/* EV charger toggle — only appliance asked at pre-survey now (AC removed) */}
       <div className={`${sectionCls} ${onlyPackages ? "hidden" : ""}`}>
-        <div className="space-y-3">
-          <div>
-            <div className="flex items-center justify-between mb-0.5">
-              <label className={fieldLabel}>เครื่องปรับอากาศ</label>
-              {totalAcUnits > 0 && <span className="text-xs font-semibold text-emerald-700 bg-emerald-50 border border-emerald-600/15 px-1.5 py-0.5 rounded">รวม {totalAcUnits} เครื่อง</span>}
-            </div>
-            <div className="space-y-1.5">
-              {AC_BTU_SIZES.map(btu => {
-                const count = acUnits[btu] || 0;
-                return (
-                  <div key={btu} className="flex items-center justify-between gap-3">
-                    <span className="text-sm font-medium text-gray-700 font-mono tabular-nums">{btu.toLocaleString()} <span className="text-xs text-gray-400 font-sans">BTU</span></span>
-                    <div className="flex items-center gap-2">
-                      <button type="button" onClick={() => updateAcCount(btu, -1)} disabled={count === 0} className="w-9 h-9 rounded-md border border-gray-200 text-gray-600 text-lg font-semibold disabled:opacity-30 disabled:cursor-not-allowed hover:border-gray-400">−</button>
-                      <span className="w-8 text-center text-sm font-bold tabular-nums text-gray-900">{count}</span>
-                      <button type="button" onClick={() => updateAcCount(btu, 1)} className="w-9 h-9 rounded-md border border-gray-200 text-gray-600 text-lg font-semibold hover:border-gray-400">+</button>
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
-          </div>
-          <div>
-            <label className={fieldLabel}>เครื่องใช้ไฟฟ้าอื่นๆ</label>
-            <div className="grid grid-cols-3 gap-2">
-              {APPLIANCES.map(a => (
-                <button key={a.value} type="button" onClick={() => toggleAppliance(a.value)} className={chipBtn(pre_appliances.includes(a.value))}>{a.label}</button>
-              ))}
-            </div>
-          </div>
+        <label className={fieldLabel}>ที่ชาร์จรถ EV</label>
+        <div className="grid grid-cols-2 gap-2">
+          <button type="button" onClick={() => { if (!pre_appliances.includes("ev")) toggleAppliance("ev"); }} className={chipBtn(pre_appliances.includes("ev"))}>มี</button>
+          <button type="button" onClick={() => { if (pre_appliances.includes("ev")) toggleAppliance("ev"); }} className={chipBtn(!pre_appliances.includes("ev"))}>ไม่มี</button>
         </div>
       </div>
 

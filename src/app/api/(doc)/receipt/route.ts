@@ -1,9 +1,13 @@
 import { NextRequest, NextResponse } from "next/server";
 import puppeteer from "puppeteer";
+import { getUserIdFromReq } from "@/lib/auth";
 
 export async function GET(req: NextRequest) {
   const leadId = req.nextUrl.searchParams.get("lead_id");
   const stage = req.nextUrl.searchParams.get("stage") || "deposit";
+  // Prefer ?user_id from caller; fallback to whoever's authenticated. The view
+  // page is public, so this is the only place we can read the auth cookie.
+  const userId = req.nextUrl.searchParams.get("user_id") || (getUserIdFromReq(req)?.toString() ?? null);
 
   if (!leadId) {
     return NextResponse.json({ error: "Missing lead_id" }, { status: 400 });
@@ -25,6 +29,7 @@ export async function GET(req: NextRequest) {
     const qs = new URLSearchParams();
     qs.set("lead_id", leadId);
     qs.set("stage", stage);
+    if (userId) qs.set("user_id", userId);
     const url = `http://localhost:${port}/receipt/view?${qs.toString()}`;
     await page.goto(url, { waitUntil: "networkidle0", timeout: 15000 });
     await page.waitForSelector("#receipt table", { timeout: 10000 });

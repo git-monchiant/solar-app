@@ -25,6 +25,8 @@ interface LineUser {
   line_user_id: string;
   display_name: string | null;
   picture_url: string | null;
+  phone: string | null;
+  house_number: string | null;
   linked_leads: LinkedLead[];
   linked_prospects: LinkedProspect[];
   linked_leads_count: number;
@@ -67,7 +69,8 @@ export default function LineUsersPage() {
               <thead>
                 <tr className="border-b border-gray-100 bg-gray-50">
                   <th className="text-left px-4 py-3 text-xs font-semibold text-gray-400 uppercase tracking-wider">User</th>
-                  <th className="text-left px-4 py-3 text-xs font-semibold text-gray-400 uppercase tracking-wider">LINE ID</th>
+                  <th className="text-left px-4 py-3 text-xs font-semibold text-gray-400 uppercase tracking-wider">เบอร์</th>
+                  <th className="text-left px-4 py-3 text-xs font-semibold text-gray-400 uppercase tracking-wider">บ้านเลขที่</th>
                   <th className="text-left px-4 py-3 text-xs font-semibold text-gray-400 uppercase tracking-wider">Mapped Lead</th>
                   <th className="text-left px-4 py-3 text-xs font-semibold text-gray-400 uppercase tracking-wider">Added</th>
                   <th className="text-left px-4 py-3 text-xs font-semibold text-gray-400 uppercase tracking-wider">Status</th>
@@ -88,7 +91,12 @@ export default function LineUsersPage() {
                         <span className="font-semibold text-gray-900">{u.display_name || "—"}</span>
                       </div>
                     </td>
-                    <td className="px-4 py-3 font-mono text-xs text-gray-500 truncate max-w-[150px]">{u.line_user_id}</td>
+                    <td className="px-4 py-3 font-mono text-xs text-gray-700">
+                      {u.phone || <span className="text-gray-300">—</span>}
+                    </td>
+                    <td className="px-4 py-3 text-xs text-gray-700">
+                      {u.house_number || <span className="text-gray-300">—</span>}
+                    </td>
                     <td className="px-4 py-3">
                       {(u.linked_leads.length > 0 || u.linked_prospects.length > 0) ? (
                         <div className="flex flex-wrap gap-1.5">

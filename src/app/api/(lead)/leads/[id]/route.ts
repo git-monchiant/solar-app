@@ -119,6 +119,10 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
       sets.push("phone = @phone");
       request.input("phone", sql.NVarChar(20), body.phone);
     }
+    if (body.email !== undefined) {
+      sets.push("email = @email");
+      request.input("email", sql.NVarChar(200), body.email);
+    }
     if (body.installation_address !== undefined) {
       sets.push("installation_address = @installation_address");
       request.input("installation_address", sql.NVarChar(500), body.installation_address);
@@ -627,6 +631,99 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
     if (body.grid_note !== undefined) {
       sets.push("grid_note = @grid_note");
       request.input("grid_note", sql.NVarChar(sql.MAX), body.grid_note);
+    }
+    // Sheet-sync fields (migration 096)
+    if (body.customer_code !== undefined) {
+      sets.push("customer_code = @customer_code");
+      request.input("customer_code", sql.NVarChar(20), body.customer_code);
+    }
+    if (body.project_note !== undefined) {
+      sets.push("project_note = @project_note");
+      request.input("project_note", sql.NVarChar(500), body.project_note);
+    }
+    if (body.customer_interest !== undefined) {
+      sets.push("customer_interest = @customer_interest");
+      request.input("customer_interest", sql.NVarChar(500), body.customer_interest);
+    }
+    if (body.seeker_type !== undefined) {
+      sets.push("seeker_type = @seeker_type");
+      request.input("seeker_type", sql.NVarChar(50), body.seeker_type);
+    }
+    if (body.seeker_name !== undefined) {
+      sets.push("seeker_name = @seeker_name");
+      request.input("seeker_name", sql.NVarChar(200), body.seeker_name);
+    }
+    if (body.home_loan_status !== undefined) {
+      sets.push("home_loan_status = @home_loan_status");
+      request.input("home_loan_status", sql.NVarChar(50), body.home_loan_status);
+    }
+    if (body.survey_actual_date !== undefined) {
+      sets.push("survey_actual_date = @survey_actual_date");
+      request.input("survey_actual_date", sql.Date, body.survey_actual_date ? new Date(body.survey_actual_date + "T12:00:00") : null);
+    }
+    if (body.survey_actual_by !== undefined) {
+      sets.push("survey_actual_by = @survey_actual_by");
+      request.input("survey_actual_by", sql.NVarChar(200), body.survey_actual_by);
+    }
+    if (body.quotation_by !== undefined) {
+      sets.push("quotation_by = @quotation_by");
+      request.input("quotation_by", sql.NVarChar(200), body.quotation_by);
+    }
+    if (body.quotation_doc_no !== undefined) {
+      sets.push("quotation_doc_no = @quotation_doc_no");
+      request.input("quotation_doc_no", sql.NVarChar(30), body.quotation_doc_no);
+    }
+    if (body.quotation_sent_date !== undefined) {
+      sets.push("quotation_sent_date = @quotation_sent_date");
+      request.input("quotation_sent_date", sql.Date, body.quotation_sent_date ? new Date(body.quotation_sent_date + "T12:00:00") : null);
+    }
+    if (body.finance_bank !== undefined) {
+      sets.push("finance_bank = @finance_bank");
+      request.input("finance_bank", sql.NVarChar(100), body.finance_bank);
+    }
+    if (body.finance_months !== undefined) {
+      sets.push("finance_months = @finance_months");
+      request.input("finance_months", sql.Int, body.finance_months);
+    }
+    if (body.finance_monthly !== undefined) {
+      sets.push("finance_monthly = @finance_monthly");
+      request.input("finance_monthly", sql.Decimal(12, 2), body.finance_monthly);
+    }
+    if (body.finance_loan_bank !== undefined) {
+      sets.push("finance_loan_bank = @finance_loan_bank");
+      request.input("finance_loan_bank", sql.NVarChar(100), body.finance_loan_bank);
+    }
+    if (body.finance_loan_amount !== undefined) {
+      sets.push("finance_loan_amount = @finance_loan_amount");
+      request.input("finance_loan_amount", sql.Decimal(12, 2), body.finance_loan_amount);
+    }
+    if (body.finance_documents !== undefined) {
+      sets.push("finance_documents = @finance_documents");
+      request.input("finance_documents", sql.NVarChar(sql.MAX), body.finance_documents);
+    }
+    if (body.install_actual_date !== undefined) {
+      sets.push("install_actual_date = @install_actual_date");
+      request.input("install_actual_date", sql.Date, body.install_actual_date ? new Date(body.install_actual_date + "T12:00:00") : null);
+    }
+    if (body.house_number !== undefined) {
+      sets.push("house_number = @house_number");
+      request.input("house_number", sql.NVarChar(50), body.house_number);
+    }
+    if (body.survey_doc_no !== undefined) {
+      sets.push("survey_doc_no = @survey_doc_no");
+      request.input("survey_doc_no", sql.NVarChar(30), body.survey_doc_no);
+    }
+    // Action-user stamps — set by the step that's being closed so PDFs can
+    // render the right signer downstream.
+    for (const f of [
+      "survey_completed_by", "quote_sent_by", "payment_confirmed_by",
+      "order_before_paid_by", "order_after_paid_by",
+      "install_completed_by", "warranty_issued_by",
+    ]) {
+      if (body[f] !== undefined) {
+        sets.push(`${f} = @${f}`);
+        request.input(f, sql.Int, body[f]);
+      }
     }
 
     if (sets.length === 0) {

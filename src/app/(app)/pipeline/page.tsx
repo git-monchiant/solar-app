@@ -10,10 +10,13 @@ interface Lead {
   id: number;
   full_name: string;
   phone: string;
+  email: string | null;
   project_name: string;
   installation_address: string;
+  house_number: string | null;
   status: string;
   source: string;
+  note: string | null;
   contact_date: string;
   created_at: string;
   survey_date: string | null;
@@ -22,6 +25,7 @@ interface Lead {
   package_name: string | null;
   package_price: number | null;
   pre_doc_no: string | null;
+  assigned_name: string | null;
 }
 
 type TabKey = "all" | "pre_survey" | "survey" | "quotation" | "order" | "install" | "warranty" | "gridtie" | "closed" | "lost";
@@ -80,28 +84,40 @@ export default function PipelinePage() {
     })
     .filter(l => {
       if (!search.trim()) return true;
-      const q = search.toLowerCase();
-      return l.full_name?.toLowerCase().includes(q) || l.phone?.includes(q) || l.project_name?.toLowerCase().includes(q) || l.installation_address?.toLowerCase().includes(q);
+      const q = search.trim().toLowerCase();
+      return (
+        l.full_name?.toLowerCase().includes(q) ||
+        l.phone?.includes(q) ||
+        l.project_name?.toLowerCase().includes(q) ||
+        l.installation_address?.toLowerCase().includes(q) ||
+        l.house_number?.toLowerCase().includes(q) ||
+        l.email?.toLowerCase().includes(q) ||
+        l.source?.toLowerCase().includes(q) ||
+        l.note?.toLowerCase().includes(q) ||
+        l.assigned_name?.toLowerCase().includes(q) ||
+        l.pre_doc_no?.toLowerCase().includes(q)
+      );
     })
     .sort(tab === "survey" ? sortByApptDate("survey_date") : tab === "install" ? sortByApptDate("install_date") : () => 0);
 
   const countFor = (key: TabKey) => key === "all" ? leads.length : leads.filter(l => TAB_STATUSES[key].includes(l.status)).length;
 
-  const ALL_TABS: { key: TabKey; label: string; roles: ("sales" | "solar")[] }[] = [
-    { key: "all",        label: "ทั้งหมด",           roles: ["sales", "solar"] },
-    { key: "pre_survey", label: "รอติดตาม",          roles: ["sales"] },
-    { key: "survey",     label: "สำรวจหน้างาน",      roles: ["solar"] },
-    { key: "quotation",  label: "รอใบเสนอราคา",      roles: ["solar"] },
-    { key: "order",      label: "รออนุมัติ/ชำระ",    roles: ["sales"] },
-    { key: "install",    label: "ติดตั้ง",            roles: ["solar"] },
-    { key: "warranty",   label: "ออกใบรับประกัน",    roles: ["solar"] },
-    { key: "gridtie",    label: "ขอขนานไฟ",          roles: ["solar"] },
-    { key: "closed",     label: "ส่งมอบแล้ว",  roles: ["sales", "solar"] },
-    { key: "lost",       label: "ยกเลิกและส่งกลับ",  roles: ["sales"] },
+  // Sales + solar both see the full pipeline. Tab visibility used to gate by
+  // role, but the team wanted shared visibility into every stage.
+  const ALL_TABS: { key: TabKey; label: string }[] = [
+    { key: "all",        label: "ทั้งหมด" },
+    { key: "pre_survey", label: "รอติดตาม" },
+    { key: "survey",     label: "สำรวจหน้างาน" },
+    { key: "quotation",  label: "รอใบเสนอราคา" },
+    { key: "order",      label: "รออนุมัติ/ชำระ" },
+    { key: "install",    label: "ติดตั้ง" },
+    { key: "warranty",   label: "ออกใบรับประกัน" },
+    { key: "gridtie",    label: "ขอขนานไฟ" },
+    { key: "closed",     label: "ส่งมอบแล้ว" },
+    { key: "lost",       label: "ยกเลิกและส่งกลับ" },
   ];
-  const TABS = ALL_TABS
-    .filter(t => isAdmin || t.roles.some(r => (r === "sales" && isSales) || (r === "solar" && isSolar)))
-    .map(t => ({ key: t.key, label: t.label, count: countFor(t.key) }));
+  const visible = isAdmin || isSales || isSolar;
+  const TABS = (visible ? ALL_TABS : []).map(t => ({ key: t.key, label: t.label, count: countFor(t.key) }));
 
   return (
     <div>

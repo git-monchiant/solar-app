@@ -40,6 +40,7 @@ interface Data {
     warranty_has_battery: boolean | null;
   };
   package: Pkg | null;
+  signer: { full_name: string; signature_url: string | null } | null;
 }
 
 const CO = {
@@ -69,7 +70,9 @@ export default function WarrantyPage() {
   const [d, setD] = useState<Data | null>(null);
 
   useEffect(() => {
-    fetch(`/api/warranty/${id}/data`).then(r => r.json()).then(setD).catch(console.error);
+    const userId = typeof window !== "undefined" ? new URLSearchParams(window.location.search).get("user_id") : null;
+    const qs = userId ? `?user_id=${userId}` : "";
+    fetch(`/api/warranty/${id}/data${qs}`).then(r => r.json()).then(setD).catch(console.error);
   }, [id]);
 
   if (!d) return <div className="flex items-center justify-center h-screen"><div className="w-8 h-8 border-2 border-primary/30 border-t-primary animate-spin" /></div>;
@@ -256,7 +259,7 @@ export default function WarrantyPage() {
 
                   <div className="flex justify-around gap-8 mt-4 avoid-break">
                     <SignatureBox label="ลูกค้า" name={lead.full_name} signatureUrl={lead.warranty_customer_signature_url || lead.install_customer_signature_url} />
-                    <SignatureBox label={CO.nameTh} name="" />
+                    <SignatureBox label={CO.nameTh} name={d.signer?.full_name || ""} signatureUrl={d.signer?.signature_url ?? null} />
                   </div>
                 </div>
               </td>

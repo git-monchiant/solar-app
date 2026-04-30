@@ -297,7 +297,6 @@ export default function SurveyForm({ lead, refresh, section = "all", onPhaseChan
               placeholder="อื่นๆ ระบุ..."
               value={meterSize.startsWith("other:") ? meterSize.slice(6) : ""}
               onChange={e => setMeterSize(e.target.value ? `other:${e.target.value}` : "")}
-              onFocus={() => { if (!meterSize.startsWith("other")) setMeterSize("other:"); }}
               className={`w-full mt-2 h-10 px-3 rounded-lg border text-sm focus:outline-none ${meterSize.startsWith("other") ? "border-active bg-active-light" : "border-gray-200 bg-white"}`}
             />
           </div>
@@ -636,7 +635,7 @@ export default function SurveyForm({ lead, refresh, section = "all", onPhaseChan
       {/* PDF §5 Photo Checklist — separate card */}
       <div className={card}>
         <div className="text-sm font-bold text-gray-700 uppercase tracking-wider mb-3">Photo Checklist</div>
-        <div className="space-y-4">
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
           {[
             { key: "building" as const, url: photoBuilding, set: setPhotoBuilding, field: "survey_photo_building_url" as const, label: "รูปถ่ายอาคาร ให้เห็นหลังคา" },
             { key: "roof_structure" as const, url: photoRoofStructure, set: setPhotoRoofStructure, field: "survey_photo_roof_structure_url" as const, label: "รูปโครงสร้างใต้หลังคา" },

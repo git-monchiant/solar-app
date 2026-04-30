@@ -46,6 +46,7 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
     if (body.team !== undefined) { sets.push("team = @team"); request.input("team", sql.NVarChar(50), body.team); }
     if (body.phone !== undefined) { sets.push("phone = @phone"); request.input("phone", sql.NVarChar(20), body.phone); }
     if (body.email !== undefined) { sets.push("email = @email"); request.input("email", sql.NVarChar(150), body.email); }
+    if (body.signature_url !== undefined) { sets.push("signature_url = @signature_url"); request.input("signature_url", sql.NVarChar(500), body.signature_url); }
     if (body.is_active !== undefined) { sets.push("is_active = @is_active"); request.input("is_active", sql.Bit, body.is_active ? 1 : 0); }
     if (body.password) { sets.push("password_hash = @password_hash"); request.input("password_hash", sql.NVarChar(255), hashPassword(String(body.password))); }
     if (body.roles !== undefined) {

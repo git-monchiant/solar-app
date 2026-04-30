@@ -15,8 +15,10 @@
  *
  * Behavior:
  *   - Creates the project row if the name is new.
- *   - Deletes prospects for THIS project before inserting (re-runs are idempotent).
- *     With --clear-all, deletes everything in prospects first instead.
+ *   - Default: SKIP houses that already exist (project_id + house_number) —
+ *     preserves seeker visits, notes, contact edits. Only inserts new houses.
+ *   - --replace: deletes prospects for THIS project then re-inserts (old behavior).
+ *   - --clear-all: deletes everything in prospects first.
  *   - Sheet rows: top 3 rows treated as headers; cols A–I mapped; blank house_number skipped.
  */
 import sql from 'mssql';
@@ -45,6 +47,7 @@ let PROJECT_NAME = args.get('project');
 const CSV_PATH = args.get('csv');
 const SHEET_URL = args.get('url');
 const CLEAR_ALL = !!args.get('clear-all');
+const REPLACE = !!args.get('replace');
 const HEADER_ROWS = parseInt(args.get('header-rows') || '3', 10);
 
 if (!PROJECT_NAME && !SHEET_URL) { console.error('Missing --project (required unless --url auto-detects from filename)'); process.exit(1); }
@@ -191,16 +194,23 @@ if (existing.recordset.length > 0) {
   console.log(`Project created: id=${projectId}`);
 }
 
-// Clear existing prospects
+// Clear existing prospects (optional — default is skip-existing merge).
 if (CLEAR_ALL) {
   const del = await pool.request().query(`DELETE FROM prospects`);
   console.log(`Deleted ALL prospects: ${del.rowsAffected[0] ?? 0} rows`);
-} else {
+} else if (REPLACE) {
   const del = await pool.request()
     .input('project_id', sql.Int, projectId)
     .query(`DELETE FROM prospects WHERE project_id = @project_id`);
   console.log(`Deleted prospects for project ${projectId}: ${del.rowsAffected[0] ?? 0} rows`);
 }
+
+// Pre-load existing house_numbers in this project so we can skip them.
+const existingRes = await pool.request()
+  .input('project_id', sql.Int, projectId)
+  .query(`SELECT house_number FROM prospects WHERE project_id = @project_id`);
+const existingHouses = new Set(existingRes.recordset.map(r => r.house_number));
+console.log(`Existing houses in project: ${existingHouses.size}`);
 
 // Import data rows using the dynamic column map.
 // Multiple rows with the same house_number represent multiple people living
@@ -224,8 +234,9 @@ for (const r of dataRows) {
 }
 console.log(`Unique houses: ${houseMap.size}`);
 
-let ok = 0, packed = 0;
+let ok = 0, packed = 0, skipped = 0;
 for (const [house_number, groupRows] of houseMap) {
+  if (existingHouses.has(house_number)) { skipped++; continue; }
   const first = groupRows[0];
   // Build contacts array, dedup by (name|phone).
   const seen = new Set();
@@ -262,5 +273,5 @@ for (const [house_number, groupRows] of houseMap) {
     `);
   ok++;
 }
-console.log(`Imported: ${ok} houses · extra contacts packed: ${packed}`);
+console.log(`Imported: ${ok} houses · skipped (exists): ${skipped} · extra contacts packed: ${packed}`);
 await pool.close();

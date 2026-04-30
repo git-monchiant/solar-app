@@ -74,6 +74,7 @@ interface Lead {
 interface Data {
   lead: Lead;
   packages: Pkg[];
+  signer: { full_name: string; signature_url: string | null } | null;
 }
 
 const CO = {
@@ -124,7 +125,9 @@ export default function SurveyPdfPage() {
   const [locQr, setLocQr] = useState<string | null>(null);
 
   useEffect(() => {
-    fetch(`/api/survey/${id}/data`).then(r => r.json()).then(setD).catch(console.error);
+    const userId = typeof window !== "undefined" ? new URLSearchParams(window.location.search).get("user_id") : null;
+    const qs = userId ? `?user_id=${userId}` : "";
+    fetch(`/api/survey/${id}/data${qs}`).then(r => r.json()).then(setD).catch(console.error);
   }, [id]);
 
   useEffect(() => {
@@ -320,7 +323,7 @@ export default function SurveyPdfPage() {
                   {/* Signature */}
                   <div className="flex justify-around gap-8 mt-24 avoid-break">
                     <SignatureBox label="ลูกค้า" name={lead.full_name} signatureUrl={lead.survey_customer_signature_url} />
-                    <SignatureBox label="ผู้สำรวจ" name={lead.assigned_name || ""} />
+                    <SignatureBox label="ผู้สำรวจ" name={d.signer?.full_name || lead.assigned_name || ""} signatureUrl={d.signer?.signature_url ?? null} />
                   </div>
 
                   {/* 6. Photo Checklist — pushed to last page(s) */}

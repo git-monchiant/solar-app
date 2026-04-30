@@ -40,3 +40,10 @@ yarn-error.log*
 *.tsbuildinfo
 next-env.d.ts
 public/uploads/
+
+# Adhoc / personal
+.claude/
+Project Infomation/
+1-7-68*.xlsx
+sql/solardb_clone.sql
+scripts/adhoc/_*.mjs

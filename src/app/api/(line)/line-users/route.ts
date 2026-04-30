@@ -17,11 +17,11 @@ export async function GET(req: NextRequest) {
       const { sql } = await import("@/lib/db");
       const one = await db.request()
         .input("id", sql.NVarChar(100), oneId)
-        .query(`SELECT TOP 1 line_user_id, display_name, picture_url FROM line_users WHERE line_user_id = @id`);
+        .query(`SELECT TOP 1 line_user_id, display_name, picture_url, phone, house_number FROM line_users WHERE line_user_id = @id`);
       return NextResponse.json(one.recordset[0] ?? null);
     }
     const result = await db.request().query(`
-      SELECT lu.id, lu.line_user_id, lu.display_name, lu.picture_url, lu.created_at, lu.last_message_at,
+      SELECT lu.id, lu.line_user_id, lu.display_name, lu.picture_url, lu.phone, lu.house_number, lu.created_at, lu.last_message_at,
         (SELECT COUNT(*) FROM leads WHERE line_id = lu.line_user_id) as linked_leads_count,
         (SELECT COUNT(*) FROM prospects WHERE line_id = lu.line_user_id) as linked_prospects_count
       FROM line_users lu

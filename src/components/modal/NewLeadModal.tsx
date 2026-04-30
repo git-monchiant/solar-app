@@ -4,6 +4,7 @@ import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { apiFetch } from "@/lib/api";
 import CustomerWizard from "@/components/customer/CustomerWizard";
+import LinePickerModal from "@/components/modal/LinePickerModal";
 import ModalCloseButton from "@/components/ui/ModalCloseButton";
 
 export interface LineLinkInfo {
@@ -31,6 +32,15 @@ export default function NewLeadModal({ onClose, onCreated, linkLine }: Props) {
     id_card_photo_url: null as string | null, house_reg_photo_url: null as string | null,
     utility_provider: "", ca_number: "", meter_number: "", monthly_bill: "",
   });
+  // LINE picker state — only used when modal opened without a pre-selected linkLine.
+  const [pickedLineProfile, setPickedLineProfile] = useState<{ display_name: string; picture_url: string | null } | null>(null);
+  const [pickedLineId, setPickedLineId] = useState<number | null>(null);
+  const [showLinePicker, setShowLinePicker] = useState(false);
+
+  // Compose LINE display: pre-supplied prop wins; otherwise show whatever user picked.
+  const lineProfile = linkLine
+    ? { display_name: linkLine.displayName, picture_url: linkLine.pictureUrl }
+    : pickedLineProfile;
 
   const handleSubmit = async () => {
     if (!form.full_name.trim()) return;
@@ -46,8 +56,9 @@ export default function NewLeadModal({ onClose, onCreated, linkLine }: Props) {
           interested_package_id: form.interested_package_id ? parseInt(form.interested_package_id) : null,
         }),
       });
-      if (linkLine && result?.id) {
-        await apiFetch(`/api/line-users/${linkLine.userId}`, {
+      const lineUserToLink = linkLine?.userId ?? pickedLineId;
+      if (lineUserToLink && result?.id) {
+        await apiFetch(`/api/line-users/${lineUserToLink}`, {
           method: "PATCH",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ lead_id: result.id }),
@@ -65,23 +76,35 @@ export default function NewLeadModal({ onClose, onCreated, linkLine }: Props) {
   return (
     <div className="fixed inset-0 z-[70] md:flex md:items-center md:justify-center md:p-6">
       <div className="hidden md:block absolute inset-0 bg-black/30" onClick={onClose} />
-      <div className="relative bg-white w-full h-full md:max-w-[90vw] md:max-h-[90vh] md:rounded-2xl overflow-y-auto md:animate-slide-up flex flex-col">
+      <div className="relative bg-white w-full h-full md:h-auto md:max-w-2xl lg:max-w-4xl md:max-h-[90vh] md:rounded-2xl overflow-y-auto md:animate-slide-up flex flex-col">
         <div className="sticky top-0 bg-white border-b border-gray-100 px-5 py-4 pt-[max(1rem,env(safe-area-inset-top,1rem))] flex items-center justify-between z-10 shrink-0">
           <h2 className="text-lg font-bold text-gray-900 truncate">New Lead{form.full_name.trim() ? ` — ${form.full_name.trim()}` : ""}</h2>
           <ModalCloseButton onClick={onClose} />
         </div>
 
-        <div className="px-5 py-4 lg:px-10 flex-1 min-h-0">
+        <div className="px-5 py-4">
           <CustomerWizard
             values={form}
             onChange={patch => setForm(prev => ({ ...prev, ...(patch as Record<string, unknown>) } as typeof prev))}
             onSubmit={handleSubmit}
             saving={saving}
-            lineProfile={linkLine ? { display_name: linkLine.displayName, picture_url: linkLine.pictureUrl } : undefined}
-            linePending={!!linkLine}
+            lineProfile={lineProfile}
+            linePending={!!lineProfile}
+            onLinkLine={linkLine ? undefined : () => setShowLinePicker(true)}
+            mode="create"
           />
         </div>
       </div>
+      {showLinePicker && (
+        <LinePickerModal
+          target={{ type: "draft", label: form.full_name?.trim() || "ลูกค้าใหม่" }}
+          onClose={() => setShowLinePicker(false)}
+          onLinked={(linked) => {
+            setPickedLineProfile({ display_name: linked.display_name, picture_url: linked.picture_url });
+            setPickedLineId(linked.id);
+          }}
+        />
+      )}
     </div>
   );
 }

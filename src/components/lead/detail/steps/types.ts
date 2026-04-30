@@ -2,6 +2,7 @@ export interface Lead {
   id: number;
   full_name: string;
   phone: string;
+  email: string | null;
   project_name: string;
   package_name: string;
   package_price: number;
@@ -148,6 +149,27 @@ export interface Lead {
   warranty_has_battery: boolean | null;
   warranty_inverter_sn_photo_url: string | null;
   warranty_batteries: string | null;
+  // Sheet-sync fields (migration 096) — mirror Solar Sales Lead Database
+  customer_code: string | null;
+  project_note: string | null;
+  customer_interest: string | null;
+  seeker_type: string | null;
+  seeker_name: string | null;
+  home_loan_status: string | null;
+  survey_actual_date: string | null;
+  survey_actual_by: string | null;
+  quotation_by: string | null;
+  quotation_doc_no: string | null;
+  quotation_sent_date: string | null;
+  finance_bank: string | null;
+  finance_months: number | null;
+  finance_monthly: number | null;
+  finance_loan_bank: string | null;
+  finance_loan_amount: number | null;
+  finance_documents: string | null;
+  install_actual_date: string | null;
+  house_number: string | null;
+  survey_doc_no: string | null;
   // Grid-tie / ขอขนานไฟ (step 07)
   grid_utility: string | null;
   grid_app_no: string | null;

@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import { apiFetch } from "@/lib/api";
+import { useMe } from "@/lib/roles";
 import type { StepCommonProps } from "./types";
 import FallbackImage from "@/components/ui/FallbackImage";
 import PaymentSection from "@/components/payment/PaymentSection";
@@ -26,6 +27,7 @@ interface Props extends StepCommonProps {
 }
 
 export default function InstallStep({ lead, state, refresh, expanded, onToggle }: Props) {
+  const { me } = useMe();
   const [subStep, setSubStep] = useSubStep(`installSubStep_${lead.id}`, lead.install_confirmed ? 1 : 0, SUB_STEPS.length);
   const [nextError, setNextError] = useState<string | null>(null);
   const [photos, setPhotos] = useState<string[]>(lead.install_photos ? lead.install_photos.split(",").filter(Boolean) : []);
@@ -40,6 +42,9 @@ export default function InstallStep({ lead, state, refresh, expanded, onToggle }
   const [fullscreen, setFullscreen] = useState(false);
   const [hasDrawn, setHasDrawn] = useState(false);
   const [sigSaving, setSigSaving] = useState(false);
+  const [actualDate, setActualDate] = useState<string>(
+    lead.install_actual_date ? String(lead.install_actual_date).slice(0, 10) : new Date().toISOString().slice(0, 10)
+  );
   const inlineCanvasRef = useRef<HTMLCanvasElement>(null);
   const inlineDrawingRef = useRef(false);
   const fsCanvasRef = useRef<HTMLCanvasElement>(null);
@@ -188,6 +193,12 @@ export default function InstallStep({ lead, state, refresh, expanded, onToggle }
   // PaymentSection writes the payments row + flips order_after_paid itself.
   // Stay on the current sub-step — user clicks "ถัดไป" to proceed.
   const onAfterConfirmed = async () => {
+    if (me?.id) {
+      apiFetch(`/api/leads/${lead.id}`, {
+        method: "PATCH", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ order_after_paid_by: me.id }),
+      }).catch(console.error);
+    }
     await refresh();
   };
 
@@ -394,6 +405,8 @@ export default function InstallStep({ lead, state, refresh, expanded, onToggle }
         body: JSON.stringify({
           install_completed_at: true,
           status: "warranty",
+          install_actual_date: actualDate || null,
+          install_completed_by: me?.id ?? null,
         }),
       });
       await refresh();
@@ -412,6 +425,12 @@ export default function InstallStep({ lead, state, refresh, expanded, onToggle }
           <div className="rounded-lg bg-gray-50 border border-gray-200 p-2.5">
             <div className="text-xs font-bold text-gray-400 uppercase mb-0.5">นัดติดตั้ง</div>
             <div className="font-semibold text-gray-800 text-sm">{formatDate(lead.install_date)}</div>
+          </div>
+        )}
+        {lead.install_actual_date && (
+          <div className="rounded-lg bg-gray-50 border border-gray-200 p-2.5">
+            <div className="text-xs font-bold text-gray-400 uppercase mb-0.5">ติดตั้งจริง</div>
+            <div className="font-semibold text-gray-800 text-sm">{formatDate(lead.install_actual_date)}</div>
           </div>
         )}
         {lead.install_completed_at && (
@@ -813,6 +832,12 @@ export default function InstallStep({ lead, state, refresh, expanded, onToggle }
                 ขยายเต็มจอ
               </button>
             </div>
+          </div>
+
+          <div>
+            <label className="text-xs font-semibold tracking-wider uppercase text-gray-400 block mb-1.5">วันที่ติดตั้งจริง</label>
+            <input type="date" value={actualDate} onChange={e => setActualDate(e.target.value)}
+              className="w-full h-11 px-3 rounded-lg border border-gray-200 bg-white text-sm focus:outline-none focus:border-primary" />
           </div>
 
           <button

@@ -3,15 +3,18 @@ import { useState, useEffect } from "react";
 import { STATUS_CONFIG, getStatusLabel } from "@/lib/constants/statuses";
 import { stripThaiTitle } from "@/lib/utils/name";
 import AssignOwnerButton from "./AssignOwnerButton";
+import SourceTag from "@/components/SourceTag";
 
 export interface LeadData {
   id: number;
   full_name: string;
   phone: string;
+  email?: string | null;
   project_name: string;
   package_name: string;
   package_price: number;
   installation_address: string;
+  house_number: string | null;
   customer_type: string;
   status: string;
   source: string;
@@ -69,9 +72,13 @@ export default function LeadCard({ lead, compact, onAssignChange }: { lead: Lead
         {/* Header: name + status */}
         <div className="flex items-start justify-between gap-3 mb-3">
           <div className="flex-1 min-w-0">
-            <div className="font-bold text-lg text-gray-900 truncate leading-tight">
-              {lead.installation_address && <>{lead.installation_address} - </>}
-              {stripThaiTitle(lead.full_name)}
+            <div className="font-bold text-lg text-gray-900 truncate leading-tight flex items-center gap-1.5">
+              <svg className="w-4 h-4 shrink-0 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                <path strokeLinecap="round" strokeLinejoin="round" d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6" />
+              </svg>
+              <span className="truncate">
+                {lead.house_number ? `${lead.house_number} - ${stripThaiTitle(lead.full_name)}` : stripThaiTitle(lead.full_name)}
+              </span>
             </div>
             <div className="text-sm text-gray-500 truncate mt-0.5 font-mono tabular-nums flex items-center gap-1.5">
               {lead.phone}
@@ -157,6 +164,13 @@ export default function LeadCard({ lead, compact, onAssignChange }: { lead: Lead
               <span className="font-semibold text-purple-600 uppercase tracking-wider">Upgrade</span>
             )}
             {aging > 0 && <span>{aging} วันแล้ว</span>}
+            {lead.created_at && (
+              <span>· สร้าง {formatDate(lead.created_at)}</span>
+            )}
+            {lead.source && <SourceTag value={lead.source} size="xs" />}
+            {lead.last_activity_date && (
+              <span>· ติดตามล่าสุด {formatDate(lead.last_activity_date)}</span>
+            )}
             {!compact && lead.next_follow_up && (
               <span className={`font-semibold ${isOverdue ? "text-red-600" : "text-amber-600"}`}>
                 · {isOverdue ? "Overdue" : "Follow-up"} {formatDate(lead.next_follow_up)}

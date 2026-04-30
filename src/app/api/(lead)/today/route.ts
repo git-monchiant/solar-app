@@ -9,7 +9,8 @@ export async function GET(req: NextRequest) {
     const db = await getDb();
 
     const [newLeads, overduePreSurvey, followUpToday, followUpOverdue, surveyToday, surveyPending, quotationPending, installPending, followUpUpcoming, installing, recentlyClosed, stats] = await Promise.all([
-      // 1. Lead ใหม่รอจอง (pre_survey + no pre_doc_no + < 2 days)
+      // 1. Lead ใหม่ — pre_survey ที่ยังไม่มี doc และไม่มี follow-up ในอนาคต
+      // เคยมี cutoff "อายุ < 2 วัน" แต่ทำให้ lead ที่ import จากชีต (ส่วนใหญ่ > 2 วัน) ตกจากกอง
       db.request().query(`
         SELECT l.*, p.name as project_name, p.district, p.province, pk.name as package_name, u.full_name as assigned_name,
                (SELECT TOP 1 note FROM lead_activities WHERE lead_id = l.id ORDER BY created_at DESC) as last_activity_note
@@ -19,24 +20,11 @@ export async function GET(req: NextRequest) {
         LEFT JOIN users u ON l.assigned_user_id = u.id
         WHERE l.status = 'pre_survey'
           AND l.pre_doc_no IS NULL
-          AND l.created_at >= DATEADD(day, -2, GETDATE())
           AND (l.next_follow_up IS NULL OR CAST(l.next_follow_up AS DATE) < CAST(GETDATE() AS DATE))
-        ORDER BY COALESCE(l.contact_date, l.created_at) ASC
+        ORDER BY l.created_at DESC
       `),
-      // 2. เกินกำหนดจอง (pre_survey + no pre_doc_no + > 2 days)
-      db.request().query(`
-        SELECT l.*, p.name as project_name, p.district, p.province, pk.name as package_name, u.full_name as assigned_name,
-               (SELECT TOP 1 note FROM lead_activities WHERE lead_id = l.id ORDER BY created_at DESC) as last_activity_note
-        FROM leads l
-        LEFT JOIN projects p ON l.project_id = p.id
-        LEFT JOIN packages pk ON l.interested_package_id = pk.id
-        LEFT JOIN users u ON l.assigned_user_id = u.id
-        WHERE l.status = 'pre_survey'
-          AND l.pre_doc_no IS NULL
-          AND l.created_at < DATEADD(day, -2, GETDATE())
-          AND (l.next_follow_up IS NULL OR CAST(l.next_follow_up AS DATE) < CAST(GETDATE() AS DATE))
-        ORDER BY COALESCE(l.contact_date, l.created_at) ASC
-      `),
+      // 2. (deprecated — รวมกับ newLeads แล้ว)
+      db.request().query(`SELECT TOP 0 * FROM leads`),
       // 3. นัดติดตามวันนี้
       db.request().query(`
         SELECT l.*, p.name as project_name, p.district, p.province, pk.name as package_name, u.full_name as assigned_name,

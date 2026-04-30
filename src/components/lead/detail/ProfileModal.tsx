@@ -25,6 +25,9 @@ export default function ProfileModal({ leadId, onClose, onSaved }: Props) {
     id_card_number: "", id_card_address: "",
     id_card_photo_url: null as string | null, house_reg_photo_url: null as string | null,
     utility_provider: "", ca_number: "", meter_number: "", monthly_bill: "",
+    customer_code: "", seeker_type: "", seeker_name: "",
+    customer_interest: "", home_loan_status: "", project_note: "",
+    house_number: "",
   });
 
   useEffect(() => {
@@ -49,6 +52,13 @@ export default function ProfileModal({ leadId, onClose, onSaved }: Props) {
         ca_number: lead.ca_number || lead.survey_ca_number || "",
         meter_number: lead.meter_number || "",
         monthly_bill: lead.pre_monthly_bill ? String(lead.pre_monthly_bill) : "",
+        customer_code: lead.customer_code || "",
+        seeker_type: lead.seeker_type || "",
+        seeker_name: lead.seeker_name || "",
+        customer_interest: lead.customer_interest || "",
+        home_loan_status: lead.home_loan_status || "",
+        project_note: lead.project_note || "",
+        house_number: lead.house_number || "",
       });
       if (lead.line_display_name) {
         setLineProfile({ display_name: lead.line_display_name, picture_url: lead.line_picture_url || null });
@@ -78,6 +88,13 @@ export default function ProfileModal({ leadId, onClose, onSaved }: Props) {
           id_card_address: form.id_card_address ? form.id_card_address.slice(0, 500) : undefined,
           id_card_photo_url: form.id_card_photo_url,
           house_reg_photo_url: form.house_reg_photo_url,
+          customer_code: form.customer_code || null,
+          seeker_type: form.seeker_type || null,
+          seeker_name: form.seeker_name || null,
+          customer_interest: form.customer_interest || null,
+          home_loan_status: form.home_loan_status || null,
+          project_note: form.project_note || null,
+          house_number: form.house_number || null,
         }),
       });
       onSaved();
@@ -92,7 +109,7 @@ export default function ProfileModal({ leadId, onClose, onSaved }: Props) {
   return (
     <div className="fixed inset-0 z-[70] md:flex md:items-center md:justify-center md:p-6">
       <div className="hidden md:block absolute inset-0 bg-black/30" onClick={onClose} />
-      <div className="relative bg-white w-full h-full md:max-w-[90vw] md:max-h-[90vh] md:rounded-2xl overflow-y-auto md:animate-slide-up flex flex-col">
+      <div className="relative bg-white w-full h-full md:h-auto md:max-w-2xl lg:max-w-4xl md:max-h-[90vh] md:rounded-2xl overflow-y-auto md:animate-slide-up flex flex-col">
         <div className="sticky top-0 bg-white border-b border-gray-100 px-5 py-4 pt-[max(1rem,env(safe-area-inset-top,1rem))] flex items-center justify-between z-10 shrink-0">
           <h2 className="text-lg font-bold text-gray-900 truncate min-w-0">ข้อมูลลูกค้า{form.full_name ? ` — ${form.full_name}` : ""}</h2>
           <ModalCloseButton onClick={onClose} />
@@ -103,7 +120,7 @@ export default function ProfileModal({ leadId, onClose, onSaved }: Props) {
             <div className="w-8 h-8 border-2 border-primary/30 border-t-primary rounded-full animate-spin" />
           </div>
         ) : (
-          <div className="px-5 py-4 lg:px-10 flex-1 min-h-0">
+          <div className="px-5 py-4">
             <CustomerWizard
               values={form}
               onChange={patch => setForm(prev => ({ ...prev, ...(patch as Record<string, unknown>) } as typeof prev))}

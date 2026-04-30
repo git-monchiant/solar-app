@@ -633,11 +633,11 @@ export default function PaymentSection({
       {otherEnabled && tab === "other" && (
         <div className="space-y-3">
           <div>
-            <label className="text-xs font-semibold tracking-wider uppercase text-gray-400 block mb-1">ชำระโดย / รายละเอียด</label>
+            <label className="text-xs font-semibold tracking-wider uppercase text-gray-400 block mb-1">ชำระโดย / รายละเอียด <span className="text-red-500">*</span></label>
             <textarea
               value={otherMethod}
               onChange={e => setOtherMethod(e.target.value)}
-              placeholder="กรุณาระบุช่องทางการจ่ายเงินที่ทำกับลูกค้า"
+              placeholder="รับชำระรูปแบบอื่นๆ เช่น สินเชื่อ, Home Equity (โปรดระบุให้ละเอียด เช่น ธนาคาร, วงเงิน, ระยะเวลาผ่อน, ผ่อนต่อเดือน)"
               disabled={confirmed}
               rows={5}
               className="w-full px-3 py-2 rounded-lg border border-gray-200 text-sm focus:outline-none focus:border-active disabled:bg-gray-50"
