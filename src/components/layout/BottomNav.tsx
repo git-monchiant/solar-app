@@ -86,8 +86,8 @@ export default function BottomNav() {
           })}
         </div>
       </nav>
-      <aside className="hidden md:flex fixed left-0 top-0 bottom-0 w-64 bg-slate-900 border-r border-slate-800 flex-col z-50">
-        <div className="h-16 px-5 border-b border-slate-800 bg-slate-900 flex items-center">
+      <aside className="hidden md:flex fixed left-0 top-0 bottom-0 w-56 bg-white border-r border-gray-200 flex-col z-50">
+        <div className="h-16 px-5 border-b border-gray-100 bg-white flex items-center">
           <img
             src="https://senasolarenergy.com/wp-content/uploads/2022/04/logo_senasolarenergy.png"
             alt="Sena Solar Energy"
@@ -104,9 +104,9 @@ export default function BottomNav() {
             const showDivider = prev && prev.group === "seeker" && item.group !== "seeker";
             return (
               <div key={item.href}>
-                {showDivider && <div className="my-1.5 border-t border-slate-800" />}
+                {showDivider && <div className="my-1.5 border-t border-gray-100" />}
                 <Link href={item.href}
-                  className={`flex items-center gap-3 px-3 py-1.5 rounded-lg text-xs font-semibold uppercase tracking-wider transition-colors ${isActive ? "bg-primary/15 text-primary" : "text-slate-400 hover:bg-slate-800 hover:text-slate-100"}`}>
+                  className={`flex items-center gap-3 px-3 py-1.5 rounded-lg text-xs font-semibold uppercase tracking-wider transition-colors ${isActive ? "bg-primary/10 text-primary" : "text-gray hover:bg-gray-50"}`}>
                   {item.icon} {item.label}
                 </Link>
               </div>
@@ -183,13 +183,13 @@ function AdminGroups({ pathname }: { pathname: string }) {
   return (
     <>
       {ADMIN_GROUPS.map((g, i) => (
-        <div key={g.title} className={i === 0 ? "pt-2 mt-2 border-t border-slate-800" : "pt-2 mt-2"}>
-          <div className="px-3 pb-0.5 text-[10px] font-bold uppercase tracking-widest text-slate-500">{g.title}</div>
+        <div key={g.title} className={i === 0 ? "pt-2 mt-2 border-t border-gray-100" : "pt-2 mt-2"}>
+          <div className="px-3 pb-0.5 text-[10px] font-bold uppercase tracking-widest text-gray-400">{g.title}</div>
           {g.links.map(l => {
             const active = l.href === "/packages/manage" ? pathname.startsWith("/packages/manage") : pathname.startsWith(l.href);
             return (
               <Link key={l.href} href={l.href}
-                className={`flex items-center gap-3 px-3 py-1.5 rounded-lg text-xs font-semibold uppercase tracking-wider transition-colors ${active ? "bg-primary/15 text-primary" : "text-slate-400 hover:bg-slate-800 hover:text-slate-100"}`}>
+                className={`flex items-center gap-3 px-3 py-1.5 rounded-lg text-xs font-semibold uppercase tracking-wider transition-colors ${active ? "bg-primary/10 text-primary" : "text-gray hover:bg-gray-50"}`}>
                 {l.icon} {l.label}
               </Link>
             );

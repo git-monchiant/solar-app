@@ -17,7 +17,7 @@ export default function Header({ title, subtitle, backHref, rightContent, hideAv
     <div className="bg-gradient-to-b from-primary via-primary/50 to-white sticky top-0 z-10" style={{ paddingTop: "env(safe-area-inset-top, 0px)" }}>
       <div className="h-16 px-5 flex items-center gap-3">
         {backHref && (
-          <Link href={backHref} className="p-2 -ml-2 rounded-full text-gray-600 hover:bg-gray-100 transition-colors">
+          <Link href={backHref} className="p-2 -ml-2 rounded-full text-gray-600 hover:bg-gray-200 transition-colors">
             <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
               <path strokeLinecap="round" strokeLinejoin="round" d="M15.75 19.5L8.25 12l7.5-7.5" />
             </svg>
@@ -32,7 +32,7 @@ export default function Header({ title, subtitle, backHref, rightContent, hideAv
               </span>
             )}
           </h1>
-          {subtitle && <p className="text-xs font-semibold tracking-wider uppercase text-gray-400 leading-none mt-0.5 truncate">{subtitle}</p>}
+          {subtitle && <p className="text-xs font-semibold tracking-wider uppercase text-gray-500 leading-none mt-0.5 truncate">{subtitle}</p>}
         </div>
         <RoleSwitcher />
         {rightContent}

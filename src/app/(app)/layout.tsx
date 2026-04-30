@@ -28,9 +28,9 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
 
   return (
     <DialogProvider>
-      <div className="flex h-full bg-gray-50">
+      <div className="flex h-full">
         <BottomNav />
-        <main className="flex-1 overflow-y-auto pb-20 md:pb-0 md:ml-64">
+        <main className="flex-1 overflow-y-auto pb-20 md:pb-0 md:ml-56 bg-white">
           {children}
         </main>
       </div>
