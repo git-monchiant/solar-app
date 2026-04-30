@@ -94,10 +94,25 @@ export async function POST(req: NextRequest) {
       const sMap: Record<string, string> = {};
       for (const row of settingsRes.recordset) sMap[row.key] = row.value || "";
       const ref1Value = (sMap.promptpay_mode === "bill_payment" && sMap.promptpay_ref1)
-        ? `${sMap.promptpay_ref1}L${leadId}S${stepNo}`.slice(0, 20)
+        ? `${sMap.promptpay_ref1}L${leadId}S${String(stepNo).padStart(2, "0")}`.slice(0, 20)
         : null;
 
-      const insertReq = new sql.Request(tx)
+      // If /api/payments/intent already pre-created a pending row for this
+      // (lead, step, slip_field), UPDATE it instead of inserting — that keeps
+      // payment_no (used as Ref2 in the QR) stable across the confirm step.
+      const pendingRes = await new sql.Request(tx)
+        .input("lead_id", sql.Int, leadId)
+        .input("step_no", sql.Int, stepNo)
+        .input("slip_field", sql.NVarChar(50), slipField)
+        .query(`
+          SELECT TOP 1 id FROM payments
+          WHERE lead_id = @lead_id AND step_no = @step_no AND slip_field = @slip_field
+            AND confirmed_at IS NULL
+          ORDER BY id DESC
+        `);
+      const pendingId: number | null = pendingRes.recordset[0]?.id ?? null;
+
+      const writeReq = new sql.Request(tx)
         .input("lead_id", sql.Int, leadId)
         .input("step_no", sql.Int, stepNo)
         .input("slip_field", sql.NVarChar(50), slipField)
@@ -113,7 +128,7 @@ export async function POST(req: NextRequest) {
       for (let i = 0; i < MAX_SLIPS; i++) {
         const slip = slipRes.recordset[i] ?? null;
         const suffix = i === 0 ? "" : `_${i + 1}`;
-        insertReq
+        writeReq
           .input(`slip_data${suffix}`, sql.VarBinary(sql.MAX), slip?.data ?? null)
           .input(`slip_mime${suffix}`, sql.NVarChar(50), slip?.mime ?? null)
           .input(`slip_filename${suffix}`, sql.NVarChar(200), slip?.filename ?? null);
@@ -123,12 +138,28 @@ export async function POST(req: NextRequest) {
         }
       }
 
-      const insertRes = await insertReq.query(`
-        INSERT INTO payments (lead_id, step_no, slip_field, doc_no, amount, description, ${slotCols.join(", ")}, confirmed_by, ref1, payment_method)
-        OUTPUT INSERTED.id
-        VALUES (@lead_id, @step_no, @slip_field, @doc_no, @amount, @description, ${slotParams.join(", ")}, @confirmed_by, @ref1, @payment_method)
-      `);
-      paymentId = insertRes.recordset[0].id;
+      if (pendingId !== null) {
+        writeReq.input("id", sql.Int, pendingId);
+        const setExprs = [
+          "doc_no = @doc_no",
+          "amount = @amount",
+          "description = @description",
+          "confirmed_by = @confirmed_by",
+          "confirmed_at = GETDATE()",
+          "ref1 = @ref1",
+          "payment_method = @payment_method",
+          ...slotCols.map((c) => `${c} = @${c}`),
+        ];
+        await writeReq.query(`UPDATE payments SET ${setExprs.join(", ")} WHERE id = @id`);
+        paymentId = pendingId;
+      } else {
+        const insertRes = await writeReq.query(`
+          INSERT INTO payments (lead_id, step_no, slip_field, doc_no, amount, description, ${slotCols.join(", ")}, confirmed_by, confirmed_at, ref1, payment_method)
+          OUTPUT INSERTED.id
+          VALUES (@lead_id, @step_no, @slip_field, @doc_no, @amount, @description, ${slotParams.join(", ")}, @confirmed_by, GETDATE(), @ref1, @payment_method)
+        `);
+        paymentId = insertRes.recordset[0].id;
+      }
       const paymentUrl = `/api/payments/${paymentId}`;
 
       await new sql.Request(tx)

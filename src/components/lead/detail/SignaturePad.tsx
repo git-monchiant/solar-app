@@ -55,17 +55,22 @@ export default function SignaturePad({ leadId, fieldName, initialUrl, onSaved }:
   };
   useEffect(() => { return () => cancelAutoSave(); }, []);
 
+  // fieldName looks like "survey_customer_signature_url" — the route key drops
+  // the "_signature_url" suffix.
+  const fieldKey = fieldName.replace(/_signature_url$/, "");
+  const sigEndpoint = `/api/leads/${leadId}/signature/${fieldKey}`;
+
   const uploadSignature = async (): Promise<string | null> => {
     const c = inlineCanvasRef.current;
     if (!c || !hasDrawn) return signatureUrl;
     return new Promise((resolve) => {
       c.toBlob(async (blob) => {
         if (!blob) return resolve(null);
-        const fd = new FormData();
-        fd.append("file", new File([blob], `sig_${leadId}.png`, { type: "image/png" }));
-        fd.append("lead_id", String(leadId));
-        fd.append("type", "signature");
-        const res = await apiFetch("/api/upload", { method: "POST", body: fd });
+        const res = await apiFetch(sigEndpoint, {
+          method: "PUT",
+          headers: { "Content-Type": "image/png" },
+          body: blob,
+        });
         resolve(res.url || null);
       }, "image/png");
     });
@@ -78,10 +83,6 @@ export default function SignaturePad({ leadId, fieldName, initialUrl, onSaved }:
       const url = await uploadSignature();
       if (url) {
         setSignatureUrl(url);
-        await apiFetch(`/api/leads/${leadId}`, {
-          method: "PATCH", headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ [fieldName]: url }),
-        });
         onSaved?.(url);
       }
     } finally { setSigSaving(false); }
@@ -122,10 +123,7 @@ export default function SignaturePad({ leadId, fieldName, initialUrl, onSaved }:
     setHasDrawn(false);
     if (signatureUrl) {
       setSignatureUrl(null);
-      apiFetch(`/api/leads/${leadId}`, {
-        method: "PATCH", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ [fieldName]: null }),
-      }).catch(console.error);
+      apiFetch(sigEndpoint, { method: "DELETE" }).catch(console.error);
       onSaved?.(null);
     }
   };
@@ -189,10 +187,7 @@ export default function SignaturePad({ leadId, fieldName, initialUrl, onSaved }:
     setFsHasDrawn(false);
     if (signatureUrl) {
       setSignatureUrl(null);
-      apiFetch(`/api/leads/${leadId}`, {
-        method: "PATCH", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ [fieldName]: null }),
-      }).catch(console.error);
+      apiFetch(sigEndpoint, { method: "DELETE" }).catch(console.error);
       onSaved?.(null);
     }
   };

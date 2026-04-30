@@ -2,6 +2,7 @@
 import { useEffect, useState } from "react";
 import { useParams } from "next/navigation";
 import QRCode from "qrcode";
+import { formatSlotsRange } from "@/lib/time-slots";
 
 interface Pkg {
   id: number;
@@ -111,7 +112,6 @@ const ACCESS_MAP: Record<string, string> = { ladder: "บันไดพาด",
 const APPLIANCE_MAP: Record<string, string> = { water_heater: "เครื่องทำน้ำอุ่น", ev: "ที่ชาร์จรถ EV" };
 const BATTERY_MAP: Record<string, string> = { yes: "Solar + Battery", no: "On Grid", upgrade: "Upgrade", maybe: "ยังไม่แน่ใจ" };
 const PHASE_MAP: Record<string, string> = { "1_phase": "1 เฟส", "3_phase": "3 เฟส" };
-const SLOT_TIME: Record<string, string> = { morning: "09:00–12:00", afternoon: "13:00–16:00" };
 
 function otherLabel(raw: string | null, map: Record<string, string>): string {
   if (!raw) return "—";
@@ -143,7 +143,7 @@ export default function SurveyPdfPage() {
   const { lead, packages } = d;
 
   const docNo = `SRV${new Date().getFullYear().toString().slice(-2)}${String(lead.id).padStart(4, "0")}`;
-  const slotTime = lead.survey_time_slot ? SLOT_TIME[lead.survey_time_slot] ?? lead.survey_time_slot : "—";
+  const slotTime = lead.survey_time_slot ? (formatSlotsRange(lead.survey_time_slot) || lead.survey_time_slot) : "—";
   const appliances = (lead.survey_appliances || "").split(",").filter(Boolean).map(v => APPLIANCE_MAP[v] || v);
 
   const photoSlots: { url: string | null; label: string }[] = [

@@ -269,10 +269,7 @@ export default function InstallStep({ lead, state, refresh, expanded, onToggle }
     setHasDrawn(false);
     if (signatureUrl) {
       setSignatureUrl(null);
-      apiFetch(`/api/leads/${lead.id}`, {
-        method: "PATCH", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ install_customer_signature_url: null }),
-      }).catch(console.error);
+      apiFetch(`/api/leads/${lead.id}/signature/install_customer`, { method: "DELETE" }).catch(console.error);
     }
   };
 
@@ -342,10 +339,7 @@ export default function InstallStep({ lead, state, refresh, expanded, onToggle }
     setFsHasDrawn(false);
     if (signatureUrl) {
       setSignatureUrl(null);
-      apiFetch(`/api/leads/${lead.id}`, {
-        method: "PATCH", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ install_customer_signature_url: null }),
-      }).catch(console.error);
+      apiFetch(`/api/leads/${lead.id}/signature/install_customer`, { method: "DELETE" }).catch(console.error);
     }
   };
   // Fullscreen "เสร็จ" → copy fullscreen canvas back to inline, then auto-save + advance
@@ -374,11 +368,11 @@ export default function InstallStep({ lead, state, refresh, expanded, onToggle }
     return new Promise((resolve) => {
       c.toBlob(async (blob) => {
         if (!blob) return resolve(null);
-        const fd = new FormData();
-        const stamp = Date.now();
-        fd.append("file", new File([blob], `install_sig_${lead.id}_${stamp}.png`, { type: "image/png" }));
-        fd.append("filename", `install_sig_${lead.id}_${stamp}`);
-        const res = await apiFetch("/api/upload", { method: "POST", body: fd });
+        const res = await apiFetch(`/api/leads/${lead.id}/signature/install_customer`, {
+          method: "PUT",
+          headers: { "Content-Type": "image/png" },
+          body: blob,
+        });
         resolve(res.url || null);
       }, "image/png");
     });
@@ -390,10 +384,6 @@ export default function InstallStep({ lead, state, refresh, expanded, onToggle }
     try {
       const url = await uploadInlineSignature();
       if (url) setSignatureUrl(url);
-      await apiFetch(`/api/leads/${lead.id}`, {
-        method: "PATCH", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ install_customer_signature_url: url }),
-      });
     } finally { setSigSaving(false); }
   };
 
@@ -904,17 +894,17 @@ export default function InstallStep({ lead, state, refresh, expanded, onToggle }
 
       {/* Navigation buttons */}
       {lead.install_confirmed && subStep < 4 && (
-        <div className="flex gap-2 mt-3">
-          {subStep > 0 && (
-            <button type="button" onClick={() => { setNextError(null); setSubStep(subStep - 1); scrollToStep(); }} className="flex-1 h-11 rounded-lg text-sm font-semibold border border-gray-200 text-gray-600 hover:bg-gray-50 transition-colors flex items-center justify-center gap-1">
+        <div className="flex gap-2 mt-3 lg:justify-between">
+          {subStep > 0 ? (
+            <button type="button" onClick={() => { setNextError(null); setSubStep(subStep - 1); scrollToStep(); }} className="flex-1 lg:flex-none lg:w-80 h-11 rounded-lg text-sm font-semibold border border-gray-200 text-gray-600 hover:bg-gray-50 transition-colors flex items-center justify-center gap-1">
               <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M15.75 19.5L8.25 12l7.5-7.5" /></svg>
               ย้อนกลับ
             </button>
-          )}
+          ) : <span className="hidden lg:block lg:w-80" />}
           <button type="button" onClick={() => {
             setNextError(null);
             setSubStep(subStep + 1); scrollToStep();
-          }} className="flex-1 h-11 rounded-lg text-sm font-semibold text-white bg-active hover:brightness-110 transition-colors flex items-center justify-center gap-1">
+          }} className="flex-1 lg:flex-none lg:w-80 h-11 rounded-lg text-sm font-semibold text-white bg-active hover:brightness-110 transition-colors flex items-center justify-center gap-1">
             ถัดไป
             <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M8.25 4.5l7.5 7.5-7.5 7.5" /></svg>
           </button>

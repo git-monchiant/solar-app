@@ -26,18 +26,21 @@ async function loadBillerSettings(): Promise<BillerSettings> {
       'promptpay_ref1',
       'promptpay_ref2',
       'promptpay_merchant_name',
-      'promptpay_terminal'
+      'promptpay_terminal',
+      'company_name'
     )
   `);
   const map: Record<string, string> = {};
   for (const row of result.recordset) map[row.key] = row.value || "";
+  // Default merchant name = explicit override, else company_name, else generic.
+  const merchantName = map.promptpay_merchant_name || map.company_name || "";
   return {
     mode: map.promptpay_mode || "credit_transfer",
     taxId: map.promptpay_tax_id || "",
     billerId: map.promptpay_biller_id || "",
     ref1: map.promptpay_ref1 || "",
     ref2: map.promptpay_ref2 || "",
-    merchantName: map.promptpay_merchant_name || "",
+    merchantName,
     terminal: map.promptpay_terminal || "",
   };
 }
@@ -69,7 +72,7 @@ function buildBillPaymentPayload(opts: {
     tlv("00", BILL_PAYMENT_AID) +
     tlv("01", opts.billerId) +
     tlv("02", opts.ref1) +
-    (opts.ref2 ? tlv("03", opts.ref2) : "");
+    (opts.ref2 ? tlv("03", opts.ref2.slice(0, 20)) : "");
   const hasAmount = opts.amount > 0;
   const core =
     tlv("00", "01") +
@@ -78,7 +81,9 @@ function buildBillPaymentPayload(opts: {
     tlv("53", "764") +
     (hasAmount ? tlv("54", opts.amount.toFixed(2)) : "") +
     tlv("58", "TH") +
-    tlv("59", (opts.merchantName || "SENA SOLAR").slice(0, 25)) +
+    // Fall back to company_name from settings (loaded by caller as
+    // merchantName) or a generic label so the QR is always self-describing.
+    tlv("59", (opts.merchantName || "SENA SOLAR ENERGY").slice(0, 25)) +
     (opts.terminal ? tlv("62", tlv("07", opts.terminal)) : "");
   const withCrcPrefix = core + "6304";
   return withCrcPrefix + crc16(withCrcPrefix);
@@ -100,9 +105,12 @@ export async function GET(req: NextRequest) {
   const cfg = await loadBillerSettings();
   const useBillPayment = cfg.mode === "bill_payment" && !!cfg.billerId && !!cfg.ref1;
 
-  // Ref1 = configured prefix (e.g. "87UX") + per-payment tag "L<lead>S<step>".
+  // Ref1 = configured prefix (e.g. "87UX") + per-payment tag "L<lead>S<step:2d>".
   // Max 20 chars per EMV spec; leading prefix is preserved so Digio still recognizes the merchant.
-  const ref1Suffix = [leadIdParam && `L${leadIdParam}`, stepNoParam && `S${stepNoParam}`].filter(Boolean).join("");
+  const ref1Suffix = [
+    leadIdParam && `L${leadIdParam}`,
+    stepNoParam && `S${stepNoParam.padStart(2, "0")}`,
+  ].filter(Boolean).join("");
   const ref1Value = (cfg.ref1 + ref1Suffix).slice(0, 20);
 
   let payload: string;

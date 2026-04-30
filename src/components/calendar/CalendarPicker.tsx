@@ -2,13 +2,9 @@
 
 import { useEffect, useState } from "react";
 import { apiFetch } from "@/lib/api";
+import { HOURLY_SLOTS, parseSlots, serializeSlots } from "@/lib/time-slots";
 
 const WEEKDAYS = ["อา", "จ", "อ", "พ", "พฤ", "ศ", "ส"];
-
-const TIME_SLOTS = [
-  { value: "morning", time: "09:00 - 12:00" },
-  { value: "afternoon", time: "13:00 - 16:00" },
-];
 
 interface Props {
   date: string;
@@ -40,19 +36,28 @@ export default function CalendarPicker({
       .catch(console.error);
   }, [showSurveySlots, excludeLeadId]);
 
-  const surveyCountByDate = surveys.reduce<Record<string, { morning: number; afternoon: number }>>((acc, s) => {
+  // Per-date set of hourly slots already booked. Install events (no slot)
+  // block the entire day, so we mark all hourly codes plus a sentinel "FULL"
+  // so the day-level check is cheap.
+  const bookedSlotsByDate = surveys.reduce<Record<string, Set<string>>>((acc, s) => {
     const dateRaw = s.event_date || s.survey_date;
-    const slot = s.time_slot ?? s.survey_time_slot;
+    const slot = s.time_slot ?? s.survey_time_slot ?? null;
     if (!dateRaw) return acc;
-    // Include both survey and install events — both occupy the day
     const key = dateRaw.slice(0, 10);
-    if (!acc[key]) acc[key] = { morning: 0, afternoon: 0 };
-    if (slot === "morning") acc[key].morning++;
-    else if (slot === "afternoon") acc[key].afternoon++;
-    // Install events (no slot) occupy both — blocks the day
-    else { acc[key].morning++; acc[key].afternoon++; }
+    if (!acc[key]) acc[key] = new Set();
+    const set = acc[key];
+    if (!slot) {
+      // Full-day event (install / block) — covers every slot.
+      HOURLY_SLOTS.forEach(h => set.add(h));
+      set.add("FULL");
+      return acc;
+    }
+    parseSlots(slot).forEach(h => set.add(h));
     return acc;
   }, {});
+
+  // Currently selected hourly slots for this picker (multi-select).
+  const selectedSlots = parseSlots(timeSlot);
 
   const today = new Date(); today.setHours(0, 0, 0, 0);
   const months = [
@@ -84,10 +89,11 @@ export default function CalendarPicker({
                   const isPast = d < today;
                   const isToday = d.getTime() === today.getTime();
                   const isWeekend = d.getDay() === 0 || d.getDay() === 6;
-                  const counts = surveyCountByDate[iso];
-                  const isFull = !!(counts && counts.morning > 0 && counts.afternoon > 0);
-                  const isPartial = !!(counts && (counts.morning > 0 || counts.afternoon > 0) && !isFull);
-                  // Full-day events (install) block any day already scheduled
+                  const booked = bookedSlotsByDate[iso];
+                  const bookedCount = booked ? Array.from(booked).filter(s => s !== "FULL").length : 0;
+                  const isFull = !!booked && (booked.has("FULL") || bookedCount >= HOURLY_SLOTS.length);
+                  const isPartial = !!booked && bookedCount > 0 && !isFull;
+                  // Full-day picker (install) — any prior booking blocks the day.
                   const fullDayEvent = !showTimeSlot;
                   const disabled = isPast || (showSurveySlots && (isFull || (fullDayEvent && isPartial)));
                   let bookedClass = "";
@@ -102,10 +108,14 @@ export default function CalendarPicker({
                         disabled={disabled}
                         onClick={() => {
                           onDateChange(iso);
-                          // Keep time slot if it doesn't conflict; clear only if the slot is already taken
-                          const c = surveyCountByDate[iso];
-                          const conflict = !!(c && timeSlot && (timeSlot === "morning" ? c.morning > 0 : c.afternoon > 0));
-                          if (conflict) onTimeSlotChange("");
+                          // Drop any previously selected slots that are taken on the new date.
+                          const taken = bookedSlotsByDate[iso];
+                          if (taken && selectedSlots.length > 0) {
+                            const remaining = selectedSlots.filter(s => !taken.has(s));
+                            if (remaining.length !== selectedSlots.length) {
+                              onTimeSlotChange(serializeSlots(remaining) || "");
+                            }
+                          }
                         }}
                         style={{ minHeight: 0 }}
                         className={`w-8 h-8 rounded-full flex items-center justify-center text-sm leading-none font-semibold transition-all ${
@@ -131,24 +141,30 @@ export default function CalendarPicker({
         })}
       </div>
 
-      {/* Time slot — always visible */}
+      {/* Time slot — always visible. Hourly multi-select; saved as JSON array. */}
       {showTimeSlot && (
         <div className="mt-2 pt-2 border-t border-gray-100">
           <div className="text-xs font-semibold tracking-wider uppercase text-gray-400 mb-2">
             ช่วงเวลา {required && <span className="text-red-500">*</span>}
+            <span className="ml-2 text-gray-300 normal-case font-normal">เลือกได้มากกว่า 1 ช่วง</span>
           </div>
-          <div className="grid grid-cols-3 gap-2">
-            {TIME_SLOTS.map(s => {
-              const selected = timeSlot === s.value;
-              const counts = date && showSurveySlots ? surveyCountByDate[date] : null;
-              const taken = !!(counts && (s.value === "morning" ? counts.morning > 0 : counts.afternoon > 0));
+          <div className="grid grid-cols-7 gap-1.5">
+            {HOURLY_SLOTS.map(s => {
+              const selected = selectedSlots.includes(s);
+              const dayBooked = date && showSurveySlots ? bookedSlotsByDate[date] : null;
+              const taken = !!dayBooked && dayBooked.has(s) && !selected;
               return (
                 <button
-                  key={s.value}
+                  key={s}
                   type="button"
                   disabled={taken}
-                  onClick={() => onTimeSlotChange(s.value)}
-                  className={`flex items-center justify-center py-2.5 px-3 rounded-lg border transition-all ${
+                  onClick={() => {
+                    const next = selected
+                      ? selectedSlots.filter(x => x !== s)
+                      : [...selectedSlots, s].sort();
+                    onTimeSlotChange(serializeSlots(next) || "");
+                  }}
+                  className={`flex items-center justify-center h-8 px-1 rounded-md border transition-all ${
                     selected
                       ? "bg-active border-active text-white shadow-sm shadow-active/20"
                       : taken
@@ -156,7 +172,7 @@ export default function CalendarPicker({
                       : "bg-white border-gray-300 text-gray-900 hover:border-active hover:text-active"
                   }`}
                 >
-                  <span className="text-[15px] font-bold font-mono tabular-nums">{s.time}</span>
+                  <span className="text-[11px] font-semibold font-mono tabular-nums">{s}</span>
                 </button>
               );
             })}

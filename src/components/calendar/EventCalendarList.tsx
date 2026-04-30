@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { apiFetch } from "@/lib/api";
 import { getStatusLabel } from "@/lib/constants/statuses";
+import { formatSlotsRange } from "@/lib/time-slots";
 
 // List-style calendar view used by Today's "ปฏิทิน" tab and the standalone
 // /calendar page. Fetches /api/surveys/scheduled and renders one row per day
@@ -232,7 +233,7 @@ export default function EventCalendarList({ monthsBack, monthsForward, days, zon
                                 <div className="flex-1 min-w-0">
                                   <div className="text-xs font-semibold text-gray-900 truncate">{j.house_number ? `${j.house_number} - ${j.full_name}` : j.full_name}</div>
                                   <div className="text-[10px] text-gray-500">
-                                    {j.time_slot === "morning" ? "09:00 - 12:00" : j.time_slot === "afternoon" ? "13:00 - 16:00" : isBlock ? "ทั้งวัน" : ""}{j.time_slot || isBlock ? " · " : ""}{c.label}
+                                    {formatSlotsRange(j.time_slot) || (isBlock ? "ทั้งวัน" : "")}{j.time_slot || isBlock ? " · " : ""}{c.label}
                                   </div>
                                 </div>
                               </>

@@ -1,6 +1,7 @@
 "use client";
 import { useEffect, useState, Suspense } from "react";
 import { useSearchParams } from "next/navigation";
+import { formatSlotsRange } from "@/lib/time-slots";
 
 interface ReceiptData {
   stage: "deposit" | "order_before" | "order_after";
@@ -35,7 +36,6 @@ const CO = {
 };
 
 const fmt = (n: number) => new Intl.NumberFormat("en-US", { minimumFractionDigits: 2 }).format(n);
-const slotMap: Record<string, string> = { am: "9:00 - 12:00", morning: "9:00 - 12:00", pm: "13:00 - 16:00", afternoon: "13:00 - 16:00" };
 
 const STAGE_TITLE: Record<string, string> = {
   deposit: "SOLAR ROOFTOP SURVEY / TEMPORARY RECEIPT",
@@ -46,6 +46,10 @@ const STAGE_TITLE: Record<string, string> = {
 function ReceiptContent() {
   const params = useSearchParams();
   const [d, setD] = useState<ReceiptData | null>(null);
+  // Caller can override the document title via ?title=... — used when the same
+  // receipt template is reused for different document kinds (e.g. booking
+  // confirmation vs. temporary receipt). Falls back to the stage default.
+  const titleOverride = params.get("title");
 
   useEffect(() => {
     const qs = new URLSearchParams();
@@ -61,6 +65,7 @@ function ReceiptContent() {
   if (!d) return <div className="flex items-center justify-center h-screen"><div className="w-8 h-8 border-2 border-primary/30 border-t-primary rounded-full animate-spin" /></div>;
 
   const showSurvey = d.stage === "deposit";
+  const docTitle = titleOverride || STAGE_TITLE[d.stage];
 
   return (
     <div className="bg-white min-h-screen print:min-h-0 receipt-root">
@@ -82,7 +87,7 @@ function ReceiptContent() {
         </div>
 
         <div className="px-10 pt-4 pb-3 flex flex-col flex-1">
-          <div className="text-center font-bold text-lg tracking-wide uppercase mb-2">{STAGE_TITLE[d.stage]}</div>
+          <div className="text-center font-bold text-lg tracking-wide uppercase mb-2">{docTitle}</div>
 
           <div className="flex justify-between text-sm text-gray-500 mb-3">
             <span>RECEIPT NO: {d.receipt_no}</span>
@@ -149,7 +154,7 @@ function ReceiptContent() {
 
           {showSurvey && d.survey_date && (
             <div className="bg-yellow-100 py-2 px-4 font-bold text-sm mb-4">
-              SURVEY DATE: {(() => { const dt = new Date(String(d.survey_date).slice(0, 10) + "T12:00:00"); return dt.toLocaleDateString("th-TH", { day: "numeric", month: "long", year: "numeric" }); })()} {slotMap[d.survey_time_slot || ""] || ""}
+              SURVEY DATE: {(() => { const dt = new Date(String(d.survey_date).slice(0, 10) + "T12:00:00"); return dt.toLocaleDateString("th-TH", { day: "numeric", month: "long", year: "numeric" }); })()} {formatSlotsRange(d.survey_time_slot)}
             </div>
           )}
 
@@ -183,7 +188,7 @@ function ReceiptContent() {
                 <div className="absolute inset-x-0 bottom-0 border-b border-gray-300" />
               </div>
               <div>SIGNATURE</div>
-              <div>(..............................................)</div>
+              <div>({d.full_name || ".............................................."})</div>
             </div>
             <div className="text-center">
               <div className="relative w-44 h-12 mb-1">

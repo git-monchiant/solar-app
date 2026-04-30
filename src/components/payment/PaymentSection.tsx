@@ -206,6 +206,10 @@ export default function PaymentSection({
   const [qrLoading, setQrLoading] = useState(true);
   const [qrError, setQrError] = useState<string | null>(null);
   const [payToken, setPayToken] = useState<string>("");
+  // Per-payment number (Ref2 in the QR). Allocated by /api/payments/intent so
+  // every QR carries a unique transaction reference. Empty until allocated;
+  // QR will fall back to the static settings ref2 in that brief window.
+  const [paymentNo, setPaymentNo] = useState<string>("");
   const [linkCopied, setLinkCopied] = useState(false);
   const [lineSending, setLineSending] = useState<string | null>(null);
   const [lineSent, setLineSent] = useState<string | null>(null);
@@ -224,7 +228,25 @@ export default function PaymentSection({
     }).catch(console.error);
   }, []);
 
-  // Generate PromptPay QR — regen whenever amount changes
+  // Allocate a payment_no (Ref2) up-front so the QR carries a stable per-payment
+  // reference. Skipped if confirmed (payment row already exists; pending lookup
+  // would also collide). Idempotent — same (lead, step, slip_field) returns the
+  // same number, even if amount changes.
+  useEffect(() => {
+    if (amount <= 0 || !leadId || stepNo === undefined || !slipField) return;
+    if (confirmed) return;
+    let cancelled = false;
+    apiFetch("/api/payments/intent", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ lead_id: leadId, step_no: stepNo, slip_field: slipField, amount, description }),
+    }).then((r: { payment_no: string }) => {
+      if (!cancelled && r.payment_no) setPaymentNo(r.payment_no);
+    }).catch(console.error);
+    return () => { cancelled = true; };
+  }, [leadId, stepNo, slipField, amount, description, confirmed]);
+
+  // Generate PromptPay QR — regen whenever amount or payment_no changes
   useEffect(() => {
     if (amount <= 0) return;
     setQrLoading(true);
@@ -232,6 +254,7 @@ export default function PaymentSection({
     const params = new URLSearchParams({ amount: String(amount) });
     if (leadId) params.set("lead_id", String(leadId));
     if (stepNo) params.set("step_no", String(stepNo));
+    if (paymentNo) params.set("ref2", paymentNo);
     apiFetch(`/api/qr?${params.toString()}`)
       .then((d: { qrDataUrl: string; mode?: "credit_transfer" | "bill_payment" }) => {
         setQrDataUrl(d.qrDataUrl);
@@ -239,7 +262,7 @@ export default function PaymentSection({
       })
       .catch((err) => { console.error(err); setQrError("สร้าง QR ไม่สำเร็จ"); })
       .finally(() => setQrLoading(false));
-  }, [amount, leadId, stepNo]);
+  }, [amount, leadId, stepNo, paymentNo]);
 
   // Ensure a pay token exists for (lead_id, amount, description, installment) so URLs can hide the amount
   useEffect(() => {
@@ -273,7 +296,11 @@ export default function PaymentSection({
     setLineSending(type);
     try {
       const origin = typeof window !== "undefined" ? window.location.origin : "";
-      const qrImageUrl = type === "qr" ? `${origin}/api/qr?amount=${amount}&format=image` : undefined;
+      const qrParams = new URLSearchParams({ amount: String(amount), format: "image" });
+      if (leadId) qrParams.set("lead_id", String(leadId));
+      if (stepNo) qrParams.set("step_no", String(stepNo));
+      if (paymentNo) qrParams.set("ref2", paymentNo);
+      const qrImageUrl = type === "qr" ? `${origin}/api/qr?${qrParams.toString()}` : undefined;
       const bankDetails = type === "bank" ? [
         { label: "ธนาคาร", value: `${bankName}${bankBranch ? " · " + bankBranch : ""}` },
         { label: "เลขบัญชี", value: bankNumber },
@@ -485,9 +512,94 @@ export default function PaymentSection({
     : type === "link" ? "ส่งลิ้งค์ให้ลูกค้า"
     : "ส่งบัญชีให้ลูกค้า";
 
+  // "ใบขอให้โอนเงิน" download — only visible once we have a pay token (which
+  // is what the public /invoice/[token] page keys off). We hit the PDF
+  // endpoint via fetch + blob so the browser saves the file under the lead's
+  // name instead of dumping it inline.
+  const downloadInvoice = async () => {
+    if (!invoiceDocUrl) return;
+    try {
+      const res = await fetch(invoiceDocUrl, { headers: { ...getUserIdHeader() } });
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const blob = await res.blob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `ใบแจ้งชำระเงิน_${leadName || leadId}.pdf`;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      URL.revokeObjectURL(url);
+    } catch (e) {
+      console.error("invoice download failed", e);
+      dialog.alert({ title: "ดาวน์โหลดไม่สำเร็จ", message: "โหลด PDF ไม่สำเร็จ", variant: "danger" });
+    }
+  };
+
+  // Temporary receipt — only after the payment is confirmed. The /api/receipt
+  // endpoint takes a stage code that mirrors the slip_field (deposit /
+  // order_before / order_after).
+  const receiptStage = slipField === "pre_slip_url" ? "deposit"
+    : slipField === "order_before_slip" ? "order_before"
+    : slipField === "order_after_slip" ? "order_after"
+    : null;
+  const downloadReceipt = async () => {
+    if (!receiptStage) return;
+    try {
+      const title = "TEMPORARY RECEIPT";
+      const url = `/api/receipt?lead_id=${leadId}&stage=${receiptStage}&format=pdf&title=${encodeURIComponent(title)}`;
+      const res = await fetch(url, { headers: { ...getUserIdHeader() } });
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const blob = await res.blob();
+      const blobUrl = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = blobUrl;
+      a.download = `ใบเสร็จรับเงินชั่วคราว_${leadName || leadId}.pdf`;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      URL.revokeObjectURL(blobUrl);
+    } catch (e) {
+      console.error("receipt download failed", e);
+      dialog.alert({ title: "ดาวน์โหลดไม่สำเร็จ", message: "โหลด PDF ไม่สำเร็จ", variant: "danger" });
+    }
+  };
+
   return (
-    <div className="space-y-3">
-      <PaymentHeader title={paymentTitle} amount={amount} amountLabel={amountLabel} />
+    <div className="space-y-3 relative">
+      <div className="flex items-start justify-between gap-2">
+        <PaymentHeader title={paymentTitle} amount={amount} amountLabel={amountLabel} />
+        <div className="shrink-0 flex items-center gap-1">
+          {invoiceDocUrl && (
+            <button
+              type="button"
+              onClick={downloadInvoice}
+              className="inline-flex items-center gap-1 h-8 px-2 rounded-lg text-gray-400 hover:text-active hover:bg-active/5 transition-colors"
+              title="ดาวน์โหลดใบแจ้งชำระเงิน (PDF)"
+              aria-label="ดาวน์โหลดใบแจ้งชำระเงิน (PDF)"
+            >
+              <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                <path strokeLinecap="round" strokeLinejoin="round" d="M3 16.5v2.25A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75V16.5M16.5 12L12 16.5m0 0L7.5 12m4.5 4.5V3" />
+              </svg>
+              <span className="text-xs font-semibold">ใบแจ้งชำระเงิน</span>
+            </button>
+          )}
+          {confirmed && receiptStage && (
+            <button
+              type="button"
+              onClick={downloadReceipt}
+              className="inline-flex items-center gap-1 h-8 px-2 rounded-lg text-gray-400 hover:text-active hover:bg-active/5 transition-colors"
+              title="ดาวน์โหลดใบเสร็จรับเงินชั่วคราว (PDF)"
+              aria-label="ดาวน์โหลดใบเสร็จรับเงินชั่วคราว (PDF)"
+            >
+              <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                <path strokeLinecap="round" strokeLinejoin="round" d="M3 16.5v2.25A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75V16.5M16.5 12L12 16.5m0 0L7.5 12m4.5 4.5V3" />
+              </svg>
+              <span className="text-xs font-semibold">ใบเสร็จรับเงินชั่วคราว</span>
+            </button>
+          )}
+        </div>
+      </div>
 
       {/* Tabs (hide if only one enabled) */}
       {[qrEnabled, linkEnabled, bankEnabled, otherEnabled].filter(Boolean).length > 1 && (() => {

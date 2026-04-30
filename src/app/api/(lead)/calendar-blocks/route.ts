@@ -30,7 +30,7 @@ export async function POST(req: NextRequest) {
     const r = await db.request()
       .input("title", sql.NVarChar(200), String(body.title))
       .input("block_date", sql.Date, body.block_date)
-      .input("time_slot", sql.NVarChar(20), body.time_slot || null)
+      .input("time_slot", sql.NVarChar(100), body.time_slot || null)
       .input("note", sql.NVarChar(sql.MAX), body.note || null)
       .input("created_by", sql.Int, gate.userId)
       .query(`

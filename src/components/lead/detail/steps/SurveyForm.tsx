@@ -285,7 +285,7 @@ export default function SurveyForm({ lead, refresh, section = "all", onPhaseChan
           {/* 2.1 ขนาดมิเตอร์ */}
           <div>
             <div className={subLabel}>ขนาดมิเตอร์ <span className="text-red-500">*</span></div>
-            <div className="grid grid-cols-3 gap-2">
+            <div className="grid grid-cols-3 md:grid-cols-4 gap-2">
               {(METER_SIZES[electricalPhase] || METER_SIZES["1_phase"]).map(m => (
                 <button key={m.value} type="button" onClick={() => setMeterSize(m.value)} className={chipBtn(meterSize === m.value)}>
                   {m.label}
@@ -304,7 +304,7 @@ export default function SurveyForm({ lead, refresh, section = "all", onPhaseChan
           {/* 2.2 ระบบไฟ 1/3 Phase */}
           <div>
             <div className={subLabel}>ระบบไฟ <span className="text-red-500">*</span></div>
-            <div className="grid grid-cols-3 gap-2">
+            <div className="grid grid-cols-3 md:grid-cols-4 gap-2">
               {[
                 { value: "1_phase", label: "1 เฟส" },
                 { value: "3_phase", label: "3 เฟส" },
@@ -323,22 +323,24 @@ export default function SurveyForm({ lead, refresh, section = "all", onPhaseChan
 
           {/* 2.3 แรงดันไฟฟ้าหน้างาน L-N / L-L */}
           <div>
-            <div className={subLabel}>แรงดันไฟฟ้าหน้างาน (V)</div>
-            <div className="grid grid-cols-2 gap-2">
-              <div className="input-affix">
+            <div className={subLabel}>แรงดันไฟฟ้าหน้างาน (V) <span className="text-red-500">*</span></div>
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
+              <div className="input-affix md:col-span-2">
                 <span className="input-affix-left">L-N</span>
-                <input type="number" step="0.1" value={voltageLN === "" ? "" : voltageLN} onChange={e => setVoltageLN(e.target.value === "" ? "" : parseFloat(e.target.value))} placeholder="220" className="input-affix-input w-full h-10 pl-12 pr-3 rounded-lg border border-gray-200 text-sm" />
+                <input type="number" step="0.1" value={voltageLN === "" ? "" : voltageLN} onChange={e => setVoltageLN(e.target.value === "" ? "" : parseFloat(e.target.value))} placeholder="220" className="input-affix-input w-full h-10 pl-12 pr-8 rounded-lg border border-gray-200 text-sm" />
+                <span className="input-affix-right">V</span>
               </div>
-              <div className="input-affix">
+              <div className="input-affix md:col-span-2">
                 <span className="input-affix-left">L-L</span>
-                <input type="number" step="0.1" value={voltageLL === "" ? "" : voltageLL} onChange={e => setVoltageLL(e.target.value === "" ? "" : parseFloat(e.target.value))} placeholder="380" className="input-affix-input w-full h-10 pl-12 pr-3 rounded-lg border border-gray-200 text-sm" />
+                <input type="number" step="0.1" value={voltageLL === "" ? "" : voltageLL} onChange={e => setVoltageLL(e.target.value === "" ? "" : parseFloat(e.target.value))} placeholder="380" className="input-affix-input w-full h-10 pl-12 pr-8 rounded-lg border border-gray-200 text-sm" />
+                <span className="input-affix-right">V</span>
               </div>
             </div>
           </div>
 
           {/* 2.4 ค่าไฟเฉลี่ยต่อเดือน */}
           <div>
-            <div className={subLabel}>ค่าไฟเฉลี่ยต่อเดือน</div>
+            <div className={subLabel}>ค่าไฟเฉลี่ยต่อเดือน <span className="text-red-500">*</span></div>
             <div className="relative">
               <input
                 type="number"
@@ -355,7 +357,7 @@ export default function SurveyForm({ lead, refresh, section = "all", onPhaseChan
           {/* 2.5 + 2.6 ตู้ MDB / Consumer Unit + ช่องว่าง (checkbox) */}
           <div>
             <div className="flex items-center justify-between mb-2">
-              <div className="text-xs font-semibold tracking-wider uppercase text-gray-400">ตู้ MDB / Consumer Unit</div>
+              <div className="text-xs font-semibold tracking-wider uppercase text-gray-400">ตู้ MDB / Consumer Unit <span className="text-red-500">*</span></div>
               <label className="inline-flex items-center gap-1.5 cursor-pointer select-none">
                 <input
                   type="checkbox"
@@ -363,19 +365,19 @@ export default function SurveyForm({ lead, refresh, section = "all", onPhaseChan
                   onChange={e => setMdbSlots(e.target.checked ? "has_slot" : "full")}
                   className="w-4 h-4 rounded border-gray-300 accent-active"
                 />
-                <span className="text-xs font-semibold text-gray-600">มีช่องว่าง</span>
+                <span className="text-xs font-semibold text-gray-600">ยังมีช่องว่าง</span>
               </label>
             </div>
-            <div className="grid grid-cols-2 gap-2">
-              <input type="text" value={mdbBrand} onChange={e => setMdbBrand(e.target.value)} placeholder="ยี่ห้อ" className="h-9 px-3 rounded-lg border border-gray-200 text-sm" />
-              <input type="text" value={mdbModel} onChange={e => setMdbModel(e.target.value)} placeholder="รุ่น" className="h-9 px-3 rounded-lg border border-gray-200 text-sm" />
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
+              <input type="text" value={mdbBrand} onChange={e => setMdbBrand(e.target.value)} placeholder="ยี่ห้อ" className="md:col-span-2 h-9 px-3 rounded-lg border border-gray-200 text-sm" />
+              <input type="text" value={mdbModel} onChange={e => setMdbModel(e.target.value)} placeholder="รุ่น" className="md:col-span-2 h-9 px-3 rounded-lg border border-gray-200 text-sm" />
             </div>
           </div>
 
           {/* 2.7 ชนิดของลูกเซอร์กิต */}
           <div>
-            <div className={subLabel}>ชนิดของลูกเซอร์กิต</div>
-            <div className="grid grid-cols-2 gap-2">
+            <div className={subLabel}>ชนิดของลูกเซอร์กิต <span className="text-red-500">*</span></div>
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
               {[
                 { value: "plug_on", label: "Plug On" },
                 { value: "screw", label: "ขันยึดสกรู" },
@@ -397,7 +399,7 @@ export default function SurveyForm({ lead, refresh, section = "all", onPhaseChan
 
           {/* 2.8 ระยะจากแผงถึงจุดเชื่อมต่อ Inverter */}
           <div>
-            <div className={subLabel}>Cable (PV → Inverter)</div>
+            <div className={subLabel}>Cable (PV → Inverter) <span className="text-red-500">*</span></div>
             <div className="relative">
               <input
                 type="number"
@@ -414,7 +416,7 @@ export default function SurveyForm({ lead, refresh, section = "all", onPhaseChan
 
           {/* 2.9 ระยะ Inverter → MDB */}
           <div>
-            <div className={subLabel}>Cable (Inverter → MDB)</div>
+            <div className={subLabel}>Cable (Inverter → MDB) <span className="text-red-500">*</span></div>
             <div className="relative">
               <input
                 type="number"
@@ -453,7 +455,7 @@ export default function SurveyForm({ lead, refresh, section = "all", onPhaseChan
           {/* 3.1 ประเภทหลังคา */}
           <div>
             <div className={subLabel}>ประเภทหลังคา <span className="text-red-500">*</span></div>
-            <div className="grid grid-cols-2 gap-2">
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
               {ROOF_MATERIALS.map(r => (
                 <button key={r.value} type="button" onClick={() => setRoofMaterial(r.value)} className={chipBtn(roofMaterial === r.value)}>
                   {r.label}
@@ -464,8 +466,8 @@ export default function SurveyForm({ lead, refresh, section = "all", onPhaseChan
 
           {/* มุมลาดเอียงหลังคา — ย้ายขึ้นมาติดกับประเภทหลังคา */}
           <div>
-            <div className={subLabel}>มุมลาดเอียงหลังคา</div>
-            <div className="grid grid-cols-3 gap-2">
+            <div className={subLabel}>มุมลาดเอียงหลังคา <span className="text-red-500">*</span></div>
+            <div className="grid grid-cols-3 md:grid-cols-4 gap-2">
               {ROOF_TILTS.map(t => (
                 <button key={t} type="button" onClick={() => setRoofTilt(t)} className={chipBtn(roofTilt === t)}>
                   {t}°
@@ -476,8 +478,8 @@ export default function SurveyForm({ lead, refresh, section = "all", onPhaseChan
 
           {/* 3.2 โครงสร้างหลังคา */}
           <div>
-            <div className={subLabel}>โครงสร้างหลังคา</div>
-            <div className="grid grid-cols-3 gap-2">
+            <div className={subLabel}>โครงสร้างหลังคา <span className="text-red-500">*</span></div>
+            <div className="grid grid-cols-3 md:grid-cols-4 gap-2">
               {[
                 { value: "steel", label: "เหล็ก" },
                 { value: "wood", label: "ไม้" },
@@ -500,8 +502,8 @@ export default function SurveyForm({ lead, refresh, section = "all", onPhaseChan
 
           {/* 3.3 ทิศทางการวางแผง */}
           <div>
-            <div className={subLabel}>ทิศทางการวางแผง <span className="text-gray-400 normal-case font-normal ml-1">(เลือกได้มากกว่า 1 ทิศ)</span></div>
-            <div className="grid grid-cols-3 gap-2">
+            <div className={subLabel}>ทิศทางการวางแผง <span className="text-red-500">*</span> <span className="text-gray-400 normal-case font-normal ml-1">(เลือกได้มากกว่า 1 ทิศ)</span></div>
+            <div className="grid grid-cols-3 md:grid-cols-4 gap-2">
               {ROOF_ORIENTATIONS.map(o => (
                 <button key={o.value} type="button" onClick={() => toggleOrientation(o.value)} className={chipBtn(roofOrientations.includes(o.value))}>
                   {o.label}
@@ -512,8 +514,8 @@ export default function SurveyForm({ lead, refresh, section = "all", onPhaseChan
 
           {/* 3.4 ความสูงอาคาร (ชั้น) */}
           <div>
-            <div className={subLabel}>ความสูงอาคาร (ชั้น)</div>
-            <div className="grid grid-cols-3 gap-2">
+            <div className={subLabel}>ความสูงอาคาร (ชั้น) <span className="text-red-500">*</span></div>
+            <div className="grid grid-cols-3 md:grid-cols-4 gap-2">
               {FLOORS.map(f => (
                 <button key={f.value} type="button" onClick={() => setFloors(f.value)} className={chipBtn(floors === f.value)}>
                   {f.label}
@@ -524,7 +526,7 @@ export default function SurveyForm({ lead, refresh, section = "all", onPhaseChan
 
           {/* 3.6 พื้นที่หลังคา + กว้าง × ยาว */}
           <div>
-            <div className={subLabel}>พื้นที่หลังคาที่ใช้ได้จริง</div>
+            <div className={subLabel}>พื้นที่หลังคาที่ใช้ได้จริง <span className="text-red-500">*</span></div>
             <div className="relative mb-2">
               <input
                 type="number"
@@ -536,7 +538,7 @@ export default function SurveyForm({ lead, refresh, section = "all", onPhaseChan
               />
               <span className="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-gray-400 font-medium">m²</span>
             </div>
-            <div className="grid grid-cols-2 gap-2">
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
               <div className="input-affix">
                 <span className="input-affix-left">W</span>
                 <input type="number" step="1" inputMode="numeric" value={roofWidth === "" ? "" : roofWidth} onChange={e => setRoofWidth(e.target.value === "" ? "" : parseInt(e.target.value))} className="input-affix-input w-full h-10 pl-9 pr-8 rounded-lg border border-gray-200 text-sm" />
@@ -552,8 +554,8 @@ export default function SurveyForm({ lead, refresh, section = "all", onPhaseChan
 
           {/* 3.7 สิ่งกีดขวาง / ร่มเงา */}
           <div>
-            <div className={subLabel}>สิ่งกีดขวาง / ร่มเงา</div>
-            <div className="grid grid-cols-3 gap-2">
+            <div className={subLabel}>สิ่งกีดขวาง / ร่มเงา <span className="text-red-500">*</span></div>
+            <div className="grid grid-cols-3 md:grid-cols-4 gap-2">
               {SHADING.map(s => (
                 <button key={s.value} type="button" onClick={() => setShading(shading.startsWith(s.value + ":") || shading === s.value ? s.value : s.value)} className={chipBtn(shading === s.value || shading.startsWith(s.value + ":"))}>
                   {s.label}
@@ -581,8 +583,8 @@ export default function SurveyForm({ lead, refresh, section = "all", onPhaseChan
       {(section === "all" || section === "prep") && <><div className={card}>
         <div className="space-y-4">
           <div>
-            <div className={subLabel}>จุดติดตั้ง Inverter</div>
-            <div className="grid grid-cols-2 gap-2">
+            <div className={subLabel}>จุดติดตั้ง Inverter <span className="text-red-500">*</span></div>
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
               {[
                 { value: "indoor", label: "ในร่ม (Indoor)" },
                 { value: "outdoor", label: "นอกอาคาร (Outdoor)" },
@@ -594,8 +596,8 @@ export default function SurveyForm({ lead, refresh, section = "all", onPhaseChan
             </div>
           </div>
           <div>
-            <div className={subLabel}>ความแรง Wi-Fi</div>
-            <div className="grid grid-cols-3 gap-2">
+            <div className={subLabel}>ความแรง Wi-Fi <span className="text-red-500">*</span></div>
+            <div className="grid grid-cols-3 md:grid-cols-4 gap-2">
               {[
                 { value: "good", label: "ดีมาก" },
                 { value: "fair", label: "พอใช้" },
@@ -608,8 +610,8 @@ export default function SurveyForm({ lead, refresh, section = "all", onPhaseChan
             </div>
           </div>
           <div>
-            <div className={subLabel}>วิธีการขึ้นชั้นหลังคา</div>
-            <div className="grid grid-cols-3 gap-2">
+            <div className={subLabel}>วิธีการขึ้นชั้นหลังคา <span className="text-red-500">*</span></div>
+            <div className="grid grid-cols-3 md:grid-cols-4 gap-2">
               {[
                 { value: "ladder", label: "บันไดพาด" },
                 { value: "scaffold", label: "นั่งร้าน" },

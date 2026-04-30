@@ -267,7 +267,7 @@ export default function PreSurveyForm({ lead, refresh, packages = [], hideReside
       {!hideResidence && (
         <div className={`${sectionCls} ${onlyPackages ? "hidden" : ""}`}>
           <label className={fieldLabel}>ประเภทบ้านพักอาศัย <span className="text-red-500">*</span></label>
-          <div className="grid grid-cols-3 gap-2">
+          <div className="grid grid-cols-3 md:grid-cols-6 gap-2">
             {RESIDENCE_TYPES.map(r => (
               <button key={r.value} type="button" onClick={() => setResidenceType(r.value)} className={chipBtn(residenceType === r.value || (r.value === "other" && residenceType.startsWith("other")))}>
                 {r.label}
@@ -305,7 +305,7 @@ export default function PreSurveyForm({ lead, refresh, packages = [], hideReside
           </div>
           <div>
             <label className={fieldLabel}>ช่วงเวลาที่ใช้ไฟสูงสุด <span className="text-red-500">*</span></label>
-            <div className="grid grid-cols-3 gap-2">
+            <div className="grid grid-cols-3 md:grid-cols-6 gap-2">
               {PEAK_USAGE.map(p => (
                 <button key={p.value} type="button" onClick={() => setPeakUsage(p.value)} className={chipBtn(peakUsage === p.value)}>{p.label}</button>
               ))}
@@ -313,7 +313,7 @@ export default function PreSurveyForm({ lead, refresh, packages = [], hideReside
           </div>
           <div>
             <label className={fieldLabel}>ระบบไฟปัจจุบัน <span className="text-red-500">*</span></label>
-            <div className="grid grid-cols-3 gap-2">
+            <div className="grid grid-cols-3 md:grid-cols-6 gap-2">
               {ELECTRICAL_PHASES.map(p => (
                 <button key={p.value} type="button" onClick={() => { setElectricalPhase(p.value); setSelectedPkgs([]); }} className={chipBtn(electricalPhase === p.value)}>{p.label}</button>
               ))}
@@ -326,7 +326,7 @@ export default function PreSurveyForm({ lead, refresh, packages = [], hideReside
       {/* EV charger toggle — only appliance asked at pre-survey now (AC removed) */}
       <div className={`${sectionCls} ${onlyPackages ? "hidden" : ""}`}>
         <label className={fieldLabel}>ที่ชาร์จรถ EV</label>
-        <div className="grid grid-cols-2 gap-2">
+        <div className="grid grid-cols-2 md:grid-cols-6 gap-2">
           <button type="button" onClick={() => { if (!pre_appliances.includes("ev")) toggleAppliance("ev"); }} className={chipBtn(pre_appliances.includes("ev"))}>มี</button>
           <button type="button" onClick={() => { if (pre_appliances.includes("ev")) toggleAppliance("ev"); }} className={chipBtn(!pre_appliances.includes("ev"))}>ไม่มี</button>
         </div>
@@ -337,7 +337,7 @@ export default function PreSurveyForm({ lead, refresh, packages = [], hideReside
         <div className={`${sectionCls} ${hidePackages ? "hidden" : ""}`}>
           <div className="mb-3">
             <label className={fieldLabel}>ต้องการแบตเตอรี่ + Upgrade <span className="text-red-500">*</span></label>
-            <div className="grid grid-cols-3 gap-2">
+            <div className="grid grid-cols-3 md:grid-cols-6 gap-2">
               {BATTERY_OPTIONS.map(b => (
                 <button key={b.value} type="button" onClick={() => { setWantsBattery(b.value); setSelectedPkgs([]); }} className={chipBtn(wantsBattery === b.value)}>{b.label}</button>
               ))}

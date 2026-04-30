@@ -544,6 +544,7 @@ export default function LeadDetailPage({ params }: { params: Promise<{ id: strin
 
       {/* Content */}
       <div ref={scrollRef} className="flex-1 overflow-y-auto pb-20 relative" style={{ overscrollBehaviorY: "contain" }}>
+        <div className="max-w-5xl">
         {tab === "info" ? (
           <div className="p-4">
             {(() => {
@@ -839,6 +840,7 @@ export default function LeadDetailPage({ params }: { params: Promise<{ id: strin
             <ActivityTimeline activities={activities} loading={loadingAct} />
           </div>
         )}
+        </div>
       </div>
 
       {/* Footer quick actions */}

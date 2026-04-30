@@ -601,13 +601,13 @@ export default function OrderStep({ lead, state, refresh, expanded, onToggle }: 
 
       {/* Navigation buttons */}
       {subStep < 4 && (
-        <div className="flex gap-2 mt-3">
-          {subStep > 0 && (
-            <button type="button" onClick={() => { setNextError(null); setSubStep(subStep - 1); scrollToStep(); }} className="flex-1 h-11 rounded-lg text-sm font-semibold border border-gray-200 text-gray-600 hover:bg-gray-50 transition-colors flex items-center justify-center gap-1">
+        <div className="flex gap-2 mt-3 lg:justify-between">
+          {subStep > 0 ? (
+            <button type="button" onClick={() => { setNextError(null); setSubStep(subStep - 1); scrollToStep(); }} className="flex-1 lg:flex-none lg:w-80 h-11 rounded-lg text-sm font-semibold border border-gray-200 text-gray-600 hover:bg-gray-50 transition-colors flex items-center justify-center gap-1">
               <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M15.75 19.5L8.25 12l7.5-7.5" /></svg>
               ย้อนกลับ
             </button>
-          )}
+          ) : <span className="hidden lg:block lg:w-80" />}
           <button type="button" onClick={() => {
             const missing: string[] = [];
             if (subStep === 0 && (!total || total <= 0)) missing.push("ยอดรวม");
@@ -618,7 +618,7 @@ export default function OrderStep({ lead, state, refresh, expanded, onToggle }: 
             if (missing.length > 0) { setNextError(missing.join(", ")); return; }
             setNextError(null);
             setSubStep(subStep + 1); scrollToStep();
-          }} className="flex-1 h-11 rounded-lg text-sm font-semibold text-white bg-active hover:brightness-110 transition-colors flex items-center justify-center gap-1">
+          }} className="flex-1 lg:flex-none lg:w-80 h-11 rounded-lg text-sm font-semibold text-white bg-active hover:brightness-110 transition-colors flex items-center justify-center gap-1">
             ถัดไป
             <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M8.25 4.5l7.5 7.5-7.5 7.5" /></svg>
           </button>

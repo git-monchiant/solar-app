@@ -1,6 +1,7 @@
 "use client";
 import { useEffect, useState } from "react";
 import { useParams } from "next/navigation";
+import { formatSlotsRange } from "@/lib/time-slots";
 
 interface InvoiceData {
   id: number;
@@ -32,7 +33,6 @@ const CO = {
 };
 
 const fmt = (n: number) => new Intl.NumberFormat("en-US", { minimumFractionDigits: 2 }).format(n);
-const slotMap: Record<string, string> = { am: "9:00 - 12:00", morning: "9:00 - 12:00", pm: "13:00 - 16:00", afternoon: "13:00 - 16:00" };
 const thaiDate = (s: string) => new Date(s.slice(0, 10) + "T12:00:00").toLocaleDateString("th-TH", { day: "numeric", month: "long", year: "numeric" });
 
 export default function InvoicePage() {
@@ -62,7 +62,7 @@ export default function InvoicePage() {
             </div>
             <div className="text-right shrink-0">
               <div className="text-[10px] uppercase tracking-wider opacity-80 leading-tight">Payment Request</div>
-              <div className="text-[16px] font-bold leading-tight mt-0.5">ใบแจ้งโอนเงิน</div>
+              <div className="text-[16px] font-bold leading-tight mt-0.5">ใบแจ้งชำระเงิน</div>
             </div>
           </div>
         </div>
@@ -100,7 +100,7 @@ export default function InvoicePage() {
               </div>
               {d.is_pre_survey && d.survey_date && (
                 <div className="text-[12px] text-gray-500 mt-1">
-                  นัดสำรวจ {thaiDate(d.survey_date)} {slotMap[d.survey_time_slot || ""] || ""}
+                  นัดสำรวจ {thaiDate(d.survey_date)} {formatSlotsRange(d.survey_time_slot)}
                 </div>
               )}
               {!d.is_pre_survey && d.install_date && (
@@ -135,7 +135,9 @@ export default function InvoicePage() {
             </div>
           )}
 
-          {/* Bank info — prominent */}
+          {/* Bank info — prominent. QR sits on the right of the bank block so
+              the customer can scan-or-transfer side by side. The QR is locked
+              to this invoice's exact amount. */}
           <div className="border border-gray-200 bg-primary/5 p-3.5">
             <div className="text-[11px] font-bold uppercase tracking-wider text-primary mb-2 flex items-center gap-1.5">
               <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
@@ -143,24 +145,34 @@ export default function InvoicePage() {
               </svg>
               ช่องทางการโอน
             </div>
-            <div className="space-y-2 text-[12px]">
-              <div>
-                <div className="text-gray-500 text-[10px]">ธนาคาร</div>
-                <div className="font-semibold text-gray-900">{CO.bank} · {CO.bankBranch}</div>
-              </div>
-              <div className="grid grid-cols-2 gap-3">
+            <div className="flex gap-3 items-start">
+              <div className="flex-1 min-w-0 space-y-2 text-[12px]">
                 <div>
-                  <div className="text-gray-500 text-[10px]">เลขบัญชี</div>
-                  <div className="font-bold font-mono tabular-nums text-gray-900 text-[13px]">{CO.bankAcc}</div>
+                  <div className="text-gray-500 text-[10px]">ธนาคาร</div>
+                  <div className="font-semibold text-gray-900">{CO.bank} · {CO.bankBranch}</div>
+                </div>
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <div className="text-gray-500 text-[10px]">เลขบัญชี</div>
+                    <div className="font-bold font-mono tabular-nums text-gray-900 text-[13px]">{CO.bankAcc}</div>
+                  </div>
+                  <div>
+                    <div className="text-gray-500 text-[10px]">PromptPay (Tax ID)</div>
+                    <div className="font-bold font-mono tabular-nums text-gray-900 text-[13px]">{CO.taxId}</div>
+                  </div>
                 </div>
                 <div>
-                  <div className="text-gray-500 text-[10px]">PromptPay (Tax ID)</div>
-                  <div className="font-bold font-mono tabular-nums text-gray-900 text-[13px]">{CO.taxId}</div>
+                  <div className="text-gray-500 text-[10px]">ชื่อบัญชี</div>
+                  <div className="font-semibold text-gray-900">{CO.bankName}</div>
                 </div>
               </div>
-              <div>
-                <div className="text-gray-500 text-[10px]">ชื่อบัญชี</div>
-                <div className="font-semibold text-gray-900">{CO.bankName}</div>
+              <div className="shrink-0 text-center">
+                <img
+                  src={`/api/qr?amount=${d.amount}&format=image`}
+                  alt="PromptPay QR"
+                  className="w-24 h-24 bg-white border border-gray-200 p-1"
+                />
+                <div className="text-[9px] text-gray-500 mt-1">สแกนเพื่อจ่าย</div>
               </div>
             </div>
           </div>

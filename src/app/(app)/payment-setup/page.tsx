@@ -155,17 +155,8 @@ function PaymentSetup() {
         <SaveButton saving={saving} onClick={saveCompany} />
       </Section>
 
-      <Section title="PromptPay QR Mode" subtitle="วิธีสร้าง QR — Credit Transfer (Tax ID) หรือ Bill Payment (Biller ID)" savedAt={savedSection === "qr"}>
-        <FormRow label="Mode">
-          <select value={modeInput} onChange={e => setModeInput(e.target.value as "credit_transfer" | "bill_payment")}
-            className="w-full h-10 px-3 rounded-lg border border-gray-200 text-sm focus:outline-none focus:border-primary">
-            <option value="credit_transfer">Credit Transfer (Tax ID)</option>
-            <option value="bill_payment">Bill Payment (Biller ID)</option>
-          </select>
-        </FormRow>
-        {modeInput === "bill_payment" && (
-          <>
-            <FormRow label="Biller ID (15 หลัก)">
+      <Section title="PromptPay QR Bill Payment" subtitle="ใช้ Biller ID ผ่าน Digio" savedAt={savedSection === "qr"}>
+        <FormRow label="Biller ID (15 หลัก)">
               <input type="text" value={billerIdInput}
                 onChange={e => setBillerIdInput(e.target.value.replace(/\D/g, "").slice(0, 15))}
                 placeholder="010753700001716"
@@ -181,9 +172,9 @@ function PaymentSetup() {
                 placeholder="86289573"
                 className="w-full h-10 px-3 rounded-lg border border-gray-200 text-sm font-mono focus:outline-none focus:border-primary" />
             </FormRow>
-            <FormRow label="Merchant Name (tag 59, max 25)">
+            <FormRow label="Merchant Name (tag 59, max 25 — เว้นว่าง = ใช้ชื่อบริษัท)">
               <input type="text" value={merchantNameInput} onChange={e => setMerchantNameInput(e.target.value.slice(0, 25))}
-                placeholder="Digio"
+                placeholder={companyInput.slice(0, 25) || "SENA SOLAR ENERGY"}
                 className="w-full h-10 px-3 rounded-lg border border-gray-200 text-sm focus:outline-none focus:border-primary" />
             </FormRow>
             <FormRow label="Terminal (tag 62/07 — optional)">
@@ -191,8 +182,6 @@ function PaymentSetup() {
                 placeholder="SDGO862842802640220"
                 className="w-full h-10 px-3 rounded-lg border border-gray-200 text-sm font-mono focus:outline-none focus:border-primary" />
             </FormRow>
-          </>
-        )}
         <SaveButton saving={saving} onClick={saveQr} />
       </Section>
 

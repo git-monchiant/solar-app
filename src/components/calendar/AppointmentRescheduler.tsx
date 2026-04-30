@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import CalendarPicker from "./CalendarPicker";
+import { formatSlotsRange } from "@/lib/time-slots";
 
 const formatDate = (d: string) =>
   new Date(String(d).slice(0, 10) + "T12:00:00").toLocaleDateString("th-TH", { day: "numeric", month: "short", year: "numeric" });
@@ -17,6 +18,8 @@ interface Props {
   currentDate: string | null;
   currentSlot?: string | null;
   showTimeSlot?: boolean;
+  /** @deprecated Time slots are now hourly multi-select; CalendarPicker
+   * renders the chips itself. Retained so existing callers compile. */
   timeSlots?: TimeSlot[];
   excludeLeadId?: number;
   onCancel: () => void;
@@ -28,7 +31,6 @@ export default function AppointmentRescheduler({
   currentDate,
   currentSlot,
   showTimeSlot = false,
-  timeSlots,
   excludeLeadId,
   onCancel,
   onSave,
@@ -37,7 +39,7 @@ export default function AppointmentRescheduler({
   const [slot, setSlot] = useState<string>(currentSlot ?? "");
   const [saving, setSaving] = useState(false);
 
-  const slotLabel = timeSlots?.find(s => s.value === slot)?.time;
+  const slotLabel = formatSlotsRange(slot);
   const canSave = !!date && (!showTimeSlot || !!slot);
 
   const handleSave = async () => {

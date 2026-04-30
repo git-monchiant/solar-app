@@ -1,6 +1,7 @@
 import { useRouter } from "next/navigation";
 import { useState, useEffect } from "react";
 import { STATUS_CONFIG, getStatusLabel } from "@/lib/constants/statuses";
+import { formatSlotsRange } from "@/lib/time-slots";
 import { stripThaiTitle } from "@/lib/utils/name";
 import AssignOwnerButton from "./AssignOwnerButton";
 import SourceTag from "@/components/SourceTag";
@@ -45,10 +46,6 @@ export interface LeadData {
 
 const formatPrice = (n: number) => new Intl.NumberFormat("th-TH").format(n);
 const formatDate = (d: string) => new Date(String(d).slice(0, 10) + "T12:00:00").toLocaleDateString("th-TH", { day: "numeric", month: "short" });
-const SURVEY_TIME_LABEL: Record<string, string> = {
-  morning: "09:00 - 12:00",
-  afternoon: "13:00 - 16:00",
-};
 
 export default function LeadCard({ lead, compact, onAssignChange }: { lead: LeadData; compact?: boolean; onAssignChange?: () => void }) {
   const router = useRouter();
@@ -142,7 +139,7 @@ export default function LeadCard({ lead, compact, onAssignChange }: { lead: Lead
               <span className="font-bold text-gray-900">{formatDate(showDate)}</span>
               {showTime && lead.survey_time_slot ? (
                 <span className="font-mono tabular-nums text-gray-600">
-                  · {SURVEY_TIME_LABEL[lead.survey_time_slot] || lead.survey_time_slot}
+                  · {formatSlotsRange(lead.survey_time_slot) || lead.survey_time_slot}
                 </span>
               ) : (
                 <span className="text-xs text-gray-500">· {label}</span>

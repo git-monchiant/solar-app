@@ -8,6 +8,9 @@ export async function GET(req: NextRequest) {
   // Prefer ?user_id from caller; fallback to whoever's authenticated. The view
   // page is public, so this is the only place we can read the auth cookie.
   const userId = req.nextUrl.searchParams.get("user_id") || (getUserIdFromReq(req)?.toString() ?? null);
+  // Forward an optional title override to the view page so the rendered PDF
+  // can show document kinds like "Temporary Receipt" or "Booking Confirmation".
+  const title = req.nextUrl.searchParams.get("title");
 
   if (!leadId) {
     return NextResponse.json({ error: "Missing lead_id" }, { status: 400 });
@@ -30,6 +33,7 @@ export async function GET(req: NextRequest) {
     qs.set("lead_id", leadId);
     qs.set("stage", stage);
     if (userId) qs.set("user_id", userId);
+    if (title) qs.set("title", title);
     const url = `http://localhost:${port}/receipt/view?${qs.toString()}`;
     await page.goto(url, { waitUntil: "networkidle0", timeout: 15000 });
     await page.waitForSelector("#receipt table", { timeout: 10000 });

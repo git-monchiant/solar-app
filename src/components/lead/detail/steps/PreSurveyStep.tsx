@@ -15,6 +15,7 @@ import FallbackImage from "@/components/ui/FallbackImage";
 import CustomerInfoForm from "@/components/customer/CustomerInfoForm";
 import StepLayout from "../StepLayout";
 import ReceiptButtons from "../ReceiptButtons";
+import { formatSlotsRange } from "@/lib/time-slots";
 import { useSubStep } from "@/lib/hooks/useSubStep";
 
 const DEPOSIT_AMOUNT = 1000;
@@ -108,11 +109,6 @@ const PEAK_USAGE = [
   { value: "both", label: "ทั้งสองช่วง" },
 ];
 
-const SURVEY_TIME_SLOTS = [
-  { value: "morning", label: "เช้า", time: "09:00 - 12:00" },
-  { value: "afternoon", label: "บ่าย", time: "13:00 - 16:00" },
-];
-
 const RESIDENCE_TYPES = [
   { value: "detached", label: "บ้านเดี่ยว" },
   { value: "townhome", label: "ทาวน์โฮม" },
@@ -141,6 +137,29 @@ const InfoRow = ({
     <span className="text-sm font-medium text-gray-800">{value}</span>
   </div>
 );
+
+// Done-view label/value row. On mobile, label/value spread to opposite edges
+// like a typical key-value row. On desktop, the label gets a fixed width so
+// every value lines up on the same left edge across sections.
+// `multiline=true` stacks label above value on mobile (both left-aligned at
+// the section's left edge) — long-form text reads better that way than
+// right-justified wraps.
+const DataRow = ({ label, value, valueClass, multiline }: { label: string; value: React.ReactNode; valueClass?: string; multiline?: boolean }) => {
+  if (multiline) {
+    return (
+      <div className="flex flex-col lg:flex-row lg:gap-2 text-sm">
+        <span className="text-gray-400 shrink-0 lg:w-40">{label}</span>
+        <span className={`font-semibold text-gray-800 min-w-0 text-left ${valueClass || ""}`}>{value}</span>
+      </div>
+    );
+  }
+  return (
+    <div className="flex gap-2 text-sm justify-between lg:justify-start">
+      <span className="text-gray-400 shrink-0 lg:w-40">{label}</span>
+      <span className={`font-semibold text-gray-800 min-w-0 text-right lg:text-left ${valueClass || ""}`}>{value}</span>
+    </div>
+  );
+};
 
 interface Props extends StepCommonProps {
   packages: Package[];
@@ -179,28 +198,21 @@ export default function PreSurveyStep({ lead, state, refresh, packages, expanded
   }, [regName, regIdCard, regAddress, regHouseNumber]); // eslint-disable-line react-hooks/exhaustive-deps
   const [zone, setZone] = useState<string>(lead.zone ?? "");
   const [zones, setZones] = useState<{ id: number; name: string; color: string }[]>([]);
-  useEffect(() => { apiFetch("/api/zones").then(setZones).catch(console.error); }, []);
-  const [scheduledSurveys, setScheduledSurveys] = useState<{ id: number; full_name: string; survey_date: string; survey_time_slot: string | null }[]>([]);
-
   useEffect(() => {
-    apiFetch("/api/surveys/scheduled")
-      .then((data) => setScheduledSurveys(data))
-      .catch(console.error);
-  }, [lead.id]);
-
-  // date -> { morning, afternoon, total }
-  const surveyCountByDate = scheduledSurveys.reduce<Record<string, { morning: number; afternoon: number; total: number }>>((acc, s) => {
-    const date = (s as unknown as { event_date?: string; survey_date?: string }).event_date || (s as unknown as { survey_date?: string }).survey_date;
-    const slot = (s as unknown as { time_slot?: string; survey_time_slot?: string }).time_slot || (s as unknown as { survey_time_slot?: string }).survey_time_slot;
-    if (!date) return acc;
-    const key = date.slice(0, 10);
-    if (!acc[key]) acc[key] = { morning: 0, afternoon: 0, total: 0 };
-    if (slot === "morning") acc[key].morning++;
-    else if (slot === "afternoon") acc[key].afternoon++;
-    acc[key].total++;
-    return acc;
-  }, {});
-
+    apiFetch("/api/zones").then((zs: { id: number; name: string; color: string }[]) => {
+      setZones(zs);
+      // Default to "กรุงเทพ" for new leads — most surveys are in Bangkok, so
+      // prefilling avoids an extra tap. Skipped if the lead already has a zone.
+      const defaultZone = zs.find(z => z.name.startsWith("กรุงเทพ"));
+      if (!lead.zone && defaultZone) {
+        setZone(defaultZone.name);
+        apiFetch(`/api/leads/${lead.id}`, {
+          method: "PATCH", headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ zone: defaultZone.name }),
+        }).catch(console.error);
+      }
+    }).catch(console.error);
+  }, [lead.id, lead.zone]);
   // Pre-survey form state
   const [selectedPkg, setSelectedPkg] = useState(lead.interested_package_id ? String(lead.interested_package_id) : "");
   const [paymentMethod, setPaymentMethod] = useState(lead.payment_type ?? "transfer");
@@ -339,7 +351,7 @@ export default function PreSurveyStep({ lead, state, refresh, packages, expanded
             <span className="block">นัด {new Date(String(lead.survey_date).slice(0, 10) + "T12:00:00").toLocaleDateString("th-TH", { weekday: "short", day: "numeric", month: "short", year: "numeric" })}</span>
             {lead.survey_time_slot && (
               <span className="block font-mono tabular-nums text-xs text-gray-500">
-                {SURVEY_TIME_SLOTS.find(s => s.value === lead.survey_time_slot)?.time || lead.survey_time_slot}
+                {formatSlotsRange(lead.survey_time_slot)}
               </span>
             )}
           </span>
@@ -363,26 +375,27 @@ export default function PreSurveyStep({ lead, state, refresh, packages, expanded
             return selectedPkgs.length > 0 ? (
               <div className="border-l-3 border-primary pl-3">
                 <div className="text-xs font-bold text-primary uppercase mb-1">แพ็คเกจที่สนใจ</div>
-                {selectedPkgs.map(p => (
-                  <div key={p.id} className="flex items-center justify-between">
-                    <span className="text-gray-800 flex items-center gap-1.5">
-                      {p.name}
-                      {p.is_upgrade && <span className="text-xs font-bold text-blue-600 bg-blue-50 px-2 py-0.5 rounded uppercase shrink-0">UPGRADE</span>}
-                      <span className="inline-flex items-center gap-0.5 ml-1">
-                        <svg className={`w-3 h-3 ${p.has_panel ? "text-amber-500" : "text-gray-300"}`} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M12 3v2.25m6.364.386l-1.591 1.591M21 12h-2.25m-.386 6.364l-1.591-1.591M12 18.75V21m-4.773-4.227l-1.591 1.591M5.25 12H3m4.227-4.773L5.636 5.636M15.75 12a3.75 3.75 0 11-7.5 0 3.75 3.75 0 017.5 0z" /></svg>
-                        <svg className={`w-3 h-3 ${p.has_inverter ? "text-violet-500" : "text-gray-300"}`} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M3.75 13.5l10.5-11.25L12 10.5h8.25L9.75 21.75 12 13.5H3.75z" /></svg>
-                        <svg className={`w-3 h-3 ${p.has_battery ? "text-green-500 fill-green-500" : "text-gray-300"}`} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M21 10.5h.375c.621 0 1.125.504 1.125 1.125v2.25c0 .621-.504 1.125-1.125 1.125H21M3.75 18h15A2.25 2.25 0 0021 15.75v-6a2.25 2.25 0 00-2.25-2.25h-15A2.25 2.25 0 001.5 9.75v6A2.25 2.25 0 003.75 18z" /></svg>
-                      </span>
-                    </span>
-                    <span className="font-semibold text-gray-800 font-mono shrink-0">{formatPrice(p.price)}</span>
-                  </div>
-                ))}
-                {batteryLabel && (
-                  <div className="flex justify-between mt-1 pt-1 border-t border-gray-100">
-                    <span className="text-gray-400">แบตเตอรี่</span>
-                    <span className="font-semibold text-gray-800">{batteryLabel}</span>
-                  </div>
-                )}
+                <div className="space-y-0.5">
+                  {selectedPkgs.map((p, idx) => (
+                    <DataRow
+                      key={p.id}
+                      label={idx === 0 ? "แพ็คเกจ" : ""}
+                      value={
+                        <span className="flex items-center gap-1.5 flex-wrap">
+                          <span>{p.name}</span>
+                          {p.is_upgrade && <span className="text-xs font-bold text-blue-600 bg-blue-50 px-2 py-0.5 rounded uppercase shrink-0">UPGRADE</span>}
+                          <span className="inline-flex items-center gap-0.5">
+                            <svg className={`w-3 h-3 ${p.has_panel ? "text-amber-500" : "text-gray-300"}`} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M12 3v2.25m6.364.386l-1.591 1.591M21 12h-2.25m-.386 6.364l-1.591-1.591M12 18.75V21m-4.773-4.227l-1.591 1.591M5.25 12H3m4.227-4.773L5.636 5.636M15.75 12a3.75 3.75 0 11-7.5 0 3.75 3.75 0 017.5 0z" /></svg>
+                            <svg className={`w-3 h-3 ${p.has_inverter ? "text-violet-500" : "text-gray-300"}`} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M3.75 13.5l10.5-11.25L12 10.5h8.25L9.75 21.75 12 13.5H3.75z" /></svg>
+                            <svg className={`w-3 h-3 ${p.has_battery ? "text-green-500 fill-green-500" : "text-gray-300"}`} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M21 10.5h.375c.621 0 1.125.504 1.125 1.125v2.25c0 .621-.504 1.125-1.125 1.125H21M3.75 18h15A2.25 2.25 0 0021 15.75v-6a2.25 2.25 0 00-2.25-2.25h-15A2.25 2.25 0 001.5 9.75v6A2.25 2.25 0 003.75 18z" /></svg>
+                          </span>
+                          <span className="font-mono ml-auto pl-2">{formatPrice(p.price)} บาท</span>
+                        </span>
+                      }
+                    />
+                  ))}
+                  {batteryLabel && <DataRow label="แบตเตอรี่" value={batteryLabel} />}
+                </div>
               </div>
             ) : null;
           })()}
@@ -392,9 +405,9 @@ export default function PreSurveyStep({ lead, state, refresh, packages, expanded
             <div className="border-l-3 border-indigo-400 pl-3">
               <div className="text-xs font-bold text-indigo-600 uppercase mb-1">ข้อมูลลูกค้า</div>
               <div className="space-y-0.5">
-                {lead.customer_type && <div className="flex justify-between"><span className="text-gray-400">ประเภทลูกค้า</span><span className="font-semibold text-gray-800">{lead.customer_type}</span></div>}
-                {lead.project_name && <div className="flex justify-between"><span className="text-gray-400">โครงการ</span><span className="font-semibold text-gray-800 text-right">{lead.project_name}</span></div>}
-                {lead.installation_address && <div className="flex justify-between gap-2"><span className="text-gray-400 shrink-0">บ้านเลขที่</span><span className="font-semibold text-gray-800 text-right">{lead.installation_address}</span></div>}
+                {lead.customer_type && <DataRow label="ประเภทลูกค้า" value={lead.customer_type} />}
+                {lead.project_name && <DataRow label="โครงการ" value={lead.project_name} />}
+                {lead.installation_address && <DataRow label="บ้านเลขที่" value={lead.installation_address} />}
               </div>
             </div>
           )}
@@ -404,8 +417,8 @@ export default function PreSurveyStep({ lead, state, refresh, packages, expanded
             <div className="border-l-3 border-amber-400 pl-3">
               <div className="text-xs font-bold text-amber-600 uppercase mb-1">บ้าน</div>
               <div className="space-y-0.5">
-                {residenceLabel && <div className="flex justify-between"><span className="text-gray-400">ประเภทบ้าน</span><span className="font-semibold text-gray-800">{residenceLabel}</span></div>}
-                {roofLabel && <div className="flex justify-between"><span className="text-gray-400">รูปทรงหลังคา</span><span className="font-semibold text-gray-800">{roofLabel}</span></div>}
+                {residenceLabel && <DataRow label="ประเภทบ้าน" value={residenceLabel} />}
+                {roofLabel && <DataRow label="รูปทรงหลังคา" value={roofLabel} />}
               </div>
             </div>
           )}
@@ -415,9 +428,9 @@ export default function PreSurveyStep({ lead, state, refresh, packages, expanded
             <div className="border-l-3 border-blue-400 pl-3">
               <div className="text-xs font-bold text-blue-600 uppercase mb-1">การใช้ไฟฟ้า</div>
               <div className="space-y-0.5">
-                {lead.pre_monthly_bill != null && <div className="flex justify-between"><span className="text-gray-400">ค่าไฟต่อเดือน</span><span className="font-semibold text-gray-800 font-mono">{formatPrice(lead.pre_monthly_bill)} บาท</span></div>}
-                {phaseLabel && <div className="flex justify-between"><span className="text-gray-400">ระบบไฟ</span><span className="font-semibold text-gray-800">{phaseLabel}</span></div>}
-                {peakLabel && <div className="flex justify-between"><span className="text-gray-400">ช่วงใช้ไฟสูงสุด</span><span className="font-semibold text-gray-800">{peakLabel}</span></div>}
+                {lead.pre_monthly_bill != null && <DataRow label="ค่าไฟต่อเดือน" value={`${formatPrice(lead.pre_monthly_bill)} บาท`} valueClass="font-mono" />}
+                {phaseLabel && <DataRow label="ระบบไฟ" value={phaseLabel} />}
+                {peakLabel && <DataRow label="ช่วงใช้ไฟสูงสุด" value={peakLabel} />}
               </div>
             </div>
           )}
@@ -454,28 +467,23 @@ export default function PreSurveyStep({ lead, state, refresh, packages, expanded
           <div className="border-l-3 border-emerald-400 pl-3">
             <div className="text-xs font-bold text-emerald-600 uppercase mb-1">ค่าสำรวจ · เอกสาร</div>
             <div className="space-y-0.5">
-              <div className="flex justify-between">
-                <span className="text-gray-400">จำนวนเงิน</span>
-                <span className="font-semibold text-gray-800 font-mono tabular-nums">
-                  {lead.pre_total_price != null ? `${formatPrice(lead.pre_total_price)} บาท` : "—"}
-                </span>
-              </div>
-              <div className="flex justify-between">
-                <span className="text-gray-400">วิธีชำระ</span>
-                <span className="font-semibold text-emerald-600">{paymentLabel || "—"}</span>
-              </div>
+              <DataRow
+                label="จำนวนเงิน"
+                value={lead.pre_total_price != null ? `${formatPrice(lead.pre_total_price)} บาท` : "—"}
+                valueClass="font-mono tabular-nums"
+              />
+              <DataRow label="วิธีชำระ" value={paymentLabel || "—"} valueClass="text-emerald-600" />
               {lead.pre_booked_at && (
-                <div className="flex justify-between">
-                  <span className="text-gray-400">วันที่ชำระ</span>
-                  <span className="font-semibold text-gray-800">{new Date(String(lead.pre_booked_at).slice(0, 10) + "T12:00:00").toLocaleDateString("th-TH", { day: "numeric", month: "short", year: "numeric" })}</span>
-                </div>
+                <DataRow
+                  label="วันที่ชำระ"
+                  value={new Date(String(lead.pre_booked_at).slice(0, 10) + "T12:00:00").toLocaleDateString("th-TH", { day: "numeric", month: "short", year: "numeric" })}
+                />
               )}
-              <div className="flex justify-between">
-                <span className="text-gray-400">สถานะ</span>
-                <span className={`font-semibold ${lead.payment_confirmed ? "text-emerald-600" : "text-amber-600"}`}>
-                  {lead.payment_confirmed ? "ยืนยันแล้ว" : "ยังไม่ยืนยัน"}
-                </span>
-              </div>
+              <DataRow
+                label="สถานะ"
+                value={lead.payment_confirmed ? "ยืนยันแล้ว" : "ยังไม่ยืนยัน"}
+                valueClass={lead.payment_confirmed ? "text-emerald-600" : "text-amber-600"}
+              />
             </div>
             {(lead.pre_bill_photo_url || lead.pre_slip_url) && (
               <div className="flex gap-3 mt-2">
@@ -503,8 +511,8 @@ export default function PreSurveyStep({ lead, state, refresh, packages, expanded
             <div className="border-l-3 border-teal-400 pl-3">
               <div className="text-xs font-bold text-teal-600 uppercase mb-1">ข้อมูลลูกค้าเพื่อออกใบเสร็จ</div>
               <div className="space-y-0.5">
-                {lead.id_card_number && <div className="flex justify-between gap-2"><span className="text-gray-400 shrink-0">เลขบัตรประชาชน</span><span className="font-semibold text-gray-800 font-mono tabular-nums">{lead.id_card_number}</span></div>}
-                {lead.id_card_address && <div className="flex justify-between gap-2"><span className="text-gray-400 shrink-0">ที่อยู่ตามบัตร</span><span className="font-semibold text-gray-800 text-right break-words max-w-[65%]">{lead.id_card_address}</span></div>}
+                {lead.id_card_number && <DataRow label="เลขบัตรประชาชน" value={lead.id_card_number} valueClass="font-mono tabular-nums" />}
+                {lead.id_card_address && <DataRow label="ที่อยู่ตามบัตร" value={lead.id_card_address} valueClass="break-words" />}
               </div>
               {(lead.id_card_photo_url || lead.house_reg_photo_url) && (
                 <div className="flex gap-3 mt-1.5">
@@ -529,8 +537,10 @@ export default function PreSurveyStep({ lead, state, refresh, packages, expanded
           {(lead.requirement || lead.note) && (
             <div className="border-l-3 border-gray-400 pl-3">
               <div className="text-xs font-bold text-gray-500 uppercase mb-1">บันทึก</div>
-              {lead.requirement && <div className="text-sm text-gray-800 whitespace-pre-wrap break-words mb-1">{lead.requirement}</div>}
-              {lead.note && <div className="text-xs text-gray-500 whitespace-pre-wrap break-words">{lead.note}</div>}
+              <div className="space-y-0.5">
+                {lead.requirement && <DataRow label="ความต้องการ" value={lead.requirement} valueClass="whitespace-pre-wrap break-words" multiline />}
+                {lead.note && <DataRow label="หมายเหตุ" value={lead.note} valueClass="whitespace-pre-wrap break-words font-normal text-gray-500" multiline />}
+              </div>
             </div>
           )}
 
@@ -719,9 +729,15 @@ export default function PreSurveyStep({ lead, state, refresh, packages, expanded
         </div>
       )}
 
-      {/* Confirm action — step 5 */}
+      {/* Confirm action — step 5. Mobile: full-width 50/50 with Back below.
+          Desktop: Back left / ยืนยัน right (same pattern as other sub-steps). */}
       {subStep === 4 && (
-        <div className="space-y-2">
+        <div className="mt-3 flex gap-2">
+          <button type="button" onClick={() => { setSubStep(subStep - 1); setTimeout(() => document.querySelector("[data-step-active]")?.scrollIntoView({ behavior: "smooth", block: "start" }), 100); }} className="flex-1 lg:flex-none lg:w-80 h-11 rounded-lg text-sm font-semibold border border-gray-200 text-gray-600 hover:bg-gray-50 transition-colors flex items-center justify-center gap-1">
+            <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M15.75 19.5L8.25 12l7.5-7.5" /></svg>
+            ย้อนกลับ
+          </button>
+          <div className="hidden lg:block flex-1" />
           <button
             onClick={async () => {
               const missing: string[] = [];
@@ -769,7 +785,7 @@ export default function PreSurveyStep({ lead, state, refresh, packages, expanded
               } finally { setConfirmSaving(false); }
             }}
             disabled={confirmSaving}
-            className="w-full h-11 rounded-lg text-sm font-semibold text-white bg-gradient-to-r from-primary to-primary-dark hover:brightness-110 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+            className="flex-1 lg:flex-none lg:w-80 h-11 rounded-lg text-sm font-semibold text-white bg-gradient-to-r from-primary to-primary-dark hover:brightness-110 disabled:opacity-50 disabled:cursor-not-allowed transition-colors flex items-center justify-center"
           >
             {confirmSaving ? "กำลังบันทึก…" : "ยืนยันและเปิดขั้นสำรวจ"}
           </button>
@@ -802,12 +818,13 @@ export default function PreSurveyStep({ lead, state, refresh, packages, expanded
           <div className="mt-3 space-y-2">
             <div className="flex gap-2">
               {subStep > 0 && (
-                <button type="button" onClick={() => { setNextError(null); setSubStep(subStep - 1); setTimeout(() => document.querySelector("[data-step-active]")?.scrollIntoView({ behavior: "smooth", block: "start" }), 100); }} className="flex-1 h-11 rounded-lg text-sm font-semibold border border-gray-200 text-gray-600 hover:bg-gray-50 transition-colors flex items-center justify-center gap-1">
+                <button type="button" onClick={() => { setNextError(null); setSubStep(subStep - 1); setTimeout(() => document.querySelector("[data-step-active]")?.scrollIntoView({ behavior: "smooth", block: "start" }), 100); }} className="flex-1 lg:flex-none lg:w-80 h-11 rounded-lg text-sm font-semibold border border-gray-200 text-gray-600 hover:bg-gray-50 transition-colors flex items-center justify-center gap-1">
                   <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M15.75 19.5L8.25 12l7.5-7.5" /></svg>
                   ย้อนกลับ
                 </button>
               )}
-              <button type="button" onClick={handleNext} className="flex-1 h-11 rounded-lg text-sm font-semibold text-white bg-active hover:brightness-110 transition-colors flex items-center justify-center gap-1">
+              <div className="hidden lg:block flex-1" />
+              <button type="button" onClick={handleNext} className="flex-1 lg:flex-none lg:w-80 h-11 rounded-lg text-sm font-semibold text-white bg-active hover:brightness-110 transition-colors flex items-center justify-center gap-1">
                 ถัดไป
                 <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M8.25 4.5l7.5 7.5-7.5 7.5" /></svg>
               </button>
@@ -815,12 +832,6 @@ export default function PreSurveyStep({ lead, state, refresh, packages, expanded
           </div>
         );
       })()}
-      {subStep === 4 && subStep > 0 && (
-        <button type="button" onClick={() => { setSubStep(subStep - 1); setTimeout(() => document.querySelector("[data-step-active]")?.scrollIntoView({ behavior: "smooth", block: "start" }), 100); }} className="w-full h-9 mt-2 rounded-lg text-xs text-gray-500 border border-gray-200 hover:bg-gray-50 transition-colors flex items-center justify-center gap-1">
-          <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M15.75 19.5L8.25 12l7.5-7.5" /></svg>
-          ย้อนกลับ
-        </button>
-      )}
 
       <ErrorPopup message={nextError} onClose={() => setNextError(null)} />
     </StepLayout>

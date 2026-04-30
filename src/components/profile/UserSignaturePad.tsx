@@ -51,11 +51,11 @@ export default function UserSignaturePad({ userId, initialUrl, onSaved }: Props)
     return new Promise((resolve) => {
       c.toBlob(async (blob) => {
         if (!blob) return resolve(null);
-        const fd = new FormData();
-        fd.append("file", new File([blob], `usersig_${userId}.png`, { type: "image/png" }));
-        fd.append("type", "user_signature");
-        fd.append("filename", `user${userId}_sig_${Date.now()}`);
-        const res = await apiFetch("/api/upload", { method: "POST", body: fd });
+        const res = await apiFetch(`/api/users/${userId}/signature`, {
+          method: "PUT",
+          headers: { "Content-Type": "image/png" },
+          body: blob,
+        });
         resolve(res.url || null);
       }, "image/png");
     });
@@ -68,11 +68,6 @@ export default function UserSignaturePad({ userId, initialUrl, onSaved }: Props)
       const url = await upload();
       if (url) {
         setSignatureUrl(url);
-        await apiFetch(`/api/users/${userId}`, {
-          method: "PATCH",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ signature_url: url }),
-        });
         onSaved?.(url);
       }
     } finally { setSaving(false); }
@@ -114,11 +109,7 @@ export default function UserSignaturePad({ userId, initialUrl, onSaved }: Props)
     setHasDrawn(false);
     if (signatureUrl) {
       setSignatureUrl(null);
-      apiFetch(`/api/users/${userId}`, {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ signature_url: null }),
-      }).catch(console.error);
+      apiFetch(`/api/users/${userId}/signature`, { method: "DELETE" }).catch(console.error);
       onSaved?.(null);
     }
   };

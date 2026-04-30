@@ -207,3 +207,15 @@ textarea::placeholder {
   font-variant-numeric: tabular-nums;
   text-align: right;
 }
+
+/* Hide the up/down spinner buttons on number inputs (Webkit + Firefox).
+   We never want them: numbers are typed, not nudged. */
+input[type="number"]::-webkit-inner-spin-button,
+input[type="number"]::-webkit-outer-spin-button {
+  -webkit-appearance: none;
+  margin: 0;
+}
+input[type="number"] {
+  -moz-appearance: textfield;
+  appearance: textfield;
+}

@@ -16,14 +16,10 @@ import { useSubStep } from "@/lib/hooks/useSubStep";
 import { useIsMobile } from "@/lib/hooks/useIsMobile";
 import { compressImage } from "@/lib/utils/compressImage";
 import { buildAppointmentFlex } from "@/lib/utils/line-flex";
+import { formatSlotsRange } from "@/lib/time-slots";
 
 const formatDate = (d: string) =>
   new Date(String(d).slice(0, 10) + "T12:00:00").toLocaleDateString("th-TH", { day: "numeric", month: "short", year: "numeric" });
-
-const SURVEY_TIME_SLOTS = [
-  { value: "morning", label: "เช้า", time: "09:00 - 12:00" },
-  { value: "afternoon", label: "บ่าย", time: "13:00 - 16:00" },
-];
 
 const ROOF_MATERIAL_MAP: Record<string, string> = {
   cpac_tile: "CPAC", old_tile: "ลอนคู่",
@@ -33,7 +29,7 @@ const ROOF_MATERIAL_MAP: Record<string, string> = {
 const ORIENTATION_MAP: Record<string, string> = { north: "เหนือ", south: "ใต้", east: "ตะวันออก", west: "ตะวันตก" };
 const SHADING_MAP: Record<string, string> = { none: "ไม่มี", partial: "บางช่วง", heavy: "ตลอดวัน" };
 const METER_MAP: Record<string, string> = { "5_15": "5(15) A", "15_45": "15(45) A", "30_100": "30(100) A" };
-const MDB_SLOTS_MAP: Record<string, string> = { has_slot: "มีช่องว่าง", full: "เต็ม" };
+const MDB_SLOTS_MAP: Record<string, string> = { has_slot: "ยังมีช่องว่าง", full: "เต็ม" };
 const BREAKER_MAP: Record<string, string> = { plug_on: "Plug On", screw: "ขันยึดสกรู" };
 const ROOF_STRUCTURE_MAP: Record<string, string> = { steel: "เหล็ก", wood: "ไม้", aluminum: "อลูมิเนียม" };
 const INVERTER_LOC_MAP: Record<string, string> = { indoor: "ในร่ม", outdoor: "นอกอาคาร" };
@@ -123,7 +119,10 @@ export default function SurveyStep({ lead, state, refresh, packages, expanded, o
 
   const parseCoords = (input: string): { lat: number; lng: number } | null => {
     if (!input) return null;
-    const m = input.match(/(-?\d{1,3}\.\d{3,})[\s,]+(-?\d{1,3}\.\d{3,})/);
+    // Handles "13.7,100.5" / "13.7 100.5" / "13.7,+100.5" (Google Maps search
+    // URLs encode the space after the comma as "+"). Skip the "+" if it
+    // immediately precedes the second number so it's not consumed as sign.
+    const m = input.match(/(-?\d{1,3}\.\d{3,})[\s,+/]+\+?(-?\d{1,3}\.\d{3,})/);
     if (!m) return null;
     const lat = parseFloat(m[1]);
     const lng = parseFloat(m[2]);
@@ -133,13 +132,22 @@ export default function SurveyStep({ lead, state, refresh, packages, expanded, o
 
   const submitPastedLocation = async () => {
     setLocError(null);
-    const parsed = parseCoords(locInput);
-    if (!parsed) {
-      setLocError("ไม่พบพิกัด (รองรับเฉพาะ URL ที่มี lat,lng เช่น Google Maps)");
-      return;
-    }
     setLocSaving(true);
     try {
+      // Try parsing the input as-is first (long Google Maps URLs include
+      // @lat,lng directly). If that fails, treat it as a short link and ask
+      // the server to follow the redirect, then re-parse the expanded URL.
+      let parsed = parseCoords(locInput);
+      if (!parsed && /^https?:\/\//i.test(locInput.trim())) {
+        try {
+          const r = await apiFetch(`/api/maps/resolve?url=${encodeURIComponent(locInput.trim())}`);
+          if (r.url) parsed = parseCoords(r.url);
+        } catch { /* fall through to error below */ }
+      }
+      if (!parsed) {
+        setLocError("ไม่พบพิกัด (รองรับ Google Maps URL หรือ short link)");
+        return;
+      }
       await saveLocation(parsed.lat, parsed.lng);
       setLocEditing(false);
       setLocInput("");
@@ -216,7 +224,7 @@ export default function SurveyStep({ lead, state, refresh, packages, expanded, o
 
 
 
-  const slotLabel = SURVEY_TIME_SLOTS.find(s => s.value === lead.survey_time_slot)?.time ?? lead.survey_time_slot;
+  const slotLabel = formatSlotsRange(lead.survey_time_slot) || lead.survey_time_slot;
 
   const persistPhotos = async (next: string[]) => {
     setSurveyPhotos(next);
@@ -375,7 +383,7 @@ export default function SurveyStep({ lead, state, refresh, packages, expanded, o
     }
   };
 
-  const slotTime = SURVEY_TIME_SLOTS.find(s => s.value === lead.survey_time_slot)?.time;
+  const slotTime = formatSlotsRange(lead.survey_time_slot);
 
   const doneHeaderContent = (
     <>
@@ -600,7 +608,6 @@ export default function SurveyStep({ lead, state, refresh, packages, expanded, o
         currentDate={lead.survey_date}
         currentSlot={lead.survey_time_slot}
         showTimeSlot
-        timeSlots={SURVEY_TIME_SLOTS.map(s => ({ value: s.value, label: s.label, time: s.time }))}
         excludeLeadId={lead.id}
         onCancel={() => setRescheduling(false)}
         onSave={saveReschedule}
@@ -1084,14 +1091,14 @@ export default function SurveyStep({ lead, state, refresh, packages, expanded, o
           setTimeout(() => document.querySelector("[data-step-active]")?.scrollIntoView({ behavior: "smooth", block: "start" }), 100);
         };
         return (
-          <div className="flex gap-2 mt-3">
-            {subStep > 0 && (
-              <button type="button" onClick={() => { setNextError(null); setSubStep(subStep - 1); setTimeout(() => document.querySelector("[data-step-active]")?.scrollIntoView({ behavior: "smooth", block: "start" }), 100); }} className="flex-1 h-11 rounded-lg text-sm font-semibold border border-gray-200 text-gray-600 hover:bg-gray-50 transition-colors flex items-center justify-center gap-1">
+          <div className="flex gap-2 mt-3 lg:justify-between">
+            {subStep > 0 ? (
+              <button type="button" onClick={() => { setNextError(null); setSubStep(subStep - 1); setTimeout(() => document.querySelector("[data-step-active]")?.scrollIntoView({ behavior: "smooth", block: "start" }), 100); }} className="flex-1 lg:flex-none lg:w-80 h-11 rounded-lg text-sm font-semibold border border-gray-200 text-gray-600 hover:bg-gray-50 transition-colors flex items-center justify-center gap-1">
                 <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M15.75 19.5L8.25 12l7.5-7.5" /></svg>
                 ย้อนกลับ
               </button>
-            )}
-            <button type="button" onClick={handleNext} className="flex-1 h-11 rounded-lg text-sm font-semibold text-white bg-active hover:brightness-110 transition-colors flex items-center justify-center gap-1">
+            ) : <span className="hidden lg:block lg:w-80" />}
+            <button type="button" onClick={handleNext} className="flex-1 lg:flex-none lg:w-80 h-11 rounded-lg text-sm font-semibold text-white bg-active hover:brightness-110 transition-colors flex items-center justify-center gap-1">
               ถัดไป
               <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M8.25 4.5l7.5 7.5-7.5 7.5" /></svg>
             </button>
