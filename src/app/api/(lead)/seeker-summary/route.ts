@@ -45,17 +45,17 @@ export async function GET(req: NextRequest) {
     const totalsRes = await totalsReq.query(`
       SELECT
         COUNT(*) AS total,
-        SUM(CASE WHEN ${STATUS_CASE} = 'pending' THEN 1 ELSE 0 END) AS pending,
-        SUM(CASE WHEN ${STATUS_CASE} = 'contacted' THEN 1 ELSE 0 END) AS contacted,
-        SUM(CASE WHEN ${STATUS_CASE} = 'interested' THEN 1 ELSE 0 END) AS interested,
-        SUM(CASE WHEN ${STATUS_CASE} = 'not_interested' THEN 1 ELSE 0 END) AS not_interested,
-        SUM(CASE WHEN p.interest = 'interested' AND p.interest_type = 'new' THEN 1 ELSE 0 END) AS interested_new,
-        SUM(CASE WHEN p.interest = 'interested' AND p.interest_type = 'upgrade' THEN 1 ELSE 0 END) AS interested_upgrade,
-        SUM(CASE WHEN p.interest = 'undecided' THEN 1 ELSE 0 END) AS undecided,
-        SUM(CASE WHEN p.interest = 'not_home' THEN 1 ELSE 0 END) AS not_home,
-        SUM(${HAS_SOLAR_CASE}) AS has_solar,
-        SUM(CASE WHEN p.line_id IS NOT NULL THEN 1 ELSE 0 END) AS line_linked,
-        SUM(CASE WHEN p.lead_id IS NOT NULL THEN 1 ELSE 0 END) AS leads_created
+        ISNULL(SUM(CASE WHEN ${STATUS_CASE} = 'pending' THEN 1 ELSE 0 END), 0) AS pending,
+        ISNULL(SUM(CASE WHEN ${STATUS_CASE} = 'contacted' THEN 1 ELSE 0 END), 0) AS contacted,
+        ISNULL(SUM(CASE WHEN ${STATUS_CASE} = 'interested' THEN 1 ELSE 0 END), 0) AS interested,
+        ISNULL(SUM(CASE WHEN ${STATUS_CASE} = 'not_interested' THEN 1 ELSE 0 END), 0) AS not_interested,
+        ISNULL(SUM(CASE WHEN p.interest = 'interested' AND p.interest_type = 'new' THEN 1 ELSE 0 END), 0) AS interested_new,
+        ISNULL(SUM(CASE WHEN p.interest = 'interested' AND p.interest_type = 'upgrade' THEN 1 ELSE 0 END), 0) AS interested_upgrade,
+        ISNULL(SUM(CASE WHEN p.interest = 'undecided' THEN 1 ELSE 0 END), 0) AS undecided,
+        ISNULL(SUM(CASE WHEN p.interest = 'not_home' THEN 1 ELSE 0 END), 0) AS not_home,
+        ISNULL(SUM(${HAS_SOLAR_CASE}), 0) AS has_solar,
+        ISNULL(SUM(CASE WHEN p.line_id IS NOT NULL THEN 1 ELSE 0 END), 0) AS line_linked,
+        ISNULL(SUM(CASE WHEN p.lead_id IS NOT NULL THEN 1 ELSE 0 END), 0) AS leads_created
       FROM prospects p
       WHERE 1=1 ${projectFilter}
     `);

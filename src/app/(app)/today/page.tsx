@@ -37,8 +37,6 @@ export default function TodayPage() {
   const { activeRoles } = useActiveRoles();
 
   useEffect(() => {
-    const savedTab = localStorage.getItem("todayTab");
-    if (savedTab === "sales" || savedTab === "sales_solar" || savedTab === "solar" || savedTab === "calendar") setTab(savedTab);
     const savedZone = localStorage.getItem("selectedZone");
     if (savedZone) setSelectedZone(savedZone);
 
@@ -63,7 +61,6 @@ export default function TodayPage() {
     if (!validKeys.includes(tab)) {
       const fallback = validKeys[0] as "sales" | "sales_solar" | "solar" | "calendar";
       setTab(fallback);
-      localStorage.setItem("todayTab", fallback);
     }
   }, [activeRoles, tab]);
 
@@ -136,7 +133,7 @@ export default function TodayPage() {
         searchPlaceholder="ค้นหาชื่อ, เบอร์..."
         tabs={allTabs}
         activeTab={visibleTab}
-        onTabChange={(k) => { setTab(k as "sales" | "sales_solar" | "solar" | "calendar"); localStorage.setItem("todayTab", k); }}
+        onTabChange={(k) => setTab(k as "sales" | "sales_solar" | "solar" | "calendar")}
       />
 
       {/* Content */}

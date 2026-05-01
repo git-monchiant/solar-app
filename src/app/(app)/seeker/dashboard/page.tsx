@@ -87,7 +87,21 @@ export default function SeekerDashboardPage() {
     else localStorage.removeItem("seekerProjectFilter");
   }, [projectFilter]);
 
-  const stats: Totals = summary?.totals || EMPTY_TOTALS;
+  const rawStats = summary?.totals || EMPTY_TOTALS;
+  const stats: Totals = {
+    total: rawStats.total ?? 0,
+    pending: rawStats.pending ?? 0,
+    contacted: rawStats.contacted ?? 0,
+    interested: rawStats.interested ?? 0,
+    not_interested: rawStats.not_interested ?? 0,
+    interested_new: rawStats.interested_new ?? 0,
+    interested_upgrade: rawStats.interested_upgrade ?? 0,
+    undecided: rawStats.undecided ?? 0,
+    not_home: rawStats.not_home ?? 0,
+    has_solar: rawStats.has_solar ?? 0,
+    line_linked: rawStats.line_linked ?? 0,
+    leads_created: rawStats.leads_created ?? 0,
+  };
   const byProject: ByProject[] = summary?.by_project || [];
   const recentVisits: RecentVisit[] = summary?.recent_visits || [];
   const projectOptions: string[] = summary?.project_options || [];

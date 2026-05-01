@@ -209,6 +209,7 @@ export default function SeekerPage() {
   const [editing, setEditing] = useState<Prospect | null>(null);
   const [hydrated, setHydrated] = useState(false);
   const [creatingNew, setCreatingNew] = useState(false);
+  const [channelPickerOpen, setChannelPickerOpen] = useState(false);
   const dialog = useDialog();
 
   const fetchProjects = useCallback(async () => {
@@ -550,6 +551,7 @@ export default function SeekerPage() {
       {editing && (
         <VisitModal
           prospect={editing}
+          projects={projectCards}
           onClose={() => setEditing(null)}
           onSaved={() => {
             setEditing(null);
@@ -562,46 +564,7 @@ export default function SeekerPage() {
       <button
         type="button"
         disabled={creatingNew}
-        onClick={() => {
-          // Don't POST yet — open the modal with a draft prospect (id=0).
-          // Auto-save inside VisitModal upgrades it to a real row only after
-          // the validation guard passes (house_number + LINE or phone+name).
-          setEditing({
-            id: 0,
-            project_id: projectFilterId || null,
-            project_name: projectFilter || null,
-            seq: null,
-            house_number: null,
-            full_name: null,
-            phone: null,
-            app_status: null,
-            existing_solar: null,
-            installed_kw: null,
-            installed_product: null,
-            ev_charger: null,
-            interest: null,
-            interest_type: null,
-            note: null,
-            visited_by: null,
-            visited_by_name: null,
-            visited_at: null,
-            visit_count: 0,
-            visit_lat: null,
-            visit_lng: null,
-            line_id: null,
-            line_display_name: null,
-            line_picture_url: null,
-            contact_time: null,
-            interest_reasons: null,
-            interest_reason_note: null,
-            interest_sizes: null,
-            returned_at: null,
-            lead_id: null,
-            contacts: null,
-            channel: null,
-            created_at: new Date().toISOString(),
-          } as Prospect);
-        }}
+        onClick={() => setChannelPickerOpen(true)}
         title="สร้าง Prospect ใหม่"
         className="fixed bottom-24 md:bottom-8 right-5 z-40 w-14 h-14 rounded-full bg-primary text-white shadow-lg hover:brightness-110 active:scale-95 transition-all flex items-center justify-center disabled:opacity-60"
       >
@@ -614,6 +577,105 @@ export default function SeekerPage() {
         )}
       </button>
 
+      {channelPickerOpen && (
+        <ChannelPickerModal
+          onClose={() => setChannelPickerOpen(false)}
+          onPick={(code) => {
+            setChannelPickerOpen(false);
+            setEditing({
+              id: 0,
+              project_id: projectFilterId || null,
+              project_name: projectFilter || null,
+              seq: null,
+              house_number: null,
+              full_name: null,
+              phone: null,
+              app_status: null,
+              existing_solar: null,
+              installed_kw: null,
+              installed_product: null,
+              ev_charger: null,
+              interest: null,
+              interest_type: null,
+              note: null,
+              visited_by: null,
+              visited_by_name: null,
+              visited_at: null,
+              visit_count: 0,
+              visit_lat: null,
+              visit_lng: null,
+              line_id: null,
+              line_display_name: null,
+              line_picture_url: null,
+              contact_time: null,
+              interest_reasons: null,
+              interest_reason_note: null,
+              interest_sizes: null,
+              returned_at: null,
+              lead_id: null,
+              contacts: null,
+              channel: code,
+              created_at: new Date().toISOString(),
+            } as Prospect);
+          }}
+        />
+      )}
+
+    </div>
+  );
+}
+
+function ChannelPickerModal({ onClose, onPick }: { onClose: () => void; onPick: (code: ChannelCode) => void }) {
+  const channelIcon = (code: ChannelCode) => {
+    const cls = "w-6 h-6 text-gray-500";
+    switch (code) {
+      case "senxpm":
+        return <svg className={cls} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.8}><path strokeLinecap="round" strokeLinejoin="round" d="M3.75 21h16.5M4.5 3h15M5.25 3v18m13.5-18v18M9 6.75h1.5m-1.5 3h1.5m-1.5 3h1.5m3-6H15m-1.5 3H15m-1.5 3H15M9 21v-3.375c0-.621.504-1.125 1.125-1.125h3.75c.621 0 1.125.504 1.125 1.125V21" /></svg>;
+      case "walk_in":
+        return <svg className={cls} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.8}><path strokeLinecap="round" strokeLinejoin="round" d="M13 5.5a1.5 1.5 0 11-3 0 1.5 1.5 0 013 0zM10.5 9.5l-2.5 5L6 17m4.5-7.5l2 2.5 2 1.5m-4-4l2 7 1 4m0 0l4-2" /></svg>;
+      case "event":
+        return <svg className={cls} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.8}><path strokeLinecap="round" strokeLinejoin="round" d="M3 21h18M5 21V8l7-5 7 5v13M9 21v-6h6v6M11 12h2" /></svg>;
+      case "ads":
+        return <svg className={cls} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.8}><path strokeLinecap="round" strokeLinejoin="round" d="M10.34 3.94c-.16.46-.45.86-.83 1.16l-3.18 2.55a1.5 1.5 0 00-.56 1.17V14a1.5 1.5 0 00.56 1.17l3.18 2.55c.38.3.67.7.83 1.16l.78 2.27a1.5 1.5 0 002.84 0l.78-2.27c.16-.46.45-.86.83-1.16l3.18-2.55c.35-.28.56-.71.56-1.17V8.82c0-.46-.21-.89-.56-1.17l-3.18-2.55a2.5 2.5 0 01-.83-1.16l-.78-2.27a1.5 1.5 0 00-2.84 0l-.78 2.27z" /></svg>;
+      case "the1":
+        return <svg className={cls} viewBox="0 0 24 24" fill="currentColor"><path d="M11.48 3.499a.562.562 0 011.04 0l2.125 5.111a.563.563 0 00.475.345l5.518.442c.499.04.701.663.321.988l-4.204 3.602a.563.563 0 00-.182.557l1.285 5.385a.562.562 0 01-.84.61l-4.725-2.885a.563.563 0 00-.586 0L6.982 20.54a.562.562 0 01-.84-.61l1.285-5.386a.562.562 0 00-.182-.557l-4.204-3.602a.562.562 0 01.321-.988l5.518-.442a.563.563 0 00.475-.345L11.48 3.5z" /></svg>;
+      case "web":
+        return <svg className={cls} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.8}><path strokeLinecap="round" strokeLinejoin="round" d="M12 21a9 9 0 100-18 9 9 0 000 18zm0 0a8.949 8.949 0 004.5-1.207m-9 0A8.949 8.949 0 0012 21M3.6 9h16.8M3.6 15h16.8M11.99 3a17 17 0 00-3.5 9 17 17 0 003.5 9m.02-18a17 17 0 013.5 9 17 17 0 01-3.5 9" /></svg>;
+      case "refer":
+        return <svg className={cls} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.8}><path strokeLinecap="round" strokeLinejoin="round" d="M18 18.72a9.094 9.094 0 003.741-.479 3 3 0 00-4.682-2.72m.94 3.198l.001.031c0 .225-.012.447-.037.666A11.944 11.944 0 0112 21c-2.17 0-4.207-.576-5.963-1.584A6.062 6.062 0 016 18.719m12 0a5.971 5.971 0 00-.941-3.197m0 0A5.995 5.995 0 0012 12.75a5.995 5.995 0 00-5.058 2.772m0 0a3 3 0 00-4.681 2.72 8.986 8.986 0 003.74.477m.94-3.197a5.971 5.971 0 00-.94 3.197M15 6.75a3 3 0 11-6 0 3 3 0 016 0zm6 3a2.25 2.25 0 11-4.5 0 2.25 2.25 0 014.5 0zm-13.5 0a2.25 2.25 0 11-4.5 0 2.25 2.25 0 014.5 0z" /></svg>;
+      case "other":
+      default:
+        return <svg className={cls} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.8}><path strokeLinecap="round" strokeLinejoin="round" d="M6.75 12a.75.75 0 11-1.5 0 .75.75 0 011.5 0zm6 0a.75.75 0 11-1.5 0 .75.75 0 011.5 0zm6 0a.75.75 0 11-1.5 0 .75.75 0 011.5 0z" /></svg>;
+    }
+  };
+  return (
+    <div className="fixed inset-0 z-50 bg-black/50 flex items-center justify-center p-4" onClick={onClose}>
+      <div
+        className="bg-white w-full max-w-sm rounded-2xl p-5 flex flex-col gap-4"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className="text-base font-bold text-gray-900 text-center">เลือกช่องทาง</div>
+        <div className="grid grid-cols-2 gap-2">
+          {CHANNELS.map((ch) => (
+            <button
+              key={ch.code}
+              type="button"
+              onClick={() => onPick(ch.code)}
+              className="h-12 rounded-xl border border-gray-200 bg-white inline-flex items-center justify-start gap-2 px-3 text-sm font-semibold text-gray-700 hover:border-primary hover:text-primary hover:bg-primary/5 transition-colors"
+            >
+              {channelIcon(ch.code as ChannelCode)}
+              {ch.label}
+            </button>
+          ))}
+        </div>
+        <button
+          type="button"
+          onClick={onClose}
+          className="h-10 rounded-lg text-sm text-gray-500 hover:bg-gray-50"
+        >
+          ยกเลิก
+        </button>
+      </div>
     </div>
   );
 }
@@ -757,13 +819,16 @@ function ProjectLanding({
   );
 }
 
-function VisitModal({ prospect, onClose, onSaved, onRefresh }: { prospect: Prospect; onClose: () => void; onSaved: () => void; onRefresh: () => void }) {
+function VisitModal({ prospect, projects, onClose, onSaved, onRefresh }: { prospect: Prospect; projects: ProjectCard[]; onClose: () => void; onSaved: () => void; onRefresh: () => void }) {
   const dialog = useDialog();
-  const [modalTab, setModalTab] = useState<"line" | "people" | "visit" | "reasons">("line");
+  const [modalTab, setModalTab] = useState<"line" | "people" | "visit" | "reasons">("people");
   const [interest, setInterest] = useState<Prospect["interest"]>(prospect.interest);
   const [interestType, setInterestType] = useState<Prospect["interest_type"]>(prospect.interest_type);
   const [note, setNote] = useState(prospect.note || "");
   const [houseNumber, setHouseNumber] = useState(prospect.house_number || "");
+  const [projectId, setProjectId] = useState<number | null>(prospect.project_id);
+  const [projectPickerOpen, setProjectPickerOpen] = useState(false);
+  const projectName = projects.find((p) => p.id === projectId)?.name ?? "";
   // For draft prospects (clicked +, not yet POSTed), id is 0. After the first
   // valid auto-save we POST and then mirror the new id locally for subsequent
   // PATCHes — without re-mounting this modal.
@@ -896,6 +961,7 @@ function VisitModal({ prospect, onClose, onSaved, onRefresh }: { prospect: Prosp
     house_number: prospect.house_number || "",
     contact_time: prospect.contact_time || "",
     channel: (prospect.channel as ChannelCode | null) ?? null,
+    project_id: prospect.project_id,
     contactsJson,
   });
   const [visitSavedAt, setVisitSavedAt] = useState<number | null>(null);
@@ -919,6 +985,10 @@ function VisitModal({ prospect, onClose, onSaved, onRefresh }: { prospect: Prosp
       if (nextHouse !== init.house_number) patch.house_number = nextHouse || null;
       if (nextContactTime !== init.contact_time) patch.contact_time = nextContactTime || null;
       if (channelCode !== init.channel) patch.channel = channelCode;
+      if (projectId !== init.project_id) {
+        patch.project_id = projectId;
+        patch.project_name = projects.find((p) => p.id === projectId)?.name ?? null;
+      }
       if (contactsJson !== init.contactsJson) patch.contacts = cleanContacts;
 
       if (Object.keys(patch).length === 0 && !isDraft) return;
@@ -931,8 +1001,8 @@ function VisitModal({ prospect, onClose, onSaved, onRefresh }: { prospect: Prosp
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({
-              project_id: prospect.project_id || null,
-              project_name: prospect.project_name || null,
+              project_id: projectId,
+              project_name: projects.find((p) => p.id === projectId)?.name ?? null,
               house_number: nextHouse,
               full_name: cleanContacts[0]?.name || null,
               phone: cleanContacts[0]?.phone || null,
@@ -967,6 +1037,7 @@ function VisitModal({ prospect, onClose, onSaved, onRefresh }: { prospect: Prosp
           house_number: nextHouse,
           contact_time: nextContactTime,
           channel: channelCode,
+          project_id: projectId,
           contactsJson,
         };
         setVisitSavedAt(Date.now());
@@ -978,7 +1049,7 @@ function VisitModal({ prospect, onClose, onSaved, onRefresh }: { prospect: Prosp
     }, 600);
     return () => clearTimeout(timer);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [interest, interestType, note, houseNumber, contactHours, contactsJson, channelCode, prospectId, isDraft]);
+  }, [interest, interestType, note, houseNumber, contactHours, contactsJson, channelCode, projectId, prospectId, isDraft]);
   const [saving, setSaving] = useState(false);
   const [creatingLead, setCreatingLead] = useState(false);
   // When >1 contact lives at this house, seeker must pick ONE for the lead.
@@ -1152,25 +1223,20 @@ function VisitModal({ prospect, onClose, onSaved, onRefresh }: { prospect: Prosp
       ),
     },
   ];
-  const channelMeta = channelCode ? CHANNEL_BY_CODE[channelCode] : null;
   const title = (
     <>
-      <div className="flex flex-col min-w-0 flex-1">
-        <div className="flex items-baseline gap-2 min-w-0">
-          {prospect.project_name && (
-            <span className="text-sm font-semibold text-gray-500 truncate leading-tight">
-              {prospect.project_name}
-            </span>
-          )}
-          {channelMeta && (
-            <span className="shrink-0 text-base font-bold uppercase tracking-wider text-gray-500">
-              ({channelMeta.label})
-            </span>
-          )}
-        </div>
+      <div className="flex items-center gap-2 min-w-0 flex-1">
         <span className="truncate">
           {houseNumber || <span className="text-gray-300">บ้านใหม่</span>}
         </span>
+        {channelCode && (() => {
+          const s = getSourceStyle(channelCode);
+          return (
+            <span className={`shrink-0 inline-flex items-center rounded font-bold uppercase tracking-wider px-1 text-[9px] leading-[14px] ${s.cls}`}>
+              {s.label}
+            </span>
+          );
+        })()}
       </div>
       <span className="flex items-center gap-1.5 shrink-0">
         {flagItems.map((i) => (
@@ -1178,25 +1244,44 @@ function VisitModal({ prospect, onClose, onSaved, onRefresh }: { prospect: Prosp
             {i.icon}
           </span>
         ))}
-        {cleanContacts[0]?.phone && (
-          <a
-            href={`tel:${cleanContacts[0].phone}`}
-            title={`โทร ${cleanContacts[0].phone}`}
-            onClick={(e) => e.stopPropagation()}
-            className="ml-1 w-9 h-9 rounded-full bg-emerald-50 text-emerald-600 hover:bg-emerald-100 flex items-center justify-center transition-colors"
-          >
-            <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-              <path strokeLinecap="round" strokeLinejoin="round" d="M2.25 6.75c0 8.284 6.716 15 15 15h2.25a2.25 2.25 0 002.25-2.25v-1.372c0-.516-.351-.966-.852-1.091l-4.423-1.106c-.44-.11-.902.055-1.173.417l-.97 1.293c-.282.376-.769.542-1.21.38a12.035 12.035 0 01-7.143-7.143c-.162-.441.004-.928.38-1.21l1.293-.97c.363-.271.527-.734.417-1.173L6.963 3.102a1.125 1.125 0 00-1.091-.852H4.5A2.25 2.25 0 002.25 4.5v2.25z" />
-            </svg>
-          </a>
-        )}
       </span>
+      {cleanContacts[0]?.phone && (
+        <a
+          href={`tel:${cleanContacts[0].phone}`}
+          title={`โทร ${cleanContacts[0].phone}`}
+          onClick={(e) => e.stopPropagation()}
+          style={{ width: 36, height: 36, minWidth: 36, minHeight: 36, borderRadius: "50%" }}
+          className="ml-auto shrink-0 bg-emerald-50 text-emerald-600 hover:bg-emerald-100 flex items-center justify-center transition-colors"
+        >
+          <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+            <path strokeLinecap="round" strokeLinejoin="round" d="M2.25 6.75c0 8.284 6.716 15 15 15h2.25a2.25 2.25 0 002.25-2.25v-1.372c0-.516-.351-.966-.852-1.091l-4.423-1.106c-.44-.11-.902.055-1.173.417l-.97 1.293c-.282.376-.769.542-1.21.38a12.035 12.035 0 01-7.143-7.143c-.162-.441.004-.928.38-1.21l1.293-.97c.363-.271.527-.734.417-1.173L6.963 3.102a1.125 1.125 0 00-1.091-.852H4.5A2.25 2.25 0 002.25 4.5v2.25z" />
+          </svg>
+        </a>
+      )}
     </>
   );
 
   return (
-    <Modal onClose={onClose} title={title}>
+    <Modal onClose={onClose} title={title} size="xl">
       <div className="flex border-b border-gray-200 -mx-5 px-5 mb-4">
+        <button
+          type="button"
+          onClick={() => setModalTab("people")}
+          className={`flex-1 pb-2.5 text-sm font-semibold border-b-2 -mb-px transition-colors ${
+            modalTab === "people" ? "text-primary border-primary" : "text-gray-400 border-transparent hover:text-gray-600"
+          }`}
+        >
+          ข้อมูล
+        </button>
+        <button
+          type="button"
+          onClick={() => setModalTab("visit")}
+          className={`flex-1 pb-2.5 text-sm font-semibold border-b-2 -mb-px transition-colors ${
+            modalTab === "visit" ? "text-primary border-primary" : "text-gray-400 border-transparent hover:text-gray-600"
+          }`}
+        >
+          ความสนใจ
+        </button>
         <button
           type="button"
           onClick={() => setModalTab("line")}
@@ -1215,24 +1300,6 @@ function VisitModal({ prospect, onClose, onSaved, onRefresh }: { prospect: Prosp
         </button>
         <button
           type="button"
-          onClick={() => setModalTab("people")}
-          className={`flex-1 pb-2.5 text-sm font-semibold border-b-2 -mb-px transition-colors ${
-            modalTab === "people" ? "text-primary border-primary" : "text-gray-400 border-transparent hover:text-gray-600"
-          }`}
-        >
-          สมาชิก
-        </button>
-        <button
-          type="button"
-          onClick={() => setModalTab("visit")}
-          className={`flex-1 pb-2.5 text-sm font-semibold border-b-2 -mb-px transition-colors ${
-            modalTab === "visit" ? "text-primary border-primary" : "text-gray-400 border-transparent hover:text-gray-600"
-          }`}
-        >
-          ความสนใจ
-        </button>
-        <button
-          type="button"
           onClick={() => setModalTab("reasons")}
           className={`flex-1 pb-2.5 text-sm font-semibold border-b-2 -mb-px transition-colors ${
             modalTab === "reasons" ? "text-primary border-primary" : "text-gray-400 border-transparent hover:text-gray-600"
@@ -1245,8 +1312,6 @@ function VisitModal({ prospect, onClose, onSaved, onRefresh }: { prospect: Prosp
       <div className="flex-1">
       {modalTab === "line" ? (
         <div className="flex flex-col items-center gap-3 py-2">
-          <img src="/logos/logo-sena.png" alt="SENA SOLAR" className="h-9 w-auto" />
-
           {/* QR block — single clean card, no heavy borders */}
           <div className="flex flex-col items-center gap-1.5">
             <div className="text-xs font-medium tracking-wider uppercase text-gray-400">
@@ -1257,6 +1322,9 @@ function VisitModal({ prospect, onClose, onSaved, onRefresh }: { prospect: Prosp
               alt="LINE QR"
               className="w-56 h-56 rounded-2xl p-2 bg-white ring-1 ring-gray-200"
             />
+            <div className="text-sm font-bold tracking-wider text-gray-700">
+              SENA SOLAR ENERGY
+            </div>
           </div>
 
           {/* Linked profile or picker — minimal row */}
@@ -1315,11 +1383,37 @@ function VisitModal({ prospect, onClose, onSaved, onRefresh }: { prospect: Prosp
             )}
           </div>
 
-          {/* House number sits right under the LINE link — it's the primary
-              identifier for the prospect, and auto-save is gated on it being
-              present, so we want it in the very first thing the seeker sees. */}
-          <div className="w-56">
-            <label className="text-xs font-semibold uppercase tracking-wider text-gray-500 block mb-2">บ้านเลขที่</label>
+          {linePickerOpen && (
+            <LinePickerModal
+              target={{ type: "prospect", id: prospect.id, label: prospect.house_number || contactName || "บ้านนี้" }}
+              onClose={() => setLinePickerOpen(false)}
+              onLinked={(linked) => { setLinkedLine(linked); onRefresh(); }}
+            />
+          )}
+        </div>
+      ) : modalTab === "people" ? (
+        <div className="flex flex-col gap-3 py-2">
+          <div>
+            <label className="text-xs font-semibold uppercase tracking-wider text-gray-500 block mb-1.5">โครงการ</label>
+            <div className="flex items-center gap-2 h-10 pl-3 pr-1.5 rounded-lg border border-gray-200 bg-white">
+              <svg className="w-4 h-4 text-primary shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                <path strokeLinecap="round" strokeLinejoin="round" d="M3.75 21h16.5M4.5 3h15M5.25 3v18m13.5-18v18M9 6.75h1.5m-1.5 3h1.5m-1.5 3h1.5m3-6H15m-1.5 3H15m-1.5 3H15M9 21v-3.375c0-.621.504-1.125 1.125-1.125h3.75c.621 0 1.125.504 1.125 1.125V21" />
+              </svg>
+              <span className="text-sm font-semibold text-gray-800 truncate min-w-0 flex-1">
+                {projectName || <span className="text-gray-400 font-normal">ยังไม่เลือก</span>}
+              </span>
+              <button
+                type="button"
+                onClick={() => setProjectPickerOpen(true)}
+                className="shrink-0 h-7 px-2.5 rounded-md text-xs font-semibold text-primary hover:bg-primary/5 transition-colors"
+              >
+                เปลี่ยน
+              </button>
+            </div>
+          </div>
+
+          <div>
+            <label className="text-xs font-semibold uppercase tracking-wider text-gray-500 block mb-1.5">บ้านเลขที่</label>
             <div className="relative">
               <svg className="w-4 h-4 text-primary absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
                 <path strokeLinecap="round" strokeLinejoin="round" d="M2.25 12l8.954-8.955c.44-.439 1.152-.439 1.591 0L21.75 12M4.5 9.75v10.125c0 .621.504 1.125 1.125 1.125H9.75v-4.875c0-.621.504-1.125 1.125-1.125h2.25c.621 0 1.125.504 1.125 1.125V21h4.125c.621 0 1.125-.504 1.125-1.125V9.75" />
@@ -1334,53 +1428,47 @@ function VisitModal({ prospect, onClose, onSaved, onRefresh }: { prospect: Prosp
             </div>
           </div>
 
-          {linePickerOpen && (
-            <LinePickerModal
-              target={{ type: "prospect", id: prospect.id, label: prospect.house_number || contactName || "บ้านนี้" }}
-              onClose={() => setLinePickerOpen(false)}
-              onLinked={(linked) => { setLinkedLine(linked); onRefresh(); }}
+          {projectPickerOpen && (
+            <ProjectPickerById
+              value={projectId}
+              options={projects}
+              onChange={(id) => { setProjectId(id); setProjectPickerOpen(false); }}
+              onClose={() => setProjectPickerOpen(false)}
             />
           )}
-        </div>
-      ) : modalTab === "people" ? (
-        <div className="flex flex-col gap-4 py-2">
+
           <div>
-            <label className="text-xs font-semibold uppercase tracking-wider text-gray-500 block mb-2">ที่มา</label>
-            <div className="flex flex-wrap gap-1.5">
-              {CHANNELS.map((ch) => {
-                const active = channelCode === ch.code;
-                return (
-                  <button
-                    key={ch.code}
-                    type="button"
-                    onClick={() => setChannelCode(active ? null : ch.code)}
-                    className={`px-2.5 py-1 rounded-full text-xs font-semibold border transition-colors ${
-                      active ? ch.color : "bg-white text-gray-500 border-gray-200 hover:border-gray-300"
-                    }`}
-                  >
-                    {ch.label}
-                  </button>
-                );
-              })}
-            </div>
-          </div>
-          <div>
-            <div className="text-xs font-semibold uppercase tracking-wider text-gray-500 block mb-2">
+            <label className="text-xs font-semibold uppercase tracking-wider text-gray-500 block mb-1.5">
               กรุณาเลือกผู้ติดต่อหลัก
-            </div>
-            <div className="space-y-2.5">
+            </label>
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-2.5">
               {contacts.map((c, i) => {
                 const isPrimary = i === primaryIdx;
                 return (
                 <div
                   key={i}
-                  onClick={() => { if (!isPrimary) setPrimaryIdx(i); }}
-                  className={`rounded-xl border-2 bg-white p-2 space-y-1.5 transition-colors ${
-                    isPrimary
-                      ? "border-amber-400 cursor-default"
-                      : "border-gray-200 cursor-pointer hover:border-gray-300"
+                  className={`rounded-xl border-2 bg-white overflow-hidden transition-colors ${
+                    isPrimary ? "border-amber-400" : "border-gray-200"
                   }`}
                 >
+                  <button
+                    type="button"
+                    onClick={() => setPrimaryIdx(i)}
+                    disabled={isPrimary}
+                    className={`w-full flex items-center gap-2 px-3 h-8 text-xs font-semibold transition-colors ${
+                      isPrimary
+                        ? "bg-amber-100 text-amber-700 cursor-default"
+                        : "bg-gray-50 text-gray-500 hover:bg-amber-50 hover:text-amber-700"
+                    }`}
+                  >
+                    <span className={`w-3.5 h-3.5 rounded-full border-2 inline-flex items-center justify-center shrink-0 ${
+                      isPrimary ? "border-amber-500" : "border-gray-300"
+                    }`}>
+                      {isPrimary && <span className="w-1.5 h-1.5 rounded-full bg-amber-500" />}
+                    </span>
+                    {isPrimary ? "ผู้ติดต่อหลัก" : "ตั้งเป็นผู้ติดต่อหลัก"}
+                  </button>
+                  <div className="p-2 space-y-1.5">
                   <div className="relative">
                     <svg className="w-4 h-4 text-indigo-500 absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
                       <path strokeLinecap="round" strokeLinejoin="round" d="M15.75 6a3.75 3.75 0 11-7.5 0 3.75 3.75 0 017.5 0zM4.501 20.118a7.5 7.5 0 0114.998 0" />
@@ -1390,15 +1478,8 @@ function VisitModal({ prospect, onClose, onSaved, onRefresh }: { prospect: Prosp
                       value={c.name || ""}
                       onChange={(e) => updateContact(i, { name: e.target.value || null })}
                       placeholder="ชื่อ-นามสกุล"
-                      className={`w-full h-10 pl-9 rounded-lg border border-gray-200 bg-white text-sm focus:outline-none focus:border-primary ${
-                        isPrimary ? "pr-24" : "pr-3"
-                      }`}
+                      className="w-full h-10 pl-9 pr-3 rounded-lg border border-gray-200 bg-white text-sm focus:outline-none focus:border-primary"
                     />
-                    {isPrimary && (
-                      <span className="absolute right-2 top-1/2 -translate-y-1/2 pointer-events-none text-[11px] font-semibold text-amber-600 bg-amber-50 border border-amber-200 px-1.5 py-0.5 rounded">
-                        ผู้ติดต่อหลัก
-                      </span>
-                    )}
                   </div>
                   <div className="relative">
                     <svg className="w-4 h-4 text-emerald-600 absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none" fill="currentColor" viewBox="0 0 24 24">
@@ -1423,6 +1504,7 @@ function VisitModal({ prospect, onClose, onSaved, onRefresh }: { prospect: Prosp
                       placeholder="อีเมล (ไม่บังคับ)"
                       className="w-full h-10 pl-9 pr-3 rounded-lg border border-gray-200 bg-white text-sm focus:outline-none focus:border-primary"
                     />
+                  </div>
                   </div>
                 </div>
                 );
@@ -1876,7 +1958,7 @@ function VisitModal({ prospect, onClose, onSaved, onRefresh }: { prospect: Prosp
 
       {/* Step navigation — mirrors the PreSurvey sub-step footer */}
       {(() => {
-        const order: Array<typeof modalTab> = ["line", "people", "visit", "reasons"];
+        const order: Array<typeof modalTab> = ["people", "visit", "line", "reasons"];
         const idx = order.indexOf(modalTab);
         const prev = idx > 0 ? order[idx - 1] : null;
         const next = idx >= 0 && idx < order.length - 1 ? order[idx + 1] : null;
@@ -1914,11 +1996,16 @@ function VisitModal({ prospect, onClose, onSaved, onRefresh }: { prospect: Prosp
   );
 }
 
-function Modal({ title, children, onClose }: { title: React.ReactNode; children: React.ReactNode; onClose: () => void }) {
+function Modal({ title, children, onClose, size = "md" }: { title: React.ReactNode; children: React.ReactNode; onClose: () => void; size?: "md" | "lg" | "xl" }) {
+  const sizeCls = size === "xl"
+    ? "md:max-w-4xl"
+    : size === "lg"
+      ? "md:max-w-2xl"
+      : "md:max-w-md md:h-[720px]";
   return (
     <div className="fixed inset-0 z-50 bg-black/50 flex items-stretch md:items-center justify-center md:p-4" onClick={onClose}>
       <div
-        className="bg-white w-full md:max-w-md md:rounded-2xl md:h-[720px] md:max-h-[90vh] overflow-y-auto flex flex-col"
+        className={`bg-white w-full md:rounded-2xl md:max-h-[90vh] overflow-y-auto flex flex-col ${sizeCls}`}
         style={{
           paddingTop: "max(1.25rem, env(safe-area-inset-top))",
           paddingBottom: "max(1.25rem, env(safe-area-inset-bottom))",
@@ -1928,7 +2015,7 @@ function Modal({ title, children, onClose }: { title: React.ReactNode; children:
         onClick={(e) => e.stopPropagation()}
       >
         <div className="flex items-center justify-between mb-4 gap-2">
-          <h2 className="text-lg font-bold text-gray-900 flex items-center gap-2 min-w-0">{title}</h2>
+          <h2 className="text-lg font-bold text-gray-900 flex items-center gap-2 min-w-0 flex-1">{title}</h2>
           <ModalCloseButton onClick={onClose} />
         </div>
         {children}
@@ -2003,6 +2090,62 @@ function ProjectPickerModal({
               >
                 <span className="truncate">{name}</span>
                 {value === name && (
+                  <svg className="w-5 h-5 shrink-0 ml-2" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M4.5 12.75l6 6 9-13.5" />
+                  </svg>
+                )}
+              </button>
+            ))
+          )}
+        </div>
+      </div>
+    </Modal>
+  );
+}
+
+function ProjectPickerById({
+  value,
+  options,
+  onChange,
+  onClose,
+}: {
+  value: number | null;
+  options: ProjectCard[];
+  onChange: (id: number) => void;
+  onClose: () => void;
+}) {
+  const [query, setQuery] = useState("");
+  const filtered = useMemo(() => {
+    const q = query.trim().toLowerCase();
+    if (!q) return options;
+    return options.filter((o) => o.name.toLowerCase().includes(q));
+  }, [options, query]);
+
+  return (
+    <Modal onClose={onClose} title="เลือกโครงการ">
+      <div className="flex flex-col flex-1 min-h-0 gap-3">
+        <input
+          autoFocus
+          value={query}
+          onChange={(e) => setQuery(e.target.value)}
+          placeholder="ค้นหาโครงการ..."
+          className="shrink-0 w-full h-11 px-3 rounded-lg border border-gray-300 bg-white text-sm"
+        />
+        <div className="flex-1 min-h-0 overflow-y-auto -mx-2">
+          {filtered.length === 0 ? (
+            <div className="px-4 py-8 text-center text-sm text-gray-400">ไม่พบโครงการ</div>
+          ) : (
+            filtered.map((p) => (
+              <button
+                key={p.id}
+                type="button"
+                onClick={() => onChange(p.id)}
+                className={`w-full text-left px-4 py-3 rounded-lg text-sm flex items-center justify-between hover:bg-gray-50 ${
+                  value === p.id ? "text-primary font-semibold bg-primary/5" : "text-gray-700"
+                }`}
+              >
+                <span className="truncate">{p.name}</span>
+                {value === p.id && (
                   <svg className="w-5 h-5 shrink-0 ml-2" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
                     <path strokeLinecap="round" strokeLinejoin="round" d="M4.5 12.75l6 6 9-13.5" />
                   </svg>
