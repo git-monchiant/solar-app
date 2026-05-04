@@ -52,7 +52,6 @@ export function validateSurvey(lead: Partial<Lead>): ValidationResult {
     { field: "survey_breaker_type", label: "ชนิดเบรกเกอร์" },
     { field: "survey_panel_to_inverter_m", label: "Cable PV→Inverter" },
     { field: "survey_db_distance_m", label: "Cable Inverter→MDB" },
-    { field: "survey_appliances", label: "เครื่องใช้พิเศษ" },
     // Roof / house
     { field: "survey_floors", label: "จำนวนชั้น" },
     { field: "survey_roof_material", label: "วัสดุหลังคา" },

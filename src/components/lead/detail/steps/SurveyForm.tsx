@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { forwardRef, useEffect, useImperativeHandle, useRef, useState } from "react";
 import { apiFetch, getUserIdHeader } from "@/lib/api";
 import type { Lead } from "./types";
 import FallbackImage from "@/components/ui/FallbackImage";
@@ -108,6 +108,10 @@ function stringifyAcUnits(map: Record<number, number>): string | null {
   return pairs.length > 0 ? pairs.join(",") : null;
 }
 
+export interface SurveyFormHandle {
+  flushSave: () => Promise<void>;
+}
+
 interface Props {
   lead: Lead;
   refresh: () => void;
@@ -116,7 +120,7 @@ interface Props {
   onFormChange?: (data: Partial<Lead>) => void;
 }
 
-export default function SurveyForm({ lead, refresh, section = "all", onPhaseChange, onFormChange }: Props) {
+const SurveyForm = forwardRef<SurveyFormHandle, Props>(function SurveyForm({ lead, refresh, section = "all", onPhaseChange, onFormChange }, ref) {
   // Must-have on-site
   const [roofMaterial, setRoofMaterial] = useState<string>(lead.survey_roof_material ?? "");
   const [roofOrientations, setRoofOrientations] = useState<string[]>(
@@ -247,7 +251,7 @@ export default function SurveyForm({ lead, refresh, section = "all", onPhaseChan
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(payload),
-      }).catch(console.error);
+      }).then(() => refresh()).catch(console.error);
       pendingRef.current = null;
     }, 600);
     pendingRef.current = { payload, timer };
@@ -266,11 +270,28 @@ export default function SurveyForm({ lead, refresh, section = "all", onPhaseChan
           method: "PATCH",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify(payload),
-        }).catch(console.error);
+        }).then(() => refresh()).catch(console.error);
       }
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  useImperativeHandle(ref, () => ({
+    flushSave: async () => {
+      if (!pendingRef.current) return;
+      clearTimeout(pendingRef.current.timer);
+      const payload = pendingRef.current.payload;
+      pendingRef.current = null;
+      try {
+        await apiFetch(`/api/leads/${lead.id}`, {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(payload),
+        });
+        refresh();
+      } catch (e) { console.error(e); }
+    },
+  }), [lead.id, refresh]);
 
   const card = "rounded-lg bg-white/60 border border-active/15 p-3";
   const label = "text-xs font-semibold tracking-wider uppercase text-gray-400 block mb-2";
@@ -705,4 +726,6 @@ export default function SurveyForm({ lead, refresh, section = "all", onPhaseChan
       </div></>}
     </div>
   );
-}
+});
+
+export default SurveyForm;

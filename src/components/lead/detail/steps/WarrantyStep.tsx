@@ -13,6 +13,7 @@ import LineConfirmModal from "@/components/modal/LineConfirmModal";
 import { useSubStep } from "@/lib/hooks/useSubStep";
 import { useIsMobile } from "@/lib/hooks/useIsMobile";
 import { buildWarrantyFlex } from "@/lib/utils/line-flex";
+import { compressImage } from "@/lib/utils/compressImage";
 import { formatThaiDate } from "@/lib/utils/formatters";
 
 const SUB_STEPS = ["ข้อมูล", "แบตเตอรี่", "เอกสาร", "ลายเซ็น", "ยืนยัน"];
@@ -165,8 +166,9 @@ export default function WarrantyStep({ lead, state, refresh, packages, expanded,
     const file = e.target.files?.[0]; e.target.value = ""; if (!file) return;
     setBattSnScanning(i);
     try {
+      const compressed = await compressImage(file).catch(() => file);
       const fd = new FormData();
-      fd.append("file", file);
+      fd.append("file", compressed);
       fd.append("lead_id", String(lead.id));
       fd.append("type", `warranty_batt${i}_scan`);
       const up = await apiFetch("/api/upload", { method: "POST", body: fd });
@@ -181,8 +183,9 @@ export default function WarrantyStep({ lead, state, refresh, packages, expanded,
     const file = e.target.files?.[0]; e.target.value = ""; if (!file) return;
     setSnScanning(true);
     try {
+      const compressed = await compressImage(file).catch(() => file);
       const fd = new FormData();
-      fd.append("file", file);
+      fd.append("file", compressed);
       fd.append("lead_id", String(lead.id));
       fd.append("type", "warranty_sn_scan");
       const up = await apiFetch("/api/upload", { method: "POST", body: fd });
@@ -204,8 +207,11 @@ export default function WarrantyStep({ lead, state, refresh, packages, expanded,
   const effectiveSignatureUrl = lead.install_customer_signature_url;
 
   const uploadCert = async (file: File, type: string): Promise<string | null> => {
+    // compressImage rejects non-image files (PDFs etc) — fall through with the
+    // original file so PDF certificates still upload as-is.
+    const prepared = await compressImage(file).catch(() => file);
     const fd = new FormData();
-    fd.append("file", file);
+    fd.append("file", prepared);
     fd.append("lead_id", String(lead.id));
     fd.append("type", `warranty_${type}`);
     const res = await apiFetch("/api/upload", { method: "POST", body: fd });
@@ -619,24 +625,26 @@ export default function WarrantyStep({ lead, state, refresh, packages, expanded,
 
       {/* Navigation */}
       {subStep < 4 && (
-        <div className="flex gap-2 mt-3 lg:justify-between">
+        <div className="flex gap-2 mt-3 md:justify-between">
           {subStep > 0 ? (
-            <button type="button" onClick={() => { setSubStep(subStep - 1); scrollToStep(); }} className="flex-1 lg:flex-none lg:w-80 h-11 rounded-lg text-sm font-semibold border border-gray-200 text-gray-600 hover:bg-gray-50 transition-colors flex items-center justify-center gap-1">
+            <button type="button" onClick={() => { setSubStep(subStep - 1); scrollToStep(); }} className="flex-1 md:flex-none md:w-64 h-11 rounded-lg text-sm font-semibold border border-gray-200 text-gray-600 hover:bg-gray-50 transition-colors flex items-center justify-center gap-1">
               <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M15.75 19.5L8.25 12l7.5-7.5" /></svg>
               ย้อนกลับ
             </button>
-          ) : <span className="hidden lg:block lg:w-80" />}
-          <button type="button" onClick={() => { setSubStep(subStep + 1); scrollToStep(); }} className="flex-1 lg:flex-none lg:w-80 h-11 rounded-lg text-sm font-semibold text-white bg-active hover:brightness-110 transition-colors flex items-center justify-center gap-1">
+          ) : <span className="hidden md:block md:w-64" />}
+          <button type="button" onClick={() => { setSubStep(subStep + 1); scrollToStep(); }} className="flex-1 md:flex-none md:w-64 h-11 rounded-lg text-sm font-semibold text-white bg-active hover:brightness-110 transition-colors flex items-center justify-center gap-1">
             ถัดไป
             <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M8.25 4.5l7.5 7.5-7.5 7.5" /></svg>
           </button>
         </div>
       )}
       {subStep === 4 && (
-        <button type="button" onClick={() => { setSubStep(subStep - 1); scrollToStep(); }} className="w-full h-9 mt-2 rounded-lg text-xs text-gray-500 border border-gray-200 hover:bg-gray-50 transition-colors flex items-center justify-center gap-1">
-          <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M15.75 19.5L8.25 12l7.5-7.5" /></svg>
-          ย้อนกลับ
-        </button>
+        <div className="flex mt-3 md:justify-start">
+          <button type="button" onClick={() => { setSubStep(subStep - 1); scrollToStep(); }} className="flex-1 md:flex-none md:w-64 h-11 rounded-lg text-sm font-semibold border border-gray-200 text-gray-600 hover:bg-gray-50 transition-colors flex items-center justify-center gap-1">
+            <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M15.75 19.5L8.25 12l7.5-7.5" /></svg>
+            ย้อนกลับ
+          </button>
+        </div>
       )}
 
       <ErrorPopup message={nextError} onClose={() => setNextError(null)} />

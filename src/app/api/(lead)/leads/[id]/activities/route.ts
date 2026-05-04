@@ -9,6 +9,7 @@ const titleMap: Record<string, string> = {
   other: "Other contact",
   note: "Added a note",
   follow_up: "Scheduled follow-up",
+  loan_followup: "Loan follow-up",
 };
 
 export async function GET(_req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
@@ -44,6 +45,15 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
     let title = titleMap[activityType] || "Activity";
     if (body.follow_up_date) {
       title = `Scheduled follow-up for ${new Date(body.follow_up_date).toLocaleDateString("th-TH", { day: "numeric", month: "short" })}`;
+    }
+    // Loan follow-ups carry the งวด index + the channel that was picked, since
+    // activity_type is fixed to "loan_followup" — without this the channel info
+    // would be lost.
+    if (activityType === "loan_followup") {
+      const methodLabel: Record<string, string> = { call: "โทร", visit: "เยี่ยม", line: "LINE", other: "อื่นๆ" };
+      const channel = methodLabel[String(body.followup_method || "")] || "ติดตาม";
+      const idx = typeof body.installment_index === "number" ? `งวดที่ ${body.installment_index + 1}` : "งวด";
+      title = `[${idx}] ${channel}`;
     }
 
     const request = db.request()

@@ -335,17 +335,20 @@ export default function LeadDetailPage({ params }: { params: Promise<{ id: strin
 
   const scrollRef = useRef<HTMLDivElement>(null);
 
-  // Auto-scroll to active step when lead status changes or on first load
+  // Auto-scroll to active step when lead loads — works on both Workflow + Info tabs.
+  // Mobile users especially need this so they don't have to scroll past 5 done steps
+  // every time they open a lead.
   const hasScrolled = useRef(false);
   useEffect(() => {
-    if (!lead || tab !== "info" || hasScrolled.current) return;
+    if (!lead || hasScrolled.current) return;
+    if (tab !== "info" && tab !== "workflow") return;
     const t = setTimeout(() => {
       const el = document.querySelector("[data-step-active]") as HTMLElement | null;
       if (el) {
         hasScrolled.current = true;
         el.scrollIntoView({ behavior: "smooth", block: "start" });
       }
-    }, 300);
+    }, 400);
     return () => clearTimeout(t);
   }, [lead, tab]);
 

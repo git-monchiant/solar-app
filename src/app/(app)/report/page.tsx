@@ -3,6 +3,8 @@ import { apiFetch } from "@/lib/api";
 import { Fragment, useEffect, useState } from "react";
 import Link from "next/link";
 import Header from "@/components/layout/Header";
+import FallbackImage from "@/components/ui/FallbackImage";
+import ImageLightbox, { type LightboxImage } from "@/components/ui/ImageLightbox";
 import { formatTHB, formatThaiDate as fmtDate } from "@/lib/utils/formatters";
 
 interface Installment {
@@ -12,8 +14,10 @@ interface Installment {
   doc_no: string | null;
   amount: number;
   description: string | null;
-  confirmed_at: string;
+  confirmed_at: string | null;
   confirmed_by: string | null;
+  has_slip: boolean;
+  slip_urls: string[];
 }
 
 interface ReportRow {
@@ -34,6 +38,8 @@ interface ReportRow {
   total_value: number;
   received: number;
   outstanding: number;
+  pending_approval: number;
+  pending_amount: number;
   installments: Installment[];
 }
 
@@ -45,7 +51,16 @@ interface ReportData {
 const fmt = (n: number) => formatTHB(Math.round(n));
 const fmtDateTime = (d: string) => fmtDate(d, { time: true });
 const paymentLabels: Record<string, string> = { transfer: "โอนเงิน", cash: "เงินสด", credit_card: "บัตรเครดิต", home_equity: "Home Equity", finance: "สินเชื่อ" };
+// Step → label. Per-installment payments live at step_no 10+ where the
+// suffix in slip_field (`order_installment_<i>`) is the 0-based installment
+// index. step 4 is the legacy "after-install" slot kept for older leads.
 const stepLabels: Record<number, string> = { 0: "มัดจำ", 1: "ค่าสำรวจ", 3: "งวด 1/2", 4: "งวด 2/2" };
+function labelForInstallment(step_no: number, slip_field: string): string {
+  if (stepLabels[step_no]) return stepLabels[step_no];
+  const m = /^order_installment_(\d+)$/.exec(slip_field || "");
+  if (m) return `งวดที่ ${parseInt(m[1]) + 1}`;
+  return `step ${step_no}`;
+}
 
 function toCsv(rows: ReportRow[]): string {
   const header = ["เลขเอกสาร", "ลูกค้า", "เบอร์", "โครงการ", "แพ็คเกจ", "ช่องทาง", "มูลค่ารวม", "รับแล้ว", "ค้างรับ", "วันที่ทำสัญญา", "รายละเอียดการรับเงิน"];
@@ -60,7 +75,7 @@ function toCsv(rows: ReportRow[]): string {
     r.received,
     r.outstanding,
     r.pre_booked_at ? String(r.pre_booked_at).slice(0, 10) : "",
-    r.installments.map(i => `${stepLabels[i.step_no] || `step${i.step_no}`}: ${fmt(i.amount)} (${String(i.confirmed_at).slice(0,10)})`).join(" | "),
+    r.installments.map(i => `${labelForInstallment(i.step_no, i.slip_field)}: ${fmt(i.amount)} ${i.confirmed_at ? `(${String(i.confirmed_at).slice(0,10)})` : "(รอยืนยัน)"}`).join(" | "),
   ].map(v => {
     const s = String(v ?? "");
     return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
@@ -73,14 +88,24 @@ export default function ReportPage() {
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState("");
   const [filterProject, setFilterProject] = useState("all");
-  const [filterStatus, setFilterStatus] = useState<"all" | "outstanding" | "settled">("all");
+  const [filterStatus, setFilterStatus] = useState<"all" | "outstanding" | "settled" | "pending_approval">("all");
   const [dateFrom, setDateFrom] = useState("");
   const [dateTo, setDateTo] = useState("");
   const [expanded, setExpanded] = useState<Set<number>>(new Set());
+  const [lightbox, setLightbox] = useState<{ images: LightboxImage[]; index: number } | null>(null);
 
   useEffect(() => {
     apiFetch("/api/report/payments").then(setData).catch(console.error).finally(() => setLoading(false));
   }, []);
+
+  const openSlips = (i: Installment) => {
+    if (i.slip_urls.length === 0) return;
+    const label = labelForInstallment(i.step_no, i.slip_field);
+    const imgs: LightboxImage[] = i.slip_urls.map((url, idx) => ({
+      url, label: i.slip_urls.length > 1 ? `${label} · สลิป ${idx + 1} / ${i.slip_urls.length}` : label,
+    }));
+    setLightbox({ images: imgs, index: 0 });
+  };
 
   if (loading) return <div className="flex items-center justify-center h-full py-20"><div className="w-10 h-10 border-3 border-gray-200 border-t-primary rounded-full animate-spin" /></div>;
   if (!data) return <div className="text-center py-12 text-gray-400 text-sm">Unable to load data</div>;
@@ -95,13 +120,14 @@ export default function ReportPage() {
     if (filterProject !== "all" && r.project_name !== filterProject) return false;
     if (filterStatus === "outstanding" && r.outstanding <= 0) return false;
     if (filterStatus === "settled" && r.outstanding > 0) return false;
+    if (filterStatus === "pending_approval" && r.pending_approval === 0) return false;
     if (dateFrom || dateTo) {
       const d = r.pre_booked_at ? String(r.pre_booked_at).slice(0, 10) : "";
       if (dateFrom && d < dateFrom) return false;
       if (dateTo && d > dateTo) return false;
     }
     return true;
-  });
+  }).sort((a, b) => String(b.pre_booked_at || "").localeCompare(String(a.pre_booked_at || "")));
 
   const rollup = filtered.reduce(
     (acc, r) => {
@@ -165,7 +191,7 @@ export default function ReportPage() {
               <option value="all">ทุกโครงการ</option>
               {projects.map(p => <option key={p} value={p}>{p}</option>)}
             </select>
-            <select value={filterStatus} onChange={e => setFilterStatus(e.target.value as "all" | "outstanding" | "settled")} className="h-9 px-3 rounded-lg border border-gray-200 text-xs bg-white focus:outline-none focus:border-primary">
+            <select value={filterStatus} onChange={e => setFilterStatus(e.target.value as "all" | "outstanding" | "settled" | "pending_approval")} className="h-9 px-3 rounded-lg border border-gray-200 text-xs bg-white focus:outline-none focus:border-primary">
               <option value="all">สถานะทั้งหมด</option>
               <option value="outstanding">ยังค้างรับ</option>
               <option value="settled">ครบแล้ว</option>
@@ -233,24 +259,66 @@ export default function ReportPage() {
                                 <thead>
                                   <tr className="text-gray-400 uppercase">
                                     <th className="text-left py-1 font-semibold">งวด</th>
+                                    <th className="text-left py-1 font-semibold">สถานะ</th>
                                     <th className="text-left py-1 font-semibold">รายละเอียด</th>
                                     <th className="text-left py-1 font-semibold">เลขเอกสาร</th>
                                     <th className="text-left py-1 font-semibold">ผู้ยืนยัน</th>
                                     <th className="text-right py-1 font-semibold">จำนวน</th>
                                     <th className="text-left py-1 font-semibold pl-4">วันเวลา</th>
+                                    <th className="text-right py-1 font-semibold">หลักฐาน</th>
                                   </tr>
                                 </thead>
                                 <tbody>
-                                  {r.installments.map(i => (
-                                    <tr key={i.id} className="border-t border-gray-200">
-                                      <td className="py-1 font-semibold text-gray-700">{stepLabels[i.step_no] || `step ${i.step_no}`}</td>
-                                      <td className="py-1 text-gray-600">{i.description || "—"}</td>
-                                      <td className="py-1 font-mono text-gray-500">{i.doc_no || "—"}</td>
-                                      <td className="py-1 text-gray-500">{i.confirmed_by || "—"}</td>
-                                      <td className="py-1 text-right font-mono tabular-nums font-semibold text-emerald-700">{fmt(i.amount)}</td>
-                                      <td className="py-1 text-gray-500 pl-4">{fmtDateTime(i.confirmed_at)}</td>
-                                    </tr>
-                                  ))}
+                                  {r.installments.map(i => {
+                                    const isPaid = !!i.confirmed_at;
+                                    return (
+                                      <tr key={i.id} className="border-t border-gray-200">
+                                        <td className="py-1 font-semibold text-gray-700">{labelForInstallment(i.step_no, i.slip_field)}</td>
+                                        <td className="py-1">
+                                          {isPaid ? (
+                                            <span className="inline-block px-1.5 py-0.5 rounded bg-emerald-50 text-emerald-700 text-[10px] font-bold">ชำระแล้ว</span>
+                                          ) : (
+                                            <span className="inline-block px-1.5 py-0.5 rounded bg-amber-50 text-amber-700 text-[10px] font-bold">
+                                              {i.has_slip ? "รอยืนยัน" : "รอชำระ"}
+                                            </span>
+                                          )}
+                                        </td>
+                                        <td className="py-1 text-gray-600">{i.description || "—"}</td>
+                                        <td className="py-1 font-mono text-gray-500">{i.doc_no || "—"}</td>
+                                        <td className="py-1 text-gray-500">{i.confirmed_by || "—"}</td>
+                                        <td className={`py-1 text-right font-mono tabular-nums font-semibold ${isPaid ? "text-emerald-700" : "text-gray-400"}`}>{fmt(i.amount)}</td>
+                                        <td className="py-1 text-gray-500 pl-4">{i.confirmed_at ? fmtDateTime(i.confirmed_at) : "—"}</td>
+                                        <td className="py-1 text-right">
+                                          <div className="inline-flex items-center gap-1.5 justify-end">
+                                            {i.slip_urls.length > 0 ? (
+                                              <div className="flex items-center gap-1">
+                                                {i.slip_urls.slice(0, 3).map((url, idx) => (
+                                                  <FallbackImage
+                                                    key={url}
+                                                    src={url}
+                                                    alt=""
+                                                    className="w-9 h-9 object-cover rounded border border-gray-200 cursor-pointer hover:border-active"
+                                                    gallery={i.slip_urls.map((u, k) => ({ url: u, label: i.slip_urls.length > 1 ? `${labelForInstallment(i.step_no, i.slip_field)} · สลิป ${k + 1} / ${i.slip_urls.length}` : labelForInstallment(i.step_no, i.slip_field) }))}
+                                                    galleryIndex={idx}
+                                                  />
+                                                ))}
+                                                {i.slip_urls.length > 3 && (
+                                                  <button type="button" onClick={() => openSlips(i)} className="w-9 h-9 rounded border border-gray-200 bg-gray-50 text-[10px] font-semibold text-gray-600 hover:border-active hover:text-active" style={{ minHeight: 0 }}>
+                                                    +{i.slip_urls.length - 3}
+                                                  </button>
+                                                )}
+                                              </div>
+                                            ) : <span className="text-gray-300 text-[11px]">—</span>}
+                                            {!isPaid && i.has_slip && (
+                                              <Link href={`/leads/${r.lead_id}`} onClick={e => e.stopPropagation()} className="h-7 px-2 rounded text-[11px] font-semibold text-white bg-amber-500 hover:brightness-110 inline-flex items-center" style={{ minHeight: 0 }}>
+                                                ยืนยันรับเงิน
+                                              </Link>
+                                            )}
+                                          </div>
+                                        </td>
+                                      </tr>
+                                    );
+                                  })}
                                 </tbody>
                               </table>
                             )}
@@ -298,16 +366,50 @@ export default function ReportPage() {
                     <div className="px-4 pb-3 bg-gray-50 space-y-2">
                       {r.installments.length === 0 ? (
                         <div className="text-xs text-gray-400 py-2">ยังไม่มีรายการรับเงิน</div>
-                      ) : r.installments.map(i => (
-                        <div key={i.id} className="flex items-start justify-between gap-2 py-1 text-xs">
-                          <div className="flex-1 min-w-0">
-                            <div className="font-semibold text-gray-700">{stepLabels[i.step_no] || `step ${i.step_no}`}</div>
-                            <div className="text-gray-500 truncate">{i.description || "—"}</div>
-                            <div className="text-gray-400">{fmtDateTime(i.confirmed_at)}</div>
+                      ) : r.installments.map(i => {
+                        const isPaid = !!i.confirmed_at;
+                        return (
+                          <div key={i.id} className="flex items-start justify-between gap-2 py-1 text-xs">
+                            <div className="flex-1 min-w-0">
+                              <div className="flex items-center gap-1.5 flex-wrap">
+                                <span className="font-semibold text-gray-700">{labelForInstallment(i.step_no, i.slip_field)}</span>
+                                {isPaid ? (
+                                  <span className="inline-block px-1.5 py-0.5 rounded bg-emerald-50 text-emerald-700 text-[10px] font-bold">ชำระแล้ว</span>
+                                ) : (
+                                  <span className="inline-block px-1.5 py-0.5 rounded bg-amber-50 text-amber-700 text-[10px] font-bold">
+                                    {i.has_slip ? "รอยืนยัน" : "รอชำระ"}
+                                  </span>
+                                )}
+                              </div>
+                              <div className="text-gray-500 truncate">{i.description || "—"}</div>
+                              <div className="text-gray-400">{i.confirmed_at ? fmtDateTime(i.confirmed_at) : "—"}</div>
+                              <div className="flex items-center gap-1.5 mt-1 flex-wrap">
+                                {i.slip_urls.slice(0, 3).map((url, idx) => (
+                                  <FallbackImage
+                                    key={url}
+                                    src={url}
+                                    alt=""
+                                    className="w-10 h-10 object-cover rounded border border-gray-200"
+                                    gallery={i.slip_urls.map((u, k) => ({ url: u, label: i.slip_urls.length > 1 ? `${labelForInstallment(i.step_no, i.slip_field)} · สลิป ${k + 1} / ${i.slip_urls.length}` : labelForInstallment(i.step_no, i.slip_field) }))}
+                                    galleryIndex={idx}
+                                  />
+                                ))}
+                                {i.slip_urls.length > 3 && (
+                                  <button type="button" onClick={() => openSlips(i)} className="w-10 h-10 rounded border border-gray-200 bg-gray-50 text-[10px] font-semibold text-gray-600" style={{ minHeight: 0 }}>
+                                    +{i.slip_urls.length - 3}
+                                  </button>
+                                )}
+                                {!isPaid && i.has_slip && (
+                                  <Link href={`/leads/${r.lead_id}`} onClick={e => e.stopPropagation()} className="h-7 px-2 rounded text-[11px] font-semibold text-white bg-amber-500 inline-flex items-center" style={{ minHeight: 0 }}>
+                                    ยืนยันรับเงิน
+                                  </Link>
+                                )}
+                              </div>
+                            </div>
+                            <div className={`font-mono font-semibold tabular-nums shrink-0 ${isPaid ? "text-emerald-700" : "text-gray-400"}`}>{fmt(i.amount)}</div>
                           </div>
-                          <div className="font-mono font-semibold text-emerald-700 tabular-nums shrink-0">{fmt(i.amount)}</div>
-                        </div>
-                      ))}
+                        );
+                      })}
                     </div>
                   )}
                 </div>
@@ -317,6 +419,15 @@ export default function ReportPage() {
           </div>
         </div>
       </div>
+
+      {lightbox && (
+        <ImageLightbox
+          images={lightbox.images}
+          index={lightbox.index}
+          onIndexChange={(n) => setLightbox(prev => prev ? { ...prev, index: n } : null)}
+          onClose={() => setLightbox(null)}
+        />
+      )}
     </div>
   );
 }

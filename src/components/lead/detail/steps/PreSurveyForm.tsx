@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { forwardRef, useEffect, useImperativeHandle, useRef, useState } from "react";
 import { apiFetch, getUserIdHeader } from "@/lib/api";
 import FallbackImage from "@/components/ui/FallbackImage";
 import type { Lead, Package } from "./types";
@@ -108,6 +108,10 @@ const chipBtn = (selected: boolean) =>
       : "bg-white text-gray-600 border-gray-200 hover:border-active/40 hover:text-active"
   }`;
 
+export interface PreSurveyFormHandle {
+  flushSave: () => Promise<void>;
+}
+
 interface Props {
   lead: Lead;
   refresh: () => void;
@@ -119,7 +123,7 @@ interface Props {
   onFormChange?: (data: Partial<Lead>) => void;
 }
 
-export default function PreSurveyForm({ lead, refresh, packages = [], hideResidence, hidePackages, onlyPackages, onPackageChange, onFormChange }: Props) {
+const PreSurveyForm = forwardRef<PreSurveyFormHandle, Props>(function PreSurveyForm({ lead, refresh, packages = [], hideResidence, hidePackages, onlyPackages, onPackageChange, onFormChange }, ref) {
   const [residenceType, setResidenceType] = useState<string>(lead.pre_residence_type ?? "");
   const [monthlyBill, setMonthlyBill] = useState<number | undefined>(lead.pre_monthly_bill ?? undefined);
   const [peakUsage, setPeakUsage] = useState<string>(lead.pre_peak_usage ?? "");
@@ -174,39 +178,85 @@ export default function PreSurveyForm({ lead, refresh, packages = [], hideReside
       pre_wants_battery: wantsBattery || null,
       pre_ac_units: stringifyAcUnits(acUnits),
       pre_appliances: pre_appliances.length ? pre_appliances.join(",") : null,
+      pre_roof_shape: roofShape || null,
       interested_package_ids: selectedPkgs.length ? selectedPkgs.join(",") : null,
       interested_package_id: selectedPkgs.length ? parseInt(selectedPkgs[0]) : null,
     } as Partial<Lead>);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [residenceType, monthlyBill, peakUsage, electricalPhase, wantsBattery, acUnits, pre_appliances, selectedPkgs]);
+  }, [residenceType, monthlyBill, peakUsage, electricalPhase, wantsBattery, acUnits, pre_appliances, roofShape, selectedPkgs]);
 
-  // Auto-save to DB (debounced)
+  // Auto-save to DB (debounced). Pending payload is held in a ref so it can
+  // flush on unmount — otherwise navigating to the next sub-step within 600ms
+  // of a change cancels the save and loses data. After every successful save
+  // we call refresh() so the parent's lead prop catches up; otherwise the next
+  // mount would re-seed input state from a stale prop and look "empty".
   const isFirstAutosave = useRef(true);
+  const pendingRef = useRef<{ payload: Record<string, unknown>; timer: ReturnType<typeof setTimeout> } | null>(null);
   useEffect(() => {
     if (isFirstAutosave.current) {
       isFirstAutosave.current = false;
       return;
     }
-    const t = setTimeout(() => {
+    const payload = {
+      pre_residence_type: residenceType || null,
+      pre_monthly_bill: monthlyBill ?? null,
+      pre_peak_usage: peakUsage || null,
+      pre_electrical_phase: electricalPhase || null,
+      pre_wants_battery: wantsBattery || null,
+      pre_ac_units: stringifyAcUnits(acUnits),
+      pre_appliances: pre_appliances.length ? pre_appliances.join(",") : null,
+      pre_roof_shape: roofShape || null,
+      interested_package_ids: selectedPkgs.length ? selectedPkgs.join(",") : null,
+      interested_package_id: selectedPkgs.length ? parseInt(selectedPkgs[0]) : null,
+    };
+    if (pendingRef.current) clearTimeout(pendingRef.current.timer);
+    const timer = setTimeout(() => {
       apiFetch(`/api/leads/${lead.id}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          pre_residence_type: residenceType || null,
-          pre_monthly_bill: monthlyBill ?? null,
-          pre_peak_usage: peakUsage || null,
-          pre_electrical_phase: electricalPhase || null,
-          pre_wants_battery: wantsBattery || null,
-          pre_ac_units: stringifyAcUnits(acUnits),
-          pre_appliances: pre_appliances.length ? pre_appliances.join(",") : null,
-          interested_package_ids: selectedPkgs.length ? selectedPkgs.join(",") : null,
-          interested_package_id: selectedPkgs.length ? parseInt(selectedPkgs[0]) : null,
-        }),
-      }).catch(console.error);
+        body: JSON.stringify(payload),
+      }).then(() => refresh()).catch(console.error);
+      pendingRef.current = null;
     }, 600);
-    return () => clearTimeout(t);
+    pendingRef.current = { payload, timer };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [residenceType, monthlyBill, peakUsage, electricalPhase, wantsBattery, acUnits, pre_appliances, selectedPkgs]);
+  }, [residenceType, monthlyBill, peakUsage, electricalPhase, wantsBattery, acUnits, pre_appliances, roofShape, selectedPkgs]);
+
+  // Flush any pending debounced save on unmount.
+  useEffect(() => {
+    return () => {
+      if (pendingRef.current) {
+        clearTimeout(pendingRef.current.timer);
+        const payload = pendingRef.current.payload;
+        pendingRef.current = null;
+        apiFetch(`/api/leads/${lead.id}`, {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(payload),
+        }).then(() => refresh()).catch(console.error);
+      }
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // Imperative flush — parent calls before advancing sub-step so the latest
+  // typed value lands in DB regardless of debounce timing.
+  useImperativeHandle(ref, () => ({
+    flushSave: async () => {
+      if (!pendingRef.current) return;
+      clearTimeout(pendingRef.current.timer);
+      const payload = pendingRef.current.payload;
+      pendingRef.current = null;
+      try {
+        await apiFetch(`/api/leads/${lead.id}`, {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(payload),
+        });
+        refresh();
+      } catch (e) { console.error(e); }
+    },
+  }), [lead.id, refresh]);
 
   const handleBillPhotoCapture = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -386,4 +436,6 @@ export default function PreSurveyForm({ lead, refresh, packages = [], hideReside
       )}
     </div>
   );
-}
+});
+
+export default PreSurveyForm;

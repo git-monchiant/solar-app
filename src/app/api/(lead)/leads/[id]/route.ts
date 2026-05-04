@@ -211,17 +211,79 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
       sets.push("quotation_amount = @quotation_amount");
       request.input("quotation_amount", sql.Decimal(12, 2), body.quotation_amount);
     }
+    if (body.order_installments !== undefined) {
+      // Guard: an installment that's already confirmed (payments.confirmed_at IS NOT NULL)
+      // can't be edited or removed. Block updates that would shrink the array
+      // below a paid index, or change a paid row's pct/method/loan_bank/when.
+      try {
+        const newArr: Array<{ pct?: number; when?: string; method?: string; loan_bank?: string | null }> = body.order_installments ? JSON.parse(body.order_installments) : [];
+        if (Array.isArray(newArr)) {
+          const paidRows = await db.request()
+            .input("lead_id", sql.Int, leadId)
+            .query(`
+              SELECT slip_field FROM payments
+              WHERE lead_id = @lead_id
+                AND confirmed_at IS NOT NULL
+                AND slip_field LIKE 'order_installment_%'
+            `);
+          const paidIdx = paidRows.recordset
+            .map((r: { slip_field: string }) => parseInt(r.slip_field.replace("order_installment_", "")))
+            .filter((n: number) => !isNaN(n));
+          // 1. Shrink check
+          for (const idx of paidIdx) {
+            if (idx >= newArr.length) {
+              return NextResponse.json({ error: `งวดที่ ${idx + 1} ชำระแล้ว — ลบ/ลดจำนวนงวดไม่ได้ ต้องถอน confirm ก่อน` }, { status: 409 });
+            }
+          }
+          // 2. Compare paid rows with prior values — frontend should already block, but verify here too
+          const prevRow = await db.request().input("id", sql.Int, leadId).query(`SELECT order_installments FROM leads WHERE id = @id`);
+          const prevArr = prevRow.recordset[0]?.order_installments ? JSON.parse(prevRow.recordset[0].order_installments) : [];
+          for (const idx of paidIdx) {
+            const prev = prevArr[idx];
+            const next = newArr[idx];
+            if (!prev || !next) continue;
+            const changed = prev.pct !== next.pct || prev.when !== next.when || prev.method !== next.method || prev.loan_bank !== next.loan_bank;
+            if (changed) {
+              return NextResponse.json({ error: `งวดที่ ${idx + 1} ชำระแล้ว — แก้ไขข้อมูลไม่ได้ ต้องถอน confirm ก่อน` }, { status: 409 });
+            }
+          }
+        }
+      } catch (e) {
+        if (e instanceof SyntaxError) {
+          return NextResponse.json({ error: "Invalid order_installments JSON" }, { status: 400 });
+        }
+        // Not a validation error — re-throw to outer catch
+        throw e;
+      }
+      sets.push("order_installments = @order_installments");
+      request.input("order_installments", sql.NVarChar(sql.MAX), body.order_installments);
+    }
     if (body.order_total !== undefined) {
       sets.push("order_total = @order_total");
       request.input("order_total", sql.Decimal(12, 2), body.order_total);
     }
-    if (body.order_pct_before !== undefined) {
-      sets.push("order_pct_before = @order_pct_before");
-      request.input("order_pct_before", sql.Int, body.order_pct_before);
-    }
-    if (body.order_pct_after !== undefined) {
-      sets.push("order_pct_after = @order_pct_after");
-      request.input("order_pct_after", sql.Int, body.order_pct_after);
+    // Enforce sum=100 invariant — order_pct_before + order_pct_after must
+    // equal 100 whenever both are touched. If only one side is sent, derive
+    // the other so the row never lands in an inconsistent state.
+    if (body.order_pct_before !== undefined && body.order_pct_after !== undefined) {
+      const b = Number(body.order_pct_before);
+      const a = Number(body.order_pct_after);
+      if (b + a !== 100) {
+        return NextResponse.json({ error: `order_pct_before + order_pct_after must = 100 (got ${b} + ${a} = ${b + a})` }, { status: 400 });
+      }
+      sets.push("order_pct_before = @order_pct_before", "order_pct_after = @order_pct_after");
+      request.input("order_pct_before", sql.Int, b);
+      request.input("order_pct_after", sql.Int, a);
+    } else if (body.order_pct_before !== undefined) {
+      const b = Number(body.order_pct_before);
+      sets.push("order_pct_before = @order_pct_before", "order_pct_after = @order_pct_after");
+      request.input("order_pct_before", sql.Int, b);
+      request.input("order_pct_after", sql.Int, 100 - b);
+    } else if (body.order_pct_after !== undefined) {
+      const a = Number(body.order_pct_after);
+      sets.push("order_pct_after = @order_pct_after", "order_pct_before = @order_pct_before");
+      request.input("order_pct_after", sql.Int, a);
+      request.input("order_pct_before", sql.Int, 100 - a);
     }
     if (body.order_before_paid !== undefined) {
       sets.push("order_before_paid = @order_before_paid");
@@ -735,6 +797,88 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
     const result = await request.query(`
       UPDATE leads SET ${sets.join(", ")} OUTPUT INSERTED.* WHERE id = @id
     `);
+
+    // When the installment plan changes:
+    //   1. Drop pending payment rows whose installment index is no longer in the
+    //      plan (e.g. shrank from 4 → 2 → indices 2 + 3 are orphans).
+    //   2. Sync the amount on remaining pending rows so they match the latest
+    //      plan — otherwise the payments table holds stale numbers if the user
+    //      edits % without re-opening that row's PaymentSection.
+    // Confirmed payments are not touched (historical records).
+    if (body.order_installments !== undefined) {
+      try {
+        const arr = body.order_installments ? JSON.parse(body.order_installments) : [];
+        if (Array.isArray(arr)) {
+          const count = arr.length;
+          // 1. Drop orphans
+          await db.request()
+            .input("lead_id", sql.Int, leadId)
+            .input("count", sql.Int, count)
+            .query(`
+              DELETE FROM payments
+              WHERE lead_id = @lead_id
+                AND confirmed_at IS NULL
+                AND slip_field LIKE 'order_installment_%'
+                AND TRY_CAST(SUBSTRING(slip_field, LEN('order_installment_') + 1, 10) AS INT) >= @count
+            `);
+          // 2. Sync amount on pending rows that still belong to the plan.
+          // Mirrors the frontend math: gross amount per row, then deposit
+          // (pre_total_price) credit walked backward — last row gets the
+          // 1,000 ค่าสำรวจ first; spillover lands on earlier rows.
+          const totalsRes = await db.request().input("id", sql.Int, leadId)
+            .query(`SELECT order_total, pre_total_price FROM leads WHERE id = @id`);
+          const orderTotal = Number(totalsRes.recordset[0]?.order_total || 0);
+          const depositPaid = Number(totalsRes.recordset[0]?.pre_total_price || 0);
+          if (orderTotal > 0) {
+            const paidRes = await db.request().input("id", sql.Int, leadId)
+              .query(`
+                SELECT slip_field FROM payments
+                WHERE lead_id = @id AND confirmed_at IS NOT NULL
+                  AND slip_field LIKE 'order_installment_%'
+              `);
+            const paidIdxSet = new Set<number>(
+              paidRes.recordset
+                .map((r: { slip_field: string }) => parseInt(r.slip_field.replace("order_installment_", "")))
+                .filter((n: number) => !isNaN(n))
+            );
+            let autoIdx = arr.length - 1;
+            for (let k = arr.length - 1; k >= 0; k--) {
+              if (!paidIdxSet.has(k)) { autoIdx = k; break; }
+            }
+            const earlierSum = arr.reduce((s: number, r: { pct?: number }, idx: number) => idx === autoIdx ? s : s + (Number(r?.pct) || 0), 0);
+            const lastPct = Math.max(0, 100 - earlierSum);
+            // Gross per row.
+            const gross: number[] = arr.map((_r, i) => {
+              const pct = i === autoIdx ? lastPct : Number(arr[i]?.pct) || 0;
+              return Math.round((orderTotal * pct) / 100);
+            });
+            // Allocate deposit credit walking backward.
+            const credits: number[] = arr.map(() => 0);
+            let remaining = depositPaid;
+            for (let i = arr.length - 1; i >= 0 && remaining > 0; i--) {
+              const c = Math.min(gross[i], remaining);
+              credits[i] = c;
+              remaining -= c;
+            }
+            for (let i = 0; i < arr.length; i++) {
+              const net = Math.max(0, gross[i] - credits[i]);
+              await db.request()
+                .input("lead_id", sql.Int, leadId)
+                .input("slip_field", sql.NVarChar(50), `order_installment_${i}`)
+                .input("amount", sql.Decimal(12, 2), net)
+                .query(`
+                  UPDATE payments SET amount = @amount
+                  WHERE lead_id = @lead_id
+                    AND slip_field = @slip_field
+                    AND confirmed_at IS NULL
+                `);
+            }
+          }
+        }
+      } catch (e) {
+        console.error("Pending payment sync failed:", e);
+      }
+    }
 
     // Auto-log status change as activity (with duplicate prevention)
     if (body.status !== undefined && oldStatus && oldStatus !== body.status) {

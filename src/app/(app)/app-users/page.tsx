@@ -98,7 +98,7 @@ function UsersList({ currentUserId }: { currentUserId: number }) {
                   <td className="px-4 py-3">
                     <div className="flex flex-wrap gap-1">
                       {(u.roles || []).map(r => (
-                        <span key={r} className="text-[10px] font-semibold px-1.5 py-0.5 rounded bg-gray-100 text-gray-700">{r}</span>
+                        <span key={r} className="text-xs font-semibold px-2 py-0.5 rounded bg-gray-100 text-gray-700">{r}</span>
                       ))}
                     </div>
                   </td>

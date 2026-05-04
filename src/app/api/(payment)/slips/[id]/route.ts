@@ -29,6 +29,38 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ id:
   }
 }
 
+// PATCH /api/slips/<id>  body: { submit: true }
+// Marks the staging slip as "submitted for accountant review" (sets
+// submitted_at). Until submitted, the slip is a draft and won't appear
+// in the accountant's pending-approval queue.
+export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
+  const gate = await requireAuth(req);
+  if (gate.error) return gate.error;
+  const { id } = await params;
+  const slipId = parseInt(id);
+  if (!slipId) return NextResponse.json({ error: "Invalid id" }, { status: 400 });
+  try {
+    const body = await req.json().catch(() => ({}));
+    if (body.submit === true) {
+      const db = await getDb();
+      await db.request().input("id", sql.Int, slipId)
+        .query(`UPDATE slip_files SET submitted_at = GETDATE() WHERE id = @id AND submitted_at IS NULL`);
+      return NextResponse.json({ ok: true });
+    }
+    if (body.submit === false) {
+      // Revert to draft so the uploader can edit/replace before resubmitting.
+      const db = await getDb();
+      await db.request().input("id", sql.Int, slipId)
+        .query(`UPDATE slip_files SET submitted_at = NULL WHERE id = @id`);
+      return NextResponse.json({ ok: true });
+    }
+    return NextResponse.json({ error: "No-op" }, { status: 400 });
+  } catch (e) {
+    console.error("PATCH /api/slips/[id] error:", e);
+    return NextResponse.json({ error: e instanceof Error ? e.message : "Failed" }, { status: 500 });
+  }
+}
+
 // DELETE /api/slips/<id>  → remove record
 export async function DELETE(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const gate = await requireAuth(req);

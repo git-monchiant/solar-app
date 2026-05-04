@@ -40,6 +40,12 @@ interface Props {
   // Optional public-facing document URL (receipt PDF). If set, LINE flex button links to it
   // instead of the default /pay/<token> payment page.
   docUrl?: string;
+  /** Hide the PaymentHeader (title + amount line). Use when the parent already shows
+   * those details and PaymentSection is embedded as a slot. */
+  hideHeader?: boolean;
+  /** Force the section to only expose the "อื่นๆ" tab — used by loan installments
+   * where customers pay via the bank, not via our QR/link/transfer flows. */
+  onlyOther?: boolean;
 }
 
 type Settings = {
@@ -58,6 +64,7 @@ type Settings = {
 };
 
 type SlipStatus = "verifying" | "verified" | "failed";
+type DocType = "slip" | "cheque" | "paper" | "other";
 interface SlipEntry {
   key: string;            // stable React key (slip_files id, payment slot, or tmp-<ts>)
   url: string;            // image URL (or data: for local preview)
@@ -66,6 +73,19 @@ interface SlipEntry {
   slipFilesId?: number;   // staging row id — needed for DELETE /api/slips/:id
   tempFileUrl?: string;   // /api/files/<name> during verify; cleaned after success/fail
   filename?: string;
+  // null = draft (uploader still working); non-null = submitted to accountant.
+  submittedAt?: string | null;
+  // Fields parsed from the file by Gemini at verify time. Displayed under
+  // the thumbnail so admin can match against the visible doc without opening.
+  extracted?: {
+    doc_type?: DocType | null;
+    amount?: number | null;
+    ref1?: string | null;
+    ref2?: string | null;
+    trans_id?: string | null;
+    datetime?: string | null;
+    cheque_no?: string | null;
+  };
 }
 
 export default function PaymentSection({
@@ -88,6 +108,8 @@ export default function PaymentSection({
   onUndone,
   confirmLabel,
   docUrl,
+  hideHeader,
+  onlyOther,
 }: Props) {
   const [confirming, setConfirming] = useState(false);
   const [confirmError, setConfirmError] = useState<string | null>(null);
@@ -107,6 +129,10 @@ export default function PaymentSection({
   const { me } = useMe();
   const dialog = useDialog();
   const isAdmin = me?.roles?.includes("admin") ?? false;
+  // Step-1 (uploader) — admin/sales/solar can submit slips for review.
+  const canStep1 = !!(me?.roles?.some(r => r === "admin" || r === "sales" || r === "solar"));
+  // Step-2 (accountant) — only account/admin can confirm receipt of money.
+  const canStep2 = !!(me?.roles?.some(r => r === "admin" || r === "account"));
 
   const [slips, setSlips] = useState<SlipEntry[]>([]);
   const [slipsLoaded, setSlipsLoaded] = useState(false);
@@ -152,7 +178,7 @@ export default function PaymentSection({
           if (data.payment_method === "bank_transfer") setTab("bank");
           else if (data.payment_method === "qr" || data.payment_method === "link" || data.payment_method === "other") setTab(data.payment_method);
         } else {
-          const res = await apiFetch(`/api/slips?lead_id=${leadId}&slip_field=${encodeURIComponent(slipField)}`) as { slips: Array<{ id: number; url: string; filename: string | null }> };
+          const res = await apiFetch(`/api/slips?lead_id=${leadId}&slip_field=${encodeURIComponent(slipField)}`) as { slips: Array<{ id: number; url: string; filename: string | null; submitted_at: string | null }> };
           if (cancelled) return;
           const list = res.slips.map((s) => ({
             key: `slip-${s.id}`,
@@ -160,6 +186,7 @@ export default function PaymentSection({
             status: "verified" as const,
             slipFilesId: s.id,
             filename: s.filename ?? undefined,
+            submittedAt: s.submitted_at ?? null,
           }));
           setSlips(list);
           if (list.length > 0 && !verifiedFiredRef.current) {
@@ -203,6 +230,9 @@ export default function PaymentSection({
   const [bankCopied, setBankCopied] = useState<"number" | "name" | "all" | null>(null);
   const [qrDataUrl, setQrDataUrl] = useState<string | null>(null);
   const [qrMode, setQrMode] = useState<"credit_transfer" | "bill_payment">("credit_transfer");
+  const [qrRef1, setQrRef1] = useState<string | null>(null);
+  const [qrRef2, setQrRef2] = useState<string | null>(null);
+  const [refCopied, setRefCopied] = useState<"ref1" | "ref2" | null>(null);
   const [qrLoading, setQrLoading] = useState(true);
   const [qrError, setQrError] = useState<string | null>(null);
   const [payToken, setPayToken] = useState<string>("");
@@ -218,6 +248,7 @@ export default function PaymentSection({
   useEffect(() => {
     apiFetch("/api/settings").then((s: Settings) => {
       setSettings(s);
+      if (onlyOther) { setTab("other"); return; }
       const qr = s.promptpay_qr_enabled !== "false";
       const link = s.promptpay_link_enabled !== "false";
       const bank = s.bank_account_enabled !== "false";
@@ -226,7 +257,7 @@ export default function PaymentSection({
       else if (!qr && !link && bank) setTab("bank");
       else if (!qr && !link && !bank && other) setTab("other");
     }).catch(console.error);
-  }, []);
+  }, [onlyOther]);
 
   // Allocate a payment_no (Ref2) up-front so the QR carries a stable per-payment
   // reference. Skipped if confirmed (payment row already exists; pending lookup
@@ -256,9 +287,11 @@ export default function PaymentSection({
     if (stepNo) params.set("step_no", String(stepNo));
     if (paymentNo) params.set("ref2", paymentNo);
     apiFetch(`/api/qr?${params.toString()}`)
-      .then((d: { qrDataUrl: string; mode?: "credit_transfer" | "bill_payment" }) => {
+      .then((d: { qrDataUrl: string; mode?: "credit_transfer" | "bill_payment"; ref1?: string | null; ref2?: string | null }) => {
         setQrDataUrl(d.qrDataUrl);
         if (d.mode) setQrMode(d.mode);
+        setQrRef1(d.ref1 ?? null);
+        setQrRef2(d.ref2 ?? null);
       })
       .catch((err) => { console.error(err); setQrError("สร้าง QR ไม่สำเร็จ"); })
       .finally(() => setQrLoading(false));
@@ -274,10 +307,10 @@ export default function PaymentSection({
     }).then((r: { token: string }) => setPayToken(r.token)).catch(console.error);
   }, [leadId, amount, paymentTitle, amountLabel]);
 
-  const qrEnabled = settings.promptpay_qr_enabled !== "false";
-  const linkEnabled = settings.promptpay_link_enabled !== "false";
-  const bankEnabled = settings.bank_account_enabled !== "false";
-  const otherEnabled = settings.other_payment_enabled === "true";
+  const qrEnabled = !onlyOther && settings.promptpay_qr_enabled !== "false";
+  const linkEnabled = !onlyOther && settings.promptpay_link_enabled !== "false";
+  const bankEnabled = !onlyOther && settings.bank_account_enabled !== "false";
+  const otherEnabled = onlyOther ? true : settings.other_payment_enabled === "true";
   const taxId = settings.promptpay_tax_id || "";
   const companyShort = settings.company_short_name || "SENA SOLAR";
   const companyFull = settings.company_name || "SENA SOLAR ENERGY CO., LTD.";
@@ -352,48 +385,26 @@ export default function PaymentSection({
     setSlips((prev) => [...prev, { key: tempKey, url: previewUrl, status: "verifying" }]);
     log("upload_start", { filename: file.name, size: file.size, mime: file.type, expected_amount: amount, current_count: slips.length });
 
-    let tmpUrl: string | null = null;
     try {
-      // 1. Upload temp copy to disk so Gemini can fetch it by URL
-      const uploadForm = new FormData();
-      uploadForm.append("file", file);
-      uploadForm.append("lead_id", String(leadId));
-      uploadForm.append("type", `slip_step${stepNo ?? 0}`);
-      const uploadRes = await fetch("/api/upload", { method: "POST", headers: { "ngrok-skip-browser-warning": "true", ...getUserIdHeader() }, body: uploadForm });
-      const uploadJson = await uploadRes.json();
-      tmpUrl = uploadJson.url as string;
-      log("upload_tmp_ok", { tmp_url: tmpUrl });
-
-      // 2. Verify with Gemini
-      const verifyRes = await fetch("/api/verify-slip", {
-        method: "POST",
-        headers: { "Content-Type": "application/json", "ngrok-skip-browser-warning": "true", ...getUserIdHeader() },
-        body: JSON.stringify({ imageUrl: tmpUrl }),
-      });
-      const slipData = await verifyRes.json();
-
-      if (!slipData.is_slip) {
-        log("verify_fail", { tmp_url: tmpUrl, expected_amount: amount, gemini: slipData });
-        setSlips((prev) => prev.map((s) => s.key === tempKey ? { ...s, status: "failed" as const, error: "ไม่ใช่สลิปโอนเงิน", tempFileUrl: tmpUrl ?? undefined } : s));
-        return;
-      }
-      log("verify_success", { tmp_url: tmpUrl, expected_amount: amount, gemini: slipData });
-
-      // 3. Persist to staging (slip_files)
+      // Skip Gemini for now — single round-trip directly to staging.
+      // (Previous flow uploaded to /api/upload temp, then called verify-slip,
+      //  then re-uploaded to /api/slips, then deleted temp = 4 round-trips.)
       const storeForm = new FormData();
       storeForm.append("file", file);
       storeForm.append("lead_id", String(leadId));
       storeForm.append("slip_field", slipField);
       const storeRes = await apiFetch("/api/slips", { method: "POST", body: storeForm }) as { id: number; url: string };
 
-      // 4. Cleanup temp disk file
-      if (tmpUrl) {
-        fetch(`/api/upload?file=${encodeURIComponent(tmpUrl)}`, { method: "DELETE", headers: { "ngrok-skip-browser-warning": "true", ...getUserIdHeader() } }).catch(() => {});
-      }
-
       log("slip_saved", { db_url: storeRes.url });
       setSlips((prev) => prev.map((s) => s.key === tempKey
-        ? { key: `slip-${storeRes.id}`, url: storeRes.url, status: "verified" as const, slipFilesId: storeRes.id, filename: file.name }
+        ? {
+            key: `slip-${storeRes.id}`,
+            url: storeRes.url,
+            status: "verified" as const,
+            slipFilesId: storeRes.id,
+            filename: file.name,
+            submittedAt: null, // draft — uploader must explicitly submit
+          }
         : s));
 
       if (!verifiedFiredRef.current) {
@@ -402,7 +413,7 @@ export default function PaymentSection({
       }
     } catch (e) {
       console.error("addSlip failed:", e);
-      setSlips((prev) => prev.map((s) => s.key === tempKey ? { ...s, status: "failed" as const, error: "ตรวจสลิปไม่สำเร็จ", tempFileUrl: tmpUrl ?? undefined } : s));
+      setSlips((prev) => prev.map((s) => s.key === tempKey ? { ...s, status: "failed" as const, error: "อัปโหลดไม่สำเร็จ" } : s));
     }
   };
 
@@ -433,7 +444,7 @@ export default function PaymentSection({
       form.append("slip_field", slipField);
       const storeRes = await apiFetch("/api/slips", { method: "POST", body: form }) as { id: number; url: string };
       setSlips(prev => prev.map(s => s.key === tempKey
-        ? { key: `slip-${storeRes.id}`, url: storeRes.url, status: "verified" as const, slipFilesId: storeRes.id, filename: file.name }
+        ? { key: `slip-${storeRes.id}`, url: storeRes.url, status: "verified" as const, slipFilesId: storeRes.id, filename: file.name, submittedAt: null }
         : s));
       if (!verifiedFiredRef.current) {
         verifiedFiredRef.current = true;
@@ -443,6 +454,42 @@ export default function PaymentSection({
       console.error("addSlipDirect failed:", e);
       setSlips(prev => prev.map(s => s.key === tempKey ? { ...s, status: "failed" as const, error: "อัปโหลดไม่สำเร็จ" } : s));
     }
+  };
+
+  // Two-step flow — uploader first uploads (status=draft, submitted_at=null),
+  // then explicitly clicks "ยืนยันส่งให้ทีมบัญชี" to mark all draft slips as
+  // submitted. Only submitted slips show up in the accountant's queue.
+  const draftSlips = slips.filter(s => s.status === "verified" && s.slipFilesId && !s.submittedAt);
+  const submittedSlips = slips.filter(s => s.status === "verified" && s.submittedAt);
+  const [submitting, setSubmitting] = useState(false);
+  const submitDrafts = async () => {
+    if (submitting || draftSlips.length === 0) return;
+    setSubmitting(true);
+    try {
+      await Promise.all(draftSlips.map(s =>
+        apiFetch(`/api/slips/${s.slipFilesId}`, {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ submit: true }),
+        }).catch(console.error)
+      ));
+      const stamp = new Date().toISOString();
+      setSlips(prev => prev.map(s => draftSlips.find(d => d.key === s.key) ? { ...s, submittedAt: stamp } : s));
+    } finally {
+      setSubmitting(false);
+    }
+  };
+  // Admin "ถอย" — delete every staging slip for this payment so the UI
+  // returns to step 1 (no slips, ready to re-upload).
+  const adminRollback = async () => {
+    const targets = slips.filter(s => s.slipFilesId);
+    if (targets.length === 0) return;
+    await Promise.all(targets.map(s =>
+      apiFetch(`/api/slips/${s.slipFilesId}`, {
+        method: "DELETE",
+      }).catch(console.error)
+    ));
+    setSlips(prev => prev.filter(s => !s.slipFilesId));
   };
 
   // Remove a single slip. Staging rows DELETE /api/slips/:id; failed-temp entries
@@ -462,7 +509,11 @@ export default function PaymentSection({
   const verifiedCount = slips.filter((s) => s.status === "verified").length;
   const anyVerifying = slips.some((s) => s.status === "verifying");
   const canAddMore = !confirmed && slips.length < MAX_SLIPS;
-  const canConfirm = !confirmed && verifiedCount > 0 && !anyVerifying && (tab !== "other" || otherMethod.trim().length > 0);
+  // Two-step gate: accountant's "ยืนยันรับชำระเงิน" only enables after the
+  // uploader has marked drafts as submitted. While drafts exist, only the
+  // amber "ยืนยันส่งให้ทีมบัญชี" button is actionable.
+  const hasUnsubmittedDraft = slips.some(s => s.status === "verified" && s.slipFilesId && !s.submittedAt);
+  const canConfirm = !confirmed && verifiedCount > 0 && !anyVerifying && !hasUnsubmittedDraft && (tab !== "other" || otherMethod.trim().length > 0);
 
   const handleConfirm = async () => {
     if (stepNo === undefined || confirming || confirmed || !canConfirm) return;
@@ -538,16 +589,22 @@ export default function PaymentSection({
 
   // Temporary receipt — only after the payment is confirmed. The /api/receipt
   // endpoint takes a stage code that mirrors the slip_field (deposit /
-  // order_before / order_after).
+  // order_before / order_after) or "installment" + payment_id for the
+  // dynamic per-row flow used by OrderStep งวดชำระเงิน.
   const receiptStage = slipField === "pre_slip_url" ? "deposit"
     : slipField === "order_before_slip" ? "order_before"
     : slipField === "order_after_slip" ? "order_after"
+    : /^order_installment_\d+$/.test(slipField) ? "installment"
+    : null;
+  const installmentPayId = receiptStage === "installment" && slipUrl?.startsWith("/api/payments/")
+    ? slipUrl.split("/").pop()
     : null;
   const downloadReceipt = async () => {
     if (!receiptStage) return;
     try {
       const title = "TEMPORARY RECEIPT";
-      const url = `/api/receipt?lead_id=${leadId}&stage=${receiptStage}&format=pdf&title=${encodeURIComponent(title)}`;
+      const installmentQs = installmentPayId ? `&payment_id=${installmentPayId}` : "";
+      const url = `/api/receipt?lead_id=${leadId}&stage=${receiptStage}${installmentQs}&format=pdf&title=${encodeURIComponent(title)}`;
       const res = await fetch(url, { headers: { ...getUserIdHeader() } });
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       const blob = await res.blob();
@@ -567,8 +624,8 @@ export default function PaymentSection({
 
   return (
     <div className="space-y-3 relative">
-      <div className="flex items-start justify-between gap-2">
-        <PaymentHeader title={paymentTitle} amount={amount} amountLabel={amountLabel} />
+      <div className={`flex items-start gap-2 ${hideHeader ? "justify-start" : "justify-between"}`}>
+        {!hideHeader && <PaymentHeader title={paymentTitle} amount={amount} amountLabel={amountLabel} />}
         <div className="shrink-0 flex items-center gap-1">
           {invoiceDocUrl && (
             <button
@@ -661,6 +718,19 @@ export default function PaymentSection({
               </div>
             </div>
           </div>
+          {/* Ref1 / Ref2 — single line, click to copy combined string. */}
+          {qrMode === "bill_payment" && (qrRef1 || qrRef2) && (() => {
+            const combined = [qrRef1, qrRef2].filter(Boolean).join(" / ");
+            return (
+              <button
+                type="button"
+                onClick={() => { navigator.clipboard.writeText(combined); setRefCopied("ref1"); setTimeout(() => setRefCopied(null), 1500); }}
+                className="block mx-auto text-center font-mono tabular-nums text-sm text-gray-700 hover:text-active"
+              >
+                {combined}{refCopied && <span className="text-emerald-600 ml-1">✓</span>}
+              </button>
+            );
+          })()}
           <button type="button" disabled={confirmed || lineSending === "qr" || !lineId} onClick={() => setLineConfirmType("qr")} className={lineBtnClass("qr")}>
             {lineBtnLabel("qr")}
           </button>
@@ -827,6 +897,38 @@ export default function PaymentSection({
           </div>
         )}
 
+        {/* Extracted fields — shown for the first verified slip that has any
+            field parsed by Gemini. Helps admin reconcile without opening the
+            image. doc_type chip indicates slip / cheque / paper. */}
+        {(() => {
+          const verified = slips.find(s => s.status === "verified" && s.extracted);
+          const e = verified?.extracted;
+          if (!e) return null;
+          const docTypeLabel: Record<string, string> = { slip: "สลิปโอนเงิน", cheque: "เช็ค", paper: "ใบเสร็จ", other: "อื่นๆ" };
+          const rows: Array<[string, string]> = [];
+          if (e.doc_type) rows.push(["ประเภท", docTypeLabel[e.doc_type] || e.doc_type]);
+          if (typeof e.amount === "number") rows.push(["ยอด", new Intl.NumberFormat("en-US").format(e.amount) + " บาท"]);
+          if (e.datetime) rows.push(["วันเวลา", e.datetime.replace("T", " ").slice(0, 16)]);
+          if (e.cheque_no) rows.push(["เลขเช็ค", e.cheque_no]);
+          if (e.ref1) rows.push(["Ref1", e.ref1]);
+          if (e.ref2) rows.push(["Ref2", e.ref2]);
+          if (e.trans_id) rows.push(["Trans ID", e.trans_id]);
+          if (rows.length === 0) return null;
+          return (
+            <div className="mt-2 rounded-lg bg-gray-50 border border-gray-200 px-3 py-2 text-xs">
+              <div className="text-[10px] font-semibold uppercase tracking-wider text-gray-400 mb-1">ค่าที่อ่านได้จากหลักฐาน</div>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-x-4 gap-y-1">
+                {rows.map(([label, value]) => (
+                  <div key={label} className="flex gap-2">
+                    <span className="text-gray-400 w-16 shrink-0">{label}</span>
+                    <span className="font-mono tabular-nums text-gray-800 break-all">{value}</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          );
+        })()}
+
         {confirmed && (
           <div className="mt-3 space-y-2">
             <div className="w-full h-11 rounded-lg text-sm font-semibold text-emerald-700 bg-emerald-50 border border-emerald-600/15 flex items-center justify-center gap-1">✓ ยืนยันการชำระเงินเรียบร้อย</div>
@@ -843,29 +945,58 @@ export default function PaymentSection({
           </div>
         )}
 
-        {/* Confirm button — enabled once at least 1 slip verified and none verifying */}
+        {/* Single primary action button — label/handler swaps by stage:
+              • Drafts present → Step 1 (uploader submits) "ยืนยันการชำระเงิน 1"
+              • All submitted   → Step 2 (accountant confirms) "ยืนยันการชำระเงิน 2"
+            One button, one position — same look as the existing confirm. */}
         {stepNo !== undefined && !confirmed && slips.length > 0 && (
           <>
-            <button
-              type="button"
-              disabled={!canConfirm || confirming}
-              onClick={handleConfirm}
-              className="w-full h-11 mt-3 rounded-lg text-sm font-semibold transition-colors flex items-center justify-center gap-1.5 text-white bg-gradient-to-r from-primary to-primary-dark hover:brightness-110 disabled:opacity-40 disabled:cursor-not-allowed"
-            >
-              {confirming ? (
-                <>
-                  <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
-                  กำลังยืนยัน…
-                </>
-              ) : (
-                `${confirmLabel || "ยืนยันรับชำระเงิน"}${verifiedCount > 1 ? ` (${verifiedCount} สลิป)` : ""}`
-              )}
-            </button>
+            {hasUnsubmittedDraft ? (
+              canStep1 && (
+                <button
+                  type="button"
+                  disabled={submitting || anyVerifying}
+                  onClick={submitDrafts}
+                  className="w-full h-11 mt-3 rounded-lg text-sm font-semibold transition-colors flex items-center justify-center gap-1.5 text-white bg-gradient-to-r from-amber-500 to-amber-600 hover:brightness-110 disabled:opacity-40 disabled:cursor-not-allowed"
+                >
+                  {submitting ? "กำลังส่ง…" : "ยืนยันการชำระเงิน 1"}
+                </button>
+              )
+            ) : (
+              canStep2 && (
+                <button
+                  type="button"
+                  disabled={!canConfirm || confirming}
+                  onClick={handleConfirm}
+                  className="w-full h-11 mt-3 rounded-lg text-sm font-semibold transition-colors flex items-center justify-center gap-1.5 text-white bg-gradient-to-r from-primary to-primary-dark hover:brightness-110 disabled:opacity-40 disabled:cursor-not-allowed"
+                >
+                  {confirming ? (
+                    <>
+                      <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                      กำลังยืนยัน…
+                    </>
+                  ) : (
+                    `${confirmLabel || "ยืนยันการชำระเงิน 2"}${verifiedCount > 1 ? ` (${verifiedCount} สลิป)` : ""}`
+                  )}
+                </button>
+              )
+            )}
             {confirmError && (
               <div className="mt-2 text-xs text-red-600 text-center">{confirmError}</div>
             )}
             {anyVerifying && (
               <div className="mt-2 text-xs text-amber-600 text-center">กำลังตรวจสลิป… รอสักครู่</div>
+            )}
+            {/* Admin rollback — visible at submitted state only (drafts → step 1
+                already happens via per-slip remove). Wipes all staging slips. */}
+            {!hasUnsubmittedDraft && submittedSlips.length > 0 && isAdmin && (
+              <button
+                type="button"
+                onClick={adminRollback}
+                className="w-full h-10 mt-2 rounded-lg text-sm font-semibold text-red-600 border border-red-300 bg-white hover:bg-red-50 flex items-center justify-center gap-1.5"
+              >
+                ↶ ถอย payment (admin)
+              </button>
             )}
           </>
         )}

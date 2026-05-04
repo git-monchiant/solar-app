@@ -31,12 +31,17 @@ export async function POST(req: NextRequest) {
       // Re-use any pending row for this (lead, step, slip_field). A confirmed row
       // must not be touched — a new payment for the same step (e.g. retry after
       // rollback) gets its own running number.
+      //
+      // UPDLOCK + HOLDLOCK serialize concurrent intent calls for the same key
+      // (e.g. React StrictMode double-mount that fires the effect twice) so
+      // they don't both see "no pending row" and both INSERT a duplicate.
+      // Other (lead, step, slip_field) keys are unaffected.
       const existing = await new sql.Request(tx)
         .input("lead_id", sql.Int, leadId)
         .input("step_no", sql.Int, stepNo)
         .input("slip_field", sql.NVarChar(50), slipField)
         .query(`
-          SELECT TOP 1 id, payment_no FROM payments
+          SELECT TOP 1 id, payment_no FROM payments WITH (UPDLOCK, HOLDLOCK)
           WHERE lead_id = @lead_id AND step_no = @step_no AND slip_field = @slip_field
             AND confirmed_at IS NULL
           ORDER BY id DESC

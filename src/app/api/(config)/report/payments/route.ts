@@ -25,27 +25,98 @@ export async function GET(req: NextRequest) {
       LEFT JOIN packages pk ON l.pre_package_id = pk.id
       LEFT JOIN users u ON l.assigned_user_id = u.id
       WHERE l.pre_doc_no IS NOT NULL
-      ORDER BY l.pre_booked_at DESC
+         OR EXISTS (SELECT 1 FROM payments p WHERE p.lead_id = l.id)
+      ORDER BY l.pre_booked_at DESC, l.id DESC
     `);
 
+    // Pull confirmed AND pending payments — accountant needs to see both to
+    // approve. Per row we resolve slip URLs from two sources:
+    //   • Confirmed rows: payments.slip_data_{1..5} → /api/payments/{id}[?slot=N]
+    //   • Pending rows: slip_files staging table → /api/slips/{id}
+    // (Confirmed rows have empty staging because POST /api/payments deletes
+    // slip_files on commit. Pending rows usually have empty slip_data.)
+    const MAX_SLOTS = 5;
+    const slotCols = Array.from({ length: MAX_SLOTS }, (_, i) => {
+      const suffix = i === 0 ? "" : `_${i + 1}`;
+      return `DATALENGTH(p.slip_data${suffix}) AS bytes_${i + 1}`;
+    }).join(", ");
     const paymentsRes = await db.request().query(`
-      SELECT id, lead_id, step_no, slip_field, doc_no, amount, description, confirmed_at, confirmed_by
-      FROM payments
-      ORDER BY confirmed_at ASC
+      SELECT p.id, p.lead_id, p.step_no, p.slip_field, p.doc_no, p.amount, p.description,
+             p.confirmed_at, p.confirmed_by, p.payment_no, p.ref1,
+             ${slotCols}
+      FROM payments p
+      ORDER BY p.step_no ASC, p.id ASC
     `);
+
+    // PromptPay Ref1 — for pending rows that haven't been confirmed yet, ref1
+    // hasn't been written to the row. Compute it the same way /api/qr does so
+    // accountants can match the slip Ref1 against system records.
+    const settingsRes = await db.request().query(`
+      SELECT [key], value FROM app_settings WHERE [key] IN ('promptpay_mode', 'promptpay_ref1')
+    `);
+    const sMap: Record<string, string> = {};
+    for (const row of settingsRes.recordset) sMap[row.key] = row.value || "";
+    const ref1Prefix = sMap.promptpay_mode === "bill_payment" ? (sMap.promptpay_ref1 || "") : "";
+    const computeRef1 = (leadId: number, stepNo: number): string | null => {
+      if (!ref1Prefix) return null;
+      return `${ref1Prefix}L${leadId}S${String(stepNo).padStart(2, "0")}`.slice(0, 20);
+    };
+
+    // Map (lead_id, slip_field) → staging slip_files ids — only SUBMITTED
+    // ones (submitted_at IS NOT NULL) count toward the accountant's queue.
+    // Drafts (uploader still working) are excluded so the queue only shows
+    // slips the uploader has actively flagged for review.
+    const stagingRes = await db.request().query(`
+      SELECT id, lead_id, slip_field FROM slip_files
+      WHERE submitted_at IS NOT NULL
+      ORDER BY id ASC
+    `);
+    const stagingMap = new Map<string, number[]>();
+    for (const sf of stagingRes.recordset as Array<{ id: number; lead_id: number; slip_field: string }>) {
+      const key = `${sf.lead_id}::${sf.slip_field}`;
+      const arr = stagingMap.get(key) || [];
+      arr.push(sf.id);
+      stagingMap.set(key, arr);
+    }
 
     const byLead = new Map<number, Array<{
       id: number; step_no: number; slip_field: string; doc_no: string | null;
-      amount: number; description: string | null; confirmed_at: string; confirmed_by: string | null;
+      amount: number; description: string | null;
+      confirmed_at: string | null; confirmed_by: string | null;
+      has_slip: boolean;
+      slip_urls: string[];
+      ref1: string | null;
+      ref2: string | null;
     }>>();
-    for (const row of fixDates(paymentsRes.recordset) as typeof paymentsRes.recordset) {
-      const arr = byLead.get(row.lead_id) || [];
+    for (const row of fixDates(paymentsRes.recordset) as Array<Record<string, unknown>>) {
+      const slipUrls: string[] = [];
+      for (let n = 1; n <= MAX_SLOTS; n++) {
+        const bytes = Number(row[`bytes_${n}`] || 0);
+        if (bytes > 0) {
+          slipUrls.push(n === 1 ? `/api/payments/${row.id}` : `/api/payments/${row.id}?slot=${n}`);
+        }
+      }
+      const stageIds = stagingMap.get(`${row.lead_id}::${row.slip_field}`) || [];
+      for (const sid of stageIds) slipUrls.push(`/api/slips/${sid}`);
+
+      const leadId = row.lead_id as number;
+      const stepNo = row.step_no as number;
+      const arr = byLead.get(leadId) || [];
       arr.push({
-        id: row.id, step_no: row.step_no, slip_field: row.slip_field,
-        doc_no: row.doc_no, amount: Number(row.amount || 0),
-        description: row.description, confirmed_at: row.confirmed_at, confirmed_by: row.confirmed_by,
+        id: row.id as number,
+        step_no: stepNo,
+        slip_field: row.slip_field as string,
+        doc_no: (row.doc_no as string | null) ?? null,
+        amount: Number(row.amount || 0),
+        description: (row.description as string | null) ?? null,
+        confirmed_at: (row.confirmed_at as string | null) ?? null,
+        confirmed_by: (row.confirmed_by as string | null) ?? null,
+        has_slip: slipUrls.length > 0,
+        slip_urls: slipUrls,
+        ref1: (row.ref1 as string | null) || computeRef1(leadId, stepNo),
+        ref2: (row.payment_no as string | null) ?? null,
       });
-      byLead.set(row.lead_id, arr);
+      byLead.set(leadId, arr);
     }
 
     const rows = (fixDates(leadsRes.recordset) as typeof leadsRes.recordset).map((l) => {
@@ -54,7 +125,14 @@ export async function GET(req: NextRequest) {
       const preTotal = Number(l.pre_total_price || 0);
       const total_value = orderTotal > 0 ? orderTotal + extra : preTotal;
       const installments = byLead.get(l.lead_id) || [];
-      const received = installments.reduce((s, i) => s + i.amount, 0);
+      // Only confirmed payments count toward "received" — pending rows with
+      // unverified slips are NOT money in hand yet.
+      const received = installments
+        .filter(i => i.confirmed_at)
+        .reduce((s, i) => s + i.amount, 0);
+      const pendingRows = installments.filter(i => !i.confirmed_at && i.has_slip);
+      const pendingApproval = pendingRows.length;
+      const pendingAmount = pendingRows.reduce((s, i) => s + i.amount, 0);
       const outstanding = Math.max(0, total_value - received);
       return {
         lead_id: l.lead_id,
@@ -74,6 +152,8 @@ export async function GET(req: NextRequest) {
         total_value,
         received,
         outstanding,
+        pending_approval: pendingApproval,
+        pending_amount: pendingAmount,
         installments,
       };
     });

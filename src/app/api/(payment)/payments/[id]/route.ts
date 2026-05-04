@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getDb, sql } from "@/lib/db";
 import { requireAdmin, requireAuth } from "@/lib/auth";
+import { syncOrderPaidFlags } from "@/lib/payments-helpers";
 
 export const runtime = "nodejs";
 
@@ -100,11 +101,24 @@ export async function DELETE(req: NextRequest, { params }: { params: Promise<{ i
     if (payRes.recordset.length === 0) return NextResponse.json({ error: "Payment not found" }, { status: 404 });
     const pay = payRes.recordset[0];
     const slipField = pay.slip_field as string;
-    const paidFlag = PAID_FLAG[slipField];
-    if (!paidFlag) return NextResponse.json({ error: `Unknown slip_field: ${slipField}` }, { status: 400 });
+    const paidFlag = PAID_FLAG[slipField] ?? null;
 
-    await db.request().input("id", sql.Int, payId).query(`DELETE FROM payments WHERE id = @id`);
+    // Revert (don't delete) so payment_no + step_no + amount stay stable when
+    // the slip is re-uploaded + re-confirmed. Clears slip data + confirm meta
+    // back to pending.
+    await db.request().input("id", sql.Int, payId).query(`
+      UPDATE payments SET
+        slip_data = NULL, slip_data_2 = NULL, slip_data_3 = NULL, slip_data_4 = NULL, slip_data_5 = NULL,
+        slip_mime = NULL, slip_mime_2 = NULL, slip_mime_3 = NULL, slip_mime_4 = NULL, slip_mime_5 = NULL,
+        slip_filename = NULL, slip_filename_2 = NULL, slip_filename_3 = NULL, slip_filename_4 = NULL, slip_filename_5 = NULL,
+        confirmed_at = NULL,
+        confirmed_by = NULL,
+        payment_method = NULL
+      WHERE id = @id
+    `);
 
+    // Legacy slip_fields also flipped a leads column on confirm — flip it back.
+    // Dynamic per-installment slips (order_installment_<i>) have no column.
     if (slipField === "pre_slip_url") {
       await db.request().input("lead_id", sql.Int, pay.lead_id)
         .query(`UPDATE leads SET
@@ -113,7 +127,7 @@ export async function DELETE(req: NextRequest, { params }: { params: Promise<{ i
           status = CASE WHEN status = 'survey' THEN 'pre_survey' ELSE status END,
           updated_at = GETDATE()
           WHERE id = @lead_id`);
-    } else {
+    } else if (paidFlag) {
       await db.request().input("lead_id", sql.Int, pay.lead_id)
         .query(`UPDATE leads SET ${slipField} = NULL, ${paidFlag} = 0, updated_at = GETDATE() WHERE id = @lead_id`);
     }
@@ -125,6 +139,11 @@ export async function DELETE(req: NextRequest, { params }: { params: Promise<{ i
       .input("details", sql.NVarChar(sql.MAX), JSON.stringify({ payment_id: payId, doc_no: pay.doc_no, amount: pay.amount }))
       .query(`INSERT INTO payment_logs (lead_id, action, slip_field, step_no, details, user_id)
               VALUES (@lead_id, 'undo_payment', @slip_field, @step_no, @details, 1)`);
+
+    // Re-derive legacy order_before_paid / order_after_paid after undo of an installment.
+    if (/^order_installment_\d+$/.test(slipField)) {
+      await syncOrderPaidFlags(db, pay.lead_id).catch(e => console.error("syncOrderPaidFlags failed:", e));
+    }
 
     return NextResponse.json({ ok: true, lead_id: pay.lead_id });
   } catch (e) {

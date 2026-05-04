@@ -21,11 +21,15 @@ interface Props {
   /** Show "ส่งกลับ Seeker" option — only when lead is still returnable
    * (came from prospect AND hasn't advanced past pre-survey / paid deposit). */
   canSendBack?: boolean;
+  /** Tag this follow-up as belonging to a loan installment row. When set, the
+   * saved activity gets activity_type="loan_followup" + a "[งวดที่ N]" prefix
+   * in its title so the order step can show them grouped per row. */
+  loanInstallmentIndex?: number;
   onClose: () => void;
   onSaved: () => void;
 }
 
-export default function AddActivityModal({ activityType, leadId, canSendBack = false, onClose, onSaved }: Props) {
+export default function AddActivityModal({ activityType, leadId, canSendBack = false, loanInstallmentIndex, onClose, onSaved }: Props) {
   const [note, setNote] = useState("");
   const [followUpDate, setFollowUpDate] = useState(() => {
     const d = new Date();
@@ -40,14 +44,19 @@ export default function AddActivityModal({ activityType, leadId, canSendBack = f
   const handleSubmit = async () => {
     setSaving(true);
     try {
+      const isLoanFollowup = typeof loanInstallmentIndex === "number" && activityType === "follow_up";
       await apiFetch(`/api/leads/${leadId}/activities`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          activity_type: activityType === "follow_up" ? (followUpMethod || "follow_up") : "note",
+          activity_type: isLoanFollowup
+            ? "loan_followup"
+            : (activityType === "follow_up" ? (followUpMethod || "follow_up") : "note"),
           note: note.trim() || null,
           follow_up_date: nextFollowUpDate || null,
           contact_date: followUpDate || null,
+          installment_index: isLoanFollowup ? loanInstallmentIndex : undefined,
+          followup_method: isLoanFollowup ? (followUpMethod || "follow_up") : undefined,
         }),
       });
       if (sendBackToSeeker && activityType === "follow_up") {

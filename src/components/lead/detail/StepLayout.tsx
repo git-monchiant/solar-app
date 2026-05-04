@@ -3,10 +3,14 @@
 import { ReactNode } from "react";
 import type { CardStateKind } from "./steps/types";
 
+// Sub-step label — string for shared label, tuple `[mobile, desktop]` for
+// responsive labels (e.g. tighter wording on mobile screens).
+export type SubStepLabel = string | readonly [string, string];
+
 interface StepLayoutProps {
   state: CardStateKind;
   /** Sub-step labels. Omit or pass a single-element array to hide the indicator bar. */
-  subSteps?: readonly string[];
+  subSteps?: readonly SubStepLabel[];
   /** Current sub-step (controlled by parent via useSubStep). */
   subStep?: number;
   onSubStepChange?: (n: number) => void;
@@ -85,7 +89,12 @@ export default function StepLayout({
                   i === subStep ? "text-active" : i < subStep ? "text-gray-500" : "text-gray-300"
                 }`}
               >
-                {label}
+                {typeof label === "string" ? label : (
+                  <>
+                    <span className="md:hidden">{label[0]}</span>
+                    <span className="hidden md:inline">{label[1]}</span>
+                  </>
+                )}
               </span>
             </button>
           ))}

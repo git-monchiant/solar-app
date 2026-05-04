@@ -4,7 +4,7 @@ import { useSearchParams } from "next/navigation";
 import { formatSlotsRange } from "@/lib/time-slots";
 
 interface ReceiptData {
-  stage: "deposit" | "order_before" | "order_after";
+  stage: "deposit" | "order_before" | "order_after" | "installment";
   receipt_no: string;
   created_at: string;
   total_price: number;
@@ -22,6 +22,7 @@ interface ReceiptData {
   survey_time_slot: string | null;
   packages: { id: number; name: string; kwp: number; price: number }[];
   signer: { full_name: string; signature_url: string | null } | null;
+  customer_signature_url: string | null;
 }
 
 const CO = {
@@ -41,6 +42,7 @@ const STAGE_TITLE: Record<string, string> = {
   deposit: "SOLAR ROOFTOP SURVEY / TEMPORARY RECEIPT",
   order_before: "SOLAR ROOFTOP INSTALLATION / PRE-INSTALLATION RECEIPT",
   order_after: "SOLAR ROOFTOP INSTALLATION / FINAL PAYMENT RECEIPT",
+  installment: "SOLAR ROOFTOP INSTALLATION / TEMPORARY RECEIPT",
 };
 
 function ReceiptContent() {
@@ -59,6 +61,8 @@ function ReceiptContent() {
     if (leadId) qs.set("lead_id", leadId);
     qs.set("stage", stage);
     if (userId) qs.set("user_id", userId);
+    const paymentId = params.get("payment_id");
+    if (paymentId) qs.set("payment_id", paymentId);
     fetch(`/api/receipt/data?${qs.toString()}`).then(r => r.json()).then(setD).catch(console.error);
   }, [params]);
 
@@ -185,6 +189,13 @@ function ReceiptContent() {
           <div className="flex justify-around mb-3 mt-10 text-xs text-gray-500">
             <div className="text-center">
               <div className="relative w-44 h-12 mb-1">
+                {d.customer_signature_url && (
+                  <img
+                    src={d.customer_signature_url}
+                    alt="customer signature"
+                    className="absolute inset-x-0 bottom-0 mx-auto max-h-12 object-contain"
+                  />
+                )}
                 <div className="absolute inset-x-0 bottom-0 border-b border-gray-300" />
               </div>
               <div>SIGNATURE</div>

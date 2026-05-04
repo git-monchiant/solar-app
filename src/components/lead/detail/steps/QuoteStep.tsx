@@ -96,7 +96,6 @@ export default function QuoteStep({ lead, state, refresh, expanded, onToggle }: 
           quotation_files: url || null,
           quotation_amount: amount || null,
           quotation_doc_no: docNo || null,
-          quotation_sent_date: new Date().toISOString().slice(0, 10),
           quotation_by: byName || null,
           quote_sent_by: me?.id ?? null,
         }),
@@ -190,34 +189,29 @@ export default function QuoteStep({ lead, state, refresh, expanded, onToggle }: 
         />
       </div>
 
-      {/* File upload */}
+      {/* File upload — replace pattern: same control shows filename when selected. */}
       <div>
         <label className="text-xs font-semibold tracking-wider uppercase text-gray-400 block mb-1">แนบไฟล์ <span className="text-red-500">*</span></label>
-        <label className="flex items-center justify-center gap-2 px-4 py-3 rounded-lg border border-gray-200 bg-gray-50 hover:border-primary hover:bg-primary/5 cursor-pointer transition-colors">
-          <svg className="w-5 h-5 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M12 16.5V9.75m0 0l3 3m-3-3l-3 3M6.75 19.5a4.5 4.5 0 01-1.41-8.775 5.25 5.25 0 0110.233-2.33 3 3 0 013.758 3.848A3.752 3.752 0 0118 19.5H6.75z" /></svg>
-          <span className="text-sm text-gray-500">เลือกไฟล์ (รูป, PDF, เอกสาร)</span>
-          <input
-            type="file"
-            accept="image/*,.pdf,.doc,.docx,.xls,.xlsx"
-            className="hidden"
-            onChange={e => {
-              if (e.target.files?.[0]) setFiles([e.target.files[0]]);
-            }}
-          />
-        </label>
-
-        {/* File list */}
-        {files.length > 0 && (
-          <div className="mt-2 space-y-1">
-            {files.map((f, i) => (
-              <div key={i} className="flex items-center justify-between gap-2 text-sm text-gray-700 px-3 py-2 rounded-lg bg-gray-50 border border-gray-200">
-                <div className="flex items-center gap-2 min-w-0">
-                  <svg className="w-4 h-4 text-primary shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M19.5 14.25v-2.625a3.375 3.375 0 00-3.375-3.375h-1.5A1.125 1.125 0 0113.5 7.125v-1.5a3.375 3.375 0 00-3.375-3.375H8.25m2.25 0H5.625c-.621 0-1.125.504-1.125 1.125v17.25c0 .621.504 1.125 1.125 1.125h12.75c.621 0 1.125-.504 1.125-1.125V11.25a9 9 0 00-9-9z" /></svg>
-                  <span className="truncate">{f.name}</span>
-                </div>
-                <button type="button" onClick={() => setFiles(prev => prev.filter((_, j) => j !== i))} className="text-red-400 hover:text-red-600 shrink-0" style={{ minHeight: 0 }}>✕</button>
-              </div>
-            ))}
+        {files.length === 0 ? (
+          <label className="flex items-center justify-center gap-2 px-4 py-3 rounded-lg border border-gray-200 bg-gray-50 hover:border-primary hover:bg-primary/5 cursor-pointer transition-colors">
+            <svg className="w-5 h-5 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M12 16.5V9.75m0 0l3 3m-3-3l-3 3M6.75 19.5a4.5 4.5 0 01-1.41-8.775 5.25 5.25 0 0110.233-2.33 3 3 0 013.758 3.848A3.752 3.752 0 0118 19.5H6.75z" /></svg>
+            <span className="text-sm text-gray-500">เลือกไฟล์ (รูป, PDF)</span>
+            <input
+              type="file"
+              accept="image/*,.pdf"
+              className="hidden"
+              onChange={e => {
+                if (e.target.files?.[0]) setFiles([e.target.files[0]]);
+              }}
+            />
+          </label>
+        ) : (
+          <div className="flex items-center justify-between gap-2 px-4 py-3 rounded-lg border border-gray-200 bg-gray-50">
+            <div className="flex items-center gap-2 min-w-0">
+              <svg className="w-5 h-5 text-primary shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M19.5 14.25v-2.625a3.375 3.375 0 00-3.375-3.375h-1.5A1.125 1.125 0 0113.5 7.125v-1.5a3.375 3.375 0 00-3.375-3.375H8.25m2.25 0H5.625c-.621 0-1.125.504-1.125 1.125v17.25c0 .621.504 1.125 1.125 1.125h12.75c.621 0 1.125-.504 1.125-1.125V11.25a9 9 0 00-9-9z" /></svg>
+              <span className="truncate text-sm text-gray-700">{files[0].name}</span>
+            </div>
+            <button type="button" onClick={() => setFiles([])} className="text-red-400 hover:text-red-600 shrink-0 text-lg leading-none" style={{ minHeight: 0 }}>✕</button>
           </div>
         )}
       </div>

@@ -5,7 +5,7 @@ import { apiFetch } from "@/lib/api";
 import { useMe } from "@/lib/roles";
 import { PAYMENT_TYPES, FINANCE_STATUSES } from "@/lib/constants/statuses";
 import type { Lead, Package, StepCommonProps } from "./types";
-import PreSurveyForm from "./PreSurveyForm";
+import PreSurveyForm, { type PreSurveyFormHandle } from "./PreSurveyForm";
 import PaymentSection from "@/components/payment/PaymentSection";
 import PaymentSlipsThumbs from "@/components/payment/PaymentSlipsThumbs";
 import CalendarPicker from "@/components/calendar/CalendarPicker";
@@ -177,21 +177,27 @@ export default function PreSurveyStep({ lead, state, refresh, packages, expanded
   const [nextError, setNextError] = useState<string | null>(null);
   const [formDraft, setFormDraft] = useState<Partial<Lead>>({});
   const isFirstRegSave = useRef(true);
+  const regSaveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const buildRegPayload = () => ({
+    full_name: regName ? regName.slice(0, 200) : undefined,
+    id_card_number: regIdCard ? regIdCard.slice(0, 13) : undefined,
+    id_card_address: regAddress ? regAddress.slice(0, 500) : undefined,
+    installation_address: regHouseNumber ? regHouseNumber.slice(0, 500) : undefined,
+  });
   useEffect(() => {
     if (isFirstRegSave.current) { isFirstRegSave.current = false; return; }
-    const t = setTimeout(() => {
+    if (regSaveTimerRef.current) clearTimeout(regSaveTimerRef.current);
+    regSaveTimerRef.current = setTimeout(() => {
       apiFetch(`/api/leads/${lead.id}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          full_name: regName ? regName.slice(0, 200) : undefined,
-          id_card_number: regIdCard ? regIdCard.slice(0, 13) : undefined,
-          id_card_address: regAddress ? regAddress.slice(0, 500) : undefined,
-          installation_address: regHouseNumber ? regHouseNumber.slice(0, 500) : undefined,
-        }),
+        body: JSON.stringify(buildRegPayload()),
       }).catch(console.error);
+      regSaveTimerRef.current = null;
     }, 600);
-    return () => clearTimeout(t);
+    return () => {
+      if (regSaveTimerRef.current) { clearTimeout(regSaveTimerRef.current); regSaveTimerRef.current = null; }
+    };
   }, [regName, regIdCard, regAddress, regHouseNumber]); // eslint-disable-line react-hooks/exhaustive-deps
   const [zone, setZone] = useState<string>(lead.zone ?? "");
   const [zones, setZones] = useState<{ id: number; name: string; color: string }[]>([]);
@@ -234,24 +240,47 @@ export default function PreSurveyStep({ lead, state, refresh, packages, expanded
 
   // Auto-save pre-survey fields on change (debounced)
   const isFirstAutosave = useRef(true);
+  const surveySaveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const buildSurveyDatePayload = () => ({
+    survey_date: surveyDate || null,
+    survey_time_slot: surveyTimeSlot || null,
+  });
   useEffect(() => {
     if (isFirstAutosave.current) {
       isFirstAutosave.current = false;
       return;
     }
-    const t = setTimeout(() => {
+    if (surveySaveTimerRef.current) clearTimeout(surveySaveTimerRef.current);
+    surveySaveTimerRef.current = setTimeout(() => {
       apiFetch(`/api/leads/${lead.id}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          survey_date: surveyDate || null,
-          survey_time_slot: surveyTimeSlot || null,
-        }),
+        body: JSON.stringify(buildSurveyDatePayload()),
       }).catch(console.error);
+      surveySaveTimerRef.current = null;
     }, 600);
-    return () => clearTimeout(t);
+    return () => {
+      if (surveySaveTimerRef.current) { clearTimeout(surveySaveTimerRef.current); surveySaveTimerRef.current = null; }
+    };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [surveyDate, surveyTimeSlot]);
+
+  // Imperative flush — combines parent fields (reg + survey date) plus the
+  // PreSurveyForm child's pending payload via formRef. Called by "ถัดไป" before
+  // advancing so a fast click never drops the latest typed value.
+  const formRef = useRef<PreSurveyFormHandle>(null);
+  const flushAllSaves = async () => {
+    if (regSaveTimerRef.current) { clearTimeout(regSaveTimerRef.current); regSaveTimerRef.current = null; }
+    if (surveySaveTimerRef.current) { clearTimeout(surveySaveTimerRef.current); surveySaveTimerRef.current = null; }
+    try {
+      await apiFetch(`/api/leads/${lead.id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ ...buildRegPayload(), ...buildSurveyDatePayload() }),
+      });
+    } catch (e) { console.error(e); }
+    if (formRef.current) await formRef.current.flushSave();
+  };
 
 
   // subStep 4 final confirm: advance status to 'survey' + save payment_type.
@@ -567,8 +596,10 @@ export default function PreSurveyStep({ lead, state, refresh, packages, expanded
 
   // Sub-step navigation is unrestricted — users can move freely between sub-steps.
   // All required-field validation is enforced at the final "ยืนยัน" button (sub-step 4).
-  const handleSubStepChange = (i: number) => {
+  // Always flushAllSaves before changing tab so any in-flight typed value lands.
+  const handleSubStepChange = async (i: number) => {
     setNextError(null);
+    await flushAllSaves();
     setSubStep(i);
   };
 
@@ -584,7 +615,7 @@ export default function PreSurveyStep({ lead, state, refresh, packages, expanded
     >
       {/* Step 1+2: single PreSurveyForm instance, CSS toggle sections */}
       <div className={subStep <= 1 ? "" : "hidden"}>
-        <PreSurveyForm lead={lead} refresh={refresh} packages={packages} hidePackages={subStep !== 1} onlyPackages={subStep === 1} onPackageChange={setSelectedPkg} onFormChange={setFormDraft} />
+        <PreSurveyForm ref={formRef} lead={lead} refresh={refresh} packages={packages} hidePackages={subStep !== 1} onlyPackages={subStep === 1} onPackageChange={setSelectedPkg} onFormChange={setFormDraft} />
       </div>
 
       {/* Step 3: นัดสำรวจ */}
@@ -729,12 +760,11 @@ export default function PreSurveyStep({ lead, state, refresh, packages, expanded
       {/* Confirm action — step 5. Mobile: full-width 50/50 with Back below.
           Desktop: Back left / ยืนยัน right (same pattern as other sub-steps). */}
       {subStep === 4 && (
-        <div className="mt-3 flex gap-2">
-          <button type="button" onClick={() => { setSubStep(subStep - 1); setTimeout(() => document.querySelector("[data-step-active]")?.scrollIntoView({ behavior: "smooth", block: "start" }), 100); }} className="flex-1 lg:flex-none lg:w-80 h-11 rounded-lg text-sm font-semibold border border-gray-200 text-gray-600 hover:bg-gray-50 transition-colors flex items-center justify-center gap-1">
+        <div className="mt-3 flex gap-2 md:justify-between">
+          <button type="button" onClick={() => { setSubStep(subStep - 1); setTimeout(() => document.querySelector("[data-step-active]")?.scrollIntoView({ behavior: "smooth", block: "start" }), 100); }} className="flex-1 md:flex-none md:w-64 h-11 rounded-lg text-sm font-semibold border border-gray-200 text-gray-600 hover:bg-gray-50 transition-colors flex items-center justify-center gap-1">
             <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M15.75 19.5L8.25 12l7.5-7.5" /></svg>
             ย้อนกลับ
           </button>
-          <div className="hidden lg:block flex-1" />
           <button
             onClick={async () => {
               const missing: string[] = [];
@@ -782,7 +812,7 @@ export default function PreSurveyStep({ lead, state, refresh, packages, expanded
               } finally { setConfirmSaving(false); }
             }}
             disabled={confirmSaving}
-            className="flex-1 lg:flex-none lg:w-80 h-11 rounded-lg text-sm font-semibold text-white bg-gradient-to-r from-primary to-primary-dark hover:brightness-110 disabled:opacity-50 disabled:cursor-not-allowed transition-colors flex items-center justify-center"
+            className="flex-1 md:flex-none md:w-64 h-11 rounded-lg text-sm font-semibold text-white bg-gradient-to-r from-primary to-primary-dark hover:brightness-110 disabled:opacity-50 disabled:cursor-not-allowed transition-colors flex items-center justify-center"
           >
             {confirmSaving ? "กำลังบันทึก…" : "ยืนยันและเปิดขั้นสำรวจ"}
           </button>
@@ -797,7 +827,7 @@ export default function PreSurveyStep({ lead, state, refresh, packages, expanded
           2: ["survey_date", "survey_time_slot"],
           3: [],
         };
-        const handleNext = () => {
+        const handleNext = async () => {
           const v = validatePreSurvey({ ...lead, ...formDraft, survey_date: surveyDate || lead.survey_date, survey_time_slot: surveyTimeSlot || lead.survey_time_slot });
           const missingHere = v.missing.filter(m => stepGate[subStep]?.includes(m.field));
           if (subStep === 3 && !paymentVerified) {
@@ -807,21 +837,21 @@ export default function PreSurveyStep({ lead, state, refresh, packages, expanded
             setNextError(missingHere.map(m => m.label).join(", "));
             return;
           }
+          await flushAllSaves();
           setNextError(null);
           setSubStep(subStep + 1);
           setTimeout(() => document.querySelector("[data-step-active]")?.scrollIntoView({ behavior: "smooth", block: "start" }), 100);
         };
         return (
           <div className="mt-3 space-y-2">
-            <div className="flex gap-2">
-              {subStep > 0 && (
-                <button type="button" onClick={() => { setNextError(null); setSubStep(subStep - 1); setTimeout(() => document.querySelector("[data-step-active]")?.scrollIntoView({ behavior: "smooth", block: "start" }), 100); }} className="flex-1 lg:flex-none lg:w-80 h-11 rounded-lg text-sm font-semibold border border-gray-200 text-gray-600 hover:bg-gray-50 transition-colors flex items-center justify-center gap-1">
+            <div className="flex gap-2 md:justify-between">
+              {subStep > 0 ? (
+                <button type="button" onClick={() => { setNextError(null); setSubStep(subStep - 1); setTimeout(() => document.querySelector("[data-step-active]")?.scrollIntoView({ behavior: "smooth", block: "start" }), 100); }} className="flex-1 md:flex-none md:w-64 h-11 rounded-lg text-sm font-semibold border border-gray-200 text-gray-600 hover:bg-gray-50 transition-colors flex items-center justify-center gap-1">
                   <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M15.75 19.5L8.25 12l7.5-7.5" /></svg>
                   ย้อนกลับ
                 </button>
-              )}
-              <div className="hidden lg:block flex-1" />
-              <button type="button" onClick={handleNext} className="flex-1 lg:flex-none lg:w-80 h-11 rounded-lg text-sm font-semibold text-white bg-active hover:brightness-110 transition-colors flex items-center justify-center gap-1">
+              ) : <span className="hidden md:block md:w-64" />}
+              <button type="button" onClick={handleNext} className="flex-1 md:flex-none md:w-64 h-11 rounded-lg text-sm font-semibold text-white bg-active hover:brightness-110 transition-colors flex items-center justify-center gap-1">
                 ถัดไป
                 <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M8.25 4.5l7.5 7.5-7.5 7.5" /></svg>
               </button>

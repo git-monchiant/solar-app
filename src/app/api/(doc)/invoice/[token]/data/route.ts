@@ -39,7 +39,7 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ tok
     const db = await getDb();
     const r = await db.request().input("token", sql.NVarChar(64), token).query(`
       SELECT l.id, l.full_name, l.phone, l.installation_address, l.id_card_address, l.id_card_number,
-             l.survey_date, l.survey_time_slot, l.install_date, l.install_completed_at,
+             l.survey_date, l.survey_time_slot, l.install_date, l.install_actual_date, l.install_completed_at,
              l.interested_package_ids, l.interested_package_id,
              l.contact_date, l.created_at, l.pre_pay_amount, l.pre_pay_description, l.pre_pay_installment, l.status,
              l.pre_doc_no,

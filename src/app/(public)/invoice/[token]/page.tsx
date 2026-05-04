@@ -17,6 +17,8 @@ interface InvoiceData {
   survey_date: string | null;
   survey_time_slot: string | null;
   install_date: string | null;
+  install_actual_date: string | null;
+  install_completed_at: string | null;
   created_at: string;
   packages: { id: number; name: string; kwp: number; price: number }[];
   step_no: number;
@@ -105,9 +107,9 @@ export default function InvoicePage() {
                   นัดสำรวจ {thaiDate(d.survey_date)} {formatSlotsRange(d.survey_time_slot)}
                 </div>
               )}
-              {!d.is_pre_survey && d.install_date && (
+              {!d.is_pre_survey && (d.install_completed_at || d.install_actual_date || d.install_date) && (
                 <div className="text-[12px] text-gray-500 mt-1">
-                  กำหนดติดตั้ง {thaiDate(d.install_date)}
+                  วันที่ติดตั้ง {thaiDate(d.install_completed_at || d.install_actual_date || d.install_date!)}
                 </div>
               )}
             </div>

@@ -1,10 +1,10 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { apiFetch, getUserIdHeader } from "@/lib/api";
 import { useMe } from "@/lib/roles";
 import type { StepCommonProps, Package, Lead } from "./types";
-import SurveyForm from "./SurveyForm";
+import SurveyForm, { type SurveyFormHandle } from "./SurveyForm";
 import AppointmentRescheduler from "@/components/calendar/AppointmentRescheduler";
 import ErrorPopup from "@/components/ui/ErrorPopup";
 import { validateSurvey } from "@/lib/constants/step-validators";
@@ -60,6 +60,7 @@ export default function SurveyStep({ lead, state, refresh, packages, expanded, o
   const [subStep, setSubStep] = useSubStep(`surveySubStep_${lead.id}`, 0, SURVEY_SUB.length);
   const [nextError, setNextError] = useState<string | null>(null);
   const [formDraft, setFormDraft] = useState<Partial<Lead>>({});
+  const formRef = useRef<SurveyFormHandle>(null);
   const [selectedPkgs, setSelectedPkgs] = useState<string[]>(
     lead.interested_package_ids ? lead.interested_package_ids.split(",").filter(Boolean) : lead.interested_package_id ? [String(lead.interested_package_id)] : []
   );
@@ -547,7 +548,7 @@ export default function SurveyStep({ lead, state, refresh, packages, expanded, o
       {/* 7. Photo Checklist — 4 named slots */}
       <div className="border-l-3 border-gray-300 pl-3">
         <div className="text-xs font-bold text-gray-500 uppercase mb-1.5">Photo Checklist</div>
-        <div className="grid grid-cols-2 gap-2">
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
           {photoSlots.map(p => (
             <div key={p.label} className="rounded-lg overflow-hidden border border-gray-200 bg-white">
               <div className="aspect-[4/3] bg-gray-50 flex items-center justify-center overflow-hidden">
@@ -627,7 +628,11 @@ export default function SurveyStep({ lead, state, refresh, packages, expanded, o
     );
   }
 
-  const handleSubStepChange = (i: number) => {
+  const handleSubStepChange = async (i: number) => {
+    // Always flush in-flight typed values into DB before switching tabs so a
+    // fast click doesn't drop the most recent change (debounce timer hasn't
+    // fired yet). Backward jumps still flush — same race exists.
+    if (formRef.current) await formRef.current.flushSave();
     if (i <= subStep) { setNextError(null); setSubStep(i); return; }
     const gates: Record<number, string[]> = {
       0: ["survey_confirmed"],
@@ -637,7 +642,6 @@ export default function SurveyStep({ lead, state, refresh, packages, expanded, o
         "survey_monthly_bill",
         "survey_mdb_brand", "survey_mdb_model", "survey_mdb_slots", "survey_breaker_type",
         "survey_panel_to_inverter_m", "survey_db_distance_m",
-        "survey_appliances",
       ],
       2: [ // Roof / house
         "survey_floors", "survey_roof_material",
@@ -1034,28 +1038,34 @@ export default function SurveyStep({ lead, state, refresh, packages, expanded, o
             )}
           </div>
 
-          {/* Confirm — สำรวจเสร็จสิ้น */}
-          <button onClick={markDone} disabled={saving} className="w-full h-11 rounded-lg text-sm font-semibold text-white bg-gradient-to-r from-primary to-primary-dark hover:brightness-110 disabled:opacity-50 transition-colors flex items-center justify-center gap-2">
-            <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}><path strokeLinecap="round" strokeLinejoin="round" d="M4.5 12.75l6 6 9-13.5" /></svg>
-            {saving ? "กำลังบันทึก…" : "สำรวจเสร็จสิ้น"}
-          </button>
+          {/* Confirm — สำรวจเสร็จสิ้น (paired with ย้อนกลับ in nav row below) */}
+          <div className="flex gap-2 mt-3 md:justify-between">
+            <button type="button" onClick={() => { setSubStep(subStep - 1); setTimeout(() => document.querySelector("[data-step-active]")?.scrollIntoView({ behavior: "smooth", block: "start" }), 100); }} className="flex-1 md:flex-none md:w-64 h-11 rounded-lg text-sm font-semibold border border-gray-200 text-gray-600 hover:bg-gray-50 transition-colors flex items-center justify-center gap-1">
+              <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M15.75 19.5L8.25 12l7.5-7.5" /></svg>
+              ย้อนกลับ
+            </button>
+            <button onClick={markDone} disabled={saving} className="flex-1 md:flex-none md:w-64 h-11 rounded-lg text-sm font-semibold text-white bg-gradient-to-r from-primary to-primary-dark hover:brightness-110 disabled:opacity-50 transition-colors flex items-center justify-center gap-2">
+              <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}><path strokeLinecap="round" strokeLinejoin="round" d="M4.5 12.75l6 6 9-13.5" /></svg>
+              {saving ? "กำลังบันทึก…" : "สำรวจเสร็จสิ้น"}
+            </button>
+          </div>
         </div>
       )}
 
       {/* Step 1: ระบบไฟฟ้า (PDF section 2) */}
       {lead.survey_confirmed && subStep === 1 && (
-        <SurveyForm lead={lead} refresh={refresh} section="electrical" onFormChange={setFormDraft} onPhaseChange={(phase) => { setSurveyPhase(phase); setSelectedPkgs([]); apiFetch(`/api/leads/${lead.id}`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ interested_package_ids: null, interested_package_id: null }) }).catch(console.error); }} />
+        <SurveyForm ref={formRef} lead={lead} refresh={refresh} section="electrical" onFormChange={setFormDraft} onPhaseChange={(phase) => { setSurveyPhase(phase); setSelectedPkgs([]); apiFetch(`/api/leads/${lead.id}`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ interested_package_ids: null, interested_package_id: null }) }).catch(console.error); }} />
       )}
 
       {/* Step 2: หลังคา · บ้าน (PDF section 3) */}
       {lead.survey_confirmed && subStep === 2 && (
-        <SurveyForm lead={lead} refresh={refresh} section="house" onFormChange={setFormDraft} />
+        <SurveyForm ref={formRef} lead={lead} refresh={refresh} section="house" onFormChange={setFormDraft} />
       )}
 
       {/* Step 3: การเตรียมการติดตั้ง + บันทึก + รูปถ่าย */}
       {lead.survey_confirmed && subStep === 3 && (
         <div className="space-y-3">
-          <SurveyForm lead={lead} refresh={refresh} section="prep" onFormChange={setFormDraft} />
+          <SurveyForm ref={formRef} lead={lead} refresh={refresh} section="prep" onFormChange={setFormDraft} />
           <div className="rounded-lg bg-white/60 border border-active/15 p-3">
             <label className="text-xs font-semibold tracking-wider uppercase text-gray-400 block mb-2">บันทึก Survey</label>
             <textarea value={surveyNote} onChange={e => setSurveyNote(e.target.value)} placeholder="บันทึกหน้างาน เช่น สภาพหลังคา, ข้อจำกัด, ข้อแนะนำ..." rows={3} className="w-full px-3 py-2 rounded-lg border border-gray-200 bg-white text-sm focus:outline-none focus:border-primary resize-none" />
@@ -1117,39 +1127,33 @@ export default function SurveyStep({ lead, state, refresh, packages, expanded, o
             "survey_actual_date", "survey_actual_by",
           ],
         };
-        const handleNext = () => {
+        const handleNext = async () => {
           const v = validateSurvey({ ...lead, ...formDraft, survey_note: surveyNote || lead.survey_note, survey_photos: surveyPhotos.length ? surveyPhotos.join(",") : lead.survey_photos, survey_wants_battery: surveyBattery || lead.survey_wants_battery, survey_electrical_phase: surveyPhase || lead.survey_electrical_phase, interested_package_id: selectedPkgs.length ? parseInt(selectedPkgs[0]) : lead.interested_package_id, survey_actual_date: actualDate || lead.survey_actual_date, survey_actual_by: actualBy || lead.survey_actual_by });
           const missingHere = v.missing.filter(m => (gates[subStep] || []).includes(m.field));
           if (missingHere.length > 0) {
             setNextError(missingHere.map(m => m.label).join(", "));
             return;
           }
+          if (formRef.current) await formRef.current.flushSave();
           setNextError(null);
           setSubStep(subStep + 1);
           setTimeout(() => document.querySelector("[data-step-active]")?.scrollIntoView({ behavior: "smooth", block: "start" }), 100);
         };
         return (
-          <div className="flex gap-2 mt-3 lg:justify-between">
+          <div className="flex gap-2 mt-3 md:justify-between">
             {subStep > 0 ? (
-              <button type="button" onClick={() => { setNextError(null); setSubStep(subStep - 1); setTimeout(() => document.querySelector("[data-step-active]")?.scrollIntoView({ behavior: "smooth", block: "start" }), 100); }} className="flex-1 lg:flex-none lg:w-80 h-11 rounded-lg text-sm font-semibold border border-gray-200 text-gray-600 hover:bg-gray-50 transition-colors flex items-center justify-center gap-1">
+              <button type="button" onClick={() => { setNextError(null); setSubStep(subStep - 1); setTimeout(() => document.querySelector("[data-step-active]")?.scrollIntoView({ behavior: "smooth", block: "start" }), 100); }} className="flex-1 md:flex-none md:w-64 h-11 rounded-lg text-sm font-semibold border border-gray-200 text-gray-600 hover:bg-gray-50 transition-colors flex items-center justify-center gap-1">
                 <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M15.75 19.5L8.25 12l7.5-7.5" /></svg>
                 ย้อนกลับ
               </button>
-            ) : <span className="hidden lg:block lg:w-80" />}
-            <button type="button" onClick={handleNext} className="flex-1 lg:flex-none lg:w-80 h-11 rounded-lg text-sm font-semibold text-white bg-active hover:brightness-110 transition-colors flex items-center justify-center gap-1">
+            ) : <span className="hidden md:block md:w-64" />}
+            <button type="button" onClick={handleNext} className="flex-1 md:flex-none md:w-64 h-11 rounded-lg text-sm font-semibold text-white bg-active hover:brightness-110 transition-colors flex items-center justify-center gap-1">
               ถัดไป
               <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M8.25 4.5l7.5 7.5-7.5 7.5" /></svg>
             </button>
           </div>
         );
       })()}
-      {lead.survey_confirmed && subStep === 4 && (
-        <button type="button" onClick={() => { setSubStep(subStep - 1); setTimeout(() => document.querySelector("[data-step-active]")?.scrollIntoView({ behavior: "smooth", block: "start" }), 100); }} className="w-full h-9 mt-2 rounded-lg text-xs text-gray-500 border border-gray-200 hover:bg-gray-50 transition-colors flex items-center justify-center gap-1">
-          <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M15.75 19.5L8.25 12l7.5-7.5" /></svg>
-          ย้อนกลับ
-        </button>
-      )}
-
       <ErrorPopup message={nextError} onClose={() => setNextError(null)} />
     </StepLayout>
   </>);

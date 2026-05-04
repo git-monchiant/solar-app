@@ -144,5 +144,10 @@ export async function GET(req: NextRequest) {
     amount,
     mode: useBillPayment ? "bill_payment" : "credit_transfer",
     test_mode: testMode,
+    // Refs are only meaningful in bill_payment mode (Credit Transfer QRs have
+    // no Ref fields). Returned so the UI can show them next to the QR for
+    // post-transfer reconciliation.
+    ref1: useBillPayment ? ref1Value : null,
+    ref2: useBillPayment ? (ref2Param || cfg.ref2 || null) : null,
   });
 }
