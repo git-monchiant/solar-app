@@ -1,6 +1,7 @@
 "use client";
 import { useEffect, useState } from "react";
 import { useParams } from "next/navigation";
+import { formatThaiDate } from "@/lib/utils/formatters";
 
 interface Pkg {
   id: number;
@@ -56,14 +57,8 @@ const CO = {
 // Use Thai Buddhist calendar (พ.ศ.) — toLocaleDateString("th-TH") alone still
 // returns Gregorian year in some runtimes; the BCP-47 -u-ca-buddhist extension
 // forces พ.ศ. consistently in browser + puppeteer.
-const fmt = (d: string | null) => {
-  if (!d) return "—";
-  return new Date(d.slice(0, 10) + "T12:00:00").toLocaleDateString("th-TH-u-ca-buddhist", { day: "numeric", month: "long", year: "numeric" });
-};
-const fmtLong = (d: string | null) => {
-  if (!d) return "……………………….";
-  return new Date(d.slice(0, 10) + "T12:00:00").toLocaleDateString("th-TH-u-ca-buddhist", { day: "numeric", month: "long", year: "numeric" });
-};
+const fmt = (d: string | null) => formatThaiDate(d, { buddhist: true, monthLong: true });
+const fmtLong = (d: string | null) => d ? formatThaiDate(d, { buddhist: true, monthLong: true }) : "……………………….";
 
 export default function WarrantyPage() {
   const { id } = useParams();

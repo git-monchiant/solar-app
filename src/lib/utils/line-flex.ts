@@ -1,3 +1,5 @@
+import { formatSlotsRange } from "@/lib/time-slots";
+
 const fmt = (n: number) => new Intl.NumberFormat("th-TH").format(n);
 
 const fmtLongDate = (iso: string) => {
@@ -11,6 +13,14 @@ const SURVEY_TIME_LABEL: Record<string, string> = {
   morning: "09:00 - 12:00",
   afternoon: "13:00 - 16:00",
 };
+
+// Resolve the legacy "morning/afternoon" label, the JSON array of half-hour
+// slots saved by CalendarPicker, or a free-form custom label.
+function formatTimeSlot(raw: string): string {
+  if (raw in SURVEY_TIME_LABEL) return SURVEY_TIME_LABEL[raw];
+  if (raw.trim().startsWith("[")) return formatSlotsRange(raw);
+  return raw;
+}
 
 interface FlexAppointmentProps {
   origin: string;
@@ -35,7 +45,7 @@ export function buildAppointmentFlex({
   const now = issuedAt ?? new Date();
   const title = kind === "survey" ? "นัดสำรวจพื้นที่" : "นัดติดตั้ง Solar";
   const accent = kind === "survey" ? "#1ed0c7" : "#f97316";
-  const timeText = timeSlot ? (SURVEY_TIME_LABEL[timeSlot] ?? timeSlot) : null;
+  const timeText = timeSlot ? formatTimeSlot(timeSlot) : null;
 
   const details: Array<{ label: string; value: string }> = [];
   if (timeText) details.push({ label: "เวลา", value: timeText });
@@ -114,6 +124,69 @@ interface FlexWarrantyProps {
   issuedAt?: Date;
 }
 
+interface FlexSurveyResultProps {
+  origin: string;
+  name: string;
+  surveyDate: string;
+  recommendedKw?: number | null;
+  systemLabel?: string | null;     // e.g. "On Grid", "Solar+Battery"
+  panelCount?: number | null;
+  packageLabel?: string | null;    // selected package name
+  pdfUrl: string;                  // survey PDF endpoint
+  note?: string | null;
+  issuedAt?: Date;
+}
+
+export function buildSurveyResultFlex({
+  origin, name, surveyDate, recommendedKw, systemLabel, panelCount, packageLabel, pdfUrl, note, issuedAt,
+}: FlexSurveyResultProps) {
+  const now = issuedAt ?? new Date();
+  const accent = "#1ed0c7";
+  const details: Array<{ label: string; value: string }> = [];
+  if (recommendedKw != null) details.push({ label: "ขนาดที่แนะนำ", value: `${recommendedKw} kWp` });
+  if (systemLabel) details.push({ label: "ระบบ", value: systemLabel });
+  if (panelCount != null && panelCount > 0) details.push({ label: "จำนวน Panel", value: `${panelCount} แผง` });
+  if (packageLabel) details.push({ label: "แพ็คเกจ", value: packageLabel });
+
+  return {
+    type: "flex" as const,
+    altText: `ใบสำรวจหน้างาน ${fmtLongDate(surveyDate)}`,
+    contents: {
+      type: "bubble",
+      size: "mega",
+      body: {
+        type: "box", layout: "vertical", paddingAll: "20px", spacing: "md",
+        contents: [
+          {
+            type: "box", layout: "horizontal", alignItems: "center", spacing: "sm",
+            contents: [
+              { type: "image", url: `${origin}/logos/logo-sena.png`, size: "md", aspectRatio: "3:1", aspectMode: "fit", flex: 0 },
+              { type: "text", text: "  ใบสำรวจหน้างาน", size: "sm", color: accent, weight: "bold" },
+            ],
+          },
+          { type: "text", text: fmtLongDate(surveyDate), size: "lg", weight: "bold", color: "#1b1b1b", wrap: true },
+          { type: "text", text: name, size: "xs", color: "#999999" },
+          { type: "separator", color: "#f0f0f0" },
+          ...details.map(d => ({
+            type: "box" as const, layout: "horizontal" as const, spacing: "sm" as const,
+            contents: [
+              { type: "text" as const, text: d.label, size: "xxs" as const, color: "#999999" as const, flex: 0 },
+              { type: "text" as const, text: d.value, size: "xs" as const, color: "#333333" as const, align: "end" as const, wrap: true, flex: 1 },
+            ],
+          })),
+          ...(note ? [{ type: "text" as const, text: note, size: "xxs" as const, color: "#999999" as const, wrap: true, margin: "sm" as const }] : []),
+          { type: "text" as const, text: `ออกเมื่อ ${fmtTime(now)}`, size: "xxs" as const, color: "#b8860b" as const, margin: "sm" as const },
+          {
+            type: "button" as const, style: "primary" as const, color: accent, height: "sm" as const, margin: "md" as const,
+            action: { type: "uri" as const, label: "ดาวน์โหลดใบสำรวจ", uri: pdfUrl },
+          },
+          { type: "text", text: "Sena Solar Energy", size: "xxs", color: "#cccccc", align: "end" },
+        ],
+      },
+    },
+  };
+}
+
 export function buildWarrantyFlex({ origin, docNo, name, pdfUrl, periodLabel, issuedAt }: FlexWarrantyProps) {
   const now = issuedAt ?? new Date();
   return {
@@ -187,7 +260,7 @@ export function buildPaymentFlex({ origin, title, amount, name, actionLabel, act
           })),
           ...(note ? [{ type: "text" as const, text: note, size: "xxs" as const, color: "#999999" as const, wrap: true }] : []),
           { type: "text" as const, text: `ออกเมื่อ ${fmtTime(now)}`, size: "xxs" as const, color: "#b8860b" as const, margin: "sm" as const },
-          ...(!qrUrl ? [{
+          ...(actionUrl ? [{
             type: "button" as const, style: "primary" as const, color: "#1ed0c7", height: "sm" as const, margin: "md" as const,
             action: { type: "uri" as const, label: actionLabel, uri: actionUrl },
           }] : []),

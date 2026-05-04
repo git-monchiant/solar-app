@@ -5,6 +5,7 @@ import { apiFetch } from "@/lib/api";
 import CustomerInfoForm from "@/components/customer/CustomerInfoForm";
 import ErrorPopup from "@/components/ui/ErrorPopup";
 import LineIcon from "@/components/icons/LineIcon";
+import { formatTHB as formatPrice } from "@/lib/utils/formatters";
 
 export interface CustomerWizardValues {
   full_name?: string;
@@ -114,9 +115,6 @@ const fieldCard = "rounded-lg bg-white border border-gray-200 p-3";
 const fieldLabel = "text-sm font-semibold tracking-wider uppercase text-gray-400 block mb-1.5";
 const fieldInput = "w-full h-11 px-3 rounded-lg border border-gray-200 text-base focus:outline-none focus:border-primary transition-colors";
 const fieldTextarea = "w-full px-3 py-2.5 rounded-lg border border-gray-200 text-base focus:outline-none focus:border-primary transition-colors resize-none";
-
-const formatPrice = (n: number) => new Intl.NumberFormat("th-TH").format(n);
-
 
 // Option lists used by the comprehensive create form.
 const PRIMARY_REASONS = [

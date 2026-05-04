@@ -18,16 +18,18 @@ interface Props {
   onCreated?: () => void;
   /** If provided, auto-link this LINE user to the new lead after save */
   linkLine?: LineLinkInfo;
+  /** Pre-set the lead source (channel) — set by ChannelPickerModal callers */
+  initialSource?: string;
 }
 
-export default function NewLeadModal({ onClose, onCreated, linkLine }: Props) {
+export default function NewLeadModal({ onClose, onCreated, linkLine, initialSource }: Props) {
   const router = useRouter();
   const [saving, setSaving] = useState(false);
   const [form, setForm] = useState({
     full_name: "", phone: "", project_id: "" as string | number | null, project_name: "",
     installation_address: "",
     customer_type: "ลูกค้าใหม่ยังไม่มีโซล่า", interested_package_id: "", note: "",
-    source: "walk-in", payment_type: "", requirement: "",
+    source: initialSource || (linkLine ? "line" : "walk_in"), payment_type: "", requirement: "",
     id_card_number: "", id_card_address: "",
     id_card_photo_url: null as string | null, house_reg_photo_url: null as string | null,
     utility_provider: "", ca_number: "", meter_number: "", monthly_bill: "",

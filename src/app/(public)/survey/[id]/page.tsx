@@ -3,6 +3,22 @@ import { useEffect, useState } from "react";
 import { useParams } from "next/navigation";
 import QRCode from "qrcode";
 import { formatSlotsRange } from "@/lib/time-slots";
+import {
+  ROOF_MATERIAL_LABEL as ROOF_MATERIAL_MAP,
+  ORIENTATION_LABEL as ORIENTATION_MAP,
+  SHADING_LABEL as SHADING_MAP,
+  METER_SIZE_LABEL as METER_MAP,
+  MDB_SLOTS_LABEL as MDB_SLOTS_MAP,
+  BREAKER_LABEL as BREAKER_MAP,
+  ROOF_STRUCTURE_LABEL as ROOF_STRUCTURE_MAP,
+  INVERTER_LOCATION_LABEL as INVERTER_LOC_MAP,
+  WIFI_LABEL as WIFI_MAP,
+  ACCESS_LABEL as ACCESS_MAP,
+  APPLIANCE_LABEL as APPLIANCE_MAP,
+  BATTERY_LABEL as BATTERY_MAP,
+  PHASE_LABEL as PHASE_MAP,
+  labelFor as otherLabel,
+} from "@/lib/constants/survey-options";
 
 interface Pkg {
   id: number;
@@ -92,32 +108,6 @@ const fmtDate = (d: string | null) => {
   if (!d) return "—";
   return new Date(d.slice(0, 10) + "T12:00:00").toLocaleDateString("th-TH", { day: "numeric", month: "long", year: "numeric" });
 };
-
-const ROOF_MATERIAL_MAP: Record<string, string> = {
-  cpac_tile: "CPAC",
-  old_tile: "ลอนคู่",
-  "metal_sheet:bolt": "เมทัลชีท ยึดน็อต",
-  "metal_sheet:clip": "เมทัลชีท คลิปล็อก",
-  concrete: "ดาดฟ้าคอนกรีต",
-};
-const ORIENTATION_MAP: Record<string, string> = { north: "เหนือ", south: "ใต้", east: "ตะวันออก", west: "ตะวันตก" };
-const SHADING_MAP: Record<string, string> = { none: "ไม่มี", partial: "บางช่วง", heavy: "ตลอดวัน" };
-const METER_MAP: Record<string, string> = { "5_15": "5(15) A", "15_45": "15(45) A", "30_100": "30(100) A" };
-const MDB_SLOTS_MAP: Record<string, string> = { has_slot: "มีช่องว่าง", full: "เต็ม" };
-const BREAKER_MAP: Record<string, string> = { plug_on: "Plug On", screw: "ขันยึดสกรู" };
-const ROOF_STRUCTURE_MAP: Record<string, string> = { steel: "เหล็ก", wood: "ไม้", aluminum: "อลูมิเนียม" };
-const INVERTER_LOC_MAP: Record<string, string> = { indoor: "ในร่ม", outdoor: "นอกอาคาร" };
-const WIFI_MAP: Record<string, string> = { good: "ดีมาก", fair: "พอใช้", none: "ยังไม่มี" };
-const ACCESS_MAP: Record<string, string> = { ladder: "บันไดพาด", scaffold: "นั่งร้าน", crane: "รถกระเช้า" };
-const APPLIANCE_MAP: Record<string, string> = { water_heater: "เครื่องทำน้ำอุ่น", ev: "ที่ชาร์จรถ EV" };
-const BATTERY_MAP: Record<string, string> = { yes: "Solar + Battery", no: "On Grid", upgrade: "Upgrade", maybe: "ยังไม่แน่ใจ" };
-const PHASE_MAP: Record<string, string> = { "1_phase": "1 เฟส", "3_phase": "3 เฟส" };
-
-function otherLabel(raw: string | null, map: Record<string, string>): string {
-  if (!raw) return "—";
-  if (raw.startsWith("other:")) return raw.slice(6) || "อื่นๆ";
-  return map[raw] || raw;
-}
 
 export default function SurveyPdfPage() {
   const { id } = useParams();

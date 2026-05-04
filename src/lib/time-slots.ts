@@ -53,6 +53,11 @@ function nextHalfHour(t: string): string {
   return `${String(h).padStart(2, "0")}:${String(m).padStart(2, "0")}`;
 }
 
+/** Render a single slot code as its half-hour range — "09:00" → "09:00-09:30". */
+export function slotLabel(code: string): string {
+  return `${code}-${nextHalfHour(code)}`;
+}
+
 /** Pretty label like "09:00 - 10:00, 13:00 - 14:00" for display.
  * Contiguous half-hour slots are merged into a single range. */
 export function formatSlotsRange(value: string | null | undefined): string {

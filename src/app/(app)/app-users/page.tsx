@@ -29,7 +29,7 @@ export default function AppUsersPage() {
     return (
       <div>
         <Header title="App Users" subtitle="USER MANAGEMENT" />
-        <div className="p-4 md:p-6 max-w-4xl">
+        <div className="p-4 md:p-6">
           <div className="bg-white rounded-xl border border-gray-200 p-6 text-sm text-gray-500 text-center">
             ต้องเป็น admin เท่านั้น
           </div>
@@ -41,7 +41,7 @@ export default function AppUsersPage() {
   return (
     <div>
       <Header title="App Users" subtitle="USER MANAGEMENT" />
-      <div className="p-4 md:p-6 max-w-4xl">
+      <div className="p-4 md:p-6">
         <UsersList currentUserId={me.id} />
       </div>
     </div>

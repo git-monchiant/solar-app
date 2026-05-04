@@ -16,7 +16,7 @@ export default function ExportPage() {
     return (
       <div>
         <Header title="Export" subtitle="ADMIN ONLY" />
-        <div className="p-4 md:p-6 max-w-4xl">
+        <div className="p-4 md:p-6">
           <div className="bg-white rounded-xl border border-gray-200 p-6 text-sm text-gray-500 text-center">
             ต้องเป็น admin เท่านั้น
           </div>
@@ -49,7 +49,7 @@ export default function ExportPage() {
   return (
     <div>
       <Header title="Export" subtitle="DATA EXPORT (TEMP)" />
-      <div className="p-4 md:p-6 max-w-4xl space-y-3">
+      <div className="p-4 md:p-6 space-y-3">
         <div className="bg-amber-50 border border-amber-200 text-amber-800 rounded-lg px-4 py-3 text-xs">
           🚧 หน้าชั่วคราว — จะถูกแทนที่ด้วยหน้า Reports เต็มในอนาคต
         </div>

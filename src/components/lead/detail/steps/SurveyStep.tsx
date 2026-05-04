@@ -13,37 +13,26 @@ import StepLayout from "../StepLayout";
 import SignaturePad from "../SignaturePad";
 import SurveyPdfModal from "../SurveyPdfModal";
 import { useSubStep } from "@/lib/hooks/useSubStep";
-import { useIsMobile } from "@/lib/hooks/useIsMobile";
 import { compressImage } from "@/lib/utils/compressImage";
-import { buildAppointmentFlex } from "@/lib/utils/line-flex";
+import { buildAppointmentFlex, buildSurveyResultFlex } from "@/lib/utils/line-flex";
 import { formatSlotsRange } from "@/lib/time-slots";
-
-const formatDate = (d: string) =>
-  new Date(String(d).slice(0, 10) + "T12:00:00").toLocaleDateString("th-TH", { day: "numeric", month: "short", year: "numeric" });
-
-const ROOF_MATERIAL_MAP: Record<string, string> = {
-  cpac_tile: "CPAC", old_tile: "ลอนคู่",
-  "metal_sheet:bolt": "เมทัลชีท ยึดน็อต", "metal_sheet:clip": "เมทัลชีท คลิปล็อก",
-  concrete: "ดาดฟ้าคอนกรีต",
-};
-const ORIENTATION_MAP: Record<string, string> = { north: "เหนือ", south: "ใต้", east: "ตะวันออก", west: "ตะวันตก" };
-const SHADING_MAP: Record<string, string> = { none: "ไม่มี", partial: "บางช่วง", heavy: "ตลอดวัน" };
-const METER_MAP: Record<string, string> = { "5_15": "5(15) A", "15_45": "15(45) A", "30_100": "30(100) A" };
-const MDB_SLOTS_MAP: Record<string, string> = { has_slot: "ยังมีช่องว่าง", full: "เต็ม" };
-const BREAKER_MAP: Record<string, string> = { plug_on: "Plug On", screw: "ขันยึดสกรู" };
-const ROOF_STRUCTURE_MAP: Record<string, string> = { steel: "เหล็ก", wood: "ไม้", aluminum: "อลูมิเนียม" };
-const INVERTER_LOC_MAP: Record<string, string> = { indoor: "ในร่ม", outdoor: "นอกอาคาร" };
-const WIFI_MAP: Record<string, string> = { good: "ดีมาก", fair: "พอใช้", none: "ยังไม่มี" };
-const ACCESS_MAP: Record<string, string> = { ladder: "บันไดพาด", scaffold: "นั่งร้าน", crane: "รถกระเช้า" };
-const APPLIANCE_MAP: Record<string, string> = { water_heater: "เครื่องทำน้ำอุ่น", ev: "ที่ชาร์จรถ EV" };
-const BATTERY_MAP: Record<string, string> = { yes: "Solar + Battery", no: "On Grid", upgrade: "Upgrade", maybe: "ยังไม่แน่ใจ" };
-const PHASE_MAP: Record<string, string> = { "1_phase": "1 เฟส", "3_phase": "3 เฟส" };
-
-function otherLabel(raw: string | null, map: Record<string, string>): string {
-  if (!raw) return "—";
-  if (raw.startsWith("other:")) return raw.slice(6) || "อื่นๆ";
-  return map[raw] || raw;
-}
+import { formatThaiDate as formatDate } from "@/lib/utils/formatters";
+import {
+  ROOF_MATERIAL_LABEL as ROOF_MATERIAL_MAP,
+  ORIENTATION_LABEL as ORIENTATION_MAP,
+  SHADING_LABEL as SHADING_MAP,
+  METER_SIZE_LABEL as METER_MAP,
+  MDB_SLOTS_LABEL as MDB_SLOTS_MAP,
+  BREAKER_LABEL as BREAKER_MAP,
+  ROOF_STRUCTURE_LABEL as ROOF_STRUCTURE_MAP,
+  INVERTER_LOCATION_LABEL as INVERTER_LOC_MAP,
+  WIFI_LABEL as WIFI_MAP,
+  ACCESS_LABEL as ACCESS_MAP,
+  APPLIANCE_LABEL as APPLIANCE_MAP,
+  BATTERY_LABEL as BATTERY_MAP,
+  PHASE_LABEL as PHASE_MAP,
+  labelFor as otherLabel,
+} from "@/lib/constants/survey-options";
 const AC_BTU_SIZES = [9000, 12000, 18000, 24000];
 
 function parseAcUnits(s: string | null): Record<number, number> {
@@ -101,7 +90,6 @@ export default function SurveyStep({ lead, state, refresh, packages, expanded, o
     if (!actualBy && me?.full_name && !lead.survey_actual_by) setActualBy(me.full_name);
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [me]);
-  const isMobile = useIsMobile();
 
   const saveLocation = async (lat: number, lng: number) => {
     try {
@@ -182,11 +170,10 @@ export default function SurveyStep({ lead, state, refresh, packages, expanded, o
       { enableHighAccuracy: true, timeout: 15000 }
     );
   };
-  // Mobile → in-app modal preview. Desktop → new tab (native PDF viewer).
+  // Always use the in-app modal preview — same UX as warranty.
   const openPdf = (e?: React.MouseEvent) => {
     e?.stopPropagation();
-    if (isMobile) setPdfPreviewOpen(true);
-    else window.open(`/api/survey/${lead.id}`, "_blank", "noreferrer");
+    setPdfPreviewOpen(true);
   };
   // Auto-save survey note (debounced)
   useEffect(() => {
@@ -271,6 +258,7 @@ export default function SurveyStep({ lead, state, refresh, packages, expanded, o
   };
 
   const [notifyLine, setNotifyLine] = useState(true);
+  const [notifyDoneLine, setNotifyDoneLine] = useState(true);
   const [resending, setResending] = useState(false);
   const [resendResult, setResendResult] = useState<null | "ok" | "err">(null);
 
@@ -377,6 +365,30 @@ export default function SurveyStep({ lead, state, refresh, packages, expanded, o
           survey_completed_by: me?.id ?? null,
         }),
       });
+      // Optionally push the survey result to the customer's LINE so they can
+      // download the signed PDF without waiting for staff to send it manually.
+      if (notifyDoneLine && lead.line_id) {
+        const origin = typeof window !== "undefined" ? window.location.origin : "";
+        const systemMap: Record<string, string> = { yes: "Solar + Battery", no: "On Grid", upgrade: "Upgrade", maybe: "ยังไม่แน่ใจ" };
+        const battKey = surveyBattery || fresh.survey_wants_battery || "";
+        const systemLabel = battKey.startsWith("other:") ? battKey.slice(6) : (systemMap[battKey] || null);
+        const chosenPkg = packages.find(p => p.id === (selectedPkgs.length ? parseInt(selectedPkgs[0]) : fresh.interested_package_id));
+        const msg = buildSurveyResultFlex({
+          origin,
+          name: lead.full_name,
+          surveyDate: actualDate || lead.survey_actual_date || lead.survey_date || new Date().toISOString().slice(0, 10),
+          recommendedKw: recommendedKw ?? fresh.survey_recommended_kw,
+          systemLabel,
+          panelCount: typeof panelCount === "number" ? panelCount : fresh.survey_panel_count,
+          packageLabel: chosenPkg ? `${chosenPkg.name} ${chosenPkg.kwp} kWp` : null,
+          pdfUrl: `${origin}/api/survey/${lead.id}`,
+        });
+        apiFetch("/api/line/send", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ lead_id: lead.id, messages: [msg] }),
+        }).catch(console.error);
+      }
       await refresh();
     } finally {
       setSaving(false);
@@ -639,7 +651,6 @@ export default function SurveyStep({ lead, state, refresh, packages, expanded, o
         "survey_photo_mdb_url", "survey_photo_inverter_point_url",
         "survey_photos", "survey_note",
         "survey_actual_date", "survey_actual_by",
-        "survey_lat", "survey_lng",
       ],
       4: [ // Recommendation + signature
         "survey_recommended_kw", "survey_panel_count", "survey_wants_battery",
@@ -664,7 +675,8 @@ export default function SurveyStep({ lead, state, refresh, packages, expanded, o
     setSubStep(i);
   };
 
-  return (
+  return (<>
+    {pdfPreviewOpen && <SurveyPdfModal leadId={lead.id} onClose={() => setPdfPreviewOpen(false)} />}
     <StepLayout
       state={state}
       subSteps={SURVEY_SUB}
@@ -995,6 +1007,33 @@ export default function SurveyStep({ lead, state, refresh, packages, expanded, o
             </div>
           </div>
 
+          {/* Preview survey PDF + optional LINE notify
+              mobile: flex (button auto, checkbox fills) · desktop: grid 1/3 + 2/3 */}
+          <div className="flex md:grid md:grid-cols-3 items-center gap-3">
+            <button
+              type="button"
+              onClick={openPdf}
+              className="shrink-0 md:col-span-1 md:w-auto h-10 px-4 rounded-lg text-sm font-semibold border border-gray-200 bg-white text-gray-700 hover:border-active hover:text-active hover:bg-active/5 transition-colors inline-flex items-center justify-center gap-2"
+            >
+              <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                <path strokeLinecap="round" strokeLinejoin="round" d="M2.036 12.322a1.012 1.012 0 010-.639C3.423 7.51 7.36 4.5 12 4.5c4.638 0 8.573 3.007 9.963 7.178.07.207.07.431 0 .639C20.577 16.49 16.64 19.5 12 19.5c-4.638 0-8.573-3.007-9.963-7.178z" />
+                <path strokeLinecap="round" strokeLinejoin="round" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+              </svg>
+              ดูใบสำรวจ
+            </button>
+            {lead.line_id && (
+              <label className="flex-1 md:col-span-2 flex items-center gap-2 text-xs text-gray-600 cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={notifyDoneLine}
+                  onChange={(e) => setNotifyDoneLine(e.target.checked)}
+                  className="w-4 h-4 accent-primary"
+                />
+                <span>ส่งใบสำรวจให้ลูกค้าทาง LINE</span>
+              </label>
+            )}
+          </div>
+
           {/* Confirm — สำรวจเสร็จสิ้น */}
           <button onClick={markDone} disabled={saving} className="w-full h-11 rounded-lg text-sm font-semibold text-white bg-gradient-to-r from-primary to-primary-dark hover:brightness-110 disabled:opacity-50 transition-colors flex items-center justify-center gap-2">
             <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}><path strokeLinecap="round" strokeLinejoin="round" d="M4.5 12.75l6 6 9-13.5" /></svg>
@@ -1076,7 +1115,6 @@ export default function SurveyStep({ lead, state, refresh, packages, expanded, o
             "survey_photo_mdb_url", "survey_photo_inverter_point_url",
             "survey_photos", "survey_note",
             "survey_actual_date", "survey_actual_by",
-            "survey_lat", "survey_lng",
           ],
         };
         const handleNext = () => {
@@ -1114,7 +1152,7 @@ export default function SurveyStep({ lead, state, refresh, packages, expanded, o
 
       <ErrorPopup message={nextError} onClose={() => setNextError(null)} />
     </StepLayout>
-  );
+  </>);
 }
 
 function DoneRow({ label, value }: { label: string; value: string | number }) {

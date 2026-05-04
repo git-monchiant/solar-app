@@ -541,12 +541,32 @@ export default function SurveyForm({ lead, refresh, section = "all", onPhaseChan
             <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
               <div className="input-affix">
                 <span className="input-affix-left">W</span>
-                <input type="number" step="1" inputMode="numeric" value={roofWidth === "" ? "" : roofWidth} onChange={e => setRoofWidth(e.target.value === "" ? "" : parseInt(e.target.value))} className="input-affix-input w-full h-10 pl-9 pr-8 rounded-lg border border-gray-200 text-sm" />
+                <input
+                  type="text"
+                  inputMode="numeric"
+                  pattern="[0-9]*"
+                  value={roofWidth === "" ? "" : roofWidth}
+                  onChange={e => {
+                    const digits = e.target.value.replace(/[^\d]/g, "");
+                    setRoofWidth(digits === "" ? "" : parseInt(digits));
+                  }}
+                  className="input-affix-input w-full h-10 pl-9 pr-8 rounded-lg border border-gray-200 text-sm"
+                />
                 <span className="input-affix-right">m</span>
               </div>
               <div className="input-affix">
                 <span className="input-affix-left">L</span>
-                <input type="number" step="1" inputMode="numeric" value={roofLength === "" ? "" : roofLength} onChange={e => setRoofLength(e.target.value === "" ? "" : parseInt(e.target.value))} className="input-affix-input w-full h-10 pl-9 pr-8 rounded-lg border border-gray-200 text-sm" />
+                <input
+                  type="text"
+                  inputMode="numeric"
+                  pattern="[0-9]*"
+                  value={roofLength === "" ? "" : roofLength}
+                  onChange={e => {
+                    const digits = e.target.value.replace(/[^\d]/g, "");
+                    setRoofLength(digits === "" ? "" : parseInt(digits));
+                  }}
+                  className="input-affix-input w-full h-10 pl-9 pr-8 rounded-lg border border-gray-200 text-sm"
+                />
                 <span className="input-affix-right">m</span>
               </div>
             </div>
@@ -644,8 +664,8 @@ export default function SurveyForm({ lead, refresh, section = "all", onPhaseChan
             { key: "mdb" as const, url: photoMdb, set: setPhotoMdb, field: "survey_photo_mdb_url" as const, label: "รูปเปิดตู้ไฟเมน ให้เห็นเบรคเกอร์ชัดเจน" },
             { key: "inverter_point" as const, url: photoInverterPoint, set: setPhotoInverterPoint, field: "survey_photo_inverter_point_url" as const, label: "รูปจุดที่จะติดตั้ง Inverter" },
           ].map(slot => (
-            <div key={slot.key}>
-              <div className={subLabel}>{slot.label}</div>
+            <div key={slot.key} className="flex flex-col">
+              <div className={`${subLabel} min-h-[2.5em] leading-snug`}>{slot.label}</div>
               <input
                 id={`photo-${slot.key}-${lead.id}`}
                 type="file"

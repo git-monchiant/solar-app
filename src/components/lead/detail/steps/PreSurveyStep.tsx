@@ -17,12 +17,9 @@ import StepLayout from "../StepLayout";
 import ReceiptButtons from "../ReceiptButtons";
 import { formatSlotsRange } from "@/lib/time-slots";
 import { useSubStep } from "@/lib/hooks/useSubStep";
+import { formatTHB as formatPrice, formatThaiDate as formatDate } from "@/lib/utils/formatters";
 
 const DEPOSIT_AMOUNT = 1000;
-
-const formatPrice = (n: number) => new Intl.NumberFormat("th-TH").format(n);
-const formatDate = (d: string) =>
-  new Date(String(d).slice(0, 10) + "T12:00:00").toLocaleDateString("th-TH", { day: "numeric", month: "short", year: "numeric" });
 
 const ROOF_SHAPES: { value: string; label: string; svg: React.ReactNode }[] = [
   {

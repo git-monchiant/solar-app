@@ -14,10 +14,7 @@ import ReceiptButtons from "../ReceiptButtons";
 import { useSubStep } from "@/lib/hooks/useSubStep";
 import { compressImage } from "@/lib/utils/compressImage";
 import { buildAppointmentFlex } from "@/lib/utils/line-flex";
-
-const fmt = (n: number) => new Intl.NumberFormat("th-TH").format(n);
-const formatDate = (d: string) =>
-  new Date(String(d).slice(0, 10) + "T12:00:00").toLocaleDateString("th-TH", { day: "numeric", month: "short", year: "numeric" });
+import { formatTHB as fmt, formatThaiDate as formatDate } from "@/lib/utils/formatters";
 
 const SUB_STEPS = ["นัด", "รูปภาพ", "สรุป คชจ.", "เก็บเงิน", "ส่งมอบ"];
 

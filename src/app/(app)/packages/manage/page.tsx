@@ -3,6 +3,7 @@
 import { apiFetch } from "@/lib/api";
 import { useEffect, useState } from "react";
 import Header from "@/components/layout/Header";
+import { formatTHB as fmt, formatThaiDate as fmtDate } from "@/lib/utils/formatters";
 
 interface Package {
   id: number;
@@ -36,9 +37,6 @@ const empty: Omit<Package, "id"> = {
   start_date: new Date().toISOString().slice(0, 10),
   expire_date: `${new Date().getFullYear() + 99}-${String(new Date().getMonth() + 1).padStart(2, "0")}-${String(new Date().getDate()).padStart(2, "0")}`,
 };
-
-const fmt = (n: number) => new Intl.NumberFormat("th-TH").format(n);
-const fmtDate = (d: string | null) => d ? new Date(String(d).slice(0, 10) + "T12:00:00").toLocaleDateString("th-TH", { day: "numeric", month: "short", year: "numeric" }) : "—";
 
 export default function ManagePackagesPage() {
   const [packages, setPackages] = useState<Package[]>([]);

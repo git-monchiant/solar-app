@@ -3,6 +3,7 @@ import { useState, useEffect } from "react";
 import { STATUS_CONFIG, getStatusLabel } from "@/lib/constants/statuses";
 import { formatSlotsRange } from "@/lib/time-slots";
 import { stripThaiTitle } from "@/lib/utils/name";
+import { formatTHB, formatThaiDateShort } from "@/lib/utils/formatters";
 import AssignOwnerButton from "./AssignOwnerButton";
 import SourceTag from "@/components/SourceTag";
 
@@ -43,9 +44,6 @@ export interface LeadData {
   province: string | null;
   zone?: string | null;
 }
-
-const formatPrice = (n: number) => new Intl.NumberFormat("th-TH").format(n);
-const formatDate = (d: string) => new Date(String(d).slice(0, 10) + "T12:00:00").toLocaleDateString("th-TH", { day: "numeric", month: "short" });
 
 export default function LeadCard({ lead, compact, onAssignChange }: { lead: LeadData; compact?: boolean; onAssignChange?: () => void }) {
   const router = useRouter();
@@ -136,7 +134,7 @@ export default function LeadCard({ lead, compact, onAssignChange }: { lead: Lead
               <svg className="w-4 h-4 shrink-0 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
                 <path strokeLinecap="round" strokeLinejoin="round" d="M6.75 3v2.25M17.25 3v2.25M3 18.75V7.5a2.25 2.25 0 012.25-2.25h13.5A2.25 2.25 0 0121 7.5v11.25" />
               </svg>
-              <span className="font-bold text-gray-900">{formatDate(showDate)}</span>
+              <span className="font-bold text-gray-900">{formatThaiDateShort(showDate)}</span>
               {showTime && lead.survey_time_slot ? (
                 <span className="font-mono tabular-nums text-gray-600">
                   · {formatSlotsRange(lead.survey_time_slot) || lead.survey_time_slot}
@@ -162,15 +160,15 @@ export default function LeadCard({ lead, compact, onAssignChange }: { lead: Lead
             )}
             {aging > 0 && <span>{aging} วันแล้ว</span>}
             {lead.created_at && (
-              <span>· สร้าง {formatDate(lead.created_at)}</span>
+              <span>· สร้าง {formatThaiDateShort(lead.created_at)}</span>
             )}
             {lead.source && <SourceTag value={lead.source} size="xs" />}
             {lead.last_activity_date && (
-              <span>· ติดตามล่าสุด {formatDate(lead.last_activity_date)}</span>
+              <span>· ติดตามล่าสุด {formatThaiDateShort(lead.last_activity_date)}</span>
             )}
             {!compact && lead.next_follow_up && (
               <span className={`font-semibold ${isOverdue ? "text-red-600" : "text-amber-600"}`}>
-                · {isOverdue ? "Overdue" : "Follow-up"} {formatDate(lead.next_follow_up)}
+                · {isOverdue ? "Overdue" : "Follow-up"} {formatThaiDateShort(lead.next_follow_up)}
               </span>
             )}
             {!compact && lead.pre_doc_no && (() => {
@@ -186,7 +184,7 @@ export default function LeadCard({ lead, compact, onAssignChange }: { lead: Lead
                 : (lead.pre_total_price || 0);
               const amount = later ? base + (lead.install_extra_cost || 0) : base;
               return (
-                <span className="font-semibold text-emerald-700 font-mono tabular-nums">· {formatPrice(amount)} ฿</span>
+                <span className="font-semibold text-emerald-700 font-mono tabular-nums">· {formatTHB(amount)} ฿</span>
               );
             })()}
           </div>

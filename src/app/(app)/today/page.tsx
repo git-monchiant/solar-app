@@ -6,6 +6,8 @@ import Link from "next/link";
 import LeadCard, { LeadData } from "@/components/lead/LeadCard";
 import ListPageHeader from "@/components/layout/ListPageHeader";
 import NewLeadModal from "@/components/modal/NewLeadModal";
+import ChannelPickerModal from "@/components/shared/ChannelPickerModal";
+import type { ChannelCode } from "@/lib/constants/channels";
 import { useActiveRoles, hasRole } from "@/lib/roles";
 import { getStatusLabel } from "@/lib/constants/statuses";
 import { formatSlotsRange } from "@/lib/time-slots";
@@ -32,8 +34,9 @@ export default function TodayPage() {
   const [search, setSearch] = useState("");
   const [scheduledSurveys, setScheduledSurveys] = useState<{ id: number; full_name: string; event_date: string; time_slot: string | null; event_type: string; status: string; zone: string | null }[]>([]);
   const [zones, setZones] = useState<{ id: number; name: string }[]>([]);
-  const [selectedZone, setSelectedZone] = useState<string>("กรุงเทพและปริมณฑล");
-  const [showNewLead, setShowNewLead] = useState(false);
+  const [selectedZone, setSelectedZone] = useState<string>("กรุงเทพ ทีม 1");
+  const [channelPickerOpen, setChannelPickerOpen] = useState(false);
+  const [pickedChannel, setPickedChannel] = useState<ChannelCode | null>(null);
   const { activeRoles } = useActiveRoles();
 
   useEffect(() => {
@@ -403,7 +406,7 @@ export default function TodayPage() {
       {/* FAB — primary teal */}
       <button
         type="button"
-        onClick={() => setShowNewLead(true)}
+        onClick={() => setChannelPickerOpen(true)}
         className="fixed bottom-24 right-5 md:bottom-6 md:right-6 w-14 h-14 bg-gradient-to-b from-primary via-primary to-primary rounded-full shadow-lg shadow-primary/30 flex items-center justify-center hover:bg-primary-dark transition-all z-20"
       >
         <svg className="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
@@ -411,8 +414,21 @@ export default function TodayPage() {
         </svg>
       </button>
 
-      {showNewLead && (
-        <NewLeadModal onClose={() => setShowNewLead(false)} />
+      {channelPickerOpen && (
+        <ChannelPickerModal
+          onClose={() => setChannelPickerOpen(false)}
+          onPick={(code) => {
+            setChannelPickerOpen(false);
+            setPickedChannel(code);
+          }}
+        />
+      )}
+
+      {pickedChannel && (
+        <NewLeadModal
+          initialSource={pickedChannel}
+          onClose={() => setPickedChannel(null)}
+        />
       )}
     </div>
   );

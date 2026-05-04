@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { getSourceStyle } from "@/lib/source-tag";
+import { formatTHB as formatPrice, formatThaiDate as formatDate } from "@/lib/utils/formatters";
 
 interface Lead {
   full_name: string;
@@ -22,12 +23,6 @@ interface Lead {
   pre_total_price: number | null;
   created_at: string;
 }
-
-const formatPrice = (n: number) => new Intl.NumberFormat("th-TH").format(n);
-const formatDate = (d: string) => {
-  if (!d) return "";
-  return new Date(String(d).slice(0, 10) + "T12:00:00").toLocaleDateString("th-TH", { day: "numeric", month: "short", year: "numeric" });
-};
 
 export default function CustomerSummary({ lead }: { lead: Lead }) {
   const [expanded, setExpanded] = useState(false);

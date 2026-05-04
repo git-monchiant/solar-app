@@ -23,26 +23,8 @@ import GridTieStep from "@/components/lead/detail/steps/GridTieStep";
 import type { Lead, Package, CardStateKind } from "@/components/lead/detail/steps/types";
 import { useDialog } from "@/components/ui/Dialog";
 import { useIsMobile } from "@/lib/hooks/useIsMobile";
-
-const formatDate = (d: string) =>
-  new Date(String(d).slice(0, 10) + "T12:00:00").toLocaleDateString("th-TH", { day: "numeric", month: "short", year: "numeric" });
-
-// Label maps for the Info tab (read-only customer-interest summary).
-const INFO_LABELS = {
-  peakUsage: { day: "กลางวัน", night: "กลางคืน", both: "ทั้งสองช่วง" } as Record<string, string>,
-  electricalPhase: { "1_phase": "1 เฟส", "3_phase": "3 เฟส" } as Record<string, string>,
-  battery: { yes: "ต้องการ", no: "ไม่ต้องการ", maybe: "ยังไม่แน่ใจ", upgrade: "Upgrade เพิ่มแบต" } as Record<string, string>,
-  roofShape: { gable: "หน้าจั่ว", hip: "ปั้นหยา", shed: "เพิงหมาแหงน", flat: "ทรงแบน" } as Record<string, string>,
-  residence: { detached: "บ้านเดี่ยว", townhome: "ทาวน์โฮม", townhouse: "ทาวน์เฮาส์", home_office: "โฮมออฟฟิศ", shophouse: "อาคารพาณิชย์" } as Record<string, string>,
-  payment: { cash: "เงินสด", finance: "ไฟแนนซ์", home_equity: "สินเชื่อบ้าน" } as Record<string, string>,
-  source: { "walk-in": "SENX PM", event: "Event" } as Record<string, string>,
-  primaryReason: {
-    save_bill: "ประหยัดค่าไฟ", sell_back: "ขายไฟคืน", tax_deduction: "ลดหย่อนภาษี",
-    daytime_usage: "เปิดแอร์ทั้งวัน", pet_ac: "แอร์ให้สัตว์เลี้ยง", elderly_care: "ดูแลผู้สูงอายุ",
-    has_ev: "ชาร์จ EV", environment: "รักษ์โลก", home_business: "เปิดร้านที่บ้าน", other: "อื่นๆ",
-  } as Record<string, string>,
-  appliances: { water_heater: "เครื่องทำน้ำอุ่น", ev: "ที่ชาร์จรถ EV" } as Record<string, string>,
-};
+import { formatThaiDate as formatDate } from "@/lib/utils/formatters";
+import { INFO_LABELS } from "@/lib/constants/info-labels";
 
 const formatAcUnits = (s: string | null): string | null => {
   if (!s) return null;
@@ -544,7 +526,7 @@ export default function LeadDetailPage({ params }: { params: Promise<{ id: strin
 
       {/* Content */}
       <div ref={scrollRef} className="flex-1 overflow-y-auto pb-20 relative" style={{ overscrollBehaviorY: "contain" }}>
-        <div className="max-w-5xl">
+        <div>
         {tab === "info" ? (
           <div className="p-4">
             {(() => {

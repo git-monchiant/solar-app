@@ -19,6 +19,8 @@ interface InvoiceData {
   install_date: string | null;
   created_at: string;
   packages: { id: number; name: string; kwp: number; price: number }[];
+  step_no: number;
+  payment_no: string | null;
 }
 
 const CO = {
@@ -168,7 +170,11 @@ export default function InvoicePage() {
               </div>
               <div className="shrink-0 text-center">
                 <img
-                  src={`/api/qr?amount=${d.amount}&format=image`}
+                  src={(() => {
+                    const p = new URLSearchParams({ amount: String(d.amount), format: "image", lead_id: String(d.id), step_no: String(d.step_no) });
+                    if (d.payment_no) p.set("ref2", d.payment_no);
+                    return `/api/qr?${p.toString()}`;
+                  })()}
                   alt="PromptPay QR"
                   className="w-24 h-24 bg-white border border-gray-200 p-1"
                 />

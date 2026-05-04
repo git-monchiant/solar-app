@@ -67,6 +67,19 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ tok
 
     const amount = l.pre_pay_amount != null ? Number(l.pre_pay_amount) : 0;
 
+    // Look up the pending payment intent for this pre-survey deposit so the
+    // QR on the invoice carries the same per-payment Ref2 as the QR shown on
+    // screen. Mirrors PreSurveyStep's slipField + stepNo.
+    const intentRes = await db.request()
+      .input("lead_id", sql.Int, l.id)
+      .query(`
+        SELECT TOP 1 payment_no FROM payments
+        WHERE lead_id = @lead_id AND step_no = 1 AND slip_field = 'pre_slip_url'
+          AND confirmed_at IS NULL
+        ORDER BY id DESC
+      `);
+    const paymentNo = intentRes.recordset[0]?.payment_no || null;
+
     // Use the booking number (pre_doc_no) as the invoice reference. If the
     // lead hasn't been booked yet, mint one now and persist it so the same
     // number sticks for the actual booking confirmation later.
@@ -81,6 +94,8 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ tok
       packages,
       is_pre_survey: isPreSurvey,
       reference_no: docNo,
+      step_no: 1,
+      payment_no: paymentNo,
     });
   } catch (error) {
     console.error("Invoice data error:", error);

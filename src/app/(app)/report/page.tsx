@@ -3,6 +3,7 @@ import { apiFetch } from "@/lib/api";
 import { Fragment, useEffect, useState } from "react";
 import Link from "next/link";
 import Header from "@/components/layout/Header";
+import { formatTHB, formatThaiDate as fmtDate } from "@/lib/utils/formatters";
 
 interface Installment {
   id: number;
@@ -41,9 +42,8 @@ interface ReportData {
   summary: { count: number; total_value: number; received: number; outstanding: number };
 }
 
-const fmt = (n: number) => new Intl.NumberFormat("th-TH").format(Math.round(n));
-const fmtDate = (d: string) => new Date(String(d).slice(0, 10) + "T12:00:00").toLocaleDateString("th-TH", { day: "numeric", month: "short", year: "numeric" });
-const fmtDateTime = (d: string) => new Date(d).toLocaleString("th-TH", { day: "numeric", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit" });
+const fmt = (n: number) => formatTHB(Math.round(n));
+const fmtDateTime = (d: string) => fmtDate(d, { time: true });
 const paymentLabels: Record<string, string> = { transfer: "โอนเงิน", cash: "เงินสด", credit_card: "บัตรเครดิต", home_equity: "Home Equity", finance: "สินเชื่อ" };
 const stepLabels: Record<number, string> = { 0: "มัดจำ", 1: "ค่าสำรวจ", 3: "งวด 1/2", 4: "งวด 2/2" };
 

@@ -6,6 +6,7 @@ import { useRouter } from "next/navigation";
 import Link from "next/link";
 import Header from "@/components/layout/Header";
 import { STATUS_CONFIG } from "@/lib/constants/statuses";
+import { formatTHB as fmt, formatThaiDateShort as fmtDate, formatThaiTime as fmtTime } from "@/lib/utils/formatters";
 
 interface DashboardData {
   total_leads: number;
@@ -21,10 +22,6 @@ interface DashboardData {
   recent_activities: { title: string; activity_type: string; created_at: string; full_name: string; by_name: string }[];
   activity_heatmap: { day: string; lead_id: number; full_name: string; lead_status: string; activity_type?: string; total_activities: number; has_paid: boolean }[];
 }
-
-const fmt = (n: number) => new Intl.NumberFormat("th-TH").format(n);
-const fmtDate = (d: string) => new Date(String(d).slice(0, 10) + "T12:00:00").toLocaleDateString("th-TH", { day: "numeric", month: "short" });
-const fmtTime = (d: string) => new Date(d).toLocaleTimeString("th-TH", { hour: "2-digit", minute: "2-digit" });
 
 function Trend({ current, previous, suffix = "" }: { current: number; previous: number; suffix?: string }) {
   if (!previous || !Number.isFinite(previous) || !Number.isFinite(current)) return null;

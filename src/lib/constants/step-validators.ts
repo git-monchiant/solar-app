@@ -40,8 +40,6 @@ export function validateSurvey(lead: Partial<Lead>): ValidationResult {
     // Actual visit
     { field: "survey_actual_date", label: "วันที่เข้าสำรวจจริง" },
     { field: "survey_actual_by", label: "ผู้เข้าสำรวจ" },
-    { field: "survey_lat", label: "พิกัด (lat)" },
-    { field: "survey_lng", label: "พิกัด (lng)" },
     // Electrical
     { field: "survey_meter_size", label: "ขนาดมิเตอร์" },
     { field: "survey_electrical_phase", label: "ระบบไฟ" },

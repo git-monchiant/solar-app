@@ -3,9 +3,7 @@
 import { useState } from "react";
 import CalendarPicker from "./CalendarPicker";
 import { formatSlotsRange } from "@/lib/time-slots";
-
-const formatDate = (d: string) =>
-  new Date(String(d).slice(0, 10) + "T12:00:00").toLocaleDateString("th-TH", { day: "numeric", month: "short", year: "numeric" });
+import { formatThaiDate as formatDate } from "@/lib/utils/formatters";
 
 export interface TimeSlot {
   value: string;

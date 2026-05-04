@@ -13,13 +13,11 @@ import LineConfirmModal from "@/components/modal/LineConfirmModal";
 import { useSubStep } from "@/lib/hooks/useSubStep";
 import { useIsMobile } from "@/lib/hooks/useIsMobile";
 import { buildWarrantyFlex } from "@/lib/utils/line-flex";
+import { formatThaiDate } from "@/lib/utils/formatters";
 
 const SUB_STEPS = ["ข้อมูล", "แบตเตอรี่", "เอกสาร", "ลายเซ็น", "ยืนยัน"];
 
-const formatDate = (d: string | null) => {
-  if (!d) return "—";
-  return new Date(String(d).slice(0, 10) + "T12:00:00").toLocaleDateString("th-TH-u-ca-buddhist", { day: "numeric", month: "short", year: "numeric" });
-};
+const formatDate = (d: string | null) => formatThaiDate(d, { buddhist: true });
 
 const toISO = (d: Date) => d.toISOString().slice(0, 10);
 

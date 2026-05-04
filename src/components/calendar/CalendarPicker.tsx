@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { apiFetch } from "@/lib/api";
-import { HOURLY_SLOTS, parseSlots, serializeSlots } from "@/lib/time-slots";
+import { HOURLY_SLOTS, parseSlots, serializeSlots, slotLabel } from "@/lib/time-slots";
 
 const WEEKDAYS = ["อา", "จ", "อ", "พ", "พฤ", "ศ", "ส"];
 
@@ -148,7 +148,7 @@ export default function CalendarPicker({
             ช่วงเวลา {required && <span className="text-red-500">*</span>}
             <span className="ml-2 text-gray-300 normal-case font-normal">เลือกได้มากกว่า 1 ช่วง</span>
           </div>
-          <div className="grid grid-cols-7 gap-1.5">
+          <div className="grid grid-cols-4 gap-1.5">
             {HOURLY_SLOTS.map(s => {
               const selected = selectedSlots.includes(s);
               const dayBooked = date && showSurveySlots ? bookedSlotsByDate[date] : null;
@@ -172,7 +172,7 @@ export default function CalendarPicker({
                       : "bg-white border-gray-300 text-gray-900 hover:border-active hover:text-active"
                   }`}
                 >
-                  <span className="text-[11px] font-semibold font-mono tabular-nums">{s}</span>
+                  <span className="text-[11px] font-semibold font-mono tabular-nums">{slotLabel(s)}</span>
                 </button>
               );
             })}

@@ -8,9 +8,7 @@ import ErrorPopup from "@/components/ui/ErrorPopup";
 import FallbackImage from "@/components/ui/FallbackImage";
 import StepLayout from "../StepLayout";
 import { compressImage } from "@/lib/utils/compressImage";
-
-const formatDate = (d: string) =>
-  new Date(String(d).slice(0, 10) + "T12:00:00").toLocaleDateString("th-TH", { day: "numeric", month: "short", year: "numeric" });
+import { formatTHB, formatThaiDate as formatDate } from "@/lib/utils/formatters";
 
 interface Props extends StepCommonProps {
   packages: Package[];
@@ -22,7 +20,10 @@ export default function QuoteStep({ lead, state, refresh, expanded, onToggle }: 
   const [files, setFiles] = useState<File[]>([]);
   const [note, setNote] = useState(lead.quotation_note || "");
   const [amount, setAmount] = useState<number>(lead.quotation_amount || 0);
-  const [docNo, setDocNo] = useState(lead.quotation_doc_no || "");
+  // Default to "QT-<yy><leadId:4d>" — same shape as the uploaded filename so
+  // staff don't have to retype it. Persisted on save like a normal value.
+  const defaultDocNo = `QT-${new Date().getFullYear().toString().slice(-2)}${String(lead.id).padStart(4, "0")}`;
+  const [docNo, setDocNo] = useState(lead.quotation_doc_no || defaultDocNo);
   // sentDate is captured automatically on submit (current timestamp) — no UI input.
   const [byName, setByName] = useState(lead.quotation_by || "");
   const { me } = useMe();
@@ -30,6 +31,27 @@ export default function QuoteStep({ lead, state, refresh, expanded, onToggle }: 
     if (!byName && me?.full_name && !lead.quotation_by) setByName(me.full_name);
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [me]);
+
+  // Auto-save the four free-form fields so a refresh before clicking "ส่ง" doesn't
+  // lose what the user has typed. Mirrors the pattern in SurveyStep. The submit
+  // handler still PATCHes the same fields so this is purely additive.
+  useEffect(() => {
+    const t = setTimeout(() => {
+      apiFetch(`/api/leads/${lead.id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          quotation_note: note || null,
+          quotation_amount: amount || null,
+          quotation_doc_no: docNo || null,
+          quotation_by: byName || null,
+        }),
+      }).catch(console.error);
+    }, 600);
+    return () => clearTimeout(t);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [note, amount, docNo, byName]);
+
   const [saving, setSaving] = useState(false);
   const [uploading, setUploading] = useState(false);
   const [nextError, setNextError] = useState<string | null>(null);
@@ -90,7 +112,7 @@ export default function QuoteStep({ lead, state, refresh, expanded, onToggle }: 
       {typeof lead.quotation_amount === "number" && (
         <div className="border-l-3 border-blue-400 pl-3">
           <div className="text-xs font-bold text-blue-600 uppercase mb-1">มูลค่าตามใบเสนอราคา</div>
-          <div className="text-lg font-bold font-mono tabular-nums text-gray-900">{new Intl.NumberFormat("th-TH").format(lead.quotation_amount)} บาท</div>
+          <div className="text-lg font-bold font-mono tabular-nums text-gray-900">{formatTHB(lead.quotation_amount)} บาท</div>
         </div>
       )}
 
@@ -152,7 +174,7 @@ export default function QuoteStep({ lead, state, refresh, expanded, onToggle }: 
       state={state}
       expanded={expanded}
       onToggle={onToggle}
-      doneHeader={<span className="text-sm font-semibold text-emerald-700">ส่งใบเสนอราคาแล้ว{typeof lead.quotation_amount === "number" ? ` · ${new Intl.NumberFormat("th-TH").format(lead.quotation_amount)} บาท` : ""}</span>}
+      doneHeader={<span className="text-sm font-semibold text-emerald-700">ส่งใบเสนอราคาแล้ว{typeof lead.quotation_amount === "number" ? ` · ${formatTHB(lead.quotation_amount)} บาท` : ""}</span>}
       renderDone={renderDoneContent}
     >
       <div className="space-y-3">

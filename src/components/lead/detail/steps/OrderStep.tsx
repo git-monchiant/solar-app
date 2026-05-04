@@ -15,10 +15,7 @@ import PaymentSlipsThumbs from "@/components/payment/PaymentSlipsThumbs";
 import StepLayout from "../StepLayout";
 import ReceiptButtons from "../ReceiptButtons";
 import { useSubStep } from "@/lib/hooks/useSubStep";
-
-const fmt = (n: number) => new Intl.NumberFormat("th-TH").format(n);
-const formatDate = (d: string) =>
-  new Date(String(d).slice(0, 10) + "T12:00:00").toLocaleDateString("th-TH", { day: "numeric", month: "short", year: "numeric" });
+import { formatTHB as fmt, formatThaiDate as formatDate } from "@/lib/utils/formatters";
 
 const SUB_STEPS = ["ราคา", "ส่งลูกค้า", "นัดหมาย", "ชำระเงิน", "ยืนยัน"];
 

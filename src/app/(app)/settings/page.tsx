@@ -36,7 +36,7 @@ export default function SettingsPage() {
     <div>
       <Header title="Settings" subtitle="APP CONFIGURATION" />
 
-      <div className="p-4 md:p-6 max-w-4xl">
+      <div className="p-4 md:p-6">
         <div className="flex items-center gap-1 border-b border-gray-200 mb-4">
           <TabBtn active={tab === "running_numbers"} onClick={() => setTab("running_numbers")} label="เลขเอกสาร" />
           <TabBtn active={tab === "gmail"} onClick={() => setTab("gmail")} label="Gmail" />

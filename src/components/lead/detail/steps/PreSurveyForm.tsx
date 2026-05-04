@@ -4,8 +4,7 @@ import { useEffect, useRef, useState } from "react";
 import { apiFetch, getUserIdHeader } from "@/lib/api";
 import FallbackImage from "@/components/ui/FallbackImage";
 import type { Lead, Package } from "./types";
-
-const formatPrice = (n: number) => new Intl.NumberFormat("th-TH").format(n);
+import { formatTHB as formatPrice } from "@/lib/utils/formatters";
 
 const RESIDENCE_TYPES = [
   { value: "detached", label: "บ้านเดี่ยว" },

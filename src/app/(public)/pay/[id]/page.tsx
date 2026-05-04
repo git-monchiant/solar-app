@@ -1,8 +1,7 @@
 "use client";
 
 import { useEffect, useState, use } from "react";
-
-const fmt = (n: number) => new Intl.NumberFormat("th-TH").format(n);
+import { formatTHB as fmt } from "@/lib/utils/formatters";
 const headers = { "ngrok-skip-browser-warning": "true" };
 
 export default function PublicPayPage({ params }: { params: Promise<{ id: string }> }) {

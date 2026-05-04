@@ -3,6 +3,7 @@
 import { apiFetch } from "@/lib/api";
 import { useEffect, useState } from "react";
 import ListPageHeader from "@/components/layout/ListPageHeader";
+import { formatTHB } from "@/lib/utils/formatters";
 
 interface Package {
   id: number;
@@ -54,8 +55,6 @@ export default function PackagesPage() {
         String(p.kwp).includes(q)
       );
     });
-  const formatPrice = (n: number) => new Intl.NumberFormat("th-TH").format(n);
-
   const TABS = [
     { key: "solar" as TabKey, label: "Solar", count: packages.filter((p) => !p.has_battery && !p.is_upgrade).length },
     { key: "battery" as TabKey, label: "Battery", count: packages.filter((p) => p.has_battery && !p.is_upgrade).length },
@@ -101,7 +100,7 @@ export default function PackagesPage() {
                 <div className="px-4 pt-3 pb-2 flex items-baseline justify-between gap-2 border-b border-gray-100">
                   <div>
                     <div className="text-2xl font-bold font-mono tabular-nums text-gray-900 leading-tight">
-                      {formatPrice(pkg.price)}
+                      {formatTHB(pkg.price)}
                       <span className="text-sm font-semibold text-gray-400 ml-1">THB</span>
                     </div>
                   </div>

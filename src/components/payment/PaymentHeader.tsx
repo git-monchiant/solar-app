@@ -1,4 +1,4 @@
-const fmt = (n: number) => new Intl.NumberFormat("th-TH").format(n);
+import { formatTHB } from "@/lib/utils/formatters";
 
 interface Props {
   title: string;
@@ -10,7 +10,7 @@ export default function PaymentHeader({ title, amount, amountLabel = "ยอด�
   return (
     <div>
       <div className="text-sm font-semibold text-gray-900">{title}</div>
-      <div className="text-xs text-gray-500">{amountLabel} {fmt(amount)} บาท</div>
+      <div className="text-xs text-gray-500">{amountLabel} {formatTHB(amount)} บาท</div>
     </div>
   );
 }
