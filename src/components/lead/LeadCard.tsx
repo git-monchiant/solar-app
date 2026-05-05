@@ -1,6 +1,6 @@
 import { useRouter } from "next/navigation";
 import { useState, useEffect } from "react";
-import { STATUS_CONFIG, getStatusLabel } from "@/lib/constants/statuses";
+import { STATUSES, STATUS_CONFIG, getStatusLabel } from "@/lib/constants/statuses";
 import { formatSlotsRange } from "@/lib/time-slots";
 import { stripThaiTitle } from "@/lib/utils/name";
 import { formatTHB, formatThaiDateShort } from "@/lib/utils/formatters";
@@ -65,8 +65,8 @@ export default function LeadCard({ lead, compact, onAssignChange }: { lead: Lead
     >
       <div className="p-5">
         {/* Header: name + status */}
-        <div className="flex items-start justify-between gap-3 mb-3">
-          <div className="flex-1 min-w-0">
+        <div className="flex items-start gap-3 mb-3">
+          <div className="flex-1 min-w-0 md:w-52 md:flex-none lg:w-72">
             <div className="font-bold text-lg text-gray-900 truncate leading-tight flex items-center gap-1.5">
               <svg className="w-4 h-4 shrink-0 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
                 <path strokeLinecap="round" strokeLinejoin="round" d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6" />
@@ -82,7 +82,60 @@ export default function LeadCard({ lead, compact, onAssignChange }: { lead: Lead
               )}
             </div>
           </div>
-          <span className={`shrink-0 text-xs font-semibold uppercase tracking-wide px-2.5 py-0.5 rounded-full text-white ${config.color}`}>
+          {(() => {
+            const currentIdx = STATUSES.indexOf(lead.status as typeof STATUSES[number]);
+            if (currentIdx < 0) return null;
+            const FLOW_LABELS: Record<string, string> = {
+              pre_survey: "ติดตาม",
+              survey: "สำรวจ",
+              quote: "เสนอราคา",
+              order: "ชำระเงิน",
+              install: "ติดตั้ง",
+              warranty: "รับประกัน",
+              gridtie: "ขนานไฟ",
+              closed: "ส่งมอบ",
+            };
+            return (
+              <div className="hidden md:flex items-start mt-1" aria-label="Flow progress">
+                {STATUSES.map((s, i) => {
+                  const isCurrent = i === currentIdx;
+                  const isPast = i < currentIdx;
+                  const stageConfig = STATUS_CONFIG[s];
+                  return (
+                    <div key={s} className="flex items-start" title={stageConfig?.label}>
+                      <div className="flex flex-col items-center w-10 lg:w-14 shrink-0">
+                        <div className={`w-5 h-5 lg:w-6 lg:h-6 rounded-full flex items-center justify-center transition-all ${
+                          isCurrent ? `${config.color} ring-2 ring-offset-1 ring-gray-200 shadow-sm scale-110`
+                          : isPast ? "bg-emerald-500"
+                          : "bg-gray-200"
+                        }`}>
+                          {isPast && (
+                            <svg className="w-3 h-3 lg:w-3.5 lg:h-3.5 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={3}>
+                              <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
+                            </svg>
+                          )}
+                          {isCurrent && (
+                            <span className="w-1 h-1 lg:w-1.5 lg:h-1.5 bg-white rounded-full" />
+                          )}
+                        </div>
+                        <span className={`text-[9px] lg:text-[10px] mt-1 lg:mt-1.5 leading-none whitespace-nowrap ${
+                          isCurrent ? `font-semibold ${config.text ?? "text-gray-900"}`
+                          : isPast ? "text-emerald-700"
+                          : "text-gray-400"
+                        }`}>
+                          {FLOW_LABELS[s]}
+                        </span>
+                      </div>
+                      {i < STATUSES.length - 1 && (
+                        <div className={`h-0.5 w-1 lg:w-2 mt-[9px] lg:mt-[11px] ${isPast ? "bg-emerald-400" : "bg-gray-200"}`} />
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+            );
+          })()}
+          <span className={`shrink-0 ml-auto text-xs font-semibold uppercase tracking-wide px-2.5 py-0.5 rounded-full text-white ${config.color}`}>
             {getStatusLabel(lead)}
           </span>
         </div>

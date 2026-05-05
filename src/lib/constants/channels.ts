@@ -1,6 +1,6 @@
 // Where a prospect originated. Stored as a short code in prospects.channel.
 // Order here is the display order of the chip selector (most-common first).
-export type ChannelCode = "senxpm" | "walk_in" | "event" | "ads" | "the1" | "web" | "refer" | "other";
+export type ChannelCode = "senxpm" | "walk_in" | "event" | "ads" | "the1" | "web" | "refer" | "line_oa" | "other";
 
 export const CHANNELS: { code: ChannelCode; label: string; color: string }[] = [
   { code: "senxpm",  label: "SenXPM",      color: "bg-indigo-100 text-indigo-700 border-indigo-200" },
@@ -9,7 +9,8 @@ export const CHANNELS: { code: ChannelCode; label: string; color: string }[] = [
   { code: "ads",     label: "Ads",         color: "bg-rose-100 text-rose-700 border-rose-200" },
   { code: "the1",    label: "The1",        color: "bg-red-100 text-red-700 border-red-200" },
   { code: "web",     label: "Web",         color: "bg-sky-100 text-sky-700 border-sky-200" },
-  { code: "refer",   label: "แนะนำต่อ",     color: "bg-amber-100 text-amber-700 border-amber-200" },
+  { code: "line_oa", label: "LINE OA",     color: "bg-green-100 text-green-700 border-green-200" },
+  { code: "refer",   label: "มีคนแนะนำ",     color: "bg-amber-100 text-amber-700 border-amber-200" },
   { code: "other",   label: "อื่นๆ",         color: "bg-gray-100 text-gray-700 border-gray-200" },
 ];
 

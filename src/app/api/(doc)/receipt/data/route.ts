@@ -144,8 +144,10 @@ export async function GET(req: NextRequest) {
           lineItems.push({ label: `งวดที่ ${idx + 1} · ค่าระบบ Solar Rooftop${pctSuffix}`, amount: gross });
           if (p.confirmed_at && (!latest || new Date(p.confirmed_at) > new Date(latest))) latest = p.confirmed_at;
         }
-        if (depositPrice > 0) {
-          lineItems.push({ label: "หักค่าสำรวจ", amount: -depositPrice });
+        // Only show the deposit credit on this receipt if งวด-after couldn't
+        // fully absorb it. creditBefore = spillover after งวด-after took its share.
+        if (creditBefore > 0) {
+          lineItems.push({ label: "หักค่าสำรวจ", amount: -creditBefore });
         }
         totalPrice = lineItems.reduce((s, li) => s + li.amount, 0);
         description = lineItems[0]?.label || "ค่าระบบ Solar Rooftop";

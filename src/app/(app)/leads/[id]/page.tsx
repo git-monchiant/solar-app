@@ -488,7 +488,7 @@ export default function LeadDetailPage({ params }: { params: Promise<{ id: strin
                   <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
                     <path strokeLinecap="round" strokeLinejoin="round" d="M4.5 10.5L12 3m0 0l7.5 7.5M12 3v18" />
                   </svg>
-                  Upgrade
+                  Scale Up
                 </span>
               </>
             )}

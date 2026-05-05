@@ -40,7 +40,7 @@ const STATUS_LABEL: Record<StatusKey, string> = {
   pending: "ยังไม่เยี่ยม",
   contacted: "กำลังติดต่อ",
   interested: "สนใจ (ใหม่)",
-  upgrade: "สนใจ (Upgrade)",
+  upgrade: "สนใจ (Scale Up)",
   not_interested: "ไม่สนใจ",
 };
 

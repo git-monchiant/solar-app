@@ -6,6 +6,8 @@ import CustomerInfoForm from "@/components/customer/CustomerInfoForm";
 import ErrorPopup from "@/components/ui/ErrorPopup";
 import LineIcon from "@/components/icons/LineIcon";
 import { formatTHB as formatPrice } from "@/lib/utils/formatters";
+import { CHANNELS } from "@/lib/constants/channels";
+import { normalizeSourceKey } from "@/lib/source-tag";
 
 export interface CustomerWizardValues {
   full_name?: string;
@@ -72,16 +74,10 @@ interface Props {
   mode?: "create" | "edit";
 }
 
-const SOURCES = [
-  { value: "walk-in", label: "SENX PM" },
-  { value: "event", label: "Event" },
-  { value: "ads", label: "Ads" },
-  { value: "the1", label: "The1" },
-  { value: "web", label: "Web" },
-  { value: "refer", label: "Refer" },
-  { value: "email", label: "Email" },
-  { value: "other", label: "Other" },
-];
+// Mirror the ChannelPickerModal codes so a pre-selected channel highlights
+// the matching chip on entry. normalizeSourceKey() also folds legacy values
+// ("walk-in", "Sen X PM", …) onto these codes when editing older leads.
+const SOURCES = CHANNELS.map((c) => ({ value: c.code, label: c.label }));
 const CUSTOMER_TYPES = [
   { value: "ลูกค้าใหม่ยังไม่มีโซล่า", label: "New" },
   { value: "ลูกค้าเดิมต้องการ Upgrade/Battery", label: "Upgrade" },
@@ -325,9 +321,12 @@ function CreateProfileForm({
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-3">
           <FormField label="ที่มา">
             <div className="grid grid-cols-2 gap-2">
-              {SOURCES.map(s => (
-                <button key={s.value} type="button" onClick={() => onChange({ source: s.value })} className={chipBtn(values.source === s.value)} style={{ minHeight: 0 }}>{s.label}</button>
-              ))}
+              {(() => {
+                const currentKey = normalizeSourceKey(values.source);
+                return SOURCES.map(s => (
+                  <button key={s.value} type="button" onClick={() => onChange({ source: s.value })} className={chipBtn(values.source === s.value || currentKey === s.value)} style={{ minHeight: 0 }}>{s.label}</button>
+                ));
+              })()}
             </div>
           </FormField>
           <FormField label="ประเภทลูกค้า">

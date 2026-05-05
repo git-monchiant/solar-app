@@ -25,7 +25,7 @@ const navItems: NavItem[] = [
   {
     href: "/seeker/dashboard",
     label: "Insights",
-    roles: ["leadsseeker"],
+    roles: ["leadsseeker", "account"],
     group: "seeker",
     icon: <svg className="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M3 13.125C3 12.504 3.504 12 4.125 12h2.25c.621 0 1.125.504 1.125 1.125v6.75C7.5 20.496 6.996 21 6.375 21h-2.25A1.125 1.125 0 013 19.875v-6.75zM9.75 8.625c0-.621.504-1.125 1.125-1.125h2.25c.621 0 1.125.504 1.125 1.125v11.25c0 .621-.504 1.125-1.125 1.125h-2.25a1.125 1.125 0 01-1.125-1.125V8.625zM16.5 4.125c0-.621.504-1.125 1.125-1.125h2.25C20.496 3 21 3.504 21 4.125v15.75c0 .621-.504 1.125-1.125 1.125h-2.25a1.125 1.125 0 01-1.125-1.125V4.125z" /></svg>,
   },
@@ -62,10 +62,10 @@ const navItems: NavItem[] = [
 export default function BottomNav() {
   const pathname = usePathname();
   const { activeRoles } = useActiveRoles();
-  const isAdmin = hasRole(activeRoles, "admin");
   const seekerMode = activeRoles.includes("leadsseeker") && !activeRoles.includes("sales") && !activeRoles.includes("solar");
+  const showAdminGroups = !seekerMode && hasRole(activeRoles, "admin", "sales", "solar", "account");
   const visibleItems = navItems.filter((item) => {
-    if (seekerMode) return item.href === "/seeker" || item.href === "/seeker/dashboard" || item.href === "/seeker/map" || item.href === "/profile";
+    if (seekerMode) return item.href === "/seeker" || item.href === "/seeker/dashboard" || item.href === "/seeker/map" || item.href === "/packages" || item.href === "/profile";
     return !item.roles || hasRole(activeRoles, ...item.roles);
   });
   const visibleMobile = visibleItems.filter((i) => !i.desktopOnly);
@@ -112,15 +112,16 @@ export default function BottomNav() {
               </div>
             );
           })}
-          {isAdmin && !seekerMode && <AdminGroups pathname={pathname} />}
+          {showAdminGroups && <AdminGroups pathname={pathname} activeRoles={activeRoles} />}
         </nav>
       </aside>
     </>
   );
 }
 
-type AdminLink = { href: string; label: string; icon: React.ReactNode };
+type AdminLink = { href: string; label: string; icon: React.ReactNode; roles?: Role[] };
 
+// roles: undefined → admin only. Listed roles widen the visibility.
 const ADMIN_GROUPS: { title: string; links: AdminLink[] }[] = [
   {
     title: "Reports",
@@ -128,26 +129,31 @@ const ADMIN_GROUPS: { title: string; links: AdminLink[] }[] = [
       {
         href: "/dashboard",
         label: "Dashboard",
+        roles: ["admin", "sales", "solar", "account"],
         icon: <svg className="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M3 13.125C3 12.504 3.504 12 4.125 12h2.25c.621 0 1.125.504 1.125 1.125v6.75C7.5 20.496 6.996 21 6.375 21h-2.25A1.125 1.125 0 013 19.875v-6.75zM9.75 8.625c0-.621.504-1.125 1.125-1.125h2.25c.621 0 1.125.504 1.125 1.125v11.25c0 .621-.504 1.125-1.125 1.125h-2.25a1.125 1.125 0 01-1.125-1.125V8.625zM16.5 4.125c0-.621.504-1.125 1.125-1.125h2.25C20.496 3 21 3.504 21 4.125v15.75c0 .621-.504 1.125-1.125 1.125h-2.25a1.125 1.125 0 01-1.125-1.125V4.125z" /></svg>,
       },
       {
         href: "/report",
         label: "Report",
+        roles: ["admin", "sales", "solar", "account"],
         icon: <svg className="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M19.5 14.25v-2.625a3.375 3.375 0 00-3.375-3.375h-1.5A1.125 1.125 0 0113.5 7.125v-1.5a3.375 3.375 0 00-3.375-3.375H8.25m0 12.75h7.5m-7.5 3H12M10.5 2.25H5.625c-.621 0-1.125.504-1.125 1.125v17.25c0 .621.504 1.125 1.125 1.125h12.75c.621 0 1.125-.504 1.125-1.125V11.25a9 9 0 00-9-9z" /></svg>,
       },
       {
         href: "/report/pending",
         label: "รอยืนยัน",
+        roles: ["admin", "account"],
         icon: <svg className="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M9 12.75L11.25 15 15 9.75M21 12a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>,
       },
       {
         href: "/calendar",
         label: "Calendar",
+        roles: ["admin", "sales", "solar"],
         icon: <svg className="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M6.75 3v2.25M17.25 3v2.25M3 18.75V7.5a2.25 2.25 0 012.25-2.25h13.5A2.25 2.25 0 0121 7.5v11.25m-18 0A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75m-18 0v-7.5A2.25 2.25 0 015.25 9h13.5A2.25 2.25 0 0121 11.25v7.5" /></svg>,
       },
       {
         href: "/export",
         label: "Export",
+        roles: ["admin", "sales", "solar"],
         icon: <svg className="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M3 16.5v2.25A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75V16.5M16.5 12L12 16.5m0 0L7.5 12m4.5 4.5V3" /></svg>,
       },
     ],
@@ -158,6 +164,7 @@ const ADMIN_GROUPS: { title: string; links: AdminLink[] }[] = [
       {
         href: "/packages/manage",
         label: "Packages",
+        roles: ["admin", "sales", "solar"],
         icon: <svg className="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M21 11.25v8.25a1.5 1.5 0 01-1.5 1.5H5.25a1.5 1.5 0 01-1.5-1.5v-8.25M12 4.875A2.625 2.625 0 109.375 7.5H12m0-2.625V7.5m0-2.625A2.625 2.625 0 1114.625 7.5H12m0 0V21m-8.625-9.75h18c.621 0 1.125-.504 1.125-1.125v-1.5c0-.621-.504-1.125-1.125-1.125h-18c-.621 0-1.125.504-1.125 1.125v1.5c0 .621.504 1.125 1.125 1.125z" /></svg>,
       },
       {
@@ -168,6 +175,7 @@ const ADMIN_GROUPS: { title: string; links: AdminLink[] }[] = [
       {
         href: "/line-users",
         label: "LINE Users",
+        roles: ["admin", "sales", "solar"],
         icon: <svg className="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M7.5 8.25h9m-9 3H12m-9.75 1.51c0 1.6 1.123 2.994 2.707 3.227 1.129.166 2.27.293 3.423.379.35.026.67.21.865.501L12 21l2.755-4.133a1.14 1.14 0 01.865-.501 48.172 48.172 0 003.423-.379c1.584-.233 2.707-1.626 2.707-3.228V6.741c0-1.602-1.123-2.995-2.707-3.228A48.394 48.394 0 0012 3c-2.392 0-4.744.175-7.043.513C3.373 3.746 2.25 5.14 2.25 6.741v6.018z" /></svg>,
       },
       {
@@ -184,23 +192,28 @@ const ADMIN_GROUPS: { title: string; links: AdminLink[] }[] = [
   },
 ];
 
-function AdminGroups({ pathname }: { pathname: string }) {
+function AdminGroups({ pathname, activeRoles }: { pathname: string; activeRoles: Role[] }) {
+  const isAdmin = hasRole(activeRoles, "admin");
   return (
     <>
-      {ADMIN_GROUPS.map((g, i) => (
-        <div key={g.title} className={i === 0 ? "pt-2 mt-2 border-t border-gray-100" : "pt-2 mt-2"}>
-          <div className="px-3 pb-0.5 text-[10px] font-bold uppercase tracking-widest text-gray-400">{g.title}</div>
-          {g.links.map(l => {
-            const active = l.href === "/packages/manage" ? pathname.startsWith("/packages/manage") : pathname.startsWith(l.href);
-            return (
-              <Link key={l.href} href={l.href}
-                className={`flex items-center gap-3 px-3 py-1.5 rounded-lg text-xs font-semibold uppercase tracking-wider transition-colors ${active ? "bg-primary/10 text-primary" : "text-gray hover:bg-gray-50"}`}>
-                {l.icon} {l.label}
-              </Link>
-            );
-          })}
-        </div>
-      ))}
+      {ADMIN_GROUPS.map((g, i) => {
+        const links = g.links.filter((l) => isAdmin || (l.roles && hasRole(activeRoles, ...l.roles)));
+        if (links.length === 0) return null;
+        return (
+          <div key={g.title} className={i === 0 ? "pt-2 mt-2 border-t border-gray-100" : "pt-2 mt-2"}>
+            <div className="px-3 pb-0.5 text-[10px] font-bold uppercase tracking-widest text-gray-400">{g.title}</div>
+            {links.map(l => {
+              const active = l.href === "/packages/manage" ? pathname.startsWith("/packages/manage") : pathname.startsWith(l.href);
+              return (
+                <Link key={l.href} href={l.href}
+                  className={`flex items-center gap-3 px-3 py-1.5 rounded-lg text-xs font-semibold uppercase tracking-wider transition-colors ${active ? "bg-primary/10 text-primary" : "text-gray hover:bg-gray-50"}`}>
+                  {l.icon} {l.label}
+                </Link>
+              );
+            })}
+          </div>
+        );
+      })}
     </>
   );
 }

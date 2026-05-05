@@ -76,10 +76,10 @@ export default function NewLeadModal({ onClose, onCreated, linkLine, initialSour
   };
 
   return (
-    <div className="fixed inset-0 z-[70] md:flex md:items-center md:justify-center md:p-6">
-      <div className="hidden md:block absolute inset-0 bg-black/30" onClick={onClose} />
-      <div className="relative bg-white w-full h-full md:h-auto md:max-w-2xl lg:max-w-4xl md:max-h-[90vh] md:rounded-2xl overflow-y-auto md:animate-slide-up flex flex-col">
-        <div className="sticky top-0 bg-white border-b border-gray-100 px-5 py-4 pt-[max(1rem,env(safe-area-inset-top,1rem))] flex items-center justify-between z-10 shrink-0">
+    <div className="fixed inset-0 z-[70] overflow-y-auto md:py-6">
+      <div className="hidden md:block fixed inset-0 bg-black/30" onClick={onClose} />
+      <div className="relative bg-white w-full md:mx-auto md:max-w-2xl lg:max-w-4xl md:rounded-2xl md:animate-slide-up min-h-screen md:min-h-0">
+        <div className="bg-white border-b border-gray-100 px-5 py-4 pt-[max(1rem,env(safe-area-inset-top,1rem))] flex items-center justify-between md:rounded-t-2xl">
           <h2 className="text-lg font-bold text-gray-900 truncate">New Lead{form.full_name.trim() ? ` — ${form.full_name.trim()}` : ""}</h2>
           <ModalCloseButton onClick={onClose} />
         </div>

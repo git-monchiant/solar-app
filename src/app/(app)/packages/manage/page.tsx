@@ -130,8 +130,8 @@ export default function ManagePackagesPage() {
           </select>
           <select value={filterUpgrade} onChange={e => setFilterUpgrade(e.target.value as typeof filterUpgrade)} className="h-10 px-3 rounded-lg border border-gray-200 text-sm bg-white focus:outline-none focus:border-primary">
             <option value="all">ทุกประเภท</option>
-            <option value="yes">Upgrade</option>
-            <option value="no">ไม่ใช่ Upgrade</option>
+            <option value="yes">Scale Up</option>
+            <option value="no">ไม่ใช่ Scale Up</option>
           </select>
           <button type="button" onClick={() => setEditing({ ...empty })} className="h-10 px-5 rounded-lg bg-primary text-white text-sm font-semibold hover:bg-primary-dark transition-colors">+ เพิ่ม Package</button>
         </div>
@@ -145,7 +145,7 @@ export default function ManagePackagesPage() {
                   {/* Row 1: Name + badges */}
                   <div className="flex items-center gap-2 mb-2">
                     <span className="font-bold text-lg text-gray-900 truncate">{pkg.name}</span>
-                    {pkg.is_upgrade && <span className="text-xs font-bold px-2 py-0.5 rounded bg-blue-50 text-blue-600 uppercase shrink-0">Upgrade</span>}
+                    {pkg.is_upgrade && <span className="text-xs font-bold px-2 py-0.5 rounded bg-blue-50 text-blue-600 shrink-0">SCALE UP</span>}
                     <span className="text-sm font-mono text-gray-500 shrink-0">{pkg.kwp} kWp · {pkg.phase === 0 ? "All Phase" : `${pkg.phase}P`}</span>
                   </div>
 
@@ -228,7 +228,7 @@ export default function ManagePackagesPage() {
                     { key: "has_panel", label: "Panel", color: "amber" },
                     { key: "has_inverter", label: "Inverter", color: "violet" },
                     { key: "has_battery", label: "Battery", color: "green" },
-                    { key: "is_upgrade", label: "Upgrade", color: "blue" },
+                    { key: "is_upgrade", label: "Scale Up", color: "blue" },
                   ].map(f => (
                     <button key={f.key} type="button" onClick={() => setEditing({ ...editing, [f.key]: !(editing as Record<string, unknown>)[f.key] })}
                       className={`px-3 py-1.5 rounded-lg text-xs font-semibold border transition-all ${(editing as Record<string, unknown>)[f.key] ? `bg-${f.color}-50 text-${f.color}-700 border-${f.color}-200` : "bg-white text-gray-400 border-gray-200"}`}>

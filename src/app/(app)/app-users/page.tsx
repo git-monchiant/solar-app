@@ -52,6 +52,7 @@ function UsersList({ currentUserId }: { currentUserId: number }) {
   const [users, setUsers] = useState<UserRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [editing, setEditing] = useState<UserRow | "new" | null>(null);
+  const [search, setSearch] = useState("");
 
   const load = () => {
     setLoading(true);
@@ -59,17 +60,59 @@ function UsersList({ currentUserId }: { currentUserId: number }) {
   };
   useEffect(load, []);
 
+  const q = search.trim().toLowerCase();
+  const visibleUsers = q
+    ? users.filter((u) => {
+        const hay = [
+          u.username, u.full_name, u.team, u.phone, u.email,
+          (u.roles || []).join(" "),
+          u.is_active ? "active" : "disabled",
+        ].filter(Boolean).join(" ").toLowerCase();
+        return hay.includes(q);
+      })
+    : users;
+
   return (
     <div className="space-y-4">
-      <div className="flex items-center justify-between">
-        <div>
+      <div className="flex items-center justify-between gap-3">
+        <div className="min-w-0">
           <h2 className="text-sm font-bold text-gray-900">ผู้ใช้งานระบบ</h2>
           <p className="text-xs text-gray-500 mt-0.5">เพิ่ม/แก้ไข/ปิดการใช้งาน บัญชีผู้ใช้</p>
         </div>
         <button type="button" onClick={() => setEditing("new")}
-          className="h-10 px-4 rounded-lg text-sm font-semibold text-white bg-primary hover:bg-primary-dark transition-colors">
+          className="h-10 px-4 rounded-lg text-sm font-semibold text-white bg-primary hover:bg-primary-dark transition-colors shrink-0">
           + เพิ่มผู้ใช้
         </button>
+      </div>
+
+      <div className="relative">
+        <svg className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400 pointer-events-none" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+          <path strokeLinecap="round" strokeLinejoin="round" d="M21 21l-4.35-4.35M10.5 18a7.5 7.5 0 100-15 7.5 7.5 0 000 15z" />
+        </svg>
+        <input
+          type="text"
+          value={search}
+          onChange={(e) => setSearch(e.target.value)}
+          placeholder="ค้นหา username, ชื่อ, เบอร์, email, role…"
+          className="w-full h-10 pl-9 pr-24 rounded-lg border border-gray-200 bg-white text-sm focus:outline-none focus:border-primary focus:ring-2 focus:ring-primary/20 transition"
+        />
+        {search && (
+          <div className="absolute right-2 top-1/2 -translate-y-1/2 flex items-center gap-1.5">
+            <span className="text-[11px] text-gray-400 tabular-nums">
+              {visibleUsers.length}/{users.length}
+            </span>
+            <button
+              type="button"
+              onClick={() => setSearch("")}
+              aria-label="ล้างคำค้น"
+              className="w-6 h-6 rounded-full hover:bg-gray-100 flex items-center justify-center text-gray-400 hover:text-gray-600 transition"
+            >
+              <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
+                <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
+              </svg>
+            </button>
+          </div>
+        )}
       </div>
 
       <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
@@ -91,7 +134,7 @@ function UsersList({ currentUserId }: { currentUserId: number }) {
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-100">
-              {users.map(u => (
+              {visibleUsers.map(u => (
                 <tr key={u.id} className={u.is_active ? "" : "opacity-50"}>
                   <td className="px-4 py-3 font-mono text-xs">{u.username}</td>
                   <td className="px-4 py-3 font-semibold">{u.full_name}</td>
@@ -117,8 +160,10 @@ function UsersList({ currentUserId }: { currentUserId: number }) {
                   </td>
                 </tr>
               ))}
-              {users.length === 0 && (
-                <tr><td colSpan={7} className="px-4 py-10 text-center text-sm text-gray-400">ยังไม่มีผู้ใช้</td></tr>
+              {visibleUsers.length === 0 && (
+                <tr><td colSpan={7} className="px-4 py-10 text-center text-sm text-gray-400">
+                  {users.length === 0 ? "ยังไม่มีผู้ใช้" : `ไม่พบ "${search}"`}
+                </td></tr>
               )}
             </tbody>
           </table>

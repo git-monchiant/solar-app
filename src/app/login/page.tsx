@@ -11,11 +11,16 @@ export default function LoginPage() {
   const [showPw, setShowPw] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
+  const [version, setVersion] = useState<string | null>(null);
 
   useEffect(() => {
     if (typeof window !== "undefined" && localStorage.getItem("userId")) {
       router.replace("/today");
     }
+    fetch("/api/version", { cache: "no-store" })
+      .then((r) => r.ok ? r.json() : null)
+      .then((d) => d?.version && setVersion(d.version))
+      .catch(() => {});
   }, [router]);
 
   const submit = async (e: React.FormEvent) => {
@@ -145,8 +150,8 @@ export default function LoginPage() {
             <a href="#" className="font-medium text-gray-600 hover:text-primary transition-colors">Contact admin</a>
             <div className="mt-2 text-[12px] md:text-[11px]">
               © {new Date().getFullYear()} Sena Solar Energy
-              {process.env.NEXT_PUBLIC_APP_VERSION && (
-                <span className="ml-2 font-mono">v{process.env.NEXT_PUBLIC_APP_VERSION}</span>
+              {version && (
+                <span className="ml-2 font-mono">v{version}</span>
               )}
             </div>
           </div>

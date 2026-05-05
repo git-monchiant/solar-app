@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { useEffect, useState } from "react";
 import RoleSwitcher from "./RoleSwitcher";
 
 interface HeaderProps {
@@ -13,6 +14,13 @@ interface HeaderProps {
 }
 
 export default function Header({ title, subtitle, backHref, rightContent, hideAvatar, children }: HeaderProps) {
+  const [version, setVersion] = useState<string | null>(null);
+  useEffect(() => {
+    fetch("/api/version", { cache: "no-store" })
+      .then((r) => r.ok ? r.json() : null)
+      .then((d) => d?.version && setVersion(d.version))
+      .catch(() => {});
+  }, []);
   return (
     <div className="bg-gradient-to-b from-primary via-primary/50 to-white sticky top-0 z-10" style={{ paddingTop: "env(safe-area-inset-top, 0px)" }}>
       <div className="h-16 px-5 flex items-center gap-3">
@@ -26,9 +34,9 @@ export default function Header({ title, subtitle, backHref, rightContent, hideAv
         <div className="flex-1 min-w-0">
           <h1 className="text-lg font-bold tracking-tight leading-tight text-gray-900 truncate flex items-baseline gap-1.5">
             {title}
-            {process.env.NEXT_PUBLIC_APP_VERSION && (
+            {version && (
               <span className="text-sm font-mono font-semibold text-gray-500 tracking-normal shrink-0">
-                v{process.env.NEXT_PUBLIC_APP_VERSION}
+                v{version}
               </span>
             )}
           </h1>

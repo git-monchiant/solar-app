@@ -58,7 +58,7 @@ export default function PackagesPage() {
   const TABS = [
     { key: "solar" as TabKey, label: "Solar", count: packages.filter((p) => !p.has_battery && !p.is_upgrade).length },
     { key: "battery" as TabKey, label: "Battery", count: packages.filter((p) => p.has_battery && !p.is_upgrade).length },
-    { key: "upgrade" as TabKey, label: "Upgrade", count: packages.filter((p) => p.is_upgrade).length },
+    { key: "upgrade" as TabKey, label: "Scale Up", count: packages.filter((p) => p.is_upgrade).length },
   ];
 
   return (
@@ -87,7 +87,7 @@ export default function PackagesPage() {
                 <div className="bg-gradient-to-br from-primary/5 to-primary/10 px-4 py-3 flex flex-wrap items-center gap-1.5">
                   <span className="text-base font-bold text-primary">{pkg.name}</span>
                   {pkg.is_upgrade && (
-                    <span className="text-xs font-bold px-2 py-0.5 rounded uppercase bg-blue-50 text-blue-600 border border-blue-100">UPGRADE</span>
+                    <span className="text-xs font-bold px-2 py-0.5 rounded bg-blue-50 text-blue-600 border border-blue-100">SCALE UP</span>
                   )}
                   {pkg.phase > 0 && (
                     <span className="text-xs font-semibold px-2 py-0.5 rounded-full bg-white border border-primary/20 text-primary">

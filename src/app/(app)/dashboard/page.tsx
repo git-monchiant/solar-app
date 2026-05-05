@@ -142,13 +142,13 @@ export default function DashboardPage() {
 
         {/* Activity Heatmap */}
         <div className="rounded-xl bg-white border border-gray-300 p-4">
-          <div className="text-xs font-semibold uppercase tracking-wider text-gray-400 mb-3">การติดตามลูกค้า <span className="normal-case text-gray-300">({new Date().toLocaleDateString("th-TH", { month: "long", year: "numeric" })})</span></div>
+          <div className="text-xs font-semibold uppercase tracking-wider text-gray-400 mb-3">การติดตามลูกค้า <span className="normal-case text-gray-300">(30 วันล่าสุด)</span></div>
           <ActivityChart data={data.activity_heatmap} />
         </div>
 
         {/* LINE OA growth */}
         <div className="rounded-xl bg-white border border-gray-300 p-4">
-          <div className="text-xs font-semibold uppercase tracking-wider text-gray-400 mb-3">Add LINE OA รายวัน <span className="normal-case text-gray-300">({new Date().toLocaleDateString("th-TH", { month: "long", year: "numeric" })})</span></div>
+          <div className="text-xs font-semibold uppercase tracking-wider text-gray-400 mb-3">Add LINE OA รายวัน <span className="normal-case text-gray-300">(30 วันล่าสุด)</span></div>
           <LineGrowthChart users={lineUsers} />
         </div>
 
@@ -246,11 +246,14 @@ function ActivityChart({ data }: { data: { day: string; lead_id: number; full_na
   const [isMobile, setIsMobile] = useState(false);
   useEffect(() => { setIsMobile(window.innerWidth < 768); }, []);
 
+  // Rolling window: 30 days history + 3-day future buffer (matches seeker dashboard).
+  // Mobile keeps the tighter 7+1 view because there's no horizontal room.
   const today = new Date();
+  const HISTORY = 30;
+  const FUTURE_PAD = 3;
   const allDayKeys: string[] = [];
-  const daysInMonth = new Date(today.getFullYear(), today.getMonth() + 1, 0).getDate();
-  for (let i = 1; i <= daysInMonth; i++) {
-    const d = new Date(today.getFullYear(), today.getMonth(), i);
+  for (let i = HISTORY - 1; i >= -FUTURE_PAD; i--) {
+    const d = new Date(today.getFullYear(), today.getMonth(), today.getDate() - i);
     allDayKeys.push(`${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`);
   }
 
@@ -384,24 +387,25 @@ function ActivityChart({ data }: { data: { day: string; lead_id: number; full_na
 }
 
 function LineGrowthChart({ users }: { users: { created_at: string; phone: string | null; house_number: string | null }[] }) {
+  // Rolling 30 days history + 3-day future buffer (matches seeker dashboard).
   const today = new Date();
-  const year = today.getFullYear();
-  const month = today.getMonth();
-  const daysInMonth = new Date(year, month + 1, 0).getDate();
+  const HISTORY = 30;
+  const FUTURE_PAD = 3;
+  const dayKeys: string[] = [];
+  for (let i = HISTORY - 1; i >= -FUTURE_PAD; i--) {
+    const d = new Date(today.getFullYear(), today.getMonth(), today.getDate() - i);
+    dayKeys.push(`${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`);
+  }
+  const indexByKey = new Map(dayKeys.map((k, i) => [k, i]));
 
-  // Bucket users into the day they joined. Each entry keeps its phone +
-  // house_number so the block can be colored individually (blue = shared
-  // phone or house number, green = neither). Sort ascending by created_at
-  // within a day so the EARLIEST add sits at the bottom of the stack (the
-  // chart uses flex-col-reverse, where the first child renders at the bottom).
-  const byDay: { phone: string | null; house_number: string | null; ts: number }[][] = Array.from({ length: daysInMonth }, () => []);
+  const byDay: { phone: string | null; house_number: string | null; ts: number }[][] = dayKeys.map(() => []);
   for (const u of users) {
-    // Keep the Z — parse as UTC so getDate() returns the user's local day.
     const d = new Date(String(u.created_at));
     if (isNaN(d.getTime())) continue;
-    if (d.getFullYear() !== year || d.getMonth() !== month) continue;
-    const day = d.getDate();
-    if (day >= 1 && day <= daysInMonth) byDay[day - 1].push({ phone: u.phone, house_number: u.house_number, ts: d.getTime() });
+    const k = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+    const idx = indexByKey.get(k);
+    if (idx === undefined) continue;
+    byDay[idx].push({ phone: u.phone, house_number: u.house_number, ts: d.getTime() });
   }
   for (const blocks of byDay) blocks.sort((a, b) => a.ts - b.ts);
 
@@ -415,10 +419,7 @@ function LineGrowthChart({ users }: { users: { created_at: string; phone: string
   if (!yTicks.includes(maxCount)) yTicks.push(maxCount);
 
   const totalMonth = counts.reduce((a, b) => a + b, 0);
-  const totalWithContact = users.filter((u) => {
-    const d = new Date(String(u.created_at));
-    return !isNaN(d.getTime()) && d.getFullYear() === year && d.getMonth() === month && (!!u.phone || !!u.house_number);
-  }).length;
+  const totalWithContact = byDay.flat().filter((b) => !!b.phone || !!b.house_number).length;
 
   return (
     <div>
@@ -434,12 +435,13 @@ function LineGrowthChart({ users }: { users: { created_at: string; phone: string
               {blocks.map((b, j) => {
                 const hasContact = !!b.phone || !!b.house_number;
                 const tip = [b.phone && `เบอร์ ${b.phone}`, b.house_number && `บ้าน ${b.house_number}`].filter(Boolean).join(" · ") || "ยังไม่มีข้อมูล";
+                const dayLabel = parseInt(dayKeys[i].slice(8));
                 return (
                   <div
                     key={j}
                     className={`rounded-sm ${hasContact ? "bg-blue-600" : "bg-emerald-500"}`}
                     style={{ height: 18 }}
-                    title={`${i + 1} · ${tip}`}
+                    title={`${dayLabel} · ${tip}`}
                   />
                 );
               })}
@@ -448,12 +450,12 @@ function LineGrowthChart({ users }: { users: { created_at: string; phone: string
         </div>
       </div>
       <div className="flex gap-[3px] mt-1 ml-6">
-        {counts.map((_, i) => (
-          <div key={i} className="flex-1 text-center text-[10px] text-gray-400 truncate">{i + 1}</div>
+        {dayKeys.map((dk, i) => (
+          <div key={i} className="flex-1 text-center text-[10px] text-gray-400 truncate">{parseInt(dk.slice(8))}</div>
         ))}
       </div>
       <div className="flex items-center justify-between mt-2">
-        <span className="text-xs text-gray-400">รวมเดือนนี้ {totalMonth} คน · ให้ข้อมูล {totalWithContact} คน · 1 block = 1 user</span>
+        <span className="text-xs text-gray-400">รวม 30 วัน {totalMonth} คน · ให้ข้อมูล {totalWithContact} คน · 1 block = 1 user</span>
         <div className="flex items-center gap-3 text-[10px] text-gray-400">
           <div className="flex items-center gap-1">
             <div className="w-[10px] h-[10px] rounded-sm bg-blue-600" />

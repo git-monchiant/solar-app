@@ -531,7 +531,7 @@ export default function SeekerPage() {
                     if (status === "interested" && p.interest_type === "upgrade") {
                       chips.push(
                         <span key="upgrade" className="flex-1 inline-flex items-center justify-start text-xs font-bold tracking-wider uppercase text-blue-700 py-0.5">
-                          Upgrade
+                          Scale Up
                         </span>
                       );
                     }
@@ -1131,7 +1131,7 @@ function VisitModal({ prospect, projects, onClose, onSaved, onRefresh }: { prosp
   };
   const visitChoices: VisitChoice[] = [
     { key: "interested-new", label: "สนใจ - ติดตั้ง", interest: "interested", type: "new", color: "bg-green-600 border-green-600 text-white", idle: "bg-white border-green-500 text-green-700 hover:bg-green-50", icon: "new" },
-    { key: "interested-upgrade", label: "สนใจ - Upgrade", interest: "interested", type: "upgrade", color: "bg-blue-600 border-blue-600 text-white", idle: "bg-white border-blue-500 text-blue-700 hover:bg-blue-50", icon: "upgrade" },
+    { key: "interested-upgrade", label: "สนใจ - Scale Up", interest: "interested", type: "upgrade", color: "bg-blue-600 border-blue-600 text-white", idle: "bg-white border-blue-500 text-blue-700 hover:bg-blue-50", icon: "upgrade" },
     { key: "undecided", label: "ยังไม่ตัดสินใจ", interest: "undecided", type: null, color: "bg-amber-500 border-amber-500 text-white", idle: "bg-white border-amber-400 text-amber-700 hover:bg-amber-50", icon: "undecided" },
     { key: "not_home", label: "ไม่อยู่บ้าน", interest: "not_home", type: null, color: "bg-amber-500 border-amber-500 text-white", idle: "bg-white border-amber-400 text-amber-700 hover:bg-amber-50", icon: "not_home" },
     { key: "not_interested", label: "ไม่สนใจ", interest: "not_interested", type: null, color: "bg-red-500 border-red-500 text-white", idle: "bg-white border-red-400 text-red-700 hover:bg-red-50", icon: "not_interested" },
@@ -1679,7 +1679,7 @@ function VisitModal({ prospect, projects, onClose, onSaved, onRefresh }: { prosp
           const canCreate = isInterested && hasContact;
           const isReturnedHere = !!localReturnedAt && !!leadIdLocal;
           const reason = !isInterested
-            ? "ต้องเลือก \"สนใจ - ติดตั้ง\" หรือ \"สนใจ - Upgrade\" ก่อน"
+            ? "ต้องเลือก \"สนใจ - ติดตั้ง\" หรือ \"สนใจ - Scale Up\" ก่อน"
             : !hasContact
               ? "ต้องมีเบอร์โทรหรือ LINE อย่างน้อย 1 อย่าง"
               : "";
@@ -1721,7 +1721,7 @@ function VisitModal({ prospect, projects, onClose, onSaved, onRefresh }: { prosp
               if (!ok) return;
               setCreatingLead(true);
               try {
-                const interestTypeMap: Record<string, string> = { new: "ลูกค้าใหม่", upgrade: "Upgrade" };
+                const interestTypeMap: Record<string, string> = { new: "ลูกค้าใหม่", upgrade: "Scale Up" };
                 const customerType = interestType && interestTypeMap[interestType] ? interestTypeMap[interestType] : null;
                 // Seeker-only context that has no direct column on leads — fold
                 // into `requirement` so sales sees it on the pre-survey screen.

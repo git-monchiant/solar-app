@@ -15,7 +15,7 @@ export const SOURCE_STYLES: Record<SourceKey, { label: string; cls: string }> = 
   ads:     { label: "Ads",      cls: "bg-orange-50 text-orange-700 ring-orange-200" },
   the1:    { label: "The1",     cls: "bg-pink-50 text-pink-700 ring-pink-200" },
   web:     { label: "Web",      cls: "bg-sky-50 text-sky-700 ring-sky-200" },
-  refer:   { label: "Refer",    cls: "bg-emerald-50 text-emerald-700 ring-emerald-200" },
+  refer:   { label: "มีคนแนะนำ",    cls: "bg-emerald-50 text-emerald-700 ring-emerald-200" },
   email:   { label: "Email",    cls: "bg-amber-50 text-amber-700 ring-amber-200" },
   line:    { label: "LINE",     cls: "bg-green-50 text-green-700 ring-green-200" },
   seeker:  { label: "Seeker",   cls: "bg-teal-50 text-teal-700 ring-teal-200" },

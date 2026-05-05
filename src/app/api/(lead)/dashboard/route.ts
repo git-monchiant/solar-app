@@ -62,6 +62,8 @@ export async function GET(req: NextRequest) {
         LEFT JOIN users u ON la.created_by = u.id
         ORDER BY la.created_at DESC
       `),
+      // Rolling 33-day window: last 30 days of activity + 3-day future buffer to
+      // match seeker dashboard. Future bars stay empty on the client.
       db.request().query(`
         SELECT CAST(la.created_at AS DATE) as day, la.lead_id, l.full_name, la.activity_type,
                COALESCE(
@@ -79,8 +81,7 @@ export async function GET(req: NextRequest) {
                ) THEN 1 ELSE 0 END as has_paid
         FROM lead_activities la
         JOIN leads l ON la.lead_id = l.id
-        WHERE la.created_at >= DATEFROMPARTS(YEAR(GETDATE()), MONTH(GETDATE()), 1)
-          AND la.created_at < DATEADD(MONTH, 1, DATEFROMPARTS(YEAR(GETDATE()), MONTH(GETDATE()), 1))
+        WHERE la.created_at >= DATEADD(day, -33, CAST(GETDATE() AS DATE))
         ORDER BY day, la.created_at ASC
       `),
     ]);
