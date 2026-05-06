@@ -982,7 +982,7 @@ export default function OrderStep({ lead, state, refresh, expanded, onToggle }: 
           </div>
           <div>
             <label className="text-xs font-semibold tracking-wider uppercase text-gray-400 block mb-1">กำหนดเข้าติดตั้ง</label>
-            <CalendarPicker date={installDate} timeSlot="" onDateChange={setInstallDate} onTimeSlotChange={() => {}} showTimeSlot={false} showSurveySlots excludeLeadId={lead.id} />
+            <CalendarPicker date={installDate} timeSlot="" onDateChange={setInstallDate} onTimeSlotChange={() => {}} showTimeSlot={false} showSurveySlots excludeLeadId={lead.id} zoneFilter={zone} />
           </div>
         </div>
       )}

@@ -2,15 +2,13 @@
 
 import { apiFetch } from "@/lib/api";
 import { useEffect, useState } from "react";
-import Link from "next/link";
 import LeadCard, { LeadData } from "@/components/lead/LeadCard";
 import ListPageHeader from "@/components/layout/ListPageHeader";
 import NewLeadModal from "@/components/modal/NewLeadModal";
 import ChannelPickerModal from "@/components/shared/ChannelPickerModal";
 import type { ChannelCode } from "@/lib/constants/channels";
 import { useActiveRoles, hasRole } from "@/lib/roles";
-import { getStatusLabel } from "@/lib/constants/statuses";
-import { formatSlotsRange } from "@/lib/time-slots";
+import EventCalendarList from "@/components/calendar/EventCalendarList";
 
 interface TodayData {
   newLeads: LeadData[];
@@ -32,8 +30,7 @@ export default function TodayPage() {
   const [loading, setLoading] = useState(true);
   const [tab, setTab] = useState<"sales" | "sales_solar" | "solar" | "calendar">("sales");
   const [search, setSearch] = useState("");
-  const [scheduledSurveys, setScheduledSurveys] = useState<{ id: number; full_name: string; event_date: string; time_slot: string | null; event_type: string; status: string; zone: string | null }[]>([]);
-  const [zones, setZones] = useState<{ id: number; name: string }[]>([]);
+  const [zones, setZones] = useState<{ id: number; name: string; color?: string | null }[]>([]);
   const [selectedZone, setSelectedZone] = useState<string>("กรุงเทพ ทีม 1");
   const [channelPickerOpen, setChannelPickerOpen] = useState(false);
   const [pickedChannel, setPickedChannel] = useState<ChannelCode | null>(null);
@@ -43,7 +40,6 @@ export default function TodayPage() {
     const savedZone = localStorage.getItem("selectedZone");
     if (savedZone) setSelectedZone(savedZone);
 
-    apiFetch("/api/surveys/scheduled").then(setScheduledSurveys).catch(console.error);
     apiFetch("/api/zones").then(setZones).catch(console.error);
     apiFetch("/api/today").then((t) => {
       setTodayData(t);
@@ -66,6 +62,22 @@ export default function TodayPage() {
       setTab(fallback);
     }
   }, [activeRoles, tab]);
+
+  // Snap to today's row whenever the calendar tab becomes visible — the list
+  // window starts at the 1st of the current month, so without this the user
+  // lands on past dates instead of today.
+  useEffect(() => {
+    if (tab !== "calendar") return;
+    const t = new Date();
+    const k = `${t.getFullYear()}-${String(t.getMonth() + 1).padStart(2, "0")}-${String(t.getDate()).padStart(2, "0")}`;
+    let tries = 0;
+    const tick = () => {
+      const el = document.getElementById(`day-${k}`);
+      if (el) { el.scrollIntoView({ behavior: "auto", block: "start" }); return; }
+      if (++tries < 30) setTimeout(tick, 50);
+    };
+    tick();
+  }, [tab]);
 
   if (loading || activeRoles.length === 0) {
     return (
@@ -296,111 +308,42 @@ export default function TodayPage() {
           </>
         )}
 
-        {/* Calendar Tab — list view with events per day */}
-        {visibleTab === "calendar" && (() => {
-          const today = new Date();
-          const filtered = selectedZone === "all" ? scheduledSurveys : scheduledSurveys.filter(s => s.zone === selectedZone);
-          const surveyByDate: Record<string, typeof scheduledSurveys> = {};
-          filtered.forEach(s => {
-            const key = String(s.event_date).slice(0, 10);
-            if (!surveyByDate[key]) surveyByDate[key] = [];
-            surveyByDate[key].push(s);
-          });
-
-          // Generate days for 2 months from today
-          const days: string[] = [];
-          for (let i = 0; i < 60; i++) {
-            const d = new Date(today.getFullYear(), today.getMonth(), today.getDate() + i);
-            const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
-            days.push(key);
-          }
-
-          // Group by month
-          const byMonth: Record<string, string[]> = {};
-          days.forEach(dk => {
-            const mk = dk.slice(0, 7);
-            if (!byMonth[mk]) byMonth[mk] = [];
-            byMonth[mk].push(dk);
-          });
-
-          const isToday = (dk: string) => {
-            const t = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, "0")}-${String(today.getDate()).padStart(2, "0")}`;
-            return dk === t;
-          };
-
-          const fmtDay = (dk: string) => {
-            const d = new Date(dk + "T12:00:00");
-            return {
-              weekday: d.toLocaleDateString("th-TH", { weekday: "short" }),
-              day: d.getDate(),
-              hasJobs: (surveyByDate[dk]?.length || 0) > 0,
-              jobs: surveyByDate[dk] || [],
-            };
-          };
-
-          return (
-            <div className="space-y-4">
-              {/* Zone filter */}
-              <div className="flex gap-2 flex-wrap">
-                <button type="button" onClick={() => { setSelectedZone("all"); localStorage.setItem("selectedZone", "all"); }} className={`px-3 h-8 rounded-lg text-xs font-semibold border transition-all ${selectedZone === "all" ? "bg-active text-white border-active" : "bg-white text-gray-600 border-gray-200"}`} style={{ minHeight: 0 }}>All</button>
-                {zones.map(z => (
-                  <button key={z.id} type="button" onClick={() => { setSelectedZone(z.name); localStorage.setItem("selectedZone", z.name); }} className={`px-3 h-8 rounded-lg text-xs font-semibold border transition-all ${selectedZone === z.name ? "bg-active text-white border-active" : "bg-white text-gray-600 border-gray-200"}`} style={{ minHeight: 0 }}>{z.name}</button>
-                ))}
-              </div>
-              {Object.entries(byMonth).map(([mk, daysInMonth]) => (
-                <div key={mk}>
-                  <div className="text-xs font-bold text-gray-400 uppercase tracking-wider mb-2 px-1">
-                    {new Date(mk + "-15T12:00:00").toLocaleDateString("th-TH", { month: "long", year: "numeric" })}
-                  </div>
-                  <div className="space-y-1">
-                    {daysInMonth.map(dk => {
-                      const { weekday, day, hasJobs, jobs } = fmtDay(dk);
-                      const todayClass = isToday(dk);
-                      return (
-                        <div key={dk} className={`rounded-xl border p-3 ${todayClass ? "border-primary bg-primary/5" : hasJobs ? "border-gray-200 bg-white" : "border-transparent"}`}>
-                          <div className="flex items-start gap-3">
-                            <div className={`w-10 text-center shrink-0 ${todayClass ? "text-primary" : "text-gray-500"}`}>
-                              <div className="text-[10px] font-semibold uppercase">{weekday}</div>
-                              <div className={`text-lg font-bold ${todayClass ? "text-primary" : hasJobs ? "text-gray-900" : "text-gray-400"}`}>{day}</div>
-                            </div>
-                            <div className="flex-1 min-w-0">
-                              {jobs.length === 0 && !todayClass ? null : jobs.length === 0 ? (
-                                <div className="text-xs text-gray-400 py-1">ไม่มีนัดหมาย</div>
-                              ) : (
-                                <div className="space-y-1">
-                                  {jobs.map(j => {
-                                    const STATUS_COLOR: Record<string, { bg: string; bar: string; label: string }> = {
-                                      survey:  { bg: "bg-violet-100 hover:bg-violet-200",   bar: "bg-violet-500",  label: "สำรวจหน้างาน" },
-                                      quote:   { bg: "bg-orange-100 hover:bg-orange-200",   bar: "bg-orange-500",  label: "รอใบเสนอราคา" },
-                                      order:   { bg: "bg-green-100 hover:bg-green-200",     bar: "bg-green-500",   label: j.event_type === "install" ? "นัดติดตั้ง" : "รออนุมัติ/ชำระ" },
-                                      install: { bg: "bg-emerald-100 hover:bg-emerald-200", bar: "bg-emerald-500", label: getStatusLabel(j) },
-                                    };
-                                    const c = STATUS_COLOR[j.status] || { bg: "bg-gray-100 hover:bg-gray-200", bar: "bg-gray-400", label: j.status };
-                                    return (
-                                      <Link key={`${j.event_type}-${j.id}`} href={`/leads/${j.id}`} className={`flex items-center gap-2 p-2 rounded-lg transition-colors ${c.bg}`}>
-                                        <div className={`w-1.5 h-6 rounded-full shrink-0 ${c.bar}`} />
-                                        <div className="flex-1 min-w-0">
-                                          <div className="text-xs font-semibold text-gray-900 truncate">{j.full_name}</div>
-                                          <div className="text-[10px] text-gray-500">
-                                            {formatSlotsRange(j.time_slot)} · {c.label}
-                                          </div>
-                                        </div>
-                                      </Link>
-                                    );
-                                  })}
-                                </div>
-                              )}
-                            </div>
-                          </div>
-                        </div>
-                      );
-                    })}
-                  </div>
-                </div>
-              ))}
+        {/* Calendar Tab — shared list view (same component as /calendar) */}
+        {visibleTab === "calendar" && (
+          <div className="space-y-4">
+            <div className="flex gap-2 flex-wrap">
+              <button
+                type="button"
+                onClick={() => { setSelectedZone("all"); localStorage.setItem("selectedZone", "all"); }}
+                className={`px-3 h-8 rounded-lg text-xs font-semibold border transition-all ${selectedZone === "all" ? "bg-active text-white border-active" : "bg-white text-gray-600 border-gray-200"}`}
+                style={{ minHeight: 0 }}
+              >
+                All
+              </button>
+              {zones.map((z) => {
+                const active = selectedZone === z.name;
+                return (
+                  <button
+                    key={z.id}
+                    type="button"
+                    onClick={() => { setSelectedZone(z.name); localStorage.setItem("selectedZone", z.name); }}
+                    className="px-3 h-8 rounded-lg text-xs font-semibold border transition-all inline-flex items-center gap-1.5"
+                    style={{
+                      minHeight: 0,
+                      backgroundColor: active && z.color ? z.color : "white",
+                      borderColor: z.color || "#e5e7eb",
+                      color: active ? "white" : (z.color || "#4b5563"),
+                    }}
+                  >
+                    {!active && z.color && <span className="w-2 h-2 rounded-full" style={{ backgroundColor: z.color }} />}
+                    {z.name}
+                  </button>
+                );
+              })}
             </div>
-          );
-        })()}
+            <EventCalendarList monthsBack={0} monthsForward={2} controlledZone={selectedZone} hideNav />
+          </div>
+        )}
       </div>
 
       {/* FAB — primary teal */}

@@ -389,6 +389,7 @@ export default function InstallStep({ lead, state, refresh, expanded, onToggle }
         currentDate={lead.install_date}
         showTimeSlot={false}
         excludeLeadId={lead.id}
+        zoneFilter={lead.zone}
         onCancel={() => setRescheduling(false)}
         onSave={saveReschedule}
       />

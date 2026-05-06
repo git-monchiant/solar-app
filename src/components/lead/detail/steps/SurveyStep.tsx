@@ -622,6 +622,7 @@ export default function SurveyStep({ lead, state, refresh, packages, expanded, o
         currentSlot={lead.survey_time_slot}
         showTimeSlot
         excludeLeadId={lead.id}
+        zoneFilter={lead.zone}
         onCancel={() => setRescheduling(false)}
         onSave={saveReschedule}
       />

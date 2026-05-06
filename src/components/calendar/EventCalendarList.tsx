@@ -21,19 +21,41 @@ type ScheduledEvent = {
   zone: string | null;
 };
 
-const STATUS_COLOR = (j: ScheduledEvent): { bg: string; bar: string; label: string } => {
-  if (j.event_type === "block") return { bg: "bg-gray-100", bar: "bg-gray-400", label: "งานอื่น" };
-  // event_type drives color (survey vs install) so the chip matches the
-  // calendar legend regardless of whether the lead has advanced past that
-  // stage. Status only refines the wording.
-  if (j.event_type === "survey") {
-    return { bg: "bg-violet-100 hover:bg-violet-200", bar: "bg-violet-500", label: "นัดสำรวจ" };
-  }
-  if (j.event_type === "install") {
-    return { bg: "bg-emerald-100 hover:bg-emerald-200", bar: "bg-emerald-500", label: "นัดติดตั้ง" };
-  }
-  return { bg: "bg-gray-100 hover:bg-gray-200", bar: "bg-gray-400", label: getStatusLabel(j) };
+// Pill background neutral; the colored bar on the left is what carries the
+// zone identity. Label text still says survey/install so the row stays
+// readable at a glance.
+const STATUS_LABEL = (j: ScheduledEvent): string => {
+  if (j.event_type === "block") return "งานอื่น";
+  if (j.event_type === "survey") return "นัดสำรวจ";
+  if (j.event_type === "install") return "นัดติดตั้ง";
+  return getStatusLabel(j);
 };
+
+// Icon picks the appointment kind so colour can be reserved for zone identity.
+function EventIcon({ type }: { type: string }) {
+  if (type === "block") {
+    return (
+      <svg className="w-3.5 h-3.5 shrink-0 text-gray-500" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+        <path strokeLinecap="round" strokeLinejoin="round" d="M18.364 18.364A9 9 0 005.636 5.636m12.728 12.728L5.636 5.636" />
+      </svg>
+    );
+  }
+  if (type === "survey") {
+    return (
+      <svg className="w-3.5 h-3.5 shrink-0 text-gray-600" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+        <path strokeLinecap="round" strokeLinejoin="round" d="M21 21l-5.197-5.197m0 0A7.5 7.5 0 105.196 5.196a7.5 7.5 0 0010.607 10.607z" />
+      </svg>
+    );
+  }
+  if (type === "install") {
+    return (
+      <svg className="w-3.5 h-3.5 shrink-0 text-gray-600" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+        <path strokeLinecap="round" strokeLinejoin="round" d="M3.75 13.5l10.5-11.25L12 10.5h8.25L9.75 21.75 12 13.5H3.75z" />
+      </svg>
+    );
+  }
+  return null;
+}
 
 interface Props {
   // Window of months shown around the anchor — default anchors at the
@@ -63,11 +85,18 @@ function ymdLocal(d: Date) {
 
 export default function EventCalendarList({ monthsBack, monthsForward, days, zoneFilter = "all", showZoneChips = false, toolbarRight, anchor: controlledAnchor, hideNav = false, controlledZone, onVisibleMonthChange }: Props) {
   const [events, setEvents] = useState<ScheduledEvent[]>([]);
-  const [zones, setZones] = useState<{ id: number; name: string }[]>([]);
+  const [zones, setZones] = useState<{ id: number; name: string; color?: string | null }[]>([]);
   const [loading, setLoading] = useState(true);
   const [internalZone, setInternalZone] = useState<string>(zoneFilter);
   const selectedZone = controlledZone ?? internalZone;
   const setSelectedZone = setInternalZone;
+  // name → hex color, derived once per zones load. Used to tint the row's
+  // left bar so "All" view shows team identity at a glance.
+  const zoneColor = useMemo(() => {
+    const m: Record<string, string> = {};
+    for (const z of zones) if (z.color) m[z.name] = z.color;
+    return m;
+  }, [zones]);
 
   // Anchor + window. Default anchor = "monthsBack months before today" so the
   // initial render still includes recent past months. Prev/Next move the
@@ -85,10 +114,10 @@ export default function EventCalendarList({ monthsBack, monthsForward, days, zon
 
   useEffect(() => {
     apiFetch("/api/surveys/scheduled").then(setEvents).catch(console.error).finally(() => setLoading(false));
-    if (showZoneChips) {
-      apiFetch("/api/zones").then(setZones).catch(console.error);
-    }
-  }, [showZoneChips]);
+    // Always fetch zones so we have the color map even when the parent owns
+    // the chips (controlledZone case).
+    apiFetch("/api/zones").then(setZones).catch(console.error);
+  }, []);
 
   const todayKey = ymdLocal(today);
 
@@ -176,11 +205,22 @@ export default function EventCalendarList({ monthsBack, monthsForward, days, zon
               <button type="button" onClick={() => setSelectedZone("all")}
                 className={`px-3 h-8 rounded-lg text-xs font-semibold border transition-all ${selectedZone === "all" ? "bg-active text-white border-active" : "bg-white text-gray-600 border-gray-200"}`}
                 style={{ minHeight: 0 }}>All</button>
-              {zones.map((z) => (
-                <button key={z.id} type="button" onClick={() => setSelectedZone(z.name)}
-                  className={`px-3 h-8 rounded-lg text-xs font-semibold border transition-all ${selectedZone === z.name ? "bg-active text-white border-active" : "bg-white text-gray-600 border-gray-200"}`}
-                  style={{ minHeight: 0 }}>{z.name}</button>
-              ))}
+              {zones.map((z) => {
+                const active = selectedZone === z.name;
+                return (
+                  <button key={z.id} type="button" onClick={() => setSelectedZone(z.name)}
+                    className="px-3 h-8 rounded-lg text-xs font-semibold border transition-all inline-flex items-center gap-1.5"
+                    style={{
+                      minHeight: 0,
+                      backgroundColor: active && z.color ? z.color : "white",
+                      borderColor: z.color || "#e5e7eb",
+                      color: active ? "white" : (z.color || "#4b5563"),
+                    }}>
+                    {!active && z.color && <span className="w-2 h-2 rounded-full" style={{ backgroundColor: z.color }} />}
+                    {z.name}
+                  </button>
+                );
+              })}
             </>
           )}
           {toolbarRight && <div className="ml-auto">{toolbarRight}</div>}
@@ -225,23 +265,30 @@ export default function EventCalendarList({ monthsBack, monthsForward, days, zon
                       ) : (
                         <div className="space-y-1">
                           {jobs.map((j) => {
-                            const c = STATUS_COLOR(j);
                             const isBlock = j.event_type === "block";
+                            const label = STATUS_LABEL(j);
+                            // Bar color comes from the lead's zone (block → gray fallback).
+                            const barColor = isBlock ? null : (j.zone ? zoneColor[j.zone] : null);
+                            const bg = isBlock ? "bg-gray-100" : "bg-gray-50 hover:bg-gray-100";
                             const inner = (
                               <>
-                                <div className={`w-1.5 h-6 rounded-full shrink-0 ${c.bar}`} />
+                                <div
+                                  className={`w-1.5 h-6 rounded-full shrink-0 ${barColor ? "" : "bg-gray-400"}`}
+                                  style={barColor ? { backgroundColor: barColor } : undefined}
+                                />
+                                <EventIcon type={j.event_type} />
                                 <div className="flex-1 min-w-0">
                                   <div className="text-xs font-semibold text-gray-900 truncate">{j.house_number ? `${j.house_number} - ${j.full_name}` : j.full_name}</div>
                                   <div className="text-[10px] text-gray-500">
-                                    {formatSlotsRange(j.time_slot) || (isBlock ? "ทั้งวัน" : "")}{j.time_slot || isBlock ? " · " : ""}{c.label}
+                                    {formatSlotsRange(j.time_slot) || (isBlock ? "ทั้งวัน" : "")}{j.time_slot || isBlock ? " · " : ""}{label}{j.zone ? ` · ${j.zone}` : ""}
                                   </div>
                                 </div>
                               </>
                             );
                             return isBlock ? (
-                              <div key={`block-${j.id}`} className={`flex items-center gap-2 p-2 rounded-lg ${c.bg}`}>{inner}</div>
+                              <div key={`block-${j.id}`} className={`flex items-center gap-2 p-2 rounded-lg ${bg}`}>{inner}</div>
                             ) : (
-                              <Link key={`${j.event_type}-${j.id}`} href={`/leads/${j.id}`} className={`flex items-center gap-2 p-2 rounded-lg transition-colors ${c.bg}`}>{inner}</Link>
+                              <Link key={`${j.event_type}-${j.id}`} href={`/leads/${j.id}`} className={`flex items-center gap-2 p-2 rounded-lg transition-colors ${bg}`}>{inner}</Link>
                             );
                           })}
                         </div>

@@ -50,11 +50,18 @@ export default function EventCalendarMonth({ toolbarRight, year: controlledYear,
   const setYear = setInternalYear;
   const setMonth = setInternalMonth;
   const [events, setEvents] = useState<ScheduledEvent[]>([]);
+  const [zones, setZones] = useState<{ id: number; name: string; color?: string | null }[]>([]);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
     apiFetch("/api/surveys/scheduled").then(setEvents).catch(console.error).finally(() => setLoading(false));
+    apiFetch("/api/zones").then(setZones).catch(console.error);
   }, []);
+  const zoneColor = useMemo(() => {
+    const m: Record<string, string> = {};
+    for (const z of zones) if (z.color) m[z.name] = z.color;
+    return m;
+  }, [zones]);
 
   const eventsByDay = useMemo(() => {
     const map = new Map<string, ScheduledEvent[]>();
@@ -135,11 +142,15 @@ export default function EventCalendarMonth({ toolbarRight, year: controlledYear,
                     {evs.slice(0, 4).map((ev, j) => {
                       const isBlock = ev.event_type === "block";
                       const isSurvey = !isBlock && (ev.status === "survey" || ev.event_type === "survey");
-                      const color = isBlock
+                      // Border + icon-tint comes from the lead's zone color so
+                      // teams are distinguishable at a glance. Block stays gray.
+                      const zc = !isBlock && ev.zone ? zoneColor[ev.zone] : null;
+                      const baseCls = isBlock
                         ? "bg-gray-100 text-gray-700 border-gray-300"
-                        : isSurvey
-                          ? "bg-violet-50 text-violet-700 border-violet-200"
-                          : "bg-emerald-50 text-emerald-700 border-emerald-200";
+                        : "bg-white text-gray-800 border-gray-200";
+                      const inlineStyle: React.CSSProperties | undefined = zc
+                        ? { borderColor: zc, color: zc, backgroundColor: `${zc}14` }
+                        : undefined;
                       const kindLabel = isBlock ? "งานอื่น" : isSurvey ? "สำรวจ" : "ติดตั้ง";
                       const handleClick = () => { if (!isBlock) router.push(`/leads/${ev.id}`); };
                       return (
@@ -148,8 +159,9 @@ export default function EventCalendarMonth({ toolbarRight, year: controlledYear,
                           type="button"
                           onClick={handleClick}
                           disabled={isBlock}
-                          className={`w-full text-left text-[11px] leading-tight px-1.5 py-1 rounded border ${color} ${isBlock ? "cursor-default" : "hover:brightness-95"} truncate inline-flex items-center gap-1`}
-                          title={`${kindLabel}: ${ev.house_number ? ev.house_number + " - " : ""}${ev.full_name}`}
+                          className={`w-full text-left text-[11px] leading-tight px-1.5 py-1 rounded border ${baseCls} ${isBlock ? "cursor-default" : "hover:brightness-95"} truncate inline-flex items-center gap-1`}
+                          style={inlineStyle}
+                          title={`${kindLabel}${ev.zone ? ` · ${ev.zone}` : ""}: ${ev.house_number ? ev.house_number + " - " : ""}${ev.full_name}`}
                         >
                           {isBlock ? (
                             <svg className="w-3 h-3 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>

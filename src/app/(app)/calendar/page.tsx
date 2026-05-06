@@ -16,7 +16,7 @@ export default function CalendarPage() {
   const [view, setView] = useState<"month" | "list">("list");
   const [newOpen, setNewOpen] = useState(false);
   const [newPrefillDate, setNewPrefillDate] = useState<string | undefined>(undefined);
-  const [zones, setZones] = useState<{ id: number; name: string }[]>([]);
+  const [zones, setZones] = useState<{ id: number; name: string; color?: string | null }[]>([]);
   const [selectedZone, setSelectedZone] = useState<string>("all");
   useEffect(() => { apiFetch("/api/zones").then(setZones).catch(console.error); }, []);
 
@@ -94,9 +94,13 @@ export default function CalendarPage() {
               <div className="text-sm md:text-base font-bold ml-1">{TH_MONTHS[visibleMonth.m]} {visibleMonth.y + 543}</div>
             </>
           )}
-          <span className="inline-flex items-center gap-3 text-xs ml-2">
-            <span className="inline-flex items-center gap-1.5"><span className="w-3 h-3 rounded-sm bg-violet-400 border border-violet-500" />สำรวจ</span>
-            <span className="inline-flex items-center gap-1.5"><span className="w-3 h-3 rounded-sm bg-emerald-400 border border-emerald-500" />ติดตั้ง</span>
+          <span className="inline-flex items-center gap-3 text-xs ml-2 flex-wrap">
+            {zones.map((z) => (
+              <span key={z.id} className="inline-flex items-center gap-1.5">
+                <span className="w-3 h-3 rounded-sm" style={{ backgroundColor: z.color || "#9ca3af" }} />
+                {z.name}
+              </span>
+            ))}
             <span className="inline-flex items-center gap-1.5"><span className="w-3 h-3 rounded-sm bg-gray-300 border border-gray-400" />งานอื่น</span>
           </span>
           <div className="flex-1" />
@@ -129,11 +133,22 @@ export default function CalendarPage() {
             <button type="button" onClick={() => setSelectedZone("all")}
               className={`px-3 h-8 rounded-lg text-xs font-semibold border transition-all ${selectedZone === "all" ? "bg-active text-white border-active" : "bg-white text-gray-600 border-gray-200"}`}
               style={{ minHeight: 0 }}>All</button>
-            {zones.map((z) => (
-              <button key={z.id} type="button" onClick={() => setSelectedZone(z.name)}
-                className={`px-3 h-8 rounded-lg text-xs font-semibold border transition-all ${selectedZone === z.name ? "bg-active text-white border-active" : "bg-white text-gray-600 border-gray-200"}`}
-                style={{ minHeight: 0 }}>{z.name}</button>
-            ))}
+            {zones.map((z) => {
+              const active = selectedZone === z.name;
+              return (
+                <button key={z.id} type="button" onClick={() => setSelectedZone(z.name)}
+                  className="px-3 h-8 rounded-lg text-xs font-semibold border transition-all inline-flex items-center gap-1.5"
+                  style={{
+                    minHeight: 0,
+                    backgroundColor: active && z.color ? z.color : "white",
+                    borderColor: z.color || "#e5e7eb",
+                    color: active ? "white" : (z.color || "#4b5563"),
+                  }}>
+                  {!active && z.color && <span className="w-2 h-2 rounded-full" style={{ backgroundColor: z.color }} />}
+                  {z.name}
+                </button>
+              );
+            })}
           </div>
         </div>
       </Header>

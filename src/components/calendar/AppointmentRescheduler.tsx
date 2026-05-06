@@ -20,6 +20,7 @@ interface Props {
    * renders the chips itself. Retained so existing callers compile. */
   timeSlots?: TimeSlot[];
   excludeLeadId?: number;
+  zoneFilter?: string | null;
   onCancel: () => void;
   onSave: (picked: { date: string; slot: string }) => void | Promise<void>;
 }
@@ -30,6 +31,7 @@ export default function AppointmentRescheduler({
   currentSlot,
   showTimeSlot = false,
   excludeLeadId,
+  zoneFilter,
   onCancel,
   onSave,
 }: Props) {
@@ -62,6 +64,7 @@ export default function AppointmentRescheduler({
         showTimeSlot={showTimeSlot}
         showSurveySlots
         excludeLeadId={excludeLeadId}
+        zoneFilter={zoneFilter}
       />
 
       {date && (

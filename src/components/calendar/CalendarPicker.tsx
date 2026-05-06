@@ -15,6 +15,9 @@ interface Props {
   showSurveySlots?: boolean;
   excludeLeadId?: number;
   required?: boolean;
+  /** Restrict booked-slot view to events in this zone. Free-form blocks
+   * (event_type='block', no zone) still apply globally. Empty/null = no filter. */
+  zoneFilter?: string | null;
 }
 
 export default function CalendarPicker({
@@ -26,8 +29,9 @@ export default function CalendarPicker({
   showSurveySlots = false,
   excludeLeadId,
   required = false,
+  zoneFilter,
 }: Props) {
-  const [surveys, setSurveys] = useState<{ id: number; event_date?: string; time_slot?: string | null; event_type?: string; survey_date?: string; survey_time_slot?: string | null }[]>([]);
+  const [surveys, setSurveys] = useState<{ id: number; event_date?: string; time_slot?: string | null; event_type?: string; survey_date?: string; survey_time_slot?: string | null; zone?: string | null }[]>([]);
 
   useEffect(() => {
     if (!showSurveySlots) return;
@@ -39,7 +43,10 @@ export default function CalendarPicker({
   // Per-date set of hourly slots already booked. Install events (no slot)
   // block the entire day, so we mark all hourly codes plus a sentinel "FULL"
   // so the day-level check is cheap.
-  const bookedSlotsByDate = surveys.reduce<Record<string, Set<string>>>((acc, s) => {
+  const zoneScoped = zoneFilter
+    ? surveys.filter(s => s.event_type === "block" || s.zone === zoneFilter)
+    : surveys;
+  const bookedSlotsByDate = zoneScoped.reduce<Record<string, Set<string>>>((acc, s) => {
     const dateRaw = s.event_date || s.survey_date;
     const slot = s.time_slot ?? s.survey_time_slot ?? null;
     if (!dateRaw) return acc;
