@@ -9,7 +9,7 @@ export async function GET(req: NextRequest) {
     const hasProspects = req.nextUrl.searchParams.get("has_prospects") === "1";
     const db = await getDb();
     const query = hasProspects
-      ? `SELECT p.id, p.name, p.assignee,
+      ? `SELECT p.id, p.name, p.assignee, ISNULL(p.is_pinned, 0) AS is_pinned,
            (SELECT COUNT(*) FROM prospects pr WHERE pr.project_id = p.id) AS prospect_count,
            (SELECT COUNT(*) FROM prospects pr WHERE pr.project_id = p.id AND pr.interest = 'interested') AS interested_count,
            (SELECT COUNT(*) FROM prospects pr WHERE pr.project_id = p.id AND pr.interest = 'not_interested') AS not_interested_count,
@@ -17,12 +17,12 @@ export async function GET(req: NextRequest) {
               AND pr.interest IS NULL AND pr.visited_at IS NULL
               AND (pr.note IS NULL OR pr.note = N'')) AS pending_count,
            (SELECT COUNT(*) FROM prospects pr WHERE pr.project_id = p.id AND pr.visited_at IS NOT NULL) AS visited_count,
-           STUFF((SELECT DISTINCT ',' + pr.channel FROM prospects pr WHERE pr.project_id = p.id AND pr.channel IS NOT NULL FOR XML PATH('')), 1, 1, '') AS channels
+           STUFF((SELECT DISTINCT ',' + pr.prospect_source FROM prospects pr WHERE pr.project_id = p.id AND pr.prospect_source IS NOT NULL FOR XML PATH('')), 1, 1, '') AS channels
          FROM projects p
          WHERE p.is_active = 1
-           AND EXISTS (SELECT 1 FROM prospects pr WHERE pr.project_id = p.id)
-         ORDER BY p.name`
-      : `SELECT * FROM projects WHERE is_active = 1 ORDER BY name`;
+           AND (ISNULL(p.is_pinned, 0) = 1 OR EXISTS (SELECT 1 FROM prospects pr WHERE pr.project_id = p.id))
+         ORDER BY ISNULL(p.is_pinned, 0) DESC, p.name`
+      : `SELECT * FROM projects WHERE is_active = 1 ORDER BY ISNULL(is_pinned, 0) DESC, name`;
     const result = await db.request().query(query);
     return NextResponse.json(result.recordset);
   } catch (error) {

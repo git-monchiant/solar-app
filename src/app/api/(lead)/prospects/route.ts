@@ -34,9 +34,25 @@ export async function GET(req: NextRequest) {
       }
     }
     if (channel) {
-      where.push("p.channel = @channel");
-      request.input("channel", sql.NVarChar(20), channel);
+      // Match prospects whose first-touchpoint source is X OR who carry X as
+      // an additional tag.
+      where.push("(p.prospect_source = @source OR p.tag LIKE @tagLike)");
+      request.input("source", sql.NVarChar(20), channel);
+      request.input("tagLike", sql.NVarChar(40), `%"${channel}"%`);
     }
+    // Substring search on house_number — used by seeker landing page to let
+    // users check if a house already exists across any project before they
+    // start creating a new prospect. Exact matches surface first.
+    const houseQ = req.nextUrl.searchParams.get("house_q");
+    let houseQActive = false;
+    if (houseQ && houseQ.trim().length >= 2) {
+      where.push("p.house_number LIKE @house_q");
+      request.input("house_q", sql.NVarChar(60), `%${houseQ.trim()}%`);
+      request.input("house_q_exact", sql.NVarChar(60), houseQ.trim());
+      houseQActive = true;
+    }
+    const limitParam = req.nextUrl.searchParams.get("limit");
+    const topClause = limitParam ? `TOP ${Math.max(1, Math.min(200, parseInt(limitParam) || 50))}` : "";
     const whereSql = where.length ? `WHERE ${where.join(" AND ")}` : "";
     // For slim mode, return CASE expressions that flatten free-text into a
     // single bit / null string so the rest of the schema stays unchanged for
@@ -45,9 +61,9 @@ export async function GET(req: NextRequest) {
     const contactsSql = slim ? "CAST(NULL AS NVARCHAR(MAX)) AS contacts" : "p.contacts";
     const reasonNoteSql = slim ? "CAST(NULL AS NVARCHAR(MAX)) AS interest_reason_note" : "p.interest_reason_note";
     const result = await request.query(`
-      SELECT p.id, p.project_id, p.seq, p.house_number, p.full_name, p.phone,
+      SELECT ${topClause} p.id, p.project_id, p.seq, p.house_number, p.full_name, p.phone,
              p.app_status, p.existing_solar, p.installed_kw, p.installed_product, p.ev_charger,
-             p.interest, p.interest_type, ${noteSql}, p.visited_by, p.visited_at, p.visit_count, p.visit_lat, p.visit_lng, p.line_id, p.contact_time, p.interest_reasons, ${reasonNoteSql}, p.interest_sizes, p.returned_at, p.lead_id, ${contactsSql}, p.channel, p.email, p.the1_id, p.created_at, p.updated_at,
+             p.interest, p.interest_type, ${noteSql}, p.visited_by, p.visited_at, p.visit_count, p.visit_lat, p.visit_lng, p.line_id, p.contact_time, p.interest_reasons, ${reasonNoteSql}, p.interest_sizes, p.returned_at, p.lead_id, ${contactsSql}, p.prospect_source, p.tag, p.project_alias, p.email, p.the1_id, p.created_at, p.updated_at,
              COALESCE(NULLIF(p.project_name, N''), pr.name) as project_name,
              u.full_name as visited_by_name,
              lu.display_name as line_display_name,
@@ -57,7 +73,7 @@ export async function GET(req: NextRequest) {
       LEFT JOIN users u ON p.visited_by = u.id
       LEFT JOIN line_users lu ON lu.line_user_id = p.line_id
       ${whereSql}
-      ORDER BY p.created_at DESC
+      ORDER BY ${houseQActive ? "CASE WHEN p.house_number = @house_q_exact THEN 0 ELSE 1 END, LEN(p.house_number), p.house_number, " : ""}p.created_at DESC
     `);
     return NextResponse.json(fixDates(result.recordset));
   } catch (error) {
@@ -84,11 +100,14 @@ export async function POST(req: NextRequest) {
       .input("installed_kw", sql.Decimal(8, 2), body.installed_kw ?? null)
       .input("installed_product", sql.NVarChar(200), body.installed_product || null)
       .input("ev_charger", sql.NVarChar(100), body.ev_charger || null)
-      .input("channel", sql.NVarChar(20), body.channel || null)
+      // prospect_source is the first-touch channel — set once at insert and
+      // never updated. tag is the editable JSON array of additional touchpoints.
+      .input("prospect_source", sql.NVarChar(20), body.prospect_source || null)
+      .input("tag", sql.NVarChar(500), Array.isArray(body.tag) && body.tag.length > 0 ? JSON.stringify(body.tag) : null)
       .query(`
-        INSERT INTO prospects (project_id, project_name, seq, house_number, full_name, phone, app_status, existing_solar, installed_kw, installed_product, ev_charger, channel)
+        INSERT INTO prospects (project_id, project_name, seq, house_number, full_name, phone, app_status, existing_solar, installed_kw, installed_product, ev_charger, prospect_source, tag)
         OUTPUT INSERTED.*
-        VALUES (@project_id, @project_name, @seq, @house_number, @full_name, @phone, @app_status, @existing_solar, @installed_kw, @installed_product, @ev_charger, @channel)
+        VALUES (@project_id, @project_name, @seq, @house_number, @full_name, @phone, @app_status, @existing_solar, @installed_kw, @installed_product, @ev_charger, @prospect_source, @tag)
       `);
     return NextResponse.json(result.recordset[0], { status: 201 });
   } catch (error) {

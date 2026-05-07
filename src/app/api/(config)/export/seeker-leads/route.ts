@@ -28,7 +28,7 @@ export async function GET(req: NextRequest) {
       seeker_user.full_name AS seeker_name,
       p.id AS prospect_id,
       p.house_number AS prospect_house_number,
-      p.channel AS prospect_channel,
+      p.prospect_source AS prospect_channel,
       p.interest AS prospect_interest,
       l.created_at,
       l.contact_date,

@@ -109,9 +109,19 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
       sets.push("returned_at = @returned_at");
       request.input("returned_at", sql.DateTime2, body.returned_at);
     }
-    if (body.channel !== undefined) {
-      sets.push("channel = @channel");
-      request.input("channel", sql.NVarChar(20), body.channel);
+    if (body.project_alias !== undefined) {
+      sets.push("project_alias = @project_alias");
+      request.input("project_alias", sql.NVarChar(200), (body.project_alias || "").trim() || null);
+    }
+    // Updating extra-touchpoint tags. prospect_source is immutable post-insert
+    // (it represents how the customer was first acquired), so any incoming
+    // `prospect_source` field on a PATCH is silently ignored.
+    if (body.tag !== undefined) {
+      const arr = Array.isArray(body.tag)
+        ? body.tag.map((c: unknown) => String(c).trim()).filter(Boolean)
+        : [];
+      sets.push("tag = @tag");
+      request.input("tag", sql.NVarChar(500), arr.length > 0 ? JSON.stringify(arr) : null);
     }
     // Multi-person households: `contacts` is a JSON array of {name, phone}.
     // When sent, we also mirror contacts[0] into full_name/phone so existing
@@ -160,6 +170,16 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
     return NextResponse.json(fixDates(result.recordset)[0]);
   } catch (error) {
     console.error("PATCH /api/prospects/[id] error:", error);
+    // SQL unique-index violation on (project_id, house_number) — surface as
+    // 409 with a readable message so the client can show "house already taken"
+    // instead of a silent 500.
+    const msg = error instanceof Error ? error.message : "";
+    if (/UX_prospects_project_house|duplicate key/i.test(msg)) {
+      return NextResponse.json(
+        { error: "บ้านเลขที่นี้มีอยู่แล้วในโครงการนี้", code: "DUPLICATE_HOUSE" },
+        { status: 409 },
+      );
+    }
     return NextResponse.json({ error: "Failed to update prospect" }, { status: 500 });
   }
 }

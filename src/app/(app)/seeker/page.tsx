@@ -41,7 +41,9 @@ type Prospect = {
   interest_sizes: string | null;
   returned_at: string | null;
   contacts: string | null;
-  channel: string | null;
+  prospect_source: string | null;
+  tag: string | null;
+  project_alias: string | null;
   line_display_name: string | null;
   line_picture_url: string | null;
   created_at: string;
@@ -189,6 +191,7 @@ type ProjectCard = {
   pending_count: number;
   visited_count: number;
   channels: string | null; // comma-separated distinct channels of prospects in this project
+  is_pinned?: number | boolean;
 };
 
 export default function SeekerPage() {
@@ -217,6 +220,23 @@ export default function SeekerPage() {
   };
   const projectFilter = projectCards.find((p) => p.id === projectFilterId)?.name || "";
   const [projectSearch, setProjectSearch] = useState<string>("");
+  const [houseMatches, setHouseMatches] = useState<Prospect[]>([]);
+  const [houseMatchesLoading, setHouseMatchesLoading] = useState(false);
+  // Cross-project house lookup: fires when the landing search starts to look
+  // like a house number (contains a digit + at least 2 chars). Lets seekers
+  // verify "is 99/118 already in some other project?" before creating a dup.
+  useEffect(() => {
+    const q = projectSearch.trim();
+    if (q.length < 2 || !/\d/.test(q)) { setHouseMatches([]); return; }
+    setHouseMatchesLoading(true);
+    const timer = setTimeout(() => {
+      apiFetch(`/api/prospects?house_q=${encodeURIComponent(q)}&limit=20`)
+        .then((rows: Prospect[]) => setHouseMatches(rows || []))
+        .catch(() => setHouseMatches([]))
+        .finally(() => setHouseMatchesLoading(false));
+    }, 300);
+    return () => clearTimeout(timer);
+  }, [projectSearch]);
   const [editing, setEditing] = useState<Prospect | null>(null);
   const [hydrated, setHydrated] = useState(false);
   const [creatingNew, setCreatingNew] = useState(false);
@@ -322,7 +342,16 @@ export default function SeekerPage() {
     if (!projectFilterId) return prospects;
     let list = prospects.filter((p) => p.project_id === projectFilterId);
     // Carry the channel filter from the project landing into the prospect list.
-    if (channelFilter) list = list.filter((p) => p.channel === channelFilter);
+    if (channelFilter) {
+      list = list.filter((p) => {
+        if (p.prospect_source === channelFilter) return true;
+        if (!p.tag) return false;
+        try {
+          const arr = JSON.parse(p.tag);
+          return Array.isArray(arr) && arr.includes(channelFilter);
+        } catch { return false; }
+      });
+    }
     return list;
   }, [prospects, projectFilterId, channelFilter]);
 
@@ -364,10 +393,15 @@ export default function SeekerPage() {
     return (
       <ProjectLanding
         projects={filteredProjects}
+        totalCount={projectCards.length}
         loading={projectsLoading}
         search={projectSearch}
         onSearchChange={setProjectSearch}
         onSelect={(id) => setProjectFilterId(id, matchedChannelKey)}
+        houseMatches={houseMatches}
+        houseMatchesLoading={houseMatchesLoading}
+        projectNameById={Object.fromEntries(projectCards.map((p) => [p.id, p.name]))}
+        onOpenProspect={(p) => { if (p.project_id) setProjectFilterId(p.project_id, null); setEditing(p); }}
       />
     );
   }
@@ -438,6 +472,11 @@ export default function SeekerPage() {
                         </svg>
                         <span className="text-base font-bold text-gray-900 leading-tight break-all">{p.house_number || "-"}</span>
                       </div>
+                      {p.project_alias && p.project_alias.trim() && (
+                        <div className="text-[11px] text-gray-500 truncate mt-0.5 pl-5" title={p.project_alias}>
+                          {p.project_alias}
+                        </div>
+                      )}
                     </div>
                     {(() => {
                       if (isReturned) {
@@ -502,15 +541,26 @@ export default function SeekerPage() {
                   {/* Row 4: indicators (Channel / Solar / EV / Upgrade) — split equally */}
                   {(() => {
                     const chips: React.ReactNode[] = [];
-                    if (p.channel) {
-                      const meta = CHANNEL_BY_CODE[p.channel];
-                      if (meta) {
-                        chips.push(
-                          <span key="channel" className="flex-1 flex items-center py-0.5">
-                            <SourceTag value={p.channel} size="xs" />
-                          </span>
-                        );
-                      }
+                    // First-touch source + any additional touchpoint tags.
+                    const source: string | null = p.prospect_source || null;
+                    const extraTags: string[] = (() => {
+                      try {
+                        if (p.tag) {
+                          const arr = JSON.parse(p.tag);
+                          if (Array.isArray(arr)) return arr.filter(Boolean);
+                        }
+                      } catch {}
+                      return [];
+                    })();
+                    const allChips = [source, ...extraTags].filter((c, i, arr) => !!c && arr.indexOf(c) === i) as string[];
+                    if (allChips.length > 0) {
+                      chips.push(
+                        <span key="channel" className="flex-1 flex items-center gap-1 py-0.5 flex-wrap">
+                          {allChips.map((c) => CHANNEL_BY_CODE[c] && (
+                            <SourceTag key={c} value={c} size="xs" />
+                          ))}
+                        </span>
+                      );
                     }
                     if (hasExistingSolar(p)) {
                       chips.push(
@@ -561,14 +611,17 @@ export default function SeekerPage() {
 
       {editing && (
         <VisitModal
+          key={editing.id || "draft"}
           prospect={editing}
           projects={projectCards}
+          existingProspects={prospects}
           onClose={() => setEditing(null)}
           onSaved={() => {
             setEditing(null);
             refresh();
           }}
           onRefresh={() => refresh()}
+          onJumpToProspect={(p) => setEditing(p)}
         />
       )}
 
@@ -625,7 +678,9 @@ export default function SeekerPage() {
               returned_at: null,
               lead_id: null,
               contacts: null,
-              channel: code,
+              prospect_source: code,
+              tag: null,
+              project_alias: null,
               created_at: new Date().toISOString(),
             } as Prospect);
           }}
@@ -640,16 +695,26 @@ const FAV_KEY = "seekerFavorites";
 
 function ProjectLanding({
   projects,
+  totalCount,
   loading,
   search,
   onSearchChange,
   onSelect,
+  houseMatches,
+  houseMatchesLoading,
+  projectNameById,
+  onOpenProspect,
 }: {
   projects: ProjectCard[];
+  totalCount: number;
   loading: boolean;
   search: string;
   onSearchChange: (v: string) => void;
   onSelect: (id: number) => void;
+  houseMatches: Prospect[];
+  houseMatchesLoading: boolean;
+  projectNameById: Record<number, string>;
+  onOpenProspect: (p: Prospect) => void;
 }) {
   const [favs, setFavs] = useState<Set<string>>(new Set());
 
@@ -675,6 +740,9 @@ function ProjectLanding({
 
   const sortedProjects = useMemo(() => {
     return [...projects].sort((a, b) => {
+      // Server-pinned projects always come first (e.g. "โครงการอื่นทั่วไป").
+      const pa = !!a.is_pinned, pb = !!b.is_pinned;
+      if (pa !== pb) return pa ? -1 : 1;
       const fa = favs.has(a.name), fb = favs.has(b.name);
       if (fa && !fb) return -1;
       if (!fa && fb) return 1;
@@ -695,6 +763,52 @@ function ProjectLanding({
       />
 
       <div className="px-3 md:px-5 py-3 flex-1 overflow-y-auto">
+        {/^\d/.test(search.trim()) && search.trim().length >= 2 && (
+          <div className="mb-3 rounded-2xl border border-gray-200 bg-white overflow-hidden">
+            <div className="px-3 py-2 bg-gray-50 border-b border-gray-100 flex items-center justify-between">
+              <div className="text-[10px] font-bold uppercase tracking-wider text-gray-500">
+                บ้านที่ตรงกัน{houseMatchesLoading && " · กำลังค้น..."}
+              </div>
+              {houseMatches.length > 0 && (
+                <span className="text-[10px] text-gray-400 tabular-nums">{houseMatches.length} หลัง</span>
+              )}
+            </div>
+            {houseMatches.length === 0 && !houseMatchesLoading ? (
+              <div className="px-3 py-6 text-center text-xs text-gray-400">ไม่พบบ้านนี้ในระบบ — สร้างใหม่ได้</div>
+            ) : (
+              <div className="divide-y divide-gray-100 max-h-72 overflow-y-auto">
+                {houseMatches.map((p) => {
+                  const projName = projectNameById[p.project_id || 0] || p.project_name || "—";
+                  return (
+                    <button
+                      key={p.id}
+                      type="button"
+                      onClick={() => onOpenProspect(p)}
+                      className="w-full flex items-center gap-2 px-3 py-2 text-left hover:bg-gray-50"
+                    >
+                      <svg className="w-4 h-4 text-sky-500 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                        <path strokeLinecap="round" strokeLinejoin="round" d="M2.25 12l8.954-8.955c.44-.439 1.152-.439 1.591 0L21.75 12M4.5 9.75v10.125c0 .621.504 1.125 1.125 1.125H9.75v-4.875c0-.621.504-1.125 1.125-1.125h2.25c.621 0 1.125.504 1.125 1.125V21h4.125c.621 0 1.125-.504 1.125-1.125V9.75" />
+                      </svg>
+                      <div className="flex-1 min-w-0">
+                        <div className="text-xs font-bold text-gray-900 truncate">
+                          {p.house_number}
+                          <span className="ml-2 text-[10px] font-normal text-gray-500">{projName}</span>
+                        </div>
+                        <div className="text-[11px] text-gray-500 truncate">
+                          {p.full_name || <span className="text-gray-400">(ยังไม่มีชื่อ)</span>}
+                          {p.phone && <span> · {p.phone}</span>}
+                        </div>
+                      </div>
+                      <svg className="w-3.5 h-3.5 text-gray-300 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                        <path strokeLinecap="round" strokeLinejoin="round" d="M8.25 4.5l7.5 7.5-7.5 7.5" />
+                      </svg>
+                    </button>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+        )}
         {loading ? (
           <div className="flex items-center justify-center py-16">
             <div className="w-8 h-8 border-3 border-gray-200 border-t-gray-900 rounded-full animate-spin" />
@@ -702,6 +816,13 @@ function ProjectLanding({
         ) : projects.length === 0 ? (
           <div className="text-center text-gray-400 text-sm py-16">ไม่มีโครงการ</div>
         ) : (
+          <>
+          <div className="text-xs text-gray-500 mb-2 px-1 tabular-nums">
+            {search.trim()
+              ? <><span className="font-semibold text-gray-700">{projects.length}</span> / {totalCount} โครงการ</>
+              : <><span className="font-semibold text-gray-700">{totalCount}</span> โครงการ</>
+            }
+          </div>
           <div className="bg-white rounded-2xl border border-gray-200 overflow-hidden">
             <div className="divide-y divide-gray-200">
               {sortedProjects.map((p) => {
@@ -740,7 +861,7 @@ function ProjectLanding({
                     >
                       <div className="flex items-center justify-between gap-2">
                         <div className="flex items-center gap-2 min-w-0 flex-1">
-                          <svg className="w-4 h-4 text-gray-500 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                          <svg className="w-4 h-4 text-sky-500 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
                             <path strokeLinecap="round" strokeLinejoin="round" d="M3 9.75L12 3l9 6.75V21a1.5 1.5 0 01-1.5 1.5H16.5v-6.75a1.5 1.5 0 00-1.5-1.5h-6a1.5 1.5 0 00-1.5 1.5V22.5H4.5A1.5 1.5 0 013 21V9.75z" />
                           </svg>
                           <div className="min-w-0">
@@ -769,13 +890,14 @@ function ProjectLanding({
               })}
             </div>
           </div>
+          </>
         )}
       </div>
     </div>
   );
 }
 
-function VisitModal({ prospect, projects, onClose, onSaved, onRefresh }: { prospect: Prospect; projects: ProjectCard[]; onClose: () => void; onSaved: () => void; onRefresh: () => void }) {
+function VisitModal({ prospect, projects, existingProspects, onClose, onSaved, onRefresh, onJumpToProspect }: { prospect: Prospect; projects: ProjectCard[]; existingProspects: Prospect[]; onClose: () => void; onSaved: () => void; onRefresh: () => void; onJumpToProspect: (p: Prospect) => void }) {
   const dialog = useDialog();
   const [modalTab, setModalTab] = useState<"line" | "people" | "visit" | "reasons">("people");
   const [interest, setInterest] = useState<Prospect["interest"]>(prospect.interest);
@@ -784,15 +906,73 @@ function VisitModal({ prospect, projects, onClose, onSaved, onRefresh }: { prosp
   const [houseNumber, setHouseNumber] = useState(prospect.house_number || "");
   const [projectId, setProjectId] = useState<number | null>(prospect.project_id);
   const [projectPickerOpen, setProjectPickerOpen] = useState(false);
-  const projectName = projects.find((p) => p.id === projectId)?.name ?? "";
+  const selectedProject = projects.find((p) => p.id === projectId) || null;
+  const projectName = selectedProject?.name ?? "";
+  const isPinnedProject = !!selectedProject?.is_pinned;
+  // Free-text alias — only shown when the picked project is pinned (the
+  // "โครงการอื่นทั่วไป" catch-all bucket). Stored on prospects.project_alias
+  // and displayed as a sub-line on the prospect card. For NEW prospects we
+  // restore the last alias the seeker typed (kept in localStorage with a
+  // 24-hour TTL) so a single event can be recorded on many houses without
+  // retyping — but stale aliases from yesterday's event don't bleed in.
+  const ALIAS_TTL_MS = 24 * 60 * 60 * 1000;
+  const [customProjectName, setCustomProjectName] = useState<string>(() => {
+    if (prospect.project_alias) return prospect.project_alias;
+    if (prospect.id === 0 && typeof window !== "undefined") {
+      try {
+        const raw = localStorage.getItem("seekerLastProjectAlias");
+        if (raw) {
+          const parsed = JSON.parse(raw) as { value: string; savedAt: number };
+          if (parsed.value && Date.now() - parsed.savedAt < ALIAS_TTL_MS) {
+            return parsed.value;
+          }
+          localStorage.removeItem("seekerLastProjectAlias");
+        }
+      } catch {
+        localStorage.removeItem("seekerLastProjectAlias");
+      }
+    }
+    return "";
+  });
+  // Persist whenever the alias changes under a pinned project so the next
+  // draft picks it up automatically (within the 24h window).
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    if (!isPinnedProject) return;
+    const v = customProjectName.trim();
+    if (v) {
+      localStorage.setItem("seekerLastProjectAlias", JSON.stringify({ value: v, savedAt: Date.now() }));
+    } else {
+      localStorage.removeItem("seekerLastProjectAlias");
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [customProjectName, isPinnedProject]);
   // For draft prospects (clicked +, not yet POSTed), id is 0. After the first
   // valid auto-save we POST and then mirror the new id locally for subsequent
   // PATCHes — without re-mounting this modal.
   const [prospectId, setProspectId] = useState<number>(prospect.id);
   const isDraft = prospectId === 0;
-  const [channelCode, setChannelCode] = useState<ChannelCode | null>(
-    (prospect.channel as ChannelCode | null) || null
-  );
+  // First-touch source — set once on insert, never changes here.
+  const prospectSource = (prospect.prospect_source as ChannelCode | null) || null;
+  // Editable extra-touchpoint tags (JSON array).
+  const [tagCodes, setTagCodes] = useState<ChannelCode[]>(() => {
+    try {
+      if (prospect.tag) {
+        const arr = JSON.parse(prospect.tag);
+        if (Array.isArray(arr)) return arr.filter(Boolean) as ChannelCode[];
+      }
+    } catch {}
+    return [];
+  });
+  const tagsKey = tagCodes.join(",");
+  const [visitChannelPickerOpen, setVisitChannelPickerOpen] = useState(false);
+  const addTag = (c: ChannelCode) => {
+    if (c === prospectSource) return; // source can't be added as a tag too
+    setTagCodes((prev) => prev.includes(c) ? prev : [...prev, c]);
+  };
+  const removeTag = (c: ChannelCode) => {
+    setTagCodes((prev) => prev.filter((x) => x !== c));
+  };
   // Contacts: everyone living at this house. The primary contact is mirrored
   // server-side into legacy full_name / phone. We keep `contacts` in stable
   // insertion order and track `primaryIdx` separately so marking someone as
@@ -879,11 +1059,12 @@ function VisitModal({ prospect, projects, onClose, onSaved, onRefresh }: { prosp
   const reasonsInitRef = useRef(true);
 
   // Auto-save reasons tab: debounced PATCH whenever chips or note change.
-  // Gated on house_number being set — a prospect without a house number is
-  // considered incomplete and shouldn't accumulate side data.
+  // Gated on house_number + a real (non-draft) prospect id — drafts haven't
+  // been POSTed yet so PATCH /api/prospects/0 would 404.
   useEffect(() => {
     if (reasonsInitRef.current) { reasonsInitRef.current = false; return; }
     if (!houseNumber.trim()) return;
+    if (isDraft || !prospectId) return;
     const timer = setTimeout(async () => {
       try {
         await apiFetch(`/api/prospects/${prospectId}`, {
@@ -902,7 +1083,7 @@ function VisitModal({ prospect, projects, onClose, onSaved, onRefresh }: { prosp
       }
     }, 600);
     return () => clearTimeout(timer);
-  }, [reasonCodes, reasonNote, sizeCodes, houseNumber, prospect.id]);
+  }, [reasonCodes, reasonNote, sizeCodes, houseNumber, prospectId, isDraft]);
 
   // Auto-save visit + line tab fields (interest, note, contact, house number).
   // Skips GPS — that's only captured when user explicitly "visits" (on mount).
@@ -916,8 +1097,9 @@ function VisitModal({ prospect, projects, onClose, onSaved, onRefresh }: { prosp
     note: prospect.note || "",
     house_number: prospect.house_number || "",
     contact_time: prospect.contact_time || "",
-    channel: (prospect.channel as ChannelCode | null) ?? null,
+    tag: tagsKey,
     project_id: prospect.project_id,
+    project_alias: prospect.project_alias || "",
     contactsJson,
   });
   const [visitSavedAt, setVisitSavedAt] = useState<number | null>(null);
@@ -931,6 +1113,16 @@ function VisitModal({ prospect, projects, onClose, onSaved, onRefresh }: { prosp
       if (!nextHouse) return;
       const hasContact = !!linkedLine || cleanContacts.some((c) => c.name && c.phone);
       if (!hasContact) return;
+      // Skip the save when the typed house_number would conflict with another
+      // prospect in the same project. The unique index would 409 anyway and
+      // the user already sees a warning chip — no point spamming the API.
+      const normHouse = nextHouse.trim().toLowerCase().replace(/\s+/g, "");
+      const conflict = existingProspects.some((p) =>
+        p.id !== prospectId &&
+        p.project_id === projectId &&
+        (p.house_number || "").trim().toLowerCase().replace(/\s+/g, "") === normHouse
+      );
+      if (conflict) return;
       const nextContactTime = contactHours.length ? [...contactHours].sort((a, b) => a - b).join(",") : "";
       const nextInterestType = interest === "interested" ? interestType : null;
 
@@ -940,10 +1132,15 @@ function VisitModal({ prospect, projects, onClose, onSaved, onRefresh }: { prosp
       if (note !== init.note) patch.note = note;
       if (nextHouse !== init.house_number) patch.house_number = nextHouse || null;
       if (nextContactTime !== init.contact_time) patch.contact_time = nextContactTime || null;
-      if (channelCode !== init.channel) patch.channel = channelCode;
+      if (tagsKey !== init.tag) patch.tag = tagCodes;
       if (projectId !== init.project_id) {
         patch.project_id = projectId;
         patch.project_name = projects.find((p) => p.id === projectId)?.name ?? null;
+      }
+      // Alias is independent of project_id — only meaningful when the picked
+      // project is pinned, but we always trust the field if it changed.
+      if (customProjectName.trim() !== (init.project_alias || "")) {
+        patch.project_alias = customProjectName.trim() || null;
       }
       if (contactsJson !== init.contactsJson) patch.contacts = cleanContacts;
 
@@ -962,7 +1159,8 @@ function VisitModal({ prospect, projects, onClose, onSaved, onRefresh }: { prosp
               house_number: nextHouse,
               full_name: cleanContacts[0]?.name || null,
               phone: cleanContacts[0]?.phone || null,
-              channel: channelCode || null,
+              prospect_source: prospectSource,
+              tag: tagCodes,
             }),
           }) as Prospect;
           setProspectId(created.id);
@@ -992,8 +1190,9 @@ function VisitModal({ prospect, projects, onClose, onSaved, onRefresh }: { prosp
           note,
           house_number: nextHouse,
           contact_time: nextContactTime,
-          channel: channelCode,
+          tag: tagsKey,
           project_id: projectId,
+          project_alias: customProjectName.trim(),
           contactsJson,
         };
         setVisitSavedAt(Date.now());
@@ -1005,7 +1204,7 @@ function VisitModal({ prospect, projects, onClose, onSaved, onRefresh }: { prosp
     }, 600);
     return () => clearTimeout(timer);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [interest, interestType, note, houseNumber, contactHours, contactsJson, channelCode, projectId, prospectId, isDraft]);
+  }, [interest, interestType, note, houseNumber, contactHours, contactsJson, tagsKey, projectId, customProjectName, isPinnedProject, prospectId, isDraft]);
   const [saving, setSaving] = useState(false);
   const [creatingLead, setCreatingLead] = useState(false);
   // When >1 contact lives at this house, seeker must pick ONE for the lead.
@@ -1185,14 +1384,14 @@ function VisitModal({ prospect, projects, onClose, onSaved, onRefresh }: { prosp
         <span className="truncate">
           {houseNumber || <span className="text-gray-300">บ้านใหม่</span>}
         </span>
-        {channelCode && (() => {
-          const s = getSourceStyle(channelCode);
+        {tagCodes.map((c) => {
+          const s = getSourceStyle(c);
           return (
-            <span className={`shrink-0 inline-flex items-center rounded font-bold uppercase tracking-wider px-1 text-[9px] leading-[14px] ${s.cls}`}>
+            <span key={c} className={`shrink-0 inline-flex items-center rounded font-bold uppercase tracking-wider leading-none px-1 text-[9px] leading-[14px] ${s.cls}`}>
               {s.label}
             </span>
           );
-        })()}
+        })}
       </div>
       <span className="flex items-center gap-1.5 shrink-0">
         {flagItems.map((i) => (
@@ -1368,6 +1567,19 @@ function VisitModal({ prospect, projects, onClose, onSaved, onRefresh }: { prosp
             </div>
           </div>
 
+          {isPinnedProject && (
+            <div>
+              <label className="text-xs font-semibold uppercase tracking-wider text-gray-500 block mb-1.5">ระบุชื่อโครงการ / สถานที่</label>
+              <input
+                type="text"
+                value={customProjectName}
+                onChange={(e) => setCustomProjectName(e.target.value)}
+                placeholder="เช่น หมู่บ้านสวยงาม ซอย 5"
+                className="w-full h-10 px-3 rounded-lg border border-gray-200 text-sm focus:outline-none focus:border-primary"
+              />
+            </div>
+          )}
+
           <div>
             <label className="text-xs font-semibold uppercase tracking-wider text-gray-500 block mb-1.5">บ้านเลขที่</label>
             <div className="relative">
@@ -1382,6 +1594,135 @@ function VisitModal({ prospect, projects, onClose, onSaved, onRefresh }: { prosp
                 className="w-full h-10 pl-9 pr-3 rounded-lg border border-gray-200 text-sm focus:outline-none focus:border-primary"
               />
             </div>
+            {(() => {
+              // Two modes:
+              //  • Draft → full autocomplete (substring matches) so user can
+              //    pick existing house instead of duplicating.
+              //  • Edit  → only show EXACT-match conflict, since a unique
+              //    index on (project_id, house_number) would otherwise let the
+              //    PATCH fail silently with a 500.
+              const norm = (s: string | null | undefined) => (s || "").trim().toLowerCase().replace(/\s+/g, "");
+              const q = norm(houseNumber);
+              if (!q || q.length < 2) return null;
+              if (!isDraft) {
+                const conflict = existingProspects.find((p) =>
+                  p.id !== prospectId &&
+                  p.project_id === projectId &&
+                  norm(p.house_number) === q
+                );
+                if (!conflict) return null;
+                return (
+                  <button
+                    type="button"
+                    onClick={() => onJumpToProspect(conflict)}
+                    className="mt-2 w-full flex items-center gap-2 rounded-lg border border-red-300 bg-red-50 px-3 py-2 text-left hover:bg-red-100 transition-colors"
+                  >
+                    <svg className="w-4 h-4 text-red-600 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                      <path strokeLinecap="round" strokeLinejoin="round" d="M12 9v3.75m-9.303 3.376c-.866 1.5.217 3.374 1.948 3.374h14.71c1.73 0 2.813-1.874 1.948-3.374L13.949 3.378c-.866-1.5-3.032-1.5-3.898 0L2.697 16.126zM12 15.75h.007v.008H12v-.008z" />
+                    </svg>
+                    <div className="flex-1 min-w-0">
+                      <div className="text-xs font-bold text-red-900">เลขนี้มีบ้านใช้อยู่แล้ว · บันทึกไม่ได้</div>
+                      <div className="text-[11px] text-red-700 truncate">
+                        {conflict.house_number} · {conflict.full_name || "(ยังไม่มีชื่อ)"} · คลิกเพื่อเปิดบ้านนั้น
+                      </div>
+                    </div>
+                  </button>
+                );
+              }
+              const matches = existingProspects
+                .filter((p) =>
+                  p.id !== prospectId &&
+                  p.project_id === projectId &&
+                  norm(p.house_number).includes(q)
+                )
+                .slice(0, 6);
+              if (matches.length === 0) return null;
+              return (
+                <div className="mt-2 rounded-lg border border-gray-200 bg-white overflow-hidden divide-y divide-gray-100 shadow-sm">
+                  <div className="px-3 py-1.5 bg-gray-50 text-[10px] font-bold uppercase tracking-wider text-gray-500">
+                    {matches.length} หลังที่ตรงกัน · คลิกเพื่อแก้ไข
+                  </div>
+                  {matches.map((dup) => {
+                    const isExact = norm(dup.house_number) === q;
+                    return (
+                      <button
+                        key={dup.id}
+                        type="button"
+                        onClick={() => onJumpToProspect(dup)}
+                        className={`w-full flex items-center gap-2 px-3 py-2 text-left transition-colors ${
+                          isExact ? "bg-amber-50 hover:bg-amber-100" : "hover:bg-gray-50"
+                        }`}
+                      >
+                        <svg className={`w-4 h-4 shrink-0 ${isExact ? "text-amber-600" : "text-gray-400"}`} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                          <path strokeLinecap="round" strokeLinejoin="round" d="M2.25 12l8.954-8.955c.44-.439 1.152-.439 1.591 0L21.75 12M4.5 9.75v10.125c0 .621.504 1.125 1.125 1.125H9.75v-4.875c0-.621.504-1.125 1.125-1.125h2.25c.621 0 1.125.504 1.125 1.125V21h4.125c.621 0 1.125-.504 1.125-1.125V9.75" />
+                        </svg>
+                        <div className="flex-1 min-w-0">
+                          <div className={`text-xs font-bold truncate ${isExact ? "text-amber-900" : "text-gray-900"}`}>
+                            {dup.house_number}
+                            {isExact && <span className="ml-1.5 text-[10px] font-bold uppercase text-amber-700">มีอยู่แล้ว</span>}
+                          </div>
+                          <div className="text-[11px] text-gray-500 truncate">
+                            {dup.full_name || <span className="text-gray-400">(ยังไม่มีชื่อ)</span>}
+                            {dup.phone && <span> · {dup.phone}</span>}
+                          </div>
+                        </div>
+                        <svg className="w-3.5 h-3.5 text-gray-300 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                          <path strokeLinecap="round" strokeLinejoin="round" d="M8.25 4.5l7.5 7.5-7.5 7.5" />
+                        </svg>
+                      </button>
+                    );
+                  })}
+                </div>
+              );
+            })()}
+          </div>
+
+          <div>
+            <label className="text-xs font-semibold uppercase tracking-wider text-gray-500 block mb-1.5">Touchpoint</label>
+            <div className="flex flex-wrap items-center gap-1.5 min-h-[44px] rounded-lg border border-gray-200 bg-white px-2 py-2">
+              {!prospectSource && tagCodes.length === 0 && (
+                <span className="text-sm text-gray-400 px-1">ยังไม่มี tag</span>
+              )}
+              {prospectSource && (() => {
+                const s = getSourceStyle(prospectSource);
+                return (
+                  <span
+                    className={`inline-flex items-center h-7 rounded font-bold uppercase tracking-wider leading-none px-2.5 text-[10px] ${s.cls}`}
+                    title="ช่องทางแรกที่พบ — แก้ไม่ได้"
+                  >
+                    {s.label}
+                  </span>
+                );
+              })()}
+              {tagCodes.map((c) => {
+                const s = getSourceStyle(c);
+                return (
+                  <span key={c} className={`inline-flex items-center h-7 rounded font-bold uppercase tracking-wider leading-none pl-2.5 pr-1 text-[10px] gap-1 ${s.cls}`}>
+                    {s.label}
+                    <button
+                      type="button"
+                      onClick={() => removeTag(c)}
+                      aria-label={`ลบ ${s.label}`}
+                      className="w-5 h-5 rounded-full hover:bg-black/10 flex items-center justify-center -mr-0.5"
+                    >
+                      <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
+                        <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
+                      </svg>
+                    </button>
+                  </span>
+                );
+              })}
+              <button
+                type="button"
+                onClick={() => setVisitChannelPickerOpen(true)}
+                className="inline-flex items-center h-7 px-2.5 rounded text-[10px] font-bold uppercase tracking-wider leading-none text-primary border border-dashed border-primary/40 hover:bg-primary/5 gap-0.5"
+              >
+                <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={3}>
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M12 4.5v15m7.5-7.5h-15" />
+                </svg>
+                TAG
+              </button>
+            </div>
           </div>
 
           {projectPickerOpen && (
@@ -1390,6 +1731,13 @@ function VisitModal({ prospect, projects, onClose, onSaved, onRefresh }: { prosp
               options={projects}
               onChange={(id) => { setProjectId(id); setProjectPickerOpen(false); }}
               onClose={() => setProjectPickerOpen(false)}
+            />
+          )}
+          {visitChannelPickerOpen && (
+            <ChannelPickerModal
+              title="เพิ่ม tag ช่องทาง"
+              onClose={() => setVisitChannelPickerOpen(false)}
+              onPick={(code) => { addTag(code); setVisitChannelPickerOpen(false); }}
             />
           )}
 

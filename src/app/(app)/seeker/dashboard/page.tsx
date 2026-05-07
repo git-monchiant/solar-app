@@ -22,7 +22,7 @@ type Totals = {
   leads_created: number;
 };
 
-type ByProject = { name: string; total: number; pending: number; contacted: number; interested: number; not_interested: number };
+type ByProject = { name: string; total: number; pending: number; contacted: number; interested: number; not_interested: number; is_pinned?: number | boolean };
 
 type RecentVisit = {
   id: number;

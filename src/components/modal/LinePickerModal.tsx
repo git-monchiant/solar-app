@@ -127,13 +127,7 @@ export default function LinePickerModal({ target, onClose, onLinked }: Props) {
                   onClick={() => setConfirm(u)}
                   className="w-full flex items-center gap-3 p-3 rounded-xl border border-gray-200 hover:border-active/40 hover:bg-active-light transition-all text-left"
                 >
-                  {u.picture_url ? (
-                    <img src={u.picture_url} alt="" className="w-10 h-10 rounded-full object-cover shrink-0" style={{ minHeight: 0 }} />
-                  ) : (
-                    <div className="w-10 h-10 rounded-full bg-gray-200 flex items-center justify-center shrink-0" style={{ minHeight: 0 }}>
-                      <svg className="w-5 h-5 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M15.75 6a3.75 3.75 0 11-7.5 0 3.75 3.75 0 017.5 0zM4.501 20.118a7.5 7.5 0 0114.998 0" /></svg>
-                    </div>
-                  )}
+                  <LineAvatar url={u.picture_url} />
                   <div className="flex-1 min-w-0">
                     <div className="flex items-start gap-2">
                       <div className="flex-1 min-w-0">
@@ -171,5 +165,30 @@ export default function LinePickerModal({ target, onClose, onLinked }: Props) {
         )}
       </div>
     </div>
+  );
+}
+
+// LINE profile URLs expire periodically — when the image fails to load we
+// silently swap to a placeholder instead of letting the broken-image icon
+// (and a noisy console 404) leak into the UI.
+function LineAvatar({ url }: { url: string | null }) {
+  const [failed, setFailed] = useState(false);
+  if (!url || failed) {
+    return (
+      <div className="w-10 h-10 rounded-full bg-gray-200 flex items-center justify-center shrink-0" style={{ minHeight: 0 }}>
+        <svg className="w-5 h-5 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+          <path strokeLinecap="round" strokeLinejoin="round" d="M15.75 6a3.75 3.75 0 11-7.5 0 3.75 3.75 0 017.5 0zM4.501 20.118a7.5 7.5 0 0114.998 0" />
+        </svg>
+      </div>
+    );
+  }
+  return (
+    <img
+      src={url}
+      alt=""
+      className="w-10 h-10 rounded-full object-cover shrink-0"
+      style={{ minHeight: 0 }}
+      onError={() => setFailed(true)}
+    />
   );
 }

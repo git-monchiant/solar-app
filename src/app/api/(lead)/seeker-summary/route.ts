@@ -60,20 +60,46 @@ export async function GET(req: NextRequest) {
       WHERE 1=1 ${projectFilter}
     `);
 
-    // Per-project rollup. Always returns every project (filter is only on the
-    // top-level totals view) so the "By project" panel keeps showing context.
+    // Per-project rollup. Includes every active project from `projects` even
+    // when no prospect references it yet — so seekers can see "empty" projects
+    // they haven't started canvassing. Names also union with whatever legacy
+    // free-text project_name strings exist on prospects.
     const byProjectRes = await db.request().query(`
+      ;WITH project_names AS (
+        SELECT name, ISNULL(is_pinned, 0) AS is_pinned FROM projects WHERE is_active = 1
+        UNION
+        SELECT DISTINCT COALESCE(NULLIF(p.project_name, N''), pr.name) AS name, 0 AS is_pinned
+        FROM prospects p LEFT JOIN projects pr ON pr.id = p.project_id
+        WHERE COALESCE(NULLIF(p.project_name, N''), pr.name) IS NOT NULL
+      ),
+      project_dedup AS (
+        SELECT name, MAX(CAST(is_pinned AS INT)) AS is_pinned
+        FROM project_names GROUP BY name
+      ),
+      prospect_named AS (
+        -- For pinned projects (e.g. "โครงการอื่นทั่วไป") we ALWAYS group by
+        -- pr.name so every free-text project_name typed by users still rolls
+        -- up into the catch-all bucket. Non-pinned rows keep the legacy
+        -- COALESCE behaviour where project_name overrides.
+        SELECT p.*,
+          CASE
+            WHEN ISNULL(pr.is_pinned, 0) = 1 THEN pr.name
+            ELSE COALESCE(NULLIF(p.project_name, N''), pr.name)
+          END AS resolved_name
+        FROM prospects p LEFT JOIN projects pr ON pr.id = p.project_id
+      )
       SELECT
-        COALESCE(NULLIF(p.project_name, N''), pr.name, N'— ไม่ระบุ —') AS name,
-        COUNT(*) AS total,
-        SUM(CASE WHEN ${STATUS_CASE} = 'pending' THEN 1 ELSE 0 END) AS pending,
-        SUM(CASE WHEN ${STATUS_CASE} = 'contacted' THEN 1 ELSE 0 END) AS contacted,
-        SUM(CASE WHEN ${STATUS_CASE} = 'interested' THEN 1 ELSE 0 END) AS interested,
-        SUM(CASE WHEN ${STATUS_CASE} = 'not_interested' THEN 1 ELSE 0 END) AS not_interested
-      FROM prospects p
-      LEFT JOIN projects pr ON pr.id = p.project_id
-      GROUP BY COALESCE(NULLIF(p.project_name, N''), pr.name, N'— ไม่ระบุ —')
-      ORDER BY COUNT(*) DESC
+        pn.name,
+        pn.is_pinned,
+        COUNT(p.id) AS total,
+        ISNULL(SUM(CASE WHEN p.id IS NOT NULL AND ${STATUS_CASE} = 'pending' THEN 1 ELSE 0 END), 0) AS pending,
+        ISNULL(SUM(CASE WHEN p.id IS NOT NULL AND ${STATUS_CASE} = 'contacted' THEN 1 ELSE 0 END), 0) AS contacted,
+        ISNULL(SUM(CASE WHEN p.id IS NOT NULL AND ${STATUS_CASE} = 'interested' THEN 1 ELSE 0 END), 0) AS interested,
+        ISNULL(SUM(CASE WHEN p.id IS NOT NULL AND ${STATUS_CASE} = 'not_interested' THEN 1 ELSE 0 END), 0) AS not_interested
+      FROM project_dedup pn
+      LEFT JOIN prospect_named p ON p.resolved_name = pn.name
+      GROUP BY pn.name, pn.is_pinned
+      ORDER BY pn.is_pinned DESC, COUNT(p.id) DESC, pn.name
     `);
 
     // Recent visits — used to fill the bottom list. TOP 10 keeps it cheap.
@@ -111,14 +137,19 @@ export async function GET(req: NextRequest) {
       GROUP BY CONVERT(NVARCHAR(10), p.visited_at, 23)
     `);
 
-    // Project options for the picker — every project that has at least one
-    // prospect, sorted alphabetically.
+    // Project options for the dashboard picker — only projects that already
+    // have at least one prospect (the dashboard charts go blank otherwise).
+    // We still surface pinned projects first so they pop to the top.
     const optionsRes = await db.request().query(`
-      SELECT DISTINCT COALESCE(NULLIF(p.project_name, N''), pr.name) AS name
-      FROM prospects p
-      LEFT JOIN projects pr ON pr.id = p.project_id
-      WHERE COALESCE(NULLIF(p.project_name, N''), pr.name) IS NOT NULL
-      ORDER BY name
+      ;WITH resolved AS (
+        SELECT DISTINCT COALESCE(NULLIF(p.project_name, N''), pr.name) AS name,
+               ISNULL(pr.is_pinned, 0) AS is_pinned
+        FROM prospects p LEFT JOIN projects pr ON pr.id = p.project_id
+        WHERE COALESCE(NULLIF(p.project_name, N''), pr.name) IS NOT NULL
+      )
+      SELECT name FROM resolved
+      GROUP BY name
+      ORDER BY MAX(CAST(is_pinned AS INT)) DESC, name
     `);
 
     return NextResponse.json({

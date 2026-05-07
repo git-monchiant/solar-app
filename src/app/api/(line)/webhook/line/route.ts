@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import crypto from "crypto";
 import { getDb, sql } from "@/lib/db";
+import { cacheLineAvatar } from "@/lib/line-avatar";
 
 const CHANNEL_SECRET = process.env.LINE_CHANNEL_SECRET || "";
 const CHANNEL_ACCESS_TOKEN = process.env.LINE_CHANNEL_ACCESS_TOKEN || "";
@@ -35,20 +36,34 @@ async function upsertLineUser(userId: string, displayName?: string, pictureUrl?:
     .input("line_user_id", sql.NVarChar(100), userId)
     .query(`SELECT id FROM line_users WHERE line_user_id = @line_user_id`);
 
+  // Cache the LINE CDN avatar locally so the URL doesn't expire on us. We
+  // intentionally fire-and-forget (well, awaited but never throw) so the
+  // webhook still completes if LINE returns 4xx or the disk write fails.
+  let localPath: string | null = null;
+  if (pictureUrl) localPath = await cacheLineAvatar(userId, pictureUrl);
+
   if (existing.recordset.length > 0) {
     await db.request()
       .input("line_user_id", sql.NVarChar(100), userId)
       .input("display_name", sql.NVarChar(200), displayName || null)
       .input("picture_url", sql.NVarChar(500), pictureUrl || null)
+      .input("picture_local_path", sql.NVarChar(300), localPath)
       .input("last_message_at", sql.DateTime2, new Date())
-      .query(`UPDATE line_users SET display_name = COALESCE(@display_name, display_name), picture_url = COALESCE(@picture_url, picture_url), last_message_at = @last_message_at WHERE line_user_id = @line_user_id`);
+      .query(`UPDATE line_users SET
+        display_name = COALESCE(@display_name, display_name),
+        picture_url = COALESCE(@picture_url, picture_url),
+        picture_local_path = COALESCE(@picture_local_path, picture_local_path),
+        last_message_at = @last_message_at
+       WHERE line_user_id = @line_user_id`);
     return existing.recordset[0].id;
   } else {
     const result = await db.request()
       .input("line_user_id", sql.NVarChar(100), userId)
       .input("display_name", sql.NVarChar(200), displayName || null)
       .input("picture_url", sql.NVarChar(500), pictureUrl || null)
-      .query(`INSERT INTO line_users (line_user_id, display_name, picture_url, last_message_at) OUTPUT INSERTED.id VALUES (@line_user_id, @display_name, @picture_url, GETDATE())`);
+      .input("picture_local_path", sql.NVarChar(300), localPath)
+      .query(`INSERT INTO line_users (line_user_id, display_name, picture_url, picture_local_path, last_message_at)
+       OUTPUT INSERTED.id VALUES (@line_user_id, @display_name, @picture_url, @picture_local_path, GETDATE())`);
     return result.recordset[0].id;
   }
 }
