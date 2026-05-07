@@ -406,7 +406,19 @@ export default function PreSurveyStep({ lead, state, refresh, packages, expanded
         )}
         {!lead.survey_date && <span className="flex-1" />}
         {hasReceipt && (
-          <div className="mr-4"><ReceiptButtons leadId={lead.id} stage="deposit" fileLabel={lead.pre_doc_no || `lead_${lead.id}_deposit`} compact /></div>
+          <div className="mr-4 flex items-center gap-3">
+            <ReceiptButtons
+              leadId={lead.id}
+              stage="deposit"
+              fileLabel={`booking_${lead.pre_doc_no || lead.id}`}
+              title="BOOKING CONFIRMATION"
+              showSurvey
+              label="ใบยืนยันการจอง"
+              modalLabel="ใบยืนยันการจอง"
+              compact
+            />
+            <ReceiptButtons leadId={lead.id} stage="deposit" fileLabel={lead.pre_doc_no || `lead_${lead.id}_deposit`} compact />
+          </div>
         )}
       </>
     );
@@ -598,7 +610,16 @@ export default function PreSurveyStep({ lead, state, refresh, packages, expanded
               ขั้นสำรวจ" again is misleading. ID/project info is read-only
               in the "ข้อมูลลูกค้าเพื่อออกใบเสร็จ" section above. */}
           {hasReceipt && (
-            <div className="pt-3 border-t border-gray-100">
+            <div className="pt-3 border-t border-gray-100 grid grid-cols-2 gap-2">
+              <ReceiptButtons
+                leadId={lead.id}
+                stage="deposit"
+                fileLabel={`booking_${lead.pre_doc_no || lead.id}`}
+                title="BOOKING CONFIRMATION"
+                showSurvey
+                label="ใบยืนยันการจอง"
+                modalLabel="ใบยืนยันการจอง"
+              />
               <ReceiptButtons leadId={lead.id} stage="deposit" fileLabel={lead.pre_doc_no || `lead_${lead.id}_deposit`} />
             </div>
           )}
