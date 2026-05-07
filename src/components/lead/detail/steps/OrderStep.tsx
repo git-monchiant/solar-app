@@ -200,22 +200,44 @@ export default function OrderStep({ lead, state, refresh, expanded, onToggle }: 
   useEffect(() => { loadActivities(); /* eslint-disable-next-line react-hooks/exhaustive-deps */ }, [lead.id]);
   const followupsByRow = (idx: number) => loanActivities.filter(a => a.title.startsWith(`[งวดที่ ${idx + 1}]`));
 
+  // Track every installment idx that already has a payments row (pending OR
+  // confirmed) so we don't re-seed placeholders for it on the next click.
+  const [existingIdxSet, setExistingIdxSet] = useState<Set<number>>(new Set());
+  // Track installments awaiting accountant step-2 verify — uploader has
+  // submitted a slip (slip_files.submitted_at IS NOT NULL) but admin hasn't
+  // confirmed yet. Drives the per-row "รอยืนยัน" button.
+  const [pendingApprovalIdxSet, setPendingApprovalIdxSet] = useState<Set<number>>(new Set());
   const loadPayments = async () => {
     try {
-      const all = await apiFetch(`/api/payments?lead_id=${lead.id}`) as Array<{ id: number; slip_field: string; confirmed_at: string | null }>;
+      const [paysRes, slipsRes] = await Promise.all([
+        apiFetch(`/api/payments?lead_id=${lead.id}`) as Promise<Array<{ id: number; slip_field: string; confirmed_at: string | null }>>,
+        apiFetch(`/api/slips?lead_id=${lead.id}`) as Promise<{ slips: Array<{ id: number; slip_field?: string; submitted_at: string | null }> }>,
+      ]);
       const paid = new Set<number>();
       const idMap = new Map<number, number>();
-      for (const p of all) {
-        if (!p.confirmed_at || !p.slip_field) continue;
+      const existing = new Set<number>();
+      for (const p of paysRes) {
+        if (!p.slip_field) continue;
         const m = /^order_installment_(\d+)$/.exec(p.slip_field);
-        if (m) {
-          const idx = parseInt(m[1]);
+        if (!m) continue;
+        const idx = parseInt(m[1]);
+        existing.add(idx);
+        if (p.confirmed_at) {
           paid.add(idx);
           idMap.set(idx, p.id);
         }
       }
+      const pendingApproval = new Set<number>();
+      for (const s of slipsRes.slips || []) {
+        if (!s.slip_field || !s.submitted_at) continue;
+        const m = /^order_installment_(\d+)$/.exec(s.slip_field);
+        if (!m) continue;
+        pendingApproval.add(parseInt(m[1]));
+      }
       setPaidIdxSet(paid);
       setPaidIdToId(idMap);
+      setExistingIdxSet(existing);
+      setPendingApprovalIdxSet(pendingApproval);
     } catch (e) { console.error(e); }
   };
   useEffect(() => { loadPayments(); /* eslint-disable-next-line react-hooks/exhaustive-deps */ }, [lead.id]);
@@ -228,6 +250,9 @@ export default function OrderStep({ lead, state, refresh, expanded, onToggle }: 
   })();
   const [installDate, setInstallDate] = useState(lead.install_date ? String(lead.install_date).slice(0, 10) : "");
   const [saving, setSaving] = useState(false);
+  // Tracks the per-substep "next" button while flushSave is in flight, so we
+  // can disable + relabel it to give the user feedback during the round-trip.
+  const [advancing, setAdvancing] = useState(false);
   const [beforeSlipDone, setBeforeSlipDone] = useState(!!lead.order_before_slip);
   const [afterSlipDone, setAfterSlipDone] = useState(!!lead.order_after_slip);
   const [lineSending, setLineSending] = useState(false);
@@ -494,11 +519,46 @@ export default function OrderStep({ lead, state, refresh, expanded, onToggle }: 
     if (from === 2 && !installDate) missing.push("วันนัดติดตั้ง");
     return missing;
   };
+  // After validation passes from the payment-plan substep (1 → next), pre-create
+  // pending payments rows for every "after-install" installment that doesn't
+  // already have one. The accountant report then sees the full installment plan
+  // (not just งวด 1 the customer happens to have started). Idempotent — skips
+  // any idx that already has a row, pending or confirmed.
+  const seedAfterInstallments = useCallback(async () => {
+    const tasks: Promise<unknown>[] = [];
+    for (let i = 0; i < persistedInstallments.length; i++) {
+      const row = persistedInstallments[i];
+      if (row.when !== "after") continue;
+      if (existingIdxSet.has(i)) continue;
+      const net = rowNet(i);
+      if (net <= 0) continue;
+      tasks.push(apiFetch(`/api/payments/intent`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          lead_id: lead.id,
+          step_no: 10 + i,
+          slip_field: `order_installment_${i}`,
+          amount: net,
+          description: `งวดที่ ${i + 1}`,
+        }),
+      }));
+    }
+    if (tasks.length === 0) return;
+    await Promise.all(tasks);
+    await loadPayments();
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [lead.id, persistedInstallments, existingIdxSet]);
+
   const handleSubStepChange = async (n: number) => {
     if (n > subStep) {
       const missing = gateCheck(subStep);
       if (missing.length > 0) { setNextError(missing.join(", ")); return; }
-      await flushSave();
+      setAdvancing(true);
+      try {
+        await flushSave();
+        if (subStep === 1) await seedAfterInstallments();
+      } finally { setAdvancing(false); }
     }
     setNextError(null);
     setSubStep(n);
@@ -616,6 +676,7 @@ export default function OrderStep({ lead, state, refresh, expanded, onToggle }: 
                 ) : null;
                 const paymentOpen = paymentRow === i;
                 const noNet = rowNetAmount === 0 && total > 0;
+                const pendingApproval = !paid && pendingApprovalIdxSet.has(i);
                 const recordPaymentBtn = (
                   <button
                     type="button"
@@ -626,15 +687,24 @@ export default function OrderStep({ lead, state, refresh, expanded, onToggle }: 
                         ? "bg-emerald-50 text-emerald-700 border-emerald-200 cursor-default"
                         : paid
                           ? "bg-emerald-50 text-emerald-700 border-emerald-200"
-                          : paymentOpen
-                            ? "bg-active text-white border-active"
-                            : "border-gray-200 bg-white text-gray-700 hover:border-active hover:text-active hover:bg-active/5"
+                          : pendingApproval
+                            ? "bg-amber-50 text-amber-700 border-amber-300"
+                            : paymentOpen
+                              ? "bg-active text-white border-active"
+                              : "border-gray-200 bg-white text-gray-700 hover:border-active hover:text-active hover:bg-active/5"
                     }`}
                   >
                     {noNet ? (
                       <>✓ ไม่มียอดต้องเก็บ</>
                     ) : paid ? (
                       <>ชำระแล้ว</>
+                    ) : pendingApproval ? (
+                      <>
+                        <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                          <path strokeLinecap="round" strokeLinejoin="round" d="M12 6v6h4.5m4.5 0a9 9 0 11-18 0 9 9 0 0118 0z" />
+                        </svg>
+                        รอยืนยัน
+                      </>
                     ) : (
                       <>
                         <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
@@ -765,20 +835,29 @@ export default function OrderStep({ lead, state, refresh, expanded, onToggle }: 
                       {row.method === "loan" && bankPicker && (
                         <div>{bankPicker}</div>
                       )}
-                      {/* Action button: บันทึกรับชำระ / ชำระแล้ว — full width */}
+                      {/* Action button: บันทึกรับชำระ / รอยืนยัน / ชำระแล้ว — full width */}
                       <button
                         type="button"
                         onClick={(e) => { e.stopPropagation(); setPaymentRow(paymentOpen ? null : i); }}
                         className={`w-full h-10 rounded-md border text-sm font-semibold transition-colors inline-flex items-center justify-center gap-2 ${
                           paid
                             ? "bg-emerald-50 text-emerald-700 border-emerald-200"
-                            : paymentOpen
-                              ? "bg-active text-white border-active"
-                              : "border-gray-200 bg-white text-gray-700 hover:border-active hover:text-active hover:bg-active/5"
+                            : pendingApproval
+                              ? "bg-amber-50 text-amber-700 border-amber-300"
+                              : paymentOpen
+                                ? "bg-active text-white border-active"
+                                : "border-gray-200 bg-white text-gray-700 hover:border-active hover:text-active hover:bg-active/5"
                         }`}
                       >
                         {paid ? (
                           <>ชำระแล้ว</>
+                        ) : pendingApproval ? (
+                          <>
+                            <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                              <path strokeLinecap="round" strokeLinejoin="round" d="M12 6v6h4.5m4.5 0a9 9 0 11-18 0 9 9 0 0118 0z" />
+                            </svg>
+                            รอยืนยัน
+                          </>
                         ) : (
                           <>
                             <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
@@ -969,7 +1048,7 @@ export default function OrderStep({ lead, state, refresh, expanded, onToggle }: 
         <div className="space-y-3">
           <div className="rounded-lg border border-active/15 bg-white/60 p-4">
             <label className="text-xs font-semibold tracking-wider uppercase text-gray-400 block mb-2">Zone</label>
-            <div className="grid grid-cols-1 gap-2">
+            <div className="grid grid-cols-1 md:grid-cols-4 gap-2">
               {zones.map(z => (
                 <button key={z.id} type="button" onClick={() => {
                   setZone(z.name);
@@ -1103,15 +1182,26 @@ export default function OrderStep({ lead, state, refresh, expanded, onToggle }: 
               ย้อนกลับ
             </button>
           ) : <span className="hidden md:block md:w-64" />}
-          <button type="button" onClick={async () => {
-            const missing = gateCheck(subStep);
-            if (missing.length > 0) { setNextError(missing.join(", ")); return; }
-            await flushSave();
-            setNextError(null);
-            setSubStep(subStep + 1); scrollToStep();
-          }} className="flex-1 md:flex-none md:w-64 h-11 rounded-lg text-sm font-semibold text-white bg-active hover:brightness-110 transition-colors flex items-center justify-center gap-1">
-            ถัดไป
-            <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M8.25 4.5l7.5 7.5-7.5 7.5" /></svg>
+          <button
+            type="button"
+            disabled={advancing}
+            onClick={async () => {
+              const missing = gateCheck(subStep);
+              if (missing.length > 0) { setNextError(missing.join(", ")); return; }
+              setAdvancing(true);
+              try {
+                await flushSave();
+                if (subStep === 1) await seedAfterInstallments();
+              } finally { setAdvancing(false); }
+              setNextError(null);
+              setSubStep(subStep + 1); scrollToStep();
+            }}
+            className="flex-1 md:flex-none md:w-64 h-11 rounded-lg text-sm font-semibold text-white bg-active hover:brightness-110 disabled:opacity-60 disabled:cursor-not-allowed transition-colors flex items-center justify-center gap-1"
+          >
+            {advancing ? "กำลังบันทึก..." : "ถัดไป"}
+            {!advancing && (
+              <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M8.25 4.5l7.5 7.5-7.5 7.5" /></svg>
+            )}
           </button>
         </div>
       )}

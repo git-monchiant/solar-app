@@ -9,7 +9,7 @@ export async function GET(req: NextRequest) {
   if (gate.error) return gate.error;
   const db = await getDb();
   const r = await db.request().query(`
-    SELECT b.id, b.title, b.block_date, b.time_slot, b.note, b.created_by, b.created_at,
+    SELECT b.id, b.title, b.block_date, b.end_date, b.time_slot, b.note, b.zone, b.created_by, b.created_at,
            u.full_name AS created_by_name
     FROM calendar_blocks b
     LEFT JOIN users u ON u.id = b.created_by
@@ -27,16 +27,19 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: "title + block_date required" }, { status: 400 });
     }
     const db = await getDb();
+    const endDate = body.end_date && body.end_date > body.block_date ? body.end_date : null;
     const r = await db.request()
       .input("title", sql.NVarChar(200), String(body.title))
       .input("block_date", sql.Date, body.block_date)
+      .input("end_date", sql.Date, endDate)
       .input("time_slot", sql.NVarChar(100), body.time_slot || null)
       .input("note", sql.NVarChar(sql.MAX), body.note || null)
+      .input("zone", sql.NVarChar(50), body.zone || null)
       .input("created_by", sql.Int, gate.userId)
       .query(`
-        INSERT INTO calendar_blocks (title, block_date, time_slot, note, created_by)
+        INSERT INTO calendar_blocks (title, block_date, end_date, time_slot, note, zone, created_by)
         OUTPUT INSERTED.*
-        VALUES (@title, @block_date, @time_slot, @note, @created_by)
+        VALUES (@title, @block_date, @end_date, @time_slot, @note, @zone, @created_by)
       `);
     return NextResponse.json(fixDates(r.recordset)[0], { status: 201 });
   } catch (e) {

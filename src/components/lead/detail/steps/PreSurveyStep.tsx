@@ -623,7 +623,7 @@ export default function PreSurveyStep({ lead, state, refresh, packages, expanded
         <div className="space-y-2">
         <div className="rounded-lg border border-active/15 bg-white/60 p-4">
           <label className="text-xs font-semibold tracking-wider uppercase text-gray-400 block mb-2">Zone</label>
-          <div className="grid grid-cols-1 gap-2">
+          <div className="grid grid-cols-1 md:grid-cols-4 gap-2">
             {zones.map(z => (
               <button key={z.id} type="button" onClick={() => {
                 setZone(z.name);

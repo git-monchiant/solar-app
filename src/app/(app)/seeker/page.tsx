@@ -101,6 +101,16 @@ const CARD_STATUS: Record<CardStatusKey, { label: string; card: string; badge: s
   },
 };
 
+// Lenient substring search: split query on whitespace, drop punctuation
+// (".", ",", "-", "_", "/") on both sides, then every token must appear.
+// Lets "รามอินทรา กม 9" match a name like "เสนา วิลเลจ รามอินทรา กม.9".
+function matchesSearch(text: string | null | undefined, query: string): boolean {
+  if (!query) return true;
+  const normalize = (s: string) => s.toLowerCase().replace(/[\s.,\-_/]+/g, "");
+  const haystack = normalize(text || "");
+  return query.split(/\s+/).filter(Boolean).every((tok) => haystack.includes(normalize(tok)));
+}
+
 function houseSortKey(h: string | null): [number, number, string] {
   if (!h) return [Number.MAX_SAFE_INTEGER, 0, ""];
   const parts = h.split("/");
@@ -305,7 +315,7 @@ export default function SeekerPage() {
           visited_count: 0,
         }));
     }
-    return projectCards.filter((p) => p.name.toLowerCase().includes(q));
+    return projectCards.filter((p) => matchesSearch(p.name, q));
   }, [projectCards, projectSearch, matchedChannelKey, channelCounts]);
 
   const scopedByProject = useMemo(() => {
@@ -341,10 +351,10 @@ export default function SeekerPage() {
     if (q) {
       list = list.filter(
         (p) =>
-          (p.full_name || "").toLowerCase().includes(q) ||
-          (p.house_number || "").toLowerCase().includes(q) ||
+          matchesSearch(p.full_name, q) ||
+          matchesSearch(p.house_number, q) ||
           (p.phone || "").includes(q) ||
-          (p.project_name || "").toLowerCase().includes(q)
+          matchesSearch(p.project_name, q)
       );
     }
     return [...list].sort(compareHouse);

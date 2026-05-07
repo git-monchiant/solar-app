@@ -60,6 +60,15 @@ export default function SeekerDashboardPage() {
   const [loading, setLoading] = useState(true);
   const [projectFilter, setProjectFilter] = useState<string>("");
   const [pickerOpen, setPickerOpen] = useState(false);
+  const [chartFullscreen, setChartFullscreen] = useState(false);
+  const [chartSearch, setChartSearch] = useState("");
+  // Lock background scroll while the chart is in fullscreen.
+  useEffect(() => {
+    if (!chartFullscreen) return;
+    const prev = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    return () => { document.body.style.overflow = prev; };
+  }, [chartFullscreen]);
   // StrictMode double-mounts in dev; ref short-circuits the second effect run.
   const fetchedRef = useRef(false);
 
@@ -75,17 +84,10 @@ export default function SeekerDashboardPage() {
   useEffect(() => {
     if (fetchedRef.current) return;
     fetchedRef.current = true;
-    const saved = typeof window !== "undefined" ? localStorage.getItem("seekerProjectFilter") : null;
-    const initial = saved || "";
-    if (saved) setProjectFilter(saved);
-    loadSummary(initial);
+    // Always start at "all projects" — within-session selections still update
+    // the filter, but reloading the page returns to the wide view.
+    loadSummary("");
   }, []);
-
-  useEffect(() => {
-    if (typeof window === "undefined") return;
-    if (projectFilter) localStorage.setItem("seekerProjectFilter", projectFilter);
-    else localStorage.removeItem("seekerProjectFilter");
-  }, [projectFilter]);
 
   const rawStats = summary?.totals || EMPTY_TOTALS;
   const stats: Totals = {
@@ -207,6 +209,127 @@ export default function SeekerDashboardPage() {
               </div>
               <SeekerActivityChart daily={daily} />
             </div>
+
+            {/* House count per project — stacked bar chart by visit status */}
+            {byProject.length > 0 && (() => {
+              const totalOf = (r: ByProject) => r.interested + r.contacted + r.not_interested + r.pending;
+              const q = chartSearch.trim().toLowerCase();
+              const sorted = [...byProject]
+                .filter((r) => totalOf(r) > 0)
+                .filter((r) => !q || r.name.toLowerCase().includes(q))
+                .sort((a, b) => totalOf(b) - totalOf(a));
+              const maxTotal = Math.max(1, ...sorted.map(totalOf));
+              const CHART_H = chartFullscreen ? Math.max(360, (typeof window !== "undefined" ? window.innerHeight : 720) - 220) : 320;
+              const totalSum = sorted.reduce((s, r) => s + totalOf(r), 0);
+              return (
+                <div className={chartFullscreen
+                  ? "fixed inset-0 z-[9999] bg-white flex flex-col safe-top"
+                  : "bg-white rounded-2xl border border-gray-200 overflow-hidden"}>
+                  <div className="px-4 py-3 border-b border-gray-100 flex items-center justify-between flex-wrap gap-2">
+                    <h2 className="text-sm font-bold text-gray-900">จำนวนหลังต่อโครงการ</h2>
+                    <div className="flex items-center gap-3">
+                      <span className="text-xs text-gray-400">{sorted.length} โครงการ · รวม {totalSum} หลัง</span>
+                      <button
+                        type="button"
+                        onClick={() => setChartFullscreen((v) => !v)}
+                        aria-label={chartFullscreen ? "ปิดเต็มจอ" : "ขยายเต็มจอ"}
+                        title={chartFullscreen ? "ปิดเต็มจอ" : "ขยายเต็มจอ"}
+                        className="w-8 h-8 rounded-md text-gray-500 hover:text-gray-900 hover:bg-gray-100 flex items-center justify-center"
+                        style={{ minHeight: 0 }}
+                      >
+                        {chartFullscreen ? (
+                          <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                            <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
+                          </svg>
+                        ) : (
+                          <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                            <path strokeLinecap="round" strokeLinejoin="round" d="M3.75 3.75v4.5m0-4.5h4.5m-4.5 0L9 9M3.75 20.25v-4.5m0 4.5h4.5m-4.5 0L9 15M20.25 3.75h-4.5m4.5 0v4.5m0-4.5L15 9m5.25 11.25h-4.5m4.5 0v-4.5m0 4.5L15 15" />
+                          </svg>
+                        )}
+                      </button>
+                    </div>
+                  </div>
+                  <div className="px-4 py-2 border-b border-gray-100 flex items-center gap-3 flex-wrap text-xs">
+                    <input
+                      type="text"
+                      value={chartSearch}
+                      onChange={(e) => setChartSearch(e.target.value)}
+                      placeholder="ค้นหาชื่อโครงการ..."
+                      className="flex-1 min-w-[180px] h-8 px-3 rounded-md border border-gray-200 text-xs focus:outline-none focus:border-primary"
+                      style={{ minHeight: 0 }}
+                    />
+                  </div>
+                  <div className="px-4 py-2 border-b border-gray-100 flex items-center gap-4 text-xs">
+                    <span className="inline-flex items-center gap-1.5"><span className="w-3 h-3 rounded-sm bg-green-500" />สนใจ</span>
+                    <span className="inline-flex items-center gap-1.5"><span className="w-3 h-3 rounded-sm bg-amber-400" />ยังไม่ตัดสินใจ</span>
+                    <span className="inline-flex items-center gap-1.5"><span className="w-3 h-3 rounded-sm bg-red-400" />ไม่สนใจ</span>
+                    <span className="inline-flex items-center gap-1.5"><span className="w-3 h-3 rounded-sm bg-gray-300" />ยังไม่ได้เยี่ยม</span>
+                  </div>
+                  <div className={chartFullscreen ? "p-4 overflow-auto flex-1" : "p-4 overflow-x-auto"}>
+                    <div className="w-full">
+                      <div className="flex items-end gap-1 w-full border-b-2 border-gray-300">
+                        {sorted.map((row) => {
+                          const total = totalOf(row);
+                          const totalH = Math.max(2, Math.round((total / maxTotal) * CHART_H));
+                          const interestedH = total === 0 ? 0 : Math.round((row.interested / total) * totalH);
+                          const contactedH = total === 0 ? 0 : Math.round((row.contacted / total) * totalH);
+                          const notInterestedH = total === 0 ? 0 : Math.round((row.not_interested / total) * totalH);
+                          const pendingH = totalH - interestedH - contactedH - notInterestedH;
+                          return (
+                            <div
+                              key={row.name}
+                              className="flex flex-col items-center justify-end flex-1 min-w-0"
+                              style={{ height: `${CHART_H + 18}px` }}
+                            >
+                              <span className="text-[10px] font-mono tabular-nums text-gray-700 mb-1">{total}</span>
+                              <div
+                                className="w-full flex flex-col-reverse overflow-hidden hover:brightness-110 transition-all"
+                                style={{ height: `${totalH}px` }}
+                                title={`${row.name}\nสนใจ ${row.interested} · ยังไม่ตัดสินใจ ${row.contacted} · ไม่สนใจ ${row.not_interested} · ยังไม่ได้เยี่ยม ${row.pending}`}
+                              >
+                                {row.interested > 0 && (
+                                  <div className="bg-green-500 flex items-center justify-center text-[10px] font-mono tabular-nums text-white" style={{ height: `${interestedH}px` }}>
+                                    {interestedH >= 14 ? row.interested : ""}
+                                  </div>
+                                )}
+                                {row.contacted > 0 && (
+                                  <div className="bg-amber-400 flex items-center justify-center text-[10px] font-mono tabular-nums text-white" style={{ height: `${contactedH}px` }}>
+                                    {contactedH >= 14 ? row.contacted : ""}
+                                  </div>
+                                )}
+                                {row.not_interested > 0 && (
+                                  <div className="bg-red-400 flex items-center justify-center text-[10px] font-mono tabular-nums text-white" style={{ height: `${notInterestedH}px` }}>
+                                    {notInterestedH >= 14 ? row.not_interested : ""}
+                                  </div>
+                                )}
+                                {row.pending > 0 && (
+                                  <div className="bg-gray-300 flex items-center justify-center text-[10px] font-mono tabular-nums text-gray-700" style={{ height: `${Math.max(0, pendingH)}px` }}>
+                                    {pendingH >= 14 ? row.pending : ""}
+                                  </div>
+                                )}
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </div>
+                      <div className="flex gap-1 w-full mt-2 items-start">
+                        {sorted.map((row) => (
+                          <div key={row.name} className="flex justify-center flex-1 min-w-0">
+                            <div
+                              className="text-[11px] text-gray-700 whitespace-nowrap"
+                              style={{ writingMode: "vertical-rl", transform: "rotate(180deg)" }}
+                              title={row.name}
+                            >
+                              {row.name}
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              );
+            })()}
 
             {/* Coverage progress */}
             <div className="bg-white rounded-2xl border border-gray-200 p-4">

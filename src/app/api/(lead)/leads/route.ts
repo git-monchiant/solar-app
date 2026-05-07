@@ -25,8 +25,18 @@ export async function GET(req: NextRequest) {
   if (gate.error) return gate.error;
   try {
     const db = await getDb();
+    // Explicit column list — `leads` has 180+ columns but the card UI uses
+    // ~30. Picking only what LeadCard/pipeline render keeps the response
+    // ~3-4× smaller (1MB → ~250KB at 150 leads).
     const result = await db.request().query(`
-      SELECT l.*, p.name as project_name, p.district, p.province, pk.name as package_name, pk.price as package_price,
+      SELECT l.id, l.full_name, l.phone, l.email, l.installation_address, l.house_number,
+             l.customer_type, l.status, l.source, l.note, l.contact_date, l.created_at,
+             l.next_follow_up, l.revisit_date, l.lost_reason,
+             l.assigned_user_id, l.zone, l.line_id,
+             l.survey_date, l.survey_time_slot, l.install_date, l.install_completed_at, l.install_extra_cost,
+             l.pre_doc_no, l.pre_total_price, l.quotation_amount, l.order_total,
+             p.name as project_name, p.district, p.province,
+             pk.name as package_name, pk.price as package_price,
              u.full_name as assigned_name,
              (SELECT TOP 1 note FROM lead_activities WHERE lead_id = l.id AND note IS NOT NULL ORDER BY created_at DESC) as last_activity_note,
              (SELECT TOP 1 created_at FROM lead_activities WHERE lead_id = l.id ORDER BY created_at DESC) as last_activity_date

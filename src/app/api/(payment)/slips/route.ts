@@ -7,9 +7,11 @@ export const maxDuration = 30;
 
 const MAX_SLIPS = 5;
 
-// GET /api/slips?lead_id=<id>&slip_field=<field>
-// List staging slips for a (lead, slip_field) pair. Used by PaymentSection to
-// render up to MAX_SLIPS slot thumbnails before confirm.
+// GET /api/slips?lead_id=<id>[&slip_field=<field>]
+// List staging slips for a lead. With slip_field set, scope to that one field
+// (used by PaymentSection for the slot thumbnails). Without it, return every
+// staging slip for the lead — OrderStep needs that to know which installments
+// are awaiting accountant step-2 verify.
 export async function GET(req: NextRequest) {
   const gate = await requireAuth(req);
   if (gate.error) return gate.error;
@@ -17,23 +19,26 @@ export async function GET(req: NextRequest) {
     const { searchParams } = new URL(req.url);
     const leadId = parseInt(searchParams.get("lead_id") || "0");
     const slipField = searchParams.get("slip_field") || "";
-    if (!leadId || !slipField) {
-      return NextResponse.json({ error: "lead_id and slip_field required" }, { status: 400 });
+    if (!leadId) {
+      return NextResponse.json({ error: "lead_id required" }, { status: 400 });
     }
     const db = await getDb();
-    const r = await db.request()
-      .input("lead_id", sql.Int, leadId)
-      .input("slip_field", sql.NVarChar(50), slipField)
-      .query(`
-        SELECT id, mime, filename, uploaded_at, submitted_at, DATALENGTH(data) AS bytes
-        FROM slip_files
-        WHERE lead_id = @lead_id AND slip_field = @slip_field
-        ORDER BY id ASC
-      `);
+    const reqDb = db.request().input("lead_id", sql.Int, leadId);
+    const where = slipField
+      ? "WHERE lead_id = @lead_id AND slip_field = @slip_field"
+      : "WHERE lead_id = @lead_id";
+    if (slipField) reqDb.input("slip_field", sql.NVarChar(50), slipField);
+    const r = await reqDb.query(`
+      SELECT id, slip_field, mime, filename, uploaded_at, submitted_at, DATALENGTH(data) AS bytes
+      FROM slip_files
+      ${where}
+      ORDER BY id ASC
+    `);
     return NextResponse.json({
       slips: r.recordset.map((row) => ({
         id: row.id,
         url: `/api/slips/${row.id}`,
+        slip_field: row.slip_field,
         mime: row.mime,
         filename: row.filename,
         bytes: row.bytes,

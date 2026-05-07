@@ -75,7 +75,10 @@ export default function BottomNav() {
       <nav className="fixed inset-x-0 bottom-0 bg-white border-t border-gray-200 z-50 md:hidden">
         <div className="flex justify-around items-center h-20">
           {visibleMobile.map((item) => {
-            const isActive = item.href === "/seeker" ? pathname === "/seeker" : pathname.startsWith(item.href);
+            const isActive =
+              item.href === "/seeker" ? pathname === "/seeker" :
+              item.href === "/report" ? pathname === "/report" :
+              pathname.startsWith(item.href);
             return (
               <Link key={item.href} href={item.href}
                 className={`flex flex-col items-center justify-center w-full h-full gap-0.5 transition-colors ${isActive ? "text-primary" : "text-gray"}`}>
@@ -99,6 +102,7 @@ export default function BottomNav() {
             const isActive =
               item.href === "/packages" ? pathname === "/packages" :
               item.href === "/seeker" ? pathname === "/seeker" :
+              item.href === "/report" ? pathname === "/report" :
               pathname.startsWith(item.href);
             const prev = visibleItems[idx - 1];
             const showDivider = prev && prev.group === "seeker" && item.group !== "seeker";
@@ -133,18 +137,6 @@ const ADMIN_GROUPS: { title: string; links: AdminLink[] }[] = [
         icon: <svg className="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M3 13.125C3 12.504 3.504 12 4.125 12h2.25c.621 0 1.125.504 1.125 1.125v6.75C7.5 20.496 6.996 21 6.375 21h-2.25A1.125 1.125 0 013 19.875v-6.75zM9.75 8.625c0-.621.504-1.125 1.125-1.125h2.25c.621 0 1.125.504 1.125 1.125v11.25c0 .621-.504 1.125-1.125 1.125h-2.25a1.125 1.125 0 01-1.125-1.125V8.625zM16.5 4.125c0-.621.504-1.125 1.125-1.125h2.25C20.496 3 21 3.504 21 4.125v15.75c0 .621-.504 1.125-1.125 1.125h-2.25a1.125 1.125 0 01-1.125-1.125V4.125z" /></svg>,
       },
       {
-        href: "/report",
-        label: "Report",
-        roles: ["admin", "sales", "solar", "account"],
-        icon: <svg className="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M19.5 14.25v-2.625a3.375 3.375 0 00-3.375-3.375h-1.5A1.125 1.125 0 0113.5 7.125v-1.5a3.375 3.375 0 00-3.375-3.375H8.25m0 12.75h7.5m-7.5 3H12M10.5 2.25H5.625c-.621 0-1.125.504-1.125 1.125v17.25c0 .621.504 1.125 1.125 1.125h12.75c.621 0 1.125-.504 1.125-1.125V11.25a9 9 0 00-9-9z" /></svg>,
-      },
-      {
-        href: "/report/pending",
-        label: "รอยืนยัน",
-        roles: ["admin", "account"],
-        icon: <svg className="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M9 12.75L11.25 15 15 9.75M21 12a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>,
-      },
-      {
         href: "/calendar",
         label: "Calendar",
         roles: ["admin", "sales", "solar"],
@@ -155,6 +147,23 @@ const ADMIN_GROUPS: { title: string; links: AdminLink[] }[] = [
         label: "Export",
         roles: ["admin", "sales", "solar"],
         icon: <svg className="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M3 16.5v2.25A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75V16.5M16.5 12L12 16.5m0 0L7.5 12m4.5 4.5V3" /></svg>,
+      },
+    ],
+  },
+  {
+    title: "Accounting",
+    links: [
+      {
+        href: "/report",
+        label: "Report",
+        roles: ["admin", "sales", "solar", "account"],
+        icon: <svg className="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M19.5 14.25v-2.625a3.375 3.375 0 00-3.375-3.375h-1.5A1.125 1.125 0 0113.5 7.125v-1.5a3.375 3.375 0 00-3.375-3.375H8.25m0 12.75h7.5m-7.5 3H12M10.5 2.25H5.625c-.621 0-1.125.504-1.125 1.125v17.25c0 .621.504 1.125 1.125 1.125h12.75c.621 0 1.125-.504 1.125-1.125V11.25a9 9 0 00-9-9z" /></svg>,
+      },
+      {
+        href: "/report/pending",
+        label: "Pending Approval",
+        roles: ["admin", "account"],
+        icon: <svg className="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M9 12.75L11.25 15 15 9.75M21 12a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>,
       },
     ],
   },
@@ -203,7 +212,10 @@ function AdminGroups({ pathname, activeRoles }: { pathname: string; activeRoles:
           <div key={g.title} className={i === 0 ? "pt-2 mt-2 border-t border-gray-100" : "pt-2 mt-2"}>
             <div className="px-3 pb-0.5 text-[10px] font-bold uppercase tracking-widest text-gray-400">{g.title}</div>
             {links.map(l => {
-              const active = l.href === "/packages/manage" ? pathname.startsWith("/packages/manage") : pathname.startsWith(l.href);
+              const active =
+                l.href === "/packages/manage" ? pathname.startsWith("/packages/manage") :
+                l.href === "/report" ? pathname === "/report" :
+                pathname.startsWith(l.href);
               return (
                 <Link key={l.href} href={l.href}
                   className={`flex items-center gap-3 px-3 py-1.5 rounded-lg text-xs font-semibold uppercase tracking-wider transition-colors ${active ? "bg-primary/10 text-primary" : "text-gray hover:bg-gray-50"}`}>

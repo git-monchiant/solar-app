@@ -124,7 +124,20 @@ export default function PaymentSection({
   };
 
   const [settings, setSettings] = useState<Settings>({});
-  const [tab, setTab] = useState<"qr" | "link" | "bank" | "other">("qr");
+  // Remember the last tab the user picked for this (lead, slip_field) pair so
+  // a refresh after submitting a slip on "bank" doesn't snap back to "qr".
+  // Confirmed payments override this via payment_method below.
+  const tabStorageKey = `paymentTab:${leadId}:${slipField}`;
+  const [tab, setTab] = useState<"qr" | "link" | "bank" | "other">(() => {
+    if (typeof window === "undefined") return "qr";
+    const saved = localStorage.getItem(tabStorageKey);
+    if (saved === "qr" || saved === "link" || saved === "bank" || saved === "other") return saved;
+    return "qr";
+  });
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    localStorage.setItem(tabStorageKey, tab);
+  }, [tab, tabStorageKey]);
   const [otherMethod, setOtherMethod] = useState("");
   const { me } = useMe();
   const dialog = useDialog();
@@ -880,7 +893,7 @@ export default function PaymentSection({
                 {s.status === "failed" && (
                   <div className="absolute inset-x-0 bottom-0 bg-red-500/90 text-white text-[10px] font-semibold text-center py-0.5 px-1 truncate pointer-events-none" title={s.error}>{s.error || "ไม่ผ่าน"}</div>
                 )}
-                {!confirmed && (
+                {!confirmed && !s.submittedAt && (
                   <button type="button" onClick={(e) => { e.stopPropagation(); removeSlip(s); }}
                     className="absolute top-1 right-1 w-6 h-6 bg-black/60 rounded-full text-white flex items-center justify-center text-xs z-10" style={{ minHeight: 0 }}>✕</button>
                 )}

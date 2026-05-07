@@ -1,26 +1,33 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { apiFetch } from "@/lib/api";
+import { HOURLY_SLOTS, parseSlots, serializeSlots, slotLabel } from "@/lib/time-slots";
+
+type Zone = { id: number; name: string; color?: string | null };
 
 // Quick-create modal for a non-lead "other work" calendar block — lets
 // dispatch reserve a slot/day so survey/install scheduling sees it as taken.
 // POSTs to /api/calendar-blocks. The /api/surveys/scheduled endpoint UNIONs
 // these with lead appointments so date pickers automatically respect them.
 
-const SLOTS = [
-  { value: "", label: "ทั้งวัน" },
-  { value: "morning", label: "เช้า (09:00-12:00)" },
-  { value: "afternoon", label: "บ่าย (13:00-16:00)" },
-];
-
 export default function NewAppointmentModal({ onClose, onCreated, initialDate }: { onClose: () => void; onCreated: () => void; initialDate?: string }) {
   const [title, setTitle] = useState("");
   const [date, setDate] = useState<string>(initialDate || new Date().toISOString().slice(0, 10));
-  const [slot, setSlot] = useState<string>("");
+  const [endDate, setEndDate] = useState<string>("");
+  const [timeSlot, setTimeSlot] = useState<string>("");
+  const [zone, setZone] = useState<string>("");
+  const [zones, setZones] = useState<Zone[]>([]);
   const [note, setNote] = useState("");
   const [saving, setSaving] = useState(false);
   const [err, setErr] = useState<string | null>(null);
+
+  useEffect(() => {
+    apiFetch("/api/zones").then((zs: Zone[]) => {
+      setZones(zs);
+      if (zs.length > 0) setZone((cur) => cur || zs[0].name);
+    }).catch(console.error);
+  }, []);
 
   const save = async () => {
     if (!title.trim()) { setErr("กรอกชื่องาน"); return; }
@@ -33,7 +40,9 @@ export default function NewAppointmentModal({ onClose, onCreated, initialDate }:
         body: JSON.stringify({
           title: title.trim(),
           block_date: date,
-          time_slot: slot || null,
+          end_date: endDate && endDate > date ? endDate : null,
+          time_slot: timeSlot || null,
+          zone: zone || null,
           note: note.trim() || null,
         }),
       });
@@ -65,21 +74,69 @@ export default function NewAppointmentModal({ onClose, onCreated, initialDate }:
           </div>
 
           <div>
-            <label className="text-xs font-semibold tracking-wider uppercase text-gray-400 block mb-1">วันที่</label>
-            <input type="date" value={date} onChange={(e) => setDate(e.target.value)}
-              className="w-full h-10 px-3 rounded-lg border border-gray-200 text-sm focus:outline-none focus:border-primary" />
+            <label className="text-xs font-semibold tracking-wider uppercase text-gray-400 block mb-1">ทีม</label>
+            <div className="flex flex-wrap gap-2">
+              {zones.map((z) => {
+                const selected = zone === z.name;
+                const tint = z.color ?? undefined;
+                return (
+                  <button key={z.id} type="button" onClick={() => setZone(z.name)}
+                    style={selected && tint ? { backgroundColor: tint, borderColor: tint, color: "#fff" } : tint ? { borderColor: tint, color: tint } : undefined}
+                    className={`h-9 px-3 rounded-lg text-sm font-semibold border transition-colors ${selected && !tint ? "bg-primary text-white border-primary" : !tint ? "bg-white text-gray-600 border-gray-200 hover:border-gray-400" : "bg-white"}`}>
+                    {z.name}
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className="text-xs font-semibold tracking-wider uppercase text-gray-400 block mb-1">วันเริ่ม</label>
+              <input type="date" value={date}
+                onChange={(e) => {
+                  const v = e.target.value;
+                  setDate(v);
+                  if (endDate && endDate < v) setEndDate("");
+                }}
+                className="w-full h-10 px-3 rounded-lg border border-gray-200 text-sm focus:outline-none focus:border-primary" />
+            </div>
+            <div>
+              <label className="text-xs font-semibold tracking-wider uppercase text-gray-400 block mb-1">
+                วันสิ้นสุด
+                <span className="ml-2 text-gray-300 normal-case font-normal">ไม่กรอก = วันเดียว</span>
+              </label>
+              <input type="date" value={endDate} min={date} onChange={(e) => setEndDate(e.target.value)}
+                className="w-full h-10 px-3 rounded-lg border border-gray-200 text-sm focus:outline-none focus:border-primary" />
+            </div>
           </div>
 
           <div>
-            <label className="text-xs font-semibold tracking-wider uppercase text-gray-400 block mb-1">ช่วงเวลา</label>
-            <div className="grid grid-cols-3 gap-2">
-              {SLOTS.map((s) => (
-                <button key={s.value} type="button" onClick={() => setSlot(s.value)}
-                  className={`h-10 rounded-lg border text-sm font-semibold transition-colors ${slot === s.value ? "bg-primary text-white border-primary" : "bg-white text-gray-600 border-gray-200 hover:border-gray-400"}`}>
-                  {s.label}
-                </button>
-              ))}
+            <label className="text-xs font-semibold tracking-wider uppercase text-gray-400 block mb-1">
+              ช่วงเวลา
+              <span className="ml-2 text-gray-300 normal-case font-normal">เลือกได้มากกว่า 1 ช่วง</span>
+            </label>
+            <div className="grid grid-cols-4 gap-1.5">
+              {HOURLY_SLOTS.map((s) => {
+                const selected = parseSlots(timeSlot).includes(s);
+                return (
+                  <button key={s} type="button"
+                    onClick={() => {
+                      const cur = parseSlots(timeSlot);
+                      const next = selected ? cur.filter((x) => x !== s) : [...cur, s].sort();
+                      setTimeSlot(serializeSlots(next) || "");
+                    }}
+                    className={`flex items-center justify-center h-8 px-1 rounded-md border transition-all ${
+                      selected
+                        ? "bg-active border-active text-white shadow-sm shadow-active/20"
+                        : "bg-white border-gray-300 text-gray-900 hover:border-active hover:text-active"
+                    }`}>
+                    <span className="text-[11px] font-semibold font-mono tabular-nums">{slotLabel(s)}</span>
+                  </button>
+                );
+              })}
             </div>
+            <div className="text-[11px] text-gray-400 mt-2">ไม่เลือกช่วงเวลา = block ทั้งวัน</div>
           </div>
 
           <div>

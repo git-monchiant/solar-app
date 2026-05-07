@@ -14,6 +14,17 @@ export async function GET(req: NextRequest) {
     // has that appointment on the calendar). Exclude terminal cancels so freed
     // slots come back to the pool.
     const result = await db.request().query(`
+      ;WITH block_days AS (
+        -- Expand each calendar_block into one row per day in [block_date, end_date].
+        -- end_date NULL = single-day block. The recursive CTE walks day-by-day
+        -- so multi-day "ลาพักร้อน" blocks show up on every covered day.
+        SELECT id, title, time_slot, block_date AS d, COALESCE(end_date, block_date) AS last_d
+        FROM calendar_blocks
+        UNION ALL
+        SELECT id, title, time_slot, DATEADD(day, 1, d), last_d
+        FROM block_days
+        WHERE d < last_d
+      )
       SELECT id, full_name, house_number, survey_date as event_date, survey_time_slot as time_slot, 'survey' as event_type, status, zone
       FROM leads
       WHERE survey_date IS NOT NULL
@@ -24,12 +35,11 @@ export async function GET(req: NextRequest) {
       WHERE install_date IS NOT NULL
         AND status NOT IN ('lost', 'returned')
       UNION ALL
-      -- Free-form blocks ("other work") created via /api/calendar-blocks.
-      -- Negative id space so they don't collide with lead ids on the client.
       SELECT (-id) as id, title as full_name, NULL as house_number,
-             block_date as event_date, time_slot, 'block' as event_type,
+             d as event_date, time_slot, 'block' as event_type,
              'block' as status, NULL as zone
-      FROM calendar_blocks
+      FROM block_days
+      OPTION (MAXRECURSION 366)
     `);
     return NextResponse.json(fixDates(result.recordset));
   } catch (error) {
