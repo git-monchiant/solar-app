@@ -38,7 +38,10 @@ export async function GET(req: NextRequest) {
              l.install_customer_signature_url, l.survey_customer_signature_url,
              l.pre_doc_no, l.pre_total_price, l.pre_booked_at, l.pre_package_id,
              l.payment_confirmed_by, l.order_before_paid_by, l.order_after_paid_by,
-             pr.name as project_name
+             -- Show project_alias when set (e.g. when the lead lives under the
+             -- catch-all "โครงการอื่นทั่วไป" but has its own real name) — else
+             -- fall back to the joined project's official name.
+             COALESCE(NULLIF(l.project_alias, N''), pr.name) as project_name
       FROM leads l
       LEFT JOIN projects pr ON l.project_id = pr.id
       WHERE l.id = @id
@@ -135,13 +138,17 @@ export async function GET(req: NextRequest) {
         // Show gross (pct × order_total) per row + a single deposit-credit line.
         // payments.amount is already net of the credit, but a separate line is
         // clearer on the receipt.
+        // Single-installment plan: drop the "งวดที่ N" prefix and the "(100%)"
+        // suffix — both are noise when there's only one row.
+        const onlyOne = planArr.length === 1;
         for (const p of instRes.recordset) {
           const m = /^order_installment_(\d+)$/.exec(p.slip_field);
           const idx = m ? parseInt(m[1]) : 0;
           const pct = idx === planArr.length - 1 ? lastPct : Number(planArr[idx]?.pct) || 0;
-          const pctSuffix = pct > 0 ? ` (${pct}%)` : "";
+          const pctSuffix = !onlyOne && pct > 0 ? ` (${pct}%)` : "";
           const gross = orderTotal > 0 && pct > 0 ? Math.round((orderTotal * pct) / 100) : Number(p.amount || 0);
-          lineItems.push({ label: `งวดที่ ${idx + 1} · ค่าระบบ Solar Rooftop${pctSuffix}`, amount: gross });
+          const label = onlyOne ? "ค่าระบบ Solar Rooftop" : `งวดที่ ${idx + 1} · ค่าระบบ Solar Rooftop${pctSuffix}`;
+          lineItems.push({ label, amount: gross });
           if (p.confirmed_at && (!latest || new Date(p.confirmed_at) > new Date(latest))) latest = p.confirmed_at;
         }
         // Only show the deposit credit on this receipt if งวด-after couldn't
@@ -170,18 +177,22 @@ export async function GET(req: NextRequest) {
       // Pull the installment's pct from order_installments JSON (last row's pct
       // is the auto-computed remainder = 100 − sum of earlier rows).
       let pctSuffix = "";
+      let onlyOneInstallment = false;
       try {
         const planArr = (l as { order_installments?: string }).order_installments
           ? JSON.parse((l as { order_installments?: string }).order_installments as string)
           : [];
         if (Array.isArray(planArr) && planArr.length > 0) {
+          onlyOneInstallment = planArr.length === 1;
           const earlierSum = planArr.slice(0, planArr.length - 1).reduce((s: number, r: { pct?: number }) => s + (Number(r?.pct) || 0), 0);
           const lastPct = Math.max(0, 100 - earlierSum);
           const pct = idx === planArr.length - 1 ? lastPct : Number(planArr[idx]?.pct) || 0;
-          if (pct > 0) pctSuffix = ` (${pct}%)`;
+          if (!onlyOneInstallment && pct > 0) pctSuffix = ` (${pct}%)`;
         }
       } catch { /* fall through */ }
-      description = `งวดที่ ${idx + 1} · ค่าระบบ Solar Rooftop${pctSuffix}`;
+      description = onlyOneInstallment
+        ? "ค่าระบบ Solar Rooftop"
+        : `งวดที่ ${idx + 1} · ค่าระบบ Solar Rooftop${pctSuffix}`;
       lineItems = [{ label: description, amount: amt }];
       receiptNumber = `${l.pre_doc_no || fallbackDocNo}-${idx + 1}`;
       receiptDate = installmentRow.confirmed_at || new Date().toISOString();

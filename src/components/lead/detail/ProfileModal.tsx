@@ -3,7 +3,7 @@ import { useEffect, useState } from "react";
 import { apiFetch } from "@/lib/api";
 import CustomerWizard from "@/components/customer/CustomerWizard";
 import LinePickerModal from "@/components/modal/LinePickerModal";
-import ModalCloseButton from "@/components/ui/ModalCloseButton";
+import ModalBase from "@/components/ui/ModalBase";
 
 interface Props {
   leadId: number;
@@ -18,7 +18,7 @@ export default function ProfileModal({ leadId, onClose, onSaved }: Props) {
   const [showLinePicker, setShowLinePicker] = useState(false);
   const [form, setForm] = useState({
     full_name: "", phone: "",
-    project_id: "" as string | number | null, project_name: "",
+    project_id: "" as string | number | null, project_name: "", project_alias: "",
     installation_address: "",
     customer_type: "", interested_package_id: "", note: "",
     source: "", payment_type: "", requirement: "",
@@ -36,7 +36,13 @@ export default function ProfileModal({ leadId, onClose, onSaved }: Props) {
         full_name: lead.full_name || "",
         phone: lead.phone || "",
         project_id: lead.project_id || "",
-        project_name: lead.project_name || "",
+        // The wizard's "โครงการ" text box is bound to project_name in our
+        // form state, but for the lead profile we treat it as an *alias*
+        // editor: prefer the existing alias, fall back to the COALESCEd
+        // project_name (joined or free-text). On save the typed/picked value
+        // gets written back to project_alias.
+        project_name: lead.project_alias || lead.project_name || "",
+        project_alias: lead.project_alias || "",
         installation_address: lead.installation_address || "",
         customer_type: lead.customer_type || "",
         interested_package_id: lead.interested_package_id ? String(lead.interested_package_id) : "",
@@ -77,6 +83,11 @@ export default function ProfileModal({ leadId, onClose, onSaved }: Props) {
           full_name: form.full_name ? form.full_name.slice(0, 200) : undefined,
           phone: form.phone || undefined,
           project_id: form.project_id ? parseInt(String(form.project_id)) : null,
+          // The "โครงการ" input here edits the alias; whatever the user
+          // typed/picked goes into project_alias. project_name (free-text
+          // fallback) is cleared because alias supersedes it for display.
+          project_alias: form.project_name?.trim() || null,
+          project_name: null,
           installation_address: form.installation_address ? form.installation_address.slice(0, 500) : undefined,
           customer_type: form.customer_type || undefined,
           interested_package_id: form.interested_package_id ? parseInt(form.interested_package_id) : null,
@@ -107,31 +118,38 @@ export default function ProfileModal({ leadId, onClose, onSaved }: Props) {
   };
 
   return (
-    <div className="fixed inset-0 z-[70] md:flex md:items-center md:justify-center md:p-6">
-      <div className="hidden md:block absolute inset-0 bg-black/30" onClick={onClose} />
-      <div className="relative bg-white w-full h-full md:h-auto md:max-w-2xl lg:max-w-4xl md:max-h-[90vh] md:rounded-2xl overflow-y-auto md:animate-slide-up flex flex-col">
-        <div className="sticky top-0 bg-white border-b border-gray-100 px-5 py-4 pt-[max(1rem,env(safe-area-inset-top,1rem))] flex items-center justify-between z-10 shrink-0">
-          <h2 className="text-lg font-bold text-gray-900 truncate min-w-0">ข้อมูลลูกค้า{form.full_name ? ` — ${form.full_name}` : ""}</h2>
-          <ModalCloseButton onClick={onClose} />
-        </div>
-
+    <>
+      <ModalBase
+        title={`ข้อมูลลูกค้า${form.full_name ? ` — ${form.full_name}` : ""}`}
+        onClose={onClose}
+        size="xl"
+        footer={!loading && (
+          <button
+            type="button"
+            onClick={handleSave}
+            disabled={saving}
+            className="w-full h-11 rounded-lg text-sm font-semibold text-white bg-gradient-to-r from-primary to-primary-dark hover:brightness-110 disabled:opacity-50 transition-colors flex items-center justify-center gap-2"
+          >
+            {saving ? "กำลังบันทึก…" : "บันทึก"}
+          </button>
+        )}
+      >
         {loading ? (
           <div className="flex items-center justify-center py-20">
             <div className="w-8 h-8 border-2 border-primary/30 border-t-primary rounded-full animate-spin" />
           </div>
         ) : (
-          <div className="px-5 py-4">
-            <CustomerWizard
-              values={form}
-              onChange={patch => setForm(prev => ({ ...prev, ...(patch as Record<string, unknown>) } as typeof prev))}
-              onSubmit={handleSave}
-              saving={saving}
-              lineProfile={lineProfile}
-              onLinkLine={() => setShowLinePicker(true)}
-            />
-          </div>
+          <CustomerWizard
+            values={form}
+            onChange={patch => setForm(prev => ({ ...prev, ...(patch as Record<string, unknown>) } as typeof prev))}
+            onSubmit={handleSave}
+            saving={saving}
+            lineProfile={lineProfile}
+            onLinkLine={() => setShowLinePicker(true)}
+            hideSubmit
+          />
         )}
-      </div>
+      </ModalBase>
 
       {showLinePicker && (
         <LinePickerModal
@@ -143,6 +161,6 @@ export default function ProfileModal({ leadId, onClose, onSaved }: Props) {
           }}
         />
       )}
-    </div>
+    </>
   );
 }

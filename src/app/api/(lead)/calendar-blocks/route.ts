@@ -28,6 +28,7 @@ export async function POST(req: NextRequest) {
     }
     const db = await getDb();
     const endDate = body.end_date && body.end_date > body.block_date ? body.end_date : null;
+    const team = body.team === "survey" || body.team === "install" ? body.team : null;
     const r = await db.request()
       .input("title", sql.NVarChar(200), String(body.title))
       .input("block_date", sql.Date, body.block_date)
@@ -35,11 +36,12 @@ export async function POST(req: NextRequest) {
       .input("time_slot", sql.NVarChar(100), body.time_slot || null)
       .input("note", sql.NVarChar(sql.MAX), body.note || null)
       .input("zone", sql.NVarChar(50), body.zone || null)
+      .input("team", sql.NVarChar(20), team)
       .input("created_by", sql.Int, gate.userId)
       .query(`
-        INSERT INTO calendar_blocks (title, block_date, end_date, time_slot, note, zone, created_by)
+        INSERT INTO calendar_blocks (title, block_date, end_date, time_slot, note, zone, team, created_by)
         OUTPUT INSERTED.*
-        VALUES (@title, @block_date, @end_date, @time_slot, @note, @zone, @created_by)
+        VALUES (@title, @block_date, @end_date, @time_slot, @note, @zone, @team, @created_by)
       `);
     return NextResponse.json(fixDates(r.recordset)[0], { status: 201 });
   } catch (e) {

@@ -21,6 +21,9 @@ interface Props {
   timeSlots?: TimeSlot[];
   excludeLeadId?: number;
   zoneFilter?: string | null;
+  /** Which team's calendar this rescheduler is operating in. Required so the
+   * picker only blocks slots used by the same team. */
+  teamContext?: "survey" | "install";
   onCancel: () => void;
   onSave: (picked: { date: string; slot: string }) => void | Promise<void>;
 }
@@ -32,6 +35,7 @@ export default function AppointmentRescheduler({
   showTimeSlot = false,
   excludeLeadId,
   zoneFilter,
+  teamContext = "survey",
   onCancel,
   onSave,
 }: Props) {
@@ -65,6 +69,7 @@ export default function AppointmentRescheduler({
         showSurveySlots
         excludeLeadId={excludeLeadId}
         zoneFilter={zoneFilter}
+        teamContext={teamContext}
       />
 
       {date && (

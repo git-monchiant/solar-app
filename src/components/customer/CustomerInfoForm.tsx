@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import { apiFetch, getUserIdHeader } from "@/lib/api";
 import ErrorPopup from "@/components/ui/ErrorPopup";
 import FallbackImage from "@/components/ui/FallbackImage";
+import { compressImageForOCR } from "@/lib/utils/image-compress";
 
 export type CustomerField =
   | "full_name"
@@ -181,11 +182,14 @@ export default function CustomerInfoForm({
   };
 
   const handleScan = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
+    const raw = e.target.files?.[0];
     e.target.value = "";
-    if (!file) return;
+    if (!raw) return;
     setOcrStatus("reading");
     try {
+      // Compress before upload — phone-camera shots are usually 3-5 MB and the
+      // upload + Gemini round-trip dominates latency.
+      const file = await compressImageForOCR(raw);
       const url = await uploadDoc(file);
       if (!url) throw new Error("upload failed");
       // Always request all known keys — doc may have any subset

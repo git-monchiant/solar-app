@@ -2,17 +2,39 @@ import { NextRequest, NextResponse } from "next/server";
 import { getDb, fixDates } from "@/lib/db";
 import { requireAuth } from "@/lib/auth";
 
+// LeadCard + today page only read ~30 columns from the leads table. The full
+// table is 60-80 cols per row (survey JSON blobs, photo URLs, etc.) so
+// SELECT * was sending ~10× the bytes the UI actually used. This focused
+// list also resolves project_name once via COALESCE so we don't need to
+// flatten duplicate-aliased columns coming back from the mssql driver.
+const LEAD_COLS = `
+  l.id, l.full_name, l.house_number, l.phone, l.email, l.note,
+  l.status, l.source, l.customer_type, l.line_id, l.zone,
+  l.created_at, l.contact_date, l.updated_at, l.next_follow_up,
+  l.assigned_user_id, l.installation_address, l.project_id,
+  l.pre_doc_no, l.pre_total_price, l.payment_confirmed,
+  l.survey_date, l.survey_time_slot,
+  l.install_date, l.install_completed_at, l.install_extra_cost,
+  l.order_total, l.quotation_amount,
+  COALESCE(NULLIF(l.project_name, ''), p.name) as project_name,
+  p.district, p.province, pk.name as package_name, u.full_name as assigned_name
+`;
+
+function fix<T extends Record<string, unknown>>(rs: T[]): T[] {
+  return fixDates(rs) as T[];
+}
+
 export async function GET(req: NextRequest) {
   const gate = await requireAuth(req);
   if (gate.error) return gate.error;
   try {
     const db = await getDb();
 
-    const [newLeads, overduePreSurvey, followUpToday, followUpOverdue, surveyToday, surveyPending, quotationPending, installPending, followUpUpcoming, installing, recentlyClosed, stats] = await Promise.all([
+    const [newLeads, overduePreSurvey, followUpToday, followUpOverdue, surveyToday, surveyPending, quotationPending, installPending, followUpUpcoming, installing, recentlyClosed, booking, stats] = await Promise.all([
       // 1. Lead ใหม่ — pre_survey ที่ยังไม่มี doc และไม่มี follow-up ในอนาคต
       // เคยมี cutoff "อายุ < 2 วัน" แต่ทำให้ lead ที่ import จากชีต (ส่วนใหญ่ > 2 วัน) ตกจากกอง
       db.request().query(`
-        SELECT l.*, p.name as project_name, p.district, p.province, pk.name as package_name, u.full_name as assigned_name,
+        SELECT ${LEAD_COLS},
                (SELECT TOP 1 note FROM lead_activities WHERE lead_id = l.id ORDER BY created_at DESC) as last_activity_note
         FROM leads l
         LEFT JOIN projects p ON l.project_id = p.id
@@ -27,7 +49,7 @@ export async function GET(req: NextRequest) {
       db.request().query(`SELECT TOP 0 * FROM leads`),
       // 3. นัดติดตามวันนี้
       db.request().query(`
-        SELECT l.*, p.name as project_name, p.district, p.province, pk.name as package_name, u.full_name as assigned_name,
+        SELECT ${LEAD_COLS},
                (SELECT TOP 1 note FROM lead_activities WHERE lead_id = l.id ORDER BY created_at DESC) as last_activity_note
         FROM leads l
         LEFT JOIN projects p ON l.project_id = p.id
@@ -39,7 +61,7 @@ export async function GET(req: NextRequest) {
       `),
       // 4. เลยกำหนดติดตาม (overdue follow-up)
       db.request().query(`
-        SELECT l.*, p.name as project_name, p.district, p.province, pk.name as package_name, u.full_name as assigned_name,
+        SELECT ${LEAD_COLS},
                (SELECT TOP 1 note FROM lead_activities WHERE lead_id = l.id ORDER BY created_at DESC) as last_activity_note
         FROM leads l
         LEFT JOIN projects p ON l.project_id = p.id
@@ -51,7 +73,7 @@ export async function GET(req: NextRequest) {
       `),
       // 5. Survey วันนี้
       db.request().query(`
-        SELECT l.*, p.name as project_name, p.district, p.province, pk.name as package_name, u.full_name as assigned_name
+        SELECT ${LEAD_COLS}
         FROM leads l
         LEFT JOIN projects p ON l.project_id = p.id
         LEFT JOIN packages pk ON l.interested_package_id = pk.id
@@ -61,7 +83,7 @@ export async function GET(req: NextRequest) {
       `),
       // 6. Survey รอดำเนินการ (ทั้งหมดที่ยังไม่เสร็จ ยกเว้นวันนี้)
       db.request().query(`
-        SELECT l.*, p.name as project_name, p.district, p.province, pk.name as package_name, u.full_name as assigned_name
+        SELECT ${LEAD_COLS}
         FROM leads l
         LEFT JOIN projects p ON l.project_id = p.id
         LEFT JOIN packages pk ON l.interested_package_id = pk.id
@@ -71,7 +93,7 @@ export async function GET(req: NextRequest) {
       `),
       // 7. Quotation รอเสนอ
       db.request().query(`
-        SELECT l.*, p.name as project_name, p.district, p.province, pk.name as package_name, u.full_name as assigned_name
+        SELECT ${LEAD_COLS}
         FROM leads l
         LEFT JOIN projects p ON l.project_id = p.id
         LEFT JOIN packages pk ON l.interested_package_id = pk.id
@@ -81,7 +103,7 @@ export async function GET(req: NextRequest) {
       `),
       // 8. รอติดตั้ง
       db.request().query(`
-        SELECT l.*, p.name as project_name, p.district, p.province, pk.name as package_name, u.full_name as assigned_name
+        SELECT ${LEAD_COLS}
         FROM leads l
         LEFT JOIN projects p ON l.project_id = p.id
         LEFT JOIN packages pk ON l.interested_package_id = pk.id
@@ -91,7 +113,7 @@ export async function GET(req: NextRequest) {
       `),
       // 9. นัดติดตามที่ยังไม่ถึง (upcoming follow-up)
       db.request().query(`
-        SELECT l.*, p.name as project_name, p.district, p.province, pk.name as package_name, u.full_name as assigned_name,
+        SELECT ${LEAD_COLS},
                (SELECT TOP 1 note FROM lead_activities WHERE lead_id = l.id ORDER BY created_at DESC) as last_activity_note
         FROM leads l
         LEFT JOIN projects p ON l.project_id = p.id
@@ -103,7 +125,7 @@ export async function GET(req: NextRequest) {
       `),
       // 10. กำลังติดตั้ง
       db.request().query(`
-        SELECT l.*, p.name as project_name, p.district, p.province, pk.name as package_name, u.full_name as assigned_name
+        SELECT ${LEAD_COLS}
         FROM leads l
         LEFT JOIN projects p ON l.project_id = p.id
         LEFT JOIN packages pk ON l.interested_package_id = pk.id
@@ -113,7 +135,7 @@ export async function GET(req: NextRequest) {
       `),
       // 11. ปิดงานล่าสุด (7 วัน)
       db.request().query(`
-        SELECT l.*, p.name as project_name, p.district, p.province, pk.name as package_name, u.full_name as assigned_name
+        SELECT ${LEAD_COLS}
         FROM leads l
         LEFT JOIN projects p ON l.project_id = p.id
         LEFT JOIN packages pk ON l.interested_package_id = pk.id
@@ -121,6 +143,19 @@ export async function GET(req: NextRequest) {
         WHERE l.status = 'closed'
           AND l.install_completed_at >= DATEADD(day, -7, GETDATE())
         ORDER BY l.install_completed_at DESC
+      `),
+      // 12. Booking — pre_survey ที่จ่ายเงินจองแล้วแต่ยังไม่ได้นัดสำรวจ.
+      // Virtual status เดียวกับ pipeline → กลุ่ม "Booking". เด่นที่สุดบน today
+      // เพราะลูกค้าจ่ายแล้วต้อง follow-up ให้นัดสำรวจ
+      db.request().query(`
+        SELECT ${LEAD_COLS},
+               (SELECT TOP 1 note FROM lead_activities WHERE lead_id = l.id ORDER BY created_at DESC) as last_activity_note
+        FROM leads l
+        LEFT JOIN projects p ON l.project_id = p.id
+        LEFT JOIN packages pk ON l.interested_package_id = pk.id
+        LEFT JOIN users u ON l.assigned_user_id = u.id
+        WHERE l.status = 'pre_survey' AND l.payment_confirmed = 1
+        ORDER BY l.pre_booked_at DESC, l.updated_at DESC
       `),
       // Quick stats
       db.request().query(`
@@ -133,17 +168,18 @@ export async function GET(req: NextRequest) {
     ]);
 
     return NextResponse.json({
-      newLeads: fixDates(newLeads.recordset),
-      overduePreSurvey: fixDates(overduePreSurvey.recordset),
-      followUpToday: fixDates(followUpToday.recordset),
-      followUpOverdue: fixDates(followUpOverdue.recordset),
-      surveyToday: fixDates(surveyToday.recordset),
-      surveyPending: fixDates(surveyPending.recordset),
-      quotationPending: fixDates(quotationPending.recordset),
-      installPending: fixDates(installPending.recordset),
-      followUpUpcoming: fixDates(followUpUpcoming.recordset),
-      installing: fixDates(installing.recordset),
-      recentlyClosed: fixDates(recentlyClosed.recordset),
+      newLeads: fix(newLeads.recordset),
+      overduePreSurvey: fix(overduePreSurvey.recordset),
+      followUpToday: fix(followUpToday.recordset),
+      followUpOverdue: fix(followUpOverdue.recordset),
+      surveyToday: fix(surveyToday.recordset),
+      surveyPending: fix(surveyPending.recordset),
+      quotationPending: fix(quotationPending.recordset),
+      installPending: fix(installPending.recordset),
+      followUpUpcoming: fix(followUpUpcoming.recordset),
+      installing: fix(installing.recordset),
+      recentlyClosed: fix(recentlyClosed.recordset),
+      booking: fix(booking.recordset),
       stats: stats.recordset[0],
     });
   } catch (error) {

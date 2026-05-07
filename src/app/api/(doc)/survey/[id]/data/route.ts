@@ -10,7 +10,7 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
     const leadResult = await db.request()
       .input("id", sql.Int, parseInt(id))
       .query(`
-        SELECT l.*, p.name as project_name, u.full_name as assigned_name
+        SELECT l.*, p.name as project_official_name, u.full_name as assigned_name
         FROM leads l
         LEFT JOIN projects p ON l.project_id = p.id
         LEFT JOIN users u ON l.assigned_user_id = u.id
@@ -32,6 +32,12 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
       return NextResponse.json({ error: "Lead not found" }, { status: 404 });
     }
     const lead = fixDates(leadResult.recordset)[0];
+    // Project display: alias → free-text fallback → joined official name.
+    lead.project_name = (lead.project_alias && String(lead.project_alias).trim())
+      || (lead.project_name && String(lead.project_name).trim())
+      || lead.project_official_name
+      || null;
+    delete lead.project_official_name;
 
     const pkgIds = String(lead.interested_package_ids || lead.interested_package_id || "")
       .split(",").map(s => parseInt(s.trim())).filter(n => !isNaN(n));

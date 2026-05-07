@@ -258,7 +258,7 @@ export function buildPaymentFlex({ origin, title, amount, name, actionLabel, act
               { type: "text" as const, text: d.value, size: "xs" as const, color: "#333333" as const, align: "end" as const, wrap: true, flex: 1 },
             ],
           })),
-          ...(note ? [{ type: "text" as const, text: note, size: "xxs" as const, color: "#999999" as const, wrap: true }] : []),
+          ...(note ? [{ type: "text" as const, text: note, size: "xxs" as const, color: "#999999" as const, wrap: true, margin: "sm" as const }] : []),
           { type: "text" as const, text: `ออกเมื่อ ${fmtTime(now)}`, size: "xxs" as const, color: "#b8860b" as const, margin: "sm" as const },
           ...(actionUrl ? [{
             type: "button" as const, style: "primary" as const, color: "#1ed0c7", height: "sm" as const, margin: "md" as const,

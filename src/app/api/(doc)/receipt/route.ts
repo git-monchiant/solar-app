@@ -11,6 +11,9 @@ export async function GET(req: NextRequest) {
   // Forward an optional title override to the view page so the rendered PDF
   // can show document kinds like "Temporary Receipt" or "Booking Confirmation".
   const title = req.nextUrl.searchParams.get("title");
+  // Forwarded to the view page — Booking Confirmation needs the SURVEY DATE
+  // block visible; the standard temporary receipt does not.
+  const showSurvey = req.nextUrl.searchParams.get("show_survey");
   // Per-installment receipts identify the source row by payment_id.
   const paymentId = req.nextUrl.searchParams.get("payment_id");
 
@@ -36,6 +39,7 @@ export async function GET(req: NextRequest) {
     qs.set("stage", stage);
     if (userId) qs.set("user_id", userId);
     if (title) qs.set("title", title);
+    if (showSurvey) qs.set("show_survey", showSurvey);
     if (paymentId) qs.set("payment_id", paymentId);
     const url = `http://localhost:${port}/receipt/view?${qs.toString()}`;
     await page.goto(url, { waitUntil: "networkidle0", timeout: 15000 });

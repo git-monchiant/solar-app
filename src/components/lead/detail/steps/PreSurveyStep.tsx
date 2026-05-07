@@ -12,9 +12,11 @@ import CalendarPicker from "@/components/calendar/CalendarPicker";
 import { validatePreSurvey } from "@/lib/constants/step-validators";
 import ErrorPopup from "@/components/ui/ErrorPopup";
 import FallbackImage from "@/components/ui/FallbackImage";
-import CustomerInfoForm from "@/components/customer/CustomerInfoForm";
+import DocumentScanner from "@/components/customer/DocumentScanner";
 import StepLayout from "../StepLayout";
 import ReceiptButtons from "../ReceiptButtons";
+import ReceiptModal from "../ReceiptModal";
+import { buildAppointmentFlex } from "@/lib/utils/line-flex";
 import { formatSlotsRange } from "@/lib/time-slots";
 import { useSubStep } from "@/lib/hooks/useSubStep";
 import { formatTHB as formatPrice, formatThaiDate as formatDate } from "@/lib/utils/formatters";
@@ -171,8 +173,7 @@ export default function PreSurveyStep({ lead, state, refresh, packages, expanded
   const [regIdCard, setRegIdCard] = useState(lead.id_card_number || "");
   const [regAddress, setRegAddress] = useState(lead.id_card_address || "");
   const [regHouseNumber, setRegHouseNumber] = useState(lead.installation_address || "");
-  const [regProject, setRegProject] = useState(lead.project_name || "");
-  const REG_SUB_STEPS = ["ข้อมูล", "แพ็คเกจ", "นัดสำรวจ", "ชำระเงิน", "ยืนยัน"];
+  const REG_SUB_STEPS = ["ข้อมูล", "แพ็คเกจ", "ยืนยัน", "ชำระเงิน", "นัดสำรวจ"];
   const [subStep, setSubStep] = useSubStep(`preSurveySubStep_${lead.id}`, 0, REG_SUB_STEPS.length);
   const [nextError, setNextError] = useState<string | null>(null);
   const [formDraft, setFormDraft] = useState<Partial<Lead>>({});
@@ -230,6 +231,27 @@ export default function PreSurveyStep({ lead, state, refresh, packages, expanded
   const [paymentVerified, setPaymentVerified] = useState<boolean>(!!lead.payment_confirmed);
   const [surveyDate, setSurveyDate] = useState<string>(lead.survey_date ? lead.survey_date.slice(0, 10) : "");
   const [surveyTimeSlot, setSurveyTimeSlot] = useState<string>(lead.survey_time_slot ?? "");
+  const [bookingPreviewOpen, setBookingPreviewOpen] = useState(false);
+  const [notifyBookingLine, setNotifyBookingLine] = useState(true);
+  // Tracks the last (date|slot) pair we PATCHed so picking the same combo
+  // again doesn't fire a duplicate request. Initialised to the lead's
+  // current values so opening the step doesn't trigger an unnecessary save.
+  const lastBookingSavedRef = useRef<string>(`${lead.survey_date?.slice(0, 10) ?? ""}|${lead.survey_time_slot ?? ""}`);
+
+  // Auto-save the slot the moment user picks date+slot — locks it for other
+  // concurrent users via /api/surveys/scheduled. Status stays at 'pre_survey'
+  // (status only flips to 'survey' on the explicit "ยืนยันและเปิดขั้นสำรวจ"
+  // button), but a non-null survey_date is enough for the lock query.
+  const lockSurveySlot = (nextDate: string, nextSlot: string) => {
+    if (!nextDate || !nextSlot) return;
+    const key = `${nextDate}|${nextSlot}`;
+    if (key === lastBookingSavedRef.current) return;
+    lastBookingSavedRef.current = key;
+    apiFetch(`/api/leads/${lead.id}`, {
+      method: "PATCH", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ survey_date: nextDate, survey_time_slot: nextSlot, zone: zone || undefined }),
+    }).catch(console.error);
+  };
 
   // Pre-Survey step is "done" once status advances past 'pre_survey' (the user
   // submitted the ID-info form at subStep 4, which PATCHes status='survey').
@@ -618,37 +640,53 @@ export default function PreSurveyStep({ lead, state, refresh, packages, expanded
         <PreSurveyForm ref={formRef} lead={lead} refresh={refresh} packages={packages} hidePackages={subStep !== 1} onlyPackages={subStep === 1} onPackageChange={setSelectedPkg} onFormChange={setFormDraft} />
       </div>
 
-      {/* Step 3: นัดสำรวจ */}
+      {/* Step 2: ยืนยันข้อมูลใบเสร็จ — ย้ายจาก step สุดท้ายมาก่อนชำระเงิน
+       * เพราะต้องมีข้อมูลออกใบเสร็จครบก่อนรับเงิน */}
       {subStep === 2 && (
         <div className="space-y-2">
-        <div className="rounded-lg border border-active/15 bg-white/60 p-4">
-          <label className="text-xs font-semibold tracking-wider uppercase text-gray-400 block mb-2">Zone</label>
-          <div className="grid grid-cols-1 md:grid-cols-4 gap-2">
-            {zones.map(z => (
-              <button key={z.id} type="button" onClick={() => {
-                setZone(z.name);
-                apiFetch(`/api/leads/${lead.id}`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ zone: z.name }) }).catch(console.error);
-              }} className={`w-full h-10 rounded-lg text-sm font-semibold border transition-all text-left px-4 ${zone === z.name ? "bg-active text-white border-active" : "bg-white text-gray-600 border-gray-200"}`}>
-                {z.name}
-              </button>
-            ))}
-          </div>
-        </div>
-        <div className="rounded-lg border border-active/15 bg-white/60 p-4">
-          <label className="text-xs font-semibold tracking-wider uppercase text-gray-400 block mb-2">
-            Survey Appointment <span className="text-red-500">*</span>
-          </label>
-          <CalendarPicker
-            date={surveyDate}
-            timeSlot={surveyTimeSlot}
-            onDateChange={setSurveyDate}
-            onTimeSlotChange={setSurveyTimeSlot}
-            showSurveySlots
-            required
-            zoneFilter={zone}
+          <DocumentScanner
+            fields={["id_card_number", "id_card_address", "installation_address"]}
+            onResult={(patch) => {
+              if (patch.id_card_number) setRegIdCard(patch.id_card_number);
+              if (patch.id_card_address) setRegAddress(patch.id_card_address);
+              if (patch.installation_address) setRegHouseNumber(patch.installation_address);
+            }}
           />
-          <div className="text-xs text-gray-500 mt-2">นัดครั้งแรก · เลื่อนนัดทำได้ในขั้น Survey</div>
-        </div>
+          <div className="rounded-lg border border-active/15 bg-white/60 p-3 space-y-2.5">
+            <div className="text-xs font-semibold text-gray-400 uppercase tracking-wider">ข้อมูลลูกค้าเพื่อออกใบเสร็จ</div>
+            <div>
+              <label className="text-xs text-gray-500 block mb-1">ชื่อ-นามสกุล <span className="text-red-500">*</span></label>
+              <input type="text" value={regName} onChange={e => setRegName(e.target.value)} className="w-full h-10 px-3 rounded-lg border border-gray-200 text-sm focus:outline-none focus:border-primary" />
+            </div>
+            <div>
+              <label className="text-xs text-gray-500 block mb-1">เลขบัตรประชาชน <span className="text-red-500">*</span></label>
+              <input type="text" value={regIdCard} onChange={e => setRegIdCard(e.target.value)} className="w-full h-10 px-3 rounded-lg border border-gray-200 text-sm font-mono tabular-nums focus:outline-none focus:border-primary" />
+            </div>
+            <div>
+              <label className="text-xs text-gray-500 block mb-1">ที่อยู่ตามบัตรประชาชน <span className="text-red-500">*</span></label>
+              <textarea value={regAddress} onChange={e => setRegAddress(e.target.value)} rows={3} className="w-full px-3 py-2 rounded-lg border border-gray-200 text-sm focus:outline-none focus:border-primary resize-none" />
+            </div>
+            <div>
+              <div className="flex items-center justify-between mb-1">
+                <label className="text-xs text-gray-500">ที่อยู่ติดตั้ง <span className="text-red-500">*</span></label>
+                <label className="text-xs text-gray-600 inline-flex items-center gap-1.5 cursor-pointer select-none">
+                  <input
+                    type="checkbox"
+                    className="w-3.5 h-3.5 accent-primary cursor-pointer"
+                    checked={!!regAddress && regHouseNumber === regAddress}
+                    onChange={(e) => {
+                      // Mirror the ID-card address into ที่อยู่ติดตั้ง when ticked
+                      // — most leads install at the registered address. Untick to
+                      // edit independently again.
+                      if (e.target.checked) setRegHouseNumber(regAddress);
+                    }}
+                  />
+                  เหมือนที่อยู่ตามบัตร
+                </label>
+              </div>
+              <textarea value={regHouseNumber} onChange={e => setRegHouseNumber(e.target.value)} rows={3} className="w-full px-3 py-2 rounded-lg border border-gray-200 text-sm focus:outline-none focus:border-primary resize-none" />
+            </div>
+          </div>
         </div>
       )}
 
@@ -717,43 +755,86 @@ export default function PreSurveyStep({ lead, state, refresh, packages, expanded
         </div>
       )}
 
-      {/* Step 5: ยืนยัน */}
+      {/* Step 5: นัดสำรวจ — ย้ายจาก step 3 มาเป็น step สุดท้าย ติดกับปุ่ม
+       * "ยืนยันและเปิดขั้นสำรวจ" */}
       {subStep === 4 && (
         <div className="space-y-2">
-          {/* OCR scan helper */}
-          <CustomerInfoForm
-            values={{}}
-            onChange={(patch) => {
-              // Skip full_name — customer name is set earlier; don't overwrite from OCR here
-              if (patch.id_card_number) setRegIdCard(patch.id_card_number);
-              if (patch.id_card_address) setRegAddress(patch.id_card_address);
-              if (patch.installation_address) setRegHouseNumber(patch.installation_address);
-            }}
-            fields={[]}
-            showScan
-          />
-          <div className="rounded-lg border border-active/15 bg-white/60 p-3 space-y-2.5">
-            <div className="text-xs font-semibold text-gray-400 uppercase tracking-wider">ข้อมูลลูกค้าเพื่อออกใบเสร็จ</div>
-            <div>
-              <label className="text-xs text-gray-500 block mb-1">ชื่อ-นามสกุล <span className="text-red-500">*</span></label>
-              <input type="text" value={regName} onChange={e => setRegName(e.target.value)} className="w-full h-10 px-3 rounded-lg border border-gray-200 text-sm focus:outline-none focus:border-primary" />
+          <div className="rounded-lg border border-active/15 bg-white/60 p-4">
+            <label className="text-xs font-semibold tracking-wider uppercase text-gray-400 block mb-2">Zone</label>
+            <div className="grid grid-cols-1 md:grid-cols-4 gap-2">
+              {zones.map(z => {
+                const active = zone === z.name;
+                // Selected: filled with the zone's color. Unselected: white pill
+                // with a small dot in the zone color so the user can see the
+                // legend without selecting first.
+                return (
+                  <button
+                    key={z.id}
+                    type="button"
+                    onClick={() => {
+                      setZone(z.name);
+                      apiFetch(`/api/leads/${lead.id}`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ zone: z.name }) }).catch(console.error);
+                    }}
+                    className="w-full h-10 rounded-lg text-sm font-semibold border transition-all text-left px-4 inline-flex items-center gap-2"
+                    style={{
+                      backgroundColor: active && z.color ? z.color : "white",
+                      borderColor: z.color || "#e5e7eb",
+                      color: active ? "white" : (z.color || "#4b5563"),
+                    }}
+                  >
+                    {!active && z.color && (
+                      <span className="w-2 h-2 rounded-full shrink-0" style={{ backgroundColor: z.color }} />
+                    )}
+                    {z.name}
+                  </button>
+                );
+              })}
             </div>
-            <div>
-              <label className="text-xs text-gray-500 block mb-1">เลขบัตรประชาชน <span className="text-red-500">*</span></label>
-              <input type="text" value={regIdCard} onChange={e => setRegIdCard(e.target.value)} className="w-full h-10 px-3 rounded-lg border border-gray-200 text-sm font-mono tabular-nums focus:outline-none focus:border-primary" />
-            </div>
-            <div>
-              <label className="text-xs text-gray-500 block mb-1">ที่อยู่ตามบัตรประชาชน <span className="text-red-500">*</span></label>
-              <textarea value={regAddress} onChange={e => setRegAddress(e.target.value)} rows={2} className="w-full px-3 py-2 rounded-lg border border-gray-200 text-sm focus:outline-none focus:border-primary resize-none" />
-            </div>
-            <div>
-              <label className="text-xs text-gray-500 block mb-1">โครงการ</label>
-              <input type="text" value={regProject} onChange={e => setRegProject(e.target.value)} className="w-full h-10 px-3 rounded-lg border border-gray-200 text-sm focus:outline-none focus:border-primary" />
-            </div>
-            <div>
-              <label className="text-xs text-gray-500 block mb-1">ที่อยู่ติดตั้ง <span className="text-red-500">*</span></label>
-              <textarea value={regHouseNumber} onChange={e => setRegHouseNumber(e.target.value)} rows={2} className="w-full px-3 py-2 rounded-lg border border-gray-200 text-sm focus:outline-none focus:border-primary resize-none" />
-            </div>
+          </div>
+          <div className="rounded-lg border border-active/15 bg-white/60 p-4">
+            <label className="text-xs font-semibold tracking-wider uppercase text-gray-400 block mb-2">
+              Survey Appointment <span className="text-red-500">*</span>
+            </label>
+            <CalendarPicker
+              date={surveyDate}
+              timeSlot={surveyTimeSlot}
+              onDateChange={(d) => { setSurveyDate(d); lockSurveySlot(d, surveyTimeSlot); }}
+              onTimeSlotChange={(s) => { setSurveyTimeSlot(s); lockSurveySlot(surveyDate, s); }}
+              showSurveySlots
+              required
+              teamContext="survey"
+              excludeLeadId={lead.id}
+            />
+            <div className="text-xs text-gray-500 mt-2">นัดครั้งแรก · เลื่อนนัดทำได้ในขั้น Survey</div>
+          </div>
+
+          {/* Booking Confirmation preview + optional LINE notify — same shape
+              as the survey-result row in SurveyStep. Disabled until both date
+              and slot are picked, since the doc embeds them. */}
+          <div className="flex md:grid md:grid-cols-3 items-center gap-3">
+            <button
+              type="button"
+              disabled={!surveyDate || !surveyTimeSlot}
+              onClick={() => setBookingPreviewOpen(true)}
+              className="shrink-0 md:col-span-1 md:w-auto h-10 px-4 rounded-lg text-sm font-semibold border border-gray-200 bg-white text-gray-700 hover:border-active hover:text-active hover:bg-active/5 disabled:opacity-50 disabled:cursor-not-allowed transition-colors inline-flex items-center justify-center gap-2"
+            >
+              <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                <path strokeLinecap="round" strokeLinejoin="round" d="M2.036 12.322a1.012 1.012 0 010-.639C3.423 7.51 7.36 4.5 12 4.5c4.638 0 8.573 3.007 9.963 7.178.07.207.07.431 0 .639C20.577 16.49 16.64 19.5 12 19.5c-4.638 0-8.573-3.007-9.963-7.178z" />
+                <path strokeLinecap="round" strokeLinejoin="round" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+              </svg>
+              ดูใบยืนยันนัดสำรวจ
+            </button>
+            {lead.line_id && (
+              <label className="flex-1 md:col-span-2 flex items-center gap-2 text-xs text-gray-600 cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={notifyBookingLine}
+                  onChange={(e) => setNotifyBookingLine(e.target.checked)}
+                  className="w-4 h-4 accent-primary"
+                />
+                <span>ส่งใบยืนยันนัดให้ลูกค้าทาง LINE</span>
+              </label>
+            )}
           </div>
         </div>
       )}
@@ -806,6 +887,31 @@ export default function PreSurveyStep({ lead, state, refresh, packages, expanded
                     next_follow_up: null,
                   }),
                 });
+                // Send the Booking Confirmation flex to the customer's LINE if
+                // they're linked and the user opted in. Mirrors the survey-done
+                // notify in SurveyStep.markDone — fire-and-forget so the spinner
+                // doesn't wait on LINE delivery.
+                if (notifyBookingLine && lead.line_id) {
+                  const origin = typeof window !== "undefined" ? window.location.origin : "";
+                  const pdfUrl = `${origin}/api/receipt?lead_id=${lead.id}&stage=deposit&format=pdf&show_survey=1&title=${encodeURIComponent("BOOKING CONFIRMATION")}`;
+                  const msg = buildAppointmentFlex({
+                    origin,
+                    kind: "survey",
+                    name: regName || lead.full_name,
+                    date: surveyDate,
+                    timeSlot: surveyTimeSlot,
+                    address: regHouseNumber || lead.installation_address,
+                    project: lead.project_name,
+                    documents: ["บิลค่าไฟฟ้าล่าสุด"],
+                    actionLabel: "ดาวน์โหลดใบยืนยันนัด",
+                    actionUrl: pdfUrl,
+                  });
+                  apiFetch("/api/line/send", {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({ lead_id: lead.id, messages: [msg] }),
+                  }).catch(console.error);
+                }
                 // Wait for lead to refetch before releasing the spinner so the
                 // button stays in "loading" state all the way until the card
                 // actually transitions to done — no flicker of re-enabled button.
@@ -825,12 +931,22 @@ export default function PreSurveyStep({ lead, state, refresh, packages, expanded
         const stepGate: Record<number, string[]> = {
           0: ["full_name", "phone", "pre_residence_type", "pre_monthly_bill", "pre_peak_usage", "pre_electrical_phase"],
           1: ["pre_wants_battery", "interested_package_ids"],
-          2: ["survey_date", "survey_time_slot"],
+          // Step 2 (ยืนยันข้อมูลใบเสร็จ): id card + customer info validated
+          // ad-hoc below since fields aren't in validatePreSurvey
+          2: [],
+          // Step 3 (ชำระเงิน): no validatePreSurvey gate — paymentVerified is
+          // checked separately below
           3: [],
         };
         const handleNext = async () => {
           const v = validatePreSurvey({ ...lead, ...formDraft, survey_date: surveyDate || lead.survey_date, survey_time_slot: surveyTimeSlot || lead.survey_time_slot });
           const missingHere = v.missing.filter(m => stepGate[subStep]?.includes(m.field));
+          if (subStep === 2) {
+            if (!regName) missingHere.push({ field: "full_name", label: "ชื่อ-นามสกุล" });
+            if (!regIdCard) missingHere.push({ field: "id_card", label: "เลขบัตรประชาชน" });
+            if (!regAddress) missingHere.push({ field: "id_card_address", label: "ที่อยู่ตามบัตร" });
+            if (!regHouseNumber) missingHere.push({ field: "installation_address", label: "ที่อยู่ติดตั้ง" });
+          }
           if (subStep === 3 && !paymentVerified) {
             missingHere.push({ field: "slip", label: (slipVerifiedUrl ? "กรุณายืนยันชำระเงิน" : "กรุณาอัปโหลดสลิปชำระเงิน") });
           }
@@ -862,6 +978,17 @@ export default function PreSurveyStep({ lead, state, refresh, packages, expanded
       })()}
 
       <ErrorPopup message={nextError} onClose={() => setNextError(null)} />
+      {bookingPreviewOpen && (
+        <ReceiptModal
+          leadId={lead.id}
+          stage="deposit"
+          fileLabel={`booking_${lead.id}`}
+          title="BOOKING CONFIRMATION"
+          showSurvey
+          modalLabel="ใบยืนยันนัดสำรวจ"
+          onClose={() => setBookingPreviewOpen(false)}
+        />
+      )}
     </StepLayout>
   );
 }

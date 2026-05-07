@@ -18,24 +18,59 @@ const STORAGE_KEY = "activeRoles";
 
 type Me = { id: number; username: string; full_name: string; roles: Role[] };
 
-let cachedMe: Me | null = null;
+// Persist /api/me across page reloads. The hot copy lives in module memory
+// (cachedMe); on cold module load we hydrate from localStorage so the very
+// first render shows the user immediately, then background-refresh.
+const ME_STORAGE = "auto:me:v1";
+
+function readPersisted(): Me | null {
+  if (typeof window === "undefined") return null;
+  try {
+    const raw = window.localStorage.getItem(ME_STORAGE);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw) as Me;
+    return parsed && typeof parsed.id === "number" ? parsed : null;
+  } catch { return null; }
+}
+function writePersisted(m: Me | null) {
+  if (typeof window === "undefined") return;
+  try {
+    if (m) window.localStorage.setItem(ME_STORAGE, JSON.stringify(m));
+    else window.localStorage.removeItem(ME_STORAGE);
+  } catch { /* quota or private mode — ignore */ }
+}
+
+let cachedMe: Me | null = readPersisted();
+// In-flight promise — components mounting in parallel (page + BottomNav +
+// Header all useMe()) used to each trigger their own /api/me. This shared
+// promise lets every concurrent caller await the same request.
+let mePromise: Promise<Me> | null = null;
 const listeners = new Set<() => void>();
 
 function emit() {
   listeners.forEach(l => l());
 }
 
+function fetchMe(): Promise<Me> {
+  if (mePromise) return mePromise;
+  mePromise = apiFetch("/api/me").then((d: Me) => {
+    cachedMe = { ...d, roles: Array.isArray(d.roles) ? d.roles : [] };
+    writePersisted(cachedMe);
+    emit();
+    return cachedMe;
+  }).finally(() => { mePromise = null; });
+  return mePromise;
+}
+
 export function useMe() {
   const [me, setMe] = useState<Me | null>(cachedMe);
+  // No spinner needed when localStorage gave us a cached user.
   const [loading, setLoading] = useState(!cachedMe);
 
   useEffect(() => {
-    if (cachedMe) return;
-    apiFetch("/api/me").then(d => {
-      cachedMe = { ...d, roles: Array.isArray(d.roles) ? d.roles : [] };
-      setMe(cachedMe);
-      emit();
-    }).catch(console.error).finally(() => setLoading(false));
+    // Always background-refresh so role/name changes propagate, but don't
+    // block initial render when we already have a cached copy.
+    fetchMe().then((m) => setMe(m)).catch(console.error).finally(() => setLoading(false));
   }, []);
 
   useEffect(() => {

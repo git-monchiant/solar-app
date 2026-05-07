@@ -68,7 +68,10 @@ function ReceiptContent() {
 
   if (!d) return <div className="flex items-center justify-center h-screen"><div className="w-8 h-8 border-2 border-primary/30 border-t-primary rounded-full animate-spin" /></div>;
 
-  const showSurvey = d.stage === "deposit";
+  // Re-enabled when the receipt is rendered as a Booking Confirmation
+  // (?show_survey=1). The default temporary receipt still hides it because
+  // the appointment row is irrelevant after payment.
+  const showSurvey = params.get("show_survey") === "1";
   const docTitle = titleOverride || STAGE_TITLE[d.stage];
 
   return (

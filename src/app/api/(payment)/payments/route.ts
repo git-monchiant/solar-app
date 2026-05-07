@@ -4,6 +4,7 @@ import path from "path";
 import { getDb, sql } from "@/lib/db";
 import { requireAdmin, requireAuth } from "@/lib/auth";
 import { syncOrderPaidFlags } from "@/lib/payments-helpers";
+import { logLeadActivity, paymentStepLabel, fmtBaht } from "@/lib/lead-activity-log";
 
 export const runtime = "nodejs";
 export const maxDuration = 30;
@@ -217,6 +218,14 @@ export async function POST(req: NextRequest) {
       await syncOrderPaidFlags(pool, leadId).catch(e => console.error("syncOrderPaidFlags failed:", e));
     }
 
+    await logLeadActivity(pool, {
+      leadId,
+      activityType: "payment_confirmed",
+      title: `ยืนยันการชำระเงิน ${paymentStepLabel(slipField, stepNo)} ${fmtBaht(amount)}`,
+      note: body.description ?? null,
+      userId: gate.userId,
+    });
+
     return NextResponse.json({ id: paymentId, url: `/api/payments/${paymentId}`, slip_count: slipCount });
   } catch (e) {
     console.error("POST /api/payments error:", e);
@@ -283,6 +292,14 @@ export async function DELETE(req: NextRequest) {
         `UPDATE leads SET ${slipField} = NULL, ${paidFlag} = 0, updated_at = GETDATE() WHERE id = @lead_id`
       );
     }
+
+    const fields: string[] = rows.recordset.map((r: { slip_field: string }) => paymentStepLabel(r.slip_field, step));
+    await logLeadActivity(db, {
+      leadId,
+      activityType: "payment_undone",
+      title: `ยกเลิกการชำระเงิน ${fields.join(", ") || `step ${step}`}`,
+      userId: gate.userId,
+    });
 
     return NextResponse.json({ ok: true });
   } catch (e) {

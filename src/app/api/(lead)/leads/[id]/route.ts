@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getDb, sql, fixDates } from "@/lib/db";
 import { requireAuth } from "@/lib/auth";
+import { logLeadActivity, fmtThaiDate } from "@/lib/lead-activity-log";
 
 const statusLabels: Record<string, string> = {
   pre_survey: "รอติดตาม",
@@ -19,7 +20,10 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
       .request()
       .input("id", sql.Int, parseInt(id))
       .query(`
-        SELECT l.*, p.name as project_name, pk.name as package_name, pk.price as package_price,
+        SELECT l.*,
+               COALESCE(NULLIF(l.project_alias, N''), NULLIF(l.project_name, N''), p.name) as project_display_name,
+               p.name as project_official_name,
+               pk.name as package_name, pk.price as package_price,
                u.full_name as assigned_name,
                lu.display_name as line_display_name, lu.picture_url as line_picture_url,
                CAST(CASE WHEN EXISTS (SELECT 1 FROM prospects WHERE lead_id = l.id) THEN 1 ELSE 0 END AS BIT) as from_prospect
@@ -34,7 +38,15 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
     if (result.recordset.length === 0) {
       return NextResponse.json({ error: "Lead not found" }, { status: 404 });
     }
-    return NextResponse.json(fixDates(result.recordset)[0]);
+    // l.* exposes the raw l.project_name (free-text fallback). Overlay it with
+    // the COALESCEd display name so UI's `project_name` always shows the
+    // best-available label (free text when no project_id, official name
+    // otherwise). project_official_name remains for callers that need the
+    // strict joined value.
+    const row = fixDates(result.recordset)[0];
+    row.project_name = row.project_display_name;
+    delete row.project_display_name;
+    return NextResponse.json(row);
   } catch (error) {
     console.error("GET /api/leads/[id] error:", error);
     return NextResponse.json({ error: "Failed to fetch lead" }, { status: 500 });
@@ -50,24 +62,46 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
     const db = await getDb();
     const leadId = parseInt(id);
 
-    // Get current status before update
+    // Snapshot fields we care about for activity logging — read once so any
+    // appointment changes (survey_date, install_date, next_follow_up,
+    // survey_confirmed, install_confirmed, install_completed_at) and status
+    // transitions can be diffed against the new body in a single round-trip.
     let oldStatus: string | null = null;
-    if (body.status !== undefined) {
-      const current = await db.request().input("id", sql.Int, leadId)
-        .query(`SELECT status, payment_confirmed FROM leads WHERE id = @id`);
+    let oldRow: {
+      status: string | null;
+      payment_confirmed: boolean | number | null;
+      survey_date: Date | null;
+      survey_time_slot: string | null;
+      install_date: Date | null;
+      install_time_slot: string | null;
+      next_follow_up: Date | null;
+      survey_confirmed: boolean | number | null;
+      install_confirmed: boolean | number | null;
+      install_completed_at: Date | null;
+    } | null = null;
+    {
+      const current = await db.request().input("id", sql.Int, leadId).query(`
+        SELECT status, payment_confirmed,
+               survey_date, survey_time_slot, install_date, install_time_slot, next_follow_up,
+               survey_confirmed, install_confirmed, install_completed_at
+        FROM leads WHERE id = @id
+      `);
       if (current.recordset.length > 0) {
-        oldStatus = current.recordset[0].status;
-        // Guard: can't move forward from pre_survey → survey (or beyond)
-        // without a confirmed payment. The body may set payment_confirmed in
-        // the same PATCH, so accept that too.
-        const ADVANCED = new Set(["survey", "quote", "order", "install", "warranty", "gridtie", "closed"]);
-        const movingForward = oldStatus === "pre_survey" && ADVANCED.has(body.status);
-        const willBePaid = body.payment_confirmed === true || current.recordset[0].payment_confirmed === true;
-        if (movingForward && !willBePaid) {
-          return NextResponse.json(
-            { error: "ต้องยืนยันชำระเงิน (payment_confirmed) ก่อนจึงจะเลื่อนไปขั้น survey ได้" },
-            { status: 400 }
-          );
+        oldRow = current.recordset[0];
+        oldStatus = oldRow?.status ?? null;
+        if (body.status !== undefined) {
+          // Guard: can't move forward from pre_survey → survey (or beyond)
+          // without a confirmed payment. The body may set payment_confirmed in
+          // the same PATCH, so accept that too.
+          const ADVANCED = new Set(["survey", "quote", "order", "install", "warranty", "gridtie", "closed"]);
+          const movingForward = oldStatus === "pre_survey" && ADVANCED.has(body.status);
+          const willBePaid = body.payment_confirmed === true || oldRow?.payment_confirmed === true;
+          if (movingForward && !willBePaid) {
+            return NextResponse.json(
+              { error: "ต้องยืนยันชำระเงิน (payment_confirmed) ก่อนจึงจะเลื่อนไปขั้น survey ได้" },
+              { status: 400 }
+            );
+          }
         }
       }
     }
@@ -115,6 +149,14 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
       sets.push("interested_package_ids = @interested_package_ids");
       request.input("interested_package_ids", sql.NVarChar(200), body.interested_package_ids);
     }
+    if (body.package_note !== undefined) {
+      sets.push("package_note = @package_note");
+      request.input("package_note", sql.NVarChar(500), body.package_note || null);
+    }
+    if (body.quotation_type !== undefined) {
+      sets.push("quotation_type = @quotation_type");
+      request.input("quotation_type", sql.NVarChar(20), body.quotation_type || null);
+    }
     if (body.phone !== undefined) {
       sets.push("phone = @phone");
       request.input("phone", sql.NVarChar(20), body.phone);
@@ -150,6 +192,14 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
     if (body.source !== undefined) {
       sets.push("source = @source");
       request.input("source", sql.NVarChar(30), body.source);
+    }
+    if (body.tag !== undefined) {
+      sets.push("tag = @tag");
+      // Accept array (will be JSON-stringified) or already-stringified JSON
+      const tagVal = Array.isArray(body.tag)
+        ? (body.tag.length > 0 ? JSON.stringify(body.tag) : null)
+        : (typeof body.tag === "string" && body.tag ? body.tag : null);
+      request.input("tag", sql.NVarChar(500), tagVal);
     }
     if (body.payment_type !== undefined) {
       sets.push("payment_type = @payment_type");
@@ -703,6 +753,14 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
       sets.push("project_note = @project_note");
       request.input("project_note", sql.NVarChar(500), body.project_note);
     }
+    if (body.project_name !== undefined) {
+      sets.push("project_name = @project_name");
+      request.input("project_name", sql.NVarChar(200), body.project_name);
+    }
+    if (body.project_alias !== undefined) {
+      sets.push("project_alias = @project_alias");
+      request.input("project_alias", sql.NVarChar(200), body.project_alias);
+    }
     if (body.customer_interest !== undefined) {
       sets.push("customer_interest = @customer_interest");
       request.input("customer_interest", sql.NVarChar(500), body.customer_interest);
@@ -880,6 +938,97 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
       }
     }
 
+    // Appointment activity logs — diff body against the snapshot taken at the
+    // top so we can tell "set" (was null, now has value) vs "rescheduled" (was
+    // set, value changed). Date columns: SQL DATE → JS Date midnight UTC, so
+    // compare on ISO date string slice.
+    const sameDay = (a: Date | null | undefined, b: string | null | undefined) => {
+      const aS = a ? new Date(a).toISOString().slice(0, 10) : "";
+      const bS = b ? String(b).slice(0, 10) : "";
+      return aS === bS;
+    };
+    const logApptChange = async (
+      kind: "survey" | "install",
+      newDate: string | null,
+      newSlot: string | null | undefined,
+    ) => {
+      const oldDate = kind === "survey" ? oldRow?.survey_date : oldRow?.install_date;
+      const oldSlot = kind === "survey" ? oldRow?.survey_time_slot : oldRow?.install_time_slot;
+      if (sameDay(oldDate ?? null, newDate) && (newSlot === undefined || newSlot === oldSlot)) return;
+      const label = kind === "survey" ? "นัดสำรวจ" : "นัดติดตั้ง";
+      const slotPart = newSlot ? ` ${newSlot}` : "";
+      if (!oldDate && newDate) {
+        await logLeadActivity(db, {
+          leadId,
+          activityType: "appointment_set",
+          title: `${label} ${fmtThaiDate(newDate)}${slotPart}`,
+          userId: gate.userId,
+        });
+      } else if (oldDate && !newDate) {
+        await logLeadActivity(db, {
+          leadId,
+          activityType: "appointment_cancelled",
+          title: `ยกเลิก${label} (เดิม ${fmtThaiDate(oldDate)})`,
+          userId: gate.userId,
+        });
+      } else if (oldDate && newDate) {
+        await logLeadActivity(db, {
+          leadId,
+          activityType: "appointment_rescheduled",
+          title: `เลื่อน${label} ${fmtThaiDate(oldDate)} → ${fmtThaiDate(newDate)}${slotPart}`,
+          userId: gate.userId,
+        });
+      }
+    };
+    if (body.survey_date !== undefined || body.survey_time_slot !== undefined) {
+      const nextDate = body.survey_date !== undefined
+        ? (body.survey_date ?? null)
+        : (oldRow?.survey_date ? new Date(oldRow.survey_date).toISOString().slice(0, 10) : null);
+      const nextSlot = body.survey_time_slot !== undefined ? body.survey_time_slot : undefined;
+      await logApptChange("survey", nextDate, nextSlot ?? null);
+    }
+    if (body.install_date !== undefined || body.install_time_slot !== undefined) {
+      const nextDate = body.install_date !== undefined
+        ? (body.install_date ?? null)
+        : (oldRow?.install_date ? new Date(oldRow.install_date).toISOString().slice(0, 10) : null);
+      const nextSlot = body.install_time_slot !== undefined ? body.install_time_slot : undefined;
+      await logApptChange("install", nextDate, nextSlot ?? null);
+    }
+    if (body.next_follow_up !== undefined && !sameDay(oldRow?.next_follow_up ?? null, body.next_follow_up)) {
+      await logLeadActivity(db, {
+        leadId,
+        activityType: body.next_follow_up ? "follow_up" : "follow_up_cleared",
+        title: body.next_follow_up
+          ? `นัดติดตาม ${fmtThaiDate(body.next_follow_up)}`
+          : `ล้างนัดติดตาม`,
+        userId: gate.userId,
+      });
+    }
+    if (body.survey_confirmed === true && !oldRow?.survey_confirmed) {
+      await logLeadActivity(db, {
+        leadId,
+        activityType: "appointment_confirmed",
+        title: `ยืนยันนัดสำรวจ${oldRow?.survey_date ? ` ${fmtThaiDate(oldRow.survey_date)}` : ""}`,
+        userId: gate.userId,
+      });
+    }
+    if (body.install_confirmed === true && !oldRow?.install_confirmed) {
+      await logLeadActivity(db, {
+        leadId,
+        activityType: "appointment_confirmed",
+        title: `ยืนยันนัดติดตั้ง${oldRow?.install_date ? ` ${fmtThaiDate(oldRow.install_date)}` : ""}`,
+        userId: gate.userId,
+      });
+    }
+    if (body.install_completed_at !== undefined && !oldRow?.install_completed_at) {
+      await logLeadActivity(db, {
+        leadId,
+        activityType: "step_completed",
+        title: `ปิดงานติดตั้งเรียบร้อย`,
+        userId: gate.userId,
+      });
+    }
+
     // Auto-log status change as activity (with duplicate prevention)
     if (body.status !== undefined && oldStatus && oldStatus !== body.status) {
       const dup = await db.request()
@@ -890,15 +1039,18 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
       if (dup.recordset.length === 0) {
         const oldLabel = statusLabels[oldStatus] || oldStatus;
         const newLabel = statusLabels[body.status] || body.status;
+        // Stamp the actual user (was hardcoded 1 = Admin, which broke
+        // attribution for seeker-driven status changes via sync).
         await db.request()
           .input("lead_id", sql.Int, leadId)
           .input("activity_type", sql.NVarChar(30), "status_change")
           .input("title", sql.NVarChar(200), `Status: ${oldLabel} → ${newLabel}`)
           .input("old_status", sql.NVarChar(30), oldStatus)
           .input("new_status", sql.NVarChar(30), body.status)
+          .input("created_by", sql.Int, gate.userId)
           .query(`
             INSERT INTO lead_activities (lead_id, activity_type, title, old_status, new_status, created_by)
-            VALUES (@lead_id, @activity_type, @title, @old_status, @new_status, 1)
+            VALUES (@lead_id, @activity_type, @title, @old_status, @new_status, @created_by)
           `);
       }
     }

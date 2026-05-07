@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { apiFetch } from "@/lib/api";
+import ModalBase from "@/components/ui/ModalBase";
 
 interface LineUser {
   id: number;
@@ -67,16 +68,8 @@ export default function LinePickerModal({ target, onClose, onLinked }: Props) {
   );
 
   return (
-    <div className="fixed inset-0 z-[80] flex items-end md:items-center justify-center">
-      <div className="absolute inset-0 bg-black/30" onClick={onClose} />
-      <div className="relative bg-white rounded-t-2xl md:rounded-2xl w-full md:max-w-lg p-5 pb-8 md:pb-5 animate-slide-up max-h-[70vh] overflow-y-auto">
-        <div className="flex items-center justify-between mb-4">
-          <h3 className="font-bold text-lg">เชื่อม LINE</h3>
-          <button onClick={onClose} style={{ minHeight: 0 }} className="text-gray-400 hover:text-gray-600 p-1">
-            <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" /></svg>
-          </button>
-        </div>
-
+    <ModalBase title="เชื่อม LINE" onClose={onClose} size="lg">
+      <>
         {confirm ? (
           <div className="space-y-4">
             <div className="flex flex-col items-center py-4">
@@ -163,8 +156,8 @@ export default function LinePickerModal({ target, onClose, onLinked }: Props) {
             </div>
           </div>
         )}
-      </div>
-    </div>
+      </>
+    </ModalBase>
   );
 }
 

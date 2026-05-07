@@ -874,8 +874,10 @@ export default function OrderStep({ lead, state, refresh, expanded, onToggle }: 
                         <PaymentSection
                           hideHeader
                           onlyOther={row.method === "loan"}
-                          paymentTitle={`งวดที่ ${i + 1} · ค่าระบบ Solar Rooftop (${isAutoRow ? lastPct : row.pct}%)`}
-                          amountLabel={`งวดที่ ${i + 1}/${installments.length}`}
+                          paymentTitle={installments.length > 1
+                            ? `งวดที่ ${i + 1} · ค่าระบบ Solar Rooftop (${isAutoRow ? lastPct : row.pct}%)`
+                            : `ค่าระบบ Solar Rooftop`}
+                          amountLabel={installments.length > 1 ? `งวดที่ ${i + 1}/${installments.length}` : ""}
                           amount={rowNetAmount}
                           leadId={lead.id}
                           leadName={lead.full_name}
@@ -998,27 +1000,34 @@ export default function OrderStep({ lead, state, refresh, expanded, onToggle }: 
                   const firstFile = (lead.quotation_files || "").split(",").filter(Boolean)[0] || "";
                   const downloadUrl = firstFile.startsWith("http") ? firstFile : `${origin}${firstFile}`;
                   const deposit = depositPaid;
+                  const bankLabel: Record<string, string> = { ghb: "ธอส.", gsb: "ออมสิน" };
+                  const fmtMethod = (r: typeof persistedInstallments[number]) => r.method === "loan"
+                    ? `สินเชื่อ${r.loan_bank ? ` ${bankLabel[r.loan_bank] || r.loan_bank}` : ""}`
+                    : "เงินโอน/QR";
                   const details: { label: string; value: string }[] = [];
                   details.push({ label: "ยอดรวม", value: `฿${fmt(total)}` });
                   if (deposit > 0) {
                     details.push({ label: "หักค่าสำรวจ", value: `-฿${fmt(deposit)}` });
                     details.push({ label: "ยอดที่ต้องชำระ", value: `฿${fmt(total - deposit)}` });
                   }
-                  // Installment plan — one line per งวด with timing + method.
-                  const bankLabel: Record<string, string> = { ghb: "ธอส.", gsb: "ออมสิน" };
-                  persistedInstallments.forEach((r, idx) => {
-                    const amt = total > 0 ? Math.round((total * r.pct) / 100) : 0;
-                    const method = r.method === "loan"
-                      ? `สินเชื่อ${r.loan_bank ? ` ${bankLabel[r.loan_bank] || r.loan_bank}` : ""}`
-                      : "เงินโอน/QR";
-                    details.push({
-                      label: `งวดที่ ${idx + 1} · ${method}`,
-                      value: `฿${fmt(amt)} (${r.pct}%)`,
+                  // Single installment: skip the redundant "งวดที่ 1" row —
+                  // ยอดที่ต้องชำระ already conveys the amount. Only surface
+                  // the payment method as a separate row.
+                  if (persistedInstallments.length === 1) {
+                    details.push({ label: "ชำระโดย", value: fmtMethod(persistedInstallments[0]) });
+                  } else {
+                    persistedInstallments.forEach((r, idx) => {
+                      const amt = total > 0 ? Math.round((total * r.pct) / 100) : 0;
+                      details.push({
+                        label: `งวดที่ ${idx + 1} · ${fmtMethod(r)}`,
+                        value: `฿${fmt(amt)} (${r.pct}%)`,
+                      });
                     });
-                  });
+                  }
                   const messages = [buildPaymentFlex({
                     origin, title: "ใบเสนอราคา", amount: total, name: lead.full_name,
                     actionLabel: "รายละเอียดใบเสนอราคา", actionUrl: downloadUrl, details,
+                    note: "• กรุณาตรวจสอบเงื่อนไขการเสนอราคาให้ครบถ้วน\n• การชำระผ่านบัตรเครดิต จะมีค่าธรรมเนียม 3%",
                   })];
                   await apiFetch("/api/line/send", {
                     method: "POST",
@@ -1049,19 +1058,38 @@ export default function OrderStep({ lead, state, refresh, expanded, onToggle }: 
           <div className="rounded-lg border border-active/15 bg-white/60 p-4">
             <label className="text-xs font-semibold tracking-wider uppercase text-gray-400 block mb-2">Zone</label>
             <div className="grid grid-cols-1 md:grid-cols-4 gap-2">
-              {zones.map(z => (
-                <button key={z.id} type="button" onClick={() => {
-                  setZone(z.name);
-                  apiFetch(`/api/leads/${lead.id}`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ zone: z.name }) }).catch(console.error);
-                }} className={`w-full h-10 rounded-lg text-sm font-semibold border transition-all text-left px-4 ${zone === z.name ? "bg-active text-white border-active" : "bg-white text-gray-600 border-gray-200"}`}>
-                  {z.name}
-                </button>
-              ))}
+              {zones.map(z => {
+                const active = zone === z.name;
+                // Selected: filled with the zone's colour. Unselected: white
+                // pill with a small dot in the zone colour so the user can see
+                // the legend without selecting first. Mirrors PreSurveyStep.
+                return (
+                  <button
+                    key={z.id}
+                    type="button"
+                    onClick={() => {
+                      setZone(z.name);
+                      apiFetch(`/api/leads/${lead.id}`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ zone: z.name }) }).catch(console.error);
+                    }}
+                    className="w-full h-10 rounded-lg text-sm font-semibold border transition-all text-left px-4 inline-flex items-center gap-2"
+                    style={{
+                      backgroundColor: active && z.color ? z.color : "white",
+                      borderColor: z.color || "#e5e7eb",
+                      color: active ? "white" : (z.color || "#4b5563"),
+                    }}
+                  >
+                    {!active && z.color && (
+                      <span className="w-2 h-2 rounded-full shrink-0" style={{ backgroundColor: z.color }} />
+                    )}
+                    {z.name}
+                  </button>
+                );
+              })}
             </div>
           </div>
           <div>
             <label className="text-xs font-semibold tracking-wider uppercase text-gray-400 block mb-1">กำหนดเข้าติดตั้ง</label>
-            <CalendarPicker date={installDate} timeSlot="" onDateChange={setInstallDate} onTimeSlotChange={() => {}} showTimeSlot={false} showSurveySlots excludeLeadId={lead.id} zoneFilter={zone} />
+            <CalendarPicker date={installDate} timeSlot="" onDateChange={setInstallDate} onTimeSlotChange={() => {}} showTimeSlot={false} showSurveySlots teamContext="install" excludeLeadId={lead.id} />
           </div>
         </div>
       )}

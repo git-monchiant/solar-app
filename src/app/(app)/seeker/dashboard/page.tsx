@@ -174,25 +174,39 @@ export default function SeekerDashboardPage() {
               </button>
               <div className="text-xs font-semibold uppercase tracking-wider text-gray-500 mb-3">สถานะการนำเสนอ</div>
               <div className="flex items-center gap-4">
-                <InterestDonut
-                  segments={[
-                    { value: stats.interested_new, color: "#16a34a" },
-                    { value: stats.interested_upgrade, color: "#2563eb" },
-                    { value: stats.undecided, color: "#f59e0b" },
-                    { value: stats.not_home, color: "#9ca3af" },
-                    { value: stats.not_interested, color: "#dc2626" },
-                    { value: stats.pending, color: "#e5e7eb" },
-                  ]}
-                  total={stats.total}
-                />
-                <div className="flex-1 min-w-0 text-xs space-y-1.5">
-                  <LegendRow color="#16a34a" label="สนใจ-ติดตั้ง" value={stats.interested_new} total={stats.total} />
-                  <LegendRow color="#2563eb" label="สนใจ-Upgrade" value={stats.interested_upgrade} total={stats.total} />
-                  <LegendRow color="#f59e0b" label="ยังไม่ตัดสินใจ" value={stats.undecided} total={stats.total} />
-                  <LegendRow color="#9ca3af" label="ไม่อยู่บ้าน" value={stats.not_home} total={stats.total} />
-                  <LegendRow color="#dc2626" label="ไม่สนใจ" value={stats.not_interested} total={stats.total} />
-                  <LegendRow color="#e5e7eb" label="ยังไม่ระบุ" value={stats.pending} total={stats.total} />
-                </div>
+                {(() => {
+                  // Some "interested" prospects don't have interest_type set (e.g.
+                  // imported rows). Without this bucket the donut undercounts the
+                  // total — KPI shows 136 but legend would only sum 94.
+                  const interestedOther = Math.max(0, stats.interested - stats.interested_new - stats.interested_upgrade);
+                  return (
+                    <>
+                      <InterestDonut
+                        segments={[
+                          { value: stats.interested_new, color: "#16a34a" },
+                          { value: stats.interested_upgrade, color: "#2563eb" },
+                          { value: interestedOther, color: "#86efac" },
+                          { value: stats.undecided, color: "#f59e0b" },
+                          { value: stats.not_home, color: "#9ca3af" },
+                          { value: stats.not_interested, color: "#dc2626" },
+                          { value: stats.pending, color: "#e5e7eb" },
+                        ]}
+                        total={stats.total}
+                      />
+                      <div className="flex-1 min-w-0 text-xs space-y-1.5">
+                        <LegendRow color="#16a34a" label="สนใจ-ติดตั้ง" value={stats.interested_new} total={stats.total} />
+                        <LegendRow color="#2563eb" label="สนใจ-Scale Up" value={stats.interested_upgrade} total={stats.total} />
+                        {interestedOther > 0 && (
+                          <LegendRow color="#86efac" label="สนใจ-ไม่ระบุ" value={interestedOther} total={stats.total} />
+                        )}
+                        <LegendRow color="#f59e0b" label="ยังไม่ตัดสินใจ" value={stats.undecided} total={stats.total} />
+                        <LegendRow color="#9ca3af" label="ไม่อยู่บ้าน" value={stats.not_home} total={stats.total} />
+                        <LegendRow color="#dc2626" label="ไม่สนใจ" value={stats.not_interested} total={stats.total} />
+                        <LegendRow color="#e5e7eb" label="ยังไม่ระบุ" value={stats.pending} total={stats.total} />
+                      </div>
+                    </>
+                  );
+                })()}
               </div>
             </div>
 

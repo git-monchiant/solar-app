@@ -74,6 +74,10 @@ interface Props {
   // Controlled zone filter — when provided, parent owns the chips and the
   // component just respects the value.
   controlledZone?: string;
+  // Controlled team filter — "all" | "survey" | "install". When "survey" or
+  // "install" is set, only events whose event_type matches are listed (block
+  // events stay visible since they apply globally).
+  controlledTeam?: "all" | "survey" | "install";
   // Fires whenever the most-visible month section changes due to scroll.
   // Lets the parent's sticky header reflect "what month am I looking at".
   onVisibleMonthChange?: (mk: string) => void;
@@ -83,7 +87,7 @@ function ymdLocal(d: Date) {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
 }
 
-export default function EventCalendarList({ monthsBack, monthsForward, days, zoneFilter = "all", showZoneChips = false, toolbarRight, anchor: controlledAnchor, hideNav = false, controlledZone, onVisibleMonthChange }: Props) {
+export default function EventCalendarList({ monthsBack, monthsForward, days, zoneFilter = "all", showZoneChips = false, toolbarRight, anchor: controlledAnchor, hideNav = false, controlledZone, controlledTeam = "all", onVisibleMonthChange }: Props) {
   const [events, setEvents] = useState<ScheduledEvent[]>([]);
   const [zones, setZones] = useState<{ id: number; name: string; color?: string | null }[]>([]);
   const [loading, setLoading] = useState(true);
@@ -122,7 +126,21 @@ export default function EventCalendarList({ monthsBack, monthsForward, days, zon
   const todayKey = ymdLocal(today);
 
   const { byMonth, byDate } = useMemo(() => {
-    const filtered = selectedZone === "all" ? events : events.filter((s) => s.zone === selectedZone);
+    // Two filters layered:
+    //  1. Zone (legacy chips, still wired for backwards compat)
+    //  2. Team — keeps blocks visible since they apply to every team
+    const zoneFiltered = selectedZone === "all" ? events : events.filter((s) => s.zone === selectedZone);
+    const filtered = controlledTeam === "all"
+      ? zoneFiltered
+      : zoneFiltered.filter((s) => {
+          // event_type='survey' / 'install' have an implicit team that matches
+          // their type. Blocks carry an explicit team (null = both teams).
+          if (s.event_type === "block") {
+            const t = (s as { team?: string | null }).team;
+            return t == null || t === controlledTeam;
+          }
+          return s.event_type === controlledTeam;
+        });
     const byDate: Record<string, ScheduledEvent[]> = {};
     for (const s of filtered) {
       const k = String(s.event_date).slice(0, 10);
@@ -139,7 +157,7 @@ export default function EventCalendarList({ monthsBack, monthsForward, days, zon
       cursor.setDate(cursor.getDate() + 1);
     }
     return { byMonth, byDate };
-  }, [events, selectedZone, anchor, windowMonths]);
+  }, [events, selectedZone, controlledTeam, anchor, windowMonths]);
 
   const goPrev = () => setAnchor((a) => {
     const d = new Date(a.y, a.m - 1, 1);
@@ -267,8 +285,12 @@ export default function EventCalendarList({ monthsBack, monthsForward, days, zon
                           {jobs.map((j) => {
                             const isBlock = j.event_type === "block";
                             const label = STATUS_LABEL(j);
-                            // Bar color comes from the lead's zone (block → gray fallback).
-                            const barColor = isBlock ? null : (j.zone ? zoneColor[j.zone] : null);
+                            // Bar colour by team (survey vs install), block → gray.
+                            // Replaces the old per-zone tint so the calendar reads
+                            // as "which team owns this slot".
+                            const barColor = isBlock
+                              ? null
+                              : j.event_type === "install" ? "#f97316" : "#1ed0c7";
                             const bg = isBlock ? "bg-gray-100" : "bg-gray-50 hover:bg-gray-100";
                             const inner = (
                               <>
@@ -286,7 +308,27 @@ export default function EventCalendarList({ monthsBack, monthsForward, days, zon
                               </>
                             );
                             return isBlock ? (
-                              <div key={`block-${j.id}`} className={`flex items-center gap-2 p-2 rounded-lg ${bg}`}>{inner}</div>
+                              <div key={`block-${j.id}`} className={`group flex items-center gap-2 p-2 rounded-lg ${bg}`}>
+                                {inner}
+                                <button
+                                  type="button"
+                                  title="ลบ block นี้"
+                                  onClick={async () => {
+                                    if (!confirm("ลบ block นี้?")) return;
+                                    // Block ids in /api/surveys/scheduled are
+                                    // emitted negative so they don't collide
+                                    // with lead ids — flip back for the route.
+                                    const blockId = Math.abs(j.id);
+                                    try {
+                                      await apiFetch(`/api/calendar-blocks/${blockId}`, { method: "DELETE" });
+                                      setEvents((evs) => evs.filter((e) => !(e.event_type === "block" && Math.abs(e.id) === blockId)));
+                                    } catch (e) { console.error(e); }
+                                  }}
+                                  className="ml-auto w-7 h-7 rounded-md text-gray-400 hover:text-red-600 hover:bg-red-50 inline-flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity"
+                                >
+                                  <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" /></svg>
+                                </button>
+                              </div>
                             ) : (
                               <Link key={`${j.event_type}-${j.id}`} href={`/leads/${j.id}`} className={`flex items-center gap-2 p-2 rounded-lg transition-colors ${bg}`}>{inner}</Link>
                             );

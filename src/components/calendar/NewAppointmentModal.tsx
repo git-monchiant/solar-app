@@ -1,10 +1,11 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import { apiFetch } from "@/lib/api";
 import { HOURLY_SLOTS, parseSlots, serializeSlots, slotLabel } from "@/lib/time-slots";
+import ModalBase from "@/components/ui/ModalBase";
 
-type Zone = { id: number; name: string; color?: string | null };
+type TeamPick = "survey" | "install" | "both";
 
 // Quick-create modal for a non-lead "other work" calendar block — lets
 // dispatch reserve a slot/day so survey/install scheduling sees it as taken.
@@ -16,18 +17,11 @@ export default function NewAppointmentModal({ onClose, onCreated, initialDate }:
   const [date, setDate] = useState<string>(initialDate || new Date().toISOString().slice(0, 10));
   const [endDate, setEndDate] = useState<string>("");
   const [timeSlot, setTimeSlot] = useState<string>("");
-  const [zone, setZone] = useState<string>("");
-  const [zones, setZones] = useState<Zone[]>([]);
+  const [allDay, setAllDay] = useState<boolean>(true);
+  const [team, setTeam] = useState<TeamPick>("both");
   const [note, setNote] = useState("");
   const [saving, setSaving] = useState(false);
   const [err, setErr] = useState<string | null>(null);
-
-  useEffect(() => {
-    apiFetch("/api/zones").then((zs: Zone[]) => {
-      setZones(zs);
-      if (zs.length > 0) setZone((cur) => cur || zs[0].name);
-    }).catch(console.error);
-  }, []);
 
   const save = async () => {
     if (!title.trim()) { setErr("กรอกชื่องาน"); return; }
@@ -41,8 +35,8 @@ export default function NewAppointmentModal({ onClose, onCreated, initialDate }:
           title: title.trim(),
           block_date: date,
           end_date: endDate && endDate > date ? endDate : null,
-          time_slot: timeSlot || null,
-          zone: zone || null,
+          time_slot: allDay ? null : (timeSlot || null),
+          team: team === "both" ? null : team,
           note: note.trim() || null,
         }),
       });
@@ -55,17 +49,30 @@ export default function NewAppointmentModal({ onClose, onCreated, initialDate }:
   };
 
   return (
-    <div className="fixed inset-0 z-[9999] bg-black/40 flex items-end md:items-center justify-center p-0 md:p-4">
-      <div className="w-full md:max-w-lg bg-white rounded-t-2xl md:rounded-2xl shadow-xl max-h-[90vh] overflow-y-auto flex flex-col">
-        <div className="sticky top-0 bg-white px-5 py-3 border-b border-gray-100 flex items-center justify-between">
-          <div>
-            <div className="text-sm font-bold">สร้างนัด (งานอื่น)</div>
-            <div className="text-xs text-gray-500 mt-0.5">block วันให้ทีมนัดหมายไม่เลือก</div>
-          </div>
-          <button type="button" onClick={onClose} className="text-gray-400 hover:text-gray-700 text-xl leading-none">✕</button>
+    <ModalBase
+      title={
+        <div>
+          <div className="text-sm font-bold">สร้างนัด (งานอื่น)</div>
+          <div className="text-xs text-gray-500 mt-0.5 font-normal">block วันให้ทีมนัดหมายไม่เลือก</div>
         </div>
-
-        <div className="p-5 space-y-4">
+      }
+      onClose={onClose}
+      size="lg"
+      footer={
+        <div className="flex items-center gap-2">
+          <button type="button" onClick={onClose}
+            className="h-10 px-5 rounded-lg text-sm font-semibold text-gray-600 border border-gray-200 hover:bg-gray-50">
+            ยกเลิก
+          </button>
+          <div className="flex-1" />
+          <button type="button" onClick={save} disabled={saving || !title.trim()}
+            className="h-10 px-5 rounded-lg text-sm font-semibold text-white bg-primary hover:bg-primary-dark disabled:opacity-50 disabled:cursor-not-allowed">
+            {saving ? "กำลังบันทึก..." : "บันทึก"}
+          </button>
+        </div>
+      }
+    >
+      <div className="space-y-4">
           <div>
             <label className="text-xs font-semibold tracking-wider uppercase text-gray-400 block mb-1">ชื่องาน</label>
             <input type="text" value={title} onChange={(e) => setTitle(e.target.value)}
@@ -76,14 +83,17 @@ export default function NewAppointmentModal({ onClose, onCreated, initialDate }:
           <div>
             <label className="text-xs font-semibold tracking-wider uppercase text-gray-400 block mb-1">ทีม</label>
             <div className="flex flex-wrap gap-2">
-              {zones.map((z) => {
-                const selected = zone === z.name;
-                const tint = z.color ?? undefined;
+              {[
+                { value: "survey" as const, label: "ทีม Survey", color: "#1ed0c7" },
+                { value: "install" as const, label: "ทีม Solar", color: "#f97316" },
+                { value: "both" as const, label: "ทั้ง 2 ทีม", color: "#6b7280" },
+              ].map((opt) => {
+                const selected = team === opt.value;
                 return (
-                  <button key={z.id} type="button" onClick={() => setZone(z.name)}
-                    style={selected && tint ? { backgroundColor: tint, borderColor: tint, color: "#fff" } : tint ? { borderColor: tint, color: tint } : undefined}
-                    className={`h-9 px-3 rounded-lg text-sm font-semibold border transition-colors ${selected && !tint ? "bg-primary text-white border-primary" : !tint ? "bg-white text-gray-600 border-gray-200 hover:border-gray-400" : "bg-white"}`}>
-                    {z.name}
+                  <button key={opt.value} type="button" onClick={() => setTeam(opt.value)}
+                    style={selected ? { backgroundColor: opt.color, borderColor: opt.color, color: "#fff" } : { borderColor: opt.color, color: opt.color }}
+                    className="h-9 px-3 rounded-lg text-sm font-semibold border bg-white transition-colors">
+                    {opt.label}
                   </button>
                 );
               })}
@@ -112,18 +122,36 @@ export default function NewAppointmentModal({ onClose, onCreated, initialDate }:
           </div>
 
           <div>
-            <label className="text-xs font-semibold tracking-wider uppercase text-gray-400 block mb-1">
-              ช่วงเวลา
-              <span className="ml-2 text-gray-300 normal-case font-normal">เลือกได้มากกว่า 1 ช่วง</span>
-            </label>
+            <div className="flex items-center justify-between mb-1">
+              <label className="text-xs font-semibold tracking-wider uppercase text-gray-400">
+                ช่วงเวลา
+                <span className="ml-2 text-gray-300 normal-case font-normal">เลือกได้มากกว่า 1 ช่วง</span>
+              </label>
+              <label className="inline-flex items-center gap-1.5 text-xs text-gray-600 cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={allDay}
+                  onChange={(e) => {
+                    setAllDay(e.target.checked);
+                    if (e.target.checked) setTimeSlot("");
+                  }}
+                  className="w-4 h-4 accent-primary"
+                />
+                ทั้งวัน
+              </label>
+            </div>
             <div className="grid grid-cols-4 gap-1.5">
               {HOURLY_SLOTS.map((s) => {
-                const selected = parseSlots(timeSlot).includes(s);
+                const selected = allDay || parseSlots(timeSlot).includes(s);
                 return (
                   <button key={s} type="button"
                     onClick={() => {
-                      const cur = parseSlots(timeSlot);
-                      const next = selected ? cur.filter((x) => x !== s) : [...cur, s].sort();
+                      // Clicking a slot exits "ทั้งวัน" mode automatically. If
+                      // we were in all-day, treat the click as "carve out this
+                      // one hour"; otherwise toggle normally.
+                      const base = allDay ? [...HOURLY_SLOTS] : parseSlots(timeSlot);
+                      const next = selected ? base.filter((x) => x !== s) : [...base, s].sort();
+                      setAllDay(false);
                       setTimeSlot(serializeSlots(next) || "");
                     }}
                     className={`flex items-center justify-center h-8 px-1 rounded-md border transition-all ${
@@ -136,7 +164,6 @@ export default function NewAppointmentModal({ onClose, onCreated, initialDate }:
                 );
               })}
             </div>
-            <div className="text-[11px] text-gray-400 mt-2">ไม่เลือกช่วงเวลา = block ทั้งวัน</div>
           </div>
 
           <div>
@@ -146,20 +173,7 @@ export default function NewAppointmentModal({ onClose, onCreated, initialDate }:
           </div>
 
           {err && <div className="text-sm text-red-600 bg-red-50 border border-red-200 rounded-lg py-2 text-center">{err}</div>}
-        </div>
-
-        <div className="sticky bottom-0 bg-white px-5 py-3 border-t border-gray-100 flex items-center gap-2">
-          <button type="button" onClick={onClose}
-            className="h-10 px-5 rounded-lg text-sm font-semibold text-gray-600 border border-gray-200 hover:bg-gray-50">
-            ยกเลิก
-          </button>
-          <div className="flex-1" />
-          <button type="button" onClick={save} disabled={saving || !title.trim()}
-            className="h-10 px-5 rounded-lg text-sm font-semibold text-white bg-primary hover:bg-primary-dark disabled:opacity-50 disabled:cursor-not-allowed">
-            {saving ? "กำลังบันทึก..." : "บันทึก"}
-          </button>
-        </div>
       </div>
-    </div>
+    </ModalBase>
   );
 }

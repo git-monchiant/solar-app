@@ -362,7 +362,10 @@ export default function LeadDetailPage({ params }: { params: Promise<{ id: strin
   if (!lead) return <div className="text-center py-12 text-gray-500">Not found</div>;
 
   const isLost = lead.status === "lost" || lead.status === "returned";
-  const isUpgrade = lead.customer_type?.includes("Upgrade") || lead.customer_type?.includes("เดิม");
+  // Recognise both the short code ("upgrade") and the legacy long Thai
+  // labels ("Upgrade", "ลูกค้าเดิมต้องการ Upgrade/Battery") so old data
+  // imported before the standardisation still flags correctly.
+  const isUpgrade = lead.customer_type === "upgrade" || lead.customer_type?.includes("Upgrade") || lead.customer_type?.includes("เดิม");
   // pre_survey is only "done" if we've actually moved past it into a real
   // downstream step. Terminal states (lost/returned) don't imply completion —
   // the lead was exited before finishing.

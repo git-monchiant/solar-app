@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { apiFetch } from "@/lib/api";
 import { HOURLY_SLOTS, parseSlots, serializeSlots, slotLabel } from "@/lib/time-slots";
 
@@ -15,10 +15,22 @@ interface Props {
   showSurveySlots?: boolean;
   excludeLeadId?: number;
   required?: boolean;
-  /** Restrict booked-slot view to events in this zone. Free-form blocks
-   * (event_type='block', no zone) still apply globally. Empty/null = no filter. */
+  /** Legacy — no longer drives availability or colour. Kept so older callers
+   * still compile. */
   zoneFilter?: string | null;
+  /** Which team's calendar this picker represents. Drives availability:
+   *   "survey" → blocks survey events + survey-or-shared blocks
+   *   "install" → blocks install events + install-or-shared blocks
+   * Required for showSurveySlots; defaults to "survey". */
+  teamContext?: "survey" | "install";
 }
+
+// Team colours mirror the calendar page legend so the picker reads the same
+// regardless of where it's opened.
+const TEAM_COLOR: Record<string, string> = {
+  survey: "#1ed0c7",
+  install: "#f97316",
+};
 
 export default function CalendarPicker({
   date,
@@ -30,8 +42,10 @@ export default function CalendarPicker({
   excludeLeadId,
   required = false,
   zoneFilter,
+  teamContext = "survey",
 }: Props) {
-  const [surveys, setSurveys] = useState<{ id: number; event_date?: string; time_slot?: string | null; event_type?: string; survey_date?: string; survey_time_slot?: string | null; zone?: string | null }[]>([]);
+  void zoneFilter;
+  const [surveys, setSurveys] = useState<{ id: number; event_date?: string; time_slot?: string | null; event_type?: string; survey_date?: string; survey_time_slot?: string | null; zone?: string | null; team?: string | null }[]>([]);
 
   useEffect(() => {
     if (!showSurveySlots) return;
@@ -40,13 +54,37 @@ export default function CalendarPicker({
       .catch(console.error);
   }, [showSurveySlots, excludeLeadId]);
 
-  // Per-date set of hourly slots already booked. Install events (no slot)
-  // block the entire day, so we mark all hourly codes plus a sentinel "FULL"
-  // so the day-level check is cheap.
-  const zoneScoped = zoneFilter
-    ? surveys.filter(s => s.event_type === "block" || s.zone === zoneFilter)
-    : surveys;
-  const bookedSlotsByDate = zoneScoped.reduce<Record<string, Set<string>>>((acc, s) => {
+  // Team-scoped events. Block events with team=null apply to both teams.
+  const teamEvents = useMemo(() => surveys.filter(s => {
+    if (s.event_type === "block") return s.team == null || s.team === teamContext;
+    return s.team === teamContext;
+  }), [surveys, teamContext]);
+
+  // Same-day tint. Real bookings (survey/install) take the team colour, while
+  // manual blocks (admin "ทีมไปทำอย่างอื่น") show as neutral gray — they
+  // aren't actual jobs, just unavailability.
+  const dayColor = TEAM_COLOR[teamContext] ?? "#1ed0c7";
+  const BLOCK_GRAY = "#9ca3af";
+  const zoneByDate = useMemo(() => {
+    // Per date: prefer the team colour if any same-team booking exists;
+    // fall back to gray when only blocks are present.
+    const m: Record<string, string> = {};
+    for (const s of teamEvents) {
+      const dateRaw = s.event_date || s.survey_date;
+      if (!dateRaw) continue;
+      const key = dateRaw.slice(0, 10);
+      const isBlock = s.event_type === "block";
+      if (m[key] === dayColor) continue;
+      m[key] = isBlock ? BLOCK_GRAY : dayColor;
+    }
+    return m;
+  }, [teamEvents, dayColor]);
+  const zoneColor: Record<string, string> = useMemo(() => ({ [dayColor]: dayColor, [BLOCK_GRAY]: BLOCK_GRAY }), [dayColor]);
+
+  // Per-date set of hourly slots already booked WITHIN THIS TEAM. Install
+  // events (no slot) block the entire day. Sentinel "FULL" speeds the
+  // day-level check.
+  const bookedSlotsByDate = teamEvents.reduce<Record<string, Set<string>>>((acc, s) => {
     const dateRaw = s.event_date || s.survey_date;
     const slot = s.time_slot ?? s.survey_time_slot ?? null;
     if (!dateRaw) return acc;
@@ -54,7 +92,6 @@ export default function CalendarPicker({
     if (!acc[key]) acc[key] = new Set();
     const set = acc[key];
     if (!slot) {
-      // Full-day event (install / block) — covers every slot.
       HOURLY_SLOTS.forEach(h => set.add(h));
       set.add("FULL");
       return acc;
@@ -74,13 +111,13 @@ export default function CalendarPicker({
 
   return (
     <div>
-      <div className="grid grid-cols-2 gap-2">
-        {months.map(monthStart => {
+      <div className="grid grid-cols-2 gap-2 divide-x divide-gray-200">
+        {months.map((monthStart, monthIdx) => {
           const monthLabel = monthStart.toLocaleDateString("th-TH", { month: "long" });
           const firstDayOfWeek = monthStart.getDay();
           const daysInMonth = new Date(monthStart.getFullYear(), monthStart.getMonth() + 1, 0).getDate();
           return (
-            <div key={monthStart.toISOString()}>
+            <div key={monthStart.toISOString()} className={monthIdx > 0 ? "pl-3" : undefined}>
               <div className="text-xs font-semibold text-gray-700 mb-1 text-center">{monthLabel}</div>
               <div className="grid grid-cols-7 mb-0.5">
                 {WEEKDAYS.map((w, i) => (
@@ -103,10 +140,21 @@ export default function CalendarPicker({
                   // Full-day picker (install) — any prior booking blocks the day.
                   const fullDayEvent = !showTimeSlot;
                   const disabled = isPast || (showSurveySlots && (isFull || (fullDayEvent && isPartial)));
+                  // Tint booked cells by the zone of the first booking on
+                  // that date. Falls back to neutral red/amber when the zone
+                  // has no colour configured.
+                  const zoneName = zoneByDate[iso];
+                  const zc = zoneName ? zoneColor[zoneName] : null;
                   let bookedClass = "";
+                  let bookedStyle: React.CSSProperties | undefined;
                   if (!isPast && !selected && showSurveySlots) {
-                    if (isFull || (fullDayEvent && isPartial)) bookedClass = "bg-red-100 text-red-500";
-                    else if (isPartial) bookedClass = "bg-amber-100 text-amber-700";
+                    if (isFull || (fullDayEvent && isPartial)) {
+                      if (zc) bookedStyle = { backgroundColor: `${zc}33`, color: zc };
+                      else bookedClass = "bg-red-100 text-red-500";
+                    } else if (isPartial) {
+                      if (zc) bookedStyle = { backgroundColor: `${zc}1f`, color: zc };
+                      else bookedClass = "bg-amber-100 text-amber-700";
+                    }
                   }
                   return (
                     <div key={iso} className="h-9 flex items-center justify-center">
@@ -124,14 +172,14 @@ export default function CalendarPicker({
                             }
                           }
                         }}
-                        style={{ minHeight: 0 }}
+                        style={bookedStyle ? { minHeight: 0, ...bookedStyle } : { minHeight: 0 }}
                         className={`w-8 h-8 rounded-full flex items-center justify-center text-sm leading-none font-semibold transition-all ${
                           selected
                             ? "bg-active text-white shadow-sm shadow-active/30"
                             : isPast
                             ? "text-gray-300 cursor-not-allowed"
-                            : bookedClass
-                            ? bookedClass + (isFull ? " cursor-not-allowed" : " hover:brightness-95")
+                            : bookedClass || bookedStyle
+                            ? `${bookedClass}${isFull ? " cursor-not-allowed" : " hover:brightness-95"}`
                             : isToday
                             ? "bg-active-light text-active ring-1 ring-active/30 hover:bg-active hover:text-white"
                             : `${isWeekend ? "text-red-500" : "text-gray-700"} hover:bg-active-light hover:text-active`

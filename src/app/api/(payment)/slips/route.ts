@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getDb, sql } from "@/lib/db";
 import { requireAuth } from "@/lib/auth";
+import { logLeadActivity, paymentStepLabel, fmtBaht } from "@/lib/lead-activity-log";
 
 export const runtime = "nodejs";
 export const maxDuration = 30;
@@ -109,6 +110,13 @@ export async function POST(req: NextRequest) {
         VALUES (@lead_id, @slip_field, @data, @mime, @filename, @slip_amount, @slip_ref1, @slip_ref2, @slip_trans_id, @slip_datetime, @slip_doc_type, @slip_cheque_no)
       `);
     const id = result.recordset[0].id;
+    await logLeadActivity(db, {
+      leadId,
+      activityType: "slip_uploaded",
+      title: `แนบสลิป ${paymentStepLabel(slipField)}${slipAmount ? ` ${fmtBaht(slipAmount)}` : ""}`,
+      note: file.name || null,
+      userId: gate.userId,
+    });
     return NextResponse.json({ id, url: `/api/slips/${id}` });
   } catch (e) {
     console.error("POST /api/slips error:", e);

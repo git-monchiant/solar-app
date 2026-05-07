@@ -48,7 +48,7 @@ export interface LeadData {
 export default function LeadCard({ lead, compact, onAssignChange }: { lead: LeadData; compact?: boolean; onAssignChange?: () => void }) {
   const router = useRouter();
   const config = STATUS_CONFIG[lead.status] || STATUS_CONFIG.pre_survey;
-  const isUpgrade = lead.customer_type?.includes("Upgrade") || lead.customer_type?.includes("เดิม");
+  const isUpgrade = lead.customer_type === "upgrade" || lead.customer_type?.includes("Upgrade") || lead.customer_type?.includes("เดิม");
   const [now, setNow] = useState<number | null>(null);
   useEffect(() => { setNow(Date.now()); }, []);
   const startDate = lead.contact_date || lead.created_at;

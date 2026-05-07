@@ -4,7 +4,7 @@ import { useState } from "react";
 import { apiFetch } from "@/lib/api";
 import DateSlider from "@/components/ui/DateSlider";
 import CalendarPicker from "@/components/calendar/CalendarPicker";
-import ModalCloseButton from "@/components/ui/ModalCloseButton";
+import ModalBase from "@/components/ui/ModalBase";
 
 type ActivityType = "note" | "follow_up";
 
@@ -78,25 +78,11 @@ export default function AddActivityModal({ activityType, leadId, canSendBack = f
   // Note modal — simple
   if (activityType === "note") {
     return (
-      <div className="fixed inset-0 z-[60] flex items-end md:items-center justify-center">
-        <div className="absolute inset-0 bg-black/30" onClick={onClose} />
-        <div className="relative bg-white rounded-t-2xl md:rounded-2xl w-full md:max-w-md p-5 pb-8 md:pb-5 animate-slide-up">
-          <div className="flex items-center justify-between mb-4">
-            <h3 className="font-bold text-lg">Note</h3>
-            <button onClick={onClose} style={{ minHeight: 0 }} className="text-gray-400 hover:text-gray-600 p-1">
-              <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
-              </svg>
-            </button>
-          </div>
-          <textarea
-            value={note}
-            onChange={(e) => setNote(e.target.value)}
-            placeholder="บันทึกโน้ต..."
-            rows={4}
-            autoFocus
-            className="w-full px-4 py-3 rounded-xl border border-gray-200 bg-white focus:outline-none focus:border-primary text-sm resize-none mb-4"
-          />
+      <ModalBase
+        title="Note"
+        onClose={onClose}
+        size="md"
+        footer={
           <button
             onClick={handleSubmit}
             disabled={saving || !note.trim()}
@@ -104,22 +90,49 @@ export default function AddActivityModal({ activityType, leadId, canSendBack = f
           >
             {saving ? "กำลังบันทึก..." : "บันทึก"}
           </button>
-        </div>
-      </div>
+        }
+      >
+        <textarea
+          value={note}
+          onChange={(e) => setNote(e.target.value)}
+          placeholder="บันทึกโน้ต..."
+          rows={4}
+          autoFocus
+          className="w-full px-4 py-3 rounded-xl border border-gray-200 bg-white focus:outline-none focus:border-primary text-sm resize-none"
+        />
+      </ModalBase>
     );
   }
 
-  // Follow-up modal — full screen on mobile
+  // Follow-up modal — uses ModalBase, action button in footer
+  const canSubmit = !saving && !!followUpMethod && !!followUpDate && !!note.trim();
   return (
-    <div className="fixed inset-0 z-[60] md:flex md:items-center md:justify-center">
-      <div className="hidden md:block absolute inset-0 bg-black/30" onClick={onClose} />
-      <div className="relative bg-white w-full h-full md:h-auto md:max-h-[90vh] md:rounded-2xl md:max-w-md md:animate-slide-up flex flex-col">
-        <div className="shrink-0 bg-white flex items-center justify-between px-5 pt-5 pb-3 border-b border-gray-100 safe-top">
-          <h3 className="font-bold text-lg">Follow-up</h3>
-          <ModalCloseButton onClick={onClose} />
-        </div>
-
-        <div className="flex-1 overflow-y-auto space-y-3 pb-4">
+    <ModalBase
+      title="Follow-up"
+      onClose={onClose}
+      size="md"
+      footer={
+        <button
+          onClick={handleSubmit}
+          disabled={!canSubmit}
+          className={`w-full py-3 rounded-xl font-bold text-sm text-white active:scale-[0.98] transition-all flex items-center justify-center gap-2 ${
+            !canSubmit
+              ? "bg-gray-300 cursor-not-allowed"
+              : sendBackToSeeker
+              ? "bg-amber-500 hover:bg-amber-600"
+              : "bg-primary"
+          }`}
+        >
+          {saving ? (
+            <>
+              <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+              <span>{sendBackToSeeker ? "กำลังส่งกลับ…" : "กำลังบันทึก…"}</span>
+            </>
+          ) : sendBackToSeeker ? "บันทึกและส่งข้อมูลไปยัง Lead Seeker" : "บันทึก"}
+        </button>
+      }
+    >
+      <div className="-mx-5 space-y-3">
           {/* วันที่ติดตาม — DateSlider */}
           <div>
             <div className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-1 px-5">
@@ -236,37 +249,8 @@ export default function AddActivityModal({ activityType, leadId, canSendBack = f
               </div>
             )}
           </div>
-
-        </div>
-
-        {/* Submit — pinned at bottom so it's never clipped by the viewport */}
-        <div className="shrink-0 px-5 pt-3 pb-10 border-t border-gray-100 bg-white" style={{ paddingBottom: "max(2.5rem, env(safe-area-inset-bottom))" }}>
-          {(() => {
-            const canSubmit = !saving && !!followUpMethod && !!followUpDate && !!note.trim();
-            return (
-          <button
-            onClick={handleSubmit}
-            disabled={!canSubmit}
-            className={`w-full py-3 rounded-xl font-bold text-sm text-white active:scale-[0.98] transition-all flex items-center justify-center gap-2 ${
-              !canSubmit
-                ? "bg-gray-300 cursor-not-allowed"
-                : sendBackToSeeker
-                ? "bg-amber-500 hover:bg-amber-600"
-                : "bg-primary"
-            }`}
-          >
-            {saving ? (
-              <>
-                <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
-                <span>{sendBackToSeeker ? "กำลังส่งกลับ…" : "กำลังบันทึก…"}</span>
-              </>
-            ) : sendBackToSeeker ? "บันทึกและส่งข้อมูลไปยัง Lead Seeker" : "บันทึก"}
-          </button>
-            );
-          })()}
-        </div>
       </div>
-    </div>
+    </ModalBase>
   );
 }
 

@@ -142,14 +142,14 @@ export default function EventCalendarMonth({ toolbarRight, year: controlledYear,
                     {evs.slice(0, 4).map((ev, j) => {
                       const isBlock = ev.event_type === "block";
                       const isSurvey = !isBlock && (ev.status === "survey" || ev.event_type === "survey");
-                      // Border + icon-tint comes from the lead's zone color so
-                      // teams are distinguishable at a glance. Block stays gray.
-                      const zc = !isBlock && ev.zone ? zoneColor[ev.zone] : null;
+                      // Border + icon-tint coloured by team (survey vs install)
+                      // so teams are distinguishable at a glance. Block stays gray.
+                      const tc = isBlock ? null : isSurvey ? "#1ed0c7" : "#f97316";
                       const baseCls = isBlock
                         ? "bg-gray-100 text-gray-700 border-gray-300"
                         : "bg-white text-gray-800 border-gray-200";
-                      const inlineStyle: React.CSSProperties | undefined = zc
-                        ? { borderColor: zc, color: zc, backgroundColor: `${zc}14` }
+                      const inlineStyle: React.CSSProperties | undefined = tc
+                        ? { borderColor: tc, color: tc, backgroundColor: `${tc}14` }
                         : undefined;
                       const kindLabel = isBlock ? "งานอื่น" : isSurvey ? "สำรวจ" : "ติดตั้ง";
                       const handleClick = () => { if (!isBlock) router.push(`/leads/${ev.id}`); };

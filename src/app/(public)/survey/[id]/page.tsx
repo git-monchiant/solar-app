@@ -48,6 +48,8 @@ interface Lead {
   survey_lat: number | null;
   survey_lng: number | null;
   survey_note: string | null;
+  package_note: string | null;
+  quotation_type: string | null;
   survey_photos: string | null;
   // Electrical
   survey_electrical_phase: string | null;
@@ -301,14 +303,24 @@ export default function SurveyPdfPage() {
                         </table>
                       </div>
                     )}
+                    {lead.package_note && (
+                      <div className="mt-2 text-[15px] text-black whitespace-pre-wrap">
+                        <span className="font-bold">หมายเหตุ:</span> {lead.package_note}
+                      </div>
+                    )}
                   </Section>
 
-                  {/* 5. บันทึก Surveyor */}
-                  {lead.survey_note && (
-                    <Section title="5. บันทึกผู้สำรวจ · SURVEYOR NOTE">
+                  {/* 5. บันทึก Surveyor — note box first, quotation_type sits
+                      below the box as the surveyor's verdict on the quote. */}
+                  <Section title="5. บันทึกผู้สำรวจ · SURVEYOR NOTE">
+                    {lead.survey_note && (
                       <div className="text-[15px] text-black whitespace-pre-wrap border border-gray-300 rounded p-3">{lead.survey_note}</div>
-                    </Section>
-                  )}
+                    )}
+                    <div className="mt-2 text-[15px] text-black">
+                      <span className="font-bold">ประเภทใบเสนอราคา:</span>{" "}
+                      {lead.quotation_type === "special" ? "Customization" : "Standard"}
+                    </div>
+                  </Section>
 
                   {/* Signature */}
                   <div className="flex justify-around gap-8 mt-24 avoid-break">

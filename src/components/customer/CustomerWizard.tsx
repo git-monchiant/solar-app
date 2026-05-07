@@ -6,8 +6,9 @@ import CustomerInfoForm from "@/components/customer/CustomerInfoForm";
 import ErrorPopup from "@/components/ui/ErrorPopup";
 import LineIcon from "@/components/icons/LineIcon";
 import { formatTHB as formatPrice } from "@/lib/utils/formatters";
-import { CHANNELS } from "@/lib/constants/channels";
-import { normalizeSourceKey } from "@/lib/source-tag";
+import { CHANNEL_BY_CODE, type ChannelCode } from "@/lib/constants/channels";
+import { getSourceStyle } from "@/lib/source-tag";
+import ChannelPickerModal from "@/components/shared/ChannelPickerModal";
 
 export interface CustomerWizardValues {
   full_name?: string;
@@ -19,6 +20,9 @@ export interface CustomerWizardValues {
   interested_package_id?: string;
   note?: string;
   source?: string;
+  /** Additional touchpoints (mirrors prospects.tag). Stored as JSON string in
+   * the DB but accepted here as either array or pre-stringified JSON. */
+  tag?: string | string[] | null;
   payment_type?: string;
   requirement?: string;
   id_card_number?: string;
@@ -72,15 +76,18 @@ interface Props {
   onLinkLine?: () => void;
   /** "create" hides sheet-sync extras to keep new-lead step minimal; "edit" shows them. */
   mode?: "create" | "edit";
+  /** When the wizard is embedded in a Modal that owns the footer/save button,
+   * suppress the wizard's internal save button. Caller should wire onSubmit
+   * via the Modal's footer slot. */
+  hideSubmit?: boolean;
 }
 
-// Mirror the ChannelPickerModal codes so a pre-selected channel highlights
-// the matching chip on entry. normalizeSourceKey() also folds legacy values
-// ("walk-in", "Sen X PM", …) onto these codes when editing older leads.
-const SOURCES = CHANNELS.map((c) => ({ value: c.code, label: c.label }));
+// Standard short codes — match the values used by import_leads_merge.mjs and
+// the seeker→lead sync. Storing codes (not Thai labels) avoids drift between
+// chip-selected state and DB value when wording changes.
 const CUSTOMER_TYPES = [
-  { value: "ลูกค้าใหม่ยังไม่มีโซล่า", label: "New" },
-  { value: "ลูกค้าเดิมต้องการ Upgrade/Battery", label: "Upgrade" },
+  { value: "new", label: "New" },
+  { value: "upgrade", label: "Upgrade" },
 ];
 const PAYMENT_TYPES = [
   { value: "cash", label: "เงินสด" },
@@ -316,35 +323,153 @@ function CreateProfileForm({
         </FormCard>
       </div>
 
-      {/* Row 2: ที่มา / ประเภท */}
-      <FormCard title="ที่มา / ประเภทลูกค้า">
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-3">
-          <FormField label="ที่มา">
-            <div className="grid grid-cols-2 gap-2">
-              {(() => {
-                const currentKey = normalizeSourceKey(values.source);
-                return SOURCES.map(s => (
-                  <button key={s.value} type="button" onClick={() => onChange({ source: s.value })} className={chipBtn(values.source === s.value || currentKey === s.value)} style={{ minHeight: 0 }}>{s.label}</button>
-                ));
-              })()}
-            </div>
-          </FormField>
-          <FormField label="ประเภทลูกค้า">
-            <div className="grid grid-cols-2 gap-2">
-              {CUSTOMER_TYPES.map(t => (
-                <button key={t.value} type="button" onClick={() => onChange({ customer_type: t.value })} className={chipBtn(values.customer_type === t.value)} style={{ minHeight: 0 }}>{t.label}</button>
-              ))}
-            </div>
-          </FormField>
-        </div>
-      </FormCard>
+      {/* Row 2: ที่มา / ประเภท — chip system mirrors the seeker prospect modal:
+       * - source = first-touch (immutable once set; clicking + opens the picker
+       *   when blank, otherwise just acts as the label chip)
+       * - tag = editable JSON array of additional touchpoints, each chip has ×
+       *   to delete, + button to add via ChannelPickerModal */}
+      <ChannelTagPicker values={values} onChange={onChange} />
     </div>
+  );
+}
+
+// ChannelTagPicker — replaces the legacy SOURCES grid. Mirrors the seeker
+// prospect modal so the lead UX matches: source chip + editable tag chips +
+// add button, with customer_type kept as a side-by-side toggle.
+function ChannelTagPicker({
+  values,
+  onChange,
+}: {
+  values: CustomerWizardValues;
+  onChange: (patch: Partial<CustomerWizardValues>) => void;
+}) {
+  const [pickerOpen, setPickerOpen] = useState<null | "source" | "tag">(null);
+
+  // tag may arrive as JSON string (from API) or array (in-memory). Normalize.
+  const tagCodes: ChannelCode[] = (() => {
+    if (Array.isArray(values.tag)) return values.tag.filter(Boolean) as ChannelCode[];
+    if (typeof values.tag === "string" && values.tag) {
+      try {
+        const parsed = JSON.parse(values.tag);
+        if (Array.isArray(parsed)) return parsed.filter(Boolean) as ChannelCode[];
+      } catch {}
+    }
+    return [];
+  })();
+
+  const setTagCodes = (next: ChannelCode[]) => onChange({ tag: next });
+  const removeTag = (c: ChannelCode) => setTagCodes(tagCodes.filter((x) => x !== c));
+  const addTag = (c: ChannelCode) => {
+    if (c === values.source) return; // already the first-touch
+    if (tagCodes.includes(c)) return;
+    setTagCodes([...tagCodes, c]);
+  };
+
+  const chipBase: React.CSSProperties = {
+    display: "inline-flex",
+    alignItems: "center",
+    justifyContent: "center",
+    height: 28,
+    minHeight: 28,
+    maxHeight: 28,
+    paddingTop: 0,
+    paddingBottom: 0,
+    borderWidth: 0,
+    boxSizing: "border-box",
+    lineHeight: 1,
+    flexShrink: 0,
+    borderRadius: 6,
+    fontSize: 12,
+    fontWeight: 700,
+    textTransform: "uppercase",
+    letterSpacing: "0.05em",
+  };
+
+  return (
+    <FormCard title="ที่มา / ประเภทลูกค้า">
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-3">
+        <FormField label="ที่มา (ช่องทางที่ลูกค้ารู้จักเรา)">
+          <div className="flex items-center gap-1.5 flex-wrap">
+            {values.source ? (() => {
+              const s = getSourceStyle(values.source);
+              return (
+                <span
+                  title="ที่มาแรก — แก้ไม่ได้"
+                  className={s.cls}
+                  style={{ ...chipBase, paddingLeft: 10, paddingRight: 10 }}
+                >
+                  {s.label}
+                </span>
+              );
+            })() : (
+              <button
+                type="button"
+                onClick={() => setPickerOpen("source")}
+                className="text-gray-500 bg-gray-100 hover:bg-gray-200 px-3"
+                style={{ ...chipBase, fontWeight: 600 }}
+              >
+                เลือกที่มา
+              </button>
+            )}
+            {tagCodes.map((c) => CHANNEL_BY_CODE[c] && (() => {
+              const s = getSourceStyle(c);
+              return (
+                <button
+                  type="button"
+                  key={c}
+                  onClick={() => removeTag(c)}
+                  title={`คลิกเพื่อลบ ${s.label}`}
+                  className={`hover:opacity-80 ${s.cls}`}
+                  style={{ ...chipBase, paddingLeft: 10, paddingRight: 6, gap: 4 }}
+                >
+                  {s.label}
+                  <svg width={12} height={12} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={3}>
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
+                  </svg>
+                </button>
+              );
+            })())}
+            {values.source && (
+              <button
+                type="button"
+                onClick={() => setPickerOpen("tag")}
+                title="เพิ่ม Touchpoint"
+                className="text-gray-500 bg-gray-100 hover:bg-gray-200"
+                style={{ ...chipBase, width: 28, minWidth: 28, maxWidth: 28, paddingLeft: 0, paddingRight: 0, fontSize: 0 }}
+              >
+                <svg width={14} height={14} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={3} style={{ display: "block" }}>
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M12 4.5v15m7.5-7.5h-15" />
+                </svg>
+              </button>
+            )}
+          </div>
+        </FormField>
+        <FormField label="ประเภทลูกค้า">
+          <div className="grid grid-cols-2 gap-2">
+            {CUSTOMER_TYPES.map(t => (
+              <button key={t.value} type="button" onClick={() => onChange({ customer_type: t.value })} className={chipBtn(values.customer_type === t.value)} style={{ minHeight: 0 }}>{t.label}</button>
+            ))}
+          </div>
+        </FormField>
+      </div>
+
+      {pickerOpen && (
+        <ChannelPickerModal
+          onClose={() => setPickerOpen(null)}
+          onPick={(code) => {
+            if (pickerOpen === "source") onChange({ source: code });
+            else addTag(code as ChannelCode);
+            setPickerOpen(null);
+          }}
+        />
+      )}
+    </FormCard>
   );
 }
 
 // `mode` prop is accepted for backwards compatibility (callers still pass it)
 // but ignored — both create and edit render the same compact form now.
-export default function CustomerWizard({ values, onChange, onSubmit, submitLabel = "บันทึก", saving, lineProfile, linePending, onLinkLine }: Props) {
+export default function CustomerWizard({ values, onChange, onSubmit, submitLabel = "บันทึก", saving, lineProfile, linePending, onLinkLine, hideSubmit }: Props) {
   const [nextError, setNextError] = useState<string | null>(null);
   const [projects, setProjects] = useState<Project[]>([]);
 
@@ -363,13 +488,16 @@ export default function CustomerWizard({ values, onChange, onSubmit, submitLabel
         onLinkLine={onLinkLine}
       />
 
-      {/* Footer save button — single-button footer with top border separator,
-          matching AddActivityModal's pattern. */}
-      <div className="flex gap-2 mt-4 pt-4 border-t border-gray-100">
-        <button type="button" onClick={onSubmit} disabled={saving} className="flex-1 h-11 rounded-lg text-sm font-semibold text-white bg-gradient-to-r from-primary to-primary-dark hover:brightness-110 disabled:opacity-50 transition-colors flex items-center justify-center gap-2">
-          {saving ? "กำลังบันทึก…" : submitLabel}
-        </button>
-      </div>
+      {/* Footer save button — only when the wizard owns the chrome. When
+          embedded in a Modal that handles the footer slot, set hideSubmit=true
+          and wire onSubmit through the Modal footer button instead. */}
+      {!hideSubmit && (
+        <div className="flex gap-2 mt-4 pt-4 border-t border-gray-100">
+          <button type="button" onClick={onSubmit} disabled={saving} className="flex-1 h-11 rounded-lg text-sm font-semibold text-white bg-gradient-to-r from-primary to-primary-dark hover:brightness-110 disabled:opacity-50 transition-colors flex items-center justify-center gap-2">
+            {saving ? "กำลังบันทึก…" : submitLabel}
+          </button>
+        </div>
+      )}
 
       <ErrorPopup message={nextError} onClose={() => setNextError(null)} />
     </div>

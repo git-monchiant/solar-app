@@ -22,13 +22,14 @@ interface TodayData {
   installPending: LeadData[];
   installing: LeadData[];
   recentlyClosed: LeadData[];
+  booking: LeadData[];
   stats: { pipeline: number; won: number; lost: number; new_this_week: number };
 }
 
 export default function TodayPage() {
   const [todayData, setTodayData] = useState<TodayData | null>(null);
   const [loading, setLoading] = useState(true);
-  const [tab, setTab] = useState<"sales" | "sales_solar" | "solar" | "calendar">("sales");
+  const [tab, setTab] = useState<"sales" | "booking" | "quote" | "sales_solar" | "solar" | "calendar">("sales");
   const [search, setSearch] = useState("");
   const [zones, setZones] = useState<{ id: number; name: string; color?: string | null }[]>([]);
   const [selectedZone, setSelectedZone] = useState<string>("กรุงเทพ ทีม 1");
@@ -54,11 +55,11 @@ export default function TodayPage() {
     const isSales = hasRole(activeRoles, "sales");
     const isSolar = hasRole(activeRoles, "solar");
     const validKeys: string[] = [];
-    if (isSales) validKeys.push("sales", "sales_solar");
+    if (isSales) validKeys.push("sales", "booking", "quote", "sales_solar");
     if (isSolar) validKeys.push("solar");
     validKeys.push("calendar");
     if (!validKeys.includes(tab)) {
-      const fallback = validKeys[0] as "sales" | "sales_solar" | "solar" | "calendar";
+      const fallback = validKeys[0] as "sales" | "booking" | "quote" | "sales_solar" | "solar" | "calendar";
       setTab(fallback);
     }
   }, [activeRoles, tab]);
@@ -118,25 +119,36 @@ export default function TodayPage() {
     installPending: filterLeads(raw.installPending),
     installing: filterLeads(raw.installing || []),
     recentlyClosed: filterLeads(raw.recentlyClosed || []),
+    booking: filterLeads(raw.booking || []),
   };
 
-  const followupCount = d.followUpOverdue.length + d.followUpToday.length + d.newLeads.length + d.overduePreSurvey.length + d.followUpUpcoming.length;
-  const orderCount = d.installPending.length;
-  const salesCount = followupCount + orderCount;
-  const solarCount = d.surveyToday.length + d.surveyPending.length + d.quotationPending.length + d.installing.length;
+  const bookingCount = d.booking.length;
+  // ติดตามลูกค้า tab — รวม "งานที่ต้องติดตาม" ทุกสถานะ:
+  // - ที่ถึงวัน follow-up แล้ว (overdue + today) → แสดงบนสุด
+  // - lead ใหม่ที่ยังไม่ได้ติดต่อ
+  // - รออนุมัติ/ชำระ (order)
+  // ที่ "ยังไม่ถึงวัน" follow-up จะไม่แสดง (ไปดูใน pipeline)
+  const salesCount =
+    d.followUpOverdue.length +
+    d.followUpToday.length +
+    d.newLeads.length +
+    d.installPending.length;
+  const solarCount = bookingCount + d.surveyToday.length + d.surveyPending.length + d.quotationPending.length + d.installing.length;
   const salesSolarCount = d.quotationPending.length;
 
   const isSales = hasRole(activeRoles, "sales");
   const isSolar = hasRole(activeRoles, "solar");
   const allTabs = [
     isSales && { key: "sales", label: "ติดตามลูกค้า", count: salesCount },
+    isSales && { key: "booking", label: "รายการจอง", count: bookingCount },
+    isSales && { key: "quote", label: "เสนอราคา", count: d.installPending.length },
     isSales && { key: "sales_solar", label: "ติดตามงาน", count: salesSolarCount },
     isSolar && { key: "solar", label: "ทีมโซลาร์", count: solarCount },
     { key: "calendar", label: "ปฏิทิน" },
   ].filter(Boolean) as { key: string; label: string; count?: number }[];
 
   // While effect re-syncs an invalid tab, render against an in-bounds key
-  const visibleTab = (allTabs.some(t => t.key === tab) ? tab : (allTabs[0]?.key ?? "calendar")) as "sales" | "sales_solar" | "solar" | "calendar";
+  const visibleTab = (allTabs.some(t => t.key === tab) ? tab : (allTabs[0]?.key ?? "calendar")) as "sales" | "booking" | "quote" | "sales_solar" | "solar" | "calendar";
 
   return (
     <div>
@@ -148,28 +160,17 @@ export default function TodayPage() {
         searchPlaceholder="ค้นหาชื่อ, เบอร์..."
         tabs={allTabs}
         activeTab={visibleTab}
-        onTabChange={(k) => setTab(k as "sales" | "sales_solar" | "solar" | "calendar")}
+        onTabChange={(k) => setTab(k as "sales" | "booking" | "quote" | "sales_solar" | "solar" | "calendar")}
       />
 
       {/* Content */}
       <div className="p-4 space-y-5">
-        {/* Sales Tab */}
+        {/* Sales Tab — งานที่ต้องติดตามทั้งหมด.
+         * บนสุด: ที่ถึงวัน follow-up แล้ว (overdue + today)
+         * ถัดมา: lead ใหม่, รออนุมัติ/ชำระ
+         * ที่ยังไม่ถึงวัน follow-up → ไปดู pipeline */}
         {visibleTab === "sales" && (
           <>
-            {/* Order — top */}
-            {d.installPending.length > 0 && (
-              <section>
-                <div className="flex items-center justify-between mb-3 px-1">
-                  <h2 className="text-xs font-bold tracking-wider uppercase text-green-600">รออนุมัติ/ชำระ</h2>
-                  <span className="text-xs font-semibold text-green-600 bg-green-50 px-2 py-0.5 rounded-full">{d.installPending.length}</span>
-                </div>
-                <div className="space-y-3">{d.installPending.map((l) => <LeadCard key={l.id} lead={l} />)}</div>
-              </section>
-            )}
-
-            {/* Follow-up — bottom */}
-            {followupCount > 0 && (
-              <div className="space-y-4 pt-2">
             {d.followUpOverdue.length > 0 && (
               <section>
                 <div className="flex items-center justify-between mb-3 px-1">
@@ -191,31 +192,20 @@ export default function TodayPage() {
             {d.newLeads.length > 0 && (
               <section>
                 <div className="flex items-center justify-between mb-3 px-1">
-                  <h2 className="text-xs font-bold tracking-wider uppercase text-blue-600">Lead ใหม่ยังไม่มีการติดต่อ</h2>
+                  <h2 className="text-xs font-bold tracking-wider uppercase text-blue-600">Lead ใหม่ ยังไม่ติดต่อ</h2>
                   <span className="text-xs font-semibold text-blue-600 bg-blue-50 px-2 py-0.5 rounded-full">{d.newLeads.length}</span>
                 </div>
                 <div className="space-y-3">{d.newLeads.map((l) => <LeadCard key={l.id} lead={l} compact />)}</div>
               </section>
             )}
-            {d.overduePreSurvey.length > 0 && (
+            {d.installPending.length > 0 && (
               <section>
                 <div className="flex items-center justify-between mb-3 px-1">
-                  <h2 className="text-xs font-bold tracking-wider uppercase text-red-600">Leads ที่ต้องติดตาม</h2>
-                  <span className="text-xs font-semibold text-red-600 bg-red-50 px-2 py-0.5 rounded-full">{d.overduePreSurvey.length}</span>
+                  <h2 className="text-xs font-bold tracking-wider uppercase text-green-600">รออนุมัติ/ชำระ</h2>
+                  <span className="text-xs font-semibold text-green-600 bg-green-50 px-2 py-0.5 rounded-full">{d.installPending.length}</span>
                 </div>
-                <div className="space-y-3">{d.overduePreSurvey.map((l) => <LeadCard key={l.id} lead={l} />)}</div>
+                <div className="space-y-3">{d.installPending.map((l) => <LeadCard key={l.id} lead={l} />)}</div>
               </section>
-            )}
-            {d.followUpUpcoming.length > 0 && (
-              <section>
-                <div className="flex items-center justify-between mb-3 px-1">
-                  <h2 className="text-xs font-bold tracking-wider uppercase text-gray-500">นัดติดตามที่ยังไม่ถึง</h2>
-                  <span className="text-xs font-semibold text-gray-500 bg-gray-100 px-2 py-0.5 rounded-full">{d.followUpUpcoming.length}</span>
-                </div>
-                <div className="space-y-3">{d.followUpUpcoming.map((l) => <LeadCard key={l.id} lead={l} />)}</div>
-              </section>
-            )}
-              </div>
             )}
 
             {salesCount === 0 && (
@@ -224,7 +214,54 @@ export default function TodayPage() {
                   <svg className="w-8 h-8 text-emerald-500" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M4.5 12.75l6 6 9-13.5" /></svg>
                 </div>
                 <div className="text-base font-semibold text-gray-900">All caught up!</div>
-                <div className="text-sm text-gray-500 mt-1">ไม่มีงาน Sales วันนี้</div>
+                <div className="text-sm text-gray-500 mt-1">ไม่มีงานที่ต้องติดตาม</div>
+              </div>
+            )}
+          </>
+        )}
+
+        {/* Booking Tab — pre_survey ที่จ่ายเงินจองแล้ว ต้องนัดสำรวจ */}
+        {visibleTab === "booking" && (
+          <>
+            {d.booking.length > 0 ? (
+              <section>
+                <div className="flex items-center justify-between mb-3 px-1">
+                  <h2 className="text-xs font-bold tracking-wider uppercase text-emerald-700">รายการจอง · รอนัดสำรวจ</h2>
+                  <span className="text-xs font-semibold text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded-full">{d.booking.length}</span>
+                </div>
+                <div className="space-y-3">{d.booking.map((l) => <LeadCard key={l.id} lead={l} />)}</div>
+              </section>
+            ) : (
+              <div className="text-center py-16">
+                <div className="w-16 h-16 mx-auto rounded-full bg-emerald-50 flex items-center justify-center mb-3">
+                  <svg className="w-8 h-8 text-emerald-500" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M4.5 12.75l6 6 9-13.5" /></svg>
+                </div>
+                <div className="text-base font-semibold text-gray-900">ยังไม่มีรายการจอง</div>
+                <div className="text-sm text-gray-500 mt-1">ลูกค้าจ่ายเงินจองแล้วจะปรากฏที่นี่</div>
+              </div>
+            )}
+          </>
+        )}
+
+        {/* Quote Tab — leads at status='order' (sales has to draft + send the
+            quotation, follow up on payment). Reuses installPending data. */}
+        {visibleTab === "quote" && (
+          <>
+            {d.installPending.length > 0 ? (
+              <section>
+                <div className="flex items-center justify-between mb-3 px-1">
+                  <h2 className="text-xs font-bold tracking-wider uppercase text-violet-700">เสนอราคา · รอดำเนินการ</h2>
+                  <span className="text-xs font-semibold text-violet-700 bg-violet-50 px-2 py-0.5 rounded-full">{d.installPending.length}</span>
+                </div>
+                <div className="space-y-3">{d.installPending.map((l) => <LeadCard key={l.id} lead={l} />)}</div>
+              </section>
+            ) : (
+              <div className="text-center py-16">
+                <div className="w-16 h-16 mx-auto rounded-full bg-violet-50 flex items-center justify-center mb-3">
+                  <svg className="w-8 h-8 text-violet-500" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M4.5 12.75l6 6 9-13.5" /></svg>
+                </div>
+                <div className="text-base font-semibold text-gray-900">ยังไม่มีรายการเสนอราคา</div>
+                <div className="text-sm text-gray-500 mt-1">หลังสำรวจเสร็จและออกใบเสนอราคา จะปรากฏที่นี่</div>
               </div>
             )}
           </>
@@ -260,6 +297,17 @@ export default function TodayPage() {
         {/* Solar Tab */}
         {visibleTab === "solar" && (
           <>
+            {/* Booking — ลูกค้าจ่ายแล้ว Solar ต้องนัดสำรวจ. แสดงบนสุดของ
+             * solar tab เพราะเป็นงานเข้าใหม่ที่มีลำดับสูงสุด */}
+            {d.booking.length > 0 && (
+              <section>
+                <div className="flex items-center justify-between mb-3 px-1">
+                  <h2 className="text-xs font-bold tracking-wider uppercase text-emerald-700">รายการจอง · รอนัดสำรวจ</h2>
+                  <span className="text-xs font-semibold text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded-full">{d.booking.length}</span>
+                </div>
+                <div className="space-y-3">{d.booking.map((l) => <LeadCard key={l.id} lead={l} />)}</div>
+              </section>
+            )}
             {d.surveyToday.length > 0 && (
               <section>
                 <div className="flex items-center justify-between mb-3 px-1">

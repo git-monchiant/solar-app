@@ -12,6 +12,7 @@ export async function GET(req: NextRequest) {
       ? `SELECT p.id, p.name, p.assignee, ISNULL(p.is_pinned, 0) AS is_pinned,
            (SELECT COUNT(*) FROM prospects pr WHERE pr.project_id = p.id) AS prospect_count,
            (SELECT COUNT(*) FROM prospects pr WHERE pr.project_id = p.id AND pr.interest = 'interested') AS interested_count,
+           (SELECT COUNT(*) FROM prospects pr WHERE pr.project_id = p.id AND pr.lead_id IS NOT NULL) AS lead_created_count,
            (SELECT COUNT(*) FROM prospects pr WHERE pr.project_id = p.id AND pr.interest = 'not_interested') AS not_interested_count,
            (SELECT COUNT(*) FROM prospects pr WHERE pr.project_id = p.id
               AND pr.interest IS NULL AND pr.visited_at IS NULL

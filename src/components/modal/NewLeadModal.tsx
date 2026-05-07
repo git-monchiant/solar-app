@@ -5,7 +5,7 @@ import { useRouter } from "next/navigation";
 import { apiFetch } from "@/lib/api";
 import CustomerWizard from "@/components/customer/CustomerWizard";
 import LinePickerModal from "@/components/modal/LinePickerModal";
-import ModalCloseButton from "@/components/ui/ModalCloseButton";
+import ModalBase from "@/components/ui/ModalBase";
 
 export interface LineLinkInfo {
   userId: number;
@@ -28,7 +28,7 @@ export default function NewLeadModal({ onClose, onCreated, linkLine, initialSour
   const [form, setForm] = useState({
     full_name: "", phone: "", project_id: "" as string | number | null, project_name: "",
     installation_address: "",
-    customer_type: "ลูกค้าใหม่ยังไม่มีโซล่า", interested_package_id: "", note: "",
+    customer_type: "new", interested_package_id: "", note: "",
     source: initialSource || (linkLine ? "line" : "walk_in"), payment_type: "", requirement: "",
     id_card_number: "", id_card_address: "",
     id_card_photo_url: null as string | null, house_reg_photo_url: null as string | null,
@@ -76,27 +76,34 @@ export default function NewLeadModal({ onClose, onCreated, linkLine, initialSour
   };
 
   return (
-    <div className="fixed inset-0 z-[70] overflow-y-auto md:py-6">
-      <div className="hidden md:block fixed inset-0 bg-black/30" onClick={onClose} />
-      <div className="relative bg-white w-full md:mx-auto md:max-w-2xl lg:max-w-4xl md:rounded-2xl md:animate-slide-up min-h-screen md:min-h-0">
-        <div className="bg-white border-b border-gray-100 px-5 py-4 pt-[max(1rem,env(safe-area-inset-top,1rem))] flex items-center justify-between md:rounded-t-2xl">
-          <h2 className="text-lg font-bold text-gray-900 truncate">New Lead{form.full_name.trim() ? ` — ${form.full_name.trim()}` : ""}</h2>
-          <ModalCloseButton onClick={onClose} />
-        </div>
-
-        <div className="px-5 py-4">
-          <CustomerWizard
-            values={form}
-            onChange={patch => setForm(prev => ({ ...prev, ...(patch as Record<string, unknown>) } as typeof prev))}
-            onSubmit={handleSubmit}
-            saving={saving}
-            lineProfile={lineProfile}
-            linePending={!!lineProfile}
-            onLinkLine={linkLine ? undefined : () => setShowLinePicker(true)}
-            mode="create"
-          />
-        </div>
-      </div>
+    <>
+      <ModalBase
+        title={`New Lead${form.full_name.trim() ? ` — ${form.full_name.trim()}` : ""}`}
+        onClose={onClose}
+        size="xl"
+        footer={
+          <button
+            type="button"
+            onClick={handleSubmit}
+            disabled={saving || !form.full_name.trim()}
+            className="w-full h-11 rounded-lg text-sm font-semibold text-white bg-gradient-to-r from-primary to-primary-dark hover:brightness-110 disabled:opacity-50 transition-colors"
+          >
+            {saving ? "กำลังบันทึก…" : "บันทึก"}
+          </button>
+        }
+      >
+        <CustomerWizard
+          values={form}
+          onChange={patch => setForm(prev => ({ ...prev, ...(patch as Record<string, unknown>) } as typeof prev))}
+          onSubmit={handleSubmit}
+          saving={saving}
+          lineProfile={lineProfile}
+          linePending={!!lineProfile}
+          onLinkLine={linkLine ? undefined : () => setShowLinePicker(true)}
+          mode="create"
+          hideSubmit
+        />
+      </ModalBase>
       {showLinePicker && (
         <LinePickerModal
           target={{ type: "draft", label: form.full_name?.trim() || "ลูกค้าใหม่" }}
@@ -107,6 +114,6 @@ export default function NewLeadModal({ onClose, onCreated, linkLine, initialSour
           }}
         />
       )}
-    </div>
+    </>
   );
 }

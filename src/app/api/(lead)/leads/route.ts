@@ -30,12 +30,13 @@ export async function GET(req: NextRequest) {
     // ~3-4× smaller (1MB → ~250KB at 150 leads).
     const result = await db.request().query(`
       SELECT l.id, l.full_name, l.phone, l.email, l.installation_address, l.house_number,
-             l.customer_type, l.status, l.source, l.note, l.contact_date, l.created_at,
+             l.customer_type, l.status, l.source, l.tag, l.note, l.contact_date, l.created_at,
              l.next_follow_up, l.revisit_date, l.lost_reason,
              l.assigned_user_id, l.zone, l.line_id,
              l.survey_date, l.survey_time_slot, l.install_date, l.install_completed_at, l.install_extra_cost,
-             l.pre_doc_no, l.pre_total_price, l.quotation_amount, l.order_total,
-             p.name as project_name, p.district, p.province,
+             l.pre_doc_no, l.pre_total_price, l.payment_confirmed, l.quotation_amount, l.order_total,
+             COALESCE(NULLIF(l.project_alias, N''), NULLIF(l.project_name, N''), p.name) as project_name,
+             l.project_alias, p.district, p.province,
              pk.name as package_name, pk.price as package_price,
              u.full_name as assigned_name,
              (SELECT TOP 1 note FROM lead_activities WHERE lead_id = l.id AND note IS NOT NULL ORDER BY created_at DESC) as last_activity_note,
@@ -110,8 +111,22 @@ export async function POST(request: NextRequest) {
       .input("customer_interest", sql.NVarChar(500), body.customer_interest || null)
       .input("home_loan_status", sql.NVarChar(50), body.home_loan_status || null)
       .input("project_note", sql.NVarChar(500), body.project_note || null)
+      // Free-text fallbacks — mirror prospects so seeker→lead sync lands in
+      // the matching columns. project_name takes effect only when project_id
+      // is NULL; project_alias is always free-form.
+      .input("project_name", sql.NVarChar(200), body.project_name || null)
+      .input("project_alias", sql.NVarChar(200), body.project_alias || null)
       // Electrical / utility
       .input("meter_number", sql.NVarChar(30), body.meter_number || null)
+      // Touchpoint tag — JSON array of additional channels touched along the
+      // journey (mirrors prospects.tag). `source` stays as immutable
+      // first-touch. Accepts an array (will be JSON-stringified) OR a
+      // pre-stringified JSON value (already comes that way from seeker→lead
+      // promotion).
+      .input("tag", sql.NVarChar(500),
+        Array.isArray(body.tag) && body.tag.length > 0
+          ? JSON.stringify(body.tag)
+          : (typeof body.tag === "string" && body.tag ? body.tag : null))
       .query(`
         INSERT INTO leads (
           full_name, phone, project_id, installation_address, customer_type, interested_package_id,
@@ -121,7 +136,8 @@ export async function POST(request: NextRequest) {
           pre_primary_reason, pre_peak_usage, pre_electrical_phase, pre_wants_battery,
           pre_roof_shape, pre_residence_type, pre_monthly_bill,
           customer_code, seeker_type, seeker_name, customer_interest, home_loan_status, project_note,
-          meter_number, status
+          project_name, project_alias,
+          meter_number, tag, status
         )
         OUTPUT INSERTED.*
         VALUES (
@@ -132,17 +148,22 @@ export async function POST(request: NextRequest) {
           @pre_primary_reason, @pre_peak_usage, @pre_electrical_phase, @pre_wants_battery,
           @pre_roof_shape, @pre_residence_type, @pre_monthly_bill,
           @customer_code, @seeker_type, @seeker_name, @customer_interest, @home_loan_status, @project_note,
-          @meter_number, 'pre_survey'
+          @project_name, @project_alias,
+          @meter_number, @tag, 'pre_survey'
         )
       `);
 
-    // Auto-log lead created (register/walk-in is the first contact)
+    // Auto-log lead created (register/walk-in is the first contact). Stamp
+    // created_by with the authenticated user so seeker→lead syncs and manual
+    // creates both attribute correctly — was hardcoded to 1 (system/admin),
+    // which broke "who synced this lead" reporting.
     const leadId = result.recordset[0].id;
     await db.request()
       .input("lead_id", sql.Int, leadId)
       .input("source", sql.NVarChar(30), body.source || "walk-in")
       .input("note", sql.NVarChar(sql.MAX), body.note || body.requirement || null)
-      .query(`INSERT INTO lead_activities (lead_id, activity_type, title, note, created_by) VALUES (@lead_id, 'lead_created', 'Lead created (' + @source + ')', @note, 1)`);
+      .input("created_by", sql.Int, gate.userId)
+      .query(`INSERT INTO lead_activities (lead_id, activity_type, title, note, created_by) VALUES (@lead_id, 'lead_created', 'Lead created (' + @source + ')', @note, @created_by)`);
 
     // Backfill project district/province if missing (fire-and-forget, don't block response)
     if (body.project_id) {

@@ -25,22 +25,26 @@ interface Lead {
   package_name: string | null;
   package_price: number | null;
   pre_doc_no: string | null;
+  payment_confirmed?: boolean | number | null;
   assigned_name: string | null;
 }
 
-type TabKey = "all" | "pre_survey" | "survey" | "quotation" | "order" | "install" | "warranty" | "gridtie" | "closed" | "lost";
+type TabKey = "all" | "pre_survey" | "booking" | "survey" | "quotation" | "order" | "install" | "warranty" | "gridtie" | "closed" | "lost";
 
-const TAB_STATUSES: Record<TabKey, string[]> = {
-  all: [],
-  pre_survey: ["pre_survey"],
-  survey: ["survey"],
-  quotation: ["quote"],
-  order: ["order"],
-  install: ["install"],
-  warranty: ["warranty"],
-  gridtie: ["gridtie"],
-  closed: ["closed"],
-  lost: ["lost", "returned"],
+// Booking is a virtual sub-state of pre_survey: status is still pre_survey in
+// the DB but the deposit has been paid (payment_confirmed = true). We split it
+// out in the pipeline view so sales sees "ลูกค้าจองแล้วยังไม่ได้สำรวจ" as a
+// distinct bucket from pure follow-ups.
+const isBookingLead = (l: Pick<Lead, "status" | "payment_confirmed">) =>
+  l.status === "pre_survey" && !!l.payment_confirmed;
+
+const matchesTab = (l: Lead, key: TabKey): boolean => {
+  if (key === "all") return true;
+  if (key === "pre_survey") return l.status === "pre_survey" && !isBookingLead(l);
+  if (key === "booking") return isBookingLead(l);
+  if (key === "lost") return l.status === "lost" || l.status === "returned";
+  if (key === "quotation") return l.status === "quote";
+  return l.status === key;
 };
 
 export default function PipelinePage() {
@@ -54,7 +58,8 @@ export default function PipelinePage() {
 
   useEffect(() => {
     const saved = localStorage.getItem("pipelineTab") as TabKey;
-    if (saved && TAB_STATUSES[saved] !== undefined) setTab(saved);
+    const ALL_KEYS: TabKey[] = ["all","pre_survey","booking","survey","quotation","order","install","warranty","gridtie","closed","lost"];
+    if (saved && ALL_KEYS.includes(saved)) setTab(saved);
   }, []);
   const [search, setSearch] = useState("");
 
@@ -78,10 +83,7 @@ export default function PipelinePage() {
     };
 
   const filtered = leads
-    .filter(l => {
-      if (tab === "all") return true;
-      return TAB_STATUSES[tab].includes(l.status);
-    })
+    .filter(l => matchesTab(l, tab))
     .filter(l => {
       if (!search.trim()) return true;
       const q = search.trim().toLowerCase();
@@ -100,13 +102,14 @@ export default function PipelinePage() {
     })
     .sort(tab === "survey" ? sortByApptDate("survey_date") : tab === "install" ? sortByApptDate("install_date") : () => 0);
 
-  const countFor = (key: TabKey) => key === "all" ? leads.length : leads.filter(l => TAB_STATUSES[key].includes(l.status)).length;
+  const countFor = (key: TabKey) => key === "all" ? leads.length : leads.filter(l => matchesTab(l, key)).length;
 
   // Sales + solar both see the full pipeline. Tab visibility used to gate by
   // role, but the team wanted shared visibility into every stage.
   const ALL_TABS: { key: TabKey; label: string }[] = [
     { key: "all",        label: "ทั้งหมด" },
     { key: "pre_survey", label: "รอติดตาม" },
+    { key: "booking",    label: "รายการจอง" },
     { key: "survey",     label: "สำรวจหน้างาน" },
     { key: "quotation",  label: "รอใบเสนอราคา" },
     { key: "order",      label: "รออนุมัติ/ชำระ" },

@@ -64,6 +64,8 @@ export default function SurveyStep({ lead, state, refresh, packages, expanded, o
   const [selectedPkgs, setSelectedPkgs] = useState<string[]>(
     lead.interested_package_ids ? lead.interested_package_ids.split(",").filter(Boolean) : lead.interested_package_id ? [String(lead.interested_package_id)] : []
   );
+  const [packageNote, setPackageNote] = useState<string>(lead.package_note ?? "");
+  const [quotationType, setQuotationType] = useState<string>(lead.quotation_type ?? "standard");
   const MAX_PKGS = 3;
   const [surveyBattery, setSurveyBattery] = useState<string>(lead.survey_wants_battery ?? lead.pre_wants_battery ?? "");
   const [recommendedKw, setRecommendedKw] = useState<number | null>(lead.survey_recommended_kw ?? null);
@@ -190,25 +192,28 @@ export default function SurveyStep({ lead, state, refresh, packages, expanded, o
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [surveyNote]);
 
-  // Auto-save actual visit fields (date + surveyor) so a refresh before clicking
-  // "สำรวจเสร็จสิ้น" doesn't lose the data.
+  // Auto-save package note (debounced) — same pattern as surveyNote.
   useEffect(() => {
-    // Persist actual visit date/who whenever the user touches them — don't gate
-    // on survey_confirmed. Otherwise the defaults (today + current user) only
-    // exist in local state and validateSurvey reads stale null from `lead`.
+    if (!lead.survey_confirmed) return;
     const t = setTimeout(() => {
       apiFetch(`/api/leads/${lead.id}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          survey_actual_date: actualDate || null,
-          survey_actual_by: actualBy || null,
-        }),
+        body: JSON.stringify({ package_note: packageNote || null }),
       }).catch(console.error);
     }, 600);
     return () => clearTimeout(t);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [actualDate, actualBy]);
+  }, [packageNote]);
+
+  // NOTE: We deliberately DO NOT auto-PATCH survey_actual_date here. That
+  // column doubles as the "survey actually happened" signal in
+  // /api/surveys/scheduled (`survey_actual_date IS NULL` keeps the slot
+  // locked). Auto-saving the today-default would silently free every open
+  // survey lead from the lock pool, hiding their slots from other pickers.
+  // Instead, the values flow into DB via markDone() / handleNext() — the
+  // local state seeds the form so a mid-step refresh re-shows the same
+  // defaults without persisting them.
 
 
 
@@ -348,6 +353,11 @@ export default function SurveyStep({ lead, state, refresh, packages, expanded, o
       survey_panel_count: typeof panelCount === "number" ? panelCount : fresh.survey_panel_count,
       interested_package_id: selectedPkgs.length ? parseInt(selectedPkgs[0]) : fresh.interested_package_id,
       interested_package_ids: selectedPkgs.length ? selectedPkgs.join(",") : fresh.interested_package_ids,
+      // Local default for actualDate is today + actualBy is current user; DB
+      // stays null until this PATCH below fires. Merge them in so validation
+      // doesn't false-flag the unsaved defaults.
+      survey_actual_date: actualDate || fresh.survey_actual_date,
+      survey_actual_by: actualBy || fresh.survey_actual_by,
     });
     if (!v.valid) {
       setNextError(v.missing.map(m => m.label).join(", "));
@@ -622,7 +632,7 @@ export default function SurveyStep({ lead, state, refresh, packages, expanded, o
         currentSlot={lead.survey_time_slot}
         showTimeSlot
         excludeLeadId={lead.id}
-        zoneFilter={lead.zone}
+        teamContext="survey"
         onCancel={() => setRescheduling(false)}
         onSave={saveReschedule}
       />
@@ -987,6 +997,50 @@ export default function SurveyStep({ lead, state, refresh, packages, expanded, o
               </div>
             ) : <div className="text-center py-6 text-xs text-gray-400">ไม่มีแพ็คเกจ</div>;
           })()}
+
+          {/* Package note — free-text below the package picker, surfaced on
+              the survey PDF beneath the package table. */}
+          <div className="rounded-lg bg-white/60 border border-active/15 p-3">
+            <label className="text-xs font-semibold tracking-wider uppercase text-gray-400 block mb-2">บันทึกเกี่ยวกับแพ็คเกจ</label>
+            <textarea
+              value={packageNote}
+              onChange={e => setPackageNote(e.target.value)}
+              placeholder="หมายเหตุเพิ่มเติม เช่น เพิ่ม panel, แบต option, ส่วนลดพิเศษ..."
+              rows={3}
+              className="w-full px-3 py-2 rounded-lg border border-gray-200 bg-white text-sm focus:outline-none focus:border-primary resize-none"
+            />
+          </div>
+
+          {/* Quotation type — drives whether OrderStep uses the standard
+              template or routes to a special-pricing flow. Saved to lead
+              immediately on click so it survives a refresh. */}
+          <div className="rounded-lg bg-white/60 border border-active/15 p-3">
+            <label className="text-xs font-semibold tracking-wider uppercase text-gray-400 block mb-2">ประเภทใบเสนอราคา</label>
+            <div className="grid grid-cols-2 gap-2">
+              {[
+                { value: "standard", label: "Standard" },
+                { value: "special", label: "Customization" },
+              ].map(opt => {
+                const active = quotationType === opt.value;
+                return (
+                  <button
+                    key={opt.value}
+                    type="button"
+                    onClick={() => {
+                      setQuotationType(opt.value);
+                      apiFetch(`/api/leads/${lead.id}`, {
+                        method: "PATCH", headers: { "Content-Type": "application/json" },
+                        body: JSON.stringify({ quotation_type: opt.value }),
+                      }).catch(console.error);
+                    }}
+                    className={`h-11 rounded-lg text-sm font-semibold border transition-all ${active ? "bg-active text-white border-active" : "bg-white text-gray-600 border-gray-200 hover:border-active/50"}`}
+                  >
+                    {opt.label}
+                  </button>
+                );
+              })}
+            </div>
+          </div>
 
           {/* ลายเซ็นลูกค้า */}
           <div>

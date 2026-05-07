@@ -1,8 +1,21 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getDb, sql } from "@/lib/db";
 import { requireAuth } from "@/lib/auth";
+import { logLeadActivity } from "@/lib/lead-activity-log";
 
 const CHANNEL_ACCESS_TOKEN = process.env.LINE_CHANNEL_ACCESS_TOKEN || "";
+
+type LineMessage = { type?: string; text?: string; altText?: string };
+
+function summarizeMessages(messages: LineMessage[]): string {
+  const parts = messages.map((m) => {
+    if (m?.type === "text" && m.text) return m.text;
+    if (m?.altText) return m.altText;
+    if (m?.type) return `[${m.type}]`;
+    return "[message]";
+  });
+  return parts.join(" · ").slice(0, 180);
+}
 
 export async function POST(request: NextRequest) {
   const gate = await requireAuth(request);
@@ -37,6 +50,14 @@ export async function POST(request: NextRequest) {
       console.error("LINE send error:", err);
       return NextResponse.json({ error: "LINE send failed", detail: err }, { status: 500 });
     }
+
+    await logLeadActivity(db, {
+      leadId: lead_id,
+      activityType: "line_sent",
+      title: `ส่ง LINE ให้ลูกค้า (${messages.length} ข้อความ)`,
+      note: summarizeMessages(messages),
+      userId: gate.userId,
+    });
 
     return NextResponse.json({ ok: true });
   } catch (error) {

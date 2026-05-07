@@ -42,8 +42,8 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ tok
              l.survey_date, l.survey_time_slot, l.install_date, l.install_actual_date, l.install_completed_at,
              l.interested_package_ids, l.interested_package_id,
              l.contact_date, l.created_at, l.pre_pay_amount, l.pre_pay_description, l.pre_pay_installment, l.status,
-             l.pre_doc_no,
-             pr.name as project_name
+             l.pre_doc_no, l.project_alias,
+             COALESCE(NULLIF(l.project_alias, N''), pr.name) as project_name
       FROM leads l
       LEFT JOIN projects pr ON l.project_id = pr.id
       WHERE l.pre_pay_token = @token

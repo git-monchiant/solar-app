@@ -651,7 +651,7 @@ export default function PaymentSection({
               <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
                 <path strokeLinecap="round" strokeLinejoin="round" d="M3 16.5v2.25A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75V16.5M16.5 12L12 16.5m0 0L7.5 12m4.5 4.5V3" />
               </svg>
-              <span className="text-xs font-semibold">ใบแจ้งชำระเงิน</span>
+              <span className="text-xs font-semibold hidden md:inline">ใบแจ้งชำระเงิน</span>
             </button>
           )}
           {confirmed && receiptStage && (
@@ -665,7 +665,7 @@ export default function PaymentSection({
               <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
                 <path strokeLinecap="round" strokeLinejoin="round" d="M3 16.5v2.25A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75V16.5M16.5 12L12 16.5m0 0L7.5 12m4.5 4.5V3" />
               </svg>
-              <span className="text-xs font-semibold">ใบเสร็จรับเงินชั่วคราว</span>
+              <span className="text-xs font-semibold hidden md:inline">ใบเสร็จรับเงินชั่วคราว</span>
             </button>
           )}
         </div>
@@ -679,7 +679,7 @@ export default function PaymentSection({
             <path fillRule="evenodd" clipRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" />
           </svg>
         );
-        const tabBtnCls = (t: string) => `flex-1 pb-2.5 text-sm font-semibold border-b-2 -mb-px transition-colors cursor-pointer inline-flex items-center justify-center ${tab === t ? "text-active border-active" : "text-gray-400 border-transparent hover:text-gray-600"}`;
+        const tabBtnCls = (t: string) => `flex-1 pb-2.5 text-xs md:text-sm font-semibold border-b-2 -mb-px transition-colors cursor-pointer inline-flex items-center justify-center whitespace-nowrap ${tab === t ? "text-active border-active" : "text-gray-400 border-transparent hover:text-gray-600"}`;
         return (
           <div className="flex border-b border-gray-200 -mx-3 px-3">
             {qrEnabled && (

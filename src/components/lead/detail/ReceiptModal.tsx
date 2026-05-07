@@ -12,6 +12,13 @@ interface Props {
   stage: ReceiptStage;
   fileLabel: string;
   onClose: () => void;
+  /** Override the doc title shown in the rendered PDF. Used when the same
+   * receipt template doubles as a Booking Confirmation. */
+  title?: string;
+  /** Render the SURVEY DATE block (used for Booking Confirmation). */
+  showSurvey?: boolean;
+  /** Header label inside this modal — defaults to a stage-based label. */
+  modalLabel?: string;
 }
 
 const STAGE_TITLE: Record<ReceiptStage, string> = {
@@ -20,17 +27,20 @@ const STAGE_TITLE: Record<ReceiptStage, string> = {
   order_after: "ใบเสร็จงวดหลังติดตั้ง",
 };
 
-function apiUrl(leadId: number, stage: ReceiptStage, userId?: number) {
+function apiUrl(leadId: number, stage: ReceiptStage, userId?: number, title?: string, showSurvey?: boolean) {
   const qs = new URLSearchParams({ lead_id: String(leadId), stage, format: "pdf" });
   if (userId) qs.set("user_id", String(userId));
+  if (title) qs.set("title", title);
+  if (showSurvey) qs.set("show_survey", "1");
   return `/api/receipt?${qs.toString()}`;
 }
 
-export default function ReceiptModal({ leadId, stage, fileLabel, onClose }: Props) {
+export default function ReceiptModal({ leadId, stage, fileLabel, onClose, title, showSurvey, modalLabel }: Props) {
   const [saving, setSaving] = useState(false);
   const [mounted, setMounted] = useState(false);
   const { me } = useMe();
-  const pdfUrl = apiUrl(leadId, stage, me?.id);
+  const pdfUrl = apiUrl(leadId, stage, me?.id, title, showSurvey);
+  const headerLabel = modalLabel ?? STAGE_TITLE[stage];
 
   // Render via portal at document.body so the full-screen overlay can't be
   // trapped by an ancestor's stacking context (e.g. when called from inside
@@ -67,7 +77,7 @@ export default function ReceiptModal({ leadId, stage, fileLabel, onClose }: Prop
   return createPortal(
     <div className="fixed inset-0 z-[9999] bg-black/70 flex flex-col safe-top" onClick={onClose}>
       <div className="flex items-center justify-between px-4 py-3 shrink-0">
-        <div className="text-white text-sm font-semibold">{STAGE_TITLE[stage]} · {fileLabel}</div>
+        <div className="text-white text-sm font-semibold">{headerLabel} · {fileLabel}</div>
         <button type="button" onClick={onClose} className="w-10 h-10 rounded-full bg-black/50 text-white flex items-center justify-center text-xl">✕</button>
       </div>
       <div className="flex-1 overflow-auto px-4 pb-4 min-h-0" onClick={e => e.stopPropagation()}>

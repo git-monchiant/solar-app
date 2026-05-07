@@ -47,6 +47,8 @@ export interface Lead {
   pre_bill_photo_url: string | null;
   interested_package_id: number | null;
   interested_package_ids: string | null;
+  package_note: string | null;
+  quotation_type: string | null;
   line_id: string | null;
   line_display_name?: string | null;
   line_picture_url?: string | null;

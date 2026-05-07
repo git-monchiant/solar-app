@@ -67,11 +67,15 @@ export async function GET(req: NextRequest) {
              COALESCE(NULLIF(p.project_name, N''), pr.name) as project_name,
              u.full_name as visited_by_name,
              lu.display_name as line_display_name,
-             lu.picture_url as line_picture_url
+             lu.picture_url as line_picture_url,
+             l.payment_confirmed as lead_payment_confirmed,
+             l.pre_total_price as lead_pre_total_price,
+             l.pre_doc_no as lead_pre_doc_no
       FROM prospects p
       LEFT JOIN projects pr ON p.project_id = pr.id
       LEFT JOIN users u ON p.visited_by = u.id
       LEFT JOIN line_users lu ON lu.line_user_id = p.line_id
+      LEFT JOIN leads l ON l.id = p.lead_id
       ${whereSql}
       ORDER BY ${houseQActive ? "CASE WHEN p.house_number = @house_q_exact THEN 0 ELSE 1 END, LEN(p.house_number), p.house_number, " : ""}p.created_at DESC
     `);
@@ -109,7 +113,18 @@ export async function POST(req: NextRequest) {
         OUTPUT INSERTED.*
         VALUES (@project_id, @project_name, @seq, @house_number, @full_name, @phone, @app_status, @existing_solar, @installed_kw, @installed_product, @ev_charger, @prospect_source, @tag)
       `);
-    return NextResponse.json(result.recordset[0], { status: 201 });
+    const created = result.recordset[0];
+    // Audit: who created this prospect. Failure here doesn't block the create.
+    try {
+      await db.request()
+        .input("pid", sql.Int, created.id)
+        .input("by", sql.Int, gate.userId)
+        .query(`INSERT INTO prospect_activities (prospect_id, activity_type, title, created_by)
+                VALUES (@pid, 'created', N'Prospect created', @by)`);
+    } catch (e) {
+      console.error("prospect_activities create failed", e);
+    }
+    return NextResponse.json(created, { status: 201 });
   } catch (error) {
     console.error("POST /api/prospects error:", error);
     return NextResponse.json({ error: "Failed to create prospect" }, { status: 500 });

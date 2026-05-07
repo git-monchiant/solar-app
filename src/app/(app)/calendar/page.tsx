@@ -16,16 +16,19 @@ export default function CalendarPage() {
   const [view, setView] = useState<"month" | "list">("list");
   const [newOpen, setNewOpen] = useState(false);
   const [newPrefillDate, setNewPrefillDate] = useState<string | undefined>(undefined);
-  const [zones, setZones] = useState<{ id: number; name: string; color?: string | null }[]>([]);
-  const [selectedZone, setSelectedZone] = useState<string>("all");
-  useEffect(() => { apiFetch("/api/zones").then(setZones).catch(console.error); }, []);
+  // Team filter — calendar shows the survey team's bookings or the solar
+  // (install) team's bookings. Replaced the per-zone chips since we don't
+  // split work by zone any more.
+  const [selectedTeam, setSelectedTeam] = useState<"all" | "survey" | "install">("all");
 
-  // First load: snap to today's row so the calendar opens AT today, not at
-  // the top of the back-extended window. We retry briefly to wait for the
-  // list rendering to finish.
+  // Snap to today's row whenever the list view becomes active — both on first
+  // mount and every time the user switches back from month view. Also resets
+  // the anchor month so the visible header label snaps back to today's month.
   useEffect(() => {
     if (view !== "list") return;
     const t = new Date();
+    setListAnchor({ y: t.getFullYear(), m: t.getMonth() });
+    setVisibleMonth({ y: t.getFullYear(), m: t.getMonth() });
     const k = `${t.getFullYear()}-${String(t.getMonth() + 1).padStart(2, "0")}-${String(t.getDate()).padStart(2, "0")}`;
     let tries = 0;
     const tick = () => {
@@ -34,8 +37,7 @@ export default function CalendarPage() {
       if (++tries < 20) setTimeout(tick, 50);
     };
     tick();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [view]);
   const [refreshKey, setRefreshKey] = useState(0);
   const TH_MONTHS = ["มกราคม","กุมภาพันธ์","มีนาคม","เมษายน","พฤษภาคม","มิถุนายน","กรกฎาคม","สิงหาคม","กันยายน","ตุลาคม","พฤศจิกายน","ธันวาคม"];
   const [listAnchor, setListAnchor] = useState(() => {
@@ -95,12 +97,8 @@ export default function CalendarPage() {
             </>
           )}
           <span className="inline-flex items-center gap-3 text-xs ml-2 flex-wrap">
-            {zones.map((z) => (
-              <span key={z.id} className="inline-flex items-center gap-1.5">
-                <span className="w-3 h-3 rounded-sm" style={{ backgroundColor: z.color || "#9ca3af" }} />
-                {z.name}
-              </span>
-            ))}
+            <span className="inline-flex items-center gap-1.5"><span className="w-3 h-3 rounded-sm bg-active" />ทีม Survey</span>
+            <span className="inline-flex items-center gap-1.5"><span className="w-3 h-3 rounded-sm bg-orange-500" />ทีม Solar</span>
             <span className="inline-flex items-center gap-1.5"><span className="w-3 h-3 rounded-sm bg-gray-300 border border-gray-400" />งานอื่น</span>
           </span>
           <div className="flex-1" />
@@ -128,24 +126,20 @@ export default function CalendarPage() {
             </button>
           </div>
           </div>
-          {/* Zone chips — second row, still inside the sticky Header. */}
+          {/* Team chips — second row, still inside the sticky Header.
+              Filters which team's events the calendar shows. */}
           <div className="flex gap-2 flex-wrap mt-2">
-            <button type="button" onClick={() => setSelectedZone("all")}
-              className={`px-3 h-8 rounded-lg text-xs font-semibold border transition-all ${selectedZone === "all" ? "bg-active text-white border-active" : "bg-white text-gray-600 border-gray-200"}`}
-              style={{ minHeight: 0 }}>All</button>
-            {zones.map((z) => {
-              const active = selectedZone === z.name;
+            {[
+              { value: "all" as const, label: "ทั้งหมด" },
+              { value: "survey" as const, label: "ทีม Survey" },
+              { value: "install" as const, label: "ทีม Solar" },
+            ].map((opt) => {
+              const active = selectedTeam === opt.value;
               return (
-                <button key={z.id} type="button" onClick={() => setSelectedZone(z.name)}
-                  className="px-3 h-8 rounded-lg text-xs font-semibold border transition-all inline-flex items-center gap-1.5"
-                  style={{
-                    minHeight: 0,
-                    backgroundColor: active && z.color ? z.color : "white",
-                    borderColor: z.color || "#e5e7eb",
-                    color: active ? "white" : (z.color || "#4b5563"),
-                  }}>
-                  {!active && z.color && <span className="w-2 h-2 rounded-full" style={{ backgroundColor: z.color }} />}
-                  {z.name}
+                <button key={opt.value} type="button" onClick={() => setSelectedTeam(opt.value)}
+                  className={`px-3 h-8 rounded-lg text-xs font-semibold border transition-all ${active ? "bg-active text-white border-active" : "bg-white text-gray-600 border-gray-200 hover:border-active/50"}`}
+                  style={{ minHeight: 0 }}>
+                  {opt.label}
                 </button>
               );
             })}
@@ -164,7 +158,7 @@ export default function CalendarPage() {
               monthsBack={1}
               monthsForward={3}
               hideNav
-              controlledZone={selectedZone}
+              controlledTeam={selectedTeam}
               anchor={listAnchor}
               onVisibleMonthChange={(mk) => {
                 const [y, m] = mk.split("-").map(Number);

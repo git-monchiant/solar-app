@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getDb, sql } from "@/lib/db";
 import { requireAuth } from "@/lib/auth";
+import { logLeadActivity, paymentStepLabel } from "@/lib/lead-activity-log";
 
 export const runtime = "nodejs";
 
@@ -43,15 +44,37 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
     const body = await req.json().catch(() => ({}));
     if (body.submit === true) {
       const db = await getDb();
-      await db.request().input("id", sql.Int, slipId)
+      const before = await db.request().input("id", sql.Int, slipId)
+        .query(`SELECT lead_id, slip_field, submitted_at FROM slip_files WHERE id = @id`);
+      const row = before.recordset[0];
+      const upd = await db.request().input("id", sql.Int, slipId)
         .query(`UPDATE slip_files SET submitted_at = GETDATE() WHERE id = @id AND submitted_at IS NULL`);
+      if (row && upd.rowsAffected[0] > 0) {
+        await logLeadActivity(db, {
+          leadId: row.lead_id,
+          activityType: "slip_submitted",
+          title: `ตรวจสลิป ${paymentStepLabel(row.slip_field)} (รอบัญชียืนยัน)`,
+          userId: gate.userId,
+        });
+      }
       return NextResponse.json({ ok: true });
     }
     if (body.submit === false) {
       // Revert to draft so the uploader can edit/replace before resubmitting.
       const db = await getDb();
+      const before = await db.request().input("id", sql.Int, slipId)
+        .query(`SELECT lead_id, slip_field FROM slip_files WHERE id = @id`);
+      const row = before.recordset[0];
       await db.request().input("id", sql.Int, slipId)
         .query(`UPDATE slip_files SET submitted_at = NULL WHERE id = @id`);
+      if (row) {
+        await logLeadActivity(db, {
+          leadId: row.lead_id,
+          activityType: "slip_unsubmitted",
+          title: `ย้อนสถานะสลิป ${paymentStepLabel(row.slip_field)}`,
+          userId: gate.userId,
+        });
+      }
       return NextResponse.json({ ok: true });
     }
     return NextResponse.json({ error: "No-op" }, { status: 400 });

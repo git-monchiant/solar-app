@@ -10,7 +10,7 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
     const leadResult = await db.request()
       .input("id", sql.Int, parseInt(id))
       .query(`
-        SELECT l.*, p.name as project_name
+        SELECT l.*, p.name as project_official_name
         FROM leads l
         LEFT JOIN projects p ON l.project_id = p.id
         WHERE l.id = @id
@@ -20,6 +20,15 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
       return NextResponse.json({ error: "Lead not found" }, { status: 404 });
     }
     const lead = fixDates(leadResult.recordset)[0];
+    // Project display: prefer project_alias (custom name on lead) → project's
+    // free-text fallback (l.project_name) → joined project's official name.
+    // Customer-facing docs (warranty cert) should never show the catch-all
+    // "โครงการอื่นทั่วไป" if there's a real alias on the lead.
+    lead.project_name = (lead.project_alias && String(lead.project_alias).trim())
+      || (lead.project_name && String(lead.project_name).trim())
+      || lead.project_official_name
+      || null;
+    delete lead.project_official_name;
 
     // Signer = user who issued the warranty → lead owner → ?user_id viewer.
     let signer: { full_name: string; signature_url: string | null } | null = null;

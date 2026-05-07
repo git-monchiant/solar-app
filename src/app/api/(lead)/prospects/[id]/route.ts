@@ -63,6 +63,14 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
       sets.push("visited_at = GETDATE()");
       isVisit = true;
     }
+    // Auto-stamp visited_by from the authenticated user when the seeker UI
+    // sets interest but doesn't pass an explicit visited_by. Without this
+    // every "interested" prospect ends up with visited_by = NULL (the cause
+    // of the audit gap we found in May 2026).
+    if (body.interest !== undefined && body.visited_by === undefined) {
+      sets.push("visited_by = @visited_by_auto");
+      request.input("visited_by_auto", sql.Int, gate.userId);
+    }
     if (body.interest_type !== undefined) {
       sets.push("interest_type = @interest_type");
       request.input("interest_type", sql.NVarChar(20), body.interest_type);
@@ -160,6 +168,12 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
     }
     sets.push("updated_at = GETDATE()");
 
+    // Snapshot the audited fields BEFORE the UPDATE so we can diff and write
+    // activity rows afterwards. Cheap point read on a primary-key lookup.
+    const beforeRes = await db.request().input("idSnap", sql.Int, parseInt(id))
+      .query(`SELECT interest, interest_type, note, lead_id, project_id, house_number FROM prospects WHERE id = @idSnap`);
+    const prev: Record<string, unknown> = beforeRes.recordset[0] || {};
+
     const result = await request.query(`
       UPDATE prospects SET ${sets.join(", ")} OUTPUT INSERTED.* WHERE id = @id
     `);
@@ -167,7 +181,47 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
     if (result.recordset.length === 0) {
       return NextResponse.json({ error: "Prospect not found" }, { status: 404 });
     }
-    return NextResponse.json(fixDates(result.recordset)[0]);
+    const next = result.recordset[0];
+
+    // Write activity rows for the diffs we care about. Failures here MUST
+    // NOT fail the request — audit is a secondary concern.
+    type Act = { type: string; old: string | null; new: string | null; title: string | null };
+    const acts: Act[] = [];
+    const str = (v: unknown) => v == null ? null : String(v).slice(0, 500);
+
+    if (body.interest !== undefined && prev.interest !== next.interest) {
+      acts.push({ type: "interest_change", old: str(prev.interest), new: str(next.interest), title: `interest: ${prev.interest ?? "-"} → ${next.interest ?? "-"}` });
+    }
+    if (body.interest_type !== undefined && prev.interest_type !== next.interest_type) {
+      acts.push({ type: "interest_type_change", old: str(prev.interest_type), new: str(next.interest_type), title: null });
+    }
+    if (body.note !== undefined && prev.note !== next.note) {
+      acts.push({ type: "note_change", old: str(prev.note), new: str(next.note), title: null });
+    }
+    if (body.lead_id !== undefined && prev.lead_id !== next.lead_id) {
+      acts.push({ type: "lead_link", old: str(prev.lead_id), new: str(next.lead_id), title: next.lead_id ? `ผูก Lead #${next.lead_id}` : `ปลด Lead` });
+    }
+    if ((body.project_id !== undefined || body.house_number !== undefined) && (prev.project_id !== next.project_id || prev.house_number !== next.house_number)) {
+      acts.push({ type: "house_change", old: `${prev.project_id ?? "-"}/${prev.house_number ?? "-"}`, new: `${next.project_id ?? "-"}/${next.house_number ?? "-"}`, title: null });
+    }
+
+    for (const a of acts) {
+      try {
+        await db.request()
+          .input("pid", sql.Int, parseInt(id))
+          .input("type", sql.NVarChar(50), a.type)
+          .input("title", sql.NVarChar(500), a.title)
+          .input("old", sql.NVarChar(500), a.old)
+          .input("new", sql.NVarChar(500), a.new)
+          .input("by", sql.Int, gate.userId)
+          .query(`INSERT INTO prospect_activities (prospect_id, activity_type, title, old_value, new_value, created_by)
+                  VALUES (@pid, @type, @title, @old, @new, @by)`);
+      } catch (e) {
+        console.error("prospect_activities insert failed", e);
+      }
+    }
+
+    return NextResponse.json(fixDates([next])[0]);
   } catch (error) {
     console.error("PATCH /api/prospects/[id] error:", error);
     // SQL unique-index violation on (project_id, house_number) — surface as

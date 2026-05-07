@@ -1,6 +1,7 @@
 "use client";
 
 import { CHANNELS, type ChannelCode } from "@/lib/constants/channels";
+import ModalBase from "@/components/ui/ModalBase";
 
 // "Where did this customer come from?" picker. Shown before opening the
 // prospect/lead create form so the source/channel is set before the user
@@ -54,33 +55,20 @@ const channelIcon = (code: ChannelCode) => {
 
 export default function ChannelPickerModal({ onClose, onPick, title = "เลือกช่องทาง" }: Props) {
   return (
-    <div className="fixed inset-0 z-50 bg-black/50 flex items-center justify-center p-4" onClick={onClose}>
-      <div
-        className="bg-white w-full max-w-sm rounded-2xl p-5 flex flex-col gap-4"
-        onClick={(e) => e.stopPropagation()}
-      >
-        <div className="text-base font-bold text-gray-900 text-center">{title}</div>
-        <div className="grid grid-cols-2 gap-2">
-          {CHANNELS.map((ch) => (
-            <button
-              key={ch.code}
-              type="button"
-              onClick={() => onPick(ch.code)}
-              className="h-12 rounded-xl border border-gray-200 bg-white inline-flex items-center justify-start gap-2 px-3 text-sm font-semibold text-gray-700 hover:border-primary hover:text-primary hover:bg-primary/5 transition-colors"
-            >
-              {channelIcon(ch.code)}
-              {ch.label}
-            </button>
-          ))}
-        </div>
-        <button
-          type="button"
-          onClick={onClose}
-          className="h-10 rounded-lg text-sm text-gray-500 hover:bg-gray-50"
-        >
-          ยกเลิก
-        </button>
+    <ModalBase title={title} onClose={onClose} size="md">
+      <div className="grid grid-cols-2 gap-2">
+        {CHANNELS.map((ch) => (
+          <button
+            key={ch.code}
+            type="button"
+            onClick={() => onPick(ch.code)}
+            className="h-12 rounded-xl border border-gray-200 bg-white inline-flex items-center justify-start gap-2 px-3 text-sm font-semibold text-gray-700 hover:border-primary hover:text-primary hover:bg-primary/5 transition-colors"
+          >
+            {channelIcon(ch.code)}
+            {ch.label}
+          </button>
+        ))}
       </div>
-    </div>
+    </ModalBase>
   );
 }
