@@ -61,6 +61,7 @@ export interface Lead {
   pre_residence_type: string | null;
   survey_note: string | null;
   survey_photos: string | null;
+  survey_photo_notes: string | null;
   survey_electrical_phase: string | null;
   survey_wants_battery: string | null;
   survey_panel_count: number | null;
@@ -69,6 +70,7 @@ export interface Lead {
   // Must-have on-site
   survey_roof_material: string | null;
   survey_roof_orientation: string | null;
+  survey_roof_orientation_notes: string | null;
   survey_floors: number | null;
   survey_roof_area_m2: number | null;
   survey_meter_size: string | null;

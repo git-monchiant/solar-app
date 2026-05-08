@@ -47,3 +47,4 @@ Project Infomation/
 1-7-68*.xlsx
 sql/solardb_clone.sql
 scripts/adhoc/_*.mjs
+tmp-files/

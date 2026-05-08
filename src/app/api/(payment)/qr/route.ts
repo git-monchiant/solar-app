@@ -98,9 +98,7 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ error: "Invalid amount" }, { status: 400 });
   }
 
-  const forcedAmount = parseFloat(process.env.QR_FORCE_AMOUNT || "");
-  const testMode = forcedAmount > 0;
-  const amount = testMode ? forcedAmount : requestedAmount;
+  const amount = requestedAmount;
 
   const cfg = await loadBillerSettings();
   const useBillPayment = cfg.mode === "bill_payment" && !!cfg.billerId && !!cfg.ref1;
@@ -143,7 +141,6 @@ export async function GET(req: NextRequest) {
     qrDataUrl,
     amount,
     mode: useBillPayment ? "bill_payment" : "credit_transfer",
-    test_mode: testMode,
     // Refs are only meaningful in bill_payment mode (Credit Transfer QRs have
     // no Ref fields). Returned so the UI can show them next to the QR for
     // post-transfer reconciliation.

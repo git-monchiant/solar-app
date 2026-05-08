@@ -1,6 +1,6 @@
 "use client";
 
-import { forwardRef, useEffect, useImperativeHandle, useRef, useState } from "react";
+import { Fragment, forwardRef, useEffect, useImperativeHandle, useRef, useState } from "react";
 import { apiFetch, getUserIdHeader } from "@/lib/api";
 import type { Lead } from "./types";
 import FallbackImage from "@/components/ui/FallbackImage";
@@ -126,8 +126,29 @@ const SurveyForm = forwardRef<SurveyFormHandle, Props>(function SurveyForm({ lea
   const [roofOrientations, setRoofOrientations] = useState<string[]>(
     (lead.survey_roof_orientation ?? "").split(",").filter(Boolean)
   );
+  // Per-direction remarks (north/south/east/west). Stored on the lead as a
+  // JSON object string in survey_roof_orientation_notes; surface it as a flat
+  // record locally so input handlers stay simple.
+  const [roofOrientationNotes, setRoofOrientationNotes] = useState<Record<string, string>>(() => {
+    try {
+      const parsed = JSON.parse(lead.survey_roof_orientation_notes ?? "{}");
+      return typeof parsed === "object" && parsed ? parsed : {};
+    } catch { return {}; }
+  });
   const toggleOrientation = (v: string) =>
-    setRoofOrientations(prev => prev.includes(v) ? prev.filter(o => o !== v) : [...prev, v]);
+    setRoofOrientations(prev => {
+      const next = prev.includes(v) ? prev.filter(o => o !== v) : [...prev, v];
+      // Drop the remark for a direction the surveyor just turned off so it
+      // doesn't get re-saved if they toggle back later.
+      if (!next.includes(v)) {
+        setRoofOrientationNotes(curr => {
+          if (!(v in curr)) return curr;
+          const { [v]: _drop, ...rest } = curr;
+          return rest;
+        });
+      }
+      return next;
+    });
   const [floors, setFloors] = useState<number | null>(lead.survey_floors ?? null);
   const [roofArea, setRoofArea] = useState<number | "">(lead.survey_roof_area_m2 ?? "");
   const [meterSize, setMeterSize] = useState<string>(lead.survey_meter_size ?? "");
@@ -183,6 +204,47 @@ const SurveyForm = forwardRef<SurveyFormHandle, Props>(function SurveyForm({ lea
     } finally { setUploadingSlot(null); }
   };
 
+  // Photo-with-Note section — dynamic captioned slots stored as a JSON array
+  // in survey_photo_notes. Starts with 1 row; surveyor taps "+" to add more
+  // up to PHOTO_NOTES_MAX. Each entry: { url, note }. The autosave effect
+  // serializes the whole array, so editing any field flushes the lot.
+  const PHOTO_NOTES_MAX = 5;
+  type PhotoNote = { url: string | null; note: string };
+  const initPhotoNotes = (): PhotoNote[] => {
+    let parsed: PhotoNote[] = [];
+    try {
+      const raw = lead.survey_photo_notes;
+      if (raw) {
+        const arr = JSON.parse(raw);
+        if (Array.isArray(arr)) parsed = arr.map(it => ({ url: it?.url ?? null, note: it?.note ?? "" }));
+      }
+    } catch {}
+    if (parsed.length === 0) parsed = [{ url: null, note: "" }];
+    return parsed.slice(0, PHOTO_NOTES_MAX);
+  };
+  const [photoNotes, setPhotoNotes] = useState<PhotoNote[]>(initPhotoNotes);
+  const [uploadingPhotoNoteIdx, setUploadingPhotoNoteIdx] = useState<number | null>(null);
+  const updatePhotoNote = (idx: number, patch: Partial<PhotoNote>) =>
+    setPhotoNotes(curr => curr.map((p, i) => i === idx ? { ...p, ...patch } : p));
+  const removePhotoNote = (idx: number) =>
+    // Always keep at least one empty row visible — fully removing the last
+    // row would leave the section blank with no way back.
+    setPhotoNotes(curr => curr.length > 1 ? curr.filter((_, i) => i !== idx) : [{ url: null, note: "" }]);
+  const addPhotoNote = () =>
+    setPhotoNotes(curr => curr.length < PHOTO_NOTES_MAX ? [...curr, { url: null, note: "" }] : curr);
+  const uploadPhotoNote = async (file: File, idx: number) => {
+    setUploadingPhotoNoteIdx(idx);
+    try {
+      const compressed = await compressImage(file).catch(() => file);
+      const fd = new FormData();
+      fd.append("file", compressed);
+      fd.append("filename", `lead${lead.id}_note${idx + 1}_${Date.now()}`);
+      const res = await fetch("/api/upload", { method: "POST", body: fd, headers: { "ngrok-skip-browser-warning": "true", ...getUserIdHeader() } });
+      const { url } = await res.json();
+      if (url) updatePhotoNote(idx, { url });
+    } finally { setUploadingPhotoNoteIdx(null); }
+  };
+
   // Duplicates of pre_* (default from pre_*)
   const [monthlyBill, setMonthlyBill] = useState<number | "">(lead.survey_monthly_bill ?? lead.pre_monthly_bill ?? "");
   const [appliances, setAppliances] = useState<string[]>(
@@ -212,6 +274,7 @@ const SurveyForm = forwardRef<SurveyFormHandle, Props>(function SurveyForm({ lea
     const house = {
       survey_roof_material: roofMaterial || null,
       survey_roof_orientation: roofOrientations.length ? roofOrientations.join(",") : null,
+      survey_roof_orientation_notes: Object.keys(roofOrientationNotes).length ? JSON.stringify(roofOrientationNotes) : null,
       survey_floors: floors,
       survey_roof_area_m2: typeof roofArea === "number" ? roofArea : null,
       survey_roof_tilt: roofTilt,
@@ -224,6 +287,15 @@ const SurveyForm = forwardRef<SurveyFormHandle, Props>(function SurveyForm({ lea
       survey_inverter_location: inverterLocation || null,
       survey_wifi_signal: wifiSignal || null,
       survey_access_method: accessMethod || null,
+      // Photo-with-note lives on the prep/photo section. Drop empty trailing
+      // entries so a row with both url=null and note="" doesn't take up space
+      // in the DB after a save.
+      survey_photo_notes: (() => {
+        const cleaned = photoNotes.map(p => ({ url: p.url, note: (p.note ?? "").trim() }));
+        const lastFilled = cleaned.reduce((last, p, i) => (p.url || p.note) ? i : last, -1);
+        if (lastFilled < 0) return null;
+        return JSON.stringify(cleaned.slice(0, lastFilled + 1));
+      })(),
     };
     if (section === "electrical") return electrical;
     if (section === "house") return house;
@@ -235,7 +307,7 @@ const SurveyForm = forwardRef<SurveyFormHandle, Props>(function SurveyForm({ lea
   useEffect(() => {
     onFormChange?.(buildPayload());
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [roofMaterial, roofOrientations, floors, roofArea, meterSize, dbDistance, shading, roofTilt, monthlyBill, appliances, electricalPhase, voltageLN, voltageLL, mdbBrand, mdbModel, mdbSlots, breakerType, panelToInverterM, roofStructure, roofWidth, roofLength, inverterLocation, wifiSignal, accessMethod]);
+  }, [roofMaterial, roofOrientations, roofOrientationNotes, floors, roofArea, meterSize, dbDistance, shading, roofTilt, monthlyBill, appliances, electricalPhase, voltageLN, voltageLL, mdbBrand, mdbModel, mdbSlots, breakerType, panelToInverterM, roofStructure, roofWidth, roofLength, inverterLocation, wifiSignal, accessMethod, photoNotes]);
 
   // Auto-save to DB (debounced). Pending payload lives in a ref so it can
   // flush on unmount — otherwise navigating between SurveyForm sections within
@@ -256,7 +328,7 @@ const SurveyForm = forwardRef<SurveyFormHandle, Props>(function SurveyForm({ lea
     }, 600);
     pendingRef.current = { payload, timer };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [roofMaterial, roofOrientations, floors, roofArea, meterSize, dbDistance, shading, roofTilt, monthlyBill, appliances, electricalPhase, voltageLN, voltageLL, mdbBrand, mdbModel, mdbSlots, breakerType, panelToInverterM, roofStructure, roofWidth, roofLength, inverterLocation, wifiSignal, accessMethod]);
+  }, [roofMaterial, roofOrientations, roofOrientationNotes, floors, roofArea, meterSize, dbDistance, shading, roofTilt, monthlyBill, appliances, electricalPhase, voltageLN, voltageLL, mdbBrand, mdbModel, mdbSlots, breakerType, panelToInverterM, roofStructure, roofWidth, roofLength, inverterLocation, wifiSignal, accessMethod, photoNotes]);
 
   // Flush any pending debounced save when this section unmounts (e.g. user
   // navigates subStep before the 600ms timer fires).
@@ -322,39 +394,46 @@ const SurveyForm = forwardRef<SurveyFormHandle, Props>(function SurveyForm({ lea
             />
           </div>
 
-          {/* 2.2 ระบบไฟ 1/3 Phase */}
+          {/* 2.2 ระบบไฟ — chip + L-N/L-L label outside + voltage input. Two
+               rows; clicking the chip selects the phase and enables its input.
+               The other row's input is disabled, and its voltage is cleared
+               on phase switch so stale values don't leak. */}
           <div>
             <div className={subLabel}>ระบบไฟ <span className="text-red-500">*</span></div>
-            <div className="grid grid-cols-3 md:grid-cols-4 gap-2">
-              {[
-                { value: "1_phase", label: "1 เฟส" },
-                { value: "3_phase", label: "3 เฟส" },
-              ].map(p => (
-                <button key={p.value} type="button" onClick={() => {
-                  setElectricalPhase(p.value);
-                  onPhaseChange?.(p.value);
-                  const valid = METER_SIZES[p.value]?.some(m => m.value === meterSize);
-                  if (!valid) setMeterSize("");
-                }} className={chipBtn(electricalPhase === p.value)}>
-                  {p.label}
-                </button>
-              ))}
-            </div>
-          </div>
-
-          {/* 2.3 แรงดันไฟฟ้าหน้างาน L-N / L-L */}
-          <div>
-            <div className={subLabel}>แรงดันไฟฟ้าหน้างาน (V) <span className="text-red-500">*</span></div>
-            <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
-              <div className="input-affix md:col-span-2">
-                <span className="input-affix-left">L-N</span>
-                <input type="number" step="0.1" value={voltageLN === "" ? "" : voltageLN} onChange={e => setVoltageLN(e.target.value === "" ? "" : parseFloat(e.target.value))} placeholder="220" className="input-affix-input w-full h-10 pl-12 pr-8 rounded-lg border border-gray-200 text-sm" />
-                <span className="input-affix-right">V</span>
+            {/* 2 cols across all screen sizes — button = 1/3, label+input = 2/3 */}
+            <div className="grid grid-cols-[1fr_2fr] gap-2 items-center">
+              <button type="button" onClick={() => {
+                setElectricalPhase("1_phase");
+                onPhaseChange?.("1_phase");
+                const valid = METER_SIZES["1_phase"]?.some(m => m.value === meterSize);
+                if (!valid) setMeterSize("");
+                setVoltageLL("");
+              }} className={chipBtn(electricalPhase === "1_phase")}>
+                1 เฟส
+              </button>
+              <div className="flex items-center gap-2">
+                <span className="text-sm font-semibold text-gray-500 shrink-0">L-N</span>
+                <div className="relative flex-1">
+                  <input type="number" step="0.1" value={voltageLN === "" ? "" : voltageLN} onChange={e => setVoltageLN(e.target.value === "" ? "" : parseFloat(e.target.value))} placeholder="220" disabled={electricalPhase !== "1_phase"} className="w-full h-10 pl-3 pr-8 rounded-lg border border-gray-200 text-sm focus:outline-none focus:border-primary disabled:bg-gray-50 disabled:text-gray-400" />
+                  <span className="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-gray-400">V</span>
+                </div>
               </div>
-              <div className="input-affix md:col-span-2">
-                <span className="input-affix-left">L-L</span>
-                <input type="number" step="0.1" value={voltageLL === "" ? "" : voltageLL} onChange={e => setVoltageLL(e.target.value === "" ? "" : parseFloat(e.target.value))} placeholder="380" className="input-affix-input w-full h-10 pl-12 pr-8 rounded-lg border border-gray-200 text-sm" />
-                <span className="input-affix-right">V</span>
+
+              <button type="button" onClick={() => {
+                setElectricalPhase("3_phase");
+                onPhaseChange?.("3_phase");
+                const valid = METER_SIZES["3_phase"]?.some(m => m.value === meterSize);
+                if (!valid) setMeterSize("");
+                setVoltageLN("");
+              }} className={chipBtn(electricalPhase === "3_phase")}>
+                3 เฟส
+              </button>
+              <div className="flex items-center gap-2">
+                <span className="text-sm font-semibold text-gray-500 shrink-0">L-L</span>
+                <div className="relative flex-1">
+                  <input type="number" step="0.1" value={voltageLL === "" ? "" : voltageLL} onChange={e => setVoltageLL(e.target.value === "" ? "" : parseFloat(e.target.value))} placeholder="380" disabled={electricalPhase !== "3_phase"} className="w-full h-10 pl-3 pr-8 rounded-lg border border-gray-200 text-sm focus:outline-none focus:border-primary disabled:bg-gray-50 disabled:text-gray-400" />
+                  <span className="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-gray-400">V</span>
+                </div>
               </div>
             </div>
           </div>
@@ -521,15 +600,31 @@ const SurveyForm = forwardRef<SurveyFormHandle, Props>(function SurveyForm({ lea
             />
           </div>
 
-          {/* 3.3 ทิศทางการวางแผง */}
+          {/* 3.3 ทิศทางการวางแผง — same 1/3 chip + 2/3 input pattern as
+               ระบบไฟ. Each direction is a row; remark only enables when that
+               direction is toggled on. Toggle off clears the remark via
+               toggleOrientation. */}
           <div>
             <div className={subLabel}>ทิศทางการวางแผง <span className="text-red-500">*</span> <span className="text-gray-400 normal-case font-normal ml-1">(เลือกได้มากกว่า 1 ทิศ)</span></div>
-            <div className="grid grid-cols-3 md:grid-cols-4 gap-2">
-              {ROOF_ORIENTATIONS.map(o => (
-                <button key={o.value} type="button" onClick={() => toggleOrientation(o.value)} className={chipBtn(roofOrientations.includes(o.value))}>
-                  {o.label}
-                </button>
-              ))}
+            <div className="grid grid-cols-[1fr_2fr] gap-2 items-center">
+              {ROOF_ORIENTATIONS.map(o => {
+                const selected = roofOrientations.includes(o.value);
+                return (
+                  <Fragment key={o.value}>
+                    <button type="button" onClick={() => toggleOrientation(o.value)} className={chipBtn(selected)}>
+                      {o.label}
+                    </button>
+                    <input
+                      type="text"
+                      value={roofOrientationNotes[o.value] ?? ""}
+                      onChange={e => setRoofOrientationNotes(curr => ({ ...curr, [o.value]: e.target.value }))}
+                      placeholder="หมายเหตุ (ถ้ามี)"
+                      disabled={!selected}
+                      className="w-full h-10 px-3 rounded-lg border border-gray-200 text-sm focus:outline-none focus:border-primary disabled:bg-gray-50 disabled:text-gray-400"
+                    />
+                  </Fragment>
+                );
+              })}
             </div>
           </div>
 
@@ -687,11 +782,27 @@ const SurveyForm = forwardRef<SurveyFormHandle, Props>(function SurveyForm({ lea
           ].map(slot => (
             <div key={slot.key} className="flex flex-col">
               <div className={`${subLabel} min-h-[2.5em] leading-snug`}>{slot.label}</div>
+              {/* Two file inputs feed the same handler — capture=environment
+                   opens the camera; the bare one opens the gallery. UI shows
+                   two icon-only buttons instead of relying on the browser's
+                   native picker, which on some Android builds only surfaces
+                   one option. */}
               <input
-                id={`photo-${slot.key}-${lead.id}`}
+                id={`photo-${slot.key}-cam-${lead.id}`}
                 type="file"
                 accept="image/*"
                 capture="environment"
+                onChange={(e) => {
+                  const f = e.target.files?.[0];
+                  if (f) uploadPhotoSlot(f, slot.field, slot.set, slot.key);
+                  e.target.value = "";
+                }}
+                className="hidden"
+              />
+              <input
+                id={`photo-${slot.key}-lib-${lead.id}`}
+                type="file"
+                accept="image/*"
                 onChange={(e) => {
                   const f = e.target.files?.[0];
                   if (f) uploadPhotoSlot(f, slot.field, slot.set, slot.key);
@@ -712,17 +823,91 @@ const SurveyForm = forwardRef<SurveyFormHandle, Props>(function SurveyForm({ lea
                   >×</button>
                 </div>
               ) : (
-                <label htmlFor={`photo-${slot.key}-${lead.id}`} className="h-28 rounded-lg border border-dashed border-gray-300 bg-white flex items-center justify-center gap-2 cursor-pointer hover:border-active/40 hover:text-active text-gray-500 text-sm transition-colors">
+                <div className="h-28 rounded-lg border border-dashed border-gray-300 bg-white flex items-center justify-center gap-12 text-gray-500">
                   {uploadingSlot === slot.key ? (
-                    <><div className="w-5 h-5 border-2 border-gray-300 border-t-active rounded-full animate-spin" /> กำลังอัปโหลด…</>
+                    <div className="w-5 h-5 border-2 border-gray-300 border-t-active rounded-full animate-spin" />
                   ) : (
-                    <><svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.8}><path strokeLinecap="round" strokeLinejoin="round" d="M3 9a2 2 0 012-2h.93a2 2 0 001.664-.89l.812-1.22A2 2 0 0110.07 4h3.86a2 2 0 011.664.89l.812 1.22A2 2 0 0018.07 7H19a2 2 0 012 2v9a2 2 0 01-2 2H5a2 2 0 01-2-2V9z" /><path strokeLinecap="round" strokeLinejoin="round" d="M15 13a3 3 0 11-6 0 3 3 0 016 0z" /></svg> ถ่ายรูป</>
+                    <>
+                      <button type="button" onClick={() => document.getElementById(`photo-${slot.key}-cam-${lead.id}`)?.click()} title="ถ่ายรูป" className="hover:text-active transition-colors cursor-pointer">
+                        <svg className="w-7 h-7" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}><path strokeLinecap="round" strokeLinejoin="round" d="M6.827 6.175A2.31 2.31 0 015.186 7.23c-.38.054-.757.112-1.134.175C2.999 7.58 2.25 8.507 2.25 9.574V18a2.25 2.25 0 002.25 2.25h15A2.25 2.25 0 0021.75 18V9.574c0-1.067-.75-1.994-1.802-2.169a47.865 47.865 0 00-1.134-.175 2.31 2.31 0 01-1.64-1.055l-.822-1.316a2.192 2.192 0 00-1.736-1.039 48.774 48.774 0 00-5.232 0 2.192 2.192 0 00-1.736 1.039l-.821 1.316z" /><path strokeLinecap="round" strokeLinejoin="round" d="M16.5 12.75a4.5 4.5 0 11-9 0 4.5 4.5 0 019 0zM18.75 10.5h.008v.008h-.008V10.5z" /></svg>
+                      </button>
+                      <button type="button" onClick={() => document.getElementById(`photo-${slot.key}-lib-${lead.id}`)?.click()} title="แนบรูป" className="hover:text-active transition-colors cursor-pointer">
+                        <svg className="w-7 h-7" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}><path strokeLinecap="round" strokeLinejoin="round" d="M2.25 15.75l5.159-5.159a2.25 2.25 0 013.182 0l5.159 5.159m-1.5-1.5l1.409-1.409a2.25 2.25 0 013.182 0l2.909 2.909m-18 3.75h16.5a1.5 1.5 0 001.5-1.5V6a1.5 1.5 0 00-1.5-1.5H3.75A1.5 1.5 0 002.25 6v12a1.5 1.5 0 001.5 1.5zm10.5-11.25h.008v.008h-.008V8.25zm.375 0a.375.375 0 11-.75 0 .375.375 0 01.75 0z" /></svg>
+                      </button>
+                    </>
                   )}
-                </label>
+                </div>
               )}
             </div>
           ))}
         </div>
+      </div>
+
+      {/* Photo with Note — dynamic captioned slots, 1 by default, up to 5.
+           "+" adds a row; "×" removes one (collapses back to a single empty
+           row if the surveyor deletes the last). Stored as JSON; trailing
+           empty rows are dropped on save (see buildPayload). */}
+      <div className={card}>
+        <div className="flex items-center justify-between mb-3">
+          <div className="text-sm font-bold text-gray-700 uppercase tracking-wider">Photo with Note</div>
+          <span className="text-xs text-gray-400">{photoNotes.length} / {PHOTO_NOTES_MAX}</span>
+        </div>
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+          {photoNotes.map((p, idx) => (
+            <div key={idx} className="relative rounded-lg border border-gray-200 bg-white/60 p-2 space-y-2">
+              {/* Same dual-input pattern as Photo Checklist: programmatic
+                   .click() avoids the Android Chrome label-routing quirk. */}
+              <input id={`photo-note-${idx}-cam-${lead.id}`} type="file" accept="image/*" capture="environment" onChange={(e) => { const f = e.target.files?.[0]; if (f) uploadPhotoNote(f, idx); e.target.value = ""; }} className="hidden" />
+              <input id={`photo-note-${idx}-lib-${lead.id}`} type="file" accept="image/*" onChange={(e) => { const f = e.target.files?.[0]; if (f) uploadPhotoNote(f, idx); e.target.value = ""; }} className="hidden" />
+              {/* Row delete — collapses the row entirely (photo + note). When
+                   it's the only row, the helper resets it to empty rather
+                   than leaving the section blank. */}
+              <button
+                type="button"
+                onClick={() => removePhotoNote(idx)}
+                title="ลบ"
+                className="absolute -top-1.5 -right-1.5 w-6 h-6 rounded-full bg-red-500 text-white flex items-center justify-center text-xs shadow z-10"
+              >×</button>
+              {p.url ? (
+                <div className="relative aspect-video">
+                  <FallbackImage src={p.url} alt={`Photo ${idx + 1}`} lightboxLabel={p.note || `Photo ${idx + 1}`} className="w-full h-full object-cover rounded-lg border border-gray-200" fallbackLabel="รูปหาย" />
+                </div>
+              ) : (
+                <div className="h-28 rounded-lg border border-dashed border-gray-300 bg-white flex items-center justify-center gap-12 text-gray-500">
+                  {uploadingPhotoNoteIdx === idx ? (
+                    <div className="w-5 h-5 border-2 border-gray-300 border-t-active rounded-full animate-spin" />
+                  ) : (
+                    <>
+                      <button type="button" onClick={() => document.getElementById(`photo-note-${idx}-cam-${lead.id}`)?.click()} title="ถ่ายรูป" className="hover:text-active transition-colors cursor-pointer">
+                        <svg className="w-7 h-7" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}><path strokeLinecap="round" strokeLinejoin="round" d="M6.827 6.175A2.31 2.31 0 015.186 7.23c-.38.054-.757.112-1.134.175C2.999 7.58 2.25 8.507 2.25 9.574V18a2.25 2.25 0 002.25 2.25h15A2.25 2.25 0 0021.75 18V9.574c0-1.067-.75-1.994-1.802-2.169a47.865 47.865 0 00-1.134-.175 2.31 2.31 0 01-1.64-1.055l-.822-1.316a2.192 2.192 0 00-1.736-1.039 48.774 48.774 0 00-5.232 0 2.192 2.192 0 00-1.736 1.039l-.821 1.316z" /><path strokeLinecap="round" strokeLinejoin="round" d="M16.5 12.75a4.5 4.5 0 11-9 0 4.5 4.5 0 019 0zM18.75 10.5h.008v.008h-.008V10.5z" /></svg>
+                      </button>
+                      <button type="button" onClick={() => document.getElementById(`photo-note-${idx}-lib-${lead.id}`)?.click()} title="แนบรูป" className="hover:text-active transition-colors cursor-pointer">
+                        <svg className="w-7 h-7" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}><path strokeLinecap="round" strokeLinejoin="round" d="M2.25 15.75l5.159-5.159a2.25 2.25 0 013.182 0l5.159 5.159m-1.5-1.5l1.409-1.409a2.25 2.25 0 013.182 0l2.909 2.909m-18 3.75h16.5a1.5 1.5 0 001.5-1.5V6a1.5 1.5 0 00-1.5-1.5H3.75A1.5 1.5 0 002.25 6v12a1.5 1.5 0 001.5 1.5zm10.5-11.25h.008v.008h-.008V8.25zm.375 0a.375.375 0 11-.75 0 .375.375 0 01.75 0z" /></svg>
+                      </button>
+                    </>
+                  )}
+                </div>
+              )}
+              <textarea
+                value={p.note}
+                onChange={e => updatePhotoNote(idx, { note: e.target.value })}
+                placeholder={`หมายเหตุรูปที่ ${idx + 1}`}
+                rows={2}
+                className="w-full px-3 py-2 rounded-lg border border-gray-200 text-sm focus:outline-none focus:border-primary resize-none"
+              />
+            </div>
+          ))}
+        </div>
+        {photoNotes.length < PHOTO_NOTES_MAX && (
+          <button
+            type="button"
+            onClick={addPhotoNote}
+            className="mt-3 w-full h-10 rounded-lg border border-dashed border-gray-300 bg-white flex items-center justify-center gap-1.5 text-sm font-semibold text-gray-500 hover:border-active/40 hover:text-active transition-colors"
+          >
+            <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}><path strokeLinecap="round" strokeLinejoin="round" d="M12 4.5v15m7.5-7.5h-15" /></svg>
+            เพิ่มรูป
+          </button>
+        )}
       </div></>}
     </div>
   );

@@ -183,6 +183,16 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
     }
     const next = result.recordset[0];
 
+    // Mirror line_id onto the linked lead so the LINE push API (which reads
+    // leads.line_id) sees the same binding the seeker UI just wrote.
+    // Without this the QR-link flow looks "saved" but ส่ง LINE → 400.
+    if (body.line_id !== undefined && next.lead_id) {
+      await db.request()
+        .input("lid", sql.Int, next.lead_id)
+        .input("line_id", sql.NVarChar(100), body.line_id)
+        .query(`UPDATE leads SET line_id = @line_id WHERE id = @lid`);
+    }
+
     // Write activity rows for the diffs we care about. Failures here MUST
     // NOT fail the request — audit is a secondary concern.
     type Act = { type: string; old: string | null; new: string | null; title: string | null };

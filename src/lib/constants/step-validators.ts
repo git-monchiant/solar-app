@@ -43,8 +43,11 @@ export function validateSurvey(lead: Partial<Lead>): ValidationResult {
     // Electrical
     { field: "survey_meter_size", label: "ขนาดมิเตอร์" },
     { field: "survey_electrical_phase", label: "ระบบไฟ" },
-    { field: "survey_voltage_ln", label: "แรงดัน L-N" },
-    { field: "survey_voltage_ll", label: "แรงดัน L-L" },
+    // Voltage requirement follows the phase: 1-phase needs L-N (220V), 3-phase
+    // needs L-L (380V). The other one is intentionally not collected so the
+    // form stays focused on the value the surveyor actually measured.
+    { field: "survey_voltage_ln", label: "แรงดัน L-N", test: v => (lead as Lead).survey_electrical_phase !== "1_phase" || v != null },
+    { field: "survey_voltage_ll", label: "แรงดัน L-L", test: v => (lead as Lead).survey_electrical_phase !== "3_phase" || v != null },
     { field: "survey_monthly_bill", label: "ค่าไฟ/เดือน" },
     { field: "survey_mdb_brand", label: "ยี่ห้อ MDB" },
     { field: "survey_mdb_model", label: "รุ่น MDB" },
@@ -66,12 +69,8 @@ export function validateSurvey(lead: Partial<Lead>): ValidationResult {
     { field: "survey_inverter_location", label: "ตำแหน่ง Inverter" },
     { field: "survey_wifi_signal", label: "สัญญาณ Wi-Fi" },
     { field: "survey_access_method", label: "วิธีขึ้นหลังคา" },
-    // Photo Checklist (4 named slots)
-    { field: "survey_photo_building_url", label: "รูปอาคาร" },
-    { field: "survey_photo_roof_structure_url", label: "รูปโครงหลังคา" },
-    { field: "survey_photo_mdb_url", label: "รูปตู้ MDB" },
-    { field: "survey_photo_inverter_point_url", label: "รูปจุดติดตั้ง Inverter" },
-    { field: "survey_photos", label: "รูปถ่ายเพิ่มเติม", test: v => typeof v === "string" && v.split(",").filter(Boolean).length > 0 },
+    // Photos are all optional — surveyor may skip if site conditions don't
+    // require them. Re-add to this list if/when a slot becomes mandatory.
     // Recommendation + signature (final tab)
     { field: "survey_recommended_kw", label: "ขนาดที่แนะนำ (kWp)" },
     { field: "survey_panel_count", label: "จำนวน Panel" },

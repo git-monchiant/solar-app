@@ -25,7 +25,8 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
                p.name as project_official_name,
                pk.name as package_name, pk.price as package_price,
                u.full_name as assigned_name,
-               lu.display_name as line_display_name, lu.picture_url as line_picture_url,
+               lu.display_name as line_display_name,
+               CASE WHEN lu.picture_blob IS NOT NULL THEN '/api/line-avatar/' + lu.line_user_id ELSE NULL END AS line_picture_url,
                CAST(CASE WHEN EXISTS (SELECT 1 FROM prospects WHERE lead_id = l.id) THEN 1 ELSE 0 END AS BIT) as from_prospect
         FROM leads l
         LEFT JOIN projects p ON l.project_id = p.id
@@ -414,6 +415,10 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
       sets.push("survey_photos = @survey_photos");
       request.input("survey_photos", sql.NVarChar(sql.MAX), body.survey_photos);
     }
+    if (body.survey_photo_notes !== undefined) {
+      sets.push("survey_photo_notes = @survey_photo_notes");
+      request.input("survey_photo_notes", sql.NVarChar(sql.MAX), body.survey_photo_notes);
+    }
     if (body.survey_electrical_phase !== undefined) {
       sets.push("survey_electrical_phase = @survey_electrical_phase");
       request.input("survey_electrical_phase", sql.NVarChar(20), body.survey_electrical_phase);
@@ -442,6 +447,10 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
     if (body.survey_roof_orientation !== undefined) {
       sets.push("survey_roof_orientation = @survey_roof_orientation");
       request.input("survey_roof_orientation", sql.NVarChar(60), body.survey_roof_orientation);
+    }
+    if (body.survey_roof_orientation_notes !== undefined) {
+      sets.push("survey_roof_orientation_notes = @survey_roof_orientation_notes");
+      request.input("survey_roof_orientation_notes", sql.NVarChar(1000), body.survey_roof_orientation_notes);
     }
     if (body.survey_floors !== undefined) {
       sets.push("survey_floors = @survey_floors");

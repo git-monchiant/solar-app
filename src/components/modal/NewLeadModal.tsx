@@ -26,7 +26,8 @@ export default function NewLeadModal({ onClose, onCreated, linkLine, initialSour
   const router = useRouter();
   const [saving, setSaving] = useState(false);
   const [form, setForm] = useState({
-    full_name: "", phone: "", project_id: "" as string | number | null, project_name: "",
+    full_name: "", phone: "", email: "", house_number: "",
+    project_id: "" as string | number | null, project_name: "",
     installation_address: "",
     customer_type: "new", interested_package_id: "", note: "",
     source: initialSource || (linkLine ? "line" : "walk_in"), payment_type: "", requirement: "",
@@ -44,8 +45,10 @@ export default function NewLeadModal({ onClose, onCreated, linkLine, initialSour
     ? { display_name: linkLine.displayName, picture_url: linkLine.pictureUrl }
     : pickedLineProfile;
 
+  const canSubmit = !!form.full_name.trim() && !!form.phone.trim() && !!form.email.trim() && !!form.house_number.trim();
+
   const handleSubmit = async () => {
-    if (!form.full_name.trim()) return;
+    if (!canSubmit) return;
     setSaving(true);
     try {
       const result = await apiFetch("/api/leads", {
@@ -85,7 +88,7 @@ export default function NewLeadModal({ onClose, onCreated, linkLine, initialSour
           <button
             type="button"
             onClick={handleSubmit}
-            disabled={saving || !form.full_name.trim()}
+            disabled={saving || !canSubmit}
             className="w-full h-11 rounded-lg text-sm font-semibold text-white bg-gradient-to-r from-primary to-primary-dark hover:brightness-110 disabled:opacity-50 transition-colors"
           >
             {saving ? "กำลังบันทึก…" : "บันทึก"}

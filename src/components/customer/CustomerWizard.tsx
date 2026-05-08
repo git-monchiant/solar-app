@@ -13,6 +13,7 @@ import ChannelPickerModal from "@/components/shared/ChannelPickerModal";
 export interface CustomerWizardValues {
   full_name?: string;
   phone?: string;
+  email?: string;
   project_id?: string | number | null;
   project_name?: string;
   installation_address?: string;
@@ -232,13 +233,22 @@ function CreateProfileForm({
               className={fieldInput}
             />
           </FormField>
-          <FormField label="เบอร์โทร">
+          <FormField label="เบอร์โทร" required>
             <input
               type="tel"
               value={values.phone ?? ""}
               onChange={e => onChange({ phone: e.target.value })}
               placeholder="08x-xxx-xxxx"
               className={fieldInput + " font-mono tabular-nums"}
+            />
+          </FormField>
+          <FormField label="อีเมล" required>
+            <input
+              type="email"
+              value={values.email ?? ""}
+              onChange={e => onChange({ email: e.target.value })}
+              placeholder="example@mail.com"
+              className={fieldInput}
             />
           </FormField>
           {lineProfile !== undefined && (
@@ -272,7 +282,7 @@ function CreateProfileForm({
 
         <FormCard title="ที่อยู่ติดตั้ง">
           <div className="grid grid-cols-3 gap-2">
-            <FormField label="บ้านเลขที่">
+            <FormField label="บ้านเลขที่" required>
               <input
                 type="text"
                 value={values.house_number ?? ""}

@@ -68,6 +68,7 @@ interface Lead {
   // Roof / house
   survey_roof_material: string | null;
   survey_roof_orientation: string | null;
+  survey_roof_orientation_notes: string | null;
   survey_floors: number | null;
   survey_roof_area_m2: number | null;
   survey_roof_tilt: number | null;
@@ -84,6 +85,8 @@ interface Lead {
   survey_photo_roof_structure_url: string | null;
   survey_photo_mdb_url: string | null;
   survey_photo_inverter_point_url: string | null;
+  // Photo with note (JSON array of { url, note })
+  survey_photo_notes: string | null;
   // Recommendation + sign
   survey_recommended_kw: number | null;
   survey_panel_count: number | null;
@@ -145,6 +148,25 @@ export default function SurveyPdfPage() {
     { url: lead.survey_photo_inverter_point_url, label: "จุดติดตั้ง Inverter" },
   ];
   const extraPhotos = (lead.survey_photos || "").split(",").filter(Boolean);
+
+  // Per-direction surveyor remarks. Stored as a JSON object keyed by
+  // direction code; render each selected direction with its note next to it.
+  const orientationCodes = (lead.survey_roof_orientation || "").split(",").filter(Boolean);
+  const orientationNotes: Record<string, string> = (() => {
+    try { return JSON.parse(lead.survey_roof_orientation_notes || "{}") || {}; } catch { return {}; }
+  })();
+
+  // Photo-with-note section. Stored as JSON array of { url, note }; only
+  // render entries that have at least one of the two filled.
+  const photoNotes: { url: string | null; note: string }[] = (() => {
+    try {
+      const arr = JSON.parse(lead.survey_photo_notes || "[]");
+      if (!Array.isArray(arr)) return [];
+      return arr
+        .map((it: { url?: string | null; note?: string }) => ({ url: it?.url ?? null, note: (it?.note ?? "").trim() }))
+        .filter(p => p.url || p.note);
+    } catch { return []; }
+  })();
 
   return (
     <div className="bg-gray-100 min-h-screen py-4 print:py-0 print:bg-white">
@@ -246,7 +268,25 @@ export default function SurveyPdfPage() {
                     <SpecGrid>
                       <Field label="จำนวนชั้น" value={lead.survey_floors != null ? `${lead.survey_floors} ชั้น` : "—"} />
                       <Field label="วัสดุหลังคา" value={lead.survey_roof_material ? ROOF_MATERIAL_MAP[lead.survey_roof_material] || lead.survey_roof_material : "—"} />
-                      <Field label="ทิศทางหลังคา" value={lead.survey_roof_orientation ? ORIENTATION_MAP[lead.survey_roof_orientation] || lead.survey_roof_orientation : "—"} />
+                      {orientationCodes.length === 0 ? (
+                        <Field label="ทิศทางหลังคา" value="—" />
+                      ) : (
+                        <div className="flex items-baseline gap-3 border-b border-dotted border-gray-300 py-1.5 leading-tight">
+                          <span className="text-[15px] font-medium uppercase tracking-wider text-black shrink-0 min-w-[160px]">ทิศทางหลังคา</span>
+                          <div className="text-[15px] text-black flex flex-col gap-0.5">
+                            {orientationCodes.map(code => {
+                              const label = ORIENTATION_MAP[code] || code;
+                              const note = (orientationNotes[code] || "").trim();
+                              return (
+                                <span key={code}>
+                                  <span className="font-semibold">{label}</span>
+                                  {note && <span className="text-gray-700"> — {note}</span>}
+                                </span>
+                              );
+                            })}
+                          </div>
+                        </div>
+                      )}
                       <Field label="ความชันหลังคา" value={lead.survey_roof_tilt != null ? `${lead.survey_roof_tilt}°` : "—"} />
                       <GroupRow label="ขนาดหลังคา" items={[
                         { label: "พื้นที่", value: lead.survey_roof_area_m2 != null ? `${lead.survey_roof_area_m2} m²` : "—" },
@@ -336,21 +376,47 @@ export default function SurveyPdfPage() {
                           <PhotoSlot key={p.label} url={p.url} label={p.label} />
                         ))}
                       </div>
-                      {extraPhotos.length > 0 && (
-                        <div className="mt-4">
-                          <div className="text-[16px] font-bold uppercase tracking-wider text-black mb-2">รูปถ่ายเพิ่มเติม</div>
-                          <div className="grid grid-cols-3 gap-2">
-                            {extraPhotos.map((url) => (
-                              <div key={url} className="border border-gray-200 aspect-square overflow-hidden rounded">
-                                {/* eslint-disable-next-line @next/next/no-img-element */}
-                                <img src={url} alt="survey" className="w-full h-full object-cover" />
-                              </div>
-                            ))}
-                          </div>
-                        </div>
-                      )}
                     </Section>
                   </div>
+                  {/* Photo with Note — fresh page so each captioned photo
+                       has room. Placed before "รูปถ่ายเพิ่มเติม" because the
+                       captioned shots tend to be the more meaningful ones. */}
+                  {photoNotes.length > 0 && (
+                    <div style={{ breakBefore: "page" }}>
+                      <Section title="รูปถ่ายพร้อมหมายเหตุ · PHOTO WITH NOTE">
+                        <div className="grid grid-cols-2 gap-3">
+                          {photoNotes.map((p, idx) => (
+                            <div key={idx} className="border border-gray-300 rounded overflow-hidden avoid-break">
+                              <div className="aspect-[4/3] bg-gray-50 flex items-center justify-center overflow-hidden">
+                                {p.url ? (
+                                  // eslint-disable-next-line @next/next/no-img-element
+                                  <img src={p.url} alt={`Photo ${idx + 1}`} className="w-full h-full object-cover" />
+                                ) : (
+                                  <span className="text-[15px] text-black">— ไม่มีรูป —</span>
+                                )}
+                              </div>
+                              {p.note && (
+                                <div className="px-2 py-1.5 border-t border-gray-300 text-[14px] text-black whitespace-pre-wrap leading-snug">{p.note}</div>
+                              )}
+                            </div>
+                          ))}
+                        </div>
+                      </Section>
+                    </div>
+                  )}
+                  {extraPhotos.length > 0 && (
+                    <div className="mt-4">
+                      <div className="text-[16px] font-bold uppercase tracking-wider text-black mb-2">รูปถ่ายเพิ่มเติม</div>
+                      <div className="grid grid-cols-3 gap-2">
+                        {extraPhotos.map((url) => (
+                          <div key={url} className="border border-gray-200 aspect-square overflow-hidden rounded">
+                            {/* eslint-disable-next-line @next/next/no-img-element */}
+                            <img src={url} alt="survey" className="w-full h-full object-cover" />
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
                 </div>
               </td>
             </tr>

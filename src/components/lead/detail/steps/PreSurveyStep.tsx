@@ -170,6 +170,7 @@ interface Props extends StepCommonProps {
 export default function PreSurveyStep({ lead, state, refresh, packages, expanded, onToggle }: Props) {
   const { me } = useMe();
   const [regName, setRegName] = useState(lead.full_name || "");
+  const [regEmail, setRegEmail] = useState(lead.email || "");
   const [regIdCard, setRegIdCard] = useState(lead.id_card_number || "");
   const [regAddress, setRegAddress] = useState(lead.id_card_address || "");
   const [regHouseNumber, setRegHouseNumber] = useState(lead.installation_address || "");
@@ -181,6 +182,7 @@ export default function PreSurveyStep({ lead, state, refresh, packages, expanded
   const regSaveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const buildRegPayload = () => ({
     full_name: regName ? regName.slice(0, 200) : undefined,
+    email: regEmail ? regEmail.slice(0, 200) : null,
     id_card_number: regIdCard ? regIdCard.slice(0, 13) : undefined,
     id_card_address: regAddress ? regAddress.slice(0, 500) : undefined,
     installation_address: regHouseNumber ? regHouseNumber.slice(0, 500) : undefined,
@@ -199,7 +201,7 @@ export default function PreSurveyStep({ lead, state, refresh, packages, expanded
     return () => {
       if (regSaveTimerRef.current) { clearTimeout(regSaveTimerRef.current); regSaveTimerRef.current = null; }
     };
-  }, [regName, regIdCard, regAddress, regHouseNumber]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [regName, regEmail, regIdCard, regAddress, regHouseNumber]); // eslint-disable-line react-hooks/exhaustive-deps
   const [zone, setZone] = useState<string>(lead.zone ?? "");
   const [zones, setZones] = useState<{ id: number; name: string; color: string }[]>([]);
   useEffect(() => {
@@ -567,10 +569,11 @@ export default function PreSurveyStep({ lead, state, refresh, packages, expanded
           </div>
 
           {/* ข้อมูลลูกค้าเพื่อออกใบเสร็จ · เอกสาร */}
-          {(lead.id_card_number || lead.id_card_address || lead.id_card_photo_url || lead.house_reg_photo_url) && (
+          {(lead.id_card_number || lead.id_card_address || lead.id_card_photo_url || lead.house_reg_photo_url || lead.email) && (
             <div className="border-l-3 border-teal-400 pl-3">
               <div className="text-xs font-bold text-teal-600 uppercase mb-1">ข้อมูลลูกค้าเพื่อออกใบเสร็จ</div>
               <div className="space-y-0.5">
+                {lead.email && <DataRow label="อีเมล" value={lead.email} valueClass="break-all" />}
                 {lead.id_card_number && <DataRow label="เลขบัตรประชาชน" value={lead.id_card_number} valueClass="font-mono tabular-nums" />}
                 {lead.id_card_address && <DataRow label="ที่อยู่ตามบัตร" value={lead.id_card_address} valueClass="break-words" />}
               </div>
@@ -678,6 +681,10 @@ export default function PreSurveyStep({ lead, state, refresh, packages, expanded
             <div>
               <label className="text-xs text-gray-500 block mb-1">ชื่อ-นามสกุล <span className="text-red-500">*</span></label>
               <input type="text" value={regName} onChange={e => setRegName(e.target.value)} className="w-full h-10 px-3 rounded-lg border border-gray-200 text-sm focus:outline-none focus:border-primary" />
+            </div>
+            <div>
+              <label className="text-xs text-gray-500 block mb-1">อีเมล <span className="text-red-500">*</span></label>
+              <input type="email" value={regEmail} onChange={e => setRegEmail(e.target.value)} placeholder="example@mail.com" className="w-full h-10 px-3 rounded-lg border border-gray-200 text-sm focus:outline-none focus:border-primary" />
             </div>
             <div>
               <label className="text-xs text-gray-500 block mb-1">เลขบัตรประชาชน <span className="text-red-500">*</span></label>
@@ -883,6 +890,7 @@ export default function PreSurveyStep({ lead, state, refresh, packages, expanded
               });
               for (const m of v.missing) missing.push(m.label);
               // ยืนยัน-only fields (id card / payment slip)
+              if (!regEmail) missing.push("อีเมล");
               if (!regIdCard) missing.push("เลขบัตรประชาชน");
               if (!regAddress) missing.push("ที่อยู่ตามบัตร");
               if (!paymentVerified) missing.push((slipVerifiedUrl ? "กรุณายืนยันชำระเงิน" : "กรุณาอัปโหลดสลิปชำระเงิน"));
@@ -898,6 +906,7 @@ export default function PreSurveyStep({ lead, state, refresh, packages, expanded
                   headers: { "Content-Type": "application/json" },
                   body: JSON.stringify({
                     full_name: regName || undefined,
+                    email: regEmail || null,
                     id_card_number: regIdCard || undefined,
                     id_card_address: regAddress || undefined,
                     installation_address: regHouseNumber || undefined,
@@ -964,6 +973,7 @@ export default function PreSurveyStep({ lead, state, refresh, packages, expanded
           const missingHere = v.missing.filter(m => stepGate[subStep]?.includes(m.field));
           if (subStep === 2) {
             if (!regName) missingHere.push({ field: "full_name", label: "ชื่อ-นามสกุล" });
+            if (!regEmail) missingHere.push({ field: "email", label: "อีเมล" });
             if (!regIdCard) missingHere.push({ field: "id_card", label: "เลขบัตรประชาชน" });
             if (!regAddress) missingHere.push({ field: "id_card_address", label: "ที่อยู่ตามบัตร" });
             if (!regHouseNumber) missingHere.push({ field: "installation_address", label: "ที่อยู่ติดตั้ง" });

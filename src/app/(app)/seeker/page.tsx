@@ -909,13 +909,20 @@ function ProjectLanding({
                           ) : null
                         )}
                       </div>
-                      <div className="mt-1.5 text-xs text-gray-500 flex flex-wrap gap-x-3 gap-y-0.5">
-                        <span>ทั้งหมด {total}</span>
-                        {leadCreated > 0 && <span className="text-emerald-700">สร้าง Lead {leadCreated}</span>}
-                        {interestedOnly > 0 && <span className="text-green-600">สนใจ {interestedOnly}</span>}
-                        {contacted > 0 && <span className="text-amber-600">ติดตาม {contacted}</span>}
-                        {p.not_interested_count > 0 && <span className="text-red-600">ไม่สนใจ {p.not_interested_count}</span>}
-                        {p.pending_count > 0 && <span className="text-gray-500">ยังไม่เยี่ยม {p.pending_count}</span>}
+                      <div className="mt-1.5 text-xs text-gray-500 flex flex-wrap gap-x-3 gap-y-0.5 items-baseline justify-between">
+                        <div className="flex flex-wrap gap-x-3 gap-y-0.5">
+                          <span>ทั้งหมด {total}</span>
+                          {leadCreated > 0 && <span className="text-emerald-700">สร้าง Lead {leadCreated}</span>}
+                          {interestedOnly > 0 && <span className="text-green-600">สนใจ {interestedOnly}</span>}
+                          {contacted > 0 && <span className="text-amber-600">ติดตาม {contacted}</span>}
+                          {p.not_interested_count > 0 && <span className="text-red-600">ไม่สนใจ {p.not_interested_count}</span>}
+                          {p.pending_count > 0 && <span className="text-gray-500">ยังไม่เยี่ยม {p.pending_count}</span>}
+                        </div>
+                        {p.assignee && (
+                          <span className="text-gray-400 truncate ml-auto">
+                            ผู้รับผิดชอบ: <span className="font-medium text-gray-600">{p.assignee.trim()}</span>
+                          </span>
+                        )}
                       </div>
                     </button>
                   </div>
@@ -2619,6 +2626,7 @@ function TimelineStep({
 type LeadDepositInfo = {
   id: number;
   full_name: string;
+  email: string | null;
   id_card_number: string | null;
   id_card_address: string | null;
   installation_address: string | null;
@@ -2745,11 +2753,12 @@ function LeadDepositPaymentTab({
   const [lead, setLead] = useState<LeadDepositInfo | null>(null);
   const [loading, setLoading] = useState(true);
   const [fullName, setFullName] = useState("");
+  const [email, setEmail] = useState("");
   const [idCardNumber, setIdCardNumber] = useState("");
   const [idCardAddress, setIdCardAddress] = useState("");
   const [installAddress, setInstallAddress] = useState("");
   const [savedAt, setSavedAt] = useState<number | null>(null);
-  const initialRef = useRef({ full_name: "", id_card_number: "", id_card_address: "", installation_address: "" });
+  const initialRef = useRef({ full_name: "", email: "", id_card_number: "", id_card_address: "", installation_address: "" });
 
   const firstLoadRef = useRef(true);
   const refresh = useCallback(async (resetForm: boolean) => {
@@ -2774,11 +2783,13 @@ function LeadDepositPaymentTab({
       // to flash on every onVerified callback.
       if (resetForm) {
         setFullName(d.full_name || "");
+        setEmail(d.email || "");
         setIdCardNumber(d.id_card_number || "");
         setIdCardAddress(d.id_card_address || "");
         setInstallAddress(d.installation_address || "");
         initialRef.current = {
           full_name: d.full_name || "",
+          email: d.email || "",
           id_card_number: d.id_card_number || "",
           id_card_address: d.id_card_address || "",
           installation_address: d.installation_address || "",
@@ -2803,6 +2814,7 @@ function LeadDepositPaymentTab({
     const init = initialRef.current;
     const patch: Record<string, unknown> = {};
     if (fullName !== init.full_name) patch.full_name = fullName.trim() || null;
+    if (email !== init.email) patch.email = email.trim() || null;
     if (idCardNumber !== init.id_card_number) patch.id_card_number = idCardNumber.trim() || null;
     if (idCardAddress !== init.id_card_address) patch.id_card_address = idCardAddress.trim() || null;
     if (installAddress !== init.installation_address) patch.installation_address = installAddress.trim() || null;
@@ -2816,6 +2828,7 @@ function LeadDepositPaymentTab({
         });
         initialRef.current = {
           full_name: fullName,
+          email: email,
           id_card_number: idCardNumber,
           id_card_address: idCardAddress,
           installation_address: installAddress,
@@ -2827,7 +2840,7 @@ function LeadDepositPaymentTab({
       }
     }, 600);
     return () => clearTimeout(timer);
-  }, [fullName, idCardNumber, idCardAddress, installAddress, leadId, loading]);
+  }, [fullName, email, idCardNumber, idCardAddress, installAddress, leadId, loading]);
 
   if (loading) {
     return (
@@ -2878,6 +2891,15 @@ function LeadDepositPaymentTab({
           </div>
         </div>
         <div>
+          <label className={labelCls}>อีเมล {requiredMark}</label>
+          <div className="relative">
+            <svg className={iconCls} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+              <path strokeLinecap="round" strokeLinejoin="round" d="M21.75 6.75v10.5a2.25 2.25 0 01-2.25 2.25h-15a2.25 2.25 0 01-2.25-2.25V6.75m19.5 0A2.25 2.25 0 0019.5 4.5h-15a2.25 2.25 0 00-2.25 2.25m19.5 0v.243a2.25 2.25 0 01-1.07 1.916l-7.5 4.615a2.25 2.25 0 01-2.36 0L3.32 8.91a2.25 2.25 0 01-1.07-1.916V6.75" />
+            </svg>
+            <input type="email" value={email} onChange={(e) => setEmail(e.target.value)} placeholder="example@mail.com" className={inputCls} />
+          </div>
+        </div>
+        <div>
           <label className={labelCls}>เลขบัตรประชาชน {requiredMark}</label>
           <div className="relative">
             <svg className={iconCls} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
@@ -2908,7 +2930,18 @@ function LeadDepositPaymentTab({
           </div>
         </div>
         <div>
-          <label className={labelCls}>ที่อยู่ติดตั้ง {requiredMark}</label>
+          <div className="flex items-center justify-between mb-1">
+            <label className={labelCls + " mb-0"}>ที่อยู่ติดตั้ง {requiredMark}</label>
+            <label className="text-xs text-gray-600 inline-flex items-center gap-1.5 cursor-pointer select-none">
+              <input
+                type="checkbox"
+                className="w-3.5 h-3.5 accent-primary cursor-pointer"
+                checked={!!idCardAddress && installAddress === idCardAddress}
+                onChange={(e) => { if (e.target.checked) setInstallAddress(idCardAddress); }}
+              />
+              เหมือนที่อยู่ตามบัตร
+            </label>
+          </div>
           <div className="relative">
             <svg className={iconTopCls} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
               <path strokeLinecap="round" strokeLinejoin="round" d="M15 10.5a3 3 0 11-6 0 3 3 0 016 0zM19.5 10.5c0 7.142-7.5 11.25-7.5 11.25S4.5 17.642 4.5 10.5a7.5 7.5 0 1115 0z" />

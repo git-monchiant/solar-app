@@ -123,6 +123,8 @@ export default function TodayPage() {
   };
 
   const bookingCount = d.booking.length;
+  // Solar เห็นเฉพาะ booking ที่จ่ายแล้ว (รอนัดสำรวจ); ส่วนที่รอชำระเป็นงาน sales
+  const bookingPaidCount = d.booking.filter(l => l.payment_confirmed).length;
   // ติดตามลูกค้า tab — รวม "งานที่ต้องติดตาม" ทุกสถานะ:
   // - ที่ถึงวัน follow-up แล้ว (overdue + today) → แสดงบนสุด
   // - lead ใหม่ที่ยังไม่ได้ติดต่อ
@@ -133,7 +135,7 @@ export default function TodayPage() {
     d.followUpToday.length +
     d.newLeads.length +
     d.installPending.length;
-  const solarCount = bookingCount + d.surveyToday.length + d.surveyPending.length + d.quotationPending.length + d.installing.length;
+  const solarCount = bookingPaidCount + d.surveyToday.length + d.surveyPending.length + d.quotationPending.length + d.installing.length;
   const salesSolarCount = d.quotationPending.length;
 
   const isSales = hasRole(activeRoles, "sales");
@@ -220,28 +222,46 @@ export default function TodayPage() {
           </>
         )}
 
-        {/* Booking Tab — pre_survey ที่จ่ายเงินจองแล้ว ต้องนัดสำรวจ */}
-        {visibleTab === "booking" && (
-          <>
-            {d.booking.length > 0 ? (
-              <section>
-                <div className="flex items-center justify-between mb-3 px-1">
-                  <h2 className="text-xs font-bold tracking-wider uppercase text-emerald-700">รายการจอง · รอนัดสำรวจ</h2>
-                  <span className="text-xs font-semibold text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded-full">{d.booking.length}</span>
-                </div>
-                <div className="space-y-3">{d.booking.map((l) => <LeadCard key={l.id} lead={l} />)}</div>
-              </section>
-            ) : (
+        {/* Booking Tab — pre_survey ที่ออกใบจองแล้ว แยก 2 กอง:
+              • รอชำระเงินจอง — ใบจองออก ลูกค้ายังไม่จ่าย → sales ตามจ่าย
+              • รอนัดสำรวจ — จ่ายแล้ว → นัดวันสำรวจ */}
+        {visibleTab === "booking" && (() => {
+          const unpaid = d.booking.filter(l => !l.payment_confirmed);
+          const paid = d.booking.filter(l => l.payment_confirmed);
+          if (d.booking.length === 0) {
+            return (
               <div className="text-center py-16">
                 <div className="w-16 h-16 mx-auto rounded-full bg-emerald-50 flex items-center justify-center mb-3">
                   <svg className="w-8 h-8 text-emerald-500" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M4.5 12.75l6 6 9-13.5" /></svg>
                 </div>
                 <div className="text-base font-semibold text-gray-900">ยังไม่มีรายการจอง</div>
-                <div className="text-sm text-gray-500 mt-1">ลูกค้าจ่ายเงินจองแล้วจะปรากฏที่นี่</div>
+                <div className="text-sm text-gray-500 mt-1">ใบจองออกแล้วจะปรากฏที่นี่</div>
               </div>
-            )}
-          </>
-        )}
+            );
+          }
+          return (
+            <div className="space-y-6">
+              {unpaid.length > 0 && (
+                <section>
+                  <div className="flex items-center justify-between mb-3 px-1">
+                    <h2 className="text-xs font-bold tracking-wider uppercase text-amber-700">รายการจอง · รอชำระเงิน</h2>
+                    <span className="text-xs font-semibold text-amber-700 bg-amber-50 px-2 py-0.5 rounded-full">{unpaid.length}</span>
+                  </div>
+                  <div className="space-y-3">{unpaid.map((l) => <LeadCard key={l.id} lead={l} />)}</div>
+                </section>
+              )}
+              {paid.length > 0 && (
+                <section>
+                  <div className="flex items-center justify-between mb-3 px-1">
+                    <h2 className="text-xs font-bold tracking-wider uppercase text-emerald-700">รายการจอง · รอนัดสำรวจ</h2>
+                    <span className="text-xs font-semibold text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded-full">{paid.length}</span>
+                  </div>
+                  <div className="space-y-3">{paid.map((l) => <LeadCard key={l.id} lead={l} />)}</div>
+                </section>
+              )}
+            </div>
+          );
+        })()}
 
         {/* Quote Tab — leads at status='order' (sales has to draft + send the
             quotation, follow up on payment). Reuses installPending data. */}
@@ -297,17 +317,20 @@ export default function TodayPage() {
         {/* Solar Tab */}
         {visibleTab === "solar" && (
           <>
-            {/* Booking — ลูกค้าจ่ายแล้ว Solar ต้องนัดสำรวจ. แสดงบนสุดของ
-             * solar tab เพราะเป็นงานเข้าใหม่ที่มีลำดับสูงสุด */}
-            {d.booking.length > 0 && (
-              <section>
-                <div className="flex items-center justify-between mb-3 px-1">
-                  <h2 className="text-xs font-bold tracking-wider uppercase text-emerald-700">รายการจอง · รอนัดสำรวจ</h2>
-                  <span className="text-xs font-semibold text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded-full">{d.booking.length}</span>
-                </div>
-                <div className="space-y-3">{d.booking.map((l) => <LeadCard key={l.id} lead={l} />)}</div>
-              </section>
-            )}
+            {/* Booking — เฉพาะ "จ่ายแล้ว" Solar ต้องนัดสำรวจ. ลูกค้ายังไม่จ่าย
+             * เป็นงาน sales ตามเงิน — ไม่อยู่บน solar dashboard */}
+            {(() => {
+              const ready = d.booking.filter(l => l.payment_confirmed);
+              return ready.length > 0 && (
+                <section>
+                  <div className="flex items-center justify-between mb-3 px-1">
+                    <h2 className="text-xs font-bold tracking-wider uppercase text-emerald-700">รายการจอง · รอนัดสำรวจ</h2>
+                    <span className="text-xs font-semibold text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded-full">{ready.length}</span>
+                  </div>
+                  <div className="space-y-3">{ready.map((l) => <LeadCard key={l.id} lead={l} />)}</div>
+                </section>
+              );
+            })()}
             {d.surveyToday.length > 0 && (
               <section>
                 <div className="flex items-center justify-between mb-3 px-1">

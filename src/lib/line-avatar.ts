@@ -1,46 +1,31 @@
-// Caches LINE profile pictures to public/uploads/line-avatars so the UI
-// keeps showing them after LINE's CDN URLs expire (they rotate every
-// ~30-90 days when the user updates their avatar).
-import { writeFile, mkdir, stat } from "fs/promises";
-import path from "path";
-
-const AVATAR_DIR = path.join(process.cwd(), "public", "uploads", "line-avatars");
-const PUBLIC_PREFIX = "/uploads/line-avatars";
-
-async function ensureDir() {
-  try {
-    await stat(AVATAR_DIR);
-  } catch {
-    await mkdir(AVATAR_DIR, { recursive: true });
-  }
+// Fetches LINE profile pictures so we can store the bytes in line_users
+// directly (picture_blob + picture_mime). Storing in the DB means avatars sync
+// alongside the row — previous on-disk design left UAT/dev with broken images
+// after a DB-only sync, since public/uploads/line-avatars/ is .gitignored.
+export interface LineAvatarFetch {
+  buf: Buffer;
+  mime: string;
 }
 
 /**
- * Download a LINE profile URL and save it to disk. Returns the public path
- * (e.g. "/uploads/line-avatars/Uxxxxxx.jpg") on success, or null on failure
- * (404 from LINE, network error, etc.). Callers should fall back to whatever
- * picture_url the DB already has when this returns null.
+ * Download a LINE profile picture from its CDN URL. Returns the raw bytes +
+ * mime, or null on failure (404, network error, non-image response). Callers
+ * should leave the existing blob untouched when this returns null — LINE's CDN
+ * sometimes 403s transiently.
  */
-export async function cacheLineAvatar(lineUserId: string, pictureUrl: string): Promise<string | null> {
-  if (!lineUserId || !pictureUrl) return null;
+export async function fetchLineAvatar(pictureUrl: string): Promise<LineAvatarFetch | null> {
+  if (!pictureUrl) return null;
   try {
     const res = await fetch(pictureUrl, {
       // LINE CDN sometimes 403s without a UA header.
       headers: { "User-Agent": "Mozilla/5.0 SenaSolarApp/1.0" },
     });
     if (!res.ok) return null;
-    const ct = res.headers.get("content-type") || "image/jpeg";
-    const ext = ct.includes("png") ? "png" : ct.includes("webp") ? "webp" : "jpg";
+    const mime = res.headers.get("content-type") || "image/jpeg";
     const buf = Buffer.from(await res.arrayBuffer());
-    await ensureDir();
-    // Sanitise the user id for filesystem safety even though LINE ids are
-    // already alnum/U-prefixed.
-    const safeId = lineUserId.replace(/[^a-zA-Z0-9_-]/g, "_");
-    const filename = `${safeId}.${ext}`;
-    await writeFile(path.join(AVATAR_DIR, filename), buf);
-    return `${PUBLIC_PREFIX}/${filename}`;
+    return { buf, mime };
   } catch (err) {
-    console.warn(`cacheLineAvatar(${lineUserId}) failed:`, err instanceof Error ? err.message : err);
+    console.warn("fetchLineAvatar failed:", err instanceof Error ? err.message : err);
     return null;
   }
 }

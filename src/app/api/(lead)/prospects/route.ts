@@ -67,7 +67,7 @@ export async function GET(req: NextRequest) {
              COALESCE(NULLIF(p.project_name, N''), pr.name) as project_name,
              u.full_name as visited_by_name,
              lu.display_name as line_display_name,
-             lu.picture_url as line_picture_url,
+             CASE WHEN lu.picture_blob IS NOT NULL THEN '/api/line-avatar/' + lu.line_user_id ELSE NULL END AS line_picture_url,
              l.payment_confirmed as lead_payment_confirmed,
              l.pre_total_price as lead_pre_total_price,
              l.pre_doc_no as lead_pre_doc_no

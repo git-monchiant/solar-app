@@ -2,6 +2,7 @@
 import { useEffect, useState } from "react";
 import { apiFetch } from "@/lib/api";
 import CustomerWizard from "@/components/customer/CustomerWizard";
+import DocumentScanner, { type ScanFields } from "@/components/customer/DocumentScanner";
 import LinePickerModal from "@/components/modal/LinePickerModal";
 import ModalBase from "@/components/ui/ModalBase";
 
@@ -11,13 +12,16 @@ interface Props {
   onSaved: () => void;
 }
 
+type Tab = "info" | "docs";
+
 export default function ProfileModal({ leadId, onClose, onSaved }: Props) {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+  const [tab, setTab] = useState<Tab>("info");
   const [lineProfile, setLineProfile] = useState<{ display_name: string; picture_url: string | null } | null>(null);
   const [showLinePicker, setShowLinePicker] = useState(false);
   const [form, setForm] = useState({
-    full_name: "", phone: "",
+    full_name: "", phone: "", email: "",
     project_id: "" as string | number | null, project_name: "", project_alias: "",
     installation_address: "",
     customer_type: "", interested_package_id: "", note: "",
@@ -35,6 +39,7 @@ export default function ProfileModal({ leadId, onClose, onSaved }: Props) {
       setForm({
         full_name: lead.full_name || "",
         phone: lead.phone || "",
+        email: lead.email || "",
         project_id: lead.project_id || "",
         // The wizard's "โครงการ" text box is bound to project_name in our
         // form state, but for the lead profile we treat it as an *alias*
@@ -74,6 +79,18 @@ export default function ProfileModal({ leadId, onClose, onSaved }: Props) {
   }, [leadId]);
 
   const handleSave = async () => {
+    const missing: string[] = [];
+    if (!form.full_name.trim()) missing.push("ชื่อ-นามสกุล");
+    if (!form.phone.trim()) missing.push("เบอร์โทร");
+    if (!form.email.trim()) missing.push("อีเมล");
+    if (!form.house_number.trim()) missing.push("บ้านเลขที่");
+    if (missing.length > 0) {
+      // Switch to whichever tab holds the first missing field so it's visible.
+      // info tab owns name/phone/house_number; docs tab owns email duplicate.
+      setTab("info");
+      alert("กรุณากรอก: " + missing.join(", "));
+      return;
+    }
     setSaving(true);
     try {
       await apiFetch(`/api/leads/${leadId}`, {
@@ -82,6 +99,7 @@ export default function ProfileModal({ leadId, onClose, onSaved }: Props) {
         body: JSON.stringify({
           full_name: form.full_name ? form.full_name.slice(0, 200) : undefined,
           phone: form.phone || undefined,
+          email: form.email ? form.email.slice(0, 200) : null,
           project_id: form.project_id ? parseInt(String(form.project_id)) : null,
           // The "โครงการ" input here edits the alias; whatever the user
           // typed/picked goes into project_alias. project_name (free-text
@@ -117,6 +135,27 @@ export default function ProfileModal({ leadId, onClose, onSaved }: Props) {
     }
   };
 
+  // OCR scanner pushes whatever Gemini found into the corresponding form
+  // field — only fill blanks, never overwrite something the user already
+  // typed (rescans should not clobber edits).
+  const applyScan = (fields: ScanFields) => {
+    setForm(prev => ({
+      ...prev,
+      full_name: prev.full_name || fields.full_name || prev.full_name,
+      phone: prev.phone || fields.phone || prev.phone,
+      id_card_number: prev.id_card_number || fields.id_card_number || prev.id_card_number,
+      id_card_address: prev.id_card_address || fields.id_card_address || prev.id_card_address,
+      installation_address: prev.installation_address || fields.installation_address || prev.installation_address,
+    }));
+  };
+
+  const tabBtn = (active: boolean) =>
+    `flex-1 h-10 rounded-lg text-sm font-semibold transition-all ${
+      active
+        ? "bg-primary text-white shadow-sm shadow-primary/20"
+        : "bg-transparent text-gray-500 hover:text-gray-700"
+    }`;
+
   return (
     <>
       <ModalBase
@@ -139,15 +178,38 @@ export default function ProfileModal({ leadId, onClose, onSaved }: Props) {
             <div className="w-8 h-8 border-2 border-primary/30 border-t-primary rounded-full animate-spin" />
           </div>
         ) : (
-          <CustomerWizard
-            values={form}
-            onChange={patch => setForm(prev => ({ ...prev, ...(patch as Record<string, unknown>) } as typeof prev))}
-            onSubmit={handleSave}
-            saving={saving}
-            lineProfile={lineProfile}
-            onLinkLine={() => setShowLinePicker(true)}
-            hideSubmit
-          />
+          <>
+            {/* Tab bar — pill-style, single row. Form state is shared so the
+                Save button at the modal footer flushes both tabs at once. */}
+            <div className="flex gap-1 p-1 bg-gray-100 rounded-xl mb-4 lg:max-w-md mx-auto">
+              <button type="button" onClick={() => setTab("info")} className={tabBtn(tab === "info")} style={{ minHeight: 0 }}>
+                ข้อมูล
+              </button>
+              <button type="button" onClick={() => setTab("docs")} className={tabBtn(tab === "docs")} style={{ minHeight: 0 }}>
+                เอกสาร
+              </button>
+            </div>
+
+            {tab === "info" && (
+              <CustomerWizard
+                values={form}
+                onChange={patch => setForm(prev => ({ ...prev, ...(patch as Record<string, unknown>) } as typeof prev))}
+                onSubmit={handleSave}
+                saving={saving}
+                lineProfile={lineProfile}
+                onLinkLine={() => setShowLinePicker(true)}
+                hideSubmit
+              />
+            )}
+
+            {tab === "docs" && (
+              <DocumentTab
+                form={form}
+                onChange={patch => setForm(prev => ({ ...prev, ...patch }))}
+                onScan={applyScan}
+              />
+            )}
+          </>
         )}
       </ModalBase>
 
@@ -162,5 +224,111 @@ export default function ProfileModal({ leadId, onClose, onSaved }: Props) {
         />
       )}
     </>
+  );
+}
+
+// Receipt-info tab. Hosts the OCR scanner up top and the four fields used to
+// issue receipts — kept close to the scanner so a single tap can fill them.
+function DocumentTab({
+  form,
+  onChange,
+  onScan,
+}: {
+  form: { full_name: string; email: string; id_card_number: string; id_card_address: string; installation_address: string };
+  onChange: (patch: Partial<{ full_name: string; email: string; id_card_number: string; id_card_address: string; installation_address: string }>) => void;
+  onScan: (fields: ScanFields) => void;
+}) {
+  const installMirrorsId = !!form.id_card_address && form.installation_address === form.id_card_address;
+
+  return (
+    <div className="lg:max-w-2xl mx-auto space-y-3">
+      <DocumentScanner
+        onResult={onScan}
+        fields={["full_name", "id_card_number", "id_card_address", "installation_address"]}
+        subtitle="บัตรประชาชน · ทะเบียนบ้าน · บิลค่าไฟ · ซองจดหมาย"
+      />
+
+      <div className="rounded-lg bg-white border border-gray-200 p-3 space-y-3">
+        <div className="text-sm font-bold text-gray-700 pb-2 border-b border-gray-100">ข้อมูลลูกค้าเพื่อออกใบเสร็จ</div>
+
+        <div>
+          <label className="block text-xs font-bold uppercase tracking-wider text-gray-400 mb-1.5">
+            ชื่อ-นามสกุล <span className="text-red-500">*</span>
+          </label>
+          <input
+            type="text"
+            value={form.full_name}
+            onChange={e => onChange({ full_name: e.target.value })}
+            className="w-full h-11 px-3 rounded-lg border border-gray-200 text-base focus:outline-none focus:border-primary transition-colors"
+          />
+        </div>
+
+        <div>
+          <label className="block text-xs font-bold uppercase tracking-wider text-gray-400 mb-1.5">
+            อีเมล <span className="text-red-500">*</span>
+          </label>
+          <input
+            type="email"
+            value={form.email}
+            onChange={e => onChange({ email: e.target.value })}
+            placeholder="example@mail.com"
+            className="w-full h-11 px-3 rounded-lg border border-gray-200 text-base focus:outline-none focus:border-primary transition-colors"
+          />
+        </div>
+
+        <div>
+          <label className="block text-xs font-bold uppercase tracking-wider text-gray-400 mb-1.5">
+            เลขบัตรประชาชน <span className="text-red-500">*</span>
+          </label>
+          <input
+            type="text"
+            value={form.id_card_number}
+            onChange={e => onChange({ id_card_number: e.target.value.slice(0, 13) })}
+            placeholder="x-xxxx-xxxxx-xx-x"
+            className="w-full h-11 px-3 rounded-lg border border-gray-200 text-base font-mono tabular-nums focus:outline-none focus:border-primary transition-colors"
+          />
+        </div>
+
+        <div>
+          <label className="block text-xs font-bold uppercase tracking-wider text-gray-400 mb-1.5">
+            ที่อยู่ตามบัตรประชาชน <span className="text-red-500">*</span>
+          </label>
+          <textarea
+            value={form.id_card_address}
+            onChange={e => onChange({ id_card_address: e.target.value })}
+            rows={3}
+            className="w-full px-3 py-2.5 rounded-lg border border-gray-200 text-base focus:outline-none focus:border-primary transition-colors resize-none"
+          />
+        </div>
+
+        <div>
+          <div className="flex items-center justify-between mb-1.5">
+            <label className="block text-xs font-bold uppercase tracking-wider text-gray-400">
+              ที่อยู่ติดตั้ง <span className="text-red-500">*</span>
+            </label>
+            <label className="text-xs text-gray-600 inline-flex items-center gap-1.5 cursor-pointer select-none">
+              <input
+                type="checkbox"
+                className="w-3.5 h-3.5 accent-primary cursor-pointer"
+                checked={installMirrorsId}
+                onChange={(e) => {
+                  // One-shot copy from id_card_address into installation_address
+                  // when ticked. Untick lets the user edit independently — same
+                  // behavior as PreSurveyStep so the two screens feel uniform.
+                  if (e.target.checked) onChange({ installation_address: form.id_card_address });
+                }}
+              />
+              เหมือนที่อยู่ตามบัตร
+            </label>
+          </div>
+          <textarea
+            value={form.installation_address}
+            onChange={e => onChange({ installation_address: e.target.value })}
+            rows={3}
+            className="w-full px-3 py-2.5 rounded-lg border border-gray-200 text-base focus:outline-none focus:border-primary transition-colors resize-none"
+          />
+        </div>
+      </div>
+    </div>
   );
 }

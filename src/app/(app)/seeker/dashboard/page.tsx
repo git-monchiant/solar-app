@@ -233,7 +233,10 @@ export default function SeekerDashboardPage() {
                 .filter((r) => !q || r.name.toLowerCase().includes(q))
                 .sort((a, b) => totalOf(b) - totalOf(a));
               const maxTotal = Math.max(1, ...sorted.map(totalOf));
-              const CHART_H = chartFullscreen ? Math.max(360, (typeof window !== "undefined" ? window.innerHeight : 720) - 220) : 320;
+              // Fullscreen reserves room for header/search/legend (~150px) + the
+              // rotated x-axis labels (~180px for long Thai project names) so
+              // the chart fits within the viewport without a vertical scroll.
+              const CHART_H = chartFullscreen ? Math.max(280, (typeof window !== "undefined" ? window.innerHeight : 720) - 360) : 320;
               const totalSum = sorted.reduce((s, r) => s + totalOf(r), 0);
               return (
                 <div className={chartFullscreen
@@ -279,7 +282,7 @@ export default function SeekerDashboardPage() {
                     <span className="inline-flex items-center gap-1.5"><span className="w-3 h-3 rounded-sm bg-red-400" />ไม่สนใจ</span>
                     <span className="inline-flex items-center gap-1.5"><span className="w-3 h-3 rounded-sm bg-gray-300" />ยังไม่ได้เยี่ยม</span>
                   </div>
-                  <div className={chartFullscreen ? "p-4 overflow-auto flex-1" : "p-4 overflow-x-auto"}>
+                  <div className={chartFullscreen ? "p-4 overflow-x-auto overflow-y-hidden flex-1 min-h-0" : "p-4 overflow-x-auto"}>
                     <div className="w-full">
                       <div className="flex items-end gap-1 w-full border-b-2 border-gray-300">
                         {sorted.map((row) => {

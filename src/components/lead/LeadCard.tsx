@@ -29,6 +29,7 @@ export interface LeadData {
   last_activity_date: string | null;
   pre_doc_no: string | null;
   pre_total_price: number | null;
+  payment_confirmed?: boolean | null;
   quotation_amount: number | null;
   order_total: number | null;
   install_extra_cost: number | null;

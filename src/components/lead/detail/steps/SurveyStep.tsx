@@ -264,7 +264,7 @@ export default function SurveyStep({ lead, state, refresh, packages, expanded, o
   };
 
   const [notifyLine, setNotifyLine] = useState(true);
-  const [notifyDoneLine, setNotifyDoneLine] = useState(true);
+  const [notifyDoneLine, setNotifyDoneLine] = useState(false);
   const [resending, setResending] = useState(false);
   const [resendResult, setResendResult] = useState<null | "ok" | "err">(null);
 
@@ -660,11 +660,9 @@ export default function SurveyStep({ lead, state, refresh, packages, expanded, o
         "survey_roof_area_m2", "survey_roof_width_m", "survey_roof_length_m",
         "survey_roof_structure", "survey_shading",
       ],
-      3: [ // Install planning + Photo Checklist + actual visit notes
+      3: [ // Install planning + actual visit notes (photos optional)
         "survey_inverter_location", "survey_wifi_signal", "survey_access_method",
-        "survey_photo_building_url", "survey_photo_roof_structure_url",
-        "survey_photo_mdb_url", "survey_photo_inverter_point_url",
-        "survey_photos", "survey_note",
+        "survey_note",
         "survey_actual_date", "survey_actual_by",
       ],
       4: [ // Recommendation + signature
@@ -1130,7 +1128,11 @@ export default function SurveyStep({ lead, state, refresh, packages, expanded, o
               <label className="text-xs font-semibold tracking-wider uppercase text-gray-400">รูปถ่ายเพิ่มเติม</label>
               {surveyPhotos.length > 0 && <span className="text-xs text-gray-500">{surveyPhotos.length} รูป</span>}
             </div>
-            <input type="file" accept="image/*" multiple capture="environment" onChange={handlePhotoCapture} className="hidden" id={`survey-photos-${lead.id}`} />
+            {/* Two inputs feed the same handler — capture=environment opens
+                 the camera, the bare one opens the gallery (multiple lets the
+                 user grab a batch). UI surfaces both as icon-only buttons. */}
+            <input type="file" accept="image/*" capture="environment" onChange={handlePhotoCapture} className="hidden" id={`survey-photos-cam-${lead.id}`} />
+            <input type="file" accept="image/*" multiple onChange={handlePhotoCapture} className="hidden" id={`survey-photos-lib-${lead.id}`} />
             {surveyPhotos.length > 0 && (
               <div className="grid grid-cols-3 md:grid-cols-4 gap-2 mb-2">
                 {surveyPhotos.map((url, idx) => (
@@ -1147,9 +1149,20 @@ export default function SurveyStep({ lead, state, refresh, packages, expanded, o
                 ))}
               </div>
             )}
-            <label htmlFor={`survey-photos-${lead.id}`} className="w-full h-10 rounded-lg border border-dashed border-gray-300 bg-white flex items-center justify-center gap-2 cursor-pointer hover:border-active/40 hover:text-active text-gray-500 text-sm transition-colors">
-              {photoUploading ? (<><div className="w-4 h-4 border-2 border-gray-300 border-t-active rounded-full animate-spin" /> กำลังอัปโหลด…</>) : (<><svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M3 9a2 2 0 012-2h.93a2 2 0 001.664-.89l.812-1.22A2 2 0 0110.07 4h3.86a2 2 0 011.664.89l.812 1.22A2 2 0 0018.07 7H19a2 2 0 012 2v9a2 2 0 01-2 2H5a2 2 0 01-2-2V9z" /><path strokeLinecap="round" strokeLinejoin="round" d="M15 13a3 3 0 11-6 0 3 3 0 016 0z" /></svg> เพิ่มรูปถ่าย</>)}
-            </label>
+            <div className="w-full h-10 rounded-lg border border-dashed border-gray-300 bg-white flex items-center justify-center gap-12 text-gray-500">
+              {photoUploading ? (
+                <div className="w-4 h-4 border-2 border-gray-300 border-t-active rounded-full animate-spin" />
+              ) : (
+                <>
+                  <button type="button" onClick={() => document.getElementById(`survey-photos-cam-${lead.id}`)?.click()} title="ถ่ายรูป" className="hover:text-active transition-colors cursor-pointer">
+                    <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.8}><path strokeLinecap="round" strokeLinejoin="round" d="M6.827 6.175A2.31 2.31 0 015.186 7.23c-.38.054-.757.112-1.134.175C2.999 7.58 2.25 8.507 2.25 9.574V18a2.25 2.25 0 002.25 2.25h15A2.25 2.25 0 0021.75 18V9.574c0-1.067-.75-1.994-1.802-2.169a47.865 47.865 0 00-1.134-.175 2.31 2.31 0 01-1.64-1.055l-.822-1.316a2.192 2.192 0 00-1.736-1.039 48.774 48.774 0 00-5.232 0 2.192 2.192 0 00-1.736 1.039l-.821 1.316z" /><path strokeLinecap="round" strokeLinejoin="round" d="M16.5 12.75a4.5 4.5 0 11-9 0 4.5 4.5 0 019 0zM18.75 10.5h.008v.008h-.008V10.5z" /></svg>
+                  </button>
+                  <button type="button" onClick={() => document.getElementById(`survey-photos-lib-${lead.id}`)?.click()} title="แนบรูป" className="hover:text-active transition-colors cursor-pointer">
+                    <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.8}><path strokeLinecap="round" strokeLinejoin="round" d="M2.25 15.75l5.159-5.159a2.25 2.25 0 013.182 0l5.159 5.159m-1.5-1.5l1.409-1.409a2.25 2.25 0 013.182 0l2.909 2.909m-18 3.75h16.5a1.5 1.5 0 001.5-1.5V6a1.5 1.5 0 00-1.5-1.5H3.75A1.5 1.5 0 002.25 6v12a1.5 1.5 0 001.5 1.5zm10.5-11.25h.008v.008h-.008V8.25zm.375 0a.375.375 0 11-.75 0 .375.375 0 01.75 0z" /></svg>
+                  </button>
+                </>
+              )}
+            </div>
           </div>
         </div>
       )}
@@ -1176,9 +1189,7 @@ export default function SurveyStep({ lead, state, refresh, packages, expanded, o
           ],
           3: [
             "survey_inverter_location", "survey_wifi_signal", "survey_access_method",
-            "survey_photo_building_url", "survey_photo_roof_structure_url",
-            "survey_photo_mdb_url", "survey_photo_inverter_point_url",
-            "survey_photos", "survey_note",
+            "survey_note",
             "survey_actual_date", "survey_actual_by",
           ],
         };

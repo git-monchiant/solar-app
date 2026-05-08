@@ -11,21 +11,44 @@ export default function RoleSwitcher() {
   // Users with only one role can't switch — no switcher shown.
   if (availableRoles.length <= 1) return null;
 
-  const label = activeRoles.length === availableRoles.length
+  const label = activeRoles.includes("admin") && activeRoles.length === availableRoles.length
+    ? "Admin (ทุก role)"
+    : activeRoles.length === availableRoles.length
     ? "All roles"
     : activeRoles.length === 0
     ? "เลือก role"
     : activeRoles.map(r => ROLE_LABEL[r]).join(" · ");
 
-  const openModal = () => { setDraft(activeRoles); setOpen(true); };
+  // When admin is currently active and the role list is full, the user
+  // entered "admin override" mode. Reduce the displayed draft to just admin
+  // so the modal reflects intent, not the expanded-to-all result.
+  const adminOverride = activeRoles.includes("admin") && activeRoles.length === availableRoles.length;
+  const openModal = () => {
+    setDraft(adminOverride ? ["admin"] : activeRoles);
+    setOpen(true);
+  };
 
   const toggle = (r: Role) => {
-    setDraft(prev => prev.includes(r) ? prev.filter(x => x !== r) : [...prev, r]);
+    setDraft(prev => {
+      const has = prev.includes(r);
+      if (r === "admin") {
+        // Checking admin = override mode (will expand to all on confirm).
+        // Unchecking admin = drop the override, keep no other selections so
+        // the user explicitly picks the specific role they want next.
+        return has ? prev.filter(x => x !== "admin") : ["admin"];
+      }
+      // Picking a specific role exits admin-override mode automatically.
+      const next = prev.filter(x => x !== "admin");
+      return has ? next.filter(x => x !== r) : [...next, r];
+    });
   };
 
   const confirm = () => {
     if (draft.length === 0) return;
-    setActiveRoles(draft);
+    // Admin-override → grant every available role so all role-gated views
+    // show through. Otherwise the chosen roles are exactly what's active.
+    const final = draft.includes("admin") ? availableRoles : draft;
+    setActiveRoles(final);
     setOpen(false);
     // Route through "/" so it redirects to the landing page appropriate for
     // the new role (/seeker for seeker-only, /today for sales). A plain
@@ -68,10 +91,27 @@ export default function RoleSwitcher() {
             <div className="text-base font-bold mb-1">เปลี่ยนมุมมอง (Role)</div>
             <div className="text-xs text-gray-400 mb-4">กด "ตกลง" เพื่อเปลี่ยน — หน้าจะ refresh ใหม่</div>
             <div className="space-y-1 mb-4">
-              {availableRoles.map(r => {
+              {/* Admin first — checking it expands to "ทุก role + สิทธิ์ admin".
+                  Other rows render below as the per-role pure view. */}
+              {availableRoles.includes("admin") && (
+                <label className="flex items-start gap-3 px-3 py-2.5 rounded-lg hover:bg-gray-50 cursor-pointer border border-gray-200">
+                  <input
+                    type="checkbox"
+                    checked={draft.includes("admin")}
+                    onChange={() => toggle("admin")}
+                    className="w-4 h-4 mt-0.5 rounded border-gray-300 accent-primary"
+                  />
+                  <span className="flex-1">
+                    <span className="block text-sm font-semibold text-gray-700">{ROLE_LABEL.admin}</span>
+                    <span className="block text-[11px] text-gray-400">เห็นทุก role + สิทธิ์ admin</span>
+                  </span>
+                </label>
+              )}
+              {availableRoles.filter(r => r !== "admin").map(r => {
                 const checked = draft.includes(r);
+                const lockedByAdmin = draft.includes("admin");
                 return (
-                  <label key={r} className="flex items-center gap-3 px-3 py-2.5 rounded-lg hover:bg-gray-50 cursor-pointer border border-gray-200">
+                  <label key={r} className={`flex items-center gap-3 px-3 py-2.5 rounded-lg cursor-pointer border border-gray-200 ${lockedByAdmin ? "opacity-50" : "hover:bg-gray-50"}`}>
                     <input
                       type="checkbox"
                       checked={checked}

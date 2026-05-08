@@ -144,9 +144,10 @@ export async function GET(req: NextRequest) {
           AND l.install_completed_at >= DATEADD(day, -7, GETDATE())
         ORDER BY l.install_completed_at DESC
       `),
-      // 12. Booking — pre_survey ที่จ่ายเงินจองแล้วแต่ยังไม่ได้นัดสำรวจ.
+      // 12. Booking — pre_survey ที่ออกใบจองแล้ว (ไม่ว่าจะจ่ายเงินจองหรือยัง).
       // Virtual status เดียวกับ pipeline → กลุ่ม "Booking". เด่นที่สุดบน today
-      // เพราะลูกค้าจ่ายแล้วต้อง follow-up ให้นัดสำรวจ
+      // เพราะใบจองออกแล้วต้อง follow-up: ถ้ายังไม่จ่าย → ตามจ่าย, ถ้าจ่ายแล้ว
+      // → นัดสำรวจ. payment_confirmed flag ใช้ใน UI ระบุ reason ของแต่ละ row.
       db.request().query(`
         SELECT ${LEAD_COLS},
                (SELECT TOP 1 note FROM lead_activities WHERE lead_id = l.id ORDER BY created_at DESC) as last_activity_note
@@ -154,8 +155,8 @@ export async function GET(req: NextRequest) {
         LEFT JOIN projects p ON l.project_id = p.id
         LEFT JOIN packages pk ON l.interested_package_id = pk.id
         LEFT JOIN users u ON l.assigned_user_id = u.id
-        WHERE l.status = 'pre_survey' AND l.payment_confirmed = 1
-        ORDER BY l.pre_booked_at DESC, l.updated_at DESC
+        WHERE l.status = 'pre_survey' AND l.pre_doc_no IS NOT NULL
+        ORDER BY l.payment_confirmed ASC, l.pre_booked_at DESC, l.updated_at DESC
       `),
       // Quick stats
       db.request().query(`

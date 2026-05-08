@@ -81,6 +81,7 @@ export async function POST(request: NextRequest) {
       .request()
       .input("full_name", sql.NVarChar(200), body.full_name)
       .input("phone", sql.NVarChar(20), body.phone || null)
+      .input("email", sql.NVarChar(200), body.email || null)
       .input("project_id", sql.Int, projectId)
       .input("installation_address", sql.NVarChar(500), body.installation_address || null)
       .input("customer_type", sql.NVarChar(50), body.customer_type || null)
@@ -129,7 +130,7 @@ export async function POST(request: NextRequest) {
           : (typeof body.tag === "string" && body.tag ? body.tag : null))
       .query(`
         INSERT INTO leads (
-          full_name, phone, project_id, installation_address, customer_type, interested_package_id,
+          full_name, phone, email, project_id, installation_address, customer_type, interested_package_id,
           source, payment_type, requirement, note,
           id_card_number, id_card_address, id_card_photo_url, house_reg_photo_url,
           pre_appliances, line_id, house_number,
@@ -141,7 +142,7 @@ export async function POST(request: NextRequest) {
         )
         OUTPUT INSERTED.*
         VALUES (
-          @full_name, @phone, @project_id, @installation_address, @customer_type, @interested_package_id,
+          @full_name, @phone, @email, @project_id, @installation_address, @customer_type, @interested_package_id,
           @source, @payment_type, @requirement, @note,
           @id_card_number, @id_card_address, @id_card_photo_url, @house_reg_photo_url,
           @pre_appliances, @line_id, @house_number,

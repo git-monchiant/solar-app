@@ -12,19 +12,23 @@ export async function GET(req: NextRequest) {
     // Fast path: fetch a single profile by line_user_id.
     // Used by the seeker modal to show the linked LINE profile without
     // pulling the full registry + its lead/prospect enrichment.
+    // Avatar bytes are stored in line_users.picture_blob — clients hit
+    // /api/line-avatar/<line_user_id> to fetch them. Returning the URL only
+    // when picture_blob exists avoids broken-image fallbacks for users we
+    // never managed to fetch a picture for.
     const oneId = req.nextUrl.searchParams.get("line_user_id");
     if (oneId) {
       const { sql } = await import("@/lib/db");
       const one = await db.request()
         .input("id", sql.NVarChar(100), oneId)
         .query(`SELECT TOP 1 line_user_id, display_name,
-          picture_local_path AS picture_url,
+          CASE WHEN picture_blob IS NOT NULL THEN '/api/line-avatar/' + line_user_id ELSE NULL END AS picture_url,
           phone, house_number FROM line_users WHERE line_user_id = @id`);
       return NextResponse.json(one.recordset[0] ?? null);
     }
     const result = await db.request().query(`
       SELECT lu.id, lu.line_user_id, lu.display_name,
-        lu.picture_local_path AS picture_url,
+        CASE WHEN lu.picture_blob IS NOT NULL THEN '/api/line-avatar/' + lu.line_user_id ELSE NULL END AS picture_url,
         lu.phone, lu.house_number, lu.created_at, lu.last_message_at,
         (SELECT COUNT(*) FROM leads WHERE line_id = lu.line_user_id) as linked_leads_count,
         (SELECT COUNT(*) FROM prospects WHERE line_id = lu.line_user_id) as linked_prospects_count

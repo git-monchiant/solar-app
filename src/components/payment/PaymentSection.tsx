@@ -6,7 +6,7 @@ import LineConfirmModal from "@/components/modal/LineConfirmModal";
 import ImageLightbox from "@/components/ui/ImageLightbox";
 import PaymentHeader from "./PaymentHeader";
 import { buildPaymentFlex } from "@/lib/utils/line-flex";
-import { useMe } from "@/lib/roles";
+import { useMe, useActiveRoles } from "@/lib/roles";
 import { useDialog } from "@/components/ui/Dialog";
 
 const MAX_SLIPS = 5;
@@ -140,12 +140,15 @@ export default function PaymentSection({
   }, [tab, tabStorageKey]);
   const [otherMethod, setOtherMethod] = useState("");
   const { me } = useMe();
+  const { activeRoles } = useActiveRoles();
   const dialog = useDialog();
-  const isAdmin = me?.roles?.includes("admin") ?? false;
+  // Gate by the *active* role view, not the user's available roles — when an
+  // admin switches to seeker mode, payment confirm/rollback should disappear.
+  const isAdmin = activeRoles.includes("admin");
   // Step-1 (uploader) — admin/sales/solar can submit slips for review.
-  const canStep1 = !!(me?.roles?.some(r => r === "admin" || r === "sales" || r === "solar"));
+  const canStep1 = activeRoles.some(r => r === "admin" || r === "sales" || r === "solar");
   // Step-2 (accountant) — only account/admin can confirm receipt of money.
-  const canStep2 = !!(me?.roles?.some(r => r === "admin" || r === "account"));
+  const canStep2 = activeRoles.some(r => r === "admin" || r === "account");
 
   const [slips, setSlips] = useState<SlipEntry[]>([]);
   const [slipsLoaded, setSlipsLoaded] = useState(false);

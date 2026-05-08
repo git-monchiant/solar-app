@@ -262,6 +262,7 @@ export default function OrderStep({ lead, state, refresh, expanded, onToggle }: 
   const [lineSent, setLineSent] = useState<boolean>(!!lead.quotation_sent_date);
   const [lineConfirm, setLineConfirm] = useState(false);
   const [regName, setRegName] = useState(lead.full_name || "");
+  const [regEmail, setRegEmail] = useState(lead.email || "");
   const [regIdCard, setRegIdCard] = useState(lead.id_card_number || "");
   const [regAddress, setRegAddress] = useState(lead.id_card_address || "");
   const [regInstallAddr, setRegInstallAddr] = useState(lead.installation_address || "");
@@ -1185,6 +1186,10 @@ export default function OrderStep({ lead, state, refresh, expanded, onToggle }: 
               <input type="text" value={regName} onChange={e => setRegName(e.target.value)} className="w-full h-10 px-3 rounded-lg border border-gray-200 focus:outline-none focus:border-primary" />
             </div>
             <div>
+              <label className="text-xs text-gray-500 block mb-1">อีเมล <span className="text-red-500">*</span></label>
+              <input type="email" value={regEmail} onChange={e => setRegEmail(e.target.value)} placeholder="example@mail.com" className="w-full h-10 px-3 rounded-lg border border-gray-200 focus:outline-none focus:border-primary" />
+            </div>
+            <div>
               <label className="text-xs text-gray-500 block mb-1">เลขบัตรประชาชน</label>
               <input type="text" inputMode="numeric" maxLength={13} value={regIdCard} onChange={e => setRegIdCard(e.target.value.replace(/\D/g, "").slice(0, 13))} placeholder="13 หลัก" className="w-full h-10 px-3 rounded-lg border border-gray-200 font-mono tabular-nums focus:outline-none focus:border-primary" />
             </div>
@@ -1193,7 +1198,18 @@ export default function OrderStep({ lead, state, refresh, expanded, onToggle }: 
               <textarea value={regAddress} onChange={e => setRegAddress(e.target.value)} rows={2} className="w-full px-3 py-2 rounded-lg border border-gray-200 focus:outline-none focus:border-primary resize-none" />
             </div>
             <div>
-              <label className="text-xs text-gray-500 block mb-1">ที่อยู่ติดตั้ง</label>
+              <div className="flex items-center justify-between mb-1">
+                <label className="text-xs text-gray-500">ที่อยู่ติดตั้ง</label>
+                <label className="text-xs text-gray-600 inline-flex items-center gap-1.5 cursor-pointer select-none">
+                  <input
+                    type="checkbox"
+                    className="w-3.5 h-3.5 accent-primary cursor-pointer"
+                    checked={!!regAddress && regInstallAddr === regAddress}
+                    onChange={(e) => { if (e.target.checked) setRegInstallAddr(regAddress); }}
+                  />
+                  เหมือนที่อยู่ตามบัตร
+                </label>
+              </div>
               <textarea value={regInstallAddr} onChange={e => setRegInstallAddr(e.target.value)} rows={2} className="w-full px-3 py-2 rounded-lg border border-gray-200 focus:outline-none focus:border-primary resize-none" />
             </div>
           </div>
@@ -1259,6 +1275,7 @@ export default function OrderStep({ lead, state, refresh, expanded, onToggle }: 
                   headers: { "Content-Type": "application/json" },
                   body: JSON.stringify({
                     full_name: regName || undefined,
+                    email: regEmail || null,
                     id_card_number: regIdCard || undefined,
                     id_card_address: regAddress || undefined,
                     installation_address: regInstallAddr || undefined,
