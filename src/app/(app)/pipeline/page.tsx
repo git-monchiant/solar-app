@@ -31,17 +31,13 @@ interface Lead {
 
 type TabKey = "all" | "pre_survey" | "booking" | "survey" | "quotation" | "order" | "install" | "warranty" | "gridtie" | "closed" | "lost";
 
-// Booking is a virtual sub-state of pre_survey: status is still pre_survey in
-// the DB but the deposit has been paid (payment_confirmed = true). We split it
-// out in the pipeline view so sales sees "ลูกค้าจองแล้วยังไม่ได้สำรวจ" as a
-// distinct bucket from pure follow-ups.
-const isBookingLead = (l: Pick<Lead, "status" | "payment_confirmed">) =>
-  l.status === "pre_survey" && !!l.payment_confirmed;
-
+// Booking = pre_survey lead ที่กดยืนยันการชำระเงิน 1 หรือ 2 แล้ว
+// (status เป็น pre_survey-01 หรือ pre_survey-02). plain `pre_survey` =
+// ก่อนกดยืนยัน 1 → ไป tab "รอติดตาม" ตามปกติ
 const matchesTab = (l: Lead, key: TabKey): boolean => {
   if (key === "all") return true;
-  if (key === "pre_survey") return l.status === "pre_survey" && !isBookingLead(l);
-  if (key === "booking") return isBookingLead(l);
+  if (key === "pre_survey") return l.status === "pre_survey";
+  if (key === "booking") return l.status === "pre_survey-01" || l.status === "pre_survey-02";
   if (key === "lost") return l.status === "lost" || l.status === "returned";
   if (key === "quotation") return l.status === "quote";
   return l.status === key;
@@ -53,7 +49,7 @@ export default function PipelinePage() {
   const [tab, setTab] = useState<TabKey>("all");
   const { activeRoles } = useActiveRoles();
   const isSales = hasRole(activeRoles, "sales");
-  const isSolar = hasRole(activeRoles, "solar");
+  const isSolar = hasRole(activeRoles, "solar", "smartify");
   const isAdmin = hasRole(activeRoles, "admin");
 
   useEffect(() => {

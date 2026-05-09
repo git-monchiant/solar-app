@@ -1,6 +1,6 @@
 import { useRouter } from "next/navigation";
 import { useState, useEffect } from "react";
-import { STATUSES, STATUS_CONFIG, getStatusLabel } from "@/lib/constants/statuses";
+import { STATUSES, STATUS_CONFIG, getStatusLabel, getMainStatus, getSubstep } from "@/lib/constants/statuses";
 import { formatSlotsRange } from "@/lib/time-slots";
 import { stripThaiTitle } from "@/lib/utils/name";
 import { formatTHB, formatThaiDateShort } from "@/lib/utils/formatters";
@@ -87,10 +87,22 @@ export default function LeadCard({ lead, compact, onAssignChange }: { lead: Lead
             </div>
           </div>
           {(() => {
-            const currentIdx = STATUSES.indexOf(lead.status as typeof STATUSES[number]);
+            // Visual flow stages — virtual "booking" between pre_survey and
+            // survey. Both substeps highlight "จอง" stage; the dot color
+            // reflects the substep state:
+            //   pre_survey       → ติดตาม (sky)
+            //   pre_survey-01    → จอง (amber — รอยืนยันรับเงิน)
+            //   pre_survey-02    → จอง (emerald — บัญชี confirm แล้ว)
+            //   survey/...       → main stage
+            const FLOW_STAGES = ["pre_survey", "booking", "survey", "quote", "order", "install", "warranty", "gridtie", "closed"] as const;
+            const main = getMainStatus(lead.status);
+            const sub = getSubstep(lead.status);
+            const effective = main === "pre_survey" && sub > 0 ? "booking" : main;
+            const currentIdx = FLOW_STAGES.indexOf(effective as typeof FLOW_STAGES[number]);
             if (currentIdx < 0) return null;
             const FLOW_LABELS: Record<string, string> = {
               pre_survey: "ติดตาม",
+              booking: "จอง",
               survey: "สำรวจ",
               quote: "เสนอราคา",
               order: "ชำระเงิน",
@@ -101,10 +113,10 @@ export default function LeadCard({ lead, compact, onAssignChange }: { lead: Lead
             };
             return (
               <div className="hidden md:flex items-start mt-1" aria-label="Flow progress">
-                {STATUSES.map((s, i) => {
+                {FLOW_STAGES.map((s, i) => {
                   const isCurrent = i === currentIdx;
                   const isPast = i < currentIdx;
-                  const stageConfig = STATUS_CONFIG[s];
+                  const stageConfig = STATUS_CONFIG[s] ?? { label: FLOW_LABELS[s], color: "bg-amber-500", text: "text-amber-700" };
                   return (
                     <div key={s} className="flex items-start" title={stageConfig?.label}>
                       <div className="flex flex-col items-center w-10 lg:w-14 shrink-0">
@@ -130,7 +142,7 @@ export default function LeadCard({ lead, compact, onAssignChange }: { lead: Lead
                           {FLOW_LABELS[s]}
                         </span>
                       </div>
-                      {i < STATUSES.length - 1 && (
+                      {i < FLOW_STAGES.length - 1 && (
                         <div className={`h-0.5 w-1 lg:w-2 mt-[9px] lg:mt-[11px] ${isPast ? "bg-emerald-400" : "bg-gray-200"}`} />
                       )}
                     </div>

@@ -198,6 +198,16 @@ export async function POST(req: NextRequest) {
           .query(`UPDATE leads SET ${slipField} = @url, ${paidFlag} = 1, updated_at = GETDATE() WHERE id = @lead_id`);
       }
 
+      // Pre-survey deposit confirm → advance status to pre_survey-02 (จอง).
+      // Only fires if lead is still inside pre_survey stage (not already moved
+      // forward) so this never overwrites later statuses on a re-confirm.
+      if (slipField === "pre_slip_url") {
+        await new sql.Request(tx)
+          .input("lead_id", sql.Int, leadId)
+          .query(`UPDATE leads SET status = 'pre_survey-02', updated_at = GETDATE()
+                  WHERE id = @lead_id AND status LIKE 'pre_survey%'`);
+      }
+
       await new sql.Request(tx)
         .input("lead_id", sql.Int, leadId)
         .input("slip_field", sql.NVarChar(50), slipField)

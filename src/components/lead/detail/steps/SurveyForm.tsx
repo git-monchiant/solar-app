@@ -205,10 +205,9 @@ const SurveyForm = forwardRef<SurveyFormHandle, Props>(function SurveyForm({ lea
   };
 
   // Photo-with-Note section — dynamic captioned slots stored as a JSON array
-  // in survey_photo_notes. Starts with 1 row; surveyor taps "+" to add more
-  // up to PHOTO_NOTES_MAX. Each entry: { url, note }. The autosave effect
-  // serializes the whole array, so editing any field flushes the lot.
-  const PHOTO_NOTES_MAX = 5;
+  // in survey_photo_notes. Always renders PHOTO_NOTES_MAX fixed slots — the
+  // surveyor fills any of them in; no "+" button needed.
+  const PHOTO_NOTES_MAX = 4;
   type PhotoNote = { url: string | null; note: string };
   const initPhotoNotes = (): PhotoNote[] => {
     let parsed: PhotoNote[] = [];
@@ -219,19 +218,14 @@ const SurveyForm = forwardRef<SurveyFormHandle, Props>(function SurveyForm({ lea
         if (Array.isArray(arr)) parsed = arr.map(it => ({ url: it?.url ?? null, note: it?.note ?? "" }));
       }
     } catch {}
-    if (parsed.length === 0) parsed = [{ url: null, note: "" }];
+    // Pad to fixed length so the grid always shows MAX slots up-front.
+    while (parsed.length < PHOTO_NOTES_MAX) parsed.push({ url: null, note: "" });
     return parsed.slice(0, PHOTO_NOTES_MAX);
   };
   const [photoNotes, setPhotoNotes] = useState<PhotoNote[]>(initPhotoNotes);
   const [uploadingPhotoNoteIdx, setUploadingPhotoNoteIdx] = useState<number | null>(null);
   const updatePhotoNote = (idx: number, patch: Partial<PhotoNote>) =>
     setPhotoNotes(curr => curr.map((p, i) => i === idx ? { ...p, ...patch } : p));
-  const removePhotoNote = (idx: number) =>
-    // Always keep at least one empty row visible — fully removing the last
-    // row would leave the section blank with no way back.
-    setPhotoNotes(curr => curr.length > 1 ? curr.filter((_, i) => i !== idx) : [{ url: null, note: "" }]);
-  const addPhotoNote = () =>
-    setPhotoNotes(curr => curr.length < PHOTO_NOTES_MAX ? [...curr, { url: null, note: "" }] : curr);
   const uploadPhotoNote = async (file: File, idx: number) => {
     setUploadingPhotoNoteIdx(idx);
     try {
@@ -859,18 +853,19 @@ const SurveyForm = forwardRef<SurveyFormHandle, Props>(function SurveyForm({ lea
                    .click() avoids the Android Chrome label-routing quirk. */}
               <input id={`photo-note-${idx}-cam-${lead.id}`} type="file" accept="image/*" capture="environment" onChange={(e) => { const f = e.target.files?.[0]; if (f) uploadPhotoNote(f, idx); e.target.value = ""; }} className="hidden" />
               <input id={`photo-note-${idx}-lib-${lead.id}`} type="file" accept="image/*" onChange={(e) => { const f = e.target.files?.[0]; if (f) uploadPhotoNote(f, idx); e.target.value = ""; }} className="hidden" />
-              {/* Row delete — collapses the row entirely (photo + note). When
-                   it's the only row, the helper resets it to empty rather
-                   than leaving the section blank. */}
-              <button
-                type="button"
-                onClick={() => removePhotoNote(idx)}
-                title="ลบ"
-                className="absolute -top-1.5 -right-1.5 w-6 h-6 rounded-full bg-red-500 text-white flex items-center justify-center text-xs shadow z-10"
-              >×</button>
+              {/* Slot is fixed — only allow clearing the photo+note back to
+                   empty (not removing the slot entirely). Hidden when empty. */}
+              {(p.url || p.note) && (
+                <button
+                  type="button"
+                  onClick={() => updatePhotoNote(idx, { url: null, note: "" })}
+                  title="ล้าง"
+                  className="absolute -top-1.5 -right-1.5 w-6 h-6 rounded-full bg-red-500 text-white flex items-center justify-center text-xs shadow z-10"
+                >×</button>
+              )}
               {p.url ? (
-                <div className="relative aspect-video">
-                  <FallbackImage src={p.url} alt={`Photo ${idx + 1}`} lightboxLabel={p.note || `Photo ${idx + 1}`} className="w-full h-full object-cover rounded-lg border border-gray-200" fallbackLabel="รูปหาย" />
+                <div className="relative">
+                  <FallbackImage src={p.url} alt={`Photo ${idx + 1}`} lightboxLabel={p.note || `Photo ${idx + 1}`} className="w-full h-auto rounded-lg border border-gray-200 block" fallbackLabel="รูปหาย" />
                 </div>
               ) : (
                 <div className="h-28 rounded-lg border border-dashed border-gray-300 bg-white flex items-center justify-center gap-12 text-gray-500">
@@ -898,16 +893,6 @@ const SurveyForm = forwardRef<SurveyFormHandle, Props>(function SurveyForm({ lea
             </div>
           ))}
         </div>
-        {photoNotes.length < PHOTO_NOTES_MAX && (
-          <button
-            type="button"
-            onClick={addPhotoNote}
-            className="mt-3 w-full h-10 rounded-lg border border-dashed border-gray-300 bg-white flex items-center justify-center gap-1.5 text-sm font-semibold text-gray-500 hover:border-active/40 hover:text-active transition-colors"
-          >
-            <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}><path strokeLinecap="round" strokeLinejoin="round" d="M12 4.5v15m7.5-7.5h-15" /></svg>
-            เพิ่มรูป
-          </button>
-        )}
       </div></>}
     </div>
   );

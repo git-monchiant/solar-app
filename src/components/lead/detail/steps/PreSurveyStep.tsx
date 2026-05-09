@@ -3,7 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import { apiFetch } from "@/lib/api";
 import { useMe } from "@/lib/roles";
-import { PAYMENT_TYPES, FINANCE_STATUSES } from "@/lib/constants/statuses";
+import { PAYMENT_TYPES, FINANCE_STATUSES, isPreSurvey } from "@/lib/constants/statuses";
 import type { Lead, Package, StepCommonProps } from "./types";
 import PreSurveyForm, { type PreSurveyFormHandle } from "./PreSurveyForm";
 import PaymentSection from "@/components/payment/PaymentSection";
@@ -255,9 +255,10 @@ export default function PreSurveyStep({ lead, state, refresh, packages, expanded
     }).catch(console.error);
   };
 
-  // Pre-Survey step is "done" once status advances past 'pre_survey' (the user
-  // submitted the ID-info form at subStep 4, which PATCHes status='survey').
-  const hasPreSurveyDone = lead.status !== "pre_survey";
+  // Pre-Survey step is "done" once status advances past pre_survey altogether
+  // (i.e. main status is survey/quote/...). Substeps pre_survey-01 / -02 are
+  // STILL inside pre-survey — don't flip to done until main status changes.
+  const hasPreSurveyDone = !isPreSurvey(lead.status);
   const hasReceipt = !!lead.pre_doc_no || !!lead.payment_confirmed;
   const paymentLabel = PAYMENT_TYPES.find(p => p.value === lead.payment_type)?.label;
   const financeConfig = FINANCE_STATUSES.find(f => f.value === lead.finance_status);
@@ -409,17 +410,24 @@ export default function PreSurveyStep({ lead, state, refresh, packages, expanded
         {!lead.survey_date && <span className="flex-1" />}
         {hasReceipt && (
           <div className="mr-4 flex items-center gap-3">
-            <ReceiptButtons
-              leadId={lead.id}
-              stage="deposit"
-              fileLabel={`booking_${lead.pre_doc_no || lead.id}`}
-              title="BOOKING CONFIRMATION"
-              showSurvey
-              label="ใบยืนยันการจอง"
-              modalLabel="ใบยืนยันการจอง"
-              compact
-            />
-            <ReceiptButtons leadId={lead.id} stage="deposit" fileLabel={lead.pre_doc_no || `lead_${lead.id}_deposit`} compact />
+            {/* ใบยืนยันการจอง — show whenever a booking number exists. */}
+            {lead.pre_doc_no && (
+              <ReceiptButtons
+                leadId={lead.id}
+                stage="deposit"
+                fileLabel={`booking_${lead.pre_doc_no || lead.id}`}
+                title="BOOKING CONFIRMATION"
+                showSurvey
+                label="ใบยืนยันการจอง"
+                modalLabel="ใบยืนยันการจอง"
+                compact
+              />
+            )}
+            {/* ใบเสร็จ — only after accountant confirms (payment_confirmed=true,
+                i.e. status reached pre_survey-02). */}
+            {lead.payment_confirmed && (
+              <ReceiptButtons leadId={lead.id} stage="deposit" fileLabel={lead.pre_doc_no || `lead_${lead.id}_deposit`} compact />
+            )}
           </div>
         )}
       </>

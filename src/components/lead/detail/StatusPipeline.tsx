@@ -1,4 +1,4 @@
-import { STATUSES, STATUS_CONFIG } from "@/lib/constants/statuses";
+import { STATUSES, STATUS_CONFIG, getMainStatus } from "@/lib/constants/statuses";
 
 interface Props {
   currentStatus: string;
@@ -6,7 +6,7 @@ interface Props {
 }
 
 export default function StatusPipeline({ currentStatus, onChangeStatus }: Props) {
-  const currentIdx = STATUSES.indexOf(currentStatus as typeof STATUSES[number]);
+  const currentIdx = STATUSES.indexOf(getMainStatus(currentStatus) as typeof STATUSES[number]);
   const isLost = currentStatus === "lost";
 
   return (

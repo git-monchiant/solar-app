@@ -3,8 +3,8 @@
 import { useEffect, useState } from "react";
 import { apiFetch } from "./api";
 
-export type Role = "admin" | "sales" | "solar" | "leadsseeker" | "account";
-export const ALL_ROLES: Role[] = ["admin", "sales", "solar", "leadsseeker", "account"];
+export type Role = "admin" | "sales" | "solar" | "leadsseeker" | "account" | "smartify";
+export const ALL_ROLES: Role[] = ["admin", "sales", "solar", "leadsseeker", "account", "smartify"];
 
 export const ROLE_LABEL: Record<Role, string> = {
   admin: "Admin",
@@ -12,6 +12,7 @@ export const ROLE_LABEL: Record<Role, string> = {
   solar: "Solar",
   leadsseeker: "Leads Seeker",
   account: "Account",
+  smartify: "Smartify",
 };
 
 const STORAGE_KEY = "activeRoles";
@@ -90,13 +91,20 @@ export function useActiveRoles(): { activeRoles: Role[]; setActiveRoles: (r: Rol
   const { me } = useMe();
   const [, force] = useState(0);
 
+  // Admin sees every role in the switcher so they can preview any view —
+  // even ones not explicitly assigned to their account.
+  const availableRoles: Role[] = me
+    ? (me.roles.includes("admin") ? ALL_ROLES : me.roles)
+    : [];
+
   useEffect(() => {
     if (!me || cachedActiveRoles !== null) return;
+    const allowed = me.roles.includes("admin") ? ALL_ROLES : me.roles;
     const saved = typeof window !== "undefined" ? localStorage.getItem(STORAGE_KEY) : null;
     if (saved) {
       try {
         const parsed = JSON.parse(saved) as Role[];
-        const valid = parsed.filter(r => me.roles.includes(r));
+        const valid = parsed.filter(r => allowed.includes(r));
         if (valid.length > 0) {
           cachedActiveRoles = valid;
           emitRoles();
@@ -120,7 +128,7 @@ export function useActiveRoles(): { activeRoles: Role[]; setActiveRoles: (r: Rol
     emitRoles();
   };
 
-  return { activeRoles: cachedActiveRoles || [], setActiveRoles, availableRoles: me?.roles || [] };
+  return { activeRoles: cachedActiveRoles || [], setActiveRoles, availableRoles };
 }
 
 export function hasRole(activeRoles: Role[], ...required: Role[]): boolean {

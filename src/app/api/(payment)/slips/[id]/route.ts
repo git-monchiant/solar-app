@@ -56,6 +56,14 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
           title: `ตรวจสลิป ${paymentStepLabel(row.slip_field)} (รอบัญชียืนยัน)`,
           userId: gate.userId,
         });
+        // Pre-survey deposit slip submit → advance lead from `pre_survey` (no
+        // suffix) to `pre_survey-01` (รอยืนยันรับเงิน). Skip if already at -01
+        // or beyond so re-submitting another slip doesn't reset the status.
+        if (row.slip_field === "pre_slip_url") {
+          await db.request().input("lead_id", sql.Int, row.lead_id)
+            .query(`UPDATE leads SET status = 'pre_survey-01', updated_at = GETDATE()
+                    WHERE id = @lead_id AND status = 'pre_survey'`);
+        }
       }
       return NextResponse.json({ ok: true });
     }
@@ -74,6 +82,19 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
           title: `ย้อนสถานะสลิป ${paymentStepLabel(row.slip_field)}`,
           userId: gate.userId,
         });
+        // Pre-survey unsubmit → revert status to plain `pre_survey` only when
+        // no other submitted slips remain for this lead's deposit.
+        if (row.slip_field === "pre_slip_url") {
+          await db.request().input("lead_id", sql.Int, row.lead_id)
+            .query(`UPDATE leads SET status = 'pre_survey', updated_at = GETDATE()
+                    WHERE id = @lead_id AND status = 'pre_survey-01'
+                      AND NOT EXISTS (
+                        SELECT 1 FROM slip_files sf2
+                        WHERE sf2.lead_id = @lead_id
+                          AND sf2.slip_field = 'pre_slip_url'
+                          AND sf2.submitted_at IS NOT NULL
+                      )`);
+        }
       }
       return NextResponse.json({ ok: true });
     }
@@ -93,7 +114,25 @@ export async function DELETE(req: NextRequest, { params }: { params: Promise<{ i
   if (!slipId) return NextResponse.json({ error: "Invalid id" }, { status: 400 });
   try {
     const db = await getDb();
+    // Capture lead_id + slip_field before delete so we can revert pre_survey
+    // substep if removing the last remaining staging slip resets the queue.
+    const before = await db.request().input("id", sql.Int, slipId)
+      .query(`SELECT lead_id, slip_field FROM slip_files WHERE id = @id`);
+    const row = before.recordset[0];
     await db.request().input("id", sql.Int, slipId).query(`DELETE FROM slip_files WHERE id = @id`);
+    // Pre-survey deposit slip removed (admin ถอย) → if no submitted slip left
+    // for this lead's deposit, revert status from pre_survey-01 → pre_survey.
+    if (row && row.slip_field === "pre_slip_url") {
+      await db.request().input("lead_id", sql.Int, row.lead_id)
+        .query(`UPDATE leads SET status = 'pre_survey', updated_at = GETDATE()
+                WHERE id = @lead_id AND status = 'pre_survey-01'
+                  AND NOT EXISTS (
+                    SELECT 1 FROM slip_files sf
+                    WHERE sf.lead_id = @lead_id
+                      AND sf.slip_field = 'pre_slip_url'
+                      AND sf.submitted_at IS NOT NULL
+                  )`);
+    }
     return NextResponse.json({ ok: true });
   } catch (e) {
     console.error("DELETE /api/slips/[id] error:", e);

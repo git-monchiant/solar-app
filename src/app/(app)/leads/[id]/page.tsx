@@ -119,7 +119,9 @@ const STEP_TEAMS: Record<number, string> = {
 
 function stepIndex(status: string) {
   if (status === "closed") return STEP_ORDER.length;
-  return STEP_ORDER.indexOf(status);
+  // Strip pre_survey-NN substep so the main step still maps correctly.
+  const main = status.split('-')[0];
+  return STEP_ORDER.indexOf(main);
 }
 
 const InfoRow = ({ label, value, mono = false, accent = false }: { label: string; value: React.ReactNode; mono?: boolean; accent?: boolean }) => (
@@ -369,7 +371,7 @@ export default function LeadDetailPage({ params }: { params: Promise<{ id: strin
   // pre_survey is only "done" if we've actually moved past it into a real
   // downstream step. Terminal states (lost/returned) don't imply completion —
   // the lead was exited before finishing.
-  const hasPreSurveyDone = STEP_ORDER.indexOf(lead.status) > 0 || lead.status === "closed";
+  const hasPreSurveyDone = STEP_ORDER.indexOf(lead.status.split('-')[0]) > 0 || lead.status === "closed";
   const currentStep = stepIndex(lead.status);
 
   const cardState = (stepIdx: number): CardStateKind => {

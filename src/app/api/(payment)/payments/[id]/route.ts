@@ -121,11 +121,16 @@ export async function DELETE(req: NextRequest, { params }: { params: Promise<{ i
     // Legacy slip_fields also flipped a leads column on confirm — flip it back.
     // Dynamic per-installment slips (order_installment_<i>) have no column.
     if (slipField === "pre_slip_url") {
+      // Admin ถอย pre_slip_url confirm → reset entirely back to plain
+      // `pre_survey` regardless of where it was (-01, -02, or even survey).
       await db.request().input("lead_id", sql.Int, pay.lead_id)
         .query(`UPDATE leads SET
           pre_slip_url = NULL, payment_confirmed = 0,
           pre_doc_no = NULL, pre_total_price = NULL, pre_package_id = NULL, pre_booked_at = NULL,
-          status = CASE WHEN status = 'survey' THEN 'pre_survey' ELSE status END,
+          status = CASE
+            WHEN status LIKE 'pre_survey%' OR status = 'survey' THEN 'pre_survey'
+            ELSE status
+          END,
           updated_at = GETDATE()
           WHERE id = @lead_id`);
     } else if (paidFlag) {

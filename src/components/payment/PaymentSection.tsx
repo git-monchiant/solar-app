@@ -146,7 +146,7 @@ export default function PaymentSection({
   // admin switches to seeker mode, payment confirm/rollback should disappear.
   const isAdmin = activeRoles.includes("admin");
   // Step-1 (uploader) — admin/sales/solar can submit slips for review.
-  const canStep1 = activeRoles.some(r => r === "admin" || r === "sales" || r === "solar");
+  const canStep1 = activeRoles.some(r => r === "admin" || r === "sales" || r === "solar" || r === "smartify");
   // Step-2 (accountant) — only account/admin can confirm receipt of money.
   const canStep2 = activeRoles.some(r => r === "admin" || r === "account");
 
@@ -978,24 +978,32 @@ export default function PaymentSection({
                   {submitting ? "กำลังส่ง…" : "ยืนยันการชำระเงิน 1"}
                 </button>
               )
+            ) : canStep2 ? (
+              <button
+                type="button"
+                disabled={!canConfirm || confirming}
+                onClick={handleConfirm}
+                className="w-full h-11 mt-3 rounded-lg text-sm font-semibold transition-colors flex items-center justify-center gap-1.5 text-white bg-gradient-to-r from-primary to-primary-dark hover:brightness-110 disabled:opacity-40 disabled:cursor-not-allowed"
+              >
+                {confirming ? (
+                  <>
+                    <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                    กำลังยืนยัน…
+                  </>
+                ) : (
+                  `${confirmLabel || "ยืนยันการชำระเงิน 2"}${verifiedCount > 1 ? ` (${verifiedCount} สลิป)` : ""}`
+                )}
+              </button>
             ) : (
-              canStep2 && (
-                <button
-                  type="button"
-                  disabled={!canConfirm || confirming}
-                  onClick={handleConfirm}
-                  className="w-full h-11 mt-3 rounded-lg text-sm font-semibold transition-colors flex items-center justify-center gap-1.5 text-white bg-gradient-to-r from-primary to-primary-dark hover:brightness-110 disabled:opacity-40 disabled:cursor-not-allowed"
-                >
-                  {confirming ? (
-                    <>
-                      <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
-                      กำลังยืนยัน…
-                    </>
-                  ) : (
-                    `${confirmLabel || "ยืนยันการชำระเงิน 2"}${verifiedCount > 1 ? ` (${verifiedCount} สลิป)` : ""}`
-                  )}
-                </button>
-              )
+              // Roles ที่ทำ step 2 ไม่ได้ (sales/solar) → โชว์ปุ่มแบบ disabled
+              // เพื่อให้รู้ว่ารอบัญชีอนุมัติอยู่ ไม่ใช่ปุ่มหายไป
+              <button
+                type="button"
+                disabled
+                className="w-full h-11 mt-3 rounded-lg text-sm font-semibold text-amber-700 bg-amber-50 border border-amber-200 cursor-not-allowed flex items-center justify-center gap-1.5"
+              >
+                ⏳ รออนุมัติการรับชำระเงิน
+              </button>
             )}
             {confirmError && (
               <div className="mt-2 text-xs text-red-600 text-center">{confirmError}</div>

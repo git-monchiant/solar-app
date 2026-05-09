@@ -4,7 +4,7 @@ import { getUserIdFromReq, hashPassword } from "@/lib/auth";
 
 export const runtime = "nodejs";
 
-const VALID_ROLES = new Set(["admin", "sales", "solar", "leadsseeker"]);
+const VALID_ROLES = new Set(["admin", "sales", "solar", "leadsseeker", "account", "smartify"]);
 function parseRoles(raw: unknown): string[] {
   if (!Array.isArray(raw)) return [];
   const out: string[] = [];
