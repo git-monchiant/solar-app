@@ -61,6 +61,11 @@ export default function DashboardDevPage() {
       <Header title="Dashboard Dev" subtitle="EXPERIMENTAL — admin only" />
       <div className="p-3 md:p-6 space-y-3">
 
+        {/* Horizontal funnel — wide hero visualisation showing the lead
+            pipeline left → right. Each stage tapers to the next based on
+            its value relative to the largest stage. */}
+        <HorizontalFunnel funnel={data.funnel} />
+
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-3">
           <div className="rounded-xl bg-white border border-gray-300 p-4">
             <div className="text-xs font-semibold uppercase tracking-wider text-gray-400 mb-3">Source <span className="normal-case text-gray-300">(top 10)</span></div>
@@ -414,6 +419,86 @@ function BarList({ items, color }: { items: { label: string; value: number }[]; 
           </div>
         );
       })}
+    </div>
+  );
+}
+
+/**
+ * Horizontal funnel — stages flow left → right. Each segment is rendered
+ * as a tapered trapezoid via clip-path: the LEFT edge height matches the
+ * previous segment's RIGHT edge height (so adjacent segments connect into
+ * a continuous shape), and the RIGHT edge height = `value / max`. The
+ * largest stage anchors the funnel at full height; smaller stages collapse
+ * proportionally.
+ */
+function HorizontalFunnel({ funnel }: { funnel: DevData["funnel"] }) {
+  const stages: { label: string; value: number; color: string; hex: string }[] = [
+    { label: "Total leads",    value: funnel.total,           color: "bg-gray-400",    hex: "#9ca3af" },
+    { label: "จองค่าสำรวจ",     value: funnel.has_pre_doc,     color: "bg-sky-500",     hex: "#0ea5e9" },
+    { label: "นัดสำรวจ",        value: funnel.has_survey,      color: "bg-violet-500",  hex: "#8b5cf6" },
+    { label: "ออเดอร์",         value: funnel.has_order,       color: "bg-orange-500",  hex: "#f97316" },
+    { label: "นัดติดตั้ง",      value: funnel.has_install,     color: "bg-emerald-500", hex: "#10b981" },
+    { label: "ติดตั้งเสร็จ",    value: funnel.installed,       color: "bg-teal-500",    hex: "#14b8a6" },
+    { label: "ออกใบรับประกัน",  value: funnel.warranty_issued, color: "bg-cyan-500",    hex: "#06b6d4" },
+  ];
+  const max = Math.max(...stages.map(s => s.value), 1);
+
+  return (
+    <div className="rounded-xl bg-white border border-gray-300 p-4 md:p-5">
+      <div className="flex items-center justify-between mb-3">
+        <div className="text-xs font-semibold uppercase tracking-wider text-gray-400">
+          Funnel — Lead Pipeline
+        </div>
+        <div className="text-[10px] text-gray-400">{stages.length} stages · ซ้าย → ขวา</div>
+      </div>
+
+      {/* The funnel itself — flex row of clipped segments. h-32 keeps it
+          short so the whole hero band stays compact across the page top. */}
+      <div className="flex w-full h-32 md:h-36">
+        {stages.map((s, i) => {
+          const leftPct = i === 0 ? 100 : (stages[i - 1].value / max) * 100;
+          const rightPct = (s.value / max) * 100;
+          // Center the trapezoid vertically so the funnel tapers symmetrically.
+          const topL = (100 - leftPct) / 2;
+          const botL = (100 + leftPct) / 2;
+          const topR = (100 - rightPct) / 2;
+          const botR = (100 + rightPct) / 2;
+          return (
+            <div
+              key={s.label}
+              className={`flex-1 ${s.color} relative`}
+              style={{
+                clipPath: `polygon(0% ${topL}%, 100% ${topR}%, 100% ${botR}%, 0% ${botL}%)`,
+              }}
+              title={`${s.label}: ${s.value.toLocaleString("en")}`}
+            />
+          );
+        })}
+      </div>
+
+      {/* Stage labels + values below the bands. Each cell aligns under its
+          corresponding funnel segment. */}
+      <div className="flex w-full mt-2">
+        {stages.map((s, i) => {
+          const prev = i > 0 ? stages[i - 1].value : null;
+          const conv = prev && prev > 0 ? Math.round((s.value / prev) * 100) : null;
+          return (
+            <div key={s.label} className="flex-1 px-1 text-center">
+              <div className="text-[10px] font-semibold uppercase tracking-wider text-gray-500 leading-tight truncate" title={s.label}>
+                {s.label}
+              </div>
+              <div className="text-base md:text-lg font-bold font-mono tabular-nums text-gray-900 mt-0.5">
+                {s.value.toLocaleString("en")}
+              </div>
+              {conv !== null && (
+                <div className="text-[10px] text-gray-400 font-normal">
+                  {conv}% from prev
+                </div>
+              )}
+            </div>
+          );
+        })}
+      </div>
     </div>
   );
 }
