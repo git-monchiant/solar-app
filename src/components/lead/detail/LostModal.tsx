@@ -72,6 +72,32 @@ const REASON_GROUPS: Group[] = [
       "คู่แข่งติดตั้งได้เร็วกว่า",
       "กลัวเรื่องความปลอดภัย",
       "กลัวเรื่องหลังคารั่ว",
+      "บ้าน/หลังคาไม่เหมาะกับการติดตั้ง",
+    ],
+  },
+  {
+    key: "readiness",
+    title: "ความพร้อม",
+    accent: {
+      text: "text-amber-700",
+      bg: "bg-amber-50/40",
+      border: "border-amber-200",
+      headBg: "bg-amber-100/70",
+      selBorder: "border-amber-500",
+      selBg: "bg-amber-50",
+      selText: "text-amber-800",
+      selDot: "bg-amber-500",
+    },
+    icon: (
+      <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+        <path strokeLinecap="round" strokeLinejoin="round" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+      </svg>
+    ),
+    items: [
+      "ครอบครัวไม่อนุมัติ / ผู้มีอำนาจไม่ตัดสินใจ",
+      "ยังไม่ตัดสินใจ / ขอเวลาคิด",
+      "อยู่ต่างจังหวัด / ไม่สะดวก",
+      "ปัญหาการเงินชั่วคราว",
     ],
   },
   {

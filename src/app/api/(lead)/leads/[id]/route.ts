@@ -774,6 +774,21 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
       sets.push("project_alias = @project_alias");
       request.input("project_alias", sql.NVarChar(200), body.project_alias);
     }
+    if (body.interest_reasons !== undefined) {
+      // Stored as comma-separated to match prospects.interest_reasons format.
+      // Accept array (joined here) or pre-joined string from the client.
+      const value = Array.isArray(body.interest_reasons)
+        ? body.interest_reasons.join(",")
+        : body.interest_reasons;
+      sets.push("interest_reasons = @interest_reasons");
+      request.input("interest_reasons", sql.NVarChar(500), value || null);
+    }
+    if (body.undecided_reason !== undefined) {
+      // Overwrites — represents the customer's most recent stated reason for
+      // not deciding. Each follow-up replaces the previous value.
+      sets.push("undecided_reason = @undecided_reason");
+      request.input("undecided_reason", sql.NVarChar(200), body.undecided_reason || null);
+    }
     if (body.customer_interest !== undefined) {
       sets.push("customer_interest = @customer_interest");
       request.input("customer_interest", sql.NVarChar(500), body.customer_interest);

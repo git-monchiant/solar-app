@@ -62,6 +62,35 @@ export default function SeekerDashboardPage() {
   const [pickerOpen, setPickerOpen] = useState(false);
   const [chartFullscreen, setChartFullscreen] = useState(false);
   const [chartSearch, setChartSearch] = useState("");
+  // Drill-down: clicking a project bar opens a 30-day chart filtered to that project.
+  const [drillProject, setDrillProject] = useState<string | null>(null);
+  const [drillDaily, setDrillDaily] = useState<DailyRow[] | null>(null);
+  const [drillLoading, setDrillLoading] = useState(false);
+  const autoDrillRef = useRef(false);
+  useEffect(() => {
+    if (!drillProject) { setDrillDaily(null); return; }
+    setDrillLoading(true);
+    apiFetch(`/api/seeker-summary?project=${encodeURIComponent(drillProject)}`, { cache: "no-store" })
+      .then((s: Summary) => setDrillDaily(s.daily || []))
+      .catch(console.error)
+      .finally(() => setDrillLoading(false));
+  }, [drillProject]);
+  // Auto-select the highest-volume project on first summary load.
+  useEffect(() => {
+    if (autoDrillRef.current) return;
+    const list = summary?.by_project;
+    if (!list?.length) return;
+    const sorted = [...list]
+      .filter((r) => r.interested + r.contacted + r.not_interested + r.pending > 0)
+      .sort((a, b) =>
+        (b.interested + b.contacted + b.not_interested + b.pending) -
+        (a.interested + a.contacted + a.not_interested + a.pending)
+      );
+    if (sorted[0]) {
+      setDrillProject(sorted[0].name);
+      autoDrillRef.current = true;
+    }
+  }, [summary]);
   // Lock background scroll while the chart is in fullscreen.
   useEffect(() => {
     if (!chartFullscreen) return;
@@ -210,12 +239,6 @@ export default function SeekerDashboardPage() {
               </div>
             </div>
 
-            {/* Adoption mini-bars */}
-            <div className="grid grid-cols-2 gap-3">
-              <AdoptionBar label="Solar Adoption" value={stats.has_solar} total={stats.total} color="bg-amber-500" icon="solar" iconColor="text-amber-500" />
-              <AdoptionBar label="LINE OA" value={stats.line_linked} total={stats.total} color="bg-emerald-500" icon="line" iconColor="text-emerald-500" />
-            </div>
-
             {/* Daily seeker activity — 1 block per house visited that day */}
             <div className="bg-white rounded-2xl border border-gray-200 p-4 relative">
               <button
@@ -243,7 +266,7 @@ export default function SeekerDashboardPage() {
                 <span className="text-xs font-semibold">PDF</span>
               </button>
               <div className="text-xs font-semibold uppercase tracking-wider text-gray-500 mb-3">
-                การทำงานของ Seeker <span className="normal-case text-gray-300">(30 วันล่าสุด)</span>
+                ข้อมูลการเดินหาลูกค้าของทีม Seeker <span className="normal-case text-gray-300">(30 วันล่าสุด)</span>
               </div>
               <SeekerActivityChart daily={daily} />
             </div>
@@ -319,14 +342,15 @@ export default function SeekerDashboardPage() {
                           return (
                             <div
                               key={row.name}
-                              className="flex flex-col items-center justify-end flex-1 min-w-0"
+                              className="flex flex-col items-center justify-end flex-1 min-w-0 cursor-pointer"
                               style={{ height: `${CHART_H + 18}px` }}
+                              onClick={() => setDrillProject(row.name)}
                             >
                               <span className="text-[10px] font-mono tabular-nums text-gray-700 mb-1">{total}</span>
                               <div
-                                className="w-full flex flex-col-reverse overflow-hidden hover:brightness-110 transition-all"
+                                className={`w-full flex flex-col-reverse overflow-hidden hover:brightness-110 transition-all ${drillProject === row.name ? "ring-2 ring-primary" : ""}`}
                                 style={{ height: `${totalH}px` }}
-                                title={`${row.name}\nสนใจ ${row.interested} · ยังไม่ตัดสินใจ ${row.contacted} · ไม่สนใจ ${row.not_interested} · ยังไม่ได้เยี่ยม ${row.pending}`}
+                                title={`คลิกเพื่อดูรายวัน 30 วัน — ${row.name}\nสนใจ ${row.interested} · ยังไม่ตัดสินใจ ${row.contacted} · ไม่สนใจ ${row.not_interested} · ยังไม่ได้เยี่ยม ${row.pending}`}
                               >
                                 {row.interested > 0 && (
                                   <div className="bg-green-500 flex items-center justify-center text-[10px] font-mono tabular-nums text-white" style={{ height: `${interestedH}px` }}>
@@ -371,6 +395,37 @@ export default function SeekerDashboardPage() {
                 </div>
               );
             })()}
+
+            {/* Drill-down: daily 30-day chart for the selected project */}
+            {drillProject && (
+              <div className="bg-white rounded-2xl border border-gray-200 overflow-hidden">
+                <div className="px-4 py-3 border-b border-gray-100 flex items-center justify-between">
+                  <h2 className="text-sm font-bold text-gray-900">
+                    รายวัน 30 วัน — <span className="text-primary">{drillProject}</span>
+                  </h2>
+                  <button
+                    type="button"
+                    onClick={() => setDrillProject(null)}
+                    className="w-8 h-8 rounded-md text-gray-500 hover:text-gray-900 hover:bg-gray-100 flex items-center justify-center"
+                    style={{ minHeight: 0 }}
+                    aria-label="ปิด"
+                  >
+                    <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                      <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
+                    </svg>
+                  </button>
+                </div>
+                <div className="p-4">
+                  {drillLoading ? (
+                    <div className="text-center py-8"><div className="inline-block w-6 h-6 border-2 border-gray-200 border-t-primary rounded-full animate-spin" /></div>
+                  ) : drillDaily && drillDaily.length > 0 ? (
+                    <SeekerActivityChart daily={drillDaily} />
+                  ) : (
+                    <div className="text-xs text-gray-400 text-center py-6">ไม่มีข้อมูล 30 วันล่าสุดสำหรับโครงการนี้</div>
+                  )}
+                </div>
+              </div>
+            )}
 
             {/* Coverage progress */}
             <div className="bg-white rounded-2xl border border-gray-200 p-4">

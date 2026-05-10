@@ -68,6 +68,22 @@ const UNDECIDED_REASONS = [
   "ทำเรื่องสินเชื่อ",
 ];
 
+// §5 — Interest Reasons (multi-select). Mirrors the prospect form so sales
+// can capture WHY the customer is interested when the offer lands. Shown
+// alongside UNDECIDED_REASONS when outcome = SALE_OFFER.
+const INTEREST_REASONS = [
+  "ประหยัดค่าไฟ",
+  "เปิดแอร์ทั้งวัน",
+  "ลดหย่อนภาษี",
+  "เปิดร้านที่บ้าน",
+  "แอร์ให้สัตว์เลี้ยง",
+  "ขายไฟคืน",
+  "ชาร์จ EV",
+  "ดูแลผู้สูงอายุ",
+  "รักษ์โลก",
+  "อื่นๆ",
+];
+
 const SALE_OFFER = "ติดต่อได้ - Sale เสนอขาย";
 
 interface Props {
@@ -93,6 +109,8 @@ export default function AddActivityModal({ activityType, leadId, canSendBack = f
   const [followUpMethod, setFollowUpMethod] = useState("");
   const [outcome, setOutcome] = useState("");
   const [undecidedReason, setUndecidedReason] = useState("");
+  // Multi-select — sales can tick more than one reason a customer cares about.
+  const [interestReasons, setInterestReasons] = useState<string[]>([]);
   const [nextFollowUpDate, setNextFollowUpDate] = useState("");
   const [nextPickerOpen, setNextPickerOpen] = useState(false);
   const [sendBackToSeeker, setSendBackToSeeker] = useState(false);
@@ -106,10 +124,11 @@ export default function AddActivityModal({ activityType, leadId, canSendBack = f
     setError(null);
     try {
       const isLoanFollowup = typeof loanInstallmentIndex === "number" && activityType === "follow_up";
-      // Compose title: outcome + optional undecided reason. Empty = let API derive.
-      const title = activityType === "follow_up" && outcome
-        ? (showUndecided && undecidedReason ? `${outcome} · ${undecidedReason}` : outcome)
-        : null;
+      // Title carries only the outcome (§28). Undecided reason +
+      // interest_reasons live as their own columns on `leads` so the
+      // activity timeline stays readable instead of accumulating redundant
+      // "· …" suffixes that duplicate structured data.
+      const title = activityType === "follow_up" && outcome ? outcome : null;
       await apiFetch(`/api/leads/${leadId}/activities`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -125,6 +144,31 @@ export default function AddActivityModal({ activityType, leadId, canSendBack = f
           followup_method: isLoanFollowup ? (followUpMethod || "follow_up") : undefined,
         }),
       });
+      // Persist structured reasons on the lead so dashboards/queries can
+      // aggregate. interest_reasons MERGES across follow-ups (multi-select
+      // accumulates); undecided_reason OVERWRITES (always the latest state).
+      const sendInterest = activityType === "follow_up" && interestReasons.length > 0;
+      const sendUndecided = activityType === "follow_up" && !!undecidedReason;
+      if (sendInterest || sendUndecided) {
+        try {
+          const patch: Record<string, string> = {};
+          if (sendInterest) {
+            const lead = await apiFetch(`/api/leads/${leadId}`);
+            const existing = (lead?.interest_reasons || "").split(",").map((s: string) => s.trim()).filter(Boolean);
+            const merged = Array.from(new Set([...existing, ...interestReasons]));
+            patch.interest_reasons = merged.join(",");
+          }
+          if (sendUndecided) patch.undecided_reason = undecidedReason;
+          await apiFetch(`/api/leads/${leadId}`, {
+            method: "PATCH",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(patch),
+          });
+        } catch (e) {
+          // Non-fatal — activity already saved. Surface in console for triage.
+          console.error("reasons sync failed:", e);
+        }
+      }
       if (sendBackToSeeker && activityType === "follow_up") {
         await apiFetch(`/api/leads/${leadId}/return-to-prospect`, {
           method: "POST",
@@ -294,7 +338,10 @@ export default function AddActivityModal({ activityType, leadId, canSendBack = f
                   type="button"
                   onClick={() => {
                     setOutcome(o.value);
-                    if (o.value !== SALE_OFFER) setUndecidedReason("");
+                    if (o.value !== SALE_OFFER) {
+                      setUndecidedReason("");
+                      setInterestReasons([]);
+                    }
                   }}
                   className={`w-full text-left px-3 py-2.5 rounded-lg border text-sm transition-colors flex items-center gap-3 ${
                     selected
@@ -333,6 +380,37 @@ export default function AddActivityModal({ activityType, leadId, canSendBack = f
                       selected
                         ? "bg-amber-500 text-white border-amber-500"
                         : "bg-white text-gray-700 border-gray-200 hover:border-amber-300"
+                    }`}
+                  >
+                    {r}
+                  </button>
+                );
+              })}
+            </div>
+          </section>
+        )}
+
+        {/* 3c. Conditional — เหตุผลที่สนใจ (multi-select). Mirrors the
+             prospect form so we capture WHY the customer is interested. */}
+        {showUndecided && (
+          <section>
+            <div className="text-xs font-bold text-gray-400 uppercase tracking-wider mb-1.5">
+              เหตุผลที่สนใจ <span className="font-normal text-gray-400">(เลือกได้หลายอัน)</span>
+            </div>
+            <div className="flex flex-wrap gap-1.5">
+              {INTEREST_REASONS.map((r) => {
+                const selected = interestReasons.includes(r);
+                return (
+                  <button
+                    key={r}
+                    type="button"
+                    onClick={() => setInterestReasons(prev =>
+                      selected ? prev.filter(x => x !== r) : [...prev, r]
+                    )}
+                    className={`px-3 py-1.5 rounded-full text-xs font-semibold border transition-colors ${
+                      selected
+                        ? "bg-emerald-500 text-white border-emerald-500"
+                        : "bg-white text-gray-700 border-gray-200 hover:border-emerald-300"
                     }`}
                   >
                     {r}
