@@ -27,7 +27,11 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
                u.full_name as assigned_name,
                lu.display_name as line_display_name,
                CASE WHEN lu.picture_blob IS NOT NULL THEN '/api/line-avatar/' + lu.line_user_id ELSE NULL END AS line_picture_url,
-               CAST(CASE WHEN EXISTS (SELECT 1 FROM prospects WHERE lead_id = l.id) THEN 1 ELSE 0 END AS BIT) as from_prospect
+               CAST(CASE
+                 WHEN EXISTS (SELECT 1 FROM prospects WHERE lead_id = l.id)
+                   AND (l.note IS NULL OR l.note NOT LIKE N'สถานะจาก sheet:%')
+                 THEN 1 ELSE 0
+               END AS BIT) as from_prospect
         FROM leads l
         LEFT JOIN projects p ON l.project_id = p.id
         LEFT JOIN packages pk ON l.interested_package_id = pk.id

@@ -121,15 +121,6 @@ const fieldInput = "w-full h-11 px-3 rounded-lg border border-gray-200 text-base
 const fieldTextarea = "w-full px-3 py-2.5 rounded-lg border border-gray-200 text-base focus:outline-none focus:border-primary transition-colors resize-none";
 
 // Option lists used by the comprehensive create form.
-const PRIMARY_REASONS = [
-  { value: "save_bill", label: "ประหยัดค่าไฟ" },
-  { value: "sell_back", label: "ขายไฟคืน" },
-  { value: "tax_deduction", label: "ลดหย่อนภาษี" },
-  { value: "daytime_usage", label: "เปิดแอร์ทั้งวัน" },
-  { value: "has_ev", label: "ชาร์จ EV" },
-  { value: "environment", label: "รักษ์โลก" },
-  { value: "home_business", label: "เปิดร้านที่บ้าน" },
-];
 const PEAK_USAGE_OPTIONS = [
   { value: "day", label: "กลางวัน" },
   { value: "night", label: "กลางคืน" },

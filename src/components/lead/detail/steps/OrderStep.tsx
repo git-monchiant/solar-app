@@ -16,8 +16,8 @@ import PaymentSlipsThumbs from "@/components/payment/PaymentSlipsThumbs";
 import StepLayout from "../StepLayout";
 import ReceiptButtons from "../ReceiptButtons";
 import { useSubStep } from "@/lib/hooks/useSubStep";
-import { useDialog } from "@/components/ui/Dialog";
 import { formatTHB as fmt, formatThaiDate as formatDate } from "@/lib/utils/formatters";
+import DoneSection from "./DoneSection";
 
 type PayMethod = "transfer" | "loan";
 type LoanBank = "ghb" | "gsb";
@@ -80,7 +80,6 @@ interface Props extends StepCommonProps {
 
 export default function OrderStep({ lead, state, refresh, expanded, onToggle }: Props) {
   const { me } = useMe();
-  const dialog = useDialog();
   const [subStep, setSubStep] = useSubStep(`orderSubStep_${lead.id}`, 0, SUB_STEPS.length);
   const [nextError, setNextError] = useState<string | null>(null);
   const [total, setTotal] = useState<number>(lead.order_total || lead.quotation_amount || 0);
@@ -161,11 +160,7 @@ export default function OrderStep({ lead, state, refresh, expanded, onToggle }: 
 
     if (conflicts.length > 0) {
       const list = conflicts.map(i => `งวดที่ ${i + 1}`).join(", ");
-      dialog.alert({
-        title: "ปรับจำนวนงวดไม่ได้",
-        message: `${list} ชำระแล้ว — เปลี่ยนเป็น ${n} งวดจะกระทบ % ของงวดที่ชำระแล้ว ต้องถอน confirm ก่อน`,
-        variant: "danger",
-      });
+      setNextError(`ปรับจำนวนงวดไม่ได้: ${list} ชำระแล้ว — เปลี่ยนเป็น ${n} งวดจะกระทบ % ของงวดที่ชำระแล้ว ต้องถอน confirm ก่อน`);
       return;
     }
 
@@ -457,33 +452,32 @@ export default function OrderStep({ lead, state, refresh, expanded, onToggle }: 
         </div>
       )}
       {lead.install_date && (
-        <div className="border-l-3 border-amber-400 pl-3">
-          <div className="text-xs font-bold text-amber-600 uppercase mb-1">กำหนดเข้าติดตั้ง</div>
+        <DoneSection color="amber" title="กำหนดเข้าติดตั้ง">
           <div className="font-semibold text-gray-800">{formatDate(lead.install_date)}</div>
-        </div>
+        </DoneSection>
       )}
 
       {lead.order_before_slip && (
-        <div className="border-l-3 border-violet-400 pl-3">
-          <div className="flex items-center justify-between mb-1.5">
-            <div className="text-xs font-bold text-violet-600 uppercase">สลิปก่อนติดตั้ง</div>
-            <div className="text-sm font-bold font-mono tabular-nums text-gray-900">{fmt(doneAmtBefore)} บาท</div>
-          </div>
+        <DoneSection color="violet" title={
+          <span className="flex items-center justify-between gap-2">
+            <span>สลิปก่อนติดตั้ง</span>
+            <span className="text-sm font-bold font-mono tabular-nums text-gray-900 normal-case">{fmt(doneAmtBefore)} บาท</span>
+          </span>
+        }>
           <PaymentSlipsThumbs slipUrl={lead.order_before_slip} label="สลิปก่อนติดตั้ง" />
-        </div>
+        </DoneSection>
       )}
 
 
       {(lead.full_name || lead.id_card_number || lead.id_card_address || lead.installation_address) && (
-        <div className="border-l-3 border-gray-300 pl-3">
-          <div className="text-xs font-bold text-gray-400 uppercase mb-1">ข้อมูลขออนุญาตติดตั้ง</div>
+        <DoneSection color="gray" title="ข้อมูลขออนุญาตติดตั้ง">
           <div className="space-y-0.5">
             {lead.full_name && <div className="flex justify-between"><span className="text-gray-400">ชื่อ-นามสกุล</span><span className="text-gray-800 text-right">{lead.full_name}</span></div>}
             {lead.id_card_number && <div className="flex justify-between"><span className="text-gray-400">เลขบัตร ปชช.</span><span className="font-mono tabular-nums text-gray-800">{lead.id_card_number}</span></div>}
             {lead.id_card_address && <div className="flex flex-col"><span className="text-gray-400">ที่อยู่ตามบัตร</span><span className="text-gray-800">{lead.id_card_address}</span></div>}
             {lead.installation_address && <div className="flex flex-col"><span className="text-gray-400">ที่อยู่ติดตั้ง</span><span className="text-gray-800">{lead.installation_address}</span></div>}
           </div>
-        </div>
+        </DoneSection>
       )}
 
       {lead.order_before_paid && (
@@ -1183,15 +1177,15 @@ export default function OrderStep({ lead, state, refresh, expanded, onToggle }: 
             <div className="text-xs font-semibold text-gray-400 uppercase tracking-wider">ข้อมูลขออนุญาตติดตั้ง</div>
             <div>
               <label className="text-xs text-gray-500 block mb-1">ชื่อ-นามสกุล</label>
-              <input type="text" value={regName} onChange={e => setRegName(e.target.value)} className="w-full h-10 px-3 rounded-lg border border-gray-200 focus:outline-none focus:border-primary" />
+              <input type="text" value={regName} onChange={e => setRegName(e.target.value)} className="w-full h-11 px-3 rounded-lg border border-gray-200 focus:outline-none focus:border-primary" />
             </div>
             <div>
               <label className="text-xs text-gray-500 block mb-1">อีเมล <span className="text-red-500">*</span></label>
-              <input type="email" value={regEmail} onChange={e => setRegEmail(e.target.value)} placeholder="example@mail.com" className="w-full h-10 px-3 rounded-lg border border-gray-200 focus:outline-none focus:border-primary" />
+              <input type="email" value={regEmail} onChange={e => setRegEmail(e.target.value)} placeholder="example@mail.com" className="w-full h-11 px-3 rounded-lg border border-gray-200 focus:outline-none focus:border-primary" />
             </div>
             <div>
               <label className="text-xs text-gray-500 block mb-1">เลขบัตรประชาชน</label>
-              <input type="text" inputMode="numeric" maxLength={13} value={regIdCard} onChange={e => setRegIdCard(e.target.value.replace(/\D/g, "").slice(0, 13))} placeholder="13 หลัก" className="w-full h-10 px-3 rounded-lg border border-gray-200 font-mono tabular-nums focus:outline-none focus:border-primary" />
+              <input type="text" inputMode="numeric" maxLength={13} value={regIdCard} onChange={e => setRegIdCard(e.target.value.replace(/\D/g, "").slice(0, 13))} placeholder="13 หลัก" className="w-full h-11 px-3 rounded-lg border border-gray-200 font-mono tabular-nums focus:outline-none focus:border-primary" />
             </div>
             <div>
               <label className="text-xs text-gray-500 block mb-1">ที่อยู่ตามบัตรประชาชน</label>

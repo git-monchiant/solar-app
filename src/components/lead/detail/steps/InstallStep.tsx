@@ -16,6 +16,7 @@ import { useSubStep } from "@/lib/hooks/useSubStep";
 import { compressImage } from "@/lib/utils/compressImage";
 import { buildAppointmentFlex } from "@/lib/utils/line-flex";
 import { formatTHB as fmt, formatThaiDate as formatDate } from "@/lib/utils/formatters";
+import DoneSection from "./DoneSection";
 
 const SUB_STEPS = ["นัด", "รูปภาพ", "สรุป คชจ.", "เก็บเงิน", "ส่งมอบ"];
 
@@ -254,8 +255,7 @@ export default function InstallStep({ lead, state, refresh, expanded, onToggle }
 
       {/* Photos */}
       {photos.length > 0 && (
-        <div className="border-l-3 border-emerald-400 pl-3">
-          <div className="text-xs font-bold text-emerald-600 uppercase mb-1.5">ภาพส่งมอบ ({photos.length})</div>
+        <DoneSection color="emerald" title={`ภาพส่งมอบ (${photos.length})`}>
           <div className="grid grid-cols-3 md:grid-cols-4 gap-2">
             {photos.map((url, i) => (
               <FallbackImage
@@ -268,19 +268,17 @@ export default function InstallStep({ lead, state, refresh, expanded, onToggle }
               />
             ))}
           </div>
-        </div>
+        </DoneSection>
       )}
 
       {lead.install_note && (
-        <div className="border-l-3 border-gray-300 pl-3">
-          <div className="text-xs font-bold text-gray-400 uppercase mb-1">บันทึกการส่งมอบ</div>
+        <DoneSection color="gray" title="บันทึกการส่งมอบ">
           <div className="text-gray-800 whitespace-pre-wrap">{lead.install_note}</div>
-        </div>
+        </DoneSection>
       )}
 
       {/* Cost summary */}
-      <div className="border-l-3 border-blue-400 pl-3">
-        <div className="text-xs font-bold text-blue-600 uppercase mb-1.5">สรุปค่าใช้จ่าย</div>
+      <DoneSection color="blue" title="สรุปค่าใช้จ่าย">
         <div className="space-y-1.5">
           <div className="flex justify-between text-sm">
             <span className="text-gray-500">มูลค่างาน (ใบเสนอราคา)</span>
@@ -327,31 +325,28 @@ export default function InstallStep({ lead, state, refresh, expanded, onToggle }
             <span className="font-mono text-emerald-700">{fmt(orderTotal + (lead.install_extra_cost || 0))} ฿</span>
           </div>
         </div>
-      </div>
+      </DoneSection>
 
       {/* Slip */}
       {lead.order_after_slip && (
-        <div className="border-l-3 border-violet-400 pl-3">
-          <div className="text-xs font-bold text-violet-600 uppercase mb-1.5">สลิปหลังติดตั้ง</div>
+        <DoneSection color="violet" title="สลิปหลังติดตั้ง">
           <PaymentSlipsThumbs slipUrl={lead.order_after_slip} label="สลิปหลังติดตั้ง" />
-        </div>
+        </DoneSection>
       )}
 
 
       {/* Customer signature */}
       {lead.install_customer_signature_url && (
-        <div className="border-l-3 border-emerald-400 pl-3">
-          <div className="text-xs font-bold text-emerald-600 uppercase mb-1.5">ลายเซ็นลูกค้า (รับงาน)</div>
+        <DoneSection color="emerald" title="ลายเซ็นลูกค้า (รับงาน)">
           <a href={lead.install_customer_signature_url} target="_blank" rel="noreferrer">
             <FallbackImage src={lead.install_customer_signature_url} alt="ลายเซ็น" className="max-h-40 max-w-full object-contain bg-white rounded-lg border border-gray-200 hover:opacity-80 transition" />
           </a>
-        </div>
+        </DoneSection>
       )}
 
       {/* Review */}
       {lead.review_rating ? (
-        <div className="border-l-3 border-amber-400 pl-3">
-          <div className="text-xs font-bold text-amber-600 uppercase mb-2">คะแนนจากลูกค้า</div>
+        <DoneSection color="amber" title="คะแนนจากลูกค้า">
           <div className="space-y-1.5">
             {[
               { label: "คุณภาพงาน", value: lead.review_quality },
@@ -369,7 +364,7 @@ export default function InstallStep({ lead, state, refresh, expanded, onToggle }
             ))}
           </div>
           {lead.review_comment && <div className="text-gray-600 mt-2 text-xs italic">&quot;{lead.review_comment}&quot;</div>}
-        </div>
+        </DoneSection>
       ) : lead.review_sent ? (
         <div className="text-xs text-gray-400 italic">ส่งแบบประเมินแล้ว — รอลูกค้าให้คะแนน</div>
       ) : null}
@@ -714,7 +709,7 @@ export default function InstallStep({ lead, state, refresh, expanded, onToggle }
               closeStep();
             }}
             disabled={saving || !signatureUrl}
-            className="flex-1 md:flex-none md:w-64 h-11 rounded-lg text-sm font-semibold text-white bg-gradient-to-r from-emerald-500 to-emerald-600 hover:brightness-110 disabled:from-gray-300 disabled:to-gray-300 disabled:cursor-not-allowed transition-colors flex items-center justify-center gap-2"
+            className="flex-1 md:flex-none md:w-64 h-11 rounded-lg text-sm font-semibold text-white bg-gradient-to-r from-primary to-primary-dark hover:brightness-110 disabled:from-gray-300 disabled:to-gray-300 disabled:cursor-not-allowed transition-colors flex items-center justify-center gap-2"
           >
             {saving ? "กำลังยืนยัน..." : "ยืนยันส่งมอบงาน"}
             <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M8.25 4.5l7.5 7.5-7.5 7.5" /></svg>

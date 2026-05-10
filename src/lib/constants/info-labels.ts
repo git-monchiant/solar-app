@@ -47,18 +47,24 @@ export const SOURCE_LABEL: Record<string, string> = {
   event: "Event",
 };
 
-export const PRIMARY_REASON_LABEL: Record<string, string> = {
-  save_bill: "ประหยัดค่าไฟ",
-  sell_back: "ขายไฟคืน",
-  tax_deduction: "ลดหย่อนภาษี",
-  daytime_usage: "เปิดแอร์ทั้งวัน",
-  pet_ac: "แอร์ให้สัตว์เลี้ยง",
-  elderly_care: "ดูแลผู้สูงอายุ",
-  has_ev: "ชาร์จ EV",
-  environment: "รักษ์โลก",
-  home_business: "เปิดร้านที่บ้าน",
-  other: "อื่นๆ",
-};
+// Single source of truth for "เหตุผลที่สนใจ" — used by the seeker picker
+// (ordered list) and the lead-detail Info tab (label lookup).
+export const INTEREST_REASONS = [
+  { code: "save_bill", label: "ประหยัดค่าไฟ" },
+  { code: "sell_back", label: "ขายไฟคืน" },
+  { code: "tax_deduction", label: "ลดหย่อนภาษี" },
+  { code: "daytime_usage", label: "เปิดแอร์ทั้งวัน" },
+  { code: "pet_ac", label: "แอร์ให้สัตว์เลี้ยง" },
+  { code: "elderly_care", label: "ดูแลผู้สูงอายุ" },
+  { code: "has_ev", label: "ชาร์จ EV" },
+  { code: "environment", label: "รักษ์โลก" },
+  { code: "home_business", label: "เปิดร้านที่บ้าน" },
+  { code: "other", label: "อื่นๆ" },
+] as const;
+
+export const PRIMARY_REASON_LABEL: Record<string, string> = Object.fromEntries(
+  INTEREST_REASONS.map((r) => [r.code, r.label])
+);
 
 export const APPLIANCE_INTEREST_LABEL: Record<string, string> = {
   water_heater: "เครื่องทำน้ำอุ่น",

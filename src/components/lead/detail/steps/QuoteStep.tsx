@@ -9,6 +9,7 @@ import FallbackImage from "@/components/ui/FallbackImage";
 import StepLayout from "../StepLayout";
 import { compressImage } from "@/lib/utils/compressImage";
 import { formatTHB, formatThaiDate as formatDate } from "@/lib/utils/formatters";
+import DoneSection from "./DoneSection";
 
 interface Props extends StepCommonProps {
   packages: Package[];
@@ -109,10 +110,9 @@ export default function QuoteStep({ lead, state, refresh, expanded, onToggle }: 
   const renderDoneContent = () => (
     <>
       {typeof lead.quotation_amount === "number" && (
-        <div className="border-l-3 border-blue-400 pl-3">
-          <div className="text-xs font-bold text-blue-600 uppercase mb-1">มูลค่าตามใบเสนอราคา</div>
+        <DoneSection color="blue" title="มูลค่าตามใบเสนอราคา">
           <div className="text-lg font-bold font-mono tabular-nums text-gray-900">{formatTHB(lead.quotation_amount)} บาท</div>
-        </div>
+        </DoneSection>
       )}
 
       {(lead.quotation_doc_no || lead.quotation_sent_date || lead.quotation_by) && (
@@ -139,10 +139,9 @@ export default function QuoteStep({ lead, state, refresh, expanded, onToggle }: 
       )}
 
       {lead.quotation_note && (
-        <div className="border-l-3 border-gray-300 pl-3">
-          <div className="text-xs font-bold text-gray-400 uppercase mb-1">บันทึก</div>
+        <DoneSection color="gray" title="บันทึก">
           <div className="text-gray-800 whitespace-pre-wrap">{lead.quotation_note}</div>
-        </div>
+        </DoneSection>
       )}
 
       {lead.quotation_files && (() => {
@@ -150,8 +149,7 @@ export default function QuoteStep({ lead, state, refresh, expanded, onToggle }: 
         const isImage = /\.(jpg|jpeg|png|gif|webp)$/i.test(url);
         const fileName = url.split("/").pop() || "ไฟล์ใบเสนอราคา";
         return (
-          <div className="border-l-3 border-orange-400 pl-3">
-            <div className="text-xs font-bold text-orange-600 uppercase mb-1.5">ไฟล์ใบเสนอราคา</div>
+          <DoneSection color="orange" title="ไฟล์ใบเสนอราคา">
             {isImage ? (
               <a href={url} target="_blank" rel="noreferrer">
                 <FallbackImage src={url} alt={fileName} className="max-h-40 max-w-full object-contain bg-gray-50 rounded-lg border border-gray-200 hover:opacity-80 transition" fallbackLabel="ไฟล์หาย" />
@@ -162,7 +160,7 @@ export default function QuoteStep({ lead, state, refresh, expanded, onToggle }: 
                 <span className="text-sm text-primary font-semibold truncate">{fileName}</span>
               </a>
             )}
-          </div>
+          </DoneSection>
         );
       })()}
     </>

@@ -324,7 +324,7 @@ const PreSurveyForm = forwardRef<PreSurveyFormHandle, Props>(function PreSurveyF
             ))}
           </div>
           {residenceType.startsWith("other") && (
-            <input type="text" placeholder="ระบุประเภทบ้าน..." value={residenceType.startsWith("other:") ? residenceType.slice(6) : ""} onChange={e => setResidenceType(e.target.value ? `other:${e.target.value}` : "other")} className="w-full mt-2 h-10 px-3 rounded-lg border border-gray-200 text-sm focus:outline-none focus:border-active" />
+            <input type="text" placeholder="ระบุประเภทบ้าน..." value={residenceType.startsWith("other:") ? residenceType.slice(6) : ""} onChange={e => setResidenceType(e.target.value ? `other:${e.target.value}` : "other")} className="w-full mt-2 h-11 px-3 rounded-lg border border-gray-200 text-sm focus:outline-none focus:border-active" />
           )}
         </div>
       )}

@@ -119,8 +119,10 @@ export async function GET(req: NextRequest) {
       ORDER BY p.visited_at DESC
     `);
 
-    // Daily chart data — last 33 days (30 history + 3 future buffer).
-    // Future days will simply be empty rows on the client side.
+    // Daily chart data — all-time (every day with at least one visit). The
+    // dashboard label/bar count is sized client-side from the earliest day in
+    // the response so the chart shows actual usage span, not a fixed 30-day
+    // window that under- or over-claims relative to the KPIs above it.
     const dailyReq = db.request();
     if (project) dailyReq.input("project", sql.NVarChar(200), project);
     const dailyRes = await dailyReq.query(`
@@ -132,7 +134,6 @@ export async function GET(req: NextRequest) {
         SUM(CASE WHEN ${STATUS_CASE} = 'pending' THEN 1 ELSE 0 END) AS pending
       FROM prospects p
       WHERE p.visited_at IS NOT NULL
-        AND p.visited_at >= DATEADD(day, -33, CAST(GETDATE() AS DATE))
         ${projectFilter}
       GROUP BY CONVERT(NVARCHAR(10), p.visited_at, 23)
     `);

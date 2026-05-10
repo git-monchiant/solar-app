@@ -384,7 +384,7 @@ const SurveyForm = forwardRef<SurveyFormHandle, Props>(function SurveyForm({ lea
               placeholder="อื่นๆ ระบุ..."
               value={meterSize.startsWith("other:") ? meterSize.slice(6) : ""}
               onChange={e => setMeterSize(e.target.value ? `other:${e.target.value}` : "")}
-              className={`w-full mt-2 h-10 px-3 rounded-lg border text-sm focus:outline-none ${meterSize.startsWith("other") ? "border-active bg-active-light" : "border-gray-200 bg-white"}`}
+              className={`w-full mt-2 h-11 px-3 rounded-lg border text-sm focus:outline-none ${meterSize.startsWith("other") ? "border-active bg-active-light" : "border-gray-200 bg-white"}`}
             />
           </div>
 
@@ -487,7 +487,7 @@ const SurveyForm = forwardRef<SurveyFormHandle, Props>(function SurveyForm({ lea
               value={breakerType.startsWith("other:") ? breakerType.slice(6) : ""}
               onChange={e => setBreakerType(e.target.value ? `other:${e.target.value}` : "")}
               onFocus={() => { if (!breakerType.startsWith("other")) setBreakerType("other:"); }}
-              className={`w-full mt-2 h-10 px-3 rounded-lg border text-sm focus:outline-none ${breakerType.startsWith("other") ? "border-active bg-active-light" : "border-gray-200 bg-white"}`}
+              className={`w-full mt-2 h-11 px-3 rounded-lg border text-sm focus:outline-none ${breakerType.startsWith("other") ? "border-active bg-active-light" : "border-gray-200 bg-white"}`}
             />
           </div>
 
@@ -590,7 +590,7 @@ const SurveyForm = forwardRef<SurveyFormHandle, Props>(function SurveyForm({ lea
               value={roofStructure.startsWith("other:") ? roofStructure.slice(6) : ""}
               onChange={e => setRoofStructure(e.target.value ? `other:${e.target.value}` : "")}
               onFocus={() => { if (!roofStructure.startsWith("other")) setRoofStructure("other:"); }}
-              className={`w-full mt-2 h-10 px-3 rounded-lg border text-sm focus:outline-none ${roofStructure.startsWith("other") ? "border-active bg-active-light" : "border-gray-200 bg-white"}`}
+              className={`w-full mt-2 h-11 px-3 rounded-lg border text-sm focus:outline-none ${roofStructure.startsWith("other") ? "border-active bg-active-light" : "border-gray-200 bg-white"}`}
             />
           </div>
 
@@ -614,7 +614,7 @@ const SurveyForm = forwardRef<SurveyFormHandle, Props>(function SurveyForm({ lea
                       onChange={e => setRoofOrientationNotes(curr => ({ ...curr, [o.value]: e.target.value }))}
                       placeholder="หมายเหตุ (ถ้ามี)"
                       disabled={!selected}
-                      className="w-full h-10 px-3 rounded-lg border border-gray-200 text-sm focus:outline-none focus:border-primary disabled:bg-gray-50 disabled:text-gray-400"
+                      className="w-full h-11 px-3 rounded-lg border border-gray-200 text-sm focus:outline-none focus:border-primary disabled:bg-gray-50 disabled:text-gray-400"
                     />
                   </Fragment>
                 );
@@ -700,7 +700,7 @@ const SurveyForm = forwardRef<SurveyFormHandle, Props>(function SurveyForm({ lea
                 const base = shading.includes(":") ? shading.split(":")[0] : (shading || "partial");
                 setShading(e.target.value ? `${base}:${e.target.value}` : base);
               }}
-              className="w-full mt-2 h-10 px-3 rounded-lg border border-gray-200 bg-white text-sm focus:outline-none focus:border-primary"
+              className="w-full mt-2 h-11 px-3 rounded-lg border border-gray-200 bg-white text-sm focus:outline-none focus:border-primary"
             />
           </div>
 
@@ -758,7 +758,7 @@ const SurveyForm = forwardRef<SurveyFormHandle, Props>(function SurveyForm({ lea
               value={accessMethod.startsWith("other:") ? accessMethod.slice(6) : ""}
               onChange={e => setAccessMethod(e.target.value ? `other:${e.target.value}` : "")}
               onFocus={() => { if (!accessMethod.startsWith("other")) setAccessMethod("other:"); }}
-              className={`w-full mt-2 h-10 px-3 rounded-lg border text-sm focus:outline-none ${accessMethod.startsWith("other") ? "border-active bg-active-light" : "border-gray-200 bg-white"}`}
+              className={`w-full mt-2 h-11 px-3 rounded-lg border text-sm focus:outline-none ${accessMethod.startsWith("other") ? "border-active bg-active-light" : "border-gray-200 bg-white"}`}
             />
           </div>
         </div>

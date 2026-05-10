@@ -437,36 +437,36 @@ export default function WarrantyStep({ lead, state, refresh, packages, expanded,
           <div className="text-xs font-semibold tracking-wider uppercase text-gray-400">อุปกรณ์ที่ติดตั้ง (ตามหน้างานจริง)</div>
           <div>
             <label className="text-xs text-gray-500 block mb-1">ขนาดระบบ (kWp)</label>
-            <input type="number" step="0.01" value={sysKwp} onChange={e => setSysKwp(e.target.value ? parseFloat(e.target.value) : "")} placeholder="5.00" className="w-full h-10 px-3 rounded-lg border border-gray-200 font-mono focus:outline-none focus:border-primary" />
+            <input type="number" step="0.01" value={sysKwp} onChange={e => setSysKwp(e.target.value ? parseFloat(e.target.value) : "")} placeholder="5.00" className="w-full h-11 px-3 rounded-lg border border-gray-200 font-mono focus:outline-none focus:border-primary" />
           </div>
           <div className="grid grid-cols-3 gap-2">
             <div>
               <label className="text-xs text-gray-500 block mb-1">จำนวนแผง</label>
-              <input type="number" value={panelCount} onChange={e => setPanelCount(e.target.value ? parseInt(e.target.value) : "")} placeholder="10" className="w-full h-10 px-3 rounded-lg border border-gray-200 font-mono focus:outline-none focus:border-primary" />
+              <input type="number" value={panelCount} onChange={e => setPanelCount(e.target.value ? parseInt(e.target.value) : "")} placeholder="10" className="w-full h-11 px-3 rounded-lg border border-gray-200 font-mono focus:outline-none focus:border-primary" />
             </div>
             <div>
               <label className="text-xs text-gray-500 block mb-1">วัตต์/แผง</label>
-              <input type="number" value={panelWatt} onChange={e => setPanelWatt(e.target.value ? parseInt(e.target.value) : "")} placeholder="550" className="w-full h-10 px-3 rounded-lg border border-gray-200 font-mono focus:outline-none focus:border-primary" />
+              <input type="number" value={panelWatt} onChange={e => setPanelWatt(e.target.value ? parseInt(e.target.value) : "")} placeholder="550" className="w-full h-11 px-3 rounded-lg border border-gray-200 font-mono focus:outline-none focus:border-primary" />
             </div>
             <div>
               <label className="text-xs text-gray-500 block mb-1">ยี่ห้อแผง</label>
-              <input type="text" value={panelBrand} onChange={e => setPanelBrand(e.target.value)} placeholder="Canadian" className="w-full h-10 px-3 rounded-lg border border-gray-200 focus:outline-none focus:border-primary" />
+              <input type="text" value={panelBrand} onChange={e => setPanelBrand(e.target.value)} placeholder="Canadian" className="w-full h-11 px-3 rounded-lg border border-gray-200 focus:outline-none focus:border-primary" />
             </div>
           </div>
           <div className="grid grid-cols-2 gap-2">
             <div>
               <label className="text-xs text-gray-500 block mb-1">ยี่ห้ออินเวอร์เตอร์</label>
-              <input type="text" value={invBrand} onChange={e => setInvBrand(e.target.value)} placeholder="Huawei" className="w-full h-10 px-3 rounded-lg border border-gray-200 focus:outline-none focus:border-primary" />
+              <input type="text" value={invBrand} onChange={e => setInvBrand(e.target.value)} placeholder="Huawei" className="w-full h-11 px-3 rounded-lg border border-gray-200 focus:outline-none focus:border-primary" />
             </div>
             <div>
               <label className="text-xs text-gray-500 block mb-1">ขนาด (kW)</label>
-              <input type="number" step="0.01" value={invKw} onChange={e => setInvKw(e.target.value ? parseFloat(e.target.value) : "")} placeholder="5" className="w-full h-10 px-3 rounded-lg border border-gray-200 font-mono focus:outline-none focus:border-primary" />
+              <input type="number" step="0.01" value={invKw} onChange={e => setInvKw(e.target.value ? parseFloat(e.target.value) : "")} placeholder="5" className="w-full h-11 px-3 rounded-lg border border-gray-200 font-mono focus:outline-none focus:border-primary" />
             </div>
           </div>
           <div>
             <label className="text-xs text-gray-500 block mb-1">Inverter Serial Number</label>
             <div className="flex gap-2">
-              <input value={sn} onChange={e => setSn(e.target.value)} placeholder="HW1234567890" className="flex-1 h-10 px-3 rounded-lg border border-gray-200 font-mono focus:outline-none focus:border-primary" />
+              <input value={sn} onChange={e => setSn(e.target.value)} placeholder="HW1234567890" className="flex-1 h-11 px-3 rounded-lg border border-gray-200 font-mono focus:outline-none focus:border-primary" />
               <input type="file" accept="image/*" capture="environment" onChange={handleSnPhoto} className="hidden" id={`sn-scan-${lead.id}`} />
               <label htmlFor={`sn-scan-${lead.id}`} className="shrink-0 self-stretch w-10 rounded-lg border border-gray-200 bg-white flex items-center justify-center cursor-pointer hover:border-primary hover:text-primary text-gray-500 transition-colors" title="ถ่ายรูป SN เพื่ออ่านอัตโนมัติ">
                 {snScanning ? (

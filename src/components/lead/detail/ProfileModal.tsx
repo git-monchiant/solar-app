@@ -20,6 +20,7 @@ export default function ProfileModal({ leadId, onClose, onSaved }: Props) {
   const [tab, setTab] = useState<Tab>("info");
   const [lineProfile, setLineProfile] = useState<{ display_name: string; picture_url: string | null } | null>(null);
   const [showLinePicker, setShowLinePicker] = useState(false);
+  const [error, setError] = useState<string | null>(null);
   const [form, setForm] = useState({
     full_name: "", phone: "", email: "",
     project_id: "" as string | number | null, project_name: "", project_alias: "",
@@ -88,10 +89,11 @@ export default function ProfileModal({ leadId, onClose, onSaved }: Props) {
       // Switch to whichever tab holds the first missing field so it's visible.
       // info tab owns name/phone/house_number; docs tab owns email duplicate.
       setTab("info");
-      alert("กรุณากรอก: " + missing.join(", "));
+      setError("กรุณากรอก: " + missing.join(", "));
       return;
     }
     setSaving(true);
+    setError(null);
     try {
       await apiFetch(`/api/leads/${leadId}`, {
         method: "PATCH",
@@ -129,7 +131,7 @@ export default function ProfileModal({ leadId, onClose, onSaved }: Props) {
       onSaved();
       onClose();
     } catch (err) {
-      console.error(err);
+      setError(err instanceof Error ? err.message : "บันทึกไม่สำเร็จ");
     } finally {
       setSaving(false);
     }
@@ -149,28 +151,46 @@ export default function ProfileModal({ leadId, onClose, onSaved }: Props) {
     }));
   };
 
+  // Match the underline-style tabs used on the lead detail page so the
+  // ProfileModal feels consistent with the rest of the app.
   const tabBtn = (active: boolean) =>
-    `flex-1 h-10 rounded-lg text-sm font-semibold transition-all ${
-      active
-        ? "bg-primary text-white shadow-sm shadow-primary/20"
-        : "bg-transparent text-gray-500 hover:text-gray-700"
+    `px-4 py-3 text-xs font-semibold uppercase tracking-wider border-b-2 -mb-px transition-colors inline-flex items-center gap-1.5 ${
+      active ? "text-active border-active" : "text-gray-500 border-transparent hover:text-gray-700"
     }`;
 
   return (
     <>
       <ModalBase
-        title={`ข้อมูลลูกค้า${form.full_name ? ` — ${form.full_name}` : ""}`}
+        title={
+          <div className="flex items-center gap-2">
+            <span className="w-7 h-7 rounded-full bg-primary/10 text-primary flex items-center justify-center shrink-0">
+              <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                <path strokeLinecap="round" strokeLinejoin="round" d="M15.75 6a3.75 3.75 0 11-7.5 0 3.75 3.75 0 017.5 0zM4.501 20.118a7.5 7.5 0 0114.998 0A17.933 17.933 0 0112 21.75c-2.676 0-5.216-.584-7.499-1.632z" />
+              </svg>
+            </span>
+            <span>{`ข้อมูลลูกค้า${form.full_name ? ` — ${form.full_name}` : ""}`}</span>
+          </div>
+        }
         onClose={onClose}
         size="xl"
         footer={!loading && (
-          <button
-            type="button"
-            onClick={handleSave}
-            disabled={saving}
-            className="w-full h-11 rounded-lg text-sm font-semibold text-white bg-gradient-to-r from-primary to-primary-dark hover:brightness-110 disabled:opacity-50 transition-colors flex items-center justify-center gap-2"
-          >
-            {saving ? "กำลังบันทึก…" : "บันทึก"}
-          </button>
+          <div className="flex gap-2">
+            <button
+              type="button"
+              onClick={onClose}
+              className="flex-1 py-3 rounded-xl border border-gray-200 text-sm font-semibold text-gray-700 bg-white"
+            >
+              ยกเลิก
+            </button>
+            <button
+              type="button"
+              onClick={handleSave}
+              disabled={saving}
+              className="flex-1 py-3 rounded-xl bg-primary text-white text-sm font-bold disabled:opacity-50 active:bg-primary-dark transition-colors"
+            >
+              {saving ? "กำลังบันทึก…" : "บันทึก"}
+            </button>
+          </div>
         )}
       >
         {loading ? (
@@ -179,9 +199,10 @@ export default function ProfileModal({ leadId, onClose, onSaved }: Props) {
           </div>
         ) : (
           <>
-            {/* Tab bar — pill-style, single row. Form state is shared so the
-                Save button at the modal footer flushes both tabs at once. */}
-            <div className="flex gap-1 p-1 bg-gray-100 rounded-xl mb-4 lg:max-w-md mx-auto">
+            {/* Tab bar — underline style, matches the rest of the app
+                (lead detail, settings). Form state is shared so the Save
+                button in the modal footer flushes both tabs at once. */}
+            <div className="flex border-b border-gray-200 mb-4 -mx-5 px-5">
               <button type="button" onClick={() => setTab("info")} className={tabBtn(tab === "info")} style={{ minHeight: 0 }}>
                 ข้อมูล
               </button>
@@ -208,6 +229,10 @@ export default function ProfileModal({ leadId, onClose, onSaved }: Props) {
                 onChange={patch => setForm(prev => ({ ...prev, ...patch }))}
                 onScan={applyScan}
               />
+            )}
+
+            {error && (
+              <div className="mt-4 rounded-lg bg-red-50 border border-red-200 px-3 py-2 text-xs text-red-700">{error}</div>
             )}
           </>
         )}

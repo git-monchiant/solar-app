@@ -13,6 +13,7 @@ import { getSourceStyle } from "@/lib/source-tag";
 import ChannelPickerModal from "@/components/shared/ChannelPickerModal";
 import PaymentSection from "@/components/payment/PaymentSection";
 import DocumentScanner from "@/components/customer/DocumentScanner";
+import { INTEREST_REASONS } from "@/lib/constants/info-labels";
 
 type Prospect = {
   id: number;
@@ -2232,18 +2233,7 @@ function VisitModal({ prospect, projects, existingProspects, onClose, onSaved, o
 
         <Field label="เหตุผลที่สนใจ (เลือกได้หลายข้อ)">
           <div className="flex flex-wrap gap-1.5">
-            {[
-              { code: "save_bill", label: "ประหยัดค่าไฟ" },
-              { code: "sell_back", label: "ขายไฟคืน" },
-              { code: "tax_deduction", label: "ลดหย่อนภาษี" },
-              { code: "daytime_usage", label: "เปิดแอร์ทั้งวัน" },
-              { code: "pet_ac", label: "แอร์ให้สัตว์เลี้ยง" },
-              { code: "elderly_care", label: "ดูแลผู้สูงอายุ" },
-              { code: "has_ev", label: "ชาร์จ EV" },
-              { code: "environment", label: "รักษ์โลก" },
-              { code: "home_business", label: "เปิดร้านที่บ้าน" },
-              { code: "other", label: "อื่นๆ" },
-            ].map((r) => {
+            {INTEREST_REASONS.map((r) => {
               const on = reasonCodes.includes(r.code);
               return (
                 <button

@@ -25,6 +25,7 @@ interface Props {
 export default function NewLeadModal({ onClose, onCreated, linkLine, initialSource }: Props) {
   const router = useRouter();
   const [saving, setSaving] = useState(false);
+  const [error, setError] = useState<string | null>(null);
   const [form, setForm] = useState({
     full_name: "", phone: "", email: "", house_number: "",
     project_id: "" as string | number | null, project_name: "",
@@ -50,6 +51,7 @@ export default function NewLeadModal({ onClose, onCreated, linkLine, initialSour
   const handleSubmit = async () => {
     if (!canSubmit) return;
     setSaving(true);
+    setError(null);
     try {
       const result = await apiFetch("/api/leads", {
         method: "POST",
@@ -74,25 +76,45 @@ export default function NewLeadModal({ onClose, onCreated, linkLine, initialSour
       if (result?.id) {
         router.push(`/leads/${result.id}`);
       }
-    } catch (err) { console.error(err); }
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "สร้าง lead ไม่สำเร็จ");
+    }
     finally { setSaving(false); }
   };
 
   return (
     <>
       <ModalBase
-        title={`New Lead${form.full_name.trim() ? ` — ${form.full_name.trim()}` : ""}`}
+        title={
+          <div className="flex items-center gap-2">
+            <span className="w-7 h-7 rounded-full bg-primary/10 text-primary flex items-center justify-center shrink-0">
+              <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                <path strokeLinecap="round" strokeLinejoin="round" d="M19 7.5v3m0 0v3m0-3h3m-3 0h-3m-2.25-4.125a3.375 3.375 0 11-6.75 0 3.375 3.375 0 016.75 0zM4 19.235v-.11a6.375 6.375 0 0112.75 0v.109A12.318 12.318 0 0110.374 21c-2.331 0-4.512-.645-6.374-1.766z" />
+              </svg>
+            </span>
+            <span>{`Lead ใหม่${form.full_name.trim() ? ` — ${form.full_name.trim()}` : ""}`}</span>
+          </div>
+        }
         onClose={onClose}
         size="xl"
         footer={
-          <button
-            type="button"
-            onClick={handleSubmit}
-            disabled={saving || !canSubmit}
-            className="w-full h-11 rounded-lg text-sm font-semibold text-white bg-gradient-to-r from-primary to-primary-dark hover:brightness-110 disabled:opacity-50 transition-colors"
-          >
-            {saving ? "กำลังบันทึก…" : "บันทึก"}
-          </button>
+          <div className="flex gap-2">
+            <button
+              type="button"
+              onClick={onClose}
+              className="flex-1 py-3 rounded-xl border border-gray-200 text-sm font-semibold text-gray-700 bg-white"
+            >
+              ยกเลิก
+            </button>
+            <button
+              type="button"
+              onClick={handleSubmit}
+              disabled={saving || !canSubmit}
+              className="flex-1 py-3 rounded-xl bg-primary text-white text-sm font-bold disabled:opacity-50 active:bg-primary-dark transition-colors"
+            >
+              {saving ? "กำลังบันทึก…" : "บันทึก"}
+            </button>
+          </div>
         }
       >
         <CustomerWizard
@@ -106,6 +128,9 @@ export default function NewLeadModal({ onClose, onCreated, linkLine, initialSour
           mode="create"
           hideSubmit
         />
+        {error && (
+          <div className="mt-4 rounded-lg bg-red-50 border border-red-200 px-3 py-2 text-xs text-red-700">{error}</div>
+        )}
       </ModalBase>
       {showLinePicker && (
         <LinePickerModal

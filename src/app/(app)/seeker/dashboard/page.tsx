@@ -217,7 +217,31 @@ export default function SeekerDashboardPage() {
             </div>
 
             {/* Daily seeker activity — 1 block per house visited that day */}
-            <div className="bg-white rounded-2xl border border-gray-200 p-4">
+            <div className="bg-white rounded-2xl border border-gray-200 p-4 relative">
+              <button
+                type="button"
+                onClick={async () => {
+                  const res = await fetch("/api/report/seeker-leads-pdf", { headers: { ...getUserIdHeader() } });
+                  if (!res.ok) { dialog.alert({ title: "โหลดไม่สำเร็จ", message: "โหลด PDF ไม่สำเร็จ", variant: "danger" }); return; }
+                  const blob = await res.blob();
+                  const url = URL.createObjectURL(blob);
+                  const a = document.createElement("a");
+                  a.href = url;
+                  a.download = `seeker_leads_${new Date().toISOString().slice(0, 10)}.pdf`;
+                  document.body.appendChild(a);
+                  a.click();
+                  a.remove();
+                  URL.revokeObjectURL(url);
+                }}
+                className="absolute top-3 right-3 inline-flex items-center gap-1 h-8 px-2 rounded-lg text-gray-400 hover:text-primary hover:bg-primary/5 transition-colors"
+                title="ดาวน์โหลดรายงาน PDF (Lead Seeker — 30 วัน)"
+                aria-label="ดาวน์โหลดรายงาน PDF"
+              >
+                <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M3 16.5v2.25A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75V16.5M16.5 12L12 16.5m0 0L7.5 12m4.5 4.5V3" />
+                </svg>
+                <span className="text-xs font-semibold">PDF</span>
+              </button>
               <div className="text-xs font-semibold uppercase tracking-wider text-gray-500 mb-3">
                 การทำงานของ Seeker <span className="normal-case text-gray-300">(30 วันล่าสุด)</span>
               </div>
@@ -495,13 +519,14 @@ const BADGE_COLOR: Record<StatusKey, string> = {
   not_interested: "bg-red-100 text-red-700 border-red-200",
 };
 
-function SeekerActivityChart({ daily }: { daily: DailyRow[] }) {
+function SeekerActivityChart({ daily, usageDays }: { daily: DailyRow[]; usageDays?: number }) {
   const [tooltip, setTooltip] = useState<{ x: number; y: number; text: string } | null>(null);
 
-  // Rolling 30-day window with 3 trailing future days — gives the latest
-  // bar visual breathing room and stops it from hugging the right edge.
+  // Rolling window from the system's first day of use → today (with 3 trailing
+  // future days for breathing room). Caller passes `usageDays`; default to 30
+  // when omitted. Avoids showing empty pre-rollout days as zero-bars.
   const today = new Date();
-  const HISTORY = 30;
+  const HISTORY = Math.max(1, usageDays ?? 30);
   const FUTURE_PAD = 3;
   const start = new Date(today.getFullYear(), today.getMonth(), today.getDate() - (HISTORY - 1));
   const end = new Date(today.getFullYear(), today.getMonth(), today.getDate() + FUTURE_PAD);
@@ -610,7 +635,7 @@ function SeekerActivityChart({ daily }: { daily: DailyRow[] }) {
         ))}
       </div>
       <div className="flex items-center justify-between mt-2">
-        <span className="text-xs text-gray-400">รวม 30 วัน {totalMonth} หลัง · 1 แท่ง = 1 วัน</span>
+        <span className="text-xs text-gray-400">รวม {HISTORY} วัน {totalMonth} หลัง · 1 แท่ง = 1 วัน</span>
         <div className="flex items-center gap-3 text-[10px] text-gray-400">
           <div className="flex items-center gap-1"><div className="w-[10px] h-[10px] rounded-sm bg-green-500" /><span>สนใจ</span></div>
           <div className="flex items-center gap-1"><div className="w-[10px] h-[10px] rounded-sm bg-sky-500" /><span>ติดตาม</span></div>

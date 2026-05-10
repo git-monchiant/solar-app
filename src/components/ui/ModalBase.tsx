@@ -1,7 +1,7 @@
 "use client";
 import ModalCloseButton from "./ModalCloseButton";
 
-type Size = "md" | "lg" | "xl";
+type Size = "md" | "lg" | "xl" | "2xl";
 
 interface Props {
   title: React.ReactNode;
@@ -18,6 +18,7 @@ const SIZE_CLASS: Record<Size, string> = {
   md: "md:max-w-md",
   lg: "md:max-w-2xl",
   xl: "md:max-w-4xl",
+  "2xl": "md:max-w-5xl",
 };
 
 /**

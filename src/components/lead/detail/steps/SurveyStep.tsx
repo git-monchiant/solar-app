@@ -17,6 +17,7 @@ import { compressImage } from "@/lib/utils/compressImage";
 import { buildAppointmentFlex, buildSurveyResultFlex } from "@/lib/utils/line-flex";
 import { formatSlotsRange } from "@/lib/time-slots";
 import { formatThaiDate as formatDate } from "@/lib/utils/formatters";
+import DoneSection from "./DoneSection";
 import {
   ROOF_MATERIAL_LABEL as ROOF_MATERIAL_MAP,
   ORIENTATION_LABEL as ORIENTATION_MAP,
@@ -444,18 +445,16 @@ export default function SurveyStep({ lead, state, refresh, packages, expanded, o
 
       {/* 0. ข้อมูลการเข้าสำรวจจริง */}
       {(lead.survey_actual_date || lead.survey_actual_by) && (
-        <div className="border-l-3 border-teal-400 pl-3">
-          <div className="text-xs font-bold text-teal-600 uppercase mb-1.5">เข้าสำรวจหน้างาน</div>
+        <DoneSection color="teal" title="เข้าสำรวจหน้างาน">
           <div className="space-y-0.5 text-sm">
             <DoneRow label="วันที่จริง" value={lead.survey_actual_date ? formatDate(lead.survey_actual_date) : "—"} />
             <DoneRow label="ผู้สำรวจ" value={lead.survey_actual_by || "—"} />
           </div>
-        </div>
+        </DoneSection>
       )}
 
       {/* 1. ระบบไฟฟ้า */}
-      <div className="border-l-3 border-blue-400 pl-3">
-        <div className="text-xs font-bold text-blue-600 uppercase mb-1.5">ระบบไฟฟ้า</div>
+      <DoneSection color="blue" title="ระบบไฟฟ้า">
         <div className="space-y-0.5 text-sm">
           <DoneRow label="มิเตอร์" value={lead.survey_meter_size ? METER_MAP[lead.survey_meter_size] || lead.survey_meter_size : "—"} />
           <DoneRow label="ระบบไฟ" value={lead.survey_electrical_phase ? PHASE_MAP[lead.survey_electrical_phase] || lead.survey_electrical_phase : "—"} />
@@ -476,11 +475,10 @@ export default function SurveyStep({ lead, state, refresh, packages, expanded, o
           ]} />
           <DoneRow label="เครื่องใช้พิเศษ" value={applianceList.length ? applianceList.join(" · ") : "—"} />
         </div>
-      </div>
+      </DoneSection>
 
       {/* 2. หลังคา · โครงสร้างบ้าน */}
-      <div className="border-l-3 border-amber-400 pl-3">
-        <div className="text-xs font-bold text-amber-600 uppercase mb-1.5">หลังคา · โครงสร้างบ้าน</div>
+      <DoneSection color="amber" title="หลังคา · โครงสร้างบ้าน">
         <div className="space-y-0.5 text-sm">
           <DoneRow label="จำนวนชั้น" value={lead.survey_floors != null ? `${lead.survey_floors} ชั้น` : "—"} />
           <DoneRow label="วัสดุหลังคา" value={lead.survey_roof_material ? ROOF_MATERIAL_MAP[lead.survey_roof_material] || lead.survey_roof_material : "—"} />
@@ -493,21 +491,19 @@ export default function SurveyStep({ lead, state, refresh, packages, expanded, o
           <DoneRow label="โครงสร้างหลังคา" value={lead.survey_roof_structure ? ROOF_STRUCTURE_MAP[lead.survey_roof_structure] || lead.survey_roof_structure : "—"} />
           <DoneRow label="เงาบัง" value={lead.survey_shading ? SHADING_MAP[lead.survey_shading] || lead.survey_shading : "—"} />
         </div>
-      </div>
+      </DoneSection>
 
       {/* 3. การเตรียมการติดตั้ง */}
-      <div className="border-l-3 border-violet-400 pl-3">
-        <div className="text-xs font-bold text-violet-600 uppercase mb-1.5">การเตรียมการติดตั้ง</div>
+      <DoneSection color="violet" title="การเตรียมการติดตั้ง">
         <div className="space-y-0.5 text-sm">
           <DoneRow label="ตำแหน่ง Inverter" value={lead.survey_inverter_location ? INVERTER_LOC_MAP[lead.survey_inverter_location] || lead.survey_inverter_location : "—"} />
           <DoneRow label="สัญญาณ Wi-Fi" value={lead.survey_wifi_signal ? WIFI_MAP[lead.survey_wifi_signal] || lead.survey_wifi_signal : "—"} />
           <DoneRow label="วิธีขึ้นหลังคา" value={lead.survey_access_method ? ACCESS_MAP[lead.survey_access_method] || lead.survey_access_method : "—"} />
         </div>
-      </div>
+      </DoneSection>
 
       {/* 4. ขนาดระบบที่เสนอ + packages */}
-      <div className="border-l-3 border-emerald-400 pl-3">
-        <div className="text-xs font-bold text-emerald-600 uppercase mb-1.5">ขนาดระบบที่เสนอ</div>
+      <DoneSection color="emerald" title="ขนาดระบบที่เสนอ">
         <div className="space-y-0.5 text-sm">
           <DoneRow label="ขนาดแนะนำ" value={lead.survey_recommended_kw != null ? `${lead.survey_recommended_kw} kWp` : "—"} />
           <DoneRow label="จำนวน Panel" value={lead.survey_panel_count != null ? `${lead.survey_panel_count} แผง` : "—"} />
@@ -534,30 +530,27 @@ export default function SurveyStep({ lead, state, refresh, packages, expanded, o
             ))}
           </div>
         )}
-      </div>
+      </DoneSection>
 
       {/* 5. บันทึกผู้สำรวจ */}
       {lead.survey_note && (
-        <div className="border-l-3 border-gray-300 pl-3">
-          <div className="text-xs font-bold text-gray-500 uppercase mb-1.5">บันทึกผู้สำรวจ</div>
+        <DoneSection color="gray" title="บันทึกผู้สำรวจ">
           <div className="text-sm text-gray-800 whitespace-pre-wrap">{lead.survey_note}</div>
-        </div>
+        </DoneSection>
       )}
 
       {/* 6. ลายเซ็นลูกค้า */}
       {lead.survey_customer_signature_url && (
-        <div className="border-l-3 border-gray-300 pl-3">
-          <div className="text-xs font-bold text-gray-500 uppercase mb-1.5">ลายเซ็นลูกค้า</div>
+        <DoneSection color="gray" title="ลายเซ็นลูกค้า">
           <div className="bg-white border border-gray-200 rounded-lg p-3 flex justify-center">
             {/* eslint-disable-next-line @next/next/no-img-element */}
             <img src={lead.survey_customer_signature_url} alt="signature" className="max-h-20 object-contain" />
           </div>
-        </div>
+        </DoneSection>
       )}
 
       {/* 7. Photo Checklist — 4 named slots */}
-      <div className="border-l-3 border-gray-300 pl-3">
-        <div className="text-xs font-bold text-gray-500 uppercase mb-1.5">Photo Checklist</div>
+      <DoneSection color="gray" title="Photo Checklist">
         <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
           {photoSlots.map(p => (
             <div key={p.label} className="rounded-lg overflow-hidden border border-gray-200 bg-white">
@@ -572,12 +565,11 @@ export default function SurveyStep({ lead, state, refresh, packages, expanded, o
             </div>
           ))}
         </div>
-      </div>
+      </DoneSection>
 
       {/* 8. รูปถ่ายเพิ่มเติม */}
       {lead.survey_photos && (
-        <div className="border-l-3 border-gray-300 pl-3">
-          <div className="text-xs font-bold text-gray-500 uppercase mb-1.5">รูปถ่ายเพิ่มเติม</div>
+        <DoneSection color="gray" title="รูปถ่ายเพิ่มเติม">
           <div className="grid grid-cols-3 md:grid-cols-4 gap-2">
             {(() => {
               const urls = lead.survey_photos.split(",").filter(Boolean);
@@ -595,7 +587,7 @@ export default function SurveyStep({ lead, state, refresh, packages, expanded, o
               ));
             })()}
           </div>
-        </div>
+        </DoneSection>
       )}
 
       {/* PDF download */}
@@ -820,7 +812,7 @@ export default function SurveyStep({ lead, state, refresh, packages, expanded, o
                       value={locInput}
                       onChange={e => setLocInput(e.target.value)}
                       placeholder="วางลิงก์จาก LINE/Google Maps หรือ lat,lng"
-                      className="w-full h-10 px-3 rounded-lg border border-gray-200 text-sm focus:outline-none focus:border-active"
+                      className="w-full h-11 px-3 rounded-lg border border-gray-200 text-sm focus:outline-none focus:border-active"
                       autoFocus
                     />
                     <button
@@ -911,7 +903,7 @@ export default function SurveyStep({ lead, state, refresh, packages, expanded, o
                 apiFetch(`/api/leads/${lead.id}`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ survey_wants_battery: v || null, interested_package_ids: null, interested_package_id: null }) }).catch(console.error);
               }}
               onFocus={() => { if (!surveyBattery.startsWith("other")) setSurveyBattery("other:"); }}
-              className={`w-full mt-2 h-10 px-3 rounded-lg border text-sm focus:outline-none ${surveyBattery.startsWith("other") ? "border-active bg-active-light" : "border-gray-200 bg-white"}`}
+              className={`w-full mt-2 h-11 px-3 rounded-lg border text-sm focus:outline-none ${surveyBattery.startsWith("other") ? "border-active bg-active-light" : "border-gray-200 bg-white"}`}
             />
           </div>
 
@@ -1055,12 +1047,12 @@ export default function SurveyStep({ lead, state, refresh, packages, expanded, o
             <div>
               <div className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-1.5">วันที่เข้าสำรวจจริง</div>
               <input type="date" value={actualDate} onChange={e => setActualDate(e.target.value)}
-                className="w-full h-10 px-3 rounded-lg border border-gray-200 bg-white text-sm focus:outline-none focus:border-primary" />
+                className="w-full h-11 px-3 rounded-lg border border-gray-200 bg-white text-sm focus:outline-none focus:border-primary" />
             </div>
             <div>
               <div className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-1.5">ผู้เข้าสำรวจ</div>
               <input type="text" value={actualBy} onChange={e => setActualBy(e.target.value)}
-                className="w-full h-10 px-3 rounded-lg border border-gray-200 bg-white text-sm focus:outline-none focus:border-primary" />
+                className="w-full h-11 px-3 rounded-lg border border-gray-200 bg-white text-sm focus:outline-none focus:border-primary" />
             </div>
           </div>
 

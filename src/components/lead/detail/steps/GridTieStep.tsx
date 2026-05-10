@@ -5,6 +5,7 @@ import { apiFetch } from "@/lib/api";
 import type { StepCommonProps } from "./types";
 import FallbackImage from "@/components/ui/FallbackImage";
 import ErrorPopup from "@/components/ui/ErrorPopup";
+import DoneSection from "./DoneSection";
 import StepLayout from "../StepLayout";
 import { compressImage } from "@/lib/utils/compressImage";
 
@@ -116,10 +117,9 @@ export default function GridTieStep({ lead, state, refresh, expanded, onToggle }
         </a>
       )}
       {lead.grid_note && (
-        <div className="border-l-3 border-gray-300 pl-3 text-sm">
-          <div className="text-xs font-bold text-gray-400 uppercase mb-1">หมายเหตุ</div>
-          <div className="text-gray-800 whitespace-pre-wrap">{lead.grid_note}</div>
-        </div>
+        <DoneSection color="gray" title="หมายเหตุ">
+          <div className="text-sm text-gray-800 whitespace-pre-wrap">{lead.grid_note}</div>
+        </DoneSection>
       )}
     </>
   );

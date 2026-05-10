@@ -51,22 +51,28 @@ export default function NewAppointmentModal({ onClose, onCreated, initialDate }:
   return (
     <ModalBase
       title={
-        <div>
-          <div className="text-sm font-bold">สร้างนัด (งานอื่น)</div>
-          <div className="text-xs text-gray-500 mt-0.5 font-normal">block วันให้ทีมนัดหมายไม่เลือก</div>
+        <div className="flex items-center gap-2">
+          <span className="w-7 h-7 rounded-full bg-primary/10 text-primary flex items-center justify-center shrink-0">
+            <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+              <path strokeLinecap="round" strokeLinejoin="round" d="M6.75 3v2.25M17.25 3v2.25M3 18.75V7.5a2.25 2.25 0 012.25-2.25h13.5A2.25 2.25 0 0121 7.5v11.25m-18 0A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75m-18 0v-7.5A2.25 2.25 0 015.25 9h13.5A2.25 2.25 0 0121 11.25v7.5" />
+            </svg>
+          </span>
+          <div>
+            <div className="text-sm font-bold">สร้างนัด (งานอื่น)</div>
+            <div className="text-xs text-gray-500 mt-0.5 font-normal">block วันให้ทีมนัดหมายไม่เลือก</div>
+          </div>
         </div>
       }
       onClose={onClose}
       size="lg"
       footer={
-        <div className="flex items-center gap-2">
+        <div className="flex gap-2">
           <button type="button" onClick={onClose}
-            className="h-10 px-5 rounded-lg text-sm font-semibold text-gray-600 border border-gray-200 hover:bg-gray-50">
+            className="flex-1 py-3 rounded-xl border border-gray-200 text-sm font-semibold text-gray-700 bg-white">
             ยกเลิก
           </button>
-          <div className="flex-1" />
           <button type="button" onClick={save} disabled={saving || !title.trim()}
-            className="h-10 px-5 rounded-lg text-sm font-semibold text-white bg-primary hover:bg-primary-dark disabled:opacity-50 disabled:cursor-not-allowed">
+            className="flex-1 py-3 rounded-xl bg-primary text-white text-sm font-bold disabled:opacity-50 active:bg-primary-dark transition-colors">
             {saving ? "กำลังบันทึก..." : "บันทึก"}
           </button>
         </div>
@@ -74,14 +80,14 @@ export default function NewAppointmentModal({ onClose, onCreated, initialDate }:
     >
       <div className="space-y-4">
           <div>
-            <label className="text-xs font-semibold tracking-wider uppercase text-gray-400 block mb-1">ชื่องาน</label>
+            <label className="text-xs font-bold tracking-wider uppercase text-gray-400 block mb-1.5">ชื่องาน</label>
             <input type="text" value={title} onChange={(e) => setTitle(e.target.value)}
               placeholder="เช่น ประชุมทีม, ลาพักร้อน, ติดตั้งภายใน, ฯลฯ"
               className="w-full h-10 px-3 rounded-lg border border-gray-200 text-sm focus:outline-none focus:border-primary" />
           </div>
 
           <div>
-            <label className="text-xs font-semibold tracking-wider uppercase text-gray-400 block mb-1">ทีม</label>
+            <label className="text-xs font-bold tracking-wider uppercase text-gray-400 block mb-1.5">ทีม</label>
             <div className="flex flex-wrap gap-2">
               {[
                 { value: "survey" as const, label: "ทีม Survey", color: "#1ed0c7" },
@@ -102,7 +108,7 @@ export default function NewAppointmentModal({ onClose, onCreated, initialDate }:
 
           <div className="grid grid-cols-2 gap-3">
             <div>
-              <label className="text-xs font-semibold tracking-wider uppercase text-gray-400 block mb-1">วันเริ่ม</label>
+              <label className="text-xs font-bold tracking-wider uppercase text-gray-400 block mb-1.5">วันเริ่ม</label>
               <input type="date" value={date}
                 onChange={(e) => {
                   const v = e.target.value;
@@ -112,7 +118,7 @@ export default function NewAppointmentModal({ onClose, onCreated, initialDate }:
                 className="w-full h-10 px-3 rounded-lg border border-gray-200 text-sm focus:outline-none focus:border-primary" />
             </div>
             <div>
-              <label className="text-xs font-semibold tracking-wider uppercase text-gray-400 block mb-1">
+              <label className="text-xs font-bold tracking-wider uppercase text-gray-400 block mb-1.5">
                 วันสิ้นสุด
                 <span className="ml-2 text-gray-300 normal-case font-normal">ไม่กรอก = วันเดียว</span>
               </label>
@@ -167,12 +173,12 @@ export default function NewAppointmentModal({ onClose, onCreated, initialDate }:
           </div>
 
           <div>
-            <label className="text-xs font-semibold tracking-wider uppercase text-gray-400 block mb-1">หมายเหตุ (optional)</label>
+            <label className="text-xs font-bold tracking-wider uppercase text-gray-400 block mb-1.5">หมายเหตุ (optional)</label>
             <textarea value={note} onChange={(e) => setNote(e.target.value)} rows={2}
               className="w-full px-3 py-2 rounded-lg border border-gray-200 text-sm focus:outline-none focus:border-primary resize-none" />
           </div>
 
-          {err && <div className="text-sm text-red-600 bg-red-50 border border-red-200 rounded-lg py-2 text-center">{err}</div>}
+          {err && <div className="rounded-lg bg-red-50 border border-red-200 px-3 py-2 text-xs text-red-700">{err}</div>}
       </div>
     </ModalBase>
   );

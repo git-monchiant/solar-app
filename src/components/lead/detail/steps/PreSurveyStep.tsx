@@ -20,6 +20,7 @@ import { buildAppointmentFlex } from "@/lib/utils/line-flex";
 import { formatSlotsRange } from "@/lib/time-slots";
 import { useSubStep } from "@/lib/hooks/useSubStep";
 import { formatTHB as formatPrice, formatThaiDate as formatDate } from "@/lib/utils/formatters";
+import DoneSection from "./DoneSection";
 
 const DEPOSIT_AMOUNT = 1000;
 
@@ -443,8 +444,7 @@ export default function PreSurveyStep({ lead, state, refresh, packages, expanded
               ? packages.filter(p => pkgIds.includes(p.id))
               : bookedId ? packages.filter(p => p.id === bookedId) : [];
             return selectedPkgs.length > 0 ? (
-              <div className="border-l-3 border-primary pl-3">
-                <div className="text-xs font-bold text-primary uppercase mb-1">แพ็คเกจที่สนใจ</div>
+              <DoneSection color="primary" title="แพ็คเกจที่สนใจ">
                 <div className="space-y-0.5">
                   {selectedPkgs.map((p, idx) => (
                     <DataRow
@@ -466,49 +466,45 @@ export default function PreSurveyStep({ lead, state, refresh, packages, expanded
                   ))}
                   {batteryLabel && <DataRow label="แบตเตอรี่" value={batteryLabel} />}
                 </div>
-              </div>
+              </DoneSection>
             ) : null;
           })()}
 
           {/* ข้อมูลลูกค้า · ที่อยู่ติดตั้ง */}
           {(lead.customer_type || lead.installation_address || lead.project_name) && (
-            <div className="border-l-3 border-indigo-400 pl-3">
-              <div className="text-xs font-bold text-indigo-600 uppercase mb-1">ข้อมูลลูกค้า</div>
+            <DoneSection color="indigo" title="ข้อมูลลูกค้า">
               <div className="space-y-0.5">
                 {lead.customer_type && <DataRow label="ประเภทลูกค้า" value={lead.customer_type} />}
                 {lead.project_name && <DataRow label="โครงการ" value={lead.project_name} />}
                 {lead.installation_address && <DataRow label="บ้านเลขที่" value={lead.installation_address} />}
               </div>
-            </div>
+            </DoneSection>
           )}
 
           {/* บ้าน + หลังคา */}
           {(residenceLabel || roofLabel) && (
-            <div className="border-l-3 border-amber-400 pl-3">
-              <div className="text-xs font-bold text-amber-600 uppercase mb-1">บ้าน</div>
+            <DoneSection color="amber" title="บ้าน">
               <div className="space-y-0.5">
                 {residenceLabel && <DataRow label="ประเภทบ้าน" value={residenceLabel} />}
                 {roofLabel && <DataRow label="รูปทรงหลังคา" value={roofLabel} />}
               </div>
-            </div>
+            </DoneSection>
           )}
 
           {/* การใช้ไฟฟ้า */}
           {(phaseLabel || peakLabel || lead.pre_monthly_bill != null) && (
-            <div className="border-l-3 border-blue-400 pl-3">
-              <div className="text-xs font-bold text-blue-600 uppercase mb-1">การใช้ไฟฟ้า</div>
+            <DoneSection color="blue" title="การใช้ไฟฟ้า">
               <div className="space-y-0.5">
                 {lead.pre_monthly_bill != null && <DataRow label="ค่าไฟต่อเดือน" value={`${formatPrice(lead.pre_monthly_bill)} บาท`} valueClass="font-mono" />}
                 {phaseLabel && <DataRow label="ระบบไฟ" value={phaseLabel} />}
                 {peakLabel && <DataRow label="ช่วงใช้ไฟสูงสุด" value={peakLabel} />}
               </div>
-            </div>
+            </DoneSection>
           )}
 
           {/* เครื่องใช้ไฟฟ้า */}
           {(acTotal > 0 || applianceList.length > 0) && (
-            <div className="border-l-3 border-violet-400 pl-3">
-              <div className="text-xs font-bold text-violet-600 uppercase mb-1">เครื่องใช้ไฟฟ้า</div>
+            <DoneSection color="violet" title="เครื่องใช้ไฟฟ้า">
               {acTotal > 0 && (
                 <div className="mb-1.5">
                   <span className="text-xs text-gray-400">แอร์ ({acTotal} เครื่อง)</span>
@@ -528,14 +524,13 @@ export default function PreSurveyStep({ lead, state, refresh, packages, expanded
                   ))}
                 </div>
               )}
-            </div>
+            </DoneSection>
           )}
 
           {/* การชำระเงิน · เอกสาร — always rendered in the done view so
               survey team can verify payment happened. Shows "—" for any
               missing field rather than hiding the whole section. */}
-          <div className="border-l-3 border-emerald-400 pl-3">
-            <div className="text-xs font-bold text-emerald-600 uppercase mb-1">ค่าสำรวจ · เอกสาร</div>
+          <DoneSection color="emerald" title="ค่าสำรวจ · เอกสาร">
             <div className="space-y-0.5">
               <DataRow
                 label="จำนวนเงิน"
@@ -574,12 +569,11 @@ export default function PreSurveyStep({ lead, state, refresh, packages, expanded
             {!lead.pre_slip_url && (
               <div className="mt-2 text-xs text-amber-600">⚠ ไม่มีไฟล์สลิปในระบบ</div>
             )}
-          </div>
+          </DoneSection>
 
           {/* ข้อมูลลูกค้าเพื่อออกใบเสร็จ · เอกสาร */}
           {(lead.id_card_number || lead.id_card_address || lead.id_card_photo_url || lead.house_reg_photo_url || lead.email) && (
-            <div className="border-l-3 border-teal-400 pl-3">
-              <div className="text-xs font-bold text-teal-600 uppercase mb-1">ข้อมูลลูกค้าเพื่อออกใบเสร็จ</div>
+            <DoneSection color="teal" title="ข้อมูลลูกค้าเพื่อออกใบเสร็จ">
               <div className="space-y-0.5">
                 {lead.email && <DataRow label="อีเมล" value={lead.email} valueClass="break-all" />}
                 {lead.id_card_number && <DataRow label="เลขบัตรประชาชน" value={lead.id_card_number} valueClass="font-mono tabular-nums" />}
@@ -601,18 +595,17 @@ export default function PreSurveyStep({ lead, state, refresh, packages, expanded
                   )}
                 </div>
               )}
-            </div>
+            </DoneSection>
           )}
 
           {/* บันทึก · ข้อความจากฝ่ายขาย */}
           {(lead.requirement || lead.note) && (
-            <div className="border-l-3 border-gray-400 pl-3">
-              <div className="text-xs font-bold text-gray-500 uppercase mb-1">บันทึก</div>
+            <DoneSection color="gray" title="บันทึก">
               <div className="space-y-0.5">
                 {lead.requirement && <DataRow label="ความต้องการ" value={lead.requirement} valueClass="whitespace-pre-wrap break-words" multiline />}
                 {lead.note && <DataRow label="หมายเหตุ" value={lead.note} valueClass="whitespace-pre-wrap break-words font-normal text-gray-500" multiline />}
               </div>
-            </div>
+            </DoneSection>
           )}
 
           {/* Action — only the receipt buttons once pre-survey is done.
@@ -688,15 +681,15 @@ export default function PreSurveyStep({ lead, state, refresh, packages, expanded
             <div className="text-xs font-semibold text-gray-400 uppercase tracking-wider">ข้อมูลลูกค้าเพื่อออกใบเสร็จ</div>
             <div>
               <label className="text-xs text-gray-500 block mb-1">ชื่อ-นามสกุล <span className="text-red-500">*</span></label>
-              <input type="text" value={regName} onChange={e => setRegName(e.target.value)} className="w-full h-10 px-3 rounded-lg border border-gray-200 text-sm focus:outline-none focus:border-primary" />
+              <input type="text" value={regName} onChange={e => setRegName(e.target.value)} className="w-full h-11 px-3 rounded-lg border border-gray-200 text-sm focus:outline-none focus:border-primary" />
             </div>
             <div>
               <label className="text-xs text-gray-500 block mb-1">อีเมล <span className="text-red-500">*</span></label>
-              <input type="email" value={regEmail} onChange={e => setRegEmail(e.target.value)} placeholder="example@mail.com" className="w-full h-10 px-3 rounded-lg border border-gray-200 text-sm focus:outline-none focus:border-primary" />
+              <input type="email" value={regEmail} onChange={e => setRegEmail(e.target.value)} placeholder="example@mail.com" className="w-full h-11 px-3 rounded-lg border border-gray-200 text-sm focus:outline-none focus:border-primary" />
             </div>
             <div>
               <label className="text-xs text-gray-500 block mb-1">เลขบัตรประชาชน <span className="text-red-500">*</span></label>
-              <input type="text" value={regIdCard} onChange={e => setRegIdCard(e.target.value)} className="w-full h-10 px-3 rounded-lg border border-gray-200 text-sm font-mono tabular-nums focus:outline-none focus:border-primary" />
+              <input type="text" value={regIdCard} onChange={e => setRegIdCard(e.target.value)} className="w-full h-11 px-3 rounded-lg border border-gray-200 text-sm font-mono tabular-nums focus:outline-none focus:border-primary" />
             </div>
             <div>
               <label className="text-xs text-gray-500 block mb-1">ที่อยู่ตามบัตรประชาชน <span className="text-red-500">*</span></label>
