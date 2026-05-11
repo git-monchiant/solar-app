@@ -31,7 +31,7 @@ export default function NewLeadModal({ onClose, onCreated, linkLine, initialSour
     project_id: "" as string | number | null, project_name: "",
     installation_address: "",
     customer_type: "new", interested_package_id: "", note: "",
-    source: initialSource || (linkLine ? "line" : "walk_in"), payment_type: "", requirement: "",
+    source: initialSource || (linkLine ? "line_oa" : "walk_in"), payment_type: "", requirement: "",
     id_card_number: "", id_card_address: "",
     id_card_photo_url: null as string | null, house_reg_photo_url: null as string | null,
     utility_provider: "", ca_number: "", meter_number: "", monthly_bill: "",

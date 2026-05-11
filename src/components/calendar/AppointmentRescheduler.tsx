@@ -70,6 +70,7 @@ export default function AppointmentRescheduler({
         excludeLeadId={excludeLeadId}
         zoneFilter={zoneFilter}
         teamContext={teamContext}
+        allowPast
       />
 
       {date && (

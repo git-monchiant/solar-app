@@ -69,10 +69,16 @@ export async function GET(req: NextRequest) {
         SELECT bucket, COUNT(*) as cnt FROM labeled GROUP BY bucket
       `),
       // Within "contacted" — what stage are they at? Grouped into 5 buckets.
+      // Must mirror Query 1's bucket logic: a lead tagged "sheet 13./14."
+      // (= no_contact) outranks any pre_doc_no / survey_date / activity, so
+      // exclude it here too. Without this guard, leads with old sheet status
+      // 13/14 but later got a booking show up in "contacted" here but as
+      // "ติดต่อไม่ได้" in the headline donut → mismatched totals.
       db.request().query(`
         WITH contacted AS (
           SELECT * FROM leads
           WHERE status NOT IN ('lost','closed','returned')
+            AND (note IS NULL OR (note NOT LIKE '%สถานะจาก sheet: 13.%' AND note NOT LIKE '%สถานะจาก sheet: 14.%'))
             AND (
               pre_doc_no IS NOT NULL OR survey_date IS NOT NULL
               OR note LIKE '%สถานะจาก sheet: 2.%' OR note LIKE '%สถานะจาก sheet: 3.%'

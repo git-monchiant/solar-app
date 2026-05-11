@@ -833,6 +833,7 @@ export default function PreSurveyStep({ lead, state, refresh, packages, expanded
               required
               teamContext="survey"
               excludeLeadId={lead.id}
+              allowPast
             />
             <div className="text-xs text-gray-500 mt-2">นัดครั้งแรก · เลื่อนนัดทำได้ในขั้น Survey</div>
           </div>

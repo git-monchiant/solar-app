@@ -8,11 +8,11 @@ import NewAppointmentModal from "@/components/calendar/NewAppointmentModal";
 import { useMe } from "@/lib/roles";
 import { apiFetch } from "@/lib/api";
 
-// Admin-only calendar page. Toggles between a month-grid and a list view —
-// both back the same data source as Today's "ปฏิทิน" tab.
+// Calendar page — open to every authenticated role. Toggles between a
+// month-grid and a list view; both back the same data source as Today's
+// "ปฏิทิน" tab.
 export default function CalendarPage() {
   const { me } = useMe();
-  const isAdmin = (me?.roles || []).includes("admin");
   const [view, setView] = useState<"month" | "list">("list");
   const [newOpen, setNewOpen] = useState(false);
   const [newPrefillDate, setNewPrefillDate] = useState<string | undefined>(undefined);
@@ -64,18 +64,6 @@ export default function CalendarPage() {
   };
 
   if (!me) return null;
-  if (!isAdmin) {
-    return (
-      <div>
-        <Header title="ตารางงาน" subtitle="CALENDAR" />
-        <div className="p-4 md:p-6">
-          <div className="bg-white rounded-xl border border-gray-200 p-6 text-sm text-gray-500 text-center">
-            ต้องเป็น admin เท่านั้น
-          </div>
-        </div>
-      </div>
-    );
-  }
 
   return (
     <div>

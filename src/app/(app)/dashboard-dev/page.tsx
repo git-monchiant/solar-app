@@ -5,6 +5,7 @@ import { useEffect, useState } from "react";
 import Header from "@/components/layout/Header";
 import { useMe } from "@/lib/roles";
 import { PRIMARY_REASON_LABEL } from "@/lib/constants/info-labels";
+import { getSourceStyle, normalizeSourceKey } from "@/lib/source-tag";
 
 interface DevData {
   funnel: {
@@ -69,7 +70,19 @@ export default function DashboardDevPage() {
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-3">
           <div className="rounded-xl bg-white border border-gray-300 p-4">
             <div className="text-xs font-semibold uppercase tracking-wider text-gray-400 mb-3">Source <span className="normal-case text-gray-300">(top 10)</span></div>
-            <BarList items={data.sources.slice(0, 10).map(s => ({ label: s.source, value: s.cnt }))} color="bg-sky-500" />
+            <BarList items={(() => {
+              // Collapse raw legacy strings ("Lead Seeker - Sen X PM", "LINE OA - SENA Solar"…)
+              // into canonical buckets via normalizeSourceKey so labels match the chip + channel picker.
+              const buckets = new Map<string, { label: string; value: number }>();
+              for (const s of data.sources) {
+                const key = normalizeSourceKey(s.source);
+                const label = getSourceStyle(s.source).label;
+                const cur = buckets.get(key);
+                if (cur) cur.value += s.cnt;
+                else buckets.set(key, { label, value: s.cnt });
+              }
+              return Array.from(buckets.values()).sort((a, b) => b.value - a.value).slice(0, 10);
+            })()} color="bg-sky-500" />
             <div className="text-[10px] text-gray-400 text-left mt-2">ณ วันที่ {today}</div>
           </div>
           <FunnelCard funnel={data.funnel} />
@@ -149,7 +162,6 @@ function FunnelCard({ funnel }: { funnel: DevData["funnel"] }) {
     { label: "ออเดอร์",          value: funnel.has_order,       color: "bg-orange-500" },
     { label: "นัดติดตั้ง",       value: funnel.has_install,     color: "bg-emerald-500" },
     { label: "ติดตั้งเสร็จ",     value: funnel.installed,       color: "bg-teal-500" },
-    { label: "ออกใบรับประกัน",   value: funnel.warranty_issued, color: "bg-cyan-500" },
   ];
   const max = Math.max(...stages.map(s => s.value), 1);
   return (
@@ -432,6 +444,9 @@ function BarList({ items, color }: { items: { label: string; value: number }[]; 
  * proportionally.
  */
 function HorizontalFunnel({ funnel }: { funnel: DevData["funnel"] }) {
+  // Funnel stops at "ติดตั้งเสร็จ" — warranty issuance is an admin task that
+  // lags installation by days/weeks, so including it distorts the funnel
+  // shape with a sparse trailing stage that isn't a sales signal.
   const stages: { label: string; value: number; color: string; hex: string }[] = [
     { label: "Total leads",    value: funnel.total,           color: "bg-gray-400",    hex: "#9ca3af" },
     { label: "จองค่าสำรวจ",     value: funnel.has_pre_doc,     color: "bg-sky-500",     hex: "#0ea5e9" },
@@ -439,7 +454,6 @@ function HorizontalFunnel({ funnel }: { funnel: DevData["funnel"] }) {
     { label: "ออเดอร์",         value: funnel.has_order,       color: "bg-orange-500",  hex: "#f97316" },
     { label: "นัดติดตั้ง",      value: funnel.has_install,     color: "bg-emerald-500", hex: "#10b981" },
     { label: "ติดตั้งเสร็จ",    value: funnel.installed,       color: "bg-teal-500",    hex: "#14b8a6" },
-    { label: "ออกใบรับประกัน",  value: funnel.warranty_issued, color: "bg-cyan-500",    hex: "#06b6d4" },
   ];
   const max = Math.max(...stages.map(s => s.value), 1);
 

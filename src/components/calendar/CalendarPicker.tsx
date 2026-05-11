@@ -23,6 +23,11 @@ interface Props {
    *   "install" → blocks install events + install-or-shared blocks
    * Required for showSurveySlots; defaults to "survey". */
   teamContext?: "survey" | "install";
+  /** Allow clicking dates in the past (e.g. back-dating an activity log).
+   * Default false — future appointments shouldn't be back-dated. When true,
+   * also shifts the visible window to show the previous month + current month
+   * so the user can reach last month without month navigation. */
+  allowPast?: boolean;
 }
 
 // Team colours mirror the calendar page legend so the picker reads the same
@@ -43,6 +48,7 @@ export default function CalendarPicker({
   required = false,
   zoneFilter,
   teamContext = "survey",
+  allowPast = false,
 }: Props) {
   void zoneFilter;
   const [surveys, setSurveys] = useState<{ id: number; event_date?: string; time_slot?: string | null; event_type?: string; survey_date?: string; survey_time_slot?: string | null; zone?: string | null; team?: string | null }[]>([]);
@@ -104,10 +110,17 @@ export default function CalendarPicker({
   const selectedSlots = parseSlots(timeSlot);
 
   const today = new Date(); today.setHours(0, 0, 0, 0);
-  const months = [
-    new Date(today.getFullYear(), today.getMonth(), 1),
-    new Date(today.getFullYear(), today.getMonth() + 1, 1),
-  ];
+  // Back-dating view shifts the window one month earlier so the user can
+  // reach last month without month navigation.
+  const months = allowPast
+    ? [
+        new Date(today.getFullYear(), today.getMonth() - 1, 1),
+        new Date(today.getFullYear(), today.getMonth(), 1),
+      ]
+    : [
+        new Date(today.getFullYear(), today.getMonth(), 1),
+        new Date(today.getFullYear(), today.getMonth() + 1, 1),
+      ];
 
   return (
     <div>
@@ -139,7 +152,8 @@ export default function CalendarPicker({
                   const isPartial = !!booked && bookedCount > 0 && !isFull;
                   // Full-day picker (install) — any prior booking blocks the day.
                   const fullDayEvent = !showTimeSlot;
-                  const disabled = isPast || (showSurveySlots && (isFull || (fullDayEvent && isPartial)));
+                  const pastBlocks = isPast && !allowPast;
+                  const disabled = pastBlocks || (showSurveySlots && (isFull || (fullDayEvent && isPartial)));
                   // Tint booked cells by the zone of the first booking on
                   // that date. Falls back to neutral red/amber when the zone
                   // has no colour configured.
@@ -176,12 +190,14 @@ export default function CalendarPicker({
                         className={`w-8 h-8 rounded-full flex items-center justify-center text-sm leading-none font-semibold transition-all ${
                           selected
                             ? "bg-active text-white shadow-sm shadow-active/30"
-                            : isPast
+                            : pastBlocks
                             ? "text-gray-300 cursor-not-allowed"
                             : bookedClass || bookedStyle
                             ? `${bookedClass}${isFull ? " cursor-not-allowed" : " hover:brightness-95"}`
                             : isToday
                             ? "bg-active-light text-active ring-1 ring-active/30 hover:bg-active hover:text-white"
+                            : isPast
+                            ? "text-gray-500 hover:bg-active-light hover:text-active"
                             : `${isWeekend ? "text-red-500" : "text-gray-700"} hover:bg-active-light hover:text-active`
                         }`}
                       >
