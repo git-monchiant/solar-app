@@ -22,6 +22,7 @@ interface Lead {
   survey_date: string | null;
   install_date: string | null;
   next_follow_up: string | null;
+  last_activity_date?: string | null;
   package_name: string | null;
   package_price: number | null;
   pre_doc_no: string | null;
@@ -52,10 +53,17 @@ export default function PipelinePage() {
   const isSolar = hasRole(activeRoles, "solar", "smartify");
   const isAdmin = hasRole(activeRoles, "admin");
 
+  const [sortField, setSortField] = useState<"follow_up" | "created" | "name" | "activity" | "survey_date" | "install_date">("follow_up");
+  const [sortOrder, setSortOrder] = useState<"asc" | "desc">("asc");
   useEffect(() => {
     const saved = localStorage.getItem("pipelineTab") as TabKey;
     const ALL_KEYS: TabKey[] = ["all","pre_survey","booking","survey","quotation","order","install","warranty","gridtie","closed","lost"];
     if (saved && ALL_KEYS.includes(saved)) setTab(saved);
+
+    const sf = localStorage.getItem("pipeline.sortField");
+    if (sf === "follow_up" || sf === "created" || sf === "activity" || sf === "name" || sf === "survey_date" || sf === "install_date") setSortField(sf);
+    const so = localStorage.getItem("pipeline.sortOrder");
+    if (so === "asc" || so === "desc") setSortOrder(so);
   }, []);
   const [search, setSearch] = useState("");
 
@@ -65,38 +73,65 @@ export default function PipelinePage() {
 
   useEffect(() => { fetchLeads(); }, [fetchLeads]);
 
-  // For survey/install tabs, sort by the scheduled appointment date ascending so
-  // the upcoming jobs appear first (nulls at the end). Other tabs keep the
-  // API's default ordering.
-  const sortByApptDate = (field: "survey_date" | "install_date") =>
-    (a: Lead, b: Lead) => {
-      const av = a[field] ? String(a[field]).slice(0, 10) : "";
-      const bv = b[field] ? String(b[field]).slice(0, 10) : "";
-      if (!av && !bv) return 0;
-      if (!av) return 1;
-      if (!bv) return -1;
-      return av.localeCompare(bv);
-    };
+  // User-selected sort — applied across all tabs, overrides API default order.
+  // วันนัดติดตาม fallback ใช้ activity ล่าสุด เพื่อให้ section ที่ไม่มี follow_up
+  // (survey/quote/install) ยัง sort เห็นผล
+  const sortLeads = (arr: Lead[]): Lead[] => {
+    const dir = sortOrder === "asc" ? 1 : -1;
+    const ts = (v: string | null | undefined, fb: number) => v ? new Date(v).getTime() : fb;
+    return [...arr].sort((a, b) => {
+      if (sortField === "name") {
+        return (a.full_name || "").localeCompare(b.full_name || "", "th") * dir;
+      }
+      const fb = sortOrder === "asc" ? Number.POSITIVE_INFINITY : 0;
+      const av =
+        sortField === "follow_up" ? ts(a.next_follow_up ?? a.last_activity_date, fb)
+        : sortField === "created" ? ts(a.created_at, fb)
+        : sortField === "survey_date" ? ts(a.survey_date, fb)
+        : sortField === "install_date" ? ts(a.install_date, fb)
+        : ts(a.last_activity_date, fb);
+      const bv =
+        sortField === "follow_up" ? ts(b.next_follow_up ?? b.last_activity_date, fb)
+        : sortField === "created" ? ts(b.created_at, fb)
+        : sortField === "survey_date" ? ts(b.survey_date, fb)
+        : sortField === "install_date" ? ts(b.install_date, fb)
+        : ts(b.last_activity_date, fb);
+      return (av - bv) * dir;
+    });
+  };
 
-  const filtered = leads
-    .filter(l => matchesTab(l, tab))
-    .filter(l => {
-      if (!search.trim()) return true;
-      const q = search.trim().toLowerCase();
-      return (
-        l.full_name?.toLowerCase().includes(q) ||
-        l.phone?.includes(q) ||
-        l.project_name?.toLowerCase().includes(q) ||
-        l.installation_address?.toLowerCase().includes(q) ||
-        l.house_number?.toLowerCase().includes(q) ||
-        l.email?.toLowerCase().includes(q) ||
-        l.source?.toLowerCase().includes(q) ||
-        l.note?.toLowerCase().includes(q) ||
-        l.assigned_name?.toLowerCase().includes(q) ||
-        l.pre_doc_no?.toLowerCase().includes(q)
-      );
-    })
-    .sort(tab === "survey" ? sortByApptDate("survey_date") : tab === "install" ? sortByApptDate("install_date") : () => 0);
+  // Reset sort field when switching away from survey/install tabs so a stale
+  // survey_date/install_date selection doesn't silently apply to unrelated tabs.
+  useEffect(() => {
+    if (sortField === "survey_date" && tab !== "survey") {
+      setSortField("follow_up");
+      localStorage.setItem("pipeline.sortField", "follow_up");
+    } else if (sortField === "install_date" && tab !== "install") {
+      setSortField("follow_up");
+      localStorage.setItem("pipeline.sortField", "follow_up");
+    }
+  }, [tab, sortField]);
+
+  const filtered = sortLeads(
+    leads
+      .filter(l => matchesTab(l, tab))
+      .filter(l => {
+        if (!search.trim()) return true;
+        const q = search.trim().toLowerCase();
+        return (
+          l.full_name?.toLowerCase().includes(q) ||
+          l.phone?.includes(q) ||
+          l.project_name?.toLowerCase().includes(q) ||
+          l.installation_address?.toLowerCase().includes(q) ||
+          l.house_number?.toLowerCase().includes(q) ||
+          l.email?.toLowerCase().includes(q) ||
+          l.source?.toLowerCase().includes(q) ||
+          l.note?.toLowerCase().includes(q) ||
+          l.assigned_name?.toLowerCase().includes(q) ||
+          l.pre_doc_no?.toLowerCase().includes(q)
+        );
+      })
+  );
 
   const countFor = (key: TabKey) => key === "all" ? leads.length : leads.filter(l => matchesTab(l, key)).length;
 
@@ -129,6 +164,38 @@ export default function PipelinePage() {
         tabs={TABS}
         activeTab={tab}
         onTabChange={(k) => { setTab(k as TabKey); localStorage.setItem("pipelineTab", k); }}
+        tabsRight={(
+          <div className="flex items-center gap-2">
+            <select
+              value={sortField}
+              onChange={(e) => {
+                const v = e.target.value as typeof sortField;
+                setSortField(v);
+                localStorage.setItem("pipeline.sortField", v);
+              }}
+              className="h-7 px-2 pr-6 rounded-md border border-gray-200 bg-white text-[11px] font-medium text-gray-700 focus:outline-none focus:border-gray-400"
+            >
+              <option value="follow_up">วันนัดติดตาม</option>
+              <option value="created">วันที่สร้าง</option>
+              <option value="activity">กิจกรรมล่าสุด</option>
+              {tab === "survey" && <option value="survey_date">วันที่สำรวจ</option>}
+              {tab === "install" && <option value="install_date">วันที่ติดตั้ง</option>}
+              <option value="name">ชื่อลูกค้า</option>
+            </select>
+            <select
+              value={sortOrder}
+              onChange={(e) => {
+                const v = e.target.value as typeof sortOrder;
+                setSortOrder(v);
+                localStorage.setItem("pipeline.sortOrder", v);
+              }}
+              className="h-7 px-2 pr-6 rounded-md border border-gray-200 bg-white text-[11px] font-medium text-gray-700 focus:outline-none focus:border-gray-400"
+            >
+              <option value="asc">{sortField === "name" ? "ก-ฮ" : "เก่า → ใหม่"}</option>
+              <option value="desc">{sortField === "name" ? "ฮ-ก" : "ใหม่ → เก่า"}</option>
+            </select>
+          </div>
+        )}
       />
 
       <div className="p-3 md:p-4">
