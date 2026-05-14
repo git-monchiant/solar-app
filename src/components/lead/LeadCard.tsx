@@ -35,6 +35,7 @@ export interface LeadData {
   install_extra_cost: number | null;
   assigned_user_id: number | null;
   assigned_name: string | null;
+  assigned_username?: string | null;
   install_date: string | null;
   install_completed_at: string | null;
   created_at: string;
@@ -235,6 +236,12 @@ export default function LeadCard({ lead, compact, onAssignChange }: { lead: Lead
                 assignedName={lead.assigned_name}
                 onChanged={onAssignChange}
               />
+              {(lead.assigned_username || lead.assigned_name) && (
+                <span className="font-semibold text-gray-700 uppercase tracking-wider">
+                  <span className="md:hidden">{lead.assigned_username || lead.assigned_name}</span>
+                  <span className="hidden md:inline">{lead.assigned_name || lead.assigned_username}</span>
+                </span>
+              )}
               {isUpgrade && (
                 <span className="font-semibold text-purple-600 uppercase tracking-wider">Upgrade</span>
               )}

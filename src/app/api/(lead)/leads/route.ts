@@ -38,7 +38,7 @@ export async function GET(req: NextRequest) {
              COALESCE(NULLIF(l.project_alias, N''), NULLIF(l.project_name, N''), p.name) as project_name,
              l.project_alias, p.district, p.province,
              pk.name as package_name, pk.price as package_price,
-             u.full_name as assigned_name,
+             u.full_name as assigned_name, u.username as assigned_username,
              (SELECT TOP 1 note FROM lead_activities WHERE lead_id = l.id AND note IS NOT NULL ORDER BY created_at DESC) as last_activity_note,
              (SELECT TOP 1 created_at FROM lead_activities WHERE lead_id = l.id ORDER BY created_at DESC) as last_activity_date
       FROM leads l

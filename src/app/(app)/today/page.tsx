@@ -166,12 +166,14 @@ export default function TodayPage() {
         return (a.full_name || "").localeCompare(b.full_name || "", "th") * dir;
       }
       const fallback = sortOrder === "asc" ? Number.POSITIVE_INFINITY : 0;
+      // วันนัดติดตาม: fallback ใช้ activity ล่าสุด เพื่อให้ sort เห็นผลแม้ section
+      // ที่ leads ไม่มี next_follow_up (survey/quote/install)
       const av =
-        sortField === "follow_up" ? ts(a.next_follow_up, fallback)
+        sortField === "follow_up" ? ts(a.next_follow_up ?? a.last_activity_date, fallback)
         : sortField === "created" ? ts(a.created_at, fallback)
         : ts(a.last_activity_date, fallback);
       const bv =
-        sortField === "follow_up" ? ts(b.next_follow_up, fallback)
+        sortField === "follow_up" ? ts(b.next_follow_up ?? b.last_activity_date, fallback)
         : sortField === "created" ? ts(b.created_at, fallback)
         : ts(b.last_activity_date, fallback);
       return (av - bv) * dir;

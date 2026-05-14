@@ -24,7 +24,7 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
                COALESCE(NULLIF(l.project_alias, N''), NULLIF(l.project_name, N''), p.name) as project_display_name,
                p.name as project_official_name,
                pk.name as package_name, pk.price as package_price,
-               u.full_name as assigned_name,
+               u.full_name as assigned_name, u.username as assigned_username,
                lu.display_name as line_display_name,
                CASE WHEN lu.picture_blob IS NOT NULL THEN '/api/line-avatar/' + lu.line_user_id ELSE NULL END AS line_picture_url,
                CAST(CASE

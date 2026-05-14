@@ -17,7 +17,7 @@ const LEAD_COLS = `
   l.install_date, l.install_completed_at, l.install_extra_cost,
   l.order_total, l.quotation_amount,
   COALESCE(NULLIF(l.project_name, ''), p.name) as project_name,
-  p.district, p.province, pk.name as package_name, u.full_name as assigned_name
+  p.district, p.province, pk.name as package_name, u.full_name as assigned_name, u.username as assigned_username
 `;
 
 function fix<T extends Record<string, unknown>>(rs: T[]): T[] {
