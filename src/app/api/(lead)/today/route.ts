@@ -35,7 +35,8 @@ export async function GET(req: NextRequest) {
       // เคยมี cutoff "อายุ < 2 วัน" แต่ทำให้ lead ที่ import จากชีต (ส่วนใหญ่ > 2 วัน) ตกจากกอง
       db.request().query(`
         SELECT ${LEAD_COLS},
-               (SELECT TOP 1 note FROM lead_activities WHERE lead_id = l.id ORDER BY created_at DESC) as last_activity_note
+               (SELECT TOP 1 note FROM lead_activities WHERE lead_id = l.id ORDER BY created_at DESC) as last_activity_note,
+               (SELECT TOP 1 created_at FROM lead_activities WHERE lead_id = l.id ORDER BY created_at DESC) as last_activity_date
         FROM leads l
         LEFT JOIN projects p ON l.project_id = p.id
         LEFT JOIN packages pk ON l.interested_package_id = pk.id
@@ -50,7 +51,8 @@ export async function GET(req: NextRequest) {
       // 3. นัดติดตามวันนี้
       db.request().query(`
         SELECT ${LEAD_COLS},
-               (SELECT TOP 1 note FROM lead_activities WHERE lead_id = l.id ORDER BY created_at DESC) as last_activity_note
+               (SELECT TOP 1 note FROM lead_activities WHERE lead_id = l.id ORDER BY created_at DESC) as last_activity_note,
+               (SELECT TOP 1 created_at FROM lead_activities WHERE lead_id = l.id ORDER BY created_at DESC) as last_activity_date
         FROM leads l
         LEFT JOIN projects p ON l.project_id = p.id
         LEFT JOIN packages pk ON l.interested_package_id = pk.id
@@ -62,7 +64,8 @@ export async function GET(req: NextRequest) {
       // 4. เลยกำหนดติดตาม (overdue follow-up)
       db.request().query(`
         SELECT ${LEAD_COLS},
-               (SELECT TOP 1 note FROM lead_activities WHERE lead_id = l.id ORDER BY created_at DESC) as last_activity_note
+               (SELECT TOP 1 note FROM lead_activities WHERE lead_id = l.id ORDER BY created_at DESC) as last_activity_note,
+               (SELECT TOP 1 created_at FROM lead_activities WHERE lead_id = l.id ORDER BY created_at DESC) as last_activity_date
         FROM leads l
         LEFT JOIN projects p ON l.project_id = p.id
         LEFT JOIN packages pk ON l.interested_package_id = pk.id
@@ -93,7 +96,8 @@ export async function GET(req: NextRequest) {
       `),
       // 7. Quotation รอเสนอ
       db.request().query(`
-        SELECT ${LEAD_COLS}
+        SELECT ${LEAD_COLS},
+               (SELECT TOP 1 created_at FROM lead_activities WHERE lead_id = l.id ORDER BY created_at DESC) as last_activity_date
         FROM leads l
         LEFT JOIN projects p ON l.project_id = p.id
         LEFT JOIN packages pk ON l.interested_package_id = pk.id
@@ -103,7 +107,8 @@ export async function GET(req: NextRequest) {
       `),
       // 8. รอติดตั้ง
       db.request().query(`
-        SELECT ${LEAD_COLS}
+        SELECT ${LEAD_COLS},
+               (SELECT TOP 1 created_at FROM lead_activities WHERE lead_id = l.id ORDER BY created_at DESC) as last_activity_date
         FROM leads l
         LEFT JOIN projects p ON l.project_id = p.id
         LEFT JOIN packages pk ON l.interested_package_id = pk.id
@@ -114,7 +119,8 @@ export async function GET(req: NextRequest) {
       // 9. นัดติดตามที่ยังไม่ถึง (upcoming follow-up)
       db.request().query(`
         SELECT ${LEAD_COLS},
-               (SELECT TOP 1 note FROM lead_activities WHERE lead_id = l.id ORDER BY created_at DESC) as last_activity_note
+               (SELECT TOP 1 note FROM lead_activities WHERE lead_id = l.id ORDER BY created_at DESC) as last_activity_note,
+               (SELECT TOP 1 created_at FROM lead_activities WHERE lead_id = l.id ORDER BY created_at DESC) as last_activity_date
         FROM leads l
         LEFT JOIN projects p ON l.project_id = p.id
         LEFT JOIN packages pk ON l.interested_package_id = pk.id
@@ -149,7 +155,8 @@ export async function GET(req: NextRequest) {
       // IN-list — no payment_confirmed / slip_files predicates needed.
       db.request().query(`
         SELECT ${LEAD_COLS},
-               (SELECT TOP 1 note FROM lead_activities WHERE lead_id = l.id ORDER BY created_at DESC) as last_activity_note
+               (SELECT TOP 1 note FROM lead_activities WHERE lead_id = l.id ORDER BY created_at DESC) as last_activity_note,
+               (SELECT TOP 1 created_at FROM lead_activities WHERE lead_id = l.id ORDER BY created_at DESC) as last_activity_date
         FROM leads l
         LEFT JOIN projects p ON l.project_id = p.id
         LEFT JOIN packages pk ON l.interested_package_id = pk.id
