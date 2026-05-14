@@ -74,16 +74,16 @@ export default function ChannelPickerModal({ onClose, onPick, title = "เลื
       onClose={onClose}
       size="md"
     >
-      <div className="grid grid-cols-2 gap-2">
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
         {CHANNELS.map((ch) => (
           <button
             key={ch.code}
             type="button"
             onClick={() => onPick(ch.code)}
-            className="h-12 rounded-xl border border-gray-200 bg-white inline-flex items-center justify-start gap-2 px-3 text-sm font-semibold text-gray-700 hover:border-primary hover:text-primary hover:bg-primary/5 transition-colors"
+            className="h-12 rounded-xl border border-gray-200 bg-white inline-flex items-center justify-start gap-2 px-3 text-sm font-semibold text-gray-700 hover:border-primary hover:text-primary hover:bg-primary/5 transition-colors text-left"
           >
-            {channelIcon(ch.code)}
-            {ch.label}
+            <span className="shrink-0">{channelIcon(ch.code)}</span>
+            <span className="truncate min-w-0">{ch.label}</span>
           </button>
         ))}
       </div>

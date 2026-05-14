@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import ModalBase from "@/components/ui/ModalBase";
+import { apiFetch } from "@/lib/api";
 
 // Reason taxonomy from docs/lead-master-lists.md (sheet master).
 // Groups roughly map to sheet sections §6/28, §8, §14, §19, plus free-text.
@@ -171,18 +172,16 @@ export default function LostModal({ leadId, onClose, onSaved }: Props) {
     setSaving(true);
     setError(null);
     try {
-      const res = await fetch(`/api/leads/${leadId}`, {
+      // Use apiFetch so x-user-id is forwarded — raw fetch() skips that header
+      // and the server's requireAuth gate returns 401.
+      await apiFetch(`/api/leads/${leadId}`, {
         method: "PATCH",
-        headers: { "Content-Type": "application/json", "ngrok-skip-browser-warning": "true" },
+        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           status: "lost",
           lost_reason: finalReason,
         }),
       });
-      if (!res.ok) {
-        const body = await res.json().catch(() => ({}));
-        throw new Error(body?.error || `บันทึกไม่สำเร็จ (HTTP ${res.status})`);
-      }
       onSaved();
       onClose();
     } catch (err) {

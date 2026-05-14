@@ -2,6 +2,7 @@ import type { Metadata, Viewport } from "next";
 import localFont from "next/font/local";
 import "./globals.css";
 import DisableNumberInputWheel from "@/components/utils/DisableNumberInputWheel";
+import GlobalErrorReporter from "@/components/utils/GlobalErrorReporter";
 
 const dbHeavent = localFont({
   src: [
@@ -47,6 +48,7 @@ export default function RootLayout({
     <html lang="th" className={`h-full ${dbHeavent.variable}`}>
       <body className="h-full bg-white font-sans">
         <DisableNumberInputWheel />
+        <GlobalErrorReporter />
         {children}
       </body>
     </html>

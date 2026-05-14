@@ -110,7 +110,7 @@ export default function PipelinePage() {
     { key: "quotation",  label: "รอใบเสนอราคา" },
     { key: "order",      label: "รออนุมัติ/ชำระ" },
     { key: "install",    label: "ติดตั้ง" },
-    { key: "warranty",   label: "ออกใบรับประกัน" },
+    { key: "warranty",   label: "รอออกใบรับประกัน" },
     { key: "gridtie",    label: "ขอขนานไฟ" },
     { key: "closed",     label: "ส่งมอบแล้ว" },
     { key: "lost",       label: "ยกเลิกและส่งกลับ" },
