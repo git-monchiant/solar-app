@@ -88,7 +88,7 @@ export default function AssignOwnerButton({ leadId, assignedUserId, assignedName
     }
   };
 
-  const sizePx = size === "lg" ? "w-10 h-10 text-sm" : size === "md" ? "w-9 h-9 text-[13px]" : "w-6 h-6 text-[10px]";
+  const sizePx = size === "lg" ? "w-10 h-10 text-sm" : size === "md" ? "w-9 h-9 text-xxs" : "w-6 h-6 text-xxs";
   const iconSize = size === "lg" ? "w-5 h-5" : size === "md" ? "w-5 h-5" : "w-3.5 h-3.5";
   const assigned = !!localUserId;
   const initials = initialsOf(localName);
@@ -120,7 +120,7 @@ export default function AssignOwnerButton({ leadId, assignedUserId, assignedName
 
       {open && (
         <div className="absolute left-0 bottom-8 z-50 w-56 rounded-xl bg-white border border-gray-200 shadow-lg overflow-hidden">
-          <div className="px-3 py-2 text-[10px] font-bold uppercase tracking-wider text-gray-400 border-b border-gray-100">
+          <div className="px-3 py-2 text-xxs font-bold uppercase tracking-wider text-gray-400 border-b border-gray-100">
             Assign Owner
           </div>
           {me && localUserId !== me.id && (
@@ -130,7 +130,7 @@ export default function AssignOwnerButton({ leadId, assignedUserId, assignedName
               onClick={() => assign(me.id, me.full_name)}
               className="w-full flex items-center gap-2 px-3 py-2 hover:bg-gray-50 text-left"
             >
-              <span className={`w-6 h-6 rounded-full ${colorOf(me.id)} text-white text-[10px] font-bold flex items-center justify-center shrink-0`}>
+              <span className={`w-6 h-6 rounded-full ${colorOf(me.id)} text-white text-xxs font-bold flex items-center justify-center shrink-0`}>
                 {initialsOf(me.full_name) ?? (
                   <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
                     <path strokeLinecap="round" strokeLinejoin="round" d="M15.75 6a3.75 3.75 0 11-7.5 0 3.75 3.75 0 017.5 0zM4.501 20.118a7.5 7.5 0 0114.998 0" />
@@ -152,7 +152,7 @@ export default function AssignOwnerButton({ leadId, assignedUserId, assignedName
                   onClick={() => assign(u.id, u.full_name)}
                   className={`w-full flex items-center gap-2 px-3 py-2 hover:bg-gray-50 text-left ${u.id === localUserId ? "bg-primary/5" : ""}`}
                 >
-                  <span className={`w-6 h-6 rounded-full ${colorOf(u.id)} text-white text-[10px] font-bold flex items-center justify-center shrink-0`}>
+                  <span className={`w-6 h-6 rounded-full ${colorOf(u.id)} text-white text-xxs font-bold flex items-center justify-center shrink-0`}>
                     {initialsOf(u.full_name) ?? (
                       <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
                         <path strokeLinecap="round" strokeLinejoin="round" d="M15.75 6a3.75 3.75 0 11-7.5 0 3.75 3.75 0 017.5 0zM4.501 20.118a7.5 7.5 0 0114.998 0" />

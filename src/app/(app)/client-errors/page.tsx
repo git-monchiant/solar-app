@@ -84,12 +84,12 @@ export default function ClientErrorsPage() {
                     className="w-full text-left p-3 hover:bg-gray-50 transition-colors"
                   >
                     <div className="flex items-start gap-3">
-                      <span className={`shrink-0 text-[10px] font-bold uppercase px-2 py-0.5 rounded border ${tint}`}>
+                      <span className={`shrink-0 text-xxs font-bold uppercase px-2 py-0.5 rounded border ${tint}`}>
                         {r.source || "?"}{r.status_code ? ` · ${r.status_code}` : ""}
                       </span>
                       <div className="flex-1 min-w-0">
                         <div className="text-sm font-semibold text-gray-900 truncate">{r.message || "(no message)"}</div>
-                        <div className="text-[11px] text-gray-500 mt-0.5 truncate">
+                        <div className="text-xxs text-gray-500 mt-0.5 truncate">
                           {fmtTime(r.created_at)}
                           {r.user_name ? ` · ${r.user_name}` : r.user_id ? ` · user #${r.user_id}` : " · anon"}
                           {r.url ? ` · ${new URL(r.url).pathname}` : ""}
@@ -117,7 +117,7 @@ export default function ClientErrorsPage() {
                       {r.stack && (
                         <div>
                           <div className="font-semibold text-gray-500 uppercase tracking-wider mb-1">Stack / Body</div>
-                          <pre className="font-mono text-[11px] text-gray-700 bg-white border border-gray-200 rounded p-2 overflow-x-auto whitespace-pre-wrap break-words">{r.stack}</pre>
+                          <pre className="font-mono text-xxs text-gray-700 bg-white border border-gray-200 rounded p-2 overflow-x-auto whitespace-pre-wrap break-words">{r.stack}</pre>
                         </div>
                       )}
                       {r.user_agent && (

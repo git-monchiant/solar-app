@@ -102,7 +102,7 @@ function stringifyAcUnits(map: Record<number, number>): string | null {
 }
 
 const chipBtn = (selected: boolean) =>
-  `h-9 px-3 rounded-lg text-[15px] font-semibold border transition-all cursor-pointer ${
+  `h-9 px-3 rounded-lg text-xxs font-semibold border transition-all cursor-pointer ${
     selected
       ? "bg-active text-white border-active shadow-sm shadow-active/20"
       : "bg-white text-gray-600 border-gray-200 hover:border-active/40 hover:text-active"

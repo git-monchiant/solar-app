@@ -41,6 +41,8 @@
 
 /* Font sizes — must be in non-inline @theme to be picked up by Tailwind v4 utility generation */
 @theme {
+  --text-xxs: 18px;
+  --text-xxs--line-height: 24px;
   --text-xs: 20px;
   --text-xs--line-height: 26px;
   --text-sm: 22px;
@@ -82,25 +84,27 @@ body {
   }
 }
 
-/* Desktop: slightly smaller than mobile but still readable for DB Heavent */
+/* Desktop: exactly 2px smaller than mobile across the scale. */
 @media (min-width: 768px) {
   :root {
-    --text-xs: 15px;
-    --text-xs--line-height: 20px;
-    --text-sm: 17px;
-    --text-sm--line-height: 24px;
-    --text-md: 18px;
-    --text-md--line-height: 25px;
-    --text-base: 19px;
-    --text-base--line-height: 26px;
-    --text-lg: 22px;
-    --text-lg--line-height: 30px;
-    --text-xl: 26px;
-    --text-xl--line-height: 34px;
-    --text-2xl: 30px;
-    --text-2xl--line-height: 38px;
-    --text-3xl: 36px;
-    --text-3xl--line-height: 44px;
+    --text-xxs: 16px;
+    --text-xxs--line-height: 22px;
+    --text-xs: 18px;
+    --text-xs--line-height: 24px;
+    --text-sm: 20px;
+    --text-sm--line-height: 28px;
+    --text-md: 21px;
+    --text-md--line-height: 29px;
+    --text-base: 22px;
+    --text-base--line-height: 30px;
+    --text-lg: 26px;
+    --text-lg--line-height: 34px;
+    --text-xl: 30px;
+    --text-xl--line-height: 38px;
+    --text-2xl: 36px;
+    --text-2xl--line-height: 44px;
+    --text-3xl: 42px;
+    --text-3xl--line-height: 50px;
   }
 }
 

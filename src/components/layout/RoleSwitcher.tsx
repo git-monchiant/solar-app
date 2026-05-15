@@ -103,7 +103,7 @@ export default function RoleSwitcher() {
                   />
                   <span className="flex-1">
                     <span className="block text-sm font-semibold text-gray-700">{ROLE_LABEL.admin}</span>
-                    <span className="block text-[11px] text-gray-400">เห็นทุก role + สิทธิ์ admin</span>
+                    <span className="block text-xxs text-gray-400">เห็นทุก role + สิทธิ์ admin</span>
                   </span>
                 </label>
               )}

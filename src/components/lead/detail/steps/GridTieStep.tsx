@@ -153,7 +153,7 @@ export default function GridTieStep({ lead, state, refresh, expanded, onToggle }
 
       {/* Date timeline */}
       <div className="rounded-lg bg-gray-50 border border-gray-200 p-3 space-y-2">
-        <div className="text-[10px] font-bold uppercase tracking-wider text-gray-400">Timeline</div>
+        <div className="text-xxs font-bold uppercase tracking-wider text-gray-400">Timeline</div>
         <DateRow label="ลงทะเบียน ERC (กกพ.)" value={ercDate} onChange={setErcDate} />
         <DateRow label="ยื่นคำขอ กฟน./กฟภ." value={submitDate} onChange={setSubmitDate} />
         <DateRow label="นัดช่างเข้าตรวจ (COD)" value={inspectDate} onChange={setInspectDate} />
@@ -218,7 +218,7 @@ function DateRow({ label, value, onChange, highlight }: { label: string; value: 
 function Info({ label, value, mono }: { label: string; value: string | null | undefined; mono?: boolean }) {
   return (
     <div className="rounded-lg bg-gray-50 border border-gray-200 p-2">
-      <div className="text-[10px] font-bold uppercase tracking-wider text-gray-400 mb-0.5">{label}</div>
+      <div className="text-xxs font-bold uppercase tracking-wider text-gray-400 mb-0.5">{label}</div>
       <div className={`text-sm font-semibold text-gray-800 ${mono ? "font-mono" : ""}`}>{value || "—"}</div>
     </div>
   );

@@ -755,7 +755,7 @@ export default function PaymentSection({
               </div>
               <div className="text-center">
                 <div className="text-xs font-semibold text-gray-700">{companyFull}</div>
-                <div className="text-[11px] text-gray-500 font-mono tabular-nums mt-0.5">
+                <div className="text-xxs text-gray-500 font-mono tabular-nums mt-0.5">
                   {qrMode === "bill_payment"
                     ? `Bill Payment · Biller ${settings.promptpay_biller_id || ""}`
                     : `PromptPay Tax ID: ${taxId}`}
@@ -920,10 +920,10 @@ export default function PaymentSection({
                   </div>
                 )}
                 {s.status === "verified" && (
-                  <div className="absolute bottom-1 left-1 w-5 h-5 rounded-full bg-emerald-500 text-white flex items-center justify-center text-[10px] font-bold pointer-events-none">✓</div>
+                  <div className="absolute bottom-1 left-1 w-5 h-5 rounded-full bg-emerald-500 text-white flex items-center justify-center text-xxs font-bold pointer-events-none">✓</div>
                 )}
                 {s.status === "failed" && (
-                  <div className="absolute inset-x-0 bottom-0 bg-red-500/90 text-white text-[10px] font-semibold text-center py-0.5 px-1 truncate pointer-events-none" title={s.error}>{s.error || "ไม่ผ่าน"}</div>
+                  <div className="absolute inset-x-0 bottom-0 bg-red-500/90 text-white text-xxs font-semibold text-center py-0.5 px-1 truncate pointer-events-none" title={s.error}>{s.error || "ไม่ผ่าน"}</div>
                 )}
                 {!confirmed && !s.submittedAt && (
                   <button type="button" onClick={(e) => { e.stopPropagation(); removeSlip(s); }}
@@ -936,7 +936,7 @@ export default function PaymentSection({
                 <svg className="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.8}>
                   <path strokeLinecap="round" strokeLinejoin="round" d="M12 4.5v15m7.5-7.5h-15" />
                 </svg>
-                <span className="text-[10px] font-semibold uppercase tracking-wider">เพิ่มสลิป</span>
+                <span className="text-xxs font-semibold uppercase tracking-wider">เพิ่มสลิป</span>
               </label>
             )}
           </div>
@@ -961,7 +961,7 @@ export default function PaymentSection({
           if (rows.length === 0) return null;
           return (
             <div className="mt-2 rounded-lg bg-gray-50 border border-gray-200 px-3 py-2 text-xs">
-              <div className="text-[10px] font-semibold uppercase tracking-wider text-gray-400 mb-1">ค่าที่อ่านได้จากหลักฐาน</div>
+              <div className="text-xxs font-semibold uppercase tracking-wider text-gray-400 mb-1">ค่าที่อ่านได้จากหลักฐาน</div>
               <div className="grid grid-cols-1 md:grid-cols-2 gap-x-4 gap-y-1">
                 {rows.map(([label, value]) => (
                   <div key={label} className="flex gap-2">

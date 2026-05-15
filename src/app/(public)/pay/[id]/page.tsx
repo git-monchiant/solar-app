@@ -79,7 +79,7 @@ export default function PublicPayPage({ params }: { params: Promise<{ id: string
             {qrDataUrl && <img src={qrDataUrl} alt="PromptPay QR" className="w-full max-w-[320px]" />}
             <div className="text-center mt-3">
               <div className="text-xs font-semibold text-gray-700">PromptPay</div>
-              <div className="text-[11px] text-gray-500 font-mono tabular-nums mt-0.5">Tax ID: {taxId}</div>
+              <div className="text-xxs text-gray-500 font-mono tabular-nums mt-0.5">Tax ID: {taxId}</div>
             </div>
           </div>
 

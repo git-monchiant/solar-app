@@ -215,7 +215,7 @@ function AdminGroups({ pathname, activeRoles }: { pathname: string; activeRoles:
         if (links.length === 0) return null;
         return (
           <div key={g.title} className={i === 0 ? "pt-2 mt-2 border-t border-gray-100" : "pt-2 mt-2"}>
-            <div className="px-3 pb-0.5 text-[10px] font-bold uppercase tracking-widest text-gray-400">{g.title}</div>
+            <div className="px-3 pb-0.5 text-xxs font-bold uppercase tracking-widest text-gray-400">{g.title}</div>
             {links.map(l => {
               const active =
                 l.href === "/packages/manage" ? pathname.startsWith("/packages/manage") :

@@ -446,7 +446,7 @@ export default function AddActivityModal({ activityType, leadId, canSendBack = f
             />
             <div className="flex-1 min-w-0">
               <div className="text-sm font-semibold text-gray-800">ส่งกลับทีม Lead Seeker</div>
-              <div className="text-[11px] text-gray-500 mt-0.5">โปรดระบุเหตุผลในหมายเหตุ</div>
+              <div className="text-xxs text-gray-500 mt-0.5">โปรดระบุเหตุผลในหมายเหตุ</div>
             </div>
           </label>
         )}

@@ -39,8 +39,8 @@ export default function SourceTag({ value, size = "sm" }: { value: string | null
   const style = getSourceStyle(value);
   const key = normalizeSourceKey(value);
   const sizeCls = size === "xs"
-    ? "px-1.5 py-0.5 text-[10px] gap-1"
-    : "px-2 py-0.5 text-[11px] gap-1";
+    ? "px-1.5 py-0.5 text-xxs gap-1"
+    : "px-2 py-0.5 text-xxs gap-1";
   const iconCls = size === "xs" ? "w-3 h-3" : "w-3.5 h-3.5";
   return (
     <span className={`inline-flex items-center rounded-full font-bold uppercase tracking-wider ring-1 ring-inset ${sizeCls} ${style.cls}`}>

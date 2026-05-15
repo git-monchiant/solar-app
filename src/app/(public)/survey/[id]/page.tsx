@@ -184,7 +184,7 @@ export default function SurveyPdfPage() {
         .survey-body table { break-inside: auto; }
         .avoid-break { break-inside: avoid; page-break-inside: avoid; }
       `}</style>
-      <div className="survey-body mx-auto bg-white shadow-xl print:shadow-none text-[16px] text-gray-900" style={{ width: "210mm", minHeight: "297mm" }} id="survey">
+      <div className="survey-body mx-auto bg-white shadow-xl print:shadow-none text-xxs text-gray-900" style={{ width: "210mm", minHeight: "297mm" }} id="survey">
         <table className="doc">
           <thead>
             <tr>
@@ -192,13 +192,13 @@ export default function SurveyPdfPage() {
                 <div className="strip-header bg-primary text-white px-5 py-4">
                   <div className="flex items-start justify-between gap-3">
                     <div className="min-w-0">
-                      <div className="font-bold text-[16px] leading-tight tracking-wide">{CO.name}</div>
-                      <div className="text-[11px] opacity-90 leading-snug mt-1">{CO.address}</div>
-                      <div className="text-[11px] opacity-90 leading-snug">TAX ID: {CO.taxId} · TEL: {CO.phone}</div>
+                      <div className="font-bold text-xxs leading-tight tracking-wide">{CO.name}</div>
+                      <div className="text-xxs opacity-90 leading-snug mt-1">{CO.address}</div>
+                      <div className="text-xxs opacity-90 leading-snug">TAX ID: {CO.taxId} · TEL: {CO.phone}</div>
                     </div>
                     <div className="text-right shrink-0">
-                      <div className="text-[10px] uppercase tracking-wider opacity-80 leading-tight">Site Survey Form</div>
-                      <div className="text-[16px] font-bold leading-tight mt-0.5">ใบสำรวจหน้างาน</div>
+                      <div className="text-xxs uppercase tracking-wider opacity-80 leading-tight">Site Survey Form</div>
+                      <div className="text-xxs font-bold leading-tight mt-0.5">ใบสำรวจหน้างาน</div>
                     </div>
                   </div>
                 </div>
@@ -212,17 +212,17 @@ export default function SurveyPdfPage() {
               <td>
                 {/* Ref + Date */}
                 <div className="tbody-pull-up px-[30px] py-2.5 flex justify-between items-center border-b border-gray-100">
-                  <span className="text-[12px] text-gray-500">DOCUMENT NO: <span className="text-gray-900 font-bold text-[18px] tracking-wider ml-1">{docNo}</span></span>
-                  <span className="text-[12px] text-gray-500">SURVEY DATE: <span className="text-gray-800 font-semibold">{fmtDate(lead.survey_date)}{lead.survey_time_slot ? ` · ${slotTime}` : ""}</span></span>
+                  <span className="text-xxs text-gray-500">DOCUMENT NO: <span className="text-gray-900 font-bold text-[18px] tracking-wider ml-1">{docNo}</span></span>
+                  <span className="text-xxs text-gray-500">SURVEY DATE: <span className="text-gray-800 font-semibold">{fmtDate(lead.survey_date)}{lead.survey_time_slot ? ` · ${slotTime}` : ""}</span></span>
                 </div>
 
                 <div className="px-[30px] py-4 flex flex-col gap-3.5 leading-[1.5]">
 
                   {/* ข้อมูลลูกค้า */}
                   <div className="avoid-break">
-                    <div className="text-[16px] font-bold uppercase tracking-wider text-black mb-2">CUSTOMER INFORMATION · ข้อมูลลูกค้า</div>
+                    <div className="text-xxs font-bold uppercase tracking-wider text-black mb-2">CUSTOMER INFORMATION · ข้อมูลลูกค้า</div>
                     <div className="flex items-start gap-4">
-                      <div className="flex-1 grid grid-cols-[110px_1fr] gap-x-3 gap-y-1.5 text-[15px] text-black">
+                      <div className="flex-1 grid grid-cols-[110px_1fr] gap-x-3 gap-y-1.5 text-xxs text-black">
                         <span className="font-medium">ชื่อลูกค้า</span><span>{lead.full_name || "—"}</span>
                         <span className="font-medium">เบอร์โทร</span><span>{lead.phone || "—"}</span>
                         {lead.project_name && (<><span className="font-medium">โครงการ</span><span>{lead.project_name}</span></>)}
@@ -233,7 +233,7 @@ export default function SurveyPdfPage() {
                         <div className="shrink-0 text-center">
                           {/* eslint-disable-next-line @next/next/no-img-element */}
                           <img src={locQr} alt="Location QR" className="w-[120px] h-[120px] border border-gray-300 rounded" />
-                          <div className="text-[10px] font-semibold uppercase tracking-wider text-black mt-1">QR แผนที่ Location</div>
+                          <div className="text-xxs font-semibold uppercase tracking-wider text-black mt-1">QR แผนที่ Location</div>
                         </div>
                       )}
                     </div>
@@ -272,8 +272,8 @@ export default function SurveyPdfPage() {
                         <Field label="ทิศทางหลังคา" value="—" />
                       ) : (
                         <div className="flex items-baseline gap-3 border-b border-dotted border-gray-300 py-1.5 leading-tight">
-                          <span className="text-[15px] font-medium uppercase tracking-wider text-black shrink-0 min-w-[160px]">ทิศทางหลังคา</span>
-                          <div className="text-[15px] text-black flex flex-col gap-0.5">
+                          <span className="text-xxs font-medium uppercase tracking-wider text-black shrink-0 min-w-[160px]">ทิศทางหลังคา</span>
+                          <div className="text-xxs text-black flex flex-col gap-0.5">
                             {orientationCodes.map(code => {
                               const label = ORIENTATION_MAP[code] || code;
                               const note = (orientationNotes[code] || "").trim();
@@ -316,8 +316,8 @@ export default function SurveyPdfPage() {
                     </SpecGrid>
                     {packages.length > 0 && (
                       <div className="mt-2.5">
-                        <div className="text-[16px] font-bold uppercase tracking-wider text-black mb-1.5">แพ็คเกจที่เสนอ</div>
-                        <table className="w-full border border-gray-200 text-[15px]">
+                        <div className="text-xxs font-bold uppercase tracking-wider text-black mb-1.5">แพ็คเกจที่เสนอ</div>
+                        <table className="w-full border border-gray-200 text-xxs">
                           <thead className="bg-gray-50">
                             <tr className="text-left">
                               <th className="py-1.5 font-medium text-black" style={{ paddingLeft: "32px", paddingRight: "12px" }}>ชื่อแพ็คเกจ</th>
@@ -344,7 +344,7 @@ export default function SurveyPdfPage() {
                       </div>
                     )}
                     {lead.package_note && (
-                      <div className="mt-2 text-[15px] text-black whitespace-pre-wrap">
+                      <div className="mt-2 text-xxs text-black whitespace-pre-wrap">
                         <span className="font-bold">หมายเหตุ:</span> {lead.package_note}
                       </div>
                     )}
@@ -354,9 +354,9 @@ export default function SurveyPdfPage() {
                       below the box as the surveyor's verdict on the quote. */}
                   <Section title="5. บันทึกผู้สำรวจ · SURVEYOR NOTE">
                     {lead.survey_note && (
-                      <div className="text-[15px] text-black whitespace-pre-wrap border border-gray-300 rounded p-3">{lead.survey_note}</div>
+                      <div className="text-xxs text-black whitespace-pre-wrap border border-gray-300 rounded p-3">{lead.survey_note}</div>
                     )}
-                    <div className="mt-2 text-[15px] text-black">
+                    <div className="mt-2 text-xxs text-black">
                       <span className="font-bold">ประเภทใบเสนอราคา:</span>{" "}
                       {lead.quotation_type === "special" ? "Customization" : "Standard"}
                     </div>
@@ -392,11 +392,11 @@ export default function SurveyPdfPage() {
                                   // eslint-disable-next-line @next/next/no-img-element
                                   <img src={p.url} alt={`Photo ${idx + 1}`} className="w-full h-full object-cover" />
                                 ) : (
-                                  <span className="text-[15px] text-black">— ไม่มีรูป —</span>
+                                  <span className="text-xxs text-black">— ไม่มีรูป —</span>
                                 )}
                               </div>
                               {p.note && (
-                                <div className="px-2 py-1.5 border-t border-gray-300 text-[14px] text-black whitespace-pre-wrap leading-snug">{p.note}</div>
+                                <div className="px-2 py-1.5 border-t border-gray-300 text-xxs text-black whitespace-pre-wrap leading-snug">{p.note}</div>
                               )}
                             </div>
                           ))}
@@ -406,7 +406,7 @@ export default function SurveyPdfPage() {
                   )}
                   {extraPhotos.length > 0 && (
                     <div className="mt-4">
-                      <div className="text-[16px] font-bold uppercase tracking-wider text-black mb-2">รูปถ่ายเพิ่มเติม</div>
+                      <div className="text-xxs font-bold uppercase tracking-wider text-black mb-2">รูปถ่ายเพิ่มเติม</div>
                       <div className="grid grid-cols-3 gap-2">
                         {extraPhotos.map((url) => (
                           <div key={url} className="border border-gray-200 aspect-square overflow-hidden rounded">
@@ -425,7 +425,7 @@ export default function SurveyPdfPage() {
           <tfoot>
             <tr>
               <td>
-                <div className="strip-footer bg-gray-50 border-t border-gray-100 px-5 py-2 text-[11px] text-gray-500 text-center">
+                <div className="strip-footer bg-gray-50 border-t border-gray-100 px-5 py-2 text-xxs text-gray-500 text-center">
                   การให้บริการด้านเทคนิค ติดต่อ โทร. {CO.phone} · สายด่วน {CO.hotline} · {CO.email}
                 </div>
               </td>
@@ -440,7 +440,7 @@ export default function SurveyPdfPage() {
 function Section({ title, children }: { title: string; children: React.ReactNode }) {
   return (
     <div className="avoid-break">
-      <h2 className="text-[16px] font-bold text-black border-l-4 border-primary pl-2 mb-2">{title}</h2>
+      <h2 className="text-xxs font-bold text-black border-l-4 border-primary pl-2 mb-2">{title}</h2>
       <div>{children}</div>
     </div>
   );
@@ -453,8 +453,8 @@ function SpecGrid({ children }: { children: React.ReactNode }) {
 function Field({ label, value }: { label: string; value: string }) {
   return (
     <div className="flex items-baseline gap-3 border-b border-dotted border-gray-300 py-1.5 leading-tight">
-      <span className="text-[15px] font-medium uppercase tracking-wider text-black shrink-0 min-w-[160px]">{label}</span>
-      <span className="text-[15px] font-normal text-black">{value}</span>
+      <span className="text-xxs font-medium uppercase tracking-wider text-black shrink-0 min-w-[160px]">{label}</span>
+      <span className="text-xxs font-normal text-black">{value}</span>
     </div>
   );
 }
@@ -462,12 +462,12 @@ function Field({ label, value }: { label: string; value: string }) {
 function GroupRow({ label, items }: { label: string; items: { label: string; value: string }[] }) {
   return (
     <div className="flex items-baseline gap-3 border-b border-dotted border-gray-300 py-1.5 leading-tight">
-      <span className="text-[15px] font-medium uppercase tracking-wider text-black shrink-0 min-w-[160px]">{label}</span>
+      <span className="text-xxs font-medium uppercase tracking-wider text-black shrink-0 min-w-[160px]">{label}</span>
       <div className="text-black flex flex-wrap items-baseline gap-x-10 gap-y-1">
         {items.map((it, i) => (
           <span key={i} className="inline-flex items-baseline gap-4 whitespace-nowrap">
-            <span className="text-[15px] font-normal text-black">{it.label}</span>
-            <span className="text-[15px] font-normal text-black">{it.value}</span>
+            <span className="text-xxs font-normal text-black">{it.label}</span>
+            <span className="text-xxs font-normal text-black">{it.value}</span>
           </span>
         ))}
       </div>
@@ -483,10 +483,10 @@ function PhotoSlot({ url, label }: { url: string | null; label: string }) {
           // eslint-disable-next-line @next/next/no-img-element
           <img src={url} alt={label} className="w-full h-full object-cover" />
         ) : (
-          <span className="text-[15px] text-black">— ไม่มีรูป —</span>
+          <span className="text-xxs text-black">— ไม่มีรูป —</span>
         )}
       </div>
-      <div className="px-2 py-1.5 border-t border-gray-300 text-[15px] font-medium uppercase tracking-wider text-black">{label}</div>
+      <div className="px-2 py-1.5 border-t border-gray-300 text-xxs font-medium uppercase tracking-wider text-black">{label}</div>
     </div>
   );
 }
@@ -500,8 +500,8 @@ function SignatureBox({ label, name, signatureUrl }: { label: string; name: stri
           <img src={signatureUrl} alt="signature" className="max-h-[70px] max-w-full object-contain" />
         )}
       </div>
-      <div className="text-[15px] border-t border-black pt-1.5 font-normal">( {name || "…………………………………………"} )</div>
-      <div className="text-[15px] font-medium mt-1">{label}</div>
+      <div className="text-xxs border-t border-black pt-1.5 font-normal">( {name || "…………………………………………"} )</div>
+      <div className="text-xxs font-medium mt-1">{label}</div>
     </div>
   );
 }

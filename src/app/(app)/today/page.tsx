@@ -192,7 +192,7 @@ export default function TodayPage() {
           setSortField(v);
           localStorage.setItem("today.sortField", v);
         }}
-        className="h-7 px-2 pr-6 rounded-md border border-gray-200 bg-white text-[11px] font-medium text-gray-700 focus:outline-none focus:border-gray-400"
+        className="h-7 px-2 pr-6 rounded-md border border-gray-200 bg-white text-xxs font-medium text-gray-700 focus:outline-none focus:border-gray-400"
       >
         <option value="follow_up">วันนัดติดตาม</option>
         <option value="created">วันที่สร้าง</option>
@@ -206,7 +206,7 @@ export default function TodayPage() {
           setSortOrder(v);
           localStorage.setItem("today.sortOrder", v);
         }}
-        className="h-7 px-2 pr-6 rounded-md border border-gray-200 bg-white text-[11px] font-medium text-gray-700 focus:outline-none focus:border-gray-400"
+        className="h-7 px-2 pr-6 rounded-md border border-gray-200 bg-white text-xxs font-medium text-gray-700 focus:outline-none focus:border-gray-400"
       >
         <option value="asc">{sortField === "name" ? "ก-ฮ" : "เก่า → ใหม่"}</option>
         <option value="desc">{sortField === "name" ? "ฮ-ก" : "ใหม่ → เก่า"}</option>

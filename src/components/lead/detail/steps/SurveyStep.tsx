@@ -515,7 +515,7 @@ export default function SurveyStep({ lead, state, refresh, packages, expanded, o
               <div key={pkg.id} className="rounded-lg border border-emerald-200 bg-white p-2">
                 <div className="flex items-center justify-between gap-2">
                   <div className="text-sm font-bold text-gray-900 flex items-center gap-1.5">
-                    {pkg.is_upgrade && <span className="text-[10px] font-bold text-blue-600 bg-blue-50 px-1.5 py-0.5 rounded uppercase">UPGRADE</span>}
+                    {pkg.is_upgrade && <span className="text-xxs font-bold text-blue-600 bg-blue-50 px-1.5 py-0.5 rounded uppercase">UPGRADE</span>}
                     {pkg.name}
                   </div>
                   <div className="text-sm font-bold font-mono tabular-nums">{pkg.price.toLocaleString()} ฿</div>
@@ -558,10 +558,10 @@ export default function SurveyStep({ lead, state, refresh, packages, expanded, o
                 {p.url ? (
                   <FallbackImage src={p.url} alt={p.label} className="w-full h-full object-cover" fallbackLabel="รูปหาย" />
                 ) : (
-                  <span className="text-[10px] text-gray-300">— ไม่มีรูป —</span>
+                  <span className="text-xxs text-gray-300">— ไม่มีรูป —</span>
                 )}
               </div>
-              <div className="px-2 py-1 text-[10px] font-semibold uppercase tracking-wider text-gray-500 text-center">{p.label}</div>
+              <div className="px-2 py-1 text-xxs font-semibold uppercase tracking-wider text-gray-500 text-center">{p.label}</div>
             </div>
           ))}
         </div>
@@ -762,7 +762,7 @@ export default function SurveyStep({ lead, state, refresh, packages, expanded, o
                     </svg>
                   </div>
                   <div className="flex-1 min-w-0">
-                    <div className="text-[10px] font-semibold tracking-wider uppercase text-gray-400 leading-none">พิกัดหน้างาน</div>
+                    <div className="text-xxs font-semibold tracking-wider uppercase text-gray-400 leading-none">พิกัดหน้างาน</div>
                     {hasLoc ? (
                       <div className="font-mono tabular-nums text-sm text-gray-900 mt-1 truncate">
                         {Number(lead.survey_lat).toFixed(6)}, {Number(lead.survey_lng).toFixed(6)}

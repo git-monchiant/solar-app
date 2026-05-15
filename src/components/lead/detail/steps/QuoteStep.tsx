@@ -119,19 +119,19 @@ export default function QuoteStep({ lead, state, refresh, expanded, onToggle }: 
         <div className="grid grid-cols-2 gap-x-4 gap-y-2">
           {lead.quotation_doc_no && (
             <div>
-              <div className="text-[11px] font-bold text-gray-400 uppercase tracking-wider">เลขที่ใบเสนอราคา</div>
+              <div className="text-xxs font-bold text-gray-400 uppercase tracking-wider">เลขที่ใบเสนอราคา</div>
               <div className="text-sm font-medium text-gray-800 font-mono">{lead.quotation_doc_no}</div>
             </div>
           )}
           {lead.quotation_sent_date && (
             <div>
-              <div className="text-[11px] font-bold text-gray-400 uppercase tracking-wider">วันที่ส่ง</div>
+              <div className="text-xxs font-bold text-gray-400 uppercase tracking-wider">วันที่ส่ง</div>
               <div className="text-sm font-medium text-gray-800">{formatDate(lead.quotation_sent_date)}</div>
             </div>
           )}
           {lead.quotation_by && (
             <div className="col-span-2">
-              <div className="text-[11px] font-bold text-gray-400 uppercase tracking-wider">ผู้จัดทำ</div>
+              <div className="text-xxs font-bold text-gray-400 uppercase tracking-wider">ผู้จัดทำ</div>
               <div className="text-sm font-medium text-gray-800">{lead.quotation_by}</div>
             </div>
           )}

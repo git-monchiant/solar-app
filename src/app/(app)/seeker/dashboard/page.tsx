@@ -346,29 +346,29 @@ export default function SeekerDashboardPage() {
                               style={{ height: `${CHART_H + 18}px` }}
                               onClick={() => setDrillProject(row.name)}
                             >
-                              <span className="text-[10px] font-mono tabular-nums text-gray-700 mb-1">{total}</span>
+                              <span className="text-xxs font-mono tabular-nums text-gray-700 mb-1">{total}</span>
                               <div
                                 className={`w-full flex flex-col-reverse overflow-hidden hover:brightness-110 transition-all ${drillProject === row.name ? "ring-2 ring-primary" : ""}`}
                                 style={{ height: `${totalH}px` }}
                                 title={`คลิกเพื่อดูรายวัน 30 วัน — ${row.name}\nสนใจ ${row.interested} · ยังไม่ตัดสินใจ ${row.contacted} · ไม่สนใจ ${row.not_interested} · ยังไม่ได้เยี่ยม ${row.pending}`}
                               >
                                 {row.interested > 0 && (
-                                  <div className="bg-green-500 flex items-center justify-center text-[10px] font-mono tabular-nums text-white" style={{ height: `${interestedH}px` }}>
+                                  <div className="bg-green-500 flex items-center justify-center text-xxs font-mono tabular-nums text-white" style={{ height: `${interestedH}px` }}>
                                     {interestedH >= 14 ? row.interested : ""}
                                   </div>
                                 )}
                                 {row.contacted > 0 && (
-                                  <div className="bg-amber-400 flex items-center justify-center text-[10px] font-mono tabular-nums text-white" style={{ height: `${contactedH}px` }}>
+                                  <div className="bg-amber-400 flex items-center justify-center text-xxs font-mono tabular-nums text-white" style={{ height: `${contactedH}px` }}>
                                     {contactedH >= 14 ? row.contacted : ""}
                                   </div>
                                 )}
                                 {row.not_interested > 0 && (
-                                  <div className="bg-red-400 flex items-center justify-center text-[10px] font-mono tabular-nums text-white" style={{ height: `${notInterestedH}px` }}>
+                                  <div className="bg-red-400 flex items-center justify-center text-xxs font-mono tabular-nums text-white" style={{ height: `${notInterestedH}px` }}>
                                     {notInterestedH >= 14 ? row.not_interested : ""}
                                   </div>
                                 )}
                                 {row.pending > 0 && (
-                                  <div className="bg-gray-300 flex items-center justify-center text-[10px] font-mono tabular-nums text-gray-700" style={{ height: `${Math.max(0, pendingH)}px` }}>
+                                  <div className="bg-gray-300 flex items-center justify-center text-xxs font-mono tabular-nums text-gray-700" style={{ height: `${Math.max(0, pendingH)}px` }}>
                                     {pendingH >= 14 ? row.pending : ""}
                                   </div>
                                 )}
@@ -381,7 +381,7 @@ export default function SeekerDashboardPage() {
                         {sorted.map((row) => (
                           <div key={row.name} className="flex justify-center flex-1 min-w-0">
                             <div
-                              className="text-[11px] text-gray-700 whitespace-nowrap"
+                              className="text-xxs text-gray-700 whitespace-nowrap"
                               style={{ writingMode: "vertical-rl", transform: "rotate(180deg)" }}
                               title={row.name}
                             >
@@ -530,7 +530,7 @@ export default function SeekerDashboardPage() {
                               </svg>
                             </a>
                           )}
-                          <span className={`text-[10px] px-2 py-0.5 rounded-full border ${BADGE_COLOR[st]}`}>
+                          <span className={`text-xxs px-2 py-0.5 rounded-full border ${BADGE_COLOR[st]}`}>
                             {STATUS_LABEL[st]}
                           </span>
                         </div>
@@ -637,7 +637,7 @@ function SeekerActivityChart({ daily, usageDays }: { daily: DailyRow[]; usageDay
       <div className="flex">
         <div className="flex flex-col-reverse justify-between pr-2" style={{ height: chartH }}>
           {yTicks.map((t) => (
-            <div key={t} className="text-[10px] text-gray-400 text-right leading-none">{t}</div>
+            <div key={t} className="text-xxs text-gray-400 text-right leading-none">{t}</div>
           ))}
         </div>
         <div className="flex-1 flex items-end gap-[3px] border-l border-b border-gray-200" style={{ height: chartH }}>
@@ -666,14 +666,14 @@ function SeekerActivityChart({ daily, usageDays }: { daily: DailyRow[]; usageDay
                   return (
                     <div key={k} className={`${STATUS_COLOR[k]} flex items-center justify-center`} style={{ height: h }}>
                       {h >= 14 && (
-                        <span className="text-[10px] font-bold tabular-nums text-white leading-none">{c}</span>
+                        <span className="text-xxs font-bold tabular-nums text-white leading-none">{c}</span>
                       )}
                     </div>
                   );
                 })}
                 {d.total > 0 && (
                   <span
-                    className="absolute left-0 right-0 text-center text-[10px] font-bold tabular-nums text-gray-700 pointer-events-none leading-none"
+                    className="absolute left-0 right-0 text-center text-xxs font-bold tabular-nums text-gray-700 pointer-events-none leading-none"
                     style={{ bottom: barH + 2 }}
                   >
                     {d.total}
@@ -686,12 +686,12 @@ function SeekerActivityChart({ daily, usageDays }: { daily: DailyRow[]; usageDay
       </div>
       <div className="flex gap-[3px] mt-1 ml-6">
         {dayKeys.map((d, i) => (
-          <div key={i} className="flex-1 text-center text-[10px] text-gray-400 truncate">{d.label}</div>
+          <div key={i} className="flex-1 text-center text-xxs text-gray-400 truncate">{d.label}</div>
         ))}
       </div>
       <div className="flex items-center justify-between mt-2">
         <span className="text-xs text-gray-400">รวม {HISTORY} วัน {totalMonth} หลัง · 1 แท่ง = 1 วัน</span>
-        <div className="flex items-center gap-3 text-[10px] text-gray-400">
+        <div className="flex items-center gap-3 text-xxs text-gray-400">
           <div className="flex items-center gap-1"><div className="w-[10px] h-[10px] rounded-sm bg-green-500" /><span>สนใจ</span></div>
           <div className="flex items-center gap-1"><div className="w-[10px] h-[10px] rounded-sm bg-sky-500" /><span>ติดตาม</span></div>
           <div className="flex items-center gap-1"><div className="w-[10px] h-[10px] rounded-sm bg-red-500" /><span>ไม่สนใจ</span></div>
@@ -732,10 +732,10 @@ function KpiCard({ icon, label, value, suffix, tint }: { icon: "home" | "check" 
     <div className={`rounded-2xl p-4 ${t.bg}`}>
       <div className="flex items-center gap-2 mb-1">
         <span className={t.icon}>{renderKpiIcon(icon)}</span>
-        <div className="text-[11px] font-semibold uppercase tracking-wider text-gray-500">{label}</div>
+        <div className="text-xxs font-semibold uppercase tracking-wider text-gray-500">{label}</div>
       </div>
       <div className="text-2xl md:text-3xl font-bold text-gray-900 tabular-nums leading-tight">{value}</div>
-      <div className="text-[11px] text-gray-500 mt-0.5">{suffix}</div>
+      <div className="text-xxs text-gray-500 mt-0.5">{suffix}</div>
     </div>
   );
 }
@@ -827,7 +827,7 @@ function AdoptionBar({ label, value, total, color, icon, iconColor }: { label: s
       <div className="h-2 bg-gray-100 rounded-full overflow-hidden">
         <div className={`h-full ${color} transition-all`} style={{ width: `${pct}%` }} />
       </div>
-      <div className="mt-1.5 text-[11px] text-gray-500 tabular-nums">{value.toLocaleString("en")} / {total.toLocaleString("en")}</div>
+      <div className="mt-1.5 text-xxs text-gray-500 tabular-nums">{value.toLocaleString("en")} / {total.toLocaleString("en")}</div>
     </div>
   );
 }

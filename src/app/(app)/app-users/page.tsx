@@ -98,7 +98,7 @@ function UsersList({ currentUserId }: { currentUserId: number }) {
         />
         {search && (
           <div className="absolute right-2 top-1/2 -translate-y-1/2 flex items-center gap-1.5">
-            <span className="text-[11px] text-gray-400 tabular-nums">
+            <span className="text-xxs text-gray-400 tabular-nums">
               {visibleUsers.length}/{users.length}
             </span>
             <button
@@ -149,8 +149,8 @@ function UsersList({ currentUserId }: { currentUserId: number }) {
                   <td className="px-4 py-3 text-xs text-gray-500 hidden lg:table-cell">{u.phone || "—"}</td>
                   <td className="px-4 py-3">
                     {u.is_active
-                      ? <span className="text-[10px] font-bold uppercase px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-700">Active</span>
-                      : <span className="text-[10px] font-bold uppercase px-2 py-0.5 rounded-full bg-gray-100 text-gray-500">Disabled</span>}
+                      ? <span className="text-xxs font-bold uppercase px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-700">Active</span>
+                      : <span className="text-xxs font-bold uppercase px-2 py-0.5 rounded-full bg-gray-100 text-gray-500">Disabled</span>}
                   </td>
                   <td className="px-4 py-3 text-right">
                     <button type="button" onClick={() => setEditing(u)}

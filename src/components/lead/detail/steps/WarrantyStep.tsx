@@ -476,7 +476,7 @@ export default function WarrantyStep({ lead, state, refresh, packages, expanded,
                 )}
               </label>
             </div>
-            <div className="text-[11px] text-gray-400 mt-1">ถ่ายรูปฉลากอินเวอร์เตอร์ — ระบบจะอ่าน SN ให้อัตโนมัติ</div>
+            <div className="text-xxs text-gray-400 mt-1">ถ่ายรูปฉลากอินเวอร์เตอร์ — ระบบจะอ่าน SN ให้อัตโนมัติ</div>
           </div>
         </div>
       </>)}
@@ -485,7 +485,7 @@ export default function WarrantyStep({ lead, state, refresh, packages, expanded,
       {subStep === 1 && (
         <div className="rounded-lg border border-gray-200 p-3 space-y-2">
           <div className="text-xs font-semibold tracking-wider uppercase text-gray-400">แบตเตอรี่ (ไม่บังคับ · สูงสุด {BATTERY_ROWS} ก้อน)</div>
-          <div className="grid grid-cols-[24px_1fr_72px_1fr_40px] gap-1.5 text-[10px] font-semibold text-gray-400 uppercase tracking-wider px-1">
+          <div className="grid grid-cols-[24px_1fr_72px_1fr_40px] gap-1.5 text-xxs font-semibold text-gray-400 uppercase tracking-wider px-1">
             <span></span>
             <span>ยี่ห้อ</span>
             <span>kWh</span>
@@ -657,7 +657,7 @@ export default function WarrantyStep({ lead, state, refresh, packages, expanded,
 function Info({ label, value, mono }: { label: string; value: string | null | undefined; mono?: boolean }) {
   return (
     <div className="rounded-lg bg-gray-50 border border-gray-200 p-2">
-      <div className="text-[10px] font-bold uppercase tracking-wider text-gray-400 mb-0.5">{label}</div>
+      <div className="text-xxs font-bold uppercase tracking-wider text-gray-400 mb-0.5">{label}</div>
       <div className={`text-sm font-semibold text-gray-800 ${mono ? "font-mono" : ""}`}>{value || "—"}</div>
     </div>
   );

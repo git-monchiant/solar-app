@@ -150,7 +150,7 @@ export default function LeadCard({ lead, compact, onAssignChange }: { lead: Lead
                             <span className="w-1 h-1 lg:w-1.5 lg:h-1.5 bg-white rounded-full" />
                           )}
                         </div>
-                        <span className={`text-[9px] lg:text-[10px] mt-1 lg:mt-1.5 leading-none whitespace-nowrap ${
+                        <span className={`text-xxs lg:text-xxs mt-1 lg:mt-1.5 leading-none whitespace-nowrap ${
                           isCurrent ? `font-semibold ${config.text ?? "text-gray-900"}`
                           : isPast ? "text-emerald-700"
                           : "text-gray-400"

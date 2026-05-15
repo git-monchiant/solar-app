@@ -276,9 +276,9 @@ export default function ReportPage() {
                                         <td className="py-1 font-semibold text-gray-700">{labelForInstallment(i.step_no, i.slip_field)}</td>
                                         <td className="py-1">
                                           {isPaid ? (
-                                            <span className="inline-block px-1.5 py-0.5 rounded bg-emerald-50 text-emerald-700 text-[10px] font-bold">ชำระแล้ว</span>
+                                            <span className="inline-block px-1.5 py-0.5 rounded bg-emerald-50 text-emerald-700 text-xxs font-bold">ชำระแล้ว</span>
                                           ) : (
-                                            <span className="inline-block px-1.5 py-0.5 rounded bg-amber-50 text-amber-700 text-[10px] font-bold">
+                                            <span className="inline-block px-1.5 py-0.5 rounded bg-amber-50 text-amber-700 text-xxs font-bold">
                                               {i.has_slip ? "รอยืนยัน" : "รอชำระ"}
                                             </span>
                                           )}
@@ -303,14 +303,14 @@ export default function ReportPage() {
                                                   />
                                                 ))}
                                                 {i.slip_urls.length > 3 && (
-                                                  <button type="button" onClick={() => openSlips(i)} className="w-9 h-9 rounded border border-gray-200 bg-gray-50 text-[10px] font-semibold text-gray-600 hover:border-active hover:text-active" style={{ minHeight: 0 }}>
+                                                  <button type="button" onClick={() => openSlips(i)} className="w-9 h-9 rounded border border-gray-200 bg-gray-50 text-xxs font-semibold text-gray-600 hover:border-active hover:text-active" style={{ minHeight: 0 }}>
                                                     +{i.slip_urls.length - 3}
                                                   </button>
                                                 )}
                                               </div>
-                                            ) : <span className="text-gray-300 text-[11px]">—</span>}
+                                            ) : <span className="text-gray-300 text-xxs">—</span>}
                                             {!isPaid && i.has_slip && (
-                                              <Link href={`/leads/${r.lead_id}`} onClick={e => e.stopPropagation()} className="h-7 px-2 rounded text-[11px] font-semibold text-white bg-amber-500 hover:brightness-110 inline-flex items-center" style={{ minHeight: 0 }}>
+                                              <Link href={`/leads/${r.lead_id}`} onClick={e => e.stopPropagation()} className="h-7 px-2 rounded text-xxs font-semibold text-white bg-amber-500 hover:brightness-110 inline-flex items-center" style={{ minHeight: 0 }}>
                                                 ยืนยันรับเงิน
                                               </Link>
                                             )}
@@ -342,7 +342,7 @@ export default function ReportPage() {
                   <button type="button" onClick={() => toggle(r.lead_id)} className="w-full text-left px-4 py-3 hover:bg-gray-50 transition-colors">
                     <div className="flex items-center justify-between mb-1">
                       <Link href={`/leads/${r.lead_id}`} onClick={e => e.stopPropagation()} className="text-sm font-semibold text-gray-900">{r.full_name}</Link>
-                      <span className={`text-[10px] font-bold uppercase px-2 py-0.5 rounded-full ${settled ? "bg-emerald-50 text-emerald-700" : "bg-amber-50 text-amber-700"}`}>
+                      <span className={`text-xxs font-bold uppercase px-2 py-0.5 rounded-full ${settled ? "bg-emerald-50 text-emerald-700" : "bg-amber-50 text-amber-700"}`}>
                         {settled ? "PAID" : "ค้าง"}
                       </span>
                     </div>
@@ -374,9 +374,9 @@ export default function ReportPage() {
                               <div className="flex items-center gap-1.5 flex-wrap">
                                 <span className="font-semibold text-gray-700">{labelForInstallment(i.step_no, i.slip_field)}</span>
                                 {isPaid ? (
-                                  <span className="inline-block px-1.5 py-0.5 rounded bg-emerald-50 text-emerald-700 text-[10px] font-bold">ชำระแล้ว</span>
+                                  <span className="inline-block px-1.5 py-0.5 rounded bg-emerald-50 text-emerald-700 text-xxs font-bold">ชำระแล้ว</span>
                                 ) : (
-                                  <span className="inline-block px-1.5 py-0.5 rounded bg-amber-50 text-amber-700 text-[10px] font-bold">
+                                  <span className="inline-block px-1.5 py-0.5 rounded bg-amber-50 text-amber-700 text-xxs font-bold">
                                     {i.has_slip ? "รอยืนยัน" : "รอชำระ"}
                                   </span>
                                 )}
@@ -395,12 +395,12 @@ export default function ReportPage() {
                                   />
                                 ))}
                                 {i.slip_urls.length > 3 && (
-                                  <button type="button" onClick={() => openSlips(i)} className="w-10 h-10 rounded border border-gray-200 bg-gray-50 text-[10px] font-semibold text-gray-600" style={{ minHeight: 0 }}>
+                                  <button type="button" onClick={() => openSlips(i)} className="w-10 h-10 rounded border border-gray-200 bg-gray-50 text-xxs font-semibold text-gray-600" style={{ minHeight: 0 }}>
                                     +{i.slip_urls.length - 3}
                                   </button>
                                 )}
                                 {!isPaid && i.has_slip && (
-                                  <Link href={`/leads/${r.lead_id}`} onClick={e => e.stopPropagation()} className="h-7 px-2 rounded text-[11px] font-semibold text-white bg-amber-500 inline-flex items-center" style={{ minHeight: 0 }}>
+                                  <Link href={`/leads/${r.lead_id}`} onClick={e => e.stopPropagation()} className="h-7 px-2 rounded text-xxs font-semibold text-white bg-amber-500 inline-flex items-center" style={{ minHeight: 0 }}>
                                     ยืนยันรับเงิน
                                   </Link>
                                 )}

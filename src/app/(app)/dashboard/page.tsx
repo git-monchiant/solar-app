@@ -131,9 +131,9 @@ export default function DashboardPage() {
                     </div>
                     {k.trend && <Trend current={k.trend.current} previous={k.trend.previous} />}
                   </div>
-                  <div className="text-[11px] font-semibold tracking-wider uppercase text-gray-400">{k.label}</div>
+                  <div className="text-xxs font-semibold tracking-wider uppercase text-gray-400">{k.label}</div>
                   <div className="text-2xl font-bold font-mono tabular-nums text-gray-900 mt-0.5">{k.value}</div>
-                  <div className="text-[11px] text-gray-400 mt-1">{k.sub}</div>
+                  <div className="text-xxs text-gray-400 mt-1">{k.sub}</div>
                 </div>
               ))}
             </div>
@@ -211,7 +211,7 @@ export default function DashboardPage() {
                       <div className="text-xs font-semibold text-gray-900 truncate">{l.full_name}</div>
                       <div className="text-xs text-gray-400">{l.project_name || "—"} · {fmtDate(l.created_at)}</div>
                     </div>
-                    <span className={`text-[10px] font-bold uppercase tracking-wider px-1.5 py-0.5 rounded text-white shrink-0 ${cfg?.color || "bg-gray-400"}`}>
+                    <span className={`text-xxs font-bold uppercase tracking-wider px-1.5 py-0.5 rounded text-white shrink-0 ${cfg?.color || "bg-gray-400"}`}>
                       {cfg?.label || l.status}
                     </span>
                   </Link>
@@ -316,7 +316,7 @@ function ActivityChart({ data }: { data: { day: string; lead_id: number; full_na
         {/* Y axis */}
         <div className="flex flex-col-reverse justify-between pr-2" style={{ height: chartH }}>
           {yTicks.map(t => (
-            <div key={t} className="text-[10px] text-gray-400 text-right leading-none" style={{ marginBottom: t === 0 ? 0 : undefined }}>
+            <div key={t} className="text-xxs text-gray-400 text-right leading-none" style={{ marginBottom: t === 0 ? 0 : undefined }}>
               {t}
             </div>
           ))}
@@ -351,7 +351,7 @@ function ActivityChart({ data }: { data: { day: string; lead_id: number; full_na
       {/* X axis: dates */}
       <div className="flex gap-[3px] mt-1 ml-6">
         {dayKeys.map(dk => (
-          <div key={dk} className="flex-1 text-center text-[10px] text-gray-400 truncate">
+          <div key={dk} className="flex-1 text-center text-xxs text-gray-400 truncate">
             {parseInt(dk.slice(8))}
           </div>
         ))}
@@ -359,7 +359,7 @@ function ActivityChart({ data }: { data: { day: string; lead_id: number; full_na
       {/* Legend */}
       <div className="flex items-center justify-between mt-2">
         <span className="text-xs text-gray-400">1 block = 1 lead · สีเข้ม = ติดตามหลายครั้ง</span>
-        <div className="flex items-center gap-3 text-[10px] text-gray-400">
+        <div className="flex items-center gap-3 text-xxs text-gray-400">
           <div className="flex items-center gap-1">
             <div className="w-[10px] h-[10px] rounded-sm bg-sky-400" />
             <span>Pre-Survey</span>
@@ -426,7 +426,7 @@ function LineGrowthChart({ users }: { users: { created_at: string; phone: string
       <div className="flex">
         <div className="flex flex-col-reverse justify-between pr-2" style={{ height: chartH }}>
           {yTicks.map((t) => (
-            <div key={t} className="text-[10px] text-gray-400 text-right leading-none">{t}</div>
+            <div key={t} className="text-xxs text-gray-400 text-right leading-none">{t}</div>
           ))}
         </div>
         <div className="flex-1 flex items-end gap-[3px] border-l border-b border-gray-200" style={{ height: chartH }}>
@@ -451,12 +451,12 @@ function LineGrowthChart({ users }: { users: { created_at: string; phone: string
       </div>
       <div className="flex gap-[3px] mt-1 ml-6">
         {dayKeys.map((dk, i) => (
-          <div key={i} className="flex-1 text-center text-[10px] text-gray-400 truncate">{parseInt(dk.slice(8))}</div>
+          <div key={i} className="flex-1 text-center text-xxs text-gray-400 truncate">{parseInt(dk.slice(8))}</div>
         ))}
       </div>
       <div className="flex items-center justify-between mt-2">
         <span className="text-xs text-gray-400">รวม 30 วัน {totalMonth} คน · ให้ข้อมูล {totalWithContact} คน · 1 block = 1 user</span>
-        <div className="flex items-center gap-3 text-[10px] text-gray-400">
+        <div className="flex items-center gap-3 text-xxs text-gray-400">
           <div className="flex items-center gap-1">
             <div className="w-[10px] h-[10px] rounded-sm bg-blue-600" />
             <span>มีเบอร์/บ้านเลขที่</span>

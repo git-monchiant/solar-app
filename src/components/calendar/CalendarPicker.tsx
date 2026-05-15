@@ -243,7 +243,7 @@ export default function CalendarPicker({
                       : "bg-white border-gray-300 text-gray-900 hover:border-active hover:text-active"
                   }`}
                 >
-                  <span className="text-[11px] font-semibold font-mono tabular-nums">{slotLabel(s)}</span>
+                  <span className="text-xxs font-semibold font-mono tabular-nums">{slotLabel(s)}</span>
                 </button>
               );
             })}

@@ -787,7 +787,7 @@ export default function OrderStep({ lead, state, refresh, expanded, onToggle }: 
                         )}
                         <span className={paid ? "text-emerald-800" : ""}>{`งวดที่ ${i + 1}`}</span>
                         {row.method === "loan" && rowFollowups.length > 0 && (
-                          <span className="text-[10px] text-active font-mono tabular-nums">({rowFollowups.length})</span>
+                          <span className="text-xxs text-active font-mono tabular-nums">({rowFollowups.length})</span>
                         )}
                       </div>
                       <div className="hidden md:block md:w-20 relative md:shrink-0 md:order-2">
@@ -981,7 +981,7 @@ export default function OrderStep({ lead, state, refresh, expanded, onToggle }: 
                         <div className="mt-2 -mx-2 border-t border-gray-100 overflow-x-auto">
                           <table className="w-full text-xs">
                               <thead>
-                                <tr className="text-gray-400 uppercase tracking-wider text-[10px] border-b border-gray-100">
+                                <tr className="text-gray-400 uppercase tracking-wider text-xxs border-b border-gray-100">
                                   <th className="px-2 py-1.5 text-left font-semibold">วันเวลา</th>
                                   <th className="px-2 py-1.5 text-left font-semibold">ช่องทาง</th>
                                   <th className="px-2 py-1.5 text-left font-semibold">บันทึก</th>
@@ -1214,7 +1214,7 @@ export default function OrderStep({ lead, state, refresh, expanded, onToggle }: 
             <div className="text-xs font-bold text-gray-500 uppercase tracking-wider">ส่วนลด</div>
             <div className="grid grid-cols-4 gap-2">
               <label className="col-span-2 min-w-0">
-                <span className="text-[11px] text-gray-500">Discount Text</span>
+                <span className="text-xxs text-gray-500">Discount Text</span>
                 <input
                   type="text" maxLength={200}
                   value={discountNote}
@@ -1224,7 +1224,7 @@ export default function OrderStep({ lead, state, refresh, expanded, onToggle }: 
                 />
               </label>
               <label>
-                <span className="text-[11px] text-gray-500">%</span>
+                <span className="text-xxs text-gray-500">%</span>
                 <div className="relative mt-0.5">
                   <input
                     type="number" min={0} max={100} step="0.01"
@@ -1241,7 +1241,7 @@ export default function OrderStep({ lead, state, refresh, expanded, onToggle }: 
                 </div>
               </label>
               <label>
-                <span className="text-[11px] text-gray-500">บาท</span>
+                <span className="text-xxs text-gray-500">บาท</span>
                 <div className="relative mt-0.5">
                   <input
                     type="number" min={0} step="1"

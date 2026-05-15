@@ -13,8 +13,10 @@ function DbBanner() {
   const [mounted, setMounted] = useState(false);
   useEffect(() => setMounted(true), []);
   if (!mounted || me?.db_name !== "solardb_dev") return null;
+  // Inline at the top of the layout flex column — header (sticky inside each
+  // page) will sit below this strip instead of being covered by it.
   return (
-    <div className="fixed top-0 inset-x-0 z-[100] bg-amber-500 text-white text-[10px] leading-none font-semibold tracking-widest text-center py-0.5 shadow-md pointer-events-none">
+    <div className="shrink-0 bg-amber-500 text-white text-xxs leading-none font-semibold tracking-widest text-center py-0.5 shadow-md">
       DEVELOPMENT / DEMO
     </div>
   );
@@ -58,10 +60,14 @@ function AppShell({ children }: { children: React.ReactNode }) {
 export default function AppLayout({ children }: { children: React.ReactNode }) {
   return (
     <DialogProvider>
-      <DbBanner />
-      <Suspense fallback={<div className="h-full flex items-center justify-center bg-gray-50"><div className="w-8 h-8 border-2 border-primary/30 border-t-primary rounded-full animate-spin" /></div>}>
-        <AppShell>{children}</AppShell>
-      </Suspense>
+      <div className="flex flex-col h-full">
+        <DbBanner />
+        <div className="flex-1 min-h-0">
+          <Suspense fallback={<div className="h-full flex items-center justify-center bg-gray-50"><div className="w-8 h-8 border-2 border-primary/30 border-t-primary rounded-full animate-spin" /></div>}>
+            <AppShell>{children}</AppShell>
+          </Suspense>
+        </div>
+      </div>
     </DialogProvider>
   );
 }

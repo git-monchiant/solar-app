@@ -237,7 +237,7 @@ export default function LostModal({ leadId, onClose, onSaved }: Props) {
               <header className={`flex items-center gap-1.5 px-2.5 py-2 ${g.accent.headBg} ${g.accent.text}`}>
                 {g.icon}
                 <span className="text-xs font-bold flex-1 leading-tight">{g.title}</span>
-                <span className={`text-[10px] font-bold tabular-nums px-1.5 py-0.5 rounded-full bg-white/70 ${g.accent.text}`}>
+                <span className={`text-xxs font-bold tabular-nums px-1.5 py-0.5 rounded-full bg-white/70 ${g.accent.text}`}>
                   {g.items.length}
                 </span>
               </header>
@@ -249,7 +249,7 @@ export default function LostModal({ leadId, onClose, onSaved }: Props) {
                       key={r}
                       type="button"
                       onClick={() => setReason(r)}
-                      className={`w-full text-left px-2.5 py-2 rounded-lg border text-[13px] leading-snug transition-colors flex items-start gap-2 ${
+                      className={`w-full text-left px-2.5 py-2 rounded-lg border text-xxs leading-snug transition-colors flex items-start gap-2 ${
                         selected
                           ? `${g.accent.selBorder} ${g.accent.selBg} ${g.accent.selText} font-semibold`
                           : "border-transparent bg-white/70 text-gray-700 hover:bg-white"

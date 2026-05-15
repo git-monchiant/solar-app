@@ -159,7 +159,7 @@ export default function EventCalendarMonth({ toolbarRight, year: controlledYear,
                           type="button"
                           onClick={handleClick}
                           disabled={isBlock}
-                          className={`w-full text-left text-[11px] leading-tight px-1.5 py-1 rounded border ${baseCls} ${isBlock ? "cursor-default" : "hover:brightness-95"} truncate inline-flex items-center gap-1`}
+                          className={`w-full text-left text-xxs leading-tight px-1.5 py-1 rounded border ${baseCls} ${isBlock ? "cursor-default" : "hover:brightness-95"} truncate inline-flex items-center gap-1`}
                           style={inlineStyle}
                           title={`${kindLabel}${ev.zone ? ` · ${ev.zone}` : ""}: ${ev.house_number ? ev.house_number + " - " : ""}${ev.full_name}`}
                         >
@@ -181,7 +181,7 @@ export default function EventCalendarMonth({ toolbarRight, year: controlledYear,
                       );
                     })}
                     {evs.length > 4 && (
-                      <div className="text-[10px] text-gray-400 px-1">+{evs.length - 4} เพิ่มเติม</div>
+                      <div className="text-xxs text-gray-400 px-1">+{evs.length - 4} เพิ่มเติม</div>
                     )}
                   </div>
                 </div>

@@ -109,7 +109,7 @@ export default function DateSlider({ date, onDateChange, days, pastDays = 3, fut
                   : "text-gray-500"
               }`}
             >
-              <span className="text-[11px] font-semibold">{dayName}</span>
+              <span className="text-xxs font-semibold">{dayName}</span>
               <span className="text-lg font-bold leading-tight">{d.getDate()}</span>
             </button>
           );

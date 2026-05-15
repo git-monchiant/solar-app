@@ -274,7 +274,7 @@ export default function EventCalendarList({ monthsBack, monthsForward, days, zon
                 <div key={dk} id={`day-${dk}`} className={`rounded-xl border p-3 scroll-mt-44 ${isToday ? "border-primary bg-primary/5" : jobs.length > 0 ? "border-gray-200 bg-white" : "border-transparent"}`}>
                   <div className="flex items-start gap-3">
                     <div className={`w-10 text-center shrink-0 ${isToday ? "text-primary" : isWeekend ? "text-red-500" : "text-gray-500"}`}>
-                      <div className="text-[10px] font-semibold uppercase">{weekday}</div>
+                      <div className="text-xxs font-semibold uppercase">{weekday}</div>
                       <div className={`text-lg font-bold ${isToday ? "text-primary" : jobs.length > 0 ? (isWeekend ? "text-red-500" : "text-gray-900") : (isWeekend ? "text-red-300" : "text-gray-400")}`}>{d.getDate()}</div>
                     </div>
                     <div className="flex-1 min-w-0">
@@ -301,7 +301,7 @@ export default function EventCalendarList({ monthsBack, monthsForward, days, zon
                                 <EventIcon type={j.event_type} />
                                 <div className="flex-1 min-w-0">
                                   <div className="text-xs font-semibold text-gray-900 truncate">{j.house_number ? `${j.house_number} - ${j.full_name}` : j.full_name}</div>
-                                  <div className="text-[10px] text-gray-500">
+                                  <div className="text-xxs text-gray-500">
                                     {formatSlotsRange(j.time_slot) || (isBlock ? "ทั้งวัน" : "")}{j.time_slot || isBlock ? " · " : ""}{label}{j.zone ? ` · ${j.zone}` : ""}
                                   </div>
                                 </div>

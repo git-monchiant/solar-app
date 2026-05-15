@@ -83,7 +83,7 @@ export default function DashboardDevPage() {
               }
               return Array.from(buckets.values()).sort((a, b) => b.value - a.value).slice(0, 10);
             })()} color="bg-sky-500" />
-            <div className="text-[10px] text-gray-400 text-left mt-2">ณ วันที่ {today}</div>
+            <div className="text-xxs text-gray-400 text-left mt-2">ณ วันที่ {today}</div>
           </div>
           <FunnelCard funnel={data.funnel} />
           <div className="rounded-xl bg-white border border-gray-300 p-4">
@@ -99,7 +99,7 @@ export default function DashboardDevPage() {
             ) : (
               <div className="text-xs text-gray-400 text-center py-4">ยังไม่มีข้อมูล</div>
             )}
-            <div className="text-[10px] text-gray-400 text-left mt-2">ณ วันที่ {today}</div>
+            <div className="text-xxs text-gray-400 text-left mt-2">ณ วันที่ {today}</div>
           </div>
           <div className="rounded-xl bg-white border border-gray-300 p-4">
             <div className="text-xs font-semibold uppercase tracking-wider text-gray-400 mb-3">เหตุผลที่ยังไม่จอง</div>
@@ -114,7 +114,7 @@ export default function DashboardDevPage() {
             ) : (
               <div className="text-xs text-gray-400 text-center py-4">ยังไม่มีข้อมูล</div>
             )}
-            <div className="text-[10px] text-gray-400 text-left mt-2">ณ วันที่ {today}</div>
+            <div className="text-xxs text-gray-400 text-left mt-2">ณ วันที่ {today}</div>
           </div>
           <div className="rounded-xl bg-white border border-gray-300 p-4">
             <div className="text-xs font-semibold uppercase tracking-wider text-gray-400 mb-3">เหตุผลที่ Lost</div>
@@ -129,7 +129,7 @@ export default function DashboardDevPage() {
             ) : (
               <div className="text-xs text-gray-400 text-center py-4">ยังไม่มีข้อมูล</div>
             )}
-            <div className="text-[10px] text-gray-400 text-left mt-2">ณ วันที่ {today}</div>
+            <div className="text-xxs text-gray-400 text-left mt-2">ณ วันที่ {today}</div>
           </div>
         </div>
 
@@ -144,7 +144,7 @@ export default function DashboardDevPage() {
           <div className="md:col-span-2 rounded-xl bg-white border border-gray-300 p-4">
             <div className="text-xs font-semibold uppercase tracking-wider text-gray-400 mb-3">Lead ใหม่รายวัน <span className="normal-case text-gray-300">(30 วันล่าสุด)</span></div>
             <DailyChart daily={data.daily} />
-            <div className="text-[10px] text-gray-400 text-left mt-2">ณ วันที่ {today}</div>
+            <div className="text-xxs text-gray-400 text-left mt-2">ณ วันที่ {today}</div>
           </div>
         </div>
 
@@ -188,7 +188,7 @@ function FunnelCard({ funnel }: { funnel: DevData["funnel"] }) {
           );
         })}
       </div>
-      <div className="text-[10px] text-gray-400 text-left mt-2">ณ วันที่ {today}</div>
+      <div className="text-xxs text-gray-400 text-left mt-2">ณ วันที่ {today}</div>
     </div>
   );
 }
@@ -222,7 +222,7 @@ function DailyChart({ daily }: { daily: { day: string; cnt: number; with_line: n
     <div>
       <div className="flex">
         <div className="flex flex-col-reverse justify-between pr-2" style={{ height: chartH }}>
-          {yTicks.map(t => <div key={t} className="text-[10px] text-gray-400 text-right leading-none">{t}</div>)}
+          {yTicks.map(t => <div key={t} className="text-xxs text-gray-400 text-right leading-none">{t}</div>)}
         </div>
         <div className="flex-1 flex items-end gap-[3px] border-l border-b border-gray-200" style={{ height: chartH }}>
           {days.map((d, i) => {
@@ -232,7 +232,7 @@ function DailyChart({ daily }: { daily: { day: string; cnt: number; with_line: n
             return (
               <div key={i} className="flex-1 flex flex-col justify-end items-center" style={{ height: "100%" }}>
                 {d.cnt > 0 && (
-                  <div className="text-[9px] font-bold font-mono tabular-nums text-gray-600 leading-none mb-0.5">{d.cnt}</div>
+                  <div className="text-xxs font-bold font-mono tabular-nums text-gray-600 leading-none mb-0.5">{d.cnt}</div>
                 )}
                 <div className="w-full flex flex-col-reverse" style={{ height: Math.max(h, d.cnt > 0 ? 2 : 0) }}>
                   {d.with_line > 0 && (
@@ -251,12 +251,12 @@ function DailyChart({ daily }: { daily: { day: string; cnt: number; with_line: n
       </div>
       <div className="flex gap-[3px] mt-1 ml-6">
         {days.map((d, i) => (
-          <div key={i} className="flex-1 text-center text-[10px] text-gray-400 truncate">{parseInt(d.key.slice(8))}</div>
+          <div key={i} className="flex-1 text-center text-xxs text-gray-400 truncate">{parseInt(d.key.slice(8))}</div>
         ))}
       </div>
       <div className="flex items-center justify-between mt-2">
         <div className="text-xs text-gray-400">รวม 30 วัน {total} leads · max {max}/วัน</div>
-        <div className="flex items-center gap-3 text-[10px] text-gray-400">
+        <div className="flex items-center gap-3 text-xxs text-gray-400">
           <div className="inline-flex items-center gap-1"><span className="w-2.5 h-2.5 bg-emerald-500" />Add LINE ({totalWithLine})</div>
           <div className="inline-flex items-center gap-1"><span className="w-2.5 h-2.5 bg-gray-400" />ไม่ได้ Add ({total - totalWithLine})</div>
         </div>
@@ -289,7 +289,7 @@ function ContactRecencyCard({ recency }: { recency: { bucket: string; cnt: numbe
     <div className="rounded-xl bg-white border border-gray-300 p-4">
       <div className="text-xs font-semibold uppercase tracking-wider text-gray-400 mb-3">Aging <span className="normal-case text-gray-300">(นับจากติดต่อล่าสุด)</span></div>
       <Donut slices={slices} centerLabel="Active" />
-      <div className="text-[10px] text-gray-400 text-left mt-2">ณ วันที่ {today}</div>
+      <div className="text-xxs text-gray-400 text-left mt-2">ณ วันที่ {today}</div>
     </div>
   );
 }
@@ -307,7 +307,7 @@ function ContactStatusCard({ status }: { status: { bucket: string; cnt: number }
     <div className="rounded-xl bg-white border border-gray-300 p-4">
       <div className="text-xs font-semibold uppercase tracking-wider text-gray-400 mb-3">การติดต่อ</div>
       <Donut slices={slices} centerLabel="ทั้งหมด" />
-      <div className="text-[10px] text-gray-400 text-left mt-2">ณ วันที่ {today}</div>
+      <div className="text-xxs text-gray-400 text-left mt-2">ณ วันที่ {today}</div>
     </div>
   );
 }
@@ -340,7 +340,7 @@ function ContactOutcomesCard({ outcomes }: { outcomes: { stage: string; cnt: num
       {slices.length > 0
         ? <Donut slices={slices} centerLabel="ติดต่อได้" />
         : <div className="text-xs text-gray-400 text-center py-4">ยังไม่มีข้อมูล</div>}
-      <div className="text-[10px] text-gray-400 text-left mt-2">ณ วันที่ {today}</div>
+      <div className="text-xxs text-gray-400 text-left mt-2">ณ วันที่ {today}</div>
     </div>
   );
 }
@@ -362,7 +362,7 @@ function FinanceCard({ breakdown }: { breakdown: { bucket: string; cnt: number }
       {slices.length > 0
         ? <Donut slices={slices} centerLabel="ทั้งหมด" />
         : <div className="text-xs text-gray-400 text-center py-4">ยังไม่มีข้อมูล</div>}
-      <div className="text-[10px] text-gray-400 text-left mt-2">ณ วันที่ {today}</div>
+      <div className="text-xxs text-gray-400 text-left mt-2">ณ วันที่ {today}</div>
     </div>
   );
 }
@@ -393,7 +393,7 @@ function Donut({ slices, centerLabel }: { slices: { label: string; value: number
             />
           );
         })}
-        <text x={cx} y={cy - 4} textAnchor="middle" className="text-[10px] fill-gray-400" style={{ fontSize: 10 }}>{centerLabel}</text>
+        <text x={cx} y={cy - 4} textAnchor="middle" className="text-xxs fill-gray-400" style={{ fontSize: 10 }}>{centerLabel}</text>
         <text x={cx} y={cy + 12} textAnchor="middle" className="font-bold fill-gray-900" style={{ fontSize: 18, fontFamily: "monospace" }}>{total}</text>
       </svg>
       <div className="flex-1 min-w-0 space-y-1">
@@ -463,7 +463,7 @@ function HorizontalFunnel({ funnel }: { funnel: DevData["funnel"] }) {
         <div className="text-xs font-semibold uppercase tracking-wider text-gray-400">
           Funnel — Lead Pipeline
         </div>
-        <div className="text-[10px] text-gray-400">{stages.length} stages · ซ้าย → ขวา</div>
+        <div className="text-xxs text-gray-400">{stages.length} stages · ซ้าย → ขวา</div>
       </div>
 
       {/* The funnel itself — flex row of clipped segments. h-32 keeps it
@@ -498,14 +498,14 @@ function HorizontalFunnel({ funnel }: { funnel: DevData["funnel"] }) {
           const conv = prev && prev > 0 ? Math.round((s.value / prev) * 100) : null;
           return (
             <div key={s.label} className="flex-1 px-1 text-center">
-              <div className="text-[10px] font-semibold uppercase tracking-wider text-gray-500 leading-tight truncate" title={s.label}>
+              <div className="text-xxs font-semibold uppercase tracking-wider text-gray-500 leading-tight truncate" title={s.label}>
                 {s.label}
               </div>
               <div className="text-base md:text-lg font-bold font-mono tabular-nums text-gray-900 mt-0.5">
                 {s.value.toLocaleString("en")}
               </div>
               {conv !== null && (
-                <div className="text-[10px] text-gray-400 font-normal">
+                <div className="text-xxs text-gray-400 font-normal">
                   {conv}% from prev
                 </div>
               )}

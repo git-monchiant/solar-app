@@ -109,7 +109,7 @@ const UTILITY_PROVIDERS = [
 const SUB_STEPS = ["ลูกค้า", "แพ็คเกจ", "จดทะเบียน", "ไฟฟ้า"];
 
 const chipBtn = (selected: boolean) =>
-  `h-9 px-3 rounded-lg text-[15px] font-semibold border transition-all cursor-pointer ${
+  `h-9 px-3 rounded-lg text-xxs font-semibold border transition-all cursor-pointer ${
     selected
       ? "bg-active text-white border-active shadow-sm shadow-active/20"
       : "bg-white text-gray-600 border-gray-200 hover:border-active/40 hover:text-active"
@@ -252,7 +252,7 @@ function CreateProfileForm({
                     <div className="w-7 h-7 rounded-full bg-[#06C755] flex items-center justify-center shrink-0 text-white"><LineIcon /></div>
                   )}
                   <span className="text-sm font-medium text-gray-900 truncate flex-1 min-w-0">{lineProfile.display_name}</span>
-                  <span className={`text-[10px] font-bold uppercase tracking-wider px-1.5 py-0.5 rounded shrink-0 ${linePending ? "bg-amber-50 text-amber-600" : "bg-emerald-50 text-emerald-600"}`}>
+                  <span className={`text-xxs font-bold uppercase tracking-wider px-1.5 py-0.5 rounded shrink-0 ${linePending ? "bg-amber-50 text-amber-600" : "bg-emerald-50 text-emerald-600"}`}>
                     {linePending ? "รอเชื่อม" : "เชื่อมแล้ว"}
                   </span>
                 </div>

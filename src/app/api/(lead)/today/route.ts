@@ -7,37 +7,65 @@ import { requireAuth } from "@/lib/auth";
 // SELECT * was sending ~10× the bytes the UI actually used. This focused
 // list also resolves project_name once via COALESCE so we don't need to
 // flatten duplicate-aliased columns coming back from the mssql driver.
+//
+// Activity-derived fields (`contact_count`, `last_activity_*`,
+// `is_followup_overdue`) come from a single pre-aggregated scan of
+// lead_activities joined via `act` + a single TOP-1 OUTER APPLY for the
+// most-recent note. This avoids the N+1 correlated-subqueries-per-row
+// pattern that previously caused /api/today to time out under any network
+// jitter.
 const LEAD_COLS = `
   l.id, l.full_name, l.house_number, l.phone, l.email, l.note,
   l.status, l.source, l.customer_type, l.line_id, l.zone,
-  l.created_at, l.contact_date, l.updated_at, l.next_follow_up,
-  l.assigned_user_id, l.installation_address, l.project_id,
+  l.created_at, l.contact_date, l.next_follow_up,
+  l.assigned_user_id, l.installation_address,
   l.pre_doc_no, l.pre_total_price, l.payment_confirmed,
   l.survey_date, l.survey_time_slot,
   l.install_date, l.install_completed_at, l.install_extra_cost,
   l.order_total, l.quotation_amount,
   COALESCE(NULLIF(l.project_name, ''), p.name) as project_name,
-  p.district, p.province, pk.name as package_name, u.full_name as assigned_name, u.username as assigned_username,
-  -- Total contact attempts (call/visit/follow_up/loan_followup) for the chip
-  -- on LeadCard.
-  (SELECT COUNT(*) FROM lead_activities
-     WHERE lead_id = l.id
-       AND activity_type IN ('call','visit','follow_up','loan_followup')) AS contact_count,
-  -- Server-side overdue flag — mirrors the followUpOverdue NOT EXISTS check
-  -- so LeadCard doesn't need to re-derive (which would mislabel leads that
-  -- have already been followed up).
+  p.district, p.province, pk.name as package_name,
+  u.full_name as assigned_name, u.username as assigned_username,
+  COALESCE(act.contact_count, 0) AS contact_count,
+  last_act.last_activity_date,
   CAST(CASE
     WHEN l.next_follow_up IS NOT NULL
      AND l.next_follow_up < CAST(GETDATE() AS DATE)
      AND l.status NOT IN ('install', 'lost')
-     AND NOT EXISTS (
-       SELECT 1 FROM lead_activities a
-        WHERE a.lead_id = l.id
-          AND a.activity_type = 'follow_up'
-          AND COALESCE(a.followup_date, CAST(a.created_at AS DATE)) >= l.next_follow_up
-     )
+     AND (act.last_followup_date IS NULL OR act.last_followup_date < l.next_follow_up)
     THEN 1 ELSE 0
   END AS BIT) AS is_followup_overdue
+`;
+
+// Shared FROM clause for every today-list query. Two activity joins:
+//   `act`      — GROUP BY per lead_id, scans lead_activities once per query
+//                (not once per row), gives contact_count + last_followup_date.
+//   `last_act` — OUTER APPLY TOP 1 by created_at DESC, returns the most-recent
+//                activity's note + display date. With the
+//                idx_lead_activities_lead_id_created_at index this is a single
+//                seek per row.
+const LEAD_FROM = `
+  FROM leads l
+  LEFT JOIN projects p ON l.project_id = p.id
+  LEFT JOIN packages pk ON l.interested_package_id = pk.id
+  LEFT JOIN users u ON l.assigned_user_id = u.id
+  LEFT JOIN (
+    SELECT
+      a.lead_id,
+      SUM(CASE WHEN a.activity_type IN ('call','visit','follow_up','loan_followup') THEN 1 ELSE 0 END) AS contact_count,
+      MAX(CASE WHEN a.activity_type = 'follow_up'
+               THEN COALESCE(a.followup_date, CAST(a.created_at AS DATE))
+          END) AS last_followup_date
+    FROM lead_activities a
+    GROUP BY a.lead_id
+  ) act ON act.lead_id = l.id
+  OUTER APPLY (
+    SELECT TOP 1
+      COALESCE(followup_date, CAST(created_at AS DATE)) AS last_activity_date
+    FROM lead_activities
+    WHERE lead_id = l.id
+    ORDER BY created_at DESC
+  ) last_act
 `;
 
 function fix<T extends Record<string, unknown>>(rs: T[]): T[] {
@@ -54,13 +82,8 @@ export async function GET(req: NextRequest) {
       // 1. Lead ใหม่ — pre_survey ที่ยังไม่มี doc และไม่มี follow-up ในอนาคต
       // เคยมี cutoff "อายุ < 2 วัน" แต่ทำให้ lead ที่ import จากชีต (ส่วนใหญ่ > 2 วัน) ตกจากกอง
       db.request().query(`
-        SELECT ${LEAD_COLS},
-               (SELECT TOP 1 note FROM lead_activities WHERE lead_id = l.id ORDER BY created_at DESC) as last_activity_note,
-               (SELECT TOP 1 COALESCE(followup_date, CAST(created_at AS DATE)) FROM lead_activities WHERE lead_id = l.id ORDER BY created_at DESC) as last_activity_date
-        FROM leads l
-        LEFT JOIN projects p ON l.project_id = p.id
-        LEFT JOIN packages pk ON l.interested_package_id = pk.id
-        LEFT JOIN users u ON l.assigned_user_id = u.id
+        SELECT ${LEAD_COLS}
+        ${LEAD_FROM}
         WHERE l.status = 'pre_survey'
           AND l.pre_doc_no IS NULL
           AND (l.next_follow_up IS NULL OR CAST(l.next_follow_up AS DATE) < CAST(GETDATE() AS DATE))
@@ -70,90 +93,56 @@ export async function GET(req: NextRequest) {
       db.request().query(`SELECT TOP 0 * FROM leads`),
       // 3. นัดติดตามวันนี้
       db.request().query(`
-        SELECT ${LEAD_COLS},
-               (SELECT TOP 1 note FROM lead_activities WHERE lead_id = l.id ORDER BY created_at DESC) as last_activity_note,
-               (SELECT TOP 1 COALESCE(followup_date, CAST(created_at AS DATE)) FROM lead_activities WHERE lead_id = l.id ORDER BY created_at DESC) as last_activity_date
-        FROM leads l
-        LEFT JOIN projects p ON l.project_id = p.id
-        LEFT JOIN packages pk ON l.interested_package_id = pk.id
-        LEFT JOIN users u ON l.assigned_user_id = u.id
+        SELECT ${LEAD_COLS}
+        ${LEAD_FROM}
         WHERE l.next_follow_up = CAST(GETDATE() AS DATE)
           AND l.status NOT IN ('install', 'lost')
         ORDER BY COALESCE(l.contact_date, l.created_at) ASC
       `),
       // 4. เลยกำหนดติดตาม (overdue follow-up).
-      // Drop a lead from overdue once any activity is logged on/after the
-      // scheduled date — sales has acted on it; if they didn't bump the due
-      // date it means no more tracking needed.
+      // Drop a lead from overdue once any follow_up activity is logged on/after
+      // the scheduled date — derived via `act.last_followup_date` in LEAD_COLS,
+      // so the filter is a simple comparison instead of NOT EXISTS.
       db.request().query(`
-        SELECT ${LEAD_COLS},
-               (SELECT TOP 1 note FROM lead_activities WHERE lead_id = l.id ORDER BY created_at DESC) as last_activity_note,
-               (SELECT TOP 1 COALESCE(followup_date, CAST(created_at AS DATE)) FROM lead_activities WHERE lead_id = l.id ORDER BY created_at DESC) as last_activity_date
-        FROM leads l
-        LEFT JOIN projects p ON l.project_id = p.id
-        LEFT JOIN packages pk ON l.interested_package_id = pk.id
-        LEFT JOIN users u ON l.assigned_user_id = u.id
+        SELECT ${LEAD_COLS}
+        ${LEAD_FROM}
         WHERE l.next_follow_up < CAST(GETDATE() AS DATE)
           AND l.status NOT IN ('install', 'lost')
-          AND NOT EXISTS (
-            SELECT 1 FROM lead_activities a
-            WHERE a.lead_id = l.id
-              AND a.activity_type = 'follow_up'
-              AND COALESCE(a.followup_date, CAST(a.created_at AS DATE)) >= l.next_follow_up
-          )
+          AND (act.last_followup_date IS NULL OR act.last_followup_date < l.next_follow_up)
         ORDER BY COALESCE(l.contact_date, l.created_at) ASC
       `),
       // 5. Survey วันนี้
       db.request().query(`
         SELECT ${LEAD_COLS}
-        FROM leads l
-        LEFT JOIN projects p ON l.project_id = p.id
-        LEFT JOIN packages pk ON l.interested_package_id = pk.id
-        LEFT JOIN users u ON l.assigned_user_id = u.id
+        ${LEAD_FROM}
         WHERE l.status = 'survey' AND l.survey_date = CAST(GETDATE() AS DATE)
         ORDER BY l.survey_time_slot ASC
       `),
       // 6. Survey รอดำเนินการ (ทั้งหมดที่ยังไม่เสร็จ ยกเว้นวันนี้)
       db.request().query(`
         SELECT ${LEAD_COLS}
-        FROM leads l
-        LEFT JOIN projects p ON l.project_id = p.id
-        LEFT JOIN packages pk ON l.interested_package_id = pk.id
-        LEFT JOIN users u ON l.assigned_user_id = u.id
+        ${LEAD_FROM}
         WHERE l.status = 'survey' AND (l.survey_date != CAST(GETDATE() AS DATE) OR l.survey_date IS NULL)
         ORDER BY l.survey_date ASC
       `),
       // 7. Quotation รอเสนอ
       db.request().query(`
-        SELECT ${LEAD_COLS},
-               (SELECT TOP 1 COALESCE(followup_date, CAST(created_at AS DATE)) FROM lead_activities WHERE lead_id = l.id ORDER BY created_at DESC) as last_activity_date
-        FROM leads l
-        LEFT JOIN projects p ON l.project_id = p.id
-        LEFT JOIN packages pk ON l.interested_package_id = pk.id
-        LEFT JOIN users u ON l.assigned_user_id = u.id
+        SELECT ${LEAD_COLS}
+        ${LEAD_FROM}
         WHERE l.status = 'quote'
         ORDER BY l.updated_at DESC
       `),
       // 8. รอติดตั้ง
       db.request().query(`
-        SELECT ${LEAD_COLS},
-               (SELECT TOP 1 COALESCE(followup_date, CAST(created_at AS DATE)) FROM lead_activities WHERE lead_id = l.id ORDER BY created_at DESC) as last_activity_date
-        FROM leads l
-        LEFT JOIN projects p ON l.project_id = p.id
-        LEFT JOIN packages pk ON l.interested_package_id = pk.id
-        LEFT JOIN users u ON l.assigned_user_id = u.id
+        SELECT ${LEAD_COLS}
+        ${LEAD_FROM}
         WHERE l.status = 'order'
         ORDER BY l.updated_at DESC
       `),
       // 9. นัดติดตามที่ยังไม่ถึง (upcoming follow-up)
       db.request().query(`
-        SELECT ${LEAD_COLS},
-               (SELECT TOP 1 note FROM lead_activities WHERE lead_id = l.id ORDER BY created_at DESC) as last_activity_note,
-               (SELECT TOP 1 COALESCE(followup_date, CAST(created_at AS DATE)) FROM lead_activities WHERE lead_id = l.id ORDER BY created_at DESC) as last_activity_date
-        FROM leads l
-        LEFT JOIN projects p ON l.project_id = p.id
-        LEFT JOIN packages pk ON l.interested_package_id = pk.id
-        LEFT JOIN users u ON l.assigned_user_id = u.id
+        SELECT ${LEAD_COLS}
+        ${LEAD_FROM}
         WHERE CAST(l.next_follow_up AS DATE) > CAST(GETDATE() AS DATE)
           AND l.status NOT IN ('install', 'lost')
         ORDER BY l.next_follow_up ASC
@@ -161,20 +150,14 @@ export async function GET(req: NextRequest) {
       // 10. กำลังติดตั้ง
       db.request().query(`
         SELECT ${LEAD_COLS}
-        FROM leads l
-        LEFT JOIN projects p ON l.project_id = p.id
-        LEFT JOIN packages pk ON l.interested_package_id = pk.id
-        LEFT JOIN users u ON l.assigned_user_id = u.id
+        ${LEAD_FROM}
         WHERE l.status = 'install'
         ORDER BY l.install_date ASC, l.updated_at DESC
       `),
       // 11. ปิดงานล่าสุด (7 วัน)
       db.request().query(`
         SELECT ${LEAD_COLS}
-        FROM leads l
-        LEFT JOIN projects p ON l.project_id = p.id
-        LEFT JOIN packages pk ON l.interested_package_id = pk.id
-        LEFT JOIN users u ON l.assigned_user_id = u.id
+        ${LEAD_FROM}
         WHERE l.status = 'closed'
           AND l.install_completed_at >= DATEADD(day, -7, GETDATE())
         ORDER BY l.install_completed_at DESC
@@ -183,13 +166,8 @@ export async function GET(req: NextRequest) {
       // Substep encoded directly in status column, so the filter is just an
       // IN-list — no payment_confirmed / slip_files predicates needed.
       db.request().query(`
-        SELECT ${LEAD_COLS},
-               (SELECT TOP 1 note FROM lead_activities WHERE lead_id = l.id ORDER BY created_at DESC) as last_activity_note,
-               (SELECT TOP 1 COALESCE(followup_date, CAST(created_at AS DATE)) FROM lead_activities WHERE lead_id = l.id ORDER BY created_at DESC) as last_activity_date
-        FROM leads l
-        LEFT JOIN projects p ON l.project_id = p.id
-        LEFT JOIN packages pk ON l.interested_package_id = pk.id
-        LEFT JOIN users u ON l.assigned_user_id = u.id
+        SELECT ${LEAD_COLS}
+        ${LEAD_FROM}
         WHERE l.status IN ('pre_survey-01', 'pre_survey-02')
         ORDER BY l.status DESC, l.pre_booked_at DESC, l.updated_at DESC
       `),

@@ -79,7 +79,7 @@ function InfoSection({
           <path strokeLinecap="round" strokeLinejoin="round" d="M9 5l7 7-7 7" />
         </svg>
         <span className="text-sm font-semibold text-gray-700 flex-1 truncate">{title}</span>
-        <span className={`text-[11px] font-mono tabular-nums shrink-0 ${filled === 0 ? "text-gray-300" : filled === total ? "text-emerald-600" : "text-gray-400"}`}>
+        <span className={`text-xxs font-mono tabular-nums shrink-0 ${filled === 0 ? "text-gray-300" : filled === total ? "text-emerald-600" : "text-gray-400"}`}>
           {filled}/{total}
         </span>
       </button>

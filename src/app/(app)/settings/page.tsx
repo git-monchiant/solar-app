@@ -276,14 +276,14 @@ function RunningNumbersSection() {
                     <div className="text-xs text-gray-500 mt-0.5">{t.description}</div>
                   </div>
                   <div>
-                    <label className="text-[10px] font-bold uppercase tracking-wider text-gray-400 block mb-1 md:hidden">Prefix</label>
+                    <label className="text-xxs font-bold uppercase tracking-wider text-gray-400 block mb-1 md:hidden">Prefix</label>
                     <input type="text" value={cur.prefix}
                       onChange={e => update(t.key, { prefix: e.target.value.toUpperCase().replace(/[^A-Z0-9]/g, "").slice(0, 6) })}
                       placeholder={t.defaultPrefix}
                       className="w-full h-10 px-3 rounded-lg border border-gray-200 text-sm font-mono tracking-wider focus:outline-none focus:border-primary" />
                   </div>
                   <div>
-                    <label className="text-[10px] font-bold uppercase tracking-wider text-gray-400 block mb-1 md:hidden">Digits</label>
+                    <label className="text-xxs font-bold uppercase tracking-wider text-gray-400 block mb-1 md:hidden">Digits</label>
                     <select value={cur.digits} onChange={e => update(t.key, { digits: parseInt(e.target.value) })}
                       className="w-full h-10 px-3 rounded-lg border border-gray-200 text-sm focus:outline-none focus:border-primary">
                       <option value={3}>3 หลัก</option>
@@ -292,7 +292,7 @@ function RunningNumbersSection() {
                     </select>
                   </div>
                   <div className="text-xs text-gray-500 md:text-right">
-                    <span className="md:hidden text-[10px] font-bold uppercase tracking-wider text-gray-400 mr-1">ตัวอย่าง</span>
+                    <span className="md:hidden text-xxs font-bold uppercase tracking-wider text-gray-400 mr-1">ตัวอย่าง</span>
                     <span className="font-mono text-sm font-semibold text-gray-700">{preview(cur.prefix || t.defaultPrefix, cur.digits)}</span>
                   </div>
                 </div>

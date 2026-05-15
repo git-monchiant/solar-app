@@ -493,7 +493,7 @@ export default function SeekerPage() {
                         <span className="text-base font-bold text-gray-900 leading-tight break-all">{p.house_number || "-"}</span>
                       </div>
                       {p.project_alias && p.project_alias.trim() && (
-                        <div className="text-[11px] text-gray-500 truncate mt-0.5 pl-5" title={p.project_alias}>
+                        <div className="text-xxs text-gray-500 truncate mt-0.5 pl-5" title={p.project_alias}>
                           {p.project_alias}
                         </div>
                       )}
@@ -501,14 +501,14 @@ export default function SeekerPage() {
                     {(() => {
                       if (isReturned) {
                         return (
-                          <span className="shrink-0 text-[10px] px-1.5 py-0.5 rounded-full border whitespace-nowrap bg-amber-200 text-amber-900 border-amber-400 font-semibold">
+                          <span className="shrink-0 text-xxs px-1.5 py-0.5 rounded-full border whitespace-nowrap bg-amber-200 text-amber-900 border-amber-400 font-semibold">
                             ส่งกลับ #{p.lead_id}
                           </span>
                         );
                       }
                       if (isSynced) {
                         return (
-                          <span className="shrink-0 text-[10px] px-1.5 py-0.5 rounded-full border whitespace-nowrap bg-blue-200 text-blue-800 border-blue-300 font-semibold">
+                          <span className="shrink-0 text-xxs px-1.5 py-0.5 rounded-full border whitespace-nowrap bg-blue-200 text-blue-800 border-blue-300 font-semibold">
                             LEAD #{p.lead_id}
                           </span>
                         );
@@ -516,7 +516,7 @@ export default function SeekerPage() {
                       const count = p.visit_count ?? 0;
                       if (status === "contacted" || status === "not_interested") {
                         return (
-                          <span className={`shrink-0 text-[10px] px-1.5 py-0.5 rounded-full border whitespace-nowrap ${CARD_STATUS[status].badge}`}>
+                          <span className={`shrink-0 text-xxs px-1.5 py-0.5 rounded-full border whitespace-nowrap ${CARD_STATUS[status].badge}`}>
                             {CARD_STATUS[status].label}
                             {status === "contacted" && count > 0 && <span className="ml-1 font-bold">×{count}</span>}
                           </span>
@@ -793,11 +793,11 @@ function ProjectLanding({
         {/^\d/.test(search.trim()) && search.trim().length >= 2 && (
           <div className="mb-3 rounded-2xl border border-gray-200 bg-white overflow-hidden">
             <div className="px-3 py-2 bg-gray-50 border-b border-gray-100 flex items-center justify-between">
-              <div className="text-[10px] font-bold uppercase tracking-wider text-gray-500">
+              <div className="text-xxs font-bold uppercase tracking-wider text-gray-500">
                 บ้านที่ตรงกัน{houseMatchesLoading && " · กำลังค้น..."}
               </div>
               {houseMatches.length > 0 && (
-                <span className="text-[10px] text-gray-400 tabular-nums">{houseMatches.length} หลัง</span>
+                <span className="text-xxs text-gray-400 tabular-nums">{houseMatches.length} หลัง</span>
               )}
             </div>
             {houseMatches.length === 0 && !houseMatchesLoading ? (
@@ -819,9 +819,9 @@ function ProjectLanding({
                       <div className="flex-1 min-w-0">
                         <div className="text-xs font-bold text-gray-900 truncate">
                           {p.house_number}
-                          <span className="ml-2 text-[10px] font-normal text-gray-500">{projName}</span>
+                          <span className="ml-2 text-xxs font-normal text-gray-500">{projName}</span>
                         </div>
-                        <div className="text-[11px] text-gray-500 truncate">
+                        <div className="text-xxs text-gray-500 truncate">
                           {p.full_name || <span className="text-gray-400">(ยังไม่มีชื่อ)</span>}
                           {p.phone && <span> · {p.phone}</span>}
                         </div>
@@ -1559,7 +1559,7 @@ function VisitModal({ prospect, projects, existingProspects, onClose, onSaved, o
             { label: "บ่าย", hours: [13, 14, 15, 16, 17, 18, 19] },
           ] as const).map((group) => (
             <div key={group.label} className="flex items-center gap-2">
-              <div className="text-[10px] font-medium text-gray-400 w-7 shrink-0">{group.label}</div>
+              <div className="text-xxs font-medium text-gray-400 w-7 shrink-0">{group.label}</div>
               <div className="grid grid-cols-7 gap-1 flex-1">
                 {group.hours.map((h) => {
                   const on = contactHours.includes(h);
@@ -1570,7 +1570,7 @@ function VisitModal({ prospect, projects, existingProspects, onClose, onSaved, o
                       onClick={() =>
                         setContactHours((prev) => (prev.includes(h) ? prev.filter((x) => x !== h) : [...prev, h]))
                       }
-                      className={`h-7 rounded text-[11px] font-semibold tabular-nums transition-colors ${
+                      className={`h-7 rounded text-xxs font-semibold tabular-nums transition-colors ${
                         on
                           ? "bg-primary text-white border border-primary"
                           : "bg-white text-gray-700 border border-gray-200 hover:border-gray-400"
@@ -1584,7 +1584,7 @@ function VisitModal({ prospect, projects, existingProspects, onClose, onSaved, o
             </div>
           ))}
         </div>
-        <div className="mt-1 text-[10px] text-gray-400">เลือกได้หลายช่วง</div>
+        <div className="mt-1 text-xxs text-gray-400">เลือกได้หลายช่วง</div>
       </Field>
 
       {(() => {
@@ -1612,7 +1612,7 @@ function VisitModal({ prospect, projects, existingProspects, onClose, onSaved, o
                   placeholder="เช่น ติดต่อได้แล้ว เปลี่ยนเบอร์ใหม่ 089-xxx, นัดทีมขายโทรตอนบ่าย 2..."
                   className="w-full px-3 py-2 rounded-lg border border-amber-300 bg-amber-50 focus:outline-none focus:border-amber-500 text-sm resize-none"
                 />
-                <div className="text-[11px] text-amber-600 mt-1">ข้อความนี้จะไปเป็น activity บนลีดให้ทีมขายเห็น</div>
+                <div className="text-xxs text-amber-600 mt-1">ข้อความนี้จะไปเป็น activity บนลีดให้ทีมขายเห็น</div>
               </div>
             )}
             <button
@@ -1795,7 +1795,7 @@ function VisitModal({ prospect, projects, existingProspects, onClose, onSaved, o
                 </>
               )}
             </button>
-            <div className="mt-1.5 text-[11px] text-gray-400">
+            <div className="mt-1.5 text-xxs text-gray-400">
               {!canCreate
                 ? reason
                 : isReturnedHere
@@ -1953,7 +1953,7 @@ function VisitModal({ prospect, projects, existingProspects, onClose, onSaved, o
                     </svg>
                     <div className="flex-1 min-w-0">
                       <div className="text-xs font-bold text-red-900">เลขนี้มีบ้านใช้อยู่แล้ว · บันทึกไม่ได้</div>
-                      <div className="text-[11px] text-red-700 truncate">
+                      <div className="text-xxs text-red-700 truncate">
                         {conflict.house_number} · {conflict.full_name || "(ยังไม่มีชื่อ)"} · คลิกเพื่อเปิดบ้านนั้น
                       </div>
                     </div>
@@ -1970,7 +1970,7 @@ function VisitModal({ prospect, projects, existingProspects, onClose, onSaved, o
               if (matches.length === 0) return null;
               return (
                 <div className="mt-2 rounded-lg border border-gray-200 bg-white overflow-hidden divide-y divide-gray-100 shadow-sm">
-                  <div className="px-3 py-1.5 bg-gray-50 text-[10px] font-bold uppercase tracking-wider text-gray-500">
+                  <div className="px-3 py-1.5 bg-gray-50 text-xxs font-bold uppercase tracking-wider text-gray-500">
                     {matches.length} หลังที่ตรงกัน · คลิกเพื่อแก้ไข
                   </div>
                   {matches.map((dup) => {
@@ -1990,9 +1990,9 @@ function VisitModal({ prospect, projects, existingProspects, onClose, onSaved, o
                         <div className="flex-1 min-w-0">
                           <div className={`text-xs font-bold truncate ${isExact ? "text-amber-900" : "text-gray-900"}`}>
                             {dup.house_number}
-                            {isExact && <span className="ml-1.5 text-[10px] font-bold uppercase text-amber-700">มีอยู่แล้ว</span>}
+                            {isExact && <span className="ml-1.5 text-xxs font-bold uppercase text-amber-700">มีอยู่แล้ว</span>}
                           </div>
-                          <div className="text-[11px] text-gray-500 truncate">
+                          <div className="text-xxs text-gray-500 truncate">
                             {dup.full_name || <span className="text-gray-400">(ยังไม่มีชื่อ)</span>}
                             {dup.phone && <span> · {dup.phone}</span>}
                           </div>
@@ -2112,7 +2112,7 @@ function VisitModal({ prospect, projects, existingProspects, onClose, onSaved, o
               })}
               {addingOpen ? (
                 <div className="rounded-xl border border-dashed border-primary/40 bg-primary/5 p-3 space-y-2">
-                  <div className="text-[11px] font-medium text-primary">เพิ่มผู้อยู่อาศัยใหม่</div>
+                  <div className="text-xxs font-medium text-primary">เพิ่มผู้อยู่อาศัยใหม่</div>
                   <div className="relative">
                     <svg className="w-4 h-4 text-indigo-500 absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
                       <path strokeLinecap="round" strokeLinejoin="round" d="M15.75 6a3.75 3.75 0 11-7.5 0 3.75 3.75 0 017.5 0zM4.501 20.118a7.5 7.5 0 0114.998 0" />
@@ -2306,7 +2306,7 @@ function VisitModal({ prospect, projects, existingProspects, onClose, onSaved, o
                 )}
                 <div className="flex-1 min-w-0">
                   <div className="text-sm font-medium text-gray-900 truncate">{linkedLine.display_name || "LINE User"}</div>
-                  <div className="inline-flex items-center gap-0.5 text-[10px] text-[#06C755] font-medium">
+                  <div className="inline-flex items-center gap-0.5 text-xxs text-[#06C755] font-medium">
                     <svg className="w-3 h-3" fill="currentColor" viewBox="0 0 24 24"><path d="M9 16.17l-3.88-3.88a1 1 0 10-1.41 1.41l4.58 4.59a1 1 0 001.42 0l10.59-10.59a1 1 0 10-1.41-1.41L9 16.17z" /></svg>
                     เชื่อมกับบ้านนี้แล้ว
                   </div>
@@ -2591,7 +2591,7 @@ function TimelineStep({
       >
         <div className="flex-1 min-w-0">
           <div className={`text-sm font-bold ${c.text}`}>{title}</div>
-          {subtitle && <div className="text-[11px] text-gray-500">{subtitle}</div>}
+          {subtitle && <div className="text-xxs text-gray-500">{subtitle}</div>}
           {!expanded && summary && (
             <div className="text-xs text-gray-700 truncate mt-0.5">{summary}</div>
           )}
@@ -2717,7 +2717,7 @@ function ProspectLogTab({ prospectId }: { prospectId: number }) {
                 </div>
               )}
               {it.note && <div className="mt-1 text-xs text-gray-600 whitespace-pre-wrap">{it.note}</div>}
-              <div className="mt-1 flex items-center gap-2 text-[11px] text-gray-400">
+              <div className="mt-1 flex items-center gap-2 text-xxs text-gray-400">
                 <span>{fmtRelativeThai(it.created_at)}</span>
                 {it.created_by_name && (<><span>·</span><span>โดย {it.created_by_name}</span></>)}
               </div>
@@ -2868,7 +2868,7 @@ function LeadDepositPaymentTab({
       />
       <div className="flex items-center justify-between">
         <div className="text-xs font-semibold uppercase tracking-wider text-gray-500">ข้อมูลออกใบเสร็จ</div>
-        {savedAt && <span className="text-[10px] text-emerald-600 font-semibold">บันทึกแล้ว</span>}
+        {savedAt && <span className="text-xxs text-emerald-600 font-semibold">บันทึกแล้ว</span>}
       </div>
       <div className="space-y-3">
         <div>
