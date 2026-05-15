@@ -57,12 +57,21 @@ export default function LeadCard({ lead, compact, onAssignChange }: { lead: Lead
   const aging = now && startDate ? Math.floor((now - new Date(startDate).getTime()) / 86400000) : 0;
   const isOverdue = now && lead.next_follow_up && new Date(String(lead.next_follow_up).slice(0, 10) + "T12:00:00").getTime() < now;
 
+  const open = () => {
+    const isLargeScreen = typeof window !== "undefined" && window.matchMedia("(min-width: 500px)").matches;
+    if (isLargeScreen) {
+      window.open(`/leads/${lead.id}`, "_blank", "noreferrer");
+    } else {
+      router.push(`/leads/${lead.id}`);
+    }
+  };
+
   return (
     <div
       role="button"
       tabIndex={0}
-      onClick={() => router.push(`/leads/${lead.id}`)}
-      onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); router.push(`/leads/${lead.id}`); } }}
+      onClick={open}
+      onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); open(); } }}
       className="block rounded-2xl bg-white border border-gray-300 shadow-sm hover:border-gray-400 hover:shadow-md transition-all cursor-pointer"
     >
       <div className="p-5 md:p-3">

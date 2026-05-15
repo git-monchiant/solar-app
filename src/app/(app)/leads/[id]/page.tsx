@@ -285,6 +285,13 @@ export default function LeadDetailPage({ params }: { params: Promise<{ id: strin
     document.body.style.overflow = "hidden";
     return () => { document.body.style.overflow = prev; };
   }, [fullscreenStep]);
+  useEffect(() => {
+    if (!lead) return;
+    const name = stripThaiTitle(lead.full_name);
+    const prev = document.title;
+    document.title = lead.house_number ? `${lead.house_number} - ${name}` : name;
+    return () => { document.title = prev; };
+  }, [lead]);
   const [showProfileModal, setShowProfileModal] = useState(false);
   const [preSurveyExpanded, setPreSurveyExpanded] = useState(false);
   const [surveyExpanded, setSurveyExpanded] = useState(false);
