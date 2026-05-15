@@ -11,18 +11,19 @@ export async function POST(req: NextRequest) {
   const gate = await requireAuth(req);
   if (gate.error) return gate.error;
   try {
-    const { lead_id, amount, description, installment } = await req.json();
+    const { lead_id, amount, description, installment, payment_id } = await req.json();
     const leadId = parseInt(lead_id);
     const amt = parseFloat(amount);
     const desc: string | null = typeof description === "string" && description.length > 0 ? description.slice(0, 200) : null;
     const inst: string | null = typeof installment === "string" && installment.length > 0 ? installment.slice(0, 50) : null;
+    const paymentId: number | null = payment_id != null && Number.isFinite(Number(payment_id)) ? parseInt(payment_id) : null;
     if (!leadId || !(amt > 0)) {
       return NextResponse.json({ error: "lead_id and positive amount required" }, { status: 400 });
     }
 
     const db = await getDb();
     const existing = await db.request().input("id", sql.Int, leadId)
-      .query(`SELECT pre_pay_token, pre_pay_amount, pre_pay_description, pre_pay_installment FROM leads WHERE id = @id`);
+      .query(`SELECT pre_pay_token, pre_pay_amount, pre_pay_description, pre_pay_installment, pre_pay_payment_id FROM leads WHERE id = @id`);
     if (existing.recordset.length === 0) {
       return NextResponse.json({ error: "Lead not found" }, { status: 404 });
     }
@@ -30,9 +31,10 @@ export async function POST(req: NextRequest) {
     const currentAmount = row.pre_pay_amount != null ? Number(row.pre_pay_amount) : null;
     const currentDesc = row.pre_pay_description ?? null;
     const currentInst = row.pre_pay_installment ?? null;
+    const currentPaymentId = row.pre_pay_payment_id ?? null;
 
     let token: string;
-    if (row.pre_pay_token && currentAmount === amt && currentDesc === desc && currentInst === inst) {
+    if (row.pre_pay_token && currentAmount === amt && currentDesc === desc && currentInst === inst && currentPaymentId === paymentId) {
       token = row.pre_pay_token;
     } else {
       token = genToken();
@@ -42,7 +44,8 @@ export async function POST(req: NextRequest) {
         .input("amount", sql.Decimal(12, 2), amt)
         .input("description", sql.NVarChar(200), desc)
         .input("installment", sql.NVarChar(50), inst)
-        .query(`UPDATE leads SET pre_pay_token = @token, pre_pay_amount = @amount, pre_pay_description = @description, pre_pay_installment = @installment WHERE id = @id`);
+        .input("payment_id", sql.Int, paymentId)
+        .query(`UPDATE leads SET pre_pay_token = @token, pre_pay_amount = @amount, pre_pay_description = @description, pre_pay_installment = @installment, pre_pay_payment_id = @payment_id WHERE id = @id`);
     }
 
     return NextResponse.json({ token, url: `/pay/${token}` });

@@ -51,12 +51,12 @@ export async function GET(req: NextRequest) {
 
     // For installment stage, signer comes from payments.confirmed_by; otherwise
     // from the matching lead column.
-    let installmentRow: { id: number; slip_field: string; amount: number; confirmed_by: number | null; confirmed_at: string | null; description: string | null; payment_no: string | null } | null = null;
+    let installmentRow: { id: number; slip_field: string; amount: number; confirmed_by: number | null; confirmed_at: string | null; description: string | null; payment_no: string | null; cc_surcharge_pct: number | null; cc_surcharge_amount: number | null } | null = null;
     if (stageParam === "installment" && paymentIdParam) {
       const r = await db.request()
         .input("id", sql.Int, parseInt(paymentIdParam))
         .input("lead_id", sql.Int, leadId)
-        .query(`SELECT id, slip_field, amount, confirmed_by, confirmed_at, description, payment_no FROM payments WHERE id = @id AND lead_id = @lead_id`);
+        .query(`SELECT id, slip_field, amount, confirmed_by, confirmed_at, description, payment_no, cc_surcharge_pct, cc_surcharge_amount FROM payments WHERE id = @id AND lead_id = @lead_id`);
       if (r.recordset.length > 0) installmentRow = r.recordset[0];
     }
     const signerId = stageParam === "installment"
@@ -119,7 +119,7 @@ export async function GET(req: NextRequest) {
       // what was actually charged. Falls back to the legacy 1/2-split logic
       // when no per-installment payments exist (legacy leads).
       const instRes = await db.request().input("id", sql.Int, leadId).query(`
-        SELECT slip_field, amount, confirmed_at FROM payments
+        SELECT slip_field, amount, confirmed_at, cc_surcharge_pct, cc_surcharge_amount FROM payments
         WHERE lead_id = @id AND confirmed_at IS NOT NULL
           AND slip_field LIKE 'order_installment_%'
         ORDER BY slip_field
@@ -149,6 +149,14 @@ export async function GET(req: NextRequest) {
           const gross = orderTotal > 0 && pct > 0 ? Math.round((orderTotal * pct) / 100) : Number(p.amount || 0);
           const label = onlyOne ? "ค่าระบบ Solar Rooftop" : `งวดที่ ${idx + 1} · ค่าระบบ Solar Rooftop${pctSuffix}`;
           lineItems.push({ label, amount: gross });
+          const ccFee = Number(p.cc_surcharge_amount || 0);
+          if (ccFee > 0) {
+            const ccPct = p.cc_surcharge_pct != null ? Number(p.cc_surcharge_pct) : null;
+            const ccLabel = onlyOne
+              ? `ค่าธรรมเนียมบัตรเครดิต${ccPct ? ` (${ccPct}%)` : ""}`
+              : `งวดที่ ${idx + 1} · ค่าธรรมเนียมบัตรเครดิต${ccPct ? ` (${ccPct}%)` : ""}`;
+            lineItems.push({ label: ccLabel, amount: ccFee });
+          }
           if (p.confirmed_at && (!latest || new Date(p.confirmed_at) > new Date(latest))) latest = p.confirmed_at;
         }
         // Only show the deposit credit on this receipt if งวด-after couldn't
@@ -173,7 +181,9 @@ export async function GET(req: NextRequest) {
       const m = /^order_installment_(\d+)$/.exec(installmentRow.slip_field);
       const idx = m ? parseInt(m[1]) : 0;
       const amt = Number(installmentRow.amount || 0);
-      totalPrice = amt;
+      const ccFee = Number(installmentRow.cc_surcharge_amount || 0);
+      const ccPct = installmentRow.cc_surcharge_pct != null ? Number(installmentRow.cc_surcharge_pct) : null;
+      totalPrice = amt + ccFee;
       // Pull the installment's pct from order_installments JSON (last row's pct
       // is the auto-computed remainder = 100 − sum of earlier rows).
       let pctSuffix = "";
@@ -194,6 +204,9 @@ export async function GET(req: NextRequest) {
         ? "ค่าระบบ Solar Rooftop"
         : `งวดที่ ${idx + 1} · ค่าระบบ Solar Rooftop${pctSuffix}`;
       lineItems = [{ label: description, amount: amt }];
+      if (ccFee > 0) {
+        lineItems.push({ label: `ค่าธรรมเนียมบัตรเครดิต${ccPct ? ` (${ccPct}%)` : ""}`, amount: ccFee });
+      }
       receiptNumber = `${l.pre_doc_no || fallbackDocNo}-${idx + 1}`;
       receiptDate = installmentRow.confirmed_at || new Date().toISOString();
     } else if (stageParam === "order_after") {

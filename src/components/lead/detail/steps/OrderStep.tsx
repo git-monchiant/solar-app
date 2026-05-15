@@ -19,7 +19,7 @@ import { useSubStep } from "@/lib/hooks/useSubStep";
 import { formatTHB as fmt, formatThaiDate as formatDate } from "@/lib/utils/formatters";
 import DoneSection from "./DoneSection";
 
-type PayMethod = "transfer" | "loan";
+type PayMethod = "transfer" | "loan" | "cc";
 type LoanBank = "ghb" | "gsb";
 
 const LOAN_BANKS: { value: LoanBank; label: string }[] = [
@@ -27,12 +27,16 @@ const LOAN_BANKS: { value: LoanBank; label: string }[] = [
   { value: "gsb", label: "ออมสิน" },
 ];
 
+const CC_RATES = [1.5, 2, 2.5, 3] as const;
+const CC_DEFAULT = 3;
+
 type Installment = {
   pct: number;
   when: "before" | "after";
   due_date: string | null;
   method: PayMethod;
   loan_bank: LoanBank | null;
+  cc_pct: number | null;
 };
 
 function todayISO(): string {
@@ -49,8 +53,9 @@ function parseInstallments(raw: string | null | undefined, fallbackPctBefore: nu
           pct: Number(r?.pct) || 0,
           when: r?.when === "after" ? "after" : "before",
           due_date: typeof r?.due_date === "string" && r.due_date ? r.due_date : todayISO(),
-          method: r?.method === "loan" ? "loan" : "transfer",
+          method: r?.method === "loan" ? "loan" : r?.method === "cc" ? "cc" : "transfer",
           loan_bank: r?.loan_bank === "ghb" || r?.loan_bank === "gsb" ? r.loan_bank : null,
+          cc_pct: r?.method === "cc" ? (Number(r?.cc_pct) || CC_DEFAULT) : null,
         }));
       }
     } catch { /* fall through */ }
@@ -58,7 +63,7 @@ function parseInstallments(raw: string | null | undefined, fallbackPctBefore: nu
   // Backward-compat: derive from order_pct_before — single row "before" if 100,
   // otherwise งวด 1 = pctBefore (before), งวด 2 = remainder (after).
   const today = todayISO();
-  const base = { method: "transfer" as const, loan_bank: null };
+  const base = { method: "transfer" as const, loan_bank: null, cc_pct: null };
   if (fallbackPctBefore >= 100) return [{ pct: 100, when: "before", due_date: today, ...base }];
   return [
     { pct: fallbackPctBefore, when: "before", due_date: today, ...base },
@@ -92,6 +97,10 @@ export default function OrderStep({ lead, state, refresh, expanded, onToggle }: 
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [lead.quotation_amount, lead.order_total]);
+  const [discountPct, setDiscountPct] = useState<number>(lead.order_discount_pct ?? 0);
+  const [discountAmount, setDiscountAmount] = useState<number>(lead.order_discount_amount ?? 0);
+  const [discountNote, setDiscountNote] = useState<string>(lead.order_discount_note ?? "");
+
   // Installment plan: array of {pct, when, due_date}. The legacy order_pct_before
   // is the sum of "before-install" rows — kept in sync so PaymentSection (which
   // splits its UI into งวด 1/2 based on pctBefore) keeps working.
@@ -134,7 +143,7 @@ export default function OrderStep({ lead, state, refresh, expanded, onToggle }: 
       ? [
           ...installments,
           ...Array.from({ length: n - installments.length }, () => ({
-            pct: 0, when: "before" as const, due_date: today, method: "transfer" as const, loan_bank: null,
+            pct: 0, when: "before" as const, due_date: today, method: "transfer" as const, loan_bank: null, cc_pct: null,
           })),
         ]
       : installments.slice(0, n);
@@ -277,36 +286,35 @@ export default function OrderStep({ lead, state, refresh, expanded, onToggle }: 
   // charged for งวด 1 even though they're already paid up).
   const depositPaid = lead.pre_total_price || 0;
 
-  // Per-installment gross amount + deposit credit allocation.
+  // Discount + deposit are deducted up-front so installments split the actual
+  // net cash to collect. No per-row deposit credit needed.
+  const totalDiscount = Math.min(total, discountAmount || 0);
+  const effTotal = Math.max(0, total - totalDiscount);
+  const netTotal = Math.max(0, effTotal - depositPaid);
+
   const rowGross = (idx: number) => {
     const pct = idx === _autoIdx ? lastPct : (installments[idx]?.pct ?? 0);
-    return total > 0 ? Math.round((total * pct) / 100) : 0;
+    return netTotal > 0 ? Math.round((netTotal * pct) / 100) : 0;
   };
-  const rowCredits = (() => {
-    const out = installments.map(() => 0);
-    let remaining = depositPaid;
-    for (let i = installments.length - 1; i >= 0 && remaining > 0; i--) {
-      const c = Math.min(rowGross(i), remaining);
-      out[i] = c;
-      remaining -= c;
-    }
-    return out;
-  })();
-  const rowNet = (idx: number) => Math.max(0, rowGross(idx) - rowCredits[idx]);
-  // Gross amount per side (deposit is NOT pre-deducted here — the credit
-  // allocator below distributes the deposit to one or both sides). Otherwise
-  // we'd double-count the deposit and refund it back even when it covered the
-  // installments correctly.
-  const amountBefore = total > 0
-    ? (pctBefore >= 100 ? total : Math.round(total * pctBefore / 100))
+  const rowCredits = installments.map(() => 0);
+  const rowNet = (idx: number) => rowGross(idx);
+  const amountBefore = netTotal > 0
+    ? (pctBefore >= 100 ? netTotal : Math.round(netTotal * pctBefore / 100))
     : 0;
-  const amountAfter = total > 0 && pctBefore < 100 ? total - Math.round(total * pctBefore / 100) : 0;
-  // Distribute deposit credit: งวด 2 first, then spill to งวด 1, then refund.
-  const creditAfter = Math.min(amountAfter, depositPaid);
-  const creditBefore = Math.min(amountBefore, depositPaid - creditAfter);
-  const netBefore = amountBefore - creditBefore;
-  const netAfter = amountAfter - creditAfter;
-  const refund = depositPaid - creditAfter - creditBefore;
+  const amountAfter = netTotal > 0 && pctBefore < 100 ? netTotal - amountBefore : 0;
+  const creditBefore = 0;
+  const creditAfter = 0;
+  const netBefore = amountBefore;
+  const netAfter = amountAfter;
+  // If deposit > eff (rare — refund-due to customer), surface the excess.
+  const refund = Math.max(0, depositPaid - effTotal);
+  // Credit-card surcharge: each "cc" installment row adds rowGross × cc_pct/100
+  // to what the customer actually pays. Summed across all rows for the summary.
+  const ccSurcharge = installments.reduce((s, r, idx) => {
+    if (r.method === "cc" && r.cc_pct) return s + Math.round((rowGross(idx) * r.cc_pct) / 100);
+    return s;
+  }, 0);
+  const totalToCharge = netTotal + ccSurcharge;
 
   // Build the auto-save payload from current state. Used both by the debounce
   // autosave (below) and the synchronous flushSave called when the user clicks
@@ -315,8 +323,13 @@ export default function OrderStep({ lead, state, refresh, expanded, onToggle }: 
   // could lose the most recent change).
   const buildSavePayload = useCallback(() => ({
     order_total: total || null,
-    order_pct_before: pctBefore,
-    order_pct_after: pctAfter,
+    order_discount_pct: discountPct || null,
+    order_discount_amount: discountAmount || null,
+    order_discount_note: discountNote || null,
+    // pctBefore/pctAfter are int columns + API enforces b+a=100. Round to keep
+    // decimal per-installment pct from breaking the invariant via float drift.
+    order_pct_before: Math.round(pctBefore),
+    order_pct_after: 100 - Math.round(pctBefore),
     order_installments: JSON.stringify(persistedInstallments),
     install_date: installDate || null,
     finance_bank: financeBank || null,
@@ -325,7 +338,7 @@ export default function OrderStep({ lead, state, refresh, expanded, onToggle }: 
     finance_loan_bank: loanBank || null,
     finance_loan_amount: loanAmount ? parseFloat(loanAmount) : null,
     finance_documents: loanDocs || null,
-  }), [total, pctBefore, pctAfter, persistedInstallments, installDate, financeBank, financeMonths, financeMonthly, loanBank, loanAmount, loanDocs]);
+  }), [total, discountPct, discountAmount, discountNote, pctBefore, pctAfter, persistedInstallments, installDate, financeBank, financeMonths, financeMonthly, loanBank, loanAmount, loanDocs]);
 
   const saveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const flushSave = useCallback(async () => {
@@ -359,7 +372,7 @@ export default function OrderStep({ lead, state, refresh, expanded, onToggle }: 
       }
     };
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [total, pctBefore, installments, installDate, financeBank, financeMonths, financeMonthly, loanBank, loanAmount, loanDocs]);
+  }, [total, discountPct, discountAmount, discountNote, pctBefore, installments, installDate, financeBank, financeMonths, financeMonthly, loanBank, loanAmount, loanDocs]);
 
   // PaymentSection writes the payments row + flips the paid flag itself. Parent just
   // reacts after the fact — tracks local UI state and refreshes the lead.
@@ -536,6 +549,12 @@ export default function OrderStep({ lead, state, refresh, expanded, onToggle }: 
           slip_field: `order_installment_${i}`,
           amount: net,
           description: `งวดที่ ${i + 1}`,
+          payment_method: row.method,
+          discount_pct: discountPct || null,
+          discount_amount: discountAmount || null,
+          discount_note: discountNote || null,
+          cc_surcharge_pct: row.method === "cc" ? row.cc_pct : null,
+          cc_surcharge_amount: row.method === "cc" && row.cc_pct ? Math.round((net * row.cc_pct) / 100) : null,
         }),
       }));
     }
@@ -634,6 +653,9 @@ export default function OrderStep({ lead, state, refresh, expanded, onToggle }: 
                   {n} งวด
                 </button>
               ))}
+              <span className="ml-auto text-sm text-gray-500">
+                ยอดรวมที่ต้องชำระ <span className="font-bold font-mono tabular-nums text-lg text-gray-900">{fmt(totalToCharge)}</span> บาท
+              </span>
             </div>
 
             <div className="space-y-2">
@@ -650,11 +672,25 @@ export default function OrderStep({ lead, state, refresh, expanded, onToggle }: 
                       checked={row.method === "loan"}
                       disabled={paid}
                       onChange={(e) => updateInstallment(i, e.target.checked
-                        ? { method: "loan", loan_bank: row.loan_bank || LOAN_BANKS[0].value }
-                        : { method: "transfer", loan_bank: null })}
+                        ? { method: "loan", loan_bank: row.loan_bank || LOAN_BANKS[0].value, cc_pct: null }
+                        : { method: "transfer", loan_bank: null, cc_pct: null })}
                       className="w-4 h-4 accent-primary"
                     />
                     <span>สินเชื่อ</span>
+                  </label>
+                );
+                const ccCheckbox = (
+                  <label className={`flex items-center gap-1.5 text-xs text-gray-600 shrink-0 ${paid ? "cursor-default opacity-60" : "cursor-pointer"}`}>
+                    <input
+                      type="checkbox"
+                      checked={row.method === "cc"}
+                      disabled={paid}
+                      onChange={(e) => updateInstallment(i, e.target.checked
+                        ? { method: "cc", cc_pct: row.cc_pct || CC_DEFAULT, loan_bank: null }
+                        : { method: "transfer", cc_pct: null, loan_bank: null })}
+                      className="w-4 h-4 accent-primary"
+                    />
+                    <span>บัตรเครดิต</span>
                   </label>
                 );
                 const bankPicker = row.method === "loan" ? (
@@ -666,6 +702,18 @@ export default function OrderStep({ lead, state, refresh, expanded, onToggle }: 
                   >
                     {LOAN_BANKS.map(b => (
                       <option key={b.value} value={b.value}>{b.label}</option>
+                    ))}
+                  </select>
+                ) : null;
+                const ccPicker = row.method === "cc" ? (
+                  <select
+                    value={row.cc_pct ?? CC_DEFAULT}
+                    disabled={paid}
+                    onChange={e => updateInstallment(i, { cc_pct: parseFloat(e.target.value) })}
+                    className={`w-full md:w-auto h-9 px-2 rounded-md border border-gray-200 bg-white text-sm focus:outline-none focus:border-primary ${paid ? "opacity-60" : ""}`}
+                  >
+                    {CC_RATES.map(r => (
+                      <option key={r} value={r}>+{r}%</option>
                     ))}
                   </select>
                 ) : null;
@@ -713,9 +761,9 @@ export default function OrderStep({ lead, state, refresh, expanded, onToggle }: 
                 const rowFollowups = row.method === "loan" ? followupsByRow(i) : [];
                 const expanded = expandedRow === i;
                 return (
-                  <div key={i} className={`rounded-lg border p-2 transition-colors ${paid ? "bg-emerald-50 border-emerald-200" : "bg-white border-gray-200"}`}>
+                  <div key={i} className={`rounded-lg border p-2 transition-colors ${paid ? "bg-emerald-50 border-emerald-200" : paymentOpen ? "bg-active-light border-active border-2 shadow-md shadow-active/20" : "bg-white border-gray-200"} ${row.method === "cc" && row.cc_pct && rowGross(i) > 0 ? "pb-6" : ""}`}>
                     {/* Mobile: 12-col grid (existing) · Desktop: flex single line */}
-                    <div className="grid grid-cols-12 gap-2 items-center md:flex md:flex-wrap">
+                    <div className="grid grid-cols-12 gap-2 items-center md:flex md:flex-nowrap">
                       <div className="order-1 col-span-7 md:w-24 text-xs font-semibold text-gray-700 md:shrink-0 flex items-center gap-1">
                         {row.method === "loan" ? (
                           <button
@@ -745,21 +793,60 @@ export default function OrderStep({ lead, state, refresh, expanded, onToggle }: 
                       <div className="hidden md:block md:w-20 relative md:shrink-0 md:order-2">
                         <input
                           type="text"
-                          inputMode="numeric"
-                          pattern="[0-9]*"
-                          value={isAutoRow ? lastPct : row.pct}
+                          inputMode="decimal"
+                          value={(() => {
+                            const p = isAutoRow ? lastPct : row.pct;
+                            return Number.isInteger(p) ? p : Math.round(p * 100) / 100;
+                          })()}
                           disabled={isAutoRow || paid}
                           onChange={e => {
-                            const digits = e.target.value.replace(/[^\d]/g, "");
-                            const v = digits === "" ? 0 : Math.min(100, parseInt(digits));
+                            const cleaned = e.target.value.replace(/[^\d.]/g, "");
+                            const v = cleaned === "" ? 0 : Math.min(100, parseFloat(cleaned) || 0);
                             updateInstallment(i, { pct: v });
                           }}
                           className={`w-full h-9 pl-2 pr-7 rounded-md border text-sm font-mono tabular-nums focus:outline-none ${isAutoRow || paid ? "bg-gray-50 border-gray-200 text-gray-700" : "border-gray-200 focus:border-primary"}`}
                         />
                         <span className="absolute right-2 top-1/2 -translate-y-1/2 text-xs text-gray-400 pointer-events-none">%</span>
                       </div>
-                      {/* "ชำระหลังติดตั้ง" — desktop column */}
-                      <div className="hidden md:block md:order-3 md:shrink-0">
+                      {/* Amount cell: editable — typing here back-derives pct from effTotal. */}
+                      <div className="order-2 col-span-5 md:order-3 flex items-center justify-end md:justify-start gap-2 md:shrink-0 md:-ml-1">
+                        {row.method === "loan" && rowFollowups.length > 0 && (() => {
+                          const next = rowFollowups.find(a => !!a.follow_up_date);
+                          return next ? (
+                            <span className="hidden md:inline text-xs text-gray-500 font-normal whitespace-nowrap">(กำหนดติดตาม {formatDate(next.follow_up_date)})</span>
+                          ) : null;
+                        })()}
+                        <div className="w-full md:w-32 text-right relative">
+                          <div className="relative">
+                            <input
+                              type="text"
+                              inputMode="numeric"
+                              value={netTotal > 0 ? rowAmount : ""}
+                              disabled={isAutoRow || paid}
+                              onChange={e => {
+                                const digits = e.target.value.replace(/[^\d]/g, "");
+                                const amt = digits === "" ? 0 : Math.min(netTotal, parseInt(digits));
+                                // Full precision so amt → pct → rowGross round-trips exactly.
+                                const pct = netTotal > 0 ? (amt / netTotal) * 100 : 0;
+                                updateInstallment(i, { pct });
+                              }}
+                              placeholder={netTotal > 0 ? "" : "—"}
+                              className={`w-full h-9 pl-2 pr-6 rounded-md border text-sm font-mono tabular-nums text-right focus:outline-none ${isAutoRow || paid ? "bg-gray-50 border-gray-200 text-gray-700" : "border-gray-200 focus:border-primary"}`}
+                            />
+                            <span className="absolute right-2 top-1/2 -translate-y-1/2 text-xs text-gray-400 pointer-events-none">฿</span>
+                          </div>
+                          {row.method === "cc" && row.cc_pct && rowAmount > 0 && (() => {
+                            const fee = Math.round((rowAmount * row.cc_pct) / 100);
+                            return (
+                              <span className="absolute top-full left-0 right-0 mt-0.5 text-xs text-gray-500 whitespace-nowrap text-right pointer-events-none">
+                                +ค่าธรรมเนียม {row.cc_pct}% = {fmt(fee)} ฿ · รวม <span className="font-semibold text-gray-700">{fmt(rowAmount + fee)}</span> ฿
+                              </span>
+                            );
+                          })()}
+                        </div>
+                      </div>
+                      {/* "ชำระหลังติดตั้ง" — desktop column (after amount) */}
+                      <div className="hidden md:block md:order-4 md:shrink-0">
                         <label className={`flex items-center gap-1.5 text-xs text-gray-600 h-9 ${paid ? "cursor-default opacity-60" : "cursor-pointer"}`}>
                           <input
                             type="checkbox"
@@ -771,23 +858,10 @@ export default function OrderStep({ lead, state, refresh, expanded, onToggle }: 
                           <span>ชำระหลังติดตั้ง</span>
                         </label>
                       </div>
-                      {/* Amount cell: fixed-width wrapper so the numeric value lines up across rows even when a follow-up hint is present. */}
-                      <div className="order-2 col-span-5 md:order-last md:w-56 flex items-center justify-end gap-2 md:shrink-0">
-                        {row.method === "loan" && rowFollowups.length > 0 && (() => {
-                          const next = rowFollowups.find(a => !!a.follow_up_date);
-                          return next ? (
-                            <span className="hidden md:inline text-xs text-gray-500 font-normal whitespace-nowrap">(กำหนดติดตาม {formatDate(next.follow_up_date)})</span>
-                          ) : null;
-                        })()}
-                        <span className="w-full md:w-24 text-right text-sm font-mono tabular-nums text-gray-700">
-                          {total > 0 ? fmt(rowNetAmount) : "—"} ฿
-                          {rowCredit > 0 && (
-                            <span className="block text-[10px] font-sans text-gray-400 font-normal whitespace-nowrap">หักค่าสำรวจ -{fmt(rowCredit)}</span>
-                          )}
-                        </span>
-                      </div>
-                      {/* Desktop: loan checkbox + bank picker + buttons inline at end of row */}
+                      {/* Desktop: cc/loan checkboxes + their pickers + buttons inline at end of row */}
                       <div className="hidden md:flex items-center gap-2 md:ml-auto md:order-last">
+                        {ccCheckbox}
+                        {ccPicker}
                         {loanCheckbox}
                         {bankPicker}
                         {recordPaymentBtn}
@@ -800,19 +874,22 @@ export default function OrderStep({ lead, state, refresh, expanded, onToggle }: 
                         <div className="relative w-20 shrink-0">
                           <input
                             type="text"
-                            inputMode="numeric"
-                            pattern="[0-9]*"
-                            value={isAutoRow ? lastPct : row.pct}
+                            inputMode="decimal"
+                            value={(() => {
+                              const p = isAutoRow ? lastPct : row.pct;
+                              return Number.isInteger(p) ? p : Math.round(p * 100) / 100;
+                            })()}
                             disabled={isAutoRow || paid}
                             onChange={e => {
-                              const digits = e.target.value.replace(/[^\d]/g, "");
-                              const v = digits === "" ? 0 : Math.min(100, parseInt(digits));
+                              const cleaned = e.target.value.replace(/[^\d.]/g, "");
+                              const v = cleaned === "" ? 0 : Math.min(100, parseFloat(cleaned) || 0);
                               updateInstallment(i, { pct: v });
                             }}
                             className={`w-full h-9 pl-2 pr-7 rounded-md border text-sm font-mono tabular-nums focus:outline-none ${isAutoRow || paid ? "bg-gray-50 border-gray-200 text-gray-700" : "border-gray-200 focus:border-primary"}`}
                           />
                           <span className="absolute right-2 top-1/2 -translate-y-1/2 text-xs text-gray-400 pointer-events-none">%</span>
                         </div>
+                        {ccCheckbox}
                         {loanCheckbox}
                         <label className={`flex items-center gap-1.5 text-xs text-gray-600 ${paid ? "cursor-default opacity-60" : "cursor-pointer"}`}>
                           <input
@@ -829,6 +906,9 @@ export default function OrderStep({ lead, state, refresh, expanded, onToggle }: 
                           activity in the AddActivityModal, not here */}
                       {row.method === "loan" && bankPicker && (
                         <div>{bankPicker}</div>
+                      )}
+                      {row.method === "cc" && ccPicker && (
+                        <div>{ccPicker}</div>
                       )}
                       {/* Action button: บันทึกรับชำระ / รอยืนยัน / ชำระแล้ว — full width */}
                       <button
@@ -886,6 +966,12 @@ export default function OrderStep({ lead, state, refresh, expanded, onToggle }: 
                           confirmed={paid}
                           onConfirmed={async () => { await refresh(); await loadPayments(); }}
                           onUndone={async () => { await refresh(); await loadPayments(); }}
+                          paymentMethod={row.method}
+                          discountPct={discountPct || null}
+                          discountAmount={discountAmount || null}
+                          discountNote={discountNote || null}
+                          ccSurchargePct={row.method === "cc" ? row.cc_pct : null}
+                          ccSurchargeAmount={row.method === "cc" && row.cc_pct ? Math.round((rowNetAmount * row.cc_pct) / 100) : null}
                         />
                       </div>
                     )}
@@ -925,46 +1011,48 @@ export default function OrderStep({ lead, state, refresh, expanded, onToggle }: 
             {earlierPctSum > 100 && (
               <div className="mt-2 text-xs text-red-500">รวม % เกิน 100 ({earlierPctSum}%) — ลด % ของงวดก่อนหน้าลง</div>
             )}
+          </div>
 
-            <div className="mt-3 rounded-lg bg-gray-50 border border-gray-200 p-3 space-y-1">
-              <div className="flex justify-between text-sm">
-                <span className="text-gray-500">ยอดรวม</span>
-                <span className="font-bold font-mono tabular-nums text-gray-900">{fmt(total)} บาท</span>
-              </div>
-              {pctBefore < 100 && total > 0 ? (
-                <>
-                  <div className="flex justify-between text-sm font-semibold border-t border-gray-200 pt-1">
-                    <span className="text-gray-600">ยอดชำระก่อนติดตั้งสุทธิ</span>
-                    <span className="font-bold font-mono text-gray-900">{fmt(netBefore)} บาท</span>
-                  </div>
-                  {depositPaid > 0 && (
-                    <div className="flex justify-between text-xs text-gray-400">
-                      <span>หักค่าสำรวจ</span>
-                      <span>-{fmt(depositPaid)} บาท</span>
-                    </div>
-                  )}
-                  <div className="flex justify-between text-sm font-semibold">
-                    <span className="text-gray-600">ยอดชำระหลังติดตั้งสุทธิ</span>
-                    <span className="font-bold font-mono text-gray-900">{fmt(netAfter)} บาท</span>
-                  </div>
-                </>
-              ) : (
-                <>
-                  {depositPaid > 0 && (
-                    <div className="flex justify-between text-xs text-gray-400">
-                      <span>หักค่าสำรวจ</span>
-                      <span>-{fmt(depositPaid)} บาท</span>
-                    </div>
-                  )}
-                  {depositPaid > 0 && (
-                    <div className="flex justify-between text-sm font-semibold border-t border-gray-200 pt-1">
-                      <span className="text-gray-600">ยอดที่ต้องชำระ</span>
-                      <span className="font-bold font-mono text-gray-900">{fmt(total - depositPaid)} บาท</span>
-                    </div>
-                  )}
-                </>
-              )}
+          {/* Post-installments summary: full breakdown from ยอดรวม through
+              ยอดชำระสุทธิ, then CC fees + grand total when applicable. */}
+          <div className="rounded-lg bg-gray-50 border border-gray-200 p-3 space-y-1">
+            <div className="flex justify-between text-sm">
+              <span className="text-gray-500">ยอดรวม</span>
+              <span className="font-bold font-mono">{fmt(total)} บาท</span>
             </div>
+            <div className="flex justify-between text-xs text-gray-400">
+              <span>
+                ส่วนลด{discountPct > 0 ? ` ${discountPct}%` : ""}
+                {discountNote ? ` · ${discountNote}` : ""}
+              </span>
+              <span>{totalDiscount > 0 ? `-${fmt(totalDiscount)}` : "0"} บาท</span>
+            </div>
+            {depositPaid > 0 && (
+              <div className="flex justify-between text-xs text-gray-400">
+                <span>หักค่าสำรวจ</span>
+                <span>-{fmt(depositPaid)} บาท</span>
+              </div>
+            )}
+            <div className="flex justify-between text-sm font-semibold border-t border-gray-200 pt-1">
+              <span className="text-gray-600">ยอดชำระสุทธิ</span>
+              <span className="font-bold font-mono text-gray-900">{fmt(netTotal)} บาท</span>
+            </div>
+            {ccSurcharge > 0 && (<>
+              <div className="flex justify-between text-xs text-gray-400">
+                <span>ค่าธรรมเนียมบัตรเครดิต</span>
+                <span>+{fmt(ccSurcharge)} บาท</span>
+              </div>
+              <div className="flex justify-between text-sm font-semibold border-t border-gray-200 pt-1">
+                <span className="text-gray-600">ยอดรวมที่ต้องชำระ</span>
+                <span className="font-bold font-mono text-gray-900">{fmt(totalToCharge)} บาท</span>
+              </div>
+            </>)}
+            {refund > 0 && (
+              <div className="flex justify-between text-sm font-semibold text-emerald-700 border-t border-emerald-200 pt-1">
+                <span>คืนเงินลูกค้า</span>
+                <span className="font-bold font-mono">{fmt(refund)} บาท</span>
+              </div>
+            )}
           </div>
 
           {/* Send Quotation to customer via LINE */}
@@ -994,33 +1082,44 @@ export default function OrderStep({ lead, state, refresh, expanded, onToggle }: 
                   // URI, so pick the first file only.
                   const firstFile = (lead.quotation_files || "").split(",").filter(Boolean)[0] || "";
                   const downloadUrl = firstFile.startsWith("http") ? firstFile : `${origin}${firstFile}`;
-                  const deposit = depositPaid;
                   const bankLabel: Record<string, string> = { ghb: "ธอส.", gsb: "ออมสิน" };
                   const fmtMethod = (r: typeof persistedInstallments[number]) => r.method === "loan"
                     ? `สินเชื่อ${r.loan_bank ? ` ${bankLabel[r.loan_bank] || r.loan_bank}` : ""}`
-                    : "เงินโอน/QR";
+                    : r.method === "cc" ? "บัตรเครดิต" : "เงินโอน/QR";
+                  const cleanPct = (p: number) => Math.abs(p - Math.round(p)) < 0.01;
                   const details: { label: string; value: string }[] = [];
                   details.push({ label: "ยอดรวม", value: `฿${fmt(total)}` });
-                  if (deposit > 0) {
-                    details.push({ label: "หักค่าสำรวจ", value: `-฿${fmt(deposit)}` });
-                    details.push({ label: "ยอดที่ต้องชำระ", value: `฿${fmt(total - deposit)}` });
+                  if (totalDiscount > 0) {
+                    const dLabel = `ส่วนลด${discountPct > 0 ? ` ${discountPct}%` : ""}${discountNote ? ` · ${discountNote}` : ""}`;
+                    details.push({ label: dLabel, value: `-฿${fmt(totalDiscount)}` });
                   }
-                  // Single installment: skip the redundant "งวดที่ 1" row —
-                  // ยอดที่ต้องชำระ already conveys the amount. Only surface
-                  // the payment method as a separate row.
+                  if (depositPaid > 0) {
+                    details.push({ label: "หักค่าสำรวจ", value: `-฿${fmt(depositPaid)}` });
+                  }
+                  details.push({ label: "ยอดชำระสุทธิ", value: `฿${fmt(netTotal)}` });
+                  if (ccSurcharge > 0) {
+                    details.push({ label: "ค่าธรรมเนียมบัตรเครดิต", value: `+฿${fmt(ccSurcharge)}` });
+                    details.push({ label: "ยอดรวมที่ต้องชำระ", value: `฿${fmt(totalToCharge)}` });
+                  }
                   if (persistedInstallments.length === 1) {
                     details.push({ label: "ชำระโดย", value: fmtMethod(persistedInstallments[0]) });
                   } else {
                     persistedInstallments.forEach((r, idx) => {
-                      const amt = total > 0 ? Math.round((total * r.pct) / 100) : 0;
+                      const gross = rowGross(idx);
+                      const isCc = r.method === "cc" && r.cc_pct;
+                      const ccFee = isCc ? Math.round((gross * (r.cc_pct as number)) / 100) : 0;
+                      const totalRow = gross + ccFee;
+                      const pctSuffix = cleanPct(r.pct) && r.pct > 0 ? ` (${Math.round(r.pct)}%)` : "";
+                      const ccSuffix = isCc ? ` (+${r.cc_pct}%)` : "";
+                      const paidSuffix = paidIdxSet.has(idx) ? " ✓ จ่ายแล้ว" : "";
                       details.push({
-                        label: `งวดที่ ${idx + 1} · ${fmtMethod(r)}`,
-                        value: `฿${fmt(amt)} (${r.pct}%)`,
+                        label: `งวดที่ ${idx + 1} · ${fmtMethod(r)}${ccSuffix}${paidSuffix}`,
+                        value: `฿${fmt(totalRow)}${pctSuffix}`,
                       });
                     });
                   }
                   const messages = [buildPaymentFlex({
-                    origin, title: "ใบเสนอราคา", amount: total, name: lead.full_name,
+                    origin, title: "ใบเสนอราคา", amount: totalToCharge, name: lead.full_name,
                     actionLabel: "รายละเอียดใบเสนอราคา", actionUrl: downloadUrl, details,
                     note: "• กรุณาตรวจสอบเงื่อนไขการเสนอราคาให้ครบถ้วน\n• การชำระผ่านบัตรเครดิต จะมีค่าธรรมเนียม 3%",
                   })];
@@ -1111,40 +1210,86 @@ export default function OrderStep({ lead, state, refresh, expanded, onToggle }: 
             </div>
           )}
 
+          <div className="rounded-lg bg-white border border-gray-200 p-3 space-y-2">
+            <div className="text-xs font-bold text-gray-500 uppercase tracking-wider">ส่วนลด</div>
+            <div className="grid grid-cols-4 gap-2">
+              <label className="col-span-2 min-w-0">
+                <span className="text-[11px] text-gray-500">Discount Text</span>
+                <input
+                  type="text" maxLength={200}
+                  value={discountNote}
+                  onChange={(e) => setDiscountNote(e.target.value)}
+                  placeholder="เช่น โปรโมชัน, ส่วนลดพนักงาน"
+                  className="mt-0.5 w-full h-10 px-3 rounded-lg border border-gray-200 text-sm focus:outline-none focus:border-active"
+                />
+              </label>
+              <label>
+                <span className="text-[11px] text-gray-500">%</span>
+                <div className="relative mt-0.5">
+                  <input
+                    type="number" min={0} max={100} step="0.01"
+                    value={discountPct || ""}
+                    onChange={(e) => {
+                      const pct = Math.min(100, Math.max(0, parseFloat(e.target.value) || 0));
+                      setDiscountPct(pct);
+                      if (total > 0) setDiscountAmount(Math.round((total * pct) / 100));
+                    }}
+                    placeholder="0"
+                    className="w-full h-10 pl-3 pr-7 rounded-lg border border-gray-200 text-sm font-mono tabular-nums text-right focus:outline-none focus:border-active"
+                  />
+                  <span className="absolute right-2.5 top-1/2 -translate-y-1/2 text-sm text-gray-400 pointer-events-none">%</span>
+                </div>
+              </label>
+              <label>
+                <span className="text-[11px] text-gray-500">บาท</span>
+                <div className="relative mt-0.5">
+                  <input
+                    type="number" min={0} step="1"
+                    value={discountAmount || ""}
+                    onChange={(e) => {
+                      const amt = Math.max(0, parseFloat(e.target.value) || 0);
+                      setDiscountAmount(amt);
+                      if (total > 0) setDiscountPct(Math.round((amt / total) * 10000) / 100);
+                    }}
+                    placeholder="0"
+                    className="w-full h-10 pl-3 pr-7 rounded-lg border border-gray-200 text-sm font-mono tabular-nums text-right focus:outline-none focus:border-active"
+                  />
+                  <span className="absolute right-2.5 top-1/2 -translate-y-1/2 text-sm text-gray-400 pointer-events-none">฿</span>
+                </div>
+              </label>
+            </div>
+          </div>
+
           <div className="rounded-lg bg-gray-50 border border-gray-200 p-3 space-y-1">
             <div className="flex justify-between text-sm">
               <span className="text-gray-500">ยอดรวม</span>
               <span className="font-bold font-mono">{fmt(total)} บาท</span>
             </div>
-            {pctBefore < 100 && (<>
-              <div className="flex justify-between text-xs text-gray-400">
-                <span>ชำระก่อนติดตั้ง {pctBefore}%</span>
-                <span>{fmt(amountBefore)} บาท</span>
-              </div>
-              <div className="flex justify-between text-xs text-gray-400">
-                <span>ชำระหลังติดตั้ง</span>
-                <span>{fmt(amountAfter)} บาท</span>
-              </div>
-            </>)}
+            <div className="flex justify-between text-xs text-gray-400">
+              <span>
+                ส่วนลด{discountPct > 0 ? ` ${discountPct}%` : ""}
+                {discountNote ? ` · ${discountNote}` : ""}
+              </span>
+              <span>{totalDiscount > 0 ? `-${fmt(totalDiscount)}` : "0"} บาท</span>
+            </div>
             {depositPaid > 0 && (
               <div className="flex justify-between text-xs text-gray-400">
                 <span>หักค่าสำรวจ</span>
                 <span>-{fmt(depositPaid)} บาท</span>
               </div>
             )}
-            {pctBefore >= 100 ? (
-              <div className="flex justify-between text-sm font-semibold border-t border-gray-200 pt-1">
-                <span className="text-gray-600">ยอดชำระสุทธิ</span>
-                <span className="font-bold font-mono text-gray-900">{fmt(netBefore)} บาท</span>
-              </div>
-            ) : (<>
-              <div className="flex justify-between text-sm font-semibold border-t border-gray-200 pt-1">
-                <span className="text-gray-600">ยอดชำระก่อนติดตั้งสุทธิ</span>
-                <span className="font-bold font-mono text-gray-900">{fmt(netBefore)} บาท</span>
+            <div className="flex justify-between text-sm font-semibold border-t border-gray-200 pt-1">
+              <span className="text-gray-600">ยอดชำระสุทธิ</span>
+              <span className="font-bold font-mono text-gray-900">{fmt(netTotal)} บาท</span>
+            </div>
+            {ccSurcharge > 0 && (<>
+              <div className="flex justify-between text-xs text-gray-400">
+                <span>ค่าธรรมเนียมบัตรเครดิต</span>
+                <span>+{fmt(ccSurcharge)} บาท</span>
               </div>
               <div className="flex justify-between text-sm font-semibold">
-                <span className="text-gray-600">ยอดชำระหลังติดตั้งสุทธิ</span>
-                <span className="font-bold font-mono text-gray-900">{fmt(netAfter)} บาท</span>
+                <span className="text-gray-600">ยอดรวมที่ต้องชำระ</span>
+                <span className="font-bold font-mono text-gray-900">{fmt(totalToCharge)} บาท</span>
               </div>
             </>)}
             {refund > 0 && (

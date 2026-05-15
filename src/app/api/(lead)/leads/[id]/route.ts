@@ -317,6 +317,18 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
       sets.push("order_total = @order_total");
       request.input("order_total", sql.Decimal(12, 2), body.order_total);
     }
+    if (body.order_discount_pct !== undefined) {
+      sets.push("order_discount_pct = @order_discount_pct");
+      request.input("order_discount_pct", sql.Decimal(5, 2), body.order_discount_pct);
+    }
+    if (body.order_discount_amount !== undefined) {
+      sets.push("order_discount_amount = @order_discount_amount");
+      request.input("order_discount_amount", sql.Decimal(12, 2), body.order_discount_amount);
+    }
+    if (body.order_discount_note !== undefined) {
+      sets.push("order_discount_note = @order_discount_note");
+      request.input("order_discount_note", sql.NVarChar(200), body.order_discount_note);
+    }
     // Enforce sum=100 invariant — order_pct_before + order_pct_after must
     // equal 100 whenever both are touched. If only one side is sent, derive
     // the other so the row never lands in an inconsistent state.

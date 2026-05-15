@@ -23,6 +23,10 @@ interface InvoiceData {
   packages: { id: number; name: string; kwp: number; price: number }[];
   step_no: number;
   payment_no: string | null;
+  payment_method?: string | null;
+  cc_surcharge_pct?: number | null;
+  cc_surcharge_amount?: number | null;
+  total_to_pay?: number;
 }
 
 const CO = {
@@ -113,12 +117,31 @@ export default function InvoicePage() {
                 </div>
               )}
             </div>
-            <div className="px-4 py-3 bg-active-light/30 flex items-end justify-between">
-              <div className="text-[11px] uppercase tracking-wider text-gray-500">ยอดที่ต้องโอน</div>
-              <div className="text-[26px] font-bold font-mono tabular-nums text-gray-900 leading-none">
-                {fmt(d.amount)} <span className="text-[13px] font-medium text-gray-500">บาท</span>
+            {(d.cc_surcharge_amount ?? 0) > 0 ? (
+              <div className="px-4 py-3 bg-active-light/30 space-y-1.5">
+                <div className="flex items-baseline justify-between text-[12px] text-gray-500">
+                  <span>ยอด</span>
+                  <span className="font-mono tabular-nums">{fmt(d.amount)} บาท</span>
+                </div>
+                <div className="flex items-baseline justify-between text-[12px] text-gray-500">
+                  <span>ค่าธรรมเนียมบัตรเครดิต {d.cc_surcharge_pct ? `(${d.cc_surcharge_pct}%)` : ""}</span>
+                  <span className="font-mono tabular-nums">+{fmt(d.cc_surcharge_amount!)} บาท</span>
+                </div>
+                <div className="flex items-end justify-between border-t border-gray-300/60 pt-1.5">
+                  <div className="text-[11px] uppercase tracking-wider text-gray-500">ยอดที่ต้องโอน</div>
+                  <div className="text-[26px] font-bold font-mono tabular-nums text-gray-900 leading-none">
+                    {fmt(d.total_to_pay ?? (d.amount + (d.cc_surcharge_amount ?? 0)))} <span className="text-[13px] font-medium text-gray-500">บาท</span>
+                  </div>
+                </div>
               </div>
-            </div>
+            ) : (
+              <div className="px-4 py-3 bg-active-light/30 flex items-end justify-between">
+                <div className="text-[11px] uppercase tracking-wider text-gray-500">ยอดที่ต้องโอน</div>
+                <div className="text-[26px] font-bold font-mono tabular-nums text-gray-900 leading-none">
+                  {fmt(d.amount)} <span className="text-[13px] font-medium text-gray-500">บาท</span>
+                </div>
+              </div>
+            )}
           </div>
 
           {/* Packages — label changes based on step */}
@@ -173,7 +196,8 @@ export default function InvoicePage() {
               <div className="shrink-0 text-center">
                 <img
                   src={(() => {
-                    const p = new URLSearchParams({ amount: String(d.amount), format: "image", lead_id: String(d.id), step_no: String(d.step_no) });
+                    const qrAmount = d.total_to_pay ?? (d.amount + (d.cc_surcharge_amount ?? 0));
+                    const p = new URLSearchParams({ amount: String(qrAmount), format: "image", lead_id: String(d.id), step_no: String(d.step_no) });
                     if (d.payment_no) p.set("ref2", d.payment_no);
                     return `/api/qr?${p.toString()}`;
                   })()}

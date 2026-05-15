@@ -60,7 +60,7 @@ export default function LeadCard({ lead, compact, onAssignChange }: { lead: Lead
   const open = () => {
     const isLargeScreen = typeof window !== "undefined" && window.matchMedia("(min-width: 500px)").matches;
     if (isLargeScreen) {
-      window.open(`/leads/${lead.id}`, "_blank", "noreferrer");
+      window.open(`/leads/${lead.id}?focus=1`, "_blank", "noreferrer");
     } else {
       router.push(`/leads/${lead.id}`);
     }

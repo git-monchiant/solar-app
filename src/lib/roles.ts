@@ -17,7 +17,7 @@ export const ROLE_LABEL: Record<Role, string> = {
 
 const STORAGE_KEY = "activeRoles";
 
-type Me = { id: number; username: string; full_name: string; roles: Role[] };
+type Me = { id: number; username: string; full_name: string; roles: Role[]; db_name?: string };
 
 // Persist /api/me across page reloads. The hot copy lives in module memory
 // (cachedMe); on cold module load we hydrate from localStorage so the very

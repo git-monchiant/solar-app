@@ -23,6 +23,14 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: "lead_id, step_no, slip_field, amount required" }, { status: 400 });
     }
     const description = body.description ? String(body.description).slice(0, 200) : null;
+    // Optional context captured from the order step at intent time so receipts
+    // and reports don't have to re-derive from the lead.
+    const paymentMethod = body.payment_method ? String(body.payment_method).slice(0, 20) : null;
+    const discountPct = body.discount_pct != null ? parseFloat(String(body.discount_pct)) : null;
+    const discountAmount = body.discount_amount != null ? parseFloat(String(body.discount_amount)) : null;
+    const discountNote = body.discount_note ? String(body.discount_note).slice(0, 200) : null;
+    const ccSurchargePct = body.cc_surcharge_pct != null ? parseFloat(String(body.cc_surcharge_pct)) : null;
+    const ccSurchargeAmount = body.cc_surcharge_amount != null ? parseFloat(String(body.cc_surcharge_amount)) : null;
 
     const pool = await getDb();
     const tx = new sql.Transaction(pool);
@@ -53,7 +61,24 @@ export async function POST(req: NextRequest) {
           .input("id", sql.Int, row.id)
           .input("amount", sql.Decimal(12, 2), amount)
           .input("description", sql.NVarChar(200), description)
-          .query(`UPDATE payments SET amount = @amount, description = @description WHERE id = @id`);
+          .input("payment_method", sql.NVarChar(20), paymentMethod)
+          .input("discount_pct", sql.Decimal(5, 2), discountPct)
+          .input("discount_amount", sql.Decimal(12, 2), discountAmount)
+          .input("discount_note", sql.NVarChar(200), discountNote)
+          .input("cc_surcharge_pct", sql.Decimal(5, 2), ccSurchargePct)
+          .input("cc_surcharge_amount", sql.Decimal(12, 2), ccSurchargeAmount)
+          .query(`
+            UPDATE payments SET
+              amount = @amount,
+              description = @description,
+              payment_method = @payment_method,
+              discount_pct = @discount_pct,
+              discount_amount = @discount_amount,
+              discount_note = @discount_note,
+              cc_surcharge_pct = @cc_surcharge_pct,
+              cc_surcharge_amount = @cc_surcharge_amount
+            WHERE id = @id
+          `);
         await tx.commit();
         return NextResponse.json({ id: row.id, payment_no: row.payment_no });
       }
@@ -84,10 +109,24 @@ export async function POST(req: NextRequest) {
         .input("amount", sql.Decimal(12, 2), amount)
         .input("description", sql.NVarChar(200), description)
         .input("payment_no", sql.NVarChar(20), paymentNo)
+        .input("payment_method", sql.NVarChar(20), paymentMethod)
+        .input("discount_pct", sql.Decimal(5, 2), discountPct)
+        .input("discount_amount", sql.Decimal(12, 2), discountAmount)
+        .input("discount_note", sql.NVarChar(200), discountNote)
+        .input("cc_surcharge_pct", sql.Decimal(5, 2), ccSurchargePct)
+        .input("cc_surcharge_amount", sql.Decimal(12, 2), ccSurchargeAmount)
         .query(`
-          INSERT INTO payments (lead_id, step_no, slip_field, amount, description, payment_no)
+          INSERT INTO payments (
+            lead_id, step_no, slip_field, amount, description, payment_no,
+            payment_method, discount_pct, discount_amount, discount_note,
+            cc_surcharge_pct, cc_surcharge_amount
+          )
           OUTPUT INSERTED.id
-          VALUES (@lead_id, @step_no, @slip_field, @amount, @description, @payment_no)
+          VALUES (
+            @lead_id, @step_no, @slip_field, @amount, @description, @payment_no,
+            @payment_method, @discount_pct, @discount_amount, @discount_note,
+            @cc_surcharge_pct, @cc_surcharge_amount
+          )
         `);
       const id = insertRes.recordset[0].id as number;
       await tx.commit();

@@ -3,6 +3,7 @@
 import { apiFetch } from "@/lib/api";
 import { stripThaiTitle } from "@/lib/utils/name";
 import { useEffect, useState, use, useCallback, useRef } from "react";
+import { useSearchParams } from "next/navigation";
 import Link from "next/link";
 import ActivityTimeline from "@/components/lead/detail/ActivityTimeline";
 import AddActivityModal, { ActivityType } from "@/components/lead/detail/AddActivityModal";
@@ -260,6 +261,8 @@ function StepCard({
 
 export default function LeadDetailPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = use(params);
+  const searchParams = useSearchParams();
+  const focus = searchParams.get("focus") === "1";
   const dialog = useDialog();
   const [lead, setLead] = useState<Lead | null>(null);
   const [activities, setActivities] = useState<Activity[]>([]);
@@ -404,20 +407,30 @@ export default function LeadDetailPage({ params }: { params: Promise<{ id: strin
       <div className="bg-gradient-to-b from-primary via-primary/50 to-white safe-top sticky top-0 z-10">
         {/* Top row: back + name + call */}
         <div className="pl-3 pr-5 pt-3 flex items-center gap-2">
-          <button type="button" onClick={() => window.history.back()} className="p-2 rounded-full text-gray-600 hover:bg-gray-200 transition-colors shrink-0" style={{ minHeight: 0 }}>
-            <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
-              <path strokeLinecap="round" strokeLinejoin="round" d="M15.75 19.5L8.25 12l7.5-7.5" />
-            </svg>
-          </button>
+          {focus ? (
+            <button type="button" onClick={() => setShowProfileModal(true)} className="w-11 h-11 rounded-full text-gray-600 hover:bg-gray-200 hover:text-primary transition-colors shrink-0 flex items-center justify-center" style={{ minHeight: 0 }}>
+              <svg className="w-9 h-9" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
+                <path strokeLinecap="round" strokeLinejoin="round" d="M17.982 18.725A7.488 7.488 0 0012 15.75a7.488 7.488 0 00-5.982 2.975m11.963 0a9 9 0 10-11.963 0m11.963 0A8.966 8.966 0 0112 21a8.966 8.966 0 01-5.982-2.275M15 9.75a3 3 0 11-6 0 3 3 0 016 0z" />
+              </svg>
+            </button>
+          ) : (
+            <button type="button" onClick={() => window.history.back()} className="p-2 rounded-full text-gray-600 hover:bg-gray-200 transition-colors shrink-0" style={{ minHeight: 0 }}>
+              <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
+                <path strokeLinecap="round" strokeLinejoin="round" d="M15.75 19.5L8.25 12l7.5-7.5" />
+              </svg>
+            </button>
+          )}
           <div className="flex-1 min-w-0 flex items-center gap-1">
             <h1 className="text-2xl font-bold tracking-tight leading-tight text-gray-900 truncate">
               {lead.house_number ? `${lead.house_number} - ${stripThaiTitle(lead.full_name)}` : stripThaiTitle(lead.full_name)}
             </h1>
-            <button type="button" onClick={() => setShowProfileModal(true)} className="shrink-0 w-8 h-8 rounded-full hover:bg-gray-200 flex items-center justify-center text-gray-400 hover:text-primary transition-colors" style={{ minHeight: 0 }}>
-              <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                <path strokeLinecap="round" strokeLinejoin="round" d="M17.982 18.725A7.488 7.488 0 0012 15.75a7.488 7.488 0 00-5.982 2.975m11.963 0a9 9 0 10-11.963 0m11.963 0A8.966 8.966 0 0112 21a8.966 8.966 0 01-5.982-2.275M15 9.75a3 3 0 11-6 0 3 3 0 016 0z" />
-              </svg>
-            </button>
+            {!focus && (
+              <button type="button" onClick={() => setShowProfileModal(true)} className="shrink-0 w-8 h-8 rounded-full hover:bg-gray-200 flex items-center justify-center text-gray-400 hover:text-primary transition-colors" style={{ minHeight: 0 }}>
+                <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M17.982 18.725A7.488 7.488 0 0012 15.75a7.488 7.488 0 00-5.982 2.975m11.963 0a9 9 0 10-11.963 0m11.963 0A8.966 8.966 0 0112 21a8.966 8.966 0 01-5.982-2.275M15 9.75a3 3 0 11-6 0 3 3 0 016 0z" />
+                </svg>
+              </button>
+            )}
           </div>
           {/* LINE link button — connected: open unmap modal; not connected: open picker */}
           <button
@@ -442,7 +455,7 @@ export default function LeadDetailPage({ params }: { params: Promise<{ id: strin
               className="shrink-0 w-11 h-11 rounded-full bg-primary text-white shadow-lg shadow-primary/40 flex items-center justify-center hover:bg-primary-dark active:scale-95 transition-all"
               aria-label="โทร"
             >
-              <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 24 24">
+              <svg className="w-5 h-5" width="20" height="20" fill="white" viewBox="0 0 24 24">
                 <path d="M6.62 10.79a15.05 15.05 0 006.59 6.59l2.2-2.2a1 1 0 011.05-.24c1.12.37 2.33.57 3.57.57a1 1 0 011 1V20a1 1 0 01-1 1A17 17 0 013 4a1 1 0 011-1h3.5a1 1 0 011 1c0 1.24.2 2.45.57 3.57a1 1 0 01-.24 1.05l-2.21 2.17z" />
               </svg>
             </a>

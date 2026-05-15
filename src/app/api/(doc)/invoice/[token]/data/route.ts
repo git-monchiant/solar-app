@@ -42,10 +42,14 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ tok
              l.survey_date, l.survey_time_slot, l.install_date, l.install_actual_date, l.install_completed_at,
              l.interested_package_ids, l.interested_package_id,
              l.contact_date, l.created_at, l.pre_pay_amount, l.pre_pay_description, l.pre_pay_installment, l.status,
-             l.pre_doc_no, l.project_alias,
-             COALESCE(NULLIF(l.project_alias, N''), pr.name) as project_name
+             l.pre_doc_no, l.project_alias, l.pre_pay_payment_id,
+             COALESCE(NULLIF(l.project_alias, N''), pr.name) as project_name,
+             p.payment_method as pay_method,
+             p.discount_pct, p.discount_amount, p.discount_note,
+             p.cc_surcharge_pct, p.cc_surcharge_amount
       FROM leads l
       LEFT JOIN projects pr ON l.project_id = pr.id
+      LEFT JOIN payments p ON p.id = l.pre_pay_payment_id
       WHERE l.pre_pay_token = @token
     `);
     if (r.recordset.length === 0) return NextResponse.json({ error: "not found" }, { status: 404 });
@@ -86,6 +90,8 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ tok
     let docNo: string = l.pre_doc_no;
     if (!docNo) docNo = await ensureBookingDocNo(db, l.id);
 
+    const ccSurchargeAmount = l.cc_surcharge_amount != null ? Number(l.cc_surcharge_amount) : 0;
+    const ccSurchargePct = l.cc_surcharge_pct != null ? Number(l.cc_surcharge_pct) : null;
     return NextResponse.json({
       ...fixDates([l])[0],
       amount,
@@ -96,6 +102,10 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ tok
       reference_no: docNo,
       step_no: 1,
       payment_no: paymentNo,
+      payment_method: l.pay_method || null,
+      cc_surcharge_pct: ccSurchargePct,
+      cc_surcharge_amount: ccSurchargeAmount,
+      total_to_pay: amount + ccSurchargeAmount,
     });
   } catch (error) {
     console.error("Invoice data error:", error);

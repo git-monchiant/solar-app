@@ -32,7 +32,7 @@ export async function GET(req: NextRequest) {
           (SELECT COUNT(*) FROM leads WHERE status = 'order' AND updated_at >= @first_day) as won
       `);
 
-    return NextResponse.json({ ...user.recordset[0], roles, stats: stats.recordset[0] });
+    return NextResponse.json({ ...user.recordset[0], roles, stats: stats.recordset[0], db_name: process.env.DB_NAME || "solardb" });
   } catch (error) {
     console.error("GET /api/me error:", error);
     return NextResponse.json({ error: "Failed" }, { status: 500 });

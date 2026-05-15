@@ -46,6 +46,14 @@ interface Props {
   /** Force the section to only expose the "อื่นๆ" tab — used by loan installments
    * where customers pay via the bank, not via our QR/link/transfer flows. */
   onlyOther?: boolean;
+  /** Per-payment context stamped onto the payments row at intent time so receipts
+   * and reports don't have to re-derive from the lead. All optional. */
+  paymentMethod?: string | null;
+  discountPct?: number | null;
+  discountAmount?: number | null;
+  discountNote?: string | null;
+  ccSurchargePct?: number | null;
+  ccSurchargeAmount?: number | null;
 }
 
 type Settings = {
@@ -110,6 +118,12 @@ export default function PaymentSection({
   docUrl,
   hideHeader,
   onlyOther,
+  paymentMethod,
+  discountPct,
+  discountAmount,
+  discountNote,
+  ccSurchargePct,
+  ccSurchargeAmount,
 }: Props) {
   const [confirming, setConfirming] = useState(false);
   const [confirmError, setConfirmError] = useState<string | null>(null);
@@ -256,6 +270,7 @@ export default function PaymentSection({
   // every QR carries a unique transaction reference. Empty until allocated;
   // QR will fall back to the static settings ref2 in that brief window.
   const [paymentNo, setPaymentNo] = useState<string>("");
+  const [paymentId, setPaymentId] = useState<number | null>(null);
   const [linkCopied, setLinkCopied] = useState(false);
   const [lineSending, setLineSending] = useState<string | null>(null);
   const [lineSent, setLineSent] = useState<string | null>(null);
@@ -286,19 +301,33 @@ export default function PaymentSection({
     apiFetch("/api/payments/intent", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ lead_id: leadId, step_no: stepNo, slip_field: slipField, amount, description }),
-    }).then((r: { payment_no: string }) => {
-      if (!cancelled && r.payment_no) setPaymentNo(r.payment_no);
+      body: JSON.stringify({
+        lead_id: leadId, step_no: stepNo, slip_field: slipField, amount, description,
+        payment_method: paymentMethod ?? null,
+        discount_pct: discountPct ?? null,
+        discount_amount: discountAmount ?? null,
+        discount_note: discountNote ?? null,
+        cc_surcharge_pct: ccSurchargePct ?? null,
+        cc_surcharge_amount: ccSurchargeAmount ?? null,
+      }),
+    }).then((r: { payment_no: string; id: number }) => {
+      if (!cancelled) {
+        if (r.payment_no) setPaymentNo(r.payment_no);
+        if (r.id) setPaymentId(r.id);
+      }
     }).catch(console.error);
     return () => { cancelled = true; };
-  }, [leadId, stepNo, slipField, amount, description, confirmed]);
+  }, [leadId, stepNo, slipField, amount, description, confirmed, paymentMethod, discountPct, discountAmount, discountNote, ccSurchargePct, ccSurchargeAmount]);
+
+  // QR amount must match the document — include CC surcharge when present.
+  const qrAmount = amount + (ccSurchargeAmount ?? 0);
 
   // Generate PromptPay QR — regen whenever amount or payment_no changes
   useEffect(() => {
-    if (amount <= 0) return;
+    if (qrAmount <= 0) return;
     setQrLoading(true);
     setQrError(null);
-    const params = new URLSearchParams({ amount: String(amount) });
+    const params = new URLSearchParams({ amount: String(qrAmount) });
     if (leadId) params.set("lead_id", String(leadId));
     if (stepNo) params.set("step_no", String(stepNo));
     if (paymentNo) params.set("ref2", paymentNo);
@@ -311,7 +340,7 @@ export default function PaymentSection({
       })
       .catch((err) => { console.error(err); setQrError("สร้าง QR ไม่สำเร็จ"); })
       .finally(() => setQrLoading(false));
-  }, [amount, leadId, stepNo, paymentNo]);
+  }, [qrAmount, leadId, stepNo, paymentNo]);
 
   // Ensure a pay token exists for (lead_id, amount, description, installment) so URLs can hide the amount
   useEffect(() => {
@@ -319,9 +348,9 @@ export default function PaymentSection({
     apiFetch("/api/pay-tokens", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ lead_id: leadId, amount, description: paymentTitle, installment: amountLabel }),
+      body: JSON.stringify({ lead_id: leadId, amount, description: paymentTitle, installment: amountLabel, payment_id: paymentId }),
     }).then((r: { token: string }) => setPayToken(r.token)).catch(console.error);
-  }, [leadId, amount, paymentTitle, amountLabel]);
+  }, [leadId, amount, paymentTitle, amountLabel, paymentId]);
 
   const qrEnabled = !onlyOther && settings.promptpay_qr_enabled !== "false";
   const linkEnabled = !onlyOther && settings.promptpay_link_enabled !== "false";
@@ -345,7 +374,7 @@ export default function PaymentSection({
     setLineSending(type);
     try {
       const origin = typeof window !== "undefined" ? window.location.origin : "";
-      const qrParams = new URLSearchParams({ amount: String(amount), format: "image" });
+      const qrParams = new URLSearchParams({ amount: String(qrAmount), format: "image" });
       if (leadId) qrParams.set("lead_id", String(leadId));
       if (stepNo) qrParams.set("step_no", String(stepNo));
       if (paymentNo) qrParams.set("ref2", paymentNo);
@@ -359,7 +388,7 @@ export default function PaymentSection({
       const messages = [buildPaymentFlex({
         origin,
         title: paymentTitle,
-        amount,
+        amount: qrAmount,
         name: leadName,
         actionLabel: fullDocUrl ? "ดูเอกสาร" : "ดู QR / ชำระเงิน",
         actionUrl: fullDocUrl || payUrl,
@@ -641,7 +670,7 @@ export default function PaymentSection({
   return (
     <div className="space-y-3 relative">
       <div className={`flex items-start gap-2 ${hideHeader ? "justify-start" : "justify-between"}`}>
-        {!hideHeader && <PaymentHeader title={paymentTitle} amount={amount} amountLabel={amountLabel} />}
+        {!hideHeader && <PaymentHeader title={paymentTitle} amount={qrAmount} amountLabel={amountLabel} />}
         <div className="shrink-0 flex items-center gap-1">
           {invoiceDocUrl && (
             <button

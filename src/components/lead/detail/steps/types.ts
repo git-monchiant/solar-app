@@ -109,6 +109,9 @@ export interface Lead {
   quotation_amount: number | null;
   // Purchase
   order_total: number | null;
+  order_discount_pct: number | null;
+  order_discount_amount: number | null;
+  order_discount_note: string | null;
   order_pct_before: number | null;
   order_pct_after: number | null;
   // JSON array of {pct: number, when: "before"|"after", due_date: string|null}.
