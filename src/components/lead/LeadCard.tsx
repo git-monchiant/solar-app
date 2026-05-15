@@ -45,6 +45,8 @@ export interface LeadData {
   district: string | null;
   province: string | null;
   zone?: string | null;
+  contact_count?: number;
+  is_followup_overdue?: boolean;
 }
 
 export default function LeadCard({ lead, compact, onAssignChange }: { lead: LeadData; compact?: boolean; onAssignChange?: () => void }) {
@@ -55,7 +57,11 @@ export default function LeadCard({ lead, compact, onAssignChange }: { lead: Lead
   useEffect(() => { setNow(Date.now()); }, []);
   const startDate = lead.contact_date || lead.created_at;
   const aging = now && startDate ? Math.floor((now - new Date(startDate).getTime()) / 86400000) : 0;
-  const isOverdue = now && lead.next_follow_up && new Date(String(lead.next_follow_up).slice(0, 10) + "T12:00:00").getTime() < now;
+  // Prefer the server's overdue flag (filters out leads already followed up).
+  // Fall back to the local date check for callers that don't supply it.
+  const isOverdue = lead.is_followup_overdue !== undefined
+    ? lead.is_followup_overdue
+    : !!(now && lead.next_follow_up && new Date(String(lead.next_follow_up).slice(0, 10) + "T12:00:00").getTime() < now);
 
   const open = () => {
     const isLargeScreen = typeof window !== "undefined" && window.matchMedia("(min-width: 500px)").matches;
@@ -263,9 +269,12 @@ export default function LeadCard({ lead, compact, onAssignChange }: { lead: Lead
               {lead.last_activity_date && (
                 <span className="hidden md:inline">· ติดตามล่าสุด {formatThaiDateShort(lead.last_activity_date)}</span>
               )}
+              {(lead.contact_count ?? 0) > 0 && (
+                <span className="font-semibold text-gray-600">· ติดตาม {lead.contact_count} ครั้ง</span>
+              )}
               {!compact && lead.next_follow_up && (
                 <span className={`font-semibold ${isOverdue ? "text-red-600" : "text-amber-600"}`}>
-                  · {isOverdue ? "Overdue" : "Follow-up"} {formatThaiDateShort(lead.next_follow_up)}
+                  · นัดติดตามครั้งถัดไป {formatThaiDateShort(lead.next_follow_up)}{isOverdue ? " (Overdue)" : ""}
                 </span>
               )}
               {amount != null && (

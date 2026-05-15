@@ -8,7 +8,11 @@ import { useMe } from "@/lib/roles";
 
 function DbBanner() {
   const { me } = useMe();
-  if (me?.db_name !== "solardb_dev") return null;
+  // Gate render on mount — useMe() hydrates from localStorage on the client,
+  // so the server (no localStorage) and the first client render disagree.
+  const [mounted, setMounted] = useState(false);
+  useEffect(() => setMounted(true), []);
+  if (!mounted || me?.db_name !== "solardb_dev") return null;
   return (
     <div className="fixed top-0 inset-x-0 z-[100] bg-amber-500 text-white text-[10px] leading-none font-semibold tracking-widest text-center py-0.5 shadow-md pointer-events-none">
       DEVELOPMENT / DEMO

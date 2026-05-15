@@ -24,7 +24,7 @@ import GridTieStep from "@/components/lead/detail/steps/GridTieStep";
 import type { Lead, Package, CardStateKind } from "@/components/lead/detail/steps/types";
 import { useDialog } from "@/components/ui/Dialog";
 import { useIsMobile } from "@/lib/hooks/useIsMobile";
-import { formatThaiDate as formatDate } from "@/lib/utils/formatters";
+import { formatThaiDate as formatDate, formatThaiTime } from "@/lib/utils/formatters";
 import { INFO_LABELS } from "@/lib/constants/info-labels";
 
 const formatAcUnits = (s: string | null): string | null => {
@@ -720,9 +720,17 @@ export default function LeadDetailPage({ params }: { params: Promise<{ id: strin
                 presurvey_doc_created: { label: "เปิดเลขเอกสาร", color: "bg-emerald-500" },
               };
 
-              const headerLabel = latest
-                ? `${typeMap[latest.activity_type]?.label || "บันทึก"} · ${formatDate(latest.created_at)}`
-                : "";
+              const headerParts = latest
+                ? (() => {
+                    const label = typeMap[latest.activity_type]?.label || "บันทึก";
+                    const eventDate = latest.followup_date || latest.created_at;
+                    const eventStr = formatDate(eventDate);
+                    // Save time is always real (DB default GETDATE()) for new
+                    // rows; legacy backdated rows show 12:00 — kept honest.
+                    const saveStr = `${formatDate(latest.created_at)} ${formatThaiTime(latest.created_at)}`;
+                    return { main: `${label} · ${eventStr}`, save: saveStr };
+                  })()
+                : null;
               const bodyText = latest ? (latest.note || latest.title) : null;
               const createdBy = latest?.created_by_name ?? null;
               const accentColor = latest
@@ -744,7 +752,15 @@ export default function LeadDetailPage({ params }: { params: Promise<{ id: strin
                       </div>
                       <div className="flex-1 min-w-0">
                         <div className="text-xs font-semibold tracking-wider uppercase text-gray-400 leading-none">Latest Contact</div>
-                        {!isEmpty && <div className="text-sm font-semibold text-gray-900 mt-1">{headerLabel}</div>}
+                        {!isEmpty && headerParts && (
+                          <>
+                            <div className="text-sm font-semibold text-gray-900 mt-1">
+                              {headerParts.main}
+                              <span className="hidden md:inline text-xs font-normal text-gray-400"> · บันทึกวันที่ {headerParts.save}</span>
+                            </div>
+                            <div className="md:hidden text-xs font-normal text-gray-400 mt-0.5">บันทึกวันที่ {headerParts.save}</div>
+                          </>
+                        )}
                         {isEmpty && <div className="text-sm text-gray-400 mt-1">ยังไม่มีการติดต่อ · แตะเพื่อเพิ่ม</div>}
                       </div>
                       <span className="text-primary text-sm font-semibold shrink-0">+ เพิ่ม</span>
@@ -752,20 +768,64 @@ export default function LeadDetailPage({ params }: { params: Promise<{ id: strin
                     {!isEmpty && (
                       <div className="text-sm text-gray-700 leading-relaxed whitespace-pre-wrap mt-3 pt-3 border-t border-gray-100">
                         {bodyText}
+                        {(() => {
+                          // Pick the latest follow_up_date scheduled across activities,
+                          // then check if anything was logged on/after that date.
+                          const scheduled = activities.find(a => !!a.follow_up_date);
+                          if (!scheduled || !scheduled.follow_up_date) return null;
+                          const schedDate = new Date(String(scheduled.follow_up_date).slice(0, 10) + "T00:00:00");
+                          const today = new Date();
+                          today.setHours(0, 0, 0, 0);
+                          // Was any follow_up activity logged on/after the scheduled date?
+                          const fulfilled = activities.some(a => {
+                            if (a.id === scheduled.id) return false;
+                            const evt = new Date(String((a.followup_date || a.created_at)).slice(0, 10) + "T00:00:00");
+                            return evt >= schedDate;
+                          });
+                          const isOverdue = !fulfilled && schedDate < today;
+                          const isToday = !fulfilled && schedDate.getTime() === today.getTime();
+                          const tone = fulfilled
+                            ? "text-emerald-700"
+                            : isOverdue ? "text-red-600" : isToday ? "text-amber-700" : "text-gray-600";
+                          return (
+                            <div className={`text-xs font-semibold mt-2 ${tone}`}>
+                              นัดติดตามครั้งถัดไป {formatDate(scheduled.follow_up_date)}
+                              {fulfilled
+                                ? <span className="ml-1">✓ ติดตามแล้ว</span>
+                                : isOverdue
+                                  ? <span className="ml-1">(Overdue)</span>
+                                  : isToday
+                                    ? <span className="ml-1">· วันนี้</span>
+                                    : null}
+                            </div>
+                          );
+                        })()}
                         {createdBy && (
                           <div className="text-xs text-gray-400 mt-2">โดย {createdBy}</div>
                         )}
                       </div>
                     )}
                   </div>
-                  <div className="absolute bottom-3 right-3" onClick={(e) => e.stopPropagation()}>
+                  {/* Footer — assignee in bottom-left + count in bottom-right, mirroring LeadCard */}
+                  <div onClick={(e) => e.stopPropagation()} className="px-5 py-3 bg-gray-50 rounded-b-2xl flex items-center gap-2 text-xs text-gray-400">
                     <AssignOwnerButton
                       leadId={lead.id}
                       assignedUserId={lead.assigned_user_id}
                       assignedName={lead.assigned_name}
                       onChanged={refresh}
-                      size="md"
                     />
+                    {(lead.assigned_username || lead.assigned_name) && (
+                      <span className="font-semibold text-gray-700 uppercase tracking-wider">
+                        {lead.assigned_name || lead.assigned_username}
+                      </span>
+                    )}
+                    {(() => {
+                      const CONTACT_TYPES = new Set(["call", "visit", "follow_up", "loan_followup"]);
+                      const n = activities.filter(a => CONTACT_TYPES.has(a.activity_type)).length;
+                      return n > 0 ? (
+                        <span className="ml-auto text-xs font-semibold text-gray-600">ติดตาม {n} ครั้ง</span>
+                      ) : null;
+                    })()}
                   </div>
                 </div>
               );

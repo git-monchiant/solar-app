@@ -6,6 +6,9 @@ interface Activity {
   old_status: string | null;
   new_status: string | null;
   follow_up_date: string | null;
+  // User-entered "วันที่ติดตาม" (event date). Optional. created_at remains the
+  // real save timestamp.
+  followup_date: string | null;
   created_by_name: string | null;
   created_at: string;
 }
@@ -26,6 +29,31 @@ const formatTime = (d: string) => new Date(d).toLocaleTimeString("th-TH", { hour
 const formatDateTime = (d: string) => {
   const date = new Date(d);
   return date.toLocaleDateString("en-US", { day: "numeric", month: "short", year: "numeric" }) + " at " + date.toLocaleTimeString("th-TH", { hour: "2-digit", minute: "2-digit" });
+};
+const formatThaiDate = (d: string) => new Date(String(d).slice(0, 10) + "T12:00:00")
+  .toLocaleDateString("th-TH", { day: "numeric", month: "short", year: "numeric" });
+
+// Activity-type label shown in the title slot. Mirrors lead detail's typeMap so
+// the timeline reads consistently across the app. Anything missing here falls
+// through to "บันทึก" — keep in sync with new activity_types added by the app.
+const TYPE_LABELS: Record<string, string> = {
+  call: "โทร",
+  visit: "เยี่ยม",
+  follow_up: "ติดตาม",
+  loan_followup: "ติดตามสินเชื่อ",
+  note: "โน้ต",
+  status_change: "เปลี่ยนสถานะ",
+  presurvey_doc_created: "เปิดเลขเอกสาร",
+  payment_confirmed: "ยืนยันการชำระ",
+  appointment_set: "นัดสำรวจ",
+  appointment_rescheduled: "เลื่อนนัดสำรวจ",
+  appointment_confirmed: "ยืนยันนัดสำรวจ",
+  slip_uploaded: "อัปโหลดสลิป",
+  slip_submitted: "ส่งสลิป",
+  line: "LINE",
+  line_sent: "ส่ง LINE",
+  step_completed: "ขั้นตอนเสร็จ",
+  other: "อื่นๆ",
 };
 
 export default function ActivityItem({ activity, isLast }: { activity: Activity; isLast?: boolean }) {
@@ -73,7 +101,18 @@ export default function ActivityItem({ activity, isLast }: { activity: Activity;
     );
   }
 
-  // Normal activity item
+  // Normal activity item.
+  // Title was historically "Scheduled follow-up for <date>" which read as if
+  // the event happened on that date — but it's actually the NEXT scheduled
+  // date. Build the header from structured fields so it's unambiguous.
+  const typeLabel = TYPE_LABELS[activity.activity_type] || "บันทึก";
+  const eventDate = activity.followup_date || activity.created_at;
+  const sd = new Date(activity.created_at);
+  const isNoonDefault = sd.getHours() === 12 && sd.getMinutes() === 0 && sd.getSeconds() === 0;
+  const saveStr = isNoonDefault
+    ? formatThaiDate(activity.created_at)
+    : `${formatThaiDate(activity.created_at)} ${formatTime(activity.created_at)}`;
+
   return (
     <div className="flex gap-3">
       <div className="flex flex-col items-center">
@@ -85,15 +124,20 @@ export default function ActivityItem({ activity, isLast }: { activity: Activity;
         {!isLast && <div className="w-px flex-1 bg-gray-200 mt-1" />}
       </div>
       <div className="flex-1 pb-4 min-w-0">
-        <div className="flex items-start justify-between gap-2">
-          <div className="font-semibold text-sm">{activity.title}</div>
-          <span className="text-xs text-gray shrink-0">{formatTime(activity.created_at)}</span>
+        <div className="font-semibold text-sm text-gray-900">
+          {typeLabel} · {formatThaiDate(eventDate)}
+          <span className="ml-1 text-xs font-normal text-gray-400">· บันทึกเมื่อ {saveStr}</span>
         </div>
         {activity.note && (
-          <div className="text-sm text-gray mt-1">{activity.note}</div>
+          <div className="text-sm text-gray-700 mt-1 whitespace-pre-wrap">{activity.note}</div>
+        )}
+        {activity.follow_up_date && (
+          <div className="text-xs text-amber-700 font-semibold mt-1">
+            นัดติดตามครั้งถัดไป {formatThaiDate(activity.follow_up_date)}
+          </div>
         )}
         {activity.created_by_name && (
-          <div className="text-xs text-gray/50 mt-1">by {activity.created_by_name}</div>
+          <div className="text-xs text-gray-400 mt-1">โดย {activity.created_by_name}</div>
         )}
       </div>
     </div>

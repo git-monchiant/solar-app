@@ -61,16 +61,17 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
       .input("activity_type", sql.NVarChar(30), activityType)
       .input("title", sql.NVarChar(200), title)
       .input("note", sql.NVarChar(sql.MAX), body.note || null)
-      .input("follow_up_date", sql.DateTime2, body.follow_up_date ? new Date(body.follow_up_date + "T12:00:00") : null);
-
-    const hasContactDate = !!body.contact_date;
-    if (hasContactDate) request.input("created_at", sql.DateTime2, new Date(body.contact_date + "T12:00:00"));
+      .input("follow_up_date", sql.DateTime2, body.follow_up_date ? new Date(body.follow_up_date + "T12:00:00") : null)
+      // The user-entered "วันที่ติดตาม" (event date). Stored as a DATE column so
+      // there's no time component to mislead. created_at remains the real save
+      // timestamp via the DB's GETDATE() default.
+      .input("followup_date", sql.Date, body.contact_date ? new Date(body.contact_date + "T12:00:00") : null);
 
     request.input("created_by", sql.Int, userId);
     const result = await request.query(`
-      INSERT INTO lead_activities (lead_id, activity_type, title, note, follow_up_date, created_by${hasContactDate ? ", created_at" : ""})
+      INSERT INTO lead_activities (lead_id, activity_type, title, note, follow_up_date, followup_date, created_by)
       OUTPUT INSERTED.*
-      VALUES (@lead_id, @activity_type, @title, @note, @follow_up_date, @created_by${hasContactDate ? ", @created_at" : ""})
+      VALUES (@lead_id, @activity_type, @title, @note, @follow_up_date, @followup_date, @created_by)
     `);
 
     // Update lead's next_follow_up whenever a follow-up date is provided

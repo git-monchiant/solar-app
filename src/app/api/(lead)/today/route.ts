@@ -17,7 +17,27 @@ const LEAD_COLS = `
   l.install_date, l.install_completed_at, l.install_extra_cost,
   l.order_total, l.quotation_amount,
   COALESCE(NULLIF(l.project_name, ''), p.name) as project_name,
-  p.district, p.province, pk.name as package_name, u.full_name as assigned_name, u.username as assigned_username
+  p.district, p.province, pk.name as package_name, u.full_name as assigned_name, u.username as assigned_username,
+  -- Total contact attempts (call/visit/follow_up/loan_followup) for the chip
+  -- on LeadCard.
+  (SELECT COUNT(*) FROM lead_activities
+     WHERE lead_id = l.id
+       AND activity_type IN ('call','visit','follow_up','loan_followup')) AS contact_count,
+  -- Server-side overdue flag — mirrors the followUpOverdue NOT EXISTS check
+  -- so LeadCard doesn't need to re-derive (which would mislabel leads that
+  -- have already been followed up).
+  CAST(CASE
+    WHEN l.next_follow_up IS NOT NULL
+     AND l.next_follow_up < CAST(GETDATE() AS DATE)
+     AND l.status NOT IN ('install', 'lost')
+     AND NOT EXISTS (
+       SELECT 1 FROM lead_activities a
+        WHERE a.lead_id = l.id
+          AND a.activity_type = 'follow_up'
+          AND COALESCE(a.followup_date, CAST(a.created_at AS DATE)) >= l.next_follow_up
+     )
+    THEN 1 ELSE 0
+  END AS BIT) AS is_followup_overdue
 `;
 
 function fix<T extends Record<string, unknown>>(rs: T[]): T[] {
@@ -36,7 +56,7 @@ export async function GET(req: NextRequest) {
       db.request().query(`
         SELECT ${LEAD_COLS},
                (SELECT TOP 1 note FROM lead_activities WHERE lead_id = l.id ORDER BY created_at DESC) as last_activity_note,
-               (SELECT TOP 1 created_at FROM lead_activities WHERE lead_id = l.id ORDER BY created_at DESC) as last_activity_date
+               (SELECT TOP 1 COALESCE(followup_date, CAST(created_at AS DATE)) FROM lead_activities WHERE lead_id = l.id ORDER BY created_at DESC) as last_activity_date
         FROM leads l
         LEFT JOIN projects p ON l.project_id = p.id
         LEFT JOIN packages pk ON l.interested_package_id = pk.id
@@ -52,7 +72,7 @@ export async function GET(req: NextRequest) {
       db.request().query(`
         SELECT ${LEAD_COLS},
                (SELECT TOP 1 note FROM lead_activities WHERE lead_id = l.id ORDER BY created_at DESC) as last_activity_note,
-               (SELECT TOP 1 created_at FROM lead_activities WHERE lead_id = l.id ORDER BY created_at DESC) as last_activity_date
+               (SELECT TOP 1 COALESCE(followup_date, CAST(created_at AS DATE)) FROM lead_activities WHERE lead_id = l.id ORDER BY created_at DESC) as last_activity_date
         FROM leads l
         LEFT JOIN projects p ON l.project_id = p.id
         LEFT JOIN packages pk ON l.interested_package_id = pk.id
@@ -61,17 +81,26 @@ export async function GET(req: NextRequest) {
           AND l.status NOT IN ('install', 'lost')
         ORDER BY COALESCE(l.contact_date, l.created_at) ASC
       `),
-      // 4. เลยกำหนดติดตาม (overdue follow-up)
+      // 4. เลยกำหนดติดตาม (overdue follow-up).
+      // Drop a lead from overdue once any activity is logged on/after the
+      // scheduled date — sales has acted on it; if they didn't bump the due
+      // date it means no more tracking needed.
       db.request().query(`
         SELECT ${LEAD_COLS},
                (SELECT TOP 1 note FROM lead_activities WHERE lead_id = l.id ORDER BY created_at DESC) as last_activity_note,
-               (SELECT TOP 1 created_at FROM lead_activities WHERE lead_id = l.id ORDER BY created_at DESC) as last_activity_date
+               (SELECT TOP 1 COALESCE(followup_date, CAST(created_at AS DATE)) FROM lead_activities WHERE lead_id = l.id ORDER BY created_at DESC) as last_activity_date
         FROM leads l
         LEFT JOIN projects p ON l.project_id = p.id
         LEFT JOIN packages pk ON l.interested_package_id = pk.id
         LEFT JOIN users u ON l.assigned_user_id = u.id
         WHERE l.next_follow_up < CAST(GETDATE() AS DATE)
           AND l.status NOT IN ('install', 'lost')
+          AND NOT EXISTS (
+            SELECT 1 FROM lead_activities a
+            WHERE a.lead_id = l.id
+              AND a.activity_type = 'follow_up'
+              AND COALESCE(a.followup_date, CAST(a.created_at AS DATE)) >= l.next_follow_up
+          )
         ORDER BY COALESCE(l.contact_date, l.created_at) ASC
       `),
       // 5. Survey วันนี้
@@ -97,7 +126,7 @@ export async function GET(req: NextRequest) {
       // 7. Quotation รอเสนอ
       db.request().query(`
         SELECT ${LEAD_COLS},
-               (SELECT TOP 1 created_at FROM lead_activities WHERE lead_id = l.id ORDER BY created_at DESC) as last_activity_date
+               (SELECT TOP 1 COALESCE(followup_date, CAST(created_at AS DATE)) FROM lead_activities WHERE lead_id = l.id ORDER BY created_at DESC) as last_activity_date
         FROM leads l
         LEFT JOIN projects p ON l.project_id = p.id
         LEFT JOIN packages pk ON l.interested_package_id = pk.id
@@ -108,7 +137,7 @@ export async function GET(req: NextRequest) {
       // 8. รอติดตั้ง
       db.request().query(`
         SELECT ${LEAD_COLS},
-               (SELECT TOP 1 created_at FROM lead_activities WHERE lead_id = l.id ORDER BY created_at DESC) as last_activity_date
+               (SELECT TOP 1 COALESCE(followup_date, CAST(created_at AS DATE)) FROM lead_activities WHERE lead_id = l.id ORDER BY created_at DESC) as last_activity_date
         FROM leads l
         LEFT JOIN projects p ON l.project_id = p.id
         LEFT JOIN packages pk ON l.interested_package_id = pk.id
@@ -120,7 +149,7 @@ export async function GET(req: NextRequest) {
       db.request().query(`
         SELECT ${LEAD_COLS},
                (SELECT TOP 1 note FROM lead_activities WHERE lead_id = l.id ORDER BY created_at DESC) as last_activity_note,
-               (SELECT TOP 1 created_at FROM lead_activities WHERE lead_id = l.id ORDER BY created_at DESC) as last_activity_date
+               (SELECT TOP 1 COALESCE(followup_date, CAST(created_at AS DATE)) FROM lead_activities WHERE lead_id = l.id ORDER BY created_at DESC) as last_activity_date
         FROM leads l
         LEFT JOIN projects p ON l.project_id = p.id
         LEFT JOIN packages pk ON l.interested_package_id = pk.id
@@ -156,7 +185,7 @@ export async function GET(req: NextRequest) {
       db.request().query(`
         SELECT ${LEAD_COLS},
                (SELECT TOP 1 note FROM lead_activities WHERE lead_id = l.id ORDER BY created_at DESC) as last_activity_note,
-               (SELECT TOP 1 created_at FROM lead_activities WHERE lead_id = l.id ORDER BY created_at DESC) as last_activity_date
+               (SELECT TOP 1 COALESCE(followup_date, CAST(created_at AS DATE)) FROM lead_activities WHERE lead_id = l.id ORDER BY created_at DESC) as last_activity_date
         FROM leads l
         LEFT JOIN projects p ON l.project_id = p.id
         LEFT JOIN packages pk ON l.interested_package_id = pk.id

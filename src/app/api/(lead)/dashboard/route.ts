@@ -65,7 +65,7 @@ export async function GET(req: NextRequest) {
       // Rolling 33-day window: last 30 days of activity + 3-day future buffer to
       // match seeker dashboard. Future bars stay empty on the client.
       db.request().query(`
-        SELECT CAST(la.created_at AS DATE) as day, la.lead_id, l.full_name, la.activity_type,
+        SELECT COALESCE(la.followup_date, CAST(la.created_at AS DATE)) as day, la.lead_id, l.full_name, la.activity_type,
                COALESCE(
                  (SELECT TOP 1 new_status FROM lead_activities
                   WHERE lead_id = la.lead_id AND activity_type = 'status_change'
@@ -77,11 +77,12 @@ export async function GET(req: NextRequest) {
                CASE WHEN EXISTS (
                  SELECT 1 FROM lead_activities
                  WHERE lead_id = la.lead_id AND activity_type = 'payment_confirmed'
-                   AND CAST(created_at AS DATE) = CAST(la.created_at AS DATE)
+                   AND CAST(created_at AS DATE) = COALESCE(la.followup_date, CAST(la.created_at AS DATE))
                ) THEN 1 ELSE 0 END as has_paid
         FROM lead_activities la
         JOIN leads l ON la.lead_id = l.id
         WHERE la.created_at >= DATEADD(day, -33, CAST(GETDATE() AS DATE))
+           OR la.followup_date >= DATEADD(day, -33, CAST(GETDATE() AS DATE))
         ORDER BY day, la.created_at ASC
       `),
     ]);

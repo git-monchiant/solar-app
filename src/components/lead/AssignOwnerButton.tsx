@@ -17,7 +17,7 @@ interface Props {
   assignedUserId: number | null;
   assignedName: string | null;
   onChanged?: () => void;
-  size?: "sm" | "md";
+  size?: "sm" | "md" | "lg";
 }
 
 function initialsOf(name: string | null | undefined): string | null {
@@ -88,8 +88,8 @@ export default function AssignOwnerButton({ leadId, assignedUserId, assignedName
     }
   };
 
-  const sizePx = size === "md" ? "w-9 h-9 text-[13px]" : "w-6 h-6 text-[10px]";
-  const iconSize = size === "md" ? "w-5 h-5" : "w-3.5 h-3.5";
+  const sizePx = size === "lg" ? "w-10 h-10 text-sm" : size === "md" ? "w-9 h-9 text-[13px]" : "w-6 h-6 text-[10px]";
+  const iconSize = size === "lg" ? "w-5 h-5" : size === "md" ? "w-5 h-5" : "w-3.5 h-3.5";
   const assigned = !!localUserId;
   const initials = initialsOf(localName);
   const personIcon = (
