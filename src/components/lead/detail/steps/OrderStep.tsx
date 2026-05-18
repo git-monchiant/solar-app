@@ -508,20 +508,18 @@ export default function OrderStep({ lead, state, refresh, expanded, onToggle }: 
       missing.push(`ยอดต้องไม่ต่ำกว่าค่าสำรวจ (฿${fmt(depositPaid)})`);
     }
     if (from === 1 && (pctBefore === null || pctBefore === undefined)) missing.push("% ชำระก่อนติดตั้ง");
-    // Leaving "งวดชำระ" requires every "before-install" row to be confirmed,
-    // regardless of method. Loan rows count as confirmed only after the bank
-    // disburses (admin confirms via the loan flow's "ยืนยันรับเงิน" action,
-    // which writes confirmed_at on the payment row just like a transfer).
-    // Rows whose net is 0 (deposit fully covers the gross) are skipped — the
-    // customer doesn't owe anything, so there's nothing to confirm.
+    // Leaving "งวดชำระ" → "นัดหมาย" needs ≥1 before-install row confirmed
+    // (deposit landed). The remaining before-install rows are re-validated
+    // at the final "บันทึกและไปขั้นตอนติดตั้ง" close — so sales can schedule
+    // the install appointment without waiting for every งวด to clear.
     if (from === 1) {
-      const unpaidBefore = persistedInstallments
+      const beforeRows = persistedInstallments
         .map((r, i) => ({ r, i }))
         .filter(({ r }) => r.when === "before")
-        .filter(({ i }) => rowNet(i) > 0)
-        .filter(({ i }) => !paidIdxSet.has(i));
-      if (unpaidBefore.length > 0) {
-        missing.push(`รับชำระงวดก่อนติดตั้งยังไม่ครบ (เหลือ ${unpaidBefore.length} งวด)`);
+        .filter(({ i }) => rowNet(i) > 0);
+      const paidBefore = beforeRows.filter(({ i }) => paidIdxSet.has(i));
+      if (beforeRows.length > 0 && paidBefore.length === 0) {
+        missing.push(`ต้องรับชำระอย่างน้อย 1 งวดก่อนติดตั้ง`);
       }
     }
     if (from === 2 && !installDate) missing.push("วันนัดติดตั้ง");

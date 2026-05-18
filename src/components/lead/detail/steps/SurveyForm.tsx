@@ -378,14 +378,14 @@ const SurveyForm = forwardRef<SurveyFormHandle, Props>(function SurveyForm({ lea
                   {m.label}
                 </button>
               ))}
+              <input
+                type="text"
+                placeholder="อื่นๆ ระบุ..."
+                value={meterSize.startsWith("other:") ? meterSize.slice(6) : ""}
+                onChange={e => setMeterSize(e.target.value ? `other:${e.target.value}` : "")}
+                className={`col-span-3 md:col-span-1 w-full h-9 px-3 rounded-lg border text-xxs focus:outline-none ${meterSize.startsWith("other") ? "border-active bg-active-light" : "border-gray-200 bg-white"}`}
+              />
             </div>
-            <input
-              type="text"
-              placeholder="อื่นๆ ระบุ..."
-              value={meterSize.startsWith("other:") ? meterSize.slice(6) : ""}
-              onChange={e => setMeterSize(e.target.value ? `other:${e.target.value}` : "")}
-              className={`w-full mt-2 h-11 px-3 rounded-lg border text-sm focus:outline-none ${meterSize.startsWith("other") ? "border-active bg-active-light" : "border-gray-200 bg-white"}`}
-            />
           </div>
 
           {/* 2.2 ระบบไฟ — chip + L-N/L-L label outside + voltage input. Two
@@ -394,8 +394,8 @@ const SurveyForm = forwardRef<SurveyFormHandle, Props>(function SurveyForm({ lea
                on phase switch so stale values don't leak. */}
           <div>
             <div className={subLabel}>ระบบไฟ <span className="text-red-500">*</span></div>
-            {/* 2 cols across all screen sizes — button = 1/3, label+input = 2/3 */}
-            <div className="grid grid-cols-[1fr_2fr] gap-2 items-center">
+            {/* 2 cols across all screen sizes — button = 1/4, label+input = 3/4 */}
+            <div className="grid grid-cols-[1fr_3fr] gap-2 items-center">
               <button type="button" onClick={() => {
                 setElectricalPhase("1_phase");
                 onPhaseChange?.("1_phase");
@@ -471,7 +471,7 @@ const SurveyForm = forwardRef<SurveyFormHandle, Props>(function SurveyForm({ lea
           {/* 2.7 ชนิดของลูกเซอร์กิต */}
           <div>
             <div className={subLabel}>ชนิดของลูกเซอร์กิต <span className="text-red-500">*</span></div>
-            <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
+            <div className="grid grid-cols-3 md:grid-cols-4 gap-2">
               {[
                 { value: "plug_on", label: "Plug On" },
                 { value: "screw", label: "ขันยึดสกรู" },
@@ -480,15 +480,15 @@ const SurveyForm = forwardRef<SurveyFormHandle, Props>(function SurveyForm({ lea
                   {b.label}
                 </button>
               ))}
+              <input
+                type="text"
+                placeholder="อื่นๆ ระบุ..."
+                value={breakerType.startsWith("other:") ? breakerType.slice(6) : ""}
+                onChange={e => setBreakerType(e.target.value ? `other:${e.target.value}` : "")}
+                onFocus={() => { if (!breakerType.startsWith("other")) setBreakerType("other:"); }}
+                className={`col-span-3 md:col-span-2 w-full h-9 px-3 rounded-lg border text-xxs focus:outline-none ${breakerType.startsWith("other") ? "border-active bg-active-light" : "border-gray-200 bg-white"}`}
+              />
             </div>
-            <input
-              type="text"
-              placeholder="อื่นๆ ระบุ..."
-              value={breakerType.startsWith("other:") ? breakerType.slice(6) : ""}
-              onChange={e => setBreakerType(e.target.value ? `other:${e.target.value}` : "")}
-              onFocus={() => { if (!breakerType.startsWith("other")) setBreakerType("other:"); }}
-              className={`w-full mt-2 h-11 px-3 rounded-lg border text-sm focus:outline-none ${breakerType.startsWith("other") ? "border-active bg-active-light" : "border-gray-200 bg-white"}`}
-            />
           </div>
 
           {/* 2.8 ระยะจากแผงถึงจุดเชื่อมต่อ Inverter */}
@@ -583,15 +583,15 @@ const SurveyForm = forwardRef<SurveyFormHandle, Props>(function SurveyForm({ lea
                   {b.label}
                 </button>
               ))}
+              <input
+                type="text"
+                placeholder="อื่นๆ ระบุ..."
+                value={roofStructure.startsWith("other:") ? roofStructure.slice(6) : ""}
+                onChange={e => setRoofStructure(e.target.value ? `other:${e.target.value}` : "")}
+                onFocus={() => { if (!roofStructure.startsWith("other")) setRoofStructure("other:"); }}
+                className={`col-span-3 md:col-span-1 w-full h-9 px-3 rounded-lg border text-xxs focus:outline-none ${roofStructure.startsWith("other") ? "border-active bg-active-light" : "border-gray-200 bg-white"}`}
+              />
             </div>
-            <input
-              type="text"
-              placeholder="อื่นๆ ระบุ..."
-              value={roofStructure.startsWith("other:") ? roofStructure.slice(6) : ""}
-              onChange={e => setRoofStructure(e.target.value ? `other:${e.target.value}` : "")}
-              onFocus={() => { if (!roofStructure.startsWith("other")) setRoofStructure("other:"); }}
-              className={`w-full mt-2 h-11 px-3 rounded-lg border text-sm focus:outline-none ${roofStructure.startsWith("other") ? "border-active bg-active-light" : "border-gray-200 bg-white"}`}
-            />
           </div>
 
           {/* 3.3 ทิศทางการวางแผง — same 1/3 chip + 2/3 input pattern as
@@ -691,17 +691,17 @@ const SurveyForm = forwardRef<SurveyFormHandle, Props>(function SurveyForm({ lea
                   {s.label}
                 </button>
               ))}
+              <input
+                type="text"
+                placeholder="ระบุสิ่งกีดขวาง..."
+                value={shading.includes(":") ? shading.split(":").slice(1).join(":") : ""}
+                onChange={e => {
+                  const base = shading.includes(":") ? shading.split(":")[0] : (shading || "partial");
+                  setShading(e.target.value ? `${base}:${e.target.value}` : base);
+                }}
+                className="col-span-3 md:col-span-1 w-full h-9 px-3 rounded-lg border border-gray-200 bg-white text-xxs focus:outline-none focus:border-primary"
+              />
             </div>
-            <input
-              type="text"
-              placeholder="ระบุสิ่งกีดขวาง เช่น ต้นไม้ทิศตะวันตก, ตึกข้างเคียง..."
-              value={shading.includes(":") ? shading.split(":").slice(1).join(":") : ""}
-              onChange={e => {
-                const base = shading.includes(":") ? shading.split(":")[0] : (shading || "partial");
-                setShading(e.target.value ? `${base}:${e.target.value}` : base);
-              }}
-              className="w-full mt-2 h-11 px-3 rounded-lg border border-gray-200 bg-white text-sm focus:outline-none focus:border-primary"
-            />
           </div>
 
         </div>
@@ -716,8 +716,8 @@ const SurveyForm = forwardRef<SurveyFormHandle, Props>(function SurveyForm({ lea
             <div className={subLabel}>จุดติดตั้ง Inverter <span className="text-red-500">*</span></div>
             <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
               {[
-                { value: "indoor", label: "ในร่ม (Indoor)" },
-                { value: "outdoor", label: "นอกอาคาร (Outdoor)" },
+                { value: "indoor", label: "ในร่ม" },
+                { value: "outdoor", label: "นอกอาคาร" },
               ].map(b => (
                 <button key={b.value} type="button" onClick={() => setInverterLocation(inverterLocation === b.value ? "" : b.value)} className={chipBtn(inverterLocation === b.value)}>
                   {b.label}
@@ -751,15 +751,15 @@ const SurveyForm = forwardRef<SurveyFormHandle, Props>(function SurveyForm({ lea
                   {b.label}
                 </button>
               ))}
+              <input
+                type="text"
+                placeholder="อื่นๆ ระบุ..."
+                value={accessMethod.startsWith("other:") ? accessMethod.slice(6) : ""}
+                onChange={e => setAccessMethod(e.target.value ? `other:${e.target.value}` : "")}
+                onFocus={() => { if (!accessMethod.startsWith("other")) setAccessMethod("other:"); }}
+                className={`col-span-3 md:col-span-1 w-full h-9 px-3 rounded-lg border text-xxs focus:outline-none ${accessMethod.startsWith("other") ? "border-active bg-active-light" : "border-gray-200 bg-white"}`}
+              />
             </div>
-            <input
-              type="text"
-              placeholder="อื่นๆ ระบุ..."
-              value={accessMethod.startsWith("other:") ? accessMethod.slice(6) : ""}
-              onChange={e => setAccessMethod(e.target.value ? `other:${e.target.value}` : "")}
-              onFocus={() => { if (!accessMethod.startsWith("other")) setAccessMethod("other:"); }}
-              className={`w-full mt-2 h-11 px-3 rounded-lg border text-sm focus:outline-none ${accessMethod.startsWith("other") ? "border-active bg-active-light" : "border-gray-200 bg-white"}`}
-            />
           </div>
         </div>
       </div>

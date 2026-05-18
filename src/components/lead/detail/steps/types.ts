@@ -19,6 +19,7 @@ export interface Lead {
   assigned_staff: string | null;
   assigned_user_id: number | null;
   assigned_name: string | null;
+  assigned_username?: string | null;
   pre_package_id: number | null;
   pre_slip_url: string | null;
   pre_doc_no: string | null;
@@ -65,6 +66,7 @@ export interface Lead {
   survey_electrical_phase: string | null;
   survey_wants_battery: string | null;
   survey_panel_count: number | null;
+  survey_customize_items: string | null;
   survey_monthly_bill: number | null;
   survey_appliances: string | null;
   // Must-have on-site

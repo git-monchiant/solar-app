@@ -71,6 +71,34 @@ export default function SurveyStep({ lead, state, refresh, packages, expanded, o
   const [surveyBattery, setSurveyBattery] = useState<string>(lead.survey_wants_battery ?? lead.pre_wants_battery ?? "");
   const [recommendedKw, setRecommendedKw] = useState<number | null>(lead.survey_recommended_kw ?? null);
   const [panelCount, setPanelCount] = useState<number | "">(lead.survey_panel_count ?? "");
+  // Customize-tab state — 3 fixed integer counts. Free-text notes reuse the
+  // existing package_note field. Stored as a single JSON object in
+  // leads.survey_customize_items.
+  type CustomizeData = { panel: number; battery: number; inverter: number };
+  const [customizeData, setCustomizeData] = useState<CustomizeData>(() => {
+    const raw = lead.survey_customize_items;
+    if (raw) {
+      try {
+        const obj = JSON.parse(raw);
+        if (obj && typeof obj === "object" && !Array.isArray(obj)) {
+          return {
+            panel: Number(obj.panel) || 0,
+            battery: Number(obj.battery) || 0,
+            inverter: Number(obj.inverter) || 0,
+          };
+        }
+      } catch { /* fall through */ }
+    }
+    return { panel: 0, battery: 0, inverter: 0 };
+  });
+  const patchCustomizeData = (next: CustomizeData) => {
+    setCustomizeData(next);
+    apiFetch(`/api/leads/${lead.id}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ survey_customize_items: JSON.stringify(next) }),
+    }).catch(console.error);
+  };
   const [surveyPhase, setSurveyPhase] = useState<string>(lead.survey_electrical_phase ?? lead.pre_electrical_phase ?? "");
   const [rescheduling, setRescheduling] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -881,53 +909,68 @@ export default function SurveyStep({ lead, state, refresh, packages, expanded, o
 
           <div>
             <div className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-2">ระบบ</div>
-            <div className="grid grid-cols-2 gap-2">
-              {[{ value: "no", label: "On Grid" }, { value: "yes", label: "Solar+Battery" }, { value: "upgrade", label: "+ Upgrade" }].map(b => (
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
+              {[
+                { value: "no",        label: "On Grid" },
+                { value: "yes",       label: "Solar+Battery" },
+                { value: "upgrade",   label: "+ Upgrade" },
+                { value: "customize", label: "Customize" },
+              ].map(b => (
                 <button key={b.value} type="button" onClick={() => {
                   setSurveyBattery(b.value);
                   setSelectedPkgs([]);
-                  apiFetch(`/api/leads/${lead.id}`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ survey_wants_battery: b.value, interested_package_ids: null, interested_package_id: null }) }).catch(console.error);
+                  // Customize tab has its own per-item counts → clear the
+                  // standalone survey_panel_count so it doesn't double-show.
+                  const patchBody: Record<string, unknown> = {
+                    survey_wants_battery: b.value,
+                    interested_package_ids: null,
+                    interested_package_id: null,
+                  };
+                  if (b.value === "customize") {
+                    setPanelCount("");
+                    patchBody.survey_panel_count = null;
+                  }
+                  apiFetch(`/api/leads/${lead.id}`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify(patchBody) }).catch(console.error);
                 }} className={`h-9 rounded-lg text-xs font-semibold border transition-all ${surveyBattery === b.value ? "bg-active text-white border-active" : "bg-white text-gray-600 border-gray-200"}`}>
                   {b.label}
                 </button>
               ))}
             </div>
-            <input
-              type="text"
-              placeholder="อื่นๆ ระบุ..."
-              value={surveyBattery.startsWith("other:") ? surveyBattery.slice(6) : ""}
-              onChange={e => {
-                const v = e.target.value ? `other:${e.target.value}` : "";
-                setSurveyBattery(v);
-                setSelectedPkgs([]);
-                apiFetch(`/api/leads/${lead.id}`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ survey_wants_battery: v || null, interested_package_ids: null, interested_package_id: null }) }).catch(console.error);
-              }}
-              onFocus={() => { if (!surveyBattery.startsWith("other")) setSurveyBattery("other:"); }}
-              className={`w-full mt-2 h-11 px-3 rounded-lg border text-sm focus:outline-none ${surveyBattery.startsWith("other") ? "border-active bg-active-light" : "border-gray-200 bg-white"}`}
-            />
+            {(surveyBattery === "customize" || surveyBattery.startsWith("customize:")) && (
+              <div className="mt-3 space-y-2">
+                {([
+                  { key: "panel",    label: "Panel" },
+                  { key: "battery",  label: "Battery" },
+                  { key: "inverter", label: "Inverter" },
+                ] as const).map(({ key, label }) => {
+                  const count = customizeData[key];
+                  return (
+                    <div key={key} className="flex items-center gap-2 bg-white border border-gray-200 rounded-lg px-3 py-2">
+                      <span className="flex-1 text-sm text-gray-700">{label}</span>
+                      <button
+                        type="button"
+                        onClick={() => patchCustomizeData({ ...customizeData, [key]: Math.max(0, count - 1) })}
+                        className="w-7 h-7 rounded-md border border-gray-200 text-gray-700 font-bold shrink-0 hover:border-active hover:text-active flex items-center justify-center"
+                      >−</button>
+                      <span className="w-6 text-center text-sm font-mono tabular-nums shrink-0">{count}</span>
+                      <button
+                        type="button"
+                        onClick={() => patchCustomizeData({ ...customizeData, [key]: count + 1 })}
+                        className="w-7 h-7 rounded-md border border-gray-200 text-gray-700 font-bold shrink-0 hover:border-active hover:text-active flex items-center justify-center"
+                      >+</button>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
           </div>
 
-          <div>
-            <div className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-2">จำนวน Panel</div>
-            <div className="relative">
-              <input
-                type="number"
-                inputMode="numeric"
-                value={panelCount === "" ? "" : panelCount}
-                onChange={e => {
-                  const v = e.target.value ? parseInt(e.target.value) : "";
-                  setPanelCount(v);
-                  apiFetch(`/api/leads/${lead.id}`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ survey_panel_count: typeof v === "number" ? v : null }) }).catch(console.error);
-                }}
-                placeholder="เช่น 10"
-                className="w-full h-10 pl-3 pr-14 rounded-lg border border-gray-200 bg-white text-sm font-mono tabular-nums focus:outline-none focus:border-primary"
-              />
-              <span className="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-gray-400 font-medium pointer-events-none">แผง</span>
-            </div>
-          </div>
-
-          <div className="text-xs font-semibold text-gray-400 uppercase tracking-wider">Package ที่เหมาะสม</div>
-          {(() => {
+          {/* Customize tab = custom system, skip the predefined package picker
+              + panel count + note. They render only for the other 3 tabs. */}
+          {!surveyBattery.startsWith("customize") && (
+            <div className="text-xs font-semibold text-gray-400 uppercase tracking-wider">Package ที่เหมาะสม</div>
+          )}
+          {!surveyBattery.startsWith("customize") && (() => {
             const phase = surveyPhase === "3_phase" ? 3 : surveyPhase === "1_phase" ? 1 : 0;
             const battery = surveyBattery;
             const availablePkgs = packages.filter(p => {
@@ -988,14 +1031,37 @@ export default function SurveyStep({ lead, state, refresh, packages, expanded, o
             ) : <div className="text-center py-6 text-xs text-gray-400">ไม่มีแพ็คเกจ</div>;
           })()}
 
-          {/* Package note — free-text below the package picker, surfaced on
-              the survey PDF beneath the package table. */}
+          {/* Panel count — non-customize tabs only (customize has its own Panel
+              row inside the stepper list above). */}
+          {!surveyBattery.startsWith("customize") && (
+            <div>
+              <div className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-2">จำนวน Panel</div>
+              <div className="relative">
+                <input
+                  type="number"
+                  inputMode="numeric"
+                  value={panelCount === "" ? "" : panelCount}
+                  onChange={e => {
+                    const v = e.target.value ? parseInt(e.target.value) : "";
+                    setPanelCount(v);
+                    apiFetch(`/api/leads/${lead.id}`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ survey_panel_count: typeof v === "number" ? v : null }) }).catch(console.error);
+                  }}
+                  placeholder="เช่น 10"
+                  className="w-full h-10 pl-3 pr-14 rounded-lg border border-gray-200 bg-white text-sm font-mono tabular-nums focus:outline-none focus:border-primary"
+                />
+                <span className="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-gray-400 font-medium pointer-events-none">แผง</span>
+              </div>
+            </div>
+          )}
+
           <div className="rounded-lg bg-white/60 border border-active/15 p-3">
-            <label className="text-xs font-semibold tracking-wider uppercase text-gray-400 block mb-2">บันทึกเกี่ยวกับแพ็คเกจ</label>
+            <label className="text-xs font-semibold tracking-wider uppercase text-gray-400 block mb-2">
+              {surveyBattery.startsWith("customize") ? "อื่นๆ" : "บันทึกเกี่ยวกับแพ็คเกจ"}
+            </label>
             <textarea
               value={packageNote}
               onChange={e => setPackageNote(e.target.value)}
-              placeholder="หมายเหตุเพิ่มเติม เช่น เพิ่ม panel, แบต option, ส่วนลดพิเศษ..."
+              placeholder={surveyBattery.startsWith("customize") ? "ระบุรายการเพิ่มเติม..." : "หมายเหตุเพิ่มเติม เช่น เพิ่ม panel, แบต option, ส่วนลดพิเศษ..."}
               rows={3}
               className="w-full px-3 py-2 rounded-lg border border-gray-200 bg-white text-sm focus:outline-none focus:border-primary resize-none"
             />
@@ -1006,7 +1072,7 @@ export default function SurveyStep({ lead, state, refresh, packages, expanded, o
               immediately on click so it survives a refresh. */}
           <div className="rounded-lg bg-white/60 border border-active/15 p-3">
             <label className="text-xs font-semibold tracking-wider uppercase text-gray-400 block mb-2">ประเภทใบเสนอราคา</label>
-            <div className="grid grid-cols-2 gap-2">
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
               {[
                 { value: "standard", label: "Standard" },
                 { value: "special", label: "Customization" },
@@ -1042,8 +1108,8 @@ export default function SurveyStep({ lead, state, refresh, packages, expanded, o
             />
           </div>
 
-          {/* การสำรวจหน้างาน — วันและผู้สำรวจจริง */}
-          <div className="grid grid-cols-2 gap-3">
+          {/* การสำรวจหน้างาน — วันและผู้สำรวจจริง · mobile: stack 1 col */}
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
             <div>
               <div className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-1.5">วันที่เข้าสำรวจจริง</div>
               <input type="date" value={actualDate} onChange={e => setActualDate(e.target.value)}
@@ -1056,13 +1122,12 @@ export default function SurveyStep({ lead, state, refresh, packages, expanded, o
             </div>
           </div>
 
-          {/* Preview survey PDF + optional LINE notify
-              mobile: flex (button auto, checkbox fills) · desktop: grid 1/3 + 2/3 */}
-          <div className="flex md:grid md:grid-cols-3 items-center gap-3">
+          {/* Preview survey PDF + optional LINE notify · mobile: stack 1 col */}
+          <div className="flex flex-col md:grid md:grid-cols-3 items-stretch md:items-center gap-3">
             <button
               type="button"
               onClick={openPdf}
-              className="shrink-0 md:col-span-1 md:w-auto h-10 px-4 rounded-lg text-sm font-semibold border border-gray-200 bg-white text-gray-700 hover:border-active hover:text-active hover:bg-active/5 transition-colors inline-flex items-center justify-center gap-2"
+              className="md:col-span-1 md:w-auto w-full h-10 px-4 rounded-lg text-sm font-semibold border border-gray-200 bg-white text-gray-700 hover:border-active hover:text-active hover:bg-active/5 transition-colors inline-flex items-center justify-center gap-2"
             >
               <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
                 <path strokeLinecap="round" strokeLinejoin="round" d="M2.036 12.322a1.012 1.012 0 010-.639C3.423 7.51 7.36 4.5 12 4.5c4.638 0 8.573 3.007 9.963 7.178.07.207.07.431 0 .639C20.577 16.49 16.64 19.5 12 19.5c-4.638 0-8.573-3.007-9.963-7.178z" />

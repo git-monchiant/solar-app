@@ -27,6 +27,11 @@ export interface LeadData {
   lost_reason: string | null;
   last_activity_note: string | null;
   last_activity_date: string | null;
+  last_activity_title?: string | null;
+  last_activity_type?: string | null;
+  order_paid_count?: number | null;
+  order_total_count?: number | null;
+  order_payment_progress?: string | null;
   pre_doc_no: string | null;
   pre_total_price: number | null;
   payment_confirmed?: boolean | null;
@@ -267,25 +272,56 @@ export default function LeadCard({ lead, compact, onAssignChange }: { lead: Lead
                 <span className="hidden md:inline">· สร้าง {formatThaiDateShort(lead.created_at)}</span>
               )}
               {lead.last_activity_date && (
-                <span className="hidden md:inline">· ติดตามล่าสุด {formatThaiDateShort(lead.last_activity_date)}</span>
+                <span className="hidden md:inline">
+                  · ติดตามล่าสุด {formatThaiDateShort(lead.last_activity_date)}
+                  {(() => {
+                    const t = lead.last_activity_title || "";
+                    const isOk = t.startsWith("ติดต่อได้");
+                    const isFail = t.startsWith("ติดต่อไม่ได้");
+                    const isOther = t === "อื่นๆ";
+                    const hasStructured = isOk || isFail || isOther;
+                    const tone = isOk ? "text-green-700" : isFail ? "text-red-700" : "text-gray-600";
+                    const type = lead.last_activity_type || "follow_up";
+                    const iconCls = `w-3 h-3 ${tone}`;
+                    const icon = !hasStructured ? null :
+                      type === "call" ? (
+                        <svg className={iconCls} fill="currentColor" viewBox="0 0 24 24"><path d="M6.62 10.79a15.05 15.05 0 006.59 6.59l2.2-2.2a1 1 0 011.05-.24c1.12.37 2.33.57 3.57.57a1 1 0 011 1V20a1 1 0 01-1 1A17 17 0 013 4a1 1 0 011-1h3.5a1 1 0 011 1c0 1.24.2 2.45.57 3.57a1 1 0 01-.24 1.05l-2.21 2.17z" /></svg>
+                      ) : type === "visit" ? (
+                        <svg className={iconCls} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6" /></svg>
+                      ) : type === "line" ? (
+                        <svg className={iconCls} viewBox="0 0 24 24" fill="currentColor"><path d="M19.365 9.863c.349 0 .63.285.63.631 0 .345-.281.63-.63.63H17.61v1.125h1.755c.349 0 .63.283.63.63 0 .344-.281.629-.63.629h-2.386c-.345 0-.627-.285-.627-.629V8.108c0-.345.282-.63.63-.63h2.386c.346 0 .627.285.627.63 0 .349-.281.63-.63.63H17.61v1.125h1.755zm-3.855 3.016c0 .27-.174.51-.432.596-.064.021-.133.031-.199.031-.211 0-.391-.09-.51-.25l-2.443-3.317v2.94c0 .344-.279.629-.631.629-.346 0-.626-.285-.626-.629V8.108c0-.27.173-.51.43-.595.064-.022.134-.032.2-.032.211 0 .391.09.51.25l2.44 3.317V8.108c0-.345.282-.63.63-.63.345 0 .63.285.63.63v4.771zm-5.741 0c0 .344-.282.629-.631.629-.345 0-.627-.285-.627-.629V8.108c0-.345.282-.63.63-.63.346 0 .628.285.628.63v4.771zm-2.466.629H4.917c-.345 0-.63-.285-.63-.629V8.108c0-.345.285-.63.63-.63.348 0 .63.285.63.63v4.141h1.756c.348 0 .629.283.629.63 0 .344-.282.629-.629.629M24 10.314C24 4.943 18.615.572 12 .572S0 4.943 0 10.314c0 4.811 4.27 8.842 10.035 9.608.391.082.923.258 1.058.59.12.301.079.766.038 1.08l-.164 1.02c-.045.301-.24 1.186 1.049.645 1.291-.539 6.916-4.078 9.436-6.975C23.176 14.393 24 12.458 24 10.314" /></svg>
+                      ) : type === "loan_followup" ? (
+                        <svg className={iconCls} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M2.25 8.25h19.5M2.25 9h19.5m-16.5 5.25h6m-6 2.25h3m-3.75 3h15a2.25 2.25 0 002.25-2.25V6.75A2.25 2.25 0 0019.5 4.5h-15a2.25 2.25 0 00-2.25 2.25v10.5A2.25 2.25 0 004.5 19.5z" /></svg>
+                      ) : (
+                        <span className={`w-1.5 h-1.5 rounded-full ${isOk ? "bg-green-500" : isFail ? "bg-red-500" : "bg-gray-400"}`} />
+                      );
+                    const note = lead.last_activity_note?.trim();
+                    if (!hasStructured && !note) return null;
+                    return (
+                      <span className="ml-1.5 inline-flex items-center gap-1">
+                        {icon}
+                        {hasStructured && <span className={`font-medium ${tone}`}>{t}</span>}
+                        {note && <span className="text-gray-500 font-normal italic">{hasStructured ? "— " : ""}{note}</span>}
+                      </span>
+                    );
+                  })()}
+                </span>
               )}
               {(lead.contact_count ?? 0) > 0 && (
                 <span className="font-semibold text-gray-600">· ติดตาม {lead.contact_count} ครั้ง</span>
-              )}
-              {!compact && lead.next_follow_up && (
-                <span className={`font-semibold ${isOverdue ? "text-red-600" : "text-amber-600"}`}>
-                  · นัดติดตามครั้งถัดไป {formatThaiDateShort(lead.next_follow_up)}{isOverdue ? " (Overdue)" : ""}
-                </span>
               )}
               {amount != null && (
                 <span className="font-semibold text-emerald-700 font-mono tabular-nums">
                   · {formatTHB(amount)} ฿
                 </span>
               )}
-              {/* Zone — ml-auto pushes it right on the same row when content
-                  fits, or to its own bottom-right line when meta wraps. */}
               {lead.zone && (
-                <span className="ml-auto truncate shrink-0">{lead.zone}</span>
+                <span className="truncate shrink-0">{lead.zone}</span>
+              )}
+              {!compact && lead.next_follow_up && (
+                <span className={`ml-auto font-semibold ${isOverdue ? "text-red-600" : "text-amber-600"}`}>
+                  นัดติดตามครั้งถัดไป {formatThaiDateShort(lead.next_follow_up)}{isOverdue ? " (Overdue)" : ""}
+                </span>
               )}
             </div>
           );

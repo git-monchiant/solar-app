@@ -5,7 +5,7 @@ import { logLeadActivity, fmtThaiDate } from "@/lib/lead-activity-log";
 
 const statusLabels: Record<string, string> = {
   pre_survey: "รอติดตาม",
-  survey: "สำรวจหน้างาน", quote: "รอใบเสนอราคา", order: "รออนุมัติ/ชำระ",
+  survey: "รอสำรวจ", quote: "รอใบเสนอราคา", order: "รออนุมัติ/ชำระ",
   install: "กำลังติดตั้ง", warranty: "ออกใบรับประกัน", gridtie: "ขอขนานไฟ",
   closed: "ส่งมอบแล้ว", lost: "ยกเลิก", returned: "ส่งกลับ Seeker",
 };
@@ -442,6 +442,10 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
     if (body.survey_wants_battery !== undefined) {
       sets.push("survey_wants_battery = @survey_wants_battery");
       request.input("survey_wants_battery", sql.NVarChar(20), body.survey_wants_battery);
+    }
+    if (body.survey_customize_items !== undefined) {
+      sets.push("survey_customize_items = @survey_customize_items");
+      request.input("survey_customize_items", sql.NVarChar(sql.MAX), body.survey_customize_items);
     }
     if (body.survey_panel_count !== undefined) {
       sets.push("survey_panel_count = @survey_panel_count");
@@ -1079,18 +1083,24 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
       if (dup.recordset.length === 0) {
         const oldLabel = statusLabels[oldStatus] || oldStatus;
         const newLabel = statusLabels[body.status] || body.status;
+        // When marking lost, attach the reason so the activity log shows
+        // who-when-why instead of just the status delta.
+        const lostNote = body.status === "lost" && body.lost_reason
+          ? String(body.lost_reason)
+          : null;
         // Stamp the actual user (was hardcoded 1 = Admin, which broke
         // attribution for seeker-driven status changes via sync).
         await db.request()
           .input("lead_id", sql.Int, leadId)
           .input("activity_type", sql.NVarChar(30), "status_change")
           .input("title", sql.NVarChar(200), `Status: ${oldLabel} → ${newLabel}`)
+          .input("note", sql.NVarChar(sql.MAX), lostNote)
           .input("old_status", sql.NVarChar(30), oldStatus)
           .input("new_status", sql.NVarChar(30), body.status)
           .input("created_by", sql.Int, gate.userId)
           .query(`
-            INSERT INTO lead_activities (lead_id, activity_type, title, old_status, new_status, created_by)
-            VALUES (@lead_id, @activity_type, @title, @old_status, @new_status, @created_by)
+            INSERT INTO lead_activities (lead_id, activity_type, title, note, old_status, new_status, created_by)
+            VALUES (@lead_id, @activity_type, @title, @note, @old_status, @new_status, @created_by)
           `);
       }
     }

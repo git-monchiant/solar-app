@@ -49,6 +49,7 @@ interface Lead {
   survey_lng: number | null;
   survey_note: string | null;
   package_note: string | null;
+  survey_customize_items: string | null;
   quotation_type: string | null;
   survey_photos: string | null;
   // Electrical
@@ -178,7 +179,7 @@ export default function SurveyPdfPage() {
         table.doc tfoot { display: table-footer-group; }
         table.doc td { padding: 0; vertical-align: top; }
         .strip-header, .strip-footer { -webkit-print-color-adjust: exact; print-color-adjust: exact; color-adjust: exact; }
-        .strip-header { height: 20mm; box-sizing: border-box; padding-top: 4mm !important; padding-bottom: 4mm !important; }
+        .strip-header { min-height: 20mm; box-sizing: border-box; padding-top: 4mm !important; padding-bottom: 4mm !important; }
         .tbody-pull-up { margin-top: -5mm; }
         .survey-body h2 { break-after: avoid; page-break-after: avoid; }
         .survey-body table { break-inside: auto; }
@@ -216,7 +217,7 @@ export default function SurveyPdfPage() {
                   <span className="text-xxs text-gray-500">SURVEY DATE: <span className="text-gray-800 font-semibold">{fmtDate(lead.survey_date)}{lead.survey_time_slot ? ` · ${slotTime}` : ""}</span></span>
                 </div>
 
-                <div className="px-[30px] py-4 flex flex-col gap-3.5 leading-[1.5]">
+                <div className="px-[30px] py-3 flex flex-col gap-2 leading-[1.35]">
 
                   {/* ข้อมูลลูกค้า */}
                   <div className="avoid-break">
@@ -311,10 +312,45 @@ export default function SurveyPdfPage() {
                   <Section title="4. ขนาดระบบที่เสนอ · RECOMMENDED SYSTEM">
                     <SpecGrid>
                       <Field label="ขนาดแนะนำ" value={lead.survey_recommended_kw != null ? `${lead.survey_recommended_kw} kWp` : "—"} />
-                      <Field label="จำนวน Panel" value={lead.survey_panel_count != null ? `${lead.survey_panel_count} แผง` : "—"} />
+                      {!lead.survey_wants_battery?.startsWith("customize") && (
+                        <Field label="จำนวน Panel" value={lead.survey_panel_count != null ? `${lead.survey_panel_count} แผง` : "—"} />
+                      )}
                       <Field label="ระบบ" value={otherLabel(lead.survey_wants_battery, BATTERY_MAP)} />
                     </SpecGrid>
-                    {packages.length > 0 && (
+                    {/* Customize system — show item counts table instead of
+                        predefined packages, since this is a one-off bundle. */}
+                    {lead.survey_wants_battery?.startsWith("customize") && lead.survey_customize_items && (() => {
+                      let obj: { panel?: number; battery?: number; inverter?: number } = {};
+                      try { obj = JSON.parse(lead.survey_customize_items) || {}; } catch {}
+                      const rows = [
+                        { label: "Panel",    count: Number(obj.panel) || 0 },
+                        { label: "Battery",  count: Number(obj.battery) || 0 },
+                        { label: "Inverter", count: Number(obj.inverter) || 0 },
+                      ].filter(r => r.count > 0);
+                      if (rows.length === 0) return null;
+                      return (
+                        <div className="mt-2.5">
+                          <div className="text-xxs font-bold uppercase tracking-wider text-black mb-1.5">รายการ Customize</div>
+                          <table className="w-full border border-gray-200 text-xxs">
+                            <thead className="bg-gray-50">
+                              <tr className="text-left">
+                                <th className="py-1.5 font-medium text-black" style={{ paddingLeft: "32px", paddingRight: "12px" }}>รายการ</th>
+                                <th className="py-1.5 font-medium text-black text-right" style={{ paddingLeft: "12px", paddingRight: "32px" }}>จำนวน</th>
+                              </tr>
+                            </thead>
+                            <tbody>
+                              {rows.map(r => (
+                                <tr key={r.label} className="border-t border-gray-100">
+                                  <td className="py-1.5" style={{ paddingLeft: "32px", paddingRight: "12px" }}>{r.label}</td>
+                                  <td className="py-1.5 text-right font-mono" style={{ paddingLeft: "12px", paddingRight: "32px" }}>{r.count}</td>
+                                </tr>
+                              ))}
+                            </tbody>
+                          </table>
+                        </div>
+                      );
+                    })()}
+                    {!lead.survey_wants_battery?.startsWith("customize") && packages.length > 0 && (
                       <div className="mt-2.5">
                         <div className="text-xxs font-bold uppercase tracking-wider text-black mb-1.5">แพ็คเกจที่เสนอ</div>
                         <table className="w-full border border-gray-200 text-xxs">
@@ -368,8 +404,8 @@ export default function SurveyPdfPage() {
                     <SignatureBox label="ผู้สำรวจ" name={d.signer?.full_name || lead.assigned_name || ""} signatureUrl={d.signer?.signature_url ?? null} />
                   </div>
 
-                  {/* 6. Photo Checklist — pushed to last page(s) */}
-                  <div style={{ breakBefore: "page" }}>
+                  {/* 6. Photo Checklist — flow on same page as sections 4-5 */}
+                  <div>
                     <Section title="บันทึกภาพหน้างาน · PHOTO CHECKLIST">
                       <div className="grid grid-cols-2 gap-3">
                         {photoSlots.map((p) => (

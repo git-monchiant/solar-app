@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { Fragment, useState } from "react";
 import { apiFetch } from "@/lib/api";
 import DateSlider from "@/components/ui/DateSlider";
 import CalendarPicker from "@/components/calendar/CalendarPicker";
@@ -49,9 +49,13 @@ const FOLLOW_UP_METHODS: { value: string; label: string; icon: React.ReactNode }
 
 // §28 — ผลการติดต่อ per attempt. Tone drives the small dot color: ok = green,
 // fail = red, neutral = gray. Order matches what sales actually picks most.
-const OUTCOMES: { value: string; label: string; tone: "ok" | "fail" | "neutral" }[] = [
+type OutcomeRow =
+  | { value: string; label: string; tone: "ok" | "fail" | "neutral" }
+  | { group: string };
+const OUTCOMES: OutcomeRow[] = [
   { value: "ติดต่อได้ - Sale เสนอขาย",          label: "เสนอขายแล้ว",            tone: "ok" },
   { value: "ติดต่อได้ - ลูกค้าไม่สะดวกคุย",       label: "ลูกค้าไม่สะดวกคุย",        tone: "ok" },
+  { group: "ติดต่อไม่ได้" },
   { value: "ติดต่อไม่ได้ - ไม่รับสาย",            label: "ไม่รับสาย",               tone: "fail" },
   { value: "ติดต่อไม่ได้ - ข้อมูลติดต่อไม่ถูกต้อง", label: "ข้อมูลติดต่อไม่ถูกต้อง",   tone: "fail" },
   { value: "อื่นๆ",                               label: "อื่นๆ",                    tone: "neutral" },
@@ -326,100 +330,113 @@ export default function AddActivityModal({ activityType, leadId, canSendBack = f
 
         {/* 3. ผลการติดต่อ — flat radio rows, dot color encodes tone */}
         <section>
-          <div className="text-xs font-bold text-gray-400 uppercase tracking-wider mb-1.5">
-            ผลการติดต่อ <span className="text-red-500">*</span>
+          <div className="text-xs font-bold text-gray-400 uppercase tracking-wider mb-1.5 flex items-center gap-1.5">
+            <svg className="w-3.5 h-3.5 text-green-600" fill="currentColor" viewBox="0 0 20 20">
+              <path d="M2 3a1 1 0 011-1h2.153a1 1 0 01.986.836l.74 4.435a1 1 0 01-.54 1.06l-1.548.773a11.037 11.037 0 006.105 6.105l.774-1.548a1 1 0 011.059-.54l4.435.74a1 1 0 01.836.986V17a1 1 0 01-1 1h-2C7.82 18 2 12.18 2 5V3z" />
+            </svg>
+            <span>ติดต่อได้ <span className="text-red-500">*</span></span>
           </div>
           <div className="space-y-1.5">
-            {OUTCOMES.map((o) => {
+            {OUTCOMES.map((o, i) => {
+              if ("group" in o) {
+                return (
+                  <div
+                    key={`g-${i}`}
+                    className="text-xs font-bold text-gray-400 uppercase tracking-wider pt-2 pb-0.5 flex items-center gap-1.5"
+                  >
+                    <svg className="w-3.5 h-3.5 text-red-600" fill="currentColor" viewBox="0 0 20 20">
+                      <path d="M2 3a1 1 0 011-1h2.153a1 1 0 01.986.836l.74 4.435a1 1 0 01-.54 1.06l-1.548.773a11.037 11.037 0 006.105 6.105l.774-1.548a1 1 0 011.059-.54l4.435.74a1 1 0 01.836.986V17a1 1 0 01-1 1h-2C7.82 18 2 12.18 2 5V3z" />
+                      <path d="M14 4l4 4M18 4l-4 4" stroke="currentColor" strokeWidth="2" fill="none" strokeLinecap="round" />
+                    </svg>
+                    <span>{o.group}</span>
+                  </div>
+                );
+              }
               const selected = outcome === o.value;
               return (
-                <button
-                  key={o.value}
-                  type="button"
-                  onClick={() => {
-                    setOutcome(o.value);
-                    if (o.value !== SALE_OFFER) {
-                      setUndecidedReason("");
-                      setInterestReasons([]);
-                    }
-                  }}
-                  className={`w-full text-left px-3 py-2.5 rounded-lg border text-sm transition-colors flex items-center gap-3 ${
-                    selected
-                      ? "border-gray-800 bg-gray-50 text-gray-900 font-semibold"
-                      : "border-gray-200 bg-white text-gray-700 hover:border-gray-300"
-                  }`}
-                >
-                  <span className={dotClass(o.tone, selected)} />
-                  <span className="flex-1">{o.label}</span>
-                  {selected && (
-                    <svg className="w-4 h-4 text-gray-700" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={3}>
-                      <path strokeLinecap="round" strokeLinejoin="round" d="M4.5 12.75l6 6 9-13.5" />
-                    </svg>
+                <Fragment key={o.value}>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setOutcome(o.value);
+                      if (o.value !== SALE_OFFER) {
+                        setUndecidedReason("");
+                        setInterestReasons([]);
+                      }
+                    }}
+                    className={`w-full text-left px-3 py-2.5 rounded-lg border text-sm transition-colors flex items-center gap-3 ${
+                      selected
+                        ? "border-gray-800 bg-gray-50 text-gray-900 font-semibold"
+                        : "border-gray-200 bg-white text-gray-700 hover:border-gray-300"
+                    }`}
+                  >
+                    <span className={dotClass(o.tone, selected)} />
+                    <span className="flex-1">{o.label}</span>
+                    {selected && (
+                      <svg className="w-4 h-4 text-gray-700" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={3}>
+                        <path strokeLinecap="round" strokeLinejoin="round" d="M4.5 12.75l6 6 9-13.5" />
+                      </svg>
+                    )}
+                  </button>
+                  {o.value === SALE_OFFER && showUndecided && (
+                    <div className="pl-3 pr-1 py-2 space-y-3 border-l-2 border-gray-200 ml-1">
+                      <div>
+                        <div className="text-xs font-bold text-gray-400 uppercase tracking-wider mb-1.5">
+                          เหตุผลที่ยังไม่ตัดสินใจ <span className="font-normal text-gray-400">(ถ้ามี)</span>
+                        </div>
+                        <div className="flex flex-wrap gap-1.5">
+                          {UNDECIDED_REASONS.map((r) => {
+                            const sel = undecidedReason === r;
+                            return (
+                              <button
+                                key={r}
+                                type="button"
+                                onClick={() => setUndecidedReason(sel ? "" : r)}
+                                className={`px-3 py-1.5 rounded-full text-xs font-semibold border transition-colors ${
+                                  sel
+                                    ? "bg-amber-500 text-white border-amber-500"
+                                    : "bg-white text-gray-700 border-gray-200 hover:border-amber-300"
+                                }`}
+                              >
+                                {r}
+                              </button>
+                            );
+                          })}
+                        </div>
+                      </div>
+                      <div>
+                        <div className="text-xs font-bold text-gray-400 uppercase tracking-wider mb-1.5">
+                          เหตุผลที่สนใจ <span className="font-normal text-gray-400">(เลือกได้หลายอัน)</span>
+                        </div>
+                        <div className="flex flex-wrap gap-1.5">
+                          {INTEREST_REASONS.map((r) => {
+                            const sel = interestReasons.includes(r);
+                            return (
+                              <button
+                                key={r}
+                                type="button"
+                                onClick={() => setInterestReasons(prev =>
+                                  sel ? prev.filter(x => x !== r) : [...prev, r]
+                                )}
+                                className={`px-3 py-1.5 rounded-full text-xs font-semibold border transition-colors ${
+                                  sel
+                                    ? "bg-emerald-500 text-white border-emerald-500"
+                                    : "bg-white text-gray-700 border-gray-200 hover:border-emerald-300"
+                                }`}
+                              >
+                                {r}
+                              </button>
+                            );
+                          })}
+                        </div>
+                      </div>
+                    </div>
                   )}
-                </button>
+                </Fragment>
               );
             })}
           </div>
         </section>
-
-        {/* 3b. Conditional — เหตุผลยังไม่ตัดสินใจ */}
-        {showUndecided && (
-          <section>
-            <div className="text-xs font-bold text-gray-400 uppercase tracking-wider mb-1.5">
-              เหตุผลที่ยังไม่ตัดสินใจ <span className="font-normal text-gray-400">(ถ้ามี)</span>
-            </div>
-            <div className="flex flex-wrap gap-1.5">
-              {UNDECIDED_REASONS.map((r) => {
-                const selected = undecidedReason === r;
-                return (
-                  <button
-                    key={r}
-                    type="button"
-                    onClick={() => setUndecidedReason(selected ? "" : r)}
-                    className={`px-3 py-1.5 rounded-full text-xs font-semibold border transition-colors ${
-                      selected
-                        ? "bg-amber-500 text-white border-amber-500"
-                        : "bg-white text-gray-700 border-gray-200 hover:border-amber-300"
-                    }`}
-                  >
-                    {r}
-                  </button>
-                );
-              })}
-            </div>
-          </section>
-        )}
-
-        {/* 3c. Conditional — เหตุผลที่สนใจ (multi-select). Mirrors the
-             prospect form so we capture WHY the customer is interested. */}
-        {showUndecided && (
-          <section>
-            <div className="text-xs font-bold text-gray-400 uppercase tracking-wider mb-1.5">
-              เหตุผลที่สนใจ <span className="font-normal text-gray-400">(เลือกได้หลายอัน)</span>
-            </div>
-            <div className="flex flex-wrap gap-1.5">
-              {INTEREST_REASONS.map((r) => {
-                const selected = interestReasons.includes(r);
-                return (
-                  <button
-                    key={r}
-                    type="button"
-                    onClick={() => setInterestReasons(prev =>
-                      selected ? prev.filter(x => x !== r) : [...prev, r]
-                    )}
-                    className={`px-3 py-1.5 rounded-full text-xs font-semibold border transition-colors ${
-                      selected
-                        ? "bg-emerald-500 text-white border-emerald-500"
-                        : "bg-white text-gray-700 border-gray-200 hover:border-emerald-300"
-                    }`}
-                  >
-                    {r}
-                  </button>
-                );
-              })}
-            </div>
-          </section>
-        )}
 
         {/* 4. หมายเหตุ */}
         <section>

@@ -1,21 +1,29 @@
 # Migrations
 
-Forward-only, versioned schema/data migrations. **This folder must stay empty until a new migration is added.**
+Forward-only, versioned schema/data migrations pending **prod**. This folder
+stays empty in the steady state — every file here is moved to
+`_archive/migrations/` as soon as it has been applied to prod.
 
 ## Conventions
 
-- Filename: `NNN_<short-description>.mjs` — sequential, never reused
+- Filename: `NNN_<short-description>.{sql|mjs}` — sequential, never reused
 - Idempotent if possible (safe to re-run)
 - One change per file — keep it small
-- After applying to **prod**, leave the file here for one release cycle, then move to `_archive/migrations/`
+- `.mjs` migrations MUST accept `--db=<name>` and exit non-zero on failure
+  so the deploy tool can spawn + verify them
 
 ## How to apply
 
 ```bash
-node scripts/tools/apply_migration.mjs scripts/migrations/NNN_<name>.sql   # SQL files
-node scripts/migrations/NNN_<name>.mjs                                      # mjs files
+# Test on dev first (does NOT archive — files stay so you can re-deploy to prod)
+node scripts/tools/deploy_migrations.mjs --db=solardb_dev --yes
+
+# Production — applies all pending in order, archives on success
+node scripts/tools/deploy_migrations.mjs --db=solardb --yes
 ```
 
-## Environment safety
+Both `.sql` and `.mjs` files are picked up automatically. SQL runs via the
+mssql driver, mjs is spawned as a child process.
 
-UAT shares the production database. Test new migrations against `solardb_dev` (or local) first. See top-level memory `uat-shares-prod-db`.
+The dev DB (`solardb_dev`) lives on the same MSSQL instance as prod
+(`solardb`); see top-level memory `prod-deploy-script` for the env distinction.

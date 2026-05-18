@@ -731,12 +731,20 @@ export default function LeadDetailPage({ params }: { params: Promise<{ id: strin
                     return { main: `${label} · ${eventStr}`, save: saveStr };
                   })()
                 : null;
-              const bodyText = latest ? (latest.note || latest.title) : null;
+              // Structured follow-up outcome (e.g. "ติดต่อได้ - ลูกค้าไม่สะดวกคุย")
+              // lives in `title`. Older auto-generated titles like "Called customer"
+              // are filtered out so legacy data doesn't leak.
+              const titleStr = latest?.title ?? "";
+              const isOkTitle = titleStr.startsWith("ติดต่อได้");
+              const isFailTitle = titleStr.startsWith("ติดต่อไม่ได้");
+              const isOtherTitle = titleStr === "อื่นๆ";
+              const structuredTitle = (isOkTitle || isFailTitle || isOtherTitle) ? titleStr : null;
+              const bodyText = latest ? (latest.note || (!structuredTitle ? latest.title : null)) : null;
               const createdBy = latest?.created_by_name ?? null;
               const accentColor = latest
                 ? (typeMap[latest.activity_type]?.color || "bg-gray-500") + " text-white"
                 : "bg-gray-50 text-gray-400 ring-1 ring-inset ring-gray-200";
-              const isEmpty = !bodyText;
+              const isEmpty = !bodyText && !structuredTitle;
 
               return (
                 <div
@@ -767,6 +775,17 @@ export default function LeadDetailPage({ params }: { params: Promise<{ id: strin
                     </div>
                     {!isEmpty && (
                       <div className="text-sm text-gray-700 leading-relaxed whitespace-pre-wrap mt-3 pt-3 border-t border-gray-100">
+                        {structuredTitle && (
+                          <div className="mb-1.5">
+                            <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-semibold border ${
+                              isOkTitle
+                                ? "bg-green-50 text-green-700 border-green-200"
+                                : isFailTitle
+                                ? "bg-red-50 text-red-700 border-red-200"
+                                : "bg-gray-50 text-gray-600 border-gray-200"
+                            }`}>{structuredTitle}</span>
+                          </div>
+                        )}
                         {bodyText}
                         {(() => {
                           // Pick the latest follow_up_date scheduled across activities,

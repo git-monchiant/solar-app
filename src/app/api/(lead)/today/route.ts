@@ -28,6 +28,13 @@ const LEAD_COLS = `
   u.full_name as assigned_name, u.username as assigned_username,
   COALESCE(act.contact_count, 0) AS contact_count,
   last_act.last_activity_date,
+  last_act.last_activity_title,
+  last_act.last_activity_type,
+  last_act.last_activity_note,
+  COALESCE(pay.paid_count, 0) AS order_paid_count,
+  COALESCE(pay.total_count, 0) AS order_total_count,
+  CAST(COALESCE(pay.paid_count, 0) AS NVARCHAR(10))
+    + N'/' + CAST(COALESCE(pay.total_count, 0) AS NVARCHAR(10)) AS order_payment_progress,
   CAST(CASE
     WHEN l.next_follow_up IS NOT NULL
      AND l.next_follow_up < CAST(GETDATE() AS DATE)
@@ -52,8 +59,8 @@ const LEAD_FROM = `
   LEFT JOIN (
     SELECT
       a.lead_id,
-      SUM(CASE WHEN a.activity_type IN ('call','visit','follow_up','loan_followup') THEN 1 ELSE 0 END) AS contact_count,
-      MAX(CASE WHEN a.activity_type = 'follow_up'
+      SUM(CASE WHEN a.activity_type IN ('call','visit','line','other','follow_up','loan_followup') THEN 1 ELSE 0 END) AS contact_count,
+      MAX(CASE WHEN a.activity_type IN ('call','visit','line','other','follow_up','loan_followup')
                THEN COALESCE(a.followup_date, CAST(a.created_at AS DATE))
           END) AS last_followup_date
     FROM lead_activities a
@@ -61,11 +68,23 @@ const LEAD_FROM = `
   ) act ON act.lead_id = l.id
   OUTER APPLY (
     SELECT TOP 1
-      COALESCE(followup_date, CAST(created_at AS DATE)) AS last_activity_date
+      COALESCE(followup_date, CAST(created_at AS DATE)) AS last_activity_date,
+      title AS last_activity_title,
+      activity_type AS last_activity_type,
+      note AS last_activity_note
     FROM lead_activities
     WHERE lead_id = l.id
+      AND activity_type IN ('call', 'visit', 'line', 'other', 'follow_up', 'loan_followup')
     ORDER BY created_at DESC
   ) last_act
+  LEFT JOIN (
+    SELECT lead_id,
+      COUNT(CASE WHEN confirmed_at IS NOT NULL THEN 1 END) AS paid_count,
+      COUNT(*) AS total_count
+    FROM payments
+    WHERE slip_field LIKE 'order_installment_%'
+    GROUP BY lead_id
+  ) pay ON pay.lead_id = l.id
 `;
 
 function fix<T extends Record<string, unknown>>(rs: T[]): T[] {

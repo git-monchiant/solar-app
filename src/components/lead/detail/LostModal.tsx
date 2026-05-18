@@ -102,6 +102,28 @@ const REASON_GROUPS: Group[] = [
     ],
   },
   {
+    key: "finance",
+    title: "สินเชื่อ",
+    accent: {
+      text: "text-violet-700",
+      bg: "bg-violet-50/40",
+      border: "border-violet-200",
+      headBg: "bg-violet-100/70",
+      selBorder: "border-violet-500",
+      selBg: "bg-violet-50",
+      selText: "text-violet-800",
+      selDot: "bg-violet-500",
+    },
+    icon: (
+      <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+        <path strokeLinecap="round" strokeLinejoin="round" d="M3 10h18M5 6h14a2 2 0 012 2v8a2 2 0 01-2 2H5a2 2 0 01-2-2V8a2 2 0 012-2z" />
+      </svg>
+    ),
+    items: [
+      "สินเชื่อไม่อนุมัติ - ลูกค้ายกเลิก",
+    ],
+  },
+  {
     key: "lost_sale",
     title: "ปิดการขายไม่สำเร็จ",
     accent: {
@@ -125,28 +147,6 @@ const REASON_GROUPS: Group[] = [
       "ราคาสูง",
     ],
   },
-  {
-    key: "finance",
-    title: "สินเชื่อ",
-    accent: {
-      text: "text-violet-700",
-      bg: "bg-violet-50/40",
-      border: "border-violet-200",
-      headBg: "bg-violet-100/70",
-      selBorder: "border-violet-500",
-      selBg: "bg-violet-50",
-      selText: "text-violet-800",
-      selDot: "bg-violet-500",
-    },
-    icon: (
-      <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-        <path strokeLinecap="round" strokeLinejoin="round" d="M3 10h18M5 6h14a2 2 0 012 2v8a2 2 0 01-2 2H5a2 2 0 01-2-2V8a2 2 0 012-2z" />
-      </svg>
-    ),
-    items: [
-      "สินเชื่อไม่อนุมัติ - ลูกค้ายกเลิก",
-    ],
-  },
 ];
 
 const OTHER = "อื่นๆ";
@@ -164,8 +164,15 @@ export default function LostModal({ leadId, onClose, onSaved }: Props) {
   const [error, setError] = useState<string | null>(null);
 
   const isOther = reason === OTHER;
-  const finalReason = isOther ? otherNote.trim() : reason;
-  const canSubmit = finalReason.length > 0 && !saving;
+  // Find which group the picked item belongs to so we can prepend the group
+  // header — activity log + reporting needs the category, not just the leaf.
+  const selectedGroup = REASON_GROUPS.find(g => g.items.includes(reason));
+  const finalReason = isOther
+    ? `อื่นๆ — ${otherNote.trim()}`
+    : selectedGroup
+    ? `${selectedGroup.title} — ${reason}`
+    : reason;
+  const canSubmit = (isOther ? otherNote.trim().length > 0 : reason.length > 0) && !saving;
 
   const handleSubmit = async () => {
     if (!canSubmit) return;
@@ -228,7 +235,7 @@ export default function LostModal({ leadId, onClose, onSaved }: Props) {
         {/* Group cards. Mobile 1 col → Tablet 2 col → Desktop 4 col side-by-side
             so all groups are visible horizontally without scroll. items-start
             keeps cards top-aligned despite uneven item counts (1–6). */}
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-3 items-start">
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-3 items-start">
           {REASON_GROUPS.map((g) => (
             <section
               key={g.key}

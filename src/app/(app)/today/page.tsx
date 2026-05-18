@@ -7,7 +7,7 @@ import ListPageHeader from "@/components/layout/ListPageHeader";
 import NewLeadModal from "@/components/modal/NewLeadModal";
 import ChannelPickerModal from "@/components/shared/ChannelPickerModal";
 import type { ChannelCode } from "@/lib/constants/channels";
-import { useActiveRoles, hasRole } from "@/lib/roles";
+import { useActiveRoles, hasRole, useMe } from "@/lib/roles";
 import EventCalendarList from "@/components/calendar/EventCalendarList";
 
 interface TodayData {
@@ -28,8 +28,9 @@ interface TodayData {
 
 export default function TodayPage() {
   const [todayData, setTodayData] = useState<TodayData | null>(null);
+  const [allLeads, setAllLeads] = useState<LeadData[] | null>(null);
   const [loading, setLoading] = useState(true);
-  const [tab, setTab] = useState<"sales_all" | "sales" | "booking" | "quote" | "sales_solar" | "solar" | "solar_survey" | "solar_quote" | "solar_install" | "calendar">("sales_all");
+  const [tab, setTab] = useState<"sales_all" | "sales" | "booking" | "quote" | "deposit_paid" | "sales_solar" | "solar" | "solar_survey" | "solar_quote" | "solar_install" | "calendar">("sales_all");
   const [search, setSearch] = useState("");
   const [zones, setZones] = useState<{ id: number; name: string; color?: string | null }[]>([]);
   const [selectedZone, setSelectedZone] = useState<string>("กรุงเทพ ทีม 1");
@@ -37,7 +38,9 @@ export default function TodayPage() {
   const [pickedChannel, setPickedChannel] = useState<ChannelCode | null>(null);
   const [sortField, setSortField] = useState<"follow_up" | "created" | "name" | "activity">("follow_up");
   const [sortOrder, setSortOrder] = useState<"asc" | "desc">("asc");
+  const [mineOnly, setMineOnly] = useState(false);
   const { activeRoles } = useActiveRoles();
+  const { me } = useMe();
 
   useEffect(() => {
     const savedZone = localStorage.getItem("selectedZone");
@@ -51,10 +54,15 @@ export default function TodayPage() {
     if (savedSortOrder === "asc" || savedSortOrder === "desc") {
       setSortOrder(savedSortOrder);
     }
+    if (localStorage.getItem("today.mineOnly") === "1") setMineOnly(true);
 
     apiFetch("/api/zones").then(setZones).catch(console.error);
-    apiFetch("/api/today").then((t) => {
+    Promise.all([
+      apiFetch("/api/today"),
+      apiFetch("/api/leads"),
+    ]).then(([t, leads]: [TodayData, LeadData[]]) => {
       setTodayData(t);
+      setAllLeads(leads);
     }).catch(console.error).finally(() => setLoading(false));
   }, []);
 
@@ -66,11 +74,11 @@ export default function TodayPage() {
     const isSales = hasRole(activeRoles, "sales");
     const isSolar = hasRole(activeRoles, "solar", "smartify");
     const validKeys: string[] = [];
-    if (isSales) validKeys.push("sales_all", "sales", "booking", "quote", "sales_solar");
+    if (isSales) validKeys.push("sales_all", "sales", "booking", "quote", "deposit_paid", "sales_solar");
     if (isSolar) validKeys.push("solar", "solar_survey", "solar_quote", "solar_install");
     validKeys.push("calendar");
     if (!validKeys.includes(tab)) {
-      const fallback = validKeys[0] as "sales_all" | "sales" | "booking" | "quote" | "sales_solar" | "solar" | "solar_survey" | "solar_quote" | "solar_install" | "calendar";
+      const fallback = validKeys[0] as "sales_all" | "sales" | "booking" | "quote" | "deposit_paid" | "sales_solar" | "solar" | "solar_survey" | "solar_quote" | "solar_install" | "calendar";
       setTab(fallback);
     }
   }, [activeRoles, tab]);
@@ -102,9 +110,13 @@ export default function TodayPage() {
   const raw = todayData!;
 
   const filterLeads = (leads: LeadData[]) => {
-    if (!search.trim()) return leads;
+    let out = leads;
+    if (mineOnly && me?.id) {
+      out = out.filter(l => l.assigned_user_id === me.id);
+    }
+    if (!search.trim()) return out;
     const q = search.trim().toLowerCase();
-    return leads.filter(l =>
+    return out.filter(l =>
       l.full_name?.toLowerCase().includes(q) ||
       l.phone?.includes(q) ||
       l.project_name?.toLowerCase().includes(q) ||
@@ -118,6 +130,7 @@ export default function TodayPage() {
     );
   };
 
+  const allInstallPending = filterLeads(raw.installPending);
   const d = {
     followUpOverdue: filterLeads(raw.followUpOverdue),
     followUpToday: filterLeads(raw.followUpToday),
@@ -127,7 +140,9 @@ export default function TodayPage() {
     surveyToday: filterLeads(raw.surveyToday),
     surveyPending: filterLeads(raw.surveyPending),
     quotationPending: filterLeads(raw.quotationPending),
-    installPending: filterLeads(raw.installPending),
+    // Split รอเสนอราคา (no installment paid yet) from ชำระมัดจำ (≥1 confirmed)
+    installPending: allInstallPending.filter(l => (l.order_paid_count ?? 0) === 0),
+    depositPaid: allInstallPending.filter(l => (l.order_paid_count ?? 0) >= 1),
     installing: filterLeads(raw.installing || []),
     recentlyClosed: filterLeads(raw.recentlyClosed || []),
     booking: filterLeads(raw.booking || []),
@@ -185,6 +200,20 @@ export default function TodayPage() {
   // badge so they sit on the same row as the group number across every tab.
   const sortControls = (
     <>
+      <button
+        type="button"
+        onClick={() => {
+          const next = !mineOnly;
+          setMineOnly(next);
+          localStorage.setItem("today.mineOnly", next ? "1" : "0");
+        }}
+        className="h-7 inline-flex items-center gap-1.5 px-1 text-xxs font-medium text-gray-700 cursor-pointer"
+      >
+        <span className={`w-3.5 h-3.5 rounded-full border-2 flex items-center justify-center transition-colors ${mineOnly ? "border-gray-800 bg-gray-800" : "border-gray-300"}`}>
+          {mineOnly && <svg className="w-2 h-2 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={4}><path strokeLinecap="round" strokeLinejoin="round" d="M4.5 12.75l6 6 9-13.5" /></svg>}
+        </span>
+        งานของฉัน
+      </button>
       <select
         value={sortField}
         onChange={(e) => {
@@ -214,29 +243,26 @@ export default function TodayPage() {
     </>
   );
 
-  const salesAllCount =
-    d.followUpOverdue.length +
-    d.followUpToday.length +
-    d.newLeads.length +
-    bookingCount +
-    d.installPending.length +
-    d.quotationPending.length;
+  // sales_all tab now shows ALL leads (same as Pipeline > ทั้งหมด), so count
+  // matches the filtered all-leads list rather than summed today buckets.
+  const salesAllCount = allLeads ? filterLeads(allLeads).length : 0;
 
   const allTabs = [
     isSales && { key: "sales_all", label: "ทั้งหมด", count: salesAllCount },
     isSales && { key: "sales", label: "ติดตามลูกค้า", count: salesCount },
     isSales && { key: "booking", label: "รายการจอง", count: bookingCount },
-    isSales && { key: "quote", label: "เสนอราคา", count: d.installPending.length },
-    isSales && { key: "sales_solar", label: "ติดตามงาน", count: salesSolarCount },
+    isSales && { key: "quote", label: "รอเสนอราคา", count: d.installPending.length },
+    isSales && { key: "deposit_paid", label: "ชำระมัดจำ", count: d.depositPaid.length },
+    isSales && { key: "sales_solar", label: "ติดตามใบเสนอราคา", count: salesSolarCount },
     isSolar && { key: "solar", label: "ทั้งหมด", count: solarCount },
-    isSolar && { key: "solar_survey", label: "สำรวจ", count: solarSurveyCount },
-    isSolar && { key: "solar_quote", label: "ใบเสนอราคา", count: solarQuoteCount },
-    isSolar && { key: "solar_install", label: "ติดตั้ง", count: solarInstallCount },
+    isSolar && { key: "solar_survey", label: "รอสำรวจ", count: solarSurveyCount },
+    isSolar && { key: "solar_quote", label: "รอทำใบเสนอราคา", count: solarQuoteCount },
+    isSolar && { key: "solar_install", label: "รอติดตั้ง", count: solarInstallCount },
     { key: "calendar", label: "ปฏิทิน" },
   ].filter(Boolean) as { key: string; label: string; count?: number }[];
 
   // While effect re-syncs an invalid tab, render against an in-bounds key
-  const visibleTab = (allTabs.some(t => t.key === tab) ? tab : (allTabs[0]?.key ?? "calendar")) as "sales_all" | "sales" | "booking" | "quote" | "sales_solar" | "solar" | "solar_survey" | "solar_quote" | "solar_install" | "calendar";
+  const visibleTab = (allTabs.some(t => t.key === tab) ? tab : (allTabs[0]?.key ?? "calendar")) as "sales_all" | "sales" | "booking" | "quote" | "deposit_paid" | "sales_solar" | "solar" | "solar_survey" | "solar_quote" | "solar_install" | "calendar";
 
   return (
     <div>
@@ -253,7 +279,8 @@ export default function TodayPage() {
 
       {/* Content */}
       <div className="p-4 space-y-5">
-        {/* Sales · ทั้งหมด — รวมทุก section ของ sales tabs เรียงตามความเร่งด่วน */}
+        {/* Sales · ทั้งหมด — เรียงตาม section เดิม + section "อื่นๆ" รวม leads
+            ที่ไม่อยู่ใน bucket ใดข้างบน (เพื่อให้เห็น lead ครบทุกใบเหมือน pipeline) */}
         {visibleTab === "sales_all" && (() => {
           // First-visible-section flag: sort dropdowns sit inline with that
           // section's count so they appear on the same row as the group number.
@@ -263,6 +290,7 @@ export default function TodayPage() {
             : d.newLeads.length > 0 ? "newLeads"
             : d.booking.length > 0 ? "booking"
             : d.installPending.length > 0 ? "installPending"
+            : d.depositPaid.length > 0 ? "depositPaid"
             : d.quotationPending.length > 0 ? "quotationPending"
             : null;
           return (
@@ -327,6 +355,18 @@ export default function TodayPage() {
                 <div className="space-y-3">{sortLeads(d.installPending).map((l) => <LeadCard key={l.id} lead={l} />)}</div>
               </section>
             )}
+            {d.depositPaid.length > 0 && (
+              <section>
+                <div className="flex items-center justify-between mb-3 px-1">
+                  <h2 className="text-xs font-bold tracking-wider uppercase text-emerald-700">ชำระมัดจำแล้ว</h2>
+                  <div className="flex items-center gap-2">
+                    {firstSection === "depositPaid" && sortControls}
+                    <span className="text-xs font-semibold text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded-full">{d.depositPaid.length}</span>
+                  </div>
+                </div>
+                <div className="space-y-3">{sortLeads(d.depositPaid).map((l) => <LeadCard key={l.id} lead={l} />)}</div>
+              </section>
+            )}
             {d.quotationPending.length > 0 && (
               <section>
                 <div className="flex items-center justify-between mb-3 px-1">
@@ -339,6 +379,30 @@ export default function TodayPage() {
                 <div className="space-y-3">{sortLeads(d.quotationPending).map((l) => <LeadCard key={l.id} lead={l} />)}</div>
               </section>
             )}
+            {/* Rest of leads — anything not in the priority sections above */}
+            {(() => {
+              if (!allLeads) return null;
+              const seen = new Set<number>([
+                ...d.followUpOverdue.map(l => l.id),
+                ...d.followUpToday.map(l => l.id),
+                ...d.newLeads.map(l => l.id),
+                ...d.booking.map(l => l.id),
+                ...d.installPending.map(l => l.id),
+                ...d.depositPaid.map(l => l.id),
+                ...d.quotationPending.map(l => l.id),
+              ]);
+              const rest = filterLeads(allLeads).filter(l => !seen.has(l.id));
+              if (rest.length === 0) return null;
+              return (
+                <section>
+                  <div className="flex items-center justify-between mb-3 px-1">
+                    <h2 className="text-xs font-bold tracking-wider uppercase text-gray-500">อื่นๆ</h2>
+                    <span className="text-xs font-semibold text-gray-500 bg-gray-100 px-2 py-0.5 rounded-full">{rest.length}</span>
+                  </div>
+                  <div className="space-y-3">{sortLeads(rest).map((l) => <LeadCard key={l.id} lead={l} />)}</div>
+                </section>
+              );
+            })()}
             {salesAllCount === 0 && (
               <div className="text-center py-16">
                 <div className="w-16 h-16 mx-auto rounded-full bg-emerald-50 flex items-center justify-center mb-3">
@@ -461,6 +525,32 @@ export default function TodayPage() {
                 </div>
                 <div className="text-base font-semibold text-gray-900">ยังไม่มีรายการเสนอราคา</div>
                 <div className="text-sm text-gray-500 mt-1">หลังสำรวจเสร็จและออกใบเสนอราคา จะปรากฏที่นี่</div>
+              </div>
+            )}
+          </>
+        )}
+
+        {/* Deposit-Paid Tab — leads at status='order' with ≥1 confirmed installment */}
+        {visibleTab === "deposit_paid" && (
+          <>
+            {d.depositPaid.length > 0 ? (
+              <section>
+                <div className="flex items-center justify-between mb-3 px-1">
+                  <h2 className="text-xs font-bold tracking-wider uppercase text-emerald-700">ชำระมัดจำแล้ว</h2>
+                  <div className="flex items-center gap-2">
+                    {sortControls}
+                    <span className="text-xs font-semibold text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded-full">{d.depositPaid.length}</span>
+                  </div>
+                </div>
+                <div className="space-y-3">{sortLeads(d.depositPaid).map((l) => <LeadCard key={l.id} lead={l} />)}</div>
+              </section>
+            ) : (
+              <div className="text-center py-16">
+                <div className="w-16 h-16 mx-auto rounded-full bg-emerald-50 flex items-center justify-center mb-3">
+                  <svg className="w-8 h-8 text-emerald-500" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M2.25 18.75a60.07 60.07 0 0115.797 2.101c.727.198 1.453-.342 1.453-1.096V18.75M3.75 4.5v.75A.75.75 0 013 6h-.75m0 0v-.375c0-.621.504-1.125 1.125-1.125H20.25M2.25 6v9m18-10.5v.75c0 .414.336.75.75.75h.75m-1.5-1.5h.375c.621 0 1.125.504 1.125 1.125v9.75c0 .621-.504 1.125-1.125 1.125h-.375" /></svg>
+                </div>
+                <div className="text-base font-semibold text-gray-900">ยังไม่มีรายการชำระมัดจำ</div>
+                <div className="text-sm text-gray-500 mt-1">รายการที่ชำระงวด 1 แล้วจะปรากฏที่นี่</div>
               </div>
             )}
           </>

@@ -40,7 +40,10 @@ export async function GET(req: NextRequest) {
              pk.name as package_name, pk.price as package_price,
              u.full_name as assigned_name, u.username as assigned_username,
              (SELECT TOP 1 note FROM lead_activities WHERE lead_id = l.id AND note IS NOT NULL ORDER BY created_at DESC) as last_activity_note,
-             (SELECT TOP 1 created_at FROM lead_activities WHERE lead_id = l.id ORDER BY created_at DESC) as last_activity_date
+             (SELECT TOP 1 created_at FROM lead_activities WHERE lead_id = l.id AND activity_type IN ('call','visit','line','other','follow_up','loan_followup') ORDER BY created_at DESC) as last_activity_date,
+             (SELECT TOP 1 title FROM lead_activities WHERE lead_id = l.id AND activity_type IN ('call','visit','line','other','follow_up','loan_followup') ORDER BY created_at DESC) as last_activity_title,
+             (SELECT TOP 1 activity_type FROM lead_activities WHERE lead_id = l.id AND activity_type IN ('call','visit','line','other','follow_up','loan_followup') ORDER BY created_at DESC) as last_activity_type,
+             (SELECT COUNT(*) FROM payments WHERE lead_id = l.id AND slip_field LIKE 'order_installment_%' AND confirmed_at IS NOT NULL) as order_paid_count
       FROM leads l
       LEFT JOIN projects p ON l.project_id = p.id
       LEFT JOIN packages pk ON l.interested_package_id = pk.id

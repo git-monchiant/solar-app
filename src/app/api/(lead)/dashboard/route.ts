@@ -67,13 +67,18 @@ export async function GET(req: NextRequest) {
       db.request().query(`
         SELECT COALESCE(la.followup_date, CAST(la.created_at AS DATE)) as day, la.lead_id, l.full_name, la.activity_type,
                COALESCE(
-                 (SELECT TOP 1 new_status FROM lead_activities
-                  WHERE lead_id = la.lead_id AND activity_type = 'status_change'
-                    AND created_at <= DATEADD(day, 1, CAST(la.created_at AS DATE))
+                 (SELECT TOP 1
+                    CASE WHEN activity_type = 'status_change' THEN new_status ELSE NULL END
+                  FROM lead_activities
+                  WHERE lead_id = la.lead_id
+                    AND CAST(created_at AS DATE) = CAST(la.created_at AS DATE)
                   ORDER BY created_at DESC),
                  'pre_survey'
                ) as lead_status,
-               (SELECT COUNT(*) FROM lead_activities WHERE lead_id = la.lead_id AND created_at <= DATEADD(day, 1, CAST(la.created_at AS DATE))) as total_activities,
+               (SELECT COUNT(*) FROM lead_activities
+                WHERE lead_id = la.lead_id
+                  AND activity_type IN ('call','visit','line','other','follow_up','loan_followup')
+                  AND created_at <= DATEADD(day, 1, CAST(la.created_at AS DATE))) as total_activities,
                CASE WHEN EXISTS (
                  SELECT 1 FROM lead_activities
                  WHERE lead_id = la.lead_id AND activity_type = 'payment_confirmed'
@@ -81,8 +86,9 @@ export async function GET(req: NextRequest) {
                ) THEN 1 ELSE 0 END as has_paid
         FROM lead_activities la
         JOIN leads l ON la.lead_id = l.id
-        WHERE la.created_at >= DATEADD(day, -33, CAST(GETDATE() AS DATE))
-           OR la.followup_date >= DATEADD(day, -33, CAST(GETDATE() AS DATE))
+        WHERE la.activity_type IN ('lead_created','call','visit','line','other','follow_up','loan_followup')
+          AND (la.created_at >= DATEADD(day, -33, CAST(GETDATE() AS DATE))
+            OR la.followup_date >= DATEADD(day, -33, CAST(GETDATE() AS DATE)))
         ORDER BY day, la.created_at ASC
       `),
     ]);

@@ -1,3 +1,5 @@
+import { STATUS_CONFIG, getMainStatus } from "@/lib/constants/statuses";
+
 interface Activity {
   id: number;
   activity_type: string;
@@ -105,8 +107,20 @@ export default function ActivityItem({ activity, isLast }: { activity: Activity;
   // Title was historically "Scheduled follow-up for <date>" which read as if
   // the event happened on that date — but it's actually the NEXT scheduled
   // date. Build the header from structured fields so it's unambiguous.
-  const typeLabel = TYPE_LABELS[activity.activity_type] || "บันทึก";
+  const newStatusLabel = activity.new_status
+    ? (STATUS_CONFIG[activity.new_status]?.label ?? STATUS_CONFIG[getMainStatus(activity.new_status)]?.label ?? activity.new_status)
+    : "";
+  const typeLabel = activity.activity_type === "status_change" && newStatusLabel
+    ? `เปลี่ยนสถานะเป็น : ${newStatusLabel}`
+    : (TYPE_LABELS[activity.activity_type] || "บันทึก");
   const eventDate = activity.followup_date || activity.created_at;
+  // Status changes to 'lost' / 'returned' read as cancellations — render the
+  // dot + label in red so the timeline visually flags them.
+  const isLostChange = activity.activity_type === "status_change"
+    && (activity.new_status === "lost" || activity.new_status === "returned");
+  const dotColor = isLostChange ? "bg-red-500" : config.color;
+  const headColor = isLostChange ? "text-red-600" : "text-gray-900";
+  const noteColor = isLostChange ? "text-red-600" : "text-gray-700";
   const sd = new Date(activity.created_at);
   const isNoonDefault = sd.getHours() === 12 && sd.getMinutes() === 0 && sd.getSeconds() === 0;
   const saveStr = isNoonDefault
@@ -116,7 +130,7 @@ export default function ActivityItem({ activity, isLast }: { activity: Activity;
   return (
     <div className="flex gap-3">
       <div className="flex flex-col items-center">
-        <div className={`w-8 h-8 rounded-full flex items-center justify-center shrink-0 ${config.color}`}>
+        <div className={`w-8 h-8 rounded-full flex items-center justify-center shrink-0 ${dotColor}`}>
           <svg className="w-4 h-4 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
             <path strokeLinecap="round" strokeLinejoin="round" d={config.icon} />
           </svg>
@@ -124,12 +138,46 @@ export default function ActivityItem({ activity, isLast }: { activity: Activity;
         {!isLast && <div className="w-px flex-1 bg-gray-200 mt-1" />}
       </div>
       <div className="flex-1 pb-4 min-w-0">
-        <div className="font-semibold text-sm text-gray-900">
+        <div className={`font-semibold text-sm ${headColor}`}>
           {typeLabel} · {formatThaiDate(eventDate)}
           <span className="ml-1 text-xs font-normal text-gray-400">· บันทึกเมื่อ {saveStr}</span>
         </div>
+        {activity.title && (() => {
+          const t = activity.title;
+          const isOk = t.startsWith("ติดต่อได้");
+          const isFail = t.startsWith("ติดต่อไม่ได้");
+          const isOther = t === "อื่นๆ";
+          if (!isOk && !isFail && !isOther) return null;
+          const cls = isOk
+            ? "bg-green-50 text-green-700 border-green-200"
+            : isFail
+            ? "bg-red-50 text-red-700 border-red-200"
+            : "bg-gray-50 text-gray-600 border-gray-200";
+          return (
+            <span className={`inline-flex items-center mt-1 px-2 py-0.5 rounded-full text-xs font-semibold border ${cls}`}>
+              {t}
+            </span>
+          );
+        })()}
+        {activity.activity_type === "status_change" && activity.old_status && activity.new_status && (() => {
+          const labelOf = (s: string) => STATUS_CONFIG[s]?.label ?? STATUS_CONFIG[getMainStatus(s)]?.label ?? s;
+          const tone = (s: string) => {
+            if (s === "lost" || s === "returned") return "bg-red-50 text-red-700 border-red-200";
+            if (s === "closed" || s === "warranty") return "bg-teal-50 text-teal-700 border-teal-200";
+            return "bg-gray-50 text-gray-700 border-gray-200";
+          };
+          return (
+            <div className="flex items-center gap-1.5 mt-1 text-xs">
+              <span className={`px-2 py-0.5 rounded-full border font-semibold ${tone(activity.old_status)}`}>{labelOf(activity.old_status)}</span>
+              <svg className="w-3 h-3 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                <path strokeLinecap="round" strokeLinejoin="round" d="M17 8l4 4m0 0l-4 4m4-4H3" />
+              </svg>
+              <span className={`px-2 py-0.5 rounded-full border font-semibold ${tone(activity.new_status)}`}>{labelOf(activity.new_status)}</span>
+            </div>
+          );
+        })()}
         {activity.note && (
-          <div className="text-sm text-gray-700 mt-1 whitespace-pre-wrap">{activity.note}</div>
+          <div className={`text-sm mt-1 whitespace-pre-wrap ${noteColor}`}>{activity.note}</div>
         )}
         {activity.follow_up_date && (
           <div className="text-xs text-amber-700 font-semibold mt-1">

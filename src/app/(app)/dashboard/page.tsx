@@ -53,7 +53,7 @@ export default function DashboardPage() {
   // See InstallStep.tsx (→warranty), WarrantyStep.tsx (→gridtie), GridTieStep.tsx (→closed).
   const pipelineSteps: { status: string; label: string; color: string; count: number }[] = [
     { status: "pre_survey", label: "รอติดตาม",         color: "bg-sky-500",     count: countsByStatus["pre_survey"] || 0 },
-    { status: "survey",     label: "สำรวจหน้างาน",       color: "bg-violet-500",  count: countsByStatus["survey"] || 0 },
+    { status: "survey",     label: "รอสำรวจ",       color: "bg-violet-500",  count: countsByStatus["survey"] || 0 },
     { status: "quote",      label: "รอใบเสนอราคา",       color: "bg-orange-500",  count: countsByStatus["quote"] || 0 },
     { status: "order",      label: "รออนุมัติ/ชำระ",     color: "bg-green-500",   count: countsByStatus["order"] || 0 },
     { status: "install",    label: "กำลังติดตั้ง",       color: "bg-emerald-500", count: countsByStatus["install"] || 0 },
@@ -117,10 +117,17 @@ export default function DashboardPage() {
               iconBg: "bg-teal-50", iconColor: "text-teal-600",
               icon: "M2.25 18.75a60.07 60.07 0 0115.797 2.101c.727.198 1.453-.342 1.453-1.096V18.75M3.75 4.5v.75A.75.75 0 013 6h-.75m0 0v-.375c0-.621.504-1.125 1.125-1.125H20.25M2.25 6v9m18-10.5v.75c0 .414.336.75.75.75h.75m-1.5-1.5h.375c.621 0 1.125.504 1.125 1.125v9.75c0 .621-.504 1.125-1.125 1.125h-.375m1.5-1.5H21a.75.75 0 00-.75.75v.75m0 0H3.75m0 0h-.375a1.125 1.125 0 01-1.125-1.125V15m1.5 1.5v-.75A.75.75 0 003 15h-.75M15 12a3 3 0 11-6 0 3 3 0 016 0z",
             },
+            {
+              label: "ยกเลิก",
+              value: String(countsByStatus["lost"] || 0),
+              sub: "Marked lost",
+              iconBg: "bg-red-50", iconColor: "text-red-600",
+              icon: "M6 18L18 6M6 6l12 12",
+            },
           ];
 
           return (
-            <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
+            <div className="grid grid-cols-2 md:grid-cols-6 gap-3">
               {kpis.map(k => (
                 <div key={k.label} className="rounded-2xl bg-white border border-gray-200 p-4 hover:shadow-sm transition-shadow">
                   <div className="flex items-start justify-between mb-3">
@@ -142,13 +149,11 @@ export default function DashboardPage() {
 
         {/* Activity Heatmap */}
         <div className="rounded-xl bg-white border border-gray-300 p-4">
-          <div className="text-xs font-semibold uppercase tracking-wider text-gray-400 mb-3">การติดตามลูกค้า <span className="normal-case text-gray-300">(30 วันล่าสุด)</span></div>
           <ActivityChart data={data.activity_heatmap} />
         </div>
 
         {/* LINE OA growth */}
         <div className="rounded-xl bg-white border border-gray-300 p-4">
-          <div className="text-xs font-semibold uppercase tracking-wider text-gray-400 mb-3">Add LINE OA รายวัน <span className="normal-case text-gray-300">(30 วันล่าสุด)</span></div>
           <LineGrowthChart users={lineUsers} />
         </div>
 
@@ -244,7 +249,15 @@ export default function DashboardPage() {
 function ActivityChart({ data }: { data: { day: string; lead_id: number; full_name: string; lead_status: string; activity_type?: string; total_activities: number; has_paid: boolean }[] }) {
   const router = useRouter();
   const [isMobile, setIsMobile] = useState(false);
+  const [mode, setMode] = useState<"all" | "create" | "activity">("all");
   useEffect(() => { setIsMobile(window.innerWidth < 768); }, []);
+
+  // Filter rows by mode (All / Create / Activity)
+  const filteredData = data.filter(row => {
+    if (mode === "all") return true;
+    if (mode === "create") return row.activity_type === "lead_created";
+    return row.activity_type && row.activity_type !== "lead_created";
+  });
 
   // Rolling window: 30 days history + 3-day future buffer (matches seeker dashboard).
   // Mobile keeps the tighter 7+1 view because there's no horizontal room.
@@ -275,7 +288,7 @@ function ActivityChart({ data }: { data: { day: string; lead_id: number; full_na
   const seen: Record<string, Set<number>> = {};
   dayKeys.forEach(k => { seen[k] = new Set(); });
 
-  data.forEach(row => {
+  filteredData.forEach(row => {
     const dk = String(row.day).slice(0, 10);
     if (!byDay[dk] || seen[dk].has(row.lead_id)) return;
     seen[dk].add(row.lead_id);
@@ -283,13 +296,16 @@ function ActivityChart({ data }: { data: { day: string; lead_id: number; full_na
   });
 
   const maxLeads = Math.max(...dayKeys.map(k => byDay[k].length), 1);
-  const maxTotal = Math.max(...data.map(d => d.total_activities), 1);
+  const maxTotal = Math.max(...filteredData.map(d => d.total_activities), 1);
 
-  const primaryColors = ["bg-primary/20", "bg-primary/40", "bg-primary/60", "bg-primary/80", "bg-primary"];
+  const primaryColors = ["bg-primary/50", "bg-primary/65", "bg-primary/80", "bg-primary/90", "bg-primary"];
   const blueColors = ["bg-sky-200", "bg-sky-300", "bg-sky-400", "bg-sky-500", "bg-sky-600"];
+  const redColors = ["bg-red-200", "bg-red-300", "bg-red-400", "bg-red-500", "bg-red-600"];
 
-  const getColor = (total: number, actType: string) => {
-    const colors = actType === "lead_created" ? blueColors : primaryColors;
+  const getColor = (total: number, actType: string, status: string) => {
+    const colors = status === "lost" || status === "returned"
+      ? redColors
+      : actType === "lead_created" ? blueColors : primaryColors;
     const ratio = total / maxTotal;
     if (ratio <= 0.2) return colors[0];
     if (ratio <= 0.4) return colors[1];
@@ -299,27 +315,33 @@ function ActivityChart({ data }: { data: { day: string; lead_id: number; full_na
   };
 
   const [tooltip, setTooltip] = useState<{ x: number; y: number; text: string } | null>(null);
-  const chartH = maxLeads * 20 + 20;
-  const blockH = 0;
-
-  const yTicks: number[] = [];
-  for (let i = 0; i <= maxLeads; i++) {
-    if (maxLeads <= 5 || i % Math.ceil(maxLeads / 4) === 0 || i === maxLeads) {
-      yTicks.push(i);
-    }
-  }
-  if (!yTicks.includes(maxLeads)) yTicks.push(maxLeads);
+  // Block size fixed; chart container grows so every block fits at its real
+  // size without overflow.
+  const blockH = 7;
+  const ROW_GAP = 2;
+  const chartH = maxLeads * (blockH + ROW_GAP) + 20;
 
   return (
     <div>
+      <div className="flex items-center justify-between mb-3">
+        <div className="text-xs font-semibold uppercase tracking-wider text-gray-400">
+          การติดตามลูกค้า <span className="normal-case text-gray-300">(30 วันล่าสุด)</span>
+        </div>
+        <select
+          value={mode}
+          onChange={(e) => setMode(e.target.value as typeof mode)}
+          className="h-7 px-2 pr-6 rounded-md border border-gray-200 bg-white text-xxs font-medium text-gray-700 focus:outline-none focus:border-gray-400"
+        >
+          <option value="all">All</option>
+          <option value="create">Create</option>
+          <option value="activity">Activity</option>
+        </select>
+      </div>
       <div className="flex">
-        {/* Y axis */}
-        <div className="flex flex-col-reverse justify-between pr-2" style={{ height: chartH }}>
-          {yTicks.map(t => (
-            <div key={t} className="text-xxs text-gray-400 text-right leading-none" style={{ marginBottom: t === 0 ? 0 : undefined }}>
-              {t}
-            </div>
-          ))}
+        {/* Y axis — only max + 0 */}
+        <div className="flex flex-col justify-between pr-2" style={{ height: chartH }}>
+          <div className="text-xxs text-gray-400 text-right leading-none">{maxLeads}</div>
+          <div className="text-xxs text-gray-400 text-right leading-none">0</div>
         </div>
         {/* Bars */}
         <div className="flex-1 flex items-end gap-[3px] border-l border-b border-gray-200" style={{ height: chartH }}>
@@ -330,12 +352,12 @@ function ActivityChart({ data }: { data: { day: string; lead_id: number; full_na
                 {blocks.map((b, i) => (
                   <div
                     key={i}
-                    className={`rounded-sm ${getColor(b.total, b.actType)} hover:ring-1 hover:ring-primary cursor-pointer`}
-                    style={{ height: 18 }}
+                    className={`rounded-sm shrink-0 ${getColor(b.total, b.actType, b.status)} hover:ring-1 hover:ring-primary cursor-pointer`}
+                    style={{ height: blockH, minHeight: blockH }}
                     onMouseEnter={e => {
                       const r = e.currentTarget.getBoundingClientRect();
                       const isFollow = ["follow_up","call","visit","note"].includes(b.actType);
-                      const statusLabel: Record<string,string> = { pre_survey: "รอติดตาม", survey: "สำรวจหน้างาน", quote: "รอใบเสนอราคา", order: "รออนุมัติ/ชำระ", install: "กำลังติดตั้ง", closed: "ส่งมอบแล้ว", lost: "ยกเลิก", returned: "ส่งกลับ Seeker" };
+                      const statusLabel: Record<string,string> = { pre_survey: "รอติดตาม", survey: "รอสำรวจ", quote: "รอใบเสนอราคา", order: "รออนุมัติ/ชำระ", install: "กำลังติดตั้ง", closed: "ส่งมอบแล้ว", lost: "ยกเลิก", returned: "ส่งกลับ Seeker" };
                       const label = isFollow ? "ติดตาม" : (statusLabel[b.status] || b.status);
                       setTooltip({ x: r.left + r.width / 2, y: r.top - 4, text: `${b.name} · ${label} · ${b.total} ครั้ง` });
                     }}
@@ -343,6 +365,9 @@ function ActivityChart({ data }: { data: { day: string; lead_id: number; full_na
                     onClick={() => router.push(`/leads/${b.lead_id}`)}
                   />
                 ))}
+                {blocks.length > 0 && (
+                  <div className="text-center text-xxs font-bold text-gray-700 tabular-nums leading-none mb-0.5">{blocks.length}</div>
+                )}
               </div>
             );
           })}
@@ -387,6 +412,14 @@ function ActivityChart({ data }: { data: { day: string; lead_id: number; full_na
 }
 
 function LineGrowthChart({ users }: { users: { created_at: string; phone: string | null; house_number: string | null }[] }) {
+  const [mode, setMode] = useState<"all" | "line" | "line_phone">("all");
+  // Filter users by mode: All / Line (no contact) / Line + Phone (has contact)
+  const filteredUsers = users.filter(u => {
+    if (mode === "all") return true;
+    const hasContact = !!u.phone || !!u.house_number;
+    if (mode === "line") return !hasContact;
+    return hasContact;
+  });
   // Rolling 30 days history + 3-day future buffer (matches seeker dashboard).
   const today = new Date();
   const HISTORY = 30;
@@ -399,7 +432,7 @@ function LineGrowthChart({ users }: { users: { created_at: string; phone: string
   const indexByKey = new Map(dayKeys.map((k, i) => [k, i]));
 
   const byDay: { phone: string | null; house_number: string | null; ts: number }[][] = dayKeys.map(() => []);
-  for (const u of users) {
+  for (const u of filteredUsers) {
     const d = new Date(String(u.created_at));
     if (isNaN(d.getTime())) continue;
     const k = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
@@ -411,23 +444,34 @@ function LineGrowthChart({ users }: { users: { created_at: string; phone: string
 
   const counts = byDay.map((b) => b.length);
   const maxCount = Math.max(...counts, 1);
-  const chartH = maxCount * 20 + 20;
-
-  const yTicks: number[] = [];
-  const step = Math.max(1, Math.ceil(maxCount / 4));
-  for (let i = 0; i <= maxCount; i += step) yTicks.push(i);
-  if (!yTicks.includes(maxCount)) yTicks.push(maxCount);
+  // Block size fixed; chart grows to fit max-day stack.
+  const blockH = 7;
+  const ROW_GAP = 2;
+  const chartH = maxCount * (blockH + ROW_GAP) + 20;
 
   const totalMonth = counts.reduce((a, b) => a + b, 0);
   const totalWithContact = byDay.flat().filter((b) => !!b.phone || !!b.house_number).length;
 
   return (
     <div>
+      <div className="flex items-center justify-between mb-3">
+        <div className="text-xs font-semibold uppercase tracking-wider text-gray-400">
+          Add LINE OA รายวัน <span className="normal-case text-gray-300">(30 วันล่าสุด)</span>
+        </div>
+        <select
+          value={mode}
+          onChange={(e) => setMode(e.target.value as typeof mode)}
+          className="h-7 px-2 pr-6 rounded-md border border-gray-200 bg-white text-xxs font-medium text-gray-700 focus:outline-none focus:border-gray-400"
+        >
+          <option value="all">All</option>
+          <option value="line">Line</option>
+          <option value="line_phone">Line + Phone</option>
+        </select>
+      </div>
       <div className="flex">
-        <div className="flex flex-col-reverse justify-between pr-2" style={{ height: chartH }}>
-          {yTicks.map((t) => (
-            <div key={t} className="text-xxs text-gray-400 text-right leading-none">{t}</div>
-          ))}
+        <div className="flex flex-col justify-between pr-2" style={{ height: chartH }}>
+          <div className="text-xxs text-gray-400 text-right leading-none">{maxCount}</div>
+          <div className="text-xxs text-gray-400 text-right leading-none">0</div>
         </div>
         <div className="flex-1 flex items-end gap-[3px] border-l border-b border-gray-200" style={{ height: chartH }}>
           {byDay.map((blocks, i) => (
@@ -439,12 +483,15 @@ function LineGrowthChart({ users }: { users: { created_at: string; phone: string
                 return (
                   <div
                     key={j}
-                    className={`rounded-sm ${hasContact ? "bg-blue-600" : "bg-emerald-500"}`}
-                    style={{ height: 18 }}
+                    className={`rounded-sm shrink-0 ${hasContact ? "bg-blue-600" : "bg-emerald-500"}`}
+                    style={{ height: blockH, minHeight: blockH }}
                     title={`${dayLabel} · ${tip}`}
                   />
                 );
               })}
+              {blocks.length > 0 && (
+                <div className="text-center text-xxs font-bold text-gray-700 tabular-nums leading-none mb-0.5">{blocks.length}</div>
+              )}
             </div>
           ))}
         </div>

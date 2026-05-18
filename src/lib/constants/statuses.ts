@@ -21,7 +21,7 @@ export const STATUS_CONFIG: Record<string, { label: string; color: string; bg: s
   pre_survey:  { label: "รอติดตาม",     color: "bg-sky-500",     bg: "bg-sky-50",     text: "text-sky-700",     icon: "M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0z",  description: "Registered or walked in — first contact",      action: "Log Contact" },
   "pre_survey-01": { label: "รอยืนยันรับเงิน", color: "bg-amber-500", bg: "bg-amber-50", text: "text-amber-700", icon: "M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z",  description: "Slip submitted — waiting for accountant", action: "Confirm Receipt" },
   "pre_survey-02": { label: "จอง",          color: "bg-emerald-500", bg: "bg-emerald-50", text: "text-emerald-700", icon: "M9 12.75L11.25 15 15 9.75M21 12a9 9 0 11-18 0 9 9 0 0118 0z",  description: "Booked — waiting for survey",          action: "Schedule Survey" },
-  survey:        { label: "สำรวจหน้างาน",   color: "bg-violet-500",  bg: "bg-violet-50",  text: "text-violet-700",  icon: "M15 10.5a3 3 0 11-6 0 3 3 0 016 0zM19.5 10.5c0 7.142-7.5 11.25-7.5 11.25S4.5 17.642 4.5 10.5a7.5 7.5 0 1115 0z",  description: "Site survey scheduled",                action: "Schedule Survey" },
+  survey:        { label: "รอสำรวจ",   color: "bg-violet-500",  bg: "bg-violet-50",  text: "text-violet-700",  icon: "M15 10.5a3 3 0 11-6 0 3 3 0 016 0zM19.5 10.5c0 7.142-7.5 11.25-7.5 11.25S4.5 17.642 4.5 10.5a7.5 7.5 0 1115 0z",  description: "Site survey scheduled",                action: "Schedule Survey" },
   quote:        { label: "รอใบเสนอราคา",   color: "bg-orange-500",  bg: "bg-orange-50",  text: "text-orange-700",  icon: "M12 6v12m-3-2.818l.879.659c1.171.879 3.07.879 4.242 0 1.172-.879 1.172-2.303 0-3.182C13.536 12.219 12.768 12 12 12c-.725 0-1.45-.22-2.003-.659-1.106-.879-1.106-2.303 0-3.182s2.9-.879 4.006 0l.415.33M21 12a9 9 0 11-18 0 9 9 0 0118 0z",  description: "Quotation sent — waiting for decision", action: "Show Package" },
   order:     { label: "รออนุมัติ/ชำระ", color: "bg-green-500",   bg: "bg-green-50",   text: "text-green-700",   icon: "M9 12.75L11.25 15 15 9.75M21 12a9 9 0 11-18 0 9 9 0 0118 0z",  description: "Customer order — process payment",  action: "Process Payment" },
   install:     { label: "กำลังติดตั้ง",   color: "bg-emerald-500", bg: "bg-emerald-50", text: "text-emerald-700", icon: "M11.42 15.17l-5.658-5.66a2.122 2.122 0 010-3l1.532-1.532a2.122 2.122 0 013 0L15.953 10.637a2.122 2.122 0 010 3l-1.532 1.532a2.122 2.122 0 01-3 0z",  description: "Installation completed!",              action: "Complete" },
@@ -32,7 +32,7 @@ export const STATUS_CONFIG: Record<string, { label: string; color: string; bg: s
   returned:      { label: "ส่งกลับ Seeker", color: "bg-amber-500",   bg: "bg-amber-50",   text: "text-amber-700",   icon: "M9 15L3 9m0 0l6-6M3 9h12a6 6 0 010 12h-3",  description: "Returned — seeker follows up again",    action: "Returned" },
 };
 
-export function getStatusLabel(lead: { status: string; install_date?: string | null; event_date?: string | null }): string {
+export function getStatusLabel(lead: { status: string; install_date?: string | null; event_date?: string | null; order_paid_count?: number | null }): string {
   if (lead.status === "install") {
     const date = lead.event_date || lead.install_date;
     if (date) {
@@ -41,6 +41,11 @@ export function getStatusLabel(lead: { status: string; install_date?: string | n
       const jobDate = String(date).slice(0, 10);
       if (jobDate > todayStr) return "รอติดตั้ง";
     }
+  }
+  // Order with ≥1 confirmed installment → "ชำระมัดจำแล้ว" (visual cue that
+  // the deposit landed, even though the lead's main status is still 'order').
+  if (lead.status === "order" && (lead.order_paid_count ?? 0) >= 1) {
+    return "ชำระมัดจำแล้ว";
   }
   // Try exact match first (covers substeps like pre_survey-01); fall back to
   // main-status entry so unknown substeps still render the parent label.

@@ -28,9 +28,10 @@ interface Lead {
   pre_doc_no: string | null;
   payment_confirmed?: boolean | number | null;
   assigned_name: string | null;
+  order_paid_count?: number | null;
 }
 
-type TabKey = "all" | "pre_survey" | "booking" | "survey" | "quotation" | "order" | "install" | "warranty" | "gridtie" | "closed" | "lost";
+type TabKey = "all" | "pre_survey" | "booking" | "survey" | "quotation" | "order" | "deposit" | "install" | "warranty" | "gridtie" | "closed" | "lost";
 
 // Booking = pre_survey lead ที่กดยืนยันการชำระเงิน 1 หรือ 2 แล้ว
 // (status เป็น pre_survey-01 หรือ pre_survey-02). plain `pre_survey` =
@@ -41,6 +42,10 @@ const matchesTab = (l: Lead, key: TabKey): boolean => {
   if (key === "booking") return l.status === "pre_survey-01" || l.status === "pre_survey-02";
   if (key === "lost") return l.status === "lost" || l.status === "returned";
   if (key === "quotation") return l.status === "quote";
+  // Split 'order' status by paid deposit — ≥1 confirmed installment goes to
+  // "ชำระมัดจำ", the rest stays in "รออนุมัติ/ชำระ".
+  if (key === "order") return l.status === "order" && (l.order_paid_count ?? 0) === 0;
+  if (key === "deposit") return l.status === "order" && (l.order_paid_count ?? 0) >= 1;
   return l.status === key;
 };
 
@@ -57,7 +62,7 @@ export default function PipelinePage() {
   const [sortOrder, setSortOrder] = useState<"asc" | "desc">("asc");
   useEffect(() => {
     const saved = localStorage.getItem("pipelineTab") as TabKey;
-    const ALL_KEYS: TabKey[] = ["all","pre_survey","booking","survey","quotation","order","install","warranty","gridtie","closed","lost"];
+    const ALL_KEYS: TabKey[] = ["all","pre_survey","booking","survey","quotation","order","deposit","install","warranty","gridtie","closed","lost"];
     if (saved && ALL_KEYS.includes(saved)) setTab(saved);
 
     const sf = localStorage.getItem("pipeline.sortField");
@@ -141,9 +146,10 @@ export default function PipelinePage() {
     { key: "all",        label: "ทั้งหมด" },
     { key: "pre_survey", label: "รอติดตาม" },
     { key: "booking",    label: "รายการจอง" },
-    { key: "survey",     label: "สำรวจหน้างาน" },
+    { key: "survey",     label: "รอสำรวจ" },
     { key: "quotation",  label: "รอใบเสนอราคา" },
     { key: "order",      label: "รออนุมัติ/ชำระ" },
+    { key: "deposit",    label: "ชำระมัดจำ" },
     { key: "install",    label: "ติดตั้ง" },
     { key: "warranty",   label: "รอออกใบรับประกัน" },
     { key: "gridtie",    label: "ขอขนานไฟ" },
