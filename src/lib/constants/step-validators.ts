@@ -35,6 +35,10 @@ export function validatePreSurvey(lead: Partial<Lead>): ValidationResult {
 }
 
 export function validateSurvey(lead: Partial<Lead>): ValidationResult {
+  // "Customize" system bypasses the standard panel + package picker: surveyor
+  // describes the build in package_note instead. Skip panel_count + package
+  // requirements, but enforce package_note as the substitute.
+  const isCustomize = String((lead as Lead).survey_wants_battery || "").startsWith("customize");
   return check(lead, [
     { field: "survey_confirmed", label: "ยืนยันนัดสำรวจ", test: v => v === true },
     // Actual visit
@@ -73,9 +77,10 @@ export function validateSurvey(lead: Partial<Lead>): ValidationResult {
     // require them. Re-add to this list if/when a slot becomes mandatory.
     // Recommendation + signature (final tab)
     { field: "survey_recommended_kw", label: "ขนาดที่แนะนำ (kWp)" },
-    { field: "survey_panel_count", label: "จำนวน Panel" },
+    { field: "survey_panel_count", label: "จำนวน Panel", test: v => isCustomize || (v != null && Number(v) > 0) },
     { field: "survey_wants_battery", label: "ระบบ (On Grid / Battery / Upgrade)" },
-    { field: "interested_package_id", label: "แพ็คเกจที่เสนอ" },
+    { field: "interested_package_id", label: "แพ็คเกจที่เสนอ", test: v => isCustomize || (v != null && v !== "") },
+    { field: "package_note", label: "หมายเหตุแพ็คเกจ (อื่นๆ)", test: v => !isCustomize || (typeof v === "string" && v.trim() !== "") },
     { field: "survey_note", label: "บันทึก Survey" },
     { field: "survey_customer_signature_url", label: "ลายเซ็นลูกค้า" },
   ]);

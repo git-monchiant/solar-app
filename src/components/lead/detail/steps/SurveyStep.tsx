@@ -1057,6 +1057,7 @@ export default function SurveyStep({ lead, state, refresh, packages, expanded, o
           <div className="rounded-lg bg-white/60 border border-active/15 p-3">
             <label className="text-xs font-semibold tracking-wider uppercase text-gray-400 block mb-2">
               {surveyBattery.startsWith("customize") ? "อื่นๆ" : "บันทึกเกี่ยวกับแพ็คเกจ"}
+              {surveyBattery.startsWith("customize") && <span className="ml-1 text-red-500">*</span>}
             </label>
             <textarea
               value={packageNote}

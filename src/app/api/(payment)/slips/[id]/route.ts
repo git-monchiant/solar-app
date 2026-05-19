@@ -50,6 +50,15 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
       const upd = await db.request().input("id", sql.Int, slipId)
         .query(`UPDATE slip_files SET submitted_at = GETDATE() WHERE id = @id AND submitted_at IS NULL`);
       if (row && upd.rowsAffected[0] > 0) {
+        // Stamp step 1 author on the payment row so Timeline doesn't have to
+        // scrape the activity log later. Only the FIRST submit wins so re-
+        // submission (after a revert) keeps the original attribution intact.
+        await db.request()
+          .input("lead_id", sql.Int, row.lead_id)
+          .input("slip_field", sql.NVarChar(50), row.slip_field)
+          .input("submitted_by", sql.Int, gate.userId)
+          .query(`UPDATE payments SET submitted_by = @submitted_by, submitted_at = GETDATE()
+                  WHERE lead_id = @lead_id AND slip_field = @slip_field AND submitted_at IS NULL`);
         await logLeadActivity(db, {
           leadId: row.lead_id,
           activityType: "slip_submitted",

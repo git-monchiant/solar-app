@@ -266,12 +266,14 @@ export default function LeadDetailPage({ params }: { params: Promise<{ id: strin
   const dialog = useDialog();
   const [lead, setLead] = useState<Lead | null>(null);
   const [activities, setActivities] = useState<Activity[]>([]);
+  type TimelinePayment = { id: number; step_no: number; slip_field: string; amount: number; confirmed_at: string | null; confirmed_by_name: string | null; submitted_at: string | null; submitted_by_name: string | null };
+  const [paymentRows, setPaymentRows] = useState<TimelinePayment[]>([]);
   const [packages, setPackages] = useState<Package[]>([]);
   const [loadingLead, setLoadingLead] = useState(true);
   const [loadingAct, setLoadingAct] = useState(true);
   const [modalType, setModalType] = useState<ActivityType | null>(null);
   const [showLostModal, setShowLostModal] = useState(false);
-  const [tab, setTab] = useState<"info" | "workflow" | "log">("workflow");
+  const [tab, setTab] = useState<"info" | "workflow" | "timeline" | "log">("workflow");
   const [openSections, setOpenSections] = useState<Record<string, boolean>>({
     contact: true, address: true, interest: true, usage: true, system: true, finance: true, source: true, note: true,
   });
@@ -329,7 +331,8 @@ export default function LeadDetailPage({ params }: { params: Promise<{ id: strin
     fetchLead();
     fetchActivities();
     apiFetch("/api/packages").then(setPackages).catch(console.error);
-  }, [fetchLead, fetchActivities]);
+    apiFetch(`/api/payments?lead_id=${id}`).then((rs: TimelinePayment[]) => setPaymentRows(rs || [])).catch(console.error);
+  }, [fetchLead, fetchActivities, id]);
 
   const refresh = useCallback(() => {
     return Promise.all([fetchLead(), fetchActivities()]);
@@ -520,9 +523,13 @@ export default function LeadDetailPage({ params }: { params: Promise<{ id: strin
           </div>
         </div>
 
-        {/* Tabs row + (desktop) Activity Log header column-aligned with the
-            right panel below, so both headers sit on the same baseline. */}
+        {/* Tabs row + (desktop) left step-nav header + Activity Log header,
+            all column-aligned with the panels below. */}
         <div className="flex">
+        {/* Left step-nav header (desktop only) — always visible */}
+        <div className="hidden md:flex w-20 border-r border-gray-200 px-2 items-center justify-center py-3 text-xs font-semibold uppercase tracking-wider text-gray-500">
+          <span className="text-[10px]">Steps</span>
+        </div>
         <div className="flex-1 flex px-5 gap-1 min-w-0">
           <button
             onClick={() => setTab("workflow")}
@@ -541,6 +548,15 @@ export default function LeadDetailPage({ params }: { params: Promise<{ id: strin
               <path strokeLinecap="round" strokeLinejoin="round" d="M11.25 11.25l.041-.02a.75.75 0 011.063.852l-.708 2.836a.75.75 0 001.063.853l.041-.021M21 12a9 9 0 11-18 0 9 9 0 0118 0zm-9-3.75h.008v.008H12V8.25z" />
             </svg>
             Info
+          </button>
+          <button
+            onClick={() => setTab("timeline")}
+            className={`px-4 py-3 text-xs font-semibold uppercase tracking-wider border-b-2 -mb-px transition-colors inline-flex items-center gap-1.5 ${tab === "timeline" ? "text-active border-active" : "text-gray-500 border-transparent hover:text-gray-700"}`}
+          >
+            <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+              <path strokeLinecap="round" strokeLinejoin="round" d="M6.75 3v2.25M17.25 3v2.25M3 18.75V7.5a2.25 2.25 0 012.25-2.25h13.5A2.25 2.25 0 0121 7.5v11.25" />
+            </svg>
+            Timeline
           </button>
           <button
             onClick={() => setTab("log")}
@@ -588,8 +604,57 @@ export default function LeadDetailPage({ params }: { params: Promise<{ id: strin
         </div>
       </div>
 
-      {/* Content + desktop right panel (activity log always visible md+) */}
+      {/* Content + desktop side panels (left step nav, right activity log) */}
       <div className="flex-1 flex min-h-0">
+      {/* Left step navigator (desktop only) — click to scroll to a step */}
+      {(() => {
+        const STEPS_NAV = [
+          { idx: 0, label: "Pre-Survey" },
+          { idx: 1, label: "Survey" },
+          { idx: 2, label: "Quote" },
+          { idx: 3, label: "Order" },
+          { idx: 4, label: "Install" },
+          { idx: 5, label: "Warranty" },
+          { idx: 6, label: "Grid-Tie" },
+        ];
+        const goto = (i: number) => {
+          const el = document.getElementById(`step-${i}`);
+          if (el) el.scrollIntoView({ behavior: "smooth", block: "start" });
+        };
+        return (
+          <aside className="hidden md:flex w-20 border-r border-gray-200 bg-gray-50/40 flex-col py-3 px-1.5 gap-1.5">
+            {STEPS_NAV.map(s => {
+              const st = cardState(s.idx);
+              const isActive = st === "active";
+              const isDone = st === "done";
+              const isLocked = st === "locked";
+              return (
+                <button
+                  key={s.idx}
+                  type="button"
+                  onClick={() => goto(s.idx)}
+                  disabled={isLocked}
+                  className={`flex flex-col items-center gap-0.5 py-2 rounded-lg transition-colors ${
+                    isActive
+                      ? "bg-active text-white"
+                      : isDone
+                      ? "bg-white text-gray-700 border border-gray-200 hover:border-active hover:text-active"
+                      : "text-gray-300 cursor-not-allowed"
+                  }`}
+                >
+                  <span className="text-xxs font-bold tabular-nums leading-none">{String(s.idx + 1).padStart(2, "0")}</span>
+                  <span className="text-[10px] font-semibold leading-tight text-center px-1">{s.label}</span>
+                  {isDone && (
+                    <svg className="w-3 h-3 text-emerald-500" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={3}>
+                      <path strokeLinecap="round" strokeLinejoin="round" d="M4.5 12.75l6 6 9-13.5" />
+                    </svg>
+                  )}
+                </button>
+              );
+            })}
+          </aside>
+        );
+      })()}
       <div ref={scrollRef} className="flex-1 overflow-y-auto pb-20 relative min-w-0" style={{ overscrollBehaviorY: "contain" }}>
         <div>
         {tab === "info" ? (
@@ -760,7 +825,7 @@ export default function LeadDetailPage({ params }: { params: Promise<{ id: strin
               return (
                 <div
                   onClick={() => setModalType("note")}
-                  className="relative w-full text-left rounded-2xl bg-white border border-gray-300 hover:border-gray-400 hover:shadow-sm transition-all cursor-pointer"
+                  className="md:hidden relative w-full text-left rounded-2xl bg-white border border-gray-300 hover:border-gray-400 hover:shadow-sm transition-all cursor-pointer"
                 >
                   <div className="p-5">
                     <div className="flex items-center gap-3 mb-2">
@@ -960,6 +1025,188 @@ export default function LeadDetailPage({ params }: { params: Promise<{ id: strin
                 Mark as Lost
               </button>
             )}
+          </div>
+        ) : tab === "timeline" ? (
+          <div className="p-4">
+            {(() => {
+              // Group by step (Pre-Survey / Survey / Quotation / Order / Install
+              // / Warranty / Cancelled). Each section uses the InfoSection layout
+              // from the Info tab so the look is consistent; rows inside are
+              // "what happened · when" bullets sorted earliest → latest.
+              type Bullet = { date: string | null; label: string; sub?: string; tone?: "paid" | "pending" };
+              const fmtIfDate = (d: string | null | undefined) => d ? formatDate(d) : "—";
+
+              const preSurveyRows: Bullet[] = [];
+              if (lead.created_at) preSurveyRows.push({ date: lead.created_at, label: "ลงทะเบียน Lead" });
+              if (lead.pre_booked_at) preSurveyRows.push({
+                date: lead.pre_booked_at,
+                label: "ออกใบจอง",
+                sub: [lead.pre_doc_no && `เลขที่ ${lead.pre_doc_no}`, lead.pre_total_price && `ค่าจอง ${lead.pre_total_price.toLocaleString()} ฿`].filter(Boolean).join(" · ") || undefined,
+              });
+              // Booking deposit — read step 1 (submitted) + step 2 (confirmed)
+              // straight from the payment row; backfill migration 010 fills
+              // these for legacy rows that only had the activity log.
+              const prePay = paymentRows.find(p => p.slip_field === "pre_slip_url");
+              if (prePay) {
+                const parts: string[] = [];
+                if (prePay.submitted_at) {
+                  parts.push(`รับเงินโดย ${prePay.submitted_by_name || "—"} ${formatDate(prePay.submitted_at)} ${formatThaiTime(prePay.submitted_at)}`);
+                }
+                if (prePay.confirmed_at) {
+                  parts.push(`ยืนยันรับเงินโดย ${prePay.confirmed_by_name || "—"} ${formatDate(prePay.confirmed_at)} ${formatThaiTime(prePay.confirmed_at)}`);
+                } else {
+                  parts.push("รอบัญชียืนยัน");
+                }
+                preSurveyRows.push({
+                  date: prePay.confirmed_at ?? prePay.submitted_at ?? lead.pre_booked_at ?? null,
+                  label: `ชำระเงินจองสำรวจ${prePay.amount ? ` ${prePay.amount.toLocaleString()} ฿` : ""}`,
+                  sub: parts.length ? parts.join(" · ") : undefined,
+                  tone: prePay.confirmed_at ? "paid" : "pending",
+                });
+              }
+
+              const surveyRows: Bullet[] = [];
+              if (lead.survey_date) surveyRows.push({
+                date: lead.survey_date,
+                label: "นัดวันเข้าสำรวจ",
+                sub: lead.survey_time_slot ? `ช่วงเวลา ${lead.survey_time_slot}` : undefined,
+              });
+              if (lead.survey_actual_date) surveyRows.push({
+                date: lead.survey_actual_date,
+                label: "เข้าสำรวจหน้างานจริง",
+                sub: lead.survey_actual_by ? `โดย ${lead.survey_actual_by}` : undefined,
+              });
+
+              const quoteRows: Bullet[] = [];
+              if (lead.quotation_sent_date) quoteRows.push({
+                date: lead.quotation_sent_date,
+                label: "ส่งใบเสนอราคา",
+                sub: lead.quotation_amount ? `ยอด ${lead.quotation_amount.toLocaleString()} ฿` : undefined,
+              });
+
+              const orderInstallments = (() => {
+                try { return JSON.parse(lead.order_installments || "[]") as Array<{ due_date?: string; pct?: number; when?: string; method?: string }>; }
+                catch { return []; }
+              })();
+              const orderRows: Bullet[] = orderInstallments.map((r, i) => {
+                const pctStr = r.pct ? `${typeof r.pct === "number" ? r.pct.toFixed(0) : r.pct}%` : "";
+                const methodStr = r.method ? `${r.method === "cc" ? "บัตรเครดิต" : r.method === "loan" ? "สินเชื่อ" : "โอน"}` : "";
+                const pay = paymentRows.find(p => p.slip_field === `order_installment_${i}`);
+                // Amount preference: confirmed payment row → computed from pct
+                // × lead.order_total → null. Shown in label so it's visible
+                // even with sub collapsed.
+                const computedAmount = (typeof r.pct === "number" && lead.order_total)
+                  ? Math.round((lead.order_total * r.pct) / 100)
+                  : null;
+                const amount = pay?.amount ?? computedAmount;
+                const subParts: string[] = [];
+                if (pctStr) subParts.push(pctStr);
+                if (methodStr) subParts.push(methodStr);
+                if (pay?.submitted_at) {
+                  subParts.push(`รับเงินโดย ${pay.submitted_by_name || "—"} ${formatDate(pay.submitted_at)} ${formatThaiTime(pay.submitted_at)}`);
+                }
+                if (pay?.confirmed_at) {
+                  subParts.push(`ยืนยันรับเงินโดย ${pay.confirmed_by_name || "—"} ${formatDate(pay.confirmed_at)} ${formatThaiTime(pay.confirmed_at)}`);
+                } else if (pay) {
+                  subParts.push("รอบัญชียืนยัน");
+                }
+                const bullet: Bullet = {
+                  date: r.due_date || null,
+                  label: `งวดที่ ${i + 1} ${r.when === "after" ? "(หลังติดตั้ง)" : "(ก่อนติดตั้ง)"}${amount != null ? ` · ${amount.toLocaleString()} ฿` : ""}`,
+                  sub: subParts.length ? subParts.join(" · ") : undefined,
+                  tone: pay?.confirmed_at ? "paid" : "pending",
+                };
+                return bullet;
+              }).filter(b => b.date);
+
+              const installRows: Bullet[] = [];
+              if (lead.install_date) installRows.push({ date: lead.install_date, label: "นัดวันติดตั้ง" });
+              if (lead.install_completed_at) installRows.push({ date: lead.install_completed_at, label: "ติดตั้งเสร็จสิ้น" });
+
+              const warrantyRows: Bullet[] = [];
+              if (lead.warranty_issued_at) warrantyRows.push({ date: lead.warranty_issued_at, label: "ออกใบรับประกัน" });
+
+              const lostRows: Bullet[] = [];
+              if (isLost) {
+                const lostAct = activities.find(a => a.activity_type === "status_change" && (a.new_status === "lost" || a.new_status === "returned"));
+                lostRows.push({
+                  date: lostAct?.created_at ?? null,
+                  label: lead.status === "returned" ? "ส่งกลับ Seeker" : "ยกเลิก",
+                  sub: lead.lost_reason || undefined,
+                });
+              }
+
+              const sections = [
+                { id: "tl-pre",    title: "Pre-Survey",   rows: preSurveyRows, tone: "text-sky-700",     dot: "bg-sky-500" },
+                { id: "tl-survey", title: "Survey",       rows: surveyRows,    tone: "text-violet-700",  dot: "bg-violet-500" },
+                { id: "tl-quote",  title: "Quotation",    rows: quoteRows,     tone: "text-orange-700",  dot: "bg-orange-500" },
+                { id: "tl-order",  title: "Order · งวดชำระ", rows: orderRows,   tone: "text-emerald-700", dot: "bg-emerald-500" },
+                { id: "tl-install", title: "Install",     rows: installRows,   tone: "text-amber-700",   dot: "bg-amber-500" },
+                { id: "tl-warranty", title: "Warranty",   rows: warrantyRows,  tone: "text-teal-700",    dot: "bg-teal-500" },
+                ...(isLost ? [{ id: "tl-lost", title: "ยกเลิก", rows: lostRows, tone: "text-red-700", dot: "bg-red-500" }] : []),
+              ].filter(s => s.rows.length > 0);
+
+              // Sort bullets within each section earliest → latest
+              sections.forEach(s => s.rows.sort((a, b) => {
+                const ta = a.date ? new Date(a.date).getTime() : Number.POSITIVE_INFINITY;
+                const tb = b.date ? new Date(b.date).getTime() : Number.POSITIVE_INFINITY;
+                return ta - tb;
+              }));
+
+              if (sections.length === 0) {
+                return (
+                  <div className="text-center py-16">
+                    <div className="w-14 h-14 mx-auto rounded-full bg-gray-100 flex items-center justify-center mb-3">
+                      <svg className="w-7 h-7 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.8}>
+                        <path strokeLinecap="round" strokeLinejoin="round" d="M6.75 3v2.25M17.25 3v2.25M3 18.75V7.5a2.25 2.25 0 012.25-2.25h13.5A2.25 2.25 0 0121 7.5v11.25" />
+                      </svg>
+                    </div>
+                    <div className="text-sm font-semibold text-gray-700">ยังไม่มี milestone</div>
+                  </div>
+                );
+              }
+              return (
+                <div className="space-y-3 rounded-2xl bg-white border border-gray-200 px-4 py-4">
+                  {sections.map(s => (
+                    <InfoSection
+                      key={s.id}
+                      id={s.id}
+                      title={s.title}
+                      filled={s.rows.length}
+                      total={s.rows.length}
+                      open={openSections[s.id] ?? true}
+                      onToggle={toggleSection}
+                    >
+                      <ul className="space-y-2 py-1">
+                        {s.rows.map((r, i) => {
+                          const isPaid = r.tone === "paid";
+                          const isPending = r.tone === "pending";
+                          const dotCls = isPaid ? "bg-emerald-500" : isPending ? "bg-orange-500" : s.dot;
+                          const labelCls = isPaid ? "text-emerald-700" : isPending ? "text-orange-700" : "text-gray-800";
+                          const dateCls = isPaid ? "text-emerald-600" : isPending ? "text-orange-600" : "text-gray-500";
+                          const subCls = isPaid ? "text-emerald-600" : isPending ? "text-orange-600" : "text-gray-500";
+                          return (
+                            <li key={i} className="flex items-start gap-2.5 text-sm">
+                              <span className={`mt-1.5 w-1.5 h-1.5 rounded-full shrink-0 ${dotCls}`} />
+                              <div className="flex-1 min-w-0">
+                                <div className="flex items-baseline gap-2 flex-wrap">
+                                  <span className={`font-semibold ${labelCls}`}>{r.label}</span>
+                                  {isPending && (
+                                    <span className="text-xxs font-bold uppercase tracking-wider px-1.5 py-0.5 rounded-md bg-orange-100 text-orange-700">รอรับชำระ</span>
+                                  )}
+                                  <span className={`text-xs font-mono tabular-nums ${dateCls}`}>· {fmtIfDate(r.date)}</span>
+                                </div>
+                                {r.sub && <div className={`text-xs mt-0.5 ${subCls}`}>{r.sub}</div>}
+                              </div>
+                            </li>
+                          );
+                        })}
+                      </ul>
+                    </InfoSection>
+                  ))}
+                </div>
+              );
+            })()}
           </div>
         ) : (
           <div className="p-4 md:hidden">

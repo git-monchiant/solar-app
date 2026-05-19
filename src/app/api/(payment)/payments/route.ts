@@ -131,7 +131,17 @@ export async function POST(req: NextRequest) {
         .input("doc_no", sql.NVarChar(50), body.doc_no ?? null)
         .input("amount", sql.Decimal(12, 2), amount)
         .input("description", sql.NVarChar(200), body.description ?? null)
-        .input("confirmed_by", sql.NVarChar(100), body.confirmed_by ?? null)
+        // confirmed_by stores the human-readable name. Default to the
+        // requesting user's full_name so the timeline always shows who
+        // confirmed even when the client doesn't echo it back.
+        .input("confirmed_by", sql.NVarChar(100), body.confirmed_by ?? (await (async () => {
+          if (!gate.userId) return null;
+          try {
+            const u = (await pool.request().input("uid", sql.Int, gate.userId)
+              .query(`SELECT full_name FROM users WHERE id = @uid`)).recordset[0];
+            return u?.full_name ?? null;
+          } catch { return null; }
+        })()))
         .input("ref1", sql.NVarChar(50), ref1Value)
         .input("payment_method", sql.NVarChar(20), paymentMethod)
         .input("slip_amount", sql.Decimal(12, 2), firstSlip?.slip_amount ?? null)
@@ -254,13 +264,20 @@ export async function GET(req: NextRequest) {
     const stepNo = searchParams.get("step_no");
     const db = await getDb();
     const request = db.request().input("lead_id", sql.Int, leadId);
-    let q = `SELECT id, lead_id, step_no, slip_field, doc_no, amount, description, slip_mime, slip_filename, confirmed_by, confirmed_at, ref1, payment_method
-             FROM payments WHERE lead_id = @lead_id`;
+    // confirmed_by is a free-text NVARCHAR (legacy schema — stores the user's
+    // full name directly). submitted_by is INT → JOIN users for the name.
+    let q = `SELECT p.id, p.lead_id, p.step_no, p.slip_field, p.doc_no, p.amount, p.description, p.slip_mime, p.slip_filename, p.confirmed_by, p.confirmed_at, p.ref1, p.payment_method,
+                    p.submitted_by, p.submitted_at,
+                    p.confirmed_by as confirmed_by_name,
+                    su.full_name as submitted_by_name
+             FROM payments p
+             LEFT JOIN users su ON su.id = p.submitted_by
+             WHERE p.lead_id = @lead_id`;
     if (stepNo !== null) {
       request.input("step_no", sql.Int, parseInt(stepNo));
-      q += ` AND step_no = @step_no`;
+      q += ` AND p.step_no = @step_no`;
     }
-    q += ` ORDER BY id DESC`;
+    q += ` ORDER BY p.id DESC`;
     const r = await request.query(q);
     return NextResponse.json(r.recordset);
   } catch (e) {
