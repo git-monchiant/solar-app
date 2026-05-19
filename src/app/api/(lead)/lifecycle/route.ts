@@ -82,7 +82,20 @@ export async function GET(req: NextRequest) {
         l.created_at,
         l.survey_date,
         l.install_date,
+        l.pre_doc_no,
+        l.payment_confirmed,
+        l.lost_reason,
+        l.order_installments,
+        (SELECT COUNT(*) FROM payments
+          WHERE lead_id = l.id AND slip_field LIKE 'order_installment_%' AND confirmed_at IS NOT NULL) AS order_paid_count,
         l.install_completed_at AS install_done_at,
+        CASE WHEN EXISTS (
+          SELECT 1 FROM slip_files
+          WHERE lead_id = l.id AND slip_field = 'pre_slip_url'
+        ) OR EXISTS (
+          SELECT 1 FROM payments
+          WHERE lead_id = l.id AND slip_field = 'pre_slip_url' AND submitted_at IS NOT NULL
+        ) THEN 1 ELSE 0 END AS pre_slip_uploaded,
 
         -- Contact 1 has a special fallback: if no activity logged but a survey
         -- deposit slip was submitted, the customer must have been contacted —

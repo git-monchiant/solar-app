@@ -1,12 +1,13 @@
 "use client";
 
-import { apiFetch } from "@/lib/api";
+import { apiFetch, getUserIdHeader } from "@/lib/api";
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
-import Link from "next/link";
 import Header from "@/components/layout/Header";
 import { STATUS_CONFIG } from "@/lib/constants/statuses";
-import { formatTHB as fmt, formatThaiDateShort as fmtDate, formatThaiTime as fmtTime } from "@/lib/utils/formatters";
+import { PRIMARY_REASON_LABEL } from "@/lib/constants/info-labels";
+import { getSourceStyle, normalizeSourceKey } from "@/lib/source-tag";
+import { formatTHB as fmt } from "@/lib/utils/formatters";
 
 type LifecycleCol = "first_contact_at" | "contact2_at" | "contact3_at" | "contact4_at" | "contact5_at"
   | "sales_pitch_at" | "booking_paid_at" | "survey_date" | "survey_done_at"
@@ -16,15 +17,27 @@ type ContactStateField = "first_contact_state" | "contact2_state" | "contact3_st
 
 type LifecycleRow = { [K in LifecycleCol]: string | null }
   & { [K in ContactStateField]: "yes" | "no" | null }
-  & { id: number; status: string };
+  & { id: number; full_name: string; house_number: string | null; status: string; pre_doc_no: string | null; payment_confirmed: boolean | null; pre_slip_uploaded: 0 | 1; lost_reason: string | null; order_installments: string | null; order_paid_count: number };
+
+// Moved over from /dashboard-dev — subset of fields the 5-card row needs.
+interface DevData {
+  funnel: { total: number; has_pre_doc: number; has_survey: number; has_order: number; has_install: number; installed: number; warranty_issued: number };
+  total_lost: number;
+  sources: { source: string; cnt: number; booked: number; paid: number; installed: number }[];
+  lost_reasons: { reason: string; cnt: number }[];
+  interest_reasons: { code: string; cnt: number }[];
+  interested_count: number;
+  undecided_reasons: { reason: string; cnt: number }[];
+}
 
 interface DashboardData {
   total_leads: number;
   total_deposits: number;
   total_deposit_value: number;
   total_won: number;
+  total_received: number;
   conversion_rate: number;
-  this_month: { new_leads: number; closed_count: number; closed_value: number };
+  this_month: { new_leads: number; closed_count: number; closed_value: number; closed_outstanding: number };
   last_month: { new_leads: number; closed_count: number };
   status_breakdown: { status: string; count: number }[];
   recent_leads: { id: number; full_name: string; status: string; project_name: string; created_at: string }[];
@@ -33,140 +46,347 @@ interface DashboardData {
   activity_heatmap: { day: string; lead_id: number; full_name: string; lead_status: string; activity_type?: string; total_activities: number; has_paid: boolean }[];
 }
 
-function Trend({ current, previous, suffix = "" }: { current: number; previous: number; suffix?: string }) {
-  if (!previous || !Number.isFinite(previous) || !Number.isFinite(current)) return null;
-  const diff = current - previous;
-  const pct = Math.round((diff / previous) * 100);
-  if (pct === 0 || !Number.isFinite(pct)) return null;
-  return (
-    <span className={`text-xs font-semibold ${pct > 0 ? "text-emerald-600" : "text-red-500"}`}>
-      {pct > 0 ? "↑" : "↓"} {Math.abs(pct)}%{suffix}
-    </span>
-  );
-}
-
 export default function DashboardPage() {
   const [data, setData] = useState<DashboardData | null>(null);
+  const [devData, setDevData] = useState<DevData | null>(null);
   const [lineUsers, setLineUsers] = useState<{ created_at: string; phone: string | null; house_number: string | null }[]>([]);
   const [lifecycleRows, setLifecycleRows] = useState<LifecycleRow[]>([]);
   const [loading, setLoading] = useState(true);
+  // Click any KPI count → popup lists the leads behind it. Click a name to open
+  // that lead's detail in a new tab.
+  const [bucket, setBucket] = useState<{ title: string; rows: LifecycleRow[] } | null>(null);
 
   useEffect(() => {
     apiFetch("/api/dashboard").then(setData).catch(console.error).finally(() => setLoading(false));
     apiFetch("/api/line-users").then(setLineUsers).catch(console.error);
     apiFetch("/api/lifecycle").then((rows: LifecycleRow[]) => setLifecycleRows(rows)).catch(console.error);
+    apiFetch("/api/dashboard-dev").then(setDevData).catch(console.error);
   }, []);
 
   if (loading) return <div className="flex items-center justify-center h-full py-20"><div className="w-10 h-10 border-3 border-gray-200 border-t-primary rounded-full animate-spin" /></div>;
   if (!data) return <div className="text-center py-12 text-gray-400 text-sm">Unable to load data</div>;
 
-  const countsByStatus = Object.fromEntries(data.status_breakdown.map(s => [s.status, s.count]));
-  // Split pre_survey by first_contact_at: ยังไม่ได้ติดต่อ vs อยู่ระหว่างติดต่อ.
-  // Falls back to the unsplit total until /api/lifecycle resolves so the row
-  // doesn't briefly show 0.
-  const preSurveyTotal = countsByStatus["pre_survey"] || 0;
-  const preSurveyInContact = lifecycleRows.filter(r => r.status === "pre_survey" && r.first_contact_at).length;
-  const preSurveyNoContact = lifecycleRows.length > 0
-    ? lifecycleRows.filter(r => r.status === "pre_survey" && !r.first_contact_at).length
-    : preSurveyTotal;
-  // Order follows the actual status flow in code: install → warranty → gridtie → closed.
-  // See InstallStep.tsx (→warranty), WarrantyStep.tsx (→gridtie), GridTieStep.tsx (→closed).
-  const pipelineSteps: { status: string; label: string; color: string; count: number }[] = [
-    { status: "pre_survey_no_contact", label: "ยังไม่ได้ติดต่อ",  color: "bg-rose-400",    count: preSurveyNoContact },
-    { status: "pre_survey_in_contact", label: "อยู่ระหว่างติดต่อ", color: "bg-sky-500",     count: preSurveyInContact },
-    { status: "survey",     label: "รอสำรวจ",       color: "bg-violet-500",  count: countsByStatus["survey"] || 0 },
-    { status: "quote",      label: "รอใบเสนอราคา",       color: "bg-orange-500",  count: countsByStatus["quote"] || 0 },
-    { status: "order",      label: "รออนุมัติ/ชำระ",     color: "bg-green-500",   count: countsByStatus["order"] || 0 },
-    { status: "install",    label: "กำลังติดตั้ง",       color: "bg-emerald-500", count: countsByStatus["install"] || 0 },
-    { status: "warranty",   label: "ออกใบรับประกัน",     color: "bg-cyan-500",    count: countsByStatus["warranty"] || 0 },
-    { status: "gridtie",    label: "ขอขนานไฟ",           color: "bg-amber-500",   count: countsByStatus["gridtie"] || 0 },
-    { status: "closed",     label: "ส่งมอบแล้ว",   color: "bg-teal-500",    count: countsByStatus["closed"] || 0 },
-    { status: "lost",       label: "ยกเลิก",             color: "bg-red-400",     count: countsByStatus["lost"] || 0 },
-    { status: "returned",   label: "ส่งกลับ Seeker",     color: "bg-amber-500",   count: countsByStatus["returned"] || 0 },
-  ];
-  const totalByStatus = data.status_breakdown.reduce((sum, s) => sum + s.count, 0);
 
   return (
-    <div>
-      <Header title="Dashboard" subtitle="SENA SOLAR ENERGY" />
+    <div className="dashboard-print-root">
+      <div className="dashboard-pdf-skip">
+        <Header
+          title="Dashboard I"
+          subtitle="SENA SOLAR ENERGY"
+          rightContent={
+            <button
+              type="button"
+              onClick={async (e) => {
+                const btn = e.currentTarget;
+                btn.disabled = true;
+                try {
+                  const res = await fetch("/api/report/dashboard-pdf", { headers: { ...getUserIdHeader() } });
+                  if (!res.ok) { alert("ดาวน์โหลด PDF ไม่สำเร็จ"); return; }
+                  const blob = await res.blob();
+                  const url = URL.createObjectURL(blob);
+                  const a = document.createElement("a");
+                  a.href = url;
+                  a.download = `dashboard_${new Date().toISOString().slice(0, 10)}.pdf`;
+                  document.body.appendChild(a);
+                  a.click();
+                  a.remove();
+                  URL.revokeObjectURL(url);
+                } finally {
+                  btn.disabled = false;
+                }
+              }}
+              className="cursor-pointer inline-flex items-center gap-1.5 h-8 px-3 rounded-lg bg-white border border-gray-200 text-xs font-semibold text-gray-700 hover:border-gray-300 disabled:opacity-50 disabled:cursor-wait transition-colors"
+              title="ดาวน์โหลด Dashboard เป็น PDF"
+              aria-label="ดาวน์โหลด Dashboard เป็น PDF"
+            >
+              <svg className="w-3.5 h-3.5 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                <path strokeLinecap="round" strokeLinejoin="round" d="M3 16.5v2.25A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75V16.5M16.5 12L12 16.5m0 0L7.5 12m4.5 4.5V3" />
+              </svg>
+              <span>PDF</span>
+            </button>
+          }
+        />
+      </div>
 
-      <div className="p-3 md:p-6 space-y-3">
-        {/* KPI Cards — 5 tiles with icons */}
+      {/* Bucket popup — opens when any KPI count is clicked. Lists the leads
+          that make up that count; click a name to open the lead detail in a
+          new tab. Click backdrop or ✕ to close. */}
+      {bucket && (
+        <div
+          className="fixed inset-0 z-50 bg-black/50 flex items-end md:items-center justify-center p-0 md:p-4"
+          onClick={() => setBucket(null)}
+        >
+          <div
+            className="bg-white rounded-t-2xl md:rounded-2xl w-full max-w-2xl max-h-[85vh] flex flex-col shadow-2xl"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-center justify-between p-4 border-b border-gray-200">
+              <h3 className="text-lg font-bold text-gray-900">
+                {bucket.title} <span className="text-base font-normal text-gray-500 ml-1">({bucket.rows.length})</span>
+              </h3>
+              <button
+                type="button"
+                onClick={() => setBucket(null)}
+                className="cursor-pointer w-8 h-8 rounded-full hover:bg-gray-100 flex items-center justify-center text-gray-500 text-xl"
+                aria-label="ปิด"
+              >✕</button>
+            </div>
+            <div className="overflow-auto divide-y divide-gray-100">
+              {bucket.rows.length === 0 ? (
+                <div className="text-center py-10 text-gray-400 text-sm">ไม่มีรายการ</div>
+              ) : bucket.rows.map((r) => {
+                const cfg = STATUS_CONFIG[r.status] || STATUS_CONFIG[r.status.split("-")[0]];
+                return (
+                  <a
+                    key={r.id}
+                    href={`/leads/${r.id}`}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="cursor-pointer flex items-center gap-3 px-4 py-2.5 hover:bg-gray-50"
+                  >
+                    <div className="w-8 h-8 rounded-full bg-gray-100 flex items-center justify-center shrink-0 text-gray-600 font-bold text-sm">
+                      {r.full_name.charAt(0)}
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <div className="text-sm font-semibold text-gray-900 truncate">{r.full_name}</div>
+                      <div className="text-xs text-gray-500 truncate">
+                        ID {r.id}{r.house_number ? ` · บ้าน ${r.house_number}` : ""}
+                      </div>
+                    </div>
+                    <span className={`text-xxs font-bold uppercase tracking-wider px-2 py-0.5 rounded text-white shrink-0 ${cfg?.color || "bg-gray-400"}`}>
+                      {cfg?.label || r.status}
+                    </span>
+                  </a>
+                );
+              })}
+            </div>
+            <div className="px-4 py-2 border-t border-gray-100 text-xxs text-gray-400 text-center">
+              คลิกชื่อเพื่อเปิด lead detail ใน tab ใหม่
+            </div>
+          </div>
+        </div>
+      )}
+
+      <div className="dashboard-pdf-content p-3 md:p-6 space-y-3">
+        {/* KPI — 2 rows: (1) 4 equal hero cards, each w/ inline breakdown chips
+            (2) full-width subway-map funnel of the active 28 booked-paid leads */}
         {(() => {
-          const followCount = countsByStatus["pre_survey"] || 0;
-          const inProgress = (countsByStatus["survey"] || 0) + (countsByStatus["quote"] || 0) + (countsByStatus["order"] || 0) + (countsByStatus["install"] || 0);
-          // "Installed" = install step done (status moves on to warranty → gridtie → closed).
-          const installedCount = (countsByStatus["warranty"] || 0) + (countsByStatus["gridtie"] || 0) + (countsByStatus["closed"] || 0);
           const closedValue = Number(data.this_month.closed_value || 0);
+          const outstanding = Number(data.this_month.closed_outstanding || 0);
           const fmtMoney = (v: number) => v >= 1000000 ? `฿${(v / 1000000).toFixed(1)}M` : v >= 1000 ? `฿${Math.round(v / 1000)}K` : `฿${fmt(v)}`;
 
-          const kpis = [
-            {
-              label: "Leads ทั้งหมด",
-              value: String(data.total_leads),
-              sub: `+${data.this_month.new_leads || 0} เดือนนี้`,
-              trend: { current: data.this_month.new_leads || 0, previous: data.last_month.new_leads || 0 },
-              iconBg: "bg-sky-50", iconColor: "text-sky-600",
-              icon: "M15 19.128a9.38 9.38 0 002.625.372 9.337 9.337 0 004.121-.952 4.125 4.125 0 00-7.533-2.493M15 19.128v-.003c0-1.113-.285-2.16-.786-3.07M15 19.128v.106A12.318 12.318 0 018.624 21c-2.331 0-4.512-.645-6.374-1.766l-.001-.109a6.375 6.375 0 0111.964-3.07M12 6.375a3.375 3.375 0 11-6.75 0 3.375 3.375 0 016.75 0zm8.25 2.25a2.625 2.625 0 11-5.25 0 2.625 2.625 0 015.25 0z",
-            },
-            {
-              label: "รอติดตาม",
-              value: String(followCount),
-              sub: "Leads ยังไม่ได้นัด",
-              iconBg: "bg-rose-50", iconColor: "text-rose-600",
-              icon: "M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6.002 6.002 0 00-4-5.659V5a2 2 0 10-4 0v.341C7.67 6.165 6 8.388 6 11v3.159c0 .538-.214 1.055-.595 1.436L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9",
-            },
-            {
-              label: "กำลังดำเนินการ",
-              value: String(inProgress),
-              sub: `สำรวจ ${countsByStatus["survey"] || 0} · เสนอราคา ${countsByStatus["quote"] || 0} · อนุมัติ ${countsByStatus["order"] || 0} · ติดตั้ง ${countsByStatus["install"] || 0}`,
-              iconBg: "bg-amber-50", iconColor: "text-amber-600",
-              icon: "M9.813 15.904L9 18.75l-.813-2.846a4.5 4.5 0 00-3.09-3.09L2.25 12l2.846-.813a4.5 4.5 0 003.09-3.09L9 5.25l.813 2.846a4.5 4.5 0 003.09 3.09L15.75 12l-2.846.813a4.5 4.5 0 00-3.09 3.09zM18.259 8.715L18 9.75l-.259-1.035a3.375 3.375 0 00-2.455-2.456L14.25 6l1.036-.259a3.375 3.375 0 002.455-2.456L18 2.25l.259 1.035a3.375 3.375 0 002.456 2.456L21.75 6l-1.035.259a3.375 3.375 0 00-2.456 2.456z",
-            },
-            {
-              label: "ติดตั้งเสร็จ",
-              value: String(installedCount),
-              sub: `+${data.this_month.closed_count || 0} เดือนนี้`,
-              trend: { current: data.this_month.closed_count || 0, previous: data.last_month.closed_count || 0 },
-              iconBg: "bg-emerald-50", iconColor: "text-emerald-600",
-              icon: "M9 12.75L11.25 15 15 9.75M21 12a9 9 0 11-18 0 9 9 0 0118 0z",
-            },
-            {
-              label: "มูลค่างานเดือนนี้",
-              value: fmtMoney(closedValue),
-              sub: "Revenue (บาท)",
-              iconBg: "bg-teal-50", iconColor: "text-teal-600",
-              icon: "M2.25 18.75a60.07 60.07 0 0115.797 2.101c.727.198 1.453-.342 1.453-1.096V18.75M3.75 4.5v.75A.75.75 0 013 6h-.75m0 0v-.375c0-.621.504-1.125 1.125-1.125H20.25M2.25 6v9m18-10.5v.75c0 .414.336.75.75.75h.75m-1.5-1.5h.375c.621 0 1.125.504 1.125 1.125v9.75c0 .621-.504 1.125-1.125 1.125h-.375m1.5-1.5H21a.75.75 0 00-.75.75v.75m0 0H3.75m0 0h-.375a1.125 1.125 0 01-1.125-1.125V15m1.5 1.5v-.75A.75.75 0 003 15h-.75M15 12a3 3 0 11-6 0 3 3 0 016 0z",
-            },
-            {
-              label: "ยกเลิก",
-              value: String(countsByStatus["lost"] || 0),
-              sub: "Marked lost",
-              iconBg: "bg-red-50", iconColor: "text-red-600",
-              icon: "M6 18L18 6M6 6l12 12",
-            },
+          const today = new Date(new Date().toDateString());
+          const bookingPaidRows = lifecycleRows.filter(r => r.booking_paid_at);
+          const bookingPaidCount = bookingPaidRows.length;
+
+          // 4 mutually-exclusive buckets sum = total leads:
+          //   1) ยกเลิก (status=lost) — extracted first so the other 3 contain
+          //      only active leads, otherwise lost would double-count.
+          //   2) ติดต่อได้ — booking_paid OR any state=yes (booking override)
+          //   3) ติดต่อไม่ได้ — has no, no yes
+          //   4) ยังไม่ติดต่อ — no state activity at all
+          const lostRows         = lifecycleRows.filter(r => r.status === "lost");
+          const contactedYesRows = lifecycleRows.filter(r => r.status !== "lost" && (!!r.booking_paid_at
+            || [r.first_contact_state, r.contact2_state, r.contact3_state, r.contact4_state, r.contact5_state].some(s => s === "yes")));
+          const contactedNoRows = lifecycleRows.filter(r => {
+            if (r.status === "lost" || r.booking_paid_at) return false;
+            const states = [r.first_contact_state, r.contact2_state, r.contact3_state, r.contact4_state, r.contact5_state];
+            return states.some(s => s === "no") && !states.some(s => s === "yes");
+          });
+          const notContactedRows = lifecycleRows.filter(r => {
+            if (r.status === "lost" || r.booking_paid_at) return false;
+            const states = [r.first_contact_state, r.contact2_state, r.contact3_state, r.contact4_state, r.contact5_state];
+            return !states.some(s => s === "yes") && !states.some(s => s === "no");
+          });
+          const lostTotal    = lostRows.length;
+          const contactedYes = contactedYesRows.length;
+          const contactedNo  = contactedNoRows.length;
+          const notContacted = notContactedRows.length;
+
+          const contactedNoPitchRows     = contactedYesRows.filter(r => r.status === "pre_survey" && !r.sales_pitch_at && r.pre_slip_uploaded !== 1);
+          const contactedInPitchRows     = contactedYesRows.filter(r => r.status === "pre_survey" && r.sales_pitch_at && r.pre_slip_uploaded !== 1);
+          const contactedSlipPendingRows = contactedYesRows.filter(r => r.status === "pre_survey-01" || (r.status === "pre_survey" && r.pre_slip_uploaded === 1));
+          // booking_paid_at = "ชำระจองสำรวจ" — counts ALL who paid, including
+          // lost-after-booking (the 2 in ยกเลิกหลังจอง station). Otherwise this
+          // chip would disagree with the Row 2 wrapper count.
+          const contactedBookedRows      = lifecycleRows.filter(r => !!r.booking_paid_at);
+          const contactedNoPitch     = contactedNoPitchRows.length;
+          const contactedInPitch     = contactedInPitchRows.length;
+          const contactedSlipPending = contactedSlipPendingRows.length;
+          const contactedBooked      = contactedBookedRows.length;
+
+          const orderRows = bookingPaidRows.filter(r => r.status === "order");
+          const orderPaidFull = orderRows.filter(r => {
+            if (!r.order_paid_at) return false;
+            const total = (() => { try { return r.order_installments ? (JSON.parse(r.order_installments) as unknown[]).length : 0; } catch { return 0; } })();
+            return r.order_paid_count > 0 && r.order_paid_count >= total;
+          }).length;
+          const orderPaidPartial = orderRows.filter(r => r.order_paid_at).length - orderPaidFull;
+          const orderUnpaid = orderRows.length - orderPaidPartial - orderPaidFull;
+
+          const stepWaitSurveyRows       = lifecycleRows.filter(r => r.status === "pre_survey-02");
+          const stepSurveyScheduledRows  = bookingPaidRows.filter(r => r.status === "survey" && r.survey_date && new Date(r.survey_date) > today);
+          const stepSurveyingRows        = bookingPaidRows.filter(r => r.status === "survey" && (!r.survey_date || new Date(r.survey_date) <= today));
+          const stepWaitQuoteRows        = bookingPaidRows.filter(r => r.status === "quote");
+          const stepInstallScheduledRows = bookingPaidRows.filter(r => r.status === "install" && r.install_date && !r.install_done_at && new Date(r.install_date) > today);
+          const stepInstallingRows       = bookingPaidRows.filter(r => r.status === "install" && (!r.install_date || new Date(r.install_date) <= today) && !r.install_done_at);
+          const stepDoneRows             = bookingPaidRows.filter(r => ["warranty", "gridtie", "closed"].includes(r.status));
+          const stepLostAfterRows        = bookingPaidRows.filter(r => r.status === "lost");
+
+          const pct = (a: number, b: number) => b > 0 ? Math.round((a / b) * 100) : 0;
+
+          // Clickable chip — always opens the bucket popup, even when empty
+          // (popup shows "ไม่มีรายการ" in that case so the cursor stays a hand).
+          const Chip = ({ n, l, tone, detail, rows }: { n: number | string; l: string; tone: string; detail?: string; rows?: LifecycleRow[] }) => (
+            <button
+              type="button"
+              onClick={() => setBucket({ title: l, rows: rows ?? [] })}
+              className={`cursor-pointer rounded-lg px-2 py-3 text-center min-w-0 ${tone} hover:ring-2 hover:ring-offset-1 hover:ring-gray-300 transition-all`}
+            >
+              <div className="text-xl font-bold font-mono tabular-nums leading-none">{n}</div>
+              {detail && <div className="text-xxs font-mono tabular-nums opacity-60 mt-1 truncate">{detail}</div>}
+              <div className="text-xxs mt-2 leading-tight truncate opacity-75">{l}</div>
+            </button>
+          );
+
+          // 4 phase / 4 สี: Survey (violet) → Quote (amber) → Install (sky) →
+          // Cancel (rose). ภายใน phase เดียวกันใช้สีเดียวกันเพื่อให้ภาพรวม
+          // อ่านเป็นกลุ่มได้ — แทนที่จะไล่เฉดทีละ stage
+          const SURVEY  = { cardBg: "bg-violet-100", cardBorder: "border-violet-300", labelColor: "text-violet-800" };
+          const QUOTE   = { cardBg: "bg-amber-100",  cardBorder: "border-amber-300",  labelColor: "text-amber-800"  };
+          const INSTALL = { cardBg: "bg-sky-100",    cardBorder: "border-sky-300",    labelColor: "text-sky-800"    };
+          const CANCEL  = { cardBg: "bg-rose-50",    cardBorder: "border-rose-200",   labelColor: "text-rose-700"   };
+          const stations: { l: string; rows: LifecycleRow[]; sub?: string; detail?: string; cardBg: string; cardBorder: string; labelColor: string; dark?: boolean }[] = [
+            { l: "รอนัดสำรวจ",    rows: stepWaitSurveyRows,       sub: "ยืนยัน 2 แล้ว",            ...SURVEY },
+            { l: "นัดสำรวจ",       rows: stepSurveyScheduledRows,  sub: "นัดแล้ว ยังไม่ถึงวัน",     ...SURVEY },
+            { l: "กำลังสำรวจ",     rows: stepSurveyingRows,        sub: "ถึงวัน / ผ่านวันสำรวจ",    ...SURVEY },
+            { l: "รอใบเสนอราคา",    rows: stepWaitQuoteRows,        sub: "สำรวจเสร็จ",             ...QUOTE },
+            { l: "ได้ใบเสนอราคา",  rows: orderRows, detail: `${orderUnpaid} ยังไม่จ่าย · ${orderPaidPartial} มัดจำ · ${orderPaidFull} ครบ`, ...QUOTE },
+            { l: "นัดติดตั้ง",      rows: stepInstallScheduledRows, sub: "นัดแล้ว ยังไม่ถึงวัน",     ...INSTALL },
+            { l: "กำลังติดตั้ง",    rows: stepInstallingRows,       sub: "ถึงวัน / ผ่านวันติดตั้ง",  ...INSTALL },
+            { l: "ติดตั้งเสร็จ",    rows: stepDoneRows,             sub: "warranty / gridtie / closed", ...INSTALL },
+            { l: "ยกเลิกหลังจอง",   rows: stepLostAfterRows,        sub: "Lost after booking",       ...CANCEL },
           ];
 
+          // Big-number click handler — always opens the popup (cursor stays
+          // pointer even at count=0, popup just shows "ไม่มีรายการ").
+          const openBucket = (title: string, rows: LifecycleRow[]) =>
+            () => setBucket({ title, rows });
+          const bigNumCls = "cursor-pointer hover:underline decoration-2 underline-offset-4";
+
           return (
-            <div className="grid grid-cols-2 md:grid-cols-6 gap-3">
-              {kpis.map(k => (
-                <div key={k.label} className="rounded-2xl bg-white border border-gray-200 p-4 hover:shadow-sm transition-shadow">
-                  <div className="flex items-start justify-between mb-3">
-                    <div className={`w-10 h-10 rounded-xl ${k.iconBg} ${k.iconColor} flex items-center justify-center`}>
-                      <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.8}>
-                        <path strokeLinecap="round" strokeLinejoin="round" d={k.icon} />
-                      </svg>
-                    </div>
-                    {k.trend && <Trend current={k.trend.current} previous={k.trend.previous} />}
+            <div className="space-y-3">
+              {/* ROW 1 — 3 hero cards (Leads / ติดต่อได้ / รายได้) */}
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+                {/* Leads */}
+                <div className="rounded-2xl bg-white border border-gray-200 p-4 flex flex-col">
+                  <div className="flex items-baseline justify-between mb-3">
+                    <span className="text-sm font-bold uppercase tracking-[0.15em] text-gray-500">Leads ทั้งหมด</span>
+                    <span className="text-xs font-semibold text-emerald-600">+{data.this_month.new_leads || 0} เดือนนี้</span>
                   </div>
-                  <div className="text-xxs font-semibold tracking-wider uppercase text-gray-400">{k.label}</div>
-                  <div className="text-2xl font-bold font-mono tabular-nums text-gray-900 mt-0.5">{k.value}</div>
-                  <div className="text-xxs text-gray-400 mt-1">{k.sub}</div>
+                  <button
+                    type="button"
+                    onClick={openBucket("Leads ทั้งหมด", lifecycleRows)}
+                    className={`text-left text-3xl font-bold font-mono tabular-nums text-gray-900 leading-none ${bigNumCls}`}
+                  >{data.total_leads}</button>
+                  <div className="mt-auto pt-4 grid grid-cols-4 gap-1.5">
+                    <Chip n={notContacted}  l="รอติดตาม"      tone="bg-sky-50 text-sky-700"           rows={notContactedRows} />
+                    <Chip n={contactedNo}   l="ติดต่อไม่ได้"   tone="bg-rose-50 text-rose-700"          rows={contactedNoRows} />
+                    <Chip n={contactedYes}  l="ติดต่อได้"      tone="bg-emerald-600 text-white"         rows={contactedYesRows} />
+                    <Chip n={lostTotal}     l="ยกเลิก"        tone="bg-gray-300 text-gray-800"          rows={lostRows} />
+                  </div>
                 </div>
-              ))}
+
+                {/* ติดต่อได้ — ปลายทาง */}
+                <div className="rounded-2xl bg-white border border-gray-200 p-4 flex flex-col">
+                  <div className="flex items-baseline justify-between mb-3">
+                    <span className="text-sm font-bold uppercase tracking-[0.15em] text-emerald-700">ติดต่อได้ — ปลายทาง</span>
+                    <span className="text-xs font-semibold text-gray-500">{pct(contactedYes, data.total_leads)}% reach</span>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={openBucket("ติดต่อได้", contactedYesRows)}
+                    className={`text-left text-3xl font-bold font-mono tabular-nums text-gray-900 leading-none ${bigNumCls}`}
+                  >{contactedYes}</button>
+                  <div className="mt-auto pt-4 grid grid-cols-4 gap-1">
+                    <Chip n={contactedNoPitch}     l="ยังไม่สะดวกคุย" tone="bg-gray-100 text-gray-700"     rows={contactedNoPitchRows} />
+                    <Chip n={contactedInPitch}     l="ระหว่างเสนอ"   tone="bg-indigo-50 text-indigo-700"  rows={contactedInPitchRows} />
+                    <Chip n={contactedSlipPending} l="รอรับเงินจอง"   tone="bg-amber-50 text-amber-700"    rows={contactedSlipPendingRows} />
+                    <Chip n={contactedBooked}      l="ชำระจองสำรวจ"   tone="bg-emerald-600 text-white"      rows={contactedBookedRows} />
+                  </div>
+                </div>
+
+                {/* รับเงินแล้ว — total all-time confirmed payments (ยืนยัน 2) */}
+                <div className="rounded-2xl bg-teal-200 border border-teal-400 p-4 flex flex-col">
+                  <div className="flex items-baseline justify-between mb-3">
+                    <span className="text-sm font-bold uppercase tracking-[0.15em] text-teal-800">รับเงินแล้ว</span>
+                    <span className="text-xs font-semibold text-teal-700">บัญชียืนยันแล้ว</span>
+                  </div>
+                  <div className="text-3xl font-bold font-mono tabular-nums text-teal-900 leading-none">{fmtMoney(Number(data.total_received || 0))}</div>
+                  <div className="mt-auto pt-3 grid grid-cols-2 gap-2 border-t border-teal-400/60">
+                    <div>
+                      <div className="text-xs text-teal-700 leading-tight">รายได้เดือนนี้</div>
+                      <div className="text-lg font-bold font-mono tabular-nums text-teal-900 leading-none mt-0.5">{fmtMoney(closedValue)} <span className="text-xs font-normal text-teal-700">· {data.this_month.closed_count || 0} งาน</span></div>
+                    </div>
+                    <div className="text-right">
+                      <div className="text-xs text-teal-700 leading-tight">ยังค้างรับ</div>
+                      <div className="text-lg font-bold font-mono tabular-nums text-amber-700 leading-none mt-0.5">{fmtMoney(outstanding)}</div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              {/* ROW 2 — ชำระจองสำรวจ wrapper + 9 child KPI cards */}
+              <div className="rounded-2xl bg-white border border-emerald-300 p-4">
+                <div className="flex items-baseline justify-between mb-3 flex-wrap gap-2">
+                  <div className="flex items-baseline gap-3">
+                    <button
+                      type="button"
+                      onClick={openBucket("ชำระจองสำรวจ", bookingPaidRows)}
+                      className={`text-3xl font-bold font-mono tabular-nums text-emerald-700 leading-none ${bigNumCls}`}
+                    >{bookingPaidCount}</button>
+                    <span className="text-sm font-bold uppercase tracking-[0.15em] text-emerald-700">ชำระจองสำรวจ</span>
+                    <span className="text-xs font-semibold text-gray-500">{pct(bookingPaidCount, contactedYes)}% ของติดต่อได้</span>
+                  </div>
+                  <span className="text-xxs text-gray-400">แตกย่อยตาม step ปัจจุบัน (sum = ชำระจองสำรวจ)</span>
+                </div>
+
+                <div className="grid grid-cols-3 md:grid-cols-9 gap-2">
+                  {stations.map((s, i) => (
+                    <button
+                      key={i}
+                      type="button"
+                      onClick={() => setBucket({ title: s.l, rows: s.rows })}
+                      className={`cursor-pointer text-left rounded-xl border p-3 ${s.cardBg} ${s.cardBorder} hover:ring-2 hover:ring-offset-1 hover:ring-gray-300 transition-all`}
+                    >
+                      <div className={`text-sm font-bold uppercase tracking-[0.1em] leading-tight ${s.labelColor}`}>{s.l}</div>
+                      <div className={`text-2xl font-bold font-mono tabular-nums leading-none mt-1.5 ${s.dark ? "text-white" : "text-gray-900"}`}>{s.rows.length}</div>
+                      {s.detail
+                        ? <div className={`text-xxs mt-1.5 font-mono tabular-nums leading-tight ${s.dark ? "text-white/85" : "text-gray-500"}`}>{s.detail}</div>
+                        : <div className={`text-xxs mt-1.5 leading-tight truncate ${s.dark ? "text-white/75" : "text-gray-400"}`}>{s.sub}</div>}
+                    </button>
+                  ))}
+                </div>
+              </div>
             </div>
           );
         })()}
+
+        {/* Lifecycle funnel — full width */}
+        <div className="rounded-xl bg-white border border-gray-300 p-4">
+          <LifecycleFunnelChart rows={lifecycleRows} onStageClick={(title, r) => setBucket({ title, rows: r })} />
+        </div>
+
+        {/* Source quality chart — full width */}
+        {devData && (
+          <div className="rounded-xl bg-white border border-gray-300 p-4">
+            <div className="flex items-baseline justify-between mb-3">
+              <div className="text-sm font-semibold uppercase tracking-wider text-gray-400">Lead&apos;s Source</div>
+            </div>
+            <SourceQualityChart sources={devData.sources} />
+            <div className="text-xxs text-gray-400 text-left mt-2">ณ วันที่ {new Date().toLocaleDateString("th-TH", { day: "numeric", month: "long", year: "numeric" })}</div>
+          </div>
+        )}
 
         {/* Activity Heatmap */}
         <div className="rounded-xl bg-white border border-gray-300 p-4">
@@ -178,95 +398,60 @@ export default function DashboardPage() {
           <LineGrowthChart users={lineUsers} />
         </div>
 
-        {/* Lifecycle funnel — lead ค้างอยู่ stage ใด ตอนนี้ (ทั้งหมดตั้งแต่เริ่ม) */}
-        <div className="rounded-xl bg-white border border-gray-300 p-4">
-          <LifecycleFunnelChart rows={lifecycleRows} />
-        </div>
-
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-          {/* Pipeline */}
-          <div className="rounded-xl bg-white border border-gray-300 p-4">
-            <div className="text-xs font-semibold uppercase tracking-wider text-gray-400 mb-3">Pipeline</div>
-            <div className="space-y-2">
-              {pipelineSteps.map((s) => {
-                const pct = totalByStatus > 0 ? (s.count / totalByStatus) * 100 : 0;
-                return (
-                  <div key={s.status}>
-                    <div className="flex items-center justify-between mb-0.5">
-                      <span className="text-xs font-medium text-gray-700">{s.label}</span>
-                      <span className="text-xs font-bold font-mono tabular-nums text-gray-900">{s.count} <span className="text-gray-400 font-normal">({pct.toFixed(1)}%)</span></span>
-                    </div>
-                    <div className="h-2 bg-gray-100 rounded-full overflow-hidden">
-                      <div className={`h-full rounded-full transition-all duration-500 ${s.color}`} style={{ width: `${pct}%` }} />
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
-          </div>
-
-          {/* Top Projects */}
-          <div className="rounded-xl bg-white border border-gray-300 p-4">
-            <div className="text-xs font-semibold uppercase tracking-wider text-gray-400 mb-3">Top Projects</div>
-            {data.top_projects.length > 0 ? (
-              <div className="space-y-2">
-                {data.top_projects.map((p, i) => (
-                  <div key={p.name} className="flex items-center gap-3">
-                    <span className="w-6 h-6 rounded-full bg-primary/10 text-primary text-xs font-bold flex items-center justify-center shrink-0">{i + 1}</span>
-                    <div className="flex-1 min-w-0">
-                      <div className="text-sm font-semibold text-gray-800 truncate">{p.name}</div>
-                      <div className="text-xs text-gray-500">{p.lead_count} leads · {p.won} won</div>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            ) : (
-              <div className="text-xs text-gray-400 text-center py-4">ยังไม่มีข้อมูล</div>
-            )}
-          </div>
-        </div>
-
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-          {/* Recent Leads */}
-          <div className="rounded-xl bg-white border border-gray-300 p-4">
-            <div className="text-xs font-semibold uppercase tracking-wider text-gray-400 mb-3">Recent Leads</div>
-            <div className="space-y-1.5">
-              {data.recent_leads.map((l) => {
-                const cfg = STATUS_CONFIG[l.status];
-                return (
-                  <Link key={l.id} href={`/leads/${l.id}`} className="flex items-center gap-2.5 py-1.5 hover:bg-gray-50 rounded-lg px-1 -mx-1 transition-colors">
-                    <div className="w-7 h-7 bg-gray-100 rounded-full flex items-center justify-center shrink-0">
-                      <span className="text-gray-600 font-bold text-xs">{l.full_name.charAt(0)}</span>
-                    </div>
-                    <div className="flex-1 min-w-0">
-                      <div className="text-xs font-semibold text-gray-900 truncate">{l.full_name}</div>
-                      <div className="text-xs text-gray-400">{l.project_name || "—"} · {fmtDate(l.created_at)}</div>
-                    </div>
-                    <span className={`text-xxs font-bold uppercase tracking-wider px-1.5 py-0.5 rounded text-white shrink-0 ${cfg?.color || "bg-gray-400"}`}>
-                      {cfg?.label || l.status}
-                    </span>
-                  </Link>
-                );
-              })}
-            </div>
-          </div>
-
-          {/* Recent Activity */}
-          <div className="rounded-xl bg-white border border-gray-300 p-4">
-            <div className="text-xs font-semibold uppercase tracking-wider text-gray-400 mb-3">Recent Activity</div>
-            <div className="space-y-2">
-              {data.recent_activities.map((a, i) => (
-                <div key={i} className="flex gap-2.5">
-                  <div className="w-1.5 h-1.5 rounded-full bg-primary mt-1.5 shrink-0" />
-                  <div className="flex-1 min-w-0">
-                    <div className="text-xs text-gray-800 truncate">{a.title}</div>
-                    <div className="text-xs text-gray-400">{a.full_name} · {a.by_name ? `by ${a.by_name}` : ""} · {fmtDate(a.created_at)} {fmtTime(a.created_at)}</div>
-                  </div>
+        {/* Interest / Undecided / Lost — 3 reason cards */}
+        {devData && (() => {
+          const today = new Date().toLocaleDateString("th-TH", { day: "numeric", month: "long", year: "numeric" });
+          return (
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+              <div className="rounded-xl bg-white border border-gray-300 p-4">
+                <div className="flex items-baseline justify-between mb-3">
+                  <div className="text-sm font-semibold uppercase tracking-wider text-gray-400">เหตุผลที่สนใจ <span className="normal-case text-gray-300">(prospects)</span></div>
+                  <div className="text-lg font-bold font-mono tabular-nums text-emerald-700">{devData.interested_count}</div>
                 </div>
-              ))}
+                {devData.interest_reasons.length > 0 ? (
+                  <BarList
+                    items={devData.interest_reasons.map(r => ({ label: PRIMARY_REASON_LABEL[r.code] || r.code, value: r.cnt }))}
+                    color="bg-emerald-500"
+                  />
+                ) : (
+                  <div className="text-xs text-gray-400 text-center py-4">ยังไม่มีข้อมูล</div>
+                )}
+                <div className="text-xxs text-gray-400 text-left mt-2">ณ วันที่ {today}</div>
+              </div>
+              <div className="rounded-xl bg-white border border-gray-300 p-4">
+                <div className="flex items-baseline justify-between mb-3">
+                  <div className="text-sm font-semibold uppercase tracking-wider text-gray-400">เหตุผลที่ยังไม่จอง</div>
+                  <div className="text-lg font-bold font-mono tabular-nums text-amber-700">{devData.undecided_reasons.reduce((a, b) => a + b.cnt, 0)}</div>
+                </div>
+                {devData.undecided_reasons.length > 0 ? (
+                  <BarList
+                    items={devData.undecided_reasons.map(r => ({ label: r.reason, value: r.cnt }))}
+                    color="bg-amber-400"
+                  />
+                ) : (
+                  <div className="text-xs text-gray-400 text-center py-4">ยังไม่มีข้อมูล</div>
+                )}
+                <div className="text-xxs text-gray-400 text-left mt-2">ณ วันที่ {today}</div>
+              </div>
+              <div className="rounded-xl bg-white border border-gray-300 p-4">
+                <div className="flex items-baseline justify-between mb-3">
+                  <div className="text-sm font-semibold uppercase tracking-wider text-gray-400">เหตุผลที่ Lost</div>
+                  <div className="text-lg font-bold font-mono tabular-nums text-red-600">{devData.total_lost}</div>
+                </div>
+                {devData.lost_reasons.length > 0 || devData.total_lost > 0 ? (
+                  <BarList
+                    items={devData.lost_reasons.map(r => ({ label: r.reason, value: r.cnt }))}
+                    color="bg-red-400"
+                  />
+                ) : (
+                  <div className="text-xs text-gray-400 text-center py-4">ยังไม่มีข้อมูล</div>
+                )}
+                <div className="text-xxs text-gray-400 text-left mt-2">ณ วันที่ {today}</div>
+              </div>
             </div>
-          </div>
-        </div>
+          );
+        })()}
+
       </div>
     </div>
   );
@@ -350,7 +535,7 @@ function ActivityChart({ data }: { data: { day: string; lead_id: number; full_na
   return (
     <div>
       <div className="flex items-center justify-between mb-3">
-        <div className="text-xs font-semibold uppercase tracking-wider text-gray-400">
+        <div className="text-sm font-semibold uppercase tracking-wider text-gray-400">
           การติดตามลูกค้า <span className="normal-case text-gray-300">(30 วันล่าสุด)</span>
         </div>
         <select
@@ -484,7 +669,7 @@ function LineGrowthChart({ users }: { users: { created_at: string; phone: string
   return (
     <div>
       <div className="flex items-center justify-between mb-3">
-        <div className="text-xs font-semibold uppercase tracking-wider text-gray-400">
+        <div className="text-sm font-semibold uppercase tracking-wider text-gray-400">
           Add LINE OA รายวัน <span className="normal-case text-gray-300">(30 วันล่าสุด)</span>
         </div>
         <select
@@ -547,57 +732,102 @@ function LineGrowthChart({ users }: { users: { created_at: string; phone: string
   );
 }
 
-// Funnel = lead count by status (matches Pipeline section's status_breakdown
-// 1:1 so the two sections never disagree). pre_survey is split by
-// first_contact_at: ยังไม่ได้ติดต่อ vs ติดต่อได้/ไม่ได้ (stacked by contact_state).
-function LifecycleFunnelChart({ rows }: { rows: LifecycleRow[] }) {
+// Funnel chart that mirrors the KPI cards above 1:1 — every stage's label,
+// definition, and count matches a chip or row-2 station on the dashboard so
+// the two sections can never disagree. booking_paid_at counts as "ติดต่อได้"
+// (same override as KPI), so a lead that paid but never had a successful
+// contact-attempt logged (e.g. lead 438) is still in ติดต่อได้.
+function LifecycleFunnelChart({ rows, onStageClick }: { rows: LifecycleRow[]; onStageClick?: (title: string, rows: LifecycleRow[]) => void }) {
   const CONTACT_STATES: ContactStateField[] = [
     "first_contact_state", "contact2_state", "contact3_state", "contact4_state", "contact5_state",
   ];
-  const byStatus = (s: string) => rows.filter(r => r.status === s);
-  const preSurvey = byStatus("pre_survey");
-  const preSurveyNoContact = preSurvey.filter(r => !r.first_contact_at).length;
-  const preSurveyInContact = preSurvey.filter(r => r.first_contact_at);
-  const contactYesRows = preSurveyInContact.filter(r => CONTACT_STATES.some(s => r[s] === "yes"));
-  const contactYes = contactYesRows.length;
-  const contactNo = preSurveyInContact.length - contactYes;
-  // เสนอขาย bar base = ติดต่อได้ subset (sales_pitch_at เกิดขึ้นได้เฉพาะคนที่ติดต่อ
-  // ได้จริงเท่านั้น) ดังนั้น stack รวมต้องเท่า contactYes
-  const pitched = contactYesRows.filter(r => r.sales_pitch_at).length;
-  const notPitched = contactYes - pitched;
-  // จองแล้วแต่ยังไม่ได้นัดสำรวจ — booking_paid_at มี survey_date null และ
-  // status ยังอยู่ใน pre_survey (ไม่ใช่นัดแล้วแต่ status เลื่อนไปแล้ว)
-  const bookedNotScheduled = rows.filter(r =>
-    r.booking_paid_at && !r.survey_date && r.status.startsWith("pre_survey")
-  ).length;
+  const today = new Date(new Date().toDateString());
+  const stateList = (r: LifecycleRow) => CONTACT_STATES.map(s => r[s]);
+  const hasYes = (r: LifecycleRow) => stateList(r).some(s => s === "yes");
+  const hasNo  = (r: LifecycleRow) => stateList(r).some(s => s === "no");
+  const isPaid = (r: LifecycleRow) => !!r.booking_paid_at;
 
-  const stages: { label: string; total: number; segments: { color: string; count: number }[] }[] = [
-    { label: "ยังไม่ได้ติดต่อ",   total: preSurveyNoContact,         segments: [{ color: "bg-rose-400",    count: preSurveyNoContact }] },
-    { label: "ติดต่อได้/ไม่ได้",  total: preSurveyInContact.length,  segments: [
-      { color: "bg-emerald-500", count: contactYes },
-      { color: "bg-red-400",     count: contactNo },
-    ] },
-    { label: "เสนอขายแล้ว",      total: contactYes,                 segments: [
-      { color: "bg-emerald-500", count: pitched },     // ได้เสนอขายแล้ว
-      { color: "bg-gray-300",    count: notPitched },  // ยังไม่ได้เสนอขาย
-    ] },
-    { label: "จองแล้ว/รอนัด",     total: bookedNotScheduled,         segments: [{ color: "bg-amber-500",  count: bookedNotScheduled }] },
-    { label: "รอสำรวจ",         total: byStatus("survey").length,   segments: [{ color: "bg-violet-500", count: byStatus("survey").length }] },
-    { label: "รอใบเสนอราคา",     total: byStatus("quote").length,    segments: [{ color: "bg-orange-500", count: byStatus("quote").length }] },
-    { label: "รออนุมัติ/ชำระ",    total: byStatus("order").length,    segments: [{ color: "bg-green-500",  count: byStatus("order").length }] },
-    { label: "กำลังติดตั้ง",      total: byStatus("install").length,  segments: [{ color: "bg-emerald-500", count: byStatus("install").length }] },
-    { label: "ออกใบรับประกัน",   total: byStatus("warranty").length, segments: [{ color: "bg-cyan-500",   count: byStatus("warranty").length }] },
-    { label: "ขอขนานไฟ",        total: byStatus("gridtie").length,  segments: [{ color: "bg-amber-500",  count: byStatus("gridtie").length }] },
-    { label: "ส่งมอบแล้ว",       total: byStatus("closed").length,   segments: [{ color: "bg-teal-500",   count: byStatus("closed").length }] },
+  // Contact section — 4 mutually-exclusive buckets sum = total leads, matching
+  // Leads card chips exactly. Lost is extracted first so the other 3 contain
+  // only active leads (no double-count with the terminal ยกเลิก bar).
+  const isLost = (r: LifecycleRow) => r.status === "lost";
+  const noContactRows  = rows.filter(r => !isLost(r) && !isPaid(r) && !hasYes(r) && !hasNo(r));
+  const contactNoRows  = rows.filter(r => !isLost(r) && !isPaid(r) && hasNo(r) && !hasYes(r));
+  const contactYesRows = rows.filter(r => !isLost(r) && (isPaid(r) || hasYes(r)));
+
+  // ติดต่อได้ — ปลายทาง: same 4 mutually-exclusive buckets as KPI card 2
+  // (sum = contactYesRows.length). Lost is excluded above so we don't add a
+  // 5th bar for it.
+  const destNoPitchRows     = contactYesRows.filter(r => r.status === "pre_survey" && !r.sales_pitch_at && r.pre_slip_uploaded !== 1);
+  const destInPitchRows     = contactYesRows.filter(r => r.status === "pre_survey" && r.sales_pitch_at && r.pre_slip_uploaded !== 1);
+  const destSlipPendingRows = contactYesRows.filter(r => r.status === "pre_survey-01" || (r.status === "pre_survey" && r.pre_slip_uploaded === 1));
+  const destBookedRows      = contactYesRows.filter(r => !!r.booking_paid_at);
+
+  // ชำระจองสำรวจ — same 9 buckets as KPI row 2 stations (sum = bookingPaid).
+  const bookingPaidRows = rows.filter(r => r.booking_paid_at);
+  const stepWaitSurveyRows       = rows.filter(r => r.status === "pre_survey-02");
+  const stepSurveyScheduledRows  = bookingPaidRows.filter(r => r.status === "survey" && r.survey_date && new Date(r.survey_date) > today);
+  const stepSurveyingRows        = bookingPaidRows.filter(r => r.status === "survey" && (!r.survey_date || new Date(r.survey_date) <= today));
+  const stepWaitQuoteRows        = bookingPaidRows.filter(r => r.status === "quote");
+  const orderRowsList            = bookingPaidRows.filter(r => r.status === "order");
+  const stepInstallScheduledRows = bookingPaidRows.filter(r => r.status === "install" && r.install_date && !r.install_done_at && new Date(r.install_date) > today);
+  const stepInstallingRows       = bookingPaidRows.filter(r => r.status === "install" && (!r.install_date || new Date(r.install_date) <= today) && !r.install_done_at);
+  const stepDoneRows             = bookingPaidRows.filter(r => ["warranty", "gridtie", "closed"].includes(r.status));
+  const stepLostAfterRows        = bookingPaidRows.filter(r => r.status === "lost");
+
+  // ยกเลิก — every lost lead (= countsByStatus['lost']). Overlaps with contact
+  // buckets above because lost can happen at any stage; shown separately as a
+  // terminal-state column so the user sees total churn at a glance.
+  const lostRows = rows.filter(r => r.status === "lost");
+
+  type Seg = { color: string; count: number; rows: LifecycleRow[]; subLabel?: string };
+  const stages: { label: string; total: number; rows: LifecycleRow[]; segments: Seg[] }[] = [
+    // การติดต่อ — 3 columns, sum = total leads
+    { label: "ยังไม่ติดต่อ",  total: noContactRows.length,  rows: noContactRows,
+      segments: [{ color: "bg-gray-400",   count: noContactRows.length,  rows: noContactRows }] },
+    { label: "ติดต่อไม่ได้",  total: contactNoRows.length,  rows: contactNoRows,
+      segments: [{ color: "bg-rose-400",   count: contactNoRows.length,  rows: contactNoRows }] },
+    { label: "ติดต่อได้",     total: contactYesRows.length, rows: contactYesRows,
+      segments: [{ color: "bg-emerald-500", count: contactYesRows.length, rows: contactYesRows }] },
+    // ปลายทางติดต่อได้ — 5 columns matching KPI ติดต่อได้-ปลายทาง card
+    { label: "ยังไม่สะดวกคุย", total: destNoPitchRows.length,     rows: destNoPitchRows,
+      segments: [{ color: "bg-gray-400",    count: destNoPitchRows.length,     rows: destNoPitchRows }] },
+    { label: "ระหว่างเสนอ",    total: destInPitchRows.length,     rows: destInPitchRows,
+      segments: [{ color: "bg-indigo-500",  count: destInPitchRows.length,     rows: destInPitchRows }] },
+    { label: "รอรับเงินจอง",   total: destSlipPendingRows.length, rows: destSlipPendingRows,
+      segments: [{ color: "bg-amber-500",   count: destSlipPendingRows.length, rows: destSlipPendingRows }] },
+    { label: "ชำระจองสำรวจ",       total: destBookedRows.length,      rows: destBookedRows,
+      segments: [{ color: "bg-emerald-600", count: destBookedRows.length,      rows: destBookedRows }] },
+    // ชำระจองสำรวจ — 9 columns matching KPI row 2 stations
+    { label: "รอนัดสำรวจ",    total: stepWaitSurveyRows.length,       rows: stepWaitSurveyRows,
+      segments: [{ color: "bg-purple-500", count: stepWaitSurveyRows.length,       rows: stepWaitSurveyRows }] },
+    { label: "นัดสำรวจ",       total: stepSurveyScheduledRows.length,  rows: stepSurveyScheduledRows,
+      segments: [{ color: "bg-cyan-500",   count: stepSurveyScheduledRows.length,  rows: stepSurveyScheduledRows }] },
+    { label: "กำลังสำรวจ",     total: stepSurveyingRows.length,        rows: stepSurveyingRows,
+      segments: [{ color: "bg-sky-500",    count: stepSurveyingRows.length,        rows: stepSurveyingRows }] },
+    { label: "รอใบเสนอราคา",    total: stepWaitQuoteRows.length,        rows: stepWaitQuoteRows,
+      segments: [{ color: "bg-yellow-500", count: stepWaitQuoteRows.length,        rows: stepWaitQuoteRows }] },
+    { label: "ได้ใบเสนอราคา",  total: orderRowsList.length,            rows: orderRowsList,
+      segments: [{ color: "bg-lime-500",   count: orderRowsList.length,            rows: orderRowsList }] },
+    { label: "นัดติดตั้ง",      total: stepInstallScheduledRows.length, rows: stepInstallScheduledRows,
+      segments: [{ color: "bg-blue-500",   count: stepInstallScheduledRows.length, rows: stepInstallScheduledRows }] },
+    { label: "กำลังติดตั้ง",    total: stepInstallingRows.length,       rows: stepInstallingRows,
+      segments: [{ color: "bg-indigo-500", count: stepInstallingRows.length,       rows: stepInstallingRows }] },
+    { label: "ติดตั้งเสร็จ",    total: stepDoneRows.length,             rows: stepDoneRows,
+      segments: [{ color: "bg-teal-500",   count: stepDoneRows.length,             rows: stepDoneRows }] },
+    { label: "ยกเลิกหลังจอง",   total: stepLostAfterRows.length,        rows: stepLostAfterRows,
+      segments: [{ color: "bg-rose-500",   count: stepLostAfterRows.length,        rows: stepLostAfterRows }] },
+    // Terminal
+    { label: "ยกเลิก (รวม)",   total: lostRows.length,        rows: lostRows,
+      segments: [{ color: "bg-gray-500",   count: lostRows.length,        rows: lostRows }] },
   ];
 
   // Group header band — span matches the # of stages that bucket under each.
   const groups = [
-    { title: "การติดต่อ",           tone: "bg-sky-50 text-sky-800 border-sky-200",            span: 3 },
-    { title: "Pre-Survey / Survey", tone: "bg-violet-50 text-violet-800 border-violet-200",   span: 2 },
-    { title: "Quote / Order",       tone: "bg-orange-50 text-orange-800 border-orange-200",   span: 2 },
-    { title: "ติดตั้ง / รับประกัน",  tone: "bg-teal-50 text-teal-800 border-teal-200",          span: 3 },
-    { title: "ส่งมอบ",              tone: "bg-gray-50 text-gray-700 border-gray-200",         span: 1 },
+    { title: "การติดต่อ",                  tone: "bg-sky-50 text-sky-800 border-sky-200",            span: 3 },
+    { title: "ติดต่อได้ — ปลายทาง",          tone: "bg-emerald-50 text-emerald-800 border-emerald-200", span: 4 },
+    { title: "รายละเอียดจากชำระจองสำรวจ",     tone: "bg-emerald-50 text-emerald-800 border-emerald-200", span: 9 },
+    { title: "ยกเลิก",                     tone: "bg-rose-50 text-rose-700 border-rose-200",         span: 1 },
   ];
 
   const maxTotal = Math.max(...stages.map(s => s.total), 1);
@@ -606,8 +836,8 @@ function LifecycleFunnelChart({ rows }: { rows: LifecycleRow[] }) {
 
   return (
     <div>
-      <div className="text-xs font-semibold uppercase tracking-wider text-gray-400 mb-3">
-        Lead ค้างที่ stage ไหน <span className="normal-case text-gray-300">(ทั้งหมดตั้งแต่เริ่ม)</span>
+      <div className="text-sm font-semibold uppercase tracking-wider text-gray-400 mb-3">
+        Lead&apos;s Stage
       </div>
       <div className="overflow-x-auto">
         <div className="min-w-[500px]">
@@ -624,9 +854,15 @@ function LifecycleFunnelChart({ rows }: { rows: LifecycleRow[] }) {
             {stages.map((stage, i) => {
               const totalH = (stage.total / maxTotal) * usableH;
               return (
-                <div key={i} className="flex-1 min-w-0 flex flex-col items-stretch justify-end px-0.5" style={{ height: "100%" }}>
+                <button
+                  key={i}
+                  type="button"
+                  onClick={() => onStageClick?.(stage.label, stage.rows)}
+                  className="cursor-pointer flex-1 min-w-0 flex flex-col items-stretch justify-end px-0.5 hover:bg-gray-50 transition-colors"
+                  style={{ height: "100%" }}
+                >
                   <div className="text-center text-xxs font-bold text-gray-700 tabular-nums leading-none mb-1">{stage.total}</div>
-                  <div className="rounded-t-sm overflow-hidden flex flex-col-reverse" style={{ height: Math.max(totalH, stage.total > 0 ? 4 : 0) }}>
+                  <div className="overflow-hidden flex flex-col-reverse" style={{ height: Math.max(totalH, stage.total > 0 ? 4 : 0) }}>
                     {stage.segments.map((seg, j) => (
                       seg.count > 0 ? (
                         <div key={j}
@@ -639,7 +875,7 @@ function LifecycleFunnelChart({ rows }: { rows: LifecycleRow[] }) {
                       ) : null
                     ))}
                   </div>
-                </div>
+                </button>
               );
             })}
           </div>
@@ -653,11 +889,14 @@ function LifecycleFunnelChart({ rows }: { rows: LifecycleRow[] }) {
           <div className="mt-3 flex items-center gap-4 text-xxs text-gray-500">
             <div className="flex items-center gap-1.5">
               <div className="w-2.5 h-2.5 rounded-sm bg-emerald-500" />
-              <span>ติดต่อได้ <span className="font-bold text-gray-700 tabular-nums">{contactYes}</span></span>
+              <span>ติดต่อได้ <span className="font-bold text-gray-700 tabular-nums">{contactYesRows.length}</span></span>
             </div>
             <div className="flex items-center gap-1.5">
-              <div className="w-2.5 h-2.5 rounded-sm bg-red-400" />
-              <span>ติดต่อไม่ได้ <span className="font-bold text-gray-700 tabular-nums">{contactNo}</span></span>
+              <div className="w-2.5 h-2.5 rounded-sm bg-rose-400" />
+              <span>ติดต่อไม่ได้ <span className="font-bold text-gray-700 tabular-nums">{contactNoRows.length}</span></span>
+            </div>
+            <div className="flex items-center gap-1.5 ml-auto">
+              <span className="text-gray-400">คลิก stage ดูรายชื่อ</span>
             </div>
           </div>
         </div>
@@ -665,3 +904,105 @@ function LifecycleFunnelChart({ rows }: { rows: LifecycleRow[] }) {
     </div>
   );
 }
+
+// Source quality — vertical grouped-bar chart, 4 bars per source side-by-side.
+//   Lead (total) · จอง (booked) · มัดจำ (paid) · ติดตั้ง (installed)
+// The "drop" between bars within a group = funnel conversion at a glance.
+function SourceQualityChart({ sources }: { sources: DevData["sources"] }) {
+  // Short labels for chart x-axis — the full "Seeker · Sen X PM" / "LINE OA ·
+  // SENA Solar" form is too long to fit under a 10-column bar group, so we
+  // collapse to a compact word per source. Long form still shows in the title
+  // tooltip on hover.
+  const SHORT_LABEL: Record<string, string> = {
+    seeker_senxpm: "Sen X PM",  seeker_housing: "Housing",
+    line_sena: "LINE OA",       line_agent: "LINE Agent",     line_smartify: "LINE Smartify",
+    event_booth: "Event",
+    smartify_app: "Smartify",   smartify_existing: "Smartify เดิม", smartify_new: "Smartify ใหม่",
+    web_sena: "Website",
+    fb_smartify: "FB Smartify", fb_senx: "FB SenX",
+    other: "อื่นๆ",
+    senxpm: "SenXPM",           walk_in: "Walk-in",
+    event: "Event",             ads: "Ads",                   the1: "The1",
+    web: "Web",                 refer: "แนะนำ",
+    line_oa: "LINE OA",         email: "Email",               seeker: "Seeker",
+  };
+  // Collapse raw source strings into canonical buckets — same as the old BarList
+  // so labels match the chip + channel picker; aggregate per-stage counts.
+  type Bucket = { label: string; fullLabel: string; cnt: number; booked: number; paid: number; installed: number };
+  const buckets = new Map<string, Bucket>();
+  for (const s of sources) {
+    const key = normalizeSourceKey(s.source);
+    const fullLabel = getSourceStyle(s.source).label;
+    const label = SHORT_LABEL[key] || fullLabel;
+    const cur = buckets.get(key);
+    if (cur) { cur.cnt += s.cnt; cur.booked += s.booked; cur.paid += s.paid; cur.installed += s.installed; }
+    else buckets.set(key, { label, fullLabel, cnt: s.cnt, booked: s.booked, paid: s.paid, installed: s.installed });
+  }
+  const items = Array.from(buckets.values()).sort((a, b) => b.cnt - a.cnt).slice(0, 10);
+  const max = Math.max(...items.map(s => s.cnt), 1);
+  const chartH = 180;
+  const bars: { key: "cnt" | "booked" | "paid" | "installed"; color: string; label: string }[] = [
+    { key: "cnt",       color: "bg-gray-400",    label: "Lead"    },
+    { key: "booked",    color: "bg-blue-500",    label: "จอง"     },
+    { key: "paid",      color: "bg-yellow-400",  label: "มัดจำ"   },
+    { key: "installed", color: "bg-emerald-500", label: "ติดตั้ง" },
+  ];
+
+  return (
+    <div>
+      <div className="flex items-end gap-3 border-b border-gray-200 pb-px" style={{ height: chartH + 30 }}>
+        {items.map((s, i) => (
+          <div key={i} className="flex-1 min-w-0 flex flex-col items-stretch justify-end" style={{ height: "100%" }}>
+            <div className="flex items-end gap-0.5 px-0.5" style={{ height: chartH + 22 }}>
+              {bars.map(b => {
+                const v = s[b.key];
+                const h = (v / max) * chartH;
+                return (
+                  <div key={b.key} className="flex-1 min-w-0 flex flex-col items-stretch justify-end">
+                    <div className="text-center text-xxs font-bold font-mono tabular-nums text-gray-700 leading-none mb-1">{v}</div>
+                    <div className={`${b.color}`} style={{ height: Math.max(h, v > 0 ? 2 : 0) }} title={`${b.label} ${v}`} />
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        ))}
+      </div>
+      <div className="flex gap-3 mt-1">
+        {items.map((s, i) => (
+          <div key={i} className="flex-1 min-w-0 text-center text-xxs text-gray-500 leading-tight px-0.5 truncate" title={s.fullLabel}>{s.label}</div>
+        ))}
+      </div>
+      <div className="mt-3 flex items-center gap-3 text-xxs text-gray-500 flex-wrap">
+        {bars.map(b => (
+          <div key={b.key} className="flex items-center gap-1"><div className={`w-2.5 h-2.5 rounded-sm ${b.color}`} />{b.label}</div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+// BarList — moved over from /dashboard-dev so the 5-card row above can render
+// without the dev page.
+function BarList({ items, color }: { items: { label: string; value: number }[]; color: string }) {
+  const max = Math.max(...items.map(i => i.value), 1);
+  return (
+    <div className="space-y-1.5">
+      {items.map((it, i) => {
+        const pct = (it.value / max) * 100;
+        return (
+          <div key={i}>
+            <div className="flex items-center justify-between mb-0.5">
+              <span className="text-xs font-medium text-gray-700 truncate">{it.label}</span>
+              <span className="text-xs font-bold font-mono tabular-nums text-gray-900 ml-2">{it.value}</span>
+            </div>
+            <div className="h-1.5 bg-gray-100 overflow-hidden">
+              <div className={`h-full ${color}`} style={{ width: `${pct}%` }} />
+            </div>
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+

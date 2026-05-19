@@ -27,7 +27,10 @@ export async function GET(req: NextRequest) {
           (SELECT COUNT(*) FROM leads) as total_leads,
           (SELECT COUNT(*) FROM leads WHERE pre_doc_no IS NOT NULL) as total_deposits,
           (SELECT ISNULL(SUM(pre_total_price), 0) FROM leads WHERE pre_doc_no IS NOT NULL) as total_deposit_value,
-          (SELECT COUNT(*) FROM leads WHERE status = 'order') as total_won
+          (SELECT COUNT(*) FROM leads WHERE status = 'order') as total_won,
+          -- All cash received that accounting has confirmed (level-2 sign-off).
+          -- Covers every slip_field — booking deposit, order installments, etc.
+          (SELECT ISNULL(SUM(amount), 0) FROM payments WHERE confirmed_at IS NOT NULL) as total_received
       `),
       // Revenue is recognized the moment an install is completed (status moves to
       // warranty → gridtie → closed after that). Filtering on status='closed' would
@@ -37,7 +40,16 @@ export async function GET(req: NextRequest) {
         SELECT
           (SELECT COUNT(*) FROM leads WHERE created_at >= @first_day) as new_leads,
           (SELECT COUNT(*) FROM leads WHERE install_completed_at >= @first_day) as closed_count,
-          (SELECT ISNULL(SUM(ISNULL(order_total,0) + ISNULL(install_extra_cost,0)), 0) FROM leads WHERE install_completed_at >= @first_day) as closed_value
+          (SELECT ISNULL(SUM(ISNULL(order_total,0) + ISNULL(install_extra_cost,0)), 0) FROM leads WHERE install_completed_at >= @first_day) as closed_value,
+          (SELECT ISNULL(SUM(ISNULL(l.order_total,0) + ISNULL(l.install_extra_cost,0) - ISNULL(cp.paid,0)), 0)
+             FROM leads l
+             LEFT JOIN (
+               SELECT lead_id, SUM(amount) AS paid
+               FROM payments
+               WHERE slip_field LIKE 'order_installment_%' AND confirmed_at IS NOT NULL
+               GROUP BY lead_id
+             ) cp ON cp.lead_id = l.id
+             WHERE l.install_completed_at >= @first_day) as closed_outstanding
       `),
       db.request().input("lm_start", lastMonthFirst).input("lm_end", lastMonthEnd).query(`
         SELECT
@@ -102,6 +114,7 @@ export async function GET(req: NextRequest) {
       total_deposits: t.total_deposits,
       total_deposit_value: t.total_deposit_value,
       total_won: t.total_won,
+      total_received: t.total_received,
       conversion_rate: t.total_leads > 0 ? Math.round((t.total_won / t.total_leads) * 100) : 0,
       this_month: tm,
       last_month: lm,

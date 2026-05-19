@@ -1,6 +1,6 @@
 "use client";
 
-import { apiFetch } from "@/lib/api";
+import { apiFetch, getUserIdHeader } from "@/lib/api";
 import { useEffect, useState } from "react";
 import Header from "@/components/layout/Header";
 import { useMe } from "@/lib/roles";
@@ -10,12 +10,11 @@ import { getSourceStyle, normalizeSourceKey } from "@/lib/source-tag";
 interface DevData {
   funnel: {
     total: number;
-    has_pre_doc: number;
-    has_survey: number;
-    has_order: number;
-    has_install: number;
+    contacted: number;
+    booked: number;
+    surveyed: number;
+    quoted: number;
     installed: number;
-    warranty_issued: number;
   };
   total_lost: number;
   daily: { day: string; cnt: number; with_line: number; without_line: number }[];
@@ -32,106 +31,65 @@ interface DevData {
 
 export default function DashboardDevPage() {
   const { me } = useMe();
-  const isAdmin = (me?.roles || []).includes("admin");
   const [data, setData] = useState<DevData | null>(null);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    if (!isAdmin) { setLoading(false); return; }
     apiFetch("/api/dashboard-dev").then(setData).catch(console.error).finally(() => setLoading(false));
-  }, [isAdmin]);
+  }, []);
 
   if (!me) return null;
-  if (!isAdmin) {
-    return (
-      <div>
-        <Header title="Dashboard Dev" subtitle="EXPERIMENTAL" />
-        <div className="p-4 md:p-6">
-          <div className="bg-white rounded-xl border border-gray-200 p-6 text-sm text-gray-500 text-center">ต้องเป็น admin เท่านั้น</div>
-        </div>
-      </div>
-    );
-  }
   if (loading) return <div className="flex items-center justify-center h-full py-20"><div className="w-10 h-10 border-3 border-gray-200 border-t-primary rounded-full animate-spin" /></div>;
   if (!data) return <div className="text-center py-12 text-gray-400 text-sm">Unable to load data</div>;
 
   const today = new Date().toLocaleDateString("th-TH", { day: "numeric", month: "long", year: "numeric" });
 
   return (
-    <div>
-      <Header title="Dashboard Dev" subtitle="EXPERIMENTAL — admin only" />
-      <div className="p-3 md:p-6 space-y-3">
+    <div className="dashboard-print-root">
+      <div className="dashboard-pdf-skip">
+        <Header
+          title="Dashboard II"
+          subtitle="SENA SOLAR ENERGY"
+          rightContent={
+            <button
+              type="button"
+              onClick={async (e) => {
+                const btn = e.currentTarget;
+                btn.disabled = true;
+                try {
+                  const res = await fetch("/api/report/dashboard-pdf?path=/dashboard-dev", { headers: { ...getUserIdHeader() } });
+                  if (!res.ok) { alert("ดาวน์โหลด PDF ไม่สำเร็จ"); return; }
+                  const blob = await res.blob();
+                  const url = URL.createObjectURL(blob);
+                  const a = document.createElement("a");
+                  a.href = url;
+                  a.download = `dashboard-ii_${new Date().toISOString().slice(0, 10)}.pdf`;
+                  document.body.appendChild(a);
+                  a.click();
+                  a.remove();
+                  URL.revokeObjectURL(url);
+                } finally {
+                  btn.disabled = false;
+                }
+              }}
+              className="cursor-pointer inline-flex items-center gap-1.5 h-8 px-3 rounded-lg bg-white border border-gray-200 text-xs font-semibold text-gray-700 hover:border-gray-300 disabled:opacity-50 disabled:cursor-wait transition-colors"
+              title="ดาวน์โหลด Dashboard II เป็น PDF"
+              aria-label="ดาวน์โหลด Dashboard II เป็น PDF"
+            >
+              <svg className="w-3.5 h-3.5 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                <path strokeLinecap="round" strokeLinejoin="round" d="M3 16.5v2.25A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75V16.5M16.5 12L12 16.5m0 0L7.5 12m4.5 4.5V3" />
+              </svg>
+              <span>PDF</span>
+            </button>
+          }
+        />
+      </div>
+      <div className="dashboard-pdf-content p-3 md:p-6 space-y-3">
 
         {/* Horizontal funnel — wide hero visualisation showing the lead
             pipeline left → right. Each stage tapers to the next based on
             its value relative to the largest stage. */}
         <HorizontalFunnel funnel={data.funnel} />
-
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-3">
-          <div className="rounded-xl bg-white border border-gray-300 p-4">
-            <div className="text-xs font-semibold uppercase tracking-wider text-gray-400 mb-3">Source <span className="normal-case text-gray-300">(top 10)</span></div>
-            <BarList items={(() => {
-              // Collapse raw legacy strings ("Lead Seeker - Sen X PM", "LINE OA - SENA Solar"…)
-              // into canonical buckets via normalizeSourceKey so labels match the chip + channel picker.
-              const buckets = new Map<string, { label: string; value: number }>();
-              for (const s of data.sources) {
-                const key = normalizeSourceKey(s.source);
-                const label = getSourceStyle(s.source).label;
-                const cur = buckets.get(key);
-                if (cur) cur.value += s.cnt;
-                else buckets.set(key, { label, value: s.cnt });
-              }
-              return Array.from(buckets.values()).sort((a, b) => b.value - a.value).slice(0, 10);
-            })()} color="bg-sky-500" />
-            <div className="text-xxs text-gray-400 text-left mt-2">ณ วันที่ {today}</div>
-          </div>
-          <FunnelCard funnel={data.funnel} />
-          <div className="rounded-xl bg-white border border-gray-300 p-4">
-            <div className="text-xs font-semibold uppercase tracking-wider text-gray-400 mb-3">เหตุผลที่สนใจ <span className="normal-case text-gray-300">(prospects)</span></div>
-            {data.interest_reasons.length > 0 ? (
-              <BarList
-                items={[
-                  { label: "Total prospect (สนใจ)", value: data.interested_count },
-                  ...data.interest_reasons.map(r => ({ label: PRIMARY_REASON_LABEL[r.code] || r.code, value: r.cnt })),
-                ]}
-                color="bg-emerald-500"
-              />
-            ) : (
-              <div className="text-xs text-gray-400 text-center py-4">ยังไม่มีข้อมูล</div>
-            )}
-            <div className="text-xxs text-gray-400 text-left mt-2">ณ วันที่ {today}</div>
-          </div>
-          <div className="rounded-xl bg-white border border-gray-300 p-4">
-            <div className="text-xs font-semibold uppercase tracking-wider text-gray-400 mb-3">เหตุผลที่ยังไม่จอง</div>
-            {data.undecided_reasons.length > 0 ? (
-              <BarList
-                items={[
-                  { label: "Total ยังไม่จอง", value: data.undecided_reasons.reduce((a, b) => a + b.cnt, 0) },
-                  ...data.undecided_reasons.map(r => ({ label: r.reason, value: r.cnt })),
-                ]}
-                color="bg-amber-400"
-              />
-            ) : (
-              <div className="text-xs text-gray-400 text-center py-4">ยังไม่มีข้อมูล</div>
-            )}
-            <div className="text-xxs text-gray-400 text-left mt-2">ณ วันที่ {today}</div>
-          </div>
-          <div className="rounded-xl bg-white border border-gray-300 p-4">
-            <div className="text-xs font-semibold uppercase tracking-wider text-gray-400 mb-3">เหตุผลที่ Lost</div>
-            {data.lost_reasons.length > 0 || data.total_lost > 0 ? (
-              <BarList
-                items={[
-                  { label: "Total Lost", value: data.total_lost },
-                  ...data.lost_reasons.map(r => ({ label: r.reason, value: r.cnt })),
-                ]}
-                color="bg-red-400"
-              />
-            ) : (
-              <div className="text-xs text-gray-400 text-center py-4">ยังไม่มีข้อมูล</div>
-            )}
-            <div className="text-xxs text-gray-400 text-left mt-2">ณ วันที่ {today}</div>
-          </div>
-        </div>
 
         <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
           <ContactStatusCard status={data.contact_status} />
@@ -149,46 +107,6 @@ export default function DashboardDevPage() {
         </div>
 
       </div>
-    </div>
-  );
-}
-
-function FunnelCard({ funnel }: { funnel: DevData["funnel"] }) {
-  const today = new Date().toLocaleDateString("th-TH", { day: "numeric", month: "long", year: "numeric" });
-  const stages = [
-    { label: "Total leads",      value: funnel.total,           color: "bg-gray-400" },
-    { label: "จองค่าสำรวจ",      value: funnel.has_pre_doc,     color: "bg-sky-500" },
-    { label: "นัดสำรวจ",         value: funnel.has_survey,      color: "bg-violet-500" },
-    { label: "ออเดอร์",          value: funnel.has_order,       color: "bg-orange-500" },
-    { label: "นัดติดตั้ง",       value: funnel.has_install,     color: "bg-emerald-500" },
-    { label: "ติดตั้งเสร็จ",     value: funnel.installed,       color: "bg-teal-500" },
-  ];
-  const max = Math.max(...stages.map(s => s.value), 1);
-  return (
-    <div className="rounded-xl bg-white border border-gray-300 p-4">
-      <div className="text-xs font-semibold uppercase tracking-wider text-gray-400 mb-3">Funnel — Lead conversion</div>
-      <div className="space-y-2">
-        {stages.map((s, i) => {
-          const pct = (s.value / max) * 100;
-          const prev = i > 0 ? stages[i - 1].value : null;
-          const dropPct = prev && prev > 0 ? Math.round((s.value / prev) * 100) : null;
-          return (
-            <div key={s.label}>
-              <div className="flex items-center justify-between mb-0.5">
-                <span className="text-xs font-medium text-gray-700">
-                  {s.label}
-                  {dropPct !== null && <span className="ml-2 text-gray-400 font-normal">({dropPct}% from prev)</span>}
-                </span>
-                <span className="text-xs font-bold font-mono tabular-nums text-gray-900">{s.value}</span>
-              </div>
-              <div className="h-2 bg-gray-100 overflow-hidden">
-                <div className={`h-full transition-all duration-500 ${s.color}`} style={{ width: `${pct}%` }} />
-              </div>
-            </div>
-          );
-        })}
-      </div>
-      <div className="text-xxs text-gray-400 text-left mt-2">ณ วันที่ {today}</div>
     </div>
   );
 }
@@ -240,7 +158,7 @@ function DailyChart({ daily }: { daily: { day: string; cnt: number; with_line: n
                       title={`${d.key} · มี LINE ${d.with_line} / ${d.cnt}`} />
                   )}
                   {d.without_line > 0 && (
-                    <div className="w-full bg-gray-400" style={{ height: noneH }}
+                    <div className="w-full bg-sky-500" style={{ height: noneH }}
                       title={`${d.key} · ไม่ได้ Add LINE ${d.without_line} / ${d.cnt}`} />
                   )}
                 </div>
@@ -258,7 +176,7 @@ function DailyChart({ daily }: { daily: { day: string; cnt: number; with_line: n
         <div className="text-xs text-gray-400">รวม 30 วัน {total} leads · max {max}/วัน</div>
         <div className="flex items-center gap-3 text-xxs text-gray-400">
           <div className="inline-flex items-center gap-1"><span className="w-2.5 h-2.5 bg-emerald-500" />Add LINE ({totalWithLine})</div>
-          <div className="inline-flex items-center gap-1"><span className="w-2.5 h-2.5 bg-gray-400" />ไม่ได้ Add ({total - totalWithLine})</div>
+          <div className="inline-flex items-center gap-1"><span className="w-2.5 h-2.5 bg-sky-500" />ไม่ได้ Add ({total - totalWithLine})</div>
         </div>
       </div>
     </div>
@@ -294,13 +212,14 @@ function ContactRecencyCard({ recency }: { recency: { bucket: string; cnt: numbe
   );
 }
 
-// Contact status — donut: ติดต่อได้ / ยังไม่ติดต่อ / ติดต่อไม่ได้
+// Contact status — donut: 4 buckets matching main dashboard Leads card chips.
 function ContactStatusCard({ status }: { status: { bucket: string; cnt: number }[] }) {
   const map = new Map(status.map(s => [s.bucket, s.cnt]));
   const slices = [
-    { label: "ติดต่อได้",     value: map.get("contacted")        ?? 0, color: "#10b981" },
-    { label: "ยังไม่ติดต่อ",   value: map.get("never_contacted")  ?? 0, color: "#9ca3af" },
-    { label: "ติดต่อไม่ได้",   value: map.get("no_contact")       ?? 0, color: "#f87171" },
+    { label: "ติดต่อได้",     value: map.get("contacted")        ?? 0, color: "#059669" }, // emerald-600
+    { label: "ยังไม่ติดต่อ",   value: map.get("never_contacted")  ?? 0, color: "#0ea5e9" }, // sky-500 (match รอติดตาม)
+    { label: "ติดต่อไม่ได้",   value: map.get("no_contact")       ?? 0, color: "#f87171" }, // rose
+    { label: "ยกเลิก",        value: map.get("lost")             ?? 0, color: "#9ca3af" }, // gray (terminal)
   ];
   const today = new Date().toLocaleDateString("th-TH", { day: "numeric", month: "long", year: "numeric" });
   return (
@@ -312,20 +231,19 @@ function ContactStatusCard({ status }: { status: { bucket: string; cnt: number }
   );
 }
 
-// Contact outcomes — donut: stage breakdown of "ติดต่อได้"
+// Contact outcomes — donut: 4 destinations matching main dashboard's
+// "ติดต่อได้ — ปลายทาง" card. Colors mirror the chip palette there.
 const OUTCOME_LABEL: Record<string, string> = {
-  "1_contacted_only": "ติดต่อแล้ว ยังไม่นัด",
-  "2_booked_or_survey_set": "จองค่าสำรวจ/นัดสำรวจ",
-  "3_survey_quote": "สำรวจ/ใบเสนอราคา",
-  "4_order": "ออเดอร์/ชำระ",
-  "5_installed": "ติดตั้ง",
+  "1_no_pitch":     "ยังไม่สะดวกคุย",
+  "2_in_pitch":     "ระหว่างเสนอ",
+  "3_slip_pending": "รอรับเงินจอง",
+  "4_booked":       "ชำระจองสำรวจ",
 };
 const OUTCOME_COLOR: Record<string, string> = {
-  "1_contacted_only": "#fbbf24",
-  "2_booked_or_survey_set": "#60a5fa",
-  "3_survey_quote": "#a78bfa",
-  "4_order": "#f97316",
-  "5_installed": "#10b981",
+  "1_no_pitch":     "#9ca3af", // gray
+  "2_in_pitch":     "#6366f1", // indigo
+  "3_slip_pending": "#f59e0b", // amber
+  "4_booked":       "#059669", // emerald-600
 };
 function ContactOutcomesCard({ outcomes }: { outcomes: { stage: string; cnt: number }[] }) {
   const slices = outcomes.map(o => ({
@@ -444,16 +362,15 @@ function BarList({ items, color }: { items: { label: string; value: number }[]; 
  * proportionally.
  */
 function HorizontalFunnel({ funnel }: { funnel: DevData["funnel"] }) {
-  // Funnel stops at "ติดตั้งเสร็จ" — warranty issuance is an admin task that
-  // lags installation by days/weeks, so including it distorts the funnel
-  // shape with a sparse trailing stage that isn't a sales signal.
+  // 6-stage funnel — labels and definitions match the main dashboard's KPI
+  // cards so numbers tie out exactly with the chips above.
   const stages: { label: string; value: number; color: string; hex: string }[] = [
-    { label: "Total leads",    value: funnel.total,           color: "bg-gray-400",    hex: "#9ca3af" },
-    { label: "จองค่าสำรวจ",     value: funnel.has_pre_doc,     color: "bg-sky-500",     hex: "#0ea5e9" },
-    { label: "นัดสำรวจ",        value: funnel.has_survey,      color: "bg-violet-500",  hex: "#8b5cf6" },
-    { label: "ออเดอร์",         value: funnel.has_order,       color: "bg-orange-500",  hex: "#f97316" },
-    { label: "นัดติดตั้ง",      value: funnel.has_install,     color: "bg-emerald-500", hex: "#10b981" },
-    { label: "ติดตั้งเสร็จ",    value: funnel.installed,       color: "bg-teal-500",    hex: "#14b8a6" },
+    { label: "Total Leads",       value: funnel.total,     color: "bg-gray-400",    hex: "#9ca3af" },
+    { label: "ติดต่อได้",          value: funnel.contacted, color: "bg-emerald-600", hex: "#059669" },
+    { label: "ชำระจองสำรวจ",       value: funnel.booked,    color: "bg-sky-500",     hex: "#0ea5e9" },
+    { label: "สำรวจเสร็จ",         value: funnel.surveyed,  color: "bg-violet-500",  hex: "#8b5cf6" },
+    { label: "ได้ใบเสนอ/มัดจำ",     value: funnel.quoted,    color: "bg-orange-500",  hex: "#f97316" },
+    { label: "ติดตั้งเสร็จ",        value: funnel.installed, color: "bg-teal-500",    hex: "#14b8a6" },
   ];
   const max = Math.max(...stages.map(s => s.value), 1);
 

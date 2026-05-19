@@ -79,6 +79,31 @@ html, body {
     height: auto;
     overflow: visible;
   }
+
+  /* Dashboard PDF export — triggered by the PDF button on /dashboard.
+     Hide everything except the dashboard content tree, then reflow it to
+     A4 landscape so 9-station rows and the full-width funnel chart fit. */
+  @page { size: A4 landscape; margin: 8mm; }
+
+  /* Hide elements that don't belong in the report (nav, popups, the PDF
+     button itself, etc.) — opt-in via .no-print or by being outside the
+     .dashboard-print-root subtree when printing the dashboard. */
+  .no-print { display: none !important; }
+  body:has(.dashboard-print-root) > *:not(.dashboard-print-root):not(script):not(style) { display: none !important; }
+
+  .dashboard-print-root {
+    background: white !important;
+  }
+  /* Tighten dashboard padding/margins so more fits per page. */
+  .dashboard-print-root .p-3,
+  .dashboard-print-root .p-4,
+  .dashboard-print-root .p-5,
+  .dashboard-print-root .md\:p-6 { padding: 4px !important; }
+  .dashboard-print-root .space-y-3 > * + * { margin-top: 6px !important; }
+
+  /* Keep KPI cards / chart cards together on one page when possible. */
+  .dashboard-print-root .rounded-2xl,
+  .dashboard-print-root .rounded-xl { break-inside: avoid; page-break-inside: avoid; }
 }
 
 body {
