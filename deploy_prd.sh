@@ -44,7 +44,17 @@ fi
 echo "✅ Local build OK"
 echo ""
 
-# 2. stream source tarball to prod (excludes dev artifacts + secrets)
+# 2. apply pending DB migrations to prod BEFORE the new container starts —
+# additive schema changes need to land first so the new code finds its columns
+# on boot. deploy_migrations.mjs is a no-op when nothing is pending.
+echo "🗄️  Applying pending migrations to prod ..."
+if ! node scripts/tools/deploy_migrations.mjs --db=solardb --yes; then
+  echo "❌ Migration step failed. Aborting deploy."
+  exit 1
+fi
+echo ""
+
+# 3. stream source tarball to prod (excludes dev artifacts + secrets)
 echo "📦 Streaming source to ${PRD_HOST}:${PRD_DIR} ..."
 tar \
   --exclude='node_modules' \
@@ -63,7 +73,7 @@ sshpass -p "${PRD_PASS}" ssh \
   -p "${PRD_PORT}" "${PRD_USER}@${PRD_HOST}" \
   "cd ${PRD_DIR} && tar -xzf - && find . -name '._*' -delete"
 
-# 3. ensure uploads dir is writable by the container (uid 1001 = nextjs user
+# 4. ensure uploads dir is writable by the container (uid 1001 = nextjs user
 #    inside the image; host dir must be owned by that uid so bind-mount writes
 #    don't EACCES).
 sshpass -p "${PRD_PASS}" ssh \
@@ -71,14 +81,14 @@ sshpass -p "${PRD_PASS}" ssh \
   -p "${PRD_PORT}" "${PRD_USER}@${PRD_HOST}" \
   "mkdir -p ${PRD_DIR}/uploads && echo '${PRD_PASS}' | sudo -S chown -R 1001:1001 ${PRD_DIR}/uploads 2>/dev/null || true"
 
-# 4. build + restart container on prod
+# 5. build + restart container on prod
 echo "🔨 Building + restarting container on prod ..."
 sshpass -p "${PRD_PASS}" ssh \
   -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null \
   -p "${PRD_PORT}" "${PRD_USER}@${PRD_HOST}" \
   "cd ${PRD_DIR} && docker compose up -d --build 2>&1 | tail -5"
 
-# 4. wait for health + smoke test via public URL
+# 6. wait for health + smoke test via public URL
 echo "🔎 Smoke test ..."
 for i in {1..12}; do
   code=$(curl -s -o /dev/null -w "%{http_code}" "${PUBLIC_URL}/" || echo "000")
