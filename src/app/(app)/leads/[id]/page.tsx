@@ -252,7 +252,7 @@ function StepCard({
   const headerWrapCls = fullscreen ? "shrink-0 border-b border-gray-100" : "";
 
   return (
-    <div data-step-active={state === "active" ? "" : undefined} className={rootCls}>
+    <div id={`step-${stepIdx}`} data-step-active={state === "active" ? "" : undefined} className={rootCls}>
       <div className={headerWrapCls}>{header}</div>
       {state !== "locked" && <div className={bodyCls}>{children}</div>}
     </div>
@@ -520,8 +520,10 @@ export default function LeadDetailPage({ params }: { params: Promise<{ id: strin
           </div>
         </div>
 
-        {/* Tabs */}
-        <div className="flex px-5 gap-1">
+        {/* Tabs row + (desktop) Activity Log header column-aligned with the
+            right panel below, so both headers sit on the same baseline. */}
+        <div className="flex">
+        <div className="flex-1 flex px-5 gap-1 min-w-0">
           <button
             onClick={() => setTab("workflow")}
             className={`px-4 py-3 text-xs font-semibold uppercase tracking-wider border-b-2 -mb-px transition-colors inline-flex items-center gap-1.5 ${tab === "workflow" ? "text-active border-active" : "text-gray-500 border-transparent hover:text-gray-700"}`}
@@ -542,7 +544,7 @@ export default function LeadDetailPage({ params }: { params: Promise<{ id: strin
           </button>
           <button
             onClick={() => setTab("log")}
-            className={`px-4 py-3 text-xs font-semibold uppercase tracking-wider border-b-2 -mb-px transition-colors inline-flex items-center gap-1.5 ${tab === "log" ? "text-active border-active" : "text-gray-500 border-transparent hover:text-gray-700"}`}
+            className={`md:hidden px-4 py-3 text-xs font-semibold uppercase tracking-wider border-b-2 -mb-px transition-colors inline-flex items-center gap-1.5 ${tab === "log" ? "text-active border-active" : "text-gray-500 border-transparent hover:text-gray-700"}`}
           >
             <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
               <path strokeLinecap="round" strokeLinejoin="round" d="M12 6v6h4.5m4.5 0a9 9 0 11-18 0 9 9 0 0118 0z" />
@@ -576,10 +578,19 @@ export default function LeadDetailPage({ params }: { params: Promise<{ id: strin
             </div>
           )}
         </div>
+        {/* Right column header (desktop only) — aligns with the right panel */}
+        <div className="hidden md:flex w-96 border-l border-gray-200 px-4 items-center py-3 text-xs font-semibold uppercase tracking-wider text-gray-500 gap-1.5">
+          <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+            <path strokeLinecap="round" strokeLinejoin="round" d="M12 6v6h4.5m4.5 0a9 9 0 11-18 0 9 9 0 0118 0z" />
+          </svg>
+          Activity Log <span className="ml-1 text-gray-400 normal-case">{activities.length}</span>
+        </div>
+        </div>
       </div>
 
-      {/* Content */}
-      <div ref={scrollRef} className="flex-1 overflow-y-auto pb-20 relative" style={{ overscrollBehaviorY: "contain" }}>
+      {/* Content + desktop right panel (activity log always visible md+) */}
+      <div className="flex-1 flex min-h-0">
+      <div ref={scrollRef} className="flex-1 overflow-y-auto pb-20 relative min-w-0" style={{ overscrollBehaviorY: "contain" }}>
         <div>
         {tab === "info" ? (
           <div className="p-4">
@@ -951,11 +962,20 @@ export default function LeadDetailPage({ params }: { params: Promise<{ id: strin
             )}
           </div>
         ) : (
-          <div className="p-4">
+          <div className="p-4 md:hidden">
             <ActivityTimeline activities={activities} loading={loadingAct} />
           </div>
         )}
         </div>
+      </div>
+
+      {/* Desktop right panel — Activity Log content (header is in the sticky
+          page header above to align with the Workflow/Info tabs). */}
+      <aside className="hidden md:flex w-96 border-l border-gray-200 bg-gray-50/30 flex-col min-h-0">
+        <div className="flex-1 overflow-y-auto p-4">
+          <ActivityTimeline activities={activities} loading={loadingAct} />
+        </div>
+      </aside>
       </div>
 
       {/* Footer quick actions — mobile only; desktop has buttons in the sticky tab bar. */}
