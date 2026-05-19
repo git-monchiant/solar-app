@@ -387,7 +387,7 @@ function ActivityChart({ data }: { data: { day: string; lead_id: number; full_na
         <div className="flex items-center gap-3 text-xxs text-gray-400">
           <div className="flex items-center gap-1">
             <div className="w-[10px] h-[10px] rounded-sm bg-sky-400" />
-            <span>Pre-Survey</span>
+            <span>New Lead</span>
           </div>
           <div className="flex items-center gap-1">
             <div className="w-[10px] h-[10px] rounded-sm bg-primary" />

@@ -15,11 +15,17 @@ interface Activity {
   created_at: string;
 }
 
+// Chat-bubble icon, shared by both incoming and outgoing LINE entries.
+const LINE_ICON = "M2.25 12.76c0 1.6 1.123 2.994 2.707 3.227 1.068.157 2.148.279 3.238.364.466.037.893.281 1.153.671L12 21l2.652-3.978c.26-.39.687-.634 1.153-.67 1.09-.086 2.17-.208 3.238-.365 1.584-.233 2.707-1.626 2.707-3.228V6.741c0-1.602-1.123-2.995-2.707-3.228A48.394 48.394 0 0012 3c-2.392 0-4.744.175-7.043.513C3.373 3.746 2.25 5.14 2.25 6.741v6.018z";
 const typeConfig: Record<string, { icon: string; color: string }> = {
   call: { icon: "M2.25 6.75c0 8.284 6.716 15 15 15h2.25a2.25 2.25 0 002.25-2.25v-1.372c0-.516-.351-.966-.852-1.091l-4.423-1.106c-.44-.11-.902.055-1.173.417l-.97 1.293c-.282.376-.769.542-1.21.38a12.035 12.035 0 01-7.143-7.143c-.162-.441.004-.928.38-1.21l1.293-.97c.363-.271.527-.734.417-1.173L6.963 3.102a1.125 1.125 0 00-1.091-.852H4.5A2.25 2.25 0 002.25 4.5v2.25z", color: "bg-blue-500" },
   visit: { icon: "M15 10.5a3 3 0 11-6 0 3 3 0 016 0zM19.5 10.5c0 7.142-7.5 11.25-7.5 11.25S4.5 17.642 4.5 10.5a7.5 7.5 0 1115 0z", color: "bg-purple-500" },
+  line: { icon: LINE_ICON, color: "bg-green-500" },
+  line_sent: { icon: LINE_ICON, color: "bg-green-500" },
   follow_up: { icon: "M12 6v6h4.5m4.5 0a9 9 0 11-18 0 9 9 0 0118 0z", color: "bg-amber-500" },
+  follow_up_cleared: { icon: "M12 6v6h4.5m4.5 0a9 9 0 11-18 0 9 9 0 0118 0z", color: "bg-amber-300" },
   loan_followup: { icon: "M2.25 8.25h19.5M2.25 9h19.5m-16.5 5.25h6m-6 2.25h3m-3.75 3h15a2.25 2.25 0 002.25-2.25V6.75A2.25 2.25 0 0019.5 4.5h-15a2.25 2.25 0 00-2.25 2.25v10.5A2.25 2.25 0 004.5 19.5z", color: "bg-rose-500" },
+  other: { icon: "M8.625 12a.375.375 0 11-.75 0 .375.375 0 01.75 0zm0 0H8.25m4.125 0a.375.375 0 11-.75 0 .375.375 0 01.75 0zm0 0H12m4.125 0a.375.375 0 11-.75 0 .375.375 0 01.75 0zm0 0h-.375m-13.5 3.01c0 1.6 1.123 2.994 2.707 3.227 1.129.166 2.27.293 3.423.379.35.026.67.21.865.501L12 21l2.755-4.133a1.14 1.14 0 01.865-.501 48.172 48.172 0 003.423-.379c1.584-.233 2.707-1.626 2.707-3.228V6.741c0-1.602-1.123-2.995-2.707-3.228A48.394 48.394 0 0012 3c-2.392 0-4.744.175-7.043.513C3.373 3.746 2.25 5.14 2.25 6.741v6.018z", color: "bg-teal-500" },
   status_change: { icon: "M3 7.5L7.5 3m0 0L12 7.5M7.5 3v13.5m13.5-4.5L16.5 7.5m0 0L12 12m4.5-4.5V21", color: "bg-sky-500" },
   note: { icon: "M16.862 4.487l1.687-1.688a1.875 1.875 0 112.652 2.652L10.582 16.07a4.5 4.5 0 01-1.897 1.13L6 18l.8-2.685a4.5 4.5 0 011.13-1.897l8.932-8.931z", color: "bg-gray-500" },
   lead_created: { icon: "M12 4.5v15m7.5-7.5h-15", color: "bg-primary" },
@@ -110,9 +116,25 @@ export default function ActivityItem({ activity, isLast }: { activity: Activity;
   const newStatusLabel = activity.new_status
     ? (STATUS_CONFIG[activity.new_status]?.label ?? STATUS_CONFIG[getMainStatus(activity.new_status)]?.label ?? activity.new_status)
     : "";
+  // appointment_* activity types don't encode survey vs install in the type —
+  // the kind lives in the title field ("นัดติดตั้ง..." vs "นัดสำรวจ...").
+  // Detect from title so the label reflects the real kind.
+  const isAppointment = activity.activity_type.startsWith("appointment_");
+  const isInstallAppt = isAppointment && activity.title?.includes("ติดตั้ง");
+  const apptLabel = isAppointment
+    ? (activity.activity_type === "appointment_set"
+        ? (isInstallAppt ? "นัดติดตั้ง" : "นัดสำรวจ")
+        : activity.activity_type === "appointment_rescheduled"
+          ? (isInstallAppt ? "เลื่อนนัดติดตั้ง" : "เลื่อนนัดสำรวจ")
+          : activity.activity_type === "appointment_confirmed"
+            ? (isInstallAppt ? "ยืนยันนัดติดตั้ง" : "ยืนยันนัดสำรวจ")
+            : activity.activity_type === "appointment_cancelled"
+              ? (isInstallAppt ? "ยกเลิกนัดติดตั้ง" : "ยกเลิกนัดสำรวจ")
+              : null)
+    : null;
   const typeLabel = activity.activity_type === "status_change" && newStatusLabel
     ? `เปลี่ยนสถานะเป็น : ${newStatusLabel}`
-    : (TYPE_LABELS[activity.activity_type] || "บันทึก");
+    : (apptLabel ?? TYPE_LABELS[activity.activity_type] ?? "บันทึก");
   const eventDate = activity.followup_date || activity.created_at;
   // Status changes to 'lost' / 'returned' read as cancellations — render the
   // dot + label in red so the timeline visually flags them.
@@ -139,7 +161,10 @@ export default function ActivityItem({ activity, isLast }: { activity: Activity;
       </div>
       <div className="flex-1 pb-4 min-w-0">
         <div className={`font-semibold text-sm ${headColor}`}>
-          {typeLabel} · {formatThaiDate(eventDate)}
+          {/* Appointment titles already encode the from/to dates + slot — render
+              the full title so users see the whole reschedule context. Other
+              activities use the short typeLabel + event date. */}
+          {isAppointment ? activity.title : `${typeLabel} · ${formatThaiDate(eventDate)}`}
           <span className="ml-1 text-xs font-normal text-gray-400">· บันทึกเมื่อ {saveStr}</span>
         </div>
         {activity.title && (() => {

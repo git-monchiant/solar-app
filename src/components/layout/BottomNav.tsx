@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { useActiveRoles, hasRole, Role } from "@/lib/roles";
+import { useActiveRoles, useMe, hasRole, Role } from "@/lib/roles";
 import LogoSolarPanel from "@/components/brand/LogoSolarPanel";
 
 type NavItem = {
@@ -62,6 +62,11 @@ const navItems: NavItem[] = [
 export default function BottomNav() {
   const pathname = usePathname();
   const { activeRoles } = useActiveRoles();
+  const { me } = useMe();
+  // Hard-gate certain links to the literal "admin" account, not the "admin"
+  // role — so role-elevated viewers (e.g. sales with admin role temp) still
+  // don't see the dev-only experiments.
+  const isAdminUser = me?.username === "admin";
   const seekerMode = activeRoles.includes("leadsseeker") && !activeRoles.includes("sales") && !activeRoles.includes("solar") && !activeRoles.includes("smartify");
   const showAdminGroups = !seekerMode && hasRole(activeRoles, "admin", "sales", "solar", "smartify", "account");
   const visibleItems = navItems.filter((item) => {
@@ -116,14 +121,14 @@ export default function BottomNav() {
               </div>
             );
           })}
-          {showAdminGroups && <AdminGroups pathname={pathname} activeRoles={activeRoles} />}
+          {showAdminGroups && <AdminGroups pathname={pathname} activeRoles={activeRoles} username={me?.username ?? null} />}
         </nav>
       </aside>
     </>
   );
 }
 
-type AdminLink = { href: string; label: string; icon: React.ReactNode; roles?: Role[] };
+type AdminLink = { href: string; label: string; icon: React.ReactNode; roles?: Role[]; userOnly?: string[] };
 
 // roles: undefined → admin only. Listed roles widen the visibility.
 const ADMIN_GROUPS: { title: string; links: AdminLink[] }[] = [
@@ -139,12 +144,20 @@ const ADMIN_GROUPS: { title: string; links: AdminLink[] }[] = [
       {
         href: "/dashboard-dev",
         label: "Dashboard Dev",
+        userOnly: ["admin"],
         icon: <svg className="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M10.5 6h9.75M10.5 6a1.5 1.5 0 11-3 0m3 0a1.5 1.5 0 10-3 0M3.75 6H7.5m3 12h9.75m-9.75 0a1.5 1.5 0 01-3 0m3 0a1.5 1.5 0 00-3 0m-3.75 0H7.5m9-6h3.75m-3.75 0a1.5 1.5 0 01-3 0m3 0a1.5 1.5 0 00-3 0m-9.75 0h9.75" /></svg>,
       },
       {
         href: "/dashboard-dev-2",
         label: "Dashboard Dev 2",
+        userOnly: ["admin"],
         icon: <svg className="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M3.75 3v11.25A2.25 2.25 0 006 16.5h2.25M3.75 3h-1.5m1.5 0h16.5m0 0h1.5m-1.5 0v11.25A2.25 2.25 0 0118 16.5h-2.25m-7.5 0h7.5m-7.5 0l-1 3m8.5-3l1 3m0 0l.5 1.5m-.5-1.5h-9.5m0 0l-.5 1.5m.75-9l3-3 2.148 2.148A12.061 12.061 0 0116.5 7.605" /></svg>,
+      },
+      {
+        href: "/lifecycle",
+        label: "Lead Tracking",
+        roles: ["admin", "sales", "solar", "smartify", "account"],
+        icon: <svg className="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M9 12.75L11.25 15 15 9.75M21 12a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>,
       },
       {
         href: "/calendar",
@@ -211,12 +224,17 @@ const ADMIN_GROUPS: { title: string; links: AdminLink[] }[] = [
   },
 ];
 
-function AdminGroups({ pathname, activeRoles }: { pathname: string; activeRoles: Role[] }) {
+function AdminGroups({ pathname, activeRoles, username }: { pathname: string; activeRoles: Role[]; username: string | null }) {
   const isAdmin = hasRole(activeRoles, "admin");
   return (
     <>
       {ADMIN_GROUPS.map((g, i) => {
-        const links = g.links.filter((l) => isAdmin || (l.roles && hasRole(activeRoles, ...l.roles)));
+        const links = g.links.filter((l) => {
+          // userOnly is the strictest gate — links with it must match the
+          // current account by username, regardless of role.
+          if (l.userOnly) return !!username && l.userOnly.includes(username);
+          return isAdmin || (l.roles && hasRole(activeRoles, ...l.roles));
+        });
         if (links.length === 0) return null;
         return (
           <div key={g.title} className={i === 0 ? "pt-2 mt-2 border-t border-gray-100" : "pt-2 mt-2"}>

@@ -116,15 +116,17 @@ export default function CalendarPicker({
     ? [
         new Date(today.getFullYear(), today.getMonth() - 1, 1),
         new Date(today.getFullYear(), today.getMonth(), 1),
+        new Date(today.getFullYear(), today.getMonth() + 1, 1),
       ]
     : [
         new Date(today.getFullYear(), today.getMonth(), 1),
         new Date(today.getFullYear(), today.getMonth() + 1, 1),
+        new Date(today.getFullYear(), today.getMonth() + 2, 1),
       ];
 
   return (
     <div>
-      <div className="grid grid-cols-2 gap-2 divide-x divide-gray-200">
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-2 md:divide-x md:divide-gray-200">
         {months.map((monthStart, monthIdx) => {
           const monthLabel = monthStart.toLocaleDateString("th-TH", { month: "long" });
           const firstDayOfWeek = monthStart.getDay();
