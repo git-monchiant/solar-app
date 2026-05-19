@@ -128,8 +128,8 @@ export default function WarrantyStep({ lead, state, refresh, packages, expanded,
   // can change to reflect what was actually installed on-site.
   const defaultPkg = packages.find(p => p.id === lead.interested_package_id);
   const [sysKwp, setSysKwp] = useState<number | "">(lead.warranty_system_size_kwp ?? defaultPkg?.kwp ?? "");
-  const [panelCount, setPanelCount] = useState<number | "">(lead.warranty_panel_count ?? defaultPkg?.solar_panels ?? "");
-  const [panelWatt, setPanelWatt] = useState<number | "">(lead.warranty_panel_watt ?? defaultPkg?.panel_watt ?? "");
+  const [panelCount, setPanelCount] = useState<number | "">(lead.warranty_panel_count ?? "");
+  const [panelWatt, setPanelWatt] = useState<number | "">(lead.warranty_panel_watt ?? "");
   const [panelBrand, setPanelBrand] = useState<string>(lead.warranty_panel_brand ?? "");
   const [invBrand, setInvBrand] = useState<string>(lead.warranty_inverter_brand ?? defaultPkg?.inverter_brand ?? "");
   const [invKw, setInvKw] = useState<number | "">(lead.warranty_inverter_kw ?? defaultPkg?.inverter_kw ?? "");

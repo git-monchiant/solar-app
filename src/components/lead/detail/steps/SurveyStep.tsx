@@ -550,7 +550,6 @@ export default function SurveyStep({ lead, state, refresh, packages, expanded, o
                 </div>
                 <div className="text-xs text-gray-500 mt-0.5 flex flex-wrap gap-x-2">
                   <span>{pkg.kwp} kWp</span>
-                  {pkg.solar_panels > 0 && <span>· {pkg.solar_panels} × {pkg.panel_watt}W</span>}
                   {pkg.inverter_kw > 0 && <span>· {pkg.inverter_brand} {pkg.inverter_kw}kW</span>}
                   {pkg.has_battery && <span>· Battery {pkg.battery_kwh}kWh</span>}
                 </div>
@@ -1008,10 +1007,9 @@ export default function SurveyStep({ lead, state, refresh, packages, expanded, o
                             {p.name}
                           </div>
                           <div className="text-xs text-gray-500 mt-0.5 flex flex-wrap gap-x-3">
-                            {p.solar_panels > 0 && <span>{p.solar_panels} panels</span>}
                             {p.inverter_brand && <span>{p.inverter_brand} {p.inverter_kw}kW</span>}
                             {p.has_battery && <span>Battery {p.battery_kwh}kWh</span>}
-                            {p.is_upgrade && p.solar_panels === 0 && <span>เพิ่มแบตอย่างเดียว</span>}
+                            {p.is_upgrade && !p.has_panel && <span>เพิ่มแบตอย่างเดียว</span>}
                             <span className="inline-flex items-center gap-0.5 ml-1">
                               <svg className={`w-3.5 h-3.5 ${p.has_panel ? "text-amber-500" : "text-gray-300"}`} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M12 3v2.25m6.364.386l-1.591 1.591M21 12h-2.25m-.386 6.364l-1.591-1.591M12 18.75V21m-4.773-4.227l-1.591 1.591M5.25 12H3m4.227-4.773L5.636 5.636M15.75 12a3.75 3.75 0 11-7.5 0 3.75 3.75 0 017.5 0z" /></svg>
                               <svg className={`w-3.5 h-3.5 ${p.has_inverter ? "text-violet-500" : "text-gray-300"}`} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M3.75 13.5l10.5-11.25L12 10.5h8.25L9.75 21.75 12 13.5H3.75z" /></svg>

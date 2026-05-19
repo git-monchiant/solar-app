@@ -16,8 +16,6 @@ interface Package {
   is_upgrade: boolean;
   battery_kwh: number;
   battery_brand: string;
-  solar_panels: number;
-  panel_watt: number;
   inverter_kw: number;
   inverter_brand: string;
   price: number;
@@ -114,12 +112,6 @@ export default function PackagesPage() {
 
                 {/* Specs */}
                 <div className="px-4 py-3 space-y-1.5">
-                  {pkg.solar_panels > 0 && (
-                    <div className="flex items-baseline justify-between gap-2">
-                      <span className="text-xs font-semibold uppercase tracking-wider text-gray-400">Panels</span>
-                      <span className="text-sm font-semibold text-gray-800">{pkg.solar_panels} × {pkg.panel_watt}W</span>
-                    </div>
-                  )}
                   {pkg.inverter_kw > 0 && (
                     <div className="flex items-baseline justify-between gap-2">
                       <span className="text-xs font-semibold uppercase tracking-wider text-gray-400">Inverter</span>
@@ -138,11 +130,8 @@ export default function PackagesPage() {
                       <span className="text-sm font-semibold text-gray-800">{pkg.warranty_years} years</span>
                     </div>
                   )}
-                  {pkg.is_upgrade && pkg.solar_panels === 0 && (
-                    <div className="text-xs text-gray-500 pt-1 border-t border-gray-100">เพิ่มแบตอย่างเดียว</div>
-                  )}
-                  {pkg.is_upgrade && pkg.solar_panels > 0 && (
-                    <div className="text-xs text-gray-500 pt-1 border-t border-gray-100">+แผง +Inverter +Battery</div>
+                  {pkg.is_upgrade && (
+                    <div className="text-xs text-gray-500 pt-1 border-t border-gray-100">{pkg.has_panel ? "+แผง +Inverter +Battery" : "เพิ่มแบตอย่างเดียว"}</div>
                   )}
                 </div>
               </div>

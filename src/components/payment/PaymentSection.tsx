@@ -6,6 +6,7 @@ import LineConfirmModal from "@/components/modal/LineConfirmModal";
 import ImageLightbox from "@/components/ui/ImageLightbox";
 import PaymentHeader from "./PaymentHeader";
 import { buildPaymentFlex } from "@/lib/utils/line-flex";
+import { compressSlipFile } from "@/lib/utils/compress-slip";
 import { useMe, useActiveRoles } from "@/lib/roles";
 import { useDialog } from "@/components/ui/Dialog";
 
@@ -434,8 +435,9 @@ export default function PaymentSection({
       // Skip Gemini for now — single round-trip directly to staging.
       // (Previous flow uploaded to /api/upload temp, then called verify-slip,
       //  then re-uploaded to /api/slips, then deleted temp = 4 round-trips.)
+      const compressed = await compressSlipFile(file);
       const storeForm = new FormData();
-      storeForm.append("file", file);
+      storeForm.append("file", compressed);
       storeForm.append("lead_id", String(leadId));
       storeForm.append("slip_field", slipField);
       const storeRes = await apiFetch("/api/slips", { method: "POST", body: storeForm }) as { id: number; url: string };
@@ -483,8 +485,9 @@ export default function PaymentSection({
     });
     setSlips(prev => [...prev, { key: tempKey, url: dataUrl, status: "verifying" }]);
     try {
+      const compressed = await compressSlipFile(file);
       const form = new FormData();
-      form.append("file", file);
+      form.append("file", compressed);
       form.append("lead_id", String(leadId));
       form.append("slip_field", slipField);
       const storeRes = await apiFetch("/api/slips", { method: "POST", body: form }) as { id: number; url: string };

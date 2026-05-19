@@ -72,8 +72,8 @@ const GROUPS: { title: string; tone: string; cols: { key: ColKey; label: string 
     title: "Quote / Order",
     tone: "bg-orange-50 text-orange-800 border-orange-200",
     cols: [
-      { key: "quote_issued_at", label: "ออกใบเสนอราคา" },
-      { key: "order_paid_at", label: "จ่ายมัดจำ/ทั้งหมด" },
+      { key: "quote_issued_at", label: "ใบเสนอราคา" },
+      { key: "order_paid_at", label: "ชำระมัดจำ" },
     ],
   },
   {
@@ -89,7 +89,7 @@ const GROUPS: { title: string; tone: string; cols: { key: ColKey; label: string 
 ];
 
 const STATUS_OPTIONS: { value: string; label: string }[] = [
-  { value: "pre_survey", label: "Pre-Survey" },
+  { value: "pre_survey", label: "รอติดตาม" },
   { value: "survey",     label: "สำรวจ" },
   { value: "quote",      label: "ใบเสนอราคา" },
   { value: "order",      label: "Order" },
@@ -189,7 +189,7 @@ export default function LifecyclePage() {
     // Two-row header: groups (merged) on top, columns below — mirrors the
     // on-screen matrix so the spreadsheet reads the same way.
     const groupSpec: { title: string; cols: number }[] = [
-      { title: "ลีด", cols: 5 },
+      { title: "ลีด", cols: 6 },
       { title: "การติดต่อ", cols: 6 },
       { title: "Pre-Survey / Survey", cols: 3 },
       { title: "Quote / Order", cols: 2 },
@@ -202,7 +202,7 @@ export default function LifecyclePage() {
       for (let i = 1; i < g.cols; i++) groupRow.push("");
     }
     const colRow = [
-      "#", "บ้านเลขที่", "ชื่อ", "สถานะ", "วันสร้าง",
+      "#", "บ้านเลขที่", "ชื่อ", "สถานะ", "วันสร้าง", "Aging",
       "ครั้งที่ 1", "ครั้งที่ 2", "ครั้งที่ 3", "ครั้งที่ 4", "ครั้งที่ 5", "เสนอขาย",
       "จองสำรวจ", "นัดสำรวจ", "สำรวจเสร็จ",
       "ออกใบเสนอราคา", "จ่ายมัดจำ/ทั้งหมด",
@@ -213,10 +213,10 @@ export default function LifecyclePage() {
       { v: r.house_number ?? "" },
       { v: r.full_name },
       { v: getStatusLabel({ status: r.status, install_date: r.install_date }) },
+      fmt(r.created_at),
       (() => {
-        const c = fmt(r.created_at);
         const a = agingDays(r.created_at);
-        return c.v && a != null ? { ...c, v: `${c.v}\n(Aging: ${a})` } : c;
+        return { v: a == null ? "" : `${a}d` };
       })(),
       fmt(r.first_contact_at, r.first_contact_state),
       fmt(r.contact2_at, r.contact2_state),
@@ -297,7 +297,7 @@ export default function LifecyclePage() {
     }
 
     ws["!cols"] = [
-      { wch: 4 }, { wch: 10 }, { wch: 24 }, { wch: 14 }, { wch: 14 },
+      { wch: 4 }, { wch: 10 }, { wch: 24 }, { wch: 14 }, { wch: 14 }, { wch: 8 },
       { wch: 16 }, { wch: 16 }, { wch: 16 }, { wch: 16 }, { wch: 16 }, { wch: 14 },
       { wch: 14 }, { wch: 14 }, { wch: 14 },
       { wch: 18 }, { wch: 20 },
@@ -435,27 +435,25 @@ export default function LifecyclePage() {
                     trigger a hydration error, so we keep all <col>s as direct
                     array children with no surrounding whitespace. */}
                 {[
-                  ["#", "w-8"], ["house", "w-16"], ["name", "w-28"], ["status", "w-20"], ["created", "w-16"],
+                  ["#", "w-8"], ["house", "w-16"], ["name", "w-28"], ["status", "w-20"], ["created", "w-14"], ["aging", "w-12"],
                 ].map(([k, cls]) => <col key={k} className={cls} />)}
                 {flatCols.map(c => {
-                  // Contact + Pre-Survey/Survey + install date cols are narrow —
-                  // cells are either "—" or a short "✓ D/M" date.
+                  // Contact group + install date cols are narrow — cells are
+                  // either "—" or a short "✓ D/M" date.
                   const narrow = c.key === "first_contact_at"
                     || c.key === "contact2_at" || c.key === "contact3_at"
                     || c.key === "contact4_at" || c.key === "contact5_at"
                     || c.key === "sales_pitch_at"
-                    || c.key === "booking_paid_at" || c.key === "survey_date" || c.key === "survey_done_at"
                     || c.key === "install_date" || c.key === "install_started_at" || c.key === "install_done_at";
-                  // Long Thai labels need extra space — "ออกใบเสนอราคา",
-                  // "จ่ายมัดจำ/ทั้งหมด", "ออกใบรับประกัน".
-                  const wide = c.key === "quote_issued_at" || c.key === "order_paid_at" || c.key === "warranty_at";
-                  return <col key={c.key} className={narrow ? "w-12" : wide ? "w-24" : "w-14"} />;
+                  // Only "ออกใบรับประกัน" still needs extra space.
+                  const wide = c.key === "warranty_at";
+                  return <col key={c.key} className={narrow ? "w-12" : wide ? "w-24" : "w-16"} />;
                 })}
               </colgroup>
               <thead>
                 {/* Group header row — sticky at top of scroll container */}
                 <tr className="border-b border-gray-200">
-                  <th colSpan={5} className="sticky top-16 z-20 bg-gray-50 px-2 py-1.5 text-left text-xxs font-semibold text-gray-700 border-r border-gray-200">ลีด</th>
+                  <th colSpan={6} className="sticky top-16 z-20 bg-gray-50 px-2 py-1.5 text-left text-xxs font-semibold text-gray-700 border-r border-gray-200">ลีด</th>
                   {GROUPS.map(g => (
                     <th key={g.title} colSpan={g.cols.length} className={`sticky top-16 z-20 px-2 py-1.5 text-left text-xxs font-semibold border-r border-gray-200 ${g.tone}`}>
                       {g.title}
@@ -469,9 +467,10 @@ export default function LifecyclePage() {
                   <th className="sticky top-[100px] z-20 bg-gray-50 px-2 py-1.5 text-left font-medium">ชื่อ</th>
                   <th className="sticky top-[100px] z-20 bg-gray-50 px-2 py-1.5 text-left font-medium">สถานะ</th>
                   <th onClick={() => cycleTri("created_at")}
-                      className="sticky top-[100px] z-20 bg-gray-50 px-2 py-1.5 text-left font-medium border-r border-gray-200 cursor-pointer hover:bg-gray-100 select-none">
+                      className="sticky top-[100px] z-20 bg-gray-50 px-2 py-1.5 text-left font-medium cursor-pointer hover:bg-gray-100 select-none">
                     วันสร้าง<TriBadge state={tri.created_at} />
                   </th>
+                  <th className="sticky top-[100px] z-20 bg-gray-50 px-2 py-1.5 text-left font-medium border-r border-gray-200">Aging</th>
                   {flatCols.map((c, i) => (
                     <th key={c.key}
                         onClick={() => cycleTri(c.key)}
@@ -490,13 +489,11 @@ export default function LifecyclePage() {
                       <a href={`/leads/${r.id}`} target="_blank" rel="noopener noreferrer" className="text-primary hover:underline">{r.full_name}</a>
                     </td>
                     <td className="px-2 py-1.5 truncate"><StatusPill lead={r} /></td>
-                    <td className="px-2 py-1.5 border-r border-gray-100">
-                      <Cell date={r.created_at} />
+                    <td className="px-2 py-1.5 whitespace-nowrap"><Cell date={r.created_at} /></td>
+                    <td className="px-2 py-1.5 border-r border-gray-100 whitespace-nowrap text-gray-500 tabular-nums">
                       {(() => {
                         const a = agingDays(r.created_at);
-                        return a == null ? null : (
-                          <span className="block text-[14px] text-gray-400 leading-tight">Aging: {a}</span>
-                        );
+                        return a == null ? <span className="text-gray-300">—</span> : `${a}d`;
                       })()}
                     </td>
                     {flatCols.map((c, i) => {

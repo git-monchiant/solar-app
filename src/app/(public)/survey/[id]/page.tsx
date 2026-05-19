@@ -307,8 +307,11 @@ export default function SurveyPdfPage() {
                     </SpecGrid>
                   </Section>
 
-                  {/* 4. ขนาดระบบ + แพ็คเกจที่เสนอ (PDF §7) — ขึ้นหน้าใหม่ */}
-                  <div style={{ breakBefore: "page" }} />
+                  {/* 4. ขนาดระบบ + แพ็คเกจที่เสนอ (PDF §7).
+                      เคยใช้ breakBefore: page บน <div /> ว่างก่อน section นี้
+                      แต่ใน Chrome puppeteer การ break ภายใน flex container
+                      ทำให้เนื้อหา section 4+ หายไปทั้งหมด — pageถูกสร้างแต่ว่าง.
+                      ปล่อย flow ปกติแทน. */}
                   <Section title="4. ขนาดระบบที่เสนอ · RECOMMENDED SYSTEM">
                     <SpecGrid>
                       <Field label="ขนาดแนะนำ" value={lead.survey_recommended_kw != null ? `${lead.survey_recommended_kw} kWp` : "—"} />

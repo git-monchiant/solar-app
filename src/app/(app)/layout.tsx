@@ -50,7 +50,7 @@ function AppShell({ children }: { children: React.ReactNode }) {
   return (
     <div className="flex h-full">
       {!focus && <BottomNav />}
-      <main className={`flex-1 overflow-y-auto bg-white ${focus ? "" : "pb-20 md:pb-0 md:ml-56"}`}>
+      <main className={`flex-1 overflow-y-auto overscroll-none bg-white ${focus ? "" : "pb-20 md:pb-0 md:ml-56"}`}>
         {children}
       </main>
     </div>

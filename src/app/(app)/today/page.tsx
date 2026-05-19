@@ -33,7 +33,7 @@ export default function TodayPage() {
   const [tab, setTab] = useState<"sales_all" | "sales" | "booking" | "quote" | "deposit_paid" | "sales_solar" | "solar" | "solar_survey" | "solar_quote" | "solar_install" | "calendar">("sales_all");
   const [search, setSearch] = useState("");
   const [zones, setZones] = useState<{ id: number; name: string; color?: string | null }[]>([]);
-  const [selectedZone, setSelectedZone] = useState<string>("กรุงเทพ ทีม 1");
+  const [selectedZone, setSelectedZone] = useState<string>("");
   const [channelPickerOpen, setChannelPickerOpen] = useState(false);
   const [pickedChannel, setPickedChannel] = useState<ChannelCode | null>(null);
   const [sortField, setSortField] = useState<"follow_up" | "created" | "name" | "activity">("follow_up");
@@ -43,9 +43,6 @@ export default function TodayPage() {
   const { me } = useMe();
 
   useEffect(() => {
-    const savedZone = localStorage.getItem("selectedZone");
-    if (savedZone) setSelectedZone(savedZone);
-
     const savedSortField = localStorage.getItem("today.sortField");
     if (savedSortField === "follow_up" || savedSortField === "created" || savedSortField === "activity" || savedSortField === "name") {
       setSortField(savedSortField);
@@ -57,6 +54,20 @@ export default function TodayPage() {
     if (localStorage.getItem("today.mineOnly") === "1") setMineOnly(true);
 
     apiFetch("/api/zones").then(setZones).catch(console.error);
+
+  }, []);
+
+  // Default zone = first zone from /api/zones. Validate against current list so
+  // a stale localStorage value (e.g. zone since renamed/deleted) doesn't leave
+  // the calendar permanently empty.
+  useEffect(() => {
+    if (zones.length === 0 || selectedZone) return;
+    const saved = localStorage.getItem("selectedZone");
+    const valid = saved && (saved === "all" || zones.some(z => z.name === saved));
+    setSelectedZone(valid ? saved! : zones[0].name);
+  }, [zones, selectedZone]);
+
+  useEffect(() => {
     Promise.all([
       apiFetch("/api/today"),
       apiFetch("/api/leads"),
@@ -171,11 +182,18 @@ export default function TodayPage() {
   const solarQuoteCount = d.quotationPending.length;
   const solarInstallCount = d.installing.length;
 
-  const sortLeads = (leads: LeadData[]): LeadData[] => {
-    const dir = sortOrder === "asc" ? 1 : -1;
+  const sortLeads = (leads: LeadData[], dateField?: "survey_date" | "install_date"): LeadData[] => {
     const ts = (v: string | null | undefined, fallback: number) =>
       v ? new Date(v).getTime() : fallback;
     const arr = [...leads];
+    // Appointment-date sort: always ASC (เลย/ใกล้กำหนดสุดอยู่บน) and ignores
+    // the global dropdown — sections with นัดสำรวจ/ติดตั้ง use this hard.
+    if (dateField) {
+      const fallback = Number.POSITIVE_INFINITY;
+      arr.sort((a, b) => ts(a[dateField], fallback) - ts(b[dateField], fallback));
+      return arr;
+    }
+    const dir = sortOrder === "asc" ? 1 : -1;
     arr.sort((a, b) => {
       if (sortField === "name") {
         return (a.full_name || "").localeCompare(b.full_name || "", "th") * dir;
@@ -196,10 +214,10 @@ export default function TodayPage() {
     return arr;
   };
 
-  // Sort dropdowns — rendered inline with the first visible section's count
-  // badge so they sit on the same row as the group number across every tab.
+  // Sort controls — desktop only. Mobile section headers are already tight
+  // (title + count + tab bar above) so hiding the filter strip keeps it clean.
   const sortControls = (
-    <>
+    <div className="hidden md:flex items-center justify-end gap-2 flex-wrap">
       <button
         type="button"
         onClick={() => {
@@ -207,7 +225,7 @@ export default function TodayPage() {
           setMineOnly(next);
           localStorage.setItem("today.mineOnly", next ? "1" : "0");
         }}
-        className="h-7 inline-flex items-center gap-1.5 px-1 text-xxs font-medium text-gray-700 cursor-pointer"
+        className="h-7 inline-flex items-center gap-1.5 px-1 text-xxs font-medium text-gray-700 cursor-pointer whitespace-nowrap"
       >
         <span className={`w-3.5 h-3.5 rounded-full border-2 flex items-center justify-center transition-colors ${mineOnly ? "border-gray-800 bg-gray-800" : "border-gray-300"}`}>
           {mineOnly && <svg className="w-2 h-2 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={4}><path strokeLinecap="round" strokeLinejoin="round" d="M4.5 12.75l6 6 9-13.5" /></svg>}
@@ -240,7 +258,7 @@ export default function TodayPage() {
         <option value="asc">{sortField === "name" ? "ก-ฮ" : "เก่า → ใหม่"}</option>
         <option value="desc">{sortField === "name" ? "ฮ-ก" : "ใหม่ → เก่า"}</option>
       </select>
-    </>
+    </div>
   );
 
   // sales_all tab now shows ALL leads (same as Pipeline > ทั้งหมด), so count
@@ -281,26 +299,14 @@ export default function TodayPage() {
       <div className="p-4 space-y-5">
         {/* Sales · ทั้งหมด — เรียงตาม section เดิม + section "อื่นๆ" รวม leads
             ที่ไม่อยู่ใน bucket ใดข้างบน (เพื่อให้เห็น lead ครบทุกใบเหมือน pipeline) */}
-        {visibleTab === "sales_all" && (() => {
-          // First-visible-section flag: sort dropdowns sit inline with that
-          // section's count so they appear on the same row as the group number.
-          const firstSection =
-            d.followUpOverdue.length > 0 ? "followUpOverdue"
-            : d.followUpToday.length > 0 ? "followUpToday"
-            : d.newLeads.length > 0 ? "newLeads"
-            : d.booking.length > 0 ? "booking"
-            : d.installPending.length > 0 ? "installPending"
-            : d.depositPaid.length > 0 ? "depositPaid"
-            : d.quotationPending.length > 0 ? "quotationPending"
-            : null;
-          return (
+        {visibleTab === "sales_all" && (
           <>
+            {sortControls}
             {d.followUpOverdue.length > 0 && (
               <section>
                 <div className="flex items-center justify-between mb-3 px-1">
                   <h2 className="text-xs font-bold tracking-wider uppercase text-red-600">เลยกำหนดติดตาม</h2>
                   <div className="flex items-center gap-2">
-                    {firstSection === "followUpOverdue" && sortControls}
                     <span className="text-xs font-semibold text-red-600 bg-red-50 px-2 py-0.5 rounded-full">{d.followUpOverdue.length}</span>
                   </div>
                 </div>
@@ -312,7 +318,6 @@ export default function TodayPage() {
                 <div className="flex items-center justify-between mb-3 px-1">
                   <h2 className="text-xs font-bold tracking-wider uppercase text-amber-600">รอติดตาม</h2>
                   <div className="flex items-center gap-2">
-                    {firstSection === "followUpToday" && sortControls}
                     <span className="text-xs font-semibold text-amber-600 bg-amber-50 px-2 py-0.5 rounded-full">{d.followUpToday.length}</span>
                   </div>
                 </div>
@@ -324,7 +329,6 @@ export default function TodayPage() {
                 <div className="flex items-center justify-between mb-3 px-1">
                   <h2 className="text-xs font-bold tracking-wider uppercase text-blue-600">Lead ใหม่ ยังไม่ติดต่อ</h2>
                   <div className="flex items-center gap-2">
-                    {firstSection === "newLeads" && sortControls}
                     <span className="text-xs font-semibold text-blue-600 bg-blue-50 px-2 py-0.5 rounded-full">{d.newLeads.length}</span>
                   </div>
                 </div>
@@ -336,7 +340,6 @@ export default function TodayPage() {
                 <div className="flex items-center justify-between mb-3 px-1">
                   <h2 className="text-xs font-bold tracking-wider uppercase text-emerald-700">รายการจอง · รอนัดสำรวจ</h2>
                   <div className="flex items-center gap-2">
-                    {firstSection === "booking" && sortControls}
                     <span className="text-xs font-semibold text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded-full">{d.booking.length}</span>
                   </div>
                 </div>
@@ -348,7 +351,6 @@ export default function TodayPage() {
                 <div className="flex items-center justify-between mb-3 px-1">
                   <h2 className="text-xs font-bold tracking-wider uppercase text-violet-700">เสนอราคา · รอดำเนินการ</h2>
                   <div className="flex items-center gap-2">
-                    {firstSection === "installPending" && sortControls}
                     <span className="text-xs font-semibold text-violet-700 bg-violet-50 px-2 py-0.5 rounded-full">{d.installPending.length}</span>
                   </div>
                 </div>
@@ -360,7 +362,6 @@ export default function TodayPage() {
                 <div className="flex items-center justify-between mb-3 px-1">
                   <h2 className="text-xs font-bold tracking-wider uppercase text-emerald-700">ชำระมัดจำแล้ว</h2>
                   <div className="flex items-center gap-2">
-                    {firstSection === "depositPaid" && sortControls}
                     <span className="text-xs font-semibold text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded-full">{d.depositPaid.length}</span>
                   </div>
                 </div>
@@ -372,7 +373,6 @@ export default function TodayPage() {
                 <div className="flex items-center justify-between mb-3 px-1">
                   <h2 className="text-xs font-bold tracking-wider uppercase text-violet-600">รอใบเสนอราคา</h2>
                   <div className="flex items-center gap-2">
-                    {firstSection === "quotationPending" && sortControls}
                     <span className="text-xs font-semibold text-violet-600 bg-violet-50 px-2 py-0.5 rounded-full">{d.quotationPending.length}</span>
                   </div>
                 </div>
@@ -413,27 +413,20 @@ export default function TodayPage() {
               </div>
             )}
           </>
-          );
-        })()}
+        )}
 
         {/* Sales Tab — งานที่ต้องติดตามทั้งหมด.
          * บนสุด: ที่ถึงวัน follow-up แล้ว (overdue + today)
          * ถัดมา: lead ใหม่, รออนุมัติ/ชำระ
          * ที่ยังไม่ถึงวัน follow-up → ไปดู pipeline */}
-        {visibleTab === "sales" && (() => {
-          const firstSection =
-            d.followUpOverdue.length > 0 ? "followUpOverdue"
-            : d.followUpToday.length > 0 ? "followUpToday"
-            : d.newLeads.length > 0 ? "newLeads"
-            : null;
-          return (
+        {visibleTab === "sales" && (
           <>
+            {sortControls}
             {d.followUpOverdue.length > 0 && (
               <section>
                 <div className="flex items-center justify-between mb-3 px-1">
                   <h2 className="text-xs font-bold tracking-wider uppercase text-red-600">เลยกำหนดติดตาม</h2>
                   <div className="flex items-center gap-2">
-                    {firstSection === "followUpOverdue" && sortControls}
                     <span className="text-xs font-semibold text-red-600 bg-red-50 px-2 py-0.5 rounded-full">{d.followUpOverdue.length}</span>
                   </div>
                 </div>
@@ -445,7 +438,6 @@ export default function TodayPage() {
                 <div className="flex items-center justify-between mb-3 px-1">
                   <h2 className="text-xs font-bold tracking-wider uppercase text-amber-600">นัดติดตามวันนี้</h2>
                   <div className="flex items-center gap-2">
-                    {firstSection === "followUpToday" && sortControls}
                     <span className="text-xs font-semibold text-amber-600 bg-amber-50 px-2 py-0.5 rounded-full">{d.followUpToday.length}</span>
                   </div>
                 </div>
@@ -457,7 +449,6 @@ export default function TodayPage() {
                 <div className="flex items-center justify-between mb-3 px-1">
                   <h2 className="text-xs font-bold tracking-wider uppercase text-blue-600">Lead ใหม่ ยังไม่ติดต่อ</h2>
                   <div className="flex items-center gap-2">
-                    {firstSection === "newLeads" && sortControls}
                     <span className="text-xs font-semibold text-blue-600 bg-blue-50 px-2 py-0.5 rounded-full">{d.newLeads.length}</span>
                   </div>
                 </div>
@@ -474,8 +465,7 @@ export default function TodayPage() {
               </div>
             )}
           </>
-          );
-        })()}
+        )}
 
         {/* Booking Tab — "จอง" = จ่ายค่าสำรวจแล้ว (payment_confirmed=true)
             ยังอยู่ใน pre_survey รอนัดสำรวจ. ที่ยังไม่จ่ายจะอยู่ในแท็บ
@@ -589,15 +579,22 @@ export default function TodayPage() {
         {/* Solar Tab */}
         {visibleTab === "solar" && (() => {
           const bookingReady = d.booking.filter(l => l.payment_confirmed);
-          const firstSection =
-            bookingReady.length > 0 ? "booking"
-            : d.surveyToday.length > 0 ? "surveyToday"
-            : d.surveyPending.length > 0 ? "surveyPending"
-            : d.quotationPending.length > 0 ? "quotationPending"
-            : d.installing.length > 0 ? "installing"
-            : null;
           return (
           <>
+            {sortControls}
+            {/* Survey วันนี้ มาก่อน — เป็นคำถามแรกของช่างตอนเช้า "วันนี้มีนัดอะไร"
+             * เรียงตาม survey_date (เวลานัด) เช้า → เย็น */}
+            {d.surveyToday.length > 0 && (
+              <section>
+                <div className="flex items-center justify-between mb-3 px-1">
+                  <h2 className="text-xs font-bold tracking-wider uppercase text-primary">Survey วันนี้</h2>
+                  <div className="flex items-center gap-2">
+                    <span className="text-xs font-semibold text-primary bg-primary/10 px-2 py-0.5 rounded-full">{d.surveyToday.length}</span>
+                  </div>
+                </div>
+                <div className="space-y-3">{sortLeads(d.surveyToday, "survey_date").map((l) => <LeadCard key={l.id} lead={l} />)}</div>
+              </section>
+            )}
             {/* Booking — เฉพาะ "จ่ายแล้ว" Solar ต้องนัดสำรวจ. ลูกค้ายังไม่จ่าย
              * เป็นงาน sales ตามเงิน — ไม่อยู่บน solar dashboard */}
             {bookingReady.length > 0 && (
@@ -605,23 +602,10 @@ export default function TodayPage() {
                 <div className="flex items-center justify-between mb-3 px-1">
                   <h2 className="text-xs font-bold tracking-wider uppercase text-emerald-700">รายการจอง · รอนัดสำรวจ</h2>
                   <div className="flex items-center gap-2">
-                    {firstSection === "booking" && sortControls}
                     <span className="text-xs font-semibold text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded-full">{bookingReady.length}</span>
                   </div>
                 </div>
                 <div className="space-y-3">{sortLeads(bookingReady).map((l) => <LeadCard key={l.id} lead={l} />)}</div>
-              </section>
-            )}
-            {d.surveyToday.length > 0 && (
-              <section>
-                <div className="flex items-center justify-between mb-3 px-1">
-                  <h2 className="text-xs font-bold tracking-wider uppercase text-primary">Survey วันนี้</h2>
-                  <div className="flex items-center gap-2">
-                    {firstSection === "surveyToday" && sortControls}
-                    <span className="text-xs font-semibold text-primary bg-primary/10 px-2 py-0.5 rounded-full">{d.surveyToday.length}</span>
-                  </div>
-                </div>
-                <div className="space-y-3">{sortLeads(d.surveyToday).map((l) => <LeadCard key={l.id} lead={l} />)}</div>
               </section>
             )}
             {d.surveyPending.length > 0 && (
@@ -629,11 +613,10 @@ export default function TodayPage() {
                 <div className="flex items-center justify-between mb-3 px-1">
                   <h2 className="text-xs font-bold tracking-wider uppercase text-amber-600">Survey รอดำเนินการ</h2>
                   <div className="flex items-center gap-2">
-                    {firstSection === "surveyPending" && sortControls}
                     <span className="text-xs font-semibold text-amber-600 bg-amber-50 px-2 py-0.5 rounded-full">{d.surveyPending.length}</span>
                   </div>
                 </div>
-                <div className="space-y-3">{sortLeads(d.surveyPending).map((l) => <LeadCard key={l.id} lead={l} />)}</div>
+                <div className="space-y-3">{sortLeads(d.surveyPending, "survey_date").map((l) => <LeadCard key={l.id} lead={l} />)}</div>
               </section>
             )}
             {d.quotationPending.length > 0 && (
@@ -641,7 +624,6 @@ export default function TodayPage() {
                 <div className="flex items-center justify-between mb-3 px-1">
                   <h2 className="text-xs font-bold tracking-wider uppercase text-violet-600">รอใบเสนอราคา</h2>
                   <div className="flex items-center gap-2">
-                    {firstSection === "quotationPending" && sortControls}
                     <span className="text-xs font-semibold text-violet-600 bg-violet-50 px-2 py-0.5 rounded-full">{d.quotationPending.length}</span>
                   </div>
                 </div>
@@ -653,11 +635,10 @@ export default function TodayPage() {
                 <div className="flex items-center justify-between mb-3 px-1">
                   <h2 className="text-xs font-bold tracking-wider uppercase text-emerald-600">กำลังติดตั้ง</h2>
                   <div className="flex items-center gap-2">
-                    {firstSection === "installing" && sortControls}
                     <span className="text-xs font-semibold text-emerald-600 bg-emerald-50 px-2 py-0.5 rounded-full">{d.installing.length}</span>
                   </div>
                 </div>
-                <div className="space-y-3">{sortLeads(d.installing).map((l) => <LeadCard key={l.id} lead={l} />)}</div>
+                <div className="space-y-3">{sortLeads(d.installing, "install_date").map((l) => <LeadCard key={l.id} lead={l} />)}</div>
               </section>
             )}
             {solarCount === 0 && (
@@ -676,35 +657,29 @@ export default function TodayPage() {
         {/* Solar · สำรวจ — booking ที่จ่ายแล้ว + survey วันนี้ + รอนัดสำรวจ */}
         {visibleTab === "solar_survey" && (() => {
           const bookingReady = d.booking.filter(l => l.payment_confirmed);
-          const firstSection =
-            bookingReady.length > 0 ? "booking"
-            : d.surveyToday.length > 0 ? "surveyToday"
-            : d.surveyPending.length > 0 ? "surveyPending"
-            : null;
           return (
           <>
-            {bookingReady.length > 0 && (
-              <section>
-                <div className="flex items-center justify-between mb-3 px-1">
-                  <h2 className="text-xs font-bold tracking-wider uppercase text-emerald-700">รายการจอง · รอนัดสำรวจ</h2>
-                  <div className="flex items-center gap-2">
-                    {firstSection === "booking" && sortControls}
-                    <span className="text-xs font-semibold text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded-full">{bookingReady.length}</span>
-                  </div>
-                </div>
-                <div className="space-y-3">{sortLeads(bookingReady).map((l) => <LeadCard key={l.id} lead={l} />)}</div>
-              </section>
-            )}
+            {sortControls}
             {d.surveyToday.length > 0 && (
               <section>
                 <div className="flex items-center justify-between mb-3 px-1">
                   <h2 className="text-xs font-bold tracking-wider uppercase text-primary">Survey วันนี้</h2>
                   <div className="flex items-center gap-2">
-                    {firstSection === "surveyToday" && sortControls}
                     <span className="text-xs font-semibold text-primary bg-primary/10 px-2 py-0.5 rounded-full">{d.surveyToday.length}</span>
                   </div>
                 </div>
-                <div className="space-y-3">{sortLeads(d.surveyToday).map((l) => <LeadCard key={l.id} lead={l} />)}</div>
+                <div className="space-y-3">{sortLeads(d.surveyToday, "survey_date").map((l) => <LeadCard key={l.id} lead={l} />)}</div>
+              </section>
+            )}
+            {bookingReady.length > 0 && (
+              <section>
+                <div className="flex items-center justify-between mb-3 px-1">
+                  <h2 className="text-xs font-bold tracking-wider uppercase text-emerald-700">รายการจอง · รอนัดสำรวจ</h2>
+                  <div className="flex items-center gap-2">
+                    <span className="text-xs font-semibold text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded-full">{bookingReady.length}</span>
+                  </div>
+                </div>
+                <div className="space-y-3">{sortLeads(bookingReady).map((l) => <LeadCard key={l.id} lead={l} />)}</div>
               </section>
             )}
             {d.surveyPending.length > 0 && (
@@ -712,11 +687,10 @@ export default function TodayPage() {
                 <div className="flex items-center justify-between mb-3 px-1">
                   <h2 className="text-xs font-bold tracking-wider uppercase text-amber-600">Survey รอดำเนินการ</h2>
                   <div className="flex items-center gap-2">
-                    {firstSection === "surveyPending" && sortControls}
                     <span className="text-xs font-semibold text-amber-600 bg-amber-50 px-2 py-0.5 rounded-full">{d.surveyPending.length}</span>
                   </div>
                 </div>
-                <div className="space-y-3">{sortLeads(d.surveyPending).map((l) => <LeadCard key={l.id} lead={l} />)}</div>
+                <div className="space-y-3">{sortLeads(d.surveyPending, "survey_date").map((l) => <LeadCard key={l.id} lead={l} />)}</div>
               </section>
             )}
             {solarSurveyCount === 0 && (
@@ -770,7 +744,7 @@ export default function TodayPage() {
                     <span className="text-xs font-semibold text-emerald-600 bg-emerald-50 px-2 py-0.5 rounded-full">{d.installing.length}</span>
                   </div>
                 </div>
-                <div className="space-y-3">{sortLeads(d.installing).map((l) => <LeadCard key={l.id} lead={l} />)}</div>
+                <div className="space-y-3">{sortLeads(d.installing, "install_date").map((l) => <LeadCard key={l.id} lead={l} />)}</div>
               </section>
             ) : (
               <div className="text-center py-16">

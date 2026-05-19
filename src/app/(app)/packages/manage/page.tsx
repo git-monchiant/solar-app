@@ -16,8 +16,6 @@ interface Package {
   is_upgrade: boolean;
   battery_kwh: number | null;
   battery_brand: string | null;
-  solar_panels: number | null;
-  panel_watt: number | null;
   inverter_kw: number | null;
   inverter_brand: string | null;
   price: number;
@@ -31,7 +29,7 @@ interface Package {
 
 const empty: Omit<Package, "id"> = {
   name: "", kwp: 0, phase: 1, has_battery: false, has_panel: true, has_inverter: true, is_upgrade: false,
-  battery_kwh: null, battery_brand: null, solar_panels: null, panel_watt: null,
+  battery_kwh: null, battery_brand: null,
   inverter_kw: null, inverter_brand: null, price: 0, monthly_installment: null,
   monthly_saving: null, warranty_years: 10, is_active: true,
   start_date: new Date().toISOString().slice(0, 10),
@@ -153,7 +151,7 @@ export default function ManagePackagesPage() {
                   <div className="flex items-center gap-4 mb-2">
                     <span className="text-xl font-bold font-mono tabular-nums text-gray-900">{fmt(pkg.price)} <span className="text-sm text-gray-400">THB</span></span>
                     <div className="flex items-center gap-1.5">
-                      {pkg.has_panel && <span className="text-xs px-2 py-0.5 rounded bg-amber-50 text-amber-600 font-semibold">Panel {pkg.solar_panels ? `${pkg.solar_panels}×${pkg.panel_watt}W` : ""}</span>}
+                      {pkg.has_panel && <span className="text-xs px-2 py-0.5 rounded bg-amber-50 text-amber-600 font-semibold">Panel</span>}
                       {pkg.has_inverter && <span className="text-xs px-2 py-0.5 rounded bg-violet-50 text-violet-600 font-semibold">Inv {pkg.inverter_brand ? `${pkg.inverter_brand} ${pkg.inverter_kw}kW` : ""}</span>}
                       {pkg.has_battery && <span className="text-xs px-2 py-0.5 rounded bg-green-50 text-green-600 font-semibold">Bat {pkg.battery_kwh ? `${pkg.battery_kwh}kWh ${pkg.battery_brand || ""}` : ""}</span>}
                     </div>
@@ -238,16 +236,8 @@ export default function ManagePackagesPage() {
                 </div>
               </div>
 
-              {/* Panel & Inverter */}
+              {/* Inverter */}
               <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wider mb-0.5">จำนวนแผง</label>
-                  <input type="number" value={editing.solar_panels ?? ""} onChange={e => setEditing({ ...editing, solar_panels: e.target.value ? parseInt(e.target.value) : null })} className="w-full h-10 px-3 rounded-lg border border-gray-200 text-sm focus:outline-none focus:border-primary" />
-                </div>
-                <div>
-                  <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wider mb-0.5">วัตต์/แผง</label>
-                  <input type="number" value={editing.panel_watt ?? ""} onChange={e => setEditing({ ...editing, panel_watt: e.target.value ? parseInt(e.target.value) : null })} className="w-full h-10 px-3 rounded-lg border border-gray-200 text-sm focus:outline-none focus:border-primary" />
-                </div>
                 <div>
                   <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wider mb-0.5">Inverter kW</label>
                   <input type="number" step="0.1" value={editing.inverter_kw ?? ""} onChange={e => setEditing({ ...editing, inverter_kw: e.target.value ? parseFloat(e.target.value) : null })} className="w-full h-10 px-3 rounded-lg border border-gray-200 text-sm focus:outline-none focus:border-primary" />

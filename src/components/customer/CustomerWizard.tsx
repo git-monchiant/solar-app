@@ -55,7 +55,7 @@ export interface CustomerWizardValues {
 interface Project { id: number; name: string; district: string | null; province: string | null; }
 interface Package {
   id: number; name: string; kwp: number; phase: number; has_battery: boolean;
-  battery_kwh: number; battery_brand: string; solar_panels: number; panel_watt: number;
+  battery_kwh: number; battery_brand: string;
   inverter_kw: number; inverter_brand: string; price: number; is_upgrade: boolean;
   has_panel: boolean; has_inverter: boolean;
 }

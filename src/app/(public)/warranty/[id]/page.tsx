@@ -10,8 +10,6 @@ interface Pkg {
   has_battery: boolean;
   battery_kwh: number;
   battery_brand: string;
-  solar_panels: number;
-  panel_watt: number;
   inverter_kw: number;
   inverter_brand: string;
 }
@@ -76,8 +74,8 @@ export default function WarrantyPage() {
   // Prefer warranty_* equipment snapshot (entered by staff to reflect actual
   // installed equipment); fall back to the package for older leads.
   const sysKwp = lead.warranty_system_size_kwp ?? pkg?.kwp ?? null;
-  const pnlCount = lead.warranty_panel_count ?? pkg?.solar_panels ?? null;
-  const pnlWatt = lead.warranty_panel_watt ?? pkg?.panel_watt ?? null;
+  const pnlCount = lead.warranty_panel_count ?? null;
+  const pnlWatt = lead.warranty_panel_watt ?? null;
   const pnlBrand = lead.warranty_panel_brand ?? "";
   const invBrand = lead.warranty_inverter_brand ?? pkg?.inverter_brand ?? "";
   const invKw = lead.warranty_inverter_kw ?? pkg?.inverter_kw ?? null;

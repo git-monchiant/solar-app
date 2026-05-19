@@ -65,6 +65,20 @@ html, body {
   height: 100vh; /* fallback */
   height: 100lvh; /* large viewport — stable, no shift on scroll */
   margin: 0;
+  /* Lock the document scroller — inner <main> handles scrolling. Without this,
+     iOS Safari rubber-bands the page (overscroll-behavior: none alone doesn't
+     stop it when the body is the viewport-sized element). */
+  overflow: hidden;
+}
+
+/* Print/PDF must override the viewport lock — Puppeteer renders the survey/
+   warranty/receipt docs as PDFs and needs to see content past the viewport.
+   Without this, body clips at 100vh and Puppeteer emits blank pages 2+. */
+@media print {
+  html, body {
+    height: auto;
+    overflow: visible;
+  }
 }
 
 body {

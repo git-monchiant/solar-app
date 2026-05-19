@@ -8,6 +8,16 @@ import Header from "@/components/layout/Header";
 import { STATUS_CONFIG } from "@/lib/constants/statuses";
 import { formatTHB as fmt, formatThaiDateShort as fmtDate, formatThaiTime as fmtTime } from "@/lib/utils/formatters";
 
+type LifecycleCol = "first_contact_at" | "contact2_at" | "contact3_at" | "contact4_at" | "contact5_at"
+  | "sales_pitch_at" | "booking_paid_at" | "survey_date" | "survey_done_at"
+  | "quote_issued_at" | "order_paid_at" | "install_date" | "install_started_at" | "install_done_at" | "warranty_at";
+
+type ContactStateField = "first_contact_state" | "contact2_state" | "contact3_state" | "contact4_state" | "contact5_state";
+
+type LifecycleRow = { [K in LifecycleCol]: string | null }
+  & { [K in ContactStateField]: "yes" | "no" | null }
+  & { id: number; status: string };
+
 interface DashboardData {
   total_leads: number;
   total_deposits: number;
@@ -38,28 +48,39 @@ function Trend({ current, previous, suffix = "" }: { current: number; previous: 
 export default function DashboardPage() {
   const [data, setData] = useState<DashboardData | null>(null);
   const [lineUsers, setLineUsers] = useState<{ created_at: string; phone: string | null; house_number: string | null }[]>([]);
+  const [lifecycleRows, setLifecycleRows] = useState<LifecycleRow[]>([]);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
     apiFetch("/api/dashboard").then(setData).catch(console.error).finally(() => setLoading(false));
     apiFetch("/api/line-users").then(setLineUsers).catch(console.error);
+    apiFetch("/api/lifecycle").then((rows: LifecycleRow[]) => setLifecycleRows(rows)).catch(console.error);
   }, []);
 
   if (loading) return <div className="flex items-center justify-center h-full py-20"><div className="w-10 h-10 border-3 border-gray-200 border-t-primary rounded-full animate-spin" /></div>;
   if (!data) return <div className="text-center py-12 text-gray-400 text-sm">Unable to load data</div>;
 
   const countsByStatus = Object.fromEntries(data.status_breakdown.map(s => [s.status, s.count]));
+  // Split pre_survey by first_contact_at: ยังไม่ได้ติดต่อ vs อยู่ระหว่างติดต่อ.
+  // Falls back to the unsplit total until /api/lifecycle resolves so the row
+  // doesn't briefly show 0.
+  const preSurveyTotal = countsByStatus["pre_survey"] || 0;
+  const preSurveyInContact = lifecycleRows.filter(r => r.status === "pre_survey" && r.first_contact_at).length;
+  const preSurveyNoContact = lifecycleRows.length > 0
+    ? lifecycleRows.filter(r => r.status === "pre_survey" && !r.first_contact_at).length
+    : preSurveyTotal;
   // Order follows the actual status flow in code: install → warranty → gridtie → closed.
   // See InstallStep.tsx (→warranty), WarrantyStep.tsx (→gridtie), GridTieStep.tsx (→closed).
   const pipelineSteps: { status: string; label: string; color: string; count: number }[] = [
-    { status: "pre_survey", label: "รอติดตาม",         color: "bg-sky-500",     count: countsByStatus["pre_survey"] || 0 },
+    { status: "pre_survey_no_contact", label: "ยังไม่ได้ติดต่อ",  color: "bg-rose-400",    count: preSurveyNoContact },
+    { status: "pre_survey_in_contact", label: "อยู่ระหว่างติดต่อ", color: "bg-sky-500",     count: preSurveyInContact },
     { status: "survey",     label: "รอสำรวจ",       color: "bg-violet-500",  count: countsByStatus["survey"] || 0 },
     { status: "quote",      label: "รอใบเสนอราคา",       color: "bg-orange-500",  count: countsByStatus["quote"] || 0 },
     { status: "order",      label: "รออนุมัติ/ชำระ",     color: "bg-green-500",   count: countsByStatus["order"] || 0 },
     { status: "install",    label: "กำลังติดตั้ง",       color: "bg-emerald-500", count: countsByStatus["install"] || 0 },
-    { status: "closed",     label: "ส่งมอบแล้ว",   color: "bg-teal-500",    count: countsByStatus["closed"] || 0 },
     { status: "warranty",   label: "ออกใบรับประกัน",     color: "bg-cyan-500",    count: countsByStatus["warranty"] || 0 },
     { status: "gridtie",    label: "ขอขนานไฟ",           color: "bg-amber-500",   count: countsByStatus["gridtie"] || 0 },
+    { status: "closed",     label: "ส่งมอบแล้ว",   color: "bg-teal-500",    count: countsByStatus["closed"] || 0 },
     { status: "lost",       label: "ยกเลิก",             color: "bg-red-400",     count: countsByStatus["lost"] || 0 },
     { status: "returned",   label: "ส่งกลับ Seeker",     color: "bg-amber-500",   count: countsByStatus["returned"] || 0 },
   ];
@@ -155,6 +176,11 @@ export default function DashboardPage() {
         {/* LINE OA growth */}
         <div className="rounded-xl bg-white border border-gray-300 p-4">
           <LineGrowthChart users={lineUsers} />
+        </div>
+
+        {/* Lifecycle funnel — lead ค้างอยู่ stage ใด ตอนนี้ (ทั้งหมดตั้งแต่เริ่ม) */}
+        <div className="rounded-xl bg-white border border-gray-300 p-4">
+          <LifecycleFunnelChart rows={lifecycleRows} />
         </div>
 
         <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
@@ -348,7 +374,7 @@ function ActivityChart({ data }: { data: { day: string; lead_id: number; full_na
           {dayKeys.map(dk => {
             const blocks = byDay[dk];
             return (
-              <div key={dk} className="flex-1 flex flex-col-reverse gap-[2px] items-stretch" style={{ height: "100%" }}>
+              <div key={dk} className="flex-1 min-w-0 flex flex-col-reverse gap-[2px] items-stretch" style={{ height: "100%" }}>
                 {blocks.map((b, i) => (
                   <div
                     key={i}
@@ -376,7 +402,7 @@ function ActivityChart({ data }: { data: { day: string; lead_id: number; full_na
       {/* X axis: dates */}
       <div className="flex gap-[3px] mt-1 ml-6">
         {dayKeys.map(dk => (
-          <div key={dk} className="flex-1 text-center text-xxs text-gray-400 truncate">
+          <div key={dk} className="flex-1 min-w-0 text-center text-xxs text-gray-400 truncate">
             {parseInt(dk.slice(8))}
           </div>
         ))}
@@ -413,6 +439,8 @@ function ActivityChart({ data }: { data: { day: string; lead_id: number; full_na
 
 function LineGrowthChart({ users }: { users: { created_at: string; phone: string | null; house_number: string | null }[] }) {
   const [mode, setMode] = useState<"all" | "line" | "line_phone">("all");
+  const [isMobile, setIsMobile] = useState(false);
+  useEffect(() => { setIsMobile(window.innerWidth < 768); }, []);
   // Filter users by mode: All / Line (no contact) / Line + Phone (has contact)
   const filteredUsers = users.filter(u => {
     if (mode === "all") return true;
@@ -420,10 +448,11 @@ function LineGrowthChart({ users }: { users: { created_at: string; phone: string
     if (mode === "line") return !hasContact;
     return hasContact;
   });
-  // Rolling 30 days history + 3-day future buffer (matches seeker dashboard).
+  // Rolling 30 days history + 3-day future buffer. Mobile shrinks to 7+1 since
+  // there's no horizontal room for 33 columns.
   const today = new Date();
-  const HISTORY = 30;
-  const FUTURE_PAD = 3;
+  const HISTORY = isMobile ? 7 : 30;
+  const FUTURE_PAD = isMobile ? 1 : 3;
   const dayKeys: string[] = [];
   for (let i = HISTORY - 1; i >= -FUTURE_PAD; i--) {
     const d = new Date(today.getFullYear(), today.getMonth(), today.getDate() - i);
@@ -475,7 +504,7 @@ function LineGrowthChart({ users }: { users: { created_at: string; phone: string
         </div>
         <div className="flex-1 flex items-end gap-[3px] border-l border-b border-gray-200" style={{ height: chartH }}>
           {byDay.map((blocks, i) => (
-            <div key={i} className="flex-1 flex flex-col-reverse gap-[2px] items-stretch" style={{ height: "100%" }}>
+            <div key={i} className="flex-1 min-w-0 flex flex-col-reverse gap-[2px] items-stretch" style={{ height: "100%" }}>
               {blocks.map((b, j) => {
                 const hasContact = !!b.phone || !!b.house_number;
                 const tip = [b.phone && `เบอร์ ${b.phone}`, b.house_number && `บ้าน ${b.house_number}`].filter(Boolean).join(" · ") || "ยังไม่มีข้อมูล";
@@ -498,7 +527,7 @@ function LineGrowthChart({ users }: { users: { created_at: string; phone: string
       </div>
       <div className="flex gap-[3px] mt-1 ml-6">
         {dayKeys.map((dk, i) => (
-          <div key={i} className="flex-1 text-center text-xxs text-gray-400 truncate">{parseInt(dk.slice(8))}</div>
+          <div key={i} className="flex-1 min-w-0 text-center text-xxs text-gray-400 truncate">{parseInt(dk.slice(8))}</div>
         ))}
       </div>
       <div className="flex items-center justify-between mt-2">
@@ -511,6 +540,125 @@ function LineGrowthChart({ users }: { users: { created_at: string; phone: string
           <div className="flex items-center gap-1">
             <div className="w-[10px] h-[10px] rounded-sm bg-emerald-500" />
             <span>ยังไม่ให้ข้อมูล</span>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// Funnel = lead count by status (matches Pipeline section's status_breakdown
+// 1:1 so the two sections never disagree). pre_survey is split by
+// first_contact_at: ยังไม่ได้ติดต่อ vs ติดต่อได้/ไม่ได้ (stacked by contact_state).
+function LifecycleFunnelChart({ rows }: { rows: LifecycleRow[] }) {
+  const CONTACT_STATES: ContactStateField[] = [
+    "first_contact_state", "contact2_state", "contact3_state", "contact4_state", "contact5_state",
+  ];
+  const byStatus = (s: string) => rows.filter(r => r.status === s);
+  const preSurvey = byStatus("pre_survey");
+  const preSurveyNoContact = preSurvey.filter(r => !r.first_contact_at).length;
+  const preSurveyInContact = preSurvey.filter(r => r.first_contact_at);
+  const contactYesRows = preSurveyInContact.filter(r => CONTACT_STATES.some(s => r[s] === "yes"));
+  const contactYes = contactYesRows.length;
+  const contactNo = preSurveyInContact.length - contactYes;
+  // เสนอขาย bar base = ติดต่อได้ subset (sales_pitch_at เกิดขึ้นได้เฉพาะคนที่ติดต่อ
+  // ได้จริงเท่านั้น) ดังนั้น stack รวมต้องเท่า contactYes
+  const pitched = contactYesRows.filter(r => r.sales_pitch_at).length;
+  const notPitched = contactYes - pitched;
+  // จองแล้วแต่ยังไม่ได้นัดสำรวจ — booking_paid_at มี survey_date null และ
+  // status ยังอยู่ใน pre_survey (ไม่ใช่นัดแล้วแต่ status เลื่อนไปแล้ว)
+  const bookedNotScheduled = rows.filter(r =>
+    r.booking_paid_at && !r.survey_date && r.status.startsWith("pre_survey")
+  ).length;
+
+  const stages: { label: string; total: number; segments: { color: string; count: number }[] }[] = [
+    { label: "ยังไม่ได้ติดต่อ",   total: preSurveyNoContact,         segments: [{ color: "bg-rose-400",    count: preSurveyNoContact }] },
+    { label: "ติดต่อได้/ไม่ได้",  total: preSurveyInContact.length,  segments: [
+      { color: "bg-emerald-500", count: contactYes },
+      { color: "bg-red-400",     count: contactNo },
+    ] },
+    { label: "เสนอขายแล้ว",      total: contactYes,                 segments: [
+      { color: "bg-emerald-500", count: pitched },     // ได้เสนอขายแล้ว
+      { color: "bg-gray-300",    count: notPitched },  // ยังไม่ได้เสนอขาย
+    ] },
+    { label: "จองแล้ว/รอนัด",     total: bookedNotScheduled,         segments: [{ color: "bg-amber-500",  count: bookedNotScheduled }] },
+    { label: "รอสำรวจ",         total: byStatus("survey").length,   segments: [{ color: "bg-violet-500", count: byStatus("survey").length }] },
+    { label: "รอใบเสนอราคา",     total: byStatus("quote").length,    segments: [{ color: "bg-orange-500", count: byStatus("quote").length }] },
+    { label: "รออนุมัติ/ชำระ",    total: byStatus("order").length,    segments: [{ color: "bg-green-500",  count: byStatus("order").length }] },
+    { label: "กำลังติดตั้ง",      total: byStatus("install").length,  segments: [{ color: "bg-emerald-500", count: byStatus("install").length }] },
+    { label: "ออกใบรับประกัน",   total: byStatus("warranty").length, segments: [{ color: "bg-cyan-500",   count: byStatus("warranty").length }] },
+    { label: "ขอขนานไฟ",        total: byStatus("gridtie").length,  segments: [{ color: "bg-amber-500",  count: byStatus("gridtie").length }] },
+    { label: "ส่งมอบแล้ว",       total: byStatus("closed").length,   segments: [{ color: "bg-teal-500",   count: byStatus("closed").length }] },
+  ];
+
+  // Group header band — span matches the # of stages that bucket under each.
+  const groups = [
+    { title: "การติดต่อ",           tone: "bg-sky-50 text-sky-800 border-sky-200",            span: 3 },
+    { title: "Pre-Survey / Survey", tone: "bg-violet-50 text-violet-800 border-violet-200",   span: 2 },
+    { title: "Quote / Order",       tone: "bg-orange-50 text-orange-800 border-orange-200",   span: 2 },
+    { title: "ติดตั้ง / รับประกัน",  tone: "bg-teal-50 text-teal-800 border-teal-200",          span: 3 },
+    { title: "ส่งมอบ",              tone: "bg-gray-50 text-gray-700 border-gray-200",         span: 1 },
+  ];
+
+  const maxTotal = Math.max(...stages.map(s => s.total), 1);
+  const chartH = 180;
+  const usableH = chartH - 24;
+
+  return (
+    <div>
+      <div className="text-xs font-semibold uppercase tracking-wider text-gray-400 mb-3">
+        Lead ค้างที่ stage ไหน <span className="normal-case text-gray-300">(ทั้งหมดตั้งแต่เริ่ม)</span>
+      </div>
+      <div className="overflow-x-auto">
+        <div className="min-w-[500px]">
+          <div className="flex gap-[3px] mb-1">
+            {groups.map(g => (
+              <div key={g.title}
+                   className={`text-xxs font-semibold text-center py-1 px-1 rounded border ${g.tone}`}
+                   style={{ flex: g.span, minWidth: 0 }}>
+                {g.title}
+              </div>
+            ))}
+          </div>
+          <div className="flex items-end gap-[3px] border-l border-b border-gray-200" style={{ height: chartH }}>
+            {stages.map((stage, i) => {
+              const totalH = (stage.total / maxTotal) * usableH;
+              return (
+                <div key={i} className="flex-1 min-w-0 flex flex-col items-stretch justify-end px-0.5" style={{ height: "100%" }}>
+                  <div className="text-center text-xxs font-bold text-gray-700 tabular-nums leading-none mb-1">{stage.total}</div>
+                  <div className="rounded-t-sm overflow-hidden flex flex-col-reverse" style={{ height: Math.max(totalH, stage.total > 0 ? 4 : 0) }}>
+                    {stage.segments.map((seg, j) => (
+                      seg.count > 0 ? (
+                        <div key={j}
+                             className={`${seg.color} flex items-center justify-center`}
+                             style={{ height: `${(seg.count / Math.max(stage.total, 1)) * 100}%` }}>
+                          {stage.segments.length > 1 && (
+                            <span className="text-xxs font-bold text-white tabular-nums leading-none">{seg.count}</span>
+                          )}
+                        </div>
+                      ) : null
+                    ))}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+          <div className="flex gap-[3px] mt-1">
+            {stages.map((stage, i) => (
+              <div key={i} className="flex-1 min-w-0 text-center text-xxs text-gray-500 leading-tight px-0.5">
+                {stage.label}
+              </div>
+            ))}
+          </div>
+          <div className="mt-3 flex items-center gap-4 text-xxs text-gray-500">
+            <div className="flex items-center gap-1.5">
+              <div className="w-2.5 h-2.5 rounded-sm bg-emerald-500" />
+              <span>ติดต่อได้ <span className="font-bold text-gray-700 tabular-nums">{contactYes}</span></span>
+            </div>
+            <div className="flex items-center gap-1.5">
+              <div className="w-2.5 h-2.5 rounded-sm bg-red-400" />
+              <span>ติดต่อไม่ได้ <span className="font-bold text-gray-700 tabular-nums">{contactNo}</span></span>
+            </div>
           </div>
         </div>
       </div>

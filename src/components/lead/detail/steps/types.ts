@@ -210,8 +210,6 @@ export interface Package {
   has_battery: boolean;
   battery_kwh: number;
   battery_brand: string;
-  solar_panels: number;
-  panel_watt: number;
   inverter_kw: number;
   inverter_brand: string;
   price: number;

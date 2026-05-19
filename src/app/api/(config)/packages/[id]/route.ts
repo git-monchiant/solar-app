@@ -23,8 +23,6 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
       is_upgrade: { type: sql.Bit, value: body.is_upgrade },
       battery_kwh: { type: sql.Decimal(5, 1), value: body.battery_kwh },
       battery_brand: { type: sql.NVarChar(50), value: body.battery_brand },
-      solar_panels: { type: sql.Int, value: body.solar_panels },
-      panel_watt: { type: sql.Int, value: body.panel_watt },
       inverter_kw: { type: sql.Decimal(5, 1), value: body.inverter_kw },
       inverter_brand: { type: sql.NVarChar(50), value: body.inverter_brand },
       price: { type: sql.Decimal(12, 2), value: body.price },
