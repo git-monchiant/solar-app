@@ -102,7 +102,7 @@ export default function BottomNav() {
             className="h-9 w-auto"
           />
         </div>
-        <nav className="flex-1 px-3 py-2 space-y-0.5">
+        <nav className="flex-1 min-h-0 overflow-y-auto px-3 py-2 space-y-0.5">
           {visibleItems.map((item, idx) => {
             const isActive =
               item.href === "/packages" ? pathname === "/packages" :
@@ -115,7 +115,7 @@ export default function BottomNav() {
               <div key={item.href}>
                 {showDivider && <div className="my-1.5 border-t border-gray-100" />}
                 <Link href={item.href}
-                  className={`flex items-center gap-3 px-3 py-1.5 rounded-lg text-xs font-semibold uppercase tracking-wider transition-colors ${isActive ? "bg-primary/10 text-primary" : "text-gray hover:bg-gray-50"}`}>
+                  className={`flex items-center gap-3 px-3 py-1.5 rounded-lg text-xs font-semibold uppercase transition-colors ${isActive ? "bg-primary/10 text-primary" : "text-gray hover:bg-gray-50"}`}>
                   {item.icon} {item.label}
                 </Link>
               </div>
@@ -246,7 +246,7 @@ function AdminGroups({ pathname, activeRoles, username }: { pathname: string; ac
                 pathname.startsWith(l.href);
               return (
                 <Link key={l.href} href={l.href}
-                  className={`flex items-center gap-3 px-3 py-1.5 rounded-lg text-xs font-semibold uppercase tracking-wider transition-colors ${active ? "bg-primary/10 text-primary" : "text-gray hover:bg-gray-50"}`}>
+                  className={`flex items-center gap-3 px-3 py-1.5 rounded-lg text-xs font-semibold uppercase transition-colors ${active ? "bg-primary/10 text-primary" : "text-gray hover:bg-gray-50"}`}>
                   {l.icon} {l.label}
                 </Link>
               );

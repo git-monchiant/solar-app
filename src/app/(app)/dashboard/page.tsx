@@ -401,6 +401,11 @@ export default function DashboardPage() {
         {/* Interest / Undecided / Lost — 3 reason cards */}
         {devData && (() => {
           const today = new Date().toLocaleDateString("th-TH", { day: "numeric", month: "long", year: "numeric" });
+          // Pulled in locally — the outer IIFE that owns openBucket/lostRows
+          // closes before this block, so the click handlers need their own.
+          const lostRows = lifecycleRows.filter(r => r.status === "lost");
+          const bigNumCls = "cursor-pointer hover:underline decoration-2 underline-offset-4";
+          const openBucket = (title: string, rows: LifecycleRow[]) => () => setBucket({ title, rows });
           return (
             <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
               <div className="rounded-xl bg-white border border-gray-300 p-4">
@@ -436,12 +441,17 @@ export default function DashboardPage() {
               <div className="rounded-xl bg-white border border-gray-300 p-4">
                 <div className="flex items-baseline justify-between mb-3">
                   <div className="text-sm font-semibold uppercase tracking-wider text-gray-400">เหตุผลที่ Lost</div>
-                  <div className="text-lg font-bold font-mono tabular-nums text-red-600">{devData.total_lost}</div>
+                  <button
+                    type="button"
+                    onClick={openBucket("ยกเลิก", lostRows)}
+                    className={`text-lg font-bold font-mono tabular-nums text-red-600 ${bigNumCls}`}
+                  >{devData.total_lost}</button>
                 </div>
                 {devData.lost_reasons.length > 0 || devData.total_lost > 0 ? (
-                  <BarList
-                    items={devData.lost_reasons.map(r => ({ label: r.reason, value: r.cnt }))}
-                    color="bg-red-400"
+                  <LostReasonsByGroup
+                    items={devData.lost_reasons}
+                    rows={lostRows}
+                    onOpenBucket={(title, rows) => setBucket({ title, rows })}
                   />
                 ) : (
                   <div className="text-xs text-gray-400 text-center py-4">ยังไม่มีข้อมูล</div>
@@ -998,6 +1008,84 @@ function BarList({ items, color }: { items: { label: string; value: number }[]; 
             </div>
             <div className="h-1.5 bg-gray-100 overflow-hidden">
               <div className={`h-full ${color}`} style={{ width: `${pct}%` }} />
+            </div>
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+// Group palette mirrors LostModal's 5 categories so the chart and the picker
+// read as the same taxonomy. "Other" is a synthetic bucket for free-text
+// (อื่นๆ — …) plus any legacy bare values that never got a group prefix.
+const LOST_GROUPS: { title: string }[] = [
+  { title: "ติดต่อไม่ได้ / ข้อมูลผิด" },
+  { title: "ลูกค้าไม่สนใจ"          },
+  { title: "ความพร้อม"             },
+  { title: "สินเชื่อ"                },
+  { title: "ปิดการขายไม่สำเร็จ"      },
+  { title: "อื่นๆ"                  },
+];
+
+function LostReasonsByGroup({
+  items,
+  rows,
+  onOpenBucket,
+}: {
+  items: { reason: string; cnt: number }[];
+  rows: LifecycleRow[];
+  onOpenBucket: (title: string, rows: LifecycleRow[]) => void;
+}) {
+  // LostModal saves "{group_title} — {item}" (U+2014 em-dash). Split on that
+  // separator; anything without the prefix lands in the synthetic "Other"
+  // bucket (legacy bare values, plus the "test" / bare "อื่นๆ" rows).
+  const SEP = " — ";
+  const parsed = items.map(it => {
+    const i = it.reason.indexOf(SEP);
+    if (i === -1) return { group: "อื่นๆ", item: it.reason, cnt: it.cnt, fullReason: it.reason };
+    return { group: it.reason.slice(0, i), item: it.reason.slice(i + SEP.length), cnt: it.cnt, fullReason: it.reason };
+  });
+  const max = Math.max(...parsed.map(p => p.cnt), 1);
+  return (
+    <div className="space-y-3">
+      {LOST_GROUPS.map(g => {
+        const inGroup = parsed.filter(p => p.group === g.title);
+        if (inGroup.length === 0) return null;
+        const groupTotal = inGroup.reduce((a, b) => a + b.cnt, 0);
+        const groupReasonSet = new Set(inGroup.map(p => p.fullReason));
+        const groupRows = rows.filter(r => r.lost_reason !== null && groupReasonSet.has(r.lost_reason));
+        return (
+          <div key={g.title}>
+            <button
+              type="button"
+              onClick={() => onOpenBucket(g.title, groupRows)}
+              className="w-full flex items-center justify-between px-2 py-1 mb-1.5 rounded bg-red-200 hover:bg-red-300 cursor-pointer transition-colors"
+            >
+              <div className="text-xxs font-bold uppercase tracking-wider text-red-800">{g.title}</div>
+              <div className="text-xs font-bold font-mono tabular-nums text-red-800">{groupTotal}</div>
+            </button>
+            <div className="space-y-1.5">
+              {inGroup.map((p, i) => {
+                const pct = (p.cnt / max) * 100;
+                const itemRows = rows.filter(r => r.lost_reason === p.fullReason);
+                return (
+                  <button
+                    type="button"
+                    key={i}
+                    onClick={() => onOpenBucket(p.fullReason, itemRows)}
+                    className="w-full text-left hover:bg-gray-50 rounded px-1 py-0.5 cursor-pointer transition-colors"
+                  >
+                    <div className="flex items-center justify-between mb-0.5">
+                      <span className="text-xs font-medium text-gray-700 truncate">{p.item}</span>
+                      <span className="text-xs font-bold font-mono tabular-nums text-gray-900 ml-2">{p.cnt}</span>
+                    </div>
+                    <div className="h-1.5 bg-gray-100 overflow-hidden">
+                      <div className="h-full bg-red-400" style={{ width: `${pct}%` }} />
+                    </div>
+                  </button>
+                );
+              })}
             </div>
           </div>
         );

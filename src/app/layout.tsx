@@ -3,6 +3,7 @@ import localFont from "next/font/local";
 import "./globals.css";
 import DisableNumberInputWheel from "@/components/utils/DisableNumberInputWheel";
 import GlobalErrorReporter from "@/components/utils/GlobalErrorReporter";
+import { version } from "../../package.json";
 
 const dbHeavent = localFont({
   src: [
@@ -16,7 +17,7 @@ const dbHeavent = localFont({
 });
 
 export const metadata: Metadata = {
-  title: "Solar Sales App",
+  title: `Solar APP - ${version}`,
   description: "Sena Solar Energy - Sales Management",
   manifest: "/manifest.json",
   icons: {
