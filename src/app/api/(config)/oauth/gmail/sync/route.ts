@@ -42,6 +42,15 @@ export async function POST(req: NextRequest) {
 
         if (!parsed.full_name && !parsed.phone) { errors++; continue; }
 
+        // Dedupe by phone + house_number (names are unreliable — typos, nicknames).
+        if (parsed.phone && parsed.house_number) {
+          const dupe = await db.request()
+            .input("phone", sql.NVarChar(20), parsed.phone)
+            .input("house_number", sql.NVarChar(50), parsed.house_number)
+            .query(`SELECT TOP 1 id FROM leads WHERE phone = @phone AND house_number = @house_number`);
+          if (dupe.recordset.length) { skipped++; continue; }
+        }
+
         const note = `[Gmail registration]\nวันที่: ${date}\nsubject: ${subject}\n\n` +
           `ชื่อ: ${parsed.full_name}\nemail: ${parsed.email || "-"}\nโทร: ${parsed.phone}\n` +
           `จังหวัด: ${parsed.province || "-"}\nประเภทที่อยู่: ${parsed.residence || "-"}\n` +
@@ -57,15 +66,19 @@ export async function POST(req: NextRequest) {
           .input("residence", sql.NVarChar(30), parsed.residence ? parsed.residence.slice(0, 30) : null)
           .input("roof_shape", sql.NVarChar(20), parsed.roof_shape ? parsed.roof_shape.slice(0, 20) : null)
           .input("monthly_bill", sql.Decimal(12, 2), parsed.monthly_bill)
+          .input("installation_address", sql.NVarChar(500), parsed.address ? parsed.address.slice(0, 500) : null)
+          .input("house_number", sql.NVarChar(50), parsed.house_number ? parsed.house_number.slice(0, 50) : null)
           .input("gmail_id", sql.NVarChar(64), id)
           .query(`
             INSERT INTO leads (
               full_name, phone, email, source, status, note,
               zone, pre_residence_type, pre_roof_shape, pre_monthly_bill,
+              installation_address, house_number,
               gmail_message_id, contact_date, created_at
             ) VALUES (
               @full_name, @phone, @email, @source, 'pre_survey', @note,
               @zone, @residence, @roof_shape, @monthly_bill,
+              @installation_address, @house_number,
               @gmail_id, GETDATE(), GETDATE()
             )
           `);

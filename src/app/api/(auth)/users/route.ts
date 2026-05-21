@@ -54,7 +54,9 @@ export async function GET(req: NextRequest) {
     if (!(await isAdmin(db, userId))) return NextResponse.json({ error: "Admin only" }, { status: 403 });
 
     const users = await db.request().query(`
-      SELECT u.id, u.username, u.full_name, u.team, u.phone, u.email, u.is_active, u.created_at, u.roles
+      SELECT u.id, u.username, u.full_name, u.team, u.phone, u.email, u.is_active,
+             u.created_at, u.roles,
+             CASE WHEN u.signature_data IS NOT NULL THEN 1 ELSE 0 END AS has_signature
       FROM users u
       ORDER BY u.is_active DESC, u.id
     `);

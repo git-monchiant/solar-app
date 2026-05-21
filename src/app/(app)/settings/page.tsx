@@ -15,7 +15,7 @@ const DOC_TYPES: { key: string; label: string; description: string; defaultPrefi
   { key: "receipt", label: "ใบเสร็จอย่างย่อ", description: "ใบรับเงินมัดจำ/งวด", defaultPrefix: "RC" },
 ];
 
-type Tab = "running_numbers" | "gmail";
+type Tab = "running_numbers" | "warranty_signer" | "gmail";
 
 export default function SettingsPage() {
   const router = useRouter();
@@ -39,6 +39,7 @@ export default function SettingsPage() {
       <div className="p-4 md:p-6">
         <div className="flex items-center gap-1 border-b border-gray-200 mb-4">
           <TabBtn active={tab === "running_numbers"} onClick={() => setTab("running_numbers")} label="เลขเอกสาร" />
+          <TabBtn active={tab === "warranty_signer"} onClick={() => setTab("warranty_signer")} label="ผู้ลงนามใบรับประกัน" />
           <TabBtn active={tab === "gmail"} onClick={() => setTab("gmail")} label="Gmail" />
           <div className="flex-1" />
           <div className="pb-2 pr-1">
@@ -53,6 +54,7 @@ export default function SettingsPage() {
         </div>
 
         {tab === "running_numbers" && <RunningNumbersSection />}
+        {tab === "warranty_signer" && <WarrantySignerSection />}
         {tab === "gmail" && <GmailSection />}
       </div>
     </div>
@@ -307,6 +309,93 @@ function RunningNumbersSection() {
             {!dirty && <span className="text-xs text-gray-400">— ไม่มีการเปลี่ยนแปลง</span>}
           </div>
         </>
+      )}
+    </section>
+  );
+}
+
+// Pick the default signer that warranty certificates print under. Saved as
+// app_settings.warranty_signer_user_id; the warranty data route reads it as
+// the default when no per-lead warranty_issued_by is set.
+type UserOpt = { id: number; full_name: string; has_signature: 0 | 1 | boolean };
+
+function WarrantySignerSection() {
+  const [users, setUsers] = useState<UserOpt[]>([]);
+  const [current, setCurrent] = useState<number | null>(null);
+  const [original, setOriginal] = useState<number | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+
+  useEffect(() => {
+    Promise.all([
+      apiFetch("/api/users") as Promise<UserOpt[]>,
+      apiFetch("/api/settings") as Promise<Settings>,
+    ])
+      .then(([userList, settings]) => {
+        // Filter to users whose signature blob lives in users.signature_data
+        // (the canonical store). The /api/users response exposes a boolean
+        // has_signature so we don't have to fetch each blob.
+        setUsers(userList.filter(u => !!u.has_signature));
+        const id = settings.warranty_signer_user_id ? parseInt(settings.warranty_signer_user_id) : null;
+        setCurrent(id);
+        setOriginal(id);
+      })
+      .catch(console.error)
+      .finally(() => setLoading(false));
+  }, []);
+
+  const dirty = current !== original;
+
+  const save = async () => {
+    setSaving(true);
+    try {
+      await apiFetch("/api/settings", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ warranty_signer_user_id: current === null ? "" : String(current) }),
+      });
+      setOriginal(current);
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <section className="bg-white rounded-xl border border-gray-200 overflow-hidden">
+      <div className="px-5 py-4 border-b border-gray-100">
+        <h2 className="text-sm font-bold text-gray-900">ผู้ลงนามใบรับประกัน</h2>
+        <p className="text-xs text-gray-500 mt-1">ตั้งค่า user เริ่มต้นที่ชื่อ + ลายเซ็นจะปรากฏบนใบรับประกันทุกฉบับ — ใช้แทน lead.warranty_issued_by ที่ยังไม่ถูกกำหนด</p>
+      </div>
+      {loading ? (
+        <div className="p-5 text-sm text-gray-500">กำลังโหลด...</div>
+      ) : (
+        <div className="p-5 space-y-4">
+          <div>
+            <label className="text-xs font-semibold text-gray-600 block mb-1">User ที่จะลงนาม</label>
+            <select
+              value={current ?? ""}
+              onChange={(e) => setCurrent(e.target.value ? parseInt(e.target.value) : null)}
+              className="w-full h-10 px-3 rounded-lg border border-gray-200 text-sm focus:outline-none focus:border-primary"
+            >
+              <option value="">— ไม่ระบุ (ใช้ผู้ที่กดออกใบ หรือเจ้าของ lead) —</option>
+              {users.map(u => (
+                <option key={u.id} value={u.id}>{u.full_name}</option>
+              ))}
+            </select>
+            {users.length === 0 && (
+              <div className="text-xs text-amber-700 mt-2">
+                ยังไม่มี user ที่อัพโหลดลายเซ็นในระบบ — ให้ user ไปที่หน้า Profile → ลายเซ็น ก่อน
+              </div>
+            )}
+          </div>
+          <div className="flex items-center gap-2">
+            <button type="button" onClick={save} disabled={saving || !dirty}
+              className="h-10 px-5 rounded-lg text-sm font-semibold text-white bg-primary hover:bg-primary-dark disabled:opacity-50 disabled:cursor-not-allowed transition-colors">
+              {saving ? "กำลังบันทึก..." : "บันทึก"}
+            </button>
+            {!dirty && <span className="text-xs text-gray-400">— ไม่มีการเปลี่ยนแปลง</span>}
+          </div>
+        </div>
       )}
     </section>
   );

@@ -64,6 +64,22 @@ export async function POST(request: NextRequest) {
     const body = await request.json();
     const db = await getDb();
 
+    // Dedupe: phone + house_number identifies a household. Name/email are
+    // unreliable (typos, missing). Block create and return existing lead so
+    // the UI can offer "open existing record" instead of making a duplicate.
+    if (body.phone && body.house_number) {
+      const dupe = await db.request()
+        .input("phone", sql.NVarChar(20), body.phone)
+        .input("house_number", sql.NVarChar(50), body.house_number)
+        .query(`SELECT TOP 1 id, full_name, status FROM leads WHERE phone = @phone AND house_number = @house_number`);
+      if (dupe.recordset.length) {
+        return NextResponse.json(
+          { error: "Lead already exists", existing_lead: dupe.recordset[0] },
+          { status: 409 }
+        );
+      }
+    }
+
     // Auto-create project if user typed a name not in the list
     let projectId = body.project_id || null;
     if (!projectId && body.project_name_input) {

@@ -37,12 +37,20 @@ export async function GET(req: NextRequest) {
           FROM contact_per_act GROUP BY lead_id
         ),
         lead_paid AS (
+          -- booking_paid (= ชำระจองสำรวจ) — accountant has confirmed the slip.
           SELECT DISTINCT lead_id FROM payments
           WHERE slip_field = 'pre_slip_url' AND confirmed_at IS NOT NULL
+        ),
+        lead_submitted AS (
+          -- Submitting the slip already counts as "contacted" — mirrors
+          -- /api/lifecycle's first_contact fallback so the funnel and the
+          -- Dashboard I "ติดต่อได้" card agree on the same lead set.
+          SELECT DISTINCT lead_id FROM payments
+          WHERE slip_field = 'pre_slip_url' AND submitted_at IS NOT NULL
         )
         SELECT
           COUNT(*) as total,
-          SUM(CASE WHEN l.status <> 'lost' AND (lp.lead_id IS NOT NULL OR ISNULL(pl.has_yes, 0) = 1) THEN 1 ELSE 0 END) as contacted,
+          SUM(CASE WHEN l.status <> 'lost' AND (ls.lead_id IS NOT NULL OR ISNULL(pl.has_yes, 0) = 1) THEN 1 ELSE 0 END) as contacted,
           SUM(CASE WHEN lp.lead_id IS NOT NULL THEN 1 ELSE 0 END) as booked,
           SUM(CASE WHEN l.status IN ('quote','order','install','warranty','gridtie','closed') THEN 1 ELSE 0 END) as surveyed,
           SUM(CASE WHEN l.status IN ('order','install','warranty','gridtie','closed') THEN 1 ELSE 0 END) as quoted,
@@ -51,6 +59,7 @@ export async function GET(req: NextRequest) {
         FROM leads l
         LEFT JOIN per_lead pl ON pl.lead_id = l.id
         LEFT JOIN lead_paid lp ON lp.lead_id = l.id
+        LEFT JOIN lead_submitted ls ON ls.lead_id = l.id
       `),
       db.request().query(`
         SELECT CONVERT(varchar, created_at, 23) as day,

@@ -21,6 +21,7 @@ interface Lead {
   created_at: string;
   survey_date: string | null;
   install_date: string | null;
+  install_completed_at?: string | null;
   next_follow_up: string | null;
   last_activity_date?: string | null;
   package_name: string | null;
@@ -31,7 +32,7 @@ interface Lead {
   order_paid_count?: number | null;
 }
 
-type TabKey = "all" | "pre_survey" | "booking" | "survey" | "quotation" | "order" | "deposit" | "install" | "warranty" | "gridtie" | "closed" | "lost";
+type TabKey = "all" | "pre_survey" | "booking" | "survey" | "quotation" | "order" | "deposit" | "wait_install" | "install" | "warranty" | "lost";
 
 // Booking = pre_survey lead ที่กดยืนยันการชำระเงิน 1 หรือ 2 แล้ว
 // (status เป็น pre_survey-01 หรือ pre_survey-02). plain `pre_survey` =
@@ -46,6 +47,11 @@ const matchesTab = (l: Lead, key: TabKey): boolean => {
   // "ชำระมัดจำ", the rest stays in "รออนุมัติ/ชำระ".
   if (key === "order") return l.status === "order" && (l.order_paid_count ?? 0) === 0;
   if (key === "deposit") return l.status === "order" && (l.order_paid_count ?? 0) >= 1;
+  // "รอนัดติดตั้ง" — paid the deposit but no install date scheduled yet.
+  // Status not gated (could be order or install) but we exclude lost.
+  if (key === "wait_install") return (l.order_paid_count ?? 0) > 0 && !l.install_date && !l.install_completed_at && l.status !== "lost" && l.status !== "returned";
+  // "รอติดตั้ง" — has a scheduled install date, not yet completed.
+  if (key === "install") return !!l.install_date && !l.install_completed_at && l.status !== "lost" && l.status !== "returned";
   return l.status === key;
 };
 
@@ -62,7 +68,7 @@ export default function PipelinePage() {
   const [sortOrder, setSortOrder] = useState<"asc" | "desc">("asc");
   useEffect(() => {
     const saved = localStorage.getItem("pipelineTab") as TabKey;
-    const ALL_KEYS: TabKey[] = ["all","pre_survey","booking","survey","quotation","order","deposit","install","warranty","gridtie","closed","lost"];
+    const ALL_KEYS: TabKey[] = ["all","pre_survey","booking","survey","quotation","order","deposit","wait_install","install","warranty","lost"];
     if (saved && ALL_KEYS.includes(saved)) setTab(saved);
 
     const sf = localStorage.getItem("pipeline.sortField");
@@ -150,11 +156,10 @@ export default function PipelinePage() {
     { key: "quotation",  label: "รอใบเสนอราคา" },
     { key: "order",      label: "รออนุมัติ/ชำระ" },
     { key: "deposit",    label: "ชำระมัดจำ" },
-    { key: "install",    label: "ติดตั้ง" },
+    { key: "wait_install", label: "รอนัดติดตั้ง" },
+    { key: "install",    label: "รอติดตั้ง" },
     { key: "warranty",   label: "รอออกใบรับประกัน" },
-    { key: "gridtie",    label: "ขอขนานไฟ" },
-    { key: "closed",     label: "ส่งมอบแล้ว" },
-    { key: "lost",       label: "ยกเลิกและส่งกลับ" },
+    { key: "lost",       label: "ยกเลิก" },
   ];
   const visible = isAdmin || isSales || isSolar;
   const TABS = (visible ? ALL_TABS : []).map(t => ({ key: t.key, label: t.label, count: countFor(t.key) }));

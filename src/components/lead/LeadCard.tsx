@@ -1,6 +1,6 @@
 import { useRouter } from "next/navigation";
 import { useState, useEffect } from "react";
-import { STATUSES, STATUS_CONFIG, getStatusLabel, getMainStatus, getSubstep } from "@/lib/constants/statuses";
+import { STATUSES, STATUS_CONFIG, getStatusLabel, getStatusColor, getMainStatus, getSubstep } from "@/lib/constants/statuses";
 import { formatSlotsRange } from "@/lib/time-slots";
 import { stripThaiTitle } from "@/lib/utils/name";
 import { formatTHB, formatThaiDateShort } from "@/lib/utils/formatters";
@@ -108,17 +108,29 @@ export default function LeadCard({ lead, compact, onAssignChange }: { lead: Lead
             </div>
           </div>
           {(() => {
-            // Visual flow stages — virtual "booking" between pre_survey and
-            // survey. Both substeps highlight "จอง" stage; the dot color
-            // reflects the substep state:
-            //   pre_survey       → ติดตาม (sky)
-            //   pre_survey-01    → จอง (amber — รอยืนยันรับเงิน)
-            //   pre_survey-02    → จอง (emerald — บัญชี confirm แล้ว)
-            //   survey/...       → main stage
-            const FLOW_STAGES = ["pre_survey", "booking", "survey", "quote", "order", "install", "warranty", "gridtie", "closed"] as const;
+            // Visual flow stages — virtual stages "booking", "wait_install"
+            // and "install" don't map 1:1 onto the lead.status column:
+            //   pre_survey       → ติดตาม
+            //   pre_survey-01/02 → จอง
+            //   survey           → สำรวจ
+            //   quote            → เสนอราคา
+            //   order (paid=0)   → ชำระเงิน
+            //   order (paid≥1, no install_date) → รอนัดติดตั้ง
+            //   install_date set → รอติดตั้ง
+            //   warranty/gridtie/closed → รับประกัน
+            const FLOW_STAGES = ["pre_survey", "booking", "survey", "quote", "order", "wait_install", "install", "warranty"] as const;
             const main = getMainStatus(lead.status);
             const sub = getSubstep(lead.status);
-            const effective = main === "pre_survey" && sub > 0 ? "booking" : main;
+            const paid = (lead.order_paid_count ?? 0) >= 1;
+            const hasInstallDate = !!lead.install_date;
+            const isDone = ["warranty", "gridtie", "closed"].includes(main);
+            const effective = (() => {
+              if (isDone) return "warranty";
+              if (hasInstallDate) return "install";                                          // schedule locked in
+              if (paid && (main === "order" || main === "install")) return "wait_install";   // paid but no date yet
+              if (main === "pre_survey" && sub > 0) return "booking";
+              return main;
+            })();
             const currentIdx = FLOW_STAGES.indexOf(effective as typeof FLOW_STAGES[number]);
             if (currentIdx < 0) return null;
             const FLOW_LABELS: Record<string, string> = {
@@ -127,10 +139,9 @@ export default function LeadCard({ lead, compact, onAssignChange }: { lead: Lead
               survey: "สำรวจ",
               quote: "เสนอราคา",
               order: "ชำระเงิน",
-              install: "ติดตั้ง",
+              wait_install: "รอนัดติดตั้ง",
+              install: "รอติดตั้ง",
               warranty: "รับประกัน",
-              gridtie: "ขนานไฟ",
-              closed: "ส่งมอบ",
             };
             return (
               <div className="hidden md:flex items-start mt-1" aria-label="Flow progress">
@@ -172,7 +183,7 @@ export default function LeadCard({ lead, compact, onAssignChange }: { lead: Lead
               </div>
             );
           })()}
-          <span className={`shrink-0 ml-auto text-xs font-semibold uppercase tracking-wide px-2.5 py-0.5 rounded-full text-white ${config.color}`}>
+          <span className={`shrink-0 ml-auto text-xs font-semibold uppercase tracking-wide px-2.5 py-0.5 rounded-full text-white ${getStatusColor(lead)}`}>
             {getStatusLabel(lead)}
           </span>
         </div>

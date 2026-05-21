@@ -86,7 +86,11 @@ export default function StepLayout({
               <div className={`h-1 w-full rounded-full transition-colors ${i <= subStep ? "bg-active" : "bg-gray-200"}`} />
               <span
                 className={`text-xs font-semibold transition-colors ${
-                  i === subStep ? "text-active" : i < subStep ? "text-gray-500" : "text-gray-300"
+                  i === subStep
+                    ? "text-active"            // currently on this tab
+                    : i < subStep
+                    ? "text-active/70"         // already visited — colored, slightly faded
+                    : "text-gray-300"          // not visited yet
                 }`}
               >
                 {typeof label === "string" ? label : (

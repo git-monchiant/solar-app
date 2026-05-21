@@ -30,23 +30,31 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
       || null;
     delete lead.project_official_name;
 
-    // Signer priority: who actually issued > current viewer > lead owner.
-    // For legacy leads with no warranty_issued_by stamp, the first viewer
-    // with a user_id param also AUTO-STAMPS lead.warranty_issued_by so the
-    // signer sticks across opens — otherwise every viewer would see their
-    // own name and the cert identity would drift.
-    let signer: { full_name: string; signature_url: string | null } | null = null;
+    // Signer priority (first non-null wins):
+    //   1. app_settings.warranty_signer_user_id — admin-configured default
+    //      wins everything else (the cert is a corporate doc — one designated
+    //      signer for the whole company)
+    //   2. lead.warranty_issued_by — per-lead explicit issuer (legacy /
+    //      pre-config rows)
+    //   3. userIdParam — current viewer
+    //   4. lead.assigned_user_id — sales owner (last-resort fallback)
     const viewerId = userIdParam ? parseInt(userIdParam) : null;
-    const signerId = lead.warranty_issued_by || viewerId || lead.assigned_user_id;
+    const defaultSignerRow = await db.request()
+      .query(`SELECT value FROM app_settings WHERE [key] = 'warranty_signer_user_id'`);
+    const configSignerId = defaultSignerRow.recordset[0]?.value
+      ? parseInt(defaultSignerRow.recordset[0].value) || null
+      : null;
+    let signer: { full_name: string; signature_url: string | null } | null = null;
+    const signerId = configSignerId || lead.warranty_issued_by || viewerId || lead.assigned_user_id;
     if (signerId) {
       const u = await db.request().input("id", sql.Int, signerId)
         .query(`SELECT full_name, signature_url FROM users WHERE id = @id`);
       if (u.recordset.length > 0) signer = u.recordset[0];
     }
-    // Auto-stamp: when warranty_issued_by was empty and a viewer is opening
-    // the cert, persist the viewer as the issuer of record. Idempotent — once
-    // set, the OR-chain above skips this branch.
-    if (!lead.warranty_issued_by && viewerId) {
+    // Auto-stamp legacy leads when we fall through to viewer — but ONLY if
+    // no config override exists (otherwise stamping would lock in the wrong
+    // person and override the admin default).
+    if (!lead.warranty_issued_by && !configSignerId && viewerId) {
       await db.request()
         .input("id", sql.Int, parseInt(id))
         .input("by", sql.Int, viewerId)

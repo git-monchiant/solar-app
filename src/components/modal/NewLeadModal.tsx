@@ -53,9 +53,10 @@ export default function NewLeadModal({ onClose, onCreated, linkLine, initialSour
     setSaving(true);
     setError(null);
     try {
-      const result = await apiFetch("/api/leads", {
+      // Raw fetch (not apiFetch) so we can surface the 409 dedupe response.
+      const res = await fetch("/api/leads", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: { "Content-Type": "application/json", "ngrok-skip-browser-warning": "true" },
         body: JSON.stringify({
           ...form,
           project_id: form.project_id ? parseInt(String(form.project_id)) : null,
@@ -63,6 +64,22 @@ export default function NewLeadModal({ onClose, onCreated, linkLine, initialSour
           interested_package_id: form.interested_package_id ? parseInt(form.interested_package_id) : null,
         }),
       });
+      if (res.status === 409) {
+        const data = await res.json().catch(() => ({}));
+        const existing = data?.existing_lead;
+        if (existing?.id) {
+          const goTo = confirm(`ลูกค้านี้มีอยู่แล้ว: ${existing.full_name || "(ไม่มีชื่อ)"} (สถานะ: ${existing.status || "-"})\nต้องการเปิด lead เดิมเลยมั้ย?`);
+          if (goTo) {
+            onClose();
+            router.push(`/leads/${existing.id}`);
+            return;
+          }
+        }
+        setError("ลูกค้านี้มีอยู่แล้ว (เบอร์โทร + บ้านเลขที่ ตรงกับ lead ที่มีอยู่)");
+        return;
+      }
+      if (!res.ok) throw new Error(`API error: ${res.status}`);
+      const result = await res.json();
       const lineUserToLink = linkLine?.userId ?? pickedLineId;
       if (lineUserToLink && result?.id) {
         await apiFetch(`/api/line-users/${lineUserToLink}`, {

@@ -25,6 +25,8 @@ export type ParsedLead = {
   residence: string | null;
   monthly_bill: number | null;
   roof_shape: string | null;
+  address: string | null;
+  house_number: string | null;
 };
 
 export function parseRegistrationEmail(rawBody: string): ParsedLead {
@@ -63,6 +65,9 @@ export function parseRegistrationEmail(rawBody: string): ParsedLead {
   const billNumbers = (fields.monthly_bill || "").match(/[\d,]+/g)?.map((n) => parseInt(n.replace(/,/g, ""))).filter((n) => !isNaN(n)) ?? [];
   const monthlyBill = billNumbers.length ? Math.round(billNumbers.reduce((a, b) => a + b, 0) / billNumbers.length) : null;
 
+  const address = (fields.address || "").trim() || null;
+  const houseNumber = address ? (address.match(/\d+(?:\/\d+)?/)?.[0] || null) : null;
+
   return {
     full_name: (fields.full_name_combined || "").trim(),
     phone,
@@ -71,6 +76,8 @@ export function parseRegistrationEmail(rawBody: string): ParsedLead {
     residence: (fields.residence || "").trim() || null,
     monthly_bill: monthlyBill,
     roof_shape: (fields.roof_shape || "").trim() || null,
+    address,
+    house_number: houseNumber,
   };
 }
 
