@@ -59,8 +59,12 @@ export default function InstallStep({ lead, state, refresh, expanded, onToggle }
 
   const pctBefore = lead.order_pct_before ?? 100;
   const orderTotal = lead.order_total || 0;
+  const orderDiscount = Number(lead.order_discount_amount) || 0;
   const depositPaid = lead.pre_total_price || 0;
-  const netDue = Math.max(0, orderTotal - depositPaid);
+  // Net the customer actually owes = quoted price − VIP/customer discount −
+  // ค่าจอง (already paid up front). Was missing the discount, so the install
+  // step over-reported "ยอดคงค้าง" by exactly the discount amount.
+  const netDue = Math.max(0, orderTotal - orderDiscount - depositPaid);
   // Paid amount across all confirmed per-installment payments.
   const [paidAmount, setPaidAmount] = useState(0);
   useEffect(() => {
@@ -531,13 +535,19 @@ export default function InstallStep({ lead, state, refresh, expanded, onToggle }
               <span className="text-gray-500">ยอดตามใบเสนอราคา</span>
               <span className="font-bold font-mono text-gray-900">{fmt(orderTotal)} บาท</span>
             </div>
+            {orderDiscount > 0 && (
+              <div className="flex justify-between text-xs text-rose-600">
+                <span>หักส่วนลด{lead.order_discount_note ? ` (${lead.order_discount_note})` : ""}</span>
+                <span className="font-mono">-{fmt(orderDiscount)}</span>
+              </div>
+            )}
             <div className="flex justify-between text-xs text-emerald-600">
               <span>ชำระแล้ว</span>
               <span className="font-mono">-{fmt(paidAmount)}</span>
             </div>
             <div className="flex justify-between text-xs text-gray-500 border-t border-gray-200 pt-1.5">
               <span>ยอดที่ต้องจ่าย</span>
-              <span className="font-mono">{fmt(Math.max(0, orderTotal - paidAmount))}</span>
+              <span className="font-mono">{fmt(Math.max(0, orderTotal - orderDiscount - paidAmount))}</span>
             </div>
             {depositPaid > 0 && (
               <div className="flex justify-between text-xs text-gray-400">
@@ -665,8 +675,12 @@ export default function InstallStep({ lead, state, refresh, expanded, onToggle }
         </div>
       )}
 
-      {/* Navigation buttons */}
-      {lead.install_confirmed && subStep < 4 && (
+      {/* Navigation buttons — show whenever user is past the appointment
+          sub-step. Was gated on `install_confirmed`, which stranded the user
+          with no Back button after a reschedule (saveReschedule resets the
+          flag but the persisted subStep stays at 1+). The earlier sub-step
+          has its own "ยืนยันนัดติดตั้ง" button so navigation isn't needed there. */}
+      {subStep > 0 && subStep < 4 && (
         <div className="flex gap-2 mt-3 md:justify-between">
           {subStep > 0 ? (
             <button type="button" onClick={() => { setNextError(null); setSubStep(subStep - 1); scrollToStep(); }} className="flex-1 md:flex-none md:w-64 h-11 rounded-lg text-sm font-semibold border border-gray-200 text-gray-600 hover:bg-gray-50 transition-colors flex items-center justify-center gap-1">

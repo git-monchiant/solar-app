@@ -301,15 +301,21 @@ export default function TodayPage() {
             ที่ไม่อยู่ใน bucket ใดข้างบน (เพื่อให้เห็น lead ครบทุกใบเหมือน pipeline) */}
         {visibleTab === "sales_all" && (
           <>
-            {sortControls}
+            {/* First section header + sort controls on a single row.
+                When overdue is empty, the controls sit alone right-aligned. */}
+            <div className="flex items-center justify-between mb-3 px-1 gap-3 flex-wrap">
+              {d.followUpOverdue.length > 0 ? (
+                <h2 className="text-xs font-bold tracking-wider uppercase text-red-600">เลยกำหนดติดตาม</h2>
+              ) : <div />}
+              <div className="flex items-center gap-2">
+                {sortControls}
+                {d.followUpOverdue.length > 0 && (
+                  <span className="text-xs font-semibold text-red-600 bg-red-50 px-2 py-0.5 rounded-full">{d.followUpOverdue.length}</span>
+                )}
+              </div>
+            </div>
             {d.followUpOverdue.length > 0 && (
               <section>
-                <div className="flex items-center justify-between mb-3 px-1">
-                  <h2 className="text-xs font-bold tracking-wider uppercase text-red-600">เลยกำหนดติดตาม</h2>
-                  <div className="flex items-center gap-2">
-                    <span className="text-xs font-semibold text-red-600 bg-red-50 px-2 py-0.5 rounded-full">{d.followUpOverdue.length}</span>
-                  </div>
-                </div>
                 <div className="space-y-3">{sortLeads(d.followUpOverdue).map((l) => <LeadCard key={l.id} lead={l} />)}</div>
               </section>
             )}
@@ -421,15 +427,19 @@ export default function TodayPage() {
          * ที่ยังไม่ถึงวัน follow-up → ไปดู pipeline */}
         {visibleTab === "sales" && (
           <>
-            {sortControls}
+            <div className="flex items-center justify-between mb-3 px-1 gap-3 flex-wrap">
+              {d.followUpOverdue.length > 0 ? (
+                <h2 className="text-xs font-bold tracking-wider uppercase text-red-600">เลยกำหนดติดตาม</h2>
+              ) : <div />}
+              <div className="flex items-center gap-2">
+                {sortControls}
+                {d.followUpOverdue.length > 0 && (
+                  <span className="text-xs font-semibold text-red-600 bg-red-50 px-2 py-0.5 rounded-full">{d.followUpOverdue.length}</span>
+                )}
+              </div>
+            </div>
             {d.followUpOverdue.length > 0 && (
               <section>
-                <div className="flex items-center justify-between mb-3 px-1">
-                  <h2 className="text-xs font-bold tracking-wider uppercase text-red-600">เลยกำหนดติดตาม</h2>
-                  <div className="flex items-center gap-2">
-                    <span className="text-xs font-semibold text-red-600 bg-red-50 px-2 py-0.5 rounded-full">{d.followUpOverdue.length}</span>
-                  </div>
-                </div>
                 <div className="space-y-3">{sortLeads(d.followUpOverdue).map((l) => <LeadCard key={l.id} lead={l} />)}</div>
               </section>
             )}

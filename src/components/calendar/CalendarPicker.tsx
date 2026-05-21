@@ -188,6 +188,16 @@ export default function CalendarPicker({
                             }
                           }
                         }}
+                        onDoubleClick={(e) => {
+                          // Double-click the currently selected day to clear
+                          // the picker — there's no other way to undo a pick
+                          // once one is committed.
+                          if (selected) {
+                            e.preventDefault();
+                            onDateChange("");
+                            onTimeSlotChange("");
+                          }
+                        }}
                         style={bookedStyle ? { minHeight: 0, ...bookedStyle } : { minHeight: 0 }}
                         className={`w-8 h-8 rounded-full flex items-center justify-center text-sm leading-none font-semibold transition-all ${
                           selected

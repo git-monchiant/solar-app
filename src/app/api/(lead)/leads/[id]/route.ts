@@ -984,11 +984,22 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
 
     // Appointment activity logs — diff body against the snapshot taken at the
     // top so we can tell "set" (was null, now has value) vs "rescheduled" (was
-    // set, value changed). Date columns: SQL DATE → JS Date midnight UTC, so
-    // compare on ISO date string slice.
-    const sameDay = (a: Date | null | undefined, b: string | null | undefined) => {
-      const aS = a ? new Date(a).toISOString().slice(0, 10) : "";
-      const bS = b ? String(b).slice(0, 10) : "";
+    // set, value changed).
+    //
+    // sameDay() must extract YYYY-MM-DD via local-TZ getters, NOT
+    // toISOString(): the container runs with TZ=Asia/Bangkok and the mssql
+    // driver returns SQL DATE values as local-midnight Date objects (which
+    // map to the *previous* UTC day). Using toISOString().slice(0,10) here
+    // shifted the day by one and tripped the reschedule branch on every
+    // PATCH that re-sent the unchanged install_date / survey_date, producing
+    // spurious "X → X" log entries (since fmtThaiDate uses local-TZ
+    // formatting and renders both sides as the same Thai date).
+    const sameDay = (a: Date | string | null | undefined, b: string | null | undefined) => {
+      if (!a && !b) return true;
+      if (!a || !b) return false;
+      const dt = a instanceof Date ? a : new Date(a);
+      const aS = `${dt.getFullYear()}-${String(dt.getMonth() + 1).padStart(2, "0")}-${String(dt.getDate()).padStart(2, "0")}`;
+      const bS = String(b).slice(0, 10);
       return aS === bS;
     };
     const logApptChange = async (
@@ -1024,19 +1035,23 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
         });
       }
     };
+    // Pass nextSlot through as-is — collapsing undefined→null with `?? null`
+    // would defeat the `newSlot === undefined` short-circuit in logApptChange
+    // and cause a spurious "rescheduled" log whenever the body PATCHes only
+    // the date (slot left untouched), since null !== the stored JSON slot.
     if (body.survey_date !== undefined || body.survey_time_slot !== undefined) {
       const nextDate = body.survey_date !== undefined
         ? (body.survey_date ?? null)
         : (oldRow?.survey_date ? new Date(oldRow.survey_date).toISOString().slice(0, 10) : null);
       const nextSlot = body.survey_time_slot !== undefined ? body.survey_time_slot : undefined;
-      await logApptChange("survey", nextDate, nextSlot ?? null);
+      await logApptChange("survey", nextDate, nextSlot);
     }
     if (body.install_date !== undefined || body.install_time_slot !== undefined) {
       const nextDate = body.install_date !== undefined
         ? (body.install_date ?? null)
         : (oldRow?.install_date ? new Date(oldRow.install_date).toISOString().slice(0, 10) : null);
       const nextSlot = body.install_time_slot !== undefined ? body.install_time_slot : undefined;
-      await logApptChange("install", nextDate, nextSlot ?? null);
+      await logApptChange("install", nextDate, nextSlot);
     }
     if (body.next_follow_up !== undefined && !sameDay(oldRow?.next_follow_up ?? null, body.next_follow_up)) {
       await logLeadActivity(db, {

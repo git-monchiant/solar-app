@@ -44,9 +44,14 @@ export async function GET(req: NextRequest) {
           (SELECT ISNULL(SUM(ISNULL(l.order_total,0) + ISNULL(l.install_extra_cost,0) - ISNULL(cp.paid,0)), 0)
              FROM leads l
              LEFT JOIN (
+               -- Sum every confirmed payment, not just order_installment_*. The
+               -- ฿1,000 booking deposit lives under slip_field='pre_slip_url' and
+               -- is part of the customer's total obligation (order_total
+               -- includes it), so filtering it out made fully-paid leads look
+               -- ฿1K outstanding on the dashboard.
                SELECT lead_id, SUM(amount) AS paid
                FROM payments
-               WHERE slip_field LIKE 'order_installment_%' AND confirmed_at IS NOT NULL
+               WHERE confirmed_at IS NOT NULL
                GROUP BY lead_id
              ) cp ON cp.lead_id = l.id
              WHERE l.install_completed_at >= @first_day) as closed_outstanding

@@ -37,10 +37,14 @@ export async function POST(req: NextRequest) {
     const type = formData.get("type") as string | null;
     const safe = (s: string) => s.replace(/[^A-Za-z0-9_-]/g, "_");
     // Random 6-hex suffix makes filenames collision-proof even if two uploads
-    // from the same lead/type land in the same millisecond.
+    // from the same lead/type land in the same millisecond. The same suffix
+    // is appended even when a customName is supplied — otherwise re-uploads
+    // produce the same URL and browser/CDN caches keep serving the stale file.
     const rand = randomBytes(3).toString("hex");
-    const built = leadId && type ? `lead${safe(leadId)}_${safe(type)}_${Date.now()}_${rand}` : null;
-    const filename = `${customName ? safe(customName) : built ?? `doc_${Date.now()}_${rand}`}.${ext}`;
+    const stamp = `${Date.now()}_${rand}`;
+    const built = leadId && type ? `lead${safe(leadId)}_${safe(type)}_${stamp}` : null;
+    const base = customName ? `${safe(customName)}_${stamp}` : built ?? `doc_${stamp}`;
+    const filename = `${base}.${ext}`;
     const filepath = path.join(process.cwd(), "public", "uploads", filename);
 
     await writeFile(filepath, buffer);

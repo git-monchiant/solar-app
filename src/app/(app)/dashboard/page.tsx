@@ -136,6 +136,22 @@ export default function DashboardPage() {
                 <div className="text-center py-10 text-gray-400 text-sm">ไม่มีรายการ</div>
               ) : bucket.rows.map((r) => {
                 const cfg = STATUS_CONFIG[r.status] || STATUS_CONFIG[r.status.split("-")[0]];
+                // Payment progress as a real percentage of the order value:
+                // sum the `pct` field of each installment that's been paid
+                // (the first order_paid_count of them — installments are
+                // settled in JSON order). Falls back to null when the
+                // JSON is missing/malformed.
+                const paidPct = (() => {
+                  try {
+                    const arr = r.order_installments ? (JSON.parse(r.order_installments) as { pct?: number }[]) : [];
+                    if (!Array.isArray(arr) || arr.length === 0) return null;
+                    const paidCount = r.order_paid_count ?? 0;
+                    return Math.round(arr.slice(0, paidCount).reduce((a, x) => a + (Number(x.pct) || 0), 0));
+                  } catch { return null; }
+                })();
+                const installDateStr = r.install_date
+                  ? new Date(r.install_date).toLocaleDateString("th-TH", { day: "numeric", month: "short", year: "2-digit" })
+                  : null;
                 return (
                   <a
                     key={r.id}
@@ -149,9 +165,22 @@ export default function DashboardPage() {
                     </div>
                     <div className="flex-1 min-w-0">
                       <div className="text-sm font-semibold text-gray-900 truncate">{r.full_name}</div>
-                      <div className="text-xs text-gray-500 truncate">
-                        ID {r.id}{r.house_number ? ` · บ้าน ${r.house_number}` : ""}
+                      {/* Fixed-width columns so each line in the list reads
+                          like a small table — ID / house / paid / install all
+                          align vertically across rows. */}
+                      <div className="text-xs text-gray-500 flex items-baseline gap-3 font-mono tabular-nums">
+                        <span className="w-14 shrink-0">ID {r.id}</span>
+                        <span className="w-28 shrink-0 truncate">บ้าน {r.house_number || "—"}</span>
+                        <span className={`w-16 shrink-0 ${paidPct === null ? "text-gray-300" : paidPct >= 100 ? "text-emerald-600" : paidPct > 0 ? "text-amber-600" : "text-gray-400"}`}>
+                          {paidPct !== null ? `จ่าย ${paidPct}%` : "—"}
+                        </span>
+                        <span className="w-32 shrink-0 text-sky-700">{installDateStr ? `นัดติดตั้ง ${installDateStr}` : ""}</span>
                       </div>
+                      {/* Lost reason — only shown for lost leads so the ยกเลิก
+                          bucket popup explains why each lead got marked lost. */}
+                      {r.status === "lost" && r.lost_reason && (
+                        <div className="text-xs text-rose-700 truncate mt-0.5">เหตุผล: {r.lost_reason}</div>
+                      )}
                     </div>
                     <span className={`text-xxs font-bold uppercase tracking-wider px-2 py-0.5 rounded text-white shrink-0 ${cfg?.color || "bg-gray-400"}`}>
                       {cfg?.label || r.status}
@@ -206,16 +235,22 @@ export default function DashboardPage() {
           const contactedNoPitchRows     = contactedYesRows.filter(r => r.status === "pre_survey" && !r.sales_pitch_at && r.pre_slip_uploaded !== 1);
           const contactedInPitchRows     = contactedYesRows.filter(r => r.status === "pre_survey" && r.sales_pitch_at && r.pre_slip_uploaded !== 1);
           const contactedSlipPendingRows = contactedYesRows.filter(r => r.status === "pre_survey-01" || (r.status === "pre_survey" && r.pre_slip_uploaded === 1));
-          // booking_paid_at = "ชำระจองสำรวจ" — counts ALL who paid, including
-          // lost-after-booking (the 2 in ยกเลิกหลังจอง station). Otherwise this
-          // chip would disagree with the Row 2 wrapper count.
-          const contactedBookedRows      = lifecycleRows.filter(r => !!r.booking_paid_at);
+          // booking_paid_at = "ชำระจองสำรวจ" inside this card. Scoped to
+          // contactedYesRows (excludes lost) so the 4 sub-chips partition the
+          // card header exactly — lost-after-booking shows up in the Leads
+          // card "ยกเลิก" chip and in Row 2's ยกเลิกหลังจอง station instead.
+          const contactedBookedRows      = contactedYesRows.filter(r => !!r.booking_paid_at);
           const contactedNoPitch     = contactedNoPitchRows.length;
           const contactedInPitch     = contactedInPitchRows.length;
           const contactedSlipPending = contactedSlipPendingRows.length;
           const contactedBooked      = contactedBookedRows.length;
 
-          const orderRows = bookingPaidRows.filter(r => r.status === "order");
+          // "ได้ใบเสนอราคา" = status=order AND no install_date yet. Once
+          // install_date is locked in (regardless of whether status flipped
+          // to "install"), the lead moves to the install chip via the rule
+          // above, so we exclude those rows from order to keep stations
+          // mutually exclusive.
+          const orderRows = bookingPaidRows.filter(r => r.status === "order" && !r.install_date);
           const orderPaidFull = orderRows.filter(r => {
             if (!r.order_paid_at) return false;
             const total = (() => { try { return r.order_installments ? (JSON.parse(r.order_installments) as unknown[]).length : 0; } catch { return 0; } })();
@@ -227,10 +262,31 @@ export default function DashboardPage() {
           const stepWaitSurveyRows       = lifecycleRows.filter(r => r.status === "pre_survey-02");
           const stepSurveyScheduledRows  = bookingPaidRows.filter(r => r.status === "survey" && r.survey_date && new Date(r.survey_date) > today);
           const stepSurveyingRows        = bookingPaidRows.filter(r => r.status === "survey" && (!r.survey_date || new Date(r.survey_date) <= today));
-          const stepWaitQuoteRows        = bookingPaidRows.filter(r => r.status === "quote");
-          const stepInstallScheduledRows = bookingPaidRows.filter(r => r.status === "install" && r.install_date && !r.install_done_at && new Date(r.install_date) > today);
-          const stepInstallingRows       = bookingPaidRows.filter(r => r.status === "install" && (!r.install_date || new Date(r.install_date) <= today) && !r.install_done_at);
+          // "รอใบเสนอราคา" excludes leads with install_date set — those already
+  // have a locked-in install schedule (even if status got reverted to quote)
+  // so they belong in the install chip, not the quote chip.
+  const stepWaitQuoteRows        = bookingPaidRows.filter(r => r.status === "quote" && !r.install_date);
+          // Install chips: paid first installment + install_date set. Status
+          // is intentionally NOT checked — a lead reverted from order back
+          // to quote still has a locked install schedule and belongs here.
+          // To keep stations exclusive, the quote/order chips exclude leads
+          // whose install_date is already set (see those filters above).
+          const stepInstallScheduledRows = bookingPaidRows.filter(r => (r.order_paid_count ?? 0) > 0 && r.install_date && !r.install_done_at && new Date(r.install_date) > today);
+          const stepInstallingRows       = bookingPaidRows.filter(r => (r.order_paid_count ?? 0) > 0 && r.install_date && new Date(r.install_date) <= today && !r.install_done_at);
           const stepDoneRows             = bookingPaidRows.filter(r => ["warranty", "gridtie", "closed"].includes(r.status));
+          // นัดติดตั้ง / กำลังติดตั้ง / ติดตั้งเสร็จ breakdown: how many leads
+          // have paid every installment (ครบ) vs. only the deposit (มัดจำ).
+          // Mirrors the orderPaidFull / orderPaidPartial split used earlier.
+          const countFullyPaid = (rs: LifecycleRow[]) => rs.filter(r => {
+            const total = (() => { try { return r.order_installments ? (JSON.parse(r.order_installments) as unknown[]).length : 0; } catch { return 0; } })();
+            return total > 0 && (r.order_paid_count ?? 0) >= total;
+          }).length;
+          const installPaidFull = countFullyPaid(stepInstallScheduledRows);
+          const installPaidPartial = stepInstallScheduledRows.length - installPaidFull;
+          const installingPaidFull = countFullyPaid(stepInstallingRows);
+          const installingPaidPartial = stepInstallingRows.length - installingPaidFull;
+          const donePaidFull = countFullyPaid(stepDoneRows);
+          const donePaidPartial = stepDoneRows.length - donePaidFull;
           const stepLostAfterRows        = bookingPaidRows.filter(r => r.status === "lost");
 
           const pct = (a: number, b: number) => b > 0 ? Math.round((a / b) * 100) : 0;
@@ -262,9 +318,9 @@ export default function DashboardPage() {
             { l: "กำลังสำรวจ",     rows: stepSurveyingRows,        sub: "ถึงวัน / ผ่านวันสำรวจ",    ...SURVEY },
             { l: "รอใบเสนอราคา",    rows: stepWaitQuoteRows,        sub: "สำรวจเสร็จ",             ...QUOTE },
             { l: "ได้ใบเสนอราคา",  rows: orderRows, detail: `${orderUnpaid} ยังไม่จ่าย · ${orderPaidPartial} มัดจำ · ${orderPaidFull} ครบ`, ...QUOTE },
-            { l: "นัดติดตั้ง",      rows: stepInstallScheduledRows, sub: "นัดแล้ว ยังไม่ถึงวัน",     ...INSTALL },
-            { l: "กำลังติดตั้ง",    rows: stepInstallingRows,       sub: "ถึงวัน / ผ่านวันติดตั้ง",  ...INSTALL },
-            { l: "ติดตั้งเสร็จ",    rows: stepDoneRows,             sub: "warranty / gridtie / closed", ...INSTALL },
+            { l: "นัดติดตั้ง",      rows: stepInstallScheduledRows, detail: `${installPaidPartial} มัดจำ · ${installPaidFull} ครบ`, ...INSTALL },
+            { l: "กำลังติดตั้ง",    rows: stepInstallingRows,       detail: `${installingPaidPartial} มัดจำ · ${installingPaidFull} ครบ`, ...INSTALL },
+            { l: "ติดตั้งเสร็จ",    rows: stepDoneRows,             detail: `${donePaidPartial} มัดจำ · ${donePaidFull} ครบ`, ...INSTALL },
             { l: "ยกเลิกหลังจอง",   rows: stepLostAfterRows,        sub: "Lost after booking",       ...CANCEL },
           ];
 
@@ -339,13 +395,20 @@ export default function DashboardPage() {
               {/* ROW 2 — ชำระจองสำรวจ wrapper + 9 child KPI cards */}
               <div className="rounded-2xl bg-white border border-emerald-300 p-4">
                 <div className="flex items-baseline justify-between mb-3 flex-wrap gap-2">
-                  <div className="flex items-baseline gap-3">
+                  <div className="flex items-baseline gap-3 flex-wrap">
                     <button
                       type="button"
-                      onClick={openBucket("ชำระจองสำรวจ", bookingPaidRows)}
+                      onClick={openBucket("ชำระจองสำรวจ", bookingPaidRows.filter(r => r.status !== "lost"))}
                       className={`text-3xl font-bold font-mono tabular-nums text-emerald-700 leading-none ${bigNumCls}`}
-                    >{bookingPaidCount}</button>
+                    >{bookingPaidCount - stepLostAfterRows.length}</button>
                     <span className="text-sm font-bold uppercase tracking-[0.15em] text-emerald-700">ชำระจองสำรวจ</span>
+                    {stepLostAfterRows.length > 0 && (
+                      <button
+                        type="button"
+                        onClick={openBucket("ยกเลิกหลังจอง", stepLostAfterRows)}
+                        className={`text-xs font-semibold text-rose-600 ${bigNumCls}`}
+                      >+ {stepLostAfterRows.length} ยกเลิกหลังจอง</button>
+                    )}
                     <span className="text-xs font-semibold text-gray-500">{pct(bookingPaidCount, contactedYes)}% ของติดต่อได้</span>
                   </div>
                   <span className="text-xxs text-gray-400">แตกย่อยตาม step ปัจจุบัน (sum = ชำระจองสำรวจ)</span>
@@ -778,10 +841,17 @@ function LifecycleFunnelChart({ rows, onStageClick }: { rows: LifecycleRow[]; on
   const stepWaitSurveyRows       = rows.filter(r => r.status === "pre_survey-02");
   const stepSurveyScheduledRows  = bookingPaidRows.filter(r => r.status === "survey" && r.survey_date && new Date(r.survey_date) > today);
   const stepSurveyingRows        = bookingPaidRows.filter(r => r.status === "survey" && (!r.survey_date || new Date(r.survey_date) <= today));
-  const stepWaitQuoteRows        = bookingPaidRows.filter(r => r.status === "quote");
-  const orderRowsList            = bookingPaidRows.filter(r => r.status === "order");
-  const stepInstallScheduledRows = bookingPaidRows.filter(r => r.status === "install" && r.install_date && !r.install_done_at && new Date(r.install_date) > today);
-  const stepInstallingRows       = bookingPaidRows.filter(r => r.status === "install" && (!r.install_date || new Date(r.install_date) <= today) && !r.install_done_at);
+  // "รอใบเสนอราคา" excludes leads with install_date set — those already
+  // have a locked-in install schedule (even if status got reverted to quote)
+  // so they belong in the install chip, not the quote chip.
+  const stepWaitQuoteRows        = bookingPaidRows.filter(r => r.status === "quote" && !r.install_date);
+  // Mirror of the dashboard page rule — exclude order leads that already
+  // have install_date set (those land in the install chip instead).
+  const orderRowsList            = bookingPaidRows.filter(r => r.status === "order" && !r.install_date);
+  // Mirror of the dashboard page rule — install chip ignores status; the
+  // earlier quote/order chips exclude install_date-set rows to avoid overlap.
+  const stepInstallScheduledRows = bookingPaidRows.filter(r => (r.order_paid_count ?? 0) > 0 && r.install_date && !r.install_done_at && new Date(r.install_date) > today);
+  const stepInstallingRows       = bookingPaidRows.filter(r => (r.order_paid_count ?? 0) > 0 && r.install_date && new Date(r.install_date) <= today && !r.install_done_at);
   const stepDoneRows             = bookingPaidRows.filter(r => ["warranty", "gridtie", "closed"].includes(r.status));
   const stepLostAfterRows        = bookingPaidRows.filter(r => r.status === "lost");
 
@@ -1047,11 +1117,17 @@ function LostReasonsByGroup({
     return { group: it.reason.slice(0, i), item: it.reason.slice(i + SEP.length), cnt: it.cnt, fullReason: it.reason };
   });
   const max = Math.max(...parsed.map(p => p.cnt), 1);
+  // Sort groups by their total descending so heaviest reasons appear first.
+  // Empty groups are dropped here (instead of inline-returning null) so the
+  // mapping below can skip the conditional check.
+  const groupsWithCounts = LOST_GROUPS
+    .map(g => ({ g, total: parsed.filter(p => p.group === g.title).reduce((a, b) => a + b.cnt, 0) }))
+    .filter(x => x.total > 0)
+    .sort((a, b) => b.total - a.total);
   return (
     <div className="space-y-3">
-      {LOST_GROUPS.map(g => {
+      {groupsWithCounts.map(({ g }) => {
         const inGroup = parsed.filter(p => p.group === g.title);
-        if (inGroup.length === 0) return null;
         const groupTotal = inGroup.reduce((a, b) => a + b.cnt, 0);
         const groupReasonSet = new Set(inGroup.map(p => p.fullReason));
         const groupRows = rows.filter(r => r.lost_reason !== null && groupReasonSet.has(r.lost_reason));

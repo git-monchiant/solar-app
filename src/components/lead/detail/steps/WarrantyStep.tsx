@@ -337,6 +337,11 @@ export default function WarrantyStep({ lead, state, refresh, packages, expanded,
     if (!docNo) missing.push("เลขที่เอกสาร");
     if (!startDate) missing.push("วันเริ่มประกัน");
     if (!effectiveSignatureUrl) missing.push("ลายเซ็นลูกค้า");
+    // Gate on me?.id — without a logged-in user we can't stamp warranty_issued_by,
+    // and submitting would null it out via the PATCH route's "set if defined"
+    // logic. The button below also disables on !me?.id as a second line of
+    // defense.
+    if (!me?.id) missing.push("กรุณารอโหลดข้อมูลผู้ใช้ก่อน");
     if (missing.length > 0) { setNextError(missing.join(", ")); return; }
 
     setIssuing(true);
@@ -350,7 +355,7 @@ export default function WarrantyStep({ lead, state, refresh, packages, expanded,
           warranty_end_date: endDate,
           warranty_doc_url: `/api/warranty/${lead.id}`,
           warranty_issued_at: true,
-          warranty_issued_by: me?.id ?? null,
+          warranty_issued_by: me!.id,
           status: "gridtie",
         }),
       });
@@ -584,7 +589,7 @@ export default function WarrantyStep({ lead, state, refresh, packages, expanded,
               {lineSending ? "กำลังส่ง..." : lineSent ? "✓ ส่งแล้ว" : !lead.line_id ? "ไม่มี LINE" : "ส่ง LINE"}
             </button>
           </div>
-          <button type="button" onClick={issueWarranty} disabled={issuing || !effectiveSignatureUrl}
+          <button type="button" onClick={issueWarranty} disabled={issuing || !effectiveSignatureUrl || !me?.id}
             className="w-full h-11 rounded-lg text-sm font-semibold text-white bg-gradient-to-r from-primary to-primary-dark hover:brightness-110 disabled:from-gray-300 disabled:to-gray-300 disabled:cursor-not-allowed transition-colors flex items-center justify-center gap-1">
             {issuing ? "กำลังออกเอกสาร..." : "ออกเอกสาร & ถัดไป"}
             <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M8.25 4.5l7.5 7.5-7.5 7.5" /></svg>

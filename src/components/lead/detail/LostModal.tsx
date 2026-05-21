@@ -46,6 +46,7 @@ const REASON_GROUPS: Group[] = [
     items: [
       "ติดต่อลูกค้าไม่ได้ - ไม่รับสาย",
       "ข้อมูลติดต่อไม่ถูกต้อง",
+      "ข้อมูลซ้ำ",
     ],
   },
   {
@@ -257,7 +258,7 @@ export default function LostModal({ leadId, onClose, onSaved }: Props) {
                   {g.items.length}
                 </span>
               </header>
-              <div className="p-1.5 space-y-1 flex-1">
+              <div className="p-1.5 space-y-0.5 flex-1">
                 {g.items.map((r) => {
                   const selected = reason === r;
                   return (
@@ -265,7 +266,7 @@ export default function LostModal({ leadId, onClose, onSaved }: Props) {
                       key={r}
                       type="button"
                       onClick={() => setReason(r)}
-                      className={`w-full text-left px-2.5 py-2 rounded-lg border text-xxs leading-snug transition-colors flex items-start gap-2 ${
+                      className={`w-full text-left px-2 py-1 rounded-lg border text-xxs leading-snug transition-colors flex items-start gap-2 ${
                         selected
                           ? `${g.accent.selBorder} ${g.accent.selBg} ${g.accent.selText} font-semibold`
                           : "border-transparent bg-white/70 text-gray-700 hover:bg-white"
@@ -283,8 +284,8 @@ export default function LostModal({ leadId, onClose, onSaved }: Props) {
           ))}
         </div>
 
-        {/* Other group — dashed border, full-width to give the textarea room. */}
-        <section className={`rounded-xl border-2 border-dashed ${isOther ? "border-gray-700 bg-gray-50" : "border-gray-300 bg-white"} overflow-hidden`}>
+        {/* Other group — full-width to give the textarea room. */}
+        <section className={`rounded-xl border ${isOther ? "border-gray-700 bg-gray-50" : "border-gray-300 bg-white"} overflow-hidden`}>
           <button
             type="button"
             onClick={() => setReason(OTHER)}

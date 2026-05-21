@@ -30,13 +30,28 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
       || null;
     delete lead.project_official_name;
 
-    // Signer = user who issued the warranty → lead owner → ?user_id viewer.
+    // Signer priority: who actually issued > current viewer > lead owner.
+    // For legacy leads with no warranty_issued_by stamp, the first viewer
+    // with a user_id param also AUTO-STAMPS lead.warranty_issued_by so the
+    // signer sticks across opens — otherwise every viewer would see their
+    // own name and the cert identity would drift.
     let signer: { full_name: string; signature_url: string | null } | null = null;
-    const signerId = lead.warranty_issued_by || lead.assigned_user_id || (userIdParam ? parseInt(userIdParam) : null);
+    const viewerId = userIdParam ? parseInt(userIdParam) : null;
+    const signerId = lead.warranty_issued_by || viewerId || lead.assigned_user_id;
     if (signerId) {
       const u = await db.request().input("id", sql.Int, signerId)
         .query(`SELECT full_name, signature_url FROM users WHERE id = @id`);
       if (u.recordset.length > 0) signer = u.recordset[0];
+    }
+    // Auto-stamp: when warranty_issued_by was empty and a viewer is opening
+    // the cert, persist the viewer as the issuer of record. Idempotent — once
+    // set, the OR-chain above skips this branch.
+    if (!lead.warranty_issued_by && viewerId) {
+      await db.request()
+        .input("id", sql.Int, parseInt(id))
+        .input("by", sql.Int, viewerId)
+        .query(`UPDATE leads SET warranty_issued_by = @by, updated_at = SYSUTCDATETIME() WHERE id = @id AND warranty_issued_by IS NULL`);
+      lead.warranty_issued_by = viewerId;
     }
 
     // Use the package confirmed at Survey (lead.interested_package_id is overwritten

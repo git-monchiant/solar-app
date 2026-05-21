@@ -42,8 +42,12 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
     const userId = getUserIdFromReq(req) ?? 1;
 
     const activityType = body.activity_type || "note";
-    let title = titleMap[activityType] || "Activity";
-    if (body.follow_up_date) {
+    // Prefer the title supplied by the caller (e.g. the outcome the sales
+    // person picked in the follow-up modal). Fall back to a generic default
+    // only when the body omits it — previously the route always overwrote
+    // body.title, so the picked outcome never made it into the DB.
+    let title = body.title || titleMap[activityType] || "Activity";
+    if (!body.title && body.follow_up_date) {
       title = `Scheduled follow-up for ${new Date(body.follow_up_date).toLocaleDateString("th-TH", { day: "numeric", month: "short" })}`;
     }
     // Loan follow-ups carry the งวด index + the channel that was picked, since
