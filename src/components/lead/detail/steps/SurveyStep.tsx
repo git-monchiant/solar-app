@@ -258,8 +258,10 @@ export default function SurveyStep({ lead, state, refresh, packages, expanded, o
     refresh();
   };
 
-  const handlePhotoCapture = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const files = Array.from(e.target.files || []);
+  // Upload-and-persist core, shared by the file-input change handler and the
+  // drop-zone drop handler. Sequential upload + single persist avoids the
+  // stale-closure race that bit InstallStep's multi-upload before.
+  const uploadFiles = async (files: File[]) => {
     if (!files.length) return;
     setPhotoUploading(true);
     try {
@@ -280,9 +282,16 @@ export default function SurveyStep({ lead, state, refresh, packages, expanded, o
       await persistPhotos([...surveyPhotos, ...uploaded]);
     } finally {
       setPhotoUploading(false);
-      e.target.value = "";
     }
   };
+
+  const handlePhotoCapture = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = Array.from(e.target.files || []);
+    e.target.value = "";
+    await uploadFiles(files);
+  };
+
+  const [photoDragActive, setPhotoDragActive] = useState(false);
 
   const removePhoto = async (url: string) => {
     fetch(`/api/upload?file=${encodeURIComponent(url)}`, {
@@ -1189,34 +1198,78 @@ export default function SurveyStep({ lead, state, refresh, packages, expanded, o
                  user grab a batch). UI surfaces both as icon-only buttons. */}
             <input type="file" accept="image/*" capture="environment" onChange={handlePhotoCapture} className="hidden" id={`survey-photos-cam-${lead.id}`} />
             <input type="file" accept="image/*" multiple onChange={handlePhotoCapture} className="hidden" id={`survey-photos-lib-${lead.id}`} />
-            {surveyPhotos.length > 0 && (
-              <div className="grid grid-cols-3 md:grid-cols-4 gap-2 mb-2">
-                {surveyPhotos.map((url, idx) => (
-                  <div key={url} className="relative aspect-square">
-                    <FallbackImage
-                      src={url}
-                      alt="Survey"
-                      className="w-full h-full object-cover rounded-lg border border-gray-200"
-                      gallery={surveyPhotos.map((u, i) => ({ url: u, label: `รูปสำรวจ ${i + 1} / ${surveyPhotos.length}` }))}
-                      galleryIndex={idx}
-                    />
-                    <button type="button" onClick={() => removePhoto(url)} className="absolute -top-1.5 -right-1.5 w-5 h-5 rounded-full bg-red-500 text-white flex items-center justify-center text-xs shadow">×</button>
-                  </div>
-                ))}
-              </div>
-            )}
-            <div className="w-full h-10 rounded-lg border border-dashed border-gray-300 bg-white flex items-center justify-center gap-12 text-gray-500">
-              {photoUploading ? (
-                <div className="w-4 h-4 border-2 border-gray-300 border-t-active rounded-full animate-spin" />
+            {/* Single drop zone with the thumbs + add tile inline. Camera
+                shortcut sits as a small icon next to the "+" tile so surveyors
+                in the field still get the quick capture path. */}
+            {/* Empty → big centered prompt. Filled → grid + small "+" tile.
+                Camera shortcut sits inside both states for surveyors. */}
+            <div
+              onDragEnter={(e) => { e.preventDefault(); e.stopPropagation(); setPhotoDragActive(true); }}
+              onDragOver={(e) => { e.preventDefault(); e.stopPropagation(); if (!photoDragActive) setPhotoDragActive(true); }}
+              onDragLeave={(e) => { e.preventDefault(); e.stopPropagation(); setPhotoDragActive(false); }}
+              onDrop={async (e) => {
+                e.preventDefault(); e.stopPropagation();
+                setPhotoDragActive(false);
+                const dropped = Array.from(e.dataTransfer.files || []).filter(f => f.type.startsWith("image/"));
+                if (dropped.length) await uploadFiles(dropped);
+              }}
+              className={`relative rounded-lg border-2 border-dashed transition-colors ${photoDragActive ? "border-primary bg-primary/5" : "border-gray-300 bg-white"}`}
+            >
+              {surveyPhotos.length === 0 ? (
+                <label
+                  htmlFor={`survey-photos-lib-${lead.id}`}
+                  className={`flex flex-col items-center justify-center gap-2 px-4 py-12 min-h-[160px] cursor-pointer transition-colors ${photoDragActive ? "text-primary" : "text-gray-500 hover:text-primary"}`}
+                >
+                  {photoUploading ? (
+                    <div className="w-8 h-8 border-2 border-current/30 border-t-current rounded-full animate-spin" />
+                  ) : (
+                    <>
+                      <svg className="w-10 h-10" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}><path strokeLinecap="round" strokeLinejoin="round" d="M12 16.5V9.75m0 0l3 3m-3-3l-3 3M6.75 19.5a4.5 4.5 0 01-1.41-8.775 5.25 5.25 0 0110.233-2.33 3 3 0 013.758 3.848A3.752 3.752 0 0118 19.5H6.75z" /></svg>
+                      <span className="text-sm font-semibold">
+                        {photoDragActive ? "ปล่อยเพื่ออัพโหลด" : "ลากรูปมาวาง หรือคลิกเพื่อเลือก"}
+                      </span>
+                    </>
+                  )}
+                </label>
               ) : (
-                <>
-                  <button type="button" onClick={() => document.getElementById(`survey-photos-cam-${lead.id}`)?.click()} title="ถ่ายรูป" className="hover:text-active transition-colors cursor-pointer">
-                    <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.8}><path strokeLinecap="round" strokeLinejoin="round" d="M6.827 6.175A2.31 2.31 0 015.186 7.23c-.38.054-.757.112-1.134.175C2.999 7.58 2.25 8.507 2.25 9.574V18a2.25 2.25 0 002.25 2.25h15A2.25 2.25 0 0021.75 18V9.574c0-1.067-.75-1.994-1.802-2.169a47.865 47.865 0 00-1.134-.175 2.31 2.31 0 01-1.64-1.055l-.822-1.316a2.192 2.192 0 00-1.736-1.039 48.774 48.774 0 00-5.232 0 2.192 2.192 0 00-1.736 1.039l-.821 1.316z" /><path strokeLinecap="round" strokeLinejoin="round" d="M16.5 12.75a4.5 4.5 0 11-9 0 4.5 4.5 0 019 0zM18.75 10.5h.008v.008h-.008V10.5z" /></svg>
-                  </button>
-                  <button type="button" onClick={() => document.getElementById(`survey-photos-lib-${lead.id}`)?.click()} title="แนบรูป" className="hover:text-active transition-colors cursor-pointer">
-                    <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.8}><path strokeLinecap="round" strokeLinejoin="round" d="M2.25 15.75l5.159-5.159a2.25 2.25 0 013.182 0l5.159 5.159m-1.5-1.5l1.409-1.409a2.25 2.25 0 013.182 0l2.909 2.909m-18 3.75h16.5a1.5 1.5 0 001.5-1.5V6a1.5 1.5 0 00-1.5-1.5H3.75A1.5 1.5 0 002.25 6v12a1.5 1.5 0 001.5 1.5zm10.5-11.25h.008v.008h-.008V8.25zm.375 0a.375.375 0 11-.75 0 .375.375 0 01.75 0z" /></svg>
-                  </button>
-                </>
+                <div className="p-3 grid grid-cols-2 md:grid-cols-6 lg:grid-cols-8 gap-2">
+                  {surveyPhotos.map((url, idx) => (
+                    <div key={url} className="relative aspect-square">
+                      <FallbackImage
+                        src={url}
+                        alt="Survey"
+                        className="w-full h-full object-cover rounded-lg border border-gray-200"
+                        gallery={surveyPhotos.map((u, i) => ({ url: u, label: `รูปสำรวจ ${i + 1} / ${surveyPhotos.length}` }))}
+                        galleryIndex={idx}
+                      />
+                      <button type="button" onClick={() => removePhoto(url)} className="absolute -top-1.5 -right-1.5 w-5 h-5 rounded-full bg-red-500 text-white flex items-center justify-center text-xs shadow">×</button>
+                    </div>
+                  ))}
+                  <label
+                    htmlFor={`survey-photos-lib-${lead.id}`}
+                    title="เพิ่มรูป"
+                    className={`relative aspect-square flex items-center justify-center rounded-lg border-2 border-dashed cursor-pointer transition-colors ${photoDragActive ? "border-primary text-primary" : "border-gray-300 text-gray-400 hover:border-primary hover:text-primary"}`}
+                  >
+                    {photoUploading ? (
+                      <div className="w-6 h-6 border-2 border-current/30 border-t-current rounded-full animate-spin" />
+                    ) : (
+                      <svg className="w-8 h-8" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}><path strokeLinecap="round" strokeLinejoin="round" d="M12 4.5v15m7.5-7.5h-15" /></svg>
+                    )}
+                  </label>
+                </div>
+              )}
+              {/* Camera shortcut — pinned to the box corner; works in both
+                  empty and filled states. capture=environment opens the phone
+                  camera directly. */}
+              {!photoUploading && (
+                <button
+                  type="button"
+                  onClick={(e) => { e.preventDefault(); e.stopPropagation(); document.getElementById(`survey-photos-cam-${lead.id}`)?.click(); }}
+                  title="ถ่ายรูปจากกล้อง"
+                  className="absolute top-2 right-2 w-8 h-8 rounded-md bg-white border border-gray-200 text-gray-500 hover:text-active hover:border-active flex items-center justify-center shadow-sm transition-colors"
+                >
+                  <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.8}><path strokeLinecap="round" strokeLinejoin="round" d="M6.827 6.175A2.31 2.31 0 015.186 7.23c-.38.054-.757.112-1.134.175C2.999 7.58 2.25 8.507 2.25 9.574V18a2.25 2.25 0 002.25 2.25h15A2.25 2.25 0 0021.75 18V9.574c0-1.067-.75-1.994-1.802-2.169a47.865 47.865 0 00-1.134-.175 2.31 2.31 0 01-1.64-1.055l-.822-1.316a2.192 2.192 0 00-1.736-1.039 48.774 48.774 0 00-5.232 0 2.192 2.192 0 00-1.736 1.039l-.821 1.316z" /><path strokeLinecap="round" strokeLinejoin="round" d="M16.5 12.75a4.5 4.5 0 11-9 0 4.5 4.5 0 019 0z" /></svg>
+                </button>
               )}
             </div>
           </div>

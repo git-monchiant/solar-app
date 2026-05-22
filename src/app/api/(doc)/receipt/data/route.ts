@@ -89,10 +89,16 @@ export async function GET(req: NextRequest) {
     }
 
     const orderTotal = Number(l.order_total || 0);
+    const discountAmount = Math.min(orderTotal, Number(l.order_discount_amount || 0));
+    // effOrderTotal = price after the special discount (VIP/promo). All
+    // before/after-install splits are computed off this discounted total —
+    // matches OrderStep's `effTotal` / `netTotal` and what the customer is
+    // actually billed.
+    const effOrderTotal = Math.max(0, orderTotal - discountAmount);
     const pctBefore = l.order_pct_before ?? 100;
     const depositPrice = Number(l.pre_total_price || 0);
-    const beforeAmount = Math.round(orderTotal * pctBefore / 100);
-    const afterAmount = orderTotal - beforeAmount;
+    const beforeAmount = Math.round(effOrderTotal * pctBefore / 100);
+    const afterAmount = effOrderTotal - beforeAmount;
     const extraCost = Number(l.install_extra_cost || 0);
     // Distribute deposit credit: งวด 2 first, spillover to งวด 1.
     const creditAfter = Math.min(afterAmount, depositPrice);
@@ -146,7 +152,7 @@ export async function GET(req: NextRequest) {
           const idx = m ? parseInt(m[1]) : 0;
           const pct = idx === planArr.length - 1 ? lastPct : Number(planArr[idx]?.pct) || 0;
           const pctSuffix = !onlyOne && pct > 0 ? ` (${pct}%)` : "";
-          const gross = orderTotal > 0 && pct > 0 ? Math.round((orderTotal * pct) / 100) : Number(p.amount || 0);
+          const gross = effOrderTotal > 0 && pct > 0 ? Math.round((effOrderTotal * pct) / 100) : Number(p.amount || 0);
           const label = onlyOne ? "ค่าระบบ Solar Rooftop" : `งวดที่ ${idx + 1} · ค่าระบบ Solar Rooftop${pctSuffix}`;
           lineItems.push({ label, amount: gross });
           const ccFee = Number(p.cc_surcharge_amount || 0);

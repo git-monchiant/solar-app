@@ -542,7 +542,7 @@ export default function LeadDetailPage({ params }: { params: Promise<{ id: strin
           </button>
           <button
             onClick={() => setTab("info")}
-            className={`px-4 py-3 text-xs font-semibold uppercase tracking-wider border-b-2 -mb-px transition-colors inline-flex items-center gap-1.5 ${tab === "info" ? "text-active border-active" : "text-gray-500 border-transparent hover:text-gray-700"}`}
+            className={`hidden md:inline-flex px-4 py-3 text-xs font-semibold uppercase tracking-wider border-b-2 -mb-px transition-colors items-center gap-1.5 ${tab === "info" ? "text-active border-active" : "text-gray-500 border-transparent hover:text-gray-700"}`}
           >
             <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
               <path strokeLinecap="round" strokeLinejoin="round" d="M11.25 11.25l.041-.02a.75.75 0 011.063.852l-.708 2.836a.75.75 0 001.063.853l.041-.021M21 12a9 9 0 11-18 0 9 9 0 0118 0zm-9-3.75h.008v.008H12V8.25z" />
@@ -558,15 +558,8 @@ export default function LeadDetailPage({ params }: { params: Promise<{ id: strin
             </svg>
             Timeline
           </button>
-          <button
-            onClick={() => setTab("log")}
-            className={`md:hidden px-4 py-3 text-xs font-semibold uppercase tracking-wider border-b-2 -mb-px transition-colors inline-flex items-center gap-1.5 ${tab === "log" ? "text-active border-active" : "text-gray-500 border-transparent hover:text-gray-700"}`}
-          >
-            <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-              <path strokeLinecap="round" strokeLinejoin="round" d="M12 6v6h4.5m4.5 0a9 9 0 11-18 0 9 9 0 0118 0z" />
-            </svg>
-            Activity Log <span className="text-xs text-gray-400 ml-1 normal-case">{activities.length}</span>
-          </button>
+          {/* Activity Log tab removed on mobile — desktop still shows the log
+              in the right side panel. On desktop the tab itself never existed. */}
           {/* Desktop quick actions — sit in the sticky tab bar so they stay
               reachable while scrolling. Mobile keeps the bottom footer. */}
           {(tab === "info" || tab === "workflow") && !isLost && (

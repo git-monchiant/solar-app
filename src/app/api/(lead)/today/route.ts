@@ -97,7 +97,7 @@ export async function GET(req: NextRequest) {
   try {
     const db = await getDb();
 
-    const [newLeads, overduePreSurvey, followUpToday, followUpOverdue, surveyToday, surveyPending, quotationPending, installPending, followUpUpcoming, installing, recentlyClosed, booking, stats] = await Promise.all([
+    const [newLeads, overduePreSurvey, followUpToday, followUpOverdue, surveyToday, surveyPending, quotationPending, installPending, followUpUpcoming, waitInstall, installScheduled, warranty, recentlyClosed, booking, stats] = await Promise.all([
       // 1. Lead ใหม่ — pre_survey ที่ยังไม่มี doc และไม่มี follow-up ในอนาคต
       // เคยมี cutoff "อายุ < 2 วัน" แต่ทำให้ lead ที่ import จากชีต (ส่วนใหญ่ > 2 วัน) ตกจากกอง
       db.request().query(`
@@ -166,14 +166,33 @@ export async function GET(req: NextRequest) {
           AND l.status NOT IN ('install', 'lost')
         ORDER BY l.next_follow_up ASC
       `),
-      // 10. กำลังติดตั้ง
+      // 10. รอนัดติดตั้ง — มัดจำแล้ว แต่ยังไม่นัดวันติดตั้ง (matches pipeline wait_install)
       db.request().query(`
         SELECT ${LEAD_COLS}
         ${LEAD_FROM}
-        WHERE l.status = 'install'
+        WHERE COALESCE(pay.paid_count, 0) > 0
+          AND l.install_date IS NULL
+          AND l.install_completed_at IS NULL
+          AND l.status NOT IN ('lost', 'returned')
+        ORDER BY l.updated_at DESC
+      `),
+      // 11. รอติดตั้ง — มีวันนัดติดตั้งแล้ว ยังไม่เสร็จ (matches pipeline install)
+      db.request().query(`
+        SELECT ${LEAD_COLS}
+        ${LEAD_FROM}
+        WHERE l.install_date IS NOT NULL
+          AND l.install_completed_at IS NULL
+          AND l.status NOT IN ('lost', 'returned')
         ORDER BY l.install_date ASC, l.updated_at DESC
       `),
-      // 11. ปิดงานล่าสุด (7 วัน)
+      // 12. รอออกใบรับประกัน — status=warranty
+      db.request().query(`
+        SELECT ${LEAD_COLS}
+        ${LEAD_FROM}
+        WHERE l.status = 'warranty'
+        ORDER BY l.install_completed_at DESC, l.updated_at DESC
+      `),
+      // 13. ปิดงานล่าสุด (7 วัน)
       db.request().query(`
         SELECT ${LEAD_COLS}
         ${LEAD_FROM}
@@ -181,7 +200,7 @@ export async function GET(req: NextRequest) {
           AND l.install_completed_at >= DATEADD(day, -7, GETDATE())
         ORDER BY l.install_completed_at DESC
       `),
-      // 12. Booking — pre_survey substeps -01 (รอยืนยันรับเงิน) + -02 (จอง).
+      // 14. Booking — pre_survey substeps -01 (รอยืนยันรับเงิน) + -02 (จอง).
       // Substep encoded directly in status column, so the filter is just an
       // IN-list — no payment_confirmed / slip_files predicates needed.
       db.request().query(`
@@ -210,7 +229,9 @@ export async function GET(req: NextRequest) {
       quotationPending: fix(quotationPending.recordset),
       installPending: fix(installPending.recordset),
       followUpUpcoming: fix(followUpUpcoming.recordset),
-      installing: fix(installing.recordset),
+      waitInstall: fix(waitInstall.recordset),
+      installScheduled: fix(installScheduled.recordset),
+      warranty: fix(warranty.recordset),
       recentlyClosed: fix(recentlyClosed.recordset),
       booking: fix(booking.recordset),
       stats: stats.recordset[0],

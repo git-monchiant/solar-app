@@ -736,6 +736,10 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
       sets.push("warranty_batteries = @warranty_batteries");
       request.input("warranty_batteries", sql.NVarChar(sql.MAX), body.warranty_batteries);
     }
+    if (body.warranty_panel_serials !== undefined) {
+      sets.push("warranty_panel_serials = @warranty_panel_serials");
+      request.input("warranty_panel_serials", sql.NVarChar(sql.MAX), body.warranty_panel_serials);
+    }
     // Grid-tie / ขอขนานไฟ (step 07)
     if (body.grid_utility !== undefined) {
       sets.push("grid_utility = @grid_utility");

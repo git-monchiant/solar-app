@@ -29,6 +29,7 @@ function AppShell({ children }: { children: React.ReactNode }) {
   const searchParams = useSearchParams();
   const focus = searchParams.get("focus") === "1";
   const [ready, setReady] = useState(false);
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
 
   useEffect(() => {
     if (typeof window === "undefined") return;
@@ -36,8 +37,17 @@ function AppShell({ children }: { children: React.ReactNode }) {
       router.replace("/login");
       return;
     }
+    setSidebarCollapsed(localStorage.getItem("sidebarCollapsed") === "1");
     setReady(true);
   }, [router]);
+
+  const toggleSidebar = () => {
+    setSidebarCollapsed(prev => {
+      const next = !prev;
+      localStorage.setItem("sidebarCollapsed", next ? "1" : "0");
+      return next;
+    });
+  };
 
   if (!ready) {
     return (
@@ -49,8 +59,8 @@ function AppShell({ children }: { children: React.ReactNode }) {
 
   return (
     <div className="flex h-full">
-      {!focus && <BottomNav />}
-      <main className={`flex-1 overflow-y-auto overscroll-none bg-white ${focus ? "" : "pb-20 md:pb-0 md:ml-56"}`}>
+      {!focus && <BottomNav collapsed={sidebarCollapsed} onToggle={toggleSidebar} />}
+      <main className={`flex-1 overflow-y-auto overscroll-none bg-white transition-[margin] duration-200 ${focus ? "" : `pb-20 md:pb-0 ${sidebarCollapsed ? "md:ml-14" : "md:ml-56"}`}`}>
         {children}
       </main>
     </div>

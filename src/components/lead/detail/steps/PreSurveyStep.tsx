@@ -178,6 +178,10 @@ export default function PreSurveyStep({ lead, state, refresh, packages, expanded
   const REG_SUB_STEPS = ["ข้อมูล", "แพ็คเกจ", "ยืนยัน", "ชำระเงิน", "นัดสำรวจ"];
   const [subStep, setSubStep] = useSubStep(`preSurveySubStep_${lead.id}`, 0, REG_SUB_STEPS.length);
   const [nextError, setNextError] = useState<string | null>(null);
+  // Survey deposit amount — defaults to 1,000 but staff can override before
+  // payment is confirmed (e.g. promo waiver, increased deposit). After
+  // confirmation the input is locked.
+  const [depositAmount, setDepositAmount] = useState<number>(lead.pre_total_price ?? DEPOSIT_AMOUNT);
   const [formDraft, setFormDraft] = useState<Partial<Lead>>({});
   const isFirstRegSave = useRef(true);
   const regSaveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -345,7 +349,7 @@ export default function PreSurveyStep({ lead, state, refresh, packages, expanded
       });
       await apiFetch(`/api/leads/${lead.id}/book`, {
         method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ package_id: parseInt(selectedPkg), total_price: DEPOSIT_AMOUNT }),
+        body: JSON.stringify({ package_id: parseInt(selectedPkg), total_price: depositAmount }),
       });
       setConfirmSaved(true);
       await refresh();
@@ -725,7 +729,8 @@ export default function PreSurveyStep({ lead, state, refresh, packages, expanded
           <PaymentSection
             paymentTitle="ชำระค่าจอง Survey"
             amountLabel="ค่าสำรวจ"
-            amount={DEPOSIT_AMOUNT}
+            amount={depositAmount}
+            onAmountEdit={lead.payment_confirmed ? undefined : setDepositAmount}
             leadId={lead.id}
             leadName={lead.full_name}
             lineId={lead.line_id}
@@ -745,7 +750,7 @@ export default function PreSurveyStep({ lead, state, refresh, packages, expanded
                 try {
                   await apiFetch(`/api/leads/${lead.id}/book`, {
                     method: "POST", headers: { "Content-Type": "application/json" },
-                    body: JSON.stringify({ package_id: parseInt(selectedPkg), total_price: DEPOSIT_AMOUNT }),
+                    body: JSON.stringify({ package_id: parseInt(selectedPkg), total_price: depositAmount }),
                   });
                 } catch (e) { console.error("auto pre_doc_no failed:", e); }
               }
@@ -754,14 +759,15 @@ export default function PreSurveyStep({ lead, state, refresh, packages, expanded
               // re-querying the payments table. Without this, leads that
               // skipped the /book path (e.g. seeker syncs that didn't pick a
               // package) end up with pre_total_price/booked_at = null even
-              // after payment is confirmed.
-              if (lead.pre_total_price == null) {
+              // after payment is confirmed. Also re-mirror when staff edited
+              // the deposit amount (override differs from the row's value).
+              if (lead.pre_total_price == null || lead.pre_total_price !== depositAmount) {
                 try {
                   await apiFetch(`/api/leads/${lead.id}`, {
                     method: "PATCH", headers: { "Content-Type": "application/json" },
                     body: JSON.stringify({
-                      pre_total_price: DEPOSIT_AMOUNT,
-                      pre_booked_at: new Date().toISOString(),
+                      pre_total_price: depositAmount,
+                      pre_booked_at: lead.pre_booked_at || new Date().toISOString(),
                     }),
                   });
                 } catch (e) { console.error("mirror payment meta failed:", e); }

@@ -20,7 +20,9 @@ interface TodayData {
   surveyPending: LeadData[];
   quotationPending: LeadData[];
   installPending: LeadData[];
-  installing: LeadData[];
+  waitInstall: LeadData[];
+  installScheduled: LeadData[];
+  warranty: LeadData[];
   recentlyClosed: LeadData[];
   booking: LeadData[];
   stats: { pipeline: number; won: number; lost: number; new_this_week: number };
@@ -30,7 +32,7 @@ export default function TodayPage() {
   const [todayData, setTodayData] = useState<TodayData | null>(null);
   const [allLeads, setAllLeads] = useState<LeadData[] | null>(null);
   const [loading, setLoading] = useState(true);
-  const [tab, setTab] = useState<"sales_all" | "sales" | "booking" | "quote" | "deposit_paid" | "sales_solar" | "solar" | "solar_survey" | "solar_quote" | "solar_install" | "calendar">("sales_all");
+  const [tab, setTab] = useState<"sales_all" | "sales" | "booking" | "quote" | "deposit_paid" | "sales_wait_install" | "sales_solar" | "solar" | "solar_survey" | "solar_quote" | "solar_wait_install" | "solar_install" | "solar_warranty" | "calendar">("sales_all");
   const [search, setSearch] = useState("");
   const [zones, setZones] = useState<{ id: number; name: string; color?: string | null }[]>([]);
   const [selectedZone, setSelectedZone] = useState<string>("");
@@ -85,11 +87,11 @@ export default function TodayPage() {
     const isSales = hasRole(activeRoles, "sales");
     const isSolar = hasRole(activeRoles, "solar", "smartify");
     const validKeys: string[] = [];
-    if (isSales) validKeys.push("sales_all", "sales", "booking", "quote", "deposit_paid", "sales_solar");
-    if (isSolar) validKeys.push("solar", "solar_survey", "solar_quote", "solar_install");
+    if (isSales) validKeys.push("sales_all", "sales", "booking", "quote", "deposit_paid", "sales_wait_install", "sales_solar");
+    if (isSolar) validKeys.push("solar", "solar_survey", "solar_quote", "solar_wait_install", "solar_install", "solar_warranty");
     validKeys.push("calendar");
     if (!validKeys.includes(tab)) {
-      const fallback = validKeys[0] as "sales_all" | "sales" | "booking" | "quote" | "deposit_paid" | "sales_solar" | "solar" | "solar_survey" | "solar_quote" | "solar_install" | "calendar";
+      const fallback = validKeys[0] as "sales_all" | "sales" | "booking" | "quote" | "deposit_paid" | "sales_wait_install" | "sales_solar" | "solar" | "solar_survey" | "solar_quote" | "solar_wait_install" | "solar_install" | "solar_warranty" | "calendar";
       setTab(fallback);
     }
   }, [activeRoles, tab]);
@@ -154,7 +156,9 @@ export default function TodayPage() {
     // Split รอเสนอราคา (no installment paid yet) from ชำระมัดจำ (≥1 confirmed)
     installPending: allInstallPending.filter(l => (l.order_paid_count ?? 0) === 0),
     depositPaid: allInstallPending.filter(l => (l.order_paid_count ?? 0) >= 1),
-    installing: filterLeads(raw.installing || []),
+    waitInstall: filterLeads(raw.waitInstall || []),
+    installScheduled: filterLeads(raw.installScheduled || []),
+    warranty: filterLeads(raw.warranty || []),
     recentlyClosed: filterLeads(raw.recentlyClosed || []),
     booking: filterLeads(raw.booking || []),
   };
@@ -170,7 +174,7 @@ export default function TodayPage() {
     d.followUpOverdue.length +
     d.followUpToday.length +
     d.newLeads.length;
-  const solarCount = bookingPaidCount + d.surveyToday.length + d.surveyPending.length + d.quotationPending.length + d.installing.length;
+  const solarCount = bookingPaidCount + d.surveyToday.length + d.surveyPending.length + d.quotationPending.length + d.waitInstall.length + d.installScheduled.length + d.warranty.length;
   const salesSolarCount = d.quotationPending.length;
 
   const isSales = hasRole(activeRoles, "sales");
@@ -180,7 +184,9 @@ export default function TodayPage() {
   // scrolling.
   const solarSurveyCount = bookingPaidCount + d.surveyToday.length + d.surveyPending.length;
   const solarQuoteCount = d.quotationPending.length;
-  const solarInstallCount = d.installing.length;
+  const solarWaitInstallCount = d.waitInstall.length;
+  const solarInstallCount = d.installScheduled.length;
+  const solarWarrantyCount = d.warranty.length;
 
   const sortLeads = (leads: LeadData[], dateField?: "survey_date" | "install_date"): LeadData[] => {
     const ts = (v: string | null | undefined, fallback: number) =>
@@ -269,18 +275,21 @@ export default function TodayPage() {
     isSales && { key: "sales_all", label: "ทั้งหมด", count: salesAllCount },
     isSales && { key: "sales", label: "ติดตามลูกค้า", count: salesCount },
     isSales && { key: "booking", label: "รายการจอง", count: bookingCount },
+    isSales && { key: "sales_solar", label: "ติดตามใบเสนอราคา", count: salesSolarCount },
     isSales && { key: "quote", label: "รอเสนอราคา", count: d.installPending.length },
     isSales && { key: "deposit_paid", label: "ชำระมัดจำ", count: d.depositPaid.length },
-    isSales && { key: "sales_solar", label: "ติดตามใบเสนอราคา", count: salesSolarCount },
+    isSales && { key: "sales_wait_install", label: "รอนัดติดตั้ง", count: solarWaitInstallCount },
     isSolar && { key: "solar", label: "ทั้งหมด", count: solarCount },
     isSolar && { key: "solar_survey", label: "รอสำรวจ", count: solarSurveyCount },
     isSolar && { key: "solar_quote", label: "รอทำใบเสนอราคา", count: solarQuoteCount },
+    isSolar && { key: "solar_wait_install", label: "รอนัดติดตั้ง", count: solarWaitInstallCount },
     isSolar && { key: "solar_install", label: "รอติดตั้ง", count: solarInstallCount },
+    isSolar && { key: "solar_warranty", label: "รอออกใบรับประกัน", count: solarWarrantyCount },
     { key: "calendar", label: "ปฏิทิน" },
   ].filter(Boolean) as { key: string; label: string; count?: number }[];
 
   // While effect re-syncs an invalid tab, render against an in-bounds key
-  const visibleTab = (allTabs.some(t => t.key === tab) ? tab : (allTabs[0]?.key ?? "calendar")) as "sales_all" | "sales" | "booking" | "quote" | "deposit_paid" | "sales_solar" | "solar" | "solar_survey" | "solar_quote" | "solar_install" | "calendar";
+  const visibleTab = (allTabs.some(t => t.key === tab) ? tab : (allTabs[0]?.key ?? "calendar")) as "sales_all" | "sales" | "booking" | "quote" | "deposit_paid" | "sales_wait_install" | "sales_solar" | "solar" | "solar_survey" | "solar_quote" | "solar_wait_install" | "solar_install" | "solar_warranty" | "calendar";
 
   return (
     <div>
@@ -292,7 +301,7 @@ export default function TodayPage() {
         searchPlaceholder="ค้นหาชื่อ, เบอร์..."
         tabs={allTabs}
         activeTab={visibleTab}
-        onTabChange={(k) => setTab(k as "sales_all" | "sales" | "booking" | "quote" | "sales_solar" | "solar" | "solar_survey" | "solar_quote" | "solar_install" | "calendar")}
+        onTabChange={(k) => setTab(k as "sales_all" | "sales" | "booking" | "quote" | "deposit_paid" | "sales_wait_install" | "sales_solar" | "solar" | "solar_survey" | "solar_quote" | "solar_wait_install" | "solar_install" | "solar_warranty" | "calendar")}
       />
 
       {/* Content */}
@@ -374,6 +383,17 @@ export default function TodayPage() {
                 <div className="space-y-3">{sortLeads(d.depositPaid).map((l) => <LeadCard key={l.id} lead={l} />)}</div>
               </section>
             )}
+            {d.waitInstall.length > 0 && (
+              <section>
+                <div className="flex items-center justify-between mb-3 px-1">
+                  <h2 className="text-xs font-bold tracking-wider uppercase text-orange-600">รอนัดติดตั้ง</h2>
+                  <div className="flex items-center gap-2">
+                    <span className="text-xs font-semibold text-orange-600 bg-orange-50 px-2 py-0.5 rounded-full">{d.waitInstall.length}</span>
+                  </div>
+                </div>
+                <div className="space-y-3">{sortLeads(d.waitInstall).map((l) => <LeadCard key={l.id} lead={l} />)}</div>
+              </section>
+            )}
             {d.quotationPending.length > 0 && (
               <section>
                 <div className="flex items-center justify-between mb-3 px-1">
@@ -395,6 +415,7 @@ export default function TodayPage() {
                 ...d.booking.map(l => l.id),
                 ...d.installPending.map(l => l.id),
                 ...d.depositPaid.map(l => l.id),
+                ...d.waitInstall.map(l => l.id),
                 ...d.quotationPending.map(l => l.id),
               ]);
               const rest = filterLeads(allLeads).filter(l => !seen.has(l.id));
@@ -556,6 +577,33 @@ export default function TodayPage() {
           </>
         )}
 
+        {/* Sales · รอนัดติดตั้ง — มัดจำแล้ว แต่ Solar ยังไม่นัดวันติดตั้ง.
+            Sales ใช้ติดตามว่าลูกค้าที่จ่ายแล้วได้นัดติดตั้งหรือยัง */}
+        {visibleTab === "sales_wait_install" && (
+          <>
+            {d.waitInstall.length > 0 ? (
+              <section>
+                <div className="flex items-center justify-between mb-3 px-1">
+                  <h2 className="text-xs font-bold tracking-wider uppercase text-orange-600">รอนัดติดตั้ง</h2>
+                  <div className="flex items-center gap-2">
+                    {sortControls}
+                    <span className="text-xs font-semibold text-orange-600 bg-orange-50 px-2 py-0.5 rounded-full">{d.waitInstall.length}</span>
+                  </div>
+                </div>
+                <div className="space-y-3">{sortLeads(d.waitInstall).map((l) => <LeadCard key={l.id} lead={l} />)}</div>
+              </section>
+            ) : (
+              <div className="text-center py-16">
+                <div className="w-16 h-16 mx-auto rounded-full bg-orange-50 flex items-center justify-center mb-3">
+                  <svg className="w-8 h-8 text-orange-500" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M4.5 12.75l6 6 9-13.5" /></svg>
+                </div>
+                <div className="text-base font-semibold text-gray-900">All caught up!</div>
+                <div className="text-sm text-gray-500 mt-1">ไม่มีงานรอนัดติดตั้ง</div>
+              </div>
+            )}
+          </>
+        )}
+
         {/* Sales-Solar Tab — sales follows up on solar team's progress */}
         {visibleTab === "sales_solar" && (
           <>
@@ -640,15 +688,37 @@ export default function TodayPage() {
                 <div className="space-y-3">{sortLeads(d.quotationPending).map((l) => <LeadCard key={l.id} lead={l} />)}</div>
               </section>
             )}
-            {d.installing.length > 0 && (
+            {d.waitInstall.length > 0 && (
               <section>
                 <div className="flex items-center justify-between mb-3 px-1">
-                  <h2 className="text-xs font-bold tracking-wider uppercase text-emerald-600">กำลังติดตั้ง</h2>
+                  <h2 className="text-xs font-bold tracking-wider uppercase text-orange-600">รอนัดติดตั้ง</h2>
                   <div className="flex items-center gap-2">
-                    <span className="text-xs font-semibold text-emerald-600 bg-emerald-50 px-2 py-0.5 rounded-full">{d.installing.length}</span>
+                    <span className="text-xs font-semibold text-orange-600 bg-orange-50 px-2 py-0.5 rounded-full">{d.waitInstall.length}</span>
                   </div>
                 </div>
-                <div className="space-y-3">{sortLeads(d.installing, "install_date").map((l) => <LeadCard key={l.id} lead={l} />)}</div>
+                <div className="space-y-3">{sortLeads(d.waitInstall).map((l) => <LeadCard key={l.id} lead={l} />)}</div>
+              </section>
+            )}
+            {d.installScheduled.length > 0 && (
+              <section>
+                <div className="flex items-center justify-between mb-3 px-1">
+                  <h2 className="text-xs font-bold tracking-wider uppercase text-emerald-600">รอติดตั้ง</h2>
+                  <div className="flex items-center gap-2">
+                    <span className="text-xs font-semibold text-emerald-600 bg-emerald-50 px-2 py-0.5 rounded-full">{d.installScheduled.length}</span>
+                  </div>
+                </div>
+                <div className="space-y-3">{sortLeads(d.installScheduled, "install_date").map((l) => <LeadCard key={l.id} lead={l} />)}</div>
+              </section>
+            )}
+            {d.warranty.length > 0 && (
+              <section>
+                <div className="flex items-center justify-between mb-3 px-1">
+                  <h2 className="text-xs font-bold tracking-wider uppercase text-cyan-700">รอออกใบรับประกัน</h2>
+                  <div className="flex items-center gap-2">
+                    <span className="text-xs font-semibold text-cyan-700 bg-cyan-50 px-2 py-0.5 rounded-full">{d.warranty.length}</span>
+                  </div>
+                </div>
+                <div className="space-y-3">{sortLeads(d.warranty).map((l) => <LeadCard key={l.id} lead={l} />)}</div>
               </section>
             )}
             {solarCount === 0 && (
@@ -742,19 +812,45 @@ export default function TodayPage() {
           </>
         )}
 
-        {/* Solar · ติดตั้ง — งานที่กำลังติดตั้ง */}
-        {visibleTab === "solar_install" && (
+        {/* Solar · รอนัดติดตั้ง — มัดจำแล้ว แต่ยังไม่นัดวันติดตั้ง (matches pipeline wait_install) */}
+        {visibleTab === "solar_wait_install" && (
           <>
-            {d.installing.length > 0 ? (
+            {d.waitInstall.length > 0 ? (
               <section>
                 <div className="flex items-center justify-between mb-3 px-1">
-                  <h2 className="text-xs font-bold tracking-wider uppercase text-emerald-600">กำลังติดตั้ง</h2>
+                  <h2 className="text-xs font-bold tracking-wider uppercase text-orange-600">รอนัดติดตั้ง</h2>
                   <div className="flex items-center gap-2">
                     {sortControls}
-                    <span className="text-xs font-semibold text-emerald-600 bg-emerald-50 px-2 py-0.5 rounded-full">{d.installing.length}</span>
+                    <span className="text-xs font-semibold text-orange-600 bg-orange-50 px-2 py-0.5 rounded-full">{d.waitInstall.length}</span>
                   </div>
                 </div>
-                <div className="space-y-3">{sortLeads(d.installing, "install_date").map((l) => <LeadCard key={l.id} lead={l} />)}</div>
+                <div className="space-y-3">{sortLeads(d.waitInstall).map((l) => <LeadCard key={l.id} lead={l} />)}</div>
+              </section>
+            ) : (
+              <div className="text-center py-16">
+                <div className="w-16 h-16 mx-auto rounded-full bg-orange-50 flex items-center justify-center mb-3">
+                  <svg className="w-8 h-8 text-orange-500" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M4.5 12.75l6 6 9-13.5" /></svg>
+                </div>
+                <div className="text-base font-semibold text-gray-900">All caught up!</div>
+                <div className="text-sm text-gray-500 mt-1">ไม่มีงานรอนัดติดตั้ง</div>
+              </div>
+            )}
+          </>
+        )}
+
+        {/* Solar · รอติดตั้ง — นัดวันติดตั้งแล้ว ยังไม่เสร็จ (matches pipeline install) */}
+        {visibleTab === "solar_install" && (
+          <>
+            {d.installScheduled.length > 0 ? (
+              <section>
+                <div className="flex items-center justify-between mb-3 px-1">
+                  <h2 className="text-xs font-bold tracking-wider uppercase text-emerald-600">รอติดตั้ง</h2>
+                  <div className="flex items-center gap-2">
+                    {sortControls}
+                    <span className="text-xs font-semibold text-emerald-600 bg-emerald-50 px-2 py-0.5 rounded-full">{d.installScheduled.length}</span>
+                  </div>
+                </div>
+                <div className="space-y-3">{sortLeads(d.installScheduled, "install_date").map((l) => <LeadCard key={l.id} lead={l} />)}</div>
               </section>
             ) : (
               <div className="text-center py-16">
@@ -762,7 +858,33 @@ export default function TodayPage() {
                   <svg className="w-8 h-8 text-emerald-500" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M4.5 12.75l6 6 9-13.5" /></svg>
                 </div>
                 <div className="text-base font-semibold text-gray-900">All caught up!</div>
-                <div className="text-sm text-gray-500 mt-1">ไม่มีงานติดตั้ง</div>
+                <div className="text-sm text-gray-500 mt-1">ไม่มีงานรอติดตั้ง</div>
+              </div>
+            )}
+          </>
+        )}
+
+        {/* Solar · รอออกใบรับประกัน — status='warranty' */}
+        {visibleTab === "solar_warranty" && (
+          <>
+            {d.warranty.length > 0 ? (
+              <section>
+                <div className="flex items-center justify-between mb-3 px-1">
+                  <h2 className="text-xs font-bold tracking-wider uppercase text-cyan-700">รอออกใบรับประกัน</h2>
+                  <div className="flex items-center gap-2">
+                    {sortControls}
+                    <span className="text-xs font-semibold text-cyan-700 bg-cyan-50 px-2 py-0.5 rounded-full">{d.warranty.length}</span>
+                  </div>
+                </div>
+                <div className="space-y-3">{sortLeads(d.warranty).map((l) => <LeadCard key={l.id} lead={l} />)}</div>
+              </section>
+            ) : (
+              <div className="text-center py-16">
+                <div className="w-16 h-16 mx-auto rounded-full bg-cyan-50 flex items-center justify-center mb-3">
+                  <svg className="w-8 h-8 text-cyan-600" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M4.5 12.75l6 6 9-13.5" /></svg>
+                </div>
+                <div className="text-base font-semibold text-gray-900">All caught up!</div>
+                <div className="text-sm text-gray-500 mt-1">ไม่มีรายการรอออกใบรับประกัน</div>
               </div>
             )}
           </>

@@ -2,8 +2,11 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
+import { useRef, useState } from "react";
 import { useActiveRoles, useMe, hasRole, Role } from "@/lib/roles";
 import LogoSolarPanel from "@/components/brand/LogoSolarPanel";
+
+type HoverInfo = { label: string; href: string; top: number };
 
 type NavItem = {
   href: string;
@@ -59,10 +62,33 @@ const navItems: NavItem[] = [
   },
 ];
 
-export default function BottomNav() {
+type BottomNavProps = {
+  collapsed?: boolean;
+  onToggle?: () => void;
+};
+
+export default function BottomNav({ collapsed = false, onToggle }: BottomNavProps = {}) {
   const pathname = usePathname();
   const { activeRoles } = useActiveRoles();
   const { me } = useMe();
+  // Floating hover label — only shown when collapsed. position: fixed so it
+  // escapes the nav's overflow-y-auto (which CSS-clips both axes).
+  const [hover, setHover] = useState<HoverInfo | null>(null);
+  const hideTimer = useRef<number | null>(null);
+  const showHover = (e: React.MouseEvent<HTMLElement>, label: string, href: string) => {
+    if (!collapsed) return;
+    if (hideTimer.current) { window.clearTimeout(hideTimer.current); hideTimer.current = null; }
+    const rect = e.currentTarget.getBoundingClientRect();
+    setHover({ label, href, top: rect.top + rect.height / 2 });
+  };
+  const scheduleHide = () => {
+    if (!collapsed) return;
+    if (hideTimer.current) window.clearTimeout(hideTimer.current);
+    hideTimer.current = window.setTimeout(() => setHover(null), 120);
+  };
+  const cancelHide = () => {
+    if (hideTimer.current) { window.clearTimeout(hideTimer.current); hideTimer.current = null; }
+  };
   // Hard-gate certain links to the literal "admin" account, not the "admin"
   // role — so role-elevated viewers (e.g. sales with admin role temp) still
   // don't see the dev-only experiments.
@@ -94,15 +120,28 @@ export default function BottomNav() {
           })}
         </div>
       </nav>
-      <aside className="hidden md:flex fixed left-0 top-0 bottom-0 w-56 bg-white border-r border-gray-200 flex-col z-50">
-        <div className="h-16 px-5 border-b border-gray-100 bg-white flex items-center">
-          <img
-            src="https://senasolarenergy.com/wp-content/uploads/2022/04/logo_senasolarenergy.png"
-            alt="Sena Solar Energy"
-            className="h-9 w-auto"
-          />
+      <aside className={`hidden md:flex fixed left-0 top-0 bottom-0 bg-white border-r border-gray-200 flex-col z-50 transition-[width] duration-200 ${collapsed ? "w-14" : "w-56"}`}>
+        <div className={`h-16 border-b border-gray-100 bg-white flex items-center ${collapsed ? "justify-center px-2" : "justify-between px-3"}`}>
+          {!collapsed && (
+            <img
+              src="https://senasolarenergy.com/wp-content/uploads/2022/04/logo_senasolarenergy.png"
+              alt="Sena Solar Energy"
+              className="h-9 w-auto pl-2"
+            />
+          )}
+          <button
+            type="button"
+            onClick={onToggle}
+            title={collapsed ? "Expand menu" : "Collapse menu"}
+            aria-label={collapsed ? "Expand menu" : "Collapse menu"}
+            className="p-1.5 rounded-md text-gray-600 hover:bg-gray-100 transition-colors"
+          >
+            <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+              <path strokeLinecap="round" strokeLinejoin="round" d="M3.75 6.75h16.5M3.75 12h16.5m-16.5 5.25h16.5" />
+            </svg>
+          </button>
         </div>
-        <nav className="flex-1 min-h-0 overflow-y-auto px-3 py-2 space-y-0.5">
+        <nav className={`flex-1 min-h-0 overflow-y-auto py-2 space-y-0.5 ${collapsed ? "px-1.5" : "px-3"}`}>
           {visibleItems.map((item, idx) => {
             const isActive =
               item.href === "/packages" ? pathname === "/packages" :
@@ -115,15 +154,30 @@ export default function BottomNav() {
               <div key={item.href}>
                 {showDivider && <div className="my-1.5 border-t border-gray-100" />}
                 <Link href={item.href}
-                  className={`flex items-center gap-3 px-3 py-1.5 rounded-lg text-xs font-semibold uppercase transition-colors ${isActive ? "bg-primary/10 text-primary" : "text-gray hover:bg-gray-50"}`}>
-                  {item.icon} {item.label}
+                  onMouseEnter={(e) => showHover(e, item.label, item.href)}
+                  onMouseLeave={scheduleHide}
+                  className={`flex items-center rounded-lg text-xs font-semibold uppercase transition-colors ${collapsed ? "justify-center px-2 py-2" : "gap-3 px-3 py-1.5"} ${isActive ? "bg-primary/10 text-primary" : "text-gray hover:bg-gray-50"}`}>
+                  {item.icon}
+                  {!collapsed && <span>{item.label}</span>}
                 </Link>
               </div>
             );
           })}
-          {showAdminGroups && <AdminGroups pathname={pathname} activeRoles={activeRoles} username={me?.username ?? null} />}
+          {showAdminGroups && <AdminGroups pathname={pathname} activeRoles={activeRoles} username={me?.username ?? null} collapsed={collapsed} onHover={showHover} onHoverEnd={scheduleHide} />}
         </nav>
       </aside>
+      {collapsed && hover && (
+        <Link
+          href={hover.href}
+          onMouseEnter={cancelHide}
+          onMouseLeave={scheduleHide}
+          onClick={() => setHover(null)}
+          className="hidden md:inline-flex fixed items-center -translate-y-1/2 px-3 py-1.5 rounded-md bg-gray-900 text-white text-xs font-semibold uppercase tracking-wider shadow-lg z-[60] whitespace-nowrap hover:bg-gray-700 transition-colors"
+          style={{ left: 56, top: hover.top }}
+        >
+          {hover.label}
+        </Link>
+      )}
     </>
   );
 }
@@ -218,21 +272,21 @@ const ADMIN_GROUPS: { title: string; links: AdminLink[] }[] = [
   },
 ];
 
-function AdminGroups({ pathname, activeRoles, username }: { pathname: string; activeRoles: Role[]; username: string | null }) {
+function AdminGroups({ pathname, activeRoles, username, collapsed, onHover, onHoverEnd }: { pathname: string; activeRoles: Role[]; username: string | null; collapsed?: boolean; onHover: (e: React.MouseEvent<HTMLElement>, label: string, href: string) => void; onHoverEnd: () => void }) {
   const isAdmin = hasRole(activeRoles, "admin");
   return (
     <>
       {ADMIN_GROUPS.map((g, i) => {
         const links = g.links.filter((l) => {
-          // userOnly is the strictest gate — links with it must match the
-          // current account by username, regardless of role.
           if (l.userOnly) return !!username && l.userOnly.includes(username);
           return isAdmin || (l.roles && hasRole(activeRoles, ...l.roles));
         });
         if (links.length === 0) return null;
         return (
           <div key={g.title} className={i === 0 ? "pt-2 mt-2 border-t border-gray-100" : "pt-2 mt-2"}>
-            <div className="px-3 pb-0.5 text-xxs font-bold uppercase tracking-widest text-gray-400">{g.title}</div>
+            {!collapsed && (
+              <div className="px-3 pb-0.5 text-xxs font-bold uppercase tracking-widest text-gray-400">{g.title}</div>
+            )}
             {links.map(l => {
               const active =
                 l.href === "/packages/manage" ? pathname.startsWith("/packages/manage") :
@@ -246,8 +300,11 @@ function AdminGroups({ pathname, activeRoles, username }: { pathname: string; ac
                 pathname.startsWith(l.href);
               return (
                 <Link key={l.href} href={l.href}
-                  className={`flex items-center gap-3 px-3 py-1.5 rounded-lg text-xs font-semibold uppercase transition-colors ${active ? "bg-primary/10 text-primary" : "text-gray hover:bg-gray-50"}`}>
-                  {l.icon} {l.label}
+                  onMouseEnter={(e) => onHover(e, l.label, l.href)}
+                  onMouseLeave={onHoverEnd}
+                  className={`flex items-center rounded-lg text-xs font-semibold uppercase transition-colors ${collapsed ? "justify-center px-2 py-2" : "gap-3 px-3 py-1.5"} ${active ? "bg-primary/10 text-primary" : "text-gray hover:bg-gray-50"}`}>
+                  {l.icon}
+                  {!collapsed && <span>{l.label}</span>}
                 </Link>
               );
             })}

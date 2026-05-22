@@ -176,7 +176,7 @@ export default function PipelinePage() {
         activeTab={tab}
         onTabChange={(k) => { setTab(k as TabKey); localStorage.setItem("pipelineTab", k); }}
         tabsRight={(
-          <div className="flex items-center gap-2">
+          <div className="hidden md:flex items-center gap-2">
             <select
               value={sortField}
               onChange={(e) => {

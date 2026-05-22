@@ -161,6 +161,7 @@ export interface Lead {
   warranty_has_battery: boolean | null;
   warranty_inverter_sn_photo_url: string | null;
   warranty_batteries: string | null;
+  warranty_panel_serials: string | null;
   // Sheet-sync fields (migration 096) — mirror Solar Sales Lead Database
   customer_code: string | null;
   project_note: string | null;

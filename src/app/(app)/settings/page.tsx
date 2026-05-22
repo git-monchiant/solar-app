@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { apiFetch } from "@/lib/api";
 import Header from "@/components/layout/Header";
@@ -15,7 +15,7 @@ const DOC_TYPES: { key: string; label: string; description: string; defaultPrefi
   { key: "receipt", label: "ใบเสร็จอย่างย่อ", description: "ใบรับเงินมัดจำ/งวด", defaultPrefix: "RC" },
 ];
 
-type Tab = "running_numbers" | "warranty_signer" | "gmail";
+type Tab = "running_numbers" | "warranty_signer" | "gmail" | "customer_docs";
 
 export default function SettingsPage() {
   const router = useRouter();
@@ -40,6 +40,7 @@ export default function SettingsPage() {
         <div className="flex items-center gap-1 border-b border-gray-200 mb-4">
           <TabBtn active={tab === "running_numbers"} onClick={() => setTab("running_numbers")} label="เลขเอกสาร" />
           <TabBtn active={tab === "warranty_signer"} onClick={() => setTab("warranty_signer")} label="ผู้ลงนามใบรับประกัน" />
+          <TabBtn active={tab === "customer_docs"} onClick={() => setTab("customer_docs")} label="เอกสารลูกค้า" />
           <TabBtn active={tab === "gmail"} onClick={() => setTab("gmail")} label="Gmail" />
           <div className="flex-1" />
           <div className="pb-2 pr-1">
@@ -55,6 +56,7 @@ export default function SettingsPage() {
 
         {tab === "running_numbers" && <RunningNumbersSection />}
         {tab === "warranty_signer" && <WarrantySignerSection />}
+        {tab === "customer_docs" && <CustomerDocsSection />}
         {tab === "gmail" && <GmailSection />}
       </div>
     </div>
@@ -395,6 +397,129 @@ function WarrantySignerSection() {
             </button>
             {!dirty && <span className="text-xs text-gray-400">— ไม่มีการเปลี่ยนแปลง</span>}
           </div>
+        </div>
+      )}
+    </section>
+  );
+}
+
+// PDF checklist ที่ลูกค้าต้องเตรียมก่อนขอขนานไฟ (กับ MEA/PEA). อัพโหลดที่นี่ครั้งเดียว
+// ใช้ได้ทุก lead — ส่ง URL เก็บไว้ที่ app_settings.customer_checklist_pdf_url.
+// step ไหนที่ download — รอ user บอก (จะใส่ลิงก์ลง step นั้นภายหลัง)
+function CustomerDocsSection() {
+  const [url, setUrl] = useState<string | null>(null);
+  const [name, setName] = useState<string | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState<string | null>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    apiFetch("/api/settings").then((s: Settings) => {
+      setUrl(s.customer_checklist_pdf_url || null);
+      setName(s.customer_checklist_pdf_name || null);
+    }).catch(console.error).finally(() => setLoading(false));
+  }, []);
+
+  const onPick = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setErr(null);
+    if (file.type !== "application/pdf") {
+      setErr("ไฟล์ต้องเป็น PDF เท่านั้น");
+      if (fileInputRef.current) fileInputRef.current.value = "";
+      return;
+    }
+    setBusy(true);
+    const prevUrl = url;
+    try {
+      const fd = new FormData();
+      fd.append("file", file);
+      fd.append("filename", "customer_checklist");
+      const res = await apiFetch("/api/upload", { method: "POST", body: fd }) as { url: string };
+      await apiFetch("/api/settings", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          customer_checklist_pdf_url: res.url,
+          customer_checklist_pdf_name: file.name,
+        }),
+      });
+      // Drop the previous file from disk only after the settings row points at
+      // the new one — safe order: new URL is live before old file is removed.
+      if (prevUrl) {
+        apiFetch(`/api/upload?file=${encodeURIComponent(prevUrl)}`, { method: "DELETE" }).catch(() => {});
+      }
+      setUrl(res.url);
+      setName(file.name);
+    } catch (e) {
+      setErr(e instanceof Error ? e.message : "อัพโหลดไม่สำเร็จ");
+    } finally {
+      setBusy(false);
+      if (fileInputRef.current) fileInputRef.current.value = "";
+    }
+  };
+
+  const remove = async () => {
+    if (!url) return;
+    if (!confirm("ลบไฟล์ checklist นี้?")) return;
+    setBusy(true);
+    try {
+      await apiFetch("/api/settings", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ customer_checklist_pdf_url: "", customer_checklist_pdf_name: "" }),
+      });
+      apiFetch(`/api/upload?file=${encodeURIComponent(url)}`, { method: "DELETE" }).catch(() => {});
+      setUrl(null);
+      setName(null);
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <section className="bg-white rounded-xl border border-gray-200 overflow-hidden">
+      <div className="px-5 py-4 border-b border-gray-100">
+        <h2 className="text-sm font-bold text-gray-900">Checklist เอกสารขอขนานไฟ</h2>
+        <p className="text-xs text-gray-500 mt-1">PDF รายการเอกสารที่ลูกค้าต้องเตรียม เพื่อใช้ขอขนานไฟ — อัพโหลดที่นี่ครั้งเดียว แล้วเปิดให้ลูกค้าดาวน์โหลดที่ขั้นตอนที่กำหนด</p>
+      </div>
+      {loading ? (
+        <div className="p-5 text-sm text-gray-500">กำลังโหลด...</div>
+      ) : (
+        <div className="p-5 space-y-4">
+          {url ? (
+            <div className="flex items-center gap-3 p-3 rounded-lg border border-gray-200 bg-gray-50/50">
+              <div className="w-10 h-10 rounded-md bg-red-50 text-red-600 flex items-center justify-center shrink-0">
+                <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M19.5 14.25v-2.625a3.375 3.375 0 00-3.375-3.375h-1.5A1.125 1.125 0 0113.5 7.125v-1.5a3.375 3.375 0 00-3.375-3.375H8.25m2.25 0H5.625c-.621 0-1.125.504-1.125 1.125v17.25c0 .621.504 1.125 1.125 1.125h12.75c.621 0 1.125-.504 1.125-1.125V11.25a9 9 0 00-9-9z" />
+                </svg>
+              </div>
+              <div className="flex-1 min-w-0">
+                <div className="text-sm font-semibold text-gray-900 truncate">{name || "checklist.pdf"}</div>
+                <a href={url} target="_blank" rel="noopener noreferrer" className="text-xs text-primary hover:underline font-medium">
+                  เปิดดู / ดาวน์โหลด ↗
+                </a>
+              </div>
+              <button type="button" onClick={remove} disabled={busy}
+                className="h-9 px-3 rounded-lg text-xs font-semibold text-red-600 border border-red-200 hover:bg-red-50 disabled:opacity-50">
+                ลบ
+              </button>
+            </div>
+          ) : (
+            <div className="text-sm text-gray-500 px-1">ยังไม่ได้อัพโหลดไฟล์ — กดปุ่มข้างล่างเพื่ออัพโหลด PDF</div>
+          )}
+          <input ref={fileInputRef} type="file" accept="application/pdf" onChange={onPick} disabled={busy} className="hidden" />
+          <div className="flex items-center gap-2">
+            <button type="button" onClick={() => fileInputRef.current?.click()} disabled={busy}
+              className="h-10 px-5 rounded-lg text-sm font-semibold text-white bg-primary hover:bg-primary-dark disabled:opacity-50 transition-colors">
+              {busy ? "กำลังอัพโหลด..." : url ? "อัพโหลดไฟล์ใหม่ (แทนของเดิม)" : "อัพโหลด PDF"}
+            </button>
+            <span className="text-xs text-gray-400">PDF เท่านั้น · ไม่เกิน 20 MB</span>
+          </div>
+          {err && (
+            <div className="text-xs text-red-700 bg-red-50 border border-red-100 rounded-lg px-3 py-2">{err}</div>
+          )}
         </div>
       )}
     </section>

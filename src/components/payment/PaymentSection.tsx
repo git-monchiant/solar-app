@@ -16,6 +16,8 @@ interface Props {
   paymentTitle: string;
   amountLabel: string;
   amount: number;
+  /** Optional — when provided, PaymentHeader shows a pencil icon to edit the amount inline. */
+  onAmountEdit?: (next: number) => void;
   leadId: number;
   leadName: string;
   lineId: string | null;
@@ -100,6 +102,7 @@ interface SlipEntry {
 export default function PaymentSection({
   paymentTitle,
   amountLabel,
+  onAmountEdit,
   amount,
   leadId,
   leadName,
@@ -673,7 +676,7 @@ export default function PaymentSection({
   return (
     <div className="space-y-3 relative">
       <div className={`flex items-start gap-2 ${hideHeader ? "justify-start" : "justify-between"}`}>
-        {!hideHeader && <PaymentHeader title={paymentTitle} amount={qrAmount} amountLabel={amountLabel} />}
+        {!hideHeader && <PaymentHeader title={paymentTitle} amount={qrAmount} amountLabel={amountLabel} onAmountEdit={onAmountEdit} />}
         <div className="shrink-0 flex items-center gap-1">
           {invoiceDocUrl && (
             <button

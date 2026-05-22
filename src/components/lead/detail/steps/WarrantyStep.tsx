@@ -15,8 +15,10 @@ import { useIsMobile } from "@/lib/hooks/useIsMobile";
 import { buildWarrantyFlex } from "@/lib/utils/line-flex";
 import { compressImage } from "@/lib/utils/compressImage";
 import { formatThaiDate } from "@/lib/utils/formatters";
+import { INVERTER_BRANDS, INVERTER_KW_SIZES } from "@/lib/constants/survey-options";
 
-const SUB_STEPS = ["ข้อมูล", "แบตเตอรี่", "เอกสาร", "ลายเซ็น", "ยืนยัน"];
+const SUB_STEPS = ["ข้อมูล", "แบตเตอรี่", "แผง", "เอกสาร", "ยืนยัน"];
+const PANEL_ROWS = 20;
 
 const formatDate = (d: string | null) => formatThaiDate(d, { buddhist: true });
 
@@ -106,7 +108,6 @@ export default function WarrantyStep({ lead, state, refresh, packages, expanded,
   const [issuing, setIssuing] = useState(false);
   const [inverterCertUrl, setInverterCertUrl] = useState<string | null>(lead.warranty_inverter_cert_url);
   const [panelCertUrl, setPanelCertUrl] = useState<string | null>(lead.warranty_panel_cert_url);
-  const [panelSerialsUrl, setPanelSerialsUrl] = useState<string | null>(lead.warranty_panel_serials_url);
   const [otherDocs, setOtherDocs] = useState<string[]>(lead.warranty_other_docs_url ? lead.warranty_other_docs_url.split(",").filter(Boolean) : []);
   const [uploadingField, setUploadingField] = useState<string | null>(null);
   const [nextError, setNextError] = useState<string | null>(null);
@@ -160,24 +161,194 @@ export default function WarrantyStep({ lead, state, refresh, packages, expanded,
   const updateBatt = (i: number, patch: Partial<Batt>) => {
     setBatteries(prev => prev.map((b, idx) => idx === i ? { ...b, ...patch } : b));
   };
-  const [snScanning, setSnScanning] = useState(false);
-  const [battSnScanning, setBattSnScanning] = useState<number | null>(null);
-  const handleBattSnPhoto = async (i: number, e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0]; e.target.value = ""; if (!file) return;
-    setBattSnScanning(i);
+  // Per-row verified lock for batteries — same pattern as panelVerified.
+  // Stored in localStorage so it survives page refresh without a DB column.
+  const battVerifiedKey = `warrantyBattVerified_${lead.id}`;
+  const [battVerified, setBattVerified] = useState<boolean[]>(() => {
+    if (typeof window === "undefined") return Array.from({ length: BATTERY_ROWS }, () => false);
     try {
-      const compressed = await compressImage(file).catch(() => file);
-      const fd = new FormData();
-      fd.append("file", compressed);
-      fd.append("lead_id", String(lead.id));
-      fd.append("type", `warranty_batt${i}_scan`);
-      const up = await apiFetch("/api/upload", { method: "POST", body: fd });
-      if (!up.url) return;
-      const ocr = await apiFetch("/api/ocr-serial", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ imageUrl: up.url }) });
-      if (ocr?.serial) updateBatt(i, { serial: ocr.serial });
-      fetch(`/api/upload?file=${encodeURIComponent(up.url)}`, { method: "DELETE", headers: { ...getUserIdHeader() } }).catch(() => {});
-    } finally { setBattSnScanning(null); }
+      const raw = localStorage.getItem(battVerifiedKey);
+      const parsed = raw ? JSON.parse(raw) : [];
+      if (Array.isArray(parsed)) {
+        return Array.from({ length: BATTERY_ROWS }, (_, i) => !!parsed[i]);
+      }
+    } catch {}
+    return Array.from({ length: BATTERY_ROWS }, () => false);
+  });
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    try { localStorage.setItem(battVerifiedKey, JSON.stringify(battVerified)); } catch {}
+  }, [battVerified, battVerifiedKey]);
+  const toggleBattVerified = (i: number) => {
+    setBattVerified(prev => prev.map((v, idx) => idx === i ? !v : v));
   };
+  // Battery serial bulk-scan — auto-process pipeline mirroring panel scan.
+  // Each uploaded photo is OCR'd individually, results stream into next empty
+  // unlocked battery row's serial field (locked rows untouched, dedup against
+  // every existing serial).
+  const [battScanProgress, setBattScanProgress] = useState<{ current: number; total: number } | null>(null);
+  const applyBattOcrSerials = (found: string[]) => {
+    if (found.length === 0) return;
+    setBatteries(prev => {
+      const existing = new Set(prev.map(b => b.serial.trim()).filter(Boolean));
+      const queue: string[] = [];
+      for (const raw of found) {
+        const s = raw.trim();
+        if (!s || existing.has(s)) continue;
+        queue.push(s);
+        existing.add(s);
+      }
+      let qi = 0;
+      return prev.map((b, idx) => {
+        if (battVerified[idx] || b.serial.trim() || qi >= queue.length) return b;
+        return { ...b, serial: queue[qi++] };
+      });
+    });
+  };
+  const handleBattScanUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = Array.from(e.target.files || []); e.target.value = "";
+    if (!files.length || battScanProgress) return;
+    // Fresh batch — wipe serials in unlocked rows (brand/kWh untouched).
+    setBatteries(prev => prev.map((b, i) => battVerified[i] ? b : { ...b, serial: "" }));
+    setBattScanProgress({ current: 0, total: files.length });
+    try {
+      for (let i = 0; i < files.length; i++) {
+        setBattScanProgress({ current: i + 1, total: files.length });
+        const f = files[i];
+        let uploadedUrl: string | null = null;
+        try {
+          const compressed = await compressImage(f).catch(() => f);
+          const fd = new FormData();
+          fd.append("file", compressed);
+          fd.append("lead_id", String(lead.id));
+          fd.append("type", "warranty_batt_scan");
+          const up = await apiFetch("/api/upload", { method: "POST", body: fd });
+          if (!up.url) continue;
+          uploadedUrl = up.url;
+          const res = await apiFetch("/api/ocr-battery-serials", {
+            method: "POST", headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ imageUrls: [uploadedUrl] }),
+          });
+          const found: string[] = Array.isArray(res?.serials) ? res.serials : [];
+          applyBattOcrSerials(found);
+        } finally {
+          if (uploadedUrl) {
+            fetch(`/api/upload?file=${encodeURIComponent(uploadedUrl)}`, { method: "DELETE", headers: { ...getUserIdHeader() } }).catch(() => {});
+          }
+        }
+      }
+    } finally {
+      setBattScanProgress(null);
+    }
+  };
+  // Panel serials — flat array of up to PANEL_ROWS strings (one per panel).
+  // Persisted as JSON in warranty_panel_serials (NULL if all empty).
+  const initPanelSerials: string[] = (() => {
+    try {
+      const parsed = lead.warranty_panel_serials ? JSON.parse(lead.warranty_panel_serials) : [];
+      if (Array.isArray(parsed)) {
+        return Array.from({ length: PANEL_ROWS }, (_, i) => typeof parsed[i] === "string" ? parsed[i] : "");
+      }
+    } catch {}
+    return Array.from({ length: PANEL_ROWS }, () => "");
+  })();
+  const [panelSerials, setPanelSerials] = useState<string[]>(initPanelSerials);
+  const updatePanelSerial = (i: number, val: string) => {
+    setPanelSerials(prev => prev.map((s, idx) => idx === i ? val : s));
+  };
+  // "Verified" flags — per-slot lock. When true, AI rescan skips that slot.
+  // Persisted to localStorage (per lead) so verification survives page refresh
+  // without requiring a DB column.
+  const verifiedKey = `warrantyPanelVerified_${lead.id}`;
+  const [panelVerified, setPanelVerified] = useState<boolean[]>(() => {
+    if (typeof window === "undefined") return Array.from({ length: PANEL_ROWS }, () => false);
+    try {
+      const raw = localStorage.getItem(verifiedKey);
+      const parsed = raw ? JSON.parse(raw) : [];
+      if (Array.isArray(parsed)) {
+        return Array.from({ length: PANEL_ROWS }, (_, i) => !!parsed[i]);
+      }
+    } catch {}
+    return Array.from({ length: PANEL_ROWS }, () => false);
+  });
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    try { localStorage.setItem(verifiedKey, JSON.stringify(panelVerified)); } catch {}
+  }, [panelVerified, verifiedKey]);
+  const togglePanelVerified = (i: number) => {
+    setPanelVerified(prev => prev.map((v, idx) => idx === i ? !v : v));
+  };
+  // Panel serial bulk-scan — auto-process: each selected photo is uploaded,
+  // OCR'd, and applied immediately, then the temp upload is deleted. If the
+  // user picks multiple files at once, they're processed sequentially so the
+  // user can see results stream in. Unlocked slots receive AI values in order;
+  // locked (verified) slots are skipped.
+  const [panelScanProgress, setPanelScanProgress] = useState<{ current: number; total: number } | null>(null);
+  // Append AI serials into next empty unlocked slot — used within a single
+  // upload batch so multiple photos accumulate rather than overwrite each
+  // other. (Batch start clears unlocked slots first, so anything filled
+  // mid-batch comes from an earlier photo in the same batch.)
+  //
+  // Dedup is strict: an incoming AI value is skipped if it matches ANY value
+  // already in the list (locked or unlocked-filled) OR if it duplicates an
+  // earlier value in the same `found` array. Prevents the same serial from
+  // appearing twice anywhere in the UI.
+  const applyOcrSerials = (found: string[]) => {
+    if (found.length === 0) return;
+    setPanelSerials(prev => {
+      const existing = new Set(prev.map(s => s.trim()).filter(Boolean));
+      const queue: string[] = [];
+      for (const raw of found) {
+        const s = raw.trim();
+        if (!s || existing.has(s)) continue;
+        queue.push(s);
+        existing.add(s);
+      }
+      let qi = 0;
+      return prev.map((s, idx) => {
+        if (panelVerified[idx] || s.trim() || qi >= queue.length) return s;
+        return queue[qi++];
+      });
+    });
+  };
+  const handlePanelScanUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = Array.from(e.target.files || []); e.target.value = "";
+    if (!files.length || panelScanProgress) return;
+    // Fresh batch — wipe unlocked slots so new AI results have a clean canvas.
+    // Locked (verified) slots survive untouched.
+    setPanelSerials(prev => prev.map((s, i) => panelVerified[i] ? s : ""));
+    setPanelScanProgress({ current: 0, total: files.length });
+    try {
+      for (let i = 0; i < files.length; i++) {
+        setPanelScanProgress({ current: i + 1, total: files.length });
+        const f = files[i];
+        let uploadedUrl: string | null = null;
+        try {
+          const compressed = await compressImage(f).catch(() => f);
+          const fd = new FormData();
+          fd.append("file", compressed);
+          fd.append("lead_id", String(lead.id));
+          fd.append("type", "warranty_panel_scan");
+          const up = await apiFetch("/api/upload", { method: "POST", body: fd });
+          if (!up.url) continue;
+          uploadedUrl = up.url;
+          const res = await apiFetch("/api/ocr-panel-serials", {
+            method: "POST", headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ imageUrls: [uploadedUrl] }),
+          });
+          const found: string[] = Array.isArray(res?.serials) ? res.serials : [];
+          applyOcrSerials(found);
+        } finally {
+          if (uploadedUrl) {
+            fetch(`/api/upload?file=${encodeURIComponent(uploadedUrl)}`, { method: "DELETE", headers: { ...getUserIdHeader() } }).catch(() => {});
+          }
+        }
+      }
+    } finally {
+      setPanelScanProgress(null);
+    }
+  };
+  const [snScanning, setSnScanning] = useState(false);
 
   const handleSnPhoto = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0]; e.target.value = ""; if (!file) return;
@@ -240,17 +411,6 @@ export default function WarrantyStep({ lead, state, refresh, packages, expanded,
       }
     } finally { setUploadingField(null); }
   };
-  const handlePanelSerials = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const f = e.target.files?.[0]; e.target.value = ""; if (!f) return;
-    setUploadingField("serials");
-    try {
-      const url = await uploadCert(f, "panel_serials");
-      if (url) {
-        setPanelSerialsUrl(url);
-        await apiFetch(`/api/leads/${lead.id}`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ warranty_panel_serials_url: url }) });
-      }
-    } finally { setUploadingField(null); }
-  };
   const handleOtherDocs = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const files = Array.from(e.target.files || []); e.target.value = ""; if (!files.length) return;
     setUploadingField("other");
@@ -265,10 +425,10 @@ export default function WarrantyStep({ lead, state, refresh, packages, expanded,
       await apiFetch(`/api/leads/${lead.id}`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ warranty_other_docs_url: next.length ? next.join(",") : null }) });
     } finally { setUploadingField(null); }
   };
-  const removeCert = async (field: "inverter" | "panel" | "serials") => {
-    const urlMap = { inverter: inverterCertUrl, panel: panelCertUrl, serials: panelSerialsUrl };
-    const setterMap = { inverter: setInverterCertUrl, panel: setPanelCertUrl, serials: setPanelSerialsUrl };
-    const colMap = { inverter: "warranty_inverter_cert_url", panel: "warranty_panel_cert_url", serials: "warranty_panel_serials_url" };
+  const removeCert = async (field: "inverter" | "panel") => {
+    const urlMap = { inverter: inverterCertUrl, panel: panelCertUrl };
+    const setterMap = { inverter: setInverterCertUrl, panel: setPanelCertUrl };
+    const colMap = { inverter: "warranty_inverter_cert_url", panel: "warranty_panel_cert_url" };
     const url = urlMap[field];
     if (!url) return;
     fetch(`/api/upload?file=${encodeURIComponent(url)}`, { method: "DELETE", headers: { ...getUserIdHeader() } }).catch(() => {});
@@ -308,12 +468,13 @@ export default function WarrantyStep({ lead, state, refresh, packages, expanded,
           warranty_inverter_kw: invKw === "" ? null : invKw,
           warranty_batteries: JSON.stringify(batteries.filter(b => b.brand || b.kwh || b.serial).map(b => ({ brand: b.brand || null, kwh: b.kwh ? parseFloat(b.kwh) : null, serial: b.serial || null }))),
           warranty_has_battery: batteries.some(b => b.brand || b.kwh || b.serial),
+          warranty_panel_serials: panelSerials.some(s => s.trim()) ? JSON.stringify(panelSerials.map(s => s.trim())) : null,
         }),
       }).catch(console.error);
     }, 800);
     return () => clearTimeout(t);
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [sn, docNo, startDate, sysKwp, panelCount, panelWatt, panelBrand, invBrand, invKw, batteries]);
+  }, [sn, docNo, startDate, sysKwp, panelCount, panelWatt, panelBrand, invBrand, invKw, batteries, panelSerials]);
 
   const saveDraft = async () => {
     setSaving(true);
@@ -422,14 +583,14 @@ export default function WarrantyStep({ lead, state, refresh, packages, expanded,
     <div className="space-y-3">
       {/* subStep 0: ข้อมูล */}
       {subStep === 0 && (<>
-        <div>
-          <label className="text-xs font-semibold tracking-wider uppercase text-gray-400 block mb-1">เลขที่เอกสาร</label>
-          <input value={docNo} onChange={e => setDocNo(e.target.value)} placeholder="SSE250045"
-            className="w-full h-11 px-3 rounded-lg border border-gray-200 font-mono focus:outline-none focus:border-primary" />
-        </div>
-        <div className="grid grid-cols-2 gap-2">
+        <div className="grid grid-cols-2 md:grid-cols-3 gap-2">
+          <div className="col-span-2 md:col-span-1">
+            <label className="text-xs font-semibold tracking-wider uppercase text-gray-400 block mb-1">เลขที่เอกสาร</label>
+            <input value={docNo} onChange={e => setDocNo(e.target.value)} placeholder="SSE250045"
+              className="w-full h-11 px-3 rounded-lg border border-gray-200 font-mono focus:outline-none focus:border-primary" />
+          </div>
           <div>
-            <label className="text-xs font-semibold tracking-wider uppercase text-gray-400 block mb-1">เริ่มประกัน (พ.ศ.)</label>
+            <label className="text-xs font-semibold tracking-wider uppercase text-gray-400 block mb-1">รับประกันงานติดตั้ง</label>
             <ThaiDateInput value={startDate} onChange={setStartDate} />
           </div>
           <div>
@@ -461,11 +622,23 @@ export default function WarrantyStep({ lead, state, refresh, packages, expanded,
           <div className="grid grid-cols-2 gap-2">
             <div>
               <label className="text-xs text-gray-500 block mb-1">ยี่ห้ออินเวอร์เตอร์</label>
-              <input type="text" value={invBrand} onChange={e => setInvBrand(e.target.value)} placeholder="Huawei" className="w-full h-11 px-3 rounded-lg border border-gray-200 focus:outline-none focus:border-primary" />
+              <select value={invBrand} onChange={e => setInvBrand(e.target.value)} className="w-full h-11 px-3 rounded-lg border border-gray-200 bg-white focus:outline-none focus:border-primary">
+                <option value="">เลือกยี่ห้อ</option>
+                {INVERTER_BRANDS.map(b => <option key={b} value={b}>{b}</option>)}
+                {invBrand && !INVERTER_BRANDS.includes(invBrand as typeof INVERTER_BRANDS[number]) && (
+                  <option value={invBrand}>{invBrand}</option>
+                )}
+              </select>
             </div>
             <div>
               <label className="text-xs text-gray-500 block mb-1">ขนาด (kW)</label>
-              <input type="number" step="0.01" value={invKw} onChange={e => setInvKw(e.target.value ? parseFloat(e.target.value) : "")} placeholder="5" className="w-full h-11 px-3 rounded-lg border border-gray-200 font-mono focus:outline-none focus:border-primary" />
+              <select value={invKw} onChange={e => setInvKw(e.target.value ? parseFloat(e.target.value) : "")} className="w-full h-11 px-3 rounded-lg border border-gray-200 bg-white font-mono focus:outline-none focus:border-primary">
+                <option value="">เลือกขนาด</option>
+                {INVERTER_KW_SIZES.map(kw => <option key={kw} value={kw}>{kw} kW</option>)}
+                {invKw !== "" && !INVERTER_KW_SIZES.includes(invKw as typeof INVERTER_KW_SIZES[number]) && (
+                  <option value={invKw}>{invKw} kW</option>
+                )}
+              </select>
             </div>
           </div>
           <div>
@@ -473,11 +646,11 @@ export default function WarrantyStep({ lead, state, refresh, packages, expanded,
             <div className="flex gap-2">
               <input value={sn} onChange={e => setSn(e.target.value)} placeholder="HW1234567890" className="flex-1 h-11 px-3 rounded-lg border border-gray-200 font-mono focus:outline-none focus:border-primary" />
               <input type="file" accept="image/*" capture="environment" onChange={handleSnPhoto} className="hidden" id={`sn-scan-${lead.id}`} />
-              <label htmlFor={`sn-scan-${lead.id}`} className="shrink-0 self-stretch w-10 rounded-lg border border-gray-200 bg-white flex items-center justify-center cursor-pointer hover:border-primary hover:text-primary text-gray-500 transition-colors" title="ถ่ายรูป SN เพื่ออ่านอัตโนมัติ">
+              <label htmlFor={`sn-scan-${lead.id}`} className="shrink-0 h-11 w-16 rounded-lg border border-active/30 bg-active-light text-active flex items-center justify-center cursor-pointer hover:bg-active/15 transition-colors" title="ถ่ายรูป SN เพื่ออ่านอัตโนมัติ">
                 {snScanning ? (
-                  <div className="w-4 h-4 border-2 border-gray-300 border-t-primary rounded-full animate-spin" />
+                  <div className="w-5 h-5 border-2 border-gray-300 border-t-primary rounded-full animate-spin" />
                 ) : (
-                  <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M3 9a2 2 0 012-2h.93a2 2 0 001.664-.89l.812-1.22A2 2 0 0110.07 4h3.86a2 2 0 011.664.89l.812 1.22A2 2 0 0018.07 7H19a2 2 0 012 2v9a2 2 0 01-2 2H5a2 2 0 01-2-2V9z" /><path strokeLinecap="round" strokeLinejoin="round" d="M15 13a3 3 0 11-6 0 3 3 0 016 0z" /></svg>
+                  <svg className="w-7 h-7" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M3 9a2 2 0 012-2h.93a2 2 0 001.664-.89l.812-1.22A2 2 0 0110.07 4h3.86a2 2 0 011.664.89l.812 1.22A2 2 0 0018.07 7H19a2 2 0 012 2v9a2 2 0 01-2 2H5a2 2 0 01-2-2V9z" /><path strokeLinecap="round" strokeLinejoin="round" d="M15 13a3 3 0 11-6 0 3 3 0 016 0z" /></svg>
                 )}
               </label>
             </div>
@@ -488,42 +661,200 @@ export default function WarrantyStep({ lead, state, refresh, packages, expanded,
 
       {/* subStep 1: แบตเตอรี่ */}
       {subStep === 1 && (
-        <div className="rounded-lg border border-gray-200 p-3 space-y-2">
-          <div className="text-xs font-semibold tracking-wider uppercase text-gray-400">แบตเตอรี่ (ไม่บังคับ · สูงสุด {BATTERY_ROWS} ก้อน)</div>
-          <div className="grid grid-cols-[24px_1fr_72px_1fr_40px] gap-1.5 text-xxs font-semibold text-gray-400 uppercase tracking-wider px-1">
-            <span></span>
-            <span>ยี่ห้อ</span>
-            <span>kWh</span>
-            <span>Serial</span>
-            <span></span>
+        <div className="space-y-2">
+          {/* Auto-scan zone — same pattern as panel: each photo uploads + OCRs +
+              applies immediately. Fills the serial field of next empty unlocked
+              row; brand/kWh stay manual. */}
+          <div className="rounded-lg border border-active/20 bg-active-light/50 p-3 space-y-2">
+            <div className="text-xs font-semibold tracking-wider uppercase text-active">AI หา Serial แบตเตอรี่</div>
+            <input type="file" accept="image/*" multiple onChange={handleBattScanUpload} className="hidden" id={`batt-scan-${lead.id}`} />
+            <label
+              htmlFor={`batt-scan-${lead.id}`}
+              className={`w-full h-11 rounded-lg text-sm font-semibold flex items-center justify-center gap-1.5 transition-colors whitespace-nowrap ${
+                battScanProgress
+                  ? "bg-gray-200 text-gray-500 cursor-not-allowed pointer-events-none"
+                  : "text-white bg-active hover:brightness-110 cursor-pointer"
+              }`}
+            >
+              {battScanProgress ? (
+                <>
+                  <div className="w-5 h-5 border-2 border-gray-300 border-t-active rounded-full animate-spin" />
+                  ประมวลผล {battScanProgress.current}/{battScanProgress.total}
+                </>
+              ) : (
+                <>
+                  <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M3 9a2 2 0 012-2h.93a2 2 0 001.664-.89l.812-1.22A2 2 0 0110.07 4h3.86a2 2 0 011.664.89l.812 1.22A2 2 0 0018.07 7H19a2 2 0 012 2v9a2 2 0 01-2 2H5a2 2 0 01-2-2V9z" /><path strokeLinecap="round" strokeLinejoin="round" d="M15 13a3 3 0 11-6 0 3 3 0 016 0z" /></svg>
+                  ถ่าย / เลือกรูป
+                </>
+              )}
+            </label>
+            <div className="text-xxs text-gray-500">ถ่ายรูป serial แบตทีละใบ AI จะอ่านแล้วเติมลง row unlocked อัตโนมัติ (brand/kWh กรอกเอง)</div>
           </div>
-          {batteries.map((b, i) => (
-            <div key={i} className="grid grid-cols-[24px_1fr_72px_1fr_40px] gap-1.5 items-center">
-              <span className="text-xs text-gray-400 text-center">{i + 1}</span>
-              <input type="text" value={b.brand} onChange={e => updateBatt(i, { brand: e.target.value })} placeholder="Huawei LUNA" className="h-9 px-2 rounded-lg border border-gray-200 bg-white text-sm focus:outline-none focus:border-primary" />
-              <input type="number" step="0.01" value={b.kwh} onChange={e => updateBatt(i, { kwh: e.target.value })} placeholder="5" className="h-9 px-2 rounded-lg border border-gray-200 bg-white text-sm font-mono focus:outline-none focus:border-primary" />
-              <input type="text" value={b.serial} onChange={e => updateBatt(i, { serial: e.target.value })} placeholder="SN…" className="h-9 px-2 rounded-lg border border-gray-200 bg-white text-sm font-mono focus:outline-none focus:border-primary" />
-              <>
-                <input type="file" accept="image/*" capture="environment" onChange={(e) => handleBattSnPhoto(i, e)} className="hidden" id={`batt-sn-${i}-${lead.id}`} />
-                <label htmlFor={`batt-sn-${i}-${lead.id}`} className="h-9 w-9 rounded-lg border border-gray-200 bg-white flex items-center justify-center cursor-pointer hover:border-primary hover:text-primary text-gray-500 transition-colors" title="ถ่ายรูป SN">
-                  {battSnScanning === i ? (
-                    <div className="w-3.5 h-3.5 border-2 border-gray-300 border-t-primary rounded-full animate-spin" />
-                  ) : (
-                    <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M3 9a2 2 0 012-2h.93a2 2 0 001.664-.89l.812-1.22A2 2 0 0110.07 4h3.86a2 2 0 011.664.89l.812 1.22A2 2 0 0018.07 7H19a2 2 0 012 2v9a2 2 0 01-2 2H5a2 2 0 01-2-2V9z" /><path strokeLinecap="round" strokeLinejoin="round" d="M15 13a3 3 0 11-6 0 3 3 0 016 0z" /></svg>
-                  )}
-                </label>
-              </>
+
+          {/* Battery rows */}
+          <div className="rounded-lg border border-gray-200 p-3 space-y-2">
+            <div className="flex items-center justify-between gap-2">
+              <div className="text-xs font-semibold tracking-wider uppercase text-gray-400">แบตเตอรี่ (สูงสุด {BATTERY_ROWS} ก้อน)</div>
+              <div className="flex items-center gap-2">
+                <span className="text-xxs text-gray-500">ยืนยัน {battVerified.filter(Boolean).length}/{BATTERY_ROWS}</span>
+                <button
+                  type="button"
+                  onClick={() => setBatteries(prev => prev.map((b, i) => battVerified[i] ? b : { ...b, serial: "" }))}
+                  disabled={!batteries.some((b, i) => b.serial.trim() && !battVerified[i])}
+                  className="text-xxs font-semibold text-red-500 hover:text-red-600 disabled:text-gray-300 disabled:cursor-not-allowed"
+                  style={{ minHeight: 0 }}
+                  title="ล้าง serial ในแถวที่ยังไม่ยืนยัน (brand/kWh ไม่ถูกล้าง, ก้อนที่ lock ✓ ไม่ถูกล้าง)"
+                >
+                  ล้าง serial ที่ยังไม่ยืนยัน
+                </button>
+              </div>
             </div>
-          ))}
+            {/* Desktop column headers (hidden on mobile — mobile uses card layout) */}
+            <div className="hidden md:grid grid-cols-[1fr_72px_1fr_36px] gap-1.5 text-xxs font-semibold text-gray-400 uppercase tracking-wider px-1">
+              <span>ยี่ห้อ</span>
+              <span>kWh</span>
+              <span>Serial</span>
+              <span></span>
+            </div>
+            {batteries.map((b, i) => {
+              const filled = !!(b.brand || b.kwh || b.serial);
+              const verified = battVerified[i];
+              return (
+                <div
+                  key={i}
+                  className={`
+                    rounded-xl border p-2.5 space-y-1.5 transition-colors
+                    ${verified ? "border-emerald-300 bg-emerald-50/30" : filled ? "border-gray-200 bg-white" : "border-dashed border-gray-200 bg-gray-50/40"}
+                    md:p-0 md:rounded-none md:border-0 md:bg-transparent md:space-y-0
+                    md:grid md:grid-cols-[1fr_72px_1fr_36px] md:gap-1.5 md:items-center
+                  `}
+                >
+                  {/* Row 1 (mobile) / cols 1-2 (desktop): brand + kWh */}
+                  <div className="flex items-center gap-1.5 md:contents">
+                    <input type="text" value={b.brand} onChange={e => updateBatt(i, { brand: e.target.value })} placeholder={`ก้อนที่ ${i + 1}`} className="flex-1 min-w-0 h-9 px-2 rounded-lg border border-gray-200 bg-white text-sm focus:outline-none focus:border-primary md:flex-none md:w-auto md:min-w-0" />
+                    <input type="number" step="0.01" value={b.kwh} onChange={e => updateBatt(i, { kwh: e.target.value })} placeholder="5" className="w-16 shrink-0 h-9 px-2 rounded-lg border border-gray-200 bg-white text-sm font-mono text-center focus:outline-none focus:border-primary md:w-auto md:text-left" />
+                  </div>
+                  {/* Row 2 (mobile) / cols 3-4 (desktop): serial + lock checkbox */}
+                  <div className="flex items-center gap-1.5 md:contents">
+                    <input type="text" value={b.serial} onChange={e => updateBatt(i, { serial: e.target.value })} placeholder="SN…" className="flex-1 min-w-0 h-9 px-2 rounded-lg border border-gray-200 bg-white text-sm font-mono focus:outline-none focus:border-primary md:flex-none md:w-auto md:min-w-0" />
+                    <button
+                      type="button"
+                      onClick={() => toggleBattVerified(i)}
+                      className={`shrink-0 h-9 w-9 rounded-lg border flex items-center justify-center transition-colors ${
+                        verified
+                          ? "border-emerald-400 bg-emerald-500 text-white hover:bg-emerald-600"
+                          : "border-gray-200 bg-white text-gray-300 hover:text-gray-500 hover:border-gray-300"
+                      }`}
+                      title={verified ? "ยกเลิกยืนยัน (AI จะ scan ทับได้)" : "ยืนยันถูกแล้ว (lock — AI จะไม่ทับ)"}
+                      aria-pressed={verified}
+                    >
+                      <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={3}><path strokeLinecap="round" strokeLinejoin="round" d="M4.5 12.75l6 6 9-13.5" /></svg>
+                    </button>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
         </div>
       )}
 
-      {/* subStep 2: เอกสาร */}
-      {subStep === 2 && (<>
+      {/* subStep 2: แผง — text list of per-panel serial numbers (max PANEL_ROWS).
+         Optional AI bulk-scan zone at top: upload one or more photos (each may
+         contain many panel labels), Gemini extracts all serials in one call and
+         fills into empty slots below. */}
+      {subStep === 2 && (
+        <div className="space-y-2">
+          {/* Auto-scan zone — each photo uploads + OCRs + applies immediately,
+              then the temp upload is deleted. Workflow: take photo → AI fills
+              unlocked slots → user verifies & ticks ✓ to lock → take next photo. */}
+          <div className="rounded-lg border border-active/20 bg-active-light/50 p-3 space-y-2">
+            <div className="text-xs font-semibold tracking-wider uppercase text-active">AI หา Serial แผง</div>
+            <input type="file" accept="image/*" multiple onChange={handlePanelScanUpload} className="hidden" id={`panel-scan-${lead.id}`} />
+            <label
+              htmlFor={`panel-scan-${lead.id}`}
+              className={`w-full h-11 rounded-lg text-sm font-semibold flex items-center justify-center gap-1.5 transition-colors whitespace-nowrap ${
+                panelScanProgress
+                  ? "bg-gray-200 text-gray-500 cursor-not-allowed pointer-events-none"
+                  : "text-white bg-active hover:brightness-110 cursor-pointer"
+              }`}
+            >
+              {panelScanProgress ? (
+                <>
+                  <div className="w-5 h-5 border-2 border-gray-300 border-t-active rounded-full animate-spin" />
+                  ประมวลผล {panelScanProgress.current}/{panelScanProgress.total}
+                </>
+              ) : (
+                <>
+                  <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M3 9a2 2 0 012-2h.93a2 2 0 001.664-.89l.812-1.22A2 2 0 0110.07 4h3.86a2 2 0 011.664.89l.812 1.22A2 2 0 0018.07 7H19a2 2 0 012 2v9a2 2 0 01-2 2H5a2 2 0 01-2-2V9z" /><path strokeLinecap="round" strokeLinejoin="round" d="M15 13a3 3 0 11-6 0 3 3 0 016 0z" /></svg>
+                  ถ่าย / เลือกรูป
+                </>
+              )}
+            </label>
+            <div className="text-xxs text-gray-500">ถ่ายรูปทีละใบ AI จะอ่านแล้วเติมลงช่อง unlocked อัตโนมัติ — เลือกหลายรูปครั้งเดียวก็ได้ (จะประมวลทีละใบ)</div>
+          </div>
+
+          {/* Manual serial list — checkbox locks a slot so AI rescan won't overwrite */}
+          <div className="rounded-lg border border-gray-200 p-3 space-y-2">
+            <div className="flex items-center justify-between gap-2">
+              <div className="text-xs font-semibold tracking-wider uppercase text-gray-400">Serial แผง (สูงสุด {PANEL_ROWS} แผง)</div>
+              <div className="flex items-center gap-2">
+                <span className="text-xxs text-gray-500">ยืนยัน {panelVerified.filter(Boolean).length}/{PANEL_ROWS}</span>
+                <button
+                  type="button"
+                  onClick={() => setPanelSerials(prev => prev.map((s, i) => panelVerified[i] ? s : ""))}
+                  disabled={!panelSerials.some((s, i) => s.trim() && !panelVerified[i])}
+                  className="text-xxs font-semibold text-red-500 hover:text-red-600 disabled:text-gray-300 disabled:cursor-not-allowed"
+                  style={{ minHeight: 0 }}
+                  title="ล้าง serial ในช่องที่ยังไม่ยืนยัน (ช่องที่ lock ✓ ไม่ถูกล้าง)"
+                >
+                  ล้างที่ยังไม่ยืนยัน
+                </button>
+              </div>
+            </div>
+            {/* Column-major flow on desktop (col 1: 1-10, col 2: 11-20) so users
+                can scan vertically and compare side-by-side with the physical
+                panel stack. Mobile stays as a single column. */}
+            <div className="grid grid-cols-1 md:grid-cols-2 md:grid-rows-[repeat(10,minmax(0,auto))] md:grid-flow-col gap-1.5">
+              {panelSerials.map((s, i) => {
+                const verified = panelVerified[i];
+                return (
+                  <div key={i} className="flex items-center gap-1.5">
+                    <span className="w-6 shrink-0 text-xs text-gray-400 text-right tabular-nums">{i + 1}.</span>
+                    <input
+                      type="text"
+                      value={s}
+                      onChange={e => updatePanelSerial(i, e.target.value)}
+                      placeholder={`แผงที่ ${i + 1}`}
+                      className={`flex-1 min-w-0 h-9 px-2 rounded-lg border bg-white text-sm font-mono focus:outline-none focus:border-primary transition-colors ${
+                        verified ? "border-emerald-300 bg-emerald-50/30" : "border-gray-200"
+                      }`}
+                    />
+                    <button
+                      type="button"
+                      onClick={() => togglePanelVerified(i)}
+                      className={`shrink-0 h-9 w-9 rounded-lg border flex items-center justify-center transition-colors ${
+                        verified
+                          ? "border-emerald-400 bg-emerald-500 text-white hover:bg-emerald-600"
+                          : "border-gray-200 bg-white text-gray-300 hover:text-gray-500 hover:border-gray-300"
+                      }`}
+                      title={verified ? "ยกเลิกยืนยัน (AI จะ scan ทับได้)" : "ยืนยันถูกแล้ว (lock — AI จะไม่ทับ)"}
+                      aria-pressed={verified}
+                    >
+                      <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={3}><path strokeLinecap="round" strokeLinejoin="round" d="M4.5 12.75l6 6 9-13.5" /></svg>
+                    </button>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* subStep 3: เอกสาร */}
+      {subStep === 3 && (<>
         <div className="space-y-2">
           <CertSlot label="ใบรับประกันอินเวอร์เตอร์ (ผู้ผลิต)" url={inverterCertUrl} uploading={uploadingField === "inverter"} inputId={`inv-cert-${lead.id}`} onChange={handleInverterCert} onRemove={() => removeCert("inverter")} />
           <CertSlot label="ใบรับประกันแผงโซลาร์ (ผู้ผลิต)" url={panelCertUrl} uploading={uploadingField === "panel"} inputId={`pnl-cert-${lead.id}`} onChange={handlePanelCert} onRemove={() => removeCert("panel")} />
-          <CertSlot label="เอกสาร Serial แผงทั้งหมด" url={panelSerialsUrl} uploading={uploadingField === "serials"} inputId={`pnl-sn-${lead.id}`} onChange={handlePanelSerials} onRemove={() => removeCert("serials")} />
         </div>
         <div>
           <label className="text-xs font-semibold tracking-wider uppercase text-gray-400 block mb-1">เอกสารแนบอื่นๆ</label>
@@ -548,29 +879,27 @@ export default function WarrantyStep({ lead, state, refresh, packages, expanded,
         </div>
       </>)}
 
-      {/* subStep 3: ลายเซ็น — if already signed at Install, just show it and allow
-         Next. If not, SignaturePad lets the customer sign now. */}
-      {subStep === 3 && (
-        <div className="space-y-3">
-          <div className="text-xs font-semibold tracking-wider uppercase text-gray-400">ลายเซ็นลูกค้า (ยืนยันรับงาน)</div>
-          {effectiveSignatureUrl ? (
-            <div className="bg-white rounded-lg border border-gray-200 p-3 flex items-center justify-center">
-              <FallbackImage src={effectiveSignatureUrl} alt="ลายเซ็น" className="max-h-40 object-contain" />
-            </div>
-          ) : (
-            <SignaturePad
-              leadId={lead.id}
-              fieldName="install_customer_signature_url"
-              initialUrl={null}
-              onSaved={() => { refresh(); }}
-            />
-          )}
-        </div>
-      )}
-
-      {/* subStep 4: ยืนยัน */}
+      {/* subStep 4: ยืนยัน — signature + preview/LINE/issue actions in one panel.
+         If customer signed at Install, the signature shows; otherwise SignaturePad
+         lets them sign here. */}
       {subStep === 4 && (
-        <div className="space-y-2">
+        <div className="space-y-3">
+          <div className="space-y-2">
+            <div className="text-xs font-semibold tracking-wider uppercase text-gray-400">ลายเซ็นลูกค้า (ยืนยันรับงาน)</div>
+            {effectiveSignatureUrl ? (
+              <div className="bg-white rounded-lg border border-gray-200 p-3 flex items-center justify-center">
+                <FallbackImage src={effectiveSignatureUrl} alt="ลายเซ็น" className="max-h-40 object-contain" />
+              </div>
+            ) : (
+              <SignaturePad
+                leadId={lead.id}
+                fieldName="install_customer_signature_url"
+                initialUrl={null}
+                onSaved={() => { refresh(); }}
+              />
+            )}
+          </div>
+          <div className="space-y-2">
           <div className="grid grid-cols-2 gap-2">
             <button type="button" onClick={() => setPreviewOpen(true)}
               className="h-11 rounded-lg text-sm font-semibold border border-primary/30 bg-primary/5 text-primary hover:bg-primary/10 transition-colors flex items-center justify-center gap-1.5">
@@ -625,6 +954,7 @@ export default function WarrantyStep({ lead, state, refresh, packages, expanded,
               }}
             />
           )}
+          </div>
         </div>
       )}
 

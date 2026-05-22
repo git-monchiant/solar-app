@@ -32,6 +32,7 @@ export default function InstallStep({ lead, state, refresh, expanded, onToggle }
   const [photos, setPhotos] = useState<string[]>(lead.install_photos ? lead.install_photos.split(",").filter(Boolean) : []);
   const [note, setNote] = useState(lead.install_note || "");
   const [uploading, setUploading] = useState(false);
+  const [dragActive, setDragActive] = useState(false);
   const [saving, setSaving] = useState(false);
   const [extraCost, setExtraCost] = useState<number>(lead.install_extra_cost || 0);
   const [extraNote, setExtraNote] = useState(lead.install_extra_note || "");
@@ -41,6 +42,15 @@ export default function InstallStep({ lead, state, refresh, expanded, onToggle }
   const [actualDate, setActualDate] = useState<string>(
     lead.install_actual_date ? String(lead.install_actual_date).slice(0, 10) : new Date().toISOString().slice(0, 10)
   );
+  // PDF checklist that the customer must prepare for grid-connection (ขนานไฟ).
+  // URL lives in app_settings — single global file, hidden if admin hasn't uploaded.
+  // Download filename is rewritten per-customer at the <a download> attribute.
+  const [checklistUrl, setChecklistUrl] = useState<string | null>(null);
+  useEffect(() => {
+    apiFetch("/api/settings").then((s: Record<string, string>) => {
+      setChecklistUrl(s.customer_checklist_pdf_url || null);
+    }).catch(() => {});
+  }, []);
 
   // Auto-save note + extras. Removed the `state !== "active"` gate because the
   // editable form is sometimes still mounted (e.g. expanded done view) and a
@@ -84,23 +94,35 @@ export default function InstallStep({ lead, state, refresh, expanded, onToggle }
   const afterRaw = pctBefore < 100 ? orderTotal - Math.round(orderTotal * pctBefore / 100) : 0;
   const depositCredit = Math.min(afterRaw, depositPaid);
 
-  const uploadPhoto = async (file: File) => {
+  // Upload only — returns the uploaded URL. Caller batches setPhotos + PATCH.
+  // Multi-select used to race here: each parallel call read the same stale
+  // `photos` closure, so [...photos, url] kept the last upload only.
+  const uploadOne = async (file: File): Promise<string | null> => {
+    const compressed = await compressImage(file).catch(() => file);
+    const formData = new FormData();
+    formData.append("file", compressed);
+    formData.append("lead_id", String(lead.id));
+    formData.append("type", "install");
+    const res = await apiFetch("/api/upload", { method: "POST", body: formData });
+    return res?.url ?? null;
+  };
+
+  const uploadPhotos = async (files: File[]) => {
+    if (files.length === 0) return;
     setUploading(true);
     try {
-      const compressed = await compressImage(file).catch(() => file);
-      const formData = new FormData();
-      formData.append("file", compressed);
-      formData.append("lead_id", String(lead.id));
-      formData.append("type", "install");
-      const res = await apiFetch("/api/upload", { method: "POST", body: formData });
-      if (res.url) {
-        const newPhotos = [...photos, res.url];
-        setPhotos(newPhotos);
-        await apiFetch(`/api/leads/${lead.id}`, {
-          method: "PATCH", headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ install_photos: newPhotos.join(",") }),
-        });
+      const newUrls: string[] = [];
+      for (const f of files) {
+        const url = await uploadOne(f);
+        if (url) newUrls.push(url);
       }
+      if (newUrls.length === 0) return;
+      const next = [...photos, ...newUrls];
+      setPhotos(next);
+      await apiFetch(`/api/leads/${lead.id}`, {
+        method: "PATCH", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ install_photos: next.join(",") }),
+      });
     } finally { setUploading(false); }
   };
 
@@ -281,54 +303,70 @@ export default function InstallStep({ lead, state, refresh, expanded, onToggle }
         </DoneSection>
       )}
 
-      {/* Cost summary */}
+      {/* Cost summary — applies VIP / promo discount before installment split so
+         the totals match Order step and the receipt. */}
       <DoneSection color="blue" title="สรุปค่าใช้จ่าย">
-        <div className="space-y-1.5">
-          <div className="flex justify-between text-sm">
-            <span className="text-gray-500">มูลค่างาน (ใบเสนอราคา)</span>
-            <span className="font-mono text-gray-800">{fmt(orderTotal)} ฿</span>
-          </div>
-          {lead.pre_total_price ? (
-            <div className="flex justify-between text-sm">
-              <span className="text-gray-500">ค่าสำรวจ</span>
-              <span className="font-mono text-gray-800">{fmt(lead.pre_total_price)} ฿</span>
-            </div>
-          ) : null}
-          {pctBefore < 100 ? (() => {
-            const dep = lead.pre_total_price || 0;
-            const beforeAmt = Math.round(orderTotal * pctBefore / 100);
-            const afterAmt = orderTotal - beforeAmt;
-            const credAfter = Math.min(afterAmt, dep);
-            const credBefore = Math.min(beforeAmt, dep - credAfter);
-            return (
-              <>
+        {(() => {
+          const effTotal = Math.max(0, orderTotal - orderDiscount);
+          const extra = lead.install_extra_cost || 0;
+          return (
+            <div className="space-y-1.5">
+              <div className="flex justify-between text-sm">
+                <span className="text-gray-500">มูลค่างาน (ใบเสนอราคา)</span>
+                <span className="font-mono text-gray-800">{fmt(orderTotal)} ฿</span>
+              </div>
+              {orderDiscount > 0 && (
                 <div className="flex justify-between text-sm">
-                  <span className="text-gray-500">งวด 1/2 (ก่อนติดตั้ง {pctBefore}%)</span>
-                  <span className="font-mono text-gray-800">{fmt(beforeAmt - credBefore)} ฿</span>
+                  <span className="text-gray-500">
+                    หักส่วนลด{lead.order_discount_pct ? ` ${lead.order_discount_pct}%` : ""}
+                    {lead.order_discount_note ? ` · ${lead.order_discount_note}` : ""}
+                  </span>
+                  <span className="font-mono text-gray-800">-{fmt(orderDiscount)} ฿</span>
                 </div>
+              )}
+              {lead.pre_total_price ? (
                 <div className="flex justify-between text-sm">
-                  <span className="text-gray-500">งวด 2/2 (หลังติดตั้ง)</span>
-                  <span className="font-mono text-gray-800">{fmt(afterAmt - credAfter)} ฿</span>
+                  <span className="text-gray-500">ค่าสำรวจ</span>
+                  <span className="font-mono text-gray-800">{fmt(lead.pre_total_price)} ฿</span>
                 </div>
-              </>
-            );
-          })() : (
-            <div className="flex justify-between text-sm">
-              <span className="text-gray-500">ชำระเต็มจำนวน</span>
-              <span className="font-mono text-gray-800">{fmt(Math.max(0, orderTotal - (lead.pre_total_price || 0)))} ฿</span>
+              ) : null}
+              {pctBefore < 100 ? (() => {
+                const dep = lead.pre_total_price || 0;
+                const beforeAmt = Math.round(effTotal * pctBefore / 100);
+                const afterAmt = effTotal - beforeAmt;
+                const credAfter = Math.min(afterAmt, dep);
+                const credBefore = Math.min(beforeAmt, dep - credAfter);
+                return (
+                  <>
+                    <div className="flex justify-between text-sm">
+                      <span className="text-gray-500">งวด 1/2 (ก่อนติดตั้ง {pctBefore}%)</span>
+                      <span className="font-mono text-gray-800">{fmt(beforeAmt - credBefore)} ฿</span>
+                    </div>
+                    <div className="flex justify-between text-sm">
+                      <span className="text-gray-500">งวด 2/2 (หลังติดตั้ง)</span>
+                      <span className="font-mono text-gray-800">{fmt(afterAmt - credAfter)} ฿</span>
+                    </div>
+                  </>
+                );
+              })() : (
+                <div className="flex justify-between text-sm">
+                  <span className="text-gray-500">ชำระเต็มจำนวน</span>
+                  <span className="font-mono text-gray-800">{fmt(Math.max(0, effTotal - (lead.pre_total_price || 0)))} ฿</span>
+                </div>
+              )}
+              {extra > 0 && (
+                <div className="flex justify-between text-sm">
+                  <span className="text-gray-500">{lead.install_extra_note || "ค่าใช้จ่ายเพิ่มเติม"}</span>
+                  <span className="font-mono text-gray-800">+{fmt(extra)} ฿</span>
+                </div>
+              )}
+              <div className="flex justify-between text-base font-bold border-t-2 border-gray-300 pt-2 mt-1">
+                <span className="text-gray-900">มูลค่างานรวม</span>
+                <span className="font-mono text-emerald-700">{fmt(effTotal + extra)} ฿</span>
+              </div>
             </div>
-          )}
-          {(lead.install_extra_cost || 0) > 0 && (
-            <div className="flex justify-between text-sm">
-              <span className="text-gray-500">{lead.install_extra_note || "ค่าใช้จ่ายเพิ่มเติม"}</span>
-              <span className="font-mono text-gray-800">+{fmt(lead.install_extra_cost || 0)} ฿</span>
-            </div>
-          )}
-          <div className="flex justify-between text-base font-bold border-t-2 border-gray-300 pt-2 mt-1">
-            <span className="text-gray-900">มูลค่างานรวม</span>
-            <span className="font-mono text-emerald-700">{fmt(orderTotal + (lead.install_extra_cost || 0))} ฿</span>
-          </div>
-        </div>
+          );
+        })()}
       </DoneSection>
 
       {/* Slip */}
@@ -488,6 +526,26 @@ export default function InstallStep({ lead, state, refresh, expanded, onToggle }
                 : "ส่งยืนยันทาง LINE อีกครั้ง"}
             </button>
           )}
+          {checklistUrl && (() => {
+            // Per-customer download filename — `download` attribute is honored
+            // because /api/files/* is same-origin and sets no Content-Disposition.
+            const safe = (lead.full_name || `lead_${lead.id}`).replace(/[\\/:*?"<>|]/g, "_").trim();
+            const downloadName = `เอกสารขอขนานไฟ_${safe}.pdf`;
+            return (
+              <a
+                href={checklistUrl}
+                target="_blank"
+                rel="noopener noreferrer"
+                download={downloadName}
+                className="w-full h-10 rounded-lg text-xs font-semibold text-gray-700 border border-gray-200 hover:bg-gray-50 transition-colors flex items-center justify-center gap-1.5"
+              >
+                <svg className="w-4 h-4 text-red-500" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M19.5 14.25v-2.625a3.375 3.375 0 00-3.375-3.375h-1.5A1.125 1.125 0 0113.5 7.125v-1.5a3.375 3.375 0 00-3.375-3.375H8.25m2.25 0H5.625c-.621 0-1.125.504-1.125 1.125v17.25c0 .621.504 1.125 1.125 1.125h12.75c.621 0 1.125-.504 1.125-1.125V11.25a9 9 0 00-9-9z" />
+                </svg>
+                ดาวน์โหลด checklist เอกสารขอขนานไฟ
+              </a>
+            );
+          })()}
         </div>
       )}
 
@@ -496,25 +554,72 @@ export default function InstallStep({ lead, state, refresh, expanded, onToggle }
         <div className="space-y-3">
           <div>
             <label className="text-xs font-semibold tracking-wider uppercase text-gray-400 block mb-2">ภาพส่งมอบ</label>
-            <div className="grid grid-cols-3 md:grid-cols-4 gap-2 mb-2">
-              {photos.map((url, i) => (
-                <div key={i} className="relative">
-                  <FallbackImage
-                    src={url}
-                    alt=""
-                    className="w-full aspect-square object-cover rounded-lg border border-gray-200"
-                    gallery={photos.map((u, idx) => ({ url: u, label: `รูปติดตั้ง ${idx + 1} / ${photos.length}` }))}
-                    galleryIndex={i}
-                  />
-                  <button onClick={(e) => { e.stopPropagation(); removePhoto(i); }} className="absolute top-1 right-1 w-6 h-6 bg-black/50 rounded-full text-white flex items-center justify-center text-xs z-10" style={{ minHeight: 0 }}>✕</button>
+            {/* Single drop zone wraps the thumbs and an inline add-tile.
+                Dragging into the bordered area drops files; the add-tile is the
+                click target for the file picker. Same input handler in both. */}
+            {/* Single drop zone. Empty → centered prompt fills the box; filled
+                → grid with a compact "+" tile at the end. Drop anywhere uploads. */}
+            <div
+              onDragEnter={(e) => { e.preventDefault(); e.stopPropagation(); setDragActive(true); }}
+              onDragOver={(e) => { e.preventDefault(); e.stopPropagation(); if (!dragActive) setDragActive(true); }}
+              onDragLeave={(e) => { e.preventDefault(); e.stopPropagation(); setDragActive(false); }}
+              onDrop={async (e) => {
+                e.preventDefault(); e.stopPropagation();
+                setDragActive(false);
+                const dropped = Array.from(e.dataTransfer.files || []).filter(f => f.type.startsWith("image/"));
+                if (dropped.length) await uploadPhotos(dropped);
+              }}
+              className={`rounded-lg border-2 border-dashed transition-colors ${dragActive ? "border-primary bg-primary/5" : "border-gray-300"}`}
+            >
+              {photos.length === 0 ? (
+                <label className={`flex flex-col items-center justify-center gap-2 px-4 py-12 min-h-[160px] cursor-pointer transition-colors ${dragActive ? "text-primary" : "text-gray-500 hover:text-primary"}`}>
+                  {uploading ? (
+                    <div className="w-8 h-8 border-2 border-current/30 border-t-current rounded-full animate-spin" />
+                  ) : (
+                    <>
+                      <svg className="w-10 h-10" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}><path strokeLinecap="round" strokeLinejoin="round" d="M12 16.5V9.75m0 0l3 3m-3-3l-3 3M6.75 19.5a4.5 4.5 0 01-1.41-8.775 5.25 5.25 0 0110.233-2.33 3 3 0 013.758 3.848A3.752 3.752 0 0118 19.5H6.75z" /></svg>
+                      <span className="text-sm font-semibold">
+                        {dragActive ? "ปล่อยเพื่ออัพโหลด" : "ลากรูปมาวาง หรือคลิกเพื่อเลือก"}
+                      </span>
+                    </>
+                  )}
+                  <input type="file" accept="image/*" multiple className="hidden" onChange={async e => {
+                    const input = e.target;
+                    if (!input.files?.length) return;
+                    await uploadPhotos(Array.from(input.files));
+                    input.value = "";
+                  }} />
+                </label>
+              ) : (
+                <div className="p-3 grid grid-cols-2 md:grid-cols-6 lg:grid-cols-8 gap-2">
+                  {photos.map((url, i) => (
+                    <div key={i} className="relative">
+                      <FallbackImage
+                        src={url}
+                        alt=""
+                        className="w-full aspect-square object-cover rounded-lg border border-gray-200"
+                        gallery={photos.map((u, idx) => ({ url: u, label: `รูปติดตั้ง ${idx + 1} / ${photos.length}` }))}
+                        galleryIndex={i}
+                      />
+                      <button onClick={(e) => { e.stopPropagation(); removePhoto(i); }} className="absolute top-1 right-1 w-6 h-6 bg-black/50 rounded-full text-white flex items-center justify-center text-xs z-10" style={{ minHeight: 0 }}>✕</button>
+                    </div>
+                  ))}
+                  <label className={`relative aspect-square flex items-center justify-center rounded-lg border-2 border-dashed cursor-pointer transition-colors ${dragActive ? "border-primary text-primary" : "border-gray-300 text-gray-400 hover:border-primary hover:text-primary"}`} title="เพิ่มรูป">
+                    {uploading ? (
+                      <div className="w-6 h-6 border-2 border-current/30 border-t-current rounded-full animate-spin" />
+                    ) : (
+                      <svg className="w-8 h-8" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}><path strokeLinecap="round" strokeLinejoin="round" d="M12 4.5v15m7.5-7.5h-15" /></svg>
+                    )}
+                    <input type="file" accept="image/*" multiple className="hidden" onChange={async e => {
+                      const input = e.target;
+                      if (!input.files?.length) return;
+                      await uploadPhotos(Array.from(input.files));
+                      input.value = "";
+                    }} />
+                  </label>
                 </div>
-              ))}
+              )}
             </div>
-            <label className="flex items-center justify-center gap-2 px-4 py-3 rounded-lg border-2 border-dashed border-gray-300 hover:border-primary cursor-pointer transition-colors">
-              <svg className="w-5 h-5 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M6.827 6.175A2.31 2.31 0 015.186 7.23c-.38.054-.757.112-1.134.175C2.999 7.58 2.25 8.507 2.25 9.574V18a2.25 2.25 0 002.25 2.25h15A2.25 2.25 0 0021.75 18V9.574c0-1.067-.75-1.994-1.802-2.169a47.865 47.865 0 00-1.134-.175 2.31 2.31 0 01-1.64-1.055l-.822-1.316a2.192 2.192 0 00-1.736-1.039 48.774 48.774 0 00-5.232 0 2.192 2.192 0 00-1.736 1.039l-.821 1.316z" /><path strokeLinecap="round" strokeLinejoin="round" d="M16.5 12.75a4.5 4.5 0 11-9 0 4.5 4.5 0 019 0z" /></svg>
-              <span className="text-sm text-gray-500">{uploading ? "กำลังอัพโหลด..." : "ถ่ายรูป / เลือกรูป"}</span>
-              <input type="file" accept="image/*" multiple className="hidden" onChange={e => { if (e.target.files) Array.from(e.target.files).forEach(f => uploadPhoto(f)); }} />
-            </label>
           </div>
 
           <div>

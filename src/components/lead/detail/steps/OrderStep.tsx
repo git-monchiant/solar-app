@@ -399,13 +399,17 @@ export default function OrderStep({ lead, state, refresh, expanded, onToggle }: 
   };
 
   const doneTotal = lead.order_total || 0;
+  // Apply special discount (VIP / promo) before splitting into before/after
+  // installments — installments are computed off the discounted price, same
+  // as the edit view's `effTotal` / `netTotal`.
+  const doneDiscount = Math.min(doneTotal, lead.order_discount_amount || 0);
+  const doneEffTotal = Math.max(0, doneTotal - doneDiscount);
   const donePctBefore = lead.order_pct_before ?? 100;
   const donePctAfter = 100 - donePctBefore;
-  // Gross — do NOT pre-deduct deposit. Credit allocator below applies it.
   const doneAmtBefore = donePctBefore >= 100
-    ? doneTotal
-    : Math.round(doneTotal * donePctBefore / 100);
-  const doneAmtAfter = donePctAfter > 0 ? doneTotal - Math.round(doneTotal * donePctBefore / 100) : 0;
+    ? doneEffTotal
+    : Math.round(doneEffTotal * donePctBefore / 100);
+  const doneAmtAfter = donePctAfter > 0 ? doneEffTotal - Math.round(doneEffTotal * donePctBefore / 100) : 0;
   const doneDeposit = lead.pre_total_price || 0;
   const doneCreditAfter = Math.min(doneAmtAfter, doneDeposit);
   const doneCreditBefore = Math.min(doneAmtBefore, doneDeposit - doneCreditAfter);
@@ -421,6 +425,15 @@ export default function OrderStep({ lead, state, refresh, expanded, onToggle }: 
             <span className="text-gray-700 font-semibold">ยอดรวม</span>
             <span className="font-bold font-mono tabular-nums text-gray-900">{fmt(doneTotal)} บาท</span>
           </div>
+          {doneDiscount > 0 && (
+            <div className="flex justify-between text-xs">
+              <span className="text-gray-400">
+                ส่วนลด{lead.order_discount_pct ? ` ${lead.order_discount_pct}%` : ""}
+                {lead.order_discount_note ? ` · ${lead.order_discount_note}` : ""}
+              </span>
+              <span className="font-mono tabular-nums text-gray-400">-{fmt(doneDiscount)} บาท</span>
+            </div>
+          )}
           <div className="flex justify-between text-xs">
             <span className="text-gray-400">ชำระก่อนติดตั้ง {donePctBefore}%</span>
             <span className="font-mono tabular-nums text-gray-400">{fmt(doneAmtBefore)} บาท</span>

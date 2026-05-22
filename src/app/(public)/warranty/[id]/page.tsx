@@ -37,6 +37,8 @@ interface Data {
     warranty_battery_brand: string | null;
     warranty_battery_kwh: number | null;
     warranty_has_battery: boolean | null;
+    warranty_batteries: string | null;
+    warranty_panel_serials: string | null;
   };
   package: Pkg | null;
   signer: { full_name: string; signature_url: string | null } | null;
@@ -83,6 +85,24 @@ export default function WarrantyPage() {
   const battKwh = lead.warranty_battery_kwh ?? pkg?.battery_kwh ?? null;
   const hasBattery = lead.warranty_has_battery ?? !!pkg?.has_battery;
 
+  // Parse battery / panel serial arrays (JSON columns). Falls back to empty
+  // on parse error so the doc still renders for legacy leads without these
+  // fields populated.
+  const batteryList: Array<{ brand: string | null; kwh: number | null; serial: string | null }> = (() => {
+    try {
+      const parsed = lead.warranty_batteries ? JSON.parse(lead.warranty_batteries) : [];
+      return Array.isArray(parsed)
+        ? parsed.filter((b: { brand?: string | null; kwh?: number | null; serial?: string | null }) => b && (b.brand || b.kwh != null || b.serial))
+        : [];
+    } catch { return []; }
+  })();
+  const panelSerials: string[] = (() => {
+    try {
+      const parsed = lead.warranty_panel_serials ? JSON.parse(lead.warranty_panel_serials) : [];
+      return Array.isArray(parsed) ? parsed.filter((s: unknown): s is string => typeof s === "string" && s.trim().length > 0) : [];
+    } catch { return []; }
+  })();
+
   const defaultDocNo = `SSE${new Date().getFullYear().toString().slice(-2)}${String(lead.id).padStart(4, "0")}`;
   const docNo = lead.warranty_doc_no || defaultDocNo;
   const sizeSpec = sysKwp != null ? `${sysKwp} kWp` : "—";
@@ -107,7 +127,7 @@ export default function WarrantyPage() {
         .warranty-body ol, .warranty-body ul { break-inside: avoid; page-break-inside: avoid; }
         .avoid-break { break-inside: avoid; page-break-inside: avoid; }
       `}</style>
-      <div className="warranty-body mx-auto bg-white shadow-xl print:shadow-none text-[12px] text-gray-900" style={{ width: "210mm", minHeight: "297mm", fontFamily: "'Sarabun', 'Noto Sans Thai', system-ui, sans-serif" }} id="warranty">
+      <div className="warranty-body mx-auto bg-white shadow-xl print:shadow-none text-[14px] text-gray-900" style={{ width: "210mm", minHeight: "297mm" }} id="warranty">
         <table className="doc">
           <thead>
             <tr>
@@ -115,13 +135,13 @@ export default function WarrantyPage() {
                 <div className="strip-header bg-primary text-white px-5 py-4">
                   <div className="flex items-start justify-between gap-3">
                     <div className="min-w-0">
-                      <div className="font-bold text-[16px] leading-tight tracking-wide">{CO.name}</div>
-                      <div className="text-[11px] opacity-90 leading-snug mt-1">{CO.address}</div>
-                      <div className="text-[11px] opacity-90 leading-snug">TAX ID: {CO.taxId} · TEL: {CO.phone}</div>
+                      <div className="font-bold text-[18px] leading-tight tracking-wide">{CO.name}</div>
+                      <div className="text-[13px] opacity-90 leading-snug mt-1">{CO.address}</div>
+                      <div className="text-[13px] opacity-90 leading-snug">TAX ID: {CO.taxId} · TEL: {CO.phone}</div>
                     </div>
                     <div className="text-right shrink-0">
-                      <div className="text-[10px] uppercase tracking-wider opacity-80 leading-tight">Warranty Certificate</div>
-                      <div className="text-[16px] font-bold leading-tight mt-0.5">หนังสือรับประกัน</div>
+                      <div className="text-[12px] uppercase tracking-wider opacity-80 leading-tight">Warranty Certificate</div>
+                      <div className="text-[18px] font-bold leading-tight mt-0.5">หนังสือรับประกัน</div>
                     </div>
                   </div>
                 </div>
@@ -135,15 +155,15 @@ export default function WarrantyPage() {
               <td>
                 {/* Ref + Date */}
                 <div className="tbody-pull-up px-5 py-2.5 flex justify-between items-center border-b border-gray-100">
-                  <span className="text-[12px] text-gray-500">DOCUMENT NO: <span className="text-gray-900 font-bold text-[18px] tracking-wider ml-1">{docNo}</span></span>
-                  <span className="text-[12px] text-gray-500">DATE: <span className="text-gray-800 font-semibold">{fmt(lead.warranty_issued_at || lead.warranty_start_date)}</span></span>
+                  <span className="text-[14px] text-gray-500">DOCUMENT NO: <span className="text-gray-900 font-bold text-[20px] tracking-wider ml-1">{docNo}</span></span>
+                  <span className="text-[14px] text-gray-500">DATE: <span className="text-gray-800 font-semibold">{fmt(lead.warranty_issued_at || lead.warranty_start_date)}</span></span>
                 </div>
 
                 {/* Body */}
                 <div className="px-5 py-4 flex flex-col gap-4 leading-[1.55]">
                   <div className="avoid-break">
-                    <div className="text-[10px] font-bold uppercase tracking-wider text-gray-400 mb-1.5">CUSTOMER INFORMATION</div>
-                    <div className="grid grid-cols-[70px_1fr] gap-y-1 text-[12px]">
+                    <div className="text-[12px] font-bold uppercase tracking-wider text-gray-400 mb-1.5">CUSTOMER INFORMATION</div>
+                    <div className="grid grid-cols-[70px_1fr] gap-y-1 text-[14px]">
                       <span className="text-gray-400">NAME</span><span className="text-gray-900 font-semibold">{lead.full_name}</span>
                       {lead.phone && (<><span className="text-gray-400">PHONE</span><span className="text-gray-800">{lead.phone}</span></>)}
                       {lead.project_name && (<><span className="text-gray-400">PROJECT</span><span className="text-gray-800">{lead.project_name}</span></>)}
@@ -153,7 +173,7 @@ export default function WarrantyPage() {
 
                   <div className="border border-gray-200 overflow-hidden avoid-break">
                     <div className="bg-gray-50 px-4 py-2.5 border-b border-gray-200">
-                      <div className="text-[10px] font-bold uppercase tracking-wider text-gray-400">ระบบผลิตไฟฟ้าพลังงานแสงอาทิตย์ (บนหลังคา)</div>
+                      <div className="text-[12px] font-bold uppercase tracking-wider text-gray-400">ระบบผลิตไฟฟ้าพลังงานแสงอาทิตย์ (บนหลังคา)</div>
                     </div>
                     <div className="px-4 py-3 grid grid-cols-2 gap-x-4 gap-y-2">
                       <Spec label="SYSTEM SIZE" value={sizeSpec} />
@@ -164,14 +184,58 @@ export default function WarrantyPage() {
                       <Spec label="ON-SITE SERVICE" value="ล้างแผง / ตรวจเช็คระบบ 4 ครั้ง / 2 ปี" />
                     </div>
                     <div className="px-4 py-3 bg-active-light/30 flex items-end justify-between border-t border-gray-200">
-                      <div className="text-[11px] uppercase tracking-wider text-gray-500">WARRANTY PERIOD · ระยะเวลารับประกันการติดตั้ง 2 ปี</div>
-                      <div className="text-[13px] font-bold text-gray-900">
+                      <div className="text-[13px] uppercase tracking-wider text-gray-500">WARRANTY PERIOD · ระยะเวลารับประกันการติดตั้ง 2 ปี</div>
+                      <div className="text-[15px] font-bold text-gray-900">
                         {fmtLong(lead.warranty_start_date)} <span className="text-gray-400 mx-1">—</span> {fmtLong(lead.warranty_end_date)}
                       </div>
                     </div>
                   </div>
 
-                  <p className="text-[12px] indent-6">
+                  {hasBattery && batteryList.length > 0 && (
+                    <div className="border border-gray-200 overflow-hidden avoid-break">
+                      <div className="bg-gray-50 px-4 py-2 border-b border-gray-200 flex items-center justify-between">
+                        <div className="text-[12px] font-bold uppercase tracking-wider text-gray-400">รายละเอียดแบตเตอรี่ · BATTERY MODULES</div>
+                        <div className="text-[11px] text-gray-500 tabular-nums">{batteryList.length} ก้อน</div>
+                      </div>
+                      <div className="px-4 py-3 grid grid-cols-2 gap-x-6 gap-y-2 text-[12px]">
+                        {batteryList.map((b, i) => (
+                          <div key={i} className="flex gap-2">
+                            <span className="text-gray-400 tabular-nums w-6 text-right shrink-0 font-mono">{i + 1}.</span>
+                            <div className="min-w-0 flex-1">
+                              <div className="font-mono text-gray-800 break-all">{b.serial || "—"}</div>
+                              {(b.brand || b.kwh != null) && (
+                                <div className="text-gray-400 text-[11px]">{b.brand || ""}{b.brand && b.kwh != null ? " · " : ""}{b.kwh != null ? `${b.kwh} kWh` : ""}</div>
+                              )}
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+
+                  {panelSerials.length > 0 && (
+                    <div className="border border-gray-200 overflow-hidden avoid-break">
+                      <div className="bg-gray-50 px-4 py-2 border-b border-gray-200 flex items-center justify-between">
+                        <div className="text-[12px] font-bold uppercase tracking-wider text-gray-400">รายการ Serial แผงโซลาร์ · PANEL SERIAL NUMBERS</div>
+                        <div className="text-[11px] text-gray-500 tabular-nums">{panelSerials.length} แผง</div>
+                      </div>
+                      {/* Column-major flow: fill col 1 fully top-to-bottom, then col 2.
+                          Dynamic row count = ceil(total / 2) so any panel count works. */}
+                      <div
+                        className="px-4 py-3 grid grid-cols-2 grid-flow-col gap-x-6 gap-y-1 text-[12px] font-mono"
+                        style={{ gridTemplateRows: `repeat(${Math.ceil(panelSerials.length / 2)}, auto)` }}
+                      >
+                        {panelSerials.map((s, i) => (
+                          <div key={i} className="flex gap-2">
+                            <span className="text-gray-400 tabular-nums w-6 text-right shrink-0">{i + 1}.</span>
+                            <span className="text-gray-800 break-all">{s}</span>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+
+                  <p className="text-[14px] indent-6">
                     <strong>{CO.nameTh}</strong> ("บริษัทฯ") ขอรับรองการติดตั้งระบบผลิตไฟฟ้าพลังงานแสงอาทิตย์ให้แก่ลูกค้า ภายใต้เงื่อนไขดังต่อไปนี้
                   </p>
 
@@ -246,7 +310,7 @@ export default function WarrantyPage() {
                     <p className="mt-1.5 indent-6">ทั้งนี้ สินค้าทุกประเภทที่อยู่ในระยะเวลารับประกันแต่อยู่นอกเงื่อนไขการรับประกัน หากลูกค้าประสงค์ให้บริษัทฯ ซ่อมแซม บริษัทฯ มีบริการรับซ่อมโดยเรียกเก็บค่าบริการตามอัตราที่บริษัทฯ กำหนด</p>
                   </Section>
 
-                  <p className="text-[11px] text-gray-600 indent-6">
+                  <p className="text-[13px] text-gray-600 indent-6">
                     เอกสารนี้ทำขึ้น 2 ฉบับ มีข้อความถูกต้องตรงกัน ทั้งสองฝ่ายได้อ่านและยอมรับเงื่อนไขข้างต้นแล้ว จึงได้ลงรายมือชื่อไว้เป็นสำคัญ
                   </p>
 
@@ -262,7 +326,7 @@ export default function WarrantyPage() {
           <tfoot>
             <tr>
               <td>
-                <div className="strip-footer bg-gray-50 border-t border-gray-100 px-5 py-2 text-[11px] text-gray-500 text-center">
+                <div className="strip-footer bg-gray-50 border-t border-gray-100 px-5 py-2 text-[13px] text-gray-500 text-center">
                   การให้บริการด้านเทคนิค ติดต่อ โทร. {CO.phone} · สายด่วน {CO.hotline} · {CO.email}
                 </div>
               </td>
@@ -277,8 +341,8 @@ export default function WarrantyPage() {
 function Spec({ label, value }: { label: string; value: string }) {
   return (
     <div>
-      <div className="text-[10px] font-bold uppercase tracking-wider text-gray-400 leading-tight">{label}</div>
-      <div className="text-[12px] font-semibold text-gray-800">{value}</div>
+      <div className="text-[12px] font-bold uppercase tracking-wider text-gray-400 leading-tight">{label}</div>
+      <div className="text-[14px] font-semibold text-gray-800">{value}</div>
     </div>
   );
 }
@@ -286,7 +350,7 @@ function Spec({ label, value }: { label: string; value: string }) {
 function Section({ title, children, avoidBreak = true }: { title: string; children: React.ReactNode; avoidBreak?: boolean }) {
   return (
     <div className={`${avoidBreak ? "avoid-break" : ""}`}>
-      <h2 className="text-[13px] font-bold text-gray-900 border-l-4 border-primary pl-2 mb-1">{title}</h2>
+      <h2 className="text-[15px] font-bold text-gray-900 border-l-4 border-primary pl-2 mb-1">{title}</h2>
       <div>{children}</div>
     </div>
   );
@@ -300,8 +364,8 @@ function SignatureBox({ label, name, signatureUrl }: { label: string; name: stri
           <img src={signatureUrl} alt="signature" className="max-h-[55px] max-w-full object-contain" />
         )}
       </div>
-      <div className="text-[11px] border-t border-gray-400 pt-1">( {name || "…………………………………………"} )</div>
-      <div className="text-[10px] text-gray-500 mt-0.5">{label}</div>
+      <div className="text-[13px] border-t border-gray-400 pt-1">( {name || "…………………………………………"} )</div>
+      <div className="text-[12px] text-gray-500 mt-0.5">{label}</div>
     </div>
   );
 }

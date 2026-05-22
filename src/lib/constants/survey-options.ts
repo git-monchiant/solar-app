@@ -51,6 +51,15 @@ export const INVERTER_LOCATION_LABEL: Record<string, string> = {
   outdoor: "นอกอาคาร",
 };
 
+// ยี่ห้ออินเวอร์เตอร์ที่บริษัทใช้ติดตั้ง — เก็บเป็นชื่อยี่ห้อตรงๆ ใน DB
+// (ไม่ใช้ short code) ใช้สำหรับ dropdown ใน Warranty / Package
+export const INVERTER_BRANDS = ["DEYE", "Huawei"] as const;
+export type InverterBrand = (typeof INVERTER_BRANDS)[number];
+
+// ขนาดอินเวอร์เตอร์ (kW) ที่บริษัทมีให้เลือก
+export const INVERTER_KW_SIZES = [3, 5, 7, 10] as const;
+export type InverterKwSize = (typeof INVERTER_KW_SIZES)[number];
+
 export const WIFI_LABEL: Record<string, string> = {
   good: "ดีมาก",
   fair: "พอใช้",
