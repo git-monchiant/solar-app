@@ -30,6 +30,7 @@ interface Row {
   order_installments: string | null;
   order_paid_count: number | null;
   order_total: number | null;
+  payment_followup_date: string | null;
   install_date: string | null;
   install_started_at: string | null;
   install_done_at: string | null;
@@ -46,7 +47,7 @@ const STATE_KEY: Record<string, keyof Row | undefined> = {
 
 type ColKey = "created_at" | "first_contact_at" | "contact2_at" | "contact3_at" | "contact4_at" | "contact5_at"
   | "sales_pitch_at" | "booking_paid_at" | "survey_date" | "survey_done_at" | "quote_issued_at"
-  | "order_paid_at" | "deposit_pct" | "install_date" | "install_started_at" | "install_done_at" | "warranty_at";
+  | "order_paid_at" | "deposit_pct" | "payment_followup_date" | "install_date" | "install_started_at" | "install_done_at" | "warranty_at";
 
 // % เงินมัดจำ — งวดแรกใน order_installments (down payment). null = ยังไม่มีแผนงวด.
 function depositPct(raw: string | null | undefined): number | null {
@@ -99,6 +100,7 @@ const GROUPS: { title: string; tone: string; cols: { key: ColKey; label: string 
       { key: "quote_issued_at", label: "ใบเสนอราคา" },
       { key: "order_paid_at", label: "ชำระมัดจำ" },
       { key: "deposit_pct", label: "% มัดจำ" },
+      { key: "payment_followup_date", label: "นัดติดตามชำระ" },
     ],
   },
   {
@@ -133,6 +135,7 @@ const ALL_COLS: ColKey[] = ["created_at", "first_contact_at",
   "contact2_at", "contact3_at", "contact4_at", "contact5_at",
   "sales_pitch_at", "booking_paid_at",
   "survey_date", "survey_done_at", "quote_issued_at", "order_paid_at",
+  "payment_followup_date",
   "install_date", "install_started_at", "install_done_at", "warranty_at"];
 
 const emptyTri = (): Record<ColKey, Tri> => Object.fromEntries(ALL_COLS.map(k => [k, "any"])) as Record<ColKey, Tri>;
@@ -181,8 +184,11 @@ export default function LifecyclePage() {
     if (to)   out = out.filter(r => r.created_at && r.created_at.slice(0, 10) <= to);
     for (const k of ALL_COLS) {
       const t = tri[k];
-      if (t === "yes") out = out.filter(r => !!r[k]);
-      else if (t === "no") out = out.filter(r => !r[k]);
+      // ALL_COLS only lists real date fields on Row; deposit_pct (a derived
+      // column) is excluded, so the cast is safe.
+      const val = (r: Row) => (r as unknown as Record<string, unknown>)[k];
+      if (t === "yes") out = out.filter(r => !!val(r));
+      else if (t === "no") out = out.filter(r => !val(r));
     }
     return out;
   }, [rows, q, statusSel, from, to, tri]);
@@ -231,7 +237,7 @@ export default function LifecyclePage() {
       { title: "ลีด", cols: 6 },
       { title: "การติดต่อ", cols: 6 },
       { title: "Pre-Survey / Survey", cols: 3 },
-      { title: "Quote / Order", cols: 5 },
+      { title: "Quote / Order", cols: 6 },
       { title: "ติดตั้ง / รับประกัน", cols: 4 },
     ];
     const totalCols = groupSpec.reduce((s, g) => s + g.cols, 0);
@@ -244,7 +250,7 @@ export default function LifecyclePage() {
       "#", "บ้านเลขที่", "ชื่อ", "สถานะ", "วันสร้าง", "Aging",
       "ครั้งที่ 1", "ครั้งที่ 2", "ครั้งที่ 3", "ครั้งที่ 4", "ครั้งที่ 5", "เสนอขาย",
       "จองสำรวจ", "นัดสำรวจ", "สำรวจเสร็จ",
-      "ออกใบเสนอราคา", "จ่ายมัดจำ/ทั้งหมด", "เงินมัดจำ", "% มัดจำ", "ยอดรวม",
+      "ออกใบเสนอราคา", "จ่ายมัดจำ/ทั้งหมด", "เงินมัดจำ", "% มัดจำ", "ยอดรวม", "นัดติดตามชำระ",
       "นัดติดตั้ง", "เริ่มติดตั้ง", "ติดตั้งเสร็จ", "ออกใบรับประกัน",
     ];
     const dataCells: (CellInfo | { v: string | number })[][] = filtered.map((r, i) => [
@@ -271,6 +277,7 @@ export default function LifecyclePage() {
       (() => { const p = depositPct(r.order_installments); return { v: p != null && r.order_total ? Math.round((r.order_total * p) / 100) : "" }; })(),
       (() => { const p = depositPct(r.order_installments); return { v: p != null ? p : "" }; })(),
       { v: r.order_total ?? "" },
+      fmt(r.payment_followup_date),
       fmt(r.install_date),
       fmt(r.install_started_at),
       fmt(r.install_done_at),
@@ -356,7 +363,7 @@ export default function LifecyclePage() {
       { wch: 4 }, { wch: 10 }, { wch: 24 }, { wch: 14 }, { wch: 14 }, { wch: 8 },
       { wch: 16 }, { wch: 16 }, { wch: 16 }, { wch: 16 }, { wch: 16 }, { wch: 14 },
       { wch: 14 }, { wch: 14 }, { wch: 14 },
-      { wch: 18 }, { wch: 20 }, { wch: 14 }, { wch: 10 }, { wch: 14 },
+      { wch: 18 }, { wch: 20 }, { wch: 14 }, { wch: 10 }, { wch: 14 }, { wch: 14 },
       { wch: 14 }, { wch: 14 }, { wch: 14 }, { wch: 18 },
     ];
     ws["!rows"] = [{ hpt: 24 }, { hpt: 30 }];

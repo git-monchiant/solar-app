@@ -87,6 +87,7 @@ export async function GET(req: NextRequest) {
         l.lost_reason,
         l.order_installments,
         l.order_total,
+        l.payment_followup_date,
         (SELECT COUNT(*) FROM payments
           WHERE lead_id = l.id AND slip_field LIKE 'order_installment_%' AND confirmed_at IS NOT NULL) AS order_paid_count,
         l.install_completed_at AS install_done_at,
