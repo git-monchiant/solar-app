@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useActiveRoles, useMe, hasRole, Role } from "@/lib/roles";
 import LogoSolarPanel from "@/components/brand/LogoSolarPanel";
 
@@ -28,7 +28,7 @@ const navItems: NavItem[] = [
   {
     href: "/seeker/dashboard",
     label: "Insights",
-    roles: ["leadsseeker", "account"],
+    roles: ["leadsseeker"],
     group: "seeker",
     icon: <svg className="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M3 13.125C3 12.504 3.504 12 4.125 12h2.25c.621 0 1.125.504 1.125 1.125v6.75C7.5 20.496 6.996 21 6.375 21h-2.25A1.125 1.125 0 013 19.875v-6.75zM9.75 8.625c0-.621.504-1.125 1.125-1.125h2.25c.621 0 1.125.504 1.125 1.125v11.25c0 .621-.504 1.125-1.125 1.125h-2.25a1.125 1.125 0 01-1.125-1.125V8.625zM16.5 4.125c0-.621.504-1.125 1.125-1.125h2.25C20.496 3 21 3.504 21 4.125v15.75c0 .621-.504 1.125-1.125 1.125h-2.25a1.125 1.125 0 01-1.125-1.125V4.125z" /></svg>,
   },
@@ -43,7 +43,8 @@ const navItems: NavItem[] = [
   {
     href: "/today",
     label: "Today",
-    icon: <svg className="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M2.25 12l8.954-8.955c.44-.439 1.152-.439 1.591 0L21.75 12M4.5 9.75v10.125c0 .621.504 1.125 1.125 1.125H9.75v-4.875c0-.621.504-1.125 1.125-1.125h2.25c.621 0 1.125.504 1.125 1.125V21h4.125c.621 0 1.125-.504 1.125-1.125V9.75M8.25 21h8.25" /></svg>,
+    roles: ["admin", "account", "sales", "solar", "smartify"],
+    icon: <svg className="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M6.75 3v2.25M17.25 3v2.25M3 18.75V7.5a2.25 2.25 0 012.25-2.25h13.5A2.25 2.25 0 0121 7.5v11.25m-18 0A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75m-18 0v-7.5A2.25 2.25 0 015.25 9h13.5A2.25 2.25 0 0121 11.25v7.5" /></svg>,
   },
   {
     href: "/pipeline",
@@ -51,8 +52,15 @@ const navItems: NavItem[] = [
     icon: <svg className="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M3.75 12h16.5m-16.5 3.75h16.5M3.75 19.5h16.5M5.625 4.5h12.75a1.875 1.875 0 010 3.75H5.625a1.875 1.875 0 010-3.75z" /></svg>,
   },
   {
+    href: "/report/pending",
+    label: "Pending",
+    roles: ["admin", "account"],
+    icon: <svg className="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M9 12.75L11.25 15 15 9.75M21 12a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>,
+  },
+  {
     href: "/packages",
     label: "Packages",
+    roles: ["admin", "sales", "solar", "smartify", "leadsseeker"],
     icon: <svg className="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M12 3v2.25m6.364.386l-1.591 1.591M21 12h-2.25m-.386 6.364l-1.591-1.591M12 18.75V21m-4.773-4.227l-1.591 1.591M5.25 12H3m4.227-4.773L5.636 5.636M15.75 12a3.75 3.75 0 11-7.5 0 3.75 3.75 0 017.5 0z" /></svg>,
   },
   {
@@ -99,7 +107,33 @@ export default function BottomNav({ collapsed = false, onToggle }: BottomNavProp
     if (seekerMode) return item.href === "/seeker" || item.href === "/seeker/dashboard" || item.href === "/seeker/map" || item.href === "/packages" || item.href === "/profile";
     return !item.roles || hasRole(activeRoles, ...item.roles);
   });
-  const visibleMobile = visibleItems.filter((i) => !i.desktopOnly);
+  // Admin mobile nav is a curated 4-item bar — same icons we show in the
+  // desktop "Settings" admin group, surfaced as primary nav on phone since
+  // admin's day is mostly user/payment/settings ops, not pipeline browsing.
+  const isAdminActive = hasRole(activeRoles, "admin");
+  const adminMobileItems: NavItem[] = isAdminActive ? [
+    {
+      href: "/pipeline",
+      label: "Pipeline",
+      icon: <svg className="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M3.75 12h16.5m-16.5 3.75h16.5M3.75 19.5h16.5M5.625 4.5h12.75a1.875 1.875 0 010 3.75H5.625a1.875 1.875 0 010-3.75z" /></svg>,
+    },
+    {
+      href: "/app-users",
+      label: "App Users",
+      icon: <svg className="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M15 19.128a9.38 9.38 0 002.625.372 9.337 9.337 0 004.121-.952 4.125 4.125 0 00-7.533-2.493M15 19.128v-.003c0-1.113-.285-2.16-.786-3.07M15 19.128v.106A12.318 12.318 0 018.624 21c-2.331 0-4.512-.645-6.374-1.766l-.001-.109a6.375 6.375 0 0111.964-3.07M12 6.375a3.375 3.375 0 11-6.75 0 3.375 3.375 0 016.75 0zm8.25 2.25a2.625 2.625 0 11-5.25 0 2.625 2.625 0 015.25 0z" /></svg>,
+    },
+    {
+      href: "/settings",
+      label: "Settings",
+      icon: <svg className="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M9.594 3.94c.09-.542.56-.94 1.11-.94h2.593c.55 0 1.02.398 1.11.94l.213 1.281c.063.374.313.686.645.87.074.04.147.083.22.127.325.196.72.257 1.075.124l1.217-.456a1.125 1.125 0 011.37.49l1.296 2.247a1.125 1.125 0 01-.26 1.431l-1.003.827c-.293.241-.438.613-.43.992a7.723 7.723 0 010 .255c-.008.378.137.75.43.991l1.004.827c.424.35.534.955.26 1.43l-1.298 2.247a1.125 1.125 0 01-1.369.491l-1.217-.456c-.355-.133-.75-.072-1.076.124a6.47 6.47 0 01-.22.128c-.331.183-.581.495-.644.869l-.213 1.281c-.09.543-.56.941-1.11.941h-2.594c-.55 0-1.019-.398-1.11-.94l-.213-1.281c-.062-.374-.312-.686-.644-.87a6.52 6.52 0 01-.22-.127c-.325-.196-.72-.257-1.076-.124l-1.217.456a1.125 1.125 0 01-1.369-.49l-1.297-2.247a1.125 1.125 0 01.26-1.431l1.004-.827c.292-.24.437-.613.43-.991a6.932 6.932 0 010-.255c.007-.38-.138-.751-.43-.992l-1.004-.827a1.125 1.125 0 01-.26-1.43l1.297-2.247a1.125 1.125 0 011.37-.491l1.216.456c.356.133.751.072 1.076-.124.072-.044.146-.087.22-.128.332-.183.582-.495.644-.869l.214-1.28z" /><path strokeLinecap="round" strokeLinejoin="round" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" /></svg>,
+    },
+    {
+      href: "/profile",
+      label: "Me",
+      icon: <svg className="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M17.982 18.725A7.488 7.488 0 0012 15.75a7.488 7.488 0 00-5.982 2.975m11.963 0a9 9 0 10-11.963 0m11.963 0A8.966 8.966 0 0112 21a8.966 8.966 0 01-5.982-2.275M15 9.75a3 3 0 11-6 0 3 3 0 016 0z" /></svg>,
+    },
+  ] : [];
+  const visibleMobile = isAdminActive ? adminMobileItems : visibleItems.filter((i) => !i.desktopOnly);
 
   return (
     <>
@@ -272,8 +306,34 @@ const ADMIN_GROUPS: { title: string; links: AdminLink[] }[] = [
   },
 ];
 
+// Groups whose section header can be clicked to collapse the link list.
+// "Settings" stays always-open since it's the catch-all admin area.
+const COLLAPSIBLE_GROUPS = new Set(["Reports", "Accounting"]);
+
 function AdminGroups({ pathname, activeRoles, username, collapsed, onHover, onHoverEnd }: { pathname: string; activeRoles: Role[]; username: string | null; collapsed?: boolean; onHover: (e: React.MouseEvent<HTMLElement>, label: string, href: string) => void; onHoverEnd: () => void }) {
   const isAdmin = hasRole(activeRoles, "admin");
+  // Persisted per-group collapse state. Key = group title.
+  const [foldedGroups, setFoldedGroups] = useState<Set<string>>(new Set());
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    try {
+      const raw = localStorage.getItem("admin_nav_folded");
+      if (raw) {
+        const arr = JSON.parse(raw);
+        if (Array.isArray(arr)) setFoldedGroups(new Set(arr.filter((x): x is string => typeof x === "string")));
+      }
+    } catch { /* ignore */ }
+  }, []);
+  const toggleGroup = (title: string) => {
+    setFoldedGroups(prev => {
+      const next = new Set(prev);
+      if (next.has(title)) next.delete(title); else next.add(title);
+      if (typeof window !== "undefined") {
+        localStorage.setItem("admin_nav_folded", JSON.stringify(Array.from(next)));
+      }
+      return next;
+    });
+  };
   return (
     <>
       {ADMIN_GROUPS.map((g, i) => {
@@ -282,12 +342,28 @@ function AdminGroups({ pathname, activeRoles, username, collapsed, onHover, onHo
           return isAdmin || (l.roles && hasRole(activeRoles, ...l.roles));
         });
         if (links.length === 0) return null;
+        const canCollapse = !collapsed && COLLAPSIBLE_GROUPS.has(g.title);
+        const folded = canCollapse && foldedGroups.has(g.title);
         return (
           <div key={g.title} className={i === 0 ? "pt-2 mt-2 border-t border-gray-100" : "pt-2 mt-2"}>
             {!collapsed && (
-              <div className="px-3 pb-0.5 text-xxs font-bold uppercase tracking-widest text-gray-400">{g.title}</div>
+              canCollapse ? (
+                <button
+                  type="button"
+                  onClick={() => toggleGroup(g.title)}
+                  className="w-full flex items-center justify-between px-3 pb-0.5 text-xxs font-bold uppercase tracking-widest text-gray-400 hover:text-gray-600 transition-colors"
+                  aria-expanded={!folded}
+                >
+                  <span>{g.title}</span>
+                  <svg className={`w-3 h-3 transition-transform ${folded ? "" : "rotate-90"}`} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M9 5l7 7-7 7" />
+                  </svg>
+                </button>
+              ) : (
+                <div className="px-3 pb-0.5 text-xxs font-bold uppercase tracking-widest text-gray-400">{g.title}</div>
+              )
             )}
-            {links.map(l => {
+            {!folded && links.map(l => {
               const active =
                 l.href === "/packages/manage" ? pathname.startsWith("/packages/manage") :
                 l.href === "/report" ? pathname === "/report" :

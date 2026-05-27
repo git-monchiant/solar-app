@@ -18,14 +18,17 @@ export async function GET(req: NextRequest) {
              l.pre_booked_at, l.payment_confirmed,
              l.order_before_paid, l.order_after_paid,
              p.name as project_name, p.district, p.province,
-             pk.name as package_name, pk.kwp,
+             COALESCE(pk.name, pk2.name) as package_name,
+             COALESCE(pk.kwp, pk2.kwp) as kwp,
+             COALESCE(pk.price, pk2.price) as package_price,
              u.full_name as created_by_name
       FROM leads l
       LEFT JOIN projects p ON l.project_id = p.id
       LEFT JOIN packages pk ON l.pre_package_id = pk.id
+      LEFT JOIN packages pk2 ON l.interested_package_id = pk2.id
       LEFT JOIN users u ON l.assigned_user_id = u.id
-      WHERE l.pre_doc_no IS NOT NULL
-         OR EXISTS (SELECT 1 FROM payments p WHERE p.lead_id = l.id)
+      WHERE (l.pre_doc_no IS NOT NULL AND LTRIM(RTRIM(l.pre_doc_no)) <> '')
+         OR EXISTS (SELECT 1 FROM payments p WHERE p.lead_id = l.id AND p.confirmed_at IS NULL)
       ORDER BY l.pre_booked_at DESC, l.id DESC
     `);
 
@@ -122,7 +125,12 @@ export async function GET(req: NextRequest) {
     const rows = (fixDates(leadsRes.recordset) as typeof leadsRes.recordset).map((l) => {
       const orderTotal = Number(l.order_total || 0);
       const extra = Number(l.install_extra_cost || 0);
-      const preTotal = Number(l.pre_total_price || 0);
+      // Project total source-of-truth fallback chain:
+      //   1. Confirmed order_total + extras (after Order step)
+      //   2. Package price via pre_package_id (set at /book) or interested_package_id (UI selection)
+      //   3. Legacy lead.pre_total_price (only meaningful on old rows)
+      const packagePrice = Number(l.package_price || 0);
+      const preTotal = packagePrice > 0 ? packagePrice : Number(l.pre_total_price || 0);
       const total_value = orderTotal > 0 ? orderTotal + extra : preTotal;
       const installments = byLead.get(l.lead_id) || [];
       // Only confirmed payments count toward "received" — pending rows with

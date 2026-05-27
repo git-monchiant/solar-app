@@ -15,6 +15,7 @@ import FallbackImage from "@/components/ui/FallbackImage";
 import DocumentScanner from "@/components/customer/DocumentScanner";
 import StepLayout from "../StepLayout";
 import ReceiptButtons from "../ReceiptButtons";
+import ActualReceiptUpload from "../ActualReceiptUpload";
 import ReceiptModal from "../ReceiptModal";
 import { buildAppointmentFlex } from "@/lib/utils/line-flex";
 import { formatSlotsRange } from "@/lib/time-slots";
@@ -401,20 +402,21 @@ export default function PreSurveyStep({ lead, state, refresh, packages, expanded
     const residenceLabel = lead.pre_residence_type?.startsWith("other:") ? lead.pre_residence_type.slice(6) : RESIDENCE_TYPES.find(r => r.value === lead.pre_residence_type)?.label;
 
     const doneHeaderContent = (
-      <>
-        {lead.survey_date && (
-          <span className="text-sm font-bold text-gray-900 leading-tight flex-1">
-            <span className="block">นัด {new Date(String(lead.survey_date).slice(0, 10) + "T12:00:00").toLocaleDateString("th-TH", { weekday: "short", day: "numeric", month: "short", year: "numeric" })}</span>
+      <div className="flex-1 min-w-0 flex flex-col md:flex-row md:items-center gap-1.5 md:gap-2">
+        {lead.survey_date ? (
+          <span className="text-sm font-bold text-gray-900 leading-tight md:flex-1 md:truncate">
+            <span className="block md:inline">นัด {new Date(String(lead.survey_date).slice(0, 10) + "T12:00:00").toLocaleDateString("th-TH", { weekday: "short", day: "numeric", month: "short", year: "numeric" })}</span>
             {lead.survey_time_slot && (
-              <span className="block font-mono tabular-nums text-xs text-gray-500">
+              <span className="block md:inline md:ml-2 font-mono tabular-nums text-xs text-gray-500">
                 {formatSlotsRange(lead.survey_time_slot)}
               </span>
             )}
           </span>
+        ) : (
+          <span className="md:flex-1" />
         )}
-        {!lead.survey_date && <span className="flex-1" />}
         {hasReceipt && (
-          <div className="mr-4 flex items-center gap-3">
+          <div className="w-full md:w-auto md:mr-4 grid grid-cols-4 gap-2 md:flex md:items-center md:gap-3">
             {/* ใบยืนยันการจอง — show whenever a booking number exists. */}
             {lead.pre_doc_no && (
               <ReceiptButtons
@@ -429,13 +431,24 @@ export default function PreSurveyStep({ lead, state, refresh, packages, expanded
               />
             )}
             {/* ใบเสร็จ — only after accountant confirms (payment_confirmed=true,
-                i.e. status reached pre_survey-02). */}
-            {lead.payment_confirmed && (
+                i.e. status reached pre_survey-02). Hidden when a real scanned
+                receipt has been uploaded — the upload supersedes the PDF. */}
+            {lead.payment_confirmed && !lead.receipt_deposit_actual_url && (
               <ReceiptButtons leadId={lead.id} stage="deposit" fileLabel={lead.pre_doc_no || `lead_${lead.id}_deposit`} compact />
+            )}
+            {lead.payment_confirmed && (
+              <ActualReceiptUpload
+                leadId={lead.id}
+                field="receipt_deposit_actual_url"
+                url={lead.receipt_deposit_actual_url ?? null}
+                fileLabel={lead.pre_doc_no || `lead_${lead.id}_deposit`}
+                refresh={refresh}
+                compact
+              />
             )}
           </div>
         )}
-      </>
+      </div>
     );
 
     const renderDoneContent = () => (<>
@@ -612,25 +625,8 @@ export default function PreSurveyStep({ lead, state, refresh, packages, expanded
             </DoneSection>
           )}
 
-          {/* Action — only the receipt buttons once pre-survey is done.
-              Editable registration form no longer belongs here: the status
-              has already moved forward, so exposing inputs + "ยืนยันและเปิด
-              ขั้นสำรวจ" again is misleading. ID/project info is read-only
-              in the "ข้อมูลลูกค้าเพื่อออกใบเสร็จ" section above. */}
-          {hasReceipt && (
-            <div className="pt-3 border-t border-gray-100 grid grid-cols-2 gap-2">
-              <ReceiptButtons
-                leadId={lead.id}
-                stage="deposit"
-                fileLabel={`booking_${lead.pre_doc_no || lead.id}`}
-                title="BOOKING CONFIRMATION"
-                showSurvey
-                label="ใบยืนยันการจอง"
-                modalLabel="ใบยืนยันการจอง"
-              />
-              <ReceiptButtons leadId={lead.id} stage="deposit" fileLabel={lead.pre_doc_no || `lead_${lead.id}_deposit`} />
-            </div>
-          )}
+          {/* Receipt + actual receipt upload now live in the done-header (compact
+              icons) only. See doneHeader above. */}
         </>);
 
     return (<>

@@ -3,7 +3,7 @@
 import { useRouter, usePathname } from "next/navigation";
 import { useRef } from "react";
 
-const ORDER = ["/today", "/pipeline", "/packages", "/dashboard"];
+const ORDER = ["/pipeline", "/packages", "/dashboard"];
 
 export default function SwipeNav({ children }: { children: React.ReactNode }) {
   const router = useRouter();

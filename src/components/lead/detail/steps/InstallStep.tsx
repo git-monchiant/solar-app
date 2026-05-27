@@ -10,7 +10,7 @@ import PaymentSlipsThumbs from "@/components/payment/PaymentSlipsThumbs";
 import ErrorPopup from "@/components/ui/ErrorPopup";
 import AppointmentRescheduler from "@/components/calendar/AppointmentRescheduler";
 import StepLayout from "../StepLayout";
-import ReceiptButtons from "../ReceiptButtons";
+import InstallmentReceiptList from "../InstallmentReceiptList";
 import SignaturePad from "../SignaturePad";
 import { useSubStep } from "@/lib/hooks/useSubStep";
 import { compressImage } from "@/lib/utils/compressImage";
@@ -261,19 +261,24 @@ export default function InstallStep({ lead, state, refresh, expanded, onToggle }
       <div className="grid grid-cols-2 gap-2">
         {lead.install_date && (
           <div className="rounded-lg bg-gray-50 border border-gray-200 p-2.5">
-            <div className="text-xs font-bold text-gray-400 uppercase mb-0.5">นัดติดตั้ง</div>
-            <div className="font-semibold text-gray-800 text-sm">{formatDate(lead.install_date)}</div>
+            <div className="text-xs font-bold text-gray-400 uppercase mb-0.5">วันที่ติดตั้ง</div>
+            <div className="font-semibold text-gray-800 text-sm">
+              {formatDate(lead.install_date)}
+              {lead.install_date_end && lead.install_date_end !== lead.install_date && (
+                <span> – {formatDate(lead.install_date_end)}</span>
+              )}
+            </div>
           </div>
         )}
         {lead.install_actual_date && (
           <div className="rounded-lg bg-gray-50 border border-gray-200 p-2.5">
-            <div className="text-xs font-bold text-gray-400 uppercase mb-0.5">ติดตั้งจริง</div>
+            <div className="text-xs font-bold text-gray-400 uppercase mb-0.5">วันที่ติดตั้งเสร็จ</div>
             <div className="font-semibold text-gray-800 text-sm">{formatDate(lead.install_actual_date)}</div>
           </div>
         )}
         {lead.install_completed_at && (
           <div className="rounded-lg bg-emerald-50 border border-emerald-200 p-2.5">
-            <div className="text-xs font-bold text-emerald-600 uppercase mb-0.5">ส่งมอบ</div>
+            <div className="text-xs font-bold text-emerald-600 uppercase mb-0.5">วันที่ส่งมอบ</div>
             <div className="font-semibold text-emerald-700 text-sm">{formatDate(lead.install_completed_at)}</div>
           </div>
         )}
@@ -410,12 +415,6 @@ export default function InstallStep({ lead, state, refresh, expanded, onToggle }
       ) : lead.review_sent ? (
         <div className="text-xs text-gray-400 italic">ส่งแบบประเมินแล้ว — รอลูกค้าให้คะแนน</div>
       ) : null}
-
-      {lead.order_after_paid && (
-        <div className="pt-3 border-t border-gray-100">
-          <ReceiptButtons leadId={lead.id} stage="order_after" fileLabel={`${lead.pre_doc_no || `lead_${lead.id}`}_after`} />
-        </div>
-      )}
     </>
   );
 
@@ -458,12 +457,22 @@ export default function InstallStep({ lead, state, refresh, expanded, onToggle }
       expanded={expanded}
       onToggle={onToggle}
       doneHeader={
-        <>
-          <span className="text-sm font-semibold text-emerald-700 flex-1">ติดตั้งเสร็จสิ้น{lead.install_completed_at ? ` · ${formatDate(lead.install_completed_at)}` : ""}</span>
-          {lead.order_after_paid && (
-            <div className="mr-4"><ReceiptButtons leadId={lead.id} stage="order_after" fileLabel={`${lead.pre_doc_no || `lead_${lead.id}`}_after`} compact /></div>
-          )}
-        </>
+        <div className="flex-1 min-w-0 flex flex-col md:flex-row md:items-center gap-1.5 md:gap-2">
+          <span className="text-sm font-semibold text-emerald-700 md:flex-1 md:truncate">ติดตั้งเสร็จสิ้น{lead.install_actual_date ? ` · ${formatDate(lead.install_actual_date)}` : lead.install_completed_at ? ` · ${formatDate(lead.install_completed_at)}` : ""}</span>
+          <div className="md:mr-4">
+            <InstallmentReceiptList
+              leadId={lead.id}
+              preDocNo={lead.pre_doc_no}
+              when="after"
+              refresh={refresh}
+              installments={(() => {
+                try { return lead.order_installments ? JSON.parse(lead.order_installments) : []; }
+                catch { return []; }
+              })()}
+              compact
+            />
+          </div>
+        </div>
       }
       renderDone={renderDoneContent}
     >
@@ -481,6 +490,9 @@ export default function InstallStep({ lead, state, refresh, expanded, onToggle }
               {lead.install_date ? (
                 <span className={`text-sm font-bold ${lead.install_confirmed ? "text-emerald-900" : "text-active"}`}>
                   {formatDate(lead.install_date)}
+                  {lead.install_date_end && lead.install_date_end !== lead.install_date && (
+                    <span> – {formatDate(lead.install_date_end)}</span>
+                  )}
                 </span>
               ) : (
                 <span className="text-sm text-gray-500 italic">ยังไม่ได้นัด</span>
@@ -490,6 +502,28 @@ export default function InstallStep({ lead, state, refresh, expanded, onToggle }
               {lead.install_date ? "Reschedule" : "เลือกวัน"}
             </button>
           </div>
+          {/* Optional end date for multi-day installs. Hidden until a start
+              date is picked; clearing the field stores NULL (single-day). */}
+          {lead.install_date && (
+            <div className="flex items-center gap-2 text-xs text-gray-600 px-1">
+              <label className="font-semibold uppercase tracking-wider shrink-0">วันสุดท้าย</label>
+              <input
+                type="date"
+                value={lead.install_date_end ? String(lead.install_date_end).slice(0, 10) : ""}
+                min={String(lead.install_date).slice(0, 10)}
+                onChange={async (e) => {
+                  const v = e.target.value || null;
+                  await apiFetch(`/api/leads/${lead.id}`, {
+                    method: "PATCH", headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({ install_date_end: v }),
+                  });
+                  refresh();
+                }}
+                className="h-8 px-2 rounded-md border border-gray-200 bg-white text-xs focus:outline-none focus:border-primary"
+              />
+              <span className="text-gray-400">ติดตั้งหลายวัน — เว้นว่างถ้าเป็นวันเดียว</span>
+            </div>
+          )}
           {!lead.install_confirmed && lead.install_date && (
             <div className="space-y-2">
               {lead.line_id && (

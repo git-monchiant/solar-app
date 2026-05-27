@@ -65,6 +65,24 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
           title: `ตรวจสลิป ${paymentStepLabel(row.slip_field)} (รอบัญชียืนยัน)`,
           userId: gate.userId,
         });
+        // Clear any prior rejection note for this slip_field — uploader has
+        // resubmitted, so the "ไม่อนุมัติ: …" banner should disappear. Read
+        // → mutate JSON in-app → write; SQL Server JSON support is awkward.
+        const noteRow = await db.request().input("lead_id", sql.Int, row.lead_id)
+          .query(`SELECT payment_reject_notes FROM leads WHERE id = @lead_id`);
+        const raw = noteRow.recordset[0]?.payment_reject_notes;
+        if (raw) {
+          let notes: Record<string, unknown> = {};
+          try { notes = JSON.parse(raw); } catch { notes = {}; }
+          if (notes && typeof notes === "object" && row.slip_field in notes) {
+            delete (notes as Record<string, unknown>)[row.slip_field];
+            const next = Object.keys(notes).length === 0 ? null : JSON.stringify(notes);
+            await db.request()
+              .input("lead_id", sql.Int, row.lead_id)
+              .input("notes", sql.NVarChar(sql.MAX), next)
+              .query(`UPDATE leads SET payment_reject_notes = @notes WHERE id = @lead_id`);
+          }
+        }
         // Pre-survey deposit slip submit → advance lead from `pre_survey` (no
         // suffix) to `pre_survey-01` (รอยืนยันรับเงิน). Skip if already at -01
         // or beyond so re-submitting another slip doesn't reset the status.

@@ -63,6 +63,7 @@ export default function PipelinePage() {
   const isSales = hasRole(activeRoles, "sales");
   const isSolar = hasRole(activeRoles, "solar", "smartify");
   const isAdmin = hasRole(activeRoles, "admin");
+  const isAccount = hasRole(activeRoles, "account");
 
   const [sortField, setSortField] = useState<"follow_up" | "created" | "name" | "activity" | "survey_date" | "install_date">("follow_up");
   const [sortOrder, setSortOrder] = useState<"asc" | "desc">("asc");
@@ -154,14 +155,14 @@ export default function PipelinePage() {
     { key: "booking",    label: "รายการจอง" },
     { key: "survey",     label: "รอสำรวจ" },
     { key: "quotation",  label: "รอใบเสนอราคา" },
-    { key: "order",      label: "รออนุมัติ/ชำระ" },
+    { key: "order",      label: "รอเสนอลูกค้า" },
     { key: "deposit",    label: "ชำระมัดจำ" },
     { key: "wait_install", label: "รอนัดติดตั้ง" },
     { key: "install",    label: "รอติดตั้ง" },
     { key: "warranty",   label: "รอออกใบรับประกัน" },
     { key: "lost",       label: "ยกเลิก" },
   ];
-  const visible = isAdmin || isSales || isSolar;
+  const visible = isAdmin || isSales || isSolar || isAccount;
   const TABS = (visible ? ALL_TABS : []).map(t => ({ key: t.key, label: t.label, count: countFor(t.key) }));
 
   return (

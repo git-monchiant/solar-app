@@ -6,63 +6,39 @@ import { useActiveRoles, ROLE_LABEL, type Role } from "@/lib/roles";
 export default function RoleSwitcher() {
   const { activeRoles, setActiveRoles, availableRoles } = useActiveRoles();
   const [open, setOpen] = useState(false);
-  const [draft, setDraft] = useState<Role[]>(activeRoles);
 
   // Users with only one role can't switch — no switcher shown.
   if (availableRoles.length <= 1) return null;
 
-  const label = activeRoles.includes("admin") && activeRoles.length === availableRoles.length
+  // "admin override" = admin active AND every role granted (admin viewer
+  // sees through every role gate). Detected so the trigger label can read
+  // "Admin (ทุก role)" instead of dumping the full role list.
+  const adminOverride = activeRoles.includes("admin") && activeRoles.length === availableRoles.length;
+  const label = adminOverride
     ? "Admin (ทุก role)"
-    : activeRoles.length === availableRoles.length
-    ? "All roles"
     : activeRoles.length === 0
     ? "เลือก role"
     : activeRoles.map(r => ROLE_LABEL[r]).join(" · ");
 
-  // When admin is currently active and the role list is full, the user
-  // entered "admin override" mode. Reduce the displayed draft to just admin
-  // so the modal reflects intent, not the expanded-to-all result.
-  const adminOverride = activeRoles.includes("admin") && activeRoles.length === availableRoles.length;
-  const openModal = () => {
-    setDraft(adminOverride ? ["admin"] : activeRoles);
-    setOpen(true);
-  };
-
-  const toggle = (r: Role) => {
-    setDraft(prev => {
-      const has = prev.includes(r);
-      if (r === "admin") {
-        // Checking admin = override mode (will expand to all on confirm).
-        // Unchecking admin = drop the override, keep no other selections so
-        // the user explicitly picks the specific role they want next.
-        return has ? prev.filter(x => x !== "admin") : ["admin"];
-      }
-      // Picking a specific role exits admin-override mode automatically.
-      const next = prev.filter(x => x !== "admin");
-      return has ? next.filter(x => x !== r) : [...next, r];
-    });
-  };
-
-  const confirm = () => {
-    if (draft.length === 0) return;
-    // Admin-override → grant every available role so all role-gated views
-    // show through. Otherwise the chosen roles are exactly what's active.
-    const final = draft.includes("admin") ? availableRoles : draft;
+  // One-shot switch — click a role and we commit immediately. Admin expands
+  // to every available role (override mode); any other pick narrows to that
+  // role exclusively. After switching we route through "/" so the landing
+  // redirect picks the right page for the new role.
+  const switchTo = (r: Role) => {
+    const final = r === "admin" ? availableRoles : [r];
     setActiveRoles(final);
     setOpen(false);
-    // Route through "/" so it redirects to the landing page appropriate for
-    // the new role (/seeker for seeker-only, /today for sales). A plain
-    // reload() would keep the user on the current URL, which may no longer
-    // be valid for the new role — e.g. switching to seeker but staying on
-    // /today still shows the sales list because /today has no role filter.
     if (typeof window !== "undefined") window.location.href = "/";
   };
+
+  const isActive = (r: Role) =>
+    r === "admin" ? adminOverride : !adminOverride && activeRoles.length === 1 && activeRoles[0] === r;
 
   return (
     <>
       <button
         type="button"
-        onClick={openModal}
+        onClick={() => setOpen(true)}
         className="flex items-center gap-1.5 h-8 px-3 rounded-lg bg-white border border-gray-200 text-xs font-semibold text-gray-700 hover:border-gray-300 transition-colors"
         style={{ minHeight: 0 }}
       >
@@ -89,56 +65,42 @@ export default function RoleSwitcher() {
               ✕
             </button>
             <div className="text-base font-bold mb-1">เปลี่ยนมุมมอง (Role)</div>
-            <div className="text-xs text-gray-400 mb-4">กด "ตกลง" เพื่อเปลี่ยน — หน้าจะ refresh ใหม่</div>
-            <div className="space-y-1 mb-4">
-              {/* Admin first — checking it expands to "ทุก role + สิทธิ์ admin".
-                  Other rows render below as the per-role pure view. */}
+            <div className="text-xs text-gray-400 mb-4">กดปุ่ม role ที่ต้องการ — เปลี่ยนทันที</div>
+            <div className="space-y-1.5">
+              {/* Admin button first — switches into "override" mode where
+                  every role gate shows through. Active role highlighted. */}
               {availableRoles.includes("admin") && (
-                <label className="flex items-start gap-3 px-3 py-2.5 rounded-lg hover:bg-gray-50 cursor-pointer border border-gray-200">
-                  <input
-                    type="checkbox"
-                    checked={draft.includes("admin")}
-                    onChange={() => toggle("admin")}
-                    className="w-4 h-4 mt-0.5 rounded border-gray-300 accent-primary"
-                  />
+                <button
+                  type="button"
+                  onClick={() => switchTo("admin")}
+                  className={`w-full text-left flex items-start gap-3 px-3 py-2.5 rounded-lg border transition-colors ${isActive("admin") ? "border-primary bg-primary/5" : "border-gray-200 hover:bg-gray-50"}`}
+                >
                   <span className="flex-1">
-                    <span className="block text-sm font-semibold text-gray-700">{ROLE_LABEL.admin}</span>
+                    <span className={`block text-sm font-semibold ${isActive("admin") ? "text-primary" : "text-gray-700"}`}>{ROLE_LABEL.admin}</span>
                     <span className="block text-xxs text-gray-400">เห็นทุก role + สิทธิ์ admin</span>
                   </span>
-                </label>
+                  {isActive("admin") && (
+                    <svg className="w-4 h-4 text-primary mt-0.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
+                      <path strokeLinecap="round" strokeLinejoin="round" d="M4.5 12.75l6 6 9-13.5" />
+                    </svg>
+                  )}
+                </button>
               )}
-              {availableRoles.filter(r => r !== "admin").map(r => {
-                const checked = draft.includes(r);
-                const lockedByAdmin = draft.includes("admin");
-                return (
-                  <label key={r} className={`flex items-center gap-3 px-3 py-2.5 rounded-lg cursor-pointer border border-gray-200 ${lockedByAdmin ? "opacity-50" : "hover:bg-gray-50"}`}>
-                    <input
-                      type="checkbox"
-                      checked={checked}
-                      onChange={() => toggle(r)}
-                      className="w-4 h-4 rounded border-gray-300 accent-primary"
-                    />
-                    <span className="text-sm font-semibold text-gray-700">{ROLE_LABEL[r]}</span>
-                  </label>
-                );
-              })}
-            </div>
-            <div className="flex gap-2">
-              <button
-                type="button"
-                onClick={() => setOpen(false)}
-                className="flex-1 py-3 rounded-xl text-sm font-semibold bg-white border border-gray-200 text-gray-700"
-              >
-                ยกเลิก
-              </button>
-              <button
-                type="button"
-                onClick={confirm}
-                disabled={draft.length === 0}
-                className="flex-1 py-3 rounded-xl text-sm font-semibold bg-primary text-white hover:bg-primary-dark disabled:opacity-50 transition-colors"
-              >
-                ตกลง
-              </button>
+              {availableRoles.filter(r => r !== "admin").map(r => (
+                <button
+                  key={r}
+                  type="button"
+                  onClick={() => switchTo(r)}
+                  className={`w-full text-left flex items-center gap-3 px-3 py-2.5 rounded-lg border transition-colors ${isActive(r) ? "border-primary bg-primary/5" : "border-gray-200 hover:bg-gray-50"}`}
+                >
+                  <span className={`flex-1 text-sm font-semibold ${isActive(r) ? "text-primary" : "text-gray-700"}`}>{ROLE_LABEL[r]}</span>
+                  {isActive(r) && (
+                    <svg className="w-4 h-4 text-primary" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
+                      <path strokeLinecap="round" strokeLinejoin="round" d="M4.5 12.75l6 6 9-13.5" />
+                    </svg>
+                  )}
+                </button>
+              ))}
             </div>
           </div>
         </div>

@@ -113,7 +113,11 @@ export function getStatusColor(lead: { status: string; install_date?: string | n
     return "bg-blue-500";                             // "กำลังติดตั้ง" (today / past / no date)
   }
   if (lead.status === "order" && (lead.order_paid_count ?? 0) >= 1) {
-    return lead.install_date ? "bg-sky-500" : "bg-amber-500";  // รอติดตั้ง vs รอนัดติดตั้ง
+    const date = lead.event_date || lead.install_date;
+    if (!date) return "bg-amber-500";  // รอนัดติดตั้ง
+    const today = new Date();
+    const todayStr = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, "0")}-${String(today.getDate()).padStart(2, "0")}`;
+    return String(date).slice(0, 10) > todayStr ? "bg-sky-500" : "bg-blue-500";  // รอติดตั้ง vs กำลังติดตั้ง
   }
   return STATUS_CONFIG[lead.status]?.color
     ?? STATUS_CONFIG[getMainStatus(lead.status)]?.color
@@ -130,13 +134,17 @@ export function getStatusLabel(lead: { status: string; install_date?: string | n
       if (jobDate > todayStr) return "รอติดตั้ง";
     }
   }
-  // Order with ≥1 confirmed installment splits by whether the customer has
-  // an install_date locked in yet:
-  //   - has install_date  → "รอติดตั้ง" (schedule fixed, waiting for the day)
-  //   - no install_date   → "รอนัดติดตั้ง" (deposit landed, schedule pending)
+  // Order with ≥1 confirmed installment splits by install_date:
+  //   - no install_date         → "รอนัดติดตั้ง" (deposit landed, schedule pending)
+  //   - install_date in future   → "รอติดตั้ง" (schedule fixed, waiting for the day)
+  //   - install_date today/past  → "กำลังติดตั้ง" (the install day has arrived)
   // Pipeline tabs and dashboard chips read the same split.
   if (lead.status === "order" && (lead.order_paid_count ?? 0) >= 1) {
-    return lead.install_date ? "รอติดตั้ง" : "รอนัดติดตั้ง";
+    const date = lead.event_date || lead.install_date;
+    if (!date) return "รอนัดติดตั้ง";
+    const today = new Date();
+    const todayStr = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, "0")}-${String(today.getDate()).padStart(2, "0")}`;
+    return String(date).slice(0, 10) > todayStr ? "รอติดตั้ง" : "กำลังติดตั้ง";
   }
   // Try exact match first (covers substeps like pre_survey-01); fall back to
   // main-status entry so unknown substeps still render the parent label.

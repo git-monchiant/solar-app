@@ -15,8 +15,15 @@ export default function Home() {
       !activeRoles.includes("sales") &&
       !activeRoles.includes("solar") &&
       !activeRoles.includes("smartify");
+    const accountOnly =
+      activeRoles.includes("account") &&
+      !activeRoles.includes("admin") &&
+      !activeRoles.includes("sales") &&
+      !activeRoles.includes("solar") &&
+      !activeRoles.includes("smartify");
     if (seekerOnly) router.replace("/seeker");
-    else router.replace("/today");
+    else if (accountOnly) router.replace("/today");
+    else router.replace("/pipeline");
   }, [activeRoles, router]);
 
   return (

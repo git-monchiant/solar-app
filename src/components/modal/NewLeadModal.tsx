@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
-import { apiFetch } from "@/lib/api";
+import { apiFetch, getUserIdHeader } from "@/lib/api";
 import CustomerWizard from "@/components/customer/CustomerWizard";
 import LinePickerModal from "@/components/modal/LinePickerModal";
 import ModalBase from "@/components/ui/ModalBase";
@@ -54,9 +54,11 @@ export default function NewLeadModal({ onClose, onCreated, linkLine, initialSour
     setError(null);
     try {
       // Raw fetch (not apiFetch) so we can surface the 409 dedupe response.
+      // Must hand-roll the x-user-id header that apiFetch normally injects —
+      // missing it makes requireAuth() return 401 to every user.
       const res = await fetch("/api/leads", {
         method: "POST",
-        headers: { "Content-Type": "application/json", "ngrok-skip-browser-warning": "true" },
+        headers: { "Content-Type": "application/json", "ngrok-skip-browser-warning": "true", ...getUserIdHeader() },
         body: JSON.stringify({
           ...form,
           project_id: form.project_id ? parseInt(String(form.project_id)) : null,

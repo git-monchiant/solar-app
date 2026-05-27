@@ -35,6 +35,8 @@ export interface LeadData {
   pre_doc_no: string | null;
   pre_total_price: number | null;
   payment_confirmed?: boolean | null;
+  /** 1 = at least one slip has been rejected by accounting and not yet re-submitted. */
+  has_payment_reject?: 0 | 1 | boolean | null;
   quotation_amount: number | null;
   order_total: number | null;
   install_extra_cost: number | null;
@@ -42,6 +44,8 @@ export interface LeadData {
   assigned_name: string | null;
   assigned_username?: string | null;
   install_date: string | null;
+  install_date_end?: string | null;
+  install_actual_date?: string | null;
   install_completed_at: string | null;
   created_at: string;
   survey_date: string | null;
@@ -54,7 +58,7 @@ export interface LeadData {
   is_followup_overdue?: boolean;
 }
 
-export default function LeadCard({ lead, compact, onAssignChange }: { lead: LeadData; compact?: boolean; onAssignChange?: () => void }) {
+export default function LeadCard({ lead, compact, onAssignChange, onOpen }: { lead: LeadData; compact?: boolean; onAssignChange?: () => void; onOpen?: (lead: LeadData) => void }) {
   const router = useRouter();
   const config = STATUS_CONFIG[lead.status] || STATUS_CONFIG.pre_survey;
   const isUpgrade = lead.customer_type === "upgrade" || lead.customer_type?.includes("Upgrade") || lead.customer_type?.includes("เดิม");
@@ -69,6 +73,7 @@ export default function LeadCard({ lead, compact, onAssignChange }: { lead: Lead
     : !!(now && lead.next_follow_up && new Date(String(lead.next_follow_up).slice(0, 10) + "T12:00:00").getTime() < now);
 
   const open = () => {
+    if (onOpen) { onOpen(lead); return; }
     const isLargeScreen = typeof window !== "undefined" && window.matchMedia("(min-width: 500px)").matches;
     if (isLargeScreen) {
       window.open(`/leads/${lead.id}?focus=1`, "_blank", "noreferrer");
@@ -186,6 +191,17 @@ export default function LeadCard({ lead, compact, onAssignChange }: { lead: Lead
           <span className={`shrink-0 ml-auto text-xs font-semibold uppercase tracking-wide px-2.5 py-0.5 rounded-full text-white ${getStatusColor(lead)}`}>
             {getStatusLabel(lead)}
           </span>
+          {!!lead.has_payment_reject && (
+            <span
+              className="shrink-0 inline-flex items-center gap-1 text-xs font-semibold uppercase tracking-wide px-2.5 py-0.5 rounded-full bg-red-500 text-white"
+              title="บัญชีไม่อนุมัติสลิปบางรายการ — รอ sales อัพโหลดใหม่"
+            >
+              <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={3}>
+                <path strokeLinecap="round" strokeLinejoin="round" d="M12 9v3.75m9-.75a9 9 0 11-18 0 9 9 0 0118 0zm-9 3.75h.008v.008H12v-.008z" />
+              </svg>
+              สลิปถูกปฏิเสธ
+            </span>
+          )}
         </div>
 
         {/* Location */}
@@ -219,7 +235,7 @@ export default function LeadCard({ lead, compact, onAssignChange }: { lead: Lead
           let label = "";
           let showTime = false;
           if (lead.install_completed_at) {
-            showDate = lead.install_completed_at;
+            showDate = lead.install_actual_date || lead.install_completed_at;
             label = "ส่งมอบ";
           } else if (lead.install_date) {
             showDate = lead.install_date;
@@ -235,7 +251,12 @@ export default function LeadCard({ lead, compact, onAssignChange }: { lead: Lead
               <svg className="w-5 h-5 shrink-0 text-violet-500" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
                 <path strokeLinecap="round" strokeLinejoin="round" d="M6.75 3v2.25M17.25 3v2.25M3 18.75V7.5a2.25 2.25 0 012.25-2.25h13.5A2.25 2.25 0 0121 7.5v11.25" />
               </svg>
-              <span className="font-bold text-gray-900">{formatThaiDateShort(showDate)}</span>
+              <span className="font-bold text-gray-900">
+                {formatThaiDateShort(showDate)}
+                {label === "นัดติดตั้ง" && lead.install_date_end && lead.install_date_end !== lead.install_date && (
+                  <span> – {formatThaiDateShort(lead.install_date_end)}</span>
+                )}
+              </span>
               {showTime && lead.survey_time_slot ? (
                 <span className="font-mono tabular-nums text-gray-600">
                   · {formatSlotsRange(lead.survey_time_slot) || lead.survey_time_slot}

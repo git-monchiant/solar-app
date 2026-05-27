@@ -1113,8 +1113,13 @@ export default function LeadDetailPage({ params }: { params: Promise<{ id: strin
               }).filter(b => b.date);
 
               const installRows: Bullet[] = [];
-              if (lead.install_date) installRows.push({ date: lead.install_date, label: "นัดวันติดตั้ง" });
-              if (lead.install_completed_at) installRows.push({ date: lead.install_completed_at, label: "ติดตั้งเสร็จสิ้น" });
+              if (lead.install_date) {
+                const endStr = lead.install_date_end && lead.install_date_end !== lead.install_date
+                  ? ` – ${formatDate(lead.install_date_end)}`
+                  : "";
+                installRows.push({ date: lead.install_date, label: `นัดวันติดตั้ง${endStr}` });
+              }
+              if (lead.install_completed_at) installRows.push({ date: lead.install_actual_date || lead.install_completed_at, label: "ติดตั้งเสร็จสิ้น" });
 
               const warrantyRows: Bullet[] = [];
               if (lead.warranty_issued_at) warrantyRows.push({ date: lead.warranty_issued_at, label: "ออกใบรับประกัน" });

@@ -14,9 +14,10 @@ import CustomerInfoForm from "@/components/customer/CustomerInfoForm";
 import FallbackImage from "@/components/ui/FallbackImage";
 import PaymentSlipsThumbs from "@/components/payment/PaymentSlipsThumbs";
 import StepLayout from "../StepLayout";
-import ReceiptButtons from "../ReceiptButtons";
+import InstallmentReceiptList from "../InstallmentReceiptList";
 import { useSubStep } from "@/lib/hooks/useSubStep";
 import { formatTHB as fmt, formatThaiDate as formatDate } from "@/lib/utils/formatters";
+import { parseQuotationFiles } from "@/lib/utils/quotation";
 import DoneSection from "./DoneSection";
 
 type PayMethod = "transfer" | "loan" | "cc";
@@ -97,6 +98,56 @@ export default function OrderStep({ lead, state, refresh, expanded, onToggle }: 
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [lead.quotation_amount, lead.order_total]);
+
+  // Quotation options (JSON in lead.quotation_files, or legacy CSV). The
+  // customer picks one in substep 0 — that index lands in
+  // quotation_accepted_idx, and quotation_amount + quotation_doc_no get
+  // synced from the chosen entry. Single-quotation leads auto-accept idx 0.
+  const quoteOptions = parseQuotationFiles(lead.quotation_files, lead.quotation_doc_no || "", lead.quotation_amount || 0);
+  const [pickingQuote, setPickingQuote] = useState(false);
+  const acceptedIdx = lead.quotation_accepted_idx;
+  // Default-select idx 0 when nothing's been picked yet. User can still
+  // switch on substep 0; this just avoids the empty-state where Next is
+  // gated while the user is reading the customer's options.
+  useEffect(() => {
+    if (quoteOptions.length > 0 && (acceptedIdx === null || acceptedIdx === undefined) && !pickingQuote) {
+      const first = quoteOptions[0];
+      setPickingQuote(true);
+      apiFetch(`/api/leads/${lead.id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          quotation_accepted_idx: 0,
+          quotation_amount: first.amount,
+          quotation_doc_no: first.doc_no || null,
+        }),
+      }).then(() => refresh()).finally(() => setPickingQuote(false));
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [quoteOptions.length, acceptedIdx]);
+
+  const pickQuote = async (idx: number) => {
+    if (pickingQuote) return;
+    const opt = quoteOptions[idx];
+    if (!opt) return;
+    setPickingQuote(true);
+    try {
+      await apiFetch(`/api/leads/${lead.id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          quotation_accepted_idx: idx,
+          quotation_amount: opt.amount,
+          quotation_doc_no: opt.doc_no || null,
+        }),
+      });
+      // Reset order_total so the gateCheck math reflects the new quote.
+      setTotal(opt.amount);
+      await refresh();
+    } finally {
+      setPickingQuote(false);
+    }
+  };
   const [discountPct, setDiscountPct] = useState<number>(lead.order_discount_pct ?? 0);
   const [discountAmount, setDiscountAmount] = useState<number>(lead.order_discount_amount ?? 0);
   const [discountNote, setDiscountNote] = useState<string>(lead.order_discount_note ?? "");
@@ -178,6 +229,80 @@ export default function OrderStep({ lead, state, refresh, expanded, onToggle }: 
   const updateInstallment = (i: number, patch: Partial<Installment>) => {
     setInstallments(prev => prev.map((r, idx) => idx === i ? { ...r, ...patch } : r));
   };
+
+  // Lead-level payment follow-up date (ติดตามให้ชำระก่อนติดตั้ง N วัน). Stored in
+  // leads.payment_followup_date (single value, report-friendly) + mirrored to an
+  // activity log + lead.next_follow_up so it surfaces in the Today follow-up queue.
+  const FOLLOWUP_DAYS_BEFORE = 3;
+  // Two-field model: `enabled` = checkbox intent (independent of date), `date` =
+  // computed install−N (null until install date is known — no sentinel).
+  const [paymentFollowupEnabled, setPaymentFollowupEnabled] = useState<boolean>(!!lead.payment_followup_enabled);
+  const [paymentFollowupDate, setPaymentFollowupDate] = useState<string | null>(
+    lead.payment_followup_date ? String(lead.payment_followup_date).slice(0, 10) : null
+  );
+  const computeFollowupDate = useCallback((isoInstall: string | null): string | null => {
+    if (!isoInstall) return null;
+    const d = new Date(isoInstall + "T12:00:00");
+    d.setDate(d.getDate() - FOLLOWUP_DAYS_BEFORE);
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+  }, []);
+  const togglePaymentFollowup = async (checked: boolean, computed: string | null) => {
+    const prevDate = paymentFollowupDate; // value before this toggle
+    setPaymentFollowupEnabled(checked);
+    const date = checked ? computed : null;
+    setPaymentFollowupDate(date);
+    try {
+      const patch: Record<string, unknown> = { payment_followup_enabled: checked, payment_followup_date: date };
+      // On uncheck, clear next_follow_up too — but only when it (a) still points
+      // at this payment follow-up and (b) is still in the future (ยังไม่ถึงกำหนด).
+      // A due/overdue reminder is left alone so an in-progress task isn't wiped.
+      if (!checked && prevDate && lead.next_follow_up && String(lead.next_follow_up).slice(0, 10) === prevDate && prevDate > todayISO()) {
+        patch.next_follow_up = null;
+      }
+      await apiFetch(`/api/leads/${lead.id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(patch),
+      });
+      // Log a real follow-up reminder only when we have an actual install date.
+      if (checked && computed) {
+        await apiFetch(`/api/leads/${lead.id}/activities`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            activity_type: "follow_up",
+            note: `ติดตามให้ชำระเงินก่อนติดตั้ง ${FOLLOWUP_DAYS_BEFORE} วัน (ติดตั้ง ${formatDate(installDate)})`,
+            follow_up_date: computed,
+          }),
+        });
+      }
+      refresh();
+    } catch (e) { console.error("payment follow-up failed:", e); }
+  };
+
+  // Clear the payment follow-up entirely (used by the paid-all / skip-step
+  // triggers). Also wipes the active next_follow_up when it still points at the
+  // payment follow-up date (regardless of due/overdue — the chase is over).
+  const clearPaymentFollowup = useCallback(async () => {
+    if (!paymentFollowupEnabled && !paymentFollowupDate) return;
+    const prevDate = paymentFollowupDate;
+    setPaymentFollowupEnabled(false);
+    setPaymentFollowupDate(null);
+    try {
+      const patch: Record<string, unknown> = { payment_followup_enabled: false, payment_followup_date: null };
+      if (prevDate && lead.next_follow_up && String(lead.next_follow_up).slice(0, 10) === prevDate) {
+        patch.next_follow_up = null;
+      }
+      await apiFetch(`/api/leads/${lead.id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(patch),
+      });
+      refresh();
+    } catch (e) { console.error("clear payment follow-up failed:", e); }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [paymentFollowupEnabled, paymentFollowupDate, lead.id, lead.next_follow_up]);
+
   // Zone (จากที่ตั้งไว้ตอน PreSurveyStep) — ให้แก้ใหม่ได้ที่ tab นัดหมาย
   const [zone, setZone] = useState<string>(lead.zone ?? "");
   const [zones, setZones] = useState<{ id: number; name: string; color: string }[]>([]);
@@ -253,6 +378,55 @@ export default function OrderStep({ lead, state, refresh, expanded, onToggle }: 
     return -1;
   })();
   const [installDate, setInstallDate] = useState(lead.install_date ? String(lead.install_date).slice(0, 10) : "");
+  const [installDateEnd, setInstallDateEnd] = useState(lead.install_date_end ? String(lead.install_date_end).slice(0, 10) : "");
+
+  // Auto-recompute the payment follow-up date when the install date changes
+  // while the checkbox is enabled — e.g. user ticked before picking a date,
+  // then set it at the นัดติดตั้ง step. Saves + logs the activity at that moment.
+  // (Placed after installDate is declared to avoid a TDZ reference.)
+  useEffect(() => {
+    if (!paymentFollowupEnabled) return;
+    const next = computeFollowupDate(installDate || null);
+    if (next && next !== paymentFollowupDate) {
+      setPaymentFollowupDate(next);
+      (async () => {
+        try {
+          await apiFetch(`/api/leads/${lead.id}`, {
+            method: "PATCH",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ payment_followup_date: next }),
+          });
+          await apiFetch(`/api/leads/${lead.id}/activities`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              activity_type: "follow_up",
+              note: `ติดตามให้ชำระเงินก่อนติดตั้ง ${FOLLOWUP_DAYS_BEFORE} วัน (ติดตั้ง ${formatDate(installDate)})`,
+              follow_up_date: next,
+            }),
+          });
+          refresh();
+        } catch (e) { console.error("recompute payment follow-up failed:", e); }
+      })();
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [installDate, paymentFollowupEnabled]);
+
+  // Clear payment follow-up when every installment is paid — no one left to chase.
+  useEffect(() => {
+    if (!paymentFollowupEnabled) return;
+    const allPaid = installments.length > 0 && installments.every((_, idx) => paidIdxSet.has(idx));
+    if (allPaid) clearPaymentFollowup();
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [paidIdxSet, installments.length, paymentFollowupEnabled]);
+
+  // Clear payment follow-up when the Order step is done/skipped (status advanced
+  // past order) — the chase no longer belongs to this step.
+  useEffect(() => {
+    if (state === "done" && paymentFollowupEnabled) clearPaymentFollowup();
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [state, paymentFollowupEnabled]);
+
   const [saving, setSaving] = useState(false);
   // Tracks the per-substep "next" button while flushSave is in flight, so we
   // can disable + relabel it to give the user feedback during the round-trip.
@@ -332,13 +506,14 @@ export default function OrderStep({ lead, state, refresh, expanded, onToggle }: 
     order_pct_after: 100 - Math.round(pctBefore),
     order_installments: JSON.stringify(persistedInstallments),
     install_date: installDate || null,
+    install_date_end: installDateEnd || null,
     finance_bank: financeBank || null,
     finance_months: financeMonths ? parseInt(financeMonths) : null,
     finance_monthly: financeMonthly ? parseFloat(financeMonthly) : null,
     finance_loan_bank: loanBank || null,
     finance_loan_amount: loanAmount ? parseFloat(loanAmount) : null,
     finance_documents: loanDocs || null,
-  }), [total, discountPct, discountAmount, discountNote, pctBefore, pctAfter, persistedInstallments, installDate, financeBank, financeMonths, financeMonthly, loanBank, loanAmount, loanDocs]);
+  }), [total, discountPct, discountAmount, discountNote, pctBefore, pctAfter, persistedInstallments, installDate, installDateEnd, financeBank, financeMonths, financeMonthly, loanBank, loanAmount, loanDocs]);
 
   const saveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const flushSave = useCallback(async () => {
@@ -479,7 +654,12 @@ export default function OrderStep({ lead, state, refresh, expanded, onToggle }: 
       )}
       {lead.install_date && (
         <DoneSection color="amber" title="กำหนดเข้าติดตั้ง">
-          <div className="font-semibold text-gray-800">{formatDate(lead.install_date)}</div>
+          <div className="font-semibold text-gray-800">
+            {formatDate(lead.install_date)}
+            {lead.install_date_end && lead.install_date_end !== lead.install_date && (
+              <span> – {formatDate(lead.install_date_end)}</span>
+            )}
+          </div>
         </DoneSection>
       )}
 
@@ -505,17 +685,17 @@ export default function OrderStep({ lead, state, refresh, expanded, onToggle }: 
           </div>
         </DoneSection>
       )}
-
-      {lead.order_before_paid && (
-        <div className="pt-3 border-t border-gray-100">
-          <ReceiptButtons leadId={lead.id} stage="order_before" fileLabel={`${lead.pre_doc_no || `lead_${lead.id}`}_before`} />
-        </div>
-      )}
     </>
   );
 
   const gateCheck = (from: number): string[] => {
     const missing: string[] = [];
+    // Substep 0 → 1: must have picked which quotation the customer accepted.
+    // Single-option leads auto-accept (effect above) so this only blocks when
+    // there's actually a choice to make.
+    if (from === 0 && quoteOptions.length > 1 && (acceptedIdx === null || acceptedIdx === undefined)) {
+      missing.push("เลือกใบเสนอราคา");
+    }
     if (from === 1 && (!total || total <= 0)) missing.push("ยอดรวม");
     if (from === 1 && depositPaid > 0 && total > 0 && total < depositPaid) {
       missing.push(`ยอดต้องไม่ต่ำกว่าค่าสำรวจ (฿${fmt(depositPaid)})`);
@@ -598,38 +778,48 @@ export default function OrderStep({ lead, state, refresh, expanded, onToggle }: 
       expanded={expanded}
       onToggle={onToggle}
       doneHeader={
-        <>
-          <span className="text-sm font-semibold text-gray-900 flex-1">{lead.install_date ? `กำหนดเข้าติดตั้ง ${formatDate(lead.install_date)}` : "ยืนยันการชำระ"}</span>
-          {lead.order_before_paid && (
-            <div className="mr-4"><ReceiptButtons leadId={lead.id} stage="order_before" fileLabel={`${lead.pre_doc_no || `lead_${lead.id}`}_before`} compact /></div>
-          )}
-        </>
+        <div className="flex-1 min-w-0 flex flex-col md:flex-row md:items-center gap-1.5 md:gap-2">
+          <span className="text-sm font-semibold text-gray-900 md:flex-1 md:truncate">{lead.install_date
+            ? `กำหนดเข้าติดตั้ง ${formatDate(lead.install_date)}${lead.install_date_end && lead.install_date_end !== lead.install_date ? ` – ${formatDate(lead.install_date_end)}` : ""}`
+            : "ยืนยันการชำระ"}</span>
+          <div className="md:mr-4">
+            <InstallmentReceiptList
+              leadId={lead.id}
+              preDocNo={lead.pre_doc_no}
+              when="before"
+              refresh={refresh}
+              installments={persistedInstallments}
+              compact
+            />
+          </div>
+        </div>
       }
       renderDone={renderDoneContent}
     >
       {/* Step 1: ชุดการชำระเงิน (ราคา + งวด) */}
       {subStep === 1 && (
         <div className="space-y-3">
-          {lead.quotation_files && (
-            <div className="rounded-lg bg-orange-50 border border-orange-200 p-3">
-              <div className="text-xs font-bold text-orange-600 uppercase mb-2">ไฟล์ใบเสนอราคา</div>
-              <div className="space-y-1.5">
-                {lead.quotation_files.split(",").filter(Boolean).map((url, i) => {
-                  const fileName = url.split("/").pop() || `ไฟล์ ${i + 1}`;
-                  const isImage = /\.(jpg|jpeg|png|gif|webp)$/i.test(url);
-                  return (
-                    <a key={i} href={url} target="_blank" rel="noreferrer" className="flex items-center gap-2 px-3 py-2 rounded-lg bg-white border border-orange-100 hover:bg-orange-50 transition-colors">
-                      <svg className="w-4 h-4 text-orange-400 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                        <path strokeLinecap="round" strokeLinejoin="round" d={isImage ? "M2.25 15.75l5.159-5.159a2.25 2.25 0 013.182 0l5.159 5.159m-1.5-1.5l1.409-1.41a2.25 2.25 0 013.182 0l2.909 2.91M3.75 21h16.5a2.25 2.25 0 002.25-2.25V5.25A2.25 2.25 0 0020.25 3H3.75A2.25 2.25 0 001.5 5.25v13.5A2.25 2.25 0 003.75 21z" : "M19.5 14.25v-2.625a3.375 3.375 0 00-3.375-3.375h-1.5A1.125 1.125 0 0113.5 7.125v-1.5a3.375 3.375 0 00-3.375-3.375H8.25m2.25 0H5.625c-.621 0-1.125.504-1.125 1.125v17.25c0 .621.504 1.125 1.125 1.125h12.75c.621 0 1.125-.504 1.125-1.125V11.25a9 9 0 00-9-9z"} />
-                      </svg>
-                      <span className="text-sm text-orange-700 font-semibold truncate">{fileName}</span>
-                    </a>
-                  );
-                })}
+          {/* Show only the accepted quotation (picked in substep 0). Other
+              options live in the JSON but aren't relevant once the customer
+              has chosen. */}
+          {(() => {
+            const accepted = acceptedIdx !== null && acceptedIdx !== undefined ? quoteOptions[acceptedIdx] : null;
+            if (!accepted) return null;
+            const fileName = accepted.url.split("/").pop() || "ไฟล์ใบเสนอราคา";
+            const isImage = /\.(jpg|jpeg|png|gif|webp)$/i.test(accepted.url);
+            return (
+              <div className="rounded-lg bg-orange-50 border border-orange-200 p-3">
+                <div className="text-xs font-bold text-orange-600 uppercase mb-2">ใบเสนอราคาที่ลูกค้าเลือก{accepted.doc_no ? ` · ${accepted.doc_no}` : ""}</div>
+                <a href={accepted.url} target="_blank" rel="noreferrer" className="flex items-center gap-2 px-3 py-2 rounded-lg bg-white border border-orange-100 hover:bg-orange-50 transition-colors">
+                  <svg className="w-4 h-4 text-orange-400 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                    <path strokeLinecap="round" strokeLinejoin="round" d={isImage ? "M2.25 15.75l5.159-5.159a2.25 2.25 0 013.182 0l5.159 5.159m-1.5-1.5l1.409-1.41a2.25 2.25 0 013.182 0l2.909 2.91M3.75 21h16.5a2.25 2.25 0 002.25-2.25V5.25A2.25 2.25 0 0020.25 3H3.75A2.25 2.25 0 001.5 5.25v13.5A2.25 2.25 0 003.75 21z" : "M19.5 14.25v-2.625a3.375 3.375 0 00-3.375-3.375h-1.5A1.125 1.125 0 0113.5 7.125v-1.5a3.375 3.375 0 00-3.375-3.375H8.25m2.25 0H5.625c-.621 0-1.125.504-1.125 1.125v17.25c0 .621.504 1.125 1.125 1.125h12.75c.621 0 1.125-.504 1.125-1.125V11.25a9 9 0 00-9-9z"} />
+                  </svg>
+                  <span className="text-sm text-orange-700 font-semibold truncate">{fileName}</span>
+                </a>
+                {lead.quotation_note && <div className="text-xs text-orange-600 mt-2">{lead.quotation_note}</div>}
               </div>
-              {lead.quotation_note && <div className="text-xs text-orange-600 mt-2">{lead.quotation_note}</div>}
-            </div>
-          )}
+            );
+          })()}
 
           <div>
             <label className="text-xs font-semibold tracking-wider uppercase text-gray-400 block mb-1">จำนวนเงินตามใบเสนอราคา (บาท)</label>
@@ -649,22 +839,24 @@ export default function OrderStep({ lead, state, refresh, expanded, onToggle }: 
 
           <div>
             <label className="text-xs font-semibold tracking-wider uppercase text-gray-400 block mb-2">งวดการชำระเงิน</label>
-            <div className="flex items-center gap-1.5 mb-3">
-              {[1, 2, 3, 4].map(n => (
-                <button
-                  key={n}
-                  type="button"
-                  onClick={() => setInstallmentCount(n)}
-                  className={`h-9 px-4 rounded-lg text-sm font-semibold border transition-all ${
-                    installments.length === n
-                      ? "bg-active text-white border-active"
-                      : "bg-white text-gray-600 border-gray-200 hover:border-active/40"
-                  }`}
-                >
-                  {n} งวด
-                </button>
-              ))}
-              <span className="ml-auto text-sm text-gray-500">
+            <div className="flex flex-col md:flex-row md:items-center gap-2 md:gap-3 mb-3">
+              <div className="flex items-center gap-1.5">
+                {[1, 2, 3, 4].map(n => (
+                  <button
+                    key={n}
+                    type="button"
+                    onClick={() => setInstallmentCount(n)}
+                    className={`h-9 px-4 rounded-lg text-sm font-semibold border transition-all ${
+                      installments.length === n
+                        ? "bg-active text-white border-active"
+                        : "bg-white text-gray-600 border-gray-200 hover:border-active/40"
+                    }`}
+                  >
+                    {n} <span className="hidden sm:inline">งวด</span>
+                  </button>
+                ))}
+              </div>
+              <span className="text-sm text-gray-500 md:ml-auto md:text-right">
                 ยอดรวมที่ต้องชำระ <span className="font-bold font-mono tabular-nums text-lg text-gray-900">{fmt(totalToCharge)}</span> บาท
               </span>
             </div>
@@ -775,7 +967,7 @@ export default function OrderStep({ lead, state, refresh, expanded, onToggle }: 
                   <div key={i} className={`rounded-lg border p-2 transition-colors ${paid ? "bg-emerald-50 border-emerald-200" : paymentOpen ? "bg-active-light border-active border-2 shadow-md shadow-active/20" : "bg-white border-gray-200"} ${row.method === "cc" && row.cc_pct && rowGross(i) > 0 ? "pb-6" : ""}`}>
                     {/* Mobile: 12-col grid (existing) · Desktop: flex single line */}
                     <div className="grid grid-cols-12 gap-2 items-center md:flex md:flex-nowrap">
-                      <div className="order-1 col-span-7 md:w-24 text-xs font-semibold text-gray-700 md:shrink-0 flex items-center gap-1">
+                      <div className="order-1 col-span-4 md:w-24 text-xs font-semibold text-gray-700 md:shrink-0 flex items-center gap-1">
                         {row.method === "loan" ? (
                           <button
                             type="button"
@@ -801,7 +993,7 @@ export default function OrderStep({ lead, state, refresh, expanded, onToggle }: 
                           <span className="text-xxs text-active font-mono tabular-nums">({rowFollowups.length})</span>
                         )}
                       </div>
-                      <div className="hidden md:block md:w-20 relative md:shrink-0 md:order-2">
+                      <div className="order-2 col-span-3 md:w-20 md:order-2 relative md:shrink-0">
                         <input
                           type="text"
                           inputMode="decimal"
@@ -820,7 +1012,7 @@ export default function OrderStep({ lead, state, refresh, expanded, onToggle }: 
                         <span className="absolute right-2 top-1/2 -translate-y-1/2 text-xs text-gray-400 pointer-events-none">%</span>
                       </div>
                       {/* Amount cell: editable — typing here back-derives pct from effTotal. */}
-                      <div className="order-2 col-span-5 md:order-3 flex items-center justify-end md:justify-start gap-2 md:shrink-0 md:-ml-1">
+                      <div className="order-3 col-span-5 md:order-3 flex items-center justify-end md:justify-start gap-2 md:shrink-0 md:-ml-1">
                         {row.method === "loan" && rowFollowups.length > 0 && (() => {
                           const next = rowFollowups.find(a => !!a.follow_up_date);
                           return next ? (
@@ -878,28 +1070,11 @@ export default function OrderStep({ lead, state, refresh, expanded, onToggle }: 
                         {recordPaymentBtn}
                       </div>
                     </div>
-                    {/* Mobile redesign — clear sections, full-width actions */}
+                    {/* Mobile redesign — clear sections, full-width actions.
+                        (% input moved up into the same row as งวด + amount.) */}
                     <div className="mt-2 md:hidden space-y-2">
-                      {/* Row: % + สินเชื่อ + ชำระหลังติดตั้ง */}
+                      {/* Row: payment-method checkboxes + ชำระหลังติดตั้ง */}
                       <div className="flex items-center gap-3 flex-wrap">
-                        <div className="relative w-20 shrink-0">
-                          <input
-                            type="text"
-                            inputMode="decimal"
-                            value={(() => {
-                              const p = isAutoRow ? lastPct : row.pct;
-                              return Number.isInteger(p) ? p : Math.round(p * 100) / 100;
-                            })()}
-                            disabled={isAutoRow || paid}
-                            onChange={e => {
-                              const cleaned = e.target.value.replace(/[^\d.]/g, "");
-                              const v = cleaned === "" ? 0 : Math.min(100, parseFloat(cleaned) || 0);
-                              updateInstallment(i, { pct: v });
-                            }}
-                            className={`w-full h-9 pl-2 pr-7 rounded-md border text-sm font-mono tabular-nums focus:outline-none ${isAutoRow || paid ? "bg-gray-50 border-gray-200 text-gray-700" : "border-gray-200 focus:border-primary"}`}
-                          />
-                          <span className="absolute right-2 top-1/2 -translate-y-1/2 text-xs text-gray-400 pointer-events-none">%</span>
-                        </div>
                         {ccCheckbox}
                         {loanCheckbox}
                         <label className={`flex items-center gap-1.5 text-xs text-gray-600 ${paid ? "cursor-default opacity-60" : "cursor-pointer"}`}>
@@ -1022,6 +1197,41 @@ export default function OrderStep({ lead, state, refresh, expanded, onToggle }: 
             {earlierPctSum > 100 && (
               <div className="mt-2 text-xs text-red-500">รวม % เกิน 100 ({earlierPctSum}%) — ลด % ของงวดก่อนหน้าลง</div>
             )}
+            {/* การติดตามชำระเงิน — checkbox เดียวระดับ order. คำนวณวันจาก
+                installDate − N วัน. ติ๊ก → เก็บ leads.payment_followup_date +
+                สร้าง activity (follow_up) + set lead.next_follow_up. */}
+            {(() => {
+              // ติ๊กได้เมื่อยังมีงวดที่ยังไม่ชำระ ≥1 งวด (ไม่ต้องรอวันติดตั้ง).
+              // ถ้ายังไม่มีวันติดตั้ง → ติ๊กได้ แต่ date เป็น null + แสดง
+              // "ยังไม่ระบุวันติดตั้ง"; date จะถูกคำนวณอัตโนมัติเมื่อตั้งวันติดตั้ง.
+              const hasUnpaid = installments.some((_, idx) => !paidIdxSet.has(idx));
+              const followupComputed = computeFollowupDate(installDate || null);
+              const hint = !hasUnpaid
+                ? "ชำระครบทุกงวดแล้ว"
+                : followupComputed
+                  ? formatDate(followupComputed)
+                  : "คำนวณอัตโนมัติเมื่อระบุวันติดตั้ง";
+              return (
+                <div className="mt-3 pt-3 border-t border-gray-100">
+                  <div className="text-xs font-semibold text-gray-500 mb-1.5">การติดตามชำระเงิน</div>
+                  <label className={`inline-flex items-center gap-2 text-sm ${hasUnpaid ? "cursor-pointer text-gray-700" : "opacity-60 cursor-default text-gray-500"}`}>
+                    <input
+                      type="checkbox"
+                      checked={paymentFollowupEnabled}
+                      disabled={!hasUnpaid}
+                      onChange={e => togglePaymentFollowup(e.target.checked, followupComputed)}
+                      className="w-4 h-4 accent-primary"
+                    />
+                    <span>
+                      ติดตามให้ชำระเงินก่อนติดตั้ง {FOLLOWUP_DAYS_BEFORE} วัน{" "}
+                      <span className={paymentFollowupEnabled && followupComputed ? "font-semibold text-amber-700" : "text-gray-400"}>
+                        ({hint})
+                      </span>
+                    </span>
+                  </label>
+                </div>
+              );
+            })()}
           </div>
 
           {/* Post-installments summary: full breakdown from ยอดรวม through
@@ -1089,10 +1299,12 @@ export default function OrderStep({ lead, state, refresh, expanded, onToggle }: 
                 setLineSending(true);
                 try {
                   const origin = typeof window !== "undefined" ? window.location.origin : "";
-                  // quotation_files is CSV of URLs — LINE button needs a single valid
-                  // URI, so pick the first file only.
-                  const firstFile = (lead.quotation_files || "").split(",").filter(Boolean)[0] || "";
-                  const downloadUrl = firstFile.startsWith("http") ? firstFile : `${origin}${firstFile}`;
+                  // LINE button needs a single URI — use the accepted
+                  // quotation if the customer picked one, otherwise fall
+                  // back to the first option.
+                  const linkOpt = (acceptedIdx !== null && acceptedIdx !== undefined ? quoteOptions[acceptedIdx] : null) || quoteOptions[0];
+                  const linkUrl = linkOpt?.url || "";
+                  const downloadUrl = linkUrl.startsWith("http") ? linkUrl : `${origin}${linkUrl}`;
                   const bankLabel: Record<string, string> = { ghb: "ธอส.", gsb: "ออมสิน" };
                   const fmtMethod = (r: typeof persistedInstallments[number]) => r.method === "loan"
                     ? `สินเชื่อ${r.loan_bank ? ` ${bankLabel[r.loan_bank] || r.loan_bank}` : ""}`
@@ -1194,7 +1406,31 @@ export default function OrderStep({ lead, state, refresh, expanded, onToggle }: 
           </div>
           <div>
             <label className="text-xs font-semibold tracking-wider uppercase text-gray-400 block mb-1">กำหนดเข้าติดตั้ง</label>
-            <CalendarPicker date={installDate} timeSlot="" onDateChange={setInstallDate} onTimeSlotChange={() => {}} showTimeSlot={false} showSurveySlots teamContext="install" excludeLeadId={lead.id} allowPast />
+            <CalendarPicker
+              date={installDate}
+              dateEnd={installDateEnd}
+              timeSlot=""
+              onDateChange={setInstallDate}
+              onDateEndChange={setInstallDateEnd}
+              onTimeSlotChange={() => {}}
+              showTimeSlot={false}
+              showSurveySlots
+              teamContext="install"
+              excludeLeadId={lead.id}
+              allowPast
+            />
+            <div className="text-xs text-gray-500 mt-2">
+              {installDate
+                ? installDateEnd
+                  ? (() => {
+                      const start = new Date(installDate + "T12:00:00");
+                      const end = new Date(installDateEnd + "T12:00:00");
+                      const days = Math.round((end.getTime() - start.getTime()) / 86400000) + 1;
+                      return `เลือกแล้ว: ${formatDate(installDate)} – ${formatDate(installDateEnd)} (ใช้เวลาติดตั้ง ${days} วัน)`;
+                    })()
+                  : "คลิกอีกครั้งบนวันที่ถัดไปเพื่อเลือกช่วง — หรือเว้นไว้ถ้าติดตั้งวันเดียว"
+                : "คลิกวันเริ่มต้นการติดตั้ง"}
+            </div>
           </div>
         </div>
       )}
@@ -1202,21 +1438,38 @@ export default function OrderStep({ lead, state, refresh, expanded, onToggle }: 
       {/* Step 0: ส่งใบเสนอราคาให้ลูกค้า */}
       {subStep === 0 && (
         <div className="space-y-3">
-          {lead.quotation_files && (
+          {quoteOptions.length > 0 && (
             <div className="rounded-lg bg-orange-50 border border-orange-200 p-3">
-              <div className="text-xs font-bold text-orange-600 uppercase mb-2">ไฟล์ที่จะส่ง</div>
-              {lead.quotation_files.split(",").filter(Boolean).map((url, i) => {
-                const fileName = url.split("/").pop() || `ไฟล์ ${i + 1}`;
-                const isImage = /\.(jpg|jpeg|png|gif|webp)$/i.test(url);
-                return (
-                  <a key={i} href={url} target="_blank" rel="noreferrer" className="flex items-center gap-2 px-3 py-2 rounded-lg bg-white border border-orange-100 hover:bg-orange-50 transition-colors">
-                    <svg className="w-4 h-4 text-orange-400 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                      <path strokeLinecap="round" strokeLinejoin="round" d={isImage ? "M2.25 15.75l5.159-5.159a2.25 2.25 0 013.182 0l5.159 5.159m-1.5-1.5l1.409-1.41a2.25 2.25 0 013.182 0l2.909 2.91M3.75 21h16.5a2.25 2.25 0 002.25-2.25V5.25A2.25 2.25 0 0020.25 3H3.75A2.25 2.25 0 001.5 5.25v13.5A2.25 2.25 0 003.75 21z" : "M19.5 14.25v-2.625a3.375 3.375 0 00-3.375-3.375h-1.5A1.125 1.125 0 0113.5 7.125v-1.5a3.375 3.375 0 00-3.375-3.375H8.25m2.25 0H5.625c-.621 0-1.125.504-1.125 1.125v17.25c0 .621.504 1.125 1.125 1.125h12.75c.621 0 1.125-.504 1.125-1.125V11.25a9 9 0 00-9-9z"} />
-                    </svg>
-                    <span className="text-sm text-orange-700 font-semibold truncate">{fileName}</span>
-                  </a>
-                );
-              })}
+              <div className="text-xs font-bold text-orange-600 uppercase mb-2">
+                {quoteOptions.length === 1 ? "ใบเสนอราคา" : `เลือกใบเสนอราคาที่ลูกค้ารับ (${quoteOptions.length} ชุด)`}
+              </div>
+              <div className={`grid gap-2 ${quoteOptions.length > 1 ? "grid-cols-1 md:grid-cols-3" : "grid-cols-1"}`}>
+                {quoteOptions.map((opt, i) => {
+                  const fileName = opt.url.split("/").pop() || `ไฟล์ ${i + 1}`;
+                  const isImage = /\.(jpg|jpeg|png|gif|webp)$/i.test(opt.url);
+                  const isAccepted = acceptedIdx === i;
+                  const isSelectable = quoteOptions.length > 1;
+                  return (
+                    <div key={i}
+                      onClick={isSelectable ? () => pickQuote(i) : undefined}
+                      className={`rounded-lg border p-2 transition-colors ${isAccepted ? "border-emerald-400 bg-emerald-50/60 ring-1 ring-emerald-300" : "border-orange-100 bg-white"} ${isSelectable && !isAccepted ? "cursor-pointer hover:border-orange-300 hover:bg-orange-50/40" : ""} ${pickingQuote ? "opacity-60" : ""}`}
+                    >
+                      <div className="flex items-center justify-between mb-1.5">
+                        <div className="text-xxs font-bold uppercase tracking-wider text-gray-500">ชุด {i + 1}</div>
+                        {isAccepted && <div className="text-xxs font-bold text-emerald-700 bg-emerald-100 px-2 py-0.5 rounded-full">เลือกแล้ว</div>}
+                      </div>
+                      <a href={opt.url} target="_blank" rel="noreferrer" onClick={e => e.stopPropagation()} className="flex items-center gap-2 px-2 py-1.5 rounded bg-orange-50 border border-orange-100 hover:bg-orange-100 transition-colors">
+                        <svg className="w-4 h-4 text-orange-400 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                          <path strokeLinecap="round" strokeLinejoin="round" d={isImage ? "M2.25 15.75l5.159-5.159a2.25 2.25 0 013.182 0l5.159 5.159m-1.5-1.5l1.409-1.41a2.25 2.25 0 013.182 0l2.909 2.91M3.75 21h16.5a2.25 2.25 0 002.25-2.25V5.25A2.25 2.25 0 0020.25 3H3.75A2.25 2.25 0 001.5 5.25v13.5A2.25 2.25 0 003.75 21z" : "M19.5 14.25v-2.625a3.375 3.375 0 00-3.375-3.375h-1.5A1.125 1.125 0 0113.5 7.125v-1.5a3.375 3.375 0 00-3.375-3.375H8.25m2.25 0H5.625c-.621 0-1.125.504-1.125 1.125v17.25c0 .621.504 1.125 1.125 1.125h12.75c.621 0 1.125-.504 1.125-1.125V11.25a9 9 0 00-9-9z"} />
+                        </svg>
+                        <span className="text-xs text-orange-700 font-semibold truncate">{fileName}</span>
+                      </a>
+                      <div className="mt-1.5 text-base font-bold font-mono tabular-nums text-gray-900">{fmt(opt.amount)} บาท</div>
+                      {opt.doc_no && <div className="text-xxs text-gray-500 font-mono mt-0.5">{opt.doc_no}</div>}
+                    </div>
+                  );
+                })}
+              </div>
               {lead.quotation_note && <div className="text-xs text-orange-600 mt-2">{lead.quotation_note}</div>}
             </div>
           )}

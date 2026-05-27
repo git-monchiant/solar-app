@@ -135,63 +135,115 @@ export default function PendingApprovalReport() {
             <div className="text-sm text-gray-400">ไม่มีรายการรอยืนยัน</div>
           </div>
         ) : (
-          <div className="bg-white rounded-xl border border-gray-300 divide-y divide-gray-100">
+          <div className="space-y-2 md:space-y-0 md:bg-white md:rounded-xl md:border md:border-gray-300 md:divide-y md:divide-gray-100">
             {filtered.map(it => {
               const i = it.installment;
+              const label = labelForInstallment(i.step_no, i.slip_field);
+              const gallery = i.slip_urls.map((u, k) => ({ url: u, label: i.slip_urls.length > 1 ? `${label} · สลิป ${k + 1} / ${i.slip_urls.length}` : label }));
               return (
-                <div key={`${it.lead_id}-${i.id}`} className="p-3 md:p-4 flex items-center gap-3 md:gap-4 flex-wrap md:flex-nowrap">
-                  {/* Slip thumbnails */}
-                  <div className="flex items-center gap-1 shrink-0">
-                    {i.slip_urls.slice(0, 3).map((url, idx) => (
-                      <FallbackImage
-                        key={url}
-                        src={url}
-                        alt=""
-                        className="w-12 h-12 object-cover rounded border border-gray-200"
-                        gallery={i.slip_urls.map((u, k) => ({ url: u, label: i.slip_urls.length > 1 ? `${labelForInstallment(i.step_no, i.slip_field)} · สลิป ${k + 1} / ${i.slip_urls.length}` : labelForInstallment(i.step_no, i.slip_field) }))}
-                        galleryIndex={idx}
-                      />
-                    ))}
-                    {i.slip_urls.length > 3 && (
-                      <button type="button" onClick={() => openSlips(i)} className="w-12 h-12 rounded border border-gray-200 bg-gray-50 text-xs font-semibold text-gray-600">+{i.slip_urls.length - 3}</button>
+                <div key={`${it.lead_id}-${i.id}`}>
+                  {/* Mobile card */}
+                  <div className="md:hidden bg-white rounded-xl border border-gray-300 p-3 space-y-2">
+                    <div className="flex items-start justify-between gap-2">
+                      <div className="min-w-0 flex-1">
+                        <Link href={`/leads/${it.lead_id}`} className="block font-semibold text-gray-900 truncate">{it.full_name}</Link>
+                        <div className="text-[11px] text-gray-400 font-mono truncate">{it.pre_doc_no || `#${it.lead_id}`}{it.project_name ? ` · ${it.project_name}` : ""}</div>
+                      </div>
+                      <div className="text-right shrink-0">
+                        <div className="text-xl font-bold font-mono tabular-nums text-amber-600 leading-none">{fmt(i.amount)}</div>
+                        <div className="text-[10px] text-gray-400 mt-0.5">บาท</div>
+                      </div>
+                    </div>
+                    <div className="text-xs">
+                      <span className="font-semibold text-gray-800">{label}</span>
+                      {i.description && <span className="text-gray-500"> · {i.description}</span>}
+                    </div>
+                    {i.slip_urls.length > 0 && (
+                      <div className="flex items-center gap-1 overflow-x-auto pb-1 -mx-1 px-1">
+                        {i.slip_urls.slice(0, 4).map((url, idx) => (
+                          <FallbackImage
+                            key={url}
+                            src={url}
+                            alt=""
+                            className="w-14 h-14 object-cover rounded border border-gray-200 shrink-0"
+                            gallery={gallery}
+                            galleryIndex={idx}
+                          />
+                        ))}
+                        {i.slip_urls.length > 4 && (
+                          <button type="button" onClick={() => openSlips(i)} className="w-14 h-14 rounded border border-gray-200 bg-gray-50 text-xs font-semibold text-gray-600 shrink-0">+{i.slip_urls.length - 4}</button>
+                        )}
+                      </div>
                     )}
+                    {(i.ref1 || i.ref2) && (
+                      <div className="grid grid-cols-2 gap-2 text-xs font-mono tabular-nums">
+                        {i.ref1 && <div className="truncate"><span className="text-gray-400">Ref1: </span><span className="text-gray-800">{i.ref1}</span></div>}
+                        {i.ref2 && <div className="truncate"><span className="text-gray-400">Ref2: </span><span className="text-gray-800">{i.ref2}</span></div>}
+                      </div>
+                    )}
+                    <Link
+                      href={`/leads/${it.lead_id}`}
+                      className="block w-full text-center h-10 leading-10 rounded-lg text-sm font-semibold text-white bg-amber-500 hover:brightness-110"
+                    >
+                      ยืนยันรับเงิน
+                    </Link>
                   </div>
 
-                  {/* Info */}
-                  <div className="flex-1 min-w-0">
-                    <div className="flex items-center gap-2 flex-wrap">
-                      <Link href={`/leads/${it.lead_id}`} className="font-semibold text-gray-900 hover:text-primary">{it.full_name}</Link>
-                      <span className="text-xs font-mono text-gray-400">{it.pre_doc_no || `#${it.lead_id}`}</span>
-                      {it.project_name && <span className="text-xs text-gray-500">· {it.project_name}</span>}
-                    </div>
-                    <div className="text-xs text-gray-500 mt-0.5">
-                      <span className="font-semibold text-gray-700">{labelForInstallment(i.step_no, i.slip_field)}</span>
-                      {i.description && <span> · {i.description}</span>}
-                    </div>
-                  </div>
-
-                  {/* Refs — own column. Label/value aligned left in 2 columns. */}
-                  {(i.ref1 || i.ref2) && (
-                    <div className="shrink-0 font-mono tabular-nums leading-tight text-sm">
-                      {i.ref1 && (
-                        <div className="flex gap-2"><span className="text-gray-400 w-10">Ref1:</span><span className="text-gray-800">{i.ref1}</span></div>
+                  {/* Desktop row */}
+                  <div className="hidden md:flex items-center gap-4 p-4">
+                    <div className="flex items-center gap-1 shrink-0">
+                      {i.slip_urls.slice(0, 3).map((url, idx) => (
+                        <FallbackImage
+                          key={url}
+                          src={url}
+                          alt=""
+                          className="w-12 h-12 object-cover rounded border border-gray-200"
+                          gallery={gallery}
+                          galleryIndex={idx}
+                        />
+                      ))}
+                      {i.slip_urls.length > 3 && (
+                        <button type="button" onClick={() => openSlips(i)} className="w-12 h-12 rounded border border-gray-200 bg-gray-50 text-xs font-semibold text-gray-600">+{i.slip_urls.length - 3}</button>
                       )}
-                      {i.ref2 && (
-                        <div className="flex gap-2"><span className="text-gray-400 w-10">Ref2:</span><span className="text-gray-800">{i.ref2}</span></div>
-                      )}
                     </div>
-                  )}
-
-                  {/* Amount */}
-                  <div className="text-right shrink-0">
-                    <div className="text-lg font-bold font-mono tabular-nums text-amber-600">{fmt(i.amount)}</div>
-                    <div className="text-xs text-gray-400">บาท</div>
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <Link href={`/leads/${it.lead_id}`} className="font-semibold text-gray-900 hover:text-primary">{it.full_name}</Link>
+                        <span className="text-xs font-mono text-gray-400">{it.pre_doc_no || `#${it.lead_id}`}</span>
+                        {it.project_name && <span className="text-xs text-gray-500">· {it.project_name}</span>}
+                      </div>
+                      <div className="text-xs text-gray-500 mt-0.5">
+                        <span className="font-semibold text-gray-700">{label}</span>
+                        {i.description && <span> · {i.description}</span>}
+                      </div>
+                    </div>
+                    {(i.ref1 || i.ref2) && (
+                      <div className="shrink-0 font-mono tabular-nums leading-tight text-sm">
+                        {i.ref1 && (
+                          <div className="flex gap-2"><span className="text-gray-400 w-10">Ref1:</span><span className="text-gray-800">{i.ref1}</span></div>
+                        )}
+                        {i.ref2 && (
+                          <div className="flex gap-2"><span className="text-gray-400 w-10">Ref2:</span><span className="text-gray-800">{i.ref2}</span></div>
+                        )}
+                      </div>
+                    )}
+                    <div className="text-right shrink-0">
+                      <div className="text-lg font-bold font-mono tabular-nums text-amber-600">{fmt(i.amount)}</div>
+                      <div className="text-xs text-gray-400">บาท</div>
+                    </div>
+                    {/* Desktop opens the lead detail in a focus-mode tab (no
+                        sidebar / no margin) — matches the LeadCard "open in new
+                        tab on desktop" pattern. Mobile button above keeps the
+                        in-app navigation since phone has no sidebar to hide. */}
+                    <Link
+                      href={`/leads/${it.lead_id}?focus=1`}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="h-9 px-3 rounded-lg text-sm font-semibold text-white bg-amber-500 hover:brightness-110 inline-flex items-center shrink-0"
+                    >
+                      ยืนยันรับเงิน
+                    </Link>
                   </div>
-
-                  {/* Action */}
-                  <Link href={`/leads/${it.lead_id}`} className="h-9 px-3 rounded-lg text-sm font-semibold text-white bg-amber-500 hover:brightness-110 inline-flex items-center shrink-0">
-                    ยืนยันรับเงิน
-                  </Link>
                 </div>
               );
             })}

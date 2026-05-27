@@ -28,6 +28,11 @@ interface Props {
    * also shifts the visible window to show the previous month + current month
    * so the user can reach last month without month navigation. */
   allowPast?: boolean;
+  /** Optional end date — when both this and `onDateEndChange` are provided
+   * the picker becomes a range selector: 1st click = start, 2nd click = end,
+   * 3rd click = reset to new start. Click on start clears the range. */
+  dateEnd?: string;
+  onDateEndChange?: (d: string) => void;
 }
 
 // Team colours mirror the calendar page legend so the picker reads the same
@@ -49,7 +54,10 @@ export default function CalendarPicker({
   zoneFilter,
   teamContext = "survey",
   allowPast = false,
+  dateEnd,
+  onDateEndChange,
 }: Props) {
+  const rangeMode = !!onDateEndChange;
   void zoneFilter;
   const [surveys, setSurveys] = useState<{ id: number; event_date?: string; time_slot?: string | null; event_type?: string; survey_date?: string; survey_time_slot?: string | null; zone?: string | null; team?: string | null }[]>([]);
 
@@ -144,7 +152,10 @@ export default function CalendarPicker({
                 {Array.from({ length: daysInMonth }).map((_, i) => {
                   const d = new Date(monthStart.getFullYear(), monthStart.getMonth(), i + 1);
                   const iso = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
-                  const selected = date === iso;
+                  const isStart = date === iso;
+                  const isEnd = rangeMode && !!dateEnd && dateEnd === iso;
+                  const isInRange = rangeMode && !!date && !!dateEnd && iso > date && iso < dateEnd;
+                  const selected = isStart || isEnd;
                   const isPast = d < today;
                   const isToday = d.getTime() === today.getTime();
                   const isWeekend = d.getDay() === 0 || d.getDay() === 6;
@@ -178,6 +189,24 @@ export default function CalendarPicker({
                         type="button"
                         disabled={disabled}
                         onClick={() => {
+                          if (rangeMode) {
+                            // Range cycle: empty → start; start only + click later → end;
+                            // start + end → reset start to clicked, clear end;
+                            // click on existing start → clear both.
+                            if (!date) {
+                              onDateChange(iso);
+                              onDateEndChange!("");
+                            } else if (iso === date) {
+                              onDateChange("");
+                              onDateEndChange!("");
+                            } else if (!dateEnd && iso > date) {
+                              onDateEndChange!(iso);
+                            } else {
+                              onDateChange(iso);
+                              onDateEndChange!("");
+                            }
+                            return;
+                          }
                           onDateChange(iso);
                           // Drop any previously selected slots that are taken on the new date.
                           const taken = bookedSlotsByDate[iso];
@@ -195,6 +224,7 @@ export default function CalendarPicker({
                           if (selected) {
                             e.preventDefault();
                             onDateChange("");
+                            if (rangeMode) onDateEndChange!("");
                             onTimeSlotChange("");
                           }
                         }}
@@ -202,6 +232,8 @@ export default function CalendarPicker({
                         className={`w-8 h-8 rounded-full flex items-center justify-center text-sm leading-none font-semibold transition-all ${
                           selected
                             ? "bg-active text-white shadow-sm shadow-active/30"
+                            : isInRange
+                            ? "bg-active/20 text-active hover:bg-active/30"
                             : pastBlocks
                             ? "text-gray-300 cursor-not-allowed"
                             : bookedClass || bookedStyle

@@ -40,6 +40,7 @@ interface Lead {
   id: number;
   full_name: string;
   phone: string;
+  email: string | null;
   project_name: string | null;
   installation_address: string | null;
   assigned_name: string | null;
@@ -228,6 +229,7 @@ export default function SurveyPdfPage() {
                         <span className="font-medium">เบอร์โทร</span><span>{lead.phone || "—"}</span>
                         {lead.project_name && (<><span className="font-medium">โครงการ</span><span>{lead.project_name}</span></>)}
                         {lead.installation_address && (<><span className="font-medium">ที่อยู่ติดตั้ง</span><span>{lead.installation_address}</span></>)}
+                        <span className="font-medium">อีเมล</span><span>{lead.email || "—"}</span>
                         {lead.assigned_name && (<><span className="font-medium">ผู้สำรวจ</span><span>{lead.assigned_name}</span></>)}
                       </div>
                       {locQr && (

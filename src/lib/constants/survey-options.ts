@@ -31,7 +31,7 @@ export const METER_SIZE_LABEL: Record<string, string> = {
 };
 
 export const MDB_SLOTS_LABEL: Record<string, string> = {
-  has_slot: "ยังมีช่องว่าง",
+  has_slot: "มีช่องว่าง 1 ช่อง",
   full: "เต็ม",
 };
 
@@ -57,7 +57,7 @@ export const INVERTER_BRANDS = ["DEYE", "Huawei"] as const;
 export type InverterBrand = (typeof INVERTER_BRANDS)[number];
 
 // ขนาดอินเวอร์เตอร์ (kW) ที่บริษัทมีให้เลือก
-export const INVERTER_KW_SIZES = [3, 5, 7, 10] as const;
+export const INVERTER_KW_SIZES = [3, 5, 6, 10] as const;
 export type InverterKwSize = (typeof INVERTER_KW_SIZES)[number];
 
 export const WIFI_LABEL: Record<string, string> = {

@@ -5,7 +5,7 @@ import { createPortal } from "react-dom";
 import PdfPreview from "./PdfPreview";
 import { useMe } from "@/lib/roles";
 
-export type ReceiptStage = "deposit" | "order_before" | "order_after";
+export type ReceiptStage = "deposit" | "order_before" | "order_after" | "installment";
 
 interface Props {
   leadId: number;
@@ -19,27 +19,31 @@ interface Props {
   showSurvey?: boolean;
   /** Header label inside this modal — defaults to a stage-based label. */
   modalLabel?: string;
+  /** Required when stage="installment" — identifies the source payment row. */
+  paymentId?: number;
 }
 
 const STAGE_TITLE: Record<ReceiptStage, string> = {
   deposit: "ใบเสร็จค่าสำรวจ",
   order_before: "ใบเสร็จงวดก่อนติดตั้ง",
   order_after: "ใบเสร็จงวดหลังติดตั้ง",
+  installment: "ใบเสร็จงวดชำระ",
 };
 
-function apiUrl(leadId: number, stage: ReceiptStage, userId?: number, title?: string, showSurvey?: boolean) {
+function apiUrl(leadId: number, stage: ReceiptStage, userId?: number, title?: string, showSurvey?: boolean, paymentId?: number) {
   const qs = new URLSearchParams({ lead_id: String(leadId), stage, format: "pdf" });
   if (userId) qs.set("user_id", String(userId));
   if (title) qs.set("title", title);
   if (showSurvey) qs.set("show_survey", "1");
+  if (paymentId) qs.set("payment_id", String(paymentId));
   return `/api/receipt?${qs.toString()}`;
 }
 
-export default function ReceiptModal({ leadId, stage, fileLabel, onClose, title, showSurvey, modalLabel }: Props) {
+export default function ReceiptModal({ leadId, stage, fileLabel, onClose, title, showSurvey, modalLabel, paymentId }: Props) {
   const [saving, setSaving] = useState(false);
   const [mounted, setMounted] = useState(false);
   const { me } = useMe();
-  const pdfUrl = apiUrl(leadId, stage, me?.id, title, showSurvey);
+  const pdfUrl = apiUrl(leadId, stage, me?.id, title, showSurvey, paymentId);
   const headerLabel = modalLabel ?? STAGE_TITLE[stage];
 
   // Render via portal at document.body so the full-screen overlay can't be

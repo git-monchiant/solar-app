@@ -22,6 +22,9 @@ export interface Lead {
   assigned_username?: string | null;
   pre_package_id: number | null;
   pre_slip_url: string | null;
+  receipt_deposit_actual_url?: string | null;
+  receipt_order_before_actual_url?: string | null;
+  receipt_order_after_actual_url?: string | null;
   pre_doc_no: string | null;
   pre_total_price: number | null;
   pre_booked_at: string | null;
@@ -107,7 +110,12 @@ export interface Lead {
   survey_customer_signature_url: string | null;
   // Quotation
   quotation_note: string | null;
+  // JSON: [{ url, doc_no, amount }, ...] up to 3 entries (legacy: bare CSV of URLs).
   quotation_files: string | null;
+  // Index (0-based) into quotation_files JSON of the option the customer
+  // accepted — set in OrderStep substep 1. quotation_amount + quotation_doc_no
+  // are synced from the chosen entry once picked.
+  quotation_accepted_idx: number | null;
   quotation_amount: number | null;
   // Purchase
   order_total: number | null;
@@ -124,7 +132,10 @@ export interface Lead {
   order_after_paid: boolean;
   order_after_slip: string | null;
   install_date: string | null;
+  install_date_end: string | null;
   install_time_slot: string | null;
+  payment_followup_date: string | null;
+  payment_followup_enabled: boolean;
   install_confirmed: boolean;
   install_photos: string | null;
   install_note: string | null;
@@ -156,6 +167,8 @@ export interface Lead {
   warranty_panel_brand: string | null;
   warranty_inverter_brand: string | null;
   warranty_inverter_kw: number | null;
+  warranty_electrical_phase: string | null;
+  payment_reject_notes: string | null;
   warranty_battery_brand: string | null;
   warranty_battery_kwh: number | null;
   warranty_has_battery: boolean | null;

@@ -29,7 +29,7 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
     const db = await getDb();
 
     if (searchParams.get("list")) {
-      const cols = ["id", "payment_method", "description"];
+      const cols = ["id", "payment_method", "description", "actual_receipt_url"];
       for (let i = 1; i <= MAX_SLIPS; i++) {
         const suffix = i === 1 ? "" : `_${i}`;
         cols.push(`slip_mime${suffix}`, `slip_filename${suffix}`, `DATALENGTH(slip_data${suffix}) AS bytes_${i}`);
@@ -52,7 +52,12 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
           });
         }
       }
-      return NextResponse.json({ slots, payment_method: row.payment_method || null, description: row.description || null });
+      return NextResponse.json({
+        slots,
+        payment_method: row.payment_method || null,
+        description: row.description || null,
+        actual_receipt_url: row.actual_receipt_url || null,
+      });
     }
 
     const slot = parseInt(searchParams.get("slot") || "1");
@@ -74,6 +79,37 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
     });
   } catch (e) {
     console.error("GET /api/payments/[id] error:", e);
+    return NextResponse.json({ error: e instanceof Error ? e.message : "Failed" }, { status: 500 });
+  }
+}
+
+// PATCH /api/payments/<id>  → currently only used to attach/clear the scanned
+// "ใบเสร็จตัวจริง" URL per installment. Keeps the receipt next to the payment
+// it belongs to instead of sprawling across stage-level columns on leads.
+export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
+  const gate = await requireAuth(req);
+  if (gate.error) return gate.error;
+  const { id } = await params;
+  const payId = parseInt(id);
+  if (!payId) return NextResponse.json({ error: "Invalid id" }, { status: 400 });
+  try {
+    const body = await req.json();
+    if (!Object.prototype.hasOwnProperty.call(body, "actual_receipt_url")) {
+      return NextResponse.json({ error: "actual_receipt_url required" }, { status: 400 });
+    }
+    // actual_receipt_url is a JSON array of up to 5 URLs (migration 027). Server
+    // stores the string verbatim; client owns serialization (single URL string
+    // is also accepted for legacy backwards-compat reads).
+    const url = body.actual_receipt_url == null ? null : String(body.actual_receipt_url);
+    const db = await getDb();
+    const result = await db.request()
+      .input("id", sql.Int, payId)
+      .input("url", sql.NVarChar(sql.MAX), url)
+      .query(`UPDATE payments SET actual_receipt_url = @url WHERE id = @id`);
+    if (result.rowsAffected[0] === 0) return NextResponse.json({ error: "Not found" }, { status: 404 });
+    return NextResponse.json({ ok: true });
+  } catch (e) {
+    console.error("PATCH /api/payments/[id] error:", e);
     return NextResponse.json({ error: e instanceof Error ? e.message : "Failed" }, { status: 500 });
   }
 }

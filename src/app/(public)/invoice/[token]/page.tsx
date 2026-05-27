@@ -12,6 +12,7 @@ interface InvoiceData {
   is_pre_survey: boolean;
   full_name: string;
   phone: string;
+  email: string | null;
   project_name: string | null;
   installation_address: string | null;
   survey_date: string | null;
@@ -91,6 +92,7 @@ export default function InvoicePage() {
               {d.phone && (<><span className="text-gray-400">PHONE</span><span className="text-gray-800">{d.phone}</span></>)}
               {d.project_name && (<><span className="text-gray-400">PROJECT</span><span className="text-gray-800">{d.project_name}</span></>)}
               {d.installation_address && (<><span className="text-gray-400">ADDRESS</span><span className="text-gray-800 truncate">{d.installation_address}</span></>)}
+              <span className="text-gray-400">EMAIL</span><span className="text-gray-800 truncate">{d.email || "-"}</span>
             </div>
           </div>
 
@@ -111,9 +113,9 @@ export default function InvoicePage() {
                   นัดสำรวจ {thaiDate(d.survey_date)} {formatSlotsRange(d.survey_time_slot)}
                 </div>
               )}
-              {!d.is_pre_survey && (d.install_completed_at || d.install_actual_date || d.install_date) && (
+              {!d.is_pre_survey && (d.install_actual_date || d.install_completed_at || d.install_date) && (
                 <div className="text-[12px] text-gray-500 mt-1">
-                  วันที่ติดตั้ง {thaiDate(d.install_completed_at || d.install_actual_date || d.install_date!)}
+                  วันที่ติดตั้ง {thaiDate(d.install_actual_date || d.install_completed_at || d.install_date!)}
                 </div>
               )}
             </div>

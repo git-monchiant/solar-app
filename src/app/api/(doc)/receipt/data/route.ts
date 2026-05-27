@@ -31,7 +31,7 @@ export async function GET(req: NextRequest) {
     let signer: { full_name: string; signature_url: string | null } | null = null;
 
     const leadRes = await db.request().input("id", sql.Int, leadId).query(`
-      SELECT l.id, l.full_name, l.phone, l.installation_address, l.id_card_address, l.id_card_number,
+      SELECT l.id, l.full_name, l.phone, l.email, l.installation_address, l.id_card_address, l.id_card_number,
              l.survey_date, l.survey_time_slot, l.interested_package_id, l.interested_package_ids,
              l.order_total, l.order_pct_before, l.order_installments,
              l.install_extra_cost, l.install_extra_note, l.install_completed_at,

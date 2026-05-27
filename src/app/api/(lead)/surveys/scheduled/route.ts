@@ -24,6 +24,20 @@ export async function GET(req: NextRequest) {
         SELECT id, title, time_slot, team, DATEADD(day, 1, d), last_d
         FROM block_days
         WHERE d < last_d
+      ),
+      install_days AS (
+        -- Same day-by-day expansion for multi-day installs. install_date_end
+        -- NULL = single-day install. So a 23–24 มิ.ย. install shows on both days.
+        SELECT id, full_name, house_number, status, zone,
+               install_date AS d, COALESCE(install_date_end, install_date) AS last_d
+        FROM leads
+        WHERE install_date IS NOT NULL
+          AND install_completed_at IS NULL
+          AND status NOT IN ('warranty', 'gridtie', 'closed', 'lost', 'returned')
+        UNION ALL
+        SELECT id, full_name, house_number, status, zone, DATEADD(day, 1, d), last_d
+        FROM install_days
+        WHERE d < last_d
       )
       -- Each row carries a team field so the picker can scope availability:
       --   survey events → survey (Survey team calendar)
@@ -35,11 +49,8 @@ export async function GET(req: NextRequest) {
         AND survey_actual_date IS NULL
         AND status NOT IN ('quote', 'order', 'install', 'warranty', 'gridtie', 'closed', 'lost', 'returned')
       UNION ALL
-      SELECT id, full_name, house_number, install_date as event_date, NULL as time_slot, 'install' as event_type, status, zone, 'install' as team
-      FROM leads
-      WHERE install_date IS NOT NULL
-        AND install_completed_at IS NULL
-        AND status NOT IN ('warranty', 'gridtie', 'closed', 'lost', 'returned')
+      SELECT id, full_name, house_number, d as event_date, NULL as time_slot, 'install' as event_type, status, zone, 'install' as team
+      FROM install_days
       UNION ALL
       SELECT (-id) as id, title as full_name, NULL as house_number,
              d as event_date, time_slot, 'block' as event_type,

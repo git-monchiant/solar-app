@@ -14,7 +14,7 @@ export default function LoginPage() {
 
   useEffect(() => {
     if (typeof window !== "undefined" && localStorage.getItem("userId")) {
-      router.replace("/today");
+      router.replace("/pipeline");
     }
     fetch("/api/version", { cache: "no-store" })
       .then((r) => r.ok ? r.json() : null)

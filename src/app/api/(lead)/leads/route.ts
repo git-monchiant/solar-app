@@ -33,7 +33,7 @@ export async function GET(req: NextRequest) {
              l.customer_type, l.status, l.source, l.tag, l.note, l.contact_date, l.created_at,
              l.next_follow_up, l.revisit_date, l.lost_reason,
              l.assigned_user_id, l.zone, l.line_id,
-             l.survey_date, l.survey_time_slot, l.install_date, l.install_completed_at, l.install_extra_cost,
+             l.survey_date, l.survey_time_slot, l.install_date, l.install_date_end, l.install_actual_date, l.install_completed_at, l.install_extra_cost,
              l.pre_doc_no, l.pre_total_price, l.payment_confirmed, l.quotation_amount, l.order_total,
              COALESCE(NULLIF(l.project_alias, N''), NULLIF(l.project_name, N''), p.name) as project_name,
              l.project_alias, p.district, p.province,
@@ -43,7 +43,14 @@ export async function GET(req: NextRequest) {
              (SELECT TOP 1 created_at FROM lead_activities WHERE lead_id = l.id AND activity_type IN ('call','visit','line','other','follow_up','loan_followup') ORDER BY created_at DESC) as last_activity_date,
              (SELECT TOP 1 title FROM lead_activities WHERE lead_id = l.id AND activity_type IN ('call','visit','line','other','follow_up','loan_followup') ORDER BY created_at DESC) as last_activity_title,
              (SELECT TOP 1 activity_type FROM lead_activities WHERE lead_id = l.id AND activity_type IN ('call','visit','line','other','follow_up','loan_followup') ORDER BY created_at DESC) as last_activity_type,
-             (SELECT COUNT(*) FROM payments WHERE lead_id = l.id AND slip_field LIKE 'order_installment_%' AND confirmed_at IS NOT NULL) as order_paid_count
+             (SELECT COUNT(*) FROM payments WHERE lead_id = l.id AND slip_field LIKE 'order_installment_%' AND confirmed_at IS NOT NULL) as order_paid_count,
+             -- 1 = accountant has rejected at least one slip and the uploader
+             -- has not re-submitted yet (notes JSON is non-empty).
+             CASE
+               WHEN l.payment_reject_notes IS NULL THEN 0
+               WHEN LTRIM(RTRIM(l.payment_reject_notes)) IN ('', '{}', '[]') THEN 0
+               ELSE 1
+             END as has_payment_reject
       FROM leads l
       LEFT JOIN projects p ON l.project_id = p.id
       LEFT JOIN packages pk ON l.interested_package_id = pk.id

@@ -2,6 +2,7 @@
 
 import { apiFetch } from "@/lib/api";
 import { useEffect, useState } from "react";
+import { useRouter } from "next/navigation";
 import LeadCard, { LeadData } from "@/components/lead/LeadCard";
 import ListPageHeader from "@/components/layout/ListPageHeader";
 import NewLeadModal from "@/components/modal/NewLeadModal";
@@ -84,8 +85,9 @@ export default function TodayPage() {
   // valid "sales" tab to "calendar" on first render before /api/me resolves.
   useEffect(() => {
     if (activeRoles.length === 0) return;
-    const isSales = hasRole(activeRoles, "sales");
-    const isSolar = hasRole(activeRoles, "solar", "smartify");
+    const isAdminish = hasRole(activeRoles, "admin", "account");
+    const isSales = hasRole(activeRoles, "sales") || isAdminish;
+    const isSolar = hasRole(activeRoles, "solar", "smartify") || isAdminish;
     const validKeys: string[] = [];
     if (isSales) validKeys.push("sales_all", "sales", "booking", "quote", "deposit_paid", "sales_wait_install", "sales_solar");
     if (isSolar) validKeys.push("solar", "solar_survey", "solar_quote", "solar_wait_install", "solar_install", "solar_warranty");
@@ -118,6 +120,15 @@ export default function TodayPage() {
         <div className="w-10 h-10 border-3 border-gray-200 border-t-gray-900 rounded-full animate-spin" />
       </div>
     );
+  }
+
+  // Account-only role → simplified single-tab "รอยืนยันรับเงิน" view.
+  // (Sales/solar/admin/smartify see the full multi-tab Today below.)
+  const accountOnly =
+    hasRole(activeRoles, "account") &&
+    !hasRole(activeRoles, "admin", "sales", "solar", "smartify");
+  if (accountOnly) {
+    return <AccountTodayView leads={allLeads || []} search={search} setSearch={setSearch} />;
   }
 
   const raw = todayData!;
@@ -276,7 +287,7 @@ export default function TodayPage() {
     isSales && { key: "sales", label: "ติดตามลูกค้า", count: salesCount },
     isSales && { key: "booking", label: "รายการจอง", count: bookingCount },
     isSales && { key: "sales_solar", label: "ติดตามใบเสนอราคา", count: salesSolarCount },
-    isSales && { key: "quote", label: "รอเสนอราคา", count: d.installPending.length },
+    isSales && { key: "quote", label: "รอเสนอลูกค้า", count: d.installPending.length },
     isSales && { key: "deposit_paid", label: "ชำระมัดจำ", count: d.depositPaid.length },
     isSales && { key: "sales_wait_install", label: "รอนัดติดตั้ง", count: solarWaitInstallCount },
     isSolar && { key: "solar", label: "ทั้งหมด", count: solarCount },
@@ -364,7 +375,7 @@ export default function TodayPage() {
             {d.installPending.length > 0 && (
               <section>
                 <div className="flex items-center justify-between mb-3 px-1">
-                  <h2 className="text-xs font-bold tracking-wider uppercase text-violet-700">เสนอราคา · รอดำเนินการ</h2>
+                  <h2 className="text-xs font-bold tracking-wider uppercase text-violet-700">รอเสนอลูกค้า</h2>
                   <div className="flex items-center gap-2">
                     <span className="text-xs font-semibold text-violet-700 bg-violet-50 px-2 py-0.5 rounded-full">{d.installPending.length}</span>
                   </div>
@@ -531,7 +542,7 @@ export default function TodayPage() {
             {d.installPending.length > 0 ? (
               <section>
                 <div className="flex items-center justify-between mb-3 px-1">
-                  <h2 className="text-xs font-bold tracking-wider uppercase text-violet-700">เสนอราคา · รอดำเนินการ</h2>
+                  <h2 className="text-xs font-bold tracking-wider uppercase text-violet-700">รอเสนอลูกค้า</h2>
                   <div className="flex items-center gap-2">
                     {sortControls}
                     <span className="text-xs font-semibold text-violet-700 bg-violet-50 px-2 py-0.5 rounded-full">{d.installPending.length}</span>
@@ -955,6 +966,96 @@ export default function TodayPage() {
           onClose={() => setPickedChannel(null)}
         />
       )}
+    </div>
+  );
+}
+
+// Single-tab Today shown to account-only users. Pulls pending installments from
+// /api/report/payments, intersects lead_ids with /api/leads, renders LeadCard.
+interface PendingReportRow { lead_id: number; installments: { confirmed_at: string | null; has_slip: boolean }[] }
+interface PendingReportData { rows: PendingReportRow[] }
+
+function AccountTodayView({ leads, search, setSearch }: { leads: LeadData[]; search: string; setSearch: (s: string) => void }) {
+  const router = useRouter();
+  const [report, setReport] = useState<PendingReportData | null>(null);
+  const [reportLoading, setReportLoading] = useState(true);
+  useEffect(() => {
+    apiFetch("/api/report/payments")
+      .then((r: PendingReportData) => setReport(r))
+      .catch(console.error)
+      .finally(() => setReportLoading(false));
+  }, []);
+
+  // Map lead status → (localStorage substep key, substep index) for the
+  // "ชำระเงิน" substep of the relevant step. Used to deep-link the account
+  // user into the right form when they click a pending-payment card.
+  const paymentSubStepFor = (status: string): { key: string; sub: number } | null => {
+    const main = status.split('-')[0];
+    if (status === 'pre_survey-01' || status === 'pre_survey-02') return { key: 'preSurveySubStep', sub: 3 };
+    if (main === 'order') return { key: 'orderSubStep', sub: 1 };
+    if (main === 'install') return { key: 'installSubStep', sub: 3 };
+    return null;
+  };
+
+  const openAtPayment = (lead: LeadData) => {
+    const target = paymentSubStepFor(lead.status || "");
+    if (target && typeof window !== 'undefined') {
+      localStorage.setItem(`${target.key}_${lead.id}`, String(target.sub));
+    }
+    const isLarge = typeof window !== 'undefined' && window.matchMedia("(min-width: 500px)").matches;
+    if (isLarge) window.open(`/leads/${lead.id}?focus=1`, "_blank", "noreferrer");
+    else router.push(`/leads/${lead.id}`);
+  };
+
+  const pendingIds = new Set<number>();
+  if (report) {
+    for (const r of report.rows) {
+      if (r.installments.some(i => !i.confirmed_at && i.has_slip)) pendingIds.add(r.lead_id);
+    }
+  }
+  const cards = leads.filter(l => pendingIds.has(l.id));
+  const q = search.trim().toLowerCase();
+  const filtered = !q ? cards : cards.filter(l =>
+    l.full_name?.toLowerCase().includes(q) ||
+    l.phone?.includes(q) ||
+    l.project_name?.toLowerCase().includes(q) ||
+    l.installation_address?.toLowerCase().includes(q) ||
+    l.house_number?.toLowerCase().includes(q) ||
+    l.pre_doc_no?.toLowerCase().includes(q)
+  );
+
+  const today = new Date();
+  const subtitle = today.toLocaleDateString("en-US", { weekday: "long", month: "long", day: "numeric" }).toUpperCase();
+
+  return (
+    <div>
+      <ListPageHeader
+        title="Today"
+        subtitle={subtitle}
+        search={search}
+        onSearchChange={setSearch}
+        searchPlaceholder="ค้นหาชื่อ, เบอร์..."
+        tabs={[{ key: "pending", label: "รอยืนยันรับเงิน", count: filtered.length }]}
+        activeTab="pending"
+        onTabChange={() => {}}
+      />
+      <div className="p-3 md:p-6">
+        {reportLoading ? (
+          <div className="flex items-center justify-center py-20">
+            <div className="w-10 h-10 border-3 border-gray-200 border-t-primary rounded-full animate-spin" />
+          </div>
+        ) : filtered.length === 0 ? (
+          <div className="bg-white rounded-xl border border-gray-300 p-12 text-center">
+            <div className="text-sm text-gray-400">ไม่มีรายการรอยืนยัน</div>
+          </div>
+        ) : (
+          <div className="space-y-2">
+            {filtered.map(lead => (
+              <LeadCard key={lead.id} lead={lead} onOpen={openAtPayment} />
+            ))}
+          </div>
+        )}
+      </div>
     </div>
   );
 }

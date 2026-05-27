@@ -14,6 +14,7 @@ interface ReceiptData {
   order_total: number | null;
   full_name: string;
   phone: string;
+  email: string | null;
   project_name: string | null;
   id_card_address: string | null;
   id_card_number: string | null;
@@ -112,6 +113,7 @@ function ReceiptContent() {
             <div className="grid grid-cols-[80px_1fr] gap-y-1.5">
               <span className="text-gray-400">PROJECT</span><span>{d.project_name || "-"}</span>
               <span className="text-gray-400">ADDRESS</span><span>{d.id_card_address || d.installation_address || "-"}</span>
+              <span className="text-gray-400">EMAIL</span><span>{d.email || "-"}</span>
             </div>
           </div>
           <hr className="border-gray-200 mb-4" />

@@ -234,6 +234,14 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
       sets.push("next_follow_up = @next_follow_up");
       request.input("next_follow_up", sql.Date, body.next_follow_up ? new Date(body.next_follow_up + "T12:00:00") : null);
     }
+    if (body.payment_followup_date !== undefined) {
+      sets.push("payment_followup_date = @payment_followup_date");
+      request.input("payment_followup_date", sql.Date, body.payment_followup_date ? new Date(String(body.payment_followup_date).slice(0, 10) + "T12:00:00") : null);
+    }
+    if (body.payment_followup_enabled !== undefined) {
+      sets.push("payment_followup_enabled = @payment_followup_enabled");
+      request.input("payment_followup_enabled", sql.Bit, body.payment_followup_enabled ? 1 : 0);
+    }
     if (body.survey_time_slot !== undefined) {
       sets.push("survey_time_slot = @survey_time_slot");
       request.input("survey_time_slot", sql.NVarChar(100), body.survey_time_slot);
@@ -265,6 +273,10 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
     if (body.quotation_amount !== undefined) {
       sets.push("quotation_amount = @quotation_amount");
       request.input("quotation_amount", sql.Decimal(12, 2), body.quotation_amount);
+    }
+    if (body.quotation_accepted_idx !== undefined) {
+      sets.push("quotation_accepted_idx = @quotation_accepted_idx");
+      request.input("quotation_accepted_idx", sql.Int, body.quotation_accepted_idx);
     }
     if (body.order_installments !== undefined) {
       // Guard: an installment that's already confirmed (payments.confirmed_at IS NOT NULL)
@@ -372,6 +384,10 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
       sets.push("install_date = @install_date");
       request.input("install_date", sql.Date, body.install_date ? new Date(body.install_date + "T12:00:00") : null);
     }
+    if (body.install_date_end !== undefined) {
+      sets.push("install_date_end = @install_date_end");
+      request.input("install_date_end", sql.Date, body.install_date_end ? new Date(body.install_date_end + "T12:00:00") : null);
+    }
     if (body.install_time_slot !== undefined) {
       sets.push("install_time_slot = @install_time_slot");
       request.input("install_time_slot", sql.NVarChar(100), body.install_time_slot);
@@ -401,6 +417,9 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
       request.input("install_customer_signature_url", sql.NVarChar(500), body.install_customer_signature_url);
     }
     if (body.install_completed_at !== undefined) {
+      // install_completed_at = audit timestamp of when the "ติดตั้งเสร็จ"
+      // button was pressed. install_actual_date holds the user-picked
+      // วันที่ติดตั้งจริง separately and is the display source of truth.
       sets.push("install_completed_at = GETDATE()");
     }
     if (body.review_sent !== undefined) {
@@ -624,6 +643,21 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
       sets.push("pre_slip_url = @pre_slip_url");
       request.input("pre_slip_url", sql.NVarChar(500), body.pre_slip_url);
     }
+    // receipt_*_actual_url store a JSON array of up to 5 URLs (migration 027).
+    // Legacy rows may still hold a single URL string — front-end parser unwraps
+    // either form. Server just persists whatever payload it gets.
+    if (body.receipt_deposit_actual_url !== undefined) {
+      sets.push("receipt_deposit_actual_url = @receipt_deposit_actual_url");
+      request.input("receipt_deposit_actual_url", sql.NVarChar(sql.MAX), body.receipt_deposit_actual_url);
+    }
+    if (body.receipt_order_before_actual_url !== undefined) {
+      sets.push("receipt_order_before_actual_url = @receipt_order_before_actual_url");
+      request.input("receipt_order_before_actual_url", sql.NVarChar(sql.MAX), body.receipt_order_before_actual_url);
+    }
+    if (body.receipt_order_after_actual_url !== undefined) {
+      sets.push("receipt_order_after_actual_url = @receipt_order_after_actual_url");
+      request.input("receipt_order_after_actual_url", sql.NVarChar(sql.MAX), body.receipt_order_after_actual_url);
+    }
     if (body.pre_doc_no !== undefined) {
       sets.push("pre_doc_no = @pre_doc_no");
       request.input("pre_doc_no", sql.NVarChar(20), body.pre_doc_no);
@@ -719,6 +753,10 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
     if (body.warranty_inverter_kw !== undefined) {
       sets.push("warranty_inverter_kw = @warranty_inverter_kw");
       request.input("warranty_inverter_kw", sql.Decimal(6, 2), body.warranty_inverter_kw);
+    }
+    if (body.warranty_electrical_phase !== undefined) {
+      sets.push("warranty_electrical_phase = @warranty_electrical_phase");
+      request.input("warranty_electrical_phase", sql.NVarChar(20), body.warranty_electrical_phase);
     }
     if (body.warranty_battery_brand !== undefined) {
       sets.push("warranty_battery_brand = @warranty_battery_brand");

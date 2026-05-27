@@ -15,7 +15,7 @@ import { useIsMobile } from "@/lib/hooks/useIsMobile";
 import { buildWarrantyFlex } from "@/lib/utils/line-flex";
 import { compressImage } from "@/lib/utils/compressImage";
 import { formatThaiDate } from "@/lib/utils/formatters";
-import { INVERTER_BRANDS, INVERTER_KW_SIZES } from "@/lib/constants/survey-options";
+import { INVERTER_BRANDS, INVERTER_KW_SIZES, PHASE_LABEL } from "@/lib/constants/survey-options";
 
 const SUB_STEPS = ["ข้อมูล", "แบตเตอรี่", "แผง", "เอกสาร", "ยืนยัน"];
 const PANEL_ROWS = 20;
@@ -134,6 +134,10 @@ export default function WarrantyStep({ lead, state, refresh, packages, expanded,
   const [panelBrand, setPanelBrand] = useState<string>(lead.warranty_panel_brand ?? "");
   const [invBrand, setInvBrand] = useState<string>(lead.warranty_inverter_brand ?? defaultPkg?.inverter_brand ?? "");
   const [invKw, setInvKw] = useState<number | "">(lead.warranty_inverter_kw ?? defaultPkg?.inverter_kw ?? "");
+  // Phase defaults to whatever survey captured — staff override only if the
+  // actual install diverged. Stored separately from survey_electrical_phase
+  // so the survey record stays intact.
+  const [phase, setPhase] = useState<string>(lead.warranty_electrical_phase ?? lead.survey_electrical_phase ?? "");
   // Battery list — up to 5 units, each with brand/kwh/serial. Not required.
   const BATTERY_ROWS = 5;
   type Batt = { brand: string; kwh: string; serial: string };
@@ -466,6 +470,7 @@ export default function WarrantyStep({ lead, state, refresh, packages, expanded,
           warranty_panel_brand: panelBrand || null,
           warranty_inverter_brand: invBrand || null,
           warranty_inverter_kw: invKw === "" ? null : invKw,
+          warranty_electrical_phase: phase || null,
           warranty_batteries: JSON.stringify(batteries.filter(b => b.brand || b.kwh || b.serial).map(b => ({ brand: b.brand || null, kwh: b.kwh ? parseFloat(b.kwh) : null, serial: b.serial || null }))),
           warranty_has_battery: batteries.some(b => b.brand || b.kwh || b.serial),
           warranty_panel_serials: panelSerials.some(s => s.trim()) ? JSON.stringify(panelSerials.map(s => s.trim())) : null,
@@ -474,7 +479,7 @@ export default function WarrantyStep({ lead, state, refresh, packages, expanded,
     }, 800);
     return () => clearTimeout(t);
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [sn, docNo, startDate, sysKwp, panelCount, panelWatt, panelBrand, invBrand, invKw, batteries, panelSerials]);
+  }, [sn, docNo, startDate, sysKwp, panelCount, panelWatt, panelBrand, invBrand, invKw, phase, batteries, panelSerials]);
 
   const saveDraft = async () => {
     setSaving(true);
@@ -497,6 +502,7 @@ export default function WarrantyStep({ lead, state, refresh, packages, expanded,
     if (!sn) missing.push("Inverter Serial Number");
     if (!docNo) missing.push("เลขที่เอกสาร");
     if (!startDate) missing.push("วันเริ่มประกัน");
+    if (!phase) missing.push("Phase ของระบบไฟ");
     if (!effectiveSignatureUrl) missing.push("ลายเซ็นลูกค้า");
     // Gate on me?.id — without a logged-in user we can't stamp warranty_issued_by,
     // and submitting would null it out via the PATCH route's "set if defined"
@@ -619,7 +625,7 @@ export default function WarrantyStep({ lead, state, refresh, packages, expanded,
               <input type="text" value={panelBrand} onChange={e => setPanelBrand(e.target.value)} placeholder="Canadian" className="w-full h-11 px-3 rounded-lg border border-gray-200 focus:outline-none focus:border-primary" />
             </div>
           </div>
-          <div className="grid grid-cols-2 gap-2">
+          <div className="grid grid-cols-3 gap-2">
             <div>
               <label className="text-xs text-gray-500 block mb-1">ยี่ห้ออินเวอร์เตอร์</label>
               <select value={invBrand} onChange={e => setInvBrand(e.target.value)} className="w-full h-11 px-3 rounded-lg border border-gray-200 bg-white focus:outline-none focus:border-primary">
@@ -638,6 +644,13 @@ export default function WarrantyStep({ lead, state, refresh, packages, expanded,
                 {invKw !== "" && !INVERTER_KW_SIZES.includes(invKw as typeof INVERTER_KW_SIZES[number]) && (
                   <option value={invKw}>{invKw} kW</option>
                 )}
+              </select>
+            </div>
+            <div>
+              <label className="text-xs text-gray-500 block mb-1">Phase <span className="text-red-500">*</span></label>
+              <select value={phase} onChange={e => setPhase(e.target.value)} className="w-full h-11 px-3 rounded-lg border border-gray-200 bg-white focus:outline-none focus:border-primary">
+                <option value="">เลือก phase</option>
+                {Object.entries(PHASE_LABEL).map(([v, l]) => <option key={v} value={v}>{l}</option>)}
               </select>
             </div>
           </div>

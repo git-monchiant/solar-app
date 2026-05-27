@@ -267,7 +267,7 @@ export async function GET(req: NextRequest) {
     // confirmed_by is a free-text NVARCHAR (legacy schema — stores the user's
     // full name directly). submitted_by is INT → JOIN users for the name.
     let q = `SELECT p.id, p.lead_id, p.step_no, p.slip_field, p.doc_no, p.amount, p.description, p.slip_mime, p.slip_filename, p.confirmed_by, p.confirmed_at, p.ref1, p.payment_method,
-                    p.submitted_by, p.submitted_at,
+                    p.submitted_by, p.submitted_at, p.actual_receipt_url,
                     p.confirmed_by as confirmed_by_name,
                     su.full_name as submitted_by_name
              FROM payments p

@@ -27,6 +27,9 @@ interface Row {
   survey_done_at: string | null;
   quote_issued_at: string | null;
   order_paid_at: string | null;
+  order_installments: string | null;
+  order_paid_count: number | null;
+  order_total: number | null;
   install_date: string | null;
   install_started_at: string | null;
   install_done_at: string | null;
@@ -43,7 +46,28 @@ const STATE_KEY: Record<string, keyof Row | undefined> = {
 
 type ColKey = "created_at" | "first_contact_at" | "contact2_at" | "contact3_at" | "contact4_at" | "contact5_at"
   | "sales_pitch_at" | "booking_paid_at" | "survey_date" | "survey_done_at" | "quote_issued_at"
-  | "order_paid_at" | "install_date" | "install_started_at" | "install_done_at" | "warranty_at";
+  | "order_paid_at" | "deposit_pct" | "install_date" | "install_started_at" | "install_done_at" | "warranty_at";
+
+// % เงินมัดจำ — งวดแรกใน order_installments (down payment). null = ยังไม่มีแผนงวด.
+function depositPct(raw: string | null | undefined): number | null {
+  if (!raw) return null;
+  try {
+    const arr = JSON.parse(raw);
+    if (Array.isArray(arr) && arr.length > 0) {
+      const p = Number(arr[0]?.pct);
+      return Number.isFinite(p) ? Math.round(p) : null;
+    }
+  } catch { /* ignore */ }
+  return null;
+}
+
+// "100,000 (20%)" — จำนวนเงินมัดจำ (order_total × pct) + เปอร์เซ็นต์. "" ถ้าไม่มีแผนงวด.
+function depositDisplay(r: { order_installments: string | null; order_total: number | null }): string {
+  const p = depositPct(r.order_installments);
+  if (p == null) return "";
+  const amt = r.order_total ? Math.round((r.order_total * p) / 100) : null;
+  return amt != null ? `${amt.toLocaleString()} (${p}%)` : `${p}%`;
+}
 type Tri = "any" | "yes" | "no";
 
 const GROUPS: { title: string; tone: string; cols: { key: ColKey; label: string }[] }[] = [
@@ -74,6 +98,7 @@ const GROUPS: { title: string; tone: string; cols: { key: ColKey; label: string 
     cols: [
       { key: "quote_issued_at", label: "ใบเสนอราคา" },
       { key: "order_paid_at", label: "ชำระมัดจำ" },
+      { key: "deposit_pct", label: "% มัดจำ" },
     ],
   },
   {
@@ -93,6 +118,9 @@ const STATUS_OPTIONS: { value: string; label: string }[] = [
   { value: "survey",     label: "สำรวจ" },
   { value: "quote",      label: "ใบเสนอราคา" },
   { value: "order",      label: "Order" },
+  // Special — not a real status. Matches leads that have paid their deposit
+  // (order_paid_at set), regardless of main status. Handled in the filter.
+  { value: "deposit_paid", label: "จ่ายมัดจำ" },
   { value: "install",    label: "ติดตั้ง" },
   { value: "warranty",   label: "รับประกัน" },
   { value: "gridtie",    label: "ขนานไฟ" },
@@ -136,7 +164,18 @@ export default function LifecyclePage() {
       );
     }
     if (statusSel.size > 0) {
-      out = out.filter(r => statusSel.has(getMainStatus(r.status)));
+      // "deposit_paid" is a virtual status — matches any lead with a deposit
+      // payment date, OR'd with the real main-status selections.
+      const wantDeposit = statusSel.has("deposit_paid");
+      // "install" chip should also catch leads that *display* as รอติดตั้ง/
+      // กำลังติดตั้ง but whose raw status is still "order" (deposit paid +
+      // install_date set, before-install not yet 100%).
+      const wantInstall = statusSel.has("install");
+      out = out.filter(r =>
+        statusSel.has(getMainStatus(r.status))
+        || (wantDeposit && !!r.order_paid_at)
+        || (wantInstall && r.status === "order" && (r.order_paid_count ?? 0) >= 1 && !!r.install_date)
+      );
     }
     if (from) out = out.filter(r => r.created_at && r.created_at.slice(0, 10) >= from);
     if (to)   out = out.filter(r => r.created_at && r.created_at.slice(0, 10) <= to);
@@ -192,7 +231,7 @@ export default function LifecyclePage() {
       { title: "ลีด", cols: 6 },
       { title: "การติดต่อ", cols: 6 },
       { title: "Pre-Survey / Survey", cols: 3 },
-      { title: "Quote / Order", cols: 2 },
+      { title: "Quote / Order", cols: 5 },
       { title: "ติดตั้ง / รับประกัน", cols: 4 },
     ];
     const totalCols = groupSpec.reduce((s, g) => s + g.cols, 0);
@@ -205,7 +244,7 @@ export default function LifecyclePage() {
       "#", "บ้านเลขที่", "ชื่อ", "สถานะ", "วันสร้าง", "Aging",
       "ครั้งที่ 1", "ครั้งที่ 2", "ครั้งที่ 3", "ครั้งที่ 4", "ครั้งที่ 5", "เสนอขาย",
       "จองสำรวจ", "นัดสำรวจ", "สำรวจเสร็จ",
-      "ออกใบเสนอราคา", "จ่ายมัดจำ/ทั้งหมด",
+      "ออกใบเสนอราคา", "จ่ายมัดจำ/ทั้งหมด", "เงินมัดจำ", "% มัดจำ", "ยอดรวม",
       "นัดติดตั้ง", "เริ่มติดตั้ง", "ติดตั้งเสร็จ", "ออกใบรับประกัน",
     ];
     const dataCells: (CellInfo | { v: string | number })[][] = filtered.map((r, i) => [
@@ -229,6 +268,9 @@ export default function LifecyclePage() {
       fmt(r.survey_done_at),
       fmt(r.quote_issued_at),
       fmt(r.order_paid_at),
+      (() => { const p = depositPct(r.order_installments); return { v: p != null && r.order_total ? Math.round((r.order_total * p) / 100) : "" }; })(),
+      (() => { const p = depositPct(r.order_installments); return { v: p != null ? p : "" }; })(),
+      { v: r.order_total ?? "" },
       fmt(r.install_date),
       fmt(r.install_started_at),
       fmt(r.install_done_at),
@@ -275,6 +317,13 @@ export default function LifecyclePage() {
       if (ws[a]) ws[a].s = groupStyle;
       if (ws[b]) ws[b].s = colHeaderStyle;
     }
+    // Number formats: accounting on money columns, "0%" on the percent column —
+    // both stay sortable/summable numbers (not text).
+    const ACCT_FMT = '_(* #,##0_);_(* (#,##0);_(* "-"_);_(@_)';
+    const PCT_FMT = '0"%"';
+    const moneyCols = new Set(colRow.map((l, i) => (l === "เงินมัดจำ" || l === "ยอดรวม") ? i : -1).filter(i => i >= 0));
+    const pctCols = new Set(colRow.map((l, i) => l === "% มัดจำ" ? i : -1).filter(i => i >= 0));
+
     // Each data cell gets its own font colour: green when the milestone was
     // hit successfully, red when contact failed, default grey otherwise.
     for (let r = 0; r < dataCells.length; r++) {
@@ -288,11 +337,18 @@ export default function LifecyclePage() {
           info.state === "no"  ? { rgb: "C0392B" } :
           info.state === "yes" ? { rgb: "1E8449" } :
           undefined;
+        // xlsx-js-style reads the number format from s.numFmt (cell.z alone is
+        // ignored once a style object is attached).
+        const numFmt = typeof cell.v === "number"
+          ? (moneyCols.has(c) ? ACCT_FMT : pctCols.has(c) ? PCT_FMT : undefined)
+          : undefined;
         cell.s = {
           font: { sz: 10, ...(color ? { color, bold: true } : {}) },
           alignment: { vertical: "center", wrapText: true },
           border: hairBorders,
+          ...(numFmt ? { numFmt } : {}),
         };
+        if (numFmt) cell.z = numFmt;
       }
     }
 
@@ -300,7 +356,7 @@ export default function LifecyclePage() {
       { wch: 4 }, { wch: 10 }, { wch: 24 }, { wch: 14 }, { wch: 14 }, { wch: 8 },
       { wch: 16 }, { wch: 16 }, { wch: 16 }, { wch: 16 }, { wch: 16 }, { wch: 14 },
       { wch: 14 }, { wch: 14 }, { wch: 14 },
-      { wch: 18 }, { wch: 20 },
+      { wch: 18 }, { wch: 20 }, { wch: 14 }, { wch: 10 }, { wch: 14 },
       { wch: 14 }, { wch: 14 }, { wch: 14 }, { wch: 18 },
     ];
     ws["!rows"] = [{ hpt: 24 }, { hpt: 30 }];
@@ -316,7 +372,7 @@ export default function LifecyclePage() {
     const cfg = STATUS_CONFIG[lead.status] ?? STATUS_CONFIG[getMainStatus(lead.status)] ?? STATUS_CONFIG.pre_survey;
     return (
       <span className={`inline-block px-1.5 py-0.5 rounded text-xxs whitespace-nowrap ${cfg.bg} ${cfg.text}`}>
-        {getStatusLabel({ status: lead.status, install_date: lead.install_date })}
+        {getStatusLabel({ status: lead.status, install_date: lead.install_date, order_paid_count: lead.order_paid_count })}
       </span>
     );
   };
@@ -472,11 +528,18 @@ export default function LifecyclePage() {
                   </th>
                   <th className="sticky top-[100px] z-20 bg-gray-50 px-2 py-1.5 text-left font-medium border-r border-gray-200">Aging</th>
                   {flatCols.map((c, i) => (
-                    <th key={c.key}
-                        onClick={() => cycleTri(c.key)}
-                        className={`sticky top-[100px] z-20 bg-gray-50 px-2 py-1.5 text-left font-medium cursor-pointer hover:bg-gray-100 select-none truncate ${groupEnds.has(i) ? "border-r border-gray-200" : ""}`}>
-                      {c.label}<TriBadge state={tri[c.key]} />
-                    </th>
+                    c.key === "deposit_pct" ? (
+                      <th key={c.key}
+                          className={`sticky top-[100px] z-20 bg-gray-50 px-2 py-1.5 text-left font-medium select-none truncate ${groupEnds.has(i) ? "border-r border-gray-200" : ""}`}>
+                        {c.label}
+                      </th>
+                    ) : (
+                      <th key={c.key}
+                          onClick={() => cycleTri(c.key)}
+                          className={`sticky top-[100px] z-20 bg-gray-50 px-2 py-1.5 text-left font-medium cursor-pointer hover:bg-gray-100 select-none truncate ${groupEnds.has(i) ? "border-r border-gray-200" : ""}`}>
+                        {c.label}<TriBadge state={tri[c.key]} />
+                      </th>
+                    )
                   ))}
                 </tr>
               </thead>
@@ -497,11 +560,19 @@ export default function LifecyclePage() {
                       })()}
                     </td>
                     {flatCols.map((c, i) => {
+                      if (c.key === "deposit_pct") {
+                        const disp = depositDisplay(r);
+                        return (
+                          <td key={c.key} className={`px-2 py-1.5 tabular-nums whitespace-nowrap ${groupEnds.has(i) ? "border-r border-gray-100" : ""}`}>
+                            {disp || <span className="text-gray-300">—</span>}
+                          </td>
+                        );
+                      }
                       const stateField = STATE_KEY[c.key];
                       const state = stateField ? (r[stateField] as "yes" | "no" | null) : "yes";
                       return (
                         <td key={c.key} className={`px-2 py-1.5 ${groupEnds.has(i) ? "border-r border-gray-100" : ""}`}>
-                          <Cell date={r[c.key]} state={state} />
+                          <Cell date={r[c.key as Exclude<ColKey, "deposit_pct">]} state={state} />
                         </td>
                       );
                     })}

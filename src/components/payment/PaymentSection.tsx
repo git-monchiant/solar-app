@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { apiFetch, getUserIdHeader } from "@/lib/api";
 import LineConfirmModal from "@/components/modal/LineConfirmModal";
 import ImageLightbox from "@/components/ui/ImageLightbox";
@@ -9,6 +9,7 @@ import { buildPaymentFlex } from "@/lib/utils/line-flex";
 import { compressSlipFile } from "@/lib/utils/compress-slip";
 import { useMe, useActiveRoles } from "@/lib/roles";
 import { useDialog } from "@/components/ui/Dialog";
+import ActualReceiptUpload from "@/components/lead/detail/ActualReceiptUpload";
 
 const MAX_SLIPS = 5;
 
@@ -171,6 +172,7 @@ export default function PaymentSection({
   const [slips, setSlips] = useState<SlipEntry[]>([]);
   const [slipsLoaded, setSlipsLoaded] = useState(false);
   const [confirmedMethod, setConfirmedMethod] = useState<string | null>(null);
+  const [actualReceiptUrl, setActualReceiptUrl] = useState<string | null>(null);
   const [lightbox, setLightbox] = useState<{ url: string; index: number } | null>(null);
   const verifiedFiredRef = useRef(false);
 
@@ -193,7 +195,7 @@ export default function PaymentSection({
             return;
           }
           if (!res.ok) throw new Error(`API error: ${res.status}`);
-          const data = await res.json() as { slots: Array<{ slot: number; url: string; filename: string | null }>; payment_method: string | null; description: string | null };
+          const data = await res.json() as { slots: Array<{ slot: number; url: string; filename: string | null }>; payment_method: string | null; description: string | null; actual_receipt_url: string | null };
           if (cancelled) return;
           setSlips(data.slots.map((s) => ({
             key: `slot-${s.slot}`,
@@ -202,6 +204,7 @@ export default function PaymentSection({
             filename: s.filename ?? undefined,
           })));
           setConfirmedMethod(data.payment_method);
+          setActualReceiptUrl(data.actual_receipt_url || null);
           // Extract "ชำระโดย: …" note from the stored description so the textarea
           // re-populates after refresh (otherMethod state is component-local).
           if (data.description) {
@@ -237,6 +240,55 @@ export default function PaymentSection({
     load();
     return () => { cancelled = true; };
   }, [leadId, slipField, confirmed, slipUrl]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Accountant rejection banner state. Lives on lead.payment_reject_notes
+  // (JSON keyed by slip_field). Refreshed on mount, after rejection, and
+  // after submitDrafts (server clears the note when uploader resubmits).
+  type RejectNote = { reason: string; by: string; at: string };
+  const [rejectNote, setRejectNote] = useState<RejectNote | null>(null);
+  const loadRejectNote = useCallback(async () => {
+    try {
+      const lead = await apiFetch(`/api/leads/${leadId}`) as { payment_reject_notes?: string | null };
+      const raw = lead?.payment_reject_notes;
+      if (!raw) { setRejectNote(null); return; }
+      const parsed = JSON.parse(raw);
+      const entry = parsed && typeof parsed === "object" ? parsed[slipField] : null;
+      setRejectNote(entry ?? null);
+    } catch { /* ignore — banner just won't show */ }
+  }, [leadId, slipField]);
+  useEffect(() => { loadRejectNote(); }, [loadRejectNote]);
+
+  // Reject modal (accountant action — reason required, hard delete of all
+  // submitted slips for this slip_field, banner appears for uploader).
+  const [rejectOpen, setRejectOpen] = useState(false);
+  const [rejectReason, setRejectReason] = useState("");
+  const [rejecting, setRejecting] = useState(false);
+  const handleReject = async () => {
+    const reason = rejectReason.trim();
+    if (!reason || rejecting) return;
+    setRejecting(true);
+    try {
+      await apiFetch("/api/payments/reject", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ lead_id: leadId, slip_field: slipField, reason }),
+      });
+      setRejectOpen(false);
+      setRejectReason("");
+      // Clear local slip state — server deleted the staging rows.
+      setSlips(prev => prev.filter(s => !s.slipFilesId));
+      await loadRejectNote();
+      await onUndone?.();
+    } catch (e) {
+      dialog.alert({
+        title: "ปฏิเสธไม่สำเร็จ",
+        message: e instanceof Error ? e.message : "เกิดข้อผิดพลาด",
+        variant: "danger",
+      });
+    } finally {
+      setRejecting(false);
+    }
+  };
 
   const [undoing, setUndoing] = useState(false);
   const handleUndo = async () => {
@@ -526,23 +578,13 @@ export default function PaymentSection({
       ));
       const stamp = new Date().toISOString();
       setSlips(prev => prev.map(s => draftSlips.find(d => d.key === s.key) ? { ...s, submittedAt: stamp } : s));
+      // Server clears any prior rejection note for this slip_field on submit;
+      // refresh so the banner disappears.
+      await loadRejectNote();
     } finally {
       setSubmitting(false);
     }
   };
-  // Admin "ถอย" — delete every staging slip for this payment so the UI
-  // returns to step 1 (no slips, ready to re-upload).
-  const adminRollback = async () => {
-    const targets = slips.filter(s => s.slipFilesId);
-    if (targets.length === 0) return;
-    await Promise.all(targets.map(s =>
-      apiFetch(`/api/slips/${s.slipFilesId}`, {
-        method: "DELETE",
-      }).catch(console.error)
-    ));
-    setSlips(prev => prev.filter(s => !s.slipFilesId));
-  };
-
   // Remove a single slip. Staging rows DELETE /api/slips/:id; failed-temp entries
   // just clean the disk file. Confirmed slots (after ยืนยัน) can't be removed —
   // use ถอย payment to rollback the entire row.
@@ -675,36 +717,94 @@ export default function PaymentSection({
 
   return (
     <div className="space-y-3 relative">
-      <div className={`flex items-start gap-2 ${hideHeader ? "justify-start" : "justify-between"}`}>
+      <div className={`flex flex-wrap items-start gap-2 ${hideHeader ? "justify-start" : "justify-between"}`}>
         {!hideHeader && <PaymentHeader title={paymentTitle} amount={qrAmount} amountLabel={amountLabel} onAmountEdit={onAmountEdit} />}
-        <div className="shrink-0 flex items-center gap-1">
+        {/* Mobile: 4-col grid below header so every doc tile lines up with the
+            ActualReceiptUpload thumbnails (same pattern as InstallmentReceiptList).
+            Desktop: shrink-0 inline-flex on the right (existing layout). */}
+        <div className="w-full md:w-auto md:shrink-0 grid grid-cols-4 gap-2 md:flex md:items-center md:gap-1">
           {invoiceDocUrl && (
-            <button
-              type="button"
-              onClick={downloadInvoice}
-              className="inline-flex items-center gap-1 h-8 px-2 rounded-lg text-gray-400 hover:text-active hover:bg-active/5 transition-colors"
-              title="ดาวน์โหลดใบแจ้งชำระเงิน (PDF)"
-              aria-label="ดาวน์โหลดใบแจ้งชำระเงิน (PDF)"
-            >
-              <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                <path strokeLinecap="round" strokeLinejoin="round" d="M3 16.5v2.25A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75V16.5M16.5 12L12 16.5m0 0L7.5 12m4.5 4.5V3" />
-              </svg>
-              <span className="text-xs font-semibold hidden md:inline">ใบแจ้งชำระเงิน</span>
-            </button>
+            <>
+              {/* Mobile tile + caption */}
+              <div className="md:hidden flex flex-col gap-1">
+                <button
+                  type="button"
+                  onClick={downloadInvoice}
+                  aria-label="ดาวน์โหลดใบแจ้งชำระเงิน (PDF)"
+                  className="aspect-square w-full inline-flex items-center justify-center rounded-md border border-primary/30 bg-primary/5 text-primary hover:bg-primary/10 transition-colors"
+                >
+                  <svg className="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.8}>
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M3 16.5v2.25A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75V16.5M16.5 12L12 16.5m0 0L7.5 12m4.5 4.5V3" />
+                  </svg>
+                </button>
+                <span className="text-xs text-center text-gray-600 truncate leading-tight font-medium">ใบแจ้งชำระ</span>
+              </div>
+              {/* Desktop icon + text inline */}
+              <button
+                type="button"
+                onClick={downloadInvoice}
+                className="hidden md:inline-flex items-center gap-1 h-8 px-2 rounded-lg text-gray-400 hover:text-active hover:bg-active/5 transition-colors"
+                title="ดาวน์โหลดใบแจ้งชำระเงิน (PDF)"
+                aria-label="ดาวน์โหลดใบแจ้งชำระเงิน (PDF)"
+              >
+                <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M3 16.5v2.25A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75V16.5M16.5 12L12 16.5m0 0L7.5 12m4.5 4.5V3" />
+                </svg>
+                <span className="text-xs font-semibold">ใบแจ้งชำระเงิน</span>
+              </button>
+            </>
           )}
-          {confirmed && receiptStage && (
-            <button
-              type="button"
-              onClick={downloadReceipt}
-              className="inline-flex items-center gap-1 h-8 px-2 rounded-lg text-gray-400 hover:text-active hover:bg-active/5 transition-colors"
-              title="ดาวน์โหลดใบเสร็จรับเงินชั่วคราว (PDF)"
-              aria-label="ดาวน์โหลดใบเสร็จรับเงินชั่วคราว (PDF)"
-            >
-              <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                <path strokeLinecap="round" strokeLinejoin="round" d="M3 16.5v2.25A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75V16.5M16.5 12L12 16.5m0 0L7.5 12m4.5 4.5V3" />
-              </svg>
-              <span className="text-xs font-semibold hidden md:inline">ใบเสร็จรับเงินชั่วคราว</span>
-            </button>
+          {confirmed && receiptStage && !actualReceiptUrl && (
+            <>
+              {/* Mobile tile + caption */}
+              <div className="md:hidden flex flex-col gap-1">
+                <button
+                  type="button"
+                  onClick={downloadReceipt}
+                  aria-label="ดาวน์โหลดใบเสร็จรับเงินชั่วคราว (PDF)"
+                  className="aspect-square w-full inline-flex items-center justify-center rounded-md border border-primary/30 bg-primary/5 text-primary hover:bg-primary/10 transition-colors"
+                >
+                  <svg className="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.8}>
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M3 16.5v2.25A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75V16.5M16.5 12L12 16.5m0 0L7.5 12m4.5 4.5V3" />
+                  </svg>
+                </button>
+                <span className="text-xs text-center text-gray-600 truncate leading-tight font-medium">ใบเสร็จ</span>
+              </div>
+              {/* Desktop icon + text inline */}
+              <button
+                type="button"
+                onClick={downloadReceipt}
+                className="hidden md:inline-flex items-center gap-1 h-8 px-2 rounded-lg text-gray-400 hover:text-active hover:bg-active/5 transition-colors"
+                title="ดาวน์โหลดใบเสร็จรับเงินชั่วคราว (PDF)"
+                aria-label="ดาวน์โหลดใบเสร็จรับเงินชั่วคราว (PDF)"
+              >
+                <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M3 16.5v2.25A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75V16.5M16.5 12L12 16.5m0 0L7.5 12m4.5 4.5V3" />
+                </svg>
+                <span className="text-xs font-semibold">ใบเสร็จรับเงินชั่วคราว</span>
+              </button>
+            </>
+          )}
+          {confirmed && installmentPayId && (
+            <ActualReceiptUpload
+              leadId={leadId}
+              paymentId={parseInt(installmentPayId)}
+              url={actualReceiptUrl}
+              fileLabel={`lead_${leadId}_pay${installmentPayId}`}
+              refresh={async () => {
+                // Reload local actual_receipt_url from /api/payments/<id>?list=1
+                try {
+                  const res = await fetch(`/api/payments/${installmentPayId}?list=1`, {
+                    headers: { "ngrok-skip-browser-warning": "true", ...getUserIdHeader() },
+                  });
+                  if (res.ok) {
+                    const d = await res.json();
+                    setActualReceiptUrl(d.actual_receipt_url || null);
+                  }
+                } catch { /* ignore */ }
+              }}
+              compact
+            />
           )}
         </div>
       </div>
@@ -892,6 +992,22 @@ export default function PaymentSection({
           )}
         </div>
 
+        {/* Accountant rejection banner — sits at the top of the slip area so
+            the uploader sees the reason before re-uploading. Cleared by the
+            slip submit handler when ยืนยัน 1 fires (server-side). */}
+        {rejectNote && !confirmed && (
+          <div className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-700 flex items-start gap-2">
+            <svg className="w-4 h-4 shrink-0 mt-0.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+              <path strokeLinecap="round" strokeLinejoin="round" d="M12 9v3.75m9-.75a9 9 0 11-18 0 9 9 0 0118 0zm-9 3.75h.008v.008H12v-.008z" />
+            </svg>
+            <div className="min-w-0">
+              <div className="font-semibold">บัญชีไม่อนุมัติ — กรุณา upload สลิปใหม่</div>
+              <div className="mt-0.5 break-words">เหตุผล: {rejectNote.reason}</div>
+              <div className="mt-0.5 text-red-500/80">โดย {rejectNote.by} · {new Date(rejectNote.at).toLocaleString("th-TH", { dateStyle: "short", timeStyle: "short" })}</div>
+            </div>
+          </div>
+        )}
+
         {slips.length === 0 && slipsLoaded && !confirmed && (
           <label htmlFor={slipInputId} className="w-full h-11 px-4 rounded-lg text-sm font-semibold flex items-center justify-center gap-2 cursor-pointer bg-white border border-gray-200 text-gray-700 hover:border-gray-400 transition-colors">
             {tab === "other" ? "อัปโหลดหลักฐานการชำระ" : "กรุณาอัปโหลดสลิปโอนเงิน"}
@@ -1046,15 +1162,16 @@ export default function PaymentSection({
             {anyVerifying && (
               <div className="mt-2 text-xs text-amber-600 text-center">กำลังตรวจสลิป… รอสักครู่</div>
             )}
-            {/* Admin rollback — visible at submitted state only (drafts → step 1
-                already happens via per-slip remove). Wipes all staging slips. */}
-            {!hasUnsubmittedDraft && submittedSlips.length > 0 && isAdmin && (
+            {/* Accountant / admin reject — visible at submitted state only.
+                Wipes all staging slips, records the reason on the lead, logs
+                an activity, and shows a banner to the uploader. */}
+            {!hasUnsubmittedDraft && submittedSlips.length > 0 && canStep2 && (
               <button
                 type="button"
-                onClick={adminRollback}
+                onClick={() => { setRejectReason(""); setRejectOpen(true); }}
                 className="w-full h-10 mt-2 rounded-lg text-sm font-semibold text-red-600 border border-red-300 bg-white hover:bg-red-50 flex items-center justify-center gap-1.5"
               >
-                ↶ ถอย payment (admin)
+                ✗ ไม่อนุมัติ / ส่งกลับให้ upload ใหม่
               </button>
             )}
           </>
@@ -1079,6 +1196,53 @@ export default function PaymentSection({
           onCancel={() => setLineConfirmType(null)}
           onConfirm={() => sendViaLine(lineConfirmType)}
         />
+      )}
+
+      {/* Reject reason modal — accountant gate. Hard-blocks submit until
+          a non-empty reason is typed so the uploader always sees an actionable
+          message instead of a silent rollback. */}
+      {rejectOpen && (
+        <div
+          className="fixed inset-0 z-[60] bg-black/40 flex items-end sm:items-center justify-center sm:p-4"
+          style={{ paddingTop: "max(1rem, env(safe-area-inset-top))" }}
+          onClick={() => !rejecting && setRejectOpen(false)}
+        >
+          <div
+            className="bg-white rounded-t-2xl sm:rounded-xl shadow-2xl max-w-md w-full p-5 max-h-[85vh] overflow-y-auto"
+            style={{ paddingBottom: "max(1.25rem, env(safe-area-inset-bottom))" }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <h3 className="text-base font-bold text-gray-900 mb-1">ไม่อนุมัติการชำระเงิน</h3>
+            <p className="text-xs text-gray-600 mb-3">สลิปงวดนี้จะถูกลบ แล้วส่งกลับให้ Sales อัปโหลดใหม่ กรุณาระบุเหตุผลให้ครบถ้วน</p>
+            <label className="text-xs font-semibold text-gray-700 block mb-1">เหตุผล <span className="text-red-500">*</span></label>
+            <textarea
+              value={rejectReason}
+              onChange={(e) => setRejectReason(e.target.value)}
+              rows={3}
+              placeholder="เช่น: ยอดเงินไม่ตรงกับใบเสนอราคา / ผิดบัญชี / สลิปไม่ชัด"
+              className="w-full px-3 py-2 rounded-lg border border-gray-200 text-sm focus:outline-none focus:border-red-400 resize-none"
+              autoFocus
+            />
+            <div className="mt-4 flex items-center gap-2 justify-end">
+              <button
+                type="button"
+                onClick={() => setRejectOpen(false)}
+                disabled={rejecting}
+                className="h-9 px-4 rounded-lg text-sm font-semibold text-gray-700 border border-gray-200 hover:bg-gray-50 disabled:opacity-50"
+              >
+                ยกเลิก
+              </button>
+              <button
+                type="button"
+                onClick={handleReject}
+                disabled={!rejectReason.trim() || rejecting}
+                className="h-9 px-4 rounded-lg text-sm font-semibold text-white bg-red-600 hover:bg-red-700 disabled:opacity-40 disabled:cursor-not-allowed"
+              >
+                {rejecting ? "กำลังส่ง…" : "ยืนยันไม่อนุมัติ"}
+              </button>
+            </div>
+          </div>
+        </div>
       )}
     </div>
   );

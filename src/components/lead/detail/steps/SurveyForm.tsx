@@ -459,7 +459,7 @@ const SurveyForm = forwardRef<SurveyFormHandle, Props>(function SurveyForm({ lea
                   onChange={e => setMdbSlots(e.target.checked ? "has_slot" : "full")}
                   className="w-4 h-4 rounded border-gray-300 accent-active"
                 />
-                <span className="text-xs font-semibold text-gray-600">ยังมีช่องว่าง</span>
+                <span className="text-xs font-semibold text-gray-600">มีช่องว่าง 1 ช่อง</span>
               </label>
             </div>
             <div className="grid grid-cols-2 md:grid-cols-4 gap-2">

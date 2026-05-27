@@ -34,23 +34,27 @@ export default function SettingsPage() {
 
   return (
     <div>
-      <Header title="Settings" subtitle="APP CONFIGURATION" />
+      <Header
+        title="Settings"
+        subtitle="APP CONFIGURATION"
+        rightContent={
+          <button
+            type="button"
+            onClick={logout}
+            className="h-9 px-4 rounded-lg text-xs font-semibold text-red-600 border border-red-200 bg-white/80 backdrop-blur hover:bg-red-50 transition-colors shrink-0"
+          >
+            ออกจากระบบ
+          </button>
+        }
+      />
 
       <div className="p-4 md:p-6">
-        <div className="flex items-center gap-1 border-b border-gray-200 mb-4">
-          <TabBtn active={tab === "running_numbers"} onClick={() => setTab("running_numbers")} label="เลขเอกสาร" />
-          <TabBtn active={tab === "warranty_signer"} onClick={() => setTab("warranty_signer")} label="ผู้ลงนามใบรับประกัน" />
-          <TabBtn active={tab === "customer_docs"} onClick={() => setTab("customer_docs")} label="เอกสารลูกค้า" />
-          <TabBtn active={tab === "gmail"} onClick={() => setTab("gmail")} label="Gmail" />
-          <div className="flex-1" />
-          <div className="pb-2 pr-1">
-            <button
-              type="button"
-              onClick={logout}
-              className="h-9 px-4 rounded-lg text-xs font-semibold text-red-600 border border-red-200 hover:bg-red-50 transition-colors"
-            >
-              ออกจากระบบ
-            </button>
+        <div className="border-b border-gray-200 mb-4 -mx-4 md:mx-0 px-4 md:px-0">
+          <div className="flex items-center gap-1 overflow-x-auto scrollbar-hide">
+            <TabBtn active={tab === "running_numbers"} onClick={() => setTab("running_numbers")} label="เลขเอกสาร" />
+            <TabBtn active={tab === "warranty_signer"} onClick={() => setTab("warranty_signer")} label="ผู้ลงนามใบรับประกัน" />
+            <TabBtn active={tab === "customer_docs"} onClick={() => setTab("customer_docs")} label="เอกสารลูกค้า" />
+            <TabBtn active={tab === "gmail"} onClick={() => setTab("gmail")} label="Gmail" />
           </div>
         </div>
 
@@ -68,7 +72,7 @@ function TabBtn({ active, onClick, label }: { active: boolean; onClick: () => vo
     <button
       type="button"
       onClick={onClick}
-      className={`px-4 py-2.5 text-sm font-semibold border-b-2 -mb-px transition-colors ${active ? "text-primary border-primary" : "text-gray-500 border-transparent hover:text-gray-800"}`}
+      className={`shrink-0 whitespace-nowrap px-4 py-2.5 text-sm font-semibold border-b-2 -mb-px transition-colors ${active ? "text-primary border-primary" : "text-gray-500 border-transparent hover:text-gray-800"}`}
     >
       {label}
     </button>
@@ -162,26 +166,30 @@ function ConnectedView({ status, busy, setBusy, onDisconnect }: {
 
   return (
     <div className="space-y-3">
-      <div className="flex items-center gap-3">
-        <div className="w-10 h-10 rounded-full bg-emerald-50 text-emerald-600 flex items-center justify-center shrink-0">
-          <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
-            <path strokeLinecap="round" strokeLinejoin="round" d="M4.5 12.75l6 6 9-13.5" />
-          </svg>
-        </div>
-        <div className="flex-1 min-w-0">
-          <div className="text-sm font-semibold text-gray-900 truncate">{status.email}</div>
-          <div className="text-xs text-gray-500">
-            เชื่อมเมื่อ {status.connected_at ? new Date(status.connected_at).toLocaleString("th-TH") : "—"}
+      <div className="flex flex-col md:flex-row md:items-center gap-3">
+        <div className="flex items-center gap-3 flex-1 min-w-0">
+          <div className="w-10 h-10 rounded-full bg-emerald-50 text-emerald-600 flex items-center justify-center shrink-0">
+            <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
+              <path strokeLinecap="round" strokeLinejoin="round" d="M4.5 12.75l6 6 9-13.5" />
+            </svg>
+          </div>
+          <div className="flex-1 min-w-0">
+            <div className="text-sm font-semibold text-gray-900 truncate">{status.email}</div>
+            <div className="text-xs text-gray-500">
+              เชื่อมเมื่อ {status.connected_at ? new Date(status.connected_at).toLocaleString("th-TH") : "—"}
+            </div>
           </div>
         </div>
-        <button type="button" onClick={sync} disabled={busy}
-          className="h-9 px-4 rounded-lg text-xs font-semibold text-white bg-primary hover:bg-primary-dark disabled:opacity-50 transition-colors">
-          {busy ? "กำลัง sync..." : "Sync ตอนนี้"}
-        </button>
-        <button type="button" onClick={onDisconnect} disabled={busy}
-          className="h-9 px-3 rounded-lg text-xs font-semibold text-red-600 border border-red-200 hover:bg-red-50 disabled:opacity-50">
-          ตัด
-        </button>
+        <div className="flex items-center gap-2 md:shrink-0">
+          <button type="button" onClick={sync} disabled={busy}
+            className="flex-1 md:flex-none h-9 px-4 rounded-lg text-xs font-semibold text-white bg-primary hover:bg-primary-dark disabled:opacity-50 transition-colors">
+            {busy ? "กำลัง sync..." : "Sync ตอนนี้"}
+          </button>
+          <button type="button" onClick={onDisconnect} disabled={busy}
+            className="h-9 px-3 rounded-lg text-xs font-semibold text-red-600 border border-red-200 hover:bg-red-50 disabled:opacity-50">
+            ตัด
+          </button>
+        </div>
       </div>
       {result && (
         <div className="text-xs text-emerald-700 bg-emerald-50 border border-emerald-100 rounded-lg px-3 py-2">

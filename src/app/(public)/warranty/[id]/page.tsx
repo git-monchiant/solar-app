@@ -19,6 +19,7 @@ interface Data {
     id: number;
     full_name: string;
     phone: string;
+    email: string | null;
     project_name: string | null;
     installation_address: string | null;
     warranty_inverter_sn: string | null;
@@ -168,6 +169,7 @@ export default function WarrantyPage() {
                       {lead.phone && (<><span className="text-gray-400">PHONE</span><span className="text-gray-800">{lead.phone}</span></>)}
                       {lead.project_name && (<><span className="text-gray-400">PROJECT</span><span className="text-gray-800">{lead.project_name}</span></>)}
                       {lead.installation_address && (<><span className="text-gray-400">ADDRESS</span><span className="text-gray-800">{lead.installation_address}</span></>)}
+                      <span className="text-gray-400">EMAIL</span><span className="text-gray-800">{lead.email || "-"}</span>
                     </div>
                   </div>
 

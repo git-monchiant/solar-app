@@ -115,60 +115,104 @@ function UsersList({ currentUserId }: { currentUserId: number }) {
         )}
       </div>
 
-      <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
-        {loading ? (
-          <div className="flex items-center justify-center py-12">
-            <div className="w-8 h-8 border-2 border-primary/30 border-t-primary rounded-full animate-spin" />
-          </div>
-        ) : (
-          <table className="w-full text-sm">
-            <thead className="bg-gray-50 text-xs uppercase tracking-wider text-gray-500">
-              <tr>
-                <th className="px-4 py-3 text-left">Username</th>
-                <th className="px-4 py-3 text-left">ชื่อ-สกุล</th>
-                <th className="px-4 py-3 text-left">Role</th>
-                <th className="px-4 py-3 text-left hidden md:table-cell">Team</th>
-                <th className="px-4 py-3 text-left hidden lg:table-cell">เบอร์</th>
-                <th className="px-4 py-3 text-left">สถานะ</th>
-                <th className="px-4 py-3" />
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-gray-100">
-              {visibleUsers.map(u => (
-                <tr key={u.id} className={u.is_active ? "" : "opacity-50"}>
-                  <td className="px-4 py-3 font-mono text-xs">{u.username}</td>
-                  <td className="px-4 py-3 font-semibold">{u.full_name}</td>
-                  <td className="px-4 py-3">
-                    <div className="flex flex-wrap gap-1">
-                      {(u.roles || []).map(r => (
-                        <span key={r} className="text-xs font-semibold px-2 py-0.5 rounded bg-gray-100 text-gray-700">{r}</span>
-                      ))}
-                    </div>
-                  </td>
-                  <td className="px-4 py-3 text-xs text-gray-500 hidden md:table-cell">{u.team}</td>
-                  <td className="px-4 py-3 text-xs text-gray-500 hidden lg:table-cell">{u.phone || "—"}</td>
-                  <td className="px-4 py-3">
+      {loading ? (
+        <div className="bg-white rounded-xl border border-gray-200 flex items-center justify-center py-12">
+          <div className="w-8 h-8 border-2 border-primary/30 border-t-primary rounded-full animate-spin" />
+        </div>
+      ) : (
+        <>
+          {/* Mobile: card list */}
+          <div className="md:hidden space-y-2">
+            {visibleUsers.map(u => (
+              <div key={u.id} className={`bg-white rounded-xl border border-gray-200 p-3 ${u.is_active ? "" : "opacity-60"}`}>
+                <div className="flex items-start justify-between gap-2">
+                  <div className="min-w-0 flex-1">
+                    <div className="font-semibold text-gray-900 truncate">{u.full_name}</div>
+                    <div className="text-xs font-mono text-gray-500 mt-0.5">{u.username}</div>
+                  </div>
+                  <div className="flex flex-col items-end gap-1 shrink-0">
                     {u.is_active
-                      ? <span className="text-xxs font-bold uppercase px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-700">Active</span>
-                      : <span className="text-xxs font-bold uppercase px-2 py-0.5 rounded-full bg-gray-100 text-gray-500">Disabled</span>}
-                  </td>
-                  <td className="px-4 py-3 text-right">
+                      ? <span className="text-[10px] font-bold uppercase px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-700">Active</span>
+                      : <span className="text-[10px] font-bold uppercase px-2 py-0.5 rounded-full bg-gray-100 text-gray-500">Disabled</span>}
                     <button type="button" onClick={() => setEditing(u)}
                       className="text-xs font-semibold text-primary hover:underline">
                       แก้ไข
                     </button>
-                  </td>
+                  </div>
+                </div>
+                {(u.roles || []).length > 0 && (
+                  <div className="flex flex-wrap gap-1 mt-2">
+                    {(u.roles || []).map(r => (
+                      <span key={r} className="text-[11px] font-semibold px-2 py-0.5 rounded bg-gray-100 text-gray-700">{r}</span>
+                    ))}
+                  </div>
+                )}
+                {(u.team || u.phone) && (
+                  <div className="flex items-center gap-3 text-xs text-gray-500 mt-2">
+                    {u.team && <span>{u.team}</span>}
+                    {u.phone && <span>· {u.phone}</span>}
+                  </div>
+                )}
+              </div>
+            ))}
+            {visibleUsers.length === 0 && (
+              <div className="bg-white rounded-xl border border-gray-200 px-4 py-10 text-center text-sm text-gray-400">
+                {users.length === 0 ? "ยังไม่มีผู้ใช้" : `ไม่พบ "${search}"`}
+              </div>
+            )}
+          </div>
+
+          {/* Desktop: table */}
+          <div className="hidden md:block bg-white rounded-xl border border-gray-200 overflow-hidden">
+            <table className="w-full text-sm">
+              <thead className="bg-gray-50 text-xs uppercase tracking-wider text-gray-500">
+                <tr>
+                  <th className="px-4 py-3 text-left">Username</th>
+                  <th className="px-4 py-3 text-left">ชื่อ-สกุล</th>
+                  <th className="px-4 py-3 text-left">Role</th>
+                  <th className="px-4 py-3 text-left">Team</th>
+                  <th className="px-4 py-3 text-left hidden lg:table-cell">เบอร์</th>
+                  <th className="px-4 py-3 text-left">สถานะ</th>
+                  <th className="px-4 py-3" />
                 </tr>
-              ))}
-              {visibleUsers.length === 0 && (
-                <tr><td colSpan={7} className="px-4 py-10 text-center text-sm text-gray-400">
-                  {users.length === 0 ? "ยังไม่มีผู้ใช้" : `ไม่พบ "${search}"`}
-                </td></tr>
-              )}
-            </tbody>
-          </table>
-        )}
-      </div>
+              </thead>
+              <tbody className="divide-y divide-gray-100">
+                {visibleUsers.map(u => (
+                  <tr key={u.id} className={u.is_active ? "" : "opacity-50"}>
+                    <td className="px-4 py-3 font-mono text-xs">{u.username}</td>
+                    <td className="px-4 py-3 font-semibold">{u.full_name}</td>
+                    <td className="px-4 py-3">
+                      <div className="flex flex-wrap gap-1">
+                        {(u.roles || []).map(r => (
+                          <span key={r} className="text-xs font-semibold px-2 py-0.5 rounded bg-gray-100 text-gray-700">{r}</span>
+                        ))}
+                      </div>
+                    </td>
+                    <td className="px-4 py-3 text-xs text-gray-500">{u.team}</td>
+                    <td className="px-4 py-3 text-xs text-gray-500 hidden lg:table-cell">{u.phone || "—"}</td>
+                    <td className="px-4 py-3">
+                      {u.is_active
+                        ? <span className="text-xxs font-bold uppercase px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-700">Active</span>
+                        : <span className="text-xxs font-bold uppercase px-2 py-0.5 rounded-full bg-gray-100 text-gray-500">Disabled</span>}
+                    </td>
+                    <td className="px-4 py-3 text-right">
+                      <button type="button" onClick={() => setEditing(u)}
+                        className="text-xs font-semibold text-primary hover:underline">
+                        แก้ไข
+                      </button>
+                    </td>
+                  </tr>
+                ))}
+                {visibleUsers.length === 0 && (
+                  <tr><td colSpan={7} className="px-4 py-10 text-center text-sm text-gray-400">
+                    {users.length === 0 ? "ยังไม่มีผู้ใช้" : `ไม่พบ "${search}"`}
+                  </td></tr>
+                )}
+              </tbody>
+            </table>
+          </div>
+        </>
+      )}
 
       {editing && (
         <UserEditor
