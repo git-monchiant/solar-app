@@ -28,17 +28,6 @@ const ROOF_ORIENTATIONS = [
   { value: "west", label: "ตก" },
 ];
 
-const GRID_TYPES = [
-  { value: "on_grid", label: "On-Grid" },
-  { value: "hybrid", label: "Hybrid" },
-  { value: "off_grid", label: "Off-Grid" },
-];
-
-const UTILITIES = [
-  { value: "MEA", label: "MEA" },
-  { value: "PEA", label: "PEA" },
-];
-
 const METER_SIZES_ALL = [
   { value: "5_15", label: "5(15) A" },
   { value: "15_45", label: "15(45) A" },
@@ -61,52 +50,7 @@ const SHADING = [
   { value: "heavy", label: "ตลอดวัน" },
 ];
 
-const ROOF_AGES = [
-  { value: "new", label: "< 5 ปี" },
-  { value: "mid", label: "5-10 ปี" },
-  { value: "old", label: "> 10 ปี" },
-];
-
 const ROOF_TILTS = [15, 25, 35];
-
-
-const RESIDENCE_TYPES = [
-  { value: "detached", label: "บ้านเดี่ยว" },
-  { value: "townhome", label: "ทาวน์โฮม" },
-  { value: "townhouse", label: "ทาวน์เฮาส์" },
-  { value: "home_office", label: "โฮมออฟฟิศ" },
-  { value: "shophouse", label: "อาคารพาณิชย์" },
-  { value: "other", label: "อื่นๆ" },
-];
-
-const PEAK_USAGE = [
-  { value: "day", label: "กลางวัน" },
-  { value: "night", label: "กลางคืน" },
-  { value: "both", label: "ทั้งสองช่วง" },
-];
-
-const APPLIANCES = [
-  { value: "water_heater", label: "เครื่องทำน้ำอุ่น" },
-  { value: "ev", label: "ที่ชาร์จรถ EV" },
-];
-
-const AC_BTU_SIZES = [9000, 12000, 18000, 24000];
-
-function parseAcUnits(s: string | null): Record<number, number> {
-  const map: Record<number, number> = {};
-  AC_BTU_SIZES.forEach(b => { map[b] = 0; });
-  if (!s) return map;
-  s.split(",").forEach(pair => {
-    const [btu, count] = pair.split(":").map(Number);
-    if (!isNaN(btu) && !isNaN(count) && AC_BTU_SIZES.includes(btu)) map[btu] = count;
-  });
-  return map;
-}
-
-function stringifyAcUnits(map: Record<number, number>): string | null {
-  const pairs = AC_BTU_SIZES.filter(b => map[b] > 0).map(b => `${b}:${map[b]}`);
-  return pairs.length > 0 ? pairs.join(",") : null;
-}
 
 export interface SurveyFormHandle {
   flushSave: () => Promise<void>;
@@ -360,7 +304,6 @@ const SurveyForm = forwardRef<SurveyFormHandle, Props>(function SurveyForm({ lea
   }), [lead.id, refresh]);
 
   const card = "rounded-lg bg-white/60 border border-active/15 p-3";
-  const label = "text-xs font-semibold tracking-wider uppercase text-gray-400 block mb-2";
 
   const subLabel = "text-xs font-semibold tracking-wider uppercase text-gray-400 block mb-2";
 

@@ -1,4 +1,5 @@
 "use client";
+import { BoltIcon, CameraIcon } from "@/components/ui/icons";
 
 import { forwardRef, useEffect, useImperativeHandle, useRef, useState } from "react";
 import { apiFetch, getUserIdHeader } from "@/lib/api";
@@ -15,49 +16,6 @@ const RESIDENCE_TYPES = [
   { value: "other", label: "อื่นๆ" },
 ];
 
-const ROOF_SHAPES: { value: string; label: string; svg: React.ReactNode }[] = [
-  {
-    value: "gable",
-    label: "ทรงหน้าจั่ว",
-    svg: (
-      <svg viewBox="0 0 48 48" fill="none" className="w-10 h-10">
-        <path d="M6 22 L24 8 L42 22 L42 38 L6 38 Z" stroke="currentColor" strokeWidth="1.5" strokeLinejoin="round" />
-        <path d="M24 8 L24 38" stroke="currentColor" strokeWidth="1.5" strokeDasharray="2 2" />
-      </svg>
-    ),
-  },
-  {
-    value: "hip",
-    label: "ปั้นหยา",
-    svg: (
-      <svg viewBox="0 0 48 48" fill="none" className="w-10 h-10">
-        <path d="M6 38 L10 22 L38 22 L42 38 Z" stroke="currentColor" strokeWidth="1.5" strokeLinejoin="round" />
-        <path d="M10 22 L18 12 L30 12 L38 22" stroke="currentColor" strokeWidth="1.5" strokeLinejoin="round" />
-        <path d="M18 12 L10 22 M30 12 L38 22" stroke="currentColor" strokeWidth="1.5" />
-      </svg>
-    ),
-  },
-  {
-    value: "shed",
-    label: "เพิงหมาแหงน",
-    svg: (
-      <svg viewBox="0 0 48 48" fill="none" className="w-10 h-10">
-        <path d="M6 20 L42 10 L42 38 L6 38 Z" stroke="currentColor" strokeWidth="1.5" strokeLinejoin="round" />
-      </svg>
-    ),
-  },
-  {
-    value: "flat",
-    label: "ทรงแบน",
-    svg: (
-      <svg viewBox="0 0 48 48" fill="none" className="w-10 h-10">
-        <path d="M6 14 L42 14 L42 38 L6 38 Z" stroke="currentColor" strokeWidth="1.5" strokeLinejoin="round" />
-        <path d="M6 14 L42 14" stroke="currentColor" strokeWidth="1.5" />
-      </svg>
-    ),
-  },
-];
-
 const ELECTRICAL_PHASES = [
   { value: "1_phase", label: "1 เฟส" },
   { value: "3_phase", label: "3 เฟส" },
@@ -68,11 +26,6 @@ const BATTERY_OPTIONS = [
   { value: "yes", label: "ต้องการ" },
   { value: "maybe", label: "ยังไม่แน่ใจ" },
   { value: "upgrade", label: "+ Upgrade" },
-];
-
-const APPLIANCES = [
-  { value: "water_heater", label: "เครื่องทำน้ำอุ่น" },
-  { value: "ev", label: "ที่ชาร์จรถ EV" },
 ];
 
 const AC_BTU_SIZES = [9000, 12000, 18000, 24000];
@@ -129,11 +82,11 @@ const PreSurveyForm = forwardRef<PreSurveyFormHandle, Props>(function PreSurveyF
   const [peakUsage, setPeakUsage] = useState<string>(lead.pre_peak_usage ?? "");
   const [electricalPhase, setElectricalPhase] = useState<string>(lead.pre_electrical_phase ?? "");
   const [wantsBattery, setWantsBattery] = useState<string>(lead.pre_wants_battery ?? "maybe");
-  const [acUnits, setAcUnits] = useState<Record<number, number>>(parseAcUnits(lead.pre_ac_units));
+  const [acUnits] = useState<Record<number, number>>(parseAcUnits(lead.pre_ac_units));
   const [pre_appliances, setAppliances] = useState<string[]>(
     lead.pre_appliances ? lead.pre_appliances.split(",").filter(Boolean) : []
   );
-  const [roofShape, setRoofShape] = useState<string>(lead.pre_roof_shape ?? "");
+  const [roofShape] = useState<string>(lead.pre_roof_shape ?? "");
   const [billPhotoUrl, setBillPhotoUrl] = useState<string | null>(lead.pre_bill_photo_url ?? null);
   const [billUploading, setBillUploading] = useState(false);
   const [selectedPkgs, setSelectedPkgs] = useState<string[]>(
@@ -158,14 +111,8 @@ const PreSurveyForm = forwardRef<PreSurveyFormHandle, Props>(function PreSurveyF
     return true;
   });
 
-  const totalAcUnits = Object.values(acUnits).reduce((a, b) => a + b, 0);
-
   const toggleAppliance = (v: string) => {
     setAppliances(prev => (prev.includes(v) ? prev.filter(a => a !== v) : [...prev, v]));
-  };
-
-  const updateAcCount = (btu: number, delta: number) => {
-    setAcUnits(prev => ({ ...prev, [btu]: Math.max(0, (prev[btu] || 0) + delta) }));
   };
 
   // Sync parent state immediately so validation sees latest values
@@ -342,7 +289,7 @@ const PreSurveyForm = forwardRef<PreSurveyFormHandle, Props>(function PreSurveyF
               </div>
               <input type="file" accept="image/*" capture="environment" onChange={handleBillPhotoCapture} className="hidden" id={`bill-photo-${lead.id}`} />
               <label htmlFor={`bill-photo-${lead.id}`} className="shrink-0 h-10 w-10 rounded-lg border border-gray-200 bg-white flex items-center justify-center cursor-pointer hover:border-active/40 hover:text-active text-gray-500 transition-colors">
-                {billUploading ? <div className="w-4 h-4 border-2 border-gray-300 border-t-active rounded-full animate-spin" /> : <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M3 9a2 2 0 012-2h.93a2 2 0 001.664-.89l.812-1.22A2 2 0 0110.07 4h3.86a2 2 0 011.664.89l.812 1.22A2 2 0 0018.07 7H19a2 2 0 012 2v9a2 2 0 01-2 2H5a2 2 0 01-2-2V9z" /><path strokeLinecap="round" strokeLinejoin="round" d="M15 13a3 3 0 11-6 0 3 3 0 016 0z" /></svg>}
+                {billUploading ? <div className="w-4 h-4 border-2 border-gray-300 border-t-active rounded-full animate-spin" /> : <CameraIcon className="w-5 h-5" strokeWidth={2} />}
               </label>
             </div>
             {billPhotoUrl && (
@@ -417,7 +364,7 @@ const PreSurveyForm = forwardRef<PreSurveyFormHandle, Props>(function PreSurveyF
                         {p.is_upgrade && !p.has_panel && <span>เพิ่มแบตอย่างเดียว</span>}
                         <span className="inline-flex items-center gap-0.5 ml-1">
                           <svg className={`w-3.5 h-3.5 ${p.has_panel ? "text-amber-500" : "text-gray-300"}`} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M12 3v2.25m6.364.386l-1.591 1.591M21 12h-2.25m-.386 6.364l-1.591-1.591M12 18.75V21m-4.773-4.227l-1.591 1.591M5.25 12H3m4.227-4.773L5.636 5.636M15.75 12a3.75 3.75 0 11-7.5 0 3.75 3.75 0 017.5 0z" /></svg>
-                          <svg className={`w-3.5 h-3.5 ${p.has_inverter ? "text-violet-500" : "text-gray-300"}`} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M3.75 13.5l10.5-11.25L12 10.5h8.25L9.75 21.75 12 13.5H3.75z" /></svg>
+                          <BoltIcon className={`w-3.5 h-3.5 ${p.has_inverter ? "text-violet-500" : "text-gray-300"}`} strokeWidth={2} />
                           <svg className={`w-3.5 h-3.5 ${p.has_battery ? "text-green-500 fill-green-500" : "text-gray-300"}`} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M21 10.5h.375c.621 0 1.125.504 1.125 1.125v2.25c0 .621-.504 1.125-1.125 1.125H21M3.75 18h15A2.25 2.25 0 0021 15.75v-6a2.25 2.25 0 00-2.25-2.25h-15A2.25 2.25 0 001.5 9.75v6A2.25 2.25 0 003.75 18z" /></svg>
                         </span>
                       </div>

@@ -1,4 +1,5 @@
 "use client";
+import { BoltIcon } from "@/components/ui/icons";
 
 import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
@@ -34,13 +35,12 @@ interface MonthProps {
   // component hides its internal toolbar.
   year?: number;
   month?: number;
-  hideNav?: boolean;
   // Fired when user clicks an empty day cell — used by the parent to open a
   // "create appointment" modal pre-filled with that date.
   onEmptyDayClick?: (dateKey: string) => void;
 }
 
-export default function EventCalendarMonth({ toolbarRight, year: controlledYear, month: controlledMonth, hideNav = false, onEmptyDayClick }: MonthProps) {
+export default function EventCalendarMonth({ toolbarRight, year: controlledYear, month: controlledMonth, onEmptyDayClick }: MonthProps) {
   const router = useRouter();
   const today = new Date();
   const [internalYear, setInternalYear] = useState(today.getFullYear());
@@ -50,18 +50,11 @@ export default function EventCalendarMonth({ toolbarRight, year: controlledYear,
   const setYear = setInternalYear;
   const setMonth = setInternalMonth;
   const [events, setEvents] = useState<ScheduledEvent[]>([]);
-  const [zones, setZones] = useState<{ id: number; name: string; color?: string | null }[]>([]);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
     apiFetch("/api/surveys/scheduled").then(setEvents).catch(console.error).finally(() => setLoading(false));
-    apiFetch("/api/zones").then(setZones).catch(console.error);
   }, []);
-  const zoneColor = useMemo(() => {
-    const m: Record<string, string> = {};
-    for (const z of zones) if (z.color) m[z.name] = z.color;
-    return m;
-  }, [zones]);
 
   const eventsByDay = useMemo(() => {
     const map = new Map<string, ScheduledEvent[]>();
@@ -172,9 +165,7 @@ export default function EventCalendarMonth({ toolbarRight, year: controlledYear,
                               <path strokeLinecap="round" strokeLinejoin="round" d="M21 21l-5.197-5.197m0 0A7.5 7.5 0 105.196 5.196a7.5 7.5 0 0010.607 10.607z" />
                             </svg>
                           ) : (
-                            <svg className="w-3 h-3 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                              <path strokeLinecap="round" strokeLinejoin="round" d="M3.75 13.5l10.5-11.25L12 10.5h8.25L9.75 21.75 12 13.5H3.75z" />
-                            </svg>
+                            <BoltIcon className="w-3 h-3 shrink-0" strokeWidth={2} />
                           )}
                           <span className="truncate">{ev.house_number ? `${ev.house_number} - ${ev.full_name}` : ev.full_name}</span>
                         </button>

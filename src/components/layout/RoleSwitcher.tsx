@@ -1,4 +1,5 @@
 "use client";
+import { CheckIcon } from "@/components/ui/icons";
 
 import { useState } from "react";
 import { useActiveRoles, ROLE_LABEL, type Role } from "@/lib/roles";
@@ -80,9 +81,7 @@ export default function RoleSwitcher() {
                     <span className="block text-xxs text-gray-400">เห็นทุก role + สิทธิ์ admin</span>
                   </span>
                   {isActive("admin") && (
-                    <svg className="w-4 h-4 text-primary mt-0.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
-                      <path strokeLinecap="round" strokeLinejoin="round" d="M4.5 12.75l6 6 9-13.5" />
-                    </svg>
+                    <CheckIcon className="w-4 h-4 text-primary mt-0.5" strokeWidth={2.5} />
                   )}
                 </button>
               )}
@@ -95,9 +94,7 @@ export default function RoleSwitcher() {
                 >
                   <span className={`flex-1 text-sm font-semibold ${isActive(r) ? "text-primary" : "text-gray-700"}`}>{ROLE_LABEL[r]}</span>
                   {isActive(r) && (
-                    <svg className="w-4 h-4 text-primary" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
-                      <path strokeLinecap="round" strokeLinejoin="round" d="M4.5 12.75l6 6 9-13.5" />
-                    </svg>
+                    <CheckIcon className="w-4 h-4 text-primary" strokeWidth={2.5} />
                   )}
                 </button>
               ))}

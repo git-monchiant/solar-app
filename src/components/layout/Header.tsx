@@ -1,4 +1,5 @@
 "use client";
+import { ChevronLeftIcon } from "@/components/ui/icons";
 
 import Link from "next/link";
 import { useEffect, useState } from "react";
@@ -9,11 +10,10 @@ interface HeaderProps {
   subtitle?: string;
   backHref?: string;
   rightContent?: React.ReactNode;
-  hideAvatar?: boolean;
   children?: React.ReactNode;
 }
 
-export default function Header({ title, subtitle, backHref, rightContent, hideAvatar, children }: HeaderProps) {
+export default function Header({ title, subtitle, backHref, rightContent, children }: HeaderProps) {
   const [version, setVersion] = useState<string | null>(null);
   useEffect(() => {
     fetch("/api/version", { cache: "no-store" })
@@ -26,9 +26,7 @@ export default function Header({ title, subtitle, backHref, rightContent, hideAv
       <div className="h-16 px-5 flex items-center gap-3">
         {backHref && (
           <Link href={backHref} className="p-2 -ml-2 rounded-full text-gray-600 hover:bg-gray-200 transition-colors">
-            <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
-              <path strokeLinecap="round" strokeLinejoin="round" d="M15.75 19.5L8.25 12l7.5-7.5" />
-            </svg>
+            <ChevronLeftIcon className="w-5 h-5" strokeWidth={2.5} />
           </Link>
         )}
         <div className="flex-1 min-w-0">

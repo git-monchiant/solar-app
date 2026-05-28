@@ -1,4 +1,5 @@
 "use client";
+import { CheckIcon, DownloadIcon, XIcon } from "@/components/ui/icons";
 
 import { apiFetch, getUserIdHeader } from "@/lib/api";
 import { useEffect, useMemo, useRef, useState } from "react";
@@ -196,9 +197,7 @@ export default function SeekerDashboardPage() {
                 title="ดาวน์โหลดรายงาน PDF"
                 aria-label="ดาวน์โหลดรายงาน PDF"
               >
-                <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                  <path strokeLinecap="round" strokeLinejoin="round" d="M3 16.5v2.25A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75V16.5M16.5 12L12 16.5m0 0L7.5 12m4.5 4.5V3" />
-                </svg>
+                <DownloadIcon className="w-4 h-4" strokeWidth={2} />
                 <span className="text-xs font-semibold">PDF</span>
               </button>
               <div className="text-xs font-semibold uppercase tracking-wider text-gray-500 mb-3">สถานะการนำเสนอ</div>
@@ -260,9 +259,7 @@ export default function SeekerDashboardPage() {
                 title="ดาวน์โหลดรายงาน PDF (Lead Seeker — 30 วัน)"
                 aria-label="ดาวน์โหลดรายงาน PDF"
               >
-                <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                  <path strokeLinecap="round" strokeLinejoin="round" d="M3 16.5v2.25A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75V16.5M16.5 12L12 16.5m0 0L7.5 12m4.5 4.5V3" />
-                </svg>
+                <DownloadIcon className="w-4 h-4" strokeWidth={2} />
                 <span className="text-xs font-semibold">PDF</span>
               </button>
               <div className="text-xs font-semibold uppercase tracking-wider text-gray-500 mb-3">
@@ -302,9 +299,7 @@ export default function SeekerDashboardPage() {
                         style={{ minHeight: 0 }}
                       >
                         {chartFullscreen ? (
-                          <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                            <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
-                          </svg>
+                          <XIcon className="w-4 h-4" strokeWidth={2} />
                         ) : (
                           <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
                             <path strokeLinecap="round" strokeLinejoin="round" d="M3.75 3.75v4.5m0-4.5h4.5m-4.5 0L9 9M3.75 20.25v-4.5m0 4.5h4.5m-4.5 0L9 15M20.25 3.75h-4.5m4.5 0v4.5m0-4.5L15 9m5.25 11.25h-4.5m4.5 0v-4.5m0 4.5L15 15" />
@@ -410,9 +405,7 @@ export default function SeekerDashboardPage() {
                     style={{ minHeight: 0 }}
                     aria-label="ปิด"
                   >
-                    <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                      <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
-                    </svg>
+                    <XIcon className="w-4 h-4" strokeWidth={2} />
                   </button>
                 </div>
                 <div className="p-4">
@@ -709,15 +702,6 @@ function SeekerActivityChart({ daily, usageDays }: { daily: DailyRow[]; usageDay
   );
 }
 
-function StatCard({ label, value, color }: { label: string; value: number; color: string }) {
-  return (
-    <div className={`rounded-2xl p-4 ${color}`}>
-      <div className="text-xs font-semibold uppercase tracking-wider opacity-80">{label}</div>
-      <div className="mt-1 text-3xl font-bold">{value}</div>
-    </div>
-  );
-}
-
 const KPI_TINTS: Record<string, { bg: string; icon: string }> = {
   gray: { bg: "bg-gray-50", icon: "text-gray-500" },
   blue: { bg: "bg-blue-50", icon: "text-blue-600" },
@@ -748,9 +732,7 @@ function renderKpiIcon(kind: "home" | "check" | "heart" | "line" | "lead") {
     </svg>
   );
   if (kind === "check") return (
-    <svg className={cls} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
-      <path strokeLinecap="round" strokeLinejoin="round" d="M4.5 12.75l6 6 9-13.5" />
-    </svg>
+    <CheckIcon className={cls} strokeWidth={2.5} />
   );
   if (kind === "heart") return (
     <svg className={cls} fill="currentColor" viewBox="0 0 24 24">
@@ -813,42 +795,6 @@ function LegendRow({ color, label, value, total }: { color: string; label: strin
   );
 }
 
-function AdoptionBar({ label, value, total, color, icon, iconColor }: { label: string; value: number; total: number; color: string; icon?: "solar" | "line"; iconColor?: string }) {
-  const pct = total === 0 ? 0 : Math.round((value / total) * 100);
-  return (
-    <div className="bg-white rounded-2xl border border-gray-200 p-4">
-      <div className="flex items-center justify-between mb-2">
-        <div className="flex items-center gap-1.5 min-w-0">
-          {icon && <span className={`shrink-0 ${iconColor || "text-gray-500"}`}>{renderAdoptionIcon(icon)}</span>}
-          <div className="text-xs font-semibold uppercase tracking-wider text-gray-500 truncate">{label}</div>
-        </div>
-        <div className="text-lg font-bold text-gray-900 tabular-nums shrink-0">{pct}%</div>
-      </div>
-      <div className="h-2 bg-gray-100 rounded-full overflow-hidden">
-        <div className={`h-full ${color} transition-all`} style={{ width: `${pct}%` }} />
-      </div>
-      <div className="mt-1.5 text-xxs text-gray-500 tabular-nums">{value.toLocaleString("en")} / {total.toLocaleString("en")}</div>
-    </div>
-  );
-}
-
-function renderAdoptionIcon(kind: "solar" | "line") {
-  if (kind === "line") return (
-    <svg className="w-4 h-4" viewBox="0 0 24 24" fill="currentColor">
-      <path d="M19.365 9.863c.349 0 .63.285.63.631 0 .345-.281.63-.63.63H17.61v1.125h1.755c.349 0 .63.283.63.63 0 .344-.281.629-.63.629h-2.386c-.345 0-.627-.285-.627-.629V8.108c0-.345.282-.63.63-.63h2.386c.346 0 .627.285.627.63 0 .349-.281.63-.63.63H17.61v1.125h1.755zm-3.855 3.016c0 .27-.174.51-.432.596-.064.021-.133.031-.199.031-.211 0-.391-.09-.51-.25l-2.443-3.317v2.94c0 .344-.279.629-.631.629-.346 0-.626-.285-.626-.629V8.108c0-.27.173-.51.43-.595.064-.022.134-.032.2-.032.211 0 .391.09.51.25l2.44 3.317V8.108c0-.345.282-.63.63-.63.345 0 .63.285.63.63v4.771zm-5.741 0c0 .344-.282.629-.631.629-.345 0-.627-.285-.627-.629V8.108c0-.345.282-.63.63-.63.346 0 .628.285.628.63v4.771zm-2.466.629H4.917c-.345 0-.63-.285-.63-.629V8.108c0-.345.285-.63.63-.63.348 0 .63.285.63.63v4.141h1.756c.348 0 .629.283.629.63 0 .344-.282.629-.629.629M24 10.314C24 4.943 18.615.572 12 .572S0 4.943 0 10.314c0 4.811 4.27 8.842 10.035 9.608.391.082.923.258 1.058.59.12.301.079.766.038 1.08l-.164 1.02c-.045.301-.24 1.186 1.049.645 1.291-.539 6.916-4.078 9.436-6.975C23.176 14.393 24 12.458 24 10.314" />
-    </svg>
-  );
-  return (
-    <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.8}>
-      <path d="M4 18L6.5 6h11L20 18H4z" strokeLinejoin="round" />
-      <path d="M4 18h16" strokeLinecap="round" />
-      <path d="M12 6v12" />
-      <path d="M5.2 12h13.6" />
-      <path d="M7.2 9h9.6" />
-    </svg>
-  );
-}
-
 function formatDateTime(iso: string) {
   const d = new Date(iso);
   if (isNaN(d.getTime())) return iso;
@@ -886,9 +832,7 @@ function ProjectPickerModal({
         <div className="flex items-center justify-between mb-4">
           <h2 className="text-lg font-bold text-gray-900">เลือกโครงการ</h2>
           <button onClick={onClose} className="p-2 -mr-2 rounded-full hover:bg-gray-100 text-gray-500">
-            <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-              <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
-            </svg>
+            <XIcon className="w-5 h-5" strokeWidth={2} />
           </button>
         </div>
 
@@ -909,9 +853,7 @@ function ProjectPickerModal({
           >
             <span>ทุกโครงการ</span>
             {value === "" && (
-              <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
-                <path strokeLinecap="round" strokeLinejoin="round" d="M4.5 12.75l6 6 9-13.5" />
-              </svg>
+              <CheckIcon className="w-5 h-5" strokeWidth={2.5} />
             )}
           </button>
           {filtered.length === 0 ? (
@@ -928,9 +870,7 @@ function ProjectPickerModal({
               >
                 <span className="truncate">{name}</span>
                 {value === name && (
-                  <svg className="w-5 h-5 shrink-0 ml-2" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
-                    <path strokeLinecap="round" strokeLinejoin="round" d="M4.5 12.75l6 6 9-13.5" />
-                  </svg>
+                  <CheckIcon className="w-5 h-5 shrink-0 ml-2" strokeWidth={2.5} />
                 )}
               </button>
             ))

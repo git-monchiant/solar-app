@@ -1,4 +1,5 @@
 "use client";
+import { BoltIcon, XIcon } from "@/components/ui/icons";
 
 import Link from "next/link";
 import { useEffect, useMemo, useRef, useState } from "react";
@@ -49,9 +50,7 @@ function EventIcon({ type }: { type: string }) {
   }
   if (type === "install") {
     return (
-      <svg className="w-3.5 h-3.5 shrink-0 text-gray-600" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-        <path strokeLinecap="round" strokeLinejoin="round" d="M3.75 13.5l10.5-11.25L12 10.5h8.25L9.75 21.75 12 13.5H3.75z" />
-      </svg>
+      <BoltIcon className="w-3.5 h-3.5 shrink-0 text-gray-600" strokeWidth={2} />
     );
   }
   return null;
@@ -94,13 +93,6 @@ export default function EventCalendarList({ monthsBack, monthsForward, days, zon
   const [internalZone, setInternalZone] = useState<string>(zoneFilter);
   const selectedZone = controlledZone ?? internalZone;
   const setSelectedZone = setInternalZone;
-  // name → hex color, derived once per zones load. Used to tint the row's
-  // left bar so "All" view shows team identity at a glance.
-  const zoneColor = useMemo(() => {
-    const m: Record<string, string> = {};
-    for (const z of zones) if (z.color) m[z.name] = z.color;
-    return m;
-  }, [zones]);
 
   // Anchor + window. Default anchor = "monthsBack months before today" so the
   // initial render still includes recent past months. Prev/Next move the
@@ -326,7 +318,7 @@ export default function EventCalendarList({ monthsBack, monthsForward, days, zon
                                   }}
                                   className="ml-auto w-7 h-7 rounded-md text-gray-400 hover:text-red-600 hover:bg-red-50 inline-flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity"
                                 >
-                                  <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" /></svg>
+                                  <XIcon className="w-4 h-4" strokeWidth={2} />
                                 </button>
                               </div>
                             ) : (

@@ -29,7 +29,6 @@ export async function POST(request: NextRequest) {
     const requestedFields: string[] = Array.isArray(fields) && fields.length > 0
       ? fields.filter((f: unknown): f is string => typeof f === "string" && FIELD_HINTS[f] !== undefined)
       : Object.keys(FIELD_HINTS);
-    const schemaBlock = "{\n" + requestedFields.map(f => `  "${f}": "${FIELD_HINTS[f]}"`).join(",\n") + "\n}";
 
     const apiKey = process.env.GEMINI_API_KEY;
     if (!apiKey) return NextResponse.json({ error: "No API key" }, { status: 500 });

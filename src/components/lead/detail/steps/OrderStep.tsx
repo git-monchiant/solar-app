@@ -1,8 +1,8 @@
 "use client";
+import { CheckIcon, ChevronLeftIcon, ChevronRightIcon, ClockIcon, LineIcon } from "@/components/ui/icons";
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { apiFetch } from "@/lib/api";
-import { useMe } from "@/lib/roles";
 import type { StepCommonProps } from "./types";
 import CalendarPicker from "@/components/calendar/CalendarPicker";
 import AddActivityModal from "@/components/lead/detail/AddActivityModal";
@@ -11,7 +11,6 @@ import { buildPaymentFlex } from "@/lib/utils/line-flex";
 import LineConfirmModal from "@/components/modal/LineConfirmModal";
 import ErrorPopup from "@/components/ui/ErrorPopup";
 import CustomerInfoForm from "@/components/customer/CustomerInfoForm";
-import FallbackImage from "@/components/ui/FallbackImage";
 import PaymentSlipsThumbs from "@/components/payment/PaymentSlipsThumbs";
 import StepLayout from "../StepLayout";
 import InstallmentReceiptList from "../InstallmentReceiptList";
@@ -85,7 +84,6 @@ interface Props extends StepCommonProps {
 }
 
 export default function OrderStep({ lead, state, refresh, expanded, onToggle }: Props) {
-  const { me } = useMe();
   const [subStep, setSubStep] = useSubStep(`orderSubStep_${lead.id}`, 0, SUB_STEPS.length);
   const [nextError, setNextError] = useState<string | null>(null);
   const [total, setTotal] = useState<number>(lead.order_total || lead.quotation_amount || 0);
@@ -371,12 +369,6 @@ export default function OrderStep({ lead, state, refresh, expanded, onToggle }: 
   };
   useEffect(() => { loadPayments(); /* eslint-disable-next-line react-hooks/exhaustive-deps */ }, [lead.id]);
   const isPaid = (idx: number) => paidIdxSet.has(idx);
-  // Highest-index row that hasn't been paid — that's where the auto-computed
-  // remainder goes (replaces the previous "last row" assumption).
-  const lastUnpaidIdx = (() => {
-    for (let k = installments.length - 1; k >= 0; k--) if (!paidIdxSet.has(k)) return k;
-    return -1;
-  })();
   const [installDate, setInstallDate] = useState(lead.install_date ? String(lead.install_date).slice(0, 10) : "");
   const [installDateEnd, setInstallDateEnd] = useState(lead.install_date_end ? String(lead.install_date_end).slice(0, 10) : "");
 
@@ -431,8 +423,6 @@ export default function OrderStep({ lead, state, refresh, expanded, onToggle }: 
   // Tracks the per-substep "next" button while flushSave is in flight, so we
   // can disable + relabel it to give the user feedback during the round-trip.
   const [advancing, setAdvancing] = useState(false);
-  const [beforeSlipDone, setBeforeSlipDone] = useState(!!lead.order_before_slip);
-  const [afterSlipDone, setAfterSlipDone] = useState(!!lead.order_after_slip);
   const [lineSending, setLineSending] = useState(false);
   // Initialize from the persisted "quotation_sent_date" set in QuoteStep submit
   // (and re-stamped on every re-send below). After refresh the button keeps its
@@ -444,12 +434,12 @@ export default function OrderStep({ lead, state, refresh, expanded, onToggle }: 
   const [regIdCard, setRegIdCard] = useState(lead.id_card_number || "");
   const [regAddress, setRegAddress] = useState(lead.id_card_address || "");
   const [regInstallAddr, setRegInstallAddr] = useState(lead.installation_address || "");
-  const [financeBank, setFinanceBank] = useState(lead.finance_bank ?? "");
-  const [financeMonths, setFinanceMonths] = useState<string>(lead.finance_months != null ? String(lead.finance_months) : "");
-  const [financeMonthly, setFinanceMonthly] = useState<string>(lead.finance_monthly != null ? String(lead.finance_monthly) : "");
-  const [loanBank, setLoanBank] = useState(lead.finance_loan_bank ?? "");
-  const [loanAmount, setLoanAmount] = useState<string>(lead.finance_loan_amount != null ? String(lead.finance_loan_amount) : "");
-  const [loanDocs, setLoanDocs] = useState(lead.finance_documents ?? "");
+  const [financeBank] = useState(lead.finance_bank ?? "");
+  const [financeMonths] = useState<string>(lead.finance_months != null ? String(lead.finance_months) : "");
+  const [financeMonthly] = useState<string>(lead.finance_monthly != null ? String(lead.finance_monthly) : "");
+  const [loanBank] = useState(lead.finance_loan_bank ?? "");
+  const [loanAmount] = useState<string>(lead.finance_loan_amount != null ? String(lead.finance_loan_amount) : "");
+  const [loanDocs] = useState(lead.finance_documents ?? "");
 
   const pctAfter = 100 - pctBefore;
   // Single-installment (pctBefore = 100): customer already paid the deposit
@@ -470,16 +460,7 @@ export default function OrderStep({ lead, state, refresh, expanded, onToggle }: 
     const pct = idx === _autoIdx ? lastPct : (installments[idx]?.pct ?? 0);
     return netTotal > 0 ? Math.round((netTotal * pct) / 100) : 0;
   };
-  const rowCredits = installments.map(() => 0);
   const rowNet = (idx: number) => rowGross(idx);
-  const amountBefore = netTotal > 0
-    ? (pctBefore >= 100 ? netTotal : Math.round(netTotal * pctBefore / 100))
-    : 0;
-  const amountAfter = netTotal > 0 && pctBefore < 100 ? netTotal - amountBefore : 0;
-  const creditBefore = 0;
-  const creditAfter = 0;
-  const netBefore = amountBefore;
-  const netAfter = amountAfter;
   // If deposit > eff (rare — refund-due to customer), surface the excess.
   const refund = Math.max(0, depositPaid - effTotal);
   // Credit-card surcharge: each "cc" installment row adds rowGross × cc_pct/100
@@ -548,26 +529,6 @@ export default function OrderStep({ lead, state, refresh, expanded, onToggle }: 
     };
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [total, discountPct, discountAmount, discountNote, pctBefore, installments, installDate, financeBank, financeMonths, financeMonthly, loanBank, loanAmount, loanDocs]);
-
-  // PaymentSection writes the payments row + flips the paid flag itself. Parent just
-  // reacts after the fact — tracks local UI state and refreshes the lead.
-  // Payment confirmations stay on the current sub-step — user advances
-  // manually via "ถัดไป" so they see the state flip before moving on.
-  const onBeforeConfirmed = async () => {
-    const patch: Record<string, unknown> = {};
-    if (pctBefore >= 100) patch.status = "install";
-    if (me?.id) patch.order_before_paid_by = me.id;
-    if (Object.keys(patch).length) {
-      try { await apiFetch(`/api/leads/${lead.id}`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify(patch) }); } catch {}
-    }
-    await refresh();
-  };
-  const onAfterConfirmed = async () => {
-    const patch: Record<string, unknown> = { status: "install" };
-    if (me?.id) patch.order_after_paid_by = me.id;
-    try { await apiFetch(`/api/leads/${lead.id}`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify(patch) }); } catch {}
-    await refresh();
-  };
 
   const scrollToStep = () => {
     setTimeout(() => document.querySelector("[data-step-active]")?.scrollIntoView({ behavior: "smooth", block: "start" }), 100);
@@ -866,7 +827,6 @@ export default function OrderStep({ lead, state, refresh, expanded, onToggle }: 
                 const isAutoRow = i === _autoIdx;
                 const paid = isPaid(i);
                 const rowAmount = rowGross(i);
-                const rowCredit = rowCredits[i] || 0;
                 const rowNetAmount = rowNet(i);
                 const loanCheckbox = (
                   <label className={`flex items-center gap-1.5 text-xs text-gray-600 shrink-0 ${paid ? "cursor-default opacity-60" : "cursor-pointer"}`}>
@@ -946,9 +906,7 @@ export default function OrderStep({ lead, state, refresh, expanded, onToggle }: 
                       <>ชำระแล้ว</>
                     ) : pendingApproval ? (
                       <>
-                        <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                          <path strokeLinecap="round" strokeLinejoin="round" d="M12 6v6h4.5m4.5 0a9 9 0 11-18 0 9 9 0 0118 0z" />
-                        </svg>
+                        <ClockIcon className="w-3.5 h-3.5" strokeWidth={2} />
                         รอยืนยัน
                       </>
                     ) : (
@@ -984,9 +942,7 @@ export default function OrderStep({ lead, state, refresh, expanded, onToggle }: 
                           <span className="shrink-0 w-5 h-5" aria-hidden />
                         )}
                         {paid && (
-                          <svg className="w-4 h-4 text-emerald-600 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={3}>
-                            <path strokeLinecap="round" strokeLinejoin="round" d="M4.5 12.75l6 6 9-13.5" />
-                          </svg>
+                          <CheckIcon className="w-4 h-4 text-emerald-600 shrink-0" strokeWidth={3} />
                         )}
                         <span className={paid ? "text-emerald-800" : ""}>{`งวดที่ ${i + 1}`}</span>
                         {row.method === "loan" && rowFollowups.length > 0 && (
@@ -1114,9 +1070,7 @@ export default function OrderStep({ lead, state, refresh, expanded, onToggle }: 
                           <>ชำระแล้ว</>
                         ) : pendingApproval ? (
                           <>
-                            <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                              <path strokeLinecap="round" strokeLinejoin="round" d="M12 6v6h4.5m4.5 0a9 9 0 11-18 0 9 9 0 0118 0z" />
-                            </svg>
+                            <ClockIcon className="w-4 h-4" strokeWidth={2} />
                             รอยืนยัน
                           </>
                         ) : (
@@ -1285,7 +1239,7 @@ export default function OrderStep({ lead, state, refresh, expanded, onToggle }: 
               !lead.line_id ? "bg-gray-200 text-gray-400 cursor-not-allowed" : lineSent ? "bg-emerald-500 text-white" : "text-white bg-gradient-to-r from-primary to-primary-dark hover:brightness-110 shadow-primary/20"
             }`}
           >
-            <svg className="w-5 h-5" viewBox="0 0 24 24" fill="currentColor"><path d="M19.365 9.863c.349 0 .63.285.63.631 0 .345-.281.63-.63.63H17.61v1.125h1.755c.349 0 .63.283.63.63 0 .344-.281.629-.63.629h-2.386c-.345 0-.627-.285-.627-.629V8.108c0-.345.282-.63.63-.63h2.386c.346 0 .627.285.627.63 0 .349-.281.63-.63.63H17.61v1.125h1.755zm-3.855 3.016c0 .27-.174.51-.432.596-.064.021-.133.031-.199.031-.211 0-.391-.09-.51-.25l-2.443-3.317v2.94c0 .344-.279.629-.631.629-.346 0-.626-.285-.626-.629V8.108c0-.27.173-.51.43-.595.064-.022.134-.032.2-.032.211 0 .391.09.51.25l2.44 3.317V8.108c0-.345.282-.63.63-.63.345 0 .63.285.63.63v4.771zm-5.741 0c0 .344-.282.629-.631.629-.345 0-.627-.285-.627-.629V8.108c0-.345.282-.63.63-.63.346 0 .628.285.628.63v4.771zm-2.466.629H4.917c-.345 0-.63-.285-.63-.629V8.108c0-.345.285-.63.63-.63.348 0 .63.285.63.63v4.141h1.756c.348 0 .629.283.629.63 0 .344-.282.629-.629.629M24 10.314C24 4.943 18.615.572 12 .572S0 4.943 0 10.314c0 4.811 4.27 8.842 10.035 9.608.391.082.923.258 1.058.59.12.301.079.766.038 1.08l-.164 1.02c-.045.301-.24 1.186 1.049.645 1.291-.539 6.916-4.078 9.436-6.975C23.176 14.393 24 12.458 24 10.314" /></svg>
+            <LineIcon className="w-5 h-5" />
             {!lead.line_id ? "ยังไม่ได้เชื่อม LINE" : lineSending ? "กำลังส่ง..." : lineSent ? "✓ ส่งแล้ว · คลิกเพื่อส่งอีกครั้ง" : "ส่งใบเสนอราคาให้ลูกค้า"}
           </button>
 
@@ -1625,7 +1579,7 @@ export default function OrderStep({ lead, state, refresh, expanded, onToggle }: 
         <div className="flex gap-2 mt-3 md:justify-between">
           {subStep > 0 ? (
             <button type="button" onClick={() => { setNextError(null); setSubStep(subStep - 1); scrollToStep(); }} className="flex-1 md:flex-none md:w-64 h-11 rounded-lg text-sm font-semibold border border-gray-200 text-gray-600 hover:bg-gray-50 transition-colors flex items-center justify-center gap-1">
-              <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M15.75 19.5L8.25 12l7.5-7.5" /></svg>
+              <ChevronLeftIcon className="w-4 h-4" strokeWidth={2} />
               ย้อนกลับ
             </button>
           ) : <span className="hidden md:block md:w-64" />}
@@ -1647,7 +1601,7 @@ export default function OrderStep({ lead, state, refresh, expanded, onToggle }: 
           >
             {advancing ? "กำลังบันทึก..." : "ถัดไป"}
             {!advancing && (
-              <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M8.25 4.5l7.5 7.5-7.5 7.5" /></svg>
+              <ChevronRightIcon className="w-4 h-4" strokeWidth={2} />
             )}
           </button>
         </div>
@@ -1655,7 +1609,7 @@ export default function OrderStep({ lead, state, refresh, expanded, onToggle }: 
       {subStep === 3 && (
         <div className="flex gap-2 mt-3 md:justify-between">
           <button type="button" onClick={() => { setSubStep(subStep - 1); scrollToStep(); }} className="flex-1 md:flex-none md:w-64 h-11 rounded-lg text-sm font-semibold border border-gray-200 text-gray-600 hover:bg-gray-50 transition-colors flex items-center justify-center gap-1">
-            <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M15.75 19.5L8.25 12l7.5-7.5" /></svg>
+            <ChevronLeftIcon className="w-4 h-4" strokeWidth={2} />
             ย้อนกลับ
           </button>
           <button
@@ -1701,6 +1655,7 @@ export default function OrderStep({ lead, state, refresh, expanded, onToggle }: 
         <AddActivityModal
           activityType="follow_up"
           leadId={lead.id}
+          leadPhone={lead.phone}
           loanInstallmentIndex={followupRow}
           onClose={() => setFollowupRow(null)}
           onSaved={() => { refresh(); loadActivities(); }}

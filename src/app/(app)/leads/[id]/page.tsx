@@ -1,10 +1,10 @@
 "use client";
+import { CheckIcon, ChevronLeftIcon, ClockIcon, LineIcon, PhoneIcon, UserIcon, XIcon } from "@/components/ui/icons";
 
 import { apiFetch } from "@/lib/api";
 import { stripThaiTitle } from "@/lib/utils/name";
 import { useEffect, useState, use, useCallback, useRef } from "react";
 import { useSearchParams } from "next/navigation";
-import Link from "next/link";
 import ActivityTimeline from "@/components/lead/detail/ActivityTimeline";
 import AddActivityModal, { ActivityType } from "@/components/lead/detail/AddActivityModal";
 import AssignOwnerButton from "@/components/lead/AssignOwnerButton";
@@ -12,7 +12,6 @@ import LostModal from "@/components/lead/detail/LostModal";
 import ProfileModal from "@/components/lead/detail/ProfileModal";
 import LinePickerModal from "@/components/modal/LinePickerModal";
 import { getSourceStyle } from "@/lib/source-tag";
-import Header from "@/components/layout/Header";
 import { Activity } from "@/components/lead/detail/ActivityItem";
 import PreSurveyStep from "@/components/lead/detail/steps/PreSurveyStep";
 import SurveyStep from "@/components/lead/detail/steps/SurveyStep";
@@ -125,13 +124,6 @@ function stepIndex(status: string) {
   return STEP_ORDER.indexOf(main);
 }
 
-const InfoRow = ({ label, value, mono = false, accent = false }: { label: string; value: React.ReactNode; mono?: boolean; accent?: boolean }) => (
-  <div className="flex flex-col gap-0.5 py-2 border-b border-gray-100 last:border-0">
-    <span className="text-xs font-semibold tracking-wider uppercase text-gray-400">{label}</span>
-    <span className={`text-sm ${mono ? "font-mono tabular-nums" : ""} ${accent ? "font-bold text-gray-900" : "font-medium text-gray-800"}`}>{value}</span>
-  </div>
-);
-
 // Top-level stable component: children keep the same React tree position across
 // fullscreen toggles, so in-progress form state (textareas, inputs) is preserved.
 // Fullscreen is CSS-only (position:fixed) — no portal, no duplication.
@@ -211,9 +203,7 @@ function StepCard({
             style={{ minHeight: 0 }}
           >
             {fullscreen ? (
-              <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
-              </svg>
+              <XIcon className="w-4 h-4" strokeWidth={2} />
             ) : (
               <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
                 <path strokeLinecap="round" strokeLinejoin="round" d="M3.75 3.75v4.5m0-4.5h4.5m-4.5 0L9 9M3.75 20.25v-4.5m0 4.5h4.5m-4.5 0L9 15M20.25 3.75h-4.5m4.5 0v4.5m0-4.5L15 9m5.25 11.25h-4.5m4.5 0v-4.5m0 4.5L15 15" />
@@ -418,9 +408,7 @@ export default function LeadDetailPage({ params }: { params: Promise<{ id: strin
             </button>
           ) : (
             <button type="button" onClick={() => window.history.back()} className="p-2 rounded-full text-gray-600 hover:bg-gray-200 transition-colors shrink-0" style={{ minHeight: 0 }}>
-              <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
-                <path strokeLinecap="round" strokeLinejoin="round" d="M15.75 19.5L8.25 12l7.5-7.5" />
-              </svg>
+              <ChevronLeftIcon className="w-5 h-5" strokeWidth={2.5} />
             </button>
           )}
           <div className="flex-1 min-w-0 flex items-center gap-1">
@@ -450,7 +438,7 @@ export default function LeadDetailPage({ params }: { params: Promise<{ id: strin
                 : "bg-white text-gray-500 shadow border border-gray-200 hover:border-active/40 hover:text-active"
             }`}
           >
-            <svg className="w-5 h-5" viewBox="0 0 24 24" fill="currentColor"><path d="M19.365 9.863c.349 0 .63.285.63.631 0 .345-.281.63-.63.63H17.61v1.125h1.755c.349 0 .63.283.63.63 0 .344-.281.629-.63.629h-2.386c-.345 0-.627-.285-.627-.629V8.108c0-.345.282-.63.63-.63h2.386c.346 0 .627.285.627.63 0 .349-.281.63-.63.63H17.61v1.125h1.755zm-3.855 3.016c0 .27-.174.51-.432.596-.064.021-.133.031-.199.031-.211 0-.391-.09-.51-.25l-2.443-3.317v2.94c0 .344-.279.629-.631.629-.346 0-.626-.285-.626-.629V8.108c0-.27.173-.51.43-.595.064-.022.134-.032.2-.032.211 0 .391.09.51.25l2.44 3.317V8.108c0-.345.282-.63.63-.63.345 0 .63.285.63.63v4.771zm-5.741 0c0 .344-.282.629-.631.629-.345 0-.627-.285-.627-.629V8.108c0-.345.282-.63.63-.63.346 0 .628.285.628.63v4.771zm-2.466.629H4.917c-.345 0-.63-.285-.63-.629V8.108c0-.345.285-.63.63-.63.348 0 .63.285.63.63v4.141h1.756c.348 0 .629.283.629.63 0 .344-.282.629-.629.629M24 10.314C24 4.943 18.615.572 12 .572S0 4.943 0 10.314c0 4.811 4.27 8.842 10.035 9.608.391.082.923.258 1.058.59.12.301.079.766.038 1.08l-.164 1.02c-.045.301-.24 1.186 1.049.645 1.291-.539 6.916-4.078 9.436-6.975C23.176 14.393 24 12.458 24 10.314" /></svg>
+            <LineIcon className="w-5 h-5" />
           </button>
           {lead.phone && (
             <a
@@ -458,9 +446,7 @@ export default function LeadDetailPage({ params }: { params: Promise<{ id: strin
               className="shrink-0 w-11 h-11 rounded-full bg-primary text-white shadow-lg shadow-primary/40 flex items-center justify-center hover:bg-primary-dark active:scale-95 transition-all"
               aria-label="โทร"
             >
-              <svg className="w-5 h-5" width="20" height="20" fill="white" viewBox="0 0 24 24">
-                <path d="M6.62 10.79a15.05 15.05 0 006.59 6.59l2.2-2.2a1 1 0 011.05-.24c1.12.37 2.33.57 3.57.57a1 1 0 011 1V20a1 1 0 01-1 1A17 17 0 013 4a1 1 0 011-1h3.5a1 1 0 011 1c0 1.24.2 2.45.57 3.57a1 1 0 01-.24 1.05l-2.21 2.17z" />
-              </svg>
+              <PhoneIcon className="w-5 h-5" width="20" height="20" />
             </a>
           )}
         </div>
@@ -494,18 +480,14 @@ export default function LeadDetailPage({ params }: { params: Promise<{ id: strin
           <div className="text-xs text-gray-600 leading-tight flex items-center gap-1.5 flex-wrap">
             {lead.phone && (
               <>
-                <svg className="w-3.5 h-3.5 text-gray-400 shrink-0" fill="currentColor" viewBox="0 0 24 24">
-                  <path d="M6.62 10.79a15.05 15.05 0 006.59 6.59l2.2-2.2a1 1 0 011.05-.24c1.12.37 2.33.57 3.57.57a1 1 0 011 1V20a1 1 0 01-1 1A17 17 0 013 4a1 1 0 011-1h3.5a1 1 0 011 1c0 1.24.2 2.45.57 3.57a1 1 0 01-.24 1.05l-2.21 2.17z" />
-                </svg>
+                <PhoneIcon className="w-3.5 h-3.5 text-gray-400 shrink-0" />
                 <span className="font-mono tabular-nums">{lead.phone}</span>
                 <span className="text-gray-300">·</span>
               </>
             )}
             {lead.source && (
               <span className="inline-flex items-center gap-1">
-                <svg className="w-3.5 h-3.5 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                  <path strokeLinecap="round" strokeLinejoin="round" d="M15.75 6a3.75 3.75 0 11-7.5 0 3.75 3.75 0 017.5 0zM4.501 20.118a7.5 7.5 0 0114.998 0" />
-                </svg>
+                <UserIcon className="w-3.5 h-3.5 text-gray-400" strokeWidth={2} />
                 {getSourceStyle(lead.source).label}
               </span>
             )}
@@ -569,9 +551,7 @@ export default function LeadDetailPage({ params }: { params: Promise<{ id: strin
                 onClick={() => setModalType("follow_up")}
                 className="flex items-center gap-1.5 px-3 h-9 rounded-lg bg-amber-50 text-amber-700 text-sm font-semibold border border-amber-200 hover:bg-amber-100 transition-colors"
               >
-                <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                  <path strokeLinecap="round" strokeLinejoin="round" d="M12 6v6h4.5m4.5 0a9 9 0 11-18 0 9 9 0 0118 0z" />
-                </svg>
+                <ClockIcon className="w-4 h-4" strokeWidth={2} />
                 Follow-up
               </button>
               <button
@@ -589,9 +569,7 @@ export default function LeadDetailPage({ params }: { params: Promise<{ id: strin
         </div>
         {/* Right column header (desktop only) — aligns with the right panel */}
         <div className="hidden md:flex w-96 border-l border-gray-200 px-4 items-center py-3 text-xs font-semibold uppercase tracking-wider text-gray-500 gap-1.5">
-          <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-            <path strokeLinecap="round" strokeLinejoin="round" d="M12 6v6h4.5m4.5 0a9 9 0 11-18 0 9 9 0 0118 0z" />
-          </svg>
+          <ClockIcon className="w-4 h-4" strokeWidth={2} />
           Activity Log <span className="ml-1 text-gray-400 normal-case">{activities.length}</span>
         </div>
         </div>
@@ -638,9 +616,7 @@ export default function LeadDetailPage({ params }: { params: Promise<{ id: strin
                   <span className="text-xxs font-bold tabular-nums leading-none">{String(s.idx + 1).padStart(2, "0")}</span>
                   <span className="text-[10px] font-semibold leading-tight text-center px-1">{s.label}</span>
                   {isDone && (
-                    <svg className="w-3 h-3 text-emerald-500" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={3}>
-                      <path strokeLinecap="round" strokeLinejoin="round" d="M4.5 12.75l6 6 9-13.5" />
-                    </svg>
+                    <CheckIcon className="w-3 h-3 text-emerald-500" strokeWidth={3} />
                   )}
                 </button>
               );
@@ -787,6 +763,7 @@ export default function LeadDetailPage({ params }: { params: Promise<{ id: strin
                 lead_created: { label: "ลงทะเบียน", color: "bg-emerald-500" },
                 status_change: { label: "สถานะ", color: "bg-emerald-500" },
                 presurvey_doc_created: { label: "เปิดเลขเอกสาร", color: "bg-emerald-500" },
+                sms_sent: { label: "ส่ง SMS", color: "bg-emerald-500" },
               };
 
               const headerParts = latest
@@ -1230,9 +1207,7 @@ export default function LeadDetailPage({ params }: { params: Promise<{ id: strin
             onClick={() => setModalType("follow_up")}
             className="flex-1 flex items-center justify-center gap-1.5 py-2.5 rounded-xl bg-amber-50 text-amber-700 text-sm font-semibold active:bg-amber-100 transition-colors"
           >
-            <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-              <path strokeLinecap="round" strokeLinejoin="round" d="M12 6v6h4.5m4.5 0a9 9 0 11-18 0 9 9 0 0118 0z" />
-            </svg>
+            <ClockIcon className="w-4 h-4" strokeWidth={2} />
             Follow-up
           </button>
           <button
@@ -1251,6 +1226,7 @@ export default function LeadDetailPage({ params }: { params: Promise<{ id: strin
         <AddActivityModal
           activityType={modalType}
           leadId={lead.id}
+          leadPhone={lead.phone}
           canSendBack={!!lead.from_prospect && lead.status === "pre_survey" && !lead.payment_confirmed}
           onClose={() => setModalType(null)}
           onSaved={refresh}
@@ -1288,9 +1264,7 @@ export default function LeadDetailPage({ params }: { params: Promise<{ id: strin
                 <img src={lead.line_picture_url} alt="" className="w-16 h-16 rounded-full object-cover border border-gray-200" />
               ) : (
                 <div className="w-16 h-16 rounded-full bg-emerald-100 flex items-center justify-center">
-                  <svg className="w-7 h-7 text-emerald-600" viewBox="0 0 24 24" fill="currentColor">
-                    <path d="M19.365 9.863c.349 0 .63.285.63.631 0 .345-.281.63-.63.63H17.61v1.125h1.755c.349 0 .63.283.63.63 0 .344-.281.629-.63.629h-2.386c-.345 0-.627-.285-.627-.629V8.108c0-.345.282-.63.63-.63h2.386c.346 0 .627.285.627.63 0 .349-.281.63-.63.63H17.61v1.125h1.755zm-3.855 3.016c0 .27-.174.51-.432.596-.064.021-.133.031-.199.031-.211 0-.391-.09-.51-.25l-2.443-3.317v2.94c0 .344-.279.629-.631.629-.346 0-.626-.285-.626-.629V8.108c0-.27.173-.51.43-.595.064-.022.134-.032.2-.032.211 0 .391.09.51.25l2.44 3.317V8.108c0-.345.282-.63.63-.63.345 0 .63.285.63.63v4.771zm-5.741 0c0 .344-.282.629-.631.629-.345 0-.627-.285-.627-.629V8.108c0-.345.282-.63.63-.63.346 0 .628.285.628.63v4.771zm-2.466.629H4.917c-.345 0-.63-.285-.63-.629V8.108c0-.345.285-.63.63-.63.348 0 .63.285.63.63v4.141h1.756c.348 0 .629.283.629.63 0 .344-.282.629-.629.629M24 10.314C24 4.943 18.615.572 12 .572S0 4.943 0 10.314c0 4.811 4.27 8.842 10.035 9.608.391.082.923.258 1.058.59.12.301.079.766.038 1.08l-.164 1.02c-.045.301-.24 1.186 1.049.645 1.291-.539 6.916-4.078 9.436-6.975C23.176 14.393 24 12.458 24 10.314" />
-                  </svg>
+                  <LineIcon className="w-7 h-7 text-emerald-600" />
                 </div>
               )}
               <div className="text-sm font-bold text-gray-900">{lead.line_display_name || "LINE user"}</div>

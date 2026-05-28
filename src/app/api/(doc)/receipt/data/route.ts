@@ -3,8 +3,6 @@ import { getDb, sql, fixDates } from "@/lib/db";
 
 type Stage = "deposit" | "order_before" | "order_after" | "installment";
 
-const fmt0 = (n: number) => new Intl.NumberFormat("en-US").format(n);
-
 export async function GET(req: NextRequest) {
   const leadIdParam = req.nextUrl.searchParams.get("lead_id");
   const stageParam = (req.nextUrl.searchParams.get("stage") as Stage | null) || "deposit";
@@ -108,7 +106,7 @@ export async function GET(req: NextRequest) {
     let totalPrice = 0;
     let description = "";
     let lineItems: LineItem[] = [];
-    let remarks: string | null = null;
+    const remarks: string | null = null;
     const fallbackDocNo = `SSE-${new Date().getFullYear().toString().slice(-2)}${String(leadId).padStart(4, "0")}`;
     let receiptNumber = l.pre_doc_no || fallbackDocNo;
     let receiptDate: Date | string = new Date().toISOString();

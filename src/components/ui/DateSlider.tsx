@@ -1,4 +1,5 @@
 "use client";
+import { ChevronLeftIcon, ChevronRightIcon } from "@/components/ui/icons";
 
 import { useEffect, useRef } from "react";
 
@@ -74,10 +75,10 @@ export default function DateSlider({ date, onDateChange, days, pastDays = 3, fut
       <div className="absolute inset-y-0 left-1/2 -translate-x-1/2 w-14 rounded-xl border-2 border-active bg-active/10 pointer-events-none z-10" />
       {/* Arrow buttons for desktop */}
       <button type="button" onClick={() => scroll(-1)} style={{ minHeight: 0 }} className="absolute left-0 top-1/2 -translate-y-1/2 z-20 w-8 h-8 rounded-full bg-white shadow border border-gray-200 flex items-center justify-center text-gray-500 hover:text-gray-800">
-        <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}><path strokeLinecap="round" strokeLinejoin="round" d="M15.75 19.5L8.25 12l7.5-7.5" /></svg>
+        <ChevronLeftIcon className="w-4 h-4" strokeWidth={2.5} />
       </button>
       <button type="button" onClick={() => scroll(1)} style={{ minHeight: 0 }} className="absolute right-0 top-1/2 -translate-y-1/2 z-20 w-8 h-8 rounded-full bg-white shadow border border-gray-200 flex items-center justify-center text-gray-500 hover:text-gray-800">
-        <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}><path strokeLinecap="round" strokeLinejoin="round" d="M8.25 4.5l7.5 7.5-7.5 7.5" /></svg>
+        <ChevronRightIcon className="w-4 h-4" strokeWidth={2.5} />
       </button>
       <div
         ref={scrollRef}

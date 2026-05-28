@@ -1,4 +1,5 @@
 "use client";
+import { CheckIcon, ChevronLeftIcon, ChevronRightIcon, PhoneIcon, PlusIcon, UserIcon, XIcon } from "@/components/ui/icons";
 
 import { apiFetch } from "@/lib/api";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
@@ -164,23 +165,9 @@ function hasEvCharger(p: Prospect): boolean {
 }
 
 
-function SolarIcon() {
+function LineIcon({ className = "w-4 h-4 text-emerald-500 shrink-0" }: { className?: string }) {
   return (
-    <svg className="w-4 h-4 text-blue-600 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.8} aria-label="ติด Solar แล้ว">
-      <title>ติด Solar แล้ว — เสนอ upgrade</title>
-      <path d="M4 18L6.5 6h11L20 18H4z" strokeLinejoin="round" />
-      <path d="M4 18h16" strokeLinecap="round" />
-      <path d="M12 6v12" />
-      <path d="M5.2 12h13.6" />
-      <path d="M7.2 9h9.6" />
-      <path d="M4.6 15h14.8" />
-    </svg>
-  );
-}
-
-function LineIcon() {
-  return (
-    <svg className="w-4 h-4 text-emerald-500 shrink-0" viewBox="0 0 24 24" fill="currentColor" aria-label="เชื่อม LINE แล้ว">
+    <svg className={className} viewBox="0 0 24 24" fill="currentColor" aria-label="เชื่อม LINE แล้ว">
       <title>เชื่อม LINE แล้ว</title>
       <path d="M19.365 9.863c.349 0 .63.285.63.631 0 .345-.281.63-.63.63H17.61v1.125h1.755c.349 0 .63.283.63.63 0 .344-.281.629-.63.629h-2.386c-.345 0-.627-.285-.627-.629V8.108c0-.345.282-.63.63-.63h2.386c.346 0 .627.285.627.63 0 .349-.281.63-.63.63H17.61v1.125h1.755zm-3.855 3.016c0 .27-.174.51-.432.596-.064.021-.133.031-.199.031-.211 0-.391-.09-.51-.25l-2.443-3.317v2.94c0 .344-.279.629-.631.629-.346 0-.626-.285-.626-.629V8.108c0-.27.173-.51.43-.595.064-.022.134-.032.2-.032.211 0 .391.09.51.25l2.44 3.317V8.108c0-.345.282-.63.63-.63.345 0 .63.285.63.63v4.771zm-5.741 0c0 .344-.282.629-.631.629-.345 0-.627-.285-.627-.629V8.108c0-.345.282-.63.63-.63.346 0 .628.285.628.63v4.771zm-2.466.629H4.917c-.345 0-.63-.285-.63-.629V8.108c0-.345.285-.63.63-.63.348 0 .63.285.63.63v4.141h1.756c.348 0 .629.283.629.63 0 .344-.282.629-.629.629M24 10.314C24 4.943 18.615.572 12 .572S0 4.943 0 10.314c0 4.811 4.27 8.842 10.035 9.608.391.082.923.258 1.058.59.12.301.079.766.038 1.08l-.164 1.02c-.045.301-.24 1.186 1.049.645 1.291-.539 6.916-4.078 9.436-6.975C23.176 14.393 24 12.458 24 10.314" />
     </svg>
@@ -246,9 +233,8 @@ export default function SeekerPage() {
   }, [projectSearch]);
   const [editing, setEditing] = useState<Prospect | null>(null);
   const [hydrated, setHydrated] = useState(false);
-  const [creatingNew, setCreatingNew] = useState(false);
+  const [creatingNew] = useState(false);
   const [channelPickerOpen, setChannelPickerOpen] = useState(false);
-  const dialog = useDialog();
 
   const fetchProjects = useCallback(async () => {
     try {
@@ -531,9 +517,7 @@ export default function SeekerPage() {
                     const others = Math.max(0, parseContacts(p.contacts).length - 1);
                     return (
                       <div className="text-xs text-gray-600 leading-snug flex items-center gap-1 min-w-0">
-                        <svg className="w-3.5 h-3.5 text-indigo-500 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                          <path strokeLinecap="round" strokeLinejoin="round" d="M15.75 6a3.75 3.75 0 11-7.5 0 3.75 3.75 0 017.5 0zM4.501 20.118a7.5 7.5 0 0114.998 0" />
-                        </svg>
+                        <UserIcon className="w-3.5 h-3.5 text-indigo-500 shrink-0" strokeWidth={2} />
                         <span className="truncate min-w-0" title={p.full_name}>{p.full_name}</span>
                         {others > 0 && (
                           <span className="shrink-0 text-indigo-600 font-semibold">(+{others})</span>
@@ -545,9 +529,7 @@ export default function SeekerPage() {
                   {/* Row 3: primary phone + LINE icon */}
                   {(p.phone || p.line_id) && (
                     <div className="text-xs text-gray-600 font-mono tabular-nums flex items-center gap-1.5 min-w-0">
-                      <svg className="w-3.5 h-3.5 text-emerald-600 shrink-0" fill="currentColor" viewBox="0 0 24 24">
-                        <path d="M6.62 10.79a15.05 15.05 0 006.59 6.59l2.2-2.2a1 1 0 011.05-.24c1.12.37 2.33.57 3.57.57a1 1 0 011 1V20a1 1 0 01-1 1A17 17 0 013 4a1 1 0 011-1h3.5a1 1 0 011 1c0 1.24.2 2.45.57 3.57a1 1 0 01-.24 1.05l-2.21 2.17z" />
-                      </svg>
+                      <PhoneIcon className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
                       <span className="truncate">{p.phone || <span className="text-gray-300">-</span>}</span>
                       {p.line_id && (
                         <>
@@ -643,10 +625,6 @@ export default function SeekerPage() {
           projects={projectCards}
           existingProspects={prospects}
           onClose={() => setEditing(null)}
-          onSaved={() => {
-            setEditing(null);
-            refresh();
-          }}
           onRefresh={() => refresh()}
           onJumpToProspect={(p) => setEditing(p)}
         />
@@ -662,9 +640,7 @@ export default function SeekerPage() {
         {creatingNew ? (
           <div className="w-6 h-6 border-2 border-white/30 border-t-white rounded-full animate-spin" />
         ) : (
-          <svg className="w-7 h-7" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
-            <path strokeLinecap="round" strokeLinejoin="round" d="M12 4.5v15m7.5-7.5h-15" />
-          </svg>
+          <PlusIcon className="w-7 h-7" strokeWidth={2.5} />
         )}
       </button>
 
@@ -826,9 +802,7 @@ function ProjectLanding({
                           {p.phone && <span> · {p.phone}</span>}
                         </div>
                       </div>
-                      <svg className="w-3.5 h-3.5 text-gray-300 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                        <path strokeLinecap="round" strokeLinejoin="round" d="M8.25 4.5l7.5 7.5-7.5 7.5" />
-                      </svg>
+                      <ChevronRightIcon className="w-3.5 h-3.5 text-gray-300 shrink-0" strokeWidth={2} />
                     </button>
                   );
                 })}
@@ -938,7 +912,7 @@ function ProjectLanding({
   );
 }
 
-function VisitModal({ prospect, projects, existingProspects, onClose, onSaved, onRefresh, onJumpToProspect }: { prospect: Prospect; projects: ProjectCard[]; existingProspects: Prospect[]; onClose: () => void; onSaved: () => void; onRefresh: () => void; onJumpToProspect: (p: Prospect) => void }) {
+function VisitModal({ prospect, projects, existingProspects, onClose, onRefresh, onJumpToProspect }: { prospect: Prospect; projects: ProjectCard[]; existingProspects: Prospect[]; onClose: () => void; onRefresh: () => void; onJumpToProspect: (p: Prospect) => void }) {
   const dialog = useDialog();
   const [modalTab, setModalTab] = useState<"info" | "people" | "visit" | "line" | "reasons" | "payment" | "log">("info");
   // Collapsible step state for the timeline view in the "info" tab. Default is
@@ -1063,14 +1037,6 @@ function VisitModal({ prospect, projects, existingProspects, onClose, onSaved, o
     setContacts((prev) => [...prev, c]);
   const updateContact = (i: number, patch: Partial<Contact>) =>
     setContacts((prev) => prev.map((c, idx) => (idx === i ? { ...c, ...patch } : c)));
-  const promoteContact = (i: number) =>
-    setContacts((prev) => {
-      if (i <= 0 || i >= prev.length) return prev;
-      const next = [...prev];
-      const [picked] = next.splice(i, 1);
-      next.unshift(picked);
-      return next;
-    });
   // Inline "add resident" form shown at the bottom of the contacts list.
   const [addingOpen, setAddingOpen] = useState(false);
   const [addName, setAddName] = useState("");
@@ -1099,11 +1065,11 @@ function VisitModal({ prospect, projects, existingProspects, onClose, onSaved, o
   const [reasonCodes, setReasonCodes] = useState<string[]>(() =>
     prospect.interest_reasons ? prospect.interest_reasons.split(",").map((s) => s.trim()).filter(Boolean) : []
   );
-  const [reasonNote, setReasonNote] = useState(prospect.interest_reason_note || "");
+  const [reasonNote] = useState(prospect.interest_reason_note || "");
   const [sizeCodes, setSizeCodes] = useState<string[]>(() =>
     prospect.interest_sizes ? prospect.interest_sizes.split(",").map((s) => s.trim()).filter(Boolean) : []
   );
-  const [reasonsSavedAt, setReasonsSavedAt] = useState<number | null>(null);
+  const [, setReasonsSavedAt] = useState<number | null>(null);
   const reasonsInitRef = useRef(true);
 
   // Auto-save reasons tab: debounced PATCH whenever chips or note change.
@@ -1150,7 +1116,7 @@ function VisitModal({ prospect, projects, existingProspects, onClose, onSaved, o
     project_alias: prospect.project_alias || "",
     contactsJson,
   });
-  const [visitSavedAt, setVisitSavedAt] = useState<number | null>(null);
+  const [, setVisitSavedAt] = useState<number | null>(null);
   useEffect(() => {
     const timer = setTimeout(async () => {
       const init = initialVisitRef.current;
@@ -1253,10 +1219,7 @@ function VisitModal({ prospect, projects, existingProspects, onClose, onSaved, o
     return () => clearTimeout(timer);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [interest, interestType, note, houseNumber, contactHours, contactsJson, tagsKey, projectId, customProjectName, isPinnedProject, prospectId, isDraft]);
-  const [saving, setSaving] = useState(false);
   const [creatingLead, setCreatingLead] = useState(false);
-  // When >1 contact lives at this house, seeker must pick ONE for the lead.
-  const [leadContactIdx, setLeadContactIdx] = useState(0);
   const [leadIdLocal, setLeadIdLocal] = useState<number | null>(prospect.lead_id);
   const [linePickerOpen, setLinePickerOpen] = useState(false);
   // Seed from JOIN data (line_display_name / line_picture_url) when present,
@@ -1304,44 +1267,6 @@ function VisitModal({ prospect, projects, existingProspects, onClose, onSaved, o
     }).catch(() => {});
   }, [prospect.lead_id, localReturnedAt]);
 
-  function getLocation(): Promise<{ lat: number; lng: number } | null> {
-    return new Promise((resolve) => {
-      if (typeof navigator === "undefined" || !navigator.geolocation) return resolve(null);
-      navigator.geolocation.getCurrentPosition(
-        (pos) => resolve({ lat: pos.coords.latitude, lng: pos.coords.longitude }),
-        () => resolve(null),
-        { enableHighAccuracy: true, timeout: 8000, maximumAge: 30000 }
-      );
-    });
-  }
-
-  async function save() {
-    setSaving(true);
-    try {
-      const loc = await getLocation();
-      await apiFetch(`/api/prospects/${prospectId}`, {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          interest,
-          interest_type: interest === "interested" ? interestType : null,
-          note,
-          contacts: cleanContacts,
-          house_number: houseNumber.trim() || null,
-          contact_time: contactHours.length ? [...contactHours].sort((a, b) => a - b).join(",") : null,
-          visit_lat: loc?.lat ?? null,
-          visit_lng: loc?.lng ?? null,
-        }),
-      });
-      onSaved();
-    } catch (e) {
-      console.error(e);
-      dialog.toast({ message: "บันทึกไม่สำเร็จ", variant: "danger" });
-    } finally {
-      setSaving(false);
-    }
-  }
-
   type VisitChoice = {
     key: string;
     label: string;
@@ -1352,40 +1277,6 @@ function VisitModal({ prospect, projects, existingProspects, onClose, onSaved, o
     icon: "new" | "upgrade" | "undecided" | "not_home" | "not_interested";
   };
 
-  const renderChoiceIcon = (kind: VisitChoice["icon"]) => {
-    switch (kind) {
-      case "new":
-        return (
-          <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-            <path strokeLinecap="round" strokeLinejoin="round" d="M12 4.5v15m7.5-7.5h-15" />
-          </svg>
-        );
-      case "upgrade":
-        return (
-          <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-            <path strokeLinecap="round" strokeLinejoin="round" d="M12 19.5v-15m0 0l-6.75 6.75M12 4.5l6.75 6.75" />
-          </svg>
-        );
-      case "undecided":
-        return (
-          <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-            <path strokeLinecap="round" strokeLinejoin="round" d="M9.879 7.519c1.171-1.025 3.071-1.025 4.242 0 1.172 1.025 1.172 2.687 0 3.712-.203.179-.43.326-.67.442-.745.361-1.45.999-1.45 1.827v.75M21 12a9 9 0 11-18 0 9 9 0 0118 0zm-9 5.25h.008v.008H12v-.008z" />
-          </svg>
-        );
-      case "not_home":
-        return (
-          <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-            <path strokeLinecap="round" strokeLinejoin="round" d="M2.25 12l8.954-8.955c.44-.439 1.152-.439 1.591 0L21.75 12M4.5 9.75v10.125c0 .621.504 1.125 1.125 1.125H9.75v-4.875c0-.621.504-1.125 1.125-1.125h2.25c.621 0 1.125.504 1.125 1.125V21h4.125c.621 0 1.125-.504 1.125-1.125V9.75M8.25 21h8.25" />
-          </svg>
-        );
-      case "not_interested":
-        return (
-          <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-            <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
-          </svg>
-        );
-    }
-  };
   const visitChoices: VisitChoice[] = [
     { key: "interested-new", label: "สนใจ - ติดตั้ง", interest: "interested", type: "new", color: "bg-green-600 border-green-600 text-white", idle: "bg-white border-green-500 text-green-700 hover:bg-green-50", icon: "new" },
     { key: "interested-upgrade", label: "สนใจ - Scale Up", interest: "interested", type: "upgrade", color: "bg-blue-600 border-blue-600 text-white", idle: "bg-white border-blue-500 text-blue-700 hover:bg-blue-50", icon: "upgrade" },
@@ -1779,18 +1670,14 @@ function VisitModal({ prospect, projects, existingProspects, onClose, onSaved, o
               ) : leadIdLocal ? (
                 <>
                   <span className="w-5 h-5 rounded-full bg-indigo-600 text-white flex items-center justify-center">
-                    <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={3}>
-                      <path strokeLinecap="round" strokeLinejoin="round" d="M4.5 12.75l6 6 9-13.5" />
-                    </svg>
+                    <CheckIcon className="w-3 h-3" strokeWidth={3} />
                   </span>
                   <span>สร้างลีดแล้ว · #{leadIdLocal}</span>
                   <span className="text-indigo-400 text-xs font-normal">(กดเพื่อซิงก์ข้อมูล)</span>
                 </>
               ) : (
                 <>
-                  <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                    <path strokeLinecap="round" strokeLinejoin="round" d="M12 4.5v15m7.5-7.5h-15" />
-                  </svg>
+                  <PlusIcon className="w-4 h-4" strokeWidth={2} />
                   สร้างข้อมูลลีดให้ฝ่ายขาย
                 </>
               )}
@@ -1822,9 +1709,7 @@ function VisitModal({ prospect, projects, existingProspects, onClose, onSaved, o
         >
           {linkedLine && (
             <span className="w-4 h-4 rounded-full bg-emerald-500 flex items-center justify-center">
-              <svg className="w-2.5 h-2.5 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={4}>
-                <path strokeLinecap="round" strokeLinejoin="round" d="M4.5 12.75l6 6 9-13.5" />
-              </svg>
+              <CheckIcon className="w-2.5 h-2.5 text-white" strokeWidth={4} />
             </span>
           )}
           ข้อมูลลูกค้า
@@ -1841,9 +1726,7 @@ function VisitModal({ prospect, projects, existingProspects, onClose, onSaved, o
                 emerald circle with white check when payment confirmed, gray
                 circle (same shape) when still unpaid. */}
             <span className={`w-4 h-4 rounded-full flex items-center justify-center ${prospect.lead_payment_confirmed ? "bg-emerald-500" : "bg-gray-300"}`}>
-              <svg className="w-2.5 h-2.5 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={4}>
-                <path strokeLinecap="round" strokeLinejoin="round" d="M4.5 12.75l6 6 9-13.5" />
-              </svg>
+              <CheckIcon className="w-2.5 h-2.5 text-white" strokeWidth={4} />
             </span>
             รับเงินจอง
           </button>
@@ -1997,9 +1880,7 @@ function VisitModal({ prospect, projects, existingProspects, onClose, onSaved, o
                             {dup.phone && <span> · {dup.phone}</span>}
                           </div>
                         </div>
-                        <svg className="w-3.5 h-3.5 text-gray-300 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                          <path strokeLinecap="round" strokeLinejoin="round" d="M8.25 4.5l7.5 7.5-7.5 7.5" />
-                        </svg>
+                        <ChevronRightIcon className="w-3.5 h-3.5 text-gray-300 shrink-0" strokeWidth={2} />
                       </button>
                     );
                   })}
@@ -2071,9 +1952,7 @@ function VisitModal({ prospect, projects, existingProspects, onClose, onSaved, o
                   </button>
                   <div className="p-2 space-y-1.5">
                   <div className="relative">
-                    <svg className="w-4 h-4 text-indigo-500 absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                      <path strokeLinecap="round" strokeLinejoin="round" d="M15.75 6a3.75 3.75 0 11-7.5 0 3.75 3.75 0 017.5 0zM4.501 20.118a7.5 7.5 0 0114.998 0" />
-                    </svg>
+                    <UserIcon className="w-4 h-4 text-indigo-500 absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none" strokeWidth={2} />
                     <input
                       type="text"
                       value={c.name || ""}
@@ -2083,9 +1962,7 @@ function VisitModal({ prospect, projects, existingProspects, onClose, onSaved, o
                     />
                   </div>
                   <div className="relative">
-                    <svg className="w-4 h-4 text-emerald-600 absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none" fill="currentColor" viewBox="0 0 24 24">
-                      <path d="M6.62 10.79a15.05 15.05 0 006.59 6.59l2.2-2.2a1 1 0 011.05-.24c1.12.37 2.33.57 3.57.57a1 1 0 011 1V20a1 1 0 01-1 1A17 17 0 013 4a1 1 0 011-1h3.5a1 1 0 011 1c0 1.24.2 2.45.57 3.57a1 1 0 01-.24 1.05l-2.21 2.17z" />
-                    </svg>
+                    <PhoneIcon className="w-4 h-4 text-emerald-600 absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none" />
                     <input
                       type="tel"
                       value={c.phone || ""}
@@ -2114,9 +1991,7 @@ function VisitModal({ prospect, projects, existingProspects, onClose, onSaved, o
                 <div className="rounded-xl border border-dashed border-primary/40 bg-primary/5 p-3 space-y-2">
                   <div className="text-xxs font-medium text-primary">เพิ่มผู้อยู่อาศัยใหม่</div>
                   <div className="relative">
-                    <svg className="w-4 h-4 text-indigo-500 absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                      <path strokeLinecap="round" strokeLinejoin="round" d="M15.75 6a3.75 3.75 0 11-7.5 0 3.75 3.75 0 017.5 0zM4.501 20.118a7.5 7.5 0 0114.998 0" />
-                    </svg>
+                    <UserIcon className="w-4 h-4 text-indigo-500 absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none" strokeWidth={2} />
                     <input
                       type="text"
                       value={addName}
@@ -2128,9 +2003,7 @@ function VisitModal({ prospect, projects, existingProspects, onClose, onSaved, o
                     />
                   </div>
                   <div className="relative">
-                    <svg className="w-4 h-4 text-emerald-600 absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none" fill="currentColor" viewBox="0 0 24 24">
-                      <path d="M6.62 10.79a15.05 15.05 0 006.59 6.59l2.2-2.2a1 1 0 011.05-.24c1.12.37 2.33.57 3.57.57a1 1 0 011 1V20a1 1 0 01-1 1A17 17 0 013 4a1 1 0 011-1h3.5a1 1 0 011 1c0 1.24.2 2.45.57 3.57a1 1 0 01-.24 1.05l-2.21 2.17z" />
-                    </svg>
+                    <PhoneIcon className="w-4 h-4 text-emerald-600 absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none" />
                     <input
                       type="tel"
                       value={addPhone}
@@ -2155,9 +2028,7 @@ function VisitModal({ prospect, projects, existingProspects, onClose, onSaved, o
                   onClick={() => setAddingOpen(true)}
                   className="w-full h-11 inline-flex items-center justify-center gap-1.5 rounded-xl border border-dashed border-gray-300 text-sm text-gray-500 font-medium hover:text-primary hover:border-primary hover:bg-primary/5"
                 >
-                  <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
-                    <path strokeLinecap="round" strokeLinejoin="round" d="M12 4.5v15m7.5-7.5h-15" />
-                  </svg>
+                  <PlusIcon className="w-4 h-4" strokeWidth={2.5} />
                   เพิ่มผู้อยู่อาศัย
                 </button>
               )}
@@ -2332,9 +2203,7 @@ function VisitModal({ prospect, projects, existingProspects, onClose, onSaved, o
                   }}
                   className="shrink-0 w-7 h-7 rounded-lg flex items-center justify-center text-red-600 hover:bg-red-50 transition-colors"
                 >
-                  <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
-                    <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
-                  </svg>
+                  <XIcon className="w-4 h-4" strokeWidth={2.5} />
                 </button>
               </div>
             ) : (
@@ -2343,9 +2212,7 @@ function VisitModal({ prospect, projects, existingProspects, onClose, onSaved, o
                 onClick={() => setLinePickerOpen(true)}
                 className="w-full inline-flex items-center justify-center gap-2 h-10 rounded-lg border border-gray-200 bg-white text-[#06C755] text-sm font-medium hover:bg-gray-50 active:scale-[0.98] transition"
               >
-                <svg className="w-4 h-4 shrink-0" viewBox="0 0 24 24" fill="currentColor">
-                  <path d="M19.365 9.863c.349 0 .63.285.63.631 0 .345-.281.63-.63.63H17.61v1.125h1.755c.349 0 .63.283.63.63 0 .344-.281.629-.63.629h-2.386c-.345 0-.627-.285-.627-.629V8.108c0-.345.282-.63.63-.63h2.386c.346 0 .627.285.627.63 0 .349-.281.63-.63.63H17.61v1.125h1.755zm-3.855 3.016c0 .27-.174.51-.432.596-.064.021-.133.031-.199.031-.211 0-.391-.09-.51-.25l-2.443-3.317v2.94c0 .344-.279.629-.631.629-.346 0-.626-.285-.626-.629V8.108c0-.27.173-.51.43-.595.064-.022.134-.032.2-.032.211 0 .391.09.51.25l2.44 3.317V8.108c0-.345.282-.63.63-.63.345 0 .63.285.63.63v4.771zm-5.741 0c0 .344-.282.629-.631.629-.345 0-.627-.285-.627-.629V8.108c0-.345.282-.63.63-.63.346 0 .628.285.628.63v4.771zm-2.466.629H4.917c-.345 0-.63-.285-.63-.629V8.108c0-.345.285-.63.63-.63.348 0 .63.285.63.63v4.141h1.756c.348 0 .629.283.629.63 0 .344-.282.629-.629.629M24 10.314C24 4.943 18.615.572 12 .572S0 4.943 0 10.314c0 4.811 4.27 8.842 10.035 9.608.391.082.923.258 1.058.59.12.301.079.766.038 1.08l-.164 1.02c-.045.301-.24 1.186 1.049.645 1.291-.539 6.916-4.078 9.436-6.975C23.176 14.393 24 12.458 24 10.314" />
-                </svg>
+                <LineIcon className="w-4 h-4 shrink-0" />
                 + Add Profile
               </button>
             )}
@@ -2395,9 +2262,7 @@ function VisitModal({ prospect, projects, existingProspects, onClose, onSaved, o
                 onClick={() => setModalTab(prev)}
                 className="flex-1 h-11 rounded-lg text-sm font-semibold border border-gray-200 text-gray-600 hover:bg-gray-50 transition-colors flex items-center justify-center gap-1"
               >
-                <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                  <path strokeLinecap="round" strokeLinejoin="round" d="M15.75 19.5L8.25 12l7.5-7.5" />
-                </svg>
+                <ChevronLeftIcon className="w-4 h-4" strokeWidth={2} />
                 ย้อนกลับ
               </button>
             )}
@@ -2408,9 +2273,7 @@ function VisitModal({ prospect, projects, existingProspects, onClose, onSaved, o
                 className="flex-1 h-11 rounded-lg text-sm font-semibold text-white bg-amber-500 hover:bg-amber-600 transition-colors flex items-center justify-center gap-1"
               >
                 ถัดไป
-                <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                  <path strokeLinecap="round" strokeLinejoin="round" d="M8.25 4.5l7.5 7.5-7.5 7.5" />
-                </svg>
+                <ChevronRightIcon className="w-4 h-4" strokeWidth={2} />
               </button>
             )}
           </div>
@@ -2430,75 +2293,6 @@ function Field({ label, children }: { label: string; children: React.ReactNode }
   );
 }
 
-function ProjectPickerModal({
-  value,
-  options,
-  onChange,
-  onClose,
-}: {
-  value: string;
-  options: string[];
-  onChange: (v: string) => void;
-  onClose: () => void;
-}) {
-  const [query, setQuery] = useState("");
-  const filtered = useMemo(() => {
-    const q = query.trim().toLowerCase();
-    if (!q) return options;
-    return options.filter((o) => o.toLowerCase().includes(q));
-  }, [options, query]);
-
-  return (
-    <ModalBase onClose={onClose} title="เลือกโครงการ">
-      <div className="space-y-3">
-        <input
-          autoFocus
-          value={query}
-          onChange={(e) => setQuery(e.target.value)}
-          placeholder="ค้นหาโครงการ..."
-          className="w-full h-11 px-3 rounded-lg border border-gray-300 bg-white text-sm"
-        />
-        <div className="-mx-2">
-          <button
-            type="button"
-            onClick={() => onChange("")}
-            className={`w-full text-left px-4 py-3 rounded-lg text-sm flex items-center justify-between hover:bg-gray-50 ${
-              value === "" ? "text-primary font-semibold bg-primary/5" : "text-gray-700"
-            }`}
-          >
-            <span>ทุกโครงการ</span>
-            {value === "" && (
-              <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
-                <path strokeLinecap="round" strokeLinejoin="round" d="M4.5 12.75l6 6 9-13.5" />
-              </svg>
-            )}
-          </button>
-          {filtered.length === 0 ? (
-            <div className="px-4 py-8 text-center text-sm text-gray-400">ไม่พบโครงการ</div>
-          ) : (
-            filtered.map((name) => (
-              <button
-                key={name}
-                type="button"
-                onClick={() => onChange(name)}
-                className={`w-full text-left px-4 py-3 rounded-lg text-sm flex items-center justify-between hover:bg-gray-50 ${
-                  value === name ? "text-primary font-semibold bg-primary/5" : "text-gray-700"
-                }`}
-              >
-                <span className="truncate">{name}</span>
-                {value === name && (
-                  <svg className="w-5 h-5 shrink-0 ml-2" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
-                    <path strokeLinecap="round" strokeLinejoin="round" d="M4.5 12.75l6 6 9-13.5" />
-                  </svg>
-                )}
-              </button>
-            ))
-          )}
-        </div>
-      </div>
-    </ModalBase>
-  );
-}
 
 function ProjectPickerById({
   value,
@@ -2543,9 +2337,7 @@ function ProjectPickerById({
               >
                 <span className="truncate">{p.name}</span>
                 {value === p.id && (
-                  <svg className="w-5 h-5 shrink-0 ml-2" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
-                    <path strokeLinecap="round" strokeLinejoin="round" d="M4.5 12.75l6 6 9-13.5" />
-                  </svg>
+                  <CheckIcon className="w-5 h-5 shrink-0 ml-2" strokeWidth={2.5} />
                 )}
               </button>
             ))
@@ -2560,7 +2352,7 @@ function ProjectPickerById({
 // info tab is wrapped in one of these so the seeker sees their workflow as a
 // 5-step progression with checkmarks for completed sections.
 function TimelineStep({
-  idx, total, title, subtitle, summary, complete, expanded, onToggle, color = "gray", children,
+  title, subtitle, summary, expanded, onToggle, color = "gray", children,
 }: {
   idx: number;
   total: number;
@@ -2874,9 +2666,7 @@ function LeadDepositPaymentTab({
         <div>
           <label className={labelCls}>ชื่อ-นามสกุล {requiredMark}</label>
           <div className="relative">
-            <svg className={iconCls} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-              <path strokeLinecap="round" strokeLinejoin="round" d="M15.75 6a3.75 3.75 0 11-7.5 0 3.75 3.75 0 017.5 0zM4.501 20.118a7.5 7.5 0 0114.998 0" />
-            </svg>
+            <UserIcon className={iconCls} strokeWidth={2} />
             <input type="text" value={fullName} onChange={(e) => setFullName(e.target.value)} className={inputCls} />
           </div>
         </div>

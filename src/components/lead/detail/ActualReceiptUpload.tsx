@@ -1,4 +1,5 @@
 "use client";
+import { DocumentIcon, PlusIcon, XIcon } from "@/components/ui/icons";
 
 import { useState } from "react";
 import { apiFetch } from "@/lib/api";
@@ -152,9 +153,7 @@ export default function ActualReceiptUpload({ leadId, field, paymentId, url, ref
                     className="absolute -top-1 -right-1 w-5 h-5 rounded-full bg-red-500 text-white hover:bg-red-600 flex items-center justify-center disabled:opacity-50 transition-colors shadow"
                     style={{ minHeight: 0 }}
                   >
-                    <svg className="w-3 h-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={3}>
-                      <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
-                    </svg>
+                    <XIcon className="w-3 h-3" strokeWidth={3} />
                   </button>
                 )}
               </div>
@@ -171,9 +170,7 @@ export default function ActualReceiptUpload({ leadId, field, paymentId, url, ref
               {busy ? (
                 <span className="w-4 h-4 border-2 border-gray-300 border-t-gray-500 rounded-full animate-spin" />
               ) : (
-                <svg className="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                  <path strokeLinecap="round" strokeLinejoin="round" d="M12 4.5v15m7.5-7.5h-15" />
-                </svg>
+                <PlusIcon className="w-6 h-6" strokeWidth={2} />
               )}
               <input type="file" accept="image/*,.pdf" className="hidden" disabled={busy} onChange={e => e.target.files?.[0] && uploadOne(e.target.files[0])} />
             </label>
@@ -225,9 +222,7 @@ export default function ActualReceiptUpload({ leadId, field, paymentId, url, ref
               {busy ? (
                 <span className="w-3 h-3 border-2 border-gray-300 border-t-gray-500 rounded-full animate-spin" />
               ) : (
-                <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
-                  <path strokeLinecap="round" strokeLinejoin="round" d="M12 4.5v15m7.5-7.5h-15" />
-                </svg>
+                <PlusIcon className="w-3.5 h-3.5" strokeWidth={2.5} />
               )}
               <input type="file" accept="image/*,.pdf" className="hidden" disabled={busy} onChange={e => e.target.files?.[0] && uploadOne(e.target.files[0])} />
             </label>
@@ -282,9 +277,7 @@ export default function ActualReceiptUpload({ leadId, field, paymentId, url, ref
           {busy ? (
             <span className="w-3 h-3 border-2 border-gray-300 border-t-gray-500 rounded-full animate-spin" />
           ) : (
-            <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
-              <path strokeLinecap="round" strokeLinejoin="round" d="M12 4.5v15m7.5-7.5h-15" />
-            </svg>
+            <PlusIcon className="w-4 h-4" strokeWidth={2.5} />
           )}
           <input type="file" accept="image/*,.pdf" className="hidden" disabled={busy} onChange={e => e.target.files?.[0] && uploadOne(e.target.files[0])} />
         </label>
@@ -304,8 +297,6 @@ function FileIcon({ variant, className }: { variant: "pdf" | "image" | "doc"; cl
   // Page outline for PDF + generic — small "PDF" label inside the page for the
   // PDF variant so list items are distinguishable at a glance.
   return (
-    <svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.8}>
-      <path strokeLinecap="round" strokeLinejoin="round" d="M19.5 14.25v-2.625a3.375 3.375 0 00-3.375-3.375h-1.5A1.125 1.125 0 0113.5 7.125v-1.5a3.375 3.375 0 00-3.375-3.375H8.25m2.25 0H5.625c-.621 0-1.125.504-1.125 1.125v17.25c0 .621.504 1.125 1.125 1.125h12.75c.621 0 1.125-.504 1.125-1.125V11.25a9 9 0 00-9-9z" />
-    </svg>
+    <DocumentIcon className={className} strokeWidth={1.8} />
   );
 }

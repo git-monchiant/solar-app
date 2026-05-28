@@ -1,4 +1,5 @@
 "use client";
+import { DocumentIcon } from "@/components/ui/icons";
 
 import { useState } from "react";
 import ReceiptModal, { type ReceiptStage } from "./ReceiptModal";
@@ -57,9 +58,7 @@ export default function ReceiptButtons({ leadId, stage, fileLabel, compact, titl
             title={label || "ใบเสร็จ"}
             className="aspect-square w-full inline-flex items-center justify-center rounded-md border border-primary/30 bg-primary/5 text-primary hover:bg-primary/10 transition-colors"
           >
-            <svg className="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.8}>
-              <path strokeLinecap="round" strokeLinejoin="round" d="M19.5 14.25v-2.625a3.375 3.375 0 00-3.375-3.375h-1.5A1.125 1.125 0 0113.5 7.125v-1.5a3.375 3.375 0 00-3.375-3.375H8.25m2.25 0H5.625c-.621 0-1.125.504-1.125 1.125v17.25c0 .621.504 1.125 1.125 1.125h12.75c.621 0 1.125-.504 1.125-1.125V11.25a9 9 0 00-9-9z" />
-            </svg>
+            <DocumentIcon className="w-6 h-6" strokeWidth={1.8} />
           </button>
           <span className="text-xs text-center text-gray-600 truncate leading-tight font-medium">{label || "ใบเสร็จ"}</span>
         </div>
@@ -69,9 +68,7 @@ export default function ReceiptButtons({ leadId, stage, fileLabel, compact, titl
           onClick={openReceipt}
           className="hidden md:inline-flex items-center gap-1 text-xs font-semibold text-primary hover:text-primary-dark shrink-0"
         >
-          <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-            <path strokeLinecap="round" strokeLinejoin="round" d="M19.5 14.25v-2.625a3.375 3.375 0 00-3.375-3.375h-1.5A1.125 1.125 0 0113.5 7.125v-1.5a3.375 3.375 0 00-3.375-3.375H8.25m2.25 0H5.625c-.621 0-1.125.504-1.125 1.125v17.25c0 .621.504 1.125 1.125 1.125h12.75c.621 0 1.125-.504 1.125-1.125V11.25a9 9 0 00-9-9z" />
-          </svg>
+          <DocumentIcon className="w-4 h-4" strokeWidth={2} />
           {label || "ใบเสร็จ"}
         </button>
         {open && (
@@ -84,9 +81,7 @@ export default function ReceiptButtons({ leadId, stage, fileLabel, compact, titl
   return (
     <>
       <button type="button" onClick={openReceipt} className="w-full h-11 px-4 rounded-lg text-sm font-semibold flex items-center justify-center gap-2 bg-primary text-white hover:bg-primary-dark transition-colors">
-        <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-          <path strokeLinecap="round" strokeLinejoin="round" d="M19.5 14.25v-2.625a3.375 3.375 0 00-3.375-3.375h-1.5A1.125 1.125 0 0113.5 7.125v-1.5a3.375 3.375 0 00-3.375-3.375H8.25m2.25 0H5.625c-.621 0-1.125.504-1.125 1.125v17.25c0 .621.504 1.125 1.125 1.125h12.75c.621 0 1.125-.504 1.125-1.125V11.25a9 9 0 00-9-9z" />
-        </svg>
+        <DocumentIcon className="w-4 h-4" strokeWidth={2} />
         {label || "ใบเสร็จ PDF"}
       </button>
       {open && (

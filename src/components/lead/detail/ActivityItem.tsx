@@ -22,6 +22,7 @@ const typeConfig: Record<string, { icon: string; color: string }> = {
   visit: { icon: "M15 10.5a3 3 0 11-6 0 3 3 0 016 0zM19.5 10.5c0 7.142-7.5 11.25-7.5 11.25S4.5 17.642 4.5 10.5a7.5 7.5 0 1115 0z", color: "bg-purple-500" },
   line: { icon: LINE_ICON, color: "bg-green-500" },
   line_sent: { icon: LINE_ICON, color: "bg-green-500" },
+  sms_sent: { icon: "M8 10.5h8M8 14h5m-9 5.5l3-2h7.5A2.5 2.5 0 0019 15V8a2.5 2.5 0 00-2.5-2.5h-9A2.5 2.5 0 005 8v11.5z", color: "bg-indigo-500" },
   follow_up: { icon: "M12 6v6h4.5m4.5 0a9 9 0 11-18 0 9 9 0 0118 0z", color: "bg-amber-500" },
   follow_up_cleared: { icon: "M12 6v6h4.5m4.5 0a9 9 0 11-18 0 9 9 0 0118 0z", color: "bg-amber-300" },
   loan_followup: { icon: "M2.25 8.25h19.5M2.25 9h19.5m-16.5 5.25h6m-6 2.25h3m-3.75 3h15a2.25 2.25 0 002.25-2.25V6.75A2.25 2.25 0 0019.5 4.5h-15a2.25 2.25 0 00-2.25 2.25v10.5A2.25 2.25 0 004.5 19.5z", color: "bg-rose-500" },
@@ -62,6 +63,7 @@ const TYPE_LABELS: Record<string, string> = {
   payment_rejected: "ปฏิเสธสลิป",
   line: "LINE",
   line_sent: "ส่ง LINE",
+  sms_sent: "ส่ง SMS",
   step_completed: "ขั้นตอนเสร็จ",
   other: "อื่นๆ",
 };

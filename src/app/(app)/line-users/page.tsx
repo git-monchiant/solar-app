@@ -1,4 +1,5 @@
 "use client";
+import { PlusIcon, UserIcon } from "@/components/ui/icons";
 
 import { apiFetch } from "@/lib/api";
 import { useEffect, useState } from "react";
@@ -85,7 +86,7 @@ export default function LineUsersPage() {
                           <img src={u.picture_url} alt="" className="w-9 h-9 rounded-full object-cover" style={{ minHeight: 0 }} />
                         ) : (
                           <div className="w-9 h-9 rounded-full bg-gray-200 flex items-center justify-center text-gray-400" style={{ minHeight: 0 }}>
-                            <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M15.75 6a3.75 3.75 0 11-7.5 0 3.75 3.75 0 017.5 0zM4.501 20.118a7.5 7.5 0 0114.998 0" /></svg>
+                            <UserIcon className="w-5 h-5" strokeWidth={2} />
                           </div>
                         )}
                         <span className="font-semibold text-gray-900">{u.display_name || "—"}</span>
@@ -123,7 +124,7 @@ export default function LineUsersPage() {
                         </div>
                       ) : (
                         <button type="button" onClick={() => setNewLeadForLine(u)} className="inline-flex items-center gap-1 text-active font-semibold hover:underline cursor-pointer">
-                          <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}><path strokeLinecap="round" strokeLinejoin="round" d="M12 4.5v15m7.5-7.5h-15" /></svg>
+                          <PlusIcon className="w-3.5 h-3.5" strokeWidth={2.5} />
                           สร้าง Lead
                         </button>
                       )}

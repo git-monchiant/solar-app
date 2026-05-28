@@ -1,4 +1,5 @@
 "use client";
+import { CheckIcon, ChevronLeftIcon, ChevronRightIcon, DocumentIcon, PlusIcon } from "@/components/ui/icons";
 
 import { useCallback, useEffect, useState } from "react";
 import { apiFetch } from "@/lib/api";
@@ -36,7 +37,7 @@ export default function InstallStep({ lead, state, refresh, expanded, onToggle }
   const [saving, setSaving] = useState(false);
   const [extraCost, setExtraCost] = useState<number>(lead.install_extra_cost || 0);
   const [extraNote, setExtraNote] = useState(lead.install_extra_note || "");
-  const [afterSlipDone, setAfterSlipDone] = useState(!!lead.order_after_slip);
+  const [, setAfterSlipDone] = useState(!!lead.order_after_slip);
   const [rescheduling, setRescheduling] = useState(false);
   const [signatureUrl, setSignatureUrl] = useState<string | null>(lead.install_customer_signature_url);
   const [actualDate, setActualDate] = useState<string>(
@@ -88,11 +89,6 @@ export default function InstallStep({ lead, state, refresh, expanded, onToggle }
       .catch(console.error);
   }, [lead.id]);
   const remainingAmount = Math.max(0, netDue - paidAmount);
-  // Legacy after-amount calc — only used by the InstallStep PaymentSection
-  // (legacy "งวด 2" slot). Kept for backward compat with existing leads that
-  // still have order_pct_before set.
-  const afterRaw = pctBefore < 100 ? orderTotal - Math.round(orderTotal * pctBefore / 100) : 0;
-  const depositCredit = Math.min(afterRaw, depositPaid);
 
   // Upload only — returns the uploaded URL. Caller batches setPhotos + PATCH.
   // Multi-select used to race here: each parallel call read the same stale
@@ -133,17 +129,6 @@ export default function InstallStep({ lead, state, refresh, expanded, onToggle }
       method: "PATCH", headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ install_photos: newPhotos.join(",") || null }),
     });
-  };
-
-  const completeDelivery = async () => {
-    setSaving(true);
-    try {
-      await apiFetch(`/api/leads/${lead.id}`, {
-        method: "PATCH", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ install_note: note || null, install_completed_at: true }),
-      });
-      await refresh();
-    } finally { setSaving(false); }
   };
 
   const [notifyLine, setNotifyLine] = useState(true);
@@ -573,9 +558,7 @@ export default function InstallStep({ lead, state, refresh, expanded, onToggle }
                 download={downloadName}
                 className="w-full h-10 rounded-lg text-xs font-semibold text-gray-700 border border-gray-200 hover:bg-gray-50 transition-colors flex items-center justify-center gap-1.5"
               >
-                <svg className="w-4 h-4 text-red-500" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                  <path strokeLinecap="round" strokeLinejoin="round" d="M19.5 14.25v-2.625a3.375 3.375 0 00-3.375-3.375h-1.5A1.125 1.125 0 0113.5 7.125v-1.5a3.375 3.375 0 00-3.375-3.375H8.25m2.25 0H5.625c-.621 0-1.125.504-1.125 1.125v17.25c0 .621.504 1.125 1.125 1.125h12.75c.621 0 1.125-.504 1.125-1.125V11.25a9 9 0 00-9-9z" />
-                </svg>
+                <DocumentIcon className="w-4 h-4 text-red-500" strokeWidth={2} />
                 ดาวน์โหลด checklist เอกสารขอขนานไฟ
               </a>
             );
@@ -642,7 +625,7 @@ export default function InstallStep({ lead, state, refresh, expanded, onToggle }
                     {uploading ? (
                       <div className="w-6 h-6 border-2 border-current/30 border-t-current rounded-full animate-spin" />
                     ) : (
-                      <svg className="w-8 h-8" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}><path strokeLinecap="round" strokeLinejoin="round" d="M12 4.5v15m7.5-7.5h-15" /></svg>
+                      <PlusIcon className="w-8 h-8" strokeWidth={1.5} />
                     )}
                     <input type="file" accept="image/*" multiple className="hidden" onChange={async e => {
                       const input = e.target;
@@ -780,12 +763,10 @@ export default function InstallStep({ lead, state, refresh, expanded, onToggle }
               </div>
             ) : (
               <div className="rounded-lg bg-emerald-50 border border-emerald-200 p-4 flex items-center gap-3">
-                <svg className="w-5 h-5 text-emerald-600 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
-                  <path strokeLinecap="round" strokeLinejoin="round" d="M4.5 12.75l6 6 9-13.5" />
-                </svg>
+                <CheckIcon className="w-5 h-5 text-emerald-600 shrink-0" strokeWidth={2.5} />
                 <div>
                   <div className="text-sm font-semibold text-emerald-700">ไม่มียอดต้องเก็บเพิ่ม</div>
-                  <div className="text-xs text-emerald-600 mt-0.5">ลูกค้าชำระครบทุกงวดแล้ว — ถ้ามีค่าใช้จ่ายเพิ่มเติม กรอกที่ขั้นตอน "สรุปค่าใช้จ่าย"</div>
+                  <div className="text-xs text-emerald-600 mt-0.5">ลูกค้าชำระครบทุกงวดแล้ว — ถ้ามีค่าใช้จ่ายเพิ่มเติม กรอกที่ขั้นตอน &quot;สรุปค่าใช้จ่าย&quot;</div>
                 </div>
               </div>
             )}
@@ -823,7 +804,7 @@ export default function InstallStep({ lead, state, refresh, expanded, onToggle }
         <div className="flex gap-2 mt-3 md:justify-between">
           {subStep > 0 ? (
             <button type="button" onClick={() => { setNextError(null); setSubStep(subStep - 1); scrollToStep(); }} className="flex-1 md:flex-none md:w-64 h-11 rounded-lg text-sm font-semibold border border-gray-200 text-gray-600 hover:bg-gray-50 transition-colors flex items-center justify-center gap-1">
-              <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M15.75 19.5L8.25 12l7.5-7.5" /></svg>
+              <ChevronLeftIcon className="w-4 h-4" strokeWidth={2} />
               ย้อนกลับ
             </button>
           ) : <span className="hidden md:block md:w-64" />}
@@ -843,14 +824,14 @@ export default function InstallStep({ lead, state, refresh, expanded, onToggle }
             setSubStep(subStep + 1); scrollToStep();
           }} className="flex-1 md:flex-none md:w-64 h-11 rounded-lg text-sm font-semibold text-white bg-active hover:brightness-110 transition-colors flex items-center justify-center gap-1">
             ถัดไป
-            <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M8.25 4.5l7.5 7.5-7.5 7.5" /></svg>
+            <ChevronRightIcon className="w-4 h-4" strokeWidth={2} />
           </button>
         </div>
       )}
       {subStep === 4 && (
         <div className="flex gap-2 mt-3 md:justify-between">
           <button type="button" onClick={() => { setSubStep(subStep - 1); scrollToStep(); }} className="flex-1 md:flex-none md:w-64 h-11 rounded-lg text-sm font-semibold border border-gray-200 text-gray-600 hover:bg-gray-50 transition-colors flex items-center justify-center gap-1">
-            <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M15.75 19.5L8.25 12l7.5-7.5" /></svg>
+            <ChevronLeftIcon className="w-4 h-4" strokeWidth={2} />
             ย้อนกลับ
           </button>
           <button
@@ -865,7 +846,7 @@ export default function InstallStep({ lead, state, refresh, expanded, onToggle }
             className="flex-1 md:flex-none md:w-64 h-11 rounded-lg text-sm font-semibold text-white bg-gradient-to-r from-primary to-primary-dark hover:brightness-110 disabled:from-gray-300 disabled:to-gray-300 disabled:cursor-not-allowed transition-colors flex items-center justify-center gap-2"
           >
             {saving ? "กำลังยืนยัน..." : "ยืนยันส่งมอบงาน"}
-            <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M8.25 4.5l7.5 7.5-7.5 7.5" /></svg>
+            <ChevronRightIcon className="w-4 h-4" strokeWidth={2} />
           </button>
         </div>
       )}

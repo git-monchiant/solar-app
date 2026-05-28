@@ -1,11 +1,10 @@
 "use client";
+import { DownloadIcon } from "@/components/ui/icons";
 
 import { apiFetch, getUserIdHeader } from "@/lib/api";
 import { useEffect, useState } from "react";
 import Header from "@/components/layout/Header";
 import { useMe } from "@/lib/roles";
-import { PRIMARY_REASON_LABEL } from "@/lib/constants/info-labels";
-import { getSourceStyle, normalizeSourceKey } from "@/lib/source-tag";
 
 interface DevData {
   funnel: {
@@ -76,9 +75,7 @@ export default function DashboardDevPage() {
               title="ดาวน์โหลด Dashboard II เป็น PDF"
               aria-label="ดาวน์โหลด Dashboard II เป็น PDF"
             >
-              <svg className="w-3.5 h-3.5 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                <path strokeLinecap="round" strokeLinejoin="round" d="M3 16.5v2.25A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75V16.5M16.5 12L12 16.5m0 0L7.5 12m4.5 4.5V3" />
-              </svg>
+              <DownloadIcon className="w-3.5 h-3.5 text-gray-400" strokeWidth={2} />
               <span>PDF</span>
             </button>
           }
@@ -327,28 +324,6 @@ function Donut({ slices, centerLabel }: { slices: { label: string; value: number
           );
         })}
       </div>
-    </div>
-  );
-}
-
-function BarList({ items, color }: { items: { label: string; value: number }[]; color: string }) {
-  const max = Math.max(...items.map(i => i.value), 1);
-  return (
-    <div className="space-y-1.5">
-      {items.map((it, i) => {
-        const pct = (it.value / max) * 100;
-        return (
-          <div key={i}>
-            <div className="flex items-center justify-between mb-0.5">
-              <span className="text-xs font-medium text-gray-700 truncate">{it.label}</span>
-              <span className="text-xs font-bold font-mono tabular-nums text-gray-900 ml-2">{it.value}</span>
-            </div>
-            <div className="h-1.5 bg-gray-100 overflow-hidden">
-              <div className={`h-full ${color}`} style={{ width: `${pct}%` }} />
-            </div>
-          </div>
-        );
-      })}
     </div>
   );
 }

@@ -1,4 +1,5 @@
 "use client";
+import { CameraIcon, ChevronLeftIcon, ChevronRightIcon } from "@/components/ui/icons";
 
 import { useEffect, useState } from "react";
 import { apiFetch, getUserIdHeader } from "@/lib/api";
@@ -277,10 +278,7 @@ export default function CustomerInfoForm({
                   {ocrStatus === "reading" ? (
                     <div className="w-5 h-5 border-2 border-white/40 border-t-white rounded-full animate-spin" />
                   ) : (
-                    <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                      <path strokeLinecap="round" strokeLinejoin="round" d="M3 9a2 2 0 012-2h.93a2 2 0 001.664-.89l.812-1.22A2 2 0 0110.07 4h3.86a2 2 0 011.664.89l.812 1.22A2 2 0 0018.07 7H19a2 2 0 012 2v9a2 2 0 01-2 2H5a2 2 0 01-2-2V9z" />
-                      <path strokeLinecap="round" strokeLinejoin="round" d="M15 13a3 3 0 11-6 0 3 3 0 016 0z" />
-                    </svg>
+                    <CameraIcon className="w-5 h-5" strokeWidth={2} />
                   )}
                 </div>
                 <div className="flex-1 min-w-0">
@@ -457,7 +455,7 @@ export default function CustomerInfoForm({
                   </div>
                 ) : (
                   <label htmlFor="cif-id-card-upload" className="w-full h-10 rounded-lg border border-dashed border-gray-300 bg-white flex items-center justify-center gap-2 cursor-pointer hover:border-active/40 hover:text-active text-gray-500 text-sm">
-                    {uploading === "id_card_photo_url" ? <><div className="w-4 h-4 border-2 border-gray-300 border-t-active rounded-full animate-spin" /> กำลังอัปโหลด…</> : <><svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M3 9a2 2 0 012-2h.93a2 2 0 001.664-.89l.812-1.22A2 2 0 0110.07 4h3.86a2 2 0 011.664.89l.812 1.22A2 2 0 0018.07 7H19a2 2 0 012 2v9a2 2 0 01-2 2H5a2 2 0 01-2-2V9z" /><path strokeLinecap="round" strokeLinejoin="round" d="M15 13a3 3 0 11-6 0 3 3 0 016 0z" /></svg> ถ่ายรูป / อัปโหลด</>}
+                    {uploading === "id_card_photo_url" ? <><div className="w-4 h-4 border-2 border-gray-300 border-t-active rounded-full animate-spin" /> กำลังอัปโหลด…</> : <><CameraIcon className="w-4 h-4" strokeWidth={2} /> ถ่ายรูป / อัปโหลด</>}
                   </label>
                 )}
               </div>
@@ -473,7 +471,7 @@ export default function CustomerInfoForm({
                   </div>
                 ) : (
                   <label htmlFor="cif-house-reg-upload" className="w-full h-10 rounded-lg border border-dashed border-gray-300 bg-white flex items-center justify-center gap-2 cursor-pointer hover:border-active/40 hover:text-active text-gray-500 text-sm">
-                    {uploading === "house_reg_photo_url" ? <><div className="w-4 h-4 border-2 border-gray-300 border-t-active rounded-full animate-spin" /> กำลังอัปโหลด…</> : <><svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M3 9a2 2 0 012-2h.93a2 2 0 001.664-.89l.812-1.22A2 2 0 0110.07 4h3.86a2 2 0 011.664.89l.812 1.22A2 2 0 0018.07 7H19a2 2 0 012 2v9a2 2 0 01-2 2H5a2 2 0 01-2-2V9z" /><path strokeLinecap="round" strokeLinejoin="round" d="M15 13a3 3 0 11-6 0 3 3 0 016 0z" /></svg> ถ่ายรูป / อัปโหลด</>}
+                    {uploading === "house_reg_photo_url" ? <><div className="w-4 h-4 border-2 border-gray-300 border-t-active rounded-full animate-spin" /> กำลังอัปโหลด…</> : <><CameraIcon className="w-4 h-4" strokeWidth={2} /> ถ่ายรูป / อัปโหลด</>}
                   </label>
                 )}
               </div>
@@ -487,7 +485,7 @@ export default function CustomerInfoForm({
         <div className="flex gap-2 mt-3">
           {subStep > 0 && (
             <button type="button" onClick={() => { setNextError(null); setSubStep(subStep - 1); }} className="flex-1 h-11 rounded-lg text-sm font-semibold border border-gray-200 text-gray-600 hover:bg-gray-50 transition-colors flex items-center justify-center gap-1">
-              <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M15.75 19.5L8.25 12l7.5-7.5" /></svg>
+              <ChevronLeftIcon className="w-4 h-4" strokeWidth={2} />
               ย้อนกลับ
             </button>
           )}
@@ -499,7 +497,7 @@ export default function CustomerInfoForm({
               setSubStep(subStep + 1);
             }} className="flex-1 h-11 rounded-lg text-sm font-semibold text-white bg-active hover:brightness-110 transition-colors flex items-center justify-center gap-1">
               ถัดไป
-              <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M8.25 4.5l7.5 7.5-7.5 7.5" /></svg>
+              <ChevronRightIcon className="w-4 h-4" strokeWidth={2} />
             </button>
           )}
         </div>

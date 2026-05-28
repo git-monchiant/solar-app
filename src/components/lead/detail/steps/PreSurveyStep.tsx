@@ -1,9 +1,10 @@
 "use client";
+import { BoltIcon, ChevronLeftIcon, ChevronRightIcon } from "@/components/ui/icons";
 
 import { useEffect, useRef, useState } from "react";
 import { apiFetch } from "@/lib/api";
 import { useMe } from "@/lib/roles";
-import { PAYMENT_TYPES, FINANCE_STATUSES, isPreSurvey } from "@/lib/constants/statuses";
+import { PAYMENT_TYPES, isPreSurvey } from "@/lib/constants/statuses";
 import type { Lead, Package, StepCommonProps } from "./types";
 import PreSurveyForm, { type PreSurveyFormHandle } from "./PreSurveyForm";
 import PaymentSection from "@/components/payment/PaymentSection";
@@ -20,7 +21,7 @@ import ReceiptModal from "../ReceiptModal";
 import { buildAppointmentFlex } from "@/lib/utils/line-flex";
 import { formatSlotsRange } from "@/lib/time-slots";
 import { useSubStep } from "@/lib/hooks/useSubStep";
-import { formatTHB as formatPrice, formatThaiDate as formatDate } from "@/lib/utils/formatters";
+import { formatTHB as formatPrice } from "@/lib/utils/formatters";
 import DoneSection from "./DoneSection";
 
 const DEPOSIT_AMOUNT = 1000;
@@ -99,11 +100,6 @@ function parseAcUnits(s: string | null): Record<number, number> {
   return map;
 }
 
-function stringifyAcUnits(map: Record<number, number>): string | null {
-  const pairs = AC_BTU_SIZES.filter(b => map[b] > 0).map(b => `${b}:${map[b]}`);
-  return pairs.length > 0 ? pairs.join(",") : null;
-}
-
 const PEAK_USAGE = [
   { value: "day", label: "กลางวัน" },
   { value: "night", label: "กลางคืน" },
@@ -118,26 +114,6 @@ const RESIDENCE_TYPES = [
   { value: "shophouse", label: "อาคารพาณิชย์" },
   { value: "other", label: "อื่นๆ" },
 ];
-
-const chipBtn = (selected: boolean) =>
-  `h-9 px-3 rounded-lg text-xxs font-semibold border transition-all cursor-pointer ${
-    selected
-      ? "bg-active text-white border-active shadow-sm shadow-active/20"
-      : "bg-white text-gray-600 border-gray-200 hover:border-active/40 hover:text-active"
-  }`;
-
-const InfoRow = ({
-  label,
-  value,
-}: {
-  label: string;
-  value: React.ReactNode;
-}) => (
-  <div className="flex flex-col gap-0.5 py-2 border-b border-gray-100 last:border-0">
-    <span className="text-xs font-semibold tracking-wider uppercase text-gray-400">{label}</span>
-    <span className="text-sm font-medium text-gray-800">{value}</span>
-  </div>
-);
 
 // Done-view label/value row. On mobile, label/value spread to opposite edges
 // like a typical key-value row. On desktop, the label gets a fixed width so
@@ -227,10 +203,8 @@ export default function PreSurveyStep({ lead, state, refresh, packages, expanded
   }, [lead.id, lead.zone]);
   // Pre-survey form state
   const [selectedPkg, setSelectedPkg] = useState(lead.interested_package_id ? String(lead.interested_package_id) : "");
-  const [paymentMethod, setPaymentMethod] = useState(lead.payment_type ?? "transfer");
+  const [paymentMethod] = useState(lead.payment_type ?? "transfer");
   const [confirmSaving, setConfirmSaving] = useState(false);
-  const [confirmSaved, setConfirmSaved] = useState(false);
-  const [confirmingSaved, setConfirmingSaved] = useState(false);
   // Payment verification state — PaymentSection owns upload/verify and calls onVerified(url).
   // url may be "" when KBank authorized the payment but the slip file is unavailable.
   const [slipVerifiedUrl, setSlipVerifiedUrl] = useState<string | null>(lead.pre_slip_url ?? null);
@@ -267,7 +241,6 @@ export default function PreSurveyStep({ lead, state, refresh, packages, expanded
   const hasPreSurveyDone = !isPreSurvey(lead.status);
   const hasReceipt = !!lead.pre_doc_no || !!lead.payment_confirmed;
   const paymentLabel = PAYMENT_TYPES.find(p => p.value === lead.payment_type)?.label;
-  const financeConfig = FINANCE_STATUSES.find(f => f.value === lead.finance_status);
 
   // Auto-save pre-survey fields on change (debounced)
   const isFirstAutosave = useRef(true);
@@ -313,82 +286,6 @@ export default function PreSurveyStep({ lead, state, refresh, packages, expanded
     if (formRef.current) await formRef.current.flushSave();
   };
 
-
-  // subStep 4 final confirm: advance status to 'survey' + save payment_type.
-  // Payment row is already written by PaymentSection at subStep 3 (confirm slip),
-  // and pre_doc_no is already created by onConfirmed — no need to redo them.
-  const confirmWithSlip = async () => {
-    if (!selectedPkg || !paymentVerified || !surveyDate) return;
-    setConfirmSaving(true);
-    try {
-      await apiFetch(`/api/leads/${lead.id}`, {
-        method: "PATCH", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          payment_type: paymentMethod,
-          status: "survey",
-          survey_date: surveyDate,
-          survey_time_slot: surveyTimeSlot,
-          next_follow_up: null,
-        }),
-      });
-      await refresh();
-    } catch (err) {
-      console.error(err);
-    } finally {
-      setConfirmSaving(false);
-    }
-  };
-
-  // Non-transfer: save draft (book only, no payment yet)
-  const savePreSurveyDraft = async () => {
-    if (!selectedPkg) return;
-    setConfirmSaving(true);
-    try {
-      await apiFetch(`/api/leads/${lead.id}`, {
-        method: "PATCH", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ payment_type: paymentMethod }),
-      });
-      await apiFetch(`/api/leads/${lead.id}/book`, {
-        method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ package_id: parseInt(selectedPkg), total_price: depositAmount }),
-      });
-      setConfirmSaved(true);
-      await refresh();
-    } catch (err) {
-      console.error(err);
-    } finally {
-      setConfirmSaving(false);
-    }
-  };
-
-  const confirmDraftPreSurvey = async () => {
-    if (!surveyDate) return;
-    // Guard: never advance to "survey" without a verified payment.
-    // Without this, a stray call (admin action, old flow, direct client
-    // PATCH) can move status forward with payment_confirmed=false and no
-    // slip — which is how lead #30 got to survey without paying.
-    if (!paymentVerified) {
-      setNextError("กรุณายืนยันชำระเงินก่อนเปิดขั้นสำรวจ");
-      return;
-    }
-    setConfirmingSaved(true);
-    try {
-      await apiFetch(`/api/leads/${lead.id}`, {
-        method: "PATCH", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          pre_slip_url: slipVerifiedUrl || null,
-          payment_confirmed: paymentVerified,
-          status: "survey",
-          survey_date: surveyDate,
-        }),
-      });
-      await refresh();
-    } catch (err) {
-      console.error(err);
-    } finally {
-      setConfirmingSaved(false);
-    }
-  };
 
   // Display when pre-survey is done (viewing)
   if (hasPreSurveyDone) {
@@ -473,7 +370,7 @@ export default function PreSurveyStep({ lead, state, refresh, packages, expanded
                           {p.is_upgrade && <span className="text-xs font-bold text-blue-600 bg-blue-50 px-2 py-0.5 rounded uppercase shrink-0">UPGRADE</span>}
                           <span className="inline-flex items-center gap-0.5">
                             <svg className={`w-3 h-3 ${p.has_panel ? "text-amber-500" : "text-gray-300"}`} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M12 3v2.25m6.364.386l-1.591 1.591M21 12h-2.25m-.386 6.364l-1.591-1.591M12 18.75V21m-4.773-4.227l-1.591 1.591M5.25 12H3m4.227-4.773L5.636 5.636M15.75 12a3.75 3.75 0 11-7.5 0 3.75 3.75 0 017.5 0z" /></svg>
-                            <svg className={`w-3 h-3 ${p.has_inverter ? "text-violet-500" : "text-gray-300"}`} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M3.75 13.5l10.5-11.25L12 10.5h8.25L9.75 21.75 12 13.5H3.75z" /></svg>
+                            <BoltIcon className={`w-3 h-3 ${p.has_inverter ? "text-violet-500" : "text-gray-300"}`} strokeWidth={2} />
                             <svg className={`w-3 h-3 ${p.has_battery ? "text-green-500 fill-green-500" : "text-gray-300"}`} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M21 10.5h.375c.621 0 1.125.504 1.125 1.125v2.25c0 .621-.504 1.125-1.125 1.125H21M3.75 18h15A2.25 2.25 0 0021 15.75v-6a2.25 2.25 0 00-2.25-2.25h-15A2.25 2.25 0 001.5 9.75v6A2.25 2.25 0 003.75 18z" /></svg>
                           </span>
                           <span className="font-mono ml-auto pl-2">{formatPrice(p.price)} บาท</span>
@@ -876,7 +773,7 @@ export default function PreSurveyStep({ lead, state, refresh, packages, expanded
       {subStep === 4 && (
         <div className="mt-3 flex gap-2 md:justify-between">
           <button type="button" onClick={() => { setSubStep(subStep - 1); setTimeout(() => document.querySelector("[data-step-active]")?.scrollIntoView({ behavior: "smooth", block: "start" }), 100); }} className="flex-1 md:flex-none md:w-64 h-11 rounded-lg text-sm font-semibold border border-gray-200 text-gray-600 hover:bg-gray-50 transition-colors flex items-center justify-center gap-1">
-            <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M15.75 19.5L8.25 12l7.5-7.5" /></svg>
+            <ChevronLeftIcon className="w-4 h-4" strokeWidth={2} />
             ย้อนกลับ
           </button>
           <button
@@ -999,13 +896,13 @@ export default function PreSurveyStep({ lead, state, refresh, packages, expanded
             <div className="flex gap-2 md:justify-between">
               {subStep > 0 ? (
                 <button type="button" onClick={() => { setNextError(null); setSubStep(subStep - 1); setTimeout(() => document.querySelector("[data-step-active]")?.scrollIntoView({ behavior: "smooth", block: "start" }), 100); }} className="flex-1 md:flex-none md:w-64 h-11 rounded-lg text-sm font-semibold border border-gray-200 text-gray-600 hover:bg-gray-50 transition-colors flex items-center justify-center gap-1">
-                  <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M15.75 19.5L8.25 12l7.5-7.5" /></svg>
+                  <ChevronLeftIcon className="w-4 h-4" strokeWidth={2} />
                   ย้อนกลับ
                 </button>
               ) : <span className="hidden md:block md:w-64" />}
               <button type="button" onClick={handleNext} className="flex-1 md:flex-none md:w-64 h-11 rounded-lg text-sm font-semibold text-white bg-active hover:brightness-110 transition-colors flex items-center justify-center gap-1">
                 ถัดไป
-                <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M8.25 4.5l7.5 7.5-7.5 7.5" /></svg>
+                <ChevronRightIcon className="w-4 h-4" strokeWidth={2} />
               </button>
             </div>
           </div>

@@ -19,17 +19,6 @@ async function getLineProfile(userId: string) {
   return res.json() as Promise<{ displayName: string; userId: string; pictureUrl?: string }>;
 }
 
-async function replyMessage(replyToken: string, messages: { type: string; text: string }[]) {
-  await fetch("https://api.line.me/v2/bot/message/reply", {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      Authorization: `Bearer ${CHANNEL_ACCESS_TOKEN}`,
-    },
-    body: JSON.stringify({ replyToken, messages }),
-  });
-}
-
 async function upsertLineUser(userId: string, displayName?: string, pictureUrl?: string) {
   const db = await getDb();
   const existing = await db.request()

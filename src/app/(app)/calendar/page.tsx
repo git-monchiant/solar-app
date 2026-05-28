@@ -1,4 +1,5 @@
 "use client";
+import { PlusIcon } from "@/components/ui/icons";
 
 import { useEffect, useState } from "react";
 import Header from "@/components/layout/Header";
@@ -6,7 +7,6 @@ import EventCalendarList from "@/components/calendar/EventCalendarList";
 import EventCalendarMonth from "@/components/calendar/EventCalendarMonth";
 import NewAppointmentModal from "@/components/calendar/NewAppointmentModal";
 import { useMe } from "@/lib/roles";
-import { apiFetch } from "@/lib/api";
 
 // Calendar page — open to every authenticated role. Toggles between a
 // month-grid and a list view; both back the same data source as Today's
@@ -92,9 +92,7 @@ export default function CalendarPage() {
           <div className="flex-1" />
           <button type="button" onClick={() => { setNewPrefillDate(undefined); setNewOpen(true); }}
             className="h-9 px-3 rounded-lg bg-primary text-white text-xs font-semibold hover:bg-primary-dark inline-flex items-center gap-1">
-            <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
-              <path strokeLinecap="round" strokeLinejoin="round" d="M12 4.5v15m7.5-7.5h-15" />
-            </svg>
+            <PlusIcon className="w-4 h-4" strokeWidth={2.5} />
             สร้างนัด
           </button>
           <div className="inline-flex rounded-lg border border-gray-200 bg-white overflow-hidden">

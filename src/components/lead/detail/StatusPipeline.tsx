@@ -1,3 +1,4 @@
+import { CheckIcon, XIcon } from "@/components/ui/icons";
 import { STATUSES, STATUS_CONFIG, getMainStatus } from "@/lib/constants/statuses";
 
 interface Props {
@@ -26,9 +27,7 @@ export default function StatusPipeline({ currentStatus, onChangeStatus }: Props)
                   "bg-gray-200 text-gray/50"
                 }`}>
                 {isPast ? (
-                  <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={3}>
-                    <path strokeLinecap="round" strokeLinejoin="round" d="M4.5 12.75l6 6 9-13.5" />
-                  </svg>
+                  <CheckIcon className="w-3.5 h-3.5" strokeWidth={3} />
                 ) : (
                   <span>{i + 1}</span>
                 )}
@@ -42,9 +41,7 @@ export default function StatusPipeline({ currentStatus, onChangeStatus }: Props)
         {/* Lost indicator */}
         {isLost && (
           <div className="ml-2 w-7 h-7 rounded-full flex items-center justify-center bg-red-400 text-white">
-            <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={3}>
-              <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
-            </svg>
+            <XIcon className="w-3.5 h-3.5" strokeWidth={3} />
           </div>
         )}
       </div>

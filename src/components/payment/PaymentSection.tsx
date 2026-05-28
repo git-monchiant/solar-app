@@ -1,4 +1,5 @@
 "use client";
+import { CheckIcon, DownloadIcon, PlusIcon } from "@/components/ui/icons";
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { apiFetch, getUserIdHeader } from "@/lib/api";
@@ -7,7 +8,7 @@ import ImageLightbox from "@/components/ui/ImageLightbox";
 import PaymentHeader from "./PaymentHeader";
 import { buildPaymentFlex } from "@/lib/utils/line-flex";
 import { compressSlipFile } from "@/lib/utils/compress-slip";
-import { useMe, useActiveRoles } from "@/lib/roles";
+import { useActiveRoles } from "@/lib/roles";
 import { useDialog } from "@/components/ui/Dialog";
 import ActualReceiptUpload from "@/components/lead/detail/ActualReceiptUpload";
 
@@ -158,7 +159,6 @@ export default function PaymentSection({
     localStorage.setItem(tabStorageKey, tab);
   }, [tab, tabStorageKey]);
   const [otherMethod, setOtherMethod] = useState("");
-  const { me } = useMe();
   const { activeRoles } = useActiveRoles();
   const dialog = useDialog();
   // Gate by the *active* role view, not the user's available roles — when an
@@ -733,9 +733,7 @@ export default function PaymentSection({
                   aria-label="ดาวน์โหลดใบแจ้งชำระเงิน (PDF)"
                   className="aspect-square w-full inline-flex items-center justify-center rounded-md border border-primary/30 bg-primary/5 text-primary hover:bg-primary/10 transition-colors"
                 >
-                  <svg className="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.8}>
-                    <path strokeLinecap="round" strokeLinejoin="round" d="M3 16.5v2.25A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75V16.5M16.5 12L12 16.5m0 0L7.5 12m4.5 4.5V3" />
-                  </svg>
+                  <DownloadIcon className="w-6 h-6" strokeWidth={1.8} />
                 </button>
                 <span className="text-xs text-center text-gray-600 truncate leading-tight font-medium">ใบแจ้งชำระ</span>
               </div>
@@ -747,9 +745,7 @@ export default function PaymentSection({
                 title="ดาวน์โหลดใบแจ้งชำระเงิน (PDF)"
                 aria-label="ดาวน์โหลดใบแจ้งชำระเงิน (PDF)"
               >
-                <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                  <path strokeLinecap="round" strokeLinejoin="round" d="M3 16.5v2.25A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75V16.5M16.5 12L12 16.5m0 0L7.5 12m4.5 4.5V3" />
-                </svg>
+                <DownloadIcon className="w-4 h-4" strokeWidth={2} />
                 <span className="text-xs font-semibold">ใบแจ้งชำระเงิน</span>
               </button>
             </>
@@ -764,9 +760,7 @@ export default function PaymentSection({
                   aria-label="ดาวน์โหลดใบเสร็จรับเงินชั่วคราว (PDF)"
                   className="aspect-square w-full inline-flex items-center justify-center rounded-md border border-primary/30 bg-primary/5 text-primary hover:bg-primary/10 transition-colors"
                 >
-                  <svg className="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.8}>
-                    <path strokeLinecap="round" strokeLinejoin="round" d="M3 16.5v2.25A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75V16.5M16.5 12L12 16.5m0 0L7.5 12m4.5 4.5V3" />
-                  </svg>
+                  <DownloadIcon className="w-6 h-6" strokeWidth={1.8} />
                 </button>
                 <span className="text-xs text-center text-gray-600 truncate leading-tight font-medium">ใบเสร็จ</span>
               </div>
@@ -778,9 +772,7 @@ export default function PaymentSection({
                 title="ดาวน์โหลดใบเสร็จรับเงินชั่วคราว (PDF)"
                 aria-label="ดาวน์โหลดใบเสร็จรับเงินชั่วคราว (PDF)"
               >
-                <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                  <path strokeLinecap="round" strokeLinejoin="round" d="M3 16.5v2.25A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75V16.5M16.5 12L12 16.5m0 0L7.5 12m4.5 4.5V3" />
-                </svg>
+                <DownloadIcon className="w-4 h-4" strokeWidth={2} />
                 <span className="text-xs font-semibold">ใบเสร็จรับเงินชั่วคราว</span>
               </button>
             </>
@@ -940,9 +932,7 @@ export default function PaymentSection({
                   className="shrink-0 w-9 h-9 rounded-md flex items-center justify-center text-active hover:bg-active/10 transition-all cursor-pointer"
                 >
                   {bankCopied === "all" ? (
-                    <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
-                      <path strokeLinecap="round" strokeLinejoin="round" d="M4.5 12.75l6 6 9-13.5" />
-                    </svg>
+                    <CheckIcon className="w-5 h-5" strokeWidth={2.5} />
                   ) : (
                     <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
                       <path strokeLinecap="round" strokeLinejoin="round" d="M15.75 17.25v3.375c0 .621-.504 1.125-1.125 1.125h-9.75a1.125 1.125 0 01-1.125-1.125V7.875c0-.621.504-1.125 1.125-1.125H6.75a9.06 9.06 0 011.5.124m7.5 10.376h3.375c.621 0 1.125-.504 1.125-1.125V11.25c0-4.46-3.243-8.161-7.5-8.876a9.06 9.06 0 00-1.5-.124H9.375c-.621 0-1.125.504-1.125 1.125v3.5m7.5 10.375H9.375a1.125 1.125 0 01-1.125-1.125v-9.25m12 6.625v-1.875a3.375 3.375 0 00-3.375-3.375h-1.5a1.125 1.125 0 01-1.125-1.125v-1.5a3.375 3.375 0 00-3.375-3.375H9.75" />
@@ -1055,9 +1045,7 @@ export default function PaymentSection({
             ))}
             {canAddMore && (
               <label htmlFor={slipInputId} className="rounded-lg border-2 border-dashed border-gray-300 aspect-square flex flex-col items-center justify-center gap-1 text-gray-400 hover:border-primary hover:text-primary transition-colors cursor-pointer">
-                <svg className="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.8}>
-                  <path strokeLinecap="round" strokeLinejoin="round" d="M12 4.5v15m7.5-7.5h-15" />
-                </svg>
+                <PlusIcon className="w-6 h-6" strokeWidth={1.8} />
                 <span className="text-xxs font-semibold uppercase tracking-wider">เพิ่มสลิป</span>
               </label>
             )}

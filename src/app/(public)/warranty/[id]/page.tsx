@@ -238,7 +238,7 @@ export default function WarrantyPage() {
                   )}
 
                   <p className="text-[14px] indent-6">
-                    <strong>{CO.nameTh}</strong> ("บริษัทฯ") ขอรับรองการติดตั้งระบบผลิตไฟฟ้าพลังงานแสงอาทิตย์ให้แก่ลูกค้า ภายใต้เงื่อนไขดังต่อไปนี้
+                    <strong>{CO.nameTh}</strong> (&quot;บริษัทฯ&quot;) ขอรับรองการติดตั้งระบบผลิตไฟฟ้าพลังงานแสงอาทิตย์ให้แก่ลูกค้า ภายใต้เงื่อนไขดังต่อไปนี้
                   </p>
 
                   <Section title="1. ระยะเวลาการรับประกันอุปกรณ์" avoidBreak={false}>

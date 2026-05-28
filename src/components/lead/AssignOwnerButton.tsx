@@ -1,4 +1,5 @@
 "use client";
+import { CheckIcon, PlusIcon, UserIcon } from "@/components/ui/icons";
 
 import { useEffect, useRef, useState } from "react";
 import { apiFetch } from "@/lib/api";
@@ -93,9 +94,7 @@ export default function AssignOwnerButton({ leadId, assignedUserId, assignedName
   const assigned = !!localUserId;
   const initials = initialsOf(localName);
   const personIcon = (
-    <svg className={iconSize} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-      <path strokeLinecap="round" strokeLinejoin="round" d="M15.75 6a3.75 3.75 0 11-7.5 0 3.75 3.75 0 017.5 0zM4.501 20.118a7.5 7.5 0 0114.998 0" />
-    </svg>
+    <UserIcon className={iconSize} strokeWidth={2} />
   );
 
   return (
@@ -112,9 +111,7 @@ export default function AssignOwnerButton({ leadId, assignedUserId, assignedName
         style={{ minHeight: 0 }}
       >
         {assigned ? (initials ?? personIcon) : (
-          <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
-            <path strokeLinecap="round" strokeLinejoin="round" d="M12 4.5v15m7.5-7.5h-15" />
-          </svg>
+          <PlusIcon className="w-3 h-3" strokeWidth={2.5} />
         )}
       </button>
 
@@ -132,9 +129,7 @@ export default function AssignOwnerButton({ leadId, assignedUserId, assignedName
             >
               <span className={`w-6 h-6 rounded-full ${colorOf(me.id)} text-white text-xxs font-bold flex items-center justify-center shrink-0`}>
                 {initialsOf(me.full_name) ?? (
-                  <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                    <path strokeLinecap="round" strokeLinejoin="round" d="M15.75 6a3.75 3.75 0 11-7.5 0 3.75 3.75 0 017.5 0zM4.501 20.118a7.5 7.5 0 0114.998 0" />
-                  </svg>
+                  <UserIcon className="w-3.5 h-3.5" strokeWidth={2} />
                 )}
               </span>
               <span className="text-sm font-semibold text-gray-800">Me — {me.full_name}</span>
@@ -154,16 +149,12 @@ export default function AssignOwnerButton({ leadId, assignedUserId, assignedName
                 >
                   <span className={`w-6 h-6 rounded-full ${colorOf(u.id)} text-white text-xxs font-bold flex items-center justify-center shrink-0`}>
                     {initialsOf(u.full_name) ?? (
-                      <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                        <path strokeLinecap="round" strokeLinejoin="round" d="M15.75 6a3.75 3.75 0 11-7.5 0 3.75 3.75 0 017.5 0zM4.501 20.118a7.5 7.5 0 0114.998 0" />
-                      </svg>
+                      <UserIcon className="w-3.5 h-3.5" strokeWidth={2} />
                     )}
                   </span>
                   <span className="flex-1 text-sm text-gray-700 truncate">{u.full_name}</span>
                   {u.id === localUserId && (
-                    <svg className="w-4 h-4 text-primary shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
-                      <path strokeLinecap="round" strokeLinejoin="round" d="M4.5 12.75l6 6 9-13.5" />
-                    </svg>
+                    <CheckIcon className="w-4 h-4 text-primary shrink-0" strokeWidth={2.5} />
                   )}
                 </button>
               ))

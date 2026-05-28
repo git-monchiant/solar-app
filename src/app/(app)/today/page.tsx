@@ -1,4 +1,5 @@
 "use client";
+import { CheckIcon, PlusIcon } from "@/components/ui/icons";
 
 import { apiFetch } from "@/lib/api";
 import { useEffect, useState } from "react";
@@ -245,7 +246,7 @@ export default function TodayPage() {
         className="h-7 inline-flex items-center gap-1.5 px-1 text-xxs font-medium text-gray-700 cursor-pointer whitespace-nowrap"
       >
         <span className={`w-3.5 h-3.5 rounded-full border-2 flex items-center justify-center transition-colors ${mineOnly ? "border-gray-800 bg-gray-800" : "border-gray-300"}`}>
-          {mineOnly && <svg className="w-2 h-2 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={4}><path strokeLinecap="round" strokeLinejoin="round" d="M4.5 12.75l6 6 9-13.5" /></svg>}
+          {mineOnly && <CheckIcon className="w-2 h-2 text-white" strokeWidth={4} />}
         </span>
         งานของฉัน
       </button>
@@ -444,7 +445,7 @@ export default function TodayPage() {
             {salesAllCount === 0 && (
               <div className="text-center py-16">
                 <div className="w-16 h-16 mx-auto rounded-full bg-emerald-50 flex items-center justify-center mb-3">
-                  <svg className="w-8 h-8 text-emerald-500" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M4.5 12.75l6 6 9-13.5" /></svg>
+                  <CheckIcon className="w-8 h-8 text-emerald-500" strokeWidth={2} />
                 </div>
                 <div className="text-base font-semibold text-gray-900">All caught up!</div>
                 <div className="text-sm text-gray-500 mt-1">ไม่มีงานที่ต้องดำเนินการ</div>
@@ -500,7 +501,7 @@ export default function TodayPage() {
             {salesCount === 0 && (
               <div className="text-center py-16">
                 <div className="w-16 h-16 mx-auto rounded-full bg-emerald-50 flex items-center justify-center mb-3">
-                  <svg className="w-8 h-8 text-emerald-500" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M4.5 12.75l6 6 9-13.5" /></svg>
+                  <CheckIcon className="w-8 h-8 text-emerald-500" strokeWidth={2} />
                 </div>
                 <div className="text-base font-semibold text-gray-900">All caught up!</div>
                 <div className="text-sm text-gray-500 mt-1">ไม่มีงานที่ต้องติดตาม</div>
@@ -516,7 +517,7 @@ export default function TodayPage() {
           d.booking.length === 0 ? (
             <div className="text-center py-16">
               <div className="w-16 h-16 mx-auto rounded-full bg-emerald-50 flex items-center justify-center mb-3">
-                <svg className="w-8 h-8 text-emerald-500" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M4.5 12.75l6 6 9-13.5" /></svg>
+                <CheckIcon className="w-8 h-8 text-emerald-500" strokeWidth={2} />
               </div>
               <div className="text-base font-semibold text-gray-900">ยังไม่มีรายการจอง</div>
               <div className="text-sm text-gray-500 mt-1">ลูกค้าที่ชำระค่าสำรวจแล้วจะปรากฏที่นี่</div>
@@ -553,7 +554,7 @@ export default function TodayPage() {
             ) : (
               <div className="text-center py-16">
                 <div className="w-16 h-16 mx-auto rounded-full bg-violet-50 flex items-center justify-center mb-3">
-                  <svg className="w-8 h-8 text-violet-500" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M4.5 12.75l6 6 9-13.5" /></svg>
+                  <CheckIcon className="w-8 h-8 text-violet-500" strokeWidth={2} />
                 </div>
                 <div className="text-base font-semibold text-gray-900">ยังไม่มีรายการเสนอราคา</div>
                 <div className="text-sm text-gray-500 mt-1">หลังสำรวจเสร็จและออกใบเสนอราคา จะปรากฏที่นี่</div>
@@ -606,7 +607,7 @@ export default function TodayPage() {
             ) : (
               <div className="text-center py-16">
                 <div className="w-16 h-16 mx-auto rounded-full bg-orange-50 flex items-center justify-center mb-3">
-                  <svg className="w-8 h-8 text-orange-500" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M4.5 12.75l6 6 9-13.5" /></svg>
+                  <CheckIcon className="w-8 h-8 text-orange-500" strokeWidth={2} />
                 </div>
                 <div className="text-base font-semibold text-gray-900">All caught up!</div>
                 <div className="text-sm text-gray-500 mt-1">ไม่มีงานรอนัดติดตั้ง</div>
@@ -636,7 +637,7 @@ export default function TodayPage() {
             {salesSolarCount === 0 && (
               <div className="text-center py-16">
                 <div className="w-16 h-16 mx-auto rounded-full bg-emerald-50 flex items-center justify-center mb-3">
-                  <svg className="w-8 h-8 text-emerald-500" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M4.5 12.75l6 6 9-13.5" /></svg>
+                  <CheckIcon className="w-8 h-8 text-emerald-500" strokeWidth={2} />
                 </div>
                 <div className="text-base font-semibold text-gray-900">All caught up!</div>
                 <div className="text-sm text-gray-500 mt-1">ไม่มีงานรอใบเสนอราคา</div>
@@ -735,7 +736,7 @@ export default function TodayPage() {
             {solarCount === 0 && (
               <div className="text-center py-16">
                 <div className="w-16 h-16 mx-auto rounded-full bg-emerald-50 flex items-center justify-center mb-3">
-                  <svg className="w-8 h-8 text-emerald-500" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M4.5 12.75l6 6 9-13.5" /></svg>
+                  <CheckIcon className="w-8 h-8 text-emerald-500" strokeWidth={2} />
                 </div>
                 <div className="text-base font-semibold text-gray-900">All caught up!</div>
                 <div className="text-sm text-gray-500 mt-1">ไม่มีงาน Solar วันนี้</div>
@@ -787,7 +788,7 @@ export default function TodayPage() {
             {solarSurveyCount === 0 && (
               <div className="text-center py-16">
                 <div className="w-16 h-16 mx-auto rounded-full bg-emerald-50 flex items-center justify-center mb-3">
-                  <svg className="w-8 h-8 text-emerald-500" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M4.5 12.75l6 6 9-13.5" /></svg>
+                  <CheckIcon className="w-8 h-8 text-emerald-500" strokeWidth={2} />
                 </div>
                 <div className="text-base font-semibold text-gray-900">All caught up!</div>
                 <div className="text-sm text-gray-500 mt-1">ไม่มีงานสำรวจ</div>
@@ -814,7 +815,7 @@ export default function TodayPage() {
             ) : (
               <div className="text-center py-16">
                 <div className="w-16 h-16 mx-auto rounded-full bg-emerald-50 flex items-center justify-center mb-3">
-                  <svg className="w-8 h-8 text-emerald-500" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M4.5 12.75l6 6 9-13.5" /></svg>
+                  <CheckIcon className="w-8 h-8 text-emerald-500" strokeWidth={2} />
                 </div>
                 <div className="text-base font-semibold text-gray-900">All caught up!</div>
                 <div className="text-sm text-gray-500 mt-1">ไม่มีใบเสนอราคาที่ต้องทำ</div>
@@ -840,7 +841,7 @@ export default function TodayPage() {
             ) : (
               <div className="text-center py-16">
                 <div className="w-16 h-16 mx-auto rounded-full bg-orange-50 flex items-center justify-center mb-3">
-                  <svg className="w-8 h-8 text-orange-500" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M4.5 12.75l6 6 9-13.5" /></svg>
+                  <CheckIcon className="w-8 h-8 text-orange-500" strokeWidth={2} />
                 </div>
                 <div className="text-base font-semibold text-gray-900">All caught up!</div>
                 <div className="text-sm text-gray-500 mt-1">ไม่มีงานรอนัดติดตั้ง</div>
@@ -866,7 +867,7 @@ export default function TodayPage() {
             ) : (
               <div className="text-center py-16">
                 <div className="w-16 h-16 mx-auto rounded-full bg-emerald-50 flex items-center justify-center mb-3">
-                  <svg className="w-8 h-8 text-emerald-500" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M4.5 12.75l6 6 9-13.5" /></svg>
+                  <CheckIcon className="w-8 h-8 text-emerald-500" strokeWidth={2} />
                 </div>
                 <div className="text-base font-semibold text-gray-900">All caught up!</div>
                 <div className="text-sm text-gray-500 mt-1">ไม่มีงานรอติดตั้ง</div>
@@ -892,7 +893,7 @@ export default function TodayPage() {
             ) : (
               <div className="text-center py-16">
                 <div className="w-16 h-16 mx-auto rounded-full bg-cyan-50 flex items-center justify-center mb-3">
-                  <svg className="w-8 h-8 text-cyan-600" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M4.5 12.75l6 6 9-13.5" /></svg>
+                  <CheckIcon className="w-8 h-8 text-cyan-600" strokeWidth={2} />
                 </div>
                 <div className="text-base font-semibold text-gray-900">All caught up!</div>
                 <div className="text-sm text-gray-500 mt-1">ไม่มีรายการรอออกใบรับประกัน</div>
@@ -945,9 +946,7 @@ export default function TodayPage() {
         onClick={() => setChannelPickerOpen(true)}
         className="fixed bottom-24 right-5 md:bottom-6 md:right-6 w-14 h-14 bg-gradient-to-b from-primary via-primary to-primary rounded-full shadow-lg shadow-primary/30 flex items-center justify-center hover:bg-primary-dark transition-all z-20"
       >
-        <svg className="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
-          <path strokeLinecap="round" strokeLinejoin="round" d="M12 4.5v15m7.5-7.5h-15" />
-        </svg>
+        <PlusIcon className="w-6 h-6" strokeWidth={2.5} />
       </button>
 
       {channelPickerOpen && (

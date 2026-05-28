@@ -1,6 +1,7 @@
 "use client";
+import { CheckIcon, ClockIcon, LineIcon, PhoneIcon } from "@/components/ui/icons";
 
-import { Fragment, useState } from "react";
+import { Fragment, useEffect, useState } from "react";
 import { apiFetch } from "@/lib/api";
 import DateSlider from "@/components/ui/DateSlider";
 import CalendarPicker from "@/components/calendar/CalendarPicker";
@@ -13,9 +14,7 @@ const FOLLOW_UP_METHODS: { value: string; label: string; icon: React.ReactNode }
     value: "call",
     label: "โทร",
     icon: (
-      <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 24 24">
-        <path d="M6.62 10.79a15.05 15.05 0 006.59 6.59l2.2-2.2a1 1 0 011.05-.24c1.12.37 2.33.57 3.57.57a1 1 0 011 1V20a1 1 0 01-1 1A17 17 0 013 4a1 1 0 011-1h3.5a1 1 0 011 1c0 1.24.2 2.45.57 3.57a1 1 0 01-.24 1.05l-2.21 2.17z" />
-      </svg>
+      <PhoneIcon className="w-4 h-4" />
     ),
   },
   {
@@ -31,9 +30,7 @@ const FOLLOW_UP_METHODS: { value: string; label: string; icon: React.ReactNode }
     value: "line",
     label: "LINE",
     icon: (
-      <svg className="w-4 h-4" viewBox="0 0 24 24" fill="currentColor">
-        <path d="M19.365 9.863c.349 0 .63.285.63.631 0 .345-.281.63-.63.63H17.61v1.125h1.755c.349 0 .63.283.63.63 0 .344-.281.629-.63.629h-2.386c-.345 0-.627-.285-.627-.629V8.108c0-.345.282-.63.63-.63h2.386c.346 0 .627.285.627.63 0 .349-.281.63-.63.63H17.61v1.125h1.755zm-3.855 3.016c0 .27-.174.51-.432.596-.064.021-.133.031-.199.031-.211 0-.391-.09-.51-.25l-2.443-3.317v2.94c0 .344-.279.629-.631.629-.346 0-.626-.285-.626-.629V8.108c0-.27.173-.51.43-.595.064-.022.134-.032.2-.032.211 0 .391.09.51.25l2.44 3.317V8.108c0-.345.282-.63.63-.63.345 0 .63.285.63.63v4.771zm-5.741 0c0 .344-.282.629-.631.629-.345 0-.627-.285-.627-.629V8.108c0-.345.282-.63.63-.63.346 0 .628.285.628.63v4.771zm-2.466.629H4.917c-.345 0-.63-.285-.63-.629V8.108c0-.345.285-.63.63-.63.348 0 .63.285.63.63v4.141h1.756c.348 0 .629.283.629.63 0 .344-.282.629-.629.629M24 10.314C24 4.943 18.615.572 12 .572S0 4.943 0 10.314c0 4.811 4.27 8.842 10.035 9.608.391.082.923.258 1.058.59.12.301.079.766.038 1.08l-.164 1.02c-.045.301-.24 1.186 1.049.645 1.291-.539 6.916-4.078 9.436-6.975C23.176 14.393 24 12.458 24 10.314" />
-      </svg>
+      <LineIcon className="w-4 h-4" />
     ),
   },
   {
@@ -90,6 +87,15 @@ const INTEREST_REASONS = [
 
 const SALE_OFFER = "ติดต่อได้ - Sale เสนอขาย";
 
+// Mask the customer phone for the SMS button label: keep the first 3 + last 4
+// digits, hide the middle (0859099890 → 085XXX9890). No usable number → all X.
+function maskSmsPhone(raw?: string | null): string {
+  let d = (raw || "").replace(/\D/g, "");
+  if (d.startsWith("66") && d.length === 11) d = "0" + d.slice(2);
+  if (d.length < 7) return "XXXXXXXXXX";
+  return `${d.slice(0, 3)}XXX${d.slice(-4)}`;
+}
+
 interface Props {
   activityType: ActivityType;
   leadId: number;
@@ -100,11 +106,15 @@ interface Props {
    * saved activity gets activity_type="loan_followup" + a "[งวดที่ N]" prefix
    * in its title so the order step can show them grouped per row. */
   loanInstallmentIndex?: number;
+  /** Customer phone — SMS follow-up is only available when this is present
+   * (the SMS channel button is disabled otherwise). */
+  leadPhone?: string | null;
   onClose: () => void;
   onSaved: () => void;
 }
 
-export default function AddActivityModal({ activityType, leadId, canSendBack = false, loanInstallmentIndex, onClose, onSaved }: Props) {
+export default function AddActivityModal({ activityType, leadId, canSendBack = false, loanInstallmentIndex, leadPhone, onClose, onSaved }: Props) {
+  const hasPhone = !!leadPhone?.trim();
   const [note, setNote] = useState("");
   const [followUpDate, setFollowUpDate] = useState(() => {
     const d = new Date();
@@ -120,8 +130,42 @@ export default function AddActivityModal({ activityType, leadId, canSendBack = f
   const [sendBackToSeeker, setSendBackToSeeker] = useState(false);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // SMS — self-contained: typed + sent right here, independent of the form's
+  // "บันทึก". Sending logs an `sms_sent` activity on the server.
+  const [smsText, setSmsText] = useState("");
+  const [smsSending, setSmsSending] = useState(false);
+  const [smsError, setSmsError] = useState<string | null>(null);
+  // App-level toggle (settings.sms_enabled). null = still loading, false =
+  // disabled — hides the SMS channel button entirely. Default off.
+  const [smsEnabled, setSmsEnabled] = useState<boolean | null>(null);
+  useEffect(() => {
+    apiFetch("/api/settings").then((s: Record<string, string>) => {
+      setSmsEnabled(s.sms_enabled === "1");
+    }).catch(() => setSmsEnabled(false));
+  }, []);
 
   const showUndecided = outcome === SALE_OFFER;
+
+  const handleSendSms = async () => {
+    if (!smsText.trim()) return;
+    setSmsSending(true);
+    setSmsError(null);
+    try {
+      await apiFetch(`/api/sms/send`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        // outcome (a "ติดต่อไม่ได้ - …" reason) is optional — when set it rides
+        // along so the logged activity shows why the SMS follow-up happened.
+        body: JSON.stringify({ lead_id: leadId, message: smsText.trim(), outcome: outcome || null }),
+      });
+      onSaved(); // refresh the timeline so the logged SMS shows up
+      onClose(); // send is the primary action — close like the main save does
+    } catch (err) {
+      setSmsError(err instanceof Error ? err.message : "ส่ง SMS ไม่สำเร็จ");
+    } finally {
+      setSmsSending(false);
+    }
+  };
 
   const handleSubmit = async () => {
     setSaving(true);
@@ -241,6 +285,14 @@ export default function AddActivityModal({ activityType, leadId, canSendBack = f
   // inline below the outcome row when "เสนอขาย" is selected.
   const canSubmit = !saving && !!followUpMethod && !!followUpDate && !!outcome;
 
+  // SMS is a fallback when the customer can't be reached, so its outcome picker
+  // only offers the "ติดต่อไม่ได้" group (+ "อื่นๆ") — the "ติดต่อได้" rows are
+  // dropped. Selecting one is optional; it tags the logged SMS activity.
+  const isSms = followUpMethod === "sms";
+  const outcomeRows: OutcomeRow[] = isSms
+    ? OUTCOMES.filter((o) => "group" in o || o.tone !== "ok")
+    : OUTCOMES;
+
   const dotClass = (tone: "ok" | "fail" | "neutral", selected: boolean) => {
     const base = "w-2 h-2 rounded-full flex-shrink-0";
     if (selected) {
@@ -258,9 +310,7 @@ export default function AddActivityModal({ activityType, leadId, canSendBack = f
       title={
         <div className="flex items-center gap-2">
           <span className="w-7 h-7 rounded-full bg-amber-100 text-amber-600 flex items-center justify-center">
-            <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-              <path strokeLinecap="round" strokeLinejoin="round" d="M12 6v6h4.5m4.5 0a9 9 0 11-18 0 9 9 0 0118 0z" />
-            </svg>
+            <ClockIcon className="w-4 h-4" strokeWidth={2} />
           </span>
           <span>บันทึกการติดตาม</span>
         </div>
@@ -269,26 +319,45 @@ export default function AddActivityModal({ activityType, leadId, canSendBack = f
       size="2xl"
       footer={
         <div className="flex gap-2 max-w-2xl mx-auto">
-          <button
-            onClick={onClose}
-            className="flex-1 py-3 rounded-xl border border-gray-200 text-sm font-semibold text-gray-700 bg-white"
-          >
-            ยกเลิก
-          </button>
-          <button
-            onClick={handleSubmit}
-            disabled={!canSubmit}
-            className={`flex-1 py-3 rounded-xl font-bold text-sm text-white active:scale-[0.98] transition-all flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed ${
-              sendBackToSeeker ? "bg-amber-500 hover:bg-amber-600" : "bg-primary"
-            }`}
-          >
-            {saving ? (
-              <>
-                <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
-                <span>{sendBackToSeeker ? "กำลังส่งกลับ…" : "กำลังบันทึก…"}</span>
-              </>
-            ) : sendBackToSeeker ? "บันทึก + ส่งกลับ Seeker" : "บันทึก"}
-          </button>
+          {isSms ? (
+            // SMS mode: the only footer action is "ส่ง SMS" — it sends to the
+            // API + logs the activity, then closes (X in the header still cancels).
+            <button
+              onClick={handleSendSms}
+              disabled={smsSending || !smsText.trim()}
+              className="flex-1 py-3 rounded-xl bg-primary text-white text-sm font-bold active:scale-[0.98] transition-all flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              {smsSending ? (
+                <>
+                  <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                  <span>กำลังส่ง…</span>
+                </>
+              ) : "ส่ง SMS"}
+            </button>
+          ) : (
+            <>
+              <button
+                onClick={onClose}
+                className="flex-1 py-3 rounded-xl border border-gray-200 text-sm font-semibold text-gray-700 bg-white"
+              >
+                ยกเลิก
+              </button>
+              <button
+                onClick={handleSubmit}
+                disabled={!canSubmit}
+                className={`flex-1 py-3 rounded-xl font-bold text-sm text-white active:scale-[0.98] transition-all flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed ${
+                  sendBackToSeeker ? "bg-amber-500 hover:bg-amber-600" : "bg-primary"
+                }`}
+              >
+                {saving ? (
+                  <>
+                    <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                    <span>{sendBackToSeeker ? "กำลังส่งกลับ…" : "กำลังบันทึก…"}</span>
+                  </>
+                ) : sendBackToSeeker ? "บันทึก + ส่งกลับ Seeker" : "บันทึก"}
+              </button>
+            </>
+          )}
         </div>
       }
     >
@@ -308,14 +377,14 @@ export default function AddActivityModal({ activityType, leadId, canSendBack = f
           <div className="text-xs font-bold text-gray-400 uppercase tracking-wider mb-1.5">
             ช่องทางติดต่อ <span className="text-red-500">*</span>
           </div>
-          <div className="grid grid-cols-4 gap-1.5">
+          <div className="grid grid-cols-6 gap-1.5">
             {FOLLOW_UP_METHODS.map(m => (
               <button
                 key={m.value}
                 type="button"
                 onClick={() => setFollowUpMethod(m.value)}
                 style={{ minHeight: 0 }}
-                className={`py-2 rounded-lg text-sm font-semibold border transition-all flex items-center justify-center gap-1.5 ${
+                className={`py-2 rounded-lg text-sm font-semibold border transition-all flex items-center justify-center gap-1 ${
                   followUpMethod === m.value
                     ? "bg-active text-white border-active"
                     : "bg-white text-gray-600 border-gray-200 hover:border-gray-300"
@@ -325,19 +394,66 @@ export default function AddActivityModal({ activityType, leadId, canSendBack = f
                 {m.label}
               </button>
             ))}
+            {/* SMS spans 2 cols so the (masked) destination number fits on the
+                button. Disabled (greyed) when the lead has no phone.
+                Hidden entirely when settings.sms_enabled !== "1" (app-level
+                toggle in settings → ช่องทางติดต่อ). */}
+            {smsEnabled && (
+            <button
+              type="button"
+              disabled={!hasPhone}
+              onClick={() => setFollowUpMethod("sms")}
+              title={hasPhone ? undefined : "ลูกค้าไม่มีเบอร์โทร"}
+              style={{ minHeight: 0 }}
+              className={`col-span-2 py-2 rounded-lg text-sm font-semibold border transition-all flex items-center justify-center gap-1 min-w-0 ${
+                !hasPhone
+                  ? "bg-gray-100 text-gray-300 border-gray-200 cursor-not-allowed"
+                  : followUpMethod === "sms"
+                    ? "bg-active text-white border-active"
+                    : "bg-white text-gray-600 border-gray-200 hover:border-gray-300"
+              }`}
+            >
+              <svg className="w-4 h-4 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                <path strokeLinecap="round" strokeLinejoin="round" d="M8 10.5h8M8 14h5m-9 5.5l3-2h7.5A2.5 2.5 0 0019 15V8a2.5 2.5 0 00-2.5-2.5h-9A2.5 2.5 0 005 8v11.5z" />
+              </svg>
+              <span className="truncate">SMS - {maskSmsPhone(leadPhone)}</span>
+            </button>
+            )}
           </div>
+
+          {/* SMS composer — appears inline when the SMS channel is picked.
+              Sends immediately via /api/sms/send and logs an activity. */}
+          {smsEnabled && followUpMethod === "sms" && (
+            <div className="mt-2 rounded-lg border border-gray-200 bg-gray-50 p-3 space-y-2">
+              <textarea
+                value={smsText}
+                onChange={(e) => setSmsText(e.target.value)}
+                placeholder="พิมพ์ข้อความ SMS ที่จะส่งให้ลูกค้า..."
+                rows={3}
+                className="w-full px-3 py-2 rounded-lg border border-gray-200 bg-white focus:outline-none focus:border-primary text-sm resize-none"
+              />
+              <div className="text-xxs text-gray-400">{smsText.length} ตัวอักษร</div>
+              {smsError && (
+                <div className="rounded-lg bg-red-50 border border-red-200 px-3 py-2 text-xs text-red-700">{smsError}</div>
+              )}
+            </div>
+          )}
         </section>
 
-        {/* 3. ผลการติดต่อ — flat radio rows, dot color encodes tone */}
+        {/* 3. ผลการติดต่อ — flat radio rows, dot color encodes tone. For SMS the
+            "ติดต่อได้" header is hidden and only the "ติดต่อไม่ได้" group shows
+            (see outcomeRows); picking one is optional and tags the SMS log. */}
         <section>
-          <div className="text-xs font-bold text-gray-400 uppercase tracking-wider mb-1.5 flex items-center gap-1.5">
-            <svg className="w-3.5 h-3.5 text-green-600" fill="currentColor" viewBox="0 0 20 20">
-              <path d="M2 3a1 1 0 011-1h2.153a1 1 0 01.986.836l.74 4.435a1 1 0 01-.54 1.06l-1.548.773a11.037 11.037 0 006.105 6.105l.774-1.548a1 1 0 011.059-.54l4.435.74a1 1 0 01.836.986V17a1 1 0 01-1 1h-2C7.82 18 2 12.18 2 5V3z" />
-            </svg>
-            <span>ติดต่อได้ <span className="text-red-500">*</span></span>
-          </div>
+          {!isSms && (
+            <div className="text-xs font-bold text-gray-400 uppercase tracking-wider mb-1.5 flex items-center gap-1.5">
+              <svg className="w-3.5 h-3.5 text-green-600" fill="currentColor" viewBox="0 0 20 20">
+                <path d="M2 3a1 1 0 011-1h2.153a1 1 0 01.986.836l.74 4.435a1 1 0 01-.54 1.06l-1.548.773a11.037 11.037 0 006.105 6.105l.774-1.548a1 1 0 011.059-.54l4.435.74a1 1 0 01.836.986V17a1 1 0 01-1 1h-2C7.82 18 2 12.18 2 5V3z" />
+              </svg>
+              <span>ติดต่อได้ <span className="text-red-500">*</span></span>
+            </div>
+          )}
           <div className="space-y-1.5">
-            {OUTCOMES.map((o, i) => {
+            {outcomeRows.map((o, i) => {
               if ("group" in o) {
                 return (
                   <div
@@ -373,9 +489,7 @@ export default function AddActivityModal({ activityType, leadId, canSendBack = f
                     <span className={dotClass(o.tone, selected)} />
                     <span className="flex-1">{o.label}</span>
                     {selected && (
-                      <svg className="w-4 h-4 text-gray-700" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={3}>
-                        <path strokeLinecap="round" strokeLinejoin="round" d="M4.5 12.75l6 6 9-13.5" />
-                      </svg>
+                      <CheckIcon className="w-4 h-4 text-gray-700" strokeWidth={3} />
                     )}
                   </button>
                   {o.value === SALE_OFFER && showUndecided && (

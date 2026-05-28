@@ -1,4 +1,5 @@
 "use client";
+import { BoltIcon, CheckIcon, ChevronLeftIcon, ChevronRightIcon, PlusIcon, XIcon } from "@/components/ui/icons";
 
 import { useEffect, useRef, useState } from "react";
 import { apiFetch, getUserIdHeader } from "@/lib/api";
@@ -34,19 +35,6 @@ import {
   PHASE_LABEL as PHASE_MAP,
   labelFor as otherLabel,
 } from "@/lib/constants/survey-options";
-const AC_BTU_SIZES = [9000, 12000, 18000, 24000];
-
-function parseAcUnits(s: string | null): Record<number, number> {
-  const map: Record<number, number> = {};
-  AC_BTU_SIZES.forEach(b => { map[b] = 0; });
-  if (!s) return map;
-  s.split(",").forEach(pair => {
-    const [bStr, cStr] = pair.split(":");
-    const btu = parseInt(bStr); const count = parseInt(cStr);
-    if (!isNaN(btu) && !isNaN(count) && AC_BTU_SIZES.includes(btu)) map[btu] = count;
-  });
-  return map;
-}
 
 interface Props extends StepCommonProps {
   onAddActivity: (type: string) => void;
@@ -816,9 +804,7 @@ export default function SurveyStep({ lead, state, refresh, packages, expanded, o
                       style={{ minHeight: 0 }}
                     >
                       {locEditing ? (
-                        <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                          <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
-                        </svg>
+                        <XIcon className="w-4 h-4" strokeWidth={2} />
                       ) : (
                         <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
                           <path strokeLinecap="round" strokeLinejoin="round" d="M16.862 4.487l1.687-1.688a1.875 1.875 0 112.652 2.652L10.582 16.07a4.5 4.5 0 01-1.897 1.13L6 18l.8-2.685a4.5 4.5 0 011.13-1.897l8.932-8.931z" />
@@ -1021,7 +1007,7 @@ export default function SurveyStep({ lead, state, refresh, packages, expanded, o
                             {p.is_upgrade && !p.has_panel && <span>เพิ่มแบตอย่างเดียว</span>}
                             <span className="inline-flex items-center gap-0.5 ml-1">
                               <svg className={`w-3.5 h-3.5 ${p.has_panel ? "text-amber-500" : "text-gray-300"}`} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M12 3v2.25m6.364.386l-1.591 1.591M21 12h-2.25m-.386 6.364l-1.591-1.591M12 18.75V21m-4.773-4.227l-1.591 1.591M5.25 12H3m4.227-4.773L5.636 5.636M15.75 12a3.75 3.75 0 11-7.5 0 3.75 3.75 0 017.5 0z" /></svg>
-                              <svg className={`w-3.5 h-3.5 ${p.has_inverter ? "text-violet-500" : "text-gray-300"}`} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M3.75 13.5l10.5-11.25L12 10.5h8.25L9.75 21.75 12 13.5H3.75z" /></svg>
+                              <BoltIcon className={`w-3.5 h-3.5 ${p.has_inverter ? "text-violet-500" : "text-gray-300"}`} strokeWidth={2} />
                               <svg className={`w-3.5 h-3.5 ${p.has_battery ? "text-green-500 fill-green-500" : "text-gray-300"}`} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M21 10.5h.375c.621 0 1.125.504 1.125 1.125v2.25c0 .621-.504 1.125-1.125 1.125H21M3.75 18h15A2.25 2.25 0 0021 15.75v-6a2.25 2.25 0 00-2.25-2.25h-15A2.25 2.25 0 001.5 9.75v6A2.25 2.25 0 003.75 18z" /></svg>
                             </span>
                           </div>
@@ -1159,11 +1145,11 @@ export default function SurveyStep({ lead, state, refresh, packages, expanded, o
           {/* Confirm — สำรวจเสร็จสิ้น (paired with ย้อนกลับ in nav row below) */}
           <div className="flex gap-2 mt-3 md:justify-between">
             <button type="button" onClick={() => { setSubStep(subStep - 1); setTimeout(() => document.querySelector("[data-step-active]")?.scrollIntoView({ behavior: "smooth", block: "start" }), 100); }} className="flex-1 md:flex-none md:w-64 h-11 rounded-lg text-sm font-semibold border border-gray-200 text-gray-600 hover:bg-gray-50 transition-colors flex items-center justify-center gap-1">
-              <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M15.75 19.5L8.25 12l7.5-7.5" /></svg>
+              <ChevronLeftIcon className="w-4 h-4" strokeWidth={2} />
               ย้อนกลับ
             </button>
             <button onClick={markDone} disabled={saving} className="flex-1 md:flex-none md:w-64 h-11 rounded-lg text-sm font-semibold text-white bg-gradient-to-r from-primary to-primary-dark hover:brightness-110 disabled:opacity-50 transition-colors flex items-center justify-center gap-2">
-              <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}><path strokeLinecap="round" strokeLinejoin="round" d="M4.5 12.75l6 6 9-13.5" /></svg>
+              <CheckIcon className="w-4 h-4" strokeWidth={2.5} />
               {saving ? "กำลังบันทึก…" : "สำรวจเสร็จสิ้น"}
             </button>
           </div>
@@ -1253,7 +1239,7 @@ export default function SurveyStep({ lead, state, refresh, packages, expanded, o
                     {photoUploading ? (
                       <div className="w-6 h-6 border-2 border-current/30 border-t-current rounded-full animate-spin" />
                     ) : (
-                      <svg className="w-8 h-8" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}><path strokeLinecap="round" strokeLinejoin="round" d="M12 4.5v15m7.5-7.5h-15" /></svg>
+                      <PlusIcon className="w-8 h-8" strokeWidth={1.5} />
                     )}
                   </label>
                 </div>
@@ -1318,13 +1304,13 @@ export default function SurveyStep({ lead, state, refresh, packages, expanded, o
           <div className="flex gap-2 mt-3 md:justify-between">
             {subStep > 0 ? (
               <button type="button" onClick={() => { setNextError(null); setSubStep(subStep - 1); setTimeout(() => document.querySelector("[data-step-active]")?.scrollIntoView({ behavior: "smooth", block: "start" }), 100); }} className="flex-1 md:flex-none md:w-64 h-11 rounded-lg text-sm font-semibold border border-gray-200 text-gray-600 hover:bg-gray-50 transition-colors flex items-center justify-center gap-1">
-                <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M15.75 19.5L8.25 12l7.5-7.5" /></svg>
+                <ChevronLeftIcon className="w-4 h-4" strokeWidth={2} />
                 ย้อนกลับ
               </button>
             ) : <span className="hidden md:block md:w-64" />}
             <button type="button" onClick={handleNext} className="flex-1 md:flex-none md:w-64 h-11 rounded-lg text-sm font-semibold text-white bg-active hover:brightness-110 transition-colors flex items-center justify-center gap-1">
               ถัดไป
-              <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M8.25 4.5l7.5 7.5-7.5 7.5" /></svg>
+              <ChevronRightIcon className="w-4 h-4" strokeWidth={2} />
             </button>
           </div>
         );

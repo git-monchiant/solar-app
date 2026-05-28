@@ -1,11 +1,10 @@
 "use client";
+import { PlusIcon } from "@/components/ui/icons";
 
 import { useEffect, useState } from "react";
 import { apiFetch } from "@/lib/api";
-import CustomerInfoForm from "@/components/customer/CustomerInfoForm";
 import ErrorPopup from "@/components/ui/ErrorPopup";
 import LineIcon from "@/components/icons/LineIcon";
-import { formatTHB as formatPrice } from "@/lib/utils/formatters";
 import { CHANNEL_BY_CODE, type ChannelCode } from "@/lib/constants/channels";
 import { getSourceStyle } from "@/lib/source-tag";
 import ChannelPickerModal from "@/components/shared/ChannelPickerModal";
@@ -53,12 +52,6 @@ export interface CustomerWizardValues {
 }
 
 interface Project { id: number; name: string; district: string | null; province: string | null; }
-interface Package {
-  id: number; name: string; kwp: number; phase: number; has_battery: boolean;
-  battery_kwh: number; battery_brand: string;
-  inverter_kw: number; inverter_brand: string; price: number; is_upgrade: boolean;
-  has_panel: boolean; has_inverter: boolean;
-}
 
 export interface LineProfileInfo {
   display_name: string;
@@ -90,24 +83,6 @@ const CUSTOMER_TYPES = [
   { value: "new", label: "New" },
   { value: "upgrade", label: "Upgrade" },
 ];
-const PAYMENT_TYPES = [
-  { value: "cash", label: "เงินสด" },
-  { value: "home_equity", label: "สินเชื่อบ้าน" },
-  { value: "finance", label: "ไฟแนนซ์" },
-];
-const BATTERY_OPTIONS = [
-  { value: "no", label: "ไม่ต้องการ" },
-  { value: "yes", label: "ต้องการ" },
-  { value: "maybe", label: "ยังไม่แน่ใจ" },
-  { value: "upgrade", label: "+ Upgrade" },
-];
-const UTILITY_PROVIDERS = [
-  { value: "MEA", label: "MEA (นครหลวง)" },
-  { value: "PEA", label: "PEA (ภูมิภาค)" },
-];
-
-const SUB_STEPS = ["ลูกค้า", "แพ็คเกจ", "จดทะเบียน", "ไฟฟ้า"];
-
 const chipBtn = (selected: boolean) =>
   `h-9 px-3 rounded-lg text-xxs font-semibold border transition-all cursor-pointer ${
     selected
@@ -116,42 +91,8 @@ const chipBtn = (selected: boolean) =>
   }`;
 
 const fieldCard = "rounded-lg bg-white border border-gray-200 p-3";
-const fieldLabel = "text-sm font-semibold tracking-wider uppercase text-gray-400 block mb-1.5";
 const fieldInput = "w-full h-11 px-3 rounded-lg border border-gray-200 text-base focus:outline-none focus:border-primary transition-colors";
 const fieldTextarea = "w-full px-3 py-2.5 rounded-lg border border-gray-200 text-base focus:outline-none focus:border-primary transition-colors resize-none";
-
-// Option lists used by the comprehensive create form.
-const PEAK_USAGE_OPTIONS = [
-  { value: "day", label: "กลางวัน" },
-  { value: "night", label: "กลางคืน" },
-  { value: "both", label: "ทั้งสองช่วง" },
-];
-const ELECTRICAL_PHASE_OPTIONS = [
-  { value: "1_phase", label: "1 เฟส" },
-  { value: "3_phase", label: "3 เฟส" },
-];
-const BATTERY_WANT_OPTIONS = [
-  { value: "no", label: "ไม่ต้องการ" },
-  { value: "yes", label: "ต้องการ" },
-  { value: "maybe", label: "ยังไม่แน่ใจ" },
-];
-const ROOF_SHAPE_OPTIONS = [
-  { value: "gable", label: "หน้าจั่ว" },
-  { value: "hip", label: "ปั้นหยา" },
-  { value: "shed", label: "เพิงหมาแหงน" },
-  { value: "flat", label: "ทรงแบน" },
-];
-const RESIDENCE_TYPE_OPTIONS = [
-  { value: "detached", label: "บ้านเดี่ยว" },
-  { value: "townhome", label: "ทาวน์โฮม" },
-  { value: "townhouse", label: "ทาวน์เฮาส์" },
-  { value: "home_office", label: "โฮมออฟฟิศ" },
-  { value: "shophouse", label: "อาคารพาณิชย์" },
-];
-const APPLIANCE_OPTIONS = [
-  { value: "water_heater", label: "เครื่องทำน้ำอุ่น" },
-  { value: "ev", label: "ที่ชาร์จ EV" },
-];
 
 // Module-level so React keeps the same component identity across renders —
 // declaring these inside CreateProfileForm caused inputs to remount on every
@@ -202,13 +143,6 @@ function CreateProfileForm({
   const projectSuggestions = projectFocused && projectText.length >= 1
     ? projects.filter(p => p.name.toLowerCase().includes(projectText.toLowerCase())).slice(0, 8)
     : [];
-
-  const toggleAppliance = (v: string) => {
-    const set = new Set((values.pre_appliances || "").split(",").filter(Boolean));
-    if (set.has(v)) set.delete(v); else set.add(v);
-    onChange({ pre_appliances: Array.from(set).join(",") || "" });
-  };
-  const hasAppliance = (v: string) => (values.pre_appliances || "").split(",").includes(v);
 
   return (
     <div className="lg:max-w-4xl mx-auto max-w-xl space-y-3">
@@ -263,7 +197,7 @@ function CreateProfileForm({
                   className="w-full h-11 px-3 rounded-lg border border-dashed border-gray-300 bg-white flex items-center justify-center gap-2 text-sm font-semibold text-gray-500 hover:border-active hover:text-active transition-colors"
                   style={{ minHeight: 0 }}
                 >
-                  <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M12 4.5v15m7.5-7.5h-15" /></svg>
+                  <PlusIcon className="w-4 h-4" strokeWidth={2} />
                   เชื่อม LINE user
                 </button>
               ) : null}

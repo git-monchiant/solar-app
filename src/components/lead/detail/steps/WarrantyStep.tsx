@@ -1,4 +1,5 @@
 "use client";
+import { CameraIcon, CheckIcon, ChevronLeftIcon, ChevronRightIcon, DocumentIcon, LineIcon } from "@/components/ui/icons";
 
 import { useEffect, useState } from "react";
 import { apiFetch, getUserIdHeader } from "@/lib/api";
@@ -104,7 +105,6 @@ export default function WarrantyStep({ lead, state, refresh, packages, expanded,
   const [sn, setSn] = useState(lead.warranty_inverter_sn || "");
   const [docNo, setDocNo] = useState(lead.warranty_doc_no || `SSE${new Date().getFullYear().toString().slice(-2)}${String(lead.id).padStart(4, "0")}`);
   const [startDate, setStartDate] = useState(defaultStart);
-  const [saving, setSaving] = useState(false);
   const [issuing, setIssuing] = useState(false);
   const [inverterCertUrl, setInverterCertUrl] = useState<string | null>(lead.warranty_inverter_cert_url);
   const [panelCertUrl, setPanelCertUrl] = useState<string | null>(lead.warranty_panel_cert_url);
@@ -447,11 +447,6 @@ export default function WarrantyStep({ lead, state, refresh, packages, expanded,
   };
 
   const endDate = addYears(startDate, 2);
-  // Use the package confirmed at Survey (lead.interested_package_id is overwritten
-  // by the survey team's final pick). Pre-survey deposit pick (pre_package_id) may
-  // differ if the team upgraded/downgraded after the site visit.
-  const pkg = packages.find(p => p.id === lead.interested_package_id);
-  const hasBattery = !!pkg?.has_battery;
 
   // Auto-save SN / doc no / start date / equipment snapshot
   useEffect(() => {
@@ -480,22 +475,6 @@ export default function WarrantyStep({ lead, state, refresh, packages, expanded,
     return () => clearTimeout(t);
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [sn, docNo, startDate, sysKwp, panelCount, panelWatt, panelBrand, invBrand, invKw, phase, batteries, panelSerials]);
-
-  const saveDraft = async () => {
-    setSaving(true);
-    try {
-      await apiFetch(`/api/leads/${lead.id}`, {
-        method: "PATCH", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          warranty_inverter_sn: sn || null,
-          warranty_doc_no: docNo || null,
-          warranty_start_date: startDate || null,
-          warranty_end_date: endDate,
-        }),
-      });
-      await refresh();
-    } finally { setSaving(false); }
-  };
 
   const issueWarranty = async () => {
     const missing: string[] = [];
@@ -573,9 +552,7 @@ export default function WarrantyStep({ lead, state, refresh, packages, expanded,
               onClick={openWarranty}
               className="mr-4 inline-flex items-center gap-1 text-xs font-semibold text-primary hover:text-primary-dark shrink-0"
             >
-              <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                <path strokeLinecap="round" strokeLinejoin="round" d="M19.5 14.25v-2.625a3.375 3.375 0 00-3.375-3.375h-1.5A1.125 1.125 0 0113.5 7.125v-1.5a3.375 3.375 0 00-3.375-3.375H8.25m2.25 0H5.625c-.621 0-1.125.504-1.125 1.125v17.25c0 .621.504 1.125 1.125 1.125h12.75c.621 0 1.125-.504 1.125-1.125V11.25a9 9 0 00-9-9z" />
-              </svg>
+              <DocumentIcon className="w-4 h-4" strokeWidth={2} />
               ใบรับประกัน
             </button>
           )}
@@ -663,7 +640,7 @@ export default function WarrantyStep({ lead, state, refresh, packages, expanded,
                 {snScanning ? (
                   <div className="w-5 h-5 border-2 border-gray-300 border-t-primary rounded-full animate-spin" />
                 ) : (
-                  <svg className="w-7 h-7" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M3 9a2 2 0 012-2h.93a2 2 0 001.664-.89l.812-1.22A2 2 0 0110.07 4h3.86a2 2 0 011.664.89l.812 1.22A2 2 0 0018.07 7H19a2 2 0 012 2v9a2 2 0 01-2 2H5a2 2 0 01-2-2V9z" /><path strokeLinecap="round" strokeLinejoin="round" d="M15 13a3 3 0 11-6 0 3 3 0 016 0z" /></svg>
+                  <CameraIcon className="w-7 h-7" strokeWidth={2} />
                 )}
               </label>
             </div>
@@ -696,7 +673,7 @@ export default function WarrantyStep({ lead, state, refresh, packages, expanded,
                 </>
               ) : (
                 <>
-                  <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M3 9a2 2 0 012-2h.93a2 2 0 001.664-.89l.812-1.22A2 2 0 0110.07 4h3.86a2 2 0 011.664.89l.812 1.22A2 2 0 0018.07 7H19a2 2 0 012 2v9a2 2 0 01-2 2H5a2 2 0 01-2-2V9z" /><path strokeLinecap="round" strokeLinejoin="round" d="M15 13a3 3 0 11-6 0 3 3 0 016 0z" /></svg>
+                  <CameraIcon className="w-5 h-5" strokeWidth={2} />
                   ถ่าย / เลือกรูป
                 </>
               )}
@@ -761,7 +738,7 @@ export default function WarrantyStep({ lead, state, refresh, packages, expanded,
                       title={verified ? "ยกเลิกยืนยัน (AI จะ scan ทับได้)" : "ยืนยันถูกแล้ว (lock — AI จะไม่ทับ)"}
                       aria-pressed={verified}
                     >
-                      <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={3}><path strokeLinecap="round" strokeLinejoin="round" d="M4.5 12.75l6 6 9-13.5" /></svg>
+                      <CheckIcon className="w-4 h-4" strokeWidth={3} />
                     </button>
                   </div>
                 </div>
@@ -798,7 +775,7 @@ export default function WarrantyStep({ lead, state, refresh, packages, expanded,
                 </>
               ) : (
                 <>
-                  <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M3 9a2 2 0 012-2h.93a2 2 0 001.664-.89l.812-1.22A2 2 0 0110.07 4h3.86a2 2 0 011.664.89l.812 1.22A2 2 0 0018.07 7H19a2 2 0 012 2v9a2 2 0 01-2 2H5a2 2 0 01-2-2V9z" /><path strokeLinecap="round" strokeLinejoin="round" d="M15 13a3 3 0 11-6 0 3 3 0 016 0z" /></svg>
+                  <CameraIcon className="w-5 h-5" strokeWidth={2} />
                   ถ่าย / เลือกรูป
                 </>
               )}
@@ -853,7 +830,7 @@ export default function WarrantyStep({ lead, state, refresh, packages, expanded,
                       title={verified ? "ยกเลิกยืนยัน (AI จะ scan ทับได้)" : "ยืนยันถูกแล้ว (lock — AI จะไม่ทับ)"}
                       aria-pressed={verified}
                     >
-                      <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={3}><path strokeLinecap="round" strokeLinejoin="round" d="M4.5 12.75l6 6 9-13.5" /></svg>
+                      <CheckIcon className="w-4 h-4" strokeWidth={3} />
                     </button>
                   </div>
                 );
@@ -927,14 +904,14 @@ export default function WarrantyStep({ lead, state, refresh, packages, expanded,
                 lineSent ? "bg-emerald-500 text-white" : !lead.line_id ? "bg-gray-200 text-gray-400 cursor-not-allowed" : "text-white bg-[#06C755] hover:brightness-110 shadow-[#06C755]/20"
               }`}
             >
-              <svg className="w-5 h-5" viewBox="0 0 24 24" fill="currentColor"><path d="M19.365 9.863c.349 0 .63.285.63.631 0 .345-.281.63-.63.63H17.61v1.125h1.755c.349 0 .63.283.63.63 0 .344-.281.629-.63.629h-2.386c-.345 0-.627-.285-.627-.629V8.108c0-.345.282-.63.63-.63h2.386c.346 0 .627.285.627.63 0 .349-.281.63-.63.63H17.61v1.125h1.755zm-3.855 3.016c0 .27-.174.51-.432.596-.064.021-.133.031-.199.031-.211 0-.391-.09-.51-.25l-2.443-3.317v2.94c0 .344-.279.629-.631.629-.346 0-.626-.285-.626-.629V8.108c0-.27.173-.51.43-.595.064-.022.134-.032.2-.032.211 0 .391.09.51.25l2.44 3.317V8.108c0-.345.282-.63.63-.63.345 0 .63.285.63.63v4.771zm-5.741 0c0 .344-.282.629-.631.629-.345 0-.627-.285-.627-.629V8.108c0-.345.282-.63.63-.63.346 0 .628.285.628.63v4.771zm-2.466.629H4.917c-.345 0-.63-.285-.63-.629V8.108c0-.345.285-.63.63-.63.348 0 .63.285.63.63v4.141h1.756c.348 0 .629.283.629.63 0 .344-.282.629-.629.629M24 10.314C24 4.943 18.615.572 12 .572S0 4.943 0 10.314c0 4.811 4.27 8.842 10.035 9.608.391.082.923.258 1.058.59.12.301.079.766.038 1.08l-.164 1.02c-.045.301-.24 1.186 1.049.645 1.291-.539 6.916-4.078 9.436-6.975C23.176 14.393 24 12.458 24 10.314" /></svg>
+              <LineIcon className="w-5 h-5" />
               {lineSending ? "กำลังส่ง..." : lineSent ? "✓ ส่งแล้ว" : !lead.line_id ? "ไม่มี LINE" : "ส่ง LINE"}
             </button>
           </div>
           <button type="button" onClick={issueWarranty} disabled={issuing || !effectiveSignatureUrl || !me?.id}
             className="w-full h-11 rounded-lg text-sm font-semibold text-white bg-gradient-to-r from-primary to-primary-dark hover:brightness-110 disabled:from-gray-300 disabled:to-gray-300 disabled:cursor-not-allowed transition-colors flex items-center justify-center gap-1">
             {issuing ? "กำลังออกเอกสาร..." : "ออกเอกสาร & ถัดไป"}
-            <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M8.25 4.5l7.5 7.5-7.5 7.5" /></svg>
+            <ChevronRightIcon className="w-4 h-4" strokeWidth={2} />
           </button>
 
           {lineConfirm && (
@@ -976,20 +953,20 @@ export default function WarrantyStep({ lead, state, refresh, packages, expanded,
         <div className="flex gap-2 mt-3 md:justify-between">
           {subStep > 0 ? (
             <button type="button" onClick={() => { setSubStep(subStep - 1); scrollToStep(); }} className="flex-1 md:flex-none md:w-64 h-11 rounded-lg text-sm font-semibold border border-gray-200 text-gray-600 hover:bg-gray-50 transition-colors flex items-center justify-center gap-1">
-              <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M15.75 19.5L8.25 12l7.5-7.5" /></svg>
+              <ChevronLeftIcon className="w-4 h-4" strokeWidth={2} />
               ย้อนกลับ
             </button>
           ) : <span className="hidden md:block md:w-64" />}
           <button type="button" onClick={() => { setSubStep(subStep + 1); scrollToStep(); }} className="flex-1 md:flex-none md:w-64 h-11 rounded-lg text-sm font-semibold text-white bg-active hover:brightness-110 transition-colors flex items-center justify-center gap-1">
             ถัดไป
-            <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M8.25 4.5l7.5 7.5-7.5 7.5" /></svg>
+            <ChevronRightIcon className="w-4 h-4" strokeWidth={2} />
           </button>
         </div>
       )}
       {subStep === 4 && (
         <div className="flex mt-3 md:justify-start">
           <button type="button" onClick={() => { setSubStep(subStep - 1); scrollToStep(); }} className="flex-1 md:flex-none md:w-64 h-11 rounded-lg text-sm font-semibold border border-gray-200 text-gray-600 hover:bg-gray-50 transition-colors flex items-center justify-center gap-1">
-            <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M15.75 19.5L8.25 12l7.5-7.5" /></svg>
+            <ChevronLeftIcon className="w-4 h-4" strokeWidth={2} />
             ย้อนกลับ
           </button>
         </div>

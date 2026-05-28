@@ -1,4 +1,5 @@
 "use client";
+import { CheckIcon } from "@/components/ui/icons";
 
 import { useState } from "react";
 import { useParams } from "next/navigation";
@@ -43,7 +44,7 @@ export default function ReviewPage() {
       <div className="min-h-screen bg-gray-50 flex items-center justify-center p-4">
         <div className="bg-white rounded-2xl shadow-lg max-w-sm w-full p-8 text-center">
           <div className="w-20 h-20 mx-auto rounded-full bg-emerald-50 flex items-center justify-center mb-4">
-            <svg className="w-10 h-10 text-emerald-500" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M4.5 12.75l6 6 9-13.5" /></svg>
+            <CheckIcon className="w-10 h-10 text-emerald-500" strokeWidth={2} />
           </div>
           <div className="text-xl font-bold text-gray-900 mb-2">ขอบคุณครับ</div>
           <div className="text-sm text-gray-500 mb-4">ขอบคุณสำหรับการประเมิน<br />ความคิดเห็นของคุณมีค่ากับเรา</div>

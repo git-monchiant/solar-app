@@ -1,4 +1,5 @@
 "use client";
+import { CheckIcon, DocumentIcon } from "@/components/ui/icons";
 
 import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
@@ -15,7 +16,7 @@ const DOC_TYPES: { key: string; label: string; description: string; defaultPrefi
   { key: "receipt", label: "ใบเสร็จอย่างย่อ", description: "ใบรับเงินมัดจำ/งวด", defaultPrefix: "RC" },
 ];
 
-type Tab = "running_numbers" | "warranty_signer" | "gmail" | "customer_docs";
+type Tab = "running_numbers" | "warranty_signer" | "gmail" | "customer_docs" | "channels";
 
 export default function SettingsPage() {
   const router = useRouter();
@@ -54,6 +55,7 @@ export default function SettingsPage() {
             <TabBtn active={tab === "running_numbers"} onClick={() => setTab("running_numbers")} label="เลขเอกสาร" />
             <TabBtn active={tab === "warranty_signer"} onClick={() => setTab("warranty_signer")} label="ผู้ลงนามใบรับประกัน" />
             <TabBtn active={tab === "customer_docs"} onClick={() => setTab("customer_docs")} label="เอกสารลูกค้า" />
+            <TabBtn active={tab === "channels"} onClick={() => setTab("channels")} label="ช่องทางติดต่อ" />
             <TabBtn active={tab === "gmail"} onClick={() => setTab("gmail")} label="Gmail" />
           </div>
         </div>
@@ -61,6 +63,7 @@ export default function SettingsPage() {
         {tab === "running_numbers" && <RunningNumbersSection />}
         {tab === "warranty_signer" && <WarrantySignerSection />}
         {tab === "customer_docs" && <CustomerDocsSection />}
+        {tab === "channels" && <ChannelsSection />}
         {tab === "gmail" && <GmailSection />}
       </div>
     </div>
@@ -169,9 +172,7 @@ function ConnectedView({ status, busy, setBusy, onDisconnect }: {
       <div className="flex flex-col md:flex-row md:items-center gap-3">
         <div className="flex items-center gap-3 flex-1 min-w-0">
           <div className="w-10 h-10 rounded-full bg-emerald-50 text-emerald-600 flex items-center justify-center shrink-0">
-            <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
-              <path strokeLinecap="round" strokeLinejoin="round" d="M4.5 12.75l6 6 9-13.5" />
-            </svg>
+            <CheckIcon className="w-5 h-5" strokeWidth={2.5} />
           </div>
           <div className="flex-1 min-w-0">
             <div className="text-sm font-semibold text-gray-900 truncate">{status.email}</div>
@@ -411,6 +412,74 @@ function WarrantySignerSection() {
   );
 }
 
+// Feature toggle for the SMS follow-up channel. Default OFF — when sms_enabled
+// is missing or not "1", AddActivityModal hides the SMS button entirely and
+// /api/sms/send refuses to send. Lets ops turn the channel on/off without
+// touching code if the SMS gateway is down or out of budget.
+function ChannelsSection() {
+  const [enabled, setEnabled] = useState(false);
+  const [original, setOriginal] = useState(false);
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+
+  useEffect(() => {
+    apiFetch("/api/settings").then((s: Settings) => {
+      const v = s.sms_enabled === "1";
+      setEnabled(v);
+      setOriginal(v);
+    }).catch(console.error).finally(() => setLoading(false));
+  }, []);
+
+  const dirty = enabled !== original;
+  const save = async () => {
+    setSaving(true);
+    try {
+      await apiFetch("/api/settings", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ sms_enabled: enabled ? "1" : "0" }),
+      });
+      setOriginal(enabled);
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <section className="bg-white rounded-xl border border-gray-200 overflow-hidden">
+      <div className="px-5 py-4 border-b border-gray-100">
+        <h2 className="text-sm font-bold text-gray-900">ช่องทางติดต่อลูกค้า</h2>
+        <p className="text-xs text-gray-500 mt-1">เปิด/ปิดช่องทางการติดตามลูกค้าทั้งระบบ — ปิดแล้วปุ่มจะไม่ขึ้นในหน้า follow-up</p>
+      </div>
+      {loading ? (
+        <div className="p-5 text-sm text-gray-500">กำลังโหลด...</div>
+      ) : (
+        <div className="p-5 space-y-4">
+          <label className="flex items-start gap-3 cursor-pointer">
+            <input
+              type="checkbox"
+              checked={enabled}
+              onChange={(e) => setEnabled(e.target.checked)}
+              className="w-5 h-5 mt-0.5 accent-primary"
+            />
+            <div>
+              <div className="text-sm font-semibold text-gray-900">เปิดใช้งาน SMS</div>
+              <div className="text-xs text-gray-500 mt-0.5">ถ้าปิด: ปุ่ม SMS จะหายไปจากหน้า follow-up + API ส่งจะถูก block</div>
+            </div>
+          </label>
+          <div className="flex items-center gap-2">
+            <button type="button" onClick={save} disabled={saving || !dirty}
+              className="h-10 px-5 rounded-lg text-sm font-semibold text-white bg-primary hover:bg-primary-dark disabled:opacity-50 disabled:cursor-not-allowed transition-colors">
+              {saving ? "กำลังบันทึก..." : "บันทึก"}
+            </button>
+            {!dirty && <span className="text-xs text-gray-400">— ไม่มีการเปลี่ยนแปลง</span>}
+          </div>
+        </div>
+      )}
+    </section>
+  );
+}
+
 // PDF checklist ที่ลูกค้าต้องเตรียมก่อนขอขนานไฟ (กับ MEA/PEA). อัพโหลดที่นี่ครั้งเดียว
 // ใช้ได้ทุก lead — ส่ง URL เก็บไว้ที่ app_settings.customer_checklist_pdf_url.
 // step ไหนที่ download — รอ user บอก (จะใส่ลิงก์ลง step นั้นภายหลัง)
@@ -499,9 +568,7 @@ function CustomerDocsSection() {
           {url ? (
             <div className="flex items-center gap-3 p-3 rounded-lg border border-gray-200 bg-gray-50/50">
               <div className="w-10 h-10 rounded-md bg-red-50 text-red-600 flex items-center justify-center shrink-0">
-                <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                  <path strokeLinecap="round" strokeLinejoin="round" d="M19.5 14.25v-2.625a3.375 3.375 0 00-3.375-3.375h-1.5A1.125 1.125 0 0113.5 7.125v-1.5a3.375 3.375 0 00-3.375-3.375H8.25m2.25 0H5.625c-.621 0-1.125.504-1.125 1.125v17.25c0 .621.504 1.125 1.125 1.125h12.75c.621 0 1.125-.504 1.125-1.125V11.25a9 9 0 00-9-9z" />
-                </svg>
+                <DocumentIcon className="w-5 h-5" strokeWidth={2} />
               </div>
               <div className="flex-1 min-w-0">
                 <div className="text-sm font-semibold text-gray-900 truncate">{name || "checklist.pdf"}</div>

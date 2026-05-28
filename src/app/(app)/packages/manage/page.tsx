@@ -1,4 +1,5 @@
 "use client";
+import { XIcon } from "@/components/ui/icons";
 
 import { apiFetch } from "@/lib/api";
 import { useEffect, useState } from "react";
@@ -185,7 +186,7 @@ export default function ManagePackagesPage() {
             <div className="px-5 py-3 border-b border-gray-200 flex items-center justify-between">
               <h2 className="text-lg font-bold text-gray-900">{editing.id ? "แก้ไข Package" : "เพิ่ม Package ใหม่"}</h2>
               <button type="button" onClick={() => setEditing(null)} className="w-8 h-8 rounded-full hover:bg-gray-100 flex items-center justify-center">
-                <svg className="w-5 h-5 text-gray-500" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" /></svg>
+                <XIcon className="w-5 h-5 text-gray-500" strokeWidth={2} />
               </button>
             </div>
 

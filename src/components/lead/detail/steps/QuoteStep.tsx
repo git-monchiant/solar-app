@@ -1,4 +1,5 @@
 "use client";
+import { DocumentIcon } from "@/components/ui/icons";
 
 import { useEffect, useState } from "react";
 import { apiFetch } from "@/lib/api";
@@ -201,7 +202,7 @@ export default function QuoteStep({ lead, state, refresh, expanded, onToggle }: 
                       </a>
                     ) : (
                       <a href={opt.url} target="_blank" rel="noreferrer" className="flex items-center gap-2 px-2 py-1.5 rounded bg-gray-50 border border-gray-200 hover:bg-gray-100 transition-colors">
-                        <svg className="w-4 h-4 text-gray-400 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M19.5 14.25v-2.625a3.375 3.375 0 00-3.375-3.375h-1.5A1.125 1.125 0 0113.5 7.125v-1.5a3.375 3.375 0 00-3.375-3.375H8.25m2.25 0H5.625c-.621 0-1.125.504-1.125 1.125v17.25c0 .621.504 1.125 1.125 1.125h12.75c.621 0 1.125-.504 1.125-1.125V11.25a9 9 0 00-9-9z" /></svg>
+                        <DocumentIcon className="w-4 h-4 text-gray-400 shrink-0" strokeWidth={2} />
                         <span className="text-xs text-primary font-semibold truncate">{fileName}</span>
                       </a>
                     )}
@@ -263,7 +264,7 @@ export default function QuoteStep({ lead, state, refresh, expanded, onToggle }: 
                 ) : (
                   <div className="flex items-center justify-between gap-2 px-3 py-2 rounded-md border border-gray-200 bg-white">
                     <div className="flex items-center gap-2 min-w-0">
-                      <svg className="w-4 h-4 text-primary shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M19.5 14.25v-2.625a3.375 3.375 0 00-3.375-3.375h-1.5A1.125 1.125 0 0113.5 7.125v-1.5a3.375 3.375 0 00-3.375-3.375H8.25m2.25 0H5.625c-.621 0-1.125.504-1.125 1.125v17.25c0 .621.504 1.125 1.125 1.125h12.75c.621 0 1.125-.504 1.125-1.125V11.25a9 9 0 00-9-9z" /></svg>
+                      <DocumentIcon className="w-4 h-4 text-primary shrink-0" strokeWidth={2} />
                       <span className="truncate text-xs text-gray-700">{filename}</span>
                     </div>
                     <button type="button" onClick={() => updateSlot(i, { file: null, existingUrl: "" })} className="text-red-400 hover:text-red-600 shrink-0 text-base leading-none" style={{ minHeight: 0 }}>✕</button>

@@ -5,7 +5,7 @@ import Link from "next/link";
 import Header from "@/components/layout/Header";
 import FallbackImage from "@/components/ui/FallbackImage";
 import ImageLightbox, { type LightboxImage } from "@/components/ui/ImageLightbox";
-import { formatTHB, formatThaiDate as fmtDate } from "@/lib/utils/formatters";
+import { formatTHB } from "@/lib/utils/formatters";
 
 interface Installment {
   id: number;

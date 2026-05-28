@@ -1,4 +1,5 @@
 "use client";
+import { XIcon } from "@/components/ui/icons";
 
 import { useState } from "react";
 import ModalBase from "@/components/ui/ModalBase";
@@ -213,9 +214,7 @@ export default function LostModal({ leadId, onClose, onSaved }: Props) {
       title={
         <div className="flex items-center gap-2">
           <span className="w-7 h-7 rounded-full bg-red-100 text-red-600 flex items-center justify-center">
-            <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
-              <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
-            </svg>
+            <XIcon className="w-4 h-4" strokeWidth={2.5} />
           </span>
           <span className="text-red-600">ปิดงาน — ยกเลิกลูกค้า</span>
         </div>
@@ -239,7 +238,7 @@ export default function LostModal({ leadId, onClose, onSaved }: Props) {
     >
       <div className="space-y-4">
         <p className="text-xs text-gray-500 -mt-1">
-          เลือกเหตุผลที่ตรงที่สุด — งานจะย้ายไปแท็บ <span className="font-semibold text-gray-700">"ยกเลิกและส่งกลับ"</span> ทันที
+          เลือกเหตุผลที่ตรงที่สุด — งานจะย้ายไปแท็บ <span className="font-semibold text-gray-700">&quot;ยกเลิกและส่งกลับ&quot;</span> ทันที
         </p>
 
         {/* Group cards. Mobile 1 col → Tablet 2 col → Desktop 4 col side-by-side
