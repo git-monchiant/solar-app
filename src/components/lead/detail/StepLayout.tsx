@@ -22,6 +22,10 @@ interface StepLayoutProps {
   renderDone?: () => ReactNode;
   /** Active-state content. Not needed when state is "done" (uses renderDone). */
   children?: ReactNode;
+  /** Always-mounted layer (e.g. a portal'd file-preview modal). Rendered in
+   * both done and active states — unlike children, which only render when
+   * active. Put modals here so links inside renderDone() can open them too. */
+  overlay?: ReactNode;
 }
 
 function scrollToActive() {
@@ -42,28 +46,32 @@ export default function StepLayout({
   doneHeader,
   renderDone,
   children,
+  overlay,
 }: StepLayoutProps) {
   const multi = (subSteps?.length ?? 0) > 1;
 
   if (state === "done") {
     return (
-      <div className="text-sm">
-        <div onClick={() => onToggle?.()} className="flex items-center gap-2 py-1 cursor-pointer">
-          <div className="flex-1 min-w-0 flex items-center gap-2">{doneHeader}</div>
-          <svg
-            className={`w-4 h-4 text-gray-400 transition-transform shrink-0 ${expanded ? "rotate-180" : ""}`}
-            fill="none"
-            viewBox="0 0 24 24"
-            stroke="currentColor"
-            strokeWidth={2.5}
-          >
-            <path strokeLinecap="round" strokeLinejoin="round" d="M19.5 8.25l-7.5 7.5-7.5-7.5" />
-          </svg>
+      <>
+        <div className="text-sm">
+          <div onClick={() => onToggle?.()} className="flex items-center gap-2 py-1 cursor-pointer">
+            <div className="flex-1 min-w-0 flex items-center gap-2">{doneHeader}</div>
+            <svg
+              className={`w-4 h-4 text-gray-400 transition-transform shrink-0 ${expanded ? "rotate-180" : ""}`}
+              fill="none"
+              viewBox="0 0 24 24"
+              stroke="currentColor"
+              strokeWidth={2.5}
+            >
+              <path strokeLinecap="round" strokeLinejoin="round" d="M19.5 8.25l-7.5 7.5-7.5-7.5" />
+            </svg>
+          </div>
+          {expanded && renderDone && (
+            <div className="space-y-3 mt-3 pt-3 border-t border-gray-100">{renderDone()}</div>
+          )}
         </div>
-        {expanded && renderDone && (
-          <div className="space-y-3 mt-3 pt-3 border-t border-gray-100">{renderDone()}</div>
-        )}
-      </div>
+        {overlay}
+      </>
     );
   }
 
@@ -105,6 +113,7 @@ export default function StepLayout({
         </div>
       )}
       {children}
+      {overlay}
     </div>
   );
 }

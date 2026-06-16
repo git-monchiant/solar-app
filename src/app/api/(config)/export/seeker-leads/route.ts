@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { requireAdmin } from "@/lib/auth";
 import { getDb } from "@/lib/db";
+import { normalizePhone } from "@/lib/utils/formatters";
 
 // GET /api/export/seeker-leads — admin-only CSV of leads originated from
 // prospects (source = 'seeker' OR linked from prospects.lead_id). Includes
@@ -55,7 +56,11 @@ export async function GET(req: NextRequest) {
   };
   const lines = [headers.join(",")];
   for (const row of r.recordset) {
-    lines.push(headers.map((h) => escape((row as Record<string, unknown>)[h])).join(","));
+    const r0 = row as Record<string, unknown>;
+    const normalized = normalizePhone(r0.phone as string | null);
+    if (!normalized) continue; // drop rows with missing / unparseable phones
+    r0.phone = normalized;
+    lines.push(headers.map((h) => escape(r0[h])).join(","));
   }
   // ﻿ BOM so Excel opens UTF-8 Thai correctly.
   const csv = "﻿" + lines.join("\n");

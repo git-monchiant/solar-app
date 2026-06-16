@@ -75,6 +75,18 @@ function ReceiptContent() {
   const showSurvey = params.get("show_survey") === "1";
   const docTitle = titleOverride || STAGE_TITLE[d.stage];
 
+  // PWA users opening this page from a shared link get stuck because there's
+  // no nav bar / back button. Floating X tries window.close() (works for
+  // tabs opened via window.open) then falls back to history.back / a /today
+  // redirect.
+  const handleClose = () => {
+    try { window.close(); } catch { /* ignore */ }
+    if (typeof window !== "undefined" && !window.closed) {
+      if (window.history.length > 1) window.history.back();
+      else window.location.replace("/today");
+    }
+  };
+
   return (
     <div className="bg-white min-h-screen print:min-h-0 receipt-root">
       <style>{`
@@ -87,6 +99,17 @@ function ReceiptContent() {
         .receipt-root .text-lg { font-size: 18px !important; line-height: 28px !important; }
         .receipt-root .text-xl { font-size: 20px !important; line-height: 28px !important; }
       `}</style>
+      {/* Floating close button — hidden in print so it doesn't end up in the
+          PDF. Sits above the receipt with safe-area padding for iOS notch. */}
+      <button
+        type="button"
+        onClick={handleClose}
+        aria-label="ปิด"
+        className="print:hidden fixed top-3 right-3 z-50 w-11 h-11 rounded-full bg-black/70 hover:bg-black text-white flex items-center justify-center text-xl shadow-lg"
+        style={{ top: "calc(env(safe-area-inset-top, 0px) + 0.75rem)" }}
+      >
+        ✕
+      </button>
       <div className="max-w-[210mm] mx-auto flex flex-col" id="receipt">
         <div className="bg-primary text-white px-8 py-4 text-center">
           <div className="font-bold text-xl tracking-wide">{CO.name}</div>

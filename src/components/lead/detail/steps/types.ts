@@ -127,6 +127,10 @@ export interface Lead {
   // JSON array of {pct: number, when: "before"|"after", due_date: string|null}.
   // Order is งวด 1, งวด 2, ... — last entry's pct = 100 - sum of earlier pcts.
   order_installments: string | null;
+  // Count of order_installment_N payments confirmed by accounting — derived
+  // by /api/leads + /api/leads/:id. Used to warn before re-basing the order
+  // schedule when the customer switches to a different accepted quotation.
+  order_paid_count?: number | null;
   order_before_paid: boolean;
   order_before_slip: string | null;
   order_after_paid: boolean;

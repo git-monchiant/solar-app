@@ -5,6 +5,7 @@ import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { apiFetch } from "@/lib/api";
 import Header from "@/components/layout/Header";
+import { useFileViewer } from "@/lib/hooks/useFileViewer";
 
 type Settings = Record<string, string>;
 
@@ -490,6 +491,7 @@ function CustomerDocsSection() {
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const fileViewer = useFileViewer();
 
   useEffect(() => {
     apiFetch("/api/settings").then((s: Settings) => {
@@ -572,7 +574,7 @@ function CustomerDocsSection() {
               </div>
               <div className="flex-1 min-w-0">
                 <div className="text-sm font-semibold text-gray-900 truncate">{name || "checklist.pdf"}</div>
-                <a href={url} target="_blank" rel="noopener noreferrer" className="text-xs text-primary hover:underline font-medium">
+                <a href={url} onClick={fileViewer.handler(url, name || "checklist.pdf")} className="text-xs text-primary hover:underline font-medium">
                   เปิดดู / ดาวน์โหลด ↗
                 </a>
               </div>
@@ -597,6 +599,7 @@ function CustomerDocsSection() {
           )}
         </div>
       )}
+      {fileViewer.modal}
     </section>
   );
 }

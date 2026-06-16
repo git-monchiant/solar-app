@@ -2,7 +2,7 @@
 import { DownloadIcon } from "@/components/ui/icons";
 
 import { apiFetch, getUserIdHeader } from "@/lib/api";
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import Header from "@/components/layout/Header";
 import { STATUS_CONFIG } from "@/lib/constants/statuses";
@@ -18,7 +18,7 @@ type ContactStateField = "first_contact_state" | "contact2_state" | "contact3_st
 
 type LifecycleRow = { [K in LifecycleCol]: string | null }
   & { [K in ContactStateField]: "yes" | "no" | null }
-  & { id: number; full_name: string; house_number: string | null; status: string; pre_doc_no: string | null; payment_confirmed: boolean | null; pre_slip_uploaded: 0 | 1; lost_reason: string | null; order_installments: string | null; order_paid_count: number };
+  & { id: number; full_name: string; house_number: string | null; status: string; pre_doc_no: string | null; payment_confirmed: boolean | null; pre_slip_uploaded: 0 | 1; lost_reason: string | null; order_installments: string | null; order_paid_count: number; created_at: string | null };
 
 // Moved over from /dashboard-dev — subset of fields the 5-card row needs.
 interface DevData {
@@ -56,9 +56,44 @@ export default function DashboardPage() {
   // Click any KPI count → popup lists the leads behind it. Click a name to open
   // that lead's detail in a new tab.
   const [bucket, setBucket] = useState<{ title: string; rows: LifecycleRow[] } | null>(null);
-
+  // created_at filter — every chip/funnel/popup downstream uses
+  // `filteredLifecycleRows`. Default window: 1 Jan 2026 → today (persists
+  // across reloads via localStorage). Leaving "from" or "to" empty disables
+  // that side of the bound.
+  const todayYmd = useMemo(() => {
+    const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}-${String(d.getDate()).padStart(2,"0")}`;
+  }, []);
+  const [dateFrom, setDateFrom] = useState<string>("2026-01-01");
+  const [dateTo, setDateTo] = useState<string>(todayYmd);
   useEffect(() => {
-    apiFetch("/api/dashboard").then(setData).catch(console.error).finally(() => setLoading(false));
+    const sf = localStorage.getItem("dashboard.dateFrom"); if (sf !== null) setDateFrom(sf);
+    const st = localStorage.getItem("dashboard.dateTo");   if (st !== null) setDateTo(st);
+  }, []);
+  useEffect(() => { localStorage.setItem("dashboard.dateFrom", dateFrom); }, [dateFrom]);
+  useEffect(() => { localStorage.setItem("dashboard.dateTo",   dateTo);   }, [dateTo]);
+  const filteredLifecycleRows = useMemo(() => {
+    if (!dateFrom && !dateTo) return lifecycleRows;
+    return lifecycleRows.filter(r => {
+      const c = r.created_at ? String(r.created_at).slice(0, 10) : "";
+      if (!c) return false;
+      if (dateFrom && c < dateFrom) return false;
+      if (dateTo   && c > dateTo)   return false;
+      return true;
+    });
+  }, [lifecycleRows, dateFrom, dateTo]);
+
+  // /api/dashboard re-fetches when the date filter changes so server-aggregated
+  // totals (total_received, total_leads, ...) re-scope to the same cohort the
+  // client-side filteredLifecycleRows reflects. The other endpoints are
+  // cohort-agnostic, so they only fire once on mount.
+  useEffect(() => {
+    const qs = new URLSearchParams();
+    if (dateFrom) qs.set("from", dateFrom);
+    if (dateTo)   qs.set("to",   dateTo);
+    const url = `/api/dashboard${qs.toString() ? `?${qs}` : ""}`;
+    apiFetch(url).then(setData).catch(console.error).finally(() => setLoading(false));
+  }, [dateFrom, dateTo]);
+  useEffect(() => {
     apiFetch("/api/line-users").then(setLineUsers).catch(console.error);
     apiFetch("/api/lifecycle").then((rows: LifecycleRow[]) => setLifecycleRows(rows)).catch(console.error);
     apiFetch("/api/dashboard-dev").then(setDevData).catch(console.error);
@@ -75,34 +110,54 @@ export default function DashboardPage() {
           title="Dashboard I"
           subtitle="SENA SOLAR ENERGY"
           rightContent={
-            <button
-              type="button"
-              onClick={async (e) => {
-                const btn = e.currentTarget;
-                btn.disabled = true;
-                try {
-                  const res = await fetch("/api/report/dashboard-pdf", { headers: { ...getUserIdHeader() } });
-                  if (!res.ok) { alert("ดาวน์โหลด PDF ไม่สำเร็จ"); return; }
-                  const blob = await res.blob();
-                  const url = URL.createObjectURL(blob);
-                  const a = document.createElement("a");
-                  a.href = url;
-                  a.download = `dashboard_${new Date().toISOString().slice(0, 10)}.pdf`;
-                  document.body.appendChild(a);
-                  a.click();
-                  a.remove();
-                  URL.revokeObjectURL(url);
-                } finally {
-                  btn.disabled = false;
-                }
-              }}
-              className="cursor-pointer inline-flex items-center gap-1.5 h-8 px-3 rounded-lg bg-white border border-gray-200 text-xs font-semibold text-gray-700 hover:border-gray-300 disabled:opacity-50 disabled:cursor-wait transition-colors"
-              title="ดาวน์โหลด Dashboard เป็น PDF"
-              aria-label="ดาวน์โหลด Dashboard เป็น PDF"
-            >
-              <DownloadIcon className="w-3.5 h-3.5 text-gray-400" strokeWidth={2} />
-              <span>PDF</span>
-            </button>
+            <div className="flex items-center gap-2">
+              {/* Global created_at filter — every chip / funnel / popup
+                  downstream uses filteredLifecycleRows. */}
+              <div className="hidden md:flex items-center gap-1 text-xs text-gray-500">
+                <input type="date" value={dateFrom} onChange={e => setDateFrom(e.target.value)}
+                  className="h-8 px-2 rounded-lg bg-white border border-gray-200 text-xs text-gray-700 focus:outline-none focus:border-gray-300"
+                  title="กรองจากวันที่สร้าง (จาก)" />
+                <span className="text-gray-400">–</span>
+                <input type="date" value={dateTo} onChange={e => setDateTo(e.target.value)}
+                  className="h-8 px-2 rounded-lg bg-white border border-gray-200 text-xs text-gray-700 focus:outline-none focus:border-gray-300"
+                  title="กรองจากวันที่สร้าง (ถึง)" />
+                {(dateFrom !== "2026-01-01" || dateTo !== todayYmd) && (
+                  <button type="button" onClick={() => { setDateFrom("2026-01-01"); setDateTo(todayYmd); }}
+                    className="ml-1 h-8 px-2 rounded-lg text-xs text-gray-500 hover:text-gray-700"
+                    title="รีเซ็ตเป็น 1 ม.ค. → วันนี้">
+                    รีเซ็ต
+                  </button>
+                )}
+              </div>
+              <button
+                type="button"
+                onClick={async (e) => {
+                  const btn = e.currentTarget;
+                  btn.disabled = true;
+                  try {
+                    const res = await fetch("/api/report/dashboard-pdf", { headers: { ...getUserIdHeader() } });
+                    if (!res.ok) { alert("ดาวน์โหลด PDF ไม่สำเร็จ"); return; }
+                    const blob = await res.blob();
+                    const url = URL.createObjectURL(blob);
+                    const a = document.createElement("a");
+                    a.href = url;
+                    a.download = `dashboard_${new Date().toISOString().slice(0, 10)}.pdf`;
+                    document.body.appendChild(a);
+                    a.click();
+                    a.remove();
+                    URL.revokeObjectURL(url);
+                  } finally {
+                    btn.disabled = false;
+                  }
+                }}
+                className="cursor-pointer inline-flex items-center gap-1.5 h-8 px-3 rounded-lg bg-white border border-gray-200 text-xs font-semibold text-gray-700 hover:border-gray-300 disabled:opacity-50 disabled:cursor-wait transition-colors"
+                title="ดาวน์โหลด Dashboard เป็น PDF"
+                aria-label="ดาวน์โหลด Dashboard เป็น PDF"
+              >
+                <DownloadIcon className="w-3.5 h-3.5 text-gray-400" strokeWidth={2} />
+                <span>PDF</span>
+              </button>
+            </div>
           }
         />
       </div>
@@ -204,7 +259,7 @@ export default function DashboardPage() {
           const fmtMoney = (v: number) => v >= 1000000 ? `฿${(v / 1000000).toFixed(1)}M` : v >= 1000 ? `฿${Math.round(v / 1000)}K` : `฿${fmt(v)}`;
 
           const today = new Date(new Date().toDateString());
-          const bookingPaidRows = lifecycleRows.filter(r => r.booking_paid_at);
+          const bookingPaidRows = filteredLifecycleRows.filter(r => r.booking_paid_at);
           const bookingPaidCount = bookingPaidRows.length;
 
           // 4 mutually-exclusive buckets sum = total leads:
@@ -213,15 +268,15 @@ export default function DashboardPage() {
           //   2) ติดต่อได้ — booking_paid OR any state=yes (booking override)
           //   3) ติดต่อไม่ได้ — has no, no yes
           //   4) ยังไม่ติดต่อ — no state activity at all
-          const lostRows         = lifecycleRows.filter(r => r.status === "lost");
-          const contactedYesRows = lifecycleRows.filter(r => r.status !== "lost" && (!!r.booking_paid_at
+          const lostRows         = filteredLifecycleRows.filter(r => r.status === "lost");
+          const contactedYesRows = filteredLifecycleRows.filter(r => r.status !== "lost" && (!!r.booking_paid_at
             || [r.first_contact_state, r.contact2_state, r.contact3_state, r.contact4_state, r.contact5_state].some(s => s === "yes")));
-          const contactedNoRows = lifecycleRows.filter(r => {
+          const contactedNoRows = filteredLifecycleRows.filter(r => {
             if (r.status === "lost" || r.booking_paid_at) return false;
             const states = [r.first_contact_state, r.contact2_state, r.contact3_state, r.contact4_state, r.contact5_state];
             return states.some(s => s === "no") && !states.some(s => s === "yes");
           });
-          const notContactedRows = lifecycleRows.filter(r => {
+          const notContactedRows = filteredLifecycleRows.filter(r => {
             if (r.status === "lost" || r.booking_paid_at) return false;
             const states = [r.first_contact_state, r.contact2_state, r.contact3_state, r.contact4_state, r.contact5_state];
             return !states.some(s => s === "yes") && !states.some(s => s === "no");
@@ -258,20 +313,22 @@ export default function DashboardPage() {
           const orderPaidPartial = orderRows.filter(r => r.order_paid_at).length - orderPaidFull;
           const orderUnpaid = orderRows.length - orderPaidPartial - orderPaidFull;
 
-          const stepWaitSurveyRows       = lifecycleRows.filter(r => r.status === "pre_survey-02");
+          const stepWaitSurveyRows       = filteredLifecycleRows.filter(r => r.status === "pre_survey-02");
           const stepSurveyScheduledRows  = bookingPaidRows.filter(r => r.status === "survey" && r.survey_date && new Date(r.survey_date) > today);
           const stepSurveyingRows        = bookingPaidRows.filter(r => r.status === "survey" && (!r.survey_date || new Date(r.survey_date) <= today));
           // "รอใบเสนอราคา" excludes leads with install_date set — those already
   // have a locked-in install schedule (even if status got reverted to quote)
   // so they belong in the install chip, not the quote chip.
   const stepWaitQuoteRows        = bookingPaidRows.filter(r => r.status === "quote" && !r.install_date);
-          // Install chips: paid first installment + install_date set. Status
-          // is intentionally NOT checked — a lead reverted from order back
-          // to quote still has a locked install schedule and belongs here.
-          // To keep stations exclusive, the quote/order chips exclude leads
-          // whose install_date is already set (see those filters above).
-          const stepInstallScheduledRows = bookingPaidRows.filter(r => (r.order_paid_count ?? 0) > 0 && r.install_date && !r.install_done_at && new Date(r.install_date) > today);
-          const stepInstallingRows       = bookingPaidRows.filter(r => (r.order_paid_count ?? 0) > 0 && r.install_date && new Date(r.install_date) <= today && !r.install_done_at);
+          // Install chips: paid first installment + install_date set. Done
+          // is status-based (warranty/gridtie/closed) — same gate the pipeline
+          // page uses, so the counts here and the pipeline tab counts agree.
+          // install_done_at alone does NOT mark a lead as done: a crew can
+          // tick "ติดตั้งเสร็จ" but the remaining sub-steps (ส่งมอบ etc.) keep
+          // the macro status at "install" until ใบรับประกัน is issued.
+          const notInstallDone = (s: string) => s !== "warranty" && s !== "gridtie" && s !== "closed" && s !== "lost" && s !== "returned";
+          const stepInstallScheduledRows = bookingPaidRows.filter(r => (r.order_paid_count ?? 0) > 0 && r.install_date && notInstallDone(r.status) && new Date(r.install_date) > today);
+          const stepInstallingRows       = bookingPaidRows.filter(r => (r.order_paid_count ?? 0) > 0 && r.install_date && notInstallDone(r.status) && new Date(r.install_date) <= today);
           const stepDoneRows             = bookingPaidRows.filter(r => ["warranty", "gridtie", "closed"].includes(r.status));
           // นัดติดตั้ง / กำลังติดตั้ง / ติดตั้งเสร็จ breakdown: how many leads
           // have paid every installment (ครบ) vs. only the deposit (มัดจำ).
@@ -341,9 +398,9 @@ export default function DashboardPage() {
                   </div>
                   <button
                     type="button"
-                    onClick={openBucket("Leads ทั้งหมด", lifecycleRows)}
+                    onClick={openBucket("Leads ทั้งหมด", filteredLifecycleRows)}
                     className={`text-left text-3xl font-bold font-mono tabular-nums text-gray-900 leading-none ${bigNumCls}`}
-                  >{data.total_leads}</button>
+                  >{filteredLifecycleRows.length}</button>
                   <div className="mt-auto pt-4 grid grid-cols-4 gap-1.5">
                     <Chip n={notContacted}  l="รอติดตาม"      tone="bg-sky-50 text-sky-700"           rows={notContactedRows} />
                     <Chip n={contactedNo}   l="ติดต่อไม่ได้"   tone="bg-rose-50 text-rose-700"          rows={contactedNoRows} />
@@ -356,7 +413,7 @@ export default function DashboardPage() {
                 <div className="rounded-2xl bg-white border border-gray-200 p-4 flex flex-col">
                   <div className="flex items-baseline justify-between mb-3">
                     <span className="text-sm font-bold uppercase tracking-[0.15em] text-emerald-700">ติดต่อได้ — ปลายทาง</span>
-                    <span className="text-xs font-semibold text-gray-500">{pct(contactedYes, data.total_leads)}% reach</span>
+                    <span className="text-xs font-semibold text-gray-500">{pct(contactedYes, filteredLifecycleRows.length)}% reach</span>
                   </div>
                   <button
                     type="button"
@@ -436,7 +493,7 @@ export default function DashboardPage() {
 
         {/* Lifecycle funnel — full width */}
         <div className="rounded-xl bg-white border border-gray-300 p-4">
-          <LifecycleFunnelChart rows={lifecycleRows} onStageClick={(title, r) => setBucket({ title, rows: r })} />
+          <LifecycleFunnelChart rows={filteredLifecycleRows} onStageClick={(title, r) => setBucket({ title, rows: r })} />
         </div>
 
         {/* Source quality chart — full width */}
@@ -465,7 +522,7 @@ export default function DashboardPage() {
           const today = new Date().toLocaleDateString("th-TH", { day: "numeric", month: "long", year: "numeric" });
           // Pulled in locally — the outer IIFE that owns openBucket/lostRows
           // closes before this block, so the click handlers need their own.
-          const lostRows = lifecycleRows.filter(r => r.status === "lost");
+          const lostRows = filteredLifecycleRows.filter(r => r.status === "lost");
           const bigNumCls = "cursor-pointer hover:underline decoration-2 underline-offset-4";
           const openBucket = (title: string, rows: LifecycleRow[]) => () => setBucket({ title, rows });
           return (

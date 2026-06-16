@@ -8,6 +8,7 @@ import ErrorPopup from "@/components/ui/ErrorPopup";
 import DoneSection from "./DoneSection";
 import StepLayout from "../StepLayout";
 import { compressImage } from "@/lib/utils/compressImage";
+import { useFileViewer } from "@/lib/hooks/useFileViewer";
 
 const formatDate = (d: string | null) => {
   if (!d) return "—";
@@ -20,6 +21,7 @@ interface Props extends StepCommonProps {
 }
 
 export default function GridTieStep({ lead, state, refresh, expanded, onToggle }: Props) {
+  const fileViewer = useFileViewer();
   const [utility, setUtility] = useState(lead.grid_utility || "");
   const [appNo, setAppNo] = useState(lead.grid_app_no || "");
   const [ercDate, setErcDate] = useState(lead.grid_erc_submitted_date?.slice(0, 10) || "");
@@ -110,7 +112,7 @@ export default function GridTieStep({ lead, state, refresh, expanded, onToggle }
         <Info label="เปลี่ยนมิเตอร์" value={formatDate(lead.grid_meter_changed_date)} />
       </div>
       {lead.grid_permit_doc_url && (
-        <a href={lead.grid_permit_doc_url} target="_blank" rel="noreferrer"
+        <a href={lead.grid_permit_doc_url} onClick={fileViewer.handler(lead.grid_permit_doc_url, "ใบอนุญาต / PPA")}
            className="flex items-center justify-center gap-2 w-full h-10 rounded-lg bg-gray-100 hover:bg-gray-200 text-sm font-semibold text-gray-700">
           <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" /></svg>
           ดูใบอนุญาต
@@ -131,6 +133,7 @@ export default function GridTieStep({ lead, state, refresh, expanded, onToggle }
       onToggle={onToggle}
       doneHeader={<span className="text-sm font-semibold text-emerald-700">ขนานไฟสำเร็จ{lead.grid_meter_changed_date ? ` · ${formatDate(lead.grid_meter_changed_date)}` : ""}</span>}
       renderDone={renderDoneContent}
+      overlay={fileViewer.modal}
     >
     <div className="space-y-3">
       {/* Utility + App No */}
@@ -167,7 +170,7 @@ export default function GridTieStep({ lead, state, refresh, expanded, onToggle }
         {permitUrl ? (
           <div className="relative">
             {permitUrl.match(/\.(pdf)$/i) ? (
-              <a href={permitUrl} target="_blank" rel="noreferrer" className="flex items-center gap-2 p-3 rounded-lg border border-gray-200 bg-white hover:bg-gray-50">
+              <a href={permitUrl} onClick={fileViewer.handler(permitUrl, "ใบอนุญาต / PPA")} className="flex items-center gap-2 p-3 rounded-lg border border-gray-200 bg-white hover:bg-gray-50">
                 <svg className="w-6 h-6 text-red-500" fill="currentColor" viewBox="0 0 24 24"><path d="M14,2H6C4.9,2 4,2.9 4,4V20C4,21.1 4.9,22 6,22H18C19.1,22 20,21.1 20,20V8L14,2M18,20H6V4H13V9H18V20Z" /></svg>
                 <span className="text-sm text-gray-700 flex-1">ใบอนุญาต.pdf</span>
               </a>

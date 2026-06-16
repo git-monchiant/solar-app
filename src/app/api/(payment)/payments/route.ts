@@ -4,6 +4,7 @@ import path from "path";
 import { getDb, sql } from "@/lib/db";
 import { requireAdmin, requireAuth } from "@/lib/auth";
 import { syncOrderPaidFlags } from "@/lib/payments-helpers";
+import { mintPreDocNo } from "@/lib/doc-number";
 import { logLeadActivity, paymentStepLabel, fmtBaht } from "@/lib/lead-activity-log";
 
 export const runtime = "nodejs";
@@ -216,6 +217,12 @@ export async function POST(req: NextRequest) {
           .input("lead_id", sql.Int, leadId)
           .query(`UPDATE leads SET status = 'pre_survey-02', updated_at = GETDATE()
                   WHERE id = @lead_id AND status LIKE 'pre_survey%'`);
+        // Mint pre_doc_no if the lead skipped the /book endpoint (line/LINE
+        // flow PATCHes pre_booked_at + pre_total_price directly, leaving
+        // pre_doc_no NULL). Idempotent — won't overwrite an existing doc-no,
+        // so re-confirms are safe. Without this the receipt falls back to
+        // SSE-{yy}{leadId}-{n} which doesn't match the SM-26xxx convention.
+        await mintPreDocNo(tx, leadId);
       }
 
       await new sql.Request(tx)

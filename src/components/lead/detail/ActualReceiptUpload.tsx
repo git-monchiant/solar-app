@@ -5,6 +5,8 @@ import { useState } from "react";
 import { apiFetch } from "@/lib/api";
 import { useActiveRoles, hasRole } from "@/lib/roles";
 import { useDialog } from "@/components/ui/Dialog";
+import PdfViewerModal from "@/components/ui/PdfViewerModal";
+import { isMobileDevice, openInNewTab } from "@/lib/utils/device";
 
 type ReceiptField =
   | "receipt_deposit_actual_url"
@@ -53,9 +55,20 @@ const isImage = (u: string) => /\.(png|jpe?g|gif|webp|heic|heif)(\?|$)/i.test(u)
 export default function ActualReceiptUpload({ leadId, field, paymentId, url, refresh, fileLabel, compact, startIndex = 0 }: Props) {
   const urls = parseUrls(url);
   const [busy, setBusy] = useState(false);
+  const [viewer, setViewer] = useState<{ url: string; label: string } | null>(null);
   const { activeRoles } = useActiveRoles();
   const canManage = hasRole(activeRoles, "admin", "account");
   const dialog = useDialog();
+  // PWA standalone mode (added to home screen) has no browser chrome — a
+  // raw target=_blank PDF/image opens fullscreen with no way back. On mobile
+  // route the click through PdfViewerModal so users get an X to close; on
+  // desktop just open in a new tab as before.
+  const openInViewer = (e: React.MouseEvent, fileUrl: string, label: string) => {
+    e.preventDefault();
+    e.stopPropagation();
+    if (isMobileDevice()) setViewer({ url: fileUrl, label });
+    else openInNewTab(fileUrl);
+  };
 
   const persist = async (newUrls: string[]) => {
     const payload = serializeUrls(newUrls);
@@ -134,7 +147,7 @@ export default function ActualReceiptUpload({ leadId, field, paymentId, url, ref
                 className="relative aspect-square w-full rounded-md border-2 border-blue-500 bg-blue-50/40 overflow-hidden"
                 title={`${label} · ${name}`}
               >
-                <a href={u} target="_blank" rel="noreferrer" className="block w-full h-full">
+                <a href={u} onClick={(e) => openInViewer(e, u, label)} className="block w-full h-full">
                   {img ? (
                     // eslint-disable-next-line @next/next/no-img-element
                     <img src={u} alt="" className="w-full h-full object-cover" />
@@ -178,21 +191,19 @@ export default function ActualReceiptUpload({ leadId, field, paymentId, url, ref
           </div>
         )}
 
-        {/* Desktop: text list with comma separators (wrapped span) */}
-        <span className="hidden md:inline-flex flex-wrap items-center gap-x-2 gap-y-1 text-xs" onClick={(e) => e.stopPropagation()}>
+        {/* Desktop: bordered rectangular pills, one per receipt */}
+        <span className="hidden md:inline-flex flex-wrap items-center gap-2 text-xs" onClick={(e) => e.stopPropagation()}>
           {urls.map((u, i) => {
             const name = decodeURIComponent(u.split("/").pop() || "ไฟล์");
             const pdf = isPdf(u);
             const img = isImage(u);
             const label = `ใบเสร็จ ${startIndex + i + 1}`;
-            const trailingComma = i < urls.length - 1 ? "," : "";
             return (
-              <span key={`d-${u}-${i}`} className="inline-flex items-center gap-1">
+              <span key={`d-${u}-${i}`} className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md border border-blue-300 bg-blue-50/50 hover:bg-blue-50 transition-colors">
                 <a
                   href={u}
-                  target="_blank"
-                  rel="noreferrer"
-                  className="inline-flex items-center gap-1 font-medium text-blue-600 hover:text-blue-800 hover:underline"
+                  onClick={(e) => openInViewer(e, u, label)}
+                  className="inline-flex items-center gap-1 font-semibold text-blue-700 hover:text-blue-900"
                   title={name}
                 >
                   <FileIcon variant={pdf ? "pdf" : img ? "image" : "doc"} className="w-3.5 h-3.5 shrink-0 text-blue-500" />
@@ -204,13 +215,12 @@ export default function ActualReceiptUpload({ leadId, field, paymentId, url, ref
                     onClick={(e) => { e.stopPropagation(); removeAt(i); }}
                     disabled={busy}
                     aria-label="ลบไฟล์"
-                    className="text-red-500 hover:text-red-700 disabled:opacity-50 px-0.5 font-bold"
+                    className="text-red-500 hover:text-red-700 disabled:opacity-50 px-0.5 font-bold leading-none"
                     style={{ minHeight: 0 }}
                   >
                     ✕
                   </button>
                 )}
-                {trailingComma && <span className="text-gray-400">{trailingComma}</span>}
               </span>
             );
           })}
@@ -228,6 +238,7 @@ export default function ActualReceiptUpload({ leadId, field, paymentId, url, ref
             </label>
           )}
         </span>
+        {viewer && <PdfViewerModal url={viewer.url} label={viewer.label} onClose={() => setViewer(null)} />}
       </>
     );
   }
@@ -245,8 +256,7 @@ export default function ActualReceiptUpload({ leadId, field, paymentId, url, ref
           <span key={`${u}-${i}`} className="inline-flex items-center gap-1">
             <a
               href={u}
-              target="_blank"
-              rel="noreferrer"
+              onClick={(e) => openInViewer(e, u, label)}
               className="inline-flex items-center gap-1 font-medium text-primary hover:underline"
               title={name}
             >
@@ -282,6 +292,7 @@ export default function ActualReceiptUpload({ leadId, field, paymentId, url, ref
           <input type="file" accept="image/*,.pdf" className="hidden" disabled={busy} onChange={e => e.target.files?.[0] && uploadOne(e.target.files[0])} />
         </label>
       )}
+      {viewer && <PdfViewerModal url={viewer.url} label={viewer.label} onClose={() => setViewer(null)} />}
     </div>
   );
 }

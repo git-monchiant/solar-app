@@ -57,13 +57,26 @@ export async function GET(req: NextRequest) {
         .query(`SELECT id, slip_field, amount, confirmed_by, confirmed_at, description, payment_no, cc_surcharge_pct, cc_surcharge_amount FROM payments WHERE id = @id AND lead_id = @lead_id`);
       if (r.recordset.length > 0) installmentRow = r.recordset[0];
     }
-    const signerId = stageParam === "installment"
-      ? (installmentRow?.confirmed_by || (userIdParam ? parseInt(userIdParam) : null))
-      : (l[stageUserCol[stageParam as Exclude<Stage, "installment">]] || (userIdParam ? parseInt(userIdParam) : null));
-    if (signerId) {
-      const u = await db.request().input("id", sql.Int, signerId)
-        .query(`SELECT full_name, signature_url FROM users WHERE id = @id`);
-      if (u.recordset.length > 0) signer = u.recordset[0];
+    // payments.confirmed_by is nvarchar (accountant name as string), unlike
+    // the lead-level *_by columns which are user_ids. Detect by type and
+    // look up by name vs id accordingly.
+    const rawSigner: string | number | null = stageParam === "installment"
+      ? (installmentRow?.confirmed_by ?? (userIdParam ? parseInt(userIdParam) : null))
+      : (l[stageUserCol[stageParam as Exclude<Stage, "installment">]] ?? (userIdParam ? parseInt(userIdParam) : null));
+    if (rawSigner !== null && rawSigner !== undefined && rawSigner !== "") {
+      const asNum = typeof rawSigner === "number" ? rawSigner : (/^\d+$/.test(String(rawSigner)) ? parseInt(String(rawSigner)) : null);
+      if (asNum !== null) {
+        const u = await db.request().input("id", sql.Int, asNum)
+          .query(`SELECT full_name, signature_url FROM users WHERE id = @id`);
+        if (u.recordset.length > 0) signer = u.recordset[0];
+      } else {
+        // String name — try to find a matching user row for the signature,
+        // fall back to just showing the name with no signature.
+        const name = String(rawSigner);
+        const u = await db.request().input("name", sql.NVarChar(100), name)
+          .query(`SELECT TOP 1 full_name, signature_url FROM users WHERE full_name = @name`);
+        signer = u.recordset[0] ?? { full_name: name, signature_url: null };
+      }
     }
 
     // Prefer the survey-selected package (single). Fall back to pre-survey package

@@ -32,12 +32,21 @@ interface Lead {
   order_paid_count?: number | null;
 }
 
-type TabKey = "all" | "pre_survey" | "booking" | "survey" | "quotation" | "order" | "deposit" | "wait_install" | "install" | "warranty" | "lost";
+type TabKey = "all" | "pre_survey" | "booking" | "survey" | "quotation" | "order" | "deposit" | "wait_install" | "install" | "installing" | "warranty" | "lost";
 
 // Booking = pre_survey lead ที่กดยืนยันการชำระเงิน 1 หรือ 2 แล้ว
 // (status เป็น pre_survey-01 หรือ pre_survey-02). plain `pre_survey` =
 // ก่อนกดยืนยัน 1 → ไป tab "รอติดตาม" ตามปกติ
-const matchesTab = (l: Lead, key: TabKey): boolean => {
+//
+// `todayYmd` — "YYYY-MM-DD" of today's local date, used to split install tabs:
+//   install     → install_date strictly in the future (waiting for the day)
+//   installing  → install_date ≤ today (day has arrived/passed but the lead
+//                 still sits in the install workflow — e.g. ติดตั้งเสร็จ ticked
+//                 but ส่งมอบ not yet, so the macro `status` is still "install").
+// Both ignore install_completed_at and are status-agnostic except for excluding
+// terminal states (warranty / lost / returned) — matches the dashboard's
+// stepInstallScheduledRows / stepInstallingRows split.
+const matchesTab = (l: Lead, key: TabKey, todayYmd: string): boolean => {
   if (key === "all") return true;
   if (key === "pre_survey") return l.status === "pre_survey";
   if (key === "booking") return l.status === "pre_survey-01" || l.status === "pre_survey-02";
@@ -50,8 +59,13 @@ const matchesTab = (l: Lead, key: TabKey): boolean => {
   // "รอนัดติดตั้ง" — paid the deposit but no install date scheduled yet.
   // Status not gated (could be order or install) but we exclude lost.
   if (key === "wait_install") return (l.order_paid_count ?? 0) > 0 && !l.install_date && !l.install_completed_at && l.status !== "lost" && l.status !== "returned";
-  // "รอติดตั้ง" — has a scheduled install date, not yet completed.
-  if (key === "install") return !!l.install_date && !l.install_completed_at && l.status !== "lost" && l.status !== "returned";
+  // "Done" statuses match dashboard's stepDoneRows — once a lead moves into
+  // warranty/gridtie/closed it belongs to the warranty/done section, not here.
+  const installScheduled = (l.order_paid_count ?? 0) > 0 && !!l.install_date
+    && l.status !== "warranty" && l.status !== "gridtie" && l.status !== "closed"
+    && l.status !== "lost" && l.status !== "returned";
+  if (key === "install") return installScheduled && l.install_date!.slice(0, 10) > todayYmd;
+  if (key === "installing") return installScheduled && l.install_date!.slice(0, 10) <= todayYmd;
   return l.status === key;
 };
 
@@ -69,7 +83,7 @@ export default function PipelinePage() {
   const [sortOrder, setSortOrder] = useState<"asc" | "desc">("asc");
   useEffect(() => {
     const saved = localStorage.getItem("pipelineTab") as TabKey;
-    const ALL_KEYS: TabKey[] = ["all","pre_survey","booking","survey","quotation","order","deposit","wait_install","install","warranty","lost"];
+    const ALL_KEYS: TabKey[] = ["all","pre_survey","booking","survey","quotation","order","deposit","wait_install","install","installing","warranty","lost"];
     if (saved && ALL_KEYS.includes(saved)) setTab(saved);
 
     const sf = localStorage.getItem("pipeline.sortField");
@@ -118,15 +132,16 @@ export default function PipelinePage() {
     if (sortField === "survey_date" && tab !== "survey") {
       setSortField("follow_up");
       localStorage.setItem("pipeline.sortField", "follow_up");
-    } else if (sortField === "install_date" && tab !== "install") {
+    } else if (sortField === "install_date" && tab !== "install" && tab !== "installing") {
       setSortField("follow_up");
       localStorage.setItem("pipeline.sortField", "follow_up");
     }
   }, [tab, sortField]);
 
+  const todayYmd = new Date().toISOString().slice(0, 10);
   const filtered = sortLeads(
     leads
-      .filter(l => matchesTab(l, tab))
+      .filter(l => matchesTab(l, tab, todayYmd))
       .filter(l => {
         if (!search.trim()) return true;
         const q = search.trim().toLowerCase();
@@ -145,7 +160,7 @@ export default function PipelinePage() {
       })
   );
 
-  const countFor = (key: TabKey) => key === "all" ? leads.length : leads.filter(l => matchesTab(l, key)).length;
+  const countFor = (key: TabKey) => key === "all" ? leads.length : leads.filter(l => matchesTab(l, key, todayYmd)).length;
 
   // Sales + solar both see the full pipeline. Tab visibility used to gate by
   // role, but the team wanted shared visibility into every stage.
@@ -159,6 +174,7 @@ export default function PipelinePage() {
     { key: "deposit",    label: "ชำระมัดจำ" },
     { key: "wait_install", label: "รอนัดติดตั้ง" },
     { key: "install",    label: "รอติดตั้ง" },
+    { key: "installing", label: "กำลังติดตั้ง" },
     { key: "warranty",   label: "รอออกใบรับประกัน" },
     { key: "lost",       label: "ยกเลิก" },
   ];

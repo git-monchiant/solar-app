@@ -176,13 +176,15 @@ export async function GET(req: NextRequest) {
           AND l.status NOT IN ('lost', 'returned')
         ORDER BY l.updated_at DESC
       `),
-      // 11. รอติดตั้ง — มีวันนัดติดตั้งแล้ว ยังไม่เสร็จ (matches pipeline install)
+      // 11. รอติดตั้ง / กำลังติดตั้ง union — มีวันนัดติดตั้ง + ยังไม่ถึง
+      // warranty/done. Client splits this list by install_date vs today.
+      // Matches pipeline's installScheduled rule (status-based, not
+      // install_completed_at based — see comments there).
       db.request().query(`
         SELECT ${LEAD_COLS}
         ${LEAD_FROM}
         WHERE l.install_date IS NOT NULL
-          AND l.install_completed_at IS NULL
-          AND l.status NOT IN ('lost', 'returned')
+          AND l.status NOT IN ('warranty', 'gridtie', 'closed', 'lost', 'returned')
         ORDER BY l.install_date ASC, l.updated_at DESC
       `),
       // 12. รอออกใบรับประกัน — status=warranty

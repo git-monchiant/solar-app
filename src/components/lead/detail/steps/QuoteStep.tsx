@@ -11,6 +11,7 @@ import StepLayout from "../StepLayout";
 import { compressImage } from "@/lib/utils/compressImage";
 import { formatTHB, formatThaiDate as formatDate } from "@/lib/utils/formatters";
 import { parseQuotationFiles, serializeQuotationFiles, type QuoteOption } from "@/lib/utils/quotation";
+import { useFileViewer } from "@/lib/hooks/useFileViewer";
 import DoneSection from "./DoneSection";
 
 const MAX_QUOTES = 3;
@@ -26,9 +27,20 @@ interface Props extends StepCommonProps {
 }
 
 export default function QuoteStep({ lead, state, refresh, expanded, onToggle }: Props) {
-  // Default doc-no per slot: "QT-<yy><leadId:4d>" suffixed -2/-3 for the
-  // alternates. Editable per slot.
-  const baseDocNo = `QT-${new Date().getFullYear().toString().slice(-2)}${String(lead.id).padStart(4, "0")}`;
+  const fileViewer = useFileViewer();
+  // Default doc-no per slot: pulled from the shared mint endpoint so the
+  // prefix + counter match the config in /settings (default "QT-YYNNNN").
+  // Slot 0 = base, slots 1/2 append "-2"/"-3". Lead.quotation_doc_no (if
+  // already stored) wins so reopening the step shows the same number.
+  const [baseDocNo, setBaseDocNo] = useState<string>(lead.quotation_doc_no || "");
+  useEffect(() => {
+    if (baseDocNo) return;
+    apiFetch(`/api/leads/${lead.id}/doc-no/mint?type=quotation`, { method: "POST" })
+      .then((r: { docNo: string }) => setBaseDocNo(r.docNo))
+      .catch(console.error);
+    // baseDocNo is the gate — once we have one (from prop or fetch) the effect is done.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [lead.id]);
   const defaultDocNoFor = (i: number) => i === 0 ? baseDocNo : `${baseDocNo}-${i + 1}`;
 
   // Initialise 3 slots from quotation_files (JSON or legacy CSV). Empty
@@ -49,6 +61,23 @@ export default function QuoteStep({ lead, state, refresh, expanded, onToggle }: 
   };
 
   const [slots, setSlots] = useState<Slot[]>(initSlots);
+  // After the async mint resolves: (a) retro-fill any empty slot with the
+  // default, and (b) NORMALIZE slot doc-nos that still carry legacy
+  // multi-segment formats like "SM-QT-26-0040". The legacy values would
+  // propagate to lead.quotation_doc_no via picked.docNo on send and get
+  // rejected by validateDocNo (400). A canonical "PREFIX-counter" doc-no is
+  // detected as `^[A-Z]+-\d…`; anything else gets rewritten to the expected
+  // base/base-N. User-typed canonical values are preserved.
+  useEffect(() => {
+    if (!baseDocNo) return;
+    setSlots(prev => prev.map((s, i) => {
+      const expected = i === 0 ? baseDocNo : `${baseDocNo}-${i + 1}`;
+      const isEmpty = !s.existingUrl && !s.file && !s.docNo;
+      const isCanonical = !!s.docNo && /^[A-Z]+-\d+(-\d+)?$/.test(s.docNo);
+      if (isEmpty || !isCanonical) return { ...s, docNo: expected };
+      return s;
+    }));
+  }, [baseDocNo]);
   const [note, setNote] = useState(lead.quotation_note || "");
   const [byName, setByName] = useState(lead.quotation_by || "");
   const { me } = useMe();
@@ -82,6 +111,51 @@ export default function QuoteStep({ lead, state, refresh, expanded, onToggle }: 
   const [saving, setSaving] = useState(false);
   const [uploading, setUploading] = useState(false);
   const [nextError, setNextError] = useState<string | null>(null);
+
+  // Upload the picked file immediately so a refresh before "ส่ง" doesn't
+  // lose it. Optimistically sets `file` for instant UI feedback, then swaps
+  // in the persisted URL once /api/upload returns.
+  const uploadSlotFile = async (i: number, file: File) => {
+    updateSlot(i, { file });
+    setUploading(true);
+    try {
+      const compressed = await compressImage(file).catch(() => file);
+      const formData = new FormData();
+      formData.append("file", compressed);
+      formData.append("lead_id", String(lead.id));
+      formData.append("type", "quotation");
+      formData.append("filename", i === 0 ? baseDocNo : `${baseDocNo}-${i + 1}`);
+      const res = await apiFetch("/api/upload", { method: "POST", body: formData });
+      if (res?.url) updateSlot(i, { existingUrl: res.url, file: null });
+    } catch (e) {
+      console.error("quotation upload failed:", e);
+    } finally {
+      setUploading(false);
+    }
+  };
+
+  // Auto-save quotation_files whenever slots stabilise — so amount edits,
+  // file deletions, and finished uploads all persist without waiting for "ส่ง".
+  // Skipped while a fresh upload is still in flight (would persist an empty
+  // slot mid-upload). Saving as JSON via serializeQuotationFiles().
+  useEffect(() => {
+    if (uploading) return;
+    const t = setTimeout(() => {
+      const out: QuoteOption[] = [];
+      for (const s of slots) {
+        if (!s.existingUrl) continue;
+        out.push({ url: s.existingUrl, doc_no: s.docNo || "", amount: Number(s.amount) || 0 });
+      }
+      const filesJson = serializeQuotationFiles(out);
+      apiFetch(`/api/leads/${lead.id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ quotation_files: filesJson }),
+      }).catch(console.error);
+    }, 600);
+    return () => clearTimeout(t);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [slots, uploading]);
 
   const uploadAndBuildJson = async (): Promise<string | null> => {
     setUploading(true);
@@ -197,11 +271,11 @@ export default function QuoteStep({ lead, state, refresh, expanded, onToggle }: 
                       {isAccepted && <div className="text-xxs font-bold text-emerald-700 bg-emerald-100 px-2 py-0.5 rounded-full">เลือกแล้ว</div>}
                     </div>
                     {isImage ? (
-                      <a href={opt.url} target="_blank" rel="noreferrer" className="block">
+                      <a href={opt.url} onClick={fileViewer.handler(opt.url, `ใบเสนอราคา ชุด ${i + 1}`)} className="block">
                         <FallbackImage src={opt.url} alt={fileName} className="max-h-32 max-w-full object-contain bg-gray-50 rounded border border-gray-200 hover:opacity-80 transition" fallbackLabel="ไฟล์หาย" />
                       </a>
                     ) : (
-                      <a href={opt.url} target="_blank" rel="noreferrer" className="flex items-center gap-2 px-2 py-1.5 rounded bg-gray-50 border border-gray-200 hover:bg-gray-100 transition-colors">
+                      <a href={opt.url} onClick={fileViewer.handler(opt.url, `ใบเสนอราคา ชุด ${i + 1}`)} className="flex items-center gap-2 px-2 py-1.5 rounded bg-gray-50 border border-gray-200 hover:bg-gray-100 transition-colors">
                         <DocumentIcon className="w-4 h-4 text-gray-400 shrink-0" strokeWidth={2} />
                         <span className="text-xs text-primary font-semibold truncate">{fileName}</span>
                       </a>
@@ -225,6 +299,7 @@ export default function QuoteStep({ lead, state, refresh, expanded, onToggle }: 
       onToggle={onToggle}
       doneHeader={<span className="text-sm font-semibold text-emerald-700">ส่งใบเสนอราคาแล้ว{typeof lead.quotation_amount === "number" ? ` · ${formatTHB(lead.quotation_amount)} บาท` : ""}</span>}
       renderDone={renderDoneContent}
+      overlay={fileViewer.modal}
     >
       <div className="space-y-3">
       {/* Note */}
@@ -257,8 +332,8 @@ export default function QuoteStep({ lead, state, refresh, expanded, onToggle }: 
                     <input type="file" accept="image/*,.pdf" className="hidden"
                       onChange={e => {
                         const f = e.target.files?.[0];
-                        if (f) updateSlot(i, { file: f });
                         e.target.value = "";
+                        if (f) uploadSlotFile(i, f);
                       }} />
                   </label>
                 ) : (

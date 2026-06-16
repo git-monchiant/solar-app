@@ -15,6 +15,7 @@ import SignaturePad from "../SignaturePad";
 import SurveyPdfModal from "../SurveyPdfModal";
 import { useSubStep } from "@/lib/hooks/useSubStep";
 import { compressImage } from "@/lib/utils/compressImage";
+import { isMobileDevice, openInNewTab } from "@/lib/utils/device";
 import { buildAppointmentFlex, buildSurveyResultFlex } from "@/lib/utils/line-flex";
 import { formatSlotsRange } from "@/lib/time-slots";
 import { formatThaiDate as formatDate } from "@/lib/utils/formatters";
@@ -190,10 +191,16 @@ export default function SurveyStep({ lead, state, refresh, packages, expanded, o
       { enableHighAccuracy: true, timeout: 15000 }
     );
   };
-  // Always use the in-app modal preview — same UX as warranty.
+  // Mobile → in-app modal preview (same UX as the other file viewers, gives a
+  // close X in PWA standalone). Desktop → just open the survey PDF in a new tab.
+  // URL must match SurveyPdfModal's so the server resolves the same signer.
   const openPdf = (e?: React.MouseEvent) => {
     e?.stopPropagation();
-    setPdfPreviewOpen(true);
+    if (isMobileDevice()) {
+      setPdfPreviewOpen(true);
+    } else {
+      openInNewTab(me?.id ? `/api/survey/${lead.id}?user_id=${me.id}` : `/api/survey/${lead.id}`);
+    }
   };
   // Auto-save survey note (debounced)
   useEffect(() => {

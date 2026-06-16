@@ -92,13 +92,13 @@ export default function ListPageHeader({
 
       {/* Tabs */}
       <div className="flex items-center px-5">
-      <div ref={tabsRef} className="flex-1 flex gap-1 overflow-x-auto overflow-y-hidden scrollbar-hide overscroll-x-contain touch-pan-x">
+      <div ref={tabsRef} className="flex-1 flex overflow-x-auto overflow-y-hidden scrollbar-hide overscroll-x-contain touch-pan-x">
         {tabs.map((t) => (
           <button
             key={t.key}
             ref={activeTab === t.key ? activeRef : undefined}
             onClick={() => onTabChange(t.key)}
-            className={`px-4 py-3 text-xs font-semibold uppercase tracking-wider border-b-2 -mb-px transition-colors whitespace-nowrap shrink-0 ${
+            className={`px-2.5 py-3 text-xs font-semibold uppercase tracking-wider border-b-2 -mb-px transition-colors whitespace-nowrap shrink-0 ${
               activeTab === t.key ? "text-active border-active" : "text-gray-500 border-transparent hover:text-gray-700"
             }`}
           >

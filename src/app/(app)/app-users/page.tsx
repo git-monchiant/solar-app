@@ -217,6 +217,7 @@ function UsersList({ currentUserId }: { currentUserId: number }) {
         <UserEditor
           user={editing === "new" ? null : editing}
           currentUserId={currentUserId}
+          existingUsernames={new Set(users.map(u => u.username.trim().toLowerCase()))}
           onClose={() => setEditing(null)}
           onSaved={() => { setEditing(null); load(); }}
         />
@@ -225,7 +226,8 @@ function UsersList({ currentUserId }: { currentUserId: number }) {
   );
 }
 
-function UserEditor({ user, currentUserId, onClose, onSaved }: {
+function UserEditor({ user, currentUserId, existingUsernames, onClose, onSaved }: {
+  existingUsernames: Set<string>;
   user: UserRow | null;
   currentUserId: number;
   onClose: () => void;
@@ -234,6 +236,11 @@ function UserEditor({ user, currentUserId, onClose, onSaved }: {
   const dialog = useDialog();
   const isNew = !user;
   const [username, setUsername] = useState(user?.username || "");
+  // Live "username taken" check — Set is built from the parent's already-
+  // loaded users list (case-insensitive, matches SQL collation). Username
+  // editing is disabled in edit mode so the warning only fires for new users.
+  const trimmedUsername = username.trim();
+  const usernameTaken = isNew && trimmedUsername.length > 0 && existingUsernames.has(trimmedUsername.toLowerCase());
   const [fullName, setFullName] = useState(user?.full_name || "");
   const [team, setTeam] = useState(user?.team || "Sen X PM");
   const [phone, setPhone] = useState(user?.phone || "");
@@ -257,6 +264,7 @@ function UserEditor({ user, currentUserId, onClose, onSaved }: {
 
   const save = async () => {
     if (!username || !fullName) { setError("กรุณากรอก username และชื่อ-สกุล"); return; }
+    if (usernameTaken) { setError("ชื่อผู้ใช้นี้ถูกใช้แล้ว"); return; }
     if (isNew && !password) { setError("กรุณาตั้งรหัสผ่านเริ่มต้น"); return; }
     if (roles.length === 0) { setError("เลือก role อย่างน้อย 1 อัน"); return; }
     setSaving(true); setError(null);
@@ -318,7 +326,10 @@ function UserEditor({ user, currentUserId, onClose, onSaved }: {
           <Field label="Username">
             <input type="text" value={username} disabled={!isNew}
               onChange={e => setUsername(e.target.value)}
-              className="w-full h-10 px-3 rounded-lg border border-gray-200 text-sm font-mono focus:outline-none focus:border-primary disabled:bg-gray-50" />
+              className={`w-full h-10 px-3 rounded-lg border text-sm font-mono focus:outline-none disabled:bg-gray-50 ${usernameTaken ? "border-red-400 focus:border-red-500" : "border-gray-200 focus:border-primary"}`} />
+            {usernameTaken && (
+              <div className="text-xs text-red-600 mt-1">ชื่อผู้ใช้นี้ถูกใช้แล้ว</div>
+            )}
           </Field>
           <Field label="ชื่อ-สกุล">
             <input type="text" value={fullName} onChange={e => setFullName(e.target.value)}

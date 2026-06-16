@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getDb, sql, fixDates } from "@/lib/db";
+import { getDb, sql, fixDates, toSqlDate } from "@/lib/db";
 import { getUserIdFromReq } from "@/lib/auth";
 
 const titleMap: Record<string, string> = {
@@ -65,11 +65,11 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
       .input("activity_type", sql.NVarChar(30), activityType)
       .input("title", sql.NVarChar(200), title)
       .input("note", sql.NVarChar(sql.MAX), body.note || null)
-      .input("follow_up_date", sql.DateTime2, body.follow_up_date ? new Date(body.follow_up_date + "T12:00:00") : null)
+      .input("follow_up_date", sql.DateTime2, body.follow_up_date ? toSqlDate(body.follow_up_date) : null)
       // The user-entered "วันที่ติดตาม" (event date). Stored as a DATE column so
       // there's no time component to mislead. created_at remains the real save
       // timestamp via the DB's GETDATE() default.
-      .input("followup_date", sql.Date, body.contact_date ? new Date(body.contact_date + "T12:00:00") : null);
+      .input("followup_date", sql.Date, body.contact_date ? toSqlDate(body.contact_date) : null);
 
     request.input("created_by", sql.Int, userId);
     const result = await request.query(`
@@ -82,7 +82,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
     if (body.follow_up_date) {
       await db.request()
         .input("lead_id", sql.Int, leadId)
-        .input("next_follow_up", sql.Date, new Date(body.follow_up_date + "T12:00:00"))
+        .input("next_follow_up", sql.Date, toSqlDate(body.follow_up_date))
         .query(`UPDATE leads SET next_follow_up = @next_follow_up, updated_at = GETDATE() WHERE id = @lead_id`);
     }
 

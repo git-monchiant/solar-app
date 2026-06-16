@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getDb, fixDates } from "@/lib/db";
+import { getDb, sql, fixDates, toSqlDate } from "@/lib/db";
 import { requireAuth } from "@/lib/auth";
 
 export async function GET(req: NextRequest) {
@@ -12,6 +12,25 @@ export async function GET(req: NextRequest) {
     const lastMonthFirst = new Date(now.getFullYear(), now.getMonth() - 1, 1);
     const lastMonthEnd = new Date(now.getFullYear(), now.getMonth(), 0);
 
+    // Optional `from` / `to` (YYYY-MM-DD) — scope totals + total_received to
+    // the cohort of leads created in that window so the dashboard's global
+    // date filter cascades to server-aggregated numbers. Empty → no filter.
+    const fromYmd = req.nextUrl.searchParams.get("from") || "";
+    const toYmd   = req.nextUrl.searchParams.get("to")   || "";
+    const fromDate = toSqlDate(fromYmd);
+    const toDate   = toSqlDate(toYmd);
+    const leadDateWhere = (alias = "l") => {
+      const c: string[] = [];
+      if (fromDate) c.push(`CAST(${alias}.created_at AS DATE) >= @from`);
+      if (toDate)   c.push(`CAST(${alias}.created_at AS DATE) <= @to`);
+      return c.length ? (`AND ` + c.join(" AND ")) : "";
+    };
+    const bindRange = (r: ReturnType<typeof db.request>) => {
+      if (fromDate) r.input("from", sql.Date, fromDate);
+      if (toDate)   r.input("to",   sql.Date, toDate);
+      return r;
+    };
+
     const [
       totals,
       thisMonth,
@@ -22,15 +41,19 @@ export async function GET(req: NextRequest) {
       recentActivities,
       activityHeatmap,
     ] = await Promise.all([
-      db.request().query(`
+      bindRange(db.request()).query(`
         SELECT
-          (SELECT COUNT(*) FROM leads) as total_leads,
-          (SELECT COUNT(*) FROM leads WHERE pre_doc_no IS NOT NULL) as total_deposits,
-          (SELECT ISNULL(SUM(pre_total_price), 0) FROM leads WHERE pre_doc_no IS NOT NULL) as total_deposit_value,
-          (SELECT COUNT(*) FROM leads WHERE status = 'order') as total_won,
+          (SELECT COUNT(*) FROM leads l WHERE 1=1 ${leadDateWhere()}) as total_leads,
+          (SELECT COUNT(*) FROM leads l WHERE pre_doc_no IS NOT NULL ${leadDateWhere()}) as total_deposits,
+          (SELECT ISNULL(SUM(pre_total_price), 0) FROM leads l WHERE pre_doc_no IS NOT NULL ${leadDateWhere()}) as total_deposit_value,
+          (SELECT COUNT(*) FROM leads l WHERE status = 'order' ${leadDateWhere()}) as total_won,
           -- All cash received that accounting has confirmed (level-2 sign-off).
           -- Covers every slip_field — booking deposit, order installments, etc.
-          (SELECT ISNULL(SUM(amount), 0) FROM payments WHERE confirmed_at IS NOT NULL) as total_received
+          -- When from/to is set, only payments belonging to leads created in
+          -- that window count toward the total.
+          (SELECT ISNULL(SUM(p.amount), 0) FROM payments p
+            INNER JOIN leads l ON l.id = p.lead_id
+            WHERE p.confirmed_at IS NOT NULL ${leadDateWhere()}) as total_received
       `),
       // Revenue is recognized the moment an install is completed (status moves to
       // warranty → gridtie → closed after that). Filtering on status='closed' would

@@ -1,7 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getDb, sql, fixDates } from "@/lib/db";
+import { getDb, sql, fixDates, toSqlDate } from "@/lib/db";
 import { requireAuth } from "@/lib/auth";
 import { logLeadActivity, fmtThaiDate } from "@/lib/lead-activity-log";
+import { validateDocNo } from "@/lib/doc-number";
 
 const statusLabels: Record<string, string> = {
   pre_survey: "รอติดตาม",
@@ -31,7 +32,8 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
                  WHEN EXISTS (SELECT 1 FROM prospects WHERE lead_id = l.id)
                    AND (l.note IS NULL OR l.note NOT LIKE N'สถานะจาก sheet:%')
                  THEN 1 ELSE 0
-               END AS BIT) as from_prospect
+               END AS BIT) as from_prospect,
+               (SELECT COUNT(*) FROM payments WHERE lead_id = l.id AND slip_field LIKE 'order_installment_%' AND confirmed_at IS NOT NULL) as order_paid_count
         FROM leads l
         LEFT JOIN projects p ON l.project_id = p.id
         LEFT JOIN packages pk ON l.interested_package_id = pk.id
@@ -184,7 +186,7 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
     }
     if (body.revisit_date !== undefined) {
       sets.push("revisit_date = @revisit_date");
-      request.input("revisit_date", sql.Date, body.revisit_date ? new Date(body.revisit_date + "T12:00:00") : null);
+      request.input("revisit_date", sql.Date, body.revisit_date ? toSqlDate(body.revisit_date) : null);
     }
     if (body.project_id !== undefined) {
       sets.push("project_id = @project_id");
@@ -228,11 +230,11 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
     }
     if (body.survey_date !== undefined) {
       sets.push("survey_date = @survey_date");
-      request.input("survey_date", sql.Date, body.survey_date ? new Date(body.survey_date + "T12:00:00") : null);
+      request.input("survey_date", sql.Date, body.survey_date ? toSqlDate(body.survey_date) : null);
     }
     if (body.next_follow_up !== undefined) {
       sets.push("next_follow_up = @next_follow_up");
-      request.input("next_follow_up", sql.Date, body.next_follow_up ? new Date(body.next_follow_up + "T12:00:00") : null);
+      request.input("next_follow_up", sql.Date, body.next_follow_up ? toSqlDate(body.next_follow_up) : null);
     }
     if (body.payment_followup_date !== undefined) {
       sets.push("payment_followup_date = @payment_followup_date");
@@ -382,11 +384,11 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
     }
     if (body.install_date !== undefined) {
       sets.push("install_date = @install_date");
-      request.input("install_date", sql.Date, body.install_date ? new Date(body.install_date + "T12:00:00") : null);
+      request.input("install_date", sql.Date, body.install_date ? toSqlDate(body.install_date) : null);
     }
     if (body.install_date_end !== undefined) {
       sets.push("install_date_end = @install_date_end");
-      request.input("install_date_end", sql.Date, body.install_date_end ? new Date(body.install_date_end + "T12:00:00") : null);
+      request.input("install_date_end", sql.Date, body.install_date_end ? toSqlDate(body.install_date_end) : null);
     }
     if (body.install_time_slot !== undefined) {
       sets.push("install_time_slot = @install_time_slot");
@@ -659,6 +661,8 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
       request.input("receipt_order_after_actual_url", sql.NVarChar(sql.MAX), body.receipt_order_after_actual_url);
     }
     if (body.pre_doc_no !== undefined) {
+      const v = await validateDocNo(db, "booking", body.pre_doc_no);
+      if (!v.ok) return NextResponse.json({ error: `pre_doc_no: ${v.reason}` }, { status: 400 });
       sets.push("pre_doc_no = @pre_doc_no");
       request.input("pre_doc_no", sql.NVarChar(20), body.pre_doc_no);
     }
@@ -688,16 +692,18 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
       request.input("warranty_inverter_sn", sql.NVarChar(100), body.warranty_inverter_sn);
     }
     if (body.warranty_doc_no !== undefined) {
+      const v = await validateDocNo(db, "warranty", body.warranty_doc_no);
+      if (!v.ok) return NextResponse.json({ error: `warranty_doc_no: ${v.reason}` }, { status: 400 });
       sets.push("warranty_doc_no = @warranty_doc_no");
       request.input("warranty_doc_no", sql.NVarChar(30), body.warranty_doc_no);
     }
     if (body.warranty_start_date !== undefined) {
       sets.push("warranty_start_date = @warranty_start_date");
-      request.input("warranty_start_date", sql.Date, body.warranty_start_date ? new Date(body.warranty_start_date + "T12:00:00") : null);
+      request.input("warranty_start_date", sql.Date, body.warranty_start_date ? toSqlDate(body.warranty_start_date) : null);
     }
     if (body.warranty_end_date !== undefined) {
       sets.push("warranty_end_date = @warranty_end_date");
-      request.input("warranty_end_date", sql.Date, body.warranty_end_date ? new Date(body.warranty_end_date + "T12:00:00") : null);
+      request.input("warranty_end_date", sql.Date, body.warranty_end_date ? toSqlDate(body.warranty_end_date) : null);
     }
     if (body.warranty_issued_at !== undefined) {
       sets.push("warranty_issued_at = GETDATE()");
@@ -789,23 +795,23 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
     }
     if (body.grid_erc_submitted_date !== undefined) {
       sets.push("grid_erc_submitted_date = @grid_erc_submitted_date");
-      request.input("grid_erc_submitted_date", sql.Date, body.grid_erc_submitted_date ? new Date(body.grid_erc_submitted_date + "T12:00:00") : null);
+      request.input("grid_erc_submitted_date", sql.Date, body.grid_erc_submitted_date ? toSqlDate(body.grid_erc_submitted_date) : null);
     }
     if (body.grid_submitted_date !== undefined) {
       sets.push("grid_submitted_date = @grid_submitted_date");
-      request.input("grid_submitted_date", sql.Date, body.grid_submitted_date ? new Date(body.grid_submitted_date + "T12:00:00") : null);
+      request.input("grid_submitted_date", sql.Date, body.grid_submitted_date ? toSqlDate(body.grid_submitted_date) : null);
     }
     if (body.grid_inspection_date !== undefined) {
       sets.push("grid_inspection_date = @grid_inspection_date");
-      request.input("grid_inspection_date", sql.Date, body.grid_inspection_date ? new Date(body.grid_inspection_date + "T12:00:00") : null);
+      request.input("grid_inspection_date", sql.Date, body.grid_inspection_date ? toSqlDate(body.grid_inspection_date) : null);
     }
     if (body.grid_approved_date !== undefined) {
       sets.push("grid_approved_date = @grid_approved_date");
-      request.input("grid_approved_date", sql.Date, body.grid_approved_date ? new Date(body.grid_approved_date + "T12:00:00") : null);
+      request.input("grid_approved_date", sql.Date, body.grid_approved_date ? toSqlDate(body.grid_approved_date) : null);
     }
     if (body.grid_meter_changed_date !== undefined) {
       sets.push("grid_meter_changed_date = @grid_meter_changed_date");
-      request.input("grid_meter_changed_date", sql.Date, body.grid_meter_changed_date ? new Date(body.grid_meter_changed_date + "T12:00:00") : null);
+      request.input("grid_meter_changed_date", sql.Date, body.grid_meter_changed_date ? toSqlDate(body.grid_meter_changed_date) : null);
     }
     if (body.grid_permit_doc_url !== undefined) {
       sets.push("grid_permit_doc_url = @grid_permit_doc_url");
@@ -865,7 +871,7 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
     }
     if (body.survey_actual_date !== undefined) {
       sets.push("survey_actual_date = @survey_actual_date");
-      request.input("survey_actual_date", sql.Date, body.survey_actual_date ? new Date(body.survey_actual_date + "T12:00:00") : null);
+      request.input("survey_actual_date", sql.Date, body.survey_actual_date ? toSqlDate(body.survey_actual_date) : null);
     }
     if (body.survey_actual_by !== undefined) {
       sets.push("survey_actual_by = @survey_actual_by");
@@ -876,12 +882,14 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
       request.input("quotation_by", sql.NVarChar(200), body.quotation_by);
     }
     if (body.quotation_doc_no !== undefined) {
+      const v = await validateDocNo(db, "quotation", body.quotation_doc_no);
+      if (!v.ok) return NextResponse.json({ error: `quotation_doc_no: ${v.reason}` }, { status: 400 });
       sets.push("quotation_doc_no = @quotation_doc_no");
       request.input("quotation_doc_no", sql.NVarChar(30), body.quotation_doc_no);
     }
     if (body.quotation_sent_date !== undefined) {
       sets.push("quotation_sent_date = @quotation_sent_date");
-      request.input("quotation_sent_date", sql.Date, body.quotation_sent_date ? new Date(body.quotation_sent_date + "T12:00:00") : null);
+      request.input("quotation_sent_date", sql.Date, body.quotation_sent_date ? toSqlDate(body.quotation_sent_date) : null);
     }
     if (body.finance_bank !== undefined) {
       sets.push("finance_bank = @finance_bank");
@@ -909,13 +917,15 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
     }
     if (body.install_actual_date !== undefined) {
       sets.push("install_actual_date = @install_actual_date");
-      request.input("install_actual_date", sql.Date, body.install_actual_date ? new Date(body.install_actual_date + "T12:00:00") : null);
+      request.input("install_actual_date", sql.Date, body.install_actual_date ? toSqlDate(body.install_actual_date) : null);
     }
     if (body.house_number !== undefined) {
       sets.push("house_number = @house_number");
       request.input("house_number", sql.NVarChar(50), body.house_number);
     }
     if (body.survey_doc_no !== undefined) {
+      const v = await validateDocNo(db, "survey", body.survey_doc_no);
+      if (!v.ok) return NextResponse.json({ error: `survey_doc_no: ${v.reason}` }, { status: 400 });
       sets.push("survey_doc_no = @survey_doc_no");
       request.input("survey_doc_no", sql.NVarChar(30), body.survey_doc_no);
     }

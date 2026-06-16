@@ -98,6 +98,18 @@ export function formatPhone(s: string | null | undefined): string {
   return s;
 }
 
+// Strip non-digits, then accept Thai mobile (10 digits, leading 0) or
+// landline (9 digits, leading 0). A 9-digit value missing the leading 0
+// is treated as mobile and the 0 is prepended. Returns null for anything
+// that can't be coerced — used by exports to drop rows with junk phones.
+export function normalizePhone(s: string | null | undefined): string | null {
+  if (!s) return null;
+  const digits = String(s).replace(/\D/g, "");
+  if (digits.length === 9 && digits[0] !== "0") return "0" + digits;
+  if ((digits.length === 9 || digits.length === 10) && digits[0] === "0") return digits;
+  return null;
+}
+
 export function formatThaiId(s: string | null | undefined): string {
   if (!s) return DASH;
   const digits = String(s).replace(/\D/g, "");

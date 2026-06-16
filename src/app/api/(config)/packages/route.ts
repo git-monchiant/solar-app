@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getDb, sql, fixDates } from "@/lib/db";
+import { getDb, sql, fixDates, toSqlDate } from "@/lib/db";
 import { requireAuth } from "@/lib/auth";
 
 export async function GET(req: NextRequest) {
@@ -44,8 +44,8 @@ export async function POST(req: NextRequest) {
       .input("monthly_installment", sql.NVarChar(20), body.monthly_installment || null)
       .input("monthly_saving", sql.Decimal(10, 2), body.monthly_saving || null)
       .input("warranty_years", sql.Int, body.warranty_years || 10)
-      .input("start_date", sql.Date, body.start_date ? new Date(body.start_date + "T12:00:00") : today)
-      .input("expire_date", sql.Date, body.expire_date ? new Date(body.expire_date + "T12:00:00") : default99)
+      .input("start_date", sql.Date, toSqlDate(body.start_date) ?? today)
+      .input("expire_date", sql.Date, toSqlDate(body.expire_date) ?? default99)
       .query(`
         INSERT INTO packages (name, kwp, phase, has_battery, has_panel, has_inverter, is_upgrade,
           battery_kwh, battery_brand, inverter_kw, inverter_brand,

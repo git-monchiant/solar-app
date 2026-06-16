@@ -113,6 +113,9 @@ export default function ReportPage() {
   const projects = [...new Set(data.rows.map(r => r.project_name).filter(Boolean))] as string[];
 
   const filtered = data.rows.filter(r => {
+    // ซ่อน lead ที่ยังไม่เคยชำระเลย (ไม่มีทั้งยอดรับเข้า + ไม่มีรายการรอ
+    // ยืนยัน) — booking number ออกแต่ยังไม่มี activity จริง ไม่ใช่งานของบัญชี
+    if (r.received === 0 && r.pending_approval === 0) return false;
     if (search.trim()) {
       const q = search.toLowerCase();
       if (!r.full_name?.toLowerCase().includes(q) && !r.phone?.includes(q) && !r.pre_doc_no?.toLowerCase().includes(q) && !r.project_name?.toLowerCase().includes(q)) return false;

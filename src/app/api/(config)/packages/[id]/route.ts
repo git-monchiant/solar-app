@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getDb, sql, fixDates } from "@/lib/db";
+import { getDb, sql, fixDates, toSqlDate } from "@/lib/db";
 import { requireAuth } from "@/lib/auth";
 
 export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
@@ -30,8 +30,8 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
       monthly_saving: { type: sql.Decimal(10, 2), value: body.monthly_saving },
       warranty_years: { type: sql.Int, value: body.warranty_years },
       is_active: { type: sql.Bit, value: body.is_active },
-      start_date: { type: sql.Date, value: body.start_date ? new Date(body.start_date + "T12:00:00") : undefined },
-      expire_date: { type: sql.Date, value: body.expire_date ? new Date(body.expire_date + "T12:00:00") : undefined },
+      start_date: { type: sql.Date, value: body.start_date ? toSqlDate(body.start_date) : undefined },
+      expire_date: { type: sql.Date, value: body.expire_date ? toSqlDate(body.expire_date) : undefined },
     };
 
     for (const [key, { type, value }] of Object.entries(fields)) {

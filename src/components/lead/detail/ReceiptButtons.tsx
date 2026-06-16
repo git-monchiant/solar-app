@@ -62,11 +62,11 @@ export default function ReceiptButtons({ leadId, stage, fileLabel, compact, titl
           </button>
           <span className="text-xs text-center text-gray-600 truncate leading-tight font-medium">{label || "ใบเสร็จ"}</span>
         </div>
-        {/* Desktop: icon + label inline (existing text style) */}
+        {/* Desktop: bordered rectangular button */}
         <button
           type="button"
           onClick={openReceipt}
-          className="hidden md:inline-flex items-center gap-1 text-xs font-semibold text-primary hover:text-primary-dark shrink-0"
+          className="hidden md:inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md border border-primary/30 bg-primary/5 text-xs font-semibold text-primary hover:bg-primary/10 transition-colors shrink-0"
         >
           <DocumentIcon className="w-4 h-4" strokeWidth={2} />
           {label || "ใบเสร็จ"}

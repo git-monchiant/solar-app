@@ -14,7 +14,7 @@ export async function GET(req: NextRequest) {
 
     const leadsRes = await db.request().query(`
       SELECT l.id as lead_id, l.pre_doc_no, l.full_name, l.phone, l.payment_type, l.zone,
-             l.status, l.pre_total_price, l.order_total, l.install_extra_cost,
+             l.status, l.pre_total_price, l.order_total, l.order_discount_amount, l.install_extra_cost,
              l.pre_booked_at, l.payment_confirmed,
              l.order_before_paid, l.order_after_paid,
              p.name as project_name, p.district, p.province,
@@ -122,22 +122,46 @@ export async function GET(req: NextRequest) {
       byLead.set(leadId, arr);
     }
 
+    // Drop legacy 2-step rows (order_before_slip / order_after_slip) on leads
+    // that have already migrated to per-installment model (order_installment_N).
+    // Those legacy rows can linger as unconfirmed stubs with the full remaining
+    // amount and would render as a phantom "งวด 2/2 รอชำระ" line item that
+    // duplicates the per-installment rows. Leads still on the old model keep
+    // their before/after rows untouched.
+    for (const [leadId, arr] of byLead) {
+      if (arr.some(i => /^order_installment_\d+$/.test(i.slip_field))) {
+        byLead.set(leadId, arr.filter(i => i.slip_field !== "order_before_slip" && i.slip_field !== "order_after_slip"));
+      }
+    }
+
     const rows = (fixDates(leadsRes.recordset) as typeof leadsRes.recordset).map((l) => {
       const orderTotal = Number(l.order_total || 0);
+      const discount = Number(l.order_discount_amount || 0);
       const extra = Number(l.install_extra_cost || 0);
+      const depositCommit = Number(l.pre_total_price || 0);
       // Project total source-of-truth fallback chain:
-      //   1. Confirmed order_total + extras (after Order step)
+      //   1. Confirmed order_total − discount + extras (after Order step)
       //   2. Package price via pre_package_id (set at /book) or interested_package_id (UI selection)
       //   3. Legacy lead.pre_total_price (only meaningful on old rows)
       const packagePrice = Number(l.package_price || 0);
-      const preTotal = packagePrice > 0 ? packagePrice : Number(l.pre_total_price || 0);
-      const total_value = orderTotal > 0 ? orderTotal + extra : preTotal;
+      const preTotal = packagePrice > 0 ? packagePrice : depositCommit;
+      const total_value = orderTotal > 0 ? Math.max(0, orderTotal + extra - discount) : preTotal;
       const installments = byLead.get(l.lead_id) || [];
-      // Only confirmed payments count toward "received" — pending rows with
-      // unverified slips are NOT money in hand yet.
-      const received = installments
-        .filter(i => i.confirmed_at)
-        .reduce((s, i) => s + i.amount, 0);
+      // Mirror InstallStep's accounting (orderTotal − discount − pre_total_price = installment portion):
+      // once the order exists, the booking-deposit commitment (pre_total_price)
+      // counts as paid toward the order, and only confirmed per-installment
+      // rows add to received. Without this, leads where the discount or
+      // deposit credit applied would show a phantom outstanding that's just
+      // the discount + deposit gap. Survey-fee (pre_slip_url) payments stay
+      // accounted under the pre-order branch below.
+      const isOrderPlaced = orderTotal > 0;
+      const received = isOrderPlaced
+        ? depositCommit + installments
+            .filter(i => i.confirmed_at && /^order_installment_\d+$/.test(i.slip_field))
+            .reduce((s, i) => s + i.amount, 0)
+        : installments
+            .filter(i => i.confirmed_at)
+            .reduce((s, i) => s + i.amount, 0);
       const pendingRows = installments.filter(i => !i.confirmed_at && i.has_slip);
       const pendingApproval = pendingRows.length;
       const pendingAmount = pendingRows.reduce((s, i) => s + i.amount, 0);

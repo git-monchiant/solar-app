@@ -13,6 +13,7 @@ import WarrantyModal from "../WarrantyModal";
 import LineConfirmModal from "@/components/modal/LineConfirmModal";
 import { useSubStep } from "@/lib/hooks/useSubStep";
 import { useIsMobile } from "@/lib/hooks/useIsMobile";
+import { useFileViewer } from "@/lib/hooks/useFileViewer";
 import { buildWarrantyFlex } from "@/lib/utils/line-flex";
 import { compressImage } from "@/lib/utils/compressImage";
 import { formatThaiDate } from "@/lib/utils/formatters";
@@ -98,12 +99,22 @@ interface Props extends StepCommonProps {
 
 export default function WarrantyStep({ lead, state, refresh, packages, expanded, onToggle }: Props) {
   const { me } = useMe();
+  const fileViewer = useFileViewer();
   const installedISO = lead.install_completed_at ? String(lead.install_completed_at).slice(0, 10) : null;
   const warrantyStartISO = lead.warranty_start_date ? String(lead.warranty_start_date).slice(0, 10) : null;
   const defaultStart = warrantyStartISO || installedISO || toISO(new Date());
 
   const [sn, setSn] = useState(lead.warranty_inverter_sn || "");
-  const [docNo, setDocNo] = useState(lead.warranty_doc_no || `SSE${new Date().getFullYear().toString().slice(-2)}${String(lead.id).padStart(4, "0")}`);
+  // Warranty doc-no: stored value wins; otherwise mint via the shared
+  // endpoint so the prefix + counter match the config (default "SSE-YYNNNN").
+  const [docNo, setDocNo] = useState(lead.warranty_doc_no || "");
+  useEffect(() => {
+    if (docNo) return;
+    apiFetch(`/api/leads/${lead.id}/doc-no/mint?type=warranty`, { method: "POST" })
+      .then((r: { docNo: string }) => setDocNo(r.docNo))
+      .catch(console.error);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [lead.id]);
   const [startDate, setStartDate] = useState(defaultStart);
   const [issuing, setIssuing] = useState(false);
   const [inverterCertUrl, setInverterCertUrl] = useState<string | null>(lead.warranty_inverter_cert_url);
@@ -559,6 +570,7 @@ export default function WarrantyStep({ lead, state, refresh, packages, expanded,
         </>
       }
       renderDone={renderDoneContent}
+      overlay={fileViewer.modal}
       subSteps={SUB_STEPS}
       subStep={subStep}
       onSubStepChange={(i) => { setSubStep(i); scrollToStep(); }}
@@ -569,7 +581,7 @@ export default function WarrantyStep({ lead, state, refresh, packages, expanded,
         <div className="grid grid-cols-2 md:grid-cols-3 gap-2">
           <div className="col-span-2 md:col-span-1">
             <label className="text-xs font-semibold tracking-wider uppercase text-gray-400 block mb-1">เลขที่เอกสาร</label>
-            <input value={docNo} onChange={e => setDocNo(e.target.value)} placeholder="SSE250045"
+            <input value={docNo} onChange={e => setDocNo(e.target.value)} placeholder="SSE-260001"
               className="w-full h-11 px-3 rounded-lg border border-gray-200 font-mono focus:outline-none focus:border-primary" />
           </div>
           <div>
@@ -854,7 +866,7 @@ export default function WarrantyStep({ lead, state, refresh, packages, expanded,
                 const name = url.split("/").pop() || "ไฟล์";
                 return (
                   <div key={url} className="flex items-center gap-2 px-3 py-2 rounded-lg bg-gray-50 border border-gray-200">
-                    <a href={url} target="_blank" rel="noreferrer" className="flex-1 min-w-0 truncate text-sm text-gray-700 hover:text-primary">{name}</a>
+                    <a href={url} onClick={fileViewer.handler(url, name)} className="flex-1 min-w-0 truncate text-sm text-gray-700 hover:text-primary">{name}</a>
                     <button type="button" onClick={() => removeOtherDoc(url)} className="text-red-500 hover:text-red-600 text-xs font-semibold" style={{ minHeight: 0 }}>ลบ</button>
                   </div>
                 );
@@ -928,7 +940,7 @@ export default function WarrantyStep({ lead, state, refresh, packages, expanded,
                   const periodLabel = startDate && endDate ? `${formatDate(startDate)} — ${formatDate(endDate)}` : "2 ปี";
                   const messages = [buildWarrantyFlex({
                     origin,
-                    docNo: docNo || `SSE${new Date().getFullYear().toString().slice(-2)}${String(lead.id).padStart(4, "0")}`,
+                    docNo,
                     name: lead.full_name,
                     pdfUrl,
                     periodLabel,
@@ -989,12 +1001,13 @@ function Info({ label, value, mono }: { label: string; value: string | null | un
 }
 
 function CertSlot({ label, url, uploading, inputId, onChange, onRemove }: { label: string; url: string | null; uploading: boolean; inputId: string; onChange: (e: React.ChangeEvent<HTMLInputElement>) => void; onRemove: () => void }) {
+  const viewer = useFileViewer();
   return (
     <div>
       <label className="text-xs font-semibold tracking-wider uppercase text-gray-400 block mb-1">{label}</label>
       {url ? (
         <div className="relative">
-          <a href={url} target="_blank" rel="noreferrer" className="flex items-center gap-2 p-3 rounded-lg border border-gray-200 bg-white hover:bg-gray-50">
+          <a href={url} onClick={viewer.handler(url, label)} className="flex items-center gap-2 p-3 rounded-lg border border-gray-200 bg-white hover:bg-gray-50">
             <svg className="w-6 h-6 text-red-500 shrink-0" fill="currentColor" viewBox="0 0 24 24"><path d="M14,2H6C4.9,2 4,2.9 4,4V20C4,21.1 4.9,22 6,22H18C19.1,22 20,21.1 20,20V8L14,2M18,20H6V4H13V9H18V20Z" /></svg>
             <span className="text-sm text-gray-700 flex-1 truncate">{url.split("/").pop()}</span>
           </a>
@@ -1007,6 +1020,7 @@ function CertSlot({ label, url, uploading, inputId, onChange, onRemove }: { labe
           <input type="file" onChange={onChange} className="hidden" id={inputId} />
         </label>
       )}
+      {viewer.modal}
     </div>
   );
 }

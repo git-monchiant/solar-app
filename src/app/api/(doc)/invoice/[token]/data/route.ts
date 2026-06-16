@@ -1,36 +1,9 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getDb, sql, fixDates } from "@/lib/db";
+import { mintDocNo } from "@/lib/doc-number";
 
 // Data for the unified payment-request document (ใบแจ้งชำระเงิน).
 // Looked up via the lead's pre_pay_token so the URL never exposes lead_id or amount.
-
-// Mirror of POST /api/leads/[id]/book's doc_no logic, but only the doc_no
-// portion (no package/price requirement). Called inline if a lead reaches the
-// invoice page without yet having a booking number — we mint one and save it
-// back so the invoice's reference is stable across reloads.
-async function ensureBookingDocNo(db: Awaited<ReturnType<typeof getDb>>, leadId: number): Promise<string> {
-  const cfg = await db.request().query(`
-    SELECT [key], value FROM app_settings WHERE [key] IN ('doc_prefix_booking', 'doc_digits_booking')
-  `);
-  const cfgMap: Record<string, string> = {};
-  for (const r of cfg.recordset) cfgMap[r.key] = r.value;
-  const prefix = (cfgMap["doc_prefix_booking"] || "SM").replace(/[^A-Z0-9]/gi, "").toUpperCase() || "SM";
-  const digits = Math.max(3, Math.min(5, parseInt(cfgMap["doc_digits_booking"] || "3") || 3));
-  const year = new Date().getFullYear().toString().slice(-2);
-  const maxRes = await db.request()
-    .input("like", sql.NVarChar(20), `${prefix}-${year}%`)
-    .query(`
-      SELECT MAX(CAST(RIGHT(pre_doc_no, ${digits}) AS INT)) AS max_num
-      FROM leads WHERE pre_doc_no LIKE @like
-    `);
-  const nextNum = ((maxRes.recordset[0].max_num || 0) + 1).toString().padStart(digits, "0");
-  const docNo = `${prefix}-${year}${nextNum}`;
-  await db.request()
-    .input("id", sql.Int, leadId)
-    .input("doc_no", sql.NVarChar(20), docNo)
-    .query(`UPDATE leads SET pre_doc_no = @doc_no, updated_at = GETDATE() WHERE id = @id AND pre_doc_no IS NULL`);
-  return docNo;
-}
 
 export async function GET(_req: NextRequest, { params }: { params: Promise<{ token: string }> }) {
   const { token } = await params;
@@ -87,8 +60,8 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ tok
     // Use the booking number (pre_doc_no) as the invoice reference. If the
     // lead hasn't been booked yet, mint one now and persist it so the same
     // number sticks for the actual booking confirmation later.
-    let docNo: string = l.pre_doc_no;
-    if (!docNo) docNo = await ensureBookingDocNo(db, l.id);
+    let docNo: string | null = l.pre_doc_no;
+    if (!docNo) docNo = await mintDocNo(db, l.id, "booking");
 
     const ccSurchargeAmount = l.cc_surcharge_amount != null ? Number(l.cc_surcharge_amount) : 0;
     const ccSurchargePct = l.cc_surcharge_pct != null ? Number(l.cc_surcharge_pct) : null;

@@ -17,6 +17,7 @@ import InstallmentReceiptList from "../InstallmentReceiptList";
 import { useSubStep } from "@/lib/hooks/useSubStep";
 import { formatTHB as fmt, formatThaiDate as formatDate } from "@/lib/utils/formatters";
 import { parseQuotationFiles } from "@/lib/utils/quotation";
+import { useFileViewer } from "@/lib/hooks/useFileViewer";
 import DoneSection from "./DoneSection";
 
 type PayMethod = "transfer" | "loan" | "cc";
@@ -27,7 +28,7 @@ const LOAN_BANKS: { value: LoanBank; label: string }[] = [
   { value: "gsb", label: "ออมสิน" },
 ];
 
-const CC_RATES = [1.5, 2, 2.5, 3] as const;
+const CC_RATES = [0, 1.5, 2, 2.5, 3] as const;
 const CC_DEFAULT = 3;
 
 type Installment = {
@@ -55,7 +56,9 @@ function parseInstallments(raw: string | null | undefined, fallbackPctBefore: nu
           due_date: typeof r?.due_date === "string" && r.due_date ? r.due_date : todayISO(),
           method: r?.method === "loan" ? "loan" : r?.method === "cc" ? "cc" : "transfer",
           loan_bank: r?.loan_bank === "ghb" || r?.loan_bank === "gsb" ? r.loan_bank : null,
-          cc_pct: r?.method === "cc" ? (Number(r?.cc_pct) || CC_DEFAULT) : null,
+          // `??` so a saved 0 ("no surcharge") survives a refresh — `||` would
+          // treat 0 as falsy and snap the value back to CC_DEFAULT.
+          cc_pct: r?.method === "cc" ? (r?.cc_pct != null && !isNaN(Number(r.cc_pct)) ? Number(r.cc_pct) : CC_DEFAULT) : null,
         }));
       }
     } catch { /* fall through */ }
@@ -84,6 +87,7 @@ interface Props extends StepCommonProps {
 }
 
 export default function OrderStep({ lead, state, refresh, expanded, onToggle }: Props) {
+  const fileViewer = useFileViewer();
   const [subStep, setSubStep] = useSubStep(`orderSubStep_${lead.id}`, 0, SUB_STEPS.length);
   const [nextError, setNextError] = useState<string | null>(null);
   const [total, setTotal] = useState<number>(lead.order_total || lead.quotation_amount || 0);
@@ -124,10 +128,31 @@ export default function OrderStep({ lead, state, refresh, expanded, onToggle }: 
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [quoteOptions.length, acceptedIdx]);
 
+  // Once any installment payment is confirmed by accounting, the accepted
+  // quotation is locked — switching the quote would re-base order_total and
+  // every downstream amount derived from it, but recorded payments in the
+  // payments table reflect the old quote. Mixing the two leaves the lead in
+  // an inconsistent state, so block changes entirely past first payment.
+  const quoteLocked = (lead.order_paid_count ?? 0) > 0;
   const pickQuote = async (idx: number) => {
     if (pickingQuote) return;
+    if (quoteLocked) return;
     const opt = quoteOptions[idx];
     if (!opt) return;
+    // Clicking the already-accepted quote is a no-op — avoids a needless
+    // PATCH round-trip when nothing would change.
+    if (idx === acceptedIdx) return;
+    // Recompute the derived order fields so the DB matches the new quote
+    // before any downstream substep submits. Discount: keep the percentage
+    // when one is set (amount scales with total); a flat ฿ discount entered
+    // without a pct is preserved as-is — the user explicitly chose an
+    // absolute figure that survives quote changes. Per-installment amounts
+    // are NOT stored — they're derived from (total − discount) × pct at
+    // render time, so changing order_total alone repoints every installment.
+    const pct = lead.order_discount_pct ?? 0;
+    const newDiscountAmount = pct > 0
+      ? Math.round(opt.amount * pct / 100)
+      : (lead.order_discount_amount ?? 0);
     setPickingQuote(true);
     try {
       await apiFetch(`/api/leads/${lead.id}`, {
@@ -137,10 +162,12 @@ export default function OrderStep({ lead, state, refresh, expanded, onToggle }: 
           quotation_accepted_idx: idx,
           quotation_amount: opt.amount,
           quotation_doc_no: opt.doc_no || null,
+          order_total: opt.amount,
+          order_discount_amount: newDiscountAmount || null,
         }),
       });
-      // Reset order_total so the gateCheck math reflects the new quote.
       setTotal(opt.amount);
+      setDiscountAmount(newDiscountAmount);
       await refresh();
     } finally {
       setPickingQuote(false);
@@ -756,6 +783,7 @@ export default function OrderStep({ lead, state, refresh, expanded, onToggle }: 
         </div>
       }
       renderDone={renderDoneContent}
+      overlay={fileViewer.modal}
     >
       {/* Step 1: ชุดการชำระเงิน (ราคา + งวด) */}
       {subStep === 1 && (
@@ -771,7 +799,7 @@ export default function OrderStep({ lead, state, refresh, expanded, onToggle }: 
             return (
               <div className="rounded-lg bg-orange-50 border border-orange-200 p-3">
                 <div className="text-xs font-bold text-orange-600 uppercase mb-2">ใบเสนอราคาที่ลูกค้าเลือก{accepted.doc_no ? ` · ${accepted.doc_no}` : ""}</div>
-                <a href={accepted.url} target="_blank" rel="noreferrer" className="flex items-center gap-2 px-3 py-2 rounded-lg bg-white border border-orange-100 hover:bg-orange-50 transition-colors">
+                <a href={accepted.url} onClick={fileViewer.handler(accepted.url, `ใบเสนอราคา${accepted.doc_no ? ` ${accepted.doc_no}` : ""}`)} className="flex items-center gap-2 px-3 py-2 rounded-lg bg-white border border-orange-100 hover:bg-orange-50 transition-colors">
                   <svg className="w-4 h-4 text-orange-400 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
                     <path strokeLinecap="round" strokeLinejoin="round" d={isImage ? "M2.25 15.75l5.159-5.159a2.25 2.25 0 013.182 0l5.159 5.159m-1.5-1.5l1.409-1.41a2.25 2.25 0 013.182 0l2.909 2.91M3.75 21h16.5a2.25 2.25 0 002.25-2.25V5.25A2.25 2.25 0 0020.25 3H3.75A2.25 2.25 0 001.5 5.25v13.5A2.25 2.25 0 003.75 21z" : "M19.5 14.25v-2.625a3.375 3.375 0 00-3.375-3.375h-1.5A1.125 1.125 0 0113.5 7.125v-1.5a3.375 3.375 0 00-3.375-3.375H8.25m2.25 0H5.625c-.621 0-1.125.504-1.125 1.125v17.25c0 .621.504 1.125 1.125 1.125h12.75c.621 0 1.125-.504 1.125-1.125V11.25a9 9 0 00-9-9z"} />
                   </svg>
@@ -849,7 +877,7 @@ export default function OrderStep({ lead, state, refresh, expanded, onToggle }: 
                       checked={row.method === "cc"}
                       disabled={paid}
                       onChange={(e) => updateInstallment(i, e.target.checked
-                        ? { method: "cc", cc_pct: row.cc_pct || CC_DEFAULT, loan_bank: null }
+                        ? { method: "cc", cc_pct: row.cc_pct ?? CC_DEFAULT, loan_bank: null }
                         : { method: "transfer", cc_pct: null, loan_bank: null })}
                       className="w-4 h-4 accent-primary"
                     />
@@ -876,7 +904,7 @@ export default function OrderStep({ lead, state, refresh, expanded, onToggle }: 
                     className={`w-full md:w-auto h-9 px-2 rounded-md border border-gray-200 bg-white text-sm focus:outline-none focus:border-primary ${paid ? "opacity-60" : ""}`}
                   >
                     {CC_RATES.map(r => (
-                      <option key={r} value={r}>+{r}%</option>
+                      <option key={r} value={r}>{r === 0 ? "0%" : `+${r}%`}</option>
                     ))}
                   </select>
                 ) : null;
@@ -1394,15 +1422,23 @@ export default function OrderStep({ lead, state, refresh, expanded, onToggle }: 
         <div className="space-y-3">
           {quoteOptions.length > 0 && (
             <div className="rounded-lg bg-orange-50 border border-orange-200 p-3">
-              <div className="text-xs font-bold text-orange-600 uppercase mb-2">
-                {quoteOptions.length === 1 ? "ใบเสนอราคา" : `เลือกใบเสนอราคาที่ลูกค้ารับ (${quoteOptions.length} ชุด)`}
+              <div className="flex items-center justify-between mb-2 gap-2">
+                <div className="text-xs font-bold text-orange-600 uppercase">
+                  {quoteOptions.length === 1 ? "ใบเสนอราคา" : `เลือกใบเสนอราคาที่ลูกค้ารับ (${quoteOptions.length} ชุด)`}
+                </div>
+                {quoteLocked && (
+                  <div className="inline-flex items-center gap-1 text-xxs font-bold uppercase tracking-wider text-amber-700 bg-amber-100 border border-amber-200 px-2 py-0.5 rounded-full" title={`ชำระแล้ว ${lead.order_paid_count} งวด — เปลี่ยนใบเสนอราคาไม่ได้`}>
+                    <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}><path strokeLinecap="round" strokeLinejoin="round" d="M16.5 10.5V6.75a4.5 4.5 0 10-9 0v3.75m-.75 11.25h10.5a2.25 2.25 0 002.25-2.25v-6.75a2.25 2.25 0 00-2.25-2.25H6.75a2.25 2.25 0 00-2.25 2.25v6.75a2.25 2.25 0 002.25 2.25z" /></svg>
+                    <span>ล็อก · ชำระแล้ว {lead.order_paid_count} งวด</span>
+                  </div>
+                )}
               </div>
               <div className={`grid gap-2 ${quoteOptions.length > 1 ? "grid-cols-1 md:grid-cols-3" : "grid-cols-1"}`}>
                 {quoteOptions.map((opt, i) => {
                   const fileName = opt.url.split("/").pop() || `ไฟล์ ${i + 1}`;
                   const isImage = /\.(jpg|jpeg|png|gif|webp)$/i.test(opt.url);
                   const isAccepted = acceptedIdx === i;
-                  const isSelectable = quoteOptions.length > 1;
+                  const isSelectable = quoteOptions.length > 1 && !quoteLocked;
                   return (
                     <div key={i}
                       onClick={isSelectable ? () => pickQuote(i) : undefined}
@@ -1412,7 +1448,7 @@ export default function OrderStep({ lead, state, refresh, expanded, onToggle }: 
                         <div className="text-xxs font-bold uppercase tracking-wider text-gray-500">ชุด {i + 1}</div>
                         {isAccepted && <div className="text-xxs font-bold text-emerald-700 bg-emerald-100 px-2 py-0.5 rounded-full">เลือกแล้ว</div>}
                       </div>
-                      <a href={opt.url} target="_blank" rel="noreferrer" onClick={e => e.stopPropagation()} className="flex items-center gap-2 px-2 py-1.5 rounded bg-orange-50 border border-orange-100 hover:bg-orange-100 transition-colors">
+                      <a href={opt.url} onClick={fileViewer.handler(opt.url, `ใบเสนอราคา ชุด ${i + 1}`)} className="flex items-center gap-2 px-2 py-1.5 rounded bg-orange-50 border border-orange-100 hover:bg-orange-100 transition-colors">
                         <svg className="w-4 h-4 text-orange-400 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
                           <path strokeLinecap="round" strokeLinejoin="round" d={isImage ? "M2.25 15.75l5.159-5.159a2.25 2.25 0 013.182 0l5.159 5.159m-1.5-1.5l1.409-1.41a2.25 2.25 0 013.182 0l2.909 2.91M3.75 21h16.5a2.25 2.25 0 002.25-2.25V5.25A2.25 2.25 0 0020.25 3H3.75A2.25 2.25 0 001.5 5.25v13.5A2.25 2.25 0 003.75 21z" : "M19.5 14.25v-2.625a3.375 3.375 0 00-3.375-3.375h-1.5A1.125 1.125 0 0113.5 7.125v-1.5a3.375 3.375 0 00-3.375-3.375H8.25m2.25 0H5.625c-.621 0-1.125.504-1.125 1.125v17.25c0 .621.504 1.125 1.125 1.125h12.75c.621 0 1.125-.504 1.125-1.125V11.25a9 9 0 00-9-9z"} />
                         </svg>

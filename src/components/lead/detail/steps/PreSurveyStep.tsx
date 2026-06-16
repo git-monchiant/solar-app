@@ -538,11 +538,17 @@ export default function PreSurveyStep({ lead, state, refresh, packages, expanded
     );
   }
 
-  // Sub-step navigation is unrestricted — users can move freely between sub-steps.
-  // All required-field validation is enforced at the final "ยืนยัน" button (sub-step 4).
-  // Always flushAllSaves before changing tab so any in-flight typed value lands.
+  // Sub-step navigation is mostly free — except นัดสำรวจ (step 4) is locked
+  // until the booking payment is verified. Without that gate, ops can stamp
+  // a survey appointment on a lead that never paid the deposit, and the
+  // appointment + survey_date land on the row even though status is still
+  // pre_survey (see lead 437 incident, May 2026).
   const handleSubStepChange = async (i: number) => {
     setNextError(null);
+    if (i === 4 && !paymentVerified) {
+      setNextError("ยังไม่สามารถนัดสำรวจได้ — ต้องยืนยันการชำระค่าจองก่อน");
+      return;
+    }
     await flushAllSaves();
     setSubStep(i);
   };

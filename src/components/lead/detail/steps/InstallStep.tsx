@@ -14,6 +14,7 @@ import StepLayout from "../StepLayout";
 import InstallmentReceiptList from "../InstallmentReceiptList";
 import SignaturePad from "../SignaturePad";
 import { useSubStep } from "@/lib/hooks/useSubStep";
+import { useFileViewer } from "@/lib/hooks/useFileViewer";
 import { compressImage } from "@/lib/utils/compressImage";
 import { buildAppointmentFlex } from "@/lib/utils/line-flex";
 import { formatTHB as fmt, formatThaiDate as formatDate } from "@/lib/utils/formatters";
@@ -28,6 +29,7 @@ interface Props extends StepCommonProps {
 
 export default function InstallStep({ lead, state, refresh, expanded, onToggle }: Props) {
   const { me } = useMe();
+  const fileViewer = useFileViewer();
   const [subStep, setSubStep] = useSubStep(`installSubStep_${lead.id}`, lead.install_confirmed ? 1 : 0, SUB_STEPS.length);
   const [nextError, setNextError] = useState<string | null>(null);
   const [photos, setPhotos] = useState<string[]>(lead.install_photos ? lead.install_photos.split(",").filter(Boolean) : []);
@@ -370,7 +372,7 @@ export default function InstallStep({ lead, state, refresh, expanded, onToggle }
       {/* Customer signature */}
       {lead.install_customer_signature_url && (
         <DoneSection color="emerald" title="ลายเซ็นลูกค้า (รับงาน)">
-          <a href={lead.install_customer_signature_url} target="_blank" rel="noreferrer">
+          <a href={lead.install_customer_signature_url} onClick={fileViewer.handler(lead.install_customer_signature_url, "ลายเซ็นลูกค้า")}>
             <FallbackImage src={lead.install_customer_signature_url} alt="ลายเซ็น" className="max-h-40 max-w-full object-contain bg-white rounded-lg border border-gray-200 hover:opacity-80 transition" />
           </a>
         </DoneSection>
@@ -460,6 +462,7 @@ export default function InstallStep({ lead, state, refresh, expanded, onToggle }
         </div>
       }
       renderDone={renderDoneContent}
+      overlay={fileViewer.modal}
     >
       {/* Step 0: นัด — appointment confirmation */}
       {subStep === 0 && (
@@ -553,9 +556,7 @@ export default function InstallStep({ lead, state, refresh, expanded, onToggle }
             return (
               <a
                 href={checklistUrl}
-                target="_blank"
-                rel="noopener noreferrer"
-                download={downloadName}
+                onClick={fileViewer.handler(checklistUrl, downloadName)}
                 className="w-full h-10 rounded-lg text-xs font-semibold text-gray-700 border border-gray-200 hover:bg-gray-50 transition-colors flex items-center justify-center gap-1.5"
               >
                 <DocumentIcon className="w-4 h-4 text-red-500" strokeWidth={2} />

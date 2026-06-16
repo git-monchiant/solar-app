@@ -25,7 +25,13 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ fil
   try {
     await stat(filepath);
   } catch {
-    return NextResponse.json({ error: "Not found" }, { status: 404 });
+    // 404 must NOT be cached at any edge — without this header Next.js/CF
+    // default kicks in (max-age=14400) and a missing-then-uploaded file
+    // would keep returning 404 from CDN for 4 h even after the file lands.
+    return NextResponse.json(
+      { error: "Not found" },
+      { status: 404, headers: { "Cache-Control": "no-store" } },
+    );
   }
 
   const buffer = await readFile(filepath);
