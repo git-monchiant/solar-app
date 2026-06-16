@@ -65,7 +65,7 @@ export function buildAppointmentFlex({
           {
             type: "box", layout: "horizontal", alignItems: "center", spacing: "sm",
             contents: [
-              { type: "image", url: `${origin}/logos/logo-sena.png`, size: "md", aspectRatio: "3:1", aspectMode: "fit", flex: 0 },
+              { type: "image", url: `${origin}/logos/logo-sena.png?v=2`, size: "md", aspectRatio: "3:1", aspectMode: "fit", flex: 0 },
               { type: "text", text: `  ${title}`, size: "sm", color: accent, weight: "bold" },
             ],
           },
@@ -160,7 +160,7 @@ export function buildSurveyResultFlex({
           {
             type: "box", layout: "horizontal", alignItems: "center", spacing: "sm",
             contents: [
-              { type: "image", url: `${origin}/logos/logo-sena.png`, size: "md", aspectRatio: "3:1", aspectMode: "fit", flex: 0 },
+              { type: "image", url: `${origin}/logos/logo-sena.png?v=2`, size: "md", aspectRatio: "3:1", aspectMode: "fit", flex: 0 },
               { type: "text", text: "  ใบสำรวจหน้างาน", size: "sm", color: accent, weight: "bold" },
             ],
           },
@@ -201,7 +201,7 @@ export function buildWarrantyFlex({ origin, docNo, name, pdfUrl, periodLabel, is
           {
             type: "box", layout: "horizontal", alignItems: "center", spacing: "sm",
             contents: [
-              { type: "image", url: `${origin}/logos/logo-sena.png`, size: "md", aspectRatio: "3:1", aspectMode: "fit", flex: 0 },
+              { type: "image", url: `${origin}/logos/logo-sena.png?v=2`, size: "md", aspectRatio: "3:1", aspectMode: "fit", flex: 0 },
               { type: "text", text: "  ใบรับประกัน", size: "sm", color: "#1ed0c7", weight: "bold" },
             ],
           },
@@ -241,7 +241,7 @@ export function buildPaymentFlex({ origin, title, amount, name, actionLabel, act
           {
             type: "box", layout: "horizontal", alignItems: "center", spacing: "sm",
             contents: [
-              { type: "image", url: `${origin}/logos/logo-sena.png`, size: "md", aspectRatio: "3:1", aspectMode: "fit", flex: 0 },
+              { type: "image", url: `${origin}/logos/logo-sena.png?v=2`, size: "md", aspectRatio: "3:1", aspectMode: "fit", flex: 0 },
               { type: "text", text: `  ${title}`, size: "sm", color: "#1ed0c7", weight: "bold" },
             ],
           },

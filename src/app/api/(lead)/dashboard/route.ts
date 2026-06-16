@@ -12,24 +12,52 @@ export async function GET(req: NextRequest) {
     const lastMonthFirst = new Date(now.getFullYear(), now.getMonth() - 1, 1);
     const lastMonthEnd = new Date(now.getFullYear(), now.getMonth(), 0);
 
-    // Optional `from` / `to` (YYYY-MM-DD) — scope totals + total_received to
-    // the cohort of leads created in that window so the dashboard's global
-    // date filter cascades to server-aggregated numbers. Empty → no filter.
+    // Global filter — every "totals" aggregate composes against the same
+    // eligible-lead subquery, so the SELECTs themselves stay simple and the
+    // filter logic lives in ONE place. Two modes:
+    //
+    //   created   — lead.created_at falls inside [from, to]
+    //   activity  — lead has ANY tracked event inside [from, to]
+    //               (created / survey / install dates on the row itself,
+    //                a payment confirmed in the window, or any activity row)
+    //
+    // Empty from/to → no date constraint (subquery becomes `SELECT id FROM leads`).
     const fromYmd = req.nextUrl.searchParams.get("from") || "";
     const toYmd   = req.nextUrl.searchParams.get("to")   || "";
+    const modeIn  = req.nextUrl.searchParams.get("mode") || "created";
+    const mode: "created" | "activity" = modeIn === "activity" ? "activity" : "created";
     const fromDate = toSqlDate(fromYmd);
     const toDate   = toSqlDate(toYmd);
-    const leadDateWhere = (alias = "l") => {
-      const c: string[] = [];
-      if (fromDate) c.push(`CAST(${alias}.created_at AS DATE) >= @from`);
-      if (toDate)   c.push(`CAST(${alias}.created_at AS DATE) <= @to`);
-      return c.length ? (`AND ` + c.join(" AND ")) : "";
-    };
+    const hasRange = !!fromDate && !!toDate;
+
     const bindRange = (r: ReturnType<typeof db.request>) => {
       if (fromDate) r.input("from", sql.Date, fromDate);
       if (toDate)   r.input("to",   sql.Date, toDate);
       return r;
     };
+
+    // Returns the inline "lead IDs eligible under the current filter" subquery.
+    // Inlined (not a CTE/temp table) so each aggregate can drop it in `IN (...)`
+    // without coordinating a shared scope. Without range it degenerates to
+    // every lead — keeps the rest of the SQL identical regardless of filter.
+    const eligibleSet = !hasRange
+      ? "SELECT id FROM leads"
+      : mode === "created"
+      ? "SELECT id FROM leads WHERE CAST(created_at AS DATE) BETWEEN @from AND @to"
+      : `SELECT id FROM leads l WHERE
+            CAST(l.created_at AS DATE) BETWEEN @from AND @to
+            OR CAST(l.survey_date AS DATE) BETWEEN @from AND @to
+            OR CAST(l.install_date AS DATE) BETWEEN @from AND @to
+            OR CAST(l.install_completed_at AS DATE) BETWEEN @from AND @to
+            OR EXISTS (
+              SELECT 1 FROM payments p WHERE p.lead_id = l.id
+                AND p.confirmed_at IS NOT NULL
+                AND CAST(p.confirmed_at AS DATE) BETWEEN @from AND @to
+            )
+            OR EXISTS (
+              SELECT 1 FROM lead_activities a WHERE a.lead_id = l.id
+                AND CAST(a.created_at AS DATE) BETWEEN @from AND @to
+            )`;
 
     const [
       totals,
@@ -43,17 +71,14 @@ export async function GET(req: NextRequest) {
     ] = await Promise.all([
       bindRange(db.request()).query(`
         SELECT
-          (SELECT COUNT(*) FROM leads l WHERE 1=1 ${leadDateWhere()}) as total_leads,
-          (SELECT COUNT(*) FROM leads l WHERE pre_doc_no IS NOT NULL ${leadDateWhere()}) as total_deposits,
-          (SELECT ISNULL(SUM(pre_total_price), 0) FROM leads l WHERE pre_doc_no IS NOT NULL ${leadDateWhere()}) as total_deposit_value,
-          (SELECT COUNT(*) FROM leads l WHERE status = 'order' ${leadDateWhere()}) as total_won,
+          (SELECT COUNT(*) FROM leads WHERE id IN (${eligibleSet})) as total_leads,
+          (SELECT COUNT(*) FROM leads WHERE pre_doc_no IS NOT NULL AND id IN (${eligibleSet})) as total_deposits,
+          (SELECT ISNULL(SUM(pre_total_price), 0) FROM leads WHERE pre_doc_no IS NOT NULL AND id IN (${eligibleSet})) as total_deposit_value,
+          (SELECT COUNT(*) FROM leads WHERE status = 'order' AND id IN (${eligibleSet})) as total_won,
           -- All cash received that accounting has confirmed (level-2 sign-off).
           -- Covers every slip_field — booking deposit, order installments, etc.
-          -- When from/to is set, only payments belonging to leads created in
-          -- that window count toward the total.
           (SELECT ISNULL(SUM(p.amount), 0) FROM payments p
-            INNER JOIN leads l ON l.id = p.lead_id
-            WHERE p.confirmed_at IS NOT NULL ${leadDateWhere()}) as total_received
+            WHERE p.confirmed_at IS NOT NULL AND p.lead_id IN (${eligibleSet})) as total_received
       `),
       // Revenue is recognized the moment an install is completed (status moves to
       // warranty → gridtie → closed after that). Filtering on status='closed' would
@@ -102,8 +127,11 @@ export async function GET(req: NextRequest) {
         LEFT JOIN users u ON la.created_by = u.id
         ORDER BY la.created_at DESC
       `),
-      // Rolling 33-day window: last 30 days of activity + 3-day future buffer to
-      // match seeker dashboard. Future bars stay empty on the client.
+      // Activity heatmap stays OUTSIDE the global filter — it's a "what's
+      // happening recently" snapshot, scoped only to the 33-day rolling
+      // window so the "30 วันล่าสุด" title is always honest. Filtering it by
+      // cohort would hide normal day-to-day team work that the dashboard's
+      // date selector doesn't intend to silence.
       db.request().query(`
         SELECT COALESCE(la.followup_date, CAST(la.created_at AS DATE)) as day, la.lead_id, l.full_name, la.activity_type,
                COALESCE(

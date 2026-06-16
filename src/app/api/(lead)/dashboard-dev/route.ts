@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getDb } from "@/lib/db";
+import { getDb, sql, toSqlDate } from "@/lib/db";
 import { requireAuth } from "@/lib/auth";
 
 // Aggregations for the experimental admin-only Dashboard-Dev page.
@@ -9,6 +9,40 @@ export async function GET(req: NextRequest) {
   if (gate.error) return gate.error;
   try {
     const db = await getDb();
+
+    // Mirrors /api/dashboard's global filter — see eligibleSet there for the
+    // semantics of created vs activity mode. Same composed-WHERE pattern so
+    // bumping mode/filter logic only needs one place.
+    const fromYmd = req.nextUrl.searchParams.get("from") || "";
+    const toYmd   = req.nextUrl.searchParams.get("to")   || "";
+    const modeIn  = req.nextUrl.searchParams.get("mode") || "created";
+    const mode: "created" | "activity" = modeIn === "activity" ? "activity" : "created";
+    const fromDate = toSqlDate(fromYmd);
+    const toDate   = toSqlDate(toYmd);
+    const hasRange = !!fromDate && !!toDate;
+    const bindRange = (r: ReturnType<typeof db.request>) => {
+      if (fromDate) r.input("from", sql.Date, fromDate);
+      if (toDate)   r.input("to",   sql.Date, toDate);
+      return r;
+    };
+    const eligibleSet = !hasRange
+      ? "SELECT id FROM leads"
+      : mode === "created"
+      ? "SELECT id FROM leads WHERE CAST(created_at AS DATE) BETWEEN @from AND @to"
+      : `SELECT id FROM leads l WHERE
+            CAST(l.created_at AS DATE) BETWEEN @from AND @to
+            OR CAST(l.survey_date AS DATE) BETWEEN @from AND @to
+            OR CAST(l.install_date AS DATE) BETWEEN @from AND @to
+            OR CAST(l.install_completed_at AS DATE) BETWEEN @from AND @to
+            OR EXISTS (
+              SELECT 1 FROM payments p WHERE p.lead_id = l.id
+                AND p.confirmed_at IS NOT NULL
+                AND CAST(p.confirmed_at AS DATE) BETWEEN @from AND @to
+            )
+            OR EXISTS (
+              SELECT 1 FROM lead_activities a WHERE a.lead_id = l.id
+                AND CAST(a.created_at AS DATE) BETWEEN @from AND @to
+            )`;
 
     const [funnel, daily, sources, lostReasons, contactStatus, contactOutcomes, contactRecency, financeBreakdown, interestReasons, interestedCount, undecidedReasons] = await Promise.all([
       // Funnel — cumulative stages matching main dashboard's KPI cards.
@@ -78,7 +112,7 @@ export async function GET(req: NextRequest) {
       //   installed  = install_completed_at IS NOT NULL (ติดตั้งเสร็จ)
       // Booked/paid lookups use LEFT JOIN on DISTINCT lead_id derived tables
       // — MSSQL won't allow SUM(CASE WHEN EXISTS(subquery)).
-      db.request().query(`
+      bindRange(db.request()).query(`
         SELECT
           ISNULL(l.source, '(ไม่ระบุ)') as source,
           COUNT(*) as cnt,
@@ -94,13 +128,15 @@ export async function GET(req: NextRequest) {
           SELECT DISTINCT lead_id FROM payments
           WHERE slip_field LIKE 'order_installment_%' AND confirmed_at IS NOT NULL
         ) op ON op.lead_id = l.id
+        WHERE l.id IN (${eligibleSet})
         GROUP BY l.source
         ORDER BY cnt DESC
       `),
-      db.request().query(`
+      bindRange(db.request()).query(`
         SELECT lost_reason as reason, COUNT(*) as cnt
         FROM leads
         WHERE status = 'lost' AND lost_reason IS NOT NULL AND lost_reason <> ''
+          AND id IN (${eligibleSet})
         GROUP BY lost_reason
         ORDER BY cnt DESC
       `),
@@ -279,27 +315,33 @@ export async function GET(req: NextRequest) {
       `),
       // Interest reasons — explode CSV from prospects.interest_reasons.
       // Only count "interested" prospects (skip undecided / not_interested / not_home / null).
-      db.request().query(`
+      // Scoped to the global filter range when set: prospects don't have a
+      // lifecycle so we filter on their created_at (regardless of mode).
+      bindRange(db.request()).query(`
         SELECT TRIM(value) as code, COUNT(*) as cnt
         FROM prospects
         CROSS APPLY STRING_SPLIT(interest_reasons, ',')
         WHERE interest_reasons IS NOT NULL AND interest_reasons <> ''
           AND interest = 'interested'
+          ${hasRange ? "AND CAST(created_at AS DATE) BETWEEN @from AND @to" : ""}
         GROUP BY TRIM(value)
         ORDER BY cnt DESC
       `),
       // Total "interested" prospects — used as denominator on the chart header
-      db.request().query(`
-        SELECT COUNT(*) as cnt FROM prospects WHERE interest = 'interested'
+      bindRange(db.request()).query(`
+        SELECT COUNT(*) as cnt FROM prospects
+        WHERE interest = 'interested'
+        ${hasRange ? "AND CAST(created_at AS DATE) BETWEEN @from AND @to" : ""}
       `),
       // Undecided reasons — for active pre_survey leads (not booked, not lost)
       // Include NULL bucket as "ไม่ระบุเหตุผล" so total reflects all not-booked.
-      db.request().query(`
+      bindRange(db.request()).query(`
         SELECT
           ISNULL(NULLIF(undecided_reason, N''), N'ไม่ระบุเหตุผล') as reason,
           COUNT(*) as cnt
         FROM leads
         WHERE status = 'pre_survey' AND pre_doc_no IS NULL
+          AND id IN (${eligibleSet})
         GROUP BY ISNULL(NULLIF(undecided_reason, N''), N'ไม่ระบุเหตุผล')
         ORDER BY cnt DESC
       `),

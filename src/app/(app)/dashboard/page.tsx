@@ -56,31 +56,53 @@ export default function DashboardPage() {
   // Click any KPI count → popup lists the leads behind it. Click a name to open
   // that lead's detail in a new tab.
   const [bucket, setBucket] = useState<{ title: string; rows: LifecycleRow[] } | null>(null);
-  // created_at filter — every chip/funnel/popup downstream uses
+  // Global filter — every chip/funnel/popup downstream uses
   // `filteredLifecycleRows`. Default window: 1 Jan 2026 → today (persists
   // across reloads via localStorage). Leaving "from" or "to" empty disables
   // that side of the bound.
+  //   • mode "created"  — lead included if its created_at falls in range
+  //   • mode "activity" — lead included if ANY of its lifecycle dates
+  //                       (created/first_contact/booking_paid/sales_pitch/
+  //                       survey_date/survey_done/quote_issued/order_paid/
+  //                       install_date/install_started/install_done/warranty)
+  //                       falls in range
   const todayYmd = useMemo(() => {
     const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}-${String(d.getDate()).padStart(2,"0")}`;
   }, []);
   const [dateFrom, setDateFrom] = useState<string>("2026-01-01");
   const [dateTo, setDateTo] = useState<string>(todayYmd);
+  const [filterMode, setFilterMode] = useState<"created" | "activity">("created");
   useEffect(() => {
-    const sf = localStorage.getItem("dashboard.dateFrom"); if (sf !== null) setDateFrom(sf);
-    const st = localStorage.getItem("dashboard.dateTo");   if (st !== null) setDateTo(st);
+    // Only restore non-empty saved values so an empty string saved by an old
+    // reset path doesn't poison the chart's range check (which uses truthiness
+    // — empty string falls into the "no filter → 30 days" fallback).
+    const sf = localStorage.getItem("dashboard.dateFrom"); if (sf) setDateFrom(sf);
+    const st = localStorage.getItem("dashboard.dateTo");   if (st) setDateTo(st);
+    const sm = localStorage.getItem("dashboard.filterMode"); if (sm === "activity" || sm === "created") setFilterMode(sm);
   }, []);
   useEffect(() => { localStorage.setItem("dashboard.dateFrom", dateFrom); }, [dateFrom]);
   useEffect(() => { localStorage.setItem("dashboard.dateTo",   dateTo);   }, [dateTo]);
+  useEffect(() => { localStorage.setItem("dashboard.filterMode", filterMode); }, [filterMode]);
   const filteredLifecycleRows = useMemo(() => {
     if (!dateFrom && !dateTo) return lifecycleRows;
-    return lifecycleRows.filter(r => {
-      const c = r.created_at ? String(r.created_at).slice(0, 10) : "";
-      if (!c) return false;
-      if (dateFrom && c < dateFrom) return false;
-      if (dateTo   && c > dateTo)   return false;
+    const inRange = (v: string | null | undefined): boolean => {
+      if (!v) return false;
+      const d = String(v).slice(0, 10);
+      if (dateFrom && d < dateFrom) return false;
+      if (dateTo   && d > dateTo)   return false;
       return true;
-    });
-  }, [lifecycleRows, dateFrom, dateTo]);
+    };
+    if (filterMode === "created") {
+      return lifecycleRows.filter(r => inRange(r.created_at));
+    }
+    // activity: include lead if ANY of these lifecycle dates falls in range
+    const activityCols: (keyof LifecycleRow)[] = [
+      "created_at", "first_contact_at", "sales_pitch_at", "booking_paid_at",
+      "survey_date", "survey_done_at", "quote_issued_at", "order_paid_at",
+      "install_date", "install_started_at", "install_done_at", "warranty_at",
+    ];
+    return lifecycleRows.filter(r => activityCols.some(k => inRange(r[k] as string | null)));
+  }, [lifecycleRows, dateFrom, dateTo, filterMode]);
 
   // /api/dashboard re-fetches when the date filter changes so server-aggregated
   // totals (total_received, total_leads, ...) re-scope to the same cohort the
@@ -90,13 +112,14 @@ export default function DashboardPage() {
     const qs = new URLSearchParams();
     if (dateFrom) qs.set("from", dateFrom);
     if (dateTo)   qs.set("to",   dateTo);
-    const url = `/api/dashboard${qs.toString() ? `?${qs}` : ""}`;
-    apiFetch(url).then(setData).catch(console.error).finally(() => setLoading(false));
-  }, [dateFrom, dateTo]);
+    qs.set("mode", filterMode);
+    const q = qs.toString();
+    apiFetch(`/api/dashboard?${q}`).then(setData).catch(console.error).finally(() => setLoading(false));
+    apiFetch(`/api/dashboard-dev?${q}`).then(setDevData).catch(console.error);
+  }, [dateFrom, dateTo, filterMode]);
   useEffect(() => {
     apiFetch("/api/line-users").then(setLineUsers).catch(console.error);
     apiFetch("/api/lifecycle").then((rows: LifecycleRow[]) => setLifecycleRows(rows)).catch(console.error);
-    apiFetch("/api/dashboard-dev").then(setDevData).catch(console.error);
   }, []);
 
   if (loading) return <div className="flex items-center justify-center h-full py-20"><div className="w-10 h-10 border-3 border-gray-200 border-t-primary rounded-full animate-spin" /></div>;
@@ -114,17 +137,23 @@ export default function DashboardPage() {
               {/* Global created_at filter — every chip / funnel / popup
                   downstream uses filteredLifecycleRows. */}
               <div className="hidden md:flex items-center gap-1 text-xs text-gray-500">
+                <select value={filterMode} onChange={e => setFilterMode(e.target.value as "created" | "activity")}
+                  className="h-8 px-2 rounded-lg bg-white border border-gray-200 text-xs text-gray-700 focus:outline-none focus:border-gray-300"
+                  title="เลือกเงื่อนไขฟิลเตอร์">
+                  <option value="created">วันที่สร้างลีด</option>
+                  <option value="activity">กิจกรรม</option>
+                </select>
                 <input type="date" value={dateFrom} onChange={e => setDateFrom(e.target.value)}
                   className="h-8 px-2 rounded-lg bg-white border border-gray-200 text-xs text-gray-700 focus:outline-none focus:border-gray-300"
-                  title="กรองจากวันที่สร้าง (จาก)" />
+                  title="ช่วงวันที่ (จาก)" />
                 <span className="text-gray-400">–</span>
                 <input type="date" value={dateTo} onChange={e => setDateTo(e.target.value)}
                   className="h-8 px-2 rounded-lg bg-white border border-gray-200 text-xs text-gray-700 focus:outline-none focus:border-gray-300"
-                  title="กรองจากวันที่สร้าง (ถึง)" />
-                {(dateFrom !== "2026-01-01" || dateTo !== todayYmd) && (
-                  <button type="button" onClick={() => { setDateFrom("2026-01-01"); setDateTo(todayYmd); }}
+                  title="ช่วงวันที่ (ถึง)" />
+                {(dateFrom !== "2026-01-01" || dateTo !== todayYmd || filterMode !== "created") && (
+                  <button type="button" onClick={() => { setDateFrom("2026-01-01"); setDateTo(todayYmd); setFilterMode("created"); }}
                     className="ml-1 h-8 px-2 rounded-lg text-xs text-gray-500 hover:text-gray-700"
-                    title="รีเซ็ตเป็น 1 ม.ค. → วันนี้">
+                    title="รีเซ็ตเป็น 1 ม.ค. → วันนี้ (วันที่สร้างลีด)">
                     รีเซ็ต
                   </button>
                 )}
@@ -218,7 +247,14 @@ export default function DashboardPage() {
                       {r.full_name.charAt(0)}
                     </div>
                     <div className="flex-1 min-w-0">
-                      <div className="text-sm font-semibold text-gray-900 truncate">{r.full_name}</div>
+                      <div className="text-sm font-semibold text-gray-900 truncate flex items-baseline gap-2">
+                        <span className="truncate">{r.full_name}</span>
+                        {r.created_at && (
+                          <span className="text-xs font-normal text-gray-400 shrink-0">
+                            สร้าง {new Date(r.created_at).toLocaleDateString("th-TH", { day: "numeric", month: "short", year: "2-digit" })}
+                          </span>
+                        )}
+                      </div>
                       {/* Fixed-width columns so each line in the list reads
                           like a small table — ID / house / paid / install all
                           align vertically across rows. */}
@@ -599,8 +635,11 @@ function ActivityChart({ data }: { data: { day: string; lead_id: number; full_na
     return row.activity_type && row.activity_type !== "lead_created";
   });
 
-  // Rolling window: 30 days history + 3-day future buffer (matches seeker dashboard).
-  // Mobile keeps the tighter 7+1 view because there's no horizontal room.
+  // X-axis stays a fixed 30-day rolling window (+3 future buffer) regardless
+  // of the global filter — the chart's job is to surface what's happening
+  // RECENTLY, not to re-window with the filter. The filter still applies to
+  // the bar data (lead_id IN eligibleSet on the server), so a date-restricted
+  // dashboard shows fewer/zero blocks on days outside the cohort.
   const today = new Date();
   const HISTORY = 30;
   const FUTURE_PAD = 3;
