@@ -174,3 +174,37 @@ console.log(`  ${defOk}/${defs.length} defaults applied`);
 
 console.log(`\nDone. tables ok=${okCount} err=${errCount} rows=${totalRows} pks ok=${pkOk} err=${pkErr} defaults ok=${defOk} err=${defErr}`);
 await pool.close();
+
+// ── prod public/uploads/ → local public/uploads/ ─────────────────────────
+// DB blobs (slip_data, picture_blob, signature_data) come down with the
+// table copy above, but lead-uploaded files live on disk at prod's
+// public/uploads/. Mirror them so quotation PDFs, survey photos, and any
+// other file-backed URL renders correctly when poking around the dev app.
+// --delete keeps local in lockstep with prod (orphan dev-only files get
+// removed; safe because prod is the canonical source of truth).
+import { execSync } from 'child_process';
+import { existsSync, mkdirSync } from 'fs';
+import path from 'path';
+import { fileURLToPath } from 'url';
+
+const __filename = fileURLToPath(import.meta.url);
+const REPO_ROOT = path.resolve(path.dirname(__filename), '..', '..');
+const LOCAL_UPLOADS = path.join(REPO_ROOT, 'public', 'uploads');
+const PRD = { host: '172.22.22.100', port: '1822', user: 'optimus-dev', pass: '0pt!musd3V', dir: '/home/optimus-dev/solar-app/uploads/' };
+
+// Unreachable in dry-run (process.exit(0) above), so only the EXECUTE path
+// matters here.
+if (!existsSync(LOCAL_UPLOADS)) mkdirSync(LOCAL_UPLOADS, { recursive: true });
+console.log('\nSyncing public/uploads/ from prod ...');
+try {
+  execSync('which rsync', { stdio: 'pipe' });
+  execSync('which sshpass', { stdio: 'pipe' });
+  const ssh = `ssh -p ${PRD.port} -o StrictHostKeyChecking=no -o LogLevel=ERROR`;
+  const cmd = `sshpass -p '${PRD.pass}' rsync -a --delete -e "${ssh}" '${PRD.user}@${PRD.host}:${PRD.dir}' '${LOCAL_UPLOADS}/'`;
+  execSync(cmd, { stdio: 'inherit', shell: '/bin/bash' });
+  const count = execSync(`ls -1 '${LOCAL_UPLOADS}' | wc -l`, { shell: '/bin/bash' }).toString().trim();
+  console.log(`  ok — ${count} files in ${LOCAL_UPLOADS}`);
+} catch (e) {
+  console.log(`  skipped/failed: ${e.message?.split('\n')[0] || e}`);
+  console.log('  (need: brew install rsync hudochenkov/sshpass/sshpass)');
+}
