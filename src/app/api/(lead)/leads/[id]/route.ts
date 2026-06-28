@@ -402,6 +402,10 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
       sets.push("install_photos = @install_photos");
       request.input("install_photos", sql.NVarChar(sql.MAX), body.install_photos);
     }
+    if (body.install_photos_extra !== undefined) {
+      sets.push("install_photos_extra = @install_photos_extra");
+      request.input("install_photos_extra", sql.NVarChar(sql.MAX), body.install_photos_extra);
+    }
     if (body.install_note !== undefined) {
       sets.push("install_note = @install_note");
       request.input("install_note", sql.NVarChar(sql.MAX), body.install_note);
@@ -451,6 +455,10 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
     if (body.survey_photos !== undefined) {
       sets.push("survey_photos = @survey_photos");
       request.input("survey_photos", sql.NVarChar(sql.MAX), body.survey_photos);
+    }
+    if (body.survey_photos_extra !== undefined) {
+      sets.push("survey_photos_extra = @survey_photos_extra");
+      request.input("survey_photos_extra", sql.NVarChar(sql.MAX), body.survey_photos_extra);
     }
     if (body.survey_photo_notes !== undefined) {
       sets.push("survey_photo_notes = @survey_photo_notes");
@@ -542,6 +550,14 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
     if (body.survey_breaker_type !== undefined) {
       sets.push("survey_breaker_type = @survey_breaker_type");
       request.input("survey_breaker_type", sql.NVarChar(50), body.survey_breaker_type);
+    }
+    if (body.survey_main_breaker_amp !== undefined) {
+      sets.push("survey_main_breaker_amp = @survey_main_breaker_amp");
+      request.input("survey_main_breaker_amp", sql.NVarChar(50), body.survey_main_breaker_amp);
+    }
+    if (body.survey_main_cable_sqmm !== undefined) {
+      sets.push("survey_main_cable_sqmm = @survey_main_cable_sqmm");
+      request.input("survey_main_cable_sqmm", sql.NVarChar(50), body.survey_main_cable_sqmm);
     }
     if (body.survey_panel_to_inverter_m !== undefined) {
       sets.push("survey_panel_to_inverter_m = @survey_panel_to_inverter_m");
@@ -681,6 +697,17 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
     if (body.pre_booked_at !== undefined) {
       sets.push("pre_booked_at = @pre_booked_at");
       request.input("pre_booked_at", sql.DateTime2, body.pre_booked_at ? new Date(body.pre_booked_at) : null);
+    }
+    if (body.pre_survey_fee_type !== undefined) {
+      // ประเภทค่าสำรวจ — only 'free' or 'normal'. Anything else is a coding bug
+      // upstream, so reject hard instead of silently coercing. Caller is
+      // responsible for sending pre_total_price=0 alongside 'free'.
+      const v = body.pre_survey_fee_type;
+      if (v !== "free" && v !== "normal") {
+        return NextResponse.json({ error: `pre_survey_fee_type must be 'free' or 'normal'` }, { status: 400 });
+      }
+      sets.push("pre_survey_fee_type = @pre_survey_fee_type");
+      request.input("pre_survey_fee_type", sql.NVarChar(10), v);
     }
     if (body.payment_confirmed !== undefined) {
       sets.push("payment_confirmed = @payment_confirmed");

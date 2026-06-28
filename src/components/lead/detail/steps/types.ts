@@ -27,6 +27,7 @@ export interface Lead {
   receipt_order_after_actual_url?: string | null;
   pre_doc_no: string | null;
   pre_total_price: number | null;
+  pre_survey_fee_type: "free" | "normal";
   pre_booked_at: string | null;
   ca_number: string | null;
   payment_confirmed: boolean;
@@ -52,6 +53,7 @@ export interface Lead {
   interested_package_id: number | null;
   interested_package_ids: string | null;
   package_note: string | null;
+  pre_note: string | null;
   quotation_type: string | null;
   line_id: string | null;
   line_display_name?: string | null;
@@ -90,6 +92,8 @@ export interface Lead {
   survey_mdb_model: string | null;
   survey_mdb_slots: string | null;
   survey_breaker_type: string | null;
+  survey_main_breaker_amp: string | null;
+  survey_main_cable_sqmm: string | null;
   survey_panel_to_inverter_m: number | null;
   // PDF — section 3 (Roof structure)
   survey_roof_structure: string | null;

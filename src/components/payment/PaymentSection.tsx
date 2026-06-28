@@ -8,6 +8,7 @@ import ImageLightbox from "@/components/ui/ImageLightbox";
 import PaymentHeader from "./PaymentHeader";
 import { buildPaymentFlex } from "@/lib/utils/line-flex";
 import { compressSlipFile } from "@/lib/utils/compress-slip";
+import { formatTHB } from "@/lib/utils/formatters";
 import { useActiveRoles } from "@/lib/roles";
 import { useDialog } from "@/components/ui/Dialog";
 import ActualReceiptUpload from "@/components/lead/detail/ActualReceiptUpload";
@@ -59,6 +60,26 @@ interface Props {
   discountNote?: string | null;
   ccSurchargePct?: number | null;
   ccSurchargeAmount?: number | null;
+  /** Current saved pre-survey fee type. Passing this prop (with onFeeTypeChange)
+   * surfaces the "ฟรีค่าสำรวจ" checkbox under the amount header. Pre-survey
+   * step is the only caller; other payment screens leave both unset. */
+  feeType?: "free" | "normal";
+  /** Called when the user toggles the checkbox. Parent should PATCH the lead
+   * (pre_survey_fee_type + pre_total_price: 0|default + payment_confirmed flag)
+   * then refresh so the new feeType prop flows back in. */
+  onFeeTypeChange?: (type: "free" | "normal") => Promise<unknown> | void;
+  /** Reports whether the อื่นๆ-tab textarea is missing required input — true
+   * when on tab='other', not waived, and the textarea is empty. Parent's
+   * "ถัดไป" validator merges this with its own slip check so both errors show. */
+  onOtherTabInputMissing?: (missing: boolean) => void;
+  /** Seed value for the อื่นๆ-tab textarea (otherMethod). Used to restore the
+   * remark after a refresh; the parent reads it from lead.pre_note. Only
+   * applies before the payment is confirmed — confirmed reads from
+   * payment.description as before. */
+  initialOtherMethod?: string;
+  /** Fires on every textarea edit. Parent typically debounces this into a
+   * lead.pre_note PATCH so the remark survives refresh/navigation. */
+  onOtherMethodChange?: (value: string) => void;
 }
 
 type Settings = {
@@ -130,6 +151,11 @@ export default function PaymentSection({
   discountNote,
   ccSurchargePct,
   ccSurchargeAmount,
+  feeType,
+  onFeeTypeChange,
+  onOtherTabInputMissing,
+  initialOtherMethod,
+  onOtherMethodChange,
 }: Props) {
   const [confirming, setConfirming] = useState(false);
   const [confirmError, setConfirmError] = useState<string | null>(null);
@@ -158,7 +184,30 @@ export default function PaymentSection({
     if (typeof window === "undefined") return;
     localStorage.setItem(tabStorageKey, tab);
   }, [tab, tabStorageKey]);
-  const [otherMethod, setOtherMethod] = useState("");
+  const [otherMethod, setOtherMethod] = useState(initialOtherMethod ?? "");
+  // Re-seed when the parent's value changes (e.g. lead refresh after PATCH).
+  // Only applies pre-confirmation; once confirmed, payment.description owns it.
+  useEffect(() => {
+    if (!confirmed && initialOtherMethod !== undefined) setOtherMethod(initialOtherMethod);
+  }, [initialOtherMethod, confirmed]);
+  // ประเภทค่าสำรวจ — local radio state mirrors the saved feeType so UI flips
+  // (amount → 0, hide invoice) the moment the user picks "free", before save.
+  // `effectiveWaived` is what the UI actually reads.
+  const waiverEnabled = !!onFeeTypeChange;
+  const [localFeeType, setLocalFeeType] = useState<"free" | "normal">(feeType ?? "normal");
+  const effectiveWaived = waiverEnabled && localFeeType === "free";
+  useEffect(() => { setLocalFeeType(feeType ?? "normal"); }, [feeType]);
+  // Inline amount editor for the radio-row-1 "ค่าสำรวจ X บาท ✎" case. We can't
+  // nest PaymentHeader inside a <label> (any child click would toggle the radio
+  // too) so we mirror its edit affordance locally and stopPropagation on the
+  // pencil so editing doesn't flip the selection back to 'normal'.
+  const [amountEditing, setAmountEditing] = useState(false);
+  const [amountDraft, setAmountDraft] = useState("");
+  const commitAmount = () => {
+    const n = Math.max(0, parseInt(amountDraft) || 0);
+    onAmountEdit?.(n);
+    setAmountEditing(false);
+  };
   const { activeRoles } = useActiveRoles();
   const dialog = useDialog();
   // Gate by the *active* role view, not the user's available roles — when an
@@ -345,6 +394,17 @@ export default function PaymentSection({
       else if (!qr && !link && !bank && other) setTab("other");
     }).catch(console.error);
   }, [onlyOther]);
+  // Free → switch to "other" tab. Independent from the settings-driven default
+  // above so toggling the radio at runtime moves the user to the right place.
+  useEffect(() => {
+    if (effectiveWaived) setTab("other");
+  }, [effectiveWaived]);
+  // Surface "อื่นๆ tab needs a รายละเอียด" requirement up to the parent so its
+  // "ถัดไป" validator can list it. Textarea is required for BOTH normal and
+  // free (free needs a reason; normal needs a payment-method note).
+  useEffect(() => {
+    onOtherTabInputMissing?.(tab === "other" && otherMethod.trim() === "" && !confirmed);
+  }, [tab, otherMethod, confirmed, onOtherTabInputMissing]);
 
   // Allocate a payment_no (Ref2) up-front so the QR carries a stable per-payment
   // reference. Skipped if confirmed (payment row already exists; pending lookup
@@ -718,12 +778,84 @@ export default function PaymentSection({
   return (
     <div className="space-y-3 relative">
       <div className={`flex flex-wrap items-start gap-2 ${hideHeader ? "justify-start" : "justify-between"}`}>
-        {!hideHeader && <PaymentHeader title={paymentTitle} amount={qrAmount} amountLabel={amountLabel} onAmountEdit={onAmountEdit} />}
+        {!hideHeader && (waiverEnabled ? (
+          // Pre-survey header: title + 2 vertical radio rows. Row 1 inlines the
+          // existing amount + pencil edit; row 2 is the ฟรีค่าสำรวจ option.
+          <div>
+            {paymentTitle && <div className="text-sm font-semibold text-gray-900">{paymentTitle}</div>}
+            <div className="mt-1 space-y-1">
+              <div className="flex items-center gap-2 text-xs text-gray-500">
+                <input
+                  type="radio"
+                  name={`fee-type-${leadId}`}
+                  className="w-4 h-4 accent-amber-600 cursor-pointer"
+                  checked={localFeeType === "normal"}
+                  disabled={confirmed}
+                  onChange={() => { setLocalFeeType("normal"); onFeeTypeChange?.("normal"); }}
+                />
+                <span
+                  className="flex items-center gap-1 cursor-pointer"
+                  onClick={() => {
+                    if (confirmed || amountEditing) return;
+                    if (localFeeType !== "normal") { setLocalFeeType("normal"); onFeeTypeChange?.("normal"); }
+                  }}
+                >
+                  {amountLabel ? `${amountLabel} ` : ""}
+                  {amountEditing ? (
+                    <input
+                      type="number"
+                      autoFocus
+                      value={amountDraft}
+                      min={0}
+                      step={100}
+                      onChange={e => setAmountDraft(e.target.value)}
+                      onBlur={commitAmount}
+                      onClick={e => e.stopPropagation()}
+                      onKeyDown={e => {
+                        if (e.key === "Enter") commitAmount();
+                        if (e.key === "Escape") { setAmountDraft(String(qrAmount)); setAmountEditing(false); }
+                      }}
+                      className="w-24 h-6 px-1.5 rounded border border-primary font-mono text-right text-xs focus:outline-none"
+                      style={{ minHeight: 0 }}
+                    />
+                  ) : (
+                    <span>{formatTHB(qrAmount)}</span>
+                  )}
+                  <span>บาท</span>
+                  {onAmountEdit && !amountEditing && (
+                    <button
+                      type="button"
+                      onClick={e => { e.stopPropagation(); setAmountDraft(String(qrAmount)); setAmountEditing(true); }}
+                      className="ml-1 text-gray-400 hover:text-primary transition-colors"
+                      title="แก้ไขจำนวน"
+                      style={{ minHeight: 0 }}
+                    >
+                      <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M16.862 4.487l1.687-1.688a1.875 1.875 0 112.652 2.652L6.832 19.82a4.5 4.5 0 01-1.897 1.13l-2.685.8.8-2.685a4.5 4.5 0 011.13-1.897L16.863 4.487z" /></svg>
+                    </button>
+                  )}
+                </span>
+              </div>
+              <label className="flex items-center gap-2 cursor-pointer select-none text-xs text-gray-500">
+                <input
+                  type="radio"
+                  name={`fee-type-${leadId}`}
+                  className="w-4 h-4 accent-amber-600 cursor-pointer"
+                  checked={localFeeType === "free"}
+                  disabled={confirmed}
+                  onChange={() => { setLocalFeeType("free"); onFeeTypeChange?.("free"); }}
+                />
+                <span>ฟรีค่าสำรวจ</span>
+              </label>
+            </div>
+          </div>
+        ) : (
+          <PaymentHeader title={paymentTitle} amount={qrAmount} amountLabel={amountLabel} onAmountEdit={onAmountEdit} />
+        ))}
         {/* Mobile: 4-col grid below header so every doc tile lines up with the
             ActualReceiptUpload thumbnails (same pattern as InstallmentReceiptList).
             Desktop: shrink-0 inline-flex on the right (existing layout). */}
         <div className="w-full md:w-auto md:shrink-0 grid grid-cols-4 gap-2 md:flex md:items-center md:gap-1">
-          {invoiceDocUrl && (
+          {invoiceDocUrl && !effectiveWaived && (
             <>
               {/* Mobile tile + caption */}
               <div className="md:hidden flex flex-col gap-1">
@@ -809,29 +941,34 @@ export default function PaymentSection({
             <path fillRule="evenodd" clipRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" />
           </svg>
         );
-        const tabBtnCls = (t: string) => `flex-1 pb-2.5 text-xs md:text-sm font-semibold border-b-2 -mb-px transition-colors cursor-pointer inline-flex items-center justify-center whitespace-nowrap ${tab === t ? "text-active border-active" : "text-gray-400 border-transparent hover:text-gray-600"}`;
+        // ฟรีค่าสำรวจ → ทุก tab ยังโชว์อยู่ แต่กดได้แค่ "อื่นๆ" (เกรย์ปุ่มอื่นและ disable click)
+        const lockOthers = effectiveWaived;
+        const tabBtnCls = (t: string, locked: boolean) => `flex-1 pb-2.5 text-xs md:text-sm font-semibold border-b-2 -mb-px transition-colors inline-flex items-center justify-center whitespace-nowrap ${
+          locked ? "text-gray-300 border-transparent cursor-not-allowed" :
+          tab === t ? "text-active border-active cursor-pointer" : "text-gray-400 border-transparent hover:text-gray-600 cursor-pointer"
+        }`;
         return (
           <div className="flex border-b border-gray-200 -mx-3 px-3">
             {qrEnabled && (
-              <button type="button" onClick={() => setTab("qr")} className={tabBtnCls("qr")}>
+              <button type="button" disabled={lockOthers} onClick={() => setTab("qr")} className={tabBtnCls("qr", lockOthers)}>
                 {confirmedMethod === methodForTab.qr && <CheckBadge />}
                 Thai QR
               </button>
             )}
             {linkEnabled && (
-              <button type="button" onClick={() => setTab("link")} className={tabBtnCls("link")}>
+              <button type="button" disabled={lockOthers} onClick={() => setTab("link")} className={tabBtnCls("link", lockOthers)}>
                 {confirmedMethod === methodForTab.link && <CheckBadge />}
                 Payment Link
               </button>
             )}
             {bankEnabled && (
-              <button type="button" onClick={() => setTab("bank")} className={tabBtnCls("bank")}>
+              <button type="button" disabled={lockOthers} onClick={() => setTab("bank")} className={tabBtnCls("bank", lockOthers)}>
                 {confirmedMethod === methodForTab.bank && <CheckBadge />}
                 Bank Account
               </button>
             )}
             {otherEnabled && (
-              <button type="button" onClick={() => setTab("other")} className={tabBtnCls("other")}>
+              <button type="button" onClick={() => setTab("other")} className={tabBtnCls("other", false)}>
                 {confirmedMethod === methodForTab.other && <CheckBadge />}
                 อื่นๆ
               </button>
@@ -959,7 +1096,7 @@ export default function PaymentSection({
             <label className="text-xs font-semibold tracking-wider uppercase text-gray-400 block mb-1">ชำระโดย / รายละเอียด <span className="text-red-500">*</span></label>
             <textarea
               value={otherMethod}
-              onChange={e => setOtherMethod(e.target.value)}
+              onChange={e => { setOtherMethod(e.target.value); onOtherMethodChange?.(e.target.value); }}
               placeholder="รับชำระรูปแบบอื่นๆ เช่น สินเชื่อ, Home Equity (โปรดระบุให้ละเอียด เช่น ธนาคาร, วงเงิน, ระยะเวลาผ่อน, ผ่อนต่อเดือน)"
               disabled={confirmed}
               rows={5}
@@ -975,7 +1112,11 @@ export default function PaymentSection({
 
         <div className="flex items-center justify-between mb-2">
           <div className="text-xs font-semibold tracking-wider uppercase text-gray-400">
-            {tab === "other" ? "หลักฐานการชำระ" : "สลิปโอนเงิน"} <span className="font-mono tabular-nums">{slips.length}/{MAX_SLIPS}</span>
+            {tab === "other" ? "หลักฐานการชำระ" : "สลิปโอนเงิน"}
+            {/* ฟรีค่าสำรวจ → optional; ปกติ → required */}
+            {waiverEnabled && (effectiveWaived
+              ? <span className="text-gray-400 normal-case"> (Optional)</span>
+              : <span className="text-red-500"> *</span>)}
           </div>
           {!confirmed && verifiedCount > 0 && tab !== "other" && (
             <div className="text-xs font-semibold text-emerald-700">✓ ตรวจแล้ว {verifiedCount}</div>
@@ -1086,7 +1227,9 @@ export default function PaymentSection({
 
         {confirmed && (
           <div className="mt-3 space-y-2">
-            <div className="w-full h-11 rounded-lg text-sm font-semibold text-emerald-700 bg-emerald-50 border border-emerald-600/15 flex items-center justify-center gap-1">✓ ยืนยันการชำระเงินเรียบร้อย</div>
+            <div className="w-full h-11 rounded-lg text-sm font-semibold text-emerald-700 bg-emerald-50 border border-emerald-600/15 flex items-center justify-center gap-1">
+              {effectiveWaived ? "✓ ฟรีค่าสำรวจ — ไม่ต้องชำระ" : "✓ ยืนยันการชำระเงินเรียบร้อย"}
+            </div>
             {isAdmin && slipUrl?.startsWith("/api/payments/") && (
               <button
                 type="button"

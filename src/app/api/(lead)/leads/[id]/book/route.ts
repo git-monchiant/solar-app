@@ -18,8 +18,10 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
     const body = await req.json();
     const packageId = parseInt(String(body.package_id || 0));
     const totalPrice = parseFloat(String(body.total_price || 0));
-    if (!packageId || !(totalPrice > 0)) {
-      return NextResponse.json({ error: "package_id and positive total_price required" }, { status: 400 });
+    // total_price = 0 is allowed for ฟรีค่าสำรวจ; reject only negatives so a
+    // typo can't quietly negate the booking amount.
+    if (!packageId || totalPrice < 0) {
+      return NextResponse.json({ error: "package_id and non-negative total_price required" }, { status: 400 });
     }
 
     const db = await getDb();

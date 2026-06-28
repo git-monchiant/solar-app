@@ -14,7 +14,7 @@ import { getSourceStyle } from "@/lib/source-tag";
 import ChannelPickerModal from "@/components/shared/ChannelPickerModal";
 import PaymentSection from "@/components/payment/PaymentSection";
 import DocumentScanner from "@/components/customer/DocumentScanner";
-import { INTEREST_REASONS } from "@/lib/constants/info-labels";
+import { INTEREST_REASONS, PRIMARY_REASON_LABEL } from "@/lib/constants/info-labels";
 
 type Prospect = {
   id: number;
@@ -1544,7 +1544,7 @@ function VisitModal({ prospect, projects, existingProspects, onClose, onRefresh,
                   const sizeLabel = (c: string) => (c === "bat" ? "+Battery" : `${c} kW`);
                   const requirement = [
                     sizeCodes.length ? `ขนาดที่สนใจ: ${sizeCodes.map(sizeLabel).join(", ")}` : "",
-                    reasonCodes.length ? `เหตุผลที่สนใจ: ${reasonCodes.join(", ")}` : "",
+                    reasonCodes.length ? `เหตุผลที่สนใจ: ${reasonCodes.map(c => PRIMARY_REASON_LABEL[c] || c).join(", ")}` : "",
                     reasonNote ? `รายละเอียด: ${reasonNote}` : "",
                     contactHours.length ? `ติดต่อได้: ${[...contactHours].sort((a,b)=>a-b).map(h=>`${h}:00`).join(", ")}` : "",
                     ...existingSolarBits,

@@ -98,7 +98,7 @@ export default function StepLayout({
                     ? "text-active"            // currently on this tab
                     : i < subStep
                     ? "text-active/70"         // already visited — colored, slightly faded
-                    : "text-gray-300"          // not visited yet
+                    : "text-gray-500"          // not visited — readable, not invisible
                 }`}
               >
                 {typeof label === "string" ? label : (

@@ -1,8 +1,8 @@
 "use client";
 import { BoltIcon, XIcon } from "@/components/ui/icons";
 
-import Link from "next/link";
 import { useEffect, useMemo, useRef, useState } from "react";
+import { LeadLink } from "@/components/lead/LeadLink";
 import { apiFetch } from "@/lib/api";
 import { getStatusLabel } from "@/lib/constants/statuses";
 import { formatSlotsRange } from "@/lib/time-slots";
@@ -322,7 +322,7 @@ export default function EventCalendarList({ monthsBack, monthsForward, days, zon
                                 </button>
                               </div>
                             ) : (
-                              <Link key={`${j.event_type}-${j.id}`} href={`/leads/${j.id}`} className={`flex items-center gap-2 p-2 rounded-lg transition-colors ${bg}`}>{inner}</Link>
+                              <LeadLink key={`${j.event_type}-${j.id}`} id={j.id} className={`flex items-center gap-2 p-2 rounded-lg transition-colors ${bg}`}>{inner}</LeadLink>
                             );
                           })}
                         </div>

@@ -148,18 +148,31 @@ export default function DocumentScanner({
         htmlFor={inputId}
         className="flex items-center gap-3 rounded-lg bg-active-light border border-active/20 p-4 cursor-pointer hover:bg-active/10 transition-colors"
       >
-        <div className="w-10 h-10 rounded-xl bg-active text-white flex items-center justify-center shrink-0">
+        <div className="relative w-10 h-10 rounded-xl bg-active text-white flex items-center justify-center shrink-0">
           {status === "reading" ? (
             <div className="w-5 h-5 border-2 border-white/40 border-t-white rounded-full animate-spin" />
           ) : (
-            <CameraIcon className="w-5 h-5" strokeWidth={2} />
+            <>
+              <CameraIcon className="w-5 h-5" strokeWidth={2} />
+              {/* Sparkle overlay — flags this as AI-assisted, not a regular
+                  upload widget. Sits at top-right of the camera badge. */}
+              <svg className="absolute -top-1 -right-1 w-3.5 h-3.5 text-amber-300 drop-shadow" fill="currentColor" viewBox="0 0 24 24">
+                <path d="M12 0l2.4 7.6L22 10l-7.6 2.4L12 20l-2.4-7.6L2 10l7.6-2.4L12 0z" />
+              </svg>
+            </>
           )}
         </div>
         <div className="flex-1 min-w-0">
-          {status === "reading" ? <div className="text-sm font-bold text-active">กำลังอ่านข้อมูล…</div>
-            : status === "done" ? <div className="text-sm font-bold text-emerald-700">✓ กรอกข้อมูลแล้ว</div>
-            : status === "failed" ? <div className="text-sm font-bold text-gray-700">อ่านไม่ได้ ลองอีกครั้ง</div>
-            : <><div className="text-sm font-bold text-active">ถ่ายรูปเอกสาร</div><div className="text-xs text-active/70">{subtitle}</div></>}
+          {status === "reading" ? <div className="text-sm font-bold text-active">AI กำลังอ่านข้อมูล…</div>
+            : status === "done" ? <div className="text-sm font-bold text-emerald-700">✓ AI กรอกข้อมูลให้แล้ว</div>
+            : status === "failed" ? <div className="text-sm font-bold text-gray-700">AI อ่านไม่ออก ลองถ่ายใหม่</div>
+            : <>
+                <div className="flex items-center gap-1.5 mb-0.5">
+                  <span className="text-sm font-bold text-active">ถ่ายรูป — AI กรอกข้อมูลให้</span>
+                  <span className="px-1.5 py-0.5 rounded text-[9px] font-bold bg-active text-white tracking-wider uppercase leading-none">AI</span>
+                </div>
+                <div className="text-xs text-active/70">รองรับ: {subtitle}</div>
+              </>}
         </div>
       </label>
     </div>

@@ -413,34 +413,49 @@ function WarrantySignerSection() {
   );
 }
 
-// Feature toggle for the SMS follow-up channel. Default OFF — when sms_enabled
-// is missing or not "1", AddActivityModal hides the SMS button entirely and
-// /api/sms/send refuses to send. Lets ops turn the channel on/off without
-// touching code if the SMS gateway is down or out of budget.
+// Feature toggle for the SMS + LINE outbound channels. Defaults:
+//   sms_enabled  — OFF (must be explicitly turned on)
+//   line_enabled — ON  (missing/anything-but-"0" allows; dev sets "0" to kill
+//                       outbound sends so testers can't push to real customers)
 function ChannelsSection() {
-  const [enabled, setEnabled] = useState(false);
-  const [original, setOriginal] = useState(false);
+  const [smsEnabled, setSmsEnabled] = useState(false);
+  const [smsOriginal, setSmsOriginal] = useState(false);
+  const [lineEnabled, setLineEnabled] = useState(true);
+  const [lineOriginal, setLineOriginal] = useState(true);
+  // True when LINE_ENABLED=false in the deployment's env. UI greys out the
+  // checkbox so it's obvious nothing can be flipped from here.
+  const [lineEnvLocked, setLineEnvLocked] = useState(false);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
 
   useEffect(() => {
     apiFetch("/api/settings").then((s: Settings) => {
-      const v = s.sms_enabled === "1";
-      setEnabled(v);
-      setOriginal(v);
+      const sms = s.sms_enabled === "1";
+      setSmsEnabled(sms); setSmsOriginal(sms);
+      const envLocked = s.__env_line_locked === "1";
+      setLineEnvLocked(envLocked);
+      // LINE: default true unless explicitly "0" (mirrors the API gate so the
+      // UI matches what the backend actually does). When env-locked, force the
+      // UI state to false regardless of DB so it doesn't lie about what'll send.
+      const line = !envLocked && s.line_enabled !== "0";
+      setLineEnabled(line); setLineOriginal(line);
     }).catch(console.error).finally(() => setLoading(false));
   }, []);
 
-  const dirty = enabled !== original;
+  const dirty = smsEnabled !== smsOriginal || lineEnabled !== lineOriginal;
   const save = async () => {
     setSaving(true);
     try {
       await apiFetch("/api/settings", {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ sms_enabled: enabled ? "1" : "0" }),
+        body: JSON.stringify({
+          sms_enabled: smsEnabled ? "1" : "0",
+          line_enabled: lineEnabled ? "1" : "0",
+        }),
       });
-      setOriginal(enabled);
+      setSmsOriginal(smsEnabled);
+      setLineOriginal(lineEnabled);
     } finally {
       setSaving(false);
     }
@@ -459,13 +474,35 @@ function ChannelsSection() {
           <label className="flex items-start gap-3 cursor-pointer">
             <input
               type="checkbox"
-              checked={enabled}
-              onChange={(e) => setEnabled(e.target.checked)}
+              checked={smsEnabled}
+              onChange={(e) => setSmsEnabled(e.target.checked)}
               className="w-5 h-5 mt-0.5 accent-primary"
             />
             <div>
               <div className="text-sm font-semibold text-gray-900">เปิดใช้งาน SMS</div>
               <div className="text-xs text-gray-500 mt-0.5">ถ้าปิด: ปุ่ม SMS จะหายไปจากหน้า follow-up + API ส่งจะถูก block</div>
+            </div>
+          </label>
+          <label className={`flex items-start gap-3 ${lineEnvLocked ? "cursor-not-allowed opacity-60" : "cursor-pointer"}`}>
+            <input
+              type="checkbox"
+              checked={lineEnabled}
+              disabled={lineEnvLocked}
+              onChange={(e) => setLineEnabled(e.target.checked)}
+              className="w-5 h-5 mt-0.5 accent-primary"
+            />
+            <div>
+              <div className="text-sm font-semibold text-gray-900 flex items-center gap-2">
+                เปิดใช้งาน LINE
+                {lineEnvLocked && (
+                  <span className="text-[10px] font-bold uppercase tracking-wider px-1.5 py-0.5 rounded bg-red-100 text-red-700">LOCKED BY ENV</span>
+                )}
+              </div>
+              <div className="text-xs text-gray-500 mt-0.5">
+                {lineEnvLocked
+                  ? "deploy นี้ถูก hard-disable ด้วย LINE_ENABLED=false — เปิดไม่ได้จากที่นี่"
+                  : "ถ้าปิด: API ส่ง LINE ถูก block — ใช้บน dev เพื่อกันส่งผิดไปลูกค้าจริง"}
+              </div>
             </div>
           </label>
           <div className="flex items-center gap-2">

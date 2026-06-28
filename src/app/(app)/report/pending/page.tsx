@@ -1,8 +1,8 @@
 "use client";
 import { apiFetch } from "@/lib/api";
 import { useEffect, useState } from "react";
-import Link from "next/link";
 import Header from "@/components/layout/Header";
+import { LeadLink } from "@/components/lead/LeadLink";
 import FallbackImage from "@/components/ui/FallbackImage";
 import ImageLightbox, { type LightboxImage } from "@/components/ui/ImageLightbox";
 import { formatTHB } from "@/lib/utils/formatters";
@@ -146,7 +146,7 @@ export default function PendingApprovalReport() {
                   <div className="md:hidden bg-white rounded-xl border border-gray-300 p-3 space-y-2">
                     <div className="flex items-start justify-between gap-2">
                       <div className="min-w-0 flex-1">
-                        <Link href={`/leads/${it.lead_id}`} className="block font-semibold text-gray-900 truncate">{it.full_name}</Link>
+                        <LeadLink id={it.lead_id} className="block font-semibold text-gray-900 truncate">{it.full_name}</LeadLink>
                         <div className="text-[11px] text-gray-400 font-mono truncate">{it.pre_doc_no || `#${it.lead_id}`}{it.project_name ? ` · ${it.project_name}` : ""}</div>
                       </div>
                       <div className="text-right shrink-0">
@@ -181,12 +181,12 @@ export default function PendingApprovalReport() {
                         {i.ref2 && <div className="truncate"><span className="text-gray-400">Ref2: </span><span className="text-gray-800">{i.ref2}</span></div>}
                       </div>
                     )}
-                    <Link
-                      href={`/leads/${it.lead_id}`}
+                    <LeadLink
+                      id={it.lead_id}
                       className="block w-full text-center h-10 leading-10 rounded-lg text-sm font-semibold text-white bg-amber-500 hover:brightness-110"
                     >
                       ยืนยันรับเงิน
-                    </Link>
+                    </LeadLink>
                   </div>
 
                   {/* Desktop row */}
@@ -208,7 +208,7 @@ export default function PendingApprovalReport() {
                     </div>
                     <div className="flex-1 min-w-0">
                       <div className="flex items-center gap-2 flex-wrap">
-                        <Link href={`/leads/${it.lead_id}`} className="font-semibold text-gray-900 hover:text-primary">{it.full_name}</Link>
+                        <LeadLink id={it.lead_id} className="font-semibold text-gray-900 hover:text-primary">{it.full_name}</LeadLink>
                         <span className="text-xs font-mono text-gray-400">{it.pre_doc_no || `#${it.lead_id}`}</span>
                         {it.project_name && <span className="text-xs text-gray-500">· {it.project_name}</span>}
                       </div>
@@ -231,18 +231,12 @@ export default function PendingApprovalReport() {
                       <div className="text-lg font-bold font-mono tabular-nums text-amber-600">{fmt(i.amount)}</div>
                       <div className="text-xs text-gray-400">บาท</div>
                     </div>
-                    {/* Desktop opens the lead detail in a focus-mode tab (no
-                        sidebar / no margin) — matches the LeadCard "open in new
-                        tab on desktop" pattern. Mobile button above keeps the
-                        in-app navigation since phone has no sidebar to hide. */}
-                    <Link
-                      href={`/leads/${it.lead_id}?focus=1`}
-                      target="_blank"
-                      rel="noreferrer"
+                    <LeadLink
+                      id={it.lead_id}
                       className="h-9 px-3 rounded-lg text-sm font-semibold text-white bg-amber-500 hover:brightness-110 inline-flex items-center shrink-0"
                     >
                       ยืนยันรับเงิน
-                    </Link>
+                    </LeadLink>
                   </div>
                 </div>
               );

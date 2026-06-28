@@ -22,10 +22,24 @@ export async function GET(req: NextRequest) {
     const internalPort = process.env.PORT || "3000";
     // ?path= picks which dashboard to capture. Whitelist so we never let a
     // request point puppeteer at an arbitrary URL.
-    const rawPath = new URL(req.url).searchParams.get("path") || "/dashboard";
+    const searchParams = new URL(req.url).searchParams;
+    const rawPath = searchParams.get("path") || "/dashboard";
     const ALLOWED = new Set(["/dashboard", "/dashboard-dev"]);
     const path = ALLOWED.has(rawPath) ? rawPath : "/dashboard";
-    const dashboardUrl = `http://localhost:${internalPort}${path}`;
+    // Forward the global filter the user has applied on screen so the captured
+    // PDF mirrors their view. Embed the filter in the URL query (the dashboard
+    // reads ?from/?to/?mode as its initial state) so the very first render
+    // already fires the filtered fetch — localStorage-only would let the
+    // unfiltered fetch escape during the brief window before the effect runs.
+    const filterFrom = searchParams.get("from") || "";
+    const filterTo   = searchParams.get("to")   || "";
+    const filterModeRaw = searchParams.get("mode") || "created";
+    const filterMode = filterModeRaw === "activity" ? "activity" : "created";
+    const dashUrl = new URL(`http://localhost:${internalPort}${path}`);
+    if (filterFrom) dashUrl.searchParams.set("from", filterFrom);
+    if (filterTo)   dashUrl.searchParams.set("to",   filterTo);
+    dashUrl.searchParams.set("mode", filterMode);
+    const dashboardUrl = dashUrl.toString();
     const userId = String(gate.userId);
 
     browser = await puppeteer.launch({
@@ -40,10 +54,16 @@ export async function GET(req: NextRequest) {
 
     // Auth in this app = x-user-id header sourced from localStorage in
     // src/lib/api.ts. Seed localStorage before the first navigation so the
-    // page's apiFetch calls authenticate as the logged-in user.
-    await page.evaluateOnNewDocument((uid: string) => {
-      try { localStorage.setItem("userId", uid); } catch {}
-    }, userId);
+    // page's apiFetch calls authenticate as the logged-in user. Also seed the
+    // dashboard's date-range filter keys so the report renders the same slice.
+    await page.evaluateOnNewDocument((seed: { uid: string; from: string; to: string; mode: string }) => {
+      try {
+        localStorage.setItem("userId", seed.uid);
+        if (seed.from) localStorage.setItem("dashboard.dateFrom", seed.from);
+        if (seed.to)   localStorage.setItem("dashboard.dateTo",   seed.to);
+        localStorage.setItem("dashboard.filterMode", seed.mode);
+      } catch {}
+    }, { uid: userId, from: filterFrom, to: filterTo, mode: filterMode });
 
     // domcontentloaded is more reliable than networkidle0 here — dev HMR
     // keeps reconnecting websockets and networkidle0 never settles.

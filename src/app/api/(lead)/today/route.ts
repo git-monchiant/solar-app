@@ -180,11 +180,19 @@ export async function GET(req: NextRequest) {
       // warranty/done. Client splits this list by install_date vs today.
       // Matches pipeline's installScheduled rule (status-based, not
       // install_completed_at based — see comments there).
+      //
+      // Final-installment gate: only show leads where EVERY confirmed
+      // installment has cleared (paid_count >= total_count, with total > 0).
+      // Without this, leads that scheduled an install date before paying the
+      // final installment would surface in "รอติดตั้ง" while they still owe
+      // money — mirrored in pipeline's matchesTab for the same reason.
       db.request().query(`
         SELECT ${LEAD_COLS}
         ${LEAD_FROM}
         WHERE l.install_date IS NOT NULL
           AND l.status NOT IN ('warranty', 'gridtie', 'closed', 'lost', 'returned')
+          AND COALESCE(pay.total_count, 0) > 0
+          AND COALESCE(pay.paid_count, 0) >= COALESCE(pay.total_count, 0)
         ORDER BY l.install_date ASC, l.updated_at DESC
       `),
       // 12. รอออกใบรับประกัน — status=warranty

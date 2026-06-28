@@ -157,8 +157,12 @@ export default function PreSurveyStep({ lead, state, refresh, packages, expanded
   const [nextError, setNextError] = useState<string | null>(null);
   // Survey deposit amount — defaults to 1,000 but staff can override before
   // payment is confirmed (e.g. promo waiver, increased deposit). After
-  // confirmation the input is locked.
-  const [depositAmount, setDepositAmount] = useState<number>(lead.pre_total_price ?? DEPOSIT_AMOUNT);
+  // confirmation the input is locked. A 0 here means ฟรีค่าสำรวจ was picked
+  // (saved separately on pre_survey_fee_type) — fall back to the default so
+  // the row 1 "ปกติ" label still reads "1,000 บาท".
+  const [depositAmount, setDepositAmount] = useState<number>(
+    lead.pre_total_price && lead.pre_total_price > 0 ? lead.pre_total_price : DEPOSIT_AMOUNT
+  );
   const [formDraft, setFormDraft] = useState<Partial<Lead>>({});
   const isFirstRegSave = useRef(true);
   const regSaveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -211,6 +215,29 @@ export default function PreSurveyStep({ lead, state, refresh, packages, expanded
   // paymentVerified = actual confirmation (not just slip upload). Derive from
   // lead.payment_confirmed in DB so a stray slip in staging can't unlock Next.
   const [paymentVerified, setPaymentVerified] = useState<boolean>(!!lead.payment_confirmed);
+  // Reported by PaymentSection when user is on อื่นๆ tab + normal mode and
+  // hasn't typed รายละเอียด yet. Folded into the "ถัดไป" validator so the
+  // popup lists both missing fields, not just the slip.
+  const [otherTabInputMissing, setOtherTabInputMissing] = useState(false);
+  // Persist อื่นๆ-tab textarea to lead.pre_note so a refresh/navigation doesn't
+  // wipe the remark. Debounced 600ms — same pattern as the other reg* fields.
+  const preNoteSaveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const isFirstPreNoteSave = useRef(true);
+  const handleOtherMethodChange = (value: string) => {
+    if (isFirstPreNoteSave.current) { isFirstPreNoteSave.current = false; return; }
+    if (preNoteSaveTimerRef.current) clearTimeout(preNoteSaveTimerRef.current);
+    preNoteSaveTimerRef.current = setTimeout(() => {
+      apiFetch(`/api/leads/${lead.id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ pre_note: value || null }),
+      }).catch(console.error);
+      preNoteSaveTimerRef.current = null;
+    }, 600);
+  };
+  useEffect(() => () => {
+    if (preNoteSaveTimerRef.current) clearTimeout(preNoteSaveTimerRef.current);
+  }, []);
   const [surveyDate, setSurveyDate] = useState<string>(lead.survey_date ? lead.survey_date.slice(0, 10) : "");
   const [surveyTimeSlot, setSurveyTimeSlot] = useState<string>(lead.survey_time_slot ?? "");
   const [bookingPreviewOpen, setBookingPreviewOpen] = useState(false);
@@ -329,11 +356,12 @@ export default function PreSurveyStep({ lead, state, refresh, packages, expanded
             )}
             {/* ใบเสร็จ — only after accountant confirms (payment_confirmed=true,
                 i.e. status reached pre_survey-02). Hidden when a real scanned
-                receipt has been uploaded — the upload supersedes the PDF. */}
-            {lead.payment_confirmed && !lead.receipt_deposit_actual_url && (
+                receipt has been uploaded — the upload supersedes the PDF.
+                Also hidden when ฟรีค่าสำรวจ — no actual payment, no receipt. */}
+            {lead.payment_confirmed && lead.pre_survey_fee_type !== "free" && !lead.receipt_deposit_actual_url && (
               <ReceiptButtons leadId={lead.id} stage="deposit" fileLabel={lead.pre_doc_no || `lead_${lead.id}_deposit`} compact />
             )}
-            {lead.payment_confirmed && (
+            {lead.payment_confirmed && lead.pre_survey_fee_type !== "free" && (
               <ActualReceiptUpload
                 leadId={lead.id}
                 field="receipt_deposit_actual_url"
@@ -445,44 +473,60 @@ export default function PreSurveyStep({ lead, state, refresh, packages, expanded
               survey team can verify payment happened. Shows "—" for any
               missing field rather than hiding the whole section. */}
           <DoneSection color="emerald" title="ค่าสำรวจ · เอกสาร">
-            <div className="space-y-0.5">
-              <DataRow
-                label="จำนวนเงิน"
-                value={lead.pre_total_price != null ? `${formatPrice(lead.pre_total_price)} บาท` : "—"}
-                valueClass="font-mono tabular-nums"
-              />
-              <DataRow label="วิธีชำระ" value={paymentLabel || "—"} valueClass="text-emerald-600" />
-              {lead.pre_booked_at && (
-                <DataRow
-                  label="วันที่ชำระ"
-                  value={new Date(String(lead.pre_booked_at).slice(0, 10) + "T12:00:00").toLocaleDateString("th-TH", { day: "numeric", month: "short", year: "numeric" })}
-                />
-              )}
-              <DataRow
-                label="สถานะ"
-                value={lead.payment_confirmed ? "ยืนยันแล้ว" : "ยังไม่ยืนยัน"}
-                valueClass={lead.payment_confirmed ? "text-emerald-600" : "text-amber-600"}
-              />
-            </div>
-            {(lead.pre_bill_photo_url || lead.pre_slip_url) && (
-              <div className="flex gap-3 mt-2">
-                {lead.pre_bill_photo_url && (
-                  <div>
-                    <div className="text-xs text-gray-400 mb-0.5">บิลค่าไฟ</div>
-                    <FallbackImage src={lead.pre_bill_photo_url} alt="Bill" lightboxLabel="บิลค่าไฟ" className="max-h-40 max-w-full object-contain bg-gray-50 rounded-lg border border-gray-200 hover:opacity-80 transition" fallbackLabel="บิลหาย" />
+            {(() => {
+              // Done-view facts. For ฟรีค่าสำรวจ the lead never produced a
+              // payment row, so swap "วิธีชำระ" + "จำนวนเงิน" labels and
+              // suppress the slip warning that would otherwise mislead survey
+              // team into chasing a slip that should not exist.
+              const isFree = lead.pre_survey_fee_type === "free";
+              return <>
+                <div className="space-y-0.5">
+                  <DataRow
+                    label="จำนวนเงิน"
+                    value={isFree ? "0 บาท" : (lead.pre_total_price != null ? `${formatPrice(lead.pre_total_price)} บาท` : "—")}
+                    valueClass="font-mono tabular-nums"
+                  />
+                  <DataRow
+                    label="วิธีชำระ"
+                    value={isFree ? "ฟรีค่าสำรวจ" : (paymentLabel || "—")}
+                    valueClass="text-emerald-600"
+                  />
+                  {isFree && lead.pre_note && (
+                    <DataRow label="หมายเหตุ" value={lead.pre_note} valueClass="break-words" />
+                  )}
+                  {lead.pre_booked_at && (
+                    <DataRow
+                      label="วันที่ชำระ"
+                      value={new Date(String(lead.pre_booked_at).slice(0, 10) + "T12:00:00").toLocaleDateString("th-TH", { day: "numeric", month: "short", year: "numeric" })}
+                    />
+                  )}
+                  <DataRow
+                    label="สถานะ"
+                    value={lead.payment_confirmed ? "ยืนยันแล้ว" : "ยังไม่ยืนยัน"}
+                    valueClass={lead.payment_confirmed ? "text-emerald-600" : "text-amber-600"}
+                  />
+                </div>
+                {(lead.pre_bill_photo_url || lead.pre_slip_url) && (
+                  <div className="flex gap-3 mt-2">
+                    {lead.pre_bill_photo_url && (
+                      <div>
+                        <div className="text-xs text-gray-400 mb-0.5">บิลค่าไฟ</div>
+                        <FallbackImage src={lead.pre_bill_photo_url} alt="Bill" lightboxLabel="บิลค่าไฟ" className="max-h-40 max-w-full object-contain bg-gray-50 rounded-lg border border-gray-200 hover:opacity-80 transition" fallbackLabel="บิลหาย" />
+                      </div>
+                    )}
+                    {lead.pre_slip_url && (
+                      <div>
+                        <div className="text-xs text-gray-400 mb-0.5">สลิปชำระเงิน</div>
+                        <PaymentSlipsThumbs slipUrl={lead.pre_slip_url} label="สลิปชำระเงิน" />
+                      </div>
+                    )}
                   </div>
                 )}
-                {lead.pre_slip_url && (
-                  <div>
-                    <div className="text-xs text-gray-400 mb-0.5">สลิปชำระเงิน</div>
-                    <PaymentSlipsThumbs slipUrl={lead.pre_slip_url} label="สลิปชำระเงิน" />
-                  </div>
+                {!isFree && !lead.pre_slip_url && (
+                  <div className="mt-2 text-xs text-amber-600">⚠ ไม่มีไฟล์สลิปในระบบ</div>
                 )}
-              </div>
-            )}
-            {!lead.pre_slip_url && (
-              <div className="mt-2 text-xs text-amber-600">⚠ ไม่มีไฟล์สลิปในระบบ</div>
-            )}
+              </>;
+            })()}
           </DoneSection>
 
           {/* ข้อมูลลูกค้าเพื่อออกใบเสร็จ · เอกสาร */}
@@ -628,6 +672,9 @@ export default function PreSurveyStep({ lead, state, refresh, packages, expanded
           <PaymentSection
             paymentTitle="ชำระค่าจอง Survey"
             amountLabel="ค่าสำรวจ"
+            // Row 1 (normal) always shows the deposit amount even when ฟรี is
+            // selected — the two radios are independent labels, "1,000 บาท" is
+            // the price tag of "ปกติ", not the current payable amount.
             amount={depositAmount}
             onAmountEdit={lead.payment_confirmed ? undefined : setDepositAmount}
             leadId={lead.id}
@@ -640,6 +687,34 @@ export default function PreSurveyStep({ lead, state, refresh, packages, expanded
             description="ค่าสำรวจ"
             docNo={lead.pre_doc_no ? `${lead.pre_doc_no}-0` : null}
             confirmed={!!lead.payment_confirmed}
+            feeType={lead.pre_survey_fee_type}
+            onFeeTypeChange={async (type) => {
+              // Save type + price here. payment_confirmed stays untouched so
+              // the radio doesn't lock itself — the advancement PATCH flips it
+              // at close time when type='free'.
+              const isFree = type === "free";
+              try {
+                await apiFetch(`/api/leads/${lead.id}`, {
+                  method: "PATCH", headers: { "Content-Type": "application/json" },
+                  body: JSON.stringify({
+                    pre_survey_fee_type: type,
+                    pre_total_price: isFree ? 0 : depositAmount,
+                  }),
+                });
+                // ฟรี → also mint the booking doc so "ใบยืนยันการจอง" shows up
+                // in the done view (just with ยอด 0). Mirrors the /book call
+                // PaymentSection.onConfirmed makes for the normal slip flow.
+                if (isFree && !lead.pre_doc_no && selectedPkg) {
+                  try {
+                    await apiFetch(`/api/leads/${lead.id}/book`, {
+                      method: "POST", headers: { "Content-Type": "application/json" },
+                      body: JSON.stringify({ package_id: parseInt(selectedPkg), total_price: 0, note: lead.pre_note }),
+                    });
+                  } catch (e) { console.error("free /book failed:", e); }
+                }
+                await refresh();
+              } catch (e) { console.error("fee type save failed:", e); }
+            }}
             onConfirmed={async () => {
               // User clicked the real "ยืนยันรับชำระเงิน" button — this is
               // the only moment we flip paymentVerified so Next can unlock.
@@ -685,6 +760,9 @@ export default function PreSurveyStep({ lead, state, refresh, packages, expanded
             // NOT set paymentVerified here.
             onVerified={(url) => { setSlipVerifiedUrl(url || null); }}
             onUndone={refresh}
+            onOtherTabInputMissing={setOtherTabInputMissing}
+            initialOtherMethod={lead.pre_note ?? ""}
+            onOtherMethodChange={handleOtherMethodChange}
           />
         </div>
       )}
@@ -800,7 +878,12 @@ export default function PreSurveyStep({ lead, state, refresh, packages, expanded
               if (!regEmail) missing.push("อีเมล");
               if (!regIdCard) missing.push("เลขบัตรประชาชน");
               if (!regAddress) missing.push("ที่อยู่ตามบัตร");
-              if (!paymentVerified) missing.push((slipVerifiedUrl ? "กรุณายืนยันชำระเงิน" : "กรุณาอัปโหลดสลิปชำระเงิน"));
+              // หมายเหตุก่อน แล้วค่อย slip ตามที่ user request
+              if (otherTabInputMissing) missing.push("กรุณาใส่หมายเหตุการชำระ");
+              // ฟรี = ไม่บังคับ slip; ปกติเท่านั้นถึง enforce slip
+              if (lead.pre_survey_fee_type !== "free" && !paymentVerified) {
+                missing.push(slipVerifiedUrl ? "กรุณายืนยันชำระเงิน" : "กรุณาอัปโหลดสลิปชำระเงิน");
+              }
               if (missing.length > 0) {
                 setNextError(missing.join(", "));
                 return;
@@ -808,22 +891,30 @@ export default function PreSurveyStep({ lead, state, refresh, packages, expanded
               setNextError(null);
               setConfirmSaving(true);
               try {
-                await apiFetch(`/api/leads/${lead.id}`, {
-                  method: "PATCH",
-                  headers: { "Content-Type": "application/json" },
-                  body: JSON.stringify({
-                    full_name: regName || undefined,
-                    email: regEmail || null,
-                    id_card_number: regIdCard || undefined,
-                    id_card_address: regAddress || undefined,
-                    installation_address: regHouseNumber || undefined,
-                    payment_type: paymentMethod,
-                    status: "survey",
-                    survey_date: surveyDate,
-                    survey_time_slot: surveyTimeSlot,
-                    next_follow_up: null,
-                  }),
-                });
+                {
+                  // ฟรี = no slip — flip payment_confirmed=true at close time
+                  // (not at radio click) so the radio doesn't lock itself while
+                  // user is still browsing options. Satisfies the API's
+                  // pre_survey→survey guard in one shot.
+                  const isFree = lead.pre_survey_fee_type === "free";
+                  await apiFetch(`/api/leads/${lead.id}`, {
+                    method: "PATCH",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({
+                      full_name: regName || undefined,
+                      email: regEmail || null,
+                      id_card_number: regIdCard || undefined,
+                      id_card_address: regAddress || undefined,
+                      installation_address: regHouseNumber || undefined,
+                      payment_type: paymentMethod,
+                      status: "survey",
+                      survey_date: surveyDate,
+                      survey_time_slot: surveyTimeSlot,
+                      next_follow_up: null,
+                      ...(isFree ? { payment_confirmed: true, ...(me?.id ? { payment_confirmed_by: me.id } : {}) } : {}),
+                    }),
+                  });
+                }
                 // Send the Booking Confirmation flex to the customer's LINE if
                 // they're linked and the user opted in. Mirrors the survey-done
                 // notify in SurveyStep.markDone — fire-and-forget so the spinner
@@ -885,8 +976,14 @@ export default function PreSurveyStep({ lead, state, refresh, packages, expanded
             if (!regAddress) missingHere.push({ field: "id_card_address", label: "ที่อยู่ตามบัตร" });
             if (!regHouseNumber) missingHere.push({ field: "installation_address", label: "ที่อยู่ติดตั้ง" });
           }
-          if (subStep === 3 && !paymentVerified) {
-            missingHere.push({ field: "slip", label: (slipVerifiedUrl ? "กรุณายืนยันชำระเงิน" : "กรุณาอัปโหลดสลิปชำระเงิน") });
+          if (subStep === 3) {
+            // หมายเหตุก่อน แล้วค่อย slip — ฟรีไม่เช็ค slip เลย
+            if (otherTabInputMissing) {
+              missingHere.push({ field: "other_method", label: "กรุณาใส่หมายเหตุการชำระ" });
+            }
+            if (lead.pre_survey_fee_type !== "free" && !paymentVerified) {
+              missingHere.push({ field: "slip", label: (slipVerifiedUrl ? "กรุณายืนยันชำระเงิน" : "กรุณาอัปโหลดสลิปชำระเงิน") });
+            }
           }
           if (missingHere.length > 0) {
             setNextError(missingHere.map(m => m.label).join(", "));

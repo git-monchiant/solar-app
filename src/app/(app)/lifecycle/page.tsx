@@ -9,6 +9,7 @@ import * as XLSX from "xlsx-js-style";
 import Header from "@/components/layout/Header";
 import { STATUS_CONFIG, getMainStatus, getStatusLabel } from "@/lib/constants/statuses";
 import { formatThaiDateShort } from "@/lib/utils/formatters";
+import { LeadLink } from "@/components/lead/LeadLink";
 
 interface Row {
   id: number;
@@ -16,6 +17,7 @@ interface Row {
   full_name: string;
   status: string;
   created_at: string | null;
+  assigned_name: string | null;
   first_contact_at: string | null;
   first_contact_state: "yes" | "no" | null;
   contact2_at: string | null; contact2_state: "yes" | "no" | null;
@@ -31,11 +33,27 @@ interface Row {
   order_installments: string | null;
   order_paid_count: number | null;
   order_total: number | null;
+  order_discount_amount: number | null;
+  install_extra_cost: number | null;
+  pre_total_price: number | null;
+  payment_dates_json: string | null;
   payment_followup_date: string | null;
   install_date: string | null;
   install_started_at: string | null;
   install_done_at: string | null;
   warranty_at: string | null;
+}
+
+// Decode payment_dates_json into a flat list ordered by slot. Each entry is
+// the amount + confirmed_at date for a slip_field. "pre_slip_url" sorts first
+// as the booking/survey deposit; subsequent entries are installment 0, 1, 2, …
+// in order.
+function parsePaymentDates(json: string | null): Array<{ field: string; amount: number | null; confirmed_at: string }> {
+  if (!json) return [];
+  try {
+    const arr = JSON.parse(json) as Array<{ slip_field: string; amount: number | null; confirmed_at: string }>;
+    return arr.map(x => ({ field: x.slip_field, amount: x.amount ?? null, confirmed_at: x.confirmed_at }));
+  } catch { return []; }
 }
 
 const STATE_KEY: Record<string, keyof Row | undefined> = {
@@ -232,13 +250,34 @@ export default function LifecyclePage() {
       return { v: fmtDateFull(date), state: state ?? "yes" };
     };
 
-    // Two-row header: groups (merged) on top, columns below — mirrors the
-    // on-screen matrix so the spreadsheet reads the same way.
+    // Parse per-lead payment list once so we can pull installment amounts when
+    // rendering งวด 1-4 cells. The new layout is fixed-width (4 งวด max), no
+    // need to pre-scan for the widest row.
+    const paymentLists = filtered.map(r => parsePaymentDates(r.payment_dates_json));
+    const MAX_INSTALLMENTS = 4;
+    // Per-installment % pulled from order_installments JSON. Falls back to 0
+    // when the lead hasn't planned that slot yet (the column still shows 0
+    // instead of a blank per the user's "no value → 0" rule).
+    const installmentPct = (raw: string | null, slot: number): number => {
+      if (!raw) return 0;
+      try {
+        const arr = JSON.parse(raw) as Array<{ pct?: number }>;
+        if (Array.isArray(arr) && arr[slot] && typeof arr[slot].pct === "number") {
+          return Math.round(arr[slot].pct as number);
+        }
+      } catch { /* ignore */ }
+      return 0;
+    };
+    // Quote/Order money columns — 11 fixed columns, no per-row variability.
+    // (See dataCells for the exact mapping.) Group total = 2 quote/payment
+    // workflow dates + 11 money + 1 followup date = 14.
     const groupSpec: { title: string; cols: number }[] = [
-      { title: "ลีด", cols: 6 },
+      { title: "ลีด", cols: 7 }, // + ชื่อ Sales
       { title: "การติดต่อ", cols: 6 },
       { title: "Pre-Survey / Survey", cols: 3 },
-      { title: "Quote / Order", cols: 6 },
+      // Quote/Order = 2 workflow dates + 11 money + 5 payment dates (one
+      // per slot: เงินจอง, งวด 1, 2, 3, 4) + 1 followup date = 19
+      { title: "Quote / Order", cols: 19 },
       { title: "ติดตั้ง / รับประกัน", cols: 4 },
     ];
     const totalCols = groupSpec.reduce((s, g) => s + g.cols, 0);
@@ -248,42 +287,88 @@ export default function LifecyclePage() {
       for (let i = 1; i < g.cols; i++) groupRow.push("");
     }
     const colRow = [
-      "#", "บ้านเลขที่", "ชื่อ", "สถานะ", "วันสร้าง", "Aging",
+      "#", "บ้านเลขที่", "ชื่อ", "ชื่อ Sales", "สถานะ", "วันสร้าง", "Aging",
       "ครั้งที่ 1", "ครั้งที่ 2", "ครั้งที่ 3", "ครั้งที่ 4", "ครั้งที่ 5", "เสนอขาย",
       "จองสำรวจ", "นัดสำรวจ", "สำรวจเสร็จ",
-      "ออกใบเสนอราคา", "จ่ายมัดจำ/ทั้งหมด", "เงินมัดจำ", "% มัดจำ", "ยอดรวม", "นัดติดตามชำระ",
+      "ออกใบเสนอราคา", "จ่ายมัดจำ/ทั้งหมด",
+      // Money flow: เงินจอง+date → quote → installments (amount, %?, date) → totals
+      "เงินจอง", "วันที่ชำระจอง", "มูลค่างาน", "ส่วนลด",
+      "งวด 1 (มัดจำ)", "% งวด 1", "วันที่ชำระงวด 1",
+      "งวด 2", "วันที่ชำระงวด 2",
+      "งวด 3", "วันที่ชำระงวด 3",
+      "งวด 4", "วันที่ชำระงวด 4",
+      "รวมเงินรับตามใบเสนอราคา", "เงินจ่ายเพิ่ม", "ยอดรวม",
+      "นัดติดตามชำระ",
       "นัดติดตั้ง", "เริ่มติดตั้ง", "ติดตั้งเสร็จ", "ออกใบรับประกัน",
     ];
-    const dataCells: (CellInfo | { v: string | number })[][] = filtered.map((r, i) => [
-      { v: i + 1 },
-      { v: r.house_number ?? "" },
-      { v: r.full_name },
-      { v: getStatusLabel({ status: r.status, install_date: r.install_date }) },
-      fmt(r.created_at),
-      (() => {
-        const a = agingDays(r.created_at);
-        return { v: a == null ? "" : `${a}d` };
-      })(),
-      fmt(r.first_contact_at, r.first_contact_state),
-      fmt(r.contact2_at, r.contact2_state),
-      fmt(r.contact3_at, r.contact3_state),
-      fmt(r.contact4_at, r.contact4_state),
-      fmt(r.contact5_at, r.contact5_state),
-      fmt(r.sales_pitch_at),
-      fmt(r.booking_paid_at),
-      fmt(r.survey_date),
-      fmt(r.survey_done_at),
-      fmt(r.quote_issued_at),
-      fmt(r.order_paid_at),
-      (() => { const p = depositPct(r.order_installments); return { v: p != null && r.order_total ? Math.round((r.order_total * p) / 100) : "" }; })(),
-      (() => { const p = depositPct(r.order_installments); return { v: p != null ? p : "" }; })(),
-      { v: r.order_total ?? "" },
-      fmt(r.payment_followup_date),
-      fmt(r.install_date),
-      fmt(r.install_started_at),
-      fmt(r.install_done_at),
-      fmt(r.warranty_at),
-    ]);
+    const dataCells: (CellInfo | { v: string | number })[][] = filtered.map((r, i) => {
+      const payments = paymentLists[i];
+      const bookingPay = payments.find(p => p.field === "pre_slip_url");
+      const installmentPays = payments.filter(p => p.field !== "pre_slip_url");
+      // เงินจอง uses the booked amount (pre_total_price) per spec — different
+      // from what the customer actually paid when partial.
+      const deposit = r.pre_total_price ?? 0;
+      const bookingDate = bookingPay?.confirmed_at ?? null;
+      // งวด 1-4: amount + paid date come from the confirmed payment row (what
+      // actually arrived). Missing slot → 0 amount + blank date per user spec.
+      const installmentAmounts: number[] = [];
+      const installmentDates: (string | null)[] = [];
+      for (let j = 0; j < MAX_INSTALLMENTS; j++) {
+        installmentAmounts.push(installmentPays[j]?.amount ?? 0);
+        installmentDates.push(installmentPays[j]?.confirmed_at ?? null);
+      }
+      const installmentPct1 = installmentPct(r.order_installments, 0);
+      // รวมเงินรับตามใบเสนอราคา = sum of installments (excludes เงินจอง)
+      const installSum = installmentAmounts.reduce((s, n) => s + n, 0);
+      const extraCost = r.install_extra_cost ?? 0;
+      // ยอดรวม (grand) = เงินจอง + รวมเงินรับ + เงินจ่ายเพิ่ม
+      const grandTotal = deposit + installSum + extraCost;
+      return [
+        { v: i + 1 },
+        { v: r.house_number ?? "" },
+        { v: r.full_name },
+        { v: r.assigned_name ?? "" },
+        { v: getStatusLabel({ status: r.status, install_date: r.install_date }) },
+        fmt(r.created_at),
+        (() => {
+          const a = agingDays(r.created_at);
+          return { v: a == null ? "" : `${a}d` };
+        })(),
+        fmt(r.first_contact_at, r.first_contact_state),
+        fmt(r.contact2_at, r.contact2_state),
+        fmt(r.contact3_at, r.contact3_state),
+        fmt(r.contact4_at, r.contact4_state),
+        fmt(r.contact5_at, r.contact5_state),
+        fmt(r.sales_pitch_at),
+        fmt(r.booking_paid_at),
+        fmt(r.survey_date),
+        fmt(r.survey_done_at),
+        fmt(r.quote_issued_at),
+        fmt(r.order_paid_at),
+        // — Quote/Order money + paid dates (16 cells) —
+        { v: deposit },                                   // เงินจอง
+        fmt(bookingDate),                                 // วันที่ชำระจอง
+        { v: r.order_total ?? 0 },                        // มูลค่างาน
+        { v: r.order_discount_amount ?? 0 },              // ส่วนลด
+        { v: installmentAmounts[0] },                     // งวด 1 (มัดจำ)
+        { v: installmentPct1 },                           // % งวด 1
+        fmt(installmentDates[0]),                         // วันที่ชำระงวด 1
+        { v: installmentAmounts[1] },                     // งวด 2
+        fmt(installmentDates[1]),                         // วันที่ชำระงวด 2
+        { v: installmentAmounts[2] },                     // งวด 3
+        fmt(installmentDates[2]),                         // วันที่ชำระงวด 3
+        { v: installmentAmounts[3] },                     // งวด 4
+        fmt(installmentDates[3]),                         // วันที่ชำระงวด 4
+        { v: installSum },                                // รวมเงินรับตามใบเสนอราคา
+        { v: extraCost },                                 // เงินจ่ายเพิ่ม
+        { v: grandTotal },                                // ยอดรวม
+        fmt(r.payment_followup_date),                     // นัดติดตามชำระ
+        fmt(r.install_date),
+        fmt(r.install_started_at),
+        fmt(r.install_done_at),
+        fmt(r.warranty_at),
+      ];
+    });
     const dataRows = dataCells.map(row => row.map(c => c.v));
     const ws = XLSX.utils.aoa_to_sheet([groupRow, colRow, ...dataRows]);
 
@@ -319,18 +404,45 @@ export default function LifecyclePage() {
       right: { style: "hair", color: { rgb: "D0D0D0" } },
     };
 
+    // Money column tints — each slot gets a distinct pastel; its paid-date
+    // column inherits the same colour so reader can pair amount-with-date at
+    // a glance even when scrolled. เงินจอง (peach) → installments (blue,
+    // green, pink, peach) → รวม + grand (warm yellow).
+    const moneyPalette: Record<string, string> = {
+      "เงินจอง": "F8D8B8", "วันที่ชำระจอง": "F8D8B8",
+      "งวด 1 (มัดจำ)": "C5D9F1", "% งวด 1": "C5D9F1", "วันที่ชำระงวด 1": "C5D9F1",
+      "งวด 2": "D8E8C5", "วันที่ชำระงวด 2": "D8E8C5",
+      "งวด 3": "E2C5E0", "วันที่ชำระงวด 3": "E2C5E0",
+      "งวด 4": "F4D7C5", "วันที่ชำระงวด 4": "F4D7C5",
+      "รวมเงินรับตามใบเสนอราคา": "F4E8B7",
+      "ยอดรวม": "F4E8B7",
+    };
+    const colorByCol = new Map<number, string>();
+    colRow.forEach((label, idx) => {
+      const rgb = moneyPalette[label];
+      if (rgb) colorByCol.set(idx, rgb);
+    });
+    const colHeaderStyleFor = (c: number) => {
+      const rgb = colorByCol.get(c);
+      return rgb ? { ...colHeaderStyle, fill: { fgColor: { rgb } } } : colHeaderStyle;
+    };
     for (let c = 0; c < totalCols; c++) {
       const a = XLSX.utils.encode_cell({ r: 0, c });
       const b = XLSX.utils.encode_cell({ r: 1, c });
       if (ws[a]) ws[a].s = groupStyle;
-      if (ws[b]) ws[b].s = colHeaderStyle;
+      if (ws[b]) ws[b].s = colHeaderStyleFor(c);
     }
     // Number formats: accounting on money columns, "0%" on the percent column —
     // both stay sortable/summable numbers (not text).
     const ACCT_FMT = '_(* #,##0_);_(* (#,##0);_(* "-"_);_(@_)';
     const PCT_FMT = '0"%"';
-    const moneyCols = new Set(colRow.map((l, i) => (l === "เงินมัดจำ" || l === "ยอดรวม") ? i : -1).filter(i => i >= 0));
-    const pctCols = new Set(colRow.map((l, i) => l === "% มัดจำ" ? i : -1).filter(i => i >= 0));
+    const MONEY_LABELS = new Set([
+      "เงินจอง", "มูลค่างาน", "ส่วนลด",
+      "งวด 1 (มัดจำ)", "งวด 2", "งวด 3", "งวด 4",
+      "รวมเงินรับตามใบเสนอราคา", "เงินจ่ายเพิ่ม", "ยอดรวม",
+    ]);
+    const moneyCols = new Set(colRow.map((l, i) => MONEY_LABELS.has(l) ? i : -1).filter(i => i >= 0));
+    const pctCols = new Set(colRow.map((l, i) => l === "% งวด 1" ? i : -1).filter(i => i >= 0));
 
     // Each data cell gets its own font colour: green when the milestone was
     // hit successfully, red when contact failed, default grey otherwise.
@@ -360,11 +472,24 @@ export default function LifecyclePage() {
       }
     }
 
+    // Widths track the column order:
+    //   ลีด (7) | การติดต่อ (6) | Pre-Survey/Survey (3)
+    //   | Quote/Order: 2 workflow dates + 16 money/paid-date + 1 followup = 19
+    //   | ติดตั้ง/รับประกัน (4)
     ws["!cols"] = [
-      { wch: 4 }, { wch: 10 }, { wch: 24 }, { wch: 14 }, { wch: 14 }, { wch: 8 },
+      { wch: 4 }, { wch: 10 }, { wch: 24 }, { wch: 16 }, { wch: 14 }, { wch: 14 }, { wch: 8 },
       { wch: 16 }, { wch: 16 }, { wch: 16 }, { wch: 16 }, { wch: 16 }, { wch: 14 },
       { wch: 14 }, { wch: 14 }, { wch: 14 },
-      { wch: 18 }, { wch: 20 }, { wch: 14 }, { wch: 10 }, { wch: 14 }, { wch: 14 },
+      // Quote/Order workflow + money + followup
+      { wch: 18 }, { wch: 20 },
+      { wch: 12 }, { wch: 12 },                  // เงินจอง, วันที่ชำระจอง
+      { wch: 14 }, { wch: 12 },                  // มูลค่างาน, ส่วนลด
+      { wch: 14 }, { wch: 10 }, { wch: 12 },     // งวด 1, % งวด 1, วันที่ชำระงวด 1
+      { wch: 14 }, { wch: 12 },                  // งวด 2 + date
+      { wch: 14 }, { wch: 12 },                  // งวด 3 + date
+      { wch: 14 }, { wch: 12 },                  // งวด 4 + date
+      { wch: 20 }, { wch: 14 }, { wch: 14 },     // รวมเงินรับ, เงินจ่ายเพิ่ม, ยอดรวม
+      { wch: 14 },                                // นัดติดตามชำระ
       { wch: 14 }, { wch: 14 }, { wch: 14 }, { wch: 18 },
     ];
     ws["!rows"] = [{ hpt: 24 }, { hpt: 30 }];
@@ -553,7 +678,7 @@ export default function LifecyclePage() {
                     <td className="px-2 py-1.5 text-right text-gray-500 tabular-nums">{idx + 1}</td>
                     <td className="px-2 py-1.5 text-gray-700 truncate" title={r.house_number ?? ""}>{r.house_number || <span className="text-gray-300">—</span>}</td>
                     <td className="px-2 py-1.5 truncate" title={r.full_name}>
-                      <a href={`/leads/${r.id}`} target="_blank" rel="noopener noreferrer" className="text-primary hover:underline">{r.full_name}</a>
+                      <LeadLink id={r.id} className="text-primary hover:underline">{r.full_name}</LeadLink>
                     </td>
                     <td className="px-2 py-1.5 truncate"><StatusPill lead={r} /></td>
                     <td className="px-2 py-1.5 whitespace-nowrap"><Cell date={r.created_at} /></td>

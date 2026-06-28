@@ -19,7 +19,7 @@ import { compressImage } from "@/lib/utils/compressImage";
 import { formatThaiDate } from "@/lib/utils/formatters";
 import { INVERTER_BRANDS, INVERTER_KW_SIZES, PHASE_LABEL } from "@/lib/constants/survey-options";
 
-const SUB_STEPS = ["ข้อมูล", "แบตเตอรี่", "แผง", "เอกสาร", "ยืนยัน"];
+const SUB_STEPS = ["ข้อมูล", "แผง", "แบตเตอรี่", "เอกสาร", "ยืนยัน"];
 const PANEL_ROWS = 20;
 
 const formatDate = (d: string | null) => formatThaiDate(d, { buddhist: true });
@@ -459,10 +459,18 @@ export default function WarrantyStep({ lead, state, refresh, packages, expanded,
 
   const endDate = addYears(startDate, 2);
 
-  // Auto-save SN / doc no / start date / equipment snapshot
+  // Auto-save SN / doc no / start date / equipment snapshot.
+  //
+  // Dual-write during the lead_inverters/_batteries/_panels migration:
+  //   1. PATCH /api/leads/[id] — legacy warranty_* columns (still source of
+  //      truth for the public /warranty/[id] page until Phase 3 lands).
+  //   2. PUT  /api/leads/[id]/devices (×3 types) — new normalised tables.
+  // Both run in the same debounce tick so they stay in lock-step. Remove the
+  // legacy PATCH for the device columns once the public page is migrated.
   useEffect(() => {
     if (state !== "active") return;
     const t = setTimeout(() => {
+      // 1. legacy PATCH
       apiFetch(`/api/leads/${lead.id}`, {
         method: "PATCH", headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -482,10 +490,15 @@ export default function WarrantyStep({ lead, state, refresh, packages, expanded,
           warranty_panel_serials: panelSerials.some(s => s.trim()) ? JSON.stringify(panelSerials.map(s => s.trim())) : null,
         }),
       }).catch(console.error);
+      // NOTE: PUT to /api/leads/[id]/devices was removed here. The new
+      // Serials tab on the lead detail page is the single owner of the
+      // lead_inverters/_batteries/_panels tables now. Keeping the dual-write
+      // here was clobbering Serials-tab writes with null SNs whenever this
+      // effect ran while sn was empty in this step's form.
     }, 800);
     return () => clearTimeout(t);
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [sn, docNo, startDate, sysKwp, panelCount, panelWatt, panelBrand, invBrand, invKw, phase, batteries, panelSerials]);
+  }, [sn, docNo, startDate, sysKwp, panelCount, panelWatt, panelBrand, invBrand, invKw, phase, batteries, panelSerials, inverterCertUrl]);
 
   const issueWarranty = async () => {
     const missing: string[] = [];
@@ -661,8 +674,8 @@ export default function WarrantyStep({ lead, state, refresh, packages, expanded,
         </div>
       </>)}
 
-      {/* subStep 1: แบตเตอรี่ */}
-      {subStep === 1 && (
+      {/* subStep 2: แบตเตอรี่ */}
+      {subStep === 2 && (
         <div className="space-y-2">
           {/* Auto-scan zone — same pattern as panel: each photo uploads + OCRs +
               applies immediately. Fills the serial field of next empty unlocked
@@ -760,11 +773,11 @@ export default function WarrantyStep({ lead, state, refresh, packages, expanded,
         </div>
       )}
 
-      {/* subStep 2: แผง — text list of per-panel serial numbers (max PANEL_ROWS).
+      {/* subStep 1: แผง — text list of per-panel serial numbers (max PANEL_ROWS).
          Optional AI bulk-scan zone at top: upload one or more photos (each may
          contain many panel labels), Gemini extracts all serials in one call and
          fills into empty slots below. */}
-      {subStep === 2 && (
+      {subStep === 1 && (
         <div className="space-y-2">
           {/* Auto-scan zone — each photo uploads + OCRs + applies immediately,
               then the temp upload is deleted. Workflow: take photo → AI fills

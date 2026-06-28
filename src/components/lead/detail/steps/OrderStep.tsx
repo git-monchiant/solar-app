@@ -153,6 +153,12 @@ export default function OrderStep({ lead, state, refresh, expanded, onToggle }: 
     const newDiscountAmount = pct > 0
       ? Math.round(opt.amount * pct / 100)
       : (lead.order_discount_amount ?? 0);
+    // Guard against malformed doc-nos in quotation_files (legacy data where
+    // a prior QuoteStep saved options with double `-N-N` suffixes — those
+    // fail validateDocNo and 400 the PATCH). Send null in that case; the
+    // lead-level doc_no can be cleaned up later in QuoteStep.
+    const docNoRe = /^[A-Z]+-\d{5,7}(?:-\d+)?$/;
+    const cleanDocNo = opt.doc_no && docNoRe.test(opt.doc_no) ? opt.doc_no : null;
     setPickingQuote(true);
     try {
       await apiFetch(`/api/leads/${lead.id}`, {
@@ -161,7 +167,7 @@ export default function OrderStep({ lead, state, refresh, expanded, onToggle }: 
         body: JSON.stringify({
           quotation_accepted_idx: idx,
           quotation_amount: opt.amount,
-          quotation_doc_no: opt.doc_no || null,
+          quotation_doc_no: cleanDocNo,
           order_total: opt.amount,
           order_discount_amount: newDiscountAmount || null,
         }),

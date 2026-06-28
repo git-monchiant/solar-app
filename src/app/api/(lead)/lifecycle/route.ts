@@ -87,6 +87,24 @@ export async function GET(req: NextRequest) {
         l.lost_reason,
         l.order_installments,
         l.order_total,
+        l.order_discount_amount,
+        l.install_extra_cost,
+        l.pre_total_price,
+        u.full_name AS assigned_name,
+        -- Confirmed payment amount + date per installment + booking deposit,
+        -- packaged as a JSON array so the Excel export can spread them across
+        -- paired columns without extra SQL fan-out. slip_field carries the slot
+        -- key; the client knows whether to label it "ค่าสำรวจ" or "งวด N".
+        (
+          SELECT slip_field, amount, confirmed_at
+          FROM payments
+          WHERE lead_id = l.id AND confirmed_at IS NOT NULL
+            AND (slip_field = 'pre_slip_url' OR slip_field LIKE 'order_installment_%')
+          ORDER BY
+            CASE WHEN slip_field = 'pre_slip_url' THEN -1
+                 ELSE TRY_CAST(SUBSTRING(slip_field, 19, 10) AS INT) END
+          FOR JSON PATH
+        ) AS payment_dates_json,
         l.payment_followup_date,
         (SELECT COUNT(*) FROM payments
           WHERE lead_id = l.id AND slip_field LIKE 'order_installment_%' AND confirmed_at IS NOT NULL) AS order_paid_count,
@@ -131,8 +149,15 @@ export async function GET(req: NextRequest) {
             WHERE lead_id = l.id AND slip_field = 'pre_slip_url' AND submitted_at IS NOT NULL)
         ) AS sales_pitch_at,
 
-        (SELECT MIN(confirmed_at) FROM payments
-          WHERE lead_id = l.id AND slip_field = 'pre_slip_url' AND confirmed_at IS NOT NULL) AS booking_paid_at,
+        -- ฟรีค่าสำรวจ skips the slip flow → no payments row exists. Fall back
+        -- to pre_booked_at (set by /book when free is picked) so the lifecycle
+        -- column still tracks "จองสำรวจ" — semantically the booking happened,
+        -- just at 0 ฿.
+        COALESCE(
+          (SELECT MIN(confirmed_at) FROM payments
+            WHERE lead_id = l.id AND slip_field = 'pre_slip_url' AND confirmed_at IS NOT NULL),
+          CASE WHEN l.pre_survey_fee_type = 'free' AND l.payment_confirmed = 1 THEN l.pre_booked_at END
+        ) AS booking_paid_at,
 
         (SELECT MIN(created_at) FROM lead_activities
           WHERE lead_id = l.id AND activity_type='status_change' AND new_status='quote') AS survey_done_at,
@@ -150,6 +175,7 @@ export async function GET(req: NextRequest) {
           WHERE lead_id = l.id AND activity_type='status_change' AND new_status='warranty') AS warranty_at
 
       FROM leads l
+      LEFT JOIN users u ON u.id = l.assigned_user_id
       LEFT JOIN contacts c1 ON c1.lead_id = l.id AND c1.rn = 1
       LEFT JOIN contacts c2 ON c2.lead_id = l.id AND c2.rn = 2
       LEFT JOIN contacts c3 ON c3.lead_id = l.id AND c3.rn = 3

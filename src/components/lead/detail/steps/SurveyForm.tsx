@@ -5,6 +5,7 @@ import { apiFetch, getUserIdHeader } from "@/lib/api";
 import type { Lead } from "./types";
 import FallbackImage from "@/components/ui/FallbackImage";
 import { compressImage } from "@/lib/utils/compressImage";
+import { MAIN_BREAKER_AMPS, MAIN_CABLE_SQMM } from "@/lib/constants/survey-options";
 
 const chipBtn = (selected: boolean) =>
   `h-9 px-3 rounded-lg text-xxs font-semibold border transition-all cursor-pointer ${
@@ -111,6 +112,8 @@ const SurveyForm = forwardRef<SurveyFormHandle, Props>(function SurveyForm({ lea
   const [mdbModel, setMdbModel] = useState<string>(lead.survey_mdb_model ?? "");
   const [mdbSlots, setMdbSlots] = useState<string>(lead.survey_mdb_slots ?? "has_slot");
   const [breakerType, setBreakerType] = useState<string>(lead.survey_breaker_type ?? "");
+  const [mainBreakerAmp, setMainBreakerAmp] = useState<string>(lead.survey_main_breaker_amp ?? "");
+  const [mainCableSqmm, setMainCableSqmm] = useState<string>(lead.survey_main_cable_sqmm ?? "");
   const [panelToInverterM, setPanelToInverterM] = useState<number | "">(lead.survey_panel_to_inverter_m ?? "");
   // PDF — section 3 (Roof structure)
   const [roofStructure, setRoofStructure] = useState<string>(lead.survey_roof_structure ?? "");
@@ -205,6 +208,8 @@ const SurveyForm = forwardRef<SurveyFormHandle, Props>(function SurveyForm({ lea
       survey_mdb_model: mdbModel || null,
       survey_mdb_slots: mdbSlots || null,
       survey_breaker_type: breakerType || null,
+      survey_main_breaker_amp: mainBreakerAmp || null,
+      survey_main_cable_sqmm: mainCableSqmm || null,
       survey_panel_to_inverter_m: typeof panelToInverterM === "number" ? panelToInverterM : null,
       survey_db_distance_m: typeof dbDistance === "number" ? dbDistance : null,
       survey_appliances: appliances.length ? appliances.join(",") : null,
@@ -245,7 +250,7 @@ const SurveyForm = forwardRef<SurveyFormHandle, Props>(function SurveyForm({ lea
   useEffect(() => {
     onFormChange?.(buildPayload());
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [roofMaterial, roofOrientations, roofOrientationNotes, floors, roofArea, meterSize, dbDistance, shading, roofTilt, monthlyBill, appliances, electricalPhase, voltageLN, voltageLL, mdbBrand, mdbModel, mdbSlots, breakerType, panelToInverterM, roofStructure, roofWidth, roofLength, inverterLocation, wifiSignal, accessMethod, photoNotes]);
+  }, [roofMaterial, roofOrientations, roofOrientationNotes, floors, roofArea, meterSize, dbDistance, shading, roofTilt, monthlyBill, appliances, electricalPhase, voltageLN, voltageLL, mdbBrand, mdbModel, mdbSlots, breakerType, mainBreakerAmp, mainCableSqmm, panelToInverterM, roofStructure, roofWidth, roofLength, inverterLocation, wifiSignal, accessMethod, photoNotes]);
 
   // Auto-save to DB (debounced). Pending payload lives in a ref so it can
   // flush on unmount — otherwise navigating between SurveyForm sections within
@@ -266,7 +271,7 @@ const SurveyForm = forwardRef<SurveyFormHandle, Props>(function SurveyForm({ lea
     }, 600);
     pendingRef.current = { payload, timer };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [roofMaterial, roofOrientations, roofOrientationNotes, floors, roofArea, meterSize, dbDistance, shading, roofTilt, monthlyBill, appliances, electricalPhase, voltageLN, voltageLL, mdbBrand, mdbModel, mdbSlots, breakerType, panelToInverterM, roofStructure, roofWidth, roofLength, inverterLocation, wifiSignal, accessMethod, photoNotes]);
+  }, [roofMaterial, roofOrientations, roofOrientationNotes, floors, roofArea, meterSize, dbDistance, shading, roofTilt, monthlyBill, appliances, electricalPhase, voltageLN, voltageLL, mdbBrand, mdbModel, mdbSlots, breakerType, mainBreakerAmp, mainCableSqmm, panelToInverterM, roofStructure, roofWidth, roofLength, inverterLocation, wifiSignal, accessMethod, photoNotes]);
 
   // Flush any pending debounced save when this section unmounts (e.g. user
   // navigates subStep before the 600ms timer fires).
@@ -336,7 +341,7 @@ const SurveyForm = forwardRef<SurveyFormHandle, Props>(function SurveyForm({ lea
                The other row's input is disabled, and its voltage is cleared
                on phase switch so stale values don't leak. */}
           <div>
-            <div className={subLabel}>ระบบไฟ <span className="text-red-500">*</span></div>
+            <div className={subLabel}>เฟส / แรงดัน <span className="text-red-500">*</span></div>
             {/* 2 cols across all screen sizes — button = 1/4, label+input = 3/4 */}
             <div className="grid grid-cols-[1fr_3fr] gap-2 items-center">
               <button type="button" onClick={() => {
@@ -391,23 +396,31 @@ const SurveyForm = forwardRef<SurveyFormHandle, Props>(function SurveyForm({ lea
             </div>
           </div>
 
-          {/* 2.5 + 2.6 ตู้ MDB / Consumer Unit + ช่องว่าง (checkbox) */}
+          {/* 2.5 + 2.6 Consumer Unit / MDB + ช่องว่าง (checkbox) */}
           <div>
-            <div className="flex items-center justify-between mb-2">
-              <div className="text-xs font-semibold tracking-wider uppercase text-gray-400">ตู้ MDB / Consumer Unit <span className="text-red-500">*</span></div>
-              <label className="inline-flex items-center gap-1.5 cursor-pointer select-none">
+            <div className="flex items-center justify-between gap-3 mb-2">
+              {/* nowrap + drop tracking-wider — uppercase tracking-wider blew up
+                  the width on mobile and forced the asterisk onto its own line. */}
+              <div className="text-xs font-semibold uppercase text-gray-400 whitespace-nowrap">Consumer Unit / MDB <span className="text-red-500">*</span></div>
+              <label className="inline-flex items-center gap-1.5 cursor-pointer select-none shrink-0">
                 <input
                   type="checkbox"
                   checked={mdbSlots === "has_slot"}
                   onChange={e => setMdbSlots(e.target.checked ? "has_slot" : "full")}
                   className="w-4 h-4 rounded border-gray-300 accent-active"
                 />
-                <span className="text-xs font-semibold text-gray-600">มีช่องว่าง 1 ช่อง</span>
+                <span className="text-xs font-semibold text-gray-600 whitespace-nowrap">มีช่องว่าง</span>
               </label>
             </div>
             <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
-              <input type="text" value={mdbBrand} onChange={e => setMdbBrand(e.target.value)} placeholder="ยี่ห้อ" className="md:col-span-2 h-9 px-3 rounded-lg border border-gray-200 text-sm" />
-              <input type="text" value={mdbModel} onChange={e => setMdbModel(e.target.value)} placeholder="รุ่น" className="md:col-span-2 h-9 px-3 rounded-lg border border-gray-200 text-sm" />
+              <label className="md:col-span-2 flex flex-col gap-1">
+                <span className="text-[11px] font-medium text-gray-500">ยี่ห้อ</span>
+                <input type="text" value={mdbBrand} onChange={e => setMdbBrand(e.target.value)} className="h-9 px-3 rounded-lg border border-gray-200 text-sm" />
+              </label>
+              <label className="md:col-span-2 flex flex-col gap-1">
+                <span className="text-[11px] font-medium text-gray-500">รุ่น</span>
+                <input type="text" value={mdbModel} onChange={e => setMdbModel(e.target.value)} className="h-9 px-3 rounded-lg border border-gray-200 text-sm" />
+              </label>
             </div>
           </div>
 
@@ -430,6 +443,46 @@ const SurveyForm = forwardRef<SurveyFormHandle, Props>(function SurveyForm({ lea
                 onChange={e => setBreakerType(e.target.value ? `other:${e.target.value}` : "")}
                 onFocus={() => { if (!breakerType.startsWith("other")) setBreakerType("other:"); }}
                 className={`col-span-3 md:col-span-2 w-full h-9 px-3 rounded-lg border text-xxs focus:outline-none ${breakerType.startsWith("other") ? "border-active bg-active-light" : "border-gray-200 bg-white"}`}
+              />
+            </div>
+          </div>
+
+          {/* ขนาดเมนเบรกเกอร์ — chip + อื่นๆ pattern (matches meter size / breaker type) */}
+          <div>
+            <div className={subLabel}>ขนาดเมนเบรกเกอร์</div>
+            <div className="grid grid-cols-3 md:grid-cols-5 gap-2">
+              {MAIN_BREAKER_AMPS.map(a => (
+                <button key={a} type="button" onClick={() => setMainBreakerAmp(mainBreakerAmp === a ? "" : a)} className={chipBtn(mainBreakerAmp === a)}>
+                  {a} A
+                </button>
+              ))}
+              <input
+                type="text"
+                placeholder="อื่นๆ ระบุ..."
+                value={mainBreakerAmp.startsWith("other:") ? mainBreakerAmp.slice(6) : ""}
+                onChange={e => setMainBreakerAmp(e.target.value ? `other:${e.target.value}` : "")}
+                onFocus={() => { if (!mainBreakerAmp.startsWith("other")) setMainBreakerAmp("other:"); }}
+                className={`col-span-2 md:col-span-1 w-full h-9 px-3 rounded-lg border text-xxs focus:outline-none ${mainBreakerAmp.startsWith("other") ? "border-active bg-active-light" : "border-gray-200 bg-white"}`}
+              />
+            </div>
+          </div>
+
+          {/* ขนาดสายเมน — chip + อื่นๆ */}
+          <div>
+            <div className={subLabel}>ขนาดสายเมน (sq.mm)</div>
+            <div className="grid grid-cols-3 md:grid-cols-5 gap-2">
+              {MAIN_CABLE_SQMM.map(s => (
+                <button key={s} type="button" onClick={() => setMainCableSqmm(mainCableSqmm === s ? "" : s)} className={chipBtn(mainCableSqmm === s)}>
+                  {s}
+                </button>
+              ))}
+              <input
+                type="text"
+                placeholder="อื่นๆ ระบุ..."
+                value={mainCableSqmm.startsWith("other:") ? mainCableSqmm.slice(6) : ""}
+                onChange={e => setMainCableSqmm(e.target.value ? `other:${e.target.value}` : "")}
+                onFocus={() => { if (!mainCableSqmm.startsWith("other")) setMainCableSqmm("other:"); }}
+                className={`col-span-2 md:col-span-1 w-full h-9 px-3 rounded-lg border text-xxs focus:outline-none ${mainCableSqmm.startsWith("other") ? "border-active bg-active-light" : "border-gray-200 bg-white"}`}
               />
             </div>
           </div>
@@ -709,7 +762,7 @@ const SurveyForm = forwardRef<SurveyFormHandle, Props>(function SurveyForm({ lea
 
       {/* PDF §5 Photo Checklist — separate card */}
       <div className={card}>
-        <div className="text-sm font-bold text-gray-700 uppercase tracking-wider mb-3">Photo Checklist</div>
+        <div className="text-sm font-bold text-gray-700 uppercase tracking-wider mb-3">รูปตามรายการ</div>
         <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
           {[
             { key: "building" as const, url: photoBuilding, set: setPhotoBuilding, field: "survey_photo_building_url" as const, label: "รูปถ่ายอาคาร ให้เห็นหลังคา" },
@@ -786,7 +839,7 @@ const SurveyForm = forwardRef<SurveyFormHandle, Props>(function SurveyForm({ lea
            empty rows are dropped on save (see buildPayload). */}
       <div className={card}>
         <div className="flex items-center justify-between mb-3">
-          <div className="text-sm font-bold text-gray-700 uppercase tracking-wider">Photo with Note</div>
+          <div className="text-sm font-bold text-gray-700 uppercase tracking-wider">รูปพร้อมหมายเหตุ</div>
           <span className="text-xs text-gray-400">{photoNotes.length} / {PHOTO_NOTES_MAX}</span>
         </div>
         <div className="grid grid-cols-2 md:grid-cols-4 gap-3">

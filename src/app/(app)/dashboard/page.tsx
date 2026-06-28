@@ -2,8 +2,10 @@
 import { DownloadIcon } from "@/components/ui/icons";
 
 import { apiFetch, getUserIdHeader } from "@/lib/api";
+import { getWithTtl, setWithTtl, TWO_HOURS_MS } from "@/lib/storage-ttl";
 import { useEffect, useMemo, useState } from "react";
-import { useRouter } from "next/navigation";
+import { useOpenLead } from "@/lib/hooks/useOpenLead";
+import { LeadLink } from "@/components/lead/LeadLink";
 import Header from "@/components/layout/Header";
 import { STATUS_CONFIG } from "@/lib/constants/statuses";
 import { PRIMARY_REASON_LABEL } from "@/lib/constants/info-labels";
@@ -69,20 +71,37 @@ export default function DashboardPage() {
   const todayYmd = useMemo(() => {
     const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}-${String(d.getDate()).padStart(2,"0")}`;
   }, []);
-  const [dateFrom, setDateFrom] = useState<string>("2026-01-01");
-  const [dateTo, setDateTo] = useState<string>(todayYmd);
-  const [filterMode, setFilterMode] = useState<"created" | "activity">("created");
-  useEffect(() => {
-    // Only restore non-empty saved values so an empty string saved by an old
-    // reset path doesn't poison the chart's range check (which uses truthiness
-    // — empty string falls into the "no filter → 30 days" fallback).
-    const sf = localStorage.getItem("dashboard.dateFrom"); if (sf) setDateFrom(sf);
-    const st = localStorage.getItem("dashboard.dateTo");   if (st) setDateTo(st);
-    const sm = localStorage.getItem("dashboard.filterMode"); if (sm === "activity" || sm === "created") setFilterMode(sm);
+  // Filter initial state reads ?from/?to/?mode from the URL first so the PDF
+  // export (puppeteer) lands on the exact slice the user has open. Falls back
+  // to the default 2026-01-01 → today range when no query params are present.
+  // localStorage still wins on real navigations via the useEffect below.
+  const urlFilter = useMemo(() => {
+    if (typeof window === "undefined") return null;
+    const p = new URLSearchParams(window.location.search);
+    return { from: p.get("from"), to: p.get("to"), mode: p.get("mode") };
   }, []);
-  useEffect(() => { localStorage.setItem("dashboard.dateFrom", dateFrom); }, [dateFrom]);
-  useEffect(() => { localStorage.setItem("dashboard.dateTo",   dateTo);   }, [dateTo]);
-  useEffect(() => { localStorage.setItem("dashboard.filterMode", filterMode); }, [filterMode]);
+  // Lazy initializers read localStorage on first render — without this, the
+  // default state would seed the first fetch + write-back effect would clobber
+  // the saved value with the default before the read effect could rescue it.
+  // Order: URL params > localStorage (2h TTL) > default.
+  const [dateFrom, setDateFrom] = useState<string>(() => {
+    if (urlFilter?.from) return urlFilter.from;
+    return getWithTtl<string>("dashboard.dateFrom", TWO_HOURS_MS) || "2026-01-01";
+  });
+  const [dateTo, setDateTo] = useState<string>(() => {
+    if (urlFilter?.to) return urlFilter.to;
+    return getWithTtl<string>("dashboard.dateTo", TWO_HOURS_MS) || todayYmd;
+  });
+  const [filterMode, setFilterMode] = useState<"created" | "activity">(() => {
+    if (urlFilter?.mode === "activity") return "activity";
+    if (urlFilter?.mode === "created") return "created";
+    const v = getWithTtl<string>("dashboard.filterMode", TWO_HOURS_MS);
+    return v === "activity" ? "activity" : "created";
+  });
+  const [pdfLoading, setPdfLoading] = useState(false);
+  useEffect(() => { setWithTtl("dashboard.dateFrom", dateFrom); }, [dateFrom]);
+  useEffect(() => { setWithTtl("dashboard.dateTo",   dateTo);   }, [dateTo]);
+  useEffect(() => { setWithTtl("dashboard.filterMode", filterMode); }, [filterMode]);
   const filteredLifecycleRows = useMemo(() => {
     if (!dateFrom && !dateTo) return lifecycleRows;
     const inRange = (v: string | null | undefined): boolean => {
@@ -160,11 +179,18 @@ export default function DashboardPage() {
               </div>
               <button
                 type="button"
-                onClick={async (e) => {
-                  const btn = e.currentTarget;
-                  btn.disabled = true;
+                disabled={pdfLoading}
+                onClick={async () => {
+                  setPdfLoading(true);
                   try {
-                    const res = await fetch("/api/report/dashboard-pdf", { headers: { ...getUserIdHeader() } });
+                    // Forward the global filter so the PDF mirrors what the
+                    // user is staring at. Without these the server would render
+                    // the unfiltered default and ship a PDF that doesn't match.
+                    const qs = new URLSearchParams();
+                    if (dateFrom) qs.set("from", dateFrom);
+                    if (dateTo)   qs.set("to",   dateTo);
+                    qs.set("mode", filterMode);
+                    const res = await fetch(`/api/report/dashboard-pdf?${qs.toString()}`, { headers: { ...getUserIdHeader() } });
                     if (!res.ok) { alert("ดาวน์โหลด PDF ไม่สำเร็จ"); return; }
                     const blob = await res.blob();
                     const url = URL.createObjectURL(blob);
@@ -176,15 +202,24 @@ export default function DashboardPage() {
                     a.remove();
                     URL.revokeObjectURL(url);
                   } finally {
-                    btn.disabled = false;
+                    setPdfLoading(false);
                   }
                 }}
-                className="cursor-pointer inline-flex items-center gap-1.5 h-8 px-3 rounded-lg bg-white border border-gray-200 text-xs font-semibold text-gray-700 hover:border-gray-300 disabled:opacity-50 disabled:cursor-wait transition-colors"
+                className="cursor-pointer inline-flex items-center gap-1.5 h-8 px-3 rounded-lg bg-white border border-gray-200 text-xs font-semibold text-gray-700 hover:border-gray-300 disabled:opacity-60 disabled:cursor-wait transition-colors"
                 title="ดาวน์โหลด Dashboard เป็น PDF"
                 aria-label="ดาวน์โหลด Dashboard เป็น PDF"
               >
-                <DownloadIcon className="w-3.5 h-3.5 text-gray-400" strokeWidth={2} />
-                <span>PDF</span>
+                {pdfLoading ? (
+                  <>
+                    <div className="w-3.5 h-3.5 border-2 border-gray-300 border-t-gray-600 rounded-full animate-spin" />
+                    <span>กำลังสร้าง...</span>
+                  </>
+                ) : (
+                  <>
+                    <DownloadIcon className="w-3.5 h-3.5 text-gray-400" strokeWidth={2} />
+                    <span>PDF</span>
+                  </>
+                )}
               </button>
             </div>
           }
@@ -236,11 +271,9 @@ export default function DashboardPage() {
                   ? new Date(r.install_date).toLocaleDateString("th-TH", { day: "numeric", month: "short", year: "2-digit" })
                   : null;
                 return (
-                  <a
+                  <LeadLink
                     key={r.id}
-                    href={`/leads/${r.id}`}
-                    target="_blank"
-                    rel="noopener noreferrer"
+                    id={r.id}
                     className="cursor-pointer flex items-center gap-3 px-4 py-2.5 hover:bg-gray-50"
                   >
                     <div className="w-8 h-8 rounded-full bg-gray-100 flex items-center justify-center shrink-0 text-gray-600 font-bold text-sm">
@@ -275,7 +308,7 @@ export default function DashboardPage() {
                     <span className={`text-xxs font-bold uppercase tracking-wider px-2 py-0.5 rounded text-white shrink-0 ${cfg?.color || "bg-gray-400"}`}>
                       {cfg?.label || r.status}
                     </span>
-                  </a>
+                  </LeadLink>
                 );
               })}
             </div>
@@ -287,6 +320,25 @@ export default function DashboardPage() {
       )}
 
       <div className="dashboard-pdf-content p-3 md:p-6 space-y-3">
+        {/* Filter banner — shown when a date range is active so the printed
+            PDF is self-describing (reader knows what cohort the numbers cover
+            without going back to the screen). Hidden when no range, to avoid
+            chrome on the live screen where filter chips already say it. */}
+        {(dateFrom || dateTo) && (() => {
+          const fmtThai = (s: string) => {
+            if (!s) return "—";
+            const [y, m, d] = s.split("-");
+            return `${d}/${m}/${parseInt(y) + 543}`;
+          };
+          return (
+            <div className="rounded-lg border border-gray-200 bg-gray-50 px-3 py-2 text-xs text-gray-700 flex items-center gap-2 flex-wrap">
+              <span className="font-semibold text-gray-500 uppercase tracking-wider">Filter</span>
+              <span className="font-mono tabular-nums">{fmtThai(dateFrom)} – {fmtThai(dateTo)}</span>
+              <span className="text-gray-400">·</span>
+              <span>{filterMode === "activity" ? "ตามกิจกรรม" : "ตามวันที่สร้างลีด"}</span>
+            </div>
+          );
+        })()}
         {/* KPI — 2 rows: (1) 4 equal hero cards, each w/ inline breakdown chips
             (2) full-width subway-map funnel of the active 28 booked-paid leads */}
         {(() => {
@@ -623,7 +675,7 @@ export default function DashboardPage() {
 }
 
 function ActivityChart({ data }: { data: { day: string; lead_id: number; full_name: string; lead_status: string; activity_type?: string; total_activities: number; has_paid: boolean }[] }) {
-  const router = useRouter();
+  const openLead = useOpenLead();
   const [isMobile, setIsMobile] = useState(false);
   const [mode, setMode] = useState<"all" | "create" | "activity">("all");
   useEffect(() => { setIsMobile(window.innerWidth < 768); }, []);
@@ -741,7 +793,7 @@ function ActivityChart({ data }: { data: { day: string; lead_id: number; full_na
                       setTooltip({ x: r.left + r.width / 2, y: r.top - 4, text: `${b.name} · ${label} · ${b.total} ครั้ง` });
                     }}
                     onMouseLeave={() => setTooltip(null)}
-                    onClick={() => router.push(`/leads/${b.lead_id}`)}
+                    onClick={() => openLead(b.lead_id)}
                   />
                 ))}
                 {blocks.length > 0 && (

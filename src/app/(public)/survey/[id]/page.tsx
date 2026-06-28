@@ -63,6 +63,8 @@ interface Lead {
   survey_mdb_model: string | null;
   survey_mdb_slots: string | null;
   survey_breaker_type: string | null;
+  survey_main_breaker_amp: string | null;
+  survey_main_cable_sqmm: string | null;
   survey_panel_to_inverter_m: number | null;
   survey_db_distance_m: number | null;
   survey_wants_battery: string | null;
@@ -146,7 +148,7 @@ export default function SurveyPdfPage() {
   const photoSlots: { url: string | null; label: string }[] = [
     { url: lead.survey_photo_building_url, label: "อาคาร / ตัวบ้าน" },
     { url: lead.survey_photo_roof_structure_url, label: "โครงหลังคา" },
-    { url: lead.survey_photo_mdb_url, label: "ตู้ MDB / Consumer Unit" },
+    { url: lead.survey_photo_mdb_url, label: "Consumer Unit / MDB" },
     { url: lead.survey_photo_inverter_point_url, label: "จุดติดตั้ง Inverter" },
   ];
   const extraPhotos = (lead.survey_photos || "").split(",").filter(Boolean);
@@ -246,18 +248,20 @@ export default function SurveyPdfPage() {
                   <Section title="1. ระบบไฟฟ้า · ELECTRICAL SYSTEM">
                     <SpecGrid>
                       <Field label="ขนาดมิเตอร์" value={lead.survey_meter_size ? METER_MAP[lead.survey_meter_size] || lead.survey_meter_size : "—"} />
-                      <Field label="ระบบไฟ" value={lead.survey_electrical_phase ? PHASE_MAP[lead.survey_electrical_phase] || lead.survey_electrical_phase : "—"} />
+                      <Field label="เฟส / แรงดัน" value={lead.survey_electrical_phase ? PHASE_MAP[lead.survey_electrical_phase] || lead.survey_electrical_phase : "—"} />
                       <GroupRow label="แรงดัน" items={[
                         { label: "L-N", value: lead.survey_voltage_ln != null ? `${lead.survey_voltage_ln} V` : "—" },
                         { label: "L-L", value: lead.survey_voltage_ll != null ? `${lead.survey_voltage_ll} V` : "—" },
                       ]} />
                       <Field label="ค่าไฟเฉลี่ย/เดือน" value={lead.survey_monthly_bill != null ? `${lead.survey_monthly_bill.toLocaleString()} บาท` : "—"} />
-                      <GroupRow label="ตู้ MDB" items={[
+                      <GroupRow label="Consumer Unit / MDB" items={[
                         { label: "ยี่ห้อ", value: lead.survey_mdb_brand || "—" },
                         { label: "รุ่น", value: lead.survey_mdb_model || "—" },
                         { label: "ช่องว่าง", value: lead.survey_mdb_slots ? MDB_SLOTS_MAP[lead.survey_mdb_slots] || lead.survey_mdb_slots : "—" },
                       ]} />
                       <Field label="ชนิดเบรกเกอร์" value={otherLabel(lead.survey_breaker_type, BREAKER_MAP)} />
+                      <Field label="ขนาดเมนเบรกเกอร์" value={lead.survey_main_breaker_amp ? `${otherLabel(lead.survey_main_breaker_amp, {})} A` : "—"} />
+                      <Field label="ขนาดสายเมน" value={lead.survey_main_cable_sqmm ? `${otherLabel(lead.survey_main_cable_sqmm, {})} sq.mm` : "—"} />
                       <GroupRow label="Cable" items={[
                         { label: "PV → Inverter", value: lead.survey_panel_to_inverter_m != null ? `${lead.survey_panel_to_inverter_m} m` : "—" },
                         { label: "Inverter → MDB", value: lead.survey_db_distance_m != null ? `${lead.survey_db_distance_m} m` : "—" },

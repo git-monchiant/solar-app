@@ -73,6 +73,22 @@ sshpass -p "${PRD_PASS}" ssh \
   -p "${PRD_PORT}" "${PRD_USER}@${PRD_HOST}" \
   "cd ${PRD_DIR} && tar -xzf - && find . -name '._*' -delete"
 
+# 4a. ensure LINE_ENABLED=true is in prod's .env so outbound LINE messaging
+# stays on. The env file is excluded from the tarball (line 67) so this
+# guarantees the flag exists even on a fresh prod box. Dev keeps LINE_ENABLED=false
+# in its own .env.local to block testers from pushing to real customers.
+echo "🔧 Ensuring LINE_ENABLED=true on prod .env ..."
+sshpass -p "${PRD_PASS}" ssh \
+  -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null \
+  -p "${PRD_PORT}" "${PRD_USER}@${PRD_HOST}" \
+  "cd ${PRD_DIR} && touch .env && \
+   if grep -q '^LINE_ENABLED=' .env; then \
+     sed -i 's/^LINE_ENABLED=.*/LINE_ENABLED=true/' .env; \
+   else \
+     echo 'LINE_ENABLED=true' >> .env; \
+   fi && \
+   grep '^LINE_ENABLED=' .env"
+
 # 4. ensure uploads dir is writable by the container (uid 1001 = nextjs user
 #    inside the image; host dir must be owned by that uid so bind-mount writes
 #    don't EACCES).

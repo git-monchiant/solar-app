@@ -22,15 +22,24 @@ export async function POST(request: NextRequest) {
     const base64 = Buffer.from(imgBuf).toString("base64");
     const mimeType = imgRes.headers.get("content-type") || "image/jpeg";
 
-    const prompt = `ภาพนี้คือฉลาก/สติกเกอร์ของอุปกรณ์ไฟฟ้า (อินเวอร์เตอร์หรือแผงโซลาร์) ที่มี Serial Number พิมพ์อยู่
+    const prompt = `ภาพนี้คือฉลาก/สติกเกอร์ของอุปกรณ์ไฟฟ้า (อินเวอร์เตอร์ / แบตเตอรี่ / แผงโซลาร์) ที่มีรายละเอียดอุปกรณ์พิมพ์อยู่
 
-**หน้าที่:** อ่าน Serial Number (SN / S/N / Serial No.) ที่เห็นในภาพ แล้ว return เป็น raw JSON:
+**กฎสำคัญ — ป้องกัน hallucination:**
+- ห้ามคาดเดา ห้ามแต่งค่า ห้ามเดาตัวอักษรที่ดูไม่ชัด
+- ถ้าตัวอักษรเบลอ / มืด / โดนบัง / อ่านไม่ชัด → ตั้ง field นั้นเป็น null
+- Serial ต้องตรงกับที่พิมพ์บนป้ายเป๊ะ (อ่านได้ทุกตัวอักษร) ถึงจะใส่ ไม่งั้นให้ null
+- Brand ต้องเห็นเป็นโลโก้/ข้อความบนป้ายชัดเจน ไม่ใช่เดาจากรูปลักษณ์อุปกรณ์
+
+**หน้าที่:** ดึงข้อมูลที่อ่านได้ชัดเจน แล้ว return เป็น JSON:
 {
-  "serial": "<string เฉพาะตัวอักษรและตัวเลขของ serial — ไม่ใส่ label 'SN:' หรือวรรค>"
+  "serial": "<Serial Number / SN / S/N — เฉพาะตัวอักษร+ตัวเลขที่อ่านได้แน่นอน ไม่ใส่ label / วรรค>",
+  "brand": "<ยี่ห้อที่เห็นบนป้ายชัดเจน เช่น DEYE, Huawei, JINKO, ZTT>",
+  "kw":   "<กำลังไฟอินเวอร์เตอร์ kW ถ้าเห็นชัด — ตัวเลขล้วน>",
+  "kwh":  "<ความจุแบตเตอรี่ kWh ถ้าเห็นชัด — ตัวเลขล้วน>"
 }
 
-ถ้าไม่เห็น serial number → return {"serial": null}
-ห้ามใส่ markdown ห้ามใส่ code block`;
+ถ้าไม่เห็นชัด/ไม่มี → null
+ห้าม markdown ห้าม code block return JSON ดิบเท่านั้น`;
 
     const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${apiKey}`;
     const geminiRes = await fetch(endpoint, {
@@ -53,11 +62,31 @@ export async function POST(request: NextRequest) {
     if (!jsonMatch) return NextResponse.json({ serial: null });
 
     try {
-      const parsed = JSON.parse(jsonMatch[0]) as { serial?: string | null };
+      const parsed = JSON.parse(jsonMatch[0]) as {
+        serial?: string | null;
+        brand?: string | null;
+        kw?: string | number | null;
+        kwh?: string | number | null;
+      };
       const serial = typeof parsed.serial === "string" ? parsed.serial.trim() : null;
-      return NextResponse.json({ serial: serial || null });
+      const brand  = typeof parsed.brand === "string" && parsed.brand.trim() ? parsed.brand.trim() : null;
+      // Gemini occasionally returns "10kW" or "4.8 kWh" — strip non-numeric
+      // characters before parsing so the form fields stay clean.
+      const toNum = (v: unknown): number | null => {
+        if (v == null) return null;
+        const cleaned = String(v).replace(/[^\d.]/g, "");
+        if (!cleaned) return null;
+        const n = parseFloat(cleaned);
+        return Number.isFinite(n) ? n : null;
+      };
+      return NextResponse.json({
+        serial: serial || null,
+        brand,
+        kw:  toNum(parsed.kw),
+        kwh: toNum(parsed.kwh),
+      });
     } catch {
-      return NextResponse.json({ serial: null });
+      return NextResponse.json({ serial: null, brand: null, kw: null, kwh: null });
     }
   } catch (error) {
     console.error("POST /api/ocr-serial error:", error);

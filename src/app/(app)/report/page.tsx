@@ -1,8 +1,8 @@
 "use client";
 import { apiFetch } from "@/lib/api";
 import { Fragment, useEffect, useState } from "react";
-import Link from "next/link";
 import Header from "@/components/layout/Header";
+import { LeadLink } from "@/components/lead/LeadLink";
 import FallbackImage from "@/components/ui/FallbackImage";
 import ImageLightbox, { type LightboxImage } from "@/components/ui/ImageLightbox";
 import { formatTHB, formatThaiDate as fmtDate } from "@/lib/utils/formatters";
@@ -242,7 +242,7 @@ export default function ReportPage() {
                         <td className="px-2 py-3 text-gray-400 text-center">{isOpen ? "▾" : "▸"}</td>
                         <td className="px-4 py-3 font-mono text-xs text-gray-600">{r.pre_doc_no}</td>
                         <td className="px-4 py-3">
-                          <Link href={`/leads/${r.lead_id}`} onClick={e => e.stopPropagation()} className="text-sm font-semibold text-gray-900 hover:text-primary">{r.full_name}</Link>
+                          <LeadLink id={r.lead_id} onClick={e => e.stopPropagation()} className="text-sm font-semibold text-gray-900 hover:text-primary">{r.full_name}</LeadLink>
                           <div className="text-xs text-gray-400">{r.package_name || ""}{r.kwp ? ` · ${r.kwp} kWp` : ""}</div>
                         </td>
                         <td className="px-4 py-3 text-xs text-gray-500">{r.project_name || "—"}</td>
@@ -313,9 +313,9 @@ export default function ReportPage() {
                                               </div>
                                             ) : <span className="text-gray-300 text-xxs">—</span>}
                                             {!isPaid && i.has_slip && (
-                                              <Link href={`/leads/${r.lead_id}`} onClick={e => e.stopPropagation()} className="h-7 px-2 rounded text-xxs font-semibold text-white bg-amber-500 hover:brightness-110 inline-flex items-center" style={{ minHeight: 0 }}>
+                                              <LeadLink id={r.lead_id} onClick={e => e.stopPropagation()} className="h-7 px-2 rounded text-xxs font-semibold text-white bg-amber-500 hover:brightness-110 inline-flex items-center" style={{ minHeight: 0 }}>
                                                 ยืนยันรับเงิน
-                                              </Link>
+                                              </LeadLink>
                                             )}
                                           </div>
                                         </td>
@@ -344,7 +344,7 @@ export default function ReportPage() {
                 <div key={r.lead_id}>
                   <button type="button" onClick={() => toggle(r.lead_id)} className="w-full text-left px-4 py-3 hover:bg-gray-50 transition-colors">
                     <div className="flex items-center justify-between mb-1">
-                      <Link href={`/leads/${r.lead_id}`} onClick={e => e.stopPropagation()} className="text-sm font-semibold text-gray-900">{r.full_name}</Link>
+                      <LeadLink id={r.lead_id} onClick={e => e.stopPropagation()} className="text-sm font-semibold text-gray-900">{r.full_name}</LeadLink>
                       <span className={`text-xxs font-bold uppercase px-2 py-0.5 rounded-full ${settled ? "bg-emerald-50 text-emerald-700" : "bg-amber-50 text-amber-700"}`}>
                         {settled ? "PAID" : "ค้าง"}
                       </span>
@@ -403,9 +403,9 @@ export default function ReportPage() {
                                   </button>
                                 )}
                                 {!isPaid && i.has_slip && (
-                                  <Link href={`/leads/${r.lead_id}`} onClick={e => e.stopPropagation()} className="h-7 px-2 rounded text-xxs font-semibold text-white bg-amber-500 inline-flex items-center" style={{ minHeight: 0 }}>
+                                  <LeadLink id={r.lead_id} onClick={e => e.stopPropagation()} className="h-7 px-2 rounded text-xxs font-semibold text-white bg-amber-500 inline-flex items-center" style={{ minHeight: 0 }}>
                                     ยืนยันรับเงิน
-                                  </Link>
+                                  </LeadLink>
                                 )}
                               </div>
                             </div>

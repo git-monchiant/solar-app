@@ -3,7 +3,7 @@ import { CheckIcon, PlusIcon } from "@/components/ui/icons";
 
 import { apiFetch } from "@/lib/api";
 import { useEffect, useState } from "react";
-import { useRouter } from "next/navigation";
+import { useOpenLead } from "@/lib/hooks/useOpenLead";
 import LeadCard, { LeadData } from "@/components/lead/LeadCard";
 import ListPageHeader from "@/components/layout/ListPageHeader";
 import NewLeadModal from "@/components/modal/NewLeadModal";
@@ -1007,7 +1007,7 @@ interface PendingReportRow { lead_id: number; installments: { confirmed_at: stri
 interface PendingReportData { rows: PendingReportRow[] }
 
 function AccountTodayView({ leads, search, setSearch }: { leads: LeadData[]; search: string; setSearch: (s: string) => void }) {
-  const router = useRouter();
+  const openLead = useOpenLead();
   const [report, setReport] = useState<PendingReportData | null>(null);
   const [reportLoading, setReportLoading] = useState(true);
   useEffect(() => {
@@ -1033,9 +1033,7 @@ function AccountTodayView({ leads, search, setSearch }: { leads: LeadData[]; sea
     if (target && typeof window !== 'undefined') {
       localStorage.setItem(`${target.key}_${lead.id}`, String(target.sub));
     }
-    const isLarge = typeof window !== 'undefined' && window.matchMedia("(min-width: 500px)").matches;
-    if (isLarge) window.open(`/leads/${lead.id}?focus=1`, "_blank", "noreferrer");
-    else router.push(`/leads/${lead.id}`);
+    openLead(lead.id);
   };
 
   const pendingIds = new Set<number>();

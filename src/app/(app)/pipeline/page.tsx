@@ -30,6 +30,7 @@ interface Lead {
   payment_confirmed?: boolean | number | null;
   assigned_name: string | null;
   order_paid_count?: number | null;
+  order_total_count?: number | null;
 }
 
 type TabKey = "all" | "pre_survey" | "booking" | "survey" | "quotation" | "order" | "deposit" | "wait_install" | "install" | "installing" | "warranty" | "lost";
@@ -61,7 +62,17 @@ const matchesTab = (l: Lead, key: TabKey, todayYmd: string): boolean => {
   if (key === "wait_install") return (l.order_paid_count ?? 0) > 0 && !l.install_date && !l.install_completed_at && l.status !== "lost" && l.status !== "returned";
   // "Done" statuses match dashboard's stepDoneRows — once a lead moves into
   // warranty/gridtie/closed it belongs to the warranty/done section, not here.
-  const installScheduled = (l.order_paid_count ?? 0) > 0 && !!l.install_date
+  //
+  // Final-installment requirement: a lead only shows in "รอติดตั้ง" /
+  // "กำลังติดตั้ง" once ALL installments are confirmed paid, not just the
+  // deposit. order_total_count comes from /api/leads (count of payment rows
+  // under slip_field LIKE 'order_installment_%'); the install tabs gate on
+  // paid_count >= total_count so the final-installment receipt is the entry
+  // ticket. Leads stuck mid-payment fall back to the "ชำระมัดจำ" tab.
+  const totalCount = l.order_total_count ?? 0;
+  const paidCount = l.order_paid_count ?? 0;
+  const allPaid = totalCount > 0 && paidCount >= totalCount;
+  const installScheduled = allPaid && !!l.install_date
     && l.status !== "warranty" && l.status !== "gridtie" && l.status !== "closed"
     && l.status !== "lost" && l.status !== "returned";
   if (key === "install") return installScheduled && l.install_date!.slice(0, 10) > todayYmd;

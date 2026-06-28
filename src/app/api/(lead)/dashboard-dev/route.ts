@@ -54,7 +54,7 @@ export async function GET(req: NextRequest) {
       //   surveyed   = past survey phase (status quote/order/install/.../closed)
       //   quoted     = past quote phase  (status order/install/.../closed)
       //   installed  = install_completed_at IS NOT NULL
-      db.request().query(`
+      bindRange(db.request()).query(`
         WITH contact_per_act AS (
           SELECT la.lead_id,
             CASE
@@ -71,14 +71,10 @@ export async function GET(req: NextRequest) {
           FROM contact_per_act GROUP BY lead_id
         ),
         lead_paid AS (
-          -- booking_paid (= ชำระจองสำรวจ) — accountant has confirmed the slip.
           SELECT DISTINCT lead_id FROM payments
           WHERE slip_field = 'pre_slip_url' AND confirmed_at IS NOT NULL
         ),
         lead_submitted AS (
-          -- Submitting the slip already counts as "contacted" — mirrors
-          -- /api/lifecycle's first_contact fallback so the funnel and the
-          -- Dashboard I "ติดต่อได้" card agree on the same lead set.
           SELECT DISTINCT lead_id FROM payments
           WHERE slip_field = 'pre_slip_url' AND submitted_at IS NOT NULL
         )
@@ -94,14 +90,20 @@ export async function GET(req: NextRequest) {
         LEFT JOIN per_lead pl ON pl.lead_id = l.id
         LEFT JOIN lead_paid lp ON lp.lead_id = l.id
         LEFT JOIN lead_submitted ls ON ls.lead_id = l.id
+        WHERE l.id IN (${eligibleSet})
       `),
-      db.request().query(`
+      // Daily new leads — when a filter range is set, scope to that range so
+      // the chart matches the global filter. With no range, falls back to the
+      // 30-day rolling window for the "เมื่อเร็วๆ นี้" snapshot.
+      bindRange(db.request()).query(`
         SELECT CONVERT(varchar, created_at, 23) as day,
           SUM(CASE WHEN line_id IS NOT NULL AND line_id <> '' THEN 1 ELSE 0 END) as with_line,
           SUM(CASE WHEN line_id IS NULL OR line_id = '' THEN 1 ELSE 0 END) as without_line,
           COUNT(*) as cnt
         FROM leads
-        WHERE created_at >= DATEADD(day, -29, CAST(GETDATE() AS date))
+        WHERE ${hasRange
+          ? "id IN (" + eligibleSet + ")"
+          : "created_at >= DATEADD(day, -29, CAST(GETDATE() AS date))"}
         GROUP BY CONVERT(varchar, created_at, 23)
         ORDER BY day
       `),
@@ -144,7 +146,7 @@ export async function GET(req: NextRequest) {
       // active buckets, excluding lost since lost is shown elsewhere).
       // Same lead_activities-based logic: title prefix "ติดต่อได้/ไม่ได้"
       // outranks activity_type, booking_paid_at overrides any state.
-      db.request().query(`
+      bindRange(db.request()).query(`
         WITH contact_per_act AS (
           SELECT la.lead_id,
             CASE
@@ -177,6 +179,7 @@ export async function GET(req: NextRequest) {
           FROM leads l
           LEFT JOIN per_lead pl ON pl.lead_id = l.id
           LEFT JOIN lead_paid lp ON lp.lead_id = l.id
+          WHERE l.id IN (${eligibleSet})
         ) x
         GROUP BY bucket
       `),
@@ -187,7 +190,7 @@ export async function GET(req: NextRequest) {
       //   2_in_pitch     = pre_survey + has sales_pitch_at + no slip uploaded
       //   3_slip_pending = pre_survey-01 OR (pre_survey + slip uploaded)
       //   4_booked       = booking_paid (= ชำระจองสำรวจ — same as funnel)
-      db.request().query(`
+      bindRange(db.request()).query(`
         WITH contact_per_act AS (
           SELECT la.lead_id,
             CASE
@@ -233,6 +236,7 @@ export async function GET(req: NextRequest) {
           LEFT JOIN lead_slip_uploaded lp_su ON lp_su.lead_id = l.id
           WHERE l.status <> 'lost'
             AND (lp_paid.lead_id IS NOT NULL OR ISNULL(pl.has_yes, 0) = 1)
+            AND l.id IN (${eligibleSet})
         )
         SELECT stage, COUNT(*) as cnt FROM (
           SELECT CASE
@@ -251,9 +255,9 @@ export async function GET(req: NextRequest) {
       // contact_status: call/visit/line/follow_up/... contact attempts OR
       // a confirmed booking deposit (booking_paid_at override). That way
       // "5_never" here = "never_contacted" in contact_status exactly.
-      db.request().query(`
+      bindRange(db.request()).query(`
         WITH active AS (
-          SELECT * FROM leads WHERE status <> 'lost'
+          SELECT * FROM leads WHERE status <> 'lost' AND id IN (${eligibleSet})
         ),
         last_contact AS (
           SELECT lead_id, MAX(created_at) as last_at
@@ -296,7 +300,7 @@ export async function GET(req: NextRequest) {
       // Finance breakdown — cash/transfer vs สินเชื่อ split by bank.
       // Scoped to leads with at least one confirmed payment (ยืนยัน 2) so the
       // chart reflects leads who actually committed to a payment method.
-      db.request().query(`
+      bindRange(db.request()).query(`
         SELECT bucket, COUNT(*) as cnt FROM (
           SELECT
             CASE
@@ -309,6 +313,7 @@ export async function GET(req: NextRequest) {
             SELECT 1 FROM payments p
             WHERE p.lead_id = l.id AND p.confirmed_at IS NOT NULL
           )
+          AND l.id IN (${eligibleSet})
         ) x
         GROUP BY bucket
         ORDER BY bucket

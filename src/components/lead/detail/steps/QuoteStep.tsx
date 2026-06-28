@@ -41,7 +41,12 @@ export default function QuoteStep({ lead, state, refresh, expanded, onToggle }: 
     // baseDocNo is the gate — once we have one (from prop or fetch) the effect is done.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [lead.id]);
-  const defaultDocNoFor = (i: number) => i === 0 ? baseDocNo : `${baseDocNo}-${i + 1}`;
+  // Strip any trailing `-N` from the inherited doc-no. lead.quotation_doc_no
+  // can be a previously-accepted VARIANT (e.g., "QT-260705-2") — using that
+  // as the base would mint slot 1/2 defaults as "QT-260705-2-2"/"-2-3",
+  // a double-suffix format that validateDocNo rejects on the next save.
+  const baseClean = baseDocNo.replace(/-\d+$/, "");
+  const defaultDocNoFor = (i: number) => i === 0 ? baseClean : `${baseClean}-${i + 1}`;
 
   // Initialise 3 slots from quotation_files (JSON or legacy CSV). Empty
   // tail slots stay editable so the user can add up to 3.

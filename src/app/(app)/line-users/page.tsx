@@ -5,6 +5,7 @@ import { apiFetch } from "@/lib/api";
 import { useEffect, useState } from "react";
 import Header from "@/components/layout/Header";
 import NewLeadModal from "@/components/modal/NewLeadModal";
+import { LeadLink } from "@/components/lead/LeadLink";
 
 interface LinkedLead {
   id: number;
@@ -102,14 +103,14 @@ export default function LineUsersPage() {
                       {(u.linked_leads.length > 0 || u.linked_prospects.length > 0) ? (
                         <div className="flex flex-wrap gap-1.5">
                           {u.linked_leads.map(l => (
-                            <a
+                            <LeadLink
                               key={`l${l.id}`}
-                              href={`/leads/${l.id}`}
+                              id={l.id}
                               title={`Lead: ${l.full_name}${l.phone ? ` · ${l.phone}` : ""}`}
                               className="inline-flex items-center px-2 py-0.5 rounded-full bg-blue-50 border border-blue-200 text-blue-700 text-xs font-semibold hover:bg-blue-100 transition-colors"
                             >
                               L#{l.id}
-                            </a>
+                            </LeadLink>
                           ))}
                           {u.linked_prospects.filter(p => !p.lead_id).map(p => (
                             <a

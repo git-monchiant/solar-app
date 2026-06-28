@@ -452,7 +452,7 @@ export default function SurveyStep({ lead, state, refresh, packages, expanded, o
       <button
         type="button"
         onClick={openPdf}
-        className="mr-4 inline-flex items-center gap-1 text-xs font-semibold text-primary hover:text-primary-dark shrink-0"
+        className="mr-4 inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md border border-primary/30 bg-primary/5 text-xs font-semibold text-primary hover:bg-primary/10 transition-colors shrink-0"
       >
         <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" /></svg>
         ใบสำรวจ
@@ -469,7 +469,7 @@ export default function SurveyStep({ lead, state, refresh, packages, expanded, o
     const photoSlots = [
       { url: lead.survey_photo_building_url, label: "อาคาร" },
       { url: lead.survey_photo_roof_structure_url, label: "โครงหลังคา" },
-      { url: lead.survey_photo_mdb_url, label: "ตู้ MDB" },
+      { url: lead.survey_photo_mdb_url, label: "Consumer Unit / MDB" },
       { url: lead.survey_photo_inverter_point_url, label: "จุด Inverter" },
     ];
 
@@ -489,18 +489,20 @@ export default function SurveyStep({ lead, state, refresh, packages, expanded, o
       <DoneSection color="blue" title="ระบบไฟฟ้า">
         <div className="space-y-0.5 text-sm">
           <DoneRow label="มิเตอร์" value={lead.survey_meter_size ? METER_MAP[lead.survey_meter_size] || lead.survey_meter_size : "—"} />
-          <DoneRow label="ระบบไฟ" value={lead.survey_electrical_phase ? PHASE_MAP[lead.survey_electrical_phase] || lead.survey_electrical_phase : "—"} />
+          <DoneRow label="เฟส / แรงดัน" value={lead.survey_electrical_phase ? PHASE_MAP[lead.survey_electrical_phase] || lead.survey_electrical_phase : "—"} />
           <DoneGroup label="แรงดัน" items={[
             { label: "L-N", value: lead.survey_voltage_ln != null ? `${lead.survey_voltage_ln} V` : "—" },
             { label: "L-L", value: lead.survey_voltage_ll != null ? `${lead.survey_voltage_ll} V` : "—" },
           ]} />
           <DoneRow label="ค่าไฟ/เดือน" value={lead.survey_monthly_bill != null ? `${lead.survey_monthly_bill.toLocaleString()} บาท` : "—"} />
-          <DoneGroup label="ตู้ MDB" items={[
+          <DoneGroup label="Consumer Unit / MDB" items={[
             { label: "ยี่ห้อ", value: lead.survey_mdb_brand || "—" },
             { label: "รุ่น", value: lead.survey_mdb_model || "—" },
             { label: "ช่องว่าง", value: lead.survey_mdb_slots ? MDB_SLOTS_MAP[lead.survey_mdb_slots] || lead.survey_mdb_slots : "—" },
           ]} />
           <DoneRow label="ชนิดเบรกเกอร์" value={otherLabel(lead.survey_breaker_type, BREAKER_MAP)} />
+          <DoneRow label="ขนาดเมนเบรกเกอร์" value={lead.survey_main_breaker_amp ? `${otherLabel(lead.survey_main_breaker_amp, {})} A` : "—"} />
+          <DoneRow label="ขนาดสายเมน" value={lead.survey_main_cable_sqmm ? `${otherLabel(lead.survey_main_cable_sqmm, {})} sq.mm` : "—"} />
           <DoneGroup label="Cable" items={[
             { label: "PV → Inverter", value: lead.survey_panel_to_inverter_m != null ? `${lead.survey_panel_to_inverter_m} m` : "—" },
             { label: "Inverter → MDB", value: lead.survey_db_distance_m != null ? `${lead.survey_db_distance_m} m` : "—" },
@@ -581,7 +583,7 @@ export default function SurveyStep({ lead, state, refresh, packages, expanded, o
       )}
 
       {/* 7. Photo Checklist — 4 named slots */}
-      <DoneSection color="gray" title="Photo Checklist">
+      <DoneSection color="gray" title="รูปตามรายการ">
         <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
           {photoSlots.map(p => (
             <div key={p.label} className="rounded-lg overflow-hidden border border-gray-200 bg-white">
@@ -889,7 +891,7 @@ export default function SurveyStep({ lead, state, refresh, packages, expanded, o
       {lead.survey_confirmed && subStep === 4 && (
         <div className="rounded-lg bg-white/60 border border-active/15 p-3 space-y-3">
           <div>
-            <div className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-2">ขนาดที่ติดตั้งได้เหมาะสม (kWp)</div>
+            <div className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-2">ขนาดที่ติดตั้งได้เหมาะสม (kWp) <span className="text-red-500">*</span></div>
             <div className="grid grid-cols-4 gap-2">
               {[3, 5, 7, 10].map(kw => (
                 <button
@@ -909,7 +911,7 @@ export default function SurveyStep({ lead, state, refresh, packages, expanded, o
           </div>
 
           <div>
-            <div className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-2">ระบบ</div>
+            <div className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-2">ระบบ <span className="text-red-500">*</span></div>
             <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
               {[
                 { value: "no",        label: "On Grid" },
@@ -1035,7 +1037,7 @@ export default function SurveyStep({ lead, state, refresh, packages, expanded, o
               row inside the stepper list above). */}
           {!surveyBattery.startsWith("customize") && (
             <div>
-              <div className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-2">จำนวน Panel</div>
+              <div className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-2">จำนวน Panel <span className="text-red-500">*</span></div>
               <div className="relative">
                 <input
                   type="number"
@@ -1101,7 +1103,7 @@ export default function SurveyStep({ lead, state, refresh, packages, expanded, o
 
           {/* ลายเซ็นลูกค้า */}
           <div>
-            <div className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-2">ลายเซ็นลูกค้า</div>
+            <div className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-2">ลายเซ็นลูกค้า <span className="text-red-500">*</span></div>
             <SignaturePad
               leadId={lead.id}
               fieldName="survey_customer_signature_url"
@@ -1112,19 +1114,19 @@ export default function SurveyStep({ lead, state, refresh, packages, expanded, o
           {/* การสำรวจหน้างาน — วันและผู้สำรวจจริง · mobile: stack 1 col */}
           <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
             <div>
-              <div className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-1.5">วันที่เข้าสำรวจจริง</div>
+              <div className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-1.5">วันที่เข้าสำรวจจริง <span className="text-red-500">*</span></div>
               <input type="date" value={actualDate} onChange={e => setActualDate(e.target.value)}
                 className="w-full h-11 px-3 rounded-lg border border-gray-200 bg-white text-sm focus:outline-none focus:border-primary" />
             </div>
             <div>
-              <div className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-1.5">ผู้เข้าสำรวจ</div>
+              <div className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-1.5">ผู้เข้าสำรวจ <span className="text-red-500">*</span></div>
               <input type="text" value={actualBy} onChange={e => setActualBy(e.target.value)}
                 className="w-full h-11 px-3 rounded-lg border border-gray-200 bg-white text-sm focus:outline-none focus:border-primary" />
             </div>
           </div>
 
           {/* Preview survey PDF + optional LINE notify · mobile: stack 1 col */}
-          <div className="flex flex-col md:grid md:grid-cols-3 items-stretch md:items-center gap-3">
+          <div className="flex flex-col md:grid md:grid-cols-2 items-stretch md:items-center gap-3">
             <button
               type="button"
               onClick={openPdf}
@@ -1137,7 +1139,7 @@ export default function SurveyStep({ lead, state, refresh, packages, expanded, o
               ดูใบสำรวจ
             </button>
             {lead.line_id && (
-              <label className="flex-1 md:col-span-2 flex items-center gap-2 text-xs text-gray-600 cursor-pointer">
+              <label className="flex-1 md:col-span-1 flex items-center gap-2 text-xs text-gray-600 cursor-pointer">
                 <input
                   type="checkbox"
                   checked={notifyDoneLine}
@@ -1178,7 +1180,7 @@ export default function SurveyStep({ lead, state, refresh, packages, expanded, o
         <div className="space-y-3">
           <SurveyForm ref={formRef} lead={lead} refresh={refresh} section="prep" onFormChange={setFormDraft} />
           <div className="rounded-lg bg-white/60 border border-active/15 p-3">
-            <label className="text-xs font-semibold tracking-wider uppercase text-gray-400 block mb-2">บันทึก Survey</label>
+            <label className="text-xs font-semibold tracking-wider uppercase text-gray-400 block mb-2">บันทึก Survey <span className="text-red-500">*</span></label>
             <textarea value={surveyNote} onChange={e => setSurveyNote(e.target.value)} placeholder="บันทึกหน้างาน เช่น สภาพหลังคา, ข้อจำกัด, ข้อแนะนำ..." rows={3} className="w-full px-3 py-2 rounded-lg border border-gray-200 bg-white text-sm focus:outline-none focus:border-primary resize-none" />
           </div>
           <div className="rounded-lg bg-white/60 border border-active/15 p-3">

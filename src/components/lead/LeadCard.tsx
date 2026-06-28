@@ -1,10 +1,10 @@
 import { LineIcon, PhoneIcon } from "@/components/ui/icons";
-import { useRouter } from "next/navigation";
 import { useState, useEffect } from "react";
 import { STATUS_CONFIG, getStatusLabel, getStatusColor, getMainStatus, getSubstep } from "@/lib/constants/statuses";
 import { formatSlotsRange } from "@/lib/time-slots";
 import { stripThaiTitle } from "@/lib/utils/name";
 import { formatTHB, formatThaiDateShort } from "@/lib/utils/formatters";
+import { useOpenLead } from "@/lib/hooks/useOpenLead";
 import AssignOwnerButton from "./AssignOwnerButton";
 import SourceTag from "@/components/SourceTag";
 
@@ -60,7 +60,7 @@ export interface LeadData {
 }
 
 export default function LeadCard({ lead, compact, onAssignChange, onOpen }: { lead: LeadData; compact?: boolean; onAssignChange?: () => void; onOpen?: (lead: LeadData) => void }) {
-  const router = useRouter();
+  const openLead = useOpenLead();
   const config = STATUS_CONFIG[lead.status] || STATUS_CONFIG.pre_survey;
   const isUpgrade = lead.customer_type === "upgrade" || lead.customer_type?.includes("Upgrade") || lead.customer_type?.includes("เดิม");
   const [now, setNow] = useState<number | null>(null);
@@ -75,12 +75,7 @@ export default function LeadCard({ lead, compact, onAssignChange, onOpen }: { le
 
   const open = () => {
     if (onOpen) { onOpen(lead); return; }
-    const isLargeScreen = typeof window !== "undefined" && window.matchMedia("(min-width: 500px)").matches;
-    if (isLargeScreen) {
-      window.open(`/leads/${lead.id}?focus=1`, "_blank", "noreferrer");
-    } else {
-      router.push(`/leads/${lead.id}`);
-    }
+    openLead(lead.id);
   };
 
   return (

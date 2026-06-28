@@ -2,7 +2,7 @@
 import { BoltIcon } from "@/components/ui/icons";
 
 import { useEffect, useMemo, useState } from "react";
-import { useRouter } from "next/navigation";
+import { useOpenLead } from "@/lib/hooks/useOpenLead";
 import { apiFetch } from "@/lib/api";
 
 // Month-grid sibling of EventCalendarList. Same data source
@@ -41,7 +41,7 @@ interface MonthProps {
 }
 
 export default function EventCalendarMonth({ toolbarRight, year: controlledYear, month: controlledMonth, onEmptyDayClick }: MonthProps) {
-  const router = useRouter();
+  const openLead = useOpenLead();
   const today = new Date();
   const [internalYear, setInternalYear] = useState(today.getFullYear());
   const [internalMonth, setInternalMonth] = useState(today.getMonth());
@@ -145,7 +145,7 @@ export default function EventCalendarMonth({ toolbarRight, year: controlledYear,
                         ? { borderColor: tc, color: tc, backgroundColor: `${tc}14` }
                         : undefined;
                       const kindLabel = isBlock ? "งานอื่น" : isSurvey ? "สำรวจ" : "ติดตั้ง";
-                      const handleClick = () => { if (!isBlock) router.push(`/leads/${ev.id}`); };
+                      const handleClick = () => { if (!isBlock) openLead(ev.id); };
                       return (
                         <button
                           key={`${ev.id}-${ev.event_type}-${j}`}

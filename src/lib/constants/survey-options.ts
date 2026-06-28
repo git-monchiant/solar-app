@@ -40,6 +40,9 @@ export const BREAKER_LABEL: Record<string, string> = {
   screw: "ขันยึดสกรู",
 };
 
+export const MAIN_BREAKER_AMPS = ["40", "50", "80", "100"] as const;
+export const MAIN_CABLE_SQMM = ["16", "25", "35", "50"] as const;
+
 export const ROOF_STRUCTURE_LABEL: Record<string, string> = {
   steel: "เหล็ก",
   wood: "ไม้",
@@ -59,6 +62,19 @@ export type InverterBrand = (typeof INVERTER_BRANDS)[number];
 // ขนาดอินเวอร์เตอร์ (kW) ที่บริษัทมีให้เลือก
 export const INVERTER_KW_SIZES = [3, 5, 6, 10] as const;
 export type InverterKwSize = (typeof INVERTER_KW_SIZES)[number];
+
+// Battery brand/spec catalogue — only what we actually install. Single source
+// of truth so WarrantyStep, SerialsUploader, and any future picker stay in
+// sync; bumping the list = one edit here, not three.
+export const BATTERY_BRANDS = ["HUAWEI", "ZTT"] as const;
+export type BatteryBrand = (typeof BATTERY_BRANDS)[number];
+export const BATTERY_KWH_SIZES = [4.8, 7, 9.6, 14] as const;
+export type BatteryKwhSize = (typeof BATTERY_KWH_SIZES)[number];
+
+// Panel brand catalogue — same convention. Today we only stock JINKO but
+// keeping it in a list lets callers render <option> arrays uniformly.
+export const PANEL_BRANDS = ["JINKO"] as const;
+export type PanelBrand = (typeof PANEL_BRANDS)[number];
 
 export const WIFI_LABEL: Record<string, string> = {
   good: "ดีมาก",

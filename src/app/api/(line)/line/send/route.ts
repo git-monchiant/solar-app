@@ -26,7 +26,19 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: "Missing lead_id or messages" }, { status: 400 });
     }
 
+    // Hard kill switch via env — wins over the DB setting. Set LINE_ENABLED=false
+    // on dev so testers literally can't push messages even if someone flips the
+    // DB flag. Anything other than the exact string "false" leaves the gate open.
+    if ((process.env.LINE_ENABLED || "").toLowerCase() === "false") {
+      return NextResponse.json({ error: "LINE is hard-disabled via env (LINE_ENABLED=false)" }, { status: 403 });
+    }
     const db = await getDb();
+    // Soft app-level kill switch. Default ON for prod safety; admin toggles
+    // via /settings → ช่องทางติดต่อ → "เปิดใช้งาน LINE".
+    const cfg = await db.request().query(`SELECT value FROM app_settings WHERE [key] = 'line_enabled'`);
+    if (cfg.recordset[0]?.value === "0") {
+      return NextResponse.json({ error: "LINE is disabled in app settings" }, { status: 403 });
+    }
     const lead = await db.request()
       .input("id", sql.Int, lead_id)
       .query(`SELECT line_id FROM leads WHERE id = @id`);

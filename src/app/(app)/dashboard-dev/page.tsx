@@ -2,7 +2,8 @@
 import { DownloadIcon } from "@/components/ui/icons";
 
 import { apiFetch, getUserIdHeader } from "@/lib/api";
-import { useEffect, useState } from "react";
+import { getWithTtl, setWithTtl, TWO_HOURS_MS } from "@/lib/storage-ttl";
+import { useEffect, useMemo, useState } from "react";
 import Header from "@/components/layout/Header";
 import { useMe } from "@/lib/roles";
 
@@ -32,10 +33,47 @@ export default function DashboardDevPage() {
   const { me } = useMe();
   const [data, setData] = useState<DevData | null>(null);
   const [loading, setLoading] = useState(true);
+  const [pdfLoading, setPdfLoading] = useState(false);
+
+  // Shared global filter — same keys as Dashboard I (dashboard.dateFrom/dateTo/
+  // filterMode) so toggling on one page sticks for the other. URL params win
+  // when present (PDF capture path); else localStorage; else default range.
+  const todayYmd = useMemo(() => {
+    const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}-${String(d.getDate()).padStart(2,"0")}`;
+  }, []);
+  const urlFilter = useMemo(() => {
+    if (typeof window === "undefined") return null;
+    const p = new URLSearchParams(window.location.search);
+    return { from: p.get("from"), to: p.get("to"), mode: p.get("mode") };
+  }, []);
+  // Lazy initializers + 2h TTL — saved filter expires after 2 hours so a
+  // stale range from yesterday doesn't surprise the user.
+  // Order: URL params > localStorage (2h TTL) > default.
+  const [dateFrom, setDateFrom] = useState<string>(() => {
+    if (urlFilter?.from) return urlFilter.from;
+    return getWithTtl<string>("dashboard.dateFrom", TWO_HOURS_MS) || "2026-01-01";
+  });
+  const [dateTo, setDateTo] = useState<string>(() => {
+    if (urlFilter?.to) return urlFilter.to;
+    return getWithTtl<string>("dashboard.dateTo", TWO_HOURS_MS) || todayYmd;
+  });
+  const [filterMode, setFilterMode] = useState<"created" | "activity">(() => {
+    if (urlFilter?.mode === "activity") return "activity";
+    if (urlFilter?.mode === "created") return "created";
+    const v = getWithTtl<string>("dashboard.filterMode", TWO_HOURS_MS);
+    return v === "activity" ? "activity" : "created";
+  });
+  useEffect(() => { setWithTtl("dashboard.dateFrom", dateFrom); }, [dateFrom]);
+  useEffect(() => { setWithTtl("dashboard.dateTo",   dateTo);   }, [dateTo]);
+  useEffect(() => { setWithTtl("dashboard.filterMode", filterMode); }, [filterMode]);
 
   useEffect(() => {
-    apiFetch("/api/dashboard-dev").then(setData).catch(console.error).finally(() => setLoading(false));
-  }, []);
+    const qs = new URLSearchParams();
+    if (dateFrom) qs.set("from", dateFrom);
+    if (dateTo)   qs.set("to",   dateTo);
+    qs.set("mode", filterMode);
+    apiFetch(`/api/dashboard-dev?${qs.toString()}`).then(setData).catch(console.error).finally(() => setLoading(false));
+  }, [dateFrom, dateTo, filterMode]);
 
   if (!me) return null;
   if (loading) return <div className="flex items-center justify-center h-full py-20"><div className="w-10 h-10 border-3 border-gray-200 border-t-primary rounded-full animate-spin" /></div>;
@@ -50,38 +88,92 @@ export default function DashboardDevPage() {
           title="Dashboard II"
           subtitle="SENA SOLAR ENERGY"
           rightContent={
-            <button
-              type="button"
-              onClick={async (e) => {
-                const btn = e.currentTarget;
-                btn.disabled = true;
-                try {
-                  const res = await fetch("/api/report/dashboard-pdf?path=/dashboard-dev", { headers: { ...getUserIdHeader() } });
-                  if (!res.ok) { alert("ดาวน์โหลด PDF ไม่สำเร็จ"); return; }
-                  const blob = await res.blob();
-                  const url = URL.createObjectURL(blob);
-                  const a = document.createElement("a");
-                  a.href = url;
-                  a.download = `dashboard-ii_${new Date().toISOString().slice(0, 10)}.pdf`;
-                  document.body.appendChild(a);
-                  a.click();
-                  a.remove();
-                  URL.revokeObjectURL(url);
-                } finally {
-                  btn.disabled = false;
-                }
-              }}
-              className="cursor-pointer inline-flex items-center gap-1.5 h-8 px-3 rounded-lg bg-white border border-gray-200 text-xs font-semibold text-gray-700 hover:border-gray-300 disabled:opacity-50 disabled:cursor-wait transition-colors"
-              title="ดาวน์โหลด Dashboard II เป็น PDF"
-              aria-label="ดาวน์โหลด Dashboard II เป็น PDF"
-            >
-              <DownloadIcon className="w-3.5 h-3.5 text-gray-400" strokeWidth={2} />
-              <span>PDF</span>
-            </button>
+            <div className="flex items-center gap-2">
+              <div className="hidden md:flex items-center gap-1 text-xs text-gray-500">
+                <select value={filterMode} onChange={e => setFilterMode(e.target.value as "created" | "activity")}
+                  className="h-8 px-2 rounded-lg bg-white border border-gray-200 text-xs text-gray-700 focus:outline-none focus:border-gray-300"
+                  title="เลือกเงื่อนไขฟิลเตอร์">
+                  <option value="created">วันที่สร้างลีด</option>
+                  <option value="activity">กิจกรรม</option>
+                </select>
+                <input type="date" value={dateFrom} onChange={e => setDateFrom(e.target.value)}
+                  className="h-8 px-2 rounded-lg bg-white border border-gray-200 text-xs text-gray-700 focus:outline-none focus:border-gray-300"
+                  title="ช่วงวันที่ (จาก)" />
+                <span className="text-gray-400">–</span>
+                <input type="date" value={dateTo} onChange={e => setDateTo(e.target.value)}
+                  className="h-8 px-2 rounded-lg bg-white border border-gray-200 text-xs text-gray-700 focus:outline-none focus:border-gray-300"
+                  title="ช่วงวันที่ (ถึง)" />
+                {(dateFrom !== "2026-01-01" || dateTo !== todayYmd || filterMode !== "created") && (
+                  <button type="button" onClick={() => { setDateFrom("2026-01-01"); setDateTo(todayYmd); setFilterMode("created"); }}
+                    className="ml-1 h-8 px-2 rounded-lg text-xs text-gray-500 hover:text-gray-700"
+                    title="รีเซ็ตเป็น 1 ม.ค. → วันนี้ (วันที่สร้างลีด)">
+                    รีเซ็ต
+                  </button>
+                )}
+              </div>
+              <button
+                type="button"
+                disabled={pdfLoading}
+                onClick={async () => {
+                  setPdfLoading(true);
+                  try {
+                    const qs = new URLSearchParams({ path: "/dashboard-dev" });
+                    if (dateFrom) qs.set("from", dateFrom);
+                    if (dateTo)   qs.set("to",   dateTo);
+                    qs.set("mode", filterMode);
+                    const res = await fetch(`/api/report/dashboard-pdf?${qs.toString()}`, { headers: { ...getUserIdHeader() } });
+                    if (!res.ok) { alert("ดาวน์โหลด PDF ไม่สำเร็จ"); return; }
+                    const blob = await res.blob();
+                    const url = URL.createObjectURL(blob);
+                    const a = document.createElement("a");
+                    a.href = url;
+                    a.download = `dashboard-ii_${new Date().toISOString().slice(0, 10)}.pdf`;
+                    document.body.appendChild(a);
+                    a.click();
+                    a.remove();
+                    URL.revokeObjectURL(url);
+                  } finally {
+                    setPdfLoading(false);
+                  }
+                }}
+                className="cursor-pointer inline-flex items-center gap-1.5 h-8 px-3 rounded-lg bg-white border border-gray-200 text-xs font-semibold text-gray-700 hover:border-gray-300 disabled:opacity-60 disabled:cursor-wait transition-colors"
+                title="ดาวน์โหลด Dashboard II เป็น PDF"
+                aria-label="ดาวน์โหลด Dashboard II เป็น PDF"
+              >
+                {pdfLoading ? (
+                  <>
+                    <div className="w-3.5 h-3.5 border-2 border-gray-300 border-t-gray-600 rounded-full animate-spin" />
+                    <span>กำลังสร้าง...</span>
+                  </>
+                ) : (
+                  <>
+                    <DownloadIcon className="w-3.5 h-3.5 text-gray-400" strokeWidth={2} />
+                    <span>PDF</span>
+                  </>
+                )}
+              </button>
+            </div>
           }
         />
       </div>
       <div className="dashboard-pdf-content p-3 md:p-6 space-y-3">
+        {/* Filter banner — mirrors Dashboard I so the printed PDF carries the
+            cohort context. Hidden when no range is active. */}
+        {(dateFrom || dateTo) && (() => {
+          const fmtThai = (s: string) => {
+            if (!s) return "—";
+            const [y, m, d] = s.split("-");
+            return `${d}/${m}/${parseInt(y) + 543}`;
+          };
+          return (
+            <div className="rounded-lg border border-gray-200 bg-gray-50 px-3 py-2 text-xs text-gray-700 flex items-center gap-2 flex-wrap">
+              <span className="font-semibold text-gray-500 uppercase tracking-wider">Filter</span>
+              <span className="font-mono tabular-nums">{fmtThai(dateFrom)} – {fmtThai(dateTo)}</span>
+              <span className="text-gray-400">·</span>
+              <span>{filterMode === "activity" ? "ตามกิจกรรม" : "ตามวันที่สร้างลีด"}</span>
+            </div>
+          );
+        })()}
 
         {/* Horizontal funnel — wide hero visualisation showing the lead
             pipeline left → right. Each stage tapers to the next based on

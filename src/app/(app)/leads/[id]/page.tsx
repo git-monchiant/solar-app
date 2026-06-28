@@ -6,6 +6,8 @@ import { stripThaiTitle } from "@/lib/utils/name";
 import { useEffect, useState, use, useCallback, useRef } from "react";
 import { useSearchParams } from "next/navigation";
 import ActivityTimeline from "@/components/lead/detail/ActivityTimeline";
+import SerialsUploader from "@/components/lead/detail/SerialsUploader";
+import PhotosTab from "@/components/lead/detail/PhotosTab";
 import AddActivityModal, { ActivityType } from "@/components/lead/detail/AddActivityModal";
 import AssignOwnerButton from "@/components/lead/AssignOwnerButton";
 import LostModal from "@/components/lead/detail/LostModal";
@@ -24,7 +26,8 @@ import type { Lead, Package, CardStateKind } from "@/components/lead/detail/step
 import { useDialog } from "@/components/ui/Dialog";
 import { useIsMobile } from "@/lib/hooks/useIsMobile";
 import { formatThaiDate as formatDate, formatThaiTime } from "@/lib/utils/formatters";
-import { INFO_LABELS } from "@/lib/constants/info-labels";
+import { INFO_LABELS, PRIMARY_REASON_LABEL } from "@/lib/constants/info-labels";
+import FallbackImage from "@/components/ui/FallbackImage";
 
 const formatAcUnits = (s: string | null): string | null => {
   if (!s) return null;
@@ -263,7 +266,7 @@ export default function LeadDetailPage({ params }: { params: Promise<{ id: strin
   const [loadingAct, setLoadingAct] = useState(true);
   const [modalType, setModalType] = useState<ActivityType | null>(null);
   const [showLostModal, setShowLostModal] = useState(false);
-  const [tab, setTab] = useState<"info" | "workflow" | "timeline" | "log">("workflow");
+  const [tab, setTab] = useState<"info" | "workflow" | "timeline" | "serials" | "photos" | "log">("workflow");
   const [openSections, setOpenSections] = useState<Record<string, boolean>>({
     contact: true, address: true, interest: true, usage: true, system: true, finance: true, source: true, note: true,
   });
@@ -515,12 +518,13 @@ export default function LeadDetailPage({ params }: { params: Promise<{ id: strin
         <div className="flex-1 flex px-5 gap-1 min-w-0">
           <button
             onClick={() => setTab("workflow")}
-            className={`px-4 py-3 text-xs font-semibold uppercase tracking-wider border-b-2 -mb-px transition-colors inline-flex items-center gap-1.5 ${tab === "workflow" ? "text-active border-active" : "text-gray-500 border-transparent hover:text-gray-700"}`}
+            title="Workflow"
+            className={`py-3 text-xs font-semibold uppercase tracking-wider border-b-2 -mb-px transition-colors inline-flex items-center gap-1.5 ${tab === "workflow" ? "px-4 text-active border-active" : "px-3 md:px-4 text-gray-500 border-transparent hover:text-gray-700"}`}
           >
             <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
               <path strokeLinecap="round" strokeLinejoin="round" d="M3.75 6h16.5M3.75 12h16.5m-16.5 6h16.5" />
             </svg>
-            Workflow
+            <span className={tab === "workflow" ? "" : "hidden md:inline"}>Workflow</span>
           </button>
           <button
             onClick={() => setTab("info")}
@@ -533,12 +537,33 @@ export default function LeadDetailPage({ params }: { params: Promise<{ id: strin
           </button>
           <button
             onClick={() => setTab("timeline")}
-            className={`px-4 py-3 text-xs font-semibold uppercase tracking-wider border-b-2 -mb-px transition-colors inline-flex items-center gap-1.5 ${tab === "timeline" ? "text-active border-active" : "text-gray-500 border-transparent hover:text-gray-700"}`}
+            title="Timeline"
+            className={`py-3 text-xs font-semibold uppercase tracking-wider border-b-2 -mb-px transition-colors inline-flex items-center gap-1.5 ${tab === "timeline" ? "px-4 text-active border-active" : "px-3 md:px-4 text-gray-500 border-transparent hover:text-gray-700"}`}
           >
             <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
               <path strokeLinecap="round" strokeLinejoin="round" d="M6.75 3v2.25M17.25 3v2.25M3 18.75V7.5a2.25 2.25 0 012.25-2.25h13.5A2.25 2.25 0 0121 7.5v11.25" />
             </svg>
-            Timeline
+            <span className={tab === "timeline" ? "" : "hidden md:inline"}>Timeline</span>
+          </button>
+          <button
+            onClick={() => setTab("serials")}
+            title="Serials"
+            className={`py-3 text-xs font-semibold uppercase tracking-wider border-b-2 -mb-px transition-colors inline-flex items-center gap-1.5 ${tab === "serials" ? "px-4 text-active border-active" : "px-3 md:px-4 text-gray-500 border-transparent hover:text-gray-700"}`}
+          >
+            <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+              <path strokeLinecap="round" strokeLinejoin="round" d="M3.75 7.5l16.5-4.125M12 6.75c-2.708 0-5.363.224-7.948.655C2.999 7.58 2.25 8.507 2.25 9.574v9.176A2.25 2.25 0 004.5 21h15a2.25 2.25 0 002.25-2.25V9.574c0-1.067-.75-1.994-1.802-2.169A48.329 48.329 0 0012 6.75zM7.5 12.75a.75.75 0 11-1.5 0 .75.75 0 011.5 0zm6.75 0a.75.75 0 11-1.5 0 .75.75 0 011.5 0zm3 0a.75.75 0 11-1.5 0 .75.75 0 011.5 0z" />
+            </svg>
+            <span className={tab === "serials" ? "" : "hidden md:inline"}>Serials</span>
+          </button>
+          <button
+            onClick={() => setTab("photos")}
+            title="Photos"
+            className={`py-3 text-xs font-semibold uppercase tracking-wider border-b-2 -mb-px transition-colors inline-flex items-center gap-1.5 ${tab === "photos" ? "px-4 text-active border-active" : "px-3 md:px-4 text-gray-500 border-transparent hover:text-gray-700"}`}
+          >
+            <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+              <path strokeLinecap="round" strokeLinejoin="round" d="M2.25 15.75l5.159-5.159a2.25 2.25 0 013.182 0l5.159 5.159m-1.5-1.5l1.409-1.409a2.25 2.25 0 013.182 0l2.909 2.909m-18 3.75h16.5a1.5 1.5 0 001.5-1.5V6a1.5 1.5 0 00-1.5-1.5H3.75A1.5 1.5 0 002.25 6v12a1.5 1.5 0 001.5 1.5zm10.5-11.25h.008v.008h-.008V8.25zm.375 0a.375.375 0 11-.75 0 .375.375 0 01.75 0z" />
+            </svg>
+            <span className={tab === "photos" ? "" : "hidden md:inline"}>Photos</span>
           </button>
           {/* Activity Log tab removed on mobile — desktop still shows the log
               in the right side panel. On desktop the tab itself never existed. */}
@@ -659,7 +684,20 @@ export default function LeadDetailPage({ params }: { params: Promise<{ id: strin
                   title: "ความสนใจของลูกค้า",
                   rows: [
                     { label: "ความสนใจ", value: lead.customer_interest },
-                    { label: "ความต้องการ", value: lead.requirement },
+                    // ความต้องการ — multi-line free text synced from seeker.
+                    // The "เหตุผลที่สนใจ:" line carries raw codes (save_bill, has_ev, …)
+                    // which mean nothing to readers; map each known code to its
+                    // Thai label so it matches what the seeker page shows on
+                    // the picker chips.
+                    {
+                      label: "ความต้องการ",
+                      value: lead.requirement
+                        ? lead.requirement.replace(
+                            /\b(save_bill|sell_back|tax_deduction|daytime_usage|pet_ac|elderly_care|has_ev|environment|home_business|other)\b/g,
+                            (code) => PRIMARY_REASON_LABEL[code] || code,
+                          )
+                        : lead.requirement,
+                    },
                     { label: "เหตุผลที่สนใจ", value: otherOrLabel(lead.pre_primary_reason, INFO_LABELS.primaryReason) },
                     { label: "แพ็คเกจที่สนใจ", value: pkgNames.length ? pkgNames.join(" · ") : null },
                   ],
@@ -1003,7 +1041,7 @@ export default function LeadDetailPage({ params }: { params: Promise<{ id: strin
               // / Warranty / Cancelled). Each section uses the InfoSection layout
               // from the Info tab so the look is consistent; rows inside are
               // "what happened · when" bullets sorted earliest → latest.
-              type Bullet = { date: string | null; label: string; sub?: string; tone?: "paid" | "pending" };
+              type Bullet = { date: string | null; label: string; sub?: string; tone?: "paid" | "pending"; slipPaymentId?: number };
               const fmtIfDate = (d: string | null | undefined) => d ? formatDate(d) : "—";
 
               const preSurveyRows: Bullet[] = [];
@@ -1016,23 +1054,37 @@ export default function LeadDetailPage({ params }: { params: Promise<{ id: strin
               // Booking deposit — read step 1 (submitted) + step 2 (confirmed)
               // straight from the payment row; backfill migration 010 fills
               // these for legacy rows that only had the activity log.
-              const prePay = paymentRows.find(p => p.slip_field === "pre_slip_url");
-              if (prePay) {
-                const parts: string[] = [];
-                if (prePay.submitted_at) {
-                  parts.push(`รับเงินโดย ${prePay.submitted_by_name || "—"} ${formatDate(prePay.submitted_at)} ${formatThaiTime(prePay.submitted_at)}`);
-                }
-                if (prePay.confirmed_at) {
-                  parts.push(`ยืนยันรับเงินโดย ${prePay.confirmed_by_name || "—"} ${formatDate(prePay.confirmed_at)} ${formatThaiTime(prePay.confirmed_at)}`);
-                } else {
-                  parts.push("รอบัญชียืนยัน");
-                }
+              // ฟรีค่าสำรวจ takes priority: any stale pre_slip_url payment row
+              // (from a previous "normal" attempt) is meaningless once the lead
+              // is marked free, so we render a single "ฟรีค่าสำรวจ" entry
+              // instead of confusing the user with the abandoned 1,000 ฿ row.
+              if (lead.pre_survey_fee_type === "free") {
                 preSurveyRows.push({
-                  date: prePay.confirmed_at ?? prePay.submitted_at ?? lead.pre_booked_at ?? null,
-                  label: `ชำระเงินจองสำรวจ${prePay.amount ? ` ${prePay.amount.toLocaleString()} ฿` : ""}`,
-                  sub: parts.length ? parts.join(" · ") : undefined,
-                  tone: prePay.confirmed_at ? "paid" : "pending",
+                  date: lead.pre_booked_at ?? null,
+                  label: "ฟรีค่าสำรวจ",
+                  sub: lead.pre_note || undefined,
+                  tone: "paid",
                 });
+              } else {
+                const prePay = paymentRows.find(p => p.slip_field === "pre_slip_url");
+                if (prePay) {
+                  const parts: string[] = [];
+                  if (prePay.submitted_at) {
+                    parts.push(`รับเงินโดย ${prePay.submitted_by_name || "—"} ${formatDate(prePay.submitted_at)} ${formatThaiTime(prePay.submitted_at)}`);
+                  }
+                  if (prePay.confirmed_at) {
+                    parts.push(`ยืนยันรับเงินโดย ${prePay.confirmed_by_name || "—"} ${formatDate(prePay.confirmed_at)} ${formatThaiTime(prePay.confirmed_at)}`);
+                  } else {
+                    parts.push("รอบัญชียืนยัน");
+                  }
+                  preSurveyRows.push({
+                    date: prePay.confirmed_at ?? prePay.submitted_at ?? lead.pre_booked_at ?? null,
+                    label: `ชำระเงินจองสำรวจ${prePay.amount ? ` ${prePay.amount.toLocaleString()} ฿` : ""}`,
+                    sub: parts.length ? parts.join(" · ") : undefined,
+                    tone: prePay.confirmed_at ? "paid" : "pending",
+                    slipPaymentId: prePay.id,
+                  });
+                }
               }
 
               const surveyRows: Bullet[] = [];
@@ -1085,6 +1137,7 @@ export default function LeadDetailPage({ params }: { params: Promise<{ id: strin
                   label: `งวดที่ ${i + 1} ${r.when === "after" ? "(หลังติดตั้ง)" : "(ก่อนติดตั้ง)"}${amount != null ? ` · ${amount.toLocaleString()} ฿` : ""}`,
                   sub: subParts.length ? subParts.join(" · ") : undefined,
                   tone: pay?.confirmed_at ? "paid" : "pending",
+                  slipPaymentId: pay?.id,
                 };
                 return bullet;
               }).filter(b => b.date);
@@ -1172,6 +1225,20 @@ export default function LeadDetailPage({ params }: { params: Promise<{ id: strin
                                   <span className={`text-xs font-mono tabular-nums ${dateCls}`}>· {fmtIfDate(r.date)}</span>
                                 </div>
                                 {r.sub && <div className={`text-xs mt-0.5 ${subCls}`}>{r.sub}</div>}
+                                {/* Slip thumbnail — `/api/payments/{id}` streams
+                                    the first slot's blob; FallbackImage hides
+                                    itself if there isn't one (404 / failed). */}
+                                {r.slipPaymentId && (
+                                  <div className="mt-1.5">
+                                    <FallbackImage
+                                      src={`/api/payments/${r.slipPaymentId}`}
+                                      alt="สลิป"
+                                      lightboxLabel={`สลิป ${r.label}`}
+                                      className="w-20 h-20 object-cover rounded-md border border-gray-200 bg-gray-50 cursor-zoom-in"
+                                      fallbackLabel=""
+                                    />
+                                  </div>
+                                )}
                               </div>
                             </li>
                           );
@@ -1183,6 +1250,14 @@ export default function LeadDetailPage({ params }: { params: Promise<{ id: strin
               );
             })()}
           </div>
+        ) : tab === "serials" ? (
+          // Lock the Serials list only after the lead has moved PAST the
+          // warranty step. While status === "warranty" the team is still
+          // capturing SNs / re-running OCR — locking that early would force
+          // them to flip status backwards to fix a single typo.
+          <SerialsUploader leadId={lead.id} locked={lead.status === "gridtie" || lead.status === "closed"} />
+        ) : tab === "photos" ? (
+          <PhotosTab lead={lead as unknown as Record<string, unknown>} leadId={lead.id} />
         ) : (
           <div className="p-4 md:hidden">
             <ActivityTimeline activities={activities} loading={loadingAct} />

@@ -14,6 +14,10 @@ interface Pkg {
   inverter_brand: string;
 }
 
+interface DeviceInverter { id: number; brand: string | null; kw: number | null; serial_no: string | null; }
+interface DeviceBattery  { id: number; brand: string | null; kwh: number | null; serial_no: string | null; }
+interface DevicePanel    { id: number; brand: string | null; serial_no: string | null; }
+
 interface Data {
   lead: {
     id: number;
@@ -43,6 +47,11 @@ interface Data {
   };
   package: Pkg | null;
   signer: { full_name: string; signature_url: string | null } | null;
+  devices?: {
+    inverters: DeviceInverter[];
+    batteries: DeviceBattery[];
+    panels: DevicePanel[];
+  };
 }
 
 const CO = {
@@ -74,22 +83,35 @@ export default function WarrantyPage() {
   if (!d) return <div className="flex items-center justify-center h-screen"><div className="w-8 h-8 border-2 border-primary/30 border-t-primary animate-spin" /></div>;
 
   const { lead, package: pkg } = d;
+  // Inverter — prefer the new lead_inverters row (first one) → legacy
+  // warranty_inverter_* columns → package defaults. Same precedence rule for
+  // every device type below.
+  const invRow = d.devices?.inverters[0];
+  const invBrand = invRow?.brand ?? lead.warranty_inverter_brand ?? pkg?.inverter_brand ?? "";
+  const invKw = invRow?.kw ?? lead.warranty_inverter_kw ?? pkg?.inverter_kw ?? null;
+  const inverterSn = invRow?.serial_no ?? lead.warranty_inverter_sn ?? null;
   // Prefer warranty_* equipment snapshot (entered by staff to reflect actual
   // installed equipment); fall back to the package for older leads.
   const sysKwp = lead.warranty_system_size_kwp ?? pkg?.kwp ?? null;
-  const pnlCount = lead.warranty_panel_count ?? null;
+  // Panel count comes from the new lead_panels row count when present.
+  const pnlCount = (d.devices?.panels.length ?? 0) > 0
+    ? d.devices!.panels.length
+    : lead.warranty_panel_count ?? null;
   const pnlWatt = lead.warranty_panel_watt ?? null;
-  const pnlBrand = lead.warranty_panel_brand ?? "";
-  const invBrand = lead.warranty_inverter_brand ?? pkg?.inverter_brand ?? "";
-  const invKw = lead.warranty_inverter_kw ?? pkg?.inverter_kw ?? null;
-  const battBrand = lead.warranty_battery_brand ?? pkg?.battery_brand ?? "";
-  const battKwh = lead.warranty_battery_kwh ?? pkg?.battery_kwh ?? null;
-  const hasBattery = lead.warranty_has_battery ?? !!pkg?.has_battery;
+  const pnlBrand = d.devices?.panels[0]?.brand ?? lead.warranty_panel_brand ?? "";
+  // Battery summary still feeds the "ขนาดแบต" header line — first row wins.
+  const firstBatt = d.devices?.batteries[0];
+  const battBrand = firstBatt?.brand ?? lead.warranty_battery_brand ?? pkg?.battery_brand ?? "";
+  const battKwh = firstBatt?.kwh ?? lead.warranty_battery_kwh ?? pkg?.battery_kwh ?? null;
+  const hasBattery = (d.devices?.batteries.length ?? 0) > 0
+    || (lead.warranty_has_battery ?? !!pkg?.has_battery);
 
-  // Parse battery / panel serial arrays (JSON columns). Falls back to empty
-  // on parse error so the doc still renders for legacy leads without these
-  // fields populated.
+  // Battery & panel list — new tables win; legacy JSON used only when new
+  // tables are empty (lead never went through the post-Phase-2 save flow).
   const batteryList: Array<{ brand: string | null; kwh: number | null; serial: string | null }> = (() => {
+    if (d.devices?.batteries.length) {
+      return d.devices.batteries.map(b => ({ brand: b.brand, kwh: b.kwh, serial: b.serial_no }));
+    }
     try {
       const parsed = lead.warranty_batteries ? JSON.parse(lead.warranty_batteries) : [];
       return Array.isArray(parsed)
@@ -98,6 +120,11 @@ export default function WarrantyPage() {
     } catch { return []; }
   })();
   const panelSerials: string[] = (() => {
+    if (d.devices?.panels.length) {
+      return d.devices.panels
+        .map(p => (p.serial_no ?? "").trim())
+        .filter(s => s.length > 0);
+    }
     try {
       const parsed = lead.warranty_panel_serials ? JSON.parse(lead.warranty_panel_serials) : [];
       return Array.isArray(parsed) ? parsed.filter((s: unknown): s is string => typeof s === "string" && s.trim().length > 0) : [];
@@ -182,7 +209,7 @@ export default function WarrantyPage() {
                       <Spec label="SOLAR PANELS" value={panelSpec} />
                       <Spec label="INVERTER" value={inverterSpec} />
                       {hasBattery && <Spec label="BATTERY" value={batterySpec} />}
-                      <Spec label="INVERTER SERIAL NUMBER" value={lead.warranty_inverter_sn || "—"} />
+                      <Spec label="INVERTER SERIAL NUMBER" value={inverterSn || "—"} />
                       <Spec label="ON-SITE SERVICE" value="ล้างแผง / ตรวจเช็คระบบ 4 ครั้ง / 2 ปี" />
                     </div>
                     <div className="px-4 py-3 bg-active-light/30 flex items-end justify-between border-t border-gray-200">

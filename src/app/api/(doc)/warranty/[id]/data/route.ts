@@ -74,7 +74,36 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
       pkg = pkgResult.recordset[0] || null;
     }
 
-    return NextResponse.json({ lead, package: pkg, signer });
+    // Device serials from the new normalised tables. The page prefers these
+    // over the legacy warranty_batteries / warranty_panel_serials JSON columns
+    // on the lead row when they're populated; old leads without backfill still
+    // fall through to the legacy fields client-side.
+    const leadIntId = parseInt(id);
+    const [inv, batt, pan] = await Promise.all([
+      db.request().input("id", sql.Int, leadIntId).query(`
+        SELECT id, brand, kw, serial_no, photo_url, cert_url, position
+        FROM lead_inverters WHERE lead_id = @id ORDER BY position, id
+      `),
+      db.request().input("id", sql.Int, leadIntId).query(`
+        SELECT id, brand, kwh, serial_no, photo_url, position
+        FROM lead_batteries WHERE lead_id = @id ORDER BY position, id
+      `),
+      db.request().input("id", sql.Int, leadIntId).query(`
+        SELECT id, brand, serial_no, position
+        FROM lead_panels WHERE lead_id = @id ORDER BY position, id
+      `),
+    ]);
+
+    return NextResponse.json({
+      lead,
+      package: pkg,
+      signer,
+      devices: {
+        inverters: inv.recordset,
+        batteries: batt.recordset,
+        panels: pan.recordset,
+      },
+    });
   } catch (error) {
     console.error("GET /api/warranty/[id]/data error:", error);
     return NextResponse.json({ error: "Failed to fetch warranty data" }, { status: 500 });
