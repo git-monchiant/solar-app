@@ -209,7 +209,7 @@ export default function SeekerMapPage() {
           <button
             type="button"
             onClick={() => setPickerOpen(true)}
-            className="shrink-0 w-10 h-10 text-gray-700 hover:text-gray-900 flex items-center justify-center"
+            className="shrink-0 w-10 h-8 text-gray-700 hover:text-gray-900 flex items-center justify-center"
             aria-label="กรองโครงการ"
           >
             <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>

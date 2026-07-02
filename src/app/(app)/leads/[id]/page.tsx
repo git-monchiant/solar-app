@@ -49,6 +49,87 @@ const otherOrLabel = (v: string | null, labels: Record<string, string>): string 
   return labels[v] || v;
 };
 
+// Questionnaire (PreSurveyForm §1-§8) label maps. Codes MUST stay in sync
+// with the option arrays in PreSurveyForm.tsx — when the form picker shows
+// "เคย", the DB stores "yes", and the info tab needs to render "เคย" back.
+// Keep this map sorted by section so it's easy to diff against the form.
+const Q_LABELS: Record<string, Record<string, string>> = {
+  // §1 House + occupants
+  houseAge:           { lt5: "ต่ำกว่า 5 ปี", "5_10": "5-10 ปี", "10_20": "10-20 ปี", gt20: "มากกว่า 20 ปี" },
+  // §2 Bill + meter
+  meterSize:          { "15_45": "15(45) A", "30_100": "30(100) A", unknown: "ไม่ทราบ" },
+  // §3 Lifestyle
+  yesNoLifestyle:     { yes: "ใช่", no: "ไม่ใช่" },                                            // home_at_daytime, work_at_home
+  daytimeOccupants:   { family: "ทั้งครอบครัว", elderly: "ผู้สูงอายุ", kids: "เด็กเล็ก", pets: "สัตว์เลี้ยง" },
+  businessType:       { online_live: "ขายของ Online / Live", online_edu: "เรียน Online", retail: "ค้าขาย" },
+  workDaysPerWeek:    { "1_2": "1-2 วัน/สัปดาห์", "3_5": "3-5 วัน/สัปดาห์", daily: "ทุกวัน" },
+  evChargePeriod:     { day: "กลางวัน", night: "กลางคืน" },
+  // §4 Future plans
+  yesNoConsidering:   { yes: "มี", no: "ไม่มี", considering: "กำลังพิจารณา" },                  // future_ev, future_ev_charger
+  yesNoBin:           { yes: "มี", no: "ไม่มี" },                                              // future_extend_home, future_more_members, future_smart_home
+  yesNoMaybe:         { yes: "มี", no: "ไม่มี", maybe: "ยังไม่แน่ใจ" },                          // future_battery
+  // §5 Energy security
+  outagePriorities:   { ac: "แอร์", lights: "ไฟส่องสว่าง", internet: "Internet", cctv: "กล้องวงจรปิด", fridge: "ตู้เย็น", ev_charger: "EV Charger", gate: "ระบบประตูรั้ว", ups: "ระบบสำรองฉุกเฉิน" },
+  billRiseAction:     { now: "ลดค่าไฟทันที", longterm: "ควบคุมค่าใช้จ่ายระยะยาว", prepare: "เตรียมบ้านประหยัดพลังงาน" },
+  // §6 Home health
+  everNever:          { yes: "เคย", no: "ไม่เคย" },                                            // had_roof_leak, did_roof_repair, etc.
+  // §7 Future energy posture
+  ableOrNot:          { yes: "ได้", no: "ไม่ได้" },                                            // self_generates, blackout_resilient
+  evReady:            { ready: "พร้อม", not_yet: "ยังไม่พร้อม", unsure: "ไม่แน่ใจ" },
+  usageTrend:         { more: "มากขึ้น", same: "เท่าเดิม", less: "น้อยลง" },
+  // §8 Decision making
+  decisionTimeline:   { "1-3m": "ภายใน 1-3 เดือน", "6m": "ภายใน 6 เดือน", "1y+": "มากกว่า 1 ปี" },
+};
+
+// Decode a single coded value to its form label. Handles the "other"/"other:..."
+// free-text pattern PreSurveyForm uses across every chip group.
+const qLabel = (v: string | null | undefined, kind: keyof typeof Q_LABELS): string | null => {
+  if (!v) return null;
+  if (typeof v === "string" && v.startsWith("other:")) return v.slice(6) || "อื่นๆ";
+  if (v === "other") return "อื่นๆ";
+  const map = Q_LABELS[kind] || {};
+  return map[v] || v;
+};
+
+// Decode a comma-separated multi-select (daytime_occupants, outage_priorities)
+// into "label1, label2, อื่นๆ: free text".
+const qCsvLabel = (csv: string | null | undefined, kind: keyof typeof Q_LABELS): string | null => {
+  if (!csv) return null;
+  const parts = csv.split(",").map(s => s.trim()).filter(Boolean);
+  if (parts.length === 0) return null;
+  return parts.map(p => qLabel(p, kind)).filter(Boolean).join(", ");
+};
+
+// §8 Decision Factors: JSON like { factor_key: number, other: { score, text } }.
+// Render as "ชื่อปัจจัย: ★★★☆☆" style so reviewers see priorities at a glance.
+const DECISION_FACTOR_LABEL: Record<string, string> = {
+  price:       "ราคา",
+  reputation:  "ชื่อเสียงบริษัท",
+  warranty:    "การรับประกัน",
+  quality:     "คุณภาพอุปกรณ์",
+  experience:  "ประสบการณ์",
+  speed:       "ความรวดเร็ว",
+  service:     "บริการหลังการขาย",
+};
+const formatDecisionFactors = (json: string | null): string | null => {
+  if (!json) return null;
+  try {
+    const obj = JSON.parse(json) as Record<string, number | { score?: number; text?: string }>;
+    const parts: string[] = [];
+    for (const [key, val] of Object.entries(obj)) {
+      if (key === "other") {
+        const o = val as { score?: number; text?: string };
+        if (o?.text && o.score) parts.push(`${o.text}: ${"★".repeat(o.score)}${"☆".repeat(5 - o.score)}`);
+        continue;
+      }
+      if (typeof val === "number" && val > 0) {
+        parts.push(`${DECISION_FACTOR_LABEL[key] || key}: ${"★".repeat(val)}${"☆".repeat(5 - val)}`);
+      }
+    }
+    return parts.length ? parts.join(" · ") : null;
+  } catch { return null; }
+};
+
 function InfoSection({
   id,
   title,
@@ -182,7 +263,7 @@ function StepCard({
       className={`flex items-center gap-3 px-5 py-4 ${headerClickable ? "cursor-pointer" : ""}`}
       onClick={inlineClick}
     >
-      <div className={`w-10 h-10 rounded-xl flex items-center justify-center shrink-0 ${iconBox}`}>
+      <div className={`w-10 h-8 rounded-xl flex items-center justify-center shrink-0 ${iconBox}`}>
         <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.8}>
           <path strokeLinecap="round" strokeLinejoin="round" d={icon} />
         </svg>
@@ -269,6 +350,11 @@ export default function LeadDetailPage({ params }: { params: Promise<{ id: strin
   const [tab, setTab] = useState<"info" | "workflow" | "timeline" | "serials" | "photos" | "log">("workflow");
   const [openSections, setOpenSections] = useState<Record<string, boolean>>({
     contact: true, address: true, interest: true, usage: true, system: true, finance: true, source: true, note: true,
+    // PreSurvey tree — every section expanded by default so reviewers see
+    // every question + answer at first glance without clicking through.
+    q_tree: true,
+    "q_tree.q1": true, "q_tree.q2": true, "q_tree.q3": true, "q_tree.q4": true,
+    "q_tree.q5": true, "q_tree.q6": true, "q_tree.q7": true, "q_tree.q8": true,
   });
   const toggleSection = (id: string) => setOpenSections(prev => ({ ...prev, [id]: !prev[id] }));
   const [showLineModal, setShowLineModal] = useState(false);
@@ -309,10 +395,18 @@ export default function LeadDetailPage({ params }: { params: Promise<{ id: strin
       })
       .finally(() => setLoadingLead(false));
   }, [id]);
+  // Background refresh — every time a form autosave triggers refresh(), we
+  // re-fetch activities silently so the right panel stays current without
+  // flashing the "loading…" placeholder. The skeleton only shows on the
+  // very first fetch (initial mount, before any data has loaded).
+  const activitiesEverLoaded = useRef(false);
   const fetchActivities = useCallback(() => {
-    setLoadingAct(true);
+    if (!activitiesEverLoaded.current) setLoadingAct(true);
     return apiFetch(`/api/leads/${id}/activities`)
-      .then(setActivities)
+      .then((rs: Activity[]) => {
+        setActivities(rs);
+        activitiesEverLoaded.current = true;
+      })
       .catch((e: unknown) => {
         const msg = e instanceof Error ? e.message : String(e);
         if (!/API error: 404/.test(msg)) console.error(e);
@@ -383,6 +477,13 @@ export default function LeadDetailPage({ params }: { params: Promise<{ id: strin
   const cardState = (stepIdx: number): CardStateKind => {
     if (isLost) return "locked";
     if (stepIdx === 0) return hasPreSurveyDone ? "done" : "active";
+    // Install (idx 4) + Warranty (idx 5) open simultaneously — but only
+    // BEFORE install is signed off. Once install_completed_at is set,
+    // Install collapses to its done view so the user clearly sees that
+    // ยืนยันส่งมอบงาน worked; Warranty stays active for cert work.
+    const installDone = !!lead.install_completed_at;
+    if (stepIdx === 4 && installDone) return "done";
+    if ((stepIdx === 4 || stepIdx === 5) && (currentStep === 4 || currentStep === 5)) return "active";
     if (stepIdx < currentStep) return "done";
     if (stepIdx === currentStep) return "active";
     return "locked";
@@ -404,8 +505,19 @@ export default function LeadDetailPage({ params }: { params: Promise<{ id: strin
         {/* Top row: back + name + call */}
         <div className="pl-3 pr-5 pt-3 flex items-center gap-2">
           {focus ? (
-            <button type="button" onClick={() => setShowProfileModal(true)} className="w-11 h-11 rounded-full text-gray-600 hover:bg-gray-200 hover:text-primary transition-colors shrink-0 flex items-center justify-center" style={{ minHeight: 0 }}>
-              <svg className="w-9 h-9" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
+            <button type="button" onClick={() => setShowProfileModal(true)}
+              title={`Grade ${lead.customer_grade || "-"}`}
+              className={`w-11 h-11 rounded-full hover:opacity-80 transition-colors shrink-0 flex items-center justify-center ${
+                lead.customer_grade === "A" ? "text-emerald-600" :
+                lead.customer_grade === "B" ? "text-sky-600" :
+                lead.customer_grade === "C" ? "text-amber-500" :
+                lead.customer_grade === "D" ? "text-orange-500" :
+                lead.customer_grade === "E" ? "text-gray-500" :
+                lead.customer_grade === "F" ? "text-red-600" :
+                "text-gray-600"
+              }`}
+              style={{ minHeight: 0 }}>
+              <svg className="w-9 h-8" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
                 <path strokeLinecap="round" strokeLinejoin="round" d="M17.982 18.725A7.488 7.488 0 0012 15.75a7.488 7.488 0 00-5.982 2.975m11.963 0a9 9 0 10-11.963 0m11.963 0A8.966 8.966 0 0112 21a8.966 8.966 0 01-5.982-2.275M15 9.75a3 3 0 11-6 0 3 3 0 016 0z" />
               </svg>
             </button>
@@ -517,23 +629,44 @@ export default function LeadDetailPage({ params }: { params: Promise<{ id: strin
         </div>
         <div className="flex-1 flex px-5 gap-1 min-w-0">
           <button
-            onClick={() => setTab("workflow")}
-            title="Workflow"
+            onClick={() => {
+              setTab("workflow");
+              // Scroll to the current step so the user lands on what they're
+              // actively working on instead of the top of the (sometimes long)
+              // step list. Deferred a frame so the workflow tab renders first.
+              requestAnimationFrame(() => {
+                document.getElementById(`step-${currentStep}`)?.scrollIntoView({ behavior: "smooth", block: "start" });
+              });
+            }}
+            title={`Workflow (${lead.customer_grade || "-"})`}
             className={`py-3 text-xs font-semibold uppercase tracking-wider border-b-2 -mb-px transition-colors inline-flex items-center gap-1.5 ${tab === "workflow" ? "px-4 text-active border-active" : "px-3 md:px-4 text-gray-500 border-transparent hover:text-gray-700"}`}
           >
             <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
               <path strokeLinecap="round" strokeLinejoin="round" d="M3.75 6h16.5M3.75 12h16.5m-16.5 6h16.5" />
             </svg>
-            <span className={tab === "workflow" ? "" : "hidden md:inline"}>Workflow</span>
+            <span className={tab === "workflow" ? "" : "hidden md:inline"}>
+              Workflow (
+              <span className={
+                lead.customer_grade === "A" ? "text-emerald-600" :
+                lead.customer_grade === "B" ? "text-sky-600" :
+                lead.customer_grade === "C" ? "text-amber-500" :
+                lead.customer_grade === "D" ? "text-orange-500" :
+                lead.customer_grade === "E" ? "text-gray-500" :
+                lead.customer_grade === "F" ? "text-red-600" :
+                "text-gray-400"
+              }>{lead.customer_grade || "-"}</span>
+              )
+            </span>
           </button>
           <button
             onClick={() => setTab("info")}
-            className={`hidden md:inline-flex px-4 py-3 text-xs font-semibold uppercase tracking-wider border-b-2 -mb-px transition-colors items-center gap-1.5 ${tab === "info" ? "text-active border-active" : "text-gray-500 border-transparent hover:text-gray-700"}`}
+            title="Info"
+            className={`py-3 text-xs font-semibold uppercase tracking-wider border-b-2 -mb-px transition-colors inline-flex items-center gap-1.5 ${tab === "info" ? "px-4 text-active border-active" : "px-3 md:px-4 text-gray-500 border-transparent hover:text-gray-700"}`}
           >
             <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
               <path strokeLinecap="round" strokeLinejoin="round" d="M11.25 11.25l.041-.02a.75.75 0 011.063.852l-.708 2.836a.75.75 0 001.063.853l.041-.021M21 12a9 9 0 11-18 0 9 9 0 0118 0zm-9-3.75h.008v.008H12V8.25z" />
             </svg>
-            Info
+            <span className={tab === "info" ? "" : "hidden md:inline"}>Info</span>
           </button>
           <button
             onClick={() => setTab("timeline")}
@@ -547,13 +680,16 @@ export default function LeadDetailPage({ params }: { params: Promise<{ id: strin
           </button>
           <button
             onClick={() => setTab("serials")}
-            title="Serials"
+            title="Equipment - Serial"
             className={`py-3 text-xs font-semibold uppercase tracking-wider border-b-2 -mb-px transition-colors inline-flex items-center gap-1.5 ${tab === "serials" ? "px-4 text-active border-active" : "px-3 md:px-4 text-gray-500 border-transparent hover:text-gray-700"}`}
           >
             <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
               <path strokeLinecap="round" strokeLinejoin="round" d="M3.75 7.5l16.5-4.125M12 6.75c-2.708 0-5.363.224-7.948.655C2.999 7.58 2.25 8.507 2.25 9.574v9.176A2.25 2.25 0 004.5 21h15a2.25 2.25 0 002.25-2.25V9.574c0-1.067-.75-1.994-1.802-2.169A48.329 48.329 0 0012 6.75zM7.5 12.75a.75.75 0 11-1.5 0 .75.75 0 011.5 0zm6.75 0a.75.75 0 11-1.5 0 .75.75 0 011.5 0zm3 0a.75.75 0 11-1.5 0 .75.75 0 011.5 0z" />
             </svg>
-            <span className={tab === "serials" ? "" : "hidden md:inline"}>Serials</span>
+            <span className={tab === "serials" ? "" : "hidden md:inline"}>
+              <span className="md:hidden">Equipment</span>
+              <span className="hidden md:inline">Equipment - Serial</span>
+            </span>
           </button>
           <button
             onClick={() => setTab("photos")}
@@ -574,7 +710,7 @@ export default function LeadDetailPage({ params }: { params: Promise<{ id: strin
               <button
                 type="button"
                 onClick={() => setModalType("follow_up")}
-                className="flex items-center gap-1.5 px-3 h-9 rounded-lg bg-amber-50 text-amber-700 text-sm font-semibold border border-amber-200 hover:bg-amber-100 transition-colors"
+                className="flex items-center gap-1.5 px-3 h-8 rounded-lg bg-amber-50 text-amber-700 text-sm font-semibold border border-amber-200 hover:bg-amber-100 transition-colors"
               >
                 <ClockIcon className="w-4 h-4" strokeWidth={2} />
                 Follow-up
@@ -582,7 +718,7 @@ export default function LeadDetailPage({ params }: { params: Promise<{ id: strin
               <button
                 type="button"
                 onClick={() => setModalType("note")}
-                className="flex items-center gap-1.5 px-3 h-9 rounded-lg bg-gray-100 text-gray-700 text-sm font-semibold border border-gray-200 hover:bg-gray-200 transition-colors"
+                className="flex items-center gap-1.5 px-3 h-8 rounded-lg bg-gray-100 text-gray-700 text-sm font-semibold border border-gray-200 hover:bg-gray-200 transition-colors"
               >
                 <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
                   <path strokeLinecap="round" strokeLinejoin="round" d="M16.862 4.487l1.687-1.688a1.875 1.875 0 112.652 2.652L10.582 16.07a4.5 4.5 0 01-1.897 1.13L6 18l.8-2.685a4.5 4.5 0 011.13-1.897l8.932-8.931z" />
@@ -614,8 +750,16 @@ export default function LeadDetailPage({ params }: { params: Promise<{ id: strin
           { idx: 6, label: "Grid-Tie" },
         ];
         const goto = (i: number) => {
-          const el = document.getElementById(`step-${i}`);
-          if (el) el.scrollIntoView({ behavior: "smooth", block: "start" });
+          // Make sure the workflow tab is active before scrolling — clicking a
+          // step from the Info/Timeline/Photos/Serials/Log tab would otherwise
+          // scroll to a hidden element.
+          if (tab !== "workflow") setTab("workflow");
+          // Defer the scroll one frame so the workflow tab actually renders
+          // before scrollIntoView tries to find the step element.
+          requestAnimationFrame(() => {
+            const el = document.getElementById(`step-${i}`);
+            if (el) el.scrollIntoView({ behavior: "smooth", block: "start" });
+          });
         };
         return (
           <aside className="hidden md:flex w-20 border-r border-gray-200 bg-gray-50/40 flex-col py-3 px-1.5 gap-1.5">
@@ -652,7 +796,103 @@ export default function LeadDetailPage({ params }: { params: Promise<{ id: strin
       <div ref={scrollRef} className="flex-1 overflow-y-auto pb-20 relative min-w-0" style={{ overscrollBehaviorY: "contain" }}>
         <div>
         {tab === "info" ? (
-          <div className="p-4">
+          <div className="p-4 space-y-3">
+            {/* Top panel — classification chips for sales: กลุ่มลูกค้า + grade.
+                Both are PATCH'd straight to the lead row; the API accepts
+                `customer_group` and `customer_grade` keys (migration 051).
+                Visual emphasis: gradient background, primary accent border,
+                shadow, and a header strip — this is the highest-priority block
+                in the Info tab so it should look distinct from the regular
+                info sections below. */}
+            <div className="rounded-xl border border-gray-200 bg-white overflow-hidden">
+              {/* Header strip — star + Thai/English title + helper subtitle */}
+              <div className="bg-gray-50 border-b border-gray-200 px-4 py-2.5 flex items-center gap-2">
+                <span className="w-7 h-7 rounded-lg bg-amber-100 text-amber-500 flex items-center justify-center shrink-0">
+                  <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 24 24">
+                    <path d="M12 2l2.6 7.6L22 10l-6 4.4 2.4 7.6L12 17.8 5.6 22 8 14.4 2 10l7.4-.4L12 2z" />
+                  </svg>
+                </span>
+                <div className="flex-1 min-w-0">
+                  <div className="text-sm font-bold text-gray-800 leading-tight">จัดเกรดลูกค้า</div>
+                  <div className="text-[11px] text-gray-500 leading-tight">Customer Priority — กลุ่ม + ระดับความสนใจ</div>
+                </div>
+              </div>
+              <div className="px-4 py-3 space-y-3">
+              <div>
+                <div className="text-xs font-semibold tracking-wider uppercase text-gray-400 mb-1.5">กลุ่มลูกค้า</div>
+                <div className="grid grid-cols-2 md:grid-cols-7 gap-2">
+                  {([
+                    { v: "general", label: "ลูกค้าทั่วไป", cols: 1 },
+                    { v: "sena",    label: "ลูกค้าเสนา",   cols: 1 },
+                    { v: "sme",     label: "SME (อาคารพาณิชย์/สำนักงาน/ร้านอาหาร)", cols: 2 },
+                  ] as const).map(opt => {
+                    const active = lead.customer_group === opt.v;
+                    const span = opt.cols === 2 ? "col-span-2 md:col-span-2" : "col-span-1 md:col-span-1";
+                    return (
+                      <button key={opt.v} type="button"
+                        onClick={() => {
+                          apiFetch(`/api/leads/${lead.id}`, {
+                            method: "PATCH",
+                            headers: { "Content-Type": "application/json" },
+                            body: JSON.stringify({ customer_group: active ? null : opt.v }),
+                          }).then(() => refresh()).catch(console.error);
+                        }}
+                        className={`${span} h-8 px-3 rounded-lg text-xs font-semibold border transition-all ${
+                          active ? "bg-active text-white border-active"
+                                 : "bg-white text-gray-600 border-gray-200 hover:border-active/40"
+                        }`}>
+                        {opt.label}
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+              <div>
+                <div className="text-xs font-semibold tracking-wider uppercase text-gray-400 mb-1.5">Grade</div>
+                {/* Grades A-E follow the Solar Retail Lead Segmentation framework
+                    (see tmp-files PDF). Short title under each letter + full
+                    description in title= so a hover/long-press surfaces the
+                    sales playbook. F is omitted — the framework only defines
+                    A-E. */}
+                <div className="grid grid-cols-2 md:grid-cols-7 gap-2">
+                  {([
+                    { g: "-", title: "ยังไม่จัดเกรด",       color: "text-gray-400",    desc: "ยังไม่จัดเกรด — ค่า default ก่อนเซลส์ประเมิน" },
+                    { g: "A", title: "พร้อมซื้อทันที", color: "text-emerald-600", desc: "ลักษณะ: ขอราคา, ขอให้เข้า Survey, ส่งบิลค่าไฟ, ถามวันติดตั้ง, กระตือรือร้น\nเป้าหมาย: feedback ภายใน 5 นาที\nการปฏิบัติ: โทรหาลูกค้า, นัด Survey, ส่ง Company Profile, รีวิวผลงาน, ติดตาม Day1/Day3/Day7\nKPI: Response Time, Survey Rate, Close Rate" },
+                    { g: "B", title: "อยู่ระหว่างเปรียบเทียบ", color: "text-sky-600",     desc: "ลักษณะ: ขอใบเสนอราคาหลายบริษัท, เปรียบเทียบอุปกรณ์และราคา, มีความรู้ระดับหนึ่ง, พูดถึง spec/ยี่ห้อ/การรับประกัน\nสิ่งที่ลูกค้าต้องการ: ความมั่นใจ มากกว่าราคาถูกที่สุด\nการปฏิบัติ: ส่ง Case Study, Warranty, QC Process Guarantee, Reference Site, รีวิวลูกค้าเก่า, ความเป็นเสนา developer 40 ปี ติดตั้ง Solar 15 ปี\nKPI: Quotation Acceptance, Win Rate" },
+                    { g: "C", title: "พิจารณาความคุ้มค่า", color: "text-amber-500",   desc: "ลักษณะ: ถามคืนทุน, ขนาดระบบ, Battery จำเป็นหรือไม่\nสิ่งที่ลูกค้าต้องการ: ความเข้าใจ\nการปฏิบัติ: ส่ง ROI Calculator, Simulation, FAQ, วิดีโออธิบาย, เปรียบเทียบ 3/5/7 kW, เน้นว่าคุ้มค่า ลดค่าใช้จ่ายตั้งแต่เดือนแรก\nข้อควรระวัง: ไม่เร่งปิดการขาย ให้ข้อมูลเพียงพอแล้วให้เขาตัดสินใจ" },
+                    { g: "D", title: "สนใจแต่ยังไม่พร้อม", color: "text-orange-500",  desc: "ลักษณะ: วางแผนสร้างบ้าน, รอเงิน, รอเปลี่ยนหลังคา, รอซื้อ EV\nการปฏิบัติ: Add LINE, ส่ง Monthly Newsletter, โปรโมชั่นประจำเดือน, ส่ง Case Study/Review, บันทึกช่วงที่จะซื้อแล้วติดตาม (nurturing)\nKPI: Re-Engagement Rate" },
+                    { g: "E", title: "หาข้อมูลทั่วไป",       color: "text-gray-500",    desc: "ลักษณะ: อยากรู้เรื่อง Solar, Net Metering, Battery\nการปฏิบัติ: Blog, Video, LINE OA, Email Automation\nข้อควรระวัง: ไม่ควรโทรขายทันที แต่ติดตามเดือนละครั้ง" },
+                    { g: "F", title: "ไม่สนใจ",                color: "text-red-600",     desc: "ลักษณะ: ไม่สนใจสินค้า / ไม่ตอบสนอง / ปฏิเสธ\nการปฏิบัติ: ปิดเคส ไม่ติดตามต่อ" },
+                  ] as const).map(opt => {
+                    // "-" represents the default/unassigned state. Active when
+                    // the stored grade is null. Click sends customer_grade=null
+                    // explicitly (clears any prior selection).
+                    const isDefault = opt.g === "-";
+                    const active = isDefault ? !lead.customer_grade : lead.customer_grade === opt.g;
+                    return (
+                      <button key={opt.g} type="button"
+                        title={`เกรด ${opt.g}: ${opt.title}\n\n${opt.desc}`}
+                        onClick={() => {
+                          const next = isDefault ? null : (active ? null : opt.g);
+                          apiFetch(`/api/leads/${lead.id}`, {
+                            method: "PATCH",
+                            headers: { "Content-Type": "application/json" },
+                            body: JSON.stringify({ customer_grade: next }),
+                          }).then(() => refresh()).catch(console.error);
+                        }}
+                        className={`col-span-1 md:col-span-1 flex flex-col items-center justify-center gap-0.5 px-2 py-2 rounded-lg border transition-all min-h-[56px] ${
+                          active ? "bg-active text-white border-active"
+                                 : "bg-white border-gray-200 hover:border-active/40"
+                        }`}>
+                        <span className={`text-base font-bold leading-none ${active ? "" : opt.color}`}>{opt.g}</span>
+                        <span className={`text-xs font-medium leading-tight text-center ${active ? "opacity-90" : "text-gray-500"}`}>{opt.title}</span>
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+              </div>
+            </div>
             {(() => {
               const pkgIds = lead.interested_package_ids
                 ? lead.interested_package_ids.split(",").map(s => parseInt(s)).filter(n => !isNaN(n))
@@ -748,7 +988,98 @@ export default function LeadDetailPage({ params }: { params: Promise<{ id: strin
                     { label: "โน้ต", value: lead.note },
                   ],
                 },
+                // Questionnaire (PreSurvey §1-§8). These power the new
+                // top-of-page tree (rendered separately below); they no longer
+                // appear as flat sections at the bottom — user merged the two
+                // views into the single tree.
+                {
+                  id: "q1",
+                  title: "แบบสอบถาม · บ้าน + ผู้อยู่อาศัย",
+                  rows: [
+                    { label: "ประเภทบ้าน", value: otherOrLabel(lead.pre_residence_type, INFO_LABELS.residence) },
+                    { label: "ทรงหลังคา", value: lead.pre_roof_shape ? INFO_LABELS.roofShape[lead.pre_roof_shape] : null },
+                    { label: "อายุบ้าน", value: qLabel(lead.house_age, "houseAge") },
+                    { label: "ผู้อยู่อาศัยรวม", value: lead.occupant_total != null ? `${lead.occupant_total} คน` : null },
+                    { label: "ผู้สูงอายุ", value: lead.occupant_elderly != null ? `${lead.occupant_elderly} คน` : null },
+                    { label: "เด็ก", value: lead.occupant_kids != null ? `${lead.occupant_kids} คน` : null },
+                    { label: "สัตว์เลี้ยง", value: lead.occupant_pets != null ? `${lead.occupant_pets} ตัว` : null },
+                  ],
+                },
+                {
+                  id: "q2",
+                  title: "แบบสอบถาม · ค่าไฟ + มิเตอร์",
+                  rows: [
+                    { label: "ค่าไฟ / เดือน", value: lead.pre_monthly_bill ? `${lead.pre_monthly_bill.toLocaleString()} บาท` : null },
+                    { label: "ค่าไฟสูงสุดที่เคยจ่าย", value: lead.monthly_bill_max ? `${Number(lead.monthly_bill_max).toLocaleString()} บาท` : null },
+                    { label: "ช่วงเวลาใช้ไฟ", value: lead.pre_peak_usage ? INFO_LABELS.peakUsage[lead.pre_peak_usage] : null },
+                    { label: "ระบบไฟฟ้า", value: lead.pre_electrical_phase ? INFO_LABELS.electricalPhase[lead.pre_electrical_phase] : null },
+                    { label: "ขนาดมิเตอร์", value: qLabel(lead.meter_size, "meterSize") },
+                  ],
+                },
+                {
+                  id: "q3",
+                  title: "แบบสอบถาม · ไลฟ์สไตล์",
+                  rows: [
+                    { label: "อยู่บ้านช่วงกลางวัน", value: qLabel(lead.home_at_daytime, "yesNoLifestyle") },
+                    { label: "ผู้อยู่กลางวัน", value: qCsvLabel(lead.daytime_occupants, "daytimeOccupants") },
+                    { label: "ทำงานที่บ้าน", value: qLabel(lead.work_at_home, "yesNoLifestyle") },
+                    { label: "ประเภทธุรกิจ", value: qLabel(lead.business_type, "businessType") },
+                    { label: "วันทำงาน/สัปดาห์", value: qLabel(lead.work_days_per_week, "workDaysPerWeek") },
+                    { label: "ช่วงชาร์จ EV", value: qLabel(lead.ev_charge_period, "evChargePeriod") },
+                  ],
+                },
+                {
+                  id: "q4",
+                  title: "แบบสอบถาม · แผนอนาคต",
+                  rows: [
+                    { label: "ซื้อ EV อนาคต", value: qLabel(lead.future_ev, "yesNoConsidering") },
+                    { label: "ติด EV Charger", value: qLabel(lead.future_ev_charger, "yesNoConsidering") },
+                    { label: "ต่อเติมบ้าน", value: qLabel(lead.future_extend_home, "yesNoBin") },
+                    { label: "สมาชิกเพิ่ม", value: qLabel(lead.future_more_members, "yesNoBin") },
+                    { label: "Smart Home", value: qLabel(lead.future_smart_home, "yesNoBin") },
+                    { label: "แบตในอนาคต", value: qLabel(lead.future_battery, "yesNoMaybe") },
+                  ],
+                },
+                {
+                  id: "q5",
+                  title: "แบบสอบถาม · พลังงานสำรอง",
+                  rows: [
+                    { label: "ลำดับความสำคัญตอนไฟดับ", value: qCsvLabel(lead.outage_priorities, "outagePriorities") },
+                    { label: "เมื่อค่าไฟขึ้น", value: qLabel(lead.bill_rise_action, "billRiseAction") },
+                  ],
+                },
+                {
+                  id: "q6",
+                  title: "แบบสอบถาม · สุขภาพบ้าน",
+                  rows: [
+                    { label: "หลังคารั่ว", value: qLabel(lead.had_roof_leak, "everNever") },
+                    { label: "ซ่อมหลังคา", value: qLabel(lead.did_roof_repair, "everNever") },
+                    { label: "ปัญหาไฟฟ้า", value: qLabel(lead.had_electrical_issue, "everNever") },
+                    { label: "เปลี่ยน Panel", value: qLabel(lead.did_panel_replacement, "everNever") },
+                  ],
+                },
+                {
+                  id: "q7",
+                  title: "แบบสอบถาม · พลังงานในอนาคต",
+                  rows: [
+                    { label: "ผลิตไฟใช้เอง", value: qLabel(lead.self_generates, "ableOrNot") },
+                    { label: "พร้อมรองรับ EV", value: qLabel(lead.ev_ready, "evReady") },
+                    { label: "Blackout Resilience", value: qLabel(lead.blackout_resilient, "ableOrNot") },
+                    { label: "แนวโน้มใช้ไฟ", value: qLabel(lead.future_usage_trend, "usageTrend") },
+                  ],
+                },
+                {
+                  id: "q8",
+                  title: "แบบสอบถาม · ปัจจัยตัดสินใจ",
+                  rows: [
+                    { label: "ระยะเวลาตัดสินใจ", value: qLabel(lead.decision_timeline, "decisionTimeline") },
+                    { label: "คะแนนปัจจัย", value: formatDecisionFactors(lead.decision_factors) },
+                  ],
+                },
               ];
+              // The questionnaire sections feed only the q_tree below — strip
+              // them from the flat list so they don't show twice.
+              const flatSections = sections.filter(s => !s.id.startsWith("q"));
 
               const created = activities.find(a => a.activity_type === "lead_created");
               const createdAt = created?.created_at ?? lead.created_at;
@@ -756,9 +1087,71 @@ export default function LeadDetailPage({ params }: { params: Promise<{ id: strin
               const createdAtFmt = createdAt
                 ? new Date(String(createdAt)).toLocaleString("th-TH", { day: "numeric", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit" })
                 : null;
+              // New 2-level tree wrapping the questionnaire — parent "แบบสอบถาม"
+              // with q1-q8 nested as children. User wants this added on top
+              // first; the flat q1-q8 sections below remain in place until the
+              // two views can be merged.
+              const qSections = sections.filter(s => s.id.startsWith("q"));
+              const qFilled = qSections.reduce((sum, s) => sum + s.rows.filter(r => isFilled(r.value)).length, 0);
+              const qTotal  = qSections.reduce((sum, s) => sum + s.rows.length, 0);
+
               return (
                 <div className="space-y-1">
-                  {sections.map(s => {
+                  {/* PreSurvey questionnaire tree — shows every question even
+                      when unanswered (per user spec: "default แสดงทุกข้อ แค่
+                      ไม่มีคำตอบ"). InfoLine renders the empty placeholder so
+                      reviewers can see at a glance what's still missing. */}
+                  <InfoSection
+                    id="q_tree"
+                    title="แบบสอบถาม (PreSurvey)"
+                    filled={qFilled}
+                    total={qTotal}
+                    open={!!openSections.q_tree}
+                    onToggle={toggleSection}
+                  >
+                    {qSections.map(s => {
+                      const filledRows = s.rows.filter(r => isFilled(r.value)).length;
+                      const childId = `q_tree.${s.id}`;
+                      return (
+                        <InfoSection
+                          key={childId}
+                          id={childId}
+                          title={s.title.replace(/^แบบสอบถาม\s*·\s*/, "")}
+                          filled={filledRows}
+                          total={s.rows.length}
+                          open={!!openSections[childId]}
+                          onToggle={toggleSection}
+                        >
+                          {/* Mirror PreSurveyForm's 2/7-col layout so the info
+                              tab reads exactly like the questionnaire user is
+                              answering. Each Q is one cell by default; long
+                              free-text fields (priorities, business type,
+                              decision factors) span more so they don't get
+                              clipped. */}
+                          <div className="grid grid-cols-2 md:grid-cols-7 gap-2 py-1">
+                            {s.rows.map((r, i) => {
+                              const empty = !isFilled(r.value);
+                              // Heuristic span — labels/values that we know are
+                              // long get wider cells. Keys match what's in the
+                              // section row defs above.
+                              const long = ["ผู้อยู่กลางวัน","ประเภทธุรกิจ","ลำดับความสำคัญตอนไฟดับ","เมื่อค่าไฟขึ้น","คะแนนปัจจัย","ระยะเวลาตัดสินใจ","ทรงหลังคา","ประเภทบ้าน","ช่วงเวลาใช้ไฟ"].includes(r.label);
+                              const span = long ? "col-span-2 md:col-span-3" : "col-span-1 md:col-span-2";
+                              return (
+                                <div key={i} className={`${span} min-w-0 rounded-lg bg-indigo-50/40 border border-indigo-100 px-3 py-2`}>
+                                  <div className="text-[11px] font-semibold text-indigo-500 leading-tight truncate">{r.label}</div>
+                                  <div className={`text-sm leading-snug mt-0.5 ${empty ? "text-gray-400 italic" : "font-semibold text-gray-900 break-words"}`}>
+                                    {empty ? "—" : r.value}
+                                  </div>
+                                </div>
+                              );
+                            })}
+                          </div>
+                        </InfoSection>
+                      );
+                    })}
+                  </InfoSection>
+
+                  {flatSections.map(s => {
                     // Hide empty rows so the tab reads as a real summary, not a blank checklist.
                     const rows = s.rows.filter(r => isFilled(r.value));
                     if (rows.length === 0) return null;
@@ -772,9 +1165,23 @@ export default function LeadDetailPage({ params }: { params: Promise<{ id: strin
                         open={!!openSections[s.id]}
                         onToggle={toggleSection}
                       >
-                        {rows.map((r, i) => (
-                          <InfoLine key={i} label={r.label} value={r.value} />
-                        ))}
+                        {/* Same 2/7-col card layout as the questionnaire tree
+                            above so the whole Info tab reads as one consistent
+                            "form-summary" rather than two visual styles. */}
+                        <div className="grid grid-cols-2 md:grid-cols-7 gap-2 py-1">
+                          {rows.map((r, i) => {
+                            const long = ["โน้ต", "หมายเหตุโครงการ", "ที่อยู่ติดตั้ง", "เหตุผลที่สนใจ", "แพ็คเกจที่สนใจ", "ความต้องการ", "เครื่องใช้พิเศษ", "แอร์"].includes(r.label);
+                            const span = long ? "col-span-2 md:col-span-3" : "col-span-1 md:col-span-2";
+                            return (
+                              <div key={i} className={`${span} min-w-0 rounded-lg bg-gray-50/70 border border-gray-100 px-3 py-2`}>
+                                <div className="text-[10px] text-gray-400 leading-tight truncate">{r.label}</div>
+                                <div className="text-sm leading-snug mt-0.5 font-semibold text-gray-800 break-words">
+                                  {r.value}
+                                </div>
+                              </div>
+                            );
+                          })}
+                        </div>
                       </InfoSection>
                     );
                   })}
@@ -837,7 +1244,7 @@ export default function LeadDetailPage({ params }: { params: Promise<{ id: strin
                 >
                   <div className="p-5">
                     <div className="flex items-center gap-3 mb-2">
-                      <div className={`w-10 h-10 rounded-xl flex items-center justify-center shrink-0 ${accentColor}`}>
+                      <div className={`w-10 h-8 rounded-xl flex items-center justify-center shrink-0 ${accentColor}`}>
                         <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.8}>
                           <path strokeLinecap="round" strokeLinejoin="round" d="M2.25 12.76c0 1.6 1.123 2.994 2.707 3.227 1.068.157 2.148.28 3.238.37 1.083.088 1.953.823 2.306 1.794l1.499 4.125 1.5-4.125c.353-.97 1.222-1.706 2.305-1.793a48.68 48.68 0 003.238-.371c1.584-.233 2.707-1.626 2.707-3.228V6.741c0-1.602-1.123-2.995-2.707-3.228A48.394 48.394 0 0012 3c-2.392 0-4.744.175-7.043.513C3.373 3.746 2.25 5.14 2.25 6.741v6.018z" />
                         </svg>
@@ -1017,7 +1424,7 @@ export default function LeadDetailPage({ params }: { params: Promise<{ id: strin
                 )}
                 <button
                   onClick={() => setModalType("follow_up")}
-                  className="mt-3 w-full h-10 rounded-lg text-xs font-semibold text-white bg-blue-500"
+                  className="mt-3 w-full h-8 rounded-lg text-xs font-semibold text-white bg-blue-500"
                 >
                   Set Revisit Date
                 </button>

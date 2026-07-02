@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import puppeteer from "puppeteer";
 import { getUserIdFromReq } from "@/lib/auth";
+import { dispositionForLead } from "@/lib/doc-filename";
 
 export async function GET(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
@@ -40,10 +41,15 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
     await browser.close();
 
     const download = req.nextUrl.searchParams.get("download") === "1";
+    const disposition = await dispositionForLead(leadId, {
+      base: `survey_${id}`,
+      ext: "pdf",
+      disposition: download ? "attachment" : "inline",
+    });
     return new NextResponse(Buffer.from(bytes), {
       headers: {
         "Content-Type": "application/pdf",
-        "Content-Disposition": `${download ? "attachment" : "inline"}; filename=survey_${id}.pdf`,
+        "Content-Disposition": disposition,
       },
     });
   } catch (error) {

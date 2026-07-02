@@ -1,5 +1,21 @@
 import { NextRequest, NextResponse } from "next/server";
 import puppeteer from "puppeteer";
+import { getDb, sql } from "@/lib/db";
+import { buildContentDisposition } from "@/lib/doc-filename";
+
+// Token → customer name. Invoice URLs are tokenised (no lead_id in the URL),
+// so we resolve via leads.pre_pay_token same as the data endpoint.
+async function nameForToken(token: string): Promise<string | null> {
+  try {
+    const db = await getDb();
+    const r = await db.request().input("token", sql.NVarChar(64), token)
+      .query(`SELECT full_name FROM leads WHERE pre_pay_token = @token`);
+    const v = r.recordset[0]?.full_name;
+    return typeof v === "string" ? v : null;
+  } catch {
+    return null;
+  }
+}
 
 export async function GET(req: NextRequest, { params }: { params: Promise<{ token: string }> }) {
   const { token } = await params;
@@ -22,6 +38,8 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ toke
 
     const format = req.nextUrl.searchParams.get("format") || "image";
 
+    const customerName = await nameForToken(token);
+
     if (format === "pdf") {
       const pdfBuffer = await page.pdf({
         format: "A5",
@@ -32,7 +50,7 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ toke
       return new NextResponse(Buffer.from(pdfBuffer), {
         headers: {
           "Content-Type": "application/pdf",
-          "Content-Disposition": `inline; filename=invoice_${token}.pdf`,
+          "Content-Disposition": buildContentDisposition({ base: `invoice_${token}`, ext: "pdf", customerName }),
         },
       });
     }
@@ -46,7 +64,7 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ toke
     return new NextResponse(Buffer.from(imgBuffer), {
       headers: {
         "Content-Type": "image/png",
-        "Content-Disposition": `inline; filename=invoice_${token}.png`,
+        "Content-Disposition": buildContentDisposition({ base: `invoice_${token}`, ext: "png", customerName }),
       },
     });
   } catch (error) {

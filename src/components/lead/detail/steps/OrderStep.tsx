@@ -834,24 +834,23 @@ export default function OrderStep({ lead, state, refresh, expanded, onToggle }: 
 
           <div>
             <label className="text-xs font-semibold tracking-wider uppercase text-gray-400 block mb-2">งวดการชำระเงิน</label>
-            <div className="flex flex-col md:flex-row md:items-center gap-2 md:gap-3 mb-3">
-              <div className="flex items-center gap-1.5">
-                {[1, 2, 3, 4].map(n => (
-                  <button
-                    key={n}
-                    type="button"
-                    onClick={() => setInstallmentCount(n)}
-                    className={`h-9 px-4 rounded-lg text-sm font-semibold border transition-all ${
-                      installments.length === n
-                        ? "bg-active text-white border-active"
-                        : "bg-white text-gray-600 border-gray-200 hover:border-active/40"
-                    }`}
-                  >
-                    {n} <span className="hidden sm:inline">งวด</span>
-                  </button>
-                ))}
-              </div>
-              <span className="text-sm text-gray-500 md:ml-auto md:text-right">
+            <div className="grid grid-cols-2 md:grid-cols-7 gap-2 items-center mb-3">
+              {[1, 2, 3, 4].map(n => (
+                <button
+                  key={n}
+                  type="button"
+                  onClick={() => setInstallmentCount(n)}
+                  className={`h-8 px-2 rounded-lg text-sm font-semibold border transition-all ${
+                    installments.length === n
+                      ? "bg-active text-white border-active"
+                      : "bg-white text-gray-600 border-gray-200 hover:border-active/40"
+                  }`}
+                >
+                  {n} งวด
+                </button>
+              ))}
+              {/* ยอดรวม sits in the remaining md:col-span-3 cells (cols 5-7). */}
+              <span className="col-span-2 md:col-span-3 text-sm text-gray-500 md:text-right">
                 ยอดรวมที่ต้องชำระ <span className="font-bold font-mono tabular-nums text-lg text-gray-900">{fmt(totalToCharge)}</span> บาท
               </span>
             </div>
@@ -895,7 +894,7 @@ export default function OrderStep({ lead, state, refresh, expanded, onToggle }: 
                     value={row.loan_bank || ""}
                     disabled={paid}
                     onChange={e => updateInstallment(i, { loan_bank: e.target.value as LoanBank })}
-                    className={`w-full md:w-auto h-9 px-2 rounded-md border border-gray-200 bg-white text-sm focus:outline-none focus:border-primary ${paid ? "opacity-60" : ""}`}
+                    className={`w-full md:w-auto h-8 px-2 rounded-md border border-gray-200 bg-white text-sm focus:outline-none focus:border-primary ${paid ? "opacity-60" : ""}`}
                   >
                     {LOAN_BANKS.map(b => (
                       <option key={b.value} value={b.value}>{b.label}</option>
@@ -907,7 +906,7 @@ export default function OrderStep({ lead, state, refresh, expanded, onToggle }: 
                     value={row.cc_pct ?? CC_DEFAULT}
                     disabled={paid}
                     onChange={e => updateInstallment(i, { cc_pct: parseFloat(e.target.value) })}
-                    className={`w-full md:w-auto h-9 px-2 rounded-md border border-gray-200 bg-white text-sm focus:outline-none focus:border-primary ${paid ? "opacity-60" : ""}`}
+                    className={`w-full md:w-auto h-8 px-2 rounded-md border border-gray-200 bg-white text-sm focus:outline-none focus:border-primary ${paid ? "opacity-60" : ""}`}
                   >
                     {CC_RATES.map(r => (
                       <option key={r} value={r}>{r === 0 ? "0%" : `+${r}%`}</option>
@@ -922,7 +921,7 @@ export default function OrderStep({ lead, state, refresh, expanded, onToggle }: 
                     type="button"
                     disabled={noNet}
                     onClick={(e) => { e.stopPropagation(); if (noNet) return; setPaymentRow(paymentOpen ? null : i); }}
-                    className={`h-9 px-3 rounded-md border text-xs font-semibold transition-colors inline-flex items-center gap-1.5 ${
+                    className={`h-8 px-3 rounded-md border text-xs font-semibold transition-colors inline-flex items-center gap-1.5 ${
                       noNet
                         ? "bg-emerald-50 text-emerald-700 border-emerald-200 cursor-default"
                         : paid
@@ -997,9 +996,9 @@ export default function OrderStep({ lead, state, refresh, expanded, onToggle }: 
                             const v = cleaned === "" ? 0 : Math.min(100, parseFloat(cleaned) || 0);
                             updateInstallment(i, { pct: v });
                           }}
-                          className={`w-full h-9 pl-2 pr-7 rounded-md border text-sm font-mono tabular-nums focus:outline-none ${isAutoRow || paid ? "bg-gray-50 border-gray-200 text-gray-700" : "border-gray-200 focus:border-primary"}`}
+                          className={`w-full h-8 pl-2 pr-7 rounded-md border text-sm font-mono tabular-nums focus:outline-none ${isAutoRow || paid ? "bg-gray-50 border-gray-200 text-gray-700" : "border-gray-200 focus:border-primary"}`}
                         />
-                        <span className="absolute right-2 top-1/2 -translate-y-1/2 text-xs text-gray-400 pointer-events-none">%</span>
+                        <span className="absolute right-2 top-1/2 -translate-y-1/2 text-[10px] text-gray-400 pointer-events-none">%</span>
                       </div>
                       {/* Amount cell: editable — typing here back-derives pct from effTotal. */}
                       <div className="order-3 col-span-5 md:order-3 flex items-center justify-end md:justify-start gap-2 md:shrink-0 md:-ml-1">
@@ -1024,9 +1023,9 @@ export default function OrderStep({ lead, state, refresh, expanded, onToggle }: 
                                 updateInstallment(i, { pct });
                               }}
                               placeholder={netTotal > 0 ? "" : "—"}
-                              className={`w-full h-9 pl-2 pr-6 rounded-md border text-sm font-mono tabular-nums text-right focus:outline-none ${isAutoRow || paid ? "bg-gray-50 border-gray-200 text-gray-700" : "border-gray-200 focus:border-primary"}`}
+                              className={`w-full h-8 pl-2 pr-6 rounded-md border text-sm font-mono tabular-nums text-right focus:outline-none ${isAutoRow || paid ? "bg-gray-50 border-gray-200 text-gray-700" : "border-gray-200 focus:border-primary"}`}
                             />
-                            <span className="absolute right-2 top-1/2 -translate-y-1/2 text-xs text-gray-400 pointer-events-none">฿</span>
+                            <span className="absolute right-2 top-1/2 -translate-y-1/2 text-[10px] text-gray-400 pointer-events-none">฿</span>
                           </div>
                           {row.method === "cc" && row.cc_pct && rowAmount > 0 && (() => {
                             const fee = Math.round((rowAmount * row.cc_pct) / 100);
@@ -1040,7 +1039,7 @@ export default function OrderStep({ lead, state, refresh, expanded, onToggle }: 
                       </div>
                       {/* "ชำระหลังติดตั้ง" — desktop column (after amount) */}
                       <div className="hidden md:block md:order-4 md:shrink-0">
-                        <label className={`flex items-center gap-1.5 text-xs text-gray-600 h-9 ${paid ? "cursor-default opacity-60" : "cursor-pointer"}`}>
+                        <label className={`flex items-center gap-1.5 text-xs text-gray-600 h-8 ${paid ? "cursor-default opacity-60" : "cursor-pointer"}`}>
                           <input
                             type="checkbox"
                             checked={row.when === "after"}
@@ -1090,7 +1089,7 @@ export default function OrderStep({ lead, state, refresh, expanded, onToggle }: 
                       <button
                         type="button"
                         onClick={(e) => { e.stopPropagation(); setPaymentRow(paymentOpen ? null : i); }}
-                        className={`w-full h-10 rounded-md border text-sm font-semibold transition-colors inline-flex items-center justify-center gap-2 ${
+                        className={`w-full h-8 rounded-md border text-sm font-semibold transition-colors inline-flex items-center justify-center gap-2 ${
                           paid
                             ? "bg-emerald-50 text-emerald-700 border-emerald-200"
                             : pendingApproval
@@ -1362,7 +1361,7 @@ export default function OrderStep({ lead, state, refresh, expanded, onToggle }: 
         <div className="space-y-3">
           <div className="rounded-lg border border-active/15 bg-white/60 p-4">
             <label className="text-xs font-semibold tracking-wider uppercase text-gray-400 block mb-2">Zone</label>
-            <div className="grid grid-cols-1 md:grid-cols-4 gap-2">
+            <div className="grid grid-cols-2 md:grid-cols-7 gap-2">
               {zones.map(z => {
                 const active = zone === z.name;
                 // Selected: filled with the zone's colour. Unselected: white
@@ -1376,7 +1375,7 @@ export default function OrderStep({ lead, state, refresh, expanded, onToggle }: 
                       setZone(z.name);
                       apiFetch(`/api/leads/${lead.id}`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ zone: z.name }) }).catch(console.error);
                     }}
-                    className="w-full h-10 rounded-lg text-sm font-semibold border transition-all text-left px-4 inline-flex items-center gap-2"
+                    className="w-full h-8 rounded-lg text-sm font-semibold border transition-all px-2 inline-flex items-center justify-center gap-2"
                     style={{
                       backgroundColor: active && z.color ? z.color : "white",
                       borderColor: z.color || "#e5e7eb",
@@ -1480,7 +1479,7 @@ export default function OrderStep({ lead, state, refresh, expanded, onToggle }: 
                   value={discountNote}
                   onChange={(e) => setDiscountNote(e.target.value)}
                   placeholder="เช่น โปรโมชัน, ส่วนลดพนักงาน"
-                  className="mt-0.5 w-full h-10 px-3 rounded-lg border border-gray-200 text-sm focus:outline-none focus:border-active"
+                  className="mt-0.5 w-full h-8 px-3 rounded-lg border border-gray-200 text-sm focus:outline-none focus:border-active"
                 />
               </label>
               <label>
@@ -1495,7 +1494,7 @@ export default function OrderStep({ lead, state, refresh, expanded, onToggle }: 
                       if (total > 0) setDiscountAmount(Math.round((total * pct) / 100));
                     }}
                     placeholder="0"
-                    className="w-full h-10 pl-3 pr-7 rounded-lg border border-gray-200 text-sm font-mono tabular-nums text-right focus:outline-none focus:border-active"
+                    className="w-full h-8 pl-3 pr-7 rounded-lg border border-gray-200 text-sm font-mono tabular-nums text-right focus:outline-none focus:border-active"
                   />
                   <span className="absolute right-2.5 top-1/2 -translate-y-1/2 text-sm text-gray-400 pointer-events-none">%</span>
                 </div>
@@ -1512,7 +1511,7 @@ export default function OrderStep({ lead, state, refresh, expanded, onToggle }: 
                       if (total > 0) setDiscountPct(Math.round((amt / total) * 10000) / 100);
                     }}
                     placeholder="0"
-                    className="w-full h-10 pl-3 pr-7 rounded-lg border border-gray-200 text-sm font-mono tabular-nums text-right focus:outline-none focus:border-active"
+                    className="w-full h-8 pl-3 pr-7 rounded-lg border border-gray-200 text-sm font-mono tabular-nums text-right focus:outline-none focus:border-active"
                   />
                   <span className="absolute right-2.5 top-1/2 -translate-y-1/2 text-sm text-gray-400 pointer-events-none">฿</span>
                 </div>

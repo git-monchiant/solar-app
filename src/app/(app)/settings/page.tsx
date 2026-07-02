@@ -14,6 +14,7 @@ const DOC_TYPES: { key: string; label: string; description: string; defaultPrefi
   { key: "quotation", label: "ใบเสนอราคา", description: "ออกหลังเสร็จ Survey", defaultPrefix: "QT" },
   { key: "survey", label: "ใบสำรวจ", description: "เอกสารสำรวจหน้างาน", defaultPrefix: "SV" },
   { key: "warranty", label: "ใบรับประกัน", description: "ออกเมื่อจบงานติดตั้ง", defaultPrefix: "SSE" },
+  { key: "install_checklist", label: "ใบส่งมอบงานติดตั้ง", description: "เอกสารส่งมอบงานติดตั้งระบบ", defaultPrefix: "SSE-CK" },
   { key: "receipt", label: "ใบเสร็จอย่างย่อ", description: "ใบรับเงินมัดจำ/งวด", defaultPrefix: "RC" },
 ];
 
@@ -43,7 +44,7 @@ export default function SettingsPage() {
           <button
             type="button"
             onClick={logout}
-            className="h-9 px-4 rounded-lg text-xs font-semibold text-red-600 border border-red-200 bg-white/80 backdrop-blur hover:bg-red-50 transition-colors shrink-0"
+            className="h-8 px-4 rounded-lg text-xs font-semibold text-red-600 border border-red-200 bg-white/80 backdrop-blur hover:bg-red-50 transition-colors shrink-0"
           >
             ออกจากระบบ
           </button>
@@ -136,7 +137,7 @@ function GmailSection() {
             <div className="flex items-center justify-between gap-3">
               <div className="text-sm text-gray-500">ยังไม่ได้เชื่อม Gmail</div>
               <button type="button" onClick={connect} disabled={busy}
-                className="h-10 px-5 rounded-lg text-sm font-semibold text-white bg-primary hover:bg-primary-dark disabled:opacity-50 transition-colors">
+                className="h-8 px-5 rounded-lg text-sm font-semibold text-white bg-primary hover:bg-primary-dark disabled:opacity-50 transition-colors">
                 {busy ? "กำลังเปิด..." : "เชื่อม Gmail"}
               </button>
             </div>
@@ -172,7 +173,7 @@ function ConnectedView({ status, busy, setBusy, onDisconnect }: {
     <div className="space-y-3">
       <div className="flex flex-col md:flex-row md:items-center gap-3">
         <div className="flex items-center gap-3 flex-1 min-w-0">
-          <div className="w-10 h-10 rounded-full bg-emerald-50 text-emerald-600 flex items-center justify-center shrink-0">
+          <div className="w-10 h-8 rounded-full bg-emerald-50 text-emerald-600 flex items-center justify-center shrink-0">
             <CheckIcon className="w-5 h-5" strokeWidth={2.5} />
           </div>
           <div className="flex-1 min-w-0">
@@ -184,11 +185,11 @@ function ConnectedView({ status, busy, setBusy, onDisconnect }: {
         </div>
         <div className="flex items-center gap-2 md:shrink-0">
           <button type="button" onClick={sync} disabled={busy}
-            className="flex-1 md:flex-none h-9 px-4 rounded-lg text-xs font-semibold text-white bg-primary hover:bg-primary-dark disabled:opacity-50 transition-colors">
+            className="flex-1 md:flex-none h-8 px-4 rounded-lg text-xs font-semibold text-white bg-primary hover:bg-primary-dark disabled:opacity-50 transition-colors">
             {busy ? "กำลัง sync..." : "Sync ตอนนี้"}
           </button>
           <button type="button" onClick={onDisconnect} disabled={busy}
-            className="h-9 px-3 rounded-lg text-xs font-semibold text-red-600 border border-red-200 hover:bg-red-50 disabled:opacity-50">
+            className="h-8 px-3 rounded-lg text-xs font-semibold text-red-600 border border-red-200 hover:bg-red-50 disabled:opacity-50">
             ตัด
           </button>
         </div>
@@ -294,12 +295,12 @@ function RunningNumbersSection() {
                     <input type="text" value={cur.prefix}
                       onChange={e => update(t.key, { prefix: e.target.value.toUpperCase().replace(/[^A-Z0-9]/g, "").slice(0, 6) })}
                       placeholder={t.defaultPrefix}
-                      className="w-full h-10 px-3 rounded-lg border border-gray-200 text-sm font-mono tracking-wider focus:outline-none focus:border-primary" />
+                      className="w-full h-8 px-3 rounded-lg border border-gray-200 text-sm font-mono tracking-wider focus:outline-none focus:border-primary" />
                   </div>
                   <div>
                     <label className="text-xxs font-bold uppercase tracking-wider text-gray-400 block mb-1 md:hidden">Digits</label>
                     <select value={cur.digits} onChange={e => update(t.key, { digits: parseInt(e.target.value) })}
-                      className="w-full h-10 px-3 rounded-lg border border-gray-200 text-sm focus:outline-none focus:border-primary">
+                      className="w-full h-8 px-3 rounded-lg border border-gray-200 text-sm focus:outline-none focus:border-primary">
                       <option value={3}>3 หลัก</option>
                       <option value={4}>4 หลัก</option>
                       <option value={5}>5 หลัก</option>
@@ -315,7 +316,7 @@ function RunningNumbersSection() {
           </div>
           <div className="px-5 py-4 border-t border-gray-100 bg-gray-50/50 flex items-center gap-3">
             <button type="button" onClick={save} disabled={saving || !dirty}
-              className="h-10 px-5 rounded-lg text-sm font-semibold text-white bg-primary hover:bg-primary-dark disabled:opacity-50 disabled:cursor-not-allowed transition-colors">
+              className="h-8 px-5 rounded-lg text-sm font-semibold text-white bg-primary hover:bg-primary-dark disabled:opacity-50 disabled:cursor-not-allowed transition-colors">
               {saving ? "กำลังบันทึก..." : "บันทึก"}
             </button>
             {!dirty && <span className="text-xs text-gray-400">— ไม่มีการเปลี่ยนแปลง</span>}
@@ -387,7 +388,7 @@ function WarrantySignerSection() {
             <select
               value={current ?? ""}
               onChange={(e) => setCurrent(e.target.value ? parseInt(e.target.value) : null)}
-              className="w-full h-10 px-3 rounded-lg border border-gray-200 text-sm focus:outline-none focus:border-primary"
+              className="w-full h-8 px-3 rounded-lg border border-gray-200 text-sm focus:outline-none focus:border-primary"
             >
               <option value="">— ไม่ระบุ (ใช้ผู้ที่กดออกใบ หรือเจ้าของ lead) —</option>
               {users.map(u => (
@@ -402,7 +403,7 @@ function WarrantySignerSection() {
           </div>
           <div className="flex items-center gap-2">
             <button type="button" onClick={save} disabled={saving || !dirty}
-              className="h-10 px-5 rounded-lg text-sm font-semibold text-white bg-primary hover:bg-primary-dark disabled:opacity-50 disabled:cursor-not-allowed transition-colors">
+              className="h-8 px-5 rounded-lg text-sm font-semibold text-white bg-primary hover:bg-primary-dark disabled:opacity-50 disabled:cursor-not-allowed transition-colors">
               {saving ? "กำลังบันทึก..." : "บันทึก"}
             </button>
             {!dirty && <span className="text-xs text-gray-400">— ไม่มีการเปลี่ยนแปลง</span>}
@@ -507,7 +508,7 @@ function ChannelsSection() {
           </label>
           <div className="flex items-center gap-2">
             <button type="button" onClick={save} disabled={saving || !dirty}
-              className="h-10 px-5 rounded-lg text-sm font-semibold text-white bg-primary hover:bg-primary-dark disabled:opacity-50 disabled:cursor-not-allowed transition-colors">
+              className="h-8 px-5 rounded-lg text-sm font-semibold text-white bg-primary hover:bg-primary-dark disabled:opacity-50 disabled:cursor-not-allowed transition-colors">
               {saving ? "กำลังบันทึก..." : "บันทึก"}
             </button>
             {!dirty && <span className="text-xs text-gray-400">— ไม่มีการเปลี่ยนแปลง</span>}
@@ -606,7 +607,7 @@ function CustomerDocsSection() {
         <div className="p-5 space-y-4">
           {url ? (
             <div className="flex items-center gap-3 p-3 rounded-lg border border-gray-200 bg-gray-50/50">
-              <div className="w-10 h-10 rounded-md bg-red-50 text-red-600 flex items-center justify-center shrink-0">
+              <div className="w-10 h-8 rounded-md bg-red-50 text-red-600 flex items-center justify-center shrink-0">
                 <DocumentIcon className="w-5 h-5" strokeWidth={2} />
               </div>
               <div className="flex-1 min-w-0">
@@ -616,7 +617,7 @@ function CustomerDocsSection() {
                 </a>
               </div>
               <button type="button" onClick={remove} disabled={busy}
-                className="h-9 px-3 rounded-lg text-xs font-semibold text-red-600 border border-red-200 hover:bg-red-50 disabled:opacity-50">
+                className="h-8 px-3 rounded-lg text-xs font-semibold text-red-600 border border-red-200 hover:bg-red-50 disabled:opacity-50">
                 ลบ
               </button>
             </div>
@@ -626,7 +627,7 @@ function CustomerDocsSection() {
           <input ref={fileInputRef} type="file" accept="application/pdf" onChange={onPick} disabled={busy} className="hidden" />
           <div className="flex items-center gap-2">
             <button type="button" onClick={() => fileInputRef.current?.click()} disabled={busy}
-              className="h-10 px-5 rounded-lg text-sm font-semibold text-white bg-primary hover:bg-primary-dark disabled:opacity-50 transition-colors">
+              className="h-8 px-5 rounded-lg text-sm font-semibold text-white bg-primary hover:bg-primary-dark disabled:opacity-50 transition-colors">
               {busy ? "กำลังอัพโหลด..." : url ? "อัพโหลดไฟล์ใหม่ (แทนของเดิม)" : "อัพโหลด PDF"}
             </button>
             <span className="text-xs text-gray-400">PDF เท่านั้น · ไม่เกิน 20 MB</span>

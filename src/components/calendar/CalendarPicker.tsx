@@ -148,7 +148,7 @@ export default function CalendarPicker({
                 ))}
               </div>
               <div className="grid grid-cols-7">
-                {Array.from({ length: firstDayOfWeek }).map((_, i) => <div key={`pad-${i}`} className="h-9" />)}
+                {Array.from({ length: firstDayOfWeek }).map((_, i) => <div key={`pad-${i}`} className="h-8" />)}
                 {Array.from({ length: daysInMonth }).map((_, i) => {
                   const d = new Date(monthStart.getFullYear(), monthStart.getMonth(), i + 1);
                   const iso = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
@@ -184,7 +184,7 @@ export default function CalendarPicker({
                     }
                   }
                   return (
-                    <div key={iso} className="h-9 flex items-center justify-center">
+                    <div key={iso} className="h-8 flex items-center justify-center">
                       <button
                         type="button"
                         disabled={disabled}

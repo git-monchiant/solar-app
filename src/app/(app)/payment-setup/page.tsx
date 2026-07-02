@@ -144,13 +144,13 @@ function PaymentSetup() {
       <Section title="ข้อมูลผู้รับชำระเงิน" subtitle="ใช้บนเอกสารและ QR PromptPay" savedAt={savedSection === "company"}>
         <FormRow label="ชื่อบริษัท">
           <input type="text" value={companyInput} onChange={e => setCompanyInput(e.target.value)}
-            className="w-full h-10 px-3 rounded-lg border border-gray-200 text-sm focus:outline-none focus:border-primary" />
+            className="w-full h-8 px-3 rounded-lg border border-gray-200 text-sm focus:outline-none focus:border-primary" />
         </FormRow>
         <FormRow label="Tax ID (13 หลัก)">
           <input type="text" inputMode="numeric" maxLength={13} value={taxIdInput}
             onChange={e => setTaxIdInput(e.target.value.replace(/\D/g, "").slice(0, 13))}
             placeholder="0000000000000"
-            className="w-full h-10 px-3 rounded-lg border border-gray-200 text-sm font-mono tabular-nums focus:outline-none focus:border-primary" />
+            className="w-full h-8 px-3 rounded-lg border border-gray-200 text-sm font-mono tabular-nums focus:outline-none focus:border-primary" />
         </FormRow>
         <SaveButton saving={saving} onClick={saveCompany} />
       </Section>
@@ -160,43 +160,43 @@ function PaymentSetup() {
               <input type="text" value={billerIdInput}
                 onChange={e => setBillerIdInput(e.target.value.replace(/\D/g, "").slice(0, 15))}
                 placeholder="010753700001716"
-                className="w-full h-10 px-3 rounded-lg border border-gray-200 text-sm font-mono tabular-nums focus:outline-none focus:border-primary" />
+                className="w-full h-8 px-3 rounded-lg border border-gray-200 text-sm font-mono tabular-nums focus:outline-none focus:border-primary" />
             </FormRow>
             <FormRow label="Ref1 (merchant code)">
               <input type="text" value={ref1Input} onChange={e => setRef1Input(e.target.value.toUpperCase().slice(0, 20))}
                 placeholder="87UX"
-                className="w-full h-10 px-3 rounded-lg border border-gray-200 text-sm font-mono focus:outline-none focus:border-primary" />
+                className="w-full h-8 px-3 rounded-lg border border-gray-200 text-sm font-mono focus:outline-none focus:border-primary" />
             </FormRow>
             <FormRow label="Ref2 (customer/terminal ref — optional)">
               <input type="text" value={ref2Input} onChange={e => setRef2Input(e.target.value.toUpperCase().slice(0, 20))}
                 placeholder="86289573"
-                className="w-full h-10 px-3 rounded-lg border border-gray-200 text-sm font-mono focus:outline-none focus:border-primary" />
+                className="w-full h-8 px-3 rounded-lg border border-gray-200 text-sm font-mono focus:outline-none focus:border-primary" />
             </FormRow>
             <FormRow label="Merchant Name (tag 59, max 25 — เว้นว่าง = ใช้ชื่อบริษัท)">
               <input type="text" value={merchantNameInput} onChange={e => setMerchantNameInput(e.target.value.slice(0, 25))}
                 placeholder={companyInput.slice(0, 25) || "SENA SOLAR ENERGY"}
-                className="w-full h-10 px-3 rounded-lg border border-gray-200 text-sm focus:outline-none focus:border-primary" />
+                className="w-full h-8 px-3 rounded-lg border border-gray-200 text-sm focus:outline-none focus:border-primary" />
             </FormRow>
             <FormRow label="Terminal (tag 62/07 — optional)">
               <input type="text" value={terminalInput} onChange={e => setTerminalInput(e.target.value.slice(0, 32))}
                 placeholder="SDGO862842802640220"
-                className="w-full h-10 px-3 rounded-lg border border-gray-200 text-sm font-mono focus:outline-none focus:border-primary" />
+                className="w-full h-8 px-3 rounded-lg border border-gray-200 text-sm font-mono focus:outline-none focus:border-primary" />
             </FormRow>
         <SaveButton saving={saving} onClick={saveQr} />
       </Section>
 
       <Section title="บัญชีธนาคาร" subtitle="สำหรับลูกค้าโอนตรงเข้าบัญชี" savedAt={savedSection === "bank"}>
         <FormRow label="ธนาคาร">
-          <input type="text" value={bankInput} onChange={e => setBankInput(e.target.value)} className="w-full h-10 px-3 rounded-lg border border-gray-200 text-sm focus:outline-none focus:border-primary" />
+          <input type="text" value={bankInput} onChange={e => setBankInput(e.target.value)} className="w-full h-8 px-3 rounded-lg border border-gray-200 text-sm focus:outline-none focus:border-primary" />
         </FormRow>
         <FormRow label="สาขา">
-          <input type="text" value={bankBranchInput} onChange={e => setBankBranchInput(e.target.value)} className="w-full h-10 px-3 rounded-lg border border-gray-200 text-sm focus:outline-none focus:border-primary" />
+          <input type="text" value={bankBranchInput} onChange={e => setBankBranchInput(e.target.value)} className="w-full h-8 px-3 rounded-lg border border-gray-200 text-sm focus:outline-none focus:border-primary" />
         </FormRow>
         <FormRow label="เลขบัญชี">
-          <input type="text" value={bankNumberInput} onChange={e => setBankNumberInput(e.target.value)} className="w-full h-10 px-3 rounded-lg border border-gray-200 text-sm font-mono tabular-nums focus:outline-none focus:border-primary" />
+          <input type="text" value={bankNumberInput} onChange={e => setBankNumberInput(e.target.value)} className="w-full h-8 px-3 rounded-lg border border-gray-200 text-sm font-mono tabular-nums focus:outline-none focus:border-primary" />
         </FormRow>
         <FormRow label="ชื่อบัญชี">
-          <input type="text" value={bankNameInput} onChange={e => setBankNameInput(e.target.value)} className="w-full h-10 px-3 rounded-lg border border-gray-200 text-sm focus:outline-none focus:border-primary" />
+          <input type="text" value={bankNameInput} onChange={e => setBankNameInput(e.target.value)} className="w-full h-8 px-3 rounded-lg border border-gray-200 text-sm focus:outline-none focus:border-primary" />
         </FormRow>
         <SaveButton saving={saving} onClick={saveBank} />
       </Section>
@@ -262,7 +262,7 @@ function SaveButton({ saving, onClick }: { saving: boolean; onClick: () => void 
   return (
     <div className="pt-1">
       <button type="button" onClick={onClick} disabled={saving}
-        className="h-10 px-5 rounded-lg text-sm font-semibold text-white bg-primary hover:bg-primary-dark disabled:opacity-50 transition-colors">
+        className="h-8 px-5 rounded-lg text-sm font-semibold text-white bg-primary hover:bg-primary-dark disabled:opacity-50 transition-colors">
         {saving ? "กำลังบันทึก..." : "บันทึก"}
       </button>
     </div>

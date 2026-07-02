@@ -122,15 +122,16 @@ export async function GET(req: NextRequest) {
       byLead.set(leadId, arr);
     }
 
-    // Drop legacy 2-step rows (order_before_slip / order_after_slip) on leads
-    // that have already migrated to per-installment model (order_installment_N).
-    // Those legacy rows can linger as unconfirmed stubs with the full remaining
-    // amount and would render as a phantom "งวด 2/2 รอชำระ" line item that
-    // duplicates the per-installment rows. Leads still on the old model keep
-    // their before/after rows untouched.
+    // Drop legacy 2-step "order_before_slip" stub on leads that have already
+    // migrated to per-installment model — it lingers as an unconfirmed full-
+    // amount row that would render as a phantom duplicate.
+    //
+    // NOTE: order_after_slip is NOT legacy — InstallStep's "เก็บเงิน" sub-step
+    // (ยอดคงค้าง + ค่าใช้จ่ายเพิ่มเติม after install) actively writes to it,
+    // so we keep those rows whether or not the lead has order_installment_N.
     for (const [leadId, arr] of byLead) {
       if (arr.some(i => /^order_installment_\d+$/.test(i.slip_field))) {
-        byLead.set(leadId, arr.filter(i => i.slip_field !== "order_before_slip" && i.slip_field !== "order_after_slip"));
+        byLead.set(leadId, arr.filter(i => i.slip_field !== "order_before_slip"));
       }
     }
 

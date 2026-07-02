@@ -72,13 +72,25 @@ export default function TodayPage() {
   }, [zones, selectedZone]);
 
   useEffect(() => {
-    Promise.all([
+    const load = () => Promise.all([
       apiFetch("/api/today"),
       apiFetch("/api/leads"),
     ]).then(([t, leads]: [TodayData, LeadData[]]) => {
       setTodayData(t);
       setAllLeads(leads);
     }).catch(console.error).finally(() => setLoading(false));
+    load();
+    // Re-fetch when the user returns to this tab/window — e.g. they opened
+    // a lead in a new tab, changed its grade, then switched back here. Without
+    // this the list would show the stale snapshot until F5.
+    const onFocus = () => { load(); };
+    window.addEventListener("focus", onFocus);
+    const onVisible = () => { if (document.visibilityState === "visible") load(); };
+    document.addEventListener("visibilitychange", onVisible);
+    return () => {
+      window.removeEventListener("focus", onFocus);
+      document.removeEventListener("visibilitychange", onVisible);
+    };
   }, []);
 
   // If saved tab no longer valid for current role, fall back to first available.

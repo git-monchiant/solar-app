@@ -89,7 +89,7 @@ export default function AssignOwnerButton({ leadId, assignedUserId, assignedName
     }
   };
 
-  const sizePx = size === "lg" ? "w-10 h-10 text-sm" : size === "md" ? "w-9 h-9 text-xxs" : "w-6 h-6 text-xxs";
+  const sizePx = size === "lg" ? "w-10 h-8 text-sm" : size === "md" ? "w-9 h-8 text-xxs" : "w-6 h-6 text-xxs";
   const iconSize = size === "lg" ? "w-5 h-5" : size === "md" ? "w-5 h-5" : "w-3.5 h-3.5";
   const assigned = !!localUserId;
   const initials = initialsOf(localName);

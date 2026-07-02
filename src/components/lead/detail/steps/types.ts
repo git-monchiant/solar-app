@@ -8,6 +8,8 @@ export interface Lead {
   package_price: number;
   installation_address: string;
   customer_type: string;
+  customer_group: string | null;
+  customer_grade: string | null;
   status: string;
   source: string;
   note: string;
@@ -50,6 +52,46 @@ export interface Lead {
   pre_peak_usage: string | null;
   pre_primary_reason: string | null;
   pre_bill_photo_url: string | null;
+  // questionnaire §1 — also on lead_data
+  house_age: string | null;
+  occupant_total: number | null;
+  occupant_elderly: number | null;
+  occupant_kids: number | null;
+  occupant_pets: number | null;
+  // questionnaire §2 — also on lead_data
+  monthly_bill_max: number | null;
+  meter_size: string | null;
+  // questionnaire §3 — also on lead_data
+  home_at_daytime: string | null;
+  daytime_occupants: string | null;
+  work_at_home: string | null;
+  business_type: string | null;
+  work_days_per_week: string | null;
+  ac_split: string | null;
+  ev_charge_period: string | null;
+  // questionnaire §4 — also on lead_data
+  future_ev: string | null;
+  future_ev_charger: string | null;
+  future_extend_home: string | null;
+  future_more_members: string | null;
+  future_smart_home: string | null;
+  future_battery: string | null;
+  // questionnaire §5 — energy security
+  outage_priorities: string | null;
+  bill_rise_action: string | null;
+  // questionnaire §6 — home health check
+  had_roof_leak: string | null;
+  did_roof_repair: string | null;
+  had_electrical_issue: string | null;
+  did_panel_replacement: string | null;
+  // questionnaire §7 — beyond question
+  self_generates: string | null;
+  ev_ready: string | null;
+  blackout_resilient: string | null;
+  future_usage_trend: string | null;
+  // questionnaire §8 — decision making factor (JSON)
+  decision_factors: string | null;
+  decision_timeline: string | null;
   interested_package_id: number | null;
   interested_package_ids: string | null;
   package_note: string | null;
@@ -173,12 +215,17 @@ export interface Lead {
   warranty_panel_count: number | null;
   warranty_panel_watt: number | null;
   warranty_panel_brand: string | null;
+  warranty_panel_model: string | null;
+  install_checklist_doc_no: string | null;
   warranty_inverter_brand: string | null;
   warranty_inverter_kw: number | null;
   warranty_electrical_phase: string | null;
   payment_reject_notes: string | null;
   warranty_battery_brand: string | null;
+  warranty_battery_model: string | null;
   warranty_battery_kwh: number | null;
+  warranty_duration_years: number | null;
+  warranty_om_per_year: number | null;
   warranty_has_battery: boolean | null;
   warranty_inverter_sn_photo_url: string | null;
   warranty_batteries: string | null;

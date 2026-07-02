@@ -8,6 +8,7 @@ import type { StepCommonProps, Package, Lead } from "./types";
 import SurveyForm, { type SurveyFormHandle } from "./SurveyForm";
 import AppointmentRescheduler from "@/components/calendar/AppointmentRescheduler";
 import ErrorPopup from "@/components/ui/ErrorPopup";
+import NumberStepper from "@/components/ui/NumberStepper";
 import { validateSurvey } from "@/lib/constants/step-validators";
 import FallbackImage from "@/components/ui/FallbackImage";
 import StepLayout from "../StepLayout";
@@ -769,7 +770,7 @@ export default function SurveyStep({ lead, state, refresh, packages, expanded, o
               type="button"
               onClick={resendAppointmentLine}
               disabled={resending}
-              className={`w-full h-10 rounded-lg text-xs font-semibold transition-colors flex items-center justify-center gap-1.5 ${
+              className={`w-full h-8 rounded-lg text-xs font-semibold transition-colors flex items-center justify-center gap-1.5 ${
                 resendResult === "ok" ? "bg-emerald-500 text-white"
                 : resendResult === "err" ? "bg-red-500 text-white"
                 : "text-gray-700 border border-gray-200 hover:bg-gray-50"
@@ -788,7 +789,7 @@ export default function SurveyStep({ lead, state, refresh, packages, expanded, o
             return (
               <div className={`rounded-xl overflow-hidden border transition-colors ${hasLoc ? "border-emerald-200 bg-emerald-50/40" : "border-gray-200 bg-white"}`}>
                 <div className="flex items-center gap-3 px-3 py-2.5">
-                  <div className={`w-9 h-9 rounded-lg flex items-center justify-center shrink-0 ${hasLoc ? "bg-emerald-500 text-white" : "bg-gray-100 text-gray-400"}`}>
+                  <div className={`w-9 h-8 rounded-lg flex items-center justify-center shrink-0 ${hasLoc ? "bg-emerald-500 text-white" : "bg-gray-100 text-gray-400"}`}>
                     <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
                       <path strokeLinecap="round" strokeLinejoin="round" d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z" />
                       <path strokeLinecap="round" strokeLinejoin="round" d="M15 11a3 3 0 11-6 0 3 3 0 016 0z" />
@@ -850,7 +851,7 @@ export default function SurveyStep({ lead, state, refresh, packages, expanded, o
                       type="button"
                       onClick={submitPastedLocation}
                       disabled={locSaving || !locInput.trim()}
-                      className="w-full h-9 rounded-lg text-xs font-semibold text-white bg-active hover:brightness-110 disabled:opacity-50 transition-colors flex items-center justify-center gap-1.5"
+                      className="w-full h-8 rounded-lg text-xs font-semibold text-white bg-active hover:brightness-110 disabled:opacity-50 transition-colors flex items-center justify-center gap-1.5"
                       style={{ minHeight: 0 }}
                     >
                       {locSaving ? "กำลังบันทึก…" : "บันทึกพิกัดจากลิงก์"}
@@ -862,7 +863,7 @@ export default function SurveyStep({ lead, state, refresh, packages, expanded, o
                     type="button"
                     onClick={captureLocation}
                     disabled={locSaving}
-                    className={`w-full h-9 text-xs font-semibold transition-colors flex items-center justify-center gap-1.5 border-t ${hasLoc ? "border-emerald-200 text-emerald-700 hover:bg-emerald-100/50" : "border-gray-200 text-active hover:bg-active/5"} disabled:opacity-50`}
+                    className={`w-full h-8 text-xs font-semibold transition-colors flex items-center justify-center gap-1.5 border-t ${hasLoc ? "border-emerald-200 text-emerald-700 hover:bg-emerald-100/50" : "border-gray-200 text-active hover:bg-active/5"} disabled:opacity-50`}
                     style={{ minHeight: 0 }}
                   >
                     {locSaving ? (
@@ -892,7 +893,7 @@ export default function SurveyStep({ lead, state, refresh, packages, expanded, o
         <div className="rounded-lg bg-white/60 border border-active/15 p-3 space-y-3">
           <div>
             <div className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-2">ขนาดที่ติดตั้งได้เหมาะสม (kWp) <span className="text-red-500">*</span></div>
-            <div className="grid grid-cols-4 gap-2">
+            <div className="grid grid-cols-2 md:grid-cols-7 gap-2">
               {[3, 5, 7, 10].map(kw => (
                 <button
                   key={kw}
@@ -902,7 +903,7 @@ export default function SurveyStep({ lead, state, refresh, packages, expanded, o
                     setRecommendedKw(next);
                     apiFetch(`/api/leads/${lead.id}`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ survey_recommended_kw: next }) }).catch(console.error);
                   }}
-                  className={`h-9 rounded-lg text-sm font-semibold border transition-all ${recommendedKw === kw ? "bg-active text-white border-active" : "bg-white text-gray-600 border-gray-200"}`}
+                  className={`h-8 rounded-lg text-sm font-semibold border transition-all ${recommendedKw === kw ? "bg-active text-white border-active" : "bg-white text-gray-600 border-gray-200"}`}
                 >
                   {kw} kWp
                 </button>
@@ -912,7 +913,7 @@ export default function SurveyStep({ lead, state, refresh, packages, expanded, o
 
           <div>
             <div className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-2">ระบบ <span className="text-red-500">*</span></div>
-            <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
+            <div className="grid grid-cols-2 md:grid-cols-7 gap-2">
               {[
                 { value: "no",        label: "On Grid" },
                 { value: "yes",       label: "Solar+Battery" },
@@ -934,7 +935,7 @@ export default function SurveyStep({ lead, state, refresh, packages, expanded, o
                     patchBody.survey_panel_count = null;
                   }
                   apiFetch(`/api/leads/${lead.id}`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify(patchBody) }).catch(console.error);
-                }} className={`h-9 rounded-lg text-xs font-semibold border transition-all ${surveyBattery === b.value ? "bg-active text-white border-active" : "bg-white text-gray-600 border-gray-200"}`}>
+                }} className={`h-8 rounded-lg text-xs font-semibold border transition-all ${surveyBattery === b.value ? "bg-active text-white border-active" : "bg-white text-gray-600 border-gray-200"}`}>
                   {b.label}
                 </button>
               ))}
@@ -985,7 +986,9 @@ export default function SurveyStep({ lead, state, refresh, packages, expanded, o
               return true;
             });
             return availablePkgs.length > 0 ? (
-              <div className="grid grid-cols-1 gap-2">
+              // 7-col grid · each package card md:col-span-2 → 3 cards per row
+              // on desktop. Matches the PreSurveyForm package picker layout.
+              <div className="grid grid-cols-1 md:grid-cols-7 gap-2">
                 {availablePkgs.map(p => {
                   const idStr = String(p.id);
                   const selected = selectedPkgs.includes(idStr);
@@ -1003,7 +1006,7 @@ export default function SurveyStep({ lead, state, refresh, packages, expanded, o
                           interested_package_id: next.length ? parseInt(next[0]) : null,
                         }),
                       }).catch(console.error);
-                    }} className={`text-left rounded-xl p-3 border-2 transition-all ${selected ? "border-active bg-active-light" : "border-gray-100 bg-white"}`}>
+                    }} className={`md:col-span-2 text-left rounded-xl p-3 border-2 transition-all ${selected ? "border-active bg-active-light" : "border-gray-100 bg-white"}`}>
                       <div className="flex items-center justify-between gap-2">
                         <div className="min-w-0">
                           <div className="text-sm font-bold truncate flex items-center gap-1.5">
@@ -1038,20 +1041,17 @@ export default function SurveyStep({ lead, state, refresh, packages, expanded, o
           {!surveyBattery.startsWith("customize") && (
             <div>
               <div className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-2">จำนวน Panel <span className="text-red-500">*</span></div>
-              <div className="relative">
-                <input
-                  type="number"
-                  inputMode="numeric"
-                  value={panelCount === "" ? "" : panelCount}
-                  onChange={e => {
-                    const v = e.target.value ? parseInt(e.target.value) : "";
-                    setPanelCount(v);
-                    apiFetch(`/api/leads/${lead.id}`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ survey_panel_count: typeof v === "number" ? v : null }) }).catch(console.error);
-                  }}
-                  placeholder="เช่น 10"
-                  className="w-full h-10 pl-3 pr-14 rounded-lg border border-gray-200 bg-white text-sm font-mono tabular-nums focus:outline-none focus:border-primary"
-                />
-                <span className="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-gray-400 font-medium pointer-events-none">แผง</span>
+              <div className="grid grid-cols-2 md:grid-cols-7 gap-2">
+                <div className="col-span-1">
+                  <NumberStepper
+                    value={panelCount === "" ? null : panelCount}
+                    onChange={v => {
+                      const next = v == null ? "" : v;
+                      setPanelCount(next);
+                      apiFetch(`/api/leads/${lead.id}`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ survey_panel_count: typeof next === "number" ? next : null }) }).catch(console.error);
+                    }}
+                  />
+                </div>
               </div>
             </div>
           )}
@@ -1075,7 +1075,7 @@ export default function SurveyStep({ lead, state, refresh, packages, expanded, o
               immediately on click so it survives a refresh. */}
           <div className="rounded-lg bg-white/60 border border-active/15 p-3">
             <label className="text-xs font-semibold tracking-wider uppercase text-gray-400 block mb-2">ประเภทใบเสนอราคา</label>
-            <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
+            <div className="grid grid-cols-2 md:grid-cols-7 gap-2">
               {[
                 { value: "standard", label: "Standard" },
                 { value: "special", label: "Customization" },
@@ -1092,7 +1092,7 @@ export default function SurveyStep({ lead, state, refresh, packages, expanded, o
                         body: JSON.stringify({ quotation_type: opt.value }),
                       }).catch(console.error);
                     }}
-                    className={`h-11 rounded-lg text-sm font-semibold border transition-all ${active ? "bg-active text-white border-active" : "bg-white text-gray-600 border-gray-200 hover:border-active/50"}`}
+                    className={`h-8 rounded-lg text-sm font-semibold border transition-all ${active ? "bg-active text-white border-active" : "bg-white text-gray-600 border-gray-200 hover:border-active/50"}`}
                   >
                     {opt.label}
                   </button>
@@ -1111,26 +1111,27 @@ export default function SurveyStep({ lead, state, refresh, packages, expanded, o
             />
           </div>
 
-          {/* การสำรวจหน้างาน — วันและผู้สำรวจจริง · mobile: stack 1 col */}
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-            <div>
-              <div className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-1.5">วันที่เข้าสำรวจจริง <span className="text-red-500">*</span></div>
+          {/* การสำรวจหน้างาน — วันและผู้สำรวจจริง · each input md:col-span-3 in
+              the 7-col grid (matches the ยืนยัน substep on PreSurvey side). */}
+          {/* การสำรวจหน้างาน + PDF preview + LINE notify — single 7-col row on
+              desktop: วันที่ (2) + ผู้สำรวจ (2) + ดูใบสำรวจ (2) + LINE (1).
+              `items-end` so the chip-less button/checkbox align with the input
+              row, not with the labels above the inputs. Mobile stacks. */}
+          <div className="grid grid-cols-2 md:grid-cols-7 gap-2 items-end">
+            <div className="col-span-2 md:col-span-2 flex flex-col gap-1">
+              <div className="text-xs font-semibold text-gray-400 uppercase tracking-wider">วันที่เข้าสำรวจจริง <span className="text-red-500">*</span></div>
               <input type="date" value={actualDate} onChange={e => setActualDate(e.target.value)}
-                className="w-full h-11 px-3 rounded-lg border border-gray-200 bg-white text-sm focus:outline-none focus:border-primary" />
+                className="w-full h-8 px-3 rounded-lg border border-gray-200 bg-white text-sm focus:outline-none focus:border-primary" />
             </div>
-            <div>
-              <div className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-1.5">ผู้เข้าสำรวจ <span className="text-red-500">*</span></div>
+            <div className="col-span-2 md:col-span-2 flex flex-col gap-1">
+              <div className="text-xs font-semibold text-gray-400 uppercase tracking-wider">ผู้เข้าสำรวจ <span className="text-red-500">*</span></div>
               <input type="text" value={actualBy} onChange={e => setActualBy(e.target.value)}
-                className="w-full h-11 px-3 rounded-lg border border-gray-200 bg-white text-sm focus:outline-none focus:border-primary" />
+                className="w-full h-8 px-3 rounded-lg border border-gray-200 bg-white text-sm focus:outline-none focus:border-primary" />
             </div>
-          </div>
-
-          {/* Preview survey PDF + optional LINE notify · mobile: stack 1 col */}
-          <div className="flex flex-col md:grid md:grid-cols-2 items-stretch md:items-center gap-3">
             <button
               type="button"
               onClick={openPdf}
-              className="md:col-span-1 md:w-auto w-full h-10 px-4 rounded-lg text-sm font-semibold border border-gray-200 bg-white text-gray-700 hover:border-active hover:text-active hover:bg-active/5 transition-colors inline-flex items-center justify-center gap-2"
+              className="col-span-2 md:col-span-1 h-8 px-2 rounded-lg text-sm font-semibold border border-gray-200 bg-white text-gray-700 hover:border-active hover:text-active hover:bg-active/5 transition-colors inline-flex items-center justify-center gap-1.5"
             >
               <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
                 <path strokeLinecap="round" strokeLinejoin="round" d="M2.036 12.322a1.012 1.012 0 010-.639C3.423 7.51 7.36 4.5 12 4.5c4.638 0 8.573 3.007 9.963 7.178.07.207.07.431 0 .639C20.577 16.49 16.64 19.5 12 19.5c-4.638 0-8.573-3.007-9.963-7.178z" />
@@ -1139,14 +1140,14 @@ export default function SurveyStep({ lead, state, refresh, packages, expanded, o
               ดูใบสำรวจ
             </button>
             {lead.line_id && (
-              <label className="flex-1 md:col-span-1 flex items-center gap-2 text-xs text-gray-600 cursor-pointer">
+              <label className="col-span-2 md:col-span-1 h-8 flex items-center gap-2 text-xs text-gray-600 cursor-pointer">
                 <input
                   type="checkbox"
                   checked={notifyDoneLine}
                   onChange={(e) => setNotifyDoneLine(e.target.checked)}
-                  className="w-4 h-4 accent-primary"
+                  className="w-4 h-4 accent-primary shrink-0"
                 />
-                <span>ส่งใบสำรวจให้ลูกค้าทาง LINE</span>
+                <span>ส่ง LINE</span>
               </label>
             )}
           </div>
@@ -1219,7 +1220,7 @@ export default function SurveyStep({ lead, state, refresh, packages, expanded, o
                     <div className="w-8 h-8 border-2 border-current/30 border-t-current rounded-full animate-spin" />
                   ) : (
                     <>
-                      <svg className="w-10 h-10" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}><path strokeLinecap="round" strokeLinejoin="round" d="M12 16.5V9.75m0 0l3 3m-3-3l-3 3M6.75 19.5a4.5 4.5 0 01-1.41-8.775 5.25 5.25 0 0110.233-2.33 3 3 0 013.758 3.848A3.752 3.752 0 0118 19.5H6.75z" /></svg>
+                      <svg className="w-10 h-8" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}><path strokeLinecap="round" strokeLinejoin="round" d="M12 16.5V9.75m0 0l3 3m-3-3l-3 3M6.75 19.5a4.5 4.5 0 01-1.41-8.775 5.25 5.25 0 0110.233-2.33 3 3 0 013.758 3.848A3.752 3.752 0 0118 19.5H6.75z" /></svg>
                       <span className="text-sm font-semibold">
                         {photoDragActive ? "ปล่อยเพื่ออัพโหลด" : "ลากรูปมาวาง หรือคลิกเพื่อเลือก"}
                       </span>

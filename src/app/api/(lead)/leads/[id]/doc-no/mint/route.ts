@@ -5,7 +5,7 @@ import { mintDocNo, type DocType } from "@/lib/doc-number";
 
 export const runtime = "nodejs";
 
-const ALLOWED: DocType[] = ["booking", "quotation", "survey", "warranty"];
+const ALLOWED: DocType[] = ["booking", "quotation", "survey", "warranty", "install_checklist"];
 
 // POST /api/leads/:id/doc-no/mint?type=quotation
 //

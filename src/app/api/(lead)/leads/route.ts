@@ -30,7 +30,7 @@ export async function GET(req: NextRequest) {
     // ~3-4× smaller (1MB → ~250KB at 150 leads).
     const result = await db.request().query(`
       SELECT l.id, l.full_name, l.phone, l.email, l.installation_address, l.house_number,
-             l.customer_type, l.status, l.source, l.tag, l.note, l.contact_date, l.created_at,
+             l.customer_type, l.customer_grade, l.customer_group, l.status, l.source, l.tag, l.note, l.contact_date, l.created_at,
              l.next_follow_up, l.revisit_date, l.lost_reason,
              l.assigned_user_id, l.zone, l.line_id,
              l.survey_date, l.survey_time_slot, l.install_date, l.install_date_end, l.install_actual_date, l.install_completed_at, l.install_extra_cost,
@@ -121,17 +121,14 @@ export async function POST(request: NextRequest) {
       .input("id_card_address", sql.NVarChar(500), body.id_card_address || null)
       .input("id_card_photo_url", sql.NVarChar(500), body.id_card_photo_url || null)
       .input("house_reg_photo_url", sql.NVarChar(500), body.house_reg_photo_url || null)
-      .input("pre_appliances", sql.NVarChar(200), body.pre_appliances || null)
       .input("line_id", sql.NVarChar(100), body.line_id || null)
       .input("house_number", sql.NVarChar(50), body.house_number || null)
-      // Pre-survey interest fields surfaced on the new-lead form
+      // pre_primary_reason stays on leads (not in PreSurveyForm scope).
       .input("pre_primary_reason", sql.NVarChar(50), body.pre_primary_reason || null)
-      .input("pre_peak_usage", sql.NVarChar(20), body.pre_peak_usage || null)
-      .input("pre_electrical_phase", sql.NVarChar(20), body.pre_electrical_phase || null)
-      .input("pre_wants_battery", sql.NVarChar(20), body.pre_wants_battery || null)
-      .input("pre_roof_shape", sql.NVarChar(20), body.pre_roof_shape || null)
-      .input("pre_residence_type", sql.NVarChar(30), body.pre_residence_type || null)
-      .input("pre_monthly_bill", sql.Int, body.monthly_bill ? parseInt(String(body.monthly_bill)) : null)
+      // The 9 PreSurveyForm fields below (pre_appliances, pre_peak_usage,
+      // pre_electrical_phase, pre_wants_battery, pre_roof_shape,
+      // pre_residence_type, pre_monthly_bill, pre_ac_units, pre_bill_photo_url)
+      // moved to lead_data table — INSERT after we have the new lead id.
       // Sheet-sync fields
       .input("customer_code", sql.NVarChar(20), body.customer_code || null)
       .input("seeker_type", sql.NVarChar(50), body.seeker_type || null)
@@ -160,9 +157,8 @@ export async function POST(request: NextRequest) {
           full_name, phone, email, project_id, installation_address, customer_type, interested_package_id,
           source, payment_type, requirement, note,
           id_card_number, id_card_address, id_card_photo_url, house_reg_photo_url,
-          pre_appliances, line_id, house_number,
-          pre_primary_reason, pre_peak_usage, pre_electrical_phase, pre_wants_battery,
-          pre_roof_shape, pre_residence_type, pre_monthly_bill,
+          line_id, house_number,
+          pre_primary_reason,
           customer_code, seeker_type, seeker_name, customer_interest, home_loan_status, project_note,
           project_name, project_alias,
           meter_number, tag, status
@@ -172,9 +168,8 @@ export async function POST(request: NextRequest) {
           @full_name, @phone, @email, @project_id, @installation_address, @customer_type, @interested_package_id,
           @source, @payment_type, @requirement, @note,
           @id_card_number, @id_card_address, @id_card_photo_url, @house_reg_photo_url,
-          @pre_appliances, @line_id, @house_number,
-          @pre_primary_reason, @pre_peak_usage, @pre_electrical_phase, @pre_wants_battery,
-          @pre_roof_shape, @pre_residence_type, @pre_monthly_bill,
+          @line_id, @house_number,
+          @pre_primary_reason,
           @customer_code, @seeker_type, @seeker_name, @customer_interest, @home_loan_status, @project_note,
           @project_name, @project_alias,
           @meter_number, @tag, 'pre_survey'
@@ -192,6 +187,27 @@ export async function POST(request: NextRequest) {
       .input("note", sql.NVarChar(sql.MAX), body.note || body.requirement || null)
       .input("created_by", sql.Int, gate.userId)
       .query(`INSERT INTO lead_activities (lead_id, activity_type, title, note, created_by) VALUES (@lead_id, 'lead_created', 'Lead created (' + @source + ')', @note, @created_by)`);
+
+    // lead_data row — populate any of the 9 profile fields that came in on
+    // the create payload. Always insert a row even when all 9 are null so
+    // future PATCHes can UPDATE without first having to MERGE.
+    const monthlyBill = body.monthly_bill ? parseInt(String(body.monthly_bill)) : (body.pre_monthly_bill ?? null);
+    const appliances = Array.isArray(body.pre_appliances) ? body.pre_appliances.join(",") : (body.pre_appliances || null);
+    await db.request()
+      .input("lead_id", sql.Int, leadId)
+      .input("residence_type",   sql.NVarChar(50),      body.pre_residence_type   || null)
+      .input("monthly_bill",     sql.Decimal(10, 2),    monthlyBill)
+      .input("peak_usage",       sql.NVarChar(50),      body.pre_peak_usage       || null)
+      .input("electrical_phase", sql.NVarChar(50),      body.pre_electrical_phase || null)
+      .input("wants_battery",    sql.NVarChar(50),      body.pre_wants_battery    || null)
+      .input("ac_units",         sql.NVarChar(sql.MAX), body.pre_ac_units         || null)
+      .input("appliances",       sql.NVarChar(sql.MAX), appliances)
+      .input("roof_shape",       sql.NVarChar(50),      body.pre_roof_shape       || null)
+      .input("bill_photo_url",   sql.NVarChar(500),     body.pre_bill_photo_url   || null)
+      .query(`
+        INSERT INTO lead_data (lead_id, residence_type, monthly_bill, peak_usage, electrical_phase, wants_battery, ac_units, appliances, roof_shape, bill_photo_url)
+        VALUES (@lead_id, @residence_type, @monthly_bill, @peak_usage, @electrical_phase, @wants_battery, @ac_units, @appliances, @roof_shape, @bill_photo_url)
+      `);
 
     // Backfill project district/province if missing (fire-and-forget, don't block response)
     if (body.project_id) {

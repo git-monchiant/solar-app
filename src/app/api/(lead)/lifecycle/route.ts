@@ -79,6 +79,8 @@ export async function GET(req: NextRequest) {
         l.house_number,
         l.full_name,
         l.status,
+        l.customer_grade,
+        l.customer_group,
         l.created_at,
         l.survey_date,
         l.install_date,

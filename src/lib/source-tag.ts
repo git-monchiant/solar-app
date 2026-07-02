@@ -16,6 +16,7 @@ export type SourceKey =
   | "smartify_app" | "smartify_existing" | "smartify_new"
   | "web_sena"
   | "fb_smartify" | "fb_senx"
+  | "referral"
   // Catch-all + legacy aliases (older imports that we still need to render)
   | "other"
   | "senxpm" | "walk_in" | "event" | "ads" | "the1"
@@ -35,6 +36,7 @@ export const SOURCE_STYLES: Record<SourceKey, { label: string; cls: string }> = 
   web_sena:          { label: "Website · SenaSolarEnergy", cls: "bg-sky-50 text-sky-700 ring-sky-200" },
   fb_smartify:       { label: "Facebook · Smartify",    cls: "bg-blue-50 text-blue-700 ring-blue-200" },
   fb_senx:           { label: "Facebook · SenXgroup",   cls: "bg-blue-50 text-blue-700 ring-blue-200" },
+  referral:          { label: "ลูกค้าแนะนำ",              cls: "bg-emerald-50 text-emerald-700 ring-emerald-200" },
   // Catch-all + legacy aliases (kept so older leads.source values still render)
   other:    { label: "อื่นๆ",      cls: "bg-gray-100 text-gray-600 ring-gray-200" },
   senxpm:   { label: "SenXPM",   cls: "bg-indigo-50 text-indigo-700 ring-indigo-200" },
@@ -75,7 +77,10 @@ export function normalizeSourceKey(raw: string | null | undefined): SourceKey {
   if (/^ads?$|advert|google.?ads|facebook/.test(v)) return "ads";
   if (/the.?1/.test(v)) return "the1";
   if (/^web$|website/.test(v)) return "web";
-  if (/refer|ลูกค้านอก|แนะนำ/.test(v)) return "refer";
+  // New canonical `referral` first — the legacy `refer` bucket is kept only
+  // for rows that were saved before this code was introduced.
+  if (/referral|ลูกค้านอก|แนะนำ/.test(v)) return "referral";
+  if (/^refer$/.test(v)) return "refer";
   if (/^email$|e-?mail|gmail/.test(v)) return "email";
   if (/line.?oa|^line$/.test(v)) return "line_oa";
   if (/seeker/.test(v)) return "seeker";

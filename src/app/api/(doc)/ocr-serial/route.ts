@@ -35,7 +35,8 @@ export async function POST(request: NextRequest) {
   "serial": "<Serial Number / SN / S/N — เฉพาะตัวอักษร+ตัวเลขที่อ่านได้แน่นอน ไม่ใส่ label / วรรค>",
   "brand": "<ยี่ห้อที่เห็นบนป้ายชัดเจน เช่น DEYE, Huawei, JINKO, ZTT>",
   "kw":   "<กำลังไฟอินเวอร์เตอร์ kW ถ้าเห็นชัด — ตัวเลขล้วน>",
-  "kwh":  "<ความจุแบตเตอรี่ kWh ถ้าเห็นชัด — ตัวเลขล้วน>"
+  "kwh":  "<ความจุแบตเตอรี่ kWh ถ้าเห็นชัด — ตัวเลขล้วน>",
+  "box":  "<bounding box ของบรรทัด Serial บนป้าย — [ymin, xmin, ymax, xmax] normalized 0-1000 (Gemini format) — ถ้าไม่มี serial ก็ null>"
 }
 
 ถ้าไม่เห็นชัด/ไม่มี → null
@@ -67,6 +68,7 @@ export async function POST(request: NextRequest) {
         brand?: string | null;
         kw?: string | number | null;
         kwh?: string | number | null;
+        box?: unknown;
       };
       const serial = typeof parsed.serial === "string" ? parsed.serial.trim() : null;
       const brand  = typeof parsed.brand === "string" && parsed.brand.trim() ? parsed.brand.trim() : null;
@@ -79,14 +81,18 @@ export async function POST(request: NextRequest) {
         const n = parseFloat(cleaned);
         return Number.isFinite(n) ? n : null;
       };
+      const box = Array.isArray(parsed.box) && parsed.box.length === 4 && parsed.box.every(n => typeof n === "number")
+        ? (parsed.box as number[])
+        : null;
       return NextResponse.json({
         serial: serial || null,
         brand,
         kw:  toNum(parsed.kw),
         kwh: toNum(parsed.kwh),
+        box,
       });
     } catch {
-      return NextResponse.json({ serial: null, brand: null, kw: null, kwh: null });
+      return NextResponse.json({ serial: null, brand: null, kw: null, kwh: null, box: null });
     }
   } catch (error) {
     console.error("POST /api/ocr-serial error:", error);

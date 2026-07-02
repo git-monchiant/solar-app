@@ -58,7 +58,7 @@ export default function PdfViewerModal({ url, label, filename, onClose }: Props)
           type="button"
           onClick={onClose}
           aria-label="ปิด"
-          className="w-10 h-10 rounded-full bg-black/50 text-white flex items-center justify-center text-xl shrink-0"
+          className="w-10 h-8 rounded-full bg-black/50 text-white flex items-center justify-center text-xl shrink-0"
         >
           ✕
         </button>

@@ -4,14 +4,28 @@
 // new option values.
 
 export const PEAK_USAGE_LABEL: Record<string, string> = {
+  // Legacy values — older leads still hold these; questionnaire §2 moved
+  // PreSurveyForm to the time-range picker. Keep both so display still
+  // resolves regardless of when the lead was captured.
   day: "กลางวัน",
   night: "กลางคืน",
   both: "ทั้งสองช่วง",
+  morning:   "06.00-12.00",
+  afternoon: "12.00-18.00",
+  evening:   "18.00-24.00",
+  all_day:   "ตลอดวัน",
 };
 
 export const ELECTRICAL_PHASE_LABEL: Record<string, string> = {
   "1_phase": "1 เฟส",
   "3_phase": "3 เฟส",
+  unknown:   "ไม่ทราบ",
+};
+
+export const METER_SIZE_LABEL: Record<string, string> = {
+  "15_45":  "15(45) A",
+  "30_100": "30(100) A",
+  unknown:  "ไม่ทราบ",
 };
 
 export const BATTERY_INTEREST_LABEL: Record<string, string> = {

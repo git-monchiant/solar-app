@@ -81,7 +81,7 @@ function UsersList({ currentUserId }: { currentUserId: number }) {
           <p className="text-xs text-gray-500 mt-0.5">เพิ่ม/แก้ไข/ปิดการใช้งาน บัญชีผู้ใช้</p>
         </div>
         <button type="button" onClick={() => setEditing("new")}
-          className="h-10 px-4 rounded-lg text-sm font-semibold text-white bg-primary hover:bg-primary-dark transition-colors shrink-0">
+          className="h-8 px-4 rounded-lg text-sm font-semibold text-white bg-primary hover:bg-primary-dark transition-colors shrink-0">
           + เพิ่มผู้ใช้
         </button>
       </div>
@@ -95,7 +95,7 @@ function UsersList({ currentUserId }: { currentUserId: number }) {
           value={search}
           onChange={(e) => setSearch(e.target.value)}
           placeholder="ค้นหา username, ชื่อ, เบอร์, email, role…"
-          className="w-full h-10 pl-9 pr-24 rounded-lg border border-gray-200 bg-white text-sm focus:outline-none focus:border-primary focus:ring-2 focus:ring-primary/20 transition"
+          className="w-full h-8 pl-9 pr-24 rounded-lg border border-gray-200 bg-white text-sm focus:outline-none focus:border-primary focus:ring-2 focus:ring-primary/20 transition"
         />
         {search && (
           <div className="absolute right-2 top-1/2 -translate-y-1/2 flex items-center gap-1.5">
@@ -326,18 +326,18 @@ function UserEditor({ user, currentUserId, existingUsernames, onClose, onSaved }
           <Field label="Username">
             <input type="text" value={username} disabled={!isNew}
               onChange={e => setUsername(e.target.value)}
-              className={`w-full h-10 px-3 rounded-lg border text-sm font-mono focus:outline-none disabled:bg-gray-50 ${usernameTaken ? "border-red-400 focus:border-red-500" : "border-gray-200 focus:border-primary"}`} />
+              className={`w-full h-8 px-3 rounded-lg border text-sm font-mono focus:outline-none disabled:bg-gray-50 ${usernameTaken ? "border-red-400 focus:border-red-500" : "border-gray-200 focus:border-primary"}`} />
             {usernameTaken && (
               <div className="text-xs text-red-600 mt-1">ชื่อผู้ใช้นี้ถูกใช้แล้ว</div>
             )}
           </Field>
           <Field label="ชื่อ-สกุล">
             <input type="text" value={fullName} onChange={e => setFullName(e.target.value)}
-              className="w-full h-10 px-3 rounded-lg border border-gray-200 text-sm focus:outline-none focus:border-primary" />
+              className="w-full h-8 px-3 rounded-lg border border-gray-200 text-sm focus:outline-none focus:border-primary" />
           </Field>
           <Field label={isNew ? "รหัสผ่านเริ่มต้น" : "รหัสผ่านใหม่ (เว้นว่างถ้าไม่เปลี่ยน)"}>
             <input type="password" value={password} onChange={e => setPassword(e.target.value)} autoComplete="new-password"
-              className="w-full h-10 px-3 rounded-lg border border-gray-200 text-sm focus:outline-none focus:border-primary" />
+              className="w-full h-8 px-3 rounded-lg border border-gray-200 text-sm focus:outline-none focus:border-primary" />
           </Field>
           <Field label="Roles (เลือกได้หลายอัน)">
             <div className="flex flex-wrap gap-2">
@@ -357,15 +357,15 @@ function UserEditor({ user, currentUserId, existingUsernames, onClose, onSaved }
           </Field>
           <Field label="Team">
             <input type="text" value={team} onChange={e => setTeam(e.target.value)}
-              className="w-full h-10 px-3 rounded-lg border border-gray-200 text-sm focus:outline-none focus:border-primary" />
+              className="w-full h-8 px-3 rounded-lg border border-gray-200 text-sm focus:outline-none focus:border-primary" />
           </Field>
           <Field label="เบอร์โทร">
             <input type="tel" value={phone} onChange={e => setPhone(e.target.value)}
-              className="w-full h-10 px-3 rounded-lg border border-gray-200 text-sm focus:outline-none focus:border-primary" />
+              className="w-full h-8 px-3 rounded-lg border border-gray-200 text-sm focus:outline-none focus:border-primary" />
           </Field>
           <Field label="Email">
             <input type="email" value={email} onChange={e => setEmail(e.target.value)}
-              className="w-full h-10 px-3 rounded-lg border border-gray-200 text-sm focus:outline-none focus:border-primary" />
+              className="w-full h-8 px-3 rounded-lg border border-gray-200 text-sm focus:outline-none focus:border-primary" />
           </Field>
 
           {!isNew && (
@@ -381,13 +381,13 @@ function UserEditor({ user, currentUserId, existingUsernames, onClose, onSaved }
         <div className="sticky bottom-0 bg-white px-5 py-3 border-t border-gray-100 flex items-center gap-2">
           {!isNew && (
             <button type="button" onClick={deactivate} disabled={saving}
-              className="h-10 px-4 rounded-lg text-sm font-semibold text-red-600 border border-red-200 hover:bg-red-50 disabled:opacity-50">
+              className="h-8 px-4 rounded-lg text-sm font-semibold text-red-600 border border-red-200 hover:bg-red-50 disabled:opacity-50">
               ปิดการใช้งาน
             </button>
           )}
           <div className="flex-1" />
           <button type="button" onClick={onClose}
-            className="h-10 px-5 rounded-lg text-sm font-semibold text-gray-600 border border-gray-200 hover:bg-gray-50">
+            className="h-8 px-5 rounded-lg text-sm font-semibold text-gray-600 border border-gray-200 hover:bg-gray-50">
             ยกเลิก
           </button>
           <button
@@ -395,7 +395,7 @@ function UserEditor({ user, currentUserId, existingUsernames, onClose, onSaved }
             onClick={save}
             disabled={saving || roles.length === 0}
             title={roles.length === 0 ? "เลือก role อย่างน้อย 1 อัน" : undefined}
-            className="h-10 px-5 rounded-lg text-sm font-semibold text-white bg-primary hover:bg-primary-dark disabled:opacity-50 disabled:cursor-not-allowed"
+            className="h-8 px-5 rounded-lg text-sm font-semibold text-white bg-primary hover:bg-primary-dark disabled:opacity-50 disabled:cursor-not-allowed"
           >
             {saving ? "กำลังบันทึก..." : "บันทึก"}
           </button>

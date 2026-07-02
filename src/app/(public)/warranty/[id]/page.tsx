@@ -37,9 +37,11 @@ interface Data {
     warranty_panel_count: number | null;
     warranty_panel_watt: number | null;
     warranty_panel_brand: string | null;
+    warranty_panel_model: string | null;
     warranty_inverter_brand: string | null;
     warranty_inverter_kw: number | null;
     warranty_battery_brand: string | null;
+    warranty_battery_model: string | null;
     warranty_battery_kwh: number | null;
     warranty_has_battery: boolean | null;
     warranty_batteries: string | null;
@@ -99,10 +101,12 @@ export default function WarrantyPage() {
     : lead.warranty_panel_count ?? null;
   const pnlWatt = lead.warranty_panel_watt ?? null;
   const pnlBrand = d.devices?.panels[0]?.brand ?? lead.warranty_panel_brand ?? "";
+  const pnlModel = lead.warranty_panel_model ?? "";
   // Battery summary still feeds the "ขนาดแบต" header line — first row wins.
   const firstBatt = d.devices?.batteries[0];
   const battBrand = firstBatt?.brand ?? lead.warranty_battery_brand ?? pkg?.battery_brand ?? "";
   const battKwh = firstBatt?.kwh ?? lead.warranty_battery_kwh ?? pkg?.battery_kwh ?? null;
+  const battModel = lead.warranty_battery_model ?? "";
   const hasBattery = (d.devices?.batteries.length ?? 0) > 0
     || (lead.warranty_has_battery ?? !!pkg?.has_battery);
 
@@ -134,9 +138,13 @@ export default function WarrantyPage() {
   const defaultDocNo = `SSE${new Date().getFullYear().toString().slice(-2)}${String(lead.id).padStart(4, "0")}`;
   const docNo = lead.warranty_doc_no || defaultDocNo;
   const sizeSpec = sysKwp != null ? `${sysKwp} kWp` : "—";
-  const panelSpec = pnlCount && pnlWatt ? `${pnlCount} แผง × ${pnlWatt}W${pnlBrand ? ` · ${pnlBrand}` : ""}` : "—";
+  // Brand + model rendered together so the warranty spec line shows the full
+  // product identity (e.g. "JINKO JKM640N-66HL4M") instead of brand alone.
+  const pnlLabel = [pnlBrand, pnlModel].filter(Boolean).join(" ");
+  const battLabel = [battBrand, battModel].filter(Boolean).join(" ");
+  const panelSpec = pnlCount && pnlWatt ? `${pnlCount} แผง × ${pnlWatt}W${pnlLabel ? ` · ${pnlLabel}` : ""}` : "—";
   const inverterSpec = invBrand || invKw != null ? `${invBrand} ${invKw != null ? `${invKw}kW` : ""}`.trim() : "—";
-  const batterySpec = hasBattery ? `${battBrand}${battKwh != null ? ` ${battKwh}kWh` : ""}`.trim() || "—" : "—";
+  const batterySpec = hasBattery ? `${battLabel}${battKwh != null ? ` ${battKwh}kWh` : ""}`.trim() || "—" : "—";
 
   return (
     <div className="bg-gray-100 min-h-screen py-4 print:py-0 print:bg-white">

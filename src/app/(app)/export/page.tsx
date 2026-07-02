@@ -70,7 +70,7 @@ export default function ExportPage() {
               type="button"
               onClick={downloadSeekerLeads}
               disabled={busy}
-              className="h-10 px-5 rounded-lg text-sm font-semibold text-white bg-primary hover:bg-primary-dark disabled:opacity-50 transition-colors inline-flex items-center gap-2"
+              className="h-8 px-5 rounded-lg text-sm font-semibold text-white bg-primary hover:bg-primary-dark disabled:opacity-50 transition-colors inline-flex items-center gap-2"
             >
               {busy ? (
                 <>
@@ -104,7 +104,7 @@ export default function ExportPage() {
               type="button"
               onClick={downloadSeekerProspects}
               disabled={busy}
-              className="h-10 px-5 rounded-lg text-sm font-semibold text-white bg-primary hover:bg-primary-dark disabled:opacity-50 transition-colors inline-flex items-center gap-2"
+              className="h-8 px-5 rounded-lg text-sm font-semibold text-white bg-primary hover:bg-primary-dark disabled:opacity-50 transition-colors inline-flex items-center gap-2"
             >
               {busy ? (
                 <>

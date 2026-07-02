@@ -199,7 +199,7 @@ export default function ActualReceiptUpload({ leadId, field, paymentId, url, ref
             const img = isImage(u);
             const label = `ใบเสร็จ ${startIndex + i + 1}`;
             return (
-              <span key={`d-${u}-${i}`} className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md border border-blue-300 bg-blue-50/50 hover:bg-blue-50 transition-colors">
+              <span key={`d-${u}-${i}`} className="inline-flex items-center justify-center gap-1.5 px-2.5 py-1 min-w-[100px] rounded-md border border-blue-300 bg-blue-50/50 hover:bg-blue-50 transition-colors">
                 <a
                   href={u}
                   onClick={(e) => openInViewer(e, u, label)}

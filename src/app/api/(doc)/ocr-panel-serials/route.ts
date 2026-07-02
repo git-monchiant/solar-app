@@ -43,7 +43,7 @@ export async function POST(request: NextRequest) {
       })
     );
 
-    const prompt = `อ่าน serial number จากสติกเกอร์ barcode label ทุกอันที่เห็นชัดในภาพ
+    const prompt = `อ่าน serial number จากสติกเกอร์ barcode label ทุกอันที่เห็นชัดในภาพ และระบุพิกัด bounding box ของสติกเกอร์แต่ละอัน
 
 ตัวอย่างรูปแบบ serial: E2FXK226C107513735402534
 
@@ -51,10 +51,11 @@ export async function POST(request: NextRequest) {
 - **K** มีขาเฉียงด้านขวา ดูเหมือน X ได้ (แต่ไม่ใช่ XX) — ถ้าเห็นเส้นเฉียง อ่านเป็น K
 - ตัวสุดท้ายมักเป็นตัวเลข
 
-Return raw JSON:
-{ "serials": ["<sn1>", "<sn2>", ...] }
+Return raw JSON (each entry has the serial + 0-1000 normalized box [ymin, xmin, ymax, xmax] of the sticker label):
+{ "items": [ { "serial": "<sn>", "box": [<ymin>,<xmin>,<ymax>,<xmax>] }, ... ] }
 
 - ใส่เฉพาะตัวอักษร+ตัวเลขของ serial (ไม่รวม " I2" ที่ตามหลัง)
+- box ใช้รูปแบบ Gemini มาตรฐาน [ymin, xmin, ymax, xmax] normalized 0-1000
 - ลำดับ: บน→ล่าง
 - raw JSON only`;
 
@@ -87,25 +88,42 @@ Return raw JSON:
     if (!jsonMatch) return NextResponse.json({ serials: [] });
 
     try {
-      const parsed = JSON.parse(jsonMatch[0]) as { serials?: unknown };
-      const raw = Array.isArray(parsed.serials) ? parsed.serials : [];
+      // New shape: { items: [{serial, box}, ...] }. We also accept the
+      // legacy { serials: [...] } shape for older/raw responses.
+      const parsed = JSON.parse(jsonMatch[0]) as { items?: unknown; serials?: unknown };
+      type RawItem = { serial: string; box: number[] | null };
+      let raw: RawItem[] = [];
+      if (Array.isArray(parsed.items)) {
+        raw = (parsed.items as Array<Record<string, unknown>>)
+          .map((it) => ({
+            serial: typeof it.serial === "string" ? it.serial : "",
+            box: Array.isArray(it.box) && it.box.every((n) => typeof n === "number") ? it.box as number[] : null,
+          }))
+          .filter((it) => it.serial);
+      } else if (Array.isArray(parsed.serials)) {
+        raw = (parsed.serials as unknown[])
+          .filter((s): s is string => typeof s === "string")
+          .map((s) => ({ serial: s, box: null }));
+      }
       const seen = new Set<string>();
-      const serials = raw
-        .filter((s): s is string => typeof s === "string")
-        .map((s) => normalizeSerial(s.trim()))
-        .filter((s): s is string => !!s)
-        // Dedupe across the response — the model occasionally emits the same
-        // SN twice when two stickers are read at slightly different angles.
-        .filter((s) => {
-          const k = s.toUpperCase();
-          if (seen.has(k)) return false;
-          seen.add(k);
-          return true;
-        });
-      console.log(`[ocr-panel-serials] serials.length=${serials.length}`);
-      return NextResponse.json({ serials });
+      const out: Array<{ serial: string; box: number[] | null }> = [];
+      for (const it of raw) {
+        const sn = normalizeSerial(it.serial.trim());
+        if (!sn) continue;
+        const k = sn.toUpperCase();
+        if (seen.has(k)) continue;
+        seen.add(k);
+        out.push({ serial: sn, box: it.box });
+      }
+      console.log(`[ocr-panel-serials] items.length=${out.length}`);
+      // Keep `serials: string[]` for back-compat with any caller that hasn't
+      // adopted the new boxes shape yet.
+      return NextResponse.json({
+        serials: out.map((o) => o.serial),
+        items: out,
+      });
     } catch {
-      return NextResponse.json({ serials: [] });
+      return NextResponse.json({ serials: [], items: [] });
     }
   } catch (error) {
     console.error("POST /api/ocr-panel-serials error:", error);

@@ -1,5 +1,5 @@
 "use client";
-import { BoltIcon, ChevronLeftIcon, ChevronRightIcon } from "@/components/ui/icons";
+import { BoltIcon, ChevronLeftIcon, ChevronRightIcon, UserIcon } from "@/components/ui/icons";
 
 import { useEffect, useRef, useState } from "react";
 import { apiFetch } from "@/lib/api";
@@ -31,7 +31,7 @@ const ROOF_SHAPES: { value: string; label: string; svg: React.ReactNode }[] = [
     value: "gable",
     label: "ทรงหน้าจั่ว",
     svg: (
-      <svg viewBox="0 0 48 48" fill="none" className="w-10 h-10">
+      <svg viewBox="0 0 48 48" fill="none" className="w-10 h-8">
         <path d="M6 22 L24 8 L42 22 L42 38 L6 38 Z" stroke="currentColor" strokeWidth="1.5" strokeLinejoin="round" />
         <path d="M24 8 L24 38" stroke="currentColor" strokeWidth="1.5" strokeDasharray="2 2" />
       </svg>
@@ -41,7 +41,7 @@ const ROOF_SHAPES: { value: string; label: string; svg: React.ReactNode }[] = [
     value: "hip",
     label: "ปั้นหยา",
     svg: (
-      <svg viewBox="0 0 48 48" fill="none" className="w-10 h-10">
+      <svg viewBox="0 0 48 48" fill="none" className="w-10 h-8">
         <path d="M6 38 L10 22 L38 22 L42 38 Z" stroke="currentColor" strokeWidth="1.5" strokeLinejoin="round" />
         <path d="M10 22 L18 12 L30 12 L38 22" stroke="currentColor" strokeWidth="1.5" strokeLinejoin="round" />
         <path d="M18 12 L10 22 M30 12 L38 22" stroke="currentColor" strokeWidth="1.5" />
@@ -52,7 +52,7 @@ const ROOF_SHAPES: { value: string; label: string; svg: React.ReactNode }[] = [
     value: "shed",
     label: "เพิงหมาแหงน",
     svg: (
-      <svg viewBox="0 0 48 48" fill="none" className="w-10 h-10">
+      <svg viewBox="0 0 48 48" fill="none" className="w-10 h-8">
         <path d="M6 20 L42 10 L42 38 L6 38 Z" stroke="currentColor" strokeWidth="1.5" strokeLinejoin="round" />
       </svg>
     ),
@@ -61,7 +61,7 @@ const ROOF_SHAPES: { value: string; label: string; svg: React.ReactNode }[] = [
     value: "flat",
     label: "ทรงแบน",
     svg: (
-      <svg viewBox="0 0 48 48" fill="none" className="w-10 h-10">
+      <svg viewBox="0 0 48 48" fill="none" className="w-10 h-8">
         <path d="M6 14 L42 14 L42 38 L6 38 Z" stroke="currentColor" strokeWidth="1.5" strokeLinejoin="round" />
         <path d="M6 14 L42 14" stroke="currentColor" strokeWidth="1.5" />
       </svg>
@@ -152,7 +152,7 @@ export default function PreSurveyStep({ lead, state, refresh, packages, expanded
   const [regIdCard, setRegIdCard] = useState(lead.id_card_number || "");
   const [regAddress, setRegAddress] = useState(lead.id_card_address || "");
   const [regHouseNumber, setRegHouseNumber] = useState(lead.installation_address || "");
-  const REG_SUB_STEPS = ["ข้อมูล", "แพ็คเกจ", "ยืนยัน", "ชำระเงิน", "นัดสำรวจ"];
+  const REG_SUB_STEPS = [["ข้อมูล", "แบบสอบถาม"] as const, "แพ็คเกจ", "ยืนยัน", "ชำระเงิน", "นัดสำรวจ"];
   const [subStep, setSubStep] = useSubStep(`preSurveySubStep_${lead.id}`, 0, REG_SUB_STEPS.length);
   const [nextError, setNextError] = useState<string | null>(null);
   // Survey deposit amount — defaults to 1,000 but staff can override before
@@ -624,43 +624,51 @@ export default function PreSurveyStep({ lead, state, refresh, packages, expanded
               if (patch.installation_address) setRegHouseNumber(patch.installation_address);
             }}
           />
-          <div className="rounded-lg border border-active/15 bg-white/60 p-3 space-y-2.5">
-            <div className="text-xs font-semibold text-gray-400 uppercase tracking-wider">ข้อมูลลูกค้าเพื่อออกใบเสร็จ</div>
-            <div>
-              <label className="text-xs text-gray-500 block mb-1">ชื่อ-นามสกุล <span className="text-red-500">*</span></label>
-              <input type="text" value={regName} onChange={e => setRegName(e.target.value)} className="w-full h-11 px-3 rounded-lg border border-gray-200 text-sm focus:outline-none focus:border-primary" />
+          {/* ยืนยันข้อมูลใบเสร็จ — 7-col grid: short text inputs span 3 cols
+              (about half-row on desktop), addresses span the full 7 since
+              they're textareas that benefit from width. */}
+          <div className="rounded-lg border border-active/15 bg-white/60 p-3">
+            <div className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-2 flex items-center gap-2">
+              <span className="w-7 h-7 rounded-lg bg-active/10 text-active flex items-center justify-center shrink-0"><UserIcon className="w-4 h-4" /></span>
+              CUSTOMER INFO FOR RECEIPT
             </div>
-            <div>
-              <label className="text-xs text-gray-500 block mb-1">อีเมล <span className="text-red-500">*</span></label>
-              <input type="email" value={regEmail} onChange={e => setRegEmail(e.target.value)} placeholder="example@mail.com" className="w-full h-11 px-3 rounded-lg border border-gray-200 text-sm focus:outline-none focus:border-primary" />
-            </div>
-            <div>
-              <label className="text-xs text-gray-500 block mb-1">เลขบัตรประชาชน <span className="text-red-500">*</span></label>
-              <input type="text" value={regIdCard} onChange={e => setRegIdCard(e.target.value)} className="w-full h-11 px-3 rounded-lg border border-gray-200 text-sm font-mono tabular-nums focus:outline-none focus:border-primary" />
-            </div>
-            <div>
-              <label className="text-xs text-gray-500 block mb-1">ที่อยู่ตามบัตรประชาชน <span className="text-red-500">*</span></label>
-              <textarea value={regAddress} onChange={e => setRegAddress(e.target.value)} rows={3} className="w-full px-3 py-2 rounded-lg border border-gray-200 text-sm focus:outline-none focus:border-primary resize-none" />
-            </div>
-            <div>
-              <div className="flex items-center justify-between mb-1">
-                <label className="text-xs text-gray-500">ที่อยู่ติดตั้ง <span className="text-red-500">*</span></label>
-                <label className="text-xs text-gray-600 inline-flex items-center gap-1.5 cursor-pointer select-none">
-                  <input
-                    type="checkbox"
-                    className="w-3.5 h-3.5 accent-primary cursor-pointer"
-                    checked={!!regAddress && regHouseNumber === regAddress}
-                    onChange={(e) => {
-                      // Mirror the ID-card address into ที่อยู่ติดตั้ง when ticked
-                      // — most leads install at the registered address. Untick to
-                      // edit independently again.
-                      if (e.target.checked) setRegHouseNumber(regAddress);
-                    }}
-                  />
-                  เหมือนที่อยู่ตามบัตร
-                </label>
+            <div className="grid grid-cols-2 md:grid-cols-7 gap-2">
+              <div className="col-span-2 md:col-span-3 flex flex-col gap-1">
+                <label className="text-xs text-gray-500">ชื่อ-นามสกุล <span className="text-red-500">*</span></label>
+                <input type="text" value={regName} onChange={e => setRegName(e.target.value)} className="w-full h-8 px-3 rounded-lg border border-gray-200 text-sm focus:outline-none focus:border-primary" />
               </div>
-              <textarea value={regHouseNumber} onChange={e => setRegHouseNumber(e.target.value)} rows={3} className="w-full px-3 py-2 rounded-lg border border-gray-200 text-sm focus:outline-none focus:border-primary resize-none" />
+              <div className="col-span-2 md:col-span-3 flex flex-col gap-1">
+                <label className="text-xs text-gray-500">อีเมล <span className="text-red-500">*</span></label>
+                <input type="email" value={regEmail} onChange={e => setRegEmail(e.target.value)} placeholder="example@mail.com" className="w-full h-8 px-3 rounded-lg border border-gray-200 text-sm focus:outline-none focus:border-primary" />
+              </div>
+              <div className="col-span-2 md:col-span-3 flex flex-col gap-1">
+                <label className="text-xs text-gray-500">เลขบัตรประชาชน <span className="text-red-500">*</span></label>
+                <input type="text" value={regIdCard} onChange={e => setRegIdCard(e.target.value)} className="w-full h-8 px-3 rounded-lg border border-gray-200 text-sm font-mono tabular-nums focus:outline-none focus:border-primary" />
+              </div>
+              <div className="col-span-2 md:col-span-7 flex flex-col gap-1">
+                <label className="text-xs text-gray-500">ที่อยู่ตามบัตรประชาชน <span className="text-red-500">*</span></label>
+                <textarea value={regAddress} onChange={e => setRegAddress(e.target.value)} rows={3} className="w-full px-3 py-2 rounded-lg border border-gray-200 text-sm focus:outline-none focus:border-primary resize-none" />
+              </div>
+              <div className="col-span-2 md:col-span-7 flex flex-col gap-1">
+                <div className="flex items-center justify-between">
+                  <label className="text-xs text-gray-500">ที่อยู่ติดตั้ง <span className="text-red-500">*</span></label>
+                  <label className="text-xs text-gray-600 inline-flex items-center gap-1.5 cursor-pointer select-none">
+                    <input
+                      type="checkbox"
+                      className="w-3.5 h-3.5 accent-primary cursor-pointer"
+                      checked={!!regAddress && regHouseNumber === regAddress}
+                      onChange={(e) => {
+                        // Mirror the ID-card address into ที่อยู่ติดตั้ง when ticked
+                        // — most leads install at the registered address. Untick to
+                        // edit independently again.
+                        if (e.target.checked) setRegHouseNumber(regAddress);
+                      }}
+                    />
+                    เหมือนที่อยู่ตามบัตร
+                  </label>
+                </div>
+                <textarea value={regHouseNumber} onChange={e => setRegHouseNumber(e.target.value)} rows={3} className="w-full px-3 py-2 rounded-lg border border-gray-200 text-sm focus:outline-none focus:border-primary resize-none" />
+              </div>
             </div>
           </div>
         </div>
@@ -773,7 +781,7 @@ export default function PreSurveyStep({ lead, state, refresh, packages, expanded
         <div className="space-y-2">
           <div className="rounded-lg border border-active/15 bg-white/60 p-4">
             <label className="text-xs font-semibold tracking-wider uppercase text-gray-400 block mb-2">Zone</label>
-            <div className="grid grid-cols-1 md:grid-cols-4 gap-2">
+            <div className="grid grid-cols-2 md:grid-cols-7 gap-2">
               {zones.map(z => {
                 const active = zone === z.name;
                 // Selected: filled with the zone's color. Unselected: white pill
@@ -787,7 +795,7 @@ export default function PreSurveyStep({ lead, state, refresh, packages, expanded
                       setZone(z.name);
                       apiFetch(`/api/leads/${lead.id}`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ zone: z.name }) }).catch(console.error);
                     }}
-                    className="w-full h-10 rounded-lg text-sm font-semibold border transition-all text-left px-4 inline-flex items-center gap-2"
+                    className="w-full h-8 rounded-lg text-sm font-semibold border transition-all px-2 inline-flex items-center justify-center gap-2"
                     style={{
                       backgroundColor: active && z.color ? z.color : "white",
                       borderColor: z.color || "#e5e7eb",
@@ -829,7 +837,7 @@ export default function PreSurveyStep({ lead, state, refresh, packages, expanded
               type="button"
               disabled={!surveyDate || !surveyTimeSlot}
               onClick={() => setBookingPreviewOpen(true)}
-              className="shrink-0 md:col-span-1 md:w-auto h-10 px-4 rounded-lg text-sm font-semibold border border-gray-200 bg-white text-gray-700 hover:border-active hover:text-active hover:bg-active/5 disabled:opacity-50 disabled:cursor-not-allowed transition-colors inline-flex items-center justify-center gap-2"
+              className="shrink-0 md:col-span-1 md:w-auto h-8 px-4 rounded-lg text-sm font-semibold border border-gray-200 bg-white text-gray-700 hover:border-active hover:text-active hover:bg-active/5 disabled:opacity-50 disabled:cursor-not-allowed transition-colors inline-flex items-center justify-center gap-2"
             >
               <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
                 <path strokeLinecap="round" strokeLinejoin="round" d="M2.036 12.322a1.012 1.012 0 010-.639C3.423 7.51 7.36 4.5 12 4.5c4.638 0 8.573 3.007 9.963 7.178.07.207.07.431 0 .639C20.577 16.49 16.64 19.5 12 19.5c-4.638 0-8.573-3.007-9.963-7.178z" />

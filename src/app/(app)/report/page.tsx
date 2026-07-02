@@ -188,26 +188,26 @@ export default function ReportPage() {
 
         {/* Filters */}
         <div className="bg-white rounded-xl border border-gray-300 p-4 space-y-3">
-          <input type="text" value={search} onChange={e => setSearch(e.target.value)} placeholder="ค้นหาชื่อ, เบอร์, เลขเอกสาร, โครงการ..." className="w-full h-10 px-3 rounded-lg border border-gray-200 text-sm focus:outline-none focus:border-primary" />
+          <input type="text" value={search} onChange={e => setSearch(e.target.value)} placeholder="ค้นหาชื่อ, เบอร์, เลขเอกสาร, โครงการ..." className="w-full h-8 px-3 rounded-lg border border-gray-200 text-sm focus:outline-none focus:border-primary" />
           <div className="flex flex-wrap gap-2">
-            <select value={filterProject} onChange={e => setFilterProject(e.target.value)} className="h-9 px-3 rounded-lg border border-gray-200 text-xs bg-white focus:outline-none focus:border-primary">
+            <select value={filterProject} onChange={e => setFilterProject(e.target.value)} className="h-8 px-3 rounded-lg border border-gray-200 text-xs bg-white focus:outline-none focus:border-primary">
               <option value="all">ทุกโครงการ</option>
               {projects.map(p => <option key={p} value={p}>{p}</option>)}
             </select>
-            <select value={filterStatus} onChange={e => setFilterStatus(e.target.value as "all" | "outstanding" | "settled" | "pending_approval")} className="h-9 px-3 rounded-lg border border-gray-200 text-xs bg-white focus:outline-none focus:border-primary">
+            <select value={filterStatus} onChange={e => setFilterStatus(e.target.value as "all" | "outstanding" | "settled" | "pending_approval")} className="h-8 px-3 rounded-lg border border-gray-200 text-xs bg-white focus:outline-none focus:border-primary">
               <option value="all">สถานะทั้งหมด</option>
               <option value="outstanding">ยังค้างรับ</option>
               <option value="settled">ครบแล้ว</option>
             </select>
             <div className="flex items-center gap-1">
-              <input type="date" value={dateFrom} onChange={e => setDateFrom(e.target.value)} className="h-9 px-2 rounded-lg border border-gray-200 text-xs bg-white focus:outline-none focus:border-primary" />
+              <input type="date" value={dateFrom} onChange={e => setDateFrom(e.target.value)} className="h-8 px-2 rounded-lg border border-gray-200 text-xs bg-white focus:outline-none focus:border-primary" />
               <span className="text-xs text-gray-400">—</span>
-              <input type="date" value={dateTo} onChange={e => setDateTo(e.target.value)} className="h-9 px-2 rounded-lg border border-gray-200 text-xs bg-white focus:outline-none focus:border-primary" />
+              <input type="date" value={dateTo} onChange={e => setDateTo(e.target.value)} className="h-8 px-2 rounded-lg border border-gray-200 text-xs bg-white focus:outline-none focus:border-primary" />
             </div>
             {(search || filterProject !== "all" || filterStatus !== "all" || dateFrom || dateTo) && (
-              <button type="button" onClick={() => { setSearch(""); setFilterProject("all"); setFilterStatus("all"); setDateFrom(""); setDateTo(""); }} className="h-9 px-3 rounded-lg text-xs font-semibold text-red-600 border border-red-200 hover:bg-red-50" style={{ minHeight: 0 }}>ล้าง</button>
+              <button type="button" onClick={() => { setSearch(""); setFilterProject("all"); setFilterStatus("all"); setDateFrom(""); setDateTo(""); }} className="h-8 px-3 rounded-lg text-xs font-semibold text-red-600 border border-red-200 hover:bg-red-50" style={{ minHeight: 0 }}>ล้าง</button>
             )}
-            <button type="button" onClick={downloadCsv} className="h-9 px-3 rounded-lg text-xs font-semibold text-white bg-primary hover:bg-primary-dark ml-auto" style={{ minHeight: 0 }}>Export CSV</button>
+            <button type="button" onClick={downloadCsv} className="h-8 px-3 rounded-lg text-xs font-semibold text-white bg-primary hover:bg-primary-dark ml-auto" style={{ minHeight: 0 }}>Export CSV</button>
           </div>
         </div>
 
@@ -300,13 +300,13 @@ export default function ReportPage() {
                                                     key={url}
                                                     src={url}
                                                     alt=""
-                                                    className="w-9 h-9 object-cover rounded border border-gray-200 cursor-pointer hover:border-active"
+                                                    className="w-9 h-8 object-cover rounded border border-gray-200 cursor-pointer hover:border-active"
                                                     gallery={i.slip_urls.map((u, k) => ({ url: u, label: i.slip_urls.length > 1 ? `${labelForInstallment(i.step_no, i.slip_field)} · สลิป ${k + 1} / ${i.slip_urls.length}` : labelForInstallment(i.step_no, i.slip_field) }))}
                                                     galleryIndex={idx}
                                                   />
                                                 ))}
                                                 {i.slip_urls.length > 3 && (
-                                                  <button type="button" onClick={() => openSlips(i)} className="w-9 h-9 rounded border border-gray-200 bg-gray-50 text-xxs font-semibold text-gray-600 hover:border-active hover:text-active" style={{ minHeight: 0 }}>
+                                                  <button type="button" onClick={() => openSlips(i)} className="w-9 h-8 rounded border border-gray-200 bg-gray-50 text-xxs font-semibold text-gray-600 hover:border-active hover:text-active" style={{ minHeight: 0 }}>
                                                     +{i.slip_urls.length - 3}
                                                   </button>
                                                 )}
@@ -392,13 +392,13 @@ export default function ReportPage() {
                                     key={url}
                                     src={url}
                                     alt=""
-                                    className="w-10 h-10 object-cover rounded border border-gray-200"
+                                    className="w-10 h-8 object-cover rounded border border-gray-200"
                                     gallery={i.slip_urls.map((u, k) => ({ url: u, label: i.slip_urls.length > 1 ? `${labelForInstallment(i.step_no, i.slip_field)} · สลิป ${k + 1} / ${i.slip_urls.length}` : labelForInstallment(i.step_no, i.slip_field) }))}
                                     galleryIndex={idx}
                                   />
                                 ))}
                                 {i.slip_urls.length > 3 && (
-                                  <button type="button" onClick={() => openSlips(i)} className="w-10 h-10 rounded border border-gray-200 bg-gray-50 text-xxs font-semibold text-gray-600" style={{ minHeight: 0 }}>
+                                  <button type="button" onClick={() => openSlips(i)} className="w-10 h-8 rounded border border-gray-200 bg-gray-50 text-xxs font-semibold text-gray-600" style={{ minHeight: 0 }}>
                                     +{i.slip_urls.length - 3}
                                   </button>
                                 )}

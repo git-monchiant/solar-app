@@ -44,7 +44,7 @@ export default function ReviewPage() {
       <div className="min-h-screen bg-gray-50 flex items-center justify-center p-4">
         <div className="bg-white rounded-2xl shadow-lg max-w-sm w-full p-8 text-center">
           <div className="w-20 h-20 mx-auto rounded-full bg-emerald-50 flex items-center justify-center mb-4">
-            <CheckIcon className="w-10 h-10 text-emerald-500" strokeWidth={2} />
+            <CheckIcon className="w-10 h-8 text-emerald-500" strokeWidth={2} />
           </div>
           <div className="text-xl font-bold text-gray-900 mb-2">ขอบคุณครับ</div>
           <div className="text-sm text-gray-500 mb-4">ขอบคุณสำหรับการประเมิน<br />ความคิดเห็นของคุณมีค่ากับเรา</div>
@@ -72,7 +72,7 @@ export default function ReviewPage() {
     <div className="min-h-screen bg-gray-50 flex items-center justify-center p-4">
       <div className="bg-white rounded-2xl shadow-lg max-w-sm w-full p-8">
         <div className="text-center mb-6">
-          <img src="/logos/logo-sena.png" alt="Sena Solar" className="h-10 mx-auto mb-4" />
+          <img src="/logos/logo-sena.png" alt="Sena Solar" className="h-8 mx-auto mb-4" />
           <div className="text-lg font-bold text-gray-900">ประเมินการติดตั้ง</div>
           <div className="text-sm text-gray-500 mt-1">กรุณาให้คะแนนการติดตั้ง Solar Rooftop</div>
         </div>

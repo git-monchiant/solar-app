@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import puppeteer from "puppeteer";
 import { PDFDocument } from "pdf-lib";
 import { getDb, sql } from "@/lib/db";
+import { dispositionForLead } from "@/lib/doc-filename";
 
 // Fetch any attached PDFs from the lead and append them to the generated warranty
 // cover so the final PDF is a single document: warranty template → inverter cert
@@ -89,10 +90,15 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
 
     const finalBytes = await merged.save();
     const download = req.nextUrl.searchParams.get("download") === "1";
+    const disposition = await dispositionForLead(leadId, {
+      base: `warranty_${id}`,
+      ext: "pdf",
+      disposition: download ? "attachment" : "inline",
+    });
     return new NextResponse(Buffer.from(finalBytes), {
       headers: {
         "Content-Type": "application/pdf",
-        "Content-Disposition": `${download ? "attachment" : "inline"}; filename=warranty_${id}.pdf`,
+        "Content-Disposition": disposition,
       },
     });
   } catch (error) {

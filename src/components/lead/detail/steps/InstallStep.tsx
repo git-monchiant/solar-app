@@ -1,5 +1,5 @@
 "use client";
-import { CheckIcon, ChevronLeftIcon, ChevronRightIcon, DocumentIcon, PlusIcon } from "@/components/ui/icons";
+import { CameraIcon, CheckIcon, ChevronLeftIcon, ChevronRightIcon, DocumentIcon, PlusIcon, UserIcon } from "@/components/ui/icons";
 
 import { useCallback, useEffect, useState } from "react";
 import { apiFetch } from "@/lib/api";
@@ -10,17 +10,26 @@ import PaymentSection from "@/components/payment/PaymentSection";
 import PaymentSlipsThumbs from "@/components/payment/PaymentSlipsThumbs";
 import ErrorPopup from "@/components/ui/ErrorPopup";
 import AppointmentRescheduler from "@/components/calendar/AppointmentRescheduler";
+import InstallChecklist from "../InstallChecklist";
+import InstallDocModal from "../InstallDocModal";
 import StepLayout from "../StepLayout";
 import InstallmentReceiptList from "../InstallmentReceiptList";
 import SignaturePad from "../SignaturePad";
 import { useSubStep } from "@/lib/hooks/useSubStep";
+import { useIsMobile } from "@/lib/hooks/useIsMobile";
 import { useFileViewer } from "@/lib/hooks/useFileViewer";
 import { compressImage } from "@/lib/utils/compressImage";
 import { buildAppointmentFlex } from "@/lib/utils/line-flex";
 import { formatTHB as fmt, formatThaiDate as formatDate } from "@/lib/utils/formatters";
 import DoneSection from "./DoneSection";
 
-const SUB_STEPS = ["นัด", "รูปภาพ", "สรุป คชจ.", "เก็บเงิน", "ส่งมอบ"];
+const SUB_STEPS = [
+  ["นัดหมาย", "นัด"] as const,
+  "ตรวจ",
+  "สรุป คชจ.",
+  "เก็บเงิน",
+  "ส่งมอบ",
+];
 
 interface Props extends StepCommonProps {
   expanded?: boolean;
@@ -42,6 +51,9 @@ export default function InstallStep({ lead, state, refresh, expanded, onToggle }
   const [, setAfterSlipDone] = useState(!!lead.order_after_slip);
   const [rescheduling, setRescheduling] = useState(false);
   const [signatureUrl, setSignatureUrl] = useState<string | null>(lead.install_customer_signature_url);
+  // Mobile → in-app PdfPreview modal. Desktop → new tab. Same UX as Warranty.
+  const isMobile = useIsMobile();
+  const [installDocPreviewOpen, setInstallDocPreviewOpen] = useState(false);
   const [actualDate, setActualDate] = useState<string>(
     lead.install_actual_date ? String(lead.install_actual_date).slice(0, 10) : new Date().toISOString().slice(0, 10)
   );
@@ -242,6 +254,11 @@ export default function InstallStep({ lead, state, refresh, expanded, onToggle }
     setTimeout(() => document.querySelector("[data-step-active]")?.scrollIntoView({ behavior: "smooth", block: "start" }), 100);
   };
 
+  const openInstallDoc = () => {
+    if (isMobile) setInstallDocPreviewOpen(true);
+    else window.open(me?.id ? `/api/install-doc/${lead.id}?user_id=${me.id}` : `/api/install-doc/${lead.id}`, "_blank", "noreferrer");
+  };
+
   const renderDoneContent = () => (
     <>
       {/* Dates */}
@@ -402,6 +419,20 @@ export default function InstallStep({ lead, state, refresh, expanded, onToggle }
       ) : lead.review_sent ? (
         <div className="text-xs text-gray-400 italic">ส่งแบบประเมินแล้ว — รอลูกค้าให้คะแนน</div>
       ) : null}
+
+      {/* Download/preview the inspection document — same pattern as Warranty's
+          "ใบรับประกัน" button shown in its done view. */}
+      <button
+        type="button"
+        onClick={openInstallDoc}
+        className="flex items-center justify-center gap-2 w-full h-11 rounded-lg bg-primary hover:bg-primary-dark text-sm font-semibold text-white transition-colors"
+      >
+        <DocumentIcon className="w-4 h-4" strokeWidth={2} />
+        เอกสารใบส่งมอบงานติดตั้ง
+        {lead.install_checklist_doc_no && (
+          <span className="opacity-80 font-mono">· {lead.install_checklist_doc_no}</span>
+        )}
+      </button>
     </>
   );
 
@@ -427,11 +458,17 @@ export default function InstallStep({ lead, state, refresh, expanded, onToggle }
       onSubStepChange={(n) => {
         if (n > subStep) {
           // Same gates as the "ถัดไป" button — keep them in sync.
+          // Missing-field labels are pushed in top→bottom render order so the
+          // error message reads the same way the user sees the form.
           if (subStep === 1) {
             const missing: string[] = [];
             if (photos.length === 0) missing.push("รูปภาพการติดตั้ง");
             if (!note.trim()) missing.push("บันทึกการส่งมอบ");
             if (missing.length > 0) { setNextError(missing.join(", ")); return; }
+          }
+          if (subStep === 2 && extraCost > 0 && !extraNote.trim()) {
+            setNextError("กรุณากรอกรายละเอียดค่าใช้จ่ายเพิ่มเติม");
+            return;
           }
           if (subStep === 3 && (remainingAmount + extraCost) > 0 && !lead.order_after_paid) {
             setNextError("ต้องยืนยันการรับชำระเงินก่อนถึงจะส่งมอบงานได้");
@@ -536,7 +573,7 @@ export default function InstallStep({ lead, state, refresh, expanded, onToggle }
               type="button"
               onClick={resendInstallLine}
               disabled={resending}
-              className={`w-full h-10 rounded-lg text-xs font-semibold transition-colors flex items-center justify-center gap-1.5 ${
+              className={`w-full h-8 rounded-lg text-xs font-semibold transition-colors flex items-center justify-center gap-1.5 ${
                 resendResult === "ok" ? "bg-emerald-500 text-white"
                 : resendResult === "err" ? "bg-red-500 text-white"
                 : "text-gray-700 border border-gray-200 hover:bg-gray-50"
@@ -557,7 +594,7 @@ export default function InstallStep({ lead, state, refresh, expanded, onToggle }
               <a
                 href={checklistUrl}
                 onClick={fileViewer.handler(checklistUrl, downloadName)}
-                className="w-full h-10 rounded-lg text-xs font-semibold text-gray-700 border border-gray-200 hover:bg-gray-50 transition-colors flex items-center justify-center gap-1.5"
+                className="w-full h-8 rounded-lg text-xs font-semibold text-gray-700 border border-gray-200 hover:bg-gray-50 transition-colors flex items-center justify-center gap-1.5"
               >
                 <DocumentIcon className="w-4 h-4 text-red-500" strokeWidth={2} />
                 ดาวน์โหลด checklist เอกสารขอขนานไฟ
@@ -570,8 +607,15 @@ export default function InstallStep({ lead, state, refresh, expanded, onToggle }
       {/* Step 1: ส่งมอบ */}
       {subStep === 1 && (
         <div className="space-y-3">
+          {/* Install handover checklist — top of the รูปภาพ sub-step.
+              Surveyor fills the inspection form first, then attaches photo
+              evidence below. */}
+          <InstallChecklist lead={lead as unknown as Record<string, unknown>} leadId={lead.id} />
           <div>
-            <label className="text-xs font-semibold tracking-wider uppercase text-gray-400 block mb-2">ภาพส่งมอบ</label>
+            <label className="text-xs font-semibold tracking-wider uppercase text-gray-500 block mb-2 flex items-center gap-2">
+              <span className="w-7 h-7 rounded-lg bg-active/10 text-active flex items-center justify-center shrink-0"><CameraIcon className="w-4 h-4" /></span>
+              HANDOVER PHOTOS <span className="text-red-500">*</span>
+            </label>
             {/* Single drop zone wraps the thumbs and an inline add-tile.
                 Dragging into the bordered area drops files; the add-tile is the
                 click target for the file picker. Same input handler in both. */}
@@ -595,7 +639,7 @@ export default function InstallStep({ lead, state, refresh, expanded, onToggle }
                     <div className="w-8 h-8 border-2 border-current/30 border-t-current rounded-full animate-spin" />
                   ) : (
                     <>
-                      <svg className="w-10 h-10" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}><path strokeLinecap="round" strokeLinejoin="round" d="M12 16.5V9.75m0 0l3 3m-3-3l-3 3M6.75 19.5a4.5 4.5 0 01-1.41-8.775 5.25 5.25 0 0110.233-2.33 3 3 0 013.758 3.848A3.752 3.752 0 0118 19.5H6.75z" /></svg>
+                      <svg className="w-10 h-8" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}><path strokeLinecap="round" strokeLinejoin="round" d="M12 16.5V9.75m0 0l3 3m-3-3l-3 3M6.75 19.5a4.5 4.5 0 01-1.41-8.775 5.25 5.25 0 0110.233-2.33 3 3 0 013.758 3.848A3.752 3.752 0 0118 19.5H6.75z" /></svg>
                       <span className="text-sm font-semibold">
                         {dragActive ? "ปล่อยเพื่ออัพโหลด" : "ลากรูปมาวาง หรือคลิกเพื่อเลือก"}
                       </span>
@@ -641,7 +685,7 @@ export default function InstallStep({ lead, state, refresh, expanded, onToggle }
           </div>
 
           <div>
-            <label className="text-xs font-semibold tracking-wider uppercase text-gray-400 block mb-1">บันทึกการส่งมอบ</label>
+            <label className="text-xs font-semibold tracking-wider uppercase text-gray-400 block mb-1">บันทึกการส่งมอบ <span className="text-red-500">*</span></label>
             <textarea value={note} onChange={e => setNote(e.target.value)} onBlur={() => flushSave()} rows={3} placeholder="หมายเหตุ, รายละเอียดการติดตั้ง..."
               className="w-full px-3 py-2 rounded-lg border border-gray-200 focus:outline-none focus:border-primary resize-none" />
           </div>
@@ -693,7 +737,7 @@ export default function InstallStep({ lead, state, refresh, expanded, onToggle }
           </div>
 
           <div>
-            <label className="text-xs font-semibold tracking-wider uppercase text-gray-400 block mb-1">รายละเอียด</label>
+            <label className="text-xs font-semibold tracking-wider uppercase text-gray-400 block mb-1">รายละเอียด {extraCost > 0 && <span className="text-red-500">*</span>}</label>
             <textarea value={extraNote} onChange={e => setExtraNote(e.target.value)} onBlur={() => flushSave()} rows={2} placeholder="เช่น ค่าวัสดุเพิ่มเติม, ค่าแรงพิเศษ..."
               className="w-full px-3 py-2 rounded-lg border border-gray-200 focus:outline-none focus:border-primary resize-none" />
           </div>
@@ -741,16 +785,13 @@ export default function InstallStep({ lead, state, refresh, expanded, onToggle }
                   lineId={lead.line_id}
                   slipUrl={lead.order_after_slip}
                   slipField="order_after_slip"
-                  stepNo={4}
+                  stepNo={99}
                   description={desc}
-                  docNo={lead.pre_doc_no ? `${lead.pre_doc_no}-${(() => {
-                    // Number this "ยอดคงค้าง / ค่าใช้จ่ายเพิ่มเติม" payment as
-                    // the next installment after the order plan (งวดที่ N+1).
-                    try {
-                      const arr = lead.order_installments ? JSON.parse(lead.order_installments) : [];
-                      return (Array.isArray(arr) ? arr.length : 0) + 1;
-                    } catch { return 1; }
-                  })()}` : null}
+                  // Fixed "งวด 99" suffix — this payment is the post-install
+                  // top-up (ยอดคงค้าง + ค่าใช้จ่ายเพิ่มเติม), not part of the
+                  // order's regular installment plan. The 99 marker makes it
+                  // unambiguous in receipts and the accountant queue.
+                  docNo={lead.pre_doc_no ? `${lead.pre_doc_no}-99` : null}
                   confirmed={!!lead.order_after_paid}
                   onConfirmed={onAfterConfirmed}
                   onUndone={refresh}
@@ -778,7 +819,10 @@ export default function InstallStep({ lead, state, refresh, expanded, onToggle }
       {/* Step 4: ลงนามรับงาน */}
       {subStep === 4 && (
         <div className="space-y-3">
-          <div className="text-xs font-semibold tracking-wider uppercase text-gray-400">ลายเซ็นลูกค้า (ยืนยันรับงาน)</div>
+          <div className="text-xs font-semibold tracking-wider uppercase text-gray-500 flex items-center gap-2">
+            <span className="w-7 h-7 rounded-lg bg-active/10 text-active flex items-center justify-center shrink-0"><UserIcon className="w-4 h-4" /></span>
+            CUSTOMER SIGNATURE
+          </div>
 
           <SignaturePad
             leadId={lead.id}
@@ -792,6 +836,21 @@ export default function InstallStep({ lead, state, refresh, expanded, onToggle }
             <input type="date" value={actualDate} onChange={e => setActualDate(e.target.value)}
               className="w-full h-11 px-3 rounded-lg border border-gray-200 bg-white text-sm focus:outline-none focus:border-primary" />
           </div>
+
+          {/* View inspection document — same UX as Warranty's "ใบรับประกัน":
+              mobile pops the in-app PdfPreview modal, desktop opens the PDF
+              in a new tab (native PDF viewer is better for multi-page docs). */}
+          <button
+            type="button"
+            onClick={() => {
+              if (isMobile) setInstallDocPreviewOpen(true);
+              else window.open(me?.id ? `/api/install-doc/${lead.id}?user_id=${me.id}` : `/api/install-doc/${lead.id}`, "_blank", "noreferrer");
+            }}
+            className="flex items-center justify-center gap-2 w-full h-11 rounded-lg bg-primary hover:bg-primary-dark text-sm font-semibold text-white transition-colors"
+          >
+            <DocumentIcon className="w-4 h-4" strokeWidth={2} />
+            เอกสารตรวจสอบงานติดตั้ง
+          </button>
 
         </div>
       )}
@@ -815,6 +874,10 @@ export default function InstallStep({ lead, state, refresh, expanded, onToggle }
               if (photos.length === 0) missing.push("รูปภาพการติดตั้ง");
               if (!note.trim()) missing.push("บันทึกการส่งมอบ");
               if (missing.length > 0) { setNextError(missing.join(", ")); return; }
+            }
+            if (subStep === 2 && extraCost > 0 && !extraNote.trim()) {
+              setNextError("กรุณากรอกรายละเอียดค่าใช้จ่ายเพิ่มเติม");
+              return;
             }
             if (subStep === 3 && (remainingAmount + extraCost) > 0 && !lead.order_after_paid) {
               setNextError("ต้องยืนยันการรับชำระเงินก่อนถึงจะส่งมอบงานได้");
@@ -853,6 +916,13 @@ export default function InstallStep({ lead, state, refresh, expanded, onToggle }
       )}
 
       <ErrorPopup message={nextError} onClose={() => setNextError(null)} />
+      {installDocPreviewOpen && (
+        <InstallDocModal
+          leadId={lead.id}
+          docNo={lead.install_checklist_doc_no || ""}
+          onClose={() => setInstallDocPreviewOpen(false)}
+        />
+      )}
     </StepLayout>
   );
 }

@@ -83,7 +83,7 @@ export default function ReceiptModal({ leadId, stage, fileLabel, onClose, title,
     <div className="fixed inset-0 z-[9999] bg-black/70 flex flex-col safe-top" onClick={onClose}>
       <div className="flex items-center justify-between px-4 py-3 shrink-0">
         <div className="text-white text-sm font-semibold">{headerLabel} · {fileLabel}</div>
-        <button type="button" onClick={onClose} className="w-10 h-10 rounded-full bg-black/50 text-white flex items-center justify-center text-xl">✕</button>
+        <button type="button" onClick={onClose} className="w-10 h-8 rounded-full bg-black/50 text-white flex items-center justify-center text-xl">✕</button>
       </div>
       <div className="flex-1 overflow-auto px-4 pb-4 min-h-0" onClick={e => e.stopPropagation()}>
         <PdfPreview pdfUrl={pdfUrl} />

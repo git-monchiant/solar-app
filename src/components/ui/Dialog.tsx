@@ -157,7 +157,7 @@ export function DialogProvider({ children }: { children: React.ReactNode }) {
             <div className="absolute inset-0 bg-black/40" onClick={() => close(false)} />
             <div className="relative bg-white rounded-2xl w-full max-w-sm p-5 shadow-xl animate-slide-up">
               <div className="flex items-start gap-3 mb-4">
-                <div className={`w-10 h-10 rounded-full flex items-center justify-center shrink-0 ${theme.ring}`}>
+                <div className={`w-10 h-8 rounded-full flex items-center justify-center shrink-0 ${theme.ring}`}>
                   {theme.icon}
                 </div>
                 <div className="flex-1 min-w-0 pt-0.5">

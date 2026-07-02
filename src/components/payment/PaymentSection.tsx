@@ -1066,7 +1066,7 @@ export default function PaymentSection({
                     setBankCopied("all");
                     setTimeout(() => setBankCopied(null), 2000);
                   }}
-                  className="shrink-0 w-9 h-9 rounded-md flex items-center justify-center text-active hover:bg-active/10 transition-all cursor-pointer"
+                  className="shrink-0 w-9 h-8 rounded-md flex items-center justify-center text-active hover:bg-active/10 transition-all cursor-pointer"
                 >
                   {bankCopied === "all" ? (
                     <CheckIcon className="w-5 h-5" strokeWidth={2.5} />
@@ -1235,7 +1235,7 @@ export default function PaymentSection({
                 type="button"
                 disabled={undoing}
                 onClick={handleUndo}
-                className="w-full h-9 rounded-lg text-xs font-semibold text-red-600 border border-red-200 hover:bg-red-50 disabled:opacity-50 transition-colors flex items-center justify-center gap-1.5"
+                className="w-full h-8 rounded-lg text-xs font-semibold text-red-600 border border-red-200 hover:bg-red-50 disabled:opacity-50 transition-colors flex items-center justify-center gap-1.5"
               >
                 {undoing ? "กำลังถอย…" : "↺ ถอย payment (admin)"}
               </button>
@@ -1300,7 +1300,7 @@ export default function PaymentSection({
               <button
                 type="button"
                 onClick={() => { setRejectReason(""); setRejectOpen(true); }}
-                className="w-full h-10 mt-2 rounded-lg text-sm font-semibold text-red-600 border border-red-300 bg-white hover:bg-red-50 flex items-center justify-center gap-1.5"
+                className="w-full h-8 mt-2 rounded-lg text-sm font-semibold text-red-600 border border-red-300 bg-white hover:bg-red-50 flex items-center justify-center gap-1.5"
               >
                 ✗ ไม่อนุมัติ / ส่งกลับให้ upload ใหม่
               </button>
@@ -1359,7 +1359,7 @@ export default function PaymentSection({
                 type="button"
                 onClick={() => setRejectOpen(false)}
                 disabled={rejecting}
-                className="h-9 px-4 rounded-lg text-sm font-semibold text-gray-700 border border-gray-200 hover:bg-gray-50 disabled:opacity-50"
+                className="h-8 px-4 rounded-lg text-sm font-semibold text-gray-700 border border-gray-200 hover:bg-gray-50 disabled:opacity-50"
               >
                 ยกเลิก
               </button>
@@ -1367,7 +1367,7 @@ export default function PaymentSection({
                 type="button"
                 onClick={handleReject}
                 disabled={!rejectReason.trim() || rejecting}
-                className="h-9 px-4 rounded-lg text-sm font-semibold text-white bg-red-600 hover:bg-red-700 disabled:opacity-40 disabled:cursor-not-allowed"
+                className="h-8 px-4 rounded-lg text-sm font-semibold text-white bg-red-600 hover:bg-red-700 disabled:opacity-40 disabled:cursor-not-allowed"
               >
                 {rejecting ? "กำลังส่ง…" : "ยืนยันไม่อนุมัติ"}
               </button>

@@ -5,6 +5,7 @@
 // PATCHes /api/users/{id} { signature_url } instead of touching a lead.
 import { useEffect, useRef, useState } from "react";
 import { apiFetch } from "@/lib/api";
+import SignatureImportModal from "./SignatureImportModal";
 
 interface Props {
   userId: number;
@@ -16,6 +17,7 @@ export default function UserSignaturePad({ userId, initialUrl, onSaved }: Props)
   const [signatureUrl, setSignatureUrl] = useState<string | null>(initialUrl);
   const [hasDrawn, setHasDrawn] = useState(false);
   const [saving, setSaving] = useState(false);
+  const [importOpen, setImportOpen] = useState(false);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const drawingRef = useRef(false);
   const autoSaveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -114,6 +116,29 @@ export default function UserSignaturePad({ userId, initialUrl, onSaved }: Props)
     }
   };
 
+  // Cropped image from the import modal — push straight through the
+  // existing signature PUT endpoint and re-paint the preview canvas.
+  const handleImport = async (blob: Blob) => {
+    setSaving(true);
+    try {
+      const res = await apiFetch(`/api/users/${userId}/signature`, {
+        method: "PUT",
+        headers: { "Content-Type": "image/png" },
+        body: blob,
+      });
+      const url = res.url || null;
+      if (url) {
+        // Force the effect that paints the canvas to re-run by toggling
+        // hasDrawn back to false before setting the new URL.
+        setHasDrawn(false);
+        setSignatureUrl(url);
+        onSaved?.(url);
+      }
+    } finally {
+      setSaving(false);
+    }
+  };
+
   return (
     <div className="space-y-2">
       <div className="relative rounded-lg border border-gray-200 bg-white" style={{ aspectRatio: "3 / 1" }}>
@@ -135,13 +160,27 @@ export default function UserSignaturePad({ userId, initialUrl, onSaved }: Props)
         )}
       </div>
       <div className="flex items-center justify-between text-xs">
-        <button type="button" onClick={clear} disabled={!hasDrawn} className="text-gray-500 hover:text-red-600 disabled:opacity-30 disabled:cursor-not-allowed">
-          ล้าง
-        </button>
+        <div className="flex items-center gap-3">
+          <button type="button" onClick={clear} disabled={!hasDrawn} className="text-gray-500 hover:text-red-600 disabled:opacity-30 disabled:cursor-not-allowed">
+            ล้าง
+          </button>
+          <button type="button" onClick={() => setImportOpen(true)} className="text-primary hover:text-primary-dark font-semibold inline-flex items-center gap-1">
+            <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+              <path strokeLinecap="round" strokeLinejoin="round" d="M12 16.5V9.75m0 0l3 3m-3-3l-3 3M6.75 19.5a4.5 4.5 0 01-1.41-8.775 5.25 5.25 0 0110.233-2.33 3 3 0 013.758 3.848A3.752 3.752 0 0118 19.5H6.75z" />
+            </svg>
+            นำเข้ารูป
+          </button>
+        </div>
         <span className={saving ? "text-amber-500" : signatureUrl ? "text-emerald-600" : "text-gray-400"}>
           {saving ? "กำลังบันทึก..." : signatureUrl ? "บันทึกแล้ว" : "ยังไม่บันทึก"}
         </span>
       </div>
+      {importOpen && (
+        <SignatureImportModal
+          onClose={() => setImportOpen(false)}
+          onConfirm={handleImport}
+        />
+      )}
     </div>
   );
 }

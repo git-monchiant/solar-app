@@ -1147,6 +1147,7 @@ function SourceQualityChart({ sources }: { sources: DevData["sources"] }) {
     smartify_app: "Smartify",   smartify_existing: "Smartify เดิม", smartify_new: "Smartify ใหม่",
     web_sena: "Website",
     fb_smartify: "FB Smartify", fb_senx: "FB SenX",
+    referral: "แนะนำ",
     other: "อื่นๆ",
     senxpm: "SenXPM",           walk_in: "Walk-in",
     event: "Event",             ads: "Ads",                   the1: "The1",

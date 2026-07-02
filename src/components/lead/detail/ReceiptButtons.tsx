@@ -62,11 +62,13 @@ export default function ReceiptButtons({ leadId, stage, fileLabel, compact, titl
           </button>
           <span className="text-xs text-center text-gray-600 truncate leading-tight font-medium">{label || "ใบเสร็จ"}</span>
         </div>
-        {/* Desktop: bordered rectangular button */}
+        {/* Desktop: bordered rectangular button — min-width keeps the "ใบเสร็จ"
+            and "ใบเสร็จ N" buttons (from ActualReceiptUpload) the same size
+            when stacked side-by-side in InstallmentReceiptList. */}
         <button
           type="button"
           onClick={openReceipt}
-          className="hidden md:inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md border border-primary/30 bg-primary/5 text-xs font-semibold text-primary hover:bg-primary/10 transition-colors shrink-0"
+          className="hidden md:inline-flex items-center justify-center gap-1.5 px-2.5 py-1 min-w-[100px] rounded-md border border-primary/30 bg-primary/5 text-xs font-semibold text-primary hover:bg-primary/10 transition-colors shrink-0"
         >
           <DocumentIcon className="w-4 h-4" strokeWidth={2} />
           {label || "ใบเสร็จ"}

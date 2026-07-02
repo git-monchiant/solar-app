@@ -15,6 +15,7 @@ export type ChannelCode =
   | "web_sena"
   | "fb_smartify"
   | "fb_senx"
+  | "referral"
   | "other";
 
 export const CHANNELS: { code: ChannelCode; label: string; color: string }[] = [
@@ -30,6 +31,7 @@ export const CHANNELS: { code: ChannelCode; label: string; color: string }[] = [
   { code: "web_sena",          label: "Website · SenaSolarEnergy", color: "bg-sky-100 text-sky-700 border-sky-200" },
   { code: "fb_smartify",       label: "Facebook · Smartify",     color: "bg-blue-100 text-blue-700 border-blue-200" },
   { code: "fb_senx",           label: "Facebook · SenXgroup",    color: "bg-blue-100 text-blue-700 border-blue-200" },
+  { code: "referral",          label: "ลูกค้าแนะนำ",                 color: "bg-emerald-100 text-emerald-700 border-emerald-200" },
   { code: "other",             label: "อื่นๆ",                     color: "bg-gray-100 text-gray-700 border-gray-200" },
 ];
 

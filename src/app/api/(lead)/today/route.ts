@@ -16,7 +16,7 @@ import { requireAuth } from "@/lib/auth";
 // jitter.
 const LEAD_COLS = `
   l.id, l.full_name, l.house_number, l.phone, l.email, l.note,
-  l.status, l.source, l.customer_type, l.line_id, l.zone,
+  l.status, l.source, l.customer_type, l.customer_grade, l.customer_group, l.line_id, l.zone,
   l.created_at, l.contact_date, l.next_follow_up,
   l.assigned_user_id, l.installation_address,
   l.pre_doc_no, l.pre_total_price, l.payment_confirmed,

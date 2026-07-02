@@ -1764,7 +1764,7 @@ function VisitModal({ prospect, projects, existingProspects, onClose, onRefresh,
         >
           <div>
             <label className="text-xs font-semibold uppercase tracking-wider text-gray-500 block mb-1.5">โครงการ</label>
-            <div className="flex items-center gap-2 h-10 pl-3 pr-1.5 rounded-lg border border-gray-200 bg-white">
+            <div className="flex items-center gap-2 h-8 pl-3 pr-1.5 rounded-lg border border-gray-200 bg-white">
               <svg className="w-4 h-4 text-primary shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
                 <path strokeLinecap="round" strokeLinejoin="round" d="M3.75 21h16.5M4.5 3h15M5.25 3v18m13.5-18v18M9 6.75h1.5m-1.5 3h1.5m-1.5 3h1.5m3-6H15m-1.5 3H15m-1.5 3H15M9 21v-3.375c0-.621.504-1.125 1.125-1.125h3.75c.621 0 1.125.504 1.125 1.125V21" />
               </svg>
@@ -1789,7 +1789,7 @@ function VisitModal({ prospect, projects, existingProspects, onClose, onRefresh,
                 value={customProjectName}
                 onChange={(e) => setCustomProjectName(e.target.value)}
                 placeholder="เช่น หมู่บ้านสวยงาม ซอย 5"
-                className="w-full h-10 px-3 rounded-lg border border-gray-200 text-sm focus:outline-none focus:border-primary"
+                className="w-full h-8 px-3 rounded-lg border border-gray-200 text-sm focus:outline-none focus:border-primary"
               />
             </div>
           )}
@@ -1805,7 +1805,7 @@ function VisitModal({ prospect, projects, existingProspects, onClose, onRefresh,
                 value={houseNumber}
                 onChange={(e) => setHouseNumber(e.target.value)}
                 placeholder="เช่น 52/167"
-                className="w-full h-10 pl-9 pr-3 rounded-lg border border-gray-200 text-sm focus:outline-none focus:border-primary"
+                className="w-full h-8 pl-9 pr-3 rounded-lg border border-gray-200 text-sm focus:outline-none focus:border-primary"
               />
             </div>
             {(() => {
@@ -1958,7 +1958,7 @@ function VisitModal({ prospect, projects, existingProspects, onClose, onRefresh,
                       value={c.name || ""}
                       onChange={(e) => updateContact(i, { name: e.target.value || null })}
                       placeholder="ชื่อ-นามสกุล"
-                      className="w-full h-10 pl-9 pr-3 rounded-lg border border-gray-200 bg-white text-sm focus:outline-none focus:border-primary"
+                      className="w-full h-8 pl-9 pr-3 rounded-lg border border-gray-200 bg-white text-sm focus:outline-none focus:border-primary"
                     />
                   </div>
                   <div className="relative">
@@ -1968,7 +1968,7 @@ function VisitModal({ prospect, projects, existingProspects, onClose, onRefresh,
                       value={c.phone || ""}
                       onChange={(e) => updateContact(i, { phone: e.target.value || null })}
                       placeholder="เบอร์โทร"
-                      className="w-full h-10 pl-9 pr-3 rounded-lg border border-gray-200 bg-white text-sm font-mono tabular-nums focus:outline-none focus:border-primary"
+                      className="w-full h-8 pl-9 pr-3 rounded-lg border border-gray-200 bg-white text-sm font-mono tabular-nums focus:outline-none focus:border-primary"
                     />
                   </div>
                   <div className="relative">
@@ -1980,7 +1980,7 @@ function VisitModal({ prospect, projects, existingProspects, onClose, onRefresh,
                       value={c.email || ""}
                       onChange={(e) => updateContact(i, { email: e.target.value || null })}
                       placeholder="อีเมล (ไม่บังคับ)"
-                      className="w-full h-10 pl-9 pr-3 rounded-lg border border-gray-200 bg-white text-sm focus:outline-none focus:border-primary"
+                      className="w-full h-8 pl-9 pr-3 rounded-lg border border-gray-200 bg-white text-sm focus:outline-none focus:border-primary"
                     />
                   </div>
                   </div>
@@ -1999,7 +1999,7 @@ function VisitModal({ prospect, projects, existingProspects, onClose, onRefresh,
                       onKeyDown={(e) => { if (e.key === "Enter") submitAddContact(); if (e.key === "Escape") cancelAddContact(); }}
                       autoFocus
                       placeholder="ชื่อ-นามสกุล"
-                      className="w-full h-10 pl-9 pr-3 rounded-lg border border-gray-200 bg-white text-sm focus:outline-none focus:border-primary"
+                      className="w-full h-8 pl-9 pr-3 rounded-lg border border-gray-200 bg-white text-sm focus:outline-none focus:border-primary"
                     />
                   </div>
                   <div className="relative">
@@ -2010,7 +2010,7 @@ function VisitModal({ prospect, projects, existingProspects, onClose, onRefresh,
                       onChange={(e) => setAddPhone(e.target.value)}
                       onKeyDown={(e) => { if (e.key === "Enter") submitAddContact(); if (e.key === "Escape") cancelAddContact(); }}
                       placeholder="เบอร์โทร (ไม่บังคับ)"
-                      className="w-full h-10 pl-9 pr-3 rounded-lg border border-gray-200 bg-white text-sm font-mono tabular-nums focus:outline-none focus:border-primary"
+                      className="w-full h-8 pl-9 pr-3 rounded-lg border border-gray-200 bg-white text-sm font-mono tabular-nums focus:outline-none focus:border-primary"
                     />
                   </div>
                   <div className="flex justify-end gap-2 pt-1">
@@ -2171,9 +2171,9 @@ function VisitModal({ prospect, projects, existingProspects, onClose, onRefresh,
             {linkedLine ? (
               <div className="flex items-center gap-2.5 py-1.5">
                 {linkedLine.picture_url ? (
-                  <img src={linkedLine.picture_url} alt="" className="w-9 h-9 rounded-full object-cover shrink-0" />
+                  <img src={linkedLine.picture_url} alt="" className="w-9 h-8 rounded-full object-cover shrink-0" />
                 ) : (
-                  <div className="w-9 h-9 rounded-full bg-gray-200 shrink-0" />
+                  <div className="w-9 h-8 rounded-full bg-gray-200 shrink-0" />
                 )}
                 <div className="flex-1 min-w-0">
                   <div className="text-sm font-medium text-gray-900 truncate">{linkedLine.display_name || "LINE User"}</div>
@@ -2210,7 +2210,7 @@ function VisitModal({ prospect, projects, existingProspects, onClose, onRefresh,
               <button
                 type="button"
                 onClick={() => setLinePickerOpen(true)}
-                className="w-full inline-flex items-center justify-center gap-2 h-10 rounded-lg border border-gray-200 bg-white text-[#06C755] text-sm font-medium hover:bg-gray-50 active:scale-[0.98] transition"
+                className="w-full inline-flex items-center justify-center gap-2 h-8 rounded-lg border border-gray-200 bg-white text-[#06C755] text-sm font-medium hover:bg-gray-50 active:scale-[0.98] transition"
               >
                 <LineIcon className="w-4 h-4 shrink-0" />
                 + Add Profile
@@ -2640,7 +2640,7 @@ function LeadDepositPaymentTab({
 
   const labelCls = "text-xs font-semibold uppercase tracking-wider text-gray-500 block mb-1.5";
   const requiredMark = <span className="text-red-500">*</span>;
-  const inputCls = "w-full h-10 pl-9 pr-3 rounded-lg border border-gray-200 text-sm focus:outline-none focus:border-primary";
+  const inputCls = "w-full h-8 pl-9 pr-3 rounded-lg border border-gray-200 text-sm focus:outline-none focus:border-primary";
   // Address textarea — taller (2 rows) so wrapped Thai addresses are readable on mobile
   const addrTextareaCls = "w-full pl-9 pr-3 py-2.5 rounded-lg border border-gray-200 text-sm focus:outline-none focus:border-primary resize-none";
   const iconCls = "w-4 h-4 text-primary absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none";

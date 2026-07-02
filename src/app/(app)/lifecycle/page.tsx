@@ -16,6 +16,8 @@ interface Row {
   house_number: string | null;
   full_name: string;
   status: string;
+  customer_grade: string | null;
+  customer_group: string | null;
   created_at: string | null;
   assigned_name: string | null;
   first_contact_at: string | null;
@@ -272,7 +274,7 @@ export default function LifecyclePage() {
     // (See dataCells for the exact mapping.) Group total = 2 quote/payment
     // workflow dates + 11 money + 1 followup date = 14.
     const groupSpec: { title: string; cols: number }[] = [
-      { title: "ลีด", cols: 7 }, // + ชื่อ Sales
+      { title: "ลีด", cols: 9 }, // + ชื่อ Sales + Grade + กลุ่ม
       { title: "การติดต่อ", cols: 6 },
       { title: "Pre-Survey / Survey", cols: 3 },
       // Quote/Order = 2 workflow dates + 11 money + 5 payment dates (one
@@ -287,7 +289,7 @@ export default function LifecyclePage() {
       for (let i = 1; i < g.cols; i++) groupRow.push("");
     }
     const colRow = [
-      "#", "บ้านเลขที่", "ชื่อ", "ชื่อ Sales", "สถานะ", "วันสร้าง", "Aging",
+      "#", "บ้านเลขที่", "ชื่อ", "ชื่อ Sales", "สถานะ", "Grade", "กลุ่ม", "วันสร้าง", "Aging",
       "ครั้งที่ 1", "ครั้งที่ 2", "ครั้งที่ 3", "ครั้งที่ 4", "ครั้งที่ 5", "เสนอขาย",
       "จองสำรวจ", "นัดสำรวจ", "สำรวจเสร็จ",
       "ออกใบเสนอราคา", "จ่ายมัดจำ/ทั้งหมด",
@@ -329,6 +331,8 @@ export default function LifecyclePage() {
         { v: r.full_name },
         { v: r.assigned_name ?? "" },
         { v: getStatusLabel({ status: r.status, install_date: r.install_date }) },
+        { v: r.customer_grade ?? "" },
+        { v: r.customer_group ? (groupShort[r.customer_group]?.full ?? r.customer_group) : "" },
         fmt(r.created_at),
         (() => {
           const a = agingDays(r.created_at);
@@ -501,6 +505,30 @@ export default function LifecyclePage() {
   };
 
 
+  // Single-letter grade cell — color mirrors LeadCard's GRADE map so the
+  // letter pops out against the dense lifecycle grid. Empty grade -> dash.
+  const GradeCell = ({ grade }: { grade: string | null }) => {
+    if (!grade) return <span className="text-gray-300">—</span>;
+    const cMap: Record<string, string> = {
+      A: "text-emerald-600", B: "text-sky-600", C: "text-amber-600",
+      D: "text-orange-600", E: "text-gray-600",  F: "text-red-600",
+    };
+    return <span className={cMap[grade] || "text-gray-700"}>{grade}</span>;
+  };
+
+  // Short label for customer_group — table is tight on horizontal space so
+  // use abbreviated forms (full names live in tooltip).
+  const groupShort: Record<string, { short: string; full: string }> = {
+    general: { short: "ทั่วไป", full: "ลูกค้าทั่วไป" },
+    sena:    { short: "เสนา",   full: "ลูกค้าเสนา" },
+    sme:     { short: "SME",    full: "SME (อาคารพาณิชย์/สำนักงาน/ร้านอาหาร)" },
+  };
+  const GroupCell = ({ group }: { group: string | null }) => {
+    if (!group) return <span className="text-gray-300">—</span>;
+    const g = groupShort[group];
+    return <span title={g?.full ?? group} className="text-xxs text-gray-700 whitespace-nowrap">{g?.short ?? group}</span>;
+  };
+
   const StatusPill = ({ lead }: { lead: Row }) => {
     const cfg = STATUS_CONFIG[lead.status] ?? STATUS_CONFIG[getMainStatus(lead.status)] ?? STATUS_CONFIG.pre_survey;
     return (
@@ -638,7 +666,7 @@ export default function LifecyclePage() {
               <thead>
                 {/* Group header row — sticky at top of scroll container */}
                 <tr className="border-b border-gray-200">
-                  <th colSpan={6} className="sticky top-16 z-20 bg-gray-50 px-2 py-1.5 text-left text-xxs font-semibold text-gray-700 border-r border-gray-200">ลีด</th>
+                  <th colSpan={8} className="sticky top-16 z-20 bg-gray-50 px-2 py-1.5 text-left text-xxs font-semibold text-gray-700 border-r border-gray-200">ลีด</th>
                   {GROUPS.map(g => (
                     <th key={g.title} colSpan={g.cols.length} className={`sticky top-16 z-20 px-2 py-1.5 text-left text-xxs font-semibold border-r border-gray-200 ${g.tone}`}>
                       {g.title}
@@ -651,6 +679,8 @@ export default function LifecyclePage() {
                   <th className="sticky top-[100px] z-20 bg-gray-50 px-2 py-1.5 text-left font-medium">บ้านเลขที่</th>
                   <th className="sticky top-[100px] z-20 bg-gray-50 px-2 py-1.5 text-left font-medium">ชื่อ</th>
                   <th className="sticky top-[100px] z-20 bg-gray-50 px-2 py-1.5 text-left font-medium">สถานะ</th>
+                  <th className="sticky top-[100px] z-20 bg-gray-50 px-2 py-1.5 text-center font-medium">Grade</th>
+                  <th className="sticky top-[100px] z-20 bg-gray-50 px-2 py-1.5 text-left font-medium">กลุ่ม</th>
                   <th onClick={() => cycleTri("created_at")}
                       className="sticky top-[100px] z-20 bg-gray-50 px-2 py-1.5 text-left font-medium cursor-pointer hover:bg-gray-100 select-none">
                     วันสร้าง<TriBadge state={tri.created_at} />
@@ -681,6 +711,8 @@ export default function LifecyclePage() {
                       <LeadLink id={r.id} className="text-primary hover:underline">{r.full_name}</LeadLink>
                     </td>
                     <td className="px-2 py-1.5 truncate"><StatusPill lead={r} /></td>
+                    <td className="px-2 py-1.5 text-center font-bold tabular-nums"><GradeCell grade={r.customer_grade} /></td>
+                    <td className="px-2 py-1.5"><GroupCell group={r.customer_group} /></td>
                     <td className="px-2 py-1.5 whitespace-nowrap"><Cell date={r.created_at} /></td>
                     <td className="px-2 py-1.5 border-r border-gray-100 whitespace-nowrap text-gray-500 tabular-nums">
                       {(() => {
@@ -708,7 +740,7 @@ export default function LifecyclePage() {
                   </tr>
                 ))}
                 {filtered.length === 0 && (
-                  <tr><td colSpan={5 + flatCols.length} className="text-center py-8 text-gray-400">ไม่มีลีด</td></tr>
+                  <tr><td colSpan={7 + flatCols.length} className="text-center py-8 text-gray-400">ไม่มีลีด</td></tr>
                 )}
               </tbody>
             </table>

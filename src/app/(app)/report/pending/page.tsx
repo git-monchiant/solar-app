@@ -126,7 +126,7 @@ export default function PendingApprovalReport() {
 
         {/* Search */}
         <div className="bg-white rounded-xl border border-gray-300 p-3">
-          <input type="text" value={search} onChange={e => setSearch(e.target.value)} placeholder="ค้นหาชื่อ, เลขเอกสาร, โครงการ..." className="w-full h-10 px-3 rounded-lg border border-gray-200 text-sm focus:outline-none focus:border-primary" />
+          <input type="text" value={search} onChange={e => setSearch(e.target.value)} placeholder="ค้นหาชื่อ, เลขเอกสาร, โครงการ..." className="w-full h-8 px-3 rounded-lg border border-gray-200 text-sm focus:outline-none focus:border-primary" />
         </div>
 
         {/* List */}
@@ -183,7 +183,7 @@ export default function PendingApprovalReport() {
                     )}
                     <LeadLink
                       id={it.lead_id}
-                      className="block w-full text-center h-10 leading-10 rounded-lg text-sm font-semibold text-white bg-amber-500 hover:brightness-110"
+                      className="block w-full text-center h-8 leading-10 rounded-lg text-sm font-semibold text-white bg-amber-500 hover:brightness-110"
                     >
                       ยืนยันรับเงิน
                     </LeadLink>
@@ -233,7 +233,7 @@ export default function PendingApprovalReport() {
                     </div>
                     <LeadLink
                       id={it.lead_id}
-                      className="h-9 px-3 rounded-lg text-sm font-semibold text-white bg-amber-500 hover:brightness-110 inline-flex items-center shrink-0"
+                      className="h-8 px-3 rounded-lg text-sm font-semibold text-white bg-amber-500 hover:brightness-110 inline-flex items-center shrink-0"
                     >
                       ยืนยันรับเงิน
                     </LeadLink>

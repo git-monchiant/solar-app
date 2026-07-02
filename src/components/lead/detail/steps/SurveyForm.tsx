@@ -8,7 +8,7 @@ import { compressImage } from "@/lib/utils/compressImage";
 import { MAIN_BREAKER_AMPS, MAIN_CABLE_SQMM } from "@/lib/constants/survey-options";
 
 const chipBtn = (selected: boolean) =>
-  `h-9 px-3 rounded-lg text-xxs font-semibold border transition-all cursor-pointer ${
+  `h-8 px-3 rounded-lg text-xxs font-semibold border transition-all cursor-pointer ${
     selected
       ? "bg-active text-white border-active shadow-sm shadow-active/20"
       : "bg-white text-gray-600 border-gray-200 hover:border-active/40 hover:text-active"
@@ -317,10 +317,12 @@ const SurveyForm = forwardRef<SurveyFormHandle, Props>(function SurveyForm({ lea
       {/* =============== §2 Electrical — PDF top-down order =============== */}
       {(section === "all" || section === "electrical") && <><div className={card}>
         <div className="space-y-4">
-          {/* 2.1 ขนาดมิเตอร์ */}
+          {/* 2.1 ขนาดมิเตอร์.
+              "อื่นๆ ระบุ" sits in the remaining grid cells on the same row.
+              METER_SIZES has 3 chips per phase → md:col-span-4 fills cols 4-7. */}
           <div>
             <div className={subLabel}>ขนาดมิเตอร์ <span className="text-red-500">*</span></div>
-            <div className="grid grid-cols-3 md:grid-cols-4 gap-2">
+            <div className="grid grid-cols-2 md:grid-cols-7 gap-2">
               {(METER_SIZES[electricalPhase] || METER_SIZES["1_phase"]).map(m => (
                 <button key={m.value} type="button" onClick={() => setMeterSize(m.value)} className={chipBtn(meterSize === m.value)}>
                   {m.label}
@@ -331,33 +333,30 @@ const SurveyForm = forwardRef<SurveyFormHandle, Props>(function SurveyForm({ lea
                 placeholder="อื่นๆ ระบุ..."
                 value={meterSize.startsWith("other:") ? meterSize.slice(6) : ""}
                 onChange={e => setMeterSize(e.target.value ? `other:${e.target.value}` : "")}
-                className={`col-span-3 md:col-span-1 w-full h-9 px-3 rounded-lg border text-xxs focus:outline-none ${meterSize.startsWith("other") ? "border-active bg-active-light" : "border-gray-200 bg-white"}`}
+                className={`col-span-1 md:col-span-4 w-full h-8 px-3 rounded-lg border text-sm focus:outline-none ${meterSize.startsWith("other") ? "border-active bg-active-light" : "border-gray-200 bg-white"}`}
               />
             </div>
           </div>
 
-          {/* 2.2 ระบบไฟ — chip + L-N/L-L label outside + voltage input. Two
-               rows; clicking the chip selects the phase and enables its input.
-               The other row's input is disabled, and its voltage is cleared
-               on phase switch so stale values don't leak. */}
+          {/* 2.2 เฟส / แรงดัน — chip + voltage input. Two rows in 7-col grid:
+              chip md:col-span-1, voltage label+input md:col-span-6. */}
           <div>
             <div className={subLabel}>เฟส / แรงดัน <span className="text-red-500">*</span></div>
-            {/* 2 cols across all screen sizes — button = 1/4, label+input = 3/4 */}
-            <div className="grid grid-cols-[1fr_3fr] gap-2 items-center">
+            <div className="grid grid-cols-[1fr_3fr] md:grid-cols-7 gap-2 items-center">
               <button type="button" onClick={() => {
                 setElectricalPhase("1_phase");
                 onPhaseChange?.("1_phase");
                 const valid = METER_SIZES["1_phase"]?.some(m => m.value === meterSize);
                 if (!valid) setMeterSize("");
                 setVoltageLL("");
-              }} className={chipBtn(electricalPhase === "1_phase")}>
+              }} className={`md:col-span-1 ${chipBtn(electricalPhase === "1_phase")}`}>
                 1 เฟส
               </button>
-              <div className="flex items-center gap-2">
+              <div className="md:col-span-6 flex items-center gap-2">
                 <span className="text-sm font-semibold text-gray-500 shrink-0">L-N</span>
                 <div className="relative flex-1">
-                  <input type="number" step="0.1" value={voltageLN === "" ? "" : voltageLN} onChange={e => setVoltageLN(e.target.value === "" ? "" : parseFloat(e.target.value))} placeholder="220" disabled={electricalPhase !== "1_phase"} className="w-full h-10 pl-3 pr-8 rounded-lg border border-gray-200 text-sm focus:outline-none focus:border-primary disabled:bg-gray-50 disabled:text-gray-400" />
-                  <span className="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-gray-400">V</span>
+                  <input type="number" step="0.1" value={voltageLN === "" ? "" : voltageLN} onChange={e => setVoltageLN(e.target.value === "" ? "" : parseFloat(e.target.value))} placeholder="220" disabled={electricalPhase !== "1_phase"} className="w-full h-8 pl-3 pr-8 rounded-lg border border-gray-200 text-sm focus:outline-none focus:border-primary disabled:bg-gray-50 disabled:text-gray-400" />
+                  <span className="absolute right-3 top-1/2 -translate-y-1/2 text-[10px] text-gray-400">V</span>
                 </div>
               </div>
 
@@ -367,32 +366,35 @@ const SurveyForm = forwardRef<SurveyFormHandle, Props>(function SurveyForm({ lea
                 const valid = METER_SIZES["3_phase"]?.some(m => m.value === meterSize);
                 if (!valid) setMeterSize("");
                 setVoltageLN("");
-              }} className={chipBtn(electricalPhase === "3_phase")}>
+              }} className={`md:col-span-1 ${chipBtn(electricalPhase === "3_phase")}`}>
                 3 เฟส
               </button>
-              <div className="flex items-center gap-2">
+              <div className="md:col-span-6 flex items-center gap-2">
                 <span className="text-sm font-semibold text-gray-500 shrink-0">L-L</span>
                 <div className="relative flex-1">
-                  <input type="number" step="0.1" value={voltageLL === "" ? "" : voltageLL} onChange={e => setVoltageLL(e.target.value === "" ? "" : parseFloat(e.target.value))} placeholder="380" disabled={electricalPhase !== "3_phase"} className="w-full h-10 pl-3 pr-8 rounded-lg border border-gray-200 text-sm focus:outline-none focus:border-primary disabled:bg-gray-50 disabled:text-gray-400" />
-                  <span className="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-gray-400">V</span>
+                  <input type="number" step="0.1" value={voltageLL === "" ? "" : voltageLL} onChange={e => setVoltageLL(e.target.value === "" ? "" : parseFloat(e.target.value))} placeholder="380" disabled={electricalPhase !== "3_phase"} className="w-full h-8 pl-3 pr-8 rounded-lg border border-gray-200 text-sm focus:outline-none focus:border-primary disabled:bg-gray-50 disabled:text-gray-400" />
+                  <span className="absolute right-3 top-1/2 -translate-y-1/2 text-[10px] text-gray-400">V</span>
                 </div>
               </div>
             </div>
           </div>
 
-          {/* 2.4 ค่าไฟเฉลี่ยต่อเดือน */}
+          {/* 2.4 ค่าไฟเฉลี่ยต่อเดือน — number input occupies 1/7 cell so it
+              lines up with chip widths above. */}
           <div>
             <div className={subLabel}>ค่าไฟเฉลี่ยต่อเดือน <span className="text-red-500">*</span></div>
-            <div className="relative">
-              <input
-                type="number"
-                inputMode="numeric"
-                value={monthlyBill === "" ? "" : monthlyBill}
-                onChange={e => setMonthlyBill(e.target.value ? parseInt(e.target.value) : "")}
-                placeholder="เช่น 3,500"
-                className="w-full h-10 pl-3 pr-14 rounded-lg border border-gray-200 bg-white text-sm font-mono tabular-nums focus:outline-none focus:border-primary"
-              />
-              <span className="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-gray-400 font-medium">บาท</span>
+            <div className="grid grid-cols-2 md:grid-cols-7 gap-2">
+              <div className="relative col-span-1">
+                <input
+                  type="number"
+                  inputMode="numeric"
+                  value={monthlyBill === "" ? "" : monthlyBill}
+                  onChange={e => setMonthlyBill(e.target.value ? parseInt(e.target.value) : "")}
+                  placeholder="เช่น 3,500"
+                  className="w-full h-8 pl-3 pr-12 rounded-lg border border-gray-200 bg-white text-sm font-mono tabular-nums focus:outline-none focus:border-primary"
+                />
+                <span className="absolute right-3 top-1/2 -translate-y-1/2 text-[10px] text-gray-400 font-medium">บาท</span>
+              </div>
             </div>
           </div>
 
@@ -412,22 +414,23 @@ const SurveyForm = forwardRef<SurveyFormHandle, Props>(function SurveyForm({ lea
                 <span className="text-xs font-semibold text-gray-600 whitespace-nowrap">มีช่องว่าง</span>
               </label>
             </div>
-            <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
+            <div className="grid grid-cols-2 md:grid-cols-7 gap-2">
               <label className="md:col-span-2 flex flex-col gap-1">
-                <span className="text-[11px] font-medium text-gray-500">ยี่ห้อ</span>
-                <input type="text" value={mdbBrand} onChange={e => setMdbBrand(e.target.value)} className="h-9 px-3 rounded-lg border border-gray-200 text-sm" />
+                <span className="text-xs font-medium text-gray-500">ยี่ห้อ</span>
+                <input type="text" value={mdbBrand} onChange={e => setMdbBrand(e.target.value)} className="h-8 px-3 rounded-lg border border-gray-200 text-sm" />
               </label>
               <label className="md:col-span-2 flex flex-col gap-1">
-                <span className="text-[11px] font-medium text-gray-500">รุ่น</span>
-                <input type="text" value={mdbModel} onChange={e => setMdbModel(e.target.value)} className="h-9 px-3 rounded-lg border border-gray-200 text-sm" />
+                <span className="text-xs font-medium text-gray-500">รุ่น</span>
+                <input type="text" value={mdbModel} onChange={e => setMdbModel(e.target.value)} className="h-8 px-3 rounded-lg border border-gray-200 text-sm" />
               </label>
             </div>
           </div>
 
-          {/* 2.7 ชนิดของลูกเซอร์กิต */}
+          {/* 2.7 ชนิดของลูกเซอร์กิต.
+              2 chips → "อื่นๆ ระบุ" fills remaining md:col-span-5. */}
           <div>
             <div className={subLabel}>ชนิดของลูกเซอร์กิต <span className="text-red-500">*</span></div>
-            <div className="grid grid-cols-3 md:grid-cols-4 gap-2">
+            <div className="grid grid-cols-2 md:grid-cols-7 gap-2">
               {[
                 { value: "plug_on", label: "Plug On" },
                 { value: "screw", label: "ขันยึดสกรู" },
@@ -442,15 +445,15 @@ const SurveyForm = forwardRef<SurveyFormHandle, Props>(function SurveyForm({ lea
                 value={breakerType.startsWith("other:") ? breakerType.slice(6) : ""}
                 onChange={e => setBreakerType(e.target.value ? `other:${e.target.value}` : "")}
                 onFocus={() => { if (!breakerType.startsWith("other")) setBreakerType("other:"); }}
-                className={`col-span-3 md:col-span-2 w-full h-9 px-3 rounded-lg border text-xxs focus:outline-none ${breakerType.startsWith("other") ? "border-active bg-active-light" : "border-gray-200 bg-white"}`}
+                className={`col-span-1 md:col-span-5 w-full h-8 px-3 rounded-lg border text-sm focus:outline-none ${breakerType.startsWith("other") ? "border-active bg-active-light" : "border-gray-200 bg-white"}`}
               />
             </div>
           </div>
 
-          {/* ขนาดเมนเบรกเกอร์ — chip + อื่นๆ pattern (matches meter size / breaker type) */}
+          {/* ขนาดเมนเบรกเกอร์ — 4 chips → "อื่นๆ ระบุ" fills md:col-span-3. */}
           <div>
             <div className={subLabel}>ขนาดเมนเบรกเกอร์</div>
-            <div className="grid grid-cols-3 md:grid-cols-5 gap-2">
+            <div className="grid grid-cols-2 md:grid-cols-7 gap-2">
               {MAIN_BREAKER_AMPS.map(a => (
                 <button key={a} type="button" onClick={() => setMainBreakerAmp(mainBreakerAmp === a ? "" : a)} className={chipBtn(mainBreakerAmp === a)}>
                   {a} A
@@ -462,15 +465,15 @@ const SurveyForm = forwardRef<SurveyFormHandle, Props>(function SurveyForm({ lea
                 value={mainBreakerAmp.startsWith("other:") ? mainBreakerAmp.slice(6) : ""}
                 onChange={e => setMainBreakerAmp(e.target.value ? `other:${e.target.value}` : "")}
                 onFocus={() => { if (!mainBreakerAmp.startsWith("other")) setMainBreakerAmp("other:"); }}
-                className={`col-span-2 md:col-span-1 w-full h-9 px-3 rounded-lg border text-xxs focus:outline-none ${mainBreakerAmp.startsWith("other") ? "border-active bg-active-light" : "border-gray-200 bg-white"}`}
+                className={`col-span-1 md:col-span-3 w-full h-8 px-3 rounded-lg border text-sm focus:outline-none ${mainBreakerAmp.startsWith("other") ? "border-active bg-active-light" : "border-gray-200 bg-white"}`}
               />
             </div>
           </div>
 
-          {/* ขนาดสายเมน — chip + อื่นๆ */}
+          {/* ขนาดสายเมน — 4 chips → "อื่นๆ ระบุ" fills md:col-span-3. */}
           <div>
             <div className={subLabel}>ขนาดสายเมน (sq.mm)</div>
-            <div className="grid grid-cols-3 md:grid-cols-5 gap-2">
+            <div className="grid grid-cols-2 md:grid-cols-7 gap-2">
               {MAIN_CABLE_SQMM.map(s => (
                 <button key={s} type="button" onClick={() => setMainCableSqmm(mainCableSqmm === s ? "" : s)} className={chipBtn(mainCableSqmm === s)}>
                   {s}
@@ -482,41 +485,45 @@ const SurveyForm = forwardRef<SurveyFormHandle, Props>(function SurveyForm({ lea
                 value={mainCableSqmm.startsWith("other:") ? mainCableSqmm.slice(6) : ""}
                 onChange={e => setMainCableSqmm(e.target.value ? `other:${e.target.value}` : "")}
                 onFocus={() => { if (!mainCableSqmm.startsWith("other")) setMainCableSqmm("other:"); }}
-                className={`col-span-2 md:col-span-1 w-full h-9 px-3 rounded-lg border text-xxs focus:outline-none ${mainCableSqmm.startsWith("other") ? "border-active bg-active-light" : "border-gray-200 bg-white"}`}
+                className={`col-span-1 md:col-span-3 w-full h-8 px-3 rounded-lg border text-sm focus:outline-none ${mainCableSqmm.startsWith("other") ? "border-active bg-active-light" : "border-gray-200 bg-white"}`}
               />
             </div>
           </div>
 
-          {/* 2.8 ระยะจากแผงถึงจุดเชื่อมต่อ Inverter */}
+          {/* 2.8 Cable (PV → Inverter) — 1/7 input cell */}
           <div>
             <div className={subLabel}>Cable (PV → Inverter) <span className="text-red-500">*</span></div>
-            <div className="relative">
-              <input
-                type="number"
-                step="0.5"
-                inputMode="numeric"
-                value={panelToInverterM === "" ? "" : panelToInverterM}
-                onChange={e => setPanelToInverterM(e.target.value === "" ? "" : parseFloat(e.target.value))}
-                placeholder="เช่น 15"
-                className="w-full h-10 pl-3 pr-12 rounded-lg border border-gray-200 bg-white text-sm font-mono tabular-nums focus:outline-none focus:border-primary"
-              />
-              <span className="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-gray-400 font-medium">m</span>
+            <div className="grid grid-cols-2 md:grid-cols-7 gap-2">
+              <div className="relative col-span-1">
+                <input
+                  type="number"
+                  step="0.5"
+                  inputMode="numeric"
+                  value={panelToInverterM === "" ? "" : panelToInverterM}
+                  onChange={e => setPanelToInverterM(e.target.value === "" ? "" : parseFloat(e.target.value))}
+                  placeholder="เช่น 15"
+                  className="w-full h-8 pl-3 pr-10 rounded-lg border border-gray-200 bg-white text-sm font-mono tabular-nums focus:outline-none focus:border-primary"
+                />
+                <span className="absolute right-3 top-1/2 -translate-y-1/2 text-[10px] text-gray-400 font-medium">m</span>
+              </div>
             </div>
           </div>
 
-          {/* 2.9 ระยะ Inverter → MDB */}
+          {/* 2.9 Cable (Inverter → MDB) */}
           <div>
             <div className={subLabel}>Cable (Inverter → MDB) <span className="text-red-500">*</span></div>
-            <div className="relative">
-              <input
-                type="number"
-                inputMode="numeric"
-                value={dbDistance === "" ? "" : dbDistance}
-                onChange={e => setDbDistance(e.target.value ? parseInt(e.target.value) : "")}
-                placeholder="เช่น 15"
-                className="w-full h-10 pl-3 pr-12 rounded-lg border border-gray-200 bg-white text-sm font-mono tabular-nums focus:outline-none focus:border-primary"
-              />
-              <span className="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-gray-400 font-medium">m</span>
+            <div className="grid grid-cols-2 md:grid-cols-7 gap-2">
+              <div className="relative col-span-1">
+                <input
+                  type="number"
+                  inputMode="numeric"
+                  value={dbDistance === "" ? "" : dbDistance}
+                  onChange={e => setDbDistance(e.target.value ? parseInt(e.target.value) : "")}
+                  placeholder="เช่น 15"
+                  className="w-full h-8 pl-3 pr-10 rounded-lg border border-gray-200 bg-white text-sm font-mono tabular-nums focus:outline-none focus:border-primary"
+                />
+                <span className="absolute right-3 top-1/2 -translate-y-1/2 text-[10px] text-gray-400 font-medium">m</span>
+              </div>
             </div>
           </div>
         </div>
@@ -545,7 +552,7 @@ const SurveyForm = forwardRef<SurveyFormHandle, Props>(function SurveyForm({ lea
           {/* 3.1 ประเภทหลังคา */}
           <div>
             <div className={subLabel}>ประเภทหลังคา <span className="text-red-500">*</span></div>
-            <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
+            <div className="grid grid-cols-2 md:grid-cols-7 gap-2">
               {ROOF_MATERIALS.map(r => (
                 <button key={r.value} type="button" onClick={() => setRoofMaterial(r.value)} className={chipBtn(roofMaterial === r.value)}>
                   {r.label}
@@ -554,10 +561,10 @@ const SurveyForm = forwardRef<SurveyFormHandle, Props>(function SurveyForm({ lea
             </div>
           </div>
 
-          {/* มุมลาดเอียงหลังคา — ย้ายขึ้นมาติดกับประเภทหลังคา */}
+          {/* มุมลาดเอียงหลังคา */}
           <div>
             <div className={subLabel}>มุมลาดเอียงหลังคา <span className="text-red-500">*</span></div>
-            <div className="grid grid-cols-3 md:grid-cols-4 gap-2">
+            <div className="grid grid-cols-2 md:grid-cols-7 gap-2">
               {ROOF_TILTS.map(t => (
                 <button key={t} type="button" onClick={() => setRoofTilt(t)} className={chipBtn(roofTilt === t)}>
                   {t}°
@@ -566,10 +573,10 @@ const SurveyForm = forwardRef<SurveyFormHandle, Props>(function SurveyForm({ lea
             </div>
           </div>
 
-          {/* 3.2 โครงสร้างหลังคา */}
+          {/* 3.2 โครงสร้างหลังคา — 3 chips + "อื่นๆ" inline (md:col-span-4). */}
           <div>
             <div className={subLabel}>โครงสร้างหลังคา <span className="text-red-500">*</span></div>
-            <div className="grid grid-cols-3 md:grid-cols-4 gap-2">
+            <div className="grid grid-cols-2 md:grid-cols-7 gap-2">
               {[
                 { value: "steel", label: "เหล็ก" },
                 { value: "wood", label: "ไม้" },
@@ -585,23 +592,22 @@ const SurveyForm = forwardRef<SurveyFormHandle, Props>(function SurveyForm({ lea
                 value={roofStructure.startsWith("other:") ? roofStructure.slice(6) : ""}
                 onChange={e => setRoofStructure(e.target.value ? `other:${e.target.value}` : "")}
                 onFocus={() => { if (!roofStructure.startsWith("other")) setRoofStructure("other:"); }}
-                className={`col-span-3 md:col-span-1 w-full h-9 px-3 rounded-lg border text-xxs focus:outline-none ${roofStructure.startsWith("other") ? "border-active bg-active-light" : "border-gray-200 bg-white"}`}
+                className={`col-span-1 md:col-span-4 w-full h-8 px-3 rounded-lg border text-sm focus:outline-none ${roofStructure.startsWith("other") ? "border-active bg-active-light" : "border-gray-200 bg-white"}`}
               />
             </div>
           </div>
 
-          {/* 3.3 ทิศทางการวางแผง — same 1/3 chip + 2/3 input pattern as
-               ระบบไฟ. Each direction is a row; remark only enables when that
-               direction is toggled on. Toggle off clears the remark via
-               toggleOrientation. */}
+          {/* 3.3 ทิศทางการวางแผง — chip + note input pair per direction. In
+               7-col grid: chip md:col-span-1, note input md:col-span-6, so
+               each direction occupies a full row. */}
           <div>
             <div className={subLabel}>ทิศทางการวางแผง <span className="text-red-500">*</span> <span className="text-gray-400 normal-case font-normal ml-1">(เลือกได้มากกว่า 1 ทิศ)</span></div>
-            <div className="grid grid-cols-[1fr_2fr] gap-2 items-center">
+            <div className="grid grid-cols-2 md:grid-cols-7 gap-2 items-center">
               {ROOF_ORIENTATIONS.map(o => {
                 const selected = roofOrientations.includes(o.value);
                 return (
                   <Fragment key={o.value}>
-                    <button type="button" onClick={() => toggleOrientation(o.value)} className={chipBtn(selected)}>
+                    <button type="button" onClick={() => toggleOrientation(o.value)} className={`md:col-span-1 ${chipBtn(selected)}`}>
                       {o.label}
                     </button>
                     <input
@@ -610,7 +616,7 @@ const SurveyForm = forwardRef<SurveyFormHandle, Props>(function SurveyForm({ lea
                       onChange={e => setRoofOrientationNotes(curr => ({ ...curr, [o.value]: e.target.value }))}
                       placeholder="หมายเหตุ (ถ้ามี)"
                       disabled={!selected}
-                      className="w-full h-11 px-3 rounded-lg border border-gray-200 text-sm focus:outline-none focus:border-primary disabled:bg-gray-50 disabled:text-gray-400"
+                      className="md:col-span-6 w-full h-8 px-3 rounded-lg border border-gray-200 text-sm focus:outline-none focus:border-primary disabled:bg-gray-50 disabled:text-gray-400"
                     />
                   </Fragment>
                 );
@@ -621,7 +627,7 @@ const SurveyForm = forwardRef<SurveyFormHandle, Props>(function SurveyForm({ lea
           {/* 3.4 ความสูงอาคาร (ชั้น) */}
           <div>
             <div className={subLabel}>ความสูงอาคาร (ชั้น) <span className="text-red-500">*</span></div>
-            <div className="grid grid-cols-3 md:grid-cols-4 gap-2">
+            <div className="grid grid-cols-2 md:grid-cols-7 gap-2">
               {FLOORS.map(f => (
                 <button key={f.value} type="button" onClick={() => setFloors(f.value)} className={chipBtn(floors === f.value)}>
                   {f.label}
@@ -630,22 +636,23 @@ const SurveyForm = forwardRef<SurveyFormHandle, Props>(function SurveyForm({ lea
             </div>
           </div>
 
-          {/* 3.6 พื้นที่หลังคา + กว้าง × ยาว */}
+          {/* 3.6 พื้นที่หลังคา (m²) + กว้าง × ยาว (m). Area + W + L = 3 cells
+               in the 7-col grid, each col-span-1. */}
           <div>
             <div className={subLabel}>พื้นที่หลังคาที่ใช้ได้จริง <span className="text-red-500">*</span></div>
-            <div className="relative mb-2">
-              <input
-                type="number"
-                inputMode="numeric"
-                value={roofArea === "" ? "" : roofArea}
-                onChange={e => setRoofArea(e.target.value ? parseInt(e.target.value) : "")}
-                placeholder="เช่น 40"
-                className="w-full h-10 pl-3 pr-12 rounded-lg border border-gray-200 bg-white text-sm font-mono tabular-nums focus:outline-none focus:border-primary"
-              />
-              <span className="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-gray-400 font-medium">m²</span>
-            </div>
-            <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
-              <div className="input-affix">
+            <div className="grid grid-cols-2 md:grid-cols-7 gap-2">
+              <div className="relative col-span-2 md:col-span-1">
+                <input
+                  type="number"
+                  inputMode="numeric"
+                  value={roofArea === "" ? "" : roofArea}
+                  onChange={e => setRoofArea(e.target.value ? parseInt(e.target.value) : "")}
+                  placeholder="เช่น 40"
+                  className="w-full h-8 pl-3 pr-10 rounded-lg border border-gray-200 bg-white text-sm font-mono tabular-nums focus:outline-none focus:border-primary"
+                />
+                <span className="absolute right-3 top-1/2 -translate-y-1/2 text-[10px] text-gray-400 font-medium">m²</span>
+              </div>
+              <div className="input-affix col-span-1">
                 <span className="input-affix-left">W</span>
                 <input
                   type="text"
@@ -656,11 +663,11 @@ const SurveyForm = forwardRef<SurveyFormHandle, Props>(function SurveyForm({ lea
                     const digits = e.target.value.replace(/[^\d]/g, "");
                     setRoofWidth(digits === "" ? "" : parseInt(digits));
                   }}
-                  className="input-affix-input w-full h-10 pl-9 pr-8 rounded-lg border border-gray-200 text-sm"
+                  className="input-affix-input w-full h-8 pl-8 pr-7 rounded-lg border border-gray-200 text-sm"
                 />
                 <span className="input-affix-right">m</span>
               </div>
-              <div className="input-affix">
+              <div className="input-affix col-span-1">
                 <span className="input-affix-left">L</span>
                 <input
                   type="text"
@@ -671,17 +678,17 @@ const SurveyForm = forwardRef<SurveyFormHandle, Props>(function SurveyForm({ lea
                     const digits = e.target.value.replace(/[^\d]/g, "");
                     setRoofLength(digits === "" ? "" : parseInt(digits));
                   }}
-                  className="input-affix-input w-full h-10 pl-9 pr-8 rounded-lg border border-gray-200 text-sm"
+                  className="input-affix-input w-full h-8 pl-8 pr-7 rounded-lg border border-gray-200 text-sm"
                 />
                 <span className="input-affix-right">m</span>
               </div>
             </div>
           </div>
 
-          {/* 3.7 สิ่งกีดขวาง / ร่มเงา */}
+          {/* 3.7 สิ่งกีดขวาง / ร่มเงา. SHADING has 3 chips → อื่นๆ md:col-span-4. */}
           <div>
             <div className={subLabel}>สิ่งกีดขวาง / ร่มเงา <span className="text-red-500">*</span></div>
-            <div className="grid grid-cols-3 md:grid-cols-4 gap-2">
+            <div className="grid grid-cols-2 md:grid-cols-7 gap-2">
               {SHADING.map(s => (
                 <button key={s.value} type="button" onClick={() => setShading(shading.startsWith(s.value + ":") || shading === s.value ? s.value : s.value)} className={chipBtn(shading === s.value || shading.startsWith(s.value + ":"))}>
                   {s.label}
@@ -695,7 +702,7 @@ const SurveyForm = forwardRef<SurveyFormHandle, Props>(function SurveyForm({ lea
                   const base = shading.includes(":") ? shading.split(":")[0] : (shading || "partial");
                   setShading(e.target.value ? `${base}:${e.target.value}` : base);
                 }}
-                className="col-span-3 md:col-span-1 w-full h-9 px-3 rounded-lg border border-gray-200 bg-white text-xxs focus:outline-none focus:border-primary"
+                className="col-span-1 md:col-span-4 w-full h-8 px-3 rounded-lg border border-gray-200 bg-white text-sm focus:outline-none focus:border-primary"
               />
             </div>
           </div>
@@ -710,7 +717,7 @@ const SurveyForm = forwardRef<SurveyFormHandle, Props>(function SurveyForm({ lea
         <div className="space-y-4">
           <div>
             <div className={subLabel}>จุดติดตั้ง Inverter <span className="text-red-500">*</span></div>
-            <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
+            <div className="grid grid-cols-2 md:grid-cols-7 gap-2">
               {[
                 { value: "indoor", label: "ในร่ม" },
                 { value: "outdoor", label: "นอกอาคาร" },
@@ -723,7 +730,7 @@ const SurveyForm = forwardRef<SurveyFormHandle, Props>(function SurveyForm({ lea
           </div>
           <div>
             <div className={subLabel}>ความแรง Wi-Fi <span className="text-red-500">*</span></div>
-            <div className="grid grid-cols-3 md:grid-cols-4 gap-2">
+            <div className="grid grid-cols-2 md:grid-cols-7 gap-2">
               {[
                 { value: "good", label: "ดีมาก" },
                 { value: "fair", label: "พอใช้" },
@@ -735,9 +742,10 @@ const SurveyForm = forwardRef<SurveyFormHandle, Props>(function SurveyForm({ lea
               ))}
             </div>
           </div>
+          {/* วิธีการขึ้นชั้นหลังคา — 3 chips + "อื่นๆ ระบุ" inline (md:col-span-4). */}
           <div>
             <div className={subLabel}>วิธีการขึ้นชั้นหลังคา <span className="text-red-500">*</span></div>
-            <div className="grid grid-cols-3 md:grid-cols-4 gap-2">
+            <div className="grid grid-cols-2 md:grid-cols-7 gap-2">
               {[
                 { value: "ladder", label: "บันไดพาด" },
                 { value: "scaffold", label: "นั่งร้าน" },
@@ -753,7 +761,7 @@ const SurveyForm = forwardRef<SurveyFormHandle, Props>(function SurveyForm({ lea
                 value={accessMethod.startsWith("other:") ? accessMethod.slice(6) : ""}
                 onChange={e => setAccessMethod(e.target.value ? `other:${e.target.value}` : "")}
                 onFocus={() => { if (!accessMethod.startsWith("other")) setAccessMethod("other:"); }}
-                className={`col-span-3 md:col-span-1 w-full h-9 px-3 rounded-lg border text-xxs focus:outline-none ${accessMethod.startsWith("other") ? "border-active bg-active-light" : "border-gray-200 bg-white"}`}
+                className={`col-span-1 md:col-span-4 w-full h-8 px-3 rounded-lg border text-sm focus:outline-none ${accessMethod.startsWith("other") ? "border-active bg-active-light" : "border-gray-200 bg-white"}`}
               />
             </div>
           </div>

@@ -83,7 +83,7 @@ export default function NewAppointmentModal({ onClose, onCreated, initialDate }:
             <label className="text-xs font-bold tracking-wider uppercase text-gray-400 block mb-1.5">ชื่องาน</label>
             <input type="text" value={title} onChange={(e) => setTitle(e.target.value)}
               placeholder="เช่น ประชุมทีม, ลาพักร้อน, ติดตั้งภายใน, ฯลฯ"
-              className="w-full h-10 px-3 rounded-lg border border-gray-200 text-sm focus:outline-none focus:border-primary" />
+              className="w-full h-8 px-3 rounded-lg border border-gray-200 text-sm focus:outline-none focus:border-primary" />
           </div>
 
           <div>
@@ -98,7 +98,7 @@ export default function NewAppointmentModal({ onClose, onCreated, initialDate }:
                 return (
                   <button key={opt.value} type="button" onClick={() => setTeam(opt.value)}
                     style={selected ? { backgroundColor: opt.color, borderColor: opt.color, color: "#fff" } : { borderColor: opt.color, color: opt.color }}
-                    className="h-9 px-3 rounded-lg text-sm font-semibold border bg-white transition-colors">
+                    className="h-8 px-3 rounded-lg text-sm font-semibold border bg-white transition-colors">
                     {opt.label}
                   </button>
                 );
@@ -115,7 +115,7 @@ export default function NewAppointmentModal({ onClose, onCreated, initialDate }:
                   setDate(v);
                   if (endDate && endDate < v) setEndDate("");
                 }}
-                className="w-full h-10 px-3 rounded-lg border border-gray-200 text-sm focus:outline-none focus:border-primary" />
+                className="w-full h-8 px-3 rounded-lg border border-gray-200 text-sm focus:outline-none focus:border-primary" />
             </div>
             <div>
               <label className="text-xs font-bold tracking-wider uppercase text-gray-400 block mb-1.5">
@@ -123,7 +123,7 @@ export default function NewAppointmentModal({ onClose, onCreated, initialDate }:
                 <span className="ml-2 text-gray-300 normal-case font-normal">ไม่กรอก = วันเดียว</span>
               </label>
               <input type="date" value={endDate} min={date} onChange={(e) => setEndDate(e.target.value)}
-                className="w-full h-10 px-3 rounded-lg border border-gray-200 text-sm focus:outline-none focus:border-primary" />
+                className="w-full h-8 px-3 rounded-lg border border-gray-200 text-sm focus:outline-none focus:border-primary" />
             </div>
           </div>
 

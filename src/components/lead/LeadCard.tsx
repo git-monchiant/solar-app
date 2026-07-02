@@ -19,6 +19,8 @@ export interface LeadData {
   installation_address: string;
   house_number: string | null;
   customer_type: string;
+  customer_grade?: string | null;
+  customer_group?: string | null;
   status: string;
   source: string;
   note: string;
@@ -257,6 +259,46 @@ export default function LeadCard({ lead, compact, onAssignChange, onOpen }: { le
                 </span>
               ) : (
                 <span className="text-xs text-gray-500">· {label}</span>
+              )}
+            </div>
+          );
+        })()}
+
+        {/* Grade + Customer Group — last content row before the colored
+            footer bar. Star icon + framework title for Grade, then a
+            separate "column" for customer group with its own icon. */}
+        {(lead.customer_grade || lead.customer_group) && (() => {
+          const gMap: Record<string, { title: string; color: string }> = {
+            A: { title: "พร้อมซื้อทันที",        color: "text-emerald-600" },
+            B: { title: "อยู่ระหว่างเปรียบเทียบ", color: "text-sky-600" },
+            C: { title: "พิจารณาความคุ้มค่า",     color: "text-amber-600" },
+            D: { title: "สนใจแต่ยังไม่พร้อม",      color: "text-orange-600" },
+            E: { title: "หาข้อมูลทั่วไป",          color: "text-gray-600" },
+            F: { title: "ไม่สนใจ",                  color: "text-red-600" },
+          };
+          const groupMap: Record<string, string> = {
+            general: "ลูกค้าทั่วไป",
+            sena:    "ลูกค้าเสนา",
+            sme:     "SME (อาคารพาณิชย์/สำนักงาน/ร้านอาหาร)",
+          };
+          const g = lead.customer_grade ? gMap[lead.customer_grade] : null;
+          const groupLabel = lead.customer_group ? (groupMap[lead.customer_group] || lead.customer_group) : null;
+          return (
+            <div className="mt-1 flex items-center gap-1.5 text-sm truncate">
+              {g && (
+                <span className={`flex items-center gap-1.5 ${g.color} min-w-0`}>
+                  <svg className="w-5 h-5 shrink-0" fill="currentColor" viewBox="0 0 24 24">
+                    <path d="M12 2l2.6 7.6L22 10l-6 4.4 2.4 7.6L12 17.8 5.6 22 8 14.4 2 10l7.4-.4L12 2z" />
+                  </svg>
+                  <span className="font-semibold shrink-0">Grade : {lead.customer_grade}</span>
+                  <span className="text-gray-500 truncate">
+                    — {g.title}
+                    {groupLabel && <span className="text-gray-400"> / {groupLabel}</span>}
+                  </span>
+                </span>
+              )}
+              {!g && groupLabel && (
+                <span className="text-gray-500 truncate">{groupLabel}</span>
               )}
             </div>
           );

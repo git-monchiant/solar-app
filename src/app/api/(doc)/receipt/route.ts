@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import puppeteer from "puppeteer";
 import { getUserIdFromReq } from "@/lib/auth";
+import { dispositionForLead } from "@/lib/doc-filename";
 
 export async function GET(req: NextRequest) {
   const leadId = req.nextUrl.searchParams.get("lead_id");
@@ -57,10 +58,14 @@ export async function GET(req: NextRequest) {
         margin: { top: "0", right: "0", bottom: "0", left: "0" },
       });
       await browser.close();
+      const disposition = await dispositionForLead(parseInt(leadId), {
+        base: `receipt_${identifier}`,
+        ext: "pdf",
+      });
       return new NextResponse(Buffer.from(pdfBuffer), {
         headers: {
           "Content-Type": "application/pdf",
-          "Content-Disposition": `inline; filename=receipt_${identifier}.pdf`,
+          "Content-Disposition": disposition,
         },
       });
     }
@@ -70,10 +75,14 @@ export async function GET(req: NextRequest) {
     const imgBuffer = await el!.screenshot({ type: "png" });
     await browser.close();
 
+    const disposition = await dispositionForLead(parseInt(leadId), {
+      base: `receipt_${identifier}`,
+      ext: "png",
+    });
     return new NextResponse(Buffer.from(imgBuffer), {
       headers: {
         "Content-Type": "image/png",
-        "Content-Disposition": `inline; filename=receipt_${identifier}.png`,
+        "Content-Disposition": disposition,
       },
     });
   } catch (error) {

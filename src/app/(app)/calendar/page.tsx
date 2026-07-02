@@ -91,20 +91,20 @@ export default function CalendarPage() {
           </span>
           <div className="flex-1" />
           <button type="button" onClick={() => { setNewPrefillDate(undefined); setNewOpen(true); }}
-            className="h-9 px-3 rounded-lg bg-primary text-white text-xs font-semibold hover:bg-primary-dark inline-flex items-center gap-1">
+            className="h-8 px-3 rounded-lg bg-primary text-white text-xs font-semibold hover:bg-primary-dark inline-flex items-center gap-1">
             <PlusIcon className="w-4 h-4" strokeWidth={2.5} />
             สร้างนัด
           </button>
           <div className="inline-flex rounded-lg border border-gray-200 bg-white overflow-hidden">
             <button type="button" onClick={() => setView("month")}
-              className={`h-9 px-3 text-xs font-semibold ${view === "month" ? "bg-primary text-white" : "text-gray-600 hover:bg-gray-50"}`}
+              className={`h-8 px-3 text-xs font-semibold ${view === "month" ? "bg-primary text-white" : "text-gray-600 hover:bg-gray-50"}`}
               title="Month">
               <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
                 <path strokeLinecap="round" strokeLinejoin="round" d="M6.75 3v2.25M17.25 3v2.25M3 18.75V7.5a2.25 2.25 0 012.25-2.25h13.5A2.25 2.25 0 0121 7.5v11.25m-18 0A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75m-18 0v-7.5A2.25 2.25 0 015.25 9h13.5A2.25 2.25 0 0121 11.25v7.5" />
               </svg>
             </button>
             <button type="button" onClick={() => setView("list")}
-              className={`h-9 px-3 text-xs font-semibold ${view === "list" ? "bg-primary text-white" : "text-gray-600 hover:bg-gray-50"}`}
+              className={`h-8 px-3 text-xs font-semibold ${view === "list" ? "bg-primary text-white" : "text-gray-600 hover:bg-gray-50"}`}
               title="List">
               <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
                 <path strokeLinecap="round" strokeLinejoin="round" d="M3.75 6h16.5M3.75 12h16.5m-16.5 6h16.5" />

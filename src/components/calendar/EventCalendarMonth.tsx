@@ -87,13 +87,13 @@ export default function EventCalendarMonth({ toolbarRight, year: controlledYear,
   return (
     <div>
       <div className="flex items-center gap-2 mb-3">
-        <button type="button" onClick={prevMonth} className="w-9 h-9 rounded-lg border border-gray-200 bg-white hover:bg-gray-50 flex items-center justify-center">
+        <button type="button" onClick={prevMonth} className="w-9 h-8 rounded-lg border border-gray-200 bg-white hover:bg-gray-50 flex items-center justify-center">
           <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}><path strokeLinecap="round" strokeLinejoin="round" d="M15 19l-7-7 7-7" /></svg>
         </button>
-        <button type="button" onClick={nextMonth} className="w-9 h-9 rounded-lg border border-gray-200 bg-white hover:bg-gray-50 flex items-center justify-center">
+        <button type="button" onClick={nextMonth} className="w-9 h-8 rounded-lg border border-gray-200 bg-white hover:bg-gray-50 flex items-center justify-center">
           <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}><path strokeLinecap="round" strokeLinejoin="round" d="M9 5l7 7-7 7" /></svg>
         </button>
-        <button type="button" onClick={goToday} className="h-9 px-3 rounded-lg border border-gray-200 bg-white text-xs font-semibold hover:bg-gray-50">วันนี้</button>
+        <button type="button" onClick={goToday} className="h-8 px-3 rounded-lg border border-gray-200 bg-white text-xs font-semibold hover:bg-gray-50">วันนี้</button>
         <div className="text-base md:text-lg font-bold ml-2">{TH_MONTHS[month]} {year + 543}</div>
         {toolbarRight && <div className="ml-auto">{toolbarRight}</div>}
       </div>

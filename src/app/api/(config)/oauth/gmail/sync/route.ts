@@ -56,31 +56,43 @@ export async function POST(req: NextRequest) {
           `จังหวัด: ${parsed.province || "-"}\nประเภทที่อยู่: ${parsed.residence || "-"}\n` +
           `ค่าไฟต่อเดือน: ${parsed.monthly_bill || "-"}\nหลังคา: ${parsed.roof_shape || "-"}`;
 
-        await db.request()
+        const leadInsert = await db.request()
           .input("full_name", sql.NVarChar(200), parsed.full_name.slice(0, 200) || "(no name)")
           .input("phone", sql.NVarChar(20), parsed.phone.slice(0, 20))
           .input("email", sql.NVarChar(200), parsed.email ? parsed.email.slice(0, 200) : null)
           .input("source", sql.NVarChar(50), "email")
           .input("note", sql.NVarChar(sql.MAX), note)
           .input("zone", sql.NVarChar(100), parsed.province ? parsed.province.slice(0, 100) : null)
-          .input("residence", sql.NVarChar(30), parsed.residence ? parsed.residence.slice(0, 30) : null)
-          .input("roof_shape", sql.NVarChar(20), parsed.roof_shape ? parsed.roof_shape.slice(0, 20) : null)
-          .input("monthly_bill", sql.Decimal(12, 2), parsed.monthly_bill)
           .input("installation_address", sql.NVarChar(500), parsed.address ? parsed.address.slice(0, 500) : null)
           .input("house_number", sql.NVarChar(50), parsed.house_number ? parsed.house_number.slice(0, 50) : null)
           .input("gmail_id", sql.NVarChar(64), id)
           .query(`
             INSERT INTO leads (
               full_name, phone, email, source, status, note,
-              zone, pre_residence_type, pre_roof_shape, pre_monthly_bill,
+              zone,
               installation_address, house_number,
               gmail_message_id, contact_date, created_at
-            ) VALUES (
+            )
+            OUTPUT INSERTED.id
+            VALUES (
               @full_name, @phone, @email, @source, 'pre_survey', @note,
-              @zone, @residence, @roof_shape, @monthly_bill,
+              @zone,
               @installation_address, @house_number,
               @gmail_id, GETDATE(), GETDATE()
             )
+          `);
+        // profile fields (residence_type / roof_shape / monthly_bill) live on
+        // lead_data since migration 037 — INSERT a 1:1 row with whatever we
+        // parsed out of the email.
+        const newLeadId = leadInsert.recordset[0].id;
+        await db.request()
+          .input("lead_id", sql.Int, newLeadId)
+          .input("residence_type", sql.NVarChar(50), parsed.residence ? parsed.residence.slice(0, 50) : null)
+          .input("roof_shape", sql.NVarChar(50), parsed.roof_shape ? parsed.roof_shape.slice(0, 50) : null)
+          .input("monthly_bill", sql.Decimal(10, 2), parsed.monthly_bill)
+          .query(`
+            INSERT INTO lead_data (lead_id, residence_type, roof_shape, monthly_bill)
+            VALUES (@lead_id, @residence_type, @roof_shape, @monthly_bill)
           `);
         imported++;
         if (samples.length < 5) samples.push({ name: parsed.full_name, phone: parsed.phone, email: parsed.email });

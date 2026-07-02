@@ -204,11 +204,13 @@ button {
 }
 
 /* Softer placeholder across all inputs/textarea — lighter gray, slightly
-   thinner so labels still dominate. */
+   thinner, and a notch smaller than the typed value so the placeholder
+   reads like a hint, not competing with the actual content. */
 input::placeholder,
 textarea::placeholder {
   color: #cbd5e1;   /* tailwind slate-300 */
   font-weight: 400;
+  font-size: 0.85em;
   opacity: 1;
 }
 

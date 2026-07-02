@@ -361,7 +361,7 @@ export default function QuoteStep({ lead, state, refresh, expanded, onToggle }: 
                 {/* Doc no */}
                 <input type="text" value={s.docNo} onChange={e => updateSlot(i, { docNo: e.target.value })}
                   placeholder="เลขที่ใบเสนอราคา"
-                  className="w-full h-10 px-3 rounded-md border border-gray-200 text-xs font-mono focus:outline-none focus:border-primary bg-white" />
+                  className="w-full h-8 px-3 rounded-md border border-gray-200 text-xs font-mono focus:outline-none focus:border-primary bg-white" />
               </div>
             );
           })}

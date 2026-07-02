@@ -35,7 +35,7 @@ export default function CustomerSummary({ lead }: { lead: Lead }) {
     <div className="bg-white border-b border-gray-100">
       {/* Main row - always visible */}
       <button onClick={() => setExpanded(!expanded)} className="w-full px-4 py-3 flex items-center gap-3 text-left">
-        <div className="w-10 h-10 bg-primary/10 rounded-full flex items-center justify-center shrink-0">
+        <div className="w-10 h-8 bg-primary/10 rounded-full flex items-center justify-center shrink-0">
           <span className="text-primary font-bold">{lead.full_name.charAt(0)}</span>
         </div>
         <div className="flex-1 min-w-0">

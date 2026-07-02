@@ -33,12 +33,64 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
                    AND (l.note IS NULL OR l.note NOT LIKE N'สถานะจาก sheet:%')
                  THEN 1 ELSE 0
                END AS BIT) as from_prospect,
-               (SELECT COUNT(*) FROM payments WHERE lead_id = l.id AND slip_field LIKE 'order_installment_%' AND confirmed_at IS NOT NULL) as order_paid_count
+               (SELECT COUNT(*) FROM payments WHERE lead_id = l.id AND slip_field LIKE 'order_installment_%' AND confirmed_at IS NOT NULL) as order_paid_count,
+               -- Aliased lead_data columns so callers still see pre_* at the
+               -- top level — keeps PreSurveyForm + done views backwards
+               -- compatible after the schema move in migration 037.
+               d.residence_type AS pre_residence_type,
+               d.monthly_bill AS pre_monthly_bill,
+               d.peak_usage AS pre_peak_usage,
+               d.electrical_phase AS pre_electrical_phase,
+               d.wants_battery AS pre_wants_battery,
+               d.ac_units AS pre_ac_units,
+               d.appliances AS pre_appliances,
+               d.roof_shape AS pre_roof_shape,
+               d.bill_photo_url AS pre_bill_photo_url,
+               -- Questionnaire §1 (migration 038) — no pre_ alias because
+               -- these were never on leads to begin with.
+               d.house_age,
+               d.occupant_total,
+               d.occupant_elderly,
+               d.occupant_kids,
+               d.occupant_pets,
+               -- Questionnaire §2 (migration 039).
+               d.monthly_bill_max,
+               d.meter_size,
+               -- Questionnaire §3 (migration 040).
+               d.home_at_daytime,
+               d.daytime_occupants,
+               d.work_at_home,
+               d.business_type,
+               d.work_days_per_week,
+               d.ac_split,
+               d.ev_charge_period,
+               -- Questionnaire §4 (migration 041).
+               d.future_ev,
+               d.future_ev_charger,
+               d.future_extend_home,
+               d.future_more_members,
+               d.future_smart_home,
+               d.future_battery,
+               -- Questionnaire §5/§6/§7 (migration 042).
+               d.outage_priorities,
+               d.bill_rise_action,
+               d.had_roof_leak,
+               d.did_roof_repair,
+               d.had_electrical_issue,
+               d.did_panel_replacement,
+               d.self_generates,
+               d.ev_ready,
+               d.blackout_resilient,
+               d.future_usage_trend,
+               -- Questionnaire §8 (migration 043 + 049).
+               d.decision_factors,
+               d.decision_timeline
         FROM leads l
         LEFT JOIN projects p ON l.project_id = p.id
         LEFT JOIN packages pk ON l.interested_package_id = pk.id
         LEFT JOIN users u ON l.assigned_user_id = u.id
         LEFT JOIN line_users lu ON lu.line_user_id = l.line_id
+        LEFT JOIN lead_data d ON d.lead_id = l.id
         WHERE l.id = @id
       `);
 
@@ -115,6 +167,66 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
 
     const sets: string[] = [];
     const request = db.request().input("id", sql.Int, leadId);
+
+    // ── lead_data fields ─────────────────────────────────────────────────
+    // PreSurveyForm's "ข้อมูล" tab fields live in lead_data (migration 037).
+    // Collect any pre_* keys from body that target that table, then UPSERT
+    // after the leads UPDATE. Field names here drop the pre_ prefix to match
+    // the new schema; API surface keeps pre_xxx for backwards compatibility.
+    type LdEntry = { col: string; sqlType: sql.ISqlType | sql.ISqlTypeFactory; value: unknown };
+    const ldFields: LdEntry[] = [];
+    const pushLd = (col: string, sqlType: sql.ISqlType | sql.ISqlTypeFactory, value: unknown) => {
+      if (value === undefined) return;
+      ldFields.push({ col, sqlType, value });
+    };
+    pushLd("residence_type",   sql.NVarChar(50),      body.pre_residence_type);
+    pushLd("monthly_bill",     sql.Decimal(10, 2),    body.pre_monthly_bill);
+    pushLd("peak_usage",       sql.NVarChar(50),      body.pre_peak_usage);
+    pushLd("electrical_phase", sql.NVarChar(50),      body.pre_electrical_phase);
+    pushLd("wants_battery",    sql.NVarChar(50),      body.pre_wants_battery);
+    pushLd("ac_units",         sql.NVarChar(sql.MAX), body.pre_ac_units);
+    pushLd("appliances",       sql.NVarChar(sql.MAX), Array.isArray(body.pre_appliances) ? body.pre_appliances.join(",") : body.pre_appliances);
+    pushLd("roof_shape",       sql.NVarChar(50),      body.pre_roof_shape);
+    pushLd("bill_photo_url",   sql.NVarChar(500),     body.pre_bill_photo_url);
+    // Questionnaire §1 fields (migration 038).
+    pushLd("house_age",        sql.NVarChar(20),      body.house_age);
+    pushLd("occupant_total",   sql.Int,               body.occupant_total);
+    pushLd("occupant_elderly", sql.Int,               body.occupant_elderly);
+    pushLd("occupant_kids",    sql.Int,               body.occupant_kids);
+    pushLd("occupant_pets",    sql.Int,               body.occupant_pets);
+    // Questionnaire §2 (migration 039).
+    pushLd("monthly_bill_max", sql.Decimal(10, 2),    body.monthly_bill_max);
+    pushLd("meter_size",       sql.NVarChar(50),      body.meter_size);
+    // Questionnaire §3 (migration 040).
+    pushLd("home_at_daytime",    sql.NVarChar(10),      body.home_at_daytime);
+    pushLd("daytime_occupants",  sql.NVarChar(200),     body.daytime_occupants);
+    pushLd("work_at_home",       sql.NVarChar(10),      body.work_at_home);
+    pushLd("business_type",      sql.NVarChar(100),     body.business_type);
+    pushLd("work_days_per_week", sql.NVarChar(20),      body.work_days_per_week);
+    pushLd("ac_split",           sql.NVarChar(sql.MAX), body.ac_split);
+    pushLd("ev_charge_period",   sql.NVarChar(20),      body.ev_charge_period);
+    // Questionnaire §4 (migration 041).
+    pushLd("future_ev",           sql.NVarChar(20), body.future_ev);
+    pushLd("future_ev_charger",   sql.NVarChar(10), body.future_ev_charger);
+    pushLd("future_extend_home",  sql.NVarChar(10), body.future_extend_home);
+    pushLd("future_more_members", sql.NVarChar(10), body.future_more_members);
+    pushLd("future_smart_home",   sql.NVarChar(10), body.future_smart_home);
+    pushLd("future_battery",      sql.NVarChar(10), body.future_battery);
+    // Questionnaire §5/§6/§7 (migration 042).
+    pushLd("outage_priorities",     sql.NVarChar(500), body.outage_priorities);
+    pushLd("bill_rise_action",      sql.NVarChar(50),  body.bill_rise_action);
+    pushLd("had_roof_leak",         sql.NVarChar(10),  body.had_roof_leak);
+    pushLd("did_roof_repair",       sql.NVarChar(10),  body.did_roof_repair);
+    pushLd("had_electrical_issue",  sql.NVarChar(10),  body.had_electrical_issue);
+    pushLd("did_panel_replacement", sql.NVarChar(10),  body.did_panel_replacement);
+    pushLd("self_generates",        sql.NVarChar(10),  body.self_generates);
+    pushLd("ev_ready",              sql.NVarChar(20),  body.ev_ready);
+    pushLd("blackout_resilient",    sql.NVarChar(10),  body.blackout_resilient);
+    pushLd("future_usage_trend",    sql.NVarChar(20),  body.future_usage_trend);
+    // Questionnaire §8 (migration 043 + 049).
+    pushLd("decision_factors",      sql.NVarChar(sql.MAX), body.decision_factors);
+    pushLd("decision_timeline",     sql.NVarChar(200),     body.decision_timeline);
+    // ─────────────────────────────────────────────────────────────────────
 
     if (body.status !== undefined) {
       sets.push("status = @status");
@@ -196,6 +308,14 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
       sets.push("customer_type = @customer_type");
       request.input("customer_type", sql.NVarChar(50), body.customer_type);
     }
+    if (body.customer_group !== undefined) {
+      sets.push("customer_group = @customer_group");
+      request.input("customer_group", sql.NVarChar(50), body.customer_group);
+    }
+    if (body.customer_grade !== undefined) {
+      sets.push("customer_grade = @customer_grade");
+      request.input("customer_grade", sql.NVarChar(2), body.customer_grade);
+    }
     if (body.source !== undefined) {
       sets.push("source = @source");
       request.input("source", sql.NVarChar(30), body.source);
@@ -256,10 +376,8 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
       sets.push("survey_confirmed = @survey_confirmed");
       request.input("survey_confirmed", sql.Bit, body.survey_confirmed ? 1 : 0);
     }
-    if (body.pre_residence_type !== undefined) {
-      sets.push("pre_residence_type = @pre_residence_type");
-      request.input("pre_residence_type", sql.NVarChar(30), body.pre_residence_type);
-    }
+    // pre_residence_type — moved to lead_data table (migration 037).
+    // Collected in leadDataPatch; UPSERTed after the leads UPDATE below.
     if (body.survey_note !== undefined) {
       sets.push("survey_note = @survey_note");
       request.input("survey_note", sql.NVarChar(sql.MAX), body.survey_note);
@@ -621,41 +739,14 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
       sets.push("survey_lng = @survey_lng");
       request.input("survey_lng", sql.Decimal(10, 7), body.survey_lng);
     }
-    if (body.pre_monthly_bill !== undefined) {
-      sets.push("pre_monthly_bill = @pre_monthly_bill");
-      request.input("pre_monthly_bill", sql.Int, body.pre_monthly_bill);
-    }
-    if (body.pre_electrical_phase !== undefined) {
-      sets.push("pre_electrical_phase = @pre_electrical_phase");
-      request.input("pre_electrical_phase", sql.NVarChar(20), body.pre_electrical_phase);
-    }
-    if (body.pre_wants_battery !== undefined) {
-      sets.push("pre_wants_battery = @pre_wants_battery");
-      request.input("pre_wants_battery", sql.NVarChar(20), body.pre_wants_battery);
-    }
-    if (body.pre_roof_shape !== undefined) {
-      sets.push("pre_roof_shape = @pre_roof_shape");
-      request.input("pre_roof_shape", sql.NVarChar(20), body.pre_roof_shape);
-    }
-    if (body.pre_appliances !== undefined) {
-      sets.push("pre_appliances = @pre_appliances");
-      request.input("pre_appliances", sql.NVarChar(200), Array.isArray(body.pre_appliances) ? body.pre_appliances.join(",") : body.pre_appliances);
-    }
-    if (body.pre_ac_units !== undefined) {
-      sets.push("pre_ac_units = @pre_ac_units");
-      request.input("pre_ac_units", sql.NVarChar(200), body.pre_ac_units);
-    }
-    if (body.pre_peak_usage !== undefined) {
-      sets.push("pre_peak_usage = @pre_peak_usage");
-      request.input("pre_peak_usage", sql.NVarChar(20), body.pre_peak_usage);
-    }
+    // pre_monthly_bill / electrical_phase / wants_battery / roof_shape /
+    // appliances / ac_units / peak_usage / bill_photo_url — all moved to
+    // lead_data table (migration 037). Collected via leadDataPatch and
+    // UPSERTed after the leads UPDATE; per-field if-blocks removed here.
+    // pre_primary_reason stays on leads (not in PreSurveyForm scope).
     if (body.pre_primary_reason !== undefined) {
       sets.push("pre_primary_reason = @pre_primary_reason");
       request.input("pre_primary_reason", sql.NVarChar(50), body.pre_primary_reason);
-    }
-    if (body.pre_bill_photo_url !== undefined) {
-      sets.push("pre_bill_photo_url = @pre_bill_photo_url");
-      request.input("pre_bill_photo_url", sql.NVarChar(500), body.pre_bill_photo_url);
     }
     if (body.pre_slip_url !== undefined) {
       sets.push("pre_slip_url = @pre_slip_url");
@@ -779,6 +870,10 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
       sets.push("warranty_panel_brand = @warranty_panel_brand");
       request.input("warranty_panel_brand", sql.NVarChar(100), body.warranty_panel_brand);
     }
+    if (body.warranty_panel_model !== undefined) {
+      sets.push("warranty_panel_model = @warranty_panel_model");
+      request.input("warranty_panel_model", sql.NVarChar(200), body.warranty_panel_model);
+    }
     if (body.warranty_inverter_brand !== undefined) {
       sets.push("warranty_inverter_brand = @warranty_inverter_brand");
       request.input("warranty_inverter_brand", sql.NVarChar(100), body.warranty_inverter_brand);
@@ -794,6 +889,18 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
     if (body.warranty_battery_brand !== undefined) {
       sets.push("warranty_battery_brand = @warranty_battery_brand");
       request.input("warranty_battery_brand", sql.NVarChar(100), body.warranty_battery_brand);
+    }
+    if (body.warranty_battery_model !== undefined) {
+      sets.push("warranty_battery_model = @warranty_battery_model");
+      request.input("warranty_battery_model", sql.NVarChar(200), body.warranty_battery_model);
+    }
+    if (body.warranty_duration_years !== undefined) {
+      sets.push("warranty_duration_years = @warranty_duration_years");
+      request.input("warranty_duration_years", sql.Int, body.warranty_duration_years);
+    }
+    if (body.warranty_om_per_year !== undefined) {
+      sets.push("warranty_om_per_year = @warranty_om_per_year");
+      request.input("warranty_om_per_year", sql.Int, body.warranty_om_per_year);
     }
     if (body.warranty_battery_kwh !== undefined) {
       sets.push("warranty_battery_kwh = @warranty_battery_kwh");
@@ -969,15 +1076,50 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
       }
     }
 
-    if (sets.length === 0) {
+    if (sets.length === 0 && ldFields.length === 0) {
       return NextResponse.json({ error: "No fields to update" }, { status: 400 });
     }
 
-    sets.push("updated_at = GETDATE()");
+    // Run the leads UPDATE only when there are columns on leads to update.
+    // A payload like { pre_monthly_bill: ... } targets only lead_data and
+    // mustn't trigger an empty SET clause on the leads UPDATE.
+    let result: { recordset: Record<string, unknown>[] } = { recordset: [] };
+    if (sets.length > 0) {
+      sets.push("updated_at = GETDATE()");
+      result = await request.query(`
+        UPDATE leads SET ${sets.join(", ")} OUTPUT INSERTED.* WHERE id = @id
+      `);
+    }
 
-    const result = await request.query(`
-      UPDATE leads SET ${sets.join(", ")} OUTPUT INSERTED.* WHERE id = @id
-    `);
+    // ── lead_data UPSERT ────────────────────────────────────────────────
+    // MERGE so first-touch on a lead that was created before migration 037
+    // (no row in lead_data yet) still works — INSERT path covers it. Field
+    // list is built from whatever the caller sent; columns not in the body
+    // keep their existing value.
+    if (ldFields.length > 0) {
+      const ldReq = db.request().input("ld_lead_id", sql.Int, leadId);
+      for (const f of ldFields) {
+        ldReq.input(`ld_${f.col}`, f.sqlType as never, f.value as never);
+      }
+      const updateClauses = ldFields.map(f => `${f.col} = @ld_${f.col}`).join(", ");
+      const insertCols    = ["lead_id", ...ldFields.map(f => f.col)].join(", ");
+      const insertVals    = ["@ld_lead_id", ...ldFields.map(f => `@ld_${f.col}`)].join(", ");
+      await ldReq.query(`
+        MERGE INTO lead_data WITH (HOLDLOCK) AS t
+        USING (SELECT @ld_lead_id AS lead_id) AS s
+          ON t.lead_id = s.lead_id
+        WHEN MATCHED THEN
+          UPDATE SET ${updateClauses}, updated_at = SYSUTCDATETIME()
+        WHEN NOT MATCHED THEN
+          INSERT (${insertCols}, updated_at)
+          VALUES (${insertVals}, SYSUTCDATETIME());
+      `);
+    }
+    // If the leads UPDATE was skipped (only lead_data fields), recordset is
+    // empty — caller doesn't get the updated lead echoed. Most callers
+    // re-fetch via GET anyway; if any rely on the OUTPUT row, we can do an
+    // explicit SELECT here as a follow-up.
+    // ────────────────────────────────────────────────────────────────────
 
     // When the installment plan changes:
     //   1. Drop pending payment rows whose installment index is no longer in the
@@ -1199,6 +1341,13 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
       }
     }
 
+    // When only lead_data was touched, the UPDATE leads above was skipped so
+    // result.recordset is empty. Echo the current row by re-reading so the
+    // caller still gets a populated payload (matches the leads-UPDATE path).
+    if (result.recordset.length === 0) {
+      const fresh = await db.request().input("id", sql.Int, leadId).query(`SELECT * FROM leads WHERE id = @id`);
+      return NextResponse.json(fixDates(fresh.recordset)[0]);
+    }
     return NextResponse.json(fixDates(result.recordset)[0]);
   } catch (error) {
     console.error("PATCH /api/leads/[id] error:", error);

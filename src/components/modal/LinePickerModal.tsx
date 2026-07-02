@@ -122,7 +122,7 @@ export default function LinePickerModal({ target, onClose, onLinked }: Props) {
               value={search}
               onChange={e => setSearch(e.target.value)}
               placeholder="ค้นหาชื่อ LINE..."
-              className="w-full h-10 px-3 rounded-lg border border-gray-200 text-sm focus:outline-none focus:border-primary mb-3"
+              className="w-full h-8 px-3 rounded-lg border border-gray-200 text-sm focus:outline-none focus:border-primary mb-3"
             />
             <div className="grid grid-cols-1 gap-2">
               {filtered.map(u => (
@@ -180,7 +180,7 @@ function LineAvatar({ url }: { url: string | null }) {
   const [failed, setFailed] = useState(false);
   if (!url || failed) {
     return (
-      <div className="w-10 h-10 rounded-full bg-gray-200 flex items-center justify-center shrink-0" style={{ minHeight: 0 }}>
+      <div className="w-10 h-8 rounded-full bg-gray-200 flex items-center justify-center shrink-0" style={{ minHeight: 0 }}>
         <UserIcon className="w-5 h-5 text-gray-400" strokeWidth={2} />
       </div>
     );
@@ -189,7 +189,7 @@ function LineAvatar({ url }: { url: string | null }) {
     <img
       src={url}
       alt=""
-      className="w-10 h-10 rounded-full object-cover shrink-0"
+      className="w-10 h-8 rounded-full object-cover shrink-0"
       style={{ minHeight: 0 }}
       onError={() => setFailed(true)}
     />

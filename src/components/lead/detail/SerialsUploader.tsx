@@ -36,6 +36,15 @@ const SPEC_SUGGESTIONS: Partial<Record<DeviceType, readonly number[]>> = {
 interface BaseDevice {
   brand: string | null;
   serial_no: string | null;
+  // Per-row capture photo — the OCR snapshot URL is stamped here so the tree
+  // can render a thumbnail per device. Multi-SN photos (panel sheets, battery
+  // racks) share the same URL across every serial they yielded.
+  photo_url?: string | null;
+  // Bounding box of THIS serial's sticker on photo_url, JSON-encoded
+  // "[ymin,xmin,ymax,xmax]" with 0-1000 normalized coords (Gemini format).
+  // Panels only for now — lets the UI draw a red rectangle pointing at the
+  // exact sticker on the panel sheet photo.
+  photo_box?: string | null;
 }
 interface Inverter extends BaseDevice { kw: number | null; }
 interface Battery  extends BaseDevice { kwh: number | null; }
@@ -46,9 +55,39 @@ interface Props {
   /** When true, hide × buttons + disable "+ เพิ่ม" — used after the warranty
    * has been issued so the captured serials get locked into the cert. */
   locked?: boolean;
+  /** Filter which device groups to render. Default: all three. Used by
+   * WarrantyStep subStep 2/3 to show only Battery or only Panel. */
+  showTypes?: DeviceType[];
+  /** When true, replace the "+ เพิ่ม" link with an inline quick-key row
+   * (text input + add button + AI wizard button). Used in WarrantyStep so
+   * users can type a Serial directly without going through the full wizard
+   * — brand defaults to the last item's brand. */
+  quickKey?: boolean;
+  /** When set, the matching device group renders this many slot rows. Items
+   * fill the first N rows; remaining rows are empty inputs ready for a
+   * Serial. Used in WarrantyStep to show 20 panel / 5 battery slots so the
+   * field tech can see how many more SNs are expected. */
+  slotCounts?: Partial<Record<DeviceType, number>>;
+  /** Desktop column count for the slot grid (column-major flow). Used for
+   * panels which have 20 slots — splitting into 2 columns keeps the list
+   * scrollable in a sane height. Mobile always stays 1 column. */
+  slotColumns?: Partial<Record<DeviceType, number>>;
 }
 
-export default function SerialsUploader({ leadId, locked = false }: Props) {
+// Sort by serial_no (alphanumeric, case-insensitive). Items missing a serial
+// fall to the end. Stable sort so re-arrangement on re-render is consistent.
+function sortBySerial<T extends BaseDevice>(items: T[]): T[] {
+  return [...items].sort((a, b) => {
+    const sa = (a.serial_no || "").toLowerCase();
+    const sb = (b.serial_no || "").toLowerCase();
+    if (!sa && !sb) return 0;
+    if (!sa) return 1;
+    if (!sb) return -1;
+    return sa.localeCompare(sb, undefined, { numeric: true });
+  });
+}
+
+export default function SerialsUploader({ leadId, locked = false, showTypes, quickKey = false, slotCounts, slotColumns }: Props) {
   const dialog = useDialog();
   const [inverters, setInverters] = useState<Inverter[]>([]);
   const [batteries, setBatteries] = useState<Battery[]>([]);
@@ -61,9 +100,9 @@ export default function SerialsUploader({ leadId, locked = false }: Props) {
       const d = await apiFetch(`/api/leads/${leadId}/devices`) as {
         inverters: Inverter[]; batteries: Battery[]; panels: Panel[];
       };
-      setInverters(d.inverters ?? []);
-      setBatteries(d.batteries ?? []);
-      setPanels(d.panels ?? []);
+      setInverters(sortBySerial(d.inverters ?? []));
+      setBatteries(sortBySerial(d.batteries ?? []));
+      setPanels(sortBySerial(d.panels ?? []));
     } catch (e) { console.error("load devices failed:", e); }
     finally { setLoading(false); }
   }, [leadId]);
@@ -75,9 +114,9 @@ export default function SerialsUploader({ leadId, locked = false }: Props) {
         method: "PUT", headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ type, items }),
       }) as { items: BaseDevice[] };
-      if (type === "inverters") setInverters(res.items as Inverter[]);
-      if (type === "batteries") setBatteries(res.items as Battery[]);
-      if (type === "panels")    setPanels(res.items as Panel[]);
+      if (type === "inverters") setInverters(sortBySerial(res.items as Inverter[]));
+      if (type === "batteries") setBatteries(sortBySerial(res.items as Battery[]));
+      if (type === "panels")    setPanels(sortBySerial(res.items as Panel[]));
     } catch (e) { console.error("save devices failed:", e); }
   };
 
@@ -111,6 +150,23 @@ export default function SerialsUploader({ leadId, locked = false }: Props) {
     // tree will still show the bumped count).
     setOpenModal(null);
     return { added: fresh.length, dupes };
+  };
+  const onClearAll = async (type: DeviceType) => {
+    const cur: BaseDevice[] =
+      type === "inverters" ? inverters :
+      type === "batteries" ? batteries :
+                              panels;
+    if (cur.length === 0) return;
+    const label = type === "inverters" ? "Inverter" : type === "batteries" ? "Battery" : "Solar Panel";
+    const ok = await dialog.confirm({
+      title: `ลบ ${label} ทั้งหมด?`,
+      message: `จะลบ ${cur.length} รายการออกจาก ${label} — ไม่สามารถ undo ได้`,
+      variant: "danger",
+      confirmText: `ลบ ${cur.length} รายการ`,
+      cancelText: "ยกเลิก",
+    });
+    if (!ok) return;
+    await saveType(type, []);
   };
   const onRemove = async (type: DeviceType, idx: number) => {
     const cur: BaseDevice[] =
@@ -147,53 +203,79 @@ export default function SerialsUploader({ leadId, locked = false }: Props) {
           <span>ออกใบรับประกันแล้ว — รายการ Serial ถูก lock ห้ามแก้ไข</span>
         </div>
       )}
-      {/* Stack on mobile (one column reads like a long form), spread to three
-          equal columns on desktop where the page has the width to spare — the
-          panel list especially can run 20+ rows so vertical real estate adds up. */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-5 md:gap-6 items-start">
-        <TreeGroup
-          type="inverters"
-          title="Inverter"
-          emoji="⚡"
-          items={inverters}
-          formatLine={(d) => {
-            const i = d as Inverter;
-            return [i.brand, i.kw != null ? `${i.kw} kW` : null, i.serial_no].filter(Boolean).join(" · ") || "—";
-          }}
-          onAddClick={() => setOpenModal("inverters")}
-          onRemove={onRemove}
-          locked={locked}
-        />
-        <TreeGroup
-          type="panels"
-          title="Solar Panel"
-          emoji="☀️"
-          items={panels}
-          formatLine={(d) => [d.brand, d.serial_no].filter(Boolean).join(" · ") || "—"}
-          onAddClick={() => setOpenModal("panels")}
-          onRemove={onRemove}
-          locked={locked}
-        />
-        <TreeGroup
-          type="batteries"
-          title="Battery"
-          emoji="🔋"
-          items={batteries}
-          formatLine={(d) => {
-            const b = d as Battery;
-            return [b.brand, b.kwh != null ? `${b.kwh} kWh` : null, b.serial_no].filter(Boolean).join(" · ") || "—";
-          }}
-          onAddClick={() => setOpenModal("batteries")}
-          onRemove={onRemove}
-          locked={locked}
-        />
-      </div>
+      {/* Stack on mobile, spread to N equal columns on desktop — number of
+          columns matches the number of visible device types (1/2/3). */}
+      {(() => {
+        const visible = showTypes ?? (["inverters", "panels", "batteries"] as DeviceType[]);
+        const gridCols = visible.length === 1 ? "md:grid-cols-1" : visible.length === 2 ? "md:grid-cols-2" : "md:grid-cols-3";
+        return (
+          <div className={`grid grid-cols-1 ${gridCols} gap-5 md:gap-6 items-start`}>
+            {visible.includes("inverters") && (
+              <TreeGroup
+                type="inverters"
+                title="Inverter"
+                emoji="⚡"
+                items={inverters}
+                slotCount={slotCounts?.inverters}
+                slotColumns={slotColumns?.inverters}
+                formatLine={(d) => {
+                  const i = d as Inverter;
+                  return [i.brand, i.kw != null ? `${i.kw} kW` : null, i.serial_no].filter(Boolean).join(" · ") || "—";
+                }}
+                onAddClick={() => setOpenModal("inverters")}
+                onQuickAdd={quickKey ? (serial) => onAdd("inverters", [{ brand: inverters.at(-1)?.brand ?? null, serial_no: serial }]) : undefined}
+                onRemove={onRemove}
+                locked={locked}
+              />
+            )}
+            {visible.includes("panels") && (
+              <TreeGroup
+                type="panels"
+                title="Solar Panel"
+                emoji="☀️"
+                items={panels}
+                slotCount={slotCounts?.panels}
+                slotColumns={slotColumns?.panels}
+                onClearAll={() => onClearAll("panels")}
+                formatLine={(d) => [d.brand, d.serial_no].filter(Boolean).join(" · ") || "—"}
+                onAddClick={() => setOpenModal("panels")}
+                onQuickAdd={quickKey ? (serial) => onAdd("panels", [{ brand: panels.at(-1)?.brand ?? null, serial_no: serial }]) : undefined}
+                onRemove={onRemove}
+                locked={locked}
+              />
+            )}
+            {visible.includes("batteries") && (
+              <TreeGroup
+                type="batteries"
+                title="Battery"
+                emoji="🔋"
+                items={batteries}
+                slotCount={slotCounts?.batteries}
+                slotColumns={slotColumns?.batteries}
+                formatLine={(d) => {
+                  const b = d as Battery;
+                  return [b.brand, b.kwh != null ? `${b.kwh} kWh` : null, b.serial_no].filter(Boolean).join(" · ") || "—";
+                }}
+                onAddClick={() => setOpenModal("batteries")}
+                onQuickAdd={quickKey ? (serial) => onAdd("batteries", [{ brand: batteries.at(-1)?.brand ?? null, serial_no: serial }]) : undefined}
+                onRemove={onRemove}
+                locked={locked}
+              />
+            )}
+          </div>
+        );
+      })()}
 
       {openModal && (
         <AddDeviceModal
           type={openModal}
           onCancel={() => setOpenModal(null)}
           onSave={(items) => onAdd(openModal, items)}
+          existingSerials={new Set(
+            (openModal === "inverters" ? inverters : openModal === "batteries" ? batteries : panels)
+              .map(d => d.serial_no?.toLowerCase())
+              .filter((x): x is string => !!x)
+          )}
         />
       )}
     </div>
@@ -207,45 +289,162 @@ interface TreeGroupProps {
   items: BaseDevice[];
   formatLine: (d: BaseDevice) => string;
   onAddClick: () => void;
+  /** When provided, render an inline quick-key row (text input + "+" +
+   * AI camera) below the tree instead of the plain "+ เพิ่ม" link. Brand
+   * comes from the last item of this type (or null if none). */
+  onQuickAdd?: (serial: string) => Promise<{ added: number; dupes: number; reason?: string }>;
+  /** When set, render this many numbered slot rows. Items fill the first
+   * items.length rows; the remainder are empty inputs the user can key a
+   * Serial into. Header shows X/N progress badge. */
+  slotCount?: number;
+  /** Desktop column count for slot grid (column-major). Defaults to 1. */
+  slotColumns?: number;
+  /** When provided, render a "ลบทั้งหมด" button in the header that clears
+   * every item of this type after a confirmation prompt. */
+  onClearAll?: () => Promise<void>;
   onRemove: (type: DeviceType, idx: number) => void;
   locked?: boolean;
 }
-function TreeGroup({ type, title, emoji, items, formatLine, onAddClick, onRemove, locked }: TreeGroupProps) {
+function TreeGroup({ type, title, emoji, items, formatLine, onAddClick, onQuickAdd, slotCount, slotColumns, onClearAll, onRemove, locked }: TreeGroupProps) {
+  const [quickSn, setQuickSn] = useState("");
+  const [quickBusy, setQuickBusy] = useState(false);
+  const [quickError, setQuickError] = useState<string | null>(null);
+  // Which row's photo (if any) is open in the box-overlay viewer. Only panels
+  // currently have `photo_box` populated, so the overlay viewer is mostly a
+  // panel-tab feature — other types just see the plain enlarged photo.
+  const [boxViewerIdx, setBoxViewerIdx] = useState<number | null>(null);
+  const submitQuick = async () => {
+    const s = quickSn.trim();
+    if (!s || !onQuickAdd) return;
+    setQuickBusy(true);
+    setQuickError(null);
+    try {
+      const r = await onQuickAdd(s);
+      if (r.added > 0) setQuickSn("");
+      else setQuickError(r.reason || "บันทึกไม่สำเร็จ");
+    } finally { setQuickBusy(false); }
+  };
+
+  // Slot-mode: one input per empty slot, each tracked by its index. After a
+  // successful add the input clears (the slot is now "filled" by the new item
+  // and the next-empty slot shifts down by one).
+  const [slotInputs, setSlotInputs] = useState<Record<number, string>>({});
+  const [slotBusy, setSlotBusy] = useState<number | null>(null);
+  const submitSlot = async (slotIdx: number) => {
+    const s = (slotInputs[slotIdx] || "").trim();
+    if (!s || !onQuickAdd) return;
+    setSlotBusy(slotIdx);
+    try {
+      const r = await onQuickAdd(s);
+      if (r.added > 0) setSlotInputs(prev => ({ ...prev, [slotIdx]: "" }));
+    } finally { setSlotBusy(null); }
+  };
+  // Slot mode renders exactly slotCount rows (filled + empty inputs). Without
+  // slotCount it falls back to the original "list of items only" view.
+  const useSlots = typeof slotCount === "number" && slotCount > 0 && !!onQuickAdd;
+  const totalRows = useSlots ? Math.max(slotCount as number, items.length) : items.length;
+
   return (
     <section>
       <header className="flex items-center gap-2 mb-1">
         <span className="text-base">{emoji}</span>
         <h3 className="text-sm font-bold text-gray-900">{title}</h3>
-        <span className="text-xs text-gray-400 font-mono tabular-nums">{items.length}</span>
+        <span className="text-xs text-gray-400 font-mono tabular-nums">
+          {useSlots ? `${items.length} / ${slotCount}` : items.length}
+        </span>
+        {!locked && onClearAll && items.length > 0 && (
+          <button type="button" onClick={onClearAll}
+            className="ml-auto text-xs font-semibold text-red-400 hover:text-red-600 hover:underline">
+            ลบทั้งหมด
+          </button>
+        )}
       </header>
-      {/* Tree-text indented under a soft left rail to mimic the timeline tab. */}
-      <div className="pl-3 border-l border-gray-200 ml-2 space-y-1">
-        {items.length === 0 && (
+      {/* Tree-text indented under a soft left rail to mimic the timeline tab.
+          In slot mode with slotColumns > 1, lay the rows out column-major so
+          row N+1 sits to the right of row N (top of next column). */}
+      <div className="pl-3 border-l border-gray-200 ml-2">
+        {!useSlots && items.length === 0 && (
           <div className="text-xs text-gray-400 italic py-1">— ยังไม่มีรายการ —</div>
         )}
-        {items.map((d, i) => (
-          <div key={i} className="flex items-center gap-2 text-sm">
-            <span className="text-gray-300 select-none">{i === items.length - 1 ? "└" : "├"}</span>
-            <span className="font-mono tabular-nums text-gray-400 shrink-0 w-7 text-right">{i + 1}.</span>
-            <span className="font-mono tabular-nums text-gray-700 break-all">{formatLine(d)}</span>
-            {/* × button hidden when locked (warranty issued) — captured SNs
-                are now part of the cert, mutating them would invalidate it. */}
-            {!locked && (
-              <button
-                type="button"
-                onClick={() => onRemove(type, i)}
-                className="shrink-0 w-5 h-5 inline-flex items-center justify-center rounded text-red-400 hover:text-red-600 hover:bg-red-50"
-                aria-label="ลบ"
-                title="ลบ"
-              >
-                <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
-                  <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
+        <div className={
+          useSlots && (slotColumns ?? 1) > 1
+            ? "grid grid-cols-1 md:grid-cols-2 md:grid-rows-[repeat(10,minmax(0,auto))] md:grid-flow-col gap-x-3 gap-y-1"
+            : "space-y-1"
+        }>
+        {Array.from({ length: totalRows }, (_, i) => {
+          const d = items[i];
+          if (d) {
+            return (
+              <div key={i} className="flex items-center gap-2 text-sm">
+                <span className="text-gray-300 select-none">{i === totalRows - 1 ? "└" : "├"}</span>
+                <span className="font-mono tabular-nums text-gray-400 shrink-0 w-7 text-right">{i + 1}.</span>
+                {/* OCR snapshot thumbnail — click to open the full image in a
+                    new tab. Only shown when the device has a photo_url (so
+                    panel rows, which don't store per-serial photos, just keep
+                    the text-only row they had before). */}
+                {d.photo_url ? (
+                  <button
+                    type="button"
+                    onClick={() => setBoxViewerIdx(i)}
+                    title="ดูตำแหน่ง serial บนรูป"
+                    className="shrink-0 block w-9 h-9 rounded border border-gray-200 overflow-hidden bg-gray-50 hover:border-active hover:opacity-90"
+                  >
+                    {/* eslint-disable-next-line @next/next/no-img-element */}
+                    <img src={d.photo_url} alt="" className="w-full h-full object-cover" />
+                  </button>
+                ) : (
+                  <span className="shrink-0 w-9 h-9 rounded border border-dashed border-gray-200 bg-gray-50/50 flex items-center justify-center text-gray-300" title="ไม่มีรูป">
+                    <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
+                      <path strokeLinecap="round" strokeLinejoin="round" d="M4 16l4-4 3 3 5-5 4 4M4 6h16v12H4z" />
+                    </svg>
+                  </span>
+                )}
+                <span className="font-mono tabular-nums text-gray-700 break-all flex-1 min-w-0">{formatLine(d)}</span>
+                {/* × button hidden when locked (warranty issued) — captured SNs
+                    are now part of the cert, mutating them would invalidate it. */}
+                {!locked && (
+                  <button
+                    type="button"
+                    onClick={() => onRemove(type, i)}
+                    className="shrink-0 w-5 h-5 inline-flex items-center justify-center rounded text-red-400 hover:text-red-600 hover:bg-red-50"
+                    aria-label="ลบ"
+                    title="ลบ"
+                  >
+                    <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
+                      <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
+                    </svg>
+                  </button>
+                )}
+              </div>
+            );
+          }
+          // Empty slot — input row (only in slot mode). Each slot keeps its
+          // own input state in slotInputs[i]; after save it clears.
+          if (locked) return null;
+          const busy = slotBusy === i;
+          return (
+            <div key={i} className="flex items-center gap-2 text-sm">
+              <span className="font-mono tabular-nums text-gray-400 shrink-0 w-7 text-right">{i + 1}.</span>
+              <input
+                value={slotInputs[i] || ""}
+                onChange={e => setSlotInputs(prev => ({ ...prev, [i]: e.target.value }))}
+                onKeyDown={e => { if (e.key === "Enter") submitSlot(i); }}
+                disabled={busy}
+                placeholder={`Serial #${i + 1}`}
+                className="flex-1 min-w-0 h-8 px-3 rounded-lg border border-gray-200 bg-white text-sm font-mono focus:outline-none focus:border-active disabled:opacity-50"
+              />
+              <button type="button" onClick={() => submitSlot(i)} disabled={busy || !(slotInputs[i] || "").trim()}
+                title={`เพิ่ม ${title}`}
+                className="shrink-0 h-8 w-9 inline-flex items-center justify-center rounded-lg border border-active/30 bg-active-light text-active hover:bg-active/15 disabled:opacity-30 disabled:cursor-not-allowed transition-colors">
+                <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M12 4v16m8-8H4" />
                 </svg>
               </button>
-            )}
-          </div>
-        ))}
-        {!locked && <button
+            </div>
+          );
+        })}
+        </div>
+        {!locked && !onQuickAdd && <button
           type="button"
           onClick={onAddClick}
           className="inline-flex items-center gap-1.5 text-xs font-semibold text-primary hover:text-primary-dark mt-1"
@@ -255,20 +454,179 @@ function TreeGroup({ type, title, emoji, items, formatLine, onAddClick, onRemove
           </svg>
           เพิ่ม {title}
         </button>}
+        {/* Slot mode: only show the AI camera at the bottom (each empty slot
+            already has its own typing input + plus button). */}
+        {!locked && onQuickAdd && useSlots && (
+          <div className="mt-2">
+            <button type="button" onClick={onAddClick}
+              title="AI อ่าน Serial"
+              className="inline-flex items-center gap-1.5 h-8 px-3 rounded-lg text-xs font-semibold text-white bg-active hover:brightness-110 transition-colors">
+              <span className="relative inline-flex items-center justify-center">
+                <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M6.827 6.175A2.31 2.31 0 015.186 7.23c-.38.054-.757.112-1.134.175C2.999 7.58 2.25 8.507 2.25 9.574V18a2.25 2.25 0 002.25 2.25h15A2.25 2.25 0 0021.75 18V9.574c0-1.067-.75-1.994-1.802-2.169a47.865 47.865 0 00-1.134-.175 2.31 2.31 0 01-1.64-1.055l-.822-1.316a2.192 2.192 0 00-1.736-1.039 48.774 48.774 0 00-5.232 0 2.192 2.192 0 00-1.736 1.039l-.821 1.316z" />
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M16.5 12.75a4.5 4.5 0 11-9 0 4.5 4.5 0 019 0zM18.75 10.5h.008v.008h-.008V10.5z" />
+                </svg>
+                <svg className="absolute -top-1 -right-1 w-2.5 h-2.5 text-amber-300 drop-shadow" fill="currentColor" viewBox="0 0 24 24">
+                  <path d="M12 0l2.4 7.6L22 10l-7.6 2.4L12 20l-2.4-7.6L2 10l7.6-2.4L12 0z" />
+                </svg>
+              </span>
+              AI อ่าน Serial
+            </button>
+          </div>
+        )}
+        {!locked && onQuickAdd && !useSlots && (
+          <div className="mt-2 space-y-1">
+            <div className="flex items-center gap-1.5">
+              <input
+                value={quickSn}
+                onChange={e => { setQuickSn(e.target.value); setQuickError(null); }}
+                onKeyDown={e => { if (e.key === "Enter") submitQuick(); }}
+                placeholder="พิมพ์ Serial แล้วกด Enter…"
+                disabled={quickBusy}
+                className="flex-1 min-w-0 h-8 px-3 rounded-lg border border-gray-200 bg-white text-sm font-mono focus:outline-none focus:border-primary disabled:bg-gray-50"
+              />
+              <button type="button" onClick={submitQuick} disabled={quickBusy || !quickSn.trim()}
+                title={`เพิ่ม ${title}`}
+                className="shrink-0 h-8 w-9 rounded-lg border border-primary/30 bg-primary/5 text-primary flex items-center justify-center hover:bg-primary/10 disabled:opacity-40 disabled:cursor-not-allowed transition-colors">
+                <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M12 4v16m8-8H4" />
+                </svg>
+              </button>
+              <button type="button" onClick={onAddClick}
+                title="AI อ่าน Serial"
+                className="shrink-0 h-8 w-9 rounded-lg text-white bg-active hover:brightness-110 flex items-center justify-center transition-colors">
+                <span className="relative inline-flex items-center justify-center">
+                  <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M6.827 6.175A2.31 2.31 0 015.186 7.23c-.38.054-.757.112-1.134.175C2.999 7.58 2.25 8.507 2.25 9.574V18a2.25 2.25 0 002.25 2.25h15A2.25 2.25 0 0021.75 18V9.574c0-1.067-.75-1.994-1.802-2.169a47.865 47.865 0 00-1.134-.175 2.31 2.31 0 01-1.64-1.055l-.822-1.316a2.192 2.192 0 00-1.736-1.039 48.774 48.774 0 00-5.232 0 2.192 2.192 0 00-1.736 1.039l-.821 1.316z" />
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M16.5 12.75a4.5 4.5 0 11-9 0 4.5 4.5 0 019 0zM18.75 10.5h.008v.008h-.008V10.5z" />
+                  </svg>
+                  <svg className="absolute -top-1 -right-1 w-2.5 h-2.5 text-amber-300 drop-shadow" fill="currentColor" viewBox="0 0 24 24">
+                    <path d="M12 0l2.4 7.6L22 10l-7.6 2.4L12 20l-2.4-7.6L2 10l7.6-2.4L12 0z" />
+                  </svg>
+                </span>
+              </button>
+            </div>
+            {quickError && <div className="text-[10px] text-red-500">{quickError}</div>}
+          </div>
+        )}
       </div>
+
+      {boxViewerIdx != null && items[boxViewerIdx]?.photo_url && (
+        <PhotoBoxViewer
+          photoUrl={items[boxViewerIdx]!.photo_url!}
+          activeIdx={boxViewerIdx}
+          items={items.map((d, i) => ({
+            // Only stack overlays from rows that share THIS photo. Different
+            // upload sessions = different photos, so we don't want to draw
+            // boxes from a different photo on top of this one.
+            serial: d.serial_no,
+            box: d.photo_url === items[boxViewerIdx]?.photo_url ? parseBox(d.photo_box) : null,
+            idx: i,
+          }))}
+          onClose={() => setBoxViewerIdx(null)}
+        />
+      )}
     </section>
   );
 }
 
-interface ModalProps {
+// JSON-encoded "[ymin,xmin,ymax,xmax]" → number[] or null when missing/bad.
+function parseBox(s: string | null | undefined): number[] | null {
+  if (!s) return null;
+  try {
+    const arr = JSON.parse(s) as unknown;
+    if (Array.isArray(arr) && arr.length === 4 && arr.every(n => typeof n === "number")) return arr as number[];
+  } catch { /* fall through */ }
+  return null;
+}
+
+// Modal that renders the OCR snapshot at full size with red rectangles drawn
+// at every serial's bounding box. The clicked row is highlighted (thick red);
+// the rest of the shared photo's rows show as thin amber outlines so the user
+// can scan the whole sheet without losing the "you are here" anchor.
+function PhotoBoxViewer({
+  photoUrl,
+  activeIdx,
+  items,
+  onClose,
+}: {
+  photoUrl: string;
+  activeIdx: number;
+  items: Array<{ serial: string | null; box: number[] | null; idx: number }>;
+  onClose: () => void;
+}) {
+  return (
+    <div
+      onClick={onClose}
+      className="fixed inset-0 z-[60] flex items-center justify-center bg-black/80 p-4"
+      role="dialog"
+    >
+      <div onClick={e => e.stopPropagation()} className="relative max-w-[95vw] max-h-[95vh] flex flex-col">
+        <button
+          type="button"
+          onClick={onClose}
+          className="absolute -top-3 -right-3 w-9 h-9 rounded-full bg-white text-gray-800 shadow-lg flex items-center justify-center text-xl z-10"
+          aria-label="ปิด"
+        >×</button>
+        {/* Image + overlay. The overlay is absolutely positioned over the
+            <img> at 100% × 100% so a single % box position lines up regardless
+            of the rendered image size. */}
+        <div className="relative inline-block overflow-auto bg-white rounded">
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img src={photoUrl} alt="" className="block max-w-[95vw] max-h-[85vh] object-contain" />
+          <div className="absolute inset-0 pointer-events-none">
+            {(() => {
+              // Only draw the box for the row the user clicked. User feedback
+              // was that the amber outlines for sibling rows were visual noise
+              // — the whole point of opening this view is "where IS this
+              // serial," so one strong red rectangle is the right answer.
+              const active = items.find(it => it.idx === activeIdx);
+              if (!active?.box) return null;
+              const PAD = 25;  // ~2.5% of image — ≈ 5mm on a typical A4-sized photo
+              const [ymin, xmin, ymax, xmax] = active.box;
+              const y0 = Math.max(0,    ymin - PAD);
+              const x0 = Math.max(0,    xmin - PAD);
+              const y1 = Math.min(1000, ymax + PAD);
+              const x1 = Math.min(1000, xmax + PAD);
+              const top    = (y0 / 1000) * 100;
+              const left   = (x0 / 1000) * 100;
+              const height = ((y1 - y0) / 1000) * 100;
+              const width  = ((x1 - x0) / 1000) * 100;
+              return (
+                <div
+                  className="absolute border-2 border-red-500 ring-2 ring-red-500/40"
+                  style={{ top: `${top}%`, left: `${left}%`, width: `${width}%`, height: `${height}%` }}
+                >
+                  <span className="absolute -top-5 left-0 px-1.5 py-0.5 text-[10px] font-mono rounded whitespace-nowrap bg-red-500 text-white">
+                    #{activeIdx + 1}
+                  </span>
+                </div>
+              );
+            })()}
+          </div>
+        </div>
+        <div className="mt-2 text-center text-white text-sm font-mono">
+          #{activeIdx + 1} · {items.find(i => i.idx === activeIdx)?.serial || "—"}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+export interface AddDeviceModalProps {
   type: DeviceType;
   onCancel: () => void;
   onSave: (items: Array<BaseDevice & { kw?: number | null; kwh?: number | null }>) => Promise<{ added: number; dupes: number; reason?: string }>;
+  /** Serials already captured for this device type, lower-cased. The wizard
+   * silently drops OCR'd SNs that match one of these so the batch UI only
+   * surfaces fresh candidates. Without this prop, dedup still happens at
+   * save time but the user sees the dupes first. */
+  existingSerials?: Set<string>;
 }
 // 3-step wizard: pick brand → fill specs (skipped for panels) → capture serial.
 // "Step" here is a logical index, not a route — all rendered in the same modal
 // shell so back/next feels instant and state is preserved between transitions.
-function AddDeviceModal({ type, onCancel, onSave }: ModalProps) {
+export function AddDeviceModal({ type, onCancel, onSave, existingSerials }: AddDeviceModalProps) {
   const numLabel = type === "inverters" ? "kW" : type === "batteries" ? "kWh" : null;
   // One decision per step so each screen is a single tap when the value is in
   // the catalogue (auto-advance below). Panels skip the spec step.
@@ -291,7 +649,12 @@ function AddDeviceModal({ type, onCancel, onSave }: ModalProps) {
   // Photo upload result. `serials` may be 0 / 1 / N — multi-SN photos (panel
   // sheets, battery racks) drop into a batch-confirm UI; single-SN drop into
   // the textbox directly.
-  const [ocrPreview, setOcrPreview] = useState<{ brand: string | null; num: number | null; serials: string[] } | null>(null);
+  const [ocrPreview, setOcrPreview] = useState<{ brand: string | null; num: number | null; serials: string[]; boxes?: (number[] | null)[] } | null>(null);
+  // URL of the OCR snapshot — kept so we can persist it on the device row
+  // (lead_inverters / lead_batteries .photo_url). Was deleted right after
+  // OCR before; now we leave it in /uploads/ and store the URL so the
+  // info-tab tree can show the captured snapshot per device.
+  const [ocrPhotoUrl, setOcrPhotoUrl] = useState<string | null>(null);
   // For multi-SN batch, track which rows the user wants to keep. All start
   // checked; user can untick rows that look wrong before committing.
   const [batchPicks, setBatchPicks] = useState<boolean[]>([]);
@@ -311,12 +674,13 @@ function AddDeviceModal({ type, onCancel, onSave }: ModalProps) {
   //   panels    → /api/ocr-panel-serials   (N SNs, dedup'd)
   // The batch endpoints don't extract brand/spec; user picks those on steps
   // 1/2, then all the SNs from the photo share that brand+spec.
-  const runOcr = async (file: File): Promise<{ brand: string | null; num: number | null; serials: string[] } | null> => {
+  const runOcr = async (file: File): Promise<{ brand: string | null; num: number | null; serials: string[]; boxes: (number[] | null)[]; photoUrl: string | null } | null> => {
     const compressed = await compressSlipFile(file);
     const fd = new FormData();
     fd.append("file", compressed);
     const up = await apiFetch("/api/upload", { method: "POST", body: fd }) as { url: string };
     let serials: string[] = [];
+    let boxes: (number[] | null)[] = [];
     let brand: string | null = null;
     let num: number | null = null;
     try {
@@ -324,8 +688,11 @@ function AddDeviceModal({ type, onCancel, onSave }: ModalProps) {
         const ocr = await apiFetch("/api/ocr-serial", {
           method: "POST", headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ imageUrl: up.url }),
-        }) as { serial: string | null; brand: string | null; kw: number | null };
-        if (ocr.serial) serials = [ocr.serial.trim()];
+        }) as { serial: string | null; brand: string | null; kw: number | null; box?: number[] | null };
+        if (ocr.serial) {
+          serials = [ocr.serial.trim()];
+          boxes   = [Array.isArray(ocr.box) && ocr.box.length === 4 ? ocr.box : null];
+        }
         brand = ocr.brand;
         num = ocr.kw;
       } else {
@@ -333,17 +700,36 @@ function AddDeviceModal({ type, onCancel, onSave }: ModalProps) {
         const ocr = await apiFetch(endpoint, {
           method: "POST", headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ imageUrls: [up.url] }),
-        }) as { serials: string[] };
-        serials = (ocr.serials || []).map(s => s.trim()).filter(Boolean);
+        }) as { serials: string[]; items?: Array<{ serial: string; box: number[] | null }> };
+        // Prefer the new boxed shape when present (panel OCR) so each serial
+        // carries its sticker coords; fall back to the flat serials array for
+        // endpoints that haven't been upgraded yet (battery).
+        if (Array.isArray(ocr.items) && ocr.items.length > 0) {
+          serials = ocr.items.map(i => (i.serial || "").trim()).filter(Boolean);
+          boxes   = ocr.items.map(i => i.box ?? null).slice(0, serials.length);
+        } else {
+          serials = (ocr.serials || []).map(s => s.trim()).filter(Boolean);
+          boxes   = serials.map(() => null);
+        }
       }
-    } finally {
-      // Always drop the temp upload — text is what we persist, not the photo.
+    } catch (e) {
+      // OCR failed — clean up the orphan upload so it doesn't sit in /uploads/.
       fetch(`/api/upload?file=${encodeURIComponent(up.url)}`, {
         method: "DELETE", headers: { ...getUserIdHeader() },
       }).catch(() => {});
+      throw e;
     }
-    if (serials.length === 0 && !brand && num == null) return null;
-    return { brand, num, serials };
+    if (serials.length === 0 && !brand && num == null) {
+      // Nothing extracted — clean up the orphan upload.
+      fetch(`/api/upload?file=${encodeURIComponent(up.url)}`, {
+        method: "DELETE", headers: { ...getUserIdHeader() },
+      }).catch(() => {});
+      return null;
+    }
+    // Keep the photo — it's persisted on the device row so the tree can show
+    // the captured snapshot. Panel sheets share one photo across every
+    // serial extracted from them; same pattern as the battery rack scan.
+    return { brand, num, serials, boxes, photoUrl: up.url };
   };
 
   const pickPhoto = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -353,20 +739,47 @@ function AddDeviceModal({ type, onCancel, onSave }: ModalProps) {
     setOcrBusy(true);
     setError(null);
     setOcrPreview(null);
+    setOcrPhotoUrl(null);
     setBatchPicks([]);
     try {
       const result = await runOcr(file);
       if (!result) { setError("อ่านข้อมูลไม่ออก ลองถ่ายใหม่ใกล้ๆ ฉลาก"); return; }
+      setOcrPhotoUrl(result.photoUrl);
       // brand / spec auto-fill (single-photo OCR also reads them on inverter).
-      if (result.brand)  setBrand(result.brand);
-      if (result.num != null) setNum(String(result.num));
+      // Only auto-fill brand/spec when the user hasn't already picked one.
+      // Otherwise OCR-detected values would silently overwrite an explicit
+      // selection (e.g. user chose 3 kW in step 2, OCR reads the actual chip
+      // as 10 kW and stomps the user's pick).
+      if (result.brand && !brand.trim()) setBrand(result.brand);
+      if (result.num != null && !num.trim()) setNum(String(result.num));
+      // Pre-dedupe OCR'd SNs against what's already saved for this type.
+      // Without this the batch UI would surface dupes the user has to
+      // uncheck manually — and a single SN that's already saved would
+      // silently overwrite the textbox.
+      const rawCount = result.serials.length;
+      // Keep boxes aligned with their serial through the dedupe filter.
+      const keptIdx: number[] = [];
+      for (let i = 0; i < result.serials.length; i++) {
+        const s = result.serials[i];
+        if (!existingSerials || existingSerials.size === 0 || !existingSerials.has(s.toLowerCase())) keptIdx.push(i);
+      }
+      const fresh = keptIdx.map(i => result.serials[i]);
+      const freshBoxes = keptIdx.map(i => result.boxes[i] ?? null);
+      const skipped = rawCount - fresh.length;
       // 1 SN → fill the textbox like before.
       // N SNs → leave textbox alone; the batch UI takes over.
-      if (result.serials.length === 1) setSerial(result.serials[0]);
-      else if (result.serials.length > 1) setBatchPicks(result.serials.map(() => true));
-      setOcrPreview(result);
-      if (result.serials.length === 0 && step === "serial") {
-        setError("อ่าน Serial ไม่ออก ลองถ่ายใหม่ใกล้ๆ ตัวเลข");
+      if (fresh.length === 1) setSerial(fresh[0]);
+      else if (fresh.length > 1) setBatchPicks(fresh.map(() => true));
+      setOcrPreview({ ...result, serials: fresh, boxes: freshBoxes });
+      if (fresh.length === 0) {
+        if (rawCount === 0 && step === "serial") {
+          setError("อ่าน Serial ไม่ออก ลองถ่ายใหม่ใกล้ๆ ตัวเลข");
+        } else if (skipped > 0) {
+          setError(`Serial ที่อ่านได้ ${skipped} ตัวมีอยู่แล้ว — ไม่มีตัวใหม่`);
+        }
+      } else if (skipped > 0) {
+        // Non-blocking notice — the input still works, we just say what we skipped.
+        setError(`อ่านได้ ${rawCount} ตัว · ใหม่ ${fresh.length} · ข้ามที่ซ้ำ ${skipped}`);
       }
     } catch (e) {
       console.error("OCR failed:", e);
@@ -386,7 +799,13 @@ function AddDeviceModal({ type, onCancel, onSave }: ModalProps) {
     setSaving(true);
     setError(null);
     try {
-      const result = await onSave(picks.map(buildPayload));
+      // Walk the picked indices so we can stamp each payload with its own
+      // photo_box from the OCR response — keeping serial ↔ box pairing intact.
+      const pickedIdxs = ocrPreview.serials
+        .map((_, i) => (batchPicks[i] ? i : -1))
+        .filter(i => i >= 0);
+      const payloads = pickedIdxs.map(i => buildPayload(ocrPreview.serials[i], ocrPreview.boxes?.[i] ?? null));
+      const result = await onSave(payloads);
       if (result.added === 0) setError(result.reason || `Serial ทั้งหมดมีอยู่แล้ว (${result.dupes} ซ้ำ)`);
       else if (result.dupes > 0) setError(`เพิ่ม ${result.added} รายการ · ข้ามที่ซ้ำ ${result.dupes} รายการ`);
     } finally {
@@ -396,7 +815,7 @@ function AddDeviceModal({ type, onCancel, onSave }: ModalProps) {
 
   // Build one payload from current form state — used by both single and batch
   // commit paths (batch maps over SNs and stamps each with the same payload).
-  const buildPayload = (sn: string): BaseDevice & { kw?: number | null; kwh?: number | null } => {
+  const buildPayload = (sn: string, box?: number[] | null): BaseDevice & { kw?: number | null; kwh?: number | null } => {
     const numVal = num.trim() ? parseFloat(num) : null;
     const p: BaseDevice & { kw?: number | null; kwh?: number | null } = {
       brand: brand.trim() || null,
@@ -404,6 +823,14 @@ function AddDeviceModal({ type, onCancel, onSave }: ModalProps) {
     };
     if (type === "inverters") p.kw = Number.isFinite(numVal as number) ? numVal : null;
     if (type === "batteries") p.kwh = Number.isFinite(numVal as number) ? numVal : null;
+    // Stamp the OCR snapshot URL so the info-tab tree can show the captured
+    // photo per device. Same URL gets shared across all serials extracted
+    // from one batch photo (panel sheets, battery racks).
+    if (ocrPhotoUrl) p.photo_url = ocrPhotoUrl;
+    // Bounding box ([ymin,xmin,ymax,xmax], Gemini-normalised 0-1000) — saved
+    // alongside the photo so the per-row thumbnail can open a red-overlay
+    // preview pointing at the exact sticker the SN came from.
+    if (box && box.length === 4) p.photo_box = JSON.stringify(box);
     return p;
   };
 
@@ -412,7 +839,12 @@ function AddDeviceModal({ type, onCancel, onSave }: ModalProps) {
     setSaving(true);
     setError(null);
     try {
-      const result = await onSave([buildPayload(serial)]);
+      // Single-SN path: pull the matching box from ocrPreview if the user
+      // got here via the AI scan (otherwise null — typed-in SNs have no
+      // sticker coords).
+      const idx = ocrPreview ? ocrPreview.serials.indexOf(serial.trim()) : -1;
+      const box = idx >= 0 ? (ocrPreview?.boxes?.[idx] ?? null) : null;
+      const result = await onSave([buildPayload(serial, box)]);
       if (result.added === 0) setError(result.reason || "บันทึกไม่สำเร็จ");
     } finally {
       setSaving(false);
@@ -519,7 +951,7 @@ function AddDeviceModal({ type, onCancel, onSave }: ModalProps) {
                 />
               </div>
               <button type="button" onClick={next}
-                className="w-full h-10 rounded-lg text-sm text-gray-500 hover:text-gray-700 border border-gray-200 hover:border-gray-300">
+                className="w-full h-8 rounded-lg text-sm text-gray-500 hover:text-gray-700 border border-gray-200 hover:border-gray-300">
                 ข้าม (ไม่ระบุขนาด)
               </button>
             </div>
@@ -567,10 +999,13 @@ function AddDeviceModal({ type, onCancel, onSave }: ModalProps) {
                   the batch commit, all picks share the brand/spec above. */}
               {ocrPreview && ocrPreview.serials.length <= 1 && (
                 <div className="rounded-lg border border-emerald-200 bg-emerald-50/50 p-3 space-y-1.5">
-                  <div className="text-xs font-semibold text-emerald-700 uppercase tracking-wider">อ่านได้จากรูป</div>
-                  <PreviewRow label="Brand" value={ocrPreview.brand} />
-                  {numLabel && <PreviewRow label={numLabel} value={ocrPreview.num != null ? String(ocrPreview.num) : null} />}
-                  <PreviewRow label="Serial" value={ocrPreview.serials[0] ?? null} mono />
+                  <div className="text-xs font-semibold text-emerald-700 uppercase tracking-wider">สรุปข้อมูล</div>
+                  {/* Show the values that WILL be saved (current state) rather
+                      than the raw OCR readout — user-picked brand/spec win
+                      over OCR-detected ones, so the recap must reflect that. */}
+                  <PreviewRow label="Brand" value={brand || null} />
+                  {numLabel && <PreviewRow label={numLabel} value={num || null} />}
+                  <PreviewRow label="Serial" value={serial || ocrPreview.serials[0] || null} mono />
                 </div>
               )}
               {ocrPreview && ocrPreview.serials.length > 1 && (

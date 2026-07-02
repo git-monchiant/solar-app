@@ -24,13 +24,15 @@ type Tx = InstanceType<typeof sql.Transaction>;
 //
 // Pass `tx` to run inside an existing transaction so the mint commits/rolls
 // back with the surrounding work.
-export type DocType = "booking" | "quotation" | "survey" | "warranty";
+export type DocType = "booking" | "quotation" | "survey" | "warranty" | "install_checklist";
 
-const DEFAULTS: Record<DocType, { prefix: string; column: string }> = {
-  booking:   { prefix: "SM",  column: "pre_doc_no" },
-  quotation: { prefix: "QT",  column: "quotation_doc_no" },
-  survey:    { prefix: "SV",  column: "survey_doc_no" },
-  warranty:  { prefix: "SSE", column: "warranty_doc_no" },
+const DEFAULTS: Record<DocType, { prefix: string; column: string; digits?: number }> = {
+  booking:           { prefix: "SM",  column: "pre_doc_no" },
+  quotation:         { prefix: "QT",  column: "quotation_doc_no" },
+  survey:            { prefix: "SV",  column: "survey_doc_no" },
+  warranty:          { prefix: "SSE", column: "warranty_doc_no" },
+  // SSE-CK-YY#### — 4-digit counter (#### per user spec).
+  install_checklist: { prefix: "SSE-CK", column: "install_checklist_doc_no", digits: 4 },
 };
 
 function reqFor(poolOrTx: Pool | Tx) {
@@ -50,10 +52,17 @@ export async function getDocConfig(
   );
   const map: Record<string, string> = {};
   for (const r of cfg.recordset) map[r.key] = r.value;
+  // Allow a single internal dash for multi-segment prefixes (e.g. "SSE-CK")
+  // — strip everything else, collapse repeats, and trim leading/trailing.
   const prefix = (map[`doc_prefix_${type}`] || DEFAULTS[type].prefix)
-    .replace(/[^A-Z0-9]/gi, "")
+    .replace(/[^A-Z0-9-]/gi, "")
+    .replace(/-+/g, "-")
+    .replace(/^-|-$/g, "")
     .toUpperCase() || DEFAULTS[type].prefix;
-  const digits = Math.max(3, Math.min(5, parseInt(map[`doc_digits_${type}`] || "3") || 3));
+  // Per-type digit default (fallback 3) — install_checklist defaults to 4
+  // for the #### spec. Admin can still override via doc_digits_<type>.
+  const defaultDigits = String(DEFAULTS[type].digits ?? 3);
+  const digits = Math.max(3, Math.min(5, parseInt(map[`doc_digits_${type}`] || defaultDigits) || (DEFAULTS[type].digits ?? 3)));
   return { prefix, digits };
 }
 
@@ -84,6 +93,16 @@ export async function mintDocNo(
   const current = existing.recordset[0]?.doc;
   if (current) return current as string;
 
+  // install_checklist piggybacks on the lead's quotation running number —
+  // user wants the install handover doc to share the QT serial so customers
+  // can see at a glance that QT-260694 and SSE-CK-260694 belong together.
+  // If the lead has no quotation yet we fall through to minting a fresh
+  // install sequence.
+  if (type === "install_checklist") {
+    const reuse = await mintFromQuotation(poolOrTx, leadId, column);
+    if (reuse) return reuse;
+  }
+
   const { prefix, digits } = await getDocConfig(poolOrTx, type);
   const year = new Date().getFullYear().toString().slice(-2);
   const like = `${prefix}-${year}%`;
@@ -108,6 +127,35 @@ export async function mintDocNo(
     .query(`UPDATE leads SET ${column} = @doc_no, updated_at = GETDATE()
             WHERE id = @id AND ${column} IS NULL`);
 
+  return docNo;
+}
+
+// Helper for install_checklist — reuse the lead's quotation running number,
+// just swap the prefix (QT-260694 -> SSE-CK-260694). Returns null if the
+// lead has no quotation_doc_no yet so the caller can fall back to minting a
+// fresh sequence.
+async function mintFromQuotation(
+  poolOrTx: Pool | Tx,
+  leadId: number,
+  column: string,
+): Promise<string | null> {
+  const qtRes = await reqFor(poolOrTx)
+    .input("id", sql.Int, leadId)
+    .query(`SELECT quotation_doc_no FROM leads WHERE id = @id`);
+  const qtDoc = qtRes.recordset[0]?.quotation_doc_no as string | null | undefined;
+  if (!qtDoc) return null;
+
+  const qtPrefix = (await getDocConfig(poolOrTx, "quotation")).prefix;
+  const ckPrefix = (await getDocConfig(poolOrTx, "install_checklist")).prefix;
+  if (!qtDoc.startsWith(`${qtPrefix}-`)) return null;
+  const running = qtDoc.slice(qtPrefix.length + 1);
+  const docNo = `${ckPrefix}-${running}`;
+
+  await reqFor(poolOrTx)
+    .input("id", sql.Int, leadId)
+    .input("doc_no", sql.NVarChar(20), docNo)
+    .query(`UPDATE leads SET ${column} = @doc_no, updated_at = GETDATE()
+            WHERE id = @id AND ${column} IS NULL`);
   return docNo;
 }
 

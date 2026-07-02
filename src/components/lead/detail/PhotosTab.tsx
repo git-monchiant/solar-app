@@ -95,17 +95,14 @@ function buildGroups(lead: LeadLike): Group[] {
   }
   const surveyGallery: PhotoItem[] = [];
   split(lead.survey_photos).forEach((url, i) => surveyGallery.push({ url, label: `รูปสำรวจ ${i + 1}` }));
-  const surveyExtra: PhotoItem[] = [];
-  split(lead.survey_photos_extra).forEach((url, i) => surveyExtra.push({ url, label: `เพิ่มเติม ${i + 1}` }));
   pushSub("Survey", "🔍", [
     { title: "รูปตามรายการ", items: surveyChecklist },
     { title: "รูปพร้อมหมายเหตุ", items: surveyWithNote },
-    { title: "รูปอื่นๆ", items: surveyGallery },
     {
-      title: "รูปเพิ่มเติม",
-      items: surveyExtra,
-      uploadField: "survey_photos_extra",
-      uploadCurrent: has(lead.survey_photos_extra) ? lead.survey_photos_extra : "",
+      title: "รูปสำรวจอื่นๆ",
+      items: surveyGallery,
+      uploadField: "survey_photos",
+      uploadCurrent: has(lead.survey_photos) ? lead.survey_photos : "",
     },
   ]);
 
@@ -122,7 +119,7 @@ function buildGroups(lead: LeadLike): Group[] {
   pushSub("Install", "🔧", [
     { title: "รูปติดตั้ง", items: installMain },
     {
-      title: "รูปเพิ่มเติม",
+      title: "รูปติดตั้งอื่นๆ",
       items: installExtra,
       uploadField: "install_photos_extra",
       uploadCurrent: has(lead.install_photos_extra) ? lead.install_photos_extra : "",
@@ -312,8 +309,13 @@ function PhotoGrid({ items, upload }: { items: PhotoItem[]; upload?: { onPick: (
         <div
           key={`ph-${i}`}
           aria-hidden
-          className="aspect-square rounded-lg bg-gray-100/70 border border-dashed border-gray-200"
-        />
+          className="aspect-square rounded-lg bg-gray-100/70 border border-dashed border-gray-200 flex flex-col items-center justify-center gap-1 text-gray-400"
+        >
+          <svg className="w-7 h-7" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
+            <path strokeLinecap="round" strokeLinejoin="round" d="M2.25 15.75l5.159-5.159a2.25 2.25 0 013.182 0l5.159 5.159m-1.5-1.5l1.409-1.409a2.25 2.25 0 013.182 0l2.909 2.909m-18 3.75h16.5a1.5 1.5 0 001.5-1.5V6a1.5 1.5 0 00-1.5-1.5H3.75A1.5 1.5 0 002.25 6v12a1.5 1.5 0 001.5 1.5zm10.5-11.25h.008v.008h-.008V8.25zm.375 0a.375.375 0 11-.75 0 .375.375 0 01.75 0z" />
+          </svg>
+          <span className="text-xxs">ไม่มีรูป</span>
+        </div>
       ))}
     </div>
   );

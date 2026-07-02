@@ -40,7 +40,7 @@ export default function ImageLightbox({ images, index, onIndexChange, onClose }:
       <button
         type="button"
         onClick={(e) => { e.stopPropagation(); onClose(); }}
-        className="absolute top-4 right-4 w-10 h-10 rounded-full bg-black/50 text-white flex items-center justify-center text-xl safe-top"
+        className="absolute top-4 right-4 w-10 h-8 rounded-full bg-black/50 text-white flex items-center justify-center text-xl safe-top"
         aria-label="ปิด"
       >
         ✕

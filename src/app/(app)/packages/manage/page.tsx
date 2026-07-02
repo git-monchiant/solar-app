@@ -111,28 +111,28 @@ export default function ManagePackagesPage() {
       <div className="p-4 md:p-6 space-y-4">
         {/* Toolbar */}
         <div className="flex items-center gap-3 flex-wrap">
-          <input type="text" value={search} onChange={e => setSearch(e.target.value)} placeholder="ค้นหา..." className="h-10 px-4 rounded-lg border border-gray-200 text-sm flex-1 min-w-[200px] focus:outline-none focus:border-primary" />
-          <select value={filter} onChange={e => setFilter(e.target.value as typeof filter)} className="h-10 px-3 rounded-lg border border-gray-200 text-sm bg-white focus:outline-none focus:border-primary">
+          <input type="text" value={search} onChange={e => setSearch(e.target.value)} placeholder="ค้นหา..." className="h-8 px-4 rounded-lg border border-gray-200 text-sm flex-1 min-w-[200px] focus:outline-none focus:border-primary" />
+          <select value={filter} onChange={e => setFilter(e.target.value as typeof filter)} className="h-8 px-3 rounded-lg border border-gray-200 text-sm bg-white focus:outline-none focus:border-primary">
             <option value="all">ทั้งหมด</option>
             <option value="active">Active</option>
             <option value="inactive">Inactive</option>
           </select>
-          <select value={filterPhase} onChange={e => setFilterPhase(e.target.value as typeof filterPhase)} className="h-10 px-3 rounded-lg border border-gray-200 text-sm bg-white focus:outline-none focus:border-primary">
+          <select value={filterPhase} onChange={e => setFilterPhase(e.target.value as typeof filterPhase)} className="h-8 px-3 rounded-lg border border-gray-200 text-sm bg-white focus:outline-none focus:border-primary">
             <option value="all">All Phase</option>
             <option value="1">1 Phase</option>
             <option value="3">3 Phase</option>
           </select>
-          <select value={filterBat} onChange={e => setFilterBat(e.target.value as typeof filterBat)} className="h-10 px-3 rounded-lg border border-gray-200 text-sm bg-white focus:outline-none focus:border-primary">
+          <select value={filterBat} onChange={e => setFilterBat(e.target.value as typeof filterBat)} className="h-8 px-3 rounded-lg border border-gray-200 text-sm bg-white focus:outline-none focus:border-primary">
             <option value="all">Battery ทั้งหมด</option>
             <option value="yes">มี Battery</option>
             <option value="no">ไม่มี Battery</option>
           </select>
-          <select value={filterUpgrade} onChange={e => setFilterUpgrade(e.target.value as typeof filterUpgrade)} className="h-10 px-3 rounded-lg border border-gray-200 text-sm bg-white focus:outline-none focus:border-primary">
+          <select value={filterUpgrade} onChange={e => setFilterUpgrade(e.target.value as typeof filterUpgrade)} className="h-8 px-3 rounded-lg border border-gray-200 text-sm bg-white focus:outline-none focus:border-primary">
             <option value="all">ทุกประเภท</option>
             <option value="yes">Scale Up</option>
             <option value="no">ไม่ใช่ Scale Up</option>
           </select>
-          <button type="button" onClick={() => setEditing({ ...empty })} className="h-10 px-5 rounded-lg bg-primary text-white text-sm font-semibold hover:bg-primary-dark transition-colors">+ เพิ่ม Package</button>
+          <button type="button" onClick={() => setEditing({ ...empty })} className="h-8 px-5 rounded-lg bg-primary text-white text-sm font-semibold hover:bg-primary-dark transition-colors">+ เพิ่ม Package</button>
         </div>
 
         {/* Cards */}
@@ -195,15 +195,15 @@ export default function ManagePackagesPage() {
               <div className="grid grid-cols-2 gap-3">
                 <div className="col-span-2">
                   <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wider mb-0.5">ชื่อ Package</label>
-                  <input type="text" value={editing.name} onChange={e => setEditing({ ...editing, name: e.target.value })} className="w-full h-10 px-3 rounded-lg border border-gray-200 text-sm focus:outline-none focus:border-primary" />
+                  <input type="text" value={editing.name} onChange={e => setEditing({ ...editing, name: e.target.value })} className="w-full h-8 px-3 rounded-lg border border-gray-200 text-sm focus:outline-none focus:border-primary" />
                 </div>
                 <div>
                   <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wider mb-0.5">kWp</label>
-                  <input type="number" step="0.1" value={editing.kwp || ""} onChange={e => setEditing({ ...editing, kwp: parseFloat(e.target.value) || 0 })} className="w-full h-10 px-3 rounded-lg border border-gray-200 text-sm focus:outline-none focus:border-primary" />
+                  <input type="number" step="0.1" value={editing.kwp || ""} onChange={e => setEditing({ ...editing, kwp: parseFloat(e.target.value) || 0 })} className="w-full h-8 px-3 rounded-lg border border-gray-200 text-sm focus:outline-none focus:border-primary" />
                 </div>
                 <div>
                   <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wider mb-0.5">Phase</label>
-                  <select value={editing.phase} onChange={e => setEditing({ ...editing, phase: parseInt(e.target.value) })} className="w-full h-10 px-3 rounded-lg border border-gray-200 text-sm bg-white focus:outline-none focus:border-primary">
+                  <select value={editing.phase} onChange={e => setEditing({ ...editing, phase: parseInt(e.target.value) })} className="w-full h-8 px-3 rounded-lg border border-gray-200 text-sm bg-white focus:outline-none focus:border-primary">
                     <option value={0}>All Phase</option>
                     <option value={1}>1 Phase</option>
                     <option value={3}>3 Phase</option>
@@ -211,11 +211,11 @@ export default function ManagePackagesPage() {
                 </div>
                 <div>
                   <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wider mb-0.5">ราคา (THB)</label>
-                  <input type="number" value={editing.price || ""} onChange={e => setEditing({ ...editing, price: parseFloat(e.target.value) || 0 })} className="w-full h-10 px-3 rounded-lg border border-gray-200 text-sm focus:outline-none focus:border-primary" />
+                  <input type="number" value={editing.price || ""} onChange={e => setEditing({ ...editing, price: parseFloat(e.target.value) || 0 })} className="w-full h-8 px-3 rounded-lg border border-gray-200 text-sm focus:outline-none focus:border-primary" />
                 </div>
                 <div>
                   <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wider mb-0.5">Warranty (ปี)</label>
-                  <input type="number" value={editing.warranty_years || ""} onChange={e => setEditing({ ...editing, warranty_years: parseInt(e.target.value) || 0 })} className="w-full h-10 px-3 rounded-lg border border-gray-200 text-sm focus:outline-none focus:border-primary" />
+                  <input type="number" value={editing.warranty_years || ""} onChange={e => setEditing({ ...editing, warranty_years: parseInt(e.target.value) || 0 })} className="w-full h-8 px-3 rounded-lg border border-gray-200 text-sm focus:outline-none focus:border-primary" />
                 </div>
               </div>
 
@@ -241,11 +241,11 @@ export default function ManagePackagesPage() {
               <div className="grid grid-cols-2 gap-3">
                 <div>
                   <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wider mb-0.5">Inverter kW</label>
-                  <input type="number" step="0.1" value={editing.inverter_kw ?? ""} onChange={e => setEditing({ ...editing, inverter_kw: e.target.value ? parseFloat(e.target.value) : null })} className="w-full h-10 px-3 rounded-lg border border-gray-200 text-sm focus:outline-none focus:border-primary" />
+                  <input type="number" step="0.1" value={editing.inverter_kw ?? ""} onChange={e => setEditing({ ...editing, inverter_kw: e.target.value ? parseFloat(e.target.value) : null })} className="w-full h-8 px-3 rounded-lg border border-gray-200 text-sm focus:outline-none focus:border-primary" />
                 </div>
                 <div>
                   <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wider mb-0.5">Inverter Brand</label>
-                  <input type="text" value={editing.inverter_brand ?? ""} onChange={e => setEditing({ ...editing, inverter_brand: e.target.value || null })} className="w-full h-10 px-3 rounded-lg border border-gray-200 text-sm focus:outline-none focus:border-primary" />
+                  <input type="text" value={editing.inverter_brand ?? ""} onChange={e => setEditing({ ...editing, inverter_brand: e.target.value || null })} className="w-full h-8 px-3 rounded-lg border border-gray-200 text-sm focus:outline-none focus:border-primary" />
                 </div>
               </div>
 
@@ -253,11 +253,11 @@ export default function ManagePackagesPage() {
               <div className="grid grid-cols-2 gap-3">
                 <div>
                   <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wider mb-0.5">Battery kWh</label>
-                  <input type="number" step="0.1" value={editing.battery_kwh ?? ""} onChange={e => setEditing({ ...editing, battery_kwh: e.target.value ? parseFloat(e.target.value) : null })} className="w-full h-10 px-3 rounded-lg border border-gray-200 text-sm focus:outline-none focus:border-primary" />
+                  <input type="number" step="0.1" value={editing.battery_kwh ?? ""} onChange={e => setEditing({ ...editing, battery_kwh: e.target.value ? parseFloat(e.target.value) : null })} className="w-full h-8 px-3 rounded-lg border border-gray-200 text-sm focus:outline-none focus:border-primary" />
                 </div>
                 <div>
                   <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wider mb-0.5">Battery Brand</label>
-                  <input type="text" value={editing.battery_brand ?? ""} onChange={e => setEditing({ ...editing, battery_brand: e.target.value || null })} className="w-full h-10 px-3 rounded-lg border border-gray-200 text-sm focus:outline-none focus:border-primary" />
+                  <input type="text" value={editing.battery_brand ?? ""} onChange={e => setEditing({ ...editing, battery_brand: e.target.value || null })} className="w-full h-8 px-3 rounded-lg border border-gray-200 text-sm focus:outline-none focus:border-primary" />
                 </div>
               </div>
 
@@ -265,11 +265,11 @@ export default function ManagePackagesPage() {
               <div className="grid grid-cols-2 gap-3">
                 <div>
                   <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wider mb-0.5">ผ่อน/เดือน</label>
-                  <input type="text" value={editing.monthly_installment ?? ""} onChange={e => setEditing({ ...editing, monthly_installment: e.target.value || null })} className="w-full h-10 px-3 rounded-lg border border-gray-200 text-sm focus:outline-none focus:border-primary" />
+                  <input type="text" value={editing.monthly_installment ?? ""} onChange={e => setEditing({ ...editing, monthly_installment: e.target.value || null })} className="w-full h-8 px-3 rounded-lg border border-gray-200 text-sm focus:outline-none focus:border-primary" />
                 </div>
                 <div>
                   <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wider mb-0.5">ประหยัด/เดือน</label>
-                  <input type="number" value={editing.monthly_saving ?? ""} onChange={e => setEditing({ ...editing, monthly_saving: e.target.value ? parseFloat(e.target.value) : null })} className="w-full h-10 px-3 rounded-lg border border-gray-200 text-sm focus:outline-none focus:border-primary" />
+                  <input type="number" value={editing.monthly_saving ?? ""} onChange={e => setEditing({ ...editing, monthly_saving: e.target.value ? parseFloat(e.target.value) : null })} className="w-full h-8 px-3 rounded-lg border border-gray-200 text-sm focus:outline-none focus:border-primary" />
                 </div>
               </div>
 
@@ -277,11 +277,11 @@ export default function ManagePackagesPage() {
               <div className="grid grid-cols-2 gap-3">
                 <div>
                   <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wider mb-0.5">วันเริ่มใช้</label>
-                  <input type="date" value={editing.start_date?.slice(0, 10) || ""} onChange={e => setEditing({ ...editing, start_date: e.target.value })} className="w-full h-10 px-3 rounded-lg border border-gray-200 text-sm focus:outline-none focus:border-primary" />
+                  <input type="date" value={editing.start_date?.slice(0, 10) || ""} onChange={e => setEditing({ ...editing, start_date: e.target.value })} className="w-full h-8 px-3 rounded-lg border border-gray-200 text-sm focus:outline-none focus:border-primary" />
                 </div>
                 <div>
                   <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wider mb-0.5">วันหมดอายุ</label>
-                  <input type="date" value={editing.expire_date?.slice(0, 10) || ""} onChange={e => setEditing({ ...editing, expire_date: e.target.value })} className="w-full h-10 px-3 rounded-lg border border-gray-200 text-sm focus:outline-none focus:border-primary" />
+                  <input type="date" value={editing.expire_date?.slice(0, 10) || ""} onChange={e => setEditing({ ...editing, expire_date: e.target.value })} className="w-full h-8 px-3 rounded-lg border border-gray-200 text-sm focus:outline-none focus:border-primary" />
                 </div>
               </div>
 
@@ -299,8 +299,8 @@ export default function ManagePackagesPage() {
 
             {/* Actions */}
             <div className="px-5 py-3 border-t border-gray-200 flex justify-end gap-3">
-              <button type="button" onClick={() => setEditing(null)} className="h-10 px-5 rounded-lg border border-gray-200 text-sm font-semibold text-gray-600 hover:bg-gray-50">ยกเลิก</button>
-              <button type="button" onClick={save} disabled={saving || !editing.name.trim()} className="h-10 px-6 rounded-lg bg-primary text-white text-sm font-semibold hover:bg-primary-dark disabled:opacity-50 transition-colors">
+              <button type="button" onClick={() => setEditing(null)} className="h-8 px-5 rounded-lg border border-gray-200 text-sm font-semibold text-gray-600 hover:bg-gray-50">ยกเลิก</button>
+              <button type="button" onClick={save} disabled={saving || !editing.name.trim()} className="h-8 px-6 rounded-lg bg-primary text-white text-sm font-semibold hover:bg-primary-dark disabled:opacity-50 transition-colors">
                 {saving ? "กำลังบันทึก..." : "บันทึก"}
               </button>
             </div>

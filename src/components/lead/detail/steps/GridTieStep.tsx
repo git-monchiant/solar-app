@@ -113,7 +113,7 @@ export default function GridTieStep({ lead, state, refresh, expanded, onToggle }
       </div>
       {lead.grid_permit_doc_url && (
         <a href={lead.grid_permit_doc_url} onClick={fileViewer.handler(lead.grid_permit_doc_url, "ใบอนุญาต / PPA")}
-           className="flex items-center justify-center gap-2 w-full h-10 rounded-lg bg-gray-100 hover:bg-gray-200 text-sm font-semibold text-gray-700">
+           className="flex items-center justify-center gap-2 w-full h-8 rounded-lg bg-gray-100 hover:bg-gray-200 text-sm font-semibold text-gray-700">
           <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" /></svg>
           ดูใบอนุญาต
         </a>
@@ -213,7 +213,7 @@ function DateRow({ label, value, onChange, highlight }: { label: string; value: 
     <div className="flex items-center gap-2">
       <span className={`text-xs flex-1 ${highlight ? "font-semibold text-gray-800" : "text-gray-500"}`}>{label}</span>
       <input type="date" value={value} onChange={e => onChange(e.target.value)}
-        className={`w-[160px] h-9 px-2 rounded-lg border text-xs focus:outline-none focus:border-primary ${highlight ? "border-amber-300 bg-amber-50/50" : "border-gray-200 bg-white"}`} />
+        className={`w-[160px] h-8 px-2 rounded-lg border text-xs focus:outline-none focus:border-primary ${highlight ? "border-amber-300 bg-amber-50/50" : "border-gray-200 bg-white"}`} />
     </div>
   );
 }

@@ -156,7 +156,7 @@ export default function BottomNav({ collapsed = false, onToggle }: BottomNavProp
             <img
               src="https://senasolarenergy.com/wp-content/uploads/2022/04/logo_senasolarenergy.png"
               alt="Sena Solar Energy"
-              className="h-9 w-auto pl-2"
+              className="h-8 w-auto pl-2"
             />
           )}
           <button

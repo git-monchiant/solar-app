@@ -1,7 +1,7 @@
 "use client";
-import { CameraIcon, CheckIcon, ChevronLeftIcon, ChevronRightIcon, DocumentIcon, LineIcon } from "@/components/ui/icons";
+import { BoltIcon, CameraIcon, CheckIcon, ChevronLeftIcon, ChevronRightIcon, DocumentIcon, LineIcon, UserIcon } from "@/components/ui/icons";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { apiFetch, getUserIdHeader } from "@/lib/api";
 import { useMe } from "@/lib/roles";
 import type { StepCommonProps, Package } from "./types";
@@ -17,7 +17,10 @@ import { useFileViewer } from "@/lib/hooks/useFileViewer";
 import { buildWarrantyFlex } from "@/lib/utils/line-flex";
 import { compressImage } from "@/lib/utils/compressImage";
 import { formatThaiDate } from "@/lib/utils/formatters";
-import { INVERTER_BRANDS, INVERTER_KW_SIZES, PHASE_LABEL } from "@/lib/constants/survey-options";
+import { INVERTER_BRANDS, INVERTER_KW_SIZES, PANEL_BRANDS, PHASE_LABEL } from "@/lib/constants/survey-options";
+import Dropdown from "@/components/ui/Dropdown";
+import NumberStepper from "@/components/ui/NumberStepper";
+import SerialsUploader, { AddDeviceModal } from "@/components/lead/detail/SerialsUploader";
 
 const SUB_STEPS = ["ข้อมูล", "แผง", "แบตเตอรี่", "เอกสาร", "ยืนยัน"];
 const PANEL_ROWS = 20;
@@ -79,15 +82,19 @@ function ThaiDateInput({ value, onChange }: { value: string; onChange: (iso: str
       onChange={e => handleChange(e.target.value)}
       placeholder="DD-MM-YYYY (พ.ศ.)"
       maxLength={10}
-      className={`w-full h-11 px-3 rounded-lg border font-mono tabular-nums focus:outline-none ${invalid ? "border-red-400 focus:border-red-500" : "border-gray-200 focus:border-primary"}`}
+      className={`w-full h-8 px-3 rounded-lg border text-sm font-mono tabular-nums focus:outline-none ${invalid ? "border-red-400 focus:border-red-500" : "border-gray-200 focus:border-primary"}`}
     />
   );
 }
 
+// Warranty expiry = start + N years - 1 day. The -1 day so a 5-year warranty
+// starting 2026-06-30 expires on 2031-06-29, not 2031-06-30 (the start date
+// of the next year). User spec: warranty range is inclusive of both ends.
 const addYears = (iso: string | null, years: number): string | null => {
   if (!iso) return null;
   const d = new Date(iso.slice(0, 10) + "T12:00:00");
   d.setFullYear(d.getFullYear() + years);
+  d.setDate(d.getDate() - 1);
   return toISO(d);
 };
 
@@ -105,6 +112,12 @@ export default function WarrantyStep({ lead, state, refresh, packages, expanded,
   const defaultStart = warrantyStartISO || installedISO || toISO(new Date());
 
   const [sn, setSn] = useState(lead.warranty_inverter_sn || "");
+  // Camera button on the Serial Number row opens the shared add-device
+  // wizard (same modal as the Equipment-Serial tab). After a successful save,
+  // the new SN is mirrored back into this inline field. The actual wizard
+  // handler (saveInverterFromWizard) is declared further down after the
+  // brand/kw setters it needs are in scope.
+  const [openInverterWizard, setOpenInverterWizard] = useState(false);
   // Warranty doc-no: stored value wins; otherwise mint via the shared
   // endpoint so the prefix + counter match the config (default "SSE-YYNNNN").
   const [docNo, setDocNo] = useState(lead.warranty_doc_no || "");
@@ -116,11 +129,18 @@ export default function WarrantyStep({ lead, state, refresh, packages, expanded,
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [lead.id]);
   const [startDate, setStartDate] = useState(defaultStart);
+  // Warranty duration (years) drives the end-date calc — was hard-coded +2y.
+  // O&M visits/year is metadata for the maintenance schedule on the cert.
+  const [durationYears, setDurationYears] = useState<number>(lead.warranty_duration_years ?? 2);
+  const [omPerYear,    setOmPerYear]    = useState<number>(lead.warranty_om_per_year ?? 2);
   const [issuing, setIssuing] = useState(false);
   const [inverterCertUrl, setInverterCertUrl] = useState<string | null>(lead.warranty_inverter_cert_url);
   const [panelCertUrl, setPanelCertUrl] = useState<string | null>(lead.warranty_panel_cert_url);
   const [otherDocs, setOtherDocs] = useState<string[]>(lead.warranty_other_docs_url ? lead.warranty_other_docs_url.split(",").filter(Boolean) : []);
   const [uploadingField, setUploadingField] = useState<string | null>(null);
+  // Huawei warranty pull — only relevant when the inverter brand is Huawei.
+  const [huaweiLoading, setHuaweiLoading] = useState(false);
+  const [huaweiInfo, setHuaweiInfo] = useState<{ servicePackage: string; startDate: string; endDate: string } | null>(null);
   const [nextError, setNextError] = useState<string | null>(null);
   const [subStep, setSubStep] = useSubStep(`warrantySubStep_${lead.id}`, 0, SUB_STEPS.length);
   const [lineSending, setLineSending] = useState(false);
@@ -143,8 +163,54 @@ export default function WarrantyStep({ lead, state, refresh, packages, expanded,
   const [panelCount, setPanelCount] = useState<number | "">(lead.warranty_panel_count ?? "");
   const [panelWatt, setPanelWatt] = useState<number | "">(lead.warranty_panel_watt ?? "");
   const [panelBrand, setPanelBrand] = useState<string>(lead.warranty_panel_brand ?? "");
+  const [panelModel, setPanelModel] = useState<string>(lead.warranty_panel_model ?? "");
+  // BATTERY summary on subStep 0 — mirrors Install §1.4. Independent from
+  // subStep 2's per-row battery list (which has its own multi-row + OCR UI).
+  const [battBrand, setBattBrand] = useState<string>(lead.warranty_battery_brand ?? "");
+  const [battModel, setBattModel] = useState<string>(lead.warranty_battery_model ?? "");
+  const [battKwh,   setBattKwh]   = useState<number | "">(lead.warranty_battery_kwh ?? "");
   const [invBrand, setInvBrand] = useState<string>(lead.warranty_inverter_brand ?? defaultPkg?.inverter_brand ?? "");
   const [invKw, setInvKw] = useState<number | "">(lead.warranty_inverter_kw ?? defaultPkg?.inverter_kw ?? "");
+
+  // Wizard handler — declared here (after invBrand/invKw setters) so it can
+  // mirror brand + kw + sn back into the inline dropdowns when the user
+  // confirms an inverter in the AI popup.
+  const saveInverterFromWizard = async (
+    items: Array<{ brand: string | null; serial_no: string | null; kw?: number | null; kwh?: number | null }>
+  ): Promise<{ added: number; dupes: number; reason?: string }> => {
+    try {
+      const cur = await apiFetch(`/api/leads/${lead.id}/devices`) as {
+        inverters: Array<{ brand: string | null; kw: number | null; serial_no: string | null }>;
+      };
+      const existing = cur.inverters ?? [];
+      const seen = new Set(existing.map(i => i.serial_no?.toLowerCase()).filter((x): x is string => !!x));
+      const fresh: typeof existing = [];
+      let dupes = 0;
+      for (const it of items) {
+        const k = it.serial_no?.toLowerCase() || "";
+        if (k && seen.has(k)) { dupes++; continue; }
+        if (k) seen.add(k);
+        fresh.push({ brand: it.brand, kw: it.kw ?? null, serial_no: it.serial_no });
+      }
+      if (fresh.length === 0) {
+        return { added: 0, dupes, reason: `Serial ${dupes > 1 ? "ทั้ง " + dupes + " ตัว" : ""}มีอยู่แล้ว` };
+      }
+      await apiFetch(`/api/leads/${lead.id}/devices`, {
+        method: "PUT", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ type: "inverters", items: [...existing, ...fresh] }),
+      });
+      // Mirror the confirmed inverter into the inline dropdowns + SN input so
+      // the main card reflects what the wizard captured.
+      const first = fresh[0];
+      if (first?.serial_no) setSn(first.serial_no);
+      if (first?.brand)     setInvBrand(first.brand);
+      if (first?.kw != null) setInvKw(first.kw);
+      setOpenInverterWizard(false);
+      return { added: fresh.length, dupes };
+    } catch {
+      return { added: 0, dupes: 0, reason: "บันทึกไม่สำเร็จ ลองอีกครั้ง" };
+    }
+  };
   // Phase defaults to whatever survey captured — staff override only if the
   // actual install diverged. Stored separately from survey_electrical_phase
   // so the survey record stays intact.
@@ -197,6 +263,72 @@ export default function WarrantyStep({ lead, state, refresh, packages, expanded,
   const toggleBattVerified = (i: number) => {
     setBattVerified(prev => prev.map((v, idx) => idx === i ? !v : v));
   };
+
+  // ── Mirror "what was actually installed" from the install checklist. ─────
+  // Install is the source of truth (technician records actual equipment on
+  // site). Warranty fields default to that snapshot but can be overridden by
+  // the operator — only fill from install for fields that are still empty so
+  // any user override sticks across re-mounts.
+  const installMirroredRef = useRef(false);
+  useEffect(() => {
+    if (installMirroredRef.current) return;
+    installMirroredRef.current = true;
+    // Fetch install_checklist (full snapshot) AND lead_inverters/_batteries/
+    // _panels (Equipment-Serial tab data) in parallel, then mirror missing
+    // values from either source. install_checklist wins when both have data
+    // for the same field; devices fills the gap when install isn't filled.
+    Promise.all([
+      apiFetch(`/api/install-checklist/${lead.id}`).catch(() => null) as Promise<{ system_specs?: string | null } | null>,
+      apiFetch(`/api/leads/${lead.id}/devices`).catch(() => null) as Promise<{
+        inverters?: Array<{ brand: string | null; kw: number | null; serial_no: string | null }>;
+        batteries?: Array<{ brand: string | null; kwh: number | null; serial_no: string | null }>;
+        panels?: Array<{ brand: string | null; serial_no: string | null }>;
+      } | null>,
+    ]).then(([row, dev]) => {
+      let specs: { inverter?: { brand?: string; kw?: number | null; phase?: string; sn?: string }; panel?: { brand?: string; model?: string; count?: number | null; watt?: number | null; total_kwp?: number | null }; battery?: { brand?: string; model?: string; kwh?: number | null } } = {};
+      if (row?.system_specs) {
+        try { specs = JSON.parse(row.system_specs); } catch { /* fall through to devices-only mirror */ }
+      }
+      const inv = specs.inverter || {};
+      const pn  = specs.panel    || {};
+      const bt  = specs.battery  || {};
+      // First-hand from install JSON ─────────────────────────────────────
+      if (!invBrand && inv.brand) setInvBrand(inv.brand);
+      if (invKw === "" && typeof inv.kw === "number") setInvKw(inv.kw);
+      if (!phase && inv.phase) setPhase(inv.phase);
+      if (!sn && inv.sn) setSn(inv.sn);
+      if (!panelBrand && pn.brand) setPanelBrand(pn.brand);
+      if (!panelModel && pn.model) setPanelModel(pn.model);
+      if (panelCount === "" && typeof pn.count === "number") setPanelCount(pn.count);
+      if (panelWatt === "" && typeof pn.watt === "number") setPanelWatt(pn.watt);
+      if (sysKwp === "" && typeof pn.total_kwp === "number") setSysKwp(pn.total_kwp);
+      if (!battBrand && bt.brand) setBattBrand(bt.brand);
+      if (!battModel && bt.model) setBattModel(bt.model);
+      if (battKwh === "" && typeof bt.kwh === "number") setBattKwh(bt.kwh);
+      // Second-hand from Equipment-Serial tables (gap-fill only) ─────────
+      // lead_batteries[].brand / .kwh — use the first row that has the value.
+      const battRow = dev?.batteries?.find(b => b.brand || b.kwh != null);
+      if (battRow) {
+        if (!battBrand && !bt.brand && battRow.brand) setBattBrand(battRow.brand);
+        if (battKwh === "" && bt.kwh == null && typeof battRow.kwh === "number") setBattKwh(battRow.kwh);
+      }
+      // lead_inverters[].brand / .kw — same gap-fill.
+      const invRow = dev?.inverters?.find(i => i.brand || i.kw != null || i.serial_no);
+      if (invRow) {
+        if (!invBrand && !inv.brand && invRow.brand) setInvBrand(invRow.brand);
+        if (invKw === "" && inv.kw == null && typeof invRow.kw === "number") setInvKw(invRow.kw);
+        if (!sn && !inv.sn && invRow.serial_no) setSn(invRow.serial_no);
+      }
+      // lead_panels[].brand + COUNT(*) — panel count comes "for free" from
+      // the serials table since each row is one panel.
+      const panelRows = dev?.panels ?? [];
+      const firstPanelBrand = panelRows.find(p => p.brand)?.brand;
+      if (firstPanelBrand && !panelBrand && !pn.brand) setPanelBrand(firstPanelBrand);
+      if (panelRows.length > 0 && panelCount === "" && pn.count == null) setPanelCount(panelRows.length);
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [lead.id]);
+
   // Battery serial bulk-scan — auto-process pipeline mirroring panel scan.
   // Each uploaded photo is OCR'd individually, results stream into next empty
   // unlocked battery row's serial field (locked rows untouched, dedup against
@@ -415,6 +547,36 @@ export default function WarrantyStep({ lead, state, refresh, packages, expanded,
       }
     } finally { setUploadingField(null); }
   };
+  // Pull the official Huawei warranty certificate for the inverter SN and store
+  // it as the inverter manufacturer cert (warranty_inverter_cert_url) so the
+  // issued warranty PDF merges it in automatically. Captcha is solved server-side.
+  const fetchHuaweiCert = async () => {
+    const serial = sn.trim();
+    if (!serial) { setNextError("กรอก Serial Number ของอินเวอร์เตอร์ Huawei ก่อน"); return; }
+    setHuaweiLoading(true);
+    setHuaweiInfo(null);
+    try {
+      const r = await apiFetch("/api/huawei-warranty", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ serial_no: serial, lead_id: lead.id }),
+      }) as { ok?: boolean; url?: string | null; error?: string; info?: { servicePackage: string; startDate: string; endDate: string } };
+      if (!r.ok) { setNextError(r.error || "ดึงข้อมูล Huawei ไม่สำเร็จ"); return; }
+      if (r.info) setHuaweiInfo({ servicePackage: r.info.servicePackage, startDate: r.info.startDate, endDate: r.info.endDate });
+      if (r.url) {
+        // Overwrite outright — replace whatever inverter cert was there. Re-fetch
+        // is intentional, so no confirm; just delete the file we're replacing so
+        // repeated pulls don't pile up orphans in public/uploads.
+        const prev = inverterCertUrl;
+        setInverterCertUrl(r.url);
+        await apiFetch(`/api/leads/${lead.id}`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ warranty_inverter_cert_url: r.url }) });
+        if (prev && prev !== r.url) {
+          fetch(`/api/upload?file=${encodeURIComponent(prev)}`, { method: "DELETE", headers: { ...getUserIdHeader() } }).catch(() => {});
+        }
+      }
+    } catch (e) {
+      setNextError(e instanceof Error ? e.message : "ดึงข้อมูล Huawei ไม่สำเร็จ");
+    } finally { setHuaweiLoading(false); }
+  };
   const handlePanelCert = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const f = e.target.files?.[0]; e.target.value = ""; if (!f) return;
     setUploadingField("panel");
@@ -457,7 +619,7 @@ export default function WarrantyStep({ lead, state, refresh, packages, expanded,
     await apiFetch(`/api/leads/${lead.id}`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ warranty_other_docs_url: next.length ? next.join(",") : null }) });
   };
 
-  const endDate = addYears(startDate, 2);
+  const endDate = addYears(startDate, durationYears);
 
   // Auto-save SN / doc no / start date / equipment snapshot.
   //
@@ -482,6 +644,12 @@ export default function WarrantyStep({ lead, state, refresh, packages, expanded,
           warranty_panel_count: panelCount === "" ? null : panelCount,
           warranty_panel_watt: panelWatt === "" ? null : panelWatt,
           warranty_panel_brand: panelBrand || null,
+          warranty_panel_model: panelModel || null,
+          warranty_battery_brand: battBrand || null,
+          warranty_battery_model: battModel || null,
+          warranty_battery_kwh:   battKwh === "" ? null : battKwh,
+          warranty_duration_years: durationYears,
+          warranty_om_per_year:    omPerYear,
           warranty_inverter_brand: invBrand || null,
           warranty_inverter_kw: invKw === "" ? null : invKw,
           warranty_electrical_phase: phase || null,
@@ -498,7 +666,7 @@ export default function WarrantyStep({ lead, state, refresh, packages, expanded,
     }, 800);
     return () => clearTimeout(t);
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [sn, docNo, startDate, sysKwp, panelCount, panelWatt, panelBrand, invBrand, invKw, phase, batteries, panelSerials, inverterCertUrl]);
+  }, [sn, docNo, startDate, sysKwp, panelCount, panelWatt, panelBrand, panelModel, battBrand, battModel, battKwh, durationYears, omPerYear, invBrand, invKw, phase, batteries, panelSerials, inverterCertUrl]);
 
   const issueWarranty = async () => {
     const missing: string[] = [];
@@ -591,186 +759,203 @@ export default function WarrantyStep({ lead, state, refresh, packages, expanded,
     <div className="space-y-3">
       {/* subStep 0: ข้อมูล */}
       {subStep === 0 && (<>
-        <div className="grid grid-cols-2 md:grid-cols-3 gap-2">
-          <div className="col-span-2 md:col-span-1">
-            <label className="text-xs font-semibold tracking-wider uppercase text-gray-400 block mb-1">เลขที่เอกสาร</label>
-            <input value={docNo} onChange={e => setDocNo(e.target.value)} placeholder="SSE-260001"
-              className="w-full h-11 px-3 rounded-lg border border-gray-200 font-mono focus:outline-none focus:border-primary" />
+        {/* Header card — เลขที่เอกสาร + ระยะเวลารับประกัน, grouped like
+            InstallChecklist's "หัวเอกสาร" card so the form has a clear top
+            section instead of three floating fields. */}
+        <div className="rounded-lg bg-white/60 border border-active/15 p-3">
+          <div className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-2 flex items-center gap-2">
+            <span className="w-7 h-7 rounded-lg bg-active/10 text-active flex items-center justify-center shrink-0"><DocumentIcon className="w-4 h-4" /></span>
+            DOCUMENT HEADER
           </div>
-          <div>
-            <label className="text-xs font-semibold tracking-wider uppercase text-gray-400 block mb-1">รับประกันงานติดตั้ง</label>
-            <ThaiDateInput value={startDate} onChange={setStartDate} />
-          </div>
-          <div>
-            <label className="text-xs font-semibold tracking-wider uppercase text-gray-400 block mb-1">สิ้นสุด (+2 ปี)</label>
-            <input value={endDate ? isoToBE(endDate) : ""} readOnly
-              className="w-full h-11 px-3 rounded-lg border border-gray-200 bg-gray-50 text-gray-600 font-mono tabular-nums" />
+          <div className="grid grid-cols-2 md:grid-cols-7 gap-2">
+            <div className="col-span-1 md:col-span-1">
+              <label className="text-xs text-gray-500 block mb-1">เลขที่เอกสาร</label>
+              <input value={docNo} onChange={e => setDocNo(e.target.value)} placeholder="SSE-260001"
+                className="w-full h-8 px-3 rounded-lg border border-gray-200 font-mono text-sm focus:outline-none focus:border-primary" />
+            </div>
+            <div className="col-span-1 md:col-span-1">
+              <label className="text-xs text-gray-500 block mb-1">รับประกันงานติดตั้ง</label>
+              <ThaiDateInput value={startDate} onChange={setStartDate} />
+            </div>
+            <div className="col-span-1 md:col-span-1">
+              <label className="text-xs text-gray-500 block mb-1">ระยะเวลา (ปี)</label>
+              <NumberStepper value={durationYears} onChange={v => setDurationYears(v ?? 1)} min={1} max={20} />
+            </div>
+            <div className="col-span-1 md:col-span-1">
+              <label className="text-xs text-gray-500 block mb-1">สิ้นสุด (+{durationYears} ปี)</label>
+              <input value={endDate ? isoToBE(endDate) : ""} readOnly
+                className="w-full h-8 px-3 rounded-lg border border-gray-200 bg-gray-50 text-gray-600 text-sm font-mono tabular-nums" />
+            </div>
+            <div className="col-span-1 md:col-span-1">
+              <label className="text-xs text-gray-500 block mb-1">O&M (ครั้ง/ปี)</label>
+              <NumberStepper value={omPerYear} onChange={v => setOmPerYear(v ?? 0)} min={0} max={12} />
+            </div>
           </div>
         </div>
-        <div className="rounded-lg border border-gray-200 p-3 space-y-2">
-          <div className="text-xs font-semibold tracking-wider uppercase text-gray-400">อุปกรณ์ที่ติดตั้ง (ตามหน้างานจริง)</div>
-          <div>
-            <label className="text-xs text-gray-500 block mb-1">ขนาดระบบ (kWp)</label>
-            <input type="number" step="0.01" value={sysKwp} onChange={e => setSysKwp(e.target.value ? parseFloat(e.target.value) : "")} placeholder="5.00" className="w-full h-11 px-3 rounded-lg border border-gray-200 font-mono focus:outline-none focus:border-primary" />
+        <div className="rounded-lg border border-gray-200 p-3 space-y-3">
+          <div className="text-xs font-semibold tracking-wider uppercase text-gray-500 flex items-center gap-2">
+            <span className="w-7 h-7 rounded-lg bg-active/10 text-active flex items-center justify-center shrink-0"><BoltIcon className="w-4 h-4" /></span>
+            INSTALLED EQUIPMENT
           </div>
-          <div className="grid grid-cols-3 gap-2">
-            <div>
-              <label className="text-xs text-gray-500 block mb-1">จำนวนแผง</label>
-              <input type="number" value={panelCount} onChange={e => setPanelCount(e.target.value ? parseInt(e.target.value) : "")} placeholder="10" className="w-full h-11 px-3 rounded-lg border border-gray-200 font-mono focus:outline-none focus:border-primary" />
+
+          {/* Inverter group — same shape as InstallChecklist §1.1: three
+              dropdowns in one 7-col row, SN+camera on the row below. */}
+          <div className="rounded-lg border border-gray-200 bg-white/50 p-3 space-y-2">
+            <div className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Inverter</div>
+
+            <div className="grid grid-cols-2 md:grid-cols-7 gap-2">
+              <div className="col-span-1 md:col-span-1">
+                <label className="text-xs text-gray-500 block mb-1">ยี่ห้อ</label>
+                <Dropdown
+                  value={invBrand}
+                  onChange={v => setInvBrand(v)}
+                  options={INVERTER_BRANDS.map(b => ({ value: b, label: b }))}
+                />
+              </div>
+              <div className="col-span-1 md:col-span-1">
+                <label className="text-xs text-gray-500 block mb-1">ขนาด (kW)</label>
+                <Dropdown
+                  value={invKw === "" ? "" : String(invKw)}
+                  onChange={v => setInvKw(v ? parseFloat(v) : "")}
+                  options={INVERTER_KW_SIZES.map(kw => ({ value: String(kw), label: `${kw} kW` }))}
+                  buttonClassName="font-mono tabular-nums"
+                />
+              </div>
+              <div className="col-span-1 md:col-span-1">
+                <label className="text-xs text-gray-500 block mb-1">Phase <span className="text-red-500">*</span></label>
+                <Dropdown
+                  value={phase}
+                  onChange={v => setPhase(v)}
+                  options={Object.entries(PHASE_LABEL).map(([v, l]) => ({ value: v, label: l }))}
+                />
+              </div>
             </div>
+
+            {/* Serial Number — manual input stays (some users key it in
+                directly). The "AI ช่วยอ่าน Serial" button opens the shared
+                add-device wizard so the captured SN also lands in
+                lead_inverters for the cert. */}
             <div>
-              <label className="text-xs text-gray-500 block mb-1">วัตต์/แผง</label>
-              <input type="number" value={panelWatt} onChange={e => setPanelWatt(e.target.value ? parseInt(e.target.value) : "")} placeholder="550" className="w-full h-11 px-3 rounded-lg border border-gray-200 font-mono focus:outline-none focus:border-primary" />
-            </div>
-            <div>
-              <label className="text-xs text-gray-500 block mb-1">ยี่ห้อแผง</label>
-              <input type="text" value={panelBrand} onChange={e => setPanelBrand(e.target.value)} placeholder="Canadian" className="w-full h-11 px-3 rounded-lg border border-gray-200 focus:outline-none focus:border-primary" />
+              <label className="text-xs text-gray-500 block mb-1">Serial Number</label>
+              <div className="grid grid-cols-2 md:grid-cols-7 gap-2">
+                <input value={sn} onChange={e => setSn(e.target.value)} placeholder="HW1234567890"
+                  className="col-span-2 md:col-span-3 w-full h-8 px-3 rounded-lg border border-gray-200 text-sm font-mono focus:outline-none focus:border-primary" />
+                <button type="button"
+                  onClick={() => setOpenInverterWizard(true)}
+                  title="AI อ่าน Serial"
+                  className="col-span-1 md:col-span-1 h-8 rounded-lg text-white bg-active hover:brightness-110 flex items-center justify-center transition-colors">
+                  <span className="relative inline-flex items-center justify-center">
+                    <CameraIcon className="w-5 h-5" strokeWidth={2} />
+                    <svg className="absolute -top-1 -right-1 w-3 h-3 text-amber-300 drop-shadow" fill="currentColor" viewBox="0 0 24 24">
+                      <path d="M12 0l2.4 7.6L22 10l-7.6 2.4L12 20l-2.4-7.6L2 10l7.6-2.4L12 0z" />
+                    </svg>
+                  </span>
+                </button>
+              </div>
+              <div className="text-xs text-gray-400 mt-1">กดปุ่ม AI เพื่อถ่ายรูปฉลาก — ระบบจะอ่าน Serial และบันทึกให้อัตโนมัติ</div>
+
+              {/* Huawei only: pull the manufacturer warranty certificate by SN.
+                  The returned PDF is stored as the inverter cert and merged into
+                  the issued warranty document. */}
+              {invBrand.trim().toLowerCase() === "huawei" && (
+                <div className="mt-2 space-y-1.5">
+                  <button type="button" onClick={fetchHuaweiCert} disabled={huaweiLoading || !sn.trim()}
+                    className={`w-full h-9 rounded-lg text-sm font-semibold text-white bg-[#CF0A2C] hover:brightness-110 disabled:cursor-not-allowed transition-colors flex items-center justify-center gap-1.5 ${huaweiLoading ? "opacity-90" : "disabled:bg-gray-300"}`}>
+                    {huaweiLoading
+                      ? <span className="w-4 h-4 border-2 border-white/40 border-t-white rounded-full animate-spin" />
+                      : <DocumentIcon className="w-4 h-4" />}
+                    {huaweiLoading ? "กำลังดึงจาก Huawei..." : inverterCertUrl ? "ดึงใหม่ (ทับของเดิม)" : "ดึงใบรับประกันจาก Huawei"}
+                  </button>
+                  {/* Persistent status (survives reload): read from the saved cert
+                      URL so it shows even when the file lives on the เอกสาร tab.
+                      A "huawei_warranty" filename marks a successful Huawei pull;
+                      anything else is a manually-uploaded inverter cert. */}
+                  {inverterCertUrl && (
+                    <div className={`text-xs rounded-lg px-3 py-2 border ${inverterCertUrl.includes("huawei_warranty") ? "text-emerald-700 bg-emerald-50 border-emerald-200" : "text-gray-600 bg-gray-50 border-gray-200"}`}>
+                      <div className="flex items-center justify-between gap-2">
+                        <span className="font-semibold">{inverterCertUrl.includes("huawei_warranty") ? "✓ ดึงใบรับประกัน Huawei แล้ว" : "มีใบรับประกัน Inverter แล้ว (อัปโหลดเอง)"}</span>
+                        <a href={inverterCertUrl} onClick={fileViewer.handler(inverterCertUrl, "ใบรับประกัน Inverter")} className="underline shrink-0 hover:opacity-80">ดูไฟล์</a>
+                      </div>
+                      {huaweiInfo
+                        ? <span className="block mt-0.5 opacity-80">{huaweiInfo.servicePackage} · {huaweiInfo.startDate} → {huaweiInfo.endDate}</span>
+                        : <span className="block mt-0.5 opacity-70">อยู่ในแท็บ “เอกสาร” → ใบรับประกันอินเวอร์เตอร์</span>}
+                    </div>
+                  )}
+                </div>
+              )}
             </div>
           </div>
-          <div className="grid grid-cols-3 gap-2">
-            <div>
-              <label className="text-xs text-gray-500 block mb-1">ยี่ห้ออินเวอร์เตอร์</label>
-              <select value={invBrand} onChange={e => setInvBrand(e.target.value)} className="w-full h-11 px-3 rounded-lg border border-gray-200 bg-white focus:outline-none focus:border-primary">
-                <option value="">เลือกยี่ห้อ</option>
-                {INVERTER_BRANDS.map(b => <option key={b} value={b}>{b}</option>)}
-                {invBrand && !INVERTER_BRANDS.includes(invBrand as typeof INVERTER_BRANDS[number]) && (
-                  <option value={invBrand}>{invBrand}</option>
-                )}
-              </select>
-            </div>
-            <div>
-              <label className="text-xs text-gray-500 block mb-1">ขนาด (kW)</label>
-              <select value={invKw} onChange={e => setInvKw(e.target.value ? parseFloat(e.target.value) : "")} className="w-full h-11 px-3 rounded-lg border border-gray-200 bg-white font-mono focus:outline-none focus:border-primary">
-                <option value="">เลือกขนาด</option>
-                {INVERTER_KW_SIZES.map(kw => <option key={kw} value={kw}>{kw} kW</option>)}
-                {invKw !== "" && !INVERTER_KW_SIZES.includes(invKw as typeof INVERTER_KW_SIZES[number]) && (
-                  <option value={invKw}>{invKw} kW</option>
-                )}
-              </select>
-            </div>
-            <div>
-              <label className="text-xs text-gray-500 block mb-1">Phase <span className="text-red-500">*</span></label>
-              <select value={phase} onChange={e => setPhase(e.target.value)} className="w-full h-11 px-3 rounded-lg border border-gray-200 bg-white focus:outline-none focus:border-primary">
-                <option value="">เลือก phase</option>
-                {Object.entries(PHASE_LABEL).map(([v, l]) => <option key={v} value={v}>{l}</option>)}
-              </select>
+
+          {/* Panel group — ขนาดระบบ + จำนวน + วัตต์ + ยี่ห้อ in a 7-col row. */}
+          <div className="rounded-lg border border-gray-200 bg-white/50 p-3 space-y-2">
+            <div className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Panel</div>
+            <div className="grid grid-cols-2 md:grid-cols-7 gap-2">
+              <div className="col-span-1 md:col-span-1">
+                <label className="text-xs text-gray-500 block mb-1">ยี่ห้อ</label>
+                <Dropdown
+                  value={panelBrand}
+                  onChange={v => setPanelBrand(v)}
+                  options={PANEL_BRANDS.map(b => ({ value: b, label: b }))}
+                />
+              </div>
+              <div className="col-span-1 md:col-span-2">
+                <label className="text-xs text-gray-500 block mb-1">รุ่น</label>
+                <input type="text" value={panelModel} onChange={e => setPanelModel(e.target.value)} placeholder="JKM640N-66HL4M-BDV-Z1-EU" className="w-full h-8 px-3 rounded-lg border border-gray-200 text-sm focus:outline-none focus:border-primary" />
+              </div>
+              <div className="col-span-1 md:col-span-1">
+                <label className="text-xs text-gray-500 block mb-1">จำนวน (แผง)</label>
+                <NumberStepper
+                  value={typeof panelCount === "number" ? panelCount : null}
+                  onChange={v => setPanelCount(v == null ? "" : v)}
+                />
+              </div>
+              <div className="col-span-1 md:col-span-1">
+                <label className="text-xs text-gray-500 block mb-1">วัตต์/แผง</label>
+                <input type="number" value={panelWatt} onChange={e => setPanelWatt(e.target.value ? parseInt(e.target.value) : "")} placeholder="550" className="w-full h-8 px-3 rounded-lg border border-gray-200 font-mono text-sm focus:outline-none focus:border-primary" />
+              </div>
+              <div className="col-span-1 md:col-span-1">
+                <label className="text-xs text-gray-500 block mb-1">ขนาดติดตั้ง (kWp)</label>
+                <input type="number" step="0.01" value={sysKwp} onChange={e => setSysKwp(e.target.value ? parseFloat(e.target.value) : "")} placeholder="5.00" className="w-full h-8 px-3 rounded-lg border border-gray-200 font-mono text-sm focus:outline-none focus:border-primary" />
+              </div>
             </div>
           </div>
-          <div>
-            <label className="text-xs text-gray-500 block mb-1">Inverter Serial Number</label>
-            <div className="flex gap-2">
-              <input value={sn} onChange={e => setSn(e.target.value)} placeholder="HW1234567890" className="flex-1 h-11 px-3 rounded-lg border border-gray-200 font-mono focus:outline-none focus:border-primary" />
-              <input type="file" accept="image/*" capture="environment" onChange={handleSnPhoto} className="hidden" id={`sn-scan-${lead.id}`} />
-              <label htmlFor={`sn-scan-${lead.id}`} className="shrink-0 h-11 w-16 rounded-lg border border-active/30 bg-active-light text-active flex items-center justify-center cursor-pointer hover:bg-active/15 transition-colors" title="ถ่ายรูป SN เพื่ออ่านอัตโนมัติ">
-                {snScanning ? (
-                  <div className="w-5 h-5 border-2 border-gray-300 border-t-primary rounded-full animate-spin" />
-                ) : (
-                  <CameraIcon className="w-7 h-7" strokeWidth={2} />
-                )}
-              </label>
+
+          {/* Battery summary — mirrors Install §1.4. Per-row + OCR battery list
+              lives in subStep 2. This card is just the aggregate brand/model/
+              kWh for the warranty cert. */}
+          <div className="rounded-lg border border-gray-200 bg-white/50 p-3 space-y-2">
+            <div className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Battery</div>
+            <div className="grid grid-cols-2 md:grid-cols-7 gap-2">
+              <div className="col-span-1 md:col-span-1">
+                <label className="text-xs text-gray-500 block mb-1">ยี่ห้อ</label>
+                <input type="text" value={battBrand} onChange={e => setBattBrand(e.target.value)} className="w-full h-8 px-3 rounded-lg border border-gray-200 text-sm focus:outline-none focus:border-primary" />
+              </div>
+              <div className="col-span-1 md:col-span-2">
+                <label className="text-xs text-gray-500 block mb-1">รุ่น</label>
+                <input type="text" value={battModel} onChange={e => setBattModel(e.target.value)} className="w-full h-8 px-3 rounded-lg border border-gray-200 text-sm focus:outline-none focus:border-primary" />
+              </div>
+              <div className="col-span-1 md:col-span-1">
+                <label className="text-xs text-gray-500 block mb-1">ขนาด (kWh)</label>
+                <input type="number" step="0.1" value={battKwh} onChange={e => setBattKwh(e.target.value ? parseFloat(e.target.value) : "")} className="w-full h-8 px-3 rounded-lg border border-gray-200 font-mono text-sm focus:outline-none focus:border-primary" />
+              </div>
             </div>
-            <div className="text-xxs text-gray-400 mt-1">ถ่ายรูปฉลากอินเวอร์เตอร์ — ระบบจะอ่าน SN ให้อัตโนมัติ</div>
           </div>
         </div>
       </>)}
 
-      {/* subStep 2: แบตเตอรี่ */}
+      {/* subStep 2: แบตเตอรี่ — uses the shared SerialsUploader (same modal
+          pattern as the Serials tab on the lead page). Data persists to the
+          normalised lead_batteries table; the warranty cert prefers those over
+          the legacy warranty_batteries JSON column. quickKey enables the
+          inline "type SN + Enter" row so users can key serials directly. */}
       {subStep === 2 && (
-        <div className="space-y-2">
-          {/* Auto-scan zone — same pattern as panel: each photo uploads + OCRs +
-              applies immediately. Fills the serial field of next empty unlocked
-              row; brand/kWh stay manual. */}
-          <div className="rounded-lg border border-active/20 bg-active-light/50 p-3 space-y-2">
-            <div className="text-xs font-semibold tracking-wider uppercase text-active">AI หา Serial แบตเตอรี่</div>
-            <input type="file" accept="image/*" multiple onChange={handleBattScanUpload} className="hidden" id={`batt-scan-${lead.id}`} />
-            <label
-              htmlFor={`batt-scan-${lead.id}`}
-              className={`w-full h-11 rounded-lg text-sm font-semibold flex items-center justify-center gap-1.5 transition-colors whitespace-nowrap ${
-                battScanProgress
-                  ? "bg-gray-200 text-gray-500 cursor-not-allowed pointer-events-none"
-                  : "text-white bg-active hover:brightness-110 cursor-pointer"
-              }`}
-            >
-              {battScanProgress ? (
-                <>
-                  <div className="w-5 h-5 border-2 border-gray-300 border-t-active rounded-full animate-spin" />
-                  ประมวลผล {battScanProgress.current}/{battScanProgress.total}
-                </>
-              ) : (
-                <>
-                  <CameraIcon className="w-5 h-5" strokeWidth={2} />
-                  ถ่าย / เลือกรูป
-                </>
-              )}
-            </label>
-            <div className="text-xxs text-gray-500">ถ่ายรูป serial แบตทีละใบ AI จะอ่านแล้วเติมลง row unlocked อัตโนมัติ (brand/kWh กรอกเอง)</div>
-          </div>
-
-          {/* Battery rows */}
-          <div className="rounded-lg border border-gray-200 p-3 space-y-2">
-            <div className="flex items-center justify-between gap-2">
-              <div className="text-xs font-semibold tracking-wider uppercase text-gray-400">แบตเตอรี่ (สูงสุด {BATTERY_ROWS} ก้อน)</div>
-              <div className="flex items-center gap-2">
-                <span className="text-xxs text-gray-500">ยืนยัน {battVerified.filter(Boolean).length}/{BATTERY_ROWS}</span>
-                <button
-                  type="button"
-                  onClick={() => setBatteries(prev => prev.map((b, i) => battVerified[i] ? b : { ...b, serial: "" }))}
-                  disabled={!batteries.some((b, i) => b.serial.trim() && !battVerified[i])}
-                  className="text-xxs font-semibold text-red-500 hover:text-red-600 disabled:text-gray-300 disabled:cursor-not-allowed"
-                  style={{ minHeight: 0 }}
-                  title="ล้าง serial ในแถวที่ยังไม่ยืนยัน (brand/kWh ไม่ถูกล้าง, ก้อนที่ lock ✓ ไม่ถูกล้าง)"
-                >
-                  ล้าง serial ที่ยังไม่ยืนยัน
-                </button>
-              </div>
-            </div>
-            {/* Desktop column headers (hidden on mobile — mobile uses card layout) */}
-            <div className="hidden md:grid grid-cols-[1fr_72px_1fr_36px] gap-1.5 text-xxs font-semibold text-gray-400 uppercase tracking-wider px-1">
-              <span>ยี่ห้อ</span>
-              <span>kWh</span>
-              <span>Serial</span>
-              <span></span>
-            </div>
-            {batteries.map((b, i) => {
-              const filled = !!(b.brand || b.kwh || b.serial);
-              const verified = battVerified[i];
-              return (
-                <div
-                  key={i}
-                  className={`
-                    rounded-xl border p-2.5 space-y-1.5 transition-colors
-                    ${verified ? "border-emerald-300 bg-emerald-50/30" : filled ? "border-gray-200 bg-white" : "border-dashed border-gray-200 bg-gray-50/40"}
-                    md:p-0 md:rounded-none md:border-0 md:bg-transparent md:space-y-0
-                    md:grid md:grid-cols-[1fr_72px_1fr_36px] md:gap-1.5 md:items-center
-                  `}
-                >
-                  {/* Row 1 (mobile) / cols 1-2 (desktop): brand + kWh */}
-                  <div className="flex items-center gap-1.5 md:contents">
-                    <input type="text" value={b.brand} onChange={e => updateBatt(i, { brand: e.target.value })} placeholder={`ก้อนที่ ${i + 1}`} className="flex-1 min-w-0 h-9 px-2 rounded-lg border border-gray-200 bg-white text-sm focus:outline-none focus:border-primary md:flex-none md:w-auto md:min-w-0" />
-                    <input type="number" step="0.01" value={b.kwh} onChange={e => updateBatt(i, { kwh: e.target.value })} placeholder="5" className="w-16 shrink-0 h-9 px-2 rounded-lg border border-gray-200 bg-white text-sm font-mono text-center focus:outline-none focus:border-primary md:w-auto md:text-left" />
-                  </div>
-                  {/* Row 2 (mobile) / cols 3-4 (desktop): serial + lock checkbox */}
-                  <div className="flex items-center gap-1.5 md:contents">
-                    <input type="text" value={b.serial} onChange={e => updateBatt(i, { serial: e.target.value })} placeholder="SN…" className="flex-1 min-w-0 h-9 px-2 rounded-lg border border-gray-200 bg-white text-sm font-mono focus:outline-none focus:border-primary md:flex-none md:w-auto md:min-w-0" />
-                    <button
-                      type="button"
-                      onClick={() => toggleBattVerified(i)}
-                      className={`shrink-0 h-9 w-9 rounded-lg border flex items-center justify-center transition-colors ${
-                        verified
-                          ? "border-emerald-400 bg-emerald-500 text-white hover:bg-emerald-600"
-                          : "border-gray-200 bg-white text-gray-300 hover:text-gray-500 hover:border-gray-300"
-                      }`}
-                      title={verified ? "ยกเลิกยืนยัน (AI จะ scan ทับได้)" : "ยืนยันถูกแล้ว (lock — AI จะไม่ทับ)"}
-                      aria-pressed={verified}
-                    >
-                      <CheckIcon className="w-4 h-4" strokeWidth={3} />
-                    </button>
-                  </div>
-                </div>
-              );
-            })}
-          </div>
-        </div>
+        <SerialsUploader
+          leadId={lead.id}
+          showTypes={["batteries"]}
+          quickKey
+          slotCounts={{ batteries: 5 }}
+          locked={lead.status === "gridtie" || lead.status === "closed"}
+        />
       )}
 
       {/* subStep 1: แผง — text list of per-panel serial numbers (max PANEL_ROWS).
@@ -778,91 +963,14 @@ export default function WarrantyStep({ lead, state, refresh, packages, expanded,
          contain many panel labels), Gemini extracts all serials in one call and
          fills into empty slots below. */}
       {subStep === 1 && (
-        <div className="space-y-2">
-          {/* Auto-scan zone — each photo uploads + OCRs + applies immediately,
-              then the temp upload is deleted. Workflow: take photo → AI fills
-              unlocked slots → user verifies & ticks ✓ to lock → take next photo. */}
-          <div className="rounded-lg border border-active/20 bg-active-light/50 p-3 space-y-2">
-            <div className="text-xs font-semibold tracking-wider uppercase text-active">AI หา Serial แผง</div>
-            <input type="file" accept="image/*" multiple onChange={handlePanelScanUpload} className="hidden" id={`panel-scan-${lead.id}`} />
-            <label
-              htmlFor={`panel-scan-${lead.id}`}
-              className={`w-full h-11 rounded-lg text-sm font-semibold flex items-center justify-center gap-1.5 transition-colors whitespace-nowrap ${
-                panelScanProgress
-                  ? "bg-gray-200 text-gray-500 cursor-not-allowed pointer-events-none"
-                  : "text-white bg-active hover:brightness-110 cursor-pointer"
-              }`}
-            >
-              {panelScanProgress ? (
-                <>
-                  <div className="w-5 h-5 border-2 border-gray-300 border-t-active rounded-full animate-spin" />
-                  ประมวลผล {panelScanProgress.current}/{panelScanProgress.total}
-                </>
-              ) : (
-                <>
-                  <CameraIcon className="w-5 h-5" strokeWidth={2} />
-                  ถ่าย / เลือกรูป
-                </>
-              )}
-            </label>
-            <div className="text-xxs text-gray-500">ถ่ายรูปทีละใบ AI จะอ่านแล้วเติมลงช่อง unlocked อัตโนมัติ — เลือกหลายรูปครั้งเดียวก็ได้ (จะประมวลทีละใบ)</div>
-          </div>
-
-          {/* Manual serial list — checkbox locks a slot so AI rescan won't overwrite */}
-          <div className="rounded-lg border border-gray-200 p-3 space-y-2">
-            <div className="flex items-center justify-between gap-2">
-              <div className="text-xs font-semibold tracking-wider uppercase text-gray-400">Serial แผง (สูงสุด {PANEL_ROWS} แผง)</div>
-              <div className="flex items-center gap-2">
-                <span className="text-xxs text-gray-500">ยืนยัน {panelVerified.filter(Boolean).length}/{PANEL_ROWS}</span>
-                <button
-                  type="button"
-                  onClick={() => setPanelSerials(prev => prev.map((s, i) => panelVerified[i] ? s : ""))}
-                  disabled={!panelSerials.some((s, i) => s.trim() && !panelVerified[i])}
-                  className="text-xxs font-semibold text-red-500 hover:text-red-600 disabled:text-gray-300 disabled:cursor-not-allowed"
-                  style={{ minHeight: 0 }}
-                  title="ล้าง serial ในช่องที่ยังไม่ยืนยัน (ช่องที่ lock ✓ ไม่ถูกล้าง)"
-                >
-                  ล้างที่ยังไม่ยืนยัน
-                </button>
-              </div>
-            </div>
-            {/* Column-major flow on desktop (col 1: 1-10, col 2: 11-20) so users
-                can scan vertically and compare side-by-side with the physical
-                panel stack. Mobile stays as a single column. */}
-            <div className="grid grid-cols-1 md:grid-cols-2 md:grid-rows-[repeat(10,minmax(0,auto))] md:grid-flow-col gap-1.5">
-              {panelSerials.map((s, i) => {
-                const verified = panelVerified[i];
-                return (
-                  <div key={i} className="flex items-center gap-1.5">
-                    <span className="w-6 shrink-0 text-xs text-gray-400 text-right tabular-nums">{i + 1}.</span>
-                    <input
-                      type="text"
-                      value={s}
-                      onChange={e => updatePanelSerial(i, e.target.value)}
-                      placeholder={`แผงที่ ${i + 1}`}
-                      className={`flex-1 min-w-0 h-9 px-2 rounded-lg border bg-white text-sm font-mono focus:outline-none focus:border-primary transition-colors ${
-                        verified ? "border-emerald-300 bg-emerald-50/30" : "border-gray-200"
-                      }`}
-                    />
-                    <button
-                      type="button"
-                      onClick={() => togglePanelVerified(i)}
-                      className={`shrink-0 h-9 w-9 rounded-lg border flex items-center justify-center transition-colors ${
-                        verified
-                          ? "border-emerald-400 bg-emerald-500 text-white hover:bg-emerald-600"
-                          : "border-gray-200 bg-white text-gray-300 hover:text-gray-500 hover:border-gray-300"
-                      }`}
-                      title={verified ? "ยกเลิกยืนยัน (AI จะ scan ทับได้)" : "ยืนยันถูกแล้ว (lock — AI จะไม่ทับ)"}
-                      aria-pressed={verified}
-                    >
-                      <CheckIcon className="w-4 h-4" strokeWidth={3} />
-                    </button>
-                  </div>
-                );
-              })}
-            </div>
-          </div>
-        </div>
+        <SerialsUploader
+          leadId={lead.id}
+          showTypes={["panels"]}
+          quickKey
+          slotCounts={{ panels: 20 }}
+          slotColumns={{ panels: 2 }}
+          locked={lead.status === "gridtie" || lead.status === "closed"}
+        />
       )}
 
       {/* subStep 3: เอกสาร */}
@@ -872,7 +980,10 @@ export default function WarrantyStep({ lead, state, refresh, packages, expanded,
           <CertSlot label="ใบรับประกันแผงโซลาร์ (ผู้ผลิต)" url={panelCertUrl} uploading={uploadingField === "panel"} inputId={`pnl-cert-${lead.id}`} onChange={handlePanelCert} onRemove={() => removeCert("panel")} />
         </div>
         <div>
-          <label className="text-xs font-semibold tracking-wider uppercase text-gray-400 block mb-1">เอกสารแนบอื่นๆ</label>
+          <label className="text-xs font-semibold tracking-wider uppercase text-gray-500 block mb-1 flex items-center gap-2">
+            <span className="w-7 h-7 rounded-lg bg-active/10 text-active flex items-center justify-center shrink-0"><DocumentIcon className="w-4 h-4" /></span>
+            OTHER ATTACHMENTS
+          </label>
           {otherDocs.length > 0 && (
             <div className="space-y-1.5 mb-2">
               {otherDocs.map(url => {
@@ -900,7 +1011,10 @@ export default function WarrantyStep({ lead, state, refresh, packages, expanded,
       {subStep === 4 && (
         <div className="space-y-3">
           <div className="space-y-2">
-            <div className="text-xs font-semibold tracking-wider uppercase text-gray-400">ลายเซ็นลูกค้า (ยืนยันรับงาน)</div>
+            <div className="text-xs font-semibold tracking-wider uppercase text-gray-500 flex items-center gap-2">
+              <span className="w-7 h-7 rounded-lg bg-active/10 text-active flex items-center justify-center shrink-0"><UserIcon className="w-4 h-4" /></span>
+              CUSTOMER SIGNATURE
+            </div>
             {effectiveSignatureUrl ? (
               <div className="bg-white rounded-lg border border-gray-200 p-3 flex items-center justify-center">
                 <FallbackImage src={effectiveSignatureUrl} alt="ลายเซ็น" className="max-h-40 object-contain" />
@@ -998,6 +1112,13 @@ export default function WarrantyStep({ lead, state, refresh, packages, expanded,
       )}
 
       <ErrorPopup message={nextError} onClose={() => setNextError(null)} />
+      {openInverterWizard && (
+        <AddDeviceModal
+          type="inverters"
+          onCancel={() => setOpenInverterWizard(false)}
+          onSave={saveInverterFromWizard}
+        />
+      )}
     </div>
     </StepLayout>
     </>

@@ -229,8 +229,8 @@ export default function SignaturePad({ leadId, fieldName, initialUrl, onSaved }:
           )}
         </div>
         <div className="flex gap-2">
-          <button type="button" onClick={clearInline} disabled={!hasDrawn} className="flex-1 h-10 rounded-lg text-xs font-semibold text-gray-600 border border-gray-200 hover:bg-gray-50 disabled:opacity-40">ล้าง</button>
-          <button type="button" onClick={() => setFullscreen(true)} className="flex-1 h-10 rounded-lg text-xs font-semibold text-gray-700 border border-gray-300 hover:bg-gray-50 flex items-center justify-center gap-1.5">
+          <button type="button" onClick={clearInline} disabled={!hasDrawn} className="flex-1 h-8 rounded-lg text-xs font-semibold text-gray-600 border border-gray-200 hover:bg-gray-50 disabled:opacity-40">ล้าง</button>
+          <button type="button" onClick={() => setFullscreen(true)} className="flex-1 h-8 rounded-lg text-xs font-semibold text-gray-700 border border-gray-300 hover:bg-gray-50 flex items-center justify-center gap-1.5">
             <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
               <path strokeLinecap="round" strokeLinejoin="round" d="M3.75 3.75v4.5m0-4.5h4.5m-4.5 0L9 9M3.75 20.25v-4.5m0 4.5h4.5m-4.5 0L9 15M20.25 3.75h-4.5m4.5 0v4.5m0-4.5L15 9m5.25 11.25h-4.5m4.5 0v-4.5m0 4.5L15 15" />
             </svg>
@@ -248,9 +248,9 @@ export default function SignaturePad({ leadId, fieldName, initialUrl, onSaved }:
               <div className="absolute inset-0 flex items-center justify-center text-gray-300 text-base pointer-events-none">ให้ลูกค้าเซ็นชื่อที่นี่</div>
             )}
             <div className="absolute top-4 right-4 flex gap-2">
-              <button onClick={onFsClear} className="h-10 px-4 rounded-lg text-sm font-semibold text-gray-700 border border-gray-300 bg-white/90 backdrop-blur hover:bg-white">ล้าง</button>
-              <button onClick={() => setFullscreen(false)} className="h-10 px-4 rounded-lg text-sm font-semibold text-gray-700 border border-gray-300 bg-white/90 backdrop-blur hover:bg-white">ยกเลิก</button>
-              <button onClick={onFsDone} className="h-10 px-4 rounded-lg text-sm font-semibold text-white bg-primary hover:bg-primary-dark">เสร็จ</button>
+              <button onClick={onFsClear} className="h-8 px-4 rounded-lg text-sm font-semibold text-gray-700 border border-gray-300 bg-white/90 backdrop-blur hover:bg-white">ล้าง</button>
+              <button onClick={() => setFullscreen(false)} className="h-8 px-4 rounded-lg text-sm font-semibold text-gray-700 border border-gray-300 bg-white/90 backdrop-blur hover:bg-white">ยกเลิก</button>
+              <button onClick={onFsDone} className="h-8 px-4 rounded-lg text-sm font-semibold text-white bg-primary hover:bg-primary-dark">เสร็จ</button>
             </div>
           </div>
         </div>

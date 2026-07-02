@@ -148,7 +148,7 @@ export default function DocumentScanner({
         htmlFor={inputId}
         className="flex items-center gap-3 rounded-lg bg-active-light border border-active/20 p-4 cursor-pointer hover:bg-active/10 transition-colors"
       >
-        <div className="relative w-10 h-10 rounded-xl bg-active text-white flex items-center justify-center shrink-0">
+        <div className="relative w-10 h-8 rounded-xl bg-active text-white flex items-center justify-center shrink-0">
           {status === "reading" ? (
             <div className="w-5 h-5 border-2 border-white/40 border-t-white rounded-full animate-spin" />
           ) : (
