@@ -380,9 +380,19 @@ function ChannelTagPicker({
           </div>
         </FormField>
         <FormField label="ประเภทลูกค้า">
-          <div className="grid grid-cols-2 gap-2">
+          <div className="flex items-center gap-6 h-8">
             {CUSTOMER_TYPES.map(t => (
-              <button key={t.value} type="button" onClick={() => onChange({ customer_type: t.value })} className={chipBtn(values.customer_type === t.value)} style={{ minHeight: 0 }}>{t.label}</button>
+              <label key={t.value} className="inline-flex items-center gap-2 cursor-pointer text-sm text-gray-700">
+                <input
+                  type="radio"
+                  name="customer_type"
+                  value={t.value}
+                  checked={values.customer_type === t.value}
+                  onChange={() => onChange({ customer_type: t.value })}
+                  className="w-4 h-4 accent-active cursor-pointer"
+                />
+                {t.label}
+              </label>
             ))}
           </div>
         </FormField>

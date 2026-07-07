@@ -42,6 +42,87 @@ export default function InstallStep({ lead, state, refresh, expanded, onToggle }
   const [subStep, setSubStep] = useSubStep(`installSubStep_${lead.id}`, lead.install_confirmed ? 1 : 0, SUB_STEPS.length);
   const [nextError, setNextError] = useState<string | null>(null);
   const [photos, setPhotos] = useState<string[]>(lead.install_photos ? lead.install_photos.split(",").filter(Boolean) : []);
+  // Install checklist (system_specs / visual_checks / function_tests) lives
+  // in a separate table — fetch on mount so the done view can show a
+  // summary alongside the plain install_note/photos fields.
+  type ChecklistSpecs = {
+    inverter?: { brand?: string; model?: string; kw?: number | null; phase?: string; sn?: string };
+    panel?: { brand?: string; model?: string; count?: number | null; watt?: number | null; total_kwp?: number | null };
+    battery?: { brand?: string; model?: string; kwh?: number | null };
+    ac_dc_box_ongrid?: Record<string, { amp?: number | null; sqmm?: number | null }>;
+    ac_dc_box_hybrid?: Record<string, { amp?: number | null; sqmm?: number | null }>;
+  };
+  type PassNote = { pass: boolean | null; note?: string };
+  type FunctionTests = {
+    voltage_1ph?: { ln?: number | null };
+    voltage_3ph?: { l1n?: number | null; l1l2?: number | null; l3n?: number | null; l1l3?: number | null; l2n?: number | null; l2l3?: number | null };
+    meter_size?: string | null;
+    meter_amp?: number | null;
+    current_kw?: number | null;
+    pv1_volt?: number | null;
+    pv2_volt?: number | null;
+    inverter_ip?: PassNote;
+    smart_meter_reverse?: PassNote;
+    wifi_app?: PassNote;
+    app_solar?: PassNote;
+  };
+  // Label maps for the detailed pass/fail rows — kept inline so the done
+  // view is self-contained (no cross-file dep on InstallChecklist.tsx).
+  const VISUAL_ITEMS = [
+    { key: "panel_pos",        label: "2.1 ตำแหน่งแผงโซลาร์" },
+    { key: "inverter_pos",     label: "2.2 ตำแหน่ง Inverter" },
+    { key: "control_box_pos",  label: "2.3 ตู้ควบคุม" },
+    { key: "battery_pos",      label: "2.4 ตำแหน่ง Battery" },
+    { key: "junction_box",     label: "2.5 Junction Box" },
+    { key: "pipe_install",     label: "2.6 งานเดินท่อ" },
+    { key: "wire_way",         label: "2.7 Wire Way" },
+    { key: "ground_weld",      label: "2.8 กราวด์ (Thermal weld)" },
+    { key: "terminal_breaker", label: "2.9 Terminal / Breaker" },
+    { key: "dc_pipe",          label: "2.10 ท่อสาย DC" },
+  ] as const;
+  const FUNCTION_PASS_FAIL = [
+    { key: "inverter_ip",         label: "3.5 เชื่อมต่อ Inverter ผ่าน IP" },
+    { key: "smart_meter_reverse", label: "3.6 Smart Meter กันย้อน" },
+    { key: "wifi_app",            label: "3.7 WiFi ผ่าน App" },
+    { key: "app_solar",           label: "3.8 App Solar ให้ลูกค้า" },
+  ] as const;
+  const ONGRID_BREAKERS = [
+    { key: "mcb_dc_solar", label: "MCB DC SOLAR" },
+    { key: "mcb_rcbo_ac",  label: "MCB RCBO AC" },
+    { key: "mcb_dc",       label: "MCB DC" },
+    { key: "mcb_ac_grid",  label: "MCB AC GRID" },
+  ] as const;
+  const HYBRID_BREAKERS = [
+    { key: "mcb_dc_solar",  label: "MCB DC SOLAR" },
+    { key: "ats",           label: "ATS" },
+    { key: "mcb_rcbo_ac",   label: "MCB RCBO AC" },
+    { key: "mcb_dc",        label: "MCB DC" },
+    { key: "mcb_ac_grid",   label: "MCB AC GRID" },
+    { key: "mcb_ac_backup", label: "MCB AC BACK UP" },
+  ] as const;
+  const METER_LABEL: Record<string, string> = {
+    "5_15":   "5(15) A",
+    "15_45":  "15(45) A",
+    "30_100": "30(100) A",
+    unknown:  "ไม่ทราบ",
+  };
+  const [checklist, setChecklist] = useState<{
+    inspection_date: string | null;
+    system_specs: string | null;
+    visual_checks: string | null;
+    function_tests: string | null;
+    notes: string | null;
+    submitted_at: string | null;
+  } | null>(null);
+  useEffect(() => {
+    apiFetch(`/api/install-checklist/${lead.id}`)
+      .then((r) => setChecklist(r))
+      .catch(() => setChecklist(null));
+  }, [lead.id]);
+  // Merge install_photos + install_photos_extra so the done view shows both
+  // together — the extra column was invisible before.
+  const extraPhotos = lead.install_photos_extra ? lead.install_photos_extra.split(",").filter(Boolean) : [];
+  const allPhotos = Array.from(new Set([...photos, ...extraPhotos]));
   const [note, setNote] = useState(lead.install_note || "");
   const [uploading, setUploading] = useState(false);
   const [dragActive, setDragActive] = useState(false);
@@ -259,7 +340,38 @@ export default function InstallStep({ lead, state, refresh, expanded, onToggle }
     else window.open(me?.id ? `/api/install-doc/${lead.id}?user_id=${me.id}` : `/api/install-doc/${lead.id}`, "_blank", "noreferrer");
   };
 
-  const renderDoneContent = () => (
+  // Left-aligned responsive row — same pattern as SurveyStep/PreSurveyStep.
+  const doneRow = (label: React.ReactNode, value: React.ReactNode, opts?: { mono?: boolean }) => (
+    <div className="flex gap-2 items-baseline justify-between lg:justify-start text-sm">
+      <span className="text-gray-400 shrink-0 lg:w-40">{label}</span>
+      <span className={`text-gray-800 min-w-0 text-right lg:text-left ${opts?.mono ? "font-mono tabular-nums" : ""}`}>{value}</span>
+    </div>
+  );
+  const passCount = (json: string | null): { passed: number; failed: number; total: number } => {
+    if (!json) return { passed: 0, failed: 0, total: 0 };
+    try {
+      const obj = JSON.parse(json) as Record<string, PassNote | unknown>;
+      let passed = 0, failed = 0, total = 0;
+      for (const v of Object.values(obj)) {
+        if (v && typeof v === "object" && "pass" in v) {
+          total++;
+          if ((v as PassNote).pass === true) passed++;
+          else if ((v as PassNote).pass === false) failed++;
+        }
+      }
+      return { passed, failed, total };
+    } catch { return { passed: 0, failed: 0, total: 0 }; }
+  };
+
+  const renderDoneContent = () => {
+    const specs: ChecklistSpecs = (() => {
+      if (!checklist?.system_specs) return {};
+      try { return JSON.parse(checklist.system_specs) as ChecklistSpecs; } catch { return {}; }
+    })();
+    const visualStats = passCount(checklist?.visual_checks ?? null);
+    const funcStats = passCount(checklist?.function_tests ?? null);
+
+    return (
     <>
       {/* Dates */}
       <div className="grid grid-cols-2 gap-2">
@@ -288,17 +400,225 @@ export default function InstallStep({ lead, state, refresh, expanded, onToggle }
         )}
       </div>
 
-      {/* Photos */}
-      {photos.length > 0 && (
-        <DoneSection color="emerald" title={`ภาพส่งมอบ (${photos.length})`}>
-          <div className="grid grid-cols-3 md:grid-cols-4 gap-2">
-            {photos.map((url, i) => (
+      {/* เอกสารส่งมอบงานติดตั้ง — always render every checklist field, even
+          when empty. Missing values fall back to "-" so the reviewer can see
+          at a glance which parts still need filling. */}
+      <DoneSection color="indigo" title="เอกสารส่งมอบงานติดตั้ง">
+        <div className="space-y-0.5">
+          {doneRow("เลขที่เอกสาร", lead.install_checklist_doc_no || "-", { mono: true })}
+          {doneRow("วันที่ตรวจ", checklist?.inspection_date ? formatDate(checklist.inspection_date) : "-")}
+          {doneRow("ส่งเอกสาร", checklist?.submitted_at ? formatDate(checklist.submitted_at) : "-")}
+        </div>
+      </DoneSection>
+
+      {/* §1 อุปกรณ์ระบบ — always render Inverter / Panel / Battery rows so
+          a partially-filled checklist reads the same shape as a complete one. */}
+      <DoneSection color="blue" title="อุปกรณ์ระบบ (ตามใบส่งมอบ)">
+        <div className="space-y-0.5">
+          {doneRow(
+            "Inverter",
+            (() => {
+              const parts: React.ReactNode[] = [];
+              const nameStr = [specs.inverter?.brand, specs.inverter?.model].filter(Boolean).join(" ");
+              if (nameStr) parts.push(nameStr);
+              if (specs.inverter?.kw != null) parts.push(`${specs.inverter.kw} kW`);
+              if (specs.inverter?.phase) parts.push(specs.inverter.phase.includes("1") ? "1 เฟส" : "3 เฟส");
+              return parts.length > 0 ? parts.join(" · ") : "-";
+            })()
+          )}
+          {doneRow("Inverter S/N", specs.inverter?.sn || "-", { mono: true })}
+          {doneRow(
+            "Solar Panel",
+            (() => {
+              const parts: React.ReactNode[] = [];
+              const nameStr = [specs.panel?.brand, specs.panel?.model].filter(Boolean).join(" ");
+              if (nameStr) parts.push(nameStr);
+              const wattPart = specs.panel?.count != null || specs.panel?.watt != null
+                ? `${specs.panel?.count ?? "-"} แผง × ${specs.panel?.watt ?? "-"}W`
+                : null;
+              if (wattPart) parts.push(wattPart);
+              if (specs.panel?.total_kwp != null) parts.push(`${specs.panel.total_kwp} kWp`);
+              return parts.length > 0 ? parts.join(" · ") : "-";
+            })()
+          )}
+          {doneRow(
+            "Battery",
+            (() => {
+              const parts: React.ReactNode[] = [];
+              const nameStr = [specs.battery?.brand, specs.battery?.model].filter(Boolean).join(" ");
+              if (nameStr) parts.push(nameStr);
+              if (specs.battery?.kwh != null) parts.push(`${specs.battery.kwh} kWh`);
+              return parts.length > 0 ? parts.join(" · ") : "-";
+            })()
+          )}
+        </div>
+      </DoneSection>
+
+      {/* AC/DC BOX breakers — §1.5 (ON GRID) + §1.6 (HYBRID). Each row is
+          [Amp | ขนาดสาย sq.mm] per breaker. */}
+      <DoneSection color="violet" title="AC/DC BOX (§1.5 · §1.6)">
+        <div className="space-y-2 text-sm">
+          <div>
+            <div className="text-xs font-semibold text-gray-500 mb-1">1.5 ON GRID</div>
+            <div className="space-y-0.5">
+              {ONGRID_BREAKERS.map(b => {
+                const v = specs.ac_dc_box_ongrid?.[b.key] || {};
+                return doneRow(b.label, (
+                  <span className="font-mono">
+                    {v.amp != null ? `${v.amp} A` : "-"}
+                    <span className="text-gray-400"> · </span>
+                    {v.sqmm != null ? `${v.sqmm} sq.mm` : "-"}
+                  </span>
+                ));
+              })}
+            </div>
+          </div>
+          <div>
+            <div className="text-xs font-semibold text-gray-500 mb-1 mt-2">1.6 HYBRID</div>
+            <div className="space-y-0.5">
+              {HYBRID_BREAKERS.map(b => {
+                const v = specs.ac_dc_box_hybrid?.[b.key] || {};
+                return doneRow(b.label, (
+                  <span className="font-mono">
+                    {v.amp != null ? `${v.amp} A` : "-"}
+                    <span className="text-gray-400"> · </span>
+                    {v.sqmm != null ? `${v.sqmm} sq.mm` : "-"}
+                  </span>
+                ));
+              })}
+            </div>
+          </div>
+        </div>
+      </DoneSection>
+
+      {/* §2 Visual checks — 10 items with ✓/✗ + note per row. */}
+      <DoneSection color="amber" title="งานติดตั้งระบบ (§2)">
+        <div className="space-y-0.5">
+          {(() => {
+            const checks = checklist?.visual_checks ? (() => {
+              try { return JSON.parse(checklist.visual_checks) as Record<string, PassNote>; } catch { return {}; }
+            })() : {};
+            return VISUAL_ITEMS.map(item => {
+              const c = checks[item.key] || { pass: null } as PassNote;
+              return doneRow(item.label, (
+                <span className="inline-flex items-center gap-2">
+                  {c.pass === true && <span className="text-emerald-700 font-semibold">✓ ผ่าน</span>}
+                  {c.pass === false && <span className="text-red-600 font-semibold">✗ ไม่ผ่าน</span>}
+                  {c.pass == null && <span className="text-gray-400">-</span>}
+                  {c.note && <span className="text-gray-500 italic text-xs">· {c.note}</span>}
+                </span>
+              ));
+            });
+          })()}
+        </div>
+      </DoneSection>
+
+      {/* §3 Voltage / meter / kW / PV readings */}
+      {(() => {
+        const tests: FunctionTests = checklist?.function_tests ? (() => {
+          try { return JSON.parse(checklist.function_tests) as FunctionTests; } catch { return {}; }
+        })() : {};
+        const v3 = tests.voltage_3ph || {};
+        const meterText = tests.meter_size
+          ? (METER_LABEL[tests.meter_size] || tests.meter_size)
+          : (tests.meter_amp != null ? `${tests.meter_amp} A` : "-");
+        return (
+          <DoneSection color="blue" title="การวัดค่าไฟฟ้า (§3)">
+            <div className="space-y-2 text-sm">
+              <div>
+                <div className="text-xs font-semibold text-gray-500 mb-1">3.1 ระบบไฟ 1 เฟส</div>
+                <div className="space-y-0.5">
+                  {doneRow("L : N", tests.voltage_1ph?.ln != null ? `${tests.voltage_1ph.ln} V` : "-", { mono: true })}
+                  {doneRow("ขนาดมิเตอร์", meterText)}
+                </div>
+              </div>
+              <div>
+                <div className="text-xs font-semibold text-gray-500 mb-1 mt-2">3.2 ระบบไฟ 3 เฟส</div>
+                <div className="space-y-0.5">
+                  {doneRow("L1 : N",  v3.l1n  != null ? `${v3.l1n} V`  : "-", { mono: true })}
+                  {doneRow("L1 : L2", v3.l1l2 != null ? `${v3.l1l2} V` : "-", { mono: true })}
+                  {doneRow("L3 : N",  v3.l3n  != null ? `${v3.l3n} V`  : "-", { mono: true })}
+                  {doneRow("L1 : L3", v3.l1l3 != null ? `${v3.l1l3} V` : "-", { mono: true })}
+                  {doneRow("L2 : N",  v3.l2n  != null ? `${v3.l2n} V`  : "-", { mono: true })}
+                  {doneRow("L2 : L3", v3.l2l3 != null ? `${v3.l2l3} V` : "-", { mono: true })}
+                </div>
+              </div>
+              <div>
+                <div className="text-xs font-semibold text-gray-500 mb-1 mt-2">3.3 การผลิต / PV</div>
+                <div className="space-y-0.5">
+                  {doneRow("กำลังการผลิต", tests.current_kw != null ? `${tests.current_kw} kW` : "-", { mono: true })}
+                  {doneRow("PV1", tests.pv1_volt != null ? `${tests.pv1_volt} V` : "-", { mono: true })}
+                  {doneRow("PV2", tests.pv2_volt != null ? `${tests.pv2_volt} V` : "-", { mono: true })}
+                </div>
+              </div>
+            </div>
+          </DoneSection>
+        );
+      })()}
+
+      {/* §3.5-§3.8 Function pass/fail — 4 items with ✓/✗ + note per row. */}
+      <DoneSection color="emerald" title="ทดสอบฟังก์ชั่น (§3.5-§3.8)">
+        <div className="space-y-0.5">
+          {(() => {
+            const tests = checklist?.function_tests ? (() => {
+              try { return JSON.parse(checklist.function_tests) as Record<string, unknown>; } catch { return {}; }
+            })() : {};
+            return FUNCTION_PASS_FAIL.map(item => {
+              const c = (tests[item.key] as PassNote | undefined) || { pass: null };
+              return doneRow(item.label, (
+                <span className="inline-flex items-center gap-2">
+                  {c.pass === true && <span className="text-emerald-700 font-semibold">✓ ผ่าน</span>}
+                  {c.pass === false && <span className="text-red-600 font-semibold">✗ ไม่ผ่าน</span>}
+                  {c.pass == null && <span className="text-gray-400">-</span>}
+                  {c.note && <span className="text-gray-500 italic text-xs">· {c.note}</span>}
+                </span>
+              ));
+            });
+          })()}
+        </div>
+      </DoneSection>
+
+      {/* Aggregate + notes. Kept AFTER the details so reviewers see the
+          full breakdown first, then the summary + free-text at the tail. */}
+      <DoneSection color="gray" title="สรุป · บันทึกเพิ่มเติม">
+        <div className="space-y-0.5">
+          {doneRow(
+            "งานติดตั้งระบบ (§2)",
+            visualStats.total > 0 ? (
+              <>
+                <span className="text-emerald-700 font-semibold">✓ {visualStats.passed}</span>
+                {visualStats.failed > 0 && <> · <span className="text-red-600 font-semibold">✗ {visualStats.failed}</span></>}
+                <span className="text-gray-400"> / {visualStats.total}</span>
+              </>
+            ) : "-"
+          )}
+          {doneRow(
+            "ทดสอบฟังก์ชั่น (§3)",
+            funcStats.total > 0 ? (
+              <>
+                <span className="text-emerald-700 font-semibold">✓ {funcStats.passed}</span>
+                {funcStats.failed > 0 && <> · <span className="text-red-600 font-semibold">✗ {funcStats.failed}</span></>}
+                <span className="text-gray-400"> / {funcStats.total}</span>
+              </>
+            ) : "-"
+          )}
+          {doneRow("บันทึกเพิ่มเติม", checklist?.notes ? <span className="whitespace-pre-wrap">{checklist.notes}</span> : "-")}
+        </div>
+      </DoneSection>
+
+      {/* Photos — merged install_photos + install_photos_extra. Small
+          thumbnails (~64px) so 6-8 fit per row; click any to open the
+          gallery viewer full-size. */}
+      {allPhotos.length > 0 && (
+        <DoneSection color="emerald" title={`ภาพส่งมอบ (${allPhotos.length})`}>
+          <div className="flex flex-wrap gap-1.5">
+            {allPhotos.map((url, i) => (
               <FallbackImage
                 key={i}
                 src={url}
                 alt=""
-                className="w-full aspect-square object-cover rounded-lg border border-gray-200 hover:opacity-80 transition"
-                gallery={photos.map((u, idx) => ({ url: u, label: `ภาพส่งมอบ ${idx + 1} / ${photos.length}` }))}
+                className="w-16 h-16 object-cover rounded border border-gray-200 hover:opacity-80 transition cursor-pointer"
+                gallery={allPhotos.map((u, idx) => ({ url: u, label: `ภาพส่งมอบ ${idx + 1} / ${allPhotos.length}` }))}
                 galleryIndex={i}
               />
             ))}
@@ -420,21 +740,10 @@ export default function InstallStep({ lead, state, refresh, expanded, onToggle }
         <div className="text-xs text-gray-400 italic">ส่งแบบประเมินแล้ว — รอลูกค้าให้คะแนน</div>
       ) : null}
 
-      {/* Download/preview the inspection document — same pattern as Warranty's
-          "ใบรับประกัน" button shown in its done view. */}
-      <button
-        type="button"
-        onClick={openInstallDoc}
-        className="flex items-center justify-center gap-2 w-full h-11 rounded-lg bg-primary hover:bg-primary-dark text-sm font-semibold text-white transition-colors"
-      >
-        <DocumentIcon className="w-4 h-4" strokeWidth={2} />
-        เอกสารใบส่งมอบงานติดตั้ง
-        {lead.install_checklist_doc_no && (
-          <span className="opacity-80 font-mono">· {lead.install_checklist_doc_no}</span>
-        )}
-      </button>
+      {/* Install-doc download removed — "ใบส่งมอบ" button lives in the doneHeader now. */}
     </>
-  );
+    );
+  };
 
   if (rescheduling) {
     return (
@@ -483,6 +792,16 @@ export default function InstallStep({ lead, state, refresh, expanded, onToggle }
       doneHeader={
         <div className="flex-1 min-w-0 flex flex-col md:flex-row md:items-center gap-1.5 md:gap-2">
           <span className="text-sm font-semibold text-emerald-700 md:flex-1 md:truncate">ติดตั้งเสร็จสิ้น{lead.install_actual_date ? ` · ${formatDate(lead.install_actual_date)}` : lead.install_completed_at ? ` · ${formatDate(lead.install_completed_at)}` : ""}</span>
+          {/* ใบส่งมอบงานติดตั้ง — compact PDF button matching the doc-button
+              pattern used across the other done-step headers. */}
+          <button
+            type="button"
+            onClick={openInstallDoc}
+            className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md border border-primary/30 bg-primary/5 text-xs font-semibold text-primary hover:bg-primary/10 transition-colors shrink-0"
+          >
+            <DocumentIcon className="w-4 h-4" strokeWidth={2} />
+            ใบส่งมอบ
+          </button>
           <div className="md:mr-4">
             <InstallmentReceiptList
               leadId={lead.id}

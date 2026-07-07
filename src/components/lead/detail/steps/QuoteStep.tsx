@@ -302,7 +302,32 @@ export default function QuoteStep({ lead, state, refresh, expanded, onToggle }: 
       state={state}
       expanded={expanded}
       onToggle={onToggle}
-      doneHeader={<span className="text-sm font-semibold text-emerald-700">ส่งใบเสนอราคาแล้ว{typeof lead.quotation_amount === "number" ? ` · ${formatTHB(lead.quotation_amount)} บาท` : ""}</span>}
+      doneHeader={(() => {
+        // Compact ใบเสนอราคา button in the done header — mirrors the
+        // pattern PreSurvey uses (ใบยืนยันการจอง / ใบเสร็จ). Opens the
+        // accepted set when the customer has picked; otherwise the first
+        // available. Hidden when no files exist yet.
+        const options = parseQuotationFiles(lead.quotation_files, lead.quotation_doc_no || "", lead.quotation_amount || 0);
+        const acceptedIdx = lead.quotation_accepted_idx;
+        const pick = (acceptedIdx != null && options[acceptedIdx]) ? options[acceptedIdx] : options[0];
+        return (
+          <div className="flex-1 min-w-0 flex flex-col md:flex-row md:items-center gap-1.5 md:gap-2">
+            <span className="text-sm font-semibold text-emerald-700 md:flex-1 md:truncate">
+              ส่งใบเสนอราคาแล้ว{typeof lead.quotation_amount === "number" ? ` · ${formatTHB(lead.quotation_amount)} บาท` : ""}
+            </span>
+            {pick && (
+              <a
+                href={pick.url}
+                onClick={fileViewer.handler(pick.url, `ใบเสนอราคา${acceptedIdx != null ? " (ที่ลูกค้าเลือก)" : ""}`)}
+                className="md:mr-4 inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md border border-primary/30 bg-primary/5 text-xs font-semibold text-primary hover:bg-primary/10 transition-colors shrink-0"
+              >
+                <DocumentIcon className="w-4 h-4" strokeWidth={2} />
+                ใบเสนอราคา{options.length > 1 ? ` ${options.length}` : ""}
+              </a>
+            )}
+          </div>
+        );
+      })()}
       renderDone={renderDoneContent}
       overlay={fileViewer.modal}
     >

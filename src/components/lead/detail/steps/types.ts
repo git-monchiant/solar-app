@@ -193,6 +193,7 @@ export interface Lead {
   install_extra_cost: number | null;
   install_customer_signature_url: string | null;
   install_completed_at: string | null;
+  install_photos_extra: string | null;
   review_sent: boolean;
   review_rating: number | null;
   review_quality: number | null;

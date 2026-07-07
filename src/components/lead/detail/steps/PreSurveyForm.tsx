@@ -154,7 +154,7 @@ const USAGE_TREND_OPTIONS = [
 
 // Questionnaire §8 — Decision Making Factor (1..5 weighted).
 // Keys mirror what the back-end stores in the decision_factors JSON.
-const DECISION_FACTORS = [
+export const DECISION_FACTORS = [
   { key: "company_reliable",   label: "บริษัทที่น่าเชื่อถือ มีทีมดูแลตลอดอายุการใช้งานระบบโซลาร์ อีก 30 ปีข้างหน้า" },
   { key: "home_understanding", label: "เข้าใจโครงสร้างบ้าน หลังคา และระบบไฟฟ้าในบ้านของคุณ" },
   { key: "equipment_standard", label: "มาตรฐานอุปกรณ์ที่ดีที่สุด" },
@@ -371,17 +371,14 @@ const PreSurveyForm = forwardRef<PreSurveyFormHandle, Props>(function PreSurveyF
     onPackageChange?.(next[0] || "");
   };
 
-  const filteredPackages = packages.filter(p => {
-    if (p.phase !== 0) {
-      if (electricalPhase === "1_phase" && p.phase === 3) return false;
-      if (electricalPhase === "3_phase" && p.phase === 1) return false;
-    }
-    if (wantsBattery === "upgrade") return p.is_upgrade;
-    if (wantsBattery === "yes") return p.has_battery && !p.is_upgrade;
-    if (wantsBattery === "no") return !p.has_battery && !p.is_upgrade;
-    if (wantsBattery === "maybe") return !p.is_upgrade;
-    return true;
-  });
+  // Upgrade packages only surface when the user explicitly hits the
+  // "+ Upgrade" chip — that segment is a separate sales conversation, not
+  // the default browse. Every other chip (yes / no / maybe) shows the
+  // full non-upgrade catalog; battery / phase filtering was hiding valid
+  // options and got dropped.
+  const filteredPackages = packages.filter(p =>
+    wantsBattery === "upgrade" ? p.is_upgrade : !p.is_upgrade
+  );
 
   const toggleAppliance = (v: string) => {
     setAppliances(prev => (prev.includes(v) ? prev.filter(a => a !== v) : [...prev, v]));

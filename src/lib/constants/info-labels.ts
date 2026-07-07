@@ -46,6 +46,7 @@ export const RESIDENCE_TYPE_LABEL: Record<string, string> = {
   detached: "บ้านเดี่ยว",
   townhome: "ทาวน์โฮม",
   townhouse: "ทาวน์เฮาส์",
+  semi_detached: "บ้านแฝด",
   home_office: "โฮมออฟฟิศ",
   shophouse: "อาคารพาณิชย์",
 };

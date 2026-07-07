@@ -586,64 +586,55 @@ export default function OrderStep({ lead, state, refresh, expanded, onToggle }: 
   const doneNetAfter = doneAmtAfter - doneCreditAfter;
   const doneRefund = doneDeposit - doneCreditAfter - doneCreditBefore;
 
+  // Responsive money row — mobile keeps "label left / value right", desktop
+  // switches to "label 40 wide / value flowing right after" so OrderStep's
+  // done view aligns with PreSurvey/Survey. `bold` toggles the emphasized
+  // top-line + subtotal formatting; other rows read as gray-400 details.
+  const moneyRow = (label: React.ReactNode, value: string, opts?: { bold?: boolean; positive?: boolean }) => {
+    const bold = !!opts?.bold;
+    const rowCls = `flex gap-2 items-baseline justify-between lg:justify-start ${bold ? "" : "text-xs"}`;
+    const labelCls = `shrink-0 lg:w-40 ${bold ? "text-gray-700 font-semibold" : "text-gray-400"}`;
+    const valueCls = `min-w-0 text-right lg:text-left font-mono tabular-nums ${bold ? "font-bold text-gray-900" : "text-gray-400"}${opts?.positive ? " text-emerald-700" : ""}`;
+    return (
+      <div className={rowCls}>
+        <span className={labelCls}>{label}</span>
+        <span className={valueCls}>{value}</span>
+      </div>
+    );
+  };
   const renderDoneContent = () => (
     <>
       {doneTotal > 0 && (
         <div className="space-y-1">
-          <div className="flex justify-between">
-            <span className="text-gray-700 font-semibold">ยอดรวม</span>
-            <span className="font-bold font-mono tabular-nums text-gray-900">{fmt(doneTotal)} บาท</span>
-          </div>
-          {doneDiscount > 0 && (
-            <div className="flex justify-between text-xs">
-              <span className="text-gray-400">
-                ส่วนลด{lead.order_discount_pct ? ` ${lead.order_discount_pct}%` : ""}
-                {lead.order_discount_note ? ` · ${lead.order_discount_note}` : ""}
-              </span>
-              <span className="font-mono tabular-nums text-gray-400">-{fmt(doneDiscount)} บาท</span>
-            </div>
+          {moneyRow("ยอดรวม", `${fmt(doneTotal)} บาท`, { bold: true })}
+          {doneDiscount > 0 && moneyRow(
+            <>ส่วนลด{lead.order_discount_pct ? ` ${lead.order_discount_pct}%` : ""}{lead.order_discount_note ? ` · ${lead.order_discount_note}` : ""}</>,
+            `-${fmt(doneDiscount)} บาท`
           )}
-          <div className="flex justify-between text-xs">
-            <span className="text-gray-400">ชำระก่อนติดตั้ง {donePctBefore}%</span>
-            <span className="font-mono tabular-nums text-gray-400">{fmt(doneAmtBefore)} บาท</span>
-          </div>
-          {donePctAfter > 0 && (
-            <div className="flex justify-between text-xs">
-              <span className="text-gray-400">ชำระหลังติดตั้ง</span>
-              <span className="font-mono tabular-nums text-gray-400">{fmt(doneAmtAfter)} บาท</span>
-            </div>
-          )}
-          {doneDeposit > 0 ? (
+          {moneyRow(`ชำระก่อนติดตั้ง ${donePctBefore}%`, `${fmt(doneAmtBefore)} บาท`)}
+          {donePctAfter > 0 && moneyRow("ชำระหลังติดตั้ง", `${fmt(doneAmtAfter)} บาท`)}
+          {doneDeposit > 0 && (
             <>
-              <div className="flex justify-between text-xs">
-                <span className="text-gray-400">หักค่าสำรวจ</span>
-                <span className="font-mono tabular-nums text-gray-400">-{fmt(doneDeposit)} บาท</span>
-              </div>
+              {moneyRow("หักค่าสำรวจ", `-${fmt(doneDeposit)} บาท`)}
               {donePctAfter > 0 ? (
                 <>
-                  <div className="flex justify-between border-t border-gray-100 pt-1 mt-1">
-                    <span className="text-gray-700 font-semibold">ยอดชำระก่อนติดตั้งสุทธิ</span>
-                    <span className="font-bold font-mono tabular-nums text-gray-900">{fmt(doneNetBefore)} บาท</span>
+                  <div className="border-t border-gray-100 pt-1 mt-1">
+                    {moneyRow("ยอดชำระก่อนติดตั้งสุทธิ", `${fmt(doneNetBefore)} บาท`, { bold: true })}
                   </div>
-                  <div className="flex justify-between">
-                    <span className="text-gray-700 font-semibold">ยอดชำระหลังติดตั้งสุทธิ</span>
-                    <span className="font-bold font-mono tabular-nums text-gray-900">{fmt(doneNetAfter)} บาท</span>
-                  </div>
+                  {moneyRow("ยอดชำระหลังติดตั้งสุทธิ", `${fmt(doneNetAfter)} บาท`, { bold: true })}
                 </>
               ) : (
-                <div className="flex justify-between border-t border-gray-100 pt-1 mt-1">
-                  <span className="text-gray-700 font-semibold">ยอดชำระสุทธิ</span>
-                  <span className="font-bold font-mono tabular-nums text-gray-900">{fmt(doneNetBefore)} บาท</span>
+                <div className="border-t border-gray-100 pt-1 mt-1">
+                  {moneyRow("ยอดชำระสุทธิ", `${fmt(doneNetBefore)} บาท`, { bold: true })}
                 </div>
               )}
               {doneRefund > 0 && (
-                <div className="flex justify-between border-t border-emerald-100 pt-1 mt-1 text-emerald-700">
-                  <span className="font-semibold">คืนเงินลูกค้า</span>
-                  <span className="font-bold font-mono tabular-nums">{fmt(doneRefund)} บาท</span>
+                <div className="border-t border-emerald-100 pt-1 mt-1">
+                  {moneyRow("คืนเงินลูกค้า", `${fmt(doneRefund)} บาท`, { bold: true, positive: true })}
                 </div>
               )}
             </>
-          ) : null}
+          )}
         </div>
       )}
       {lead.install_date && (
@@ -671,11 +662,31 @@ export default function OrderStep({ lead, state, refresh, expanded, onToggle }: 
 
       {(lead.full_name || lead.id_card_number || lead.id_card_address || lead.installation_address) && (
         <DoneSection color="gray" title="ข้อมูลขออนุญาตติดตั้ง">
-          <div className="space-y-0.5">
-            {lead.full_name && <div className="flex justify-between"><span className="text-gray-400">ชื่อ-นามสกุล</span><span className="text-gray-800 text-right">{lead.full_name}</span></div>}
-            {lead.id_card_number && <div className="flex justify-between"><span className="text-gray-400">เลขบัตร ปชช.</span><span className="font-mono tabular-nums text-gray-800">{lead.id_card_number}</span></div>}
-            {lead.id_card_address && <div className="flex flex-col"><span className="text-gray-400">ที่อยู่ตามบัตร</span><span className="text-gray-800">{lead.id_card_address}</span></div>}
-            {lead.installation_address && <div className="flex flex-col"><span className="text-gray-400">ที่อยู่ติดตั้ง</span><span className="text-gray-800">{lead.installation_address}</span></div>}
+          <div className="space-y-0.5 text-sm">
+            {lead.full_name && (
+              <div className="flex gap-2 items-baseline justify-between lg:justify-start">
+                <span className="text-gray-400 shrink-0 lg:w-40">ชื่อ-นามสกุล</span>
+                <span className="text-gray-800 min-w-0 text-right lg:text-left">{lead.full_name}</span>
+              </div>
+            )}
+            {lead.id_card_number && (
+              <div className="flex gap-2 items-baseline justify-between lg:justify-start">
+                <span className="text-gray-400 shrink-0 lg:w-40">เลขบัตร ปชช.</span>
+                <span className="font-mono tabular-nums text-gray-800 min-w-0 text-right lg:text-left">{lead.id_card_number}</span>
+              </div>
+            )}
+            {lead.id_card_address && (
+              <div className="flex flex-col lg:flex-row lg:gap-2">
+                <span className="text-gray-400 shrink-0 lg:w-40">ที่อยู่ตามบัตร</span>
+                <span className="text-gray-800 min-w-0 lg:text-left">{lead.id_card_address}</span>
+              </div>
+            )}
+            {lead.installation_address && (
+              <div className="flex flex-col lg:flex-row lg:gap-2">
+                <span className="text-gray-400 shrink-0 lg:w-40">ที่อยู่ติดตั้ง</span>
+                <span className="text-gray-800 min-w-0 lg:text-left">{lead.installation_address}</span>
+              </div>
+            )}
           </div>
         </DoneSection>
       )}

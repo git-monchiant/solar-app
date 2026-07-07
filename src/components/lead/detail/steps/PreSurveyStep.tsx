@@ -152,7 +152,10 @@ export default function PreSurveyStep({ lead, state, refresh, packages, expanded
   const [regIdCard, setRegIdCard] = useState(lead.id_card_number || "");
   const [regAddress, setRegAddress] = useState(lead.id_card_address || "");
   const [regHouseNumber, setRegHouseNumber] = useState(lead.installation_address || "");
-  const REG_SUB_STEPS = [["ข้อมูล", "แบบสอบถาม"] as const, "แพ็คเกจ", "ยืนยัน", "ชำระเงิน", "นัดสำรวจ"];
+  // "ประเภทลูกค้า" sub-step hidden — customer_type is now edited on the
+  // Info tab (via InlineCustomerEdit / ProfileModal), no need for a
+  // dedicated workflow step. Sub-step indices are back to a 4-step flow.
+  const REG_SUB_STEPS = ["แพ็คเกจ", "ยืนยัน", "ชำระเงิน", "นัดสำรวจ"];
   const [subStep, setSubStep] = useSubStep(`preSurveySubStep_${lead.id}`, 0, REG_SUB_STEPS.length);
   const [nextError, setNextError] = useState<string | null>(null);
   // Survey deposit amount — defaults to 1,000 but staff can override before
@@ -511,7 +514,7 @@ export default function PreSurveyStep({ lead, state, refresh, packages, expanded
                     {lead.pre_bill_photo_url && (
                       <div>
                         <div className="text-xs text-gray-400 mb-0.5">บิลค่าไฟ</div>
-                        <FallbackImage src={lead.pre_bill_photo_url} alt="Bill" lightboxLabel="บิลค่าไฟ" className="max-h-40 max-w-full object-contain bg-gray-50 rounded-lg border border-gray-200 hover:opacity-80 transition" fallbackLabel="บิลหาย" />
+                        <FallbackImage src={lead.pre_bill_photo_url} alt="Bill" lightboxLabel="บิลค่าไฟ" className="w-16 h-16 object-cover rounded border border-gray-200 hover:opacity-80 transition cursor-pointer" fallbackLabel="บิลหาย" />
                       </div>
                     )}
                     {lead.pre_slip_url && (
@@ -542,13 +545,13 @@ export default function PreSurveyStep({ lead, state, refresh, packages, expanded
                   {lead.id_card_photo_url && (
                     <div>
                       <div className="text-xs text-gray-400 mb-0.5">บัตรประชาชน</div>
-                      <FallbackImage src={lead.id_card_photo_url} alt="ID card" lightboxLabel="บัตรประชาชน" className="max-h-32 max-w-full object-contain bg-gray-50 rounded-lg border border-gray-200 hover:opacity-80 transition" fallbackLabel="ไม่มีไฟล์" />
+                      <FallbackImage src={lead.id_card_photo_url} alt="ID card" lightboxLabel="บัตรประชาชน" className="w-16 h-16 object-cover rounded border border-gray-200 hover:opacity-80 transition cursor-pointer" fallbackLabel="ไม่มีไฟล์" />
                     </div>
                   )}
                   {lead.house_reg_photo_url && (
                     <div>
                       <div className="text-xs text-gray-400 mb-0.5">ทะเบียนบ้าน</div>
-                      <FallbackImage src={lead.house_reg_photo_url} alt="House reg" lightboxLabel="ทะเบียนบ้าน" className="max-h-32 max-w-full object-contain bg-gray-50 rounded-lg border border-gray-200 hover:opacity-80 transition" fallbackLabel="ไม่มีไฟล์" />
+                      <FallbackImage src={lead.house_reg_photo_url} alt="House reg" lightboxLabel="ทะเบียนบ้าน" className="w-16 h-16 object-cover rounded border border-gray-200 hover:opacity-80 transition cursor-pointer" fallbackLabel="ไม่มีไฟล์" />
                     </div>
                   )}
                 </div>
@@ -589,7 +592,7 @@ export default function PreSurveyStep({ lead, state, refresh, packages, expanded
   // pre_survey (see lead 437 incident, May 2026).
   const handleSubStepChange = async (i: number) => {
     setNextError(null);
-    if (i === 4 && !paymentVerified) {
+    if (i === 3 && !paymentVerified) {
       setNextError("ยังไม่สามารถนัดสำรวจได้ — ต้องยืนยันการชำระค่าจองก่อน");
       return;
     }
@@ -607,14 +610,13 @@ export default function PreSurveyStep({ lead, state, refresh, packages, expanded
       onToggle={onToggle}
       doneHeader={null}
     >
-      {/* Step 1+2: single PreSurveyForm instance, CSS toggle sections */}
-      <div className={subStep <= 1 ? "" : "hidden"}>
-        <PreSurveyForm ref={formRef} lead={lead} refresh={refresh} packages={packages} hidePackages={subStep !== 1} onlyPackages={subStep === 1} onPackageChange={setSelectedPkg} onFormChange={setFormDraft} />
+      {/* subStep 0 ("แพ็คเกจ") — package picker only. */}
+      <div className={subStep === 0 ? "" : "hidden"}>
+        <PreSurveyForm ref={formRef} lead={lead} refresh={refresh} packages={packages} hidePackages={false} onlyPackages={true} onPackageChange={setSelectedPkg} onFormChange={setFormDraft} />
       </div>
 
-      {/* Step 2: ยืนยันข้อมูลใบเสร็จ — ย้ายจาก step สุดท้ายมาก่อนชำระเงิน
-       * เพราะต้องมีข้อมูลออกใบเสร็จครบก่อนรับเงิน */}
-      {subStep === 2 && (
+      {/* subStep 1 ("ยืนยัน") — receipt-info; must be complete before payment. */}
+      {subStep === 1 && (
         <div className="space-y-2">
           <DocumentScanner
             fields={["id_card_number", "id_card_address", "installation_address"]}
@@ -674,8 +676,8 @@ export default function PreSurveyStep({ lead, state, refresh, packages, expanded
         </div>
       )}
 
-      {/* Step 4: ชำระเงิน */}
-      {subStep === 3 && (
+      {/* subStep 2 ("ชำระเงิน") */}
+      {subStep === 2 && (
         <div className="rounded-lg bg-white/60 border border-active/15 p-4">
           <PaymentSection
             paymentTitle="ชำระค่าจอง Survey"
@@ -775,9 +777,9 @@ export default function PreSurveyStep({ lead, state, refresh, packages, expanded
         </div>
       )}
 
-      {/* Step 5: นัดสำรวจ — ย้ายจาก step 3 มาเป็น step สุดท้าย ติดกับปุ่ม
-       * "ยืนยันและเปิดขั้นสำรวจ" */}
-      {subStep === 4 && (
+      {/* subStep 3 ("นัดสำรวจ") — final sub-step, ends with the "ยืนยันและเปิด
+       * ขั้นสำรวจ" advance button. */}
+      {subStep === 3 && (
         <div className="space-y-2">
           <div className="rounded-lg border border-active/15 bg-white/60 p-4">
             <label className="text-xs font-semibold tracking-wider uppercase text-gray-400 block mb-2">Zone</label>
@@ -860,9 +862,9 @@ export default function PreSurveyStep({ lead, state, refresh, packages, expanded
         </div>
       )}
 
-      {/* Confirm action — step 5. Mobile: full-width 50/50 with Back below.
-          Desktop: Back left / ยืนยัน right (same pattern as other sub-steps). */}
-      {subStep === 4 && (
+      {/* Confirm action — final sub-step (3 = นัดสำรวจ). Mobile: full-width
+          50/50 with Back below. Desktop: Back left / ยืนยัน right. */}
+      {subStep === 3 && (
         <div className="mt-3 flex gap-2 md:justify-between">
           <button type="button" onClick={() => { setSubStep(subStep - 1); setTimeout(() => document.querySelector("[data-step-active]")?.scrollIntoView({ behavior: "smooth", block: "start" }), 100); }} className="flex-1 md:flex-none md:w-64 h-11 rounded-lg text-sm font-semibold border border-gray-200 text-gray-600 hover:bg-gray-50 transition-colors flex items-center justify-center gap-1">
             <ChevronLeftIcon className="w-4 h-4" strokeWidth={2} />
@@ -963,28 +965,28 @@ export default function PreSurveyStep({ lead, state, refresh, packages, expanded
       )}
 
       {/* Navigation buttons — "ถัดไป" verifies the current sub-step's required fields. */}
-      {subStep < 4 && (() => {
+      {subStep < 3 && (() => {
+        // Sub-step gate map (ประเภทลูกค้า sub-step hidden — customer_type
+        // is edited on the Info tab):
+        //   0: แพ็คเกจ    — profile info from the Info tab + package pick.
+        //   1: ยืนยัน      — id card + customer receipt info.
+        //   2: ชำระเงิน    — slip + payment verified.
         const stepGate: Record<number, string[]> = {
-          0: ["full_name", "phone", "pre_residence_type", "pre_monthly_bill", "pre_peak_usage", "pre_electrical_phase"],
-          1: ["pre_wants_battery", "interested_package_ids"],
-          // Step 2 (ยืนยันข้อมูลใบเสร็จ): id card + customer info validated
-          // ad-hoc below since fields aren't in validatePreSurvey
+          0: ["full_name", "phone", "pre_residence_type", "pre_monthly_bill", "pre_peak_usage", "pre_electrical_phase", "pre_wants_battery", "interested_package_ids"],
+          1: [],
           2: [],
-          // Step 3 (ชำระเงิน): no validatePreSurvey gate — paymentVerified is
-          // checked separately below
-          3: [],
         };
         const handleNext = async () => {
           const v = validatePreSurvey({ ...lead, ...formDraft, survey_date: surveyDate || lead.survey_date, survey_time_slot: surveyTimeSlot || lead.survey_time_slot });
           const missingHere = v.missing.filter(m => stepGate[subStep]?.includes(m.field));
-          if (subStep === 2) {
+          if (subStep === 1) {
             if (!regName) missingHere.push({ field: "full_name", label: "ชื่อ-นามสกุล" });
             if (!regEmail) missingHere.push({ field: "email", label: "อีเมล" });
             if (!regIdCard) missingHere.push({ field: "id_card", label: "เลขบัตรประชาชน" });
             if (!regAddress) missingHere.push({ field: "id_card_address", label: "ที่อยู่ตามบัตร" });
             if (!regHouseNumber) missingHere.push({ field: "installation_address", label: "ที่อยู่ติดตั้ง" });
           }
-          if (subStep === 3) {
+          if (subStep === 2) {
             // หมายเหตุก่อน แล้วค่อย slip — ฟรีไม่เช็ค slip เลย
             if (otherTabInputMissing) {
               missingHere.push({ field: "other_method", label: "กรุณาใส่หมายเหตุการชำระ" });

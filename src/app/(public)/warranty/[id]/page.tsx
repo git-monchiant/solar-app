@@ -46,6 +46,8 @@ interface Data {
     warranty_has_battery: boolean | null;
     warranty_batteries: string | null;
     warranty_panel_serials: string | null;
+    warranty_duration_years: number | null;
+    warranty_om_per_year: number | null;
   };
   package: Pkg | null;
   signer: { full_name: string; signature_url: string | null } | null;
@@ -218,10 +220,18 @@ export default function WarrantyPage() {
                       <Spec label="INVERTER" value={inverterSpec} />
                       {hasBattery && <Spec label="BATTERY" value={batterySpec} />}
                       <Spec label="INVERTER SERIAL NUMBER" value={inverterSn || "—"} />
-                      <Spec label="ON-SITE SERVICE" value="ล้างแผง / ตรวจเช็คระบบ 4 ครั้ง / 2 ปี" />
+                      <Spec label="ON-SITE SERVICE" value={(() => {
+                        // Total visits = duration × visits/year. If duration
+                        // is 0/null the whole line reads "-".
+                        const y   = lead.warranty_duration_years ?? 0;
+                        const opy = lead.warranty_om_per_year ?? 0;
+                        if (!y) return "-";
+                        const total = opy * y;
+                        return `ล้างแผง / ตรวจเช็คระบบ ${total} ครั้ง / ${y} ปี`;
+                      })()} />
                     </div>
                     <div className="px-4 py-3 bg-active-light/30 flex items-end justify-between border-t border-gray-200">
-                      <div className="text-[13px] uppercase tracking-wider text-gray-500">WARRANTY PERIOD · ระยะเวลารับประกันการติดตั้ง 2 ปี</div>
+                      <div className="text-[13px] uppercase tracking-wider text-gray-500">WARRANTY PERIOD · ระยะเวลารับประกันการติดตั้ง {lead.warranty_duration_years || 0} ปี</div>
                       <div className="text-[15px] font-bold text-gray-900">
                         {fmtLong(lead.warranty_start_date)} <span className="text-gray-400 mx-1">—</span> {fmtLong(lead.warranty_end_date)}
                       </div>

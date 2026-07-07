@@ -583,28 +583,36 @@ export default function SurveyStep({ lead, state, refresh, packages, expanded, o
         </DoneSection>
       )}
 
-      {/* 7. Photo Checklist — 4 named slots */}
+      {/* 7. Photo Checklist — 4 named slots. Compact 64px thumbnails
+          matching the pattern InstallStep uses; click to open gallery. */}
       <DoneSection color="gray" title="รูปตามรายการ">
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
-          {photoSlots.map(p => (
-            <div key={p.label} className="rounded-lg overflow-hidden border border-gray-200 bg-white">
-              <div className="aspect-[4/3] bg-gray-50 flex items-center justify-center overflow-hidden">
+        <div className="flex flex-wrap gap-1.5">
+          {photoSlots.map((p, i) => (
+            <div key={p.label} className="flex flex-col items-center gap-0.5">
+              <div className="w-16 h-16 rounded border border-gray-200 bg-gray-50 overflow-hidden flex items-center justify-center">
                 {p.url ? (
-                  <FallbackImage src={p.url} alt={p.label} className="w-full h-full object-cover" fallbackLabel="รูปหาย" />
+                  <FallbackImage
+                    src={p.url}
+                    alt={p.label}
+                    className="w-full h-full object-cover cursor-pointer hover:opacity-80 transition"
+                    fallbackLabel="—"
+                    gallery={photoSlots.filter(x => x.url).map(x => ({ url: x.url!, label: x.label }))}
+                    galleryIndex={photoSlots.filter(x => x.url).findIndex(x => x.url === p.url)}
+                  />
                 ) : (
-                  <span className="text-xxs text-gray-300">— ไม่มีรูป —</span>
+                  <span className="text-[9px] text-gray-300">—</span>
                 )}
               </div>
-              <div className="px-2 py-1 text-xxs font-semibold uppercase tracking-wider text-gray-500 text-center">{p.label}</div>
+              <span className="text-[9px] text-gray-500 leading-none">{p.label}</span>
             </div>
           ))}
         </div>
       </DoneSection>
 
-      {/* 8. รูปถ่ายเพิ่มเติม */}
+      {/* 8. รูปถ่ายเพิ่มเติม — same 64px thumbnail size. */}
       {lead.survey_photos && (
         <DoneSection color="gray" title="รูปถ่ายเพิ่มเติม">
-          <div className="grid grid-cols-3 md:grid-cols-4 gap-2">
+          <div className="flex flex-wrap gap-1.5">
             {(() => {
               const urls = lead.survey_photos.split(",").filter(Boolean);
               const gallery = urls.map((u, i) => ({ url: u, label: `รูปสำรวจ ${i + 1} / ${urls.length}` }));
@@ -613,7 +621,7 @@ export default function SurveyStep({ lead, state, refresh, packages, expanded, o
                   key={url}
                   src={url}
                   alt="Survey"
-                  className="w-full aspect-square object-cover rounded-lg border border-gray-200"
+                  className="w-16 h-16 object-cover rounded border border-gray-200 hover:opacity-80 transition cursor-pointer"
                   fallbackLabel="รูปหาย"
                   gallery={gallery}
                   galleryIndex={idx}
@@ -624,15 +632,7 @@ export default function SurveyStep({ lead, state, refresh, packages, expanded, o
         </DoneSection>
       )}
 
-      {/* PDF download */}
-      <button
-        type="button"
-        onClick={openPdf}
-        className="flex items-center justify-center gap-2 w-full h-11 rounded-lg bg-primary hover:bg-primary-dark text-sm font-semibold text-white transition-colors"
-      >
-        <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" /></svg>
-        ใบสำรวจหน้างาน (PDF)
-      </button>
+      {/* PDF download removed — "ใบสำรวจ" button lives in the doneHeader now. */}
     </>);
 
     return (
@@ -975,16 +975,16 @@ export default function SurveyStep({ lead, state, refresh, packages, expanded, o
             <div className="text-xs font-semibold text-gray-400 uppercase tracking-wider">Package ที่เหมาะสม</div>
           )}
           {!surveyBattery.startsWith("customize") && (() => {
-            const phase = surveyPhase === "3_phase" ? 3 : surveyPhase === "1_phase" ? 1 : 0;
-            const battery = surveyBattery;
-            const availablePkgs = packages.filter(p => {
-              if (p.phase !== 0 && phase !== 0 && p.phase !== phase) return false;
-              if (battery === "upgrade") return p.is_upgrade;
-              if (battery === "yes") return p.has_battery && !p.is_upgrade;
-              if (battery === "no") return !p.has_battery && !p.is_upgrade;
-              if (battery === "maybe") return !p.is_upgrade;
-              return true;
-            });
+            // Filter by kWp size ONLY — the system-type chip below is a
+            // preference marker, not a filter. Catalog is small enough
+            // that surveyors prefer seeing every package at the picked
+            // size and choosing the best fit themselves. Sort so upgrade
+            // packages sink to the bottom of the list (they're a niche
+            // add-on, not the primary offer).
+            const availablePkgs = packages
+              .filter(p => recommendedKw != null ? p.kwp === recommendedKw : true)
+              .slice()
+              .sort((a, b) => Number(a.is_upgrade) - Number(b.is_upgrade));
             return availablePkgs.length > 0 ? (
               // 7-col grid · each package card md:col-span-2 → 3 cards per row
               // on desktop. Matches the PreSurveyForm package picker layout.
@@ -1330,20 +1330,24 @@ export default function SurveyStep({ lead, state, refresh, packages, expanded, o
   </>);
 }
 
+// Mobile keeps the "label left / value right" layout (justify-between +
+// text-right). Desktop switches to "label 40 wide, value flowing right
+// after" — matches PreSurvey's DataRow so both step-done views feel like
+// one system instead of one column-aligned, one right-aligned.
 function DoneRow({ label, value }: { label: string; value: string | number }) {
   return (
-    <div className="flex items-baseline justify-between gap-2">
-      <span className="text-xs text-gray-400 shrink-0">{label}</span>
-      <span className="font-semibold text-gray-800 text-right">{value}</span>
+    <div className="flex items-baseline gap-2 justify-between lg:justify-start">
+      <span className="text-xs text-gray-400 shrink-0 lg:w-40">{label}</span>
+      <span className="font-semibold text-gray-800 min-w-0 text-right lg:text-left">{value}</span>
     </div>
   );
 }
 
 function DoneGroup({ label, items }: { label: string; items: { label: string; value: string }[] }) {
   return (
-    <div className="flex items-baseline justify-between gap-2">
-      <span className="text-xs text-gray-400 shrink-0">{label}</span>
-      <div className="text-right flex flex-wrap items-baseline justify-end gap-x-3 gap-y-0.5">
+    <div className="flex items-baseline gap-2 justify-between lg:justify-start">
+      <span className="text-xs text-gray-400 shrink-0 lg:w-40">{label}</span>
+      <div className="text-right lg:text-left flex flex-wrap items-baseline justify-end lg:justify-start gap-x-3 gap-y-0.5">
         {items.map((it, i) => (
           <span key={i} className="inline-flex items-baseline gap-1.5 whitespace-nowrap">
             <span className="text-xs text-gray-400">{it.label}</span>

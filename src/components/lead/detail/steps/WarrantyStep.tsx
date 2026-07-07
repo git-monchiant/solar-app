@@ -59,7 +59,7 @@ function formatBEWithSeparators(raw: string): string {
   return `${digits.slice(0, 2)}-${digits.slice(2, 4)}-${digits.slice(4)}`;
 }
 
-function ThaiDateInput({ value, onChange }: { value: string; onChange: (iso: string) => void }) {
+function ThaiDateInput({ value, onChange, disabled }: { value: string; onChange: (iso: string) => void; disabled?: boolean }) {
   const [text, setText] = useState(() => isoToBE(value));
   // Sync external value → local text when prop changes from outside.
   useEffect(() => {
@@ -78,11 +78,12 @@ function ThaiDateInput({ value, onChange }: { value: string; onChange: (iso: str
     <input
       type="text"
       inputMode="numeric"
-      value={text}
+      value={disabled ? "-" : text}
       onChange={e => handleChange(e.target.value)}
       placeholder="DD-MM-YYYY (พ.ศ.)"
       maxLength={10}
-      className={`w-full h-8 px-3 rounded-lg border text-sm font-mono tabular-nums focus:outline-none ${invalid ? "border-red-400 focus:border-red-500" : "border-gray-200 focus:border-primary"}`}
+      disabled={disabled}
+      className={`w-full h-8 px-3 rounded-lg border text-sm font-mono tabular-nums focus:outline-none ${disabled ? "bg-gray-50 text-gray-400 border-gray-200 cursor-not-allowed" : invalid ? "border-red-400 focus:border-red-500" : "border-gray-200 focus:border-primary"}`}
     />
   );
 }
@@ -709,16 +710,7 @@ export default function WarrantyStep({ lead, state, refresh, packages, expanded,
         <Info label="เริ่มประกัน" value={formatDate(lead.warranty_start_date)} />
         <Info label="สิ้นสุด" value={formatDate(lead.warranty_end_date)} />
       </div>
-      {lead.warranty_doc_url && (
-        <button
-          type="button"
-          onClick={openWarranty}
-          className="flex items-center justify-center gap-2 w-full h-11 rounded-lg bg-primary hover:bg-primary-dark text-sm font-semibold text-white transition-colors"
-        >
-          <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" /></svg>
-          ใบรับประกัน
-        </button>
-      )}
+      {/* Warranty download removed — "ใบรับประกัน" button lives in the doneHeader now. */}
     </>
   );
 
@@ -742,7 +734,7 @@ export default function WarrantyStep({ lead, state, refresh, packages, expanded,
             <button
               type="button"
               onClick={openWarranty}
-              className="mr-4 inline-flex items-center gap-1 text-xs font-semibold text-primary hover:text-primary-dark shrink-0"
+              className="md:mr-4 inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md border border-primary/30 bg-primary/5 text-xs font-semibold text-primary hover:bg-primary/10 transition-colors shrink-0"
             >
               <DocumentIcon className="w-4 h-4" strokeWidth={2} />
               ใบรับประกัน
@@ -775,20 +767,49 @@ export default function WarrantyStep({ lead, state, refresh, packages, expanded,
             </div>
             <div className="col-span-1 md:col-span-1">
               <label className="text-xs text-gray-500 block mb-1">รับประกันงานติดตั้ง</label>
-              <ThaiDateInput value={startDate} onChange={setStartDate} />
+              <ThaiDateInput value={startDate} onChange={setStartDate} disabled={durationYears === 0} />
             </div>
             <div className="col-span-1 md:col-span-1">
               <label className="text-xs text-gray-500 block mb-1">ระยะเวลา (ปี)</label>
-              <NumberStepper value={durationYears} onChange={v => setDurationYears(v ?? 1)} min={1} max={20} />
+              <NumberStepper value={durationYears} onChange={v => setDurationYears(v ?? 0)} min={0} max={20} />
             </div>
             <div className="col-span-1 md:col-span-1">
               <label className="text-xs text-gray-500 block mb-1">สิ้นสุด (+{durationYears} ปี)</label>
-              <input value={endDate ? isoToBE(endDate) : ""} readOnly
+              <input value={durationYears === 0 ? "-" : (endDate ? isoToBE(endDate) : "")} readOnly
                 className="w-full h-8 px-3 rounded-lg border border-gray-200 bg-gray-50 text-gray-600 text-sm font-mono tabular-nums" />
             </div>
             <div className="col-span-1 md:col-span-1">
               <label className="text-xs text-gray-500 block mb-1">O&M (ครั้ง/ปี)</label>
-              <NumberStepper value={omPerYear} onChange={v => setOmPerYear(v ?? 0)} min={0} max={12} />
+              <NumberStepper value={omPerYear} onChange={v => setOmPerYear(v ?? 0)} min={0} max={12} disabled={durationYears === 0} />
+            </div>
+            {/* "ไม่มีการรับประกัน" toggle — checking it zeroes out the
+                duration, which the PDF templates already read as "no
+                warranty" and swap to "-" for every derived value. */}
+            <div className="col-span-2 md:col-span-2 flex items-end">
+              <label className="inline-flex items-center gap-2 cursor-pointer select-none h-8 px-2 rounded-lg hover:bg-gray-50 text-sm text-gray-700">
+                {/* Round checkbox — no built-in accent color on rounded native
+                    checkboxes across browsers, so we build our own with an
+                    appearance-none input + inner dot rendered via a peer
+                    ring. */}
+                <span className="relative inline-flex items-center justify-center w-4 h-4">
+                  <input
+                    type="checkbox"
+                    className="peer appearance-none w-4 h-4 rounded-full border border-gray-300 checked:border-active checked:bg-active cursor-pointer transition-colors"
+                    checked={durationYears === 0}
+                    onChange={(e) => {
+                      if (e.target.checked) setDurationYears(0);
+                      else setDurationYears(2);
+                    }}
+                  />
+                  <svg
+                    className="absolute w-2.5 h-2.5 text-white opacity-0 peer-checked:opacity-100 pointer-events-none"
+                    fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={3.5}
+                  >
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
+                  </svg>
+                </span>
+                ไม่มีการรับประกัน
+              </label>
             </div>
           </div>
         </div>
