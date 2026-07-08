@@ -2,7 +2,7 @@ import { LineIcon, PhoneIcon } from "@/components/ui/icons";
 import { useState, useEffect } from "react";
 import { STATUS_CONFIG, getStatusLabel, getStatusColor, getMainStatus, getSubstep } from "@/lib/constants/statuses";
 import { formatSlotsRange } from "@/lib/time-slots";
-import { stripThaiTitle } from "@/lib/utils/name";
+import { stripThaiTitle, houseNumberOrNull } from "@/lib/utils/name";
 import { formatTHB, formatThaiDateShort } from "@/lib/utils/formatters";
 import { useOpenLead } from "@/lib/hooks/useOpenLead";
 import AssignOwnerButton from "./AssignOwnerButton";
@@ -97,7 +97,11 @@ export default function LeadCard({ lead, compact, onAssignChange, onOpen }: { le
                 <path strokeLinecap="round" strokeLinejoin="round" d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6" />
               </svg>
               <span className="truncate">
-                {lead.house_number ? `${lead.house_number} - ${stripThaiTitle(lead.full_name)}` : stripThaiTitle(lead.full_name)}
+                {(() => {
+                  const hn = houseNumberOrNull(lead.house_number);
+                  const nm = stripThaiTitle(lead.full_name);
+                  return hn ? `${hn} - ${nm}` : nm;
+                })()}
               </span>
             </div>
             <div className="text-sm text-gray-500 truncate mt-0.5 font-mono tabular-nums flex items-center gap-1.5">
@@ -200,14 +204,15 @@ export default function LeadCard({ lead, compact, onAssignChange, onOpen }: { le
           )}
         </div>
 
-        {/* Location */}
+        {/* Location — prefer project_name; else fall back to installation_address
+            (which may be just a province name for webform-captured leads). */}
         {(lead.project_name || lead.installation_address) && (
           <div className="flex items-center gap-1.5 text-sm text-gray-500 mb-2 md:mb-0.5">
             <svg className="w-5 h-5 shrink-0 text-rose-500" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
               <path strokeLinecap="round" strokeLinejoin="round" d="M15 10.5a3 3 0 11-6 0 3 3 0 016 0zM19.5 10.5c0 7.142-7.5 11.25-7.5 11.25S4.5 17.642 4.5 10.5a7.5 7.5 0 1115 0z" />
             </svg>
             <span className="truncate">
-              {lead.project_name}
+              {lead.project_name || lead.installation_address}
               {(lead.district || lead.province) && (
                 <span className="text-gray-400"> · {[lead.district, lead.province].filter(Boolean).join(", ")}</span>
               )}

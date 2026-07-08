@@ -279,9 +279,10 @@ export async function POST(req: NextRequest) {
     raw: body,
   };
 
-  // Derive first-touch source from UTM (fallback to "web-form").
-  const utmSource = webformMeta.tracking.utm_source;
-  const source = utmSource ? `web-form:${utmSource}` : "web-form";
+  // Every inbound webform lead is tagged with the canonical
+  // "Website · SenaSolarEnergy" source key. UTM/gclid/fbclid live in
+  // webform_meta so we don't need to fan them out into source.
+  const source = "web_sena";
 
   try {
     const db = await getDb();
