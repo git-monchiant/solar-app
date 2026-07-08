@@ -13,10 +13,24 @@ export type ChannelCode =
   | "smartify_existing"
   | "smartify_new"
   | "web_sena"
+  | "facebook"
   | "fb_smartify"
   | "fb_senx"
   | "referral"
   | "other";
+
+export type ChannelValue = ChannelCode | `other:${string}`;
+
+export const OTHER_CHANNEL_DETAIL_MAX_LENGTH = 14;
+
+export function sanitizeOtherChannelDetail(value: string) {
+  return value.trim().replace(/\s+/g, " ").slice(0, OTHER_CHANNEL_DETAIL_MAX_LENGTH);
+}
+
+export function makeOtherChannelValue(detail: string): ChannelValue {
+  const cleaned = sanitizeOtherChannelDetail(detail);
+  return cleaned ? `other:${cleaned}` : "other";
+}
 
 export const CHANNELS: { code: ChannelCode; label: string; color: string }[] = [
   { code: "seeker_senxpm",     label: "Seeker · Sen X PM",       color: "bg-indigo-100 text-indigo-700 border-indigo-200" },
@@ -29,6 +43,7 @@ export const CHANNELS: { code: ChannelCode; label: string; color: string }[] = [
   { code: "smartify_existing", label: "Smartify · ลูกค้าเดิม",      color: "bg-violet-100 text-violet-700 border-violet-200" },
   { code: "smartify_new",      label: "Smartify · ลูกค้าใหม่",      color: "bg-violet-100 text-violet-700 border-violet-200" },
   { code: "web_sena",          label: "Website · SenaSolarEnergy", color: "bg-sky-100 text-sky-700 border-sky-200" },
+  { code: "facebook",          label: "Facebook",                 color: "bg-blue-100 text-blue-700 border-blue-200" },
   { code: "fb_smartify",       label: "Facebook · Smartify",     color: "bg-blue-100 text-blue-700 border-blue-200" },
   { code: "fb_senx",           label: "Facebook · SenXgroup",    color: "bg-blue-100 text-blue-700 border-blue-200" },
   { code: "referral",          label: "ลูกค้าแนะนำ",                 color: "bg-emerald-100 text-emerald-700 border-emerald-200" },

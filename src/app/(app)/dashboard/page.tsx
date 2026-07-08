@@ -1160,7 +1160,7 @@ function SourceQualityChart({ sources }: { sources: DevData["sources"] }) {
   const buckets = new Map<string, Bucket>();
   for (const s of sources) {
     const key = normalizeSourceKey(s.source);
-    const fullLabel = getSourceStyle(s.source).label;
+    const fullLabel = getSourceStyle(key).label;
     const label = SHORT_LABEL[key] || fullLabel;
     const cur = buckets.get(key);
     if (cur) { cur.cnt += s.cnt; cur.booked += s.booked; cur.paid += s.paid; cur.installed += s.installed; }

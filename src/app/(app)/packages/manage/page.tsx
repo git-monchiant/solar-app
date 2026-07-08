@@ -26,6 +26,7 @@ interface Package {
   is_active: boolean;
   start_date: string | null;
   expire_date: string | null;
+  remark?: string | null;
 }
 
 const empty: Omit<Package, "id"> = {
@@ -77,6 +78,61 @@ export default function ManagePackagesPage() {
   const isNotStarted = (p: Package) => {
     if (!p.start_date) return false;
     return new Date(String(p.start_date).slice(0, 10)) > new Date(new Date().toISOString().slice(0, 10));
+  };
+
+  const packageGroups = [
+    {
+      key: "on-grid",
+      title: "ติดตั้งใหม่",
+      subtitle: "ไม่มีแบตเตอรี่ (On-Grid)",
+      match: (p: Package) => !p.has_battery && !p.is_upgrade,
+    },
+    {
+      key: "hybrid",
+      title: "ติดตั้งใหม่",
+      subtitle: "+ แบตเตอรี่ (Hybrid)",
+      match: (p: Package) => p.has_battery && !p.is_upgrade,
+    },
+    {
+      key: "scale-up",
+      title: "Scale Up",
+      subtitle: "เพิ่มอุปกรณ์จากระบบเดิม",
+      match: (p: Package) => p.is_upgrade,
+    },
+  ];
+
+  const packageDisplayOrder = new Map([
+    1, 2, 3, 25,
+    17, 4, 5, 6, 7, 26,
+    18, 19, 20, 21, 24, 22, 27, 23, 28, 29, 30, 31,
+  ].map((id, index) => [id, index]));
+
+  const comparePackages = (a: Package, b: Package) => {
+    const orderA = packageDisplayOrder.get(a.id) ?? 9999;
+    const orderB = packageDisplayOrder.get(b.id) ?? 9999;
+    return orderA - orderB || a.kwp - b.kwp || a.phase - b.phase || a.price - b.price || a.id - b.id;
+  };
+
+  const displayedPackages = filter === "inactive" ? filtered : filtered.filter(p => p.is_active);
+
+  const grouped = packageGroups
+    .map(group => ({
+      ...group,
+      items: displayedPackages
+        .filter(group.match)
+        .sort(comparePackages),
+    }))
+    .filter(group => group.items.length > 0);
+
+  const formatPhase = (phase: number) => phase === 0 ? "All Phase" : `${phase}P`;
+
+  const packageRemark = (pkg: Package) => {
+    const remark = pkg.remark?.trim();
+    if (remark) return remark;
+    if (isExpired(pkg)) return "หมดอายุ";
+    if (isNotStarted(pkg)) return "ยังไม่เริ่ม";
+    if (pkg.is_upgrade) return pkg.has_panel ? "เพิ่มแผง / แบตเตอรี่" : "เพิ่มแบตเตอรี่";
+    return "อันราคาเดิม";
   };
 
   const save = async () => {
@@ -135,9 +191,87 @@ export default function ManagePackagesPage() {
           <button type="button" onClick={() => setEditing({ ...empty })} className="h-8 px-5 rounded-lg bg-primary text-white text-sm font-semibold hover:bg-primary-dark transition-colors">+ เพิ่ม Package</button>
         </div>
 
+        {/* Price list */}
+        <div className="hidden">
+          <div className="px-5 py-3 border-b border-gray-200 bg-primary/5 text-center">
+            <h2 className="text-lg font-bold text-gray-900">Package Solar มาตรฐาน</h2>
+          </div>
+
+          {grouped.length === 0 ? (
+            <div className="px-5 py-10 text-center text-sm text-gray-400">ไม่พบ Package ตามเงื่อนไขที่เลือก</div>
+          ) : (
+            <div className="overflow-x-auto">
+              <table className="w-full min-w-[920px] border-collapse text-sm">
+                <thead>
+                  <tr className="bg-gray-50 text-xs font-bold uppercase tracking-wider text-gray-500">
+                    <th className="w-[150px] px-4 py-3 text-left border-b border-gray-200">Group</th>
+                    <th className="px-4 py-3 text-left border-b border-gray-200">Package</th>
+                    <th className="w-[190px] px-4 py-3 text-right border-b border-gray-200">Base Price รวม Vat</th>
+                    <th className="w-[210px] px-4 py-3 text-left border-b border-gray-200">Remark</th>
+                    <th className="w-[150px] px-4 py-3 text-right border-b border-gray-200">Manage</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {grouped.map(group => group.items.map((pkg, index) => (
+                    <tr key={pkg.id} className={`border-b border-gray-100 transition-colors hover:bg-primary/5 ${!pkg.is_active ? "opacity-50" : ""}`}>
+                      {index === 0 && (
+                        <td rowSpan={group.items.length} className="px-4 py-4 align-middle border-r border-gray-100 bg-gray-50/70">
+                          <div className="font-bold text-gray-900">{group.title}</div>
+                          <div className="mt-1 text-xs font-semibold text-gray-400 leading-snug">{group.subtitle}</div>
+                        </td>
+                      )}
+                      <td className="px-4 py-3 align-top">
+                        <div className="flex flex-wrap items-center gap-2">
+                          <span className="font-bold text-gray-900">{pkg.name}</span>
+                          {pkg.is_upgrade && <span className="text-xs font-bold px-2 py-0.5 rounded bg-blue-50 text-blue-600 shrink-0">SCALE UP</span>}
+                          <span className="text-xs font-mono text-gray-500 shrink-0">{pkg.kwp} kWp ยท {formatPhase(pkg.phase)}</span>
+                        </div>
+                        <div className="mt-2 flex flex-wrap items-center gap-1.5">
+                          {pkg.has_panel && <span className="text-xs px-2 py-0.5 rounded bg-amber-50 text-amber-600 font-semibold">Panel</span>}
+                          {pkg.has_inverter && <span className="text-xs px-2 py-0.5 rounded bg-violet-50 text-violet-600 font-semibold">Inv {pkg.inverter_brand ? `${pkg.inverter_brand} ${pkg.inverter_kw}kW` : ""}</span>}
+                          {pkg.has_battery && <span className="text-xs px-2 py-0.5 rounded bg-green-50 text-green-600 font-semibold">Bat {pkg.battery_kwh ? `${pkg.battery_kwh}kWh ${pkg.battery_brand || ""}` : ""}</span>}
+                        </div>
+                        <div className="mt-2 text-xs text-gray-400">
+                          {fmtDate(pkg.start_date)} - {fmtDate(pkg.expire_date)}
+                          {isNotStarted(pkg) && <span className="ml-2 text-blue-600 font-semibold">ยังไม่เริ่ม</span>}
+                          {isExpired(pkg) && <span className="ml-2 text-red-600 font-semibold">หมดอายุ</span>}
+                        </div>
+                      </td>
+                      <td className="px-4 py-3 align-top text-right">
+                        <span className="text-lg font-bold font-mono tabular-nums text-gray-900">{fmt(pkg.price)}</span>
+                        <span className="ml-1 text-xs font-semibold text-gray-400">THB</span>
+                      </td>
+                      <td className="px-4 py-3 align-top">
+                        <span className="text-sm font-semibold text-gray-600">{packageRemark(pkg)}</span>
+                      </td>
+                      <td className="px-4 py-3 align-top">
+                        <div className="flex flex-col items-end gap-2">
+                          <button type="button" onClick={() => toggleActive(pkg)} className={`text-xs font-bold uppercase px-3 py-1.5 rounded-full ${pkg.is_active ? "bg-emerald-50 text-emerald-700" : "bg-gray-100 text-gray-500"}`}>
+                            {pkg.is_active ? "ACTIVE" : "INACTIVE"}
+                          </button>
+                          <button type="button" onClick={() => setEditing({ ...pkg })} className="text-sm text-primary font-semibold hover:underline">เนเธเนเนเธ</button>
+                        </div>
+                      </td>
+                    </tr>
+                  )))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </div>
+
         {/* Cards */}
-        <div className="space-y-3">
-          {filtered.map(pkg => (
+        <div className="space-y-5">
+          {grouped.length === 0 ? (
+            <div className="rounded-xl bg-white border border-gray-300 px-5 py-10 text-center text-sm text-gray-400">ไม่พบ Package ตามเงื่อนไขที่เลือก</div>
+          ) : grouped.map(group => (
+            <section key={group.key} className="space-y-3">
+              <div className="flex items-baseline gap-2 px-1">
+                <h2 className="text-sm font-bold text-gray-900">{group.title}</h2>
+                <span className="text-xs font-semibold text-gray-400">{group.subtitle}</span>
+                <span className="text-xs font-mono text-gray-400">({group.items.length})</span>
+              </div>
+              {group.items.map(pkg => (
             <div key={pkg.id} className={`rounded-xl bg-white border border-gray-300 overflow-hidden transition-all ${!pkg.is_active ? "opacity-50" : ""}`}>
               <div className="px-5 py-4 flex items-start justify-between gap-3">
                 <div className="flex-1 min-w-0">
@@ -175,6 +309,8 @@ export default function ManagePackagesPage() {
                 </div>
               </div>
             </div>
+              ))}
+            </section>
           ))}
         </div>
       </div>

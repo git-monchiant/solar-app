@@ -8,7 +8,7 @@ import LeadCard, { LeadData } from "@/components/lead/LeadCard";
 import ListPageHeader from "@/components/layout/ListPageHeader";
 import NewLeadModal from "@/components/modal/NewLeadModal";
 import ChannelPickerModal from "@/components/shared/ChannelPickerModal";
-import type { ChannelCode } from "@/lib/constants/channels";
+import type { ChannelValue } from "@/lib/constants/channels";
 import { useActiveRoles, hasRole, useMe } from "@/lib/roles";
 import EventCalendarList from "@/components/calendar/EventCalendarList";
 
@@ -39,7 +39,7 @@ export default function TodayPage() {
   const [zones, setZones] = useState<{ id: number; name: string; color?: string | null }[]>([]);
   const [selectedZone, setSelectedZone] = useState<string>("");
   const [channelPickerOpen, setChannelPickerOpen] = useState(false);
-  const [pickedChannel, setPickedChannel] = useState<ChannelCode | null>(null);
+  const [pickedChannel, setPickedChannel] = useState<ChannelValue | null>(null);
   const [sortField, setSortField] = useState<"follow_up" | "created" | "name" | "activity">("follow_up");
   const [sortOrder, setSortOrder] = useState<"asc" | "desc">("asc");
   const [mineOnly, setMineOnly] = useState(false);

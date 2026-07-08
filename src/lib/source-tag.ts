@@ -15,6 +15,7 @@ export type SourceKey =
   | "event_booth"
   | "smartify_app" | "smartify_existing" | "smartify_new"
   | "web_sena"
+  | "facebook"
   | "fb_smartify" | "fb_senx"
   | "referral"
   // Catch-all + legacy aliases (older imports that we still need to render)
@@ -34,6 +35,7 @@ export const SOURCE_STYLES: Record<SourceKey, { label: string; cls: string }> = 
   smartify_existing: { label: "Smartify · ลูกค้าเดิม",     cls: "bg-violet-50 text-violet-700 ring-violet-200" },
   smartify_new:      { label: "Smartify · ลูกค้าใหม่",     cls: "bg-violet-50 text-violet-700 ring-violet-200" },
   web_sena:          { label: "Website · SenaSolarEnergy", cls: "bg-sky-50 text-sky-700 ring-sky-200" },
+  facebook:          { label: "Facebook",               cls: "bg-blue-50 text-blue-700 ring-blue-200" },
   fb_smartify:       { label: "Facebook · Smartify",    cls: "bg-blue-50 text-blue-700 ring-blue-200" },
   fb_senx:           { label: "Facebook · SenXgroup",   cls: "bg-blue-50 text-blue-700 ring-blue-200" },
   referral:          { label: "ลูกค้าแนะนำ",              cls: "bg-emerald-50 text-emerald-700 ring-emerald-200" },
@@ -54,6 +56,7 @@ export const SOURCE_STYLES: Record<SourceKey, { label: string; cls: string }> = 
 export function normalizeSourceKey(raw: string | null | undefined): SourceKey {
   if (!raw) return "other";
   const v = raw.trim().toLowerCase();
+  if (v.startsWith("other:")) return "other";
   // 12 active codes — match the exact slug stored by the new picker first.
   const compactKey = v.replace(/[\s·-]+/g, "_");
   if (compactKey in SOURCE_STYLES) return compactKey as SourceKey;
@@ -68,6 +71,7 @@ export function normalizeSourceKey(raw: string | null | undefined): SourceKey {
   if (/smartify.*เดิม/.test(v)) return "smartify_existing";
   if (/smartify.*ใหม่/.test(v)) return "smartify_new";
   if (/website.*sena|senasolarenergy/.test(v)) return "web_sena";
+  if (/^facebook$|^fb$/.test(v)) return "facebook";
   if (/facebook.*smartify|fb.*smartify/.test(v)) return "fb_smartify";
   if (/facebook.*senx|fb.*senx/.test(v)) return "fb_senx";
   // Legacy single-word matches
@@ -87,6 +91,15 @@ export function normalizeSourceKey(raw: string | null | undefined): SourceKey {
   return "other";
 }
 
+export function getOtherSourceDetail(raw: string | null | undefined) {
+  if (!raw) return "";
+  const trimmed = raw.trim();
+  if (!trimmed.toLowerCase().startsWith("other:")) return "";
+  return trimmed.slice(trimmed.indexOf(":") + 1).trim();
+}
+
 export function getSourceStyle(raw: string | null | undefined) {
-  return SOURCE_STYLES[normalizeSourceKey(raw)];
+  const style = SOURCE_STYLES[normalizeSourceKey(raw)];
+  const detail = getOtherSourceDetail(raw);
+  return detail ? { ...style, label: `${style.label}: ${detail}` } : style;
 }

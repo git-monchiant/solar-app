@@ -1,7 +1,8 @@
 "use client";
+import { useState } from "react";
 import { BoltIcon, LineIcon } from "@/components/ui/icons";
 
-import { CHANNELS, type ChannelCode } from "@/lib/constants/channels";
+import { CHANNELS, makeOtherChannelValue, sanitizeOtherChannelDetail, type ChannelCode, type ChannelValue } from "@/lib/constants/channels";
 import ModalBase from "@/components/ui/ModalBase";
 
 // "Where did this customer come from?" picker. Shown before opening the
@@ -10,7 +11,7 @@ import ModalBase from "@/components/ui/ModalBase";
 
 interface Props {
   onClose: () => void;
-  onPick: (code: ChannelCode) => void;
+  onPick: (code: ChannelValue) => void;
   title?: string;
 }
 
@@ -24,6 +25,7 @@ const FAMILY_BY_CODE: Record<ChannelCode, Family> = {
   event_booth: "event",
   smartify_app: "smartify", smartify_existing: "smartify", smartify_new: "smartify",
   web_sena: "web",
+  facebook: "fb",
   fb_smartify: "fb", fb_senx: "fb",
   referral: "referral",
   other: "other",
@@ -38,6 +40,15 @@ const FAMILY_TINT: Record<Family, string> = {
   referral: "text-emerald-600",
   other: "text-gray-500",
 };
+
+const HIDDEN_PICKER_CHANNELS = new Set<ChannelCode>([
+  "line_smartify",
+  "smartify_app",
+  "smartify_existing",
+  "smartify_new",
+  "fb_smartify",
+  "fb_senx",
+]);
 
 const channelIcon = (code: ChannelCode) => {
   const family = FAMILY_BY_CODE[code];
@@ -65,6 +76,11 @@ const channelIcon = (code: ChannelCode) => {
 };
 
 export default function ChannelPickerModal({ onClose, onPick, title = "เลือกช่องทาง" }: Props) {
+  const [otherOpen, setOtherOpen] = useState(false);
+  const [otherText, setOtherText] = useState("");
+  const cleanedOtherText = sanitizeOtherChannelDetail(otherText);
+  const pickOther = () => onPick(makeOtherChannelValue(otherText));
+
   return (
     <ModalBase
       title={
@@ -81,11 +97,11 @@ export default function ChannelPickerModal({ onClose, onPick, title = "เลื
       size="md"
     >
       <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
-        {CHANNELS.map((ch) => (
+        {CHANNELS.filter((ch) => !HIDDEN_PICKER_CHANNELS.has(ch.code)).map((ch) => (
           <button
             key={ch.code}
             type="button"
-            onClick={() => onPick(ch.code)}
+            onClick={() => ch.code === "other" ? setOtherOpen(true) : onPick(ch.code)}
             className="h-12 rounded-xl border border-gray-200 bg-white inline-flex items-center justify-start gap-2 px-3 text-sm font-semibold text-gray-700 hover:border-primary hover:text-primary hover:bg-primary/5 transition-colors text-left"
           >
             <span className="shrink-0">{channelIcon(ch.code)}</span>
@@ -93,6 +109,35 @@ export default function ChannelPickerModal({ onClose, onPick, title = "เลื
           </button>
         ))}
       </div>
+      {otherOpen && (
+        <div className="mt-3 rounded-xl border border-primary/20 bg-primary/5 p-3">
+          <label className="block text-xs font-semibold text-gray-500 mb-1.5">ระบุช่องทางอื่นๆ</label>
+          <div className="flex gap-2">
+            <input
+              autoFocus
+              type="text"
+              value={otherText}
+              onChange={(e) => setOtherText(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === "Enter") pickOther();
+              }}
+              maxLength={14}
+              placeholder="เช่น TikTok"
+              className="min-w-0 flex-1 h-10 rounded-lg border border-gray-200 bg-white px-3 text-sm focus:outline-none focus:border-primary"
+            />
+            <button
+              type="button"
+              onClick={pickOther}
+              className="h-10 px-4 rounded-lg bg-primary text-white text-sm font-semibold"
+            >
+              เลือก
+            </button>
+          </div>
+          {otherText !== cleanedOtherText && (
+            <div className="mt-1 text-xxs text-gray-400">ระบบจะบันทึกเป็น: {cleanedOtherText || "อื่นๆ"}</div>
+          )}
+        </div>
+      )}
     </ModalBase>
   );
 }

@@ -5,7 +5,7 @@ import { useEffect, useState } from "react";
 import { apiFetch } from "@/lib/api";
 import ErrorPopup from "@/components/ui/ErrorPopup";
 import LineIcon from "@/components/icons/LineIcon";
-import { CHANNEL_BY_CODE, type ChannelCode } from "@/lib/constants/channels";
+import { type ChannelValue } from "@/lib/constants/channels";
 import { getSourceStyle } from "@/lib/source-tag";
 import ChannelPickerModal from "@/components/shared/ChannelPickerModal";
 
@@ -281,20 +281,20 @@ function ChannelTagPicker({
   const [pickerOpen, setPickerOpen] = useState<null | "source" | "tag">(null);
 
   // tag may arrive as JSON string (from API) or array (in-memory). Normalize.
-  const tagCodes: ChannelCode[] = (() => {
-    if (Array.isArray(values.tag)) return values.tag.filter(Boolean) as ChannelCode[];
+  const tagCodes: ChannelValue[] = (() => {
+    if (Array.isArray(values.tag)) return values.tag.filter(Boolean) as ChannelValue[];
     if (typeof values.tag === "string" && values.tag) {
       try {
         const parsed = JSON.parse(values.tag);
-        if (Array.isArray(parsed)) return parsed.filter(Boolean) as ChannelCode[];
+        if (Array.isArray(parsed)) return parsed.filter(Boolean) as ChannelValue[];
       } catch {}
     }
     return [];
   })();
 
-  const setTagCodes = (next: ChannelCode[]) => onChange({ tag: next });
-  const removeTag = (c: ChannelCode) => setTagCodes(tagCodes.filter((x) => x !== c));
-  const addTag = (c: ChannelCode) => {
+  const setTagCodes = (next: ChannelValue[]) => onChange({ tag: next });
+  const removeTag = (c: ChannelValue) => setTagCodes(tagCodes.filter((x) => x !== c));
+  const addTag = (c: ChannelValue) => {
     if (c === values.source) return; // already the first-touch
     if (tagCodes.includes(c)) return;
     setTagCodes([...tagCodes, c]);
@@ -346,7 +346,7 @@ function ChannelTagPicker({
                 เลือกที่มา
               </button>
             )}
-            {tagCodes.map((c) => CHANNEL_BY_CODE[c] && (() => {
+            {tagCodes.map((c) => {
               const s = getSourceStyle(c);
               return (
                 <button
@@ -363,7 +363,7 @@ function ChannelTagPicker({
                   </svg>
                 </button>
               );
-            })())}
+            })}
             {values.source && (
               <button
                 type="button"
@@ -403,7 +403,7 @@ function ChannelTagPicker({
           onClose={() => setPickerOpen(null)}
           onPick={(code) => {
             if (pickerOpen === "source") onChange({ source: code });
-            else addTag(code as ChannelCode);
+            else addTag(code);
             setPickerOpen(null);
           }}
         />

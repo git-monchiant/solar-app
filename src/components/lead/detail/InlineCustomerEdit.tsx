@@ -3,7 +3,7 @@ import { useEffect, useRef, useState } from "react";
 import { apiFetch } from "@/lib/api";
 import LinePickerModal from "@/components/modal/LinePickerModal";
 import ChannelPickerModal from "@/components/shared/ChannelPickerModal";
-import { CHANNEL_BY_CODE, type ChannelCode } from "@/lib/constants/channels";
+import { type ChannelValue } from "@/lib/constants/channels";
 import { getSourceStyle } from "@/lib/source-tag";
 import { LineIcon, PhoneIcon, UserIcon } from "@/components/ui/icons";
 
@@ -27,7 +27,7 @@ interface FormState {
   house_number: string;
   customer_type: string;
   source: string;
-  tag: ChannelCode[];
+  tag: ChannelValue[];
 }
 
 const empty: FormState = {
@@ -50,12 +50,12 @@ export default function InlineCustomerEdit({ leadId, onSaved }: Props) {
   useEffect(() => {
     apiFetch(`/api/leads/${leadId}`).then((lead) => {
       // Parse the tag column — may arrive as JSON string, plain string, or array.
-      let tag: ChannelCode[] = [];
-      if (Array.isArray(lead.tag)) tag = lead.tag as ChannelCode[];
+      let tag: ChannelValue[] = [];
+      if (Array.isArray(lead.tag)) tag = lead.tag as ChannelValue[];
       else if (typeof lead.tag === "string" && lead.tag) {
         try {
           const parsed = JSON.parse(lead.tag);
-          if (Array.isArray(parsed)) tag = parsed as ChannelCode[];
+          if (Array.isArray(parsed)) tag = parsed as ChannelValue[];
         } catch { /* not JSON — leave empty */ }
       }
       setForm({
@@ -271,15 +271,13 @@ export default function InlineCustomerEdit({ leadId, onSaved }: Props) {
                 </button>
               )}
               {form.tag.map(code => {
-                const s = CHANNEL_BY_CODE[code];
-                if (!s) return null;
                 const style = getSourceStyle(code);
                 return (
                   <button key={code} type="button"
                     onClick={() => patch({ tag: form.tag.filter(t => t !== code) })}
-                    title={`คลิกเพื่อลบ ${s.label}`}
+                    title={`คลิกเพื่อลบ ${style.label}`}
                     className={`h-7 pl-2.5 pr-1.5 rounded text-xxs font-bold uppercase tracking-wider ring-1 ring-inset flex items-center gap-1 ${style.cls}`}>
-                    {s.label}
+                    {style.label}
                     <svg width={12} height={12} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={3}>
                       <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
                     </svg>

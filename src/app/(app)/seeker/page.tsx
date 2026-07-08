@@ -8,7 +8,7 @@ import ListPageHeader from "@/components/layout/ListPageHeader";
 import LinePickerModal from "@/components/modal/LinePickerModal";
 import { useDialog } from "@/components/ui/Dialog";
 import ModalBase from "@/components/ui/ModalBase";
-import { CHANNEL_BY_CODE, type ChannelCode } from "@/lib/constants/channels";
+import { type ChannelValue } from "@/lib/constants/channels";
 import SourceTag from "@/components/SourceTag";
 import { getSourceStyle } from "@/lib/source-tag";
 import ChannelPickerModal from "@/components/shared/ChannelPickerModal";
@@ -571,7 +571,7 @@ export default function SeekerPage() {
                     if (allChips.length > 0 || isUpgrade || showSolar || showEv) {
                       chips.push(
                         <span key="channel" className="inline-flex items-center gap-0.5 py-0.5 shrink-0">
-                          {allChips.map((c) => CHANNEL_BY_CODE[c] && (
+                          {allChips.map((c) => (
                             <SourceTag key={c} value={c} size="xs" />
                           ))}
                           {isUpgrade && (
@@ -975,24 +975,24 @@ function VisitModal({ prospect, projects, existingProspects, onClose, onRefresh,
   const [prospectId, setProspectId] = useState<number>(prospect.id);
   const isDraft = prospectId === 0;
   // First-touch source — set once on insert, never changes here.
-  const prospectSource = (prospect.prospect_source as ChannelCode | null) || null;
+  const prospectSource = (prospect.prospect_source as ChannelValue | null) || null;
   // Editable extra-touchpoint tags (JSON array).
-  const [tagCodes, setTagCodes] = useState<ChannelCode[]>(() => {
+  const [tagCodes, setTagCodes] = useState<ChannelValue[]>(() => {
     try {
       if (prospect.tag) {
         const arr = JSON.parse(prospect.tag);
-        if (Array.isArray(arr)) return arr.filter(Boolean) as ChannelCode[];
+        if (Array.isArray(arr)) return arr.filter(Boolean) as ChannelValue[];
       }
     } catch {}
     return [];
   });
   const tagsKey = tagCodes.join(",");
   const [visitChannelPickerOpen, setVisitChannelPickerOpen] = useState(false);
-  const addTag = (c: ChannelCode) => {
+  const addTag = (c: ChannelValue) => {
     if (c === prospectSource) return; // source can't be added as a tag too
     setTagCodes((prev) => prev.includes(c) ? prev : [...prev, c]);
   };
-  const removeTag = (c: ChannelCode) => {
+  const removeTag = (c: ChannelValue) => {
     setTagCodes((prev) => prev.filter((x) => x !== c));
   };
   // Contacts: everyone living at this house. The primary contact is mirrored
