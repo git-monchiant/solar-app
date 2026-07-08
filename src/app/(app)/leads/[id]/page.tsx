@@ -2,7 +2,7 @@
 import { BoltIcon, CheckIcon, ChevronLeftIcon, ClockIcon, DocumentIcon, LineIcon, PhoneIcon, UserIcon, XIcon } from "@/components/ui/icons";
 
 import { apiFetch } from "@/lib/api";
-import { stripThaiTitle } from "@/lib/utils/name";
+import { stripThaiTitle, houseNumberOrNull } from "@/lib/utils/name";
 import { useEffect, useState, use, useCallback, useRef } from "react";
 import { useSearchParams } from "next/navigation";
 import ActivityTimeline from "@/components/lead/detail/ActivityTimeline";
@@ -751,7 +751,8 @@ export default function LeadDetailPage({ params }: { params: Promise<{ id: strin
     if (!lead) return;
     const name = stripThaiTitle(lead.full_name);
     const prev = document.title;
-    document.title = lead.house_number ? `${lead.house_number} - ${name}` : name;
+    const hn = houseNumberOrNull(lead.house_number);
+    document.title = hn ? `${hn} - ${name}` : name;
     return () => { document.title = prev; };
   }, [lead]);
   const [showProfileModal, setShowProfileModal] = useState(false);
@@ -960,7 +961,11 @@ export default function LeadDetailPage({ params }: { params: Promise<{ id: strin
           )}
           <div className="flex-1 min-w-0 flex items-center gap-1">
             <h1 className="text-2xl font-bold tracking-tight leading-tight text-gray-900 truncate">
-              {lead.house_number ? `${lead.house_number} - ${stripThaiTitle(lead.full_name)}` : stripThaiTitle(lead.full_name)}
+              {(() => {
+                const hn = houseNumberOrNull(lead.house_number);
+                const nm = stripThaiTitle(lead.full_name);
+                return hn ? `${hn} - ${nm}` : nm;
+              })()}
             </h1>
             {!focus && (
               <button type="button" onClick={() => setShowProfileModal(true)} className="shrink-0 w-8 h-8 rounded-full hover:bg-gray-200 flex items-center justify-center text-gray-400 hover:text-primary transition-colors" style={{ minHeight: 0 }}>

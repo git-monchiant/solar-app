@@ -4,6 +4,7 @@ import { BoltIcon } from "@/components/ui/icons";
 import { useEffect, useMemo, useState } from "react";
 import { useOpenLead } from "@/lib/hooks/useOpenLead";
 import { apiFetch } from "@/lib/api";
+import { houseNumberOrNull } from "@/lib/utils/name";
 
 // Month-grid sibling of EventCalendarList. Same data source
 // (/api/surveys/scheduled) — different layout. Shows up to 4 events per cell.
@@ -154,7 +155,7 @@ export default function EventCalendarMonth({ toolbarRight, year: controlledYear,
                           disabled={isBlock}
                           className={`w-full text-left text-xxs leading-tight px-1.5 py-1 rounded border ${baseCls} ${isBlock ? "cursor-default" : "hover:brightness-95"} truncate inline-flex items-center gap-1`}
                           style={inlineStyle}
-                          title={`${kindLabel}${ev.zone ? ` · ${ev.zone}` : ""}: ${ev.house_number ? ev.house_number + " - " : ""}${ev.full_name}`}
+                          title={`${kindLabel}${ev.zone ? ` · ${ev.zone}` : ""}: ${houseNumberOrNull(ev.house_number) ? houseNumberOrNull(ev.house_number) + " - " : ""}${ev.full_name}`}
                         >
                           {isBlock ? (
                             <svg className="w-3 h-3 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
@@ -167,7 +168,7 @@ export default function EventCalendarMonth({ toolbarRight, year: controlledYear,
                           ) : (
                             <BoltIcon className="w-3 h-3 shrink-0" strokeWidth={2} />
                           )}
-                          <span className="truncate">{ev.house_number ? `${ev.house_number} - ${ev.full_name}` : ev.full_name}</span>
+                          <span className="truncate">{houseNumberOrNull(ev.house_number) ? `${houseNumberOrNull(ev.house_number)} - ${ev.full_name}` : ev.full_name}</span>
                         </button>
                       );
                     })}

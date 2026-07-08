@@ -4,6 +4,7 @@ import { BoltIcon, XIcon } from "@/components/ui/icons";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { LeadLink } from "@/components/lead/LeadLink";
 import { apiFetch } from "@/lib/api";
+import { houseNumberOrNull } from "@/lib/utils/name";
 import { getStatusLabel } from "@/lib/constants/statuses";
 import { formatSlotsRange } from "@/lib/time-slots";
 
@@ -292,7 +293,7 @@ export default function EventCalendarList({ monthsBack, monthsForward, days, zon
                                 />
                                 <EventIcon type={j.event_type} />
                                 <div className="flex-1 min-w-0">
-                                  <div className="text-xs font-semibold text-gray-900 truncate">{j.house_number ? `${j.house_number} - ${j.full_name}` : j.full_name}</div>
+                                  <div className="text-xs font-semibold text-gray-900 truncate">{houseNumberOrNull(j.house_number) ? `${houseNumberOrNull(j.house_number)} - ${j.full_name}` : j.full_name}</div>
                                   <div className="text-xxs text-gray-500">
                                     {formatSlotsRange(j.time_slot) || (isBlock ? "ทั้งวัน" : "")}{j.time_slot || isBlock ? " · " : ""}{label}{j.zone ? ` · ${j.zone}` : ""}
                                   </div>
