@@ -29,7 +29,7 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
     const db = await getDb();
 
     if (searchParams.get("list")) {
-      const cols = ["id", "payment_method", "description", "actual_receipt_url"];
+      const cols = ["id", "payment_method", "description", "actual_receipt_url", "cheque_received_at", "cheque_received_by"];
       for (let i = 1; i <= MAX_SLIPS; i++) {
         const suffix = i === 1 ? "" : `_${i}`;
         cols.push(`slip_mime${suffix}`, `slip_filename${suffix}`, `DATALENGTH(slip_data${suffix}) AS bytes_${i}`);
@@ -57,6 +57,8 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
         payment_method: row.payment_method || null,
         description: row.description || null,
         actual_receipt_url: row.actual_receipt_url || null,
+        cheque_received_at: row.cheque_received_at || null,
+        cheque_received_by: row.cheque_received_by || null,
       });
     }
 
@@ -83,9 +85,10 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
   }
 }
 
-// PATCH /api/payments/<id>  → currently only used to attach/clear the scanned
-// "ใบเสร็จตัวจริง" URL per installment. Keeps the receipt next to the payment
-// it belongs to instead of sprawling across stage-level columns on leads.
+// PATCH /api/payments/<id>
+//   { actual_receipt_url } → attach/clear scanned "ใบเสร็จตัวจริง"
+//   { cheque_received: true } → step 1 for cheque payments: received cheque,
+//                               but not actual money yet.
 export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const gate = await requireAuth(req);
   if (gate.error) return gate.error;
@@ -94,20 +97,186 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
   if (!payId) return NextResponse.json({ error: "Invalid id" }, { status: 400 });
   try {
     const body = await req.json();
-    if (!Object.prototype.hasOwnProperty.call(body, "actual_receipt_url")) {
-      return NextResponse.json({ error: "actual_receipt_url required" }, { status: 400 });
-    }
-    // actual_receipt_url is a JSON array of up to 5 URLs (migration 027). Server
-    // stores the string verbatim; client owns serialization (single URL string
-    // is also accepted for legacy backwards-compat reads).
-    const url = body.actual_receipt_url == null ? null : String(body.actual_receipt_url);
     const db = await getDb();
-    const result = await db.request()
-      .input("id", sql.Int, payId)
-      .input("url", sql.NVarChar(sql.MAX), url)
-      .query(`UPDATE payments SET actual_receipt_url = @url WHERE id = @id`);
-    if (result.rowsAffected[0] === 0) return NextResponse.json({ error: "Not found" }, { status: 404 });
-    return NextResponse.json({ ok: true });
+
+    if (body.cheque_received === true) {
+      const payRes = await db.request()
+        .input("id", sql.Int, payId)
+        .query(`SELECT lead_id, slip_field, step_no, amount, payment_method, confirmed_at, cheque_received_at FROM payments WHERE id = @id`);
+      const pay = payRes.recordset[0];
+      if (!pay) return NextResponse.json({ error: "Not found" }, { status: 404 });
+      if (pay.payment_method !== "cheque") {
+        return NextResponse.json({ error: "รองรับเฉพาะรายการรับชำระด้วยเช็ค" }, { status: 400 });
+      }
+      if (pay.confirmed_at) {
+        return NextResponse.json({ error: "รายการนี้ยืนยันรับเงินแล้ว" }, { status: 409 });
+      }
+
+      let receivedBy: string | null = null;
+      if (gate.userId) {
+        const u = await db.request().input("uid", sql.Int, gate.userId)
+          .query(`SELECT full_name FROM users WHERE id = @uid`);
+        receivedBy = u.recordset[0]?.full_name ?? null;
+      }
+
+      await db.request()
+        .input("id", sql.Int, payId)
+        .input("received_by", sql.NVarChar(100), receivedBy)
+        .query(`UPDATE payments SET
+                  cheque_received_at = COALESCE(cheque_received_at, GETDATE()),
+                  cheque_received_by = COALESCE(cheque_received_by, @received_by)
+                WHERE id = @id`);
+
+      await db.request()
+        .input("lead_id", sql.Int, pay.lead_id)
+        .input("slip_field", sql.NVarChar(50), pay.slip_field)
+        .input("step_no", sql.Int, pay.step_no)
+        .input("details", sql.NVarChar(sql.MAX), JSON.stringify({ payment_id: payId, amount: pay.amount }))
+        .input("user_id", sql.Int, gate.userId ?? null)
+        .query(`INSERT INTO payment_logs (lead_id, action, slip_field, step_no, details, user_id)
+                VALUES (@lead_id, 'cheque_received', @slip_field, @step_no, @details, @user_id)`);
+
+      await logLeadActivity(db, {
+        leadId: pay.lead_id,
+        activityType: "payment_cheque_received",
+        title: `รับเช็ค ${paymentStepLabel(pay.slip_field, pay.step_no)} ${fmtBaht(Number(pay.amount || 0))}`,
+        userId: gate.userId,
+      });
+
+      return NextResponse.json({ ok: true });
+    }
+
+    if (body.confirm_received_money === true) {
+      const payRes = await db.request()
+        .input("id", sql.Int, payId)
+        .query(`SELECT lead_id, slip_field, step_no, doc_no, amount, description, payment_method, confirmed_at, cheque_received_at
+                FROM payments WHERE id = @id`);
+      const pay = payRes.recordset[0];
+      if (!pay) return NextResponse.json({ error: "Not found" }, { status: 404 });
+      if (pay.payment_method !== "cheque") {
+        return NextResponse.json({ error: "รองรับเฉพาะรายการรับชำระด้วยเช็ค" }, { status: 400 });
+      }
+      if (!pay.cheque_received_at) {
+        return NextResponse.json({ error: "ต้องยืนยันรับเช็คก่อน" }, { status: 409 });
+      }
+      if (pay.confirmed_at) {
+        return NextResponse.json({ error: "รายการนี้ยืนยันรับเงินแล้ว" }, { status: 409 });
+      }
+
+      const userRes = await db.request().input("uid", sql.Int, gate.userId)
+        .query(`SELECT full_name, roles FROM users WHERE id = @uid`);
+      const user = userRes.recordset[0];
+      let roles: string[] = [];
+      try {
+        const parsed = user?.roles ? JSON.parse(user.roles) : [];
+        if (Array.isArray(parsed)) roles = parsed;
+      } catch { roles = []; }
+      if (!roles.includes("admin") && !roles.includes("account")) {
+        return NextResponse.json({ error: "Account only" }, { status: 403 });
+      }
+      const confirmedBy = user?.full_name ?? null;
+
+      const slipRes = await db.request()
+        .input("lead_id", sql.Int, pay.lead_id)
+        .input("slip_field", sql.NVarChar(50), pay.slip_field)
+        .query(`
+          SELECT TOP (${MAX_SLIPS}) id, data, mime, filename,
+                 slip_amount, slip_ref1, slip_ref2, slip_trans_id, slip_datetime,
+                 slip_doc_type, slip_cheque_no
+          FROM slip_files
+          WHERE lead_id = @lead_id AND slip_field = @slip_field AND submitted_at IS NOT NULL
+          ORDER BY id ASC
+        `);
+
+      const existingSlots = await db.request()
+        .input("id", sql.Int, payId)
+        .query(`SELECT DATALENGTH(slip_data) AS bytes_1 FROM payments WHERE id = @id`);
+      if (slipRes.recordset.length === 0 && !Number(existingSlots.recordset[0]?.bytes_1 || 0)) {
+        return NextResponse.json({ error: "ไม่พบหลักฐานเช็คที่ส่งให้บัญชี" }, { status: 400 });
+      }
+
+      const tx = new sql.Transaction(db);
+      await tx.begin();
+      try {
+        const firstSlip = slipRes.recordset[0] ?? null;
+        const writeReq = new sql.Request(tx)
+          .input("id", sql.Int, payId)
+          .input("confirmed_by", sql.NVarChar(100), confirmedBy)
+          .input("slip_amount", sql.Decimal(12, 2), firstSlip?.slip_amount ?? null)
+          .input("slip_ref1", sql.NVarChar(50), firstSlip?.slip_ref1 ?? null)
+          .input("slip_ref2", sql.NVarChar(50), firstSlip?.slip_ref2 ?? null)
+          .input("slip_trans_id", sql.NVarChar(50), firstSlip?.slip_trans_id ?? null)
+          .input("slip_datetime", sql.DateTime2, firstSlip?.slip_datetime ?? null)
+          .input("slip_doc_type", sql.NVarChar(20), firstSlip?.slip_doc_type ?? null)
+          .input("slip_cheque_no", sql.NVarChar(50), firstSlip?.slip_cheque_no ?? null);
+
+        const setExprs = [
+          "confirmed_by = @confirmed_by",
+          "confirmed_at = GETDATE()",
+          "payment_method = 'cheque'",
+        ];
+        if (firstSlip) {
+          setExprs.push(
+            "slip_amount = @slip_amount",
+            "slip_ref1 = @slip_ref1",
+            "slip_ref2 = @slip_ref2",
+            "slip_trans_id = @slip_trans_id",
+            "slip_datetime = @slip_datetime",
+            "slip_doc_type = @slip_doc_type",
+            "slip_cheque_no = @slip_cheque_no",
+          );
+        }
+        for (let i = 0; i < MAX_SLIPS; i++) {
+          const slip = slipRes.recordset[i] ?? null;
+          const suffix = i === 0 ? "" : `_${i + 1}`;
+          if (!slip) continue;
+          writeReq
+            .input(`slip_data${suffix}`, sql.VarBinary(sql.MAX), slip.data)
+            .input(`slip_mime${suffix}`, sql.NVarChar(50), slip.mime)
+            .input(`slip_filename${suffix}`, sql.NVarChar(200), slip.filename);
+          setExprs.push(
+            `slip_data${suffix} = @slip_data${suffix}`,
+            `slip_mime${suffix} = @slip_mime${suffix}`,
+            `slip_filename${suffix} = @slip_filename${suffix}`,
+          );
+        }
+
+        await writeReq.query(`UPDATE payments SET ${setExprs.join(", ")} WHERE id = @id`);
+        await new sql.Request(tx)
+          .input("lead_id", sql.Int, pay.lead_id)
+          .input("slip_field", sql.NVarChar(50), pay.slip_field)
+          .query(`DELETE FROM slip_files WHERE lead_id = @lead_id AND slip_field = @slip_field`);
+        await tx.commit();
+      } catch (e) {
+        try { await tx.rollback(); } catch {}
+        throw e;
+      }
+
+      await syncOrderPaidFlags(db, pay.lead_id).catch(e => console.error("syncOrderPaidFlags failed:", e));
+      await logLeadActivity(db, {
+        leadId: pay.lead_id,
+        activityType: "payment_confirmed",
+        title: `ยืนยันรับเงินจากเช็ค ${paymentStepLabel(pay.slip_field, pay.step_no)} ${fmtBaht(Number(pay.amount || 0))}`,
+        note: pay.description ?? null,
+        userId: gate.userId,
+      });
+      return NextResponse.json({ ok: true });
+    }
+
+    if (Object.prototype.hasOwnProperty.call(body, "actual_receipt_url")) {
+      // actual_receipt_url is a JSON array of up to 5 URLs (migration 027). Server
+      // stores the string verbatim; client owns serialization (single URL string
+      // is also accepted for legacy backwards-compat reads).
+      const url = body.actual_receipt_url == null ? null : String(body.actual_receipt_url);
+      const result = await db.request()
+        .input("id", sql.Int, payId)
+        .input("url", sql.NVarChar(sql.MAX), url)
+        .query(`UPDATE payments SET actual_receipt_url = @url WHERE id = @id`);
+      if (result.rowsAffected[0] === 0) return NextResponse.json({ error: "Not found" }, { status: 404 });
+      return NextResponse.json({ ok: true });
+    }
+
+    return NextResponse.json({ error: "No-op" }, { status: 400 });
   } catch (e) {
     console.error("PATCH /api/payments/[id] error:", e);
     return NextResponse.json({ error: e instanceof Error ? e.message : "Failed" }, { status: 500 });
@@ -150,7 +319,9 @@ export async function DELETE(req: NextRequest, { params }: { params: Promise<{ i
         slip_filename = NULL, slip_filename_2 = NULL, slip_filename_3 = NULL, slip_filename_4 = NULL, slip_filename_5 = NULL,
         confirmed_at = NULL,
         confirmed_by = NULL,
-        payment_method = NULL
+        payment_method = NULL,
+        cheque_received_at = NULL,
+        cheque_received_by = NULL
       WHERE id = @id
     `);
 

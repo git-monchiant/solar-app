@@ -15,7 +15,7 @@ export async function GET(req: NextRequest) {
     const leadsRes = await db.request().query(`
       SELECT l.id as lead_id, l.pre_doc_no, l.full_name, l.phone, l.payment_type, l.zone,
              l.status, l.pre_total_price, l.order_total, l.order_discount_amount, l.install_extra_cost,
-             l.pre_booked_at, l.payment_confirmed,
+             l.pre_booked_at, l.payment_confirmed, l.order_installments,
              l.order_before_paid, l.order_after_paid,
              p.name as project_name, p.district, p.province,
              COALESCE(pk.name, pk2.name) as package_name,
@@ -45,7 +45,8 @@ export async function GET(req: NextRequest) {
     }).join(", ");
     const paymentsRes = await db.request().query(`
       SELECT p.id, p.lead_id, p.step_no, p.slip_field, p.doc_no, p.amount, p.description,
-             p.confirmed_at, p.confirmed_by, p.payment_no, p.ref1,
+             p.confirmed_at, p.confirmed_by, p.payment_no, p.ref1, p.payment_method,
+             p.cheque_received_at, p.cheque_received_by,
              ${slotCols}
       FROM payments p
       ORDER BY p.step_no ASC, p.id ASC
@@ -86,6 +87,9 @@ export async function GET(req: NextRequest) {
       id: number; step_no: number; slip_field: string; doc_no: string | null;
       amount: number; description: string | null;
       confirmed_at: string | null; confirmed_by: string | null;
+      payment_method: string | null;
+      cheque_received_at: string | null;
+      cheque_received_by: string | null;
       has_slip: boolean;
       slip_urls: string[];
       ref1: string | null;
@@ -114,6 +118,9 @@ export async function GET(req: NextRequest) {
         description: (row.description as string | null) ?? null,
         confirmed_at: (row.confirmed_at as string | null) ?? null,
         confirmed_by: (row.confirmed_by as string | null) ?? null,
+        payment_method: (row.payment_method as string | null) ?? null,
+        cheque_received_at: (row.cheque_received_at as string | null) ?? null,
+        cheque_received_by: (row.cheque_received_by as string | null) ?? null,
         has_slip: slipUrls.length > 0,
         slip_urls: slipUrls,
         ref1: (row.ref1 as string | null) || computeRef1(leadId, stepNo),
@@ -163,7 +170,7 @@ export async function GET(req: NextRequest) {
         : installments
             .filter(i => i.confirmed_at)
             .reduce((s, i) => s + i.amount, 0);
-      const pendingRows = installments.filter(i => !i.confirmed_at && i.has_slip);
+      const pendingRows = installments.filter(i => !i.confirmed_at && (i.has_slip || i.payment_method === "cheque" || !!i.cheque_received_at));
       const pendingApproval = pendingRows.length;
       const pendingAmount = pendingRows.reduce((s, i) => s + i.amount, 0);
       const outstanding = Math.max(0, total_value - received);
@@ -187,6 +194,7 @@ export async function GET(req: NextRequest) {
         outstanding,
         pending_approval: pendingApproval,
         pending_amount: pendingAmount,
+        order_installments: l.order_installments,
         installments,
       };
     });

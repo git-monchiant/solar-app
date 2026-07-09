@@ -19,8 +19,9 @@ import { formatTHB as fmt, formatThaiDate as formatDate } from "@/lib/utils/form
 import { parseQuotationFiles } from "@/lib/utils/quotation";
 import { useFileViewer } from "@/lib/hooks/useFileViewer";
 import DoneSection from "./DoneSection";
+import { hasRole, useActiveRoles } from "@/lib/roles";
 
-type PayMethod = "transfer" | "loan" | "cc";
+type PayMethod = "transfer" | "loan" | "cc" | "cheque";
 type LoanBank = "ghb" | "gsb";
 
 const LOAN_BANKS: { value: LoanBank; label: string }[] = [
@@ -54,7 +55,7 @@ function parseInstallments(raw: string | null | undefined, fallbackPctBefore: nu
           pct: Number(r?.pct) || 0,
           when: r?.when === "after" ? "after" : "before",
           due_date: typeof r?.due_date === "string" && r.due_date ? r.due_date : todayISO(),
-          method: r?.method === "loan" ? "loan" : r?.method === "cc" ? "cc" : "transfer",
+          method: r?.method === "loan" ? "loan" : r?.method === "cc" ? "cc" : r?.method === "cheque" ? "cheque" : "transfer",
           loan_bank: r?.loan_bank === "ghb" || r?.loan_bank === "gsb" ? r.loan_bank : null,
           // `??` so a saved 0 ("no surcharge") survives a refresh — `||` would
           // treat 0 as falsy and snap the value back to CC_DEFAULT.
@@ -88,6 +89,8 @@ interface Props extends StepCommonProps {
 
 export default function OrderStep({ lead, state, refresh, expanded, onToggle }: Props) {
   const fileViewer = useFileViewer();
+  const { activeRoles } = useActiveRoles();
+  const canConfirmChequeMoney = hasRole(activeRoles, "admin", "account");
   const [subStep, setSubStep] = useSubStep(`orderSubStep_${lead.id}`, 0, SUB_STEPS.length);
   const [nextError, setNextError] = useState<string | null>(null);
   const [total, setTotal] = useState<number>(lead.order_total || lead.quotation_amount || 0);
@@ -346,6 +349,28 @@ export default function OrderStep({ lead, state, refresh, expanded, onToggle }: 
   // slip_field (order_installment_<i>) so the payments table holds one
   // pending row per installment.
   const [paymentRow, setPaymentRow] = useState<number | null>(null);
+  const [focusedChequeConfirmId, setFocusedChequeConfirmId] = useState<number | null>(null);
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const key = `orderPaymentRow_${lead.id}`;
+    const raw = localStorage.getItem(key);
+    if (raw === null) return;
+    localStorage.removeItem(key);
+    const idx = parseInt(raw);
+    if (!isNaN(idx) && idx >= 0 && idx < installments.length) {
+      setPaymentRow(idx);
+      setTimeout(() => document.querySelector("[data-step-active]")?.scrollIntoView({ behavior: "smooth", block: "start" }), 100);
+    }
+  }, [lead.id, installments.length]);
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const key = `orderChequeConfirm_${lead.id}`;
+    const raw = localStorage.getItem(key);
+    if (raw === null) return;
+    localStorage.removeItem(key);
+    const id = parseInt(raw);
+    if (!isNaN(id)) setFocusedChequeConfirmId(id);
+  }, [lead.id]);
   // Loan follow-up activities, fetched once + after each save. Keyed by row
   // installment index parsed from "[งวดที่ N]" prefix in activity title.
   type LoanFollowupActivity = { id: number; title: string; note: string | null; created_at: string; created_by_name: string | null; follow_up_date: string | null };
@@ -367,15 +392,28 @@ export default function OrderStep({ lead, state, refresh, expanded, onToggle }: 
   // submitted a slip (slip_files.submitted_at IS NOT NULL) but admin hasn't
   // confirmed yet. Drives the per-row "รอยืนยัน" button.
   const [pendingApprovalIdxSet, setPendingApprovalIdxSet] = useState<Set<number>>(new Set());
+  const [chequeReceivedIdxSet, setChequeReceivedIdxSet] = useState<Set<number>>(new Set());
+  type ChequePendingPayment = { id: number; idx: number; amount: number; step_no: number; slip_field: string; cheque_received_at: string | null; slip_urls: string[] };
+  const [chequePendingPayments, setChequePendingPayments] = useState<ChequePendingPayment[]>([]);
+  const [confirmingChequeMoneyId, setConfirmingChequeMoneyId] = useState<number | null>(null);
   const loadPayments = async () => {
     try {
       const [paysRes, slipsRes] = await Promise.all([
-        apiFetch(`/api/payments?lead_id=${lead.id}`) as Promise<Array<{ id: number; slip_field: string; confirmed_at: string | null }>>,
+        apiFetch(`/api/payments?lead_id=${lead.id}`) as Promise<Array<{ id: number; step_no: number; slip_field: string; amount: number; confirmed_at: string | null; payment_method: string | null; cheque_received_at: string | null }>>,
         apiFetch(`/api/slips?lead_id=${lead.id}`) as Promise<{ slips: Array<{ id: number; slip_field?: string; submitted_at: string | null }> }>,
       ]);
       const paid = new Set<number>();
       const idMap = new Map<number, number>();
       const existing = new Set<number>();
+      const chequeReceived = new Set<number>();
+      const chequePending: ChequePendingPayment[] = [];
+      const submittedSlipUrlsByField = new Map<string, string[]>();
+      for (const s of slipsRes.slips || []) {
+        if (!s.slip_field || !s.submitted_at) continue;
+        const urls = submittedSlipUrlsByField.get(s.slip_field) || [];
+        urls.push(`/api/slips/${s.id}`);
+        submittedSlipUrlsByField.set(s.slip_field, urls);
+      }
       for (const p of paysRes) {
         if (!p.slip_field) continue;
         const m = /^order_installment_(\d+)$/.exec(p.slip_field);
@@ -385,6 +423,17 @@ export default function OrderStep({ lead, state, refresh, expanded, onToggle }: 
         if (p.confirmed_at) {
           paid.add(idx);
           idMap.set(idx, p.id);
+        } else if (p.payment_method === "cheque" && p.cheque_received_at) {
+          chequeReceived.add(idx);
+          chequePending.push({
+            id: p.id,
+            idx,
+            amount: Number(p.amount || 0),
+            step_no: p.step_no,
+            slip_field: p.slip_field,
+            cheque_received_at: p.cheque_received_at,
+            slip_urls: submittedSlipUrlsByField.get(p.slip_field) || [],
+          });
         }
       }
       const pendingApproval = new Set<number>();
@@ -398,9 +447,17 @@ export default function OrderStep({ lead, state, refresh, expanded, onToggle }: 
       setPaidIdToId(idMap);
       setExistingIdxSet(existing);
       setPendingApprovalIdxSet(pendingApproval);
+      setChequeReceivedIdxSet(chequeReceived);
+      setChequePendingPayments(chequePending.sort((a, b) => a.idx - b.idx));
     } catch (e) { console.error(e); }
   };
   useEffect(() => { loadPayments(); /* eslint-disable-next-line react-hooks/exhaustive-deps */ }, [lead.id]);
+  useEffect(() => {
+    if (!focusedChequeConfirmId) return;
+    const target = document.querySelector(`[data-cheque-confirm-payment="${focusedChequeConfirmId}"]`);
+    if (!target) return;
+    window.setTimeout(() => target.scrollIntoView({ behavior: "smooth", block: "center" }), 120);
+  }, [focusedChequeConfirmId, chequePendingPayments.length]);
   const isPaid = (idx: number) => paidIdxSet.has(idx);
   const [installDate, setInstallDate] = useState(lead.install_date ? String(lead.install_date).slice(0, 10) : "");
   const [installDateEnd, setInstallDateEnd] = useState(lead.install_date_end ? String(lead.install_date_end).slice(0, 10) : "");
@@ -494,6 +551,12 @@ export default function OrderStep({ lead, state, refresh, expanded, onToggle }: 
     return netTotal > 0 ? Math.round((netTotal * pct) / 100) : 0;
   };
   const rowNet = (idx: number) => rowGross(idx);
+  const isInstallReadyPayment = (idx: number) => paidIdxSet.has(idx) || chequeReceivedIdxSet.has(idx);
+  const beforeInstallRows = () => persistedInstallments
+    .map((r, i) => ({ r, i }))
+    .filter(({ r }) => r.when === "before")
+    .filter(({ i }) => rowNet(i) > 0);
+  const pendingChequeBeforeInstall = beforeInstallRows().filter(({ i }) => chequeReceivedIdxSet.has(i) && !paidIdxSet.has(i));
   // If deposit > eff (rare — refund-due to customer), surface the excess.
   const refund = Math.max(0, depositPaid - effTotal);
   // Credit-card surcharge: each "cc" installment row adds rowGross × cc_pct/100
@@ -602,8 +665,36 @@ export default function OrderStep({ lead, state, refresh, expanded, onToggle }: 
       </div>
     );
   };
+  const confirmChequeMoney = async (payment: ChequePendingPayment) => {
+    const paymentId = payment.id;
+    if (confirmingChequeMoneyId) return;
+    setConfirmingChequeMoneyId(paymentId);
+    try {
+      await apiFetch(`/api/payments/${paymentId}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ confirm_received_money: true }),
+      });
+      await loadPayments();
+      await refresh();
+      if (persistedInstallments.length > 1 && payment.idx === 0) {
+        setFocusedChequeConfirmId(null);
+        setPaymentRow(null);
+        setSubStep(1);
+        if (typeof window !== "undefined") {
+          window.dispatchEvent(new CustomEvent("lead-force-active-step", { detail: { leadId: lead.id, step: 3 } }));
+        }
+        scrollToStep();
+      }
+    } catch (e) {
+      setNextError(e instanceof Error ? e.message : "ยืนยันรับเงินจากเช็คไม่สำเร็จ");
+    } finally {
+      setConfirmingChequeMoneyId(null);
+    }
+  };
   const renderDoneContent = () => (
     <>
+      {nextError && <ErrorPopup message={nextError} onClose={() => setNextError(null)} />}
       {doneTotal > 0 && (
         <div className="space-y-1">
           {moneyRow("ยอดรวม", `${fmt(doneTotal)} บาท`, { bold: true })}
@@ -644,6 +735,43 @@ export default function OrderStep({ lead, state, refresh, expanded, onToggle }: 
             {lead.install_date_end && lead.install_date_end !== lead.install_date && (
               <span> – {formatDate(lead.install_date_end)}</span>
             )}
+          </div>
+        </DoneSection>
+      )}
+
+      {chequePendingPayments.length > 0 && (
+        <DoneSection color="amber" title="รอรับเงินจากเช็ค">
+          <div className="space-y-2">
+            {chequePendingPayments.map((p) => {
+              const busy = confirmingChequeMoneyId === p.id;
+              const focused = focusedChequeConfirmId === p.id;
+              return (
+                <div
+                  key={p.id}
+                  data-cheque-confirm-payment={p.id}
+                  className={`flex flex-col md:flex-row md:items-center gap-2 md:gap-3 rounded-lg border px-3 py-2 ${focused ? "border-emerald-300 bg-emerald-50 ring-2 ring-emerald-200" : "border-amber-200 bg-amber-50/60"}`}
+                >
+                  <div className="flex-1 min-w-0">
+                    <div className="text-sm font-semibold text-amber-900">งวดที่ {p.idx + 1}</div>
+                    <div className="text-xs text-amber-700/80">
+                      รับเช็คแล้ว{p.cheque_received_at ? ` · ${formatDate(p.cheque_received_at)}` : ""} · ยอด {fmt(p.amount)} บาท
+                    </div>
+                  </div>
+                  {canConfirmChequeMoney ? (
+                    <button
+                      type="button"
+                      disabled={busy}
+                      onClick={() => confirmChequeMoney(p)}
+                      className="h-8 px-3 rounded-md text-sm font-semibold text-white bg-amber-500 hover:brightness-110 disabled:opacity-60 disabled:cursor-not-allowed inline-flex items-center justify-center"
+                    >
+                      {busy ? "กำลังยืนยัน..." : "ยืนยันรับเงิน"}
+                    </button>
+                  ) : (
+                    <span className="text-xs font-semibold text-amber-700">รอฝ่ายบัญชียืนยันรับเงิน</span>
+                  )}
+                </div>
+              );
+            })}
           </div>
         </DoneSection>
       )}
@@ -711,13 +839,10 @@ export default function OrderStep({ lead, state, refresh, expanded, onToggle }: 
     // at the final "บันทึกและไปขั้นตอนติดตั้ง" close — so sales can schedule
     // the install appointment without waiting for every งวด to clear.
     if (from === 1) {
-      const beforeRows = persistedInstallments
-        .map((r, i) => ({ r, i }))
-        .filter(({ r }) => r.when === "before")
-        .filter(({ i }) => rowNet(i) > 0);
-      const paidBefore = beforeRows.filter(({ i }) => paidIdxSet.has(i));
-      if (beforeRows.length > 0 && paidBefore.length === 0) {
-        missing.push(`ต้องรับชำระอย่างน้อย 1 งวดก่อนติดตั้ง`);
+      const beforeRows = beforeInstallRows();
+      const readyBefore = beforeRows.filter(({ i }) => isInstallReadyPayment(i));
+      if (beforeRows.length > 0 && readyBefore.length === 0) {
+        missing.push(`ต้องรับชำระหรือรับเช็คอย่างน้อย 1 งวดก่อนติดตั้ง`);
       }
     }
     if (from === 2 && !installDate) missing.push("วันนัดติดตั้ง");
@@ -900,6 +1025,20 @@ export default function OrderStep({ lead, state, refresh, expanded, onToggle }: 
                     <span>บัตรเครดิต</span>
                   </label>
                 );
+                const chequeCheckbox = (
+                  <label className={`flex items-center gap-1.5 text-xs text-gray-600 shrink-0 ${paid ? "cursor-default opacity-60" : "cursor-pointer"}`}>
+                    <input
+                      type="checkbox"
+                      checked={row.method === "cheque"}
+                      disabled={paid}
+                      onChange={(e) => updateInstallment(i, e.target.checked
+                        ? { method: "cheque", loan_bank: null, cc_pct: null }
+                        : { method: "transfer", loan_bank: null, cc_pct: null })}
+                      className="w-4 h-4 accent-primary"
+                    />
+                    <span>เช็ค</span>
+                  </label>
+                );
                 const bankPicker = row.method === "loan" ? (
                   <select
                     value={row.loan_bank || ""}
@@ -927,6 +1066,8 @@ export default function OrderStep({ lead, state, refresh, expanded, onToggle }: 
                 const paymentOpen = paymentRow === i;
                 const noNet = rowNetAmount === 0 && total > 0;
                 const pendingApproval = !paid && pendingApprovalIdxSet.has(i);
+                const chequeWaitingMoney = !paid && chequeReceivedIdxSet.has(i);
+                const chequePendingPayment = chequePendingPayments.find(p => p.idx === i) || null;
                 const recordPaymentBtn = (
                   <button
                     type="button"
@@ -937,6 +1078,8 @@ export default function OrderStep({ lead, state, refresh, expanded, onToggle }: 
                         ? "bg-emerald-50 text-emerald-700 border-emerald-200 cursor-default"
                         : paid
                           ? "bg-emerald-50 text-emerald-700 border-emerald-200"
+                          : chequeWaitingMoney
+                            ? "bg-amber-50 text-amber-700 border-amber-300"
                           : pendingApproval
                             ? "bg-amber-50 text-amber-700 border-amber-300"
                             : paymentOpen
@@ -948,6 +1091,8 @@ export default function OrderStep({ lead, state, refresh, expanded, onToggle }: 
                       <>✓ ไม่มียอดต้องเก็บ</>
                     ) : paid ? (
                       <>ชำระแล้ว</>
+                    ) : chequeWaitingMoney ? (
+                      <>รอรับเงิน</>
                     ) : pendingApproval ? (
                       <>
                         <ClockIcon className="w-3.5 h-3.5" strokeWidth={2} />
@@ -1063,6 +1208,7 @@ export default function OrderStep({ lead, state, refresh, expanded, onToggle }: 
                       </div>
                       {/* Desktop: cc/loan checkboxes + their pickers + buttons inline at end of row */}
                       <div className="hidden md:flex items-center gap-2 md:ml-auto md:order-last">
+                        {chequeCheckbox}
                         {ccCheckbox}
                         {ccPicker}
                         {loanCheckbox}
@@ -1075,6 +1221,7 @@ export default function OrderStep({ lead, state, refresh, expanded, onToggle }: 
                     <div className="mt-2 md:hidden space-y-2">
                       {/* Row: payment-method checkboxes + ชำระหลังติดตั้ง */}
                       <div className="flex items-center gap-3 flex-wrap">
+                        {chequeCheckbox}
                         {ccCheckbox}
                         {loanCheckbox}
                         <label className={`flex items-center gap-1.5 text-xs text-gray-600 ${paid ? "cursor-default opacity-60" : "cursor-pointer"}`}>
@@ -1103,6 +1250,8 @@ export default function OrderStep({ lead, state, refresh, expanded, onToggle }: 
                         className={`w-full h-8 rounded-md border text-sm font-semibold transition-colors inline-flex items-center justify-center gap-2 ${
                           paid
                             ? "bg-emerald-50 text-emerald-700 border-emerald-200"
+                            : chequeWaitingMoney
+                              ? "bg-amber-50 text-amber-700 border-amber-300"
                             : pendingApproval
                               ? "bg-amber-50 text-amber-700 border-amber-300"
                               : paymentOpen
@@ -1112,6 +1261,8 @@ export default function OrderStep({ lead, state, refresh, expanded, onToggle }: 
                       >
                         {paid ? (
                           <>ชำระแล้ว</>
+                        ) : chequeWaitingMoney ? (
+                          <>รอรับเงิน</>
                         ) : pendingApproval ? (
                           <>
                             <ClockIcon className="w-4 h-4" strokeWidth={2} />
@@ -1130,33 +1281,90 @@ export default function OrderStep({ lead, state, refresh, expanded, onToggle }: 
                     {/* Inline PaymentSection — slip_field is per-installment so each row gets its own pending payments row */}
                     {paymentOpen && (
                       <div className="mt-3 pt-3 border-t border-gray-100">
-                        <PaymentSection
-                          hideHeader
-                          onlyOther={row.method === "loan"}
-                          paymentTitle={installments.length > 1
-                            ? `งวดที่ ${i + 1} · ค่าระบบ Solar Rooftop (${isAutoRow ? lastPct : row.pct}%)`
-                            : `ค่าระบบ Solar Rooftop`}
-                          amountLabel={installments.length > 1 ? `งวดที่ ${i + 1}/${installments.length}` : ""}
-                          amount={rowNetAmount}
-                          leadId={lead.id}
-                          leadName={lead.full_name}
-                          lineId={lead.line_id}
-                          slipUrl={paid && paidIdToId.has(i) ? `/api/payments/${paidIdToId.get(i)}` : null}
-                          slipField={`order_installment_${i}`}
-                          paymentNote={`ค่าระบบ Solar Rooftop · งวดที่ ${i + 1}`}
-                          stepNo={10 + i}
-                          description={`งวดที่ ${i + 1}`}
-                          docNo={lead.pre_doc_no ? `${lead.pre_doc_no}-${i + 1}` : null}
-                          confirmed={paid}
-                          onConfirmed={async () => { await refresh(); await loadPayments(); }}
-                          onUndone={async () => { await refresh(); await loadPayments(); }}
-                          paymentMethod={row.method}
-                          discountPct={discountPct || null}
-                          discountAmount={discountAmount || null}
-                          discountNote={discountNote || null}
-                          ccSurchargePct={row.method === "cc" ? row.cc_pct : null}
-                          ccSurchargeAmount={row.method === "cc" && row.cc_pct ? Math.round((rowNetAmount * row.cc_pct) / 100) : null}
-                        />
+                        {chequeWaitingMoney && chequePendingPayment ? (
+                          <div
+                            data-cheque-confirm-payment={chequePendingPayment.id}
+                            className="rounded-lg border border-amber-200 bg-amber-50/60 p-3 space-y-3"
+                          >
+                            <div>
+                              <div>
+                                <div className="text-sm font-semibold text-amber-900">รอรับเงินจากเช็ค</div>
+                                <div className="text-xs text-amber-700/80">
+                                  งวดที่ {i + 1} · รับเช็คแล้ว{chequePendingPayment.cheque_received_at ? ` · ${formatDate(chequePendingPayment.cheque_received_at)}` : ""} · ยอด {fmt(chequePendingPayment.amount)} บาท
+                                </div>
+                              </div>
+                            </div>
+                            <div>
+                              <div className="text-xs font-semibold tracking-wider uppercase text-gray-400 mb-2">หลักฐานเช็คที่อัปโหลด</div>
+                              <PaymentSlipsThumbs
+                                slipUrl={`/api/payments/${chequePendingPayment.id}`}
+                                label={`เช็ค งวดที่ ${i + 1}`}
+                                className="h-44 md:h-56 max-w-full object-contain bg-white rounded-lg border border-gray-200 hover:opacity-80 transition"
+                              />
+                              {chequePendingPayment.slip_urls.length > 0 && (
+                                <div className="mt-2 flex flex-wrap gap-2">
+                                  {chequePendingPayment.slip_urls.map((url, slipIdx) => (
+                                    <PaymentSlipsThumbs
+                                      key={url}
+                                      slipUrl={url}
+                                      label={`เช็ค งวดที่ ${i + 1}${chequePendingPayment.slip_urls.length > 1 ? ` ${slipIdx + 1}/${chequePendingPayment.slip_urls.length}` : ""}`}
+                                      className="h-44 md:h-56 max-w-full object-contain bg-white rounded-lg border border-gray-200 hover:opacity-80 transition"
+                                    />
+                                  ))}
+                                </div>
+                              )}
+                            </div>
+                            {canConfirmChequeMoney ? (
+                              <button
+                                type="button"
+                                disabled={confirmingChequeMoneyId === chequePendingPayment.id}
+                                onClick={() => confirmChequeMoney(chequePendingPayment)}
+                                className="w-full h-11 rounded-lg text-sm font-semibold text-white bg-gradient-to-r from-primary to-primary-dark hover:brightness-110 disabled:opacity-60 disabled:cursor-not-allowed inline-flex items-center justify-center gap-2"
+                              >
+                                {confirmingChequeMoneyId === chequePendingPayment.id ? (
+                                  <>
+                                    <span className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                                    กำลังยืนยัน...
+                                  </>
+                                ) : "ยืนยันชำระเงิน"}
+                              </button>
+                            ) : (
+                              <div className="w-full h-10 rounded-lg text-sm font-semibold text-amber-700 bg-amber-50 border border-amber-200 flex items-center justify-center">
+                                รอฝ่ายบัญชียืนยันรับเงิน
+                              </div>
+                            )}
+                            {nextError && <div className="text-xs text-red-600 text-center">{nextError}</div>}
+                          </div>
+                        ) : (
+                          <PaymentSection
+                            hideHeader
+                            onlyOther={row.method === "loan" || row.method === "cheque"}
+                            paymentTitle={installments.length > 1
+                              ? `งวดที่ ${i + 1} · ค่าระบบ Solar Rooftop (${isAutoRow ? lastPct : row.pct}%)`
+                              : `ค่าระบบ Solar Rooftop`}
+                            amountLabel={installments.length > 1 ? `งวดที่ ${i + 1}/${installments.length}` : ""}
+                            amount={rowNetAmount}
+                            leadId={lead.id}
+                            leadName={lead.full_name}
+                            lineId={lead.line_id}
+                            slipUrl={paid && paidIdToId.has(i) ? `/api/payments/${paidIdToId.get(i)}` : null}
+                            slipField={`order_installment_${i}`}
+                            paymentNote={`ค่าระบบ Solar Rooftop · งวดที่ ${i + 1}`}
+                            stepNo={10 + i}
+                            description={`งวดที่ ${i + 1}`}
+                            docNo={lead.pre_doc_no ? `${lead.pre_doc_no}-${i + 1}` : null}
+                            confirmed={paid}
+                            confirmLabel={row.method === "cheque" ? "ยืนยันรับเช็ค" : undefined}
+                            onConfirmed={async () => { setPaymentRow(null); await refresh(); await loadPayments(); }}
+                            onUndone={async () => { await refresh(); await loadPayments(); }}
+                            paymentMethod={row.method}
+                            discountPct={discountPct || null}
+                            discountAmount={discountAmount || null}
+                            discountNote={discountNote || null}
+                            ccSurchargePct={row.method === "cc" ? row.cc_pct : null}
+                            ccSurchargeAmount={row.method === "cc" && row.cc_pct ? Math.round((rowNetAmount * row.cc_pct) / 100) : null}
+                          />
+                        )}
                       </div>
                     )}
                     {/* Follow-up history table — collapsed by default, toggled via chevron */}
@@ -1306,7 +1514,7 @@ export default function OrderStep({ lead, state, refresh, expanded, onToggle }: 
                   const bankLabel: Record<string, string> = { ghb: "ธอส.", gsb: "ออมสิน" };
                   const fmtMethod = (r: typeof persistedInstallments[number]) => r.method === "loan"
                     ? `สินเชื่อ${r.loan_bank ? ` ${bankLabel[r.loan_bank] || r.loan_bank}` : ""}`
-                    : r.method === "cc" ? "บัตรเครดิต" : "เงินโอน/QR";
+                    : r.method === "cc" ? "บัตรเครดิต" : r.method === "cheque" ? "เช็ค" : "เงินโอน/QR";
                   const cleanPct = (p: number) => Math.abs(p - Math.round(p)) < 0.01;
                   const details: { label: string; value: string }[] = [];
                   details.push({ label: "ยอดรวม", value: `฿${fmt(total)}` });
@@ -1429,6 +1637,11 @@ export default function OrderStep({ lead, state, refresh, expanded, onToggle }: 
                   : "คลิกอีกครั้งบนวันที่ถัดไปเพื่อเลือกช่วง — หรือเว้นไว้ถ้าติดตั้งวันเดียว"
                 : "คลิกวันเริ่มต้นการติดตั้ง"}
             </div>
+            {pendingChequeBeforeInstall.length > 0 && (
+              <div className="mt-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800">
+                รับเช็คแล้ว {pendingChequeBeforeInstall.length} งวด สามารถบันทึกนัดติดตั้งและไปขั้นตอนติดตั้งได้ โดยยอดเงินจริงยังรอ Accounting ยืนยันใน Step 04
+              </div>
+            )}
           </div>
         </div>
       )}
@@ -1666,15 +1879,13 @@ export default function OrderStep({ lead, state, refresh, expanded, onToggle }: 
           </button>
           <button
             onClick={async () => {
-              // Gate: every "before-install" row must be confirmed. Skip rows
-              // whose net is 0 (deposit fully covers them — nothing to confirm).
-              const unpaidBefore = persistedInstallments
-                .map((r, i) => ({ r, i }))
-                .filter(({ r }) => r.when === "before")
-                .filter(({ i }) => rowNet(i) > 0)
-                .filter(({ i }) => !paidIdxSet.has(i));
+              // Gate: every "before-install" row must be ready for install.
+              // Cash/transfer/card need confirmed_at; cheque can proceed after
+              // cheque_received_at while Accounting confirms money later.
+              const unpaidBefore = beforeInstallRows()
+                .filter(({ i }) => !isInstallReadyPayment(i));
               if (unpaidBefore.length > 0) {
-                setNextError(`ต้องยืนยันการรับชำระงวดก่อนติดตั้งครบก่อน (เหลือ ${unpaidBefore.length} งวด)`);
+                setNextError(`ต้องยืนยันรับชำระหรือรับเช็คงวดก่อนติดตั้งให้ครบก่อน (เหลือ ${unpaidBefore.length} งวด)`);
                 return;
               }
               setSaving(true);

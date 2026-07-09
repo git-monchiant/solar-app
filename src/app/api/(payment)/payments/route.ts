@@ -57,7 +57,8 @@ export async function POST(req: NextRequest) {
     const slipField = String(body.slip_field || "");
     const amount = parseFloat(String(body.amount || 0));
     const methodRaw = body.payment_method ? String(body.payment_method) : "";
-    const paymentMethod = ["qr", "link", "bank_transfer", "other"].includes(methodRaw) ? methodRaw : null;
+    const paymentMethod = ["qr", "link", "bank_transfer", "other", "cheque"].includes(methodRaw) ? methodRaw : null;
+    const isChequePayment = paymentMethod === "cheque";
     if (!leadId || stepNo < 0 || !slipField || !amount) {
       return NextResponse.json({ error: "lead_id, step_no, slip_field, amount required" }, { status: 400 });
     }
@@ -86,6 +87,33 @@ export async function POST(req: NextRequest) {
           ORDER BY id ASC
         `);
       if (slipRes.recordset.length === 0) {
+        if (isChequePayment) {
+          const existingChequeRes = await new sql.Request(tx)
+            .input("lead_id", sql.Int, leadId)
+            .input("step_no", sql.Int, stepNo)
+            .input("slip_field", sql.NVarChar(50), slipField)
+            .query(`
+              SELECT TOP 1 id
+              FROM payments
+              WHERE lead_id = @lead_id
+                AND step_no = @step_no
+                AND slip_field = @slip_field
+                AND payment_method = 'cheque'
+                AND confirmed_at IS NULL
+                AND cheque_received_at IS NOT NULL
+              ORDER BY cheque_received_at DESC, id DESC
+            `);
+          const existingChequeId: number | null = existingChequeRes.recordset[0]?.id ?? null;
+          if (existingChequeId) {
+            await tx.commit();
+            return NextResponse.json({
+              id: existingChequeId,
+              url: `/api/payments/${existingChequeId}`,
+              slip_count: 0,
+              cheque_received: true,
+            });
+          }
+        }
         await tx.rollback();
         return NextResponse.json({ error: "Slip not found — upload and verify first" }, { status: 400 });
       }
@@ -134,7 +162,8 @@ export async function POST(req: NextRequest) {
         .input("description", sql.NVarChar(200), body.description ?? null)
         // confirmed_by stores the human-readable name. Default to the
         // requesting user's full_name so the timeline always shows who
-        // confirmed even when the client doesn't echo it back.
+        // confirmed even when the client doesn't echo it back. For cheque
+        // step 1 this becomes cheque_received_by, not confirmed_by.
         .input("confirmed_by", sql.NVarChar(100), body.confirmed_by ?? (await (async () => {
           if (!gate.userId) return null;
           try {
@@ -143,6 +172,7 @@ export async function POST(req: NextRequest) {
             return u?.full_name ?? null;
           } catch { return null; }
         })()))
+        .input("is_cheque", sql.Bit, isChequePayment ? 1 : 0)
         .input("ref1", sql.NVarChar(50), ref1Value)
         .input("payment_method", sql.NVarChar(20), paymentMethod)
         .input("slip_amount", sql.Decimal(12, 2), firstSlip?.slip_amount ?? null)
@@ -174,8 +204,10 @@ export async function POST(req: NextRequest) {
           "doc_no = @doc_no",
           "amount = @amount",
           "description = @description",
-          "confirmed_by = @confirmed_by",
-          "confirmed_at = GETDATE()",
+          "confirmed_by = CASE WHEN @is_cheque = 1 THEN NULL ELSE @confirmed_by END",
+          "confirmed_at = CASE WHEN @is_cheque = 1 THEN NULL ELSE GETDATE() END",
+          "cheque_received_at = CASE WHEN @is_cheque = 1 THEN COALESCE(cheque_received_at, GETDATE()) ELSE cheque_received_at END",
+          "cheque_received_by = CASE WHEN @is_cheque = 1 THEN COALESCE(cheque_received_by, @confirmed_by) ELSE cheque_received_by END",
           "ref1 = @ref1",
           "payment_method = @payment_method",
           "slip_amount = @slip_amount",
@@ -191,9 +223,14 @@ export async function POST(req: NextRequest) {
         paymentId = pendingId;
       } else {
         const insertRes = await writeReq.query(`
-          INSERT INTO payments (lead_id, step_no, slip_field, doc_no, amount, description, ${slotCols.join(", ")}, confirmed_by, confirmed_at, ref1, payment_method, slip_amount, slip_ref1, slip_ref2, slip_trans_id, slip_datetime, slip_doc_type, slip_cheque_no)
+          INSERT INTO payments (lead_id, step_no, slip_field, doc_no, amount, description, ${slotCols.join(", ")}, confirmed_by, confirmed_at, cheque_received_at, cheque_received_by, ref1, payment_method, slip_amount, slip_ref1, slip_ref2, slip_trans_id, slip_datetime, slip_doc_type, slip_cheque_no)
           OUTPUT INSERTED.id
-          VALUES (@lead_id, @step_no, @slip_field, @doc_no, @amount, @description, ${slotParams.join(", ")}, @confirmed_by, GETDATE(), @ref1, @payment_method, @slip_amount, @slip_ref1, @slip_ref2, @slip_trans_id, @slip_datetime, @slip_doc_type, @slip_cheque_no)
+          VALUES (@lead_id, @step_no, @slip_field, @doc_no, @amount, @description, ${slotParams.join(", ")},
+                  CASE WHEN @is_cheque = 1 THEN NULL ELSE @confirmed_by END,
+                  CASE WHEN @is_cheque = 1 THEN NULL ELSE GETDATE() END,
+                  CASE WHEN @is_cheque = 1 THEN GETDATE() ELSE NULL END,
+                  CASE WHEN @is_cheque = 1 THEN @confirmed_by ELSE NULL END,
+                  @ref1, @payment_method, @slip_amount, @slip_ref1, @slip_ref2, @slip_trans_id, @slip_datetime, @slip_doc_type, @slip_cheque_no)
         `);
         paymentId = insertRes.recordset[0].id;
       }
@@ -202,7 +239,7 @@ export async function POST(req: NextRequest) {
       // Only flip the legacy lead columns (pre_slip_url / order_before_slip /
       // order_after_slip) — dynamic per-installment slips (order_installment_N)
       // don't have a column, so the payments row alone is the source of truth.
-      if (paidFlag) {
+      if (paidFlag && !isChequePayment) {
         await new sql.Request(tx)
           .input("lead_id", sql.Int, leadId)
           .input("url", sql.NVarChar(200), paymentUrl)
@@ -241,14 +278,16 @@ export async function POST(req: NextRequest) {
     await cleanupTempSlips(leadId, stepNo);
 
     // Sync legacy order_before_paid / order_after_paid for downstream gates.
-    if (/^order_installment_\d+$/.test(slipField)) {
+    if (!isChequePayment && /^order_installment_\d+$/.test(slipField)) {
       await syncOrderPaidFlags(pool, leadId).catch(e => console.error("syncOrderPaidFlags failed:", e));
     }
 
     await logLeadActivity(pool, {
       leadId,
-      activityType: "payment_confirmed",
-      title: `ยืนยันการชำระเงิน ${paymentStepLabel(slipField, stepNo)} ${fmtBaht(amount)}`,
+      activityType: isChequePayment ? "payment_cheque_received" : "payment_confirmed",
+      title: isChequePayment
+        ? `รับเช็ค ${paymentStepLabel(slipField, stepNo)} ${fmtBaht(amount)}`
+        : `ยืนยันการชำระเงิน ${paymentStepLabel(slipField, stepNo)} ${fmtBaht(amount)}`,
       note: body.description ?? null,
       userId: gate.userId,
     });
@@ -274,6 +313,7 @@ export async function GET(req: NextRequest) {
     // confirmed_by is a free-text NVARCHAR (legacy schema — stores the user's
     // full name directly). submitted_by is INT → JOIN users for the name.
     let q = `SELECT p.id, p.lead_id, p.step_no, p.slip_field, p.doc_no, p.amount, p.description, p.slip_mime, p.slip_filename, p.confirmed_by, p.confirmed_at, p.ref1, p.payment_method,
+                    p.cheque_received_at, p.cheque_received_by,
                     p.submitted_by, p.submitted_at, p.actual_receipt_url,
                     p.confirmed_by as confirmed_by_name,
                     su.full_name as submitted_by_name

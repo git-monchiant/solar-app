@@ -1,5 +1,5 @@
 import { LineIcon, PhoneIcon } from "@/components/ui/icons";
-import { useState, useEffect } from "react";
+import { useState } from "react";
 import { STATUS_CONFIG, getStatusLabel, getStatusColor, getMainStatus, getSubstep } from "@/lib/constants/statuses";
 import { formatSlotsRange } from "@/lib/time-slots";
 import { stripThaiTitle, houseNumberOrNull } from "@/lib/utils/name";
@@ -33,6 +33,7 @@ export interface LeadData {
   last_activity_title?: string | null;
   last_activity_type?: string | null;
   order_paid_count?: number | null;
+  order_ready_count?: number | null;
   order_total_count?: number | null;
   order_payment_progress?: string | null;
   pre_doc_no: string | null;
@@ -65,8 +66,7 @@ export default function LeadCard({ lead, compact, onAssignChange, onOpen }: { le
   const openLead = useOpenLead();
   const config = STATUS_CONFIG[lead.status] || STATUS_CONFIG.pre_survey;
   const isUpgrade = lead.customer_type === "upgrade" || lead.customer_type?.includes("Upgrade") || lead.customer_type?.includes("เดิม");
-  const [now, setNow] = useState<number | null>(null);
-  useEffect(() => { setNow(Date.now()); }, []);
+  const [now] = useState(() => Date.now());
   const startDate = lead.contact_date || lead.created_at;
   const aging = now && startDate ? Math.floor((now - new Date(startDate).getTime()) / 86400000) : 0;
   // Prefer the server's overdue flag (filters out leads already followed up).
@@ -74,6 +74,7 @@ export default function LeadCard({ lead, compact, onAssignChange, onOpen }: { le
   const isOverdue = lead.is_followup_overdue !== undefined
     ? lead.is_followup_overdue
     : !!(now && lead.next_follow_up && new Date(String(lead.next_follow_up).slice(0, 10) + "T12:00:00").getTime() < now);
+  const hasChequePendingMoney = (lead.order_ready_count ?? 0) > (lead.order_paid_count ?? 0);
 
   const open = () => {
     if (onOpen) { onOpen(lead); return; }
@@ -126,7 +127,7 @@ export default function LeadCard({ lead, compact, onAssignChange, onOpen }: { le
             const FLOW_STAGES = ["pre_survey", "booking", "survey", "quote", "order", "wait_install", "install", "warranty"] as const;
             const main = getMainStatus(lead.status);
             const sub = getSubstep(lead.status);
-            const paid = (lead.order_paid_count ?? 0) >= 1;
+            const paid = (lead.order_ready_count ?? lead.order_paid_count ?? 0) >= 1;
             const hasInstallDate = !!lead.install_date;
             const isDone = ["warranty", "gridtie", "closed"].includes(main);
             const effective = (() => {
@@ -200,6 +201,14 @@ export default function LeadCard({ lead, compact, onAssignChange, onOpen }: { le
                 <path strokeLinecap="round" strokeLinejoin="round" d="M12 9v3.75m9-.75a9 9 0 11-18 0 9 9 0 0118 0zm-9 3.75h.008v.008H12v-.008z" />
               </svg>
               สลิปถูกปฏิเสธ
+            </span>
+          )}
+          {hasChequePendingMoney && (
+            <span
+              className="shrink-0 inline-flex items-center gap-1 text-xs font-semibold uppercase tracking-wide px-2.5 py-0.5 rounded-full bg-amber-500 text-white"
+              title="รับเช็คแล้ว แต่ยังรอ Accounting ยืนยันว่าเงินเข้าบริษัท"
+            >
+              รอรับเงินเช็ค
             </span>
           )}
         </div>

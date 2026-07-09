@@ -44,6 +44,7 @@ export async function GET(req: NextRequest) {
              (SELECT TOP 1 title FROM lead_activities WHERE lead_id = l.id AND activity_type IN ('call','visit','line','other','follow_up','loan_followup') ORDER BY created_at DESC) as last_activity_title,
              (SELECT TOP 1 activity_type FROM lead_activities WHERE lead_id = l.id AND activity_type IN ('call','visit','line','other','follow_up','loan_followup') ORDER BY created_at DESC) as last_activity_type,
              (SELECT COUNT(*) FROM payments WHERE lead_id = l.id AND slip_field LIKE 'order_installment_%' AND confirmed_at IS NOT NULL) as order_paid_count,
+             (SELECT COUNT(*) FROM payments WHERE lead_id = l.id AND slip_field LIKE 'order_installment_%' AND (confirmed_at IS NOT NULL OR cheque_received_at IS NOT NULL)) as order_ready_count,
              (SELECT COUNT(*) FROM payments WHERE lead_id = l.id AND slip_field LIKE 'order_installment_%') as order_total_count,
              -- 1 = accountant has rejected at least one slip and the uploader
              -- has not re-submitted yet (notes JSON is non-empty).

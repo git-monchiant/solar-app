@@ -3,6 +3,7 @@ import { apiFetch } from "@/lib/api";
 import { useEffect, useState } from "react";
 import Header from "@/components/layout/Header";
 import { LeadLink } from "@/components/lead/LeadLink";
+import { useOpenLead } from "@/lib/hooks/useOpenLead";
 import FallbackImage from "@/components/ui/FallbackImage";
 import ImageLightbox, { type LightboxImage } from "@/components/ui/ImageLightbox";
 import { formatTHB } from "@/lib/utils/formatters";
@@ -16,6 +17,9 @@ interface Installment {
   description: string | null;
   confirmed_at: string | null;
   confirmed_by: string | null;
+  payment_method: string | null;
+  cheque_received_at: string | null;
+  cheque_received_by: string | null;
   has_slip: boolean;
   slip_urls: string[];
   ref1: string | null;
@@ -32,6 +36,7 @@ interface ReportRow {
   kwp: number | null;
   pre_booked_at: string;
   pending_amount: number;
+  order_installments: string | null;
   installments: Installment[];
 }
 
@@ -55,13 +60,16 @@ interface PendingItem {
   full_name: string;
   project_name: string | null;
   installment: Installment;
+  is_multi_installment: boolean;
 }
 
 export default function PendingApprovalReport() {
+  const openLead = useOpenLead();
   const [data, setData] = useState<ReportData | null>(null);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState("");
   const [lightbox, setLightbox] = useState<{ images: LightboxImage[]; index: number } | null>(null);
+  const [chequeReceivingId, setChequeReceivingId] = useState<number | null>(null);
 
   useEffect(() => {
     apiFetch("/api/report/payments").then(setData).catch(console.error).finally(() => setLoading(false));
@@ -71,16 +79,33 @@ export default function PendingApprovalReport() {
   if (!data) return <div className="text-center py-12 text-gray-400 text-sm">โหลดไม่สำเร็จ</div>;
 
   // Flatten: one row per pending installment (only ones with slip awaiting verification)
+  const installmentIndex = (slipField: string): number | null => {
+    const m = /^order_installment_(\d+)$/.exec(slipField || "");
+    return m ? parseInt(m[1], 10) : null;
+  };
+  const plannedInstallmentCount = (row: ReportRow): number => {
+    try {
+      const arr = row.order_installments ? JSON.parse(row.order_installments) : [];
+      if (Array.isArray(arr) && arr.length > 0) return arr.length;
+    } catch { /* ignore malformed installment JSON */ }
+    const indexes = row.installments
+      .map(inst => installmentIndex(inst.slip_field))
+      .filter((idx): idx is number => idx !== null);
+    return indexes.length > 0 ? Math.max(...indexes) + 1 : 0;
+  };
   const items: PendingItem[] = [];
   for (const r of data.rows) {
+    const installmentCount = plannedInstallmentCount(r);
     for (const inst of r.installments) {
-      if (!inst.confirmed_at && inst.has_slip) {
+      if (!inst.confirmed_at && (inst.has_slip || inst.cheque_received_at || inst.payment_method === "cheque")) {
+        const idx = installmentIndex(inst.slip_field);
         items.push({
           lead_id: r.lead_id,
           pre_doc_no: r.pre_doc_no,
           full_name: r.full_name,
           project_name: r.project_name,
           installment: inst,
+          is_multi_installment: installmentCount > 1 && idx !== null,
         });
       }
     }
@@ -105,6 +130,73 @@ export default function PendingApprovalReport() {
       url, label: i.slip_urls.length > 1 ? `${label} · สลิป ${idx + 1} / ${i.slip_urls.length}` : label,
     }));
     setLightbox({ images: imgs, index: 0 });
+  };
+
+  const isChequeWaitingReceive = (inst: Installment) => inst.payment_method === "cheque" && !inst.cheque_received_at;
+  const isChequeWaitingMoney = (inst: Installment) => !!inst.cheque_received_at && !inst.confirmed_at;
+
+  const setOrderPaymentFocus = (leadId: number, slipField: string, opts?: { chequeConfirmPaymentId?: number; subStep?: number; openPaymentRow?: boolean; forceActiveStep?: number }) => {
+    if (typeof window === "undefined") return;
+    localStorage.setItem(`leadFocusStep_${leadId}`, "3");
+    if (opts?.forceActiveStep !== undefined) {
+      localStorage.setItem(`leadForceActiveStep_${leadId}`, String(opts.forceActiveStep));
+    }
+    localStorage.setItem(`orderSubStep_${leadId}`, String(opts?.subStep ?? 1));
+    const m = /^order_installment_(\d+)$/.exec(slipField || "");
+    if ((opts?.openPaymentRow ?? true) && m) localStorage.setItem(`orderPaymentRow_${leadId}`, m[1]);
+    if (opts?.chequeConfirmPaymentId) {
+      localStorage.setItem(`orderChequeConfirm_${leadId}`, String(opts.chequeConfirmPaymentId));
+    }
+  };
+
+  const markChequeReceived = async (item: PendingItem) => {
+    const paymentId = item.installment.id;
+    if (chequeReceivingId) return;
+    setChequeReceivingId(paymentId);
+    try {
+      await apiFetch(`/api/payments/${paymentId}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ cheque_received: true }),
+      });
+      const stamp = new Date().toISOString();
+      setData(prev => {
+        if (!prev) return prev;
+        let patched = false;
+        const rows = prev.rows.map(row => ({
+          ...row,
+          installments: row.installments.map(inst => {
+            if (inst.id !== paymentId) return inst;
+            patched = true;
+            return { ...inst, payment_method: "cheque", cheque_received_at: inst.cheque_received_at || stamp };
+          }),
+        }));
+        if (patched) return { ...prev, rows };
+        return {
+          ...prev,
+          rows: prev.rows.map(row => row.lead_id === item.lead_id
+            ? {
+                ...row,
+                installments: [
+                  ...row.installments,
+                  { ...item.installment, payment_method: "cheque", cheque_received_at: item.installment.cheque_received_at || stamp },
+                ],
+              }
+            : row),
+        };
+      });
+      setOrderPaymentFocus(item.lead_id, item.installment.slip_field);
+      window.setTimeout(() => openLead(item.lead_id), 150);
+    } catch (e) {
+      alert(e instanceof Error ? e.message : "ยืนยันรับเช็คไม่สำเร็จ");
+    } finally {
+      setChequeReceivingId(null);
+    }
+  };
+
+  const openAtOrderPayment = (leadId: number, slipField: string, opts?: { chequeConfirmPaymentId?: number; subStep?: number; openPaymentRow?: boolean; forceActiveStep?: number }) => {
+    setOrderPaymentFocus(leadId, slipField, opts);
+    openLead(leadId);
   };
 
   return (
@@ -140,6 +232,42 @@ export default function PendingApprovalReport() {
               const i = it.installment;
               const label = labelForInstallment(i.step_no, i.slip_field);
               const gallery = i.slip_urls.map((u, k) => ({ url: u, label: i.slip_urls.length > 1 ? `${label} · สลิป ${k + 1} / ${i.slip_urls.length}` : label }));
+              const chequeWaitingReceive = isChequeWaitingReceive(i);
+              const chequeWaitingMoney = isChequeWaitingMoney(i);
+              const chequeButtonBusy = chequeReceivingId === i.id;
+              const chequeMoneyTarget = it.is_multi_installment
+                ? { subStep: 1, openPaymentRow: false, forceActiveStep: 3 }
+                : { chequeConfirmPaymentId: i.id, subStep: 3, openPaymentRow: false };
+              const statusBadge = chequeWaitingReceive ? (
+                <span className="ml-1.5 inline-flex items-center rounded border border-orange-200 bg-orange-50 px-1.5 py-0.5 text-[10px] font-bold text-orange-700">รอรับเช็ค</span>
+              ) : chequeWaitingMoney ? (
+                <span className="ml-1.5 inline-flex items-center rounded border border-emerald-200 bg-emerald-50 px-1.5 py-0.5 text-[10px] font-bold text-emerald-700">รับเช็คแล้ว · รอรับเงิน</span>
+              ) : null;
+              const renderActionButton = (className = "") => chequeWaitingReceive ? (
+                <button
+                  type="button"
+                  disabled={chequeButtonBusy}
+                  onClick={() => markChequeReceived(it)}
+                  className={`h-8 px-3 rounded-lg text-sm font-semibold text-orange-700 bg-orange-50 border border-orange-300 hover:bg-orange-100 disabled:opacity-60 disabled:cursor-not-allowed inline-flex items-center justify-center shrink-0 ${className}`}
+                >
+                  {chequeButtonBusy ? "กำลังรับเช็ค..." : "ยืนยันรับเช็ค"}
+                </button>
+              ) : chequeWaitingMoney ? (
+                <button
+                  type="button"
+                  onClick={() => openAtOrderPayment(it.lead_id, i.slip_field, chequeMoneyTarget)}
+                  className={`h-8 px-3 rounded-lg text-sm font-semibold text-white bg-emerald-600 hover:brightness-110 inline-flex items-center justify-center shrink-0 ${className}`}
+                >
+                  ยืนยันรับเงิน
+                </button>
+              ) : (
+                <LeadLink
+                  id={it.lead_id}
+                  className={`h-8 px-3 rounded-lg text-sm font-semibold text-white bg-amber-500 hover:brightness-110 inline-flex items-center justify-center shrink-0 ${className}`}
+                >
+                  ยืนยันรับเงิน
+                </LeadLink>
+              );
               return (
                 <div key={`${it.lead_id}-${i.id}`}>
                   {/* Mobile card */}
@@ -157,6 +285,7 @@ export default function PendingApprovalReport() {
                     <div className="text-xs">
                       <span className="font-semibold text-gray-800">{label}</span>
                       {i.description && <span className="text-gray-500"> · {i.description}</span>}
+                      {statusBadge}
                     </div>
                     {i.slip_urls.length > 0 && (
                       <div className="flex items-center gap-1 overflow-x-auto pb-1 -mx-1 px-1">
@@ -181,12 +310,9 @@ export default function PendingApprovalReport() {
                         {i.ref2 && <div className="truncate"><span className="text-gray-400">Ref2: </span><span className="text-gray-800">{i.ref2}</span></div>}
                       </div>
                     )}
-                    <LeadLink
-                      id={it.lead_id}
-                      className="block w-full text-center h-8 leading-10 rounded-lg text-sm font-semibold text-white bg-amber-500 hover:brightness-110"
-                    >
-                      ยืนยันรับเงิน
-                    </LeadLink>
+                    <div className="grid">
+                      {renderActionButton("w-full")}
+                    </div>
                   </div>
 
                   {/* Desktop row */}
@@ -215,6 +341,7 @@ export default function PendingApprovalReport() {
                       <div className="text-xs text-gray-500 mt-0.5">
                         <span className="font-semibold text-gray-700">{label}</span>
                         {i.description && <span> · {i.description}</span>}
+                        {statusBadge}
                       </div>
                     </div>
                     {(i.ref1 || i.ref2) && (
@@ -231,12 +358,7 @@ export default function PendingApprovalReport() {
                       <div className="text-lg font-bold font-mono tabular-nums text-amber-600">{fmt(i.amount)}</div>
                       <div className="text-xs text-gray-400">บาท</div>
                     </div>
-                    <LeadLink
-                      id={it.lead_id}
-                      className="h-8 px-3 rounded-lg text-sm font-semibold text-white bg-amber-500 hover:brightness-110 inline-flex items-center shrink-0"
-                    >
-                      ยืนยันรับเงิน
-                    </LeadLink>
+                    {renderActionButton()}
                   </div>
                 </div>
               );

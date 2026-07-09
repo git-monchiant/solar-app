@@ -57,6 +57,12 @@ export async function POST(req: NextRequest) {
       .input("slip_field", sql.NVarChar(50), slipField)
       .query(`DELETE FROM slip_files WHERE lead_id = @lead_id AND slip_field = @slip_field`);
 
+    await db.request()
+      .input("lead_id", sql.Int, leadId)
+      .input("slip_field", sql.NVarChar(50), slipField)
+      .query(`UPDATE payments SET cheque_received_at = NULL, cheque_received_by = NULL
+              WHERE lead_id = @lead_id AND slip_field = @slip_field AND confirmed_at IS NULL`);
+
     // Persist the merged notes JSON.
     await db.request()
       .input("id", sql.Int, leadId)

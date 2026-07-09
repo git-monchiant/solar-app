@@ -666,15 +666,16 @@ export default function PaymentSection({
   // uploader has marked drafts as submitted. While drafts exist, only the
   // amber "ยืนยันส่งให้ทีมบัญชี" button is actionable.
   const hasUnsubmittedDraft = slips.some(s => s.status === "verified" && s.slipFilesId && !s.submittedAt);
-  const canConfirm = !confirmed && verifiedCount > 0 && !anyVerifying && !hasUnsubmittedDraft && (tab !== "other" || otherMethod.trim().length > 0);
+  const chequePayment = paymentMethod === "cheque";
+  const canConfirm = !confirmed && verifiedCount > 0 && !anyVerifying && !hasUnsubmittedDraft && (tab !== "other" || chequePayment || otherMethod.trim().length > 0);
 
   const handleConfirm = async () => {
     if (stepNo === undefined || confirming || confirmed || !canConfirm) return;
     setConfirming(true);
     setConfirmError(null);
     try {
-      const desc = tab === "other" && otherMethod.trim()
-        ? `${description ?? ""}${description ? " · " : ""}ชำระโดย: ${otherMethod.trim()}`.trim()
+      const desc = tab === "other" && (otherMethod.trim() || chequePayment)
+        ? `${description ?? ""}${description ? " · " : ""}ชำระโดย: ${chequePayment ? "เช็ค" : otherMethod.trim()}`.trim()
         : description;
       await apiFetch("/api/payments", {
         method: "POST",
@@ -686,7 +687,7 @@ export default function PaymentSection({
           doc_no: docNo ?? null,
           amount,
           description: desc ?? null,
-          payment_method: tab === "bank" ? "bank_transfer" : tab,
+          payment_method: chequePayment ? "cheque" : tab === "bank" ? "bank_transfer" : tab,
         }),
       });
       await onConfirmed?.();

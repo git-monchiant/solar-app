@@ -62,13 +62,14 @@ export function computeStageCode(lead: {
   install_completed_at?: string | Date | null;
   install_done_at?: string | Date | null;
   order_paid_count?: number | null;
+  order_ready_count?: number | null;
 }): string {
   const today = (() => { const d = new Date(); d.setHours(0, 0, 0, 0); return d; })();
   const dateIn = (v: string | Date | null | undefined) => v ? new Date(v) : null;
   const surveyDate = dateIn(lead.survey_date);
   const installDate = dateIn(lead.install_date);
   const installDone = !!(lead.install_completed_at || lead.install_done_at);
-  const paid = (lead.order_paid_count ?? 0) >= 1;
+  const paid = (lead.order_ready_count ?? lead.order_paid_count ?? 0) >= 1;
   const status = lead.status || "";
 
   if (status === "lost") return "99-0";
@@ -101,7 +102,7 @@ export function computeStageCode(lead: {
 // resolved label, not just the raw status. Without this, e.g. "รอนัดติดตั้ง"
 // (status=order + paid + no install_date) would inherit order's green and
 // look identical to plain "ชำระเงิน".
-export function getStatusColor(lead: { status: string; install_date?: string | null; event_date?: string | null; order_paid_count?: number | null }): string {
+export function getStatusColor(lead: { status: string; install_date?: string | null; event_date?: string | null; order_paid_count?: number | null; order_ready_count?: number | null }): string {
   if (lead.status === "install") {
     const date = lead.event_date || lead.install_date;
     if (date) {
@@ -112,7 +113,7 @@ export function getStatusColor(lead: { status: string; install_date?: string | n
     }
     return "bg-blue-500";                             // "กำลังติดตั้ง" (today / past / no date)
   }
-  if (lead.status === "order" && (lead.order_paid_count ?? 0) >= 1) {
+  if (lead.status === "order" && (lead.order_ready_count ?? lead.order_paid_count ?? 0) >= 1) {
     const date = lead.event_date || lead.install_date;
     if (!date) return "bg-amber-500";  // รอนัดติดตั้ง
     const today = new Date();
@@ -124,7 +125,7 @@ export function getStatusColor(lead: { status: string; install_date?: string | n
     ?? "bg-gray-400";
 }
 
-export function getStatusLabel(lead: { status: string; install_date?: string | null; event_date?: string | null; order_paid_count?: number | null }): string {
+export function getStatusLabel(lead: { status: string; install_date?: string | null; event_date?: string | null; order_paid_count?: number | null; order_ready_count?: number | null }): string {
   if (lead.status === "install") {
     const date = lead.event_date || lead.install_date;
     if (date) {
@@ -139,7 +140,7 @@ export function getStatusLabel(lead: { status: string; install_date?: string | n
   //   - install_date in future   → "รอติดตั้ง" (schedule fixed, waiting for the day)
   //   - install_date today/past  → "กำลังติดตั้ง" (the install day has arrived)
   // Pipeline tabs and dashboard chips read the same split.
-  if (lead.status === "order" && (lead.order_paid_count ?? 0) >= 1) {
+  if (lead.status === "order" && (lead.order_ready_count ?? lead.order_paid_count ?? 0) >= 1) {
     const date = lead.event_date || lead.install_date;
     if (!date) return "รอนัดติดตั้ง";
     const today = new Date();

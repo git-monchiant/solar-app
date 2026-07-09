@@ -498,7 +498,7 @@ function EditableQCell({ label, kind, value, options, suffix, required, allowOth
           day:   Object.fromEntries(TIERS.map(t => [t.key, 0])),
           night: Object.fromEntries(TIERS.map(t => [t.key, 0])),
         });
-        let parsed: AS = emptySplit();
+        const parsed: AS = emptySplit();
         if (currentStr) {
           try {
             const p = JSON.parse(currentStr) as Partial<AS>;
@@ -769,6 +769,53 @@ export default function LeadDetailPage({ params }: { params: Promise<{ id: strin
   // "current step" pick lands via the currentStep effect below (needs lead
   // to be loaded first).
   const [focusedStep, setFocusedStep] = useState<number | null>(null);
+  const [forceActiveStep, setForceActiveStep] = useState<number | null>(null);
+  useEffect(() => {
+    if (!lead || typeof window === "undefined") return;
+    const key = `leadFocusStep_${lead.id}`;
+    const raw = localStorage.getItem(key);
+    if (raw === null) return;
+    localStorage.removeItem(key);
+    const forceKey = `leadForceActiveStep_${lead.id}`;
+    const forceRaw = localStorage.getItem(forceKey);
+    if (forceRaw !== null) localStorage.removeItem(forceKey);
+    const step = parseInt(raw, 10);
+    if (!Number.isInteger(step) || step < 0 || step > 6) return;
+    const forceStep = forceRaw !== null ? parseInt(forceRaw, 10) : null;
+    if (tab !== "workflow") setTab("workflow");
+    if (focus) setFocusedStep(step);
+    if (forceStep !== null && Number.isInteger(forceStep) && forceStep >= 0 && forceStep <= 6) {
+      setForceActiveStep(forceStep);
+    }
+    if (step === 0) setPreSurveyExpanded(true);
+    if (step === 1) setSurveyExpanded(true);
+    if (step === 2) setQuoteExpanded(true);
+    if (step === 3) setOrderExpanded(true);
+    if (step === 4) setInstallExpanded(true);
+    if (step === 5) setWarrantyExpanded(true);
+    if (step === 6) setGridTieExpanded(true);
+    window.setTimeout(() => {
+      document.getElementById(`step-${step}`)?.scrollIntoView({ behavior: "smooth", block: "start" });
+    }, 250);
+  }, [focus, lead, tab]);
+  useEffect(() => {
+    if (!lead || typeof window === "undefined") return;
+    const onForceActiveStep = (event: Event) => {
+      const detail = (event as CustomEvent<{ leadId?: number; step?: number }>).detail;
+      if (!detail || detail.leadId !== lead.id) return;
+      const step = detail.step;
+      if (!Number.isInteger(step) || step == null || step < 0 || step > 6) return;
+      if (tab !== "workflow") setTab("workflow");
+      if (focus) setFocusedStep(step);
+      setForceActiveStep(step);
+      if (step === 3) setOrderExpanded(true);
+      window.setTimeout(() => {
+        document.getElementById(`step-${step}`)?.scrollIntoView({ behavior: "smooth", block: "start" });
+      }, 100);
+    };
+    window.addEventListener("lead-force-active-step", onForceActiveStep);
+    return () => window.removeEventListener("lead-force-active-step", onForceActiveStep);
+  }, [focus, lead, tab]);
   // Focus mode: whenever a done step lands as the visible card, expand it
   // by default. Users flipping through step cards in focus mode almost
   // always want to see the details right away instead of clicking the
@@ -909,6 +956,7 @@ export default function LeadDetailPage({ params }: { params: Promise<{ id: strin
 
   const cardState = (stepIdx: number): CardStateKind => {
     if (isLost) return "locked";
+    if (forceActiveStep === stepIdx) return "active";
     if (stepIdx === 0) return hasPreSurveyDone ? "done" : "active";
     // Install (idx 4) + Warranty (idx 5) open simultaneously — but only
     // BEFORE install is signed off. Once install_completed_at is set,

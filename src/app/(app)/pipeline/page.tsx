@@ -30,10 +30,16 @@ interface Lead {
   payment_confirmed?: boolean | number | null;
   assigned_name: string | null;
   order_paid_count?: number | null;
+  order_ready_count?: number | null;
   order_total_count?: number | null;
 }
 
 type TabKey = "all" | "pre_survey" | "booking" | "survey" | "quotation" | "order" | "deposit" | "wait_install" | "install" | "installing" | "warranty" | "lost";
+type SortField = "follow_up" | "created" | "name" | "activity" | "survey_date" | "install_date";
+type SortOrder = "asc" | "desc";
+
+const TAB_KEYS: TabKey[] = ["all","pre_survey","booking","survey","quotation","order","deposit","wait_install","install","installing","warranty","lost"];
+const SORT_FIELDS: SortField[] = ["follow_up", "created", "name", "activity", "survey_date", "install_date"];
 
 // Booking = pre_survey lead ที่กดยืนยันการชำระเงิน 1 หรือ 2 แล้ว
 // (status เป็น pre_survey-01 หรือ pre_survey-02). plain `pre_survey` =
@@ -55,24 +61,22 @@ const matchesTab = (l: Lead, key: TabKey, todayYmd: string): boolean => {
   if (key === "quotation") return l.status === "quote";
   // Split 'order' status by paid deposit — ≥1 confirmed installment goes to
   // "ชำระมัดจำ", the rest stays in "รออนุมัติ/ชำระ".
-  if (key === "order") return l.status === "order" && (l.order_paid_count ?? 0) === 0;
+  if (key === "order") return l.status === "order" && (l.order_ready_count ?? l.order_paid_count ?? 0) === 0;
   if (key === "deposit") return l.status === "order" && (l.order_paid_count ?? 0) >= 1;
   // "รอนัดติดตั้ง" — paid the deposit but no install date scheduled yet.
   // Status not gated (could be order or install) but we exclude lost.
-  if (key === "wait_install") return (l.order_paid_count ?? 0) > 0 && !l.install_date && !l.install_completed_at && l.status !== "lost" && l.status !== "returned";
+  if (key === "wait_install") return ((l.order_ready_count ?? l.order_paid_count ?? 0) > 0) && !l.install_date && !l.install_completed_at && l.status !== "lost" && l.status !== "returned";
   // "Done" statuses match dashboard's stepDoneRows — once a lead moves into
   // warranty/gridtie/closed it belongs to the warranty/done section, not here.
   //
-  // Final-installment requirement: a lead only shows in "รอติดตั้ง" /
-  // "กำลังติดตั้ง" once ALL installments are confirmed paid, not just the
-  // deposit. order_total_count comes from /api/leads (count of payment rows
-  // under slip_field LIKE 'order_installment_%'); the install tabs gate on
-  // paid_count >= total_count so the final-installment receipt is the entry
-  // ticket. Leads stuck mid-payment fall back to the "ชำระมัดจำ" tab.
+  // Install readiness: normal payments count after confirmed_at; cheque rows
+  // count after cheque_received_at so Sale/Install can proceed while
+  // Accounting still confirms the actual money later.
   const totalCount = l.order_total_count ?? 0;
   const paidCount = l.order_paid_count ?? 0;
-  const allPaid = totalCount > 0 && paidCount >= totalCount;
-  const installScheduled = allPaid && !!l.install_date
+  const readyCount = l.order_ready_count ?? paidCount;
+  const allInstallReady = totalCount > 0 && readyCount >= totalCount;
+  const installScheduled = allInstallReady && !!l.install_date
     && l.status !== "warranty" && l.status !== "gridtie" && l.status !== "closed"
     && l.status !== "lost" && l.status !== "returned";
   if (key === "install") return installScheduled && l.install_date!.slice(0, 10) > todayYmd;
@@ -83,25 +87,26 @@ const matchesTab = (l: Lead, key: TabKey, todayYmd: string): boolean => {
 export default function PipelinePage() {
   const [leads, setLeads] = useState<Lead[]>([]);
   const [loading, setLoading] = useState(true);
-  const [tab, setTab] = useState<TabKey>("all");
+  const [tab, setTab] = useState<TabKey>(() => {
+    if (typeof window === "undefined") return "all";
+    const saved = localStorage.getItem("pipelineTab") as TabKey | null;
+    return saved && TAB_KEYS.includes(saved) ? saved : "all";
+  });
   const { activeRoles } = useActiveRoles();
   const isSales = hasRole(activeRoles, "sales");
   const isSolar = hasRole(activeRoles, "solar", "smartify");
   const isAdmin = hasRole(activeRoles, "admin");
   const isAccount = hasRole(activeRoles, "account");
 
-  const [sortField, setSortField] = useState<"follow_up" | "created" | "name" | "activity" | "survey_date" | "install_date">("follow_up");
-  const [sortOrder, setSortOrder] = useState<"asc" | "desc">("asc");
-  useEffect(() => {
-    const saved = localStorage.getItem("pipelineTab") as TabKey;
-    const ALL_KEYS: TabKey[] = ["all","pre_survey","booking","survey","quotation","order","deposit","wait_install","install","installing","warranty","lost"];
-    if (saved && ALL_KEYS.includes(saved)) setTab(saved);
-
-    const sf = localStorage.getItem("pipeline.sortField");
-    if (sf === "follow_up" || sf === "created" || sf === "activity" || sf === "name" || sf === "survey_date" || sf === "install_date") setSortField(sf);
-    const so = localStorage.getItem("pipeline.sortOrder");
-    if (so === "asc" || so === "desc") setSortOrder(so);
-  }, []);
+  const [sortField, setSortField] = useState<SortField>(() => {
+    if (typeof window === "undefined") return "follow_up";
+    const saved = localStorage.getItem("pipeline.sortField") as SortField | null;
+    return saved && SORT_FIELDS.includes(saved) ? saved : "follow_up";
+  });
+  const [sortOrder, setSortOrder] = useState<SortOrder>(() => {
+    if (typeof window === "undefined") return "asc";
+    return localStorage.getItem("pipeline.sortOrder") === "desc" ? "desc" : "asc";
+  });
   const [search, setSearch] = useState("");
 
   const fetchLeads = useCallback(() => {
@@ -141,11 +146,11 @@ export default function PipelinePage() {
   // survey_date/install_date selection doesn't silently apply to unrelated tabs.
   useEffect(() => {
     if (sortField === "survey_date" && tab !== "survey") {
-      setSortField("follow_up");
       localStorage.setItem("pipeline.sortField", "follow_up");
+      queueMicrotask(() => setSortField("follow_up"));
     } else if (sortField === "install_date" && tab !== "install" && tab !== "installing") {
-      setSortField("follow_up");
       localStorage.setItem("pipeline.sortField", "follow_up");
+      queueMicrotask(() => setSortField("follow_up"));
     }
   }, [tab, sortField]);
 

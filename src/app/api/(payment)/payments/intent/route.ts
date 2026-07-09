@@ -72,6 +72,8 @@ export async function POST(req: NextRequest) {
               amount = @amount,
               description = @description,
               payment_method = @payment_method,
+              cheque_received_at = CASE WHEN @payment_method = 'cheque' THEN cheque_received_at ELSE NULL END,
+              cheque_received_by = CASE WHEN @payment_method = 'cheque' THEN cheque_received_by ELSE NULL END,
               discount_pct = @discount_pct,
               discount_amount = @discount_amount,
               discount_note = @discount_note,
