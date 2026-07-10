@@ -208,6 +208,10 @@ export async function POST(req: NextRequest) {
           "confirmed_at = CASE WHEN @is_cheque = 1 THEN NULL ELSE GETDATE() END",
           "cheque_received_at = CASE WHEN @is_cheque = 1 THEN COALESCE(cheque_received_at, GETDATE()) ELSE cheque_received_at END",
           "cheque_received_by = CASE WHEN @is_cheque = 1 THEN COALESCE(cheque_received_by, @confirmed_by) ELSE cheque_received_by END",
+          "cheque_status = CASE WHEN @is_cheque = 1 THEN 'received' ELSE cheque_status END",
+          "cheque_status_note = CASE WHEN @is_cheque = 1 THEN NULL ELSE cheque_status_note END",
+          "cheque_status_by = CASE WHEN @is_cheque = 1 THEN @confirmed_by ELSE cheque_status_by END",
+          "cheque_status_at = CASE WHEN @is_cheque = 1 THEN GETDATE() ELSE cheque_status_at END",
           "ref1 = @ref1",
           "payment_method = @payment_method",
           "slip_amount = @slip_amount",
@@ -223,13 +227,16 @@ export async function POST(req: NextRequest) {
         paymentId = pendingId;
       } else {
         const insertRes = await writeReq.query(`
-          INSERT INTO payments (lead_id, step_no, slip_field, doc_no, amount, description, ${slotCols.join(", ")}, confirmed_by, confirmed_at, cheque_received_at, cheque_received_by, ref1, payment_method, slip_amount, slip_ref1, slip_ref2, slip_trans_id, slip_datetime, slip_doc_type, slip_cheque_no)
+          INSERT INTO payments (lead_id, step_no, slip_field, doc_no, amount, description, ${slotCols.join(", ")}, confirmed_by, confirmed_at, cheque_received_at, cheque_received_by, cheque_status, cheque_status_by, cheque_status_at, ref1, payment_method, slip_amount, slip_ref1, slip_ref2, slip_trans_id, slip_datetime, slip_doc_type, slip_cheque_no)
           OUTPUT INSERTED.id
           VALUES (@lead_id, @step_no, @slip_field, @doc_no, @amount, @description, ${slotParams.join(", ")},
                   CASE WHEN @is_cheque = 1 THEN NULL ELSE @confirmed_by END,
                   CASE WHEN @is_cheque = 1 THEN NULL ELSE GETDATE() END,
                   CASE WHEN @is_cheque = 1 THEN GETDATE() ELSE NULL END,
                   CASE WHEN @is_cheque = 1 THEN @confirmed_by ELSE NULL END,
+                  CASE WHEN @is_cheque = 1 THEN 'received' ELSE NULL END,
+                  CASE WHEN @is_cheque = 1 THEN @confirmed_by ELSE NULL END,
+                  CASE WHEN @is_cheque = 1 THEN GETDATE() ELSE NULL END,
                   @ref1, @payment_method, @slip_amount, @slip_ref1, @slip_ref2, @slip_trans_id, @slip_datetime, @slip_doc_type, @slip_cheque_no)
         `);
         paymentId = insertRes.recordset[0].id;
@@ -313,7 +320,9 @@ export async function GET(req: NextRequest) {
     // confirmed_by is a free-text NVARCHAR (legacy schema — stores the user's
     // full name directly). submitted_by is INT → JOIN users for the name.
     let q = `SELECT p.id, p.lead_id, p.step_no, p.slip_field, p.doc_no, p.amount, p.description, p.slip_mime, p.slip_filename, p.confirmed_by, p.confirmed_at, p.ref1, p.payment_method,
-                    p.cheque_received_at, p.cheque_received_by,
+                    p.cheque_received_at, p.cheque_received_by, p.cheque_bank, p.cheque_due_date,
+                    p.cheque_deposited_at, p.cheque_status, p.cheque_status_note,
+                    p.cheque_status_by, p.cheque_status_at, p.slip_cheque_no,
                     p.submitted_by, p.submitted_at, p.actual_receipt_url,
                     p.confirmed_by as confirmed_by_name,
                     su.full_name as submitted_by_name

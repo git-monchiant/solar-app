@@ -60,7 +60,9 @@ export async function POST(req: NextRequest) {
     await db.request()
       .input("lead_id", sql.Int, leadId)
       .input("slip_field", sql.NVarChar(50), slipField)
-      .query(`UPDATE payments SET cheque_received_at = NULL, cheque_received_by = NULL
+      .query(`UPDATE payments SET cheque_received_at = NULL, cheque_received_by = NULL,
+                cheque_deposited_at = NULL, cheque_status = 'cancelled',
+                cheque_status_note = N'รายการถูกตีกลับจากคิวตรวจสอบ', cheque_status_at = GETDATE()
               WHERE lead_id = @lead_id AND slip_field = @slip_field AND confirmed_at IS NULL`);
 
     // Persist the merged notes JSON.

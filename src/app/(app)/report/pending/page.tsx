@@ -20,6 +20,14 @@ interface Installment {
   payment_method: string | null;
   cheque_received_at: string | null;
   cheque_received_by: string | null;
+  cheque_bank: string | null;
+  cheque_due_date: string | null;
+  cheque_deposited_at: string | null;
+  cheque_status: string | null;
+  cheque_status_note: string | null;
+  cheque_status_by: string | null;
+  cheque_status_at: string | null;
+  cheque_no: string | null;
   has_slip: boolean;
   slip_urls: string[];
   ref1: string | null;
@@ -46,7 +54,7 @@ interface ReportData {
 
 const fmt = (n: number) => formatTHB(Math.round(n));
 
-const stepLabels: Record<number, string> = { 0: "มัดจำ", 1: "ค่าสำรวจ", 3: "งวด 1/2", 4: "งวด 2/2" };
+const stepLabels: Record<number, string> = { 0: "มัดจำ", 1: "ค่าสำรวจ", 3: "งวด 1/2", 4: "งวด 2/2", 99: "Step 5 · เก็บเงิน" };
 function labelForInstallment(step_no: number, slip_field: string): string {
   if (stepLabels[step_no]) return stepLabels[step_no];
   const m = /^order_installment_(\d+)$/.exec(slip_field || "");
@@ -134,6 +142,12 @@ export default function PendingApprovalReport() {
 
   const isChequeWaitingReceive = (inst: Installment) => inst.payment_method === "cheque" && !inst.cheque_received_at;
   const isChequeWaitingMoney = (inst: Installment) => !!inst.cheque_received_at && !inst.confirmed_at;
+  const isChequeOverdue = (inst: Installment) => !!inst.cheque_due_date
+    && String(inst.cheque_due_date).slice(0, 10) < new Date().toISOString().slice(0, 10)
+    && !inst.confirmed_at;
+  const formatChequeDate = (value: string | null) => value
+    ? new Date(value).toLocaleDateString("th-TH", { day: "numeric", month: "short", year: "numeric" })
+    : null;
 
   const setOrderPaymentFocus = (leadId: number, slipField: string, opts?: { chequeConfirmPaymentId?: number; subStep?: number; openPaymentRow?: boolean; forceActiveStep?: number }) => {
     if (typeof window === "undefined") return;
@@ -147,6 +161,32 @@ export default function PendingApprovalReport() {
     if (opts?.chequeConfirmPaymentId) {
       localStorage.setItem(`orderChequeConfirm_${leadId}`, String(opts.chequeConfirmPaymentId));
     }
+  };
+
+  const isInstallCollectPayment = (inst: Installment) => inst.slip_field === "order_after_slip" || inst.step_no === 99;
+
+  const setInstallPaymentFocus = (leadId: number, paymentId: number) => {
+    if (typeof window === "undefined") return;
+    localStorage.setItem(`leadFocusStep_${leadId}`, "4");
+    localStorage.setItem(`leadForceActiveStep_${leadId}`, "4");
+    localStorage.setItem(`installSubStep_${leadId}`, "3");
+    localStorage.setItem(`installChequeConfirm_${leadId}`, String(paymentId));
+  };
+
+  const openChequePaymentContext = (item: PendingItem, finalConfirmation: boolean) => {
+    const inst = item.installment;
+    if (isInstallCollectPayment(inst)) {
+      setInstallPaymentFocus(item.lead_id, inst.id);
+    } else if (finalConfirmation) {
+      if (item.is_multi_installment) {
+        setOrderPaymentFocus(item.lead_id, inst.slip_field, { subStep: 1, openPaymentRow: false, forceActiveStep: 3 });
+      } else {
+        setOrderPaymentFocus(item.lead_id, inst.slip_field, { chequeConfirmPaymentId: inst.id, subStep: 3, openPaymentRow: false });
+      }
+    } else {
+      setOrderPaymentFocus(item.lead_id, inst.slip_field);
+    }
+    openLead(item.lead_id);
   };
 
   const markChequeReceived = async (item: PendingItem) => {
@@ -185,18 +225,12 @@ export default function PendingApprovalReport() {
             : row),
         };
       });
-      setOrderPaymentFocus(item.lead_id, item.installment.slip_field);
-      window.setTimeout(() => openLead(item.lead_id), 150);
+      window.setTimeout(() => openChequePaymentContext(item, false), 150);
     } catch (e) {
       alert(e instanceof Error ? e.message : "ยืนยันรับเช็คไม่สำเร็จ");
     } finally {
       setChequeReceivingId(null);
     }
-  };
-
-  const openAtOrderPayment = (leadId: number, slipField: string, opts?: { chequeConfirmPaymentId?: number; subStep?: number; openPaymentRow?: boolean; forceActiveStep?: number }) => {
-    setOrderPaymentFocus(leadId, slipField, opts);
-    openLead(leadId);
   };
 
   return (
@@ -235,10 +269,17 @@ export default function PendingApprovalReport() {
               const chequeWaitingReceive = isChequeWaitingReceive(i);
               const chequeWaitingMoney = isChequeWaitingMoney(i);
               const chequeButtonBusy = chequeReceivingId === i.id;
-              const chequeMoneyTarget = it.is_multi_installment
-                ? { subStep: 1, openPaymentRow: false, forceActiveStep: 3 }
-                : { chequeConfirmPaymentId: i.id, subStep: 3, openPaymentRow: false };
-              const statusBadge = chequeWaitingReceive ? (
+              const chequeFailed = i.cheque_status === "bounced" || i.cheque_status === "cancelled";
+              const chequeOverdue = isChequeOverdue(i);
+              const statusBadge = i.cheque_status === "bounced" ? (
+                <span className="ml-1.5 inline-flex items-center rounded border border-red-200 bg-red-50 px-1.5 py-0.5 text-[10px] font-bold text-red-700">เช็คเด้ง</span>
+              ) : i.cheque_status === "cancelled" ? (
+                <span className="ml-1.5 inline-flex items-center rounded border border-gray-300 bg-gray-100 px-1.5 py-0.5 text-[10px] font-bold text-gray-600">ยกเลิกเช็ค</span>
+              ) : chequeOverdue ? (
+                <span className="ml-1.5 inline-flex items-center rounded border border-red-200 bg-red-50 px-1.5 py-0.5 text-[10px] font-bold text-red-700">เลยวันที่หน้าเช็ค</span>
+              ) : i.cheque_status === "deposited" ? (
+                <span className="ml-1.5 inline-flex items-center rounded border border-blue-200 bg-blue-50 px-1.5 py-0.5 text-[10px] font-bold text-blue-700">นำฝากแล้ว · รอเงินเข้า</span>
+              ) : chequeWaitingReceive ? (
                 <span className="ml-1.5 inline-flex items-center rounded border border-orange-200 bg-orange-50 px-1.5 py-0.5 text-[10px] font-bold text-orange-700">รอรับเช็ค</span>
               ) : chequeWaitingMoney ? (
                 <span className="ml-1.5 inline-flex items-center rounded border border-emerald-200 bg-emerald-50 px-1.5 py-0.5 text-[10px] font-bold text-emerald-700">รับเช็คแล้ว · รอรับเงิน</span>
@@ -255,7 +296,7 @@ export default function PendingApprovalReport() {
               ) : chequeWaitingMoney ? (
                 <button
                   type="button"
-                  onClick={() => openAtOrderPayment(it.lead_id, i.slip_field, chequeMoneyTarget)}
+                  onClick={() => openChequePaymentContext(it, true)}
                   className={`h-8 px-3 rounded-lg text-sm font-semibold text-white bg-emerald-600 hover:brightness-110 inline-flex items-center justify-center shrink-0 ${className}`}
                 >
                   ยืนยันรับเงิน
@@ -268,6 +309,12 @@ export default function PendingApprovalReport() {
                   ยืนยันรับเงิน
                 </LeadLink>
               );
+              const chequeDetails = i.payment_method === "cheque" && (i.cheque_no || i.cheque_bank || i.cheque_due_date || i.cheque_status_note) ? (
+                <div className={`text-[11px] mt-1 ${chequeFailed || chequeOverdue ? "text-red-600" : "text-gray-500"}`}>
+                  {[i.cheque_no ? `เลขเช็ค ${i.cheque_no}` : null, i.cheque_bank, i.cheque_due_date ? `วันที่หน้าเช็ค ${formatChequeDate(i.cheque_due_date)}` : null].filter(Boolean).join(" · ")}
+                  {i.cheque_status_note && <span> · {i.cheque_status_note}</span>}
+                </div>
+              ) : null;
               return (
                 <div key={`${it.lead_id}-${i.id}`}>
                   {/* Mobile card */}
@@ -286,6 +333,7 @@ export default function PendingApprovalReport() {
                       <span className="font-semibold text-gray-800">{label}</span>
                       {i.description && <span className="text-gray-500"> · {i.description}</span>}
                       {statusBadge}
+                      {chequeDetails}
                     </div>
                     {i.slip_urls.length > 0 && (
                       <div className="flex items-center gap-1 overflow-x-auto pb-1 -mx-1 px-1">
@@ -342,6 +390,7 @@ export default function PendingApprovalReport() {
                         <span className="font-semibold text-gray-700">{label}</span>
                         {i.description && <span> · {i.description}</span>}
                         {statusBadge}
+                        {chequeDetails}
                       </div>
                     </div>
                     {(i.ref1 || i.ref2) && (

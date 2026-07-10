@@ -3,7 +3,7 @@ import { CameraIcon, CheckIcon, ChevronLeftIcon, ChevronRightIcon, DocumentIcon,
 
 import { useCallback, useEffect, useState } from "react";
 import { apiFetch } from "@/lib/api";
-import { useMe } from "@/lib/roles";
+import { hasRole, useActiveRoles, useMe } from "@/lib/roles";
 import type { StepCommonProps } from "./types";
 import FallbackImage from "@/components/ui/FallbackImage";
 import PaymentSection from "@/components/payment/PaymentSection";
@@ -38,6 +38,8 @@ interface Props extends StepCommonProps {
 
 export default function InstallStep({ lead, state, refresh, expanded, onToggle }: Props) {
   const { me } = useMe();
+  const { activeRoles } = useActiveRoles();
+  const canConfirmChequeMoney = hasRole(activeRoles, "admin", "account");
   const fileViewer = useFileViewer();
   const [subStep, setSubStep] = useSubStep(`installSubStep_${lead.id}`, lead.install_confirmed ? 1 : 0, SUB_STEPS.length);
   const [nextError, setNextError] = useState<string | null>(null);
@@ -173,17 +175,65 @@ export default function InstallStep({ lead, state, refresh, expanded, onToggle }
   const netDue = Math.max(0, orderTotal - orderDiscount - depositPaid);
   // Paid amount across all confirmed per-installment payments.
   const [paidAmount, setPaidAmount] = useState(0);
-  useEffect(() => {
-    apiFetch(`/api/payments?lead_id=${lead.id}`)
-      .then((rows: Array<{ slip_field: string; confirmed_at: string | null; amount: number }>) => {
-        const sum = rows
-          .filter(r => r.confirmed_at && /^order_installment_\d+$/.test(r.slip_field))
-          .reduce((s, r) => s + Number(r.amount || 0), 0);
-        setPaidAmount(sum);
-      })
-      .catch(console.error);
+  type AfterChequePending = {
+    id: number;
+    amount: number;
+    cheque_received_at: string;
+  };
+  const [afterChequePending, setAfterChequePending] = useState<AfterChequePending | null>(null);
+  const [afterPaymentRecordExists, setAfterPaymentRecordExists] = useState(false);
+  const [afterPaymentConfirmed, setAfterPaymentConfirmed] = useState(false);
+  const [focusedAfterChequeId, setFocusedAfterChequeId] = useState<number | null>(null);
+  const [confirmingAfterChequeId, setConfirmingAfterChequeId] = useState<number | null>(null);
+  const loadPaymentState = useCallback(async () => {
+    const rows = await apiFetch(`/api/payments?lead_id=${lead.id}`) as Array<{
+      id: number;
+      slip_field: string;
+      confirmed_at: string | null;
+      amount: number;
+      payment_method: string | null;
+      cheque_received_at: string | null;
+    }>;
+    const sum = rows
+      .filter(r => r.confirmed_at && /^order_installment_\d+$/.test(r.slip_field))
+      .reduce((s, r) => s + Number(r.amount || 0), 0);
+    const pendingAfterCheque = rows.find(r => r.slip_field === "order_after_slip"
+      && r.payment_method === "cheque" && !!r.cheque_received_at && !r.confirmed_at);
+    const hasAfterPayment = rows.some(r => r.slip_field === "order_after_slip");
+    const confirmedAfterPayment = rows.some(r => r.slip_field === "order_after_slip" && !!r.confirmed_at);
+    setPaidAmount(sum);
+    setAfterPaymentRecordExists(hasAfterPayment);
+    setAfterPaymentConfirmed(confirmedAfterPayment);
+    setAfterChequePending(pendingAfterCheque ? {
+      id: pendingAfterCheque.id,
+      amount: Number(pendingAfterCheque.amount || 0),
+      cheque_received_at: pendingAfterCheque.cheque_received_at as string,
+    } : null);
   }, [lead.id]);
+  useEffect(() => {
+    loadPaymentState().catch(console.error);
+  }, [loadPaymentState]);
   const remainingAmount = Math.max(0, netDue - paidAmount);
+  const afterPaymentReady = afterPaymentRecordExists
+    ? afterPaymentConfirmed || !!afterChequePending
+    : !!lead.order_after_paid;
+  const afterChequePaymentUrl = afterChequePending ? `/api/payments/${afterChequePending.id}` : null;
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const key = `installChequeConfirm_${lead.id}`;
+    const raw = localStorage.getItem(key);
+    if (raw === null) return;
+    localStorage.removeItem(key);
+    const paymentId = parseInt(raw, 10);
+    if (Number.isInteger(paymentId) && paymentId > 0) setFocusedAfterChequeId(paymentId);
+  }, [lead.id]);
+
+  useEffect(() => {
+    if (!focusedAfterChequeId || afterChequePending?.id !== focusedAfterChequeId) return;
+    const target = document.querySelector(`[data-install-cheque-confirm="${focusedAfterChequeId}"]`);
+    target?.scrollIntoView({ behavior: "smooth", block: "center" });
+  }, [focusedAfterChequeId, afterChequePending]);
 
   // Upload only — returns the uploaded URL. Caller batches setPhotos + PATCH.
   // Multi-select used to race here: each parallel call read the same stale
@@ -312,7 +362,29 @@ export default function InstallStep({ lead, state, refresh, expanded, onToggle }
         body: JSON.stringify({ order_after_paid_by: me.id }),
       }).catch(console.error);
     }
+    await loadPaymentState();
     await refresh();
+  };
+
+  const confirmAfterChequeMoney = async () => {
+    if (!afterChequePending || confirmingAfterChequeId) return;
+    if (!window.confirm("ยืนยันว่าเงินจากเช็คเข้าบัญชีบริษัทแล้ว?")) return;
+    setConfirmingAfterChequeId(afterChequePending.id);
+    setNextError(null);
+    try {
+      await apiFetch(`/api/payments/${afterChequePending.id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ confirm_received_money: true }),
+      });
+      setFocusedAfterChequeId(null);
+      await refresh();
+      await loadPaymentState();
+    } catch (error) {
+      setNextError(error instanceof Error ? error.message : "ยืนยันรับเงินจากเช็คไม่สำเร็จ");
+    } finally {
+      setConfirmingAfterChequeId(null);
+    }
   };
 
   const closeStep = async () => {
@@ -779,8 +851,8 @@ export default function InstallStep({ lead, state, refresh, expanded, onToggle }
             setNextError("กรุณากรอกรายละเอียดค่าใช้จ่ายเพิ่มเติม");
             return;
           }
-          if (subStep === 3 && (remainingAmount + extraCost) > 0 && !lead.order_after_paid) {
-            setNextError("ต้องยืนยันการรับชำระเงินก่อนถึงจะส่งมอบงานได้");
+          if (subStep === 3 && (remainingAmount + extraCost) > 0 && !afterPaymentReady) {
+            setNextError("ต้องยืนยันรับชำระหรือรับเช็คก่อนถึงจะส่งมอบงานได้");
             return;
           }
         }
@@ -1102,7 +1174,7 @@ export default function InstallStep({ lead, state, refresh, expanded, onToggle }
                   leadId={lead.id}
                   leadName={lead.full_name}
                   lineId={lead.line_id}
-                  slipUrl={lead.order_after_slip}
+                  slipUrl={lead.order_after_slip || afterChequePaymentUrl}
                   slipField="order_after_slip"
                   stepNo={99}
                   description={desc}
@@ -1111,7 +1183,8 @@ export default function InstallStep({ lead, state, refresh, expanded, onToggle }
                   // order's regular installment plan. The 99 marker makes it
                   // unambiguous in receipts and the accountant queue.
                   docNo={lead.pre_doc_no ? `${lead.pre_doc_no}-99` : null}
-                  confirmed={!!lead.order_after_paid}
+                  confirmed={afterPaymentReady}
+                  allowCheque
                   onConfirmed={onAfterConfirmed}
                   onUndone={refresh}
                   onVerified={() => setAfterSlipDone(true)}
@@ -1121,6 +1194,33 @@ export default function InstallStep({ lead, state, refresh, expanded, onToggle }
                     { label: "ยอดที่ต้องชำระ", value: `฿${fmt(totalToCollect)}` },
                   ]}
                 />
+                {afterChequePending && (
+                  <div
+                    data-install-cheque-confirm={afterChequePending.id}
+                    className={`mt-3 rounded-lg border px-3 py-3 ${focusedAfterChequeId === afterChequePending.id ? "border-emerald-400 bg-emerald-50 ring-2 ring-emerald-200" : "border-amber-200 bg-amber-50"}`}
+                  >
+                    <div className="flex flex-col md:flex-row md:items-center gap-3">
+                      <div className="flex-1 min-w-0">
+                        <div className="text-sm font-semibold text-amber-900">รับเช็คแล้ว · รอรับเงิน</div>
+                        <div className="text-xs text-amber-700 mt-0.5">
+                          รับเช็คเมื่อ {formatDate(afterChequePending.cheque_received_at)} · ยอด {fmt(afterChequePending.amount)} บาท
+                        </div>
+                      </div>
+                      {canConfirmChequeMoney ? (
+                        <button
+                          type="button"
+                          disabled={confirmingAfterChequeId === afterChequePending.id}
+                          onClick={confirmAfterChequeMoney}
+                          className="h-9 px-4 rounded-lg text-sm font-semibold text-white bg-emerald-600 hover:brightness-110 disabled:opacity-50 disabled:cursor-not-allowed inline-flex items-center justify-center shrink-0"
+                        >
+                          {confirmingAfterChequeId === afterChequePending.id ? "กำลังยืนยัน..." : "ยืนยันรับเงิน"}
+                        </button>
+                      ) : (
+                        <span className="text-xs font-semibold text-amber-700">รอฝ่ายบัญชียืนยันรับเงิน</span>
+                      )}
+                    </div>
+                  </div>
+                )}
               </div>
             ) : (
               <div className="rounded-lg bg-emerald-50 border border-emerald-200 p-4 flex items-center gap-3">
@@ -1198,8 +1298,8 @@ export default function InstallStep({ lead, state, refresh, expanded, onToggle }
               setNextError("กรุณากรอกรายละเอียดค่าใช้จ่ายเพิ่มเติม");
               return;
             }
-            if (subStep === 3 && (remainingAmount + extraCost) > 0 && !lead.order_after_paid) {
-              setNextError("ต้องยืนยันการรับชำระเงินก่อนถึงจะส่งมอบงานได้");
+            if (subStep === 3 && (remainingAmount + extraCost) > 0 && !afterPaymentReady) {
+              setNextError("ต้องยืนยันรับชำระหรือรับเช็คก่อนถึงจะส่งมอบงานได้");
               return;
             }
             await flushSave();
@@ -1219,8 +1319,8 @@ export default function InstallStep({ lead, state, refresh, expanded, onToggle }
           </button>
           <button
             onClick={() => {
-              if ((remainingAmount + extraCost) > 0 && !lead.order_after_paid) {
-                setNextError("ต้องยืนยันการรับชำระเงินก่อนถึงจะส่งมอบงานได้");
+              if ((remainingAmount + extraCost) > 0 && !afterPaymentReady) {
+                setNextError("ต้องยืนยันรับชำระหรือรับเช็คก่อนถึงจะส่งมอบงานได้");
                 return;
               }
               closeStep();

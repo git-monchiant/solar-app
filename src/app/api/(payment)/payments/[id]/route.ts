@@ -8,6 +8,18 @@ export const runtime = "nodejs";
 
 const MAX_SLIPS = 5;
 
+async function getAccountingUser(db: Awaited<ReturnType<typeof getDb>>, userId: number) {
+  const result = await db.request().input("uid", sql.Int, userId)
+    .query(`SELECT full_name, roles FROM users WHERE id = @uid AND is_active = 1`);
+  const user = result.recordset[0];
+  let roles: string[] = [];
+  try {
+    const parsed = user?.roles ? JSON.parse(user.roles) : [];
+    if (Array.isArray(parsed)) roles = parsed;
+  } catch { roles = []; }
+  return roles.includes("admin") || roles.includes("account") ? user : null;
+}
+
 // GET /api/payments/<id>
 //   default                  → serve slot 1 binary (backward compatible)
 //   ?slot=<n>                → serve slot n binary (2..MAX_SLIPS)
@@ -29,7 +41,7 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
     const db = await getDb();
 
     if (searchParams.get("list")) {
-      const cols = ["id", "payment_method", "description", "actual_receipt_url", "cheque_received_at", "cheque_received_by"];
+      const cols = ["id", "payment_method", "description", "actual_receipt_url", "cheque_received_at", "cheque_received_by", "cheque_bank", "cheque_due_date", "cheque_deposited_at", "cheque_status", "cheque_status_note", "cheque_status_by", "cheque_status_at", "slip_cheque_no"];
       for (let i = 1; i <= MAX_SLIPS; i++) {
         const suffix = i === 1 ? "" : `_${i}`;
         cols.push(`slip_mime${suffix}`, `slip_filename${suffix}`, `DATALENGTH(slip_data${suffix}) AS bytes_${i}`);
@@ -59,6 +71,14 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
         actual_receipt_url: row.actual_receipt_url || null,
         cheque_received_at: row.cheque_received_at || null,
         cheque_received_by: row.cheque_received_by || null,
+        cheque_bank: row.cheque_bank || null,
+        cheque_due_date: row.cheque_due_date || null,
+        cheque_deposited_at: row.cheque_deposited_at || null,
+        cheque_status: row.cheque_status || null,
+        cheque_status_note: row.cheque_status_note || null,
+        cheque_status_by: row.cheque_status_by || null,
+        cheque_status_at: row.cheque_status_at || null,
+        cheque_no: row.slip_cheque_no || null,
       });
     }
 
@@ -122,9 +142,20 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
       await db.request()
         .input("id", sql.Int, payId)
         .input("received_by", sql.NVarChar(100), receivedBy)
+        .input("cheque_bank", sql.NVarChar(100), body.cheque_bank ? String(body.cheque_bank).slice(0, 100) : null)
+        .input("cheque_due_date", sql.NVarChar(10), /^\d{4}-\d{2}-\d{2}$/.test(String(body.cheque_due_date || "")) ? String(body.cheque_due_date) : null)
+        .input("cheque_no", sql.NVarChar(50), body.cheque_no ? String(body.cheque_no).slice(0, 50) : null)
         .query(`UPDATE payments SET
                   cheque_received_at = COALESCE(cheque_received_at, GETDATE()),
-                  cheque_received_by = COALESCE(cheque_received_by, @received_by)
+                  cheque_received_by = COALESCE(cheque_received_by, @received_by),
+                  cheque_bank = COALESCE(@cheque_bank, cheque_bank),
+                  cheque_due_date = COALESCE(TRY_CONVERT(date, @cheque_due_date), cheque_due_date),
+                  slip_cheque_no = COALESCE(@cheque_no, slip_cheque_no),
+                  cheque_deposited_at = NULL,
+                  cheque_status = 'received',
+                  cheque_status_note = NULL,
+                  cheque_status_by = @received_by,
+                  cheque_status_at = GETDATE()
                 WHERE id = @id`);
 
       await db.request()
@@ -146,6 +177,90 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
       return NextResponse.json({ ok: true });
     }
 
+    if (body.update_cheque_details === true || body.cheque_deposited === true || body.cheque_failed) {
+      const accountingUser = await getAccountingUser(db, gate.userId);
+      if (!accountingUser) return NextResponse.json({ error: "Account only" }, { status: 403 });
+
+      const payRes = await db.request()
+        .input("id", sql.Int, payId)
+        .query(`SELECT lead_id, slip_field, step_no, amount, payment_method, confirmed_at, cheque_received_at
+                FROM payments WHERE id = @id`);
+      const pay = payRes.recordset[0];
+      if (!pay) return NextResponse.json({ error: "Not found" }, { status: 404 });
+      if (pay.payment_method !== "cheque") {
+        return NextResponse.json({ error: "รองรับเฉพาะรายการรับชำระด้วยเช็ค" }, { status: 400 });
+      }
+      if (pay.confirmed_at) {
+        return NextResponse.json({ error: "รายการนี้ยืนยันรับเงินแล้ว" }, { status: 409 });
+      }
+
+      const actionBy = accountingUser.full_name ?? null;
+      if (body.update_cheque_details === true) {
+        await db.request()
+          .input("id", sql.Int, payId)
+          .input("cheque_bank", sql.NVarChar(100), body.cheque_bank ? String(body.cheque_bank).slice(0, 100) : null)
+          .input("cheque_due_date", sql.NVarChar(10), /^\d{4}-\d{2}-\d{2}$/.test(String(body.cheque_due_date || "")) ? String(body.cheque_due_date) : null)
+          .input("cheque_no", sql.NVarChar(50), body.cheque_no ? String(body.cheque_no).slice(0, 50) : null)
+          .input("action_by", sql.NVarChar(100), actionBy)
+          .query(`UPDATE payments SET
+                    cheque_bank = @cheque_bank,
+                    cheque_due_date = TRY_CONVERT(date, @cheque_due_date),
+                    slip_cheque_no = COALESCE(@cheque_no, slip_cheque_no),
+                    cheque_status_by = @action_by,
+                    cheque_status_at = GETDATE()
+                  WHERE id = @id`);
+        return NextResponse.json({ ok: true });
+      }
+
+      if (body.cheque_deposited === true) {
+        if (!pay.cheque_received_at) return NextResponse.json({ error: "ต้องยืนยันรับเช็คก่อน" }, { status: 409 });
+        await db.request()
+          .input("id", sql.Int, payId)
+          .input("action_by", sql.NVarChar(100), actionBy)
+          .query(`UPDATE payments SET
+                    cheque_deposited_at = COALESCE(cheque_deposited_at, GETDATE()),
+                    cheque_status = 'deposited',
+                    cheque_status_note = NULL,
+                    cheque_status_by = @action_by,
+                    cheque_status_at = GETDATE()
+                  WHERE id = @id`);
+        await logLeadActivity(db, {
+          leadId: pay.lead_id,
+          activityType: "payment_cheque_deposited",
+          title: `นำฝากเช็ค ${paymentStepLabel(pay.slip_field, pay.step_no)} ${fmtBaht(Number(pay.amount || 0))}`,
+          userId: gate.userId,
+        });
+        return NextResponse.json({ ok: true });
+      }
+
+      const failedStatus = body.cheque_failed === "bounced" ? "bounced" : body.cheque_failed === "cancelled" ? "cancelled" : null;
+      if (!failedStatus) return NextResponse.json({ error: "Invalid cheque status" }, { status: 400 });
+      const statusNote = body.note ? String(body.note).slice(0, 500) : null;
+      await db.request()
+        .input("id", sql.Int, payId)
+        .input("status", sql.NVarChar(20), failedStatus)
+        .input("note", sql.NVarChar(500), statusNote)
+        .input("action_by", sql.NVarChar(100), actionBy)
+        .query(`UPDATE payments SET
+                  cheque_received_at = NULL,
+                  cheque_received_by = NULL,
+                  cheque_deposited_at = NULL,
+                  cheque_status = @status,
+                  cheque_status_note = @note,
+                  cheque_status_by = @action_by,
+                  cheque_status_at = GETDATE()
+                WHERE id = @id`);
+      await syncOrderPaidFlags(db, pay.lead_id).catch(e => console.error("syncOrderPaidFlags failed:", e));
+      await logLeadActivity(db, {
+        leadId: pay.lead_id,
+        activityType: failedStatus === "bounced" ? "payment_cheque_bounced" : "payment_cheque_cancelled",
+        title: `${failedStatus === "bounced" ? "เช็คเด้ง" : "ยกเลิกเช็ค"} ${paymentStepLabel(pay.slip_field, pay.step_no)} ${fmtBaht(Number(pay.amount || 0))}`,
+        note: statusNote,
+        userId: gate.userId,
+      });
+      return NextResponse.json({ ok: true });
+    }
+
     if (body.confirm_received_money === true) {
       const payRes = await db.request()
         .input("id", sql.Int, payId)
@@ -163,18 +278,9 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
         return NextResponse.json({ error: "รายการนี้ยืนยันรับเงินแล้ว" }, { status: 409 });
       }
 
-      const userRes = await db.request().input("uid", sql.Int, gate.userId)
-        .query(`SELECT full_name, roles FROM users WHERE id = @uid`);
-      const user = userRes.recordset[0];
-      let roles: string[] = [];
-      try {
-        const parsed = user?.roles ? JSON.parse(user.roles) : [];
-        if (Array.isArray(parsed)) roles = parsed;
-      } catch { roles = []; }
-      if (!roles.includes("admin") && !roles.includes("account")) {
-        return NextResponse.json({ error: "Account only" }, { status: 403 });
-      }
-      const confirmedBy = user?.full_name ?? null;
+      const user = await getAccountingUser(db, gate.userId);
+      if (!user) return NextResponse.json({ error: "Account only" }, { status: 403 });
+      const confirmedBy = user.full_name ?? null;
 
       const slipRes = await db.request()
         .input("lead_id", sql.Int, pay.lead_id)
@@ -214,6 +320,10 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
           "confirmed_by = @confirmed_by",
           "confirmed_at = GETDATE()",
           "payment_method = 'cheque'",
+          "cheque_status = 'cleared'",
+          "cheque_status_note = NULL",
+          "cheque_status_by = @confirmed_by",
+          "cheque_status_at = GETDATE()",
         ];
         if (firstSlip) {
           setExprs.push(

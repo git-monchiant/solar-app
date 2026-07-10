@@ -46,7 +46,9 @@ export async function GET(req: NextRequest) {
     const paymentsRes = await db.request().query(`
       SELECT p.id, p.lead_id, p.step_no, p.slip_field, p.doc_no, p.amount, p.description,
              p.confirmed_at, p.confirmed_by, p.payment_no, p.ref1, p.payment_method,
-             p.cheque_received_at, p.cheque_received_by,
+             p.cheque_received_at, p.cheque_received_by, p.cheque_bank, p.cheque_due_date,
+             p.cheque_deposited_at, p.cheque_status, p.cheque_status_note,
+             p.cheque_status_by, p.cheque_status_at, p.slip_cheque_no,
              ${slotCols}
       FROM payments p
       ORDER BY p.step_no ASC, p.id ASC
@@ -90,6 +92,14 @@ export async function GET(req: NextRequest) {
       payment_method: string | null;
       cheque_received_at: string | null;
       cheque_received_by: string | null;
+      cheque_bank: string | null;
+      cheque_due_date: string | null;
+      cheque_deposited_at: string | null;
+      cheque_status: string | null;
+      cheque_status_note: string | null;
+      cheque_status_by: string | null;
+      cheque_status_at: string | null;
+      cheque_no: string | null;
       has_slip: boolean;
       slip_urls: string[];
       ref1: string | null;
@@ -121,6 +131,14 @@ export async function GET(req: NextRequest) {
         payment_method: (row.payment_method as string | null) ?? null,
         cheque_received_at: (row.cheque_received_at as string | null) ?? null,
         cheque_received_by: (row.cheque_received_by as string | null) ?? null,
+        cheque_bank: (row.cheque_bank as string | null) ?? null,
+        cheque_due_date: (row.cheque_due_date as string | null) ?? null,
+        cheque_deposited_at: (row.cheque_deposited_at as string | null) ?? null,
+        cheque_status: (row.cheque_status as string | null) ?? null,
+        cheque_status_note: (row.cheque_status_note as string | null) ?? null,
+        cheque_status_by: (row.cheque_status_by as string | null) ?? null,
+        cheque_status_at: (row.cheque_status_at as string | null) ?? null,
+        cheque_no: (row.slip_cheque_no as string | null) ?? null,
         has_slip: slipUrls.length > 0,
         slip_urls: slipUrls,
         ref1: (row.ref1 as string | null) || computeRef1(leadId, stepNo),

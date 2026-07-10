@@ -52,6 +52,9 @@ interface Props {
   /** Force the section to only expose the "อื่นๆ" tab — used by loan installments
    * where customers pay via the bank, not via our QR/link/transfer flows. */
   onlyOther?: boolean;
+  /** Show a dedicated cheque tab. The cheque is recorded as received first;
+   * Accounting confirms actual money in a separate action after it clears. */
+  allowCheque?: boolean;
   /** Per-payment context stamped onto the payments row at intent time so receipts
    * and reports don't have to re-derive from the lead. All optional. */
   paymentMethod?: string | null;
@@ -145,6 +148,7 @@ export default function PaymentSection({
   docUrl,
   hideHeader,
   onlyOther,
+  allowCheque,
   paymentMethod,
   discountPct,
   discountAmount,
@@ -174,12 +178,18 @@ export default function PaymentSection({
   // a refresh after submitting a slip on "bank" doesn't snap back to "qr".
   // Confirmed payments override this via payment_method below.
   const tabStorageKey = `paymentTab:${leadId}:${slipField}`;
-  const [tab, setTab] = useState<"qr" | "link" | "bank" | "other">(() => {
+  type PaymentTab = "qr" | "link" | "bank" | "cheque" | "other";
+  const [tab, setTab] = useState<PaymentTab>(() => {
     if (typeof window === "undefined") return "qr";
     const saved = localStorage.getItem(tabStorageKey);
+    if (saved === "cheque" && allowCheque) return saved;
     if (saved === "qr" || saved === "link" || saved === "bank" || saved === "other") return saved;
     return "qr";
   });
+  const effectivePaymentMethod = tab === "cheque"
+    ? "cheque"
+    : paymentMethod ?? (tab === "bank" ? "bank_transfer" : tab);
+  const chequePayment = effectivePaymentMethod === "cheque";
   useEffect(() => {
     if (typeof window === "undefined") return;
     localStorage.setItem(tabStorageKey, tab);
@@ -246,12 +256,29 @@ export default function PaymentSection({
           if (!res.ok) throw new Error(`API error: ${res.status}`);
           const data = await res.json() as { slots: Array<{ slot: number; url: string; filename: string | null }>; payment_method: string | null; description: string | null; actual_receipt_url: string | null };
           if (cancelled) return;
-          setSlips(data.slots.map((s) => ({
+          let loadedSlips: SlipEntry[] = data.slots.map((s) => ({
             key: `slot-${s.slot}`,
             url: s.url,
             status: "verified" as const,
             filename: s.filename ?? undefined,
-          })));
+          }));
+          // Receiving a cheque from the Accounting pending queue records
+          // cheque_received_at by PATCH but intentionally leaves submitted
+          // evidence in slip_files until actual money clears. Fall back to
+          // staging here so Step 05 still shows the cheque image.
+          if (data.payment_method === "cheque" && loadedSlips.length === 0) {
+            const staged = await apiFetch(`/api/slips?lead_id=${leadId}&slip_field=${encodeURIComponent(slipField)}`) as { slips: Array<{ id: number; url: string; filename: string | null; submitted_at: string | null }> };
+            if (cancelled) return;
+            loadedSlips = staged.slips.map((s) => ({
+              key: `slip-${s.id}`,
+              url: s.url,
+              status: "verified" as const,
+              slipFilesId: s.id,
+              filename: s.filename ?? undefined,
+              submittedAt: s.submitted_at ?? null,
+            }));
+          }
+          setSlips(loadedSlips);
           setConfirmedMethod(data.payment_method);
           setActualReceiptUrl(data.actual_receipt_url || null);
           // Extract "ชำระโดย: …" note from the stored description so the textarea
@@ -262,6 +289,7 @@ export default function PaymentSection({
           }
           // Snap active tab to the confirmed method so user sees ✓ on the right one.
           if (data.payment_method === "bank_transfer") setTab("bank");
+          else if (data.payment_method === "cheque") setTab("cheque");
           else if (data.payment_method === "qr" || data.payment_method === "link" || data.payment_method === "other") setTab(data.payment_method);
         } else {
           const res = await apiFetch(`/api/slips?lead_id=${leadId}&slip_field=${encodeURIComponent(slipField)}`) as { slips: Array<{ id: number; url: string; filename: string | null; submitted_at: string | null }> };
@@ -419,7 +447,7 @@ export default function PaymentSection({
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         lead_id: leadId, step_no: stepNo, slip_field: slipField, amount, description,
-        payment_method: paymentMethod ?? null,
+        payment_method: effectivePaymentMethod,
         discount_pct: discountPct ?? null,
         discount_amount: discountAmount ?? null,
         discount_note: discountNote ?? null,
@@ -433,7 +461,7 @@ export default function PaymentSection({
       }
     }).catch(console.error);
     return () => { cancelled = true; };
-  }, [leadId, stepNo, slipField, amount, description, confirmed, paymentMethod, discountPct, discountAmount, discountNote, ccSurchargePct, ccSurchargeAmount]);
+  }, [leadId, stepNo, slipField, amount, description, confirmed, effectivePaymentMethod, discountPct, discountAmount, discountNote, ccSurchargePct, ccSurchargeAmount]);
 
   // QR amount must match the document — include CC surcharge when present.
   const qrAmount = amount + (ccSurchargeAmount ?? 0);
@@ -471,6 +499,7 @@ export default function PaymentSection({
   const qrEnabled = !onlyOther && settings.promptpay_qr_enabled !== "false";
   const linkEnabled = !onlyOther && settings.promptpay_link_enabled !== "false";
   const bankEnabled = !onlyOther && settings.bank_account_enabled !== "false";
+  const chequeEnabled = !onlyOther && !!allowCheque;
   const otherEnabled = onlyOther ? true : settings.other_payment_enabled === "true";
   const taxId = settings.promptpay_tax_id || "";
   const companyShort = settings.company_short_name || "SENA SOLAR";
@@ -666,7 +695,6 @@ export default function PaymentSection({
   // uploader has marked drafts as submitted. While drafts exist, only the
   // amber "ยืนยันส่งให้ทีมบัญชี" button is actionable.
   const hasUnsubmittedDraft = slips.some(s => s.status === "verified" && s.slipFilesId && !s.submittedAt);
-  const chequePayment = paymentMethod === "cheque";
   const canConfirm = !confirmed && verifiedCount > 0 && !anyVerifying && !hasUnsubmittedDraft && (tab !== "other" || chequePayment || otherMethod.trim().length > 0);
 
   const handleConfirm = async () => {
@@ -674,7 +702,7 @@ export default function PaymentSection({
     setConfirming(true);
     setConfirmError(null);
     try {
-      const desc = tab === "other" && (otherMethod.trim() || chequePayment)
+      const desc = (tab === "other" || tab === "cheque") && (otherMethod.trim() || chequePayment)
         ? `${description ?? ""}${description ? " · " : ""}ชำระโดย: ${chequePayment ? "เช็ค" : otherMethod.trim()}`.trim()
         : description;
       await apiFetch("/api/payments", {
@@ -687,7 +715,7 @@ export default function PaymentSection({
           doc_no: docNo ?? null,
           amount,
           description: desc ?? null,
-          payment_method: chequePayment ? "cheque" : tab === "bank" ? "bank_transfer" : tab,
+          payment_method: effectivePaymentMethod,
         }),
       });
       await onConfirmed?.();
@@ -935,8 +963,8 @@ export default function PaymentSection({
       </div>
 
       {/* Tabs (hide if only one enabled) */}
-      {[qrEnabled, linkEnabled, bankEnabled, otherEnabled].filter(Boolean).length > 1 && (() => {
-        const methodForTab: Record<string, string> = { qr: "qr", link: "link", bank: "bank_transfer", other: "other" };
+      {[qrEnabled, linkEnabled, bankEnabled, chequeEnabled, otherEnabled].filter(Boolean).length > 1 && (() => {
+        const methodForTab: Record<string, string> = { qr: "qr", link: "link", bank: "bank_transfer", cheque: "cheque", other: "other" };
         const CheckBadge = () => (
           <svg className="w-4 h-4 text-emerald-500 mr-1 shrink-0" fill="currentColor" viewBox="0 0 20 20" aria-label="ชำระแล้ว">
             <path fillRule="evenodd" clipRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" />
@@ -966,6 +994,12 @@ export default function PaymentSection({
               <button type="button" disabled={lockOthers} onClick={() => setTab("bank")} className={tabBtnCls("bank", lockOthers)}>
                 {confirmedMethod === methodForTab.bank && <CheckBadge />}
                 Bank Account
+              </button>
+            )}
+            {chequeEnabled && (
+              <button type="button" disabled={lockOthers} onClick={() => setTab("cheque")} className={tabBtnCls("cheque", lockOthers)}>
+                {confirmedMethod === methodForTab.cheque && <CheckBadge />}
+                เช็ค
               </button>
             )}
             {otherEnabled && (
@@ -1090,6 +1124,15 @@ export default function PaymentSection({
         </div>
       )}
 
+      {/* Cheque Tab — physical receipt lets the workflow continue; it is not
+          counted as cash until Accounting confirms that the cheque cleared. */}
+      {chequeEnabled && tab === "cheque" && (
+        <div className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-3 text-sm text-amber-800">
+          <div className="font-semibold">ชำระด้วยเช็ค</div>
+          <div className="text-xs mt-1">อัปโหลดภาพเช็คแล้วส่งให้ฝ่ายบัญชียืนยันรับเช็ค เมื่อรับเช็คแล้วสามารถดำเนินงานต่อได้ และฝ่ายบัญชีจะยืนยันรับเงินอีกครั้งเมื่อเงินเข้าจริง</div>
+        </div>
+      )}
+
       {/* Other Method Tab — free-text method + direct file upload (no OCR verify) */}
       {otherEnabled && tab === "other" && (
         <div className="space-y-3">
@@ -1113,7 +1156,7 @@ export default function PaymentSection({
 
         <div className="flex items-center justify-between mb-2">
           <div className="text-xs font-semibold tracking-wider uppercase text-gray-400">
-            {tab === "other" ? "หลักฐานการชำระ" : "สลิปโอนเงิน"}
+            {tab === "cheque" ? "หลักฐานเช็ค" : tab === "other" ? "หลักฐานการชำระ" : "สลิปโอนเงิน"}
             {/* ฟรีค่าสำรวจ → optional; ปกติ → required */}
             {waiverEnabled && (effectiveWaived
               ? <span className="text-gray-400 normal-case"> (Optional)</span>
@@ -1142,7 +1185,7 @@ export default function PaymentSection({
 
         {slips.length === 0 && slipsLoaded && !confirmed && (
           <label htmlFor={slipInputId} className="w-full h-11 px-4 rounded-lg text-sm font-semibold flex items-center justify-center gap-2 cursor-pointer bg-white border border-gray-200 text-gray-700 hover:border-gray-400 transition-colors">
-            {tab === "other" ? "อัปโหลดหลักฐานการชำระ" : "กรุณาอัปโหลดสลิปโอนเงิน"}
+            {tab === "cheque" ? "อัปโหลดภาพเช็ค" : tab === "other" ? "อัปโหลดหลักฐานการชำระ" : "กรุณาอัปโหลดสลิปโอนเงิน"}
           </label>
         )}
 
@@ -1229,7 +1272,11 @@ export default function PaymentSection({
         {confirmed && (
           <div className="mt-3 space-y-2">
             <div className="w-full h-11 rounded-lg text-sm font-semibold text-emerald-700 bg-emerald-50 border border-emerald-600/15 flex items-center justify-center gap-1">
-              {effectiveWaived ? "✓ ฟรีค่าสำรวจ — ไม่ต้องชำระ" : "✓ ยืนยันการชำระเงินเรียบร้อย"}
+              {effectiveWaived
+                ? "✓ ฟรีค่าสำรวจ — ไม่ต้องชำระ"
+                : confirmedMethod === "cheque"
+                  ? "✓ รับเช็คแล้ว — รอฝ่ายบัญชียืนยันเงินเข้า"
+                  : "✓ ยืนยันการชำระเงินเรียบร้อย"}
             </div>
             {isAdmin && slipUrl?.startsWith("/api/payments/") && (
               <button
@@ -1274,7 +1321,7 @@ export default function PaymentSection({
                     กำลังยืนยัน…
                   </>
                 ) : (
-                  `${confirmLabel || "ยืนยันการชำระเงิน 2"}${verifiedCount > 1 ? ` (${verifiedCount} สลิป)` : ""}`
+                  `${confirmLabel || (chequePayment ? "ยืนยันรับเช็ค" : "ยืนยันการชำระเงิน 2")}${verifiedCount > 1 ? ` (${verifiedCount} สลิป)` : ""}`
                 )}
               </button>
             ) : (
@@ -1285,7 +1332,7 @@ export default function PaymentSection({
                 disabled
                 className="w-full h-11 mt-3 rounded-lg text-sm font-semibold text-amber-700 bg-amber-50 border border-amber-200 cursor-not-allowed flex items-center justify-center gap-1.5"
               >
-                ⏳ รออนุมัติการรับชำระเงิน
+                ⏳ {chequePayment ? "รอฝ่ายบัญชียืนยันรับเช็ค" : "รออนุมัติการรับชำระเงิน"}
               </button>
             )}
             {confirmError && (
