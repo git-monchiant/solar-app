@@ -173,6 +173,12 @@ export async function GET(req: NextRequest) {
       const preTotal = packagePrice > 0 ? packagePrice : depositCommit;
       const total_value = orderTotal > 0 ? Math.max(0, orderTotal + extra - discount) : preTotal;
       const installments = byLead.get(l.lead_id) || [];
+      let hasStructuredAfterInstallment = false;
+      try {
+        const plan = l.order_installments ? JSON.parse(String(l.order_installments)) : [];
+        hasStructuredAfterInstallment = Array.isArray(plan)
+          && plan.some(item => item?.when === "after" && Number(item?.pct || 0) > 0);
+      } catch { /* malformed legacy plans fall back to order_after_slip */ }
       // Mirror InstallStep's accounting (orderTotal − discount − pre_total_price = installment portion):
       // once the order exists, the booking-deposit commitment (pre_total_price)
       // counts as paid toward the order, and only confirmed per-installment
@@ -183,12 +189,21 @@ export async function GET(req: NextRequest) {
       const isOrderPlaced = orderTotal > 0;
       const received = isOrderPlaced
         ? depositCommit + installments
-            .filter(i => i.confirmed_at && /^order_installment_\d+$/.test(i.slip_field))
+            .filter(i => i.confirmed_at && (
+              /^order_installment_\d+$/.test(i.slip_field)
+              || i.slip_field === "order_after_slip"
+              || /^install_extra_\d+$/.test(i.slip_field)
+            ))
             .reduce((s, i) => s + i.amount, 0)
         : installments
             .filter(i => i.confirmed_at)
             .reduce((s, i) => s + i.amount, 0);
-      const pendingRows = installments.filter(i => !i.confirmed_at && (i.has_slip || i.payment_method === "cheque" || !!i.cheque_received_at));
+      // A cheque payment row is created as soon as the method is selected.
+      // It belongs in Accounting's queue only after evidence is submitted (or
+      // after receipt was recorded), otherwise it is just an empty draft.
+      const pendingRows = installments.filter(i => !i.confirmed_at
+        && (i.has_slip || !!i.cheque_received_at)
+        && !(hasStructuredAfterInstallment && i.slip_field === "order_after_slip"));
       const pendingApproval = pendingRows.length;
       const pendingAmount = pendingRows.reduce((s, i) => s + i.amount, 0);
       const outstanding = Math.max(0, total_value - received);

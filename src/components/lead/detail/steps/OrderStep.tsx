@@ -1063,12 +1063,27 @@ export default function OrderStep({ lead, state, refresh, expanded, onToggle }: 
                     ))}
                   </select>
                 ) : null;
-                const paymentOpen = paymentRow === i;
+                const afterInstall = row.when === "after";
+                // Rows explicitly due after installation keep their installment
+                // identity here, but payment entry belongs to Step 05.
+                const paymentOpen = !afterInstall && paymentRow === i;
                 const noNet = rowNetAmount === 0 && total > 0;
                 const pendingApproval = !paid && pendingApprovalIdxSet.has(i);
                 const chequeWaitingMoney = !paid && chequeReceivedIdxSet.has(i);
                 const chequePendingPayment = chequePendingPayments.find(p => p.idx === i) || null;
-                const recordPaymentBtn = (
+                const recordPaymentBtn = afterInstall ? (
+                  <span className={`h-8 px-3 rounded-md border text-xs font-semibold inline-flex items-center gap-1.5 ${
+                    paid
+                      ? "bg-emerald-50 text-emerald-700 border-emerald-200"
+                      : chequeWaitingMoney
+                        ? "bg-amber-50 text-amber-700 border-amber-300"
+                        : pendingApproval
+                          ? "bg-amber-50 text-amber-700 border-amber-300"
+                          : "bg-violet-50 text-violet-700 border-violet-200"
+                  }`}>
+                    {paid ? "ชำระแล้ว" : chequeWaitingMoney ? "รอรับเงิน" : pendingApproval ? "รอยืนยัน" : "ชำระที่ Step 5"}
+                  </span>
+                ) : (
                   <button
                     type="button"
                     disabled={noNet}
@@ -1244,39 +1259,53 @@ export default function OrderStep({ lead, state, refresh, expanded, onToggle }: 
                         <div>{ccPicker}</div>
                       )}
                       {/* Action button: บันทึกรับชำระ / รอยืนยัน / ชำระแล้ว — full width */}
-                      <button
-                        type="button"
-                        onClick={(e) => { e.stopPropagation(); setPaymentRow(paymentOpen ? null : i); }}
-                        className={`w-full h-8 rounded-md border text-sm font-semibold transition-colors inline-flex items-center justify-center gap-2 ${
+                      {afterInstall ? (
+                        <div className={`w-full h-8 rounded-md border text-sm font-semibold inline-flex items-center justify-center ${
                           paid
                             ? "bg-emerald-50 text-emerald-700 border-emerald-200"
                             : chequeWaitingMoney
                               ? "bg-amber-50 text-amber-700 border-amber-300"
-                            : pendingApproval
-                              ? "bg-amber-50 text-amber-700 border-amber-300"
-                              : paymentOpen
-                                ? "bg-active text-white border-active"
-                                : "border-gray-200 bg-white text-gray-700 hover:border-active hover:text-active hover:bg-active/5"
-                        }`}
-                      >
-                        {paid ? (
-                          <>ชำระแล้ว</>
-                        ) : chequeWaitingMoney ? (
-                          <>รอรับเงิน</>
-                        ) : pendingApproval ? (
-                          <>
-                            <ClockIcon className="w-4 h-4" strokeWidth={2} />
-                            รอยืนยัน
-                          </>
-                        ) : (
-                          <>
-                            <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                              <path strokeLinecap="round" strokeLinejoin="round" d="M2.25 18.75a60.07 60.07 0 0115.797 2.101c.727.198 1.453-.342 1.453-1.096V18.75M3.75 4.5v.75A.75.75 0 013 6h-.75m0 0v-.375c0-.621.504-1.125 1.125-1.125H20.25M2.25 6v9m18-10.5v.75c0 .414.336.75.75.75h.75m-1.5-1.5h.375c.621 0 1.125.504 1.125 1.125v9.75c0 .621-.504 1.125-1.125 1.125h-.375m1.5-1.5H21a.75.75 0 00-.75.75v.75m0 0H3.75m0 0h-.375a1.125 1.125 0 01-1.125-1.125V15m1.5 1.5v-.75A.75.75 0 003 15h-.75M15 10.5a3 3 0 11-6 0 3 3 0 016 0zm3 0h.008v.008H18V10.5zm-12 0h.008v.008H6V10.5z" />
-                            </svg>
-                            บันทึกรับชำระ
-                          </>
-                        )}
-                      </button>
+                              : pendingApproval
+                                ? "bg-amber-50 text-amber-700 border-amber-300"
+                                : "bg-violet-50 text-violet-700 border-violet-200"
+                        }`}>
+                          {paid ? "ชำระแล้ว" : chequeWaitingMoney ? "รอรับเงิน" : pendingApproval ? "รอยืนยัน" : "ชำระที่ Step 5"}
+                        </div>
+                      ) : (
+                        <button
+                          type="button"
+                          onClick={(e) => { e.stopPropagation(); setPaymentRow(paymentOpen ? null : i); }}
+                          className={`w-full h-8 rounded-md border text-sm font-semibold transition-colors inline-flex items-center justify-center gap-2 ${
+                            paid
+                              ? "bg-emerald-50 text-emerald-700 border-emerald-200"
+                              : chequeWaitingMoney
+                                ? "bg-amber-50 text-amber-700 border-amber-300"
+                              : pendingApproval
+                                ? "bg-amber-50 text-amber-700 border-amber-300"
+                                : paymentOpen
+                                  ? "bg-active text-white border-active"
+                                  : "border-gray-200 bg-white text-gray-700 hover:border-active hover:text-active hover:bg-active/5"
+                          }`}
+                        >
+                          {paid ? (
+                            <>ชำระแล้ว</>
+                          ) : chequeWaitingMoney ? (
+                            <>รอรับเงิน</>
+                          ) : pendingApproval ? (
+                            <>
+                              <ClockIcon className="w-4 h-4" strokeWidth={2} />
+                              รอยืนยัน
+                            </>
+                          ) : (
+                            <>
+                              <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                                <path strokeLinecap="round" strokeLinejoin="round" d="M2.25 18.75a60.07 60.07 0 0115.797 2.101c.727.198 1.453-.342 1.453-1.096V18.75M3.75 4.5v.75A.75.75 0 013 6h-.75m0 0v-.375c0-.621.504-1.125 1.125-1.125H20.25M2.25 6v9m18-10.5v.75c0 .414.336.75.75.75h.75m-1.5-1.5h.375c.621 0 1.125.504 1.125 1.125v9.75c0 .621-.504 1.125-1.125 1.125h-.375m1.5-1.5H21a.75.75 0 00-.75.75v.75m0 0H3.75m0 0h-.375a1.125 1.125 0 01-1.125-1.125V15m1.5 1.5v-.75A.75.75 0 003 15h-.75M15 10.5a3 3 0 11-6 0 3 3 0 016 0zm3 0h.008v.008H18V10.5zm-12 0h.008v.008H6V10.5z" />
+                              </svg>
+                              บันทึกรับชำระ
+                            </>
+                          )}
+                        </button>
+                      )}
                     </div>
                     {/* Inline PaymentSection — slip_field is per-installment so each row gets its own pending payments row */}
                     {paymentOpen && (
@@ -1326,7 +1355,7 @@ export default function OrderStep({ lead, state, refresh, expanded, onToggle }: 
                                     <span className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
                                     กำลังยืนยัน...
                                   </>
-                                ) : "ยืนยันชำระเงิน"}
+                                ) : "ยืนยันรับเงิน"}
                               </button>
                             ) : (
                               <div className="w-full h-10 rounded-lg text-sm font-semibold text-amber-700 bg-amber-50 border border-amber-200 flex items-center justify-center">

@@ -175,49 +175,122 @@ export default function InstallStep({ lead, state, refresh, expanded, onToggle }
   const netDue = Math.max(0, orderTotal - orderDiscount - depositPaid);
   // Paid amount across all confirmed per-installment payments.
   const [paidAmount, setPaidAmount] = useState(0);
-  type AfterChequePending = {
+  type InstallPaymentRow = {
     id: number;
+    slip_field: string;
     amount: number;
-    cheque_received_at: string;
+    description: string | null;
+    confirmed_at: string | null;
+    payment_method: string | null;
+    cheque_received_at: string | null;
   };
-  const [afterChequePending, setAfterChequePending] = useState<AfterChequePending | null>(null);
-  const [afterPaymentRecordExists, setAfterPaymentRecordExists] = useState(false);
-  const [afterPaymentConfirmed, setAfterPaymentConfirmed] = useState(false);
+  type PlannedInstallment = {
+    pct?: number;
+    when?: "before" | "after";
+    method?: string;
+    loan_bank?: string | null;
+    cc_pct?: number | null;
+  };
+  const [paymentRows, setPaymentRows] = useState<InstallPaymentRow[]>([]);
+  const [paymentStateLoaded, setPaymentStateLoaded] = useState(false);
   const [focusedAfterChequeId, setFocusedAfterChequeId] = useState<number | null>(null);
   const [confirmingAfterChequeId, setConfirmingAfterChequeId] = useState<number | null>(null);
+  const [rejectingChequePayment, setRejectingChequePayment] = useState<InstallPaymentRow | null>(null);
+  const [rejectChequeReason, setRejectChequeReason] = useState("");
+  const [rejectingCheque, setRejectingCheque] = useState(false);
   const loadPaymentState = useCallback(async () => {
-    const rows = await apiFetch(`/api/payments?lead_id=${lead.id}`) as Array<{
-      id: number;
-      slip_field: string;
-      confirmed_at: string | null;
-      amount: number;
-      payment_method: string | null;
-      cheque_received_at: string | null;
-    }>;
-    const sum = rows
-      .filter(r => r.confirmed_at && /^order_installment_\d+$/.test(r.slip_field))
-      .reduce((s, r) => s + Number(r.amount || 0), 0);
-    const pendingAfterCheque = rows.find(r => r.slip_field === "order_after_slip"
-      && r.payment_method === "cheque" && !!r.cheque_received_at && !r.confirmed_at);
-    const hasAfterPayment = rows.some(r => r.slip_field === "order_after_slip");
-    const confirmedAfterPayment = rows.some(r => r.slip_field === "order_after_slip" && !!r.confirmed_at);
-    setPaidAmount(sum);
-    setAfterPaymentRecordExists(hasAfterPayment);
-    setAfterPaymentConfirmed(confirmedAfterPayment);
-    setAfterChequePending(pendingAfterCheque ? {
-      id: pendingAfterCheque.id,
-      amount: Number(pendingAfterCheque.amount || 0),
-      cheque_received_at: pendingAfterCheque.cheque_received_at as string,
-    } : null);
+    try {
+      const rows = await apiFetch(`/api/payments?lead_id=${lead.id}`) as InstallPaymentRow[];
+      const sum = rows
+        .filter(r => r.confirmed_at && /^order_installment_\d+$/.test(r.slip_field))
+        .reduce((s, r) => s + Number(r.amount || 0), 0);
+      setPaidAmount(sum);
+      setPaymentRows(rows);
+    } finally {
+      setPaymentStateLoaded(true);
+    }
   }, [lead.id]);
   useEffect(() => {
     loadPaymentState().catch(console.error);
   }, [loadPaymentState]);
   const remainingAmount = Math.max(0, netDue - paidAmount);
+  const paymentForField = (slipField: string): InstallPaymentRow | null => {
+    const candidates = paymentRows.filter(row => row.slip_field === slipField);
+    return candidates.find(row => !!row.confirmed_at)
+      ?? candidates.find(row => !!row.cheque_received_at)
+      ?? candidates[0]
+      ?? null;
+  };
+  const plannedInstallments: PlannedInstallment[] = (() => {
+    try {
+      const parsed = lead.order_installments ? JSON.parse(lead.order_installments) : [];
+      return Array.isArray(parsed) ? parsed : [];
+    } catch {
+      return [];
+    }
+  })();
+  const afterInstallmentPlans = plannedInstallments
+    .map((plan, index) => ({ plan, index }))
+    .filter(({ plan }) => plan.when === "after" && Number(plan.pct || 0) > 0);
+  const hasStructuredAfterInstallments = afterInstallmentPlans.length > 0;
+  const afterRows = paymentRows.filter(r => r.slip_field === "order_after_slip");
+  const pendingAfterRow = afterRows.find(r => !r.confirmed_at) ?? null;
+  const afterChequePending = afterRows.find(r => !r.confirmed_at
+    && r.payment_method === "cheque" && !!r.cheque_received_at) ?? null;
+  const afterPaymentRecordExists = afterRows.length > 0;
+  const afterPaymentConfirmed = afterRows.some(r => !!r.confirmed_at);
   const afterPaymentReady = afterPaymentRecordExists
     ? afterPaymentConfirmed || !!afterChequePending
     : !!lead.order_after_paid;
   const afterChequePaymentUrl = afterChequePending ? `/api/payments/${afterChequePending.id}` : null;
+
+  const extraRows = paymentRows.filter(r => /^install_extra_\d+$/.test(r.slip_field));
+  const separatelyConfirmedExtraTotal = extraRows
+    .filter(r => !!r.confirmed_at)
+    .reduce((sum, row) => sum + Number(row.amount || 0), 0);
+  // Before extra charges had their own payment fields, Step 05 saved a single
+  // order_after_slip row whose description explicitly included the extra cost.
+  // Treat that legacy confirmation as covering the current extra amount so an
+  // already-paid customer is not asked to pay the same surcharge again.
+  const legacyCombinedExtraPaid = afterRows.some(row =>
+    !!row.confirmed_at && (row.description || "").includes("ค่าใช้จ่ายเพิ่มเติม"),
+  );
+  const confirmedExtraTotal = separatelyConfirmedExtraTotal
+    + (legacyCombinedExtraPaid ? Math.max(0, extraCost - separatelyConfirmedExtraTotal) : 0);
+  const extraOutstanding = Math.max(0, extraCost - confirmedExtraTotal);
+  const pendingExtraRow = extraRows.find(r => !r.confirmed_at) ?? null;
+  const extraChequePending = pendingExtraRow?.payment_method === "cheque" && pendingExtraRow.cheque_received_at
+    ? pendingExtraRow
+    : null;
+  const usedExtraIndexes = extraRows
+    .map(r => parseInt(r.slip_field.replace("install_extra_", ""), 10))
+    .filter(Number.isFinite);
+  const nextExtraIndex = usedExtraIndexes.length > 0 ? Math.max(...usedExtraIndexes) + 1 : 0;
+  const extraSlipField = pendingExtraRow?.slip_field ?? `install_extra_${nextExtraIndex}`;
+  const extraStepNo = 100 + (pendingExtraRow
+    ? parseInt(pendingExtraRow.slip_field.replace("install_extra_", ""), 10) || 0
+    : nextExtraIndex);
+  const extraPaymentReady = extraOutstanding <= 0 || !!extraChequePending;
+  const afterInstallmentStates = afterInstallmentPlans.map(({ plan, index }) => {
+    const payment = paymentForField(`order_installment_${index}`);
+    const plannedAmount = Math.max(0, Math.round(netDue * Number(plan.pct || 0) / 100));
+    const amount = payment ? Number(payment.amount || 0) : plannedAmount;
+    const ready = !!payment?.confirmed_at || !!payment?.cheque_received_at;
+    return { plan, index, payment, amount, ready };
+  });
+  const afterInstallmentsReady = afterInstallmentStates.every(item => item.ready);
+  const afterInstallmentOutstanding = afterInstallmentStates
+    .filter(item => !item.payment?.confirmed_at)
+    .reduce((sum, item) => sum + item.amount, 0);
+  const afterInstallmentToCollect = afterInstallmentStates
+    .filter(item => !item.ready)
+    .reduce((sum, item) => sum + item.amount, 0);
+  const legacyBalanceToCollect = hasStructuredAfterInstallments ? 0 : remainingAmount;
+  const collectPaymentReady = (
+    hasStructuredAfterInstallments
+      ? afterInstallmentsReady
+      : (legacyBalanceToCollect <= 0 || afterPaymentReady)
+  ) && extraPaymentReady;
 
   useEffect(() => {
     if (typeof window === "undefined") return;
@@ -230,10 +303,15 @@ export default function InstallStep({ lead, state, refresh, expanded, onToggle }
   }, [lead.id]);
 
   useEffect(() => {
-    if (!focusedAfterChequeId || afterChequePending?.id !== focusedAfterChequeId) return;
+    const focusedPayment = [
+      afterChequePending,
+      extraChequePending,
+      ...afterInstallmentStates.map(item => item.payment?.cheque_received_at ? item.payment : null),
+    ].find(payment => payment?.id === focusedAfterChequeId);
+    if (!focusedAfterChequeId || !focusedPayment) return;
     const target = document.querySelector(`[data-install-cheque-confirm="${focusedAfterChequeId}"]`);
     target?.scrollIntoView({ behavior: "smooth", block: "center" });
-  }, [focusedAfterChequeId, afterChequePending]);
+  }, [focusedAfterChequeId, afterChequePending, extraChequePending, afterInstallmentStates]);
 
   // Upload only — returns the uploaded URL. Caller batches setPhotos + PATCH.
   // Multi-select used to race here: each parallel call read the same stale
@@ -366,13 +444,17 @@ export default function InstallStep({ lead, state, refresh, expanded, onToggle }
     await refresh();
   };
 
-  const confirmAfterChequeMoney = async () => {
-    if (!afterChequePending || confirmingAfterChequeId) return;
-    if (!window.confirm("ยืนยันว่าเงินจากเช็คเข้าบัญชีบริษัทแล้ว?")) return;
-    setConfirmingAfterChequeId(afterChequePending.id);
+  const onExtraConfirmed = async () => {
+    await loadPaymentState();
+    await refresh();
+  };
+
+  const confirmAfterChequeMoney = async (payment: InstallPaymentRow) => {
+    if (confirmingAfterChequeId) return;
+    setConfirmingAfterChequeId(payment.id);
     setNextError(null);
     try {
-      await apiFetch(`/api/payments/${afterChequePending.id}`, {
+      await apiFetch(`/api/payments/${payment.id}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ confirm_received_money: true }),
@@ -384,6 +466,30 @@ export default function InstallStep({ lead, state, refresh, expanded, onToggle }
       setNextError(error instanceof Error ? error.message : "ยืนยันรับเงินจากเช็คไม่สำเร็จ");
     } finally {
       setConfirmingAfterChequeId(null);
+    }
+  };
+
+  const rejectReceivedCheque = async () => {
+    const payment = rejectingChequePayment;
+    const reason = rejectChequeReason.trim();
+    if (!payment || !reason || rejectingCheque) return;
+    setRejectingCheque(true);
+    setNextError(null);
+    try {
+      await apiFetch("/api/payments/reject", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ lead_id: lead.id, slip_field: payment.slip_field, reason }),
+      });
+      setFocusedAfterChequeId(null);
+      setRejectingChequePayment(null);
+      setRejectChequeReason("");
+      await loadPaymentState();
+      await refresh();
+    } catch (error) {
+      setNextError(error instanceof Error ? error.message : "ส่งกลับให้ upload ใหม่ไม่สำเร็จ");
+    } finally {
+      setRejectingCheque(false);
     }
   };
 
@@ -851,8 +957,8 @@ export default function InstallStep({ lead, state, refresh, expanded, onToggle }
             setNextError("กรุณากรอกรายละเอียดค่าใช้จ่ายเพิ่มเติม");
             return;
           }
-          if (subStep === 3 && (remainingAmount + extraCost) > 0 && !afterPaymentReady) {
-            setNextError("ต้องยืนยันรับชำระหรือรับเช็คก่อนถึงจะส่งมอบงานได้");
+          if (subStep === 3 && !collectPaymentReady) {
+            setNextError("ต้องยืนยันรับชำระหรือรับเช็คของงวดหลังติดตั้งและค่าใช้จ่ายเพิ่มเติมก่อนถึงจะส่งมอบงานได้");
             return;
           }
         }
@@ -1137,7 +1243,7 @@ export default function InstallStep({ lead, state, refresh, expanded, onToggle }
           <div className="rounded-lg bg-amber-50 border border-amber-200 p-3">
             <div className="flex justify-between text-sm font-semibold">
               <span className="text-amber-700">ยอดรวมที่ต้องเก็บ</span>
-              <span className="text-lg font-bold font-mono text-amber-700">{fmt(remainingAmount + extraCost)} บาท</span>
+              <span className="text-lg font-bold font-mono text-amber-700">{fmt(legacyBalanceToCollect + afterInstallmentToCollect + extraOutstanding)} บาท</span>
             </div>
           </div>
         </div>
@@ -1145,89 +1251,176 @@ export default function InstallStep({ lead, state, refresh, expanded, onToggle }
 
       {/* Step 3: เก็บเงินคงค้าง / ค่าใช้จ่ายเพิ่มเติม */}
       {subStep === 3 && (() => {
-        const totalToCollect = remainingAmount + extraCost;
+        // PaymentSection allocates a stable intent as soon as it mounts. Wait
+        // for canonical rows first so a brief empty client state cannot create
+        // a fresh draft after the same key was already confirmed.
+        if (!paymentStateLoaded) {
+          return (
+            <div className="rounded-lg border border-gray-200 bg-gray-50 p-5 text-center text-sm text-gray-500">
+              กำลังตรวจสอบรายการชำระเงิน...
+            </div>
+          );
+        }
         const extraLabel = extraCost > 0
           ? (extraNote ? `ค่าใช้จ่ายเพิ่มเติม · ${extraNote}` : "ค่าใช้จ่ายเพิ่มเติม")
           : "";
-        const title = remainingAmount > 0 && extraCost > 0
-          ? `ยอดคงค้าง + ${extraLabel}`
-          : extraCost > 0
-            ? extraLabel
-            : "ยอดคงค้าง";
-        const desc = remainingAmount > 0 && extraCost > 0
-          ? `ยอดคงค้าง + ${extraLabel}`
-          : extraCost > 0
-            ? extraLabel
-            : "ยอดคงค้าง";
+        const renderChequePending = (payment: InstallPaymentRow, title: string) => (
+          <div
+            data-install-cheque-confirm={payment.id}
+            className={`mt-3 rounded-lg border px-3 py-3 ${focusedAfterChequeId === payment.id ? "border-emerald-400 bg-emerald-50 ring-2 ring-emerald-200" : "border-amber-200 bg-amber-50"}`}
+          >
+            <div className="space-y-3">
+              <div>
+                <div className="text-sm font-semibold text-amber-900">{title} · รับเช็คแล้ว · รอรับเงิน</div>
+                <div className="text-xs text-amber-700 mt-0.5">
+                  รับเช็คเมื่อ {formatDate(payment.cheque_received_at)} · ยอด {fmt(payment.amount)} บาท
+                </div>
+              </div>
+              {canConfirmChequeMoney ? (
+                <div className="space-y-2">
+                  <button
+                    type="button"
+                    disabled={confirmingAfterChequeId === payment.id}
+                    onClick={() => confirmAfterChequeMoney(payment)}
+                    className="w-full h-11 rounded-lg text-sm font-semibold text-white bg-emerald-600 hover:brightness-110 disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center"
+                  >
+                    {confirmingAfterChequeId === payment.id ? "กำลังยืนยัน..." : "ยืนยันรับเงิน"}
+                  </button>
+                  <button
+                    type="button"
+                    disabled={confirmingAfterChequeId === payment.id || rejectingCheque}
+                    onClick={() => { setRejectChequeReason(""); setRejectingChequePayment(payment); }}
+                    className="w-full h-8 rounded-lg text-sm font-semibold text-red-600 border border-red-300 bg-white hover:bg-red-50 disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center"
+                  >
+                    ✗ ไม่อนุมัติ / ส่งกลับให้ upload ใหม่
+                  </button>
+                </div>
+              ) : (
+                <span className="text-xs font-semibold text-amber-700">รอฝ่ายบัญชียืนยันรับเงิน</span>
+              )}
+            </div>
+          </div>
+        );
         return (
           <div className="space-y-3">
-            {totalToCollect > 0 ? (
+            {afterInstallmentStates.map(({ plan, index, payment, amount, ready }) => {
+              const chequePending = payment?.payment_method === "cheque" && payment.cheque_received_at && !payment.confirmed_at
+                ? payment
+                : null;
+              const title = `งวดที่ ${index + 1} · ชำระหลังติดตั้ง`;
+              return (
+                <div key={`after-installment-${index}`} className="rounded-lg bg-white border border-violet-200 p-3">
+                  <div className="flex items-center justify-between mb-3">
+                    <div>
+                      <span className="text-xs font-bold text-violet-700 uppercase">{title}</span>
+                      {payment?.confirmed_at && <div className="text-[11px] text-emerald-600 mt-0.5">ยืนยันรับเงินแล้ว</div>}
+                    </div>
+                    <span className="text-lg font-bold font-mono tabular-nums text-violet-700">{fmt(amount)} บาท</span>
+                  </div>
+                  <PaymentSection
+                    paymentTitle={title}
+                    amountLabel={`งวดที่ ${index + 1}/${plannedInstallments.length}`}
+                    amount={amount}
+                    leadId={lead.id}
+                    leadName={lead.full_name}
+                    lineId={lead.line_id}
+                    slipUrl={payment && (payment.confirmed_at || payment.cheque_received_at) ? `/api/payments/${payment.id}` : null}
+                    slipField={`order_installment_${index}`}
+                    paymentNote={`ค่าระบบ Solar Rooftop · งวดที่ ${index + 1} · หลังติดตั้ง`}
+                    stepNo={10 + index}
+                    description={`งวดที่ ${index + 1} · ชำระหลังติดตั้ง`}
+                    docNo={lead.pre_doc_no ? `${lead.pre_doc_no}-${index + 1}` : null}
+                    confirmed={ready}
+                    allowCheque
+                    onlyOther={plan.method === "loan"}
+                    initialOtherMethod={plan.method === "loan" ? `สินเชื่อ${plan.loan_bank ? ` · ${plan.loan_bank}` : ""}` : undefined}
+                    confirmLabel={plan.method === "cheque" ? "ยืนยันรับเช็ค" : undefined}
+                    onConfirmed={onExtraConfirmed}
+                    onUndone={onExtraConfirmed}
+                    onVerified={() => setAfterSlipDone(true)}
+                    paymentMethod={payment?.payment_method ?? plan.method ?? "transfer"}
+                    ccSurchargePct={plan.method === "cc" ? plan.cc_pct ?? null : null}
+                    ccSurchargeAmount={plan.method === "cc" && plan.cc_pct ? Math.round(amount * plan.cc_pct / 100) : null}
+                    details={[{ label: `งวดที่ ${index + 1} หลังติดตั้ง`, value: `฿${fmt(amount)}` }]}
+                  />
+                  {chequePending && renderChequePending(chequePending, title)}
+                </div>
+              );
+            })}
+
+            {!hasStructuredAfterInstallments && remainingAmount > 0 && (
               <div className="rounded-lg bg-white border border-gray-200 p-3">
                 <div className="flex items-center justify-between mb-3">
-                  <span className="text-xs font-bold text-gray-400 uppercase">ยอดเก็บเงิน</span>
-                  <span className="text-lg font-bold font-mono tabular-nums text-gray-900">{fmt(totalToCollect)} บาท</span>
+                  <span className="text-xs font-bold text-gray-400 uppercase">ยอดคงค้างเดิม</span>
+                  <span className="text-lg font-bold font-mono tabular-nums text-gray-900">{fmt(remainingAmount)} บาท</span>
                 </div>
                 <PaymentSection
-                  paymentTitle={title}
+                  paymentTitle="ยอดคงค้าง"
                   amountLabel=""
-                  amount={totalToCollect}
+                  amount={remainingAmount}
                   leadId={lead.id}
                   leadName={lead.full_name}
                   lineId={lead.line_id}
                   slipUrl={lead.order_after_slip || afterChequePaymentUrl}
                   slipField="order_after_slip"
                   stepNo={99}
-                  description={desc}
-                  // Fixed "งวด 99" suffix — this payment is the post-install
-                  // top-up (ยอดคงค้าง + ค่าใช้จ่ายเพิ่มเติม), not part of the
-                  // order's regular installment plan. The 99 marker makes it
-                  // unambiguous in receipts and the accountant queue.
+                  description="ยอดคงค้างหลังติดตั้ง"
                   docNo={lead.pre_doc_no ? `${lead.pre_doc_no}-99` : null}
                   confirmed={afterPaymentReady}
                   allowCheque
                   onConfirmed={onAfterConfirmed}
                   onUndone={refresh}
                   onVerified={() => setAfterSlipDone(true)}
+                  paymentMethod={pendingAfterRow?.payment_method ?? null}
                   details={[
-                    ...(remainingAmount > 0 ? [{ label: "ยอดคงค้าง", value: `฿${fmt(remainingAmount)}` }] : []),
-                    ...(extraCost > 0 ? [{ label: extraNote || "ค่าใช้จ่ายเพิ่มเติม", value: `+฿${fmt(extraCost)}` }] : []),
-                    { label: "ยอดที่ต้องชำระ", value: `฿${fmt(totalToCollect)}` },
+                    { label: "ยอดคงค้าง", value: `฿${fmt(remainingAmount)}` },
                   ]}
                 />
-                {afterChequePending && (
-                  <div
-                    data-install-cheque-confirm={afterChequePending.id}
-                    className={`mt-3 rounded-lg border px-3 py-3 ${focusedAfterChequeId === afterChequePending.id ? "border-emerald-400 bg-emerald-50 ring-2 ring-emerald-200" : "border-amber-200 bg-amber-50"}`}
-                  >
-                    <div className="flex flex-col md:flex-row md:items-center gap-3">
-                      <div className="flex-1 min-w-0">
-                        <div className="text-sm font-semibold text-amber-900">รับเช็คแล้ว · รอรับเงิน</div>
-                        <div className="text-xs text-amber-700 mt-0.5">
-                          รับเช็คเมื่อ {formatDate(afterChequePending.cheque_received_at)} · ยอด {fmt(afterChequePending.amount)} บาท
-                        </div>
-                      </div>
-                      {canConfirmChequeMoney ? (
-                        <button
-                          type="button"
-                          disabled={confirmingAfterChequeId === afterChequePending.id}
-                          onClick={confirmAfterChequeMoney}
-                          className="h-9 px-4 rounded-lg text-sm font-semibold text-white bg-emerald-600 hover:brightness-110 disabled:opacity-50 disabled:cursor-not-allowed inline-flex items-center justify-center shrink-0"
-                        >
-                          {confirmingAfterChequeId === afterChequePending.id ? "กำลังยืนยัน..." : "ยืนยันรับเงิน"}
-                        </button>
-                      ) : (
-                        <span className="text-xs font-semibold text-amber-700">รอฝ่ายบัญชียืนยันรับเงิน</span>
-                      )}
-                    </div>
-                  </div>
-                )}
+                {afterChequePending && renderChequePending(afterChequePending, "ยอดคงค้าง")}
               </div>
-            ) : (
+            )}
+
+            {extraOutstanding > 0 && (
+              <div className="rounded-lg bg-white border border-amber-200 p-3">
+                <div className="flex items-center justify-between mb-3">
+                  <div>
+                    <span className="text-xs font-bold text-amber-700 uppercase">ค่าใช้จ่ายเพิ่มเติม</span>
+                    {confirmedExtraTotal > 0 && <div className="text-[11px] text-gray-500 mt-0.5">ชำระแล้ว {fmt(confirmedExtraTotal)} บาท · คงเหลือรอบนี้</div>}
+                  </div>
+                  <span className="text-lg font-bold font-mono tabular-nums text-amber-700">{fmt(extraOutstanding)} บาท</span>
+                </div>
+                <PaymentSection
+                  paymentTitle={extraLabel || "ค่าใช้จ่ายเพิ่มเติม"}
+                  amountLabel=""
+                  amount={extraOutstanding}
+                  leadId={lead.id}
+                  leadName={lead.full_name}
+                  lineId={lead.line_id}
+                  slipUrl={extraChequePending ? `/api/payments/${extraChequePending.id}` : null}
+                  slipField={extraSlipField}
+                  stepNo={extraStepNo}
+                  description={extraLabel || "ค่าใช้จ่ายเพิ่มเติม"}
+                  docNo={lead.pre_doc_no ? `${lead.pre_doc_no}-EX${extraStepNo - 99}` : null}
+                  confirmed={!!extraChequePending}
+                  allowCheque
+                  onConfirmed={onExtraConfirmed}
+                  onUndone={onExtraConfirmed}
+                  onVerified={() => setAfterSlipDone(true)}
+                  paymentMethod={pendingExtraRow?.payment_method ?? null}
+                  details={[
+                    { label: extraNote || "ค่าใช้จ่ายเพิ่มเติม", value: `฿${fmt(extraOutstanding)}` },
+                  ]}
+                />
+                {extraChequePending && renderChequePending(extraChequePending, "ค่าใช้จ่ายเพิ่มเติม")}
+              </div>
+            )}
+
+            {legacyBalanceToCollect <= 0 && afterInstallmentOutstanding <= 0 && extraOutstanding <= 0 && (
               <div className="rounded-lg bg-emerald-50 border border-emerald-200 p-4 flex items-center gap-3">
                 <CheckIcon className="w-5 h-5 text-emerald-600 shrink-0" strokeWidth={2.5} />
                 <div>
                   <div className="text-sm font-semibold text-emerald-700">ไม่มียอดต้องเก็บเพิ่ม</div>
-                  <div className="text-xs text-emerald-600 mt-0.5">ลูกค้าชำระครบทุกงวดแล้ว — ถ้ามีค่าใช้จ่ายเพิ่มเติม กรอกที่ขั้นตอน &quot;สรุปค่าใช้จ่าย&quot;</div>
+                  <div className="text-xs text-emerald-600 mt-0.5">ลูกค้าชำระยอดคงค้างและค่าใช้จ่ายเพิ่มเติมครบแล้ว</div>
                 </div>
               </div>
             )}
@@ -1298,8 +1491,8 @@ export default function InstallStep({ lead, state, refresh, expanded, onToggle }
               setNextError("กรุณากรอกรายละเอียดค่าใช้จ่ายเพิ่มเติม");
               return;
             }
-            if (subStep === 3 && (remainingAmount + extraCost) > 0 && !afterPaymentReady) {
-              setNextError("ต้องยืนยันรับชำระหรือรับเช็คก่อนถึงจะส่งมอบงานได้");
+            if (subStep === 3 && !collectPaymentReady) {
+              setNextError("ต้องยืนยันรับชำระหรือรับเช็คของงวดหลังติดตั้งและค่าใช้จ่ายเพิ่มเติมก่อนถึงจะส่งมอบงานได้");
               return;
             }
             await flushSave();
@@ -1319,8 +1512,8 @@ export default function InstallStep({ lead, state, refresh, expanded, onToggle }
           </button>
           <button
             onClick={() => {
-              if ((remainingAmount + extraCost) > 0 && !afterPaymentReady) {
-                setNextError("ต้องยืนยันรับชำระหรือรับเช็คก่อนถึงจะส่งมอบงานได้");
+              if (!collectPaymentReady) {
+                setNextError("ต้องยืนยันรับชำระหรือรับเช็คของงวดหลังติดตั้งและค่าใช้จ่ายเพิ่มเติมก่อนถึงจะส่งมอบงานได้");
                 return;
               }
               closeStep();
@@ -1341,6 +1534,47 @@ export default function InstallStep({ lead, state, refresh, expanded, onToggle }
           docNo={lead.install_checklist_doc_no || ""}
           onClose={() => setInstallDocPreviewOpen(false)}
         />
+      )}
+      {rejectingChequePayment && (
+        <div
+          className="fixed inset-0 z-[60] bg-black/40 flex items-end sm:items-center justify-center sm:p-4"
+          onClick={() => !rejectingCheque && setRejectingChequePayment(null)}
+        >
+          <div
+            className="bg-white rounded-t-2xl sm:rounded-xl shadow-2xl max-w-md w-full p-5"
+            onClick={(event) => event.stopPropagation()}
+          >
+            <h3 className="text-base font-bold text-gray-900">ไม่อนุมัติการรับเช็ค</h3>
+            <p className="text-xs text-gray-600 mt-1">รายการจะถูกส่งกลับให้ Sales อัปโหลดหลักฐานใหม่ กรุณาระบุเหตุผล</p>
+            <label className="block text-xs font-semibold text-gray-700 mt-4 mb-1">เหตุผล <span className="text-red-500">*</span></label>
+            <textarea
+              value={rejectChequeReason}
+              onChange={(event) => setRejectChequeReason(event.target.value)}
+              rows={3}
+              autoFocus
+              placeholder="เช่น ภาพเช็คไม่ชัด / ยอดเงินไม่ถูกต้อง"
+              className="w-full px-3 py-2 rounded-lg border border-gray-200 text-sm focus:outline-none focus:border-red-400 resize-none"
+            />
+            <div className="mt-4 flex justify-end gap-2">
+              <button
+                type="button"
+                disabled={rejectingCheque}
+                onClick={() => setRejectingChequePayment(null)}
+                className="h-8 px-4 rounded-lg text-sm font-semibold text-gray-700 border border-gray-200 hover:bg-gray-50 disabled:opacity-50"
+              >
+                ยกเลิก
+              </button>
+              <button
+                type="button"
+                disabled={!rejectChequeReason.trim() || rejectingCheque}
+                onClick={rejectReceivedCheque}
+                className="h-8 px-4 rounded-lg text-sm font-semibold text-white bg-red-600 hover:bg-red-700 disabled:opacity-40 disabled:cursor-not-allowed"
+              >
+                {rejectingCheque ? "กำลังส่ง…" : "ยืนยันไม่อนุมัติ"}
+              </button>
+            </div>
+          </div>
+        </div>
       )}
     </StepLayout>
   );

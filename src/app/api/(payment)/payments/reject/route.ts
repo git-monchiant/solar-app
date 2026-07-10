@@ -49,6 +49,19 @@ export async function POST(req: NextRequest) {
     } catch { notes = {}; }
     notes[slipField] = { reason, by, at: new Date().toISOString() };
 
+    // A cheque that Accounting already received has been moved from staging
+    // into an unconfirmed payments row. Remove that interim row (and its
+    // embedded evidence) so the uploader gets a genuinely fresh Step 5 slot.
+    // Confirmed payment rows are never touched by rejection.
+    const receivedChequeDelete = await db.request()
+      .input("lead_id", sql.Int, leadId)
+      .input("slip_field", sql.NVarChar(50), slipField)
+      .query(`
+        DELETE FROM payments
+        WHERE lead_id = @lead_id AND slip_field = @slip_field
+          AND confirmed_at IS NULL AND cheque_received_at IS NOT NULL
+      `);
+
     // Wipe staging slips for this lead + slip_field (the "ถอย" action).
     // Confirmed slip_files (if any) are kept — rejection only targets the
     // submitted-but-unconfirmed set the accountant sees in their queue.
@@ -82,7 +95,11 @@ export async function POST(req: NextRequest) {
         VALUES (@lead_id, 'payment_rejected', @title, @note, @by, GETDATE())
       `);
 
-    return NextResponse.json({ ok: true, deleted_slip_files: del.rowsAffected[0] });
+    return NextResponse.json({
+      ok: true,
+      deleted_slip_files: del.rowsAffected[0],
+      deleted_received_cheques: receivedChequeDelete.rowsAffected[0],
+    });
   } catch (e) {
     console.error("POST /api/payments/reject error:", e);
     return NextResponse.json({ error: e instanceof Error ? e.message : "Failed" }, { status: 500 });

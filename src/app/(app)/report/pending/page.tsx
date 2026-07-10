@@ -55,9 +55,11 @@ interface ReportData {
 const fmt = (n: number) => formatTHB(Math.round(n));
 
 const stepLabels: Record<number, string> = { 0: "มัดจำ", 1: "ค่าสำรวจ", 3: "งวด 1/2", 4: "งวด 2/2", 99: "Step 5 · เก็บเงิน" };
-function labelForInstallment(step_no: number, slip_field: string): string {
-  if (stepLabels[step_no]) return stepLabels[step_no];
+function labelForInstallment(step_no: number, slip_field: string, afterInstall = false): string {
+  if (/^install_extra_\d+$/.test(slip_field || "")) return "Step 5 · ค่าใช้จ่ายเพิ่มเติม";
   const m = /^order_installment_(\d+)$/.exec(slip_field || "");
+  if (m && afterInstall) return `Step 5 · งวดที่ ${parseInt(m[1]) + 1} (หลังติดตั้ง)`;
+  if (stepLabels[step_no]) return stepLabels[step_no];
   if (m) return `งวดที่ ${parseInt(m[1]) + 1}`;
   return `step ${step_no}`;
 }
@@ -69,6 +71,7 @@ interface PendingItem {
   project_name: string | null;
   installment: Installment;
   is_multi_installment: boolean;
+  is_after_installment: boolean;
 }
 
 export default function PendingApprovalReport() {
@@ -104,8 +107,18 @@ export default function PendingApprovalReport() {
   const items: PendingItem[] = [];
   for (const r of data.rows) {
     const installmentCount = plannedInstallmentCount(r);
+    let plannedInstallments: Array<{ when?: string }> = [];
+    try {
+      const parsed = r.order_installments ? JSON.parse(r.order_installments) : [];
+      if (Array.isArray(parsed)) plannedInstallments = parsed;
+    } catch { /* ignore malformed installment JSON */ }
+    const hasStructuredAfterInstallment = plannedInstallments.some(item => item?.when === "after");
     for (const inst of r.installments) {
-      if (!inst.confirmed_at && (inst.has_slip || inst.cheque_received_at || inst.payment_method === "cheque")) {
+      if (hasStructuredAfterInstallment && inst.slip_field === "order_after_slip") continue;
+      // Creating a cheque intent happens before evidence is uploaded. Keep an
+      // empty intent out of Accounting's queue until there is a submitted file
+      // (or Accounting has already marked the cheque as received).
+      if (!inst.confirmed_at && (inst.has_slip || !!inst.cheque_received_at)) {
         const idx = installmentIndex(inst.slip_field);
         items.push({
           lead_id: r.lead_id,
@@ -114,6 +127,7 @@ export default function PendingApprovalReport() {
           project_name: r.project_name,
           installment: inst,
           is_multi_installment: installmentCount > 1 && idx !== null,
+          is_after_installment: idx !== null && plannedInstallments[idx]?.when === "after",
         });
       }
     }
@@ -163,7 +177,10 @@ export default function PendingApprovalReport() {
     }
   };
 
-  const isInstallCollectPayment = (inst: Installment) => inst.slip_field === "order_after_slip" || inst.step_no === 99;
+  const isInstallCollectPayment = (item: PendingItem) => item.is_after_installment
+    || item.installment.slip_field === "order_after_slip"
+    || /^install_extra_\d+$/.test(item.installment.slip_field)
+    || item.installment.step_no === 99;
 
   const setInstallPaymentFocus = (leadId: number, paymentId: number) => {
     if (typeof window === "undefined") return;
@@ -175,7 +192,7 @@ export default function PendingApprovalReport() {
 
   const openChequePaymentContext = (item: PendingItem, finalConfirmation: boolean) => {
     const inst = item.installment;
-    if (isInstallCollectPayment(inst)) {
+    if (isInstallCollectPayment(item)) {
       setInstallPaymentFocus(item.lead_id, inst.id);
     } else if (finalConfirmation) {
       if (item.is_multi_installment) {
@@ -192,6 +209,14 @@ export default function PendingApprovalReport() {
   const markChequeReceived = async (item: PendingItem) => {
     const paymentId = item.installment.id;
     if (chequeReceivingId) return;
+    // Step 04 needs Accounting to inspect the submitted cheque inside the
+    // installment row before choosing either "ยืนยันรับเช็ค" or reject.
+    // Do not mark it received from the report page or the reject action would
+    // be skipped. Step 05 keeps its agreed one-click receipt + deep-link flow.
+    if (!isInstallCollectPayment(item)) {
+      openChequePaymentContext(item, false);
+      return;
+    }
     setChequeReceivingId(paymentId);
     try {
       await apiFetch(`/api/payments/${paymentId}`, {
@@ -264,7 +289,7 @@ export default function PendingApprovalReport() {
           <div className="space-y-2 md:space-y-0 md:bg-white md:rounded-xl md:border md:border-gray-300 md:divide-y md:divide-gray-100">
             {filtered.map(it => {
               const i = it.installment;
-              const label = labelForInstallment(i.step_no, i.slip_field);
+              const label = labelForInstallment(i.step_no, i.slip_field, it.is_after_installment);
               const gallery = i.slip_urls.map((u, k) => ({ url: u, label: i.slip_urls.length > 1 ? `${label} · สลิป ${k + 1} / ${i.slip_urls.length}` : label }));
               const chequeWaitingReceive = isChequeWaitingReceive(i);
               const chequeWaitingMoney = isChequeWaitingMoney(i);
@@ -298,6 +323,14 @@ export default function PendingApprovalReport() {
                   type="button"
                   onClick={() => openChequePaymentContext(it, true)}
                   className={`h-8 px-3 rounded-lg text-sm font-semibold text-white bg-emerald-600 hover:brightness-110 inline-flex items-center justify-center shrink-0 ${className}`}
+                >
+                  ยืนยันรับเงิน
+                </button>
+              ) : isInstallCollectPayment(it) ? (
+                <button
+                  type="button"
+                  onClick={() => openChequePaymentContext(it, true)}
+                  className={`h-8 px-3 rounded-lg text-sm font-semibold text-white bg-amber-500 hover:brightness-110 inline-flex items-center justify-center shrink-0 ${className}`}
                 >
                   ยืนยันรับเงิน
                 </button>

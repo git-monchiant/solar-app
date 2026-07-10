@@ -96,3 +96,7 @@ Do not reuse the Step 04 helper, which currently hardcodes
 - Simplified the Pending Accounting UI by hiding the optional cheque lifecycle
   buttons (`ข้อมูลเช็ค`, `นำฝากแล้ว`, `เช็คเด้ง`, `ยกเลิก`); the primary receive
   and final money-confirmation flow remains visible.
+- For Step 04 cheque submissions, the Pending button now opens the installment
+  review without pre-confirming receipt. Accounting sees `ยืนยันรับเช็ค` plus
+  `ไม่อนุมัติ / ส่งกลับให้อัปโหลดใหม่`; after receipt, the final action is
+  labelled `ยืนยันรับเงิน`. Step 05 keeps its separate agreed deep-link flow.

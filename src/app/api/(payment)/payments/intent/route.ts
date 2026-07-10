@@ -36,6 +36,31 @@ export async function POST(req: NextRequest) {
     const tx = new sql.Transaction(pool);
     await tx.begin();
     try {
+      // Installment and sequenced extra-payment keys are immutable payment
+      // identities. A client refresh can briefly mount PaymentSection before
+      // its confirmed state arrives; in that race, return the confirmed row
+      // instead of creating a new pending duplicate for the same key.
+      const immutablePaymentKey = /^order_installment_\d+$/.test(slipField)
+        || /^install_extra_\d+$/.test(slipField);
+      if (immutablePaymentKey) {
+        const confirmed = await new sql.Request(tx)
+          .input("lead_id", sql.Int, leadId)
+          .input("step_no", sql.Int, stepNo)
+          .input("slip_field", sql.NVarChar(50), slipField)
+          .query(`
+            SELECT TOP 1 id, payment_no
+            FROM payments WITH (UPDLOCK, HOLDLOCK)
+            WHERE lead_id = @lead_id AND step_no = @step_no
+              AND slip_field = @slip_field AND confirmed_at IS NOT NULL
+            ORDER BY confirmed_at DESC, id DESC
+          `);
+        if (confirmed.recordset.length > 0) {
+          const row = confirmed.recordset[0];
+          await tx.commit();
+          return NextResponse.json({ id: row.id, payment_no: row.payment_no, confirmed: true });
+        }
+      }
+
       // Re-use any pending row for this (lead, step, slip_field). A confirmed row
       // must not be touched — a new payment for the same step (e.g. retry after
       // rollback) gets its own running number.

@@ -17,3 +17,7 @@ Statuses:
 | [20260709-05-pending-cheque-button-navigation.md](20260709-05-pending-cheque-button-navigation.md) | done | - | Improve Pending cheque status/buttons and navigate receive-cheque or receive-money actions to the correct Step 04 context |
 | [20260710-01-cheque-workflow-hardening.md](20260710-01-cheque-workflow-hardening.md) | done | - | Add cheque due-date/deposit/failure tracking; reserve accounting lifecycle and final money approval for Account/Admin |
 | [20260710-02-step5-cheque-account-navigation.md](20260710-02-step5-cheque-account-navigation.md) | done | - | Route Step 05 cheque receipt/final confirmation to Install > เก็บเงิน without requiring cheque-number input |
+| [20260710-03-separate-install-extra-payments.md](20260710-03-separate-install-extra-payments.md) | done | - | Separate Step 05 extra-cost payments so Pending shows only the incremental unpaid amount |
+| [20260710-04-after-install-installments-step5.md](20260710-04-after-install-installments-step5.md) | done | - | Move installments marked after installation to Step 05 collection without duplicate balance rows |
+| [20260710-05-payment-intent-race-hardening.md](20260710-05-payment-intent-race-hardening.md) | done | - | Prevent post-confirmation payment drafts and repair approved SM-260077 Development data |
+| [20260710-06-step5-cheque-action-layout.md](20260710-06-step5-cheque-action-layout.md) | done | - | Make Step 05 cheque confirmation and rejection actions match the requested full-width layout |

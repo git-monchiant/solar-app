@@ -194,6 +194,12 @@ export default function PaymentSection({
     if (typeof window === "undefined") return;
     localStorage.setItem(tabStorageKey, tab);
   }, [tab, tabStorageKey]);
+  useEffect(() => {
+    if (confirmed) return;
+    if (paymentMethod === "cheque" && allowCheque) setTab("cheque");
+    else if (paymentMethod === "bank_transfer" || paymentMethod === "transfer") setTab("bank");
+    else if (paymentMethod === "qr" || paymentMethod === "link" || paymentMethod === "other") setTab(paymentMethod);
+  }, [paymentMethod, allowCheque, confirmed]);
   const [otherMethod, setOtherMethod] = useState(initialOtherMethod ?? "");
   // Re-seed when the parent's value changes (e.g. lead refresh after PATCH).
   // Only applies pre-confirmation; once confirmed, payment.description owns it.

@@ -49,6 +49,8 @@ export function paymentStepLabel(slipField: string, _stepNo?: number): string {
   if (slipField === "pre_slip_url") return "ค่าจอง Survey";
   if (slipField === "order_before_slip") return "ก่อนติดตั้ง";
   if (slipField === "order_after_slip") return "หลังติดตั้ง";
+  const extra = /^install_extra_(\d+)$/.exec(slipField);
+  if (extra) return `ค่าใช้จ่ายเพิ่มเติม ครั้งที่ ${parseInt(extra[1]) + 1}`;
   const m = /^order_installment_(\d+)$/.exec(slipField);
   if (m) return `งวดที่ ${parseInt(m[1]) + 1}`;
   return slipField || "-";
