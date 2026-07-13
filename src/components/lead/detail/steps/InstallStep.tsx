@@ -328,6 +328,7 @@ export default function InstallStep({ lead, state, refresh, expanded, onToggle }
 
   const uploadPhotos = async (files: File[]) => {
     if (files.length === 0) return;
+    setNextError(null);
     setUploading(true);
     try {
       const newUrls: string[] = [];
@@ -342,6 +343,9 @@ export default function InstallStep({ lead, state, refresh, expanded, onToggle }
         method: "PATCH", headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ install_photos: next.join(",") }),
       });
+    } catch (error) {
+      console.error("Install photo upload failed:", error);
+      setNextError("อัปโหลดรูปส่งมอบไม่สำเร็จ กรุณาลองใหม่อีกครั้ง");
     } finally { setUploading(false); }
   };
 
@@ -354,7 +358,7 @@ export default function InstallStep({ lead, state, refresh, expanded, onToggle }
     });
   };
 
-  const [notifyLine, setNotifyLine] = useState(true);
+  const [notifyLine, setNotifyLine] = useState(false);
   const [resending, setResending] = useState(false);
   const [resendResult, setResendResult] = useState<null | "ok" | "err">(null);
 

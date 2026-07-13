@@ -46,6 +46,25 @@ const has = (v: unknown): v is string => typeof v === "string" && v.trim().lengt
 const split = (csv: unknown): string[] =>
   has(csv) ? csv.split(",").map(s => s.trim()).filter(Boolean) : [];
 const isPdf = (url: string) => /\.pdf(\?|$)/i.test(url);
+const splitWarrantyEvidence = (raw: unknown): Array<{ type: string; url: string }> => {
+  if (!has(raw)) return [];
+  try {
+    const parsed = JSON.parse(raw) as Record<string, unknown>;
+    const labels: Record<string, string> = { inverters: "Inverter", panels: "Solar Panel", batteries: "Battery" };
+    return Object.entries(labels).flatMap(([key, label]) => {
+      if (!Array.isArray(parsed[key])) return [];
+      return parsed[key].flatMap((item): Array<{ type: string; url: string }> => {
+        if (typeof item === "string") return [{ type: label, url: item }];
+        if (item && typeof item === "object" && typeof (item as { url?: unknown }).url === "string") {
+          return [{ type: label, url: (item as { url: string }).url }];
+        }
+        return [];
+      });
+    });
+  } catch {
+    return split(raw).map(url => ({ type: "Inverter", url }));
+  }
+};
 
 function buildGroups(lead: LeadLike): Group[] {
   const out: Group[] = [];
@@ -133,6 +152,11 @@ function buildGroups(lead: LeadLike): Group[] {
   if (has(lead.warranty_inverter_cert_url))       warranty.push({ url: lead.warranty_inverter_cert_url,     label: "ใบรับประกัน Inverter", pdf: isPdf(lead.warranty_inverter_cert_url) });
   if (has(lead.warranty_panel_cert_url))          warranty.push({ url: lead.warranty_panel_cert_url,        label: "ใบรับประกันแผง",       pdf: isPdf(lead.warranty_panel_cert_url) });
   split(lead.warranty_other_docs_url).forEach((url, i) => warranty.push({ url, label: `เอกสารอื่น ${i + 1}`, pdf: isPdf(url) }));
+  const evidenceNo: Record<string, number> = {};
+  splitWarrantyEvidence(lead.warranty_evidence_photos).forEach(({ type, url }) => {
+    evidenceNo[type] = (evidenceNo[type] ?? 0) + 1;
+    warranty.push({ url, label: `${type} · รูปหลักฐาน ${evidenceNo[type]}` });
+  });
   push("Warranty", "🛡️", warranty);
 
   // — GridTie / ขนานไฟ —

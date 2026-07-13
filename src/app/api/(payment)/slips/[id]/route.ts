@@ -30,7 +30,7 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ id:
   }
 }
 
-// PATCH /api/slips/<id>  body: { submit: true }
+// PATCH /api/slips/<id>  body: { submit: true, payment_detail?: string }
 // Marks the staging slip as "submitted for accountant review" (sets
 // submitted_at). Until submitted, the slip is a draft and won't appear
 // in the accountant's pending-approval queue.
@@ -44,20 +44,47 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
     const body = await req.json().catch(() => ({}));
     if (body.submit === true) {
       const db = await getDb();
+      const paymentDetail = typeof body.payment_detail === "string" ? body.payment_detail.trim() : "";
       const before = await db.request().input("id", sql.Int, slipId)
-        .query(`SELECT lead_id, slip_field, submitted_at FROM slip_files WHERE id = @id`);
+        .query(`
+          SELECT sf.lead_id, sf.slip_field, sf.submitted_at,
+                 p.id AS payment_id, p.payment_method, p.description
+          FROM slip_files sf
+          OUTER APPLY (
+            SELECT TOP 1 id, payment_method, description
+            FROM payments
+            WHERE lead_id = sf.lead_id
+              AND slip_field = sf.slip_field
+              AND confirmed_at IS NULL
+            ORDER BY id DESC
+          ) p
+          WHERE sf.id = @id
+        `);
       const row = before.recordset[0];
+      if (!row) return NextResponse.json({ error: "ไม่พบหลักฐานการชำระเงิน" }, { status: 404 });
+      if ((row.payment_method === "loan" || row.payment_method === "other") && !paymentDetail) {
+        return NextResponse.json({ error: "กรุณากรอกรายละเอียดการชำระก่อนส่งให้ฝ่ายบัญชี" }, { status: 400 });
+      }
+      if (paymentDetail.length > 150) {
+        return NextResponse.json({ error: "รายละเอียดการชำระต้องไม่เกิน 150 ตัวอักษร" }, { status: 400 });
+      }
       const upd = await db.request().input("id", sql.Int, slipId)
         .query(`UPDATE slip_files SET submitted_at = GETDATE() WHERE id = @id AND submitted_at IS NULL`);
       if (row && upd.rowsAffected[0] > 0) {
         // Stamp step 1 author on the payment row so Timeline doesn't have to
         // scrape the activity log later. Only the FIRST submit wins so re-
         // submission (after a revert) keeps the original attribution intact.
+        const baseDescription = String(row.description || "").replace(/\s*·\s*ชำระโดย:[\s\S]*$/, "").trim();
+        const persistedDescription = paymentDetail
+          ? `${baseDescription}${baseDescription ? " · " : ""}ชำระโดย: ${paymentDetail}`.slice(0, 200)
+          : null;
         await db.request()
           .input("lead_id", sql.Int, row.lead_id)
           .input("slip_field", sql.NVarChar(50), row.slip_field)
           .input("submitted_by", sql.Int, gate.userId)
-          .query(`UPDATE payments SET submitted_by = @submitted_by, submitted_at = GETDATE()
+          .input("description", sql.NVarChar(200), persistedDescription)
+          .query(`UPDATE payments SET submitted_by = @submitted_by, submitted_at = GETDATE(),
+                    description = CASE WHEN @description IS NOT NULL THEN @description ELSE description END
                   WHERE lead_id = @lead_id AND slip_field = @slip_field AND submitted_at IS NULL`);
         await logLeadActivity(db, {
           leadId: row.lead_id,

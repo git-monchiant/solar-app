@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { writeFile, unlink } from "fs/promises";
+import { mkdir, writeFile, unlink } from "fs/promises";
 import path from "path";
 import { randomBytes } from "crypto";
 import { requireAuth } from "@/lib/auth";
@@ -45,8 +45,13 @@ export async function POST(req: NextRequest) {
     const built = leadId && type ? `lead${safe(leadId)}_${safe(type)}_${stamp}` : null;
     const base = customName ? `${safe(customName)}_${stamp}` : built ?? `doc_${stamp}`;
     const filename = `${base}.${ext}`;
-    const filepath = path.join(process.cwd(), "public", "uploads", filename);
+    const uploadDir = path.join(process.cwd(), "public", "uploads");
+    const filepath = path.join(uploadDir, filename);
 
+    // public/uploads is intentionally gitignored, so it may not exist on a
+    // fresh checkout, deployment, or after uploads are cleaned. Always create
+    // it at write time instead of relying on an empty directory in Git.
+    await mkdir(uploadDir, { recursive: true });
     await writeFile(filepath, buffer);
 
     return NextResponse.json({ url: `/api/files/${filename}` });

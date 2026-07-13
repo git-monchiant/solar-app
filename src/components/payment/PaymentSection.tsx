@@ -290,7 +290,7 @@ export default function PaymentSection({
           // Extract "ชำระโดย: …" note from the stored description so the textarea
           // re-populates after refresh (otherMethod state is component-local).
           if (data.description) {
-            const m = data.description.match(/ชำระโดย:\s*(.+)$/);
+            const m = data.description.match(/ชำระโดย:\s*([\s\S]+)$/);
             if (m) setOtherMethod(m[1].trim());
           }
           // Snap active tab to the confirmed method so user sees ✓ on the right one.
@@ -312,6 +312,16 @@ export default function PaymentSection({
           if (list.length > 0 && !verifiedFiredRef.current) {
             verifiedFiredRef.current = true;
             onVerified?.(list[0].url);
+          }
+          // The uploader's loan/other-payment detail is persisted on the
+          // pending payment row at step 1. Reload it here so Accounting sees
+          // the same detail from another session/device before confirming.
+          if (stepNo !== undefined) {
+            const payments = await apiFetch(`/api/payments?lead_id=${leadId}&step_no=${stepNo}`) as Array<{ slip_field: string; description: string | null }>;
+            if (cancelled) return;
+            const pendingDescription = payments.find((p) => p.slip_field === slipField)?.description;
+            const detailMatch = pendingDescription?.match(/ชำระโดย:\s*([\s\S]+)$/);
+            if (detailMatch) setOtherMethod(detailMatch[1].trim());
           }
         }
       } catch (e) {
@@ -660,22 +670,30 @@ export default function PaymentSection({
   const draftSlips = slips.filter(s => s.status === "verified" && s.slipFilesId && !s.submittedAt);
   const submittedSlips = slips.filter(s => s.status === "verified" && s.submittedAt);
   const [submitting, setSubmitting] = useState(false);
+  const paymentDetailRequired = tab === "other" && !chequePayment;
+  const paymentDetailMissing = paymentDetailRequired && otherMethod.trim().length === 0;
   const submitDrafts = async () => {
-    if (submitting || draftSlips.length === 0) return;
+    if (submitting || draftSlips.length === 0 || paymentDetailMissing) return;
     setSubmitting(true);
+    setConfirmError(null);
     try {
       await Promise.all(draftSlips.map(s =>
         apiFetch(`/api/slips/${s.slipFilesId}`, {
           method: "PATCH",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ submit: true }),
-        }).catch(console.error)
+          body: JSON.stringify({
+            submit: true,
+            payment_detail: paymentDetailRequired ? otherMethod.trim() : null,
+          }),
+        })
       ));
       const stamp = new Date().toISOString();
       setSlips(prev => prev.map(s => draftSlips.find(d => d.key === s.key) ? { ...s, submittedAt: stamp } : s));
       // Server clears any prior rejection note for this slip_field on submit;
       // refresh so the banner disappears.
       await loadRejectNote();
+    } catch (e) {
+      setConfirmError(e instanceof Error ? e.message : "ส่งให้ฝ่ายบัญชีไม่สำเร็จ");
     } finally {
       setSubmitting(false);
     }
@@ -1150,8 +1168,12 @@ export default function PaymentSection({
               placeholder="รับชำระรูปแบบอื่นๆ เช่น สินเชื่อ, Home Equity (โปรดระบุให้ละเอียด เช่น ธนาคาร, วงเงิน, ระยะเวลาผ่อน, ผ่อนต่อเดือน)"
               disabled={confirmed}
               rows={5}
-              className="w-full px-3 py-2 rounded-lg border border-gray-200 text-sm focus:outline-none focus:border-active disabled:bg-gray-50"
+              maxLength={150}
+              className={`w-full px-3 py-2 rounded-lg border text-sm focus:outline-none disabled:bg-gray-50 ${paymentDetailMissing && slips.length > 0 ? "border-red-400 focus:border-red-500" : "border-gray-200 focus:border-active"}`}
             />
+            {paymentDetailMissing && slips.length > 0 && (
+              <div className="mt-1 text-xs text-red-600">กรุณากรอกรายละเอียดการชำระก่อนส่งให้ฝ่ายบัญชี</div>
+            )}
           </div>
         </div>
       )}
@@ -1307,7 +1329,7 @@ export default function PaymentSection({
               canStep1 && (
                 <button
                   type="button"
-                  disabled={submitting || anyVerifying}
+                  disabled={submitting || anyVerifying || paymentDetailMissing}
                   onClick={submitDrafts}
                   className="w-full h-11 mt-3 rounded-lg text-sm font-semibold transition-colors flex items-center justify-center gap-1.5 text-white bg-gradient-to-r from-amber-500 to-amber-600 hover:brightness-110 disabled:opacity-40 disabled:cursor-not-allowed"
                 >

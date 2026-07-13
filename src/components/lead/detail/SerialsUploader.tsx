@@ -1,5 +1,5 @@
 "use client";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { apiFetch, getUserIdHeader } from "@/lib/api";
 import { compressSlipFile } from "@/lib/utils/compress-slip";
 import { useDialog } from "@/components/ui/Dialog";
@@ -18,6 +18,20 @@ import {
 // type), reload to reflect canonical ids/timestamps.
 
 type DeviceType = "inverters" | "batteries" | "panels";
+type MatchStatus = "matched" | "partial" | "unmatched" | "unreadable";
+interface EvidencePhoto {
+  url: string;
+  brand: string | null;
+  spec: number | null;
+  detected_serials: string[];
+  matched_serials: string[];
+  boxes: Array<number[] | null>;
+  match_status: MatchStatus;
+  uploaded_at: string;
+  uploaded_by: number;
+}
+type EvidencePhotos = Record<DeviceType, EvidencePhoto[]>;
+const EMPTY_EVIDENCE: EvidencePhotos = { inverters: [], batteries: [], panels: [] };
 
 // Reuses the survey-options catalogue so adding/removing a brand is one edit
 // in src/lib/constants/survey-options.ts, not three.
@@ -94,19 +108,85 @@ export default function SerialsUploader({ leadId, locked = false, showTypes, qui
   const [panels,    setPanels]    = useState<Panel[]>([]);
   const [loading,   setLoading]   = useState(true);
   const [openModal, setOpenModal] = useState<DeviceType | null>(null);
+  const [evidenceModal, setEvidenceModal] = useState<DeviceType | null>(null);
+  const [evidencePhotos, setEvidencePhotos] = useState<EvidencePhotos>(EMPTY_EVIDENCE);
+  const [evidenceError, setEvidenceError] = useState<Partial<Record<DeviceType, string>>>({});
 
   const load = useCallback(async () => {
     try {
       const d = await apiFetch(`/api/leads/${leadId}/devices`) as {
         inverters: Inverter[]; batteries: Battery[]; panels: Panel[];
+        evidencePhotos?: EvidencePhotos;
       };
       setInverters(sortBySerial(d.inverters ?? []));
       setBatteries(sortBySerial(d.batteries ?? []));
       setPanels(sortBySerial(d.panels ?? []));
+      setEvidencePhotos(d.evidencePhotos ?? EMPTY_EVIDENCE);
     } catch (e) { console.error("load devices failed:", e); }
     finally { setLoading(false); }
   }, [leadId]);
   useEffect(() => { load(); }, [load]);
+
+  const saveEvidence = async (type: DeviceType, items: BaseDevice[]): Promise<{ added: number; dupes: number; reason?: string }> => {
+    setEvidenceError(prev => ({ ...prev, [type]: undefined }));
+    try {
+      const first = items[0];
+      const photoUrl = first?.photo_url;
+      if (!photoUrl) return { added: 0, dupes: 0, reason: "กรุณาถ่ายรูปหลักฐานก่อนบันทึก" };
+      const spec = type === "inverters"
+        ? (first as Inverter).kw
+        : type === "batteries"
+        ? (first as Battery).kwh
+        : null;
+      const saved = await apiFetch(`/api/leads/${leadId}/devices`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          type,
+          photo_url: photoUrl,
+          brand: first.brand,
+          spec,
+          serials: items.map(item => item.serial_no).filter(Boolean),
+          boxes: items.map(item => parseBox(item.photo_box)),
+        }),
+      }) as { evidencePhotos: EvidencePhotos };
+      setEvidencePhotos(saved.evidencePhotos ?? EMPTY_EVIDENCE);
+      setEvidenceModal(null);
+      return { added: 1, dupes: 0 };
+    } catch (e) {
+      const rawMessage = e instanceof Error ? e.message : "อัปโหลดรูปไม่สำเร็จ";
+      const message = rawMessage.includes("409") ? "พบ Serial ซ้ำ ไม่สามารถบันทึกได้" : rawMessage;
+      setEvidenceError(prev => ({ ...prev, [type]: message }));
+      return { added: 0, dupes: 0, reason: message };
+    }
+  };
+
+  const deleteEvidence = async (type: DeviceType, photo: EvidencePhoto) => {
+    const label = type === "inverters" ? "Inverter" : type === "panels" ? "Solar Panel" : "Battery";
+    const ok = await dialog.confirm({
+      title: `ลบรูปหลักฐาน ${label}?`,
+      message: photo.detected_serials.length > 0
+        ? `Serial: ${photo.detected_serials.join(", ")}`
+        : "รูปนี้อ่าน Serial ไม่ได้",
+      variant: "danger",
+      confirmText: "ลบรูป",
+      cancelText: "ยกเลิก",
+    });
+    if (!ok) return;
+    try {
+      const saved = await apiFetch(`/api/leads/${leadId}/devices`, {
+        method: "DELETE",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ type, photo_url: photo.url }),
+      }) as { evidencePhotos: EvidencePhotos; deletedUrl: string };
+      setEvidencePhotos(saved.evidencePhotos ?? EMPTY_EVIDENCE);
+      fetch(`/api/upload?file=${encodeURIComponent(saved.deletedUrl)}`, {
+        method: "DELETE", headers: { ...getUserIdHeader() },
+      }).catch(() => {});
+    } catch (e) {
+      setEvidenceError(prev => ({ ...prev, [type]: e instanceof Error ? e.message : "ลบรูปหลักฐานไม่สำเร็จ" }));
+    }
+  };
 
   const saveType = async (type: DeviceType, items: BaseDevice[]) => {
     try {
@@ -196,11 +276,13 @@ export default function SerialsUploader({ leadId, locked = false, showTypes, qui
   return (
     <div className="p-4 space-y-5">
       {locked && (
-        <div className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800 flex items-center gap-2">
-          <svg className="w-4 h-4 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-            <path strokeLinecap="round" strokeLinejoin="round" d="M16.5 10.5V6.75a4.5 4.5 0 10-9 0v3.75m-.75 11.25h10.5a2.25 2.25 0 002.25-2.25v-6.75a2.25 2.25 0 00-2.25-2.25H6.75a2.25 2.25 0 00-2.25 2.25v6.75a2.25 2.25 0 002.25 2.25z" />
-          </svg>
-          <span>ออกใบรับประกันแล้ว — รายการ Serial ถูก lock ห้ามแก้ไข</span>
+        <div className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-3 text-xs text-amber-800">
+          <div className="flex items-center gap-2">
+            <svg className="w-4 h-4 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+              <path strokeLinecap="round" strokeLinejoin="round" d="M16.5 10.5V6.75a4.5 4.5 0 10-9 0v3.75m-.75 11.25h10.5a2.25 2.25 0 002.25-2.25v-6.75a2.25 2.25 0 00-2.25-2.25H6.75a2.25 2.25 0 00-2.25 2.25v6.75a2.25 2.25 0 002.25 2.25z" />
+            </svg>
+            <span>ออกใบรับประกันแล้ว — รายการ Serial ถูกล็อกห้ามแก้ไข แต่ยังแนบรูปหลักฐานเพิ่มเติมได้</span>
+          </div>
         </div>
       )}
       {/* Stack on mobile, spread to N equal columns on desktop — number of
@@ -226,6 +308,10 @@ export default function SerialsUploader({ leadId, locked = false, showTypes, qui
                 onQuickAdd={quickKey ? (serial) => onAdd("inverters", [{ brand: inverters.at(-1)?.brand ?? null, serial_no: serial }]) : undefined}
                 onRemove={onRemove}
                 locked={locked}
+                evidencePhotos={evidencePhotos.inverters}
+                evidenceError={evidenceError.inverters}
+                onEvidenceClick={() => setEvidenceModal("inverters")}
+                onEvidenceDelete={(photo) => deleteEvidence("inverters", photo)}
               />
             )}
             {visible.includes("panels") && (
@@ -242,6 +328,10 @@ export default function SerialsUploader({ leadId, locked = false, showTypes, qui
                 onQuickAdd={quickKey ? (serial) => onAdd("panels", [{ brand: panels.at(-1)?.brand ?? null, serial_no: serial }]) : undefined}
                 onRemove={onRemove}
                 locked={locked}
+                evidencePhotos={evidencePhotos.panels}
+                evidenceError={evidenceError.panels}
+                onEvidenceClick={() => setEvidenceModal("panels")}
+                onEvidenceDelete={(photo) => deleteEvidence("panels", photo)}
               />
             )}
             {visible.includes("batteries") && (
@@ -260,6 +350,10 @@ export default function SerialsUploader({ leadId, locked = false, showTypes, qui
                 onQuickAdd={quickKey ? (serial) => onAdd("batteries", [{ brand: batteries.at(-1)?.brand ?? null, serial_no: serial }]) : undefined}
                 onRemove={onRemove}
                 locked={locked}
+                evidencePhotos={evidencePhotos.batteries}
+                evidenceError={evidenceError.batteries}
+                onEvidenceClick={() => setEvidenceModal("batteries")}
+                onEvidenceDelete={(photo) => deleteEvidence("batteries", photo)}
               />
             )}
           </div>
@@ -276,6 +370,26 @@ export default function SerialsUploader({ leadId, locked = false, showTypes, qui
               .map(d => d.serial_no?.toLowerCase())
               .filter((x): x is string => !!x)
           )}
+        />
+      )}
+      {evidenceModal && (
+        <AddDeviceModal
+          type={evidenceModal}
+          onCancel={() => setEvidenceModal(null)}
+          onSave={(items) => saveEvidence(evidenceModal, items)}
+          existingSerials={new Set()}
+          referenceSerials={new Set(
+            [
+              ...(evidenceModal === "inverters" ? inverters : evidenceModal === "batteries" ? batteries : panels)
+                .map(d => d.serial_no?.toLowerCase())
+                .filter((x): x is string => !!x),
+              ...(evidencePhotos[evidenceModal] ?? [])
+                .flatMap(photo => photo.detected_serials)
+                .map(serial => serial.trim().toLowerCase())
+                .filter(Boolean),
+            ]
+          )}
+          evidenceOnly
         />
       )}
     </div>
@@ -304,8 +418,12 @@ interface TreeGroupProps {
   onClearAll?: () => Promise<void>;
   onRemove: (type: DeviceType, idx: number) => void;
   locked?: boolean;
+  evidencePhotos?: EvidencePhoto[];
+  evidenceError?: string;
+  onEvidenceClick?: () => void;
+  onEvidenceDelete?: (photo: EvidencePhoto) => void;
 }
-function TreeGroup({ type, title, emoji, items, formatLine, onAddClick, onQuickAdd, slotCount, slotColumns, onClearAll, onRemove, locked }: TreeGroupProps) {
+function TreeGroup({ type, title, emoji, items, formatLine, onAddClick, onQuickAdd, slotCount, slotColumns, onClearAll, onRemove, locked, evidencePhotos = [], evidenceError, onEvidenceClick, onEvidenceDelete }: TreeGroupProps) {
   const [quickSn, setQuickSn] = useState("");
   const [quickBusy, setQuickBusy] = useState(false);
   const [quickError, setQuickError] = useState<string | null>(null);
@@ -389,8 +507,12 @@ function TreeGroup({ type, title, emoji, items, formatLine, onAddClick, onQuickA
                     title="ดูตำแหน่ง serial บนรูป"
                     className="shrink-0 block w-9 h-9 rounded border border-gray-200 overflow-hidden bg-gray-50 hover:border-active hover:opacity-90"
                   >
-                    {/* eslint-disable-next-line @next/next/no-img-element */}
-                    <img src={d.photo_url} alt="" className="w-full h-full object-cover" />
+                    <SerialCropThumbnail
+                      photoUrl={d.photo_url}
+                      box={parseBox(d.photo_box)}
+                      alt={d.serial_no || `${title} serial`}
+                      crop={type === "panels"}
+                    />
                   </button>
                 ) : (
                   <span className="shrink-0 w-9 h-9 rounded border border-dashed border-gray-200 bg-gray-50/50 flex items-center justify-center text-gray-300" title="ไม่มีรูป">
@@ -511,6 +633,15 @@ function TreeGroup({ type, title, emoji, items, formatLine, onAddClick, onQuickA
         )}
       </div>
 
+      {locked && onEvidenceClick && (
+        <EvidenceGallery
+          title={title}
+          photos={evidencePhotos}
+          error={evidenceError}
+          onClick={onEvidenceClick}
+          onDelete={onEvidenceDelete}
+        />
+      )}
       {boxViewerIdx != null && items[boxViewerIdx]?.photo_url && (
         <PhotoBoxViewer
           photoUrl={items[boxViewerIdx]!.photo_url!}
@@ -527,6 +658,261 @@ function TreeGroup({ type, title, emoji, items, formatLine, onAddClick, onQuickA
         />
       )}
     </section>
+  );
+}
+
+function EvidenceGallery({ title, photos, error, onClick, onDelete }: {
+  title: string;
+  photos: EvidencePhoto[];
+  error?: string;
+  onClick: () => void;
+  onDelete?: (photo: EvidencePhoto) => void;
+}) {
+  const [viewer, setViewer] = useState<{ photoIdx: number; serialIdx: number } | null>(null);
+  const rows = photos.flatMap((photo, photoIdx) => {
+    const serials: Array<string | null> = photo.detected_serials.length > 0 ? photo.detected_serials : [null];
+    return serials.map((serial, serialIdx) => ({
+      photo,
+      photoIdx,
+      serial,
+      serialIdx,
+      box: photo.boxes?.[serialIdx] ?? null,
+    }));
+  });
+  return (
+    <div className="mt-3 pt-3 border-t border-dashed border-gray-200">
+      <div className="text-[11px] font-semibold text-gray-500 mb-2">เพิ่มรูป {title} หลังออกใบรับประกัน</div>
+      {rows.length > 0 && <div className="pl-3 border-l border-gray-200 ml-2 mb-2 space-y-1">
+        {rows.map((row, index) => (
+          <div key={`${row.photo.url}-${row.serialIdx}`} className="flex items-center gap-2 min-w-0 text-sm">
+            <span className="text-gray-300 select-none">{index === rows.length - 1 ? "└" : "├"}</span>
+            <span className="font-mono tabular-nums text-gray-400 shrink-0 w-7 text-right">{index + 1}.</span>
+            <button type="button" onClick={() => setViewer({ photoIdx: row.photoIdx, serialIdx: row.serialIdx })}
+              title="ดูตำแหน่ง Serial ที่ AI ตรวจพบ"
+              className="shrink-0 block w-9 h-9 rounded border border-gray-200 overflow-hidden bg-gray-50 hover:border-red-400">
+              <SerialCropThumbnail
+                photoUrl={row.photo.url}
+                box={row.box}
+                alt={row.serial || `${title} evidence`}
+                crop={title === "Solar Panel"}
+              />
+            </button>
+            <div className="min-w-0 flex-1">
+              <div className="font-mono tabular-nums text-gray-700 break-all">
+                {[row.photo.brand, row.photo.spec != null ? `${row.photo.spec} ${title === "Battery" ? "kWh" : "kW"}` : null, row.serial || "ไม่พบ Serial"].filter(Boolean).join(" · ")}
+              </div>
+            </div>
+            {onDelete && <button type="button" onClick={() => onDelete(row.photo)}
+              className="shrink-0 w-6 h-6 inline-flex items-center justify-center rounded text-red-400 hover:text-red-600 hover:bg-red-50"
+              aria-label={`ลบรูปหลักฐาน ${title}`} title="ลบรูปหลักฐาน">
+              <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
+                <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
+              </svg>
+            </button>}
+          </div>
+        ))}
+      </div>}
+      <button type="button" onClick={onClick}
+        className="inline-flex items-center gap-1.5 text-xs font-semibold text-primary transition-colors hover:text-primary-dark">
+        <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
+          <path strokeLinecap="round" strokeLinejoin="round" d="M12 4v16m8-8H4" />
+        </svg>
+        <span>เพิ่มรูป {title}</span>
+      </button>
+      {error && <p className="mt-1 text-xs text-red-600">{error}</p>}
+      {viewer && photos[viewer.photoIdx] && (
+        title === "Solar Panel" ? <SerialCropViewer
+          photoUrl={photos[viewer.photoIdx].url}
+          activeIdx={viewer.serialIdx}
+          items={(photos[viewer.photoIdx].detected_serials.length > 0 ? photos[viewer.photoIdx].detected_serials : [null]).map((serial, i) => ({
+            serial,
+            box: photos[viewer.photoIdx].boxes?.[i] ?? null,
+            idx: i,
+          }))}
+          onClose={() => setViewer(null)}
+        /> : <PhotoBoxViewer
+          photoUrl={photos[viewer.photoIdx].url}
+          activeIdx={viewer.serialIdx}
+          items={(photos[viewer.photoIdx].detected_serials.length > 0 ? photos[viewer.photoIdx].detected_serials : [null]).map((serial, i) => ({
+            serial,
+            box: photos[viewer.photoIdx].boxes?.[i] ?? null,
+            idx: i,
+          }))}
+          onClose={() => setViewer(null)}
+        />
+      )}
+    </div>
+  );
+}
+
+// Evidence viewer intentionally renders only one cropped serial label. The
+// source photo is never shown, so a photo containing many labels behaves like
+// a set of independent serial previews when the user opens each row.
+function SerialCropViewer({
+  photoUrl,
+  activeIdx,
+  items,
+  onClose,
+}: {
+  photoUrl: string;
+  activeIdx: number;
+  items: Array<{ serial: string | null; box: number[] | null; idx: number }>;
+  onClose: () => void;
+}) {
+  const active = items.find(item => item.idx === activeIdx);
+  const canvasRef = useRef<HTMLCanvasElement>(null);
+  const hasBox = Boolean(active?.box && active.box.length === 4);
+  const [cropState, setCropState] = useState<"loading" | "ready" | "unavailable">("loading");
+  const visibleState = hasBox ? cropState : "unavailable";
+
+  useEffect(() => {
+    if (!active?.box || active.box.length !== 4) return;
+    const canvas = canvasRef.current;
+    const ctx = canvas?.getContext("2d");
+    if (!canvas || !ctx) return;
+
+    const image = new Image();
+    image.onload = () => {
+      const [yMin, xMin, yMax, xMax] = active.box!;
+      const boxW = Math.max(1, xMax - xMin);
+      const boxH = Math.max(1, yMax - yMin);
+      const padX = Math.max(boxW * 0.08, 12);
+      const padY = Math.max(boxH * 0.28, 18);
+      const cropX1 = Math.max(0, xMin - padX);
+      const cropY1 = Math.max(0, yMin - padY);
+      const cropX2 = Math.min(1000, xMax + padX);
+      const cropY2 = Math.min(1000, yMax + padY);
+      const sx = image.naturalWidth * cropX1 / 1000;
+      const sy = image.naturalHeight * cropY1 / 1000;
+      const sw = image.naturalWidth * (cropX2 - cropX1) / 1000;
+      const sh = image.naturalHeight * (cropY2 - cropY1) / 1000;
+      const aspect = sw / sh;
+      const outputWidth = Math.min(1400, Math.max(640, Math.round(sw)));
+      const outputHeight = Math.max(220, Math.round(outputWidth / aspect));
+
+      canvas.width = outputWidth;
+      canvas.height = outputHeight;
+      ctx.clearRect(0, 0, outputWidth, outputHeight);
+      ctx.drawImage(image, sx, sy, sw, sh, 0, 0, outputWidth, outputHeight);
+
+      const scaleX = outputWidth / (cropX2 - cropX1);
+      const scaleY = outputHeight / (cropY2 - cropY1);
+      ctx.strokeStyle = "#ef4444";
+      ctx.lineWidth = Math.max(3, Math.round(outputWidth / 350));
+      ctx.strokeRect(
+        (xMin - cropX1) * scaleX,
+        (yMin - cropY1) * scaleY,
+        boxW * scaleX,
+        boxH * scaleY,
+      );
+      setCropState("ready");
+    };
+    image.onerror = () => setCropState("unavailable");
+    image.src = photoUrl;
+    return () => {
+      image.onload = null;
+      image.onerror = null;
+    };
+  }, [photoUrl, active]);
+
+  return (
+    <div onClick={onClose} className="fixed inset-0 z-[60] flex items-center justify-center bg-black/80 p-4" role="dialog">
+      <div onClick={event => event.stopPropagation()} className="relative max-w-[95vw] max-h-[95vh] flex flex-col">
+        <button
+          type="button"
+          onClick={onClose}
+          className="absolute -top-3 -right-3 w-9 h-9 rounded-full bg-white text-gray-800 shadow-lg flex items-center justify-center text-xl z-10"
+          aria-label="ปิด"
+        >×</button>
+        <div className="relative min-w-72 min-h-40 flex items-center justify-center overflow-auto bg-white rounded">
+          <canvas
+            ref={canvasRef}
+            aria-label={`Serial ${active?.serial || activeIdx + 1}`}
+            className={`block max-w-[95vw] max-h-[80vh] object-contain ${visibleState === "ready" ? "" : "invisible"}`}
+          />
+          {visibleState === "loading" && <div className="absolute text-sm text-gray-500">กำลังตัดภาพ Serial...</div>}
+          {visibleState === "unavailable" && (
+            <div className="p-8 text-center text-sm text-gray-500">
+              ไม่พบตำแหน่ง Serial สำหรับตัดภาพ<br />กรุณาเพิ่มรูปและให้ AI ตรวจจับใหม่
+            </div>
+          )}
+        </div>
+        <div className="mt-2 text-center text-white text-sm font-mono">
+          #{activeIdx + 1} · {active?.serial || "—"}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function SerialCropThumbnail({ photoUrl, box, alt, crop = true }: { photoUrl: string; box: number[] | null; alt: string; crop?: boolean }) {
+  const canvasRef = useRef<HTMLCanvasElement>(null);
+  useEffect(() => {
+    if (!box || box.length !== 4) return;
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    const ctx = canvas.getContext("2d");
+    if (!ctx) return;
+    const image = new Image();
+    image.onload = () => {
+      const [yMin, xMin, yMax, xMax] = box;
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+      ctx.fillStyle = "#f9fafb";
+      ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+      if (!crop) {
+        const scale = Math.min(canvas.width / image.naturalWidth, canvas.height / image.naturalHeight);
+        const dw = image.naturalWidth * scale;
+        const dh = image.naturalHeight * scale;
+        const dx = (canvas.width - dw) / 2;
+        const dy = (canvas.height - dh) / 2;
+        ctx.drawImage(image, dx, dy, dw, dh);
+        ctx.strokeStyle = "#ef4444";
+        ctx.lineWidth = 3;
+        ctx.strokeRect(
+          dx + dw * xMin / 1000,
+          dy + dh * yMin / 1000,
+          dw * (xMax - xMin) / 1000,
+          dh * (yMax - yMin) / 1000,
+        );
+        return;
+      }
+
+      const padX = Math.max((xMax - xMin) * 0.12, 12);
+      const padY = Math.max((yMax - yMin) * 0.18, 12);
+      const cropX1 = Math.max(0, xMin - padX);
+      const cropY1 = Math.max(0, yMin - padY);
+      const cropX2 = Math.min(1000, xMax + padX);
+      const cropY2 = Math.min(1000, yMax + padY);
+      const sx = image.naturalWidth * cropX1 / 1000;
+      const sy = image.naturalHeight * cropY1 / 1000;
+      const sw = image.naturalWidth * (cropX2 - cropX1) / 1000;
+      const sh = image.naturalHeight * (cropY2 - cropY1) / 1000;
+      const scale = Math.min(canvas.width / sw, canvas.height / sh);
+      const dw = sw * scale;
+      const dh = sh * scale;
+      const dx = (canvas.width - dw) / 2;
+      const dy = (canvas.height - dh) / 2;
+      ctx.drawImage(image, sx, sy, sw, sh, dx, dy, dw, dh);
+      ctx.strokeStyle = "#ef4444";
+      ctx.lineWidth = 3;
+      ctx.strokeRect(
+        dx + image.naturalWidth * (xMin - cropX1) / 1000 * scale,
+        dy + image.naturalHeight * (yMin - cropY1) / 1000 * scale,
+        image.naturalWidth * (xMax - xMin) / 1000 * scale,
+        image.naturalHeight * (yMax - yMin) / 1000 * scale,
+      );
+    };
+    image.src = photoUrl;
+    return () => { image.onload = null; };
+  }, [photoUrl, box, crop]);
+
+  return (
+    <span className="relative block w-full h-full">
+      {/* eslint-disable-next-line @next/next/no-img-element */}
+      <img src={photoUrl} alt={alt} className={`w-full h-full ${crop ? "object-cover" : "object-contain"}`} />
+      {box && <canvas ref={canvasRef} width={160} height={100} aria-label={alt} className="absolute inset-0 w-full h-full object-cover bg-gray-50" />}
+    </span>
   );
 }
 
@@ -622,11 +1008,16 @@ export interface AddDeviceModalProps {
    * surfaces fresh candidates. Without this prop, dedup still happens at
    * save time but the user sees the dupes first. */
   existingSerials?: Set<string>;
+  /** Evidence mode reuses the same capture wizard but PATCHes an immutable
+   * post-warranty record instead of adding/replacing canonical device rows. */
+  evidenceOnly?: boolean;
+  /** Canonical serials used only to preview match status in evidence mode. */
+  referenceSerials?: Set<string>;
 }
 // 3-step wizard: pick brand → fill specs (skipped for panels) → capture serial.
 // "Step" here is a logical index, not a route — all rendered in the same modal
 // shell so back/next feels instant and state is preserved between transitions.
-export function AddDeviceModal({ type, onCancel, onSave, existingSerials }: AddDeviceModalProps) {
+export function AddDeviceModal({ type, onCancel, onSave, existingSerials, evidenceOnly = false, referenceSerials }: AddDeviceModalProps) {
   const numLabel = type === "inverters" ? "kW" : type === "batteries" ? "kWh" : null;
   // One decision per step so each screen is a single tap when the value is in
   // the catalogue (auto-advance below). Panels skip the spec step.
@@ -761,7 +1152,7 @@ export function AddDeviceModal({ type, onCancel, onSave, existingSerials }: AddD
       const keptIdx: number[] = [];
       for (let i = 0; i < result.serials.length; i++) {
         const s = result.serials[i];
-        if (!existingSerials || existingSerials.size === 0 || !existingSerials.has(s.toLowerCase())) keptIdx.push(i);
+        if (evidenceOnly || !existingSerials || existingSerials.size === 0 || !existingSerials.has(s.toLowerCase())) keptIdx.push(i);
       }
       const fresh = keptIdx.map(i => result.serials[i]);
       const freshBoxes = keptIdx.map(i => result.boxes[i] ?? null);
@@ -796,6 +1187,10 @@ export function AddDeviceModal({ type, onCancel, onSave, existingSerials }: AddD
     if (!ocrPreview) return;
     const picks = ocrPreview.serials.filter((_, i) => batchPicks[i]);
     if (picks.length === 0) { setError("ยังไม่ได้เลือก serial"); return; }
+    if (evidenceOnly && findDuplicateSerials(picks, referenceSerials).length > 0) {
+      setError("พบ Serial ซ้ำ ไม่สามารถบันทึกได้");
+      return;
+    }
     setSaving(true);
     setError(null);
     try {
@@ -835,7 +1230,12 @@ export function AddDeviceModal({ type, onCancel, onSave, existingSerials }: AddD
   };
 
   const submit = async () => {
-    if (!serial.trim()) { setError("ใส่ Serial หรือถ่ายรูปก่อน"); return; }
+    if (!serial.trim() && !(evidenceOnly && ocrPhotoUrl)) { setError("ใส่ Serial หรือถ่ายรูปก่อน"); return; }
+    if (evidenceOnly && !ocrPhotoUrl) { setError("กรุณาถ่ายรูปหลักฐานก่อนบันทึก"); return; }
+    if (evidenceOnly && findDuplicateSerials(serial.trim() ? [serial.trim()] : [], referenceSerials).length > 0) {
+      setError("พบ Serial ซ้ำ ไม่สามารถบันทึกได้");
+      return;
+    }
     setSaving(true);
     setError(null);
     try {
@@ -844,7 +1244,7 @@ export function AddDeviceModal({ type, onCancel, onSave, existingSerials }: AddD
       // sticker coords).
       const idx = ocrPreview ? ocrPreview.serials.indexOf(serial.trim()) : -1;
       const box = idx >= 0 ? (ocrPreview?.boxes?.[idx] ?? null) : null;
-      const result = await onSave([buildPayload(serial, box)]);
+      const result = await onSave([buildPayload(serial || "", box)]);
       if (result.added === 0) setError(result.reason || "บันทึกไม่สำเร็จ");
     } finally {
       setSaving(false);
@@ -860,7 +1260,9 @@ export function AddDeviceModal({ type, onCancel, onSave, existingSerials }: AddD
     : step === "spec"
     ? true
     : step === "serial"
-    ? serial.trim().length > 0
+    ? evidenceOnly
+      ? !!ocrPhotoUrl && findDuplicateSerials(serial.trim() ? [serial.trim()] : [], referenceSerials).length === 0
+      : serial.trim().length > 0
     : false;
 
   return (
@@ -872,7 +1274,7 @@ export function AddDeviceModal({ type, onCancel, onSave, existingSerials }: AddD
           pushing the footer off-screen on long content. */}
       <div className="relative w-full min-w-[320px] max-w-2xl min-h-[480px] max-h-[90vh] bg-white rounded-xl shadow-xl overflow-hidden flex flex-col">
         <header className="px-5 py-3 border-b border-gray-100 flex items-center gap-3">
-          <h3 className="text-sm font-bold text-gray-900 truncate">เพิ่ม {title} Serial</h3>
+          <h3 className="text-sm font-bold text-gray-900 truncate">{evidenceOnly ? `เพิ่มรูป ${title} หลังออกใบรับประกัน` : `เพิ่ม ${title} Serial`}</h3>
           {/* Step pills — visual progress indicator */}
           <div className="flex items-center gap-1 ml-auto">
             {steps.map((_, i) => (
@@ -1006,6 +1408,7 @@ export function AddDeviceModal({ type, onCancel, onSave, existingSerials }: AddD
                   <PreviewRow label="Brand" value={brand || null} />
                   {numLabel && <PreviewRow label={numLabel} value={num || null} />}
                   <PreviewRow label="Serial" value={serial || ocrPreview.serials[0] || null} mono />
+                  {evidenceOnly && <EvidenceMatchStatus serials={serial ? [serial] : ocrPreview.serials} referenceSerials={referenceSerials} />}
                 </div>
               )}
               {ocrPreview && ocrPreview.serials.length > 1 && (
@@ -1032,6 +1435,7 @@ export function AddDeviceModal({ type, onCancel, onSave, existingSerials }: AddD
                     ))}
                   </div>
                   <p className="text-xs text-gray-500">จะถูกเพิ่มทีละแถวพร้อม Brand · {numLabel || "—"} ที่เลือกไว้</p>
+                  {evidenceOnly && <EvidenceMatchStatus serials={ocrPreview.serials.filter((_, i) => batchPicks[i])} referenceSerials={referenceSerials} />}
                 </div>
               )}
             </div>
@@ -1048,8 +1452,9 @@ export function AddDeviceModal({ type, onCancel, onSave, existingSerials }: AddD
                 <PreviewRow label="Brand" value={brand.trim() || null} />
                 {numLabel && <PreviewRow label={numLabel} value={num.trim() ? num.trim() : null} />}
                 <PreviewRow label="Serial" value={serial.trim() || null} mono />
+                {evidenceOnly && <EvidenceMatchStatus serials={serial.trim() ? [serial.trim()] : []} referenceSerials={referenceSerials} />}
               </div>
-              <p className="text-xs text-gray-500">กดย้อนกลับเพื่อแก้ไข หรือกด "บันทึก" เพื่อเพิ่มในรายการ</p>
+              <p className="text-xs text-gray-500">กดย้อนกลับเพื่อแก้ไข หรือกด &quot;บันทึก&quot; เพื่อเพิ่มในรายการ</p>
             </div>
           )}
 
@@ -1075,18 +1480,21 @@ export function AddDeviceModal({ type, onCancel, onSave, existingSerials }: AddD
             const isBatch = step === "serial" && ocrPreview && ocrPreview.serials.length > 1;
             if (isBatch) {
               const pickedN = batchPicks.filter(Boolean).length;
+              const pickedSerials = ocrPreview.serials.filter((_, i) => batchPicks[i]);
+              const hasDuplicates = evidenceOnly && findDuplicateSerials(pickedSerials, referenceSerials).length > 0;
               return (
-                <button type="button" onClick={submitBatch} disabled={saving || ocrBusy || pickedN === 0}
+                <button type="button" onClick={submitBatch} disabled={saving || ocrBusy || pickedN === 0 || hasDuplicates}
                   className="h-10 px-5 rounded-lg text-sm font-semibold text-white bg-primary hover:bg-primary-dark disabled:opacity-50 disabled:cursor-not-allowed">
-                  {saving ? "กำลังบันทึก..." : `บันทึก ${pickedN} รายการ`}
+                  {saving ? "กำลังบันทึก..." : evidenceOnly ? `บันทึกรูปหลักฐาน (${pickedN} Serial)` : `บันทึก ${pickedN} รายการ`}
                 </button>
               );
             }
             if (step === "confirm") {
+              const hasDuplicates = evidenceOnly && findDuplicateSerials(serial.trim() ? [serial.trim()] : [], referenceSerials).length > 0;
               return (
-                <button type="button" onClick={submit} disabled={saving || ocrBusy}
+                <button type="button" onClick={submit} disabled={saving || ocrBusy || hasDuplicates}
                   className="h-10 px-5 rounded-lg text-sm font-semibold text-white bg-primary hover:bg-primary-dark disabled:opacity-50 disabled:cursor-not-allowed">
-                  {saving ? "กำลังบันทึก..." : "บันทึก"}
+                  {saving ? "กำลังบันทึก..." : evidenceOnly ? "บันทึกรูปหลักฐาน" : "บันทึก"}
                 </button>
               );
             }
@@ -1105,6 +1513,30 @@ export function AddDeviceModal({ type, onCancel, onSave, existingSerials }: AddD
 
 // Row in the OCR confirmation list. Greyed when value is missing so the user
 // can see which fields they'll need to fill in by hand on the next step.
+function findDuplicateSerials(serials: string[], referenceSerials?: Set<string>): string[] {
+  const seen = new Set<string>();
+  const duplicates = new Set<string>();
+  for (const serial of serials) {
+    const value = serial.trim();
+    if (!value) continue;
+    const key = value.toLowerCase();
+    if (seen.has(key) || referenceSerials?.has(key)) duplicates.add(value);
+    seen.add(key);
+  }
+  return [...duplicates];
+}
+
+function EvidenceMatchStatus({ serials, referenceSerials }: { serials: string[]; referenceSerials?: Set<string> }) {
+  const detected = serials.map(s => s.trim()).filter(Boolean);
+  const duplicates = findDuplicateSerials(detected, referenceSerials);
+  const status = detected.length === 0
+    ? { label: "AI อ่าน Serial ไม่ได้ — บันทึกเป็นหลักฐานทั่วไป", cls: "border-amber-200 bg-amber-50 text-amber-700" }
+    : duplicates.length > 0
+    ? { label: "พบ Serial ซ้ำ ไม่สามารถบันทึกได้", cls: "border-red-200 bg-red-50 text-red-700" }
+    : { label: "ไม่พบ Serial ที่ซ้ำในรายการเดิม-ยังสามารถสามารถบันทึกรายการได้", cls: "border-emerald-200 bg-emerald-50 text-emerald-700" };
+  return <div className={`rounded-lg border px-3 py-2 text-xs font-semibold ${status.cls}`}>{status.label}</div>;
+}
+
 function PreviewRow({ label, value, mono }: { label: string; value: string | null; mono?: boolean }) {
   return (
     <div className="flex items-center gap-2 text-sm">
