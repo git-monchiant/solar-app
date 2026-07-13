@@ -1,4 +1,8 @@
-# syntax=docker/dockerfile:1.7
+# NOTE: no `# syntax=docker/dockerfile:1.x` directive on purpose — pinning an
+# external BuildKit frontend forces a pull of docker/dockerfile from Docker Hub
+# at build time, which hard-fails whenever the prod host's resolver (systemd-
+# resolved stub at 127.0.0.53) flakes. This Dockerfile uses only standard
+# features, so the daemon's built-in frontend handles it with no network pull.
 # Multi-stage build for Next.js 16 (standalone output). Pins node:20-slim so
 # native modules (canvas, puppeteer) build without fighting musl on alpine.
 # Final image listens on port 80 because the UAT gateway forwards there.
