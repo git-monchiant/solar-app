@@ -917,6 +917,15 @@ export default function LeadDetailPage({ params }: { params: Promise<{ id: strin
     const installDone = !!lead.install_completed_at;
     if (stepIdx === 4 && installDone) return "done";
     if ((stepIdx === 4 || stepIdx === 5) && (currentStep === 4 || currentStep === 5)) return "active";
+    // Grid-Tie (idx 6, ขอขนานไฟ) runs in parallel with install/warranty —
+    // the utility request happens alongside the install job in the field,
+    // not after warranty is signed off. Keep it workable from the install
+    // phase onward instead of locked until status flips to 'gridtie'.
+    // "ปิดงาน" (status → closed) is what marks it done.
+    if (stepIdx === 6) {
+      if (lead.status === "closed") return "done";
+      if (currentStep >= 4) return "active";
+    }
     if (stepIdx < currentStep) return "done";
     if (stepIdx === currentStep) return "active";
     return "locked";

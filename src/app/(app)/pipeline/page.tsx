@@ -33,7 +33,7 @@ interface Lead {
   order_total_count?: number | null;
 }
 
-type TabKey = "all" | "pre_survey" | "booking" | "survey" | "quotation" | "order" | "deposit" | "wait_install" | "install" | "installing" | "warranty" | "lost";
+type TabKey = "all" | "pre_survey" | "booking" | "survey" | "quotation" | "order" | "deposit" | "wait_install" | "install" | "installing" | "warranty" | "gridtie" | "lost";
 
 // Booking = pre_survey lead ที่กดยืนยันการชำระเงิน 1 หรือ 2 แล้ว
 // (status เป็น pre_survey-01 หรือ pre_survey-02). plain `pre_survey` =
@@ -94,7 +94,7 @@ export default function PipelinePage() {
   const [sortOrder, setSortOrder] = useState<"asc" | "desc">("asc");
   useEffect(() => {
     const saved = localStorage.getItem("pipelineTab") as TabKey;
-    const ALL_KEYS: TabKey[] = ["all","pre_survey","booking","survey","quotation","order","deposit","wait_install","install","installing","warranty","lost"];
+    const ALL_KEYS: TabKey[] = ["all","pre_survey","booking","survey","quotation","order","deposit","wait_install","install","installing","warranty","gridtie","lost"];
     if (saved && ALL_KEYS.includes(saved)) setTab(saved);
 
     const sf = localStorage.getItem("pipeline.sortField");
@@ -187,6 +187,7 @@ export default function PipelinePage() {
     { key: "install",    label: "รอติดตั้ง" },
     { key: "installing", label: "กำลังติดตั้ง" },
     { key: "warranty",   label: "รอออกใบรับประกัน" },
+    { key: "gridtie",    label: "ขอขนานไฟ" },
     { key: "lost",       label: "ยกเลิก" },
   ];
   const visible = isAdmin || isSales || isSolar || isAccount;
