@@ -34,11 +34,11 @@ interface Lead {
   order_total_count?: number | null;
 }
 
-type TabKey = "all" | "pre_survey" | "booking" | "survey" | "quotation" | "order" | "deposit" | "wait_install" | "install" | "installing" | "warranty" | "lost";
+type TabKey = "all" | "pre_survey" | "booking" | "survey" | "quotation" | "order" | "deposit" | "wait_install" | "install" | "installing" | "warranty" | "gridtie" | "lost";
 type SortField = "follow_up" | "created" | "name" | "activity" | "survey_date" | "install_date";
 type SortOrder = "asc" | "desc";
 
-const TAB_KEYS: TabKey[] = ["all","pre_survey","booking","survey","quotation","order","deposit","wait_install","install","installing","warranty","lost"];
+const TAB_KEYS: TabKey[] = ["all","pre_survey","booking","survey","quotation","order","deposit","wait_install","install","installing","warranty","gridtie","lost"];
 const SORT_FIELDS: SortField[] = ["follow_up", "created", "name", "activity", "survey_date", "install_date"];
 
 // Booking = pre_survey lead ที่กดยืนยันการชำระเงิน 1 หรือ 2 แล้ว
@@ -192,6 +192,7 @@ export default function PipelinePage() {
     { key: "install",    label: "รอติดตั้ง" },
     { key: "installing", label: "กำลังติดตั้ง" },
     { key: "warranty",   label: "รอออกใบรับประกัน" },
+    { key: "gridtie",    label: "ขอขนานไฟ" },
     { key: "lost",       label: "ยกเลิก" },
   ];
   const visible = isAdmin || isSales || isSolar || isAccount;
