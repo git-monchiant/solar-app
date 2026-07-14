@@ -94,7 +94,7 @@ export default function PipelinePage() {
   });
   const { activeRoles } = useActiveRoles();
   const isSales = hasRole(activeRoles, "sales");
-  const isSolar = hasRole(activeRoles, "solar", "smartify");
+  const isSolar = hasRole(activeRoles, "solar");
   const isAdmin = hasRole(activeRoles, "admin");
   const isAccount = hasRole(activeRoles, "account");
 

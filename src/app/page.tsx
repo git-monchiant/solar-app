@@ -13,14 +13,12 @@ export default function Home() {
     const seekerOnly =
       activeRoles.includes("leadsseeker") &&
       !activeRoles.includes("sales") &&
-      !activeRoles.includes("solar") &&
-      !activeRoles.includes("smartify");
+      !activeRoles.includes("solar");
     const accountOnly =
       activeRoles.includes("account") &&
       !activeRoles.includes("admin") &&
       !activeRoles.includes("sales") &&
-      !activeRoles.includes("solar") &&
-      !activeRoles.includes("smartify");
+      !activeRoles.includes("solar");
     if (seekerOnly) router.replace("/seeker");
     else if (accountOnly) router.replace("/today");
     else router.replace("/pipeline");

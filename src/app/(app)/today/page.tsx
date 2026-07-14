@@ -102,7 +102,7 @@ export default function TodayPage() {
     if (activeRoles.length === 0) return;
     const isAdminish = hasRole(activeRoles, "admin", "account");
     const isSales = hasRole(activeRoles, "sales") || isAdminish;
-    const isSolar = hasRole(activeRoles, "solar", "smartify") || isAdminish;
+    const isSolar = hasRole(activeRoles, "solar") || isAdminish;
     const validKeys: string[] = [];
     if (isSales) validKeys.push("sales_all", "sales", "booking", "quote", "deposit_paid", "sales_wait_install", "sales_solar");
     if (isSolar) validKeys.push("solar", "solar_survey", "solar_quote", "solar_wait_install", "solar_install", "solar_installing", "solar_warranty", "solar_gridtie");
@@ -138,10 +138,10 @@ export default function TodayPage() {
   }
 
   // Account-only role → simplified single-tab "รอยืนยันรับเงิน" view.
-  // (Sales/solar/admin/smartify see the full multi-tab Today below.)
+  // (Sales/solar/admin see the full multi-tab Today below.)
   const accountOnly =
     hasRole(activeRoles, "account") &&
-    !hasRole(activeRoles, "admin", "sales", "solar", "smartify");
+    !hasRole(activeRoles, "admin", "sales", "solar");
   if (accountOnly) {
     return <AccountTodayView leads={allLeads || []} search={search} setSearch={setSearch} />;
   }
@@ -204,7 +204,7 @@ export default function TodayPage() {
   const salesSolarCount = d.quotationPending.length;
 
   const isSales = hasRole(activeRoles, "sales");
-  const isSolar = hasRole(activeRoles, "solar", "smartify");
+  const isSolar = hasRole(activeRoles, "solar");
   // Solar sub-tabs — survey/install grouped from the same data buckets the
   // ทีมโซลาร์ tab uses, so each section can be reached directly without
   // scrolling.

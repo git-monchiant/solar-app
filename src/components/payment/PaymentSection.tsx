@@ -230,7 +230,7 @@ export default function PaymentSection({
   // admin switches to seeker mode, payment confirm/rollback should disappear.
   const isAdmin = activeRoles.includes("admin");
   // Step-1 (uploader) — admin/sales/solar can submit slips for review.
-  const canStep1 = activeRoles.some(r => r === "admin" || r === "sales" || r === "solar" || r === "smartify");
+  const canStep1 = activeRoles.some(r => r === "admin" || r === "sales" || r === "solar");
   // Step-2 (accountant) — only account/admin can confirm receipt of money.
   const canStep2 = activeRoles.some(r => r === "admin" || r === "account");
 

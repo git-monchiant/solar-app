@@ -3,8 +3,8 @@
 import { useEffect, useState } from "react";
 import { apiFetch } from "./api";
 
-export type Role = "admin" | "sales" | "solar" | "leadsseeker" | "account" | "smartify";
-export const ALL_ROLES: Role[] = ["admin", "sales", "solar", "leadsseeker", "account", "smartify"];
+export type Role = "admin" | "sales" | "solar" | "leadsseeker" | "account";
+export const ALL_ROLES: Role[] = ["admin", "sales", "solar", "leadsseeker", "account"];
 
 export const ROLE_LABEL: Record<Role, string> = {
   admin: "Admin",
@@ -12,7 +12,6 @@ export const ROLE_LABEL: Record<Role, string> = {
   solar: "Solar",
   leadsseeker: "Leads Seeker",
   account: "Account",
-  smartify: "Smartify",
 };
 
 const STORAGE_KEY = "activeRoles";
