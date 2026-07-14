@@ -323,7 +323,7 @@ export default function PendingApprovalReport() {
                 <button
                   type="button"
                   onClick={() => openChequePaymentContext(it, true)}
-                  className={`h-8 px-3 rounded-lg text-sm font-semibold text-white bg-emerald-600 hover:brightness-110 inline-flex items-center justify-center shrink-0 ${className}`}
+                  className={`h-8 px-3 rounded-lg text-sm font-semibold text-white bg-emerald-500 hover:bg-emerald-600 inline-flex items-center justify-center shrink-0 ${className}`}
                 >
                   ยืนยันรับเงิน
                 </button>
@@ -331,14 +331,14 @@ export default function PendingApprovalReport() {
                 <button
                   type="button"
                   onClick={() => openChequePaymentContext(it, true)}
-                  className={`h-8 px-3 rounded-lg text-sm font-semibold text-white bg-amber-500 hover:brightness-110 inline-flex items-center justify-center shrink-0 ${className}`}
+                  className={`h-8 px-3 rounded-lg text-sm font-semibold text-white bg-emerald-500 hover:bg-emerald-600 inline-flex items-center justify-center shrink-0 ${className}`}
                 >
                   ยืนยันรับเงิน
                 </button>
               ) : (
                 <LeadLink
                   id={it.lead_id}
-                  className={`h-8 px-3 rounded-lg text-sm font-semibold text-white bg-amber-500 hover:brightness-110 inline-flex items-center justify-center shrink-0 ${className}`}
+                  className={`h-8 px-3 rounded-lg text-sm font-semibold text-white bg-emerald-500 hover:bg-emerald-600 inline-flex items-center justify-center shrink-0 ${className}`}
                 >
                   ยืนยันรับเงิน
                 </LeadLink>
