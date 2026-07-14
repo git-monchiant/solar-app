@@ -30,11 +30,13 @@ interface TodayData {
   stats: { pipeline: number; won: number; lost: number; new_this_week: number };
 }
 
+type TodayTab = "sales_all" | "sales" | "booking" | "quote" | "deposit_paid" | "sales_wait_install" | "sales_solar" | "solar" | "solar_survey" | "solar_quote" | "solar_wait_install" | "solar_install" | "solar_installing" | "solar_warranty" | "solar_gridtie" | "calendar";
+
 export default function TodayPage() {
   const [todayData, setTodayData] = useState<TodayData | null>(null);
   const [allLeads, setAllLeads] = useState<LeadData[] | null>(null);
   const [loading, setLoading] = useState(true);
-  const [tab, setTab] = useState<"sales_all" | "sales" | "booking" | "quote" | "deposit_paid" | "sales_wait_install" | "sales_solar" | "solar" | "solar_survey" | "solar_quote" | "solar_wait_install" | "solar_install" | "solar_installing" | "solar_warranty" | "calendar">("sales_all");
+  const [tab, setTab] = useState<TodayTab>("sales_all");
   const [search, setSearch] = useState("");
   const [zones, setZones] = useState<{ id: number; name: string; color?: string | null }[]>([]);
   const [selectedZone, setSelectedZone] = useState<string>("");
@@ -103,10 +105,10 @@ export default function TodayPage() {
     const isSolar = hasRole(activeRoles, "solar", "smartify") || isAdminish;
     const validKeys: string[] = [];
     if (isSales) validKeys.push("sales_all", "sales", "booking", "quote", "deposit_paid", "sales_wait_install", "sales_solar");
-    if (isSolar) validKeys.push("solar", "solar_survey", "solar_quote", "solar_wait_install", "solar_install", "solar_installing", "solar_warranty");
+    if (isSolar) validKeys.push("solar", "solar_survey", "solar_quote", "solar_wait_install", "solar_install", "solar_installing", "solar_warranty", "solar_gridtie");
     validKeys.push("calendar");
     if (!validKeys.includes(tab)) {
-      const fallback = validKeys[0] as "sales_all" | "sales" | "booking" | "quote" | "deposit_paid" | "sales_wait_install" | "sales_solar" | "solar" | "solar_survey" | "solar_quote" | "solar_wait_install" | "solar_install" | "solar_installing" | "solar_warranty" | "calendar";
+      const fallback = validKeys[0] as TodayTab;
       setTab(fallback);
     }
   }, [activeRoles, tab]);
@@ -217,6 +219,8 @@ export default function TodayPage() {
   const solarInstallCount = installFuture.length;
   const solarInstallingCount = installInProgress.length;
   const solarWarrantyCount = d.warranty.length;
+  // ใช้ชุดข้อมูลและเงื่อนไขเดียวกับ Pipeline > ขอขนานไฟ
+  const solarGridtie = filterLeads(allLeads || []).filter(l => l.status === "gridtie");
 
   const sortLeads = (leads: LeadData[], dateField?: "survey_date" | "install_date"): LeadData[] => {
     const ts = (v: string | null | undefined, fallback: number) =>
@@ -316,11 +320,12 @@ export default function TodayPage() {
     isSolar && { key: "solar_install", label: "รอติดตั้ง", count: solarInstallCount },
     isSolar && { key: "solar_installing", label: "กำลังติดตั้ง", count: solarInstallingCount },
     isSolar && { key: "solar_warranty", label: "รอออกใบรับประกัน", count: solarWarrantyCount },
+    isSolar && { key: "solar_gridtie", label: "ขอขนานไฟ", count: solarGridtie.length },
     { key: "calendar", label: "ปฏิทิน" },
   ].filter(Boolean) as { key: string; label: string; count?: number }[];
 
   // While effect re-syncs an invalid tab, render against an in-bounds key
-  const visibleTab = (allTabs.some(t => t.key === tab) ? tab : (allTabs[0]?.key ?? "calendar")) as "sales_all" | "sales" | "booking" | "quote" | "deposit_paid" | "sales_wait_install" | "sales_solar" | "solar" | "solar_survey" | "solar_quote" | "solar_wait_install" | "solar_install" | "solar_installing" | "solar_warranty" | "calendar";
+  const visibleTab = (allTabs.some(t => t.key === tab) ? tab : (allTabs[0]?.key ?? "calendar")) as TodayTab;
 
   return (
     <div>
@@ -332,7 +337,7 @@ export default function TodayPage() {
         searchPlaceholder="ค้นหาชื่อ, เบอร์..."
         tabs={allTabs}
         activeTab={visibleTab}
-        onTabChange={(k) => setTab(k as "sales_all" | "sales" | "booking" | "quote" | "deposit_paid" | "sales_wait_install" | "sales_solar" | "solar" | "solar_survey" | "solar_quote" | "solar_wait_install" | "solar_install" | "solar_installing" | "solar_warranty" | "calendar")}
+        onTabChange={(k) => setTab(k as TodayTab)}
       />
 
       {/* Content */}
@@ -941,6 +946,32 @@ export default function TodayPage() {
                 </div>
                 <div className="text-base font-semibold text-gray-900">All caught up!</div>
                 <div className="text-sm text-gray-500 mt-1">ไม่มีรายการรอออกใบรับประกัน</div>
+              </div>
+            )}
+          </>
+        )}
+
+        {/* Solar · ขอขนานไฟ — รายการเดียวกับ Pipeline > ขอขนานไฟ */}
+        {visibleTab === "solar_gridtie" && (
+          <>
+            {solarGridtie.length > 0 ? (
+              <section>
+                <div className="flex items-center justify-between mb-3 px-1">
+                  <h2 className="text-xs font-bold tracking-wider uppercase text-amber-700">ขอขนานไฟ</h2>
+                  <div className="flex items-center gap-2">
+                    {sortControls}
+                    <span className="text-xs font-semibold text-amber-700 bg-amber-50 px-2 py-0.5 rounded-full">{solarGridtie.length}</span>
+                  </div>
+                </div>
+                <div className="space-y-3">{sortLeads(solarGridtie).map((l) => <LeadCard key={l.id} lead={l} />)}</div>
+              </section>
+            ) : (
+              <div className="text-center py-16">
+                <div className="w-16 h-16 mx-auto rounded-full bg-amber-50 flex items-center justify-center mb-3">
+                  <CheckIcon className="w-8 h-8 text-amber-600" strokeWidth={2} />
+                </div>
+                <div className="text-base font-semibold text-gray-900">All caught up!</div>
+                <div className="text-sm text-gray-500 mt-1">ไม่มีรายการขอขนานไฟ</div>
               </div>
             )}
           </>

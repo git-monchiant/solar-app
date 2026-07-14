@@ -1341,7 +1341,11 @@ export default function PaymentSection({
                 type="button"
                 disabled={!canConfirm || confirming}
                 onClick={handleConfirm}
-                className="w-full h-11 mt-3 rounded-lg text-sm font-semibold transition-colors flex items-center justify-center gap-1.5 text-white bg-gradient-to-r from-primary to-primary-dark hover:brightness-110 disabled:opacity-40 disabled:cursor-not-allowed"
+                className={`w-full h-11 mt-3 rounded-lg text-sm font-semibold transition-colors flex items-center justify-center gap-1.5 text-white disabled:opacity-40 disabled:cursor-not-allowed ${
+                  chequePayment
+                    ? "bg-amber-500 hover:bg-amber-600"
+                    : "bg-gradient-to-r from-primary to-primary-dark hover:brightness-110"
+                }`}
               >
                 {confirming ? (
                   <>

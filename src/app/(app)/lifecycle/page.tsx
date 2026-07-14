@@ -10,11 +10,14 @@ import Header from "@/components/layout/Header";
 import { STATUS_CONFIG, getMainStatus, getStatusLabel } from "@/lib/constants/statuses";
 import { formatThaiDateShort } from "@/lib/utils/formatters";
 import { LeadLink } from "@/components/lead/LeadLink";
+import { getSourceStyle } from "@/lib/source-tag";
+import { hasRole, useActiveRoles } from "@/lib/roles";
 
 interface Row {
   id: number;
   house_number: string | null;
   full_name: string;
+  source: string | null;
   status: string;
   customer_grade: string | null;
   customer_group: string | null;
@@ -161,7 +164,31 @@ const ALL_COLS: ColKey[] = ["created_at", "first_contact_at",
 
 const emptyTri = (): Record<ColKey, Tri> => Object.fromEntries(ALL_COLS.map(k => [k, "any"])) as Record<ColKey, Tri>;
 
+function SourceCell({ source }: { source: string | null }) {
+  if (!source) return <span className="text-gray-300">—</span>;
+  const style = getSourceStyle(source);
+  return (
+    <span
+      title={style.label}
+      className={`inline-block max-w-full truncate rounded px-1.5 py-0.5 text-xxs whitespace-nowrap ring-1 ring-inset ${style.cls}`}
+    >
+      {style.label}
+    </span>
+  );
+}
+
+function TriBadge({ state }: { state: Tri }) {
+  if (state === "any") return null;
+  return (
+    <span className={`ml-1 inline-flex items-center justify-center w-3.5 h-3.5 rounded-sm text-[8px] font-bold ${state === "yes" ? "bg-emerald-500 text-white" : "bg-red-500 text-white"}`}>
+      {state === "yes" ? "✓" : "✗"}
+    </span>
+  );
+}
+
 export default function LifecyclePage() {
+  const { activeRoles } = useActiveRoles();
+  const showSource = hasRole(activeRoles, "admin", "sales", "solar", "account");
   const [rows, setRows] = useState<Row[]>([]);
   const [loading, setLoading] = useState(true);
   const [q, setQ] = useState("");
@@ -274,7 +301,7 @@ export default function LifecyclePage() {
     // (See dataCells for the exact mapping.) Group total = 2 quote/payment
     // workflow dates + 11 money + 1 followup date = 14.
     const groupSpec: { title: string; cols: number }[] = [
-      { title: "ลีด", cols: 9 }, // + ชื่อ Sales + Grade + กลุ่ม
+      { title: "ลีด", cols: showSource ? 10 : 9 }, // + ชื่อ Sales + ที่มา (ตาม Role) + Grade + กลุ่ม
       { title: "การติดต่อ", cols: 6 },
       { title: "Pre-Survey / Survey", cols: 3 },
       // Quote/Order = 2 workflow dates + 11 money + 5 payment dates (one
@@ -289,7 +316,9 @@ export default function LifecyclePage() {
       for (let i = 1; i < g.cols; i++) groupRow.push("");
     }
     const colRow = [
-      "#", "บ้านเลขที่", "ชื่อ", "ชื่อ Sales", "สถานะ", "Grade", "กลุ่ม", "วันสร้าง", "Aging",
+      "#", "บ้านเลขที่", "ชื่อ",
+      ...(showSource ? ["ที่มา"] : []),
+      "ชื่อ Sales", "สถานะ", "Grade", "กลุ่ม", "วันสร้าง", "Aging",
       "ครั้งที่ 1", "ครั้งที่ 2", "ครั้งที่ 3", "ครั้งที่ 4", "ครั้งที่ 5", "เสนอขาย",
       "จองสำรวจ", "นัดสำรวจ", "สำรวจเสร็จ",
       "ออกใบเสนอราคา", "จ่ายมัดจำ/ทั้งหมด",
@@ -329,6 +358,7 @@ export default function LifecyclePage() {
         { v: i + 1 },
         { v: r.house_number ?? "" },
         { v: r.full_name },
+        ...(showSource ? [{ v: r.source ? getSourceStyle(r.source).label : "" }] : []),
         { v: r.assigned_name ?? "" },
         { v: getStatusLabel({ status: r.status, install_date: r.install_date }) },
         { v: r.customer_grade ?? "" },
@@ -477,12 +507,17 @@ export default function LifecyclePage() {
     }
 
     // Widths track the column order:
-    //   ลีด (7) | การติดต่อ (6) | Pre-Survey/Survey (3)
+    //   ลีด (9, or 10 when ที่มา is visible) | การติดต่อ (6) | Pre-Survey/Survey (3)
     //   | Quote/Order: 2 workflow dates + 16 money/paid-date + 1 followup = 19
     //   | ติดตั้ง/รับประกัน (4)
     ws["!cols"] = [
-      { wch: 4 }, { wch: 10 }, { wch: 24 }, { wch: 16 }, { wch: 14 }, { wch: 14 }, { wch: 8 },
+      // ลีด
+      { wch: 4 }, { wch: 10 }, { wch: 24 },
+      ...(showSource ? [{ wch: 28 }] : []),
+      { wch: 16 }, { wch: 14 }, { wch: 14 }, { wch: 8 }, { wch: 16 }, { wch: 16 },
+      // การติดต่อ
       { wch: 16 }, { wch: 16 }, { wch: 16 }, { wch: 16 }, { wch: 16 }, { wch: 14 },
+      // Pre-Survey / Survey
       { wch: 14 }, { wch: 14 }, { wch: 14 },
       // Quote/Order workflow + money + followup
       { wch: 18 }, { wch: 20 },
@@ -565,16 +600,6 @@ export default function LifecyclePage() {
     );
   };
 
-  // Inline tri-state indicator for the milestone column header.
-  const TriBadge = ({ state }: { state: Tri }) => {
-    if (state === "any") return null;
-    return (
-      <span className={`ml-1 inline-flex items-center justify-center w-3.5 h-3.5 rounded-sm text-[8px] font-bold ${state === "yes" ? "bg-emerald-500 text-white" : "bg-red-500 text-white"}`}>
-        {state === "yes" ? "✓" : "✗"}
-      </span>
-    );
-  };
-
   const flatCols = GROUPS.flatMap(g => g.cols);
   const groupEnds = new Set<number>();
   { let acc = 0; for (let i = 0; i < GROUPS.length - 1; i++) { acc += GROUPS[i].cols.length; groupEnds.add(acc - 1); } }
@@ -648,7 +673,10 @@ export default function LifecyclePage() {
                     trigger a hydration error, so we keep all <col>s as direct
                     array children with no surrounding whitespace. */}
                 {[
-                  ["#", "w-8"], ["house", "w-16"], ["name", "w-28"], ["status", "w-20"], ["created", "w-14"], ["aging", "w-12"],
+                  ["#", "w-8"], ["house", "w-16"], ["name", "w-28"],
+                  ...(showSource ? [["source", "w-36"]] : []),
+                  ["status", "w-20"], ["grade", "w-10"], ["group", "w-14"],
+                  ["created", "w-14"], ["aging", "w-12"],
                 ].map(([k, cls]) => <col key={k} className={cls} />)}
                 {flatCols.map(c => {
                   // Contact group + install date cols are narrow — cells are
@@ -666,7 +694,7 @@ export default function LifecyclePage() {
               <thead>
                 {/* Group header row — sticky at top of scroll container */}
                 <tr className="border-b border-gray-200">
-                  <th colSpan={8} className="sticky top-16 z-20 bg-gray-50 px-2 py-1.5 text-left text-xxs font-semibold text-gray-700 border-r border-gray-200">ลีด</th>
+                  <th colSpan={8 + (showSource ? 1 : 0)} className="sticky top-16 z-20 bg-gray-50 px-2 py-1.5 text-left text-xxs font-semibold text-gray-700 border-r border-gray-200">ลีด</th>
                   {GROUPS.map(g => (
                     <th key={g.title} colSpan={g.cols.length} className={`sticky top-16 z-20 px-2 py-1.5 text-left text-xxs font-semibold border-r border-gray-200 ${g.tone}`}>
                       {g.title}
@@ -678,6 +706,7 @@ export default function LifecyclePage() {
                   <th className="sticky top-[100px] z-20 bg-gray-50 px-2 py-1.5 text-right font-medium">#</th>
                   <th className="sticky top-[100px] z-20 bg-gray-50 px-2 py-1.5 text-left font-medium">บ้านเลขที่</th>
                   <th className="sticky top-[100px] z-20 bg-gray-50 px-2 py-1.5 text-left font-medium">ชื่อ</th>
+                  {showSource && <th className="sticky top-[100px] z-20 bg-gray-50 px-2 py-1.5 text-left font-medium">ที่มา</th>}
                   <th className="sticky top-[100px] z-20 bg-gray-50 px-2 py-1.5 text-left font-medium">สถานะ</th>
                   <th className="sticky top-[100px] z-20 bg-gray-50 px-2 py-1.5 text-center font-medium">Grade</th>
                   <th className="sticky top-[100px] z-20 bg-gray-50 px-2 py-1.5 text-left font-medium">กลุ่ม</th>
@@ -710,6 +739,7 @@ export default function LifecyclePage() {
                     <td className="px-2 py-1.5 truncate" title={r.full_name}>
                       <LeadLink id={r.id} className="text-primary hover:underline">{r.full_name}</LeadLink>
                     </td>
+                    {showSource && <td className="px-2 py-1.5 overflow-hidden"><SourceCell source={r.source} /></td>}
                     <td className="px-2 py-1.5 truncate"><StatusPill lead={r} /></td>
                     <td className="px-2 py-1.5 text-center font-bold tabular-nums"><GradeCell grade={r.customer_grade} /></td>
                     <td className="px-2 py-1.5"><GroupCell group={r.customer_group} /></td>
@@ -740,7 +770,7 @@ export default function LifecyclePage() {
                   </tr>
                 ))}
                 {filtered.length === 0 && (
-                  <tr><td colSpan={7 + flatCols.length} className="text-center py-8 text-gray-400">ไม่มีลีด</td></tr>
+                  <tr><td colSpan={8 + (showSource ? 1 : 0) + flatCols.length} className="text-center py-8 text-gray-400">ไม่มีลีด</td></tr>
                 )}
               </tbody>
             </table>

@@ -21,3 +21,4 @@ Statuses:
 | [20260710-04-after-install-installments-step5.md](20260710-04-after-install-installments-step5.md) | done | - | Move installments marked after installation to Step 05 collection without duplicate balance rows |
 | [20260710-05-payment-intent-race-hardening.md](20260710-05-payment-intent-race-hardening.md) | done | - | Prevent post-confirmation payment drafts and repair approved SM-260077 Development data |
 | [20260710-06-step5-cheque-action-layout.md](20260710-06-step5-cheque-action-layout.md) | done | - | Make Step 05 cheque confirmation and rejection actions match the requested full-width layout |
+| [20260714-01-lead-tracking-source-column.md](20260714-01-lead-tracking-source-column.md) | done | - | เพิ่มคอลัมน์ที่มาใน Lead Tracking และ Excel สำหรับ Admin, Sales, Solar และ Account; ไม่แสดงให้ Leads Seeker/Smartify |
