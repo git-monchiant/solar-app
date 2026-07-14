@@ -22,6 +22,7 @@ import { compressImage } from "@/lib/utils/compressImage";
 import { buildAppointmentFlex } from "@/lib/utils/line-flex";
 import { formatTHB as fmt, formatThaiDate as formatDate } from "@/lib/utils/formatters";
 import DoneSection from "./DoneSection";
+import { COMBINED_EXTRA_MARKER, combinedPaymentDescription, parseCombinedPaymentAllocation } from "@/lib/combined-payment";
 
 const SUB_STEPS = [
   ["นัดหมาย", "นัด"] as const,
@@ -183,6 +184,7 @@ export default function InstallStep({ lead, state, refresh, expanded, onToggle }
     confirmed_at: string | null;
     payment_method: string | null;
     cheque_received_at: string | null;
+    submitted_at?: string | null;
   };
   type PlannedInstallment = {
     pct?: number;
@@ -252,13 +254,30 @@ export default function InstallStep({ lead, state, refresh, expanded, onToggle }
   // order_after_slip row whose description explicitly included the extra cost.
   // Treat that legacy confirmation as covering the current extra amount so an
   // already-paid customer is not asked to pay the same surcharge again.
-  const legacyCombinedExtraPaid = afterRows.some(row =>
-    !!row.confirmed_at && (row.description || "").includes("ค่าใช้จ่ายเพิ่มเติม"),
+  const legacyCombinedExtraPaid = afterRows
+    .filter(row => !!row.confirmed_at && (row.description || "").includes(COMBINED_EXTRA_MARKER))
+    .reduce((sum, row) => sum + (parseCombinedPaymentAllocation(row.description)?.extra
+      ?? Math.max(0, Number(row.amount || 0) - remainingAmount)), 0);
+  const structuredCombinedExtraPaid = afterInstallmentPlans.reduce((sum, { plan, index }) => {
+    const row = paymentRows.find(candidate =>
+      candidate.slip_field === `order_installment_${index}`
+      && !!candidate.confirmed_at
+      && (candidate.description || "").includes(COMBINED_EXTRA_MARKER),
+    );
+    if (!row) return sum;
+    const allocation = parseCombinedPaymentAllocation(row.description);
+    if (allocation) return sum + allocation.extra;
+    const installmentAmount = Math.max(0, Math.round(netDue * Number(plan.pct || 0) / 100));
+    return sum + Math.max(0, Number(row.amount || 0) - installmentAmount);
+  }, 0);
+  const confirmedExtraTotal = Math.min(
+    extraCost,
+    separatelyConfirmedExtraTotal + legacyCombinedExtraPaid + structuredCombinedExtraPaid,
   );
-  const confirmedExtraTotal = separatelyConfirmedExtraTotal
-    + (legacyCombinedExtraPaid ? Math.max(0, extraCost - separatelyConfirmedExtraTotal) : 0);
   const extraOutstanding = Math.max(0, extraCost - confirmedExtraTotal);
-  const pendingExtraRow = extraRows.find(r => !r.confirmed_at) ?? null;
+  const pendingExtraRow = extraRows.find(r => !r.confirmed_at && (!!r.submitted_at || !!r.cheque_received_at))
+    ?? extraRows.find(r => !r.confirmed_at)
+    ?? null;
   const extraChequePending = pendingExtraRow?.payment_method === "cheque" && pendingExtraRow.cheque_received_at
     ? pendingExtraRow
     : null;
@@ -270,14 +289,53 @@ export default function InstallStep({ lead, state, refresh, expanded, onToggle }
   const extraStepNo = 100 + (pendingExtraRow
     ? parseInt(pendingExtraRow.slip_field.replace("install_extra_", ""), 10) || 0
     : nextExtraIndex);
-  const extraPaymentReady = extraOutstanding <= 0 || !!extraChequePending;
   const afterInstallmentStates = afterInstallmentPlans.map(({ plan, index }) => {
     const payment = paymentForField(`order_installment_${index}`);
-    const plannedAmount = Math.max(0, Math.round(netDue * Number(plan.pct || 0) / 100));
-    const amount = payment ? Number(payment.amount || 0) : plannedAmount;
+    const allocation = parseCombinedPaymentAllocation(payment?.description);
+    const percentageAmount = Math.max(0, Math.round(netDue * Number(plan.pct || 0) / 100));
+    const plannedAmount = index === plannedInstallments.length - 1 && !payment?.confirmed_at
+      ? remainingAmount
+      : percentageAmount;
+    const amount = allocation?.base
+      ?? (payment && !(payment.description || "").includes(COMBINED_EXTRA_MARKER)
+        ? Number(payment.amount || 0)
+        : plannedAmount);
     const ready = !!payment?.confirmed_at || !!payment?.cheque_received_at;
     return { plan, index, payment, amount, ready };
   });
+  const unpaidAfterInstallments = afterInstallmentStates.filter(item => !item.payment?.confirmed_at);
+  const combinableAfterInstallments = unpaidAfterInstallments.filter(item =>
+    (item.payment?.description || "").includes(COMBINED_EXTRA_MARKER)
+    || (!item.payment?.submitted_at && !item.payment?.cheque_received_at),
+  );
+  const pendingExtraHasEvidence = !!pendingExtraRow?.submitted_at || !!pendingExtraRow?.cheque_received_at;
+  const existingCombinedAfterInstallment = afterInstallmentStates.find(item =>
+    (item.payment?.description || "").includes(COMBINED_EXTRA_MARKER),
+  ) ?? null;
+  const combinedAfterInstallment = existingCombinedAfterInstallment
+    ?? (extraOutstanding > 0 && combinableAfterInstallments.length === 1 && !pendingExtraHasEvidence
+        ? combinableAfterInstallments[0]
+        : null);
+  const combinedAfterChequePending = combinedAfterInstallment?.payment?.payment_method === "cheque"
+    && combinedAfterInstallment.payment.cheque_received_at
+    && !combinedAfterInstallment.payment.confirmed_at
+    ? combinedAfterInstallment.payment
+    : null;
+  const existingLegacyCombinedRow = afterRows.find(row =>
+    (row.description || "").includes(COMBINED_EXTRA_MARKER),
+  ) ?? null;
+  const legacyCombinedCreationActive = !hasStructuredAfterInstallments
+    && remainingAmount > 0
+    && extraOutstanding > 0
+    && !pendingExtraHasEvidence
+    && !existingLegacyCombinedRow;
+  const legacyCombinedDisplay = !!existingLegacyCombinedRow || legacyCombinedCreationActive;
+  const legacyCombinedBlocksExtra = legacyCombinedCreationActive
+    || (!!existingLegacyCombinedRow && !existingLegacyCombinedRow.confirmed_at);
+  const extraPaymentReady = extraOutstanding <= 0
+    || !!extraChequePending
+    || !!combinedAfterChequePending
+    || (!!afterChequePending && (afterChequePending.description || "").includes(COMBINED_EXTRA_MARKER));
   const afterInstallmentsReady = afterInstallmentStates.every(item => item.ready);
   const afterInstallmentOutstanding = afterInstallmentStates
     .filter(item => !item.payment?.confirmed_at)
@@ -1305,9 +1363,73 @@ export default function InstallStep({ lead, state, refresh, expanded, onToggle }
             </div>
           </div>
         );
+        const combinedAfterAmount = combinedAfterInstallment
+          ? ((combinedAfterInstallment.payment?.description || "").includes(COMBINED_EXTRA_MARKER)
+              ? Number(combinedAfterInstallment.payment?.amount || 0)
+              : combinedAfterInstallment.amount + extraOutstanding)
+          : 0;
+        const combinedAfterExtraAmount = combinedAfterInstallment
+          ? ((combinedAfterInstallment.payment?.description || "").includes(COMBINED_EXTRA_MARKER)
+              ? (parseCombinedPaymentAllocation(combinedAfterInstallment.payment?.description)?.extra
+                ?? Math.max(0, Number(combinedAfterInstallment.payment?.amount || 0) - combinedAfterInstallment.amount))
+              : extraOutstanding)
+          : 0;
+        const legacyCollectionAmount = existingLegacyCombinedRow
+          ? Number(existingLegacyCombinedRow.amount || 0)
+          : (legacyCombinedCreationActive ? remainingAmount + extraOutstanding : remainingAmount);
+        const legacyExtraDisplayAmount = existingLegacyCombinedRow
+          ? (parseCombinedPaymentAllocation(existingLegacyCombinedRow.description)?.extra
+            ?? Math.max(0, Number(existingLegacyCombinedRow.amount || 0) - remainingAmount))
+          : extraOutstanding;
         return (
           <div className="space-y-3">
-            {afterInstallmentStates.map(({ plan, index, payment, amount, ready }) => {
+            {combinedAfterInstallment && (() => {
+              const { plan, index, payment, amount, ready } = combinedAfterInstallment;
+              const title = `งวดที่ ${index + 1} + ค่าใช้จ่ายเพิ่มเติม`;
+              return (
+                <div className="rounded-lg bg-white border border-amber-300 p-3">
+                  <div className="flex items-center justify-between mb-3">
+                    <div>
+                      <span className="text-xs font-bold text-amber-700 uppercase">ชำระรวมครั้งเดียว</span>
+                      <div className="text-[11px] text-gray-500 mt-0.5">งวดสุดท้ายหลังติดตั้งและค่าใช้จ่ายเพิ่มเติม</div>
+                    </div>
+                    <span className="text-lg font-bold font-mono tabular-nums text-amber-700">{fmt(combinedAfterAmount)} บาท</span>
+                  </div>
+                  <PaymentSection
+                    paymentTitle={title}
+                    amountLabel="ยอดรวม"
+                    amount={combinedAfterAmount}
+                    leadId={lead.id}
+                    leadName={lead.full_name}
+                    lineId={lead.line_id}
+                    slipUrl={payment && (payment.confirmed_at || payment.cheque_received_at) ? `/api/payments/${payment.id}` : null}
+                    slipField={`order_installment_${index}`}
+                    paymentNote={`ค่าระบบ Solar Rooftop · งวดที่ ${index + 1} หลังติดตั้ง + ค่าใช้จ่ายเพิ่มเติม`}
+                    stepNo={10 + index}
+                    description={combinedPaymentDescription(`งวดที่ ${index + 1} · ชำระหลังติดตั้ง`, amount, combinedAfterExtraAmount)}
+                    docNo={lead.pre_doc_no ? `${lead.pre_doc_no}-${index + 1}` : null}
+                    confirmed={ready}
+                    allowCheque
+                    onlyOther={plan.method === "loan"}
+                    initialOtherMethod={plan.method === "loan" ? `สินเชื่อ${plan.loan_bank ? ` · ${plan.loan_bank}` : ""}` : undefined}
+                    confirmLabel={plan.method === "cheque" ? "ยืนยันรับเช็ค" : undefined}
+                    onConfirmed={onExtraConfirmed}
+                    onUndone={onExtraConfirmed}
+                    onVerified={() => setAfterSlipDone(true)}
+                    paymentMethod={payment?.payment_method ?? plan.method ?? "transfer"}
+                    ccSurchargePct={plan.method === "cc" ? plan.cc_pct ?? null : null}
+                    ccSurchargeAmount={plan.method === "cc" && plan.cc_pct ? Math.round(combinedAfterAmount * plan.cc_pct / 100) : null}
+                    details={[
+                      { label: `งวดที่ ${index + 1} หลังติดตั้ง`, value: `฿${fmt(amount)}` },
+                      { label: extraNote || "ค่าใช้จ่ายเพิ่มเติม", value: `฿${fmt(combinedAfterExtraAmount)}` },
+                    ]}
+                  />
+                  {combinedAfterChequePending && renderChequePending(combinedAfterChequePending, title)}
+                </div>
+              );
+            })()}
+
+            {afterInstallmentStates.filter(item => item.index !== combinedAfterInstallment?.index).map(({ plan, index, payment, amount, ready }) => {
               const chequePending = payment?.payment_method === "cheque" && payment.cheque_received_at && !payment.confirmed_at
                 ? payment
                 : null;
@@ -1355,20 +1477,27 @@ export default function InstallStep({ lead, state, refresh, expanded, onToggle }
             {!hasStructuredAfterInstallments && remainingAmount > 0 && (
               <div className="rounded-lg bg-white border border-gray-200 p-3">
                 <div className="flex items-center justify-between mb-3">
-                  <span className="text-xs font-bold text-gray-400 uppercase">ยอดคงค้างเดิม</span>
-                  <span className="text-lg font-bold font-mono tabular-nums text-gray-900">{fmt(remainingAmount)} บาท</span>
+                  <div>
+                    <span className={`text-xs font-bold uppercase ${legacyCombinedDisplay ? "text-amber-700" : "text-gray-400"}`}>
+                      {legacyCombinedDisplay ? "ชำระรวมครั้งเดียว" : "ยอดคงค้างเดิม"}
+                    </span>
+                    {legacyCombinedDisplay && <div className="text-[11px] text-gray-500 mt-0.5">ยอดคงค้างและค่าใช้จ่ายเพิ่มเติม</div>}
+                  </div>
+                  <span className={`text-lg font-bold font-mono tabular-nums ${legacyCombinedDisplay ? "text-amber-700" : "text-gray-900"}`}>{fmt(legacyCollectionAmount)} บาท</span>
                 </div>
                 <PaymentSection
-                  paymentTitle="ยอดคงค้าง"
-                  amountLabel=""
-                  amount={remainingAmount}
+                  paymentTitle={legacyCombinedDisplay ? "ยอดคงค้าง + ค่าใช้จ่ายเพิ่มเติม" : "ยอดคงค้าง"}
+                  amountLabel={legacyCombinedDisplay ? "ยอดรวม" : ""}
+                  amount={legacyCollectionAmount}
                   leadId={lead.id}
                   leadName={lead.full_name}
                   lineId={lead.line_id}
                   slipUrl={lead.order_after_slip || afterChequePaymentUrl}
                   slipField="order_after_slip"
                   stepNo={99}
-                  description="ยอดคงค้างหลังติดตั้ง"
+                  description={legacyCombinedDisplay
+                    ? combinedPaymentDescription("ยอดคงค้างหลังติดตั้ง", remainingAmount, legacyExtraDisplayAmount)
+                    : "ยอดคงค้างหลังติดตั้ง"}
                   docNo={lead.pre_doc_no ? `${lead.pre_doc_no}-99` : null}
                   confirmed={afterPaymentReady}
                   allowCheque
@@ -1378,13 +1507,16 @@ export default function InstallStep({ lead, state, refresh, expanded, onToggle }
                   paymentMethod={pendingAfterRow?.payment_method ?? null}
                   details={[
                     { label: "ยอดคงค้าง", value: `฿${fmt(remainingAmount)}` },
+                    ...(legacyCombinedDisplay ? [{ label: extraNote || "ค่าใช้จ่ายเพิ่มเติม", value: `฿${fmt(legacyExtraDisplayAmount)}` }] : []),
                   ]}
                 />
-                {afterChequePending && renderChequePending(afterChequePending, "ยอดคงค้าง")}
+                {afterChequePending && renderChequePending(afterChequePending, legacyCombinedDisplay ? "ยอดคงค้าง + ค่าใช้จ่ายเพิ่มเติม" : "ยอดคงค้าง")}
               </div>
             )}
 
-            {extraOutstanding > 0 && (
+            {extraOutstanding > 0
+              && !(combinedAfterInstallment && !combinedAfterInstallment.payment?.confirmed_at)
+              && !legacyCombinedBlocksExtra && (
               <div className="rounded-lg bg-white border border-amber-200 p-3">
                 <div className="flex items-center justify-between mb-3">
                   <div>

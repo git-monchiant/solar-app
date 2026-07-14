@@ -1,34 +1,5 @@
-"use client";
-import { useEffect, useState } from "react";
-import { useParams } from "next/navigation";
 import { formatSlotsRange } from "@/lib/time-slots";
-
-interface InvoiceData {
-  id: number;
-  reference_no: string;
-  amount: number;
-  description: string;
-  installment: string;
-  is_pre_survey: boolean;
-  full_name: string;
-  phone: string;
-  email: string | null;
-  project_name: string | null;
-  installation_address: string | null;
-  survey_date: string | null;
-  survey_time_slot: string | null;
-  install_date: string | null;
-  install_actual_date: string | null;
-  install_completed_at: string | null;
-  created_at: string;
-  packages: { id: number; name: string; kwp: number; price: number }[];
-  step_no: number;
-  payment_no: string | null;
-  payment_method?: string | null;
-  cc_surcharge_pct?: number | null;
-  cc_surcharge_amount?: number | null;
-  total_to_pay?: number;
-}
+import { getInvoiceData } from "@/lib/invoice-data";
 
 const CO = {
   name: "SENA SOLAR ENERGY CO., LTD.",
@@ -44,15 +15,10 @@ const CO = {
 const fmt = (n: number) => new Intl.NumberFormat("en-US", { minimumFractionDigits: 2 }).format(n);
 const thaiDate = (s: string) => new Date(s.slice(0, 10) + "T12:00:00").toLocaleDateString("th-TH", { day: "numeric", month: "long", year: "numeric" });
 
-export default function InvoicePage() {
-  const { token } = useParams();
-  const [d, setD] = useState<InvoiceData | null>(null);
-
-  useEffect(() => {
-    fetch(`/api/invoice/${token}/data`).then(r => r.json()).then(setD).catch(console.error);
-  }, [token]);
-
-  if (!d) return <div className="flex items-center justify-center h-screen"><div className="w-8 h-8 border-2 border-primary/30 border-t-primary animate-spin" /></div>;
+export default async function InvoicePage({ params }: { params: Promise<{ token: string }> }) {
+  const { token } = await params;
+  const d = await getInvoiceData(token);
+  if (!d) return <div className="flex items-center justify-center h-screen text-sm text-gray-500">ไม่พบใบแจ้งชำระเงิน</div>;
 
   return (
     <div className="bg-gray-100 min-h-screen py-4 print:py-0 print:bg-white">

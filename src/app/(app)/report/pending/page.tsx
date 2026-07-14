@@ -55,7 +55,8 @@ interface ReportData {
 const fmt = (n: number) => formatTHB(Math.round(n));
 
 const stepLabels: Record<number, string> = { 0: "มัดจำ", 1: "ค่าสำรวจ", 3: "งวด 1/2", 4: "งวด 2/2", 99: "Step 5 · เก็บเงิน" };
-function labelForInstallment(step_no: number, slip_field: string, afterInstall = false): string {
+function labelForInstallment(step_no: number, slip_field: string, afterInstall = false, description?: string | null): string {
+  if ((description || "").includes("รวมค่าใช้จ่ายเพิ่มเติม")) return "Step 5 · งวดสุดท้าย + ค่าใช้จ่ายเพิ่มเติม";
   if (/^install_extra_\d+$/.test(slip_field || "")) return "Step 5 · ค่าใช้จ่ายเพิ่มเติม";
   const m = /^order_installment_(\d+)$/.exec(slip_field || "");
   if (m && afterInstall) return `Step 5 · งวดที่ ${parseInt(m[1]) + 1} (หลังติดตั้ง)`;
@@ -147,7 +148,7 @@ export default function PendingApprovalReport() {
 
   const openSlips = (i: Installment) => {
     if (i.slip_urls.length === 0) return;
-    const label = labelForInstallment(i.step_no, i.slip_field);
+    const label = labelForInstallment(i.step_no, i.slip_field, false, i.description);
     const imgs: LightboxImage[] = i.slip_urls.map((url, idx) => ({
       url, label: i.slip_urls.length > 1 ? `${label} · สลิป ${idx + 1} / ${i.slip_urls.length}` : label,
     }));
@@ -289,7 +290,7 @@ export default function PendingApprovalReport() {
           <div className="space-y-2 md:space-y-0 md:bg-white md:rounded-xl md:border md:border-gray-300 md:divide-y md:divide-gray-100">
             {filtered.map(it => {
               const i = it.installment;
-              const label = labelForInstallment(i.step_no, i.slip_field, it.is_after_installment);
+              const label = labelForInstallment(i.step_no, i.slip_field, it.is_after_installment, i.description);
               const gallery = i.slip_urls.map((u, k) => ({ url: u, label: i.slip_urls.length > 1 ? `${label} · สลิป ${k + 1} / ${i.slip_urls.length}` : label }));
               const chequeWaitingReceive = isChequeWaitingReceive(i);
               const chequeWaitingMoney = isChequeWaitingMoney(i);

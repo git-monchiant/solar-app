@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getDb, sql, fixDates } from "@/lib/db";
+import { COMBINED_EXTRA_MARKER, parseCombinedPaymentAllocation } from "@/lib/combined-payment";
 
 type Stage = "deposit" | "order_before" | "order_after" | "installment";
 
@@ -205,6 +206,8 @@ export async function GET(req: NextRequest) {
       // is the auto-computed remainder = 100 − sum of earlier rows).
       let pctSuffix = "";
       let onlyOneInstallment = false;
+      let installmentAmount = amt;
+      let combinedExtraAmount = 0;
       try {
         const planArr = (l as { order_installments?: string }).order_installments
           ? JSON.parse((l as { order_installments?: string }).order_installments as string)
@@ -215,12 +218,30 @@ export async function GET(req: NextRequest) {
           const lastPct = Math.max(0, 100 - earlierSum);
           const pct = idx === planArr.length - 1 ? lastPct : Number(planArr[idx]?.pct) || 0;
           if (!onlyOneInstallment && pct > 0) pctSuffix = ` (${pct}%)`;
+          if ((installmentRow.description || "").includes(COMBINED_EXTRA_MARKER) && pct > 0) {
+            const allocation = parseCombinedPaymentAllocation(installmentRow.description);
+            if (allocation) {
+              installmentAmount = allocation.base;
+              combinedExtraAmount = allocation.extra;
+            } else {
+              const netOrderDue = Math.max(0, effOrderTotal - depositPrice);
+              installmentAmount = Math.min(amt, Math.max(0, Math.round(netOrderDue * pct / 100)));
+              combinedExtraAmount = Math.max(0, amt - installmentAmount);
+            }
+          }
         }
       } catch { /* fall through */ }
       description = onlyOneInstallment
         ? "ค่าระบบ Solar Rooftop"
         : `งวดที่ ${idx + 1} · ค่าระบบ Solar Rooftop${pctSuffix}`;
-      lineItems = [{ label: description, amount: amt }];
+      lineItems = [{ label: description, amount: installmentAmount }];
+      if (combinedExtraAmount > 0) {
+        const extraNote = String(l.install_extra_note || "").trim();
+        lineItems.push({
+          label: extraNote ? `ค่าใช้จ่ายเพิ่มเติม · ${extraNote}` : "ค่าใช้จ่ายเพิ่มเติม",
+          amount: combinedExtraAmount,
+        });
+      }
       if (ccFee > 0) {
         lineItems.push({ label: `ค่าธรรมเนียมบัตรเครดิต${ccPct ? ` (${ccPct}%)` : ""}`, amount: ccFee });
       }

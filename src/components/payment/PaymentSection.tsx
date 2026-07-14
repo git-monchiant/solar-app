@@ -504,13 +504,21 @@ export default function PaymentSection({
 
   // Ensure a pay token exists for (lead_id, amount, description, installment) so URLs can hide the amount
   useEffect(() => {
-    if (amount <= 0) return;
+    if (amount <= 0 || confirmed) return;
+    // PaymentSection first allocates the canonical payment row above. Waiting
+    // for its id avoids minting a temporary lead-level token with payment_id
+    // null and then racing a second token request after the intent resolves.
+    if (stepNo !== undefined && slipField && !paymentId) return;
+    let cancelled = false;
     apiFetch("/api/pay-tokens", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ lead_id: leadId, amount, description: paymentTitle, installment: amountLabel, payment_id: paymentId }),
-    }).then((r: { token: string }) => setPayToken(r.token)).catch(console.error);
-  }, [leadId, amount, paymentTitle, amountLabel, paymentId]);
+    }).then((r: { token: string }) => {
+      if (!cancelled) setPayToken(r.token);
+    }).catch(console.error);
+    return () => { cancelled = true; };
+  }, [leadId, amount, paymentTitle, amountLabel, paymentId, confirmed, stepNo, slipField]);
 
   const qrEnabled = !onlyOther && settings.promptpay_qr_enabled !== "false";
   const linkEnabled = !onlyOther && settings.promptpay_link_enabled !== "false";
@@ -926,7 +934,7 @@ export default function PaymentSection({
               <button
                 type="button"
                 onClick={downloadInvoice}
-                className="hidden md:inline-flex items-center gap-1 h-8 px-2 rounded-lg text-gray-400 hover:text-active hover:bg-active/5 transition-colors"
+                className="hidden md:inline-flex items-center gap-1 h-8 px-2 rounded-lg text-active hover:bg-active/10 transition-colors"
                 title="ดาวน์โหลดใบแจ้งชำระเงิน (PDF)"
                 aria-label="ดาวน์โหลดใบแจ้งชำระเงิน (PDF)"
               >
