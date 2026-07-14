@@ -161,6 +161,78 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
               { status: 400 }
             );
           }
+
+          // Entering Step 05 (install) requires actual received money for every
+          // installment due before installation. A cheque receipt without
+          // confirmed_at is intentionally not sufficient. Installments marked
+          // "after" are collected in Step 05 and are excluded from this gate.
+          if (body.status === "install" && oldStatus !== "install") {
+            const planRes = await db.request().input("lead_id", sql.Int, leadId).query(`
+              SELECT order_installments, order_pct_before, order_total,
+                     order_discount_amount, pre_total_price
+              FROM leads WHERE id = @lead_id
+            `);
+            const saved = planRes.recordset[0] ?? {};
+            const rawPlan = body.order_installments !== undefined
+              ? body.order_installments
+              : saved.order_installments;
+            let plan: Array<{ pct?: number; when?: string }> = [];
+            try {
+              const parsed = rawPlan ? JSON.parse(rawPlan) : [];
+              if (Array.isArray(parsed)) plan = parsed;
+            } catch {
+              return NextResponse.json({ error: "Invalid order_installments JSON" }, { status: 400 });
+            }
+            if (plan.length === 0) {
+              const beforePct = Number(saved.order_pct_before ?? 100);
+              plan = beforePct >= 100
+                ? [{ pct: 100, when: "before" }]
+                : [{ pct: beforePct, when: "before" }, { pct: 100 - beforePct, when: "after" }];
+            }
+
+            const paidRes = await db.request().input("lead_id", sql.Int, leadId).query(`
+              SELECT slip_field FROM payments
+              WHERE lead_id = @lead_id AND confirmed_at IS NOT NULL
+                AND (slip_field LIKE 'order_installment_%' OR slip_field = 'order_before_slip')
+            `);
+            const paidFields = new Set<string>(paidRes.recordset.map((r: { slip_field: string }) => r.slip_field));
+            const paidIdx = new Set<number>(
+              [...paidFields]
+                .filter(field => field.startsWith("order_installment_"))
+                .map(field => parseInt(field.replace("order_installment_", "")))
+                .filter(idx => !Number.isNaN(idx))
+            );
+
+            const orderTotal = Number(body.order_total ?? saved.order_total ?? 0);
+            const discountAmount = Math.min(orderTotal, Number(body.order_discount_amount ?? saved.order_discount_amount ?? 0));
+            const depositPaid = Number(saved.pre_total_price ?? 0);
+            const netTotal = Math.max(0, orderTotal - discountAmount - depositPaid);
+            let autoIdx = plan.length - 1;
+            for (let idx = plan.length - 1; idx >= 0; idx--) {
+              if (!paidIdx.has(idx)) { autoIdx = idx; break; }
+            }
+            const fixedPct = plan.reduce(
+              (sum, row, idx) => idx === autoIdx ? sum : sum + (Number(row?.pct) || 0),
+              0,
+            );
+            const autoPct = Math.max(0, 100 - fixedPct);
+            const requiredBefore = plan
+              .map((row, idx) => ({
+                idx,
+                when: row?.when === "after" ? "after" : "before",
+                amount: Math.round((netTotal * (idx === autoIdx ? autoPct : Number(row?.pct) || 0)) / 100),
+              }))
+              .filter(row => row.when === "before" && row.amount > 0);
+            const missingBefore = paidFields.has("order_before_slip")
+              ? []
+              : requiredBefore.filter(row => !paidIdx.has(row.idx));
+            if (missingBefore.length > 0) {
+              return NextResponse.json(
+                { error: `ต้องยืนยันรับเงินจริงงวดก่อนติดตั้งให้ครบก่อน (เหลือ ${missingBefore.length} งวด)` },
+                { status: 409 },
+              );
+            }
+          }
         }
       }
     }

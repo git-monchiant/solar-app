@@ -551,12 +551,10 @@ export default function OrderStep({ lead, state, refresh, expanded, onToggle }: 
     return netTotal > 0 ? Math.round((netTotal * pct) / 100) : 0;
   };
   const rowNet = (idx: number) => rowGross(idx);
-  const isInstallReadyPayment = (idx: number) => paidIdxSet.has(idx) || chequeReceivedIdxSet.has(idx);
   const beforeInstallRows = () => persistedInstallments
     .map((r, i) => ({ r, i }))
     .filter(({ r }) => r.when === "before")
     .filter(({ i }) => rowNet(i) > 0);
-  const pendingChequeBeforeInstall = beforeInstallRows().filter(({ i }) => chequeReceivedIdxSet.has(i) && !paidIdxSet.has(i));
   // If deposit > eff (rare — refund-due to customer), surface the excess.
   const refund = Math.max(0, depositPaid - effTotal);
   // Credit-card surcharge: each "cc" installment row adds rowGross × cc_pct/100
@@ -834,15 +832,14 @@ export default function OrderStep({ lead, state, refresh, expanded, onToggle }: 
       missing.push(`ยอดต้องไม่ต่ำกว่าค่าสำรวจ (฿${fmt(depositPaid)})`);
     }
     if (from === 1 && (pctBefore === null || pctBefore === undefined)) missing.push("% ชำระก่อนติดตั้ง");
-    // Leaving "งวดชำระ" → "นัดหมาย" needs ≥1 before-install row confirmed
-    // (deposit landed). The remaining before-install rows are re-validated
-    // at the final "บันทึกและไปขั้นตอนติดตั้ง" close — so sales can schedule
-    // the install appointment without waiting for every งวด to clear.
+    // Leaving "งวดชำระ" → "นัดหมาย" requires actual received money for every
+    // before-install row. A received cheque alone is still pending money and
+    // must not unlock scheduling. Rows explicitly marked "after" are collected
+    // in Step 05 and are excluded from this gate.
     if (from === 1) {
-      const beforeRows = beforeInstallRows();
-      const readyBefore = beforeRows.filter(({ i }) => isInstallReadyPayment(i));
-      if (beforeRows.length > 0 && readyBefore.length === 0) {
-        missing.push(`ต้องรับชำระหรือรับเช็คอย่างน้อย 1 งวดก่อนติดตั้ง`);
+      const unpaidBefore = beforeInstallRows().filter(({ i }) => !paidIdxSet.has(i));
+      if (unpaidBefore.length > 0) {
+        missing.push(`ต้องยืนยันรับเงินจริงงวดก่อนติดตั้งให้ครบก่อน (เหลือ ${unpaidBefore.length} งวด)`);
       }
     }
     if (from === 2 && !installDate) missing.push("วันนัดติดตั้ง");
@@ -1666,11 +1663,6 @@ export default function OrderStep({ lead, state, refresh, expanded, onToggle }: 
                   : "คลิกอีกครั้งบนวันที่ถัดไปเพื่อเลือกช่วง — หรือเว้นไว้ถ้าติดตั้งวันเดียว"
                 : "คลิกวันเริ่มต้นการติดตั้ง"}
             </div>
-            {pendingChequeBeforeInstall.length > 0 && (
-              <div className="mt-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800">
-                รับเช็คแล้ว {pendingChequeBeforeInstall.length} งวด สามารถบันทึกนัดติดตั้งและไปขั้นตอนติดตั้งได้ โดยยอดเงินจริงยังรอ Accounting ยืนยันใน Step 04
-              </div>
-            )}
           </div>
         </div>
       )}
@@ -1908,13 +1900,13 @@ export default function OrderStep({ lead, state, refresh, expanded, onToggle }: 
           </button>
           <button
             onClick={async () => {
-              // Gate: every "before-install" row must be ready for install.
-              // Cash/transfer/card need confirmed_at; cheque can proceed after
-              // cheque_received_at while Accounting confirms money later.
+              // Gate: every before-install row must have confirmed_at. Receiving
+              // a cheque without receiving its money is not sufficient. Rows
+              // marked for payment after installation are collected in Step 05.
               const unpaidBefore = beforeInstallRows()
-                .filter(({ i }) => !isInstallReadyPayment(i));
+                .filter(({ i }) => !paidIdxSet.has(i));
               if (unpaidBefore.length > 0) {
-                setNextError(`ต้องยืนยันรับชำระหรือรับเช็คงวดก่อนติดตั้งให้ครบก่อน (เหลือ ${unpaidBefore.length} งวด)`);
+                setNextError(`ต้องยืนยันรับเงินจริงงวดก่อนติดตั้งให้ครบก่อน (เหลือ ${unpaidBefore.length} งวด)`);
                 return;
               }
               setSaving(true);
