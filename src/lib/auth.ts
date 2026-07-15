@@ -54,3 +54,21 @@ export async function requireAdmin(req: NextRequest):
   }
   return { userId };
 }
+
+export async function requireAnyRole(req: NextRequest, allowed: readonly string[]):
+  Promise<{ userId: number; roles: string[]; error?: undefined } | { error: NextResponse; userId?: undefined; roles?: undefined }> {
+  const userId = getUserIdFromReq(req);
+  if (!userId) return { error: NextResponse.json({ error: "Not authenticated" }, { status: 401 }) };
+  const db = await getDb();
+  const result = await db.request().input("id", sql.Int, userId)
+    .query(`SELECT roles FROM users WHERE id = @id AND is_active = 1`);
+  let roles: string[] = [];
+  try {
+    const parsed = result.recordset[0]?.roles ? JSON.parse(result.recordset[0].roles) : [];
+    if (Array.isArray(parsed)) roles = parsed.filter((role): role is string => typeof role === "string");
+  } catch {}
+  if (!roles.some(role => allowed.includes(role))) {
+    return { error: NextResponse.json({ error: "Forbidden" }, { status: 403 }) };
+  }
+  return { userId, roles };
+}

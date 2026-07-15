@@ -24,3 +24,4 @@ Statuses:
 | [20260714-01-lead-tracking-source-column.md](20260714-01-lead-tracking-source-column.md) | done | - | เพิ่มคอลัมน์ที่มาใน Lead Tracking และ Excel สำหรับ Admin, Sales, Solar และ Account; ไม่แสดงให้ Leads Seeker/Smartify |
 | [20260714-02-require-received-money-before-install.md](20260714-02-require-received-money-before-install.md) | done | - | บังคับรับเงินจริงครบทุกงวดก่อนติดตั้ง และยกเว้นเฉพาะงวดที่ติ๊กจ่ายหลังติดตั้ง |
 | [20260714-03-combine-step5-final-payment.md](20260714-03-combine-step5-final-payment.md) | done | - | รวมงวดสุดท้ายหลังติดตั้งและค่าใช้จ่ายเพิ่มเติมเป็นการชำระครั้งเดียว โดยยังแจกแจงยอดในเอกสาร |
+| [20260715-01-customer-insight-dashboard.md](20260715-01-customer-insight-dashboard.md) | done | [wireframe](../mockup/20260715-01-customer-insight-dashboard/) | Hybrid Dashboard แสดงข้อมูลครบ พร้อม responsive layout, drill-down, PDF และ Excel export ตาม Filter |

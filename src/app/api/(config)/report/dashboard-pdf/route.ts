@@ -24,7 +24,7 @@ export async function GET(req: NextRequest) {
     // request point puppeteer at an arbitrary URL.
     const searchParams = new URL(req.url).searchParams;
     const rawPath = searchParams.get("path") || "/dashboard";
-    const ALLOWED = new Set(["/dashboard", "/dashboard-dev"]);
+    const ALLOWED = new Set(["/dashboard", "/dashboard-dev", "/dashboard-customer"]);
     const path = ALLOWED.has(rawPath) ? rawPath : "/dashboard";
     // Forward the global filter the user has applied on screen so the captured
     // PDF mirrors their view. Embed the filter in the URL query (the dashboard
@@ -39,6 +39,10 @@ export async function GET(req: NextRequest) {
     if (filterFrom) dashUrl.searchParams.set("from", filterFrom);
     if (filterTo)   dashUrl.searchParams.set("to",   filterTo);
     dashUrl.searchParams.set("mode", filterMode);
+    for (const key of ["project_id", "source", "status", "details"] as const) {
+      const value = searchParams.get(key);
+      if (value) dashUrl.searchParams.set(key, value);
+    }
     const dashboardUrl = dashUrl.toString();
     const userId = String(gate.userId);
 

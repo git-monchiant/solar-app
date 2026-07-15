@@ -6,163 +6,16 @@ import { apiFetch, getUserIdHeader } from "@/lib/api";
 import FallbackImage from "@/components/ui/FallbackImage";
 import type { Lead, Package } from "./types";
 import { formatTHB as formatPrice } from "@/lib/utils/formatters";
+import {
+  ABLE_OR_NOT, AC_TIERS, BATTERY_OPTIONS, BILL_RISE_ACTIONS, BUSINESS_TYPES,
+  DAYTIME_OCCUPANTS, DECISION_FACTORS, ELECTRICAL_PHASES, EVER_NEVER,
+  EV_CHARGE_PERIODS, EV_READY_OPTIONS, HOUSE_AGES, METER_SIZES,
+  MONTHLY_BILL_BUCKETS, monthlyBillBucket, OUTAGE_PRIORITIES, PEAK_USAGE, RESIDENCE_TYPES, ROOF_SHAPES,
+  USAGE_TREND_OPTIONS, WORK_DAYS_PER_WEEK, YES_NO, YES_NO_BIN,
+  YES_NO_CONSIDERING, YES_NO_MAYBE,
+} from "@/lib/customer-questionnaire";
 
-const RESIDENCE_TYPES = [
-  { value: "detached", label: "บ้านเดี่ยว" },
-  { value: "semi_detached", label: "บ้านแฝด" },
-  { value: "townhome", label: "ทาวน์โฮม" },
-  { value: "townhouse", label: "ทาวน์เฮาส์" },
-  { value: "home_office", label: "โฮมออฟฟิศ" },
-  { value: "shophouse", label: "อาคารพาณิชย์" },
-  { value: "other", label: "อื่นๆ" },
-];
-
-const HOUSE_AGES = [
-  { value: "lt5",   label: "ต่ำกว่า 5 ปี" },
-  { value: "5_10", label: "5-10 ปี" },
-  { value: "10_20", label: "10-20 ปี" },
-  { value: "gt20",  label: "มากกว่า 20 ปี" },
-];
-
-// Roof type for PreSurvey — broader buckets than the Survey step's roof
-// material picker. Survey uses metal_sheet:bolt vs metal_sheet:clip, but at
-// pre-survey time the customer rarely knows that detail.
-const ROOF_SHAPES = [
-  { value: "old_tile",   label: "กระเบื้องลอนคู่" },
-  { value: "cpac_tile",  label: "กระเบื้องคอนกรีต / ซีแพค" },
-  { value: "metal_sheet", label: "เมทัลชีท" },
-  { value: "flat_tile",  label: "กระเบื้องแผ่นเรียบ" },
-  { value: "concrete",   label: "ดาดฟ้าคอนกรีต" },
-  { value: "unknown",    label: "ไม่ทราบ" },
-  { value: "other",      label: "อื่นๆ" },
-];
-
-const ELECTRICAL_PHASES = [
-  { value: "1_phase", label: "1 เฟส" },
-  { value: "3_phase", label: "3 เฟส" },
-  { value: "unknown", label: "ไม่ทราบ" },
-];
-
-const METER_SIZES = [
-  { value: "15_45",  label: "15(45) A" },
-  { value: "30_100", label: "30(100) A" },
-  { value: "other",   label: "อื่นๆ" },
-  { value: "unknown", label: "ไม่ทราบ" },
-];
-
-// Questionnaire §3 — Lifestyle Assessment
-const YES_NO = [
-  { value: "yes", label: "ใช่" },
-  { value: "no",  label: "ไม่ใช่" },
-];
-
-const DAYTIME_OCCUPANTS = [
-  { value: "family",  label: "ทั้งครอบครัว" },
-  { value: "elderly", label: "ผู้สูงอายุ" },
-  { value: "kids",    label: "เด็กเล็ก" },
-  { value: "pets",    label: "สัตว์เลี้ยง" },
-];
-
-const BUSINESS_TYPES = [
-  { value: "online_live", label: "ขายของ Online / Live" },
-  { value: "online_edu",  label: "เรียน Online" },
-  { value: "retail",      label: "ค้าขาย" },
-  { value: "other",       label: "อื่นๆ" },
-];
-
-const WORK_DAYS_PER_WEEK = [
-  { value: "1_2",   label: "1-2 วัน/สัปดาห์" },
-  { value: "3_5",   label: "3-5 วัน/สัปดาห์" },
-  { value: "daily", label: "ทุกวัน" },
-];
-
-// AC tier sizes for the day/night split picker. ">24000" carries the
-// out-of-band gt24000 key — kept as a string so JSON shape stays consistent.
-const AC_TIERS = [
-  { key: "9000",    label: "9,000 BTU" },
-  { key: "12000",   label: "12,000 BTU" },
-  { key: "18000",   label: "18,000 BTU" },
-  { key: "24000",   label: "24,000 BTU" },
-  { key: "gt24000", label: ">24,000 BTU" },
-];
-
-const EV_CHARGE_PERIODS = [
-  { value: "day",   label: "กลางวัน" },
-  { value: "night", label: "กลางคืน" },
-];
-
-// Questionnaire §4 — Future Home Assessment (5-year horizon).
-const YES_NO_CONSIDERING = [
-  { value: "yes", label: "มี" },
-  { value: "no",  label: "ไม่มี" },
-  { value: "considering", label: "กำลังพิจารณา" },
-];
-
-const YES_NO_BIN = [
-  { value: "yes", label: "มี" },
-  { value: "no",  label: "ไม่มี" },
-];
-
-const YES_NO_MAYBE = [
-  { value: "yes",   label: "มี" },
-  { value: "no",    label: "ไม่มี" },
-  { value: "maybe", label: "ยังไม่แน่ใจ" },
-];
-
-// Questionnaire §5 — Energy Security
-const OUTAGE_PRIORITIES = [
-  { value: "ac",         label: "แอร์" },
-  { value: "lights",     label: "ไฟส่องสว่าง" },
-  { value: "internet",   label: "Internet" },
-  { value: "cctv",       label: "กล้องวงจรปิด" },
-  { value: "fridge",     label: "ตู้เย็น" },
-  { value: "ev_charger", label: "EV Charger" },
-  { value: "gate",       label: "ระบบประตูรั้ว" },
-  { value: "ups",        label: "ระบบสำรองฉุกเฉิน" },
-  { value: "other",      label: "อื่นๆ" },
-];
-
-const BILL_RISE_ACTIONS = [
-  { value: "now",      label: "ลดค่าไฟทันที" },
-  { value: "longterm", label: "ควบคุมค่าใช้จ่ายระยะยาว" },
-  { value: "prepare",  label: "เตรียมบ้านประหยัดพลังงาน" },
-];
-
-// Questionnaire §6 — Home Health Check
-const EVER_NEVER = [
-  { value: "yes", label: "เคย" },
-  { value: "no",  label: "ไม่เคย" },
-];
-
-// Questionnaire §7 — Beyond Question
-const ABLE_OR_NOT = [
-  { value: "yes", label: "ได้" },
-  { value: "no",  label: "ไม่ได้" },
-];
-
-const EV_READY_OPTIONS = [
-  { value: "ready",    label: "พร้อม" },
-  { value: "not_yet",  label: "ยังไม่พร้อม" },
-  { value: "unsure",   label: "ไม่แน่ใจ" },
-];
-
-const USAGE_TREND_OPTIONS = [
-  { value: "more", label: "มากขึ้น" },
-  { value: "same", label: "เท่าเดิม" },
-  { value: "less", label: "น้อยลง" },
-];
-
-// Questionnaire §8 — Decision Making Factor (1..5 weighted).
-// Keys mirror what the back-end stores in the decision_factors JSON.
-export const DECISION_FACTORS = [
-  { key: "company_reliable",   label: "บริษัทที่น่าเชื่อถือ มีทีมดูแลตลอดอายุการใช้งานระบบโซลาร์ อีก 30 ปีข้างหน้า" },
-  { key: "home_understanding", label: "เข้าใจโครงสร้างบ้าน หลังคา และระบบไฟฟ้าในบ้านของคุณ" },
-  { key: "equipment_standard", label: "มาตรฐานอุปกรณ์ที่ดีที่สุด" },
-  { key: "engineer_design",    label: "มีวิศวกรออกแบบระบบให้เหมาะกับการใช้งานจริงของคุณ" },
-  { key: "financial_advisor",  label: "มีทีมที่ปรึกษาด้านการเงิน" },
-  { key: "installment_loan",   label: "มีบริการผ่อนชำระหรือสินเชื่อ" },
-  { key: "affordable_price",   label: "ราคาย่อมเยา" },
-];
+export { DECISION_FACTORS } from "@/lib/customer-questionnaire";
 
 type DecisionFactors = Record<string, number> & { other?: { score?: number; text?: string } };
 function parseDecisionFactors(s: string | null | undefined): DecisionFactors {
@@ -202,24 +55,7 @@ function stringifyAcSplit(s: AcSplit): string | null {
   return hasAny ? JSON.stringify(s) : null;
 }
 
-const BATTERY_OPTIONS = [
-  { value: "no", label: "ไม่ต้องการ" },
-  { value: "yes", label: "ต้องการ" },
-  { value: "maybe", label: "ยังไม่แน่ใจ" },
-  { value: "upgrade", label: "+ Upgrade" },
-];
-
 const AC_BTU_SIZES = [9000, 12000, 18000, 24000];
-
-// Time-range buckets from questionnaire §2. Older leads may still hold
-// "day" / "night" / "both" values; INFO_LABELS.peakUsage maps both old and
-// new so display stays intact, but the chip picker only offers the new set.
-const PEAK_USAGE = [
-  { value: "morning",   label: "06.00-12.00" },
-  { value: "afternoon", label: "12.00-18.00" },
-  { value: "evening",   label: "18.00-24.00" },
-  { value: "all_day",   label: "ตลอดวัน" },
-];
 
 function parseAcUnits(s: string | null): Record<number, number> {
   const map: Record<number, number> = {};
@@ -759,16 +595,10 @@ const PreSurveyForm = forwardRef<PreSurveyFormHandle, Props>(function PreSurveyF
               {/* Read-only range chips — auto-ticks the bucket that contains
                   the typed value. Display only; the input itself is the
                   source of truth. */}
-              {([
-                { key: "lt2k",  label: "ต่ำกว่า 2,000 บาท",  test: (b: number) => b < 2000 },
-                { key: "2k4k",  label: "2,000-4,000 บาท",   test: (b: number) => b >= 2000 && b < 4000 },
-                { key: "4k6k",  label: "4,000-6,000 บาท",   test: (b: number) => b >= 4000 && b < 6000 },
-                { key: "6k10k", label: "6,000-10,000 บาท",  test: (b: number) => b >= 6000 && b <= 10000 },
-                { key: "gt10k", label: "มากกว่า 10,000 บาท", test: (b: number) => b > 10000 },
-              ] as const).map(r => {
-                const active = typeof monthlyBill === "number" && r.test(monthlyBill);
+              {MONTHLY_BILL_BUCKETS.map(r => {
+                const active = typeof monthlyBill === "number" && monthlyBillBucket(monthlyBill) === r.value;
                 return (
-                  <div key={r.key}
+                  <div key={r.value}
                     className={`col-span-1 md:col-span-1 h-8 px-2 rounded-lg border flex items-center gap-1.5 text-xs select-none ${
                       active ? "border-active bg-active-light text-active" : "border-gray-200 bg-gray-50 text-gray-400"
                     }`}>
