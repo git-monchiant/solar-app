@@ -310,11 +310,11 @@ export default function DashboardPage() {
                   <button
                     type="button"
                     onClick={exportBucketExcel}
-                    className="cursor-pointer text-xxs px-3 py-1.5 rounded-md bg-emerald-600 hover:bg-emerald-700 text-white font-semibold inline-flex items-center gap-1.5"
+                    className="cursor-pointer inline-flex items-center gap-1.5 h-8 px-3 rounded-lg bg-white border border-gray-200 text-xs font-semibold text-gray-700 hover:border-gray-300 transition-colors"
                     title={`Export ${bucket.rows.length} rows to Excel`}
                   >
-                    <DownloadIcon className="w-3.5 h-3.5" strokeWidth={2} />
-                    Export Excel
+                    <DownloadIcon className="w-3.5 h-3.5 text-gray-400" strokeWidth={2} />
+                    <span>Excel</span>
                   </button>
                 )}
                 <button
