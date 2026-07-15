@@ -20,7 +20,7 @@ type ContactStateField = "first_contact_state" | "contact2_state" | "contact3_st
 
 type LifecycleRow = { [K in LifecycleCol]: string | null }
   & { [K in ContactStateField]: "yes" | "no" | null }
-  & { id: number; full_name: string; house_number: string | null; status: string; pre_doc_no: string | null; payment_confirmed: boolean | null; pre_slip_uploaded: 0 | 1; lost_reason: string | null; order_installments: string | null; order_paid_count: number; created_at: string | null };
+  & { id: number; full_name: string; house_number: string | null; source: string | null; status: string; pre_doc_no: string | null; payment_confirmed: boolean | null; pre_slip_uploaded: 0 | 1; lost_reason: string | null; order_installments: string | null; order_paid_count: number; created_at: string | null };
 
 // Moved over from /dashboard-dev — subset of fields the 5-card row needs.
 interface DevData {
@@ -590,7 +590,11 @@ export default function DashboardPage() {
             <div className="flex items-baseline justify-between mb-3">
               <div className="text-sm font-semibold uppercase tracking-wider text-gray-400">Lead&apos;s Source</div>
             </div>
-            <SourceQualityChart sources={devData.sources} />
+            <SourceQualityChart
+              sources={devData.sources}
+              rows={filteredLifecycleRows}
+              onBarClick={(title, rows) => setBucket({ title, rows })}
+            />
             <div className="text-xxs text-gray-400 text-left mt-2">ณ วันที่ {new Date().toLocaleDateString("th-TH", { day: "numeric", month: "long", year: "numeric" })}</div>
           </div>
         )}
@@ -1135,7 +1139,15 @@ function LifecycleFunnelChart({ rows, onStageClick }: { rows: LifecycleRow[]; on
 // Source quality — vertical grouped-bar chart, 4 bars per source side-by-side.
 //   Lead (total) · จอง (booked) · มัดจำ (paid) · ติดตั้ง (installed)
 // The "drop" between bars within a group = funnel conversion at a glance.
-function SourceQualityChart({ sources }: { sources: DevData["sources"] }) {
+function SourceQualityChart({
+  sources,
+  rows,
+  onBarClick,
+}: {
+  sources: DevData["sources"];
+  rows: LifecycleRow[];
+  onBarClick?: (title: string, rows: LifecycleRow[]) => void;
+}) {
   // Short labels for chart x-axis — the full "Seeker · Sen X PM" / "LINE OA ·
   // SENA Solar" form is too long to fit under a 10-column bar group, so we
   // collapse to a compact word per source. Long form still shows in the title
@@ -1156,7 +1168,7 @@ function SourceQualityChart({ sources }: { sources: DevData["sources"] }) {
   };
   // Collapse raw source strings into canonical buckets — same as the old BarList
   // so labels match the chip + channel picker; aggregate per-stage counts.
-  type Bucket = { label: string; fullLabel: string; cnt: number; booked: number; paid: number; installed: number };
+  type Bucket = { sourceKey: string; label: string; fullLabel: string; cnt: number; booked: number; paid: number; installed: number };
   const buckets = new Map<string, Bucket>();
   for (const s of sources) {
     const key = normalizeSourceKey(s.source);
@@ -1164,7 +1176,7 @@ function SourceQualityChart({ sources }: { sources: DevData["sources"] }) {
     const label = SHORT_LABEL[key] || fullLabel;
     const cur = buckets.get(key);
     if (cur) { cur.cnt += s.cnt; cur.booked += s.booked; cur.paid += s.paid; cur.installed += s.installed; }
-    else buckets.set(key, { label, fullLabel, cnt: s.cnt, booked: s.booked, paid: s.paid, installed: s.installed });
+    else buckets.set(key, { sourceKey: key, label, fullLabel, cnt: s.cnt, booked: s.booked, paid: s.paid, installed: s.installed });
   }
   const items = Array.from(buckets.values()).sort((a, b) => b.cnt - a.cnt).slice(0, 10);
   const max = Math.max(...items.map(s => s.cnt), 1);
@@ -1176,6 +1188,14 @@ function SourceQualityChart({ sources }: { sources: DevData["sources"] }) {
     { key: "installed", color: "bg-emerald-500", label: "ติดตั้ง" },
   ];
 
+  const rowsForBar = (sourceKey: string, barKey: (typeof bars)[number]["key"]) => {
+    const sourceRows = rows.filter(r => normalizeSourceKey(r.source) === sourceKey);
+    if (barKey === "booked") return sourceRows.filter(r => !!r.booking_paid_at);
+    if (barKey === "paid") return sourceRows.filter(r => !!r.order_paid_at);
+    if (barKey === "installed") return sourceRows.filter(r => !!r.install_done_at);
+    return sourceRows;
+  };
+
   return (
     <div>
       <div className="flex items-end gap-3 border-b border-gray-200 pb-px" style={{ height: chartH + 30 }}>
@@ -1186,10 +1206,17 @@ function SourceQualityChart({ sources }: { sources: DevData["sources"] }) {
                 const v = s[b.key];
                 const h = (v / max) * chartH;
                 return (
-                  <div key={b.key} className="flex-1 min-w-0 flex flex-col items-stretch justify-end">
+                  <button
+                    type="button"
+                    key={b.key}
+                    onClick={() => onBarClick?.(`${s.fullLabel} · ${b.label}`, rowsForBar(s.sourceKey, b.key))}
+                    className="cursor-pointer flex-1 min-w-0 flex flex-col items-stretch justify-end rounded-sm hover:bg-gray-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/40"
+                    title={`${s.fullLabel} · ${b.label} ${v} — คลิกดูรายชื่อ`}
+                    aria-label={`${s.fullLabel} ${b.label} ${v} รายการ คลิกดูรายละเอียด`}
+                  >
                     <div className="text-center text-xxs font-bold font-mono tabular-nums text-gray-700 leading-none mb-1">{v}</div>
-                    <div className={`${b.color}`} style={{ height: Math.max(h, v > 0 ? 2 : 0) }} title={`${b.label} ${v}`} />
-                  </div>
+                    <div className={`${b.color} transition-opacity hover:opacity-80`} style={{ height: Math.max(h, v > 0 ? 2 : 0) }} />
+                  </button>
                 );
               })}
             </div>
@@ -1198,7 +1225,15 @@ function SourceQualityChart({ sources }: { sources: DevData["sources"] }) {
       </div>
       <div className="flex gap-3 mt-1">
         {items.map((s, i) => (
-          <div key={i} className="flex-1 min-w-0 text-center text-xxs text-gray-500 leading-tight px-0.5 truncate" title={s.fullLabel}>{s.label}</div>
+          <button
+            type="button"
+            key={i}
+            onClick={() => onBarClick?.(`${s.fullLabel} · Lead`, rowsForBar(s.sourceKey, "cnt"))}
+            className="cursor-pointer flex-1 min-w-0 text-center text-xxs text-gray-500 hover:text-gray-900 hover:underline leading-tight px-0.5 truncate focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/40 rounded-sm"
+            title={`${s.fullLabel} — คลิกดูรายชื่อ Lead`}
+          >
+            {s.label}
+          </button>
         ))}
       </div>
       <div className="mt-3 flex items-center gap-3 text-xxs text-gray-500 flex-wrap">
