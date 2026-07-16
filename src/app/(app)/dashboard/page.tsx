@@ -1,5 +1,7 @@
 "use client";
 import { DownloadIcon } from "@/components/ui/icons";
+// xlsx-js-style — same fork the Lead Tracking export uses (writes cell styles).
+import * as XLSX from "xlsx-js-style";
 
 import { apiFetch, getUserIdHeader } from "@/lib/api";
 import { getWithTtl, setWithTtl, TWO_HOURS_MS } from "@/lib/storage-ttl";
@@ -18,9 +20,25 @@ type LifecycleCol = "first_contact_at" | "contact2_at" | "contact3_at" | "contac
 
 type ContactStateField = "first_contact_state" | "contact2_state" | "contact3_state" | "contact4_state" | "contact5_state";
 
+// Payment progress as a real percentage of the order value: sum the `pct` of
+// each installment that's been settled (installments are paid in JSON order).
+// Returns null when the JSON is missing/malformed. Shared by the bucket popup
+// rows and its Excel export so both report the same number.
+const paidPctOf = (r: { order_installments: string | null; order_paid_count: number }): number | null => {
+  try {
+    const arr = r.order_installments ? (JSON.parse(r.order_installments) as { pct?: number }[]) : [];
+    if (!Array.isArray(arr) || arr.length === 0) return null;
+    const paidCount = r.order_paid_count ?? 0;
+    return Math.round(arr.slice(0, paidCount).reduce((a, x) => a + (Number(x.pct) || 0), 0));
+  } catch { return null; }
+};
+
+const thDate = (v: string | null) =>
+  v ? new Date(v).toLocaleDateString("th-TH", { day: "numeric", month: "short", year: "2-digit" }) : "";
+
 type LifecycleRow = { [K in LifecycleCol]: string | null }
   & { [K in ContactStateField]: "yes" | "no" | null }
-  & { id: number; full_name: string; house_number: string | null; source: string | null; status: string; pre_doc_no: string | null; payment_confirmed: boolean | null; pre_slip_uploaded: 0 | 1; lost_reason: string | null; order_installments: string | null; order_paid_count: number; created_at: string | null };
+  & { id: number; full_name: string; phone: string | null; house_number: string | null; source: string | null; status: string; pre_doc_no: string | null; payment_confirmed: boolean | null; pre_slip_uploaded: 0 | 1; lost_reason: string | null; order_installments: string | null; order_paid_count: number; created_at: string | null };
 
 // Moved over from /dashboard-dev — subset of fields the 5-card row needs.
 interface DevData {
@@ -58,6 +76,51 @@ export default function DashboardPage() {
   // Click any KPI count → popup lists the leads behind it. Click a name to open
   // that lead's detail in a new tab.
   const [bucket, setBucket] = useState<{ title: string; rows: LifecycleRow[] } | null>(null);
+
+  // Export the open bucket popup's leads to .xlsx — same columns the popup
+  // shows, so the sheet matches what the user is looking at.
+  const exportBucketExcel = () => {
+    if (!bucket || bucket.rows.length === 0) return;
+    // Cancelled-after-booking is the one bucket sales actually calls back, so
+    // it carries a phone column the other buckets don't need.
+    const withPhone = bucket.title === "ยกเลิกหลังจอง";
+    const header = [
+      "ID", "ชื่อ-นามสกุล",
+      ...(withPhone ? ["เบอร์โทร"] : []),
+      "บ้านเลขที่", "สถานะ", "จ่าย (%)", "วันนัดติดตั้ง", "วันที่สร้าง", "เหตุผลที่ยกเลิก",
+    ];
+    const data = bucket.rows.map((r) => {
+      const cfg = STATUS_CONFIG[r.status] || STATUS_CONFIG[r.status.split("-")[0]];
+      const pct = paidPctOf(r);
+      return [
+        r.id,
+        r.full_name,
+        ...(withPhone ? [r.phone || ""] : []),
+        r.house_number || "",
+        cfg?.label || r.status,
+        pct ?? "",
+        thDate(r.install_date),
+        thDate(r.created_at),
+        r.lost_reason || "",
+      ];
+    });
+    const ws = XLSX.utils.aoa_to_sheet([header, ...data]);
+    ws["!cols"] = [
+      { wch: 8 }, { wch: 28 },
+      ...(withPhone ? [{ wch: 14 }] : []),
+      { wch: 14 }, { wch: 16 }, { wch: 9 }, { wch: 14 }, { wch: 14 }, { wch: 48 },
+    ];
+    ws["!freeze"] = { xSplit: 0, ySplit: 1 };
+    header.forEach((_, c) => {
+      const ref = XLSX.utils.encode_cell({ r: 0, c });
+      if (ws[ref]) ws[ref].s = { font: { bold: true }, fill: { fgColor: { rgb: "F3F4F6" } } };
+    });
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, "Leads");
+    // Excel rejects \ / : * ? [ ] in names — strip them out of the bucket title.
+    const safe = bucket.title.replace(/[\\/:*?[\]]/g, "-");
+    XLSX.writeFile(wb, `${safe}_${new Date().toISOString().slice(0, 10)}.xlsx`);
+  };
   // Global filter — every chip/funnel/popup downstream uses
   // `filteredLifecycleRows`. Default window: 1 Jan 2026 → today (persists
   // across reloads via localStorage). Leaving "from" or "to" empty disables
@@ -242,34 +305,33 @@ export default function DashboardPage() {
               <h3 className="text-lg font-bold text-gray-900">
                 {bucket.title} <span className="text-base font-normal text-gray-500 ml-1">({bucket.rows.length})</span>
               </h3>
-              <button
-                type="button"
-                onClick={() => setBucket(null)}
-                className="cursor-pointer w-8 h-8 rounded-full hover:bg-gray-100 flex items-center justify-center text-gray-500 text-xl"
-                aria-label="ปิด"
-              >✕</button>
+              <div className="flex items-center gap-2">
+                {bucket.rows.length > 0 && (
+                  <button
+                    type="button"
+                    onClick={exportBucketExcel}
+                    className="cursor-pointer inline-flex items-center gap-1.5 h-8 px-3 rounded-lg bg-white border border-gray-200 text-xs font-semibold text-gray-700 hover:border-gray-300 transition-colors"
+                    title={`Export ${bucket.rows.length} rows to Excel`}
+                  >
+                    <DownloadIcon className="w-3.5 h-3.5 text-gray-400" strokeWidth={2} />
+                    <span>Excel</span>
+                  </button>
+                )}
+                <button
+                  type="button"
+                  onClick={() => setBucket(null)}
+                  className="cursor-pointer w-8 h-8 rounded-full hover:bg-gray-100 flex items-center justify-center text-gray-500 text-xl"
+                  aria-label="ปิด"
+                >✕</button>
+              </div>
             </div>
             <div className="overflow-auto divide-y divide-gray-100">
               {bucket.rows.length === 0 ? (
                 <div className="text-center py-10 text-gray-400 text-sm">ไม่มีรายการ</div>
               ) : bucket.rows.map((r) => {
                 const cfg = STATUS_CONFIG[r.status] || STATUS_CONFIG[r.status.split("-")[0]];
-                // Payment progress as a real percentage of the order value:
-                // sum the `pct` field of each installment that's been paid
-                // (the first order_paid_count of them — installments are
-                // settled in JSON order). Falls back to null when the
-                // JSON is missing/malformed.
-                const paidPct = (() => {
-                  try {
-                    const arr = r.order_installments ? (JSON.parse(r.order_installments) as { pct?: number }[]) : [];
-                    if (!Array.isArray(arr) || arr.length === 0) return null;
-                    const paidCount = r.order_paid_count ?? 0;
-                    return Math.round(arr.slice(0, paidCount).reduce((a, x) => a + (Number(x.pct) || 0), 0));
-                  } catch { return null; }
-                })();
-                const installDateStr = r.install_date
-                  ? new Date(r.install_date).toLocaleDateString("th-TH", { day: "numeric", month: "short", year: "2-digit" })
-                  : null;
+                const paidPct = paidPctOf(r);
+                const installDateStr = r.install_date ? thDate(r.install_date) : null;
                 return (
                   <LeadLink
                     key={r.id}

@@ -79,6 +79,7 @@ export async function GET(req: NextRequest) {
         l.house_number,
         l.full_name,
         l.source,
+        l.phone,
         l.status,
         l.customer_grade,
         l.customer_group,

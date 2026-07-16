@@ -53,9 +53,9 @@ export default function NewLeadModal({ onClose, onCreated, linkLine, initialSour
     setSaving(true);
     setError(null);
     try {
-      // Raw fetch (not apiFetch) so we can surface the 409 dedupe response.
-      // Must hand-roll the x-user-id header that apiFetch normally injects —
-      // missing it makes requireAuth() return 401 to every user.
+      // Raw fetch (not apiFetch) so error statuses surface here instead of
+      // throwing. Must hand-roll the x-user-id header that apiFetch normally
+      // injects — missing it makes requireAuth() return 401 to every user.
       const res = await fetch("/api/leads", {
         method: "POST",
         headers: { "Content-Type": "application/json", "ngrok-skip-browser-warning": "true", ...getUserIdHeader() },
@@ -66,20 +66,6 @@ export default function NewLeadModal({ onClose, onCreated, linkLine, initialSour
           interested_package_id: form.interested_package_id ? parseInt(form.interested_package_id) : null,
         }),
       });
-      if (res.status === 409) {
-        const data = await res.json().catch(() => ({}));
-        const existing = data?.existing_lead;
-        if (existing?.id) {
-          const goTo = confirm(`ลูกค้านี้มีอยู่แล้ว: ${existing.full_name || "(ไม่มีชื่อ)"} (สถานะ: ${existing.status || "-"})\nต้องการเปิด lead เดิมเลยมั้ย?`);
-          if (goTo) {
-            onClose();
-            router.push(`/leads/${existing.id}`);
-            return;
-          }
-        }
-        setError("ลูกค้านี้มีอยู่แล้ว (เบอร์โทร + บ้านเลขที่ ตรงกับ lead ที่มีอยู่)");
-        return;
-      }
       if (!res.ok) throw new Error(`API error: ${res.status}`);
       const result = await res.json();
       const lineUserToLink = linkLine?.userId ?? pickedLineId;

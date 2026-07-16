@@ -73,21 +73,11 @@ export async function POST(request: NextRequest) {
     const body = await request.json();
     const db = await getDb();
 
-    // Dedupe: phone + house_number identifies a household. Name/email are
-    // unreliable (typos, missing). Block create and return existing lead so
-    // the UI can offer "open existing record" instead of making a duplicate.
-    if (body.phone && body.house_number) {
-      const dupe = await db.request()
-        .input("phone", sql.NVarChar(20), body.phone)
-        .input("house_number", sql.NVarChar(50), body.house_number)
-        .query(`SELECT TOP 1 id, full_name, status FROM leads WHERE phone = @phone AND house_number = @house_number`);
-      if (dupe.recordset.length) {
-        return NextResponse.json(
-          { error: "Lead already exists", existing_lead: dupe.recordset[0] },
-          { status: 409 }
-        );
-      }
-    }
+    // No phone + house_number dedupe block here on purpose: an existing
+    // customer buying a second time (more panels, battery, another round) has
+    // the exact same phone + house_number as their first lead, so blocking on
+    // that pair made repeat purchases impossible to enter. Each purchase is its
+    // own lead. Import paths (Gmail sync etc.) still dedupe on their own keys.
 
     // Auto-create project if user typed a name not in the list
     let projectId = body.project_id || null;
