@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
+import * as XLSX from "xlsx-js-style";
 import Header from "@/components/layout/Header";
 import { LeadLink } from "@/components/lead/LeadLink";
 import { DownloadIcon } from "@/components/ui/icons";
@@ -14,7 +15,6 @@ import type {
 const fmt = (value: number | null | undefined) => Number(value || 0).toLocaleString("th-TH");
 const pct = (value: number, total: number) => total > 0 ? Math.round((value / total) * 100) : 0;
 const topItems = (series: CountSeries, limit = 8) => series.items.filter(item => item.count > 0).sort((a, b) => b.count - a.count).slice(0, limit);
-const countOf = (series: CountSeries, value: string) => series.items.find(item => item.value === value)?.count || 0;
 
 type DrillState = { title: string; loading: boolean; rows: CustomerDrilldownRow[]; error?: string } | null;
 
@@ -26,38 +26,25 @@ export default function CustomerDashboardPage() {
   const urlFilters = useMemo(() => {
     if (typeof window === "undefined") return null;
     const p = new URLSearchParams(window.location.search);
-    return {
-      from: p.get("from"), to: p.get("to"), projectId: p.get("project_id"),
-      source: p.get("source"), status: p.get("status"),
-    };
+    return { from: p.get("from"), to: p.get("to") };
   }, []);
   const [dateFrom, setDateFrom] = useState(() => urlFilters?.from || getWithTtl<string>("dashboardCustomer.dateFrom", TWO_HOURS_MS) || "2026-01-01");
   const [dateTo, setDateTo] = useState(() => urlFilters?.to || getWithTtl<string>("dashboardCustomer.dateTo", TWO_HOURS_MS) || today);
-  const [projectId, setProjectId] = useState(() => urlFilters?.projectId || getWithTtl<string>("dashboardCustomer.projectId", TWO_HOURS_MS) || "");
-  const [source, setSource] = useState(() => urlFilters?.source || getWithTtl<string>("dashboardCustomer.source", TWO_HOURS_MS) || "");
-  const [status, setStatus] = useState(() => urlFilters?.status || getWithTtl<string>("dashboardCustomer.status", TWO_HOURS_MS) || "");
   const [data, setData] = useState<CustomerDashboardData | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [drill, setDrill] = useState<DrillState>(null);
-  const [pdfLoading, setPdfLoading] = useState(false);
   const [excelLoading, setExcelLoading] = useState(false);
 
   useEffect(() => { setWithTtl("dashboardCustomer.dateFrom", dateFrom); }, [dateFrom]);
   useEffect(() => { setWithTtl("dashboardCustomer.dateTo", dateTo); }, [dateTo]);
-  useEffect(() => { setWithTtl("dashboardCustomer.projectId", projectId); }, [projectId]);
-  useEffect(() => { setWithTtl("dashboardCustomer.source", source); }, [source]);
-  useEffect(() => { setWithTtl("dashboardCustomer.status", status); }, [status]);
 
   const filterParams = useMemo(() => {
     const p = new URLSearchParams();
     if (dateFrom) p.set("from", dateFrom);
     if (dateTo) p.set("to", dateTo);
-    if (projectId) p.set("project_id", projectId);
-    if (source) p.set("source", source);
-    if (status) p.set("status", status);
     return p;
-  }, [dateFrom, dateTo, projectId, source, status]);
+  }, [dateFrom, dateTo]);
 
   useEffect(() => {
     let active = true;
@@ -84,26 +71,8 @@ export default function CustomerDashboardPage() {
     }
   };
 
-  const reset = () => { setDateFrom("2026-01-01"); setDateTo(today); setProjectId(""); setSource(""); setStatus(""); };
-  const filtersChanged = dateFrom !== "2026-01-01" || dateTo !== today || !!projectId || !!source || !!status;
-
-  const downloadPdf = async () => {
-    setPdfLoading(true);
-    try {
-      const p = new URLSearchParams(filterParams);
-      p.set("path", "/dashboard-customer");
-      p.set("details", "1");
-      const response = await fetch(`/api/report/dashboard-pdf?${p.toString()}`, { headers: { ...getUserIdHeader() } });
-      if (!response.ok) throw new Error("ดาวน์โหลด PDF ไม่สำเร็จ");
-      const blob = await response.blob();
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement("a");
-      a.href = url;
-      a.download = `dashboard-iii_${new Date().toISOString().slice(0, 10)}.pdf`;
-      document.body.appendChild(a); a.click(); a.remove(); URL.revokeObjectURL(url);
-    } catch (err) { alert(err instanceof Error ? err.message : "ดาวน์โหลด PDF ไม่สำเร็จ"); }
-    finally { setPdfLoading(false); }
-  };
+  const reset = () => { setDateFrom("2026-01-01"); setDateTo(today); };
+  const filtersChanged = dateFrom !== "2026-01-01" || dateTo !== today;
 
   const downloadExcel = async () => {
     setExcelLoading(true);
@@ -130,23 +99,14 @@ export default function CustomerDashboardPage() {
           <div className="flex items-center gap-2">
             <CustomerFilters
               className="hidden xl:flex"
-              data={data}
-              projectId={projectId} setProjectId={setProjectId}
-              source={source} setSource={setSource}
-              status={status} setStatus={setStatus}
               dateFrom={dateFrom} setDateFrom={setDateFrom}
               dateTo={dateTo} setDateTo={setDateTo}
               filtersChanged={filtersChanged} reset={reset} loading={loading}
             />
-            <button type="button" onClick={downloadExcel} disabled={excelLoading || pdfLoading}
+            <button type="button" onClick={downloadExcel} disabled={excelLoading}
               className="cursor-pointer inline-flex items-center gap-1.5 h-8 px-3 rounded-lg bg-white border border-emerald-200 text-xs font-semibold text-emerald-700 hover:border-emerald-300 disabled:opacity-60">
               {excelLoading ? <span className="w-3.5 h-3.5 border-2 border-emerald-200 border-t-emerald-600 rounded-full animate-spin" /> : <DownloadIcon className="w-3.5 h-3.5 text-emerald-500" strokeWidth={2} />}
               <span>{excelLoading ? "กำลังสร้าง..." : "Excel"}</span>
-            </button>
-            <button type="button" onClick={downloadPdf} disabled={pdfLoading || excelLoading}
-              className="cursor-pointer inline-flex items-center gap-1.5 h-8 px-3 rounded-lg bg-white border border-gray-200 text-xs font-semibold text-gray-700 hover:border-gray-300 disabled:opacity-60">
-              {pdfLoading ? <span className="w-3.5 h-3.5 border-2 border-gray-300 border-t-gray-600 rounded-full animate-spin" /> : <DownloadIcon className="w-3.5 h-3.5 text-gray-400" strokeWidth={2} />}
-              <span>{pdfLoading ? "กำลังสร้าง..." : "PDF"}</span>
             </button>
           </div>
         } />
@@ -158,65 +118,17 @@ export default function CustomerDashboardPage() {
         <div className="dashboard-pdf-skip xl:hidden rounded-xl border border-gray-200 bg-gray-50 p-3">
           <CustomerFilters
             className="flex flex-wrap"
-            data={data}
-            projectId={projectId} setProjectId={setProjectId}
-            source={source} setSource={setSource}
-            status={status} setStatus={setStatus}
             dateFrom={dateFrom} setDateFrom={setDateFrom}
             dateTo={dateTo} setDateTo={setDateTo}
             filtersChanged={filtersChanged} reset={reset} loading={loading}
           />
         </div>
 
-        <FilterBanner from={dateFrom} to={dateTo} project={data?.filters.projects.find(p => String(p.id) === projectId)?.name} source={data?.filters.sources.find(s => s.value === source)?.label} status={status ? STATUS_CONFIG[status]?.label || status : undefined} />
+        <FilterBanner from={dateFrom} to={dateTo} />
         {error && !data && <div className="rounded-xl border border-red-200 bg-red-50 p-8 text-center text-sm text-red-700">{error}</div>}
         {!data && !error && <div className="h-64 grid place-items-center"><span className="w-9 h-9 border-3 border-gray-200 border-t-primary rounded-full animate-spin" /></div>}
 
         {data && <>
-          <ReportGroup title="Executive Summary" subtitle="ภาพรวมฐานข้อมูล การจำแนกลูกค้า และความพร้อมในการตัดสินใจ">
-          <div className="grid grid-cols-1 xl:grid-cols-2 gap-3">
-            <SummaryPanel title="Questionnaire Overview" rate={`${pct(data.meta.respondents, data.meta.cohortLeads)}% response`} rateTone="text-sky-600" value={fmt(data.meta.cohortLeads)} note="Lead ทั้งหมดในช่วงเวลาที่เลือก">
-              <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
-                <SummaryTile label="ยังไม่ตอบ" value={fmt(data.meta.cohortLeads - data.meta.respondents)} tone="gray" onClick={() => openDrill("ยังไม่ตอบแบบสอบถาม", "questionnaire_status", "unanswered")} />
-                <SummaryTile label="ตอบบางส่วน" value={fmt(data.meta.respondents - data.meta.completeEight)} tone="blue" onClick={() => openDrill("ตอบแบบสอบถามบางส่วน", "questionnaire_status", "partial")} />
-                <SummaryTile label="ครบ 8 หัวข้อ" value={fmt(data.meta.completeEight)} tone="green" onClick={() => openDrill("ตอบครบทั้ง 8 หัวข้อ", "questionnaire_status", "complete")} />
-                <SummaryTile label="Coverage เฉลี่ย" value={`${data.meta.coveragePct}%`} tone="violet" />
-              </div>
-            </SummaryPanel>
-
-            <SummaryPanel title="กลุ่มลูกค้า" rate={`${pct(data.summary.customerGroups.answered, data.meta.cohortLeads)}% classified`} rateTone="text-violet-600" value={fmt(data.meta.cohortLeads)} note={`Lead ทั้งหมด · จัดกลุ่มแล้ว ${fmt(data.summary.customerGroups.answered)} Lead`}>
-              <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
-                <SummaryTile label="ลูกค้าทั่วไป" value={fmt(countOf(data.summary.customerGroups, "general"))} tone="blue" onClick={() => openDrill("ลูกค้าทั่วไป", "customer_group", "general")} />
-                <SummaryTile label="ลูกค้าเสนา" value={fmt(countOf(data.summary.customerGroups, "sena"))} tone="green" onClick={() => openDrill("ลูกค้าเสนา", "customer_group", "sena")} />
-                <SummaryTile label="SME" value={fmt(countOf(data.summary.customerGroups, "sme"))} tone="violet" onClick={() => openDrill("SME", "customer_group", "sme")} />
-                <SummaryTile label="ยังไม่ระบุ" value={fmt(countOf(data.summary.customerGroups, "unclassified"))} tone="gray" onClick={() => openDrill("ยังไม่ระบุกลุ่มลูกค้า", "customer_group", "unclassified")} />
-              </div>
-            </SummaryPanel>
-
-            <SummaryPanel title="Sales Grade" rate={`${pct(data.summary.salesGrades.answered, data.meta.cohortLeads)}% graded`} rateTone="text-emerald-600" value={fmt(data.summary.salesGrades.answered)} note={`Lead ที่ฝ่ายขายจัดเกรดแล้ว · ยังไม่จัดเกรด ${fmt(countOf(data.summary.salesGrades, "ungraded"))} Lead`}>
-              <div className="grid grid-cols-4 lg:grid-cols-7 gap-2">
-                <SummaryTile label="ยังไม่จัด" value="–" detail={fmt(countOf(data.summary.salesGrades, "ungraded"))} tone="gray" onClick={() => openDrill("ยังไม่จัด Sales Grade", "sales_grade", "ungraded")} />
-                <SummaryTile label="พร้อมซื้อ" value="A" detail={fmt(countOf(data.summary.salesGrades, "A"))} tone="green" onClick={() => openDrill("Grade A · พร้อมซื้อ", "sales_grade", "A")} />
-                <SummaryTile label="เปรียบเทียบ" value="B" detail={fmt(countOf(data.summary.salesGrades, "B"))} tone="blue" onClick={() => openDrill("Grade B · เปรียบเทียบ", "sales_grade", "B")} />
-                <SummaryTile label="พิจารณา" value="C" detail={fmt(countOf(data.summary.salesGrades, "C"))} tone="amber" onClick={() => openDrill("Grade C · พิจารณา", "sales_grade", "C")} />
-                <SummaryTile label="ยังไม่พร้อม" value="D" detail={fmt(countOf(data.summary.salesGrades, "D"))} tone="amber" onClick={() => openDrill("Grade D · ยังไม่พร้อม", "sales_grade", "D")} />
-                <SummaryTile label="หาข้อมูล" value="E" detail={fmt(countOf(data.summary.salesGrades, "E"))} tone="gray" onClick={() => openDrill("Grade E · หาข้อมูล", "sales_grade", "E")} />
-                <SummaryTile label="ไม่สนใจ" value="F" detail={fmt(countOf(data.summary.salesGrades, "F"))} tone="rose" onClick={() => openDrill("Grade F · ไม่สนใจ", "sales_grade", "F")} />
-              </div>
-            </SummaryPanel>
-
-            <SummaryPanel title="ระยะเวลาในการตัดสินใจ" rate={`${pct(data.sections.decision.timeline.answered, data.meta.cohortLeads)}% answered`} rateTone="text-orange-600" value={`${fmt(data.sections.decision.timeline.answered)} / ${fmt(data.meta.cohortLeads)}`} note={`Lead ที่ตอบระยะเวลาตัดสินใจ · ยังไม่ตอบ ${fmt(data.meta.cohortLeads - data.sections.decision.timeline.answered)} Lead`}>
-              <div className="grid grid-cols-2 sm:grid-cols-5 gap-2">
-                <SummaryTile label="1–3 เดือน" value={fmt(countOf(data.sections.decision.timeline, "1-3m"))} tone="green" onClick={() => openDrill("ตัดสินใจภายใน 1–3 เดือน", "decision_timeline", "1-3m")} />
-                <SummaryTile label="ภายใน 6 เดือน" value={fmt(countOf(data.sections.decision.timeline, "6m"))} tone="blue" onClick={() => openDrill("ตัดสินใจภายใน 6 เดือน", "decision_timeline", "6m")} />
-                <SummaryTile label="มากกว่า 1 ปี" value={fmt(countOf(data.sections.decision.timeline, "1y+"))} tone="amber" onClick={() => openDrill("ตัดสินใจมากกว่า 1 ปี", "decision_timeline", "1y+")} />
-                <SummaryTile label="อื่นๆ" value={fmt(countOf(data.sections.decision.timeline, "other"))} tone="violet" onClick={() => openDrill("ระยะเวลาตัดสินใจอื่นๆ", "decision_timeline", "other")} />
-                <SummaryTile label="ยังไม่ตอบ" value={fmt(data.meta.cohortLeads - data.sections.decision.timeline.answered)} tone="gray" onClick={() => openDrill("ยังไม่ตอบระยะเวลาตัดสินใจ", "decision_timeline", "unanswered")} />
-              </div>
-            </SummaryPanel>
-          </div>
-          </ReportGroup>
-
           <ReportGroup title="Customer & Energy" subtitle="ลูกค้าเป็นใคร และใช้พลังงานอย่างไรในปัจจุบัน">
           <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4 items-stretch">
             <SectionCard id="insight-1" number={1} title="Customer Profile" subtitle="ข้อมูลบ้านและผู้อยู่อาศัย" answered={sectionMax(data.sections.customerProfile.residenceType, data.sections.customerProfile.houseAge, data.sections.customerProfile.roofShape)} className="">
@@ -307,29 +219,15 @@ export default function CustomerDashboardPage() {
 }
 
 function CustomerFilters({
-  className, data, projectId, setProjectId, source, setSource, status, setStatus,
-  dateFrom, setDateFrom, dateTo, setDateTo, filtersChanged, reset, loading,
+  className, dateFrom, setDateFrom, dateTo, setDateTo, filtersChanged, reset, loading,
 }: {
   className: string;
-  data: CustomerDashboardData | null;
-  projectId: string; setProjectId: (value: string) => void;
-  source: string; setSource: (value: string) => void;
-  status: string; setStatus: (value: string) => void;
   dateFrom: string; setDateFrom: (value: string) => void;
   dateTo: string; setDateTo: (value: string) => void;
   filtersChanged: boolean; reset: () => void; loading: boolean;
 }) {
   const controlClass = "h-8 px-2 rounded-lg bg-white border border-gray-200 text-xs text-gray-700 focus:outline-none focus:border-gray-300";
   return <div className={`${className} items-center gap-1 text-xs text-gray-500`}>
-    <select value={projectId} onChange={e => setProjectId(e.target.value)} className={`${controlClass} w-36`} title="เลือกโครงการ">
-      <option value="">ทุกโครงการ</option>{data?.filters.projects.map(project => <option key={project.id} value={project.id}>{project.name}</option>)}
-    </select>
-    <select value={source} onChange={e => setSource(e.target.value)} className={`${controlClass} w-28`} title="เลือก Source">
-      <option value="">ทุก Source</option>{data?.filters.sources.map(item => <option key={item.value} value={item.value}>{item.label}</option>)}
-    </select>
-    <select value={status} onChange={e => setStatus(e.target.value)} className={`${controlClass} w-28`} title="เลือกสถานะ">
-      <option value="">ทุกสถานะ</option>{data?.filters.statuses.map(item => <option key={item} value={item}>{STATUS_CONFIG[item]?.label || item}</option>)}
-    </select>
     <input type="date" value={dateFrom} onChange={e => setDateFrom(e.target.value)} className={`${controlClass} w-[126px]`} title="ช่วงวันที่ (จาก)" />
     <span className="text-gray-400">–</span>
     <input type="date" value={dateTo} onChange={e => setDateTo(e.target.value)} className={`${controlClass} w-[126px]`} title="ช่วงวันที่ (ถึง)" />
@@ -347,37 +245,9 @@ function ReportGroup({ title, subtitle, children }: { title: string; subtitle: s
   </section>;
 }
 
-function FilterBanner({ from, to, project, source, status }: { from: string; to: string; project?: string; source?: string; status?: string }) {
+function FilterBanner({ from, to }: { from: string; to: string }) {
   const thai = (value: string) => { if (!value) return "—"; const [y, m, d] = value.split("-"); return `${d}/${m}/${Number(y) + 543}`; };
-  return <div className="rounded-lg border border-gray-200 bg-gray-50 px-3 py-2 text-xs text-gray-700 flex items-center gap-2 flex-wrap"><span className="font-semibold text-gray-500 uppercase tracking-wider">Filter</span><span className="font-mono">{thai(from)} – {thai(to)}</span>{project && <><span className="text-gray-300">·</span><span>{project}</span></>}{source && <><span className="text-gray-300">·</span><span>{source}</span></>}{status && <><span className="text-gray-300">·</span><span>{status}</span></>}</div>;
-}
-
-function SummaryPanel({ title, rate, rateTone, value, note, children }: { title: string; rate: string; rateTone: string; value: string; note: string; children: React.ReactNode }) {
-  return <section className="rounded-2xl bg-white border border-gray-200 p-4 min-w-0 shadow-sm">
-    <div className="flex items-start justify-between gap-3"><div className="text-xs font-semibold uppercase tracking-[0.12em] text-gray-500">{title}</div><div className={`text-xs font-bold shrink-0 ${rateTone}`}>{rate}</div></div>
-    <div className="text-3xl font-bold font-mono tabular-nums text-gray-900 mt-1">{value}</div>
-    <div className="text-xxs text-gray-400 mt-0.5">{note}</div>
-    <div className="mt-2">{children}</div>
-  </section>;
-}
-
-type SummaryTone = "gray" | "blue" | "green" | "violet" | "amber" | "rose";
-const SUMMARY_TONES: Record<SummaryTone, { box: string; value: string; label: string; detail: string }> = {
-  gray: { box: "bg-gray-200", value: "text-slate-700", label: "text-slate-600", detail: "text-slate-400" },
-  blue: { box: "bg-sky-50", value: "text-sky-700", label: "text-sky-700", detail: "text-sky-500" },
-  green: { box: "bg-emerald-600", value: "text-white", label: "text-white", detail: "text-emerald-100" },
-  violet: { box: "bg-indigo-50", value: "text-indigo-600", label: "text-indigo-600", detail: "text-indigo-400" },
-  amber: { box: "bg-amber-50", value: "text-amber-600", label: "text-amber-600", detail: "text-amber-400" },
-  rose: { box: "bg-rose-50", value: "text-rose-600", label: "text-rose-600", detail: "text-rose-400" },
-};
-
-function SummaryTile({ label, value, detail, tone, onClick }: { label: string; value: string; detail?: string; tone: SummaryTone; onClick?: () => void }) {
-  const colors = SUMMARY_TONES[tone];
-  const content = <><span className={`text-xl font-bold font-mono tabular-nums ${colors.value}`}>{value}</span><span className={`text-xxs mt-1 leading-tight text-center ${colors.label}`}>{label}</span>{detail && <span className={`text-xxs mt-0.5 font-mono ${colors.detail}`}>{detail}</span>}</>;
-  const className = `min-w-0 min-h-14 rounded-lg px-2 py-1 flex flex-col items-center justify-center ${colors.box}`;
-  return onClick
-    ? <button type="button" onClick={onClick} className={`cursor-pointer ${className} hover:ring-2 hover:ring-gray-200 transition-shadow`}>{content}</button>
-    : <div className={className}>{content}</div>;
+  return <div className="rounded-lg border border-gray-200 bg-gray-50 px-3 py-2 text-xs text-gray-700 flex items-center gap-2 flex-wrap"><span className="font-semibold text-gray-500 uppercase tracking-wider">Filter</span><span className="font-mono">{thai(from)} – {thai(to)}</span></div>;
 }
 
 const SECTION_TONES: Record<number, string> = { 1: "bg-orange-50 text-orange-600", 2: "bg-emerald-50 text-emerald-600", 3: "bg-sky-50 text-sky-600", 4: "bg-violet-50 text-violet-600", 5: "bg-amber-50 text-amber-600", 6: "bg-rose-50 text-rose-600", 7: "bg-teal-50 text-teal-600", 8: "bg-indigo-50 text-indigo-600" };
@@ -427,6 +297,94 @@ function DecisionMatrix({ factors, onClick }: { factors: CustomerDashboardData["
 
 function sectionMax(...series: CountSeries[]) { return Math.max(...series.map(s => s.answered), 0); }
 
+function exportDrilldownExcel(state: NonNullable<DrillState>) {
+  if (!state.rows.length) return;
+  const header = ["ID", "ชื่อ-นามสกุล", "บ้านเลขที่", "โครงการ", "Source", "สถานะ", "คำตอบ", "วันที่สร้าง"];
+  const rows = state.rows.map(row => {
+    const cfg = STATUS_CONFIG[row.status] || STATUS_CONFIG[row.status.split("-")[0]];
+    return [
+      row.id,
+      row.full_name,
+      row.house_number || "",
+      row.project_name || "",
+      row.source || "",
+      cfg?.label || row.status,
+      row.answer,
+      row.created_at ? new Date(row.created_at).toLocaleDateString("th-TH") : "",
+    ];
+  });
+  const worksheet = XLSX.utils.aoa_to_sheet([header, ...rows]);
+  worksheet["!cols"] = [
+    { wch: 8 }, { wch: 28 }, { wch: 14 }, { wch: 28 },
+    { wch: 18 }, { wch: 18 }, { wch: 42 }, { wch: 14 },
+  ];
+  worksheet["!freeze"] = { xSplit: 0, ySplit: 1 };
+  header.forEach((_, column) => {
+    const ref = XLSX.utils.encode_cell({ r: 0, c: column });
+    if (worksheet[ref]) {
+      worksheet[ref].s = { font: { bold: true }, fill: { fgColor: { rgb: "F3F4F6" } } };
+    }
+  });
+  const workbook = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(workbook, worksheet, "Leads");
+  const safeTitle = state.title.replace(/[\\/:*?[\]]/g, "-");
+  XLSX.writeFile(workbook, `${safeTitle}_${new Date().toISOString().slice(0, 10)}.xlsx`);
+}
+
 function DrilldownModal({ state, onClose }: { state: NonNullable<DrillState>; onClose: () => void }) {
-  return <div className="fixed inset-0 z-50 bg-black/50 flex items-end md:items-center justify-center p-0 md:p-4" onClick={onClose}><div role="dialog" aria-modal="true" aria-label={state.title} className="bg-white rounded-t-2xl md:rounded-2xl w-full max-w-2xl max-h-[85vh] flex flex-col shadow-2xl" onClick={e => e.stopPropagation()}><div className="flex items-center justify-between p-4 border-b border-gray-200"><h3 className="text-lg font-bold text-gray-900">{state.title} <span className="text-base font-normal text-gray-500">({state.loading ? "…" : state.rows.length})</span></h3><button type="button" aria-label="ปิดหน้าต่าง" onClick={onClose} className="cursor-pointer w-8 h-8 rounded-full hover:bg-gray-100 text-gray-500 text-xl">×</button></div><div className="overflow-auto divide-y divide-gray-100">{state.loading ? <div className="py-12 grid place-items-center"><span className="w-8 h-8 border-2 border-gray-200 border-t-primary rounded-full animate-spin" /></div> : state.error ? <div className="text-center py-10 text-red-500 text-sm">{state.error}</div> : !state.rows.length ? <div className="text-center py-10 text-gray-400 text-sm">ไม่มีรายการ</div> : state.rows.map(row => { const cfg = STATUS_CONFIG[row.status]; return <LeadLink key={row.id} id={row.id} className="cursor-pointer flex items-center gap-3 px-4 py-3 hover:bg-gray-50"><div className="w-9 h-9 rounded-full bg-gray-100 grid place-items-center text-gray-600 font-bold">{row.full_name.charAt(0)}</div><div className="flex-1 min-w-0"><div className="text-sm font-semibold text-gray-900 truncate">{row.full_name}</div><div className="text-xs text-gray-400 truncate">ID {row.id} · บ้าน {row.house_number || "—"} · {row.project_name || "ไม่ระบุโครงการ"}</div><div className="text-xs text-sky-700 truncate mt-0.5">{row.answer}</div></div><span className={`text-xxs font-semibold rounded-md px-2 py-1 ${cfg?.bg || "bg-gray-100"} ${cfg?.text || "text-gray-600"}`}>{cfg?.label || row.status}</span></LeadLink>; })}</div><div className="px-4 py-2 text-center text-xxs text-gray-400 border-t">คลิกชื่อเพื่อเปิด Lead Detail ในแท็บใหม่</div></div></div>;
+  return (
+    <div className="fixed inset-0 z-50 bg-black/50 flex items-end md:items-center justify-center p-0 md:p-4" onClick={onClose}>
+      <div role="dialog" aria-modal="true" aria-label={state.title} className="bg-white rounded-t-2xl md:rounded-2xl w-full max-w-2xl max-h-[85vh] flex flex-col shadow-2xl" onClick={event => event.stopPropagation()}>
+        <div className="flex items-center justify-between p-4 border-b border-gray-200">
+          <h3 className="text-lg font-bold text-gray-900 truncate">
+            {state.title} <span className="text-base font-normal text-gray-500 ml-1">({state.loading ? "…" : state.rows.length})</span>
+          </h3>
+          <div className="flex items-center gap-2 shrink-0">
+            {!state.loading && !state.error && state.rows.length > 0 && (
+              <button
+                type="button"
+                onClick={() => exportDrilldownExcel(state)}
+                className="cursor-pointer inline-flex items-center gap-1.5 h-8 px-3 rounded-lg bg-white border border-gray-200 text-xs font-semibold text-gray-700 hover:border-gray-300 transition-colors"
+                title={`Export ${state.rows.length} rows to Excel`}
+              >
+                <DownloadIcon className="w-3.5 h-3.5 text-gray-400" strokeWidth={2} />
+                <span>Excel</span>
+              </button>
+            )}
+            <button type="button" aria-label="ปิดหน้าต่าง" onClick={onClose} className="cursor-pointer w-8 h-8 rounded-full hover:bg-gray-100 flex items-center justify-center text-gray-500 text-xl">✕</button>
+          </div>
+        </div>
+        <div className="overflow-auto divide-y divide-gray-100">
+          {state.loading ? (
+            <div className="py-12 grid place-items-center"><span className="w-8 h-8 border-2 border-gray-200 border-t-primary rounded-full animate-spin" /></div>
+          ) : state.error ? (
+            <div className="text-center py-10 text-red-500 text-sm">{state.error}</div>
+          ) : !state.rows.length ? (
+            <div className="text-center py-10 text-gray-400 text-sm">ไม่มีรายการ</div>
+          ) : state.rows.map(row => {
+            const cfg = STATUS_CONFIG[row.status] || STATUS_CONFIG[row.status.split("-")[0]];
+            return (
+              <LeadLink key={row.id} id={row.id} className="cursor-pointer flex items-center gap-3 px-4 py-2.5 hover:bg-gray-50">
+                <div className="w-8 h-8 rounded-full bg-gray-100 flex items-center justify-center shrink-0 text-gray-600 font-bold text-sm">{row.full_name.charAt(0)}</div>
+                <div className="flex-1 min-w-0">
+                  <div className="text-sm font-semibold text-gray-900 truncate flex items-baseline gap-2">
+                    <span className="truncate">{row.full_name}</span>
+                    {row.created_at && <span className="text-xs font-normal text-gray-400 shrink-0">สร้าง {new Date(row.created_at).toLocaleDateString("th-TH", { day: "numeric", month: "short", year: "2-digit" })}</span>}
+                  </div>
+                  <div className="grid grid-cols-[3.5rem_minmax(5rem,7rem)_minmax(0,1fr)] gap-3 text-xs text-gray-500 font-mono tabular-nums">
+                    <span>ID {row.id}</span>
+                    <span className="truncate">บ้าน {row.house_number || "—"}</span>
+                    <span className="truncate">{row.project_name || "ไม่ระบุโครงการ"}</span>
+                  </div>
+                  <div className="text-xs text-sky-700 truncate mt-0.5">{row.answer}</div>
+                </div>
+                <span className={`text-xxs font-bold uppercase tracking-wider px-2 py-0.5 rounded text-white shrink-0 ${cfg?.color || "bg-gray-400"}`}>{cfg?.label || row.status}</span>
+              </LeadLink>
+            );
+          })}
+        </div>
+        <div className="px-4 py-2 border-t border-gray-100 text-xxs text-gray-400 text-center">คลิกชื่อเพื่อเปิด lead detail ใน tab ใหม่</div>
+      </div>
+    </div>
+  );
 }

@@ -18,11 +18,6 @@ type Option = { value: string; label: string };
 export type CustomerExportRow = {
   id: number;
   full_name: string;
-  phone: string | null;
-  email: string | null;
-  line_id: string | null;
-  id_card_number: string | null;
-  id_card_address: string | null;
   installation_address: string | null;
   house_number: string | null;
   meter_number: string | null;
@@ -179,11 +174,6 @@ function column(
 const LEAD_COLUMNS: ExportColumn[] = [
   column("ข้อมูล Lead", "id", "Lead ID", "number", row => row.id, undefined, 10),
   column("ข้อมูล Lead", "full_name", "ชื่อ-นามสกุล", "text", row => safeText(row.full_name), undefined, 24),
-  column("ข้อมูล Lead", "phone", "เบอร์โทรศัพท์", "text", row => safeText(row.phone), undefined, 16),
-  column("ข้อมูล Lead", "email", "อีเมล", "text", row => safeText(row.email), undefined, 26),
-  column("ข้อมูล Lead", "line_id", "LINE ID", "text", row => safeText(row.line_id), undefined, 20),
-  column("ข้อมูล Lead", "id_card_number", "เลขบัตรประชาชน", "text", row => safeText(row.id_card_number), undefined, 18),
-  column("ข้อมูล Lead", "id_card_address", "ที่อยู่ตามบัตรประชาชน", "text", row => safeText(row.id_card_address), undefined, 38),
   column("ข้อมูล Lead", "installation_address", "ที่อยู่ติดตั้ง", "text", row => safeText(row.installation_address), undefined, 38),
   column("ข้อมูล Lead", "house_number", "บ้านเลขที่", "text", row => safeText(row.house_number), undefined, 14),
   column("ข้อมูล Lead", "meter_number", "เลขมิเตอร์", "text", row => safeText(row.meter_number), undefined, 18),
@@ -271,8 +261,7 @@ export async function getCustomerExportRows(filters: CustomerDashboardFilters): 
   if (to) { request.input("to", sql.Date, to); clauses.push("CAST(l.created_at AS DATE) <= @to"); }
   const where = clauses.length ? `WHERE ${clauses.join(" AND ")}` : "";
   const result = await request.query(`
-    SELECT l.id, l.full_name, l.phone, l.email, l.line_id,
-      l.id_card_number, l.id_card_address, l.installation_address,
+    SELECT l.id, l.full_name, l.installation_address,
       l.house_number, l.meter_number,
       l.project_id, COALESCE(NULLIF(l.project_alias, N''), NULLIF(l.project_name, N''), p.name) AS project_name,
       p.district AS project_district, p.province AS project_province,

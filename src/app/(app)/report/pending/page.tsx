@@ -325,7 +325,7 @@ export default function PendingApprovalReport() {
                   onClick={() => openChequePaymentContext(it, true)}
                   className={`h-8 px-3 rounded-lg text-sm font-semibold text-white bg-emerald-500 hover:bg-emerald-600 inline-flex items-center justify-center shrink-0 ${className}`}
                 >
-                  ยืนยันรับเงิน
+                  กดยืนยันรับเงิน
                 </button>
               ) : isInstallCollectPayment(it) ? (
                 <button
@@ -333,14 +333,14 @@ export default function PendingApprovalReport() {
                   onClick={() => openChequePaymentContext(it, true)}
                   className={`h-8 px-3 rounded-lg text-sm font-semibold text-white bg-emerald-500 hover:bg-emerald-600 inline-flex items-center justify-center shrink-0 ${className}`}
                 >
-                  ยืนยันรับเงิน
+                  กดยืนยันรับเงิน
                 </button>
               ) : (
                 <LeadLink
                   id={it.lead_id}
                   className={`h-8 px-3 rounded-lg text-sm font-semibold text-white bg-emerald-500 hover:bg-emerald-600 inline-flex items-center justify-center shrink-0 ${className}`}
                 >
-                  ยืนยันรับเงิน
+                  กดยืนยันรับเงิน
                 </LeadLink>
               );
               const chequeDetails = i.payment_method === "cheque" && (i.cheque_no || i.cheque_bank || i.cheque_due_date || i.cheque_status_note) ? (

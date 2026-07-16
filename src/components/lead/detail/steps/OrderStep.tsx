@@ -1078,7 +1078,7 @@ export default function OrderStep({ lead, state, refresh, expanded, onToggle }: 
                           ? "bg-amber-50 text-amber-700 border-amber-300"
                           : "bg-violet-50 text-violet-700 border-violet-200"
                   }`}>
-                    {paid ? "ชำระแล้ว" : chequeWaitingMoney ? "รอรับเงิน" : pendingApproval ? "รอยืนยัน" : "ชำระที่ Step 5"}
+                    {paid ? "ชำระแล้ว" : chequeWaitingMoney ? "รอรับเงิน" : pendingApproval ? "รอยืนยัน" : "ชำระวันติดตั้ง"}
                   </span>
                 ) : (
                   <button
@@ -1266,7 +1266,7 @@ export default function OrderStep({ lead, state, refresh, expanded, onToggle }: 
                                 ? "bg-amber-50 text-amber-700 border-amber-300"
                                 : "bg-violet-50 text-violet-700 border-violet-200"
                         }`}>
-                          {paid ? "ชำระแล้ว" : chequeWaitingMoney ? "รอรับเงิน" : pendingApproval ? "รอยืนยัน" : "ชำระที่ Step 5"}
+                          {paid ? "ชำระแล้ว" : chequeWaitingMoney ? "รอรับเงิน" : pendingApproval ? "รอยืนยัน" : "ชำระวันติดตั้ง"}
                         </div>
                       ) : (
                         <button
