@@ -262,6 +262,9 @@ export interface Lead {
   grid_inspection_date: string | null;
   grid_approved_date: string | null;
   grid_meter_changed_date: string | null;
+  grid_applicant_type: string | null;
+  grid_document_checklist: string | null;
+  grid_application_doc_url: string | null;
   grid_permit_doc_url: string | null;
   grid_note: string | null;
 }

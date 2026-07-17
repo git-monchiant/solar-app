@@ -1019,6 +1019,18 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
       sets.push("grid_meter_changed_date = @grid_meter_changed_date");
       request.input("grid_meter_changed_date", sql.Date, body.grid_meter_changed_date ? toSqlDate(body.grid_meter_changed_date) : null);
     }
+    if (body.grid_applicant_type !== undefined) {
+      sets.push("grid_applicant_type = @grid_applicant_type");
+      request.input("grid_applicant_type", sql.NVarChar(20), body.grid_applicant_type);
+    }
+    if (body.grid_document_checklist !== undefined) {
+      sets.push("grid_document_checklist = @grid_document_checklist");
+      request.input("grid_document_checklist", sql.NVarChar(sql.MAX), body.grid_document_checklist);
+    }
+    if (body.grid_application_doc_url !== undefined) {
+      sets.push("grid_application_doc_url = @grid_application_doc_url");
+      request.input("grid_application_doc_url", sql.NVarChar(500), body.grid_application_doc_url);
+    }
     if (body.grid_permit_doc_url !== undefined) {
       sets.push("grid_permit_doc_url = @grid_permit_doc_url");
       request.input("grid_permit_doc_url", sql.NVarChar(500), body.grid_permit_doc_url);

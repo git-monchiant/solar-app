@@ -233,6 +233,8 @@ export async function GET(req: NextRequest) {
       /_slip(_url)?$/,                      // pre_slip_url, order_before_slip
       /^receipt_.*_url$/,                   // receipt_deposit_actual_url etc.
       /^warranty_.*(cert|serials|sn_photo|other_docs)_url$/,
+      /^grid_document_checklist$/,
+      /^grid_application_doc_url$/,
       /^grid_permit_doc_url$/,
       /^warranty_doc_url$/,
     ];

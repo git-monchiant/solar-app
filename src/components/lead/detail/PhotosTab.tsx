@@ -161,6 +161,7 @@ function buildGroups(lead: LeadLike): Group[] {
 
   // — GridTie / ขนานไฟ —
   const gridTie: PhotoItem[] = [];
+  if (has(lead.grid_application_doc_url))         gridTie.push({ url: lead.grid_application_doc_url, label: "เอกสารยื่นขอขนานไฟ", pdf: isPdf(lead.grid_application_doc_url) });
   if (has(lead.grid_permit_doc_url))              gridTie.push({ url: lead.grid_permit_doc_url, label: "ใบอนุญาตขนานไฟ", pdf: isPdf(lead.grid_permit_doc_url) });
   push("GridTie", "⚡", gridTie);
 
