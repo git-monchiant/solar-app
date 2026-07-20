@@ -28,3 +28,4 @@ Statuses:
 | [20260716-01-dashboard-iii-popup-excel.md](20260716-01-dashboard-iii-popup-excel.md) | done | - | ปรับ popup Dashboard III ตาม Dashboard I และเพิ่ม Excel เฉพาะรายการใน popup |
 | [20260717-01-grid-tie-document-timeline.md](20260717-01-grid-tie-document-timeline.md) | backlog | [interactive mockup](../mockup/20260717-01-grid-tie-document-timeline/) | ออกแบบ Timeline ขอขนานไฟ 6 ขั้น พร้อม Checklist, เอกสารหลักฐาน และ Gate ตามประเภทโครงการ |
 | [20260720-01-step5-gridtie-draft.md](20260720-01-step5-gridtie-draft.md) | done | - | เพิ่มขอขนานไฟแบบ Draft ใน Step 5 หลังตรวจ ใช้ข้อมูลร่วมกับ Step 7 และไม่บล็อกการส่งมอบงานติดตั้ง |
+| [20260720-02-quotation-package-options.md](20260720-02-quotation-package-options.md) | done | [interactive mockup](../mockup/20260720-02-quotation-package-options/) | ออกแบบ Step 03 ให้สร้างใบเสนอราคาได้สูงสุด 3 ฉบับจากแพ็กเกจหลักและ Add-on โดยคงหน้าตาตามระบบเดิม |
