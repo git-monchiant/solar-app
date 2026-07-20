@@ -11,11 +11,12 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
   const leadId = parseInt(id);
   if (!leadId) return NextResponse.json({ error: "Invalid id" }, { status: 400 });
 
+  let browser: Awaited<ReturnType<typeof puppeteer.launch>> | null = null;
   try {
-    const browser = await puppeteer.launch({
+    browser = await puppeteer.launch({
       headless: true,
       executablePath: process.env.PUPPETEER_EXECUTABLE_PATH || undefined,
-      args: ["--no-sandbox", "--disable-setuid-sandbox", "--disable-dev-shm-usage", "--disable-gpu", "--disable-crash-reporter", "--no-zygote", "--single-process"],
+      args: ["--no-sandbox", "--disable-setuid-sandbox", "--disable-dev-shm-usage", "--disable-gpu", "--disable-crash-reporter"],
       env: { ...process.env, TZ: "Asia/Bangkok" },
     });
     const page = await browser.newPage();
@@ -60,8 +61,6 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
       printBackground: true,
       margin: { top: "0", right: "0", bottom: "0", left: "0" },
     });
-    await browser.close();
-
     const download = req.nextUrl.searchParams.get("download") === "1";
     const disposition = await dispositionForLead(leadId, {
       base: `install-doc_${id}`,
@@ -77,5 +76,7 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
   } catch (error) {
     console.error("Install-doc PDF error:", error);
     return NextResponse.json({ error: "Failed to generate install-doc PDF" }, { status: 500 });
+  } finally {
+    if (browser) await browser.close().catch(() => undefined);
   }
 }

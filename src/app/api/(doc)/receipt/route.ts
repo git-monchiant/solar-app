@@ -24,12 +24,13 @@ export async function GET(req: NextRequest) {
 
   const identifier = `lead-${leadId}-${stage}`;
 
+  let browser: Awaited<ReturnType<typeof puppeteer.launch>> | null = null;
   try {
     const port = process.env.PORT || 3700;
-    const browser = await puppeteer.launch({
+    browser = await puppeteer.launch({
       headless: true,
       executablePath: process.env.PUPPETEER_EXECUTABLE_PATH || undefined,
-      args: ["--no-sandbox", "--disable-setuid-sandbox", "--disable-dev-shm-usage", "--disable-gpu", "--disable-crash-reporter", "--no-zygote", "--single-process"],
+      args: ["--no-sandbox", "--disable-setuid-sandbox", "--disable-dev-shm-usage", "--disable-gpu", "--disable-crash-reporter"],
       env: { ...process.env, TZ: "Asia/Bangkok" },
     });
     const page = await browser.newPage();
@@ -57,7 +58,6 @@ export async function GET(req: NextRequest) {
         printBackground: true,
         margin: { top: "0", right: "0", bottom: "0", left: "0" },
       });
-      await browser.close();
       const disposition = await dispositionForLead(parseInt(leadId), {
         base: `receipt_${identifier}`,
         ext: "pdf",
@@ -73,7 +73,6 @@ export async function GET(req: NextRequest) {
     await page.setViewport({ width: 794, height: 1123, deviceScaleFactor: 2 });
     const el = await page.$("#receipt");
     const imgBuffer = await el!.screenshot({ type: "png" });
-    await browser.close();
 
     const disposition = await dispositionForLead(parseInt(leadId), {
       base: `receipt_${identifier}`,
@@ -88,5 +87,7 @@ export async function GET(req: NextRequest) {
   } catch (error) {
     console.error("Receipt PDF error:", error);
     return NextResponse.json({ error: "Failed to generate PDF" }, { status: 500 });
+  } finally {
+    if (browser) await browser.close().catch(() => undefined);
   }
 }

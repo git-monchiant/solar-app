@@ -44,12 +44,15 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
   const leadId = parseInt(id);
   if (!leadId) return NextResponse.json({ error: "Invalid id" }, { status: 400 });
 
+  let browser: Awaited<ReturnType<typeof puppeteer.launch>> | null = null;
   try {
     const port = process.env.PORT || 3700;
-    const browser = await puppeteer.launch({
+    browser = await puppeteer.launch({
       headless: true,
       executablePath: process.env.PUPPETEER_EXECUTABLE_PATH || undefined,
-      args: ["--no-sandbox", "--disable-setuid-sandbox", "--disable-dev-shm-usage", "--disable-gpu", "--disable-crash-reporter", "--no-zygote", "--single-process"],
+      // `--single-process` makes Chromium's print target close on Windows.
+      // Keep the portable sandbox/resource flags and use normal child processes.
+      args: ["--no-sandbox", "--disable-setuid-sandbox", "--disable-dev-shm-usage", "--disable-gpu", "--disable-crash-reporter"],
       env: { ...process.env, TZ: "Asia/Bangkok" },
     });
     const page = await browser.newPage();
@@ -71,8 +74,6 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
       printBackground: true,
       margin: { top: "0", right: "0", bottom: "0", left: "0" },
     });
-    await browser.close();
-
     // Merge cover + attached PDFs (skip anything non-PDF silently)
     const merged = await PDFDocument.create();
     const cover = await PDFDocument.load(coverBytes);
@@ -104,5 +105,7 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
   } catch (error) {
     console.error("Warranty PDF error:", error);
     return NextResponse.json({ error: "Failed to generate warranty PDF" }, { status: 500 });
+  } finally {
+    if (browser) await browser.close().catch(() => undefined);
   }
 }
