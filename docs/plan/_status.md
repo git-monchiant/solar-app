@@ -27,3 +27,4 @@ Statuses:
 | [20260715-01-customer-insight-dashboard.md](20260715-01-customer-insight-dashboard.md) | done | [wireframe](../mockup/20260715-01-customer-insight-dashboard/) | Hybrid Dashboard แสดงข้อมูลครบ พร้อม responsive layout, drill-down, PDF และ Excel export ตาม Filter |
 | [20260716-01-dashboard-iii-popup-excel.md](20260716-01-dashboard-iii-popup-excel.md) | done | - | ปรับ popup Dashboard III ตาม Dashboard I และเพิ่ม Excel เฉพาะรายการใน popup |
 | [20260717-01-grid-tie-document-timeline.md](20260717-01-grid-tie-document-timeline.md) | backlog | [interactive mockup](../mockup/20260717-01-grid-tie-document-timeline/) | ออกแบบ Timeline ขอขนานไฟ 6 ขั้น พร้อม Checklist, เอกสารหลักฐาน และ Gate ตามประเภทโครงการ |
+| [20260720-01-step5-gridtie-draft.md](20260720-01-step5-gridtie-draft.md) | done | - | เพิ่มขอขนานไฟแบบ Draft ใน Step 5 หลังตรวจ ใช้ข้อมูลร่วมกับ Step 7 และไม่บล็อกการส่งมอบงานติดตั้ง |

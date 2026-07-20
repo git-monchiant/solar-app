@@ -3,6 +3,7 @@ import { getDb, sql, fixDates, toSqlDate } from "@/lib/db";
 import { requireAuth } from "@/lib/auth";
 import { logLeadActivity, fmtThaiDate } from "@/lib/lead-activity-log";
 import { validateDocNo } from "@/lib/doc-number";
+import { getGridTieFinalMissing } from "@/lib/gridTie";
 
 const statusLabels: Record<string, string> = {
   pre_survey: "รอติดตาม",
@@ -137,12 +138,20 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
       survey_confirmed: boolean | number | null;
       install_confirmed: boolean | number | null;
       install_completed_at: Date | null;
+      grid_utility: string | null;
+      grid_app_no: string | null;
+      grid_applicant_type: string | null;
+      grid_document_checklist: string | null;
+      grid_application_doc_url: string | null;
+      grid_permit_doc_url: string | null;
     } | null = null;
     {
       const current = await db.request().input("id", sql.Int, leadId).query(`
         SELECT status, payment_confirmed,
                survey_date, survey_time_slot, install_date, install_time_slot, next_follow_up,
-               survey_confirmed, install_confirmed, install_completed_at
+               survey_confirmed, install_confirmed, install_completed_at,
+               grid_utility, grid_app_no, grid_applicant_type, grid_document_checklist,
+               grid_application_doc_url, grid_permit_doc_url
         FROM leads WHERE id = @id
       `);
       if (current.recordset.length > 0) {
@@ -229,6 +238,23 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
             if (missingBefore.length > 0) {
               return NextResponse.json(
                 { error: `ต้องยืนยันรับเงินจริงงวดก่อนติดตั้งให้ครบก่อน (เหลือ ${missingBefore.length} งวด)` },
+                { status: 409 },
+              );
+            }
+          }
+
+          if (body.status === "closed" && oldStatus !== "closed") {
+            const missing = getGridTieFinalMissing({
+              grid_utility: body.grid_utility !== undefined ? body.grid_utility : oldRow?.grid_utility,
+              grid_app_no: body.grid_app_no !== undefined ? body.grid_app_no : oldRow?.grid_app_no,
+              grid_applicant_type: body.grid_applicant_type !== undefined ? body.grid_applicant_type : oldRow?.grid_applicant_type,
+              grid_document_checklist: body.grid_document_checklist !== undefined ? body.grid_document_checklist : oldRow?.grid_document_checklist,
+              grid_application_doc_url: body.grid_application_doc_url !== undefined ? body.grid_application_doc_url : oldRow?.grid_application_doc_url,
+              grid_permit_doc_url: body.grid_permit_doc_url !== undefined ? body.grid_permit_doc_url : oldRow?.grid_permit_doc_url,
+            });
+            if (missing.length > 0) {
+              return NextResponse.json(
+                { error: "ข้อมูลขอขนานไฟยังไม่ครบ", missing },
                 { status: 409 },
               );
             }
