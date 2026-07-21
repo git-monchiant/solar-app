@@ -1611,7 +1611,12 @@ export default function InstallStep({ lead, state, refresh, expanded, onToggle }
             leadId={lead.id}
             fieldName="install_customer_signature_url"
             initialUrl={lead.install_customer_signature_url}
-            onSaved={(url) => setSignatureUrl(url)}
+            onSaved={(url) => {
+              setSignatureUrl(url);
+              // The workflow is unmounted while another top tab is open. Keep
+              // the page-level lead snapshot current for the next mount.
+              if (url) void refresh();
+            }}
           />
 
           <div>

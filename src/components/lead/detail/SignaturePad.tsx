@@ -16,7 +16,6 @@ interface Props {
 export default function SignaturePad({ leadId, fieldName, initialUrl, onSaved }: Props) {
   const [signatureUrl, setSignatureUrl] = useState<string | null>(initialUrl);
   const [hasDrawn, setHasDrawn] = useState(false);
-  const [sigSaving, setSigSaving] = useState(false);
   const [fullscreen, setFullscreen] = useState(false);
   const [fsHasDrawn, setFsHasDrawn] = useState(false);
 
@@ -24,7 +23,10 @@ export default function SignaturePad({ leadId, fieldName, initialUrl, onSaved }:
   const inlineDrawingRef = useRef(false);
   const fsCanvasRef = useRef<HTMLCanvasElement>(null);
   const fsDrawingRef = useRef(false);
-  const autoSaveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const hasDrawnRef = useRef(false);
+  const captureVersionRef = useRef(0);
+  const uploadInFlightRef = useRef(false);
+  const pendingBlobRef = useRef<Blob | null>(null);
 
   // Inline canvas setup + load existing signature image
   useEffect(() => {
@@ -40,6 +42,7 @@ export default function SignaturePad({ leadId, fieldName, initialUrl, onSaved }:
       img.onload = () => {
         ctx.clearRect(0, 0, c.width, c.height);
         ctx.drawImage(img, 0, 0, c.width, c.height);
+        hasDrawnRef.current = true;
         setHasDrawn(true);
       };
       img.src = signatureUrl;
@@ -47,50 +50,48 @@ export default function SignaturePad({ leadId, fieldName, initialUrl, onSaved }:
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [signatureUrl]);
 
-  const cancelAutoSave = () => {
-    if (autoSaveTimerRef.current) {
-      clearTimeout(autoSaveTimerRef.current);
-      autoSaveTimerRef.current = null;
-    }
-  };
-  useEffect(() => { return () => cancelAutoSave(); }, []);
-
   // fieldName looks like "survey_customer_signature_url" — the route key drops
   // the "_signature_url" suffix.
   const fieldKey = fieldName.replace(/_signature_url$/, "");
   const sigEndpoint = `/api/leads/${leadId}/signature/${fieldKey}`;
 
-  const uploadSignature = async (): Promise<string | null> => {
-    const c = inlineCanvasRef.current;
-    if (!c || !hasDrawn) return signatureUrl;
-    return new Promise((resolve) => {
-      c.toBlob(async (blob) => {
-        if (!blob) return resolve(null);
-        const res = await apiFetch(sigEndpoint, {
-          method: "PUT",
-          headers: { "Content-Type": "image/png" },
-          body: blob,
-        });
-        resolve(res.url || null);
-      }, "image/png");
-    });
-  };
-
-  const autoSaveSignature = async () => {
-    if (sigSaving) return;
-    setSigSaving(true);
+  // Persist completed strokes immediately. The blob remains available after a
+  // tab switch unmounts the canvas, and rapid strokes coalesce to the newest
+  // full-canvas snapshot instead of racing older uploads against newer ones.
+  const drainSaveQueue = async () => {
+    if (uploadInFlightRef.current) return;
+    const blob = pendingBlobRef.current;
+    if (!blob) return;
+    pendingBlobRef.current = null;
+    uploadInFlightRef.current = true;
     try {
-      const url = await uploadSignature();
+      const res = await apiFetch(sigEndpoint, {
+        method: "PUT",
+        headers: { "Content-Type": "image/png" },
+        body: blob,
+      });
+      const url = res.url || null;
       if (url) {
         setSignatureUrl(url);
         onSaved?.(url);
       }
-    } finally { setSigSaving(false); }
+    } catch (error) {
+      console.error(error);
+    } finally {
+      uploadInFlightRef.current = false;
+      if (pendingBlobRef.current) void drainSaveQueue();
+    }
   };
 
-  const scheduleAutoSave = () => {
-    cancelAutoSave();
-    autoSaveTimerRef.current = setTimeout(() => { autoSaveSignature(); }, 1200);
+  const saveCanvas = () => {
+    const c = inlineCanvasRef.current;
+    if (!c || !hasDrawnRef.current) return;
+    const captureVersion = ++captureVersionRef.current;
+    c.toBlob((blob) => {
+      if (!blob || captureVersion !== captureVersionRef.current) return;
+      pendingBlobRef.current = blob;
+      void drainSaveQueue();
+    }, "image/png");
   };
 
   const getInlineCoords = (e: React.PointerEvent<HTMLCanvasElement>) => {
@@ -110,16 +111,21 @@ export default function SignaturePad({ leadId, fieldName, initialUrl, onSaved }:
     const ctx = inlineCanvasRef.current?.getContext("2d"); if (!ctx) return;
     const { x, y } = getInlineCoords(e);
     ctx.lineTo(x, y); ctx.stroke();
-    if (!hasDrawn) setHasDrawn(true);
+    if (!hasDrawnRef.current) {
+      hasDrawnRef.current = true;
+      setHasDrawn(true);
+    }
   };
   const onInlineUp = () => {
     inlineDrawingRef.current = false;
-    if (hasDrawn && !sigSaving) scheduleAutoSave();
+    saveCanvas();
   };
   const clearInline = () => {
-    cancelAutoSave();
+    captureVersionRef.current++;
+    pendingBlobRef.current = null;
     const c = inlineCanvasRef.current; if (!c) return;
     c.getContext("2d")?.clearRect(0, 0, c.width, c.height);
+    hasDrawnRef.current = false;
     setHasDrawn(false);
     if (signatureUrl) {
       setSignatureUrl(null);
@@ -201,11 +207,12 @@ export default function SignaturePad({ leadId, fieldName, initialUrl, onSaved }:
         ctx.clearRect(0, 0, inline.width, inline.height);
         ctx.drawImage(fs, 0, 0, inline.width, inline.height);
       }
+      hasDrawnRef.current = true;
       setHasDrawn(true);
       drew = true;
     }
     setFullscreen(false);
-    if (drew) setTimeout(() => { autoSaveSignature(); }, 50);
+    if (drew) saveCanvas();
   };
 
   return (

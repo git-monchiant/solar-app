@@ -92,6 +92,7 @@ export default function SurveyStep({ lead, state, refresh, packages, expanded, o
   const [surveyPhase, setSurveyPhase] = useState<string>(lead.survey_electrical_phase ?? lead.pre_electrical_phase ?? "");
   const [rescheduling, setRescheduling] = useState(false);
   const [saving, setSaving] = useState(false);
+  const [signatureUrl, setSignatureUrl] = useState<string | null>(lead.survey_customer_signature_url);
   const [surveyNote, setSurveyNote] = useState<string>(lead.survey_note ?? "");
   const [surveyPhotos, setSurveyPhotos] = useState<string[]>(lead.survey_photos ? lead.survey_photos.split(",").filter(Boolean) : []);
   const [photoUploading, setPhotoUploading] = useState(false);
@@ -1108,6 +1109,12 @@ export default function SurveyStep({ lead, state, refresh, packages, expanded, o
               leadId={lead.id}
               fieldName="survey_customer_signature_url"
               initialUrl={lead.survey_customer_signature_url}
+              onSaved={(url) => {
+                setSignatureUrl(url);
+                // Keep the page-level lead snapshot current so switching away
+                // from Workflow and back remounts the saved signature.
+                if (url) void refresh();
+              }}
             />
           </div>
 
@@ -1158,7 +1165,7 @@ export default function SurveyStep({ lead, state, refresh, packages, expanded, o
               <ChevronLeftIcon className="w-4 h-4" strokeWidth={2} />
               ย้อนกลับ
             </button>
-            <button onClick={markDone} disabled={saving} className="flex-1 md:flex-none md:w-64 h-11 rounded-lg text-sm font-semibold text-white bg-gradient-to-r from-primary to-primary-dark hover:brightness-110 disabled:opacity-50 transition-colors flex items-center justify-center gap-2">
+            <button onClick={markDone} disabled={saving || !signatureUrl} className="flex-1 md:flex-none md:w-64 h-11 rounded-lg text-sm font-semibold text-white bg-gradient-to-r from-primary to-primary-dark hover:brightness-110 disabled:opacity-50 disabled:cursor-not-allowed transition-colors flex items-center justify-center gap-2">
               <CheckIcon className="w-4 h-4" strokeWidth={2.5} />
               {saving ? "กำลังบันทึก…" : "สำรวจเสร็จสิ้น"}
             </button>
