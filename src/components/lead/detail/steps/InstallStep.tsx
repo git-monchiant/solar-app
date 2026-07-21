@@ -29,7 +29,6 @@ import { getGridTieProgress } from "@/lib/gridTie";
 const SUB_STEPS = [
   ["นัดหมาย", "นัด"] as const,
   "ตรวจ",
-  "ขอขนานไฟ",
   "สรุป คชจ.",
   "เก็บเงิน",
   "ส่งมอบ",
@@ -45,9 +44,9 @@ export default function InstallStep({ lead, state, refresh, expanded, onToggle }
   const { activeRoles } = useActiveRoles();
   const canConfirmChequeMoney = hasRole(activeRoles, "admin", "account");
   const fileViewer = useFileViewer();
-  // Version the key because adding Grid-Tie at index 2 shifts every later tab.
-  // Reusing the old key would open existing users on the wrong sub-step.
-  const [subStep, setSubStep] = useSubStep(`installSubStepV2_${lead.id}`, lead.install_confirmed ? 1 : 0, SUB_STEPS.length);
+  // Version the key because Grid-Tie moved from its own tab into Delivery,
+  // shifting every tab after inspection one position to the left.
+  const [subStep, setSubStep] = useSubStep(`installSubStepV3_${lead.id}`, lead.install_confirmed ? 1 : 0, SUB_STEPS.length);
   const [nextError, setNextError] = useState<string | null>(null);
   const gridTieFormRef = useRef<GridTieFormHandle>(null);
   const [gridTieProgress, setGridTieProgress] = useState(() => getGridTieProgress(
@@ -1014,7 +1013,6 @@ export default function InstallStep({ lead, state, refresh, expanded, onToggle }
       subSteps={SUB_STEPS}
       subStep={subStep}
       onSubStepChange={async (n) => {
-        if (subStep === 2 && !(await gridTieFormRef.current?.flush())) return;
         if (n > subStep) {
           // Same gates as the "ถัดไป" button — keep them in sync.
           // Missing-field labels are pushed in top→bottom render order so the
@@ -1025,11 +1023,11 @@ export default function InstallStep({ lead, state, refresh, expanded, onToggle }
             if (!note.trim()) missing.push("บันทึกการส่งมอบ");
             if (missing.length > 0) { setNextError(missing.join(", ")); return; }
           }
-          if (subStep === 3 && extraCost > 0 && !extraNote.trim()) {
+          if (subStep === 2 && extraCost > 0 && !extraNote.trim()) {
             setNextError("กรุณากรอกรายละเอียดค่าใช้จ่ายเพิ่มเติม");
             return;
           }
-          if (subStep === 4 && !collectPaymentReady) {
+          if (subStep === 3 && !collectPaymentReady) {
             setNextError("ต้องยืนยันรับชำระหรือรับเช็คของงวดหลังติดตั้งและค่าใช้จ่ายเพิ่มเติมก่อนถึงจะส่งมอบงานได้");
             return;
           }
@@ -1180,7 +1178,7 @@ export default function InstallStep({ lead, state, refresh, expanded, onToggle }
                 <span className="text-violet-500"> · ไม่กระทบการยืนยันนัดติดตั้ง</span>
               </div>
             </div>
-            <button type="button" onClick={() => { setSubStep(2); scrollToStep(); }} className="h-8 shrink-0 rounded-lg border border-violet-300 bg-white px-3 text-xs font-semibold text-violet-700 hover:bg-violet-100">
+            <button type="button" onClick={() => { setSubStep(4); scrollToStep(); }} className="h-8 shrink-0 rounded-lg border border-violet-300 bg-white px-3 text-xs font-semibold text-violet-700 hover:bg-violet-100">
               ไปกรอกข้อมูลขนานไฟ
             </button>
           </div>
@@ -1276,19 +1274,8 @@ export default function InstallStep({ lead, state, refresh, expanded, onToggle }
         </div>
       )}
 
-      {/* Step 2: ขอขนานไฟ — shared Draft, never gates installation completion */}
+      {/* Step 2: สรุปค่าใช้จ่าย */}
       {subStep === 2 && (
-        <GridTieForm
-          ref={gridTieFormRef}
-          lead={lead}
-          mode="draft"
-          refresh={refresh}
-          onProgressChange={setGridTieProgress}
-        />
-      )}
-
-      {/* Step 3: สรุปค่าใช้จ่าย */}
-      {subStep === 3 && (
         <div className="space-y-3">
           <div className="rounded-lg bg-gray-50 border border-gray-200 p-3 space-y-1.5">
             <div className="text-xs font-bold text-gray-400 uppercase mb-2">สรุปค่าใช้จ่าย</div>
@@ -1346,8 +1333,8 @@ export default function InstallStep({ lead, state, refresh, expanded, onToggle }
         </div>
       )}
 
-      {/* Step 4: เก็บเงินคงค้าง / ค่าใช้จ่ายเพิ่มเติม */}
-      {subStep === 4 && (() => {
+      {/* Step 3: เก็บเงินคงค้าง / ค่าใช้จ่ายเพิ่มเติม */}
+      {subStep === 3 && (() => {
         // PaymentSection allocates a stable intent as soon as it mounts. Wait
         // for canonical rows first so a brief empty client state cannot create
         // a fresh draft after the same key was already confirmed.
@@ -1599,8 +1586,8 @@ export default function InstallStep({ lead, state, refresh, expanded, onToggle }
         );
       })()}
 
-      {/* Step 5: ลงนามรับงาน */}
-      {subStep === 5 && (
+      {/* Step 4: ลงนามรับงานและบันทึกข้อมูลขอขนานไฟ */}
+      {subStep === 4 && (
         <div className="space-y-3">
           <div className="text-xs font-semibold tracking-wider uppercase text-gray-500 flex items-center gap-2">
             <span className="w-7 h-7 rounded-lg bg-active/10 text-active flex items-center justify-center shrink-0"><UserIcon className="w-4 h-4" /></span>
@@ -1640,6 +1627,16 @@ export default function InstallStep({ lead, state, refresh, expanded, onToggle }
             เอกสารตรวจสอบงานติดตั้ง
           </button>
 
+          {/* Shared Grid-Tie draft: optional for installation close and can
+              still be completed later in Step 7. */}
+          <GridTieForm
+            ref={gridTieFormRef}
+            lead={lead}
+            mode="draft"
+            refresh={refresh}
+            onProgressChange={setGridTieProgress}
+          />
+
         </div>
       )}
 
@@ -1648,7 +1645,7 @@ export default function InstallStep({ lead, state, refresh, expanded, onToggle }
           with no Back button after a reschedule (saveReschedule resets the
           flag but the persisted subStep stays at 1+). The earlier sub-step
           has its own "ยืนยันนัดติดตั้ง" button so navigation isn't needed there. */}
-      {subStep > 0 && subStep < 5 && (
+      {subStep > 0 && subStep < 4 && (
         <div className="flex gap-2 mt-3 md:justify-between">
           {subStep > 0 ? (
             <button type="button" onClick={() => { setNextError(null); setSubStep(subStep - 1); scrollToStep(); }} className="flex-1 md:flex-none md:w-64 h-11 rounded-lg text-sm font-semibold border border-gray-200 text-gray-600 hover:bg-gray-50 transition-colors flex items-center justify-center gap-1">
@@ -1663,12 +1660,11 @@ export default function InstallStep({ lead, state, refresh, expanded, onToggle }
               if (!note.trim()) missing.push("บันทึกการส่งมอบ");
               if (missing.length > 0) { setNextError(missing.join(", ")); return; }
             }
-            if (subStep === 2 && !(await gridTieFormRef.current?.flush())) return;
-            if (subStep === 3 && extraCost > 0 && !extraNote.trim()) {
+            if (subStep === 2 && extraCost > 0 && !extraNote.trim()) {
               setNextError("กรุณากรอกรายละเอียดค่าใช้จ่ายเพิ่มเติม");
               return;
             }
-            if (subStep === 4 && !collectPaymentReady) {
+            if (subStep === 3 && !collectPaymentReady) {
               setNextError("ต้องยืนยันรับชำระหรือรับเช็คของงวดหลังติดตั้งและค่าใช้จ่ายเพิ่มเติมก่อนถึงจะส่งมอบงานได้");
               return;
             }
@@ -1681,18 +1677,19 @@ export default function InstallStep({ lead, state, refresh, expanded, onToggle }
           </button>
         </div>
       )}
-      {subStep === 5 && (
+      {subStep === 4 && (
         <div className="flex gap-2 mt-3 md:justify-between">
           <button type="button" onClick={() => { setSubStep(subStep - 1); scrollToStep(); }} className="flex-1 md:flex-none md:w-64 h-11 rounded-lg text-sm font-semibold border border-gray-200 text-gray-600 hover:bg-gray-50 transition-colors flex items-center justify-center gap-1">
             <ChevronLeftIcon className="w-4 h-4" strokeWidth={2} />
             ย้อนกลับ
           </button>
           <button
-            onClick={() => {
+            onClick={async () => {
               if (!collectPaymentReady) {
                 setNextError("ต้องยืนยันรับชำระหรือรับเช็คของงวดหลังติดตั้งและค่าใช้จ่ายเพิ่มเติมก่อนถึงจะส่งมอบงานได้");
                 return;
               }
+              if (!(await gridTieFormRef.current?.flush())) return;
               closeStep();
             }}
             disabled={saving || !signatureUrl}

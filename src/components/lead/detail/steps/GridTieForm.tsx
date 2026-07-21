@@ -175,8 +175,7 @@ const GridTieForm = forwardRef<GridTieFormHandle, Props>(function GridTieForm(
     <div className="space-y-3">
       {mode === "draft" && (
         <div className="rounded-lg border border-violet-200 bg-violet-50 px-3 py-2.5">
-          <div className="text-sm font-bold text-violet-800">ข้อมูลขอขนานไฟล่วงหน้า</div>
-          <div className="mt-0.5 text-xs text-violet-600">กรอกเท่าที่มีได้ ข้อมูลส่วนนี้ไม่บล็อกการส่งมอบงานติดตั้ง และสามารถกรอกต่อใน Step 7</div>
+          <div className="text-sm font-bold text-violet-800">เอกสารขอขนานไฟกับการไฟฟ้าและลดหย่อนภาษี</div>
         </div>
       )}
 
@@ -195,7 +194,7 @@ const GridTieForm = forwardRef<GridTieFormHandle, Props>(function GridTieForm(
           </select>
         </div>
         <div>
-          <label className="mb-1 block text-xs font-semibold uppercase tracking-wider text-gray-400">เลขที่คำขอ</label>
+          <label className="mb-1 block text-xs font-semibold uppercase tracking-wider text-gray-400">เลขที่ใบรับ</label>
           <input value={appNo} onChange={event => setAppNo(event.target.value)} placeholder="XXX-XXXX" className="h-11 w-full rounded-lg border border-gray-200 px-3 font-mono focus:border-primary focus:outline-none" />
         </div>
       </div>
