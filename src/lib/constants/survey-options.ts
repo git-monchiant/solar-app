@@ -5,6 +5,8 @@
 
 export const ROOF_MATERIAL_LABEL: Record<string, string> = {
   cpac_tile: "CPAC",
+  "cpac_tile:corrugated": "CPAC ลอน",
+  "cpac_tile:smooth": "CPAC เรียบ",
   old_tile: "ลอนคู่",
   "metal_sheet:bolt": "เมทัลชีท ยึดน็อต",
   "metal_sheet:clip": "เมทัลชีท คลิปล็อก",

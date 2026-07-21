@@ -15,7 +15,8 @@ const chipBtn = (selected: boolean) =>
   }`;
 
 const ROOF_MATERIALS = [
-  { value: "cpac_tile", label: "CPAC" },
+  { value: "cpac_tile:corrugated", label: "CPAC ลอน" },
+  { value: "cpac_tile:smooth", label: "CPAC เรียบ" },
   { value: "old_tile", label: "ลอนคู่" },
   { value: "metal_sheet:bolt", label: "เมทัลชีท ยึดน็อต" },
   { value: "metal_sheet:clip", label: "เมทัลชีท คลิปล็อก" },
@@ -51,7 +52,7 @@ const SHADING = [
   { value: "heavy", label: "ตลอดวัน" },
 ];
 
-const ROOF_TILTS = [15, 25, 35];
+const ROOF_TILTS = [15, 25, 35, 180];
 
 export interface SurveyFormHandle {
   flushSave: () => Promise<void>;
