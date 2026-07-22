@@ -170,6 +170,11 @@ export default function WarrantyStep({ lead, state, refresh, packages, expanded,
   const [battBrand, setBattBrand] = useState<string>(lead.warranty_battery_brand ?? "");
   const [battModel, setBattModel] = useState<string>(lead.warranty_battery_model ?? "");
   const [battKwh,   setBattKwh]   = useState<number | "">(lead.warranty_battery_kwh ?? "");
+  // Some jobs reuse an inverter the customer already owns (or another contractor
+  // supplied). Ticking this greys out the whole inverter group and drops Serial
+  // Number / Phase from the issue-warranty checks — they can't be filled in for
+  // hardware that isn't ours.
+  const [noInverter, setNoInverter] = useState<boolean>(!!lead.warranty_no_inverter);
   const [invBrand, setInvBrand] = useState<string>(lead.warranty_inverter_brand ?? defaultPkg?.inverter_brand ?? "");
   const [invKw, setInvKw] = useState<number | "">(lead.warranty_inverter_kw ?? defaultPkg?.inverter_kw ?? "");
 
@@ -657,6 +662,7 @@ export default function WarrantyStep({ lead, state, refresh, packages, expanded,
           warranty_batteries: JSON.stringify(batteries.filter(b => b.brand || b.kwh || b.serial).map(b => ({ brand: b.brand || null, kwh: b.kwh ? parseFloat(b.kwh) : null, serial: b.serial || null }))),
           warranty_has_battery: batteries.some(b => b.brand || b.kwh || b.serial),
           warranty_panel_serials: panelSerials.some(s => s.trim()) ? JSON.stringify(panelSerials.map(s => s.trim())) : null,
+          warranty_no_inverter: noInverter,
         }),
       }).catch(console.error);
       // NOTE: PUT to /api/leads/[id]/devices was removed here. The new
@@ -667,14 +673,17 @@ export default function WarrantyStep({ lead, state, refresh, packages, expanded,
     }, 800);
     return () => clearTimeout(t);
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [sn, docNo, startDate, sysKwp, panelCount, panelWatt, panelBrand, panelModel, battBrand, battModel, battKwh, durationYears, omPerYear, invBrand, invKw, phase, batteries, panelSerials, inverterCertUrl]);
+  }, [sn, docNo, startDate, sysKwp, panelCount, panelWatt, panelBrand, panelModel, battBrand, battModel, battKwh, durationYears, omPerYear, invBrand, invKw, phase, batteries, panelSerials, inverterCertUrl, noInverter]);
 
   const issueWarranty = async () => {
     const missing: string[] = [];
-    if (!sn) missing.push("Inverter Serial Number");
+    // Both of these describe hardware we installed. When the inverter isn't ours
+    // there is nothing to read a serial off and no phase of our doing, so they
+    // stop being requirements instead of blocking the warranty forever.
+    if (!noInverter && !sn) missing.push("Inverter Serial Number");
     if (!docNo) missing.push("เลขที่เอกสาร");
     if (!startDate) missing.push("วันเริ่มประกัน");
-    if (!phase) missing.push("Phase ของระบบไฟ");
+    if (!noInverter && !phase) missing.push("Phase ของระบบไฟ");
     if (!effectiveSignatureUrl) missing.push("ลายเซ็นลูกค้า");
     // Gate on me?.id — without a logged-in user we can't stamp warranty_issued_by,
     // and submitting would null it out via the PATCH route's "set if defined"
@@ -824,6 +833,10 @@ export default function WarrantyStep({ lead, state, refresh, packages, expanded,
           <div className="rounded-lg border border-gray-200 bg-white/50 p-3 space-y-2">
             <div className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Inverter</div>
 
+            {/* Ticking "ไม่มีการติดตั้ง" disables every inverter control below and
+                drops Serial Number / Phase from the issue-warranty checks. The
+                checkbox itself stays enabled (it has to be untickable), and
+                values already keyed in are kept rather than wiped. */}
             <div className="grid grid-cols-2 md:grid-cols-7 gap-2">
               <div className="col-span-1 md:col-span-1">
                 <label className="text-xs text-gray-500 block mb-1">ยี่ห้อ</label>
@@ -831,6 +844,7 @@ export default function WarrantyStep({ lead, state, refresh, packages, expanded,
                   value={invBrand}
                   onChange={v => setInvBrand(v)}
                   options={INVERTER_BRANDS.map(b => ({ value: b, label: b }))}
+                  disabled={noInverter}
                 />
               </div>
               <div className="col-span-1 md:col-span-1">
@@ -840,15 +854,31 @@ export default function WarrantyStep({ lead, state, refresh, packages, expanded,
                   onChange={v => setInvKw(v ? parseFloat(v) : "")}
                   options={INVERTER_KW_SIZES.map(kw => ({ value: String(kw), label: `${kw} kW` }))}
                   buttonClassName="font-mono tabular-nums"
+                  disabled={noInverter}
                 />
               </div>
               <div className="col-span-1 md:col-span-1">
-                <label className="text-xs text-gray-500 block mb-1">Phase <span className="text-red-500">*</span></label>
+                <label className="text-xs text-gray-500 block mb-1">Phase {!noInverter && <span className="text-red-500">*</span>}</label>
                 <Dropdown
                   value={phase}
                   onChange={v => setPhase(v)}
                   options={Object.entries(PHASE_LABEL).map(([v, l]) => ({ value: v, label: l }))}
+                  disabled={noInverter}
                 />
+              </div>
+              {/* Blank label keeps the checkbox on the same baseline as the
+                  h-8 dropdowns to its left. */}
+              <div className="col-span-1 md:col-span-1">
+                <label className="text-xs text-gray-500 block mb-1">&nbsp;</label>
+                <label className="h-8 flex items-center gap-1.5 text-xs text-gray-600 cursor-pointer select-none whitespace-nowrap">
+                  <input
+                    type="checkbox"
+                    checked={noInverter}
+                    onChange={e => setNoInverter(e.target.checked)}
+                    className="w-3.5 h-3.5 rounded border-gray-300 text-active focus:ring-0 cursor-pointer shrink-0"
+                  />
+                  ไม่มีการติดตั้ง
+                </label>
               </div>
             </div>
 
@@ -860,11 +890,13 @@ export default function WarrantyStep({ lead, state, refresh, packages, expanded,
               <label className="text-xs text-gray-500 block mb-1">Serial Number</label>
               <div className="grid grid-cols-2 md:grid-cols-7 gap-2">
                 <input value={sn} onChange={e => setSn(e.target.value)} placeholder="HW1234567890"
-                  className="col-span-2 md:col-span-3 w-full h-8 px-3 rounded-lg border border-gray-200 text-sm font-mono focus:outline-none focus:border-primary" />
+                  disabled={noInverter}
+                  className="col-span-2 md:col-span-3 w-full h-8 px-3 rounded-lg border border-gray-200 text-sm font-mono focus:outline-none focus:border-primary disabled:bg-gray-50 disabled:text-gray-400 disabled:cursor-not-allowed" />
                 <button type="button"
                   onClick={() => setOpenInverterWizard(true)}
+                  disabled={noInverter}
                   title="AI อ่าน Serial"
-                  className="col-span-1 md:col-span-1 h-8 rounded-lg text-white bg-active hover:brightness-110 flex items-center justify-center transition-colors">
+                  className="col-span-1 md:col-span-1 h-8 rounded-lg text-white bg-active hover:brightness-110 disabled:bg-gray-300 disabled:cursor-not-allowed flex items-center justify-center transition-colors">
                   <span className="relative inline-flex items-center justify-center">
                     <CameraIcon className="w-5 h-5" strokeWidth={2} />
                     <svg className="absolute -top-1 -right-1 w-3 h-3 text-amber-300 drop-shadow" fill="currentColor" viewBox="0 0 24 24">
@@ -880,7 +912,7 @@ export default function WarrantyStep({ lead, state, refresh, packages, expanded,
                   the issued warranty document. */}
               {invBrand.trim().toLowerCase() === "huawei" && (
                 <div className="mt-2 space-y-1.5">
-                  <button type="button" onClick={fetchHuaweiCert} disabled={huaweiLoading || !sn.trim()}
+                  <button type="button" onClick={fetchHuaweiCert} disabled={noInverter || huaweiLoading || !sn.trim()}
                     className={`w-full h-9 rounded-lg text-sm font-semibold text-white bg-[#CF0A2C] hover:brightness-110 disabled:cursor-not-allowed transition-colors flex items-center justify-center gap-1.5 ${huaweiLoading ? "opacity-90" : "disabled:bg-gray-300"}`}>
                     {huaweiLoading
                       ? <span className="w-4 h-4 border-2 border-white/40 border-t-white rounded-full animate-spin" />
@@ -905,6 +937,11 @@ export default function WarrantyStep({ lead, state, refresh, packages, expanded,
                 </div>
               )}
             </div>
+            {noInverter && (
+              <div className="text-xs text-gray-500 bg-gray-50 border border-gray-200 rounded-lg px-3 py-2">
+                ไม่มีการติดตั้ง Inverter — ข้ามการกรอกข้อมูลและ Serial ของ Inverter
+              </div>
+            )}
           </div>
 
           {/* Panel group — ขนาดระบบ + จำนวน + วัตต์ + ยี่ห้อ in a 7-col row. */}

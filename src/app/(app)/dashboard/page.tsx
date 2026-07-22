@@ -36,9 +36,45 @@ const paidPctOf = (r: { order_installments: string | null; order_paid_count: num
 const thDate = (v: string | null) =>
   v ? new Date(v).toLocaleDateString("th-TH", { day: "numeric", month: "short", year: "2-digit" }) : "";
 
+// Money per lead — mirrors the /api/dashboard aggregate exactly:
+//   value = order_total + install_extra_cost      (list price, before discount)
+//   net   = value − order_discount_amount         (headline — what we bill)
+//   due   = net − paid                            (what's actually collectable)
+//   paid  = SUM(confirmed payment amounts)
+// The discount has to come off before comparing to payments — the customer is
+// billed the discounted total, so counting the full value made every discounted
+// lead look outstanding by exactly its discount despite showing "จ่าย 100%".
+// `net` is what every displayed "มูลค่างาน" uses so the popup reconciles with
+// the KPI above it (closed_value also nets the discount off server-side).
+const moneyOf = (r: { order_total: number | null; install_extra_cost: number | null; order_discount_amount: number | null; payment_dates_json: string | null; pending_amount?: number | null; status?: string }) => {
+  const gross = Number(r.order_total || 0) + Number(r.install_extra_cost || 0);
+  const discount = Number(r.order_discount_amount || 0);
+  let paid = 0;
+  try {
+    const arr = r.payment_dates_json ? (JSON.parse(r.payment_dates_json) as { amount?: number }[]) : [];
+    if (Array.isArray(arr)) paid = arr.reduce((a, p) => a + (Number(p.amount) || 0), 0);
+  } catch { paid = 0; }
+  // Two cases where money has come in but no priced job exists to owe against:
+  //   • lost      — cancelled, so the deposit is forfeited and kept (revenue)
+  //   • gross = 0 — still pre-order (survey/quote), holding a booking deposit
+  // Either way `paid` is the whole story and nothing is outstanding. Without
+  // this they reported due = 0 − paid: 14 cancelled leads plus 4 pre-order ones
+  // each quietly subtracted ฿1,000 from the ยังค้างรับ total of any mixed bucket.
+  if (r.status === "lost" || gross === 0) {
+    return { value: paid, net: paid, discount: 0, paid, pending: Number(r.pending_amount || 0), due: 0 };
+  }
+  const net = gross - discount;
+  return { value: gross, net, discount, paid, pending: Number(r.pending_amount || 0), due: net - paid };
+};
+const fmtBaht = (v: number) => `฿${Math.round(v).toLocaleString("th-TH")}`;
+
 type LifecycleRow = { [K in LifecycleCol]: string | null }
   & { [K in ContactStateField]: "yes" | "no" | null }
-  & { id: number; full_name: string; phone: string | null; house_number: string | null; source: string | null; status: string; pre_doc_no: string | null; payment_confirmed: boolean | null; pre_slip_uploaded: 0 | 1; lost_reason: string | null; order_installments: string | null; order_paid_count: number; created_at: string | null };
+  & { id: number; full_name: string; phone: string | null; house_number: string | null; source: string | null; status: string; pre_doc_no: string | null; payment_confirmed: boolean | null; pre_slip_uploaded: 0 | 1; lost_reason: string | null; order_installments: string | null; order_paid_count: number; created_at: string | null }
+  // Money columns — the bucket popup shows per-lead value/paid/outstanding and
+  // totals them in its header. payment_dates_json is a FOR JSON PATH array of
+  // { slip_field, amount, confirmed_at } covering confirmed payments only.
+  & { order_total: number | null; install_extra_cost: number | null; order_discount_amount: number | null; payment_dates_json: string | null; install_actual_date: string | null; pending_amount: number | null; lost_at: string | null };
 
 // Moved over from /dashboard-dev — subset of fields the 5-card row needs.
 interface DevData {
@@ -57,8 +93,23 @@ interface DashboardData {
   total_deposit_value: number;
   total_won: number;
   total_received: number;
+  unearned_received: number;
+  unearned_count: number;
+  survey_only_value: number;
+  survey_only_count: number;
+  scheduled_total: number;
+  scheduled_value: number;
+  scheduled_count: number;
+  delivered_value: number;
+  delivered_count: number;
+  survey_fee_value: number;
+  survey_fee_count: number;
+  receivable_total: number;
+  receivable_count: number;
   conversion_rate: number;
-  this_month: { new_leads: number; closed_count: number; closed_value: number; closed_outstanding: number };
+  // closed_value already includes forfeited_value; the two forfeited_* fields
+  // are only there so the card can show what the headline is made of.
+  this_month: { new_leads: number; closed_count: number; closed_value: number; closed_outstanding: number; forfeited_value: number; forfeited_count: number };
   last_month: { new_leads: number; closed_count: number };
   status_breakdown: { status: string; count: number }[];
   recent_leads: { id: number; full_name: string; status: string; project_name: string; created_at: string }[];
@@ -87,11 +138,14 @@ export default function DashboardPage() {
     const header = [
       "ID", "ชื่อ-นามสกุล",
       ...(withPhone ? ["เบอร์โทร"] : []),
-      "บ้านเลขที่", "สถานะ", "จ่าย (%)", "วันนัดติดตั้ง", "วันที่สร้าง", "เหตุผลที่ยกเลิก",
+      // ราคาเต็ม / ส่วนลด are split out here (the popup only has room for the
+      // net figure) so the sheet still shows how มูลค่างาน was arrived at.
+      "บ้านเลขที่", "สถานะ", "จ่าย (%)", "ราคาเต็ม", "ส่วนลด", "มูลค่างาน", "รับแล้ว", "ยังค้างรับ", "วันนัดติดตั้ง", "วันติดตั้งจริง", "วันที่สร้าง", "เหตุผลที่ยกเลิก",
     ];
     const data = bucket.rows.map((r) => {
       const cfg = STATUS_CONFIG[r.status] || STATUS_CONFIG[r.status.split("-")[0]];
       const pct = paidPctOf(r);
+      const m = moneyOf(r);
       return [
         r.id,
         r.full_name,
@@ -99,7 +153,13 @@ export default function DashboardPage() {
         r.house_number || "",
         cfg?.label || r.status,
         pct ?? "",
+        m.value || "",
+        m.discount || "",
+        m.value ? m.net : "",
+        m.value ? m.paid : "",
+        m.value ? m.due : "",
         thDate(r.install_date),
+        thDate(r.install_actual_date || r.install_done_at),
         thDate(r.created_at),
         r.lost_reason || "",
       ];
@@ -108,7 +168,7 @@ export default function DashboardPage() {
     ws["!cols"] = [
       { wch: 8 }, { wch: 28 },
       ...(withPhone ? [{ wch: 14 }] : []),
-      { wch: 14 }, { wch: 16 }, { wch: 9 }, { wch: 14 }, { wch: 14 }, { wch: 48 },
+      { wch: 14 }, { wch: 16 }, { wch: 9 }, { wch: 13 }, { wch: 11 }, { wch: 13 }, { wch: 13 }, { wch: 13 }, { wch: 14 }, { wch: 14 }, { wch: 14 }, { wch: 48 },
     ];
     ws["!freeze"] = { xSplit: 0, ySplit: 1 };
     header.forEach((_, c) => {
@@ -298,7 +358,7 @@ export default function DashboardPage() {
           onClick={() => setBucket(null)}
         >
           <div
-            className="bg-white rounded-t-2xl md:rounded-2xl w-full max-w-2xl max-h-[85vh] flex flex-col shadow-2xl"
+            className="bg-white rounded-t-2xl md:rounded-2xl w-full max-w-3xl max-h-[85vh] flex flex-col shadow-2xl"
             onClick={(e) => e.stopPropagation()}
           >
             <div className="flex items-center justify-between p-4 border-b border-gray-200">
@@ -325,13 +385,41 @@ export default function DashboardPage() {
                 >✕</button>
               </div>
             </div>
+            {/* Money summary — totals the same rows the list below shows, so
+                the header always reconciles with the KPI number that opened it. */}
+            {(() => {
+              const t = bucket.rows.reduce((a, r) => {
+                const m = moneyOf(r);
+                return { value: a.value + m.net, paid: a.paid + m.paid, due: a.due + m.due };
+              }, { value: 0, paid: 0, due: 0 });
+              if (t.value === 0) return null;
+              return (
+                <div className="grid grid-cols-4 gap-px bg-gray-200 border-b border-gray-200 text-center">
+                  {[
+                    ["จำนวนงาน", `${bucket.rows.length} งาน`, "text-gray-900"],
+                    ["มูลค่ารวม", fmtBaht(t.value), "text-gray-900"],
+                    ["รับแล้ว", fmtBaht(t.paid), "text-emerald-700"],
+                    ["ยังค้างรับ", fmtBaht(t.due), "text-amber-700"],
+                  ].map(([label, val, cls]) => (
+                    <div key={label} className="bg-gray-50 px-2 py-2">
+                      <div className="text-xxs text-gray-500">{label}</div>
+                      <div className={`text-sm font-bold font-mono tabular-nums ${cls}`}>{val}</div>
+                    </div>
+                  ))}
+                </div>
+              );
+            })()}
             <div className="overflow-auto divide-y divide-gray-100">
               {bucket.rows.length === 0 ? (
                 <div className="text-center py-10 text-gray-400 text-sm">ไม่มีรายการ</div>
               ) : bucket.rows.map((r) => {
                 const cfg = STATUS_CONFIG[r.status] || STATUS_CONFIG[r.status.split("-")[0]];
                 const paidPct = paidPctOf(r);
-                const installDateStr = r.install_date ? thDate(r.install_date) : null;
+                // Past the install step → show the day it was actually
+                // installed. Only leads still waiting show the booked date.
+                const doneOn = r.install_actual_date || r.install_done_at;
+                const installLabel = doneOn ? "ติดตั้ง" : "นัดติดตั้ง";
+                const installDateStr = doneOn ? thDate(doneOn) : (r.install_date ? thDate(r.install_date) : null);
                 return (
                   <LeadLink
                     key={r.id}
@@ -353,13 +441,13 @@ export default function DashboardPage() {
                       {/* Fixed-width columns so each line in the list reads
                           like a small table — ID / house / paid / install all
                           align vertically across rows. */}
-                      <div className="text-xs text-gray-500 flex items-baseline gap-3 font-mono tabular-nums">
-                        <span className="w-14 shrink-0">ID {r.id}</span>
-                        <span className="w-28 shrink-0 truncate">บ้าน {r.house_number || "—"}</span>
-                        <span className={`w-16 shrink-0 ${paidPct === null ? "text-gray-300" : paidPct >= 100 ? "text-emerald-600" : paidPct > 0 ? "text-amber-600" : "text-gray-400"}`}>
+                      <div className="text-xs text-gray-500 flex items-baseline gap-3 font-mono tabular-nums whitespace-nowrap">
+                        <span className="w-12 shrink-0">ID {r.id}</span>
+                        <span className="w-24 shrink-0 truncate">บ้าน {r.house_number || "—"}</span>
+                        <span className={`w-14 shrink-0 ${paidPct === null ? "text-gray-300" : paidPct >= 100 ? "text-emerald-600" : paidPct > 0 ? "text-amber-600" : "text-gray-400"}`}>
                           {paidPct !== null ? `จ่าย ${paidPct}%` : "—"}
                         </span>
-                        <span className="w-32 shrink-0 text-sky-700">{installDateStr ? `นัดติดตั้ง ${installDateStr}` : ""}</span>
+                        <span className={`flex-1 min-w-0 truncate ${doneOn ? "text-emerald-700" : "text-sky-700"}`}>{installDateStr ? `${installLabel} ${installDateStr}` : ""}</span>
                       </div>
                       {/* Lost reason — only shown for lost leads so the ยกเลิก
                           bucket popup explains why each lead got marked lost. */}
@@ -367,7 +455,21 @@ export default function DashboardPage() {
                         <div className="text-xs text-rose-700 truncate mt-0.5">เหตุผล: {r.lost_reason}</div>
                       )}
                     </div>
-                    <span className={`text-xxs font-bold uppercase tracking-wider px-2 py-0.5 rounded text-white shrink-0 ${cfg?.color || "bg-gray-400"}`}>
+                    {/* Money as its own fixed column — kept out of the meta line
+                        so it can't run under the status badge on narrow rows. */}
+                    {(() => {
+                      const m = moneyOf(r);
+                      if (m.value === 0) return null;
+                      return (
+                        <div className="shrink-0 w-28 text-right font-mono tabular-nums leading-tight">
+                          <div className="text-xs font-semibold text-gray-800">{fmtBaht(m.net)}</div>
+                          {m.due > 0
+                            ? <div className="text-xxs text-amber-700">ค้าง {fmtBaht(m.due)}</div>
+                            : <div className="text-xxs text-emerald-600">ครบ</div>}
+                        </div>
+                      );
+                    })()}
+                    <span className={`text-xxs font-bold uppercase tracking-wider px-2 py-0.5 rounded text-white shrink-0 w-20 text-center ${cfg?.color || "bg-gray-400"}`}>
                       {cfg?.label || r.status}
                     </span>
                   </LeadLink>
@@ -404,8 +506,10 @@ export default function DashboardPage() {
         {/* KPI — 2 rows: (1) 4 equal hero cards, each w/ inline breakdown chips
             (2) full-width subway-map funnel of the active 28 booked-paid leads */}
         {(() => {
-          const closedValue = Number(data.this_month.closed_value || 0);
           const outstanding = Number(data.this_month.closed_outstanding || 0);
+          // this_month now follows the global date filter (API scopes it to
+          // [from, to] when set), so label it for whichever cohort is showing.
+          const periodLabel = dateFrom && dateTo ? "ช่วงที่เลือก" : "เดือนนี้";
           const fmtMoney = (v: number) => v >= 1000000 ? `฿${(v / 1000000).toFixed(1)}M` : v >= 1000 ? `฿${Math.round(v / 1000)}K` : `฿${fmt(v)}`;
 
           const today = new Date(new Date().toDateString());
@@ -534,6 +638,56 @@ export default function DashboardPage() {
           // pointer even at count=0, popup just shows "ไม่มีรายการ").
           const openBucket = (title: string, rows: LifecycleRow[]) =>
             () => setBucket({ title, rows });
+          // NOTE: the รายได้ figure (closed_value / forfeited_value) is still
+          // computed and returned by /api/dashboard — it just has no slot on the
+          // card since the headline became มูลค่างานที่นัดติดตั้ง.
+          // Leads with money submitted but not yet signed off by accounting.
+          // Not tied to the install cohort — a payment can be pending long
+          // before the job is installed (that's exactly the case that made the
+          // "ยังค้างรับ" figure look like nothing was owed).
+          const pendingRows = lifecycleRows.filter(r => Number(r.pending_amount || 0) > 0);
+          // "ยังค้างรับ" = every baht owed to us that is not confirmed cash:
+          // the uncollected balance on delivered jobs PLUS money submitted but
+          // still awaiting accounting sign-off. Kept as one figure because both
+          // are, from the business side, the same thing — revenue not yet in hand.
+          // Deliberately a CURRENT snapshot, not the period-scoped `outstanding`:
+          // a cheque submitted today on a lead created in June is still money we
+          // have to collect, and filtering by created_at made it read as ฿0.
+          const receivable = Number(data.receivable_total || 0);
+          // Money paid toward the WORK, ignoring the ฿1,000 survey fee — that
+          // fee is what someone pays to get a site visit, not to fund a job.
+          const orderPaidOf = (r: LifecycleRow) => {
+            try {
+              const arr = r.payment_dates_json ? (JSON.parse(r.payment_dates_json) as { slip_field?: string; amount?: number }[]) : [];
+              return Array.isArray(arr)
+                ? arr.filter(p => p.slip_field !== "pre_slip_url").reduce((a, p) => a + (Number(p.amount) || 0), 0)
+                : 0;
+            } catch { return 0; }
+          };
+          // Jobs booked onto the install calendar in the window AND funded (first
+          // installment confirmed) — mirrors the API's schedPred. Unfiltered
+          // source set: install_date decides membership, not created_at.
+          const scheduledRows = (() => {
+            const first = new Date(new Date().getFullYear(), new Date().getMonth(), 1);
+            const firstYmd = `${first.getFullYear()}-${String(first.getMonth() + 1).padStart(2, "0")}-01`;
+            return lifecycleRows.filter(r => {
+              if (orderPaidOf(r) <= 0) return false;
+              const d = r.install_date ? String(r.install_date).slice(0, 10) : "";
+              if (!d) return false;
+              return dateFrom && dateTo ? d >= dateFrom && d <= dateTo : d >= firstYmd;
+            });
+          })();
+          // Same cohort, already handed over — nests inside scheduledRows.
+          const deliveredRows = scheduledRows.filter(r => !!r.install_done_at);
+          // Rows come from the UNfiltered lifecycle set for the same reason.
+          const receivableRows = (() => {
+            const byId = new Map<number, LifecycleRow>();
+            lifecycleRows.forEach(r => {
+              const m = moneyOf(r);
+              if (m.pending > 0 || (r.install_done_at && m.due > 0)) byId.set(r.id, r);
+            });
+            return [...byId.values()];
+          })();
           const bigNumCls = "cursor-pointer hover:underline decoration-2 underline-offset-4";
 
           return (
@@ -544,7 +698,7 @@ export default function DashboardPage() {
                 <div className="rounded-2xl bg-white border border-gray-200 p-4 flex flex-col">
                   <div className="flex items-baseline justify-between mb-3">
                     <span className="text-sm font-bold uppercase tracking-[0.15em] text-gray-500">Leads ทั้งหมด</span>
-                    <span className="text-xs font-semibold text-emerald-600">+{data.this_month.new_leads || 0} เดือนนี้</span>
+                    <span className="text-xs font-semibold text-emerald-600">+{data.this_month.new_leads || 0} {periodLabel}</span>
                   </div>
                   <button
                     type="button"
@@ -578,21 +732,53 @@ export default function DashboardPage() {
                   </div>
                 </div>
 
-                {/* รับเงินแล้ว — total all-time confirmed payments (ยืนยัน 2) */}
+                {/* Money card, read top-down as one story:
+                      รายได้            = งานที่ส่งมอบแล้ว + ค่าสำรวจที่ริบ   (earned)
+                      + รับแล้วรอส่งมอบ  = เงินที่ถือไว้ ยังไม่ได้ส่งของ        (unearned)
+                      = เงินเข้าทั้งหมด                                      (cash in)
+                    The footer prints the actual total_received rather than the
+                    sum of the two, so a narrow filter (delivery and payment in
+                    different months) shows the real cash instead of a fiction. */}
                 <div className="rounded-2xl bg-teal-200 border border-teal-400 p-4 flex flex-col">
                   <div className="flex items-baseline justify-between mb-3">
-                    <span className="text-sm font-bold uppercase tracking-[0.15em] text-teal-800">รับเงินแล้ว</span>
-                    <span className="text-xs font-semibold text-teal-700">บัญชียืนยันแล้ว</span>
+                    <span className="text-sm font-bold uppercase tracking-[0.15em] text-teal-800">มูลค่างานที่นัดติดตั้ง</span>
+                    <span className="text-xs font-semibold text-teal-700">{periodLabel}</span>
                   </div>
-                  <div className="text-3xl font-bold font-mono tabular-nums text-teal-900 leading-none">{fmtMoney(Number(data.total_received || 0))}</div>
+                  {/* Contract value of every job with an install appointment in
+                      the window — paid or not, delivered or not — plus all survey
+                      fees banked in the window, cancelled leads included. */}
+                  <div
+                    onClick={openBucket(`มูลค่างานที่นัดติดตั้ง${periodLabel}`, scheduledRows)}
+                    title="ดูงานที่รวมเป็นยอดนี้"
+                    className={`text-3xl font-bold font-mono tabular-nums text-teal-900 leading-none ${bigNumCls}`}
+                  >{fmtMoney(Number(data.scheduled_total || 0))}</div>
+                  <div className="text-xxs text-teal-700/90 leading-tight mt-1">
+                    นัดติดตั้ง {fmtBaht(Number(data.scheduled_value || 0))} ({data.scheduled_count || 0} งาน)
+                    {" · "}ค่าสำรวจ {fmtBaht(Number(data.survey_fee_value || 0))} ({data.survey_fee_count || 0} ราย)
+                  </div>
                   <div className="mt-auto pt-3 grid grid-cols-2 gap-2 border-t border-teal-400/60">
+                    {/* Cash we hold but haven't earned — the customer is still
+                        owed an installation. The rest of the headline figure is
+                        revenue: 3,885,050 − 395,200 = 3,489,850. */}
+                    {/* The delivered slice of the headline cohort — same
+                        install-appointment window, already handed over. */}
                     <div>
-                      <div className="text-xs text-teal-700 leading-tight">รายได้เดือนนี้</div>
-                      <div className="text-lg font-bold font-mono tabular-nums text-teal-900 leading-none mt-0.5">{fmtMoney(closedValue)} <span className="text-xs font-normal text-teal-700">· {data.this_month.closed_count || 0} งาน</span></div>
+                      <div className="text-xs text-teal-700 leading-tight">มูลค่างานที่ส่งมอบแล้ว</div>
+                      <div
+                        onClick={openBucket(`มูลค่างานที่ส่งมอบแล้ว (นัดติดตั้ง${periodLabel})`, deliveredRows)}
+                        title="ดูงานที่รวมเป็นยอดนี้"
+                        className={`text-lg font-bold font-mono tabular-nums text-teal-900 leading-none mt-0.5 ${bigNumCls}`}
+                      >{fmtMoney(Number(data.delivered_value || 0))} <span className="text-xs font-normal text-teal-700">· {data.delivered_count || 0} งาน</span></div>
                     </div>
+                    {/* Uncollected balance + money awaiting sign-off, as one
+                        receivables figure. */}
                     <div className="text-right">
-                      <div className="text-xs text-teal-700 leading-tight">ยังค้างรับ</div>
-                      <div className="text-lg font-bold font-mono tabular-nums text-amber-700 leading-none mt-0.5">{fmtMoney(outstanding)}</div>
+                      <div className="text-xs text-teal-700 leading-tight">ยังค้างรับ <span className="text-teal-600/70">(ทั้งหมด)</span></div>
+                      <div
+                        onClick={openBucket("ยังค้างรับ ทั้งหมด (รวมรออนุมัติ)", receivableRows)}
+                        title="ดูรายการที่รวมเป็นยอดนี้"
+                        className={`text-lg font-bold font-mono tabular-nums text-amber-700 leading-none mt-0.5 ${bigNumCls}`}
+                      >{fmtMoney(receivable)}</div>
                     </div>
                   </div>
                 </div>

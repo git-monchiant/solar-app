@@ -44,6 +44,7 @@ interface Data {
     warranty_battery_model: string | null;
     warranty_battery_kwh: number | null;
     warranty_has_battery: boolean | null;
+    warranty_no_inverter: boolean | null;
     warranty_batteries: string | null;
     warranty_panel_serials: string | null;
     warranty_duration_years: number | null;
@@ -90,10 +91,14 @@ export default function WarrantyPage() {
   // Inverter — prefer the new lead_inverters row (first one) → legacy
   // warranty_inverter_* columns → package defaults. Same precedence rule for
   // every device type below.
+  // "ไม่มีการติดตั้ง" wins over every fallback below. Without this the package
+  // default (or a stale lead_inverters row) would still print an inverter we
+  // never supplied — the one thing the flag exists to prevent.
+  const noInverter = !!lead.warranty_no_inverter;
   const invRow = d.devices?.inverters[0];
-  const invBrand = invRow?.brand ?? lead.warranty_inverter_brand ?? pkg?.inverter_brand ?? "";
-  const invKw = invRow?.kw ?? lead.warranty_inverter_kw ?? pkg?.inverter_kw ?? null;
-  const inverterSn = invRow?.serial_no ?? lead.warranty_inverter_sn ?? null;
+  const invBrand = noInverter ? "" : (invRow?.brand ?? lead.warranty_inverter_brand ?? pkg?.inverter_brand ?? "");
+  const invKw = noInverter ? null : (invRow?.kw ?? lead.warranty_inverter_kw ?? pkg?.inverter_kw ?? null);
+  const inverterSn = noInverter ? null : (invRow?.serial_no ?? lead.warranty_inverter_sn ?? null);
   // Prefer warranty_* equipment snapshot (entered by staff to reflect actual
   // installed equipment); fall back to the package for older leads.
   const sysKwp = lead.warranty_system_size_kwp ?? pkg?.kwp ?? null;
@@ -145,7 +150,7 @@ export default function WarrantyPage() {
   const pnlLabel = [pnlBrand, pnlModel].filter(Boolean).join(" ");
   const battLabel = [battBrand, battModel].filter(Boolean).join(" ");
   const panelSpec = pnlCount && pnlWatt ? `${pnlCount} แผง × ${pnlWatt}W${pnlLabel ? ` · ${pnlLabel}` : ""}` : "—";
-  const inverterSpec = invBrand || invKw != null ? `${invBrand} ${invKw != null ? `${invKw}kW` : ""}`.trim() : "—";
+  const inverterSpec = noInverter ? "-" : (invBrand || invKw != null ? `${invBrand} ${invKw != null ? `${invKw}kW` : ""}`.trim() : "—");
   const batterySpec = hasBattery ? `${battLabel}${battKwh != null ? ` ${battKwh}kWh` : ""}`.trim() || "—" : "—";
 
   return (
@@ -219,7 +224,7 @@ export default function WarrantyPage() {
                       <Spec label="SOLAR PANELS" value={panelSpec} />
                       <Spec label="INVERTER" value={inverterSpec} />
                       {hasBattery && <Spec label="BATTERY" value={batterySpec} />}
-                      <Spec label="INVERTER SERIAL NUMBER" value={inverterSn || "—"} />
+                      <Spec label="INVERTER SERIAL NUMBER" value={noInverter ? "-" : (inverterSn || "—")} />
                       <Spec label="ON-SITE SERVICE" value={(() => {
                         // Total visits = duration × visits/year. If duration
                         // is 0/null the whole line reads "-".

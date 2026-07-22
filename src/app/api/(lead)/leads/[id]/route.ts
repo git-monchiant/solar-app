@@ -1008,6 +1008,12 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
       sets.push("warranty_has_battery = @warranty_has_battery");
       request.input("warranty_has_battery", sql.Bit, body.warranty_has_battery ? 1 : 0);
     }
+    // Inverter supplied/installed by someone else — the warranty step disables
+    // its fields and drops Serial Number / Phase from the required list.
+    if (body.warranty_no_inverter !== undefined) {
+      sets.push("warranty_no_inverter = @warranty_no_inverter");
+      request.input("warranty_no_inverter", sql.Bit, body.warranty_no_inverter ? 1 : 0);
+    }
     if (body.warranty_batteries !== undefined) {
       sets.push("warranty_batteries = @warranty_batteries");
       request.input("warranty_batteries", sql.NVarChar(sql.MAX), body.warranty_batteries);

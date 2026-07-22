@@ -11,13 +11,17 @@ async function fetchAttachmentUrls(leadId: number): Promise<string[]> {
   try {
     const db = await getDb();
     const r = await db.request().input("id", sql.Int, leadId).query(
-      `SELECT warranty_inverter_cert_url, warranty_panel_cert_url, warranty_panel_serials_url, warranty_other_docs_url
+      `SELECT warranty_inverter_cert_url, warranty_panel_cert_url, warranty_panel_serials_url, warranty_other_docs_url,
+              warranty_no_inverter
        FROM leads WHERE id = @id`
     );
     if (r.recordset.length === 0) return [];
     const row = r.recordset[0];
     const urls: string[] = [];
-    if (row.warranty_inverter_cert_url) urls.push(row.warranty_inverter_cert_url);
+    // Skip the inverter cert when we didn't install one — a leftover Huawei
+    // certificate from an earlier draft would otherwise be bound into a
+    // warranty whose INVERTER line reads "-".
+    if (row.warranty_inverter_cert_url && !row.warranty_no_inverter) urls.push(row.warranty_inverter_cert_url);
     if (row.warranty_panel_cert_url) urls.push(row.warranty_panel_cert_url);
     if (row.warranty_panel_serials_url) urls.push(row.warranty_panel_serials_url);
     if (row.warranty_other_docs_url) {

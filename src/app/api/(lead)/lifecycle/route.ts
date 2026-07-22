@@ -86,6 +86,9 @@ export async function GET(req: NextRequest) {
         l.created_at,
         l.survey_date,
         l.install_date,
+        -- the day the crew actually installed (may differ from the booked
+        -- install_date and from install_completed_at, which is the sign-off).
+        l.install_actual_date,
         l.pre_doc_no,
         l.payment_confirmed,
         l.lost_reason,
@@ -110,6 +113,11 @@ export async function GET(req: NextRequest) {
           FOR JSON PATH
         ) AS payment_dates_json,
         l.payment_followup_date,
+        -- Submitted but not yet signed off by accounting — money owed to us
+        -- that hasn't landed. Surfaced so the dashboard can show it separately
+        -- from confirmed cash.
+        (SELECT ISNULL(SUM(amount), 0) FROM payments
+          WHERE lead_id = l.id AND submitted_at IS NOT NULL AND confirmed_at IS NULL) AS pending_amount,
         (SELECT COUNT(*) FROM payments
           WHERE lead_id = l.id AND slip_field LIKE 'order_installment_%' AND confirmed_at IS NOT NULL) AS order_paid_count,
         l.install_completed_at AS install_done_at,
@@ -176,7 +184,15 @@ export async function GET(req: NextRequest) {
           WHERE lead_id = l.id AND activity_type='status_change' AND new_status='install') AS install_started_at,
 
         (SELECT MIN(created_at) FROM lead_activities
-          WHERE lead_id = l.id AND activity_type='status_change' AND new_status='warranty') AS warranty_at
+          WHERE lead_id = l.id AND activity_type='status_change' AND new_status='warranty') AS warranty_at,
+
+        -- When the lead was written off. MAX, not MIN: a lead can be cancelled,
+        -- revived, and cancelled again — the latest one is the state it's in.
+        -- Drives revenue recognition of the forfeited survey fee: the deposit
+        -- stops being refundable the day the job is cancelled, which is when it
+        -- becomes ours to book.
+        (SELECT MAX(created_at) FROM lead_activities
+          WHERE lead_id = l.id AND activity_type='status_change' AND new_status='lost') AS lost_at
 
       FROM leads l
       LEFT JOIN users u ON u.id = l.assigned_user_id
