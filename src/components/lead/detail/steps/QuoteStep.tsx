@@ -13,6 +13,7 @@ import { formatTHB, formatThaiDate as formatDate } from "@/lib/utils/formatters"
 import { parseQuotationFiles, serializeQuotationFiles, type QuoteOption } from "@/lib/utils/quotation";
 import { useFileViewer } from "@/lib/hooks/useFileViewer";
 import DoneSection from "./DoneSection";
+import QuotationBuilder from "./QuotationBuilder";
 
 const MAX_QUOTES = 3;
 // Per-slot draft = saved URL (if any) + a freshly picked File (if any) +
@@ -26,7 +27,7 @@ interface Props extends StepCommonProps {
   onToggle?: () => void;
 }
 
-export default function QuoteStep({ lead, state, refresh, expanded, onToggle }: Props) {
+export default function QuoteStep({ lead, state, refresh, packages, expanded, onToggle }: Props) {
   const fileViewer = useFileViewer();
   // Default doc-no per slot: pulled from the shared mint endpoint so the
   // prefix + counter match the config in /settings (default "QT-YYNNNN").
@@ -116,6 +117,7 @@ export default function QuoteStep({ lead, state, refresh, expanded, onToggle }: 
   const [saving, setSaving] = useState(false);
   const [uploading, setUploading] = useState(false);
   const [nextError, setNextError] = useState<string | null>(null);
+  const [showLegacy, setShowLegacy] = useState(false);
 
   // Upload the picked file immediately so a refresh before "ส่ง" doesn't
   // lose it. Optimistically sets `file` for instant UI feedback, then swaps
@@ -344,6 +346,14 @@ export default function QuoteStep({ lead, state, refresh, expanded, onToggle }: 
         />
       </div>
 
+      <QuotationBuilder lead={lead} packages={packages} refresh={refresh} />
+
+      <button type="button" onClick={() => setShowLegacy(v => !v)} className="text-xs text-gray-400 underline underline-offset-2 hover:text-primary">
+        {showLegacy ? "ซ่อนการนำเข้าไฟล์แบบเดิม" : "หรืออัปโหลดใบเสนอราคาจากภายนอก (Legacy)"}
+      </button>
+
+      {showLegacy && <div className="rounded-xl border border-gray-200 bg-gray-50/60 p-3 space-y-3">
+
       {/* Quotation slots — up to 3 columns. Slot 1 is required; 2/3 optional. */}
       <div>
         <label className="text-xs font-semibold tracking-wider uppercase text-gray-400 block mb-2">ใบเสนอราคา <span className="text-gray-400 normal-case">(สูงสุด 3 ชุด — ลูกค้าจะเลือก 1 ใน Order step)</span> <span className="text-red-500">*</span></label>
@@ -393,7 +403,7 @@ export default function QuoteStep({ lead, state, refresh, expanded, onToggle }: 
         </div>
       </div>
 
-      {/* ผู้จัดทำ */}
+      {/* ผู้จัดทำของไฟล์ภายนอก */}
       <div>
         <label className="text-xs font-semibold tracking-wider uppercase text-gray-400 block mb-1">ผู้จัดทำ</label>
         <input type="text" value={byName} onChange={e => setByName(e.target.value)}
@@ -415,6 +425,8 @@ export default function QuoteStep({ lead, state, refresh, expanded, onToggle }: 
           </>
         )}
       </button>
+
+      </div>}
 
       <ErrorPopup message={nextError} onClose={() => setNextError(null)} />
       </div>

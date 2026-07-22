@@ -160,7 +160,7 @@ export default function OrderStep({ lead, state, refresh, expanded, onToggle }: 
     // a prior QuoteStep saved options with double `-N-N` suffixes — those
     // fail validateDocNo and 400 the PATCH). Send null in that case; the
     // lead-level doc_no can be cleaned up later in QuoteStep.
-    const docNoRe = /^[A-Z]+-\d{5,7}(?:-\d+)?$/;
+    const docNoRe = /^(?:[A-Z]+-\d{5,7}(?:-\d+)?|SM-QT-\d{2}-\d{4,6})$/;
     const cleanDocNo = opt.doc_no && docNoRe.test(opt.doc_no) ? opt.doc_no : null;
     setPickingQuote(true);
     try {

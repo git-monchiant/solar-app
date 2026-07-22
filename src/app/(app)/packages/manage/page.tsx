@@ -28,6 +28,7 @@ interface Package {
   expire_date: string | null;
   remark?: string | null;
 }
+type PackageItem = { item_name: string; quantity: number; unit: string };
 
 const empty: Omit<Package, "id"> = {
   name: "", kwp: 0, phase: 1, has_battery: false, has_panel: true, has_inverter: true, is_upgrade: false,
@@ -43,6 +44,7 @@ export default function ManagePackagesPage() {
   const [loading, setLoading] = useState(true);
   const [editing, setEditing] = useState<Package | (Omit<Package, "id"> & { id?: undefined }) | null>(null);
   const [saving, setSaving] = useState(false);
+  const [packageItems, setPackageItems] = useState<PackageItem[]>([]);
   const [search, setSearch] = useState("");
   const [filter, setFilter] = useState<"all" | "active" | "inactive">("all");
   const [filterPhase, setFilterPhase] = useState<"all" | "0" | "1" | "3">("all");
@@ -54,6 +56,10 @@ export default function ManagePackagesPage() {
   };
 
   useEffect(load, []);
+  useEffect(() => {
+    if (!editing?.id) { setPackageItems([]); return; }
+    apiFetch(`/api/packages/${editing.id}/items`).then(setPackageItems).catch(() => setPackageItems([]));
+  }, [editing?.id]);
 
   const filtered = packages.filter(p => {
     if (filter === "active" && !p.is_active) return false;
@@ -139,11 +145,15 @@ export default function ManagePackagesPage() {
     if (!editing || !editing.name.trim()) return;
     setSaving(true);
     try {
+      let packageId: number;
       if (editing.id) {
-        await apiFetch(`/api/packages/${editing.id}`, { method: "PATCH", body: JSON.stringify(editing) });
+        await apiFetch(`/api/packages/${editing.id}`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify(editing) });
+        packageId = editing.id;
       } else {
-        await apiFetch("/api/packages", { method: "POST", body: JSON.stringify(editing) });
+        const created = await apiFetch("/api/packages", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(editing) });
+        packageId = created.id;
       }
+      await apiFetch(`/api/packages/${packageId}/items`, { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify(packageItems) });
       setEditing(null);
       load();
     } catch (e) {
@@ -419,6 +429,21 @@ export default function ManagePackagesPage() {
                   <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wider mb-0.5">วันหมดอายุ</label>
                   <input type="date" value={editing.expire_date?.slice(0, 10) || ""} onChange={e => setEditing({ ...editing, expire_date: e.target.value })} className="w-full h-8 px-3 rounded-lg border border-gray-200 text-sm focus:outline-none focus:border-primary" />
                 </div>
+              </div>
+
+              <div className="border-t border-gray-100 pt-3">
+                <div className="flex items-center justify-between mb-2">
+                  <div><div className="text-xs font-semibold text-gray-500 uppercase tracking-wider">อุปกรณ์หลักใน Package</div><div className="text-xxs text-gray-400">รายการนี้จะถูกล็อกและ Snapshot ลงใบเสนอราคา</div></div>
+                  <button type="button" onClick={() => setPackageItems(v => [...v, { item_name: "", quantity: 1, unit: "ชุด" }])} className="text-xs text-primary font-semibold">+ เพิ่มอุปกรณ์</button>
+                </div>
+                <div className="space-y-2">{packageItems.map((item, index) => (
+                  <div key={index} className="grid grid-cols-12 gap-2">
+                    <input value={item.item_name} onChange={e => setPackageItems(v => v.map((x, i) => i === index ? { ...x, item_name: e.target.value } : x))} placeholder="ชื่ออุปกรณ์/บริการ" className="col-span-7 h-8 px-2 border border-gray-200 rounded text-xs" />
+                    <input type="number" value={item.quantity} onChange={e => setPackageItems(v => v.map((x, i) => i === index ? { ...x, quantity: Number(e.target.value) } : x))} className="col-span-2 h-8 px-2 border border-gray-200 rounded text-xs" />
+                    <input value={item.unit} onChange={e => setPackageItems(v => v.map((x, i) => i === index ? { ...x, unit: e.target.value } : x))} placeholder="หน่วย" className="col-span-2 h-8 px-2 border border-gray-200 rounded text-xs" />
+                    <button type="button" onClick={() => setPackageItems(v => v.filter((_, i) => i !== index))} className="col-span-1 text-red-500">×</button>
+                  </div>
+                ))}</div>
               </div>
 
               {/* Active toggle */}

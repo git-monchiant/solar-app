@@ -2,7 +2,28 @@
 
 ## Status
 
-`backlog`
+`in-progress`
+
+## Implementation Progress — 2026-07-22
+
+Implemented in Development:
+
+- Added idempotent migration `sql/126_quotation_system.sql` and applied it to `SolarDb_DEV` only.
+- Added `sales_sup`, user job title, Package Item Master, Payment Template, Quotation/Item/Approval Event tables.
+- Seeded 183 active equipment rows across all 23 current Packages.
+- Added the 3-card Quotation Builder, Package snapshot, locked master items, Add-on/Custom items, discount, paid deposit, VAT and editable 20/80 terms.
+- Added submit/approve/request-changes permissions, Sale Sup queue, signature snapshot and lead Activity Log.
+- Added post-approval Revision creation that preserves the approved snapshot and starts a new draft/document number.
+- Added draft/approved two-page PDF matching the sample document's Letter size (612 × 792 pt) and `SM-QT-YY-XXXX` numbering.
+- Added approved-quotation handoff to the existing Order selection while retaining legacy uploads.
+- Verified route compilation, core CRUD, approval flow and PDF generation in the local Development app. Temporary test quotation was removed afterward.
+
+Pending before this plan can be marked `done`:
+
+- Business UAT by Sales, Sale Sup and Account.
+- Confirm final company/bank/QR wording and equipment detail against all 23 Package sheets.
+- Complete the full role/PDF regression matrix.
+- Production deployment (requires explicit user approval).
 
 ## Objective
 
@@ -26,7 +47,7 @@
 - ส่วนลดมีช่อง `ชื่อส่วนลด` แบบกรอกข้อความ เช่น `ส่วนลดพิเศษ VIP` ควบคู่กับจำนวน/เปอร์เซ็นต์และเหตุผล
 - เฉพาะ Sales เจ้าของ Lead เท่านั้นที่ส่ง Approved PDF ให้ลูกค้าได้ โดย Admin เป็นสิทธิ์สำรอง; Sale Sup ดูและดาวน์โหลดได้แต่ไม่ส่ง
 - ยังไม่ทำ Technical Approval หรือ Approval Matrix หลายระดับ
-- PDF ใช้รูปแบบหลักจากไฟล์ Excel ตัวอย่าง เป็น A4 แนวตั้ง 2 หน้า
+- PDF ใช้รูปแบบหลักจากไฟล์ตัวอย่าง เป็นกระดาษ Letter แนวตั้ง 2 หน้า (612 × 792 pt ตามขนาดจริงของไฟล์ต้นฉบับ)
 
 ## Out of Scope
 
@@ -186,6 +207,9 @@ draft
 
 ## PDF Specification
 
+- ขนาดกระดาษ Letter แนวตั้ง 612 × 792 pt จำนวน 2 หน้า ตามไฟล์ต้นฉบับ
+- Typography ใช้ Cordia New ให้สัดส่วนภาพใกล้ต้นฉบับ: เนื้อหา 11 pt, หัวข้อเน้น 12 pt และหัวข้อ “ใบเสนอราคา” 18 pt; เครื่อง Production ต้องติดตั้ง Cordia New โดยมี Tahoma เป็น fallback
+
 ### Page 1: Commercial Summary
 
 - โลโก้และข้อมูลบริษัทจาก Company Settings
@@ -305,7 +329,7 @@ draft
 
 ### Phase 4 — PDF Generation
 
-- สร้าง PDF A4 2 หน้าให้ใกล้เคียง Excel ตัวอย่าง
+- สร้าง PDF Letter แนวตั้ง 2 หน้า (612 × 792 pt) ให้ใกล้เคียงไฟล์ตัวอย่าง
 - รองรับ Draft watermark และ Approved PDF
 - ผูก PDF กับ Revision/Snapshot
 - ตรวจภาษาไทย ฟอนต์ โลโก้ QR ตาราง และ page break
@@ -337,7 +361,7 @@ draft
 - Approved PDF มีภาพลายเซ็น ชื่อ ตำแหน่ง และวันที่ของผู้อนุมัติครบ
 - เฉพาะ Sales เจ้าของ Lead หรือ Admin ส่ง Approved PDF ให้ลูกค้าได้
 - การแก้ข้อมูลสำคัญหลังอนุมัติสร้าง Revision และขออนุมัติใหม่
-- PDF Approved เป็น A4 2 หน้าและยอดตรงกับข้อมูลในระบบ
+- PDF Approved เป็น Letter แนวตั้ง 2 หน้า (612 × 792 pt) และยอดตรงกับข้อมูลในระบบ
 - Order เลือกได้เฉพาะใบที่ Approved และเลือกได้หนึ่งฉบับ
 - ใบเสนอราคาเดิมยังเปิดดูได้
 - Activity Log ระบุผู้ดำเนินการ วันเวลา สถานะ และเหตุผลครบ

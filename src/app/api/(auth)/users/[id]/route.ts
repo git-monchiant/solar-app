@@ -4,7 +4,7 @@ import { getUserIdFromReq, hashPassword } from "@/lib/auth";
 
 export const runtime = "nodejs";
 
-const VALID_ROLES = new Set(["admin", "sales", "solar", "leadsseeker", "account"]);
+const VALID_ROLES = new Set(["admin", "sales", "sales_sup", "solar", "leadsseeker", "account"]);
 function parseRoles(raw: unknown): string[] {
   if (!Array.isArray(raw)) return [];
   const out: string[] = [];
@@ -43,6 +43,7 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
     const request = db.request().input("id", sql.Int, targetId);
 
     if (body.full_name !== undefined) { sets.push("full_name = @full_name"); request.input("full_name", sql.NVarChar(100), body.full_name); }
+    if (body.job_title !== undefined) { sets.push("job_title = @job_title"); request.input("job_title", sql.NVarChar(100), body.job_title || null); }
     if (body.team !== undefined) { sets.push("team = @team"); request.input("team", sql.NVarChar(50), body.team); }
     if (body.phone !== undefined) { sets.push("phone = @phone"); request.input("phone", sql.NVarChar(20), body.phone); }
     if (body.email !== undefined) { sets.push("email = @email"); request.input("email", sql.NVarChar(150), body.email); }

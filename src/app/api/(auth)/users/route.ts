@@ -4,7 +4,7 @@ import { getUserIdFromReq, hashPassword } from "@/lib/auth";
 
 export const runtime = "nodejs";
 
-const VALID_ROLES = new Set(["admin", "sales", "solar", "leadsseeker", "account"]);
+const VALID_ROLES = new Set(["admin", "sales", "sales_sup", "solar", "leadsseeker", "account"]);
 
 function parseRoles(raw: unknown): string[] {
   if (!Array.isArray(raw)) return [];
@@ -54,7 +54,7 @@ export async function GET(req: NextRequest) {
     if (!(await isAdmin(db, userId))) return NextResponse.json({ error: "Admin only" }, { status: 403 });
 
     const users = await db.request().query(`
-      SELECT u.id, u.username, u.full_name, u.team, u.phone, u.email, u.is_active,
+      SELECT u.id, u.username, u.full_name, u.job_title, u.team, u.phone, u.email, u.is_active,
              u.created_at, u.roles,
              CASE WHEN u.signature_data IS NOT NULL THEN 1 ELSE 0 END AS has_signature
       FROM users u
@@ -90,14 +90,15 @@ export async function POST(req: NextRequest) {
       .input("username", sql.NVarChar(50), body.username)
       .input("password_hash", sql.NVarChar(255), hash)
       .input("full_name", sql.NVarChar(100), body.full_name)
+      .input("job_title", sql.NVarChar(100), body.job_title || null)
       .input("team", sql.NVarChar(50), body.team || "Sen X PM")
       .input("phone", sql.NVarChar(20), body.phone || null)
       .input("email", sql.NVarChar(150), body.email || null)
       .input("roles", sql.NVarChar(sql.MAX), JSON.stringify(roles))
       .query(`
-        INSERT INTO users (username, password_hash, full_name, team, phone, email, roles)
+        INSERT INTO users (username, password_hash, full_name, job_title, team, phone, email, roles)
         OUTPUT INSERTED.id
-        VALUES (@username, @password_hash, @full_name, @team, @phone, @email, @roles)
+        VALUES (@username, @password_hash, @full_name, @job_title, @team, @phone, @email, @roles)
       `);
     return NextResponse.json({ id: result.recordset[0].id }, { status: 201 });
   } catch (e) {
