@@ -15,8 +15,9 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
     SELECT qi.* FROM quotation_items qi JOIN quotations q ON q.id=qi.quotation_id
     WHERE q.lead_id=@lead_id ORDER BY qi.quotation_id, qi.sort_order, qi.id;
   `);
-  const items = result.recordsets[1] || [];
-  return NextResponse.json(fixDates((result.recordsets[0] || []).map(q => {
+  const recordsets = result.recordsets as unknown as Array<typeof result.recordset>;
+  const items = recordsets[1] || [];
+  return NextResponse.json(fixDates((recordsets[0] || []).map(q => {
     const safe = { ...q, items: items.filter(i => i.quotation_id === q.id) };
     delete safe.approver_signature_data_snapshot;
     return safe;
@@ -34,7 +35,14 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
   const db = await getDb(); const tx = new sql.Transaction(db);
   try {
     await tx.begin(sql.ISOLATION_LEVEL.SERIALIZABLE);
-    const lead = await new sql.Request(tx).input("id", sql.Int, leadId).query(`SELECT id, assigned_user_id FROM leads WHERE id=@id`);
+    const lead = await new sql.Request(tx).input("id", sql.Int, leadId).query(`
+      SELECT l.id, l.assigned_user_id,
+        CASE WHEN l.payment_confirmed = 1 THEN COALESCE((
+          SELECT SUM(p.amount) FROM payments p
+          WHERE p.lead_id = l.id AND p.slip_field = 'pre_slip_url' AND p.confirmed_at IS NOT NULL
+        ), l.pre_total_price, 0) ELSE 0 END AS confirmed_deposit
+      FROM leads l WHERE l.id=@id
+    `);
     if (!lead.recordset[0]) { await tx.rollback(); return NextResponse.json({ error: "ไม่พบ Lead" }, { status: 404 }); }
     if (!actor.roles.includes("admin") && lead.recordset[0].assigned_user_id !== gate.userId) { await tx.rollback(); return NextResponse.json({ error: "สร้างได้เฉพาะ Lead ที่รับผิดชอบ" }, { status: 403 }); }
     const existing = await new sql.Request(tx).input("lead_id", sql.Int, leadId).input("option_no", sql.Int, optionNo).query(`SELECT TOP 1 id,status FROM quotations WHERE lead_id=@lead_id AND option_no=@option_no ORDER BY revision_no DESC`);
@@ -47,7 +55,9 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
     if (!paymentTerms && templateId) { const t = await new sql.Request(tx).input("tid", sql.Int, templateId).query(`SELECT terms_json FROM quotation_payment_templates WHERE id=@tid AND is_active=1`); if (t.recordset[0]) paymentTerms = JSON.parse(t.recordset[0].terms_json); }
     if (!paymentTerms) paymentTerms = [{ label: "งวดที่ 1 ชำระ", percent: 20, due: "ภายใน 7 วัน นับจากวันที่ในใบเสนอราคา" }, { label: "งวดที่ 2 ชำระ", percent: 80, due: "ภายใน 3 วัน หลังติดตั้งแล้วเสร็จ" }];
     const discountType = body.discount_type === "percent" ? "percent" : "amount";
-    const totals = calculateQuotation(Number(packageRow.price), customItems, discountType, Number(body.discount_value), Number(body.deposit_paid_amount), 7);
+    const confirmedDeposit = Math.max(0, Number(lead.recordset[0].confirmed_deposit) || 0);
+    const depositPaid = Math.max(confirmedDeposit, Number(body.deposit_paid_amount) || 0);
+    const totals = calculateQuotation(Number(packageRow.price), customItems, discountType, Number(body.discount_value), depositPaid, 7);
     const docNo = await nextQuotationDocNo(tx);
     const inserted = await new sql.Request(tx)
       .input("lead_id", sql.Int, leadId).input("option_no", sql.TinyInt, optionNo).input("doc_no", sql.NVarChar(30), docNo)

@@ -34,12 +34,13 @@ export function calculateQuotation(packagePrice: number, items: QuotationInputIt
   const safeValue = Math.max(0, Number(discountValue) || 0);
   const discountAmount = discountType === "percent" ? subtotal * Math.min(safeValue, 100) / 100 : Math.min(safeValue, subtotal);
   const total = Math.max(0, subtotal - discountAmount);
-  const beforeVat = total / (1 + Math.max(0, vatRate) / 100);
+  const depositPaid = Math.min(Math.max(0, Number(deposit) || 0), total);
+  const outstanding = Math.max(0, total - depositPaid);
+  const beforeVat = outstanding / (1 + Math.max(0, vatRate) / 100);
   return {
     subtotal: round2(subtotal), discountAmount: round2(discountAmount), total: round2(total),
-    deposit: round2(Math.min(Math.max(0, Number(deposit) || 0), total)),
-    outstanding: round2(Math.max(0, total - Math.max(0, Number(deposit) || 0))),
-    beforeVat: round2(beforeVat), vatAmount: round2(total - beforeVat),
+    deposit: round2(depositPaid), outstanding: round2(outstanding),
+    beforeVat: round2(beforeVat), vatAmount: round2(outstanding - beforeVat),
   };
 }
 
@@ -78,6 +79,7 @@ export async function getQuotationDetail(id: number) {
       'bank_account_bank', 'bank_account_branch', 'bank_account_number', 'bank_account_name'
     );
   `);
-  if (!result.recordsets[0]?.[0]) return null;
-  return { ...result.recordsets[0][0], items: result.recordsets[1], events: result.recordsets[2], settings: result.recordsets[3] };
+  const recordsets = result.recordsets as unknown as Array<typeof result.recordset>;
+  if (!recordsets[0]?.[0]) return null;
+  return { ...recordsets[0][0], items: recordsets[1], events: recordsets[2], settings: recordsets[3] };
 }

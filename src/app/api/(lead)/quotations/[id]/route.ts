@@ -18,7 +18,14 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
   const {id}=await params; const quotationId=Number(id); const body=await req.json(); const db=await getDb(); const tx=new sql.Transaction(db);
   try {
     await tx.begin();
-    const current=await new sql.Request(tx).input("id",sql.Int,quotationId).query(`SELECT q.*,l.assigned_user_id FROM quotations q JOIN leads l ON l.id=q.lead_id WHERE q.id=@id`);
+    const current=await new sql.Request(tx).input("id",sql.Int,quotationId).query(`
+      SELECT q.*, l.assigned_user_id,
+        CASE WHEN l.payment_confirmed = 1 THEN COALESCE((
+          SELECT SUM(p.amount) FROM payments p
+          WHERE p.lead_id = l.id AND p.slip_field = 'pre_slip_url' AND p.confirmed_at IS NOT NULL
+        ), l.pre_total_price, 0) ELSE 0 END AS confirmed_deposit
+      FROM quotations q JOIN leads l ON l.id=q.lead_id WHERE q.id=@id
+    `);
     const q=current.recordset[0]; if(!q){await tx.rollback();return NextResponse.json({error:"ไม่พบใบเสนอราคา"},{status:404});}
     if(!["draft","changes_required"].includes(q.status)){await tx.rollback();return NextResponse.json({error:"แก้ไขได้เฉพาะฉบับร่างหรือฉบับที่ส่งกลับ"},{status:409});}
     if(!actor.roles.includes("admin")&&q.assigned_user_id!==gate.userId){await tx.rollback();return NextResponse.json({error:"แก้ไขได้เฉพาะผู้รับผิดชอบ Lead"},{status:403});}
@@ -27,7 +34,9 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
     if(!pkg){await tx.rollback();return NextResponse.json({error:"ไม่พบ Package"},{status:400});}
     const items:QuotationInputItem[]=Array.isArray(body.items)?body.items.filter((i:QuotationInputItem)=>i?.item_name?.trim()).map((i:QuotationInputItem)=>({source_type:i.source_type==="addon"?"addon":"custom",item_name:String(i.item_name).trim(),quantity:Number(i.quantity)||1,unit:i.unit||"ชุด",unit_price:Number(i.unit_price)||0})):[];
     const discountType=body.discount_type==="percent"?"percent":"amount";
-    const totals=calculateQuotation(Number(pkg.price),items,discountType,Number(body.discount_value),Number(body.deposit_paid_amount),7);
+    const confirmedDeposit=Math.max(0,Number(q.confirmed_deposit)||0);
+    const depositPaid=Math.max(confirmedDeposit,Number(body.deposit_paid_amount)||0);
+    const totals=calculateQuotation(Number(pkg.price),items,discountType,Number(body.discount_value),depositPaid,7);
     await new sql.Request(tx).input("id",sql.Int,quotationId).input("pid",sql.Int,packageId).input("pname",sql.NVarChar(200),pkg.name).input("pprice",sql.Decimal(12,2),pkg.price)
       .input("issue",sql.Date,toSqlDate(body.issue_date)||q.issue_date).input("valid",sql.Int,Number(body.valid_days)||7).input("subtotal",sql.Decimal(12,2),totals.subtotal)
       .input("label",sql.NVarChar(200),body.discount_label||null).input("dtype",sql.NVarChar(10),discountType).input("dvalue",sql.Decimal(12,2),Number(body.discount_value)||0).input("damount",sql.Decimal(12,2),totals.discountAmount)
