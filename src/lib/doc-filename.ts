@@ -24,8 +24,13 @@ function sanitize(name: string | null | undefined): string {
 
 function asciiOnly(s: string): string {
   // Strip anything outside printable ASCII so the legacy `filename=` token
-  // stays valid even when the customer's name is full Thai.
-  return s.replace(/[^\x20-\x7E]/g, "").replace(/\s+/g, "_");
+  // stays valid even when the customer's name is full Thai. Stripping Thai
+  // leaves the separators behind ("วรรณวิมล_รัตนสุวรรณ" → "__"), so collapse
+  // and trim them too — otherwise the fallback reads "-691__.pdf".
+  return s.replace(/[^\x20-\x7E]/g, "")
+    .replace(/\s+/g, "_")
+    .replace(/_+/g, "_")
+    .replace(/^[_\-.]+|[_\-.]+$/g, "");
 }
 
 export async function leadFullName(leadId: number): Promise<string | null> {
@@ -53,8 +58,13 @@ export function buildContentDisposition(opts: {
   const cleaned = sanitize(opts.customerName);
   const stem = cleaned ? `${opts.base}_${cleaned}` : opts.base;
   const filename = `${stem}.${opts.ext}`;
-  const asciiStem = cleaned ? `${opts.base}_${asciiOnly(cleaned)}` : opts.base;
-  const asciiFilename = `${asciiStem}.${opts.ext}` || `${opts.base}.${opts.ext}`;
+  // `base` also has to be stripped, not just the customer name: a Thai base
+  // (e.g. "รายงานสำรวจ") left in the plain `filename=` token makes the whole
+  // header non-ByteString and the response throws before it is ever sent.
+  // Empty parts are dropped rather than joined, so an all-Thai base + name
+  // degrades to "document.pdf" instead of "document__.pdf".
+  const asciiStem = [asciiOnly(opts.base), asciiOnly(cleaned)].filter(Boolean).join("_") || "document";
+  const asciiFilename = `${asciiStem}.${opts.ext}`;
   const disp = opts.disposition || "inline";
   // RFC 5987 — encode the UTF-8 form. The ASCII form keeps legacy clients
   // happy; modern browsers use the starred token.
