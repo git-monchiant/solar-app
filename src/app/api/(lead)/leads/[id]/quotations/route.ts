@@ -3,6 +3,7 @@ import { getDb, sql, fixDates, toSqlDate } from "@/lib/db";
 import { requireAuth } from "@/lib/auth";
 import { calculateQuotation, getQuotationActor, nextQuotationDocNo, type QuotationInputItem } from "@/lib/quotation";
 import { logLeadActivity } from "@/lib/lead-activity-log";
+import { parseDocumentInputs } from "@/lib/quotation-document";
 
 export async function GET(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const gate = await requireAuth(req); if (gate.error) return gate.error;
@@ -58,6 +59,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
     const confirmedDeposit = Math.max(0, Number(lead.recordset[0].confirmed_deposit) || 0);
     const depositPaid = Math.max(confirmedDeposit, Number(body.deposit_paid_amount) || 0);
     const totals = calculateQuotation(Number(packageRow.price), customItems, discountType, Number(body.discount_value), depositPaid, 7);
+    const documentInputs = parseDocumentInputs(body.document_inputs);
     const docNo = await nextQuotationDocNo(tx);
     const inserted = await new sql.Request(tx)
       .input("lead_id", sql.Int, leadId).input("option_no", sql.TinyInt, optionNo).input("doc_no", sql.NVarChar(30), docNo)
@@ -69,9 +71,10 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
       .input("deposit", sql.Decimal(12,2), totals.deposit).input("outstanding", sql.Decimal(12,2), totals.outstanding)
       .input("before_vat", sql.Decimal(12,2), totals.beforeVat).input("vat_amount", sql.Decimal(12,2), totals.vatAmount)
       .input("template_id", sql.Int, templateId).input("payment_terms", sql.NVarChar(sql.MAX), JSON.stringify(paymentTerms))
-      .input("terms_text", sql.NVarChar(sql.MAX), body.terms_text || null).input("note", sql.NVarChar(sql.MAX), body.note || null).input("user_id", sql.Int, gate.userId)
-      .query(`INSERT quotations(lead_id,option_no,doc_no,package_id,package_name_snapshot,package_price_snapshot,issue_date,valid_days,subtotal_incl_vat,discount_label,discount_type,discount_value,discount_amount,discount_reason,contract_total_incl_vat,deposit_paid_amount,outstanding_amount,amount_before_vat,vat_amount,payment_template_id,payment_terms_json,terms_text,note,created_by,updated_by)
-      OUTPUT INSERTED.* VALUES(@lead_id,@option_no,@doc_no,@package_id,@package_name,@package_price,@issue_date,@valid_days,@subtotal,@discount_label,@discount_type,@discount_value,@discount_amount,@discount_reason,@total,@deposit,@outstanding,@before_vat,@vat_amount,@template_id,@payment_terms,@terms_text,@note,@user_id,@user_id)`);
+      .input("terms_text", sql.NVarChar(sql.MAX), body.terms_text || null).input("note", sql.NVarChar(sql.MAX), body.note || null)
+      .input("document_inputs", sql.NVarChar(sql.MAX), JSON.stringify(documentInputs)).input("user_id", sql.Int, gate.userId)
+      .query(`INSERT quotations(lead_id,option_no,doc_no,package_id,package_name_snapshot,package_price_snapshot,issue_date,valid_days,subtotal_incl_vat,discount_label,discount_type,discount_value,discount_amount,discount_reason,contract_total_incl_vat,deposit_paid_amount,outstanding_amount,amount_before_vat,vat_amount,payment_template_id,payment_terms_json,terms_text,note,document_inputs_json,created_by,updated_by)
+      OUTPUT INSERTED.* VALUES(@lead_id,@option_no,@doc_no,@package_id,@package_name,@package_price,@issue_date,@valid_days,@subtotal,@discount_label,@discount_type,@discount_value,@discount_amount,@discount_reason,@total,@deposit,@outstanding,@before_vat,@vat_amount,@template_id,@payment_terms,@terms_text,@note,@document_inputs,@user_id,@user_id)`);
     const quotationId = inserted.recordset[0].id;
     let sort = 0;
     for (const item of packageItems.recordset) await new sql.Request(tx).input("qid",sql.Int,quotationId).input("pid",sql.Int,item.id).input("name",sql.NVarChar(500),item.item_name).input("qty",sql.Decimal(10,2),item.quantity).input("unit",sql.NVarChar(50),item.unit).input("sort",sql.Int,sort++).query(`INSERT quotation_items(quotation_id,source_type,package_item_id,item_name_snapshot,quantity,unit,sort_order) VALUES(@qid,'package',@pid,@name,@qty,@unit,@sort)`);

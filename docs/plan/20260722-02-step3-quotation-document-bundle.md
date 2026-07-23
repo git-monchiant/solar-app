@@ -2,7 +2,34 @@
 
 ## Status
 
-`backlog`
+`in-progress`
+
+## Implementation Progress — 2026-07-22
+
+Implemented in Development:
+
+- เพิ่ม migration `sql/128_quotation_document_bundle.sql` และนำไปใช้กับ `SolarDb_DEV` เท่านั้น
+- เพิ่ม Document Inputs, Survey/Quotation Snapshot, Financial Snapshot, approval certification และ immutable Approved PDF artifact พร้อม SHA-256
+- เพิ่ม Financial Calculator สูตร `variable-rate-amortization-v1` รองรับอัตราดอกเบี้ยช่วงปี 1-2 และปี 3 เป็นต้นไป พร้อมคำนวณค่างวด ดอกเบี้ย ผลประหยัด จุดคุ้มทุน CO₂ และประมาณการ 25 ปี
+- นำตัวสร้างรายงานมาตรฐานเดียวกับ API `GET /api/survey-report/[leadId]` (`src/lib/docs/survey-report.js`) มาใช้ร่วมกัน ไม่สร้าง Report template ซ้ำ และต่อท้าย Quotation Revision ปัจจุบัน 2 หน้า รวม 17 หน้า พร้อมตรวจ page count ทุกครั้ง
+- Snapshot `lead_data` ร่วมกับ Survey/Quotation เพื่อให้รายงานที่ส่งอนุมัติไม่เปลี่ยนตามข้อมูล Lead ภายหลัง และส่ง Financial Snapshot/ราคา/เลขเอกสารของ Quotation Revision เข้า Report template โดยตรง
+- ปรับธีมและการจัดวางรายงานหน้า 1–15 ให้ยึดไฟล์ตัวอย่าง: พื้นขาว สีกรมท่า/ส้ม หัวข้อพร้อมเส้นส้ม ตารางเส้นฟ้าอ่อน หัวตารางกรมท่า กล่องหมายเหตุฟ้า/ครีม และเลขหน้ากึ่งกลาง
+- หน้า “ข้อมูลลูกค้าและโครงการ” แปลงรหัสระบบเป็นข้อความภาษาไทยจาก label กลางของระบบ (ประเภทบ้าน อายุบ้าน หลังคา มิเตอร์ และเฟส) และใช้โครงตาราง/กล่องสรุปตามไฟล์ตัวอย่าง
+- ข้อมูลที่ไม่มีค่าในหน้า “ข้อมูลลูกค้าและโครงการ” แสดงข้อความแนะนำในวงเล็บด้วยสีเทาอ่อน เพื่อแยกจากข้อมูลจริงอย่างชัดเจน
+- หน้ารูปถ่ายใช้คำอธิบายและลำดับภาพตามไฟล์ตัวอย่าง พร้อมฝังไฟล์ภาพเป็น Base64 ก่อนสร้าง PDF; URL ที่ไฟล์ต้นทางหายจะแสดงข้อความสีเทาแทนรูปแตก
+- หน้าผังร่างเป็นหน้าต่อเนื่องภายใต้หัวข้อ 2 ตามต้นฉบับ ไม่ใช้เลขหัวข้อแยก และแสดงหมายเหตุ ทิศหลังคา พื้นที่หลังคา และระยะถึง Inverter จาก Survey เมื่อมีข้อมูล
+- ปรับหน้าปกตามเอกสารอ้างอิง: พื้นขาว โลโก้สีตรงกลาง ลำดับชั้นข้อความ ตารางข้อมูลกรอบฟ้า ข้อมูลบริษัท และแถบหมายเหตุสีน้ำเงินเข้ม
+- ปรับ Step 03 ให้กรอกข้อมูลจริงสำหรับค่าไฟ ผลผลิตไฟ degradation และข้อมูลสินเชื่อ/แหล่งอัตราดอกเบี้ย
+- Snapshot ทั้งชุดเมื่อส่งอนุมัติ และบังคับ Sale Sup/Admin ยืนยันการตรวจสอบและรับรองเอกสารทั้งชุดก่อนอนุมัติ
+- เก็บ Approved PDF ครั้งแรกเป็น artifact แบบ immutable และใช้ไฟล์เดิมทุกครั้งที่เปิดภายหลัง
+- ทดสอบ Development flow ครบ Create → Submit → Pending PDF 17 หน้า → Certify/Approve → Approved PDF 17 หน้า → Artifact/hash และลบข้อมูลทดสอบแล้ว
+- Production build ผ่านด้วย Next.js 16 Webpack; แก้ page export ที่ Next.js 16 ไม่อนุญาตในหน้า Seeker โดยไม่เปลี่ยน behavior
+
+Pending before this plan can be marked `done`:
+
+- Business UAT ตรวจรูปแบบและข้อความทั้ง 17 หน้ากับ Sales/Sale Sup
+- ยืนยันสมมติฐานมาตรฐานบริษัทสำหรับค่าไฟ ผลผลิตไฟ และ degradation
+- Production migration/deployment ซึ่งต้องได้รับอนุญาตจากผู้ใช้ก่อนทุกครั้ง
 
 ## เป้าหมาย
 
@@ -144,14 +171,14 @@ Actions ที่แนะนำ:
 
 ## PDF Generation Strategy
 
-1. Render ส่วนรายงานจาก Template ใหม่ โดยใช้ Survey data + Quotation snapshot
+1. Render ส่วนรายงานด้วย Template กลางเดียวกับ `/api/survey-report/[leadId]` โดยใช้ Survey snapshot + Quotation snapshot
 2. ใช้ Quotation PDF generator ปัจจุบันสร้างใบเสนอราคา 2 หน้า
 3. Merge ด้วย `pdf-lib` ให้รายงานอยู่หน้าแรกและ Quotation อยู่ท้ายสุด
 4. ควบคุม Report template ให้ได้ 15 หน้าคงที่ และ merge กับ Quotation 2 หน้าเป็น 17 หน้า
 5. ใส่เลขหน้า ชื่อไฟล์ และ metadata หลัง merge
 6. ตรวจ page count ก่อนส่งอนุมัติ หากไม่เท่ากับ 17 หน้าให้ถือว่า generate ไม่สำเร็จ
 7. Draft/Pending ใช้ Watermark ทั้งชุด
-8. เมื่ออนุมัติแล้ว Generate หนสุดท้ายหนึ่งครั้ง เก็บเป็น immutable artifact
+8. เมื่ออนุมัติแล้ว Generate ครั้งสุดท้ายหนึ่งครั้ง เก็บเป็น immutable artifact
 
 ชื่อไฟล์แนะนำ:
 

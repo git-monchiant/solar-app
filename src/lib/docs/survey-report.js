@@ -123,7 +123,7 @@ export function quotationPdfPath(L) {
 
 // L = leads row (+ pname/district/province/surveyor), D = lead_data row
 // (questionnaire), PKG = the package row or null.
-export function buildSurveyReportHtml(L, D, PKG) {
+export function buildSurveyReportHtml(L, D, PKG, options = {}) {
   const A = assets();
   const font = (n, w) =>
     `@font-face{font-family:'DB Heavent';src:url(data:font/woff;base64,${A[n]}) format('woff');font-weight:${w};font-style:normal;}`;
@@ -139,17 +139,19 @@ export function buildSurveyReportHtml(L, D, PKG) {
   const acceptedQuot = quotFiles.find(q => q.doc_no === L.quotation_doc_no)
     || quotFiles.find(q => Number(q.amount) === Number(L.order_total))
     || quotFiles[quotFiles.length-1] || null;
-  const quotDocNo = acceptedQuot?.doc_no || L.quotation_doc_no || null;
+  const quotation = options.quotation || {};
+  const quotDocNo = quotation.docNo || acceptedQuot?.doc_no || L.quotation_doc_no || null;
   // price shown in §4 = the amount of the SAME quotation file we append, so the
   // price bar always matches the attached quotation. Fall back to order_total.
-  const quotPrice = acceptedQuot?.amount ?? L.order_total ?? L.quotation_amount ?? null;
+  const quotPrice = quotation.grossAmount ?? acceptedQuot?.amount ?? L.order_total ?? L.quotation_amount ?? null;
   // Whether the appendix page can promise a real attachment. Shares
   // quotationPdfPath so the page text and the merge decision can't disagree.
-  const quotPdfPath = quotationPdfPath(L);
+  const quotPdfPath = options.quotationAttached === true ? "attached-by-caller" : quotationPdfPath(L);
 
   const HEADER = `<div class="run-head">SENA SOLAR ENERGY | รายงานสำรวจหน้างานติดตั้งโซลาร์เซลล์ (Solar Cell Site Survey Report)</div>`;
   const foot = n => `<div class="run-foot">หน้า ${n} / 15</div>`;
-  const page = (n,b,cls="") => `<section class="page ${cls}">${HEADER}<div class="body">${b}</div>${foot(n)}</section>`;
+  const reportWatermark = String(options.watermark || "").replace(/[&<>"']/g, "");
+  const page = (n,b,cls="") => `<section class="page ${cls}">${reportWatermark?`<div class="report-watermark">${reportWatermark}</div>`:""}${HEADER}<div class="body">${b}</div>${foot(n)}</section>`;
   const sect = (num,th,en) => `<h2 class="sect">${num?`<span class="num">${num}.</span> `:""}${th}${en?` <span class="en">${en}</span>`:""}</h2>`;
   const ph = t => `<span class="ip">[ ${t} ]</span>`;
   const V = (v, ptxt) => (v!==null && v!==undefined && String(v).trim()!=="") ? `<span class="val">${v}</span>` : ph(ptxt);
@@ -283,10 +285,10 @@ export function buildSurveyReportHtml(L, D, PKG) {
   // booking deposit = net. Show a breakdown when there's a discount/deposit;
   // otherwise a single price bar. Net matches the quotation's "รวมยอดสุทธิ".
   const gross = quotPrice ?? PKG?.price ?? null;
-  const discAmt = Number(L.order_discount_amount) || 0;
-  const discNote = (L.order_discount_note || (L.order_discount_pct?`ส่วนลดพิเศษ ${L.order_discount_pct}%`:"ส่วนลด")).trim();
-  const bookingFee = Number(L.pre_total_price) || 0;   // เงินจอง/ค่าสำรวจ
-  const net = gross != null ? gross - discAmt - bookingFee : null;
+  const discAmt = Number(quotation.discountAmount ?? L.order_discount_amount) || 0;
+  const discNote = String(quotation.discountLabel || L.order_discount_note || (L.order_discount_pct?`ส่วนลดพิเศษ ${L.order_discount_pct}%`:"ส่วนลด")).trim();
+  const bookingFee = Number(quotation.depositAmount ?? L.pre_total_price) || 0;   // เงินจอง/ค่าสำรวจ
+  const net = quotation.netAmount ?? (gross != null ? gross - discAmt - bookingFee : null);
   const hasDeduction = discAmt > 0 || bookingFee > 0;
   const priceRow = (label, amt, minus) => `<div class="pr-row"><span>${label}</span><span class="pr-amt${minus?" minus":""}">${minus?"−":""}${baht(Math.abs(amt))} บาท</span></div>`;
   const priceBlock = gross == null
@@ -399,16 +401,39 @@ export function buildSurveyReportHtml(L, D, PKG) {
   const loanPrice = net ?? gross ?? PKG?.price ?? 112000;
   const loanKw = PKG?.kwp ?? 3;
   const loanBill = L.survey_monthly_bill ?? D.monthly_bill ?? 5000;
-  const C = calcLoan(loanPrice, loanKw, loanBill);
-  const CALC_INDEP=[["มูลค่า Solar Package (บาท)",baht(C.price),"in"],["เงินดาวน์ (%)","20.0%","in"],["ดอกเบี้ย ปีที่ 1-2 (% ต่อปี)","3.500%","in"],["ดอกเบี้ย ปีที่ 3-5 (% ต่อปี)","5.000%","in"],["ระยะเวลากู้ (ปี) - ปรับได้ 1-5","7 ปี","in"]];
-  const CALC_CALC=[["เงินดาวน์ (บาท)",baht(C.down)],["วงเงินกู้ (บาท)",baht(C.loan)],["ดอกเบี้ยรายเดือน ปีที่ 1-2",num(C.m1*100,4)+"%"],["ดอกเบี้ยรายเดือน ปีที่ 3-5",num(C.m2*100,4)+"%"],["จำนวนงวดช่วงที่ 1 (ดอก 3.5%)",C.n1+" งวด"],["จำนวนงวดช่วงที่ 2 (ดอก 5.0%)",C.n2+" งวด"],["ดอกเบี้ยถัวเฉลี่ยถ่วงน้ำหนัก/ปี",num(C.wAvg*100,3)+"%"]];
+  const financeInputs = options.financial?.inputs || {};
+  const financeOutputs = options.financial?.outputs || {};
+  const downPct = Number(financeInputs.down_payment_percent ?? 20);
+  const rate1 = Number(financeInputs.interest_rate_year_1_2 ?? 3.5);
+  const rate2 = Number(financeInputs.interest_rate_year_3_plus ?? 5);
+  const termMonths = Number(financeInputs.loan_term_months ?? 84);
+  const electricityRate = Number(financeInputs.electricity_rate ?? 5);
+  const C = calcLoan(loanPrice, loanKw, loanBill, { unit:electricityRate, r1:rate1/100, r2:rate2/100, downPct:downPct/100, term:termMonths/12 });
+  Object.assign(C, {
+    down: financeOutputs.down_payment_amount ?? C.down,
+    loan: financeOutputs.loan_amount ?? C.loan,
+    pmt: financeOutputs.monthly_installment ?? C.pmt,
+    total: financeOutputs.total_loan_payment ?? C.total,
+    interest: financeOutputs.total_interest ?? C.interest,
+    netMo: financeOutputs.net_monthly_after_saving ?? C.netMo,
+    kwh: financeOutputs.monthly_production_kwh ?? C.kwh,
+    save: financeOutputs.monthly_saving ?? C.save,
+    payback: financeOutputs.payback_months ?? C.payback,
+    save25: financeOutputs.saving_25_years ?? C.save25,
+    co2Yr: financeOutputs.co2_reduction_tons_per_year ?? C.co2Yr,
+    trees: financeOutputs.equivalent_trees ?? C.trees,
+  });
+  const CALC_INDEP=[["มูลค่า Solar Package (บาท)",baht(C.price),"in"],["เงินดาวน์ (%)",num(downPct,1)+"%","in"],["ดอกเบี้ย ปีที่ 1-2 (% ต่อปี)",num(rate1,3)+"%","in"],["ดอกเบี้ย ปีที่ 3 เป็นต้นไป (% ต่อปี)",num(rate2,3)+"%","in"],["ระยะเวลากู้",termMonths+" เดือน","in"]];
+  const CALC_CALC=[["เงินดาวน์ (บาท)",baht(C.down)],["วงเงินกู้ (บาท)",baht(C.loan)],["ดอกเบี้ยรายเดือน ปีที่ 1-2",num(C.m1*100,4)+"%"],["ดอกเบี้ยรายเดือน ปีที่ 3 เป็นต้นไป",num(C.m2*100,4)+"%"],["จำนวนงวดช่วงที่ 1",C.n1+" งวด"],["จำนวนงวดช่วงที่ 2",C.n2+" งวด"],["ดอกเบี้ยถัวเฉลี่ยถ่วงน้ำหนัก/ปี",num(C.wAvg*100,3)+"%"]];
   const CALC_RESULT=[["ค่างวดผ่อน (บาท/เดือน) — เท่ากันทุกงวด",baht(C.pmt),"big"],["ยอดจ่ายรวมตลอดสัญญา (บาท)",baht(C.total)],["ดอกเบี้ยรวมตลอดสัญญา (บาท)",baht(C.interest)],["ดอกเบี้ยถัวเฉลี่ย EIR / ปี",num(C.eir*100,3)+"%"]];
   const CALC_COMPARE=[["ค่าไฟปัจจุบัน (บาท/เดือน)",baht(C.bill),"in"],["ขนาด Solar ที่ติด (kW)",num(C.kw,1),"in"],["ค่าไฟต่อหน่วย (บาท/kWh)",num(C.unit,2)],["หน่วยไฟที่ผลิตได้/เดือน (kWh)",num(C.kwh,1)],["ประหยัดได้หลังติด Solar (บาท/เดือน)",baht(C.save)]];
   const CALC_ANALYSIS=[["ค่างวดผ่อน (บาท/เดือน)",baht(C.pmt)],["ดอกเบี้ยต่อเดือน (เดือนแรก)",baht(C.mo1Int)],["เงินต้นที่ตัดต่อเดือน (เดือนแรก)",baht(C.mo1Prin)],["ต้นทุนสุทธิ/เดือน (ค่างวด − ประหยัด)",baht(C.netMo),C.netMo<0?"neg":""],["ยอดรวมที่จ่ายตลอดสัญญา (บาท)",baht(C.total)],["ดอกเบี้ยรวม (บาท)",baht(C.interest)],["ค่าไฟรวมถ้าไม่ติด Solar (บาท)",baht(C.billTot)],["ประหยัดค่าไฟรวมตลอดสัญญาเงินกู้ (บาท)",baht(C.saveTot)],["ลดการปล่อย CO₂ ต่อปี (ตัน)",num(C.co2Yr,2)],["ลดการปล่อย CO₂ เทียบเท่าปลูกต้นไม้ (ต้น)",baht(C.trees)],["จุดคุ้มทุน (เดือน)",C.payback?num(C.payback,0):"—"],["ถ้าติด 25 ปี ประหยัดค่าไฟได้ (บาท)",baht(C.save25)]];
-  const p14 = page(13, `<h3 class="subh">ตัวอย่างตารางผ่อนชำระสินเชื่อ (Amortization Schedule) — ตัวอย่างประกอบการพิจารณา สำหรับการยื่นกู้กับ ธนาคาร ออมสิน</h3>
+  const loanBank = String(financeInputs.loan_bank || "ธนาคารออมสิน");
+  const rateSource = String(financeInputs.rate_source || "ธนาคารออมสิน GSB");
+  const p14 = page(13, `<h3 class="subh">ตัวอย่างตารางผ่อนชำระสินเชื่อ (Amortization Schedule) — ตัวอย่างประกอบการพิจารณา สำหรับการยื่นกู้กับ ${loanBank}</h3>
     <div class="calc">
-      <div class="calc-head">Solar Loan Calculator — GSB Soft Loan (ค่างวดเท่ากันทุกเดือน)</div>
-      <div class="calc-sub">สินเชื่อพลังงานสะอาด | ไม่มีหลักประกัน (Clean Loan) | Source: ธนาคารออมสิน GSB</div>
+      <div class="calc-head">Solar Loan Calculator — ${loanBank} (ค่างวดเท่ากันทุกเดือน)</div>
+      <div class="calc-sub">สินเชื่อพลังงานสะอาด | Source: ${rateSource}</div>
       <div class="calc-note"><span class="cn-red">** ใส่เฉพาะช่องที่ล้อมกรอบสีแดง <span class="cn-box"></span> ที่เหลือไม่ต้องใส่</span><span class="cn-pull">ดึงข้อมูลจาก แพ็คที่แนะนำ</span><span class="cn-yr">2026 · ORI : TV</span></div>
       <div class="calc-cols">
         <div class="calc-col">
@@ -423,7 +448,7 @@ export function buildSurveyReportHtml(L, D, PKG) {
         </div>
       </div>
     </div>
-    <p class="tiny-note">หมายเหตุ: ตารางนี้เป็นตัวอย่างการคำนวณเพื่อประกอบการตัดสินใจเท่านั้น ตัวเลขจริงจะระบุในตารางผ่อนชำระที่ธนาคารออมสินออกให้หลังการอนุมัติสินเชื่อ</p>`);
+    <p class="tiny-note">หมายเหตุ: ตารางนี้เป็นตัวอย่างการคำนวณเพื่อประกอบการตัดสินใจเท่านั้น ตัวเลขจริงให้ยึดตามตารางผ่อนชำระที่ ${loanBank} ออกให้หลังการอนุมัติสินเชื่อ</p>`);
 
   const p15 = page(14, `${sect("9","หมายเหตุและเงื่อนไขทั่วไป")}
     <ul class="reasons">
@@ -448,7 +473,7 @@ export function buildSurveyReportHtml(L, D, PKG) {
     <div class="qt-divider">
       <div class="qt-i">📄</div>
       <div class="qt-t">ใบเสนอราคาเลขที่ ${quotDocNo}</div>
-      <div class="qt-s">มูลค่า ${baht(acceptedQuot?.amount || L.order_total || 0)} บาท (รวม VAT) — เอกสารฉบับเต็มแนบต่อจากหน้านี้</div>
+      <div class="qt-s">มูลค่า ${baht(quotation.netAmount ?? acceptedQuot?.amount ?? L.order_total ?? 0)} บาท (รวม VAT) — เอกสารฉบับเต็มแนบต่อจากหน้านี้</div>
     </div>` : `
     ${emptyBox(`แนบไฟล์ใบเสนอราคา (Quotation) เลขที่ ${quotDocNo||""} — หน้า 1`,"วาง/แทรกไฟล์ PDF หรือรูปภาพใบเสนอราคาฉบับล่าสุด",150)}
     ${emptyBox("หน้า 2 ของใบเสนอราคา (หากมี)","รายละเอียดรายการอุปกรณ์ / เงื่อนไขการชำระเงิน / อายุใบเสนอราคา",150)}`}
@@ -459,6 +484,7 @@ export function buildSurveyReportHtml(L, D, PKG) {
   html,body{font-family:'DB Heavent',sans-serif;color:${INK};font-size:16px;line-height:1.5;}
   .page{position:relative;width:210mm;height:297mm;padding:16mm 15mm 14mm;page-break-after:always;overflow:hidden;}
   .page:last-child{page-break-after:auto;}
+  .report-watermark{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;transform:rotate(-25deg);font-size:72px;font-weight:700;color:rgba(222,51,74,.13);pointer-events:none;z-index:4;}
   .run-head{position:absolute;top:7mm;left:15mm;right:15mm;font-size:10px;color:${GRAY};text-align:right;border-bottom:1px solid #e2e5ea;padding-bottom:3px;}
   .run-foot{position:absolute;bottom:7mm;left:0;right:0;text-align:center;font-size:10px;color:#aab;}
   .body{height:100%;}

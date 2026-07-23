@@ -56,11 +56,11 @@ type Prospect = {
   created_at: string;
 };
 
-export type Contact = { name: string | null; phone: string | null; email?: string | null };
+type Contact = { name: string | null; phone: string | null; email?: string | null };
 
 // Strip Thai title prefixes at the start of a name (นาย/นาง/นางสาว/น.ส./ด.ช./ด.ญ.).
 // Longer prefixes first so "นางสาว" matches before "นาง".
-export function stripThaiTitle(s: string | null | undefined): string | null {
+function stripThaiTitle(s: string | null | undefined): string | null {
   if (!s) return null;
   const cleaned = s
     .trim()
@@ -69,7 +69,7 @@ export function stripThaiTitle(s: string | null | undefined): string | null {
   return cleaned || null;
 }
 
-export function parseContacts(raw: string | null): Contact[] {
+function parseContacts(raw: string | null): Contact[] {
   if (!raw) return [];
   try {
     const arr = JSON.parse(raw);
@@ -719,15 +719,12 @@ function ProjectLanding({
   projectNameById: Record<number, string>;
   onOpenProspect: (p: Prospect) => void;
 }) {
-  const [favs, setFavs] = useState<Set<string>>(new Set());
-
-  useEffect(() => {
-    if (typeof window === "undefined") return;
+  const [favs, setFavs] = useState<Set<string>>(() => {
+    if (typeof window === "undefined") return new Set();
     const saved = localStorage.getItem(FAV_KEY);
-    if (saved) {
-      try { setFavs(new Set(JSON.parse(saved))); } catch {}
-    }
-  }, []);
+    if (!saved) return new Set();
+    try { return new Set(JSON.parse(saved)); } catch { return new Set(); }
+  });
 
   const toggleFav = (name: string) => {
     setFavs((prev) => {
@@ -2461,6 +2458,8 @@ function ProspectLogTab({ prospectId }: { prospectId: number }) {
 
   useEffect(() => {
     let cancelled = false;
+    // Loading is reset when switching to a different prospect id.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     setLoading(true);
     apiFetch(`/api/prospects/${prospectId}/activities`)
       .then((rows: ProspectActivity[]) => { if (!cancelled) setItems(rows); })

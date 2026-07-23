@@ -1,9 +1,14 @@
 import { readFileSync } from "fs";
 import { join } from "path";
+import { createHash } from "crypto";
 import { NextRequest, NextResponse } from "next/server";
 import puppeteer from "puppeteer";
+import { PDFDocument } from "pdf-lib";
 import { getUserIdFromReq } from "@/lib/auth";
 import { getQuotationActor, getQuotationDetail } from "@/lib/quotation";
+import { getDb, sql } from "@/lib/db";
+import { buildQuotationDocumentSnapshot, type QuotationDocumentSnapshot } from "@/lib/quotation-document";
+import { buildSurveyReportHtml } from "@/lib/docs/survey-report";
 
 export const runtime = "nodejs";
 
@@ -56,17 +61,49 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
   if (!userId || !await getQuotationActor(userId)) return NextResponse.json({ error: "Not authenticated" }, { status: 401 });
 
   const { id } = await params;
-  const q = await getQuotationDetail(Number(id));
-  if (!q) return NextResponse.json({ error: "ไม่พบใบเสนอราคา" }, { status: 404 });
+  const quotationId = Number(id);
+  const detail = await getQuotationDetail(quotationId);
+  if (!detail) return NextResponse.json({ error: "ไม่พบใบเสนอราคา" }, { status: 404 });
 
-  const items = (q.items || []) as Array<Record<string, unknown>>;
+  const db = await getDb();
+  if (detail.status === "approved") {
+    const artifact = await db.request().input("id", sql.Int, quotationId).query(`SELECT TOP 1 pdf_data FROM quotation_document_artifacts WHERE quotation_id=@id AND document_type='approved_bundle'`);
+    if (artifact.recordset[0]?.pdf_data) {
+      const disposition = req.nextUrl.searchParams.get("download") === "1" ? "attachment" : "inline";
+      return new NextResponse(Buffer.from(artifact.recordset[0].pdf_data), { headers: { "Content-Type": "application/pdf", "Content-Disposition": `${disposition}; filename="${detail.doc_no}.pdf"`, "X-Quotation-Document-Pages": "17" } });
+    }
+  }
+
+  let snapshot: QuotationDocumentSnapshot | null = null;
+  if (detail.document_snapshot_json && ["pending_approval", "approved"].includes(detail.status)) {
+    try { snapshot = JSON.parse(detail.document_snapshot_json) as QuotationDocumentSnapshot; } catch { /* regenerate below */ }
+  }
+  if (!snapshot) snapshot = await buildQuotationDocumentSnapshot(quotationId);
+  if (!snapshot) return NextResponse.json({ error: "สร้างข้อมูลเอกสารไม่สำเร็จ" }, { status: 500 });
+  const q = {
+    ...detail,
+    ...snapshot.quotation,
+    customer_name: snapshot.lead.customer_name || snapshot.lead.full_name,
+    customer_phone: snapshot.lead.customer_phone || snapshot.lead.phone,
+    customer_email: snapshot.lead.customer_email || snapshot.lead.email,
+    installation_address: snapshot.lead.installation_address,
+    id_card_address: snapshot.lead.id_card_address,
+    id_card_number: snapshot.lead.id_card_number,
+    project_name: snapshot.quotation.project_display_name || snapshot.lead.project_name,
+    status: detail.status,
+    approved_at: detail.approved_at,
+    approver_name_snapshot: detail.approver_name_snapshot,
+    approver_title_snapshot: detail.approver_title_snapshot,
+  };
+
+  const items = snapshot.items;
   const packageItems = items.filter(item => item.source_type === "package");
   const detailItems = packageItems.filter((_, index) => index > 0);
   const addOns = items.filter(item => item.source_type !== "package");
   let terms: Array<{ label?: string; percent?: number; due?: string }> = [];
   try { terms = JSON.parse(q.payment_terms_json || "[]"); } catch { /* keep empty */ }
 
-  const settings = Object.fromEntries(((q.settings || []) as Array<{ key: string; value: string }>).map(row => [row.key, row.value]));
+  const settings = snapshot.settings;
   const bankName = settings.bank_account_bank === "TMBThanachart Bank" ? "ทหารไทยธนชาต" : settings.bank_account_bank || "ทหารไทยธนชาต";
   const bankAccountName = settings.bank_account_name === "SENA SOLAR ENERGY CO., LTD." ? "บริษัท เสนา โซลาร์ เอนเนอร์ยี่ จำกัด" : settings.bank_account_name || "บริษัท เสนา โซลาร์ เอนเนอร์ยี่ จำกัด";
   const bankAccountNumber = settings.bank_account_number || "667-2-03155-3";
@@ -74,6 +111,30 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
   const creatorSignature = signatureDataUrl(q.created_by_signature_data, q.created_by_signature_mime);
   const approverSignature = signatureDataUrl(q.approver_signature_data_snapshot, q.approver_signature_mime_snapshot);
   const watermark = q.status === "approved" ? "" : q.status === "pending_approval" ? "รออนุมัติ" : "DRAFT";
+  const reportLead = {
+    ...snapshot.lead,
+    project_alias: snapshot.quotation.project_display_name || snapshot.lead.project_alias,
+    surveyor: snapshot.lead.survey_actual_by || snapshot.lead.survey_completed_by_name || snapshot.lead.assigned_name,
+    quotation_doc_no: q.doc_no,
+  };
+  const reportPackage = {
+    ...snapshot.package,
+    name: q.package_name_snapshot || snapshot.package.name,
+    price: q.package_price_snapshot || snapshot.package.price,
+  };
+  const surveyHtml = buildSurveyReportHtml(reportLead, snapshot.lead_data || {}, reportPackage, {
+    quotationAttached: true,
+    watermark,
+    quotation: {
+      docNo: String(q.doc_no || ""),
+      grossAmount: Number(q.subtotal_incl_vat || 0),
+      discountAmount: Number(q.discount_amount || 0),
+      discountLabel: String(q.discount_label || "ส่วนลด"),
+      depositAmount: Number(q.deposit_paid_amount || 0),
+      netAmount: Number(q.outstanding_amount || 0),
+    },
+    financial: snapshot.financial,
+  });
   const contactPhone = q.created_by_phone || "0-2541-4642";
   const contactEmail = q.created_by_email || "ekkawitp@senasolarenergy.com";
   const quotationHeader = `
@@ -151,11 +212,11 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
     <section class="page">${watermark ? `<div class="watermark">${esc(watermark)}</div>` : ""}${quotationHeader}
       <table class="quote-table"><thead><tr><th style="width:12mm">ลำดับ</th><th>รายการ</th><th style="width:32.5mm">จำนวนเงิน</th></tr></thead><tbody>${itemRows.join("")}<tr class="payment-spacer"><td></td><td></td><td></td></tr><tr class="payment-shell"><td colspan="2" class="payment-cell"><div class="payment-title">เงื่อนไขการชำระเงิน</div><table class="payment-table"><tbody>${paymentRows}</tbody></table><div class="payment-bank-row"><div class="bank-copy"><b>ธนาคาร${esc(bankName)}</b><br>ชื่อบัญชี : ${esc(bankAccountName)}<br>เลขที่บัญชี : ${esc(bankAccountNumber)} สาขา ${esc(bankBranch)}</div><div class="qr"><img src="${paymentQrDataUrl}" alt="QR Payment"></div></div></td><td class="payment-side"></td></tr></tbody></table>
       <table class="financials"><tbody><tr class="strong"><td></td><td class="summary-label">ราคาก่อนหักส่วนลด (รวมภาษีมูลค่าเพิ่ม)</td><td class="summary-value">${money(q.subtotal_incl_vat)}</td></tr>${Number(q.discount_amount) > 0 ? `<tr><td></td><td class="summary-label">${esc(q.discount_label || "ส่วนลด")}</td><td class="summary-value">-${money(q.discount_amount)}</td></tr>` : ""}<tr><td></td><td class="summary-label">หัก เงินจอง</td><td class="summary-value">-${money(q.deposit_paid_amount)}</td></tr><tr class="strong"><td></td><td class="summary-label">ราคาหลังหักส่วนลด (รวมภาษีมูลค่าเพิ่ม)</td><td class="summary-value">${money(q.outstanding_amount)}</td></tr><tr><td></td><td class="summary-label">ราคาสินค้าก่อนภาษีมูลค่าเพิ่ม</td><td class="summary-value">${money(q.amount_before_vat)}</td></tr><tr><td></td><td class="summary-label">ภาษีมูลค่าเพิ่ม (VAT) 7%</td><td class="summary-value">${money(q.vat_amount)}</td></tr><tr class="grand"><td class="amount-words">( ${thaiBahtText(q.outstanding_amount)} )</td><td class="summary-label">รวมยอดที่ต้องชำระสุทธิ</td><td class="summary-value">${money(q.outstanding_amount)}</td></tr></tbody></table>
-      ${standardTermsPage1}<div class="footer">หน้า 1 / 2 · ${esc(q.doc_no)}</div>
+      ${standardTermsPage1}<div class="footer">หน้า 16 / 17 · ใบเสนอราคา 1 / 2 · ${esc(q.doc_no)}</div>
     </section>
     <section class="page">${watermark ? `<div class="watermark">${esc(watermark)}</div>` : ""}${quotationHeader}${standardTermsPage2}
       <div class="signatures">${sigCell("ลูกค้า")}${sigCell("ผู้จัดทำเอกสาร", q.created_by_name, creatorSignature, q.issue_date)}${sigCell("ผู้ตรวจสอบ", q.approver_name_snapshot || q.approved_by_name, approverSignature, q.approved_at)}${sigCell("ผู้ขาย / ผู้ตรวจสอบ", q.created_by_name, creatorSignature, q.issue_date)}</div>
-      <div class="footer">หน้า 2 / 2 · ${esc(q.doc_no)}</div>
+      <div class="footer">หน้า 17 / 17 · ใบเสนอราคา 2 / 2 · ${esc(q.doc_no)}</div>
     </section>
   </body></html>`;
 
@@ -168,11 +229,33 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
       env: { ...process.env, TZ: "Asia/Bangkok" },
     });
     const page = await browser.newPage();
-    await page.setContent(html, { waitUntil: "networkidle0" });
+    await page.emulateTimezone("Asia/Bangkok");
+    await page.setContent(surveyHtml, { waitUntil: "domcontentloaded", timeout: 30_000 });
     await page.evaluate(() => document.fonts.ready);
-    const bytes = await page.pdf({ preferCSSPageSize: true, printBackground: true, margin: { top: "0", right: "0", bottom: "0", left: "0" } });
+    const surveyBytes = await page.pdf({ format: "A4", printBackground: true, margin: { top: "0", right: "0", bottom: "0", left: "0" } });
+    const surveyPdf = await PDFDocument.load(surveyBytes);
+    if (surveyPdf.getPageCount() !== 15) throw new Error(`จำนวนหน้ารายงานสำรวจไม่ถูกต้อง: ${surveyPdf.getPageCount()}/15 หน้า`);
+
+    await page.setContent(html, { waitUntil: "domcontentloaded", timeout: 30_000 });
+    await page.evaluate(() => document.fonts.ready);
+    const quotationBytes = await page.pdf({ preferCSSPageSize: true, printBackground: true, margin: { top: "0", right: "0", bottom: "0", left: "0" } });
+    const quotationPdf = await PDFDocument.load(quotationBytes);
+    if (quotationPdf.getPageCount() !== 2) throw new Error(`จำนวนหน้าใบเสนอราคาไม่ถูกต้อง: ${quotationPdf.getPageCount()}/2 หน้า`);
+
+    const mergedPdf = await PDFDocument.create();
+    const surveyPages = await mergedPdf.copyPages(surveyPdf, surveyPdf.getPageIndices());
+    const quotationPages = await mergedPdf.copyPages(quotationPdf, quotationPdf.getPageIndices());
+    [...surveyPages, ...quotationPages].forEach(pdfPage => mergedPdf.addPage(pdfPage));
+    const bytes = await mergedPdf.save();
+    const pageCount = mergedPdf.getPageCount();
+    if (pageCount !== 17) throw new Error(`จำนวนหน้าเอกสารไม่ถูกต้อง: ${pageCount}/17 หน้า`);
+    if (detail.status === "approved") {
+      const buffer = Buffer.from(bytes);
+      const hash = createHash("sha256").update(buffer).digest("hex");
+      await db.request().input("id",sql.Int,quotationId).input("data",sql.VarBinary(sql.MAX),buffer).input("hash",sql.Char(64),hash).input("pages",sql.Int,pageCount).query(`IF NOT EXISTS (SELECT 1 FROM quotation_document_artifacts WHERE quotation_id=@id AND document_type='approved_bundle') INSERT quotation_document_artifacts(quotation_id,document_type,pdf_data,file_hash,page_count) VALUES(@id,'approved_bundle',@data,@hash,@pages)`);
+    }
     const disposition = req.nextUrl.searchParams.get("download") === "1" ? "attachment" : "inline";
-    return new NextResponse(Buffer.from(bytes), { headers: { "Content-Type": "application/pdf", "Content-Disposition": `${disposition}; filename="${q.doc_no}.pdf"` } });
+    return new NextResponse(Buffer.from(bytes), { headers: { "Content-Type": "application/pdf", "Content-Disposition": `${disposition}; filename="${q.doc_no}.pdf"`, "X-Quotation-Document-Pages": String(pageCount) } });
   } catch (error) {
     console.error("quotation pdf", error);
     return NextResponse.json({ error: "สร้าง PDF ไม่สำเร็จ" }, { status: 500 });
