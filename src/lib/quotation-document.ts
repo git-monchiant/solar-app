@@ -1,8 +1,8 @@
 import "server-only";
 import { getDb, sql } from "@/lib/db";
 
-export const QUOTATION_DOCUMENT_VERSION = 2;
-export const QUOTATION_FINANCE_FORMULA_VERSION = "variable-rate-amortization-v1";
+export const QUOTATION_DOCUMENT_VERSION = 3;
+export const QUOTATION_FINANCE_FORMULA_VERSION = "contract-price-before-deposit-v2";
 
 export type QuotationDocumentInputs = {
   recommendation_reason: string;
@@ -95,7 +95,12 @@ export function calculateFinancialSnapshot(inputs: QuotationDocumentInputs, quot
   const systemKwp = Math.max(0, Number(pkg.kwp || 0));
   const monthlyProduction = systemKwp * inputs.production_kwh_per_kw_month;
   const monthlySaving = Math.min(inputs.current_monthly_bill, monthlyProduction * inputs.electricity_rate);
-  const financedBase = Math.max(0, Number(quotation.outstanding_amount || 0));
+  // Finance and payback are based on the agreed package price after discount,
+  // before the booking/survey deposit is deducted. The deposit is a payment
+  // credit, not a reduction of the system's actual price.
+  const financedBase = Math.max(0, Number(
+    quotation.contract_total_incl_vat ?? quotation.subtotal_incl_vat ?? quotation.outstanding_amount ?? 0
+  ));
   const downPayment = inputs.loan_enabled ? financedBase * inputs.down_payment_percent / 100 : financedBase;
   const loanAmount = inputs.loan_enabled ? Math.max(0, financedBase - downPayment) : 0;
   const installment = inputs.loan_enabled ? paymentForVariableRates(loanAmount, inputs.loan_term_months, inputs.interest_rate_year_1_2, inputs.interest_rate_year_3_plus) : 0;

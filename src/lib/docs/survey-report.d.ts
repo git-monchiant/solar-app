@@ -8,6 +8,7 @@ type SurveyReportOptions = {
     grossAmount?: number;
     discountAmount?: number;
     discountLabel?: string;
+    contractAmount?: number;
     depositAmount?: number;
     netAmount?: number;
   };

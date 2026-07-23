@@ -274,13 +274,19 @@ export function buildSurveyReportHtml(L, D, PKG, options = {}) {
     <div class="callout blue tight"><div class="co-h">เข้าใจโซลาร์ : ข้อพิจารณาเรื่องระบบ Battery สำรองไฟ</div><ul>
       <li><b>ระบบโซลาร์รูฟ แบบไม่มี Battery</b> คือ ระบบโซลาร์เซลล์ที่เชื่อมต่อกับสายส่งของการไฟฟ้า ผลิตไฟจากแสงอาทิตย์มาใช้ในเวลากลางวัน และดึงไฟจากการไฟฟ้ามาเสริมอัตโนมัติหากผลิตไม่พอ ไม่ใช้แบตเตอรี่ ดูแลรักษาง่าย คุ้มค่าเมื่อใช้ไฟช่วงกลางวันเป็นหลัก</li><li><b>ระบบโซลาร์รูฟ พร้อม Battery</b> คือ ระบบที่ทำงานร่วมกันระหว่างแผงโซลาร์เซลล์ · แบตเตอรี่เก็บไฟ · และโครงข่ายไฟฟ้าจากการไฟฟ้า ดึงพลังงานแสงอาทิตย์มาใช้เป็นหลัก นำส่วนเกินไปเก็บไว้ในแบตเตอรี่สำหรับใช้ตอนกลางคืน และสลับไปใช้ไฟการไฟฟ้าอัตโนมัติหากพลังงานหมด</li>
       <li>หากสัดส่วนใช้ไฟกลางคืนสูง (ทั่วไป > 40-50% ของการใช้รวม) แนะนำ <b>ระบบโซลาร์รูฟ พร้อม Battery</b> เพื่อเก็บพลังงานส่วนเกินกลางวันไว้ใช้กลางคืน</li>
-      <li>ข้อสรุปสำหรับบ้านหลังนี้: <span class="val">ลูกค้ามีแอร์ใช้กลางคืน ${acNight?`(${acNight})`:""} และสนใจ${BATTERY[L.survey_wants_battery]||BATTERY[D.wants_battery]||"เพิ่มแบตเตอรี่"} — แนะนำพิจารณาระบบพร้อม Battery รองรับการใช้ไฟกลางคืน</span></li></ul></div>`);
+    </ul></div>`);
 
   // ── PAGE 8 §4 package — HYBRID: pull package specs from the linked
   // package (PKG); fields the catalog doesn't hold stay blank right-aligned.
   const sysType = PKG ? (PKG.is_upgrade ? "โซลาร์รูฟ · Upgrade เพิ่มเติมระบบเดิม" : (PKG.has_battery ? "ระบบโซลาร์รูฟ พร้อม Battery" : "ระบบโซลาร์รูฟ แบบไม่มี Battery")) : (L.survey_wants_battery==="customize"||D.wants_battery==="upgrade"?"โซลาร์รูฟ · Upgrade เพิ่มแบตเตอรี่":null);
   const invTxt = PKG && (PKG.inverter_brand||PKG.inverter_kw) ? `${PKG.inverter_brand||""}${PKG.inverter_kw?` ${PKG.inverter_kw} kW`:""}`.trim() : null;
   const warrTxt = PKG?.warranty_years ? `แผง 12 ปี / อินเวอร์เตอร์ 10 ปี / งานติดตั้ง ${L.warranty_duration_years||2} ปี (มาตรฐาน)` : (L.warranty_duration_years?`งานติดตั้ง ${L.warranty_duration_years} ปี`:"แผง 12 ปี / อินเวอร์เตอร์ 10 ปี / งานติดตั้ง 2 ปี (มาตรฐาน)");
+  // Prefer the package catalog count; field-survey count is the real fallback
+  // for legacy packages whose solar_panels has never been filled in.
+  const panelCount = Number(PKG?.solar_panels || L.survey_panel_count || 0);
+  const panelCountTxt = panelCount > 0 ? `<span class="val">${baht(panelCount)}</span>` : '<span class="wr"></span>';
+  const paybackMonths = Number(options.financial?.outputs?.payback_months || 0);
+  const paybackTxt = paybackMonths > 0 ? `${baht(paybackMonths)} เดือน (${num(paybackMonths / 12, 1)} ปี)` : null;
   // Price = mirror the quotation summary: gross package price − VIP discount −
   // booking deposit = net. Show a breakdown when there's a discount/deposit;
   // otherwise a single price bar. Net matches the quotation's "รวมยอดสุทธิ".
@@ -305,11 +311,11 @@ export function buildSurveyReportHtml(L, D, PKG, options = {}) {
     ${kv([
       ["ชื่อแพ็กเกจ", V(PKG?.name,"เช่น Package Standard 5 kWp")],
       ["ขนาดระบบ (System Size)", PKG?.kwp ? `<span class="val">${PKG.kwp} kWp</span>${PKG.phase?` · ${PKG.phase} เฟส`:""}` : bl("kWp")],
-      ["แบตเตอรี่ (Battery)", PKG?.has_battery ? `<span class="val">${PKG.battery_kwh?`${PKG.battery_kwh} kWh`:""}${PKG.battery_brand?` · ${PKG.battery_brand}`:""}</span>` : V(null,"ไม่มี / ระบุขนาด")],
+      ["แบตเตอรี่ (Battery)", PKG ? (PKG.has_battery ? `<span class="val">${PKG.battery_kwh?`${PKG.battery_kwh} kWh`:""}${PKG.battery_brand?` · ${PKG.battery_brand}`:""}</span>` : `<span class="val">ไม่มี</span>`) : V(null,"ไม่มี / ระบุขนาด")],
       ["อินเวอร์เตอร์ (Inverter)", V(invTxt,"ยี่ห้อ/รุ่น ขนาด kW")],
       ["โครงสร้างยึดแผง (Racking)", V(roofLabel(L.survey_roof_material)||roofLabel(D.roof_shape),"ประเภทหลังคา / วัสดุโครงสร้าง")],
       ["ประเภทระบบ", V(sysType,"On-Grid / Hybrid")],
-      ["ระยะเวลาคืนทุนโดยประมาณ (Payback Period)", bl("ปี")],
+      ["ระยะเวลาคืนทุนโดยประมาณ (Payback Period)", V(paybackTxt,"ระยะเวลาคืนทุนโดยประมาณ")],
       ["การรับประกัน", V(warrTxt,"แผง / อินเวอร์เตอร์ / งานติดตั้ง")],
     ])}
     ${priceBlock}
@@ -320,7 +326,7 @@ export function buildSurveyReportHtml(L, D, PKG, options = {}) {
     <p class="lead">จากผลการสำรวจหน้างานและข้อมูลการใช้ไฟฟ้าที่สอบถามจากเจ้าของบ้าน ทีมงานประเมินว่าแพ็กเกจนี้เหมาะสมด้วยเหตุผลดังนี้</p>
     <ul class="reasons">
       <li>ขนาดระบบ ${PKG?.kwp?`<span class="val">${PKG.kwp}</span>`:'<span class="wr"></span>'} kWp สอดคล้องกับปริมาณการใช้ไฟฟ้าช่วงกลางวันที่ประเมินได้จากข้อสมมติฐานในหมวดที่ 3 ทำให้ใช้พลังงานที่ผลิตได้อย่างคุ้มค่าโดยไม่เหลือทิ้งเข้าระบบมากเกินไป</li>
-      <li>พื้นที่หลังคาที่สำรวจมีทิศทางและมุมเอียงที่เหมาะสมสำหรับติดตั้งแผงจำนวน <span class="wr"></span> แผงตามแพ็กเกจนี้ โดยไม่มีเงาบดบังในช่วงเวลาที่มีแดดจัด</li>
+      <li>พื้นที่หลังคาที่สำรวจมีทิศทางและมุมเอียงที่เหมาะสมสำหรับติดตั้งแผงจำนวน ${panelCountTxt} แผงตามแพ็กเกจนี้ โดยไม่มีเงาบดบังในช่วงเวลาที่มีแดดจัด</li>
       <li>พฤติกรรมการใช้ไฟฟ้าของบ้านนี้ (เช่น สัดส่วนการใช้ไฟกลางวัน/กลางคืนตามหมวดที่ 3) เหมาะกับระบบ ${sysType?`<span class="val">${sysType}</span>`:'[ ระบบโซลาร์รูฟ แบบไม่มี Battery / ระบบโซลาร์รูฟ พร้อม Battery ]'} ตามที่ประเมินไว้ ช่วยให้ระยะคืนทุนคุ้มค่าที่สุด</li>
       <li>ขนาดอินเวอร์เตอร์ที่เลือกรองรับการขยายระบบเพิ่มเติมในอนาคตได้ หากมีการใช้ไฟฟ้าเพิ่มขึ้น</li>
     </ul>`);
@@ -343,11 +349,11 @@ export function buildSurveyReportHtml(L, D, PKG, options = {}) {
     <div class="callout green"><div class="co-h">สรุปขั้นตอน</div><ul>
       <li>ขั้นตอนที่ 1 — วางเงินมัดจำ 20% ของมูลค่าแพ็กเกจ เพื่อยืนยันและจองคิววันติดตั้ง</li>
       <li>ขั้นตอนที่ 2 — ยื่นขอสินเชื่อสำหรับส่วนที่เหลือ 80% ตั้งแต่ต้นจนได้วงเงินจากธนาคาร หากลูกค้าเลือกผ่อนชำระผ่านธนาคาร (ดูรายละเอียดในหมวดที่ 8)</li>
-      <li>ขั้นตอนที่ 3 — ทีมช่างเข้าติดตั้งระบบตามวันที่นัดหมาย ใช้เวลาโดยประมาณ <span class="wr"></span> วันทำการ</li>
-      <li>ขั้นตอนที่ 4 — บริษัทดำเนินการยื่นขนานไฟกับการไฟฟ้าให้ลูกค้า ใช้เวลาโดยประมาณ <span class="wr"></span> วันทำการหลังติดตั้งแล้วเสร็จ</li></ul></div>`);
+      <li>ขั้นตอนที่ 3 — ทีมช่างเข้าติดตั้งระบบตามวันที่นัดหมาย ใช้เวลาโดยประมาณ <span class="val">1-2 วันทำการ</span></li>
+      <li>ขั้นตอนที่ 4 — บริษัทดำเนินการยื่นขนานไฟกับการไฟฟ้าให้ลูกค้า</li></ul></div>`);
 
   // ── PAGE 11-14 static (payment terms — same for everyone) ───────────
-  const BANKS=[["ธนาคารกสิกรไทย (KBank)","ธนาคารกรุงศรีอยุธยา (Krungsri)"],["ธนาคารกรุงเทพ (Bangkok Bank)","ธนาคารไทยพาณิชย์ (SCB)"],["ธนาคารกรุงไทย (Krungthai)","ธนาคารทหารไทยธนชาต (ttb)"],["บัตรเครดิต UOB","บัตรเครดิต Citi"],["[ ระบุเพิ่มเติมตามที่ร่วมรายการจริง ]","[ ระบุเพิ่มเติมตามที่ร่วมรายการจริง ]"]];
+  const BANKS=[["ธนาคารกสิกรไทย (KBank)","ธนาคารกรุงศรีอยุธยา (Krungsri)"],["ธนาคารกรุงไทย (Krungthai)","ธนาคารทหารไทยธนชาต (ttb)"]];
   const p11 = page(10, `${sect("7","ทางเลือกการชำระเงินมัดจำ 20% (เพื่อจองวันติดตั้ง)")}
     <p class="lead">ลูกค้าสามารถเลือกชำระเงินมัดจำ 20% ของมูลค่าแพ็กเกจ เพื่อยืนยันและจองคิววันติดตั้งได้ 2 ช่องทาง ดังนี้</p>
     <h3 class="subh">ทางเลือกที่ 1 — ชำระเงินสด / โอนเงิน</h3>
@@ -398,7 +404,9 @@ export function buildSurveyReportHtml(L, D, PKG, options = {}) {
   // monthly bill. Falls back to the sheet's example (112,000 · 3kW · 5,000)
   // only when the lead has no price. "price" = §4 net (what the customer pays).
   const ctRows = (rows) => `<table class="ct">${rows.map(r=>`<tr><td>${r[0]}</td><td class="${r[2]||''}">${r[1]}</td></tr>`).join("")}</table>`;
-  const loanPrice = net ?? gross ?? PKG?.price ?? 112000;
+  // Use the contracted package price before booking/survey deposit. A deposit
+  // is credited toward payment but must not make the system price/payback look lower.
+  const loanPrice = quotation.contractAmount ?? gross ?? net ?? PKG?.price ?? 112000;
   const loanKw = PKG?.kwp ?? 3;
   const loanBill = L.survey_monthly_bill ?? D.monthly_bill ?? 5000;
   const financeInputs = options.financial?.inputs || {};
