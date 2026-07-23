@@ -7,18 +7,39 @@ import { PDFDocument } from "pdf-lib";
 import { getUserIdFromReq } from "@/lib/auth";
 import { getQuotationActor, getQuotationDetail } from "@/lib/quotation";
 import { getDb, sql } from "@/lib/db";
-import { buildQuotationDocumentSnapshot, type QuotationDocumentSnapshot } from "@/lib/quotation-document";
+import {
+  buildQuotationDocumentSnapshot,
+  type QuotationDocumentSnapshot,
+} from "@/lib/quotation-document";
 import { buildSurveyReportHtml } from "@/lib/docs/survey-report";
 
 export const runtime = "nodejs";
 
-const esc = (value: unknown) => String(value ?? "").replace(/[&<>"']/g, char => ({
-  "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;",
-}[char]!));
-const money = (value: unknown) => Number(value || 0).toLocaleString("th-TH", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-const thaiDate = (value: unknown) => value
-  ? new Intl.DateTimeFormat("th-TH", { day: "numeric", month: "long", year: "numeric" }).format(new Date(String(value)))
-  : "-";
+const esc = (value: unknown) =>
+  String(value ?? "").replace(
+    /[&<>"']/g,
+    (char) =>
+      ({
+        "&": "&amp;",
+        "<": "&lt;",
+        ">": "&gt;",
+        '"': "&quot;",
+        "'": "&#39;",
+      })[char]!,
+  );
+const money = (value: unknown) =>
+  Number(value || 0).toLocaleString("th-TH", {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  });
+const thaiDate = (value: unknown) =>
+  value
+    ? new Intl.DateTimeFormat("th-TH", {
+        day: "numeric",
+        month: "long",
+        year: "numeric",
+      }).format(new Date(String(value)))
+    : "-";
 const logoDataUrl = `data:image/png;base64,${readFileSync(join(process.cwd(), "public", "logos", "logo-sena.png")).toString("base64")}`;
 const paymentQrDataUrl = `data:image/png;base64,${readFileSync(join(process.cwd(), "public", "templates", "quotation-payment-qr.png")).toString("base64")}`;
 
@@ -29,7 +50,18 @@ function signatureDataUrl(data: unknown, mime: unknown) {
 
 function readThaiInteger(value: number): string {
   if (value === 0) return "ศูนย์";
-  const digits = ["ศูนย์", "หนึ่ง", "สอง", "สาม", "สี่", "ห้า", "หก", "เจ็ด", "แปด", "เก้า"];
+  const digits = [
+    "ศูนย์",
+    "หนึ่ง",
+    "สอง",
+    "สาม",
+    "สี่",
+    "ห้า",
+    "หก",
+    "เจ็ด",
+    "แปด",
+    "เก้า",
+  ];
   const positions = ["", "สิบ", "ร้อย", "พัน", "หมื่น", "แสน"];
   const underMillion = (number: number) => {
     const raw = String(Math.floor(number)).padStart(6, "0");
@@ -40,7 +72,8 @@ function readThaiInteger(value: number): string {
       const position = raw.length - index - 1;
       if (position === 1 && digit === 1) result += "สิบ";
       else if (position === 1 && digit === 2) result += "ยี่สิบ";
-      else if (position === 0 && digit === 1 && Number(raw.slice(0, -1)) > 0) result += "เอ็ด";
+      else if (position === 0 && digit === 1 && Number(raw.slice(0, -1)) > 0)
+        result += "เอ็ด";
       else result += digits[digit] + positions[position];
     }
     return result;
@@ -56,30 +89,66 @@ function thaiBahtText(value: unknown) {
   return `${readThaiInteger(baht)}บาท${satang ? `${readThaiInteger(satang)}สตางค์` : "ถ้วน"}`;
 }
 
-export async function GET(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
-  const userId = getUserIdFromReq(req) || Number(req.nextUrl.searchParams.get("user_id"));
-  if (!userId || !await getQuotationActor(userId)) return NextResponse.json({ error: "Not authenticated" }, { status: 401 });
+export async function GET(
+  req: NextRequest,
+  { params }: { params: Promise<{ id: string }> },
+) {
+  const userId =
+    getUserIdFromReq(req) || Number(req.nextUrl.searchParams.get("user_id"));
+  if (!userId || !(await getQuotationActor(userId)))
+    return NextResponse.json({ error: "Not authenticated" }, { status: 401 });
 
   const { id } = await params;
   const quotationId = Number(id);
+  const htmlPreview = req.nextUrl.searchParams.get("format") === "html";
+  const quotationOnly =
+    req.nextUrl.searchParams.get("quotation_only") === "1" || htmlPreview;
   const detail = await getQuotationDetail(quotationId);
-  if (!detail) return NextResponse.json({ error: "ไม่พบใบเสนอราคา" }, { status: 404 });
+  if (!detail)
+    return NextResponse.json({ error: "ไม่พบใบเสนอราคา" }, { status: 404 });
 
   const db = await getDb();
-  if (detail.status === "approved") {
-    const artifact = await db.request().input("id", sql.Int, quotationId).query(`SELECT TOP 1 pdf_data FROM quotation_document_artifacts WHERE quotation_id=@id AND document_type='approved_bundle'`);
+  if (detail.status === "approved" && !quotationOnly) {
+    const artifact = await db
+      .request()
+      .input("id", sql.Int, quotationId)
+      .query(
+        `SELECT TOP 1 pdf_data FROM quotation_document_artifacts WHERE quotation_id=@id AND document_type='approved_bundle'`,
+      );
     if (artifact.recordset[0]?.pdf_data) {
-      const disposition = req.nextUrl.searchParams.get("download") === "1" ? "attachment" : "inline";
-      return new NextResponse(Buffer.from(artifact.recordset[0].pdf_data), { headers: { "Content-Type": "application/pdf", "Content-Disposition": `${disposition}; filename="${detail.doc_no}.pdf"`, "X-Quotation-Document-Pages": "17" } });
+      const disposition =
+        req.nextUrl.searchParams.get("download") === "1"
+          ? "attachment"
+          : "inline";
+      return new NextResponse(Buffer.from(artifact.recordset[0].pdf_data), {
+        headers: {
+          "Content-Type": "application/pdf",
+          "Content-Disposition": `${disposition}; filename="${detail.doc_no}.pdf"`,
+          "X-Quotation-Document-Pages": "17",
+        },
+      });
     }
   }
 
   let snapshot: QuotationDocumentSnapshot | null = null;
-  if (detail.document_snapshot_json && ["pending_approval", "approved"].includes(detail.status)) {
-    try { snapshot = JSON.parse(detail.document_snapshot_json) as QuotationDocumentSnapshot; } catch { /* regenerate below */ }
+  if (
+    detail.document_snapshot_json &&
+    ["pending_approval", "approved"].includes(detail.status)
+  ) {
+    try {
+      snapshot = JSON.parse(
+        detail.document_snapshot_json,
+      ) as QuotationDocumentSnapshot;
+    } catch {
+      /* regenerate below */
+    }
   }
   if (!snapshot) snapshot = await buildQuotationDocumentSnapshot(quotationId);
-  if (!snapshot) return NextResponse.json({ error: "สร้างข้อมูลเอกสารไม่สำเร็จ" }, { status: 500 });
+  if (!snapshot)
+    return NextResponse.json(
+      { error: "สร้างข้อมูลเอกสารไม่สำเร็จ" },
+      { status: 500 },
+    );
   const q = {
     ...detail,
     ...snapshot.quotation,
@@ -89,7 +158,8 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
     installation_address: snapshot.lead.installation_address,
     id_card_address: snapshot.lead.id_card_address,
     id_card_number: snapshot.lead.id_card_number,
-    project_name: snapshot.quotation.project_display_name || snapshot.lead.project_name,
+    project_name:
+      snapshot.quotation.project_display_name || snapshot.lead.project_name,
     status: detail.status,
     approved_at: detail.approved_at,
     approver_name_snapshot: detail.approver_name_snapshot,
@@ -97,24 +167,52 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
   };
 
   const items = snapshot.items;
-  const packageItems = items.filter(item => item.source_type === "package");
+  const packageItems = items.filter((item) => item.source_type === "package");
   const detailItems = packageItems.filter((_, index) => index > 0);
-  const addOns = items.filter(item => item.source_type !== "package");
+  const addOns = items.filter((item) => item.source_type !== "package");
   let terms: Array<{ label?: string; percent?: number; due?: string }> = [];
-  try { terms = JSON.parse(q.payment_terms_json || "[]"); } catch { /* keep empty */ }
+  try {
+    terms = JSON.parse(q.payment_terms_json || "[]");
+  } catch {
+    /* keep empty */
+  }
 
   const settings = snapshot.settings;
-  const bankName = settings.bank_account_bank === "TMBThanachart Bank" ? "ทหารไทยธนชาต" : settings.bank_account_bank || "ทหารไทยธนชาต";
-  const bankAccountName = settings.bank_account_name === "SENA SOLAR ENERGY CO., LTD." ? "บริษัท เสนา โซลาร์ เอนเนอร์ยี่ จำกัด" : settings.bank_account_name || "บริษัท เสนา โซลาร์ เอนเนอร์ยี่ จำกัด";
+  const bankName =
+    settings.bank_account_bank === "TMBThanachart Bank"
+      ? "ทหารไทยธนชาต"
+      : settings.bank_account_bank || "ทหารไทยธนชาต";
+  const bankAccountName =
+    settings.bank_account_name === "SENA SOLAR ENERGY CO., LTD."
+      ? "บริษัท เสนา โซลาร์ เอนเนอร์ยี่ จำกัด"
+      : settings.bank_account_name || "บริษัท เสนา โซลาร์ เอนเนอร์ยี่ จำกัด";
   const bankAccountNumber = settings.bank_account_number || "667-2-03155-3";
-  const bankBranch = settings.bank_account_branch === "Esplanade Ratchada" ? "ดิ เอสพลานาด รัชดาภิเษก" : settings.bank_account_branch || "ดิ เอสพลานาด รัชดาภิเษก";
-  const creatorSignature = signatureDataUrl(q.created_by_signature_data, q.created_by_signature_mime);
-  const approverSignature = signatureDataUrl(q.approver_signature_data_snapshot, q.approver_signature_mime_snapshot);
-  const watermark = q.status === "approved" ? "" : q.status === "pending_approval" ? "รออนุมัติ" : "DRAFT";
+  const bankBranch =
+    settings.bank_account_branch === "Esplanade Ratchada"
+      ? "ดิ เอสพลานาด รัชดาภิเษก"
+      : settings.bank_account_branch || "ดิ เอสพลานาด รัชดาภิเษก";
+  const creatorSignature = signatureDataUrl(
+    q.created_by_signature_data,
+    q.created_by_signature_mime,
+  );
+  const approverSignature = signatureDataUrl(
+    q.approver_signature_data_snapshot,
+    q.approver_signature_mime_snapshot,
+  );
+  const watermark =
+    q.status === "approved"
+      ? ""
+      : q.status === "pending_approval"
+        ? "รออนุมัติ"
+        : "DRAFT";
   const reportLead = {
     ...snapshot.lead,
-    project_alias: snapshot.quotation.project_display_name || snapshot.lead.project_alias,
-    surveyor: snapshot.lead.survey_actual_by || snapshot.lead.survey_completed_by_name || snapshot.lead.assigned_name,
+    project_alias:
+      snapshot.quotation.project_display_name || snapshot.lead.project_alias,
+    surveyor:
+      snapshot.lead.survey_actual_by ||
+      snapshot.lead.survey_completed_by_name ||
+      snapshot.lead.assigned_name,
     quotation_doc_no: q.doc_no,
   };
   const reportPackage = {
@@ -122,20 +220,27 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
     name: q.package_name_snapshot || snapshot.package.name,
     price: q.package_price_snapshot || snapshot.package.price,
   };
-  const surveyHtml = buildSurveyReportHtml(reportLead, snapshot.lead_data || {}, reportPackage, {
-    quotationAttached: true,
-    watermark,
-    quotation: {
-      docNo: String(q.doc_no || ""),
-      grossAmount: Number(q.subtotal_incl_vat || 0),
-      discountAmount: Number(q.discount_amount || 0),
-      discountLabel: String(q.discount_label || "ส่วนลด"),
-      contractAmount: Number(q.contract_total_incl_vat || q.subtotal_incl_vat || 0),
-      depositAmount: Number(q.deposit_paid_amount || 0),
-      netAmount: Number(q.outstanding_amount || 0),
+  const surveyHtml = buildSurveyReportHtml(
+    reportLead,
+    snapshot.lead_data || {},
+    reportPackage,
+    {
+      quotationAttached: true,
+      watermark,
+      quotation: {
+        docNo: String(q.doc_no || ""),
+        grossAmount: Number(q.subtotal_incl_vat || 0),
+        discountAmount: Number(q.discount_amount || 0),
+        discountLabel: String(q.discount_label || "ส่วนลด"),
+        contractAmount: Number(
+          q.contract_total_incl_vat || q.subtotal_incl_vat || 0,
+        ),
+        depositAmount: Number(q.deposit_paid_amount || 0),
+        netAmount: Number(q.outstanding_amount || 0),
+      },
+      financial: snapshot.financial,
     },
-    financial: snapshot.financial,
-  });
+  );
   const contactPhone = q.created_by_phone || "0-2541-4642";
   const contactEmail = q.created_by_email || "ekkawitp@senasolarenergy.com";
   const quotationHeader = `
@@ -152,15 +257,26 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
   const packageTitle = `งานจ้างเหมาติดตั้งระบบผลิตไฟฟ้าจากพลังงานแสงอาทิตย์บนหลังคา ${q.package_name_snapshot || ""}`;
   const itemRows = [
     `<tr><td class="center">1</td><td>${esc(packageTitle)} 1 ชุด</td><td class="right">${money(q.package_price_snapshot)}</td></tr>`,
-    ...detailItems.map(item => `<tr><td></td><td>- ${esc(item.item_name_snapshot)} ${esc(item.quantity)} ${esc(item.unit)}</td><td></td></tr>`),
-    ...addOns.map((item, index) => `<tr><td class="center">${index + 2}</td><td>${esc(item.item_name_snapshot)} ${esc(item.quantity)} ${esc(item.unit)} <span class="muted">(ตัวเลือกเพิ่มเติม)</span></td><td class="right">${money(item.line_total)}</td></tr>`),
+    ...detailItems.map(
+      (item) =>
+        `<tr><td></td><td>- ${esc(item.item_name_snapshot)} ${esc(item.quantity)} ${esc(item.unit)}</td><td></td></tr>`,
+    ),
+    ...addOns.map(
+      (item, index) =>
+        `<tr><td class="center">${index + 2}</td><td>${esc(item.item_name_snapshot)} ${esc(item.quantity)} ${esc(item.unit)} <span class="muted">(ตัวเลือกเพิ่มเติม)</span></td><td class="right">${money(item.line_total)}</td></tr>`,
+    ),
   ];
-  while (itemRows.length < 9) itemRows.push("<tr class=\"empty-row\"><td>&nbsp;</td><td></td><td></td></tr>");
+  while (itemRows.length < 9)
+    itemRows.push(
+      '<tr class="empty-row"><td>&nbsp;</td><td></td><td></td></tr>',
+    );
 
-  const paymentRows = terms.map(term => {
-    const percent = Number(term.percent || 0);
-    return `<tr><td>${esc(term.label)}</td><td class="center">${percent}%</td><td>${esc(term.due)}</td><td class="center">เป็นจำนวนเงิน</td><td class="right">${money(Number(q.outstanding_amount) * percent / 100)}</td></tr>`;
-  }).join("");
+  const paymentRows = terms
+    .map((term) => {
+      const percent = Number(term.percent || 0);
+      return `<tr><td>${esc(term.label)}</td><td class="center">${percent}%</td><td>${esc(term.due)}</td><td class="center">เป็นจำนวนเงิน</td><td class="right">${money((Number(q.outstanding_amount) * percent) / 100)}</td></tr>`;
+    })
+    .join("");
 
   const standardTermsPage1 = `
     <div class="legal"><b><u>1. รายละเอียดการรับประกันสินค้า</u></b>
@@ -189,7 +305,13 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
       ${q.terms_text ? `<p>4.4) ${esc(q.terms_text)}</p>` : ""}
     </div>`;
 
-  const sigCell = (role: string, name = "", signature = "", date: unknown = "") => `<div class="sig-cell">${signature ? `<img src="${signature}" alt="ลายเซ็น">` : `<div class="sig-space"></div>`}<div>ลงชื่อ ............................................................. ${role}</div><div>( ${name ? esc(name) : "............................................................."} )</div><div>วันที่ ${date ? thaiDate(date) : "................... / ................... / ..................."}</div></div>`;
+  const sigCell = (
+    role: string,
+    name = "",
+    signature = "",
+    date: unknown = "",
+  ) =>
+    `<div class="sig-cell">${signature ? `<img src="${signature}" alt="ลายเซ็น">` : `<div class="sig-space"></div>`}<div>ลงชื่อ ............................................................. ${role}</div><div>( ${name ? esc(name) : "............................................................."} )</div><div>วันที่ ${date ? thaiDate(date) : "................... / ................... / ..................."}</div></div>`;
 
   const html = `<!doctype html><html lang="th"><head><meta charset="utf-8"><style>
     @page{size:Letter;margin:0}*{box-sizing:border-box}html,body{margin:0;padding:0;color:#172126;font-family:"Cordia New",Tahoma,"Noto Sans Thai",Arial,sans-serif;font-size:11pt;line-height:1.15}.page{position:relative;width:215.9mm;height:279.4mm;padding:13mm 16mm 7mm;overflow:hidden;page-break-after:always}.page:last-child{page-break-after:auto}.header{display:grid;grid-template-columns:46mm 1fr 50mm;gap:5mm;align-items:start;min-height:20mm}.brand img{display:block;width:43mm;height:17mm;object-fit:contain;object-position:left center}.company{padding-top:1mm;font-size:11pt;line-height:1.25;color:#273238}.quotation-title>div{border:1px solid #00a99d;border-radius:4px;padding:2px;text-align:center;font-size:18pt;font-weight:bold}.quotation-title table{width:100%;margin-top:2px;border-collapse:collapse;font-size:11pt}.quotation-title td{height:4.3mm;border:.75px solid #667078;padding:0 3px}.quotation-title td:first-child{width:25mm}.customer-grid{display:grid;grid-template-columns:1fr 1fr;gap:12mm;align-items:start;margin:5mm 0 3.5mm}.customer-grid table{width:100%;height:auto;align-self:start;border-collapse:collapse}.customer-grid tr{height:auto}.customer-grid th,.customer-grid td{padding:.5px 2px;text-align:left;vertical-align:top;line-height:1.18}.customer-grid th{width:25mm;white-space:nowrap;color:#253138}.customer-grid .email{color:#0073c7;text-decoration:underline}.customer-grid .valid th,.customer-grid .valid td{border:.75px solid #667078;background:#f8fbfb}.customer-grid .valid th{width:22%;text-align:center}.customer-grid .valid-days{width:11%;text-align:center;font-weight:bold}.customer-grid .valid-copy{width:67%;white-space:nowrap}.quote-table,.payment-table,.summary{width:100%;border-collapse:collapse}.quote-table th,.quote-table td,.payment-table th,.payment-table td,.summary td{border:.65px solid #778188;padding:.5px 3px}.quote-table th{height:5.2mm;border-top:1.2px solid #169d94;background:#eef6f5;text-align:center;font-size:12pt}.quote-table tbody tr{height:5mm}.quote-table tbody tr:nth-child(even):not(.empty-row){background:#fbfcfc}.quote-table .empty-row{height:4.4mm}.center{text-align:center}.right{text-align:right;white-space:nowrap}.muted{color:#667078;font-size:11pt}.payment-title{border:.65px solid #778188;border-bottom:0;background:#eef6f5;padding:0;text-align:center;font-size:12pt;font-weight:bold;color:#185f5b}.payment-table tr{height:4.6mm}.payment-table td:nth-child(1){width:25mm}.payment-table td:nth-child(2){width:13mm}.payment-table td:nth-child(4){width:31mm}.payment-table td:nth-child(5){width:28mm}.payment-bank-row{display:grid;grid-template-columns:1fr 25mm;border:.65px solid #778188;border-top:0;min-height:19mm;padding:2px 5mm 2px 7mm}.bank-copy{line-height:1.22}.qr{display:flex;align-items:center;justify-content:center}.qr img{width:18mm;height:18mm;object-fit:contain}.summary{width:96mm;margin-left:auto;table-layout:fixed}.summary td{height:4.5mm}.summary td:first-child{text-align:right}.summary td:last-child{width:32.5mm;text-align:right}.summary .strong td{background:#f7f9f9;font-weight:bold}.summary .grand td{background:#cfe9f4;font-size:12pt;font-weight:bold;color:#15343e}.amount-words{float:left;width:84mm;text-align:center;padding:7mm 3mm 0;font-weight:bold;line-height:1.25}.financials{border:.65px solid #778188;border-top:0;min-height:34mm;padding-top:1px}.financials:after{content:"";display:block;clear:both}.legal{clear:both;margin-top:3mm;font-size:11pt;line-height:1.18}.legal b{display:block;margin-top:1.5mm;border-bottom:.7px solid #66beb8;padding-bottom:.3mm;font-size:12pt;color:#176e69}.legal p{margin:.7mm 0 .7mm 12mm;text-indent:-4mm}.page-two-terms{margin-top:6mm;font-size:11pt}.page-two-terms p{margin:1.8mm 0 1.8mm 12mm}.signatures{display:grid;grid-template-columns:1fr 1fr;column-gap:20mm;row-gap:9mm;margin:13mm 8mm 0}.sig-cell{text-align:center;min-height:28mm;line-height:1.35}.sig-cell img{display:block;width:38mm;height:10mm;object-fit:contain;margin:0 auto -1mm}.sig-space{height:9mm}.watermark{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;transform:rotate(-25deg);font-size:48pt;font-weight:bold;color:rgba(222,51,74,.14);pointer-events:none}.footer{position:absolute;bottom:3mm;left:16mm;right:16mm;text-align:center;color:#7a858b;font-size:10pt}.quote-table .payment-spacer{height:8mm}.quote-table .payment-spacer td{background:#fff}.quote-table .payment-shell{height:auto;background:#fff}.quote-table .payment-cell{height:auto;padding:0;border-right:.65px solid #778188;background:#fff;vertical-align:top}.quote-table .payment-side{height:auto;background:#fff}.quote-table .payment-cell .payment-title{border:0;border-bottom:.65px solid #778188}.quote-table .payment-cell .payment-table td{height:4.6mm;border-width:0 .65px .65px 0;border-color:#778188;padding:.5px 3px;background:#fff}.quote-table .payment-cell .payment-table td:last-child{border-right:0}.quote-table .payment-cell .payment-bank-row{grid-template-columns:minmax(0,76mm) 24mm;justify-content:center;align-items:center;column-gap:10mm;border:0;min-height:25mm;padding:3mm 6mm}.quote-table .payment-cell .bank-copy{max-width:76mm}.quote-table .payment-cell .qr img{width:22mm;height:20mm}
@@ -223,42 +345,113 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
     </section>
   </body></html>`;
 
+  if (htmlPreview) {
+    return new NextResponse(html, {
+      headers: {
+        "Content-Type": "text/html; charset=utf-8",
+        "Cache-Control": "no-store",
+      },
+    });
+  }
+
   let browser: Awaited<ReturnType<typeof puppeteer.launch>> | null = null;
   try {
     browser = await puppeteer.launch({
       headless: true,
       executablePath: process.env.PUPPETEER_EXECUTABLE_PATH || undefined,
-      args: ["--no-sandbox", "--disable-setuid-sandbox", "--disable-dev-shm-usage"],
+      args: [
+        "--no-sandbox",
+        "--disable-setuid-sandbox",
+        "--disable-dev-shm-usage",
+      ],
       env: { ...process.env, TZ: "Asia/Bangkok" },
     });
     const page = await browser.newPage();
     await page.emulateTimezone("Asia/Bangkok");
-    await page.setContent(surveyHtml, { waitUntil: "domcontentloaded", timeout: 30_000 });
-    await page.evaluate(() => document.fonts.ready);
-    const surveyBytes = await page.pdf({ format: "A4", printBackground: true, margin: { top: "0", right: "0", bottom: "0", left: "0" } });
-    const surveyPdf = await PDFDocument.load(surveyBytes);
-    if (surveyPdf.getPageCount() !== 15) throw new Error(`จำนวนหน้ารายงานสำรวจไม่ถูกต้อง: ${surveyPdf.getPageCount()}/15 หน้า`);
+    let surveyPdf: PDFDocument | null = null;
+    if (!quotationOnly) {
+      await page.setContent(surveyHtml, {
+        waitUntil: "domcontentloaded",
+        timeout: 30_000,
+      });
+      await page.evaluate(() => document.fonts.ready);
+      const surveyBytes = await page.pdf({
+        format: "A4",
+        printBackground: true,
+        margin: { top: "0", right: "0", bottom: "0", left: "0" },
+      });
+      surveyPdf = await PDFDocument.load(surveyBytes);
+      if (surveyPdf.getPageCount() !== 15)
+        throw new Error(
+          `จำนวนหน้ารายงานสำรวจไม่ถูกต้อง: ${surveyPdf.getPageCount()}/15 หน้า`,
+        );
+    }
 
-    await page.setContent(html, { waitUntil: "domcontentloaded", timeout: 30_000 });
+    await page.setContent(html, {
+      waitUntil: "domcontentloaded",
+      timeout: 30_000,
+    });
     await page.evaluate(() => document.fonts.ready);
-    const quotationBytes = await page.pdf({ preferCSSPageSize: true, printBackground: true, margin: { top: "0", right: "0", bottom: "0", left: "0" } });
+    const quotationBytes = await page.pdf({
+      preferCSSPageSize: true,
+      printBackground: true,
+      margin: { top: "0", right: "0", bottom: "0", left: "0" },
+    });
     const quotationPdf = await PDFDocument.load(quotationBytes);
-    if (quotationPdf.getPageCount() !== 2) throw new Error(`จำนวนหน้าใบเสนอราคาไม่ถูกต้อง: ${quotationPdf.getPageCount()}/2 หน้า`);
+    if (quotationPdf.getPageCount() !== 2)
+      throw new Error(
+        `จำนวนหน้าใบเสนอราคาไม่ถูกต้อง: ${quotationPdf.getPageCount()}/2 หน้า`,
+      );
+    if (quotationOnly) {
+      return new NextResponse(Buffer.from(quotationBytes), {
+        headers: {
+          "Content-Type": "application/pdf",
+          "Content-Disposition": `inline; filename="${q.doc_no}-quotation.pdf"`,
+          "X-Quotation-Document-Pages": "2",
+        },
+      });
+    }
 
     const mergedPdf = await PDFDocument.create();
-    const surveyPages = await mergedPdf.copyPages(surveyPdf, surveyPdf.getPageIndices());
-    const quotationPages = await mergedPdf.copyPages(quotationPdf, quotationPdf.getPageIndices());
-    [...surveyPages, ...quotationPages].forEach(pdfPage => mergedPdf.addPage(pdfPage));
+    const surveyPages = await mergedPdf.copyPages(
+      surveyPdf!,
+      surveyPdf!.getPageIndices(),
+    );
+    const quotationPages = await mergedPdf.copyPages(
+      quotationPdf,
+      quotationPdf.getPageIndices(),
+    );
+    [...surveyPages, ...quotationPages].forEach((pdfPage) =>
+      mergedPdf.addPage(pdfPage),
+    );
     const bytes = await mergedPdf.save();
     const pageCount = mergedPdf.getPageCount();
-    if (pageCount !== 17) throw new Error(`จำนวนหน้าเอกสารไม่ถูกต้อง: ${pageCount}/17 หน้า`);
+    if (pageCount !== 17)
+      throw new Error(`จำนวนหน้าเอกสารไม่ถูกต้อง: ${pageCount}/17 หน้า`);
     if (detail.status === "approved") {
       const buffer = Buffer.from(bytes);
       const hash = createHash("sha256").update(buffer).digest("hex");
-      await db.request().input("id",sql.Int,quotationId).input("data",sql.VarBinary(sql.MAX),buffer).input("hash",sql.Char(64),hash).input("pages",sql.Int,pageCount).query(`IF NOT EXISTS (SELECT 1 FROM quotation_document_artifacts WHERE quotation_id=@id AND document_type='approved_bundle') INSERT quotation_document_artifacts(quotation_id,document_type,pdf_data,file_hash,page_count) VALUES(@id,'approved_bundle',@data,@hash,@pages)`);
+      await db
+        .request()
+        .input("id", sql.Int, quotationId)
+        .input("data", sql.VarBinary(sql.MAX), buffer)
+        .input("hash", sql.Char(64), hash)
+        .input("pages", sql.Int, pageCount)
+        .query(
+          `IF NOT EXISTS (SELECT 1 FROM quotation_document_artifacts WHERE quotation_id=@id AND document_type='approved_bundle') INSERT quotation_document_artifacts(quotation_id,document_type,pdf_data,file_hash,page_count) VALUES(@id,'approved_bundle',@data,@hash,@pages)`,
+        );
     }
-    const disposition = req.nextUrl.searchParams.get("download") === "1" ? "attachment" : "inline";
-    return new NextResponse(Buffer.from(bytes), { headers: { "Content-Type": "application/pdf", "Content-Disposition": `${disposition}; filename="${q.doc_no}.pdf"`, "X-Quotation-Document-Pages": String(pageCount) } });
+    const disposition =
+      req.nextUrl.searchParams.get("download") === "1"
+        ? "attachment"
+        : "inline";
+    return new NextResponse(Buffer.from(bytes), {
+      headers: {
+        "Content-Type": "application/pdf",
+        "Content-Disposition": `${disposition}; filename="${q.doc_no}.pdf"`,
+        "X-Quotation-Document-Pages": String(pageCount),
+      },
+    });
   } catch (error) {
     console.error("quotation pdf", error);
     return NextResponse.json({ error: "สร้าง PDF ไม่สำเร็จ" }, { status: 500 });

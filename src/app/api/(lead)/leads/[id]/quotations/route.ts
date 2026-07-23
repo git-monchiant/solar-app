@@ -55,6 +55,11 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
     let paymentTerms = Array.isArray(body.payment_terms) ? body.payment_terms : null;
     if (!paymentTerms && templateId) { const t = await new sql.Request(tx).input("tid", sql.Int, templateId).query(`SELECT terms_json FROM quotation_payment_templates WHERE id=@tid AND is_active=1`); if (t.recordset[0]) paymentTerms = JSON.parse(t.recordset[0].terms_json); }
     if (!paymentTerms) paymentTerms = [{ label: "งวดที่ 1 ชำระ", percent: 20, due: "ภายใน 7 วัน นับจากวันที่ในใบเสนอราคา" }, { label: "งวดที่ 2 ชำระ", percent: 80, due: "ภายใน 3 วัน หลังติดตั้งแล้วเสร็จ" }];
+    paymentTerms = paymentTerms.slice(0, 4);
+    const paymentPercentTotal = paymentTerms.reduce((total: number, term: { percent?: unknown }) => total + Number(term.percent), 0);
+    if (!paymentTerms.every((term: { percent?: unknown }) => Number.isFinite(Number(term.percent)) && Number(term.percent) >= 0 && Number(term.percent) <= 100) || paymentPercentTotal > 100) {
+      await tx.rollback(); return NextResponse.json({ error: "ยอดเปอร์เซ็นต์เงื่อนไขชำระเงินรวมกันต้องไม่เกิน 100%" }, { status: 400 });
+    }
     const discountType = body.discount_type === "percent" ? "percent" : "amount";
     const confirmedDeposit = Math.max(0, Number(lead.recordset[0].confirmed_deposit) || 0);
     const depositPaid = Math.max(confirmedDeposit, Number(body.deposit_paid_amount) || 0);
