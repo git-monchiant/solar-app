@@ -372,54 +372,94 @@ export async function POST(
           WHERE id = @id
         `);
       activityTitle = `${reviewer} ส่งใบเสนอราคา ${quotation.doc_no} กลับให้ Sale แก้ไข`;
-    } else if (action === "mark_sent") {
+    } else if (action === "handoff_to_sales") {
       if (quotation.status !== "approved") {
         await tx.rollback();
         return NextResponse.json(
-          { error: "ส่งลูกค้าได้เฉพาะใบที่อนุมัติแล้ว" },
+          { error: "ส่งให้ทีมขายได้เฉพาะใบเสนอราคาที่อนุมัติแล้ว" },
           { status: 409 },
         );
       }
       if (!isAdmin && !isLeadOwner) {
         await tx.rollback();
         return NextResponse.json(
-          { error: "ส่งได้เฉพาะ Sales เจ้าของ Lead หรือ Admin" },
+          { error: "ส่งให้ทีมขายได้เฉพาะ Sales เจ้าของ Lead หรือ Admin" },
           { status: 403 },
         );
       }
 
-      next = "approved";
-      await new sql.Request(tx)
-        .input("id", sql.Int, quotationId)
-        .input("uid", sql.Int, gate.userId)
+      const latestStatuses = await new sql.Request(tx)
+        .input("lead_id", sql.Int, quotation.lead_id)
         .query(`
-          UPDATE quotations SET
-            sent_to_customer_by = @uid,
-            sent_to_customer_at = GETDATE(),
-            updated_by = @uid,
-            updated_at = GETDATE()
-          WHERE id = @id
+          WITH ranked AS (
+            SELECT option_no, status,
+              ROW_NUMBER() OVER (
+                PARTITION BY option_no
+                ORDER BY revision_no DESC, id DESC
+              ) AS row_no
+            FROM quotations
+            WHERE lead_id = @lead_id
+          )
+          SELECT option_no, status
+          FROM ranked
+          WHERE row_no = 1 AND status <> 'cancelled'
+          ORDER BY option_no
         `);
+      const currentStatuses = latestStatuses.recordset as Array<{
+        option_no: number;
+        status: string;
+      }>;
+      const approvedCount = currentStatuses.filter(
+        (current) => current.status === "approved",
+      ).length;
+      if (
+        currentStatuses.length === 0 ||
+        approvedCount !== currentStatuses.length
+      ) {
+        await tx.rollback();
+        return NextResponse.json(
+          {
+            error: `ต้องอนุมัติใบเสนอราคาที่สร้างไว้ให้ครบทุกฉบับก่อนส่งให้ทีมขาย (อนุมัติแล้ว ${approvedCount}/${currentStatuses.length} ฉบับ)`,
+          },
+          { status: 409 },
+        );
+      }
+
+      next = "approved";
       const approved = await new sql.Request(tx)
         .input("lead_id", sql.Int, quotation.lead_id)
         .query(`
-          SELECT id, doc_no, contract_total_incl_vat
-          FROM quotations
-          WHERE lead_id = @lead_id AND status = 'approved'
+          WITH ranked AS (
+            SELECT id, option_no, doc_no, subtotal_incl_vat,
+                   contract_total_incl_vat, discount_label, discount_type,
+                   discount_value, discount_amount, status,
+              ROW_NUMBER() OVER (
+                PARTITION BY option_no
+                ORDER BY revision_no DESC, id DESC
+              ) AS row_no
+            FROM quotations
+            WHERE lead_id = @lead_id
+          )
+          SELECT id, doc_no, subtotal_incl_vat, contract_total_incl_vat,
+                 discount_label, discount_type, discount_value, discount_amount
+          FROM ranked
+          WHERE row_no = 1 AND status = 'approved'
           ORDER BY option_no
         `);
       const approvedRows = approved.recordset as Array<{
         id: number;
         doc_no: string;
+        subtotal_incl_vat: number;
         contract_total_incl_vat: number;
+        discount_label: string | null;
+        discount_type: string;
+        discount_value: number;
+        discount_amount: number;
       }>;
-      const selectedIdx = approvedRows.findIndex(
-        (row) => row.id === quotationId,
-      );
-      if (selectedIdx < 0) {
+      if (!approvedRows.some((row) => row.id === quotationId)) {
         await tx.rollback();
         return NextResponse.json(
-          { error: "ไม่พบใบเสนอราคาที่เลือกในรายการที่อนุมัติแล้ว" },
+          { error: "ไม่พบใบเสนอราคา Revision ล่าสุดในรายการที่อนุมัติแล้ว" },
           { status: 409 },
         );
       }
@@ -427,37 +467,47 @@ export async function POST(
         (row: {
           id: number;
           doc_no: string;
+          subtotal_incl_vat: number;
           contract_total_incl_vat: number;
+          discount_label: string | null;
+          discount_type: string;
+          discount_value: number;
+          discount_amount: number;
         }) => ({
           url: `/api/quotation-pdf/${row.id}/${encodeURIComponent(`${row.doc_no}.pdf`)}?user_id=${gate.userId}`,
           doc_no: row.doc_no,
           amount: Number(row.contract_total_incl_vat),
+          subtotal:
+            Number(row.subtotal_incl_vat) || Number(row.contract_total_incl_vat),
+          discount_label: row.discount_label || "",
+          discount_type: row.discount_type === "percent" ? "percent" : "amount",
+          discount_value: Number(row.discount_value) || 0,
+          discount_amount: Number(row.discount_amount) || 0,
         }),
       );
-      const selected = options[selectedIdx];
       await new sql.Request(tx)
         .input("lead_id", sql.Int, quotation.lead_id)
         .input("files", sql.NVarChar(sql.MAX), JSON.stringify(options))
-        .input("accepted", sql.Int, selectedIdx)
-        .input("amount", sql.Decimal(12, 2), selected.amount)
-        .input("doc", sql.NVarChar(30), selected.doc_no)
         .input("by", sql.NVarChar(200), actor.full_name)
         .input("uid", sql.Int, gate.userId)
         .query(`
           UPDATE leads SET
             status = 'order',
             quotation_files = @files,
-            quotation_accepted_idx = @accepted,
-            quotation_amount = @amount,
-            quotation_doc_no = @doc,
-            order_total = @amount,
+            quotation_accepted_idx = NULL,
+            quotation_amount = NULL,
+            quotation_doc_no = NULL,
+            order_total = NULL,
+            order_discount_note = NULL,
+            order_discount_pct = NULL,
+            order_discount_amount = NULL,
             quotation_by = @by,
             quotation_sent_date = CAST(GETDATE() AS DATE),
             quote_sent_by = @uid,
             updated_at = GETDATE()
           WHERE id = @lead_id
         `);
-      activityTitle = `ส่งใบเสนอราคา ${quotation.doc_no} ให้ลูกค้า`;
+      activityTitle = `ส่งใบเสนอราคา ${options.length} ฉบับให้ทีมขายเลือก`;
     } else {
       await tx.rollback();
       return NextResponse.json(

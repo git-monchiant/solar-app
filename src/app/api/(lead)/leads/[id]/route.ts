@@ -543,21 +543,96 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
       sets.push("order_installments = @order_installments");
       request.input("order_installments", sql.NVarChar(sql.MAX), body.order_installments);
     }
+    const quotationPricingTouched =
+      body.order_total !== undefined ||
+      body.order_discount_pct !== undefined ||
+      body.order_discount_amount !== undefined ||
+      body.order_discount_note !== undefined;
+    let lockedQuotationPricing: {
+      total: number;
+      discountPct: number;
+      discountAmount: number;
+      discountNote: string | null;
+    } | null = null;
+    if (quotationPricingTouched) {
+      const quotationState = await db
+        .request()
+        .input("lead_id", sql.Int, leadId)
+        .query(`
+          SELECT quotation_files, quotation_accepted_idx
+          FROM leads
+          WHERE id = @lead_id
+        `);
+      const quotationRow = quotationState.recordset[0];
+      const acceptedIndex =
+        body.quotation_accepted_idx !== undefined &&
+        body.quotation_accepted_idx !== null
+          ? Number(body.quotation_accepted_idx)
+          : quotationRow?.quotation_accepted_idx;
+      try {
+        const quotationOptions = quotationRow?.quotation_files
+          ? JSON.parse(quotationRow.quotation_files)
+          : [];
+        const selected = Array.isArray(quotationOptions)
+          ? quotationOptions[acceptedIndex]
+          : null;
+        if (
+          selected &&
+          Object.prototype.hasOwnProperty.call(selected, "subtotal") &&
+          Number(selected.discount_amount || 0) > 0
+        ) {
+          const total = Math.max(0, Number(selected.subtotal) || 0);
+          const discountAmount = Math.min(
+            total,
+            Math.max(0, Number(selected.discount_amount) || 0),
+          );
+          lockedQuotationPricing = {
+            total,
+            discountPct:
+              total > 0
+                ? Math.round((discountAmount / total) * 10000) / 100
+                : 0,
+            discountAmount,
+            discountNote: selected.discount_label || null,
+          };
+        }
+      } catch {
+        // Legacy quotation_files may be CSV. Those rows remain editable.
+      }
+    }
     if (body.order_total !== undefined) {
       sets.push("order_total = @order_total");
-      request.input("order_total", sql.Decimal(12, 2), body.order_total);
+      request.input(
+        "order_total",
+        sql.Decimal(12, 2),
+        lockedQuotationPricing?.total ?? body.order_total,
+      );
     }
     if (body.order_discount_pct !== undefined) {
       sets.push("order_discount_pct = @order_discount_pct");
-      request.input("order_discount_pct", sql.Decimal(5, 2), body.order_discount_pct);
+      request.input(
+        "order_discount_pct",
+        sql.Decimal(5, 2),
+        lockedQuotationPricing?.discountPct ?? body.order_discount_pct,
+      );
     }
     if (body.order_discount_amount !== undefined) {
       sets.push("order_discount_amount = @order_discount_amount");
-      request.input("order_discount_amount", sql.Decimal(12, 2), body.order_discount_amount);
+      request.input(
+        "order_discount_amount",
+        sql.Decimal(12, 2),
+        lockedQuotationPricing?.discountAmount ?? body.order_discount_amount,
+      );
     }
     if (body.order_discount_note !== undefined) {
       sets.push("order_discount_note = @order_discount_note");
-      request.input("order_discount_note", sql.NVarChar(200), body.order_discount_note);
+      request.input(
+        "order_discount_note",
+        sql.NVarChar(200),
+        lockedQuotationPricing
+          ? lockedQuotationPricing.discountNote
+          : body.order_discount_note,
+      );
     }
     // Enforce sum=100 invariant — order_pct_before + order_pct_after must
     // equal 100 whenever both are touched. If only one side is sent, derive

@@ -76,7 +76,7 @@ function parseInstallments(raw: string | null | undefined, fallbackPctBefore: nu
 }
 
 const SUB_STEPS = [
-  "ส่งลูกค้า",
+  "เลือกใบเสนอราคา",
   ["งวดชำระ", "งวดชำระเงิน"],
   "นัดหมาย",
   "ยืนยัน",
@@ -91,6 +91,7 @@ export default function OrderStep({ lead, state, refresh, expanded, onToggle }: 
   const fileViewer = useFileViewer();
   const { activeRoles } = useActiveRoles();
   const canConfirmChequeMoney = hasRole(activeRoles, "admin", "account");
+  const canSelectQuotation = hasRole(activeRoles, "admin", "sales");
   const [subStep, setSubStep] = useSubStep(`orderSubStep_${lead.id}`, 0, SUB_STEPS.length);
   const [nextError, setNextError] = useState<string | null>(null);
   const [total, setTotal] = useState<number>(lead.order_total || lead.quotation_amount || 0);
@@ -105,42 +106,26 @@ export default function OrderStep({ lead, state, refresh, expanded, onToggle }: 
   }, [lead.quotation_amount, lead.order_total]);
 
   // Quotation options (JSON in lead.quotation_files, or legacy CSV). The
-  // customer picks one in substep 0 — that index lands in
-  // quotation_accepted_idx, and quotation_amount + quotation_doc_no get
-  // synced from the chosen entry. Single-quotation leads auto-accept idx 0.
+  // Sales picks the quotation accepted by the customer in substep 0. That
+  // index lands in quotation_accepted_idx, and quotation_amount +
+  // quotation_doc_no are synced from the chosen entry.
   const quoteOptions = parseQuotationFiles(lead.quotation_files, lead.quotation_doc_no || "", lead.quotation_amount || 0);
   const [pickingQuote, setPickingQuote] = useState(false);
   const acceptedIdx = lead.quotation_accepted_idx;
-  const visibleQuoteOptions =
-    acceptedIdx !== null &&
-    acceptedIdx !== undefined &&
-    quoteOptions[acceptedIdx]
-      ? [{ option: quoteOptions[acceptedIdx], originalIndex: acceptedIdx }]
-      : quoteOptions.map((option, originalIndex) => ({
-          option,
-          originalIndex,
-        }));
-  // Legacy single-quotation leads may not have an accepted index yet. It is
-  // safe to select their only option automatically. Multi-option leads must
-  // never fall back to index 0 because that would overwrite the set chosen
-  // from Step 03.
-  useEffect(() => {
-    if (quoteOptions.length === 1 && (acceptedIdx === null || acceptedIdx === undefined) && !pickingQuote) {
-      const first = quoteOptions[0];
-      setPickingQuote(true);
-      apiFetch(`/api/leads/${lead.id}`, {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          quotation_accepted_idx: 0,
-          quotation_amount: first.amount,
-          quotation_doc_no: first.doc_no || null,
-        }),
-      }).then(() => refresh()).finally(() => setPickingQuote(false));
-    }
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [quoteOptions.length, acceptedIdx]);
-
+  const acceptedQuote =
+    acceptedIdx !== null && acceptedIdx !== undefined
+      ? quoteOptions[acceptedIdx]
+      : undefined;
+  const discountLockedFromQuotation =
+    acceptedQuote?.subtotal !== undefined &&
+    Number(acceptedQuote.discount_amount || 0) > 0;
+  // Keep every approved option visible after selection so Sales can switch
+  // to another quotation if the customer changes their decision. Payment
+  // confirmation still locks the selection via quoteLocked below.
+  const visibleQuoteOptions = quoteOptions.map((option, originalIndex) => ({
+    option,
+    originalIndex,
+  }));
   // Once any installment payment is confirmed by accounting, the accepted
   // quotation is locked — switching the quote would re-base order_total and
   // every downstream amount derived from it, but recorded payments in the
@@ -149,23 +134,22 @@ export default function OrderStep({ lead, state, refresh, expanded, onToggle }: 
   const quoteLocked = (lead.order_paid_count ?? 0) > 0;
   const pickQuote = async (idx: number) => {
     if (pickingQuote) return;
+    if (!canSelectQuotation) return;
     if (quoteLocked) return;
     const opt = quoteOptions[idx];
     if (!opt) return;
     // Clicking the already-accepted quote is a no-op — avoids a needless
     // PATCH round-trip when nothing would change.
     if (idx === acceptedIdx) return;
-    // Recompute the derived order fields so the DB matches the new quote
-    // before any downstream substep submits. Discount: keep the percentage
-    // when one is set (amount scales with total); a flat ฿ discount entered
-    // without a pct is preserved as-is — the user explicitly chose an
-    // absolute figure that survives quote changes. Per-installment amounts
-    // are NOT stored — they're derived from (total − discount) × pct at
-    // render time, so changing order_total alone repoints every installment.
-    const pct = lead.order_discount_pct ?? 0;
-    const newDiscountAmount = pct > 0
-      ? Math.round(opt.amount * pct / 100)
-      : (lead.order_discount_amount ?? 0);
+    // Each quotation carries its own gross total and discount. Reapply that
+    // snapshot when switching options so Step 4 always matches the selected
+    // PDF and never subtracts a Step 3 discount twice.
+    const newTotal = opt.subtotal || opt.amount;
+    const newDiscountAmount = Math.min(newTotal, opt.discount_amount || 0);
+    const newDiscountPct = newTotal > 0
+      ? Math.round((newDiscountAmount / newTotal) * 10000) / 100
+      : 0;
+    const newDiscountNote = opt.discount_label || "";
     // Guard against malformed doc-nos in quotation_files (legacy data where
     // a prior QuoteStep saved options with double `-N-N` suffixes — those
     // fail validateDocNo and 400 the PATCH). Send null in that case; the
@@ -181,12 +165,16 @@ export default function OrderStep({ lead, state, refresh, expanded, onToggle }: 
           quotation_accepted_idx: idx,
           quotation_amount: opt.amount,
           quotation_doc_no: cleanDocNo,
-          order_total: opt.amount,
+          order_total: newTotal,
+          order_discount_pct: newDiscountPct || null,
           order_discount_amount: newDiscountAmount || null,
+          order_discount_note: newDiscountNote || null,
         }),
       });
-      setTotal(opt.amount);
+      setTotal(newTotal);
+      setDiscountPct(newDiscountPct);
       setDiscountAmount(newDiscountAmount);
+      setDiscountNote(newDiscountNote);
       await refresh();
     } finally {
       setPickingQuote(false);
@@ -195,6 +183,19 @@ export default function OrderStep({ lead, state, refresh, expanded, onToggle }: 
   const [discountPct, setDiscountPct] = useState<number>(lead.order_discount_pct ?? 0);
   const [discountAmount, setDiscountAmount] = useState<number>(lead.order_discount_amount ?? 0);
   const [discountNote, setDiscountNote] = useState<string>(lead.order_discount_note ?? "");
+
+  useEffect(() => {
+    setTotal(lead.order_total || lead.quotation_amount || 0);
+    setDiscountPct(lead.order_discount_pct ?? 0);
+    setDiscountAmount(lead.order_discount_amount ?? 0);
+    setDiscountNote(lead.order_discount_note ?? "");
+  }, [
+    lead.order_total,
+    lead.quotation_amount,
+    lead.order_discount_pct,
+    lead.order_discount_amount,
+    lead.order_discount_note,
+  ]);
 
   // Installment plan: array of {pct, when, due_date}. The legacy order_pct_before
   // is the sum of "before-install" rows — kept in sync so PaymentSection (which
@@ -832,9 +833,7 @@ export default function OrderStep({ lead, state, refresh, expanded, onToggle }: 
   const gateCheck = (from: number): string[] => {
     const missing: string[] = [];
     // Substep 0 → 1: must have picked which quotation the customer accepted.
-    // Single-option leads auto-accept (effect above) so this only blocks when
-    // there's actually a choice to make.
-    if (from === 0 && quoteOptions.length > 1 && (acceptedIdx === null || acceptedIdx === undefined)) {
+    if (from === 0 && quoteOptions.length > 0 && (acceptedIdx === null || acceptedIdx === undefined)) {
       missing.push("เลือกใบเสนอราคา");
     }
     if (from === 1 && (!total || total <= 0)) missing.push("ยอดรวม");
@@ -1677,18 +1676,14 @@ export default function OrderStep({ lead, state, refresh, expanded, onToggle }: 
         </div>
       )}
 
-      {/* Step 0: ส่งใบเสนอราคาให้ลูกค้า */}
+      {/* Step 0: Sales selects the quotation accepted by the customer. */}
       {subStep === 0 && (
         <div className="space-y-3">
           {quoteOptions.length > 0 && (
             <div className="rounded-lg bg-orange-50 border border-orange-200 p-3">
               <div className="flex items-center justify-between mb-2 gap-2">
                 <div className="text-xs font-bold text-orange-600 uppercase">
-                  {acceptedIdx !== null && acceptedIdx !== undefined
-                    ? "ใบเสนอราคาที่ลูกค้าเลือก"
-                    : quoteOptions.length === 1
-                      ? "ใบเสนอราคา"
-                      : `เลือกใบเสนอราคาที่ลูกค้ารับ (${quoteOptions.length} ชุด)`}
+                  {`เลือกใบเสนอราคาที่ลูกค้ารับ (${quoteOptions.length} ชุด)`}
                 </div>
                 {quoteLocked && (
                   <div className="inline-flex items-center gap-1 text-xxs font-bold uppercase tracking-wider text-amber-700 bg-amber-100 border border-amber-200 px-2 py-0.5 rounded-full" title={`ชำระแล้ว ${lead.order_paid_count} งวด — เปลี่ยนใบเสนอราคาไม่ได้`}>
@@ -1702,7 +1697,7 @@ export default function OrderStep({ lead, state, refresh, expanded, onToggle }: 
                   const fileName = opt.url.split("?")[0].split("/").pop() || `ไฟล์ ${i + 1}`;
                   const isImage = /\.(jpg|jpeg|png|gif|webp)$/i.test(opt.url);
                   const isAccepted = acceptedIdx === i;
-                  const isSelectable = quoteOptions.length > 1 && !quoteLocked;
+                  const isSelectable = canSelectQuotation && !quoteLocked && !isAccepted;
                   return (
                     <div key={i}
                       onClick={isSelectable ? () => pickQuote(i) : undefined}
@@ -1712,7 +1707,17 @@ export default function OrderStep({ lead, state, refresh, expanded, onToggle }: 
                         <div className="text-xxs font-bold uppercase tracking-wider text-gray-500">ชุด {i + 1}</div>
                         {isAccepted && <div className="text-xxs font-bold text-emerald-700 bg-emerald-100 px-2 py-0.5 rounded-full">เลือกแล้ว</div>}
                       </div>
-                      <a href={opt.url} onClick={fileViewer.handler(opt.url, `ใบเสนอราคา ชุด ${i + 1}`)} className="flex items-center gap-2 px-2 py-1.5 rounded bg-orange-50 border border-orange-100 hover:bg-orange-100 transition-colors">
+                      <a
+                        href={opt.url}
+                        onClick={(event) => {
+                          event.stopPropagation();
+                          fileViewer.handler(
+                            opt.url,
+                            `ใบเสนอราคา ชุด ${i + 1}`,
+                          )(event);
+                        }}
+                        className="flex items-center gap-2 px-2 py-1.5 rounded bg-orange-50 border border-orange-100 hover:bg-orange-100 transition-colors"
+                      >
                         <svg className="w-4 h-4 text-orange-400 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
                           <path strokeLinecap="round" strokeLinejoin="round" d={isImage ? "M2.25 15.75l5.159-5.159a2.25 2.25 0 013.182 0l5.159 5.159m-1.5-1.5l1.409-1.41a2.25 2.25 0 013.182 0l2.909 2.91M3.75 21h16.5a2.25 2.25 0 002.25-2.25V5.25A2.25 2.25 0 0020.25 3H3.75A2.25 2.25 0 001.5 5.25v13.5A2.25 2.25 0 003.75 21z" : "M19.5 14.25v-2.625a3.375 3.375 0 00-3.375-3.375h-1.5A1.125 1.125 0 0113.5 7.125v-1.5a3.375 3.375 0 00-3.375-3.375H8.25m2.25 0H5.625c-.621 0-1.125.504-1.125 1.125v17.25c0 .621.504 1.125 1.125 1.125h12.75c.621 0 1.125-.504 1.125-1.125V11.25a9 9 0 00-9-9z"} />
                         </svg>
@@ -1729,16 +1734,25 @@ export default function OrderStep({ lead, state, refresh, expanded, onToggle }: 
           )}
 
           <div className="rounded-lg bg-white border border-gray-200 p-3 space-y-2">
-            <div className="text-xs font-bold text-gray-500 uppercase tracking-wider">ส่วนลด</div>
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <div className="text-xs font-bold text-gray-500 uppercase tracking-wider">ส่วนลด</div>
+              {discountLockedFromQuotation && (
+                <div className="inline-flex items-center gap-1 rounded-full bg-gray-100 px-2 py-1 text-xxs font-semibold text-gray-500">
+                  <span aria-hidden="true">🔒</span>
+                  ข้อมูลจากใบเสนอราคาที่อนุมัติแล้ว
+                </div>
+              )}
+            </div>
             <div className="grid grid-cols-4 gap-2">
               <label className="col-span-2 min-w-0">
                 <span className="text-xxs text-gray-500">Discount Text</span>
                 <input
                   type="text" maxLength={200}
                   value={discountNote}
+                  disabled={discountLockedFromQuotation}
                   onChange={(e) => setDiscountNote(e.target.value)}
                   placeholder="เช่น โปรโมชัน, ส่วนลดพนักงาน"
-                  className="mt-0.5 w-full h-8 px-3 rounded-lg border border-gray-200 text-sm focus:outline-none focus:border-active"
+                  className="mt-0.5 w-full h-8 px-3 rounded-lg border border-gray-200 text-sm focus:outline-none focus:border-active disabled:cursor-not-allowed disabled:bg-gray-100 disabled:text-gray-600"
                 />
               </label>
               <label>
@@ -1747,13 +1761,14 @@ export default function OrderStep({ lead, state, refresh, expanded, onToggle }: 
                   <input
                     type="number" min={0} max={100} step="0.01"
                     value={discountPct || ""}
+                    disabled={discountLockedFromQuotation}
                     onChange={(e) => {
                       const pct = Math.min(100, Math.max(0, parseFloat(e.target.value) || 0));
                       setDiscountPct(pct);
                       if (total > 0) setDiscountAmount(Math.round((total * pct) / 100));
                     }}
                     placeholder="0"
-                    className="w-full h-8 pl-3 pr-7 rounded-lg border border-gray-200 text-sm font-mono tabular-nums text-right focus:outline-none focus:border-active"
+                    className="w-full h-8 pl-3 pr-7 rounded-lg border border-gray-200 text-sm font-mono tabular-nums text-right focus:outline-none focus:border-active disabled:cursor-not-allowed disabled:bg-gray-100 disabled:text-gray-600"
                   />
                   <span className="absolute right-2.5 top-1/2 -translate-y-1/2 text-sm text-gray-400 pointer-events-none">%</span>
                 </div>
@@ -1764,13 +1779,14 @@ export default function OrderStep({ lead, state, refresh, expanded, onToggle }: 
                   <input
                     type="number" min={0} step="1"
                     value={discountAmount || ""}
+                    disabled={discountLockedFromQuotation}
                     onChange={(e) => {
                       const amt = Math.max(0, parseFloat(e.target.value) || 0);
                       setDiscountAmount(amt);
                       if (total > 0) setDiscountPct(Math.round((amt / total) * 10000) / 100);
                     }}
                     placeholder="0"
-                    className="w-full h-8 pl-3 pr-7 rounded-lg border border-gray-200 text-sm font-mono tabular-nums text-right focus:outline-none focus:border-active"
+                    className="w-full h-8 pl-3 pr-7 rounded-lg border border-gray-200 text-sm font-mono tabular-nums text-right focus:outline-none focus:border-active disabled:cursor-not-allowed disabled:bg-gray-100 disabled:text-gray-600"
                   />
                   <span className="absolute right-2.5 top-1/2 -translate-y-1/2 text-sm text-gray-400 pointer-events-none">฿</span>
                 </div>

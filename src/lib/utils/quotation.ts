@@ -2,7 +2,16 @@
 // these as a JSON array in leads.quotation_files. Legacy rows (bare CSV of
 // URLs) are migrated on read using the lead-level quotation_doc_no /
 // quotation_amount as the first entry's metadata.
-export type QuoteOption = { url: string; doc_no: string; amount: number };
+export type QuoteOption = {
+  url: string;
+  doc_no: string;
+  amount: number;
+  subtotal?: number;
+  discount_label?: string;
+  discount_type?: "amount" | "percent";
+  discount_value?: number;
+  discount_amount?: number;
+};
 
 // Chrome's built-in PDF viewer uses the last URL segment as its tab title.
 // Keep the quotation id for the API lookup, but append the document number as
@@ -37,6 +46,13 @@ export function parseQuotationFiles(
               url: withQuotationPdfFilename(String(e?.url || ""), docNo),
               doc_no: docNo,
               amount: Number(e?.amount) || (i === 0 ? fallbackAmount : 0),
+              subtotal: Number(e?.subtotal) || undefined,
+              discount_label: String(e?.discount_label || ""),
+              discount_type: (e?.discount_type === "percent" ? "percent" : "amount") as
+                | "percent"
+                | "amount",
+              discount_value: Number(e?.discount_value) || 0,
+              discount_amount: Number(e?.discount_amount) || 0,
             };
           })
           .filter(q => q.url);
@@ -60,6 +76,11 @@ export function serializeQuotationFiles(options: QuoteOption[]): string | null {
     url: o.url,
     doc_no: o.doc_no || "",
     amount: Number(o.amount) || 0,
+    subtotal: Number(o.subtotal) || undefined,
+    discount_label: o.discount_label || "",
+    discount_type: o.discount_type || "amount",
+    discount_value: Number(o.discount_value) || 0,
+    discount_amount: Number(o.discount_amount) || 0,
   }));
   if (cleaned.length === 0) return null;
   return JSON.stringify(cleaned);

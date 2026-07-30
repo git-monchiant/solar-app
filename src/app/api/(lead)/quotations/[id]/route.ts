@@ -33,7 +33,7 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
     const packageId=Number(body.package_id)||q.package_id;
     const pkg=(await new sql.Request(tx).input("pid",sql.Int,packageId).query(`SELECT * FROM packages WHERE id=@pid AND is_active=1`)).recordset[0];
     if(!pkg){await tx.rollback();return NextResponse.json({error:"ไม่พบ Package"},{status:400});}
-    const items:QuotationInputItem[]=Array.isArray(body.items)?body.items.filter((i:QuotationInputItem)=>i?.item_name?.trim()).map((i:QuotationInputItem)=>({source_type:i.source_type==="addon"?"addon":"custom",item_name:String(i.item_name).trim(),quantity:Number(i.quantity)||1,unit:i.unit||"ชุด",unit_price:Number(i.unit_price)||0})):[];
+    const items:QuotationInputItem[]=Array.isArray(body.items)?body.items.filter((i:QuotationInputItem)=>i?.item_name?.trim()).map((i:QuotationInputItem)=>({source_type:"custom",item_name:String(i.item_name).trim(),quantity:Number(i.quantity)||1,unit:i.unit||"ชุด",unit_price:Number(i.unit_price)||0})):[];
     const discountType=body.discount_type==="percent"?"percent":"amount";
     const confirmedDeposit=Math.max(0,Number(q.confirmed_deposit)||0);
     const depositPaid=Math.max(confirmedDeposit,Number(body.deposit_paid_amount)||0);

@@ -38,10 +38,10 @@ export default function QuoteStep({ lead, state, refresh, packages, expanded, on
   const renderDoneContent = () => {
     const options = parseQuotationFiles(lead.quotation_files, lead.quotation_doc_no || "", lead.quotation_amount || 0);
     const acceptedIdx = lead.quotation_accepted_idx;
-    const visibleOptions =
-      acceptedIdx !== null && options[acceptedIdx]
-        ? [{ option: options[acceptedIdx], originalIndex: acceptedIdx }]
-        : options.map((option, originalIndex) => ({ option, originalIndex }));
+    const visibleOptions = options.map((option, originalIndex) => ({
+      option,
+      originalIndex,
+    }));
     return (
       <>
         {typeof lead.quotation_amount === "number" && acceptedIdx !== null && (
@@ -76,7 +76,7 @@ export default function QuoteStep({ lead, state, refresh, packages, expanded, on
         {options.length > 0 && (
           <DoneSection
             color="orange"
-            title={acceptedIdx !== null ? "ใบเสนอราคาที่เลือก" : `ใบเสนอราคา${options.length > 1 ? ` (${options.length} ชุด)` : ""}`}
+            title={`ใบเสนอราคา${options.length > 1 ? ` (${options.length} ชุด)` : ""}`}
           >
             <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
               {visibleOptions.map(({ option: opt, originalIndex: i }) => {

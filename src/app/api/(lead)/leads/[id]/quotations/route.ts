@@ -48,7 +48,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
   const { id } = await params; const leadId = Number(id); const body = await req.json();
   const optionNo = Number(body.option_no); const packageId = Number(body.package_id);
   if (![1,2,3].includes(optionNo) || !packageId) return NextResponse.json({ error: "กรุณาระบุชุด 1-3 และ Package หลัก" }, { status: 400 });
-  const customItems: QuotationInputItem[] = Array.isArray(body.items) ? body.items.filter((i: QuotationInputItem) => i?.item_name?.trim()).map((i: QuotationInputItem) => ({ source_type: i.source_type === "addon" ? "addon" : "custom", item_name: String(i.item_name).trim(), quantity: Number(i.quantity) || 1, unit: i.unit || "ชุด", unit_price: Number(i.unit_price) || 0 })) : [];
+  const customItems: QuotationInputItem[] = Array.isArray(body.items) ? body.items.filter((i: QuotationInputItem) => i?.item_name?.trim()).map((i: QuotationInputItem) => ({ source_type: "custom", item_name: String(i.item_name).trim(), quantity: Number(i.quantity) || 1, unit: i.unit || "ชุด", unit_price: Number(i.unit_price) || 0 })) : [];
   const db = await getDb(); const tx = new sql.Transaction(db);
   try {
     await tx.begin(sql.ISOLATION_LEVEL.SERIALIZABLE);
