@@ -18,9 +18,17 @@ export default function Home() {
       activeRoles.includes("account") &&
       !activeRoles.includes("admin") &&
       !activeRoles.includes("sales") &&
-      !activeRoles.includes("solar");
+      !activeRoles.includes("solar") &&
+      !activeRoles.includes("solar_sup") &&
+      !activeRoles.includes("sales_sup");
+    const quotationApproverOnly =
+      !activeRoles.includes("admin") &&
+      !activeRoles.includes("sales") &&
+      !activeRoles.includes("solar") &&
+      (activeRoles.includes("solar_sup") || activeRoles.includes("sales_sup"));
     if (seekerOnly) router.replace("/seeker");
     else if (accountOnly) router.replace("/today");
+    else if (quotationApproverOnly) router.replace("/quotation-approvals");
     else router.replace("/pipeline");
   }, [activeRoles, router]);
 

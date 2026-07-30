@@ -111,11 +111,21 @@ export default function OrderStep({ lead, state, refresh, expanded, onToggle }: 
   const quoteOptions = parseQuotationFiles(lead.quotation_files, lead.quotation_doc_no || "", lead.quotation_amount || 0);
   const [pickingQuote, setPickingQuote] = useState(false);
   const acceptedIdx = lead.quotation_accepted_idx;
-  // Default-select idx 0 when nothing's been picked yet. User can still
-  // switch on substep 0; this just avoids the empty-state where Next is
-  // gated while the user is reading the customer's options.
+  const visibleQuoteOptions =
+    acceptedIdx !== null &&
+    acceptedIdx !== undefined &&
+    quoteOptions[acceptedIdx]
+      ? [{ option: quoteOptions[acceptedIdx], originalIndex: acceptedIdx }]
+      : quoteOptions.map((option, originalIndex) => ({
+          option,
+          originalIndex,
+        }));
+  // Legacy single-quotation leads may not have an accepted index yet. It is
+  // safe to select their only option automatically. Multi-option leads must
+  // never fall back to index 0 because that would overwrite the set chosen
+  // from Step 03.
   useEffect(() => {
-    if (quoteOptions.length > 0 && (acceptedIdx === null || acceptedIdx === undefined) && !pickingQuote) {
+    if (quoteOptions.length === 1 && (acceptedIdx === null || acceptedIdx === undefined) && !pickingQuote) {
       const first = quoteOptions[0];
       setPickingQuote(true);
       apiFetch(`/api/leads/${lead.id}`, {
@@ -1674,7 +1684,11 @@ export default function OrderStep({ lead, state, refresh, expanded, onToggle }: 
             <div className="rounded-lg bg-orange-50 border border-orange-200 p-3">
               <div className="flex items-center justify-between mb-2 gap-2">
                 <div className="text-xs font-bold text-orange-600 uppercase">
-                  {quoteOptions.length === 1 ? "ใบเสนอราคา" : `เลือกใบเสนอราคาที่ลูกค้ารับ (${quoteOptions.length} ชุด)`}
+                  {acceptedIdx !== null && acceptedIdx !== undefined
+                    ? "ใบเสนอราคาที่ลูกค้าเลือก"
+                    : quoteOptions.length === 1
+                      ? "ใบเสนอราคา"
+                      : `เลือกใบเสนอราคาที่ลูกค้ารับ (${quoteOptions.length} ชุด)`}
                 </div>
                 {quoteLocked && (
                   <div className="inline-flex items-center gap-1 text-xxs font-bold uppercase tracking-wider text-amber-700 bg-amber-100 border border-amber-200 px-2 py-0.5 rounded-full" title={`ชำระแล้ว ${lead.order_paid_count} งวด — เปลี่ยนใบเสนอราคาไม่ได้`}>
@@ -1683,9 +1697,9 @@ export default function OrderStep({ lead, state, refresh, expanded, onToggle }: 
                   </div>
                 )}
               </div>
-              <div className={`grid gap-2 ${quoteOptions.length > 1 ? "grid-cols-1 md:grid-cols-3" : "grid-cols-1"}`}>
-                {quoteOptions.map((opt, i) => {
-                  const fileName = opt.url.split("/").pop() || `ไฟล์ ${i + 1}`;
+              <div className={`grid gap-2 ${visibleQuoteOptions.length > 1 ? "grid-cols-1 md:grid-cols-3" : "grid-cols-1"}`}>
+                {visibleQuoteOptions.map(({ option: opt, originalIndex: i }) => {
+                  const fileName = opt.url.split("?")[0].split("/").pop() || `ไฟล์ ${i + 1}`;
                   const isImage = /\.(jpg|jpeg|png|gif|webp)$/i.test(opt.url);
                   const isAccepted = acceptedIdx === i;
                   const isSelectable = quoteOptions.length > 1 && !quoteLocked;

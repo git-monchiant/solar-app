@@ -1,7 +1,14 @@
 import "server-only";
 import { getDb, sql } from "@/lib/db";
 
-export const QUOTATION_STATUSES = ["draft", "pending_approval", "approved", "changes_required"] as const;
+export const QUOTATION_STATUSES = [
+  "draft",
+  "pending_solar_sup",
+  "pending_sales_sup",
+  "pending_approval",
+  "approved",
+  "changes_required",
+] as const;
 export type QuotationStatus = typeof QUOTATION_STATUSES[number];
 export type QuotationInputItem = {
   source_type?: "addon" | "custom";

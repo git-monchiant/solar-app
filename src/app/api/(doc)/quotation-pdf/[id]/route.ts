@@ -109,7 +109,7 @@ export async function POST(req: NextRequest) {
   const outstanding = Number(body.outstanding ?? Math.max(0, total - deposit));
   const quotation = {
     id: 0,
-    doc_no: "ตัวอย่างก่อนบันทึก",
+    doc_no: body.docNo || "ตัวอย่างก่อนบันทึก",
     issue_date: now,
     valid_days: 7,
     status: "draft",
@@ -195,7 +195,12 @@ export async function GET(
     cachedPreview?.snapshot || null;
   if (
     detail.document_snapshot_json &&
-    ["pending_approval", "approved"].includes(detail.status)
+    [
+      "pending_solar_sup",
+      "pending_sales_sup",
+      "pending_approval",
+      "approved",
+    ].includes(detail.status)
   ) {
     try {
       snapshot = JSON.parse(
@@ -264,8 +269,10 @@ export async function GET(
   const watermark =
     q.status === "approved"
       ? ""
-      : q.status === "pending_approval"
-        ? "รออนุมัติ"
+      : q.status === "pending_solar_sup"
+        ? "รอ Solar Sup อนุมัติ"
+        : ["pending_sales_sup", "pending_approval"].includes(q.status)
+          ? "รอ Sale Sup อนุมัติ"
         : "DRAFT";
   const reportLead = {
     ...snapshot.lead,

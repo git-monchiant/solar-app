@@ -10,8 +10,24 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
   const { id } = await params;
   const db = await getDb();
   const result = await db.request().input("lead_id", sql.Int, Number(id)).query(`
-    SELECT q.*, p.name package_current_name, u.full_name created_by_name
-    FROM quotations q LEFT JOIN packages p ON p.id=q.package_id LEFT JOIN users u ON u.id=q.created_by
+    SELECT q.*, p.name package_current_name, u.full_name created_by_name,
+      returned_by.full_name returned_by_name,
+      CASE
+        WHEN returned_event.action = 'changes_required_solar' THEN 'Solar Sup'
+        WHEN returned_event.action = 'changes_required_sales' THEN 'Sale Sup'
+        WHEN returned_event.id IS NOT NULL THEN 'ผู้อนุมัติ'
+        ELSE NULL
+      END returned_by_role
+    FROM quotations q
+    LEFT JOIN packages p ON p.id=q.package_id
+    LEFT JOIN users u ON u.id=q.created_by
+    OUTER APPLY (
+      SELECT TOP 1 e.id, e.action, e.acted_by
+      FROM quotation_approval_events e
+      WHERE e.quotation_id = q.id AND e.to_status = 'changes_required'
+      ORDER BY e.acted_at DESC, e.id DESC
+    ) returned_event
+    LEFT JOIN users returned_by ON returned_by.id = returned_event.acted_by
     WHERE q.lead_id=@lead_id ORDER BY q.option_no, q.revision_no DESC;
     SELECT qi.* FROM quotation_items qi JOIN quotations q ON q.id=qi.quotation_id
     WHERE q.lead_id=@lead_id ORDER BY qi.quotation_id, qi.sort_order, qi.id;
@@ -46,8 +62,11 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
     `);
     if (!lead.recordset[0]) { await tx.rollback(); return NextResponse.json({ error: "ไม่พบ Lead" }, { status: 404 }); }
     if (!actor.roles.includes("admin") && lead.recordset[0].assigned_user_id !== gate.userId) { await tx.rollback(); return NextResponse.json({ error: "สร้างได้เฉพาะ Lead ที่รับผิดชอบ" }, { status: 403 }); }
-    const existing = await new sql.Request(tx).input("lead_id", sql.Int, leadId).input("option_no", sql.Int, optionNo).query(`SELECT TOP 1 id,status FROM quotations WHERE lead_id=@lead_id AND option_no=@option_no ORDER BY revision_no DESC`);
-    if (existing.recordset[0]) { await tx.rollback(); return NextResponse.json({ error: "ชุดนี้มีใบเสนอราคาแล้ว กรุณาแก้ไขใบเดิม" }, { status: 409 }); }
+    const existing = await new sql.Request(tx).input("lead_id", sql.Int, leadId).input("option_no", sql.Int, optionNo).query(`SELECT TOP 1 id,status,revision_no FROM quotations WHERE lead_id=@lead_id AND option_no=@option_no ORDER BY revision_no DESC`);
+    if (existing.recordset[0] && existing.recordset[0].status !== "cancelled") { await tx.rollback(); return NextResponse.json({ error: "ชุดนี้มีใบเสนอราคาแล้ว กรุณาแก้ไขใบเดิม" }, { status: 409 }); }
+    const revisionNo = existing.recordset[0]
+      ? Number(existing.recordset[0].revision_no) + 1
+      : 0;
     const pkg = await new sql.Request(tx).input("package_id", sql.Int, packageId).query(`SELECT * FROM packages WHERE id=@package_id AND is_active=1`);
     const packageRow = pkg.recordset[0]; if (!packageRow) { await tx.rollback(); return NextResponse.json({ error: "ไม่พบ Package ที่ใช้งานได้" }, { status: 400 }); }
     const packageItems = await new sql.Request(tx).input("package_id", sql.Int, packageId).query(`SELECT * FROM package_items WHERE package_id=@package_id AND is_active=1 ORDER BY sort_order,id`);
@@ -67,7 +86,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
     const documentInputs = parseDocumentInputs(body.document_inputs);
     const docNo = await nextQuotationDocNo(tx);
     const inserted = await new sql.Request(tx)
-      .input("lead_id", sql.Int, leadId).input("option_no", sql.TinyInt, optionNo).input("doc_no", sql.NVarChar(30), docNo)
+      .input("lead_id", sql.Int, leadId).input("option_no", sql.TinyInt, optionNo).input("revision_no", sql.Int, revisionNo).input("doc_no", sql.NVarChar(30), docNo)
       .input("package_id", sql.Int, packageId).input("package_name", sql.NVarChar(200), packageRow.name).input("package_price", sql.Decimal(12,2), packageRow.price)
       .input("issue_date", sql.Date, toSqlDate(body.issue_date) || new Date()).input("valid_days", sql.Int, Number(body.valid_days) || 7)
       .input("subtotal", sql.Decimal(12,2), totals.subtotal).input("discount_label", sql.NVarChar(200), body.discount_label || null)
@@ -78,8 +97,8 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
       .input("template_id", sql.Int, templateId).input("payment_terms", sql.NVarChar(sql.MAX), JSON.stringify(paymentTerms))
       .input("terms_text", sql.NVarChar(sql.MAX), body.terms_text || null).input("note", sql.NVarChar(sql.MAX), body.note || null)
       .input("document_inputs", sql.NVarChar(sql.MAX), JSON.stringify(documentInputs)).input("user_id", sql.Int, gate.userId)
-      .query(`INSERT quotations(lead_id,option_no,doc_no,package_id,package_name_snapshot,package_price_snapshot,issue_date,valid_days,subtotal_incl_vat,discount_label,discount_type,discount_value,discount_amount,discount_reason,contract_total_incl_vat,deposit_paid_amount,outstanding_amount,amount_before_vat,vat_amount,payment_template_id,payment_terms_json,terms_text,note,document_inputs_json,created_by,updated_by)
-      OUTPUT INSERTED.* VALUES(@lead_id,@option_no,@doc_no,@package_id,@package_name,@package_price,@issue_date,@valid_days,@subtotal,@discount_label,@discount_type,@discount_value,@discount_amount,@discount_reason,@total,@deposit,@outstanding,@before_vat,@vat_amount,@template_id,@payment_terms,@terms_text,@note,@document_inputs,@user_id,@user_id)`);
+      .query(`INSERT quotations(lead_id,option_no,revision_no,doc_no,package_id,package_name_snapshot,package_price_snapshot,issue_date,valid_days,subtotal_incl_vat,discount_label,discount_type,discount_value,discount_amount,discount_reason,contract_total_incl_vat,deposit_paid_amount,outstanding_amount,amount_before_vat,vat_amount,payment_template_id,payment_terms_json,terms_text,note,document_inputs_json,created_by,updated_by)
+      OUTPUT INSERTED.* VALUES(@lead_id,@option_no,@revision_no,@doc_no,@package_id,@package_name,@package_price,@issue_date,@valid_days,@subtotal,@discount_label,@discount_type,@discount_value,@discount_amount,@discount_reason,@total,@deposit,@outstanding,@before_vat,@vat_amount,@template_id,@payment_terms,@terms_text,@note,@document_inputs,@user_id,@user_id)`);
     const quotationId = inserted.recordset[0].id;
     let sort = 0;
     for (const item of packageItems.recordset) await new sql.Request(tx).input("qid",sql.Int,quotationId).input("pid",sql.Int,item.id).input("name",sql.NVarChar(500),item.item_name).input("qty",sql.Decimal(10,2),item.quantity).input("unit",sql.NVarChar(50),item.unit).input("sort",sql.Int,sort++).query(`INSERT quotation_items(quotation_id,source_type,package_item_id,item_name_snapshot,quantity,unit,sort_order) VALUES(@qid,'package',@pid,@name,@qty,@unit,@sort)`);

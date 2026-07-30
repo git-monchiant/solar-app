@@ -2,7 +2,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { apiFetch, getUserIdHeader } from "@/lib/api";
 import { formatTHB } from "@/lib/utils/formatters";
-import { useMe } from "@/lib/roles";
+import { hasRole, useActiveRoles, useMe } from "@/lib/roles";
 import type { Lead, Package } from "./types";
 
 type Item = {
@@ -50,6 +50,8 @@ type Quote = {
   terms_text?: string;
   note?: string;
   approval_note?: string;
+  returned_by_name?: string;
+  returned_by_role?: string;
   document_inputs_json?: string;
   document_snapshot_at?: string;
   approval_certified_at?: string;
@@ -63,9 +65,12 @@ type Template = {
 };
 const statusLabel: Record<string, string> = {
   draft: "ฉบับร่าง",
-  pending_approval: "รออนุมัติ",
+  pending_solar_sup: "รอ Solar Sup อนุมัติ",
+  pending_sales_sup: "รอ Sale Sup อนุมัติ",
+  pending_approval: "รอ Sale Sup อนุมัติ",
   approved: "อนุมัติแล้ว",
   changes_required: "ส่งกลับแก้ไข",
+  cancelled: "ยกเลิกแล้ว",
 };
 const emptyItem = (): Item => ({
   source_type: "custom",
@@ -85,6 +90,16 @@ export default function QuotationBuilder({
   refresh: () => Promise<unknown> | void;
 }) {
   const { me } = useMe();
+  const { activeRoles } = useActiveRoles();
+  const canReviewQuotation = (status: string) =>
+    status === "pending_solar_sup"
+      ? hasRole(activeRoles, "admin", "solar_sup")
+      : ["pending_sales_sup", "pending_approval"].includes(status) &&
+        hasRole(activeRoles, "admin", "sales_sup");
+  const isPendingQuotation = (status: string) =>
+    ["pending_solar_sup", "pending_sales_sup", "pending_approval"].includes(
+      status,
+    );
   const [quotes, setQuotes] = useState<Quote[]>([]);
   const [templates, setTemplates] = useState<Template[]>([]);
   const [editing, setEditing] = useState<number | null>(null);
@@ -108,18 +123,38 @@ export default function QuotationBuilder({
   }, [load]);
   const latest = useMemo(() => {
     const map = new Map<number, Quote>();
-    for (const q of quotes) if (!map.has(q.option_no)) map.set(q.option_no, q);
+    for (const q of quotes) {
+      if (q.status === "cancelled") continue;
+      if (!map.has(q.option_no)) map.set(q.option_no, q);
+    }
     return map;
   }, [quotes]);
   const currentQuotes = useMemo(() => Array.from(latest.values()), [latest]);
   const readyQuotes = currentQuotes.filter((q) =>
     ["draft", "changes_required"].includes(q.status),
   );
-  const act = async (id: number, action: string, note = "") => {
+  const pendingSolarCount = currentQuotes.filter(
+    (q) => q.status === "pending_solar_sup",
+  ).length;
+  const pendingSalesCount = currentQuotes.filter((q) =>
+    ["pending_sales_sup", "pending_approval"].includes(q.status),
+  ).length;
+  const progressSummary = readyQuotes.length
+    ? `${readyQuotes.map((q) => `ชุด ${q.option_no}`).join(" และ ")} พร้อมส่งให้ Solar Sup อนุมัติ · ลูกค้าจะเลือก 1 ฉบับในขั้น Order`
+    : pendingSolarCount
+      ? `${pendingSolarCount} ฉบับกำลังรอ Solar Sup อนุมัติ`
+      : pendingSalesCount
+        ? `${pendingSalesCount} ฉบับผ่าน Solar Sup แล้ว · กำลังรอ Sale Sup อนุมัติ`
+        : currentQuotes.length
+          ? "ใบเสนอราคาอนุมัติครบแล้ว"
+          : "สร้างฉบับร่างจาก Package Master เพื่อเริ่มต้น";
+  const act = async (id: number, action: string, note = "", status = "") => {
     if (
       action === "approve" &&
       !window.confirm(
-        "ยืนยันว่าได้ตรวจสอบและรับรองข้อมูล Survey, Package, ราคา, เงื่อนไขชำระเงิน และผลคำนวณทั้งชุดแล้ว",
+        status === "pending_solar_sup"
+          ? "ยืนยันว่า Solar Sup ตรวจเอกสารแล้ว และส่งต่อให้ Sale Sup อนุมัติขั้นสุดท้าย"
+          : "ยืนยันว่าได้ตรวจสอบและรับรองข้อมูล Survey, Package, ราคา, เงื่อนไขชำระเงิน และผลคำนวณทั้งชุดแล้ว",
       )
     )
       return;
@@ -230,7 +265,7 @@ export default function QuotationBuilder({
                   </div>
                 </div>
                 <span
-                  className={`text-xxs px-2.5 py-1 rounded-full font-semibold whitespace-nowrap ${q.status === "approved" ? "bg-emerald-50 text-emerald-700" : q.status === "pending_approval" ? "bg-amber-50 text-amber-700" : q.status === "changes_required" ? "bg-red-50 text-red-700" : "bg-violet-50 text-violet-700"}`}
+                  className={`text-xxs px-2.5 py-1 rounded-full font-semibold whitespace-nowrap ${q.status === "approved" ? "bg-emerald-50 text-emerald-700" : isPendingQuotation(q.status) ? "bg-amber-50 text-amber-700" : q.status === "changes_required" ? "bg-red-50 text-red-700" : "bg-violet-50 text-violet-700"}`}
                 >
                   {statusLabel[q.status]}
                 </span>
@@ -252,11 +287,6 @@ export default function QuotationBuilder({
                 <span className="px-2 py-1 rounded-full bg-cyan-50 text-cyan-700 text-xxs">
                   เอกสาร 15+2 หน้า
                 </span>
-                {q.document_snapshot_at && (
-                  <span className="px-2 py-1 rounded-full bg-emerald-50 text-emerald-700 text-xxs">
-                    Snapshot แล้ว
-                  </span>
-                )}
                 {extras.length ? (
                   extras.slice(0, 2).map((item, index) => (
                     <span
@@ -279,7 +309,8 @@ export default function QuotationBuilder({
               </div>
               {q.approval_note && (
                 <div className="mt-2 text-xs text-red-600 line-clamp-2">
-                  เหตุผล: {q.approval_note}
+                  ส่งกลับโดย {q.returned_by_role || "ผู้อนุมัติ"}
+                  {q.returned_by_name ? ` (${q.returned_by_name})` : ""}: {q.approval_note}
                 </div>
               )}
               <div className="mt-auto pt-4 border-t border-gray-200 flex items-end justify-between">
@@ -302,26 +333,18 @@ export default function QuotationBuilder({
                     </button>
                     <button
                       onClick={() => openPdf(q.id)}
-                      className="h-9 rounded-lg border border-gray-200 text-gray-700 text-xs font-semibold"
+                      className="col-span-2 h-9 rounded-lg border border-gray-200 text-gray-700 text-xs font-semibold"
                     >
-                      ▣ PDF
-                    </button>
-                    <button
-                      disabled={busy}
-                      onClick={() => act(q.id, "submit")}
-                      className="h-9 rounded-lg border border-gray-200 text-gray-700 text-xs font-semibold"
-                    >
-                      ส่งอนุมัติ
+                      ▣ ดูใบเสนอราคา
                     </button>
                   </>
-                ) : q.status === "pending_approval" &&
-                  me?.roles.some((r) => ["admin", "sales_sup"].includes(r)) ? (
+                ) : isPendingQuotation(q.status) && canReviewQuotation(q.status) ? (
                   <>
                     <button
                       onClick={() => openPdf(q.id)}
                       className="h-9 rounded-lg border border-gray-200 text-xs font-semibold"
                     >
-                      ▣ PDF
+                      ▣ ดูใบเสนอราคา
                     </button>
                     <button
                       disabled={busy}
@@ -335,10 +358,12 @@ export default function QuotationBuilder({
                     </button>
                     <button
                       disabled={busy}
-                      onClick={() => act(q.id, "approve")}
+                      onClick={() => act(q.id, "approve", "", q.status)}
                       className="h-9 rounded-lg bg-emerald-600 text-white text-xs font-semibold"
                     >
-                      อนุมัติ
+                      {q.status === "pending_solar_sup"
+                        ? "อนุมัติส่งต่อ"
+                        : "อนุมัติ"}
                     </button>
                   </>
                 ) : q.status === "approved" ? (
@@ -347,7 +372,7 @@ export default function QuotationBuilder({
                       onClick={() => openPdf(q.id)}
                       className="h-9 rounded-lg border border-gray-200 text-xs font-semibold"
                     >
-                      ▣ PDF
+                      ▣ ดูใบเสนอราคา
                     </button>
                     <button
                       disabled={busy}
@@ -370,7 +395,7 @@ export default function QuotationBuilder({
                       onClick={() => openPdf(q.id)}
                       className="col-span-3 h-9 rounded-lg border border-gray-200 text-xs font-semibold"
                     >
-                      ▣ ดู PDF
+                      ▣ ดูใบเสนอราคา
                     </button>
                   </>
                 )}
@@ -411,9 +436,7 @@ export default function QuotationBuilder({
               : `ยังไม่มีใบเสนอราคา`}
           </div>
           <div className="text-xs text-gray-400 mt-0.5">
-            {readyQuotes.length
-              ? `${readyQuotes.map((q) => `ชุด ${q.option_no}`).join(" และ ")} พร้อมส่งขออนุมัติ · ลูกค้าจะเลือก 1 ฉบับในขั้น Order`
-              : "สร้างฉบับร่างจาก Package Master เพื่อเริ่มต้น"}
+            {progressSummary}
           </div>
         </div>
         <div className="text-xs text-gray-500 whitespace-nowrap">
@@ -432,17 +455,11 @@ export default function QuotationBuilder({
         />
       </div>
       {currentQuotes.length > 0 && (
-        <div className="grid grid-cols-1 md:grid-cols-[220px_1fr] gap-2">
-          <button
-            onClick={() => currentQuotes[0] && openPdf(currentQuotes[0].id)}
-            className="h-11 rounded-lg border border-primary bg-cyan-50/60 text-primary text-sm font-semibold"
-          >
-            ▣ สร้าง PDF ที่เลือก
-          </button>
+        <div>
           <button
             disabled={busy || readyQuotes.length === 0}
             onClick={submitAll}
-            className="h-11 rounded-lg bg-gradient-to-r from-primary to-cyan-500 text-white text-sm font-semibold disabled:opacity-40"
+            className="w-full h-11 rounded-lg bg-gradient-to-r from-primary to-cyan-500 text-white text-sm font-semibold disabled:opacity-40"
           >
             ▷ ส่งขออนุมัติใบเสนอราคา
             {readyQuotes.length > 1 ? ` ${readyQuotes.length} ฉบับ` : ""}
@@ -498,18 +515,13 @@ function QuotationEditor({
       .map((i) => ({ ...i, item_name: i.item_name_snapshot || i.item_name })) ||
       [],
   );
-  const [discountType, setDiscountType] = useState(
-    quote?.discount_type || "amount",
-  );
-  const [discountValue, setDiscountValue] = useState(
-    Number(quote?.discount_value) || 0,
-  );
-  const [discountLabel, setDiscountLabel] = useState(
-    quote?.discount_label || "",
-  );
-  const [discountReason, setDiscountReason] = useState(
-    quote?.discount_reason || "",
-  );
+  // Quotation discounts are intentionally disabled in this workflow. Any
+  // edited draft is saved back with zero discount so hidden legacy values
+  // cannot continue affecting the total.
+  const discountType = "amount";
+  const discountValue = 0;
+  const discountLabel = "";
+  const discountReason = "";
   const [deposit, setDeposit] = useState(
     Math.max(Number(quote?.deposit_paid_amount) || 0, confirmedDeposit),
   );
@@ -600,11 +612,7 @@ function QuotationEditor({
     0,
   );
   const subtotal = Number(pkg?.price || 0) + extras;
-  const discount =
-    discountType === "percent"
-      ? (subtotal * Math.min(discountValue, 100)) / 100
-      : Math.min(discountValue, subtotal);
-  const total = Math.max(0, subtotal - discount);
+  const total = subtotal;
   const outstanding = Math.max(0, total - deposit);
   const paymentPercentTotal = terms
     .slice(0, 4)
@@ -634,17 +642,19 @@ function QuotationEditor({
       );
     });
   const previewQuotation = async () => {
-    if (!quote) {
-      if (!pkg) {
-        setError("กรุณาเลือก Package หลักก่อนดูตัวอย่าง");
-        return;
-      }
+    if (!pkg) {
+      setError("กรุณาเลือก Package หลักก่อนดูตัวอย่าง");
+      return;
+    }
+    setError("");
+    try {
       const response = await fetch("/api/quotation-pdf/preview", {
         method: "POST",
         headers: { "Content-Type": "application/json", ...getUserIdHeader() },
         body: JSON.stringify({
           lead,
           package: pkg,
+          docNo: quote?.doc_no,
           allItems: [
             ...packageItems.map((item) => ({
               ...item,
@@ -662,20 +672,19 @@ function QuotationEditor({
           documentInputs,
         }),
       });
-      if (!response.ok) throw new Error("สร้างตัวอย่างไม่สำเร็จ");
+      if (!response.ok) {
+        const data = await response.json().catch(() => null);
+        throw new Error(data?.error || "สร้างตัวอย่างไม่สำเร็จ");
+      }
       const { token } = await response.json();
       window.open(
         `/quotation-preview/preview-${token}`,
         "_blank",
         "noopener,noreferrer",
       );
-      return;
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "สร้างตัวอย่างไม่สำเร็จ");
     }
-    window.open(
-      `/quotation-preview/${quote.id}`,
-      "_blank",
-      "noopener,noreferrer",
-    );
   };
   const save = async () => {
     if (!packageId) {
@@ -890,91 +899,27 @@ function QuotationEditor({
             </div>
           </section>
           <section className="rounded-2xl border border-amber-200 bg-amber-50/30 p-4 shadow-sm">
-            <div className="mb-3 flex items-center gap-2">
-              <span className="flex h-6 w-6 items-center justify-center rounded-full bg-amber-500 text-xs font-bold text-white">
-                3
-              </span>
-              <div>
-                <h3 className="text-sm font-bold text-gray-800">
-                  ส่วนลดและเงินจอง
-                </h3>
-                <p className="text-xxs text-gray-500">
-                  ระบุส่วนลดและยอดชำระแล้ว
+            <div>
+              <label className="text-xs font-semibold text-gray-500">
+                ค่าสำรวจ/เงินจองที่ชำระแล้ว
+              </label>
+              <input
+                type="number"
+                min={confirmedDeposit}
+                value={deposit}
+                onChange={(e) =>
+                  setDeposit(
+                    Math.max(confirmedDeposit, Number(e.target.value) || 0),
+                  )
+                }
+                className={`mt-1 ${fieldClass}`}
+              />
+              {confirmedDeposit > 0 && (
+                <p className="mt-1 text-xxs text-emerald-600">
+                  ดึงยอดที่ยืนยันรับเงินแล้วอัตโนมัติ{" "}
+                  {formatTHB(confirmedDeposit)} บาท
                 </p>
-              </div>
-            </div>
-            <div className="grid gap-3 md:grid-cols-2">
-              <div>
-                <label className="text-xs font-semibold text-gray-500">
-                  ชื่อส่วนลด
-                </label>
-                <input
-                  value={discountLabel}
-                  onChange={(e) => setDiscountLabel(e.target.value)}
-                  placeholder="เช่น ส่วนลดพิเศษ VIP"
-                  className={`mt-1 ${fieldClass}`}
-                />
-              </div>
-              <div className="grid grid-cols-2 gap-2">
-                <div>
-                  <label className="text-xs font-semibold text-gray-500">
-                    ประเภทส่วนลด
-                  </label>
-                  <select
-                    value={discountType}
-                    onChange={(e) => setDiscountType(e.target.value)}
-                    className={`mt-1 ${fieldClass}`}
-                  >
-                    <option value="amount">จำนวนเงิน</option>
-                    <option value="percent">เปอร์เซ็นต์</option>
-                  </select>
-                </div>
-                <div>
-                  <label className="text-xs font-semibold text-gray-500">
-                    มูลค่าส่วนลด
-                  </label>
-                  <input
-                    type="number"
-                    min="0"
-                    value={discountValue || ""}
-                    onChange={(e) => setDiscountValue(e.target.value === "" ? 0 : Number(e.target.value))}
-                    placeholder={discountType === "percent" ? "เช่น 10" : "เช่น 1,000"}
-                    className={`mt-1 ${fieldClass}`}
-                  />
-                </div>
-              </div>
-              <div>
-                <label className="text-xs font-semibold text-gray-500">
-                  เหตุผลส่วนลด
-                </label>
-                <input
-                  value={discountReason}
-                  onChange={(e) => setDiscountReason(e.target.value)}
-                  className={`mt-1 ${fieldClass}`}
-                />
-              </div>
-              <div>
-                <label className="text-xs font-semibold text-gray-500">
-                  ค่าสำรวจ/เงินจองที่ชำระแล้ว
-                </label>
-                <input
-                  type="number"
-                  min={confirmedDeposit}
-                  value={deposit}
-                  onChange={(e) =>
-                    setDeposit(
-                      Math.max(confirmedDeposit, Number(e.target.value) || 0),
-                    )
-                  }
-                  className={`mt-1 ${fieldClass}`}
-                />
-                {confirmedDeposit > 0 && (
-                  <p className="mt-1 text-xxs text-emerald-600">
-                    ดึงยอดที่ยืนยันรับเงินแล้วอัตโนมัติ{" "}
-                    {formatTHB(confirmedDeposit)} บาท
-                  </p>
-                )}
-              </div>
+              )}
             </div>
           </section>
           <section className="rounded-2xl border border-emerald-200 bg-emerald-50/30 p-4 shadow-sm">
@@ -1105,15 +1050,15 @@ function QuotationEditor({
                 </b>
               </div>
               <div>
-                <small className="text-gray-400">รวมก่อนลด</small>
+                <small className="text-gray-400">ยอดรวม</small>
                 <b className="mt-1 block text-gray-800">
                   {formatTHB(subtotal)}
                 </b>
               </div>
               <div>
-                <small className="text-gray-400">หักส่วนลด/ยอดชำระแล้ว</small>
+                <small className="text-gray-400">หักยอดชำระแล้ว</small>
                 <b className="mt-1 block text-red-500">
-                  -{formatTHB(discount + deposit)}
+                  -{formatTHB(deposit)}
                 </b>
               </div>
               <div>
@@ -1130,11 +1075,7 @@ function QuotationEditor({
             type="button"
             disabled={saving}
             onClick={previewQuotation}
-            title={
-              quote
-                ? "แสดงเฉพาะใบเสนอราคา 2 หน้า จากข้อมูลที่บันทึกล่าสุด"
-                : "แสดงข้อมูลที่กำลังกรอกโดยไม่บันทึก"
-            }
+            title="แสดงข้อมูลที่กำลังกรอกโดยไม่บันทึก"
             className="rounded-lg border border-primary/30 bg-white px-4 py-2 text-sm font-semibold text-primary transition-colors hover:bg-primary/5 disabled:cursor-not-allowed disabled:opacity-40"
           >
             ดูตัวอย่างใบเสนอราคา

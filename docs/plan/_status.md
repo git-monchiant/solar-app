@@ -10,6 +10,7 @@ Statuses:
 
 | Plan | Status | Mockup | Notes |
 | --- | --- | --- | --- |
+| [20260730-01-sequential-quotation-approval.md](20260730-01-sequential-quotation-approval.md) | done | - | เพิ่ม approval chain Sale → Solar Sup → Sale Sup, apply migration Development และตรวจ build/transition ผ่าน; รอกำหนดผู้ใช้ role Solar Sup |
 | [20260722-02-step3-quotation-document-bundle.md](20260722-02-step3-quotation-document-bundle.md) | in-progress | - | ใช้ Report template กลางร่วมกับ `/api/survey-report/[leadId]`; รอ regression PDF 17 หน้า, Business UAT และอนุญาตก่อน Production |
 | [20260709-01-cheque-two-step-payment.md](20260709-01-cheque-two-step-payment.md) | done | - | เพิ่ม flow เช็ค 2 step: ยืนยันรับเช็ค -> รอรับเงิน -> ยืนยันรับเงิน |
 | [20260709-02-cheque-return-to-payment.md](20260709-02-cheque-return-to-payment.md) | done | - | พา user จากรอรับเงินเช็คกลับไป step 04 / งวดชำระ พร้อมเปิดงวดที่ต้องยืนยันรับเงิน |
