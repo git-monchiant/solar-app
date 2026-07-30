@@ -527,7 +527,6 @@ function QuotationEditor({
       return (defaultTemplate?.terms || []).slice(0, 4);
     }
   });
-  const [note, setNote] = useState(quote?.note || "");
   const [termsText, setTermsText] = useState(quote?.terms_text || "");
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
@@ -580,6 +579,22 @@ function QuotationEditor({
     setTerms(defaultTemplate.terms);
   }, [defaultTemplate, quote, terms.length]);
   const pkg = packages.find((p) => p.id === packageId);
+  const packageGroups = [
+    {
+      label: "แพ็กเกจมาตรฐาน (Solar Rooftop)",
+      items: packages.filter((p) => !/scale\s*up|battery|batt/i.test(p.name)),
+    },
+    {
+      label: "แพ็กเกจเพิ่มขนาดระบบ (Scale Up)",
+      items: packages.filter(
+        (p) => /scale\s*up/i.test(p.name) && !/battery|batt/i.test(p.name),
+      ),
+    },
+    {
+      label: "แพ็กเกจแบตเตอรี่ / Hybrid",
+      items: packages.filter((p) => /battery|batt/i.test(p.name)),
+    },
+  ].filter((group) => group.items.length > 0);
   const extras = items.reduce(
     (s, i) => s + (Number(i.quantity) || 0) * (Number(i.unit_price) || 0),
     0,
@@ -620,7 +635,40 @@ function QuotationEditor({
     });
   const previewQuotation = async () => {
     if (!quote) {
-      setError("กรุณาบันทึกฉบับร่างก่อนดูตัวอย่างใบเสนอราคา");
+      if (!pkg) {
+        setError("กรุณาเลือก Package หลักก่อนดูตัวอย่าง");
+        return;
+      }
+      const response = await fetch("/api/quotation-pdf/preview", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", ...getUserIdHeader() },
+        body: JSON.stringify({
+          lead,
+          package: pkg,
+          allItems: [
+            ...packageItems.map((item) => ({
+              ...item,
+              source_type: "package",
+            })),
+            ...items,
+          ],
+          discountLabel,
+          deposit,
+          subtotal,
+          total,
+          outstanding,
+          terms: terms.slice(0, 4),
+          termsText,
+          documentInputs,
+        }),
+      });
+      if (!response.ok) throw new Error("สร้างตัวอย่างไม่สำเร็จ");
+      const { token } = await response.json();
+      window.open(
+        `/quotation-preview/preview-${token}`,
+        "_blank",
+        "noopener,noreferrer",
+      );
       return;
     }
     window.open(
@@ -653,7 +701,6 @@ function QuotationEditor({
         payment_template_id: templateId,
         payment_terms: terms.slice(0, 4),
         terms_text: termsText,
-        note,
         document_inputs: documentInputs,
       };
       await apiFetch(
@@ -725,10 +772,14 @@ function QuotationEditor({
               className={`mt-1 ${fieldClass}`}
             >
               <option value={0}>เลือก Package</option>
-              {packages.map((p) => (
-                <option key={p.id} value={p.id}>
-                  {p.name} — {formatTHB(p.price)} บาท
-                </option>
+              {packageGroups.map((group) => (
+                <optgroup key={group.label} label={group.label}>
+                  {group.items.map((p) => (
+                    <option key={p.id} value={p.id}>
+                      {p.name} — {formatTHB(p.price)} บาท
+                    </option>
+                  ))}
+                </optgroup>
               ))}
             </select>
             {packageItems.length > 0 ? (
@@ -773,6 +824,12 @@ function QuotationEditor({
                 + Add เสริม
               </button>
             </div>
+            <div className="mt-3 hidden grid-cols-12 gap-2 px-2 text-xxs font-semibold text-gray-500 md:grid">
+              <span className="col-span-2">ประเภท</span>
+              <span className="col-span-4">ชื่อรายการ</span>
+              <span className="col-span-2">จำนวน</span>
+              <span className="col-span-3">ราคา/หน่วย (บาท)</span>
+            </div>
             <div className="mt-2 space-y-2">
               {items.map((i, n) => (
                 <div
@@ -809,11 +866,15 @@ function QuotationEditor({
                   />
                   <input
                     type="number"
-                    value={i.unit_price}
+                    min="0"
+                    value={i.unit_price || ""}
                     onChange={(e) =>
-                      updateItem(n, { unit_price: Number(e.target.value) })
+                      updateItem(n, {
+                        unit_price:
+                          e.target.value === "" ? 0 : Number(e.target.value),
+                      })
                     }
-                    placeholder="ราคา/หน่วย"
+                    placeholder="เช่น 1,000"
                     className={`col-span-3 ${compactFieldClass}`}
                   />
                   <button
@@ -874,8 +935,10 @@ function QuotationEditor({
                   </label>
                   <input
                     type="number"
-                    value={discountValue}
-                    onChange={(e) => setDiscountValue(Number(e.target.value))}
+                    min="0"
+                    value={discountValue || ""}
+                    onChange={(e) => setDiscountValue(e.target.value === "" ? 0 : Number(e.target.value))}
+                    placeholder={discountType === "percent" ? "เช่น 10" : "เช่น 1,000"}
                     className={`mt-1 ${fieldClass}`}
                   />
                 </div>
@@ -1014,21 +1077,14 @@ function QuotationEditor({
                 5
               </span>
               <h3 className="text-sm font-bold text-gray-800">
-                เงื่อนไขและหมายเหตุ
+                เงื่อนไขเพิ่มเติม
               </h3>
             </div>
-            <div className="grid gap-3 md:grid-cols-2">
+            <div>
               <textarea
                 value={termsText}
                 onChange={(e) => setTermsText(e.target.value)}
                 placeholder="เงื่อนไขเพิ่มเติม"
-                rows={3}
-                className={fieldClass}
-              />
-              <textarea
-                value={note}
-                onChange={(e) => setNote(e.target.value)}
-                placeholder="หมายเหตุในใบเสนอราคา"
                 rows={3}
                 className={fieldClass}
               />
@@ -1072,12 +1128,12 @@ function QuotationEditor({
         <div className="sticky bottom-0 flex justify-end gap-2 border-t border-gray-200 bg-gray-50/90 p-4 backdrop-blur-sm">
           <button
             type="button"
-            disabled={!quote || saving}
+            disabled={saving}
             onClick={previewQuotation}
             title={
               quote
                 ? "แสดงเฉพาะใบเสนอราคา 2 หน้า จากข้อมูลที่บันทึกล่าสุด"
-                : "บันทึกฉบับร่างก่อนดูตัวอย่าง"
+                : "แสดงข้อมูลที่กำลังกรอกโดยไม่บันทึก"
             }
             className="rounded-lg border border-primary/30 bg-white px-4 py-2 text-sm font-semibold text-primary transition-colors hover:bg-primary/5 disabled:cursor-not-allowed disabled:opacity-40"
           >

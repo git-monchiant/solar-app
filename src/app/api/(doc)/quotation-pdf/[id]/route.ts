@@ -1,6 +1,7 @@
 import { readFileSync } from "fs";
 import { join } from "path";
 import { createHash } from "crypto";
+import { randomUUID } from "crypto";
 import { NextRequest, NextResponse } from "next/server";
 import puppeteer from "puppeteer";
 import { PDFDocument } from "pdf-lib";
@@ -9,11 +10,17 @@ import { getQuotationActor, getQuotationDetail } from "@/lib/quotation";
 import { getDb, sql } from "@/lib/db";
 import {
   buildQuotationDocumentSnapshot,
+  calculateFinancialSnapshot,
+  parseDocumentInputs,
   type QuotationDocumentSnapshot,
 } from "@/lib/quotation-document";
 import { buildSurveyReportHtml } from "@/lib/docs/survey-report";
 
 export const runtime = "nodejs";
+const previewCache = new Map<
+  string,
+  { detail: Record<string, unknown>; snapshot: QuotationDocumentSnapshot }
+>();
 
 const esc = (value: unknown) =>
   String(value ?? "").replace(
@@ -89,6 +96,56 @@ function thaiBahtText(value: unknown) {
   return `${readThaiInteger(baht)}บาท${satang ? `${readThaiInteger(satang)}สตางค์` : "ถ้วน"}`;
 }
 
+export async function POST(req: NextRequest) {
+  const userId = getUserIdFromReq(req);
+  if (!userId || !(await getQuotationActor(userId)))
+    return NextResponse.json({ error: "Not authenticated" }, { status: 401 });
+  const body = await req.json();
+  const now = new Date().toISOString();
+  const packageRow = body.package || {};
+  const subtotal = Number(body.subtotal ?? packageRow.price ?? 0);
+  const total = Number(body.total ?? subtotal);
+  const deposit = Number(body.deposit || 0);
+  const outstanding = Number(body.outstanding ?? Math.max(0, total - deposit));
+  const quotation = {
+    id: 0,
+    doc_no: "ตัวอย่างก่อนบันทึก",
+    issue_date: now,
+    valid_days: 7,
+    status: "draft",
+    package_id: packageRow.id || 1,
+    package_name_snapshot: packageRow.name || "-",
+    package_price_snapshot: Number(packageRow.price || 0),
+    subtotal_incl_vat: subtotal,
+    discount_label: body.discountLabel || "ส่วนลด",
+    discount_amount: Math.max(0, subtotal - total),
+    contract_total_incl_vat: total,
+    deposit_paid_amount: deposit,
+    outstanding_amount: outstanding,
+    amount_before_vat: outstanding / 1.07,
+    vat_amount: outstanding - outstanding / 1.07,
+    payment_terms_json: JSON.stringify(body.terms || []),
+    terms_text: body.termsText || "",
+    created_by_name: "-",
+  };
+  const inputs = parseDocumentInputs(body.documentInputs || {});
+  const snapshot: QuotationDocumentSnapshot = {
+    version: 3,
+    generated_at: now,
+    quotation,
+    lead: body.lead || {},
+    lead_data: {},
+    package: packageRow,
+    items: Array.isArray(body.allItems) ? body.allItems.map((item: Record<string, unknown>) => ({ ...item, item_name_snapshot: item.item_name_snapshot || item.item_name || "", line_total: Number(item.line_total || (Number(item.quantity) || 0) * (Number(item.unit_price) || 0)) })) : [],
+    settings: {},
+    financial: calculateFinancialSnapshot(inputs, quotation, packageRow),
+  };
+  const token = randomUUID();
+  previewCache.set(token, { detail: quotation, snapshot });
+  setTimeout(() => previewCache.delete(token), 10 * 60_000);
+  return NextResponse.json({ token });
+}
+
 export async function GET(
   req: NextRequest,
   { params }: { params: Promise<{ id: string }> },
@@ -99,11 +156,15 @@ export async function GET(
     return NextResponse.json({ error: "Not authenticated" }, { status: 401 });
 
   const { id } = await params;
+  const cachedPreview = id.startsWith("preview-")
+    ? previewCache.get(id.slice(8))
+    : undefined;
   const quotationId = Number(id);
   const htmlPreview = req.nextUrl.searchParams.get("format") === "html";
   const quotationOnly =
     req.nextUrl.searchParams.get("quotation_only") === "1" || htmlPreview;
-  const detail = await getQuotationDetail(quotationId);
+  const detail =
+    cachedPreview?.detail || (await getQuotationDetail(quotationId));
   if (!detail)
     return NextResponse.json({ error: "ไม่พบใบเสนอราคา" }, { status: 404 });
 
@@ -130,7 +191,8 @@ export async function GET(
     }
   }
 
-  let snapshot: QuotationDocumentSnapshot | null = null;
+  let snapshot: QuotationDocumentSnapshot | null =
+    cachedPreview?.snapshot || null;
   if (
     detail.document_snapshot_json &&
     ["pending_approval", "approved"].includes(detail.status)
@@ -263,7 +325,7 @@ export async function GET(
     ),
     ...addOns.map(
       (item, index) =>
-        `<tr><td class="center">${index + 2}</td><td>${esc(item.item_name_snapshot)} ${esc(item.quantity)} ${esc(item.unit)} <span class="muted">(ตัวเลือกเพิ่มเติม)</span></td><td class="right">${money(item.line_total)}</td></tr>`,
+        `<tr><td class="center">${index + 2}</td><td>${esc(item.item_name_snapshot)} ${esc(item.quantity)} ${esc(item.unit)} <span class="muted">(เพิ่มเติม)</span></td><td class="right">${money(item.line_total)}</td></tr>`,
     ),
   ];
   while (itemRows.length < 9)
