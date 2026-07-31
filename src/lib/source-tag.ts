@@ -17,6 +17,7 @@ export type SourceKey =
   | "web_sena"
   | "facebook"
   | "fb_smartify" | "fb_senx"
+  | "google"
   | "referral"
   // Catch-all + legacy aliases (older imports that we still need to render)
   | "other"
@@ -38,6 +39,7 @@ export const SOURCE_STYLES: Record<SourceKey, { label: string; cls: string }> = 
   facebook:          { label: "Facebook",               cls: "bg-blue-50 text-blue-700 ring-blue-200" },
   fb_smartify:       { label: "Facebook · Smartify",    cls: "bg-blue-50 text-blue-700 ring-blue-200" },
   fb_senx:           { label: "Facebook · SenXgroup",   cls: "bg-blue-50 text-blue-700 ring-blue-200" },
+  google:            { label: "Google",                 cls: "bg-red-50 text-red-700 ring-red-200" },
   referral:          { label: "ลูกค้าแนะนำ",              cls: "bg-emerald-50 text-emerald-700 ring-emerald-200" },
   // Catch-all + legacy aliases (kept so older leads.source values still render)
   other:    { label: "อื่นๆ",      cls: "bg-gray-100 text-gray-600 ring-gray-200" },
@@ -74,6 +76,9 @@ export function normalizeSourceKey(raw: string | null | undefined): SourceKey {
   if (/^facebook$|^fb$/.test(v)) return "facebook";
   if (/facebook.*smartify|fb.*smartify/.test(v)) return "fb_smartify";
   if (/facebook.*senx|fb.*senx/.test(v)) return "fb_senx";
+  // Google (incl. Google Ads / GDN) — must precede the legacy `ads` rule below,
+  // which also matches "google ads" and would otherwise swallow it.
+  if (/^google|g[-_ ]?ads|gdn/.test(v)) return "google";
   // Legacy single-word matches
   if (/sen.?x.?pm|senxpm|senx pm/.test(v)) return "senxpm";
   if (/walk.?in/.test(v)) return "walk_in";
