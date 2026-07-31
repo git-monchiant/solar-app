@@ -1,6 +1,7 @@
 "use client";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { apiFetch, getUserIdHeader } from "@/lib/api";
+import { GSB_SOLAR_LOAN_DEFAULTS } from "@/lib/loan-defaults";
 import { formatTHB } from "@/lib/utils/formatters";
 import { hasRole, useActiveRoles, useMe } from "@/lib/roles";
 import type { Lead, Package } from "./types";
@@ -84,10 +85,14 @@ export default function QuotationBuilder({
   lead,
   packages,
   refresh,
+  salesNote,
+  onSalesNoteChange,
 }: {
   lead: Lead;
   packages: Package[];
   refresh: () => Promise<unknown> | void;
+  salesNote: string;
+  onSalesNoteChange: (value: string) => void;
 }) {
   const { me } = useMe();
   const { activeRoles } = useActiveRoles();
@@ -441,6 +446,18 @@ export default function QuotationBuilder({
       </div>
       <div>
         <label className="text-xs font-semibold tracking-wider uppercase text-gray-400 block mb-1">
+          บันทึกถึงฝ่ายขาย
+        </label>
+        <textarea
+          value={salesNote}
+          onChange={(e) => onSalesNoteChange(e.target.value)}
+          placeholder="รายละเอียดใบเสนอราคา, หมายเหตุ..."
+          rows={2}
+          className="w-full px-3 py-2 rounded-lg border border-gray-200 bg-white text-sm focus:outline-none focus:border-primary resize-none"
+        />
+      </div>
+      <div>
+        <label className="text-xs font-semibold tracking-wider uppercase text-gray-400 block mb-1">
           ผู้จัดทำ
         </label>
         <input
@@ -562,17 +579,35 @@ function QuotationEditor({
     } catch {}
     return {
       recommendation_reason: saved.recommendation_reason || "",
-      loan_enabled: Boolean(saved.loan_enabled),
+      loan_enabled:
+        saved.loan_enabled ?? GSB_SOLAR_LOAN_DEFAULTS.loan_enabled,
       loan_bank:
-        saved.loan_bank || lead.finance_loan_bank || lead.finance_bank || "",
+        saved.loan_bank ||
+        lead.finance_loan_bank ||
+        lead.finance_bank ||
+        GSB_SOLAR_LOAN_DEFAULTS.loan_bank,
       loan_term_months: Number(
-        saved.loan_term_months || lead.finance_months || 84,
+        saved.loan_term_months ||
+          lead.finance_months ||
+          GSB_SOLAR_LOAN_DEFAULTS.loan_term_months,
       ),
-      down_payment_percent: Number(saved.down_payment_percent ?? 20),
-      interest_rate_year_1_2: Number(saved.interest_rate_year_1_2 || 0),
-      interest_rate_year_3_plus: Number(saved.interest_rate_year_3_plus || 0),
-      rate_source: saved.rate_source || "",
-      rate_effective_date: saved.rate_effective_date || "",
+      down_payment_percent: Number(
+        saved.down_payment_percent ??
+          GSB_SOLAR_LOAN_DEFAULTS.down_payment_percent,
+      ),
+      interest_rate_year_1_2: Number(
+        saved.interest_rate_year_1_2 ??
+          GSB_SOLAR_LOAN_DEFAULTS.interest_rate_year_1_2,
+      ),
+      interest_rate_year_3_plus: Number(
+        saved.interest_rate_year_3_plus ??
+          GSB_SOLAR_LOAN_DEFAULTS.interest_rate_year_3_plus,
+      ),
+      rate_source:
+        saved.rate_source || GSB_SOLAR_LOAN_DEFAULTS.rate_source,
+      rate_effective_date:
+        saved.rate_effective_date ||
+        GSB_SOLAR_LOAN_DEFAULTS.rate_effective_date,
       current_monthly_bill: Number(
         saved.current_monthly_bill ||
           lead.survey_monthly_bill ||

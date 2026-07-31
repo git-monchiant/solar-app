@@ -149,19 +149,13 @@ export default function QuoteStep({ lead, state, refresh, packages, expanded, on
       overlay={fileViewer.modal}
     >
       <div className="space-y-3">
-      {/* Note */}
-      <div>
-        <label className="text-xs font-semibold tracking-wider uppercase text-gray-400 block mb-1">บันทึกถึงทีมขาย</label>
-        <textarea
-          value={note}
-          onChange={e => setNote(e.target.value)}
-          placeholder="รายละเอียดใบเสนอราคา, หมายเหตุ..."
-          rows={3}
-          className="w-full px-3 py-2 rounded-lg border border-gray-200 text-sm focus:outline-none focus:border-primary resize-none"
+        <QuotationBuilder
+          lead={lead}
+          packages={packages}
+          refresh={refresh}
+          salesNote={note}
+          onSalesNoteChange={setNote}
         />
-      </div>
-
-      <QuotationBuilder lead={lead} packages={packages} refresh={refresh} />
       </div>
     </StepLayout>
   );

@@ -44,8 +44,8 @@ const baht = n => n==null?"":Number(n).toLocaleString("th-TH");
 const num = (n,d=0) => Number(n).toLocaleString("th-TH",{minimumFractionDigits:d,maximumFractionDigits:d});
 // ── GSB Solar Soft Loan calculator ──────────────────────────────────
 // Reverse-engineered from the shared sheet. Inputs (red boxes) → derived.
-// Assumptions (GSB Soft Loan defaults): down 20%, term 7y, tiered rate
-// 3.5% (yr1-2) then 5.0% (yr3-7), 4 peak-sun-hours/day, 5฿/kWh,
+// Assumptions (GSB Soft Loan defaults): down 20%, term 7y, conservative
+// no-collateral starting rate 3.5% throughout, 4 peak-sun-hours/day, 5฿/kWh,
 // CO₂ 0.5 kg/kWh, 1 ton CO₂ ≈ 100 trees/yr.
 //   down      = price × downPct
 //   loan      = price − down
@@ -60,7 +60,7 @@ const num = (n,d=0) => Number(n).toLocaleString("th-TH",{minimumFractionDigits:d
 //   billTot   = bill × n ; saveTot = save × n
 //   co2Yr     = kwh × 12 × 0.0005 (ton) ; trees = co2Yr × 100
 //   payback   = price / save (months) ; save25 = save × 12 × 25
-function calcLoan(price, kw, bill, { unit=5, r1=0.035, r2=0.05, downPct=0.20, term=7 } = {}) {
+function calcLoan(price, kw, bill, { unit=5, r1=0.035, r2=0.035, downPct=0.20, term=7 } = {}) {
   const down = Math.round(price * downPct), loan = price - down;
   const m1 = r1/12, m2 = r2/12, n1 = 24, n2 = (term-2)*12, n = n1+n2;
   const wAvg = (r1*n1 + r2*n2)/n;
@@ -413,7 +413,7 @@ export function buildSurveyReportHtml(L, D, PKG, options = {}) {
   const financeOutputs = options.financial?.outputs || {};
   const downPct = Number(financeInputs.down_payment_percent ?? 20);
   const rate1 = Number(financeInputs.interest_rate_year_1_2 ?? 3.5);
-  const rate2 = Number(financeInputs.interest_rate_year_3_plus ?? 5);
+  const rate2 = Number(financeInputs.interest_rate_year_3_plus ?? 3.5);
   const termMonths = Number(financeInputs.loan_term_months ?? 84);
   const electricityRate = Number(financeInputs.electricity_rate ?? 5);
   const C = calcLoan(loanPrice, loanKw, loanBill, { unit:electricityRate, r1:rate1/100, r2:rate2/100, downPct:downPct/100, term:termMonths/12 });

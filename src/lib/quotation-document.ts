@@ -1,5 +1,6 @@
 import "server-only";
 import { getDb, sql } from "@/lib/db";
+import { GSB_SOLAR_LOAN_DEFAULTS } from "@/lib/loan-defaults";
 
 export const QUOTATION_DOCUMENT_VERSION = 3;
 export const QUOTATION_FINANCE_FORMULA_VERSION = "contract-price-before-deposit-v2";
@@ -62,14 +63,14 @@ export function parseDocumentInputs(raw: unknown, fallback: Partial<QuotationDoc
   const number = (value: unknown, defaultValue: number) => Number.isFinite(Number(value)) ? Number(value) : defaultValue;
   return {
     recommendation_reason: String(parsed.recommendation_reason ?? fallback.recommendation_reason ?? "").trim(),
-    loan_enabled: Boolean(parsed.loan_enabled ?? fallback.loan_enabled ?? false),
-    loan_bank: String(parsed.loan_bank ?? fallback.loan_bank ?? "").trim(),
-    loan_term_months: Math.max(0, Math.round(number(parsed.loan_term_months ?? fallback.loan_term_months, 84))),
-    down_payment_percent: Math.min(100, Math.max(0, number(parsed.down_payment_percent ?? fallback.down_payment_percent, 20))),
-    interest_rate_year_1_2: Math.max(0, number(parsed.interest_rate_year_1_2 ?? fallback.interest_rate_year_1_2, 0)),
-    interest_rate_year_3_plus: Math.max(0, number(parsed.interest_rate_year_3_plus ?? fallback.interest_rate_year_3_plus, 0)),
-    rate_source: String(parsed.rate_source ?? fallback.rate_source ?? "").trim(),
-    rate_effective_date: String(parsed.rate_effective_date ?? fallback.rate_effective_date ?? "").slice(0, 10),
+    loan_enabled: Boolean(parsed.loan_enabled ?? fallback.loan_enabled ?? GSB_SOLAR_LOAN_DEFAULTS.loan_enabled),
+    loan_bank: String(parsed.loan_bank ?? fallback.loan_bank ?? GSB_SOLAR_LOAN_DEFAULTS.loan_bank).trim(),
+    loan_term_months: Math.max(0, Math.round(number(parsed.loan_term_months ?? fallback.loan_term_months, GSB_SOLAR_LOAN_DEFAULTS.loan_term_months))),
+    down_payment_percent: Math.min(100, Math.max(0, number(parsed.down_payment_percent ?? fallback.down_payment_percent, GSB_SOLAR_LOAN_DEFAULTS.down_payment_percent))),
+    interest_rate_year_1_2: Math.max(0, number(parsed.interest_rate_year_1_2 ?? fallback.interest_rate_year_1_2, GSB_SOLAR_LOAN_DEFAULTS.interest_rate_year_1_2)),
+    interest_rate_year_3_plus: Math.max(0, number(parsed.interest_rate_year_3_plus ?? fallback.interest_rate_year_3_plus, GSB_SOLAR_LOAN_DEFAULTS.interest_rate_year_3_plus)),
+    rate_source: String(parsed.rate_source ?? fallback.rate_source ?? GSB_SOLAR_LOAN_DEFAULTS.rate_source).trim(),
+    rate_effective_date: String(parsed.rate_effective_date ?? fallback.rate_effective_date ?? GSB_SOLAR_LOAN_DEFAULTS.rate_effective_date).slice(0, 10),
     current_monthly_bill: Math.max(0, number(parsed.current_monthly_bill ?? fallback.current_monthly_bill, 0)),
     electricity_rate: Math.max(0, number(parsed.electricity_rate ?? fallback.electricity_rate, 5)),
     production_kwh_per_kw_month: Math.max(0, number(parsed.production_kwh_per_kw_month ?? fallback.production_kwh_per_kw_month, 120)),
