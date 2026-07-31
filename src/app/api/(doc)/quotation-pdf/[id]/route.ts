@@ -103,6 +103,32 @@ export async function POST(req: NextRequest) {
   const body = await req.json();
   const now = new Date().toISOString();
   const packageRow = body.package || {};
+  const submittedLead =
+    body.lead && typeof body.lead === "object" ? body.lead : {};
+  const leadId = Number(submittedLead.id || 0);
+  let previewLead = submittedLead;
+  let previewLeadData: Record<string, unknown> = {};
+  if (Number.isInteger(leadId) && leadId > 0) {
+    const db = await getDb();
+    const leadResult = await db
+      .request()
+      .input("leadId", sql.Int, leadId)
+      .query(`
+        SELECT l.*,
+          owner.full_name assigned_name,
+          surveyor.full_name survey_completed_by_name
+        FROM leads l
+        LEFT JOIN users owner ON owner.id=l.assigned_user_id
+        LEFT JOIN users surveyor ON surveyor.id=l.survey_completed_by
+        WHERE l.id=@leadId;
+        SELECT TOP 1 * FROM lead_data WHERE lead_id=@leadId;
+      `);
+    const sets = leadResult.recordsets as unknown as Array<
+      Array<Record<string, unknown>>
+    >;
+    if (sets[0]?.[0]) previewLead = { ...submittedLead, ...sets[0][0] };
+    previewLeadData = sets[1]?.[0] || {};
+  }
   const subtotal = Number(body.subtotal ?? packageRow.price ?? 0);
   const total = Number(body.total ?? subtotal);
   const deposit = Number(body.deposit || 0);
@@ -133,8 +159,8 @@ export async function POST(req: NextRequest) {
     version: 3,
     generated_at: now,
     quotation,
-    lead: body.lead || {},
-    lead_data: {},
+    lead: previewLead,
+    lead_data: previewLeadData,
     package: packageRow,
     items: Array.isArray(body.allItems) ? body.allItems.map((item: Record<string, unknown>) => ({ ...item, item_name_snapshot: item.item_name_snapshot || item.item_name || "", line_total: Number(item.line_total || (Number(item.quantity) || 0) * (Number(item.unit_price) || 0)) })) : [],
     settings: {},
