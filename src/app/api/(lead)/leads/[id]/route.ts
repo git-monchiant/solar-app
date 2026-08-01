@@ -896,6 +896,10 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
       sets.push("survey_photo_inverter_point_url = @survey_photo_inverter_point_url");
       request.input("survey_photo_inverter_point_url", sql.NVarChar(500), body.survey_photo_inverter_point_url);
     }
+    if (body.survey_layout_sketch_url !== undefined) {
+      sets.push("survey_layout_sketch_url = @survey_layout_sketch_url");
+      request.input("survey_layout_sketch_url", sql.NVarChar(500), body.survey_layout_sketch_url);
+    }
     if (body.survey_recommended_kw !== undefined) {
       sets.push("survey_recommended_kw = @survey_recommended_kw");
       request.input("survey_recommended_kw", sql.Decimal(5, 1), body.survey_recommended_kw);

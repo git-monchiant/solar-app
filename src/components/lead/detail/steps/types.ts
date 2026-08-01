@@ -150,6 +150,7 @@ export interface Lead {
   survey_photo_roof_structure_url: string | null;
   survey_photo_mdb_url: string | null;
   survey_photo_inverter_point_url: string | null;
+  survey_layout_sketch_url: string | null;
   // PDF §7 — recommended install size after walking the site
   survey_recommended_kw: number | null;
   // PDF §7 — customer signature

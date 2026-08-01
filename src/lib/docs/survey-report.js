@@ -104,7 +104,11 @@ function imgData(url) {
   try {
     const buf = fs.readFileSync(path.join(process.cwd(), "public", "uploads", name));
     const ext = (name.split(".").pop() || "jpg").toLowerCase();
-    return `data:${ext === "png" ? "image/png" : "image/jpeg"};base64,${buf.toString("base64")}`;
+    const mime = ext === "png" ? "image/png"
+      : ext === "webp" ? "image/webp"
+      : ext === "gif" ? "image/gif"
+      : "image/jpeg";
+    return `data:${mime};base64,${buf.toString("base64")}`;
   } catch { return null; }
 }
 
@@ -217,6 +221,7 @@ export function buildSurveyReportHtml(L, D, PKG, options = {}) {
   const imgRoof = imgData(L.survey_photo_roof_structure_url);
   const imgInv = imgData(L.survey_photo_inverter_point_url);
   const imgMdb = imgData(L.survey_photo_mdb_url);
+  const imgLayoutSketch = imgData(L.survey_layout_sketch_url);
   const p4 = page(4, `${sect("2","รูปถ่ายหน้างานจริงและจุดติดตั้งอุปกรณ์")}<p class="src">(ข้อมูลจาก Survey)</p>
     <p class="lead">ภาพถ่ายหน้างานจริงประกอบการสำรวจ พร้อมร่างตำแหน่งจุดติดตั้งอุปกรณ์หลักของระบบโซลาร์เซลล์ เพื่อให้ลูกค้าเห็นภาพตำแหน่งการติดตั้งจริงก่อนดำเนินการ</p>
     <div class="pgrid">
@@ -229,8 +234,10 @@ export function buildSurveyReportHtml(L, D, PKG, options = {}) {
   // ── PAGE 5 §2 sketch (empty) ────────────────────────────────────────
   const p5 = page(5, `<h3 class="subh">ผังร่างจุดติดตั้งอุปกรณ์ (Equipment Layout Sketch)</h3>
     <p class="lead">ร่างผังหลังคาโดยประมาณ แสดงตำแหน่งแผงโซลาร์เซลล์ แนวเดินสายไฟ DC/AC ตำแหน่ง Inverter และตำแหน่งเชื่อมต่อเข้าตู้ไฟหลัก (MDB) ตามที่สำรวจหน้างานจริง</p>
-    <div class="sketch">
-      <div class="sk-note">พื้นที่สำหรับวาดผังร่างด้วยมือ — ระบุ: ตำแหน่งแผงโซลาร์ • แนวสายไฟ DC/AC • ตำแหน่ง Inverter • จุดเชื่อมต่อ MDB • ทิศทาง (N)</div>
+    <div class="sketch${imgLayoutSketch ? " has-image" : ""}">
+      ${imgLayoutSketch
+        ? `<img class="sketch-img" src="${imgLayoutSketch}" alt="Equipment Layout Sketch"/>`
+        : `<div class="sk-note">พื้นที่สำหรับวาดผังร่างด้วยมือ — ระบุ: ตำแหน่งแผงโซลาร์ • แนวสายไฟ DC/AC • ตำแหน่ง Inverter • จุดเชื่อมต่อ MDB • ทิศทาง (N)</div>`}
     </div>`);
 
   // ── PAGE 6 §3 Load Assumption — HYBRID: AC rows pre-filled from the
@@ -530,6 +537,8 @@ export function buildSurveyReportHtml(L, D, PKG, options = {}) {
   .ph-in{padding:12px;}.ph-t{font-size:15px;font-weight:700;color:#7a828e;}.ph-s{font-size:12.5px;color:#9aa1ab;font-style:italic;margin-top:3px;}
   /* hand-draw sketch area — big empty framed box, note pinned to top-left */
   .sketch{border:1.5px dashed #b9c0ca;border-radius:3px;background:repeating-linear-gradient(0deg,#fbfcfd,#fbfcfd 23px,#eef1f5 24px);height:205mm;position:relative;margin-top:4px;}
+  .sketch.has-image{background:#fff;padding:7mm;display:flex;align-items:center;justify-content:center;}
+  .sketch-img{display:block;width:100%;height:100%;object-fit:contain;}
   .sk-note{position:absolute;top:8px;left:12px;right:12px;font-size:12.5px;color:#98a0ab;font-style:italic;}
   .pgrid{display:grid;grid-template-columns:1fr 1fr;gap:10px;}
   .pimg{position:relative;border:1px solid #d5d9e0;border-radius:3px;overflow:hidden;background:#eef0f3;}
