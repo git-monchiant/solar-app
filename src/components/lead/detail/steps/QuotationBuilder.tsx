@@ -625,6 +625,10 @@ function QuotationEditor({
     };
   });
   useEffect(() => {
+    if (packageId || packages.length === 0) return;
+    setPackageId(packages[0].id);
+  }, [packageId, packages]);
+  useEffect(() => {
     if (!packageId) {
       setPackageItems([]);
       return;
@@ -867,7 +871,11 @@ function QuotationEditor({
                 </optgroup>
               ))}
             </select>
-            {packageItems.length > 0 ? (
+            {!packageId && packages.length === 0 ? (
+              <div className="mt-2 rounded-lg border border-amber-200 bg-amber-50 p-2 text-xs text-amber-700">
+                ไม่มี Package ที่เปิดใช้งานอยู่ในช่วงวันที่ปัจจุบัน กรุณาตรวจสอบวันเริ่มใช้และวันหมดอายุใน Package Master
+              </div>
+            ) : packageItems.length > 0 ? (
               <div className="mt-2 rounded-xl border border-primary/15 bg-primary/5 p-3">
                 <div className="mb-1 text-xs font-bold text-primary">
                   อุปกรณ์หลักจาก Package (แก้ไขไม่ได้)
@@ -879,12 +887,12 @@ function QuotationEditor({
                   </div>
                 ))}
               </div>
-            ) : (
+            ) : packageId ? (
               <div className="mt-2 rounded-lg border border-amber-200 bg-amber-50 p-2 text-xs text-amber-700">
                 Package นี้ยังไม่มีรายการอุปกรณ์ใน Master —
                 ระบบยังคงใช้ชื่อและราคาหลักของ Package
               </div>
-            )}
+            ) : null}
           </section>
           <section className="rounded-2xl border border-gray-200 bg-white p-4 shadow-sm">
             <div className="flex items-center justify-between">
