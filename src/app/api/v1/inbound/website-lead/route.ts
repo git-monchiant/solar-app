@@ -215,6 +215,22 @@ export async function POST(req: NextRequest) {
 
   const hasEv = g("has_ev", "มีรถ EV หรือไม่");
 
+  // Source — the caller may tag the lead with its own channel code (a partner
+  // site, a specific campaign, etc.). Defaults to web_sena when the field is
+  // absent OR blank, so existing callers that never send it keep working
+  // exactly as before. Capped at the column's 50-char limit to avoid a SQL
+  // overflow; no whitelist needed because the UI's normalizeSourceKey already
+  // folds any unrecognised value to the grey "อื่นๆ" chip instead of erroring.
+  const sourceRaw = g("source", "Source", "ที่มา");
+  const source = sourceRaw ? sourceRaw.slice(0, 50) : "web_sena";
+
+  // External referrer id — a partner system's referrer/agent code. Purely
+  // optional: a caller (e.g. the current website) that doesn't send it gets
+  // NULL and behaves exactly as before, so no web-side code change is forced.
+  // Capped at the column's 50-char limit to avoid a SQL overflow.
+  const referExternalIdRaw = g("refer_external_id", "refer_id", "referral_id", "Refer Id");
+  const referExternalId = referExternalIdRaw ? referExternalIdRaw.slice(0, 50) : null;
+
   // Basic validation
   if (!fullName) return NextResponse.json({ error: "full_name is required" }, { status: 400 });
   if (!phone) return NextResponse.json({ error: "valid phone is required" }, { status: 400 });
@@ -279,11 +295,8 @@ export async function POST(req: NextRequest) {
     raw: body,
   };
 
-  // Every inbound webform lead is tagged with the canonical
-  // "Website · SenaSolarEnergy" source key. UTM/gclid/fbclid live in
-  // webform_meta so we don't need to fan them out into source.
-  const source = "web_sena";
-
+  // `source` resolved above (caller-supplied, else web_sena). UTM/gclid/fbclid
+  // still live in webform_meta so we don't fan them out into source.
   try {
     const db = await getDb();
 
@@ -305,18 +318,19 @@ export async function POST(req: NextRequest) {
       .input("customer_type", sql.NVarChar(20), customerType)
       .input("interested_package_id", sql.Int, interestedPackageId)
       .input("source", sql.NVarChar(50), source)
+      .input("refer_external_id", sql.NVarChar(50), referExternalId)
       .input("note", sql.NVarChar(sql.MAX), note)
       .input("webform_meta", sql.NVarChar(sql.MAX), JSON.stringify(webformMeta))
       .query(`
         INSERT INTO leads (
           full_name, phone, email, line_id, installation_address,
-          customer_type, interested_package_id, source, note,
+          customer_type, interested_package_id, source, refer_external_id, note,
           webform_meta, status
         )
         OUTPUT INSERTED.id
         VALUES (
           @full_name, @phone, @email, @line_id, @installation_address,
-          @customer_type, @interested_package_id, @source, @note,
+          @customer_type, @interested_package_id, @source, @refer_external_id, @note,
           @webform_meta, 'pre_survey'
         )
       `);
@@ -362,6 +376,7 @@ export async function POST(req: NextRequest) {
         customer_type: customerType,
         interested_package_id: interestedPackageId,
         source,
+        refer_external_id: referExternalId,
         residence_type: residenceType,
         monthly_bill_max: monthlyBill,
         wants_battery: wantsBattery,

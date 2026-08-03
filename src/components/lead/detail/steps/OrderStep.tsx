@@ -210,6 +210,15 @@ export default function OrderStep({ lead, state, refresh, expanded, onToggle }: 
   // PaymentSection can show its admin "ถอย" button (it gates on slipUrl
   // pointing at /api/payments/<id>).
   const [paidIdToId, setPaidIdToId] = useState<Map<number, number>>(new Map());
+  // Map idx → the amount ACTUALLY recorded on the confirmed payment row. The
+  // plan recomputes every row's amount from its pct on each render, but a
+  // payment's amount is frozen when it's generated. If the plan is edited
+  // afterward (e.g. a later installment is added, re-splitting the pcts) the
+  // recomputed amount silently diverges from the money that was really
+  // collected — nothing complained, and lead 670's งวด 2 read 117,000 on screen
+  // while the cheque booked 117,400. We keep the real amount so the mismatch
+  // can be surfaced instead of hidden.
+  const [paidAmountByIdx, setPaidAmountByIdx] = useState<Map<number, number>>(new Map());
   // Sum of pct from rows that aren't the auto-computed remainder row.
   // Auto row = highest-index unpaid row (or fallback to last row when no
   // payment data is loaded yet / nothing is paid).
@@ -415,6 +424,7 @@ export default function OrderStep({ lead, state, refresh, expanded, onToggle }: 
       ]);
       const paid = new Set<number>();
       const idMap = new Map<number, number>();
+      const amtMap = new Map<number, number>();
       const existing = new Set<number>();
       const chequeReceived = new Set<number>();
       const chequePending: ChequePendingPayment[] = [];
@@ -434,6 +444,7 @@ export default function OrderStep({ lead, state, refresh, expanded, onToggle }: 
         if (p.confirmed_at) {
           paid.add(idx);
           idMap.set(idx, p.id);
+          amtMap.set(idx, Number(p.amount || 0));
         } else if (p.payment_method === "cheque" && p.cheque_received_at) {
           chequeReceived.add(idx);
           chequePending.push({
@@ -456,6 +467,7 @@ export default function OrderStep({ lead, state, refresh, expanded, onToggle }: 
       }
       setPaidIdxSet(paid);
       setPaidIdToId(idMap);
+      setPaidAmountByIdx(amtMap);
       setExistingIdxSet(existing);
       setPendingApprovalIdxSet(pendingApproval);
       setChequeReceivedIdxSet(chequeReceived);
@@ -575,6 +587,23 @@ export default function OrderStep({ lead, state, refresh, expanded, onToggle }: 
     return s;
   }, 0);
   const totalToCharge = netTotal + ccSurcharge;
+
+  // Reconcile plan vs reality. For every confirmed installment, compare the
+  // amount the plan now computes (rowNet) against the amount the payment row
+  // actually booked. A gap means the plan was edited after the money was
+  // collected — the exact trap that made lead 670 read 117,000 while the bank
+  // cleared 117,400. Round both to whole baht before comparing so sub-baht pct
+  // rounding never trips a phantom warning.
+  const paidMismatches = installments
+    .map((_, i) => {
+      if (!paidIdxSet.has(i)) return null;
+      const actual = paidAmountByIdx.get(i);
+      if (actual == null) return null;
+      const plan = rowNet(i);
+      const diff = Math.round(actual) - Math.round(plan);
+      return diff !== 0 ? { idx: i, plan: Math.round(plan), actual: Math.round(actual), diff } : null;
+    })
+    .filter((m): m is { idx: number; plan: number; actual: number; diff: number } => m !== null);
 
   // Build the auto-save payload from current state. Used both by the debounce
   // autosave (below) and the synchronous flushSave called when the user clicks
@@ -997,6 +1026,22 @@ export default function OrderStep({ lead, state, refresh, expanded, onToggle }: 
               </span>
             </div>
 
+            {paidMismatches.length > 0 && (
+              <div className="mb-3 rounded-lg border border-red-300 bg-red-50 px-3 py-2.5 text-xs text-red-800">
+                <div className="font-bold mb-1">⚠️ ยอดที่รับจริงไม่ตรงกับแผนผ่อน</div>
+                <div className="text-red-700/90 mb-1.5">
+                  งวดด้านล่างถูกแก้แผนหลังจากรับเงินไปแล้ว ยอดในแผนจึงไม่ตรงกับที่บัญชีรับจริง — ตรวจสอบก่อนปิดงาน
+                </div>
+                <ul className="space-y-0.5 font-mono tabular-nums">
+                  {paidMismatches.map(m => (
+                    <li key={m.idx}>
+                      งวดที่ {m.idx + 1}: รับจริง <span className="font-bold">{fmt(m.actual)}</span> ฿ · แผน {fmt(m.plan)} ฿ ·{" "}
+                      <span className="font-bold">{m.diff > 0 ? `เกิน ${fmt(m.diff)}` : `ขาด ${fmt(-m.diff)}`}</span> ฿
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            )}
             <div className="space-y-2">
               {installments.map((row, i) => {
                 const isAutoRow = i === _autoIdx;
