@@ -27,11 +27,29 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
     await page.goto(`http://localhost:${port}/survey/${id}${viewQs}`, { waitUntil: "networkidle0", timeout: 15000 });
     await page.waitForSelector("#survey", { timeout: 10000 });
     await page.evaluate(() => (document as unknown as { fonts: { ready: Promise<unknown> } }).fonts.ready);
-    // Wait for all images (incl. signature) to finish loading; networkidle0 alone
-    // can fire before <img> sources are decoded.
+    // Wait for EVERY image to actually be painted — not just "load fired".
+    //
+    // The signatures load from /api/leads/[id]/signature/... with a ?v cache
+    // buster, so the request can still be in flight when networkidle0 fires, and
+    // the old `img.onload || onerror` wait resolved the moment either fired —
+    // including onerror on a cold endpoint — capturing a blank signature. Poll
+    // until each image reports naturalWidth > 0 (i.e. it has real pixels), then
+    // decode() it so it's committed to a paint, before taking the PDF.
     await page.evaluate(async () => {
-      const imgs = Array.from(document.images);
-      await Promise.all(imgs.map(img => img.complete ? Promise.resolve() : new Promise<void>(res => { img.onload = img.onerror = () => res(); })));
+      const ready = (img: HTMLImageElement) => img.complete && img.naturalWidth > 0;
+      const deadline = Date.now() + 12000;
+      // eslint-disable-next-line no-constant-condition
+      while (true) {
+        const imgs = Array.from(document.images);
+        const pending = imgs.filter(img => !ready(img));
+        if (pending.length === 0 || Date.now() > deadline) break;
+        await new Promise<void>(res => setTimeout(res, 150));
+      }
+      await Promise.all(
+        Array.from(document.images).map(img =>
+          (img.decode ? img.decode() : Promise.resolve()).catch(() => undefined)
+        )
+      );
     });
 
     const bytes = await page.pdf({

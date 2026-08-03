@@ -95,14 +95,8 @@ export default function OrderStep({ lead, state, refresh, expanded, onToggle }: 
   const [nextError, setNextError] = useState<string | null>(null);
   const [total, setTotal] = useState<number>(lead.order_total || lead.quotation_amount || 0);
 
-  // Sync total with latest quotation_amount when it becomes available (user might arrive from QuoteStep
-  // after quotation_amount was just saved; useState default only captures first render).
-  useEffect(() => {
-    if (!lead.order_total && lead.quotation_amount && total !== lead.quotation_amount) {
-      setTotal(lead.quotation_amount);
-    }
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [lead.quotation_amount, lead.order_total]);
+  // Sync effect moved below — it needs the discount state (declared later) so
+  // it can re-base a %-based discount when the total changes.
 
   // Quotation options (JSON in lead.quotation_files, or legacy CSV). The
   // customer picks one in substep 0 — that index lands in
@@ -117,6 +111,17 @@ export default function OrderStep({ lead, state, refresh, expanded, onToggle }: 
   useEffect(() => {
     if (quoteOptions.length > 0 && (acceptedIdx === null || acceptedIdx === undefined) && !pickingQuote) {
       const first = quoteOptions[0];
+      // Sync order_total to the accepted quote here too — NOT just in pickQuote.
+      // This auto-accept used to set quotation_amount but leave order_total on
+      // whatever stale value it held, so every downstream figure (discount %,
+      // installments) was based on the wrong total. Lead 662 read order_total
+      // 285,000 against a 233,000 quote, making its ฿6,990 discount show 2.45%
+      // instead of 3%. Mirror pickQuote's discount handling: a %-based discount
+      // rescales with the new total, a flat ฿ discount is kept as entered.
+      const pct = lead.order_discount_pct ?? 0;
+      const newDiscountAmount = pct > 0
+        ? Math.round(first.amount * pct / 100)
+        : (lead.order_discount_amount ?? 0);
       setPickingQuote(true);
       apiFetch(`/api/leads/${lead.id}`, {
         method: "PATCH",
@@ -125,6 +130,8 @@ export default function OrderStep({ lead, state, refresh, expanded, onToggle }: 
           quotation_accepted_idx: 0,
           quotation_amount: first.amount,
           quotation_doc_no: first.doc_no || null,
+          order_total: first.amount,
+          order_discount_amount: newDiscountAmount || null,
         }),
       }).then(() => refresh()).finally(() => setPickingQuote(false));
     }
@@ -185,6 +192,25 @@ export default function OrderStep({ lead, state, refresh, expanded, onToggle }: 
   const [discountPct, setDiscountPct] = useState<number>(lead.order_discount_pct ?? 0);
   const [discountAmount, setDiscountAmount] = useState<number>(lead.order_discount_amount ?? 0);
   const [discountNote, setDiscountNote] = useState<string>(lead.order_discount_note ?? "");
+
+  // Keep order_total pinned to the accepted quotation amount. The total is the
+  // price the customer agreed to on the quote; when it drifts (a stale manual
+  // entry, or a quote corrected after order_total was first set) every derived
+  // figure mis-bases — lead 662 carried order_total 285,000 against a 233,000
+  // quote, so its ฿6,990 (3%) discount computed as 2.45%. The old effect only
+  // synced when order_total was empty, so a drifted value stuck forever.
+  //
+  // Skip once any order installment is confirmed (order_paid_count > 0): those
+  // payments are tied to the total in force then, and re-basing would desync
+  // them. A %-based discount is re-based onto the corrected total; a flat ฿
+  // discount is left as entered. The debounced auto-save persists the result.
+  useEffect(() => {
+    const q = lead.quotation_amount;
+    if (!q || (lead.order_paid_count ?? 0) > 0 || total === q) return;
+    setTotal(q);
+    if (discountPct > 0) setDiscountAmount(Math.round((q * discountPct) / 100));
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [lead.quotation_amount, lead.order_paid_count]);
 
   // Installment plan: array of {pct, when, due_date}. The legacy order_pct_before
   // is the sum of "before-install" rows — kept in sync so PaymentSection (which
