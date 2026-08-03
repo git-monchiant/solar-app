@@ -28,7 +28,7 @@ export type DocType = "booking" | "quotation" | "survey" | "warranty" | "install
 
 const DEFAULTS: Record<DocType, { prefix: string; column: string; digits?: number }> = {
   booking:           { prefix: "SM",  column: "pre_doc_no" },
-  quotation:         { prefix: "QT",  column: "quotation_doc_no" },
+  quotation:         { prefix: "SSR-QT", column: "quotation_doc_no", digits: 4 },
   survey:            { prefix: "SV",  column: "survey_doc_no" },
   warranty:          { prefix: "SSE", column: "warranty_doc_no" },
   // SSE-CK-YY#### — 4-digit counter (#### per user spec).
@@ -54,7 +54,10 @@ export async function getDocConfig(
   for (const r of cfg.recordset) map[r.key] = r.value;
   // Allow a single internal dash for multi-segment prefixes (e.g. "SSE-CK")
   // — strip everything else, collapse repeats, and trim leading/trailing.
-  const prefix = (map[`doc_prefix_${type}`] || DEFAULTS[type].prefix)
+  const configuredPrefix = type === "quotation"
+    ? DEFAULTS.quotation.prefix
+    : (map[`doc_prefix_${type}`] || DEFAULTS[type].prefix);
+  const prefix = configuredPrefix
     .replace(/[^A-Z0-9-]/gi, "")
     .replace(/-+/g, "-")
     .replace(/^-|-$/g, "")
@@ -62,7 +65,8 @@ export async function getDocConfig(
   // Per-type digit default (fallback 3) — install_checklist defaults to 4
   // for the #### spec. Admin can still override via doc_digits_<type>.
   const defaultDigits = String(DEFAULTS[type].digits ?? 3);
-  const digits = Math.max(3, Math.min(5, parseInt(map[`doc_digits_${type}`] || defaultDigits) || (DEFAULTS[type].digits ?? 3)));
+  const configuredDigits = type === "quotation" ? defaultDigits : (map[`doc_digits_${type}`] || defaultDigits);
+  const digits = Math.max(3, Math.min(5, parseInt(configuredDigits) || (DEFAULTS[type].digits ?? 3)));
   return { prefix, digits };
 }
 
@@ -73,6 +77,7 @@ export async function getDocRegex(
   type: DocType,
 ): Promise<RegExp> {
   const { prefix, digits } = await getDocConfig(poolOrTx, type);
+  if (type === "quotation") return new RegExp(`^${prefix}-\\d{2}-\\d{${digits}}$`);
   // ^PREFIX-YY{N digits}$  (one dash only, exact length)
   return new RegExp(`^${prefix}-\\d{${2 + digits}}$`);
 }
@@ -105,20 +110,24 @@ export async function mintDocNo(
 
   const { prefix, digits } = await getDocConfig(poolOrTx, type);
   const year = new Date().getFullYear().toString().slice(-2);
-  const like = `${prefix}-${year}%`;
+  const counterSeparator = type === "quotation" ? "-" : "";
+  const like = `${prefix}-${year}${counterSeparator}%`;
   // Pull MAX of the counter portion regardless of digit-length — lets the
   // sequence continue smoothly when an admin bumps doc_digits_* (existing
   // SM-26051 → next SM-260052 instead of restarting at SM-260001).
   // TRY_CAST drops any historical row whose counter isn't pure digits so a
   // malformed legacy doc (`SM-PM-26001`) won't pollute the max.
-  const counterStart = prefix.length + 1 + 2 + 1; // 1-indexed: position after `{prefix}-{yy}`
+  const counterStart = prefix.length + 1 + 2 + counterSeparator.length + 1; // 1-indexed: position after the year separator
+  const counterSql = type === "quotation"
+    ? `RIGHT(${column}, CHARINDEX('-', REVERSE(${column})) - 1)`
+    : `SUBSTRING(${column}, ${counterStart}, 20)`;
   const maxRes = await reqFor(poolOrTx)
-    .input("like", sql.NVarChar(20), like)
-    .query(`SELECT MAX(TRY_CAST(SUBSTRING(${column}, ${counterStart}, 20) AS INT)) AS max_num
+    .input("like", sql.NVarChar(30), like)
+    .query(`SELECT MAX(TRY_CAST(${counterSql} AS INT)) AS max_num
             FROM leads
             WHERE ${column} LIKE @like`);
   const nextNum = ((maxRes.recordset[0].max_num || 0) + 1).toString().padStart(digits, "0");
-  const docNo = `${prefix}-${year}${nextNum}`;
+  const docNo = `${prefix}-${year}${counterSeparator}${nextNum}`;
 
   // Guard with column IS NULL so a concurrent mint can't clobber.
   await reqFor(poolOrTx)
@@ -148,7 +157,7 @@ async function mintFromQuotation(
   const qtPrefix = (await getDocConfig(poolOrTx, "quotation")).prefix;
   const ckPrefix = (await getDocConfig(poolOrTx, "install_checklist")).prefix;
   if (!qtDoc.startsWith(`${qtPrefix}-`)) return null;
-  const running = qtDoc.slice(qtPrefix.length + 1);
+  const running = qtDoc.slice(qtPrefix.length + 1).replace(/^(\d{2})-/, "$1");
   const docNo = `${ckPrefix}-${running}`;
 
   await reqFor(poolOrTx)

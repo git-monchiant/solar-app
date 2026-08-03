@@ -9,9 +9,9 @@ import { useFileViewer } from "@/lib/hooks/useFileViewer";
 
 type Settings = Record<string, string>;
 
-const DOC_TYPES: { key: string; label: string; description: string; defaultPrefix: string }[] = [
+const DOC_TYPES: { key: string; label: string; description: string; defaultPrefix: string; defaultDigits?: number; locked?: boolean }[] = [
   { key: "booking", label: "ใบจองคิว", description: "เกิดเมื่อยืนยัน Pre-Survey + จ่ายเงินจอง", defaultPrefix: "SM" },
-  { key: "quotation", label: "ใบเสนอราคา", description: "ออกหลังเสร็จ Survey", defaultPrefix: "QT" },
+  { key: "quotation", label: "ใบเสนอราคา", description: "ออกหลังเสร็จ Survey · รูปแบบตายตัว SSR-QT-YY-XXXX", defaultPrefix: "SSR-QT", defaultDigits: 4, locked: true },
   { key: "survey", label: "ใบสำรวจ", description: "เอกสารสำรวจหน้างาน", defaultPrefix: "SV" },
   { key: "warranty", label: "ใบรับประกัน", description: "ออกเมื่อจบงานติดตั้ง", defaultPrefix: "SSE" },
   { key: "install_checklist", label: "ใบส่งมอบงานติดตั้ง", description: "เอกสารส่งมอบงานติดตั้งระบบ", defaultPrefix: "SSE-CK" },
@@ -219,8 +219,8 @@ function RunningNumbersSection() {
       const d: Record<string, { prefix: string; digits: number }> = {};
       for (const t of DOC_TYPES) {
         d[t.key] = {
-          prefix: s[`doc_prefix_${t.key}`] || t.defaultPrefix,
-          digits: parseInt(s[`doc_digits_${t.key}`] || "3"),
+          prefix: t.locked ? t.defaultPrefix : (s[`doc_prefix_${t.key}`] || t.defaultPrefix),
+          digits: t.locked ? (t.defaultDigits ?? 3) : parseInt(s[`doc_digits_${t.key}`] || String(t.defaultDigits ?? 3)),
         };
       }
       setDrafts(d);
@@ -234,8 +234,8 @@ function RunningNumbersSection() {
   const dirty = DOC_TYPES.some(t => {
     const cur = drafts[t.key];
     if (!cur) return false;
-    const savedPrefix = settings[`doc_prefix_${t.key}`] || t.defaultPrefix;
-    const savedDigits = parseInt(settings[`doc_digits_${t.key}`] || "3");
+    const savedPrefix = t.locked ? t.defaultPrefix : (settings[`doc_prefix_${t.key}`] || t.defaultPrefix);
+    const savedDigits = t.locked ? (t.defaultDigits ?? 3) : parseInt(settings[`doc_digits_${t.key}`] || String(t.defaultDigits ?? 3));
     return cur.prefix !== savedPrefix || cur.digits !== savedDigits;
   });
 
@@ -263,7 +263,10 @@ function RunningNumbersSection() {
   };
 
   const yy = new Date().getFullYear().toString().slice(-2);
-  const preview = (prefix: string, digits: number) => `${prefix}-${yy}${"1".padStart(digits, "0")}`;
+  const preview = (key: string, prefix: string, digits: number) =>
+    key === "quotation"
+      ? `${prefix}-${yy}-${"1".padStart(digits, "0")}`
+      : `${prefix}-${yy}${"1".padStart(digits, "0")}`;
 
   return (
     <section className="bg-white rounded-xl border border-gray-200 overflow-hidden">
@@ -283,7 +286,7 @@ function RunningNumbersSection() {
         <>
           <div className="divide-y divide-gray-100">
             {DOC_TYPES.map(t => {
-              const cur = drafts[t.key] || { prefix: t.defaultPrefix, digits: 3 };
+              const cur = drafts[t.key] || { prefix: t.defaultPrefix, digits: t.defaultDigits ?? 3 };
               return (
                 <div key={t.key} className="px-5 py-4 grid grid-cols-1 md:grid-cols-[1fr,140px,120px,1fr] gap-3 md:gap-4 md:items-center">
                   <div className="min-w-0">
@@ -293,14 +296,15 @@ function RunningNumbersSection() {
                   <div>
                     <label className="text-xxs font-bold uppercase tracking-wider text-gray-400 block mb-1 md:hidden">Prefix</label>
                     <input type="text" value={cur.prefix}
-                      onChange={e => update(t.key, { prefix: e.target.value.toUpperCase().replace(/[^A-Z0-9]/g, "").slice(0, 6) })}
+                      disabled={t.locked}
+                      onChange={e => update(t.key, { prefix: e.target.value.toUpperCase().replace(/[^A-Z0-9-]/g, "").replace(/-+/g, "-").replace(/^-/, "").slice(0, 10) })}
                       placeholder={t.defaultPrefix}
-                      className="w-full h-8 px-3 rounded-lg border border-gray-200 text-sm font-mono tracking-wider focus:outline-none focus:border-primary" />
+                      className="w-full h-8 px-3 rounded-lg border border-gray-200 text-sm font-mono tracking-wider focus:outline-none focus:border-primary disabled:bg-gray-50 disabled:text-gray-500 disabled:cursor-not-allowed" />
                   </div>
                   <div>
                     <label className="text-xxs font-bold uppercase tracking-wider text-gray-400 block mb-1 md:hidden">Digits</label>
-                    <select value={cur.digits} onChange={e => update(t.key, { digits: parseInt(e.target.value) })}
-                      className="w-full h-8 px-3 rounded-lg border border-gray-200 text-sm focus:outline-none focus:border-primary">
+                    <select value={cur.digits} disabled={t.locked} onChange={e => update(t.key, { digits: parseInt(e.target.value) })}
+                      className="w-full h-8 px-3 rounded-lg border border-gray-200 text-sm focus:outline-none focus:border-primary disabled:bg-gray-50 disabled:text-gray-500 disabled:cursor-not-allowed">
                       <option value={3}>3 หลัก</option>
                       <option value={4}>4 หลัก</option>
                       <option value={5}>5 หลัก</option>
@@ -308,7 +312,7 @@ function RunningNumbersSection() {
                   </div>
                   <div className="text-xs text-gray-500 md:text-right">
                     <span className="md:hidden text-xxs font-bold uppercase tracking-wider text-gray-400 mr-1">ตัวอย่าง</span>
-                    <span className="font-mono text-sm font-semibold text-gray-700">{preview(cur.prefix || t.defaultPrefix, cur.digits)}</span>
+                    <span className="font-mono text-sm font-semibold text-gray-700">{preview(t.key, cur.prefix || t.defaultPrefix, cur.digits)}</span>
                   </div>
                 </div>
               );
