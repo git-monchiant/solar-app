@@ -10,6 +10,10 @@ Statuses:
 
 | Plan | Status | Mockup | Notes |
 | --- | --- | --- | --- |
+| [20260801-02-survey-layout-sketch-upload.md](20260801-02-survey-layout-sketch-upload.md) | done | - | เพิ่มผังร่างใน Survey/Photos/PDF, apply migration 133 ที่ Development และตรวจ Build/PDF/schema ผ่าน |
+| [20260801-01-quotation-terms-payment-alignment.md](20260801-01-quotation-terms-payment-alignment.md) | done | - | แยกข้อความท้ายใบตามประเภท Package, ล็อกงวด 20/80 ตาม Excel, apply Development และตรวจ Build/PDF จริงผ่าน |
+| [20260730-01-sequential-quotation-approval.md](20260730-01-sequential-quotation-approval.md) | done | - | เพิ่ม approval chain Sale → Solar Sup → Sale Sup, apply migration Development และตรวจ build/transition ผ่าน; รอกำหนดผู้ใช้ role Solar Sup |
+| [20260722-02-step3-quotation-document-bundle.md](20260722-02-step3-quotation-document-bundle.md) | in-progress | - | ใช้ Report template กลางร่วมกับ `/api/survey-report/[leadId]`; รอ regression PDF 17 หน้า, Business UAT และอนุญาตก่อน Production |
 | [20260709-01-cheque-two-step-payment.md](20260709-01-cheque-two-step-payment.md) | done | - | เพิ่ม flow เช็ค 2 step: ยืนยันรับเช็ค -> รอรับเงิน -> ยืนยันรับเงิน |
 | [20260709-02-cheque-return-to-payment.md](20260709-02-cheque-return-to-payment.md) | done | - | พา user จากรอรับเงินเช็คกลับไป step 04 / งวดชำระ พร้อมเปิดงวดที่ต้องยืนยันรับเงิน |
 | [20260709-03-accounting-cheque-final-confirm-done-step.md](20260709-03-accounting-cheque-final-confirm-done-step.md) | done | - | ให้ Accounting ยืนยันรับเงินจริงจากเช็คได้แม้ Step 04 เป็น DONE แล้ว |
@@ -29,3 +33,4 @@ Statuses:
 | [20260717-01-grid-tie-document-timeline.md](20260717-01-grid-tie-document-timeline.md) | backlog | [interactive mockup](../mockup/20260717-01-grid-tie-document-timeline/) | ออกแบบ Timeline ขอขนานไฟ 6 ขั้น พร้อม Checklist, เอกสารหลักฐาน และ Gate ตามประเภทโครงการ |
 | [20260720-01-step5-gridtie-draft.md](20260720-01-step5-gridtie-draft.md) | done | - | เพิ่มขอขนานไฟแบบ Draft ใน Step 5 หลังตรวจ ใช้ข้อมูลร่วมกับ Step 7 และไม่บล็อกการส่งมอบงานติดตั้ง |
 | [20260720-02-quotation-package-options.md](20260720-02-quotation-package-options.md) | done | [interactive mockup](../mockup/20260720-02-quotation-package-options/) | ออกแบบ Step 03 ให้สร้างใบเสนอราคาได้สูงสุด 3 ฉบับจากแพ็กเกจหลักและ Add-on โดยคงหน้าตาตามระบบเดิม |
+| [20260722-01-quotation-system.md](20260722-01-quotation-system.md) | in-progress | [existing mockup](../mockup/20260720-02-quotation-package-options/) | Core Development implementation complete; รอ UAT, final 23-Package/PDF regression และอนุมัติก่อน Deploy |

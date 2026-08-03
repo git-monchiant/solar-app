@@ -11,6 +11,7 @@ type UserRow = {
   id: number;
   username: string;
   full_name: string;
+  job_title: string | null;
   team: string;
   phone: string | null;
   email: string | null;
@@ -242,6 +243,7 @@ function UserEditor({ user, currentUserId, existingUsernames, onClose, onSaved }
   const trimmedUsername = username.trim();
   const usernameTaken = isNew && trimmedUsername.length > 0 && existingUsernames.has(trimmedUsername.toLowerCase());
   const [fullName, setFullName] = useState(user?.full_name || "");
+  const [jobTitle, setJobTitle] = useState(user?.job_title || "");
   const [team, setTeam] = useState(user?.team || "Sen X PM");
   const [phone, setPhone] = useState(user?.phone || "");
   const [email, setEmail] = useState(user?.email || "");
@@ -273,14 +275,14 @@ function UserEditor({ user, currentUserId, existingUsernames, onClose, onSaved }
         await apiFetch("/api/users", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ username, password, full_name: fullName, team, phone, email, roles }),
+          body: JSON.stringify({ username, password, full_name: fullName, job_title: jobTitle, team, phone, email, roles }),
         });
       } else {
         await apiFetch(`/api/users/${user!.id}`, {
           method: "PATCH",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
-            full_name: fullName, team, phone, email, is_active: isActive, roles,
+            full_name: fullName, job_title: jobTitle, team, phone, email, is_active: isActive, roles,
             ...(password ? { password } : {}),
           }),
         });
@@ -354,6 +356,10 @@ function UserEditor({ user, currentUserId, existingUsernames, onClose, onSaved }
                 );
               })}
             </div>
+          </Field>
+          <Field label="ตำแหน่ง (แสดงใต้ลายเซ็นใน PDF)">
+            <input type="text" value={jobTitle} onChange={e => setJobTitle(e.target.value)} placeholder="เช่น Sale Supervisor"
+              className="w-full h-8 px-3 rounded-lg border border-gray-200 text-sm focus:outline-none focus:border-primary" />
           </Field>
           <Field label="Team">
             <input type="text" value={team} onChange={e => setTeam(e.target.value)}

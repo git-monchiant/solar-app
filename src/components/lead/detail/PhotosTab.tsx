@@ -23,11 +23,15 @@ interface PhotoItem {
 interface SubGroup {
   title: string;
   items: PhotoItem[];
+  /** Number of empty tiles for a read-only subgroup with no images. */
+  emptyPlaceholderCount?: number;
   /** When present, render an upload tile after the items and PATCH the field
    * named here with the appended CSV. */
   uploadField?: string;
   /** Existing raw CSV value behind the upload field — needed to append. */
   uploadCurrent?: string;
+  /** Single URL field. Uploading replaces the current image. */
+  replaceField?: string;
 }
 interface Group {
   title: string;
@@ -74,7 +78,7 @@ function buildGroups(lead: LeadLike): Group[] {
   const pushSub = (title: string, emoji: string, sub: SubGroup[]) => {
     // Show the section even when both subgroups are empty IF one of them is
     // upload-enabled — that's the entry point users need to bootstrap photos.
-    if (sub.some(s => s.items.length > 0 || s.uploadField)) out.push({ title, emoji, sub });
+    if (sub.some(s => s.items.length > 0 || s.uploadField || s.replaceField)) out.push({ title, emoji, sub });
   };
 
   // — Pre-Survey: ID card, house reg, electricity bill. (Payment slip is
@@ -86,7 +90,7 @@ function buildGroups(lead: LeadLike): Group[] {
   if (has(lead.pre_bill_photo_url))   preSurvey.push({ url: lead.pre_bill_photo_url,   label: "บิลค่าไฟ" });
   push("Pre-Survey", "📋", preSurvey);
 
-  // — Survey: 4-slot checklist + photo-with-note + free-form gallery + extra.
+  // — Survey: 4-slot checklist + layout sketch + photo-with-note + gallery.
   // Sub-groups mirror what the SurveyStep page captures so the reader sees
   // the same buckets here. Extra is the "เพิ่มเติม" zone for post-hoc photos
   // that the survey team needs to add later from this tab. —
@@ -95,6 +99,8 @@ function buildGroups(lead: LeadLike): Group[] {
   if (has(lead.survey_photo_roof_structure_url))  surveyChecklist.push({ url: lead.survey_photo_roof_structure_url,  label: "โครงสร้างหลังคา" });
   if (has(lead.survey_photo_mdb_url))             surveyChecklist.push({ url: lead.survey_photo_mdb_url,             label: "Consumer Unit / MDB" });
   if (has(lead.survey_photo_inverter_point_url))  surveyChecklist.push({ url: lead.survey_photo_inverter_point_url,  label: "จุดติด Inverter" });
+  const surveyLayoutSketch: PhotoItem[] = [];
+  if (has(lead.survey_layout_sketch_url)) surveyLayoutSketch.push({ url: lead.survey_layout_sketch_url, label: "ผังร่างจุดติดตั้งอุปกรณ์" });
   // Photo-with-Note slots — JSON array on lead.survey_photo_notes. Each entry
   // is { url, note }; we only show entries that actually have a photo, and
   // the note renders as a wrapped caption below the thumbnail.
@@ -116,6 +122,12 @@ function buildGroups(lead: LeadLike): Group[] {
   split(lead.survey_photos).forEach((url, i) => surveyGallery.push({ url, label: `รูปสำรวจ ${i + 1}` }));
   pushSub("Survey", "🔍", [
     { title: "รูปตามรายการ", items: surveyChecklist },
+    {
+      title: "ผังร่างจุดติดตั้งอุปกรณ์",
+      items: surveyLayoutSketch,
+      emptyPlaceholderCount: 1,
+      replaceField: "survey_layout_sketch_url",
+    },
     { title: "รูปพร้อมหมายเหตุ", items: surveyWithNote },
     {
       title: "รูปสำรวจอื่นๆ",
@@ -190,6 +202,14 @@ export default function PhotosTab({ lead, leadId }: { lead: LeadLike; leadId: nu
     setOverrides(prev => ({ ...prev, [field]: next }));
   };
 
+  const onReplace = async (field: string, newUrl: string) => {
+    await apiFetch(`/api/leads/${leadId}`, {
+      method: "PATCH", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ [field]: newUrl }),
+    });
+    setOverrides(prev => ({ ...prev, [field]: newUrl }));
+  };
+
   return (
     <div className="p-4 space-y-1">
       {groups.map((g) => {
@@ -225,8 +245,13 @@ export default function PhotosTab({ lead, leadId }: { lead: LeadLike; leadId: nu
                         <div className="pl-5 pt-2">
                           <PhotoGrid
                             items={sg.items}
-                            upload={sg.uploadField ? {
+                            emptyPlaceholderCount={sg.emptyPlaceholderCount}
+                            upload={sg.replaceField ? {
+                              onPick: (url) => onReplace(sg.replaceField!, url),
+                              label: sg.items.length ? "เปลี่ยนรูป" : "เพิ่มรูป",
+                            } : sg.uploadField ? {
                               onPick: (url) => onAppend(sg.uploadField!, sg.uploadCurrent || "", url),
+                              label: "เพิ่มรูป",
                             } : undefined}
                           />
                         </div>
@@ -278,14 +303,18 @@ function CollapseHeader({ level, emoji, title, count, open, onToggle }: {
 
 // Reusable grid + lightbox cluster so a section and a sub-section render the
 // same way — only differs in whether an upload tile gets appended.
-function PhotoGrid({ items, upload }: { items: PhotoItem[]; upload?: { onPick: (url: string) => void | Promise<void> } }) {
+function PhotoGrid({ items, upload, emptyPlaceholderCount }: {
+  items: PhotoItem[];
+  upload?: { onPick: (url: string) => void | Promise<void>; label?: string };
+  emptyPlaceholderCount?: number;
+}) {
   const gallery: LightboxImage[] = items.filter((i) => !i.pdf).map((i) => ({ url: i.url, label: i.label }));
   let imgIdx = 0;
   // Empty READ-ONLY sub-groups get grey placeholder tiles so the section
   // doesn't look broken — the user knows photos belong here but haven't
   // been captured yet. Upload-enabled sub-groups don't need them because
   // the "+ เพิ่มรูป" tile already conveys "drop a photo here".
-  const placeholderCount = items.length === 0 && !upload ? 5 : 0;
+  const placeholderCount = items.length === 0 && !upload ? (emptyPlaceholderCount ?? 5) : 0;
   return (
     <div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-6 lg:grid-cols-8 gap-2.5">
       {items.map((it, i) => {
@@ -329,7 +358,7 @@ function PhotoGrid({ items, upload }: { items: PhotoItem[]; upload?: { onPick: (
           </div>
         );
       })}
-      {upload && <UploadTile onUploaded={upload.onPick} />}
+      {upload && <UploadTile onUploaded={upload.onPick} label={upload.label} />}
       {Array.from({ length: placeholderCount }).map((_, i) => (
         <div
           key={`ph-${i}`}
@@ -347,7 +376,10 @@ function PhotoGrid({ items, upload }: { items: PhotoItem[]; upload?: { onPick: (
 }
 
 // Pick → compress → /api/upload → callback with the canonical URL.
-function UploadTile({ onUploaded }: { onUploaded: (url: string) => void | Promise<void> }) {
+function UploadTile({ onUploaded, label = "เพิ่มรูป" }: {
+  onUploaded: (url: string) => void | Promise<void>;
+  label?: string;
+}) {
   const [busy, setBusy] = useState(false);
   const inputId = `photo-up-${Math.random().toString(36).slice(2, 8)}`;
   const onPick = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -384,7 +416,7 @@ function UploadTile({ onUploaded }: { onUploaded: (url: string) => void | Promis
             <svg className="w-7 h-7" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.8}>
               <path strokeLinecap="round" strokeLinejoin="round" d="M12 4v16m8-8H4" />
             </svg>
-            <span className="text-xxs font-semibold">เพิ่มรูป</span>
+            <span className="text-xxs font-semibold">{label}</span>
           </>
         )}
       </label>

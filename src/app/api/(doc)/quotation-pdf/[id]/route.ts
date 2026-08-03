@@ -1,0 +1,571 @@
+import { readFileSync } from "fs";
+import { join } from "path";
+import { createHash } from "crypto";
+import { randomUUID } from "crypto";
+import { NextRequest, NextResponse } from "next/server";
+import puppeteer from "puppeteer";
+import { PDFDocument } from "pdf-lib";
+import { getUserIdFromReq } from "@/lib/auth";
+import { getQuotationActor, getQuotationDetail } from "@/lib/quotation";
+import { getDb, sql } from "@/lib/db";
+import {
+  buildQuotationDocumentSnapshot,
+  calculateFinancialSnapshot,
+  parseDocumentInputs,
+  type QuotationDocumentSnapshot,
+} from "@/lib/quotation-document";
+import { buildSurveyReportHtml } from "@/lib/docs/survey-report";
+import {
+  getQuotationLegalContent,
+  parseQuotationPaymentTerms,
+  type QuotationLegalSection,
+} from "@/lib/quotation-terms";
+
+export const runtime = "nodejs";
+const previewCache = new Map<
+  string,
+  { detail: Record<string, unknown>; snapshot: QuotationDocumentSnapshot }
+>();
+
+const esc = (value: unknown) =>
+  String(value ?? "").replace(
+    /[&<>"']/g,
+    (char) =>
+      ({
+        "&": "&amp;",
+        "<": "&lt;",
+        ">": "&gt;",
+        '"': "&quot;",
+        "'": "&#39;",
+      })[char]!,
+  );
+const money = (value: unknown) =>
+  Number(value || 0).toLocaleString("th-TH", {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  });
+const thaiDate = (value: unknown) =>
+  value
+    ? new Intl.DateTimeFormat("th-TH", {
+        day: "numeric",
+        month: "long",
+        year: "numeric",
+      }).format(new Date(String(value)))
+    : "-";
+const logoDataUrl = `data:image/png;base64,${readFileSync(join(process.cwd(), "public", "logos", "logo-sena.png")).toString("base64")}`;
+const paymentQrDataUrl = `data:image/png;base64,${readFileSync(join(process.cwd(), "public", "templates", "quotation-payment-qr.png")).toString("base64")}`;
+const quotationContact = {
+  name: "ณัฏฐามณฑ์ อรรควิทยาพงศ์",
+  phone: "092-496-9432",
+  email: "nattamona@sena.co.th",
+  lineOa: "@senasolarenergy",
+};
+
+function signatureDataUrl(data: unknown, mime: unknown) {
+  if (!data) return "";
+  return `data:${String(mime || "image/png")};base64,${Buffer.from(data as Uint8Array).toString("base64")}`;
+}
+
+function readThaiInteger(value: number): string {
+  if (value === 0) return "ศูนย์";
+  const digits = [
+    "ศูนย์",
+    "หนึ่ง",
+    "สอง",
+    "สาม",
+    "สี่",
+    "ห้า",
+    "หก",
+    "เจ็ด",
+    "แปด",
+    "เก้า",
+  ];
+  const positions = ["", "สิบ", "ร้อย", "พัน", "หมื่น", "แสน"];
+  const underMillion = (number: number) => {
+    const raw = String(Math.floor(number)).padStart(6, "0");
+    let result = "";
+    for (let index = 0; index < raw.length; index++) {
+      const digit = Number(raw[index]);
+      if (!digit) continue;
+      const position = raw.length - index - 1;
+      if (position === 1 && digit === 1) result += "สิบ";
+      else if (position === 1 && digit === 2) result += "ยี่สิบ";
+      else if (position === 0 && digit === 1 && Number(raw.slice(0, -1)) > 0)
+        result += "เอ็ด";
+      else result += digits[digit] + positions[position];
+    }
+    return result;
+  };
+  if (value < 1_000_000) return underMillion(value);
+  return `${readThaiInteger(Math.floor(value / 1_000_000))}ล้าน${value % 1_000_000 ? underMillion(value % 1_000_000) : ""}`;
+}
+
+function thaiBahtText(value: unknown) {
+  const amount = Math.max(0, Math.round(Number(value || 0) * 100));
+  const baht = Math.floor(amount / 100);
+  const satang = amount % 100;
+  return `${readThaiInteger(baht)}บาท${satang ? `${readThaiInteger(satang)}สตางค์` : "ถ้วน"}`;
+}
+
+export async function POST(req: NextRequest) {
+  const userId = getUserIdFromReq(req);
+  if (!userId || !(await getQuotationActor(userId)))
+    return NextResponse.json({ error: "Not authenticated" }, { status: 401 });
+  const body = await req.json();
+  const now = new Date().toISOString();
+  const packageRow = body.package || {};
+  const submittedLead =
+    body.lead && typeof body.lead === "object" ? body.lead : {};
+  const leadId = Number(submittedLead.id || 0);
+  let previewLead = submittedLead;
+  let previewLeadData: Record<string, unknown> = {};
+  if (Number.isInteger(leadId) && leadId > 0) {
+    const db = await getDb();
+    const leadResult = await db
+      .request()
+      .input("leadId", sql.Int, leadId)
+      .query(`
+        SELECT l.*,
+          owner.full_name assigned_name,
+          surveyor.full_name survey_completed_by_name
+        FROM leads l
+        LEFT JOIN users owner ON owner.id=l.assigned_user_id
+        LEFT JOIN users surveyor ON surveyor.id=l.survey_completed_by
+        WHERE l.id=@leadId;
+        SELECT TOP 1 * FROM lead_data WHERE lead_id=@leadId;
+      `);
+    const sets = leadResult.recordsets as unknown as Array<
+      Array<Record<string, unknown>>
+    >;
+    if (sets[0]?.[0]) previewLead = { ...submittedLead, ...sets[0][0] };
+    previewLeadData = sets[1]?.[0] || {};
+  }
+  const subtotal = Number(body.subtotal ?? packageRow.price ?? 0);
+  const total = Number(body.total ?? subtotal);
+  const deposit = Number(body.deposit || 0);
+  const outstanding = Number(body.outstanding ?? Math.max(0, total - deposit));
+  const quotation = {
+    id: 0,
+    doc_no: body.docNo || "ตัวอย่างก่อนบันทึก",
+    issue_date: now,
+    valid_days: 7,
+    status: "draft",
+    package_id: packageRow.id || 1,
+    package_name_snapshot: packageRow.name || "-",
+    package_price_snapshot: Number(packageRow.price || 0),
+    subtotal_incl_vat: subtotal,
+    discount_label: body.discountLabel || "ส่วนลด",
+    discount_amount: Math.max(0, subtotal - total),
+    contract_total_incl_vat: total,
+    deposit_paid_amount: deposit,
+    outstanding_amount: outstanding,
+    amount_before_vat: outstanding / 1.07,
+    vat_amount: outstanding - outstanding / 1.07,
+    payment_terms_json: JSON.stringify(parseQuotationPaymentTerms(body.terms)),
+    terms_text: body.termsText || "",
+    created_by_name: "-",
+  };
+  const inputs = parseDocumentInputs(body.documentInputs || {});
+  const snapshot: QuotationDocumentSnapshot = {
+    version: 3,
+    generated_at: now,
+    quotation,
+    lead: previewLead,
+    lead_data: previewLeadData,
+    package: packageRow,
+    items: Array.isArray(body.allItems) ? body.allItems.map((item: Record<string, unknown>) => ({ ...item, item_name_snapshot: item.item_name_snapshot || item.item_name || "", line_total: Number(item.line_total || (Number(item.quantity) || 0) * (Number(item.unit_price) || 0)) })) : [],
+    settings: {},
+    financial: calculateFinancialSnapshot(inputs, quotation, packageRow),
+  };
+  const token = randomUUID();
+  previewCache.set(token, { detail: quotation, snapshot });
+  setTimeout(() => previewCache.delete(token), 10 * 60_000);
+  return NextResponse.json({ token });
+}
+
+export async function GET(
+  req: NextRequest,
+  { params }: { params: Promise<{ id: string }> },
+) {
+  const userId =
+    getUserIdFromReq(req) || Number(req.nextUrl.searchParams.get("user_id"));
+  if (!userId || !(await getQuotationActor(userId)))
+    return NextResponse.json({ error: "Not authenticated" }, { status: 401 });
+
+  const { id } = await params;
+  const cachedPreview = id.startsWith("preview-")
+    ? previewCache.get(id.slice(8))
+    : undefined;
+  const quotationId = Number(id);
+  const htmlPreview = req.nextUrl.searchParams.get("format") === "html";
+  const quotationOnly =
+    req.nextUrl.searchParams.get("quotation_only") === "1" || htmlPreview;
+  const detail =
+    cachedPreview?.detail || (await getQuotationDetail(quotationId));
+  if (!detail)
+    return NextResponse.json({ error: "ไม่พบใบเสนอราคา" }, { status: 404 });
+
+  const db = await getDb();
+  if (detail.status === "approved" && !quotationOnly) {
+    const artifact = await db
+      .request()
+      .input("id", sql.Int, quotationId)
+      .query(
+        `SELECT TOP 1 pdf_data FROM quotation_document_artifacts WHERE quotation_id=@id AND document_type='approved_bundle'`,
+      );
+    if (artifact.recordset[0]?.pdf_data) {
+      const disposition =
+        req.nextUrl.searchParams.get("download") === "1"
+          ? "attachment"
+          : "inline";
+      return new NextResponse(Buffer.from(artifact.recordset[0].pdf_data), {
+        headers: {
+          "Content-Type": "application/pdf",
+          "Content-Disposition": `${disposition}; filename="${detail.doc_no}.pdf"`,
+          "X-Quotation-Document-Pages": "17",
+        },
+      });
+    }
+  }
+
+  let snapshot: QuotationDocumentSnapshot | null =
+    cachedPreview?.snapshot || null;
+  if (
+    detail.document_snapshot_json &&
+    [
+      "pending_solar_sup",
+      "pending_sales_sup",
+      "pending_approval",
+      "approved",
+    ].includes(detail.status)
+  ) {
+    try {
+      snapshot = JSON.parse(
+        detail.document_snapshot_json,
+      ) as QuotationDocumentSnapshot;
+    } catch {
+      /* regenerate below */
+    }
+  }
+  if (!snapshot) snapshot = await buildQuotationDocumentSnapshot(quotationId);
+  if (!snapshot)
+    return NextResponse.json(
+      { error: "สร้างข้อมูลเอกสารไม่สำเร็จ" },
+      { status: 500 },
+    );
+  const q = {
+    ...detail,
+    ...snapshot.quotation,
+    customer_name: snapshot.lead.customer_name || snapshot.lead.full_name,
+    customer_phone: snapshot.lead.customer_phone || snapshot.lead.phone,
+    customer_email: snapshot.lead.customer_email || snapshot.lead.email,
+    installation_address: snapshot.lead.installation_address,
+    id_card_address: snapshot.lead.id_card_address,
+    id_card_number: snapshot.lead.id_card_number,
+    project_name:
+      snapshot.quotation.project_display_name || snapshot.lead.project_name,
+    status: detail.status,
+    approved_at: detail.approved_at,
+    approver_name_snapshot: detail.approver_name_snapshot,
+    approver_title_snapshot: detail.approver_title_snapshot,
+  };
+
+  const items = snapshot.items;
+  const packageItems = items.filter((item) => item.source_type === "package");
+  const detailItems = packageItems.filter((_, index) => index > 0);
+  const addOns = items.filter((item) => item.source_type !== "package");
+  let terms: Array<{ label?: string; percent?: number; due?: string }> = [];
+  try {
+    terms = JSON.parse(q.payment_terms_json || "[]");
+  } catch {
+    /* keep empty */
+  }
+
+  const settings = snapshot.settings;
+  const bankName =
+    settings.bank_account_bank === "TMBThanachart Bank"
+      ? "ทหารไทยธนชาต"
+      : settings.bank_account_bank || "ทหารไทยธนชาต";
+  const bankAccountName =
+    settings.bank_account_name === "SENA SOLAR ENERGY CO., LTD."
+      ? "บริษัท เสนา โซลาร์ เอนเนอร์ยี่ จำกัด"
+      : settings.bank_account_name || "บริษัท เสนา โซลาร์ เอนเนอร์ยี่ จำกัด";
+  const bankAccountNumber = settings.bank_account_number || "667-2-03155-3";
+  const bankBranch =
+    settings.bank_account_branch === "Esplanade Ratchada"
+      ? "ดิ เอสพลานาด รัชดาภิเษก"
+      : settings.bank_account_branch || "ดิ เอสพลานาด รัชดาภิเษก";
+  const creatorSignature = signatureDataUrl(
+    q.created_by_signature_data,
+    q.created_by_signature_mime,
+  );
+  const approverSignature = signatureDataUrl(
+    q.approver_signature_data_snapshot,
+    q.approver_signature_mime_snapshot,
+  );
+  const watermark =
+    q.status === "approved"
+      ? ""
+      : q.status === "pending_solar_sup"
+        ? "รอ Solar Sup อนุมัติ"
+        : ["pending_sales_sup", "pending_approval"].includes(q.status)
+          ? "รอ Sale Sup อนุมัติ"
+        : "DRAFT";
+  const reportLead = {
+    ...snapshot.lead,
+    project_alias:
+      snapshot.quotation.project_display_name || snapshot.lead.project_alias,
+    surveyor:
+      snapshot.lead.survey_actual_by ||
+      snapshot.lead.survey_completed_by_name ||
+      snapshot.lead.assigned_name,
+    quotation_doc_no: q.doc_no,
+  };
+  const reportPackage = {
+    ...snapshot.package,
+    name: q.package_name_snapshot || snapshot.package.name,
+    price: q.package_price_snapshot || snapshot.package.price,
+  };
+  const surveyHtml = buildSurveyReportHtml(
+    reportLead,
+    snapshot.lead_data || {},
+    reportPackage,
+    {
+      quotationAttached: true,
+      watermark,
+      quotation: {
+        docNo: String(q.doc_no || ""),
+        grossAmount: Number(q.subtotal_incl_vat || 0),
+        discountAmount: Number(q.discount_amount || 0),
+        discountLabel: String(q.discount_label || "ส่วนลด"),
+        contractAmount: Number(
+          q.contract_total_incl_vat || q.subtotal_incl_vat || 0,
+        ),
+        depositAmount: Number(q.deposit_paid_amount || 0),
+        netAmount: Number(q.outstanding_amount || 0),
+      },
+      financial: snapshot.financial,
+    },
+  );
+  const quotationHeader = `
+    <div class="header">
+      <div class="brand"><img src="${logoDataUrl}" alt="SENA Solar Energy"></div>
+      <div class="company"><b>บริษัท เสนา โซลาร์ เอนเนอร์ยี่ จำกัด (สำนักงานใหญ่)</b><br>เลขที่ 448 ถนนรัชดาภิเษก แขวงสามเสนนอก เขตห้วยขวาง<br>กรุงเทพมหานคร 10310 โทร. 0-2541-4642<br>เลขประจำตัวผู้เสียภาษี 0105552041258</div>
+      <div class="quotation-title"><div>ใบเสนอราคา</div><table><tr><td>QUOTATION NO.</td><td>${esc(q.doc_no)}</td></tr><tr><td>วันที่</td><td>${thaiDate(q.issue_date)}</td></tr></table></div>
+    </div>
+    <div class="customer-grid">
+      <table><tr><th>ชื่อโครงการ :</th><td>${esc(q.project_name || "-")}</td></tr><tr><th>ลูกค้า :</th><td>${esc(q.customer_name)}</td></tr><tr><th>ที่อยู่ :</th><td>${esc(q.installation_address || q.id_card_address || "-")}</td></tr><tr><th>เบอร์ติดต่อ :</th><td>${esc(q.customer_phone || "-")}</td></tr><tr><th>เลขประจำตัวผู้เสียภาษี :</th><td>${esc(q.id_card_number || "-")}</td></tr><tr><th>Email :</th><td class="email">${esc(q.customer_email || "-")}</td></tr></table>
+      <table><tr><th>ชื่อผู้ติดต่อ :</th><td colspan="2">${esc(quotationContact.name)}</td></tr><tr><th>โทร :</th><td colspan="2">${esc(quotationContact.phone)}</td></tr><tr><th>E-Mail :</th><td colspan="2">${esc(quotationContact.email)}</td></tr><tr><th>Line OA :</th><td colspan="2">${esc(quotationContact.lineOa)}</td></tr><tr><td colspan="3" class="valid-box"><div class="valid-box-grid"><span class="valid-label">ยืนราคา</span><span class="valid-days"><b>${esc(q.valid_days)}</b></span><span class="valid-copy">วัน นับจากวันที่ออกเอกสารใบเสนอราคา</span></div></td></tr></table>
+    </div>`;
+
+  const packageTitle = `งานจ้างเหมาติดตั้งระบบผลิตไฟฟ้าจากพลังงานแสงอาทิตย์บนหลังคา ${q.package_name_snapshot || ""}`;
+  const itemRows = [
+    `<tr><td class="center">1</td><td>${esc(packageTitle)} 1 ชุด</td><td class="right">${money(q.package_price_snapshot)}</td></tr>`,
+    ...detailItems.map(
+      (item) =>
+        `<tr><td></td><td>- ${esc(item.item_name_snapshot)} ${esc(item.quantity)} ${esc(item.unit)}</td><td></td></tr>`,
+    ),
+    ...addOns.map(
+      (item, index) =>
+        `<tr><td class="center">${index + 2}</td><td>${esc(item.item_name_snapshot)} ${esc(item.quantity)} ${esc(item.unit)} <span class="muted">(เพิ่มเติม)</span></td><td class="right">${money(item.line_total)}</td></tr>`,
+    ),
+  ];
+  while (itemRows.length < 9)
+    itemRows.push(
+      '<tr class="empty-row"><td>&nbsp;</td><td></td><td></td></tr>',
+    );
+
+  let allocatedPaymentAmount = 0;
+  const paymentRows = terms
+    .map((term, index) => {
+      const percent = Number(term.percent || 0);
+      const percentText = percent.toLocaleString("th-TH", {
+        maximumFractionDigits: 2,
+      });
+      const outstandingAmount = Number(q.outstanding_amount) || 0;
+      const calculatedAmount =
+        Math.round(((outstandingAmount * percent) / 100) * 100) / 100;
+      const paymentAmount =
+        index === terms.length - 1
+          ? Math.round(
+              Math.max(0, outstandingAmount - allocatedPaymentAmount) * 100,
+            ) / 100
+          : calculatedAmount;
+      allocatedPaymentAmount += paymentAmount;
+      return `<tr><td>${esc(term.label)}</td><td class="center">${percentText}%</td><td>${esc(term.due)}</td><td class="center">เป็นจำนวนเงิน</td><td class="right">${money(paymentAmount)}</td></tr>`;
+    })
+    .join("");
+
+  const legalContent = getQuotationLegalContent(
+    snapshot.package,
+    q.valid_days,
+    String(q.terms_text || ""),
+  );
+  const renderLegalSections = (sections: QuotationLegalSection[]) =>
+    sections
+      .map(
+        (section) =>
+          `<b><u>${esc(section.title)}</u></b>${section.paragraphs.map((paragraph) => `<p>${esc(paragraph)}</p>`).join("")}`,
+      )
+      .join("");
+  const standardTermsPage1 = `<div class="legal">${renderLegalSections(legalContent.page1Sections)}</div>`;
+  const standardTermsPage2 = `
+    <div class="legal page-two-terms">
+      ${legalContent.page2LeadingParagraphs.map((paragraph) => `<p>${esc(paragraph)}</p>`).join("")}
+      ${renderLegalSections(legalContent.page2Sections)}
+    </div>`;
+
+  const sigCell = (
+    role: string,
+    name = "",
+    signature = "",
+    date: unknown = "",
+  ) =>
+    `<div class="sig-cell">${signature ? `<img src="${signature}" alt="ลายเซ็น">` : `<div class="sig-space"></div>`}<div>ลงชื่อ ............................................................. ${role}</div><div>( ${name ? esc(name) : "............................................................."} )</div><div>วันที่ ${date ? thaiDate(date) : "................... / ................... / ..................."}</div></div>`;
+
+  const html = `<!doctype html><html lang="th"><head><meta charset="utf-8"><style>
+    @page{size:Letter;margin:0}*{box-sizing:border-box}html,body{margin:0;padding:0;color:#172126;font-family:"Cordia New",Tahoma,"Noto Sans Thai",Arial,sans-serif;font-size:11pt;line-height:1.15}.page{position:relative;width:215.9mm;height:279.4mm;padding:13mm 16mm 7mm;overflow:hidden;page-break-after:always}.page:last-child{page-break-after:auto}.header{display:grid;grid-template-columns:46mm 1fr 50mm;gap:5mm;align-items:start;min-height:20mm}.brand img{display:block;width:43mm;height:17mm;object-fit:contain;object-position:left center}.company{padding-top:1mm;font-size:11pt;line-height:1.25;color:#273238}.quotation-title>div{border:1px solid #00a99d;border-radius:4px;padding:2px;text-align:center;font-size:18pt;font-weight:bold}.quotation-title table{width:100%;margin-top:2px;border-collapse:collapse;font-size:11pt}.quotation-title td{height:4.3mm;border:.75px solid #667078;padding:0 3px}.quotation-title td:first-child{width:25mm}.customer-grid{display:grid;grid-template-columns:1fr 1fr;gap:12mm;align-items:start;margin:5mm 0 3.5mm}.customer-grid table{width:100%;height:auto;align-self:start;border-collapse:collapse}.customer-grid tr{height:auto}.customer-grid th,.customer-grid td{padding:.5px 2px;text-align:left;vertical-align:top;line-height:1.18}.customer-grid th{width:25mm;white-space:nowrap;color:#253138}.customer-grid .email{color:#0073c7;text-decoration:underline}.customer-grid .valid th,.customer-grid .valid td{border:.75px solid #667078;background:#f8fbfb}.customer-grid .valid th{width:22%;text-align:center}.customer-grid .valid-days{width:11%;text-align:center;font-weight:bold}.customer-grid .valid-copy{width:67%;white-space:nowrap}.quote-table,.payment-table,.summary{width:100%;border-collapse:collapse}.quote-table th,.quote-table td,.payment-table th,.payment-table td,.summary td{border:.65px solid #778188;padding:.5px 3px}.quote-table th{height:5.2mm;border-top:1.2px solid #169d94;background:#eef6f5;text-align:center;font-size:12pt}.quote-table tbody tr{height:5mm}.quote-table tbody tr:nth-child(even):not(.empty-row){background:#fbfcfc}.quote-table .empty-row{height:4.4mm}.center{text-align:center}.right{text-align:right;white-space:nowrap}.muted{color:#667078;font-size:11pt}.payment-title{border:.65px solid #778188;border-bottom:0;background:#eef6f5;padding:0;text-align:center;font-size:12pt;font-weight:bold;color:#185f5b}.payment-table tr{height:4.6mm}.payment-table td:nth-child(1){width:25mm}.payment-table td:nth-child(2){width:13mm}.payment-table td:nth-child(4){width:31mm}.payment-table td:nth-child(5){width:28mm}.payment-bank-row{display:grid;grid-template-columns:1fr 25mm;border:.65px solid #778188;border-top:0;min-height:19mm;padding:2px 5mm 2px 7mm}.bank-copy{line-height:1.22}.qr{display:flex;align-items:center;justify-content:center}.qr img{width:18mm;height:18mm;object-fit:contain}.summary{width:96mm;margin-left:auto;table-layout:fixed}.summary td{height:4.5mm}.summary td:first-child{text-align:right}.summary td:last-child{width:32.5mm;text-align:right}.summary .strong td{background:#f7f9f9;font-weight:bold}.summary .grand td{background:#cfe9f4;font-size:12pt;font-weight:bold;color:#15343e}.amount-words{float:left;width:84mm;text-align:center;padding:7mm 3mm 0;font-weight:bold;line-height:1.25}.financials{border:.65px solid #778188;border-top:0;min-height:34mm;padding-top:1px}.financials:after{content:"";display:block;clear:both}.legal{clear:both;margin-top:3mm;font-size:11pt;line-height:1.18}.legal b{display:block;margin-top:1.5mm;border-bottom:.7px solid #66beb8;padding-bottom:.3mm;font-size:12pt;color:#176e69}.legal p{margin:.7mm 0 .7mm 12mm;text-indent:-4mm}.page-two-terms{margin-top:6mm;font-size:11pt}.page-two-terms p{margin:1.8mm 0 1.8mm 12mm}.signatures{display:grid;grid-template-columns:1fr 1fr;column-gap:20mm;row-gap:9mm;margin:13mm 8mm 0}.sig-cell{text-align:center;min-height:28mm;line-height:1.35}.sig-cell img{display:block;width:38mm;height:10mm;object-fit:contain;margin:0 auto -1mm}.sig-space{height:9mm}.watermark{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;transform:rotate(-25deg);font-size:48pt;font-weight:bold;color:rgba(222,51,74,.14);pointer-events:none}.footer{position:absolute;bottom:3mm;left:16mm;right:16mm;text-align:center;color:#7a858b;font-size:10pt}.quote-table .payment-spacer{height:8mm}.quote-table .payment-spacer td{background:#fff}.quote-table .payment-shell{height:auto;background:#fff}.quote-table .payment-cell{height:auto;padding:0;border-right:.65px solid #778188;background:#fff;vertical-align:top}.quote-table .payment-side{height:auto;background:#fff}.quote-table .payment-cell .payment-title{border:0;border-bottom:.65px solid #778188}.quote-table .payment-cell .payment-table td{height:4.6mm;border-width:0 .65px .65px 0;border-color:#778188;padding:.5px 3px;background:#fff}.quote-table .payment-cell .payment-table td:last-child{border-right:0}.quote-table .payment-cell .payment-bank-row{grid-template-columns:minmax(0,76mm) 24mm;justify-content:center;align-items:center;column-gap:10mm;border:0;min-height:25mm;padding:3mm 6mm}.quote-table .payment-cell .bank-copy{max-width:76mm}.quote-table .payment-cell .qr img{width:22mm;height:20mm}
+    /* Detail and payment sections follow the approved quotation reference: neutral grayscale, black rules and compact Tahoma type. */
+    .quote-table,.payment-table,.payment-title,.payment-bank-row{color:#111}.quote-table th,.quote-table td,.payment-table td{border-color:#222!important}.quote-table th{height:5.6mm;border-top:1px solid #222!important;background:#f1f1f1!important;color:#111;font-weight:700}.quote-table tbody tr{height:5.25mm}.quote-table tbody tr:nth-child(even):not(.empty-row){background:#fff}.payment-title,.quote-table .payment-cell .payment-title{background:#fff!important;color:#111;border-color:#222!important;font-weight:500;padding:.6mm 0}.quote-table .payment-cell .payment-table td{border-color:#222!important;background:#fff}.payment-bank-row,.quote-table .payment-cell .payment-bank-row{border-color:#222!important;background:#fff}.quote-table .payment-cell{border-right-color:#222!important}.quote-table .payment-side{border-left-color:#222!important}
+    table.financials{display:table;width:100%;min-height:0;padding:0;border:0;border-collapse:collapse;table-layout:fixed}
+    table.financials:after{display:none}
+    table.financials td{height:4.5mm;border:.65px solid #778188;padding:.5px 3px}
+    table.financials .summary-label{width:63.5mm;text-align:right}
+    table.financials .summary-value{width:32.5mm;text-align:right;white-space:nowrap}
+    table.financials .strong .summary-label,table.financials .strong .summary-value{background:#e4f0f6;font-weight:bold}
+    table.financials .grand td{height:5.4mm;background:#cfe9f4}
+    table.financials .grand .amount-words{float:none;width:auto;padding:.5px 3px;text-align:center;font-weight:normal;line-height:1.15}
+    table.financials .grand .summary-label,table.financials .grand .summary-value{font-size:12pt;font-weight:bold;color:#15343e}
+    .legal b{border-bottom:0;padding-bottom:0;color:#172126}
+    .legal b u{text-decoration-color:#172126;text-decoration-thickness:.6px;text-underline-offset:.5px}
+    .customer-grid td.valid-box{padding:0;border:0;background:#fff}
+    .valid-box-grid{display:grid;grid-template-columns:24% 10% 66%;min-height:5mm;align-items:stretch;overflow:hidden;border:.75px solid #667078;border-radius:4px}
+    .customer-grid .valid-box-grid span{display:flex;align-items:center;width:auto;padding:0 3px}
+    .valid-box-grid .valid-label,.valid-box-grid .valid-days{justify-content:center}
+    .valid-box-grid .valid-copy{white-space:nowrap}
+  </style></head><body>
+    <section class="page">${watermark ? `<div class="watermark">${esc(watermark)}</div>` : ""}${quotationHeader}
+      <table class="quote-table"><thead><tr><th style="width:12mm">ลำดับ</th><th>รายการ</th><th style="width:32.5mm">จำนวนเงิน</th></tr></thead><tbody>${itemRows.join("")}<tr class="payment-spacer"><td></td><td></td><td></td></tr><tr class="payment-shell"><td colspan="2" class="payment-cell"><div class="payment-title">เงื่อนไขการชำระเงิน</div><table class="payment-table"><tbody>${paymentRows}</tbody></table><div class="payment-bank-row"><div class="bank-copy"><b>ธนาคาร${esc(bankName)}</b><br>ชื่อบัญชี : ${esc(bankAccountName)}<br>เลขที่บัญชี : ${esc(bankAccountNumber)} สาขา ${esc(bankBranch)}</div><div class="qr"><img src="${paymentQrDataUrl}" alt="QR Payment"></div></div></td><td class="payment-side"></td></tr></tbody></table>
+      <table class="financials"><tbody><tr class="strong"><td></td><td class="summary-label">ราคาก่อนหักส่วนลด (รวมภาษีมูลค่าเพิ่ม)</td><td class="summary-value">${money(q.subtotal_incl_vat)}</td></tr>${Number(q.discount_amount) > 0 ? `<tr><td></td><td class="summary-label">${esc(q.discount_label || "ส่วนลด")}</td><td class="summary-value">-${money(q.discount_amount)}</td></tr>` : ""}<tr><td></td><td class="summary-label">หัก เงินจอง</td><td class="summary-value">-${money(q.deposit_paid_amount)}</td></tr><tr class="strong"><td></td><td class="summary-label">ราคาหลังหักส่วนลด (รวมภาษีมูลค่าเพิ่ม)</td><td class="summary-value">${money(q.outstanding_amount)}</td></tr><tr><td></td><td class="summary-label">ราคาสินค้าก่อนภาษีมูลค่าเพิ่ม</td><td class="summary-value">${money(q.amount_before_vat)}</td></tr><tr><td></td><td class="summary-label">ภาษีมูลค่าเพิ่ม (VAT) 7%</td><td class="summary-value">${money(q.vat_amount)}</td></tr><tr class="grand"><td class="amount-words">( ${thaiBahtText(q.outstanding_amount)} )</td><td class="summary-label">รวมยอดที่ต้องชำระสุทธิ</td><td class="summary-value">${money(q.outstanding_amount)}</td></tr></tbody></table>
+      ${standardTermsPage1}<div class="footer">หน้า 16 / 17 · ใบเสนอราคา 1 / 2 · ${esc(q.doc_no)}</div>
+    </section>
+    <section class="page">${watermark ? `<div class="watermark">${esc(watermark)}</div>` : ""}${quotationHeader}${standardTermsPage2}
+      <div class="signatures">${sigCell("ลูกค้า")}${sigCell("ผู้จัดทำเอกสาร", q.created_by_name, creatorSignature, q.issue_date)}${sigCell("ผู้ตรวจสอบ", q.approver_name_snapshot || q.approved_by_name, approverSignature, q.approved_at)}${sigCell("ผู้ขาย / ผู้ตรวจสอบ", q.created_by_name, creatorSignature, q.issue_date)}</div>
+      <div class="footer">หน้า 17 / 17 · ใบเสนอราคา 2 / 2 · ${esc(q.doc_no)}</div>
+    </section>
+  </body></html>`;
+
+  if (htmlPreview) {
+    return new NextResponse(html, {
+      headers: {
+        "Content-Type": "text/html; charset=utf-8",
+        "Cache-Control": "no-store",
+      },
+    });
+  }
+
+  let browser: Awaited<ReturnType<typeof puppeteer.launch>> | null = null;
+  try {
+    browser = await puppeteer.launch({
+      headless: true,
+      executablePath: process.env.PUPPETEER_EXECUTABLE_PATH || undefined,
+      args: [
+        "--no-sandbox",
+        "--disable-setuid-sandbox",
+        "--disable-dev-shm-usage",
+      ],
+      env: { ...process.env, TZ: "Asia/Bangkok" },
+    });
+    const page = await browser.newPage();
+    await page.emulateTimezone("Asia/Bangkok");
+    let surveyPdf: PDFDocument | null = null;
+    if (!quotationOnly) {
+      await page.setContent(surveyHtml, {
+        waitUntil: "domcontentloaded",
+        timeout: 30_000,
+      });
+      await page.evaluate(() => document.fonts.ready);
+      const surveyBytes = await page.pdf({
+        format: "A4",
+        printBackground: true,
+        margin: { top: "0", right: "0", bottom: "0", left: "0" },
+      });
+      surveyPdf = await PDFDocument.load(surveyBytes);
+      if (surveyPdf.getPageCount() !== 15)
+        throw new Error(
+          `จำนวนหน้ารายงานสำรวจไม่ถูกต้อง: ${surveyPdf.getPageCount()}/15 หน้า`,
+        );
+    }
+
+    await page.setContent(html, {
+      waitUntil: "domcontentloaded",
+      timeout: 30_000,
+    });
+    await page.evaluate(() => document.fonts.ready);
+    const quotationBytes = await page.pdf({
+      preferCSSPageSize: true,
+      printBackground: true,
+      margin: { top: "0", right: "0", bottom: "0", left: "0" },
+    });
+    const quotationPdf = await PDFDocument.load(quotationBytes);
+    if (quotationPdf.getPageCount() !== 2)
+      throw new Error(
+        `จำนวนหน้าใบเสนอราคาไม่ถูกต้อง: ${quotationPdf.getPageCount()}/2 หน้า`,
+      );
+    if (quotationOnly) {
+      return new NextResponse(Buffer.from(quotationBytes), {
+        headers: {
+          "Content-Type": "application/pdf",
+          "Content-Disposition": `inline; filename="${q.doc_no}-quotation.pdf"`,
+          "X-Quotation-Document-Pages": "2",
+        },
+      });
+    }
+
+    const mergedPdf = await PDFDocument.create();
+    const surveyPages = await mergedPdf.copyPages(
+      surveyPdf!,
+      surveyPdf!.getPageIndices(),
+    );
+    const quotationPages = await mergedPdf.copyPages(
+      quotationPdf,
+      quotationPdf.getPageIndices(),
+    );
+    [...surveyPages, ...quotationPages].forEach((pdfPage) =>
+      mergedPdf.addPage(pdfPage),
+    );
+    const bytes = await mergedPdf.save();
+    const pageCount = mergedPdf.getPageCount();
+    if (pageCount !== 17)
+      throw new Error(`จำนวนหน้าเอกสารไม่ถูกต้อง: ${pageCount}/17 หน้า`);
+    if (detail.status === "approved") {
+      const buffer = Buffer.from(bytes);
+      const hash = createHash("sha256").update(buffer).digest("hex");
+      await db
+        .request()
+        .input("id", sql.Int, quotationId)
+        .input("data", sql.VarBinary(sql.MAX), buffer)
+        .input("hash", sql.Char(64), hash)
+        .input("pages", sql.Int, pageCount)
+        .query(
+          `IF NOT EXISTS (SELECT 1 FROM quotation_document_artifacts WHERE quotation_id=@id AND document_type='approved_bundle') INSERT quotation_document_artifacts(quotation_id,document_type,pdf_data,file_hash,page_count) VALUES(@id,'approved_bundle',@data,@hash,@pages)`,
+        );
+    }
+    const disposition =
+      req.nextUrl.searchParams.get("download") === "1"
+        ? "attachment"
+        : "inline";
+    return new NextResponse(Buffer.from(bytes), {
+      headers: {
+        "Content-Type": "application/pdf",
+        "Content-Disposition": `${disposition}; filename="${q.doc_no}.pdf"`,
+        "X-Quotation-Document-Pages": String(pageCount),
+      },
+    });
+  } catch (error) {
+    console.error("quotation pdf", error);
+    return NextResponse.json({ error: "สร้าง PDF ไม่สำเร็จ" }, { status: 500 });
+  } finally {
+    if (browser) await browser.close().catch(() => undefined);
+  }
+}

@@ -44,8 +44,8 @@ const baht = n => n==null?"":Number(n).toLocaleString("th-TH");
 const num = (n,d=0) => Number(n).toLocaleString("th-TH",{minimumFractionDigits:d,maximumFractionDigits:d});
 // ── GSB Solar Soft Loan calculator ──────────────────────────────────
 // Reverse-engineered from the shared sheet. Inputs (red boxes) → derived.
-// Assumptions (GSB Soft Loan defaults): down 20%, term 7y, tiered rate
-// 3.5% (yr1-2) then 5.0% (yr3-7), 4 peak-sun-hours/day, 5฿/kWh,
+// Assumptions (GSB Soft Loan defaults): down 20%, term 7y, conservative
+// no-collateral starting rate 3.5% throughout, 4 peak-sun-hours/day, 5฿/kWh,
 // CO₂ 0.5 kg/kWh, 1 ton CO₂ ≈ 100 trees/yr.
 //   down      = price × downPct
 //   loan      = price − down
@@ -60,7 +60,7 @@ const num = (n,d=0) => Number(n).toLocaleString("th-TH",{minimumFractionDigits:d
 //   billTot   = bill × n ; saveTot = save × n
 //   co2Yr     = kwh × 12 × 0.0005 (ton) ; trees = co2Yr × 100
 //   payback   = price / save (months) ; save25 = save × 12 × 25
-function calcLoan(price, kw, bill, { unit=5, r1=0.035, r2=0.05, downPct=0.20, term=7 } = {}) {
+function calcLoan(price, kw, bill, { unit=5, r1=0.035, r2=0.035, downPct=0.20, term=7 } = {}) {
   const down = Math.round(price * downPct), loan = price - down;
   const m1 = r1/12, m2 = r2/12, n1 = 24, n2 = (term-2)*12, n = n1+n2;
   const wAvg = (r1*n1 + r2*n2)/n;
@@ -104,7 +104,11 @@ function imgData(url) {
   try {
     const buf = fs.readFileSync(path.join(process.cwd(), "public", "uploads", name));
     const ext = (name.split(".").pop() || "jpg").toLowerCase();
-    return `data:${ext === "png" ? "image/png" : "image/jpeg"};base64,${buf.toString("base64")}`;
+    const mime = ext === "png" ? "image/png"
+      : ext === "webp" ? "image/webp"
+      : ext === "gif" ? "image/gif"
+      : "image/jpeg";
+    return `data:${mime};base64,${buf.toString("base64")}`;
   } catch { return null; }
 }
 
@@ -123,7 +127,7 @@ export function quotationPdfPath(L) {
 
 // L = leads row (+ pname/district/province/surveyor), D = lead_data row
 // (questionnaire), PKG = the package row or null.
-export function buildSurveyReportHtml(L, D, PKG) {
+export function buildSurveyReportHtml(L, D, PKG, options = {}) {
   const A = assets();
   const font = (n, w) =>
     `@font-face{font-family:'DB Heavent';src:url(data:font/woff;base64,${A[n]}) format('woff');font-weight:${w};font-style:normal;}`;
@@ -139,17 +143,19 @@ export function buildSurveyReportHtml(L, D, PKG) {
   const acceptedQuot = quotFiles.find(q => q.doc_no === L.quotation_doc_no)
     || quotFiles.find(q => Number(q.amount) === Number(L.order_total))
     || quotFiles[quotFiles.length-1] || null;
-  const quotDocNo = acceptedQuot?.doc_no || L.quotation_doc_no || null;
+  const quotation = options.quotation || {};
+  const quotDocNo = quotation.docNo || acceptedQuot?.doc_no || L.quotation_doc_no || null;
   // price shown in §4 = the amount of the SAME quotation file we append, so the
   // price bar always matches the attached quotation. Fall back to order_total.
-  const quotPrice = acceptedQuot?.amount ?? L.order_total ?? L.quotation_amount ?? null;
+  const quotPrice = quotation.grossAmount ?? acceptedQuot?.amount ?? L.order_total ?? L.quotation_amount ?? null;
   // Whether the appendix page can promise a real attachment. Shares
   // quotationPdfPath so the page text and the merge decision can't disagree.
-  const quotPdfPath = quotationPdfPath(L);
+  const quotPdfPath = options.quotationAttached === true ? "attached-by-caller" : quotationPdfPath(L);
 
   const HEADER = `<div class="run-head">SENA SOLAR ENERGY | รายงานสำรวจหน้างานติดตั้งโซลาร์เซลล์ (Solar Cell Site Survey Report)</div>`;
   const foot = n => `<div class="run-foot">หน้า ${n} / 15</div>`;
-  const page = (n,b,cls="") => `<section class="page ${cls}">${HEADER}<div class="body">${b}</div>${foot(n)}</section>`;
+  const reportWatermark = String(options.watermark || "").replace(/[&<>"']/g, "");
+  const page = (n,b,cls="") => `<section class="page ${cls}">${reportWatermark?`<div class="report-watermark">${reportWatermark}</div>`:""}${HEADER}<div class="body">${b}</div>${foot(n)}</section>`;
   const sect = (num,th,en) => `<h2 class="sect">${num?`<span class="num">${num}.</span> `:""}${th}${en?` <span class="en">${en}</span>`:""}</h2>`;
   const ph = t => `<span class="ip">[ ${t} ]</span>`;
   const V = (v, ptxt) => (v!==null && v!==undefined && String(v).trim()!=="") ? `<span class="val">${v}</span>` : ph(ptxt);
@@ -215,6 +221,7 @@ export function buildSurveyReportHtml(L, D, PKG) {
   const imgRoof = imgData(L.survey_photo_roof_structure_url);
   const imgInv = imgData(L.survey_photo_inverter_point_url);
   const imgMdb = imgData(L.survey_photo_mdb_url);
+  const imgLayoutSketch = imgData(L.survey_layout_sketch_url);
   const p4 = page(4, `${sect("2","รูปถ่ายหน้างานจริงและจุดติดตั้งอุปกรณ์")}<p class="src">(ข้อมูลจาก Survey)</p>
     <p class="lead">ภาพถ่ายหน้างานจริงประกอบการสำรวจ พร้อมร่างตำแหน่งจุดติดตั้งอุปกรณ์หลักของระบบโซลาร์เซลล์ เพื่อให้ลูกค้าเห็นภาพตำแหน่งการติดตั้งจริงก่อนดำเนินการ</p>
     <div class="pgrid">
@@ -227,8 +234,10 @@ export function buildSurveyReportHtml(L, D, PKG) {
   // ── PAGE 5 §2 sketch (empty) ────────────────────────────────────────
   const p5 = page(5, `<h3 class="subh">ผังร่างจุดติดตั้งอุปกรณ์ (Equipment Layout Sketch)</h3>
     <p class="lead">ร่างผังหลังคาโดยประมาณ แสดงตำแหน่งแผงโซลาร์เซลล์ แนวเดินสายไฟ DC/AC ตำแหน่ง Inverter และตำแหน่งเชื่อมต่อเข้าตู้ไฟหลัก (MDB) ตามที่สำรวจหน้างานจริง</p>
-    <div class="sketch">
-      <div class="sk-note">พื้นที่สำหรับวาดผังร่างด้วยมือ — ระบุ: ตำแหน่งแผงโซลาร์ • แนวสายไฟ DC/AC • ตำแหน่ง Inverter • จุดเชื่อมต่อ MDB • ทิศทาง (N)</div>
+    <div class="sketch${imgLayoutSketch ? " has-image" : ""}">
+      ${imgLayoutSketch
+        ? `<img class="sketch-img" src="${imgLayoutSketch}" alt="Equipment Layout Sketch"/>`
+        : `<div class="sk-note">พื้นที่สำหรับวาดผังร่างด้วยมือ — ระบุ: ตำแหน่งแผงโซลาร์ • แนวสายไฟ DC/AC • ตำแหน่ง Inverter • จุดเชื่อมต่อ MDB • ทิศทาง (N)</div>`}
     </div>`);
 
   // ── PAGE 6 §3 Load Assumption — HYBRID: AC rows pre-filled from the
@@ -272,21 +281,27 @@ export function buildSurveyReportHtml(L, D, PKG) {
     <div class="callout blue tight"><div class="co-h">เข้าใจโซลาร์ : ข้อพิจารณาเรื่องระบบ Battery สำรองไฟ</div><ul>
       <li><b>ระบบโซลาร์รูฟ แบบไม่มี Battery</b> คือ ระบบโซลาร์เซลล์ที่เชื่อมต่อกับสายส่งของการไฟฟ้า ผลิตไฟจากแสงอาทิตย์มาใช้ในเวลากลางวัน และดึงไฟจากการไฟฟ้ามาเสริมอัตโนมัติหากผลิตไม่พอ ไม่ใช้แบตเตอรี่ ดูแลรักษาง่าย คุ้มค่าเมื่อใช้ไฟช่วงกลางวันเป็นหลัก</li><li><b>ระบบโซลาร์รูฟ พร้อม Battery</b> คือ ระบบที่ทำงานร่วมกันระหว่างแผงโซลาร์เซลล์ · แบตเตอรี่เก็บไฟ · และโครงข่ายไฟฟ้าจากการไฟฟ้า ดึงพลังงานแสงอาทิตย์มาใช้เป็นหลัก นำส่วนเกินไปเก็บไว้ในแบตเตอรี่สำหรับใช้ตอนกลางคืน และสลับไปใช้ไฟการไฟฟ้าอัตโนมัติหากพลังงานหมด</li>
       <li>หากสัดส่วนใช้ไฟกลางคืนสูง (ทั่วไป > 40-50% ของการใช้รวม) แนะนำ <b>ระบบโซลาร์รูฟ พร้อม Battery</b> เพื่อเก็บพลังงานส่วนเกินกลางวันไว้ใช้กลางคืน</li>
-      <li>ข้อสรุปสำหรับบ้านหลังนี้: <span class="val">ลูกค้ามีแอร์ใช้กลางคืน ${acNight?`(${acNight})`:""} และสนใจ${BATTERY[L.survey_wants_battery]||BATTERY[D.wants_battery]||"เพิ่มแบตเตอรี่"} — แนะนำพิจารณาระบบพร้อม Battery รองรับการใช้ไฟกลางคืน</span></li></ul></div>`);
+    </ul></div>`);
 
   // ── PAGE 8 §4 package — HYBRID: pull package specs from the linked
   // package (PKG); fields the catalog doesn't hold stay blank right-aligned.
   const sysType = PKG ? (PKG.is_upgrade ? "โซลาร์รูฟ · Upgrade เพิ่มเติมระบบเดิม" : (PKG.has_battery ? "ระบบโซลาร์รูฟ พร้อม Battery" : "ระบบโซลาร์รูฟ แบบไม่มี Battery")) : (L.survey_wants_battery==="customize"||D.wants_battery==="upgrade"?"โซลาร์รูฟ · Upgrade เพิ่มแบตเตอรี่":null);
   const invTxt = PKG && (PKG.inverter_brand||PKG.inverter_kw) ? `${PKG.inverter_brand||""}${PKG.inverter_kw?` ${PKG.inverter_kw} kW`:""}`.trim() : null;
   const warrTxt = PKG?.warranty_years ? `แผง 12 ปี / อินเวอร์เตอร์ 10 ปี / งานติดตั้ง ${L.warranty_duration_years||2} ปี (มาตรฐาน)` : (L.warranty_duration_years?`งานติดตั้ง ${L.warranty_duration_years} ปี`:"แผง 12 ปี / อินเวอร์เตอร์ 10 ปี / งานติดตั้ง 2 ปี (มาตรฐาน)");
+  // Prefer the package catalog count; field-survey count is the real fallback
+  // for legacy packages whose solar_panels has never been filled in.
+  const panelCount = Number(PKG?.solar_panels || L.survey_panel_count || 0);
+  const panelCountTxt = panelCount > 0 ? `<span class="val">${baht(panelCount)}</span>` : '<span class="wr"></span>';
+  const paybackMonths = Number(options.financial?.outputs?.payback_months || 0);
+  const paybackTxt = paybackMonths > 0 ? `${baht(paybackMonths)} เดือน (${num(paybackMonths / 12, 1)} ปี)` : null;
   // Price = mirror the quotation summary: gross package price − VIP discount −
   // booking deposit = net. Show a breakdown when there's a discount/deposit;
   // otherwise a single price bar. Net matches the quotation's "รวมยอดสุทธิ".
   const gross = quotPrice ?? PKG?.price ?? null;
-  const discAmt = Number(L.order_discount_amount) || 0;
-  const discNote = (L.order_discount_note || (L.order_discount_pct?`ส่วนลดพิเศษ ${L.order_discount_pct}%`:"ส่วนลด")).trim();
-  const bookingFee = Number(L.pre_total_price) || 0;   // เงินจอง/ค่าสำรวจ
-  const net = gross != null ? gross - discAmt - bookingFee : null;
+  const discAmt = Number(quotation.discountAmount ?? L.order_discount_amount) || 0;
+  const discNote = String(quotation.discountLabel || L.order_discount_note || (L.order_discount_pct?`ส่วนลดพิเศษ ${L.order_discount_pct}%`:"ส่วนลด")).trim();
+  const bookingFee = Number(quotation.depositAmount ?? L.pre_total_price) || 0;   // เงินจอง/ค่าสำรวจ
+  const net = quotation.netAmount ?? (gross != null ? gross - discAmt - bookingFee : null);
   const hasDeduction = discAmt > 0 || bookingFee > 0;
   const priceRow = (label, amt, minus) => `<div class="pr-row"><span>${label}</span><span class="pr-amt${minus?" minus":""}">${minus?"−":""}${baht(Math.abs(amt))} บาท</span></div>`;
   const priceBlock = gross == null
@@ -303,11 +318,11 @@ export function buildSurveyReportHtml(L, D, PKG) {
     ${kv([
       ["ชื่อแพ็กเกจ", V(PKG?.name,"เช่น Package Standard 5 kWp")],
       ["ขนาดระบบ (System Size)", PKG?.kwp ? `<span class="val">${PKG.kwp} kWp</span>${PKG.phase?` · ${PKG.phase} เฟส`:""}` : bl("kWp")],
-      ["แบตเตอรี่ (Battery)", PKG?.has_battery ? `<span class="val">${PKG.battery_kwh?`${PKG.battery_kwh} kWh`:""}${PKG.battery_brand?` · ${PKG.battery_brand}`:""}</span>` : V(null,"ไม่มี / ระบุขนาด")],
+      ["แบตเตอรี่ (Battery)", PKG ? (PKG.has_battery ? `<span class="val">${PKG.battery_kwh?`${PKG.battery_kwh} kWh`:""}${PKG.battery_brand?` · ${PKG.battery_brand}`:""}</span>` : `<span class="val">ไม่มี</span>`) : V(null,"ไม่มี / ระบุขนาด")],
       ["อินเวอร์เตอร์ (Inverter)", V(invTxt,"ยี่ห้อ/รุ่น ขนาด kW")],
       ["โครงสร้างยึดแผง (Racking)", V(roofLabel(L.survey_roof_material)||roofLabel(D.roof_shape),"ประเภทหลังคา / วัสดุโครงสร้าง")],
       ["ประเภทระบบ", V(sysType,"On-Grid / Hybrid")],
-      ["ระยะเวลาคืนทุนโดยประมาณ (Payback Period)", bl("ปี")],
+      ["ระยะเวลาคืนทุนโดยประมาณ (Payback Period)", V(paybackTxt,"ระยะเวลาคืนทุนโดยประมาณ")],
       ["การรับประกัน", V(warrTxt,"แผง / อินเวอร์เตอร์ / งานติดตั้ง")],
     ])}
     ${priceBlock}
@@ -318,7 +333,7 @@ export function buildSurveyReportHtml(L, D, PKG) {
     <p class="lead">จากผลการสำรวจหน้างานและข้อมูลการใช้ไฟฟ้าที่สอบถามจากเจ้าของบ้าน ทีมงานประเมินว่าแพ็กเกจนี้เหมาะสมด้วยเหตุผลดังนี้</p>
     <ul class="reasons">
       <li>ขนาดระบบ ${PKG?.kwp?`<span class="val">${PKG.kwp}</span>`:'<span class="wr"></span>'} kWp สอดคล้องกับปริมาณการใช้ไฟฟ้าช่วงกลางวันที่ประเมินได้จากข้อสมมติฐานในหมวดที่ 3 ทำให้ใช้พลังงานที่ผลิตได้อย่างคุ้มค่าโดยไม่เหลือทิ้งเข้าระบบมากเกินไป</li>
-      <li>พื้นที่หลังคาที่สำรวจมีทิศทางและมุมเอียงที่เหมาะสมสำหรับติดตั้งแผงจำนวน <span class="wr"></span> แผงตามแพ็กเกจนี้ โดยไม่มีเงาบดบังในช่วงเวลาที่มีแดดจัด</li>
+      <li>พื้นที่หลังคาที่สำรวจมีทิศทางและมุมเอียงที่เหมาะสมสำหรับติดตั้งแผงจำนวน ${panelCountTxt} แผงตามแพ็กเกจนี้ โดยไม่มีเงาบดบังในช่วงเวลาที่มีแดดจัด</li>
       <li>พฤติกรรมการใช้ไฟฟ้าของบ้านนี้ (เช่น สัดส่วนการใช้ไฟกลางวัน/กลางคืนตามหมวดที่ 3) เหมาะกับระบบ ${sysType?`<span class="val">${sysType}</span>`:'[ ระบบโซลาร์รูฟ แบบไม่มี Battery / ระบบโซลาร์รูฟ พร้อม Battery ]'} ตามที่ประเมินไว้ ช่วยให้ระยะคืนทุนคุ้มค่าที่สุด</li>
       <li>ขนาดอินเวอร์เตอร์ที่เลือกรองรับการขยายระบบเพิ่มเติมในอนาคตได้ หากมีการใช้ไฟฟ้าเพิ่มขึ้น</li>
     </ul>`);
@@ -341,11 +356,11 @@ export function buildSurveyReportHtml(L, D, PKG) {
     <div class="callout green"><div class="co-h">สรุปขั้นตอน</div><ul>
       <li>ขั้นตอนที่ 1 — วางเงินมัดจำ 20% ของมูลค่าแพ็กเกจ เพื่อยืนยันและจองคิววันติดตั้ง</li>
       <li>ขั้นตอนที่ 2 — ยื่นขอสินเชื่อสำหรับส่วนที่เหลือ 80% ตั้งแต่ต้นจนได้วงเงินจากธนาคาร หากลูกค้าเลือกผ่อนชำระผ่านธนาคาร (ดูรายละเอียดในหมวดที่ 8)</li>
-      <li>ขั้นตอนที่ 3 — ทีมช่างเข้าติดตั้งระบบตามวันที่นัดหมาย ใช้เวลาโดยประมาณ <span class="wr"></span> วันทำการ</li>
-      <li>ขั้นตอนที่ 4 — บริษัทดำเนินการยื่นขนานไฟกับการไฟฟ้าให้ลูกค้า ใช้เวลาโดยประมาณ <span class="wr"></span> วันทำการหลังติดตั้งแล้วเสร็จ</li></ul></div>`);
+      <li>ขั้นตอนที่ 3 — ทีมช่างเข้าติดตั้งระบบตามวันที่นัดหมาย ใช้เวลาโดยประมาณ <span class="val">1-2 วันทำการ</span></li>
+      <li>ขั้นตอนที่ 4 — บริษัทดำเนินการยื่นขนานไฟกับการไฟฟ้าให้ลูกค้า</li></ul></div>`);
 
   // ── PAGE 11-14 static (payment terms — same for everyone) ───────────
-  const BANKS=[["ธนาคารกสิกรไทย (KBank)","ธนาคารกรุงศรีอยุธยา (Krungsri)"],["ธนาคารกรุงเทพ (Bangkok Bank)","ธนาคารไทยพาณิชย์ (SCB)"],["ธนาคารกรุงไทย (Krungthai)","ธนาคารทหารไทยธนชาต (ttb)"],["บัตรเครดิต UOB","บัตรเครดิต Citi"],["[ ระบุเพิ่มเติมตามที่ร่วมรายการจริง ]","[ ระบุเพิ่มเติมตามที่ร่วมรายการจริง ]"]];
+  const BANKS=[["ธนาคารกสิกรไทย (KBank)","ธนาคารกรุงศรีอยุธยา (Krungsri)"],["ธนาคารกรุงไทย (Krungthai)","ธนาคารทหารไทยธนชาต (ttb)"]];
   const p11 = page(10, `${sect("7","ทางเลือกการชำระเงินมัดจำ 20% (เพื่อจองวันติดตั้ง)")}
     <p class="lead">ลูกค้าสามารถเลือกชำระเงินมัดจำ 20% ของมูลค่าแพ็กเกจ เพื่อยืนยันและจองคิววันติดตั้งได้ 2 ช่องทาง ดังนี้</p>
     <h3 class="subh">ทางเลือกที่ 1 — ชำระเงินสด / โอนเงิน</h3>
@@ -396,19 +411,44 @@ export function buildSurveyReportHtml(L, D, PKG) {
   // monthly bill. Falls back to the sheet's example (112,000 · 3kW · 5,000)
   // only when the lead has no price. "price" = §4 net (what the customer pays).
   const ctRows = (rows) => `<table class="ct">${rows.map(r=>`<tr><td>${r[0]}</td><td class="${r[2]||''}">${r[1]}</td></tr>`).join("")}</table>`;
-  const loanPrice = net ?? gross ?? PKG?.price ?? 112000;
+  // Use the contracted package price before booking/survey deposit. A deposit
+  // is credited toward payment but must not make the system price/payback look lower.
+  const loanPrice = quotation.contractAmount ?? gross ?? net ?? PKG?.price ?? 112000;
   const loanKw = PKG?.kwp ?? 3;
   const loanBill = L.survey_monthly_bill ?? D.monthly_bill ?? 5000;
-  const C = calcLoan(loanPrice, loanKw, loanBill);
-  const CALC_INDEP=[["มูลค่า Solar Package (บาท)",baht(C.price),"in"],["เงินดาวน์ (%)","20.0%","in"],["ดอกเบี้ย ปีที่ 1-2 (% ต่อปี)","3.500%","in"],["ดอกเบี้ย ปีที่ 3-5 (% ต่อปี)","5.000%","in"],["ระยะเวลากู้ (ปี) - ปรับได้ 1-5","7 ปี","in"]];
-  const CALC_CALC=[["เงินดาวน์ (บาท)",baht(C.down)],["วงเงินกู้ (บาท)",baht(C.loan)],["ดอกเบี้ยรายเดือน ปีที่ 1-2",num(C.m1*100,4)+"%"],["ดอกเบี้ยรายเดือน ปีที่ 3-5",num(C.m2*100,4)+"%"],["จำนวนงวดช่วงที่ 1 (ดอก 3.5%)",C.n1+" งวด"],["จำนวนงวดช่วงที่ 2 (ดอก 5.0%)",C.n2+" งวด"],["ดอกเบี้ยถัวเฉลี่ยถ่วงน้ำหนัก/ปี",num(C.wAvg*100,3)+"%"]];
+  const financeInputs = options.financial?.inputs || {};
+  const financeOutputs = options.financial?.outputs || {};
+  const downPct = Number(financeInputs.down_payment_percent ?? 20);
+  const rate1 = Number(financeInputs.interest_rate_year_1_2 ?? 3.5);
+  const rate2 = Number(financeInputs.interest_rate_year_3_plus ?? 3.5);
+  const termMonths = Number(financeInputs.loan_term_months ?? 84);
+  const electricityRate = Number(financeInputs.electricity_rate ?? 5);
+  const C = calcLoan(loanPrice, loanKw, loanBill, { unit:electricityRate, r1:rate1/100, r2:rate2/100, downPct:downPct/100, term:termMonths/12 });
+  Object.assign(C, {
+    down: financeOutputs.down_payment_amount ?? C.down,
+    loan: financeOutputs.loan_amount ?? C.loan,
+    pmt: financeOutputs.monthly_installment ?? C.pmt,
+    total: financeOutputs.total_loan_payment ?? C.total,
+    interest: financeOutputs.total_interest ?? C.interest,
+    netMo: financeOutputs.net_monthly_after_saving ?? C.netMo,
+    kwh: financeOutputs.monthly_production_kwh ?? C.kwh,
+    save: financeOutputs.monthly_saving ?? C.save,
+    payback: financeOutputs.payback_months ?? C.payback,
+    save25: financeOutputs.saving_25_years ?? C.save25,
+    co2Yr: financeOutputs.co2_reduction_tons_per_year ?? C.co2Yr,
+    trees: financeOutputs.equivalent_trees ?? C.trees,
+  });
+  const CALC_INDEP=[["มูลค่า Solar Package (บาท)",baht(C.price),"in"],["เงินดาวน์ (%)",num(downPct,1)+"%","in"],["ดอกเบี้ย ปีที่ 1-2 (% ต่อปี)",num(rate1,3)+"%","in"],["ดอกเบี้ย ปีที่ 3 เป็นต้นไป (% ต่อปี)",num(rate2,3)+"%","in"],["ระยะเวลากู้",termMonths+" เดือน","in"]];
+  const CALC_CALC=[["เงินดาวน์ (บาท)",baht(C.down)],["วงเงินกู้ (บาท)",baht(C.loan)],["ดอกเบี้ยรายเดือน ปีที่ 1-2",num(C.m1*100,4)+"%"],["ดอกเบี้ยรายเดือน ปีที่ 3 เป็นต้นไป",num(C.m2*100,4)+"%"],["จำนวนงวดช่วงที่ 1",C.n1+" งวด"],["จำนวนงวดช่วงที่ 2",C.n2+" งวด"],["ดอกเบี้ยถัวเฉลี่ยถ่วงน้ำหนัก/ปี",num(C.wAvg*100,3)+"%"]];
   const CALC_RESULT=[["ค่างวดผ่อน (บาท/เดือน) — เท่ากันทุกงวด",baht(C.pmt),"big"],["ยอดจ่ายรวมตลอดสัญญา (บาท)",baht(C.total)],["ดอกเบี้ยรวมตลอดสัญญา (บาท)",baht(C.interest)],["ดอกเบี้ยถัวเฉลี่ย EIR / ปี",num(C.eir*100,3)+"%"]];
   const CALC_COMPARE=[["ค่าไฟปัจจุบัน (บาท/เดือน)",baht(C.bill),"in"],["ขนาด Solar ที่ติด (kW)",num(C.kw,1),"in"],["ค่าไฟต่อหน่วย (บาท/kWh)",num(C.unit,2)],["หน่วยไฟที่ผลิตได้/เดือน (kWh)",num(C.kwh,1)],["ประหยัดได้หลังติด Solar (บาท/เดือน)",baht(C.save)]];
   const CALC_ANALYSIS=[["ค่างวดผ่อน (บาท/เดือน)",baht(C.pmt)],["ดอกเบี้ยต่อเดือน (เดือนแรก)",baht(C.mo1Int)],["เงินต้นที่ตัดต่อเดือน (เดือนแรก)",baht(C.mo1Prin)],["ต้นทุนสุทธิ/เดือน (ค่างวด − ประหยัด)",baht(C.netMo),C.netMo<0?"neg":""],["ยอดรวมที่จ่ายตลอดสัญญา (บาท)",baht(C.total)],["ดอกเบี้ยรวม (บาท)",baht(C.interest)],["ค่าไฟรวมถ้าไม่ติด Solar (บาท)",baht(C.billTot)],["ประหยัดค่าไฟรวมตลอดสัญญาเงินกู้ (บาท)",baht(C.saveTot)],["ลดการปล่อย CO₂ ต่อปี (ตัน)",num(C.co2Yr,2)],["ลดการปล่อย CO₂ เทียบเท่าปลูกต้นไม้ (ต้น)",baht(C.trees)],["จุดคุ้มทุน (เดือน)",C.payback?num(C.payback,0):"—"],["ถ้าติด 25 ปี ประหยัดค่าไฟได้ (บาท)",baht(C.save25)]];
-  const p14 = page(13, `<h3 class="subh">ตัวอย่างตารางผ่อนชำระสินเชื่อ (Amortization Schedule) — ตัวอย่างประกอบการพิจารณา สำหรับการยื่นกู้กับ ธนาคาร ออมสิน</h3>
+  const loanBank = String(financeInputs.loan_bank || "ธนาคารออมสิน");
+  const rateSource = String(financeInputs.rate_source || "ธนาคารออมสิน GSB");
+  const p14 = page(13, `<h3 class="subh">ตัวอย่างตารางผ่อนชำระสินเชื่อ (Amortization Schedule) — ตัวอย่างประกอบการพิจารณา สำหรับการยื่นกู้กับ ${loanBank}</h3>
     <div class="calc">
-      <div class="calc-head">Solar Loan Calculator — GSB Soft Loan (ค่างวดเท่ากันทุกเดือน)</div>
-      <div class="calc-sub">สินเชื่อพลังงานสะอาด | ไม่มีหลักประกัน (Clean Loan) | Source: ธนาคารออมสิน GSB</div>
+      <div class="calc-head">Solar Loan Calculator — ${loanBank} (ค่างวดเท่ากันทุกเดือน)</div>
+      <div class="calc-sub">สินเชื่อพลังงานสะอาด | Source: ${rateSource}</div>
       <div class="calc-note"><span class="cn-red">** ใส่เฉพาะช่องที่ล้อมกรอบสีแดง <span class="cn-box"></span> ที่เหลือไม่ต้องใส่</span><span class="cn-pull">ดึงข้อมูลจาก แพ็คที่แนะนำ</span><span class="cn-yr">2026 · ORI : TV</span></div>
       <div class="calc-cols">
         <div class="calc-col">
@@ -423,7 +463,7 @@ export function buildSurveyReportHtml(L, D, PKG) {
         </div>
       </div>
     </div>
-    <p class="tiny-note">หมายเหตุ: ตารางนี้เป็นตัวอย่างการคำนวณเพื่อประกอบการตัดสินใจเท่านั้น ตัวเลขจริงจะระบุในตารางผ่อนชำระที่ธนาคารออมสินออกให้หลังการอนุมัติสินเชื่อ</p>`);
+    <p class="tiny-note">หมายเหตุ: ตารางนี้เป็นตัวอย่างการคำนวณเพื่อประกอบการตัดสินใจเท่านั้น ตัวเลขจริงให้ยึดตามตารางผ่อนชำระที่ ${loanBank} ออกให้หลังการอนุมัติสินเชื่อ</p>`);
 
   const p15 = page(14, `${sect("9","หมายเหตุและเงื่อนไขทั่วไป")}
     <ul class="reasons">
@@ -448,7 +488,7 @@ export function buildSurveyReportHtml(L, D, PKG) {
     <div class="qt-divider">
       <div class="qt-i">📄</div>
       <div class="qt-t">ใบเสนอราคาเลขที่ ${quotDocNo}</div>
-      <div class="qt-s">มูลค่า ${baht(acceptedQuot?.amount || L.order_total || 0)} บาท (รวม VAT) — เอกสารฉบับเต็มแนบต่อจากหน้านี้</div>
+      <div class="qt-s">มูลค่า ${baht(quotation.netAmount ?? acceptedQuot?.amount ?? L.order_total ?? 0)} บาท (รวม VAT) — เอกสารฉบับเต็มแนบต่อจากหน้านี้</div>
     </div>` : `
     ${emptyBox(`แนบไฟล์ใบเสนอราคา (Quotation) เลขที่ ${quotDocNo||""} — หน้า 1`,"วาง/แทรกไฟล์ PDF หรือรูปภาพใบเสนอราคาฉบับล่าสุด",150)}
     ${emptyBox("หน้า 2 ของใบเสนอราคา (หากมี)","รายละเอียดรายการอุปกรณ์ / เงื่อนไขการชำระเงิน / อายุใบเสนอราคา",150)}`}
@@ -459,6 +499,7 @@ export function buildSurveyReportHtml(L, D, PKG) {
   html,body{font-family:'DB Heavent',sans-serif;color:${INK};font-size:16px;line-height:1.5;}
   .page{position:relative;width:210mm;height:297mm;padding:16mm 15mm 14mm;page-break-after:always;overflow:hidden;}
   .page:last-child{page-break-after:auto;}
+  .report-watermark{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;transform:rotate(-25deg);font-size:72px;font-weight:700;color:rgba(222,51,74,.13);pointer-events:none;z-index:4;}
   .run-head{position:absolute;top:7mm;left:15mm;right:15mm;font-size:10px;color:${GRAY};text-align:right;border-bottom:1px solid #e2e5ea;padding-bottom:3px;}
   .run-foot{position:absolute;bottom:7mm;left:0;right:0;text-align:center;font-size:10px;color:#aab;}
   .body{height:100%;}
@@ -496,6 +537,8 @@ export function buildSurveyReportHtml(L, D, PKG) {
   .ph-in{padding:12px;}.ph-t{font-size:15px;font-weight:700;color:#7a828e;}.ph-s{font-size:12.5px;color:#9aa1ab;font-style:italic;margin-top:3px;}
   /* hand-draw sketch area — big empty framed box, note pinned to top-left */
   .sketch{border:1.5px dashed #b9c0ca;border-radius:3px;background:repeating-linear-gradient(0deg,#fbfcfd,#fbfcfd 23px,#eef1f5 24px);height:205mm;position:relative;margin-top:4px;}
+  .sketch.has-image{background:#fff;padding:7mm;display:flex;align-items:center;justify-content:center;}
+  .sketch-img{display:block;width:100%;height:100%;object-fit:contain;}
   .sk-note{position:absolute;top:8px;left:12px;right:12px;font-size:12.5px;color:#98a0ab;font-style:italic;}
   .pgrid{display:grid;grid-template-columns:1fr 1fr;gap:10px;}
   .pimg{position:relative;border:1px solid #d5d9e0;border-radius:3px;overflow:hidden;background:#eef0f3;}
