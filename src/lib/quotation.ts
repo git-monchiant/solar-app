@@ -55,11 +55,15 @@ function round2(value: number) { return Math.round((value + Number.EPSILON) * 10
 
 export async function nextQuotationDocNo(tx: InstanceType<typeof sql.Transaction>): Promise<string> {
   const year = new Date().getFullYear().toString().slice(-2);
-  const prefix = `SM-QT-${year}-`;
-  const result = await new sql.Request(tx).input("like", sql.NVarChar(30), `${prefix}%`).query(`
-    SELECT MAX(TRY_CAST(SUBSTRING(doc_no, ${prefix.length + 1}, 10) AS INT)) AS max_num
-    FROM quotations WITH (UPDLOCK, HOLDLOCK) WHERE doc_no LIKE @like
-  `);
+  const prefix = `SSR-QT-${year}-`;
+  const result = await new sql.Request(tx)
+    .input("like", sql.NVarChar(30), `${prefix}%`)
+    .input("legacy_like", sql.NVarChar(30), `SM-QT-${year}-%`)
+    .query(`
+      SELECT MAX(TRY_CAST(RIGHT(doc_no, CHARINDEX('-', REVERSE(doc_no)) - 1) AS INT)) AS max_num
+      FROM quotations WITH (UPDLOCK, HOLDLOCK)
+      WHERE doc_no LIKE @like OR doc_no LIKE @legacy_like
+    `);
   return `${prefix}${String((result.recordset[0]?.max_num || 0) + 1).padStart(4, "0")}`;
 }
 

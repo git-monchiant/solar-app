@@ -4,6 +4,7 @@ import { requireAuth } from "@/lib/auth";
 import { calculateQuotation, getQuotationActor, nextQuotationDocNo, type QuotationInputItem } from "@/lib/quotation";
 import { logLeadActivity } from "@/lib/lead-activity-log";
 import { parseDocumentInputs } from "@/lib/quotation-document";
+import { getStandardQuotationPaymentTerms } from "@/lib/quotation-terms";
 
 export async function GET(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const gate = await requireAuth(req); if (gate.error) return gate.error;
@@ -71,14 +72,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
     const packageRow = pkg.recordset[0]; if (!packageRow) { await tx.rollback(); return NextResponse.json({ error: "ไม่พบ Package ที่ใช้งานได้" }, { status: 400 }); }
     const packageItems = await new sql.Request(tx).input("package_id", sql.Int, packageId).query(`SELECT * FROM package_items WHERE package_id=@package_id AND is_active=1 ORDER BY sort_order,id`);
     const templateId = Number(body.payment_template_id) || null;
-    let paymentTerms = Array.isArray(body.payment_terms) ? body.payment_terms : null;
-    if (!paymentTerms && templateId) { const t = await new sql.Request(tx).input("tid", sql.Int, templateId).query(`SELECT terms_json FROM quotation_payment_templates WHERE id=@tid AND is_active=1`); if (t.recordset[0]) paymentTerms = JSON.parse(t.recordset[0].terms_json); }
-    if (!paymentTerms) paymentTerms = [{ label: "งวดที่ 1 ชำระ", percent: 20, due: "ภายใน 7 วัน นับจากวันที่ในใบเสนอราคา" }, { label: "งวดที่ 2 ชำระ", percent: 80, due: "ภายใน 3 วัน หลังติดตั้งแล้วเสร็จ" }];
-    paymentTerms = paymentTerms.slice(0, 4);
-    const paymentPercentTotal = paymentTerms.reduce((total: number, term: { percent?: unknown }) => total + Number(term.percent), 0);
-    if (!paymentTerms.every((term: { percent?: unknown }) => Number.isFinite(Number(term.percent)) && Number(term.percent) >= 0 && Number(term.percent) <= 100) || paymentPercentTotal > 100) {
-      await tx.rollback(); return NextResponse.json({ error: "ยอดเปอร์เซ็นต์เงื่อนไขชำระเงินรวมกันต้องไม่เกิน 100%" }, { status: 400 });
-    }
+    const paymentTerms = getStandardQuotationPaymentTerms();
     const discountType = body.discount_type === "percent" ? "percent" : "amount";
     const confirmedDeposit = Math.max(0, Number(lead.recordset[0].confirmed_deposit) || 0);
     const depositPaid = Math.max(confirmedDeposit, Number(body.deposit_paid_amount) || 0);

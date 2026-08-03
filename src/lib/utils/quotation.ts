@@ -15,7 +15,7 @@ export type QuoteOption = {
 
 // Chrome's built-in PDF viewer uses the last URL segment as its tab title.
 // Keep the quotation id for the API lookup, but append the document number as
-// a filename so the tab reads "SM-QT-YY-XXXX.pdf" instead of just "2".
+// a filename so the tab reads "SSR-QT-YY-XXXX.pdf" instead of just "2".
 export function withQuotationPdfFilename(url: string, docNo: string): string {
   if (!docNo) return url;
   const match = url.match(

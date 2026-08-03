@@ -163,7 +163,8 @@ export async function buildQuotationDocumentSnapshot(quotationId: number, transa
       COALESCE(NULLIF(l.project_alias,N''),NULLIF(l.project_name,N''),pr.name) project_display_name,
       owner.full_name assigned_name, surveyor.full_name survey_completed_by_name,
       creator.full_name created_by_name, creator.job_title created_by_title,
-      p.name package_current_name, p.kwp, p.phase, p.has_battery, p.battery_kwh, p.battery_brand,
+      p.name package_current_name, p.kwp, p.phase, p.is_upgrade, p.has_panel,
+      p.has_inverter, p.has_battery, p.battery_kwh, p.battery_brand,
       p.inverter_kw, p.inverter_brand, p.warranty_years
     FROM quotations q
     JOIN leads l ON l.id=q.lead_id
@@ -182,7 +183,7 @@ export async function buildQuotationDocumentSnapshot(quotationId: number, transa
   const row = sets[0]?.[0];
   if (!row) return null;
   const quotationKeys = new Set(["id","lead_id","option_no","doc_no","revision_no","status","package_id","package_name_snapshot","package_price_snapshot","issue_date","valid_days","subtotal_incl_vat","discount_label","discount_type","discount_value","discount_amount","discount_reason","contract_total_incl_vat","deposit_paid_amount","outstanding_amount","vat_rate","amount_before_vat","vat_amount","payment_terms_json","terms_text","note","created_by","created_by_name","created_by_title","submitted_at","approved_at","approver_name_snapshot","approver_title_snapshot","project_display_name"]);
-  const packageKeys = new Set(["package_id","package_current_name","kwp","phase","has_battery","battery_kwh","battery_brand","solar_panels","panel_watt","inverter_kw","inverter_brand","warranty_years"]);
+  const packageKeys = new Set(["package_id","package_current_name","kwp","phase","is_upgrade","has_panel","has_inverter","has_battery","battery_kwh","battery_brand","solar_panels","panel_watt","inverter_kw","inverter_brand","warranty_years"]);
   const quotation: Record<string, unknown> = {};
   const pkg: Record<string, unknown> = {};
   const lead: Record<string, unknown> = {};

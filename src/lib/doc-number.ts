@@ -180,8 +180,8 @@ export async function validateDocNo(
   if (value === null || value === undefined || value === "") return { ok: true };
   if (typeof value !== "string") return { ok: false, reason: "doc-no must be a string" };
   // Quotation Builder uses the document format from the approved Excel
-  // template. Keep accepting the legacy configurable QT-YYNNN format below.
-  if (type === "quotation" && /^SM-QT-\d{2}-\d{4,6}$/.test(value)) return { ok: true };
+  // template. Keep accepting the former SM-QT prefix for existing documents.
+  if (type === "quotation" && /^(?:SSR|SM)-QT-\d{2}-\d{4,6}$/.test(value)) return { ok: true };
   const { prefix } = await getDocConfig(poolOrTx, type);
   // Lenient on counter length (5–7 digits = 2 year + 3–5 counter) so
   // grandfathered docs from older config (digits=3, SM-26049) keep validating

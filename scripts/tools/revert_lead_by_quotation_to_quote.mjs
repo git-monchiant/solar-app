@@ -3,9 +3,9 @@
 // payment data remain intact for testing. Every applied change is audited.
 //
 // Dry-run:
-//   node scripts/tools/revert_lead_by_quotation_to_quote.mjs --doc=SM-QT-26-0007
+//   node scripts/tools/revert_lead_by_quotation_to_quote.mjs --doc=SSR-QT-26-0007
 // Apply to development:
-//   node scripts/tools/revert_lead_by_quotation_to_quote.mjs --doc=SM-QT-26-0007 --yes
+//   node scripts/tools/revert_lead_by_quotation_to_quote.mjs --doc=SSR-QT-26-0007 --yes
 import sql from "mssql";
 
 const args = process.argv.slice(2);
@@ -13,7 +13,7 @@ const docNo = args.find((arg) => arg.startsWith("--doc="))?.slice(6).trim();
 const execute = args.includes("--yes");
 
 if (!docNo) {
-  console.error("Missing required --doc=SM-QT-YY-XXXX");
+  console.error("Missing required --doc=SSR-QT-YY-XXXX");
   process.exit(1);
 }
 

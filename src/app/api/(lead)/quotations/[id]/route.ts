@@ -3,6 +3,7 @@ import { getDb, sql, fixDates, toSqlDate } from "@/lib/db";
 import { requireAuth } from "@/lib/auth";
 import { calculateQuotation, getQuotationActor, getQuotationDetail, type QuotationInputItem } from "@/lib/quotation";
 import { parseDocumentInputs } from "@/lib/quotation-document";
+import { getStandardQuotationPaymentTerms } from "@/lib/quotation-terms";
 
 export async function GET(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const gate=await requireAuth(req); if(gate.error)return gate.error;
@@ -39,9 +40,7 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
     const depositPaid=Math.max(confirmedDeposit,Number(body.deposit_paid_amount)||0);
     const totals=calculateQuotation(Number(pkg.price),items,discountType,Number(body.discount_value),depositPaid,7);
     const documentInputs=parseDocumentInputs(body.document_inputs,q.document_inputs_json?parseDocumentInputs(q.document_inputs_json):undefined);
-    const paymentTerms=(Array.isArray(body.payment_terms)?body.payment_terms:JSON.parse(q.payment_terms_json)).slice(0,4);
-    const paymentPercentTotal=paymentTerms.reduce((total:number,term:{percent?:unknown})=>total+Number(term.percent),0);
-    if(!paymentTerms.every((term:{percent?:unknown})=>Number.isFinite(Number(term.percent))&&Number(term.percent)>=0&&Number(term.percent)<=100)||paymentPercentTotal>100){await tx.rollback();return NextResponse.json({error:"ยอดเปอร์เซ็นต์เงื่อนไขชำระเงินรวมกันต้องไม่เกิน 100%"},{status:400});}
+    const paymentTerms=getStandardQuotationPaymentTerms();
     await new sql.Request(tx).input("id",sql.Int,quotationId).input("pid",sql.Int,packageId).input("pname",sql.NVarChar(200),pkg.name).input("pprice",sql.Decimal(12,2),pkg.price)
       .input("issue",sql.Date,toSqlDate(body.issue_date)||q.issue_date).input("valid",sql.Int,Number(body.valid_days)||7).input("subtotal",sql.Decimal(12,2),totals.subtotal)
       .input("label",sql.NVarChar(200),body.discount_label||null).input("dtype",sql.NVarChar(10),discountType).input("dvalue",sql.Decimal(12,2),Number(body.discount_value)||0).input("damount",sql.Decimal(12,2),totals.discountAmount)

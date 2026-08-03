@@ -4,6 +4,7 @@ import { apiFetch, getUserIdHeader } from "@/lib/api";
 import { GSB_SOLAR_LOAN_DEFAULTS } from "@/lib/loan-defaults";
 import { formatTHB } from "@/lib/utils/formatters";
 import { hasRole, useActiveRoles, useMe } from "@/lib/roles";
+import { getStandardQuotationPaymentTerms } from "@/lib/quotation-terms";
 import type { Lead, Package } from "./types";
 
 type Item = {
@@ -558,17 +559,7 @@ function QuotationEditor({
   const [templateId, setTemplateId] = useState<number | undefined>(
     quote?.payment_template_id || defaultTemplate?.id,
   );
-  const [terms, setTerms] = useState(() => {
-    try {
-      return (
-        quote
-          ? JSON.parse(quote.payment_terms_json)
-          : defaultTemplate?.terms || []
-      ).slice(0, 4);
-    } catch {
-      return (defaultTemplate?.terms || []).slice(0, 4);
-    }
-  });
+  const terms = useMemo(() => getStandardQuotationPaymentTerms(), []);
   const [termsText, setTermsText] = useState(quote?.terms_text || "");
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
@@ -638,10 +629,9 @@ function QuotationEditor({
       .catch(() => setPackageItems([]));
   }, [packageId]);
   useEffect(() => {
-    if (quote || terms.length || !defaultTemplate) return;
+    if (quote || templateId || !defaultTemplate) return;
     setTemplateId(defaultTemplate.id);
-    setTerms(defaultTemplate.terms);
-  }, [defaultTemplate, quote, terms.length]);
+  }, [defaultTemplate, quote, templateId]);
   const pkg = packages.find((p) => p.id === packageId);
   const packageGroups = [
     {
@@ -677,14 +667,6 @@ function QuotationEditor({
     subtotal > 0 ? Math.round((discountAmount / subtotal) * 10000) / 100 : 0;
   const total = Math.max(0, subtotal - discountAmount);
   const outstanding = Math.max(0, total - deposit);
-  const paymentPercentTotal = terms
-    .slice(0, 4)
-    .reduce(
-      (sum: number, t: { percent: number }) =>
-        sum + Math.max(0, Number(t.percent) || 0),
-      0,
-    );
-  const remainingPaymentPercent = Math.max(0, 100 - paymentPercentTotal);
   const updateItem = (idx: number, patch: Partial<Item>) =>
     setItems((v) => v.map((i, n) => (n === idx ? { ...i, ...patch } : i)));
   const addAdditionalPackage = () => {
@@ -704,23 +686,6 @@ function QuotationEditor({
     ]);
     setAdditionalPackageId(0);
   };
-  const updateTermPercent = (idx: number, value: number) =>
-    setTerms((v: typeof terms) => {
-      const other = v
-        .slice(0, 4)
-        .reduce(
-          (sum: number, t: (typeof v)[number], n: number) =>
-            n === idx ? sum : sum + Math.max(0, Number(t.percent) || 0),
-          0,
-        );
-      const percent = Math.min(
-        Math.max(Number(value) || 0, 0),
-        Math.max(0, 100 - other),
-      );
-      return v.map((t: (typeof v)[number], n: number) =>
-        n === idx ? { ...t, percent } : t,
-      );
-    });
   const previewQuotation = async () => {
     if (!pkg) {
       setError("กรุณาเลือก Package หลักก่อนดูตัวอย่าง");
@@ -822,7 +787,7 @@ function QuotationEditor({
             <div className="mt-0.5 text-xs text-gray-500">
               {quote
                 ? `แก้ไข ${quote.doc_no}`
-                : "เลขเอกสารจะสร้างอัตโนมัติ SM-QT-YY-XXXX"}
+                : "เลขเอกสารจะสร้างอัตโนมัติ SSR-QT-YY-XXXX"}
             </div>
           </div>
           <button
@@ -1085,90 +1050,28 @@ function QuotationEditor({
               <div>
                 <h3 className="text-sm font-bold text-gray-800">งวดชำระเงิน</h3>
                 <p className="text-xxs text-gray-500">
-                  รวมได้ไม่เกิน 100% และเพิ่มได้สูงสุด 4 งวด
+                  มาตรฐาน 20/80 ตามใบเสนอราคา Excel
                 </p>
               </div>
             </div>
             <div className="space-y-2">
-              {terms
-                .slice(0, 4)
-                .map(
-                  (
-                    t: { label: string; percent: number; due: string },
-                    n: number,
-                  ) => (
-                    <div key={n} className="grid grid-cols-12 gap-2">
-                      <input
-                        value={t.label}
-                        onChange={(e) =>
-                          setTerms((v: typeof terms) =>
-                            v.map((x: typeof t, i: number) =>
-                              i === n ? { ...x, label: e.target.value } : x,
-                            ),
-                          )
-                        }
-                        className={`col-span-3 ${compactFieldClass}`}
-                      />
-                      <input
-                        type="number"
-                        min="0"
-                        max="100"
-                        value={t.percent}
-                        onChange={(e) =>
-                          updateTermPercent(n, Number(e.target.value))
-                        }
-                        className={`col-span-2 ${compactFieldClass}`}
-                      />
-                      <input
-                        value={t.due}
-                        onChange={(e) =>
-                          setTerms((v: typeof terms) =>
-                            v.map((x: typeof t, i: number) =>
-                              i === n ? { ...x, due: e.target.value } : x,
-                            ),
-                          )
-                        }
-                        className={`col-span-6 ${compactFieldClass}`}
-                      />
-                      <button
-                        type="button"
-                        onClick={() =>
-                          setTerms((v: typeof terms) =>
-                            v.filter((_: typeof t, i: number) => i !== n),
-                          )
-                        }
-                        aria-label={`ลบงวดที่ ${n + 1}`}
-                        className="col-span-1 rounded-lg text-red-400 transition-colors hover:bg-red-50 hover:text-red-600"
-                      >
-                        ×
-                      </button>
-                    </div>
-                  ),
-                )}
+              {terms.map((term) => (
+                <div
+                  key={term.label}
+                  className="grid grid-cols-12 gap-2 rounded-lg border border-emerald-100 bg-white px-3 py-2 text-sm"
+                >
+                  <div className="col-span-3 font-medium text-gray-700">
+                    {term.label}
+                  </div>
+                  <div className="col-span-2 text-center font-bold text-emerald-700">
+                    {term.percent}%
+                  </div>
+                  <div className="col-span-7 text-gray-600">{term.due}</div>
+                </div>
+              ))}
             </div>
-            {terms.length < 4 && (
-              <button
-                type="button"
-                onClick={() =>
-                  setTerms((v: typeof terms) => [
-                    ...v,
-                    {
-                      label: `งวดที่ ${v.length + 1} ชำระ`,
-                      percent: remainingPaymentPercent,
-                      due: "",
-                    },
-                  ])
-                }
-                className="mt-2 rounded-lg border border-primary/20 bg-primary/5 px-3 py-1.5 text-xs font-semibold text-primary transition-colors hover:bg-primary/10"
-              >
-                + เพิ่มงวดชำระ
-              </button>
-            )}
-            <p
-              className={`mt-1 text-xxs ${paymentPercentTotal === 100 ? "text-emerald-600" : "text-amber-600"}`}
-            >
-              รวม {paymentPercentTotal}% • คงเหลือ {remainingPaymentPercent}%
-              (รวมได้ไม่เกิน 100%)
+            <p className="mt-2 text-xxs text-emerald-700">
+              รวม 100% • ระบบคำนวณยอดแต่ละงวดจากยอดสุทธิหลังหักส่วนลดและยอดชำระแล้ว
             </p>
           </section>
           <section className="rounded-2xl border border-gray-200 bg-white p-4 shadow-sm">

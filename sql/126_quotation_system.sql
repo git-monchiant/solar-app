@@ -52,7 +52,7 @@ BEGIN
     CONSTRAINT CK_qpt_json CHECK (ISJSON(terms_json) = 1)
   );
   INSERT dbo.quotation_payment_templates(name, terms_json, is_default)
-  VALUES (N'มาตรฐาน 20/80', N'[{"label":"งวดที่ 1 ชำระ","percent":20,"due":"ภายใน 7 วัน นับจากวันที่ในใบเสนอราคา"},{"label":"งวดที่ 2 ชำระ","percent":80,"due":"ภายใน 3 วัน หลังติดตั้งแล้วเสร็จ"}]', 1);
+  VALUES (N'มาตรฐาน 20/80', N'[{"label":"งวดที่ 1 ชำระ","percent":20,"due":"ภายใน 7 วัน นับจากวันที่ในใบเสนอราคา"},{"label":"งวดที่ 2 ชำระ","percent":80,"due":"ภายใน 3 วัน ก่อนวันติดตั้ง"}]', 1);
 END;
 
 IF OBJECT_ID('dbo.quotations', 'U') IS NULL

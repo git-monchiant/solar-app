@@ -15,6 +15,11 @@ import {
   type QuotationDocumentSnapshot,
 } from "@/lib/quotation-document";
 import { buildSurveyReportHtml } from "@/lib/docs/survey-report";
+import {
+  getQuotationLegalContent,
+  getStandardQuotationPaymentTerms,
+  type QuotationLegalSection,
+} from "@/lib/quotation-terms";
 
 export const runtime = "nodejs";
 const previewCache = new Map<
@@ -49,6 +54,12 @@ const thaiDate = (value: unknown) =>
     : "-";
 const logoDataUrl = `data:image/png;base64,${readFileSync(join(process.cwd(), "public", "logos", "logo-sena.png")).toString("base64")}`;
 const paymentQrDataUrl = `data:image/png;base64,${readFileSync(join(process.cwd(), "public", "templates", "quotation-payment-qr.png")).toString("base64")}`;
+const quotationContact = {
+  name: "ณัฏฐามณฑ์ อรรควิทยาพงศ์",
+  phone: "092-496-9432",
+  email: "nattamona@sena.co.th",
+  lineOa: "@senasolarenergy",
+};
 
 function signatureDataUrl(data: unknown, mime: unknown) {
   if (!data) return "";
@@ -150,7 +161,7 @@ export async function POST(req: NextRequest) {
     outstanding_amount: outstanding,
     amount_before_vat: outstanding / 1.07,
     vat_amount: outstanding - outstanding / 1.07,
-    payment_terms_json: JSON.stringify(body.terms || []),
+    payment_terms_json: JSON.stringify(getStandardQuotationPaymentTerms()),
     terms_text: body.termsText || "",
     created_by_name: "-",
   };
@@ -336,8 +347,6 @@ export async function GET(
       financial: snapshot.financial,
     },
   );
-  const contactPhone = q.created_by_phone || "0-2541-4642";
-  const contactEmail = q.created_by_email || "ekkawitp@senasolarenergy.com";
   const quotationHeader = `
     <div class="header">
       <div class="brand"><img src="${logoDataUrl}" alt="SENA Solar Energy"></div>
@@ -346,7 +355,7 @@ export async function GET(
     </div>
     <div class="customer-grid">
       <table><tr><th>ชื่อโครงการ :</th><td>${esc(q.project_name || "-")}</td></tr><tr><th>ลูกค้า :</th><td>${esc(q.customer_name)}</td></tr><tr><th>ที่อยู่ :</th><td>${esc(q.installation_address || q.id_card_address || "-")}</td></tr><tr><th>เบอร์ติดต่อ :</th><td>${esc(q.customer_phone || "-")}</td></tr><tr><th>เลขประจำตัวผู้เสียภาษี :</th><td>${esc(q.id_card_number || "-")}</td></tr><tr><th>Email :</th><td class="email">${esc(q.customer_email || "-")}</td></tr></table>
-      <table><tr><th>ชื่อผู้ติดต่อ :</th><td colspan="2">${esc(q.created_by_name || "-")}</td></tr><tr><th>โทร :</th><td colspan="2">${esc(contactPhone)}</td></tr><tr><th>E-mail :</th><td colspan="2">${esc(contactEmail)}</td></tr><tr><th>Line OA :</th><td colspan="2">@senasolarenergy</td></tr><tr><td colspan="3" class="valid-box"><div class="valid-box-grid"><span class="valid-label">ยืนราคา</span><span class="valid-days"><b>${esc(q.valid_days)}</b></span><span class="valid-copy">วัน นับจากวันที่ออกเอกสารใบเสนอราคา</span></div></td></tr></table>
+      <table><tr><th>ชื่อผู้ติดต่อ :</th><td colspan="2">${esc(quotationContact.name)}</td></tr><tr><th>โทร :</th><td colspan="2">${esc(quotationContact.phone)}</td></tr><tr><th>E-Mail :</th><td colspan="2">${esc(quotationContact.email)}</td></tr><tr><th>Line OA :</th><td colspan="2">${esc(quotationContact.lineOa)}</td></tr><tr><td colspan="3" class="valid-box"><div class="valid-box-grid"><span class="valid-label">ยืนราคา</span><span class="valid-days"><b>${esc(q.valid_days)}</b></span><span class="valid-copy">วัน นับจากวันที่ออกเอกสารใบเสนอราคา</span></div></td></tr></table>
     </div>`;
 
   const packageTitle = `งานจ้างเหมาติดตั้งระบบผลิตไฟฟ้าจากพลังงานแสงอาทิตย์บนหลังคา ${q.package_name_snapshot || ""}`;
@@ -373,31 +382,23 @@ export async function GET(
     })
     .join("");
 
-  const standardTermsPage1 = `
-    <div class="legal"><b><u>1. รายละเอียดการรับประกันสินค้า</u></b>
-      <p>1.1) การรับประกัน แผงโซลาร์เซลล์ PRODUCTION WARRANTY และ รับประกัน PERFORMANCE WARRANTY โดยจะรับประกันจากผู้ผลิต</p>
-      <p>1.2) การรับประกัน INVERTER รับประกันมาตรฐาน โดยรับประกันจากผู้ผลิต</p>
-      <p>1.3) การรับประกัน BATTERY รับประกันมาตรฐาน โดยรับประกันจากผู้ผลิต</p>
-      <p>1.4) ยืนยันราคาภายใน ${esc(q.valid_days)} วัน นับจากวันที่ออกเอกสารใบเสนอราคา</p>
-      <b><u>2. หมายเหตุ (กรณีติดตั้งใหม่ทั้งระบบ)</u></b>
-      <p>2.1) ราคาดังกล่าวรวมค่าใช้จ่ายในการขอใบอนุญาต ได้แก่ ใบอนุญาตขนานไฟ เอกสารนอกเหนือจากนี้จะมีค่าใช้จ่ายเพิ่มเติม</p>
-      <p>2.2) ราคานี้ไม่รวมงานปรับปรุงระบบและสายไฟฟ้าเพิ่มเติมภายในบ้าน ทางบริษัทฯ ยินดีเสนอราคาเพิ่มเติมตามความเหมาะสมของหน้างาน</p>
-      <p>2.3) หากมีการเปลี่ยนแปลงจากที่ตกลง บริษัทฯ ขอสงวนสิทธิ์คิดค่าใช้จ่ายเป็นงานเพิ่ม</p>
-      <p>2.4) บ้านที่จะติดตั้งระบบโซลาร์เซลล์ ต้องยื่นขออนุญาตเรียบร้อยแล้ว พร้อมมีบ้านเลขที่และติดตั้งมิเตอร์จากการไฟฟ้าเป็นมิเตอร์ไฟจริงแล้ว</p>
-    </div>`;
+  const legalContent = getQuotationLegalContent(
+    snapshot.package,
+    q.valid_days,
+    String(q.terms_text || ""),
+  );
+  const renderLegalSections = (sections: QuotationLegalSection[]) =>
+    sections
+      .map(
+        (section) =>
+          `<b><u>${esc(section.title)}</u></b>${section.paragraphs.map((paragraph) => `<p>${esc(paragraph)}</p>`).join("")}`,
+      )
+      .join("");
+  const standardTermsPage1 = `<div class="legal">${renderLegalSections(legalContent.page1Sections)}</div>`;
   const standardTermsPage2 = `
     <div class="legal page-two-terms">
-      <p>2.5) รับประกันงานติดตั้งระบบโซลาร์เซลล์ เป็นระยะเวลา 2 ปี</p>
-      <p>2.6) ราคานี้รวมค่าดำเนินการ O&amp;M เป็นเวลา 2 ปี ปีละ 2 ครั้ง ตามรายการดังนี้</p>
-      <b><u>3. การดำเนินงานและการบำรุงรักษาระยะเวลา 2 ปี (กรณีติดตั้งใหม่ทั้งระบบ)</u></b>
-      <p>3.1) ล้างแผงโซลาร์ 2 ครั้งต่อปี เป็นระยะเวลา 2 ปี หรือประเมินจากความสกปรก</p>
-      <p>3.2) ตรวจสอบระบบโซลาร์เซลล์ ตรวจสอบจุดเชื่อมต่อ พร้อมทำ THERMOSCAN ปีละ 2 ครั้ง เป็นระยะเวลา 2 ปี</p>
-      <p>3.3) ตรวจสอบความผิดปกติของแผงโซลาร์เซลล์ทางกายภาพ ปีละ 2 ครั้ง เป็นระยะเวลา 2 ปี</p>
-      <b><u>4. เงื่อนไขเพิ่มเติม</u></b>
-      <p>4.1) ใบเสนอราคานี้เป็นเพียงการประมาณการเบื้องต้น หากติดตั้งจริงอาจมีการเปลี่ยนแปลงราคาในภายหลัง</p>
-      <p>4.2) ผู้ขายขอสงวนสิทธิ์ในการเลือกใช้อุปกรณ์ในการติดตั้งระบบโซลาร์เซลล์</p>
-      <p>4.3) เงินค่าจองเพื่อซื้อระบบโซลาร์เซลล์ จะถูกคืนให้ลูกค้าโดยหักจากยอดเงินที่ลูกค้าโอนชำระเมื่อตกลงซื้อระบบโซลาร์เซลล์</p>
-      ${q.terms_text ? `<p>4.4) ${esc(q.terms_text)}</p>` : ""}
+      ${legalContent.page2LeadingParagraphs.map((paragraph) => `<p>${esc(paragraph)}</p>`).join("")}
+      ${renderLegalSections(legalContent.page2Sections)}
     </div>`;
 
   const sigCell = (

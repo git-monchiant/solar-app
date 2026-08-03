@@ -11,6 +11,7 @@ Statuses:
 | Plan | Status | Mockup | Notes |
 | --- | --- | --- | --- |
 | [20260801-02-survey-layout-sketch-upload.md](20260801-02-survey-layout-sketch-upload.md) | done | - | เพิ่มผังร่างใน Survey/Photos/PDF, apply migration 133 ที่ Development และตรวจ Build/PDF/schema ผ่าน |
+| [20260801-01-quotation-terms-payment-alignment.md](20260801-01-quotation-terms-payment-alignment.md) | done | - | แยกข้อความท้ายใบตามประเภท Package, ล็อกงวด 20/80 ตาม Excel, apply Development และตรวจ Build/PDF จริงผ่าน |
 | [20260730-01-sequential-quotation-approval.md](20260730-01-sequential-quotation-approval.md) | done | - | เพิ่ม approval chain Sale → Solar Sup → Sale Sup, apply migration Development และตรวจ build/transition ผ่าน; รอกำหนดผู้ใช้ role Solar Sup |
 | [20260722-02-step3-quotation-document-bundle.md](20260722-02-step3-quotation-document-bundle.md) | in-progress | - | ใช้ Report template กลางร่วมกับ `/api/survey-report/[leadId]`; รอ regression PDF 17 หน้า, Business UAT และอนุญาตก่อน Production |
 | [20260709-01-cheque-two-step-payment.md](20260709-01-cheque-two-step-payment.md) | done | - | เพิ่ม flow เช็ค 2 step: ยืนยันรับเช็ค -> รอรับเงิน -> ยืนยันรับเงิน |
