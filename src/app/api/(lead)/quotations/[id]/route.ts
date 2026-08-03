@@ -3,7 +3,7 @@ import { getDb, sql, fixDates, toSqlDate } from "@/lib/db";
 import { requireAuth } from "@/lib/auth";
 import { calculateQuotation, getQuotationActor, getQuotationDetail, type QuotationInputItem } from "@/lib/quotation";
 import { parseDocumentInputs } from "@/lib/quotation-document";
-import { getStandardQuotationPaymentTerms } from "@/lib/quotation-terms";
+import { getQuotationPaymentTermsTotal, parseQuotationPaymentTerms } from "@/lib/quotation-terms";
 
 export async function GET(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const gate=await requireAuth(req); if(gate.error)return gate.error;
@@ -17,12 +17,16 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
 export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const gate=await requireAuth(req); if(gate.error)return gate.error;
   const actor=await getQuotationActor(gate.userId); if(!actor)return NextResponse.json({error:"ไม่พบผู้ใช้"},{status:401});
-  const {id}=await params; const quotationId=Number(id); const body=await req.json(); const db=await getDb(); const tx=new sql.Transaction(db);
+  const {id}=await params; const quotationId=Number(id); const body=await req.json();
+  const paymentTerms=parseQuotationPaymentTerms(body.payment_terms);
+  if(getQuotationPaymentTermsTotal(paymentTerms)!==100)return NextResponse.json({error:"ยอดรวมงวดชำระเงินต้องเท่ากับ 100%"},{status:400});
+  const db=await getDb(); const tx=new sql.Transaction(db);
   try {
     await tx.begin();
     const current=await new sql.Request(tx).input("id",sql.Int,quotationId).query(`
-      SELECT q.*, l.assigned_user_id,
-        CASE WHEN l.payment_confirmed = 1 THEN COALESCE((
+      SELECT q.*, l.assigned_user_id, l.pre_survey_fee_type,
+        CASE WHEN l.pre_survey_fee_type = 'free' THEN 0
+        WHEN l.payment_confirmed = 1 THEN COALESCE((
           SELECT SUM(p.amount) FROM payments p
           WHERE p.lead_id = l.id AND p.slip_field = 'pre_slip_url' AND p.confirmed_at IS NOT NULL
         ), l.pre_total_price, 0) ELSE 0 END AS confirmed_deposit
@@ -37,10 +41,9 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
     const items:QuotationInputItem[]=Array.isArray(body.items)?body.items.filter((i:QuotationInputItem)=>i?.item_name?.trim()).map((i:QuotationInputItem)=>({source_type:"custom",item_name:String(i.item_name).trim(),quantity:Number(i.quantity)||1,unit:i.unit||"ชุด",unit_price:Number(i.unit_price)||0})):[];
     const discountType=body.discount_type==="percent"?"percent":"amount";
     const confirmedDeposit=Math.max(0,Number(q.confirmed_deposit)||0);
-    const depositPaid=Math.max(confirmedDeposit,Number(body.deposit_paid_amount)||0);
+    const depositPaid=q.pre_survey_fee_type==="free"?0:Math.max(confirmedDeposit,Number(body.deposit_paid_amount)||0);
     const totals=calculateQuotation(Number(pkg.price),items,discountType,Number(body.discount_value),depositPaid,7);
     const documentInputs=parseDocumentInputs(body.document_inputs,q.document_inputs_json?parseDocumentInputs(q.document_inputs_json):undefined);
-    const paymentTerms=getStandardQuotationPaymentTerms();
     await new sql.Request(tx).input("id",sql.Int,quotationId).input("pid",sql.Int,packageId).input("pname",sql.NVarChar(200),pkg.name).input("pprice",sql.Decimal(12,2),pkg.price)
       .input("issue",sql.Date,toSqlDate(body.issue_date)||q.issue_date).input("valid",sql.Int,Number(body.valid_days)||7).input("subtotal",sql.Decimal(12,2),totals.subtotal)
       .input("label",sql.NVarChar(200),body.discount_label||null).input("dtype",sql.NVarChar(10),discountType).input("dvalue",sql.Decimal(12,2),Number(body.discount_value)||0).input("damount",sql.Decimal(12,2),totals.discountAmount)

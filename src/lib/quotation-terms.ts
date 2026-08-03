@@ -36,6 +36,75 @@ export function getStandardQuotationPaymentTerms(): QuotationPaymentTerm[] {
   return STANDARD_QUOTATION_PAYMENT_TERMS.map((term) => ({ ...term }));
 }
 
+export function parseQuotationPaymentTerms(
+  value: unknown,
+): QuotationPaymentTerm[] {
+  let candidate = value;
+  if (typeof candidate === "string") {
+    try {
+      candidate = JSON.parse(candidate);
+    } catch {
+      return getStandardQuotationPaymentTerms();
+    }
+  }
+  if (!Array.isArray(candidate)) return getStandardQuotationPaymentTerms();
+
+  const terms = candidate
+    .map((term, index) => {
+      if (!term || typeof term !== "object") return null;
+      const row = term as Record<string, unknown>;
+      const percent = Number(row.percent);
+      return {
+        label:
+          String(row.label || "").trim().slice(0, 200) ||
+          `งวดที่ ${index + 1} ชำระ`,
+        percent: Number.isFinite(percent)
+          ? Math.min(100, Math.max(0, percent))
+          : 0,
+        due: String(row.due || "").trim().slice(0, 500),
+      };
+    })
+    .filter((term): term is QuotationPaymentTerm => term !== null);
+
+  return terms.length ? terms : getStandardQuotationPaymentTerms();
+}
+
+export function getQuotationPaymentTermsTotal(
+  terms: QuotationPaymentTerm[],
+): number {
+  return Math.round(
+    terms.reduce(
+      (total, term) =>
+        total + (Number.isFinite(term.percent) ? term.percent : 0),
+      0,
+    ) * 100,
+  ) / 100;
+}
+
+export function balanceFinalQuotationPaymentTerm(
+  terms: QuotationPaymentTerm[],
+): QuotationPaymentTerm[] {
+  if (!terms.length) return terms;
+  let allocatedPercent = 0;
+  return terms.map((term, index) => {
+    if (index === terms.length - 1) {
+      return {
+        ...term,
+        percent:
+          Math.round(Math.max(0, 100 - allocatedPercent) * 100_000_000) /
+          100_000_000,
+      };
+    }
+    if (!Number.isFinite(term.percent)) return term;
+    const percent = Math.min(
+      Math.max(0, 100 - allocatedPercent),
+      Math.max(0, term.percent),
+    );
+    allocatedPercent += percent;
+    return { ...term, percent };
+  });
+}
+
 const asBoolean = (value: unknown) =>
   value === true || value === 1 || value === "1" || value === "true";
 

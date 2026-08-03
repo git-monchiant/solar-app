@@ -1,8 +1,11 @@
 import assert from "node:assert/strict";
 import {
+  balanceFinalQuotationPaymentTerm,
   getQuotationLegalContent,
+  getQuotationPaymentTermsTotal,
   getQuotationTermsProfile,
   getStandardQuotationPaymentTerms,
+  parseQuotationPaymentTerms,
 } from "../../src/lib/quotation-terms.ts";
 
 const onGrid = {
@@ -66,5 +69,40 @@ assert.deepEqual(getStandardQuotationPaymentTerms(), [
     due: "ภายใน 3 วัน ก่อนวันติดตั้ง",
   },
 ]);
+
+const customPaymentTerms = parseQuotationPaymentTerms([
+  { label: "งวดที่ 1 ชำระ", percent: 20, due: "วันทำสัญญา" },
+  { label: "งวดที่ 2 ชำระ", percent: 30, due: "ก่อนติดตั้ง" },
+  { label: "งวดที่ 3 ชำระ", percent: 50, due: "หลังติดตั้ง" },
+]);
+assert.equal(customPaymentTerms.length, 3);
+assert.equal(getQuotationPaymentTermsTotal(customPaymentTerms), 100);
+assert.equal(
+  getQuotationPaymentTermsTotal([
+    ...customPaymentTerms,
+    { label: "กำลังแก้ไข", percent: Number.NaN, due: "" },
+  ]),
+  100,
+);
+assert.deepEqual(
+  parseQuotationPaymentTerms(JSON.stringify(customPaymentTerms)),
+  customPaymentTerms,
+);
+
+assert.deepEqual(
+  balanceFinalQuotationPaymentTerm([
+    { label: "งวดที่ 1", percent: 35, due: "" },
+    { label: "งวดที่ 2", percent: 80, due: "" },
+    { label: "งวดที่ 3", percent: 0, due: "" },
+  ]).map((term) => term.percent),
+  [35, 65, 0],
+);
+assert.deepEqual(
+  balanceFinalQuotationPaymentTerm([
+    { label: "งวดที่ 1", percent: 25, due: "" },
+    { label: "งวดที่ 2", percent: 0, due: "" },
+  ]).map((term) => term.percent),
+  [25, 75],
+);
 
 console.log("quotation terms/payment tests passed");

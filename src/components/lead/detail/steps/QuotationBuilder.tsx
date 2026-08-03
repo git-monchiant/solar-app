@@ -4,11 +4,17 @@ import { apiFetch, getUserIdHeader } from "@/lib/api";
 import { GSB_SOLAR_LOAN_DEFAULTS } from "@/lib/loan-defaults";
 import { formatTHB } from "@/lib/utils/formatters";
 import { hasRole, useActiveRoles, useMe } from "@/lib/roles";
-import { getStandardQuotationPaymentTerms } from "@/lib/quotation-terms";
+import {
+  balanceFinalQuotationPaymentTerm,
+  getQuotationPaymentTermsTotal,
+  parseQuotationPaymentTerms,
+  type QuotationPaymentTerm,
+} from "@/lib/quotation-terms";
 import type { Lead, Package } from "./types";
 
 type Item = {
   id?: number;
+  editorSelectionId?: number;
   source_type: "package" | "addon" | "custom";
   item_name?: string;
   item_name_snapshot?: string;
@@ -111,9 +117,12 @@ export default function QuotationBuilder({
   const [editing, setEditing] = useState<number | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
-  const confirmedDeposit = lead.payment_confirmed
-    ? Math.max(0, Number(lead.pre_total_price) || 0)
-    : 0;
+  const confirmedDeposit =
+    lead.pre_survey_fee_type === "free"
+      ? 0
+      : lead.payment_confirmed
+        ? Math.max(0, Number(lead.pre_total_price) || 0)
+        : 0;
   const load = useCallback(async () => {
     try {
       setQuotes(await apiFetch(`/api/leads/${lead.id}/quotations`));
@@ -532,6 +541,7 @@ function QuotationEditor({
     quote?.package_id || packages[0]?.id || 0,
   );
   const [packageItems, setPackageItems] = useState<Item[]>([]);
+  const [showPackageItems, setShowPackageItems] = useState(false);
   const [items, setItems] = useState<Item[]>(
     quote?.items
       ?.filter((i) => i.source_type !== "package")
@@ -542,7 +552,9 @@ function QuotationEditor({
       })) ||
       [],
   );
-  const [additionalPackageId, setAdditionalPackageId] = useState(0);
+  const [additionalItemSelectors, setAdditionalItemSelectors] = useState([
+    { id: 1, value: "" },
+  ]);
   const [discountType, setDiscountType] = useState<"amount" | "percent">(
     quote?.discount_type === "percent" ? "percent" : "amount",
   );
@@ -553,13 +565,22 @@ function QuotationEditor({
     quote?.discount_label || "",
   );
   const discountReason = "";
+  const isFreeSurvey = lead.pre_survey_fee_type === "free";
   const [deposit, setDeposit] = useState(
-    Math.max(Number(quote?.deposit_paid_amount) || 0, confirmedDeposit),
+    isFreeSurvey
+      ? 0
+      : confirmedDeposit > 0
+      ? confirmedDeposit
+      : Math.max(0, Number(quote?.deposit_paid_amount) || 0),
   );
   const [templateId, setTemplateId] = useState<number | undefined>(
     quote?.payment_template_id || defaultTemplate?.id,
   );
-  const terms = useMemo(() => getStandardQuotationPaymentTerms(), []);
+  const [terms, setTerms] = useState<QuotationPaymentTerm[]>(() =>
+    balanceFinalQuotationPaymentTerm(
+      parseQuotationPaymentTerms(quote?.payment_terms_json),
+    ),
+  );
   const [termsText, setTermsText] = useState(quote?.terms_text || "");
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
@@ -632,20 +653,27 @@ function QuotationEditor({
     if (quote || templateId || !defaultTemplate) return;
     setTemplateId(defaultTemplate.id);
   }, [defaultTemplate, quote, templateId]);
+  useEffect(() => {
+    if (isFreeSurvey) setDeposit(0);
+    else if (confirmedDeposit > 0) setDeposit(confirmedDeposit);
+  }, [confirmedDeposit, isFreeSurvey]);
   const pkg = packages.find((p) => p.id === packageId);
   const packageGroups = [
     {
       label: "แพ็กเกจมาตรฐาน (Solar Rooftop)",
+      icon: "☀️",
       items: packages.filter((p) => !/scale\s*up|battery|batt/i.test(p.name)),
     },
     {
       label: "แพ็กเกจเพิ่มขนาดระบบ (Scale Up)",
+      icon: "📈",
       items: packages.filter(
         (p) => /scale\s*up/i.test(p.name) && !/battery|batt/i.test(p.name),
       ),
     },
     {
       label: "แพ็กเกจแบตเตอรี่ / Hybrid",
+      icon: "🔋",
       items: packages.filter((p) => /battery|batt/i.test(p.name)),
     },
   ].filter((group) => group.items.length > 0);
@@ -669,22 +697,147 @@ function QuotationEditor({
   const outstanding = Math.max(0, total - deposit);
   const updateItem = (idx: number, patch: Partial<Item>) =>
     setItems((v) => v.map((i, n) => (n === idx ? { ...i, ...patch } : i)));
-  const addAdditionalPackage = () => {
-    const selectedPackage = packages.find(
-      (candidate) => candidate.id === additionalPackageId,
+  const termsPercentTotal = getQuotationPaymentTermsTotal(terms);
+  const updatePaymentTerm = (
+    idx: number,
+    patch: Partial<QuotationPaymentTerm>,
+  ) =>
+    setTerms((current) => {
+      const updated = current.map((term, index) =>
+        index === idx ? { ...term, ...patch } : term,
+      );
+      return "percent" in patch
+        ? balanceFinalQuotationPaymentTerm(updated)
+        : updated;
+    });
+  const getPaymentTermAmount = (percent: number, idx: number) => {
+    if (!Number.isFinite(percent)) return Number.NaN;
+    if (idx === terms.length - 1) {
+      const allocatedAmount = terms.slice(0, -1).reduce((sum, term) => {
+        if (!Number.isFinite(term.percent)) return sum;
+        return (
+          sum + Math.round(((outstanding * term.percent) / 100) * 100) / 100
+        );
+      }, 0);
+      return Math.round(Math.max(0, outstanding - allocatedAmount) * 100) / 100;
+    }
+    return Math.round(((outstanding * percent) / 100) * 100) / 100;
+  };
+  const updatePaymentTermAmount = (idx: number, value: string) => {
+    if (value === "") {
+      updatePaymentTerm(idx, { percent: Number.NaN });
+      return;
+    }
+    const amount = Math.min(outstanding, Math.max(0, Number(value) || 0));
+    const percent =
+      outstanding > 0
+        ? Math.round(((amount / outstanding) * 100) * 100_000_000) /
+          100_000_000
+        : 0;
+    updatePaymentTerm(idx, { percent });
+  };
+  const addPaymentTerm = () =>
+    setTerms((current) =>
+      balanceFinalQuotationPaymentTerm([
+        ...current,
+        {
+          label: `งวดที่ ${current.length + 1} ชำระ`,
+          percent: 0,
+          due: "",
+        },
+      ]),
     );
-    if (!selectedPackage || selectedPackage.id === packageId) return;
-    setItems((current) => [
+  const removePaymentTerm = (idx: number) =>
+    setTerms((current) =>
+      balanceFinalQuotationPaymentTerm(
+        current
+          .filter((_, index) => index !== idx)
+          .map((term, index) => ({
+            ...term,
+            label: /^งวดที่ \d+ ชำระ$/.test(term.label)
+              ? `งวดที่ ${index + 1} ชำระ`
+              : term.label,
+          })),
+      ),
+    );
+  const addAdditionalItemSelector = () =>
+    setAdditionalItemSelectors((current) => [
       ...current,
       {
-        source_type: "custom",
-        item_name: `Package เพิ่มเติม: ${selectedPackage.name}`,
-        quantity: 1,
-        unit: "ชุด",
-        unit_price: Number(selectedPackage.price) || 0,
+        id: Math.max(0, ...current.map((selector) => selector.id)) + 1,
+        value: "",
       },
     ]);
-    setAdditionalPackageId(0);
+  const updateAdditionalItemSelection = (selectorId: number, value: string) => {
+    setAdditionalItemSelectors((current) =>
+      current.map((selector) =>
+        selector.id === selectorId ? { ...selector, value } : selector,
+      ),
+    );
+    setItems((current) => {
+      const linkedItems = new Map(
+        current
+          .filter((item) => item.editorSelectionId !== undefined)
+          .map((item) => [item.editorSelectionId, item]),
+      );
+      if (!value) {
+        linkedItems.delete(selectorId);
+      } else if (value === "custom") {
+        linkedItems.set(selectorId, {
+          ...emptyItem(),
+          editorSelectionId: selectorId,
+        });
+      } else {
+        const selectedPackage = packages.find(
+          (candidate) => candidate.id === Number(value),
+        );
+        if (!selectedPackage || selectedPackage.id === packageId) return current;
+        linkedItems.set(selectorId, {
+          source_type: "custom",
+          editorSelectionId: selectorId,
+          item_name: `Package เพิ่มเติม: ${selectedPackage.name}`,
+          quantity: 1,
+          unit: "ชุด",
+          unit_price: Number(selectedPackage.price) || 0,
+        });
+      }
+      return [
+        ...current.filter((item) => item.editorSelectionId === undefined),
+        ...additionalItemSelectors.flatMap((selector) => {
+          const item = linkedItems.get(selector.id);
+          return item ? [item] : [];
+        }),
+      ];
+    });
+  };
+  const removeAdditionalItemSelector = (selectorId: number) => {
+    setAdditionalItemSelectors((current) =>
+      current.length === 1
+        ? current.map((selector) => ({ ...selector, value: "" }))
+        : current.filter((selector) => selector.id !== selectorId),
+    );
+    setItems((current) =>
+      current.filter((item) => item.editorSelectionId !== selectorId),
+    );
+  };
+  const updateAdditionalSelectorItem = (
+    selectorId: number,
+    patch: Partial<Item>,
+  ) =>
+    setItems((current) =>
+      current.map((item) =>
+        item.editorSelectionId === selectorId ? { ...item, ...patch } : item,
+      ),
+    );
+  const removeAdditionalItem = (idx: number) => {
+    const selectorId = items[idx]?.editorSelectionId;
+    setItems((current) => current.filter((_, index) => index !== idx));
+    if (selectorId === undefined) return;
+    setAdditionalItemSelectors((current) =>
+      current.map((selector) =>
+        selector.id === selectorId ? { ...selector, value: "" } : selector,
+      ),
+    );
   };
   const previewQuotation = async () => {
     if (!pkg) {
@@ -712,7 +865,7 @@ function QuotationEditor({
           subtotal,
           total,
           outstanding,
-          terms: terms.slice(0, 4),
+          terms,
           termsText,
           documentInputs,
         }),
@@ -740,6 +893,10 @@ function QuotationEditor({
       setError("กรุณาระบุค่าไฟปัจจุบันจากข้อมูลจริง");
       return;
     }
+    if (termsPercentTotal !== 100) {
+      setError(`ยอดรวมงวดชำระเงินต้องเท่ากับ 100% (ปัจจุบัน ${termsPercentTotal}%)`);
+      return;
+    }
     setSaving(true);
     setError("");
     try {
@@ -753,7 +910,7 @@ function QuotationEditor({
         discount_reason: discountReason,
         deposit_paid_amount: deposit,
         payment_template_id: templateId,
-        payment_terms: terms.slice(0, 4),
+        payment_terms: terms,
         terms_text: termsText,
         document_inputs: documentInputs,
       };
@@ -822,7 +979,10 @@ function QuotationEditor({
             </label>
             <select
               value={packageId}
-              onChange={(e) => setPackageId(Number(e.target.value))}
+              onChange={(e) => {
+                setPackageId(Number(e.target.value));
+                setShowPackageItems(false);
+              }}
               className={`mt-1 ${fieldClass}`}
             >
               <option value={0}>เลือก Package</option>
@@ -830,7 +990,7 @@ function QuotationEditor({
                 <optgroup key={group.label} label={group.label}>
                   {group.items.map((p) => (
                     <option key={p.id} value={p.id}>
-                      {p.name} — {formatTHB(p.price)} บาท
+                      {group.icon} {p.name} — {formatTHB(p.price)} บาท
                     </option>
                   ))}
                 </optgroup>
@@ -841,16 +1001,50 @@ function QuotationEditor({
                 ไม่มี Package ที่เปิดใช้งานอยู่ในช่วงวันที่ปัจจุบัน กรุณาตรวจสอบวันเริ่มใช้และวันหมดอายุใน Package Master
               </div>
             ) : packageItems.length > 0 ? (
-              <div className="mt-2 rounded-xl border border-primary/15 bg-primary/5 p-3">
-                <div className="mb-1 text-xs font-bold text-primary">
-                  อุปกรณ์หลักจาก Package (แก้ไขไม่ได้)
-                </div>
-                {packageItems.map((i, n) => (
-                  <div key={i.id || n} className="py-0.5 text-xs text-gray-700">
-                    • {i.item_name_snapshot || i.item_name} {i.quantity}{" "}
-                    {i.unit}
+              <div className="mt-2 overflow-hidden rounded-xl border border-primary/15 bg-primary/5">
+                <button
+                  type="button"
+                  onClick={() => setShowPackageItems((current) => !current)}
+                  aria-expanded={showPackageItems}
+                  aria-controls="package-items-details"
+                  className="flex w-full items-center justify-between gap-3 p-3 text-left transition-colors hover:bg-primary/5"
+                >
+                  <div>
+                    <div className="text-xs font-bold text-primary">
+                      อุปกรณ์หลักจาก Package
+                    </div>
+                    <div className="mt-0.5 text-xxs text-gray-500">
+                      {packageItems.length} รายการ • แก้ไขไม่ได้
+                    </div>
                   </div>
-                ))}
+                  <span className="flex shrink-0 items-center gap-1.5 text-xs font-semibold text-primary">
+                    {showPackageItems ? "ซ่อนรายละเอียด" : "ดูรายละเอียด"}
+                    <span
+                      aria-hidden="true"
+                      className={`text-base transition-transform ${
+                        showPackageItems ? "rotate-180" : ""
+                      }`}
+                    >
+                      ⌄
+                    </span>
+                  </span>
+                </button>
+                {showPackageItems && (
+                  <div
+                    id="package-items-details"
+                    className="border-t border-primary/10 bg-white/60 px-3 py-2"
+                  >
+                    {packageItems.map((i, n) => (
+                      <div
+                        key={i.id || n}
+                        className="py-0.5 text-xs text-gray-700"
+                      >
+                        • {i.item_name_snapshot || i.item_name} {i.quantity}{" "}
+                        {i.unit}
+                      </div>
+                    ))}
+                  </div>
+                )}
               </div>
             ) : packageId ? (
               <div className="mt-2 rounded-lg border border-amber-200 bg-amber-50 p-2 text-xs text-amber-700">
@@ -860,7 +1054,7 @@ function QuotationEditor({
             ) : null}
           </section>
           <section className="rounded-2xl border border-gray-200 bg-white p-4 shadow-sm">
-            <div className="flex items-center justify-between">
+            <div className="flex items-center justify-between gap-3">
               <div className="flex items-center gap-2">
                 <span className="flex h-6 w-6 items-center justify-center rounded-full bg-slate-700 text-xs font-bold text-white">
                   2
@@ -876,38 +1070,12 @@ function QuotationEditor({
               </div>
               <button
                 type="button"
-                onClick={() => setItems((v) => [...v, emptyItem()])}
-                className="rounded-lg border border-primary/20 bg-primary/5 px-2.5 py-1.5 text-xs font-semibold text-primary transition-colors hover:bg-primary/10"
+                onClick={addAdditionalItemSelector}
+                aria-label="เพิ่มช่องรายการเพิ่มเติม"
+                title="เพิ่มช่องรายการเพิ่มเติม"
+                className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border border-primary/20 bg-white text-xl font-medium text-primary transition-colors hover:bg-primary/5"
               >
-                + เพิ่มรายการ
-              </button>
-            </div>
-            <div className="mt-3 flex flex-col gap-2 rounded-xl border border-primary/10 bg-primary/[0.025] p-2 sm:flex-row">
-              <select
-                value={additionalPackageId}
-                onChange={(e) => setAdditionalPackageId(Number(e.target.value))}
-                className={`min-w-0 flex-1 ${compactFieldClass}`}
-              >
-                <option value={0}>เลือก Package เพิ่มเติม</option>
-                {packageGroups.map((group) => (
-                  <optgroup key={group.label} label={group.label}>
-                    {group.items
-                      .filter((candidate) => candidate.id !== packageId)
-                      .map((candidate) => (
-                        <option key={candidate.id} value={candidate.id}>
-                          {candidate.name} — {formatTHB(candidate.price)} บาท
-                        </option>
-                      ))}
-                  </optgroup>
-                ))}
-              </select>
-              <button
-                type="button"
-                disabled={!additionalPackageId}
-                onClick={addAdditionalPackage}
-                className="rounded-lg border border-primary/20 bg-white px-3 py-1.5 text-xs font-semibold text-primary transition-colors hover:bg-primary/5 disabled:cursor-not-allowed disabled:opacity-40"
-              >
-                + เพิ่ม Package
+                +
               </button>
             </div>
             <div className="mt-3 hidden grid-cols-12 gap-2 px-2 text-xxs font-semibold text-gray-500 md:grid">
@@ -916,9 +1084,108 @@ function QuotationEditor({
               <span className="col-span-3">ราคา/หน่วย (บาท)</span>
             </div>
             <div className="mt-2 space-y-2">
-              {items.map((i, n) => (
+              {additionalItemSelectors.map((selector) => {
+                const linkedItem = items.find(
+                  (item) => item.editorSelectionId === selector.id,
+                );
+                return (
+                  <div
+                    key={selector.id}
+                    className="grid grid-cols-12 items-center gap-2 rounded-xl border border-primary/10 bg-primary/[0.025] p-2"
+                  >
+                    {selector.value === "custom" ? (
+                      <input
+                        value={linkedItem?.item_name || ""}
+                        onChange={(e) =>
+                          updateAdditionalSelectorItem(selector.id, {
+                            item_name: e.target.value,
+                          })
+                        }
+                        placeholder="ชื่ออุปกรณ์/บริการ"
+                        aria-label={`ชื่อรายการเพิ่มเติมช่องที่ ${selector.id}`}
+                        className={`col-span-6 ${compactFieldClass}`}
+                      />
+                    ) : (
+                      <select
+                        value={selector.value}
+                        onChange={(e) =>
+                          updateAdditionalItemSelection(
+                            selector.id,
+                            e.target.value,
+                          )
+                        }
+                        aria-label={`เลือกรายการเพิ่มเติมช่องที่ ${selector.id}`}
+                        className={`col-span-6 min-w-0 ${compactFieldClass}`}
+                      >
+                        <option value="">เลือกรายการเพิ่มเติม</option>
+                        {packageGroups.map((group) => (
+                          <optgroup key={group.label} label={group.label}>
+                            {group.items
+                              .filter((candidate) => candidate.id !== packageId)
+                              .map((candidate) => (
+                                <option
+                                  key={candidate.id}
+                                  value={String(candidate.id)}
+                                >
+                                  {group.icon} {candidate.name} — {formatTHB(candidate.price)} บาท
+                                </option>
+                              ))}
+                          </optgroup>
+                        ))}
+                        <optgroup label="รายการอื่นๆ นอกเหนือจาก Package">
+                          <option value="custom">
+                            🧰 เพิ่มอุปกรณ์ / บริการอื่น
+                          </option>
+                        </optgroup>
+                      </select>
+                    )}
+                    <input
+                      type="number"
+                      min="0"
+                      value={linkedItem?.quantity ?? ""}
+                      disabled={!linkedItem}
+                      onChange={(e) =>
+                        updateAdditionalSelectorItem(selector.id, {
+                          quantity: Number(e.target.value),
+                        })
+                      }
+                      aria-label={`จำนวนรายการเพิ่มเติมช่องที่ ${selector.id}`}
+                      className={`col-span-2 ${compactFieldClass}`}
+                    />
+                    <input
+                      type="number"
+                      min="0"
+                      value={linkedItem?.unit_price || ""}
+                      disabled={!linkedItem}
+                      onChange={(e) =>
+                        updateAdditionalSelectorItem(selector.id, {
+                          unit_price:
+                            e.target.value === ""
+                              ? 0
+                              : Number(e.target.value),
+                        })
+                      }
+                      placeholder="ราคา"
+                      aria-label={`ราคาต่อหน่วยรายการเพิ่มเติมช่องที่ ${selector.id}`}
+                      className={`col-span-3 ${compactFieldClass}`}
+                    />
+                    <button
+                      type="button"
+                      onClick={() => removeAdditionalItemSelector(selector.id)}
+                      aria-label="ลบรายการเพิ่มเติม"
+                      className="col-span-1 flex h-8 items-center justify-center rounded-lg text-red-400 transition-colors hover:bg-red-50 hover:text-red-600"
+                    >
+                      ×
+                    </button>
+                  </div>
+                );
+              })}
+              {items
+                .map((item, index) => ({ item, index }))
+                .filter(({ item }) => item.editorSelectionId === undefined)
+                .map(({ item: i, index: n }) => (
                 <div
-                  key={n}
+                  key={i.id || `existing-${n}`}
                   className="grid grid-cols-12 items-center gap-2 rounded-xl border border-gray-100 bg-gray-50/70 p-2"
                 >
                   <input
@@ -952,7 +1219,7 @@ function QuotationEditor({
                   />
                   <button
                     type="button"
-                    onClick={() => setItems((v) => v.filter((_, x) => x !== n))}
+                    onClick={() => removeAdditionalItem(n)}
                     aria-label="ลบรายการ"
                     className="col-span-1 flex h-8 items-center justify-center rounded-lg text-red-400 transition-colors hover:bg-red-50 hover:text-red-600"
                   >
@@ -1023,55 +1290,226 @@ function QuotationEditor({
               <label className="text-xs font-semibold text-gray-500">
                 ค่าสำรวจ/เงินจองที่ชำระแล้ว
               </label>
-              <input
-                type="number"
-                min={confirmedDeposit}
-                value={deposit}
-                onChange={(e) =>
-                  setDeposit(
-                    Math.max(confirmedDeposit, Number(e.target.value) || 0),
-                  )
-                }
-                className={`mt-1 ${fieldClass}`}
-              />
-              {confirmedDeposit > 0 && (
-                <p className="mt-1 text-xxs text-emerald-600">
-                  ดึงยอดที่ยืนยันรับเงินแล้วอัตโนมัติ{" "}
-                  {formatTHB(confirmedDeposit)} บาท
-                </p>
+              {isFreeSurvey ? (
+                <div className="mt-1 flex min-h-[58px] items-center justify-between gap-3 rounded-lg border border-cyan-200 bg-cyan-50 px-3 py-2">
+                  <div className="flex min-w-0 items-center gap-2">
+                    <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-cyan-600 text-sm font-bold text-white">
+                      ✓
+                    </span>
+                    <div className="min-w-0">
+                      <div className="text-xs font-bold text-cyan-800">
+                        ฟรีค่าสำรวจ
+                      </div>
+                    </div>
+                  </div>
+                  <b className="shrink-0 text-base text-cyan-700">0 บาท</b>
+                </div>
+              ) : confirmedDeposit > 0 ? (
+                <div className="mt-1 flex min-h-[58px] items-center justify-between gap-3 rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2">
+                  <div className="flex min-w-0 items-center gap-2">
+                    <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-emerald-600 text-sm font-bold text-white">
+                      ✓
+                    </span>
+                    <div className="min-w-0">
+                      <div className="text-xs font-bold text-emerald-800">
+                        ยืนยันการชำระแล้ว
+                      </div>
+                      <div className="text-xxs text-emerald-600">
+                        ยอดจากรายการรับชำระ แก้ไขได้จากหน้าการชำระเงิน
+                      </div>
+                    </div>
+                  </div>
+                  <b className="shrink-0 text-base text-emerald-700">
+                    {formatTHB(confirmedDeposit)} บาท
+                  </b>
+                </div>
+              ) : (
+                <>
+                  <input
+                    type="number"
+                    min="0"
+                    step="1"
+                    value={deposit || ""}
+                    onChange={(e) =>
+                      setDeposit(Math.max(0, Number(e.target.value) || 0))
+                    }
+                    placeholder="0"
+                    className={`mt-1 ${fieldClass}`}
+                  />
+                  <p className="mt-1 text-xxs text-gray-400">
+                    กรอกเมื่อได้รับค่าสำรวจหรือเงินจองแล้ว
+                  </p>
+                </>
               )}
             </div>
           </section>
           <section className="rounded-2xl border border-emerald-200 bg-emerald-50/30 p-4 shadow-sm">
-            <div className="mb-3 flex items-center gap-2">
-              <span className="flex h-6 w-6 items-center justify-center rounded-full bg-emerald-600 text-xs font-bold text-white">
-                4
-              </span>
-              <div>
-                <h3 className="text-sm font-bold text-gray-800">งวดชำระเงิน</h3>
-                <p className="text-xxs text-gray-500">
-                  มาตรฐาน 20/80 ตามใบเสนอราคา Excel
-                </p>
+            <div className="mb-3 flex items-center justify-between gap-3">
+              <div className="flex items-center gap-2">
+                <span className="flex h-6 w-6 items-center justify-center rounded-full bg-emerald-600 text-xs font-bold text-white">
+                  4
+                </span>
+                <div>
+                  <h3 className="text-sm font-bold text-gray-800">งวดชำระเงิน</h3>
+                  <p className="text-xxs text-gray-500">
+                    เพิ่มและกำหนดรายละเอียดแต่ละงวดได้
+                  </p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={addPaymentTerm}
+                aria-label="เพิ่มงวดชำระเงิน"
+                title="เพิ่มงวดชำระเงิน"
+                className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border border-emerald-200 bg-white text-xl font-medium text-emerald-700 transition-colors hover:bg-emerald-50"
+              >
+                +
+              </button>
+            </div>
+            <div className="mb-3 rounded-xl border border-primary/15 bg-white/80 p-3">
+              <div className="mb-2 text-xs font-bold text-gray-700">
+                สรุปราคา
+              </div>
+              <div className="grid grid-cols-2 gap-3 text-sm md:grid-cols-5">
+                <div>
+                  <small className="text-gray-400">Package</small>
+                  <b className="mt-1 block text-gray-800">
+                    {formatTHB(pkg?.price || 0)}
+                  </b>
+                </div>
+                <div>
+                  <small className="text-gray-400">ยอดรวม</small>
+                  <b className="mt-1 block text-gray-800">
+                    {formatTHB(subtotal)}
+                  </b>
+                </div>
+                <div>
+                  <small className="text-gray-400">ส่วนลด</small>
+                  <b className="mt-1 block text-red-500">
+                    -{formatTHB(discountAmount)}
+                  </b>
+                </div>
+                <div>
+                  <small className="text-gray-400">หักยอดชำระแล้ว</small>
+                  <b className="mt-1 block text-red-500">
+                    -{formatTHB(deposit)}
+                  </b>
+                </div>
+                <div>
+                  <small className="text-gray-400">ยอดที่ต้องชำระ</small>
+                  <b className="mt-1 block text-lg text-primary">
+                    {formatTHB(outstanding)}
+                  </b>
+                </div>
               </div>
             </div>
             <div className="space-y-2">
-              {terms.map((term) => (
+              {terms.map((term, index) => (
                 <div
-                  key={term.label}
-                  className="grid grid-cols-12 gap-2 rounded-lg border border-emerald-100 bg-white px-3 py-2 text-sm"
+                  key={index}
+                  className="grid grid-cols-12 items-center gap-2 rounded-lg border border-emerald-100 bg-white p-2 text-sm"
                 >
-                  <div className="col-span-3 font-medium text-gray-700">
-                    {term.label}
+                  <input
+                    value={term.label}
+                    maxLength={200}
+                    onChange={(e) =>
+                      updatePaymentTerm(index, { label: e.target.value })
+                    }
+                    aria-label={`ชื่องวดที่ ${index + 1}`}
+                    className={`col-span-3 ${compactFieldClass}`}
+                  />
+                  <div className="relative col-span-2">
+                    <input
+                      type="number"
+                      min="0"
+                      max="100"
+                      step="0.01"
+                      disabled={index === terms.length - 1}
+                      value={
+                        Number.isNaN(term.percent)
+                          ? ""
+                          : Math.round(term.percent * 100) / 100
+                      }
+                      onChange={(e) => {
+                        const value = e.target.value;
+                        updatePaymentTerm(index, {
+                          percent:
+                            value === ""
+                              ? Number.NaN
+                              : Math.min(100, Math.max(0, Number(value))),
+                        });
+                      }}
+                      placeholder="0"
+                      aria-label={`เปอร์เซ็นต์งวดที่ ${index + 1}`}
+                      title={
+                        index === terms.length - 1
+                          ? "งวดสุดท้ายปรับให้ครบ 100% อัตโนมัติ"
+                          : "กรอกเปอร์เซ็นต์เพื่อคำนวณยอดเงินอัตโนมัติ"
+                      }
+                      className={`pr-7 text-right font-bold text-emerald-700 ${compactFieldClass}`}
+                    />
+                    <span className="pointer-events-none absolute right-2 top-1/2 -translate-y-1/2 text-xs text-emerald-700">
+                      %
+                    </span>
                   </div>
-                  <div className="col-span-2 text-center font-bold text-emerald-700">
-                    {term.percent}%
+                  <div className="relative col-span-2">
+                    <input
+                      type="number"
+                      min="0"
+                      max={outstanding}
+                      step="0.01"
+                      value={
+                        Number.isNaN(getPaymentTermAmount(term.percent, index))
+                          ? ""
+                          : getPaymentTermAmount(term.percent, index)
+                      }
+                      disabled={
+                        outstanding <= 0 || index === terms.length - 1
+                      }
+                      onChange={(e) =>
+                        updatePaymentTermAmount(index, e.target.value)
+                      }
+                      placeholder="0"
+                      aria-label={`ยอดชำระงวดที่ ${index + 1}`}
+                      title={
+                        index === terms.length - 1
+                          ? "งวดสุดท้ายปรับให้ครบยอดที่ต้องชำระอัตโนมัติ"
+                          : "กรอกยอดเงินเพื่อคำนวณเปอร์เซ็นต์อัตโนมัติ"
+                      }
+                      className={`pr-9 text-right font-bold text-emerald-700 ${compactFieldClass}`}
+                    />
+                    <span className="pointer-events-none absolute right-2 top-1/2 -translate-y-1/2 text-xxs text-emerald-700">
+                      บาท
+                    </span>
                   </div>
-                  <div className="col-span-7 text-gray-600">{term.due}</div>
+                  <input
+                    value={term.due}
+                    maxLength={500}
+                    onChange={(e) =>
+                      updatePaymentTerm(index, { due: e.target.value })
+                    }
+                    placeholder="ระบุเงื่อนไขการชำระ"
+                    aria-label={`เงื่อนไขงวดที่ ${index + 1}`}
+                    className={`col-span-4 ${compactFieldClass}`}
+                  />
+                  <button
+                    type="button"
+                    disabled={terms.length === 1}
+                    onClick={() => removePaymentTerm(index)}
+                    aria-label={`ลบงวดที่ ${index + 1}`}
+                    className="col-span-1 flex h-8 items-center justify-center rounded-lg text-red-400 transition-colors hover:bg-red-50 hover:text-red-600 disabled:cursor-not-allowed disabled:opacity-30"
+                  >
+                    ×
+                  </button>
                 </div>
-              ))}
+                ))}
             </div>
-            <p className="mt-2 text-xxs text-emerald-700">
-              รวม 100% • ระบบคำนวณยอดแต่ละงวดจากยอดสุทธิหลังหักส่วนลดและยอดชำระแล้ว
+            <p
+              className={`mt-2 text-xxs ${
+                termsPercentTotal === 100 ? "text-emerald-700" : "text-red-600"
+              }`}
+            >
+              รวม {termsPercentTotal}% • งวดสุดท้ายปรับอัตโนมัติให้ครบยอดที่ต้องชำระ
             </p>
           </section>
           <section className="rounded-2xl border border-gray-200 bg-white p-4 shadow-sm">
@@ -1093,46 +1531,6 @@ function QuotationEditor({
               />
             </div>
           </section>
-          <div className="rounded-2xl border border-primary/15 bg-primary/[0.035] p-4 shadow-sm">
-            <div className="mb-3 flex items-center gap-2">
-              <span className="flex h-6 w-6 items-center justify-center rounded-full bg-primary text-xs font-bold text-white">
-                6
-              </span>
-              <h3 className="text-sm font-bold text-gray-800">สรุปราคา</h3>
-            </div>
-            <div className="grid grid-cols-2 gap-3 text-sm md:grid-cols-5">
-              <div>
-                <small className="text-gray-400">Package</small>
-                <b className="mt-1 block text-gray-800">
-                  {formatTHB(pkg?.price || 0)}
-                </b>
-              </div>
-              <div>
-                <small className="text-gray-400">ยอดรวม</small>
-                <b className="mt-1 block text-gray-800">
-                  {formatTHB(subtotal)}
-                </b>
-              </div>
-              <div>
-                <small className="text-gray-400">ส่วนลด</small>
-                <b className="mt-1 block text-red-500">
-                  -{formatTHB(discountAmount)}
-                </b>
-              </div>
-              <div>
-                <small className="text-gray-400">หักยอดชำระแล้ว</small>
-                <b className="mt-1 block text-red-500">
-                  -{formatTHB(deposit)}
-                </b>
-              </div>
-              <div>
-                <small className="text-gray-400">ยอดที่ต้องชำระ</small>
-                <b className="mt-1 block text-lg text-primary">
-                  {formatTHB(outstanding)}
-                </b>
-              </div>
-            </div>
-          </div>
         </div>
         <div className="sticky bottom-0 flex justify-end gap-2 border-t border-gray-200 bg-gray-50/90 p-4 backdrop-blur-sm">
           <button

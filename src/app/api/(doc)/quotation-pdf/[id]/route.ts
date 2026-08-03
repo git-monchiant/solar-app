@@ -17,7 +17,7 @@ import {
 import { buildSurveyReportHtml } from "@/lib/docs/survey-report";
 import {
   getQuotationLegalContent,
-  getStandardQuotationPaymentTerms,
+  parseQuotationPaymentTerms,
   type QuotationLegalSection,
 } from "@/lib/quotation-terms";
 
@@ -161,7 +161,7 @@ export async function POST(req: NextRequest) {
     outstanding_amount: outstanding,
     amount_before_vat: outstanding / 1.07,
     vat_amount: outstanding - outstanding / 1.07,
-    payment_terms_json: JSON.stringify(getStandardQuotationPaymentTerms()),
+    payment_terms_json: JSON.stringify(parseQuotationPaymentTerms(body.terms)),
     terms_text: body.termsText || "",
     created_by_name: "-",
   };
@@ -375,10 +375,24 @@ export async function GET(
       '<tr class="empty-row"><td>&nbsp;</td><td></td><td></td></tr>',
     );
 
+  let allocatedPaymentAmount = 0;
   const paymentRows = terms
-    .map((term) => {
+    .map((term, index) => {
       const percent = Number(term.percent || 0);
-      return `<tr><td>${esc(term.label)}</td><td class="center">${percent}%</td><td>${esc(term.due)}</td><td class="center">เป็นจำนวนเงิน</td><td class="right">${money((Number(q.outstanding_amount) * percent) / 100)}</td></tr>`;
+      const percentText = percent.toLocaleString("th-TH", {
+        maximumFractionDigits: 2,
+      });
+      const outstandingAmount = Number(q.outstanding_amount) || 0;
+      const calculatedAmount =
+        Math.round(((outstandingAmount * percent) / 100) * 100) / 100;
+      const paymentAmount =
+        index === terms.length - 1
+          ? Math.round(
+              Math.max(0, outstandingAmount - allocatedPaymentAmount) * 100,
+            ) / 100
+          : calculatedAmount;
+      allocatedPaymentAmount += paymentAmount;
+      return `<tr><td>${esc(term.label)}</td><td class="center">${percentText}%</td><td>${esc(term.due)}</td><td class="center">เป็นจำนวนเงิน</td><td class="right">${money(paymentAmount)}</td></tr>`;
     })
     .join("");
 
@@ -424,8 +438,8 @@ export async function GET(
     table.financials .grand .summary-label,table.financials .grand .summary-value{font-size:12pt;font-weight:bold;color:#15343e}
     .legal b{border-bottom:0;padding-bottom:0;color:#172126}
     .legal b u{text-decoration-color:#172126;text-decoration-thickness:.6px;text-underline-offset:.5px}
-    .customer-grid td.valid-box{padding:0;border:.75px solid #667078;background:#fff}
-    .valid-box-grid{display:grid;grid-template-columns:24% 10% 66%;min-height:5mm;align-items:stretch}
+    .customer-grid td.valid-box{padding:0;border:0;background:#fff}
+    .valid-box-grid{display:grid;grid-template-columns:24% 10% 66%;min-height:5mm;align-items:stretch;overflow:hidden;border:.75px solid #667078;border-radius:4px}
     .customer-grid .valid-box-grid span{display:flex;align-items:center;width:auto;padding:0 3px}
     .valid-box-grid .valid-label,.valid-box-grid .valid-days{justify-content:center}
     .valid-box-grid .valid-copy{white-space:nowrap}

@@ -4,7 +4,7 @@ import { requireAuth } from "@/lib/auth";
 import { calculateQuotation, getQuotationActor, nextQuotationDocNo, type QuotationInputItem } from "@/lib/quotation";
 import { logLeadActivity } from "@/lib/lead-activity-log";
 import { parseDocumentInputs } from "@/lib/quotation-document";
-import { getStandardQuotationPaymentTerms } from "@/lib/quotation-terms";
+import { getQuotationPaymentTermsTotal, parseQuotationPaymentTerms } from "@/lib/quotation-terms";
 
 export async function GET(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const gate = await requireAuth(req); if (gate.error) return gate.error;
@@ -50,12 +50,15 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
   const optionNo = Number(body.option_no); const packageId = Number(body.package_id);
   if (![1,2,3].includes(optionNo) || !packageId) return NextResponse.json({ error: "กรุณาระบุชุด 1-3 และ Package หลัก" }, { status: 400 });
   const customItems: QuotationInputItem[] = Array.isArray(body.items) ? body.items.filter((i: QuotationInputItem) => i?.item_name?.trim()).map((i: QuotationInputItem) => ({ source_type: "custom", item_name: String(i.item_name).trim(), quantity: Number(i.quantity) || 1, unit: i.unit || "ชุด", unit_price: Number(i.unit_price) || 0 })) : [];
+  const paymentTerms = parseQuotationPaymentTerms(body.payment_terms);
+  if (getQuotationPaymentTermsTotal(paymentTerms) !== 100) return NextResponse.json({ error: "ยอดรวมงวดชำระเงินต้องเท่ากับ 100%" }, { status: 400 });
   const db = await getDb(); const tx = new sql.Transaction(db);
   try {
     await tx.begin(sql.ISOLATION_LEVEL.SERIALIZABLE);
     const lead = await new sql.Request(tx).input("id", sql.Int, leadId).query(`
-      SELECT l.id, l.assigned_user_id,
-        CASE WHEN l.payment_confirmed = 1 THEN COALESCE((
+      SELECT l.id, l.assigned_user_id, l.pre_survey_fee_type,
+        CASE WHEN l.pre_survey_fee_type = 'free' THEN 0
+        WHEN l.payment_confirmed = 1 THEN COALESCE((
           SELECT SUM(p.amount) FROM payments p
           WHERE p.lead_id = l.id AND p.slip_field = 'pre_slip_url' AND p.confirmed_at IS NOT NULL
         ), l.pre_total_price, 0) ELSE 0 END AS confirmed_deposit
@@ -72,10 +75,11 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
     const packageRow = pkg.recordset[0]; if (!packageRow) { await tx.rollback(); return NextResponse.json({ error: "ไม่พบ Package ที่ใช้งานได้" }, { status: 400 }); }
     const packageItems = await new sql.Request(tx).input("package_id", sql.Int, packageId).query(`SELECT * FROM package_items WHERE package_id=@package_id AND is_active=1 ORDER BY sort_order,id`);
     const templateId = Number(body.payment_template_id) || null;
-    const paymentTerms = getStandardQuotationPaymentTerms();
     const discountType = body.discount_type === "percent" ? "percent" : "amount";
     const confirmedDeposit = Math.max(0, Number(lead.recordset[0].confirmed_deposit) || 0);
-    const depositPaid = Math.max(confirmedDeposit, Number(body.deposit_paid_amount) || 0);
+    const depositPaid = lead.recordset[0].pre_survey_fee_type === "free"
+      ? 0
+      : Math.max(confirmedDeposit, Number(body.deposit_paid_amount) || 0);
     const totals = calculateQuotation(Number(packageRow.price), customItems, discountType, Number(body.discount_value), depositPaid, 7);
     const documentInputs = parseDocumentInputs(body.document_inputs);
     const docNo = await nextQuotationDocNo(tx);
