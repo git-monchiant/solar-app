@@ -96,14 +96,8 @@ export default function OrderStep({ lead, state, refresh, expanded, onToggle }: 
   const [nextError, setNextError] = useState<string | null>(null);
   const [total, setTotal] = useState<number>(lead.order_total || lead.quotation_amount || 0);
 
-  // Sync total with latest quotation_amount when it becomes available (user might arrive from QuoteStep
-  // after quotation_amount was just saved; useState default only captures first render).
-  useEffect(() => {
-    if (!lead.order_total && lead.quotation_amount && total !== lead.quotation_amount) {
-      setTotal(lead.quotation_amount);
-    }
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [lead.quotation_amount, lead.order_total]);
+  // Sync effect moved below — it needs the discount state (declared later) so
+  // it can re-base a %-based discount when the total changes.
 
   // Quotation options (JSON in lead.quotation_files, or legacy CSV). The
   // Sales picks the quotation accepted by the customer in substep 0. That
@@ -195,6 +189,42 @@ export default function OrderStep({ lead, state, refresh, expanded, onToggle }: 
     lead.order_discount_pct,
     lead.order_discount_amount,
     lead.order_discount_note,
+  ]);
+
+  // Keep order_total pinned to the gross subtotal of the accepted quotation.
+  // Quotation `amount` is the net contract total after discount, while
+  // `subtotal` is the gross base used by Step 04. Pinning to `amount` would
+  // subtract the quotation discount twice. Legacy options without snapshot
+  // metadata fall back to amount and preserve the lead's current discount.
+  // Stop rebasing once accounting has confirmed any installment because those
+  // payments are tied to the total that was in force at confirmation time.
+  useEffect(() => {
+    if (!acceptedQuote || (lead.order_paid_count ?? 0) > 0) return;
+    const quoteTotal = acceptedQuote.subtotal || acceptedQuote.amount;
+    if (!quoteTotal || total === quoteTotal) return;
+    setTotal(quoteTotal);
+    if (acceptedQuote.subtotal !== undefined) {
+      const quoteDiscount = Math.min(
+        quoteTotal,
+        Number(acceptedQuote.discount_amount || 0),
+      );
+      setDiscountAmount(quoteDiscount);
+      setDiscountPct(
+        quoteTotal > 0
+          ? Math.round((quoteDiscount / quoteTotal) * 10000) / 100
+          : 0,
+      );
+      setDiscountNote(acceptedQuote.discount_label || "");
+    } else if (discountPct > 0) {
+      setDiscountAmount(Math.round((quoteTotal * discountPct) / 100));
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [
+    acceptedQuote?.amount,
+    acceptedQuote?.subtotal,
+    acceptedQuote?.discount_amount,
+    acceptedQuote?.discount_label,
+    lead.order_paid_count,
   ]);
 
   // Installment plan: array of {pct, when, due_date}. The legacy order_pct_before
