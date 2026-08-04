@@ -8,7 +8,7 @@
 
 Implemented in Development:
 
-- Added idempotent migration `sql/126_quotation_system.sql` and applied it to `SolarDb_DEV` only.
+- Added idempotent migration `scripts/_archive/migrations/126_quotation_system.sql` and applied it to `SolarDb_DEV` only.
 - Added `sales_sup`, user job title, Package Item Master, Payment Template, Quotation/Item/Approval Event tables.
 - Seeded 183 active equipment rows across all 23 current Packages.
 - Added the 3-card Quotation Builder, Package snapshot, locked master items, Add-on/Custom items, discount, paid deposit, VAT and editable 20/80 terms.
