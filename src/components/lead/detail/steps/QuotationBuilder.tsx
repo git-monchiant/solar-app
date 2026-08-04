@@ -1039,8 +1039,8 @@ function QuotationEditor({
                         key={i.id || n}
                         className="py-0.5 text-xs text-gray-700"
                       >
-                        • {i.item_name_snapshot || i.item_name} {i.quantity}{" "}
-                        {i.unit}
+                        • {i.item_name_snapshot || i.item_name}
+                        {i.unit ? ` ${i.quantity} ${i.unit}` : ""}
                       </div>
                     ))}
                   </div>

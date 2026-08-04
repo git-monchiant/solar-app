@@ -358,16 +358,38 @@ export async function GET(
       <table><tr><th>ชื่อผู้ติดต่อ :</th><td colspan="2">${esc(quotationContact.name)}</td></tr><tr><th>โทร :</th><td colspan="2">${esc(quotationContact.phone)}</td></tr><tr><th>E-Mail :</th><td colspan="2">${esc(quotationContact.email)}</td></tr><tr><th>Line OA :</th><td colspan="2">${esc(quotationContact.lineOa)}</td></tr><tr><td colspan="3" class="valid-box"><div class="valid-box-grid"><span class="valid-label">ยืนราคา</span><span class="valid-days"><b>${esc(q.valid_days)}</b></span><span class="valid-copy">วัน นับจากวันที่ออกเอกสารใบเสนอราคา</span></div></td></tr></table>
     </div>`;
 
-  const packageTitle = `งานจ้างเหมาติดตั้งระบบผลิตไฟฟ้าจากพลังงานแสงอาทิตย์บนหลังคา ${q.package_name_snapshot || ""}`;
+  const excelPackageItem = packageItems[0];
+  const excelPackageName = String(excelPackageItem?.item_name_snapshot || "");
+  const usesExcelPackageTitle = excelPackageName.startsWith("งานจ้างเหมา");
+  const excelPackageTitle = `${excelPackageName}${excelPackageItem?.unit ? ` ${excelPackageItem.quantity} ${excelPackageItem.unit}` : ""}`;
+  const packageTitle = usesExcelPackageTitle
+    ? excelPackageTitle
+    : `งานจ้างเหมาติดตั้งระบบผลิตไฟฟ้าจากพลังงานแสงอาทิตย์บนหลังคา ${q.package_name_snapshot || ""}`;
+  const packageDetail = (item: Record<string, unknown>) => {
+    const name = String(item.item_name_snapshot || "");
+    if (!item.unit) return name;
+    if (usesExcelPackageTitle) {
+      return `${name} ${item.quantity} ${item.unit}`;
+    }
+    if (name.startsWith("-")) {
+      return `${name} ${item.quantity} ${item.unit}`;
+    }
+    return `- ${name} ${item.quantity} ${item.unit}`;
+  };
+  let packageSequence = 1;
+  const packageDetailRows = detailItems.map((item) => {
+    const name = String(item.item_name_snapshot || "");
+    const isNumberedExcelItem =
+      usesExcelPackageTitle && !name.trimStart().startsWith("-");
+    if (isNumberedExcelItem) packageSequence += 1;
+    return `<tr><td class="center">${isNumberedExcelItem ? packageSequence : ""}</td><td>${esc(packageDetail(item))}</td><td></td></tr>`;
+  });
   const itemRows = [
-    `<tr><td class="center">1</td><td>${esc(packageTitle)} 1 ชุด</td><td class="right">${money(q.package_price_snapshot)}</td></tr>`,
-    ...detailItems.map(
-      (item) =>
-        `<tr><td></td><td>- ${esc(item.item_name_snapshot)} ${esc(item.quantity)} ${esc(item.unit)}</td><td></td></tr>`,
-    ),
+    `<tr><td class="center">1</td><td>${esc(packageTitle)}${usesExcelPackageTitle ? "" : " 1 ชุด"}</td><td class="right">${money(q.package_price_snapshot)}</td></tr>`,
+    ...packageDetailRows,
     ...addOns.map(
       (item, index) =>
-        `<tr><td class="center">${index + 2}</td><td>${esc(item.item_name_snapshot)} ${esc(item.quantity)} ${esc(item.unit)} <span class="muted">(เพิ่มเติม)</span></td><td class="right">${money(item.line_total)}</td></tr>`,
+        `<tr><td class="center">${index + packageSequence + 1}</td><td>${esc(item.item_name_snapshot)} ${esc(item.quantity)} ${esc(item.unit)} <span class="muted">(เพิ่มเติม)</span></td><td class="right">${money(item.line_total)}</td></tr>`,
     ),
   ];
   while (itemRows.length < 9)

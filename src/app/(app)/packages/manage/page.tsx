@@ -17,8 +17,14 @@ interface Package {
   is_upgrade: boolean;
   battery_kwh: number | null;
   battery_brand: string | null;
+  battery_model: string | null;
   inverter_kw: number | null;
   inverter_brand: string | null;
+  inverter_model: string | null;
+  installed_kwp: number | null;
+  panel_count: number | null;
+  panel_watt: number | null;
+  panel_brand: string | null;
   price: number;
   monthly_installment: string | null;
   monthly_saving: number | null;
@@ -28,12 +34,14 @@ interface Package {
   expire_date: string | null;
   remark?: string | null;
 }
-type PackageItem = { item_name: string; quantity: number; unit: string };
+type PackageItem = { item_name: string; quantity: number; unit: string | null };
 
 const empty: Omit<Package, "id"> = {
   name: "", kwp: 0, phase: 1, has_battery: false, has_panel: true, has_inverter: true, is_upgrade: false,
   battery_kwh: null, battery_brand: null,
-  inverter_kw: null, inverter_brand: null, price: 0, monthly_installment: null,
+  battery_model: null, inverter_kw: null, inverter_brand: null, inverter_model: null,
+  installed_kwp: null, panel_count: null, panel_watt: null, panel_brand: null,
+  price: 0, monthly_installment: null,
   monthly_saving: null, warranty_years: 10, is_active: true,
   start_date: new Date().toISOString().slice(0, 10),
   expire_date: `${new Date().getFullYear() + 99}-${String(new Date().getMonth() + 1).padStart(2, "0")}-${String(new Date().getDate()).padStart(2, "0")}`,
@@ -131,6 +139,27 @@ export default function ManagePackagesPage() {
     .filter(group => group.items.length > 0);
 
   const formatPhase = (phase: number) => phase === 0 ? "All Phase" : `${phase}P`;
+
+  const inverterLabel = (pkg: Package) => [
+    pkg.inverter_brand,
+    pkg.inverter_kw != null ? `${pkg.inverter_kw}kW` : null,
+    pkg.inverter_model,
+  ].filter(Boolean).join(" · ");
+
+  const batteryLabel = (pkg: Package) => [
+    pkg.battery_brand,
+    pkg.battery_kwh != null ? `${pkg.battery_kwh}kWh` : null,
+    pkg.battery_model,
+  ].filter(Boolean).join(" · ");
+
+  const panelLabel = (pkg: Package) => [
+    pkg.panel_brand,
+    pkg.panel_count != null
+      ? pkg.panel_watt != null
+        ? `${pkg.panel_count}×${pkg.panel_watt}W`
+        : `${pkg.panel_count} แผง`
+      : null,
+  ].filter(Boolean).join(" · ");
 
   const packageRemark = (pkg: Package) => {
     const remark = pkg.remark?.trim();
@@ -237,9 +266,9 @@ export default function ManagePackagesPage() {
                           <span className="text-xs font-mono text-gray-500 shrink-0">{pkg.kwp} kWp ยท {formatPhase(pkg.phase)}</span>
                         </div>
                         <div className="mt-2 flex flex-wrap items-center gap-1.5">
-                          {pkg.has_panel && <span className="text-xs px-2 py-0.5 rounded bg-amber-50 text-amber-600 font-semibold">Panel</span>}
-                          {pkg.has_inverter && <span className="text-xs px-2 py-0.5 rounded bg-violet-50 text-violet-600 font-semibold">Inv {pkg.inverter_brand ? `${pkg.inverter_brand} ${pkg.inverter_kw}kW` : ""}</span>}
-                          {pkg.has_battery && <span className="text-xs px-2 py-0.5 rounded bg-green-50 text-green-600 font-semibold">Bat {pkg.battery_kwh ? `${pkg.battery_kwh}kWh ${pkg.battery_brand || ""}` : ""}</span>}
+                          {pkg.has_panel && <span className="text-xs px-2 py-0.5 rounded bg-amber-50 text-amber-600 font-semibold">Panel {panelLabel(pkg)}</span>}
+                          {pkg.has_inverter && inverterLabel(pkg) && <span className="text-xs px-2 py-0.5 rounded bg-violet-50 text-violet-600 font-semibold">Inv {inverterLabel(pkg)}</span>}
+                          {pkg.has_battery && batteryLabel(pkg) && <span className="text-xs px-2 py-0.5 rounded bg-green-50 text-green-600 font-semibold">Bat {batteryLabel(pkg)}</span>}
                         </div>
                         <div className="mt-2 text-xs text-gray-400">
                           {fmtDate(pkg.start_date)} - {fmtDate(pkg.expire_date)}
@@ -290,15 +319,16 @@ export default function ManagePackagesPage() {
                     <span className="font-bold text-lg text-gray-900 truncate">{pkg.name}</span>
                     {pkg.is_upgrade && <span className="text-xs font-bold px-2 py-0.5 rounded bg-blue-50 text-blue-600 shrink-0">SCALE UP</span>}
                     <span className="text-sm font-mono text-gray-500 shrink-0">{pkg.kwp} kWp · {pkg.phase === 0 ? "All Phase" : `${pkg.phase}P`}</span>
+                    {pkg.installed_kwp != null && pkg.installed_kwp !== pkg.kwp && <span className="text-xs font-semibold text-sky-600 shrink-0">ติดตั้งจริง {pkg.installed_kwp} kWp</span>}
                   </div>
 
                   {/* Row 2: Price + Components */}
                   <div className="flex items-center gap-4 mb-2">
                     <span className="text-xl font-bold font-mono tabular-nums text-gray-900">{fmt(pkg.price)} <span className="text-sm text-gray-400">THB</span></span>
                     <div className="flex items-center gap-1.5">
-                      {pkg.has_panel && <span className="text-xs px-2 py-0.5 rounded bg-amber-50 text-amber-600 font-semibold">Panel</span>}
-                      {pkg.has_inverter && <span className="text-xs px-2 py-0.5 rounded bg-violet-50 text-violet-600 font-semibold">Inv {pkg.inverter_brand ? `${pkg.inverter_brand} ${pkg.inverter_kw}kW` : ""}</span>}
-                      {pkg.has_battery && <span className="text-xs px-2 py-0.5 rounded bg-green-50 text-green-600 font-semibold">Bat {pkg.battery_kwh ? `${pkg.battery_kwh}kWh ${pkg.battery_brand || ""}` : ""}</span>}
+                      {pkg.has_panel && <span className="text-xs px-2 py-0.5 rounded bg-amber-50 text-amber-600 font-semibold">Panel {panelLabel(pkg)}</span>}
+                      {pkg.has_inverter && inverterLabel(pkg) && <span className="text-xs px-2 py-0.5 rounded bg-violet-50 text-violet-600 font-semibold">Inv {inverterLabel(pkg)}</span>}
+                      {pkg.has_battery && batteryLabel(pkg) && <span className="text-xs px-2 py-0.5 rounded bg-green-50 text-green-600 font-semibold">Bat {batteryLabel(pkg)}</span>}
                     </div>
                   </div>
 
@@ -384,7 +414,7 @@ export default function ManagePackagesPage() {
               </div>
 
               {/* Inverter */}
-              <div className="grid grid-cols-2 gap-3">
+              <div className="grid grid-cols-3 gap-3">
                 <div>
                   <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wider mb-0.5">Inverter kW</label>
                   <input type="number" step="0.1" value={editing.inverter_kw ?? ""} onChange={e => setEditing({ ...editing, inverter_kw: e.target.value ? parseFloat(e.target.value) : null })} className="w-full h-8 px-3 rounded-lg border border-gray-200 text-sm focus:outline-none focus:border-primary" />
@@ -393,10 +423,14 @@ export default function ManagePackagesPage() {
                   <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wider mb-0.5">Inverter Brand</label>
                   <input type="text" value={editing.inverter_brand ?? ""} onChange={e => setEditing({ ...editing, inverter_brand: e.target.value || null })} className="w-full h-8 px-3 rounded-lg border border-gray-200 text-sm focus:outline-none focus:border-primary" />
                 </div>
+                <div>
+                  <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wider mb-0.5">Inverter Model</label>
+                  <input type="text" value={editing.inverter_model ?? ""} onChange={e => setEditing({ ...editing, inverter_model: e.target.value || null })} className="w-full h-8 px-3 rounded-lg border border-gray-200 text-sm focus:outline-none focus:border-primary" />
+                </div>
               </div>
 
               {/* Battery */}
-              <div className="grid grid-cols-2 gap-3">
+              <div className="grid grid-cols-3 gap-3">
                 <div>
                   <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wider mb-0.5">Battery kWh</label>
                   <input type="number" step="0.1" value={editing.battery_kwh ?? ""} onChange={e => setEditing({ ...editing, battery_kwh: e.target.value ? parseFloat(e.target.value) : null })} className="w-full h-8 px-3 rounded-lg border border-gray-200 text-sm focus:outline-none focus:border-primary" />
@@ -404,6 +438,30 @@ export default function ManagePackagesPage() {
                 <div>
                   <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wider mb-0.5">Battery Brand</label>
                   <input type="text" value={editing.battery_brand ?? ""} onChange={e => setEditing({ ...editing, battery_brand: e.target.value || null })} className="w-full h-8 px-3 rounded-lg border border-gray-200 text-sm focus:outline-none focus:border-primary" />
+                </div>
+                <div>
+                  <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wider mb-0.5">Battery Model</label>
+                  <input type="text" value={editing.battery_model ?? ""} onChange={e => setEditing({ ...editing, battery_model: e.target.value || null })} className="w-full h-8 px-3 rounded-lg border border-gray-200 text-sm focus:outline-none focus:border-primary" />
+                </div>
+              </div>
+
+              {/* Installed system */}
+              <div className="grid grid-cols-4 gap-3">
+                <div>
+                  <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wider mb-0.5">Installed kWp</label>
+                  <input type="number" step="0.01" value={editing.installed_kwp ?? ""} onChange={e => setEditing({ ...editing, installed_kwp: e.target.value ? parseFloat(e.target.value) : null })} className="w-full h-8 px-3 rounded-lg border border-gray-200 text-sm focus:outline-none focus:border-primary" />
+                </div>
+                <div>
+                  <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wider mb-0.5">Panel Brand</label>
+                  <input type="text" value={editing.panel_brand ?? ""} onChange={e => setEditing({ ...editing, panel_brand: e.target.value || null })} className="w-full h-8 px-3 rounded-lg border border-gray-200 text-sm focus:outline-none focus:border-primary" />
+                </div>
+                <div>
+                  <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wider mb-0.5">จำนวนแผง</label>
+                  <input type="number" value={editing.panel_count ?? ""} onChange={e => setEditing({ ...editing, panel_count: e.target.value ? parseInt(e.target.value) : null })} className="w-full h-8 px-3 rounded-lg border border-gray-200 text-sm focus:outline-none focus:border-primary" />
+                </div>
+                <div>
+                  <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wider mb-0.5">Watt/แผง</label>
+                  <input type="number" value={editing.panel_watt ?? ""} onChange={e => setEditing({ ...editing, panel_watt: e.target.value ? parseInt(e.target.value) : null })} className="w-full h-8 px-3 rounded-lg border border-gray-200 text-sm focus:outline-none focus:border-primary" />
                 </div>
               </div>
 
@@ -440,7 +498,7 @@ export default function ManagePackagesPage() {
                   <div key={index} className="grid grid-cols-12 gap-2">
                     <input value={item.item_name} onChange={e => setPackageItems(v => v.map((x, i) => i === index ? { ...x, item_name: e.target.value } : x))} placeholder="ชื่ออุปกรณ์/บริการ" className="col-span-7 h-8 px-2 border border-gray-200 rounded text-xs" />
                     <input type="number" value={item.quantity} onChange={e => setPackageItems(v => v.map((x, i) => i === index ? { ...x, quantity: Number(e.target.value) } : x))} className="col-span-2 h-8 px-2 border border-gray-200 rounded text-xs" />
-                    <input value={item.unit} onChange={e => setPackageItems(v => v.map((x, i) => i === index ? { ...x, unit: e.target.value } : x))} placeholder="หน่วย" className="col-span-2 h-8 px-2 border border-gray-200 rounded text-xs" />
+                    <input value={item.unit ?? ""} onChange={e => setPackageItems(v => v.map((x, i) => i === index ? { ...x, unit: e.target.value || null } : x))} placeholder="หน่วย" className="col-span-2 h-8 px-2 border border-gray-200 rounded text-xs" />
                     <button type="button" onClick={() => setPackageItems(v => v.filter((_, i) => i !== index))} className="col-span-1 text-red-500">×</button>
                   </div>
                 ))}</div>
