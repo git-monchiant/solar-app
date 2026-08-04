@@ -449,7 +449,6 @@ export function buildSurveyReportHtml(L, D, PKG, options = {}) {
     <div class="calc">
       <div class="calc-head">Solar Loan Calculator — ${loanBank} (ค่างวดเท่ากันทุกเดือน)</div>
       <div class="calc-sub">สินเชื่อพลังงานสะอาด | Source: ${rateSource}</div>
-      <div class="calc-note"><span class="cn-red">** ใส่เฉพาะช่องที่ล้อมกรอบสีแดง <span class="cn-box"></span> ที่เหลือไม่ต้องใส่</span><span class="cn-pull">ดึงข้อมูลจาก แพ็คที่แนะนำ</span><span class="cn-yr">2026 · ORI : TV</span></div>
       <div class="calc-cols">
         <div class="calc-col">
           <div class="csec">ตัวแปรอิสระ — ปรับได้ตามต้องการ</div>${ctRows(CALC_INDEP)}
@@ -620,7 +619,7 @@ export function buildSurveyReportHtml(L, D, PKG, options = {}) {
   table.ct td:first-child{color:#33404f;}
   table.ct td:last-child{text-align:right;font-weight:600;color:#1f2a3a;white-space:nowrap;width:34%;}
   table.ct tr:nth-child(even) td{background:#f6f8fa;}
-  table.ct td.in{color:#1e40af;border:1.4px solid #d9432f;background:#fff!important;border-radius:2px;}
+  table.ct td.in{color:#1f2a3a;}
   table.ct td.big{font-size:15px;font-weight:700;color:${NAVY};}
   table.ct td.neg{background:#fde2e2!important;color:#c0392b;}
   .calc-green{background:#2f8f5b;color:#eafff3;font-size:10.5px;font-weight:600;line-height:1.4;padding:9px 11px;margin:6px 6px 6px;border-radius:2px;}

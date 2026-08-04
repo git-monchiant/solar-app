@@ -117,6 +117,10 @@ export default function QuotationBuilder({
   const [editing, setEditing] = useState<number | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
+  // The quote whose PDF is being generated (puppeteer takes a few seconds).
+  // Drives the per-button spinner so a click gives immediate feedback instead
+  // of sitting silent while the server renders.
+  const [pdfLoadingId, setPdfLoadingId] = useState<number | null>(null);
   const confirmedDeposit =
     lead.pre_survey_fee_type === "free"
       ? 0
@@ -193,6 +197,8 @@ export default function QuotationBuilder({
     }
   };
   const openPdf = async (id: number, download = false) => {
+    if (pdfLoadingId !== null) return; // guard against a double-click mid-render
+    setPdfLoadingId(id);
     try {
       const response = await fetch(
         `/api/quotation-pdf/${id}${download ? "?download=1" : ""}`,
@@ -208,8 +214,20 @@ export default function QuotationBuilder({
       setTimeout(() => URL.revokeObjectURL(url), 60000);
     } catch (e) {
       setError(e instanceof Error ? e.message : "เปิด PDF ไม่สำเร็จ");
+    } finally {
+      setPdfLoadingId(null);
     }
   };
+  // Spinner-or-label for the "ดูใบเสนอราคา" buttons (4 status variants share it).
+  const viewPdfLabel = (id: number) =>
+    pdfLoadingId === id ? (
+      <span className="inline-flex items-center gap-1.5">
+        <span className="w-3 h-3 border-2 border-current border-t-transparent rounded-full animate-spin" />
+        กำลังสร้าง…
+      </span>
+    ) : (
+      "▣ ดูใบเสนอราคา"
+    );
   const submitAll = async () => {
     if (!readyQuotes.length) return;
     setBusy(true);
@@ -350,19 +368,21 @@ export default function QuotationBuilder({
                       ✎ แก้ไข
                     </button>
                     <button
+                      disabled={pdfLoadingId === q.id}
                       onClick={() => openPdf(q.id)}
                       className="col-span-2 h-9 rounded-lg border border-gray-200 text-gray-700 text-xs font-semibold"
                     >
-                      ▣ ดูใบเสนอราคา
+                      {viewPdfLabel(q.id)}
                     </button>
                   </>
                 ) : isPendingQuotation(q.status) && canReviewQuotation(q.status) ? (
                   <>
                     <button
+                      disabled={pdfLoadingId === q.id}
                       onClick={() => openPdf(q.id)}
                       className="h-9 rounded-lg border border-gray-200 text-xs font-semibold"
                     >
-                      ▣ ดูใบเสนอราคา
+                      {viewPdfLabel(q.id)}
                     </button>
                     <button
                       disabled={busy}
@@ -387,10 +407,11 @@ export default function QuotationBuilder({
                 ) : q.status === "approved" ? (
                   <>
                     <button
+                      disabled={pdfLoadingId === q.id}
                       onClick={() => openPdf(q.id)}
                       className="col-span-2 h-9 rounded-lg border border-gray-200 text-xs font-semibold"
                     >
-                      ▣ ดูใบเสนอราคา
+                      {viewPdfLabel(q.id)}
                     </button>
                     <button
                       disabled={busy}
@@ -403,10 +424,11 @@ export default function QuotationBuilder({
                 ) : (
                   <>
                     <button
+                      disabled={pdfLoadingId === q.id}
                       onClick={() => openPdf(q.id)}
                       className="col-span-3 h-9 rounded-lg border border-gray-200 text-xs font-semibold"
                     >
-                      ▣ ดูใบเสนอราคา
+                      {viewPdfLabel(q.id)}
                     </button>
                   </>
                 )}
