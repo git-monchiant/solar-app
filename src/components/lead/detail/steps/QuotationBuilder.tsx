@@ -41,6 +41,7 @@ type Quote = {
   id: number;
   option_no: number;
   doc_no: string;
+  issue_date?: string;
   revision_no: number;
   status: string;
   package_id: number;
@@ -87,6 +88,12 @@ const emptyItem = (): Item => ({
   unit: "ชุด",
   unit_price: 0,
 });
+// Local-time YYYY-MM-DD for the quotation date input default (never UTC —
+// toISOString would roll to the next day for evening edits in +07:00).
+const todayIso = () => {
+  const d = new Date();
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+};
 
 export default function QuotationBuilder({
   lead,
@@ -113,6 +120,9 @@ export default function QuotationBuilder({
       status,
     );
   const [quotes, setQuotes] = useState<Quote[]>([]);
+  // Gate the empty "+ สร้างใบเสนอราคา" placeholders behind the first fetch so
+  // an existing quote never flashes as an empty create-card while loading.
+  const [loaded, setLoaded] = useState(false);
   const [templates, setTemplates] = useState<Template[]>([]);
   const [editing, setEditing] = useState<number | null>(null);
   const [busy, setBusy] = useState(false);
@@ -132,6 +142,8 @@ export default function QuotationBuilder({
       setQuotes(await apiFetch(`/api/leads/${lead.id}/quotations`));
     } catch (e) {
       setError(e instanceof Error ? e.message : "โหลดใบเสนอราคาไม่สำเร็จ");
+    } finally {
+      setLoaded(true);
     }
   }, [lead.id]);
   useEffect(() => {
@@ -228,6 +240,22 @@ export default function QuotationBuilder({
     ) : (
       "▣ ดูใบเสนอราคา"
     );
+  // Draft-only hard delete. Backend guards to status='draft' + admin/owner and
+  // this button is shown only for drafts, so it never appears on a sent quote.
+  const remove = async (id: number) => {
+    if (!window.confirm("ลบใบเสนอราคาฉบับร่างนี้ถาวร? กู้คืนไม่ได้")) return;
+    setBusy(true);
+    setError("");
+    try {
+      await apiFetch(`/api/quotations/${id}`, { method: "DELETE" });
+      await load();
+      await refresh();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "ลบไม่สำเร็จ");
+    } finally {
+      setBusy(false);
+    }
+  };
   const submitAll = async () => {
     if (!readyQuotes.length) return;
     setBusy(true);
@@ -269,7 +297,30 @@ export default function QuotationBuilder({
         </div>
       )}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-3">
-        {[1, 2, 3].map((option) => {
+        {!loaded
+          ? [1, 2, 3].map((n) => (
+              <div
+                key={`skeleton-${n}`}
+                className="rounded-xl border border-gray-200 bg-white p-4 min-h-[342px] flex flex-col shadow-sm animate-pulse"
+              >
+                <div className="flex items-start gap-3">
+                  <div className="w-8 h-8 rounded-lg bg-gray-200 shrink-0" />
+                  <div className="flex-1 space-y-2">
+                    <div className="h-3 w-14 rounded bg-gray-200" />
+                    <div className="h-2 w-24 rounded bg-gray-100" />
+                  </div>
+                  <div className="h-7 w-16 rounded-full bg-gray-100" />
+                </div>
+                <div className="mt-4 h-20 rounded-xl bg-gray-100" />
+                <div className="mt-2 h-6 w-40 rounded-full bg-gray-100" />
+                <div className="mt-auto pt-4 border-t border-gray-200 flex items-center justify-between">
+                  <div className="h-3 w-16 rounded bg-gray-100" />
+                  <div className="h-6 w-24 rounded bg-gray-200" />
+                </div>
+                <div className="mt-3 h-9 rounded-lg bg-gray-100" />
+              </div>
+            ))
+          : [1, 2, 3].map((option) => {
           const q = latest.get(option);
           const pkg = q ? packages.find((p) => p.id === q.package_id) : null;
           const extras =
@@ -360,21 +411,34 @@ export default function QuotationBuilder({
               </div>
               <div className="grid grid-cols-3 gap-2 mt-3">
                 {["draft", "changes_required"].includes(q.status) ? (
-                  <>
+                  <div className="col-span-3 flex gap-2">
                     <button
                       onClick={() => setEditing(option)}
-                      className="h-9 rounded-lg border border-violet-300 bg-violet-50 text-violet-700 text-xs font-semibold"
+                      className="h-9 px-3 rounded-lg border border-violet-300 bg-violet-50 text-violet-700 text-xs font-semibold whitespace-nowrap"
                     >
                       ✎ แก้ไข
                     </button>
                     <button
                       disabled={pdfLoadingId === q.id}
                       onClick={() => openPdf(q.id)}
-                      className="col-span-2 h-9 rounded-lg border border-gray-200 text-gray-700 text-xs font-semibold"
+                      className="flex-1 h-9 rounded-lg border border-gray-200 text-gray-700 text-xs font-semibold"
                     >
                       {viewPdfLabel(q.id)}
                     </button>
-                  </>
+                    {q.status === "draft" && (
+                      <button
+                        disabled={busy}
+                        onClick={() => remove(q.id)}
+                        aria-label="ลบฉบับร่าง"
+                        title="ลบฉบับร่าง"
+                        className="h-9 px-3 shrink-0 flex items-center justify-center rounded-lg border border-gray-200 text-gray-500 text-xs font-semibold hover:text-red-600 hover:border-red-200 hover:bg-red-50 transition-colors disabled:cursor-not-allowed disabled:opacity-40"
+                      >
+                        <svg className="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                          <path d="M3 6h18M8 6V4h8v2M6 6l1 14h10l1-14" />
+                        </svg>
+                      </button>
+                    )}
+                  </div>
                 ) : isPendingQuotation(q.status) && canReviewQuotation(q.status) ? (
                   <>
                     <button
@@ -604,6 +668,11 @@ function QuotationEditor({
     ),
   );
   const [termsText, setTermsText] = useState(quote?.terms_text || "");
+  // Quotation date shown on the document (issue_date). Editable; defaults to
+  // today for a new quote, or the saved value when editing.
+  const [issueDate, setIssueDate] = useState(
+    quote?.issue_date ? String(quote.issue_date).slice(0, 10) : todayIso(),
+  );
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
   const [documentInputs] = useState<DocumentInputs>(() => {
@@ -875,6 +944,7 @@ function QuotationEditor({
           lead,
           package: pkg,
           docNo: quote?.doc_no,
+          issueDate,
           allItems: [
             ...packageItems.map((item) => ({
               ...item,
@@ -919,12 +989,17 @@ function QuotationEditor({
       setError(`ยอดรวมงวดชำระเงินต้องเท่ากับ 100% (ปัจจุบัน ${termsPercentTotal}%)`);
       return;
     }
+    if (issueDate > todayIso()) {
+      setError("วันที่ใบเสนอราคาต้องไม่เป็นวันที่ล่วงหน้า");
+      return;
+    }
     setSaving(true);
     setError("");
     try {
       const payload = {
         option_no: optionNo,
         package_id: packageId,
+        issue_date: issueDate,
         items,
         discount_type: discountType,
         discount_value: discountValue,
@@ -1543,14 +1618,34 @@ function QuotationEditor({
                 เงื่อนไขเพิ่มเติม
               </h3>
             </div>
-            <div>
-              <textarea
-                value={termsText}
-                onChange={(e) => setTermsText(e.target.value)}
-                placeholder="เงื่อนไขเพิ่มเติม"
-                rows={3}
-                className={fieldClass}
-              />
+            <div className="space-y-3">
+              <label className="block">
+                <span className="text-xs font-semibold text-gray-500">
+                  วันที่ใบเสนอราคา
+                </span>
+                <input
+                  type="date"
+                  value={issueDate}
+                  max={todayIso()}
+                  onChange={(e) => setIssueDate(e.target.value || todayIso())}
+                  className={`mt-1 md:max-w-[220px] ${fieldClass}`}
+                />
+                <p className="mt-1 text-xxs text-gray-400">
+                  วันที่แสดงบนเอกสารใบเสนอราคา (ค่าเริ่มต้น = วันนี้ · เลือกล่วงหน้าไม่ได้)
+                </p>
+              </label>
+              <label className="block">
+                <span className="text-xs font-semibold text-gray-500">
+                  เงื่อนไขเพิ่มเติม
+                </span>
+                <textarea
+                  value={termsText}
+                  onChange={(e) => setTermsText(e.target.value)}
+                  placeholder="เงื่อนไขเพิ่มเติม"
+                  rows={3}
+                  className={`mt-1 ${fieldClass}`}
+                />
+              </label>
             </div>
           </section>
         </div>

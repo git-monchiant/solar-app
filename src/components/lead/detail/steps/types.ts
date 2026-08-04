@@ -164,6 +164,9 @@ export interface Lead {
   // are synced from the chosen entry once picked.
   quotation_accepted_idx: number | null;
   quotation_amount: number | null;
+  // 'v1' = ระบบใบเสนอราคาเดิม (อัปโหลด PDF) · 'v2' = ระบบใหม่ (QuotationBuilder).
+  // lead ใหม่ default 'v2'; lead ที่เคยออกใบเก่าถูก backfill เป็น 'v1' (migration 136).
+  quotation_version: string | null;
   // Purchase
   order_total: number | null;
   order_discount_pct: number | null;

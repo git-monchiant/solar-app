@@ -11,6 +11,7 @@ import { parseQuotationFiles } from "@/lib/utils/quotation";
 import { useFileViewer } from "@/lib/hooks/useFileViewer";
 import DoneSection from "./DoneSection";
 import QuotationBuilder from "./QuotationBuilder";
+import QuoteStepLegacy from "./QuoteStepLegacy";
 
 interface Props extends StepCommonProps {
   packages: Package[];
@@ -18,7 +19,17 @@ interface Props extends StepCommonProps {
   onToggle?: () => void;
 }
 
-export default function QuoteStep({ lead, state, refresh, packages, expanded, onToggle }: Props) {
+// Dispatch by quotation system version. Leads that issued a quotation under the
+// old upload-a-PDF flow are pinned to 'v1' (migration 136) and keep that whole
+// UI; everyone else (quotation_version NULL) gets the new QuotationBuilder.
+// Kept as a thin wrapper so each branch owns its own hooks — a conditional
+// return inside one component would violate the rules of hooks.
+export default function QuoteStep(props: Props) {
+  if (props.lead.quotation_version === "v1") return <QuoteStepLegacy {...props} />;
+  return <QuoteStepV2 {...props} />;
+}
+
+function QuoteStepV2({ lead, state, refresh, packages, expanded, onToggle }: Props) {
   const fileViewer = useFileViewer();
   const [note, setNote] = useState(lead.quotation_note || "");
 
