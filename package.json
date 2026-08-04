@@ -1,6 +1,6 @@
 {
   "name": "solar-app",
-  "version": "1.6.26",
+  "version": "2.0.1",
   "private": true,
   "scripts": {
     "dev": "next dev",
