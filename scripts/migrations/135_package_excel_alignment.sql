@@ -34,7 +34,12 @@ INSERT #PackageExcel(package_id,expected_price,installed_kwp,panel_count,panel_w
 (30,13000,NULL,2,NULL,NULL,NULL,NULL,NULL,NULL),
 (31,20000,NULL,3,NULL,NULL,NULL,NULL,NULL,NULL),
 (32,233000,10,15,640,N'JINKO',10,N'HUAWEI',N'SUN2000-10K-MAP0',NULL);
-IF (SELECT COUNT(*) FROM dbo.packages p JOIN #PackageExcel x ON x.package_id=p.id AND p.price=x.expected_price)<>22 THROW 50135, 'Package IDs/prices differ from the approved Excel mapping.', 1;
+-- Price check relaxed per prod decision (2026-08-04): keep DB prices as-is, do
+-- NOT enforce the Excel prices. Prod pkg 4/5/25 carry 300k/325k/426k vs the
+-- Excel's 290k/320k/423k; the UPDATE below never writes `price`, so those DB
+-- prices are preserved. Validate package IDs only — the spec backfill is keyed
+-- by id, so the alignment is still safe.
+IF (SELECT COUNT(*) FROM dbo.packages p JOIN #PackageExcel x ON x.package_id=p.id)<>22 THROW 50135, 'Package IDs differ from the approved Excel mapping.', 1;
 UPDATE p SET installed_kwp=x.installed_kwp,panel_count=x.panel_count,panel_watt=x.panel_watt,panel_brand=COALESCE(x.panel_brand,p.panel_brand),inverter_kw=CASE WHEN p.has_inverter=1 THEN x.inverter_kw ELSE p.inverter_kw END,inverter_brand=CASE WHEN p.has_inverter=1 THEN x.inverter_brand ELSE p.inverter_brand END,inverter_model=x.inverter_model,battery_model=x.battery_model FROM dbo.packages p JOIN #PackageExcel x ON x.package_id=p.id;
 UPDATE dbo.packages SET is_active=0,remark=N'Not present in approved Excel quotation V0' WHERE id=26;
 CREATE TABLE #ExcelItems(package_id INT NOT NULL,sort_order INT NOT NULL,item_name NVARCHAR(500) NOT NULL,quantity DECIMAL(10,2) NOT NULL,unit NVARCHAR(50) NULL,PRIMARY KEY(package_id,sort_order));
