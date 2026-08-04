@@ -209,7 +209,7 @@ export default function SurveyStep({ lead, state, refresh, packages, expanded, o
   // ใบสำรวจ it has no HTML page to preview — always a new tab.
   const openReport = (e?: React.MouseEvent) => {
     e?.stopPropagation();
-    openInNewTab(`/api/survey-report/${lead.id}`);
+    openInNewTab(me?.id ? `/api/survey-report/${lead.id}?user_id=${me.id}` : `/api/survey-report/${lead.id}`);
   };
   // Auto-save survey note (debounced)
   useEffect(() => {

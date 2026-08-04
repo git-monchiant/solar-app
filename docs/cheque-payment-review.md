@@ -24,7 +24,7 @@ The cheque payment flow now separates receiving a cheque from confirming that mo
 
 Migration:
 
-- `sql/125_payments_cheque_received.sql`
+- `scripts/_archive/migrations/125_payments_cheque_received.sql`
 
 Added columns:
 

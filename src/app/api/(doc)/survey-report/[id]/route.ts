@@ -3,7 +3,7 @@ import puppeteer from "puppeteer";
 import { PDFDocument } from "pdf-lib";
 import fs from "fs";
 import { getDb, sql } from "@/lib/db";
-import { requireAuth } from "@/lib/auth";
+import { getUserIdFromReq } from "@/lib/auth";
 import { dispositionForLead } from "@/lib/doc-filename";
 import { buildSurveyReportHtml, quotationPdfPath } from "@/lib/docs/survey-report";
 
@@ -19,8 +19,13 @@ export const dynamic = "force-dynamic";
 // setContent. That keeps the report off the public surface (it contains the
 // full questionnaire) and removes the localhost round-trip those routes need.
 export async function GET(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
-  const gate = await requireAuth(req);
-  if (gate.error) return gate.error;
+  // A document opened with <a target="_blank"> is a browser navigation, so it
+  // cannot carry the x-user-id header used by apiFetch. Accept the current user
+  // in the query string as the sibling document routes do.
+  const userId = getUserIdFromReq(req) || Number(req.nextUrl.searchParams.get("user_id"));
+  if (!Number.isInteger(userId) || userId <= 0) {
+    return NextResponse.json({ error: "Not authenticated" }, { status: 401 });
+  }
 
   const { id } = await params;
   const leadId = parseInt(id || "");

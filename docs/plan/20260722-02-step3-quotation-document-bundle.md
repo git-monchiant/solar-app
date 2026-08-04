@@ -8,7 +8,7 @@
 
 Implemented in Development:
 
-- เพิ่ม migration `sql/128_quotation_document_bundle.sql` และนำไปใช้กับ `SolarDb_DEV` เท่านั้น
+- เพิ่ม migration `scripts/_archive/migrations/128_quotation_document_bundle.sql` และนำไปใช้กับ `SolarDb_DEV` เท่านั้น
 - เพิ่ม Document Inputs, Survey/Quotation Snapshot, Financial Snapshot, approval certification และ immutable Approved PDF artifact พร้อม SHA-256
 - เพิ่ม Financial Calculator สูตร `variable-rate-amortization-v1` รองรับอัตราดอกเบี้ยช่วงปี 1-2 และปี 3 เป็นต้นไป พร้อมคำนวณค่างวด ดอกเบี้ย ผลประหยัด จุดคุ้มทุน CO₂ และประมาณการ 25 ปี
 - นำตัวสร้างรายงานมาตรฐานเดียวกับ API `GET /api/survey-report/[leadId]` (`src/lib/docs/survey-report.js`) มาใช้ร่วมกัน ไม่สร้าง Report template ซ้ำ และต่อท้าย Quotation Revision ปัจจุบัน 2 หน้า รวม 17 หน้า พร้อมตรวจ page count ทุกครั้ง

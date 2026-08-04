@@ -34,7 +34,7 @@
 - เพิ่ม role และ approval state ครบตามลำดับ Sale → Solar Sup → Sale Sup
 - เพิ่มการแสดงผู้ที่กำลังรออนุมัติและรายละเอียดการส่งกลับในหน้า Sale
 - เพิ่มคิวตาม active role และคงการจัดกลุ่มใบเสนอราคาตาม Lead
-- ใช้ migration `sql/129_sequential_quotation_approval.sql` กับ `solardb_dev` แล้ว
+- ใช้ migration `scripts/_archive/migrations/129_sequential_quotation_approval.sql` กับ `solardb_dev` แล้ว
 - ย้ายรายการเดิม `pending_approval` จำนวน 4 ฉบับไป `pending_sales_sup`
 - ตรวจ schema และ transition ภายใน transaction ที่ rollback ผ่าน
 - TypeScript, targeted ESLint และ Next.js production build ผ่าน

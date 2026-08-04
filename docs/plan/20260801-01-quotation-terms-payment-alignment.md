@@ -32,4 +32,4 @@ Status: done
 - Production Build ผ่านด้วย Next.js 16.2.3
 - ตรวจตัวจำแนก Package ติดตั้งใหม่, Hybrid, Scale Up และแบตเตอรี่อย่างเดียวแล้ว
 - ตรวจ PDF จริงของ Scale Up แล้ว: งวด 20/80 ตรง Excel, ไม่มีหมวด O&M, เงื่อนไขเพิ่มเติมเป็นหมวด 3 และข้อความเพิ่มเป็นข้อ 3.4
-- Apply `sql/132_quotation_terms_payment_alignment.sql` กับ `solardb_dev` แล้ว โดยอัปเดต Default Template และใบ Draft/ส่งกลับแก้ไข 4 ใบ
+- Apply `scripts/_archive/migrations/132_quotation_terms_payment_alignment.sql` กับ `solardb_dev` แล้ว โดยอัปเดต Default Template และใบ Draft/ส่งกลับแก้ไข 4 ใบ

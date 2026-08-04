@@ -36,7 +36,7 @@ Reason: `confirmed_at` must remain the source of truth for actual money received
 ## Backend Changes
 
 1. Create a migration, for example:
-   - `sql/125_payments_cheque_received.sql`
+   - `scripts/_archive/migrations/125_payments_cheque_received.sql`
 
 2. Update `/api/payments/[id] PATCH`
    - Accept a dedicated action such as `{ cheque_received: true }`.
@@ -94,4 +94,3 @@ Reason: `confirmed_at` must remain the source of truth for actual money received
 8. Confirm accounting totals do not count the amount as received yet.
 9. Click `ยืนยันรับเงิน`.
 10. Confirm `confirmed_at` is set, the row disappears from pending, receipts work, and received totals include the amount.
-

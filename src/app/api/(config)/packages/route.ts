@@ -38,8 +38,14 @@ export async function POST(req: NextRequest) {
       .input("is_upgrade", sql.Bit, body.is_upgrade ? 1 : 0)
       .input("battery_kwh", sql.Decimal(5, 1), body.battery_kwh || null)
       .input("battery_brand", sql.NVarChar(50), body.battery_brand || null)
+      .input("battery_model", sql.NVarChar(150), body.battery_model || null)
       .input("inverter_kw", sql.Decimal(5, 1), body.inverter_kw || null)
       .input("inverter_brand", sql.NVarChar(50), body.inverter_brand || null)
+      .input("inverter_model", sql.NVarChar(100), body.inverter_model || null)
+      .input("installed_kwp", sql.Decimal(6, 2), body.installed_kwp || null)
+      .input("panel_count", sql.Int, body.panel_count || null)
+      .input("panel_watt", sql.Int, body.panel_watt || null)
+      .input("panel_brand", sql.NVarChar(100), body.panel_brand || null)
       .input("price", sql.Decimal(12, 2), body.price || 0)
       .input("monthly_installment", sql.NVarChar(20), body.monthly_installment || null)
       .input("monthly_saving", sql.Decimal(10, 2), body.monthly_saving || null)
@@ -48,11 +54,13 @@ export async function POST(req: NextRequest) {
       .input("expire_date", sql.Date, toSqlDate(body.expire_date) ?? default99)
       .query(`
         INSERT INTO packages (name, kwp, phase, has_battery, has_panel, has_inverter, is_upgrade,
-          battery_kwh, battery_brand, inverter_kw, inverter_brand,
+          battery_kwh, battery_brand, battery_model, inverter_kw, inverter_brand, inverter_model,
+          installed_kwp, panel_count, panel_watt, panel_brand,
           price, monthly_installment, monthly_saving, warranty_years, start_date, expire_date)
         OUTPUT INSERTED.*
         VALUES (@name, @kwp, @phase, @has_battery, @has_panel, @has_inverter, @is_upgrade,
-          @battery_kwh, @battery_brand, @inverter_kw, @inverter_brand,
+          @battery_kwh, @battery_brand, @battery_model, @inverter_kw, @inverter_brand, @inverter_model,
+          @installed_kwp, @panel_count, @panel_watt, @panel_brand,
           @price, @monthly_installment, @monthly_saving, @warranty_years, @start_date, @expire_date)
       `);
     return NextResponse.json(result.recordset[0], { status: 201 });

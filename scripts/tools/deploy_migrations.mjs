@@ -28,6 +28,10 @@ if (!dbArg) {
 }
 const database = dbArg.split('=')[1];
 if (!database) { console.error('Empty --db value'); process.exit(1); }
+if (!['solardb', 'solardb_dev'].includes(database)) {
+  console.error(`Unsupported database "${database}". Use solardb_dev or solardb.`);
+  process.exit(1);
+}
 const isProd = database === 'solardb';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));

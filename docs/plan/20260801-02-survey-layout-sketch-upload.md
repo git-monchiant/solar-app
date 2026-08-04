@@ -26,4 +26,4 @@ Status: done
 - UI, API, type, Photos และ PDF renderer ดำเนินการแล้ว
 - ESLint ไม่มี error, TypeScript และ Next.js production build ผ่าน
 - ทดสอบ PDF จริงมีรูปหน้า 5 และยังคง 15 หน้า; กรณีไม่มีรูปยังแสดงพื้นที่ว่างเดิม
-- Apply `sql/133_survey_layout_sketch.sql` ไปยังฐานข้อมูล Development แล้ว และตรวจ schema/Lead query ผ่านโดยไม่แก้ข้อมูลลูกค้า
+- Apply `scripts/_archive/migrations/133_survey_layout_sketch.sql` ไปยังฐานข้อมูล Development แล้ว และตรวจ schema/Lead query ผ่านโดยไม่แก้ข้อมูลลูกค้า

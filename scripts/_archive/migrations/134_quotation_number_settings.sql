@@ -13,4 +13,3 @@ WHEN MATCHED THEN
   UPDATE SET value = source.value, updated_at = GETDATE()
 WHEN NOT MATCHED THEN
   INSERT ([key], value) VALUES (source.[key], source.value);
-
