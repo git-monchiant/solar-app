@@ -911,7 +911,7 @@ export default function SurveyStep({ lead, state, refresh, packages, expanded, o
           <div>
             <div className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-2">ขนาดที่ติดตั้งได้เหมาะสม (kWp) <span className="text-red-500">*</span></div>
             <div className="grid grid-cols-2 md:grid-cols-7 gap-2">
-              {[3, 5, 7, 10].map(kw => (
+              {[3, 5, 7, 10, 20].map(kw => (
                 <button
                   key={kw}
                   type="button"
