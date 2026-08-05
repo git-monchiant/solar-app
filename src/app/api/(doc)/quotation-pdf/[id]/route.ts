@@ -127,7 +127,27 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "Not authenticated" }, { status: 401 });
   const body = await req.json();
   const now = new Date().toISOString();
-  const packageRow = body.package || {};
+  let packageRow = body.package || {};
+  let previewAllItems: Array<Record<string, unknown>> = Array.isArray(body.allItems) ? body.allItems : [];
+  // Mirror the create/edit promote: with no main package selected, the first
+  // package-type add-on becomes the main package so its equipment detail lines
+  // render in the preview exactly as they will once saved.
+  if (!packageRow.id) {
+    const promoted = previewAllItems.find((it) => it.source_type !== "package" && Number(it.source_package_id));
+    if (promoted) {
+      const pdb = await getDb();
+      const pid = Number(promoted.source_package_id);
+      const prow = (await pdb.request().input("pid", sql.Int, pid).query(`SELECT * FROM packages WHERE id=@pid`)).recordset[0];
+      if (prow) {
+        const pitems = (await pdb.request().input("pid", sql.Int, pid).query(`SELECT * FROM package_items WHERE package_id=@pid AND is_active=1 ORDER BY sort_order,id`)).recordset;
+        packageRow = prow;
+        previewAllItems = [
+          ...pitems.map((it: Record<string, unknown>) => ({ source_type: "package", item_name: it.item_name, item_name_snapshot: it.item_name, quantity: it.quantity, unit: it.unit, line_total: 0 })),
+          ...previewAllItems.filter((it) => it !== promoted),
+        ];
+      }
+    }
+  }
   const submittedLead =
     body.lead && typeof body.lead === "object" ? body.lead : {};
   const leadId = Number(submittedLead.id || 0);
@@ -164,8 +184,8 @@ export async function POST(req: NextRequest) {
     issue_date: body.issueDate || now,
     valid_days: 7,
     status: "draft",
-    package_id: packageRow.id || 1,
-    package_name_snapshot: packageRow.name || "-",
+    package_id: packageRow.id || null,
+    package_name_snapshot: packageRow.name || "",
     package_price_snapshot: Number(packageRow.price || 0),
     subtotal_incl_vat: subtotal,
     discount_label: body.discountLabel || "ส่วนลด",
@@ -187,7 +207,7 @@ export async function POST(req: NextRequest) {
     lead: previewLead,
     lead_data: previewLeadData,
     package: packageRow,
-    items: Array.isArray(body.allItems) ? body.allItems.map((item: Record<string, unknown>) => ({ ...item, item_name_snapshot: item.item_name_snapshot || item.item_name || "", line_total: Number(item.line_total || (Number(item.quantity) || 0) * (Number(item.unit_price) || 0)) })) : [],
+    items: previewAllItems.map((item: Record<string, unknown>) => ({ ...item, item_name_snapshot: item.item_name_snapshot || item.item_name || "", line_total: Number(item.line_total || (Number(item.quantity) || 0) * (Number(item.unit_price) || 0)) })),
     settings: {},
     financial: calculateFinancialSnapshot(inputs, quotation, packageRow),
   };
@@ -398,12 +418,20 @@ export async function GET(
     if (isNumberedExcelItem) packageSequence += 1;
     return `<tr><td class="center">${isNumberedExcelItem ? packageSequence : ""}</td><td>${esc(packageDetail(item))}</td><td></td></tr>`;
   });
+  // Package หลักเป็นตัวเลือก — ถ้าไม่มี (ซื้อเฉพาะรายการเพิ่มเติม) ข้ามแถว
+  // package แล้วเรียงเลขรายการเพิ่มเติมเริ่มจาก 1
+  const hasPackage = q.package_id != null;
+  const addOnBaseSeq = hasPackage ? packageSequence : 0;
   const itemRows = [
-    `<tr><td class="center">1</td><td>${esc(packageTitle)}${usesExcelPackageTitle ? "" : " 1 ชุด"}</td><td class="right">${money(q.package_price_snapshot)}</td></tr>`,
-    ...packageDetailRows,
+    ...(hasPackage
+      ? [
+          `<tr><td class="center">1</td><td>${esc(packageTitle)}${usesExcelPackageTitle ? "" : " 1 ชุด"}</td><td class="right">${money(q.package_price_snapshot)}</td></tr>`,
+          ...packageDetailRows,
+        ]
+      : []),
     ...addOns.map(
       (item, index) =>
-        `<tr><td class="center">${index + packageSequence + 1}</td><td>${esc(item.item_name_snapshot)} ${esc(item.quantity)} ${esc(item.unit)} <span class="muted">(เพิ่มเติม)</span></td><td class="right">${money(item.line_total)}</td></tr>`,
+        `<tr><td class="center">${addOnBaseSeq + index + 1}</td><td>${esc(item.item_name_snapshot)} ${esc(item.quantity)} ${esc(item.unit)}${hasPackage ? ' <span class="muted">(เพิ่มเติม)</span>' : ""}</td><td class="right">${money(item.line_total)}</td></tr>`,
     ),
   ];
   while (itemRows.length < 9)
@@ -444,9 +472,18 @@ export async function GET(
           `<b><u>${esc(section.title)}</u></b>${section.paragraphs.map((paragraph) => `<p>${esc(paragraph)}</p>`).join("")}`,
       )
       .join("");
-  const standardTermsPage1 = `<div class="legal">${renderLegalSections(legalContent.page1Sections)}</div>`;
+  // A long item list pushes the "2. หมายเหตุ" section down until it collides
+  // with the page-1 footer. When the item table grows past its 9-row minimum,
+  // move that whole section to page 2 — it continues seamlessly into 2.5/2.6.
+  const pushNotesToPage2 = itemRows.length > 9 && legalContent.page1Sections.length > 1;
+  const page1Sections = pushNotesToPage2
+    ? legalContent.page1Sections.slice(0, 1)
+    : legalContent.page1Sections;
+  const notesMovedToPage2 = pushNotesToPage2 ? legalContent.page1Sections.slice(1) : [];
+  const standardTermsPage1 = `<div class="legal">${renderLegalSections(page1Sections)}</div>`;
   const standardTermsPage2 = `
     <div class="legal page-two-terms">
+      ${renderLegalSections(notesMovedToPage2)}
       ${legalContent.page2LeadingParagraphs.map((paragraph) => `<p>${esc(paragraph)}</p>`).join("")}
       ${renderLegalSections(legalContent.page2Sections)}
     </div>`;

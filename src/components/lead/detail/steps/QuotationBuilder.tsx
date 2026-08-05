@@ -21,6 +21,8 @@ type Item = {
   quantity: number;
   unit: string;
   unit_price: number;
+  // Package id when this add-on line is a package picked from Package Master.
+  source_package_id?: number;
 };
 type DocumentInputs = {
   recommendation_reason: string;
@@ -625,6 +627,8 @@ function QuotationEditor({
   onSaved: () => Promise<void>;
 }) {
   const defaultTemplate = templates.find((t) => t.is_default) || templates[0];
+  // Default to unselected ("เลือก Package") — a package is optional now
+  // (customer may buy add-ons only), so we never auto-pick the first one.
   const [packageId, setPackageId] = useState(quote?.package_id || 0);
   const [packageItems, setPackageItems] = useState<Item[]>([]);
   const [showPackageItems, setShowPackageItems] = useState(false);
@@ -886,6 +890,7 @@ function QuotationEditor({
           quantity: 1,
           unit: "ชุด",
           unit_price: Number(selectedPackage.price) || 0,
+          source_package_id: selectedPackage.id,
         });
       }
       return [
@@ -927,8 +932,8 @@ function QuotationEditor({
     );
   };
   const previewQuotation = async () => {
-    if (!pkg) {
-      setError("กรุณาเลือก Package หลักก่อนดูตัวอย่าง");
+    if (!pkg && items.length === 0) {
+      setError("กรุณาเลือก Package หลัก หรือเพิ่มรายการอย่างน้อย 1 รายการก่อนดูตัวอย่าง");
       return;
     }
     setError("");
@@ -973,8 +978,8 @@ function QuotationEditor({
     }
   };
   const save = async () => {
-    if (!packageId) {
-      setError("กรุณาเลือก Package หลัก");
+    if (!packageId && items.length === 0) {
+      setError("กรุณาเลือก Package หลัก หรือเพิ่มรายการอย่างน้อย 1 รายการ");
       return;
     }
     if (documentInputs.current_monthly_bill <= 0) {
@@ -994,7 +999,7 @@ function QuotationEditor({
     try {
       const payload = {
         option_no: optionNo,
-        package_id: packageId,
+        package_id: packageId || null,
         issue_date: issueDate,
         items,
         discount_type: discountType,
