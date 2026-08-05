@@ -38,6 +38,7 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
   return NextResponse.json(fixDates((recordsets[0] || []).map(q => {
     const safe = { ...q, items: items.filter(i => i.quotation_id === q.id) };
     delete safe.approver_signature_data_snapshot;
+    delete safe.solar_approver_signature_data_snapshot;
     return safe;
   })));
 }

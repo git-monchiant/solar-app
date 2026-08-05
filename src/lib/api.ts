@@ -61,12 +61,18 @@ export async function apiFetch(url: string, options?: RequestInit): Promise<any>
     }
   }
   if (!res.ok) {
+    let bodyText = "";
+    let serverMessage = "";
+    try {
+      bodyText = await res.clone().text();
+      const body = JSON.parse(bodyText) as { error?: unknown };
+      if (typeof body.error === "string") serverMessage = body.error.trim();
+    } catch {
+      // Keep the status fallback when the response is not JSON.
+    }
     // Skip noisy 401 — they always redirect to /login above; logging adds
     // nothing and floods the table.
     if (res.status !== 401) {
-      // Try to capture the server's error body for context.
-      let bodyText = "";
-      try { bodyText = await res.clone().text(); } catch { /* ignore */ }
       reportClientError({
         source: "apifetch",
         message: `API error ${res.status} ${url}`,
@@ -75,7 +81,7 @@ export async function apiFetch(url: string, options?: RequestInit): Promise<any>
         request_url: url,
       });
     }
-    throw new Error(`API error: ${res.status}`);
+    throw new Error(serverMessage || `API error: ${res.status}`);
   }
   return res.json();
 }

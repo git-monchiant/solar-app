@@ -14,6 +14,7 @@ type Row = {
   status: string;
   package_name_snapshot: string;
   contract_total_incl_vat: number;
+  outstanding_amount: number;
   submitted_at: string;
   lead_id: number;
   customer_name: string;
@@ -106,8 +107,8 @@ export default function QuotationApprovalsPage() {
       kind === "approve" &&
       !window.confirm(
         quote.status === "pending_solar_sup"
-          ? "ยืนยันว่า Solar Sup ตรวจเอกสารแล้ว และส่งต่อให้ Sale Sup อนุมัติขั้นสุดท้าย"
-          : "ยืนยันว่าได้ตรวจและรับรองข้อมูล Survey, Package, ราคา เงื่อนไขชำระเงิน และเอกสารทั้ง 17 หน้าแล้ว",
+          ? "ยืนยันว่า Solar Sup ตรวจเอกสารแล้ว ระบบจะลงลายเซ็น Solar Sup และส่งต่อให้ Sale Sup อนุมัติขั้นสุดท้าย"
+          : "ยืนยันว่าได้ตรวจและรับรองข้อมูล Survey, Package, ราคา เงื่อนไขชำระเงิน และเอกสารทั้ง 17 หน้าแล้ว ระบบจะลงลายเซ็น Sale Sup และอนุมัติเอกสาร",
       )
     ) {
       return;
@@ -291,7 +292,7 @@ export default function QuotationApprovalsPage() {
                         <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
                           <div className="min-w-32 sm:text-right">
                             <div className="font-mono text-lg font-bold tabular-nums text-gray-900">
-                              {formatTHB(quote.contract_total_incl_vat)} บาท
+                              {formatTHB(quote.outstanding_amount)} บาท
                             </div>
                           </div>
                           <div className="grid grid-cols-3 gap-2">

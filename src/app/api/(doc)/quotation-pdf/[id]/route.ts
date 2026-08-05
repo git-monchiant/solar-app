@@ -22,6 +22,7 @@ import {
 } from "@/lib/quotation-terms";
 
 export const runtime = "nodejs";
+const APPROVED_BUNDLE_DOCUMENT_TYPE = "approved_bundle_v2";
 const previewCache = new Map<
   string,
   { detail: Record<string, unknown>; snapshot: QuotationDocumentSnapshot }
@@ -244,8 +245,9 @@ export async function GET(
     const artifact = await db
       .request()
       .input("id", sql.Int, quotationId)
+      .input("documentType", sql.NVarChar(30), APPROVED_BUNDLE_DOCUMENT_TYPE)
       .query(
-        `SELECT TOP 1 pdf_data FROM quotation_document_artifacts WHERE quotation_id=@id AND document_type='approved_bundle'`,
+        `SELECT TOP 1 pdf_data FROM quotation_document_artifacts WHERE quotation_id=@id AND document_type=@documentType`,
       );
     if (artifact.recordset[0]?.pdf_data) {
       const disposition =
@@ -302,6 +304,7 @@ export async function GET(
     approved_at: detail.approved_at,
     approver_name_snapshot: detail.approver_name_snapshot,
     approver_title_snapshot: detail.approver_title_snapshot,
+    solar_approved_at: detail.solar_approved_at,
   };
 
   const items = snapshot.items;
@@ -332,6 +335,10 @@ export async function GET(
   const creatorSignature = signatureDataUrl(
     q.created_by_signature_data,
     q.created_by_signature_mime,
+  );
+  const solarApproverSignature = signatureDataUrl(
+    q.solar_approver_signature_data_snapshot,
+    q.solar_approver_signature_mime_snapshot,
   );
   const approverSignature = signatureDataUrl(
     q.approver_signature_data_snapshot,
@@ -395,10 +402,13 @@ export async function GET(
   const excelPackageItem = packageItems[0];
   const excelPackageName = String(excelPackageItem?.item_name_snapshot || "");
   const usesExcelPackageTitle = excelPackageName.startsWith("งานจ้างเหมา");
+  const isOtherPackage = Boolean(snapshot.package.is_other);
   const excelPackageTitle = `${excelPackageName}${excelPackageItem?.unit ? ` ${excelPackageItem.quantity} ${excelPackageItem.unit}` : ""}`;
-  const packageTitle = usesExcelPackageTitle
-    ? excelPackageTitle
-    : `งานจ้างเหมาติดตั้งระบบผลิตไฟฟ้าจากพลังงานแสงอาทิตย์บนหลังคา ${q.package_name_snapshot || ""}`;
+  const packageTitle = isOtherPackage
+    ? String(q.package_name_snapshot || snapshot.package.name || "")
+    : usesExcelPackageTitle
+      ? excelPackageTitle
+      : `งานจ้างเหมาติดตั้งระบบผลิตไฟฟ้าจากพลังงานแสงอาทิตย์บนหลังคา ${q.package_name_snapshot || ""}`;
   const packageDetail = (item: Record<string, unknown>) => {
     const name = String(item.item_name_snapshot || "");
     if (!item.unit) return name;
@@ -422,6 +432,11 @@ export async function GET(
   // package แล้วเรียงเลขรายการเพิ่มเติมเริ่มจาก 1
   const hasPackage = q.package_id != null;
   const addOnBaseSeq = hasPackage ? packageSequence : 0;
+  const addOnDisplayName = (item: Record<string, unknown>) =>
+    String(item.item_name_snapshot || "").replace(/^Package เพิ่มเติม:\s*/i, "");
+  const isConsumerUnitAddOn = (item: Record<string, unknown>) =>
+    addOnDisplayName(item).trim().replace(/\s+/g, " ") ===
+    "งานเพิ่มตู้คอนซูมเมอร์ยูนิต 6 ช่อง";
   const itemRows = [
     ...(hasPackage
       ? [
@@ -429,9 +444,15 @@ export async function GET(
           ...packageDetailRows,
         ]
       : []),
-    ...addOns.map(
-      (item, index) =>
-        `<tr><td class="center">${addOnBaseSeq + index + 1}</td><td>${esc(item.item_name_snapshot)} ${esc(item.quantity)} ${esc(item.unit)}${hasPackage ? ' <span class="muted">(เพิ่มเติม)</span>' : ""}</td><td class="right">${money(item.line_total)}</td></tr>`,
+    ...addOns.flatMap((item, index) =>
+      isConsumerUnitAddOn(item)
+        ? [
+            `<tr><td class="center">${addOnBaseSeq + index + 1}</td><td>งานเพิ่มตู้คอนซูมเมอร์ยูนิต 6 ช่อง จำนวน ${esc(item.quantity)} กล่อง (เพิ่มตู้ไฟ)</td><td class="right">${money(item.line_total)}</td></tr>`,
+            '<tr><td></td><td>- เมนส์เบรกเกอร์ MCB 50A 1 SET</td><td></td></tr>',
+          ]
+        : [
+            `<tr><td class="center">${addOnBaseSeq + index + 1}</td><td>${esc(addOnDisplayName(item))} ${esc(item.quantity)} ${esc(item.unit)}${hasPackage ? ' <span class="muted">(เพิ่มเติม)</span>' : ""}</td><td class="right">${money(item.line_total)}</td></tr>`,
+          ],
     ),
   ];
   while (itemRows.length < 9)
@@ -493,12 +514,13 @@ export async function GET(
     name = "",
     signature = "",
     date: unknown = "",
+    title = "",
   ) =>
-    `<div class="sig-cell">${signature ? `<img src="${signature}" alt="ลายเซ็น">` : `<div class="sig-space"></div>`}<div class="sig-line">ลงชื่อ<span class="sig-dots"></span>${role}</div><div>( ${name ? esc(name) : "............................................................."} )</div><div>วันที่ ${date ? thaiDate(date) : "................... / ................... / ..................."}</div></div>`;
+    `<div class="sig-cell">${signature ? `<img src="${signature}" alt="ลายเซ็น">` : `<div class="sig-space"></div>`}<div class="sig-line">ลงชื่อ<span class="sig-dots"></span>${role}</div><div>( ${name ? esc(name) : "............................................................."} )</div>${title ? `<div class="sig-title">${esc(title)}</div>` : ""}<div>วันที่ ${date ? thaiDate(date) : "................... / ................... / ..................."}</div></div>`;
 
   const html = `<!doctype html><html lang="th"><head><meta charset="utf-8"><style>${heaventFontFace}
-    @page{size:Letter;margin:0}*{box-sizing:border-box}html,body{margin:0;padding:0;color:#172126;font-family:'DB Heavent',"Cordia New",Tahoma,"Noto Sans Thai",Arial,sans-serif;font-size:11pt;line-height:1.15}.page{position:relative;width:215.9mm;height:279.4mm;padding:13mm 16mm 7mm;overflow:hidden;page-break-after:always}.page:last-child{page-break-after:auto}.header{display:grid;grid-template-columns:46mm 1fr 50mm;gap:5mm;align-items:start;min-height:20mm}.brand img{display:block;width:43mm;height:17mm;object-fit:contain;object-position:left center}.company{padding-top:1mm;font-size:11pt;line-height:1.25;color:#273238}.quotation-title>div{border:1px solid #00a99d;border-radius:4px;padding:2px;text-align:center;font-size:18pt;font-weight:bold}.quotation-title table{width:100%;margin-top:2px;border-collapse:collapse;font-size:11pt}.quotation-title td{height:4.3mm;border:.75px solid #667078;padding:0 3px}.quotation-title td:first-child{width:25mm}.customer-grid{display:grid;grid-template-columns:1fr 1fr;gap:12mm;align-items:start;margin:0.5mm 0 1.5mm}.customer-grid table{width:100%;height:auto;align-self:start;border-collapse:collapse}.customer-grid tr{height:auto}.customer-grid th,.customer-grid td{padding:.5px 2px;text-align:left;vertical-align:top;line-height:1.18}.customer-grid th{width:25mm;white-space:nowrap;color:#253138}.customer-grid .email{color:#0073c7;text-decoration:underline}.customer-grid .valid th,.customer-grid .valid td{border:.75px solid #667078;background:#f8fbfb}.customer-grid .valid th{width:22%;text-align:center}.customer-grid .valid-days{width:11%;text-align:center;font-weight:bold}.customer-grid .valid-copy{width:67%;white-space:nowrap}.quote-table,.payment-table,.summary{width:100%;border-collapse:collapse}.quote-table th,.quote-table td,.payment-table th,.payment-table td,.summary td{border:.65px solid #778188;padding:.5px 3px}.quote-table th{height:5.2mm;border-top:1.2px solid #169d94;background:#eef6f5;text-align:center;font-size:12pt}.quote-table tbody tr{height:5mm}.quote-table tbody tr:nth-child(even):not(.empty-row){background:#fbfcfc}.quote-table .empty-row{height:4.4mm}.center{text-align:center}.right{text-align:right;white-space:nowrap}.muted{color:#667078;font-size:11pt}.payment-title{border:.65px solid #778188;border-bottom:0;background:#eef6f5;padding:0;text-align:center;font-size:12pt;font-weight:bold;color:#185f5b}.payment-table tr{height:4.6mm}.payment-table td:nth-child(1){width:25mm}.payment-table td:nth-child(2){width:13mm}.payment-table td:nth-child(4){width:31mm}.payment-table td:nth-child(5){width:28mm}.payment-bank-row{display:grid;grid-template-columns:1fr 25mm;border:.65px solid #778188;border-top:0;min-height:19mm;padding:2px 5mm 2px 7mm}.bank-copy{line-height:1.22}.qr{display:flex;align-items:center;justify-content:center}.qr img{width:18mm;height:18mm;object-fit:contain}.summary{width:96mm;margin-left:auto;table-layout:fixed}.summary td{height:4.5mm}.summary td:first-child{text-align:right}.summary td:last-child{width:32.5mm;text-align:right}.summary .strong td{background:#f7f9f9;font-weight:bold}.summary .grand td{background:#cfe9f4;font-size:12pt;font-weight:bold;color:#15343e}.amount-words{float:left;width:84mm;text-align:center;padding:7mm 3mm 0;font-weight:bold;line-height:1.25}.financials{border:.65px solid #778188;border-top:0;min-height:34mm;padding-top:1px}.financials:after{content:"";display:block;clear:both}.legal{clear:both;margin-top:3mm;font-size:11pt;line-height:1.18}.legal b{display:block;margin-top:1.5mm;border-bottom:.7px solid #66beb8;padding-bottom:.3mm;font-size:12pt;color:#176e69}.legal p{margin:.7mm 0 .7mm 12mm;text-indent:-4mm}.page-two-terms{margin-top:6mm;font-size:11pt}.page-two-terms p{margin:1.8mm 0 1.8mm 12mm}.signatures{display:grid;grid-template-columns:1fr 1fr;column-gap:20mm;row-gap:9mm;margin:13mm 8mm 0}.sig-cell{text-align:center;min-height:28mm;line-height:1.35}.sig-cell img{display:block;width:38mm;height:10mm;object-fit:contain;margin:0 auto -1mm}.sig-space{height:9mm}.watermark{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;transform:rotate(-25deg);font-size:48pt;font-weight:bold;color:rgba(222,51,74,.14);pointer-events:none}.footer{position:absolute;bottom:3mm;left:16mm;right:16mm;text-align:center;color:#7a858b;font-size:10pt}.quote-table .payment-spacer{height:8mm}.quote-table .payment-spacer td{background:#fff}.quote-table .payment-shell{height:auto;background:#fff}.quote-table .payment-cell{height:auto;padding:0;border-right:.65px solid #778188;background:#fff;vertical-align:top}.quote-table .payment-side{height:auto;background:#fff}.quote-table .payment-cell .payment-title{border:0;border-bottom:.65px solid #778188}.quote-table .payment-cell .payment-table td{height:4.6mm;border-width:0 .65px .65px 0;border-color:#778188;padding:.5px 3px;background:#fff}.quote-table .payment-cell .payment-table td:last-child{border-right:0}.quote-table .payment-cell .payment-bank-row{grid-template-columns:minmax(0,76mm) 24mm;justify-content:center;align-items:center;column-gap:10mm;border:0;min-height:25mm;padding:3mm 6mm}.quote-table .payment-cell .bank-copy{max-width:76mm}.quote-table .payment-cell .qr img{width:22mm;height:20mm}
-    /* Detail and payment sections follow the approved quotation reference: neutral grayscale, black rules and compact Tahoma type. */
+    @page{size:Letter;margin:0}*{box-sizing:border-box}html,body{margin:0;padding:0;color:#172126;font-family:'DB Heavent',"Cordia New",Tahoma,"Noto Sans Thai",Arial,sans-serif;font-size:11pt;line-height:1.15}.page{position:relative;width:215.9mm;height:279.4mm;padding:13mm 16mm 7mm;overflow:hidden;page-break-after:always}.page:last-child{page-break-after:auto}.header{display:grid;grid-template-columns:46mm 1fr 50mm;gap:5mm;align-items:start;min-height:20mm}.brand img{display:block;width:43mm;height:17mm;object-fit:contain;object-position:left center}.company{padding-top:1mm;font-size:11pt;line-height:1.25;color:#273238}.quotation-title>div{border:1px solid #00a99d;border-radius:4px;padding:2px;text-align:center;font-size:18pt;font-weight:bold}.quotation-title table{width:100%;margin-top:2px;border-collapse:collapse;font-size:11pt}.quotation-title td{height:4.3mm;border:.75px solid #667078;padding:0 3px}.quotation-title td:first-child{width:25mm}.customer-grid{display:grid;grid-template-columns:1fr 1fr;gap:12mm;align-items:start;margin:5mm 0 3.5mm}.customer-grid table{width:100%;height:auto;align-self:start;border-collapse:collapse}.customer-grid tr{height:auto}.customer-grid th,.customer-grid td{padding:.5px 2px;text-align:left;vertical-align:top;line-height:1.18}.customer-grid th{width:25mm;white-space:nowrap;color:#253138}.customer-grid .email{color:#0073c7;text-decoration:underline}.customer-grid .valid th,.customer-grid .valid td{border:.75px solid #667078;background:#f8fbfb}.customer-grid .valid th{width:22%;text-align:center}.customer-grid .valid-days{width:11%;text-align:center;font-weight:bold}.customer-grid .valid-copy{width:67%;white-space:nowrap}.quote-table,.payment-table,.summary{width:100%;border-collapse:collapse}.quote-table th,.quote-table td,.payment-table th,.payment-table td,.summary td{border:.65px solid #778188;padding:.5px 3px}.quote-table th{height:5.2mm;border-top:1.2px solid #169d94;background:#eef6f5;text-align:center;font-size:12pt}.quote-table tbody tr{height:5mm}.quote-table tbody tr:nth-child(even):not(.empty-row){background:#fbfcfc}.quote-table .empty-row{height:4.4mm}.center{text-align:center}.right{text-align:right;white-space:nowrap}.muted{color:#667078;font-size:11pt}.payment-title{border:.65px solid #778188;border-bottom:0;background:#eef6f5;padding:0;text-align:center;font-size:12pt;font-weight:bold;color:#185f5b}.payment-table tr{height:4.6mm}.payment-table td:nth-child(1){width:25mm}.payment-table td:nth-child(2){width:13mm}.payment-table td:nth-child(4){width:31mm}.payment-table td:nth-child(5){width:28mm}.payment-bank-row{display:grid;grid-template-columns:1fr 25mm;border:.65px solid #778188;border-top:0;min-height:19mm;padding:2px 5mm 2px 7mm}.bank-copy{line-height:1.22}.qr{display:flex;align-items:center;justify-content:center}.qr img{width:18mm;height:18mm;object-fit:contain}.summary{width:96mm;margin-left:auto;table-layout:fixed}.summary td{height:4.5mm}.summary td:first-child{text-align:right}.summary td:last-child{width:32.5mm;text-align:right}.summary .strong td{background:#f7f9f9;font-weight:bold}.summary .grand td{background:#cfe9f4;font-size:12pt;font-weight:bold;color:#15343e}.amount-words{float:left;width:84mm;text-align:center;padding:7mm 3mm 0;font-weight:bold;line-height:1.25}.financials{border:.65px solid #778188;border-top:0;min-height:34mm;padding-top:1px}.financials:after{content:"";display:block;clear:both}.legal{clear:both;margin-top:3mm;font-size:11pt;line-height:1.18}.legal b{display:block;margin-top:1.5mm;border-bottom:.7px solid #66beb8;padding-bottom:.3mm;font-size:12pt;color:#176e69}.legal p{margin:.7mm 0 .7mm 12mm;text-indent:-4mm}.page-two-terms{margin-top:6mm;font-size:11pt}.page-two-terms p{margin:1.8mm 0 1.8mm 12mm}.signatures{display:grid;grid-template-columns:1fr 1fr;column-gap:20mm;row-gap:9mm;margin:13mm 8mm 0}.sig-cell{text-align:center;min-height:28mm;line-height:1.35}.sig-cell img{display:block;width:38mm;height:10mm;object-fit:contain;margin:0 auto -1mm}.sig-space{height:9mm}.watermark{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;transform:rotate(-25deg);font-size:48pt;font-weight:bold;color:rgba(222,51,74,.14);pointer-events:none}.footer{position:absolute;bottom:3mm;left:16mm;right:16mm;text-align:center;color:#7a858b;font-size:10pt}.quote-table .payment-spacer{height:8mm}.quote-table .payment-spacer td{background:#fff}.quote-table .payment-shell{height:auto;background:#fff}.quote-table .payment-cell{height:auto;padding:0;border-right:.65px solid #778188;background:#fff;vertical-align:top}.quote-table .payment-side{height:auto;background:#fff}.quote-table .payment-cell .payment-title{border:0;border-bottom:.65px solid #778188}.quote-table .payment-cell .payment-table td{height:4.6mm;border-width:0 .65px .65px 0;border-color:#778188;padding:.5px 3px;background:#fff}.quote-table .payment-cell .payment-table td:last-child{border-right:0}.quote-table .payment-cell .payment-bank-row{grid-template-columns:minmax(0,76mm) 24mm;justify-content:center;align-items:center;column-gap:10mm;border:0;min-height:25mm;padding:3mm 6mm}.quote-table .payment-cell .bank-copy{max-width:76mm}.quote-table .payment-cell .qr img{width:22mm;height:20mm}
+    /* Detail and payment sections follow the approved quotation reference with DB Heavent typography. */
     .quote-table,.payment-table,.payment-title,.payment-bank-row{color:#111}.quote-table th,.quote-table td,.payment-table td{border-color:#222!important}.quote-table th{height:5.6mm;border-top:1px solid #222!important;background:#f1f1f1!important;color:#111;font-weight:700}.quote-table tbody tr{height:5.25mm}.quote-table tbody tr:nth-child(even):not(.empty-row){background:#fff}.payment-title,.quote-table .payment-cell .payment-title{background:#fff!important;color:#111;border-color:#222!important;font-weight:500;padding:.6mm 0}.quote-table .payment-cell .payment-table td{border-color:#222!important;background:#fff}.payment-bank-row,.quote-table .payment-cell .payment-bank-row{border-color:#222!important;background:#fff}.quote-table .payment-cell{border-right-color:#222!important}.quote-table .payment-side{border-left-color:#222!important}
     table.financials{display:table;width:100%;min-height:0;padding:0;border:0;border-collapse:collapse;table-layout:fixed}
     table.financials:after{display:none}
@@ -515,6 +537,7 @@ export async function GET(
        line no matter its length (e.g. "ผู้ขาย / ผู้ตรวจสอบ" used to wrap). */
     .sig-cell .sig-line{display:flex;align-items:flex-end;justify-content:center;gap:3px;white-space:nowrap}
     .sig-cell .sig-dots{flex:0 1 40mm;min-width:8mm;border-bottom:1px dotted #555;margin-bottom:1.2mm}
+    .sig-cell .sig-title{font-size:10pt;color:#4b5563}
     .customer-grid td.valid-box{padding:0;border:0;background:#fff}
     .valid-box-grid{display:grid;grid-template-columns:24% 10% 66%;min-height:5mm;align-items:stretch;overflow:hidden;border:.75px solid #667078;border-radius:4px}
     .customer-grid .valid-box-grid span{display:flex;align-items:center;width:auto;padding:0 3px}
@@ -527,7 +550,7 @@ export async function GET(
       ${standardTermsPage1}<div class="footer">หน้า 16 / 17 · ใบเสนอราคา 1 / 2 · ${esc(q.doc_no)}</div>
     </section>
     <section class="page">${watermark ? `<div class="watermark">${esc(watermark)}</div>` : ""}${quotationHeader}${standardTermsPage2}
-      <div class="signatures">${sigCell("ลูกค้า")}${sigCell("ผู้จัดทำเอกสาร", q.created_by_name, creatorSignature, q.issue_date)}${sigCell("ผู้ตรวจสอบ", q.approver_name_snapshot || q.approved_by_name, approverSignature, q.approved_at)}${sigCell("ผู้ขาย / ผู้ตรวจสอบ", q.created_by_name, creatorSignature, q.issue_date)}</div>
+      <div class="signatures">${sigCell("ลูกค้า")}${sigCell("ผู้จัดทำเอกสาร", q.created_by_name, creatorSignature, q.issue_date, q.created_by_title)}${sigCell("ผู้ตรวจสอบ", q.solar_approver_name_snapshot, solarApproverSignature, q.solar_approved_at)}${sigCell("ผู้ขาย/ผู้ตรวจสอบ", q.approver_name_snapshot || q.approved_by_name, approverSignature, q.approved_at)}</div>
       <div class="footer">หน้า 17 / 17 · ใบเสนอราคา 2 / 2 · ${esc(q.doc_no)}</div>
     </section>
   </body></html>`;
@@ -621,11 +644,12 @@ export async function GET(
       await db
         .request()
         .input("id", sql.Int, quotationId)
+        .input("documentType", sql.NVarChar(30), APPROVED_BUNDLE_DOCUMENT_TYPE)
         .input("data", sql.VarBinary(sql.MAX), buffer)
         .input("hash", sql.Char(64), hash)
         .input("pages", sql.Int, pageCount)
         .query(
-          `IF NOT EXISTS (SELECT 1 FROM quotation_document_artifacts WHERE quotation_id=@id AND document_type='approved_bundle') INSERT quotation_document_artifacts(quotation_id,document_type,pdf_data,file_hash,page_count) VALUES(@id,'approved_bundle',@data,@hash,@pages)`,
+          `IF NOT EXISTS (SELECT 1 FROM quotation_document_artifacts WHERE quotation_id=@id AND document_type=@documentType) INSERT quotation_document_artifacts(quotation_id,document_type,pdf_data,file_hash,page_count) VALUES(@id,@documentType,@data,@hash,@pages)`,
         );
     }
     const disposition =

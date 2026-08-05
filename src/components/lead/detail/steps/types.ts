@@ -297,6 +297,7 @@ export interface Package {
   monthly_installment: string;
   monthly_saving: number;
   is_upgrade: boolean;
+  is_other: boolean;
   has_panel: boolean;
   has_inverter: boolean;
   warranty_years: number;

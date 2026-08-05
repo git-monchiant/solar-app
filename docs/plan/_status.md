@@ -10,6 +10,8 @@ Statuses:
 
 | Plan | Status | Mockup | Notes |
 | --- | --- | --- | --- |
+| [20260805-02-package-other-type.md](20260805-02-package-other-type.md) | done | - | เพิ่มประเภท Package อื่นๆ ครบ schema/API/form/filter/group; build และ CRUD integration test ผ่าน |
+| [20260805-01-sequential-quotation-signatures.md](20260805-01-sequential-quotation-signatures.md) | done | - | Solar Sup และ Sale Sup ลงลายเซ็น Snapshot ตามลำดับ, ส่งกลับแล้วล้างรอบเดิม, PDF/build/integration test ผ่าน |
 | [20260804-01-package-master-excel-alignment.md](20260804-01-package-master-excel-alignment.md) | in-progress | - | กำลังปรับ 22 Package/รายการอุปกรณ์ตาม Excel, ปิด Battery 4.8 ที่ไม่มีในต้นฉบับ และ refresh เฉพาะ Draft อัตโนมัติ พร้อม rollback |
 | [20260801-02-survey-layout-sketch-upload.md](20260801-02-survey-layout-sketch-upload.md) | done | - | เพิ่มผังร่างใน Survey/Photos/PDF, apply migration 133 ที่ Development และตรวจ Build/PDF/schema ผ่าน |
 | [20260801-01-quotation-terms-payment-alignment.md](20260801-01-quotation-terms-payment-alignment.md) | done | - | แยกข้อความท้ายใบตามประเภท Package, ล็อกงวด 20/80 ตาม Excel, apply Development และตรวจ Build/PDF จริงผ่าน |

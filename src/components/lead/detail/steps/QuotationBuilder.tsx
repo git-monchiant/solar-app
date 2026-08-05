@@ -131,10 +131,6 @@ export default function QuotationBuilder({
   const [editing, setEditing] = useState<number | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
-  // The quote whose PDF is being generated (puppeteer takes a few seconds).
-  // Drives the per-button spinner so a click gives immediate feedback instead
-  // of sitting silent while the server renders.
-  const [pdfLoadingId, setPdfLoadingId] = useState<number | null>(null);
   const confirmedDeposit =
     lead.pre_survey_fee_type === "free"
       ? 0
@@ -212,38 +208,12 @@ export default function QuotationBuilder({
       setBusy(false);
     }
   };
-  const openPdf = async (id: number, download = false) => {
-    if (pdfLoadingId !== null) return; // guard against a double-click mid-render
-    setPdfLoadingId(id);
-    try {
-      const response = await fetch(
-        `/api/quotation-pdf/${id}${download ? "?download=1" : ""}`,
-        { headers: { ...getUserIdHeader() } },
-      );
-      if (!response.ok) {
-        const data = await response.json().catch(() => null);
-        throw new Error(data?.error || "เปิด PDF ไม่สำเร็จ");
-      }
-      const blob = await response.blob();
-      const url = URL.createObjectURL(blob);
-      window.open(url, "_blank", "noopener,noreferrer");
-      setTimeout(() => URL.revokeObjectURL(url), 60000);
-    } catch (e) {
-      setError(e instanceof Error ? e.message : "เปิด PDF ไม่สำเร็จ");
-    } finally {
-      setPdfLoadingId(null);
-    }
+  const openPdf = (id: number) => {
+    const previewUrl = `/quotation-preview/${id}`;
+    const previewWindow = window.open(previewUrl, "_blank");
+    if (previewWindow) previewWindow.opener = null;
+    else window.location.assign(previewUrl);
   };
-  // Spinner-or-label for the "ดูใบเสนอราคา" buttons (4 status variants share it).
-  const viewPdfLabel = (id: number) =>
-    pdfLoadingId === id ? (
-      <span className="inline-flex items-center gap-1.5">
-        <span className="w-3 h-3 border-2 border-current border-t-transparent rounded-full animate-spin" />
-        กำลังสร้าง…
-      </span>
-    ) : (
-      "▣ ดูใบเสนอราคา"
-    );
   // Draft-only hard delete. Backend guards to status='draft' + admin/owner and
   // this button is shown only for drafts, so it never appears on a sent quote.
   const remove = async (id: number) => {
@@ -423,11 +393,10 @@ export default function QuotationBuilder({
                       ✎ แก้ไข
                     </button>
                     <button
-                      disabled={pdfLoadingId === q.id}
                       onClick={() => openPdf(q.id)}
                       className="flex-1 h-9 rounded-lg border border-gray-200 text-gray-700 text-xs font-semibold"
                     >
-                      {viewPdfLabel(q.id)}
+                      ▣ ดูใบเสนอราคา
                     </button>
                     {q.status === "draft" && (
                       <button
@@ -446,11 +415,10 @@ export default function QuotationBuilder({
                 ) : isPendingQuotation(q.status) && canReviewQuotation(q.status) ? (
                   <>
                     <button
-                      disabled={pdfLoadingId === q.id}
                       onClick={() => openPdf(q.id)}
                       className="h-9 rounded-lg border border-gray-200 text-xs font-semibold"
                     >
-                      {viewPdfLabel(q.id)}
+                      ▣ ดูใบเสนอราคา
                     </button>
                     <button
                       disabled={busy}
@@ -475,11 +443,10 @@ export default function QuotationBuilder({
                 ) : q.status === "approved" ? (
                   <>
                     <button
-                      disabled={pdfLoadingId === q.id}
                       onClick={() => openPdf(q.id)}
                       className="col-span-2 h-9 rounded-lg border border-gray-200 text-xs font-semibold"
                     >
-                      {viewPdfLabel(q.id)}
+                      ▣ ดูใบเสนอราคา
                     </button>
                     <button
                       disabled={busy}
@@ -492,11 +459,10 @@ export default function QuotationBuilder({
                 ) : (
                   <>
                     <button
-                      disabled={pdfLoadingId === q.id}
                       onClick={() => openPdf(q.id)}
                       className="col-span-3 h-9 rounded-lg border border-gray-200 text-xs font-semibold"
                     >
-                      {viewPdfLabel(q.id)}
+                      ▣ ดูใบเสนอราคา
                     </button>
                   </>
                 )}
@@ -753,19 +719,26 @@ function QuotationEditor({
     {
       label: "แพ็กเกจมาตรฐาน (Solar Rooftop)",
       icon: "☀️",
-      items: packages.filter((p) => !/scale\s*up|battery|batt/i.test(p.name)),
+      items: packages.filter(
+        (p) => !p.has_battery && !p.is_upgrade && !p.is_other,
+      ),
     },
     {
       label: "แพ็กเกจเพิ่มขนาดระบบ (Scale Up)",
       icon: "📈",
-      items: packages.filter(
-        (p) => /scale\s*up/i.test(p.name) && !/battery|batt/i.test(p.name),
-      ),
+      items: packages.filter((p) => p.is_upgrade && !p.is_other),
     },
     {
       label: "แพ็กเกจแบตเตอรี่ / Hybrid",
       icon: "🔋",
-      items: packages.filter((p) => /battery|batt/i.test(p.name)),
+      items: packages.filter(
+        (p) => p.has_battery && !p.is_upgrade && !p.is_other,
+      ),
+    },
+    {
+      label: "Package อื่นๆ",
+      icon: "📦",
+      items: packages.filter((p) => p.is_other),
     },
   ].filter((group) => group.items.length > 0);
   const extras = items.reduce(
@@ -886,7 +859,7 @@ function QuotationEditor({
         linkedItems.set(selectorId, {
           source_type: "custom",
           editorSelectionId: selectorId,
-          item_name: `Package เพิ่มเติม: ${selectedPackage.name}`,
+          item_name: selectedPackage.name,
           quantity: 1,
           unit: "ชุด",
           unit_price: Number(selectedPackage.price) || 0,

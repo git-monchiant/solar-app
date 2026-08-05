@@ -15,6 +15,7 @@ interface Package {
   has_panel: boolean;
   has_inverter: boolean;
   is_upgrade: boolean;
+  is_other: boolean;
   battery_kwh: number | null;
   battery_brand: string | null;
   battery_model: string | null;
@@ -37,7 +38,7 @@ interface Package {
 type PackageItem = { item_name: string; quantity: number; unit: string | null };
 
 const empty: Omit<Package, "id"> = {
-  name: "", kwp: 0, phase: 1, has_battery: false, has_panel: true, has_inverter: true, is_upgrade: false,
+  name: "", kwp: 0, phase: 1, has_battery: false, has_panel: true, has_inverter: true, is_upgrade: false, is_other: false,
   battery_kwh: null, battery_brand: null,
   battery_model: null, inverter_kw: null, inverter_brand: null, inverter_model: null,
   installed_kwp: null, panel_count: null, panel_watt: null, panel_brand: null,
@@ -57,7 +58,7 @@ export default function ManagePackagesPage() {
   const [filter, setFilter] = useState<"all" | "active" | "inactive">("all");
   const [filterPhase, setFilterPhase] = useState<"all" | "0" | "1" | "3">("all");
   const [filterBat, setFilterBat] = useState<"all" | "yes" | "no">("all");
-  const [filterUpgrade, setFilterUpgrade] = useState<"all" | "yes" | "no">("all");
+  const [filterUpgrade, setFilterUpgrade] = useState<"all" | "yes" | "no" | "other">("all");
 
   const load = () => {
     apiFetch("/api/packages?all=1").then(setPackages).catch(console.error).finally(() => setLoading(false));
@@ -77,6 +78,7 @@ export default function ManagePackagesPage() {
     if (filterBat === "no" && p.has_battery) return false;
     if (filterUpgrade === "yes" && !p.is_upgrade) return false;
     if (filterUpgrade === "no" && p.is_upgrade) return false;
+    if (filterUpgrade === "other" && !p.is_other) return false;
     if (search.trim()) {
       const q = search.toLowerCase();
       if (!p.name?.toLowerCase().includes(q) && !String(p.kwp).includes(q) && !p.inverter_brand?.toLowerCase().includes(q)) return false;
@@ -99,19 +101,25 @@ export default function ManagePackagesPage() {
       key: "on-grid",
       title: "ติดตั้งใหม่",
       subtitle: "ไม่มีแบตเตอรี่ (On-Grid)",
-      match: (p: Package) => !p.has_battery && !p.is_upgrade,
+      match: (p: Package) => !p.has_battery && !p.is_upgrade && !p.is_other,
     },
     {
       key: "hybrid",
       title: "ติดตั้งใหม่",
       subtitle: "+ แบตเตอรี่ (Hybrid)",
-      match: (p: Package) => p.has_battery && !p.is_upgrade,
+      match: (p: Package) => p.has_battery && !p.is_upgrade && !p.is_other,
     },
     {
       key: "scale-up",
       title: "Scale Up",
       subtitle: "เพิ่มอุปกรณ์จากระบบเดิม",
-      match: (p: Package) => p.is_upgrade,
+      match: (p: Package) => p.is_upgrade && !p.is_other,
+    },
+    {
+      key: "other",
+      title: "อื่นๆ",
+      subtitle: "Package ประเภทอื่นๆ",
+      match: (p: Package) => p.is_other,
     },
   ];
 
@@ -166,6 +174,7 @@ export default function ManagePackagesPage() {
     if (remark) return remark;
     if (isExpired(pkg)) return "หมดอายุ";
     if (isNotStarted(pkg)) return "ยังไม่เริ่ม";
+    if (pkg.is_other) return "Package อื่นๆ";
     if (pkg.is_upgrade) return pkg.has_panel ? "เพิ่มแผง / แบตเตอรี่" : "เพิ่มแบตเตอรี่";
     return "อันราคาเดิม";
   };
@@ -226,6 +235,7 @@ export default function ManagePackagesPage() {
             <option value="all">ทุกประเภท</option>
             <option value="yes">Scale Up</option>
             <option value="no">ไม่ใช่ Scale Up</option>
+            <option value="other">อื่นๆ</option>
           </select>
           <button type="button" onClick={() => setEditing({ ...empty })} className="h-8 px-5 rounded-lg bg-primary text-white text-sm font-semibold hover:bg-primary-dark transition-colors">+ เพิ่ม Package</button>
         </div>
@@ -263,6 +273,7 @@ export default function ManagePackagesPage() {
                         <div className="flex flex-wrap items-center gap-2">
                           <span className="font-bold text-gray-900">{pkg.name}</span>
                           {pkg.is_upgrade && <span className="text-xs font-bold px-2 py-0.5 rounded bg-blue-50 text-blue-600 shrink-0">SCALE UP</span>}
+                          {pkg.is_other && <span className="text-xs font-bold px-2 py-0.5 rounded bg-slate-100 text-slate-600 shrink-0">อื่นๆ</span>}
                           <span className="text-xs font-mono text-gray-500 shrink-0">{pkg.kwp} kWp ยท {formatPhase(pkg.phase)}</span>
                         </div>
                         <div className="mt-2 flex flex-wrap items-center gap-1.5">
@@ -318,6 +329,7 @@ export default function ManagePackagesPage() {
                   <div className="flex items-center gap-2 mb-2">
                     <span className="font-bold text-lg text-gray-900 truncate">{pkg.name}</span>
                     {pkg.is_upgrade && <span className="text-xs font-bold px-2 py-0.5 rounded bg-blue-50 text-blue-600 shrink-0">SCALE UP</span>}
+                    {pkg.is_other && <span className="text-xs font-bold px-2 py-0.5 rounded bg-slate-100 text-slate-600 shrink-0">อื่นๆ</span>}
                     <span className="text-sm font-mono text-gray-500 shrink-0">{pkg.kwp} kWp · {pkg.phase === 0 ? "All Phase" : `${pkg.phase}P`}</span>
                     {pkg.installed_kwp != null && pkg.installed_kwp !== pkg.kwp && <span className="text-xs font-semibold text-sky-600 shrink-0">ติดตั้งจริง {pkg.installed_kwp} kWp</span>}
                   </div>
@@ -400,13 +412,14 @@ export default function ManagePackagesPage() {
                 <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wider mb-0.5">ประเภท</label>
                 <div className="flex flex-wrap gap-2">
                   {[
-                    { key: "has_panel", label: "Panel", color: "amber" },
-                    { key: "has_inverter", label: "Inverter", color: "violet" },
-                    { key: "has_battery", label: "Battery", color: "green" },
-                    { key: "is_upgrade", label: "Scale Up", color: "blue" },
+                    { key: "has_panel", label: "Panel", activeClass: "bg-amber-50 text-amber-700 border-amber-200" },
+                    { key: "has_inverter", label: "Inverter", activeClass: "bg-violet-50 text-violet-700 border-violet-200" },
+                    { key: "has_battery", label: "Battery", activeClass: "bg-green-50 text-green-700 border-green-200" },
+                    { key: "is_upgrade", label: "Scale Up", activeClass: "bg-blue-50 text-blue-700 border-blue-200" },
+                    { key: "is_other", label: "อื่นๆ", activeClass: "bg-slate-100 text-slate-700 border-slate-300" },
                   ].map(f => (
                     <button key={f.key} type="button" onClick={() => setEditing({ ...editing, [f.key]: !(editing as Record<string, unknown>)[f.key] })}
-                      className={`px-3 py-1.5 rounded-lg text-xs font-semibold border transition-all ${(editing as Record<string, unknown>)[f.key] ? `bg-${f.color}-50 text-${f.color}-700 border-${f.color}-200` : "bg-white text-gray-400 border-gray-200"}`}>
+                      className={`px-3 py-1.5 rounded-lg text-xs font-semibold border transition-all ${(editing as Record<string, unknown>)[f.key] ? f.activeClass : "bg-white text-gray-400 border-gray-200"}`}>
                       {f.label}
                     </button>
                   ))}

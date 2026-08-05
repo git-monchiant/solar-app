@@ -11,6 +11,7 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
   if (!detail) return NextResponse.json({error:"ไม่พบใบเสนอราคา"},{status:404});
   const safe = { ...detail };
   delete safe.approver_signature_data_snapshot;
+  delete safe.solar_approver_signature_data_snapshot;
   return NextResponse.json(fixDates([safe])[0]);
 }
 

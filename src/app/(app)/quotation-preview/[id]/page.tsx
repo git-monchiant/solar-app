@@ -102,7 +102,7 @@ export default function QuotationPreviewPage() {
   };
   const previewHtml = html.replace(
     "</head>",
-    `<style>@media screen{html,body{background:#e2e8f0!important;padding:12px 0!important}.page{margin:0 auto 18px!important;background:#fff!important;box-shadow:0 2px 8px rgba(15,23,42,.18);page-break-after:auto!important}}</style><style>body{zoom:${zoom}%}</style></head>`,
+    `<style>@font-face{font-family:"DB Heavent";src:url("/fonts/db_heavent_li_v3.2-webfont.woff") format("woff");font-weight:300;font-style:normal}@font-face{font-family:"DB Heavent";src:url("/fonts/db_heavent_v3.2-webfont.woff") format("woff");font-weight:400;font-style:normal}@font-face{font-family:"DB Heavent";src:url("/fonts/db_heavent_med_v3.2-webfont.woff") format("woff");font-weight:500;font-style:normal}@font-face{font-family:"DB Heavent";src:url("/fonts/db_heavent_bd_v3.2-webfont.woff") format("woff");font-weight:700;font-style:normal}html,body{font-family:"DB Heavent",sans-serif!important}@media screen{html,body{background:#e2e8f0!important;padding:12px 0!important}.page{margin:0 auto 18px!important;background:#fff!important;box-shadow:0 2px 8px rgba(15,23,42,.18);page-break-after:auto!important}}</style><style>body{zoom:${zoom}%}</style></head>`,
   );
   const previewWidth = Math.round((860 * zoom) / 100);
   const previewHeight = Math.round((2240 * zoom) / 100 + 80);

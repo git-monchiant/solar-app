@@ -197,6 +197,11 @@ export async function POST(
             solar_approved_by = NULL,
             solar_approved_at = NULL,
             solar_approval_note = NULL,
+            solar_approver_name_snapshot = NULL,
+            solar_approver_title_snapshot = NULL,
+            solar_approver_signature_url_snapshot = NULL,
+            solar_approver_signature_data_snapshot = NULL,
+            solar_approver_signature_mime_snapshot = NULL,
             approved_by = NULL,
             approved_at = NULL,
             approval_note = NULL,
@@ -236,11 +241,31 @@ export async function POST(
             { status: 403 },
           );
         }
+        if (!actor.signature_data) {
+          await tx.rollback();
+          return NextResponse.json(
+            { error: "กรุณาบันทึกภาพลายเซ็นใน Profile ก่อนอนุมัติในขั้น Solar Sup" },
+            { status: 400 },
+          );
+        }
         next = SALES_PENDING;
         eventAction = "approve_solar";
         await new sql.Request(tx)
           .input("id", sql.Int, quotationId)
           .input("uid", sql.Int, gate.userId)
+          .input("name", sql.NVarChar(150), actor.full_name)
+          .input(
+            "title",
+            sql.NVarChar(100),
+            actor.job_title || "Solar Supervisor",
+          )
+          .input("url", sql.NVarChar(500), actor.signature_url || null)
+          .input("data", sql.VarBinary(sql.MAX), actor.signature_data)
+          .input(
+            "mime",
+            sql.NVarChar(100),
+            actor.signature_mime || "image/png",
+          )
           .input("note", sql.NVarChar(1000), note || null)
           .query(`
             UPDATE quotations SET
@@ -248,6 +273,11 @@ export async function POST(
               solar_approved_by = @uid,
               solar_approved_at = GETDATE(),
               solar_approval_note = @note,
+              solar_approver_name_snapshot = @name,
+              solar_approver_title_snapshot = @title,
+              solar_approver_signature_url_snapshot = @url,
+              solar_approver_signature_data_snapshot = @data,
+              solar_approver_signature_mime_snapshot = @mime,
               approval_note = NULL,
               updated_by = @uid,
               updated_at = GETDATE()
@@ -365,6 +395,23 @@ export async function POST(
         .query(`
           UPDATE quotations SET
             status = 'changes_required',
+            solar_approved_by = NULL,
+            solar_approved_at = NULL,
+            solar_approval_note = NULL,
+            solar_approver_name_snapshot = NULL,
+            solar_approver_title_snapshot = NULL,
+            solar_approver_signature_url_snapshot = NULL,
+            solar_approver_signature_data_snapshot = NULL,
+            solar_approver_signature_mime_snapshot = NULL,
+            approved_by = NULL,
+            approved_at = NULL,
+            approval_certified_by = NULL,
+            approval_certified_at = NULL,
+            approver_name_snapshot = NULL,
+            approver_title_snapshot = NULL,
+            approver_signature_url_snapshot = NULL,
+            approver_signature_data_snapshot = NULL,
+            approver_signature_mime_snapshot = NULL,
             approval_note = @note,
             updated_by = @uid,
             updated_at = GETDATE()

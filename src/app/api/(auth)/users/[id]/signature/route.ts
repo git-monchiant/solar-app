@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getDb, sql } from "@/lib/db";
-import { requireAuth } from "@/lib/auth";
+import { requireAdmin, requireAuth } from "@/lib/auth";
 
 export const runtime = "nodejs";
 
@@ -40,6 +40,10 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
   const { id } = await params;
   const userId = parseInt(id);
   if (!userId) return NextResponse.json({ error: "invalid id" }, { status: 400 });
+  if (userId !== gate.userId) {
+    const adminGate = await requireAdmin(req);
+    if (adminGate.error) return adminGate.error;
+  }
   try {
     const buf = Buffer.from(await req.arrayBuffer());
     if (buf.length === 0) return NextResponse.json({ error: "empty body" }, { status: 400 });
@@ -67,6 +71,10 @@ export async function DELETE(req: NextRequest, { params }: { params: Promise<{ i
   const { id } = await params;
   const userId = parseInt(id);
   if (!userId) return NextResponse.json({ error: "invalid id" }, { status: 400 });
+  if (userId !== gate.userId) {
+    const adminGate = await requireAdmin(req);
+    if (adminGate.error) return adminGate.error;
+  }
   try {
     const db = await getDb();
     await db.request().input("id", sql.Int, userId)

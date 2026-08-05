@@ -40,6 +40,7 @@ export async function GET(req: NextRequest) {
       q.status,
       q.package_name_snapshot,
       q.contract_total_incl_vat,
+      q.outstanding_amount,
       q.submitted_at,
       q.solar_approved_at,
       l.id lead_id,

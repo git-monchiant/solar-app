@@ -102,7 +102,18 @@ export default function OrderStep({ lead, state, refresh, expanded, onToggle }: 
   // quotation_doc_no are synced from the chosen entry.
   const quoteOptions = parseQuotationFiles(lead.quotation_files, lead.quotation_doc_no || "", lead.quotation_amount || 0);
   const [pickingQuote, setPickingQuote] = useState(false);
-  const acceptedIdx = lead.quotation_accepted_idx;
+  const persistedAcceptedIdx = lead.quotation_accepted_idx;
+  // A single approved quotation has no real choice to make. Treat it as the
+  // active option immediately so the summary is populated on first paint,
+  // then persist that selection below through the same API used by a click.
+  const acceptedIdx =
+    persistedAcceptedIdx !== null &&
+    persistedAcceptedIdx !== undefined &&
+    quoteOptions[persistedAcceptedIdx]
+      ? persistedAcceptedIdx
+      : quoteOptions.length === 1
+        ? 0
+        : undefined;
   const acceptedQuote =
     acceptedIdx !== null && acceptedIdx !== undefined
       ? quoteOptions[acceptedIdx]
@@ -131,7 +142,7 @@ export default function OrderStep({ lead, state, refresh, expanded, onToggle }: 
     if (!opt) return;
     // Clicking the already-accepted quote is a no-op — avoids a needless
     // PATCH round-trip when nothing would change.
-    if (idx === acceptedIdx) return;
+    if (idx === persistedAcceptedIdx) return;
     // Each quotation carries its own gross total and discount. Reapply that
     // snapshot when switching options so Step 4 always matches the selected
     // PDF and never subtracts a Step 3 discount twice.
@@ -198,20 +209,21 @@ export default function OrderStep({ lead, state, refresh, expanded, onToggle }: 
   useEffect(() => {
     if (!acceptedQuote || (lead.order_paid_count ?? 0) > 0) return;
     const quoteTotal = acceptedQuote.subtotal || acceptedQuote.amount;
-    if (!quoteTotal || total === quoteTotal) return;
-    setTotal(quoteTotal);
+    if (!quoteTotal) return;
+    if (total !== quoteTotal) setTotal(quoteTotal);
     if (acceptedQuote.subtotal !== undefined) {
       const quoteDiscount = Math.min(
         quoteTotal,
         Number(acceptedQuote.discount_amount || 0),
       );
-      setDiscountAmount(quoteDiscount);
-      setDiscountPct(
-        quoteTotal > 0
-          ? Math.round((quoteDiscount / quoteTotal) * 10000) / 100
-          : 0,
-      );
-      setDiscountNote(acceptedQuote.discount_label || "");
+      const quoteDiscountPct = quoteTotal > 0
+        ? Math.round((quoteDiscount / quoteTotal) * 10000) / 100
+        : 0;
+      if (discountAmount !== quoteDiscount) setDiscountAmount(quoteDiscount);
+      if (discountPct !== quoteDiscountPct) setDiscountPct(quoteDiscountPct);
+      if (discountNote !== (acceptedQuote.discount_label || "")) {
+        setDiscountNote(acceptedQuote.discount_label || "");
+      }
     } else if (discountPct > 0) {
       setDiscountAmount(Math.round((quoteTotal * discountPct) / 100));
     }
@@ -222,6 +234,40 @@ export default function OrderStep({ lead, state, refresh, expanded, onToggle }: 
     acceptedQuote?.discount_amount,
     acceptedQuote?.discount_label,
     lead.order_paid_count,
+  ]);
+
+  const autoPickQuoteKey =
+    quoteOptions.length === 1
+      ? `${lead.id}:${quoteOptions[0].doc_no || quoteOptions[0].url}`
+      : "";
+  const autoPickAttemptedRef = useRef("");
+  useEffect(() => {
+    if (
+      !autoPickQuoteKey ||
+      persistedAcceptedIdx === 0 ||
+      quoteLocked ||
+      !canSelectQuotation ||
+      pickingQuote ||
+      autoPickAttemptedRef.current === autoPickQuoteKey
+    ) return;
+
+    autoPickAttemptedRef.current = autoPickQuoteKey;
+    void pickQuote(0).catch((error) => {
+      setNextError(
+        error instanceof Error
+          ? error.message
+          : "เลือกใบเสนอราคาอัตโนมัติไม่สำเร็จ",
+      );
+    });
+  // pickQuote intentionally uses the current quotation and financial state;
+  // the stable key prevents repeat PATCH requests while the parent refreshes.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [
+    autoPickQuoteKey,
+    persistedAcceptedIdx,
+    quoteLocked,
+    canSelectQuotation,
+    pickingQuote,
   ]);
 
   // Installment plan: array of {pct, when, due_date}. The legacy order_pct_before
