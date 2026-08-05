@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getDb, sql } from "@/lib/db";
 import { requireAuth } from "@/lib/auth";
-import { getQuotationActor, nextQuotationDocNo } from "@/lib/quotation";
+import { canManageQuotation, getQuotationActor, nextQuotationDocNo } from "@/lib/quotation";
 import { logLeadActivity } from "@/lib/lead-activity-log";
 import {
   buildQuotationDocumentSnapshot,
@@ -52,7 +52,6 @@ export async function POST(
     }
 
     const isAdmin = actor.roles.includes("admin");
-    const isLeadOwner = quotation.assigned_user_id === gate.userId;
     const canActAsSolarSup =
       isAdmin || actor.roles.includes("solar_sup");
     const canActAsSalesSup =
@@ -71,10 +70,10 @@ export async function POST(
           { status: 409 },
         );
       }
-      if (!isAdmin && !isLeadOwner) {
+      if (!canManageQuotation(actor.roles)) {
         await tx.rollback();
         return NextResponse.json(
-          { error: "สร้าง Revision ได้เฉพาะผู้รับผิดชอบ Lead หรือ Admin" },
+          { error: "ไม่มีสิทธิ์สร้าง Revision" },
           { status: 403 },
         );
       }
@@ -150,10 +149,10 @@ export async function POST(
           { status: 409 },
         );
       }
-      if (!isAdmin && !isLeadOwner) {
+      if (!canManageQuotation(actor.roles)) {
         await tx.rollback();
         return NextResponse.json(
-          { error: "ส่งได้เฉพาะผู้รับผิดชอบ Lead" },
+          { error: "ไม่มีสิทธิ์ส่งใบเสนอราคา" },
           { status: 403 },
         );
       }
@@ -380,10 +379,10 @@ export async function POST(
           { status: 409 },
         );
       }
-      if (!isAdmin && !isLeadOwner) {
+      if (!canManageQuotation(actor.roles)) {
         await tx.rollback();
         return NextResponse.json(
-          { error: "ส่งให้ทีมขายได้เฉพาะ Sales เจ้าของ Lead หรือ Admin" },
+          { error: "ไม่มีสิทธิ์ส่งใบเสนอราคาให้ทีมขาย" },
           { status: 403 },
         );
       }

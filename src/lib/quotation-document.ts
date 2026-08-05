@@ -141,7 +141,8 @@ export function validateQuotationDocument(snapshot: QuotationDocumentSnapshot): 
   if (!lead.survey_date && !lead.survey_actual_date) errors.push("ไม่พบวันที่สำรวจหน้างาน");
   if (!String(lead.survey_actual_by || lead.survey_completed_by_name || lead.assigned_name || "").trim()) errors.push("ไม่พบผู้สำรวจหน้างาน");
   if (!String(q.doc_no || "").trim()) errors.push("ไม่พบเลขใบเสนอราคา");
-  if (!Number(q.package_id) || Number(q.outstanding_amount) < 0) errors.push("ข้อมูล Package หรือยอดใบเสนอราคาไม่สมบูรณ์");
+  // Package หลักเป็นตัวเลือก (ซื้อเฉพาะรายการเพิ่มเติมได้) — ขอแค่มียอดจริง
+  if (Number(q.outstanding_amount) < 0 || Number(q.subtotal_incl_vat) <= 0) errors.push("ยอดใบเสนอราคาไม่สมบูรณ์");
   if (finance.inputs.current_monthly_bill <= 0) errors.push("กรุณาระบุค่าไฟปัจจุบันจากข้อมูลจริง");
   if (finance.inputs.electricity_rate <= 0) errors.push("กรุณาระบุค่าไฟต่อหน่วย");
   if (finance.inputs.production_kwh_per_kw_month <= 0) errors.push("กรุณาระบุสมมติฐานผลผลิตไฟต่อ kWp");
@@ -169,7 +170,7 @@ export async function buildQuotationDocumentSnapshot(quotationId: number, transa
       p.installed_kwp, p.panel_count, p.panel_watt, p.panel_brand, p.warranty_years
     FROM quotations q
     JOIN leads l ON l.id=q.lead_id
-    JOIN packages p ON p.id=q.package_id
+    LEFT JOIN packages p ON p.id=q.package_id
     LEFT JOIN projects pr ON pr.id=l.project_id
     LEFT JOIN users owner ON owner.id=l.assigned_user_id
     LEFT JOIN users surveyor ON surveyor.id=l.survey_completed_by

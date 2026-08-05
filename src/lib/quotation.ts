@@ -16,6 +16,10 @@ export type QuotationInputItem = {
   quantity: number;
   unit?: string;
   unit_price: number;
+  // Set when this add-on line is itself a package (chosen from Package Master).
+  // Lets the API promote the first such add-on to the main package when no main
+  // package is selected, so its equipment detail lines render like a main one.
+  source_package_id?: number;
 };
 
 export function parseRoles(raw: unknown): string[] {
@@ -33,6 +37,15 @@ export async function getQuotationActor(userId: number) {
   `);
   const row = result.recordset[0];
   return row ? { ...row, roles: parseRoles(row.roles) } : null;
+}
+
+// Roles allowed to create / edit / delete quotations. Any of these can act on
+// ANY lead — the old per-lead "assigned owner" restriction was dropped so the
+// whole sales + solar team can manage quotations together (admin included).
+// Note: account / leadsseeker are intentionally NOT here.
+export const QUOTATION_MANAGE_ROLES = ["admin", "sales", "sales_sup", "solar", "solar_sup"];
+export function canManageQuotation(roles: string[] | undefined | null): boolean {
+  return Array.isArray(roles) && roles.some((r) => QUOTATION_MANAGE_ROLES.includes(r));
 }
 
 export function calculateQuotation(packagePrice: number, items: QuotationInputItem[], discountType: string, discountValue: number, deposit: number, vatRate = 7) {

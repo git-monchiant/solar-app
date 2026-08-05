@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getDb, sql, fixDates, toSqlDate } from "@/lib/db";
 import { requireAuth } from "@/lib/auth";
-import { calculateQuotation, getQuotationActor, nextQuotationDocNo, type QuotationInputItem } from "@/lib/quotation";
+import { calculateQuotation, canManageQuotation, getQuotationActor, nextQuotationDocNo, type QuotationInputItem } from "@/lib/quotation";
 import { logLeadActivity } from "@/lib/lead-activity-log";
 import { parseDocumentInputs } from "@/lib/quotation-document";
 import { getQuotationPaymentTermsTotal, parseQuotationPaymentTerms } from "@/lib/quotation-terms";
@@ -45,11 +45,24 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
 export async function POST(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const gate = await requireAuth(req); if (gate.error) return gate.error;
   const actor = await getQuotationActor(gate.userId);
-  if (!actor || !actor.roles.some((r: string) => ["admin", "sales", "sales_sup"].includes(r))) return NextResponse.json({ error: "ไม่มีสิทธิ์สร้างใบเสนอราคา" }, { status: 403 });
+  if (!actor || !canManageQuotation(actor.roles)) return NextResponse.json({ error: "ไม่มีสิทธิ์สร้างใบเสนอราคา" }, { status: 403 });
   const { id } = await params; const leadId = Number(id); const body = await req.json();
-  const optionNo = Number(body.option_no); const packageId = Number(body.package_id);
-  if (![1,2,3].includes(optionNo) || !packageId) return NextResponse.json({ error: "กรุณาระบุชุด 1-3 และ Package หลัก" }, { status: 400 });
-  const customItems: QuotationInputItem[] = Array.isArray(body.items) ? body.items.filter((i: QuotationInputItem) => i?.item_name?.trim()).map((i: QuotationInputItem) => ({ source_type: "custom", item_name: String(i.item_name).trim(), quantity: Number(i.quantity) || 1, unit: i.unit || "ชุด", unit_price: Number(i.unit_price) || 0 })) : [];
+  const optionNo = Number(body.option_no); const packageId = Number(body.package_id) || null;
+  if (![1,2,3].includes(optionNo)) return NextResponse.json({ error: "กรุณาระบุชุด 1-3" }, { status: 400 });
+  const customItems: QuotationInputItem[] = Array.isArray(body.items) ? body.items.filter((i: QuotationInputItem) => i?.item_name?.trim()).map((i: QuotationInputItem) => ({ source_type: "custom", item_name: String(i.item_name).trim(), quantity: Number(i.quantity) || 1, unit: i.unit || "ชุด", unit_price: Number(i.unit_price) || 0, source_package_id: Number(i.source_package_id) || undefined })) : [];
+  // No main package chosen? Promote the first package-type add-on to be the main
+  // package so its equipment detail lines render like a main package.
+  let effectivePackageId = packageId;
+  let addonItems = customItems;
+  if (!effectivePackageId) {
+    const promoteIdx = customItems.findIndex((i) => i.source_package_id);
+    if (promoteIdx >= 0) {
+      effectivePackageId = customItems[promoteIdx].source_package_id!;
+      addonItems = customItems.filter((_, idx) => idx !== promoteIdx);
+    }
+  }
+  // Package หลักเป็นตัวเลือก — แต่ต้องมีอย่างน้อย package หรือ 1 รายการเพิ่มเติม
+  if (!effectivePackageId && addonItems.length === 0) return NextResponse.json({ error: "กรุณาเลือก Package หลัก หรือเพิ่มรายการอย่างน้อย 1 รายการ" }, { status: 400 });
   const paymentTerms = parseQuotationPaymentTerms(body.payment_terms);
   if (getQuotationPaymentTermsTotal(paymentTerms) !== 100) return NextResponse.json({ error: "ยอดรวมงวดชำระเงินต้องเท่ากับ 100%" }, { status: 400 });
   const db = await getDb(); const tx = new sql.Transaction(db);
@@ -65,27 +78,27 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
       FROM leads l WHERE l.id=@id
     `);
     if (!lead.recordset[0]) { await tx.rollback(); return NextResponse.json({ error: "ไม่พบ Lead" }, { status: 404 }); }
-    if (!actor.roles.includes("admin") && lead.recordset[0].assigned_user_id !== gate.userId) { await tx.rollback(); return NextResponse.json({ error: "สร้างได้เฉพาะ Lead ที่รับผิดชอบ" }, { status: 403 }); }
+    // Ownership guard removed — any QUOTATION_MANAGE_ROLES member may create for any lead.
     const existing = await new sql.Request(tx).input("lead_id", sql.Int, leadId).input("option_no", sql.Int, optionNo).query(`SELECT TOP 1 id,status,revision_no FROM quotations WHERE lead_id=@lead_id AND option_no=@option_no ORDER BY revision_no DESC`);
     if (existing.recordset[0] && existing.recordset[0].status !== "cancelled") { await tx.rollback(); return NextResponse.json({ error: "ชุดนี้มีใบเสนอราคาแล้ว กรุณาแก้ไขใบเดิม" }, { status: 409 }); }
     const revisionNo = existing.recordset[0]
       ? Number(existing.recordset[0].revision_no) + 1
       : 0;
-    const pkg = await new sql.Request(tx).input("package_id", sql.Int, packageId).query(`SELECT * FROM packages WHERE id=@package_id AND is_active=1`);
-    const packageRow = pkg.recordset[0]; if (!packageRow) { await tx.rollback(); return NextResponse.json({ error: "ไม่พบ Package ที่ใช้งานได้" }, { status: 400 }); }
-    const packageItems = await new sql.Request(tx).input("package_id", sql.Int, packageId).query(`SELECT * FROM package_items WHERE package_id=@package_id AND is_active=1 ORDER BY sort_order,id`);
+    const packageRow = effectivePackageId ? (await new sql.Request(tx).input("package_id", sql.Int, effectivePackageId).query(`SELECT * FROM packages WHERE id=@package_id AND is_active=1`)).recordset[0] : null;
+    if (effectivePackageId && !packageRow) { await tx.rollback(); return NextResponse.json({ error: "ไม่พบ Package ที่ใช้งานได้" }, { status: 400 }); }
+    const packageItemRows = effectivePackageId ? (await new sql.Request(tx).input("package_id", sql.Int, effectivePackageId).query(`SELECT * FROM package_items WHERE package_id=@package_id AND is_active=1 ORDER BY sort_order,id`)).recordset : [];
     const templateId = Number(body.payment_template_id) || null;
     const discountType = body.discount_type === "percent" ? "percent" : "amount";
     const confirmedDeposit = Math.max(0, Number(lead.recordset[0].confirmed_deposit) || 0);
     const depositPaid = lead.recordset[0].pre_survey_fee_type === "free"
       ? 0
       : Math.max(confirmedDeposit, Number(body.deposit_paid_amount) || 0);
-    const totals = calculateQuotation(Number(packageRow.price), customItems, discountType, Number(body.discount_value), depositPaid, 7);
+    const totals = calculateQuotation(Number(packageRow?.price) || 0, addonItems, discountType, Number(body.discount_value), depositPaid, 7);
     const documentInputs = parseDocumentInputs(body.document_inputs);
     const docNo = await nextQuotationDocNo(tx);
     const inserted = await new sql.Request(tx)
       .input("lead_id", sql.Int, leadId).input("option_no", sql.TinyInt, optionNo).input("revision_no", sql.Int, revisionNo).input("doc_no", sql.NVarChar(30), docNo)
-      .input("package_id", sql.Int, packageId).input("package_name", sql.NVarChar(200), packageRow.name).input("package_price", sql.Decimal(12,2), packageRow.price)
+      .input("package_id", sql.Int, effectivePackageId).input("package_name", sql.NVarChar(200), packageRow?.name || "").input("package_price", sql.Decimal(12,2), packageRow?.price || 0)
       .input("issue_date", sql.Date, toSqlDate(body.issue_date) || new Date()).input("valid_days", sql.Int, Number(body.valid_days) || 7)
       .input("subtotal", sql.Decimal(12,2), totals.subtotal).input("discount_label", sql.NVarChar(200), body.discount_label || null)
       .input("discount_type", sql.NVarChar(10), discountType).input("discount_value", sql.Decimal(12,2), Number(body.discount_value)||0).input("discount_amount", sql.Decimal(12,2), totals.discountAmount)
@@ -99,9 +112,9 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
       OUTPUT INSERTED.* VALUES(@lead_id,@option_no,@revision_no,@doc_no,@package_id,@package_name,@package_price,@issue_date,@valid_days,@subtotal,@discount_label,@discount_type,@discount_value,@discount_amount,@discount_reason,@total,@deposit,@outstanding,@before_vat,@vat_amount,@template_id,@payment_terms,@terms_text,@note,@document_inputs,@user_id,@user_id)`);
     const quotationId = inserted.recordset[0].id;
     let sort = 0;
-    for (const item of packageItems.recordset) await new sql.Request(tx).input("qid",sql.Int,quotationId).input("pid",sql.Int,item.id).input("name",sql.NVarChar(500),item.item_name).input("qty",sql.Decimal(10,2),item.quantity).input("unit",sql.NVarChar(50),item.unit).input("sort",sql.Int,sort++).query(`INSERT quotation_items(quotation_id,source_type,package_item_id,item_name_snapshot,quantity,unit,sort_order) VALUES(@qid,'package',@pid,@name,@qty,@unit,@sort)`);
-    for (const item of customItems) await new sql.Request(tx).input("qid",sql.Int,quotationId).input("source",sql.NVarChar(20),item.source_type).input("name",sql.NVarChar(500),item.item_name).input("qty",sql.Decimal(10,2),item.quantity).input("unit",sql.NVarChar(50),item.unit).input("price",sql.Decimal(12,2),item.unit_price).input("total",sql.Decimal(12,2),item.quantity*item.unit_price).input("sort",sql.Int,sort++).query(`INSERT quotation_items(quotation_id,source_type,item_name_snapshot,quantity,unit,unit_price,line_total,sort_order) VALUES(@qid,@source,@name,@qty,@unit,@price,@total,@sort)`);
-    await logLeadActivity(tx,{leadId,activityType:"quotation",title:`สร้างใบเสนอราคา ${docNo} ชุด ${optionNo}`,note:packageRow.name,userId:gate.userId});
+    for (const item of packageItemRows) await new sql.Request(tx).input("qid",sql.Int,quotationId).input("pid",sql.Int,item.id).input("name",sql.NVarChar(500),item.item_name).input("qty",sql.Decimal(10,2),item.quantity).input("unit",sql.NVarChar(50),item.unit).input("sort",sql.Int,sort++).query(`INSERT quotation_items(quotation_id,source_type,package_item_id,item_name_snapshot,quantity,unit,sort_order) VALUES(@qid,'package',@pid,@name,@qty,@unit,@sort)`);
+    for (const item of addonItems) await new sql.Request(tx).input("qid",sql.Int,quotationId).input("source",sql.NVarChar(20),item.source_type).input("name",sql.NVarChar(500),item.item_name).input("qty",sql.Decimal(10,2),item.quantity).input("unit",sql.NVarChar(50),item.unit).input("price",sql.Decimal(12,2),item.unit_price).input("total",sql.Decimal(12,2),item.quantity*item.unit_price).input("sort",sql.Int,sort++).query(`INSERT quotation_items(quotation_id,source_type,item_name_snapshot,quantity,unit,unit_price,line_total,sort_order) VALUES(@qid,@source,@name,@qty,@unit,@price,@total,@sort)`);
+    await logLeadActivity(tx,{leadId,activityType:"quotation",title:`สร้างใบเสนอราคา ${docNo} ชุด ${optionNo}`,note:packageRow?.name || "รายการเพิ่มเติม",userId:gate.userId});
     await tx.commit(); return NextResponse.json(inserted.recordset[0], { status: 201 });
   } catch (error) { try { await tx.rollback(); } catch {} console.error("POST quotation", error); return NextResponse.json({ error: error instanceof Error ? error.message : "สร้างใบเสนอราคาไม่สำเร็จ" }, { status: 500 }); }
 }
