@@ -94,6 +94,8 @@ const todayIso = () => {
   const d = new Date();
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
 };
+const formatPackageSpecs = (pkg: Package) =>
+  `ขนาด ${pkg.kwp} kWp · ${pkg.phase > 0 ? `${pkg.phase} เฟส` : "ทุกเฟส"}`;
 
 export default function QuotationBuilder({
   lead,
@@ -623,9 +625,7 @@ function QuotationEditor({
   onSaved: () => Promise<void>;
 }) {
   const defaultTemplate = templates.find((t) => t.is_default) || templates[0];
-  const [packageId, setPackageId] = useState(
-    quote?.package_id || packages[0]?.id || 0,
-  );
+  const [packageId, setPackageId] = useState(quote?.package_id || 0);
   const [packageItems, setPackageItems] = useState<Item[]>([]);
   const [showPackageItems, setShowPackageItems] = useState(false);
   const [items, setItems] = useState<Item[]>(
@@ -727,10 +727,6 @@ function QuotationEditor({
       ),
     };
   });
-  useEffect(() => {
-    if (packageId || packages.length === 0) return;
-    setPackageId(packages[0].id);
-  }, [packageId, packages]);
   useEffect(() => {
     if (!packageId) {
       setPackageItems([]);
@@ -1082,12 +1078,12 @@ function QuotationEditor({
               }}
               className={`mt-1 ${fieldClass}`}
             >
-              <option value={0}>เลือก Package</option>
+              <option value={0}>เลือก package</option>
               {packageGroups.map((group) => (
                 <optgroup key={group.label} label={group.label}>
                   {group.items.map((p) => (
                     <option key={p.id} value={p.id}>
-                      {group.icon} {p.name} — {formatTHB(p.price)} บาท
+                      {group.icon} {p.name} · {formatPackageSpecs(p)} — {formatTHB(p.price)} บาท
                     </option>
                   ))}
                 </optgroup>
@@ -1111,7 +1107,7 @@ function QuotationEditor({
                       อุปกรณ์หลักจาก Package
                     </div>
                     <div className="mt-0.5 text-xxs text-gray-500">
-                      {packageItems.length} รายการ • แก้ไขไม่ได้
+                      {packageItems.length} รายการ
                     </div>
                   </div>
                   <span className="flex shrink-0 items-center gap-1.5 text-xs font-semibold text-primary">
@@ -1224,7 +1220,7 @@ function QuotationEditor({
                                   key={candidate.id}
                                   value={String(candidate.id)}
                                 >
-                                  {group.icon} {candidate.name} — {formatTHB(candidate.price)} บาท
+                                  {group.icon} {candidate.name} · {formatPackageSpecs(candidate)} — {formatTHB(candidate.price)} บาท
                                 </option>
                               ))}
                           </optgroup>
