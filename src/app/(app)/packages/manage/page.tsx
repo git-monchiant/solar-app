@@ -53,6 +53,7 @@ export default function ManagePackagesPage() {
   const [loading, setLoading] = useState(true);
   const [editing, setEditing] = useState<Package | (Omit<Package, "id"> & { id?: undefined }) | null>(null);
   const [saving, setSaving] = useState(false);
+  const [saveError, setSaveError] = useState("");
   const [packageItems, setPackageItems] = useState<PackageItem[]>([]);
   const [search, setSearch] = useState("");
   const [filter, setFilter] = useState<"all" | "active" | "inactive">("all");
@@ -65,6 +66,9 @@ export default function ManagePackagesPage() {
   };
 
   useEffect(load, []);
+  useEffect(() => {
+    if (!editing) setSaveError("");
+  }, [editing]);
   useEffect(() => {
     if (!editing?.id) { setPackageItems([]); return; }
     apiFetch(`/api/packages/${editing.id}/items`).then(setPackageItems).catch(() => setPackageItems([]));
@@ -181,6 +185,7 @@ export default function ManagePackagesPage() {
 
   const save = async () => {
     if (!editing || !editing.name.trim()) return;
+    setSaveError("");
     setSaving(true);
     try {
       let packageId: number;
@@ -196,6 +201,7 @@ export default function ManagePackagesPage() {
       load();
     } catch (e) {
       console.error(e);
+      setSaveError("บันทึก Package ไม่สำเร็จ กรุณาลองอีกครั้งหรือติดต่อผู้ดูแลระบบ");
     } finally {
       setSaving(false);
     }
@@ -237,7 +243,7 @@ export default function ManagePackagesPage() {
             <option value="no">ไม่ใช่ Scale Up</option>
             <option value="other">อื่นๆ</option>
           </select>
-          <button type="button" onClick={() => setEditing({ ...empty })} className="h-8 px-5 rounded-lg bg-primary text-white text-sm font-semibold hover:bg-primary-dark transition-colors">+ เพิ่ม Package</button>
+          <button type="button" onClick={() => { setSaveError(""); setEditing({ ...empty }); }} className="h-8 px-5 rounded-lg bg-primary text-white text-sm font-semibold hover:bg-primary-dark transition-colors">+ เพิ่ม Package</button>
         </div>
 
         {/* Price list */}
@@ -416,7 +422,7 @@ export default function ManagePackagesPage() {
                     { key: "has_inverter", label: "Inverter", activeClass: "bg-violet-50 text-violet-700 border-violet-200" },
                     { key: "has_battery", label: "Battery", activeClass: "bg-green-50 text-green-700 border-green-200" },
                     { key: "is_upgrade", label: "Scale Up", activeClass: "bg-blue-50 text-blue-700 border-blue-200" },
-                    { key: "is_other", label: "อื่นๆ", activeClass: "bg-slate-100 text-slate-700 border-slate-300" },
+                    { key: "is_other", label: "อื่นๆ", activeClass: "bg-primary/10 text-primary border-primary/40" },
                   ].map(f => (
                     <button key={f.key} type="button" onClick={() => setEditing({ ...editing, [f.key]: !(editing as Record<string, unknown>)[f.key] })}
                       className={`px-3 py-1.5 rounded-lg text-xs font-semibold border transition-all ${(editing as Record<string, unknown>)[f.key] ? f.activeClass : "bg-white text-gray-400 border-gray-200"}`}>
@@ -510,7 +516,7 @@ export default function ManagePackagesPage() {
                 <div className="space-y-2">{packageItems.map((item, index) => (
                   <div key={index} className="grid grid-cols-12 gap-2">
                     <input value={item.item_name} onChange={e => setPackageItems(v => v.map((x, i) => i === index ? { ...x, item_name: e.target.value } : x))} placeholder="ชื่ออุปกรณ์/บริการ" className="col-span-7 h-8 px-2 border border-gray-200 rounded text-xs" />
-                    <input type="number" value={item.quantity} onChange={e => setPackageItems(v => v.map((x, i) => i === index ? { ...x, quantity: Number(e.target.value) } : x))} className="col-span-2 h-8 px-2 border border-gray-200 rounded text-xs" />
+                    <input type="number" min="1" value={item.quantity || ""} onChange={e => setPackageItems(v => v.map((x, i) => i === index ? { ...x, quantity: Number(e.target.value) } : x))} className="col-span-2 h-8 px-2 border border-gray-200 rounded text-xs" />
                     <input value={item.unit ?? ""} onChange={e => setPackageItems(v => v.map((x, i) => i === index ? { ...x, unit: e.target.value || null } : x))} placeholder="หน่วย" className="col-span-2 h-8 px-2 border border-gray-200 rounded text-xs" />
                     <button type="button" onClick={() => setPackageItems(v => v.filter((_, i) => i !== index))} className="col-span-1 text-red-500">×</button>
                   </div>
@@ -531,6 +537,7 @@ export default function ManagePackagesPage() {
 
             {/* Actions */}
             <div className="px-5 py-3 border-t border-gray-200 flex justify-end gap-3">
+              {saveError && <p role="alert" className="mr-auto self-center text-xs font-medium text-red-600">{saveError}</p>}
               <button type="button" onClick={() => setEditing(null)} className="h-8 px-5 rounded-lg border border-gray-200 text-sm font-semibold text-gray-600 hover:bg-gray-50">ยกเลิก</button>
               <button type="button" onClick={save} disabled={saving || !editing.name.trim()} className="h-8 px-6 rounded-lg bg-primary text-white text-sm font-semibold hover:bg-primary-dark disabled:opacity-50 transition-colors">
                 {saving ? "กำลังบันทึก..." : "บันทึก"}

@@ -53,6 +53,78 @@ export type QuotationDocumentSnapshot = {
   financial: FinancialSnapshot;
 };
 
+export async function expandOtherPackageAddOns(
+  items: Array<Record<string, unknown>>,
+  transaction?: InstanceType<typeof sql.Transaction>,
+): Promise<Array<Record<string, unknown>>> {
+  const db = transaction ? null : await getDb();
+  const expanded: Array<Record<string, unknown>> = [];
+
+  for (const item of items) {
+    if (item.source_type === "package") {
+      expanded.push(item);
+      continue;
+    }
+
+    const packageId = Number(item.source_package_id) || null;
+    const packageName = String(item.item_name_snapshot || item.item_name || "")
+      .replace(/^Package เพิ่มเติม:\s*/i, "")
+      .trim();
+    if (!packageId && !packageName) {
+      expanded.push(item);
+      continue;
+    }
+
+    const packageRequest = transaction ? new sql.Request(transaction) : db!.request();
+    const packageResult = await packageRequest
+      .input("packageId", sql.Int, packageId)
+      .input("packageName", sql.NVarChar(200), packageName)
+      .query(`
+        SELECT TOP 1 id
+        FROM packages
+        WHERE is_active=1 AND is_other=1
+          AND ((@packageId IS NOT NULL AND id=@packageId) OR LTRIM(RTRIM(name))=@packageName)
+        ORDER BY CASE WHEN id=@packageId THEN 0 ELSE 1 END, id DESC
+      `);
+    const matchedPackageId = Number(packageResult.recordset[0]?.id);
+    if (!matchedPackageId) {
+      expanded.push(item);
+      continue;
+    }
+
+    const itemRequest = transaction ? new sql.Request(transaction) : db!.request();
+    const packageItems = (await itemRequest
+      .input("packageId", sql.Int, matchedPackageId)
+      .query(`
+        SELECT id package_item_id, item_name item_name_snapshot, quantity, unit
+        FROM package_items
+        WHERE package_id=@packageId AND is_active=1
+        ORDER BY sort_order,id
+      `)).recordset as Array<Record<string, unknown>>;
+    if (packageItems.length === 0) {
+      expanded.push(item);
+      continue;
+    }
+
+    const [firstItem, ...detailItems] = packageItems;
+    expanded.push({
+      ...item,
+      ...firstItem,
+      source_type: "addon_package",
+      source_package_id: matchedPackageId,
+    });
+    expanded.push(...detailItems.map(detail => ({
+      ...detail,
+      source_type: "addon_package_detail",
+      source_package_id: matchedPackageId,
+      unit_price: 0,
+      line_total: 0,
+    })));
+  }
+
+  return expanded;
+}
+
 const round2 = (value: number) => Math.round((value + Number.EPSILON) * 100) / 100;
 
 export function parseDocumentInputs(raw: unknown, fallback: Partial<QuotationDocumentInputs> = {}): QuotationDocumentInputs {
@@ -209,7 +281,7 @@ export async function buildQuotationDocumentSnapshot(quotationId: number, transa
     lead,
     lead_data: sets[1]?.[0] || {},
     package: pkg,
-    items: sets[2] || [],
+    items: await expandOtherPackageAddOns(sets[2] || [], transaction),
     settings: Object.fromEntries((sets[3] || []).map(setting => [String(setting.key), String(setting.value || "")])),
     financial,
   };

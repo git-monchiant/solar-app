@@ -11,6 +11,7 @@ import { getDb, sql } from "@/lib/db";
 import {
   buildQuotationDocumentSnapshot,
   calculateFinancialSnapshot,
+  expandOtherPackageAddOns,
   parseDocumentInputs,
   type QuotationDocumentSnapshot,
 } from "@/lib/quotation-document";
@@ -149,6 +150,7 @@ export async function POST(req: NextRequest) {
       }
     }
   }
+  previewAllItems = await expandOtherPackageAddOns(previewAllItems);
   const submittedLead =
     body.lead && typeof body.lead === "object" ? body.lead : {};
   const leadId = Number(submittedLead.id || 0);
@@ -403,14 +405,40 @@ export async function GET(
   const excelPackageName = String(excelPackageItem?.item_name_snapshot || "");
   const usesExcelPackageTitle = excelPackageName.startsWith("งานจ้างเหมา");
   const isOtherPackage = Boolean(snapshot.package.is_other);
+  const normalizeOtherPackageText = (value: unknown) =>
+    String(value || "")
+      .trim()
+      .replace(/เพิิ่ม/g, "เพิ่ม")
+      .replace(/เมนส์เบรคเกอร์/g, "เมนส์เบรกเกอร์");
+  const otherPackageItemText = (item: Record<string, unknown>) => {
+    const name = normalizeOtherPackageText(item.item_name_snapshot);
+    const quantity = Number(item.quantity);
+    const unit = String(item.unit || "").trim();
+    if (!unit || !Number.isFinite(quantity) || quantity <= 0) return name;
+    const suffix = `${quantity} ${unit}`;
+    return name.toLocaleLowerCase().includes(suffix.toLocaleLowerCase())
+      ? name
+      : `${name} ${suffix}`;
+  };
   const excelPackageTitle = `${excelPackageName}${excelPackageItem?.unit ? ` ${excelPackageItem.quantity} ${excelPackageItem.unit}` : ""}`;
   const packageTitle = isOtherPackage
-    ? String(q.package_name_snapshot || snapshot.package.name || "")
+    ? excelPackageItem
+      ? otherPackageItemText(excelPackageItem)
+      : normalizeOtherPackageText(q.package_name_snapshot || snapshot.package.name)
     : usesExcelPackageTitle
       ? excelPackageTitle
       : `งานจ้างเหมาติดตั้งระบบผลิตไฟฟ้าจากพลังงานแสงอาทิตย์บนหลังคา ${q.package_name_snapshot || ""}`;
+  const otherPackageTextHtml = (value: unknown) =>
+    esc(value).replace(
+        "(เพิ่มตู้ไฟ)",
+        '<span class="item-note">(เพิ่มตู้ไฟ)</span>',
+      );
+  const packageTitleHtml = isOtherPackage
+    ? otherPackageTextHtml(packageTitle)
+    : esc(packageTitle);
   const packageDetail = (item: Record<string, unknown>) => {
     const name = String(item.item_name_snapshot || "");
+    if (isOtherPackage) return otherPackageItemText(item);
     if (!item.unit) return name;
     if (usesExcelPackageTitle) {
       return `${name} ${item.quantity} ${item.unit}`;
@@ -435,25 +463,39 @@ export async function GET(
   const addOnDisplayName = (item: Record<string, unknown>) =>
     String(item.item_name_snapshot || "").replace(/^Package เพิ่มเติม:\s*/i, "");
   const isConsumerUnitAddOn = (item: Record<string, unknown>) =>
-    addOnDisplayName(item).trim().replace(/\s+/g, " ") ===
+    normalizeOtherPackageText(addOnDisplayName(item)).replace(/\s+/g, " ") ===
     "งานเพิ่มตู้คอนซูมเมอร์ยูนิต 6 ช่อง";
+  let addOnSequence = addOnBaseSeq;
+  const addOnRows = addOns.flatMap((item) => {
+    if (item.source_type === "addon_package_detail") {
+      return [
+        `<tr><td></td><td>${otherPackageTextHtml(otherPackageItemText(item))}</td><td></td></tr>`,
+      ];
+    }
+    addOnSequence += 1;
+    if (item.source_type === "addon_package") {
+      return [
+        `<tr><td class="center">${addOnSequence}</td><td>${otherPackageTextHtml(otherPackageItemText(item))}</td><td class="right">${money(item.line_total)}</td></tr>`,
+      ];
+    }
+    if (isConsumerUnitAddOn(item)) {
+      return [
+        `<tr><td class="center">${addOnSequence}</td><td>งานเพิ่มตู้คอนซูมเมอร์ยูนิต 6 ช่อง <span class="item-note">(เพิ่มตู้ไฟ)</span> จำนวน ${esc(item.quantity)} กล่อง</td><td class="right">${money(item.line_total)}</td></tr>`,
+        '<tr><td></td><td>- เมนส์เบรกเกอร์ MCB 50A 1 SET</td><td></td></tr>',
+      ];
+    }
+    return [
+      `<tr><td class="center">${addOnSequence}</td><td>${esc(addOnDisplayName(item))} ${esc(item.quantity)} ${esc(item.unit)}${hasPackage ? ' <span class="muted">(เพิ่มเติม)</span>' : ""}</td><td class="right">${money(item.line_total)}</td></tr>`,
+    ];
+  });
   const itemRows = [
     ...(hasPackage
       ? [
-          `<tr><td class="center">1</td><td>${esc(packageTitle)}${usesExcelPackageTitle ? "" : " 1 ชุด"}</td><td class="right">${money(q.package_price_snapshot)}</td></tr>`,
+          `<tr><td class="center">1</td><td>${packageTitleHtml}${usesExcelPackageTitle || isOtherPackage ? "" : " 1 ชุด"}</td><td class="right">${money(q.package_price_snapshot)}</td></tr>`,
           ...packageDetailRows,
         ]
       : []),
-    ...addOns.flatMap((item, index) =>
-      isConsumerUnitAddOn(item)
-        ? [
-            `<tr><td class="center">${addOnBaseSeq + index + 1}</td><td>งานเพิ่มตู้คอนซูมเมอร์ยูนิต 6 ช่อง จำนวน ${esc(item.quantity)} กล่อง (เพิ่มตู้ไฟ)</td><td class="right">${money(item.line_total)}</td></tr>`,
-            '<tr><td></td><td>- เมนส์เบรกเกอร์ MCB 50A 1 SET</td><td></td></tr>',
-          ]
-        : [
-            `<tr><td class="center">${addOnBaseSeq + index + 1}</td><td>${esc(addOnDisplayName(item))} ${esc(item.quantity)} ${esc(item.unit)}${hasPackage ? ' <span class="muted">(เพิ่มเติม)</span>' : ""}</td><td class="right">${money(item.line_total)}</td></tr>`,
-          ],
-    ),
+    ...addOnRows,
   ];
   while (itemRows.length < 9)
     itemRows.push(
@@ -543,6 +585,7 @@ export async function GET(
     .customer-grid .valid-box-grid span{display:flex;align-items:center;width:auto;padding:0 3px}
     .valid-box-grid .valid-label,.valid-box-grid .valid-days{justify-content:center}
     .valid-box-grid .valid-copy{white-space:nowrap}
+    .item-note{color:#e00000;font-weight:bold}
   </style></head><body>
     <section class="page">${watermark ? `<div class="watermark">${esc(watermark)}</div>` : ""}${quotationHeader}
       <table class="quote-table"><thead><tr><th style="width:12mm">ลำดับ</th><th>รายการ</th><th style="width:32.5mm">จำนวนเงิน</th></tr></thead><tbody>${itemRows.join("")}<tr class="payment-spacer"><td></td><td></td><td></td></tr><tr class="payment-shell"><td colspan="2" class="payment-cell"><div class="payment-title">เงื่อนไขการชำระเงิน</div><table class="payment-table"><tbody>${paymentRows}</tbody></table><div class="payment-bank-row"><div class="bank-copy"><b>ธนาคาร${esc(bankName)}</b><br>ชื่อบัญชี : ${esc(bankAccountName)}<br>เลขที่บัญชี : ${esc(bankAccountNumber)} สาขา ${esc(bankBranch)}</div><div class="qr"><img src="${paymentQrDataUrl}" alt="QR Payment"></div></div></td><td class="payment-side"></td></tr></tbody></table>
