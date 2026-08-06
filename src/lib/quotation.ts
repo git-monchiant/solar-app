@@ -89,12 +89,15 @@ export async function getQuotationDetail(id: number) {
            creator.full_name created_by_name, creator.job_title created_by_title,
            creator.phone created_by_phone, creator.email created_by_email,
            creator.signature_data created_by_signature_data, creator.signature_mime created_by_signature_mime,
-           approver.full_name approved_by_name
+           approver.full_name approved_by_name,
+           solar.full_name solar_approved_name, solar.job_title solar_approved_title,
+           solar.signature_data solar_approved_signature_data, solar.signature_mime solar_approved_signature_mime
     FROM quotations q
     JOIN leads l ON l.id = q.lead_id
     LEFT JOIN projects project ON project.id = l.project_id
     LEFT JOIN users creator ON creator.id = q.created_by
     LEFT JOIN users approver ON approver.id = q.approved_by
+    LEFT JOIN users solar ON solar.id = q.solar_approved_by
     WHERE q.id = @id;
     SELECT * FROM quotation_items WHERE quotation_id = @id ORDER BY sort_order, id;
     SELECT e.*, u.full_name acted_by_name FROM quotation_approval_events e

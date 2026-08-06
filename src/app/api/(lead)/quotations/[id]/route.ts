@@ -10,7 +10,10 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
   const {id}=await params; const detail=await getQuotationDetail(Number(id));
   if (!detail) return NextResponse.json({error:"ไม่พบใบเสนอราคา"},{status:404});
   const safe = { ...detail };
+  // Never leak raw signature blobs to the client.
   delete safe.approver_signature_data_snapshot;
+  delete safe.created_by_signature_data;
+  delete safe.solar_approved_signature_data;
   return NextResponse.json(fixDates([safe])[0]);
 }
 
