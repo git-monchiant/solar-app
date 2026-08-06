@@ -2,8 +2,8 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { apiFetch, getUserIdHeader } from "@/lib/api";
 import { GSB_SOLAR_LOAN_DEFAULTS } from "@/lib/loan-defaults";
-import { formatTHB } from "@/lib/utils/formatters";
-import { hasRole, useActiveRoles, useMe } from "@/lib/roles";
+import { formatTHB, formatThaiDateShort, formatThaiTime } from "@/lib/utils/formatters";
+import { hasRole, useActiveRoles } from "@/lib/roles";
 import { useDialog } from "@/components/ui/Dialog";
 import ModalBase from "@/components/ui/ModalBase";
 import {
@@ -65,6 +65,8 @@ type Quote = {
   approval_note?: string;
   returned_by_name?: string;
   returned_by_role?: string;
+  created_by_name?: string;
+  created_at?: string;
   document_inputs_json?: string;
   document_snapshot_at?: string;
   approval_certified_at?: string;
@@ -98,6 +100,8 @@ const todayIso = () => {
   const d = new Date();
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
 };
+const formatPackageSpecs = (pkg: Package) =>
+  `ขนาด ${pkg.kwp} kWp · ${pkg.phase > 0 ? `${pkg.phase} เฟส` : "ทุกเฟส"}`;
 
 export default function QuotationBuilder({
   lead,
@@ -112,7 +116,6 @@ export default function QuotationBuilder({
   salesNote: string;
   onSalesNoteChange: (value: string) => void;
 }) {
-  const { me } = useMe();
   const { activeRoles } = useActiveRoles();
   const dialog = useDialog();
   // In-app "ส่งกลับให้แก้ไข" reason modal (replaces the native window.prompt).
@@ -138,7 +141,6 @@ export default function QuotationBuilder({
   // The quote whose PDF is being generated (puppeteer takes a few seconds).
   // Drives the per-button spinner so a click gives immediate feedback instead
   // of sitting silent while the server renders.
-  const [pdfLoadingId, setPdfLoadingId] = useState<number | null>(null);
   const confirmedDeposit =
     lead.pre_survey_fee_type === "free"
       ? 0
@@ -175,26 +177,11 @@ export default function QuotationBuilder({
   const readyQuotes = currentQuotes.filter((q) =>
     ["draft", "changes_required"].includes(q.status),
   );
-  const pendingSolarCount = currentQuotes.filter(
-    (q) => q.status === "pending_solar_sup",
-  ).length;
-  const pendingSalesCount = currentQuotes.filter((q) =>
-    ["pending_sales_sup", "pending_approval"].includes(q.status),
-  ).length;
-  const progressSummary = readyQuotes.length
-    ? `${readyQuotes.map((q) => `ชุด ${q.option_no}`).join(" และ ")} พร้อมส่งให้ Solar Sup อนุมัติ · ลูกค้าจะเลือก 1 ฉบับในขั้น Order`
-    : pendingSolarCount
-      ? `${pendingSolarCount} ฉบับกำลังรอ Solar Sup อนุมัติ`
-      : pendingSalesCount
-        ? `${pendingSalesCount} ฉบับผ่าน Solar Sup แล้ว · กำลังรอ Sale Sup อนุมัติ`
-        : currentQuotes.length
-          ? "ใบเสนอราคาอนุมัติครบแล้ว"
-          : "สร้างฉบับร่างจาก Package Master เพื่อเริ่มต้น";
   const act = async (id: number, action: string, note = "", status = "") => {
     if (action === "approve") {
       const ok = await dialog.confirm({
         title: "ยืนยันการอนุมัติ",
-        variant: "warning",
+        variant: "success",
         confirmText: "อนุมัติ",
         message:
           status === "pending_solar_sup"
@@ -219,38 +206,23 @@ export default function QuotationBuilder({
       setBusy(false);
     }
   };
-  const openPdf = async (id: number, download = false) => {
-    if (pdfLoadingId !== null) return; // guard against a double-click mid-render
-    setPdfLoadingId(id);
-    try {
-      const response = await fetch(
-        `/api/quotation-pdf/${id}${download ? "?download=1" : ""}`,
-        { headers: { ...getUserIdHeader() } },
-      );
-      if (!response.ok) {
-        const data = await response.json().catch(() => null);
-        throw new Error(data?.error || "เปิด PDF ไม่สำเร็จ");
-      }
-      const blob = await response.blob();
-      const url = URL.createObjectURL(blob);
-      window.open(url, "_blank", "noopener,noreferrer");
-      setTimeout(() => URL.revokeObjectURL(url), 60000);
-    } catch (e) {
-      setError(e instanceof Error ? e.message : "เปิด PDF ไม่สำเร็จ");
-    } finally {
-      setPdfLoadingId(null);
-    }
+  // Navigate straight to the API instead of fetching a blob: a blob: URL drops
+  // the server's Content-Disposition, so the viewer's Download button saved the
+  // file under a random name. Going direct keeps
+  // "SSR-QT-26-0003_ชื่อลูกค้า.pdf". Opening in the same tick as the click also
+  // avoids the popup blocker (the old "first click does nothing" bug).
+  const openPdf = (id: number, download = false) => {
+    const params = new URLSearchParams();
+    if (download) params.set("download", "1");
+    const uid =
+      typeof window !== "undefined" ? window.localStorage.getItem("userId") : null;
+    if (uid) params.set("user_id", uid); // header auth isn't available on a plain navigation
+    const query = params.toString();
+    const url = `/api/quotation-pdf/${id}${query ? `?${query}` : ""}`;
+    const tab = window.open(url, "_blank");
+    if (tab) tab.opener = null;
+    else window.location.href = url;
   };
-  // Spinner-or-label for the "ดูใบเสนอราคา" buttons (4 status variants share it).
-  const viewPdfLabel = (id: number) =>
-    pdfLoadingId === id ? (
-      <span className="inline-flex items-center gap-1.5">
-        <span className="w-3 h-3 border-2 border-current border-t-transparent rounded-full animate-spin" />
-        กำลังสร้าง…
-      </span>
-    ) : (
-      "▣ ดูใบเสนอราคา"
-    );
   // Draft-only hard delete. Backend guards to status='draft' + admin/owner and
   // this button is shown only for drafts, so it never appears on a sent quote.
   const remove = async (id: number) => {
@@ -330,7 +302,7 @@ export default function QuotationBuilder({
                 </div>
                 <div className="mt-4 h-20 rounded-xl bg-gray-100" />
                 <div className="mt-2 h-6 w-40 rounded-full bg-gray-100" />
-                <div className="mt-auto pt-4 border-t border-gray-200 flex items-center justify-between">
+                <div className="mt-auto pt-4 flex items-center justify-between">
                   <div className="h-3 w-16 rounded bg-gray-100" />
                   <div className="h-6 w-24 rounded bg-gray-200" />
                 </div>
@@ -378,7 +350,8 @@ export default function QuotationBuilder({
                 <div className="text-xxs font-semibold text-gray-400">
                   แพ็กเกจหลัก
                 </div>
-                <div className="mt-1 font-bold text-sm text-gray-900 line-clamp-2">
+                {/* ชื่อ package เต็ม — ไม่ตัดบรรทัด (ชื่อยาวขึ้นบรรทัดใหม่ได้) */}
+                <div className="mt-1 font-bold text-sm text-gray-900 break-words">
                   {q.package_name_snapshot}
                 </div>
                 <div className="mt-1 text-xxs text-gray-500">
@@ -386,38 +359,37 @@ export default function QuotationBuilder({
                     ? `${pkg.phase || "-"} เฟส · ${pkg.inverter_brand || "ไม่ระบุ Inverter"}${pkg.has_battery ? ` · Battery ${pkg.battery_kwh || ""} kWh` : ""}`
                     : "Snapshot จาก Package Master"}
                 </div>
-              </div>
-              <div className="mt-2 min-h-8 flex flex-wrap content-start gap-1.5">
-                <span className="px-2 py-1 rounded-full bg-cyan-50 text-cyan-700 text-xxs">
-                  เอกสาร 15+2 หน้า
-                </span>
-                {extras.length ? (
-                  extras.slice(0, 2).map((item, index) => (
-                    <span
-                      key={item.id || index}
-                      className="px-2 py-1 rounded-full bg-violet-50 text-violet-700 text-xxs"
-                    >
-                      + {item.item_name_snapshot || item.item_name}
-                    </span>
-                  ))
-                ) : (
-                  <span className="px-2 py-1 rounded-full bg-gray-100 text-gray-500 text-xxs">
-                    ไม่มีรายการอื่น
-                  </span>
-                )}
-                {extras.length > 2 && (
-                  <span className="px-2 py-1 rounded-full bg-violet-50 text-violet-700 text-xxs">
-                    +{extras.length - 2} รายการ
-                  </span>
+                {/* รายการเสริม (package เพิ่มเติม / อุปกรณ์อื่น) — บอกให้ครบว่าใบนี้มีอะไรบ้าง */}
+                {extras.length > 0 && (
+                  <div className="mt-2 pt-2 border-t border-gray-200 space-y-0.5">
+                    <div className="text-xxs font-semibold text-gray-400">
+                      รายการเสริม ({extras.length})
+                    </div>
+                    {extras.map((item, index) => (
+                      <div key={item.id || index} className="text-xxs text-gray-600 break-words">
+                        + {item.item_name_snapshot || item.item_name}
+                        {item.quantity ? ` ${item.quantity} ${item.unit || ""}` : ""}
+                      </div>
+                    ))}
+                  </div>
                 )}
               </div>
+              {/* ผู้จัดทำ + วันเวลาที่สร้าง — ใต้กล่องแพ็กเกจ เต็มความกว้างการ์ด */}
+              {q.created_by_name && (
+                <div className="mt-2 text-xxs text-gray-500 break-words">
+                  ผู้จัดทำ: {q.created_by_name}
+                  {q.created_at
+                    ? ` · ${formatThaiDateShort(q.created_at)} ${formatThaiTime(q.created_at)} น.`
+                    : ""}
+                </div>
+              )}
               {q.approval_note && (
                 <div className="mt-2 text-xs text-red-600 line-clamp-2">
                   ส่งกลับโดย {q.returned_by_role || "ผู้อนุมัติ"}
                   {q.returned_by_name ? ` (${q.returned_by_name})` : ""}: {q.approval_note}
                 </div>
               )}
-              <div className="mt-auto pt-4 border-t border-gray-200 flex items-end justify-between">
+              <div className="mt-auto pt-4 flex items-end justify-between">
                 <span className="text-xxs text-gray-400">ยอดที่ต้องชำระ</span>
                 <div className="text-right">
                   <b className="text-xl text-gray-900 tabular-nums">
@@ -436,11 +408,10 @@ export default function QuotationBuilder({
                       ✎ แก้ไข
                     </button>
                     <button
-                      disabled={pdfLoadingId === q.id}
                       onClick={() => openPdf(q.id)}
                       className="flex-1 h-9 rounded-lg border border-gray-200 text-gray-700 text-xs font-semibold"
                     >
-                      {viewPdfLabel(q.id)}
+                      ▣ ดูใบเสนอราคา
                     </button>
                     {q.status === "draft" && (
                       <button
@@ -459,11 +430,10 @@ export default function QuotationBuilder({
                 ) : isPendingQuotation(q.status) && canReviewQuotation(q.status) ? (
                   <>
                     <button
-                      disabled={pdfLoadingId === q.id}
                       onClick={() => openPdf(q.id)}
                       className="h-9 rounded-lg border border-gray-200 text-xs font-semibold"
                     >
-                      {viewPdfLabel(q.id)}
+                      ▣ ดูใบเสนอราคา
                     </button>
                     <button
                       disabled={busy}
@@ -488,11 +458,10 @@ export default function QuotationBuilder({
                 ) : q.status === "approved" ? (
                   <>
                     <button
-                      disabled={pdfLoadingId === q.id}
                       onClick={() => openPdf(q.id)}
                       className="col-span-2 h-9 rounded-lg border border-gray-200 text-xs font-semibold"
                     >
-                      {viewPdfLabel(q.id)}
+                      ▣ ดูใบเสนอราคา
                     </button>
                     <button
                       disabled={busy}
@@ -505,11 +474,10 @@ export default function QuotationBuilder({
                 ) : (
                   <>
                     <button
-                      disabled={pdfLoadingId === q.id}
                       onClick={() => openPdf(q.id)}
                       className="col-span-3 h-9 rounded-lg border border-gray-200 text-xs font-semibold"
                     >
-                      {viewPdfLabel(q.id)}
+                      ▣ ดูใบเสนอราคา
                     </button>
                   </>
                 )}
@@ -539,24 +507,6 @@ export default function QuotationBuilder({
           );
         })}
       </div>
-      <div className="rounded-xl border border-violet-200 bg-white p-4 flex flex-col md:flex-row md:items-center gap-3">
-        <div className="w-10 h-10 rounded-xl bg-violet-100 text-violet-600 flex items-center justify-center text-xl shrink-0">
-          ✓
-        </div>
-        <div className="flex-1">
-          <div className="text-sm font-bold text-gray-900">
-            {currentQuotes.length
-              ? `มีใบเสนอราคา ${currentQuotes.length} ฉบับ`
-              : `ยังไม่มีใบเสนอราคา`}
-          </div>
-          <div className="text-xs text-gray-400 mt-0.5">
-            {progressSummary}
-          </div>
-        </div>
-        <div className="text-xs text-gray-500 whitespace-nowrap">
-          <b className="text-gray-800">{currentQuotes.length}</b>/3 ฉบับ
-        </div>
-      </div>
       <div>
         <label className="text-xs font-semibold tracking-wider uppercase text-gray-400 block mb-1">
           บันทึกถึงฝ่ายขาย
@@ -565,19 +515,8 @@ export default function QuotationBuilder({
           value={salesNote}
           onChange={(e) => onSalesNoteChange(e.target.value)}
           placeholder="รายละเอียดใบเสนอราคา, หมายเหตุ..."
-          rows={2}
+          rows={3}
           className="w-full px-3 py-2 rounded-lg border border-gray-200 bg-white text-sm focus:outline-none focus:border-primary resize-none"
-        />
-      </div>
-      <div>
-        <label className="text-xs font-semibold tracking-wider uppercase text-gray-400 block mb-1">
-          ผู้จัดทำ
-        </label>
-        <input
-          type="text"
-          value={me?.full_name || ""}
-          readOnly
-          className="w-full h-11 px-3 rounded-lg border border-gray-200 bg-white text-sm text-gray-700"
         />
       </div>
       {currentQuotes.length > 0 && (
@@ -813,19 +752,26 @@ function QuotationEditor({
     {
       label: "แพ็กเกจมาตรฐาน (Solar Rooftop)",
       icon: "☀️",
-      items: packages.filter((p) => !/scale\s*up|battery|batt/i.test(p.name)),
+      items: packages.filter(
+        (p) => !p.has_battery && !p.is_upgrade && !p.is_other,
+      ),
     },
     {
       label: "แพ็กเกจเพิ่มขนาดระบบ (Scale Up)",
       icon: "📈",
-      items: packages.filter(
-        (p) => /scale\s*up/i.test(p.name) && !/battery|batt/i.test(p.name),
-      ),
+      items: packages.filter((p) => p.is_upgrade && !p.is_other),
     },
     {
       label: "แพ็กเกจแบตเตอรี่ / Hybrid",
       icon: "🔋",
-      items: packages.filter((p) => /battery|batt/i.test(p.name)),
+      items: packages.filter(
+        (p) => p.has_battery && !p.is_upgrade && !p.is_other,
+      ),
+    },
+    {
+      label: "Package อื่นๆ",
+      icon: "📦",
+      items: packages.filter((p) => p.is_other),
     },
   ].filter((group) => group.items.length > 0);
   const extras = items.reduce(
@@ -997,6 +943,14 @@ function QuotationEditor({
       return;
     }
     setError("");
+    // Same popup-blocker rule as openPdf: claim the tab during the click.
+    const tab = window.open("", "_blank");
+    if (tab) {
+      tab.opener = null;
+      tab.document.write(
+        '<!doctype html><meta charset="utf-8"><title>กำลังสร้างตัวอย่าง…</title><body style="font-family:sans-serif;display:flex;align-items:center;justify-content:center;height:100vh;margin:0;color:#475569">กำลังสร้างตัวอย่าง…</body>',
+      );
+    }
     try {
       const response = await fetch("/api/quotation-pdf/preview", {
         method: "POST",
@@ -1028,12 +982,11 @@ function QuotationEditor({
         throw new Error(data?.error || "สร้างตัวอย่างไม่สำเร็จ");
       }
       const { token } = await response.json();
-      window.open(
-        `/quotation-preview/preview-${token}`,
-        "_blank",
-        "noopener,noreferrer",
-      );
+      const previewUrl = `/quotation-preview/preview-${token}`;
+      if (tab) tab.location.href = previewUrl;
+      else window.location.href = previewUrl;
     } catch (e) {
+      tab?.close();
       setError(e instanceof Error ? e.message : "สร้างตัวอย่างไม่สำเร็จ");
     }
   };
@@ -1095,7 +1048,7 @@ function QuotationEditor({
     "min-h-[46px] w-full rounded-lg border border-gray-200 bg-white px-2.5 py-2 text-xs text-gray-800 outline-none transition-colors placeholder:text-gray-300 hover:border-gray-300 focus:border-primary focus:ring-2 focus:ring-primary/10";
   return (
     <div className="fixed inset-0 z-[80] overflow-y-auto bg-slate-900/35 p-3 backdrop-blur-[1px] md:p-8">
-      <div className="mx-auto max-w-4xl overflow-hidden rounded-2xl border border-gray-200 bg-white shadow-2xl shadow-slate-900/20">
+      <div className="mx-auto max-w-6xl overflow-hidden rounded-2xl border border-gray-200 bg-white shadow-2xl shadow-slate-900/20">
         <div className="sticky top-0 z-10 flex items-center justify-between border-b border-gray-200 bg-gradient-to-r from-white via-white to-primary/5 p-4">
           <div>
             <b className="text-sm text-gray-900">ใบเสนอราคา ชุด {optionNo}</b>
@@ -1148,7 +1101,7 @@ function QuotationEditor({
                 <optgroup key={group.label} label={group.label}>
                   {group.items.map((p) => (
                     <option key={p.id} value={p.id}>
-                      {group.icon} {p.name}{p.phase ? ` · ${p.phase} เฟส` : ""} — {formatTHB(p.price)} บาท
+                      {group.icon} {p.name} · {formatPackageSpecs(p)} — {formatTHB(p.price)} บาท
                     </option>
                   ))}
                 </optgroup>
@@ -1285,7 +1238,7 @@ function QuotationEditor({
                                   key={candidate.id}
                                   value={String(candidate.id)}
                                 >
-                                  {group.icon} {candidate.name}{candidate.phase ? ` · ${candidate.phase} เฟส` : ""} — {formatTHB(candidate.price)} บาท
+                                  {group.icon} {candidate.name} · {formatPackageSpecs(candidate)} — {formatTHB(candidate.price)} บาท
                                 </option>
                               ))}
                           </optgroup>

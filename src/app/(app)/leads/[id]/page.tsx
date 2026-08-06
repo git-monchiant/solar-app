@@ -1223,7 +1223,7 @@ export default function LeadDetailPage({ params }: { params: Promise<{ id: strin
           )}
         </div>
         {/* Right column header (desktop only) — aligns with the right panel */}
-        <div className="hidden md:flex w-96 border-l border-gray-200 px-4 items-center py-3 text-xs font-semibold uppercase tracking-wider text-gray-500 gap-1.5">
+        <div className="hidden md:flex w-80 border-l border-gray-200 px-4 items-center py-3 text-xs font-semibold uppercase tracking-wider text-gray-500 gap-1.5">
           <ClockIcon className="w-4 h-4" strokeWidth={2} />
           Activity Log <span className="ml-1 text-gray-400 normal-case">{activities.length}</span>
         </div>
@@ -2417,7 +2417,7 @@ export default function LeadDetailPage({ params }: { params: Promise<{ id: strin
 
       {/* Desktop right panel — Activity Log content (header is in the sticky
           page header above to align with the Workflow/Info tabs). */}
-      <aside className="hidden md:flex w-96 border-l border-gray-200 bg-gray-50/30 flex-col min-h-0">
+      <aside className="hidden md:flex w-80 border-l border-gray-200 bg-gray-50/30 flex-col min-h-0">
         <div className="flex-1 overflow-y-auto p-4">
           <ActivityTimeline activities={activities} loading={loadingAct} />
         </div>

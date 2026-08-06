@@ -102,6 +102,31 @@ export default function OrderStep({ lead, state, refresh, expanded, onToggle }: 
   // quotation_doc_no are synced from the chosen entry.
   const quoteOptions = parseQuotationFiles(lead.quotation_files, lead.quotation_doc_no || "", lead.quotation_amount || 0);
   const [pickingQuote, setPickingQuote] = useState(false);
+  // Generated quotation PDFs (/api/quotation-pdf/<id>/<name>.pdf) carry the file
+  // name in the URL path purely for the browser — the route resolves by id and
+  // ignores that segment. Browsers that skip Content-Disposition fall back to
+  // it, so weave the customer name in: "SSR-QT-26-0003_ชื่อลูกค้า.pdf".
+  //
+  // Only that API shape may be rewritten. Legacy leads (quotation v1) stored
+  // hand-uploaded files under /uploads/<real-file>.pdf — renaming that segment
+  // would point at a file that does not exist (404), so those pass through
+  // untouched.
+  const isGeneratedQuotationUrl = (url: string) =>
+    url.split("?")[0].startsWith("/api/quotation-pdf/");
+  const quotationFileName = (url: string) => {
+    const base = decodeURIComponent(url.split("?")[0].split("/").pop() || "");
+    if (!isGeneratedQuotationUrl(url)) return base; // legacy upload — show as stored
+    const stem = base.replace(/\.pdf$/i, "");
+    const customer = (lead.full_name || "").trim().replace(/[\\/:*?"<>|]/g, "").replace(/\s+/g, "_");
+    return `${customer ? `${stem}_${customer}` : stem}.pdf`;
+  };
+  const quotationHref = (url: string) => {
+    if (!isGeneratedQuotationUrl(url)) return url; // never touch stored file paths
+    const [path, query] = url.split("?");
+    const parts = path.split("/");
+    parts[parts.length - 1] = encodeURIComponent(quotationFileName(url));
+    return `${parts.join("/")}${query ? `?${query}` : ""}`;
+  };
   const acceptedIdx = lead.quotation_accepted_idx;
   const acceptedQuote =
     acceptedIdx !== null && acceptedIdx !== undefined
@@ -171,6 +196,15 @@ export default function OrderStep({ lead, state, refresh, expanded, onToggle }: 
       setPickingQuote(false);
     }
   };
+  // Nothing picked yet? Default to the first quotation so Step 4 always has a
+  // total to work from — Sales can still switch to another option afterwards
+  // (until a payment is confirmed, which locks it via quoteLocked).
+  useEffect(() => {
+    if (acceptedIdx !== null && acceptedIdx !== undefined) return;
+    if (!quoteOptions.length || !canSelectQuotation || quoteLocked || pickingQuote) return;
+    pickQuote(0);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [acceptedIdx, quoteOptions.length, canSelectQuotation, quoteLocked]);
   const [discountPct, setDiscountPct] = useState<number>(lead.order_discount_pct ?? 0);
   const [discountAmount, setDiscountAmount] = useState<number>(lead.order_discount_amount ?? 0);
   const [discountNote, setDiscountNote] = useState<string>(lead.order_discount_note ?? "");
@@ -998,12 +1032,13 @@ export default function OrderStep({ lead, state, refresh, expanded, onToggle }: 
           {(() => {
             const accepted = acceptedIdx !== null && acceptedIdx !== undefined ? quoteOptions[acceptedIdx] : null;
             if (!accepted) return null;
-            const fileName = accepted.url.split("/").pop() || "ไฟล์ใบเสนอราคา";
+            const fileName = quotationFileName(accepted.url);
+            const href = quotationHref(accepted.url);
             const isImage = /\.(jpg|jpeg|png|gif|webp)$/i.test(accepted.url);
             return (
               <div className="rounded-lg bg-orange-50 border border-orange-200 p-3">
                 <div className="text-xs font-bold text-orange-600 uppercase mb-2">ใบเสนอราคาที่ลูกค้าเลือก{accepted.doc_no ? ` · ${accepted.doc_no}` : ""}</div>
-                <a href={accepted.url} onClick={fileViewer.handler(accepted.url, `ใบเสนอราคา${accepted.doc_no ? ` ${accepted.doc_no}` : ""}`)} className="flex items-center gap-2 px-3 py-2 rounded-lg bg-white border border-orange-100 hover:bg-orange-50 transition-colors">
+                <a href={href} onClick={fileViewer.handler(href, `ใบเสนอราคา${accepted.doc_no ? ` ${accepted.doc_no}` : ""}`)} className="flex items-center gap-2 px-3 py-2 rounded-lg bg-white border border-orange-100 hover:bg-orange-50 transition-colors">
                   <svg className="w-4 h-4 text-orange-400 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
                     <path strokeLinecap="round" strokeLinejoin="round" d={isImage ? "M2.25 15.75l5.159-5.159a2.25 2.25 0 013.182 0l5.159 5.159m-1.5-1.5l1.409-1.41a2.25 2.25 0 013.182 0l2.909 2.91M3.75 21h16.5a2.25 2.25 0 002.25-2.25V5.25A2.25 2.25 0 0020.25 3H3.75A2.25 2.25 0 001.5 5.25v13.5A2.25 2.25 0 003.75 21z" : "M19.5 14.25v-2.625a3.375 3.375 0 00-3.375-3.375h-1.5A1.125 1.125 0 0113.5 7.125v-1.5a3.375 3.375 0 00-3.375-3.375H8.25m2.25 0H5.625c-.621 0-1.125.504-1.125 1.125v17.25c0 .621.504 1.125 1.125 1.125h12.75c.621 0 1.125-.504 1.125-1.125V11.25a9 9 0 00-9-9z"} />
                   </svg>
@@ -1016,17 +1051,34 @@ export default function OrderStep({ lead, state, refresh, expanded, onToggle }: 
 
           <div>
             <label className="text-xs font-semibold tracking-wider uppercase text-gray-400 block mb-1">จำนวนเงินตามใบเสนอราคา (บาท)</label>
-            <input type="number" value={total || ""} onChange={e => setTotal(parseFloat(e.target.value) || 0)} placeholder="0"
-              min={depositPaid || 0}
-              className={`w-full h-14 px-3 rounded-lg border text-2xl font-bold font-mono focus:outline-none ${
-                depositPaid > 0 && total > 0 && total < depositPaid
-                  ? "border-red-400 focus:border-red-500"
-                  : "border-gray-200 focus:border-primary"
-              }`} />
-            {depositPaid > 0 && total > 0 && total < depositPaid && (
-              <div className="text-xs text-red-600 mt-1">
-                ต้องไม่ต่ำกว่าค่าสำรวจที่จ่ายแล้ว (฿{fmt(depositPaid)})
-              </div>
+            {/* ยอดต้องตรงกับใบเสนอราคาที่ลูกค้าเลือกเสมอ — แก้มือไม่ได้ ป้องกัน
+                ยอดใน Step 4 หลุดจากเอกสารที่อนุมัติไปแล้ว (เปลี่ยนได้โดยเลือก
+                ใบเสนอราคาอีกฉบับในขั้นก่อนหน้า). Lead เก่าที่ไม่มีใบเสนอราคา
+                ในระบบยังกรอกเองได้ */}
+            {acceptedQuote ? (
+              <>
+                <div className="w-full h-14 px-3 rounded-lg border border-gray-200 bg-gray-50 text-2xl font-bold font-mono text-gray-800 flex items-center">
+                  {fmt(total)}
+                </div>
+                <div className="text-xs text-gray-400 mt-1">
+                  ยอดตามใบเสนอราคา {acceptedQuote.doc_no || ""} · แก้ไขโดยเลือกใบเสนอราคาฉบับอื่น
+                </div>
+              </>
+            ) : (
+              <>
+                <input type="number" value={total || ""} onChange={e => setTotal(parseFloat(e.target.value) || 0)} placeholder="0"
+                  min={depositPaid || 0}
+                  className={`w-full h-14 px-3 rounded-lg border text-2xl font-bold font-mono focus:outline-none ${
+                    depositPaid > 0 && total > 0 && total < depositPaid
+                      ? "border-red-400 focus:border-red-500"
+                      : "border-gray-200 focus:border-primary"
+                  }`} />
+                {depositPaid > 0 && total > 0 && total < depositPaid && (
+                  <div className="text-xs text-red-600 mt-1">
+                    ต้องไม่ต่ำกว่าค่าสำรวจที่จ่ายแล้ว (฿{fmt(depositPaid)})
+                  </div>
+                )}
+              </>
             )}
           </div>
 
@@ -1766,7 +1818,8 @@ export default function OrderStep({ lead, state, refresh, expanded, onToggle }: 
               </div>
               <div className={`grid gap-2 ${visibleQuoteOptions.length > 1 ? "grid-cols-1 md:grid-cols-3" : "grid-cols-1"}`}>
                 {visibleQuoteOptions.map(({ option: opt, originalIndex: i }) => {
-                  const fileName = opt.url.split("?")[0].split("/").pop() || `ไฟล์ ${i + 1}`;
+                  const fileName = quotationFileName(opt.url) || `ไฟล์ ${i + 1}`;
+                  const optHref = quotationHref(opt.url);
                   const isImage = /\.(jpg|jpeg|png|gif|webp)$/i.test(opt.url);
                   const isAccepted = acceptedIdx === i;
                   const isSelectable = canSelectQuotation && !quoteLocked && !isAccepted;
@@ -1780,11 +1833,11 @@ export default function OrderStep({ lead, state, refresh, expanded, onToggle }: 
                         {isAccepted && <div className="text-xxs font-bold text-emerald-700 bg-emerald-100 px-2 py-0.5 rounded-full">เลือกแล้ว</div>}
                       </div>
                       <a
-                        href={opt.url}
+                        href={optHref}
                         onClick={(event) => {
                           event.stopPropagation();
                           fileViewer.handler(
-                            opt.url,
+                            optHref,
                             `ใบเสนอราคา ชุด ${i + 1}`,
                           )(event);
                         }}

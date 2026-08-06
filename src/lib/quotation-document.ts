@@ -53,6 +53,78 @@ export type QuotationDocumentSnapshot = {
   financial: FinancialSnapshot;
 };
 
+export async function expandOtherPackageAddOns(
+  items: Array<Record<string, unknown>>,
+  transaction?: InstanceType<typeof sql.Transaction>,
+): Promise<Array<Record<string, unknown>>> {
+  const db = transaction ? null : await getDb();
+  const expanded: Array<Record<string, unknown>> = [];
+
+  for (const item of items) {
+    if (item.source_type === "package") {
+      expanded.push(item);
+      continue;
+    }
+
+    const packageId = Number(item.source_package_id) || null;
+    const packageName = String(item.item_name_snapshot || item.item_name || "")
+      .replace(/^Package เพิ่มเติม:\s*/i, "")
+      .trim();
+    if (!packageId && !packageName) {
+      expanded.push(item);
+      continue;
+    }
+
+    const packageRequest = transaction ? new sql.Request(transaction) : db!.request();
+    const packageResult = await packageRequest
+      .input("packageId", sql.Int, packageId)
+      .input("packageName", sql.NVarChar(200), packageName)
+      .query(`
+        SELECT TOP 1 id
+        FROM packages
+        WHERE is_active=1 AND is_other=1
+          AND ((@packageId IS NOT NULL AND id=@packageId) OR LTRIM(RTRIM(name))=@packageName)
+        ORDER BY CASE WHEN id=@packageId THEN 0 ELSE 1 END, id DESC
+      `);
+    const matchedPackageId = Number(packageResult.recordset[0]?.id);
+    if (!matchedPackageId) {
+      expanded.push(item);
+      continue;
+    }
+
+    const itemRequest = transaction ? new sql.Request(transaction) : db!.request();
+    const packageItems = (await itemRequest
+      .input("packageId", sql.Int, matchedPackageId)
+      .query(`
+        SELECT id package_item_id, item_name item_name_snapshot, quantity, unit
+        FROM package_items
+        WHERE package_id=@packageId AND is_active=1
+        ORDER BY sort_order,id
+      `)).recordset as Array<Record<string, unknown>>;
+    if (packageItems.length === 0) {
+      expanded.push(item);
+      continue;
+    }
+
+    const [firstItem, ...detailItems] = packageItems;
+    expanded.push({
+      ...item,
+      ...firstItem,
+      source_type: "addon_package",
+      source_package_id: matchedPackageId,
+    });
+    expanded.push(...detailItems.map(detail => ({
+      ...detail,
+      source_type: "addon_package_detail",
+      source_package_id: matchedPackageId,
+      unit_price: 0,
+      line_total: 0,
+    })));
+  }
+
+  return expanded;
+}
+
 const round2 = (value: number) => Math.round((value + Number.EPSILON) * 100) / 100;
 
 export function parseDocumentInputs(raw: unknown, fallback: Partial<QuotationDocumentInputs> = {}): QuotationDocumentInputs {
@@ -164,7 +236,7 @@ export async function buildQuotationDocumentSnapshot(quotationId: number, transa
       COALESCE(NULLIF(l.project_alias,N''),NULLIF(l.project_name,N''),pr.name) project_display_name,
       owner.full_name assigned_name, surveyor.full_name survey_completed_by_name,
       creator.full_name created_by_name, creator.job_title created_by_title,
-      p.name package_current_name, p.kwp, p.phase, p.is_upgrade, p.has_panel,
+      p.name package_current_name, p.kwp, p.phase, p.is_upgrade, p.is_other, p.has_panel,
       p.has_inverter, p.has_battery, p.battery_kwh, p.battery_brand,
       p.battery_model, p.inverter_kw, p.inverter_brand, p.inverter_model,
       p.installed_kwp, p.panel_count, p.panel_watt, p.panel_brand, p.warranty_years
@@ -185,7 +257,7 @@ export async function buildQuotationDocumentSnapshot(quotationId: number, transa
   const row = sets[0]?.[0];
   if (!row) return null;
   const quotationKeys = new Set(["id","lead_id","option_no","doc_no","revision_no","status","package_id","package_name_snapshot","package_price_snapshot","issue_date","valid_days","subtotal_incl_vat","discount_label","discount_type","discount_value","discount_amount","discount_reason","contract_total_incl_vat","deposit_paid_amount","outstanding_amount","vat_rate","amount_before_vat","vat_amount","payment_terms_json","terms_text","note","created_by","created_by_name","created_by_title","submitted_at","approved_at","approver_name_snapshot","approver_title_snapshot","project_display_name"]);
-  const packageKeys = new Set(["package_id","package_current_name","kwp","installed_kwp","phase","is_upgrade","has_panel","has_inverter","has_battery","battery_kwh","battery_brand","battery_model","solar_panels","panel_count","panel_watt","panel_brand","inverter_kw","inverter_brand","inverter_model","warranty_years"]);
+  const packageKeys = new Set(["package_id","package_current_name","kwp","installed_kwp","phase","is_upgrade","is_other","has_panel","has_inverter","has_battery","battery_kwh","battery_brand","battery_model","solar_panels","panel_count","panel_watt","panel_brand","inverter_kw","inverter_brand","inverter_model","warranty_years"]);
   const quotation: Record<string, unknown> = {};
   const pkg: Record<string, unknown> = {};
   const lead: Record<string, unknown> = {};
@@ -209,7 +281,7 @@ export async function buildQuotationDocumentSnapshot(quotationId: number, transa
     lead,
     lead_data: sets[1]?.[0] || {},
     package: pkg,
-    items: sets[2] || [],
+    items: await expandOtherPackageAddOns(sets[2] || [], transaction),
     settings: Object.fromEntries((sets[3] || []).map(setting => [String(setting.key), String(setting.value || "")])),
     financial,
   };

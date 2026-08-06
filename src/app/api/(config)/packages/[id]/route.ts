@@ -21,6 +21,7 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
       has_panel: { type: sql.Bit, value: body.has_panel },
       has_inverter: { type: sql.Bit, value: body.has_inverter },
       is_upgrade: { type: sql.Bit, value: body.is_upgrade },
+      is_other: { type: sql.Bit, value: body.is_other },
       battery_kwh: { type: sql.Decimal(5, 1), value: body.battery_kwh },
       battery_brand: { type: sql.NVarChar(50), value: body.battery_brand },
       battery_model: { type: sql.NVarChar(150), value: body.battery_model },

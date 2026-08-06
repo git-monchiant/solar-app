@@ -40,6 +40,8 @@ export async function GET(req: NextRequest) {
       q.status,
       q.package_name_snapshot,
       q.contract_total_incl_vat,
+      -- ยอดที่ลูกค้าต้องชำระจริง (หักมัดจำแล้ว) — ต้องตรงกับ "รวมยอดที่ต้องชำระสุทธิ" ในใบเสนอราคา
+      q.outstanding_amount,
       q.submitted_at,
       q.solar_approved_at,
       l.id lead_id,

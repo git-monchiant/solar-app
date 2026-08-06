@@ -1,9 +1,10 @@
 "use client";
 
 import Header from "@/components/layout/Header";
-import { apiFetch, getUserIdHeader } from "@/lib/api";
+import { apiFetch } from "@/lib/api";
 import { hasRole, useActiveRoles } from "@/lib/roles";
 import { formatTHB, formatThaiDate } from "@/lib/utils/formatters";
+import { useDialog } from "@/components/ui/Dialog";
 import Link from "next/link";
 import { useCallback, useEffect, useMemo, useState } from "react";
 
@@ -14,6 +15,7 @@ type Row = {
   status: string;
   package_name_snapshot: string;
   contract_total_incl_vat: number;
+  outstanding_amount: number;
   submitted_at: string;
   lead_id: number;
   customer_name: string;
@@ -30,6 +32,7 @@ type LeadGroup = {
 
 export default function QuotationApprovalsPage() {
   const { activeRoles } = useActiveRoles();
+  const dialog = useDialog();
   const [rows, setRows] = useState<Row[]>([]);
   const [search, setSearch] = useState("");
   const [loading, setLoading] = useState(true);
@@ -102,15 +105,17 @@ export default function QuotationApprovalsPage() {
     kind: "changes_required" | "approve",
     note = "",
   ) => {
-    if (
-      kind === "approve" &&
-      !window.confirm(
-        quote.status === "pending_solar_sup"
-          ? "ยืนยันว่า Solar Sup ตรวจเอกสารแล้ว และส่งต่อให้ Sale Sup อนุมัติขั้นสุดท้าย"
-          : "ยืนยันว่าได้ตรวจและรับรองข้อมูล Survey, Package, ราคา เงื่อนไขชำระเงิน และเอกสารทั้ง 17 หน้าแล้ว",
-      )
-    ) {
-      return;
+    if (kind === "approve") {
+      const ok = await dialog.confirm({
+        title: "ยืนยันการอนุมัติ",
+        variant: "success",
+        confirmText: "อนุมัติ",
+        message:
+          quote.status === "pending_solar_sup"
+            ? "ยืนยันว่า Solar Sup ตรวจเอกสารแล้ว และส่งต่อให้ Sale Sup อนุมัติขั้นสุดท้าย"
+            : "ยืนยันว่าได้ตรวจและรับรองข้อมูล Survey, Package, ราคา เงื่อนไขชำระเงิน และเอกสารทั้ง 17 หน้าแล้ว",
+      });
+      if (!ok) return;
     }
 
     setBusy(quote.id);
@@ -155,22 +160,16 @@ export default function QuotationApprovalsPage() {
     void action(rejectQuote, "changes_required", reason);
   };
 
-  const openPdf = async (id: number) => {
-    setError("");
-    try {
-      const response = await fetch(`/api/quotation-pdf/${id}`, {
-        headers: { ...getUserIdHeader() },
-      });
-      if (!response.ok) {
-        const data = await response.json().catch(() => null);
-        throw new Error(data?.error || "เปิดใบเสนอราคาไม่สำเร็จ");
-      }
-      const url = URL.createObjectURL(await response.blob());
-      window.open(url, "_blank", "noopener,noreferrer");
-      setTimeout(() => URL.revokeObjectURL(url), 60_000);
-    } catch (e) {
-      setError(e instanceof Error ? e.message : "เปิดใบเสนอราคาไม่สำเร็จ");
-    }
+  // Direct navigation (not a blob) so the server's Content-Disposition —
+  // "SSR-QT-26-0003_ชื่อลูกค้า.pdf" — survives into the viewer's Download
+  // button. Opening in the click tick also dodges the popup blocker.
+  const openPdf = (id: number) => {
+    const uid =
+      typeof window !== "undefined" ? window.localStorage.getItem("userId") : null;
+    const url = `/api/quotation-pdf/${id}${uid ? `?user_id=${uid}` : ""}`;
+    const tab = window.open(url, "_blank");
+    if (tab) tab.opener = null;
+    else window.location.href = url;
   };
 
   return (
@@ -233,16 +232,18 @@ export default function QuotationApprovalsPage() {
                 <header className="border-b border-gray-200 bg-slate-50/80 px-4 py-3">
                   <div className="min-w-0">
                     <div className="flex flex-wrap items-center gap-2">
+                      {/* focus=1 — เปิดหน้า lead ในโหมดโฟกัสขั้นตอนปัจจุบัน
+                          (ผู้อนุมัติเข้ามาดูใบเสนอราคาโดยตรง ไม่ต้องเลื่อนหา) */}
                       <Link
-                        href={`/leads/${group.leadId}`}
+                        href={`/leads/${group.leadId}?focus=1`}
                         className="font-semibold text-gray-900 hover:text-primary"
                       >
                         {group.customerName}
                       </Link>
-                      <span className="rounded-md bg-primary/10 px-2 py-0.5 text-[11px] font-semibold text-primary">
+                      <span className="rounded-md bg-primary/10 px-2 py-0.5 text-xxs font-semibold text-primary">
                         Lead #{group.leadId}
                       </span>
-                      <span className="rounded-md bg-violet-50 px-2 py-0.5 text-[11px] font-semibold text-violet-700">
+                      <span className="rounded-md bg-violet-50 px-2 py-0.5 text-xxs font-semibold text-violet-700">
                         {group.quotes.length} ฉบับ
                       </span>
                     </div>
@@ -265,20 +266,20 @@ export default function QuotationApprovalsPage() {
                             <span className="font-mono text-xs font-bold text-gray-900">
                               {quote.doc_no}
                             </span>
-                            <span className="rounded bg-gray-100 px-2 py-1 text-[11px] font-semibold text-gray-600">
+                            <span className="rounded bg-gray-100 px-2 py-1 text-xxs font-semibold text-gray-600">
                               ชุด {quote.option_no}
                             </span>
-                            <span className="rounded bg-cyan-50 px-2 py-1 text-[11px] font-semibold text-cyan-700">
+                            <span className="rounded bg-cyan-50 px-2 py-1 text-xxs font-semibold text-cyan-700">
                               17 หน้า
                             </span>
-                            <span className={`rounded px-2 py-1 text-[11px] font-semibold ${quote.status === "pending_solar_sup" ? "bg-amber-50 text-amber-700" : "bg-violet-50 text-violet-700"}`}>
+                            <span className={`rounded px-2 py-1 text-xxs font-semibold ${quote.status === "pending_solar_sup" ? "bg-amber-50 text-amber-700" : "bg-violet-50 text-violet-700"}`}>
                               รอ {quote.status === "pending_solar_sup" ? "Solar Sup" : "Sale Sup"}
                             </span>
                           </div>
                           <div className="mt-1 text-sm font-semibold text-gray-800">
                             {quote.package_name_snapshot}
                           </div>
-                          <div className="mt-0.5 text-[11px] text-gray-400">
+                          <div className="mt-0.5 text-xxs text-gray-400">
                             ส่งขออนุมัติ {formatThaiDate(quote.submitted_at, { time: true, buddhist: true })}
                             {quote.status === "pending_sales_sup" && quote.solar_approved_by_name && (
                               <span className="ml-2 text-emerald-600">
@@ -290,9 +291,15 @@ export default function QuotationApprovalsPage() {
 
                         <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
                           <div className="min-w-32 sm:text-right">
+                            {/* ยอดสุทธิหลังหักมัดจำ — ตรงกับ "รวมยอดที่ต้องชำระสุทธิ" ในใบเสนอราคา */}
                             <div className="font-mono text-lg font-bold tabular-nums text-gray-900">
-                              {formatTHB(quote.contract_total_incl_vat)} บาท
+                              {formatTHB(quote.outstanding_amount)} บาท
                             </div>
+                            {Number(quote.contract_total_incl_vat) !== Number(quote.outstanding_amount) && (
+                              <div className="text-xxs text-gray-400 mt-0.5">
+                                ราคาเต็ม {formatTHB(quote.contract_total_incl_vat)} · หักมัดจำ {formatTHB(Number(quote.contract_total_incl_vat) - Number(quote.outstanding_amount))}
+                              </div>
+                            )}
                           </div>
                           <div className="grid grid-cols-3 gap-2">
                             <button
