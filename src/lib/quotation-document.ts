@@ -61,7 +61,11 @@ export async function expandOtherPackageAddOns(
   const expanded: Array<Record<string, unknown>> = [];
 
   for (const item of items) {
-    if (item.source_type === "package") {
+    if (
+      item.source_type === "package" ||
+      item.source_type === "addon_package" ||
+      item.source_type === "addon_package_detail"
+    ) {
       expanded.push(item);
       continue;
     }
@@ -82,7 +86,7 @@ export async function expandOtherPackageAddOns(
       .query(`
         SELECT TOP 1 id
         FROM packages
-        WHERE is_active=1 AND is_other=1
+        WHERE is_active=1 AND (is_other=1 OR is_upgrade=1)
           AND ((@packageId IS NOT NULL AND id=@packageId) OR LTRIM(RTRIM(name))=@packageName)
         ORDER BY CASE WHEN id=@packageId THEN 0 ELSE 1 END, id DESC
       `);
@@ -249,7 +253,7 @@ export async function buildQuotationDocumentSnapshot(quotationId: number, transa
     LEFT JOIN users creator ON creator.id=q.created_by
     WHERE q.id=@id;
     SELECT TOP 1 * FROM lead_data WHERE lead_id=(SELECT lead_id FROM quotations WHERE id=@id);
-    SELECT source_type,item_name_snapshot,quantity,unit,unit_price,line_total,sort_order
+    SELECT source_type,package_item_id,item_name_snapshot,quantity,unit,unit_price,line_total,sort_order
       FROM quotation_items WHERE quotation_id=@id ORDER BY sort_order,id;
     SELECT [key],value FROM app_settings WHERE [key] IN ('bank_account_bank','bank_account_branch','bank_account_number','bank_account_name');
   `);

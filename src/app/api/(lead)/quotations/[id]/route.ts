@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getDb, sql, fixDates, toSqlDate } from "@/lib/db";
 import { requireAuth } from "@/lib/auth";
-import { calculateQuotation, canManageQuotation, getQuotationActor, getQuotationDetail, type QuotationInputItem } from "@/lib/quotation";
+import { calculateQuotation, canManageQuotation, getQuotationActor, getQuotationDetail, parseQuotationAddOnItems, parseQuotationPackageItems, type QuotationInputItem } from "@/lib/quotation";
 import { parseDocumentInputs } from "@/lib/quotation-document";
 import { getQuotationPaymentTermsTotal, parseQuotationPaymentTerms } from "@/lib/quotation-terms";
 
@@ -39,7 +39,7 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
     if(!["draft","changes_required"].includes(q.status)){await tx.rollback();return NextResponse.json({error:"แก้ไขได้เฉพาะฉบับร่างหรือฉบับที่ส่งกลับ"},{status:409});}
     if(!canManageQuotation(actor.roles)){await tx.rollback();return NextResponse.json({error:"ไม่มีสิทธิ์แก้ไขใบเสนอราคา"},{status:403});}
     const bodyPackageId=body.package_id===undefined?q.package_id:(Number(body.package_id)||null);
-    const items:QuotationInputItem[]=Array.isArray(body.items)?body.items.filter((i:QuotationInputItem)=>i?.item_name?.trim()).map((i:QuotationInputItem)=>({source_type:"custom",item_name:String(i.item_name).trim(),quantity:Number(i.quantity)||1,unit:i.unit||"ชุด",unit_price:Number(i.unit_price)||0,source_package_id:Number(i.source_package_id)||undefined})):[];
+    const items:QuotationInputItem[]=parseQuotationAddOnItems(body.items);
     // No main package? Promote the first package-type add-on to the main package.
     let effectivePackageId=bodyPackageId;
     let addonItems=items;
@@ -61,9 +61,10 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
       .query(`UPDATE quotations SET package_id=@pid,package_name_snapshot=@pname,package_price_snapshot=@pprice,issue_date=@issue,valid_days=@valid,subtotal_incl_vat=@subtotal,discount_label=@label,discount_type=@dtype,discount_value=@dvalue,discount_amount=@damount,discount_reason=@reason,contract_total_incl_vat=@total,deposit_paid_amount=@deposit,outstanding_amount=@outstanding,amount_before_vat=@beforevat,vat_amount=@vat,payment_template_id=@template,payment_terms_json=@terms,terms_text=@terms_text,note=@note,document_inputs_json=@document_inputs,document_snapshot_json=NULL,financial_snapshot_json=NULL,document_snapshot_at=NULL,status='draft',approval_note=NULL,updated_by=@uid,updated_at=GETDATE() WHERE id=@id`);
     await new sql.Request(tx).input("id",sql.Int,quotationId).query(`DELETE FROM quotation_document_artifacts WHERE quotation_id=@id`);
     await new sql.Request(tx).input("id",sql.Int,quotationId).query(`DELETE FROM quotation_items WHERE quotation_id=@id`);
-    const packageItemRows=effectivePackageId?(await new sql.Request(tx).input("pid",sql.Int,effectivePackageId).query(`SELECT * FROM package_items WHERE package_id=@pid AND is_active=1 ORDER BY sort_order,id`)).recordset:[]; let sort=0;
-    for(const item of packageItemRows)await new sql.Request(tx).input("qid",sql.Int,quotationId).input("piid",sql.Int,item.id).input("name",sql.NVarChar(500),item.item_name).input("qty",sql.Decimal(10,2),item.quantity).input("unit",sql.NVarChar(50),item.unit).input("sort",sql.Int,sort++).query(`INSERT quotation_items(quotation_id,source_type,package_item_id,item_name_snapshot,quantity,unit,sort_order) VALUES(@qid,'package',@piid,@name,@qty,@unit,@sort)`);
-    for(const item of addonItems)await new sql.Request(tx).input("qid",sql.Int,quotationId).input("source",sql.NVarChar(20),item.source_type).input("name",sql.NVarChar(500),item.item_name).input("qty",sql.Decimal(10,2),item.quantity).input("unit",sql.NVarChar(50),item.unit).input("price",sql.Decimal(12,2),item.unit_price).input("total",sql.Decimal(12,2),item.quantity*item.unit_price).input("sort",sql.Int,sort++).query(`INSERT quotation_items(quotation_id,source_type,item_name_snapshot,quantity,unit,unit_price,line_total,sort_order) VALUES(@qid,@source,@name,@qty,@unit,@price,@total,@sort)`);
+    const submittedPackageItems=parseQuotationPackageItems(body.package_items);
+    const packageItemRows=effectivePackageId?(submittedPackageItems??(await new sql.Request(tx).input("pid",sql.Int,effectivePackageId).query(`SELECT * FROM package_items WHERE package_id=@pid AND is_active=1 ORDER BY sort_order,id`)).recordset):[]; let sort=0;
+    for(const item of packageItemRows)await new sql.Request(tx).input("qid",sql.Int,quotationId).input("piid",sql.Int,item.package_item_id??item.id??null).input("name",sql.NVarChar(500),item.item_name).input("qty",sql.Decimal(10,2),item.quantity).input("unit",sql.NVarChar(50),item.unit).input("sort",sql.Int,sort++).query(`INSERT quotation_items(quotation_id,source_type,package_item_id,item_name_snapshot,quantity,unit,sort_order) VALUES(@qid,'package',@piid,@name,@qty,@unit,@sort)`);
+    for(const item of addonItems)await new sql.Request(tx).input("qid",sql.Int,quotationId).input("source",sql.NVarChar(20),item.source_type).input("piid",sql.Int,item.package_item_id??null).input("name",sql.NVarChar(500),item.item_name).input("qty",sql.Decimal(10,2),item.quantity).input("unit",sql.NVarChar(50),item.unit).input("price",sql.Decimal(12,2),item.unit_price).input("total",sql.Decimal(12,2),item.source_type==="addon_package"?item.line_total||0:item.quantity*item.unit_price).input("sort",sql.Int,sort++).query(`INSERT quotation_items(quotation_id,source_type,package_item_id,item_name_snapshot,quantity,unit,unit_price,line_total,sort_order) VALUES(@qid,@source,@piid,@name,@qty,@unit,@price,@total,@sort)`);
     await tx.commit(); return NextResponse.json({ok:true});
   }catch(error){try{await tx.rollback();}catch{} console.error("PATCH quotation",error);return NextResponse.json({error:error instanceof Error?error.message:"แก้ไขไม่สำเร็จ"},{status:500});}
 }

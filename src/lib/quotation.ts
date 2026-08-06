@@ -11,16 +11,111 @@ export const QUOTATION_STATUSES = [
 ] as const;
 export type QuotationStatus = typeof QUOTATION_STATUSES[number];
 export type QuotationInputItem = {
-  source_type?: "addon" | "custom";
+  source_type?:
+    | "addon"
+    | "custom"
+    | "addon_package"
+    | "addon_package_detail"
+    | "custom_group"
+    | "custom_detail";
+  package_item_id?: number | null;
   item_name: string;
   quantity: number;
-  unit?: string;
+  unit?: string | null;
   unit_price: number;
+  line_total?: number;
   // Set when this add-on line is itself a package (chosen from Package Master).
   // Lets the API promote the first such add-on to the main package when no main
   // package is selected, so its equipment detail lines render like a main one.
   source_package_id?: number;
 };
+
+export function parseQuotationAddOnItems(value: unknown): QuotationInputItem[] {
+  if (!Array.isArray(value)) return [];
+  const allowedSources = new Set([
+    "addon",
+    "custom",
+    "addon_package",
+    "addon_package_detail",
+    "custom_group",
+    "custom_detail",
+  ]);
+  return value
+    .filter(
+      (item): item is Record<string, unknown> =>
+        Boolean(
+          item &&
+            typeof item === "object" &&
+            String((item as Record<string, unknown>).item_name || "").trim(),
+        ),
+    )
+    .map((item) => {
+      const sourceType = String(item.source_type || "custom");
+      const quantity = Number(item.quantity);
+      const unitPrice = Math.max(0, Number(item.unit_price) || 0);
+      const packageItemId = Number(item.package_item_id);
+      const unit = String(item.unit || "").trim().slice(0, 50);
+      const isPackageSnapshot =
+        sourceType === "addon_package" ||
+        sourceType === "addon_package_detail" ||
+        sourceType === "custom_detail";
+      return {
+        source_type: allowedSources.has(sourceType)
+          ? (sourceType as QuotationInputItem["source_type"])
+          : "custom",
+        package_item_id:
+          Number.isInteger(packageItemId) && packageItemId > 0
+            ? packageItemId
+            : null,
+        item_name: String(item.item_name).trim().slice(0, 500),
+        quantity:
+          Number.isFinite(quantity) && quantity > 0 ? quantity : 1,
+        unit: unit || (isPackageSnapshot ? null : "ชุด"),
+        unit_price: unitPrice,
+        line_total:
+          sourceType === "addon_package"
+            ? Math.max(0, Number(item.line_total) || 0)
+            : undefined,
+        source_package_id: Number(item.source_package_id) || undefined,
+      };
+    });
+}
+
+export type QuotationPackageInputItem = {
+  package_item_id: number | null;
+  item_name: string;
+  quantity: number;
+  unit: string | null;
+};
+
+export function parseQuotationPackageItems(
+  value: unknown,
+): QuotationPackageInputItem[] | null {
+  if (!Array.isArray(value)) return null;
+  return value
+    .filter(
+      (item): item is Record<string, unknown> =>
+        Boolean(
+          item &&
+            typeof item === "object" &&
+            String((item as Record<string, unknown>).item_name || "").trim(),
+        ),
+    )
+    .map((item) => {
+      const quantity = Number(item.quantity);
+      const packageItemId = Number(item.package_item_id);
+      return {
+        package_item_id:
+          Number.isInteger(packageItemId) && packageItemId > 0
+            ? packageItemId
+            : null,
+        item_name: String(item.item_name).trim().slice(0, 500),
+        quantity:
+          Number.isFinite(quantity) && quantity > 0 ? quantity : 1,
+        unit: String(item.unit || "").trim().slice(0, 50) || null,
+      };
+    });
+}
 
 export function parseRoles(raw: unknown): string[] {
   try {
@@ -49,7 +144,15 @@ export function canManageQuotation(roles: string[] | undefined | null): boolean 
 }
 
 export function calculateQuotation(packagePrice: number, items: QuotationInputItem[], discountType: string, discountValue: number, deposit: number, vatRate = 7) {
-  const extras = items.reduce((sum, item) => sum + Math.max(0, Number(item.quantity) || 0) * Math.max(0, Number(item.unit_price) || 0), 0);
+  const extras = items.reduce(
+    (sum, item) =>
+      sum +
+      (item.source_type === "addon_package"
+        ? Math.max(0, Number(item.line_total) || 0)
+        : Math.max(0, Number(item.quantity) || 0) *
+          Math.max(0, Number(item.unit_price) || 0)),
+    0,
+  );
   const subtotal = Math.max(0, Number(packagePrice) || 0) + extras;
   const safeValue = Math.max(0, Number(discountValue) || 0);
   const discountAmount = discountType === "percent" ? subtotal * Math.min(safeValue, 100) / 100 : Math.min(safeValue, subtotal);
@@ -99,7 +202,10 @@ export async function getQuotationDetail(id: number) {
     LEFT JOIN users approver ON approver.id = q.approved_by
     LEFT JOIN users solar ON solar.id = q.solar_approved_by
     WHERE q.id = @id;
-    SELECT * FROM quotation_items WHERE quotation_id = @id ORDER BY sort_order, id;
+    SELECT qi.*, pi.package_id source_package_id
+    FROM quotation_items qi
+    LEFT JOIN package_items pi ON pi.id=qi.package_item_id
+    WHERE qi.quotation_id = @id ORDER BY qi.sort_order, qi.id;
     SELECT e.*, u.full_name acted_by_name FROM quotation_approval_events e
     LEFT JOIN users u ON u.id = e.acted_by WHERE e.quotation_id = @id ORDER BY e.acted_at;
     SELECT [key], value FROM app_settings WHERE [key] IN (

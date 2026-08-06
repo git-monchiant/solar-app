@@ -298,6 +298,9 @@ export async function GET(
       { error: "สร้างข้อมูลเอกสารไม่สำเร็จ" },
       { status: 500 },
     );
+  // Expand package-backed add-ons at render time as well, so quotations with
+  // an older stored snapshot receive the current Package Master detail rows.
+  snapshot.items = await expandOtherPackageAddOns(snapshot.items);
   const q = {
     ...detail,
     ...snapshot.quotation,
@@ -445,10 +448,16 @@ export async function GET(
   const packageTitleHtml = isOtherPackage
     ? otherPackageTextHtml(packageTitle)
     : esc(packageTitle);
+  const isQuotationOnlyPackageDetail = (item: Record<string, unknown>) =>
+    Object.prototype.hasOwnProperty.call(item, "package_item_id") &&
+    item.package_item_id == null;
   const packageDetail = (item: Record<string, unknown>) => {
     const name = String(item.item_name_snapshot || "");
     if (isOtherPackage) return otherPackageItemText(item);
     if (!item.unit) return name;
+    if (isQuotationOnlyPackageDetail(item) && !name.trimStart().startsWith("-")) {
+      return `- ${name} ${item.quantity} ${item.unit}`;
+    }
     if (usesExcelPackageTitle) {
       return `${name} ${item.quantity} ${item.unit}`;
     }
@@ -461,7 +470,9 @@ export async function GET(
   const packageDetailRows = detailItems.map((item) => {
     const name = String(item.item_name_snapshot || "");
     const isNumberedExcelItem =
-      usesExcelPackageTitle && !name.trimStart().startsWith("-");
+      usesExcelPackageTitle &&
+      !isQuotationOnlyPackageDetail(item) &&
+      !name.trimStart().startsWith("-");
     if (isNumberedExcelItem) packageSequence += 1;
     return `<tr><td class="center">${isNumberedExcelItem ? packageSequence : ""}</td><td>${esc(packageDetail(item))}</td><td></td></tr>`;
   });
@@ -470,15 +481,26 @@ export async function GET(
   const hasPackage = q.package_id != null;
   const addOnBaseSeq = hasPackage ? packageSequence : 0;
   const addOnDisplayName = (item: Record<string, unknown>) =>
-    String(item.item_name_snapshot || "").replace(/^Package เพิ่มเติม:\s*/i, "");
+    String(item.item_name_snapshot || "")
+      .replace(/^Package เพิ่มเติม:\s*/i, "")
+      .replace(/^Scal(?:e)?\s*Up\s*:\s*/i, "");
   const isConsumerUnitAddOn = (item: Record<string, unknown>) =>
     normalizeOtherPackageText(addOnDisplayName(item)).replace(/\s+/g, " ") ===
     "งานเพิ่มตู้คอนซูมเมอร์ยูนิต 6 ช่อง";
   let addOnSequence = addOnBaseSeq;
   const addOnRows = addOns.flatMap((item) => {
-    if (item.source_type === "addon_package_detail") {
+    if (
+      item.source_type === "addon_package_detail" ||
+      item.source_type === "custom_detail"
+    ) {
+      const detailText = otherPackageItemText(item);
       return [
-        `<tr><td></td><td>${otherPackageTextHtml(otherPackageItemText(item))}</td><td></td></tr>`,
+        `<tr><td></td><td>${otherPackageTextHtml(
+          item.source_type === "custom_detail" &&
+            !detailText.trimStart().startsWith("-")
+            ? `- ${detailText}`
+            : detailText,
+        )}</td><td></td></tr>`,
       ];
     }
     addOnSequence += 1;
@@ -494,7 +516,7 @@ export async function GET(
       ];
     }
     return [
-      `<tr><td class="center">${addOnSequence}</td><td>${esc(addOnDisplayName(item))} ${esc(item.quantity)} ${esc(item.unit)}${hasPackage ? ' <span class="muted">(เพิ่มเติม)</span>' : ""}</td><td class="right">${money(item.line_total)}</td></tr>`,
+      `<tr><td class="center">${addOnSequence}</td><td>${esc(addOnDisplayName(item))} ${esc(item.quantity)} ${esc(item.unit)}</td><td class="right">${money(item.line_total)}</td></tr>`,
     ];
   });
   const itemRows = [
@@ -544,17 +566,26 @@ export async function GET(
           `<b><u>${esc(section.title)}</u></b>${section.paragraphs.map((paragraph) => `<p>${esc(paragraph)}</p>`).join("")}`,
       )
       .join("");
-  // A long item list pushes the "2. หมายเหตุ" section down until it collides
-  // with the page-1 footer. When the item table grows past its 9-row minimum,
-  // move that whole section to page 2 — it continues seamlessly into 2.5/2.6.
+  // Keep legal copy clear of the fixed page footer. A moderately long item
+  // table moves section 2 to page 2; a very long table moves every legal
+  // section so even the warranty block cannot collide with the page number.
   const pushNotesToPage2 = itemRows.length > 9 && legalContent.page1Sections.length > 1;
-  const page1Sections = pushNotesToPage2
-    ? legalContent.page1Sections.slice(0, 1)
-    : legalContent.page1Sections;
-  const notesMovedToPage2 = pushNotesToPage2 ? legalContent.page1Sections.slice(1) : [];
-  const standardTermsPage1 = `<div class="legal">${renderLegalSections(page1Sections)}</div>`;
+  const pushAllTermsToPage2 = itemRows.length > 14;
+  const page1Sections = pushAllTermsToPage2
+    ? []
+    : pushNotesToPage2
+      ? legalContent.page1Sections.slice(0, 1)
+      : legalContent.page1Sections;
+  const notesMovedToPage2 = pushAllTermsToPage2
+    ? legalContent.page1Sections
+    : pushNotesToPage2
+      ? legalContent.page1Sections.slice(1)
+      : [];
+  const standardTermsPage1 = page1Sections.length
+    ? `<div class="legal">${renderLegalSections(page1Sections)}</div>`
+    : "";
   const standardTermsPage2 = `
-    <div class="legal page-two-terms">
+    <div class="legal page-two-terms${pushAllTermsToPage2 ? " compact-terms" : ""}">
       ${renderLegalSections(notesMovedToPage2)}
       ${legalContent.page2LeadingParagraphs.map((paragraph) => `<p>${esc(paragraph)}</p>`).join("")}
       ${renderLegalSections(legalContent.page2Sections)}
@@ -582,6 +613,9 @@ export async function GET(
     table.financials .grand .amount-words{float:none;width:auto;padding:.5px 3px;text-align:center;font-weight:normal;line-height:1.15}
     table.financials .grand .summary-label,table.financials .grand .summary-value{font-size:12pt;font-weight:bold;color:#15343e}
     .legal b{border-bottom:0;padding-bottom:0;color:#172126}
+    .compact-terms p{margin:.8mm 0 .8mm 12mm}
+    .compact-terms b{margin-top:1mm}
+    .compact-legal-page .signatures{margin-top:7mm;row-gap:5mm}
     .legal b u{text-decoration-color:#172126;text-decoration-thickness:.6px;text-underline-offset:.5px}
     /* Signature line: a flex-growing dotted rule keeps the role label on one
        line no matter its length (e.g. "ผู้ขาย / ผู้ตรวจสอบ" used to wrap). */
@@ -600,7 +634,7 @@ export async function GET(
       <table class="financials"><tbody><tr class="strong"><td></td><td class="summary-label">ราคาก่อนหักส่วนลด (รวมภาษีมูลค่าเพิ่ม)</td><td class="summary-value">${money(q.subtotal_incl_vat)}</td></tr>${Number(q.discount_amount) > 0 ? `<tr><td></td><td class="summary-label">${esc(q.discount_label || "ส่วนลด")}</td><td class="summary-value">-${money(q.discount_amount)}</td></tr>` : ""}<tr><td></td><td class="summary-label">หัก เงินจอง</td><td class="summary-value">-${money(q.deposit_paid_amount)}</td></tr><tr class="strong"><td></td><td class="summary-label">ราคาหลังหักส่วนลด (รวมภาษีมูลค่าเพิ่ม)</td><td class="summary-value">${money(q.outstanding_amount)}</td></tr><tr><td></td><td class="summary-label">ราคาสินค้าก่อนภาษีมูลค่าเพิ่ม</td><td class="summary-value">${money(q.amount_before_vat)}</td></tr><tr><td></td><td class="summary-label">ภาษีมูลค่าเพิ่ม (VAT) 7%</td><td class="summary-value">${money(q.vat_amount)}</td></tr><tr class="grand"><td class="amount-words">( ${thaiBahtText(q.outstanding_amount)} )</td><td class="summary-label">รวมยอดที่ต้องชำระสุทธิ</td><td class="summary-value">${money(q.outstanding_amount)}</td></tr></tbody></table>
       ${standardTermsPage1}<div class="footer">หน้า 16 / 17 · ใบเสนอราคา 1 / 2 · ${esc(q.doc_no)}</div>
     </section>
-    <section class="page">${watermark ? `<div class="watermark">${esc(watermark)}</div>` : ""}${quotationHeader}${standardTermsPage2}
+    <section class="page${pushAllTermsToPage2 ? " compact-legal-page" : ""}">${watermark ? `<div class="watermark">${esc(watermark)}</div>` : ""}${quotationHeader}${standardTermsPage2}
       <div class="signatures">${sigCell("ลูกค้า")}${sigCell("ผู้จัดทำเอกสาร", q.created_by_name, creatorSignature, q.issue_date)}${sigCell("ผู้ตรวจสอบ", q.solar_approved_name, solarSignature, q.solar_approved_at)}${sigCell("ผู้ขาย / ผู้ตรวจสอบ", q.approver_name_snapshot || q.approved_by_name, approverSignature, q.approved_at)}</div>
       <div class="footer">หน้า 17 / 17 · ใบเสนอราคา 2 / 2 · ${esc(q.doc_no)}</div>
     </section>

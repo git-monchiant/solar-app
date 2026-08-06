@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getDb, sql, fixDates, toSqlDate } from "@/lib/db";
 import { requireAuth } from "@/lib/auth";
-import { calculateQuotation, canManageQuotation, getQuotationActor, nextQuotationDocNo, type QuotationInputItem } from "@/lib/quotation";
+import { calculateQuotation, canManageQuotation, getQuotationActor, nextQuotationDocNo, parseQuotationAddOnItems, parseQuotationPackageItems, type QuotationInputItem } from "@/lib/quotation";
 import { logLeadActivity } from "@/lib/lead-activity-log";
 import { parseDocumentInputs } from "@/lib/quotation-document";
 import { getQuotationPaymentTermsTotal, parseQuotationPaymentTerms } from "@/lib/quotation-terms";
@@ -30,7 +30,10 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
     ) returned_event
     LEFT JOIN users returned_by ON returned_by.id = returned_event.acted_by
     WHERE q.lead_id=@lead_id ORDER BY q.option_no, q.revision_no DESC;
-    SELECT qi.* FROM quotation_items qi JOIN quotations q ON q.id=qi.quotation_id
+    SELECT qi.*, pi.package_id source_package_id
+    FROM quotation_items qi
+    JOIN quotations q ON q.id=qi.quotation_id
+    LEFT JOIN package_items pi ON pi.id=qi.package_item_id
     WHERE q.lead_id=@lead_id ORDER BY qi.quotation_id, qi.sort_order, qi.id;
   `);
   const recordsets = result.recordsets as unknown as Array<typeof result.recordset>;
@@ -49,7 +52,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
   const { id } = await params; const leadId = Number(id); const body = await req.json();
   const optionNo = Number(body.option_no); const packageId = Number(body.package_id) || null;
   if (![1,2,3].includes(optionNo)) return NextResponse.json({ error: "กรุณาระบุชุด 1-3" }, { status: 400 });
-  const customItems: QuotationInputItem[] = Array.isArray(body.items) ? body.items.filter((i: QuotationInputItem) => i?.item_name?.trim()).map((i: QuotationInputItem) => ({ source_type: "custom", item_name: String(i.item_name).trim(), quantity: Number(i.quantity) || 1, unit: i.unit || "ชุด", unit_price: Number(i.unit_price) || 0, source_package_id: Number(i.source_package_id) || undefined })) : [];
+  const customItems: QuotationInputItem[] = parseQuotationAddOnItems(body.items);
   // No main package chosen? Promote the first package-type add-on to be the main
   // package so its equipment detail lines render like a main package.
   let effectivePackageId = packageId;
@@ -86,7 +89,10 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
       : 0;
     const packageRow = effectivePackageId ? (await new sql.Request(tx).input("package_id", sql.Int, effectivePackageId).query(`SELECT * FROM packages WHERE id=@package_id AND is_active=1`)).recordset[0] : null;
     if (effectivePackageId && !packageRow) { await tx.rollback(); return NextResponse.json({ error: "ไม่พบ Package ที่ใช้งานได้" }, { status: 400 }); }
-    const packageItemRows = effectivePackageId ? (await new sql.Request(tx).input("package_id", sql.Int, effectivePackageId).query(`SELECT * FROM package_items WHERE package_id=@package_id AND is_active=1 ORDER BY sort_order,id`)).recordset : [];
+    const submittedPackageItems = parseQuotationPackageItems(body.package_items);
+    const packageItemRows = effectivePackageId
+      ? submittedPackageItems ?? (await new sql.Request(tx).input("package_id", sql.Int, effectivePackageId).query(`SELECT * FROM package_items WHERE package_id=@package_id AND is_active=1 ORDER BY sort_order,id`)).recordset
+      : [];
     const templateId = Number(body.payment_template_id) || null;
     const discountType = body.discount_type === "percent" ? "percent" : "amount";
     const confirmedDeposit = Math.max(0, Number(lead.recordset[0].confirmed_deposit) || 0);
@@ -112,8 +118,8 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
       OUTPUT INSERTED.* VALUES(@lead_id,@option_no,@revision_no,@doc_no,@package_id,@package_name,@package_price,@issue_date,@valid_days,@subtotal,@discount_label,@discount_type,@discount_value,@discount_amount,@discount_reason,@total,@deposit,@outstanding,@before_vat,@vat_amount,@template_id,@payment_terms,@terms_text,@note,@document_inputs,@user_id,@user_id)`);
     const quotationId = inserted.recordset[0].id;
     let sort = 0;
-    for (const item of packageItemRows) await new sql.Request(tx).input("qid",sql.Int,quotationId).input("pid",sql.Int,item.id).input("name",sql.NVarChar(500),item.item_name).input("qty",sql.Decimal(10,2),item.quantity).input("unit",sql.NVarChar(50),item.unit).input("sort",sql.Int,sort++).query(`INSERT quotation_items(quotation_id,source_type,package_item_id,item_name_snapshot,quantity,unit,sort_order) VALUES(@qid,'package',@pid,@name,@qty,@unit,@sort)`);
-    for (const item of addonItems) await new sql.Request(tx).input("qid",sql.Int,quotationId).input("source",sql.NVarChar(20),item.source_type).input("name",sql.NVarChar(500),item.item_name).input("qty",sql.Decimal(10,2),item.quantity).input("unit",sql.NVarChar(50),item.unit).input("price",sql.Decimal(12,2),item.unit_price).input("total",sql.Decimal(12,2),item.quantity*item.unit_price).input("sort",sql.Int,sort++).query(`INSERT quotation_items(quotation_id,source_type,item_name_snapshot,quantity,unit,unit_price,line_total,sort_order) VALUES(@qid,@source,@name,@qty,@unit,@price,@total,@sort)`);
+    for (const item of packageItemRows) await new sql.Request(tx).input("qid",sql.Int,quotationId).input("pid",sql.Int,item.package_item_id ?? item.id ?? null).input("name",sql.NVarChar(500),item.item_name).input("qty",sql.Decimal(10,2),item.quantity).input("unit",sql.NVarChar(50),item.unit).input("sort",sql.Int,sort++).query(`INSERT quotation_items(quotation_id,source_type,package_item_id,item_name_snapshot,quantity,unit,sort_order) VALUES(@qid,'package',@pid,@name,@qty,@unit,@sort)`);
+    for (const item of addonItems) await new sql.Request(tx).input("qid",sql.Int,quotationId).input("source",sql.NVarChar(20),item.source_type).input("piid",sql.Int,item.package_item_id??null).input("name",sql.NVarChar(500),item.item_name).input("qty",sql.Decimal(10,2),item.quantity).input("unit",sql.NVarChar(50),item.unit).input("price",sql.Decimal(12,2),item.unit_price).input("total",sql.Decimal(12,2),item.source_type==="addon_package"?item.line_total||0:item.quantity*item.unit_price).input("sort",sql.Int,sort++).query(`INSERT quotation_items(quotation_id,source_type,package_item_id,item_name_snapshot,quantity,unit,unit_price,line_total,sort_order) VALUES(@qid,@source,@piid,@name,@qty,@unit,@price,@total,@sort)`);
     await logLeadActivity(tx,{leadId,activityType:"quotation",title:`สร้างใบเสนอราคา ${docNo} ชุด ${optionNo}`,note:packageRow?.name || "รายการเพิ่มเติม",userId:gate.userId});
     await tx.commit(); return NextResponse.json(inserted.recordset[0], { status: 201 });
   } catch (error) { try { await tx.rollback(); } catch {} console.error("POST quotation", error); return NextResponse.json({ error: error instanceof Error ? error.message : "สร้างใบเสนอราคาไม่สำเร็จ" }, { status: 500 }); }

@@ -16,13 +16,22 @@ import type { Lead, Package } from "./types";
 
 type Item = {
   id?: number;
+  package_item_id?: number | null;
   editorSelectionId?: number;
-  source_type: "package" | "addon" | "custom";
+  source_type:
+    | "package"
+    | "addon"
+    | "custom"
+    | "addon_package"
+    | "addon_package_detail"
+    | "custom_group"
+    | "custom_detail";
   item_name?: string;
   item_name_snapshot?: string;
   quantity: number;
-  unit: string;
+  unit: string | null;
   unit_price: number;
+  line_total?: number;
   // Package id when this add-on line is a package picked from Package Master.
   source_package_id?: number;
 };
@@ -313,7 +322,12 @@ export default function QuotationBuilder({
           const q = latest.get(option);
           const pkg = q ? packages.find((p) => p.id === q.package_id) : null;
           const extras =
-            q?.items.filter((i) => i.source_type !== "package") || [];
+            q?.items.filter(
+              (i) =>
+                i.source_type !== "package" &&
+                i.source_type !== "addon_package_detail" &&
+                i.source_type !== "custom_detail",
+            ) || [];
           return q ? (
             <article
               key={option}
@@ -629,21 +643,104 @@ function QuotationEditor({
   // Default to unselected ("เลือก Package") — a package is optional now
   // (customer may buy add-ons only), so we never auto-pick the first one.
   const [packageId, setPackageId] = useState(quote?.package_id || 0);
-  const [packageItems, setPackageItems] = useState<Item[]>([]);
-  const [showPackageItems, setShowPackageItems] = useState(false);
-  const [items, setItems] = useState<Item[]>(
+  const savedPackageItems =
     quote?.items
-      ?.filter((i) => i.source_type !== "package")
-      .map((i) => ({
-        ...i,
-        source_type: "custom" as const,
-        item_name: i.item_name_snapshot || i.item_name,
-      })) ||
-      [],
+      ?.filter((item) => item.source_type === "package")
+      .map((item) => ({
+        ...item,
+        item_name: item.item_name_snapshot || item.item_name || "",
+        unit_price: 0,
+      })) || [];
+  const [packageItems, setPackageItems] = useState<Item[]>(savedPackageItems);
+  const [packageItemsSourceId, setPackageItemsSourceId] = useState(
+    savedPackageItems.length > 0 ? quote?.package_id || 0 : 0,
   );
-  const [additionalItemSelectors, setAdditionalItemSelectors] = useState([
-    { id: 1, value: "" },
-  ]);
+  const [packageItemsLoading, setPackageItemsLoading] = useState(false);
+  const [showPackageItems, setShowPackageItems] = useState(false);
+  const [shownAdditionalPackageItems, setShownAdditionalPackageItems] =
+    useState<Record<number, boolean>>({});
+  const initialAdditionalState = (() => {
+    const editorItems: Item[] = [];
+    const selectors: Array<{ id: number; value: string }> = [];
+    const packageDetails: Record<number, Item[]> = {};
+    let activeSelectorId: number | null = null;
+    for (const savedItem of quote?.items || []) {
+      if (savedItem.source_type === "package") continue;
+      if (savedItem.source_type === "addon_package") {
+        const selectorId = selectors.length + 1;
+        const sourcePackageId = Number(savedItem.source_package_id) || 0;
+        const selectedPackage = packages.find(
+          (candidate) => candidate.id === sourcePackageId,
+        );
+        selectors.push({ id: selectorId, value: String(sourcePackageId || "") });
+        editorItems.push({
+          ...savedItem,
+          source_type: "custom",
+          editorSelectionId: selectorId,
+          source_package_id: sourcePackageId || undefined,
+          item_name: selectedPackage
+            ? `Package เพิ่มเติม: ${selectedPackage.name}`
+            : savedItem.item_name_snapshot || savedItem.item_name,
+          quantity:
+            Number(savedItem.unit_price) > 0
+              ? Math.max(
+                  1,
+                  Number(savedItem.line_total) / Number(savedItem.unit_price),
+                )
+              : 1,
+        });
+        packageDetails[selectorId] = [
+          {
+            ...savedItem,
+            item_name: savedItem.item_name_snapshot || savedItem.item_name,
+            unit_price: 0,
+          },
+        ];
+        activeSelectorId = selectorId;
+        continue;
+      }
+      if (savedItem.source_type === "custom_group") {
+        const selectorId = selectors.length + 1;
+        selectors.push({ id: selectorId, value: "custom" });
+        editorItems.push({
+          ...savedItem,
+          source_type: "custom",
+          editorSelectionId: selectorId,
+          item_name: savedItem.item_name_snapshot || savedItem.item_name,
+        });
+        packageDetails[selectorId] = [];
+        activeSelectorId = selectorId;
+        continue;
+      }
+      if (
+        (savedItem.source_type === "addon_package_detail" ||
+          savedItem.source_type === "custom_detail") &&
+        activeSelectorId !== null
+      ) {
+        packageDetails[activeSelectorId].push({
+          ...savedItem,
+          item_name: savedItem.item_name_snapshot || savedItem.item_name,
+          unit_price: 0,
+        });
+        continue;
+      }
+      activeSelectorId = null;
+      editorItems.push({
+        ...savedItem,
+        source_type: "custom",
+        item_name: savedItem.item_name_snapshot || savedItem.item_name,
+      });
+    }
+    if (selectors.length === 0) selectors.push({ id: 1, value: "" });
+    return { editorItems, selectors, packageDetails };
+  })();
+  const [items, setItems] = useState<Item[]>(initialAdditionalState.editorItems);
+  const [additionalItemSelectors, setAdditionalItemSelectors] = useState(
+    initialAdditionalState.selectors,
+  );
+  const [additionalPackageItems, setAdditionalPackageItems] = useState<
+    Record<number, Item[]>
+  >(initialAdditionalState.packageDetails);
   const [discountType, setDiscountType] = useState<"amount" | "percent">(
     quote?.discount_type === "percent" ? "percent" : "amount",
   );
@@ -733,12 +830,38 @@ function QuotationEditor({
   useEffect(() => {
     if (!packageId) {
       setPackageItems([]);
+      setPackageItemsSourceId(0);
+      setPackageItemsLoading(false);
       return;
     }
+    if (packageItemsSourceId === packageId) return;
+    let cancelled = false;
+    setPackageItemsLoading(true);
     apiFetch(`/api/packages/${packageId}/items`)
-      .then((rows: Item[]) => setPackageItems(rows))
-      .catch(() => setPackageItems([]));
-  }, [packageId]);
+      .then((rows: Item[]) => {
+        if (cancelled) return;
+        setPackageItems(
+          rows.map((item) => ({
+            ...item,
+            package_item_id: item.id,
+            item_name: item.item_name_snapshot || item.item_name || "",
+            unit_price: 0,
+          })),
+        );
+        setPackageItemsSourceId(packageId);
+      })
+      .catch(() => {
+        if (cancelled) return;
+        setPackageItems([]);
+        setPackageItemsSourceId(packageId);
+      })
+      .finally(() => {
+        if (!cancelled) setPackageItemsLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [packageId, packageItemsSourceId]);
   useEffect(() => {
     if (quote || templateId || !defaultTemplate) return;
     setTemplateId(defaultTemplate.id);
@@ -794,6 +917,36 @@ function QuotationEditor({
   const outstanding = Math.max(0, total - deposit);
   const updateItem = (idx: number, patch: Partial<Item>) =>
     setItems((v) => v.map((i, n) => (n === idx ? { ...i, ...patch } : i)));
+  const updatePackageItem = (idx: number, patch: Partial<Item>) =>
+    setPackageItems((current) =>
+      current.map((item, index) =>
+        index === idx ? { ...item, ...patch } : item,
+      ),
+    );
+  const addPackageItem = () => {
+    setPackageItems((current) => [
+      ...current,
+      {
+        package_item_id: null,
+        source_type: "package",
+        item_name: "",
+        quantity: 1,
+        unit: "SET",
+        unit_price: 0,
+      },
+    ]);
+    setShowPackageItems(true);
+  };
+  const removePackageItem = (idx: number) => {
+    if (idx === 0) return;
+    setPackageItems((current) =>
+      current.filter((_, index) => index !== idx),
+    );
+  };
+  const restorePackageItems = () => {
+    setPackageItemsSourceId(0);
+    setShowPackageItems(true);
+  };
   const termsPercentTotal = getQuotationPaymentTermsTotal(terms);
   const updatePaymentTerm = (
     idx: number,
@@ -866,6 +1019,10 @@ function QuotationEditor({
       },
     ]);
   const updateAdditionalItemSelection = (selectorId: number, value: string) => {
+    setShownAdditionalPackageItems((current) => ({
+      ...current,
+      [selectorId]: false,
+    }));
     setAdditionalItemSelectors((current) =>
       current.map((selector) =>
         selector.id === selectorId ? { ...selector, value } : selector,
@@ -907,6 +1064,40 @@ function QuotationEditor({
         }),
       ];
     });
+    if (!value) {
+      setAdditionalPackageItems((current) => {
+        const next = { ...current };
+        delete next[selectorId];
+        return next;
+      });
+      return;
+    }
+    if (value === "custom") {
+      setAdditionalPackageItems((current) => ({
+        ...current,
+        [selectorId]: [],
+      }));
+      return;
+    }
+    apiFetch(`/api/packages/${Number(value)}/items`)
+      .then((rows: Item[]) =>
+        setAdditionalPackageItems((current) => ({
+          ...current,
+          [selectorId]: rows.map((item) => ({
+            ...item,
+            package_item_id: item.id,
+            source_type: "addon_package_detail",
+            item_name: item.item_name_snapshot || item.item_name || "",
+            unit_price: 0,
+          })),
+        })),
+      )
+      .catch(() =>
+        setAdditionalPackageItems((current) => ({
+          ...current,
+          [selectorId]: [],
+        })),
+      );
   };
   const removeAdditionalItemSelector = (selectorId: number) => {
     setAdditionalItemSelectors((current) =>
@@ -917,6 +1108,16 @@ function QuotationEditor({
     setItems((current) =>
       current.filter((item) => item.editorSelectionId !== selectorId),
     );
+    setAdditionalPackageItems((current) => {
+      const next = { ...current };
+      delete next[selectorId];
+      return next;
+    });
+    setShownAdditionalPackageItems((current) => {
+      const next = { ...current };
+      delete next[selectorId];
+      return next;
+    });
   };
   const updateAdditionalSelectorItem = (
     selectorId: number,
@@ -937,6 +1138,108 @@ function QuotationEditor({
       ),
     );
   };
+  const updateAdditionalPackageItem = (
+    selectorId: number,
+    itemIndex: number,
+    patch: Partial<Item>,
+  ) =>
+    setAdditionalPackageItems((current) => ({
+      ...current,
+      [selectorId]: (current[selectorId] || []).map((item, index) =>
+        index === itemIndex ? { ...item, ...patch } : item,
+      ),
+    }));
+  const addAdditionalPackageItem = (selectorId: number) =>
+    setAdditionalPackageItems((current) => ({
+      ...current,
+      [selectorId]: [
+        ...(current[selectorId] || []),
+        {
+          package_item_id: null,
+          source_type: "addon_package_detail",
+          item_name: "",
+          quantity: 1,
+          unit: "SET",
+          unit_price: 0,
+        },
+      ],
+    }));
+  const removeAdditionalPackageItem = (
+    selectorId: number,
+    itemIndex: number,
+  ) => {
+    const selector = additionalItemSelectors.find(
+      (item) => item.id === selectorId,
+    );
+    if (selector?.value !== "custom" && itemIndex === 0) return;
+    setAdditionalPackageItems((current) => ({
+      ...current,
+      [selectorId]: (current[selectorId] || []).filter(
+        (_, index) => index !== itemIndex,
+      ),
+    }));
+  };
+  const restoreAdditionalPackageItems = (selectorId: number) => {
+    const selector = additionalItemSelectors.find(
+      (item) => item.id === selectorId,
+    );
+    if (!selector?.value || selector.value === "custom") return;
+    apiFetch(`/api/packages/${Number(selector.value)}/items`)
+      .then((rows: Item[]) =>
+        setAdditionalPackageItems((current) => ({
+          ...current,
+          [selectorId]: rows.map((item) => ({
+            ...item,
+            package_item_id: item.id,
+            source_type: "addon_package_detail",
+            item_name: item.item_name_snapshot || item.item_name || "",
+            unit_price: 0,
+          })),
+        })),
+      )
+      .catch(() => undefined);
+  };
+  const serializeAdditionalItems = () =>
+    items.flatMap((item) => {
+      const selectorId = item.editorSelectionId;
+      if (!selectorId) return [item];
+      const packageDetailItems = additionalPackageItems[selectorId] || [];
+      if (packageDetailItems.length === 0) return [item];
+      if (!item.source_package_id) {
+        return [
+          {
+            ...item,
+            source_type: "custom_group" as const,
+            line_total:
+              (Number(item.quantity) || 1) * (Number(item.unit_price) || 0),
+          },
+          ...packageDetailItems.map((detailItem) => ({
+            ...detailItem,
+            source_type: "custom_detail" as const,
+            unit_price: 0,
+            line_total: 0,
+          })),
+        ];
+      }
+      const [firstItem, ...detailItems] = packageDetailItems;
+      return [
+        {
+          ...firstItem,
+          source_type: "addon_package" as const,
+          source_package_id: item.source_package_id,
+          unit_price: Number(item.unit_price) || 0,
+          line_total:
+            (Number(item.quantity) || 1) * (Number(item.unit_price) || 0),
+        },
+        ...detailItems.map((detailItem) => ({
+          ...detailItem,
+          source_type: "addon_package_detail" as const,
+          source_package_id: item.source_package_id,
+          unit_price: 0,
+          line_total: 0,
+        })),
+      ];
+    });
   const previewQuotation = async () => {
     if (!pkg && items.length === 0) {
       setError("กรุณาเลือก Package หลัก หรือเพิ่มรายการอย่างน้อย 1 รายการก่อนดูตัวอย่าง");
@@ -964,8 +1267,9 @@ function QuotationEditor({
             ...packageItems.map((item) => ({
               ...item,
               source_type: "package",
+              item_name_snapshot: item.item_name,
             })),
-            ...items,
+            ...serializeAdditionalItems(),
           ],
           discountLabel,
           deposit,
@@ -1013,8 +1317,9 @@ function QuotationEditor({
       const payload = {
         option_no: optionNo,
         package_id: packageId || null,
+        package_items: packageItems,
         issue_date: issueDate,
-        items,
+        items: serializeAdditionalItems(),
         discount_type: discountType,
         discount_value: discountValue,
         discount_label: discountLabel,
@@ -1111,7 +1416,7 @@ function QuotationEditor({
               <div className="mt-2 rounded-lg border border-amber-200 bg-amber-50 p-2 text-xs text-amber-700">
                 ไม่มี Package ที่เปิดใช้งานอยู่ในช่วงวันที่ปัจจุบัน กรุณาตรวจสอบวันเริ่มใช้และวันหมดอายุใน Package Master
               </div>
-            ) : packageItems.length > 0 ? (
+            ) : packageId ? (
               <div className="mt-2 overflow-hidden rounded-xl border border-primary/15 bg-primary/5">
                 <button
                   type="button"
@@ -1122,10 +1427,12 @@ function QuotationEditor({
                 >
                   <div>
                     <div className="text-xs font-bold text-primary">
-                      อุปกรณ์หลักจาก Package
+                      รายการสำหรับใบเสนอราคานี้
                     </div>
                     <div className="mt-0.5 text-xxs text-gray-500">
-                      {packageItems.length} รายการ
+                      {packageItemsLoading
+                        ? "กำลังโหลดรายการ..."
+                        : `${packageItems.length} รายการ`}
                     </div>
                   </div>
                   <span className="flex shrink-0 items-center gap-1.5 text-xs font-semibold text-primary">
@@ -1143,24 +1450,104 @@ function QuotationEditor({
                 {showPackageItems && (
                   <div
                     id="package-items-details"
-                    className="border-t border-primary/10 bg-white/60 px-3 py-2"
+                    className="border-t border-primary/10 bg-white/60 p-3"
                   >
-                    {packageItems.map((i, n) => (
-                      <div
-                        key={i.id || n}
-                        className="py-0.5 text-xs text-gray-700"
-                      >
-                        • {i.item_name_snapshot || i.item_name}
-                        {i.unit ? ` ${i.quantity} ${i.unit}` : ""}
+                    <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
+                      <span className="text-xxs text-gray-500">
+                        เพิ่ม ลบ หรือแก้ไขรายการได้เฉพาะใบเสนอราคานี้
+                      </span>
+                      <div className="flex gap-2">
+                        <button
+                          type="button"
+                          onClick={restorePackageItems}
+                          disabled={packageItemsLoading}
+                          className="rounded-lg border border-gray-200 bg-white px-2.5 py-1.5 text-xxs font-semibold text-gray-600 hover:bg-gray-50 disabled:opacity-50"
+                        >
+                          คืนค่าจาก Master
+                        </button>
+                        <button
+                          type="button"
+                          onClick={addPackageItem}
+                          className="rounded-lg border border-primary/20 bg-primary/5 px-2.5 py-1.5 text-xxs font-semibold text-primary hover:bg-primary/10"
+                        >
+                          + เพิ่มรายการ
+                        </button>
                       </div>
-                    ))}
+                    </div>
+                    <div className="hidden grid-cols-12 gap-2 px-1 pb-1 text-xxs font-semibold text-gray-500 md:grid">
+                      <span className="col-span-7">ชื่อรายการ</span>
+                      <span className="col-span-2">จำนวน</span>
+                      <span className="col-span-2">หน่วย</span>
+                    </div>
+                    <div className="space-y-2">
+                      {!packageItemsLoading && packageItems.length === 0 && (
+                        <div className="rounded-lg border border-dashed border-gray-200 bg-white p-3 text-center text-xs text-gray-500">
+                          ยังไม่มีรายการ กด “เพิ่มรายการ” หรือ “คืนค่าจาก Master”
+                        </div>
+                      )}
+                      {packageItems.map((item, index) => (
+                        <div
+                          key={item.package_item_id || item.id || `package-item-${index}`}
+                          className="grid grid-cols-12 items-center gap-2 rounded-lg border border-gray-100 bg-white p-2"
+                        >
+                          <input
+                            value={item.item_name || ""}
+                            onChange={(event) =>
+                              updatePackageItem(index, {
+                                item_name: event.target.value,
+                              })
+                            }
+                            placeholder="ชื่ออุปกรณ์/บริการ"
+                            aria-label={`ชื่อรายการ Package ลำดับ ${index + 1}`}
+                            className={`col-span-7 ${compactFieldClass}`}
+                          />
+                          <input
+                            type="number"
+                            min="0.01"
+                            step="0.01"
+                            value={item.quantity}
+                            onChange={(event) =>
+                              updatePackageItem(index, {
+                                quantity: Number(event.target.value),
+                              })
+                            }
+                            aria-label={`จำนวนรายการ Package ลำดับ ${index + 1}`}
+                            className={`col-span-2 ${compactFieldClass}`}
+                          />
+                          <input
+                            value={item.unit || ""}
+                            onChange={(event) =>
+                              updatePackageItem(index, {
+                                unit: event.target.value,
+                              })
+                            }
+                            placeholder="หน่วย"
+                            aria-label={`หน่วยรายการ Package ลำดับ ${index + 1}`}
+                            className={`col-span-2 ${compactFieldClass}`}
+                          />
+                          {index === 0 ? (
+                            <span
+                              aria-label="รายการหลัก ไม่สามารถลบได้"
+                              title="รายการหลัก ไม่สามารถลบได้"
+                              className="col-span-1 flex h-8 items-center justify-center text-xs text-gray-400"
+                            >
+                              🔒
+                            </span>
+                          ) : (
+                            <button
+                              type="button"
+                              onClick={() => removePackageItem(index)}
+                              aria-label={`ลบรายการ Package ลำดับ ${index + 1}`}
+                              className="col-span-1 flex h-8 items-center justify-center rounded-lg text-red-400 transition-colors hover:bg-red-50 hover:text-red-600"
+                            >
+                              ×
+                            </button>
+                          )}
+                        </div>
+                      ))}
+                    </div>
                   </div>
                 )}
-              </div>
-            ) : packageId ? (
-              <div className="mt-2 rounded-lg border border-amber-200 bg-amber-50 p-2 text-xs text-amber-700">
-                Package นี้ยังไม่มีรายการอุปกรณ์ใน Master —
-                ระบบยังคงใช้ชื่อและราคาหลักของ Package
               </div>
             ) : null}
           </section>
@@ -1199,11 +1586,14 @@ function QuotationEditor({
                 const linkedItem = items.find(
                   (item) => item.editorSelectionId === selector.id,
                 );
+                const isPackageMasterSelection =
+                  Boolean(selector.value) && selector.value !== "custom";
                 return (
                   <div
                     key={selector.id}
-                    className="grid grid-cols-12 items-center gap-2 rounded-xl border border-primary/10 bg-primary/[0.025] p-2"
+                    className="overflow-hidden rounded-xl border border-primary/10 bg-primary/[0.025]"
                   >
+                    <div className="grid grid-cols-12 items-center gap-2 p-2">
                     {selector.value === "custom" ? (
                       <input
                         value={linkedItem?.item_name || ""}
@@ -1254,20 +1644,30 @@ function QuotationEditor({
                       type="number"
                       min="0"
                       value={linkedItem?.quantity ?? ""}
-                      disabled={!linkedItem}
+                      disabled={!linkedItem || isPackageMasterSelection}
+                      title={
+                        isPackageMasterSelection
+                          ? "จำนวนกำหนดจาก Package Master"
+                          : undefined
+                      }
                       onChange={(e) =>
                         updateAdditionalSelectorItem(selector.id, {
                           quantity: Number(e.target.value),
                         })
                       }
                       aria-label={`จำนวนรายการเพิ่มเติมช่องที่ ${selector.id}`}
-                      className={`col-span-2 ${compactFieldClass}`}
+                      className={`col-span-2 disabled:cursor-not-allowed disabled:bg-gray-100 disabled:text-gray-500 ${compactFieldClass}`}
                     />
                     <input
                       type="number"
                       min="0"
                       value={linkedItem?.unit_price || ""}
-                      disabled={!linkedItem}
+                      disabled={!linkedItem || isPackageMasterSelection}
+                      title={
+                        isPackageMasterSelection
+                          ? "ราคากำหนดจาก Package Master"
+                          : undefined
+                      }
                       onChange={(e) =>
                         updateAdditionalSelectorItem(selector.id, {
                           unit_price:
@@ -1278,7 +1678,7 @@ function QuotationEditor({
                       }
                       placeholder="ราคา"
                       aria-label={`ราคาต่อหน่วยรายการเพิ่มเติมช่องที่ ${selector.id}`}
-                      className={`col-span-3 ${compactFieldClass}`}
+                      className={`col-span-3 disabled:cursor-not-allowed disabled:bg-gray-100 disabled:text-gray-500 ${compactFieldClass}`}
                     />
                     <button
                       type="button"
@@ -1288,6 +1688,164 @@ function QuotationEditor({
                     >
                       ×
                     </button>
+                    </div>
+                    {selector.value && linkedItem && (
+                        <div className="border-t border-primary/10 bg-white/70">
+                          <button
+                            type="button"
+                            onClick={() =>
+                              setShownAdditionalPackageItems((current) => ({
+                                ...current,
+                                [selector.id]: !current[selector.id],
+                              }))
+                            }
+                            aria-expanded={Boolean(
+                              shownAdditionalPackageItems[selector.id],
+                            )}
+                            aria-controls={`additional-package-items-${selector.id}`}
+                            className="flex w-full items-center justify-between gap-3 p-3 text-left transition-colors hover:bg-primary/5"
+                          >
+                            <div>
+                              <div className="text-xs font-bold text-primary">
+                                รายการสำหรับใบเสนอราคานี้
+                              </div>
+                              <div className="mt-0.5 text-xxs text-gray-500">
+                                {(additionalPackageItems[selector.id] || []).length} รายการ
+                              </div>
+                            </div>
+                            <span className="flex shrink-0 items-center gap-1.5 text-xs font-semibold text-primary">
+                              {shownAdditionalPackageItems[selector.id]
+                                ? "ซ่อนรายละเอียด"
+                                : "ดูรายละเอียด"}
+                              <span
+                                aria-hidden="true"
+                                className={`text-base transition-transform ${
+                                  shownAdditionalPackageItems[selector.id]
+                                    ? "rotate-180"
+                                    : ""
+                                }`}
+                              >
+                                ⌄
+                              </span>
+                            </span>
+                          </button>
+                          {shownAdditionalPackageItems[selector.id] && (
+                          <div
+                            id={`additional-package-items-${selector.id}`}
+                            className="border-t border-primary/10 p-3"
+                          >
+                          <div className="mb-2 flex justify-end">
+                            <div className="flex gap-2">
+                              {isPackageMasterSelection && (
+                                <button
+                                  type="button"
+                                  onClick={() =>
+                                    restoreAdditionalPackageItems(selector.id)
+                                  }
+                                  className="rounded-lg border border-gray-200 bg-white px-2.5 py-1.5 text-xxs font-semibold text-gray-600 hover:bg-gray-50"
+                                >
+                                  คืนค่าจาก Master
+                                </button>
+                              )}
+                              <button
+                                type="button"
+                                onClick={() =>
+                                  addAdditionalPackageItem(selector.id)
+                                }
+                                className="rounded-lg border border-primary/20 bg-primary/5 px-2.5 py-1.5 text-xxs font-semibold text-primary hover:bg-primary/10"
+                              >
+                                + เพิ่มรายการ
+                              </button>
+                            </div>
+                          </div>
+                          <div className="hidden grid-cols-12 gap-2 px-1 pb-1 text-xxs font-semibold text-gray-500 md:grid">
+                            <span className="col-span-7">ชื่อรายการ</span>
+                            <span className="col-span-2">จำนวน</span>
+                            <span className="col-span-2">หน่วย</span>
+                          </div>
+                          <div className="space-y-2">
+                            {(additionalPackageItems[selector.id] || []).map(
+                              (detailItem, detailIndex) => (
+                                <div
+                                  key={
+                                    detailItem.package_item_id ||
+                                    detailItem.id ||
+                                    `additional-${selector.id}-${detailIndex}`
+                                  }
+                                  className="grid grid-cols-12 items-center gap-2 rounded-lg border border-gray-100 bg-white p-2"
+                                >
+                                  <input
+                                    value={detailItem.item_name || ""}
+                                    onChange={(event) =>
+                                      updateAdditionalPackageItem(
+                                        selector.id,
+                                        detailIndex,
+                                        { item_name: event.target.value },
+                                      )
+                                    }
+                                    aria-label={`ชื่อรายการย่อยเพิ่มเติม ${selector.id}-${detailIndex + 1}`}
+                                    className={`col-span-7 ${compactFieldClass}`}
+                                  />
+                                  <input
+                                    type="number"
+                                    min="0.01"
+                                    step="0.01"
+                                    value={detailItem.quantity}
+                                    onChange={(event) =>
+                                      updateAdditionalPackageItem(
+                                        selector.id,
+                                        detailIndex,
+                                        { quantity: Number(event.target.value) },
+                                      )
+                                    }
+                                    aria-label={`จำนวนรายการย่อยเพิ่มเติม ${selector.id}-${detailIndex + 1}`}
+                                    className={`col-span-2 ${compactFieldClass}`}
+                                  />
+                                  <input
+                                    value={detailItem.unit || ""}
+                                    onChange={(event) =>
+                                      updateAdditionalPackageItem(
+                                        selector.id,
+                                        detailIndex,
+                                        { unit: event.target.value },
+                                      )
+                                    }
+                                    placeholder="หน่วย"
+                                    aria-label={`หน่วยรายการย่อยเพิ่มเติม ${selector.id}-${detailIndex + 1}`}
+                                    className={`col-span-2 ${compactFieldClass}`}
+                                  />
+                                  {isPackageMasterSelection &&
+                                  detailIndex === 0 ? (
+                                    <span
+                                      aria-label="หัวรายการเพิ่มเติม ไม่สามารถลบได้"
+                                      title="หัวรายการเพิ่มเติม ไม่สามารถลบได้"
+                                      className="col-span-1 flex h-8 items-center justify-center text-xs text-gray-400"
+                                    >
+                                      🔒
+                                    </span>
+                                  ) : (
+                                    <button
+                                      type="button"
+                                      onClick={() =>
+                                        removeAdditionalPackageItem(
+                                          selector.id,
+                                          detailIndex,
+                                        )
+                                      }
+                                      aria-label={`ลบรายการย่อยเพิ่มเติม ${selector.id}-${detailIndex + 1}`}
+                                      className="col-span-1 flex h-8 items-center justify-center rounded-lg text-red-400 transition-colors hover:bg-red-50 hover:text-red-600"
+                                    >
+                                      ×
+                                    </button>
+                                  )}
+                                </div>
+                              ),
+                            )}
+                          </div>
+                          </div>
+                          )}
+                        </div>
+                      )}
                   </div>
                 );
               })}
