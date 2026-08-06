@@ -4,6 +4,8 @@ import { apiFetch, getUserIdHeader } from "@/lib/api";
 import { GSB_SOLAR_LOAN_DEFAULTS } from "@/lib/loan-defaults";
 import { formatTHB } from "@/lib/utils/formatters";
 import { hasRole, useActiveRoles, useMe } from "@/lib/roles";
+import { useDialog } from "@/components/ui/Dialog";
+import ModalBase from "@/components/ui/ModalBase";
 import {
   balanceFinalQuotationPaymentTerm,
   getQuotationPaymentTermsTotal,
@@ -114,6 +116,10 @@ export default function QuotationBuilder({
 }) {
   const { me } = useMe();
   const { activeRoles } = useActiveRoles();
+  const dialog = useDialog();
+  // In-app "ส่งกลับให้แก้ไข" reason modal (replaces the native window.prompt).
+  const [returnModal, setReturnModal] = useState<{ id: number } | null>(null);
+  const [returnNote, setReturnNote] = useState("");
   const canReviewQuotation = (status: string) =>
     status === "pending_solar_sup"
       ? hasRole(activeRoles, "admin", "solar_sup")
@@ -183,15 +189,18 @@ export default function QuotationBuilder({
           ? "ใบเสนอราคาอนุมัติครบแล้ว"
           : "สร้างฉบับร่างจาก Package Master เพื่อเริ่มต้น";
   const act = async (id: number, action: string, note = "", status = "") => {
-    if (
-      action === "approve" &&
-      !window.confirm(
-        status === "pending_solar_sup"
-          ? "ยืนยันว่า Solar Sup ตรวจเอกสารแล้ว และส่งต่อให้ Sale Sup อนุมัติขั้นสุดท้าย"
-          : "ยืนยันว่าได้ตรวจสอบและรับรองข้อมูล Survey, Package, ราคา, เงื่อนไขชำระเงิน และผลคำนวณทั้งชุดแล้ว",
-      )
-    )
-      return;
+    if (action === "approve") {
+      const ok = await dialog.confirm({
+        title: "ยืนยันการอนุมัติ",
+        variant: "warning",
+        confirmText: "อนุมัติ",
+        message:
+          status === "pending_solar_sup"
+            ? "ยืนยันว่า Solar Sup ตรวจเอกสารแล้ว และส่งต่อให้ Sale Sup อนุมัติขั้นสุดท้าย"
+            : "ยืนยันว่าได้ตรวจสอบและรับรองข้อมูล Survey, Package, ราคา, เงื่อนไขชำระเงิน และผลคำนวณทั้งชุดแล้ว",
+      });
+      if (!ok) return;
+    }
     setBusy(true);
     setError("");
     try {
@@ -217,7 +226,13 @@ export default function QuotationBuilder({
   // Draft-only hard delete. Backend guards to status='draft' + admin/owner and
   // this button is shown only for drafts, so it never appears on a sent quote.
   const remove = async (id: number) => {
-    if (!window.confirm("ลบใบเสนอราคาฉบับร่างนี้ถาวร? กู้คืนไม่ได้")) return;
+    const ok = await dialog.confirm({
+      title: "ลบฉบับร่าง",
+      variant: "danger",
+      confirmText: "ลบ",
+      message: "ลบใบเสนอราคาฉบับร่างนี้ถาวร? กู้คืนไม่ได้",
+    });
+    if (!ok) return;
     setBusy(true);
     setError("");
     try {
@@ -423,8 +438,8 @@ export default function QuotationBuilder({
                     <button
                       disabled={busy}
                       onClick={() => {
-                        const n = prompt("ระบุเหตุผลที่ส่งกลับแก้ไข");
-                        if (n) act(q.id, "changes_required", n);
+                        setReturnNote("");
+                        setReturnModal({ id: q.id });
                       }}
                       className="h-9 rounded-lg bg-red-50 text-red-700 text-xs font-semibold"
                     >
@@ -568,6 +583,53 @@ export default function QuotationBuilder({
             await load();
           }}
         />
+      )}
+      {returnModal && (
+        <ModalBase
+          title="ส่งกลับให้แก้ไข"
+          size="md"
+          onClose={() => setReturnModal(null)}
+          footer={
+            <div className="flex justify-end gap-2">
+              <button
+                type="button"
+                disabled={busy}
+                onClick={() => setReturnModal(null)}
+                className="h-9 px-4 rounded-lg text-sm font-semibold text-gray-700 border border-gray-200 hover:bg-gray-50 disabled:opacity-50"
+              >
+                ยกเลิก
+              </button>
+              <button
+                type="button"
+                disabled={!returnNote.trim() || busy}
+                onClick={() => {
+                  const id = returnModal.id;
+                  const note = returnNote.trim();
+                  setReturnModal(null);
+                  act(id, "changes_required", note);
+                }}
+                className="h-9 px-4 rounded-lg text-sm font-semibold text-white bg-red-600 hover:bg-red-700 disabled:opacity-40 disabled:cursor-not-allowed"
+              >
+                ส่งกลับ
+              </button>
+            </div>
+          }
+        >
+          <p className="text-xs text-gray-600">
+            ใบเสนอราคาจะถูกส่งกลับให้ผู้จัดทำแก้ไข กรุณาระบุเหตุผล
+          </p>
+          <label className="block text-xs font-semibold text-gray-700 mt-4 mb-1">
+            เหตุผล <span className="text-red-500">*</span>
+          </label>
+          <textarea
+            value={returnNote}
+            onChange={(e) => setReturnNote(e.target.value)}
+            rows={3}
+            autoFocus
+            placeholder="เช่น ราคาไม่ถูกต้อง / เงื่อนไขชำระเงินต้องแก้"
+            className="w-full px-3 py-2 rounded-lg border border-gray-200 text-sm focus:outline-none focus:border-red-400 resize-none"
+          />
+        </ModalBase>
       )}
     </div>
   );

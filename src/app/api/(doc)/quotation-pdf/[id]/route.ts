@@ -338,13 +338,15 @@ export async function GET(
     q.created_by_signature_data,
     q.created_by_signature_mime,
   );
-  const solarApproverSignature = signatureDataUrl(
-    q.solar_approver_signature_data_snapshot,
-    q.solar_approver_signature_mime_snapshot,
-  );
   const approverSignature = signatureDataUrl(
     q.approver_signature_data_snapshot,
     q.approver_signature_mime_snapshot,
+  );
+  // Solar Sup (ผู้ตรวจสอบ) signs at the first approval step; show it as soon as
+  // they approve (pending_sales_sup onward), not only after final approval.
+  const solarSignature = signatureDataUrl(
+    q.solar_approved_signature_data,
+    q.solar_approved_signature_mime,
   );
   const watermark =
     q.status === "approved"
@@ -593,7 +595,7 @@ export async function GET(
       ${standardTermsPage1}<div class="footer">หน้า 16 / 17 · ใบเสนอราคา 1 / 2 · ${esc(q.doc_no)}</div>
     </section>
     <section class="page">${watermark ? `<div class="watermark">${esc(watermark)}</div>` : ""}${quotationHeader}${standardTermsPage2}
-      <div class="signatures">${sigCell("ลูกค้า")}${sigCell("ผู้จัดทำเอกสาร", q.created_by_name, creatorSignature, q.issue_date, q.created_by_title)}${sigCell("ผู้ตรวจสอบ", q.solar_approver_name_snapshot, solarApproverSignature, q.solar_approved_at)}${sigCell("ผู้ขาย/ผู้ตรวจสอบ", q.approver_name_snapshot || q.approved_by_name, approverSignature, q.approved_at)}</div>
+      <div class="signatures">${sigCell("ลูกค้า")}${sigCell("ผู้จัดทำเอกสาร", q.created_by_name, creatorSignature, q.issue_date, q.created_by_title)}${sigCell("ผู้ตรวจสอบ", q.solar_approved_name, solarSignature, q.solar_approved_at)}${sigCell("ผู้ขาย / ผู้ตรวจสอบ", q.approver_name_snapshot || q.approved_by_name, approverSignature, q.approved_at)}</div>
       <div class="footer">หน้า 17 / 17 · ใบเสนอราคา 2 / 2 · ${esc(q.doc_no)}</div>
     </section>
   </body></html>`;
