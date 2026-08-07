@@ -96,13 +96,6 @@ const statusLabel: Record<string, string> = {
   changes_required: "ส่งกลับแก้ไข",
   cancelled: "ยกเลิกแล้ว",
 };
-const emptyItem = (): Item => ({
-  source_type: "custom",
-  item_name: "",
-  quantity: 1,
-  unit: "ชุด",
-  unit_price: 0,
-});
 // Local-time YYYY-MM-DD for the quotation date input default (never UTC —
 // toISOString would roll to the next day for evening edits in +07:00).
 const todayIso = () => {
@@ -111,6 +104,94 @@ const todayIso = () => {
 };
 const formatPackageSpecs = (pkg: Package) =>
   `ขนาด ${pkg.kwp} kWp · ${pkg.phase > 0 ? `${pkg.phase} เฟส` : "ทุกเฟส"}`;
+// ชื่อรายการใน Package Master บางบรรทัดมี "–" นำหน้า (ไว้จัดรูปแบบใน PDF)
+// ตัดออกตอนแสดงในตัวแก้ไข ทุกบรรทัดจะเริ่มตรงกัน — ตัวสร้าง PDF ใส่ "-" ให้เอง
+const stripLeadMark = (name: string) => name.replace(/^\s*[-–—•]\s*/, "");
+
+/** ป๊อปอัปเลือกแพ็กเกจ — กดปุ่มแล้วเด้งขึ้นมาเลือก (มีช่องค้นหาในตัว) */
+function PackagePickerDialog({
+  groups,
+  onPick,
+  onClose,
+}: {
+  groups: Array<{ label: string; icon: string; items: Package[] }>;
+  onPick: (packageId: number) => void;
+  onClose: () => void;
+}) {
+  const [filter, setFilter] = useState("");
+  const matches = (p: Package) => {
+    const q = filter.trim().toLowerCase();
+    if (!q) return true;
+    return `${p.name} ${formatPackageSpecs(p)} ${p.price} ${p.inverter_brand || ""}`
+      .toLowerCase()
+      .includes(q);
+  };
+  const visible = groups
+    .map((g) => ({ ...g, items: g.items.filter(matches) }))
+    .filter((g) => g.items.length);
+  return (
+    <div className="fixed inset-0 z-[90] flex items-start justify-center bg-slate-900/40 p-4 pt-[8vh] backdrop-blur-sm">
+      <div className="flex max-h-[80vh] w-full max-w-2xl flex-col overflow-hidden rounded-2xl bg-white shadow-2xl">
+        <div className="flex shrink-0 items-center gap-2 border-b border-gray-100 p-3">
+          <input
+            autoFocus
+            value={filter}
+            onChange={(e) => setFilter(e.target.value)}
+            onKeyDown={(e) => e.key === "Escape" && onClose()}
+            placeholder="พิมพ์ค้นหาแพ็กเกจ เช่น 5 kWp, Battery, Scale Up…"
+            className="h-10 flex-1 rounded-lg border border-gray-200 bg-white px-3 text-sm outline-none focus:border-primary focus:ring-2 focus:ring-primary/10"
+          />
+          <button
+            type="button"
+            onClick={onClose}
+            aria-label="ปิด"
+            className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full text-lg text-gray-400 hover:bg-gray-100 hover:text-gray-700"
+          >
+            ×
+          </button>
+        </div>
+        <div className="min-h-0 flex-1 overflow-y-auto">
+          {visible.map((group) => (
+            <div key={group.label} className="border-t border-gray-100 first:border-t-0">
+              <div className="sticky top-0 z-10 bg-gray-50/95 px-3 py-1.5 text-xxs font-bold uppercase tracking-wider text-gray-500 backdrop-blur">
+                {group.icon} {group.label}
+              </div>
+              {group.items.map((p) => (
+                <button
+                  key={p.id}
+                  type="button"
+                  onClick={() => onPick(p.id)}
+                  className="flex w-full items-center justify-between gap-3 px-3 py-2.5 text-left transition-colors hover:bg-primary/5"
+                >
+                  <span className="flex min-w-0 items-center gap-2">
+                    <span aria-hidden="true" className="shrink-0 text-base">
+                      {group.icon}
+                    </span>
+                    <span className="min-w-0">
+                      <span className="block truncate text-sm font-semibold text-gray-800">
+                        {p.name}
+                      </span>
+                      <span className="text-xxs text-gray-400">{formatPackageSpecs(p)}</span>
+                    </span>
+                  </span>
+                  <span className="shrink-0 text-sm font-bold tabular-nums text-gray-700">
+                    {formatTHB(p.price)}
+                  </span>
+                </button>
+              ))}
+            </div>
+          ))}
+          {!visible.length && (
+            <div className="px-3 py-10 text-center text-xs text-gray-400">
+              ไม่พบแพ็กเกจที่ตรงกับ “{filter}”
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 
 export default function QuotationBuilder({
   lead,
@@ -620,6 +701,90 @@ export default function QuotationBuilder({
   );
 }
 
+/* ── Tree model ────────────────────────────────────────────────────────────
+   ใบเสนอราคา = ต้นไม้ของ "หัวข้อ" (บรรทัดที่ขึ้นเอกสาร + ราคา) และ
+   "รายละเอียด" ใต้หัวข้อนั้น (ชื่อ/จำนวน/หน่วย ไม่มีราคา)
+     • หัวข้อชนิด package  → เลือกจาก Package Master, ราคามาจาก master
+     • หัวข้อชนิด custom   → "งานเพิ่ม" พิมพ์ชื่อและราคาเอง
+   แพ็กเกจที่อยู่บนสุด = แพ็กเกจหลักของใบ (ชื่อขึ้นหัวเอกสาร)              */
+type TreeLine = {
+  key: string;
+  package_item_id?: number | null;
+  item_name: string;
+  quantity: number;
+  unit: string;
+};
+type TreeGroup = {
+  key: string;
+  kind: "package" | "custom";
+  source_package_id?: number;
+  price: number;
+  title: TreeLine;   // = item แรกของ package (บรรทัดที่โชว์บนเอกสาร)
+  details: TreeLine[];
+  open: boolean;
+};
+let treeSeq = 0;
+const treeKey = () => `t${Date.now().toString(36)}${++treeSeq}`;
+const asLine = (raw: Record<string, unknown>): TreeLine => ({
+  key: treeKey(),
+  package_item_id: (raw.package_item_id as number) ?? null,
+  item_name: stripLeadMark(String(raw.item_name_snapshot || raw.item_name || "")),
+  quantity: Number(raw.quantity) || 1,
+  unit: String(raw.unit || ""),
+});
+
+/** แปลงรายการที่บันทึกไว้กลับเป็น tree ตอนเปิดใบเก่ามาแก้ */
+function hydrateGroups(quote: Quote | undefined): TreeGroup[] {
+  const rows = (quote?.items || []) as unknown as Array<Record<string, unknown>>;
+  const groups: TreeGroup[] = [];
+  const mainRows = rows.filter((r) => r.source_type === "package");
+  if (mainRows.length) {
+    const [first, ...rest] = mainRows;
+    groups.push({
+      key: treeKey(),
+      kind: "package",
+      source_package_id: Number(quote?.package_id) || undefined,
+      price: Number(quote?.package_price_snapshot) || 0,
+      title: asLine(first),
+      details: rest.map(asLine),
+      open: true,
+    });
+  }
+  for (const row of rows) {
+    const type = String(row.source_type || "");
+    if (type === "package") continue;
+    if (type === "addon_package" || type === "custom_group") {
+      groups.push({
+        key: treeKey(),
+        kind: type === "addon_package" ? "package" : "custom",
+        source_package_id: Number(row.source_package_id) || undefined,
+        price:
+          Number(row.line_total) ||
+          (Number(row.quantity) || 1) * (Number(row.unit_price) || 0),
+        title: asLine(row),
+        details: [],
+        open: true,
+      });
+      continue;
+    }
+    if (type === "addon_package_detail" || type === "custom_detail") {
+      groups[groups.length - 1]?.details.push(asLine(row));
+      continue;
+    }
+    // legacy: รายการเดี่ยวที่ไม่มีลูก
+    groups.push({
+      key: treeKey(),
+      kind: "custom",
+      price: (Number(row.quantity) || 1) * (Number(row.unit_price) || 0),
+      title: asLine(row),
+      details: [],
+      open: false,
+    });
+  }
+  return groups;
+}
+
+
 function QuotationEditor({
   optionNo,
   quote,
@@ -640,124 +805,163 @@ function QuotationEditor({
   onSaved: () => Promise<void>;
 }) {
   const defaultTemplate = templates.find((t) => t.is_default) || templates[0];
-  // Default to unselected ("เลือก Package") — a package is optional now
-  // (customer may buy add-ons only), so we never auto-pick the first one.
-  const [packageId, setPackageId] = useState(quote?.package_id || 0);
-  const savedPackageItems =
-    quote?.items
-      ?.filter((item) => item.source_type === "package")
-      .map((item) => ({
-        ...item,
-        item_name: item.item_name_snapshot || item.item_name || "",
-        unit_price: 0,
-      })) || [];
-  const [packageItems, setPackageItems] = useState<Item[]>(savedPackageItems);
-  const [packageItemsSourceId, setPackageItemsSourceId] = useState(
-    savedPackageItems.length > 0 ? quote?.package_id || 0 : 0,
-  );
-  const [packageItemsLoading, setPackageItemsLoading] = useState(false);
-  const [showPackageItems, setShowPackageItems] = useState(false);
-  const [shownAdditionalPackageItems, setShownAdditionalPackageItems] =
-    useState<Record<number, boolean>>({});
-  const initialAdditionalState = (() => {
-    const editorItems: Item[] = [];
-    const selectors: Array<{ id: number; value: string }> = [];
-    const packageDetails: Record<number, Item[]> = {};
-    let activeSelectorId: number | null = null;
-    for (const savedItem of quote?.items || []) {
-      if (savedItem.source_type === "package") continue;
-      if (savedItem.source_type === "addon_package") {
-        const selectorId = selectors.length + 1;
-        const sourcePackageId = Number(savedItem.source_package_id) || 0;
-        const selectedPackage = packages.find(
-          (candidate) => candidate.id === sourcePackageId,
-        );
-        selectors.push({ id: selectorId, value: String(sourcePackageId || "") });
-        editorItems.push({
-          ...savedItem,
-          source_type: "custom",
-          editorSelectionId: selectorId,
-          source_package_id: sourcePackageId || undefined,
-          item_name: selectedPackage
-            ? `Package เพิ่มเติม: ${selectedPackage.name}`
-            : savedItem.item_name_snapshot || savedItem.item_name,
-          quantity:
-            Number(savedItem.unit_price) > 0
-              ? Math.max(
-                  1,
-                  Number(savedItem.line_total) / Number(savedItem.unit_price),
-                )
-              : 1,
-        });
-        packageDetails[selectorId] = [
-          {
-            ...savedItem,
-            item_name: savedItem.item_name_snapshot || savedItem.item_name,
-            unit_price: 0,
-          },
-        ];
-        activeSelectorId = selectorId;
-        continue;
-      }
-      if (savedItem.source_type === "custom_group") {
-        const selectorId = selectors.length + 1;
-        selectors.push({ id: selectorId, value: "custom" });
-        editorItems.push({
-          ...savedItem,
-          source_type: "custom",
-          editorSelectionId: selectorId,
-          item_name: savedItem.item_name_snapshot || savedItem.item_name,
-        });
-        packageDetails[selectorId] = [];
-        activeSelectorId = selectorId;
-        continue;
-      }
-      if (
-        (savedItem.source_type === "addon_package_detail" ||
-          savedItem.source_type === "custom_detail") &&
-        activeSelectorId !== null
-      ) {
-        packageDetails[activeSelectorId].push({
-          ...savedItem,
-          item_name: savedItem.item_name_snapshot || savedItem.item_name,
-          unit_price: 0,
-        });
-        continue;
-      }
-      activeSelectorId = null;
-      editorItems.push({
-        ...savedItem,
-        source_type: "custom",
-        item_name: savedItem.item_name_snapshot || savedItem.item_name,
+
+  // ── ต้นไม้รายการ ────────────────────────────────────────────────────
+  const [groups, setGroups] = useState<TreeGroup[]>(() => hydrateGroups(quote));
+  const [loadingPackage, setLoadingPackage] = useState(false);
+  const [pickerOpen, setPickerOpen] = useState(false);
+  const patchGroup = (key: string, patch: Partial<TreeGroup>) =>
+    setGroups((gs) => gs.map((g) => (g.key === key ? { ...g, ...patch } : g)));
+  /** accordion — กางได้ทีละหัวข้อ ที่เหลือหุบอัตโนมัติ */
+  const toggleGroup = (key: string) =>
+    setGroups((gs) =>
+      gs.map((g) => ({ ...g, open: g.key === key ? !g.open : false })),
+    );
+  const patchLine = (
+    groupKey: string,
+    lineKey: string,
+    patch: Partial<TreeLine>,
+  ) =>
+    setGroups((gs) =>
+      gs.map((g) =>
+        g.key !== groupKey
+          ? g
+          : lineKey === g.title.key
+            ? { ...g, title: { ...g.title, ...patch } }
+            : {
+                ...g,
+                details: g.details.map((d) =>
+                  d.key === lineKey ? { ...d, ...patch } : d,
+                ),
+              },
+      ),
+    );
+  const addDetail = (groupKey: string) =>
+    setGroups((gs) =>
+      gs.map((g) =>
+        g.key !== groupKey
+          ? { ...g, open: false }
+          : g.key === groupKey
+          ? {
+              ...g,
+              open: true,
+              details: [
+                ...g.details,
+                { key: treeKey(), item_name: "", quantity: 1, unit: "ชุด" },
+              ],
+            }
+          : g,
+      ),
+    );
+  const removeDetail = (groupKey: string, lineKey: string) =>
+    setGroups((gs) =>
+      gs.map((g) =>
+        g.key === groupKey
+          ? { ...g, details: g.details.filter((d) => d.key !== lineKey) }
+          : g,
+      ),
+    );
+  const removeGroup = (key: string) =>
+    setGroups((gs) => gs.filter((g) => g.key !== key));
+  const moveGroup = (key: string, dir: -1 | 1) =>
+    setGroups((gs) => {
+      const i = gs.findIndex((g) => g.key === key);
+      const j = i + dir;
+      if (i < 0 || j < 0 || j >= gs.length) return gs;
+      const next = [...gs];
+      [next[i], next[j]] = [next[j], next[i]];
+      return next;
+    });
+  /** ดึงชุดรายการของแพ็กเกจจาก Master มาสร้างเป็นหัวข้อใหม่ (item แรก = ชื่อบนเอกสาร) */
+  const loadPackageGroup = async (packageId: number, replaceKey?: string) => {
+    const chosen = packages.find((p) => p.id === packageId);
+    if (!chosen) return;
+    setLoadingPackage(true);
+    try {
+      const rows: Array<Record<string, unknown>> = await apiFetch(
+        `/api/packages/${packageId}/items`,
+      ).catch(() => []);
+      const lines = (rows || []).map(asLine);
+      const group: TreeGroup = {
+        key: replaceKey || treeKey(),
+        kind: "package",
+        source_package_id: packageId,
+        price: Number(chosen.price) || 0,
+        title: lines[0] || {
+          key: treeKey(),
+          item_name: chosen.name,
+          quantity: 1,
+          unit: "ชุด",
+        },
+        details: lines.slice(1),
+        open: true,
+      };
+      setGroups((gs) => {
+        if (replaceKey) return gs.map((g) => (g.key === replaceKey ? group : g));
+        // แพ็กเกจใหม่แทรกต่อท้ายกลุ่มแพ็กเกจ — "งานเพิ่ม" อยู่ล่างสุดเสมอ
+        // และหุบหัวข้ออื่นไว้ (กางได้ทีละอัน)
+        const closed = gs.map((g) => ({ ...g, open: false }));
+        const firstCustom = closed.findIndex((g) => g.kind === "custom");
+        return firstCustom < 0
+          ? [...closed, group]
+          : [...closed.slice(0, firstCustom), group, ...closed.slice(firstCustom)];
       });
+    } finally {
+      setLoadingPackage(false);
     }
-    if (selectors.length === 0) selectors.push({ id: 1, value: "" });
-    return { editorItems, selectors, packageDetails };
-  })();
-  const [items, setItems] = useState<Item[]>(initialAdditionalState.editorItems);
-  const [additionalItemSelectors, setAdditionalItemSelectors] = useState(
-    initialAdditionalState.selectors,
-  );
-  const [additionalPackageItems, setAdditionalPackageItems] = useState<
-    Record<number, Item[]>
-  >(initialAdditionalState.packageDetails);
+  };
+  const addCustomGroup = () =>
+    setGroups((gs) => [
+      ...gs.map((g) => ({ ...g, open: false })),
+      {
+        key: treeKey(),
+        kind: "custom",
+        price: 0,
+        title: { key: treeKey(), item_name: "", quantity: 1, unit: "งาน" },
+        details: [],
+        open: true,
+      },
+    ]);
+  // จัดกลุ่มแพ็กเกจให้ตัวเลือกค้นหา (ชุดเดียวกับหน้า Package Master)
+  const packageGroups = [
+    {
+      label: "แพ็กเกจมาตรฐาน (Solar Rooftop)",
+      icon: "☀️",
+      items: packages.filter((p) => !p.has_battery && !p.is_upgrade && !p.is_other),
+    },
+    {
+      label: "แพ็กเกจเพิ่มขนาดระบบ (Scale Up)",
+      icon: "📈",
+      items: packages.filter((p) => p.is_upgrade && !p.is_other),
+    },
+    {
+      label: "แพ็กเกจแบตเตอรี่ / Hybrid",
+      icon: "🔋",
+      items: packages.filter((p) => p.has_battery && !p.is_upgrade && !p.is_other),
+    },
+    { label: "Package อื่นๆ", icon: "📦", items: packages.filter((p) => p.is_other) },
+  ].filter((group) => group.items.length > 0);
+  // แพ็กเกจบนสุด = แพ็กเกจหลักของใบนี้
+  const mainIndex = groups.findIndex((g) => g.kind === "package");
+  const mainGroup = mainIndex >= 0 ? groups[mainIndex] : undefined;
+  const mainPackage = packages.find((p) => p.id === mainGroup?.source_package_id);
+
+  // ── การเงิน ─────────────────────────────────────────────────────────
   const [discountType, setDiscountType] = useState<"amount" | "percent">(
     quote?.discount_type === "percent" ? "percent" : "amount",
   );
   const [discountValue, setDiscountValue] = useState(
     Math.max(0, Number(quote?.discount_value) || 0),
   );
-  const [discountLabel, setDiscountLabel] = useState(
-    quote?.discount_label || "",
-  );
+  const [discountLabel, setDiscountLabel] = useState(quote?.discount_label || "");
   const discountReason = "";
   const isFreeSurvey = lead.pre_survey_fee_type === "free";
   const [deposit, setDeposit] = useState(
     isFreeSurvey
       ? 0
       : confirmedDeposit > 0
-      ? confirmedDeposit
-      : Math.max(0, Number(quote?.deposit_paid_amount) || 0),
+        ? confirmedDeposit
+        : Math.max(0, Number(quote?.deposit_paid_amount) || 0),
   );
   const [templateId, setTemplateId] = useState<number | undefined>(
     quote?.payment_template_id || defaultTemplate?.id,
@@ -768,8 +972,6 @@ function QuotationEditor({
     ),
   );
   const [termsText, setTermsText] = useState(quote?.terms_text || "");
-  // Quotation date shown on the document (issue_date). Editable; defaults to
-  // today for a new quote, or the saved value when editing.
   const [issueDate, setIssueDate] = useState(
     quote?.issue_date ? String(quote.issue_date).slice(0, 10) : todayIso(),
   );
@@ -782,8 +984,7 @@ function QuotationEditor({
     } catch {}
     return {
       recommendation_reason: saved.recommendation_reason || "",
-      loan_enabled:
-        saved.loan_enabled ?? GSB_SOLAR_LOAN_DEFAULTS.loan_enabled,
+      loan_enabled: saved.loan_enabled ?? GSB_SOLAR_LOAN_DEFAULTS.loan_enabled,
       loan_bank:
         saved.loan_bank ||
         lead.finance_loan_bank ||
@@ -795,22 +996,18 @@ function QuotationEditor({
           GSB_SOLAR_LOAN_DEFAULTS.loan_term_months,
       ),
       down_payment_percent: Number(
-        saved.down_payment_percent ??
-          GSB_SOLAR_LOAN_DEFAULTS.down_payment_percent,
+        saved.down_payment_percent ?? GSB_SOLAR_LOAN_DEFAULTS.down_payment_percent,
       ),
       interest_rate_year_1_2: Number(
-        saved.interest_rate_year_1_2 ??
-          GSB_SOLAR_LOAN_DEFAULTS.interest_rate_year_1_2,
+        saved.interest_rate_year_1_2 ?? GSB_SOLAR_LOAN_DEFAULTS.interest_rate_year_1_2,
       ),
       interest_rate_year_3_plus: Number(
         saved.interest_rate_year_3_plus ??
           GSB_SOLAR_LOAN_DEFAULTS.interest_rate_year_3_plus,
       ),
-      rate_source:
-        saved.rate_source || GSB_SOLAR_LOAN_DEFAULTS.rate_source,
+      rate_source: saved.rate_source || GSB_SOLAR_LOAN_DEFAULTS.rate_source,
       rate_effective_date:
-        saved.rate_effective_date ||
-        GSB_SOLAR_LOAN_DEFAULTS.rate_effective_date,
+        saved.rate_effective_date || GSB_SOLAR_LOAN_DEFAULTS.rate_effective_date,
       current_monthly_bill: Number(
         saved.current_monthly_bill ||
           lead.survey_monthly_bill ||
@@ -819,49 +1016,10 @@ function QuotationEditor({
           0,
       ),
       electricity_rate: Number(saved.electricity_rate || 5),
-      production_kwh_per_kw_month: Number(
-        saved.production_kwh_per_kw_month || 120,
-      ),
-      annual_degradation_percent: Number(
-        saved.annual_degradation_percent ?? 0.5,
-      ),
+      production_kwh_per_kw_month: Number(saved.production_kwh_per_kw_month || 120),
+      annual_degradation_percent: Number(saved.annual_degradation_percent ?? 0.5),
     };
   });
-  useEffect(() => {
-    if (!packageId) {
-      setPackageItems([]);
-      setPackageItemsSourceId(0);
-      setPackageItemsLoading(false);
-      return;
-    }
-    if (packageItemsSourceId === packageId) return;
-    let cancelled = false;
-    setPackageItemsLoading(true);
-    apiFetch(`/api/packages/${packageId}/items`)
-      .then((rows: Item[]) => {
-        if (cancelled) return;
-        setPackageItems(
-          rows.map((item) => ({
-            ...item,
-            package_item_id: item.id,
-            item_name: item.item_name_snapshot || item.item_name || "",
-            unit_price: 0,
-          })),
-        );
-        setPackageItemsSourceId(packageId);
-      })
-      .catch(() => {
-        if (cancelled) return;
-        setPackageItems([]);
-        setPackageItemsSourceId(packageId);
-      })
-      .finally(() => {
-        if (!cancelled) setPackageItemsLoading(false);
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [packageId, packageItemsSourceId]);
   useEffect(() => {
     if (quote || templateId || !defaultTemplate) return;
     setTemplateId(defaultTemplate.id);
@@ -870,38 +1028,8 @@ function QuotationEditor({
     if (isFreeSurvey) setDeposit(0);
     else if (confirmedDeposit > 0) setDeposit(confirmedDeposit);
   }, [confirmedDeposit, isFreeSurvey]);
-  const pkg = packages.find((p) => p.id === packageId);
-  const packageGroups = [
-    {
-      label: "แพ็กเกจมาตรฐาน (Solar Rooftop)",
-      icon: "☀️",
-      items: packages.filter(
-        (p) => !p.has_battery && !p.is_upgrade && !p.is_other,
-      ),
-    },
-    {
-      label: "แพ็กเกจเพิ่มขนาดระบบ (Scale Up)",
-      icon: "📈",
-      items: packages.filter((p) => p.is_upgrade && !p.is_other),
-    },
-    {
-      label: "แพ็กเกจแบตเตอรี่ / Hybrid",
-      icon: "🔋",
-      items: packages.filter(
-        (p) => p.has_battery && !p.is_upgrade && !p.is_other,
-      ),
-    },
-    {
-      label: "Package อื่นๆ",
-      icon: "📦",
-      items: packages.filter((p) => p.is_other),
-    },
-  ].filter((group) => group.items.length > 0);
-  const extras = items.reduce(
-    (s, i) => s + (Number(i.quantity) || 0) * (Number(i.unit_price) || 0),
-    0,
-  );
-  const subtotal = Number(pkg?.price || 0) + extras;
+
+  const subtotal = groups.reduce((sum, g) => sum + (Number(g.price) || 0), 0);
   const discountAmount =
     Math.round(
       Math.min(
@@ -915,43 +1043,9 @@ function QuotationEditor({
     subtotal > 0 ? Math.round((discountAmount / subtotal) * 10000) / 100 : 0;
   const total = Math.max(0, subtotal - discountAmount);
   const outstanding = Math.max(0, total - deposit);
-  const updateItem = (idx: number, patch: Partial<Item>) =>
-    setItems((v) => v.map((i, n) => (n === idx ? { ...i, ...patch } : i)));
-  const updatePackageItem = (idx: number, patch: Partial<Item>) =>
-    setPackageItems((current) =>
-      current.map((item, index) =>
-        index === idx ? { ...item, ...patch } : item,
-      ),
-    );
-  const addPackageItem = () => {
-    setPackageItems((current) => [
-      ...current,
-      {
-        package_item_id: null,
-        source_type: "package",
-        item_name: "",
-        quantity: 1,
-        unit: "SET",
-        unit_price: 0,
-      },
-    ]);
-    setShowPackageItems(true);
-  };
-  const removePackageItem = (idx: number) => {
-    if (idx === 0) return;
-    setPackageItems((current) =>
-      current.filter((_, index) => index !== idx),
-    );
-  };
-  const restorePackageItems = () => {
-    setPackageItemsSourceId(0);
-    setShowPackageItems(true);
-  };
+
   const termsPercentTotal = getQuotationPaymentTermsTotal(terms);
-  const updatePaymentTerm = (
-    idx: number,
-    patch: Partial<QuotationPaymentTerm>,
-  ) =>
+  const updatePaymentTerm = (idx: number, patch: Partial<QuotationPaymentTerm>) =>
     setTerms((current) => {
       const updated = current.map((term, index) =>
         index === idx ? { ...term, ...patch } : term,
@@ -963,13 +1057,11 @@ function QuotationEditor({
   const getPaymentTermAmount = (percent: number, idx: number) => {
     if (!Number.isFinite(percent)) return Number.NaN;
     if (idx === terms.length - 1) {
-      const allocatedAmount = terms.slice(0, -1).reduce((sum, term) => {
+      const allocated = terms.slice(0, -1).reduce((sum, term) => {
         if (!Number.isFinite(term.percent)) return sum;
-        return (
-          sum + Math.round(((outstanding * term.percent) / 100) * 100) / 100
-        );
+        return sum + Math.round(((outstanding * term.percent) / 100) * 100) / 100;
       }, 0);
-      return Math.round(Math.max(0, outstanding - allocatedAmount) * 100) / 100;
+      return Math.round(Math.max(0, outstanding - allocated) * 100) / 100;
     }
     return Math.round(((outstanding * percent) / 100) * 100) / 100;
   };
@@ -981,8 +1073,7 @@ function QuotationEditor({
     const amount = Math.min(outstanding, Math.max(0, Number(value) || 0));
     const percent =
       outstanding > 0
-        ? Math.round(((amount / outstanding) * 100) * 100_000_000) /
-          100_000_000
+        ? Math.round(((amount / outstanding) * 100) * 100_000_000) / 100_000_000
         : 0;
     updatePaymentTerm(idx, { percent });
   };
@@ -990,11 +1081,7 @@ function QuotationEditor({
     setTerms((current) =>
       balanceFinalQuotationPaymentTerm([
         ...current,
-        {
-          label: `งวดที่ ${current.length + 1} ชำระ`,
-          percent: 0,
-          due: "",
-        },
+        { label: `งวดที่ ${current.length + 1} ชำระ`, percent: 0, due: "" },
       ]),
     );
   const removePaymentTerm = (idx: number) =>
@@ -1010,243 +1097,81 @@ function QuotationEditor({
           })),
       ),
     );
-  const addAdditionalItemSelector = () =>
-    setAdditionalItemSelectors((current) => [
-      ...current,
-      {
-        id: Math.max(0, ...current.map((selector) => selector.id)) + 1,
-        value: "",
-      },
-    ]);
-  const updateAdditionalItemSelection = (selectorId: number, value: string) => {
-    setShownAdditionalPackageItems((current) => ({
-      ...current,
-      [selectorId]: false,
-    }));
-    setAdditionalItemSelectors((current) =>
-      current.map((selector) =>
-        selector.id === selectorId ? { ...selector, value } : selector,
-      ),
-    );
-    setItems((current) => {
-      const linkedItems = new Map(
-        current
-          .filter((item) => item.editorSelectionId !== undefined)
-          .map((item) => [item.editorSelectionId, item]),
-      );
-      if (!value) {
-        linkedItems.delete(selectorId);
-      } else if (value === "custom") {
-        linkedItems.set(selectorId, {
-          ...emptyItem(),
-          editorSelectionId: selectorId,
-        });
-      } else {
-        const selectedPackage = packages.find(
-          (candidate) => candidate.id === Number(value),
-        );
-        if (!selectedPackage || selectedPackage.id === packageId) return current;
-        linkedItems.set(selectorId, {
-          source_type: "custom",
-          editorSelectionId: selectorId,
-          item_name: `Package เพิ่มเติม: ${selectedPackage.name}`,
-          quantity: 1,
-          unit: "ชุด",
-          unit_price: Number(selectedPackage.price) || 0,
-          source_package_id: selectedPackage.id,
-        });
-      }
-      return [
-        ...current.filter((item) => item.editorSelectionId === undefined),
-        ...additionalItemSelectors.flatMap((selector) => {
-          const item = linkedItems.get(selector.id);
-          return item ? [item] : [];
-        }),
-      ];
-    });
-    if (!value) {
-      setAdditionalPackageItems((current) => {
-        const next = { ...current };
-        delete next[selectorId];
-        return next;
-      });
-      return;
-    }
-    if (value === "custom") {
-      setAdditionalPackageItems((current) => ({
-        ...current,
-        [selectorId]: [],
-      }));
-      return;
-    }
-    apiFetch(`/api/packages/${Number(value)}/items`)
-      .then((rows: Item[]) =>
-        setAdditionalPackageItems((current) => ({
-          ...current,
-          [selectorId]: rows.map((item) => ({
-            ...item,
-            package_item_id: item.id,
-            source_type: "addon_package_detail",
-            item_name: item.item_name_snapshot || item.item_name || "",
-            unit_price: 0,
-          })),
-        })),
-      )
-      .catch(() =>
-        setAdditionalPackageItems((current) => ({
-          ...current,
-          [selectorId]: [],
-        })),
-      );
-  };
-  const removeAdditionalItemSelector = (selectorId: number) => {
-    setAdditionalItemSelectors((current) =>
-      current.length === 1
-        ? current.map((selector) => ({ ...selector, value: "" }))
-        : current.filter((selector) => selector.id !== selectorId),
-    );
-    setItems((current) =>
-      current.filter((item) => item.editorSelectionId !== selectorId),
-    );
-    setAdditionalPackageItems((current) => {
-      const next = { ...current };
-      delete next[selectorId];
-      return next;
-    });
-    setShownAdditionalPackageItems((current) => {
-      const next = { ...current };
-      delete next[selectorId];
-      return next;
-    });
-  };
-  const updateAdditionalSelectorItem = (
-    selectorId: number,
-    patch: Partial<Item>,
-  ) =>
-    setItems((current) =>
-      current.map((item) =>
-        item.editorSelectionId === selectorId ? { ...item, ...patch } : item,
-      ),
-    );
-  const removeAdditionalItem = (idx: number) => {
-    const selectorId = items[idx]?.editorSelectionId;
-    setItems((current) => current.filter((_, index) => index !== idx));
-    if (selectorId === undefined) return;
-    setAdditionalItemSelectors((current) =>
-      current.map((selector) =>
-        selector.id === selectorId ? { ...selector, value: "" } : selector,
-      ),
-    );
-  };
-  const updateAdditionalPackageItem = (
-    selectorId: number,
-    itemIndex: number,
-    patch: Partial<Item>,
-  ) =>
-    setAdditionalPackageItems((current) => ({
-      ...current,
-      [selectorId]: (current[selectorId] || []).map((item, index) =>
-        index === itemIndex ? { ...item, ...patch } : item,
-      ),
-    }));
-  const addAdditionalPackageItem = (selectorId: number) =>
-    setAdditionalPackageItems((current) => ({
-      ...current,
-      [selectorId]: [
-        ...(current[selectorId] || []),
-        {
-          package_item_id: null,
-          source_type: "addon_package_detail",
-          item_name: "",
-          quantity: 1,
-          unit: "SET",
-          unit_price: 0,
-        },
-      ],
-    }));
-  const removeAdditionalPackageItem = (
-    selectorId: number,
-    itemIndex: number,
-  ) => {
-    const selector = additionalItemSelectors.find(
-      (item) => item.id === selectorId,
-    );
-    if (selector?.value !== "custom" && itemIndex === 0) return;
-    setAdditionalPackageItems((current) => ({
-      ...current,
-      [selectorId]: (current[selectorId] || []).filter(
-        (_, index) => index !== itemIndex,
-      ),
-    }));
-  };
-  const restoreAdditionalPackageItems = (selectorId: number) => {
-    const selector = additionalItemSelectors.find(
-      (item) => item.id === selectorId,
-    );
-    if (!selector?.value || selector.value === "custom") return;
-    apiFetch(`/api/packages/${Number(selector.value)}/items`)
-      .then((rows: Item[]) =>
-        setAdditionalPackageItems((current) => ({
-          ...current,
-          [selectorId]: rows.map((item) => ({
-            ...item,
-            package_item_id: item.id,
-            source_type: "addon_package_detail",
-            item_name: item.item_name_snapshot || item.item_name || "",
-            unit_price: 0,
-          })),
-        })),
-      )
-      .catch(() => undefined);
-  };
-  const serializeAdditionalItems = () =>
-    items.flatMap((item) => {
-      const selectorId = item.editorSelectionId;
-      if (!selectorId) return [item];
-      const packageDetailItems = additionalPackageItems[selectorId] || [];
-      if (packageDetailItems.length === 0) return [item];
-      if (!item.source_package_id) {
+
+  /** tree → payload ของ API (package_items = หัวข้อหลัก, items = หัวข้ออื่น + ลูก) */
+  const serializeTree = () => {
+    const packageItems = mainGroup
+      ? [mainGroup.title, ...mainGroup.details].map((line) => ({
+          package_item_id: line.package_item_id ?? null,
+          item_name: line.item_name,
+          quantity: Number(line.quantity) || 1,
+          unit: line.unit || null,
+        }))
+      : [];
+    const items = groups
+      .filter((g) => g.key !== mainGroup?.key)
+      .flatMap((g) => {
+        const price = Number(g.price) || 0;
+        const head =
+          g.kind === "package"
+            ? {
+                source_type: "addon_package" as const,
+                source_package_id: g.source_package_id,
+                package_item_id: g.title.package_item_id ?? null,
+                item_name: g.title.item_name,
+                quantity: 1,
+                unit: g.title.unit || "ชุด",
+                unit_price: price,
+                line_total: price,
+              }
+            : {
+                source_type: "custom_group" as const,
+                item_name: g.title.item_name,
+                quantity: 1,
+                unit: g.title.unit || "งาน",
+                unit_price: price,
+                line_total: price,
+              };
+        const detailType =
+          g.kind === "package"
+            ? ("addon_package_detail" as const)
+            : ("custom_detail" as const);
         return [
-          {
-            ...item,
-            source_type: "custom_group" as const,
-            line_total:
-              (Number(item.quantity) || 1) * (Number(item.unit_price) || 0),
-          },
-          ...packageDetailItems.map((detailItem) => ({
-            ...detailItem,
-            source_type: "custom_detail" as const,
+          head,
+          ...g.details.map((d) => ({
+            source_type: detailType,
+            source_package_id: g.source_package_id,
+            package_item_id: d.package_item_id ?? null,
+            item_name: d.item_name,
+            quantity: Number(d.quantity) || 1,
+            unit: d.unit || null,
             unit_price: 0,
             line_total: 0,
           })),
         ];
-      }
-      const [firstItem, ...detailItems] = packageDetailItems;
-      return [
-        {
-          ...firstItem,
-          source_type: "addon_package" as const,
-          source_package_id: item.source_package_id,
-          unit_price: Number(item.unit_price) || 0,
-          line_total:
-            (Number(item.quantity) || 1) * (Number(item.unit_price) || 0),
-        },
-        ...detailItems.map((detailItem) => ({
-          ...detailItem,
-          source_type: "addon_package_detail" as const,
-          source_package_id: item.source_package_id,
-          unit_price: 0,
-          line_total: 0,
-        })),
-      ];
-    });
+      });
+    return { packageId: mainGroup?.source_package_id || null, packageItems, items };
+  };
+
+  const validate = () => {
+    if (!groups.length) return "กรุณาเพิ่มแพ็กเกจ หรืองานเพิ่ม อย่างน้อย 1 รายการ";
+    if (groups.some((g) => !g.title.item_name.trim()))
+      return "กรุณาตั้งชื่อหัวข้อให้ครบทุกอัน";
+    if (documentInputs.current_monthly_bill <= 0)
+      return "กรุณาระบุค่าไฟปัจจุบันจากข้อมูลจริง";
+    if (termsPercentTotal !== 100)
+      return `ยอดรวมงวดชำระเงินต้องเท่ากับ 100% (ปัจจุบัน ${termsPercentTotal}%)`;
+    if (issueDate > todayIso()) return "วันที่ใบเสนอราคาต้องไม่เป็นวันที่ล่วงหน้า";
+    return "";
+  };
+
   const previewQuotation = async () => {
-    if (!pkg && items.length === 0) {
-      setError("กรุณาเลือก Package หลัก หรือเพิ่มรายการอย่างน้อย 1 รายการก่อนดูตัวอย่าง");
+    const problem = validate();
+    if (problem) {
+      setError(problem);
       return;
     }
     setError("");
-    // Same popup-blocker rule as openPdf: claim the tab during the click.
     const tab = window.open("", "_blank");
     if (tab) {
       tab.opener = null;
@@ -1255,12 +1180,13 @@ function QuotationEditor({
       );
     }
     try {
+      const { packageItems, items } = serializeTree();
       const response = await fetch("/api/quotation-pdf/preview", {
         method: "POST",
         headers: { "Content-Type": "application/json", ...getUserIdHeader() },
         body: JSON.stringify({
           lead,
-          package: pkg,
+          package: mainPackage,
           docNo: quote?.doc_no,
           issueDate,
           allItems: [
@@ -1269,7 +1195,7 @@ function QuotationEditor({
               source_type: "package",
               item_name_snapshot: item.item_name,
             })),
-            ...serializeAdditionalItems(),
+            ...items,
           ],
           discountLabel,
           deposit,
@@ -1294,50 +1220,38 @@ function QuotationEditor({
       setError(e instanceof Error ? e.message : "สร้างตัวอย่างไม่สำเร็จ");
     }
   };
+
   const save = async () => {
-    if (!packageId && items.length === 0) {
-      setError("กรุณาเลือก Package หลัก หรือเพิ่มรายการอย่างน้อย 1 รายการ");
-      return;
-    }
-    if (documentInputs.current_monthly_bill <= 0) {
-      setError("กรุณาระบุค่าไฟปัจจุบันจากข้อมูลจริง");
-      return;
-    }
-    if (termsPercentTotal !== 100) {
-      setError(`ยอดรวมงวดชำระเงินต้องเท่ากับ 100% (ปัจจุบัน ${termsPercentTotal}%)`);
-      return;
-    }
-    if (issueDate > todayIso()) {
-      setError("วันที่ใบเสนอราคาต้องไม่เป็นวันที่ล่วงหน้า");
+    const problem = validate();
+    if (problem) {
+      setError(problem);
       return;
     }
     setSaving(true);
     setError("");
     try {
-      const payload = {
-        option_no: optionNo,
-        package_id: packageId || null,
-        package_items: packageItems,
-        issue_date: issueDate,
-        items: serializeAdditionalItems(),
-        discount_type: discountType,
-        discount_value: discountValue,
-        discount_label: discountLabel,
-        discount_reason: discountReason,
-        deposit_paid_amount: deposit,
-        payment_template_id: templateId,
-        payment_terms: terms,
-        terms_text: termsText,
-        document_inputs: documentInputs,
-      };
+      const { packageId, packageItems, items } = serializeTree();
       await apiFetch(
-        quote
-          ? `/api/quotations/${quote.id}`
-          : `/api/leads/${lead.id}/quotations`,
+        quote ? `/api/quotations/${quote.id}` : `/api/leads/${lead.id}/quotations`,
         {
           method: quote ? "PATCH" : "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify(payload),
+          body: JSON.stringify({
+            option_no: optionNo,
+            package_id: packageId,
+            package_items: packageItems,
+            items,
+            issue_date: issueDate,
+            discount_type: discountType,
+            discount_value: discountValue,
+            discount_label: discountLabel,
+            discount_reason: discountReason,
+            deposit_paid_amount: deposit,
+            payment_template_id: templateId,
+            payment_terms: terms,
+            terms_text: termsText,
+            document_inputs: documentInputs,
+          }),
         },
       );
       await onSaved();
@@ -1347,907 +1261,455 @@ function QuotationEditor({
       setSaving(false);
     }
   };
-  const fieldClass =
-    "min-h-[46px] w-full rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm text-gray-800 outline-none transition-colors placeholder:text-gray-300 hover:border-gray-300 focus:border-primary focus:ring-2 focus:ring-primary/10";
-  const compactFieldClass =
-    "min-h-[46px] w-full rounded-lg border border-gray-200 bg-white px-2.5 py-2 text-xs text-gray-800 outline-none transition-colors placeholder:text-gray-300 hover:border-gray-300 focus:border-primary focus:ring-2 focus:ring-primary/10";
+
+
+  const CELL =
+    "h-8 w-full min-w-0 rounded-md border border-transparent bg-transparent px-1.5 text-xxs text-gray-700 outline-none transition-colors placeholder:text-gray-300 hover:border-gray-200 focus:border-primary focus:bg-white";
+  const FIELD =
+    "h-8 w-full rounded-lg border border-gray-200 bg-white px-2 text-xs text-gray-800 outline-none transition-colors placeholder:text-gray-300 hover:border-gray-300 focus:border-primary focus:ring-2 focus:ring-primary/10";
+
   return (
-    <div className="fixed inset-0 z-[80] overflow-y-auto bg-slate-900/35 p-3 backdrop-blur-[1px] md:p-8">
-      <div className="mx-auto max-w-6xl overflow-hidden rounded-2xl border border-gray-200 bg-white shadow-2xl shadow-slate-900/20">
-        <div className="sticky top-0 z-10 flex items-center justify-between border-b border-gray-200 bg-gradient-to-r from-white via-white to-primary/5 p-4">
-          <div>
-            <b className="text-sm text-gray-900">ใบเสนอราคา ชุด {optionNo}</b>
-            <div className="mt-0.5 text-xs text-gray-500">
-              {quote
-                ? `แก้ไข ${quote.doc_no}`
-                : "เลขเอกสารจะสร้างอัตโนมัติ SSR-QT-YY-XXXX"}
+    <div className="fixed inset-0 z-[80] flex items-center justify-center bg-slate-900/50 p-0 backdrop-blur-sm md:p-6">
+      <div className="flex h-full w-full max-w-6xl flex-col overflow-hidden bg-white shadow-2xl md:h-[88vh] md:rounded-2xl">
+        <header className="flex shrink-0 items-center justify-between gap-3 border-b border-gray-100 px-5 py-3">
+          <div className="min-w-0">
+            <div className="text-sm font-bold text-gray-900">ใบเสนอราคา ชุด {optionNo}</div>
+            <div className="truncate text-xxs text-gray-400">
+              {quote ? quote.doc_no : "เลขเอกสารสร้างอัตโนมัติเมื่อบันทึก"}
             </div>
           </div>
           <button
             type="button"
             onClick={onClose}
             aria-label="ปิด"
-            className="flex h-8 w-8 items-center justify-center rounded-lg text-xl text-gray-400 transition-colors hover:bg-gray-100 hover:text-gray-700"
+            className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-lg text-gray-400 transition-colors hover:bg-gray-100 hover:text-gray-700"
           >
             ×
           </button>
-        </div>
-        <div className="space-y-4 bg-slate-50/40 p-4 md:p-5">
-          {error && (
-            <div className="rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-700">
-              {error}
-            </div>
-          )}
-          <section className="rounded-2xl border border-primary/15 bg-white p-4 shadow-sm">
-            <div className="mb-3 flex items-center gap-2">
-              <span className="flex h-6 w-6 items-center justify-center rounded-full bg-primary text-xs font-bold text-white">
-                1
-              </span>
-              <div>
-                <h3 className="text-sm font-bold text-gray-800">แพ็กเกจหลัก</h3>
-                <p className="text-xxs text-gray-500">
-                  เลือกชุดอุปกรณ์และบริการหลัก
-                </p>
-              </div>
-            </div>
-            <label className="text-xs font-semibold text-gray-500">
-              Package หลัก
-            </label>
-            <select
-              value={packageId}
-              onChange={(e) => {
-                setPackageId(Number(e.target.value));
-                setShowPackageItems(false);
-              }}
-              className={`mt-1 ${fieldClass}`}
-            >
-              <option value={0}>เลือก Package</option>
-              {packageGroups.map((group) => (
-                <optgroup key={group.label} label={group.label}>
-                  {group.items.map((p) => (
-                    <option key={p.id} value={p.id}>
-                      {group.icon} {p.name} · {formatPackageSpecs(p)} — {formatTHB(p.price)} บาท
-                    </option>
-                  ))}
-                </optgroup>
-              ))}
-            </select>
-            {!packageId && packages.length === 0 ? (
-              <div className="mt-2 rounded-lg border border-amber-200 bg-amber-50 p-2 text-xs text-amber-700">
-                ไม่มี Package ที่เปิดใช้งานอยู่ในช่วงวันที่ปัจจุบัน กรุณาตรวจสอบวันเริ่มใช้และวันหมดอายุใน Package Master
-              </div>
-            ) : packageId ? (
-              <div className="mt-2 overflow-hidden rounded-xl border border-primary/15 bg-primary/5">
+        </header>
+
+        {error && (
+          <div className="shrink-0 border-b border-red-100 bg-red-50 px-5 py-2 text-xs text-red-700">
+            {error}
+          </div>
+        )}
+
+        <div className="flex min-h-0 flex-1 flex-col md:flex-row">
+          {/* ── ซ้าย: ต้นไม้รายการ (เลื่อนในกรอบตัวเอง หน้าไม่ยาว) ── */}
+          <div className="flex min-h-0 flex-1 flex-col border-b border-gray-100 md:border-b-0 md:border-r">
+            <div className="flex shrink-0 items-center gap-2 px-4 py-2">
+              <span className="text-xs font-bold text-gray-800">รายการในใบเสนอราคา</span>
+              <span className="text-xxs text-gray-400">{groups.length} หัวข้อ</span>
+              <div className="ml-auto flex items-center gap-2">
                 <button
                   type="button"
-                  onClick={() => setShowPackageItems((current) => !current)}
-                  aria-expanded={showPackageItems}
-                  aria-controls="package-items-details"
-                  className="flex w-full items-center justify-between gap-3 p-3 text-left transition-colors hover:bg-primary/5"
+                  onClick={() => setPickerOpen(true)}
+                  disabled={loadingPackage}
+                  className="h-9 shrink-0 rounded-lg border border-gray-200 bg-white px-4 text-xs font-semibold text-gray-700 transition-colors hover:border-primary/40 hover:bg-primary/5 hover:text-primary disabled:opacity-50"
                 >
-                  <div>
-                    <div className="text-xs font-bold text-primary">
-                      รายการสำหรับใบเสนอราคานี้
-                    </div>
-                    <div className="mt-0.5 text-xxs text-gray-500">
-                      {packageItemsLoading
-                        ? "กำลังโหลดรายการ..."
-                        : `${packageItems.length} รายการ`}
-                    </div>
-                  </div>
-                  <span className="flex shrink-0 items-center gap-1.5 text-xs font-semibold text-primary">
-                    {showPackageItems ? "ซ่อนรายละเอียด" : "ดูรายละเอียด"}
-                    <span
-                      aria-hidden="true"
-                      className={`text-base transition-transform ${
-                        showPackageItems ? "rotate-180" : ""
-                      }`}
-                    >
-                      ⌄
-                    </span>
-                  </span>
+                  {loadingPackage ? "กำลังดึงรายการ…" : "+ เพิ่มแพ็กเกจ"}
                 </button>
-                {showPackageItems && (
-                  <div
-                    id="package-items-details"
-                    className="border-t border-primary/10 bg-white/60 p-3"
-                  >
-                    <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
-                      <span className="text-xxs text-gray-500">
-                        เพิ่ม ลบ หรือแก้ไขรายการได้เฉพาะใบเสนอราคานี้
+                <button
+                  type="button"
+                  onClick={addCustomGroup}
+                  className="h-9 shrink-0 rounded-lg border border-gray-200 bg-white px-4 text-xs font-semibold text-gray-700 transition-colors hover:border-primary/40 hover:bg-primary/5 hover:text-primary"
+                >
+                  + งานเพิ่ม
+                </button>
+              </div>
+            </div>
+
+            <div className="min-h-0 flex-1 overflow-y-auto px-4 pb-4">
+              {groups.length === 0 && (
+                <div className="rounded-xl border border-dashed border-gray-200 py-10 text-center text-xs text-gray-400">
+                  ยังไม่มีรายการ — เริ่มด้วย “+ เพิ่มแพ็กเกจ” หรือ “+ งานเพิ่ม”
+                </div>
+              )}
+              <div className="space-y-2">
+                {groups.map((g, gi) => (
+                  <div key={g.key} className="rounded-xl border border-gray-200 bg-white">
+                    {/* หัวข้อ = บรรทัดที่ขึ้นบนเอกสาร */}
+                    {/* คลิกที่แถวหัวข้อตรงไหนก็กาง/หุบได้ — ยกเว้นช่องกรอกและปุ่ม */}
+                    <div
+                      onClick={(e) => {
+                        if ((e.target as HTMLElement).closest("input,textarea,button")) return;
+                        toggleGroup(g.key);
+                      }}
+                      className="flex cursor-pointer items-center gap-1.5 px-2 py-1.5"
+                    >
+                      <button
+                        type="button"
+                        onClick={() => toggleGroup(g.key)}
+                        aria-label={g.open ? "ย่อ" : "กาง"}
+                        className="flex h-6 w-5 shrink-0 items-center justify-center text-gray-400 transition-transform hover:text-gray-600"
+                      >
+                        <span className={g.open ? "rotate-90" : ""}>▸</span>
+                      </button>
+                      {/* เลขข้อเหมือนบนเอกสาร (ลำดับเดียวกับตารางในใบเสนอราคา) */}
+                      <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-primary/10 text-lg font-bold tabular-nums text-primary">
+                        {gi + 1}
                       </span>
-                      <div className="flex gap-2">
+                      {/* ชื่อบนเอกสารมักยาว — ใช้ textarea ที่ยืดความสูงตามข้อความ
+                          (ตัดบรรทัดได้ ไม่โดนตัดท้าย) */}
+                      <textarea
+                        value={g.title.item_name}
+                        onChange={(e) =>
+                          patchLine(g.key, g.title.key, { item_name: e.target.value })
+                        }
+                        rows={1}
+                        ref={(el) => {
+                          if (!el) return;
+                          el.style.height = "auto";
+                          el.style.height = `${el.scrollHeight}px`;
+                        }}
+                        placeholder={g.kind === "package" ? "ชื่อที่แสดงบนเอกสาร" : "ชื่องานเพิ่ม เช่น งานเพิ่มตู้คอนซูมเมอร์"}
+                        aria-label="ชื่อหัวข้อบนเอกสาร"
+                        className="min-w-0 flex-1 resize-none overflow-hidden rounded-md border border-transparent bg-transparent px-1.5 py-1 text-sm font-semibold leading-snug text-gray-800 outline-none transition-colors placeholder:font-normal placeholder:text-gray-300 hover:border-gray-200 focus:border-primary focus:bg-white"
+                      />
+                      {g.kind === "package" ? (
+                        <span className="w-24 shrink-0 text-right text-xs font-bold tabular-nums text-gray-800">
+                          {formatTHB(g.price)}
+                        </span>
+                      ) : (
+                        <input
+                          type="number"
+                          min="0"
+                          value={g.price || ""}
+                          onChange={(e) =>
+                            patchGroup(g.key, { price: Number(e.target.value) || 0 })
+                          }
+                          placeholder="ราคา"
+                          aria-label="ราคางานเพิ่ม"
+                          className="h-8 w-24 shrink-0 rounded-md border border-gray-200 bg-white px-1.5 text-right text-xs font-bold tabular-nums text-gray-800 outline-none focus:border-primary"
+                        />
+                      )}
+                      <div className="flex shrink-0 items-center">
                         <button
                           type="button"
-                          onClick={restorePackageItems}
-                          disabled={packageItemsLoading}
-                          className="rounded-lg border border-gray-200 bg-white px-2.5 py-1.5 text-xxs font-semibold text-gray-600 hover:bg-gray-50 disabled:opacity-50"
+                          onClick={() => moveGroup(g.key, -1)}
+                          disabled={gi === 0}
+                          aria-label="เลื่อนขึ้น"
+                          className="flex h-6 w-5 items-center justify-center text-gray-300 hover:text-gray-600 disabled:opacity-30"
                         >
-                          คืนค่าจาก Master
+                          ↑
                         </button>
                         <button
                           type="button"
-                          onClick={addPackageItem}
-                          className="rounded-lg border border-primary/20 bg-primary/5 px-2.5 py-1.5 text-xxs font-semibold text-primary hover:bg-primary/10"
+                          onClick={() => moveGroup(g.key, 1)}
+                          disabled={gi === groups.length - 1}
+                          aria-label="เลื่อนลง"
+                          className="flex h-6 w-5 items-center justify-center text-gray-300 hover:text-gray-600 disabled:opacity-30"
                         >
-                          + เพิ่มรายการ
+                          ↓
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => removeGroup(g.key)}
+                          aria-label="ลบหัวข้อ"
+                          className="flex h-6 w-6 items-center justify-center rounded text-gray-300 transition-colors hover:bg-red-50 hover:text-red-600"
+                        >
+                          ×
                         </button>
                       </div>
                     </div>
-                    <div className="hidden grid-cols-12 gap-2 px-1 pb-1 text-xxs font-semibold text-gray-500 md:grid">
-                      <span className="col-span-7">ชื่อรายการ</span>
-                      <span className="col-span-2">จำนวน</span>
-                      <span className="col-span-2">หน่วย</span>
-                    </div>
-                    <div className="space-y-2">
-                      {!packageItemsLoading && packageItems.length === 0 && (
-                        <div className="rounded-lg border border-dashed border-gray-200 bg-white p-3 text-center text-xs text-gray-500">
-                          ยังไม่มีรายการ กด “เพิ่มรายการ” หรือ “คืนค่าจาก Master”
-                        </div>
-                      )}
-                      {packageItems.map((item, index) => (
-                        <div
-                          key={item.package_item_id || item.id || `package-item-${index}`}
-                          className="grid grid-cols-12 items-center gap-2 rounded-lg border border-gray-100 bg-white p-2"
-                        >
-                          <input
-                            value={item.item_name || ""}
-                            onChange={(event) =>
-                              updatePackageItem(index, {
-                                item_name: event.target.value,
-                              })
-                            }
-                            placeholder="ชื่ออุปกรณ์/บริการ"
-                            aria-label={`ชื่อรายการ Package ลำดับ ${index + 1}`}
-                            className={`col-span-7 ${compactFieldClass}`}
-                          />
-                          <input
-                            type="number"
-                            min="0.01"
-                            step="0.01"
-                            value={item.quantity}
-                            onChange={(event) =>
-                              updatePackageItem(index, {
-                                quantity: Number(event.target.value),
-                              })
-                            }
-                            aria-label={`จำนวนรายการ Package ลำดับ ${index + 1}`}
-                            className={`col-span-2 ${compactFieldClass}`}
-                          />
-                          <input
-                            value={item.unit || ""}
-                            onChange={(event) =>
-                              updatePackageItem(index, {
-                                unit: event.target.value,
-                              })
-                            }
-                            placeholder="หน่วย"
-                            aria-label={`หน่วยรายการ Package ลำดับ ${index + 1}`}
-                            className={`col-span-2 ${compactFieldClass}`}
-                          />
-                          {index === 0 ? (
-                            <span
-                              aria-label="รายการหลัก ไม่สามารถลบได้"
-                              title="รายการหลัก ไม่สามารถลบได้"
-                              className="col-span-1 flex h-8 items-center justify-center text-xs text-gray-400"
-                            >
-                              🔒
-                            </span>
-                          ) : (
+
+                    {/* รายละเอียดใต้หัวข้อ */}
+                    {g.open && (
+                      <div className="border-t border-gray-100 pb-1">
+                        {g.details.map((d) => (
+                          <div
+                            key={d.key}
+                            className="grid grid-cols-[minmax(0,1fr)_56px_72px_24px] items-center gap-1.5 py-0.5 pl-9 pr-2 hover:bg-primary/[0.03]"
+                          >
+                            <div className="flex min-w-0 items-center gap-1.5">
+                              {/* จุดนำหน้า = บรรทัดรายการย่อยของหัวข้อด้านบน */}
+                              <span
+                                aria-hidden="true"
+                                className="h-1.5 w-1.5 shrink-0 rounded-full bg-gray-300"
+                              />
+                            <input
+                              value={d.item_name}
+                              onChange={(e) =>
+                                patchLine(g.key, d.key, { item_name: e.target.value })
+                              }
+                              placeholder="ชื่ออุปกรณ์/บริการ"
+                              className={CELL}
+                            />
+                            </div>
+                            <input
+                              type="number"
+                              min="0"
+                              value={d.quantity}
+                              onChange={(e) =>
+                                patchLine(g.key, d.key, { quantity: Number(e.target.value) })
+                              }
+                              className={`text-center ${CELL}`}
+                            />
+                            <input
+                              value={d.unit}
+                              onChange={(e) =>
+                                patchLine(g.key, d.key, { unit: e.target.value })
+                              }
+                              placeholder="หน่วย"
+                              className={CELL}
+                            />
                             <button
                               type="button"
-                              onClick={() => removePackageItem(index)}
-                              aria-label={`ลบรายการ Package ลำดับ ${index + 1}`}
-                              className="col-span-1 flex h-8 items-center justify-center rounded-lg text-red-400 transition-colors hover:bg-red-50 hover:text-red-600"
+                              onClick={() => removeDetail(g.key, d.key)}
+                              aria-label="ลบรายละเอียด"
+                              className="flex h-6 w-6 items-center justify-center rounded text-gray-300 opacity-0 transition-all hover:bg-red-50 hover:text-red-600 group-hover:opacity-100 focus:opacity-100"
                             >
                               ×
                             </button>
-                          )}
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-                )}
-              </div>
-            ) : null}
-          </section>
-          <section className="rounded-2xl border border-gray-200 bg-white p-4 shadow-sm">
-            <div className="flex items-center justify-between gap-3">
-              <div className="flex items-center gap-2">
-                <span className="flex h-6 w-6 items-center justify-center rounded-full bg-slate-700 text-xs font-bold text-white">
-                  2
-                </span>
-                <div>
-                  <h3 className="text-sm font-bold text-gray-800">
-                    รายการเพิ่มเติม
-                  </h3>
-                  <p className="text-xxs text-gray-500">
-                    รายการพิเศษเฉพาะโครงการ
-                  </p>
-                </div>
-              </div>
-              <button
-                type="button"
-                onClick={addAdditionalItemSelector}
-                aria-label="เพิ่มช่องรายการเพิ่มเติม"
-                title="เพิ่มช่องรายการเพิ่มเติม"
-                className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border border-primary/20 bg-white text-xl font-medium text-primary transition-colors hover:bg-primary/5"
-              >
-                +
-              </button>
-            </div>
-            <div className="mt-3 hidden grid-cols-12 gap-2 px-2 text-xxs font-semibold text-gray-500 md:grid">
-              <span className="col-span-6">ชื่อรายการ</span>
-              <span className="col-span-2">จำนวน</span>
-              <span className="col-span-3">ราคา/หน่วย (บาท)</span>
-            </div>
-            <div className="mt-2 space-y-2">
-              {additionalItemSelectors.map((selector) => {
-                const linkedItem = items.find(
-                  (item) => item.editorSelectionId === selector.id,
-                );
-                const isPackageMasterSelection =
-                  Boolean(selector.value) && selector.value !== "custom";
-                return (
-                  <div
-                    key={selector.id}
-                    className="overflow-hidden rounded-xl border border-primary/10 bg-primary/[0.025]"
-                  >
-                    <div className="grid grid-cols-12 items-center gap-2 p-2">
-                    {selector.value === "custom" ? (
-                      <input
-                        value={linkedItem?.item_name || ""}
-                        onChange={(e) =>
-                          updateAdditionalSelectorItem(selector.id, {
-                            item_name: e.target.value,
-                          })
-                        }
-                        placeholder="ชื่ออุปกรณ์/บริการ"
-                        aria-label={`ชื่อรายการเพิ่มเติมช่องที่ ${selector.id}`}
-                        className={`col-span-6 ${compactFieldClass}`}
-                      />
-                    ) : (
-                      <select
-                        value={selector.value}
-                        onChange={(e) =>
-                          updateAdditionalItemSelection(
-                            selector.id,
-                            e.target.value,
-                          )
-                        }
-                        aria-label={`เลือกรายการเพิ่มเติมช่องที่ ${selector.id}`}
-                        className={`col-span-6 min-w-0 ${compactFieldClass}`}
-                      >
-                        <option value="">เลือกรายการเพิ่มเติม</option>
-                        {packageGroups.map((group) => (
-                          <optgroup key={group.label} label={group.label}>
-                            {group.items
-                              .filter((candidate) => candidate.id !== packageId)
-                              .map((candidate) => (
-                                <option
-                                  key={candidate.id}
-                                  value={String(candidate.id)}
-                                >
-                                  {group.icon} {candidate.name} · {formatPackageSpecs(candidate)} — {formatTHB(candidate.price)} บาท
-                                </option>
-                              ))}
-                          </optgroup>
+                          </div>
                         ))}
-                        <optgroup label="รายการอื่นๆ นอกเหนือจาก Package">
-                          <option value="custom">
-                            🧰 เพิ่มอุปกรณ์ / บริการอื่น
-                          </option>
-                        </optgroup>
-                      </select>
-                    )}
-                    <input
-                      type="number"
-                      min="0"
-                      value={linkedItem?.quantity ?? ""}
-                      disabled={!linkedItem || isPackageMasterSelection}
-                      title={
-                        isPackageMasterSelection
-                          ? "จำนวนกำหนดจาก Package Master"
-                          : undefined
-                      }
-                      onChange={(e) =>
-                        updateAdditionalSelectorItem(selector.id, {
-                          quantity: Number(e.target.value),
-                        })
-                      }
-                      aria-label={`จำนวนรายการเพิ่มเติมช่องที่ ${selector.id}`}
-                      className={`col-span-2 disabled:cursor-not-allowed disabled:bg-gray-100 disabled:text-gray-500 ${compactFieldClass}`}
-                    />
-                    <input
-                      type="number"
-                      min="0"
-                      value={linkedItem?.unit_price || ""}
-                      disabled={!linkedItem || isPackageMasterSelection}
-                      title={
-                        isPackageMasterSelection
-                          ? "ราคากำหนดจาก Package Master"
-                          : undefined
-                      }
-                      onChange={(e) =>
-                        updateAdditionalSelectorItem(selector.id, {
-                          unit_price:
-                            e.target.value === ""
-                              ? 0
-                              : Number(e.target.value),
-                        })
-                      }
-                      placeholder="ราคา"
-                      aria-label={`ราคาต่อหน่วยรายการเพิ่มเติมช่องที่ ${selector.id}`}
-                      className={`col-span-3 disabled:cursor-not-allowed disabled:bg-gray-100 disabled:text-gray-500 ${compactFieldClass}`}
-                    />
-                    <button
-                      type="button"
-                      onClick={() => removeAdditionalItemSelector(selector.id)}
-                      aria-label="ลบรายการเพิ่มเติม"
-                      className="col-span-1 flex h-8 items-center justify-center rounded-lg text-red-400 transition-colors hover:bg-red-50 hover:text-red-600"
-                    >
-                      ×
-                    </button>
-                    </div>
-                    {selector.value && linkedItem && (
-                        <div className="border-t border-primary/10 bg-white/70">
+                        <div className="flex items-center gap-2 pl-9 pr-2 pt-1">
                           <button
                             type="button"
-                            onClick={() =>
-                              setShownAdditionalPackageItems((current) => ({
-                                ...current,
-                                [selector.id]: !current[selector.id],
-                              }))
-                            }
-                            aria-expanded={Boolean(
-                              shownAdditionalPackageItems[selector.id],
-                            )}
-                            aria-controls={`additional-package-items-${selector.id}`}
-                            className="flex w-full items-center justify-between gap-3 p-3 text-left transition-colors hover:bg-primary/5"
+                            onClick={() => addDetail(g.key)}
+                            className="rounded-md px-2 py-1 text-xxs font-semibold text-primary transition-colors hover:bg-primary/10"
                           >
-                            <div>
-                              <div className="text-xs font-bold text-primary">
-                                รายการสำหรับใบเสนอราคานี้
-                              </div>
-                              <div className="mt-0.5 text-xxs text-gray-500">
-                                {(additionalPackageItems[selector.id] || []).length} รายการ
-                              </div>
-                            </div>
-                            <span className="flex shrink-0 items-center gap-1.5 text-xs font-semibold text-primary">
-                              {shownAdditionalPackageItems[selector.id]
-                                ? "ซ่อนรายละเอียด"
-                                : "ดูรายละเอียด"}
-                              <span
-                                aria-hidden="true"
-                                className={`text-base transition-transform ${
-                                  shownAdditionalPackageItems[selector.id]
-                                    ? "rotate-180"
-                                    : ""
-                                }`}
-                              >
-                                ⌄
-                              </span>
-                            </span>
+                            + เพิ่มรายละเอียด
                           </button>
-                          {shownAdditionalPackageItems[selector.id] && (
-                          <div
-                            id={`additional-package-items-${selector.id}`}
-                            className="border-t border-primary/10 p-3"
-                          >
-                          <div className="mb-2 flex justify-end">
-                            <div className="flex gap-2">
-                              {isPackageMasterSelection && (
-                                <button
-                                  type="button"
-                                  onClick={() =>
-                                    restoreAdditionalPackageItems(selector.id)
-                                  }
-                                  className="rounded-lg border border-gray-200 bg-white px-2.5 py-1.5 text-xxs font-semibold text-gray-600 hover:bg-gray-50"
-                                >
-                                  คืนค่าจาก Master
-                                </button>
-                              )}
-                              <button
-                                type="button"
-                                onClick={() =>
-                                  addAdditionalPackageItem(selector.id)
-                                }
-                                className="rounded-lg border border-primary/20 bg-primary/5 px-2.5 py-1.5 text-xxs font-semibold text-primary hover:bg-primary/10"
-                              >
-                                + เพิ่มรายการ
-                              </button>
-                            </div>
-                          </div>
-                          <div className="hidden grid-cols-12 gap-2 px-1 pb-1 text-xxs font-semibold text-gray-500 md:grid">
-                            <span className="col-span-7">ชื่อรายการ</span>
-                            <span className="col-span-2">จำนวน</span>
-                            <span className="col-span-2">หน่วย</span>
-                          </div>
-                          <div className="space-y-2">
-                            {(additionalPackageItems[selector.id] || []).map(
-                              (detailItem, detailIndex) => (
-                                <div
-                                  key={
-                                    detailItem.package_item_id ||
-                                    detailItem.id ||
-                                    `additional-${selector.id}-${detailIndex}`
-                                  }
-                                  className="grid grid-cols-12 items-center gap-2 rounded-lg border border-gray-100 bg-white p-2"
-                                >
-                                  <input
-                                    value={detailItem.item_name || ""}
-                                    onChange={(event) =>
-                                      updateAdditionalPackageItem(
-                                        selector.id,
-                                        detailIndex,
-                                        { item_name: event.target.value },
-                                      )
-                                    }
-                                    aria-label={`ชื่อรายการย่อยเพิ่มเติม ${selector.id}-${detailIndex + 1}`}
-                                    className={`col-span-7 ${compactFieldClass}`}
-                                  />
-                                  <input
-                                    type="number"
-                                    min="0.01"
-                                    step="0.01"
-                                    value={detailItem.quantity}
-                                    onChange={(event) =>
-                                      updateAdditionalPackageItem(
-                                        selector.id,
-                                        detailIndex,
-                                        { quantity: Number(event.target.value) },
-                                      )
-                                    }
-                                    aria-label={`จำนวนรายการย่อยเพิ่มเติม ${selector.id}-${detailIndex + 1}`}
-                                    className={`col-span-2 ${compactFieldClass}`}
-                                  />
-                                  <input
-                                    value={detailItem.unit || ""}
-                                    onChange={(event) =>
-                                      updateAdditionalPackageItem(
-                                        selector.id,
-                                        detailIndex,
-                                        { unit: event.target.value },
-                                      )
-                                    }
-                                    placeholder="หน่วย"
-                                    aria-label={`หน่วยรายการย่อยเพิ่มเติม ${selector.id}-${detailIndex + 1}`}
-                                    className={`col-span-2 ${compactFieldClass}`}
-                                  />
-                                  {isPackageMasterSelection &&
-                                  detailIndex === 0 ? (
-                                    <span
-                                      aria-label="หัวรายการเพิ่มเติม ไม่สามารถลบได้"
-                                      title="หัวรายการเพิ่มเติม ไม่สามารถลบได้"
-                                      className="col-span-1 flex h-8 items-center justify-center text-xs text-gray-400"
-                                    >
-                                      🔒
-                                    </span>
-                                  ) : (
-                                    <button
-                                      type="button"
-                                      onClick={() =>
-                                        removeAdditionalPackageItem(
-                                          selector.id,
-                                          detailIndex,
-                                        )
-                                      }
-                                      aria-label={`ลบรายการย่อยเพิ่มเติม ${selector.id}-${detailIndex + 1}`}
-                                      className="col-span-1 flex h-8 items-center justify-center rounded-lg text-red-400 transition-colors hover:bg-red-50 hover:text-red-600"
-                                    >
-                                      ×
-                                    </button>
-                                  )}
-                                </div>
-                              ),
-                            )}
-                          </div>
-                          </div>
+                          {g.kind === "package" && g.source_package_id && (
+                            <button
+                              type="button"
+                              onClick={() => loadPackageGroup(g.source_package_id!, g.key)}
+                              className="rounded-md px-2 py-1 text-xxs font-semibold text-gray-400 transition-colors hover:bg-gray-100 hover:text-gray-600"
+                            >
+                              ↺ คืนค่าจาก Master
+                            </button>
                           )}
                         </div>
-                      )}
-                  </div>
-                );
-              })}
-              {items
-                .map((item, index) => ({ item, index }))
-                .filter(({ item }) => item.editorSelectionId === undefined)
-                .map(({ item: i, index: n }) => (
-                <div
-                  key={i.id || `existing-${n}`}
-                  className="grid grid-cols-12 items-center gap-2 rounded-xl border border-gray-100 bg-gray-50/70 p-2"
-                >
-                  <input
-                    value={i.item_name || ""}
-                    onChange={(e) =>
-                      updateItem(n, { item_name: e.target.value })
-                    }
-                    placeholder="ชื่ออุปกรณ์/บริการ"
-                    className={`col-span-6 ${compactFieldClass}`}
-                  />
-                  <input
-                    type="number"
-                    value={i.quantity}
-                    onChange={(e) =>
-                      updateItem(n, { quantity: Number(e.target.value) })
-                    }
-                    className={`col-span-2 ${compactFieldClass}`}
-                  />
-                  <input
-                    type="number"
-                    min="0"
-                    value={i.unit_price || ""}
-                    onChange={(e) =>
-                      updateItem(n, {
-                        unit_price:
-                          e.target.value === "" ? 0 : Number(e.target.value),
-                      })
-                    }
-                    placeholder="เช่น 1,000"
-                    className={`col-span-3 ${compactFieldClass}`}
-                  />
-                  <button
-                    type="button"
-                    onClick={() => removeAdditionalItem(n)}
-                    aria-label="ลบรายการ"
-                    className="col-span-1 flex h-8 items-center justify-center rounded-lg text-red-400 transition-colors hover:bg-red-50 hover:text-red-600"
-                  >
-                    ×
-                  </button>
-                </div>
-              ))}
-            </div>
-          </section>
-          <section className="rounded-2xl border border-amber-200 bg-amber-50/30 p-4 shadow-sm">
-            <div className="mb-3 flex items-center gap-2">
-              <span className="flex h-6 w-6 items-center justify-center rounded-full bg-amber-500 text-xs font-bold text-white">
-                3
-              </span>
-              <div>
-                <h3 className="text-sm font-bold text-gray-800">
-                  ส่วนลดและเงินจอง
-                </h3>
-                <p className="text-xxs text-gray-500">
-                  ระบุส่วนลดและยอดที่ชำระแล้ว
-                </p>
-              </div>
-            </div>
-            <div className="grid grid-cols-1 gap-3 md:grid-cols-4">
-              <label className="md:col-span-2">
-                <span className="text-xs font-semibold text-gray-500">Discount Text</span>
-                <input
-                  value={discountLabel}
-                  maxLength={200}
-                  onChange={(e) => setDiscountLabel(e.target.value)}
-                  placeholder="เช่น โปรโมชั่น, ส่วนลดพนักงาน"
-                  className={`mt-1 ${fieldClass}`}
-                />
-              </label>
-              <label>
-                <span className="text-xs font-semibold text-gray-500">%</span>
-                <input
-                  type="number"
-                  min="0"
-                  max="100"
-                  step="0.01"
-                  value={discountPercent || ""}
-                  onChange={(e) => {
-                    setDiscountType("percent");
-                    setDiscountValue(Math.min(100, Math.max(0, Number(e.target.value) || 0)));
-                  }}
-                  placeholder="0"
-                  className={`mt-1 text-right ${fieldClass}`}
-                />
-              </label>
-              <label>
-                <span className="text-xs font-semibold text-gray-500">บาท</span>
-                <input
-                  type="number"
-                  min="0"
-                  step="1"
-                  value={discountAmount || ""}
-                  onChange={(e) => {
-                    setDiscountType("amount");
-                    setDiscountValue(Math.min(subtotal, Math.max(0, Number(e.target.value) || 0)));
-                  }}
-                  placeholder="0"
-                  className={`mt-1 text-right ${fieldClass}`}
-                />
-              </label>
-            </div>
-            <div className="mt-3">
-              <label className="text-xs font-semibold text-gray-500">
-                ค่าสำรวจ/เงินจองที่ชำระแล้ว
-              </label>
-              {isFreeSurvey ? (
-                <div className="mt-1 flex min-h-[58px] items-center justify-between gap-3 rounded-lg border border-cyan-200 bg-cyan-50 px-3 py-2">
-                  <div className="flex min-w-0 items-center gap-2">
-                    <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-cyan-600 text-sm font-bold text-white">
-                      ✓
-                    </span>
-                    <div className="min-w-0">
-                      <div className="text-xs font-bold text-cyan-800">
-                        ฟรีค่าสำรวจ
                       </div>
-                    </div>
+                    )}
                   </div>
-                  <b className="shrink-0 text-base text-cyan-700">0 บาท</b>
-                </div>
-              ) : confirmedDeposit > 0 ? (
-                <div className="mt-1 flex min-h-[58px] items-center justify-between gap-3 rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2">
-                  <div className="flex min-w-0 items-center gap-2">
-                    <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-emerald-600 text-sm font-bold text-white">
-                      ✓
-                    </span>
-                    <div className="min-w-0">
-                      <div className="text-xs font-bold text-emerald-800">
-                        ยืนยันการชำระแล้ว
-                      </div>
-                      <div className="text-xxs text-emerald-600">
-                        ยอดจากรายการรับชำระ แก้ไขได้จากหน้าการชำระเงิน
-                      </div>
-                    </div>
-                  </div>
-                  <b className="shrink-0 text-base text-emerald-700">
-                    {formatTHB(confirmedDeposit)} บาท
-                  </b>
-                </div>
-              ) : (
-                <>
-                  <input
-                    type="number"
-                    min="0"
-                    step="1"
-                    value={deposit || ""}
-                    onChange={(e) =>
-                      setDeposit(Math.max(0, Number(e.target.value) || 0))
-                    }
-                    placeholder="0"
-                    className={`mt-1 ${fieldClass}`}
-                  />
-                  <p className="mt-1 text-xxs text-gray-400">
-                    กรอกเมื่อได้รับค่าสำรวจหรือเงินจองแล้ว
-                  </p>
-                </>
-              )}
-            </div>
-          </section>
-          <section className="rounded-2xl border border-emerald-200 bg-emerald-50/30 p-4 shadow-sm">
-            <div className="mb-3 flex items-center justify-between gap-3">
-              <div className="flex items-center gap-2">
-                <span className="flex h-6 w-6 items-center justify-center rounded-full bg-emerald-600 text-xs font-bold text-white">
-                  4
-                </span>
-                <div>
-                  <h3 className="text-sm font-bold text-gray-800">งวดชำระเงิน</h3>
-                  <p className="text-xxs text-gray-500">
-                    เพิ่มและกำหนดรายละเอียดแต่ละงวดได้
-                  </p>
-                </div>
-              </div>
-              <button
-                type="button"
-                onClick={addPaymentTerm}
-                aria-label="เพิ่มงวดชำระเงิน"
-                title="เพิ่มงวดชำระเงิน"
-                className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border border-emerald-200 bg-white text-xl font-medium text-emerald-700 transition-colors hover:bg-emerald-50"
-              >
-                +
-              </button>
-            </div>
-            <div className="mb-3 rounded-xl border border-primary/15 bg-white/80 p-3">
-              <div className="mb-2 text-xs font-bold text-gray-700">
-                สรุปราคา
-              </div>
-              <div className="grid grid-cols-2 gap-3 text-sm md:grid-cols-5">
-                <div>
-                  <small className="text-gray-400">Package</small>
-                  <b className="mt-1 block text-gray-800">
-                    {formatTHB(pkg?.price || 0)}
-                  </b>
-                </div>
-                <div>
-                  <small className="text-gray-400">ยอดรวม</small>
-                  <b className="mt-1 block text-gray-800">
-                    {formatTHB(subtotal)}
-                  </b>
-                </div>
-                <div>
-                  <small className="text-gray-400">ส่วนลด</small>
-                  <b className="mt-1 block text-red-500">
-                    {discountAmount > 0 ? `-${formatTHB(discountAmount)}` : formatTHB(0)}
-                  </b>
-                </div>
-                <div>
-                  <small className="text-gray-400">หักยอดชำระแล้ว</small>
-                  <b className="mt-1 block text-red-500">
-                    {deposit > 0 ? `-${formatTHB(deposit)}` : formatTHB(0)}
-                  </b>
-                </div>
-                <div>
-                  <small className="text-gray-400">ยอดที่ต้องชำระ</small>
-                  <b className="mt-1 block text-lg text-primary">
-                    {formatTHB(outstanding)}
-                  </b>
-                </div>
-              </div>
-            </div>
-            <div className="space-y-2">
-              {terms.map((term, index) => (
-                <div
-                  key={index}
-                  className="grid grid-cols-12 items-center gap-2 rounded-lg border border-emerald-100 bg-white p-2 text-sm"
-                >
-                  <input
-                    value={term.label}
-                    maxLength={200}
-                    onChange={(e) =>
-                      updatePaymentTerm(index, { label: e.target.value })
-                    }
-                    aria-label={`ชื่องวดที่ ${index + 1}`}
-                    className={`col-span-3 ${compactFieldClass}`}
-                  />
-                  <div className="relative col-span-2">
-                    <input
-                      type="number"
-                      min="0"
-                      max="100"
-                      step="0.01"
-                      disabled={index === terms.length - 1}
-                      value={
-                        Number.isNaN(term.percent)
-                          ? ""
-                          : Math.round(term.percent * 100) / 100
-                      }
-                      onChange={(e) => {
-                        const value = e.target.value;
-                        updatePaymentTerm(index, {
-                          percent:
-                            value === ""
-                              ? Number.NaN
-                              : Math.min(100, Math.max(0, Number(value))),
-                        });
-                      }}
-                      placeholder="0"
-                      aria-label={`เปอร์เซ็นต์งวดที่ ${index + 1}`}
-                      title={
-                        index === terms.length - 1
-                          ? "งวดสุดท้ายปรับให้ครบ 100% อัตโนมัติ"
-                          : "กรอกเปอร์เซ็นต์เพื่อคำนวณยอดเงินอัตโนมัติ"
-                      }
-                      className={`pr-7 text-right font-bold text-emerald-700 ${compactFieldClass}`}
-                    />
-                    <span className="pointer-events-none absolute right-2 top-1/2 -translate-y-1/2 text-xs text-emerald-700">
-                      %
-                    </span>
-                  </div>
-                  <div className="relative col-span-2">
-                    <input
-                      type="number"
-                      min="0"
-                      max={outstanding}
-                      step="0.01"
-                      value={
-                        Number.isNaN(getPaymentTermAmount(term.percent, index))
-                          ? ""
-                          : getPaymentTermAmount(term.percent, index)
-                      }
-                      disabled={
-                        outstanding <= 0 || index === terms.length - 1
-                      }
-                      onChange={(e) =>
-                        updatePaymentTermAmount(index, e.target.value)
-                      }
-                      placeholder="0"
-                      aria-label={`ยอดชำระงวดที่ ${index + 1}`}
-                      title={
-                        index === terms.length - 1
-                          ? "งวดสุดท้ายปรับให้ครบยอดที่ต้องชำระอัตโนมัติ"
-                          : "กรอกยอดเงินเพื่อคำนวณเปอร์เซ็นต์อัตโนมัติ"
-                      }
-                      className={`pr-9 text-right font-bold text-emerald-700 ${compactFieldClass}`}
-                    />
-                    <span className="pointer-events-none absolute right-2 top-1/2 -translate-y-1/2 text-xxs text-emerald-700">
-                      บาท
-                    </span>
-                  </div>
-                  <input
-                    value={term.due}
-                    maxLength={500}
-                    onChange={(e) =>
-                      updatePaymentTerm(index, { due: e.target.value })
-                    }
-                    placeholder="ระบุเงื่อนไขการชำระ"
-                    aria-label={`เงื่อนไขงวดที่ ${index + 1}`}
-                    className={`col-span-4 ${compactFieldClass}`}
-                  />
-                  <button
-                    type="button"
-                    disabled={terms.length === 1}
-                    onClick={() => removePaymentTerm(index)}
-                    aria-label={`ลบงวดที่ ${index + 1}`}
-                    className="col-span-1 flex h-8 items-center justify-center rounded-lg text-red-400 transition-colors hover:bg-red-50 hover:text-red-600 disabled:cursor-not-allowed disabled:opacity-30"
-                  >
-                    ×
-                  </button>
-                </div>
                 ))}
+              </div>
             </div>
-            <p
-              className={`mt-2 text-xxs ${
-                termsPercentTotal === 100 ? "text-emerald-700" : "text-red-600"
-              }`}
-            >
-              รวม {termsPercentTotal}% • งวดสุดท้ายปรับอัตโนมัติให้ครบยอดที่ต้องชำระ
-            </p>
-          </section>
-          <section className="rounded-2xl border border-gray-200 bg-white p-4 shadow-sm">
-            <div className="mb-3 flex items-center gap-2">
-              <span className="flex h-6 w-6 items-center justify-center rounded-full bg-gray-600 text-xs font-bold text-white">
-                5
-              </span>
-              <h3 className="text-sm font-bold text-gray-800">
-                เงื่อนไขเพิ่มเติม
-              </h3>
-            </div>
-            <div className="space-y-3">
-              <label className="block">
-                <span className="text-xs font-semibold text-gray-500">
-                  วันที่ใบเสนอราคา
-                </span>
-                <input
-                  type="date"
-                  value={issueDate}
-                  max={todayIso()}
-                  onChange={(e) => setIssueDate(e.target.value || todayIso())}
-                  className={`mt-1 md:max-w-[220px] ${fieldClass}`}
-                />
-                <p className="mt-1 text-xxs text-gray-400">
-                  วันที่แสดงบนเอกสารใบเสนอราคา (ค่าเริ่มต้น = วันนี้ · เลือกล่วงหน้าไม่ได้)
+          </div>
+
+          {/* ── ขวา: การเงิน (บีบให้พอดีจอ ไม่ต้องเลื่อน) ── */}
+          <div className="flex w-full shrink-0 flex-col overflow-y-auto bg-slate-50/60 p-3 md:w-80">
+            <div className="flex min-h-0 flex-1 flex-col gap-2">
+              <div className="rounded-xl border border-gray-200 bg-white p-2.5">
+                <div className="flex items-baseline justify-between">
+                  <span className="text-xxs text-gray-400">รวมรายการ</span>
+                  <span className="text-sm font-semibold tabular-nums text-gray-800">
+                    {formatTHB(subtotal)}
+                  </span>
+                </div>
+                {/* ส่วนลด: ชื่อ + % + บาท อยู่แถวเดียว */}
+                <div className="mt-2 space-y-1.5">
+                  <input
+                    value={discountLabel}
+                    maxLength={200}
+                    onChange={(e) => setDiscountLabel(e.target.value)}
+                    placeholder="ชื่อส่วนลด"
+                    className={FIELD}
+                  />
+                  <div className="grid grid-cols-2 gap-1.5">
+                  <input
+                    type="number"
+                    min="0"
+                    max="100"
+                    step="0.01"
+                    value={discountPercent || ""}
+                    onChange={(e) => {
+                      setDiscountType("percent");
+                      setDiscountValue(Math.min(100, Math.max(0, Number(e.target.value) || 0)));
+                    }}
+                    placeholder="%"
+                    className={`text-right ${FIELD}`}
+                  />
+                  <input
+                    type="number"
+                    min="0"
+                    value={discountAmount || ""}
+                    onChange={(e) => {
+                      setDiscountType("amount");
+                      setDiscountValue(Math.min(subtotal, Math.max(0, Number(e.target.value) || 0)));
+                    }}
+                    placeholder="บาท"
+                    className={`text-right ${FIELD}`}
+                  />
+                  </div>
+                </div>
+                <div className="mt-1.5 flex items-center justify-between">
+                  <span className="text-xxs text-gray-400">
+                    {isFreeSurvey ? "ฟรีค่าสำรวจ" : "หักเงินจอง/ค่าสำรวจ"}
+                  </span>
+                  {isFreeSurvey || confirmedDeposit > 0 ? (
+                    <span className="text-xs font-semibold tabular-nums text-gray-700">
+                      {deposit > 0 ? `-${formatTHB(deposit)}` : formatTHB(0)}
+                    </span>
+                  ) : (
+                    <input
+                      type="number"
+                      min="0"
+                      value={deposit || ""}
+                      onChange={(e) => setDeposit(Math.max(0, Number(e.target.value) || 0))}
+                      placeholder="0"
+                      className={`w-24 text-right ${FIELD}`}
+                    />
+                  )}
+                </div>
+                <div className="mt-1.5 flex items-baseline justify-between border-t border-gray-100 pt-1.5">
+                  <span className="text-xs font-bold text-gray-700">ยอดสุทธิ</span>
+                  <span className="text-lg font-bold tabular-nums text-primary">
+                    {formatTHB(outstanding)}
+                  </span>
+                </div>
+              </div>
+
+              <div className="rounded-xl border border-gray-200 bg-white p-2.5">
+                <div className="flex items-center justify-between">
+                  <span className="text-xs font-bold text-gray-800">งวดชำระเงิน</span>
+                  <button
+                    type="button"
+                    onClick={addPaymentTerm}
+                    className="rounded-md bg-primary/10 px-2 py-0.5 text-xxs font-semibold text-primary hover:bg-primary/15"
+                  >
+                    + งวด
+                  </button>
+                </div>
+                <div className="mt-1.5 space-y-1">
+                  {terms.map((term, index) => (
+                    <div
+                      key={index}
+                      className="grid grid-cols-[minmax(0,1fr)_72px_88px_18px] items-center gap-1"
+                    >
+                      <input
+                        value={term.label}
+                        maxLength={200}
+                        onChange={(e) => updatePaymentTerm(index, { label: e.target.value })}
+                        className={CELL}
+                      />
+                      {/* ช่อง % — ใหญ่ขึ้นและมีหน่วยกำกับ */}
+                      <div className="relative">
+                        <input
+                          type="number"
+                          min="0"
+                          max="100"
+                          step="0.01"
+                          disabled={index === terms.length - 1}
+                          value={Number.isNaN(term.percent) ? "" : Math.round(term.percent * 100) / 100}
+                          onChange={(e) =>
+                            updatePaymentTerm(index, {
+                              percent:
+                                e.target.value === ""
+                                  ? Number.NaN
+                                  : Math.min(100, Math.max(0, Number(e.target.value))),
+                            })
+                          }
+                          className="h-8 w-full rounded-md border border-gray-200 bg-white pl-1.5 pr-5 text-right text-xxs font-semibold tabular-nums text-gray-800 outline-none transition-colors hover:border-gray-300 focus:border-primary disabled:bg-gray-50 disabled:opacity-70"
+                        />
+                        <span className="pointer-events-none absolute right-1.5 top-1/2 -translate-y-1/2 text-xxs text-gray-400">
+                          %
+                        </span>
+                      </div>
+                      <input
+                        type="number"
+                        min="0"
+                        step="0.01"
+                        disabled={outstanding <= 0 || index === terms.length - 1}
+                        value={
+                          Number.isNaN(getPaymentTermAmount(term.percent, index))
+                            ? ""
+                            : getPaymentTermAmount(term.percent, index)
+                        }
+                        onChange={(e) => updatePaymentTermAmount(index, e.target.value)}
+                        className={`text-right font-semibold tabular-nums disabled:opacity-60 ${CELL}`}
+                      />
+                      <button
+                        type="button"
+                        disabled={terms.length === 1}
+                        onClick={() => removePaymentTerm(index)}
+                        aria-label={`ลบงวดที่ ${index + 1}`}
+                        className="flex h-6 w-4 items-center justify-center rounded text-gray-300 hover:bg-red-50 hover:text-red-600 disabled:opacity-30"
+                      >
+                        ×
+                      </button>
+                    </div>
+                  ))}
+                </div>
+                <p
+                  className={`mt-1 text-xxs ${
+                    termsPercentTotal === 100 ? "text-gray-400" : "text-red-600"
+                  }`}
+                >
+                  รวม {termsPercentTotal}% · งวดสุดท้ายปรับอัตโนมัติ
                 </p>
-              </label>
-              <label className="block">
-                <span className="text-xs font-semibold text-gray-500">
-                  เงื่อนไขเพิ่มเติม
-                </span>
+              </div>
+
+              <div className="rounded-xl border border-gray-200 bg-white p-2.5">
+                <div className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-2">
+                  <span className="text-xxs font-semibold text-gray-500">วันที่ใบเสนอราคา</span>
+                  <input
+                    type="date"
+                    value={issueDate}
+                    max={todayIso()}
+                    onChange={(e) => setIssueDate(e.target.value || todayIso())}
+                    className={`w-40 ${FIELD}`}
+                  />
+                </div>
                 <textarea
                   value={termsText}
                   onChange={(e) => setTermsText(e.target.value)}
+                  rows={2}
                   placeholder="เงื่อนไขเพิ่มเติม"
-                  rows={3}
-                  className={`mt-1 ${fieldClass}`}
+                  className="mt-1.5 h-16 w-full resize-none rounded-lg border border-gray-200 bg-white px-2 py-1.5 text-xs outline-none transition-colors placeholder:text-gray-300 hover:border-gray-300 focus:border-primary focus:ring-2 focus:ring-primary/10"
                 />
-              </label>
+              </div>
             </div>
-          </section>
+          </div>
         </div>
-        <div className="sticky bottom-0 flex justify-end gap-2 border-t border-gray-200 bg-gray-50/90 p-4 backdrop-blur-sm">
-          <button
-            type="button"
-            disabled={saving}
-            onClick={previewQuotation}
-            title="แสดงข้อมูลที่กำลังกรอกโดยไม่บันทึก"
-            className="rounded-lg border border-primary/30 bg-white px-4 py-2 text-sm font-semibold text-primary transition-colors hover:bg-primary/5 disabled:cursor-not-allowed disabled:opacity-40"
-          >
-            ดูตัวอย่างใบเสนอราคา
-          </button>
+
+        <footer className="flex shrink-0 items-center gap-3 border-t border-gray-100 bg-white px-5 py-3">
           <button
             type="button"
             onClick={onClose}
-            className="rounded-lg border border-gray-200 bg-white px-4 py-2 text-sm font-medium text-gray-600 transition-colors hover:bg-gray-100"
+            className="rounded-lg px-3 py-2 text-sm font-medium text-gray-500 transition-colors hover:bg-gray-100 hover:text-gray-700"
           >
             ยกเลิก
           </button>
-          <button
-            type="button"
-            disabled={saving}
-            onClick={save}
-            className="rounded-lg bg-gradient-to-r from-primary to-cyan-500 px-5 py-2 text-sm font-semibold text-white shadow-sm transition-all hover:brightness-105 disabled:opacity-50"
-          >
-            {saving ? "กำลังบันทึก..." : "บันทึกฉบับร่าง"}
-          </button>
-        </div>
+          {/* คำแนะนำการใช้งานที่คนมักไม่รู้ */}
+          <span className="hidden text-xxs text-gray-400 lg:inline">
+            💡 พิมพ์{" "}
+            <code className="rounded bg-gray-100 px-1 font-mono text-gray-600">[ข้อความ]</code>{" "}
+            ในชื่อรายการ → เอกสารแสดงเป็น <span className="font-bold text-red-600">(ข้อความ)</span>{" "}
+            สีแดง · คลิกหัวข้อเพื่อกาง/หุบ
+          </span>
+          <div className="ml-auto flex items-center gap-3">
+            <button
+              type="button"
+              disabled={saving}
+              onClick={previewQuotation}
+              className="rounded-lg border border-gray-200 px-4 py-2 text-sm font-semibold text-gray-700 transition-colors hover:bg-gray-50 disabled:opacity-40"
+            >
+              ดูตัวอย่าง
+            </button>
+            <button
+              type="button"
+              disabled={saving}
+              onClick={save}
+              className="rounded-lg bg-primary px-6 py-2 text-sm font-semibold text-white shadow-sm transition-all hover:brightness-110 disabled:opacity-50"
+            >
+              {saving ? "กำลังบันทึก…" : "บันทึกฉบับร่าง"}
+            </button>
+          </div>
+        </footer>
       </div>
+      {pickerOpen && (
+        <PackagePickerDialog
+          groups={packageGroups}
+          onPick={(id) => {
+            setPickerOpen(false);
+            loadPackageGroup(id);
+          }}
+          onClose={() => setPickerOpen(false)}
+        />
+      )}
     </div>
   );
 }

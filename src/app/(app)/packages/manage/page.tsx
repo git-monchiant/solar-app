@@ -214,7 +214,10 @@ export default function ManagePackagesPage() {
 
   // Shared field styling for the edit modal — one source of truth so every
   // input in the form lines up instead of drifting per-section.
-  const fieldCls = "w-full h-9 px-3 rounded-lg border border-gray-200 bg-white text-sm outline-none transition-colors hover:border-gray-300 focus:border-primary focus:ring-2 focus:ring-primary/10";
+  // แยกขนาดตัวอักษรออกจาก base เพราะ Tailwind เรียง utility ตาม scale ไม่ใช่ตามลำดับใน className
+  // ถ้ารวม text-sm ไว้ใน base แล้วต่อท้ายด้วย text-xs จะไม่มีผล (text-sm ชนะเสมอ)
+  const fieldBase = "w-full h-9 px-3 rounded-lg border border-gray-200 bg-white outline-none transition-colors hover:border-gray-300 focus:border-primary focus:ring-2 focus:ring-primary/10";
+  const fieldCls = `${fieldBase} text-sm`;
   const labelCls = "block text-xs font-semibold text-gray-500 mb-1";
 
   if (loading) return <div className="flex items-center justify-center h-full py-20"><div className="w-10 h-10 border-3 border-gray-200 border-t-primary rounded-full animate-spin" /></div>;
@@ -533,7 +536,7 @@ export default function ManagePackagesPage() {
                   <div className="flex items-start justify-between gap-3 mb-3">
                     <div>
                       <div className="text-xs font-bold text-gray-800">อุปกรณ์หลักใน Package</div>
-                      <div className="text-xxs text-gray-400 mt-0.5">ล็อกและ Snapshot ลงใบเสนอราคา</div>
+                      <div className="text-xxs text-gray-400 mt-0.5">แถวแรก = ชื่อที่ขึ้นบนเอกสาร · แถวถัดไป = รายละเอียดใต้หัวข้อ</div>
                     </div>
                     <button type="button" onClick={() => setPackageItems(v => [...v, { item_name: "", quantity: 1, unit: "ชุด" }])}
                       className="h-8 px-3 shrink-0 rounded-lg border border-primary/30 bg-primary/5 text-xs font-semibold text-primary hover:bg-primary/10 transition-colors">
@@ -549,15 +552,35 @@ export default function ManagePackagesPage() {
                         <span className="col-span-1 text-center">จำนวน</span>
                         <span className="col-span-1">หน่วย</span>
                       </div>
-                      <div className="space-y-2">{packageItems.map((item, index) => (
-                        <div key={index} className="grid grid-cols-12 items-center gap-2">
-                          <input value={item.item_name} onChange={e => setPackageItems(v => v.map((x, i) => i === index ? { ...x, item_name: e.target.value } : x))} placeholder="ชื่ออุปกรณ์/บริการ" className={`col-span-9 ${fieldCls}`} />
-                          <input type="number" min="1" value={item.quantity || ""} onChange={e => setPackageItems(v => v.map((x, i) => i === index ? { ...x, quantity: Number(e.target.value) } : x))} className={`col-span-1 text-center ${fieldCls}`} />
-                          <input value={item.unit ?? ""} onChange={e => setPackageItems(v => v.map((x, i) => i === index ? { ...x, unit: e.target.value || null } : x))} placeholder="หน่วย" className={`col-span-1 ${fieldCls}`} />
-                          <button type="button" onClick={() => setPackageItems(v => v.filter((_, i) => i !== index))} aria-label="ลบรายการ"
-                            className="col-span-1 h-9 flex items-center justify-center rounded-lg text-red-400 hover:bg-red-50 hover:text-red-600 transition-colors">×</button>
-                        </div>
-                      ))}</div>
+                      <div className="space-y-1">{packageItems.map((item, index) => {
+                        const isHead = index === 0;
+                        return (
+                          <div key={index}>
+                            <div className={`grid grid-cols-12 items-center gap-2 ${isHead ? "rounded-lg bg-primary/5 p-1.5 -mx-1.5" : ""}`}>
+                              <div className={`col-span-9 flex min-w-0 items-center gap-2 ${isHead ? "" : "pl-7"}`}>
+                                {isHead ? (
+                                  <span className="shrink-0 rounded bg-primary px-1.5 py-0.5 text-xxs font-bold text-white">หัวข้อ</span>
+                                ) : (
+                                  <span aria-hidden="true" className="h-1.5 w-1.5 shrink-0 rounded-full bg-gray-300" />
+                                )}
+                                <input
+                                  value={item.item_name}
+                                  onChange={e => setPackageItems(v => v.map((x, i) => i === index ? { ...x, item_name: e.target.value } : x))}
+                                  placeholder={isHead ? "ชื่อที่แสดงบนเอกสาร" : "รายละเอียดใต้หัวข้อ"}
+                                  className={`min-w-0 flex-1 ${fieldBase} ${isHead ? "text-sm font-bold text-gray-900" : "text-xs text-gray-600"}`}
+                                />
+                              </div>
+                              <input type="number" min="1" value={item.quantity || ""} onChange={e => setPackageItems(v => v.map((x, i) => i === index ? { ...x, quantity: Number(e.target.value) } : x))} className={`col-span-1 text-center ${fieldBase} ${isHead ? "text-sm" : "text-xs"}`} />
+                              <input value={item.unit ?? ""} onChange={e => setPackageItems(v => v.map((x, i) => i === index ? { ...x, unit: e.target.value || null } : x))} placeholder="หน่วย" className={`col-span-1 ${fieldBase} ${isHead ? "text-sm" : "text-xs"}`} />
+                              <button type="button" onClick={() => setPackageItems(v => v.filter((_, i) => i !== index))} aria-label="ลบรายการ"
+                                className="col-span-1 h-9 flex items-center justify-center rounded-lg text-gray-300 hover:bg-red-50 hover:text-red-600 transition-colors">×</button>
+                            </div>
+                            {isHead && packageItems.length > 1 && (
+                              <div className="mt-2 mb-1 pl-7 text-xxs font-semibold text-gray-400">รายละเอียดใต้หัวข้อ</div>
+                            )}
+                          </div>
+                        );
+                      })}</div>
                     </>
                   )}
               </section>

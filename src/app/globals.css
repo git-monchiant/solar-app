@@ -156,10 +156,17 @@ button:disabled {
   cursor: not-allowed;
 }
 
-input:not([type="checkbox"]):not([type="radio"]):not([type="file"]):not([type="date"]), textarea {
-  font-size: var(--text-sm);
-  line-height: var(--text-sm--line-height);
-  background: var(--background);
+/* ค่าเริ่มต้นของช่องกรอก — ต้องอยู่ใน @layer base เท่านั้น
+   Tailwind v4 วาง utility ไว้ใน cascade layer และ "กฎที่ไม่อยู่ใน layer ชนะ
+   layer เสมอ" (ไม่เกี่ยวกับ specificity) ถ้าปล่อยไว้นอก layer กฎนี้จะทับ
+   text-xs/text-xxs ทุกที่ → ช่องกรอกทั้งแอปแสดง 22px เท่ากันหมด */
+@layer base {
+  input:where(:not([type="checkbox"]):not([type="radio"]):not([type="file"]):not([type="date"])),
+  textarea {
+    font-size: var(--text-sm);
+    line-height: var(--text-sm--line-height);
+    background: var(--background);
+  }
 }
 
 /* Safe area helpers */
