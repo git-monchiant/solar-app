@@ -1616,7 +1616,7 @@ export default function OrderStep({ lead, state, refresh, expanded, onToggle }: 
             {depositPaid > 0 && (
               <div className="flex justify-between text-xs text-gray-400">
                 <span>หักค่าสำรวจ</span>
-                <span>-{fmt(depositPaid)} บาท</span>
+                <span>{depositPaid > 0 ? `-${fmt(depositPaid)}` : fmt(0)} บาท</span>
               </div>
             )}
             <div className="flex justify-between text-sm font-semibold border-t border-gray-200 pt-1">
@@ -1934,7 +1934,7 @@ export default function OrderStep({ lead, state, refresh, expanded, onToggle }: 
             {depositPaid > 0 && (
               <div className="flex justify-between text-xs text-gray-400">
                 <span>หักค่าสำรวจ</span>
-                <span>-{fmt(depositPaid)} บาท</span>
+                <span>{depositPaid > 0 ? `-${fmt(depositPaid)}` : fmt(0)} บาท</span>
               </div>
             )}
             <div className="flex justify-between text-sm font-semibold border-t border-gray-200 pt-1">

@@ -2055,13 +2055,13 @@ function QuotationEditor({
                 <div>
                   <small className="text-gray-400">ส่วนลด</small>
                   <b className="mt-1 block text-red-500">
-                    -{formatTHB(discountAmount)}
+                    {discountAmount > 0 ? `-${formatTHB(discountAmount)}` : formatTHB(0)}
                   </b>
                 </div>
                 <div>
                   <small className="text-gray-400">หักยอดชำระแล้ว</small>
                   <b className="mt-1 block text-red-500">
-                    -{formatTHB(deposit)}
+                    {deposit > 0 ? `-${formatTHB(deposit)}` : formatTHB(0)}
                   </b>
                 </div>
                 <div>
