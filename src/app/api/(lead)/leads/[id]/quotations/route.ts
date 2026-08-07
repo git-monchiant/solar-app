@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getDb, sql, fixDates, toSqlDate } from "@/lib/db";
 import { requireAuth } from "@/lib/auth";
+import { resolvePackagePrice, syncActivePricePeriods } from "@/lib/package-prices";
 import { calculateQuotation, canManageQuotation, getQuotationActor, nextQuotationDocNo, parseQuotationAddOnItems, parseQuotationPackageItems, type QuotationInputItem } from "@/lib/quotation";
 import { logLeadActivity } from "@/lib/lead-activity-log";
 import { parseDocumentInputs } from "@/lib/quotation-document";
@@ -46,6 +47,7 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
 }
 
 export async function POST(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
+  await syncActivePricePeriods();   // ราคาแพ็กเกจต้องเป็นของช่วงที่ถึงกำหนดแล้ว ก่อน snapshot ลงใบเสนอราคา
   const gate = await requireAuth(req); if (gate.error) return gate.error;
   const actor = await getQuotationActor(gate.userId);
   if (!actor || !canManageQuotation(actor.roles)) return NextResponse.json({ error: "ไม่มีสิทธิ์สร้างใบเสนอราคา" }, { status: 403 });
@@ -99,12 +101,14 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
     const depositPaid = lead.recordset[0].pre_survey_fee_type === "free"
       ? 0
       : Math.max(confirmedDeposit, Number(body.deposit_paid_amount) || 0);
-    const totals = calculateQuotation(Number(packageRow?.price) || 0, addonItems, discountType, Number(body.discount_value), depositPaid, 7);
+    // ผู้ใช้เลือกช่วงราคาของ package ได้ (dropdown) — ตรวจว่าเป็นราคาที่มีจริงก่อนใช้
+    const packagePrice = await resolvePackagePrice(new sql.Request(tx), effectivePackageId, body.package_price, Number(packageRow?.price) || 0, leadId);
+    const totals = calculateQuotation(packagePrice, addonItems, discountType, Number(body.discount_value), depositPaid, 7);
     const documentInputs = parseDocumentInputs(body.document_inputs);
     const docNo = await nextQuotationDocNo(tx);
     const inserted = await new sql.Request(tx)
       .input("lead_id", sql.Int, leadId).input("option_no", sql.TinyInt, optionNo).input("revision_no", sql.Int, revisionNo).input("doc_no", sql.NVarChar(30), docNo)
-      .input("package_id", sql.Int, effectivePackageId).input("package_name", sql.NVarChar(200), packageRow?.name || "").input("package_price", sql.Decimal(12,2), packageRow?.price || 0)
+      .input("package_id", sql.Int, effectivePackageId).input("package_name", sql.NVarChar(200), packageRow?.name || "").input("package_price", sql.Decimal(12,2), packagePrice)
       .input("issue_date", sql.Date, toSqlDate(body.issue_date) || new Date()).input("valid_days", sql.Int, Number(body.valid_days) || 7)
       .input("subtotal", sql.Decimal(12,2), totals.subtotal).input("discount_label", sql.NVarChar(200), body.discount_label || null)
       .input("discount_type", sql.NVarChar(10), discountType).input("discount_value", sql.Decimal(12,2), Number(body.discount_value)||0).input("discount_amount", sql.Decimal(12,2), totals.discountAmount)

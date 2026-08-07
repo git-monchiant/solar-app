@@ -61,12 +61,12 @@ export async function apiFetch(url: string, options?: RequestInit): Promise<any>
     }
   }
   if (!res.ok) {
+    // Try to capture the server's error body — ใช้ทั้งส่ง log และโยนต่อให้ UI
+    let bodyText = "";
+    try { bodyText = await res.clone().text(); } catch { /* ignore */ }
     // Skip noisy 401 — they always redirect to /login above; logging adds
     // nothing and floods the table.
     if (res.status !== 401) {
-      // Try to capture the server's error body for context.
-      let bodyText = "";
-      try { bodyText = await res.clone().text(); } catch { /* ignore */ }
       reportClientError({
         source: "apifetch",
         message: `API error ${res.status} ${url}`,
@@ -75,7 +75,11 @@ export async function apiFetch(url: string, options?: RequestInit): Promise<any>
         request_url: url,
       });
     }
-    throw new Error(`API error: ${res.status}`);
+    // ข้อความจริงจาก server ({error:"..."}) มีประโยชน์กว่า "API error: 409" มาก
+    // แต่ยังคงรูปแบบเดิมไว้เมื่อ body ไม่มีข้อความ เพราะบางหน้าเช็ค /API error: 404/
+    let serverMessage = "";
+    try { serverMessage = String(JSON.parse(bodyText)?.error || ""); } catch { /* ไม่ใช่ JSON */ }
+    throw new Error(serverMessage || `API error: ${res.status}`);
   }
   return res.json();
 }

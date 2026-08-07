@@ -109,6 +109,25 @@ const formatPackageSpecs = (pkg: Package) =>
 const stripLeadMark = (name: string) => name.replace(/^\s*[-–—•]\s*/, "");
 
 /** ป๊อปอัปเลือกแพ็กเกจ — กดปุ่มแล้วเด้งขึ้นมาเลือก (มีช่องค้นหาในตัว) */
+type PricePeriod = {
+  id: number;
+  package_id: number;
+  price: number;
+  start_date: string | null;
+  expire_date: string | null;
+  is_active: boolean;
+};
+
+const periodRangeText = (p: PricePeriod) => {
+  const day = (v: string | null) => {
+    const d = (v || "").slice(0, 10);
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(d)) return "-";
+    const [y, m, dd] = d.split("-");
+    return `${dd}/${m}/${y}`;
+  };
+  return `${day(p.start_date)} – ${day(p.expire_date)}`;
+};
+
 function PackagePickerDialog({
   groups,
   onPick,
@@ -493,6 +512,17 @@ export default function QuotationBuilder({
                   <span className="text-xxs font-semibold">บาท</span>
                 </div>
               </div>
+              {(() => {
+                // ใบที่ออกด้วยราคาคนละเดือนกับราคาที่ใช้อยู่ตอนนี้ ต้องเห็นชัดก่อนส่งอนุมัติ
+                const currentPrice = pkg ? Number(pkg.price) : null;
+                const snapshot = q.package_price_snapshot == null ? null : Number(q.package_price_snapshot);
+                if (currentPrice == null || snapshot == null || snapshot === currentPrice) return null;
+                return (
+                  <div className="mt-1 text-right text-xxs font-semibold text-red-600">
+                    * ใบเสนอราคานี้ไม่ตรงกับราคาเดือนปัจจุบัน
+                  </div>
+                );
+              })()}
               <div className="grid grid-cols-3 gap-2 mt-3">
                 {["draft", "changes_required"].includes(q.status) ? (
                   <div className="col-span-3 flex gap-2">
@@ -945,6 +975,28 @@ function QuotationEditor({
   const mainIndex = groups.findIndex((g) => g.kind === "package");
   const mainGroup = mainIndex >= 0 ? groups[mainIndex] : undefined;
   const mainPackage = packages.find((p) => p.id === mainGroup?.source_package_id);
+  // ช่วงราคาของทุกแพ็กเกจ ดึงครั้งเดียว ใช้ให้ทุกกลุ่มในทรีกดเปลี่ยนราคาได้
+  const [pricePeriods, setPricePeriods] = useState<Record<number, PricePeriod[]>>({});
+  // key ของกลุ่มที่เปิด dropdown ราคาอยู่ + ทิศทางที่กาง (ขึ้น/ลง) ตามที่ว่างบนจอ
+  const [openPriceKey, setOpenPriceKey] = useState<string | null>(null);
+  const [priceDropUp, setPriceDropUp] = useState(false);
+  useEffect(() => {
+    if (!openPriceKey) return;
+    const onKey = (e: KeyboardEvent) => e.key === "Escape" && setOpenPriceKey(null);
+    document.addEventListener("keydown", onKey);
+    return () => document.removeEventListener("keydown", onKey);
+  }, [openPriceKey]);
+  useEffect(() => {
+    apiFetch(`/api/packages/price-periods?lead_id=${lead.id}`)
+      .then((rows: PricePeriod[]) => {
+        const byPackage: Record<number, PricePeriod[]> = {};
+        for (const row of Array.isArray(rows) ? rows : []) {
+          (byPackage[row.package_id] ||= []).push(row);
+        }
+        setPricePeriods(byPackage);
+      })
+      .catch(() => setPricePeriods({}));
+  }, [lead.id]);
 
   // ── การเงิน ─────────────────────────────────────────────────────────
   const [discountType, setDiscountType] = useState<"amount" | "percent">(
@@ -1186,7 +1238,7 @@ function QuotationEditor({
         headers: { "Content-Type": "application/json", ...getUserIdHeader() },
         body: JSON.stringify({
           lead,
-          package: mainPackage,
+          package: mainPackage ? { ...mainPackage, price: mainGroup?.price ?? mainPackage.price } : mainPackage,
           docNo: quote?.doc_no,
           issueDate,
           allItems: [
@@ -1239,6 +1291,8 @@ function QuotationEditor({
           body: JSON.stringify({
             option_no: optionNo,
             package_id: packageId,
+            // ราคาที่ผู้ใช้เลือกจากช่วงราคา (ไม่ส่ง = ใช้ราคาปัจจุบันของแพ็กเกจ)
+            package_price: mainGroup?.price ?? null,
             package_items: packageItems,
             items,
             issue_date: issueDate,
@@ -1367,18 +1421,93 @@ function QuotationEditor({
                         className="min-w-0 flex-1 resize-none overflow-hidden rounded-md border border-transparent bg-transparent px-1.5 py-1 text-sm font-semibold leading-snug text-gray-800 outline-none transition-colors placeholder:font-normal placeholder:text-gray-300 hover:border-gray-200 focus:border-primary focus:bg-white"
                       />
                       {g.kind === "package" ? (
-                        <span className="w-24 shrink-0 text-right text-xs font-bold tabular-nums text-gray-800">
-                          {formatTHB(g.price)}
-                        </span>
+                        (() => {
+                          const options = pricePeriods[g.source_package_id ?? -1] || [];
+                          if (options.length < 2) {
+                            return (
+                              <span className="w-24 shrink-0 text-right text-xs font-bold tabular-nums text-gray-800">
+                                {formatTHB(g.price)}
+                              </span>
+                            );
+                          }
+                          const open = openPriceKey === g.key;
+                          return (
+                            <div className="relative w-24 shrink-0">
+                              <button
+                                type="button"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  if (open) {
+                                    setOpenPriceKey(null);
+                                    return;
+                                  }
+                                  // ถ้าที่ว่างด้านล่างไม่พอ ให้กางขึ้นแทน — กันโดนขอบ modal ตัด
+                                  const rect = e.currentTarget.getBoundingClientRect();
+                                  const spaceBelow = window.innerHeight - rect.bottom;
+                                  const needed = Math.min(options.length, 6) * 32 + 16;
+                                  setPriceDropUp(spaceBelow < needed);
+                                  setOpenPriceKey(g.key);
+                                }}
+                                title="เลือกราคาจากช่วงราคาที่ตั้งไว้"
+                                className={`flex h-8 w-full items-center justify-end gap-1 rounded-md border px-1.5 text-xs font-bold tabular-nums text-gray-800 transition-colors ${
+                                  open ? "border-primary bg-primary/5" : "border-transparent hover:border-gray-200 hover:bg-gray-50"
+                                }`}
+                              >
+                                {formatTHB(g.price)}
+                                <span aria-hidden="true" className="text-[9px] text-gray-400">▾</span>
+                              </button>
+                              {open && (
+                                <>
+                                  {/* ฉากโปร่งใสสำหรับปิดเมื่อคลิกที่อื่น — อยู่ใต้ตัว dropdown */}
+                                  <div
+                                    className="fixed inset-0 z-20"
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      setOpenPriceKey(null);
+                                    }}
+                                  />
+                                  <div className={`absolute right-0 z-30 max-h-56 w-56 overflow-y-auto rounded-lg border border-gray-200 bg-white py-1 shadow-lg ${
+                                    priceDropUp ? "bottom-full mb-1" : "top-full mt-1"}`}>
+                                    {options.map((option) => {
+                                      const picked = Number(option.price) === Number(g.price);
+                                      return (
+                                        <button
+                                          key={option.id}
+                                          type="button"
+                                          onClick={(e) => {
+                                            e.stopPropagation();
+                                            patchGroup(g.key, { price: Number(option.price) });
+                                            setOpenPriceKey(null);
+                                          }}
+                                          className={`flex w-full items-center gap-2 whitespace-nowrap px-2.5 py-1.5 text-left transition-colors ${
+                                            picked ? "bg-primary/10" : "hover:bg-gray-50"
+                                          }`}
+                                        >
+                                          <span className={`flex-1 text-xxs ${option.is_active ? "text-green-600" : "text-gray-400"}`}>
+                                            {periodRangeText(option)}
+                                          </span>
+                                          <span className={`text-xs font-bold tabular-nums ${option.is_active ? "text-green-700" : "text-gray-700"}`}>
+                                            {formatTHB(option.price)}
+                                          </span>
+                                        </button>
+                                      );
+                                    })}
+                                  </div>
+                                </>
+                              )}
+                            </div>
+                          );
+                        })()
                       ) : (
                         <input
                           type="number"
                           min="0"
-                          value={g.price || ""}
+                          value={Number.isFinite(g.price) ? String(g.price) : ""}
                           onChange={(e) =>
-                            patchGroup(g.key, { price: Number(e.target.value) || 0 })
+                            patchGroup(g.key, { price: Math.max(0, Number(e.target.value) || 0) })
                           }
                           placeholder="ราคา"
+                          title="ใส่ 0 ได้ — ถ้าเป็น 0 เอกสารจะแสดงเฉพาะชื่อรายการ ไม่มียอดเงินและหน่วย"
                           aria-label="ราคางานเพิ่ม"
                           className="h-8 w-24 shrink-0 rounded-md border border-gray-200 bg-white px-1.5 text-right text-xs font-bold tabular-nums text-gray-800 outline-none focus:border-primary"
                         />

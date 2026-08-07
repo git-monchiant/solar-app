@@ -1,11 +1,13 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getDb, sql, fixDates, toSqlDate } from "@/lib/db";
-import { requireAuth } from "@/lib/auth";
+import { requireAnyRole, requireAuth } from "@/lib/auth";
+import { syncActivePricePeriods } from "@/lib/package-prices";
 
 export async function GET(req: NextRequest) {
   const gate = await requireAuth(req);
   if (gate.error) return gate.error;
   try {
+    await syncActivePricePeriods();   // ราคาที่ถึงกำหนดใช้งานวันนี้ ต้องมีผลโดยไม่ต้องรอใครกด
     const db = await getDb();
     const all = req.nextUrl.searchParams.get("all");
     const query = all
@@ -20,7 +22,7 @@ export async function GET(req: NextRequest) {
 }
 
 export async function POST(req: NextRequest) {
-  const gate = await requireAuth(req);
+  const gate = await requireAnyRole(req, ["admin"]);
   if (gate.error) return gate.error;
   try {
     const body = await req.json();

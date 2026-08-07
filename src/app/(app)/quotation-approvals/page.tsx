@@ -14,6 +14,9 @@ type Row = {
   option_no: number;
   status: string;
   package_name_snapshot: string;
+  package_price_snapshot: number | null;
+  /** ราคาปัจจุบันของแพ็กเกจ — ต่างจาก snapshot = ใบนี้ออกด้วยราคาคนละเดือน */
+  current_package_price: number | null;
   contract_total_incl_vat: number;
   outstanding_amount: number;
   submitted_at: string;
@@ -298,6 +301,12 @@ export default function QuotationApprovalsPage() {
                             {Number(quote.contract_total_incl_vat) !== Number(quote.outstanding_amount) && (
                               <div className="text-xxs text-gray-400 mt-0.5">
                                 ราคาเต็ม {formatTHB(quote.contract_total_incl_vat)} · หักมัดจำ {formatTHB(Number(quote.contract_total_incl_vat) - Number(quote.outstanding_amount))}
+                              </div>
+                            )}
+                            {quote.package_price_snapshot != null && quote.current_package_price != null
+                              && Number(quote.package_price_snapshot) !== Number(quote.current_package_price) && (
+                              <div className="mt-0.5 text-xxs font-semibold text-red-600">
+                                * ใบเสนอราคานี้ไม่ตรงกับราคาเดือนปัจจุบัน
                               </div>
                             )}
                           </div>

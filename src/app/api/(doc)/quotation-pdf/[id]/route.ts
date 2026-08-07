@@ -499,13 +499,16 @@ export async function GET(
       ];
     }
     addOnSequence += 1;
+    // งานเพิ่มที่ราคา 0 = แถมให้ → แสดงเฉพาะชื่อรายการ ไม่ต้องมีจำนวน/หน่วย และไม่ต้องมียอด 0.00
+    const isFree = !(Number(item.line_total) > 0);
     if (item.source_type === "addon_package") {
       return [
-        `<tr class="head-row"><td class="center">${addOnSequence}</td><td>${otherPackageTextHtml(otherPackageItemText(item))}</td><td class="right">${money(item.line_total)}</td></tr>`,
+        `<tr class="head-row"><td class="center">${addOnSequence}</td><td>${otherPackageTextHtml(isFree ? normalizeOtherPackageText(item.item_name_snapshot) : otherPackageItemText(item))}</td><td class="right">${isFree ? "" : money(item.line_total)}</td></tr>`,
       ];
     }
+    // งานเพิ่มแสดงชื่อรายการอย่างเดียว ไม่ต่อท้ายด้วยจำนวน/หน่วย ("1 งาน")
     return [
-      `<tr class="head-row"><td class="center">${addOnSequence}</td><td>${itemHtml(addOnDisplayName(item))} ${esc(item.quantity)} ${esc(item.unit)}</td><td class="right">${money(item.line_total)}</td></tr>`,
+      `<tr class="head-row"><td class="center">${addOnSequence}</td><td>${itemHtml(addOnDisplayName(item))}</td><td class="right">${isFree ? "" : money(item.line_total)}</td></tr>`,
     ];
   });
   const itemRows = [

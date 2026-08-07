@@ -5,6 +5,7 @@ import { apiFetch } from "@/lib/api";
 import { useEffect, useState } from "react";
 import Header from "@/components/layout/Header";
 import { formatTHB as fmt, formatThaiDate as fmtDate } from "@/lib/utils/formatters";
+import { hasRole, useActiveRoles } from "@/lib/roles";
 
 interface Package {
   id: number;
@@ -36,6 +37,54 @@ interface Package {
   remark?: string | null;
 }
 type PackageItem = { item_name: string; quantity: number; unit: string | null };
+type PricePeriod = {
+  id?: number | null;
+  price: number;
+  monthly_installment: string | null;
+  monthly_saving: number | null;
+  start_date: string | null;
+  expire_date: string | null;
+  is_active: boolean;
+  locked?: boolean;
+  /** Lead ที่ยังใช้ราคาของช่วงนี้ได้ แม้ช่วงจะผ่านมาแล้ว เช่น "123,333,444" */
+  allowed_lead_ids?: string | null;
+};
+
+const ymd = (d: Date) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+const todayStr = () => ymd(new Date());
+/** แสดงวันที่ให้เหมือนช่อง date ของเบราว์เซอร์ (DD/MM/YYYY ค.ศ.) ไม่ใช่ "1 ส.ค. 2569" */
+const fmtPicker = (v: string | null | undefined) => {
+  const day = (v || "").slice(0, 10);
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(day)) return "";
+  const [y, m, d] = day.split("-");
+  return `${d}/${m}/${y}`;
+};
+/** วันหมดอายุตั้งต้น = สิ้นเดือนของวันที่เริ่ม (ตามรูปแบบที่ใช้จริง 01/08–31/08) ไม่เดาปีเอง */
+const endOfMonth = (from: string) => { const d = new Date(`${from}T00:00:00`); return ymd(new Date(d.getFullYear(), d.getMonth() + 1, 0)); };
+/** ช่วงใหม่เริ่มต่อจากวันสิ้นสุดที่ไกลที่สุดของช่วงเดิม (+1 วัน) — ไม่ให้ช่วงคาบเกี่ยวกัน */
+const nextStartAfter = (list: PricePeriod[]) => {
+  const lastExpire = list.map(p => p.expire_date?.slice(0, 10)).filter(Boolean).sort().pop();
+  if (!lastExpire) return todayStr();
+  const d = new Date(`${lastExpire}T00:00:00`);
+  d.setDate(d.getDate() + 1);
+  const next = ymd(d);
+  return next < todayStr() ? todayStr() : next;   // ห้ามย้อนหลัง ถ้าช่วงเดิมหมดอายุไปแล้วให้เริ่มวันนี้
+};
+/** เรียงตามวันที่เริ่มใช้ (เก่า → ใหม่) — เรียงตอนโหลด/เพิ่มแถว ไม่เรียงระหว่างพิมพ์ ไม่งั้นแถวจะกระโดด */
+const sortByStart = (list: PricePeriod[]) =>
+  [...list].sort((a, b) => (a.start_date || "").localeCompare(b.start_date || "") || (a.id ?? 0) - (b.id ?? 0));
+const blankPeriod = (active: boolean, start = todayStr()): PricePeriod => ({
+  id: null, price: 0, monthly_installment: null, monthly_saving: null,
+  start_date: start, expire_date: endOfMonth(start), is_active: active, allowed_lead_ids: null,
+});
+/** ล็อก = แก้/ลบไม่ได้ — ช่วงที่ Active หรือช่วงที่เริ่มไปแล้ว (เดือนที่ผ่านมา)
+    เหลือแก้ได้เฉพาะช่วงในอนาคตที่ยังไม่ถึงวันเริ่ม */
+const periodLocked = (p: PricePeriod) => {
+  if (!p.id) return false;                                  // แถวใหม่ที่ยังไม่บันทึก แก้ได้เสมอ
+  if (p.is_active) return true;
+  const start = (p.start_date || "").slice(0, 10);
+  return !!start && start <= todayStr();
+};
 
 /** ตัดขีด/บุลเล็ตนำหน้าออก — ในใบเสนอราคา PDF จะเติม "- " ให้เองอยู่แล้ว
     (ตรงกับ stripLeadMark ใน QuotationBuilder) */
@@ -59,6 +108,10 @@ export default function ManagePackagesPage() {
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState("");
   const [packageItems, setPackageItems] = useState<PackageItem[]>([]);
+  const [periods, setPeriods] = useState<PricePeriod[]>([]);
+  const [leadConfigKey, setLeadConfigKey] = useState<string | null>(null);
+  const { activeRoles } = useActiveRoles();
+  const isAdmin = hasRole(activeRoles, "admin");
   const [search, setSearch] = useState("");
   const [filter, setFilter] = useState<"all" | "active" | "inactive">("all");
   const [filterPhase, setFilterPhase] = useState<"all" | "0" | "1" | "3">("all");
@@ -73,6 +126,17 @@ export default function ManagePackagesPage() {
   useEffect(() => {
     if (!editing) setSaveError("");
   }, [editing]);
+  // key = "new" หรือ id — ผูก effect กับ "โมดัลที่เปิดอยู่" ไม่ใช่ object ของ editing
+  // ถ้า dep เป็น editing ตรงๆ จะ refetch ทุกครั้งที่พิมพ์ แล้วทับสิ่งที่ผู้ใช้แก้ไว้
+  const editingKey = editing ? String(editing.id ?? "new") : null;
+  useEffect(() => {
+    if (!editingKey) { setPeriods([]); return; }
+    if (editingKey === "new") { setPeriods([blankPeriod(true)]); return; }
+    apiFetch(`/api/packages/${editingKey}/periods`)
+      .then((rows: PricePeriod[]) => setPeriods(rows.length ? sortByStart(rows) : [blankPeriod(true)]))
+      .catch(() => setPeriods([blankPeriod(true)]));
+  }, [editingKey]);
+
   useEffect(() => {
     if (!editing?.id) { setPackageItems([]); return; }
     apiFetch(`/api/packages/${editing.id}/items`)
@@ -194,21 +258,50 @@ export default function ManagePackagesPage() {
     setSaveError("");
     setSaving(true);
     try {
+      // ราคา/ผ่อน/ประหยัด/ช่วงวันที่ บน packages = ค่าจากช่วงราคาที่ตั้งเป็น "ใช้งาน"
+      // ราคาบน packages = ช่วงที่ Active (ถ้ายังไม่มี ใช้ช่วงแรกไปก่อน เดี๋ยว sync ตามวันที่จะแก้ให้เอง)
+      const activePeriod = periods.find(p => p.is_active) || periods[0];
+      if (periods.some(p => !p.id && (p.start_date || "").slice(0, 10) < todayStr())) {
+        setSaveError("สร้างช่วงราคาย้อนหลังไม่ได้ — วันที่เริ่มใช้ต้องเป็นวันนี้หรือหลังจากนั้น");
+        setSaving(false);
+        return;
+      }
+      if (periods.some(p => !(Number(p.price) > 0))) {
+        setSaveError("กรุณาระบุราคาขายให้ครบทุกช่วง");
+        setSaving(false);
+        return;
+      }
+      const badRange = periods.find(p => p.start_date && p.expire_date && p.expire_date.slice(0, 10) < p.start_date.slice(0, 10));
+      if (badRange) {
+        setSaveError("วันหมดอายุต้องไม่ก่อนวันที่เริ่มใช้");
+        setSaving(false);
+        return;
+      }
+      const payload = {
+        ...editing,
+        price: Number(activePeriod?.price) || 0,
+        monthly_installment: activePeriod?.monthly_installment ?? null,
+        monthly_saving: activePeriod?.monthly_saving ?? null,
+        start_date: activePeriod?.start_date || editing.start_date,
+        expire_date: activePeriod?.expire_date || editing.expire_date,
+      };
       let packageId: number;
       if (editing.id) {
-        await apiFetch(`/api/packages/${editing.id}`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify(editing) });
+        await apiFetch(`/api/packages/${editing.id}`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload) });
         packageId = editing.id;
       } else {
-        const created = await apiFetch("/api/packages", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(editing) });
+        const created = await apiFetch("/api/packages", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload) });
         packageId = created.id;
       }
+      const savedPeriods: PricePeriod[] = await apiFetch(`/api/packages/${packageId}/periods`, { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify(periods) });
+      if (Array.isArray(savedPeriods)) setPeriods(sortByStart(savedPeriods));
       const cleanItems = packageItems.map(it => ({ ...it, item_name: stripLeadMark(it.item_name) }));
       await apiFetch(`/api/packages/${packageId}/items`, { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify(cleanItems) });
       setEditing(null);
       load();
     } catch (e) {
       console.error(e);
-      setSaveError("บันทึก Package ไม่สำเร็จ กรุณาลองอีกครั้งหรือติดต่อผู้ดูแลระบบ");
+      setSaveError(e instanceof Error && e.message ? e.message : "บันทึก Package ไม่สำเร็จ กรุณาลองอีกครั้งหรือติดต่อผู้ดูแลระบบ");
     } finally {
       setSaving(false);
     }
@@ -258,7 +351,9 @@ export default function ManagePackagesPage() {
             <option value="no">ไม่ใช่ Scale Up</option>
             <option value="other">อื่นๆ</option>
           </select>
-          <button type="button" onClick={() => { setSaveError(""); setEditing({ ...empty }); }} className="h-8 px-5 rounded-lg bg-primary text-white text-sm font-semibold hover:bg-primary-dark transition-colors">+ เพิ่ม Package</button>
+          {isAdmin && (
+            <button type="button" onClick={() => { setSaveError(""); setEditing({ ...empty }); }} className="h-8 px-5 rounded-lg bg-primary text-white text-sm font-semibold hover:bg-primary-dark transition-colors">+ เพิ่ม Package</button>
+          )}
         </div>
 
         {/* Price list */}
@@ -317,7 +412,7 @@ export default function ManagePackagesPage() {
                       </td>
                       <td className="px-4 py-3 align-top">
                         <div className="flex flex-col items-end gap-2">
-                          <button type="button" onClick={() => toggleActive(pkg)} className={`text-xs font-bold uppercase px-3 py-1.5 rounded-full ${pkg.is_active ? "bg-emerald-50 text-emerald-700" : "bg-gray-100 text-gray-500"}`}>
+                          <button type="button" onClick={() => toggleActive(pkg)} disabled={!isAdmin} className={`text-xs font-bold uppercase px-3 py-1.5 rounded-full ${!isAdmin ? "cursor-default " : ""}${pkg.is_active ? "bg-emerald-50 text-emerald-700" : "bg-gray-100 text-gray-500"}`}>
                             {pkg.is_active ? "ACTIVE" : "INACTIVE"}
                           </button>
                           <button type="button" onClick={() => setEditing({ ...pkg })} className="text-sm text-primary font-semibold hover:underline">เนเธเนเนเธ</button>
@@ -375,10 +470,12 @@ export default function ManagePackagesPage() {
 
                 {/* Right: status + edit */}
                 <div className="flex flex-col items-end gap-2 shrink-0">
-                  <button type="button" onClick={() => toggleActive(pkg)} className={`text-xs font-bold uppercase px-3 py-1.5 rounded-full ${pkg.is_active ? "bg-emerald-50 text-emerald-700" : "bg-gray-100 text-gray-500"}`}>
+                  <button type="button" onClick={() => toggleActive(pkg)} disabled={!isAdmin} className={`text-xs font-bold uppercase px-3 py-1.5 rounded-full ${!isAdmin ? "cursor-default " : ""}${pkg.is_active ? "bg-emerald-50 text-emerald-700" : "bg-gray-100 text-gray-500"}`}>
                     {pkg.is_active ? "ACTIVE" : "INACTIVE"}
                   </button>
-                  <button type="button" onClick={() => setEditing({ ...pkg })} className="text-sm text-primary font-semibold hover:underline">แก้ไข</button>
+                  {isAdmin && (
+                    <button type="button" onClick={() => setEditing({ ...pkg })} className="text-sm text-primary font-semibold hover:underline">แก้ไข</button>
+                  )}
                 </div>
               </div>
             </div>
@@ -404,7 +501,7 @@ export default function ManagePackagesPage() {
 
             <div className="p-4 md:p-6 space-y-4 bg-slate-50/50">
               {/* ── ข้อมูลหลัก ─────────────────────────────── */}
-              <section className="rounded-xl border border-gray-200 bg-white p-4 shadow-sm">
+              <section className="rounded-xl border border-gray-200 bg-white p-4">
                 <div className="text-xs font-bold text-gray-800 mb-3">ข้อมูลหลัก</div>
                 <div className="grid gap-3 md:grid-cols-12">
                   <div className="md:col-span-6">
@@ -427,11 +524,7 @@ export default function ManagePackagesPage() {
                     <label className={labelCls}>รับประกัน (ปี)</label>
                     <input type="number" value={editing.warranty_years || ""} onChange={e => setEditing({ ...editing, warranty_years: parseInt(e.target.value) || 0 })} placeholder="0" className={`text-right ${fieldCls}`} />
                   </div>
-                  <div className="md:col-span-4">
-                    <label className={labelCls}>ราคา (บาท, รวม VAT)</label>
-                    <input type="number" value={editing.price || ""} onChange={e => setEditing({ ...editing, price: parseFloat(e.target.value) || 0 })} placeholder="0" className={`text-right font-semibold ${fieldCls}`} />
-                  </div>
-                  <div className="md:col-span-8">
+                  <div className="md:col-span-12">
                     <label className={labelCls}>ประเภท</label>
                     <div className="flex flex-wrap gap-2">
                       {[
@@ -453,7 +546,7 @@ export default function ManagePackagesPage() {
 
               {/* ── สเปกอุปกรณ์ · Inverter / Battery / Panel ───────── */}
               <div className="grid gap-3 md:grid-cols-3">
-                <section className="rounded-xl border border-violet-200 bg-white p-4 shadow-sm space-y-2.5">
+                <section className="rounded-xl border border-violet-200 bg-white p-4 space-y-2.5">
                   <div className="flex items-center gap-2">
                     <span className="w-2 h-2 rounded-full bg-violet-500" />
                     <div className="text-xs font-bold text-violet-700">Inverter</div>
@@ -471,7 +564,7 @@ export default function ManagePackagesPage() {
                     <input type="text" value={editing.inverter_model ?? ""} onChange={e => setEditing({ ...editing, inverter_model: e.target.value || null })} placeholder="เช่น SUN2000-5KTL" className={fieldCls} />
                   </div>
                 </section>
-                <section className="rounded-xl border border-green-200 bg-white p-4 shadow-sm space-y-2.5">
+                <section className="rounded-xl border border-green-200 bg-white p-4 space-y-2.5">
                   <div className="flex items-center gap-2">
                     <span className="w-2 h-2 rounded-full bg-green-500" />
                     <div className="text-xs font-bold text-green-700">Battery</div>
@@ -489,7 +582,7 @@ export default function ManagePackagesPage() {
                     <input type="text" value={editing.battery_model ?? ""} onChange={e => setEditing({ ...editing, battery_model: e.target.value || null })} placeholder="-" className={fieldCls} />
                   </div>
                 </section>
-                <section className="rounded-xl border border-amber-200 bg-white p-4 shadow-sm space-y-2.5">
+                <section className="rounded-xl border border-amber-200 bg-white p-4 space-y-2.5">
                   <div className="flex items-center gap-2">
                     <span className="w-2 h-2 rounded-full bg-amber-500" />
                     <div className="text-xs font-bold text-amber-700">แผงโซลาร์ (Panel)</div>
@@ -515,35 +608,150 @@ export default function ManagePackagesPage() {
                 </section>
               </div>
 
-              {/* ── การขาย & ช่วงเวลา (เต็มความกว้าง) ───────────── */}
-              <section className="rounded-xl border border-gray-200 bg-white p-4 shadow-sm">
-                  <div className="text-xs font-bold text-gray-800 mb-3">การขาย &amp; ช่วงเวลาใช้งาน</div>
-                  <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-                    <div>
-                      <label className={labelCls}>ผ่อน/เดือน</label>
-                      <input type="text" value={editing.monthly_installment ?? ""} onChange={e => setEditing({ ...editing, monthly_installment: e.target.value || null })} placeholder="เช่น 3,500" className={fieldCls} />
-                    </div>
-                    <div>
-                      <label className={labelCls}>ประหยัด/เดือน (บาท)</label>
-                      <input type="number" value={editing.monthly_saving ?? ""} onChange={e => setEditing({ ...editing, monthly_saving: e.target.value ? parseFloat(e.target.value) : null })} placeholder="0" className={`text-right ${fieldCls}`} />
-                    </div>
-                    <div>
-                      <label className={labelCls}>วันเริ่มใช้</label>
-                      <input type="date" value={editing.start_date?.slice(0, 10) || ""} onChange={e => setEditing({ ...editing, start_date: e.target.value })} className={fieldCls} />
-                    </div>
-                    <div>
-                      <label className={labelCls}>วันหมดอายุ</label>
-                      <input type="date" value={editing.expire_date?.slice(0, 10) || ""} onChange={e => setEditing({ ...editing, expire_date: e.target.value })} className={fieldCls} />
+              {/* ── ราคาขาย & ช่วงเวลาใช้งาน — หลายช่วงราคา ใช้ครั้งละ 1 ช่วง ── */}
+              <section className="rounded-xl border border-gray-200 bg-white p-4">
+                <div className="flex items-start justify-between gap-3 mb-3">
+                  <div>
+                    <div className="text-xs font-bold text-gray-800"
+                      title="ระบบสลับ Active ตามวันที่ · ช่วงที่ Active และช่วงที่ผ่านมาแล้วแก้ไขไม่ได้">
+                      ราคาขาย &amp; ช่วงเวลาใช้งาน
                     </div>
                   </div>
+                  <button type="button" onClick={() => setPeriods(v => sortByStart([...v, blankPeriod(v.length === 0, nextStartAfter(v))]))}
+                    className="h-8 px-3 shrink-0 rounded-lg border border-primary/30 bg-primary/5 text-xs font-semibold text-primary hover:bg-primary/10 transition-colors">
+                    + เพิ่มช่วงราคา
+                  </button>
+                </div>
+
+                {/* หัวตาราง — ใช้ flex ครอบ grid เพื่อให้ปุ่มลบอยู่นอกคอลัมน์ ทุกช่องเลยกว้างเท่ากันทุกแถว */}
+                <div className="hidden md:flex items-center gap-2 px-1.5 pb-1 text-xxs font-semibold text-gray-400">
+                  <div className="grid flex-1 grid-cols-12 gap-2">
+                    <span className="col-span-2">สถานะ</span>
+                    <span className="col-span-2">วันเริ่มใช้</span>
+                    <span className="col-span-2">วันหมดอายุ</span>
+                    <span className="col-span-2 text-right">ราคาขาย (รวม VAT)</span>
+                    <span className="col-span-2">ผ่อน/เดือน</span>
+                    <span className="col-span-2 text-right">ประหยัด/เดือน</span>
+                  </div>
+                  <span className="w-9 shrink-0" aria-hidden="true" />
+                </div>
+
+                <div className="space-y-1.5">{periods.map((p, index) => {
+                  const locked = periodLocked(p);
+                  const upcoming = !p.is_active && (p.start_date || "").slice(0, 10) > todayStr();
+                  const set = (patch: Partial<PricePeriod>) => setPeriods(v => v.map((x, i) => i === index ? { ...x, ...patch } : x));
+                  const readOnlyCell = "flex items-center h-9 px-3 rounded-lg bg-gray-50 border border-gray-200 text-xs text-gray-500";
+                  const rowKey = String(p.id ?? `new-${index}`);
+                  return (
+                    <div key={rowKey} className="space-y-1">
+                    <div
+                      className={`flex items-center gap-2 rounded-lg border p-1.5 ${
+                        p.is_active ? "border-green-200 bg-green-50/40" : upcoming ? "border-amber-100" : "border-transparent"}`}>
+                      <div className="grid flex-1 grid-cols-12 gap-2 items-center">
+                        {/* สถานะอย่างเดียว ไม่ใช่ปุ่ม — ระบบสลับ Active ให้เองตามวันที่ */}
+                        <div className="col-span-12 md:col-span-2">
+                          {p.is_active ? (
+                            <span className="inline-flex h-6 w-full max-w-[124px] items-center justify-center rounded-full border border-green-300 bg-green-100 text-xxs font-bold text-green-700"
+                              title="ช่วงราคาที่ใช้อยู่วันนี้">Active</span>
+                          ) : upcoming ? (
+                            <span className="inline-flex h-6 w-full max-w-[124px] items-center justify-center rounded-full border border-amber-200 bg-amber-50 text-xxs font-bold text-amber-600 whitespace-nowrap"
+                              title={`ระบบจะเปลี่ยนมาใช้ช่วงนี้เองวันที่ ${fmtPicker(p.start_date)}`}>Active อัตโนมัติ</span>
+                          ) : (
+                            <span className="inline-flex h-6 w-full max-w-[124px] items-center justify-center rounded-full border border-transparent text-xxs font-semibold text-gray-300"
+                              title="ช่วงของเดือนที่ผ่านมาแล้ว">Inactive</span>
+                          )}
+                        </div>
+
+                        {locked ? (
+                          <>
+                            <div className={`col-span-6 md:col-span-2 ${readOnlyCell}`}>{fmtPicker(p.start_date) || "-"}</div>
+                            <div className={`col-span-6 md:col-span-2 ${readOnlyCell}`}>{fmtPicker(p.expire_date) || "-"}</div>
+                          </>
+                        ) : (
+                          <>
+                            {/* เลือกวันเริ่ม → เติมวันหมดอายุเป็นสิ้นเดือนของเดือนนั้นให้อัตโนมัติ */}
+                            <input type="date" value={p.start_date?.slice(0, 10) || ""}
+                              onChange={e => set(e.target.value
+                                ? { start_date: e.target.value, expire_date: endOfMonth(e.target.value) }
+                                : { start_date: null })}
+                              min={todayStr()} title="เลือกย้อนหลังไม่ได้ — เริ่มได้ตั้งแต่วันนี้เป็นต้นไป"
+                              className={`col-span-6 md:col-span-2 ${fieldCls}`} />
+                            <input type="date" value={p.expire_date?.slice(0, 10) || ""} onChange={e => set({ expire_date: e.target.value || null })}
+                              min={(p.start_date || "").slice(0, 10) > todayStr() ? (p.start_date || "").slice(0, 10) : todayStr()}
+                              title="วันหมดอายุต้องไม่ย้อนหลัง และไม่ก่อนวันที่เริ่มใช้"
+                              className={`col-span-6 md:col-span-2 ${fieldCls}`} />
+                          </>
+                        )}
+
+                        {locked ? (
+                          <div className={`col-span-12 md:col-span-2 justify-end gap-1.5 ${readOnlyCell}`} title="ช่วงนี้แก้ราคาไม่ได้">
+                            <span aria-hidden="true" className="text-gray-400">🔒</span>
+                            <span className="font-mono font-bold tabular-nums text-gray-800">{fmt(p.price)}</span>
+                          </div>
+                        ) : (
+                          <input type="number" value={p.price || ""} onChange={e => set({ price: parseFloat(e.target.value) || 0 })}
+                            placeholder="ระบุราคา" required title="ต้องระบุราคาขาย"
+                            className={`col-span-12 md:col-span-2 text-right font-semibold ${fieldBase} text-sm ${
+                              Number(p.price) > 0 ? "" : "border-red-300 bg-red-50/40"}`} />
+                        )}
+
+                        {locked ? (
+                          <div className={`col-span-6 md:col-span-2 ${readOnlyCell}`}>{p.monthly_installment || "-"}</div>
+                        ) : (
+                          <input type="text" value={p.monthly_installment ?? ""} onChange={e => set({ monthly_installment: e.target.value || null })}
+                            placeholder="เช่น 3,500" className={`col-span-6 md:col-span-2 ${fieldCls}`} />
+                        )}
+
+                        {locked ? (
+                          <div className={`col-span-6 md:col-span-2 justify-end font-mono tabular-nums ${readOnlyCell}`}>
+                            {p.monthly_saving != null ? fmt(p.monthly_saving) : "-"}
+                          </div>
+                        ) : (
+                          <input type="number" value={p.monthly_saving ?? ""} onChange={e => set({ monthly_saving: e.target.value ? parseFloat(e.target.value) : null })}
+                            placeholder="0" className={`col-span-6 md:col-span-2 text-right ${fieldCls}`} />
+                        )}
+                      </div>
+
+                      {locked && !p.is_active && isAdmin ? (
+                        <button type="button"
+                          onClick={() => setLeadConfigKey(rowKey === leadConfigKey ? null : rowKey)}
+                          aria-label="กำหนด Lead ที่ใช้ราคานี้ได้"
+                          title="กำหนด Lead ที่ยังใช้ราคานี้ได้"
+                          className={`w-9 h-9 shrink-0 flex items-center justify-center rounded-lg transition-colors ${
+                            p.allowed_lead_ids ? "text-primary bg-primary/10" : "text-gray-300 hover:bg-gray-100 hover:text-gray-600"}`}>⚙</button>
+                      ) : (
+                        <button type="button" disabled={locked || periods.length === 1}
+                          onClick={() => setPeriods(v => v.filter((_, i) => i !== index))}
+                          aria-label="ลบช่วงราคา"
+                          className="w-9 h-9 shrink-0 flex items-center justify-center rounded-lg text-gray-300 hover:bg-red-50 hover:text-red-600 disabled:opacity-30 disabled:hover:bg-transparent disabled:hover:text-gray-300 transition-colors">×</button>
+                      )}
+                    </div>
+
+                    {leadConfigKey === rowKey && (
+                      <div className="flex items-center gap-2 rounded-lg border border-primary/30 bg-primary/5 p-2 pl-3">
+                        <span className="shrink-0 text-xxs font-semibold text-gray-500"
+                          title="มีผลกับทุก Package ที่มีช่วงราคาเริ่มวันเดียวกัน">
+                          ระบุ Lead Id ที่สามารถใช้ชุดราคาย้อนหลังได้
+                        </span>
+                        <input
+                          autoFocus
+                          value={p.allowed_lead_ids ?? ""}
+                          onChange={e => set({ allowed_lead_ids: e.target.value })}
+                          placeholder="เช่น 123,333,444"
+                          className={`flex-1 ${fieldBase} text-xs`} />
+                      </div>
+                    )}
+                  </div>
+                  );
+                })}</div>
               </section>
 
               {/* ── อุปกรณ์หลักใน Package (เต็มความกว้าง) ───────── */}
-              <section className="rounded-xl border border-gray-200 bg-white p-4 shadow-sm">
+              <section className="rounded-xl border border-gray-200 bg-white p-4">
                   <div className="flex items-start justify-between gap-3 mb-3">
                     <div>
                       <div className="text-xs font-bold text-gray-800">อุปกรณ์หลักใน Package</div>
-                      <div className="text-xxs text-gray-400 mt-0.5">แถวแรก = ชื่อที่ขึ้นบนเอกสาร · แถวถัดไป = รายละเอียดใต้หัวข้อ</div>
+
                     </div>
                     <button type="button" onClick={() => setPackageItems(v => [...v, { item_name: "", quantity: 1, unit: "ชุด" }])}
                       className="h-8 px-3 shrink-0 rounded-lg border border-primary/30 bg-primary/5 text-xs font-semibold text-primary hover:bg-primary/10 transition-colors">

@@ -35,3 +35,4 @@ Statuses:
 | [20260720-01-step5-gridtie-draft.md](20260720-01-step5-gridtie-draft.md) | done | - | เพิ่มขอขนานไฟแบบ Draft ใน Step 5 หลังตรวจ ใช้ข้อมูลร่วมกับ Step 7 และไม่บล็อกการส่งมอบงานติดตั้ง |
 | [20260720-02-quotation-package-options.md](20260720-02-quotation-package-options.md) | done | [interactive mockup](../mockup/20260720-02-quotation-package-options/) | ออกแบบ Step 03 ให้สร้างใบเสนอราคาได้สูงสุด 3 ฉบับจากแพ็กเกจหลักและ Add-on โดยคงหน้าตาตามระบบเดิม |
 | [20260722-01-quotation-system.md](20260722-01-quotation-system.md) | in-progress | [existing mockup](../mockup/20260720-02-quotation-package-options/) | Core Development implementation complete; รอ UAT, final 23-Package/PDF regression และอนุมัติก่อน Deploy |
+| [20260807-01-package-price-periods.md](20260807-01-package-price-periods.md) | done | - | Package มีได้หลายช่วงราคา active ครั้งละ 1 ช่วง; ช่วงที่ใช้งานและเริ่มแล้วล็อกราคา ต้องเพิ่มช่วงใหม่ |

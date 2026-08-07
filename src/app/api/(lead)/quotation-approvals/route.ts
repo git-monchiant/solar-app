@@ -39,6 +39,9 @@ export async function GET(req: NextRequest) {
       q.option_no,
       q.status,
       q.package_name_snapshot,
+      q.package_price_snapshot,
+      -- ราคาปัจจุบันของแพ็กเกจ ใช้เตือนว่าใบนี้ออกด้วยราคาคนละเดือนกับที่ใช้อยู่
+      pk.price current_package_price,
       q.contract_total_incl_vat,
       -- ยอดที่ลูกค้าต้องชำระจริง (หักมัดจำแล้ว) — ต้องตรงกับ "รวมยอดที่ต้องชำระสุทธิ" ในใบเสนอราคา
       q.outstanding_amount,
@@ -50,6 +53,7 @@ export async function GET(req: NextRequest) {
       solar_approver.full_name solar_approved_by_name
     FROM quotations q
     JOIN leads l ON l.id = q.lead_id
+    LEFT JOIN packages pk ON pk.id = q.package_id
     LEFT JOIN users submitter ON submitter.id = q.submitted_by
     LEFT JOIN users solar_approver ON solar_approver.id = q.solar_approved_by
     WHERE q.status IN (${statuses.map((status) => `'${status}'`).join(",")})
