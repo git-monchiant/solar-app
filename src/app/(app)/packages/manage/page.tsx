@@ -37,6 +37,10 @@ interface Package {
 }
 type PackageItem = { item_name: string; quantity: number; unit: string | null };
 
+/** ตัดขีด/บุลเล็ตนำหน้าออก — ในใบเสนอราคา PDF จะเติม "- " ให้เองอยู่แล้ว
+    (ตรงกับ stripLeadMark ใน QuotationBuilder) */
+const stripLeadMark = (name: string) => String(name || "").replace(/^\s*[-–—•]\s*/, "");
+
 const empty: Omit<Package, "id"> = {
   name: "", kwp: 0, phase: 1, has_battery: false, has_panel: true, has_inverter: true, is_upgrade: false, is_other: false,
   battery_kwh: null, battery_brand: null,
@@ -71,7 +75,9 @@ export default function ManagePackagesPage() {
   }, [editing]);
   useEffect(() => {
     if (!editing?.id) { setPackageItems([]); return; }
-    apiFetch(`/api/packages/${editing.id}/items`).then(setPackageItems).catch(() => setPackageItems([]));
+    apiFetch(`/api/packages/${editing.id}/items`)
+      .then((rows: PackageItem[]) => setPackageItems(rows.map(r => ({ ...r, item_name: stripLeadMark(r.item_name) }))))
+      .catch(() => setPackageItems([]));
   }, [editing?.id]);
 
   const filtered = packages.filter(p => {
@@ -196,7 +202,8 @@ export default function ManagePackagesPage() {
         const created = await apiFetch("/api/packages", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(editing) });
         packageId = created.id;
       }
-      await apiFetch(`/api/packages/${packageId}/items`, { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify(packageItems) });
+      const cleanItems = packageItems.map(it => ({ ...it, item_name: stripLeadMark(it.item_name) }));
+      await apiFetch(`/api/packages/${packageId}/items`, { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify(cleanItems) });
       setEditing(null);
       load();
     } catch (e) {
@@ -565,7 +572,7 @@ export default function ManagePackagesPage() {
                                 )}
                                 <input
                                   value={item.item_name}
-                                  onChange={e => setPackageItems(v => v.map((x, i) => i === index ? { ...x, item_name: e.target.value } : x))}
+                                  onChange={e => setPackageItems(v => v.map((x, i) => i === index ? { ...x, item_name: stripLeadMark(e.target.value) } : x))}
                                   placeholder={isHead ? "ชื่อที่แสดงบนเอกสาร" : "รายละเอียดใต้หัวข้อ"}
                                   className={`min-w-0 flex-1 ${fieldBase} ${isHead ? "text-sm font-bold text-gray-900" : "text-xs text-gray-600"}`}
                                 />
