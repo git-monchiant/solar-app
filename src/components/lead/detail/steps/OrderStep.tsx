@@ -280,6 +280,9 @@ export default function OrderStep({ lead, state, refresh, expanded, onToggle }: 
   // while the cheque booked 117,400. We keep the real amount so the mismatch
   // can be surfaced instead of hidden.
   const [paidAmountByIdx, setPaidAmountByIdx] = useState<Map<number, number>>(new Map());
+  // ยอดของทุกงวดที่บันทึกไว้ใน DB (รวมงวดที่ยังไม่ confirm) — สรุปยอดตอน DONE
+  // อ่านจากตัวนี้แทนการคำนวณ % เอง จะได้ตรงกับเงินจริงเสมอ
+  const [rowAmountByIdx, setRowAmountByIdx] = useState<Map<number, number>>(new Map());
   // Sum of pct from rows that aren't the auto-computed remainder row.
   // Auto row = highest-index unpaid row (or fallback to last row when no
   // payment data is loaded yet / nothing is paid).
@@ -486,6 +489,7 @@ export default function OrderStep({ lead, state, refresh, expanded, onToggle }: 
       const paid = new Set<number>();
       const idMap = new Map<number, number>();
       const amtMap = new Map<number, number>();
+      const allAmtMap = new Map<number, number>();
       const existing = new Set<number>();
       const chequeReceived = new Set<number>();
       const chequePending: ChequePendingPayment[] = [];
@@ -502,6 +506,7 @@ export default function OrderStep({ lead, state, refresh, expanded, onToggle }: 
         if (!m) continue;
         const idx = parseInt(m[1]);
         existing.add(idx);
+        allAmtMap.set(idx, Number(p.amount || 0));
         if (p.confirmed_at) {
           paid.add(idx);
           idMap.set(idx, p.id);
@@ -529,6 +534,7 @@ export default function OrderStep({ lead, state, refresh, expanded, onToggle }: 
       setPaidIdxSet(paid);
       setPaidIdToId(idMap);
       setPaidAmountByIdx(amtMap);
+      setRowAmountByIdx(allAmtMap);
       setExistingIdxSet(existing);
       setPendingApprovalIdxSet(pendingApproval);
       setChequeReceivedIdxSet(chequeReceived);
@@ -729,24 +735,38 @@ export default function OrderStep({ lead, state, refresh, expanded, onToggle }: 
     setTimeout(() => document.querySelector("[data-step-active]")?.scrollIntoView({ behavior: "smooth", block: "start" }), 100);
   };
 
+  // สรุปยอดของ step ที่ทำเสร็จแล้ว — ต้องคิดด้วยสูตรเดียวกับตอนแก้ไข ไม่งั้นตัวเลข
+  // จะไม่ตรงกับงวดที่บันทึกไว้จริง: หักส่วนลดและค่าสำรวจออกก่อน แล้วค่อยแบ่งตาม %
+  // ของแต่ละงวด (เดิมหน้านี้แบ่ง % จากยอดก่อนหักค่าสำรวจ แล้วเอาค่าสำรวจไปหัก
+  // ที่งวดหลังอย่างเดียว ทำให้ก่อน/หลังติดตั้งเพี้ยนไปหลักร้อย เช่น lead 585
+  // แสดง 30,800/122,200 ทั้งที่งวดจริงคือ 30,600/122,400)
   const doneTotal = lead.order_total || 0;
-  // Apply special discount (VIP / promo) before splitting into before/after
-  // installments — installments are computed off the discounted price, same
-  // as the edit view's `effTotal` / `netTotal`.
   const doneDiscount = Math.min(doneTotal, lead.order_discount_amount || 0);
   const doneEffTotal = Math.max(0, doneTotal - doneDiscount);
+  const doneDeposit = Math.min(doneEffTotal, lead.pre_total_price || 0);
+  const doneNetTotal = Math.max(0, doneEffTotal - doneDeposit);
   const donePctBefore = lead.order_pct_before ?? 100;
   const donePctAfter = 100 - donePctBefore;
-  const doneAmtBefore = donePctBefore >= 100
-    ? doneEffTotal
-    : Math.round(doneEffTotal * donePctBefore / 100);
-  const doneAmtAfter = donePctAfter > 0 ? doneEffTotal - Math.round(doneEffTotal * donePctBefore / 100) : 0;
-  const doneDeposit = lead.pre_total_price || 0;
-  const doneCreditAfter = Math.min(doneAmtAfter, doneDeposit);
-  const doneCreditBefore = Math.min(doneAmtBefore, doneDeposit - doneCreditAfter);
-  const doneNetBefore = doneAmtBefore - doneCreditBefore;
-  const doneNetAfter = doneAmtAfter - doneCreditAfter;
-  const doneRefund = doneDeposit - doneCreditAfter - doneCreditBefore;
+  // ยอดแต่ละงวด — อ่านจากตาราง payments ที่บันทึกไว้จริงก่อน (rowAmountByIdx)
+  // ถ้างวดไหนยังไม่มีแถวใน DB ค่อยประมาณจากแผน % (หักค่าสำรวจแล้วแบ่งตาม %)
+  const doneRows = parseInstallments(lead.order_installments, donePctBefore);
+  const doneRowAmount = (idx: number, pct: number) =>
+    rowAmountByIdx.get(idx) ?? Math.round((doneNetTotal * pct) / 100);
+  const doneNetBefore = doneRows
+    .map((r, i) => ({ ...r, amount: doneRowAmount(i, r.pct) }))
+    .filter(r => r.when !== "after")
+    .reduce((sum, r) => sum + r.amount, 0);
+  // % = หักค่าสำรวจออกจากยอดรวมก่อน แล้วค่อยคิดสัดส่วนจากยอดที่เหลือ
+  // 30,600 / (154,000 - 1,000) = 20% พอดี  (ถ้าหารด้วยยอดเต็มจะได้ 19.87% ซึ่งไม่ใช่ %
+  // ที่ตกลงกับลูกค้า) ตัดทศนิยมที่ไม่จำเป็นทิ้ง เช่น 20.00 → 20
+  const donePctBeforeShown = doneNetTotal > 0
+    ? Number(((doneNetBefore / doneNetTotal) * 100).toFixed(2))
+    : donePctBefore;
+  const doneNetAfter = doneRows
+    .map((r, i) => ({ ...r, amount: doneRowAmount(i, r.pct) }))
+    .filter(r => r.when === "after")
+    .reduce((sum, r) => sum + r.amount, 0);
+  const doneRefund = Math.max(0, (lead.pre_total_price || 0) - doneDeposit);
 
   // Responsive money row — mobile keeps "label left / value right", desktop
   // switches to "label 40 wide / value flowing right after" so OrderStep's
@@ -801,29 +821,17 @@ export default function OrderStep({ lead, state, refresh, expanded, onToggle }: 
             <>ส่วนลด{lead.order_discount_pct ? ` ${lead.order_discount_pct}%` : ""}{lead.order_discount_note ? ` · ${lead.order_discount_note}` : ""}</>,
             `-${fmt(doneDiscount)} บาท`
           )}
-          {moneyRow(`ชำระก่อนติดตั้ง ${donePctBefore}%`, `${fmt(doneAmtBefore)} บาท`)}
-          {donePctAfter > 0 && moneyRow("ชำระหลังติดตั้ง", `${fmt(doneAmtAfter)} บาท`)}
-          {doneDeposit > 0 && (
-            <>
-              {moneyRow("หักค่าสำรวจ", `-${fmt(doneDeposit)} บาท`)}
-              {donePctAfter > 0 ? (
-                <>
-                  <div className="border-t border-gray-100 pt-1 mt-1">
-                    {moneyRow("ยอดชำระก่อนติดตั้งสุทธิ", `${fmt(doneNetBefore)} บาท`, { bold: true })}
-                  </div>
-                  {moneyRow("ยอดชำระหลังติดตั้งสุทธิ", `${fmt(doneNetAfter)} บาท`, { bold: true })}
-                </>
-              ) : (
-                <div className="border-t border-gray-100 pt-1 mt-1">
-                  {moneyRow("ยอดชำระสุทธิ", `${fmt(doneNetBefore)} บาท`, { bold: true })}
-                </div>
-              )}
-              {doneRefund > 0 && (
-                <div className="border-t border-emerald-100 pt-1 mt-1">
-                  {moneyRow("คืนเงินลูกค้า", `${fmt(doneRefund)} บาท`, { bold: true, positive: true })}
-                </div>
-              )}
-            </>
+          {doneDeposit > 0 && moneyRow("หักค่าสำรวจ", `-${fmt(doneDeposit)} บาท`)}
+          <div className="border-t border-gray-100 pt-1 mt-1">
+            {donePctAfter > 0
+              ? moneyRow(`ชำระก่อนติดตั้ง ${donePctBeforeShown}%`, `${fmt(doneNetBefore)} บาท`, { bold: true })
+              : moneyRow("ยอดชำระสุทธิ", `${fmt(doneNetBefore)} บาท`, { bold: true })}
+          </div>
+          {donePctAfter > 0 && moneyRow("ชำระหลังติดตั้ง", `${fmt(doneNetAfter)} บาท`, { bold: true })}
+          {doneRefund > 0 && (
+            <div className="border-t border-emerald-100 pt-1 mt-1">
+              {moneyRow("คืนเงินลูกค้า", `${fmt(doneRefund)} บาท`, { bold: true, positive: true })}
+            </div>
           )}
         </div>
       )}
@@ -879,7 +887,7 @@ export default function OrderStep({ lead, state, refresh, expanded, onToggle }: 
         <DoneSection color="violet" title={
           <span className="flex items-center justify-between gap-2">
             <span>สลิปก่อนติดตั้ง</span>
-            <span className="text-sm font-bold font-mono tabular-nums text-gray-900 normal-case">{fmt(doneAmtBefore)} บาท</span>
+            <span className="text-sm font-bold font-mono tabular-nums text-gray-900 normal-case">{fmt(doneNetBefore)} บาท</span>
           </span>
         }>
           <PaymentSlipsThumbs slipUrl={lead.order_before_slip} label="สลิปก่อนติดตั้ง" />
