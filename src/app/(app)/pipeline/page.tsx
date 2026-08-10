@@ -30,6 +30,10 @@ interface Lead {
   payment_confirmed?: boolean | number | null;
   assigned_name: string | null;
   order_paid_count?: number | null;
+  /** งวดที่ต้องจ่าย "ก่อนติดตั้ง" เท่านั้น — งวดที่ติ๊กชำระหลังติดตั้งไม่ถูกนับ */
+  order_before_total_count?: number | null;
+  order_before_paid_count?: number | null;
+  order_before_ready_count?: number | null;
   order_ready_count?: number | null;
   order_total_count?: number | null;
 }
@@ -74,8 +78,12 @@ const matchesTab = (l: Lead, key: TabKey, todayYmd: string): boolean => {
   // Accounting still confirms the actual money later.
   const totalCount = l.order_total_count ?? 0;
   const paidCount = l.order_paid_count ?? 0;
-  const readyCount = l.order_ready_count ?? paidCount;
-  const allInstallReady = totalCount > 0 && readyCount >= totalCount;
+  // เงื่อนไขขึ้นกระดาน = งวด "ก่อนติดตั้ง" ต้องรับเงินครบ ส่วนงวดที่ติ๊ก
+  // "ชำระหลังติดตั้ง" เก็บที่ Step 05 จึงไม่นับ ไม่งั้นงาน 20/80 จะหายจาก
+  // รอติดตั้ง/กำลังติดตั้ง ทันทีที่นัดวัน (ตรงกับ today API)
+  const beforeTotal = l.order_before_total_count ?? totalCount;
+  const beforeReady = l.order_before_ready_count ?? l.order_before_paid_count ?? paidCount;
+  const allInstallReady = totalCount > 0 && beforeReady >= beforeTotal;
   const installScheduled = allInstallReady && !!l.install_date
     && l.status !== "warranty" && l.status !== "gridtie" && l.status !== "closed"
     && l.status !== "lost" && l.status !== "returned";

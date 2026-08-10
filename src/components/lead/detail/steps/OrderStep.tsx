@@ -931,14 +931,15 @@ export default function OrderStep({ lead, state, refresh, expanded, onToggle }: 
       missing.push(`ยอดต้องไม่ต่ำกว่าค่าสำรวจ (฿${fmt(depositPaid)})`);
     }
     if (from === 1 && (pctBefore === null || pctBefore === undefined)) missing.push("% ชำระก่อนติดตั้ง");
-    // Leaving "งวดชำระ" → "นัดหมาย" requires actual received money for every
-    // before-install row. A received cheque alone is still pending money and
-    // must not unlock scheduling. Rows explicitly marked "after" are collected
-    // in Step 05 and are excluded from this gate.
+    // Leaving "งวดชำระ" → "นัดหมาย" only needs the FIRST before-install row
+    // received — enough commitment to book an installation slot. The remaining
+    // rows are still enforced when closing the step ("บันทึกและไปขั้นตอนติดตั้ง"),
+    // where they must either be received or be marked "ชำระหลังติดตั้ง".
+    // A received cheque without confirmed money still doesn't count.
     if (from === 1) {
-      const unpaidBefore = beforeInstallRows().filter(({ i }) => !paidIdxSet.has(i));
-      if (unpaidBefore.length > 0) {
-        missing.push(`ต้องยืนยันรับเงินจริงงวดก่อนติดตั้งให้ครบก่อน (เหลือ ${unpaidBefore.length} งวด)`);
+      const firstBefore = beforeInstallRows()[0];
+      if (firstBefore && !paidIdxSet.has(firstBefore.i)) {
+        missing.push(`ต้องยืนยันรับเงินจริงงวดที่ ${firstBefore.i + 1} ก่อนจึงจะนัดหมายได้`);
       }
     }
     if (from === 2 && !installDate) missing.push("วันนัดติดตั้ง");

@@ -51,6 +51,22 @@ const LEAD_COLS = `
 //                activity's note + display date. With the
 //                idx_lead_activities_lead_id_created_at index this is a single
 //                seek per row.
+/** ยังมีงวด "ก่อนติดตั้ง" ที่ยังไม่ได้ยืนยันรับเงิน
+    เทียบ index ใน slip_field (order_installment_<i>) กับแผนงวดใน
+    leads.order_installments — งวดที่ติ๊ก "ชำระหลังติดตั้ง" ไม่นับ เพราะเก็บที่ Step 05 */
+const HAS_UNPAID_BEFORE_INSTALLMENT = `
+  EXISTS (
+    SELECT 1 FROM payments p
+    WHERE p.lead_id = l.id
+      AND p.slip_field LIKE 'order_installment_%'
+      AND p.confirmed_at IS NULL
+      AND TRY_CAST(REPLACE(p.slip_field, 'order_installment_', '') AS INT) NOT IN (
+        SELECT TRY_CAST(j.[key] AS INT)
+        FROM OPENJSON(CASE WHEN ISJSON(l.order_installments) = 1 THEN l.order_installments ELSE '[]' END) j
+        WHERE JSON_VALUE(j.value, '$.when') = 'after'
+      )
+  )`;
+
 const LEAD_FROM = `
   FROM leads l
   LEFT JOIN projects p ON l.project_id = p.id
@@ -181,18 +197,18 @@ export async function GET(req: NextRequest) {
       // Matches pipeline's installScheduled rule (status-based, not
       // install_completed_at based — see comments there).
       //
-      // Final-installment gate: only show leads where EVERY confirmed
-      // installment has cleared (paid_count >= total_count, with total > 0).
-      // Without this, leads that scheduled an install date before paying the
-      // final installment would surface in "รอติดตั้ง" while they still owe
-      // money — mirrored in pipeline's matchesTab for the same reason.
+      // Payment gate: every installment due BEFORE installation must have
+      // cleared. Rows the sales team marked "ชำระหลังติดตั้ง" are collected in
+      // Step 05 and must not keep the job off the board — otherwise a normal
+      // 20/80 job disappears from รอติดตั้ง/กำลังติดตั้ง the moment it is
+      // scheduled. Mirrored in pipeline's matchesTab for the same reason.
       db.request().query(`
         SELECT ${LEAD_COLS}
         ${LEAD_FROM}
         WHERE l.install_date IS NOT NULL
           AND l.status NOT IN ('warranty', 'gridtie', 'closed', 'lost', 'returned')
           AND COALESCE(pay.total_count, 0) > 0
-          AND COALESCE(pay.paid_count, 0) >= COALESCE(pay.total_count, 0)
+          AND NOT ${HAS_UNPAID_BEFORE_INSTALLMENT}
         ORDER BY l.install_date ASC, l.updated_at DESC
       `),
       // 12. รอออกใบรับประกัน — status=warranty

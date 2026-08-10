@@ -46,6 +46,23 @@ export async function GET(req: NextRequest) {
              (SELECT COUNT(*) FROM payments WHERE lead_id = l.id AND slip_field LIKE 'order_installment_%' AND confirmed_at IS NOT NULL) as order_paid_count,
              (SELECT COUNT(*) FROM payments WHERE lead_id = l.id AND slip_field LIKE 'order_installment_%' AND (confirmed_at IS NOT NULL OR cheque_received_at IS NOT NULL)) as order_ready_count,
              (SELECT COUNT(*) FROM payments WHERE lead_id = l.id AND slip_field LIKE 'order_installment_%') as order_total_count,
+             -- นับเฉพาะงวด "ก่อนติดตั้ง" — งวดที่ติ๊ก "ชำระหลังติดตั้ง" เก็บเงินที่ Step 05
+             -- จึงต้องไม่บล็อกไม่ให้งานขึ้นกระดานรอติดตั้ง/กำลังติดตั้ง
+             (SELECT COUNT(*) FROM payments p2 WHERE p2.lead_id = l.id AND p2.slip_field LIKE 'order_installment_%'
+                AND NOT (TRY_CAST(REPLACE(p2.slip_field, 'order_installment_', '') AS INT) IN (
+                 SELECT TRY_CAST(j.[key] AS INT)
+                 FROM OPENJSON(CASE WHEN ISJSON(l.order_installments) = 1 THEN l.order_installments ELSE '[]' END) j
+                 WHERE JSON_VALUE(j.value, '$.when') = 'after'))) as order_before_total_count,
+             (SELECT COUNT(*) FROM payments p2 WHERE p2.lead_id = l.id AND p2.slip_field LIKE 'order_installment_%'
+                AND p2.confirmed_at IS NOT NULL AND NOT (TRY_CAST(REPLACE(p2.slip_field, 'order_installment_', '') AS INT) IN (
+                 SELECT TRY_CAST(j.[key] AS INT)
+                 FROM OPENJSON(CASE WHEN ISJSON(l.order_installments) = 1 THEN l.order_installments ELSE '[]' END) j
+                 WHERE JSON_VALUE(j.value, '$.when') = 'after'))) as order_before_paid_count,
+             (SELECT COUNT(*) FROM payments p2 WHERE p2.lead_id = l.id AND p2.slip_field LIKE 'order_installment_%'
+                AND (p2.confirmed_at IS NOT NULL OR p2.cheque_received_at IS NOT NULL) AND NOT (TRY_CAST(REPLACE(p2.slip_field, 'order_installment_', '') AS INT) IN (
+                 SELECT TRY_CAST(j.[key] AS INT)
+                 FROM OPENJSON(CASE WHEN ISJSON(l.order_installments) = 1 THEN l.order_installments ELSE '[]' END) j
+                 WHERE JSON_VALUE(j.value, '$.when') = 'after'))) as order_before_ready_count,
              -- 1 = accountant has rejected at least one slip and the uploader
              -- has not re-submitted yet (notes JSON is non-empty).
              CASE

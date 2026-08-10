@@ -197,17 +197,10 @@ export default function ManagePackagesPage() {
     },
   ];
 
-  const packageDisplayOrder = new Map([
-    1, 2, 3, 25,
-    17, 4, 5, 6, 7, 26,
-    18, 19, 20, 21, 24, 22, 27, 23, 28, 29, 30, 31,
-  ].map((id, index) => [id, index]));
-
-  const comparePackages = (a: Package, b: Package) => {
-    const orderA = packageDisplayOrder.get(a.id) ?? 9999;
-    const orderB = packageDisplayOrder.get(b.id) ?? 9999;
-    return orderA - orderB || a.kwp - b.kwp || a.phase - b.phase || a.price - b.price || a.id - b.id;
-  };
+  // เรียงตามชื่อภายในแต่ละกลุ่ม — numeric:true ทำให้ "3 kWp" มาก่อน "10 kWp"
+  // (ถ้าเทียบเป็นข้อความล้วน "10" จะมาก่อน "3") ท้ายสุด tie-break ด้วย id
+  const comparePackages = (a: Package, b: Package) =>
+    (a.name || "").localeCompare(b.name || "", "th", { numeric: true, sensitivity: "base" }) || a.id - b.id;
 
   const displayedPackages = filter === "inactive" ? filtered : filtered.filter(p => p.is_active);
 
