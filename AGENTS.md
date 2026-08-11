@@ -36,6 +36,26 @@ Track plan status in `docs/plan/_status.md`. Keep each plan marked as `backlog`,
 
 Whenever a feature is completed, ask the user whether to create a git commit.
 If the user wants a commit, write the commit message in Thai and make it easy to understand.
+
+### Branch & Release (ตั้งแต่เริ่มทำ v3 คู่ขนาน)
+
+รายละเอียดเต็ม + ใครทำอะไร อยู่ที่ [docs/team-workflow.md](docs/team-workflow.md)
+
+| branch | คือ | ใครแตะ |
+|---|---|---|
+| `main` | v2 = สิ่งที่อยู่บน prod | เฉพาะ bug fix / งานด่วน แล้ว deploy |
+| `v3` | release branch ของ v3 (worktree: `../solar-app-v3`) | ทีม v3 |
+| `v3/<feature>` | งานย่อยของ v3 | PR เข้า `v3` |
+
+- **merge ทางเดียว `main → v3` เท่านั้น** ทำทุกครั้งหลัง deploy v2 (อย่างน้อยสัปดาห์ละครั้ง)
+  ห้าม merge v3 กลับ main จนถึงวัน cutover — ไม่งั้นบั๊กที่แก้บน v2 จะหายไปตอน v3 ขึ้น
+  และ conflict จะบานปลายในไฟล์ที่แก้บ่อย (OrderStep, QuotationBuilder)
+- `deploy_prd.sh` ปฏิเสธทุกอย่างที่ไม่ใช่ `main` + tree สะอาด + sync กับ origin
+  (ข้ามได้ด้วย `ALLOW_DIRTY=1` เฉพาะกรณีฉุกเฉิน) และ tag `v<version>` ให้อัตโนมัติเมื่อสำเร็จ
+- DB: `solardb` = prod · `solardb_dev` = ทดสอบ fix ของ v2 · `solardb_v3` = ทีม v3
+  (v3 มี migration ที่แก้ตารางเดิม ใช้ร่วมกับ dev ไม่ได้)
+  refresh: `node scripts/tools/copy_db.mjs --dst=solardb_v3 --yes`
+- migration ของ v3 อยู่ `scripts/migrations-v3/` (ดู README ในโฟลเดอร์)
 <!-- END:git-workflow-rules -->
 
 <!-- icm:start -->
