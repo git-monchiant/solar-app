@@ -22,8 +22,8 @@ main ─────────────────────────
   └─ fix/<เรื่อง> ──PR──► main
 
 v3 ─────────────────────────────►  v3 (worktree: ../solar-app-v3)
-  ├─ v3/<โมดูล-a> ──PR──► v3
-  └─ v3/<โมดูล-b> ──PR──► v3
+  ├─ v3/<ชื่องานสั้นๆ> ──PR──► v3
+  └─ v3/<ชื่องานสั้นๆ> ──PR──► v3
 ```
 
 - **merge ทางเดียว `main → v3`** ทำทุกครั้งหลัง deploy v2 (อย่างน้อยสัปดาห์ละครั้ง)
@@ -57,15 +57,19 @@ git add -A && git commit -m "แก้ VAT ในใบเสนอราคา"
 git push -u origin fix/quotation-vat
 # เปิด PR บน GitHub → base: main
 
-# งานโมดูล v3
+# งาน v3
 git checkout v3 && git pull
-git checkout -b v3/module-billing
+git checkout -b v3/redesign-lead-list      # ตั้งชื่อตามสิ่งที่ทำ ไม่ต้องเป็นชื่อโมดูล
 # ...ทำงาน...
-git push -u origin v3/module-billing
+git push -u origin v3/redesign-lead-list
 # เปิด PR บน GitHub → base: v3
 ```
 
+- **ชื่อ branch ตั้งตามสิ่งที่ทำ** ไม่ต้องแบ่งเป็นโมดูล เช่น `v3/redesign-lead-list`,
+  `v3/new-report-page`, `fix/quotation-vat` — ขอแค่อ่านแล้วรู้ว่าคืองานอะไร
 - 1 branch = 1 เรื่อง อย่ารวมหลายงานไว้ด้วยกัน จะเทสแยกไม่ได้
+- ถ้างานใหญ่จนแบ่งไม่ออกจริงๆ ให้ส่งเป็น PR ย่อยหลายรอบตามลำดับที่ทำเสร็จ
+  ดีกว่าเปิด PR เดียวยาว 3 สัปดาห์ที่ไม่มีใครรีวิวไหว
 - `git pull` ก่อนแตก branch เสมอ ไม่งั้นทำงานบนของเก่า
 - push เข้า `main` ตรงๆ ไม่ได้ (GitHub บังคับให้ผ่าน PR) — ต้องแตก branch เท่านั้น
 - มี migration ให้เขียนไฟล์ไว้ใน PR **แต่ไม่ต้องรัน** และเขียนบอกในคำอธิบาย PR
