@@ -4,6 +4,9 @@ import {
   getQuotationLegalContent,
   getQuotationPaymentTermsTotal,
   getQuotationTermsProfile,
+  getStandardQuotationOmSettings,
+  isStandardQuotationOmSettings,
+  parseQuotationOmSettings,
   getStandardQuotationPaymentTerms,
   parseQuotationPaymentTerms,
 } from "../../src/lib/quotation-terms.ts";
@@ -56,6 +59,33 @@ assert.deepEqual(
 assert.ok(additionalInstall.page2LeadingParagraphs[0].includes("เฉพาะอุปกรณ์ที่ติดตั้งเพิ่มเท่านั้น"));
 assert.ok(additionalInstall.page2Sections[0].paragraphs.includes("3.4) ข้อความเพิ่มเติม"));
 assert.ok(!JSON.stringify(additionalInstall).includes("O&M"));
+
+assert.deepEqual(parseQuotationOmSettings(undefined), getStandardQuotationOmSettings());
+assert.equal(isStandardQuotationOmSettings(undefined), true);
+const customizedOm = parseQuotationOmSettings({
+  coverage_years: 3,
+  cleaning: { enabled: true, visits_per_year: 1, years: 3 },
+  thermoscan: { enabled: true, visits_per_year: 2, years: 2 },
+  visual_inspection: { enabled: false, visits_per_year: 2, years: 2 },
+});
+assert.equal(isStandardQuotationOmSettings(customizedOm), false);
+assert.equal(customizedOm.coverage_years, 3);
+assert.equal(customizedOm.cleaning.visits_per_year, 1);
+assert.equal(parseQuotationOmSettings({ coverage_years: 0 }).coverage_years, 0);
+assert.equal(parseQuotationOmSettings({ cleaning: { visits_per_year: 9 } }).cleaning.visits_per_year, 4);
+const customizedLegal = getQuotationLegalContent(onGrid, 7, "", customizedOm);
+assert.ok(customizedLegal.page2LeadingParagraphs[1].includes("O&M เป็นเวลา 3 ปี"));
+assert.ok(customizedLegal.page2Sections[0].paragraphs[0].includes("1 ครั้งต่อปี"));
+assert.ok(customizedLegal.page2Sections[0].paragraphs[1].includes("ปีละ 2 ครั้ง"));
+assert.equal(customizedLegal.page2Sections[0].paragraphs.length, 2);
+
+const withoutOm = getQuotationLegalContent(onGrid, 7, "ข้อความเพิ่มเติม", {
+  ...getStandardQuotationOmSettings(),
+  enabled: false,
+});
+assert.equal(withoutOm.page2LeadingParagraphs.some((text) => text.includes("O&M")), false);
+assert.deepEqual(withoutOm.page2Sections.map((section) => section.title), ["3. เงื่อนไขเพิ่มเติม"]);
+assert.ok(withoutOm.page2Sections[0].paragraphs.includes("3.4) ข้อความเพิ่มเติม"));
 
 assert.deepEqual(getStandardQuotationPaymentTerms(), [
   {

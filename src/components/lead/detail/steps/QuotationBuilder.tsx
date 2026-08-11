@@ -9,7 +9,13 @@ import ModalBase from "@/components/ui/ModalBase";
 import {
   balanceFinalQuotationPaymentTerm,
   getQuotationPaymentTermsTotal,
+  getQuotationTermsProfile,
+  getStandardQuotationOmSettings,
+  isStandardQuotationOmSettings,
+  parseQuotationOmSettings,
   parseQuotationPaymentTerms,
+  type QuotationOmService,
+  type QuotationOmSettings,
   type QuotationPaymentTerm,
 } from "@/lib/quotation-terms";
 import type { Lead, Package } from "./types";
@@ -36,6 +42,7 @@ type Item = {
   source_package_id?: number;
 };
 type DocumentInputs = {
+  om: QuotationOmSettings;
   recommendation_reason: string;
   loan_enabled: boolean;
   loan_bank: string;
@@ -102,6 +109,38 @@ const todayIso = () => {
   const d = new Date();
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
 };
+
+const OM_NUMBER_OPTIONS = [0, 1, 2, 3, 4] as const;
+
+function OmNumberSelect({
+  value,
+  max,
+  disabled,
+  className,
+  onChange,
+}: {
+  value: number;
+  max?: number;
+  disabled?: boolean;
+  className: string;
+  onChange: (value: number) => void;
+}) {
+  return (
+    <select
+      value={value}
+      disabled={disabled}
+      onChange={(event) => onChange(Number(event.target.value))}
+      className={className}
+    >
+      {OM_NUMBER_OPTIONS.map((option) => (
+        <option key={option} value={option} disabled={max !== undefined && option > max}>
+          {option}
+        </option>
+      ))}
+    </select>
+  );
+}
+
 const formatPackageSpecs = (pkg: Package) =>
   `ขนาด ${pkg.kwp} kWp · ${pkg.phase > 0 ? `${pkg.phase} เฟส` : "ทุกเฟส"}`;
 // ชื่อรายการใน Package Master บางบรรทัดมี "–" นำหน้า (ไว้จัดรูปแบบใน PDF)
@@ -1029,12 +1068,13 @@ function QuotationEditor({
   );
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
-  const [documentInputs] = useState<DocumentInputs>(() => {
+  const [documentInputs, setDocumentInputs] = useState<DocumentInputs>(() => {
     let saved: Partial<DocumentInputs> = {};
     try {
       saved = JSON.parse(quote?.document_inputs_json || "{}");
     } catch {}
     return {
+      om: parseQuotationOmSettings(saved.om),
       recommendation_reason: saved.recommendation_reason || "",
       loan_enabled: saved.loan_enabled ?? GSB_SOLAR_LOAN_DEFAULTS.loan_enabled,
       loan_bank:
@@ -1072,6 +1112,7 @@ function QuotationEditor({
       annual_degradation_percent: Number(saved.annual_degradation_percent ?? 0.5),
     };
   });
+  const [omOpen, setOmOpen] = useState(false);
   useEffect(() => {
     if (quote || templateId || !defaultTemplate) return;
     setTemplateId(defaultTemplate.id);
@@ -1149,6 +1190,30 @@ function QuotationEditor({
           })),
       ),
     );
+  const patchOm = (patch: Partial<QuotationOmSettings>) =>
+    setDocumentInputs((current) => ({
+      ...current,
+      om: parseQuotationOmSettings({ ...current.om, ...patch }),
+    }));
+  const patchOmService = (
+    key: "cleaning" | "thermoscan" | "visual_inspection",
+    patch: Partial<QuotationOmService>,
+  ) =>
+    setDocumentInputs((current) => ({
+      ...current,
+      om: parseQuotationOmSettings({
+        ...current.om,
+        [key]: { ...current.om[key], ...patch },
+      }),
+    }));
+  const omActiveCount = [
+    documentInputs.om.cleaning,
+    documentInputs.om.thermoscan,
+    documentInputs.om.visual_inspection,
+  ].filter((service) => service.enabled).length;
+  const hasFullInstallTerms = getQuotationTermsProfile(
+    mainPackage as unknown as Record<string, unknown> | undefined,
+  ) === "full_install";
 
   /** tree → payload ของ API (package_items = หัวข้อหลัก, items = หัวข้ออื่น + ลูก) */
   const serializeTree = () => {
@@ -1211,6 +1276,8 @@ function QuotationEditor({
       return "กรุณาตั้งชื่อหัวข้อให้ครบทุกอัน";
     if (documentInputs.current_monthly_bill <= 0)
       return "กรุณาระบุค่าไฟปัจจุบันจากข้อมูลจริง";
+    if (hasFullInstallTerms && documentInputs.om.enabled && omActiveCount === 0)
+      return "กรุณาเลือกบริการ O&M อย่างน้อย 1 รายการ หรือปิดบริการ O&M";
     if (termsPercentTotal !== 100)
       return `ยอดรวมงวดชำระเงินต้องเท่ากับ 100% (ปัจจุบัน ${termsPercentTotal}%)`;
     if (issueDate > todayIso()) return "วันที่ใบเสนอราคาต้องไม่เป็นวันที่ล่วงหน้า";
@@ -1691,7 +1758,117 @@ function QuotationEditor({
                 </div>
               </div>
 
-              <div className="rounded-xl border border-gray-200 bg-white p-2.5">
+              {hasFullInstallTerms && (
+                <div className="order-2 rounded-xl border border-gray-200 bg-white p-2.5">
+                  <button
+                    type="button"
+                    onClick={() => setOmOpen((open) => !open)}
+                    aria-expanded={omOpen}
+                    className="flex w-full items-start justify-between gap-2 text-left"
+                  >
+                    <span className="min-w-0">
+                      <span className="block text-xs font-bold text-gray-800">
+                        บริการ O&amp;M
+                      </span>
+                      <span className={`mt-0.5 block text-xxs ${
+                        isStandardQuotationOmSettings(documentInputs.om)
+                          ? "text-gray-400"
+                          : "text-amber-600"
+                      }`}>
+                        {documentInputs.om.enabled
+                          ? `${documentInputs.om.coverage_years} ปี · ${omActiveCount} รายการ`
+                          : "ไม่รวมค่าดำเนินการ O&M"}
+                        {!isStandardQuotationOmSettings(documentInputs.om) &&
+                          " · ปรับแต่งเฉพาะใบนี้"}
+                      </span>
+                    </span>
+                    <span className="shrink-0 text-xxs font-semibold text-primary">
+                      {omOpen ? "ซ่อน ︿" : "ตั้งค่า ﹀"}
+                    </span>
+                  </button>
+
+                  {omOpen && (
+                    <div className="mt-2 space-y-2 border-t border-gray-100 pt-2">
+                      <label className="flex items-center justify-between gap-2">
+                        <span className="flex items-center gap-2 text-xxs font-semibold text-gray-600">
+                          <input
+                            type="checkbox"
+                            checked={documentInputs.om.enabled}
+                            onChange={(event) => patchOm({ enabled: event.target.checked })}
+                            className="h-3.5 w-3.5 rounded border-gray-300 accent-primary"
+                          />
+                          รวมค่าดำเนินการ O&amp;M
+                        </span>
+                        <span className="flex items-center gap-1 text-xxs text-gray-400">
+                          ระยะเวลา
+                          <OmNumberSelect
+                            value={documentInputs.om.coverage_years}
+                            disabled={!documentInputs.om.enabled}
+                            onChange={(value) => patchOm({ coverage_years: value })}
+                            className="h-7 w-14 rounded-md border border-gray-200 bg-white px-1 text-center text-xxs font-semibold tabular-nums text-gray-700 outline-none focus:border-primary disabled:bg-gray-50 disabled:opacity-50"
+                          />
+                          ปี
+                        </span>
+                      </label>
+
+                      {([
+                        ["cleaning", "ล้างแผงโซลาร์"],
+                        ["thermoscan", "ตรวจสอบระบบโซลาร์ + THERMOSCAN"],
+                        ["visual_inspection", "ตรวจสอบความผิดปกติของแผงโซลาร์"],
+                      ] as const).map(([key, label]) => {
+                        const service = documentInputs.om[key];
+                        const disabled = !documentInputs.om.enabled;
+                        return (
+                          <div key={key} className="rounded-lg bg-slate-50/80 px-2 py-1.5">
+                            <label className="flex items-center gap-2 text-xxs font-medium text-gray-700">
+                              <input
+                                type="checkbox"
+                                checked={service.enabled}
+                                disabled={disabled}
+                                onChange={(event) =>
+                                  patchOmService(key, { enabled: event.target.checked })
+                                }
+                                className="h-3.5 w-3.5 rounded border-gray-300 accent-primary disabled:opacity-50"
+                              />
+                              <span className="min-w-0 leading-4">{label}</span>
+                            </label>
+                            <div className="mt-1 flex items-center justify-end gap-1 text-xxs text-gray-400">
+                              <OmNumberSelect
+                                value={service.visits_per_year}
+                                disabled={disabled || !service.enabled}
+                                onChange={(value) =>
+                                  patchOmService(key, { visits_per_year: value })
+                                }
+                                className="h-7 w-14 rounded-md border border-gray-200 bg-white px-1 text-center text-xxs font-semibold tabular-nums text-gray-700 outline-none focus:border-primary disabled:bg-gray-50 disabled:opacity-50"
+                              />
+                              ครั้ง/ปี
+                              <OmNumberSelect
+                                max={documentInputs.om.coverage_years}
+                                value={service.years}
+                                disabled={disabled || !service.enabled}
+                                onChange={(value) => patchOmService(key, { years: value })}
+                                className="ml-1 h-7 w-14 rounded-md border border-gray-200 bg-white px-1 text-center text-xxs font-semibold tabular-nums text-gray-700 outline-none focus:border-primary disabled:bg-gray-50 disabled:opacity-50"
+                              />
+                              ปี
+                            </div>
+                          </div>
+                        );
+                      })}
+
+                      <button
+                        type="button"
+                        onClick={() => patchOm(getStandardQuotationOmSettings())}
+                        disabled={isStandardQuotationOmSettings(documentInputs.om)}
+                        className="text-xxs font-semibold text-primary hover:underline disabled:cursor-default disabled:text-gray-300 disabled:no-underline"
+                      >
+                        ↻ คืนค่าจาก Master
+                      </button>
+                    </div>
+                  )}
+                </div>
+              )}
+
+              <div className="order-1 rounded-xl border border-gray-200 bg-white p-2.5">
                 <div className="flex items-center justify-between">
                   <span className="text-xs font-bold text-gray-800">งวดชำระเงิน</span>
                   <button
@@ -1771,7 +1948,7 @@ function QuotationEditor({
                 </p>
               </div>
 
-              <div className="rounded-xl border border-gray-200 bg-white p-2.5">
+              <div className="order-3 rounded-xl border border-gray-200 bg-white p-2.5">
                 <div className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-2">
                   <span className="text-xxs font-semibold text-gray-500">วันที่ใบเสนอราคา</span>
                   <input

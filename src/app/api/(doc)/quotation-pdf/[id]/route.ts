@@ -13,6 +13,7 @@ import {
   calculateFinancialSnapshot,
   expandOtherPackageAddOns,
   parseDocumentInputs,
+  QUOTATION_DOCUMENT_VERSION,
   type QuotationDocumentSnapshot,
 } from "@/lib/quotation-document";
 import { buildSurveyReportHtml } from "@/lib/docs/survey-report";
@@ -205,7 +206,7 @@ export async function POST(req: NextRequest) {
   };
   const inputs = parseDocumentInputs(body.documentInputs || {});
   const snapshot: QuotationDocumentSnapshot = {
-    version: 3,
+    version: QUOTATION_DOCUMENT_VERSION,
     generated_at: now,
     quotation,
     lead: previewLead,
@@ -550,6 +551,7 @@ export async function GET(
     snapshot.package,
     q.valid_days,
     String(q.terms_text || ""),
+    parseDocumentInputs(snapshot.financial?.inputs || {}).om,
   );
   const renderLegalSections = (sections: QuotationLegalSection[]) =>
     sections

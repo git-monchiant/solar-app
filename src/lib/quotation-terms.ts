@@ -6,6 +6,20 @@ export type QuotationPaymentTerm = {
   due: string;
 };
 
+export type QuotationOmService = {
+  enabled: boolean;
+  visits_per_year: number;
+  years: number;
+};
+
+export type QuotationOmSettings = {
+  enabled: boolean;
+  coverage_years: number;
+  cleaning: QuotationOmService;
+  thermoscan: QuotationOmService;
+  visual_inspection: QuotationOmService;
+};
+
 export type QuotationLegalSection = {
   title: string;
   paragraphs: string[];
@@ -34,6 +48,69 @@ export const STANDARD_QUOTATION_PAYMENT_TERMS: ReadonlyArray<Readonly<QuotationP
 
 export function getStandardQuotationPaymentTerms(): QuotationPaymentTerm[] {
   return STANDARD_QUOTATION_PAYMENT_TERMS.map((term) => ({ ...term }));
+}
+
+export function getStandardQuotationOmSettings(): QuotationOmSettings {
+  const service = (): QuotationOmService => ({
+    enabled: true,
+    visits_per_year: 2,
+    years: 2,
+  });
+  return {
+    enabled: true,
+    coverage_years: 2,
+    cleaning: service(),
+    thermoscan: service(),
+    visual_inspection: service(),
+  };
+}
+
+export function parseQuotationOmSettings(value: unknown): QuotationOmSettings {
+  let candidate = value;
+  if (typeof candidate === "string") {
+    try {
+      candidate = JSON.parse(candidate);
+    } catch {
+      candidate = {};
+    }
+  }
+  const row = candidate && typeof candidate === "object"
+    ? candidate as Record<string, unknown>
+    : {};
+  const defaults = getStandardQuotationOmSettings();
+  const integer = (raw: unknown, fallback: number, maximum: number) => {
+    const parsed = Number(raw);
+    return Number.isFinite(parsed)
+      ? Math.min(maximum, Math.max(0, Math.round(parsed)))
+      : fallback;
+  };
+  const coverageYears = integer(row.coverage_years, defaults.coverage_years, 4);
+  const service = (key: keyof Pick<QuotationOmSettings, "cleaning" | "thermoscan" | "visual_inspection">) => {
+    const raw = row[key] && typeof row[key] === "object"
+      ? row[key] as Record<string, unknown>
+      : {};
+    const fallback = defaults[key];
+    return {
+      enabled: typeof raw.enabled === "boolean" ? raw.enabled : fallback.enabled,
+      visits_per_year: integer(raw.visits_per_year, fallback.visits_per_year, 4),
+      years: Math.min(
+        coverageYears,
+        integer(raw.years, Math.min(fallback.years, coverageYears), 4),
+      ),
+    };
+  };
+  return {
+    enabled: typeof row.enabled === "boolean" ? row.enabled : defaults.enabled,
+    coverage_years: coverageYears,
+    cleaning: service("cleaning"),
+    thermoscan: service("thermoscan"),
+    visual_inspection: service("visual_inspection"),
+  };
+}
+
+export function isStandardQuotationOmSettings(value: unknown): boolean {
+  return JSON.stringify(parseQuotationOmSettings(value)) ===
+    JSON.stringify(getStandardQuotationOmSettings());
 }
 
 export function parseQuotationPaymentTerms(
@@ -135,6 +212,7 @@ export function getQuotationLegalContent(
   pkg: Record<string, unknown> | null | undefined,
   validDays: unknown,
   additionalTerms = "",
+  omValue?: unknown,
 ): QuotationLegalContent {
   const profile = getQuotationTermsProfile(pkg);
   const validityDays = Math.max(1, Number(validDays) || 7);
@@ -181,14 +259,46 @@ export function getQuotationLegalContent(
     };
   }
 
+  const om = parseQuotationOmSettings(omValue);
+  const activeOmServices = om.enabled
+    ? [
+        om.cleaning.enabled
+          ? `ล้างแผงโซลาร์ ${om.cleaning.visits_per_year} ครั้งต่อปี เป็นระยะเวลา ${om.cleaning.years} ปี หรือประเมินจากความสกปรก`
+          : null,
+        om.thermoscan.enabled
+          ? `ตรวจสอบระบบโซลาร์เซลล์ ตรวจสอบจุดเชื่อมต่อ พร้อมทำ THERMOSCAN ปีละ ${om.thermoscan.visits_per_year} ครั้ง เป็นระยะเวลา ${om.thermoscan.years} ปี`
+          : null,
+        om.visual_inspection.enabled
+          ? `ตรวจสอบความผิดปกติของแผงโซลาร์เซลล์ทางกายภาพ ปีละ ${om.visual_inspection.visits_per_year} ครั้ง เป็นระยะเวลา ${om.visual_inspection.years} ปี`
+          : null,
+      ].filter((paragraph): paragraph is string => paragraph !== null)
+    : [];
+  const hasOm = activeOmServices.length > 0;
+  const conditionsSectionNumber = hasOm ? 4 : 3;
   const fullInstallConditions = [
-    "4.1) ใบเสนอราคานี้เป็นเพียงการประมาณการเบื้องต้น หากติดตั้งจริงอาจมีการเปลี่ยนแปลงราคาในภายหลัง",
-    "4.2) ผู้ขายขอสงวนสิทธิ์ในการเลือกใช้อุปกรณ์ในการติดตั้งระบบโซลาร์เซลล์",
-    "4.3) เงินค่าจองเพื่อซื้อระบบโซลาร์เซลล์ จะถูกคืนให้ลูกค้าโดยหักจากยอดเงินที่ลูกค้าโอนชำระเมื่อตกลงซื้อระบบโซลาร์เซลล์",
-  ];
+    "ใบเสนอราคานี้เป็นเพียงการประมาณการเบื้องต้น หากติดตั้งจริงอาจมีการเปลี่ยนแปลงราคาในภายหลัง",
+    "ผู้ขายขอสงวนสิทธิ์ในการเลือกใช้อุปกรณ์ในการติดตั้งระบบโซลาร์เซลล์",
+    "เงินค่าจองเพื่อซื้อระบบโซลาร์เซลล์ จะถูกคืนให้ลูกค้าโดยหักจากยอดเงินที่ลูกค้าโอนชำระเมื่อตกลงซื้อระบบโซลาร์เซลล์",
+  ].map((paragraph, index) => `${conditionsSectionNumber}.${index + 1}) ${paragraph}`);
   if (additionalTerms.trim()) {
-    fullInstallConditions.push(`4.4) ${additionalTerms.trim()}`);
+    fullInstallConditions.push(
+      `${conditionsSectionNumber}.${fullInstallConditions.length + 1}) ${additionalTerms.trim()}`,
+    );
   }
+  const allServicesUseCoverage = activeOmServices.length > 0 &&
+    [om.cleaning, om.thermoscan, om.visual_inspection]
+      .filter((service) => service.enabled)
+      .every((service) => service.years === om.coverage_years);
+  const activeFrequencies = [om.cleaning, om.thermoscan, om.visual_inspection]
+    .filter((service) => service.enabled)
+    .map((service) => service.visits_per_year);
+  const sharedFrequency = activeFrequencies.length > 0 &&
+    activeFrequencies.every((frequency) => frequency === activeFrequencies[0])
+      ? activeFrequencies[0]
+      : null;
+  const omSummary = hasOm
+    ? `2.6) ราคานี้รวมค่าดำเนินการ O&M เป็นเวลา ${om.coverage_years} ปี${allServicesUseCoverage && sharedFrequency ? ` ปีละ ${sharedFrequency} ครั้ง` : ""} ตามรายการดังนี้`
+    : null;
   return {
     profile,
     page1Sections: [
@@ -200,19 +310,21 @@ export function getQuotationLegalContent(
     ],
     page2LeadingParagraphs: [
       "2.5) รับประกันงานติดตั้งระบบโซลาร์เซลล์ เป็นระยะเวลา 2 ปี",
-      "2.6) ราคานี้รวมค่าดำเนินการ O&M เป็นเวลา 2 ปี ปีละ 2 ครั้ง ตามรายการดังนี้",
+      ...(omSummary ? [omSummary] : []),
     ],
     page2Sections: [
+      ...(hasOm
+        ? [{
+            title: `3. การดำเนินงานและการบำรุงรักษาระยะเวลา ${om.coverage_years} ปี (กรณีติดตั้งใหม่ทั้งระบบ)`,
+            paragraphs: activeOmServices.map(
+              (paragraph, index) => `3.${index + 1}) ${paragraph}`,
+            ),
+          }]
+        : []),
       {
-        title:
-          "3. การดำเนินงานและการบำรุงรักษาระยะเวลา 2 ปี (กรณีติดตั้งใหม่ทั้งระบบ)",
-        paragraphs: [
-          "3.1) ล้างแผงโซลาร์ 2 ครั้งต่อปี เป็นระยะเวลา 2 ปี หรือประเมินจากความสกปรก",
-          "3.2) ตรวจสอบระบบโซลาร์เซลล์ ตรวจสอบจุดเชื่อมต่อ พร้อมทำ THERMOSCAN ปีละ 2 ครั้ง เป็นระยะเวลา 2 ปี",
-          "3.3) ตรวจสอบความผิดปกติของแผงโซลาร์เซลล์ทางกายภาพ ปีละ 2 ครั้ง เป็นระยะเวลา 2 ปี",
-        ],
+        title: `${conditionsSectionNumber}. เงื่อนไขเพิ่มเติม`,
+        paragraphs: fullInstallConditions,
       },
-      { title: "4. เงื่อนไขเพิ่มเติม", paragraphs: fullInstallConditions },
     ],
   };
 }
