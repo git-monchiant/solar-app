@@ -2,6 +2,7 @@
 
 import Header from "@/components/layout/Header";
 import { apiFetch } from "@/lib/api";
+import { useActiveRoles } from "@/lib/roles";
 import { formatThaiDate } from "@/lib/utils/formatters";
 import { useCallback, useEffect, useState } from "react";
 
@@ -22,16 +23,25 @@ type NotificationItem = {
 };
 
 export default function NotificationsPage() {
+  const { activeRoles } = useActiveRoles();
   const [items, setItems] = useState<NotificationItem[]>([]);
   const [unreadCount, setUnreadCount] = useState(0);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
+  const stage = activeRoles.includes("admin")
+    ? null
+    : activeRoles.includes("solar_sup")
+      ? "solar_sup"
+      : activeRoles.includes("sales_sup")
+        ? "sales_sup"
+        : null;
+  const notificationUrl = `/api/notifications${stage ? `?stage=${stage}` : ""}`;
 
   const load = useCallback(async () => {
     try {
       setError("");
-      const data = await apiFetch("/api/notifications");
+      const data = await apiFetch(notificationUrl);
       setItems(data.items || []);
       setUnreadCount(Number(data.unread_count) || 0);
     } catch (e) {
@@ -39,14 +49,14 @@ export default function NotificationsPage() {
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [notificationUrl]);
 
   useEffect(() => { void load(); }, [load]);
 
   const markAllRead = async () => {
     setBusy(true);
     try {
-      await apiFetch("/api/notifications", {
+      await apiFetch(notificationUrl, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ all: true }),
@@ -64,7 +74,7 @@ export default function NotificationsPage() {
   const openItem = async (item: NotificationItem) => {
     if (!item.read_at) {
       try {
-        await apiFetch("/api/notifications", {
+        await apiFetch(notificationUrl, {
           method: "PATCH",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ id: item.id }),

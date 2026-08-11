@@ -51,7 +51,9 @@ export async function notifyQuotationRole(
       WHERE u.is_active = 1
         AND ISJSON(u.roles) = 1
         AND EXISTS (
-          SELECT 1 FROM OPENJSON(u.roles) roles WHERE roles.[value] = @role
+          SELECT 1
+          FROM OPENJSON(u.roles) roles
+          WHERE roles.[value] IN (@role, 'admin')
         );
     `);
 }

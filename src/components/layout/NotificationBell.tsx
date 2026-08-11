@@ -1,6 +1,7 @@
 "use client";
 
 import { apiFetch } from "@/lib/api";
+import { useActiveRoles } from "@/lib/roles";
 import { formatThaiDate } from "@/lib/utils/formatters";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
@@ -20,27 +21,37 @@ type NotificationItem = {
 
 export default function NotificationBell() {
   const router = useRouter();
+  const { activeRoles } = useActiveRoles();
   const wrapperRef = useRef<HTMLDivElement>(null);
   const [open, setOpen] = useState(false);
   const [items, setItems] = useState<NotificationItem[]>([]);
   const [unreadCount, setUnreadCount] = useState(0);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
+  const stage = activeRoles.includes("admin")
+    ? null
+    : activeRoles.includes("solar_sup")
+      ? "solar_sup"
+      : activeRoles.includes("sales_sup")
+        ? "sales_sup"
+        : null;
+  const notificationUrl = `/api/notifications${stage ? `?stage=${stage}` : ""}`;
+  const summaryUrl = `/api/notifications?summary=1${stage ? `&stage=${stage}` : ""}`;
 
   const loadSummary = useCallback(async () => {
     try {
-      const data = await apiFetch("/api/notifications?summary=1");
+      const data = await apiFetch(summaryUrl);
       setUnreadCount(Number(data.unread_count) || 0);
     } catch {
       // The bell must never block the rest of the header.
     }
-  }, []);
+  }, [summaryUrl]);
 
   const loadItems = useCallback(async () => {
     setLoading(true);
     setError("");
     try {
-      const data = await apiFetch("/api/notifications");
+      const data = await apiFetch(notificationUrl);
       setItems((data.items || []).slice(0, 8));
       setUnreadCount(Number(data.unread_count) || 0);
     } catch (e) {
@@ -48,7 +59,7 @@ export default function NotificationBell() {
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [notificationUrl]);
 
   useEffect(() => {
     void loadSummary();
@@ -86,7 +97,7 @@ export default function NotificationBell() {
 
   const markAllRead = async () => {
     try {
-      await apiFetch("/api/notifications", {
+      await apiFetch(notificationUrl, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ all: true }),
@@ -103,7 +114,7 @@ export default function NotificationBell() {
   const openItem = async (item: NotificationItem) => {
     if (!item.read_at) {
       try {
-        await apiFetch("/api/notifications", {
+        await apiFetch(notificationUrl, {
           method: "PATCH",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ id: item.id }),
