@@ -10,7 +10,16 @@
 
 set -eu
 
-PORT=3010
+# port แยกตาม branch เพื่อให้รัน v2 กับ v3 พร้อมกันได้ และดูจาก URL ก็รู้ว่าตัวไหน
+#   main → 3010   ·   v3 → 3020   ·   กำหนดเองได้ด้วย PORT=xxxx ./start.sh
+BRANCH="$(git rev-parse --abbrev-ref HEAD 2>/dev/null || echo main)"
+if [[ -z "${PORT:-}" ]]; then
+  case "$BRANCH" in
+    v3|v3/*) PORT=3020 ;;
+    *)       PORT=3010 ;;
+  esac
+fi
+echo "▶ branch ${BRANCH} → port ${PORT}"
 NGROK_DOMAIN="senasolar.ngrok.app"
 PROJECT_DIR="$(cd "$(dirname "$0")" && pwd)"
 NGROK_LOG="/tmp/solar-ngrok.log"
@@ -35,6 +44,11 @@ else
 fi
 
 # ── ngrok ─────────────────────────────────────────────────────────────────
+# ngrok domain ผูกกับ port เดียวเท่านั้น — ถ้าไม่ใช่ port หลัก (หรือสั่ง SKIP_NGROK=1) ข้ามไป
+if [[ "${SKIP_NGROK:-0}" == "1" || "${PORT}" != "3010" ]]; then
+  echo "▶ ข้าม ngrok (port ${PORT}) — ใช้ http://localhost:${PORT} ได้เลย"
+  exit 0
+fi
 echo "▶ ngrok ${NGROK_DOMAIN} → ${PORT}"
 if pgrep -f "ngrok.*${NGROK_DOMAIN}" >/dev/null 2>&1; then
   PID=$(pgrep -f "ngrok.*${NGROK_DOMAIN}" | head -1)

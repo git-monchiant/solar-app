@@ -37,6 +37,19 @@ v3 ─────────────────────────�
 - `deploy_prd.sh` จะปฏิเสธถ้าไม่ได้อยู่ `main` + tree สะอาด + sync กับ origin
   (ข้ามได้ด้วย `ALLOW_DIRTY=1` แต่ไม่ควรใช้)
 
+## รู้ได้ยังไงว่ากำลังทำ v ไหน
+
+| ดูจาก | v2 | v3 |
+|---|---|---|
+| **URL ตอน dev** | `localhost:3010` | `localhost:3020` |
+| **หัวหน้าจอในแอป** | `Today v2.0.xx` | `Today v3.0.0-dev` |
+| **โฟลเดอร์** | `solar-app` | `solar-app-v3` |
+| **branch** | `git branch --show-current` → `main` | → `v3` |
+
+`start.sh` เลือก port ตาม branch ให้อัตโนมัติ จึงเปิดทั้ง v2 และ v3 พร้อมกันได้
+(กำหนดเองได้ด้วย `PORT=3030 ./start.sh`) · ngrok ผูกกับ port 3010 เท่านั้น
+ฝั่ง v3 จะข้ามไปและใช้ localhost ตรงๆ
+
 ## เริ่มงานวันแรก
 
 ```bash
@@ -44,7 +57,7 @@ git clone https://github.com/git-monchiant/solar-app.git
 cd solar-app
 npm install
 cp .env.example .env.local        # แล้วเติมค่าจริง (ขอจากเจ้าของระบบ)
-./start.sh                        # เปิดที่ http://localhost:3010
+./start.sh                        # main → :3010 · v3 → :3020 (เลือกให้อัตโนมัติ)
 ```
 
 `git clone` จะได้ **`main` (= v2 บน prod)** เสมอ เพราะเป็น default branch
