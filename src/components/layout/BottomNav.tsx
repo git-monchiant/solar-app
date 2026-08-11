@@ -5,6 +5,7 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
 import { useActiveRoles, useMe, hasRole, Role } from "@/lib/roles";
+import { apiFetch } from "@/lib/api";
 
 type HoverInfo = { label: string; href: string; top: number };
 
@@ -16,6 +17,15 @@ type NavItem = {
   desktopOnly?: boolean;
   group?: "seeker";
 };
+
+function CountBadge({ count, compact = false }: { count: number; compact?: boolean }) {
+  if (count <= 0) return null;
+  return (
+    <span className={`${compact ? "absolute -right-1 -top-1 min-w-4 px-1 text-[9px]" : "ml-auto min-w-5 px-1.5 text-xxs"} inline-flex h-4 items-center justify-center rounded-full bg-red-500 font-bold leading-none text-white`}>
+      {count > 99 ? "99+" : count}
+    </span>
+  );
+}
 
 const navItems: NavItem[] = [
   {
@@ -79,6 +89,7 @@ export default function BottomNav({ collapsed = false, onToggle }: BottomNavProp
   const pathname = usePathname();
   const { activeRoles } = useActiveRoles();
   const { me } = useMe();
+  const [pendingApprovals, setPendingApprovals] = useState(0);
   // Floating hover label — only shown when collapsed. position: fixed so it
   // escapes the nav's overflow-y-auto (which CSS-clips both axes).
   const [hover, setHover] = useState<HoverInfo | null>(null);
@@ -107,6 +118,29 @@ export default function BottomNav({ collapsed = false, onToggle }: BottomNavProp
   // desktop "Settings" admin group, surfaced as primary nav on phone since
   // admin's day is mostly user/payment/settings ops, not pipeline browsing.
   const isAdminActive = hasRole(activeRoles, "admin");
+  useEffect(() => {
+    if (!me || activeRoles.length === 0) return;
+    let cancelled = false;
+    const loadBadges = async () => {
+      const canApprove = hasRole(activeRoles, "admin", "solar_sup", "sales_sup");
+      const stage = hasRole(activeRoles, "admin")
+        ? ""
+        : hasRole(activeRoles, "solar_sup")
+          ? "solar_sup"
+          : "sales_sup";
+      if (!canApprove) return;
+      const result = await apiFetch(`/api/quotation-approvals/count${stage ? `?stage=${stage}` : ""}`).catch(() => null) as { count?: number } | null;
+      if (!cancelled && result) setPendingApprovals(Number(result.count) || 0);
+    };
+    void loadBadges();
+    const interval = window.setInterval(loadBadges, 60_000);
+    window.addEventListener("focus", loadBadges);
+    return () => {
+      cancelled = true;
+      window.clearInterval(interval);
+      window.removeEventListener("focus", loadBadges);
+    };
+  }, [activeRoles, me]);
   const adminMobileItems: NavItem[] = isAdminActive ? [
     {
       href: "/pipeline",
@@ -193,7 +227,7 @@ export default function BottomNav({ collapsed = false, onToggle }: BottomNavProp
               </div>
             );
           })}
-          {showAdminGroups && <AdminGroups pathname={pathname} activeRoles={activeRoles} username={me?.username ?? null} collapsed={collapsed} onHover={showHover} onHoverEnd={scheduleHide} />}
+          {showAdminGroups && <AdminGroups pathname={pathname} activeRoles={activeRoles} username={me?.username ?? null} collapsed={collapsed} onHover={showHover} onHoverEnd={scheduleHide} pendingApprovals={pendingApprovals} />}
         </nav>
       </aside>
       {collapsed && hover && (
@@ -318,7 +352,7 @@ const ADMIN_GROUPS: { title: string; links: AdminLink[] }[] = [
 // "Settings" stays always-open since it's the catch-all admin area.
 const COLLAPSIBLE_GROUPS = new Set(["Reports", "Accounting"]);
 
-function AdminGroups({ pathname, activeRoles, username, collapsed, onHover, onHoverEnd }: { pathname: string; activeRoles: Role[]; username: string | null; collapsed?: boolean; onHover: (e: React.MouseEvent<HTMLElement>, label: string, href: string) => void; onHoverEnd: () => void }) {
+function AdminGroups({ pathname, activeRoles, username, collapsed, onHover, onHoverEnd, pendingApprovals }: { pathname: string; activeRoles: Role[]; username: string | null; collapsed?: boolean; onHover: (e: React.MouseEvent<HTMLElement>, label: string, href: string) => void; onHoverEnd: () => void; pendingApprovals: number }) {
   const isAdmin = hasRole(activeRoles, "admin");
   // Persisted per-group collapse state. Key = group title.
   const [foldedGroups, setFoldedGroups] = useState<Set<string>>(new Set());
@@ -328,6 +362,7 @@ function AdminGroups({ pathname, activeRoles, username, collapsed, onHover, onHo
       const raw = localStorage.getItem("admin_nav_folded");
       if (raw) {
         const arr = JSON.parse(raw);
+        // eslint-disable-next-line react-hooks/set-state-in-effect
         if (Array.isArray(arr)) setFoldedGroups(new Set(arr.filter((x): x is string => typeof x === "string")));
       }
     } catch { /* ignore */ }
@@ -387,8 +422,9 @@ function AdminGroups({ pathname, activeRoles, username, collapsed, onHover, onHo
                   onMouseEnter={(e) => onHover(e, l.label, l.href)}
                   onMouseLeave={onHoverEnd}
                   className={`flex items-center rounded-lg text-xs font-semibold uppercase transition-colors ${collapsed ? "justify-center px-2 py-2" : "gap-3 px-3 py-1.5"} ${active ? "bg-primary/10 text-primary" : "text-gray hover:bg-gray-50"}`}>
-                  {l.icon}
+                  <span className="relative">{l.icon}{collapsed && l.href === "/quotation-approvals" && <CountBadge count={pendingApprovals} compact />}</span>
                   {!collapsed && <span>{l.label}</span>}
+                  {!collapsed && l.href === "/quotation-approvals" && <CountBadge count={pendingApprovals} />}
                 </Link>
               );
             })}

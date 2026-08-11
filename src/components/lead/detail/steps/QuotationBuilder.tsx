@@ -86,6 +86,8 @@ type Quote = {
   document_inputs_json?: string;
   document_snapshot_at?: string;
   approval_certified_at?: string;
+  last_reminded_at?: string | null;
+  last_reminded_by_name?: string | null;
   items: Item[];
 };
 type Template = {
@@ -285,6 +287,7 @@ export default function QuotationBuilder({
   const [templates, setTemplates] = useState<Template[]>([]);
   const [editing, setEditing] = useState<number | null>(null);
   const [busy, setBusy] = useState(false);
+  const [reminderBusy, setReminderBusy] = useState<number | null>(null);
   const [error, setError] = useState("");
   // The quote whose PDF is being generated (puppeteer takes a few seconds).
   // Drives the per-button spinner so a click gives immediate feedback instead
@@ -352,6 +355,25 @@ export default function QuotationBuilder({
       setError(e instanceof Error ? e.message : "ดำเนินการไม่สำเร็จ");
     } finally {
       setBusy(false);
+    }
+  };
+  const remindApprover = async (quote: Quote) => {
+    const target = quote.status === "pending_solar_sup" ? "Solar Sup" : "Sale Sup";
+    const ok = await dialog.confirm({
+      title: `เตือน ${target}`,
+      confirmText: "ส่งการแจ้งเตือน",
+      message: `ส่งการแจ้งเตือนภายในแอปให้ ${target} ตรวจสอบใบเสนอราคา ${quote.doc_no}`,
+    });
+    if (!ok) return;
+    setReminderBusy(quote.id);
+    setError("");
+    try {
+      await apiFetch(`/api/quotations/${quote.id}/remind`, { method: "POST" });
+      await load();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "ส่งการแจ้งเตือนไม่สำเร็จ");
+    } finally {
+      setReminderBusy(null);
     }
   };
   // Navigate straight to the API instead of fetching a blob: a blob: URL drops
@@ -465,8 +487,13 @@ export default function QuotationBuilder({
               (i) =>
                 i.source_type !== "package" &&
                 i.source_type !== "addon_package_detail" &&
-                i.source_type !== "custom_detail",
+              i.source_type !== "custom_detail",
             ) || [];
+          const lastReminderTime = q?.last_reminded_at
+            ? new Date(q.last_reminded_at).getTime()
+            : 0;
+          const reminderCoolingDown =
+            lastReminderTime > 0 && Date.now() - lastReminderTime < 60 * 60 * 1000;
           return q ? (
             <article
               key={option}
@@ -540,6 +567,11 @@ export default function QuotationBuilder({
                 <div className="mt-2 text-xs text-red-600 line-clamp-2">
                   ส่งกลับโดย {q.returned_by_role || "ผู้อนุมัติ"}
                   {q.returned_by_name ? ` (${q.returned_by_name})` : ""}: {q.approval_note}
+                </div>
+              )}
+              {isPendingQuotation(q.status) && q.last_reminded_at && (
+                <div className="mt-2 text-xxs text-amber-700">
+                  แจ้งเตือนล่าสุดโดย {q.last_reminded_by_name || "ผู้ใช้งาน"} · {formatThaiDateShort(q.last_reminded_at)} {formatThaiTime(q.last_reminded_at)} น.
                 </div>
               )}
               <div className="mt-auto pt-4 flex items-end justify-between">
@@ -617,6 +649,30 @@ export default function QuotationBuilder({
                       {q.status === "pending_solar_sup"
                         ? "อนุมัติส่งต่อ"
                         : "อนุมัติ"}
+                    </button>
+                  </>
+                ) : isPendingQuotation(q.status) ? (
+                  <>
+                    <button
+                      onClick={() => openPdf(q.id)}
+                      className="col-span-2 h-9 rounded-lg border border-gray-200 text-xs font-semibold"
+                    >
+                      ดูใบเสนอราคา
+                    </button>
+                    <button
+                      type="button"
+                      disabled={reminderBusy === q.id || reminderCoolingDown}
+                      onClick={() => void remindApprover(q)}
+                      title={reminderCoolingDown ? "ส่งการแจ้งเตือนซ้ำได้เมื่อครบ 1 ชั่วโมง" : undefined}
+                      className="h-9 rounded-lg border border-amber-300 bg-amber-50 text-xs font-semibold text-amber-700 disabled:cursor-not-allowed disabled:opacity-50"
+                    >
+                      {reminderBusy === q.id
+                        ? "กำลังส่ง…"
+                        : reminderCoolingDown
+                          ? "เตือนแล้ว"
+                          : q.status === "pending_solar_sup"
+                            ? "เตือน Solar Sup"
+                            : "เตือน Sale Sup"}
                     </button>
                   </>
                 ) : q.status === "approved" ? (
@@ -1867,7 +1923,6 @@ function QuotationEditor({
                   )}
                 </div>
               )}
-
               <div className="order-1 rounded-xl border border-gray-200 bg-white p-2.5">
                 <div className="flex items-center justify-between">
                   <span className="text-xs font-bold text-gray-800">งวดชำระเงิน</span>

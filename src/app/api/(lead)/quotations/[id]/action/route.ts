@@ -7,6 +7,11 @@ import {
   buildQuotationDocumentSnapshot,
   validateQuotationDocument,
 } from "@/lib/quotation-document";
+import {
+  closeQuotationStageNotifications,
+  notifyQuotationRole,
+  notifyQuotationUser,
+} from "@/lib/quotation-notifications";
 
 const SOLAR_PENDING = "pending_solar_sup";
 const SALES_PENDING = "pending_sales_sup";
@@ -37,7 +42,7 @@ export async function POST(
     const found = await new sql.Request(tx)
       .input("id", sql.Int, quotationId)
       .query(`
-        SELECT q.*, l.assigned_user_id
+        SELECT q.*, l.assigned_user_id, l.full_name customer_name
         FROM quotations q
         JOIN leads l ON l.id = q.lead_id
         WHERE q.id = @id
@@ -528,6 +533,57 @@ export async function POST(
         )
         VALUES(@qid, @action, @from, @to, @note, @uid)
       `);
+
+    if (eventAction === "submit") {
+      await closeQuotationStageNotifications(tx, quotationId, "solar_sup");
+      await closeQuotationStageNotifications(tx, quotationId, "sales_sup");
+      await notifyQuotationRole(tx, "solar_sup", {
+        quotationId,
+        leadId: quotation.lead_id,
+        type: "approval_requested",
+        stage: "solar_sup",
+        title: `มีใบเสนอราคา ${quotation.doc_no} รออนุมัติ`,
+        message: `${actor.full_name} ส่งใบเสนอราคาของ ${quotation.customer_name} ให้ Solar Sup ตรวจสอบ`,
+        createdBy: gate.userId,
+      });
+    } else if (eventAction === "approve_solar") {
+      await closeQuotationStageNotifications(tx, quotationId, "solar_sup");
+      await notifyQuotationRole(tx, "sales_sup", {
+        quotationId,
+        leadId: quotation.lead_id,
+        type: "approval_requested",
+        stage: "sales_sup",
+        title: `มีใบเสนอราคา ${quotation.doc_no} รออนุมัติขั้นสุดท้าย`,
+        message: `Solar Sup อนุมัติใบเสนอราคาของ ${quotation.customer_name} แล้ว`,
+        createdBy: gate.userId,
+      });
+    } else if (eventAction === "approve_sales") {
+      await closeQuotationStageNotifications(tx, quotationId, "sales_sup");
+      await notifyQuotationUser(tx, quotation.submitted_by, {
+        quotationId,
+        leadId: quotation.lead_id,
+        type: "approval_completed",
+        stage: "approved",
+        title: `ใบเสนอราคา ${quotation.doc_no} อนุมัติครบแล้ว`,
+        message: `${actor.full_name} อนุมัติใบเสนอราคาของ ${quotation.customer_name} ขั้นสุดท้ายแล้ว`,
+        createdBy: gate.userId,
+      });
+    } else if (["changes_required_solar", "changes_required_sales"].includes(eventAction)) {
+      await closeQuotationStageNotifications(
+        tx,
+        quotationId,
+        eventAction === "changes_required_solar" ? "solar_sup" : "sales_sup",
+      );
+      await notifyQuotationUser(tx, quotation.submitted_by, {
+        quotationId,
+        leadId: quotation.lead_id,
+        type: "changes_required",
+        stage: next,
+        title: `ใบเสนอราคา ${quotation.doc_no} ถูกส่งกลับแก้ไข`,
+        message: note,
+        createdBy: gate.userId,
+      });
+    }
 
     await logLeadActivity(tx, {
       leadId: quotation.lead_id,
