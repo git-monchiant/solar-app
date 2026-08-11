@@ -21,7 +21,7 @@
 main ───────────────────────────►  v2 = สิ่งที่อยู่บน prod
                                     เจ้าของระบบดูแลคนเดียว (bug fix + deploy)
 
-v3 ─────────────────────────────►  v3 (worktree: ../solar-app-v3)
+v3 ─────────────────────────────►  v3 (clone แยก: ../solar-app-v3)
   ├─ v3/<ชื่องานสั้นๆ> ──PR──► v3    ทีมพัฒนาทุกคนทำที่นี่
   └─ v3/<ชื่องานสั้นๆ> ──PR──► v3
 ```
@@ -49,6 +49,10 @@ v3 ─────────────────────────�
 `start.sh` เลือก port ตาม branch ให้อัตโนมัติ จึงเปิดทั้ง v2 และ v3 พร้อมกันได้
 (กำหนดเองได้ด้วย `PORT=3030 ./start.sh`) · ngrok ผูกกับ port 3010 เท่านั้น
 ฝั่ง v3 จะข้ามไปและใช้ localhost ตรงๆ
+
+**สองโฟลเดอร์เป็น clone แยกขาดจากกัน** ไม่ใช้ `.git`, `node_modules`, `.env.local`
+หรือ `public/uploads` ร่วมกันเลย ทำอะไรพังฝั่งไหนก็อยู่แค่ฝั่งนั้น ลบทิ้งแล้ว clone
+ใหม่ได้ตลอด
 
 ## เริ่มงานวันแรก
 
@@ -125,7 +129,16 @@ git push -u origin v3/redesign-lead-list
 4. เจ้าของระบบดึงมาเทสกับ DB ของตัวเอง แล้วกด **Squash and merge** บน GitHub
    (บีบเป็น commit เดียว ประวัติ main/v3 อ่านง่าย) → ลบ branch ทิ้ง
 5. เจ้าของระบบรัน migration + `./deploy_prd.sh` (bump version ก่อนทุกครั้ง)
-6. deploy สำเร็จ → สคริปต์ tag `v<version>` ให้อัตโนมัติ → merge `main` → `v3`
+6. deploy สำเร็จ → สคริปต์ tag `v<version>` ให้อัตโนมัติ แล้ว **merge main → v3**
+
+```bash
+# ในโฟลเดอร์ v2 — ให้ main ขึ้น origin ก่อน (deploy_prd.sh push ให้อยู่แล้ว)
+cd ~/my-projects/sena-projects/solar-app && git push
+
+# ในโฟลเดอร์ v3 — ดึงงานของ v2 ลงมา
+cd ~/my-projects/sena-projects/solar-app-v3
+git fetch origin && git merge origin/main && git push
+```
 
 ### เจ้าของระบบเทส PR ยังไง
 
