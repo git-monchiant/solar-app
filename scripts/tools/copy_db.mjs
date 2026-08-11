@@ -19,14 +19,23 @@
 //   - triggers
 //
 // Usage:
-//   node scripts/tools/copy_db.mjs           # dry-run
-//   node scripts/tools/copy_db.mjs --yes     # execute (DESTRUCTIVE on dst)
+//   node scripts/tools/copy_db.mjs                        # dry-run → solardb_dev
+//   node scripts/tools/copy_db.mjs --yes                  # execute (DESTRUCTIVE on dst)
+//   node scripts/tools/copy_db.mjs --dst=solardb_v3 --yes # ปลายทางอื่น เช่น DB ของ v3
+//
+// --dst ใช้ตอนทีมทำ v3 คู่ขนาน: v3 มี migration ที่แก้ตารางเดิม จึงใช้ solardb_dev
+// ร่วมกับการทดสอบ fix ของ v2 ไม่ได้ ต้องมี DB ของตัวเอง
 
 import sql from 'mssql';
 
 const SRC = 'solardb';
-const DST = 'solardb_dev';
+const DST = (process.argv.find(a => a.startsWith('--dst=')) || '').split('=')[1] || 'solardb_dev';
 const EXECUTE = process.argv.includes('--yes');
+
+if (DST === SRC) {
+  console.error(`❌ ปลายทางห้ามเป็น ${SRC} (prod)`);
+  process.exit(1);
+}
 
 const config = {
   server: '172.41.1.73',
