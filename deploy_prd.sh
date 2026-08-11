@@ -24,10 +24,45 @@ echo "━━━━━━━━━━━━━━━━━━━━━━━━�
 echo "  Solar App → PRODUCTION deploy"
 echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
 
-# 1. warn if working tree dirty — don't block, just surface it
-if [[ -n "$(git status --porcelain 2>/dev/null)" ]]; then
-  echo "⚠️  Uncommitted changes — deploying anyway. Consider committing first:"
+# 1. release gate — prod ต้องมาจาก main ที่ commit แล้วและ sync กับ origin เท่านั้น
+#
+# เดิมแค่เตือนแล้วไปต่อ ซึ่งอันตรายเมื่อมีหลายคน/หลาย branch: สคริปต์นี้ tar ไฟล์
+# จากโฟลเดอร์ที่รัน ไม่ได้ deploy จาก git commit ดังนั้นถ้ารันจาก worktree ของ v3
+# หรือรันทั้งที่มีไฟล์แก้ค้าง prod จะได้โค้ดที่ไม่มีใครรู้ว่าคืออะไร
+#
+# ข้าม gate ได้ด้วย ALLOW_DIRTY=1 (เช่นกรณีฉุกเฉินจริงๆ) — จะถูกบันทึกไว้ใน log
+BRANCH="$(git rev-parse --abbrev-ref HEAD 2>/dev/null || echo unknown)"
+RELEASE_BRANCH="${RELEASE_BRANCH:-main}"
+
+gate_fail() {
+  echo "❌ $1"
+  echo "   ถ้าจำเป็นต้องข้ามจริงๆ: ALLOW_DIRTY=1 ./deploy_prd.sh"
+  exit 1
+}
+
+if [[ "${ALLOW_DIRTY:-0}" == "1" ]]; then
+  echo "⚠️  ข้าม release gate ด้วย ALLOW_DIRTY=1 — branch: ${BRANCH}"
   git status --short | head -10
+  echo ""
+else
+  [[ "$BRANCH" == "$RELEASE_BRANCH" ]] \
+    || gate_fail "อยู่ branch '${BRANCH}' — deploy prod ได้จาก '${RELEASE_BRANCH}' เท่านั้น"
+
+  [[ -z "$(git status --porcelain 2>/dev/null)" ]] \
+    || { echo "❌ มีไฟล์ที่ยังไม่ commit — commit หรือ stash ก่อน:"; git status --short | head -10; \
+         echo "   ถ้าจำเป็นต้องข้ามจริงๆ: ALLOW_DIRTY=1 ./deploy_prd.sh"; exit 1; }
+
+  git fetch origin "$RELEASE_BRANCH" --quiet 2>/dev/null || true
+  LOCAL="$(git rev-parse HEAD)"
+  REMOTE="$(git rev-parse "origin/${RELEASE_BRANCH}" 2>/dev/null || echo "$LOCAL")"
+  if [[ "$LOCAL" != "$REMOTE" ]]; then
+    BEHIND="$(git rev-list --count "HEAD..origin/${RELEASE_BRANCH}" 2>/dev/null || echo 0)"
+    AHEAD="$(git rev-list --count "origin/${RELEASE_BRANCH}..HEAD" 2>/dev/null || echo 0)"
+    [[ "$BEHIND" == "0" ]] \
+      || gate_fail "ตามหลัง origin/${RELEASE_BRANCH} อยู่ ${BEHIND} commit — git pull ก่อน (กัน deploy ทับงานคนอื่น)"
+    echo "⚠️  มี ${AHEAD} commit ที่ยังไม่ push — จะ push ให้หลัง deploy สำเร็จ"
+  fi
+  echo "✅ Release gate ผ่าน — branch ${BRANCH} @ $(git rev-parse --short HEAD)"
   echo ""
 fi
 
@@ -102,20 +137,41 @@ echo "🔨 Building + restarting container on prod ..."
 sshpass -p "${PRD_PASS}" ssh \
   -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null \
   -p "${PRD_PORT}" "${PRD_USER}@${PRD_HOST}" \
-  "cd ${PRD_DIR} && docker compose up -d --build 2>&1 | tail -5"
+  "set -o pipefail; cd ${PRD_DIR} && docker compose up -d --build 2>&1 | tail -5" \
+  || { echo "❌ Build/restart บน prod ล้มเหลว — container เดิมยังรันอยู่ prod จึงยังเป็นเวอร์ชันก่อนหน้า"; \
+       echo "   ดู log เต็ม: ssh -p ${PRD_PORT} ${PRD_USER}@${PRD_HOST} 'cd ${PRD_DIR} && docker compose build'"; exit 1; }
 
 # 6. wait for health + smoke test via public URL
-echo "🔎 Smoke test ..."
+#
+# เทียบ /api/version กับ package.json ด้วย — ถ้าเช็คแค่ HTTP 200 container เก่า
+# ที่ยังรันอยู่ (กรณี build ล้ม) ก็ตอบ 200 ทำให้เข้าใจผิดว่า deploy สำเร็จ
+WANT_VERSION="$(node -p "require('./package.json').version")"
+echo "🔎 Smoke test (ต้องได้ v${WANT_VERSION}) ..."
 for i in {1..12}; do
   code=$(curl -s -o /dev/null -w "%{http_code}" "${PUBLIC_URL}/" || echo "000")
-  if [[ "$code" == "200" ]]; then
-    echo "✅ ${PUBLIC_URL} → HTTP 200"
+  got=$(curl -s "${PUBLIC_URL}/api/version" 2>/dev/null | sed -n 's/.*"version":"\([^"]*\)".*/\1/p')
+  if [[ "$code" == "200" && "$got" == "$WANT_VERSION" ]]; then
+    echo "✅ ${PUBLIC_URL} → HTTP 200 · v${got}"
+
+    # 7. tag ไว้ให้รู้ว่า prod = commit ไหน และย้อนกลับได้
+    TAG="v${WANT_VERSION}"
+    if [[ "${ALLOW_DIRTY:-0}" != "1" ]]; then
+      if git rev-parse "$TAG" >/dev/null 2>&1; then
+        echo "ℹ️  tag ${TAG} มีอยู่แล้ว ข้ามการสร้าง"
+      else
+        git tag -a "$TAG" -m "deploy to prod $(date '+%Y-%m-%d %H:%M')"
+        git push origin "$TAG" --quiet 2>/dev/null && echo "🏷️  สร้างและ push tag ${TAG}" \
+          || echo "🏷️  สร้าง tag ${TAG} แล้ว (push ไม่สำเร็จ — push เองภายหลัง)"
+      fi
+      git push --quiet 2>/dev/null && echo "⬆️  push ${BRANCH} ขึ้น origin แล้ว" || true
+    fi
     exit 0
   fi
-  echo "  waiting... (${i}/12, last code: ${code})"
+  echo "  waiting... (${i}/12, http ${code}, version '${got:-?}')"
   sleep 5
 done
 
-echo "❌ Smoke test failed after 60s. Inspect container:"
-echo "   ssh -p ${PRD_PORT} ${PRD_USER}@${PRD_HOST} 'docker compose -f ${PRD_DIR}/docker-compose.yml logs app --tail 50'"
+echo "❌ Smoke test ไม่ผ่านใน 60 วินาที (ต้องการ v${WANT_VERSION})"
+echo "   ถ้า HTTP 200 แต่เวอร์ชันไม่ตรง = container เก่ายังรันอยู่ แปลว่า build ไม่สำเร็จ"
+echo "   ดู log: ssh -p ${PRD_PORT} ${PRD_USER}@${PRD_HOST} 'cd ${PRD_DIR} && docker compose logs app --tail 50'"
 exit 1
