@@ -7,6 +7,7 @@ import { useOpenLead } from "@/lib/hooks/useOpenLead";
 import FallbackImage from "@/components/ui/FallbackImage";
 import ImageLightbox, { type LightboxImage } from "@/components/ui/ImageLightbox";
 import { formatTHB } from "@/lib/utils/formatters";
+import { useDialog } from "@/components/ui/Dialog";
 
 interface Installment {
   id: number;
@@ -76,6 +77,7 @@ interface PendingItem {
 }
 
 export default function PendingApprovalReport() {
+  const dialog = useDialog();
   const openLead = useOpenLead();
   const [data, setData] = useState<ReportData | null>(null);
   const [loading, setLoading] = useState(true);
@@ -253,7 +255,7 @@ export default function PendingApprovalReport() {
       });
       window.setTimeout(() => openChequePaymentContext(item, false), 150);
     } catch (e) {
-      alert(e instanceof Error ? e.message : "ยืนยันรับเช็คไม่สำเร็จ");
+      dialog.alert({ message: e instanceof Error ? e.message : "ยืนยันรับเช็คไม่สำเร็จ", variant: "danger" });
     } finally {
       setChequeReceivingId(null);
     }

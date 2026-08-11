@@ -13,6 +13,7 @@ import { STATUS_CONFIG } from "@/lib/constants/statuses";
 import { PRIMARY_REASON_LABEL } from "@/lib/constants/info-labels";
 import { getSourceStyle, normalizeSourceKey } from "@/lib/source-tag";
 import { formatTHB as fmt } from "@/lib/utils/formatters";
+import { useDialog } from "@/components/ui/Dialog";
 
 type LifecycleCol = "first_contact_at" | "contact2_at" | "contact3_at" | "contact4_at" | "contact5_at"
   | "sales_pitch_at" | "booking_paid_at" | "survey_date" | "survey_done_at"
@@ -119,6 +120,7 @@ interface DashboardData {
 }
 
 export default function DashboardPage() {
+  const dialog = useDialog();
   const [data, setData] = useState<DashboardData | null>(null);
   const [devData, setDevData] = useState<DevData | null>(null);
   const [lineUsers, setLineUsers] = useState<{ created_at: string; phone: string | null; house_number: string | null }[]>([]);
@@ -314,7 +316,7 @@ export default function DashboardPage() {
                     if (dateTo)   qs.set("to",   dateTo);
                     qs.set("mode", filterMode);
                     const res = await fetch(`/api/report/dashboard-pdf?${qs.toString()}`, { headers: { ...getUserIdHeader() } });
-                    if (!res.ok) { alert("ดาวน์โหลด PDF ไม่สำเร็จ"); return; }
+                    if (!res.ok) { dialog.alert({ message: "ดาวน์โหลด PDF ไม่สำเร็จ", variant: "danger" }); return; }
                     const blob = await res.blob();
                     const url = URL.createObjectURL(blob);
                     const a = document.createElement("a");

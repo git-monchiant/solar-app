@@ -8,6 +8,7 @@ import { DownloadIcon } from "@/components/ui/icons";
 import { apiFetch, getUserIdHeader } from "@/lib/api";
 import { STATUS_CONFIG } from "@/lib/constants/statuses";
 import { getWithTtl, setWithTtl, TWO_HOURS_MS } from "@/lib/storage-ttl";
+import { useDialog } from "@/components/ui/Dialog";
 import type {
   CountItem, CountSeries, CustomerDashboardData, CustomerDrilldownRow,
 } from "@/lib/customer-dashboard-types";
@@ -19,6 +20,7 @@ const topItems = (series: CountSeries, limit = 8) => series.items.filter(item =>
 type DrillState = { title: string; loading: boolean; rows: CustomerDrilldownRow[]; error?: string } | null;
 
 export default function CustomerDashboardPage() {
+  const dialog = useDialog();
   const today = useMemo(() => {
     const d = new Date();
     return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
@@ -88,7 +90,7 @@ export default function CustomerDashboardPage() {
       a.href = url;
       a.download = `customer-info_${dateFrom || "all"}_${dateTo || "all"}.xlsx`;
       document.body.appendChild(a); a.click(); a.remove(); URL.revokeObjectURL(url);
-    } catch (err) { alert(err instanceof Error ? err.message : "สร้างไฟล์ Excel ไม่สำเร็จ"); }
+    } catch (err) { dialog.alert({ message: err instanceof Error ? err.message : "สร้างไฟล์ Excel ไม่สำเร็จ", variant: "danger" }); }
     finally { setExcelLoading(false); }
   };
 

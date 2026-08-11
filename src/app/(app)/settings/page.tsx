@@ -6,6 +6,7 @@ import { useRouter } from "next/navigation";
 import { apiFetch } from "@/lib/api";
 import Header from "@/components/layout/Header";
 import { useFileViewer } from "@/lib/hooks/useFileViewer";
+import { useDialog } from "@/components/ui/Dialog";
 
 type Settings = Record<string, string>;
 
@@ -87,6 +88,7 @@ function TabBtn({ active, onClick, label }: { active: boolean; onClick: () => vo
 type GmailStatus = { connected: boolean; email: string | null; connected_at: string | null };
 
 function GmailSection() {
+  const dialog = useDialog();
   const [status, setStatus] = useState<GmailStatus | null>(null);
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
@@ -109,7 +111,7 @@ function GmailSection() {
   };
 
   const disconnect = async () => {
-    if (!confirm("ตัดการเชื่อม Gmail?")) return;
+    if (!(await dialog.confirm("ตัดการเชื่อม Gmail?"))) return;
     setBusy(true);
     try {
       await apiFetch("/api/oauth/gmail/status", { method: "DELETE" });
@@ -527,6 +529,7 @@ function ChannelsSection() {
 // ใช้ได้ทุก lead — ส่ง URL เก็บไว้ที่ app_settings.customer_checklist_pdf_url.
 // step ไหนที่ download — รอ user บอก (จะใส่ลิงก์ลง step นั้นภายหลัง)
 function CustomerDocsSection() {
+  const dialog = useDialog();
   const [url, setUrl] = useState<string | null>(null);
   const [name, setName] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
@@ -583,7 +586,7 @@ function CustomerDocsSection() {
 
   const remove = async () => {
     if (!url) return;
-    if (!confirm("ลบไฟล์ checklist นี้?")) return;
+    if (!(await dialog.confirm({ message: "ลบไฟล์ checklist นี้?", variant: "danger" }))) return;
     setBusy(true);
     try {
       await apiFetch("/api/settings", {

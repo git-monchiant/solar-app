@@ -7,6 +7,7 @@ import { apiFetch } from "@/lib/api";
 import { houseNumberOrNull } from "@/lib/utils/name";
 import { getStatusLabel } from "@/lib/constants/statuses";
 import { formatSlotsRange } from "@/lib/time-slots";
+import { useDialog } from "@/components/ui/Dialog";
 
 // List-style calendar view used by Today's "ปฏิทิน" tab and the standalone
 // /calendar page. Fetches /api/surveys/scheduled and renders one row per day
@@ -88,6 +89,7 @@ function ymdLocal(d: Date) {
 }
 
 export default function EventCalendarList({ monthsBack, monthsForward, days, zoneFilter = "all", showZoneChips = false, toolbarRight, anchor: controlledAnchor, hideNav = false, controlledZone, controlledTeam = "all", onVisibleMonthChange }: Props) {
+  const dialog = useDialog();
   const [events, setEvents] = useState<ScheduledEvent[]>([]);
   const [zones, setZones] = useState<{ id: number; name: string; color?: string | null }[]>([]);
   const [loading, setLoading] = useState(true);
@@ -307,7 +309,7 @@ export default function EventCalendarList({ monthsBack, monthsForward, days, zon
                                   type="button"
                                   title="ลบ block นี้"
                                   onClick={async () => {
-                                    if (!confirm("ลบ block นี้?")) return;
+                                    if (!(await dialog.confirm({ message: "ลบ block นี้?", variant: "danger" }))) return;
                                     // Block ids in /api/surveys/scheduled are
                                     // emitted negative so they don't collide
                                     // with lead ids — flip back for the route.
