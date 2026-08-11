@@ -102,6 +102,9 @@ tar \
   --exclude='.env' \
   --exclude='backup' \
   --exclude='Project Infomation' \
+  --exclude='tmp-files' \
+  --exclude='docs' \
+  --exclude='sql' \
   -czf - . | \
 sshpass -p "${PRD_PASS}" ssh \
   -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null \

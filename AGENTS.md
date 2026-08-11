@@ -39,6 +39,8 @@ If the user wants a commit, write the commit message in Thai and make it easy to
 
 ### Branch & Release (ตั้งแต่เริ่มทำ v3 คู่ขนาน)
 
+รายละเอียดเต็ม + ใครทำอะไร อยู่ที่ [docs/team-workflow.md](docs/team-workflow.md)
+
 | branch | คือ | ใครแตะ |
 |---|---|---|
 | `main` | v2 = สิ่งที่อยู่บน prod | เฉพาะ bug fix / งานด่วน แล้ว deploy |
