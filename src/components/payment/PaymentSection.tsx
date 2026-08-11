@@ -8,7 +8,7 @@ import ImageLightbox from "@/components/ui/ImageLightbox";
 import PaymentHeader from "./PaymentHeader";
 import { buildPaymentFlex } from "@/lib/utils/line-flex";
 import { compressSlipFile } from "@/lib/utils/compress-slip";
-import { formatTHB } from "@/lib/utils/formatters";
+import { formatTHB, formatThaiDate } from "@/lib/utils/formatters";
 import { useActiveRoles } from "@/lib/roles";
 import { useDialog } from "@/components/ui/Dialog";
 import ActualReceiptUpload from "@/components/lead/detail/ActualReceiptUpload";
@@ -1214,7 +1214,7 @@ export default function PaymentSection({
             <div className="min-w-0">
               <div className="font-semibold">บัญชีไม่อนุมัติ — กรุณา upload สลิปใหม่</div>
               <div className="mt-0.5 break-words">เหตุผล: {rejectNote.reason}</div>
-              <div className="mt-0.5 text-red-500/80">โดย {rejectNote.by} · {new Date(rejectNote.at).toLocaleString("th-TH", { dateStyle: "short", timeStyle: "short" })}</div>
+              <div className="mt-0.5 text-red-500/80">โดย {rejectNote.by} · {formatThaiDate(rejectNote.at, { time: true })}</div>
             </div>
           </div>
         )}

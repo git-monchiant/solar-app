@@ -1,5 +1,6 @@
 "use client";
 import { XIcon } from "@/components/ui/icons";
+import Dropdown from "@/components/ui/Dropdown";
 
 import { apiFetch } from "@/lib/api";
 import { useEffect, useState } from "react";
@@ -323,27 +324,27 @@ export default function ManagePackagesPage() {
         {/* Toolbar */}
         <div className="flex items-center gap-3 flex-wrap">
           <input type="text" value={search} onChange={e => setSearch(e.target.value)} placeholder="ค้นหา..." className="h-8 px-4 rounded-lg border border-gray-200 text-sm flex-1 min-w-[200px] focus:outline-none focus:border-primary" />
-          <select value={filter} onChange={e => setFilter(e.target.value as typeof filter)} className="h-8 px-3 rounded-lg border border-gray-200 text-sm bg-white focus:outline-none focus:border-primary">
-            <option value="all">ทั้งหมด</option>
-            <option value="active">Active</option>
-            <option value="inactive">Inactive</option>
-          </select>
-          <select value={filterPhase} onChange={e => setFilterPhase(e.target.value as typeof filterPhase)} className="h-8 px-3 rounded-lg border border-gray-200 text-sm bg-white focus:outline-none focus:border-primary">
-            <option value="all">All Phase</option>
-            <option value="1">1 Phase</option>
-            <option value="3">3 Phase</option>
-          </select>
-          <select value={filterBat} onChange={e => setFilterBat(e.target.value as typeof filterBat)} className="h-8 px-3 rounded-lg border border-gray-200 text-sm bg-white focus:outline-none focus:border-primary">
-            <option value="all">Battery ทั้งหมด</option>
-            <option value="yes">มี Battery</option>
-            <option value="no">ไม่มี Battery</option>
-          </select>
-          <select value={filterUpgrade} onChange={e => setFilterUpgrade(e.target.value as typeof filterUpgrade)} className="h-8 px-3 rounded-lg border border-gray-200 text-sm bg-white focus:outline-none focus:border-primary">
-            <option value="all">ทุกประเภท</option>
-            <option value="yes">Scale Up</option>
-            <option value="no">ไม่ใช่ Scale Up</option>
-            <option value="other">อื่นๆ</option>
-          </select>
+          <Dropdown className="w-36" value={filter} onChange={v => { if (v) setFilter(v as typeof filter); }} options={[
+            { value: "all", label: "ทั้งหมด" },
+            { value: "active", label: "Active" },
+            { value: "inactive", label: "Inactive" },
+          ]} />
+          <Dropdown className="w-36" value={filterPhase} onChange={v => { if (v) setFilterPhase(v as typeof filterPhase); }} options={[
+            { value: "all", label: "All Phase" },
+            { value: "1", label: "1 Phase" },
+            { value: "3", label: "3 Phase" },
+          ]} />
+          <Dropdown className="w-40" value={filterBat} onChange={v => { if (v) setFilterBat(v as typeof filterBat); }} options={[
+            { value: "all", label: "Battery ทั้งหมด" },
+            { value: "yes", label: "มี Battery" },
+            { value: "no", label: "ไม่มี Battery" },
+          ]} />
+          <Dropdown className="w-40" value={filterUpgrade} onChange={v => { if (v) setFilterUpgrade(v as typeof filterUpgrade); }} options={[
+            { value: "all", label: "ทุกประเภท" },
+            { value: "yes", label: "Scale Up" },
+            { value: "no", label: "ไม่ใช่ Scale Up" },
+            { value: "other", label: "อื่นๆ" },
+          ]} />
           {isAdmin && (
             <button type="button" onClick={() => { setSaveError(""); setEditing({ ...empty }); }} className="h-8 px-5 rounded-lg bg-primary text-white text-sm font-semibold hover:bg-primary-dark transition-colors">+ เพิ่ม Package</button>
           )}
@@ -507,11 +508,11 @@ export default function ManagePackagesPage() {
                   </div>
                   <div className="md:col-span-2">
                     <label className={labelCls}>Phase</label>
-                    <select value={editing.phase} onChange={e => setEditing({ ...editing, phase: parseInt(e.target.value) })} className={fieldCls}>
-                      <option value={0}>All Phase</option>
-                      <option value={1}>1 Phase</option>
-                      <option value={3}>3 Phase</option>
-                    </select>
+                    <Dropdown heightClassName="h-9" value={String(editing.phase)} onChange={v => setEditing({ ...editing, phase: parseInt(v) || 0 })} options={[
+                      { value: "0", label: "All Phase" },
+                      { value: "1", label: "1 Phase" },
+                      { value: "3", label: "3 Phase" },
+                    ]} />
                   </div>
                   <div className="md:col-span-2">
                     <label className={labelCls}>รับประกัน (ปี)</label>

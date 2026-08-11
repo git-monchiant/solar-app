@@ -12,12 +12,12 @@ function DbBanner() {
   // so the server (no localStorage) and the first client render disagree.
   const [mounted, setMounted] = useState(false);
   useEffect(() => setMounted(true), []);
-  if (!mounted || me?.db_name !== "solardb_dev") return null;
+  if (!mounted || !me?.db_name || me.db_name === "solardb") return null;
   // Inline at the top of the layout flex column — header (sticky inside each
   // page) will sit below this strip instead of being covered by it.
   return (
-    <div className="shrink-0 bg-amber-500 text-white text-xxs leading-none font-semibold tracking-widest text-center py-0.5 shadow-md">
-      DEVELOPMENT / DEMO
+    <div className={`shrink-0 ${me.db_name === "solardb_v3" ? "bg-red-500" : "bg-amber-500"} text-white text-xxs leading-none font-semibold tracking-widest text-center py-0.5 shadow-md`}>
+      DEVELOPMENT / {me.db_name.toUpperCase()}
     </div>
   );
 }

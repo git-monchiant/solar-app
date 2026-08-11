@@ -1,5 +1,6 @@
 "use client";
 import { CheckIcon, DownloadIcon, XIcon } from "@/components/ui/icons";
+import { formatNumber } from "@/lib/utils/formatters";
 
 import { apiFetch, getUserIdHeader } from "@/lib/api";
 import { useEffect, useMemo, useRef, useState } from "react";
@@ -169,11 +170,11 @@ export default function SeekerDashboardPage() {
           <>
             {/* Top KPI row */}
             <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
-              <KpiCard icon="home" label="ทั้งหมด" value={stats.total.toLocaleString("en")} suffix="บ้าน" tint="gray" />
+              <KpiCard icon="home" label="ทั้งหมด" value={formatNumber(stats.total)} suffix="บ้าน" tint="gray" />
               <KpiCard icon="check" label="เยี่ยมแล้ว" value={`${coverage}%`} suffix={`${stats.total - stats.pending} / ${stats.total}`} tint="blue" />
-              <KpiCard icon="heart" label="สนใจ" value={stats.interested.toLocaleString("en")} suffix={stats.total > 0 ? `${Math.round((stats.interested / stats.total) * 100)}%` : "0%"} tint="green" />
-              <KpiCard icon="line" label="Add LINE OA" value={stats.line_linked.toLocaleString("en")} suffix={stats.total > 0 ? `${Math.round((stats.line_linked / stats.total) * 100)}%` : "0%"} tint="emerald" />
-              <KpiCard icon="lead" label="สร้างลีด" value={stats.leads_created.toLocaleString("en")} suffix={stats.interested > 0 ? `${Math.round((stats.leads_created / stats.interested) * 100)}% conversion` : "0%"} tint="amber" />
+              <KpiCard icon="heart" label="สนใจ" value={formatNumber(stats.interested)} suffix={stats.total > 0 ? `${Math.round((stats.interested / stats.total) * 100)}%` : "0%"} tint="green" />
+              <KpiCard icon="line" label="Add LINE OA" value={formatNumber(stats.line_linked)} suffix={stats.total > 0 ? `${Math.round((stats.line_linked / stats.total) * 100)}%` : "0%"} tint="emerald" />
+              <KpiCard icon="lead" label="สร้างลีด" value={formatNumber(stats.leads_created)} suffix={stats.interested > 0 ? `${Math.round((stats.leads_created / stats.interested) * 100)}% conversion` : "0%"} tint="amber" />
             </div>
 
             {/* Interest breakdown: donut + legend */}

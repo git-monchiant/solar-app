@@ -5,6 +5,8 @@ import * as XLSX from "xlsx-js-style";
 import Header from "@/components/layout/Header";
 import { LeadLink } from "@/components/lead/LeadLink";
 import { DownloadIcon } from "@/components/ui/icons";
+import { useDialog } from "@/components/ui/Dialog";
+import { formatNumber, formatThaiDate } from "@/lib/utils/formatters";
 import { apiFetch, getUserIdHeader } from "@/lib/api";
 import { STATUS_CONFIG } from "@/lib/constants/statuses";
 import { getWithTtl, setWithTtl, TWO_HOURS_MS } from "@/lib/storage-ttl";
@@ -12,13 +14,14 @@ import type {
   CountItem, CountSeries, CustomerDashboardData, CustomerDrilldownRow,
 } from "@/lib/customer-dashboard-types";
 
-const fmt = (value: number | null | undefined) => Number(value || 0).toLocaleString("th-TH");
+const fmt = (value: number | null | undefined) => formatNumber(Number(value || 0));
 const pct = (value: number, total: number) => total > 0 ? Math.round((value / total) * 100) : 0;
 const topItems = (series: CountSeries, limit = 8) => series.items.filter(item => item.count > 0).sort((a, b) => b.count - a.count).slice(0, limit);
 
 type DrillState = { title: string; loading: boolean; rows: CustomerDrilldownRow[]; error?: string } | null;
 
 export default function CustomerDashboardPage() {
+  const dialog = useDialog();
   const today = useMemo(() => {
     const d = new Date();
     return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
@@ -88,7 +91,7 @@ export default function CustomerDashboardPage() {
       a.href = url;
       a.download = `customer-info_${dateFrom || "all"}_${dateTo || "all"}.xlsx`;
       document.body.appendChild(a); a.click(); a.remove(); URL.revokeObjectURL(url);
-    } catch (err) { alert(err instanceof Error ? err.message : "สร้างไฟล์ Excel ไม่สำเร็จ"); }
+    } catch (err) { dialog.alert({ title: "สร้างไฟล์ Excel ไม่สำเร็จ", message: err instanceof Error ? err.message : "เกิดข้อผิดพลาด", variant: "danger" }); }
     finally { setExcelLoading(false); }
   };
 
@@ -211,7 +214,7 @@ export default function CustomerDashboardPage() {
             </SectionCard>
           </div>
           </ReportGroup>
-          <div className="text-xxs text-gray-400">อัปเดต Customer Info ล่าสุด {data.meta.latestUpdatedAt ? new Date(data.meta.latestUpdatedAt).toLocaleString("th-TH") : "—"} · NULL ถือว่ายังไม่ตอบและไม่นับเป็น “ไม่”</div>
+          <div className="text-xxs text-gray-400">อัปเดต Customer Info ล่าสุด {formatThaiDate(data.meta.latestUpdatedAt, { time: true })} · NULL ถือว่ายังไม่ตอบและไม่นับเป็น “ไม่”</div>
         </>}
       </div>
     </div>

@@ -8,7 +8,7 @@ import { useEffect, useMemo, useState } from "react";
 import * as XLSX from "xlsx-js-style";
 import Header from "@/components/layout/Header";
 import { STATUS_CONFIG, getMainStatus, getStatusLabel } from "@/lib/constants/statuses";
-import { formatThaiDateShort } from "@/lib/utils/formatters";
+import { formatTHB, formatThaiDateShort } from "@/lib/utils/formatters";
 import { LeadLink } from "@/components/lead/LeadLink";
 import { getSourceStyle } from "@/lib/source-tag";
 import { hasRole, useActiveRoles } from "@/lib/roles";
@@ -91,7 +91,7 @@ function depositDisplay(r: { order_installments: string | null; order_total: num
   const p = depositPct(r.order_installments);
   if (p == null) return "";
   const amt = r.order_total ? Math.round((r.order_total * p) / 100) : null;
-  return amt != null ? `${amt.toLocaleString()} (${p}%)` : `${p}%`;
+  return amt != null ? `${formatTHB(amt)} (${p}%)` : `${p}%`;
 }
 type Tri = "any" | "yes" | "no";
 

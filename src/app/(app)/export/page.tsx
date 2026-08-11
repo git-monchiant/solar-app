@@ -1,5 +1,6 @@
 "use client";
 import { DownloadIcon } from "@/components/ui/icons";
+import { useDialog } from "@/components/ui/Dialog";
 
 import { useState } from "react";
 import Header from "@/components/layout/Header";
@@ -9,6 +10,7 @@ import { getUserIdHeader } from "@/lib/api";
 // Temporary admin-only export page. Will be replaced by a proper reports page.
 export default function ExportPage() {
   const { me } = useMe();
+  const dialog = useDialog();
   const isAdmin = (me?.roles || []).includes("admin");
   const [busy, setBusy] = useState(false);
 
@@ -41,7 +43,7 @@ export default function ExportPage() {
       a.remove();
       URL.revokeObjectURL(url);
     } catch (e) {
-      alert(e instanceof Error ? e.message : "Export failed");
+      dialog.alert({ title: "Export ไม่สำเร็จ", message: e instanceof Error ? e.message : "Export failed", variant: "danger" });
     } finally {
       setBusy(false);
     }

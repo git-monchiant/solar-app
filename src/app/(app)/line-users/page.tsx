@@ -1,5 +1,6 @@
 "use client";
 import { PlusIcon, UserIcon } from "@/components/ui/icons";
+import { formatThaiDate } from "@/lib/utils/formatters";
 
 import { apiFetch } from "@/lib/api";
 import { useEffect, useState } from "react";
@@ -41,7 +42,7 @@ interface LineUser {
 // converts to the user's local timezone. Stripping Z via slice() would make
 // JS treat it as naive local time and shift the display by +7h in Bangkok.
 const formatDate = (d: string) =>
-  new Date(d).toLocaleString("th-TH", { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit", timeZone: "Asia/Bangkok" });
+  formatThaiDate(d, { year: false, time: true, timeZone: "Asia/Bangkok" });
 
 export default function LineUsersPage() {
   const [users, setUsers] = useState<LineUser[]>([]);

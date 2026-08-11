@@ -16,6 +16,8 @@ interface DropdownProps {
   className?: string;
   /** Extra class for the button — useful for font-mono on numeric values. */
   buttonClassName?: string;
+  /** Button height utility; default h-8 matches compact form inputs. */
+  heightClassName?: string;
 }
 
 /**
@@ -26,7 +28,7 @@ interface DropdownProps {
 export default function Dropdown({
   value, onChange, options,
   placeholder = "— เลือก —",
-  disabled, className, buttonClassName,
+  disabled, className, buttonClassName, heightClassName,
 }: DropdownProps) {
   const [open, setOpen] = useState(false);
   const rootRef = useRef<HTMLDivElement>(null);
@@ -52,7 +54,7 @@ export default function Dropdown({
   return (
     <div ref={rootRef} className={`relative ${className ?? ""}`}>
       <button type="button" disabled={disabled} onClick={() => setOpen(o => !o)}
-        className={`w-full h-8 pl-3 pr-8 rounded-lg border text-left text-sm flex items-center transition-colors focus:outline-none ${
+        className={`w-full ${heightClassName ?? "h-8"} pl-3 pr-8 rounded-lg border text-left text-sm flex items-center transition-colors focus:outline-none ${
           disabled ? "bg-gray-50 border-gray-200 text-gray-400 cursor-not-allowed"
           : open    ? "bg-white border-primary"
                     : "bg-white border-gray-200 hover:border-active/40"

@@ -1,4 +1,5 @@
 import { formatSlotsRange } from "@/lib/time-slots";
+import { formatThaiDate } from "@/lib/utils/formatters";
 
 const fmt = (n: number) => new Intl.NumberFormat("th-TH").format(n);
 
@@ -113,7 +114,7 @@ interface FlexPaymentProps {
   issuedAt?: Date;
 }
 
-const fmtTime = (d: Date) => d.toLocaleString("th-TH", { day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit" });
+const fmtTime = (d: Date) => formatThaiDate(d, { year: false, time: true });
 
 interface FlexWarrantyProps {
   origin: string;

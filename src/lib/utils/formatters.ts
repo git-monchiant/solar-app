@@ -46,12 +46,14 @@ type ThaiDateOpts = {
   monthLong?: boolean;
   time?: boolean;
   buddhist?: boolean;
+  /** Pin display to a zone (e.g. "Asia/Bangkok") for timestamps stored without offset. */
+  timeZone?: string;
 };
 
 export function formatThaiDate(d: DateLike, opts: ThaiDateOpts = {}): string {
   const date = parseDate(d, !opts.time);
   if (!date) return DASH;
-  const { weekday = false, year = true, monthLong = false, time = false, buddhist = false } = opts;
+  const { weekday = false, year = true, monthLong = false, time = false, buddhist = false, timeZone } = opts;
   const locale = buddhist ? "th-TH-u-ca-buddhist" : "th-TH";
   const fmt: Intl.DateTimeFormatOptions = {
     day: "numeric",
@@ -59,9 +61,10 @@ export function formatThaiDate(d: DateLike, opts: ThaiDateOpts = {}): string {
   };
   if (weekday) fmt.weekday = "short";
   if (year) fmt.year = "numeric";
+  if (timeZone) fmt.timeZone = timeZone;
   let out = date.toLocaleDateString(locale, fmt);
   if (time) {
-    out += ", " + date.toLocaleTimeString("th-TH", { hour: "2-digit", minute: "2-digit" });
+    out += ", " + date.toLocaleTimeString("th-TH", { hour: "2-digit", minute: "2-digit", timeZone });
   }
   return out;
 }

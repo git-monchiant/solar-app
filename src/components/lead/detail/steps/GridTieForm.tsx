@@ -2,6 +2,7 @@
 
 import { forwardRef, useCallback, useEffect, useImperativeHandle, useMemo, useRef, useState } from "react";
 import { apiFetch } from "@/lib/api";
+import Dropdown from "@/components/ui/Dropdown";
 import { compressImage } from "@/lib/utils/compressImage";
 import { useFileViewer } from "@/lib/hooks/useFileViewer";
 import FallbackImage from "@/components/ui/FallbackImage";
@@ -189,9 +190,10 @@ const GridTieForm = forwardRef<GridTieFormHandle, Props>(function GridTieForm(
       <div className="grid grid-cols-2 gap-2">
         <div>
           <label className="mb-1 block text-xs font-semibold uppercase tracking-wider text-gray-400">การไฟฟ้า</label>
-          <select value={utility} onChange={event => setUtility(event.target.value)} className="h-11 w-full rounded-lg border border-gray-200 bg-white px-3 focus:border-primary focus:outline-none">
-            <option value="">— เลือก —</option><option value="MEA">MEA (นครหลวง)</option><option value="PEA">PEA (ส่วนภูมิภาค)</option>
-          </select>
+          <Dropdown heightClassName="h-11" value={utility} onChange={v => setUtility(v)} options={[
+            { value: "MEA", label: "MEA (นครหลวง)" },
+            { value: "PEA", label: "PEA (ส่วนภูมิภาค)" },
+          ]} />
         </div>
         <div>
           <label className="mb-1 block text-xs font-semibold uppercase tracking-wider text-gray-400">เลขที่ใบรับ</label>

@@ -1,5 +1,8 @@
 "use client";
 import { CheckIcon, DocumentIcon } from "@/components/ui/icons";
+import { useDialog } from "@/components/ui/Dialog";
+import Dropdown from "@/components/ui/Dropdown";
+import { formatThaiDate } from "@/lib/utils/formatters";
 
 import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
@@ -87,6 +90,7 @@ function TabBtn({ active, onClick, label }: { active: boolean; onClick: () => vo
 type GmailStatus = { connected: boolean; email: string | null; connected_at: string | null };
 
 function GmailSection() {
+  const dialog = useDialog();
   const [status, setStatus] = useState<GmailStatus | null>(null);
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
@@ -109,7 +113,13 @@ function GmailSection() {
   };
 
   const disconnect = async () => {
-    if (!confirm("ตัดการเชื่อม Gmail?")) return;
+    const ok = await dialog.confirm({
+      title: "ตัดการเชื่อม Gmail",
+      message: "ตัดการเชื่อม Gmail ใช่หรือไม่?",
+      variant: "danger",
+      confirmText: "ตัดการเชื่อม",
+    });
+    if (!ok) return;
     setBusy(true);
     try {
       await apiFetch("/api/oauth/gmail/status", { method: "DELETE" });
@@ -179,7 +189,7 @@ function ConnectedView({ status, busy, setBusy, onDisconnect }: {
           <div className="flex-1 min-w-0">
             <div className="text-sm font-semibold text-gray-900 truncate">{status.email}</div>
             <div className="text-xs text-gray-500">
-              เชื่อมเมื่อ {status.connected_at ? new Date(status.connected_at).toLocaleString("th-TH") : "—"}
+              เชื่อมเมื่อ {formatThaiDate(status.connected_at, { time: true })}
             </div>
           </div>
         </div>
@@ -303,12 +313,12 @@ function RunningNumbersSection() {
                   </div>
                   <div>
                     <label className="text-xxs font-bold uppercase tracking-wider text-gray-400 block mb-1 md:hidden">Digits</label>
-                    <select value={cur.digits} disabled={t.locked} onChange={e => update(t.key, { digits: parseInt(e.target.value) })}
-                      className="w-full h-8 px-3 rounded-lg border border-gray-200 text-sm focus:outline-none focus:border-primary disabled:bg-gray-50 disabled:text-gray-500 disabled:cursor-not-allowed">
-                      <option value={3}>3 หลัก</option>
-                      <option value={4}>4 หลัก</option>
-                      <option value={5}>5 หลัก</option>
-                    </select>
+                    <Dropdown value={String(cur.digits)} disabled={t.locked} onChange={v => { if (v) update(t.key, { digits: parseInt(v) }); }}
+                      options={[
+                        { value: "3", label: "3 หลัก" },
+                        { value: "4", label: "4 หลัก" },
+                        { value: "5", label: "5 หลัก" },
+                      ]} />
                   </div>
                   <div className="text-xs text-gray-500 md:text-right">
                     <span className="md:hidden text-xxs font-bold uppercase tracking-wider text-gray-400 mr-1">ตัวอย่าง</span>
@@ -389,16 +399,12 @@ function WarrantySignerSection() {
         <div className="p-5 space-y-4">
           <div>
             <label className="text-xs font-semibold text-gray-600 block mb-1">User ที่จะลงนาม</label>
-            <select
-              value={current ?? ""}
-              onChange={(e) => setCurrent(e.target.value ? parseInt(e.target.value) : null)}
-              className="w-full h-8 px-3 rounded-lg border border-gray-200 text-sm focus:outline-none focus:border-primary"
-            >
-              <option value="">— ไม่ระบุ (ใช้ผู้ที่กดออกใบ หรือเจ้าของ lead) —</option>
-              {users.map(u => (
-                <option key={u.id} value={u.id}>{u.full_name}</option>
-              ))}
-            </select>
+            <Dropdown
+              value={current != null ? String(current) : ""}
+              onChange={(v) => setCurrent(v ? parseInt(v) : null)}
+              placeholder="— ไม่ระบุ (ใช้ผู้ที่กดออกใบ หรือเจ้าของ lead) —"
+              options={users.map(u => ({ value: String(u.id), label: u.full_name }))}
+            />
             {users.length === 0 && (
               <div className="text-xs text-amber-700 mt-2">
                 ยังไม่มี user ที่อัพโหลดลายเซ็นในระบบ — ให้ user ไปที่หน้า Profile → ลายเซ็น ก่อน
@@ -527,6 +533,7 @@ function ChannelsSection() {
 // ใช้ได้ทุก lead — ส่ง URL เก็บไว้ที่ app_settings.customer_checklist_pdf_url.
 // step ไหนที่ download — รอ user บอก (จะใส่ลิงก์ลง step นั้นภายหลัง)
 function CustomerDocsSection() {
+  const dialog = useDialog();
   const [url, setUrl] = useState<string | null>(null);
   const [name, setName] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
@@ -583,7 +590,13 @@ function CustomerDocsSection() {
 
   const remove = async () => {
     if (!url) return;
-    if (!confirm("ลบไฟล์ checklist นี้?")) return;
+    const ok = await dialog.confirm({
+      title: "ลบไฟล์ checklist",
+      message: "ลบไฟล์ checklist นี้ใช่หรือไม่?",
+      variant: "danger",
+      confirmText: "ลบไฟล์",
+    });
+    if (!ok) return;
     setBusy(true);
     try {
       await apiFetch("/api/settings", {

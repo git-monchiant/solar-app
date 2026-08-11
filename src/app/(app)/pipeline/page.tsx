@@ -1,6 +1,7 @@
 "use client";
 
 import { apiFetch } from "@/lib/api";
+import Dropdown from "@/components/ui/Dropdown";
 import { useEffect, useState, useCallback } from "react";
 import ListPageHeader from "@/components/layout/ListPageHeader";
 import LeadCard, { type LeadData } from "@/components/lead/LeadCard";
@@ -219,34 +220,38 @@ export default function PipelinePage() {
         onTabChange={(k) => { setTab(k as TabKey); localStorage.setItem("pipelineTab", k); }}
         tabsRight={(
           <div className="hidden md:flex items-center gap-2">
-            <select
+            <Dropdown
+              className="w-36"
               value={sortField}
-              onChange={(e) => {
-                const v = e.target.value as typeof sortField;
-                setSortField(v);
-                localStorage.setItem("pipeline.sortField", v);
+              onChange={(v) => {
+                if (!v) return;
+                const s = v as typeof sortField;
+                setSortField(s);
+                localStorage.setItem("pipeline.sortField", s);
               }}
-              className="h-7 px-2 pr-6 rounded-md border border-gray-200 bg-white text-xxs font-medium text-gray-700 focus:outline-none focus:border-gray-400"
-            >
-              <option value="follow_up">วันนัดติดตาม</option>
-              <option value="created">วันที่สร้าง</option>
-              <option value="activity">กิจกรรมล่าสุด</option>
-              {tab === "survey" && <option value="survey_date">วันที่สำรวจ</option>}
-              {tab === "install" && <option value="install_date">วันที่ติดตั้ง</option>}
-              <option value="name">ชื่อลูกค้า</option>
-            </select>
-            <select
+              options={[
+                { value: "follow_up", label: "วันนัดติดตาม" },
+                { value: "created", label: "วันที่สร้าง" },
+                { value: "activity", label: "กิจกรรมล่าสุด" },
+                ...(tab === "survey" ? [{ value: "survey_date", label: "วันที่สำรวจ" }] : []),
+                ...(tab === "install" ? [{ value: "install_date", label: "วันที่ติดตั้ง" }] : []),
+                { value: "name", label: "ชื่อลูกค้า" },
+              ]}
+            />
+            <Dropdown
+              className="w-32"
               value={sortOrder}
-              onChange={(e) => {
-                const v = e.target.value as typeof sortOrder;
-                setSortOrder(v);
-                localStorage.setItem("pipeline.sortOrder", v);
+              onChange={(v) => {
+                if (!v) return;
+                const s = v as typeof sortOrder;
+                setSortOrder(s);
+                localStorage.setItem("pipeline.sortOrder", s);
               }}
-              className="h-7 px-2 pr-6 rounded-md border border-gray-200 bg-white text-xxs font-medium text-gray-700 focus:outline-none focus:border-gray-400"
-            >
-              <option value="asc">{sortField === "name" ? "ก-ฮ" : "เก่า → ใหม่"}</option>
-              <option value="desc">{sortField === "name" ? "ฮ-ก" : "ใหม่ → เก่า"}</option>
-            </select>
+              options={[
+                { value: "asc", label: sortField === "name" ? "ก-ฮ" : "เก่า → ใหม่" },
+                { value: "desc", label: sortField === "name" ? "ฮ-ก" : "ใหม่ → เก่า" },
+              ]}
+            />
           </div>
         )}
       />

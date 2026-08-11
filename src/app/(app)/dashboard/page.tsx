@@ -1,5 +1,7 @@
 "use client";
 import { DownloadIcon } from "@/components/ui/icons";
+import { useDialog } from "@/components/ui/Dialog";
+import Dropdown from "@/components/ui/Dropdown";
 // xlsx-js-style — same fork the Lead Tracking export uses (writes cell styles).
 import * as XLSX from "xlsx-js-style";
 
@@ -66,7 +68,7 @@ const moneyOf = (r: { order_total: number | null; install_extra_cost: number | n
   const net = gross - discount;
   return { value: gross, net, discount, paid, pending: Number(r.pending_amount || 0), due: net - paid };
 };
-const fmtBaht = (v: number) => `฿${Math.round(v).toLocaleString("th-TH")}`;
+const fmtBaht = (v: number) => `฿${fmt(Math.round(v))}`;
 
 type LifecycleRow = { [K in LifecycleCol]: string | null }
   & { [K in ContactStateField]: "yes" | "no" | null }
@@ -119,6 +121,7 @@ interface DashboardData {
 }
 
 export default function DashboardPage() {
+  const dialog = useDialog();
   const [data, setData] = useState<DashboardData | null>(null);
   const [devData, setDevData] = useState<DevData | null>(null);
   const [lineUsers, setLineUsers] = useState<{ created_at: string; phone: string | null; house_number: string | null }[]>([]);
@@ -279,12 +282,10 @@ export default function DashboardPage() {
               {/* Global created_at filter — every chip / funnel / popup
                   downstream uses filteredLifecycleRows. */}
               <div className="hidden md:flex items-center gap-1 text-xs text-gray-500">
-                <select value={filterMode} onChange={e => setFilterMode(e.target.value as "created" | "activity")}
-                  className="h-8 px-2 rounded-lg bg-white border border-gray-200 text-xs text-gray-700 focus:outline-none focus:border-gray-300"
-                  title="เลือกเงื่อนไขฟิลเตอร์">
-                  <option value="created">วันที่สร้างลีด</option>
-                  <option value="activity">กิจกรรม</option>
-                </select>
+                <Dropdown className="w-36" value={filterMode} onChange={v => { if (v) setFilterMode(v as "created" | "activity"); }} options={[
+                  { value: "created", label: "วันที่สร้างลีด" },
+                  { value: "activity", label: "กิจกรรม" },
+                ]} />
                 <input type="date" value={dateFrom} onChange={e => setDateFrom(e.target.value)}
                   className="h-8 px-2 rounded-lg bg-white border border-gray-200 text-xs text-gray-700 focus:outline-none focus:border-gray-300"
                   title="ช่วงวันที่ (จาก)" />
@@ -314,7 +315,7 @@ export default function DashboardPage() {
                     if (dateTo)   qs.set("to",   dateTo);
                     qs.set("mode", filterMode);
                     const res = await fetch(`/api/report/dashboard-pdf?${qs.toString()}`, { headers: { ...getUserIdHeader() } });
-                    if (!res.ok) { alert("ดาวน์โหลด PDF ไม่สำเร็จ"); return; }
+                    if (!res.ok) { dialog.alert({ title: "โหลดไม่สำเร็จ", message: "ดาวน์โหลด PDF ไม่สำเร็จ", variant: "danger" }); return; }
                     const blob = await res.blob();
                     const url = URL.createObjectURL(blob);
                     const a = document.createElement("a");
@@ -1010,15 +1011,16 @@ function ActivityChart({ data }: { data: { day: string; lead_id: number; full_na
         <div className="text-sm font-semibold uppercase tracking-wider text-gray-400">
           การติดตามลูกค้า <span className="normal-case text-gray-300">(30 วันล่าสุด)</span>
         </div>
-        <select
+        <Dropdown
+          className="w-28"
           value={mode}
-          onChange={(e) => setMode(e.target.value as typeof mode)}
-          className="h-7 px-2 pr-6 rounded-md border border-gray-200 bg-white text-xxs font-medium text-gray-700 focus:outline-none focus:border-gray-400"
-        >
-          <option value="all">All</option>
-          <option value="create">Create</option>
-          <option value="activity">Activity</option>
-        </select>
+          onChange={(v) => { if (v) setMode(v as typeof mode); }}
+          options={[
+            { value: "all", label: "All" },
+            { value: "create", label: "Create" },
+            { value: "activity", label: "Activity" },
+          ]}
+        />
       </div>
       <div className="flex">
         {/* Y axis — only max + 0 */}
@@ -1144,15 +1146,16 @@ function LineGrowthChart({ users }: { users: { created_at: string; phone: string
         <div className="text-sm font-semibold uppercase tracking-wider text-gray-400">
           Add LINE OA รายวัน <span className="normal-case text-gray-300">(30 วันล่าสุด)</span>
         </div>
-        <select
+        <Dropdown
+          className="w-32"
           value={mode}
-          onChange={(e) => setMode(e.target.value as typeof mode)}
-          className="h-7 px-2 pr-6 rounded-md border border-gray-200 bg-white text-xxs font-medium text-gray-700 focus:outline-none focus:border-gray-400"
-        >
-          <option value="all">All</option>
-          <option value="line">Line</option>
-          <option value="line_phone">Line + Phone</option>
-        </select>
+          onChange={(v) => { if (v) setMode(v as typeof mode); }}
+          options={[
+            { value: "all", label: "All" },
+            { value: "line", label: "Line" },
+            { value: "line_phone", label: "Line + Phone" },
+          ]}
+        />
       </div>
       <div className="flex">
         <div className="flex flex-col justify-between pr-2" style={{ height: chartH }}>

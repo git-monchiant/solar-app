@@ -1,5 +1,6 @@
 "use client";
 import { apiFetch } from "@/lib/api";
+import Dropdown from "@/components/ui/Dropdown";
 import { Fragment, useEffect, useState } from "react";
 import Header from "@/components/layout/Header";
 import { LeadLink } from "@/components/lead/LeadLink";
@@ -190,15 +191,15 @@ export default function ReportPage() {
         <div className="bg-white rounded-xl border border-gray-300 p-4 space-y-3">
           <input type="text" value={search} onChange={e => setSearch(e.target.value)} placeholder="ค้นหาชื่อ, เบอร์, เลขเอกสาร, โครงการ..." className="w-full h-8 px-3 rounded-lg border border-gray-200 text-sm focus:outline-none focus:border-primary" />
           <div className="flex flex-wrap gap-2">
-            <select value={filterProject} onChange={e => setFilterProject(e.target.value)} className="h-8 px-3 rounded-lg border border-gray-200 text-xs bg-white focus:outline-none focus:border-primary">
-              <option value="all">ทุกโครงการ</option>
-              {projects.map(p => <option key={p} value={p}>{p}</option>)}
-            </select>
-            <select value={filterStatus} onChange={e => setFilterStatus(e.target.value as "all" | "outstanding" | "settled" | "pending_approval")} className="h-8 px-3 rounded-lg border border-gray-200 text-xs bg-white focus:outline-none focus:border-primary">
-              <option value="all">สถานะทั้งหมด</option>
-              <option value="outstanding">ยังค้างรับ</option>
-              <option value="settled">ครบแล้ว</option>
-            </select>
+            <Dropdown className="w-40" value={filterProject} onChange={v => { if (v) setFilterProject(v); }} options={[
+              { value: "all", label: "ทุกโครงการ" },
+              ...projects.map(p => ({ value: p, label: p })),
+            ]} />
+            <Dropdown className="w-36" value={filterStatus} onChange={v => { if (v) setFilterStatus(v as "all" | "outstanding" | "settled" | "pending_approval"); }} options={[
+              { value: "all", label: "สถานะทั้งหมด" },
+              { value: "outstanding", label: "ยังค้างรับ" },
+              { value: "settled", label: "ครบแล้ว" },
+            ]} />
             <div className="flex items-center gap-1">
               <input type="date" value={dateFrom} onChange={e => setDateFrom(e.target.value)} className="h-8 px-2 rounded-lg border border-gray-200 text-xs bg-white focus:outline-none focus:border-primary" />
               <span className="text-xs text-gray-400">—</span>

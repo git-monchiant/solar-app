@@ -1,5 +1,6 @@
 "use client";
 import { CheckIcon, ChevronLeftIcon, ChevronRightIcon, ClockIcon, LineIcon } from "@/components/ui/icons";
+import Dropdown from "@/components/ui/Dropdown";
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { apiFetch } from "@/lib/api";
@@ -1179,28 +1180,22 @@ export default function OrderStep({ lead, state, refresh, expanded, onToggle }: 
                   </label>
                 );
                 const bankPicker = row.method === "loan" ? (
-                  <select
+                  <Dropdown
+                    className="w-full md:w-56"
                     value={row.loan_bank || ""}
                     disabled={paid}
-                    onChange={e => updateInstallment(i, { loan_bank: e.target.value as LoanBank })}
-                    className={`w-full md:w-auto h-8 px-2 rounded-md border border-gray-200 bg-white text-sm focus:outline-none focus:border-primary ${paid ? "opacity-60" : ""}`}
-                  >
-                    {LOAN_BANKS.map(b => (
-                      <option key={b.value} value={b.value}>{b.label}</option>
-                    ))}
-                  </select>
+                    onChange={v => updateInstallment(i, { loan_bank: (v || null) as LoanBank | null })}
+                    options={LOAN_BANKS}
+                  />
                 ) : null;
                 const ccPicker = row.method === "cc" ? (
-                  <select
-                    value={row.cc_pct ?? CC_DEFAULT}
+                  <Dropdown
+                    className="w-full md:w-24"
+                    value={String(row.cc_pct ?? CC_DEFAULT)}
                     disabled={paid}
-                    onChange={e => updateInstallment(i, { cc_pct: parseFloat(e.target.value) })}
-                    className={`w-full md:w-auto h-8 px-2 rounded-md border border-gray-200 bg-white text-sm focus:outline-none focus:border-primary ${paid ? "opacity-60" : ""}`}
-                  >
-                    {CC_RATES.map(r => (
-                      <option key={r} value={r}>{r === 0 ? "0%" : `+${r}%`}</option>
-                    ))}
-                  </select>
+                    onChange={v => updateInstallment(i, { cc_pct: v ? parseFloat(v) : CC_DEFAULT })}
+                    options={CC_RATES.map(r => ({ value: String(r), label: r === 0 ? "0%" : `+${r}%` }))}
+                  />
                 ) : null;
                 const afterInstall = row.when === "after";
                 // Rows explicitly due after installation keep their installment

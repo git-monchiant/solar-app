@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import Header from "@/components/layout/Header";
 import { LeadLink } from "@/components/lead/LeadLink";
 import { useOpenLead } from "@/lib/hooks/useOpenLead";
+import { useDialog } from "@/components/ui/Dialog";
 import FallbackImage from "@/components/ui/FallbackImage";
 import ImageLightbox, { type LightboxImage } from "@/components/ui/ImageLightbox";
 import { formatTHB } from "@/lib/utils/formatters";
@@ -77,6 +78,7 @@ interface PendingItem {
 
 export default function PendingApprovalReport() {
   const openLead = useOpenLead();
+  const dialog = useDialog();
   const [data, setData] = useState<ReportData | null>(null);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState("");
@@ -253,7 +255,7 @@ export default function PendingApprovalReport() {
       });
       window.setTimeout(() => openChequePaymentContext(item, false), 150);
     } catch (e) {
-      alert(e instanceof Error ? e.message : "ยืนยันรับเช็คไม่สำเร็จ");
+      dialog.alert({ title: "ยืนยันรับเช็คไม่สำเร็จ", message: e instanceof Error ? e.message : "เกิดข้อผิดพลาด", variant: "danger" });
     } finally {
       setChequeReceivingId(null);
     }

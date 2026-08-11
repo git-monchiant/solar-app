@@ -1,5 +1,6 @@
 "use client";
 import { useEffect, useState } from "react";
+import { formatTHB } from "@/lib/utils/formatters";
 import { useParams } from "next/navigation";
 import QRCode from "qrcode";
 import { formatSlotsRange } from "@/lib/time-slots";
@@ -253,7 +254,7 @@ export default function SurveyPdfPage() {
                         { label: "L-N", value: lead.survey_voltage_ln != null ? `${lead.survey_voltage_ln} V` : "—" },
                         { label: "L-L", value: lead.survey_voltage_ll != null ? `${lead.survey_voltage_ll} V` : "—" },
                       ]} />
-                      <Field label="ค่าไฟเฉลี่ย/เดือน" value={lead.survey_monthly_bill != null ? `${lead.survey_monthly_bill.toLocaleString()} บาท` : "—"} />
+                      <Field label="ค่าไฟเฉลี่ย/เดือน" value={lead.survey_monthly_bill != null ? `${formatTHB(lead.survey_monthly_bill)} บาท` : "—"} />
                       <GroupRow label="Consumer Unit / MDB" items={[
                         { label: "ยี่ห้อ", value: lead.survey_mdb_brand || "—" },
                         { label: "รุ่น", value: lead.survey_mdb_model || "—" },
@@ -381,7 +382,7 @@ export default function SurveyPdfPage() {
                                 <td className="px-3 py-1.5">{p.solar_panels > 0 ? `${p.solar_panels} × ${p.panel_watt}W` : "—"}</td>
                                 <td className="px-3 py-1.5">{p.inverter_kw > 0 ? `${p.inverter_brand} ${p.inverter_kw}kW` : "—"}</td>
                                 <td className="px-3 py-1.5">{p.has_battery ? `${p.battery_brand || ""} ${p.battery_kwh}kWh`.trim() : "—"}</td>
-                                <td className="py-1.5 text-right font-mono" style={{ paddingLeft: "12px", paddingRight: "32px" }}>{p.price.toLocaleString()}</td>
+                                <td className="py-1.5 text-right font-mono" style={{ paddingLeft: "12px", paddingRight: "32px" }}>{formatTHB(p.price)}</td>
                               </tr>
                             ))}
                           </tbody>

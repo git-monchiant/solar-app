@@ -1,4 +1,5 @@
 import { getDb, sql, toSqlDate } from "@/lib/db";
+import { formatTHB } from "@/lib/utils/formatters";
 import { getSourceStyle, normalizeSourceKey } from "@/lib/source-tag";
 import {
   ABLE_OR_NOT, BILL_RISE_ACTIONS, BUSINESS_TYPES, DAYTIME_OCCUPANTS,
@@ -424,7 +425,7 @@ function answerLabel(row: QuestionnaireRow, dimension: string, value: string, sc
   if (dimension === "customer_group") return value === "unclassified" ? "ยังไม่ระบุกลุ่มลูกค้า" : optionLabel(CUSTOMER_GROUPS, row.customer_group);
   if (dimension === "sales_grade") return value === "ungraded" ? "ยังไม่จัด Sales Grade" : `Grade ${row.customer_grade || "—"} · ${optionLabel(SALES_GRADES, row.customer_grade)}`;
   if (dimension === "decision_timeline" && value === "unanswered") return "ยังไม่ตอบระยะเวลาในการตัดสินใจ";
-  if (dimension === "monthly_bill") return row.monthly_bill ? `${Number(row.monthly_bill).toLocaleString("th-TH")} บาท` : "—";
+  if (dimension === "monthly_bill") return row.monthly_bill ? `${formatTHB(Number(row.monthly_bill))} บาท` : "—";
   if (dimension === "decision_factor") {
     const factor = DECISION_FACTORS.find(f => f.key === value);
     return `${factor?.label || value}: ${score || parseFactors(row.decision_factors)[value] || "—"}/5`;

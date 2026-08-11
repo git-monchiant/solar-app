@@ -1,5 +1,6 @@
 "use client";
 import { CheckIcon, PlusIcon } from "@/components/ui/icons";
+import Dropdown from "@/components/ui/Dropdown";
 
 import { apiFetch } from "@/lib/api";
 import { useEffect, useState } from "react";
@@ -272,32 +273,36 @@ export default function TodayPage() {
         </span>
         งานของฉัน
       </button>
-      <select
+      <Dropdown
+        className="w-36"
         value={sortField}
-        onChange={(e) => {
-          const v = e.target.value as typeof sortField;
-          setSortField(v);
-          localStorage.setItem("today.sortField", v);
+        onChange={(v) => {
+          if (!v) return;
+          const s = v as typeof sortField;
+          setSortField(s);
+          localStorage.setItem("today.sortField", s);
         }}
-        className="h-7 px-2 pr-6 rounded-md border border-gray-200 bg-white text-xxs font-medium text-gray-700 focus:outline-none focus:border-gray-400"
-      >
-        <option value="follow_up">วันนัดติดตาม</option>
-        <option value="created">วันที่สร้าง</option>
-        <option value="activity">กิจกรรมล่าสุด</option>
-        <option value="name">ชื่อลูกค้า</option>
-      </select>
-      <select
+        options={[
+          { value: "follow_up", label: "วันนัดติดตาม" },
+          { value: "created", label: "วันที่สร้าง" },
+          { value: "activity", label: "กิจกรรมล่าสุด" },
+          { value: "name", label: "ชื่อลูกค้า" },
+        ]}
+      />
+      <Dropdown
+        className="w-32"
         value={sortOrder}
-        onChange={(e) => {
-          const v = e.target.value as typeof sortOrder;
-          setSortOrder(v);
-          localStorage.setItem("today.sortOrder", v);
+        onChange={(v) => {
+          if (!v) return;
+          const s = v as typeof sortOrder;
+          setSortOrder(s);
+          localStorage.setItem("today.sortOrder", s);
         }}
-        className="h-7 px-2 pr-6 rounded-md border border-gray-200 bg-white text-xxs font-medium text-gray-700 focus:outline-none focus:border-gray-400"
-      >
-        <option value="asc">{sortField === "name" ? "ก-ฮ" : "เก่า → ใหม่"}</option>
-        <option value="desc">{sortField === "name" ? "ฮ-ก" : "ใหม่ → เก่า"}</option>
-      </select>
+        options={[
+          { value: "asc", label: sortField === "name" ? "ก-ฮ" : "เก่า → ใหม่" },
+          { value: "desc", label: sortField === "name" ? "ฮ-ก" : "ใหม่ → เก่า" },
+        ]}
+      />
     </div>
   );
 

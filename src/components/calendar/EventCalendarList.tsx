@@ -1,5 +1,6 @@
 "use client";
 import { BoltIcon, XIcon } from "@/components/ui/icons";
+import { useDialog } from "@/components/ui/Dialog";
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import { LeadLink } from "@/components/lead/LeadLink";
@@ -100,6 +101,7 @@ export default function EventCalendarList({ monthsBack, monthsForward, days, zon
   // anchor (re-render); window length stays fixed.
   const initBack = monthsBack ?? (days ? 0 : 1);
   const initForward = monthsForward ?? (days ? Math.ceil(days / 30) : 3);
+  const dialog = useDialog();
   const today = useMemo(() => new Date(), []);
   const [internalAnchor, setInternalAnchor] = useState<{ y: number; m: number }>(() => {
     const a = new Date(today.getFullYear(), today.getMonth() - initBack, 1);
@@ -307,7 +309,13 @@ export default function EventCalendarList({ monthsBack, monthsForward, days, zon
                                   type="button"
                                   title="ลบ block นี้"
                                   onClick={async () => {
-                                    if (!confirm("ลบ block นี้?")) return;
+                                    const ok = await dialog.confirm({
+                                      title: "ลบ block",
+                                      message: "ลบ block นี้ใช่หรือไม่?",
+                                      variant: "danger",
+                                      confirmText: "ลบ",
+                                    });
+                                    if (!ok) return;
                                     // Block ids in /api/surveys/scheduled are
                                     // emitted negative so they don't collide
                                     // with lead ids — flip back for the route.

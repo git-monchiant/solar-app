@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { apiFetch } from "@/lib/api";
+import { formatThaiDate } from "@/lib/utils/formatters";
 import Header from "@/components/layout/Header";
 import { useMe } from "@/lib/roles";
 
@@ -27,8 +28,7 @@ const sourceTint: Record<string, string> = {
 };
 
 function fmtTime(iso: string) {
-  const d = new Date(iso);
-  return d.toLocaleString("th-TH", { day: "2-digit", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit" });
+  return formatThaiDate(iso, { time: true });
 }
 
 export default function ClientErrorsPage() {

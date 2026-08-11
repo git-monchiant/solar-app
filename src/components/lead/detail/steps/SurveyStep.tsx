@@ -19,7 +19,7 @@ import { compressImage } from "@/lib/utils/compressImage";
 import { isMobileDevice, openInNewTab } from "@/lib/utils/device";
 import { buildAppointmentFlex, buildSurveyResultFlex } from "@/lib/utils/line-flex";
 import { formatSlotsRange } from "@/lib/time-slots";
-import { formatThaiDate as formatDate } from "@/lib/utils/formatters";
+import { formatTHB, formatThaiDate as formatDate } from "@/lib/utils/formatters";
 import DoneSection from "./DoneSection";
 import {
   ROOF_MATERIAL_LABEL as ROOF_MATERIAL_MAP,
@@ -512,7 +512,7 @@ export default function SurveyStep({ lead, state, refresh, packages, expanded, o
             { label: "L-N", value: lead.survey_voltage_ln != null ? `${lead.survey_voltage_ln} V` : "—" },
             { label: "L-L", value: lead.survey_voltage_ll != null ? `${lead.survey_voltage_ll} V` : "—" },
           ]} />
-          <DoneRow label="ค่าไฟ/เดือน" value={lead.survey_monthly_bill != null ? `${lead.survey_monthly_bill.toLocaleString()} บาท` : "—"} />
+          <DoneRow label="ค่าไฟ/เดือน" value={lead.survey_monthly_bill != null ? `${formatTHB(lead.survey_monthly_bill)} บาท` : "—"} />
           <DoneGroup label="Consumer Unit / MDB" items={[
             { label: "ยี่ห้อ", value: lead.survey_mdb_brand || "—" },
             { label: "รุ่น", value: lead.survey_mdb_model || "—" },
@@ -570,7 +570,7 @@ export default function SurveyStep({ lead, state, refresh, packages, expanded, o
                     {pkg.is_upgrade && <span className="text-xxs font-bold text-blue-600 bg-blue-50 px-1.5 py-0.5 rounded uppercase">UPGRADE</span>}
                     {pkg.name}
                   </div>
-                  <div className="text-sm font-bold font-mono tabular-nums">{pkg.price.toLocaleString()} ฿</div>
+                  <div className="text-sm font-bold font-mono tabular-nums">{formatTHB(pkg.price)} ฿</div>
                 </div>
                 <div className="text-xs text-gray-500 mt-0.5 flex flex-wrap gap-x-2">
                   <span>{pkg.kwp} kWp</span>
@@ -1042,7 +1042,7 @@ export default function SurveyStep({ lead, state, refresh, packages, expanded, o
                           </div>
                         </div>
                         <div className="text-right shrink-0">
-                          <div className="text-sm font-bold font-mono tabular-nums">{p.price.toLocaleString()}</div>
+                          <div className="text-sm font-bold font-mono tabular-nums">{formatTHB(p.price)}</div>
                           <div className="text-xs text-gray-400">THB</div>
                         </div>
                       </div>

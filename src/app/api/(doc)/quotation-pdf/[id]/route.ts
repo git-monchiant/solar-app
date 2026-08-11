@@ -1,5 +1,6 @@
 import { readFileSync } from "fs";
 import { join } from "path";
+import { formatTHB } from "@/lib/utils/formatters";
 import { createHash } from "crypto";
 import { randomUUID } from "crypto";
 import { NextRequest, NextResponse } from "next/server";
@@ -42,11 +43,7 @@ const esc = (value: unknown) =>
         "'": "&#39;",
       })[char]!,
   );
-const money = (value: unknown) =>
-  Number(value || 0).toLocaleString("th-TH", {
-    minimumFractionDigits: 2,
-    maximumFractionDigits: 2,
-  });
+const money = (value: unknown) => formatTHB(Number(value || 0), { decimals: 2 });
 const thaiDate = (value: unknown) =>
   value
     ? new Intl.DateTimeFormat("th-TH", {
