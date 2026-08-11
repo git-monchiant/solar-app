@@ -96,11 +96,28 @@ git push -u origin v3/module-billing
 
 ## รอบการส่งงาน
 
-1. dev แตก branch จาก `main` (หรือ `v3`) → เขียน → push → เปิด PR
-2. ใน PR บอกให้ชัด: แก้อะไร, ทดสอบยังไง, **มี migration ไหม**
-3. เจ้าของระบบดึงมาเทสกับ `solardb_dev` → merge เข้า `main`
-4. เจ้าของระบบรัน migration + `./deploy_prd.sh` (bump version ก่อนทุกครั้ง)
-5. deploy สำเร็จ → สคริปต์ tag `v<version>` ให้อัตโนมัติ → merge `main` → `v3`
+**ทุกงานเข้าเป็น PR เสมอ ไม่มีข้อยกเว้น** — ทั้งงาน v2 และ v3
+ห้าม push ตรงเข้า `main` หรือ `v3` แม้ว่า `v3` จะไม่ได้ตั้งกฎบล็อกไว้ก็ตาม
+**เจ้าของระบบเป็นคนกด merge เท่านั้น**
+
+1. dev แตก branch จาก `main` (งาน v2) หรือ `v3` (งาน v3) → เขียน → push → เปิด PR
+2. กรอกตามฟอร์มที่ขึ้นมาให้: แก้อะไร, ทดสอบยังไง, **มี migration ไหม**
+   (`.github/pull_request_template.md` — GitHub เติมให้เองตอนเปิด PR)
+3. `.github/CODEOWNERS` ใส่เจ้าของระบบเป็น reviewer ให้อัตโนมัติ ไม่ต้องขอเอง
+4. เจ้าของระบบดึงมาเทสกับ DB ของตัวเอง แล้วกด **Squash and merge** บน GitHub
+   (บีบเป็น commit เดียว ประวัติ main/v3 อ่านง่าย) → ลบ branch ทิ้ง
+5. เจ้าของระบบรัน migration + `./deploy_prd.sh` (bump version ก่อนทุกครั้ง)
+6. deploy สำเร็จ → สคริปต์ tag `v<version>` ให้อัตโนมัติ → merge `main` → `v3`
+
+### เจ้าของระบบเทส PR ยังไง
+
+```bash
+git fetch origin
+git checkout fix/quotation-vat     # ชื่อ branch ของ PR นั้น
+npm install                        # เผื่อมี dependency ใหม่
+./start.sh                         # ลองใช้งานจริงกับ DB ของตัวเอง
+```
+เทสผ่านแล้วกลับไปกด merge บน GitHub (อย่า merge ในเครื่องแล้ว push ตรง — PR จะค้าง)
 
 ## วัน cutover ไป v3
 
