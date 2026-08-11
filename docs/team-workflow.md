@@ -33,6 +33,43 @@ v3 ─────────────────────────�
 - `deploy_prd.sh` จะปฏิเสธถ้าไม่ได้อยู่ `main` + tree สะอาด + sync กับ origin
   (ข้ามได้ด้วย `ALLOW_DIRTY=1` แต่ไม่ควรใช้)
 
+## เริ่มงานวันแรก
+
+```bash
+git clone https://github.com/git-monchiant/solar-app.git
+cd solar-app
+npm install
+cp .env.example .env.local        # แล้วเติมค่าจริง (ขอจากเจ้าของระบบ)
+./start.sh                        # เปิดที่ http://localhost:3010
+```
+
+`git clone` จะได้ **`main` (= v2 บน prod)** เสมอ เพราะเป็น default branch
+ถ้าทำ v3 ให้สลับก่อน: `git checkout v3`
+
+## คำสั่งที่ dev ใช้ประจำ
+
+```bash
+# แก้บั๊กของ v2
+git checkout main && git pull
+git checkout -b fix/quotation-vat
+# ...แก้โค้ด + ทดสอบกับ DB ของตัวเอง...
+git add -A && git commit -m "แก้ VAT ในใบเสนอราคา"
+git push -u origin fix/quotation-vat
+# เปิด PR บน GitHub → base: main
+
+# งานโมดูล v3
+git checkout v3 && git pull
+git checkout -b v3/module-billing
+# ...ทำงาน...
+git push -u origin v3/module-billing
+# เปิด PR บน GitHub → base: v3
+```
+
+- 1 branch = 1 เรื่อง อย่ารวมหลายงานไว้ด้วยกัน จะเทสแยกไม่ได้
+- `git pull` ก่อนแตก branch เสมอ ไม่งั้นทำงานบนของเก่า
+- push เข้า `main` ตรงๆ ไม่ได้ (GitHub บังคับให้ผ่าน PR) — ต้องแตก branch เท่านั้น
+- มี migration ให้เขียนไฟล์ไว้ใน PR **แต่ไม่ต้องรัน** และเขียนบอกในคำอธิบาย PR
+
 ## ฐานข้อมูล
 
 | DB | ใช้ทำอะไร | ใครแตะ |
