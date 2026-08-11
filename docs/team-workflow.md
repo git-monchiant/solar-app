@@ -19,12 +19,16 @@
 
 ```
 main ───────────────────────────►  v2 = สิ่งที่อยู่บน prod
-  └─ fix/<เรื่อง> ──PR──► main
+                                    เจ้าของระบบดูแลคนเดียว (bug fix + deploy)
 
 v3 ─────────────────────────────►  v3 (worktree: ../solar-app-v3)
-  ├─ v3/<ชื่องานสั้นๆ> ──PR──► v3
+  ├─ v3/<ชื่องานสั้นๆ> ──PR──► v3    ทีมพัฒนาทุกคนทำที่นี่
   └─ v3/<ชื่องานสั้นๆ> ──PR──► v3
 ```
+
+**ทีมพัฒนาแตก branch จาก `v3` เสมอ** และเปิด PR กลับเข้า `v3` เท่านั้น
+ไม่ต้องยุ่งกับ `main` เลย (ถ้ามี bug บน prod ที่ต้องแก้ด่วน เจ้าของระบบจัดการเอง
+แล้ว merge `main → v3` ลงมาให้)
 
 - **merge ทางเดียว `main → v3`** ทำทุกครั้งหลัง deploy v2 (อย่างน้อยสัปดาห์ละครั้ง)
   ห้าม merge v3 กลับ main จนถึงวัน cutover
@@ -49,21 +53,18 @@ cp .env.example .env.local        # แล้วเติมค่าจริ�
 ## คำสั่งที่ dev ใช้ประจำ
 
 ```bash
-# แก้บั๊กของ v2
-git checkout main && git pull
-git checkout -b fix/quotation-vat
-# ...แก้โค้ด + ทดสอบกับ DB ของตัวเอง...
-git add -A && git commit -m "แก้ VAT ในใบเสนอราคา"
-git push -u origin fix/quotation-vat
-# เปิด PR บน GitHub → base: main
+git checkout v3 && git pull                # เริ่มจาก v3 ล่าสุดเสมอ
+git checkout -b v3/redesign-lead-list      # ตั้งชื่อตามสิ่งที่ทำ
 
-# งาน v3
-git checkout v3 && git pull
-git checkout -b v3/redesign-lead-list      # ตั้งชื่อตามสิ่งที่ทำ ไม่ต้องเป็นชื่อโมดูล
-# ...ทำงาน...
+# ...เขียนโค้ด + ทดสอบกับ DB ของตัวเอง...
+
+git add -A && git commit -m "ปรับหน้ารายการ lead"
 git push -u origin v3/redesign-lead-list
-# เปิด PR บน GitHub → base: v3
+# เปิด PR บน GitHub → base ต้องเป็น v3 (ไม่ใช่ main)
 ```
+
+รอบถัดไปเริ่มใหม่จากบรรทัดแรกเสมอ — `git checkout v3 && git pull` เพื่อดึงงานของ
+คนอื่นที่ merge เข้าไปแล้ว และงาน v2 ที่ merge forward ลงมา
 
 - **ชื่อ branch ตั้งตามสิ่งที่ทำ** ไม่ต้องแบ่งเป็นโมดูล เช่น `v3/redesign-lead-list`,
   `v3/new-report-page`, `fix/quotation-vat` — ขอแค่อ่านแล้วรู้ว่าคืองานอะไร
