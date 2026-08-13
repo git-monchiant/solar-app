@@ -9,6 +9,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 
 type NotificationItem = {
   id: number;
+  notification_source: "quotation" | "accounting";
   lead_id: number;
   approval_stage: string | null;
   title: string;
@@ -17,6 +18,8 @@ type NotificationItem = {
   created_at: string;
   doc_no: string;
   quotation_status: string;
+  target_url: string | null;
+  resolved_at: string | null;
 };
 
 export default function NotificationBell() {
@@ -35,8 +38,10 @@ export default function NotificationBell() {
       : activeRoles.includes("sales_sup")
         ? "sales_sup"
         : null;
-  const notificationUrl = `/api/notifications${stage ? `?stage=${stage}` : ""}`;
-  const summaryUrl = `/api/notifications?summary=1${stage ? `&stage=${stage}` : ""}`;
+  const accountScope = !activeRoles.includes("admin") && activeRoles.includes("account");
+  const notificationQuery = stage ? `?stage=${stage}` : accountScope ? "?scope=account" : "";
+  const notificationUrl = `/api/notifications${notificationQuery}`;
+  const summaryUrl = `/api/notifications?summary=1${stage ? `&stage=${stage}` : accountScope ? "&scope=account" : ""}`;
 
   const loadSummary = useCallback(async () => {
     try {
@@ -117,7 +122,7 @@ export default function NotificationBell() {
         await apiFetch(notificationUrl, {
           method: "PATCH",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ id: item.id }),
+          body: JSON.stringify({ id: item.id, source: item.notification_source }),
         });
         setUnreadCount((current) => Math.max(0, current - 1));
         window.dispatchEvent(new Event("notifications:changed"));
@@ -130,7 +135,9 @@ export default function NotificationBell() {
       (item.approval_stage === "solar_sup" && item.quotation_status === "pending_solar_sup") ||
       (item.approval_stage === "sales_sup" && ["pending_sales_sup", "pending_approval"].includes(item.quotation_status));
     setOpen(false);
-    router.push(stillWaitingForNotifiedStage ? "/quotation-approvals" : `/leads/${item.lead_id}?focus=1`);
+    router.push(item.notification_source === "accounting" && item.target_url
+      ? item.target_url
+      : stillWaitingForNotifiedStage ? "/quotation-approvals" : `/leads/${item.lead_id}?focus=1`);
   };
 
   return (
@@ -175,10 +182,10 @@ export default function NotificationBell() {
               <div className="px-4 py-10 text-center text-xs text-gray-400">ยังไม่มีการแจ้งเตือน</div>
             ) : items.map((item) => (
               <button
-                key={item.id}
+                key={`${item.notification_source}-${item.id}`}
                 type="button"
                 onClick={() => void openItem(item)}
-                className={`flex w-full gap-3 border-b border-gray-100 px-4 py-3 text-left last:border-b-0 hover:bg-gray-50 ${item.read_at ? "bg-white" : "bg-amber-50/60"}`}
+                className={`flex w-full gap-3 border-b border-gray-100 px-4 py-3 text-left last:border-b-0 hover:bg-gray-50 ${item.read_at ? "bg-white" : "bg-amber-50/60"} ${item.resolved_at ? "opacity-60" : ""}`}
               >
                 <span className={`mt-1.5 h-2 w-2 shrink-0 rounded-full ${item.read_at ? "bg-gray-200" : "bg-red-500"}`} />
                 <span className="min-w-0 flex-1">

@@ -82,10 +82,21 @@ export default function PendingApprovalReport() {
   const [search, setSearch] = useState("");
   const [lightbox, setLightbox] = useState<{ images: LightboxImage[]; index: number } | null>(null);
   const [chequeReceivingId, setChequeReceivingId] = useState<number | null>(null);
+  const [focusedPaymentId, setFocusedPaymentId] = useState<number | null>(null);
 
   useEffect(() => {
     apiFetch("/api/report/payments").then(setData).catch(console.error).finally(() => setLoading(false));
   }, []);
+
+  useEffect(() => {
+    if (!data) return;
+    const paymentId = Number(new URLSearchParams(window.location.search).get("payment_id"));
+    if (!Number.isInteger(paymentId) || paymentId <= 0) return;
+    setFocusedPaymentId(paymentId);
+    window.requestAnimationFrame(() => {
+      document.getElementById(`pending-payment-${paymentId}`)?.scrollIntoView({ behavior: "smooth", block: "center" });
+    });
+  }, [data]);
 
   if (loading) return <div className="flex items-center justify-center h-full py-20"><div className="w-10 h-10 border-3 border-gray-200 border-t-primary rounded-full animate-spin" /></div>;
   if (!data) return <div className="text-center py-12 text-gray-400 text-sm">โหลดไม่สำเร็จ</div>;
@@ -350,7 +361,11 @@ export default function PendingApprovalReport() {
                 </div>
               ) : null;
               return (
-                <div key={`${it.lead_id}-${i.id}`}>
+                <div
+                  id={`pending-payment-${i.id}`}
+                  key={`${it.lead_id}-${i.id}`}
+                  className={focusedPaymentId === i.id ? "rounded-xl ring-2 ring-primary ring-offset-2" : ""}
+                >
                   {/* Mobile card */}
                   <div className="md:hidden bg-white rounded-xl border border-gray-300 p-3 space-y-2">
                     <div className="flex items-start justify-between gap-2">

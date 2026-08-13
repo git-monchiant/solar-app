@@ -6,6 +6,7 @@ import { requireAdmin, requireAuth } from "@/lib/auth";
 import { syncOrderPaidFlags } from "@/lib/payments-helpers";
 import { mintPreDocNo } from "@/lib/doc-number";
 import { logLeadActivity, paymentStepLabel, fmtBaht } from "@/lib/lead-activity-log";
+import { notifyAccountingRole, resolveAccountingNotifications } from "@/lib/accounting-notifications";
 
 export const runtime = "nodejs";
 export const maxDuration = 30;
@@ -298,6 +299,26 @@ export async function POST(req: NextRequest) {
       note: body.description ?? null,
       userId: gate.userId,
     });
+
+    await resolveAccountingNotifications(pool, {
+      paymentId,
+      leadId,
+      slipField,
+      types: isChequePayment
+        ? ["account_cheque_waiting_receive"]
+        : ["account_payment_waiting_review"],
+    }).catch((error) => console.error("resolve accounting notification failed:", error));
+    if (isChequePayment) {
+      await notifyAccountingRole(pool, {
+        paymentId,
+        leadId,
+        slipField,
+        type: "account_cheque_waiting_money",
+        title: "รับเช็คแล้ว รอยืนยันเงินเข้าบริษัท",
+        message: `${paymentStepLabel(slipField, stepNo)} · ${fmtBaht(amount)}`,
+        createdBy: gate.userId,
+      }).catch((error) => console.error("create accounting notification failed:", error));
+    }
 
     return NextResponse.json({ id: paymentId, url: `/api/payments/${paymentId}`, slip_count: slipCount });
   } catch (e) {

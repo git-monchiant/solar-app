@@ -8,6 +8,7 @@ import { useCallback, useEffect, useState } from "react";
 
 type NotificationItem = {
   id: number;
+  notification_source: "quotation" | "accounting";
   quotation_id: number;
   lead_id: number;
   notification_type: string;
@@ -20,6 +21,8 @@ type NotificationItem = {
   quotation_status: string;
   customer_name: string;
   created_by_name: string | null;
+  target_url: string | null;
+  resolved_at: string | null;
 };
 
 export default function NotificationsPage() {
@@ -36,7 +39,8 @@ export default function NotificationsPage() {
       : activeRoles.includes("sales_sup")
         ? "sales_sup"
         : null;
-  const notificationUrl = `/api/notifications${stage ? `?stage=${stage}` : ""}`;
+  const accountScope = !activeRoles.includes("admin") && activeRoles.includes("account");
+  const notificationUrl = `/api/notifications${stage ? `?stage=${stage}` : accountScope ? "?scope=account" : ""}`;
 
   const load = useCallback(async () => {
     try {
@@ -77,7 +81,7 @@ export default function NotificationsPage() {
         await apiFetch(notificationUrl, {
           method: "PATCH",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ id: item.id }),
+          body: JSON.stringify({ id: item.id, source: item.notification_source }),
         });
       } catch {
         // Navigation is still useful if marking as read fails temporarily.
@@ -87,9 +91,9 @@ export default function NotificationsPage() {
     const stillWaitingForNotifiedStage =
       (item.approval_stage === "solar_sup" && item.quotation_status === "pending_solar_sup") ||
       (item.approval_stage === "sales_sup" && ["pending_sales_sup", "pending_approval"].includes(item.quotation_status));
-    window.location.href = stillWaitingForNotifiedStage
-      ? "/quotation-approvals"
-      : `/leads/${item.lead_id}?focus=1`;
+    window.location.href = item.notification_source === "accounting" && item.target_url
+      ? item.target_url
+      : stillWaitingForNotifiedStage ? "/quotation-approvals" : `/leads/${item.lead_id}?focus=1`;
   };
 
   return (
@@ -121,15 +125,18 @@ export default function NotificationsPage() {
           <div className="overflow-hidden rounded-xl border border-gray-200 bg-white">
             {items.map((item) => (
               <button
-                key={item.id}
+                key={`${item.notification_source}-${item.id}`}
                 type="button"
                 onClick={() => void openItem(item)}
-                className={`flex w-full gap-3 border-b border-gray-100 p-4 text-left last:border-b-0 hover:bg-gray-50 ${item.read_at ? "bg-white" : "bg-amber-50/60"}`}
+                className={`flex w-full gap-3 border-b border-gray-100 p-4 text-left last:border-b-0 hover:bg-gray-50 ${item.read_at ? "bg-white" : "bg-amber-50/60"} ${item.resolved_at ? "opacity-60" : ""}`}
               >
                 <span className={`mt-1 h-2.5 w-2.5 shrink-0 rounded-full ${item.read_at ? "bg-gray-200" : "bg-red-500"}`} />
                 <span className="min-w-0 flex-1">
                   <span className="flex flex-wrap items-center justify-between gap-2">
-                    <span className="font-semibold text-gray-900">{item.title}</span>
+                    <span className="font-semibold text-gray-900">
+                      {item.title}
+                      {item.resolved_at && <span className="ml-2 text-xxs font-medium text-gray-400">ดำเนินการแล้ว</span>}
+                    </span>
                     <span className="text-xxs text-gray-400">{formatThaiDate(item.created_at, { time: true, buddhist: true })}</span>
                   </span>
                   {item.message && <span className="mt-1 block text-sm text-gray-600">{item.message}</span>}

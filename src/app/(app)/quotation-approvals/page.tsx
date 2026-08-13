@@ -335,9 +335,7 @@ export default function QuotationApprovalsPage() {
                             >
                               {isBusy
                                 ? "กำลังทำรายการ..."
-                                : quote.status === "pending_solar_sup"
-                                  ? "อนุมัติส่งต่อ Sale Sup"
-                                  : "รับรองและอนุมัติ"}
+                                : "อนุมัติ"}
                             </button>
                           </div>
                         </div>

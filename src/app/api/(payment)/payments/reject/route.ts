@@ -7,6 +7,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getDb, sql } from "@/lib/db";
 import { requireAuth } from "@/lib/auth";
+import { resolveAccountingNotifications } from "@/lib/accounting-notifications";
 
 export async function POST(req: NextRequest) {
   const gate = await requireAuth(req);
@@ -94,6 +95,9 @@ export async function POST(req: NextRequest) {
         INSERT INTO lead_activities (lead_id, activity_type, title, note, created_by, created_at)
         VALUES (@lead_id, 'payment_rejected', @title, @note, @by, GETDATE())
       `);
+
+    await resolveAccountingNotifications(db, { leadId, slipField })
+      .catch((error) => console.error("resolve accounting notification failed:", error));
 
     return NextResponse.json({
       ok: true,
