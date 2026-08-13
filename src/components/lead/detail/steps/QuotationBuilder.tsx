@@ -176,7 +176,7 @@ function ApprovalFlowStatus({
           ? "ส่งแล้ว"
           : "อนุมัติแล้ว"
         : state === "returned"
-          ? "แก้ไข"
+          ? "รอแก้ไข"
           : state === "active"
             ? index === 0
               ? "รอส่ง"
@@ -219,16 +219,16 @@ function ApprovalFlowStatus({
             {index < steps.length - 1 && (
               <span
                 aria-hidden="true"
-                className={`absolute left-[calc(50%+12px)] right-[calc(-50%+12px)] top-[9px] h-0.5 ${connectorComplete ? "bg-emerald-400" : "bg-gray-200"}`}
+                className={`absolute left-[calc(50%+16px)] right-[calc(-50%+16px)] top-[13px] h-0.5 ${connectorComplete ? "bg-emerald-400" : "bg-gray-200"}`}
               />
             )}
             <div className="flex w-full min-w-0 flex-col items-center">
               <span
-                className={`flex h-5 w-5 items-center justify-center rounded-full transition-all ${nodeClass}`}
+                className={`flex h-7 w-7 items-center justify-center rounded-full transition-all ${nodeClass}`}
               >
                 {isCompleted && (
                   <svg
-                    className="h-3 w-3 text-white"
+                    className="h-4 w-4 text-white"
                     fill="none"
                     viewBox="0 0 24 24"
                     stroke="currentColor"
@@ -237,22 +237,24 @@ function ApprovalFlowStatus({
                     <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
                   </svg>
                 )}
-                {isCurrent && <span className="h-1 w-1 rounded-full bg-white" />}
+                {isCurrent && <span className="h-1.5 w-1.5 rounded-full bg-white" />}
               </span>
-              <span className={`mt-1 max-w-full truncate whitespace-nowrap text-[11px] leading-none ${isCurrent ? "font-semibold" : ""} ${textClass}`}>
+              <span className={`mt-1.5 max-w-full text-center text-xs font-semibold leading-tight ${textClass}`}>
                 {step.label}
               </span>
               {isCompleted && step.approval?.name ? (
                 <>
+                  {/* ใช้ "โดย :" สั้นๆ แทน "จัดทำโดย/อนุมัติโดย" ที่ยาวจนโดนตัด
+                      ข้อความเต็มยังอยู่ใน tooltip */}
                   <span
-                    className={`mt-1 max-w-full truncate whitespace-nowrap text-[9px] font-semibold leading-none ${textClass}`}
-                    title={step.approval.name}
+                    className={`mt-1 line-clamp-2 max-w-full text-center text-xxs leading-tight ${textClass}`}
+                    title={`${index === 0 ? "จัดทำโดย" : "อนุมัติโดย"} ${step.approval.name}`}
                   >
-                    {index === 0 ? "จัดทำโดย" : "อนุมัติโดย"} {step.approval.name}
+                    โดย : {step.approval.name}
                   </span>
                   {step.approval.approvedAt && (
                     <span
-                      className={`mt-0.5 max-w-full truncate whitespace-nowrap text-[9px] font-semibold leading-none ${textClass}`}
+                      className={`mt-0.5 max-w-full truncate whitespace-nowrap text-xxs leading-tight ${textClass}`}
                       title={`${formatThaiDateShort(step.approval.approvedAt)} ${formatThaiTime(step.approval.approvedAt)} น.`}
                     >
                       {formatApprovalDateTime(step.approval.approvedAt)}
@@ -260,9 +262,14 @@ function ApprovalFlowStatus({
                   )}
                 </>
               ) : (
-                <span className={`mt-1 max-w-full truncate whitespace-nowrap text-[9px] font-semibold leading-none ${textClass}`}>
-                  {step.detail}
-                </span>
+                <>
+                  <span
+                    className={`mt-1 line-clamp-2 max-w-full text-center text-xxs leading-tight ${textClass}`}
+                    title={step.state === "returned" && returnedByRole ? `ส่งกลับโดย ${returnedByRole}` : undefined}
+                  >
+                    {step.detail}
+                  </span>
+                </>
               )}
             </div>
           </li>
@@ -659,7 +666,7 @@ export default function QuotationBuilder({
                     </div>
                   </div>
                   <div
-                    className="mt-1 truncate whitespace-nowrap text-center font-mono text-[10px] text-gray-400"
+                    className="mt-1 truncate whitespace-nowrap text-center font-mono text-xxs text-gray-400"
                     title={`${q.doc_no}${q.revision_no > 0 ? ` · Rev.${q.revision_no}` : ""}`}
                   >
                     {q.doc_no}
@@ -1578,6 +1585,9 @@ function QuotationEditor({
     "h-8 w-full min-w-0 rounded-md border border-transparent bg-transparent px-1.5 text-xxs text-gray-700 outline-none transition-colors placeholder:text-gray-300 hover:border-gray-200 focus:border-primary focus:bg-white";
   const FIELD =
     "h-8 w-full rounded-lg border border-gray-200 bg-white px-2 text-xs text-gray-800 outline-none transition-colors placeholder:text-gray-300 hover:border-gray-300 focus:border-primary focus:ring-2 focus:ring-primary/10";
+  // ช่องเลือกตัวเลขของ O&M — ใช้ซ้ำทุกแถว จะได้กว้างเท่ากันหมด
+  const OM_SELECT =
+    "h-7 w-12 shrink-0 rounded-md border border-gray-200 bg-white px-0.5 text-center text-xxs font-semibold tabular-nums text-gray-700 outline-none focus:border-primary disabled:bg-gray-50 disabled:opacity-50";
 
   return (
     <div className="fixed inset-0 z-[80] flex items-center justify-center bg-slate-900/50 p-0 backdrop-blur-sm md:p-6">
@@ -1711,7 +1721,7 @@ function QuotationEditor({
                                 }`}
                               >
                                 {formatTHB(g.price)}
-                                <span aria-hidden="true" className="text-[9px] text-gray-400">▾</span>
+                                <span aria-hidden="true" className="text-xxs leading-none text-gray-400">▾</span>
                               </button>
                               {open && (
                                 <>
@@ -1978,7 +1988,7 @@ function QuotationEditor({
                   </button>
 
                   {omOpen && (
-                    <div className="mt-2 space-y-2 border-t border-gray-100 pt-2">
+                    <div className="mt-1.5 space-y-1 border-t border-gray-100 pt-1.5">
                       <label className="flex items-center justify-between gap-2">
                         <span className="flex items-center gap-2 text-xxs font-semibold text-gray-600">
                           <input
@@ -1995,53 +2005,59 @@ function QuotationEditor({
                             value={documentInputs.om.coverage_years}
                             disabled={!documentInputs.om.enabled}
                             onChange={(value) => patchOm({ coverage_years: value })}
-                            className="h-7 w-14 rounded-md border border-gray-200 bg-white px-1 text-center text-xxs font-semibold tabular-nums text-gray-700 outline-none focus:border-primary disabled:bg-gray-50 disabled:opacity-50"
+                            className={OM_SELECT}
                           />
                           ปี
                         </span>
                       </label>
 
+                      {/* ป้ายสั้นๆ พอให้กดเลือก — ข้อความจริงที่ขึ้นบนใบเสนอราคา
+                          อยู่ใน lib/quotation-terms.ts คนละชุดกัน แก้ตรงนี้ไม่กระทบเอกสาร
+                          ตัวเต็มอยู่ใน tooltip */}
                       {([
-                        ["cleaning", "ล้างแผงโซลาร์"],
-                        ["thermoscan", "ตรวจสอบระบบโซลาร์ + THERMOSCAN"],
-                        ["visual_inspection", "ตรวจสอบความผิดปกติของแผงโซลาร์"],
-                      ] as const).map(([key, label]) => {
+                        ["cleaning", "ล้างแผง", "ล้างแผงโซลาร์"],
+                        ["thermoscan", "ตรวจระบบ", "ตรวจสอบระบบโซลาร์ + THERMOSCAN"],
+                        ["visual_inspection", "ตรวจสภาพแผง", "ตรวจสอบความผิดปกติของแผงโซลาร์"],
+                      ] as const).map(([key, label, fullLabel]) => {
                         const service = documentInputs.om[key];
                         const disabled = !documentInputs.om.enabled;
                         return (
-                          <div key={key} className="rounded-lg bg-slate-50/80 px-2 py-1.5">
-                            <label className="flex items-center gap-2 text-xxs font-medium text-gray-700">
-                              <input
-                                type="checkbox"
-                                checked={service.enabled}
-                                disabled={disabled}
-                                onChange={(event) =>
-                                  patchOmService(key, { enabled: event.target.checked })
-                                }
-                                className="h-3.5 w-3.5 rounded border-gray-300 accent-primary disabled:opacity-50"
-                              />
-                              <span className="min-w-0 leading-4">{label}</span>
-                            </label>
-                            <div className="mt-1 flex items-center justify-end gap-1 text-xxs text-gray-400">
+                          // ชื่อรายการกับช่องเลือกอยู่บรรทัดเดียวกัน — เดิมแยก 2 บรรทัด
+                          // ต่อรายการ ทำให้กล่องยาวเกินจำเป็น (3 รายการ = 6 บรรทัด)
+                          <label
+                            key={key}
+                            className="flex items-center gap-2 rounded-lg bg-slate-50/80 px-2 py-1 text-xxs font-medium text-gray-700"
+                          >
+                            <input
+                              type="checkbox"
+                              checked={service.enabled}
+                              disabled={disabled}
+                              onChange={(event) =>
+                                patchOmService(key, { enabled: event.target.checked })
+                              }
+                              className="h-3.5 w-3.5 shrink-0 rounded border-gray-300 accent-primary disabled:opacity-50"
+                            />
+                            <span className="min-w-0 flex-1 leading-tight" title={fullLabel}>{label}</span>
+                            <span className="flex shrink-0 items-center gap-1 text-gray-400">
                               <OmNumberSelect
                                 value={service.visits_per_year}
                                 disabled={disabled || !service.enabled}
                                 onChange={(value) =>
                                   patchOmService(key, { visits_per_year: value })
                                 }
-                                className="h-7 w-14 rounded-md border border-gray-200 bg-white px-1 text-center text-xxs font-semibold tabular-nums text-gray-700 outline-none focus:border-primary disabled:bg-gray-50 disabled:opacity-50"
+                                className={OM_SELECT}
                               />
-                              ครั้ง/ปี
+                              ครั้ง
                               <OmNumberSelect
                                 max={documentInputs.om.coverage_years}
                                 value={service.years}
                                 disabled={disabled || !service.enabled}
                                 onChange={(value) => patchOmService(key, { years: value })}
-                                className="ml-1 h-7 w-14 rounded-md border border-gray-200 bg-white px-1 text-center text-xxs font-semibold tabular-nums text-gray-700 outline-none focus:border-primary disabled:bg-gray-50 disabled:opacity-50"
+                                className={OM_SELECT}
                               />
                               ปี
-                            </div>
-                          </div>
+                            </span>
+                          </label>
                         );
                       })}
 
