@@ -3,7 +3,7 @@ import { getDb, sql } from "@/lib/db";
 import { requireAdmin, requireAuth } from "@/lib/auth";
 import { syncOrderPaidFlags } from "@/lib/payments-helpers";
 import { logLeadActivity, paymentStepLabel, fmtBaht } from "@/lib/lead-activity-log";
-import { notifyAccountingRole, resolveAccountingNotifications } from "@/lib/accounting-notifications";
+import { notifyAccountingRole, notifyLeadOwner, resolveAccountingNotifications } from "@/lib/accounting-notifications";
 
 export const runtime = "nodejs";
 
@@ -397,6 +397,15 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
         slipField: pay.slip_field,
         types: ["account_cheque_waiting_money"],
       }).catch((error) => console.error("resolve accounting notification failed:", error));
+      await notifyLeadOwner(db, {
+        paymentId: payId,
+        leadId: pay.lead_id,
+        slipField: pay.slip_field,
+        type: "sale_payment_approved",
+        title: "บัญชีอนุมัติการชำระเงินแล้ว",
+        message: `${paymentStepLabel(pay.slip_field, pay.step_no)} · ${fmtBaht(Number(pay.amount || 0))}`,
+        createdBy: gate.userId,
+      }).catch((error) => console.error("create Sale payment notification failed:", error));
       return NextResponse.json({ ok: true });
     }
 

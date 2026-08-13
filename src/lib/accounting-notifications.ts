@@ -6,11 +6,27 @@ type AccountingNotificationInput = {
   paymentId?: number | null;
   leadId: number;
   slipField: string;
-  type: "account_payment_waiting_review" | "account_cheque_waiting_receive" | "account_cheque_waiting_money";
+  type: PaymentNotificationType;
   title: string;
   message?: string | null;
   createdBy?: number | null;
 };
+
+type AccountWorkNotificationType =
+  | "account_payment_waiting_review"
+  | "account_cheque_waiting_receive"
+  | "account_cheque_waiting_money";
+
+type PaymentNotificationType =
+  | AccountWorkNotificationType
+  | "sale_payment_approved"
+  | "sale_payment_rejected";
+
+const ACCOUNT_WORK_NOTIFICATION_TYPES: AccountWorkNotificationType[] = [
+  "account_payment_waiting_review",
+  "account_cheque_waiting_receive",
+  "account_cheque_waiting_money",
+];
 
 function request(db: DbExecutor) {
   return db instanceof sql.Transaction ? new sql.Request(db) : db.request();
@@ -68,12 +84,63 @@ export async function notifyAccountingRole(db: DbExecutor, input: AccountingNoti
     `);
 }
 
+export async function notifyLeadOwner(
+  db: DbExecutor,
+  input: AccountingNotificationInput & { targetUrl?: string },
+) {
+  const paymentKey = input.paymentId ? String(input.paymentId) : `${input.leadId}:${input.slipField}`;
+  const eventKey = `${input.type}:${paymentKey}`;
+  const targetUrl = input.targetUrl || `/leads/${input.leadId}?focus=1`;
+
+  await request(db)
+    .input("paymentId", sql.Int, input.paymentId || null)
+    .input("leadId", sql.Int, input.leadId)
+    .input("slipField", sql.NVarChar(50), input.slipField)
+    .input("type", sql.NVarChar(50), input.type)
+    .input("eventKey", sql.NVarChar(160), eventKey)
+    .input("title", sql.NVarChar(250), input.title)
+    .input("message", sql.NVarChar(1000), input.message || null)
+    .input("targetUrl", sql.NVarChar(500), targetUrl)
+    .input("createdBy", sql.Int, input.createdBy || null)
+    .query(`
+      MERGE dbo.accounting_notifications WITH (HOLDLOCK) AS target
+      USING (
+        SELECT u.id recipient_user_id
+        FROM dbo.leads l
+        JOIN dbo.users u ON u.id = l.assigned_user_id AND u.is_active = 1
+        WHERE l.id = @leadId
+      ) AS source
+      ON target.recipient_user_id = source.recipient_user_id
+        AND target.event_key = @eventKey
+      WHEN MATCHED THEN UPDATE SET
+        payment_id = @paymentId,
+        lead_id = @leadId,
+        slip_field = @slipField,
+        notification_type = @type,
+        title = @title,
+        message = @message,
+        target_url = @targetUrl,
+        created_by = @createdBy,
+        read_at = NULL,
+        resolved_at = NULL,
+        created_at = GETDATE(),
+        updated_at = GETDATE()
+      WHEN NOT MATCHED THEN INSERT (
+        payment_id, lead_id, slip_field, recipient_user_id,
+        notification_type, event_key, title, message, target_url, created_by
+      ) VALUES (
+        @paymentId, @leadId, @slipField, source.recipient_user_id,
+        @type, @eventKey, @title, @message, @targetUrl, @createdBy
+      );
+    `);
+}
+
 export async function resolveAccountingNotifications(
   db: DbExecutor,
-  input: { paymentId?: number | null; leadId?: number | null; slipField?: string | null; types?: AccountingNotificationInput["type"][] },
+  input: { paymentId?: number | null; leadId?: number | null; slipField?: string | null; types?: AccountWorkNotificationType[] },
 ) {
   if (!input.paymentId && (!input.leadId || !input.slipField)) return;
-  const types = input.types || [];
+  const types = input.types?.length ? input.types : ACCOUNT_WORK_NOTIFICATION_TYPES;
   await request(db)
     .input("paymentId", sql.Int, input.paymentId || null)
     .input("leadId", sql.Int, input.leadId || null)
@@ -91,6 +158,6 @@ export async function resolveAccountingNotifications(
           (@paymentId IS NOT NULL AND payment_id = @paymentId)
           OR (@leadId IS NOT NULL AND @slipField IS NOT NULL AND lead_id = @leadId AND slip_field = @slipField)
         )
-        AND (@type1 IS NULL OR notification_type IN (@type1, @type2, @type3));
+        AND notification_type IN (@type1, @type2, @type3);
     `);
 }

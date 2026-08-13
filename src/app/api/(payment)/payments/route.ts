@@ -6,7 +6,7 @@ import { requireAdmin, requireAuth } from "@/lib/auth";
 import { syncOrderPaidFlags } from "@/lib/payments-helpers";
 import { mintPreDocNo } from "@/lib/doc-number";
 import { logLeadActivity, paymentStepLabel, fmtBaht } from "@/lib/lead-activity-log";
-import { notifyAccountingRole, resolveAccountingNotifications } from "@/lib/accounting-notifications";
+import { notifyAccountingRole, notifyLeadOwner, resolveAccountingNotifications } from "@/lib/accounting-notifications";
 
 export const runtime = "nodejs";
 export const maxDuration = 30;
@@ -318,6 +318,16 @@ export async function POST(req: NextRequest) {
         message: `${paymentStepLabel(slipField, stepNo)} · ${fmtBaht(amount)}`,
         createdBy: gate.userId,
       }).catch((error) => console.error("create accounting notification failed:", error));
+    } else {
+      await notifyLeadOwner(pool, {
+        paymentId,
+        leadId,
+        slipField,
+        type: "sale_payment_approved",
+        title: "บัญชีอนุมัติการชำระเงินแล้ว",
+        message: `${paymentStepLabel(slipField, stepNo)} · ${fmtBaht(amount)}`,
+        createdBy: gate.userId,
+      }).catch((error) => console.error("create Sale payment notification failed:", error));
     }
 
     return NextResponse.json({ id: paymentId, url: `/api/payments/${paymentId}`, slip_count: slipCount });
