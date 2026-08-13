@@ -198,8 +198,25 @@ export default function PendingApprovalReport() {
     if (typeof window === "undefined") return;
     localStorage.setItem(`leadFocusStep_${leadId}`, "4");
     localStorage.setItem(`leadForceActiveStep_${leadId}`, "4");
-    localStorage.setItem(`installSubStep_${leadId}`, "3");
+    localStorage.setItem(`installSubStepV3_${leadId}`, "3");
     localStorage.setItem(`installChequeConfirm_${leadId}`, String(paymentId));
+  };
+
+  const openPaymentContext = (item: PendingItem) => {
+    const inst = item.installment;
+    if (inst.slip_field === "pre_slip_url") {
+      localStorage.setItem(`leadFocusStep_${item.lead_id}`, "0");
+      localStorage.setItem(`leadForceActiveStep_${item.lead_id}`, "0");
+      localStorage.setItem(`preSurveySubStep_${item.lead_id}`, "2");
+    } else if (isInstallCollectPayment(item)) {
+      setInstallPaymentFocus(item.lead_id, inst.id);
+    } else {
+      setOrderPaymentFocus(item.lead_id, inst.slip_field, {
+        subStep: 1,
+        forceActiveStep: 3,
+      });
+    }
+    openLead(item.lead_id);
   };
 
   const openChequePaymentContext = (item: PendingItem, finalConfirmation: boolean) => {
@@ -347,12 +364,13 @@ export default function PendingApprovalReport() {
                   กดยืนยันรับเงิน
                 </button>
               ) : (
-                <LeadLink
-                  id={it.lead_id}
+                <button
+                  type="button"
+                  onClick={() => openPaymentContext(it)}
                   className={`h-8 px-3 rounded-lg text-sm font-semibold text-white bg-emerald-500 hover:bg-emerald-600 inline-flex items-center justify-center shrink-0 ${className}`}
                 >
                   กดยืนยันรับเงิน
-                </LeadLink>
+                </button>
               );
               const chequeDetails = i.payment_method === "cheque" && (i.cheque_no || i.cheque_bank || i.cheque_due_date || i.cheque_status_note) ? (
                 <div className={`text-[11px] mt-1 ${chequeFailed || chequeOverdue ? "text-red-600" : "text-gray-500"}`}>

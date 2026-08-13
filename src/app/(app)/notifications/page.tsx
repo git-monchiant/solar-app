@@ -2,6 +2,7 @@
 
 import Header from "@/components/layout/Header";
 import { apiFetch } from "@/lib/api";
+import { getNotificationTarget } from "@/lib/notification-navigation";
 import { useActiveRoles } from "@/lib/roles";
 import { formatThaiDate } from "@/lib/utils/formatters";
 import { useCallback, useEffect, useState } from "react";
@@ -88,12 +89,7 @@ export default function NotificationsPage() {
       }
     }
     window.dispatchEvent(new Event("notifications:changed"));
-    const stillWaitingForNotifiedStage =
-      (item.approval_stage === "solar_sup" && item.quotation_status === "pending_solar_sup") ||
-      (item.approval_stage === "sales_sup" && ["pending_sales_sup", "pending_approval"].includes(item.quotation_status));
-    window.location.href = item.notification_source === "accounting" && item.target_url
-      ? item.target_url
-      : stillWaitingForNotifiedStage ? "/quotation-approvals" : `/leads/${item.lead_id}?focus=1`;
+    window.location.href = getNotificationTarget(item, activeRoles);
   };
 
   return (

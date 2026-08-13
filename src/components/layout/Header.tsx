@@ -41,9 +41,9 @@ export default function Header({ title, subtitle, backHref, rightContent, childr
           </h1>
           {subtitle && <p className="text-xs font-semibold tracking-wider uppercase text-gray-500 leading-none mt-0.5 truncate">{subtitle}</p>}
         </div>
+        <NotificationBell />
         <RoleSwitcher />
         {rightContent}
-        <NotificationBell />
       </div>
       {children}
     </div>

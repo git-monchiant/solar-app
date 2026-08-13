@@ -75,7 +75,7 @@ assert.equal(parseQuotationOmSettings({ coverage_years: 0 }).coverage_years, 0);
 assert.equal(parseQuotationOmSettings({ cleaning: { visits_per_year: 9 } }).cleaning.visits_per_year, 4);
 const customizedLegal = getQuotationLegalContent(onGrid, 7, "", customizedOm);
 assert.ok(customizedLegal.page2LeadingParagraphs[1].includes("O&M เป็นเวลา 3 ปี"));
-assert.ok(customizedLegal.page2Sections[0].paragraphs[0].includes("1 ครั้งต่อปี"));
+assert.ok(customizedLegal.page2Sections[0].paragraphs[0].includes("ล้างแผงโซลาร์เซลล์ ปีละ 1 ครั้ง"));
 assert.ok(customizedLegal.page2Sections[0].paragraphs[1].includes("ปีละ 2 ครั้ง"));
 assert.equal(customizedLegal.page2Sections[0].paragraphs.length, 2);
 

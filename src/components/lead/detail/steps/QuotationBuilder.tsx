@@ -83,6 +83,12 @@ type Quote = {
   returned_by_role?: string;
   created_by_name?: string;
   created_at?: string;
+  submitted_by_name?: string;
+  submitted_at?: string;
+  solar_approved_by_name?: string;
+  solar_approved_at?: string;
+  approved_by_name?: string;
+  approved_at?: string;
   document_inputs_json?: string;
   document_snapshot_at?: string;
   approval_certified_at?: string;
@@ -105,6 +111,166 @@ const statusLabel: Record<string, string> = {
   changes_required: "ส่งกลับแก้ไข",
   cancelled: "ยกเลิกแล้ว",
 };
+
+function formatApprovalDateTime(value: string): string {
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return "—";
+  const shortDate = date.toLocaleDateString("th-TH", {
+    day: "2-digit",
+    month: "2-digit",
+  });
+  return `${shortDate} ${formatThaiTime(value)}`;
+}
+
+type ApprovalFlowStepState =
+  | "completed"
+  | "active"
+  | "returned"
+  | "upcoming"
+  | "cancelled";
+
+function ApprovalFlowStatus({
+  status,
+  returnedByRole,
+  submittedByName,
+  submittedAt,
+  solarApprovedByName,
+  solarApprovedAt,
+  approvedByName,
+  approvedAt,
+}: {
+  status: string;
+  returnedByRole?: string;
+  submittedByName?: string;
+  submittedAt?: string;
+  solarApprovedByName?: string;
+  solarApprovedAt?: string;
+  approvedByName?: string;
+  approvedAt?: string;
+}) {
+  const currentStep =
+    status === "approved"
+      ? 3
+      : ["pending_sales_sup", "pending_approval"].includes(status)
+        ? 2
+        : status === "pending_solar_sup"
+          ? 1
+          : 0;
+  const isReturned = status === "changes_required";
+  const isCancelled = status === "cancelled";
+  const approvalDetails = [
+    { name: submittedByName, approvedAt: submittedAt },
+    { name: solarApprovedByName, approvedAt: solarApprovedAt },
+    { name: approvedByName, approvedAt },
+  ];
+  const steps = ["Sale", "Solar Manager", "Sale Manager"].map((label, index) => {
+    let state: ApprovalFlowStepState = "upcoming";
+    if (isCancelled) state = "cancelled";
+    else if (isReturned && index === 0) state = "returned";
+    else if (index < currentStep) state = "completed";
+    else if (index === currentStep && currentStep < 3) state = "active";
+
+    const detail =
+      state === "completed"
+        ? index === 0
+          ? "ส่งแล้ว"
+          : "อนุมัติแล้ว"
+        : state === "returned"
+          ? "แก้ไข"
+          : state === "active"
+            ? index === 0
+              ? "รอส่ง"
+              : "ยังไม่อนุมัติ"
+            : state === "cancelled"
+              ? "ยกเลิก"
+              : "ยังไม่อนุมัติ";
+    return { label, state, detail, approval: approvalDetails[index] };
+  });
+  const title = `${statusLabel[status] || status}${isReturned && returnedByRole ? `โดย ${returnedByRole}` : ""}`;
+
+  return (
+    <ol
+      className="flex min-w-0 flex-1 items-start"
+      aria-label={`Approval flow: ${title}`}
+      title={title}
+    >
+      {steps.map((step, index) => {
+        const isCurrent = step.state === "active" || step.state === "returned";
+        const isCompleted = step.state === "completed";
+        const nodeClass = isCompleted
+          ? "bg-emerald-500"
+          : step.state === "active"
+            ? "bg-amber-500 ring-2 ring-amber-200 shadow-sm"
+            : step.state === "returned"
+              ? "bg-red-500 ring-2 ring-red-200 shadow-sm"
+              : "bg-gray-200";
+        const textClass =
+          isCompleted
+            ? "text-emerald-700"
+            : step.state === "active"
+              ? "text-amber-700"
+              : step.state === "returned"
+                ? "text-red-600"
+                : "text-gray-400";
+        const connectorComplete = index < currentStep && !isCancelled && !isReturned;
+
+        return (
+          <li key={step.label} className="relative flex min-w-0 flex-1 items-start">
+            {index < steps.length - 1 && (
+              <span
+                aria-hidden="true"
+                className={`absolute left-[calc(50%+12px)] right-[calc(-50%+12px)] top-[9px] h-0.5 ${connectorComplete ? "bg-emerald-400" : "bg-gray-200"}`}
+              />
+            )}
+            <div className="flex w-full min-w-0 flex-col items-center">
+              <span
+                className={`flex h-5 w-5 items-center justify-center rounded-full transition-all ${nodeClass}`}
+              >
+                {isCompleted && (
+                  <svg
+                    className="h-3 w-3 text-white"
+                    fill="none"
+                    viewBox="0 0 24 24"
+                    stroke="currentColor"
+                    strokeWidth="3"
+                  >
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
+                  </svg>
+                )}
+                {isCurrent && <span className="h-1 w-1 rounded-full bg-white" />}
+              </span>
+              <span className={`mt-1 max-w-full truncate whitespace-nowrap text-[11px] leading-none ${isCurrent ? "font-semibold" : ""} ${textClass}`}>
+                {step.label}
+              </span>
+              {isCompleted && step.approval?.name ? (
+                <>
+                  <span
+                    className={`mt-1 max-w-full truncate whitespace-nowrap text-[9px] font-semibold leading-none ${textClass}`}
+                    title={step.approval.name}
+                  >
+                    {index === 0 ? "จัดทำโดย" : "อนุมัติโดย"} {step.approval.name}
+                  </span>
+                  {step.approval.approvedAt && (
+                    <span
+                      className={`mt-0.5 max-w-full truncate whitespace-nowrap text-[9px] font-semibold leading-none ${textClass}`}
+                      title={`${formatThaiDateShort(step.approval.approvedAt)} ${formatThaiTime(step.approval.approvedAt)} น.`}
+                    >
+                      {formatApprovalDateTime(step.approval.approvedAt)}
+                    </span>
+                  )}
+                </>
+              ) : (
+                <span className={`mt-1 max-w-full truncate whitespace-nowrap text-[9px] font-semibold leading-none ${textClass}`}>
+                  {step.detail}
+                </span>
+              )}
+            </div>
+          </li>
+        );
+      })}
+    </ol>
+  );
+}
 // Local-time YYYY-MM-DD for the quotation date input default (never UTC —
 // toISOString would roll to the next day for evening edits in +07:00).
 const todayIso = () => {
@@ -448,7 +614,7 @@ export default function QuotationBuilder({
                     <div className="h-3 w-14 rounded bg-gray-200" />
                     <div className="h-2 w-24 rounded bg-gray-100" />
                   </div>
-                  <div className="h-7 w-16 rounded-full bg-gray-100" />
+                  <div className="h-10 w-60 rounded-lg bg-gray-100" />
                 </div>
                 <div className="mt-4 h-20 rounded-xl bg-gray-100" />
                 <div className="mt-2 h-6 w-40 rounded-full bg-gray-100" />
@@ -475,31 +641,41 @@ export default function QuotationBuilder({
               className="rounded-xl border border-gray-200 bg-white p-4 min-h-[342px] flex flex-col shadow-sm"
             >
               <div className="flex items-start gap-3">
-                <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-primary to-cyan-400 text-white flex items-center justify-center shrink-0">
-                  <svg
-                    className="w-4 h-4"
-                    viewBox="0 0 24 24"
-                    fill="none"
-                    stroke="currentColor"
-                    strokeWidth="2"
-                  >
-                    <path d="M5 12l4 4L19 6" />
-                  </svg>
-                </div>
-                <div className="min-w-0 flex-1">
-                  <div className="font-bold text-sm text-gray-900">
-                    ชุด {option}
+                <div className="w-[100px] shrink-0 overflow-hidden">
+                  <div className="flex items-center gap-3">
+                    <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-primary to-cyan-400 text-white flex items-center justify-center shrink-0">
+                      <svg
+                        className="w-4 h-4"
+                        viewBox="0 0 24 24"
+                        fill="none"
+                        stroke="currentColor"
+                        strokeWidth="2"
+                      >
+                        <path d="M5 12l4 4L19 6" />
+                      </svg>
+                    </div>
+                    <div className="whitespace-nowrap font-bold text-sm text-gray-900">
+                      ชุด {option}
+                    </div>
                   </div>
-                  <div className="text-xxs text-gray-400 font-mono mt-0.5 truncate">
+                  <div
+                    className="mt-1 truncate whitespace-nowrap text-center font-mono text-[10px] text-gray-400"
+                    title={`${q.doc_no}${q.revision_no > 0 ? ` · Rev.${q.revision_no}` : ""}`}
+                  >
                     {q.doc_no}
                     {q.revision_no > 0 ? ` · Rev.${q.revision_no}` : ""}
                   </div>
                 </div>
-                <span
-                  className={`rounded-full px-3 py-1.5 text-sm font-bold leading-none whitespace-nowrap ${q.status === "approved" ? "bg-emerald-50 text-emerald-700" : isPendingQuotation(q.status) ? "bg-amber-50 text-amber-700" : q.status === "changes_required" ? "bg-red-50 text-red-700" : "bg-violet-50 text-violet-700"}`}
-                >
-                  {statusLabel[q.status]}
-                </span>
+                <ApprovalFlowStatus
+                  status={q.status}
+                  returnedByRole={q.returned_by_role}
+                  submittedByName={q.submitted_by_name}
+                  submittedAt={q.submitted_at}
+                  solarApprovedByName={q.solar_approved_by_name}
+                  solarApprovedAt={q.solar_approved_at}
+                  approvedByName={q.approved_by_name}
+                  approvedAt={q.approved_at}
+                />
               </div>
               <div className="mt-4 rounded-xl border border-gray-200 bg-gray-50/70 p-3">
                 <div className="text-xxs font-semibold text-gray-400">
@@ -1126,7 +1302,7 @@ function QuotationEditor({
       annual_degradation_percent: Number(saved.annual_degradation_percent ?? 0.5),
     };
   });
-  const [omOpen, setOmOpen] = useState(false);
+  const [omOpen, setOmOpen] = useState(true);
   useEffect(() => {
     if (quote || templateId || !defaultTemplate) return;
     setTemplateId(defaultTemplate.id);

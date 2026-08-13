@@ -13,6 +13,9 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
   const db = await getDb();
   const result = await db.request().input("lead_id", sql.Int, Number(id)).query(`
     SELECT q.*, p.name package_current_name, u.full_name created_by_name,
+      submitter.full_name submitted_by_name,
+      solar_approver.full_name solar_approved_by_name,
+      COALESCE(q.approver_name_snapshot, sales_approver.full_name) approved_by_name,
       returned_by.full_name returned_by_name,
       reminder.reminded_at last_reminded_at,
       reminder_user.full_name last_reminded_by_name,
@@ -25,6 +28,9 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
     FROM quotations q
     LEFT JOIN packages p ON p.id=q.package_id
     LEFT JOIN users u ON u.id=q.created_by
+    LEFT JOIN users submitter ON submitter.id=q.submitted_by
+    LEFT JOIN users solar_approver ON solar_approver.id=q.solar_approved_by
+    LEFT JOIN users sales_approver ON sales_approver.id=q.approved_by
     OUTER APPLY (
       SELECT TOP 1 e.id, e.action, e.acted_by
       FROM quotation_approval_events e

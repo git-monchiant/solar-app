@@ -1,6 +1,7 @@
 "use client";
 
 import { apiFetch } from "@/lib/api";
+import { getNotificationTarget } from "@/lib/notification-navigation";
 import { useActiveRoles } from "@/lib/roles";
 import { formatThaiDate } from "@/lib/utils/formatters";
 import Link from "next/link";
@@ -134,13 +135,8 @@ export default function NotificationBell() {
       }
     }
 
-    const stillWaitingForNotifiedStage =
-      (item.approval_stage === "solar_sup" && item.quotation_status === "pending_solar_sup") ||
-      (item.approval_stage === "sales_sup" && ["pending_sales_sup", "pending_approval"].includes(item.quotation_status));
     setOpen(false);
-    router.push(item.notification_source === "accounting" && item.target_url
-      ? item.target_url
-      : stillWaitingForNotifiedStage ? "/quotation-approvals" : `/leads/${item.lead_id}?focus=1`);
+    router.push(getNotificationTarget(item, activeRoles));
   };
 
   return (

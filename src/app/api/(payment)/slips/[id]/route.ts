@@ -52,7 +52,7 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
                  p.id AS payment_id, p.payment_method, p.description, p.step_no, p.amount
           FROM slip_files sf
           OUTER APPLY (
-            SELECT TOP 1 id, payment_method, description
+            SELECT TOP 1 id, payment_method, description, step_no, amount
             FROM payments
             WHERE lead_id = sf.lead_id
               AND slip_field = sf.slip_field

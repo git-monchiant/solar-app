@@ -157,8 +157,10 @@ export default function ActivityItem({ activity, isLast }: { activity: Activity;
       || activity.title.includes("ไม่อนุมัติ"));
   const isRedActivity = isLostChange || isRejected || isQuotationRejected;
   const dotColor = isQuotationApproved ? "bg-emerald-600" : isRedActivity ? "bg-red-500" : config.color;
-  const headColor = isQuotationApproved ? "text-emerald-700" : isRedActivity ? "text-red-600" : "text-gray-900";
-  const noteColor = isLostChange || isQuotationRejected ? "text-red-600" : "text-gray-700";
+  // Quotation entries follow the shared Activity Log pattern: status color is
+  // carried by the icon, while the title and note keep the standard text tone.
+  const headColor = isLostChange || isRejected ? "text-red-600" : "text-gray-900";
+  const noteColor = isLostChange ? "text-red-600" : "text-gray-700";
   const sd = new Date(activity.created_at);
   const isNoonDefault = sd.getHours() === 12 && sd.getMinutes() === 0 && sd.getSeconds() === 0;
   const saveStr = isNoonDefault

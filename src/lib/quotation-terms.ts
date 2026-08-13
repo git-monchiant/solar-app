@@ -263,7 +263,7 @@ export function getQuotationLegalContent(
   const activeOmServices = om.enabled
     ? [
         om.cleaning.enabled
-          ? `ล้างแผงโซลาร์ ${om.cleaning.visits_per_year} ครั้งต่อปี เป็นระยะเวลา ${om.cleaning.years} ปี หรือประเมินจากความสกปรก`
+          ? `ล้างแผงโซลาร์เซลล์ ปีละ ${om.cleaning.visits_per_year} ครั้ง เป็นระยะเวลา ${om.cleaning.years} ปี หรือประเมินจากความสกปรก`
           : null,
         om.thermoscan.enabled
           ? `ตรวจสอบระบบโซลาร์เซลล์ ตรวจสอบจุดเชื่อมต่อ พร้อมทำ THERMOSCAN ปีละ ${om.thermoscan.visits_per_year} ครั้ง เป็นระยะเวลา ${om.thermoscan.years} ปี`
