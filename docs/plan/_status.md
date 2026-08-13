@@ -10,7 +10,7 @@ Statuses:
 
 | Plan | Status | Mockup | Notes |
 | --- | --- | --- | --- |
-| [20260813-03-sale-payment-result-notifications.md](20260813-03-sale-payment-result-notifications.md) | done | - | แจ้ง Sale ผู้รับผิดชอบ Lead เมื่อ Account ยืนยันหรือส่งหลักฐานชำระเงินกลับ พร้อม deep-link และ deduplicate; lint/type/build/live API ผ่าน |
+| [20260813-03-sale-payment-result-notifications.md](20260813-03-sale-payment-result-notifications.md) | done | - | แจ้งทั้ง Sale ผู้รับผิดชอบ Lead และผู้ส่งหลักฐาน เมื่อ Account ยืนยันหรือส่งกลับ พร้อม deep-link/deduplicate และ backfill migration 148 |
 | [20260813-02-accounting-payment-notifications.md](20260813-02-accounting-payment-notifications.md) | done | - | เพิ่มแจ้งเตือน Account/Admin สำหรับสลิปรอตรวจ เช็ครอรับ และเช็ครับแล้วรอยืนยันเงินเข้า พร้อมปิดงานอัตโนมัติและ deep-link; apply Development และตรวจ lint/type/build/API ผ่าน |
 | [20260811-02-quotation-approval-notifications.md](20260811-02-quotation-approval-notifications.md) | done | - | เพิ่ม in-app notification และย้ายทางเข้าหลักเป็นกระดิ่งพร้อม dropdown ที่ Header; ตรวจ desktop/mobile, API, lint, type และ build ผ่าน โดยไม่เชื่อม LINE |
 | [20260811-01-quotation-om-editor.md](20260811-01-quotation-om-editor.md) | done | - | เพิ่ม O&M accordion, dropdown ตัวเลข 0–4, snapshot ต่อใบ, reset มาตรฐาน และสร้างข้อความ PDF แบบจัดเลขอัตโนมัติ; test/lint/type-check/build ผ่าน |

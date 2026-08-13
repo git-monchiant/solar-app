@@ -68,7 +68,10 @@ export default function NotificationBell() {
 
   useEffect(() => {
     void loadSummary();
-    const interval = window.setInterval(loadSummary, 60_000);
+    // Notifications are often created by another user on another device, so
+    // browser events cannot refresh this badge. Poll often enough that Account
+    // approval appears for Sale without requiring a manual reload.
+    const interval = window.setInterval(loadSummary, 10_000);
     window.addEventListener("focus", loadSummary);
     window.addEventListener("notifications:changed", loadSummary);
     return () => {

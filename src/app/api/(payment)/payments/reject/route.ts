@@ -37,8 +37,17 @@ export async function POST(req: NextRequest) {
     const by = userRow.recordset[0]?.full_name || userRow.recordset[0]?.username || `user#${userId}`;
 
     // Load current notes JSON so we can merge the new entry instead of replacing.
-    const cur = await db.request().input("id", sql.Int, leadId)
-      .query(`SELECT payment_reject_notes FROM leads WHERE id = @id`);
+    const cur = await db.request()
+      .input("id", sql.Int, leadId)
+      .input("slip_field", sql.NVarChar(50), slipField)
+      .query(`
+        SELECT l.payment_reject_notes,
+          (SELECT TOP 1 p.submitted_by
+           FROM payments p
+           WHERE p.lead_id = l.id AND p.slip_field = @slip_field AND p.confirmed_at IS NULL
+           ORDER BY p.id DESC) submitted_by
+        FROM leads l WHERE l.id = @id
+      `);
     if (cur.recordset.length === 0) {
       return NextResponse.json({ error: "Lead not found" }, { status: 404 });
     }
@@ -105,6 +114,7 @@ export async function POST(req: NextRequest) {
       title: "บัญชีส่งหลักฐานชำระเงินกลับ",
       message: reason,
       createdBy: userId,
+      submittedBy: cur.recordset[0]?.submitted_by ?? null,
     }).catch((error) => console.error("create Sale payment notification failed:", error));
 
     return NextResponse.json({

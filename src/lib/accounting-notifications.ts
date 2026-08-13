@@ -86,7 +86,7 @@ export async function notifyAccountingRole(db: DbExecutor, input: AccountingNoti
 
 export async function notifyLeadOwner(
   db: DbExecutor,
-  input: AccountingNotificationInput & { targetUrl?: string },
+  input: AccountingNotificationInput & { targetUrl?: string; submittedBy?: number | null },
 ) {
   const paymentKey = input.paymentId ? String(input.paymentId) : `${input.leadId}:${input.slipField}`;
   const eventKey = `${input.type}:${paymentKey}`;
@@ -102,13 +102,23 @@ export async function notifyLeadOwner(
     .input("message", sql.NVarChar(1000), input.message || null)
     .input("targetUrl", sql.NVarChar(500), targetUrl)
     .input("createdBy", sql.Int, input.createdBy || null)
+    .input("submittedBy", sql.Int, input.submittedBy || null)
     .query(`
       MERGE dbo.accounting_notifications WITH (HOLDLOCK) AS target
       USING (
-        SELECT u.id recipient_user_id
-        FROM dbo.leads l
-        JOIN dbo.users u ON u.id = l.assigned_user_id AND u.is_active = 1
-        WHERE l.id = @leadId
+        SELECT DISTINCT u.id recipient_user_id
+        FROM dbo.users u
+        WHERE u.is_active = 1
+          AND u.id IN (
+            SELECT l.assigned_user_id FROM dbo.leads l WHERE l.id = @leadId
+            UNION
+            SELECT p.submitted_by
+            FROM dbo.payments p
+            WHERE (@paymentId IS NOT NULL AND p.id = @paymentId)
+               OR (@paymentId IS NULL AND p.lead_id = @leadId AND p.slip_field = @slipField)
+            UNION
+            SELECT @submittedBy
+          )
       ) AS source
       ON target.recipient_user_id = source.recipient_user_id
         AND target.event_key = @eventKey
