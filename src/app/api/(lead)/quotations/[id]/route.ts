@@ -72,9 +72,63 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
   }catch(error){try{await tx.rollback();}catch{} console.error("PATCH quotation",error);return NextResponse.json({error:error instanceof Error?error.message:"แก้ไขไม่สำเร็จ"},{status:500});}
 }
 
-export async function DELETE(req:NextRequest,{params}:{params:Promise<{id:string}>}){
-  const gate=await requireAuth(req);if(gate.error)return gate.error;const actor=await getQuotationActor(gate.userId);const {id}=await params;const db=await getDb();
-  const q=await db.request().input("id",sql.Int,Number(id)).query(`SELECT q.status,l.assigned_user_id FROM quotations q JOIN leads l ON l.id=q.lead_id WHERE q.id=@id`);const row=q.recordset[0];
-  if(!row)return NextResponse.json({error:"ไม่พบใบเสนอราคา"},{status:404});if(row.status!=="draft")return NextResponse.json({error:"ลบได้เฉพาะฉบับร่าง"},{status:409});if(!canManageQuotation(actor?.roles))return NextResponse.json({error:"ไม่มีสิทธิ์"},{status:403});
-  await db.request().input("id",sql.Int,Number(id)).query(`DELETE FROM quotations WHERE id=@id`);return NextResponse.json({ok:true});
+export async function DELETE(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
+  const gate = await requireAuth(req);
+  if (gate.error) return gate.error;
+  const actor = await getQuotationActor(gate.userId);
+  const { id } = await params;
+  const quotationId = Number(id);
+  const db = await getDb();
+  const tx = new sql.Transaction(db);
+
+  try {
+    await tx.begin();
+    const result = await new sql.Request(tx)
+      .input("id", sql.Int, quotationId)
+      .query(`
+        SELECT status, lead_id, doc_no, revision_no, option_no
+        FROM quotations
+        WHERE id = @id
+      `);
+    const row = result.recordset[0];
+
+    if (!row) {
+      await tx.rollback();
+      return NextResponse.json({ error: "ไม่พบใบเสนอราคา" }, { status: 404 });
+    }
+    if (row.status !== "draft") {
+      await tx.rollback();
+      return NextResponse.json({ error: "ลบได้เฉพาะฉบับร่าง" }, { status: 409 });
+    }
+    if (!canManageQuotation(actor?.roles)) {
+      await tx.rollback();
+      return NextResponse.json({ error: "ไม่มีสิทธิ์" }, { status: 403 });
+    }
+
+    await new sql.Request(tx)
+      .input("id", sql.Int, quotationId)
+      .query(`DELETE FROM quotations WHERE id = @id`);
+
+    const activityTitle = Number(row.revision_no) > 0
+      ? `ลบ Revision ${row.revision_no} ของใบเสนอราคา ${row.doc_no} ชุด ${row.option_no}`
+      : `ลบใบเสนอราคาฉบับร่าง ${row.doc_no} ชุด ${row.option_no}`;
+    await new sql.Request(tx)
+      .input("lead_id", sql.Int, row.lead_id)
+      .input("title", sql.NVarChar(200), activityTitle)
+      .input("created_by", sql.Int, gate.userId)
+      .query(`
+        INSERT INTO lead_activities (lead_id, activity_type, title, created_by)
+        VALUES (@lead_id, 'quotation', @title, @created_by)
+      `);
+
+    await tx.commit();
+    return NextResponse.json({ ok: true });
+  } catch (error) {
+    try { await tx.rollback(); } catch {}
+    console.error("DELETE quotation", error);
+    return NextResponse.json(
+      { error: error instanceof Error ? error.message : "ลบไม่สำเร็จ" },
+      { status: 500 },
+    );
+  }
 }

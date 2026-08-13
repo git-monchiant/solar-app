@@ -13,16 +13,24 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
   const db = await getDb();
   const result = await db.request().input("lead_id", sql.Int, Number(id)).query(`
     SELECT q.*, p.name package_current_name, u.full_name created_by_name,
+      submitter.full_name submitted_by_name,
+      solar_approver.full_name solar_approved_by_name,
+      COALESCE(q.approver_name_snapshot, sales_approver.full_name) approved_by_name,
       returned_by.full_name returned_by_name,
+      reminder.reminded_at last_reminded_at,
+      reminder_user.full_name last_reminded_by_name,
       CASE
-        WHEN returned_event.action = 'changes_required_solar' THEN 'Solar Sup'
-        WHEN returned_event.action = 'changes_required_sales' THEN 'Sale Sup'
+        WHEN returned_event.action = 'changes_required_solar' THEN 'Solar Manager'
+        WHEN returned_event.action = 'changes_required_sales' THEN 'Sale Manager'
         WHEN returned_event.id IS NOT NULL THEN 'ผู้อนุมัติ'
         ELSE NULL
       END returned_by_role
     FROM quotations q
     LEFT JOIN packages p ON p.id=q.package_id
     LEFT JOIN users u ON u.id=q.created_by
+    LEFT JOIN users submitter ON submitter.id=q.submitted_by
+    LEFT JOIN users solar_approver ON solar_approver.id=q.solar_approved_by
+    LEFT JOIN users sales_approver ON sales_approver.id=q.approved_by
     OUTER APPLY (
       SELECT TOP 1 e.id, e.action, e.acted_by
       FROM quotation_approval_events e
@@ -30,6 +38,18 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
       ORDER BY e.acted_at DESC, e.id DESC
     ) returned_event
     LEFT JOIN users returned_by ON returned_by.id = returned_event.acted_by
+    OUTER APPLY (
+      SELECT TOP 1 r.reminded_at, r.reminded_by
+      FROM quotation_approval_reminders r
+      WHERE r.quotation_id = q.id
+        AND r.approval_stage = CASE
+          WHEN q.status = 'pending_solar_sup' THEN 'solar_sup'
+          WHEN q.status IN ('pending_sales_sup', 'pending_approval') THEN 'sales_sup'
+          ELSE ''
+        END
+      ORDER BY r.reminded_at DESC, r.id DESC
+    ) reminder
+    LEFT JOIN users reminder_user ON reminder_user.id = reminder.reminded_by
     WHERE q.lead_id=@lead_id ORDER BY q.option_no, q.revision_no DESC;
     SELECT qi.*, pi.package_id source_package_id
     FROM quotation_items qi

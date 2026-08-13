@@ -29,9 +29,10 @@ import GridTieStep from "@/components/lead/detail/steps/GridTieStep";
 import type { Lead, Package, CardStateKind } from "@/components/lead/detail/steps/types";
 import { useDialog } from "@/components/ui/Dialog";
 import { useIsMobile } from "@/lib/hooks/useIsMobile";
-import { formatTHB, formatNumber, formatThaiDate as formatDate, formatThaiTime } from "@/lib/utils/formatters";
+import { formatThaiDate as formatDate, formatThaiTime, formatNumber } from "@/lib/utils/formatters";
 import { INFO_LABELS, PRIMARY_REASON_LABEL } from "@/lib/constants/info-labels";
 import FallbackImage from "@/components/ui/FallbackImage";
+import NotificationBell from "@/components/layout/NotificationBell";
 
 const formatAcUnits = (s: string | null): string | null => {
   if (!s) return null;
@@ -991,7 +992,7 @@ export default function LeadDetailPage({ params }: { params: Promise<{ id: strin
   return (
     <div className="flex flex-col h-full">
       {/* Header — subtle primary tint */}
-      <div className="bg-gradient-to-b from-primary via-primary/50 to-white safe-top sticky top-0 z-10">
+      <div className="bg-gradient-to-b from-primary via-primary/50 to-white safe-top sticky top-0 z-40">
         {/* Top row: back + name + call */}
         <div className="pl-3 pr-5 pt-3 flex items-center gap-2">
           {focus ? (
@@ -1032,6 +1033,7 @@ export default function LeadDetailPage({ params }: { params: Promise<{ id: strin
               </button>
             )}
           </div>
+          <NotificationBell />
           {/* LINE link button — connected: open unmap modal; not connected: open picker */}
           <button
             type="button"
@@ -1572,7 +1574,7 @@ export default function LeadDetailPage({ params }: { params: Promise<{ id: strin
                   id: "usage",
                   title: "ลักษณะการใช้ไฟ",
                   rows: [
-                    { label: "ค่าไฟ / เดือน", value: lead.pre_monthly_bill ? `${formatTHB(lead.pre_monthly_bill)} บาท` : null },
+                    { label: "ค่าไฟ / เดือน", value: lead.pre_monthly_bill ? `${formatNumber(lead.pre_monthly_bill)} บาท` : null },
                     { label: "ช่วงเวลาใช้ไฟ", value: lead.pre_peak_usage ? INFO_LABELS.peakUsage[lead.pre_peak_usage] : null },
                     { label: "ระบบไฟฟ้า", value: lead.pre_electrical_phase ? INFO_LABELS.electricalPhase[lead.pre_electrical_phase] : null },
                     { label: "แอร์", value: formatAcUnits(lead.pre_ac_units) },
@@ -1638,8 +1640,8 @@ export default function LeadDetailPage({ params }: { params: Promise<{ id: strin
                   title: "แบบสอบถาม · ค่าไฟ + มิเตอร์",
                   rows: [
                     // Bill + 5 range indicator chips (auto-tick on typed value).
-                    { label: "ค่าไฟต่อเดือน", value: lead.pre_monthly_bill ? `${formatTHB(lead.pre_monthly_bill)} บาท` : null, field: "pre_monthly_bill", kind: "bill_range" as QCellKind, suffix: "บาท", raw: lead.pre_monthly_bill ?? "", required: true },
-                    { label: "ค่าไฟสูงสุดที่เคยจ่าย", value: lead.monthly_bill_max ? `${formatTHB(Number(lead.monthly_bill_max))} บาท` : null, field: "monthly_bill_max", kind: "number" as QCellKind, suffix: "บาท", raw: lead.monthly_bill_max ?? "" },
+                    { label: "ค่าไฟต่อเดือน", value: lead.pre_monthly_bill ? `${formatNumber(lead.pre_monthly_bill)} บาท` : null, field: "pre_monthly_bill", kind: "bill_range" as QCellKind, suffix: "บาท", raw: lead.pre_monthly_bill ?? "", required: true },
+                    { label: "ค่าไฟสูงสุดที่เคยจ่าย", value: lead.monthly_bill_max ? `${formatNumber(Number(lead.monthly_bill_max))} บาท` : null, field: "monthly_bill_max", kind: "number" as QCellKind, suffix: "บาท", raw: lead.monthly_bill_max ?? "" },
                     // peak_usage — only the 4 time-range codes the form
                     // currently offers. Legacy day/night/both codes are
                     // dropped from the picker (they still render on the
@@ -2198,7 +2200,7 @@ export default function LeadDetailPage({ params }: { params: Promise<{ id: strin
               if (lead.pre_booked_at) preSurveyRows.push({
                 date: lead.pre_booked_at,
                 label: "ออกใบจอง",
-                sub: [lead.pre_doc_no && `เลขที่ ${lead.pre_doc_no}`, lead.pre_total_price && `ค่าจอง ${formatTHB(lead.pre_total_price)} ฿`].filter(Boolean).join(" · ") || undefined,
+                sub: [lead.pre_doc_no && `เลขที่ ${lead.pre_doc_no}`, lead.pre_total_price && `ค่าจอง ${formatNumber(lead.pre_total_price)} ฿`].filter(Boolean).join(" · ") || undefined,
               });
               // Booking deposit — read step 1 (submitted) + step 2 (confirmed)
               // straight from the payment row; backfill migration 010 fills
@@ -2228,7 +2230,7 @@ export default function LeadDetailPage({ params }: { params: Promise<{ id: strin
                   }
                   preSurveyRows.push({
                     date: prePay.confirmed_at ?? prePay.submitted_at ?? lead.pre_booked_at ?? null,
-                    label: `ชำระเงินจองสำรวจ${prePay.amount ? ` ${formatTHB(prePay.amount)} ฿` : ""}`,
+                    label: `ชำระเงินจองสำรวจ${prePay.amount ? ` ${formatNumber(prePay.amount)} ฿` : ""}`,
                     sub: parts.length ? parts.join(" · ") : undefined,
                     tone: prePay.confirmed_at ? "paid" : "pending",
                     slipPaymentId: prePay.id,
@@ -2252,7 +2254,7 @@ export default function LeadDetailPage({ params }: { params: Promise<{ id: strin
               if (lead.quotation_sent_date) quoteRows.push({
                 date: lead.quotation_sent_date,
                 label: "ส่งใบเสนอราคา",
-                sub: lead.quotation_amount ? `ยอด ${formatTHB(lead.quotation_amount)} ฿` : undefined,
+                sub: lead.quotation_amount ? `ยอด ${formatNumber(lead.quotation_amount)} ฿` : undefined,
               });
 
               const orderInstallments = (() => {
@@ -2283,7 +2285,7 @@ export default function LeadDetailPage({ params }: { params: Promise<{ id: strin
                 }
                 const bullet: Bullet = {
                   date: r.due_date || null,
-                  label: `งวดที่ ${i + 1} ${r.when === "after" ? "(หลังติดตั้ง)" : "(ก่อนติดตั้ง)"}${amount != null ? ` · ${formatTHB(amount)} ฿` : ""}`,
+                  label: `งวดที่ ${i + 1} ${r.when === "after" ? "(หลังติดตั้ง)" : "(ก่อนติดตั้ง)"}${amount != null ? ` · ${formatNumber(amount)} ฿` : ""}`,
                   sub: subParts.length ? subParts.join(" · ") : undefined,
                   tone: pay?.confirmed_at ? "paid" : "pending",
                   slipPaymentId: pay?.id,

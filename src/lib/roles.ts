@@ -2,8 +2,9 @@
 
 import { useEffect, useState } from "react";
 import { apiFetch } from "./api";
+import { hasAnyGrantedRole, type AppRole } from "./role-permissions";
 
-export type Role = "admin" | "sales" | "solar_sup" | "sales_sup" | "solar" | "leadsseeker" | "account";
+export type Role = AppRole;
 export const ALL_ROLES: Role[] = ["admin", "sales", "solar_sup", "sales_sup", "solar", "leadsseeker", "account"];
 
 // solar_sup / sales_sup แสดงเป็น "Manager" ทั้งคู่ — key ใต้ฝากยังแยกอยู่เพราะ
@@ -11,8 +12,8 @@ export const ALL_ROLES: Role[] = ["admin", "sales", "solar_sup", "sales_sup", "s
 export const ROLE_LABEL: Record<Role, string> = {
   admin: "Admin",
   sales: "Sales",
-  solar_sup: "Manager (Solar)",
-  sales_sup: "Manager (Sales)",
+  solar_sup: "Solar Manager",
+  sales_sup: "Sale Manager",
   solar: "Solar",
   leadsseeker: "Leads Seeker",
   account: "Account",
@@ -116,6 +117,9 @@ export function useActiveRoles(): { activeRoles: Role[]; setActiveRoles: (r: Rol
       } catch {}
     }
     cachedActiveRoles = me.roles;
+    if (typeof window !== "undefined") {
+      window.localStorage.setItem(STORAGE_KEY, JSON.stringify(me.roles));
+    }
     emitRoles();
   }, [me]);
 
@@ -135,5 +139,5 @@ export function useActiveRoles(): { activeRoles: Role[]; setActiveRoles: (r: Rol
 }
 
 export function hasRole(activeRoles: Role[], ...required: Role[]): boolean {
-  return required.some(r => activeRoles.includes(r));
+  return hasAnyGrantedRole(activeRoles, required);
 }

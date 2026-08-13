@@ -1,11 +1,16 @@
 import "server-only";
 import { getDb, sql } from "@/lib/db";
 import { GSB_SOLAR_LOAN_DEFAULTS } from "@/lib/loan-defaults";
+import {
+  parseQuotationOmSettings,
+  type QuotationOmSettings,
+} from "@/lib/quotation-terms";
 
-export const QUOTATION_DOCUMENT_VERSION = 3;
+export const QUOTATION_DOCUMENT_VERSION = 4;
 export const QUOTATION_FINANCE_FORMULA_VERSION = "contract-price-before-deposit-v2";
 
 export type QuotationDocumentInputs = {
+  om: QuotationOmSettings;
   recommendation_reason: string;
   loan_enabled: boolean;
   loan_bank: string;
@@ -138,6 +143,7 @@ export function parseDocumentInputs(raw: unknown, fallback: Partial<QuotationDoc
   } catch { /* use fallbacks */ }
   const number = (value: unknown, defaultValue: number) => Number.isFinite(Number(value)) ? Number(value) : defaultValue;
   return {
+    om: parseQuotationOmSettings(parsed.om ?? fallback.om),
     recommendation_reason: String(parsed.recommendation_reason ?? fallback.recommendation_reason ?? "").trim(),
     loan_enabled: Boolean(parsed.loan_enabled ?? fallback.loan_enabled ?? GSB_SOLAR_LOAN_DEFAULTS.loan_enabled),
     loan_bank: String(parsed.loan_bank ?? fallback.loan_bank ?? GSB_SOLAR_LOAN_DEFAULTS.loan_bank).trim(),

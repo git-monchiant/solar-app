@@ -20,6 +20,15 @@ type NavItem = {
   group?: "seeker";
 };
 
+function CountBadge({ count, compact = false }: { count: number; compact?: boolean }) {
+  if (count <= 0) return null;
+  return (
+    <span className={`${compact ? "absolute -right-1 -top-1 min-w-4 px-1 text-[9px]" : "ml-auto min-w-5 px-1.5 text-xxs"} inline-flex h-4 items-center justify-center rounded-full bg-red-500 font-bold leading-none text-white`}>
+      {count > 99 ? "99+" : count}
+    </span>
+  );
+}
+
 const navItems: NavItem[] = [
   {
     href: "/seeker",
@@ -73,6 +82,20 @@ const navItems: NavItem[] = [
   },
 ];
 
+const quotationApprovalsNavItem: NavItem = {
+  href: "/quotation-approvals",
+  label: "Quotation Approvals",
+  roles: ["admin", "solar_sup", "sales_sup"],
+  icon: <svg className="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M9 12.75L11.25 15 15 9.75M6.75 3.75h10.5A2.25 2.25 0 0119.5 6v12a2.25 2.25 0 01-2.25 2.25H6.75A2.25 2.25 0 014.5 18V6a2.25 2.25 0 012.25-2.25z" /></svg>,
+};
+
+const supervisorPendingNavItem: NavItem = {
+  href: "/quotation-approvals",
+  label: "Pending",
+  roles: ["solar_sup", "sales_sup"],
+  icon: <svg className="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M9 12.75L11.25 15 15 9.75M21 12a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>,
+};
+
 type BottomNavProps = {
   collapsed?: boolean;
   onToggle?: () => void;
@@ -93,6 +116,7 @@ export default function BottomNav({ collapsed = false, onToggle }: BottomNavProp
       .then((rows) => setJourneySummary(rows as JourneySummaryRow[]))
       .catch(() => {});
   }, [activeModuleKey, pathname]);
+  const [pendingApprovals, setPendingApprovals] = useState(0);
   // Floating hover label — only shown when collapsed. position: fixed so it
   // escapes the nav's overflow-y-auto (which CSS-clips both axes).
   const [hover, setHover] = useState<HoverInfo | null>(null);
@@ -144,6 +168,29 @@ export default function BottomNav({ collapsed = false, onToggle }: BottomNavProp
   // desktop "Settings" admin group, surfaced as primary nav on phone since
   // admin's day is mostly user/payment/settings ops, not pipeline browsing.
   const isAdminActive = hasRole(activeRoles, "admin");
+  useEffect(() => {
+    if (!me || activeRoles.length === 0) return;
+    let cancelled = false;
+    const loadBadges = async () => {
+      const canApprove = hasRole(activeRoles, "admin", "solar_sup", "sales_sup");
+      const stage = hasRole(activeRoles, "admin")
+        ? ""
+        : hasRole(activeRoles, "solar_sup")
+          ? "solar_sup"
+          : "sales_sup";
+      if (!canApprove) return;
+      const result = await apiFetch(`/api/quotation-approvals/count${stage ? `?stage=${stage}` : ""}`).catch(() => null) as { count?: number } | null;
+      if (!cancelled && result) setPendingApprovals(Number(result.count) || 0);
+    };
+    void loadBadges();
+    const interval = window.setInterval(loadBadges, 60_000);
+    window.addEventListener("focus", loadBadges);
+    return () => {
+      cancelled = true;
+      window.clearInterval(interval);
+      window.removeEventListener("focus", loadBadges);
+    };
+  }, [activeRoles, me]);
   const adminMobileItems: NavItem[] = isAdminActive ? [
     {
       href: "/pipeline",
@@ -166,7 +213,21 @@ export default function BottomNav({ collapsed = false, onToggle }: BottomNavProp
       icon: <svg className="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M17.982 18.725A7.488 7.488 0 0012 15.75a7.488 7.488 0 00-5.982 2.975m11.963 0a9 9 0 10-11.963 0m11.963 0A8.966 8.966 0 0112 21a8.966 8.966 0 01-5.982-2.275M15 9.75a3 3 0 11-6 0 3 3 0 016 0z" /></svg>,
     },
   ] : [];
-  const visibleMobile = isAdminActive ? adminMobileItems : visibleItems.filter((i) => !i.desktopOnly);
+  const supervisorApprover = !isAdminActive && hasRole(activeRoles, "solar_sup", "sales_sup");
+  const supervisorMobileItems = visibleItems
+    .filter((item) => !item.desktopOnly)
+    .flatMap((item) => {
+      if (supervisorApprover && item.href === "/packages") return [supervisorPendingNavItem];
+      return [item];
+    });
+  const visibleDesktop = supervisorApprover
+    ? visibleItems.flatMap((item) => item.href === "/packages" ? [supervisorPendingNavItem] : [item])
+    : visibleItems;
+  const visibleMobile = isAdminActive
+    ? adminMobileItems
+    : supervisorApprover
+      ? supervisorMobileItems
+      : visibleItems.filter((item) => !item.desktopOnly);
 
   return (
     <>
@@ -210,7 +271,10 @@ export default function BottomNav({ collapsed = false, onToggle }: BottomNavProp
             return (
               <Link key={item.href} href={item.href}
                 className={`flex flex-col items-center justify-center w-full h-full gap-0.5 transition-colors ${isActive ? "text-primary" : "text-gray"}`}>
-                {item.icon}
+                <span className="relative">
+                  {item.icon}
+                  {item.href === "/quotation-approvals" && <CountBadge count={pendingApprovals} compact />}
+                </span>
                 <span className="text-xs font-semibold uppercase tracking-wider">{item.label}</span>
               </Link>
             );
@@ -331,13 +395,13 @@ export default function BottomNav({ collapsed = false, onToggle }: BottomNavProp
                 {homeIcon}
                 {!collapsed && <span>Home</span>}
               </Link>
-              {visibleItems.map((item, idx) => {
+              {visibleDesktop.map((item, idx) => {
             const isActive =
               item.href === "/packages" ? pathname === "/packages" :
               item.href === "/seeker" ? pathname === "/seeker" :
               item.href === "/report" ? pathname === "/report" :
               pathname.startsWith(item.href);
-            const prev = visibleItems[idx - 1];
+            const prev = visibleDesktop[idx - 1];
             const showDivider = prev && prev.group === "seeker" && item.group !== "seeker";
             return (
               <div key={item.href}>
@@ -346,13 +410,17 @@ export default function BottomNav({ collapsed = false, onToggle }: BottomNavProp
                   onMouseEnter={(e) => showHover(e, item.label, item.href)}
                   onMouseLeave={scheduleHide}
                   className={`flex items-center rounded-lg text-xs font-semibold uppercase transition-colors ${collapsed ? "justify-center px-2 py-2" : "gap-3 px-3 py-1.5"} ${isActive ? "bg-primary/10 text-primary" : "text-gray hover:bg-gray-100"}`}>
-                  {item.icon}
+                  <span className="relative">
+                    {item.icon}
+                    {collapsed && item.href === "/quotation-approvals" && <CountBadge count={pendingApprovals} compact />}
+                  </span>
                   {!collapsed && <span>{item.label}</span>}
+                  {!collapsed && item.href === "/quotation-approvals" && <CountBadge count={pendingApprovals} />}
                 </Link>
               </div>
             );
           })}
-              {showAdminGroups && <AdminGroups pathname={pathname} activeRoles={activeRoles} username={me?.username ?? null} collapsed={collapsed} onHover={showHover} onHoverEnd={scheduleHide} />}
+              {showAdminGroups && <AdminGroups pathname={pathname} activeRoles={activeRoles} username={me?.username ?? null} collapsed={collapsed} onHover={showHover} onHoverEnd={scheduleHide} pendingApprovals={pendingApprovals} />}
             </>
           )}
         </nav>
@@ -380,12 +448,7 @@ const ADMIN_GROUPS: { title: string; links: AdminLink[] }[] = [
   {
     title: "Reports",
     links: [
-      {
-        href: "/quotation-approvals",
-        label: "Quotation Approvals",
-        roles: ["admin", "solar_sup", "sales_sup"],
-        icon: <svg className="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M9 12.75L11.25 15 15 9.75M6.75 3.75h10.5A2.25 2.25 0 0119.5 6v12a2.25 2.25 0 01-2.25 2.25H6.75A2.25 2.25 0 014.5 18V6a2.25 2.25 0 012.25-2.25z" /></svg>,
-      },
+      quotationApprovalsNavItem,
       {
         href: "/dashboard",
         label: "Dashboard I",
@@ -475,12 +538,18 @@ const ADMIN_GROUPS: { title: string; links: AdminLink[] }[] = [
   },
 ];
 
+const supervisorPendingApprovalLink: AdminLink = {
+  ...supervisorPendingNavItem,
+  label: "Pending Approval",
+};
+
 // Groups whose section header can be clicked to collapse the link list.
 // "Settings" stays always-open since it's the catch-all admin area.
 const COLLAPSIBLE_GROUPS = new Set(["Reports", "Accounting"]);
 
-function AdminGroups({ pathname, activeRoles, username, collapsed, onHover, onHoverEnd }: { pathname: string; activeRoles: Role[]; username: string | null; collapsed?: boolean; onHover: (e: React.MouseEvent<HTMLElement>, label: string, href: string) => void; onHoverEnd: () => void }) {
+function AdminGroups({ pathname, activeRoles, username, collapsed, onHover, onHoverEnd, pendingApprovals }: { pathname: string; activeRoles: Role[]; username: string | null; collapsed?: boolean; onHover: (e: React.MouseEvent<HTMLElement>, label: string, href: string) => void; onHoverEnd: () => void; pendingApprovals: number }) {
   const isAdmin = hasRole(activeRoles, "admin");
+  const isSupervisorView = !isAdmin && hasRole(activeRoles, "solar_sup", "sales_sup");
   // Persisted per-group collapse state. Key = group title.
   const [foldedGroups, setFoldedGroups] = useState<Set<string>>(new Set());
   useEffect(() => {
@@ -489,6 +558,7 @@ function AdminGroups({ pathname, activeRoles, username, collapsed, onHover, onHo
       const raw = localStorage.getItem("admin_nav_folded");
       if (raw) {
         const arr = JSON.parse(raw);
+        // eslint-disable-next-line react-hooks/set-state-in-effect
         if (Array.isArray(arr)) setFoldedGroups(new Set(arr.filter((x): x is string => typeof x === "string")));
       }
     } catch { /* ignore */ }
@@ -506,7 +576,15 @@ function AdminGroups({ pathname, activeRoles, username, collapsed, onHover, onHo
   return (
     <>
       {ADMIN_GROUPS.map((g, i) => {
-        const links = g.links.filter((l) => {
+        const groupLinks = isSupervisorView && g.title === "Accounting"
+          ? [...g.links, supervisorPendingApprovalLink]
+          : g.links;
+        const links = groupLinks.filter((l) => {
+          if (
+            isSupervisorView &&
+            g.title === "Reports" &&
+            l.href === "/quotation-approvals"
+          ) return false;
           if (l.userOnly) return !!username && l.userOnly.includes(username);
           return isAdmin || (l.roles && hasRole(activeRoles, ...l.roles));
         });
@@ -548,8 +626,9 @@ function AdminGroups({ pathname, activeRoles, username, collapsed, onHover, onHo
                   onMouseEnter={(e) => onHover(e, l.label, l.href)}
                   onMouseLeave={onHoverEnd}
                   className={`flex items-center rounded-lg text-xs font-semibold uppercase transition-colors ${collapsed ? "justify-center px-2 py-2" : "gap-3 px-3 py-1.5"} ${active ? "bg-primary/10 text-primary" : "text-gray hover:bg-gray-100"}`}>
-                  {l.icon}
+                  <span className="relative">{l.icon}{collapsed && l.href === "/quotation-approvals" && <CountBadge count={pendingApprovals} compact />}</span>
                   {!collapsed && <span>{l.label}</span>}
+                  {!collapsed && l.href === "/quotation-approvals" && <CountBadge count={pendingApprovals} />}
                 </Link>
               );
             })}

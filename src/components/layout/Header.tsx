@@ -5,6 +5,7 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useEffect, useState } from "react";
 import RoleSwitcher from "./RoleSwitcher";
+import NotificationBell from "./NotificationBell";
 
 interface HeaderProps {
   title: string;
@@ -26,7 +27,7 @@ export default function Header({ title, subtitle, backHref, logoSrc, rightConten
       .catch(() => {});
   }, []);
   return (
-    <div className="bg-gradient-to-b from-primary via-primary/50 to-white sticky top-0 z-10" style={{ paddingTop: "env(safe-area-inset-top, 0px)" }}>
+    <div className="bg-gradient-to-b from-primary via-primary/50 to-white sticky top-0 z-40" style={{ paddingTop: "env(safe-area-inset-top, 0px)" }}>
       <div className="h-12 px-5 flex items-center gap-3">
         {backHref && (
           <Link href={backHref} className="p-2 -ml-2 rounded-full text-gray-600 hover:bg-gray-200 transition-colors">
@@ -48,6 +49,7 @@ export default function Header({ title, subtitle, backHref, logoSrc, rightConten
           </h1>
           {subtitle && <p className="text-xs font-semibold tracking-wider uppercase text-gray-500 leading-none mt-0.5 truncate">{subtitle}</p>}
         </div>
+        <NotificationBell />
         {/* สลับ role ทำจากหน้า module (/home) ที่เดียว — หน้าอื่นไม่โชว์ปุ่ม */}
         {pathname === "/home" && <RoleSwitcher />}
         {rightContent}

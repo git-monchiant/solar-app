@@ -1,8 +1,9 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getDb, sql } from "@/lib/db";
 import { requireAuth } from "@/lib/auth";
-import { logLeadActivity, paymentStepLabel } from "@/lib/lead-activity-log";
+import { logLeadActivity, paymentStepLabel, fmtBaht } from "@/lib/lead-activity-log";
 import { refreshJourneySafe } from "@/lib/journey";
+import { notifyAccountingRole, resolveAccountingNotifications } from "@/lib/accounting-notifications";
 
 export const runtime = "nodejs";
 
@@ -49,10 +50,10 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
       const before = await db.request().input("id", sql.Int, slipId)
         .query(`
           SELECT sf.lead_id, sf.slip_field, sf.submitted_at,
-                 p.id AS payment_id, p.payment_method, p.description
+                 p.id AS payment_id, p.payment_method, p.description, p.step_no, p.amount
           FROM slip_files sf
           OUTER APPLY (
-            SELECT TOP 1 id, payment_method, description
+            SELECT TOP 1 id, payment_method, description, step_no, amount
             FROM payments
             WHERE lead_id = sf.lead_id
               AND slip_field = sf.slip_field
@@ -93,6 +94,16 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
           title: `ตรวจสลิป ${paymentStepLabel(row.slip_field)} (รอบัญชียืนยัน)`,
           userId: gate.userId,
         });
+        const cheque = row.payment_method === "cheque";
+        await notifyAccountingRole(db, {
+          paymentId: row.payment_id,
+          leadId: row.lead_id,
+          slipField: row.slip_field,
+          type: cheque ? "account_cheque_waiting_receive" : "account_payment_waiting_review",
+          title: cheque ? "มีเช็ครอรับ" : "มีหลักฐานชำระเงินรอตรวจสอบ",
+          message: `${paymentStepLabel(row.slip_field, row.step_no)}${row.amount ? ` · ${fmtBaht(Number(row.amount))}` : ""}`,
+          createdBy: gate.userId,
+        }).catch((error) => console.error("create accounting notification failed:", error));
         // Clear any prior rejection note for this slip_field — uploader has
         // resubmitted, so the "ไม่อนุมัติ: …" banner should disappear. Read
         // → mutate JSON in-app → write; SQL Server JSON support is awkward.
@@ -152,6 +163,15 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
                       )`);
         }
         await refreshJourneySafe(db, row.lead_id);
+        const remaining = await db.request()
+          .input("lead_id", sql.Int, row.lead_id)
+          .input("slip_field", sql.NVarChar(50), row.slip_field)
+          .query(`SELECT COUNT_BIG(*) count FROM slip_files
+                  WHERE lead_id = @lead_id AND slip_field = @slip_field AND submitted_at IS NOT NULL`);
+        if (Number(remaining.recordset[0]?.count || 0) === 0) {
+          await resolveAccountingNotifications(db, { leadId: row.lead_id, slipField: row.slip_field })
+            .catch((error) => console.error("resolve accounting notification failed:", error));
+        }
       }
       return NextResponse.json({ ok: true });
     }
@@ -191,6 +211,17 @@ export async function DELETE(req: NextRequest, { params }: { params: Promise<{ i
                   )`);
     }
     if (row) await refreshJourneySafe(db, row.lead_id);
+    if (row) {
+      const remaining = await db.request()
+        .input("lead_id", sql.Int, row.lead_id)
+        .input("slip_field", sql.NVarChar(50), row.slip_field)
+        .query(`SELECT COUNT_BIG(*) count FROM slip_files
+                WHERE lead_id = @lead_id AND slip_field = @slip_field AND submitted_at IS NOT NULL`);
+      if (Number(remaining.recordset[0]?.count || 0) === 0) {
+        await resolveAccountingNotifications(db, { leadId: row.lead_id, slipField: row.slip_field })
+          .catch((error) => console.error("resolve accounting notification failed:", error));
+      }
+    }
     return NextResponse.json({ ok: true });
   } catch (e) {
     console.error("DELETE /api/slips/[id] error:", e);

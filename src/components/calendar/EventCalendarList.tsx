@@ -89,6 +89,7 @@ function ymdLocal(d: Date) {
 }
 
 export default function EventCalendarList({ monthsBack, monthsForward, days, zoneFilter = "all", showZoneChips = false, toolbarRight, anchor: controlledAnchor, hideNav = false, controlledZone, controlledTeam = "all", onVisibleMonthChange }: Props) {
+  const dialog = useDialog();
   const [events, setEvents] = useState<ScheduledEvent[]>([]);
   const [zones, setZones] = useState<{ id: number; name: string; color?: string | null }[]>([]);
   const [loading, setLoading] = useState(true);
@@ -101,7 +102,6 @@ export default function EventCalendarList({ monthsBack, monthsForward, days, zon
   // anchor (re-render); window length stays fixed.
   const initBack = monthsBack ?? (days ? 0 : 1);
   const initForward = monthsForward ?? (days ? Math.ceil(days / 30) : 3);
-  const dialog = useDialog();
   const today = useMemo(() => new Date(), []);
   const [internalAnchor, setInternalAnchor] = useState<{ y: number; m: number }>(() => {
     const a = new Date(today.getFullYear(), today.getMonth() - initBack, 1);

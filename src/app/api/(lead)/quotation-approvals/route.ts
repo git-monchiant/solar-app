@@ -1,9 +1,9 @@
 import { NextRequest, NextResponse } from "next/server";
 import { fixDates, getDb } from "@/lib/db";
-import { requireAnyRole } from "@/lib/auth";
+import { requireAnyActiveRole } from "@/lib/auth";
 
 export async function GET(req: NextRequest) {
-  const gate = await requireAnyRole(req, ["admin", "solar_sup", "sales_sup"]);
+  const gate = await requireAnyActiveRole(req, ["admin", "solar_sup", "sales_sup"]);
   if (gate.error) return gate.error;
 
   const requestedStage = req.nextUrl.searchParams.get("stage");

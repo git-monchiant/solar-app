@@ -9,8 +9,8 @@ import { getUserIdHeader } from "@/lib/api";
 
 // Temporary admin-only export page. Will be replaced by a proper reports page.
 export default function ExportPage() {
-  const { me } = useMe();
   const dialog = useDialog();
+  const { me } = useMe();
   const isAdmin = (me?.roles || []).includes("admin");
   const [busy, setBusy] = useState(false);
 
