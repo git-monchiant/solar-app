@@ -10,6 +10,7 @@ Statuses:
 
 | Plan | Status | Mockup | Notes |
 | --- | --- | --- | --- |
+| [20260813-02-module-base-navigation.md](20260813-02-module-base-navigation.md) | in-progress | [mockup](../mockup/20260813-02-module-base/) | Hub → Module → Journey ใช้ได้แล้วแบบ opt-in: /home + modules.tsx + /api/journey-summary + BottomNav โหมดโมดูล + pipeline รับ ?tab= — เมนูเดิมไม่กระทบจนกว่าจะเลือกโมดูล · เหลือ: role landing อัตโนมัติ, badge บน nav, ตัด nav เก่าเมื่อทีมย้ายครบ, O&M |
 | [20260813-01-journey-step-codes.md](20260813-01-journey-step-codes.md) | done | - | journey_step/journey_sub (INT) บน leads ครบทุกเฟส: migration+seed+backfill (validate 0 mismatch), hook 8 กลุ่มจุดเขียน, ย้ายผู้บริโภคแล้วทั้ง Today/BI/Pipeline/Dashboard I+dev (นิยาม "ติดต่อได้" เหลืออันเดียว), copy_db --dst=solardb_v3 ต่อ migration+backfill อัตโนมัติ · flip ตามวัน (310→320, 710→720) รันตอนโหลดหน้า list/BI วันละครั้ง — ไม่ใช้ cron · เหลือ: validate ซ้ำหลังใช้งานจริง |
 | [20260811-01-ui-consistency-cleanup.md](20260811-01-ui-consistency-cleanup.md) | done | - | แทน alert/confirm เบราว์เซอร์ 8 จุดด้วย useDialog, select 20 จุดด้วย Dropdown (เพิ่ม heightClassName), toLocaleString ~40 จุดด้วย formatTHB/formatNumber/formatThaiDate (เพิ่ม timeZone opt); tsc/lint/build ผ่าน — P3/P4 ยกไป UI rework |
 | [20260804-01-package-master-excel-alignment.md](20260804-01-package-master-excel-alignment.md) | in-progress | - | กำลังปรับ 22 Package/รายการอุปกรณ์ตาม Excel, ปิด Battery 4.8 ที่ไม่มีในต้นฉบับ และ refresh เฉพาะ Draft อัตโนมัติ พร้อม rollback |

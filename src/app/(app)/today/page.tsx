@@ -1,6 +1,7 @@
 "use client";
 import { CheckIcon, PlusIcon } from "@/components/ui/icons";
 import Dropdown from "@/components/ui/Dropdown";
+import { useActiveModuleKey } from "@/lib/hooks/useActiveModule";
 
 import { apiFetch } from "@/lib/api";
 import { useEffect, useState } from "react";
@@ -39,6 +40,12 @@ export default function TodayPage() {
   const [loading, setLoading] = useState(true);
   const [tab, setTab] = useState<TodayTab>("sales_all");
   const [search, setSearch] = useState("");
+  // โหมดโมดูล: left menu ทำหน้าที่แยกมุมมองแล้ว → ซ่อนแถบ tab และคง Today ไว้ที่
+  // มุมมองรวม (sales_all — ถ้า role ไม่มี fallback เป็น tab แรกที่มองเห็นตามเดิม)
+  const moduleMode = !!useActiveModuleKey();
+  useEffect(() => {
+    if (moduleMode) setTab("sales_all");
+  }, [moduleMode]);
   const [zones, setZones] = useState<{ id: number; name: string; color?: string | null }[]>([]);
   const [selectedZone, setSelectedZone] = useState<string>("");
   const [channelPickerOpen, setChannelPickerOpen] = useState(false);
@@ -204,8 +211,11 @@ export default function TodayPage() {
   const solarCount = bookingPaidCount + d.surveyToday.length + d.surveyPending.length + d.quotationPending.length + d.waitInstall.length + d.installScheduled.length + d.warranty.length;
   const salesSolarCount = d.quotationPending.length;
 
-  const isSales = hasRole(activeRoles, "sales");
-  const isSolar = hasRole(activeRoles, "solar");
+  // admin/account เห็นทั้งสองมุมมอง — หลักเดียวกับ effect ตรวจ tab ด้านบน ไม่งั้น
+  // admin เปิด Today แล้ว allTabs เหลือแค่ปฏิทิน (โหมดโมดูลซ่อน tab ยิ่งดูเหมือนหน้า Calendar)
+  const isAdminishTabs = hasRole(activeRoles, "admin", "account");
+  const isSales = hasRole(activeRoles, "sales") || isAdminishTabs;
+  const isSolar = hasRole(activeRoles, "solar") || isAdminishTabs;
   // Solar sub-tabs — survey/install grouped from the same data buckets the
   // ทีมโซลาร์ tab uses, so each section can be reached directly without
   // scrolling.
@@ -340,7 +350,7 @@ export default function TodayPage() {
         search={search}
         onSearchChange={setSearch}
         searchPlaceholder="ค้นหาชื่อ, เบอร์..."
-        tabs={allTabs}
+        tabs={moduleMode ? [] : allTabs}
         activeTab={visibleTab}
         onTabChange={(k) => setTab(k as TodayTab)}
       />

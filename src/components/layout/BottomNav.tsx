@@ -2,9 +2,12 @@
 import { DownloadIcon } from "@/components/ui/icons";
 
 import Link from "next/link";
-import { usePathname } from "next/navigation";
+import { usePathname, useSearchParams } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
 import { useActiveRoles, useMe, hasRole, Role } from "@/lib/roles";
+import { apiFetch } from "@/lib/api";
+import { getModule, modulesForRoles, countForMenuItem, matchMenuHref, type JourneySummaryRow } from "@/lib/modules";
+import { useActiveModuleKey } from "@/lib/hooks/useActiveModule";
 
 type HoverInfo = { label: string; href: string; top: number };
 
@@ -77,8 +80,19 @@ type BottomNavProps = {
 
 export default function BottomNav({ collapsed = false, onToggle }: BottomNavProps = {}) {
   const pathname = usePathname();
+  const searchParams = useSearchParams();
   const { activeRoles } = useActiveRoles();
   const { me } = useMe();
+  // โมดูลที่เลือก — sync ผ่าน hook กลาง (ที่เดียวกับหน้า list ใช้)
+  const activeModuleKey = useActiveModuleKey();
+  // badge จำนวนงานต่อเมนู — refetch ทุกครั้งที่เปลี่ยนหน้า (query GROUP BY เบามาก)
+  const [journeySummary, setJourneySummary] = useState<JourneySummaryRow[]>([]);
+  useEffect(() => {
+    if (!activeModuleKey) return;
+    apiFetch("/api/journey-summary")
+      .then((rows) => setJourneySummary(rows as JourneySummaryRow[]))
+      .catch(() => {});
+  }, [activeModuleKey, pathname]);
   // Floating hover label — only shown when collapsed. position: fixed so it
   // escapes the nav's overflow-y-auto (which CSS-clips both axes).
   const [hover, setHover] = useState<HoverInfo | null>(null);
@@ -99,6 +113,29 @@ export default function BottomNav({ collapsed = false, onToggle }: BottomNavProp
   };
   const seekerMode = activeRoles.includes("leadsseeker") && !activeRoles.includes("sales") && !activeRoles.includes("solar");
   const showAdminGroups = !seekerMode && hasRole(activeRoles, "admin", "sales", "solar_sup", "sales_sup", "solar", "account");
+  // Left menu เป็น layout เดียวทุก role ทุกกรณี: โมดูลที่เลือกไว้ → ถ้าไม่เคยเลือก
+  // หรือ role ปัจจุบันไม่เห็นโมดูลนั้น → default เป็นโมดูลแรกของ role (เมนู legacy
+  // เหลือแค่ fallback ช่วงรอ roles โหลด)
+  const visibleModules = modulesForRoles(activeRoles).filter((m) => !m.soon && m.menu.length > 0);
+  const storedModule = getModule(activeModuleKey);
+  const activeModule = storedModule && visibleModules.some((m) => m.key === storedModule.key)
+    ? storedModule
+    : (visibleModules[0] ?? null);
+  const moduleMenu = activeModule ? activeModule.menu.filter((mi) => !mi.roles || hasRole(activeRoles, ...mi.roles)) : [];
+  // mobile ไม่มีเมนูซ้อน — กลุ่มใช้ลิงก์ของลูกตัวแรก (badge = ผลรวมลูกอยู่แล้ว)
+  const moduleMenuMobile = moduleMenu
+    .map((mi) => (mi.children ? { ...mi, href: mi.children[0]?.href } : mi))
+    .filter((mi) => !!mi.href);
+  // กลุ่มที่ผู้ใช้กดกางไว้ — กลุ่มที่มีลูก active กางให้อัตโนมัติ
+  const [openGroups, setOpenGroups] = useState<Set<string>>(new Set());
+  const toggleGroup = (label: string) => setOpenGroups((prev) => {
+    const next = new Set(prev);
+    if (next.has(label)) next.delete(label); else next.add(label);
+    return next;
+  });
+  // เมนูโมดูลอาจมี query (?tab=...) — ใช้ matcher กลางตัวเดียวกับ useActiveMenuItem
+  const isModuleItemActive = (href: string) => matchMenuHref(href, pathname, searchParams);
+  const homeIcon = <svg className="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M2.25 12l8.954-8.955c.44-.439 1.152-.439 1.591 0L21.75 12M4.5 9.75v10.125c0 .621.504 1.125 1.125 1.125H9.75v-4.875c0-.621.504-1.125 1.125-1.125h2.25c.621 0 1.125.504 1.125 1.125V21h4.125c.621 0 1.125-.504 1.125-1.125V9.75M8.25 21h8.25" /></svg>;
   const visibleItems = navItems.filter((item) => {
     if (seekerMode) return item.href === "/seeker" || item.href === "/seeker/dashboard" || item.href === "/seeker/map" || item.href === "/packages" || item.href === "/profile";
     return !item.roles || hasRole(activeRoles, ...item.roles);
@@ -135,7 +172,37 @@ export default function BottomNav({ collapsed = false, onToggle }: BottomNavProp
     <>
       <nav className="fixed inset-x-0 bottom-0 bg-white border-t border-gray-200 z-50 md:hidden">
         <div className="flex justify-around items-center h-20">
-          {visibleMobile.map((item) => {
+          {activeModule ? (
+            <>
+              <Link href="/home"
+                className={`flex flex-col items-center justify-center w-full h-full gap-0.5 transition-colors ${pathname === "/home" ? "text-primary" : "text-gray"}`}>
+                {homeIcon}
+                <span className="text-xs font-semibold uppercase tracking-wider">Home</span>
+              </Link>
+              {moduleMenuMobile.slice(0, 4).map((mi) => {
+                const n = countForMenuItem(mi, journeySummary);
+                return (
+                  <Link key={mi.href} href={mi.href!}
+                    className={`flex flex-col items-center justify-center w-full h-full gap-0.5 transition-colors ${isModuleItemActive(mi.href!) ? "text-primary" : "text-gray"}`}>
+                    <span className="relative">
+                      {mi.icon}
+                      {n != null && n > 0 && (
+                        <span className="absolute -top-1 -right-2.5 min-w-[16px] h-4 rounded-full bg-red-500 text-white text-[9px] font-bold flex items-center justify-center px-1">{n > 99 ? "99+" : n}</span>
+                      )}
+                    </span>
+                    <span className="text-xs font-semibold uppercase tracking-wider">{mi.label}</span>
+                  </Link>
+                );
+              })}
+            </>
+          ) : (
+            <>
+              <Link href="/home"
+                className={`flex flex-col items-center justify-center w-full h-full gap-0.5 transition-colors ${pathname === "/home" ? "text-primary" : "text-gray"}`}>
+                {homeIcon}
+                <span className="text-xs font-semibold uppercase tracking-wider">Home</span>
+              </Link>
+              {visibleMobile.map((item) => {
             const isActive =
               item.href === "/seeker" ? pathname === "/seeker" :
               item.href === "/report" ? pathname === "/report" :
@@ -148,13 +215,15 @@ export default function BottomNav({ collapsed = false, onToggle }: BottomNavProp
               </Link>
             );
           })}
+            </>
+          )}
         </div>
       </nav>
-      <aside className={`hidden md:flex fixed left-0 top-0 bottom-0 bg-white border-r border-gray-200 flex-col z-50 transition-[width] duration-200 ${collapsed ? "w-14" : "w-56"}`}>
-        <div className={`h-16 border-b border-gray-100 bg-white flex items-center ${collapsed ? "justify-center px-2" : "justify-between px-3"}`}>
+      <aside className={`hidden md:flex fixed left-0 top-0 bottom-0 bg-gray-50 border-r border-gray-200 flex-col z-50 transition-[width] duration-200 ${collapsed ? "w-14" : "w-56"}`}>
+        <div className={`h-16 border-b border-gray-100 flex items-center ${collapsed ? "justify-center px-2" : "justify-between px-3"}`}>
           {!collapsed && (
             <img
-              src="https://senasolarenergy.com/wp-content/uploads/2022/04/logo_senasolarenergy.png"
+              src="/logos/logo-sena.png"
               alt="Sena Solar Energy"
               className="h-8 w-auto pl-2"
             />
@@ -172,7 +241,97 @@ export default function BottomNav({ collapsed = false, onToggle }: BottomNavProp
           </button>
         </div>
         <nav className={`flex-1 min-h-0 overflow-y-auto py-2 space-y-0.5 ${collapsed ? "px-1.5" : "px-3"}`}>
-          {visibleItems.map((item, idx) => {
+          {activeModule ? (
+            <>
+              <Link href="/home"
+                onMouseEnter={(e) => showHover(e, "Home", "/home")}
+                onMouseLeave={scheduleHide}
+                className={`flex items-center rounded-lg text-xs font-semibold uppercase transition-colors ${collapsed ? "justify-center px-2 py-2" : "gap-3 px-3 py-1.5"} ${pathname === "/home" ? "bg-primary/10 text-primary" : "text-gray hover:bg-gray-100"}`}>
+                {homeIcon}
+                {!collapsed && <span>Home</span>}
+              </Link>
+              {!collapsed && (
+                <div className="px-3 pt-3 pb-0.5 text-xxs font-bold uppercase tracking-widest text-gray-400">{activeModule.label}</div>
+              )}
+              {moduleMenu.map((mi) => {
+                const n = countForMenuItem(mi, journeySummary);
+                // กลุ่มพับได้ (มี children) — rail ย่อไม่มีที่ให้หัวข้อ → โชว์ลูกเป็นไอคอนตรงๆ
+                if (mi.children) {
+                  if (collapsed) {
+                    return mi.children.map((c) => (
+                      <Link key={c.href} href={c.href!}
+                        onMouseEnter={(e) => showHover(e, c.label, c.href!)}
+                        onMouseLeave={scheduleHide}
+                        className={`flex items-center justify-center px-2 py-2 rounded-lg transition-colors ${isModuleItemActive(c.href!) ? "bg-primary/10 text-primary" : "text-gray hover:bg-gray-100"}`}>
+                        {c.icon}
+                      </Link>
+                    ));
+                  }
+                  const open = openGroups.has(mi.label) || mi.children.some((c) => c.href && isModuleItemActive(c.href));
+                  return (
+                    <div key={mi.label}>
+                      <button type="button" onClick={() => toggleGroup(mi.label)} aria-expanded={open}
+                        className="w-full flex items-center gap-3 px-3 py-1.5 rounded-lg text-xs font-semibold uppercase text-gray hover:bg-gray-100 transition-colors">
+                        {mi.icon}
+                        <span className="flex-1 text-left">{mi.label}</span>
+                        {n != null && (
+                          <span className="text-xs font-semibold rounded-full px-2 py-0.5 bg-gray-100 text-gray-500">{n}</span>
+                        )}
+                        <svg className={`w-3 h-3 shrink-0 transition-transform ${open ? "rotate-90" : ""}`} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
+                          <path strokeLinecap="round" strokeLinejoin="round" d="M9 5l7 7-7 7" />
+                        </svg>
+                      </button>
+                      {open && mi.children.map((c) => {
+                        const cn = countForMenuItem(c, journeySummary);
+                        const cActive = c.href ? isModuleItemActive(c.href) : false;
+                        return (
+                          <Link key={c.href} href={c.href!}
+                            onMouseEnter={(e) => showHover(e, c.label, c.href!)}
+                            onMouseLeave={scheduleHide}
+                            className={`flex items-center gap-3 pl-9 pr-3 py-1.5 rounded-lg text-xs font-semibold uppercase transition-colors ${cActive ? "bg-primary/10 text-primary" : "text-gray hover:bg-gray-100"}`}>
+                            <span className="flex-1">{c.label}</span>
+                            {cn != null && (
+                              <span className={`text-xs font-semibold rounded-full px-2 py-0.5 ${cActive ? "bg-primary text-white" : "bg-gray-100 text-gray-500"}`}>{cn}</span>
+                            )}
+                          </Link>
+                        );
+                      })}
+                    </div>
+                  );
+                }
+                const active = isModuleItemActive(mi.href!);
+                return (
+                  <Link key={mi.href} href={mi.href!}
+                    onMouseEnter={(e) => showHover(e, mi.label, mi.href!)}
+                    onMouseLeave={scheduleHide}
+                    className={`flex items-center rounded-lg text-xs font-semibold uppercase transition-colors ${collapsed ? "justify-center px-2 py-2" : "gap-3 px-3 py-1.5"} ${active ? "bg-primary/10 text-primary" : "text-gray hover:bg-gray-100"}`}>
+                    {mi.icon}
+                    {!collapsed && <span className="flex-1">{mi.label}</span>}
+                    {!collapsed && n != null && (
+                      <span className={`text-xs font-semibold rounded-full px-2 py-0.5 ${active ? "bg-primary text-white" : "bg-gray-100 text-gray-500"}`}>{n}</span>
+                    )}
+                  </Link>
+                );
+              })}
+              <div className="my-1.5 border-t border-gray-100" />
+              <Link href="/profile"
+                onMouseEnter={(e) => showHover(e, "Me", "/profile")}
+                onMouseLeave={scheduleHide}
+                className={`flex items-center rounded-lg text-xs font-semibold uppercase transition-colors ${collapsed ? "justify-center px-2 py-2" : "gap-3 px-3 py-1.5"} ${pathname.startsWith("/profile") ? "bg-primary/10 text-primary" : "text-gray hover:bg-gray-100"}`}>
+                <svg className="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M17.982 18.725A7.488 7.488 0 0012 15.75a7.488 7.488 0 00-5.982 2.975m11.963 0a9 9 0 10-11.963 0m11.963 0A8.966 8.966 0 0112 21a8.966 8.966 0 01-5.982-2.275M15 9.75a3 3 0 11-6 0 3 3 0 016 0z" /></svg>
+                {!collapsed && <span>Me</span>}
+              </Link>
+            </>
+          ) : (
+            <>
+              <Link href="/home"
+                onMouseEnter={(e) => showHover(e, "Home", "/home")}
+                onMouseLeave={scheduleHide}
+                className={`flex items-center rounded-lg text-xs font-semibold uppercase transition-colors ${collapsed ? "justify-center px-2 py-2" : "gap-3 px-3 py-1.5"} ${pathname === "/home" ? "bg-primary/10 text-primary" : "text-gray hover:bg-gray-100"}`}>
+                {homeIcon}
+                {!collapsed && <span>Home</span>}
+              </Link>
+              {visibleItems.map((item, idx) => {
             const isActive =
               item.href === "/packages" ? pathname === "/packages" :
               item.href === "/seeker" ? pathname === "/seeker" :
@@ -186,14 +345,16 @@ export default function BottomNav({ collapsed = false, onToggle }: BottomNavProp
                 <Link href={item.href}
                   onMouseEnter={(e) => showHover(e, item.label, item.href)}
                   onMouseLeave={scheduleHide}
-                  className={`flex items-center rounded-lg text-xs font-semibold uppercase transition-colors ${collapsed ? "justify-center px-2 py-2" : "gap-3 px-3 py-1.5"} ${isActive ? "bg-primary/10 text-primary" : "text-gray hover:bg-gray-50"}`}>
+                  className={`flex items-center rounded-lg text-xs font-semibold uppercase transition-colors ${collapsed ? "justify-center px-2 py-2" : "gap-3 px-3 py-1.5"} ${isActive ? "bg-primary/10 text-primary" : "text-gray hover:bg-gray-100"}`}>
                   {item.icon}
                   {!collapsed && <span>{item.label}</span>}
                 </Link>
               </div>
             );
           })}
-          {showAdminGroups && <AdminGroups pathname={pathname} activeRoles={activeRoles} username={me?.username ?? null} collapsed={collapsed} onHover={showHover} onHoverEnd={scheduleHide} />}
+              {showAdminGroups && <AdminGroups pathname={pathname} activeRoles={activeRoles} username={me?.username ?? null} collapsed={collapsed} onHover={showHover} onHoverEnd={scheduleHide} />}
+            </>
+          )}
         </nav>
       </aside>
       {collapsed && hover && (
@@ -386,7 +547,7 @@ function AdminGroups({ pathname, activeRoles, username, collapsed, onHover, onHo
                 <Link key={l.href} href={l.href}
                   onMouseEnter={(e) => onHover(e, l.label, l.href)}
                   onMouseLeave={onHoverEnd}
-                  className={`flex items-center rounded-lg text-xs font-semibold uppercase transition-colors ${collapsed ? "justify-center px-2 py-2" : "gap-3 px-3 py-1.5"} ${active ? "bg-primary/10 text-primary" : "text-gray hover:bg-gray-50"}`}>
+                  className={`flex items-center rounded-lg text-xs font-semibold uppercase transition-colors ${collapsed ? "justify-center px-2 py-2" : "gap-3 px-3 py-1.5"} ${active ? "bg-primary/10 text-primary" : "text-gray hover:bg-gray-100"}`}>
                   {l.icon}
                   {!collapsed && <span>{l.label}</span>}
                 </Link>

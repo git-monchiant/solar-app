@@ -1,6 +1,8 @@
 "use client";
 
 import { apiFetch } from "@/lib/api";
+import { useSearchParams } from "next/navigation";
+import { useActiveMenuItem } from "@/lib/hooks/useActiveModule";
 import Dropdown from "@/components/ui/Dropdown";
 import { useEffect, useState, useCallback } from "react";
 import ListPageHeader from "@/components/layout/ListPageHeader";
@@ -79,11 +81,19 @@ const matchesTab = (l: Lead, key: TabKey, todayYmd: string): boolean => {
 export default function PipelinePage() {
   const [leads, setLeads] = useState<Lead[]>([]);
   const [loading, setLoading] = useState(true);
+  const searchParams = useSearchParams();
+  // ?tab= จากเมนูโมดูล/deep link ชนะค่าที่จำไว้ — ไม่มีก็ใช้ tab ล่าสุดจาก localStorage
   const [tab, setTab] = useState<TabKey>(() => {
     if (typeof window === "undefined") return "all";
+    const fromUrl = new URLSearchParams(window.location.search).get("tab") as TabKey | null;
+    if (fromUrl && TAB_KEYS.includes(fromUrl)) return fromUrl;
     const saved = localStorage.getItem("pipelineTab") as TabKey | null;
     return saved && TAB_KEYS.includes(saved) ? saved : "all";
   });
+  useEffect(() => {
+    const t = searchParams.get("tab") as TabKey | null;
+    if (t && TAB_KEYS.includes(t)) setTab(t);
+  }, [searchParams]);
   const { activeRoles } = useActiveRoles();
   const isSales = hasRole(activeRoles, "sales");
   const isSolar = hasRole(activeRoles, "solar");
@@ -100,6 +110,10 @@ export default function PipelinePage() {
     return localStorage.getItem("pipeline.sortOrder") === "desc" ? "desc" : "asc";
   });
   const [search, setSearch] = useState("");
+  // โหมดโมดูล: left menu ทำหน้าที่เลือก tab (ผ่าน ?tab=) → ซ่อนแถบ tab แนวนอน
+  // และหัวเรื่องหน้า = ชื่อเมนูที่ active (จาก hook กลาง ไม่ต้องรู้จักเมนูเอง)
+  const { module: activeModule, item: activeMenuItem } = useActiveMenuItem();
+  const moduleMode = !!activeModule;
 
   const fetchLeads = useCallback(() => {
     apiFetch("/api/leads").then(setLeads).catch(console.error).finally(() => setLoading(false));
@@ -183,7 +197,7 @@ export default function PipelinePage() {
     { key: "install",    label: "รอติดตั้ง" },
     { key: "installing", label: "กำลังติดตั้ง" },
     { key: "warranty",   label: "รอออกใบรับประกัน" },
-    { key: "gridtie",    label: "ขอขนานไฟ" },
+    { key: "gridtie",    label: "รอขอขนานไฟ" },
     { key: "handover",   label: "ส่งมอบแล้ว" },
     { key: "lost",       label: "ยกเลิก" },
   ];
@@ -193,16 +207,18 @@ export default function PipelinePage() {
   return (
     <div>
       <ListPageHeader
-        title="Pipeline"
-        subtitle="ALL LEADS & CUSTOMERS"
+        title={moduleMode ? (activeMenuItem?.label ?? ALL_TABS.find(t => t.key === tab)?.label ?? "Pipeline") : "Pipeline"}
+        subtitle={moduleMode ? undefined : "ALL LEADS & CUSTOMERS"}
+        tabsLeft={moduleMode ? `${countFor(tab)} รายการ` : undefined}
         search={search}
         onSearchChange={setSearch}
         searchPlaceholder="ค้นหาชื่อ, เบอร์, โครงการ..."
-        tabs={TABS}
+        tabs={moduleMode ? [] : TABS}
         activeTab={tab}
         onTabChange={(k) => { setTab(k as TabKey); localStorage.setItem("pipelineTab", k); }}
         tabsRight={(
           <div className="hidden md:flex items-center gap-2">
+            <span className="text-xs font-semibold text-gray-500 whitespace-nowrap">จัดเรียงข้อมูล</span>
             <Dropdown
               className="w-36"
               value={sortField}

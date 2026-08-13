@@ -29,7 +29,8 @@ export default function RoleSwitcher() {
     const final = r === "admin" ? availableRoles : [r];
     setActiveRoles(final);
     setOpen(false);
-    if (typeof window !== "undefined") window.location.href = "/";
+    // ไม่ redirect — ปุ่มนี้อยู่บนหน้า module (/home) ที่เดียว การสลับ role แค่
+    // กรองการ์ดโมดูลใหม่ในที่ (useActiveRoles broadcast ผ่าน emitRoles อยู่แล้ว)
   };
 
   const isActive = (r: Role) =>
