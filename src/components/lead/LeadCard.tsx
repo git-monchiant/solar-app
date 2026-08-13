@@ -126,13 +126,23 @@ export default function LeadCard({ lead, compact, onAssignChange, onOpen }: { le
             //   order (paid≥1, no install_date) → รอนัดติดตั้ง
             //   install_date set → รอติดตั้ง
             //   warranty/gridtie/closed → รับประกัน
-            const FLOW_STAGES = ["pre_survey", "booking", "survey", "quote", "order", "wait_install", "install", "warranty"] as const;
+            const FLOW_STAGES = ["pre_survey", "booking", "survey", "quote", "order", "wait_install", "install", "installing", "warranty"] as const;
+            // ตำแหน่งบน flow อ่านจาก journey_step ที่ persist แล้ว (นิยามเดียวกับ
+            // เมนูโมดูล/pipeline) — fallback derive แบบเก่าเฉพาะแถวที่ยังไม่มีค่า
+            const JOURNEY_TO_FLOW: Record<number, typeof FLOW_STAGES[number]> = {
+              100: "pre_survey", 200: "booking", 300: "survey", 400: "quote",
+              500: "order", 600: "wait_install",
+              800: "warranty", 900: "warranty", 1000: "warranty",
+            };
             const main = getMainStatus(lead.status);
             const sub = getSubstep(lead.status);
             const paid = (lead.order_ready_count ?? lead.order_paid_count ?? 0) >= 1;
             const hasInstallDate = !!lead.install_date;
             const isDone = ["warranty", "gridtie", "closed"].includes(main);
             const effective = (() => {
+              // step 700 แยกด้วย sub: 710 รอติดตั้ง · 720/730 กำลังติดตั้ง/เสร็จ
+              if (lead.journey_step === 700) return (lead.journey_sub ?? 710) >= 720 ? "installing" : "install";
+              if (lead.journey_step != null && JOURNEY_TO_FLOW[lead.journey_step]) return JOURNEY_TO_FLOW[lead.journey_step];
               if (isDone) return "warranty";
               if (hasInstallDate) return "install";                                          // schedule locked in
               if (paid && (main === "order" || main === "install")) return "wait_install";   // paid but no date yet
@@ -149,6 +159,7 @@ export default function LeadCard({ lead, compact, onAssignChange, onOpen }: { le
               order: "ชำระเงิน",
               wait_install: "รอนัดติดตั้ง",
               install: "รอติดตั้ง",
+              installing: "กำลังติดตั้ง",
               warranty: "รับประกัน",
             };
             return (

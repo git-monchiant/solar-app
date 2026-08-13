@@ -6,11 +6,13 @@ import { apiFetch } from "./api";
 export type Role = "admin" | "sales" | "solar_sup" | "sales_sup" | "solar" | "leadsseeker" | "account";
 export const ALL_ROLES: Role[] = ["admin", "sales", "solar_sup", "sales_sup", "solar", "leadsseeker", "account"];
 
+// solar_sup / sales_sup แสดงเป็น "Manager" ทั้งคู่ — key ใต้ฝากยังแยกอยู่เพราะ
+// สายอนุมัติใบเสนอ (Sale → Solar Sup → Sale Sup) ต้องรู้ว่าใครเป็นใคร
 export const ROLE_LABEL: Record<Role, string> = {
   admin: "Admin",
   sales: "Sales",
-  solar_sup: "Solar Sup",
-  sales_sup: "Sale Sup",
+  solar_sup: "Manager (Solar)",
+  sales_sup: "Manager (Sales)",
   solar: "Solar",
   leadsseeker: "Leads Seeker",
   account: "Account",
