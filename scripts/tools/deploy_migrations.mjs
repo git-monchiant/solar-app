@@ -11,6 +11,8 @@
 //   node scripts/tools/deploy_migrations.mjs --db=solardb_dev          # dry-run
 //   node scripts/tools/deploy_migrations.mjs --db=solardb_dev --yes    # apply, no archive
 //   node scripts/tools/deploy_migrations.mjs --db=solardb     --yes    # PROD: apply + archive
+//   node scripts/tools/deploy_migrations.mjs --db=solardb_v3 --yes --dir=scripts/migrations-v3
+//                                                                      # v3: โฟลเดอร์ migration แยก (ดู scripts/migrations-v3/README.md)
 
 import sql from 'mssql';
 import fs from 'fs';
@@ -20,23 +22,30 @@ import { fileURLToPath } from 'url';
 
 const args = process.argv.slice(2);
 const dbArg = args.find(a => a.startsWith('--db='));
+const dirArg = args.find(a => a.startsWith('--dir='));
 const execute = args.includes('--yes');
 
 if (!dbArg) {
-  console.error('Usage: node scripts/tools/deploy_migrations.mjs --db=<solardb|solardb_dev> [--yes]');
+  console.error('Usage: node scripts/tools/deploy_migrations.mjs --db=<solardb|solardb_dev|solardb_v3> [--yes] [--dir=scripts/migrations-v3]');
   process.exit(1);
 }
 const database = dbArg.split('=')[1];
 if (!database) { console.error('Empty --db value'); process.exit(1); }
-if (!['solardb', 'solardb_dev'].includes(database)) {
-  console.error(`Unsupported database "${database}". Use solardb_dev or solardb.`);
+if (!['solardb', 'solardb_dev', 'solardb_v3'].includes(database)) {
+  console.error(`Unsupported database "${database}". Use solardb_dev, solardb_v3 or solardb.`);
   process.exit(1);
 }
 const isProd = database === 'solardb';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const repoRoot = path.resolve(__dirname, '..', '..');
-const migrationsDir = path.join(repoRoot, 'scripts', 'migrations');
+const migrationsDir = dirArg
+  ? path.resolve(repoRoot, dirArg.split('=')[1])
+  : path.join(repoRoot, 'scripts', 'migrations');
+if (!fs.existsSync(migrationsDir)) {
+  console.error(`Migrations dir not found: ${migrationsDir}`);
+  process.exit(1);
+}
 const archiveDir = path.join(repoRoot, 'scripts', '_archive', 'migrations');
 
 const files = fs.readdirSync(migrationsDir)

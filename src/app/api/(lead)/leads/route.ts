@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { getDb, sql, fixDates } from "@/lib/db";
 import { geocodeThaiPlace } from "@/lib/utils/geocode";
 import { requireAuth } from "@/lib/auth";
+import { refreshJourneySafe, flipJourneyDatesIfDue } from "@/lib/journey";
 
 async function maybeGeocodeProject(projectId: number) {
   const db = await getDb();
@@ -28,9 +29,10 @@ export async function GET(req: NextRequest) {
     // Explicit column list — `leads` has 180+ columns but the card UI uses
     // ~30. Picking only what LeadCard/pipeline render keeps the response
     // ~3-4× smaller (1MB → ~250KB at 150 leads).
+    await flipJourneyDatesIfDue(db);
     const result = await db.request().query(`
       SELECT l.id, l.full_name, l.phone, l.email, l.installation_address, l.house_number,
-             l.customer_type, l.customer_grade, l.customer_group, l.status, l.source, l.tag, l.note, l.contact_date, l.created_at,
+             l.customer_type, l.customer_grade, l.customer_group, l.status, l.journey_step, l.journey_sub, l.source, l.tag, l.note, l.contact_date, l.created_at,
              l.next_follow_up, l.revisit_date, l.lost_reason,
              l.assigned_user_id, l.zone, l.line_id,
              l.survey_date, l.survey_time_slot, l.install_date, l.install_date_end, l.install_actual_date, l.install_completed_at, l.install_extra_cost,
@@ -189,6 +191,7 @@ export async function POST(request: NextRequest) {
     // creates both attribute correctly — was hardcoded to 1 (system/admin),
     // which broke "who synced this lead" reporting.
     const leadId = result.recordset[0].id;
+    await refreshJourneySafe(db, leadId);
     await db.request()
       .input("lead_id", sql.Int, leadId)
       .input("source", sql.NVarChar(30), body.source || "walk-in")

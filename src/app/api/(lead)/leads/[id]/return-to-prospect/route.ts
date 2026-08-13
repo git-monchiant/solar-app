@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getDb, sql } from "@/lib/db";
 import { requireAuth } from "@/lib/auth";
+import { refreshJourneySafe } from "@/lib/journey";
 
 // POST /api/leads/[id]/return-to-prospect
 // Body: { reason?: string }
@@ -64,6 +65,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
         `);
 
       await tx.commit();
+      await refreshJourneySafe(db, leadId);
       return NextResponse.json({ ok: true, prospect_id: prospectId });
     } catch (e) {
       await tx.rollback();

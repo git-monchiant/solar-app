@@ -4,6 +4,7 @@ import { requireAuth } from "@/lib/auth";
 import { logLeadActivity, fmtThaiDate } from "@/lib/lead-activity-log";
 import { validateDocNo } from "@/lib/doc-number";
 import { getGridTieFinalMissing } from "@/lib/gridTie";
+import { refreshJourneySafe } from "@/lib/journey";
 
 const statusLabels: Record<string, string> = {
   pre_survey: "รอติดตาม",
@@ -1535,6 +1536,8 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
           `);
       }
     }
+
+    await refreshJourneySafe(db, leadId);
 
     // When only lead_data was touched, the UPDATE leads above was skipped so
     // result.recordset is empty. Echo the current row by re-reading so the

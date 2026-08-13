@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getDb, sql, toSqlDate } from "@/lib/db";
+import { flipJourneyDatesIfDue } from "@/lib/journey";
 import { requireAuth } from "@/lib/auth";
 
 // Aggregations for the experimental admin-only Dashboard-Dev page.
@@ -9,6 +10,7 @@ export async function GET(req: NextRequest) {
   if (gate.error) return gate.error;
   try {
     const db = await getDb();
+    await flipJourneyDatesIfDue(db);
 
     // Mirrors /api/dashboard's global filter — see eligibleSet there for the
     // semantics of created vs activity mode. Same composed-WHERE pattern so
@@ -54,42 +56,20 @@ export async function GET(req: NextRequest) {
       //   surveyed   = past survey phase (status quote/order/install/.../closed)
       //   quoted     = past quote phase  (status order/install/.../closed)
       //   installed  = install_completed_at IS NOT NULL
+      // Funnel จากคอลัมน์ journey ที่ persist ไว้ (นิยาม "ติดต่อได้" อันเดียวกับ
+      // dashboard หลักแล้ว: ติดต่อได้ยังไม่สะดวกคุย/ระหว่างเสนอ (130,140) หรือเดิน
+      // มาถึงขั้นจอง (200) ขึ้นไป). booked = จองยืนยันแล้ว (220) หรือขั้นถัดไป —
+      // นับรวมจองแบบฟรีค่าสำรวจด้วย (เดิมนับจาก payments อย่างเดียวเลยตกหล่น)
       bindRange(db.request()).query(`
-        WITH contact_per_act AS (
-          SELECT la.lead_id,
-            CASE
-              WHEN la.title LIKE N'ติดต่อไม่ได้%' THEN 'no'
-              WHEN la.title LIKE N'ติดต่อได้%' THEN 'yes'
-              WHEN la.activity_type IN ('call','visit','line','line_sent','loan_followup') THEN 'yes'
-              ELSE NULL
-            END as state
-          FROM lead_activities la
-          WHERE la.activity_type IN ('call','visit','line','other','follow_up','loan_followup','line_sent')
-        ),
-        per_lead AS (
-          SELECT lead_id, MAX(CASE WHEN state='yes' THEN 1 ELSE 0 END) as has_yes
-          FROM contact_per_act GROUP BY lead_id
-        ),
-        lead_paid AS (
-          SELECT DISTINCT lead_id FROM payments
-          WHERE slip_field = 'pre_slip_url' AND confirmed_at IS NOT NULL
-        ),
-        lead_submitted AS (
-          SELECT DISTINCT lead_id FROM payments
-          WHERE slip_field = 'pre_slip_url' AND submitted_at IS NOT NULL
-        )
         SELECT
           COUNT(*) as total,
-          SUM(CASE WHEN l.status <> 'lost' AND (ls.lead_id IS NOT NULL OR ISNULL(pl.has_yes, 0) = 1) THEN 1 ELSE 0 END) as contacted,
-          SUM(CASE WHEN lp.lead_id IS NOT NULL THEN 1 ELSE 0 END) as booked,
-          SUM(CASE WHEN l.status IN ('quote','order','install','warranty','gridtie','closed') THEN 1 ELSE 0 END) as surveyed,
-          SUM(CASE WHEN l.status IN ('order','install','warranty','gridtie','closed') THEN 1 ELSE 0 END) as quoted,
+          SUM(CASE WHEN l.journey_sub IN (130, 140) OR l.journey_step BETWEEN 200 AND 1000 THEN 1 ELSE 0 END) as contacted,
+          SUM(CASE WHEN l.journey_sub = 220 OR l.journey_step BETWEEN 300 AND 1000 THEN 1 ELSE 0 END) as booked,
+          SUM(CASE WHEN l.journey_step BETWEEN 400 AND 1000 THEN 1 ELSE 0 END) as surveyed,
+          SUM(CASE WHEN l.journey_step BETWEEN 500 AND 1000 THEN 1 ELSE 0 END) as quoted,
           SUM(CASE WHEN l.install_completed_at IS NOT NULL THEN 1 ELSE 0 END) as installed,
-          SUM(CASE WHEN l.status = 'lost' THEN 1 ELSE 0 END) as total_lost
+          SUM(CASE WHEN l.journey_step = 9900 THEN 1 ELSE 0 END) as total_lost
         FROM leads l
-        LEFT JOIN per_lead pl ON pl.lead_id = l.id
-        LEFT JOIN lead_paid lp ON lp.lead_id = l.id
-        LEFT JOIN lead_submitted ls ON ls.lead_id = l.id
         WHERE l.id IN (${eligibleSet})
       `),
       // Daily new leads — when a filter range is set, scope to that range so
@@ -142,111 +122,39 @@ export async function GET(req: NextRequest) {
         GROUP BY lost_reason
         ORDER BY cnt DESC
       `),
-      // Contact status — aligned with main dashboard's Leads card chips (3
-      // active buckets, excluding lost since lost is shown elsewhere).
-      // Same lead_activities-based logic: title prefix "ติดต่อได้/ไม่ได้"
-      // outranks activity_type, booking_paid_at overrides any state.
+      // Contact status — อ่านตรงจาก journey (110/120/130/140 คือ funnel การติดต่อ
+      // ที่ persist แล้ว) · ส่งกลับ Seeker (9800) นับรวมใน lost เพราะออกจาก
+      // pipeline เหมือนกัน
       bindRange(db.request()).query(`
-        WITH contact_per_act AS (
-          SELECT la.lead_id,
-            CASE
-              WHEN la.title LIKE N'ติดต่อไม่ได้%' THEN 'no'
-              WHEN la.title LIKE N'ติดต่อได้%' THEN 'yes'
-              WHEN la.activity_type IN ('call','visit','line','line_sent','loan_followup') THEN 'yes'
-              ELSE NULL
-            END as state
-          FROM lead_activities la
-          WHERE la.activity_type IN ('call','visit','line','other','follow_up','loan_followup','line_sent')
-        ),
-        per_lead AS (
-          SELECT lead_id,
-            MAX(CASE WHEN state='yes' THEN 1 ELSE 0 END) as has_yes,
-            MAX(CASE WHEN state='no'  THEN 1 ELSE 0 END) as has_no
-          FROM contact_per_act GROUP BY lead_id
-        ),
-        lead_paid AS (
-          SELECT DISTINCT lead_id FROM payments
-          WHERE slip_field = 'pre_slip_url' AND confirmed_at IS NOT NULL
-        )
         SELECT bucket, COUNT(*) as cnt FROM (
           SELECT
             CASE
-              WHEN l.status = 'lost' THEN 'lost'
-              WHEN lp.lead_id IS NOT NULL OR ISNULL(pl.has_yes, 0) = 1 THEN 'contacted'
-              WHEN ISNULL(pl.has_no, 0) = 1 AND ISNULL(pl.has_yes, 0) = 0 THEN 'no_contact'
+              WHEN l.journey_step IN (9800, 9900) THEN 'lost'
+              WHEN l.journey_sub IN (130, 140) OR l.journey_step BETWEEN 200 AND 1000 THEN 'contacted'
+              WHEN l.journey_sub = 120 THEN 'no_contact'
               ELSE 'never_contacted'
             END as bucket
           FROM leads l
-          LEFT JOIN per_lead pl ON pl.lead_id = l.id
-          LEFT JOIN lead_paid lp ON lp.lead_id = l.id
           WHERE l.id IN (${eligibleSet})
         ) x
         GROUP BY bucket
       `),
-      // Contact outcomes — 4 mutually-exclusive destinations matching main
-      // dashboard's "ติดต่อได้ — ปลายทาง" card. Operates on contacted leads
-      // (booking_paid OR has 'yes' state, excluding lost).
-      //   1_no_pitch     = pre_survey + no sales_pitch_at + no slip uploaded
-      //   2_in_pitch     = pre_survey + has sales_pitch_at + no slip uploaded
-      //   3_slip_pending = pre_survey-01 OR (pre_survey + slip uploaded)
-      //   4_booked       = booking_paid (= ชำระจองสำรวจ — same as funnel)
+      // Contact outcomes — ปลายทางของ lead ที่ติดต่อได้ อ่านตรงจาก journey:
+      //   1_no_pitch     = 130 ยังไม่สะดวกคุย
+      //   2_in_pitch     = 140 ระหว่างเสนอขาย
+      //   3_slip_pending = 210 จอง รอยืนยันเงิน
+      //   4_booked       = 220 จองแล้ว หรือขั้นถัดไป (300..1000)
       bindRange(db.request()).query(`
-        WITH contact_per_act AS (
-          SELECT la.lead_id,
-            CASE
-              WHEN la.title LIKE N'ติดต่อไม่ได้%' THEN 'no'
-              WHEN la.title LIKE N'ติดต่อได้%' THEN 'yes'
-              WHEN la.activity_type IN ('call','visit','line','line_sent','loan_followup') THEN 'yes'
-              ELSE NULL
-            END as state
-          FROM lead_activities la
-          WHERE la.activity_type IN ('call','visit','line','other','follow_up','loan_followup','line_sent')
-        ),
-        per_lead AS (
-          SELECT lead_id, MAX(CASE WHEN state='yes' THEN 1 ELSE 0 END) as has_yes
-          FROM contact_per_act GROUP BY lead_id
-        ),
-        lead_paid AS (
-          SELECT DISTINCT lead_id FROM payments
-          WHERE slip_field = 'pre_slip_url' AND confirmed_at IS NOT NULL
-        ),
-        lead_pitch AS (
-          SELECT DISTINCT lead_id FROM lead_activities
-          WHERE title LIKE N'%เสนอขาย%'
-        ),
-        lead_slip_submitted AS (
-          SELECT DISTINCT lead_id FROM payments
-          WHERE slip_field = 'pre_slip_url' AND submitted_at IS NOT NULL
-        ),
-        lead_slip_uploaded AS (
-          SELECT DISTINCT lead_id FROM slip_files WHERE slip_field = 'pre_slip_url'
-          UNION
-          SELECT lead_id FROM lead_slip_submitted
-        ),
-        contacted AS (
-          SELECT l.id, l.status,
-            CASE WHEN lp_paid.lead_id IS NOT NULL THEN 1 ELSE 0 END as is_paid,
-            CASE WHEN lp_pitch.lead_id IS NOT NULL OR lp_ss.lead_id IS NOT NULL THEN 1 ELSE 0 END as has_pitch,
-            CASE WHEN lp_su.lead_id IS NOT NULL THEN 1 ELSE 0 END as has_slip
-          FROM leads l
-          LEFT JOIN per_lead pl  ON pl.lead_id = l.id
-          LEFT JOIN lead_paid lp_paid ON lp_paid.lead_id = l.id
-          LEFT JOIN lead_pitch lp_pitch ON lp_pitch.lead_id = l.id
-          LEFT JOIN lead_slip_submitted lp_ss ON lp_ss.lead_id = l.id
-          LEFT JOIN lead_slip_uploaded lp_su ON lp_su.lead_id = l.id
-          WHERE l.status <> 'lost'
-            AND (lp_paid.lead_id IS NOT NULL OR ISNULL(pl.has_yes, 0) = 1)
-            AND l.id IN (${eligibleSet})
-        )
         SELECT stage, COUNT(*) as cnt FROM (
           SELECT CASE
-            WHEN is_paid = 1 THEN '4_booked'
-            WHEN status = 'pre_survey-01' OR (status = 'pre_survey' AND has_slip = 1) THEN '3_slip_pending'
-            WHEN status = 'pre_survey' AND has_pitch = 1 THEN '2_in_pitch'
-            WHEN status = 'pre_survey' AND has_pitch = 0 AND has_slip = 0 THEN '1_no_pitch'
-            ELSE '4_booked'
+            WHEN l.journey_sub = 220 OR l.journey_step BETWEEN 300 AND 1000 THEN '4_booked'
+            WHEN l.journey_sub = 210 THEN '3_slip_pending'
+            WHEN l.journey_sub = 140 THEN '2_in_pitch'
+            ELSE '1_no_pitch'
           END as stage
-          FROM contacted
+          FROM leads l
+          WHERE (l.journey_sub IN (130, 140) OR l.journey_step BETWEEN 200 AND 1000)
+            AND l.id IN (${eligibleSet})
         ) x
         GROUP BY stage
         ORDER BY stage

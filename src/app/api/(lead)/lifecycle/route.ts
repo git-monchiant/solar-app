@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getDb, fixDates } from "@/lib/db";
+import { flipJourneyDatesIfDue } from "@/lib/journey";
 import { requireAuth } from "@/lib/auth";
 
 export const runtime = "nodejs";
@@ -43,6 +44,7 @@ export async function GET(req: NextRequest) {
   if (gate.error) return gate.error;
   try {
     const db = await getDb();
+    await flipJourneyDatesIfDue(db);
     // Rank up to 5 contact attempts per lead. The "contact" set covers every
     // outbound channel sales might log: explicit follow-up entries, calls,
     // visits, LINE messages, etc.
@@ -81,6 +83,8 @@ export async function GET(req: NextRequest) {
         l.source,
         l.phone,
         l.status,
+        l.journey_step,
+        l.journey_sub,
         l.customer_grade,
         l.customer_group,
         l.created_at,

@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { getDb, sql } from "@/lib/db";
 import { requireAuth } from "@/lib/auth";
 import { logLeadActivity, paymentStepLabel } from "@/lib/lead-activity-log";
+import { refreshJourneySafe } from "@/lib/journey";
 
 export const runtime = "nodejs";
 
@@ -118,6 +119,7 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
             .query(`UPDATE leads SET status = 'pre_survey-01', updated_at = GETDATE()
                     WHERE id = @lead_id AND status = 'pre_survey'`);
         }
+        await refreshJourneySafe(db, row.lead_id);
       }
       return NextResponse.json({ ok: true });
     }
@@ -149,6 +151,7 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
                           AND sf2.submitted_at IS NOT NULL
                       )`);
         }
+        await refreshJourneySafe(db, row.lead_id);
       }
       return NextResponse.json({ ok: true });
     }
@@ -187,6 +190,7 @@ export async function DELETE(req: NextRequest, { params }: { params: Promise<{ i
                       AND sf.submitted_at IS NOT NULL
                   )`);
     }
+    if (row) await refreshJourneySafe(db, row.lead_id);
     return NextResponse.json({ ok: true });
   } catch (e) {
     console.error("DELETE /api/slips/[id] error:", e);

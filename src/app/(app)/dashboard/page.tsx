@@ -73,6 +73,7 @@ const fmtBaht = (v: number) => `฿${fmt(Math.round(v))}`;
 type LifecycleRow = { [K in LifecycleCol]: string | null }
   & { [K in ContactStateField]: "yes" | "no" | null }
   & { id: number; full_name: string; phone: string | null; house_number: string | null; source: string | null; status: string; pre_doc_no: string | null; payment_confirmed: boolean | null; pre_slip_uploaded: 0 | 1; lost_reason: string | null; order_installments: string | null; order_paid_count: number; created_at: string | null }
+  & { journey_step: number | null; journey_sub: number | null }
   // Money columns — the bucket popup shows per-lead value/paid/outstanding and
   // totals them in its header. payment_dates_json is a FOR JSON PATH array of
   // { slip_field, amount, confirmed_at } covering confirmed payments only.
@@ -513,37 +514,26 @@ export default function DashboardPage() {
           const periodLabel = dateFrom && dateTo ? "ช่วงที่เลือก" : "เดือนนี้";
           const fmtMoney = (v: number) => v >= 1000000 ? `฿${(v / 1000000).toFixed(1)}M` : v >= 1000 ? `฿${Math.round(v / 1000)}K` : `฿${fmt(v)}`;
 
-          const today = new Date(new Date().toDateString());
           const bookingPaidRows = filteredLifecycleRows.filter(r => r.booking_paid_at);
           const bookingPaidCount = bookingPaidRows.length;
 
-          // 4 mutually-exclusive buckets sum = total leads:
-          //   1) ยกเลิก (status=lost) — extracted first so the other 3 contain
-          //      only active leads, otherwise lost would double-count.
-          //   2) ติดต่อได้ — booking_paid OR any state=yes (booking override)
-          //   3) ติดต่อไม่ได้ — has no, no yes
-          //   4) ยังไม่ติดต่อ — no state activity at all
-          const lostRows         = filteredLifecycleRows.filter(r => r.status === "lost");
-          const contactedYesRows = filteredLifecycleRows.filter(r => r.status !== "lost" && (!!r.booking_paid_at
-            || [r.first_contact_state, r.contact2_state, r.contact3_state, r.contact4_state, r.contact5_state].some(s => s === "yes")));
-          const contactedNoRows = filteredLifecycleRows.filter(r => {
-            if (r.status === "lost" || r.booking_paid_at) return false;
-            const states = [r.first_contact_state, r.contact2_state, r.contact3_state, r.contact4_state, r.contact5_state];
-            return states.some(s => s === "no") && !states.some(s => s === "yes");
-          });
-          const notContactedRows = filteredLifecycleRows.filter(r => {
-            if (r.status === "lost" || r.booking_paid_at) return false;
-            const states = [r.first_contact_state, r.contact2_state, r.contact3_state, r.contact4_state, r.contact5_state];
-            return !states.some(s => s === "yes") && !states.some(s => s === "no");
-          });
+          // 4 mutually-exclusive buckets sum = total leads — อ่านจาก journey ที่
+          // persist แล้ว (sub 110/120/130/140 = funnel การติดต่อ) นิยามเดียวกับ
+          // dashboard-dev · ยกเลิกนับรวมส่งกลับ Seeker (9800) เพราะออกจาก pipeline
+          const isContactable = (r: LifecycleRow) => r.journey_sub === 130 || r.journey_sub === 140
+            || (r.journey_step != null && r.journey_step >= 200 && r.journey_step <= 1000);
+          const lostRows         = filteredLifecycleRows.filter(r => r.journey_step === 9900 || r.journey_step === 9800);
+          const contactedYesRows = filteredLifecycleRows.filter(isContactable);
+          const contactedNoRows  = filteredLifecycleRows.filter(r => r.journey_sub === 120);
+          const notContactedRows = filteredLifecycleRows.filter(r => r.journey_sub === 110);
           const lostTotal    = lostRows.length;
           const contactedYes = contactedYesRows.length;
           const contactedNo  = contactedNoRows.length;
           const notContacted = notContactedRows.length;
 
-          const contactedNoPitchRows     = contactedYesRows.filter(r => r.status === "pre_survey" && !r.sales_pitch_at && r.pre_slip_uploaded !== 1);
-          const contactedInPitchRows     = contactedYesRows.filter(r => r.status === "pre_survey" && r.sales_pitch_at && r.pre_slip_uploaded !== 1);
-          const contactedSlipPendingRows = contactedYesRows.filter(r => r.status === "pre_survey-01" || (r.status === "pre_survey" && r.pre_slip_uploaded === 1));
+          const contactedNoPitchRows     = contactedYesRows.filter(r => r.journey_sub === 130);
+          const contactedInPitchRows     = contactedYesRows.filter(r => r.journey_sub === 140);
+          const contactedSlipPendingRows = contactedYesRows.filter(r => r.journey_sub === 210);
           // booking_paid_at = "ชำระจองสำรวจ" inside this card. Scoped to
           // contactedYesRows (excludes lost) so the 4 sub-chips partition the
           // card header exactly — lost-after-booking shows up in the Leads
@@ -554,12 +544,9 @@ export default function DashboardPage() {
           const contactedSlipPending = contactedSlipPendingRows.length;
           const contactedBooked      = contactedBookedRows.length;
 
-          // "ได้ใบเสนอราคา" = status=order AND no install_date yet. Once
-          // install_date is locked in (regardless of whether status flipped
-          // to "install"), the lead moves to the install chip via the rule
-          // above, so we exclude those rows from order to keep stations
-          // mutually exclusive.
-          const orderRows = bookingPaidRows.filter(r => r.status === "order" && !r.install_date);
+          // "ได้ใบเสนอราคา" = journey 500/600 (ขั้นชำระเงิน–รอนัดติดตั้ง) — พอมีนัด
+          // ติดตั้ง journey ขยับเป็น 700 เอง สถานีจึงไม่ซ้อนกันโดยโครงสร้าง
+          const orderRows = bookingPaidRows.filter(r => r.journey_step === 500 || r.journey_step === 600);
           const orderPaidFull = orderRows.filter(r => {
             if (!r.order_paid_at) return false;
             const total = (() => { try { return r.order_installments ? (JSON.parse(r.order_installments) as unknown[]).length : 0; } catch { return 0; } })();
@@ -568,23 +555,15 @@ export default function DashboardPage() {
           const orderPaidPartial = orderRows.filter(r => r.order_paid_at).length - orderPaidFull;
           const orderUnpaid = orderRows.length - orderPaidPartial - orderPaidFull;
 
-          const stepWaitSurveyRows       = filteredLifecycleRows.filter(r => r.status === "pre_survey-02");
-          const stepSurveyScheduledRows  = bookingPaidRows.filter(r => r.status === "survey" && r.survey_date && new Date(r.survey_date) > today);
-          const stepSurveyingRows        = bookingPaidRows.filter(r => r.status === "survey" && (!r.survey_date || new Date(r.survey_date) <= today));
-          // "รอใบเสนอราคา" excludes leads with install_date set — those already
-  // have a locked-in install schedule (even if status got reverted to quote)
-  // so they belong in the install chip, not the quote chip.
-  const stepWaitQuoteRows        = bookingPaidRows.filter(r => r.status === "quote" && !r.install_date);
-          // Install chips: paid first installment + install_date set. Done
-          // is status-based (warranty/gridtie/closed) — same gate the pipeline
-          // page uses, so the counts here and the pipeline tab counts agree.
-          // install_done_at alone does NOT mark a lead as done: a crew can
-          // tick "ติดตั้งเสร็จ" but the remaining sub-steps (ส่งมอบ etc.) keep
-          // the macro status at "install" until ใบรับประกัน is issued.
-          const notInstallDone = (s: string) => s !== "warranty" && s !== "gridtie" && s !== "closed" && s !== "lost" && s !== "returned";
-          const stepInstallScheduledRows = bookingPaidRows.filter(r => (r.order_paid_count ?? 0) > 0 && r.install_date && notInstallDone(r.status) && new Date(r.install_date) > today);
-          const stepInstallingRows       = bookingPaidRows.filter(r => (r.order_paid_count ?? 0) > 0 && r.install_date && notInstallDone(r.status) && new Date(r.install_date) <= today);
-          const stepDoneRows             = bookingPaidRows.filter(r => ["warranty", "gridtie", "closed"].includes(r.status));
+          // สถานี = journey code ตรงๆ (split นัด/กำลัง มาจาก refreshJourney +
+          // nightly recompute) · ติดตั้งเสร็จ = 730 หรือขั้นหลังติดตั้ง (800–1000)
+          const stepWaitSurveyRows       = filteredLifecycleRows.filter(r => r.journey_sub === 220);
+          const stepSurveyScheduledRows  = bookingPaidRows.filter(r => r.journey_sub === 310);
+          const stepSurveyingRows        = bookingPaidRows.filter(r => r.journey_sub === 320);
+          const stepWaitQuoteRows        = bookingPaidRows.filter(r => r.journey_step === 400);
+          const stepInstallScheduledRows = bookingPaidRows.filter(r => r.journey_sub === 710);
+          const stepInstallingRows       = bookingPaidRows.filter(r => r.journey_sub === 720);
+          const stepDoneRows             = bookingPaidRows.filter(r => r.journey_sub === 730 || (r.journey_step != null && r.journey_step >= 800 && r.journey_step <= 1000));
           // นัดติดตั้ง / กำลังติดตั้ง / ติดตั้งเสร็จ breakdown: how many leads
           // have paid every installment (ครบ) vs. only the deposit (มัดจำ).
           // Mirrors the orderPaidFull / orderPaidPartial split used earlier.
@@ -598,7 +577,7 @@ export default function DashboardPage() {
           const installingPaidPartial = stepInstallingRows.length - installingPaidFull;
           const donePaidFull = countFullyPaid(stepDoneRows);
           const donePaidPartial = stepDoneRows.length - donePaidFull;
-          const stepLostAfterRows        = bookingPaidRows.filter(r => r.status === "lost");
+          const stepLostAfterRows        = bookingPaidRows.filter(r => r.journey_step === 9900);
 
           const pct = (a: number, b: number) => b > 0 ? Math.round((a / b) * 100) : 0;
 
@@ -1213,54 +1192,37 @@ function LineGrowthChart({ users }: { users: { created_at: string; phone: string
 // (same override as KPI), so a lead that paid but never had a successful
 // contact-attempt logged (e.g. lead 438) is still in ติดต่อได้.
 function LifecycleFunnelChart({ rows, onStageClick }: { rows: LifecycleRow[]; onStageClick?: (title: string, rows: LifecycleRow[]) => void }) {
-  const CONTACT_STATES: ContactStateField[] = [
-    "first_contact_state", "contact2_state", "contact3_state", "contact4_state", "contact5_state",
-  ];
-  const today = new Date(new Date().toDateString());
-  const stateList = (r: LifecycleRow) => CONTACT_STATES.map(s => r[s]);
-  const hasYes = (r: LifecycleRow) => stateList(r).some(s => s === "yes");
-  const hasNo  = (r: LifecycleRow) => stateList(r).some(s => s === "no");
   const isPaid = (r: LifecycleRow) => !!r.booking_paid_at;
 
-  // Contact section — 4 mutually-exclusive buckets sum = total leads, matching
-  // Leads card chips exactly. Lost is extracted first so the other 3 contain
-  // only active leads (no double-count with the terminal ยกเลิก bar).
-  const isLost = (r: LifecycleRow) => r.status === "lost";
-  const noContactRows  = rows.filter(r => !isLost(r) && !isPaid(r) && !hasYes(r) && !hasNo(r));
-  const contactNoRows  = rows.filter(r => !isLost(r) && !isPaid(r) && hasNo(r) && !hasYes(r));
-  const contactYesRows = rows.filter(r => !isLost(r) && (isPaid(r) || hasYes(r)));
+  // Contact section — partition เดียวกับ KPI card และ dashboard-dev: อ่านจาก
+  // journey ที่ persist (sub 110/120/130/140 = funnel การติดต่อ)
+  const isContactable = (r: LifecycleRow) => r.journey_sub === 130 || r.journey_sub === 140
+    || (r.journey_step != null && r.journey_step >= 200 && r.journey_step <= 1000);
+  const noContactRows  = rows.filter(r => r.journey_sub === 110);
+  const contactNoRows  = rows.filter(r => r.journey_sub === 120);
+  const contactYesRows = rows.filter(isContactable);
 
-  // ติดต่อได้ — ปลายทาง: same 4 mutually-exclusive buckets as KPI card 2
-  // (sum = contactYesRows.length). Lost is excluded above so we don't add a
-  // 5th bar for it.
-  const destNoPitchRows     = contactYesRows.filter(r => r.status === "pre_survey" && !r.sales_pitch_at && r.pre_slip_uploaded !== 1);
-  const destInPitchRows     = contactYesRows.filter(r => r.status === "pre_survey" && r.sales_pitch_at && r.pre_slip_uploaded !== 1);
-  const destSlipPendingRows = contactYesRows.filter(r => r.status === "pre_survey-01" || (r.status === "pre_survey" && r.pre_slip_uploaded === 1));
-  const destBookedRows      = contactYesRows.filter(r => !!r.booking_paid_at);
+  // ติดต่อได้ — ปลายทาง: 4 buckets เดียวกับ KPI card 2
+  const destNoPitchRows     = contactYesRows.filter(r => r.journey_sub === 130);
+  const destInPitchRows     = contactYesRows.filter(r => r.journey_sub === 140);
+  const destSlipPendingRows = contactYesRows.filter(r => r.journey_sub === 210);
+  const destBookedRows      = contactYesRows.filter(isPaid);
 
-  // ชำระจองสำรวจ — same 9 buckets as KPI row 2 stations (sum = bookingPaid).
-  const bookingPaidRows = rows.filter(r => r.booking_paid_at);
-  const stepWaitSurveyRows       = rows.filter(r => r.status === "pre_survey-02");
-  const stepSurveyScheduledRows  = bookingPaidRows.filter(r => r.status === "survey" && r.survey_date && new Date(r.survey_date) > today);
-  const stepSurveyingRows        = bookingPaidRows.filter(r => r.status === "survey" && (!r.survey_date || new Date(r.survey_date) <= today));
-  // "รอใบเสนอราคา" excludes leads with install_date set — those already
-  // have a locked-in install schedule (even if status got reverted to quote)
-  // so they belong in the install chip, not the quote chip.
-  const stepWaitQuoteRows        = bookingPaidRows.filter(r => r.status === "quote" && !r.install_date);
-  // Mirror of the dashboard page rule — exclude order leads that already
-  // have install_date set (those land in the install chip instead).
-  const orderRowsList            = bookingPaidRows.filter(r => r.status === "order" && !r.install_date);
-  // Mirror of the dashboard page rule — install chip ignores status; the
-  // earlier quote/order chips exclude install_date-set rows to avoid overlap.
-  const stepInstallScheduledRows = bookingPaidRows.filter(r => (r.order_paid_count ?? 0) > 0 && r.install_date && !r.install_done_at && new Date(r.install_date) > today);
-  const stepInstallingRows       = bookingPaidRows.filter(r => (r.order_paid_count ?? 0) > 0 && r.install_date && new Date(r.install_date) <= today && !r.install_done_at);
-  const stepDoneRows             = bookingPaidRows.filter(r => ["warranty", "gridtie", "closed"].includes(r.status));
-  const stepLostAfterRows        = bookingPaidRows.filter(r => r.status === "lost");
+  // ชำระจองสำรวจ — 9 สถานีเดียวกับ KPI row 2 (journey code ตรงๆ)
+  const bookingPaidRows = rows.filter(isPaid);
+  const stepWaitSurveyRows       = rows.filter(r => r.journey_sub === 220);
+  const stepSurveyScheduledRows  = bookingPaidRows.filter(r => r.journey_sub === 310);
+  const stepSurveyingRows        = bookingPaidRows.filter(r => r.journey_sub === 320);
+  const stepWaitQuoteRows        = bookingPaidRows.filter(r => r.journey_step === 400);
+  const orderRowsList            = bookingPaidRows.filter(r => r.journey_step === 500 || r.journey_step === 600);
+  const stepInstallScheduledRows = bookingPaidRows.filter(r => r.journey_sub === 710);
+  const stepInstallingRows       = bookingPaidRows.filter(r => r.journey_sub === 720);
+  const stepDoneRows             = bookingPaidRows.filter(r => r.journey_sub === 730 || (r.journey_step != null && r.journey_step >= 800 && r.journey_step <= 1000));
+  const stepLostAfterRows        = bookingPaidRows.filter(r => r.journey_step === 9900);
 
-  // ยกเลิก — every lost lead (= countsByStatus['lost']). Overlaps with contact
-  // buckets above because lost can happen at any stage; shown separately as a
-  // terminal-state column so the user sees total churn at a glance.
-  const lostRows = rows.filter(r => r.status === "lost");
+  // ยกเลิก (รวม) — terminal ทุกตัว (ยกเลิก + ส่งกลับ Seeker) ซ้อนกับ bucket อื่น
+  // ได้โดยตั้งใจ เพราะการยกเลิกเกิดที่ขั้นไหนก็ได้
+  const lostRows = rows.filter(r => r.journey_step === 9900 || r.journey_step === 9800);
 
   type Seg = { color: string; count: number; rows: LifecycleRow[]; subLabel?: string };
   const stages: { label: string; total: number; rows: LifecycleRow[]; segments: Seg[] }[] = [

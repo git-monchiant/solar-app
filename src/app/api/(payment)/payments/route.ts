@@ -6,6 +6,7 @@ import { requireAdmin, requireAuth } from "@/lib/auth";
 import { syncOrderPaidFlags } from "@/lib/payments-helpers";
 import { mintPreDocNo } from "@/lib/doc-number";
 import { logLeadActivity, paymentStepLabel, fmtBaht } from "@/lib/lead-activity-log";
+import { refreshJourneySafe } from "@/lib/journey";
 
 export const runtime = "nodejs";
 export const maxDuration = 30;
@@ -106,6 +107,7 @@ export async function POST(req: NextRequest) {
           const existingChequeId: number | null = existingChequeRes.recordset[0]?.id ?? null;
           if (existingChequeId) {
             await tx.commit();
+            await refreshJourneySafe(pool, leadId);
             return NextResponse.json({
               id: existingChequeId,
               url: `/api/payments/${existingChequeId}`,
@@ -289,6 +291,8 @@ export async function POST(req: NextRequest) {
       await syncOrderPaidFlags(pool, leadId).catch(e => console.error("syncOrderPaidFlags failed:", e));
     }
 
+    await refreshJourneySafe(pool, leadId);
+
     await logLeadActivity(pool, {
       leadId,
       activityType: isChequePayment ? "payment_cheque_received" : "payment_confirmed",
@@ -384,6 +388,7 @@ export async function DELETE(req: NextRequest) {
       userId: gate.userId,
     });
 
+    await refreshJourneySafe(db, leadId);
     return NextResponse.json({ ok: true });
   } catch (e) {
     console.error("DELETE /api/payments error:", e);

@@ -180,9 +180,9 @@ export default function TodayPage() {
     surveyToday: filterLeads(raw.surveyToday),
     surveyPending: filterLeads(raw.surveyPending),
     quotationPending: filterLeads(raw.quotationPending),
-    // Split รอเสนอราคา (no installment paid yet) from ชำระมัดจำ (≥1 confirmed)
-    installPending: allInstallPending.filter(l => (l.order_paid_count ?? 0) === 0),
-    depositPaid: allInstallPending.filter(l => (l.order_paid_count ?? 0) >= 1),
+    // Split ด้วย journey: 500 = รอเสนอ/รอชำระ (รวมรอยืนยันเงินงวด) · 600 = มัดจำแล้ว
+    installPending: allInstallPending.filter(l => l.journey_step === 500),
+    depositPaid: allInstallPending.filter(l => l.journey_step === 600),
     waitInstall: filterLeads(raw.waitInstall || []),
     installScheduled: filterLeads(raw.installScheduled || []),
     warranty: filterLeads(raw.warranty || []),
@@ -221,7 +221,7 @@ export default function TodayPage() {
   const solarInstallingCount = installInProgress.length;
   const solarWarrantyCount = d.warranty.length;
   // ใช้ชุดข้อมูลและเงื่อนไขเดียวกับ Pipeline > ขอขนานไฟ
-  const solarGridtie = filterLeads(allLeads || []).filter(l => l.status === "gridtie");
+  const solarGridtie = filterLeads(allLeads || []).filter(l => l.journey_step === 900);
 
   const sortLeads = (leads: LeadData[], dateField?: "survey_date" | "install_date"): LeadData[] => {
     const ts = (v: string | null | undefined, fallback: number) =>

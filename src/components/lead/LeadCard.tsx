@@ -22,6 +22,8 @@ export interface LeadData {
   customer_grade?: string | null;
   customer_group?: string | null;
   status: string;
+  journey_step?: number | null;
+  journey_sub?: number | null;
   source: string;
   note: string;
   contact_date: string;

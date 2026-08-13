@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getDb, sql, fixDates } from "@/lib/db";
 import { computeStageCode, getStatusLabel } from "@/lib/constants/statuses";
+import { toLegacyStageCode } from "@/lib/journey-rules.mjs";
+import { flipJourneyDatesIfDue } from "@/lib/journey";
 
 // GET /api/v1/bi/leads
 //
@@ -98,6 +100,7 @@ export async function GET(req: NextRequest) {
 
   try {
     const db = await getDb();
+    await flipJourneyDatesIfDue(db);
 
     // 4. Count
     const countReq = db.request();
@@ -249,7 +252,12 @@ export async function GET(req: NextRequest) {
       const survey_date = r.survey_date as string | null;
       const install_completed_at = r.install_completed_at as string | null;
       const order_paid_count = (r.order_paid_count as number | null) ?? 0;
-      r.stage_code = computeStageCode({ status, install_date, survey_date, install_completed_at, order_paid_count });
+      // stage_code (legacy "MM-S") มาจากคอลัมน์ journey ที่ persist แล้ว —
+      // fallback คำนวณสดเฉพาะแถวที่ยังไม่มีค่า (ไม่ควรเกิดหลัง backfill)
+      const journeyStep = (r.journey_step as number | null) ?? null;
+      r.stage_code = journeyStep != null
+        ? toLegacyStageCode({ step: journeyStep, sub: (r.journey_sub as number | null) ?? 0 })
+        : computeStageCode({ status, install_date, survey_date, install_completed_at, order_paid_count });
       r.status_label = getStatusLabel({ status, install_date, order_paid_count });
       return r;
     });

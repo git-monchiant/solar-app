@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getDb, sql, fixDates, toSqlDate } from "@/lib/db";
 import { getUserIdFromReq } from "@/lib/auth";
+import { refreshJourneySafe } from "@/lib/journey";
 
 const titleMap: Record<string, string> = {
   call: "Called customer",
@@ -95,6 +96,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
         .query(`UPDATE leads SET assigned_user_id = @user_id, updated_at = GETDATE() WHERE id = @lead_id`);
     }
 
+    await refreshJourneySafe(db, leadId);
     return NextResponse.json(result.recordset[0], { status: 201 });
   } catch (error) {
     console.error("POST activity error:", error);

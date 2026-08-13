@@ -217,3 +217,15 @@ try {
   console.log(`  skipped/failed: ${e.message?.split('\n')[0] || e}`);
   console.log('  (need: brew install rsync hudochenkov/sshpass/sshpass)');
 }
+
+// ปลายทาง v3: DB ที่เพิ่ง copy มาเป็น schema prod เปล่าๆ — ต้องรัน migration ของ v3
+// (scripts/migrations-v3/) + backfill journey ต่อทันที ไม่งั้นโค้ด v3 ใช้ไม่ได้
+if (DST === 'solardb_v3') {
+  console.log('\nApplying v3 migrations + journey backfill ...');
+  const runNode = (rel, args) => {
+    execSync(`node '${path.join(REPO_ROOT, rel)}' ${args}`, { stdio: 'inherit', cwd: REPO_ROOT, shell: '/bin/bash' });
+  };
+  runNode('scripts/tools/deploy_migrations.mjs', '--db=solardb_v3 --dir=scripts/migrations-v3 --yes');
+  runNode('scripts/tools/backfill_journey.mjs', '--db=solardb_v3 --yes');
+  console.log('\n✅ solardb_v3 พร้อมใช้กับโค้ด v3 (schema prod + v3 migrations + journey backfill)');
+}

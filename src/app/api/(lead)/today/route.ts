@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getDb, fixDates } from "@/lib/db";
+import { flipJourneyDatesIfDue } from "@/lib/journey";
 import { requireAuth } from "@/lib/auth";
 
 // LeadCard + today page only read ~30 columns from the leads table. The full
@@ -16,7 +17,8 @@ import { requireAuth } from "@/lib/auth";
 // jitter.
 const LEAD_COLS = `
   l.id, l.full_name, l.house_number, l.phone, l.email, l.note,
-  l.status, l.source, l.customer_type, l.customer_grade, l.customer_group, l.line_id, l.zone,
+  l.status, l.journey_step, l.journey_sub,
+  l.source, l.customer_type, l.customer_grade, l.customer_group, l.line_id, l.zone,
   l.created_at, l.contact_date, l.next_follow_up,
   l.assigned_user_id, l.installation_address,
   l.pre_doc_no, l.pre_total_price, l.payment_confirmed,
@@ -112,6 +114,7 @@ export async function GET(req: NextRequest) {
   if (gate.error) return gate.error;
   try {
     const db = await getDb();
+    await flipJourneyDatesIfDue(db);
 
     const [newLeads, overduePreSurvey, followUpToday, followUpOverdue, surveyToday, surveyPending, quotationPending, installPending, followUpUpcoming, waitInstall, installScheduled, warranty, recentlyClosed, booking, stats] = await Promise.all([
       // 1. Lead ใหม่ — pre_survey ที่ยังไม่มี doc และไม่มี follow-up ในอนาคต
@@ -119,7 +122,7 @@ export async function GET(req: NextRequest) {
       db.request().query(`
         SELECT ${LEAD_COLS}
         ${LEAD_FROM}
-        WHERE l.status = 'pre_survey'
+        WHERE l.journey_step = 100
           AND l.pre_doc_no IS NULL
           AND (l.next_follow_up IS NULL OR CAST(l.next_follow_up AS DATE) < CAST(GETDATE() AS DATE))
         ORDER BY l.created_at DESC
@@ -150,28 +153,30 @@ export async function GET(req: NextRequest) {
       db.request().query(`
         SELECT ${LEAD_COLS}
         ${LEAD_FROM}
-        WHERE l.status = 'survey' AND l.survey_date = CAST(GETDATE() AS DATE)
+        WHERE l.journey_step = 300 AND l.survey_date = CAST(GETDATE() AS DATE)
         ORDER BY l.survey_time_slot ASC
       `),
       // 6. Survey รอดำเนินการ (ทั้งหมดที่ยังไม่เสร็จ ยกเว้นวันนี้)
       db.request().query(`
         SELECT ${LEAD_COLS}
         ${LEAD_FROM}
-        WHERE l.status = 'survey' AND (l.survey_date != CAST(GETDATE() AS DATE) OR l.survey_date IS NULL)
+        WHERE l.journey_step = 300 AND (l.survey_date != CAST(GETDATE() AS DATE) OR l.survey_date IS NULL)
         ORDER BY l.survey_date ASC
       `),
       // 7. Quotation รอเสนอ
       db.request().query(`
         SELECT ${LEAD_COLS}
         ${LEAD_FROM}
-        WHERE l.status = 'quote'
+        WHERE l.journey_step = 400
         ORDER BY l.updated_at DESC
       `),
-      // 8. รอติดตั้ง
+      // 8. ขั้นชำระเงิน — รอเสนอลูกค้า/รอชำระ (500) + มัดจำแล้ว (600)
+      // client แยก tab ด้วย journey_step. Lead ที่มีนัดติดตั้งแล้ว (700) ไม่อยู่กองนี้
+      // (ไปอยู่ installScheduled) — เดิม status='order' ทำให้โผล่สองกองพร้อมกัน
       db.request().query(`
         SELECT ${LEAD_COLS}
         ${LEAD_FROM}
-        WHERE l.status = 'order'
+        WHERE l.journey_step IN (500, 600)
         ORDER BY l.updated_at DESC
       `),
       // 9. นัดติดตามที่ยังไม่ถึง (upcoming follow-up)
@@ -186,10 +191,7 @@ export async function GET(req: NextRequest) {
       db.request().query(`
         SELECT ${LEAD_COLS}
         ${LEAD_FROM}
-        WHERE COALESCE(pay.paid_count, 0) > 0
-          AND l.install_date IS NULL
-          AND l.install_completed_at IS NULL
-          AND l.status NOT IN ('lost', 'returned')
+        WHERE l.journey_step = 600
         ORDER BY l.updated_at DESC
       `),
       // 11. รอติดตั้ง / กำลังติดตั้ง union — มีวันนัดติดตั้ง + ยังไม่ถึง
@@ -205,8 +207,8 @@ export async function GET(req: NextRequest) {
       db.request().query(`
         SELECT ${LEAD_COLS}
         ${LEAD_FROM}
-        WHERE l.install_date IS NOT NULL
-          AND l.status NOT IN ('warranty', 'gridtie', 'closed', 'lost', 'returned')
+        WHERE l.journey_step = 700
+          AND l.journey_sub IN (710, 720)
           AND COALESCE(pay.total_count, 0) > 0
           AND NOT ${HAS_UNPAID_BEFORE_INSTALLMENT}
         ORDER BY l.install_date ASC, l.updated_at DESC
@@ -215,14 +217,14 @@ export async function GET(req: NextRequest) {
       db.request().query(`
         SELECT ${LEAD_COLS}
         ${LEAD_FROM}
-        WHERE l.status = 'warranty'
+        WHERE l.journey_step = 800
         ORDER BY l.install_completed_at DESC, l.updated_at DESC
       `),
       // 13. ปิดงานล่าสุด (7 วัน)
       db.request().query(`
         SELECT ${LEAD_COLS}
         ${LEAD_FROM}
-        WHERE l.status = 'closed'
+        WHERE l.journey_step = 1000
           AND l.install_completed_at >= DATEADD(day, -7, GETDATE())
         ORDER BY l.install_completed_at DESC
       `),
@@ -232,8 +234,8 @@ export async function GET(req: NextRequest) {
       db.request().query(`
         SELECT ${LEAD_COLS}
         ${LEAD_FROM}
-        WHERE l.status IN ('pre_survey-01', 'pre_survey-02')
-        ORDER BY l.status DESC, l.pre_booked_at DESC, l.updated_at DESC
+        WHERE l.journey_step = 200
+        ORDER BY l.journey_sub DESC, l.pre_booked_at DESC, l.updated_at DESC
       `),
       // Quick stats
       db.request().query(`

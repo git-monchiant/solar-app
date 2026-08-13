@@ -3,6 +3,7 @@ import { getDb, sql } from "@/lib/db";
 import { requireAuth } from "@/lib/auth";
 import { canManageQuotation, getQuotationActor, nextQuotationDocNo } from "@/lib/quotation";
 import { logLeadActivity } from "@/lib/lead-activity-log";
+import { refreshJourneySafe } from "@/lib/journey";
 import {
   buildQuotationDocumentSnapshot,
   validateQuotationDocument,
@@ -538,6 +539,7 @@ export async function POST(
     });
 
     await tx.commit();
+    await refreshJourneySafe(db, quotation.lead_id);
     return NextResponse.json({
       ok: true,
       status: next,

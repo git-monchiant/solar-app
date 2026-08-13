@@ -3,6 +3,7 @@ import { requireAdmin } from "@/lib/auth";
 import { getGmailClient } from "@/lib/gmail";
 import { extractEmailBody, parseRegistrationEmail } from "@/lib/gmail-parser";
 import { getDb, sql } from "@/lib/db";
+import { refreshJourneySafe } from "@/lib/journey";
 
 // POST /api/oauth/gmail/sync
 // Pulls Sena Solar registration emails and inserts them as leads.
@@ -85,6 +86,7 @@ export async function POST(req: NextRequest) {
         // lead_data since migration 037 — INSERT a 1:1 row with whatever we
         // parsed out of the email.
         const newLeadId = leadInsert.recordset[0].id;
+        await refreshJourneySafe(db, newLeadId);
         await db.request()
           .input("lead_id", sql.Int, newLeadId)
           .input("residence_type", sql.NVarChar(50), parsed.residence ? parsed.residence.slice(0, 50) : null)
