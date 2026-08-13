@@ -39,9 +39,12 @@ interface MonthProps {
   // Fired when user clicks an empty day cell — used by the parent to open a
   // "create appointment" modal pre-filled with that date.
   onEmptyDayClick?: (dateKey: string) => void;
+  // Team filter — กติกาเดียวกับ EventCalendarList.controlledTeam:
+  // block ที่ไม่ระบุทีม (null) เห็นทุกทีม · "block" = งานอื่นล้วน
+  team?: "all" | "survey" | "install" | "block";
 }
 
-export default function EventCalendarMonth({ toolbarRight, year: controlledYear, month: controlledMonth, onEmptyDayClick }: MonthProps) {
+export default function EventCalendarMonth({ toolbarRight, year: controlledYear, month: controlledMonth, onEmptyDayClick, team = "all" }: MonthProps) {
   const openLead = useOpenLead();
   const today = new Date();
   const [internalYear, setInternalYear] = useState(today.getFullYear());
@@ -58,15 +61,26 @@ export default function EventCalendarMonth({ toolbarRight, year: controlledYear,
   }, []);
 
   const eventsByDay = useMemo(() => {
+    const filtered = team === "all"
+      ? events
+      : team === "block"
+      ? events.filter((e) => e.event_type === "block")
+      : events.filter((e) => {
+          if (e.event_type === "block") {
+            const t = (e as { team?: string | null }).team;
+            return t == null || t === team;
+          }
+          return e.event_type === team;
+        });
     const map = new Map<string, ScheduledEvent[]>();
-    for (const e of events) {
+    for (const e of filtered) {
       const k = String(e.event_date).slice(0, 10);
       const arr = map.get(k) ?? [];
       arr.push(e);
       map.set(k, arr);
     }
     return map;
-  }, [events]);
+  }, [events, team]);
 
   const cells = useMemo(() => {
     const first = new Date(year, month, 1);
@@ -138,7 +152,8 @@ export default function EventCalendarMonth({ toolbarRight, year: controlledYear,
                       const isSurvey = !isBlock && (ev.status === "survey" || ev.event_type === "survey");
                       // Border + icon-tint coloured by team (survey vs install)
                       // so teams are distinguishable at a glance. Block stays gray.
-                      const tc = isBlock ? null : isSurvey ? "#1ed0c7" : "#f97316";
+                      // สีต้องตรง legend ในหน้า calendar: Survey = ม่วง (--active), Solar = ส้ม
+                      const tc = isBlock ? null : isSurvey ? "#8b5cf6" : "#f97316";
                       const baseCls = isBlock
                         ? "bg-gray-100 text-gray-700 border-gray-300"
                         : "bg-white text-gray-800 border-gray-200";

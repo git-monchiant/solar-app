@@ -90,8 +90,8 @@ export default function NewAppointmentModal({ onClose, onCreated, initialDate }:
             <label className="text-xs font-bold tracking-wider uppercase text-gray-400 block mb-1.5">ทีม</label>
             <div className="flex flex-wrap gap-2">
               {[
-                { value: "survey" as const, label: "ทีม Survey", color: "#1ed0c7" },
-                { value: "install" as const, label: "ทีม Solar", color: "#f97316" },
+                { value: "survey" as const, label: "ทีม Survey", color: "#8b5cf6" },
+                { value: "install" as const, label: "ทีมติดตั้ง", color: "#f97316" },
                 { value: "both" as const, label: "ทั้ง 2 ทีม", color: "#6b7280" },
               ].map((opt) => {
                 const selected = team === opt.value;

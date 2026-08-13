@@ -13,13 +13,13 @@ import { useMe } from "@/lib/roles";
 // "ปฏิทิน" tab.
 export default function CalendarPage() {
   const { me } = useMe();
-  const [view, setView] = useState<"month" | "list">("list");
+  const [view, setView] = useState<"month" | "list">("month");
   const [newOpen, setNewOpen] = useState(false);
   const [newPrefillDate, setNewPrefillDate] = useState<string | undefined>(undefined);
   // Team filter — calendar shows the survey team's bookings or the solar
   // (install) team's bookings. Replaced the per-zone chips since we don't
   // split work by zone any more.
-  const [selectedTeam, setSelectedTeam] = useState<"all" | "survey" | "install">("all");
+  const [selectedTeam, setSelectedTeam] = useState<"all" | "survey" | "install" | "block">("all");
 
   // Snap to today's row whenever the list view becomes active — both on first
   // mount and every time the user switches back from month view. Also resets
@@ -67,7 +67,7 @@ export default function CalendarPage() {
 
   return (
     <div>
-      <Header title="ตารางงาน" subtitle="CALENDAR">
+      <Header title="ปฏิทิน" subtitle="CALENDAR">
         {/* Toolbar lives inside Header so the entire title row + controls
             stays as ONE sticky block — nothing in here scrolls away. */}
         <div className="bg-white border-t border-gray-100 px-3 md:px-5 py-2">
@@ -86,7 +86,7 @@ export default function CalendarPage() {
           )}
           <span className="inline-flex items-center gap-3 text-xs ml-2 flex-wrap">
             <span className="inline-flex items-center gap-1.5"><span className="w-3 h-3 rounded-sm bg-active" />ทีม Survey</span>
-            <span className="inline-flex items-center gap-1.5"><span className="w-3 h-3 rounded-sm bg-orange-500" />ทีม Solar</span>
+            <span className="inline-flex items-center gap-1.5"><span className="w-3 h-3 rounded-sm bg-orange-500" />ทีมติดตั้ง</span>
             <span className="inline-flex items-center gap-1.5"><span className="w-3 h-3 rounded-sm bg-gray-300 border border-gray-400" />งานอื่น</span>
           </span>
           <div className="flex-1" />
@@ -118,12 +118,17 @@ export default function CalendarPage() {
             {[
               { value: "all" as const, label: "ทั้งหมด" },
               { value: "survey" as const, label: "ทีม Survey" },
-              { value: "install" as const, label: "ทีม Solar" },
+              { value: "install" as const, label: "ทีมติดตั้ง" },
+              { value: "block" as const, label: "งานอื่น" },
             ].map((opt) => {
               const active = selectedTeam === opt.value;
+              // งานอื่น ใช้โทนเทาตามสีหมวดใน legend — ที่เหลือใช้ active ตามเดิม
+              const activeCls = opt.value === "block"
+                ? "bg-gray-500 text-white border-gray-500"
+                : "bg-active text-white border-active";
               return (
                 <button key={opt.value} type="button" onClick={() => setSelectedTeam(opt.value)}
-                  className={`px-3 h-8 rounded-lg text-xs font-semibold border transition-all ${active ? "bg-active text-white border-active" : "bg-white text-gray-600 border-gray-200 hover:border-active/50"}`}
+                  className={`px-3 h-8 rounded-lg text-xs font-semibold border transition-all ${active ? activeCls : "bg-white text-gray-600 border-gray-200 hover:border-active/50"}`}
                   style={{ minHeight: 0 }}>
                   {opt.label}
                 </button>
@@ -137,6 +142,7 @@ export default function CalendarPage() {
         {view === "month"
           ? <EventCalendarMonth
               key={refreshKey}
+              team={selectedTeam}
               onEmptyDayClick={(dk) => { setNewPrefillDate(dk); setNewOpen(true); }}
             />
           : <EventCalendarList

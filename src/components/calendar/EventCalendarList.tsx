@@ -75,10 +75,10 @@ interface Props {
   // Controlled zone filter — when provided, parent owns the chips and the
   // component just respects the value.
   controlledZone?: string;
-  // Controlled team filter — "all" | "survey" | "install". When "survey" or
-  // "install" is set, only events whose event_type matches are listed (block
-  // events stay visible since they apply globally).
-  controlledTeam?: "all" | "survey" | "install";
+  // Controlled team filter — "all" | "survey" | "install" | "block". When
+  // "survey"/"install" is set, only events whose event_type matches are listed
+  // (block events stay visible since they apply globally). "block" = งานอื่นล้วน.
+  controlledTeam?: "all" | "survey" | "install" | "block";
   // Fires whenever the most-visible month section changes due to scroll.
   // Lets the parent's sticky header reflect "what month am I looking at".
   onVisibleMonthChange?: (mk: string) => void;
@@ -127,6 +127,8 @@ export default function EventCalendarList({ monthsBack, monthsForward, days, zon
     const zoneFiltered = selectedZone === "all" ? events : events.filter((s) => s.zone === selectedZone);
     const filtered = controlledTeam === "all"
       ? zoneFiltered
+      : controlledTeam === "block"
+      ? zoneFiltered.filter((s) => s.event_type === "block")
       : zoneFiltered.filter((s) => {
           // event_type='survey' / 'install' have an implicit team that matches
           // their type. Blocks carry an explicit team (null = both teams).
@@ -283,9 +285,10 @@ export default function EventCalendarList({ monthsBack, monthsForward, days, zon
                             // Bar colour by team (survey vs install), block → gray.
                             // Replaces the old per-zone tint so the calendar reads
                             // as "which team owns this slot".
+                            // สีต้องตรง legend ในหน้า calendar: Survey = ม่วง (--active), Solar = ส้ม
                             const barColor = isBlock
                               ? null
-                              : j.event_type === "install" ? "#f97316" : "#1ed0c7";
+                              : j.event_type === "install" ? "#f97316" : "#8b5cf6";
                             const bg = isBlock ? "bg-gray-100" : "bg-gray-50 hover:bg-gray-100";
                             const inner = (
                               <>
