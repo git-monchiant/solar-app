@@ -91,7 +91,7 @@ export async function POST(
         VALUES(@qid, @stage, @uid);
       `);
 
-    const targetLabel = stage === "solar_sup" ? "Solar Sup" : "Sale Sup";
+    const targetLabel = stage === "solar_sup" ? "Solar Manager" : "Sale Manager";
     await notifyQuotationRole(tx, stage, {
       quotationId,
       leadId: quotation.lead_id,

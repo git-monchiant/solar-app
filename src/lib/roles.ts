@@ -9,8 +9,8 @@ export const ALL_ROLES: Role[] = ["admin", "sales", "solar_sup", "sales_sup", "s
 export const ROLE_LABEL: Record<Role, string> = {
   admin: "Admin",
   sales: "Sales",
-  solar_sup: "Solar Sup",
-  sales_sup: "Sale Sup",
+  solar_sup: "Solar Manager",
+  sales_sup: "Sale Manager",
   solar: "Solar",
   leadsseeker: "Leads Seeker",
   account: "Account",

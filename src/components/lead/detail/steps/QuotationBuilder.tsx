@@ -98,9 +98,9 @@ type Template = {
 };
 const statusLabel: Record<string, string> = {
   draft: "ฉบับร่าง",
-  pending_solar_sup: "รอ Solar Sup อนุมัติ",
-  pending_sales_sup: "รอ Sale Sup อนุมัติ",
-  pending_approval: "รอ Sale Sup อนุมัติ",
+  pending_solar_sup: "รอ Solar Manager อนุมัติ",
+  pending_sales_sup: "รอ Sale Manager อนุมัติ",
+  pending_approval: "รอ Sale Manager อนุมัติ",
   approved: "อนุมัติแล้ว",
   changes_required: "ส่งกลับแก้ไข",
   cancelled: "ยกเลิกแล้ว",
@@ -287,7 +287,6 @@ export default function QuotationBuilder({
   const [templates, setTemplates] = useState<Template[]>([]);
   const [editing, setEditing] = useState<number | null>(null);
   const [busy, setBusy] = useState(false);
-  const [reminderBusy, setReminderBusy] = useState<number | null>(null);
   const [error, setError] = useState("");
   // The quote whose PDF is being generated (puppeteer takes a few seconds).
   // Drives the per-button spinner so a click gives immediate feedback instead
@@ -336,7 +335,7 @@ export default function QuotationBuilder({
         confirmText: "อนุมัติ",
         message:
           status === "pending_solar_sup"
-            ? "ยืนยันว่า Solar Sup ตรวจเอกสารแล้ว และส่งต่อให้ Sale Sup อนุมัติขั้นสุดท้าย"
+            ? "ยืนยันว่า Solar Manager ตรวจเอกสารแล้ว และส่งต่อให้ Sale Manager อนุมัติขั้นสุดท้าย"
             : "ยืนยันว่าได้ตรวจสอบและรับรองข้อมูล Survey, Package, ราคา, เงื่อนไขชำระเงิน และผลคำนวณทั้งชุดแล้ว",
       });
       if (!ok) return;
@@ -355,25 +354,6 @@ export default function QuotationBuilder({
       setError(e instanceof Error ? e.message : "ดำเนินการไม่สำเร็จ");
     } finally {
       setBusy(false);
-    }
-  };
-  const remindApprover = async (quote: Quote) => {
-    const target = quote.status === "pending_solar_sup" ? "Solar Sup" : "Sale Sup";
-    const ok = await dialog.confirm({
-      title: `เตือน ${target}`,
-      confirmText: "ส่งการแจ้งเตือน",
-      message: `ส่งการแจ้งเตือนภายในแอปให้ ${target} ตรวจสอบใบเสนอราคา ${quote.doc_no}`,
-    });
-    if (!ok) return;
-    setReminderBusy(quote.id);
-    setError("");
-    try {
-      await apiFetch(`/api/quotations/${quote.id}/remind`, { method: "POST" });
-      await load();
-    } catch (e) {
-      setError(e instanceof Error ? e.message : "ส่งการแจ้งเตือนไม่สำเร็จ");
-    } finally {
-      setReminderBusy(null);
     }
   };
   // Navigate straight to the API instead of fetching a blob: a blob: URL drops
@@ -489,11 +469,6 @@ export default function QuotationBuilder({
                 i.source_type !== "addon_package_detail" &&
               i.source_type !== "custom_detail",
             ) || [];
-          const lastReminderTime = q?.last_reminded_at
-            ? new Date(q.last_reminded_at).getTime()
-            : 0;
-          const reminderCoolingDown =
-            lastReminderTime > 0 && Date.now() - lastReminderTime < 60 * 60 * 1000;
           return q ? (
             <article
               key={option}
@@ -594,18 +569,18 @@ export default function QuotationBuilder({
                   </div>
                 );
               })()}
-              <div className="grid grid-cols-3 gap-2 mt-3">
+              <div className="mt-3 grid h-14 grid-cols-3 gap-2">
                 {["draft", "changes_required"].includes(q.status) ? (
-                  <div className="col-span-3 flex gap-2">
+                  <div className="col-span-3 flex h-full gap-2">
                     <button
                       onClick={() => setEditing(option)}
-                      className="h-9 px-3 rounded-lg border border-violet-300 bg-violet-50 text-violet-700 text-xs font-semibold whitespace-nowrap"
+                      className="h-full px-3 rounded-lg border border-violet-300 bg-violet-50 text-violet-700 text-xs font-semibold whitespace-nowrap"
                     >
                       ✎ แก้ไข
                     </button>
                     <button
                       onClick={() => openPdf(q.id)}
-                      className="flex-1 h-9 rounded-lg border border-gray-200 text-gray-700 text-xs font-semibold"
+                      className="h-full flex-1 rounded-lg border border-gray-200 text-gray-700 text-xs font-semibold"
                     >
                       ▣ ดูใบเสนอราคา
                     </button>
@@ -615,7 +590,7 @@ export default function QuotationBuilder({
                         onClick={() => remove(q.id)}
                         aria-label="ลบฉบับร่าง"
                         title="ลบฉบับร่าง"
-                        className="h-9 px-3 shrink-0 flex items-center justify-center rounded-lg border border-gray-200 text-gray-500 text-xs font-semibold hover:text-red-600 hover:border-red-200 hover:bg-red-50 transition-colors disabled:cursor-not-allowed disabled:opacity-40"
+                        className="h-full px-3 shrink-0 flex items-center justify-center rounded-lg border border-gray-200 text-gray-500 text-xs font-semibold hover:text-red-600 hover:border-red-200 hover:bg-red-50 transition-colors disabled:cursor-not-allowed disabled:opacity-40"
                       >
                         <svg className="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
                           <path d="M3 6h18M8 6V4h8v2M6 6l1 14h10l1-14" />
@@ -627,7 +602,7 @@ export default function QuotationBuilder({
                   <>
                     <button
                       onClick={() => openPdf(q.id)}
-                      className="h-9 rounded-lg border border-gray-200 text-xs font-semibold"
+                      className="h-full rounded-lg border border-gray-200 px-2 text-xs font-semibold leading-4"
                     >
                       ▣ ดูใบเสนอราคา
                     </button>
@@ -637,14 +612,14 @@ export default function QuotationBuilder({
                         setReturnNote("");
                         setReturnModal({ id: q.id });
                       }}
-                      className="h-9 rounded-lg bg-red-50 text-red-700 text-xs font-semibold"
+                      className="h-full rounded-lg bg-red-50 px-2 text-red-700 text-xs font-semibold leading-4"
                     >
                       ส่งกลับ
                     </button>
                     <button
                       disabled={busy}
                       onClick={() => act(q.id, "approve", "", q.status)}
-                      className="h-9 rounded-lg bg-emerald-600 text-white text-xs font-semibold"
+                      className="h-full rounded-lg bg-emerald-600 px-2 text-white text-xs font-semibold leading-4"
                     >
                       {q.status === "pending_solar_sup"
                         ? "อนุมัติส่งต่อ"
@@ -652,41 +627,24 @@ export default function QuotationBuilder({
                     </button>
                   </>
                 ) : isPendingQuotation(q.status) ? (
-                  <>
-                    <button
-                      onClick={() => openPdf(q.id)}
-                      className="col-span-2 h-9 rounded-lg border border-gray-200 text-xs font-semibold"
-                    >
-                      ดูใบเสนอราคา
-                    </button>
-                    <button
-                      type="button"
-                      disabled={reminderBusy === q.id || reminderCoolingDown}
-                      onClick={() => void remindApprover(q)}
-                      title={reminderCoolingDown ? "ส่งการแจ้งเตือนซ้ำได้เมื่อครบ 1 ชั่วโมง" : undefined}
-                      className="h-9 rounded-lg border border-amber-300 bg-amber-50 text-xs font-semibold text-amber-700 disabled:cursor-not-allowed disabled:opacity-50"
-                    >
-                      {reminderBusy === q.id
-                        ? "กำลังส่ง…"
-                        : reminderCoolingDown
-                          ? "เตือนแล้ว"
-                          : q.status === "pending_solar_sup"
-                            ? "เตือน Solar Sup"
-                            : "เตือน Sale Sup"}
-                    </button>
-                  </>
+                  <button
+                    onClick={() => openPdf(q.id)}
+                    className="col-span-3 h-full rounded-lg border border-gray-200 px-2 text-xs font-semibold leading-4"
+                  >
+                    ดูใบเสนอราคา
+                  </button>
                 ) : q.status === "approved" ? (
                   <>
                     <button
                       onClick={() => openPdf(q.id)}
-                      className="col-span-2 h-9 rounded-lg border border-gray-200 text-xs font-semibold"
+                      className="col-span-2 h-full rounded-lg border border-gray-200 px-2 text-xs font-semibold leading-4"
                     >
                       ▣ ดูใบเสนอราคา
                     </button>
                     <button
                       disabled={busy}
                       onClick={() => act(q.id, "revise")}
-                      className="h-9 rounded-lg border border-gray-200 text-xs font-semibold"
+                      className="h-full rounded-lg border border-gray-200 px-2 text-xs font-semibold leading-4"
                     >
                       Revision
                     </button>
@@ -695,7 +653,7 @@ export default function QuotationBuilder({
                   <>
                     <button
                       onClick={() => openPdf(q.id)}
-                      className="col-span-3 h-9 rounded-lg border border-gray-200 text-xs font-semibold"
+                      className="col-span-3 h-full rounded-lg border border-gray-200 px-2 text-xs font-semibold leading-4"
                     >
                       ▣ ดูใบเสนอราคา
                     </button>

@@ -216,7 +216,7 @@ export async function POST(
             updated_at = GETDATE()
           WHERE id = @id
         `);
-      activityTitle = `ส่งใบเสนอราคา ${quotation.doc_no} ให้ Solar Sup อนุมัติ`;
+      activityTitle = `ส่งใบเสนอราคา ${quotation.doc_no} ให้ Solar Manager อนุมัติ`;
     } else if (action === "approve") {
       if (body.certify !== true) {
         await tx.rollback();
@@ -237,7 +237,7 @@ export async function POST(
         if (!canActAsSolarSup) {
           await tx.rollback();
           return NextResponse.json(
-            { error: "ขั้นนี้อนุมัติได้เฉพาะ Solar Sup หรือ Admin" },
+            { error: "ขั้นนี้อนุมัติได้เฉพาะ Solar Manager หรือ Admin" },
             { status: 403 },
           );
         }
@@ -258,7 +258,7 @@ export async function POST(
               updated_at = GETDATE()
             WHERE id = @id
           `);
-        activityTitle = `Solar Sup อนุมัติใบเสนอราคา ${quotation.doc_no} · ส่งต่อ Sale Sup`;
+        activityTitle = `Solar Manager อนุมัติใบเสนอราคา ${quotation.doc_no} · ส่งต่อ Sale Manager`;
       } else if (
         quotation.status === SALES_PENDING ||
         quotation.status === LEGACY_PENDING
@@ -266,7 +266,7 @@ export async function POST(
         if (!canActAsSalesSup) {
           await tx.rollback();
           return NextResponse.json(
-            { error: "ขั้นนี้อนุมัติได้เฉพาะ Sale Sup หรือ Admin" },
+            { error: "ขั้นนี้อนุมัติได้เฉพาะ Sale Manager หรือ Admin" },
             { status: 403 },
           );
         }
@@ -286,7 +286,7 @@ export async function POST(
           .input(
             "title",
             sql.NVarChar(100),
-            actor.job_title || "Sale Supervisor",
+            actor.job_title || "Sale Manager",
           )
           .input("url", sql.NVarChar(500), actor.signature_url || null)
           .input("data", sql.VarBinary(sql.MAX), actor.signature_data)
@@ -313,7 +313,7 @@ export async function POST(
               updated_at = GETDATE()
             WHERE id = @id
           `);
-        activityTitle = `Sale Sup อนุมัติใบเสนอราคา ${quotation.doc_no} ครบทุกขั้น`;
+        activityTitle = `Sale Manager อนุมัติใบเสนอราคา ${quotation.doc_no} ครบทุกขั้น`;
       } else {
         await tx.rollback();
         return NextResponse.json(
@@ -335,11 +335,11 @@ export async function POST(
         if (!canActAsSolarSup) {
           await tx.rollback();
           return NextResponse.json(
-            { error: "ขั้นนี้ส่งกลับได้เฉพาะ Solar Sup หรือ Admin" },
+            { error: "ขั้นนี้ส่งกลับได้เฉพาะ Solar Manager หรือ Admin" },
             { status: 403 },
           );
         }
-        reviewer = "Solar Sup";
+        reviewer = "Solar Manager";
         eventAction = "changes_required_solar";
       } else if (
         quotation.status === SALES_PENDING ||
@@ -348,11 +348,11 @@ export async function POST(
         if (!canActAsSalesSup) {
           await tx.rollback();
           return NextResponse.json(
-            { error: "ขั้นนี้ส่งกลับได้เฉพาะ Sale Sup หรือ Admin" },
+            { error: "ขั้นนี้ส่งกลับได้เฉพาะ Sale Manager หรือ Admin" },
             { status: 403 },
           );
         }
-        reviewer = "Sale Sup";
+        reviewer = "Sale Manager";
         eventAction = "changes_required_sales";
       } else {
         await tx.rollback();
@@ -543,7 +543,7 @@ export async function POST(
         type: "approval_requested",
         stage: "solar_sup",
         title: `มีใบเสนอราคา ${quotation.doc_no} รออนุมัติ`,
-        message: `${actor.full_name} ส่งใบเสนอราคาของ ${quotation.customer_name} ให้ Solar Sup ตรวจสอบ`,
+        message: `${actor.full_name} ส่งใบเสนอราคาของ ${quotation.customer_name} ให้ Solar Manager ตรวจสอบ`,
         createdBy: gate.userId,
       });
     } else if (eventAction === "approve_solar") {
@@ -554,7 +554,7 @@ export async function POST(
         type: "approval_requested",
         stage: "sales_sup",
         title: `มีใบเสนอราคา ${quotation.doc_no} รออนุมัติขั้นสุดท้าย`,
-        message: `Solar Sup อนุมัติใบเสนอราคาของ ${quotation.customer_name} แล้ว`,
+        message: `Solar Manager อนุมัติใบเสนอราคาของ ${quotation.customer_name} แล้ว`,
         createdBy: gate.userId,
       });
     } else if (eventAction === "approve_sales") {

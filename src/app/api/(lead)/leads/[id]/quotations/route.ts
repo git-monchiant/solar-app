@@ -17,8 +17,8 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
       reminder.reminded_at last_reminded_at,
       reminder_user.full_name last_reminded_by_name,
       CASE
-        WHEN returned_event.action = 'changes_required_solar' THEN 'Solar Sup'
-        WHEN returned_event.action = 'changes_required_sales' THEN 'Sale Sup'
+        WHEN returned_event.action = 'changes_required_solar' THEN 'Solar Manager'
+        WHEN returned_event.action = 'changes_required_sales' THEN 'Sale Manager'
         WHEN returned_event.id IS NOT NULL THEN 'ผู้อนุมัติ'
         ELSE NULL
       END returned_by_role

@@ -353,7 +353,7 @@ export async function GET(
     q.approver_signature_data_snapshot,
     q.approver_signature_mime_snapshot,
   );
-  // Solar Sup (ผู้ตรวจสอบ) signs at the first approval step; show it as soon as
+  // Solar Manager (ผู้ตรวจสอบ) signs at the first approval step; show it as soon as
   // they approve (pending_sales_sup onward), not only after final approval.
   const solarSignature = signatureDataUrl(
     q.solar_approved_signature_data,
@@ -363,9 +363,9 @@ export async function GET(
     q.status === "approved"
       ? ""
       : q.status === "pending_solar_sup"
-        ? "รอ Solar Sup อนุมัติ"
+        ? "รอ Solar Manager อนุมัติ"
         : ["pending_sales_sup", "pending_approval"].includes(q.status)
-          ? "รอ Sale Sup อนุมัติ"
+          ? "รอ Sale Manager อนุมัติ"
         : "DRAFT";
   const reportLead = {
     ...snapshot.lead,
