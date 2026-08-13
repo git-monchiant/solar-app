@@ -44,20 +44,33 @@ export default function QuotationApprovalsPage() {
   const [rejectQuote, setRejectQuote] = useState<Row | null>(null);
   const [rejectReason, setRejectReason] = useState("");
 
-  const approvalStage = hasRole(activeRoles, "admin")
+  const isAdminMode = hasRole(activeRoles, "admin");
+  const canApproveSolar = isAdminMode || hasRole(activeRoles, "solar_sup");
+  const canApproveSales = isAdminMode || hasRole(activeRoles, "sales_sup");
+  const approvalStage = isAdminMode
     ? "all"
-    : hasRole(activeRoles, "solar_sup")
+    : canApproveSolar
       ? "solar_sup"
-      : "sales_sup";
+      : canApproveSales
+        ? "sales_sup"
+        : "none";
   const stageLabel =
     approvalStage === "solar_sup"
-      ? "Solar Sup"
+      ? "Solar Manager"
       : approvalStage === "sales_sup"
-        ? "Sale Sup"
-        : "ทุกขั้น";
+        ? "Sale Manager"
+        : approvalStage === "all"
+          ? "ทุกขั้น"
+          : "role ที่ไม่มีสิทธิ์อนุมัติ";
 
   const load = useCallback(async () => {
     if (activeRoles.length === 0) return;
+    if (approvalStage === "none") {
+      setRows([]);
+      setError("role ที่กำลังใช้งานไม่มีสิทธิ์อนุมัติใบเสนอราคา");
+      setLoading(false);
+      return;
+    }
     try {
       setError("");
       const query = approvalStage === "all" ? "" : `?stage=${approvalStage}`;
@@ -115,7 +128,7 @@ export default function QuotationApprovalsPage() {
         confirmText: "อนุมัติ",
         message:
           quote.status === "pending_solar_sup"
-            ? "ยืนยันว่า Solar Sup ตรวจเอกสารแล้ว และส่งต่อให้ Sale Sup อนุมัติขั้นสุดท้าย"
+            ? "ยืนยันว่า Solar Manager ตรวจเอกสารแล้ว และส่งต่อให้ Sale Manager อนุมัติขั้นสุดท้าย"
             : "ยืนยันว่าได้ตรวจและรับรองข้อมูล Survey, Package, ราคา เงื่อนไขชำระเงิน และเอกสารทั้ง 17 หน้าแล้ว",
       });
       if (!ok) return;
@@ -259,6 +272,9 @@ export default function QuotationApprovalsPage() {
                 <div className="divide-y divide-gray-100">
                   {group.quotes.map((quote) => {
                     const isBusy = busy === quote.id;
+                    const canActOnQuote = quote.status === "pending_solar_sup"
+                      ? canApproveSolar
+                      : canApproveSales;
                     return (
                       <div
                         key={quote.id}
@@ -276,7 +292,7 @@ export default function QuotationApprovalsPage() {
                               17 หน้า
                             </span>
                             <span className={`rounded px-2 py-1 text-xxs font-semibold ${quote.status === "pending_solar_sup" ? "bg-amber-50 text-amber-700" : "bg-violet-50 text-violet-700"}`}>
-                              รอ {quote.status === "pending_solar_sup" ? "Solar Sup" : "Sale Sup"}
+                              รอ {quote.status === "pending_solar_sup" ? "Solar Manager" : "Sale Manager"}
                             </span>
                           </div>
                           <div className="mt-1 text-sm font-semibold text-gray-800">
@@ -286,7 +302,7 @@ export default function QuotationApprovalsPage() {
                             ส่งขออนุมัติ {formatThaiDate(quote.submitted_at, { time: true, buddhist: true })}
                             {quote.status === "pending_sales_sup" && quote.solar_approved_by_name && (
                               <span className="ml-2 text-emerald-600">
-                                · Solar Sup อนุมัติแล้วโดย {quote.solar_approved_by_name}
+                                · Solar Manager อนุมัติแล้วโดย {quote.solar_approved_by_name}
                               </span>
                             )}
                           </div>
@@ -310,7 +326,7 @@ export default function QuotationApprovalsPage() {
                               </div>
                             )}
                           </div>
-                          <div className="grid grid-cols-3 gap-2">
+                          <div className={`grid gap-2 ${canActOnQuote ? "grid-cols-3" : "grid-cols-1"}`}>
                             <button
                               type="button"
                               disabled={isBusy}
@@ -319,26 +335,28 @@ export default function QuotationApprovalsPage() {
                             >
                               ดูใบเสนอราคา
                             </button>
-                            <button
-                              type="button"
-                              disabled={isBusy}
-                              onClick={() => openRejectModal(quote)}
-                              className="h-9 whitespace-nowrap rounded-lg bg-red-50 px-3 text-xs font-semibold text-red-700 hover:bg-red-100 disabled:opacity-50"
-                            >
-                              ส่งกลับ
-                            </button>
-                            <button
-                              type="button"
-                              disabled={isBusy}
-                              onClick={() => action(quote, "approve")}
-                              className="h-9 whitespace-nowrap rounded-lg bg-emerald-500 px-3 text-xs font-semibold text-white hover:bg-emerald-600 disabled:opacity-50"
-                            >
-                              {isBusy
-                                ? "กำลังทำรายการ..."
-                                : quote.status === "pending_solar_sup"
-                                  ? "อนุมัติส่งต่อ Sale Sup"
-                                  : "รับรองและอนุมัติ"}
-                            </button>
+                            {canActOnQuote && (
+                              <>
+                                <button
+                                  type="button"
+                                  disabled={isBusy}
+                                  onClick={() => openRejectModal(quote)}
+                                  className="h-9 whitespace-nowrap rounded-lg bg-red-50 px-3 text-xs font-semibold text-red-700 hover:bg-red-100 disabled:opacity-50"
+                                >
+                                  ส่งกลับ
+                                </button>
+                                <button
+                                  type="button"
+                                  disabled={isBusy}
+                                  onClick={() => action(quote, "approve")}
+                                  className="h-9 whitespace-nowrap rounded-lg bg-emerald-500 px-3 text-xs font-semibold text-white hover:bg-emerald-600 disabled:opacity-50"
+                                >
+                                  {isBusy
+                                    ? "กำลังทำรายการ..."
+                                    : "อนุมัติ"}
+                                </button>
+                              </>
+                            )}
                           </div>
                         </div>
                       </div>

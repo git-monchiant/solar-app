@@ -3,6 +3,7 @@ import { getDb, sql } from "@/lib/db";
 import { requireAdmin, requireAuth } from "@/lib/auth";
 import { syncOrderPaidFlags } from "@/lib/payments-helpers";
 import { logLeadActivity, paymentStepLabel, fmtBaht } from "@/lib/lead-activity-log";
+import { notifyAccountingRole, notifyLeadOwner, resolveAccountingNotifications } from "@/lib/accounting-notifications";
 
 export const runtime = "nodejs";
 
@@ -174,6 +175,24 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
         userId: gate.userId,
       });
 
+      await resolveAccountingNotifications(db, {
+        paymentId: payId,
+        leadId: pay.lead_id,
+        slipField: pay.slip_field,
+        types: ["account_cheque_waiting_receive"],
+      }).catch((error) => console.error("resolve accounting notification failed:", error));
+      if (!pay.cheque_received_at) {
+        await notifyAccountingRole(db, {
+          paymentId: payId,
+          leadId: pay.lead_id,
+          slipField: pay.slip_field,
+          type: "account_cheque_waiting_money",
+          title: "รับเช็คแล้ว รอยืนยันเงินเข้าบริษัท",
+          message: `${paymentStepLabel(pay.slip_field, pay.step_no)} · ${fmtBaht(Number(pay.amount || 0))}`,
+          createdBy: gate.userId,
+        }).catch((error) => console.error("create accounting notification failed:", error));
+      }
+
       return NextResponse.json({ ok: true });
     }
 
@@ -258,6 +277,8 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
         note: statusNote,
         userId: gate.userId,
       });
+      await resolveAccountingNotifications(db, { paymentId: payId, leadId: pay.lead_id, slipField: pay.slip_field })
+        .catch((error) => console.error("resolve accounting notification failed:", error));
       return NextResponse.json({ ok: true });
     }
 
@@ -370,6 +391,21 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
         note: pay.description ?? null,
         userId: gate.userId,
       });
+      await resolveAccountingNotifications(db, {
+        paymentId: payId,
+        leadId: pay.lead_id,
+        slipField: pay.slip_field,
+        types: ["account_cheque_waiting_money"],
+      }).catch((error) => console.error("resolve accounting notification failed:", error));
+      await notifyLeadOwner(db, {
+        paymentId: payId,
+        leadId: pay.lead_id,
+        slipField: pay.slip_field,
+        type: "sale_payment_approved",
+        title: "บัญชีอนุมัติการชำระเงินแล้ว",
+        message: `${paymentStepLabel(pay.slip_field, pay.step_no)} · ${fmtBaht(Number(pay.amount || 0))}`,
+        createdBy: gate.userId,
+      }).catch((error) => console.error("create Sale payment notification failed:", error));
       return NextResponse.json({ ok: true });
     }
 

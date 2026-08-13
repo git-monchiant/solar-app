@@ -1,16 +1,28 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getDb, sql } from "@/lib/db";
-import { requireAuth } from "@/lib/auth";
+import { getEffectiveRolesFromReq, requireAuth } from "@/lib/auth";
 import { canManageQuotation, getQuotationActor, nextQuotationDocNo } from "@/lib/quotation";
 import { logLeadActivity } from "@/lib/lead-activity-log";
 import {
   buildQuotationDocumentSnapshot,
   validateQuotationDocument,
 } from "@/lib/quotation-document";
+import {
+  closeQuotationStageNotifications,
+  notifyQuotationRole,
+  notifyQuotationUser,
+} from "@/lib/quotation-notifications";
 
 const SOLAR_PENDING = "pending_solar_sup";
 const SALES_PENDING = "pending_sales_sup";
 const LEGACY_PENDING = "pending_approval";
+
+function getActedAsRole(eventAction: string, effectiveRoles: readonly string[]): string | null {
+  if (effectiveRoles.includes("admin")) return "admin";
+  if (eventAction.endsWith("_solar")) return "solar_sup";
+  if (eventAction.endsWith("_sales")) return "sales_sup";
+  return effectiveRoles.length === 1 ? effectiveRoles[0] : null;
+}
 
 export async function POST(
   req: NextRequest,
@@ -23,6 +35,7 @@ export async function POST(
   if (!actor) {
     return NextResponse.json({ error: "ไม่พบผู้ใช้" }, { status: 401 });
   }
+  const effectiveRoles = getEffectiveRolesFromReq(req, actor.roles);
 
   const { id } = await params;
   const quotationId = Number(id);
@@ -37,7 +50,7 @@ export async function POST(
     const found = await new sql.Request(tx)
       .input("id", sql.Int, quotationId)
       .query(`
-        SELECT q.*, l.assigned_user_id
+        SELECT q.*, l.assigned_user_id, l.full_name customer_name
         FROM quotations q
         JOIN leads l ON l.id = q.lead_id
         WHERE q.id = @id
@@ -51,11 +64,11 @@ export async function POST(
       );
     }
 
-    const isAdmin = actor.roles.includes("admin");
+    const isAdmin = effectiveRoles.includes("admin");
     const canActAsSolarSup =
-      isAdmin || actor.roles.includes("solar_sup");
+      isAdmin || effectiveRoles.includes("solar_sup");
     const canActAsSalesSup =
-      isAdmin || actor.roles.includes("sales_sup");
+      isAdmin || effectiveRoles.includes("sales_sup");
 
     let next = "";
     let eventAction = action;
@@ -70,7 +83,7 @@ export async function POST(
           { status: 409 },
         );
       }
-      if (!canManageQuotation(actor.roles)) {
+      if (!canManageQuotation(effectiveRoles)) {
         await tx.rollback();
         return NextResponse.json(
           { error: "ไม่มีสิทธิ์สร้าง Revision" },
@@ -149,7 +162,7 @@ export async function POST(
           { status: 409 },
         );
       }
-      if (!canManageQuotation(actor.roles)) {
+      if (!canManageQuotation(effectiveRoles)) {
         await tx.rollback();
         return NextResponse.json(
           { error: "ไม่มีสิทธิ์ส่งใบเสนอราคา" },
@@ -211,7 +224,7 @@ export async function POST(
             updated_at = GETDATE()
           WHERE id = @id
         `);
-      activityTitle = `ส่งใบเสนอราคา ${quotation.doc_no} ให้ Solar Sup อนุมัติ`;
+      activityTitle = `ส่งใบเสนอราคา ${quotation.doc_no} ให้ Solar Manager อนุมัติ`;
     } else if (action === "approve") {
       if (body.certify !== true) {
         await tx.rollback();
@@ -232,7 +245,7 @@ export async function POST(
         if (!canActAsSolarSup) {
           await tx.rollback();
           return NextResponse.json(
-            { error: "ขั้นนี้อนุมัติได้เฉพาะ Solar Sup หรือ Admin" },
+            { error: "ขั้นนี้อนุมัติได้เฉพาะ Solar Manager หรือ Admin" },
             { status: 403 },
           );
         }
@@ -253,7 +266,9 @@ export async function POST(
               updated_at = GETDATE()
             WHERE id = @id
           `);
-        activityTitle = `Solar Sup อนุมัติใบเสนอราคา ${quotation.doc_no} · ส่งต่อ Sale Sup`;
+        activityTitle = isAdmin
+          ? `Admin อนุมัติแทน Solar Manager สำหรับใบเสนอราคา ${quotation.doc_no} · ส่งต่อ Sale Manager`
+          : `Solar Manager อนุมัติใบเสนอราคา ${quotation.doc_no} · ส่งต่อ Sale Manager`;
       } else if (
         quotation.status === SALES_PENDING ||
         quotation.status === LEGACY_PENDING
@@ -261,7 +276,7 @@ export async function POST(
         if (!canActAsSalesSup) {
           await tx.rollback();
           return NextResponse.json(
-            { error: "ขั้นนี้อนุมัติได้เฉพาะ Sale Sup หรือ Admin" },
+            { error: "ขั้นนี้อนุมัติได้เฉพาะ Sale Manager หรือ Admin" },
             { status: 403 },
           );
         }
@@ -281,7 +296,7 @@ export async function POST(
           .input(
             "title",
             sql.NVarChar(100),
-            actor.job_title || "Sale Supervisor",
+            actor.job_title || "Sale Manager",
           )
           .input("url", sql.NVarChar(500), actor.signature_url || null)
           .input("data", sql.VarBinary(sql.MAX), actor.signature_data)
@@ -308,7 +323,9 @@ export async function POST(
               updated_at = GETDATE()
             WHERE id = @id
           `);
-        activityTitle = `Sale Sup อนุมัติใบเสนอราคา ${quotation.doc_no} ครบทุกขั้น`;
+        activityTitle = isAdmin
+          ? `Admin อนุมัติแทน Sale Manager สำหรับใบเสนอราคา ${quotation.doc_no} ครบทุกขั้น`
+          : `Sale Manager อนุมัติใบเสนอราคา ${quotation.doc_no} ครบทุกขั้น`;
       } else {
         await tx.rollback();
         return NextResponse.json(
@@ -330,11 +347,11 @@ export async function POST(
         if (!canActAsSolarSup) {
           await tx.rollback();
           return NextResponse.json(
-            { error: "ขั้นนี้ส่งกลับได้เฉพาะ Solar Sup หรือ Admin" },
+            { error: "ขั้นนี้ส่งกลับได้เฉพาะ Solar Manager หรือ Admin" },
             { status: 403 },
           );
         }
-        reviewer = "Solar Sup";
+        reviewer = "Solar Manager";
         eventAction = "changes_required_solar";
       } else if (
         quotation.status === SALES_PENDING ||
@@ -343,11 +360,11 @@ export async function POST(
         if (!canActAsSalesSup) {
           await tx.rollback();
           return NextResponse.json(
-            { error: "ขั้นนี้ส่งกลับได้เฉพาะ Sale Sup หรือ Admin" },
+            { error: "ขั้นนี้ส่งกลับได้เฉพาะ Sale Manager หรือ Admin" },
             { status: 403 },
           );
         }
-        reviewer = "Sale Sup";
+        reviewer = "Sale Manager";
         eventAction = "changes_required_sales";
       } else {
         await tx.rollback();
@@ -379,7 +396,7 @@ export async function POST(
           { status: 409 },
         );
       }
-      if (!canManageQuotation(actor.roles)) {
+      if (!canManageQuotation(effectiveRoles)) {
         await tx.rollback();
         return NextResponse.json(
           { error: "ไม่มีสิทธิ์ส่งใบเสนอราคาให้ทีมขาย" },
@@ -515,19 +532,87 @@ export async function POST(
       );
     }
 
-    await new sql.Request(tx)
+    const actedAsRole = getActedAsRole(eventAction, effectiveRoles);
+    const auditSchema = await new sql.Request(tx).query(`
+      SELECT CASE WHEN COL_LENGTH('dbo.quotation_approval_events', 'acted_as_role') IS NULL
+        THEN 0 ELSE 1 END has_acted_as_role
+    `);
+    const supportsActedAsRole = Boolean(auditSchema.recordset[0]?.has_acted_as_role);
+    const eventRequest = new sql.Request(tx)
       .input("qid", sql.Int, quotationId)
       .input("action", sql.NVarChar(30), eventAction)
       .input("from", sql.NVarChar(30), quotation.status)
       .input("to", sql.NVarChar(30), next)
       .input("note", sql.NVarChar(1000), note || null)
-      .input("uid", sql.Int, gate.userId)
-      .query(`
-        INSERT quotation_approval_events(
-          quotation_id, action, from_status, to_status, note, acted_by
-        )
-        VALUES(@qid, @action, @from, @to, @note, @uid)
-      `);
+      .input("uid", sql.Int, gate.userId);
+    if (supportsActedAsRole) {
+      await eventRequest
+        .input("acted_as_role", sql.NVarChar(30), actedAsRole)
+        .query(`
+          INSERT quotation_approval_events(
+            quotation_id, action, from_status, to_status, note, acted_by, acted_as_role
+          )
+          VALUES(@qid, @action, @from, @to, @note, @uid, @acted_as_role)
+        `);
+    } else {
+      await eventRequest.query(`
+          INSERT quotation_approval_events(
+            quotation_id, action, from_status, to_status, note, acted_by
+          )
+          VALUES(@qid, @action, @from, @to, @note, @uid)
+        `);
+    }
+
+    if (eventAction === "submit") {
+      await closeQuotationStageNotifications(tx, quotationId, "solar_sup");
+      await closeQuotationStageNotifications(tx, quotationId, "sales_sup");
+      await notifyQuotationRole(tx, "solar_sup", {
+        quotationId,
+        leadId: quotation.lead_id,
+        type: "approval_requested",
+        stage: "solar_sup",
+        title: `มีใบเสนอราคา ${quotation.doc_no} รออนุมัติ`,
+        message: `${actor.full_name} ส่งใบเสนอราคาของ ${quotation.customer_name} ให้ Solar Manager ตรวจสอบ`,
+        createdBy: gate.userId,
+      });
+    } else if (eventAction === "approve_solar") {
+      await closeQuotationStageNotifications(tx, quotationId, "solar_sup");
+      await notifyQuotationRole(tx, "sales_sup", {
+        quotationId,
+        leadId: quotation.lead_id,
+        type: "approval_requested",
+        stage: "sales_sup",
+        title: `มีใบเสนอราคา ${quotation.doc_no} รออนุมัติขั้นสุดท้าย`,
+        message: `Solar Manager อนุมัติใบเสนอราคาของ ${quotation.customer_name} แล้ว`,
+        createdBy: gate.userId,
+      });
+    } else if (eventAction === "approve_sales") {
+      await closeQuotationStageNotifications(tx, quotationId, "sales_sup");
+      await notifyQuotationUser(tx, quotation.submitted_by, {
+        quotationId,
+        leadId: quotation.lead_id,
+        type: "approval_completed",
+        stage: "approved",
+        title: `ใบเสนอราคา ${quotation.doc_no} อนุมัติครบแล้ว`,
+        message: `${actor.full_name} อนุมัติใบเสนอราคาของ ${quotation.customer_name} ขั้นสุดท้ายแล้ว`,
+        createdBy: gate.userId,
+      });
+    } else if (["changes_required_solar", "changes_required_sales"].includes(eventAction)) {
+      await closeQuotationStageNotifications(
+        tx,
+        quotationId,
+        eventAction === "changes_required_solar" ? "solar_sup" : "sales_sup",
+      );
+      await notifyQuotationUser(tx, quotation.submitted_by, {
+        quotationId,
+        leadId: quotation.lead_id,
+        type: "changes_required",
+        stage: next,
+        title: `ใบเสนอราคา ${quotation.doc_no} ถูกส่งกลับแก้ไข`,
+        message: note,
+        createdBy: gate.userId,
+      });
+    }
 
     await logLeadActivity(tx, {
       leadId: quotation.lead_id,

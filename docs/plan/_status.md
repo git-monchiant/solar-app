@@ -10,6 +10,12 @@ Statuses:
 
 | Plan | Status | Mockup | Notes |
 | --- | --- | --- | --- |
+| [20260813-03-sale-payment-result-notifications.md](20260813-03-sale-payment-result-notifications.md) | done | - | แจ้งทั้ง Sale ผู้รับผิดชอบ Lead และผู้ส่งหลักฐาน เมื่อ Account ยืนยันหรือส่งกลับ พร้อม deep-link/deduplicate และ backfill migration 148 |
+| [20260813-02-accounting-payment-notifications.md](20260813-02-accounting-payment-notifications.md) | done | - | เพิ่มแจ้งเตือน Account/Admin สำหรับสลิปรอตรวจ เช็ครอรับ และเช็ครับแล้วรอยืนยันเงินเข้า พร้อมปิดงานอัตโนมัติและ deep-link; apply Development และตรวจ lint/type/build/API ผ่าน |
+| [20260813-01-active-role-approval-authorization.md](20260813-01-active-role-approval-authorization.md) | done | - | จำกัดสิทธิ์คิวและการอนุมัติใบเสนอราคาตาม role ที่เลือก ตรวจซ้ำฝั่ง API และเตรียม migration 146 สำหรับบันทึก role ใน audit โดยยังไม่ deploy |
+| [20260811-03-supervisor-role-inheritance.md](20260811-03-supervisor-role-inheritance.md) | done | - | Solar Sup/Sale Sup เรียง Today, Pipeline, Pending, Me และย้าย Pending Approval ไป Accounting โดยยังคง Export/Settings และฟังก์ชันของทีมครบ |
+| [20260811-02-quotation-approval-notifications.md](20260811-02-quotation-approval-notifications.md) | done | - | เพิ่ม in-app notification และย้ายทางเข้าหลักเป็นกระดิ่งพร้อม dropdown ที่ Header; ตรวจ desktop/mobile, API, lint, type และ build ผ่าน โดยไม่เชื่อม LINE |
+| [20260811-01-quotation-om-editor.md](20260811-01-quotation-om-editor.md) | done | - | เพิ่ม O&M accordion, dropdown ตัวเลข 0–4, snapshot ต่อใบ, reset มาตรฐาน และสร้างข้อความ PDF แบบจัดเลขอัตโนมัติ; test/lint/type-check/build ผ่าน |
 | [20260804-01-package-master-excel-alignment.md](20260804-01-package-master-excel-alignment.md) | in-progress | - | กำลังปรับ 22 Package/รายการอุปกรณ์ตาม Excel, ปิด Battery 4.8 ที่ไม่มีในต้นฉบับ และ refresh เฉพาะ Draft อัตโนมัติ พร้อม rollback |
 | [20260801-02-survey-layout-sketch-upload.md](20260801-02-survey-layout-sketch-upload.md) | done | - | เพิ่มผังร่างใน Survey/Photos/PDF, apply migration 133 ที่ Development และตรวจ Build/PDF/schema ผ่าน |
 | [20260801-01-quotation-terms-payment-alignment.md](20260801-01-quotation-terms-payment-alignment.md) | done | - | แยกข้อความท้ายใบตามประเภท Package, ล็อกงวด 20/80 ตาม Excel, apply Development และตรวจ Build/PDF จริงผ่าน |

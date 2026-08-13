@@ -32,6 +32,7 @@ import { useIsMobile } from "@/lib/hooks/useIsMobile";
 import { formatThaiDate as formatDate, formatThaiTime, formatNumber } from "@/lib/utils/formatters";
 import { INFO_LABELS, PRIMARY_REASON_LABEL } from "@/lib/constants/info-labels";
 import FallbackImage from "@/components/ui/FallbackImage";
+import NotificationBell from "@/components/layout/NotificationBell";
 
 const formatAcUnits = (s: string | null): string | null => {
   if (!s) return null;
@@ -991,7 +992,7 @@ export default function LeadDetailPage({ params }: { params: Promise<{ id: strin
   return (
     <div className="flex flex-col h-full">
       {/* Header — subtle primary tint */}
-      <div className="bg-gradient-to-b from-primary via-primary/50 to-white safe-top sticky top-0 z-10">
+      <div className="bg-gradient-to-b from-primary via-primary/50 to-white safe-top sticky top-0 z-40">
         {/* Top row: back + name + call */}
         <div className="pl-3 pr-5 pt-3 flex items-center gap-2">
           {focus ? (
@@ -1032,6 +1033,7 @@ export default function LeadDetailPage({ params }: { params: Promise<{ id: strin
               </button>
             )}
           </div>
+          <NotificationBell />
           {/* LINE link button — connected: open unmap modal; not connected: open picker */}
           <button
             type="button"

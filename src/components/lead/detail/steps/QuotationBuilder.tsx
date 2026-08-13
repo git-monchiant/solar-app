@@ -9,7 +9,13 @@ import ModalBase from "@/components/ui/ModalBase";
 import {
   balanceFinalQuotationPaymentTerm,
   getQuotationPaymentTermsTotal,
+  getQuotationTermsProfile,
+  getStandardQuotationOmSettings,
+  isStandardQuotationOmSettings,
+  parseQuotationOmSettings,
   parseQuotationPaymentTerms,
+  type QuotationOmService,
+  type QuotationOmSettings,
   type QuotationPaymentTerm,
 } from "@/lib/quotation-terms";
 import type { Lead, Package } from "./types";
@@ -36,6 +42,7 @@ type Item = {
   source_package_id?: number;
 };
 type DocumentInputs = {
+  om: QuotationOmSettings;
   recommendation_reason: string;
   loan_enabled: boolean;
   loan_bank: string;
@@ -76,9 +83,17 @@ type Quote = {
   returned_by_role?: string;
   created_by_name?: string;
   created_at?: string;
+  submitted_by_name?: string;
+  submitted_at?: string;
+  solar_approved_by_name?: string;
+  solar_approved_at?: string;
+  approved_by_name?: string;
+  approved_at?: string;
   document_inputs_json?: string;
   document_snapshot_at?: string;
   approval_certified_at?: string;
+  last_reminded_at?: string | null;
+  last_reminded_by_name?: string | null;
   items: Item[];
 };
 type Template = {
@@ -89,19 +104,211 @@ type Template = {
 };
 const statusLabel: Record<string, string> = {
   draft: "ฉบับร่าง",
-  pending_solar_sup: "รอ Solar Sup อนุมัติ",
-  pending_sales_sup: "รอ Sale Sup อนุมัติ",
-  pending_approval: "รอ Sale Sup อนุมัติ",
+  pending_solar_sup: "รอ Solar Manager อนุมัติ",
+  pending_sales_sup: "รอ Sale Manager อนุมัติ",
+  pending_approval: "รอ Sale Manager อนุมัติ",
   approved: "อนุมัติแล้ว",
   changes_required: "ส่งกลับแก้ไข",
   cancelled: "ยกเลิกแล้ว",
 };
+
+function formatApprovalDateTime(value: string): string {
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return "—";
+  const shortDate = date.toLocaleDateString("th-TH", {
+    day: "2-digit",
+    month: "2-digit",
+  });
+  return `${shortDate} ${formatThaiTime(value)}`;
+}
+
+type ApprovalFlowStepState =
+  | "completed"
+  | "active"
+  | "returned"
+  | "upcoming"
+  | "cancelled";
+
+function ApprovalFlowStatus({
+  status,
+  returnedByRole,
+  submittedByName,
+  submittedAt,
+  solarApprovedByName,
+  solarApprovedAt,
+  approvedByName,
+  approvedAt,
+}: {
+  status: string;
+  returnedByRole?: string;
+  submittedByName?: string;
+  submittedAt?: string;
+  solarApprovedByName?: string;
+  solarApprovedAt?: string;
+  approvedByName?: string;
+  approvedAt?: string;
+}) {
+  const currentStep =
+    status === "approved"
+      ? 3
+      : ["pending_sales_sup", "pending_approval"].includes(status)
+        ? 2
+        : status === "pending_solar_sup"
+          ? 1
+          : 0;
+  const isReturned = status === "changes_required";
+  const isCancelled = status === "cancelled";
+  const approvalDetails = [
+    { name: submittedByName, approvedAt: submittedAt },
+    { name: solarApprovedByName, approvedAt: solarApprovedAt },
+    { name: approvedByName, approvedAt },
+  ];
+  const steps = ["Sale", "Solar Manager", "Sale Manager"].map((label, index) => {
+    let state: ApprovalFlowStepState = "upcoming";
+    if (isCancelled) state = "cancelled";
+    else if (isReturned && index === 0) state = "returned";
+    else if (index < currentStep) state = "completed";
+    else if (index === currentStep && currentStep < 3) state = "active";
+
+    const detail =
+      state === "completed"
+        ? index === 0
+          ? "ส่งแล้ว"
+          : "อนุมัติแล้ว"
+        : state === "returned"
+          ? "แก้ไข"
+          : state === "active"
+            ? index === 0
+              ? "รอส่ง"
+              : "ยังไม่อนุมัติ"
+            : state === "cancelled"
+              ? "ยกเลิก"
+              : "ยังไม่อนุมัติ";
+    return { label, state, detail, approval: approvalDetails[index] };
+  });
+  const title = `${statusLabel[status] || status}${isReturned && returnedByRole ? `โดย ${returnedByRole}` : ""}`;
+
+  return (
+    <ol
+      className="flex min-w-0 flex-1 items-start"
+      aria-label={`Approval flow: ${title}`}
+      title={title}
+    >
+      {steps.map((step, index) => {
+        const isCurrent = step.state === "active" || step.state === "returned";
+        const isCompleted = step.state === "completed";
+        const nodeClass = isCompleted
+          ? "bg-emerald-500"
+          : step.state === "active"
+            ? "bg-amber-500 ring-2 ring-amber-200 shadow-sm"
+            : step.state === "returned"
+              ? "bg-red-500 ring-2 ring-red-200 shadow-sm"
+              : "bg-gray-200";
+        const textClass =
+          isCompleted
+            ? "text-emerald-700"
+            : step.state === "active"
+              ? "text-amber-700"
+              : step.state === "returned"
+                ? "text-red-600"
+                : "text-gray-400";
+        const connectorComplete = index < currentStep && !isCancelled && !isReturned;
+
+        return (
+          <li key={step.label} className="relative flex min-w-0 flex-1 items-start">
+            {index < steps.length - 1 && (
+              <span
+                aria-hidden="true"
+                className={`absolute left-[calc(50%+12px)] right-[calc(-50%+12px)] top-[9px] h-0.5 ${connectorComplete ? "bg-emerald-400" : "bg-gray-200"}`}
+              />
+            )}
+            <div className="flex w-full min-w-0 flex-col items-center">
+              <span
+                className={`flex h-5 w-5 items-center justify-center rounded-full transition-all ${nodeClass}`}
+              >
+                {isCompleted && (
+                  <svg
+                    className="h-3 w-3 text-white"
+                    fill="none"
+                    viewBox="0 0 24 24"
+                    stroke="currentColor"
+                    strokeWidth="3"
+                  >
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
+                  </svg>
+                )}
+                {isCurrent && <span className="h-1 w-1 rounded-full bg-white" />}
+              </span>
+              <span className={`mt-1 max-w-full truncate whitespace-nowrap text-[11px] leading-none ${isCurrent ? "font-semibold" : ""} ${textClass}`}>
+                {step.label}
+              </span>
+              {isCompleted && step.approval?.name ? (
+                <>
+                  <span
+                    className={`mt-1 max-w-full truncate whitespace-nowrap text-[9px] font-semibold leading-none ${textClass}`}
+                    title={step.approval.name}
+                  >
+                    {index === 0 ? "จัดทำโดย" : "อนุมัติโดย"} {step.approval.name}
+                  </span>
+                  {step.approval.approvedAt && (
+                    <span
+                      className={`mt-0.5 max-w-full truncate whitespace-nowrap text-[9px] font-semibold leading-none ${textClass}`}
+                      title={`${formatThaiDateShort(step.approval.approvedAt)} ${formatThaiTime(step.approval.approvedAt)} น.`}
+                    >
+                      {formatApprovalDateTime(step.approval.approvedAt)}
+                    </span>
+                  )}
+                </>
+              ) : (
+                <span className={`mt-1 max-w-full truncate whitespace-nowrap text-[9px] font-semibold leading-none ${textClass}`}>
+                  {step.detail}
+                </span>
+              )}
+            </div>
+          </li>
+        );
+      })}
+    </ol>
+  );
+}
 // Local-time YYYY-MM-DD for the quotation date input default (never UTC —
 // toISOString would roll to the next day for evening edits in +07:00).
 const todayIso = () => {
   const d = new Date();
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
 };
+
+const OM_NUMBER_OPTIONS = [0, 1, 2, 3, 4] as const;
+
+function OmNumberSelect({
+  value,
+  max,
+  disabled,
+  className,
+  onChange,
+}: {
+  value: number;
+  max?: number;
+  disabled?: boolean;
+  className: string;
+  onChange: (value: number) => void;
+}) {
+  return (
+    <select
+      value={value}
+      disabled={disabled}
+      onChange={(event) => onChange(Number(event.target.value))}
+      className={className}
+    >
+      {OM_NUMBER_OPTIONS.map((option) => (
+        <option key={option} value={option} disabled={max !== undefined && option > max}>
+          {option}
+        </option>
+      ))}
+    </select>
+  );
+}
+
 const formatPackageSpecs = (pkg: Package) =>
   `ขนาด ${pkg.kwp} kWp · ${pkg.phase > 0 ? `${pkg.phase} เฟส` : "ทุกเฟส"}`;
 // ชื่อรายการใน Package Master บางบรรทัดมี "–" นำหน้า (ไว้จัดรูปแบบใน PDF)
@@ -294,7 +501,7 @@ export default function QuotationBuilder({
         confirmText: "อนุมัติ",
         message:
           status === "pending_solar_sup"
-            ? "ยืนยันว่า Solar Sup ตรวจเอกสารแล้ว และส่งต่อให้ Sale Sup อนุมัติขั้นสุดท้าย"
+            ? "ยืนยันว่า Solar Manager ตรวจเอกสารแล้ว และส่งต่อให้ Sale Manager อนุมัติขั้นสุดท้าย"
             : "ยืนยันว่าได้ตรวจสอบและรับรองข้อมูล Survey, Package, ราคา, เงื่อนไขชำระเงิน และผลคำนวณทั้งชุดแล้ว",
       });
       if (!ok) return;
@@ -407,7 +614,7 @@ export default function QuotationBuilder({
                     <div className="h-3 w-14 rounded bg-gray-200" />
                     <div className="h-2 w-24 rounded bg-gray-100" />
                   </div>
-                  <div className="h-7 w-16 rounded-full bg-gray-100" />
+                  <div className="h-10 w-60 rounded-lg bg-gray-100" />
                 </div>
                 <div className="mt-4 h-20 rounded-xl bg-gray-100" />
                 <div className="mt-2 h-6 w-40 rounded-full bg-gray-100" />
@@ -426,7 +633,7 @@ export default function QuotationBuilder({
               (i) =>
                 i.source_type !== "package" &&
                 i.source_type !== "addon_package_detail" &&
-                i.source_type !== "custom_detail",
+              i.source_type !== "custom_detail",
             ) || [];
           return q ? (
             <article
@@ -434,31 +641,41 @@ export default function QuotationBuilder({
               className="rounded-xl border border-gray-200 bg-white p-4 min-h-[342px] flex flex-col shadow-sm"
             >
               <div className="flex items-start gap-3">
-                <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-primary to-cyan-400 text-white flex items-center justify-center shrink-0">
-                  <svg
-                    className="w-4 h-4"
-                    viewBox="0 0 24 24"
-                    fill="none"
-                    stroke="currentColor"
-                    strokeWidth="2"
-                  >
-                    <path d="M5 12l4 4L19 6" />
-                  </svg>
-                </div>
-                <div className="min-w-0 flex-1">
-                  <div className="font-bold text-sm text-gray-900">
-                    ชุด {option}
+                <div className="w-[100px] shrink-0 overflow-hidden">
+                  <div className="flex items-center gap-3">
+                    <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-primary to-cyan-400 text-white flex items-center justify-center shrink-0">
+                      <svg
+                        className="w-4 h-4"
+                        viewBox="0 0 24 24"
+                        fill="none"
+                        stroke="currentColor"
+                        strokeWidth="2"
+                      >
+                        <path d="M5 12l4 4L19 6" />
+                      </svg>
+                    </div>
+                    <div className="whitespace-nowrap font-bold text-sm text-gray-900">
+                      ชุด {option}
+                    </div>
                   </div>
-                  <div className="text-xxs text-gray-400 font-mono mt-0.5 truncate">
+                  <div
+                    className="mt-1 truncate whitespace-nowrap text-center font-mono text-[10px] text-gray-400"
+                    title={`${q.doc_no}${q.revision_no > 0 ? ` · Rev.${q.revision_no}` : ""}`}
+                  >
                     {q.doc_no}
                     {q.revision_no > 0 ? ` · Rev.${q.revision_no}` : ""}
                   </div>
                 </div>
-                <span
-                  className={`rounded-full px-3 py-1.5 text-sm font-bold leading-none whitespace-nowrap ${q.status === "approved" ? "bg-emerald-50 text-emerald-700" : isPendingQuotation(q.status) ? "bg-amber-50 text-amber-700" : q.status === "changes_required" ? "bg-red-50 text-red-700" : "bg-violet-50 text-violet-700"}`}
-                >
-                  {statusLabel[q.status]}
-                </span>
+                <ApprovalFlowStatus
+                  status={q.status}
+                  returnedByRole={q.returned_by_role}
+                  submittedByName={q.submitted_by_name}
+                  submittedAt={q.submitted_at}
+                  solarApprovedByName={q.solar_approved_by_name}
+                  solarApprovedAt={q.solar_approved_at}
+                  approvedByName={q.approved_by_name}
+                  approvedAt={q.approved_at}
+                />
               </div>
               <div className="mt-4 rounded-xl border border-gray-200 bg-gray-50/70 p-3">
                 <div className="text-xxs font-semibold text-gray-400">
@@ -503,6 +720,11 @@ export default function QuotationBuilder({
                   {q.returned_by_name ? ` (${q.returned_by_name})` : ""}: {q.approval_note}
                 </div>
               )}
+              {isPendingQuotation(q.status) && q.last_reminded_at && (
+                <div className="mt-2 text-xxs text-amber-700">
+                  แจ้งเตือนล่าสุดโดย {q.last_reminded_by_name || "ผู้ใช้งาน"} · {formatThaiDateShort(q.last_reminded_at)} {formatThaiTime(q.last_reminded_at)} น.
+                </div>
+              )}
               <div className="mt-auto pt-4 flex items-end justify-between">
                 <span className="text-xxs text-gray-400">ยอดที่ต้องชำระ</span>
                 <div className="text-right">
@@ -523,18 +745,18 @@ export default function QuotationBuilder({
                   </div>
                 );
               })()}
-              <div className="grid grid-cols-3 gap-2 mt-3">
+              <div className="mt-3 grid h-14 grid-cols-3 gap-2">
                 {["draft", "changes_required"].includes(q.status) ? (
-                  <div className="col-span-3 flex gap-2">
+                  <div className="col-span-3 flex h-full gap-2">
                     <button
                       onClick={() => setEditing(option)}
-                      className="h-9 px-3 rounded-lg border border-violet-300 bg-violet-50 text-violet-700 text-xs font-semibold whitespace-nowrap"
+                      className="h-full px-3 rounded-lg border border-violet-300 bg-violet-50 text-violet-700 text-xs font-semibold whitespace-nowrap"
                     >
                       ✎ แก้ไข
                     </button>
                     <button
                       onClick={() => openPdf(q.id)}
-                      className="flex-1 h-9 rounded-lg border border-gray-200 text-gray-700 text-xs font-semibold"
+                      className="h-full flex-1 rounded-lg border border-gray-200 text-gray-700 text-xs font-semibold"
                     >
                       ▣ ดูใบเสนอราคา
                     </button>
@@ -544,7 +766,7 @@ export default function QuotationBuilder({
                         onClick={() => remove(q.id)}
                         aria-label="ลบฉบับร่าง"
                         title="ลบฉบับร่าง"
-                        className="h-9 px-3 shrink-0 flex items-center justify-center rounded-lg border border-gray-200 text-gray-500 text-xs font-semibold hover:text-red-600 hover:border-red-200 hover:bg-red-50 transition-colors disabled:cursor-not-allowed disabled:opacity-40"
+                        className="h-full px-3 shrink-0 flex items-center justify-center rounded-lg border border-gray-200 text-gray-500 text-xs font-semibold hover:text-red-600 hover:border-red-200 hover:bg-red-50 transition-colors disabled:cursor-not-allowed disabled:opacity-40"
                       >
                         <svg className="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
                           <path d="M3 6h18M8 6V4h8v2M6 6l1 14h10l1-14" />
@@ -556,7 +778,7 @@ export default function QuotationBuilder({
                   <>
                     <button
                       onClick={() => openPdf(q.id)}
-                      className="h-9 rounded-lg border border-gray-200 text-xs font-semibold"
+                      className="h-full rounded-lg border border-gray-200 px-2 text-xs font-semibold leading-4"
                     >
                       ▣ ดูใบเสนอราคา
                     </button>
@@ -566,32 +788,39 @@ export default function QuotationBuilder({
                         setReturnNote("");
                         setReturnModal({ id: q.id });
                       }}
-                      className="h-9 rounded-lg bg-red-50 text-red-700 text-xs font-semibold"
+                      className="h-full rounded-lg bg-red-50 px-2 text-red-700 text-xs font-semibold leading-4"
                     >
                       ส่งกลับ
                     </button>
                     <button
                       disabled={busy}
                       onClick={() => act(q.id, "approve", "", q.status)}
-                      className="h-9 rounded-lg bg-emerald-600 text-white text-xs font-semibold"
+                      className="h-full rounded-lg bg-emerald-600 px-2 text-white text-xs font-semibold leading-4"
                     >
                       {q.status === "pending_solar_sup"
                         ? "อนุมัติส่งต่อ"
                         : "อนุมัติ"}
                     </button>
                   </>
+                ) : isPendingQuotation(q.status) ? (
+                  <button
+                    onClick={() => openPdf(q.id)}
+                    className="col-span-3 h-full rounded-lg border border-gray-200 px-2 text-xs font-semibold leading-4"
+                  >
+                    ดูใบเสนอราคา
+                  </button>
                 ) : q.status === "approved" ? (
                   <>
                     <button
                       onClick={() => openPdf(q.id)}
-                      className="col-span-2 h-9 rounded-lg border border-gray-200 text-xs font-semibold"
+                      className="col-span-2 h-full rounded-lg border border-gray-200 px-2 text-xs font-semibold leading-4"
                     >
                       ▣ ดูใบเสนอราคา
                     </button>
                     <button
                       disabled={busy}
                       onClick={() => act(q.id, "revise")}
-                      className="h-9 rounded-lg border border-gray-200 text-xs font-semibold"
+                      className="h-full rounded-lg border border-gray-200 px-2 text-xs font-semibold leading-4"
                     >
                       Revision
                     </button>
@@ -600,7 +829,7 @@ export default function QuotationBuilder({
                   <>
                     <button
                       onClick={() => openPdf(q.id)}
-                      className="col-span-3 h-9 rounded-lg border border-gray-200 text-xs font-semibold"
+                      className="col-span-3 h-full rounded-lg border border-gray-200 px-2 text-xs font-semibold leading-4"
                     >
                       ▣ ดูใบเสนอราคา
                     </button>
@@ -1029,12 +1258,13 @@ function QuotationEditor({
   );
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
-  const [documentInputs] = useState<DocumentInputs>(() => {
+  const [documentInputs, setDocumentInputs] = useState<DocumentInputs>(() => {
     let saved: Partial<DocumentInputs> = {};
     try {
       saved = JSON.parse(quote?.document_inputs_json || "{}");
     } catch {}
     return {
+      om: parseQuotationOmSettings(saved.om),
       recommendation_reason: saved.recommendation_reason || "",
       loan_enabled: saved.loan_enabled ?? GSB_SOLAR_LOAN_DEFAULTS.loan_enabled,
       loan_bank:
@@ -1072,6 +1302,7 @@ function QuotationEditor({
       annual_degradation_percent: Number(saved.annual_degradation_percent ?? 0.5),
     };
   });
+  const [omOpen, setOmOpen] = useState(true);
   useEffect(() => {
     if (quote || templateId || !defaultTemplate) return;
     setTemplateId(defaultTemplate.id);
@@ -1149,6 +1380,30 @@ function QuotationEditor({
           })),
       ),
     );
+  const patchOm = (patch: Partial<QuotationOmSettings>) =>
+    setDocumentInputs((current) => ({
+      ...current,
+      om: parseQuotationOmSettings({ ...current.om, ...patch }),
+    }));
+  const patchOmService = (
+    key: "cleaning" | "thermoscan" | "visual_inspection",
+    patch: Partial<QuotationOmService>,
+  ) =>
+    setDocumentInputs((current) => ({
+      ...current,
+      om: parseQuotationOmSettings({
+        ...current.om,
+        [key]: { ...current.om[key], ...patch },
+      }),
+    }));
+  const omActiveCount = [
+    documentInputs.om.cleaning,
+    documentInputs.om.thermoscan,
+    documentInputs.om.visual_inspection,
+  ].filter((service) => service.enabled).length;
+  const hasFullInstallTerms = getQuotationTermsProfile(
+    mainPackage as unknown as Record<string, unknown> | undefined,
+  ) === "full_install";
 
   /** tree → payload ของ API (package_items = หัวข้อหลัก, items = หัวข้ออื่น + ลูก) */
   const serializeTree = () => {
@@ -1211,6 +1466,8 @@ function QuotationEditor({
       return "กรุณาตั้งชื่อหัวข้อให้ครบทุกอัน";
     if (documentInputs.current_monthly_bill <= 0)
       return "กรุณาระบุค่าไฟปัจจุบันจากข้อมูลจริง";
+    if (hasFullInstallTerms && documentInputs.om.enabled && omActiveCount === 0)
+      return "กรุณาเลือกบริการ O&M อย่างน้อย 1 รายการ หรือปิดบริการ O&M";
     if (termsPercentTotal !== 100)
       return `ยอดรวมงวดชำระเงินต้องเท่ากับ 100% (ปัจจุบัน ${termsPercentTotal}%)`;
     if (issueDate > todayIso()) return "วันที่ใบเสนอราคาต้องไม่เป็นวันที่ล่วงหน้า";
@@ -1691,7 +1948,116 @@ function QuotationEditor({
                 </div>
               </div>
 
-              <div className="rounded-xl border border-gray-200 bg-white p-2.5">
+              {hasFullInstallTerms && (
+                <div className="order-2 rounded-xl border border-gray-200 bg-white p-2.5">
+                  <button
+                    type="button"
+                    onClick={() => setOmOpen((open) => !open)}
+                    aria-expanded={omOpen}
+                    className="flex w-full items-start justify-between gap-2 text-left"
+                  >
+                    <span className="min-w-0">
+                      <span className="block text-xs font-bold text-gray-800">
+                        บริการ O&amp;M
+                      </span>
+                      <span className={`mt-0.5 block text-xxs ${
+                        isStandardQuotationOmSettings(documentInputs.om)
+                          ? "text-gray-400"
+                          : "text-amber-600"
+                      }`}>
+                        {documentInputs.om.enabled
+                          ? `${documentInputs.om.coverage_years} ปี · ${omActiveCount} รายการ`
+                          : "ไม่รวมค่าดำเนินการ O&M"}
+                        {!isStandardQuotationOmSettings(documentInputs.om) &&
+                          " · ปรับแต่งเฉพาะใบนี้"}
+                      </span>
+                    </span>
+                    <span className="shrink-0 text-xxs font-semibold text-primary">
+                      {omOpen ? "ซ่อน ︿" : "ตั้งค่า ﹀"}
+                    </span>
+                  </button>
+
+                  {omOpen && (
+                    <div className="mt-2 space-y-2 border-t border-gray-100 pt-2">
+                      <label className="flex items-center justify-between gap-2">
+                        <span className="flex items-center gap-2 text-xxs font-semibold text-gray-600">
+                          <input
+                            type="checkbox"
+                            checked={documentInputs.om.enabled}
+                            onChange={(event) => patchOm({ enabled: event.target.checked })}
+                            className="h-3.5 w-3.5 rounded border-gray-300 accent-primary"
+                          />
+                          รวมค่าดำเนินการ O&amp;M
+                        </span>
+                        <span className="flex items-center gap-1 text-xxs text-gray-400">
+                          ระยะเวลา
+                          <OmNumberSelect
+                            value={documentInputs.om.coverage_years}
+                            disabled={!documentInputs.om.enabled}
+                            onChange={(value) => patchOm({ coverage_years: value })}
+                            className="h-7 w-14 rounded-md border border-gray-200 bg-white px-1 text-center text-xxs font-semibold tabular-nums text-gray-700 outline-none focus:border-primary disabled:bg-gray-50 disabled:opacity-50"
+                          />
+                          ปี
+                        </span>
+                      </label>
+
+                      {([
+                        ["cleaning", "ล้างแผงโซลาร์"],
+                        ["thermoscan", "ตรวจสอบระบบโซลาร์ + THERMOSCAN"],
+                        ["visual_inspection", "ตรวจสอบความผิดปกติของแผงโซลาร์"],
+                      ] as const).map(([key, label]) => {
+                        const service = documentInputs.om[key];
+                        const disabled = !documentInputs.om.enabled;
+                        return (
+                          <div key={key} className="rounded-lg bg-slate-50/80 px-2 py-1.5">
+                            <label className="flex items-center gap-2 text-xxs font-medium text-gray-700">
+                              <input
+                                type="checkbox"
+                                checked={service.enabled}
+                                disabled={disabled}
+                                onChange={(event) =>
+                                  patchOmService(key, { enabled: event.target.checked })
+                                }
+                                className="h-3.5 w-3.5 rounded border-gray-300 accent-primary disabled:opacity-50"
+                              />
+                              <span className="min-w-0 leading-4">{label}</span>
+                            </label>
+                            <div className="mt-1 flex items-center justify-end gap-1 text-xxs text-gray-400">
+                              <OmNumberSelect
+                                value={service.visits_per_year}
+                                disabled={disabled || !service.enabled}
+                                onChange={(value) =>
+                                  patchOmService(key, { visits_per_year: value })
+                                }
+                                className="h-7 w-14 rounded-md border border-gray-200 bg-white px-1 text-center text-xxs font-semibold tabular-nums text-gray-700 outline-none focus:border-primary disabled:bg-gray-50 disabled:opacity-50"
+                              />
+                              ครั้ง/ปี
+                              <OmNumberSelect
+                                max={documentInputs.om.coverage_years}
+                                value={service.years}
+                                disabled={disabled || !service.enabled}
+                                onChange={(value) => patchOmService(key, { years: value })}
+                                className="ml-1 h-7 w-14 rounded-md border border-gray-200 bg-white px-1 text-center text-xxs font-semibold tabular-nums text-gray-700 outline-none focus:border-primary disabled:bg-gray-50 disabled:opacity-50"
+                              />
+                              ปี
+                            </div>
+                          </div>
+                        );
+                      })}
+
+                      <button
+                        type="button"
+                        onClick={() => patchOm(getStandardQuotationOmSettings())}
+                        disabled={isStandardQuotationOmSettings(documentInputs.om)}
+                        className="text-xxs font-semibold text-primary hover:underline disabled:cursor-default disabled:text-gray-300 disabled:no-underline"
+                      >
+                        ↻ คืนค่าจาก Master
+                      </button>
+                    </div>
+                  )}
+                </div>
+              )}
+              <div className="order-1 rounded-xl border border-gray-200 bg-white p-2.5">
                 <div className="flex items-center justify-between">
                   <span className="text-xs font-bold text-gray-800">งวดชำระเงิน</span>
                   <button
@@ -1771,7 +2137,7 @@ function QuotationEditor({
                 </p>
               </div>
 
-              <div className="rounded-xl border border-gray-200 bg-white p-2.5">
+              <div className="order-3 rounded-xl border border-gray-200 bg-white p-2.5">
                 <div className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-2">
                   <span className="text-xxs font-semibold text-gray-500">วันที่ใบเสนอราคา</span>
                   <input

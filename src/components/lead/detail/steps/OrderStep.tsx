@@ -443,7 +443,7 @@ export default function OrderStep({ lead, state, refresh, expanded, onToggle }: 
     const idx = parseInt(raw);
     if (!isNaN(idx) && idx >= 0 && idx < installments.length) {
       setPaymentRow(idx);
-      setTimeout(() => document.querySelector("[data-step-active]")?.scrollIntoView({ behavior: "smooth", block: "start" }), 100);
+      setTimeout(() => document.querySelector(`[data-order-payment-row="${idx}"]`)?.scrollIntoView({ behavior: "smooth", block: "center" }), 150);
     }
   }, [lead.id, installments.length]);
   useEffect(() => {
@@ -1265,7 +1265,7 @@ export default function OrderStep({ lead, state, refresh, expanded, onToggle }: 
                 const rowFollowups = row.method === "loan" ? followupsByRow(i) : [];
                 const expanded = expandedRow === i;
                 return (
-                  <div key={i} className={`rounded-lg border p-2 transition-colors ${paid ? "bg-emerald-50 border-emerald-200" : paymentOpen ? "bg-active-light border-active border-2 shadow-md shadow-active/20" : "bg-white border-gray-200"} ${row.method === "cc" && row.cc_pct && rowGross(i) > 0 ? "pb-6" : ""}`}>
+                  <div data-order-payment-row={i} key={i} className={`rounded-lg border p-2 transition-colors ${paid ? "bg-emerald-50 border-emerald-200" : paymentOpen ? "bg-active-light border-active border-2 shadow-md shadow-active/20" : "bg-white border-gray-200"} ${row.method === "cc" && row.cc_pct && rowGross(i) > 0 ? "pb-6" : ""}`}>
                     {/* Mobile: 12-col grid (existing) · Desktop: flex single line */}
                     <div className="grid grid-cols-12 gap-2 items-center md:flex md:flex-nowrap">
                       <div className="order-1 col-span-4 md:w-24 text-xs font-semibold text-gray-700 md:shrink-0 flex items-center gap-1">
