@@ -10,6 +10,9 @@ Statuses:
 
 | Plan | Status | Mockup | Notes |
 | --- | --- | --- | --- |
+| [20260817-03-solar-role-sla-ownership.md](20260817-03-solar-role-sla-ownership.md) | done | - | แยก Owner ของ Survey/Installation, รับ/มอบหมายงาน และตรวจ role matrix บน solardb_dev แล้ว; ยังไม่ deploy Production |
+| [20260817-02-operational-sales-sla.md](20260817-02-operational-sales-sla.md) | done | - | SLA ครบทุกขั้น เชื่อม milestone จริง, backfill และทดสอบบน solardb_dev แล้ว; ยังไม่ deploy Production |
+| [20260817-01-sales-sla-management.md](20260817-01-sales-sla-management.md) | done | [infographic](../mockup/20260817-01-sales-sla-management/sales-sla-management-infographic-white.png) | พัฒนา First Contact, Retry D3/D5/D7/D30, Grade A audit/playbook และ SLA Dashboard; migration ผ่าน solardb_dev แล้ว ยังไม่ deploy Production |
 | [20260813-03-sale-payment-result-notifications.md](20260813-03-sale-payment-result-notifications.md) | done | - | แจ้งทั้ง Sale ผู้รับผิดชอบ Lead และผู้ส่งหลักฐาน เมื่อ Account ยืนยันหรือส่งกลับ พร้อม deep-link/deduplicate และ backfill migration 148 |
 | [20260813-02-accounting-payment-notifications.md](20260813-02-accounting-payment-notifications.md) | done | - | เพิ่มแจ้งเตือน Account/Admin สำหรับสลิปรอตรวจ เช็ครอรับ และเช็ครับแล้วรอยืนยันเงินเข้า พร้อมปิดงานอัตโนมัติและ deep-link; apply Development และตรวจ lint/type/build/API ผ่าน |
 | [20260813-01-active-role-approval-authorization.md](20260813-01-active-role-approval-authorization.md) | done | - | จำกัดสิทธิ์คิวและการอนุมัติใบเสนอราคาตาม role ที่เลือก ตรวจซ้ำฝั่ง API และเตรียม migration 146 สำหรับบันทึก role ใน audit โดยยังไม่ deploy |

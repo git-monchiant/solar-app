@@ -7,6 +7,7 @@ import { syncOrderPaidFlags } from "@/lib/payments-helpers";
 import { mintPreDocNo } from "@/lib/doc-number";
 import { logLeadActivity, paymentStepLabel, fmtBaht } from "@/lib/lead-activity-log";
 import { notifyAccountingRole, notifyLeadOwner, resolveAccountingNotifications } from "@/lib/accounting-notifications";
+import { syncOperationalSlas } from "@/lib/sla-service";
 
 export const runtime = "nodejs";
 export const maxDuration = 30;
@@ -330,6 +331,7 @@ export async function POST(req: NextRequest) {
       }).catch((error) => console.error("create Sale payment notification failed:", error));
     }
 
+    await syncOperationalSlas(pool, leadId, gate.userId);
     return NextResponse.json({ id: paymentId, url: `/api/payments/${paymentId}`, slip_count: slipCount });
   } catch (e) {
     console.error("POST /api/payments error:", e);

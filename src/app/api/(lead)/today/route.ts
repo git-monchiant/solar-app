@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getDb, fixDates } from "@/lib/db";
 import { requireAuth } from "@/lib/auth";
+import { refreshOpenSlaStates } from "@/lib/sla-service";
 
 // LeadCard + today page only read ~30 columns from the leads table. The full
 // table is 60-80 cols per row (survey JSON blobs, photo URLs, etc.) so
@@ -26,6 +27,8 @@ const LEAD_COLS = `
   COALESCE(NULLIF(l.project_name, ''), p.name) as project_name,
   p.district, p.province, pk.name as package_name,
   u.full_name as assigned_name, u.username as assigned_username,
+  sla.policy_code as sla_policy_code, sla.task_name as sla_task_name,
+  sla.status as sla_status, sla.target_at as sla_target_at, sla.due_at as sla_due_at,
   COALESCE(act.contact_count, 0) AS contact_count,
   last_act.last_activity_date,
   last_act.last_activity_title,
@@ -72,6 +75,12 @@ const LEAD_FROM = `
   LEFT JOIN projects p ON l.project_id = p.id
   LEFT JOIN packages pk ON l.interested_package_id = pk.id
   LEFT JOIN users u ON l.assigned_user_id = u.id
+  OUTER APPLY (
+    SELECT TOP 1 policy_code, task_name, status, target_at, due_at
+    FROM lead_sla_instances si
+    WHERE si.lead_id = l.id AND si.status IN ('active','warning','critical','breached')
+    ORDER BY si.due_at ASC
+  ) sla
   LEFT JOIN (
     SELECT
       a.lead_id,
@@ -112,6 +121,7 @@ export async function GET(req: NextRequest) {
   if (gate.error) return gate.error;
   try {
     const db = await getDb();
+    await refreshOpenSlaStates(db);
 
     const [newLeads, overduePreSurvey, followUpToday, followUpOverdue, surveyToday, surveyPending, quotationPending, installPending, followUpUpcoming, waitInstall, installScheduled, warranty, recentlyClosed, booking, stats] = await Promise.all([
       // 1. Lead ใหม่ — pre_survey ที่ยังไม่มี doc และไม่มี follow-up ในอนาคต

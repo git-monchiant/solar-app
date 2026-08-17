@@ -4,6 +4,7 @@ import { requireAuth } from "@/lib/auth";
 import { logLeadActivity, fmtThaiDate } from "@/lib/lead-activity-log";
 import { validateDocNo } from "@/lib/doc-number";
 import { getGridTieFinalMissing } from "@/lib/gridTie";
+import { processGradeChange, syncOperationalSlas } from "@/lib/sla-service";
 
 const statusLabels: Record<string, string> = {
   pre_survey: "รอติดตาม",
@@ -18,11 +19,14 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
   try {
     const { id } = await params;
     const db = await getDb();
+    await syncOperationalSlas(db, parseInt(id), gate.userId);
     const result = await db
       .request()
       .input("id", sql.Int, parseInt(id))
       .query(`
         SELECT l.*,
+               sla.policy_code as sla_policy_code, sla.task_name as sla_task_name,
+               sla.status as sla_status, sla.target_at as sla_target_at, sla.due_at as sla_due_at,
                COALESCE(NULLIF(l.project_alias, N''), NULLIF(l.project_name, N''), p.name) as project_display_name,
                p.name as project_official_name,
                pk.name as package_name, pk.price as package_price,
@@ -92,6 +96,12 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
         LEFT JOIN users u ON l.assigned_user_id = u.id
         LEFT JOIN line_users lu ON lu.line_user_id = l.line_id
         LEFT JOIN lead_data d ON d.lead_id = l.id
+        OUTER APPLY (
+          SELECT TOP 1 policy_code, task_name, status, target_at, due_at
+          FROM lead_sla_instances si
+          WHERE si.lead_id = l.id AND si.status IN ('active','warning','critical','breached')
+          ORDER BY si.due_at ASC
+        ) sla
         WHERE l.id = @id
       `);
 
@@ -122,6 +132,10 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
     const db = await getDb();
     const leadId = parseInt(id);
 
+    if (body.customer_grade === "A" && !String(body.grade_change_reason || "").trim()) {
+      return NextResponse.json({ error: "กรุณาระบุสัญญาณความสนใจหรือเหตุผลที่ปรับเป็น Grade A" }, { status: 400 });
+    }
+
     // Snapshot fields we care about for activity logging — read once so any
     // appointment changes (survey_date, install_date, next_follow_up,
     // survey_confirmed, install_confirmed, install_completed_at) and status
@@ -144,6 +158,7 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
       grid_document_checklist: string | null;
       grid_application_doc_url: string | null;
       grid_permit_doc_url: string | null;
+      customer_grade: string | null;
     } | null = null;
     {
       const current = await db.request().input("id", sql.Int, leadId).query(`
@@ -151,7 +166,7 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
                survey_date, survey_time_slot, install_date, install_time_slot, next_follow_up,
                survey_confirmed, install_confirmed, install_completed_at,
                grid_utility, grid_app_no, grid_applicant_type, grid_document_checklist,
-               grid_application_doc_url, grid_permit_doc_url
+               grid_application_doc_url, grid_permit_doc_url, customer_grade
         FROM leads WHERE id = @id
       `);
       if (current.recordset.length > 0) {
@@ -444,6 +459,7 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
     }
     if (body.assigned_user_id !== undefined) {
       sets.push("assigned_user_id = @assigned_user_id");
+      sets.push("owner_assigned_at = CASE WHEN @assigned_user_id IS NULL THEN NULL ELSE GETDATE() END");
       request.input("assigned_user_id", sql.Int, body.assigned_user_id);
     }
     if (body.survey_date !== undefined) {
@@ -1535,6 +1551,25 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
           `);
       }
     }
+
+    if (body.customer_grade !== undefined && oldRow?.customer_grade !== body.customer_grade) {
+      await processGradeChange(db, {
+        leadId,
+        oldGrade: oldRow?.customer_grade ?? null,
+        newGrade: body.customer_grade || null,
+        actorUserId: gate.userId,
+        reason: body.grade_change_reason || null,
+      });
+      await logLeadActivity(db, {
+        leadId,
+        activityType: "grade_change",
+        title: `Grade: ${oldRow?.customer_grade || "-"} → ${body.customer_grade || "-"}`,
+        note: body.grade_change_reason || null,
+        userId: gate.userId,
+      });
+    }
+
+    await syncOperationalSlas(db, leadId, gate.userId);
 
     // When only lead_data was touched, the UPDATE leads above was skipped so
     // result.recordset is empty. Echo the current row by re-reading so the

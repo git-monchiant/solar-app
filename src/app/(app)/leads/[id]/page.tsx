@@ -991,6 +991,19 @@ export default function LeadDetailPage({ params }: { params: Promise<{ id: strin
 
   return (
     <div className="flex flex-col h-full">
+      {lead.sla_status && lead.sla_due_at && (
+        <div className={`mx-3 mt-3 rounded-xl border px-3 py-2 text-sm flex items-center gap-2 ${
+          lead.sla_status === "breached" ? "border-red-200 bg-red-50 text-red-800" :
+          lead.sla_status === "critical" ? "border-orange-200 bg-orange-50 text-orange-800" :
+          lead.sla_status === "warning" ? "border-amber-200 bg-amber-50 text-amber-800" :
+          "border-sky-200 bg-sky-50 text-sky-800"
+        }`}>
+          <ClockIcon className="h-4 w-4 shrink-0" />
+          <span className="font-semibold">SLA {lead.sla_status === "breached" ? "เกินกำหนด" : lead.sla_status === "critical" ? "เร่งด่วน" : lead.sla_status === "warning" ? "ใกล้กำหนด" : "กำลังดำเนินการ"}</span>
+          <span className="truncate">{lead.sla_task_name}</span>
+          <span className="ml-auto shrink-0">ภายใน {formatDate(lead.sla_due_at)} {formatThaiTime(lead.sla_due_at)}</span>
+        </div>
+      )}
       {/* Header — subtle primary tint */}
       <div className="bg-gradient-to-b from-primary via-primary/50 to-white safe-top sticky top-0 z-40">
         {/* Top row: back + name + call */}
@@ -1421,10 +1434,15 @@ export default function LeadDetailPage({ params }: { params: Promise<{ id: strin
                         title={`เกรด ${opt.g}: ${opt.title}\n\n${opt.desc}`}
                         onClick={() => {
                           const next = isDefault ? null : (active ? null : opt.g);
+                          let gradeChangeReason: string | null = null;
+                          if (next === "A" && lead.customer_grade !== "A") {
+                            gradeChangeReason = window.prompt("ระบุสัญญาณความสนใจ/เหตุผลที่ปรับเป็น Grade A")?.trim() || null;
+                            if (!gradeChangeReason) return;
+                          }
                           apiFetch(`/api/leads/${lead.id}`, {
                             method: "PATCH",
                             headers: { "Content-Type": "application/json" },
-                            body: JSON.stringify({ customer_grade: next }),
+                            body: JSON.stringify({ customer_grade: next, grade_change_reason: gradeChangeReason }),
                           }).then(() => refresh()).catch(console.error);
                         }}
                         className={`col-span-1 md:col-span-1 flex flex-col items-center justify-center gap-0.5 px-2 py-2 rounded-lg border transition-all min-h-[56px] ${

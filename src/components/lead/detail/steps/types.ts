@@ -273,6 +273,11 @@ export interface Lead {
   grid_application_doc_url: string | null;
   grid_permit_doc_url: string | null;
   grid_note: string | null;
+  sla_policy_code?: string | null;
+  sla_task_name?: string | null;
+  sla_status?: "active" | "warning" | "critical" | "breached" | null;
+  sla_target_at?: string | null;
+  sla_due_at?: string | null;
 }
 
 export interface Panel {

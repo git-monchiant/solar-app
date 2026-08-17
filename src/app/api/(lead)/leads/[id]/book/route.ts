@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { getDb, sql } from "@/lib/db";
 import { requireAuth } from "@/lib/auth";
 import { mintDocNo } from "@/lib/doc-number";
+import { syncOperationalSlas } from "@/lib/sla-service";
 
 // POST /api/leads/[id]/book
 // Body: { package_id, total_price, note? }
@@ -53,6 +54,8 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
         INSERT INTO lead_activities (lead_id, activity_type, title, note, created_by)
         VALUES (@lead_id, 'presurvey_doc_created', @title, @note, 1)
       `);
+
+    await syncOperationalSlas(db, leadId, gate.userId);
 
     return NextResponse.json({ doc_no: docNo, lead_id: leadId }, { status: 201 });
   } catch (e) {

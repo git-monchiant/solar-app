@@ -8,7 +8,8 @@
     "start": "next start",
     "lint": "eslint",
     "test:role-permissions": "node --experimental-strip-types scripts/tests/role-permissions.mjs",
-    "test:quotation-terms": "node --experimental-strip-types scripts/tests/quotation-terms.mjs"
+    "test:quotation-terms": "node --experimental-strip-types scripts/tests/quotation-terms.mjs",
+    "test:sla": "node --experimental-strip-types scripts/tests/sla-rules.mjs"
   },
   "dependencies": {
     "browser-image-compression": "^2.0.2",

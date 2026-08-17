@@ -146,6 +146,13 @@ export default function AddActivityModal({ activityType, leadId, canSendBack = f
 
   const showUndecided = outcome === SALE_OFFER;
 
+  const structuredContactResult = () => {
+    if (outcome.startsWith("ติดต่อได้")) return "connected";
+    if (outcome.includes("ข้อมูลติดต่อไม่ถูกต้อง")) return "invalid_contact";
+    if (outcome.startsWith("ติดต่อไม่ได้")) return "unreachable";
+    return outcome ? "other" : null;
+  };
+
   const handleSendSms = async () => {
     if (!smsText.trim()) return;
     setSmsSending(true);
@@ -190,6 +197,8 @@ export default function AddActivityModal({ activityType, leadId, canSendBack = f
           contact_date: followUpDate || null,
           installment_index: isLoanFollowup ? loanInstallmentIndex : undefined,
           followup_method: isLoanFollowup ? (followUpMethod || "follow_up") : undefined,
+          contact_result: activityType === "follow_up" ? structuredContactResult() : null,
+          contact_outcome_code: activityType === "follow_up" ? (outcome || null) : null,
         }),
       });
       // Persist structured reasons on the lead so dashboards/queries can

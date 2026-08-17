@@ -1,0 +1,63 @@
+import { NextRequest, NextResponse } from "next/server";
+import { getDb, fixDates, sql } from "@/lib/db";
+import { requireAnyActiveRole } from "@/lib/auth";
+import { refreshOpenSlaStates } from "@/lib/sla-service";
+
+export async function GET(req: NextRequest) {
+  const gate = await requireAnyActiveRole(req, ["admin", "sales", "sales_sup", "solar", "solar_sup"]);
+  if (gate.error) return gate.error;
+  try {
+    const db = await getDb();
+    await refreshOpenSlaStates(db);
+    const isAdmin = gate.roles.includes("admin");
+    const isSalesSup = gate.roles.includes("sales_sup");
+    const isSolarSup = gate.roles.includes("solar_sup");
+    const isSales = gate.roles.includes("sales");
+    const isSolar = gate.roles.includes("solar");
+    const result = await db.request()
+      .input("user_id", sql.Int, gate.userId)
+      .input("is_admin", sql.Bit, isAdmin ? 1 : 0)
+      .input("is_sales_sup", sql.Bit, isSalesSup ? 1 : 0)
+      .input("is_solar_sup", sql.Bit, isSolarSup ? 1 : 0)
+      .input("is_sales", sql.Bit, isSales ? 1 : 0)
+      .input("is_solar", sql.Bit, isSolar ? 1 : 0)
+      .query(`
+        SELECT si.id, si.lead_id, si.policy_code, si.task_name, si.status,
+               si.started_at, si.target_at, si.due_at, si.owner_user_id,
+               COALESCE(si.owner_role, CASE WHEN si.policy_code IN ('SITE_SURVEY','INSTALLATION') THEN 'solar' ELSE 'sales' END) owner_role,
+               l.full_name, l.phone, l.customer_grade, l.source,
+               u.full_name AS owner_name
+        FROM lead_sla_instances si
+        JOIN leads l ON l.id = si.lead_id
+        LEFT JOIN users u ON u.id = si.owner_user_id
+        WHERE si.status IN ('active','warning','critical','breached')
+          AND (
+            @is_admin = 1
+            OR (
+              COALESCE(si.owner_role, CASE WHEN si.policy_code IN ('SITE_SURVEY','INSTALLATION') THEN 'solar' ELSE 'sales' END) = 'sales'
+              AND (@is_sales_sup = 1 OR (@is_sales = 1 AND (si.owner_user_id = @user_id OR si.owner_user_id IS NULL)))
+            )
+            OR (
+              COALESCE(si.owner_role, CASE WHEN si.policy_code IN ('SITE_SURVEY','INSTALLATION') THEN 'solar' ELSE 'sales' END) = 'solar'
+              AND (@is_solar_sup = 1 OR (@is_solar = 1 AND (si.owner_user_id = @user_id OR si.owner_user_id IS NULL)))
+            )
+          )
+        ORDER BY CASE si.status WHEN 'breached' THEN 0 WHEN 'critical' THEN 1 WHEN 'warning' THEN 2 ELSE 3 END,
+                 si.due_at ASC
+      `);
+    const items = fixDates(result.recordset);
+    const counts = items.reduce((acc: Record<string, number>, row: Record<string, unknown>) => {
+      const key = String(row.status);
+      acc[key] = (acc[key] || 0) + 1;
+      return acc;
+    }, { active: 0, warning: 0, critical: 0, breached: 0 });
+    return NextResponse.json({
+      counts,
+      items,
+      scope: { isAdmin, isSalesSup, isSolarSup, isSales, isSolar, userId: gate.userId },
+    });
+  } catch (error) {
+    console.error("GET /api/sla/dashboard error:", error);
+    return NextResponse.json({ error: "Failed to fetch SLA dashboard" }, { status: 500 });
+  }
+}

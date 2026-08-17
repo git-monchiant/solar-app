@@ -1,9 +1,9 @@
-import { LineIcon, PhoneIcon } from "@/components/ui/icons";
+import { ClockIcon, LineIcon, PhoneIcon } from "@/components/ui/icons";
 import { useState } from "react";
 import { STATUS_CONFIG, getStatusLabel, getStatusColor, getMainStatus, getSubstep } from "@/lib/constants/statuses";
 import { formatSlotsRange } from "@/lib/time-slots";
 import { stripThaiTitle, houseNumberOrNull } from "@/lib/utils/name";
-import { formatTHB, formatThaiDateShort } from "@/lib/utils/formatters";
+import { formatTHB, formatThaiDateShort, formatThaiTime } from "@/lib/utils/formatters";
 import { useOpenLead } from "@/lib/hooks/useOpenLead";
 import AssignOwnerButton from "./AssignOwnerButton";
 import SourceTag from "@/components/SourceTag";
@@ -60,6 +60,11 @@ export interface LeadData {
   zone?: string | null;
   contact_count?: number;
   is_followup_overdue?: boolean;
+  sla_policy_code?: string | null;
+  sla_task_name?: string | null;
+  sla_status?: "active" | "warning" | "critical" | "breached" | null;
+  sla_target_at?: string | null;
+  sla_due_at?: string | null;
 }
 
 export default function LeadCard({ lead, compact, onAssignChange, onOpen }: { lead: LeadData; compact?: boolean; onAssignChange?: () => void; onOpen?: (lead: LeadData) => void }) {
@@ -407,8 +412,20 @@ export default function LeadCard({ lead, compact, onAssignChange, onOpen }: { le
               )}
             </div>
           );
-        })()}
-      </div>
+          })()}
+        </div>
+        {lead.sla_status && lead.sla_due_at && (
+          <div className={`mb-2 inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-xs font-semibold ${
+            lead.sla_status === "breached" ? "bg-red-100 text-red-700" :
+            lead.sla_status === "critical" ? "bg-orange-100 text-orange-700" :
+            lead.sla_status === "warning" ? "bg-amber-100 text-amber-700" :
+            "bg-sky-100 text-sky-700"
+          }`}>
+            <ClockIcon className="h-3.5 w-3.5" />
+            SLA {lead.sla_status === "breached" ? "เกินกำหนด" : lead.sla_status === "critical" ? "เร่งด่วน" : lead.sla_status === "warning" ? "ใกล้กำหนด" : "กำลังดำเนินการ"}
+            <span className="font-normal">· {lead.sla_task_name} · {formatThaiDateShort(lead.sla_due_at)} {formatThaiTime(lead.sla_due_at)}</span>
+          </div>
+        )}
     </div>
   );
 }

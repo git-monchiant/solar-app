@@ -4,6 +4,7 @@ import { requireAdmin, requireAuth } from "@/lib/auth";
 import { syncOrderPaidFlags } from "@/lib/payments-helpers";
 import { logLeadActivity, paymentStepLabel, fmtBaht } from "@/lib/lead-activity-log";
 import { notifyAccountingRole, notifyLeadOwner, resolveAccountingNotifications } from "@/lib/accounting-notifications";
+import { syncOperationalSlas } from "@/lib/sla-service";
 
 export const runtime = "nodejs";
 
@@ -391,6 +392,7 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
         note: pay.description ?? null,
         userId: gate.userId,
       });
+      await syncOperationalSlas(db, pay.lead_id, gate.userId);
       await resolveAccountingNotifications(db, {
         paymentId: payId,
         leadId: pay.lead_id,

@@ -3,6 +3,7 @@ import { requireAdmin } from "@/lib/auth";
 import { getGmailClient } from "@/lib/gmail";
 import { extractEmailBody, parseRegistrationEmail } from "@/lib/gmail-parser";
 import { getDb, sql } from "@/lib/db";
+import { ensureFirstContactSla } from "@/lib/sla-service";
 
 // POST /api/oauth/gmail/sync
 // Pulls Sena Solar registration emails and inserts them as leads.
@@ -94,6 +95,7 @@ export async function POST(req: NextRequest) {
             INSERT INTO lead_data (lead_id, residence_type, roof_shape, monthly_bill)
             VALUES (@lead_id, @residence_type, @roof_shape, @monthly_bill)
           `);
+        await ensureFirstContactSla(db, newLeadId);
         imported++;
         if (samples.length < 5) samples.push({ name: parsed.full_name, phone: parsed.phone, email: parsed.email });
       } catch (e) {
