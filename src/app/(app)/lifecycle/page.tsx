@@ -12,6 +12,7 @@ import { formatTHB, formatThaiDateShort } from "@/lib/utils/formatters";
 import { LeadLink } from "@/components/lead/LeadLink";
 import { getSourceStyle } from "@/lib/source-tag";
 import { hasRole, useActiveRoles } from "@/lib/roles";
+import Loading from "@/components/ui/Loading";
 
 interface Row {
   id: number;
@@ -662,9 +663,7 @@ export default function LifecyclePage() {
         </div>
 
         {loading ? (
-          <div className="flex items-center justify-center h-64">
-            <div className="w-8 h-8 border-3 border-gray-200 border-t-gray-900 rounded-full animate-spin" />
-          </div>
+          <Loading />
         ) : (
           <div className="border border-gray-200 rounded-lg bg-white">
             <table className="text-xxs table-fixed w-full">

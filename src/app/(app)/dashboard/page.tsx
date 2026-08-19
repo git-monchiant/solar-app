@@ -15,6 +15,7 @@ import { STATUS_CONFIG } from "@/lib/constants/statuses";
 import { PRIMARY_REASON_LABEL } from "@/lib/constants/info-labels";
 import { getSourceStyle, normalizeSourceKey } from "@/lib/source-tag";
 import { formatTHB as fmt } from "@/lib/utils/formatters";
+import Loading from "@/components/ui/Loading";
 
 type LifecycleCol = "first_contact_at" | "contact2_at" | "contact3_at" | "contact4_at" | "contact5_at"
   | "sales_pitch_at" | "booking_paid_at" | "survey_date" | "survey_done_at"
@@ -268,7 +269,7 @@ export default function DashboardPage() {
     apiFetch("/api/lifecycle").then((rows: LifecycleRow[]) => setLifecycleRows(rows)).catch(console.error);
   }, []);
 
-  if (loading) return <div className="flex items-center justify-center h-full py-20"><div className="w-10 h-10 border-3 border-gray-200 border-t-primary rounded-full animate-spin" /></div>;
+  if (loading) return <Loading />;
   if (!data) return <div className="text-center py-12 text-gray-400 text-sm">Unable to load data</div>;
 
 

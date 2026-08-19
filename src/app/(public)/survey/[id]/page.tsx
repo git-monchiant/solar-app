@@ -4,6 +4,7 @@ import { formatTHB } from "@/lib/utils/formatters";
 import { useParams } from "next/navigation";
 import QRCode from "qrcode";
 import { formatSlotsRange } from "@/lib/time-slots";
+import Loading from "@/components/ui/Loading";
 import {
   ROOF_MATERIAL_LABEL as ROOF_MATERIAL_MAP,
   ORIENTATION_LABEL as ORIENTATION_MAP,
@@ -138,7 +139,7 @@ export default function SurveyPdfPage() {
       .catch(err => { console.error("QR gen failed", err); setLocQr(null); });
   }, [d?.lead.survey_lat, d?.lead.survey_lng]);
 
-  if (!d) return <div className="flex items-center justify-center h-screen"><div className="w-8 h-8 border-2 border-primary/30 border-t-primary animate-spin" /></div>;
+  if (!d) return <Loading />;
 
   const { lead, packages } = d;
 

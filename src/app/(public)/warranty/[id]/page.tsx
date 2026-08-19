@@ -2,6 +2,7 @@
 import { useEffect, useState } from "react";
 import { useParams } from "next/navigation";
 import { formatThaiDate } from "@/lib/utils/formatters";
+import Loading from "@/components/ui/Loading";
 
 interface Pkg {
   id: number;
@@ -85,7 +86,7 @@ export default function WarrantyPage() {
     fetch(`/api/warranty/${id}/data${qs}`).then(r => r.json()).then(setD).catch(console.error);
   }, [id]);
 
-  if (!d) return <div className="flex items-center justify-center h-screen"><div className="w-8 h-8 border-2 border-primary/30 border-t-primary animate-spin" /></div>;
+  if (!d) return <Loading />;
 
   const { lead, package: pkg } = d;
   // Inverter — prefer the new lead_inverters row (first one) → legacy

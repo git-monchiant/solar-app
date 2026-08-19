@@ -16,6 +16,7 @@ import ChannelPickerModal from "@/components/shared/ChannelPickerModal";
 import PaymentSection from "@/components/payment/PaymentSection";
 import DocumentScanner from "@/components/customer/DocumentScanner";
 import { INTEREST_REASONS, PRIMARY_REASON_LABEL } from "@/lib/constants/info-labels";
+import Loading from "@/components/ui/Loading";
 
 type Prospect = {
   id: number;
@@ -447,9 +448,7 @@ export default function SeekerPage() {
       )}
       <div className="px-3 md:px-5 py-3 flex-1 overflow-y-auto">
         {loading ? (
-          <div className="flex items-center justify-center py-16">
-            <div className="w-8 h-8 border-3 border-gray-200 border-t-gray-900 rounded-full animate-spin" />
-          </div>
+          <Loading />
         ) : filtered.length === 0 ? (
           <div className="text-center text-gray-400 text-sm py-16">ไม่มีข้อมูล</div>
         ) : (
@@ -809,9 +808,7 @@ function ProjectLanding({
           </div>
         )}
         {loading ? (
-          <div className="flex items-center justify-center py-16">
-            <div className="w-8 h-8 border-3 border-gray-200 border-t-gray-900 rounded-full animate-spin" />
-          </div>
+          <Loading />
         ) : projects.length === 0 ? (
           <div className="text-center text-gray-400 text-sm py-16">ไม่มีโครงการ</div>
         ) : (

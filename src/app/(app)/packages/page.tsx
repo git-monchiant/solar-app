@@ -5,6 +5,7 @@ import { apiFetch } from "@/lib/api";
 import { useEffect, useState } from "react";
 import ListPageHeader from "@/components/layout/ListPageHeader";
 import { formatTHB } from "@/lib/utils/formatters";
+import Loading from "@/components/ui/Loading";
 
 interface Package {
   id: number;
@@ -75,9 +76,7 @@ export default function PackagesPage() {
 
       <div className="p-3 md:p-6">
         {loading ? (
-          <div className="flex items-center justify-center py-16">
-            <div className="w-10 h-10 border-3 border-gray-200 border-t-primary rounded-full animate-spin" />
-          </div>
+          <Loading />
         ) : (
           <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-3">
             {displayed.map((pkg) => (

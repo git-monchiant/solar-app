@@ -2,6 +2,7 @@
 import { useEffect, useState, Suspense } from "react";
 import { useSearchParams } from "next/navigation";
 import { formatSlotsRange } from "@/lib/time-slots";
+import Loading from "@/components/ui/Loading";
 
 interface ReceiptData {
   stage: "deposit" | "order_before" | "order_after" | "installment";
@@ -67,7 +68,7 @@ function ReceiptContent() {
     fetch(`/api/receipt/data?${qs.toString()}`).then(r => r.json()).then(setD).catch(console.error);
   }, [params]);
 
-  if (!d) return <div className="flex items-center justify-center h-screen"><div className="w-8 h-8 border-2 border-primary/30 border-t-primary rounded-full animate-spin" /></div>;
+  if (!d) return <Loading />;
 
   // Re-enabled when the receipt is rendered as a Booking Confirmation
   // (?show_survey=1). The default temporary receipt still hides it because
@@ -256,7 +257,7 @@ function ReceiptContent() {
 
 export default function ReceiptViewPage() {
   return (
-    <Suspense fallback={<div className="flex items-center justify-center h-screen"><div className="w-8 h-8 border-2 border-primary/30 border-t-primary rounded-full animate-spin" /></div>}>
+    <Suspense fallback={<Loading />}>
       <ReceiptContent />
     </Suspense>
   );

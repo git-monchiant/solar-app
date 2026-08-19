@@ -7,6 +7,7 @@ import { useEffect, useState } from "react";
 import Header from "@/components/layout/Header";
 import NewLeadModal from "@/components/modal/NewLeadModal";
 import { LeadLink } from "@/components/lead/LeadLink";
+import Loading from "@/components/ui/Loading";
 
 interface LinkedLead {
   id: number;
@@ -61,9 +62,7 @@ export default function LineUsersPage() {
 
       <div className="p-4">
         {loading ? (
-          <div className="flex items-center justify-center py-16">
-            <div className="w-10 h-10 border-3 border-gray-200 border-t-primary rounded-full animate-spin" />
-          </div>
+          <Loading />
         ) : users.length === 0 ? (
           <div className="text-center py-16 text-gray-400 text-sm">ยังไม่มี LINE user</div>
         ) : (

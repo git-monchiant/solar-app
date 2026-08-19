@@ -6,6 +6,7 @@ import { apiFetch } from "@/lib/api";
 import Header from "@/components/layout/Header";
 import { useDialog } from "@/components/ui/Dialog";
 import UserSignaturePad from "@/components/profile/UserSignaturePad";
+import Loading from "@/components/ui/Loading";
 
 interface UserProfile {
   id: number;
@@ -46,7 +47,7 @@ export default function ProfilePage() {
     router.replace("/login");
   };
 
-  if (!user) return <div className="flex items-center justify-center h-screen"><div className="w-10 h-10 border-3 border-primary/30 border-t-primary rounded-full animate-spin" /></div>;
+  if (!user) return <Loading />;
 
   const initials = user.full_name.split(" ").map(n => n[0]).join("").slice(0, 2);
 

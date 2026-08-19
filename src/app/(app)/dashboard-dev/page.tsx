@@ -9,6 +9,7 @@ import { getWithTtl, setWithTtl, TWO_HOURS_MS } from "@/lib/storage-ttl";
 import { useEffect, useMemo, useState } from "react";
 import Header from "@/components/layout/Header";
 import { useMe } from "@/lib/roles";
+import Loading from "@/components/ui/Loading";
 
 interface DevData {
   funnel: {
@@ -80,7 +81,7 @@ export default function DashboardDevPage() {
   }, [dateFrom, dateTo, filterMode]);
 
   if (!me) return null;
-  if (loading) return <div className="flex items-center justify-center h-full py-20"><div className="w-10 h-10 border-3 border-gray-200 border-t-primary rounded-full animate-spin" /></div>;
+  if (loading) return <Loading />;
   if (!data) return <div className="text-center py-12 text-gray-400 text-sm">Unable to load data</div>;
 
   const today = new Date().toLocaleDateString("th-TH", { day: "numeric", month: "long", year: "numeric" });

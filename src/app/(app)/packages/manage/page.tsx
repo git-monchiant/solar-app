@@ -7,6 +7,7 @@ import { useEffect, useState } from "react";
 import Header from "@/components/layout/Header";
 import { formatTHB as fmt, formatThaiDate as fmtDate } from "@/lib/utils/formatters";
 import { hasRole, useActiveRoles } from "@/lib/roles";
+import Loading from "@/components/ui/Loading";
 
 interface Package {
   id: number;
@@ -314,7 +315,7 @@ export default function ManagePackagesPage() {
   const fieldCls = `${fieldBase} text-sm`;
   const labelCls = "block text-xs font-semibold text-gray-500 mb-1";
 
-  if (loading) return <div className="flex items-center justify-center h-full py-20"><div className="w-10 h-10 border-3 border-gray-200 border-t-primary rounded-full animate-spin" /></div>;
+  if (loading) return <Loading />;
 
   return (
     <div>

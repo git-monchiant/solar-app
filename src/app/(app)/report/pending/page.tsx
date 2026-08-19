@@ -8,6 +8,7 @@ import { useDialog } from "@/components/ui/Dialog";
 import FallbackImage from "@/components/ui/FallbackImage";
 import ImageLightbox, { type LightboxImage } from "@/components/ui/ImageLightbox";
 import { formatTHB } from "@/lib/utils/formatters";
+import Loading from "@/components/ui/Loading";
 
 interface Installment {
   id: number;
@@ -100,7 +101,7 @@ export default function PendingApprovalReport() {
     });
   }, [data]);
 
-  if (loading) return <div className="flex items-center justify-center h-full py-20"><div className="w-10 h-10 border-3 border-gray-200 border-t-primary rounded-full animate-spin" /></div>;
+  if (loading) return <Loading />;
   if (!data) return <div className="text-center py-12 text-gray-400 text-sm">โหลดไม่สำเร็จ</div>;
 
   // Flatten: one row per pending installment (only ones with slip awaiting verification)

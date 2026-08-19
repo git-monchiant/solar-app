@@ -5,6 +5,7 @@ import { apiFetch } from "@/lib/api";
 import Header from "@/components/layout/Header";
 import { useMe } from "@/lib/roles";
 import { useDialog } from "@/components/ui/Dialog";
+import Loading from "@/components/ui/Loading";
 
 type Settings = Record<string, string>;
 
@@ -133,9 +134,7 @@ function PaymentSetup() {
 
   if (loading) {
     return (
-      <div className="flex items-center justify-center py-20">
-        <div className="w-8 h-8 border-2 border-primary/30 border-t-primary rounded-full animate-spin" />
-      </div>
+      <Loading />
     );
   }
 
