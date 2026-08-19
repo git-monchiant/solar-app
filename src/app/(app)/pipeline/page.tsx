@@ -8,6 +8,8 @@ import { useEffect, useState, useCallback } from "react";
 import ListPageHeader from "@/components/layout/ListPageHeader";
 import LeadCard, { type LeadData } from "@/components/lead/LeadCard";
 import { useActiveRoles, hasRole } from "@/lib/roles";
+import { normalizeSourceKey, SOURCE_STYLES } from "@/lib/source-tag";
+import Loading from "@/components/ui/Loading";
 
 interface Lead {
   id: number;
@@ -19,6 +21,8 @@ interface Lead {
   house_number: string | null;
   status: string;
   source: string;
+  /** touchpoint channels เพิ่มเติมระหว่างทาง — JSON array string เช่น '["line_sena"]' */
+  tag: string | null;
   note: string | null;
   contact_date: string;
   created_at: string;
@@ -43,12 +47,35 @@ interface Lead {
   journey_sub?: number | null;
 }
 
-type TabKey = "all" | "pre_survey" | "booking" | "survey" | "quotation" | "order" | "wait_install" | "install" | "installing" | "warranty" | "gridtie" | "handover" | "lost";
+type TabKey = "all" | "pre_survey" | "booking" | "survey" | "quotation" | "order" | "quote_process" | "install_process" | "warranty_process" | "wait_install" | "install" | "installing" | "warranty" | "gridtie" | "handover" | "lost";
 type SortField = "follow_up" | "created" | "name" | "activity" | "survey_date" | "install_date";
 type SortOrder = "asc" | "desc";
 
-const TAB_KEYS: TabKey[] = ["all","pre_survey","booking","survey","quotation","order","wait_install","install","installing","warranty","gridtie","handover","lost"];
+const TAB_KEYS: TabKey[] = ["all","pre_survey","booking","survey","quotation","order","quote_process","install_process","warranty_process","wait_install","install","installing","warranty","gridtie","handover","lost"];
 const SORT_FIELDS: SortField[] = ["follow_up", "created", "name", "activity", "survey_date", "install_date"];
+
+const parseTags = (raw: string | null | undefined): string[] => {
+  if (!raw) return [];
+  try {
+    const arr = JSON.parse(raw);
+    return Array.isArray(arr) ? arr.filter((t): t is string => typeof t === "string") : [];
+  } catch { return []; }
+};
+
+// จัดกลุ่มช่องทางเป็น bucket มาตรฐานชุดเดียวกับ dashboard (normalizeSourceKey):
+// โค้ดสะกดต่าง/ค่า other:xxx ทั้งหมด ยุบรวมตามกติกากลาง — "อื่นๆ" เป็นตัวเลือกเดียว
+// เรียงตามตัวอักษรของป้าย (ยกเว้น "อื่นๆ" ไว้ท้ายสุด)
+const buildGroups = (values: string[]) => {
+  const keys = new Set<string>();
+  for (const v of values) keys.add(normalizeSourceKey(v));
+  return [...keys]
+    .map((key) => ({ value: key, label: SOURCE_STYLES[key as keyof typeof SOURCE_STYLES]?.label ?? key }))
+    .sort((a, b) => {
+      if (a.value === "other") return 1;
+      if (b.value === "other") return -1;
+      return a.label.localeCompare(b.label, "th");
+    });
+};
 
 // Tab = กลุ่มของ journey code ที่ persist บน leads.journey_step/journey_sub
 // (กติกา: src/lib/journey-rules.mjs · design: docs/plan/20260813-01-journey-step-codes.md)
@@ -64,6 +91,13 @@ const matchesTab = (l: Lead, key: TabKey, todayYmd: string): boolean => {
   if (key === "survey") return l.journey_step === 300;
   if (key === "quotation") return l.journey_step === 400;
   if (key === "order") return l.journey_step === 500;
+  // กระบวนการใบเสนอทั้งวง: รอทำใบเสนอ → รออนุมัติ → รอชำระ (400 คลุมช่วงรออนุมัติอยู่แล้ว)
+  if (key === "quote_process") return l.journey_step === 400 || l.journey_step === 500;
+  // กระบวนการติดตั้ง: รอนัด → รอ/กำลังติดตั้ง (ออกใบรับประกันเป็นงานหลังติดตั้ง ไม่รวม)
+  // — นับตาม journey ตรงๆ ไม่ใส่ money gate เพื่อให้เท่ากับ badge
+  if (key === "install_process") return l.journey_step === 600 || l.journey_step === 700;
+  // งานรับประกันทั้งวง (การ์ดโมดูล Warranty): รอออกใบรับประกัน + รอขอขนานไฟ
+  if (key === "warranty_process") return l.journey_step === 800 || l.journey_step === 900;
   if (key === "wait_install") return l.journey_step === 600;
   if (key === "warranty") return l.journey_step === 800;
   if (key === "gridtie") return l.journey_step === 900;
@@ -110,6 +144,9 @@ export default function PipelinePage() {
     return localStorage.getItem("pipeline.sortOrder") === "desc" ? "desc" : "asc";
   });
   const [search, setSearch] = useState("");
+  // filter ช่องทาง (source) + tag — "all" = ไม่กรอง
+  const [sourceFilter, setSourceFilter] = useState("all");
+  const [tagFilter, setTagFilter] = useState("all");
   // โหมดโมดูล: left menu ทำหน้าที่เลือก tab (ผ่าน ?tab=) → ซ่อนแถบ tab แนวนอน
   // และหัวเรื่องหน้า = ชื่อเมนูที่ active (จาก hook กลาง ไม่ต้องรู้จักเมนูเอง)
   const { module: activeModule, item: activeMenuItem } = useActiveMenuItem();
@@ -161,9 +198,20 @@ export default function PipelinePage() {
   }, [tab, sortField]);
 
   const todayYmd = new Date().toISOString().slice(0, 10);
-  const filtered = sortLeads(
-    leads
-      .filter(l => matchesTab(l, tab, todayYmd))
+
+  // ตัวเลือกใน dropdown = lead source (แหล่งแรก) ของรายการในเมนู/แท็บปัจจุบันเท่านั้น
+  // (จัดกลุ่มการสะกด + เรียงตามจำนวนมาก → น้อย) — ช่องทางที่ไม่มี lead ในหน้านี้ไม่แสดง
+  const tabLeads = leads.filter(l => matchesTab(l, tab, todayYmd));
+  const sourceOptions = buildGroups(tabLeads.map(l => l.source).filter(Boolean));
+  const tagOptions = buildGroups(tabLeads.flatMap(l => parseTags(l.tag)));
+
+  // เปลี่ยนเมนู/แท็บ → ล้าง filter กันค่าที่ไม่มีในหน้าใหม่ค้างกรองแบบมองไม่เห็น
+  useEffect(() => { setSourceFilter("all"); setTagFilter("all"); }, [tab]);
+
+  const sortedLeads = sortLeads(
+    tabLeads
+      .filter(l => sourceFilter === "all" || (l.source && normalizeSourceKey(l.source) === sourceFilter))
+      .filter(l => tagFilter === "all" || parseTags(l.tag).some(t => normalizeSourceKey(t) === tagFilter))
       .filter(l => {
         if (!search.trim()) return true;
         const q = search.trim().toLowerCase();
@@ -181,6 +229,12 @@ export default function PipelinePage() {
         );
       })
   );
+  // list รวมกระบวนการ (ใบเสนอ/ติดตั้ง): จัดกลุ่มตามลำดับขั้น journey ก่อน
+  // — sort ของผู้ใช้ยังมีผลภายในแต่ละกลุ่ม (Array.sort เสถียร)
+  const filtered = tab === "quote_process" || tab === "install_process" || tab === "warranty_process"
+    ? [...sortedLeads].sort((a, b) =>
+        ((a.journey_step ?? 0) - (b.journey_step ?? 0)) || ((a.journey_sub ?? 0) - (b.journey_sub ?? 0)))
+    : sortedLeads;
 
   const countFor = (key: TabKey) => key === "all" ? leads.length : leads.filter(l => matchesTab(l, key, todayYmd)).length;
 
@@ -192,6 +246,9 @@ export default function PipelinePage() {
     { key: "booking",    label: "รายการจอง" },
     { key: "survey",     label: "รอสำรวจ" },
     { key: "quotation",  label: "รอใบเสนอราคา" },
+    { key: "quote_process", label: "ใบเสนอราคา" },
+    { key: "install_process", label: "ติดตั้ง" },
+    { key: "warranty_process", label: "รับประกัน" },
     { key: "order",      label: "รอเสนอลูกค้า" },
     { key: "wait_install", label: "มัดจำแล้ว รอนัดติดตั้ง" },
     { key: "install",    label: "รอติดตั้ง" },
@@ -209,7 +266,30 @@ export default function PipelinePage() {
       <ListPageHeader
         title={moduleMode ? (activeMenuItem?.label ?? ALL_TABS.find(t => t.key === tab)?.label ?? "Pipeline") : "Pipeline"}
         subtitle={moduleMode ? undefined : "ALL LEADS & CUSTOMERS"}
-        tabsLeft={moduleMode ? `${countFor(tab)} รายการ` : undefined}
+        tabsLeft={moduleMode ? (
+          <div className="flex items-center gap-2">
+            <span className="whitespace-nowrap">
+              {(sourceFilter !== "all" || tagFilter !== "all") ? filtered.length : countFor(tab)} รายการ
+            </span>
+            {/* filter ช่องทาง/Tag เฉพาะ list "ทั้งหมด" — list รายขั้นเอาแค่จำนวนพอ */}
+            {tab === "all" && (
+            <Dropdown
+              className="w-40 font-normal"
+              value={sourceFilter}
+              onChange={(v) => setSourceFilter(v || "all")}
+              options={[{ value: "all", label: "ช่องทางทั้งหมด" }, ...sourceOptions]}
+            />
+            )}
+            {tab === "all" && tagOptions.length > 0 && (
+              <Dropdown
+                className="w-36 font-normal"
+                value={tagFilter}
+                onChange={(v) => setTagFilter(v || "all")}
+                options={[{ value: "all", label: "Tag ทั้งหมด" }, ...tagOptions]}
+              />
+            )}
+          </div>
+        ) : undefined}
         search={search}
         onSearchChange={setSearch}
         searchPlaceholder="ค้นหาชื่อ, เบอร์, โครงการ..."
@@ -257,9 +337,7 @@ export default function PipelinePage() {
 
       <div className="p-3 md:p-4">
         {loading ? (
-          <div className="flex items-center justify-center py-16">
-            <div className="w-10 h-10 border-3 border-gray-200 border-t-primary rounded-full animate-spin" />
-          </div>
+          <Loading />
         ) : filtered.length === 0 ? (
           <div className="text-center py-16 text-gray-400 text-sm">ไม่พบรายการ</div>
         ) : (
