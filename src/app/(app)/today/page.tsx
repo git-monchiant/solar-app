@@ -13,6 +13,7 @@ import ChannelPickerModal from "@/components/shared/ChannelPickerModal";
 import type { ChannelValue } from "@/lib/constants/channels";
 import { useActiveRoles, hasRole, useMe } from "@/lib/roles";
 import EventCalendarList from "@/components/calendar/EventCalendarList";
+import Loading from "@/components/ui/Loading";
 
 interface TodayData {
   newLeads: LeadData[];
@@ -139,9 +140,7 @@ export default function TodayPage() {
 
   if (loading || activeRoles.length === 0) {
     return (
-      <div className="flex items-center justify-center h-full">
-        <div className="w-10 h-10 border-3 border-gray-200 border-t-gray-900 rounded-full animate-spin" />
-      </div>
+      <Loading />
     );
   }
 
@@ -265,10 +264,11 @@ export default function TodayPage() {
     return arr;
   };
 
-  // Sort controls — desktop only. Mobile section headers are already tight
-  // (title + count + tab bar above) so hiding the filter strip keeps it clean.
+  // Sort controls — desktop only, อยู่ในแถวตัวกรองของ ListPageHeader (layout
+  // เดียวกับ pipeline) ไม่ฝังในเนื้อหาแล้ว. Mobile ซ่อนเหมือนเดิม
   const sortControls = (
     <div className="hidden md:flex items-center justify-end gap-2 flex-wrap">
+      <span className="text-xs font-semibold text-gray-500 whitespace-nowrap">จัดเรียงข้อมูล</span>
       <button
         type="button"
         onClick={() => {
@@ -353,6 +353,11 @@ export default function TodayPage() {
         tabs={moduleMode ? [] : allTabs}
         activeTab={visibleTab}
         onTabChange={(k) => setTab(k as TodayTab)}
+        tabsLeft={(() => {
+          const n = allTabs.find(t => t.key === visibleTab)?.count;
+          return n != null ? `${n} รายการ` : undefined;
+        })()}
+        tabsRight={visibleTab !== "calendar" ? sortControls : undefined}
       />
 
       {/* Content */}
@@ -361,21 +366,12 @@ export default function TodayPage() {
             ที่ไม่อยู่ใน bucket ใดข้างบน (เพื่อให้เห็น lead ครบทุกใบเหมือน pipeline) */}
         {visibleTab === "sales_all" && (
           <>
-            {/* First section header + sort controls on a single row.
-                When overdue is empty, the controls sit alone right-aligned. */}
-            <div className="flex items-center justify-between mb-3 px-1 gap-3 flex-wrap">
-              {d.followUpOverdue.length > 0 ? (
-                <h2 className="text-xs font-bold tracking-wider uppercase text-red-600">เลยกำหนดติดตาม</h2>
-              ) : <div />}
-              <div className="flex items-center gap-2">
-                {sortControls}
-                {d.followUpOverdue.length > 0 && (
-                  <span className="text-xs font-semibold text-red-600 bg-red-50 px-2 py-0.5 rounded-full">{d.followUpOverdue.length}</span>
-                )}
-              </div>
-            </div>
             {d.followUpOverdue.length > 0 && (
               <section>
+                <div className="flex items-center justify-between mb-3 px-1">
+                  <h2 className="text-xs font-bold tracking-wider uppercase text-red-600">เลยกำหนดติดตาม</h2>
+                  <span className="text-xs font-semibold text-red-600 bg-red-50 px-2 py-0.5 rounded-full">{d.followUpOverdue.length}</span>
+                </div>
                 <div className="space-y-3">{sortLeads(d.followUpOverdue).map((l) => <LeadCard key={l.id} lead={l} />)}</div>
               </section>
             )}
@@ -499,19 +495,12 @@ export default function TodayPage() {
          * ที่ยังไม่ถึงวัน follow-up → ไปดู pipeline */}
         {visibleTab === "sales" && (
           <>
-            <div className="flex items-center justify-between mb-3 px-1 gap-3 flex-wrap">
-              {d.followUpOverdue.length > 0 ? (
-                <h2 className="text-xs font-bold tracking-wider uppercase text-red-600">เลยกำหนดติดตาม</h2>
-              ) : <div />}
-              <div className="flex items-center gap-2">
-                {sortControls}
-                {d.followUpOverdue.length > 0 && (
-                  <span className="text-xs font-semibold text-red-600 bg-red-50 px-2 py-0.5 rounded-full">{d.followUpOverdue.length}</span>
-                )}
-              </div>
-            </div>
             {d.followUpOverdue.length > 0 && (
               <section>
+                <div className="flex items-center justify-between mb-3 px-1">
+                  <h2 className="text-xs font-bold tracking-wider uppercase text-red-600">เลยกำหนดติดตาม</h2>
+                  <span className="text-xs font-semibold text-red-600 bg-red-50 px-2 py-0.5 rounded-full">{d.followUpOverdue.length}</span>
+                </div>
                 <div className="space-y-3">{sortLeads(d.followUpOverdue).map((l) => <LeadCard key={l.id} lead={l} />)}</div>
               </section>
             )}
@@ -565,10 +554,7 @@ export default function TodayPage() {
             <section>
               <div className="flex items-center justify-between mb-3 px-1">
                 <h2 className="text-xs font-bold tracking-wider uppercase text-emerald-700">รายการจอง · รอนัดสำรวจ</h2>
-                <div className="flex items-center gap-2">
-                  {sortControls}
-                  <span className="text-xs font-semibold text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded-full">{d.booking.length}</span>
-                </div>
+                <span className="text-xs font-semibold text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded-full">{d.booking.length}</span>
               </div>
               <div className="space-y-3">{sortLeads(d.booking).map((l) => <LeadCard key={l.id} lead={l} />)}</div>
             </section>
@@ -584,7 +570,6 @@ export default function TodayPage() {
                 <div className="flex items-center justify-between mb-3 px-1">
                   <h2 className="text-xs font-bold tracking-wider uppercase text-violet-700">รอเสนอลูกค้า</h2>
                   <div className="flex items-center gap-2">
-                    {sortControls}
                     <span className="text-xs font-semibold text-violet-700 bg-violet-50 px-2 py-0.5 rounded-full">{d.installPending.length}</span>
                   </div>
                 </div>
@@ -610,7 +595,6 @@ export default function TodayPage() {
                 <div className="flex items-center justify-between mb-3 px-1">
                   <h2 className="text-xs font-bold tracking-wider uppercase text-emerald-700">ชำระมัดจำแล้ว</h2>
                   <div className="flex items-center gap-2">
-                    {sortControls}
                     <span className="text-xs font-semibold text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded-full">{d.depositPaid.length}</span>
                   </div>
                 </div>
@@ -637,7 +621,6 @@ export default function TodayPage() {
                 <div className="flex items-center justify-between mb-3 px-1">
                   <h2 className="text-xs font-bold tracking-wider uppercase text-orange-600">รอนัดติดตั้ง</h2>
                   <div className="flex items-center gap-2">
-                    {sortControls}
                     <span className="text-xs font-semibold text-orange-600 bg-orange-50 px-2 py-0.5 rounded-full">{d.waitInstall.length}</span>
                   </div>
                 </div>
@@ -666,7 +649,6 @@ export default function TodayPage() {
                 <div className="flex items-center justify-between mb-3 px-1">
                   <h2 className="text-xs font-bold tracking-wider uppercase text-violet-600">รอใบเสนอราคา</h2>
                   <div className="flex items-center gap-2">
-                    {sortControls}
                     <span className="text-xs font-semibold text-violet-600 bg-violet-50 px-2 py-0.5 rounded-full">{d.quotationPending.length}</span>
                   </div>
                 </div>
@@ -690,7 +672,6 @@ export default function TodayPage() {
           const bookingReady = d.booking.filter(l => l.payment_confirmed);
           return (
           <>
-            {sortControls}
             {/* Survey วันนี้ มาก่อน — เป็นคำถามแรกของช่างตอนเช้า "วันนี้มีนัดอะไร"
              * เรียงตาม survey_date (เวลานัด) เช้า → เย็น */}
             {d.surveyToday.length > 0 && (
@@ -790,7 +771,6 @@ export default function TodayPage() {
           const bookingReady = d.booking.filter(l => l.payment_confirmed);
           return (
           <>
-            {sortControls}
             {d.surveyToday.length > 0 && (
               <section>
                 <div className="flex items-center justify-between mb-3 px-1">
@@ -845,7 +825,6 @@ export default function TodayPage() {
                 <div className="flex items-center justify-between mb-3 px-1">
                   <h2 className="text-xs font-bold tracking-wider uppercase text-violet-600">รอใบเสนอราคา</h2>
                   <div className="flex items-center gap-2">
-                    {sortControls}
                     <span className="text-xs font-semibold text-violet-600 bg-violet-50 px-2 py-0.5 rounded-full">{d.quotationPending.length}</span>
                   </div>
                 </div>
@@ -871,7 +850,6 @@ export default function TodayPage() {
                 <div className="flex items-center justify-between mb-3 px-1">
                   <h2 className="text-xs font-bold tracking-wider uppercase text-orange-600">รอนัดติดตั้ง</h2>
                   <div className="flex items-center gap-2">
-                    {sortControls}
                     <span className="text-xs font-semibold text-orange-600 bg-orange-50 px-2 py-0.5 rounded-full">{d.waitInstall.length}</span>
                   </div>
                 </div>
@@ -897,7 +875,6 @@ export default function TodayPage() {
                 <div className="flex items-center justify-between mb-3 px-1">
                   <h2 className="text-xs font-bold tracking-wider uppercase text-emerald-600">รอติดตั้ง</h2>
                   <div className="flex items-center gap-2">
-                    {sortControls}
                     <span className="text-xs font-semibold text-emerald-600 bg-emerald-50 px-2 py-0.5 rounded-full">{installFuture.length}</span>
                   </div>
                 </div>
@@ -922,7 +899,6 @@ export default function TodayPage() {
                 <div className="flex items-center justify-between mb-3 px-1">
                   <h2 className="text-xs font-bold tracking-wider uppercase text-emerald-600">กำลังติดตั้ง</h2>
                   <div className="flex items-center gap-2">
-                    {sortControls}
                     <span className="text-xs font-semibold text-emerald-600 bg-emerald-50 px-2 py-0.5 rounded-full">{installInProgress.length}</span>
                   </div>
                 </div>
@@ -948,7 +924,6 @@ export default function TodayPage() {
                 <div className="flex items-center justify-between mb-3 px-1">
                   <h2 className="text-xs font-bold tracking-wider uppercase text-cyan-700">รอออกใบรับประกัน</h2>
                   <div className="flex items-center gap-2">
-                    {sortControls}
                     <span className="text-xs font-semibold text-cyan-700 bg-cyan-50 px-2 py-0.5 rounded-full">{d.warranty.length}</span>
                   </div>
                 </div>
@@ -974,7 +949,6 @@ export default function TodayPage() {
                 <div className="flex items-center justify-between mb-3 px-1">
                   <h2 className="text-xs font-bold tracking-wider uppercase text-amber-700">ขอขนานไฟ</h2>
                   <div className="flex items-center gap-2">
-                    {sortControls}
                     <span className="text-xs font-semibold text-amber-700 bg-amber-50 px-2 py-0.5 rounded-full">{solarGridtie.length}</span>
                   </div>
                 </div>
@@ -1128,9 +1102,7 @@ function AccountTodayView({ leads, search, setSearch }: { leads: LeadData[]; sea
       />
       <div className="p-3 md:p-6">
         {reportLoading ? (
-          <div className="flex items-center justify-center py-20">
-            <div className="w-10 h-10 border-3 border-gray-200 border-t-primary rounded-full animate-spin" />
-          </div>
+          <Loading />
         ) : filtered.length === 0 ? (
           <div className="bg-white rounded-xl border border-gray-300 p-12 text-center">
             <div className="text-sm text-gray-400">ไม่มีรายการรอยืนยัน</div>
