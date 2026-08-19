@@ -18,6 +18,8 @@ type ScheduledEvent = {
   event_type: string;
   status: string;
   zone: string | null;
+  // เฉพาะ event_type='followup': จำนวนครั้งที่ติดต่อไปแล้ว
+  contact_count?: number | null;
 };
 
 const TH_MONTHS = [
@@ -41,10 +43,13 @@ interface MonthProps {
   onEmptyDayClick?: (dateKey: string) => void;
   // Team filter — กติกาเดียวกับ EventCalendarList.controlledTeam:
   // block ที่ไม่ระบุทีม (null) เห็นทุกทีม · "block" = งานอื่นล้วน
-  team?: "all" | "survey" | "install" | "block";
+  // "followup" = นัดติดตามของ sales ล้วน (fetch เพิ่มจาก API ด้วย include=followup)
+  team?: "all" | "survey" | "install" | "block" | "followup";
+  // parent คุมเดือนเอง (nav อยู่ใน sticky header ของหน้า) → ซ่อน nav ภายใน
+  hideNav?: boolean;
 }
 
-export default function EventCalendarMonth({ toolbarRight, year: controlledYear, month: controlledMonth, onEmptyDayClick, team = "all" }: MonthProps) {
+export default function EventCalendarMonth({ toolbarRight, year: controlledYear, month: controlledMonth, onEmptyDayClick, team = "all", hideNav = false }: MonthProps) {
   const openLead = useOpenLead();
   const today = new Date();
   const [internalYear, setInternalYear] = useState(today.getFullYear());
@@ -57,12 +62,15 @@ export default function EventCalendarMonth({ toolbarRight, year: controlledYear,
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    apiFetch("/api/surveys/scheduled").then(setEvents).catch(console.error).finally(() => setLoading(false));
-  }, []);
+    apiFetch(`/api/surveys/scheduled${team === "followup" ? "?include=followup" : ""}`)
+      .then(setEvents).catch(console.error).finally(() => setLoading(false));
+  }, [team]);
 
   const eventsByDay = useMemo(() => {
     const filtered = team === "all"
       ? events
+      : team === "followup"
+      ? events.filter((e) => e.event_type === "followup")
       : team === "block"
       ? events.filter((e) => e.event_type === "block")
       : events.filter((e) => {
@@ -101,6 +109,7 @@ export default function EventCalendarMonth({ toolbarRight, year: controlledYear,
 
   return (
     <div>
+      {!hideNav && (
       <div className="flex items-center gap-2 mb-3">
         <button type="button" onClick={prevMonth} className="w-9 h-8 rounded-lg border border-gray-200 bg-white hover:bg-gray-50 flex items-center justify-center">
           <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}><path strokeLinecap="round" strokeLinejoin="round" d="M15 19l-7-7 7-7" /></svg>
@@ -112,6 +121,7 @@ export default function EventCalendarMonth({ toolbarRight, year: controlledYear,
         <div className="text-base md:text-lg font-bold ml-2">{TH_MONTHS[month]} {year + 543}</div>
         {toolbarRight && <div className="ml-auto">{toolbarRight}</div>}
       </div>
+      )}
 
       <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
         <div className="grid grid-cols-7 bg-gray-50 border-b border-gray-200">
@@ -149,18 +159,21 @@ export default function EventCalendarMonth({ toolbarRight, year: controlledYear,
                   <div className="space-y-1">
                     {evs.slice(0, 4).map((ev, j) => {
                       const isBlock = ev.event_type === "block";
-                      const isSurvey = !isBlock && (ev.status === "survey" || ev.event_type === "survey");
+                      const isFollowup = ev.event_type === "followup";
+                      const isSurvey = !isBlock && !isFollowup && (ev.status === "survey" || ev.event_type === "survey");
                       // Border + icon-tint coloured by team (survey vs install)
                       // so teams are distinguishable at a glance. Block stays gray.
-                      // สีต้องตรง legend ในหน้า calendar: Survey = ม่วง (--active), Solar = ส้ม
-                      const tc = isBlock ? null : isSurvey ? "#8b5cf6" : "#f97316";
+                      // สีต้องตรง legend ในหน้า calendar: Survey = ม่วง (--active), Solar = ส้ม, นัดติดตาม = น้ำเงิน
+                      const tc = isBlock ? null : isFollowup ? "#3b82f6" : isSurvey ? "#8b5cf6" : "#f97316";
                       const baseCls = isBlock
                         ? "bg-gray-100 text-gray-700 border-gray-300"
                         : "bg-white text-gray-800 border-gray-200";
+                      // เลยกำหนดติดตาม → กรอบแดงให้สะดุดตา (เนื้อในยังโทนน้ำเงินนัดติดตาม)
+                      const isOverdueFollowup = isFollowup && key < todayKey;
                       const inlineStyle: React.CSSProperties | undefined = tc
-                        ? { borderColor: tc, color: tc, backgroundColor: `${tc}14` }
+                        ? { borderColor: isOverdueFollowup ? "#ef4444" : tc, color: tc, backgroundColor: `${tc}14` }
                         : undefined;
-                      const kindLabel = isBlock ? "งานอื่น" : isSurvey ? "สำรวจ" : "ติดตั้ง";
+                      const kindLabel = isBlock ? "งานอื่น" : isFollowup ? "นัดติดตาม" : isSurvey ? "สำรวจ" : "ติดตั้ง";
                       const handleClick = () => { if (!isBlock) openLead(ev.id); };
                       return (
                         <button
@@ -176,6 +189,10 @@ export default function EventCalendarMonth({ toolbarRight, year: controlledYear,
                             <svg className="w-3 h-3 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
                               <path strokeLinecap="round" strokeLinejoin="round" d="M18.364 18.364A9 9 0 005.636 5.636m12.728 12.728A9 9 0 015.636 5.636m12.728 12.728L5.636 5.636" />
                             </svg>
+                          ) : isFollowup ? (
+                            <svg className="w-3 h-3 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                              <path strokeLinecap="round" strokeLinejoin="round" d="M2.25 6.75c0 8.284 6.716 15 15 15h2.25a2.25 2.25 0 002.25-2.25v-1.372c0-.516-.351-.966-.852-1.091l-4.423-1.106c-.44-.11-.902.055-1.173.417l-.97 1.293c-.282.376-.769.542-1.21.38a12.035 12.035 0 01-7.143-7.143c-.162-.441.004-.928.38-1.21l1.293-.97c.363-.271.527-.734.417-1.173L6.963 3.102a1.125 1.125 0 00-1.091-.852H4.5A2.25 2.25 0 002.25 4.5v2.25z" />
+                            </svg>
                           ) : isSurvey ? (
                             <svg className="w-3 h-3 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
                               <path strokeLinecap="round" strokeLinejoin="round" d="M21 21l-5.197-5.197m0 0A7.5 7.5 0 105.196 5.196a7.5 7.5 0 0010.607 10.607z" />
@@ -184,6 +201,17 @@ export default function EventCalendarMonth({ toolbarRight, year: controlledYear,
                             <BoltIcon className="w-3 h-3 shrink-0" strokeWidth={2} />
                           )}
                           <span className="truncate">{houseNumberOrNull(ev.house_number) ? `${houseNumberOrNull(ev.house_number)} - ${ev.full_name}` : ev.full_name}</span>
+                          {isFollowup && (ev.contact_count != null || key < todayKey) && (
+                            <span className="ml-auto shrink-0 inline-flex items-center gap-1 font-semibold tabular-nums">
+                              {/* เลยกำหนดติดตาม — จุดนัดอยู่ก่อนวันนี้แต่ยังไม่ถูกปลด */}
+                              {key < todayKey && (
+                                <svg className="w-3.5 h-3.5 text-red-500" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                                  <path strokeLinecap="round" strokeLinejoin="round" d="M12 9v3.75m0 3.75h.008v.008H12v-.008zM21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                                </svg>
+                              )}
+                              {ev.contact_count != null && ev.contact_count}
+                            </span>
+                          )}
                         </button>
                       );
                     })}
