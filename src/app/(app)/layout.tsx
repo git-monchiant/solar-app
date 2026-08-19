@@ -5,6 +5,7 @@ import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import BottomNav from "@/components/layout/BottomNav";
 import { DialogProvider } from "@/components/ui/Dialog";
 import { useMe } from "@/lib/roles";
+import Loading from "@/components/ui/Loading";
 
 function DbBanner() {
   const { me } = useMe();
@@ -54,9 +55,7 @@ function AppShell({ children }: { children: React.ReactNode }) {
 
   if (!ready) {
     return (
-      <div className="h-full flex items-center justify-center bg-gray-50">
-        <div className="w-8 h-8 border-2 border-primary/30 border-t-primary rounded-full animate-spin" />
-      </div>
+      <Loading />
     );
   }
 
@@ -77,7 +76,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
       <div className="flex flex-col h-full">
         <DbBanner />
         <div className="flex-1 min-h-0">
-          <Suspense fallback={<div className="h-full flex items-center justify-center bg-gray-50"><div className="w-8 h-8 border-2 border-primary/30 border-t-primary rounded-full animate-spin" /></div>}>
+          <Suspense fallback={<Loading />}>
             <AppShell>{children}</AppShell>
           </Suspense>
         </div>

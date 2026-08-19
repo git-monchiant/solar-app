@@ -70,14 +70,14 @@ export default function ListPageHeader({
             value={search}
             onChange={(e) => onSearchChange(e.target.value)}
             placeholder={searchPlaceholder}
-            className="w-full h-8 pl-10 pr-4 rounded-full border border-white/30 bg-white/30 backdrop-blur-sm text-sm text-gray-800 placeholder-gray-500 focus:outline-none focus:bg-white/60 focus:border-white/60 transition-all"
+            className="w-full h-8 pl-10 pr-4 rounded-full border border-gray-200 bg-gray-50 text-sm text-gray-800 placeholder-gray-400 focus:outline-none focus:bg-white focus:border-gray-300 transition-all"
           />
         </div>
         {actionLabel && onAction && (
           <button
             type="button"
             onClick={onAction}
-            className="shrink-0 h-8 px-4 rounded-full bg-white/30 backdrop-blur-sm border border-white/30 text-sm font-semibold text-gray-800 hover:bg-white/60 transition-all"
+            className="shrink-0 h-8 px-4 rounded-full bg-gray-50 border border-gray-200 text-sm font-semibold text-gray-800 hover:bg-gray-100 transition-all"
           >
             {actionLabel}
           </button>
@@ -93,8 +93,8 @@ export default function ListPageHeader({
         )}
       </div>
 
-      {/* Tabs */}
-      <div className="flex items-center px-5">
+      {/* Tabs / filter row — เส้นจางคั่นจากโซนค้นหาด้านบน */}
+      <div className="flex items-center px-5 border-t border-gray-100">
       {tabsLeft && <div className="shrink-0 py-1.5 mr-3 text-sm font-semibold text-gray-600">{tabsLeft}</div>}
       <div ref={tabsRef} className="flex-1 flex overflow-x-auto overflow-y-hidden scrollbar-hide overscroll-x-contain touch-pan-x">
         {tabs.map((t) => (

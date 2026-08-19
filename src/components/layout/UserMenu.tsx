@@ -2,17 +2,20 @@
 
 import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
-import { useMe, ROLE_LABEL } from "@/lib/roles";
+import { useMe, useActiveRoles, ROLE_LABEL } from "@/lib/roles";
 import { useDialog } from "@/components/ui/Dialog";
+import { RolePickerModal } from "./RoleSwitcher";
 
 // เมนูผู้ใช้มุมขวาบน — avatar อักษรย่อ กดแล้วเปิด dropdown (โปรไฟล์ / ออกจากระบบ)
 // ใช้บนหน้า hub ที่ไม่มี left menu · พฤติกรรม popover ตามแบบ ui/Dropdown
 // (คลิกนอก/Escape ปิด) · logout = flow เดียวกับหน้า Profile รวม confirm dialog
 export default function UserMenu() {
   const { me } = useMe();
+  const { availableRoles } = useActiveRoles();
   const dialog = useDialog();
   const router = useRouter();
   const [open, setOpen] = useState(false);
+  const [rolePickerOpen, setRolePickerOpen] = useState(false);
   const rootRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -57,19 +60,17 @@ export default function UserMenu() {
 
   return (
     <div ref={rootRef} className="relative">
+      {/* trigger = avatar กลมล้วน (ชื่อ/ลูกศร/กรอบ เอาออกตามคำขอ) */}
       <button
         type="button"
         onClick={() => setOpen((o) => !o)}
         aria-haspopup="menu"
         aria-expanded={open}
-        className={`flex items-center gap-2 pl-1 pr-2.5 py-1 rounded-full border transition-colors ${open ? "bg-white border-gray-300" : "border-transparent hover:bg-gray-100"}`}
+        title={me.full_name || me.username}
+        className={`rounded-full transition-all ${open ? "ring-2 ring-primary/50" : "hover:opacity-85"}`}
         style={{ minHeight: 0 }}
       >
         <span className="w-9 h-9 rounded-full bg-primary/15 text-primary-dark font-bold text-sm flex items-center justify-center">{initials}</span>
-        <span className="hidden md:block text-sm font-semibold text-gray-700 max-w-[140px] truncate">{me.full_name || me.username}</span>
-        <svg className={`w-3 h-3 text-gray-400 transition-transform ${open ? "rotate-180" : ""}`} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-          <path strokeLinecap="round" strokeLinejoin="round" d="M19.5 8.25l-7.5 7.5-7.5-7.5" />
-        </svg>
       </button>
 
       {open && (
@@ -78,6 +79,20 @@ export default function UserMenu() {
             <div className="text-sm font-bold text-gray-900 truncate">{me.full_name || me.username}</div>
             <div className="text-xs text-gray-500 truncate">@{me.username}{roleLabel ? ` · ${roleLabel}` : ""}</div>
           </div>
+          {/* สลับ role ย้ายมาอยู่ในเมนูนี้ (ปุ่ม switch เดิมบนแถว header เอาออกแล้ว) */}
+          {availableRoles.length > 1 && (
+            <button
+              type="button"
+              role="menuitem"
+              onClick={() => { setOpen(false); setRolePickerOpen(true); }}
+              className="w-full flex items-center gap-3 px-4 py-2.5 text-sm font-semibold text-gray-700 hover:bg-gray-50 transition-colors"
+            >
+              <svg className="w-5 h-5 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                <path strokeLinecap="round" strokeLinejoin="round" d="M7.5 21L3 16.5m0 0L7.5 12M3 16.5h13.5m0-13.5L21 7.5m0 0L16.5 12M21 7.5H7.5" />
+              </svg>
+              Role Switcher
+            </button>
+          )}
           <button
             type="button"
             role="menuitem"
@@ -91,6 +106,7 @@ export default function UserMenu() {
           </button>
         </div>
       )}
+      <RolePickerModal open={rolePickerOpen} onClose={() => setRolePickerOpen(false)} />
     </div>
   );
 }
