@@ -31,8 +31,10 @@ import { useDialog } from "@/components/ui/Dialog";
 import { useIsMobile } from "@/lib/hooks/useIsMobile";
 import { formatThaiDate as formatDate, formatThaiTime, formatNumber } from "@/lib/utils/formatters";
 import { INFO_LABELS, PRIMARY_REASON_LABEL } from "@/lib/constants/info-labels";
+import { getStatusLabel, getStatusColor } from "@/lib/constants/statuses";
 import FallbackImage from "@/components/ui/FallbackImage";
 import NotificationBell from "@/components/layout/NotificationBell";
+import Loading from "@/components/ui/Loading";
 
 const formatAcUnits = (s: string | null): string | null => {
   if (!s) return null;
@@ -693,7 +695,9 @@ function StepCard({
 
   const rootCls = fullscreen
     ? "fixed inset-0 z-[9999] bg-white flex flex-col safe-top"
-    : `group relative rounded-2xl overflow-hidden transition-all ${container}`;
+    // scroll-mt = ความสูง sticky header (~124px) + 12px ให้เท่าระยะ py-3 ของราง
+    // STEPS — ตอน auto-scroll การ์ดจะเรียงขอบบนตรงกับปุ่ม step ข้างซ้ายพอดี
+    : `group relative rounded-2xl overflow-hidden transition-all scroll-mt-34 ${container}`;
   const bodyCls = fullscreen
     ? "flex-1 overflow-y-auto p-4 safe-bottom"
     : "px-5 pb-5 pt-3 border-t border-gray-100";
@@ -936,9 +940,7 @@ export default function LeadDetailPage({ params }: { params: Promise<{ id: strin
 
   if (loadingLead) {
     return (
-      <div className="flex items-center justify-center h-full py-20">
-        <div className="w-10 h-10 border-3 border-primary/30 border-t-primary rounded-full animate-spin" />
-      </div>
+      <Loading />
     );
   }
   if (!lead) return <div className="text-center py-12 text-gray-500">Not found</div>;
@@ -992,46 +994,124 @@ export default function LeadDetailPage({ params }: { params: Promise<{ id: strin
   return (
     <div className="flex flex-col h-full">
       {/* Header — subtle primary tint */}
-      <div className="bg-gradient-to-b from-primary via-primary/50 to-white safe-top sticky top-0 z-40">
-        {/* Top row: back + name + call */}
-        <div className="pl-3 pr-5 pt-3 flex items-center gap-2">
-          {focus ? (
-            <button type="button" onClick={() => setShowProfileModal(true)}
-              title={`Grade ${lead.customer_grade || "-"}`}
-              className={`w-11 h-11 rounded-full hover:opacity-80 transition-colors shrink-0 flex items-center justify-center ${
-                lead.customer_grade === "A" ? "text-emerald-600" :
-                lead.customer_grade === "B" ? "text-sky-600" :
-                lead.customer_grade === "C" ? "text-amber-500" :
-                lead.customer_grade === "D" ? "text-orange-500" :
-                lead.customer_grade === "E" ? "text-gray-500" :
-                lead.customer_grade === "F" ? "text-red-600" :
-                "text-gray-600"
-              }`}
-              style={{ minHeight: 0 }}>
-              <svg className="w-9 h-8" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
-                <path strokeLinecap="round" strokeLinejoin="round" d="M17.982 18.725A7.488 7.488 0 0012 15.75a7.488 7.488 0 00-5.982 2.975m11.963 0a9 9 0 10-11.963 0m11.963 0A8.966 8.966 0 0112 21a8.966 8.966 0 01-5.982-2.275M15 9.75a3 3 0 11-6 0 3 3 0 016 0z" />
-              </svg>
-            </button>
-          ) : (
-            <button type="button" onClick={() => window.history.back()} className="p-2 rounded-full text-gray-600 hover:bg-gray-200 transition-colors shrink-0" style={{ minHeight: 0 }}>
+      <div className="bg-white border-b border-gray-200 safe-top sticky top-0 z-40">
+        {/* Header: [คอลัมน์ avatar กว้างเท่าราง STEPS — เส้นขวาลากต่อเนื่องถึงบนสุด]
+            | [‹ + ชื่อ+ป้าย / meta] [ปุ่มขวา] */}
+        <div className="flex items-stretch">
+          {/* จอเล็ก: ปุ่มย้อนกลับอยู่หน้า avatar (ลำดับ ‹ รูป ชื่อ ติดกัน) — จอใหญ่ใช้ตัวใน
+              คอลัมน์ขวาแทน เพื่อไม่ให้เส้นแนวตั้งเลื่อนจากราง STEPS */}
+          {!focus && (
+            <button type="button" onClick={() => window.history.back()} className="md:hidden self-center ml-1 p-1.5 rounded-full text-gray-600 hover:bg-gray-200 transition-colors shrink-0" style={{ minHeight: 0 }}>
               <ChevronLeftIcon className="w-5 h-5" strokeWidth={2.5} />
             </button>
           )}
-          <div className="flex-1 min-w-0 flex items-center gap-1">
-            <h1 className="text-2xl font-bold tracking-tight leading-tight text-gray-900 truncate">
+          <div className="max-md:hidden w-20 shrink-0 border-r border-gray-200 flex items-center justify-center py-2">
+          {/* avatar กินความสูงทั้งชื่อ+meta — สีตามเกรด กดเปิดโปรไฟล์ (ทุกโหมด) */}
+          <button type="button" onClick={() => setShowProfileModal(true)}
+            title={`Grade ${lead.customer_grade || "-"}`}
+            className={`relative w-14 h-14 rounded-full hover:opacity-80 transition-colors shrink-0 flex items-center justify-center ${
+              lead.customer_grade === "A" ? "text-emerald-600" :
+              lead.customer_grade === "B" ? "text-sky-600" :
+              lead.customer_grade === "C" ? "text-amber-500" :
+              lead.customer_grade === "D" ? "text-orange-500" :
+              lead.customer_grade === "E" ? "text-gray-500" :
+              lead.customer_grade === "F" ? "text-red-600" :
+              "text-gray-600"
+            }`}
+            style={{ minHeight: 0 }}>
+            {/* เชื่อม LINE แล้ว → ใช้รูปโปรไฟล์ LINE (ขอบสีตามเกรด) แทนไอคอน */}
+            {lead.line_id && lead.line_picture_url ? (
+              // eslint-disable-next-line @next/next/no-img-element
+              <img src={lead.line_picture_url} alt="" className="w-full h-full rounded-full object-cover border-2 border-current" />
+            ) : (
+              <svg className="w-12 h-12" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
+                <path strokeLinecap="round" strokeLinejoin="round" d="M17.982 18.725A7.488 7.488 0 0012 15.75a7.488 7.488 0 00-5.982 2.975m11.963 0a9 9 0 10-11.963 0m11.963 0A8.966 8.966 0 0112 21a8.966 8.966 0 01-5.982-2.275M15 9.75a3 3 0 11-6 0 3 3 0 016 0z" />
+              </svg>
+            )}
+            {/* ตราเกรดมุมขวาล่างของ avatar — เกรดเป็นคุณสมบัติของ "ตัวลูกค้า"
+                เลยผูกกับรูป ไม่ไปแย่งพื้นที่กับป้ายสถานะข้างชื่อ */}
+            {lead.customer_grade && (
+              <span className={`absolute -bottom-0.5 -right-0.5 w-5 h-5 rounded-full text-[10px] font-bold text-white flex items-center justify-center ring-2 ring-white ${
+                lead.customer_grade === "A" ? "bg-emerald-500" :
+                lead.customer_grade === "B" ? "bg-sky-500" :
+                lead.customer_grade === "C" ? "bg-amber-500" :
+                lead.customer_grade === "D" ? "bg-orange-500" :
+                lead.customer_grade === "F" ? "bg-red-500" :
+                "bg-gray-400"
+              }`}>{lead.customer_grade}</span>
+            )}
+          </button>
+          </div>
+          <div className="flex-1 min-w-0 flex items-center gap-2 pl-1.5 md:pl-3 pr-4 md:pr-5 py-2.5">
+          {!focus && (
+            <button type="button" onClick={() => window.history.back()} className="max-md:hidden p-2 -ml-1 rounded-full text-gray-600 hover:bg-gray-200 transition-colors shrink-0" style={{ minHeight: 0 }}>
+              <ChevronLeftIcon className="w-5 h-5" strokeWidth={2.5} />
+            </button>
+          )}
+          <div className="flex-1 min-w-0">
+          <div className="flex items-center gap-2 min-w-0">
+            <h1 className="text-lg md:text-xl font-bold tracking-tight leading-tight text-gray-900 truncate">
               {(() => {
                 const hn = houseNumberOrNull(lead.house_number);
                 const nm = stripThaiTitle(lead.full_name);
                 return hn ? `${hn} - ${nm}` : nm;
               })()}
             </h1>
-            {!focus && (
-              <button type="button" onClick={() => setShowProfileModal(true)} className="shrink-0 w-8 h-8 rounded-full hover:bg-gray-200 flex items-center justify-center text-gray-400 hover:text-primary transition-colors" style={{ minHeight: 0 }}>
-                <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                  <path strokeLinecap="round" strokeLinejoin="round" d="M17.982 18.725A7.488 7.488 0 0012 15.75a7.488 7.488 0 00-5.982 2.975m11.963 0a9 9 0 10-11.963 0m11.963 0A8.966 8.966 0 0112 21a8.966 8.966 0 01-5.982-2.275M15 9.75a3 3 0 11-6 0 3 3 0 016 0z" />
-                </svg>
-              </button>
-            )}
+            {/* สถานะปัจจุบันป้ายเดียวข้างชื่อ (เกรดย้ายไปเป็นตรามุม avatar แล้ว)
+                สีเดียวกับ pill สถานะบนการ์ด lead — ระบบสีเดียวทั้งแอป */}
+            <span className={`hidden sm:inline-flex shrink-0 text-xxs font-bold uppercase tracking-wide px-2 py-0.5 rounded-full text-white ${getStatusColor(lead)}`}>
+              {getStatusLabel(lead)}
+            </span>
+          </div>
+          {/* Meta — บรรทัดเดียว truncate ใต้ชื่อ ชิดคอลัมน์เดียวกัน */}
+          <div className="mt-0.5 text-xs text-gray-600 leading-tight flex items-center gap-1.5 min-w-0">
+            <svg className="w-3.5 h-3.5 text-gray-400 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+              <path strokeLinecap="round" strokeLinejoin="round" d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z" />
+              <path strokeLinecap="round" strokeLinejoin="round" d="M15 11a3 3 0 11-6 0 3 3 0 016 0z" />
+            </svg>
+            <span className="truncate">
+              {(() => {
+                // ชื่อโครงการที่เป็นขีด/ว่าง ("-") ถือว่าไม่มี — กันขีดโดดๆ กลางบรรทัด
+                const proj = lead.project_name && !/^[\s\-–—]+$/.test(lead.project_name) ? lead.project_name : null;
+                return (
+                  <>
+                    {lead.installation_address && <span className="font-bold text-gray-900">{lead.installation_address}</span>}
+                    {lead.installation_address && proj && <span className="text-gray-300"> · </span>}
+                    {proj}
+                  </>
+                );
+              })()}
+              {lead.contact_date && (() => {
+                const aging = Math.floor((Date.now() - new Date(lead.contact_date).getTime()) / 86400000);
+                const toneText = aging >= 14 ? "text-red-600" : aging >= 7 ? "text-amber-600" : "text-emerald-600";
+                return (
+                  <>
+                    <span className="text-gray-300 mx-1.5">·</span>
+                    ติดต่อ {formatDate(lead.contact_date)}
+                    {aging > 0 && <span className={`ml-1 font-semibold ${toneText}`}>({aging} วัน)</span>}
+                  </>
+                );
+              })()}
+              {lead.phone && (
+                <>
+                  <span className="text-gray-300 mx-1.5">·</span>
+                  <span className="font-mono tabular-nums">{lead.phone}</span>
+                </>
+              )}
+              {lead.source && (
+                <>
+                  <span className="text-gray-300 mx-1.5">·</span>
+                  {getSourceStyle(lead.source).label}
+                </>
+              )}
+              {isUpgrade && (
+                <>
+                  <span className="text-gray-300 mx-1.5">·</span>
+                  <span className="font-semibold text-purple-600">↑ Scale Up</span>
+                </>
+              )}
+            </span>
+          </div>
           </div>
           <NotificationBell />
           {/* LINE link button — connected: open unmap modal; not connected: open picker */}
@@ -1043,7 +1123,7 @@ export default function LeadDetailPage({ params }: { params: Promise<{ id: strin
             }}
             title={lead.line_id ? "คลิกเพื่อยกเลิกการเชื่อม LINE" : "เชื่อมกับ LINE ลูกค้า"}
             style={{ minHeight: 0 }}
-            className={`shrink-0 w-11 h-11 rounded-full flex items-center justify-center active:scale-95 transition-all ${
+            className={`shrink-0 w-9 h-9 md:w-11 md:h-11 rounded-full flex items-center justify-center active:scale-95 transition-all ${
               lead.line_id
                 ? "bg-emerald-500 text-white shadow-lg shadow-emerald-500/40 hover:bg-emerald-600"
                 : "bg-white text-gray-500 shadow border border-gray-200 hover:border-active/40 hover:text-active"
@@ -1054,67 +1134,16 @@ export default function LeadDetailPage({ params }: { params: Promise<{ id: strin
           {lead.phone && (
             <a
               href={`tel:${lead.phone}`}
-              className="shrink-0 w-11 h-11 rounded-full bg-primary text-white shadow-lg shadow-primary/40 flex items-center justify-center hover:bg-primary-dark active:scale-95 transition-all"
+              className="shrink-0 w-9 h-9 md:w-11 md:h-11 rounded-full bg-primary text-white shadow-lg shadow-primary/40 flex items-center justify-center hover:bg-primary-dark active:scale-95 transition-all"
               aria-label="โทร"
+              style={{ minHeight: 0, minWidth: 0 }}
             >
               <PhoneIcon className="w-5 h-5" width="20" height="20" />
             </a>
           )}
-        </div>
-
-        {/* Meta — order: project (under name), source/upgrade badges, phone */}
-        <div className="px-5 pb-3 pt-1 space-y-1">
-          {(lead.project_name || lead.installation_address || lead.contact_date) && (
-            <div className="text-xs text-gray-600 leading-tight flex items-center gap-1.5 min-w-0">
-              <svg className="w-3.5 h-3.5 text-gray-400 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                <path strokeLinecap="round" strokeLinejoin="round" d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z" />
-                <path strokeLinecap="round" strokeLinejoin="round" d="M15 11a3 3 0 11-6 0 3 3 0 016 0z" />
-              </svg>
-              <span className="truncate">
-                {lead.installation_address && <span className="font-bold text-gray-900">{lead.installation_address}</span>}
-                {lead.installation_address && lead.project_name && <span className="text-gray-300"> · </span>}
-                {lead.project_name}
-                {lead.contact_date && (() => {
-                  const aging = Math.floor((Date.now() - new Date(lead.contact_date).getTime()) / 86400000);
-                  const toneText = aging >= 14 ? "text-red-600" : aging >= 7 ? "text-amber-600" : "text-emerald-600";
-                  return (
-                    <>
-                      <span className="text-gray-300 mx-1.5">·</span>
-                      ติดต่อ {formatDate(lead.contact_date)}
-                      {aging > 0 && <span className={`ml-1 font-semibold ${toneText}`}>({aging} วัน)</span>}
-                    </>
-                  );
-                })()}
-              </span>
-            </div>
-          )}
-          <div className="text-xs text-gray-600 leading-tight flex items-center gap-1.5 flex-wrap">
-            {lead.phone && (
-              <>
-                <PhoneIcon className="w-3.5 h-3.5 text-gray-400 shrink-0" />
-                <span className="font-mono tabular-nums">{lead.phone}</span>
-                <span className="text-gray-300">·</span>
-              </>
-            )}
-            {lead.source && (
-              <span className="inline-flex items-center gap-1">
-                <UserIcon className="w-3.5 h-3.5 text-gray-400" strokeWidth={2} />
-                {getSourceStyle(lead.source).label}
-              </span>
-            )}
-            {isUpgrade && (
-              <>
-                <span className="text-gray-300">·</span>
-                <span className="inline-flex items-center gap-1 font-semibold text-purple-600">
-                  <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
-                    <path strokeLinecap="round" strokeLinejoin="round" d="M4.5 10.5L12 3m0 0l7.5 7.5M12 3v18" />
-                  </svg>
-                  Scale Up
-                </span>
-              </>
-            )}
           </div>
         </div>
+
 
         {/* Tabs row + (desktop) left step-nav header + Activity Log header,
             all column-aligned with the panels below. */}
@@ -1932,7 +1961,8 @@ export default function LeadDetailPage({ params }: { params: Promise<{ id: strin
             })()}
           </div>
         ) : tab === "workflow" ? (
-          <div className="p-4 space-y-3">
+          // pt-3 = ระยะเดียวกับ py-3 ของราง STEPS ข้างซ้าย ให้ขอบบนเริ่มเท่ากัน
+          <div className="px-4 pb-4 pt-3 space-y-3">
             {/* Latest Contact — ข้อมูลการติดต่อล่าสุด */}
             {(() => {
               // DB-first: every contact event lives in lead_activities (including register/walk-in)
