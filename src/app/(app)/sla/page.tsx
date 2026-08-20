@@ -10,7 +10,8 @@ import { useOpenLead } from "@/lib/hooks/useOpenLead";
 import { useActiveRoles, useMe } from "@/lib/roles";
 
 type SlaStatus = "active" | "warning" | "critical" | "breached";
-type SlaTab = "all" | SlaStatus;
+type SlaVisibleStatus = Exclude<SlaStatus, "critical">;
+type SlaTab = "all" | SlaVisibleStatus;
 
 type SlaItem = {
   id: number;
@@ -45,9 +46,9 @@ type SolarUser = { id: number; full_name: string };
 
 const STATUS_LABEL: Record<SlaStatus, string> = {
   active: "กำลังดำเนินการ",
-  warning: "ใกล้กำหนด",
-  critical: "เร่งด่วน",
-  breached: "เกินกำหนด",
+  warning: "ใกล้กำหนด SLA",
+  critical: "ใกล้กำหนด SLA",
+  breached: "เกินกำหนด SLA",
 };
 
 const STATUS_STYLE: Record<SlaStatus, { chip: string; dot: string; card: string }> = {
@@ -58,7 +59,7 @@ const STATUS_STYLE: Record<SlaStatus, { chip: string; dot: string; card: string 
 };
 
 function SummaryCard({ status, count, active, onClick }: {
-  status: SlaStatus;
+  status: SlaVisibleStatus;
   count: number;
   active: boolean;
   onClick: () => void;
@@ -161,19 +162,20 @@ export default function SlaDashboardPage() {
   };
 
   const counts = data?.counts ?? { active: 0, warning: 0, critical: 0, breached: 0 };
+  const nearDueCount = counts.warning + counts.critical;
   const total = counts.active + counts.warning + counts.critical + counts.breached;
   const tabs = [
     { key: "all", label: "ทั้งหมด", count: total },
-    { key: "breached", label: "เกินกำหนด", count: counts.breached },
-    { key: "critical", label: "เร่งด่วน", count: counts.critical },
-    { key: "warning", label: "ใกล้กำหนด", count: counts.warning },
+    { key: "breached", label: "เกินกำหนด SLA", count: counts.breached },
+    { key: "warning", label: "ใกล้กำหนด SLA", count: nearDueCount },
     { key: "active", label: "กำลังดำเนินการ", count: counts.active },
   ];
 
   const filteredItems = useMemo(() => {
     const needle = search.trim().toLocaleLowerCase("th");
     return (data?.items ?? []).filter(item => {
-      if (tab !== "all" && item.status !== tab) return false;
+      if (tab === "warning" && item.status !== "warning" && item.status !== "critical") return false;
+      if (tab !== "all" && tab !== "warning" && item.status !== tab) return false;
       if (!needle) return true;
       return [item.full_name, item.phone, item.owner_name, item.task_name, item.source, String(item.lead_id)]
         .some(value => String(value || "").toLocaleLowerCase("th").includes(needle));
@@ -205,12 +207,12 @@ export default function SlaDashboardPage() {
             <h2 className="text-xs font-bold uppercase tracking-wider text-gray-500">ภาพรวมสถานะ SLA</h2>
             <span className="text-xxs text-gray-400">อัปเดตอัตโนมัติทุก 1 นาที</span>
           </div>
-          <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
-            {(["breached", "critical", "warning", "active"] as SlaStatus[]).map(status => (
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+            {(["breached", "warning", "active"] as SlaVisibleStatus[]).map(status => (
               <SummaryCard
                 key={status}
                 status={status}
-                count={counts[status]}
+                count={status === "warning" ? nearDueCount : counts[status]}
                 active={tab === status}
                 onClick={() => setTab(current => current === status ? "all" : status)}
               />

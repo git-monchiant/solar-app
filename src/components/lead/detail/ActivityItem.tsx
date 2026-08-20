@@ -1,6 +1,6 @@
 import { STATUS_CONFIG, getMainStatus } from "@/lib/constants/statuses";
 
-interface Activity {
+export interface Activity {
   id: number;
   activity_type: string;
   title: string;
@@ -13,8 +13,9 @@ interface Activity {
   followup_date: string | null;
   created_by_name: string | null;
   created_at: string;
+  contact_result?: string | null;
+  contact_outcome_code?: string | null;
 }
-
 // Chat-bubble icon, shared by both incoming and outgoing LINE entries.
 const LINE_ICON = "M2.25 12.76c0 1.6 1.123 2.994 2.707 3.227 1.068.157 2.148.279 3.238.364.466.037.893.281 1.153.671L12 21l2.652-3.978c.26-.39.687-.634 1.153-.67 1.09-.086 2.17-.208 3.238-.365 1.584-.233 2.707-1.626 2.707-3.228V6.741c0-1.602-1.123-2.995-2.707-3.228A48.394 48.394 0 0012 3c-2.392 0-4.744.175-7.043.513C3.373 3.746 2.25 5.14 2.25 6.741v6.018z";
 const typeConfig: Record<string, { icon: string; color: string }> = {
@@ -34,6 +35,7 @@ const typeConfig: Record<string, { icon: string; color: string }> = {
   payment_confirmed: { icon: "M2.25 18.75a60.07 60.07 0 0115.797 2.101c.727.198 1.453-.342 1.453-1.096V18.75M3.75 4.5v.75A.75.75 0 013 6h-.75m0 0v-.375c0-.621.504-1.125 1.125-1.125H20.25M2.25 6v9m18-10.5v.75c0 .414.336.75.75.75h.75m-1.5-1.5h.375c.621 0 1.125.504 1.125 1.125v9.75c0 .621-.504 1.125-1.125 1.125h-.375m1.5-1.5H21a.75.75 0 00-.75.75v.75m0 0H3.75m0 0h-.375a1.125 1.125 0 01-1.125-1.125V15m1.5 1.5v-.75A.75.75 0 003 15h-.75M15 10.5a3 3 0 11-6 0 3 3 0 016 0zm3 0h.008v.008H18V10.5zm-12 0h.008v.008H6V10.5z", color: "bg-emerald-600" },
   payment_rejected: { icon: "M12 9v3.75m9-.75a9 9 0 11-18 0 9 9 0 0118 0zm-9 3.75h.008v.008H12v-.008z", color: "bg-red-500" },
   quotation: { icon: "M19.5 14.25v-2.625a3.375 3.375 0 00-3.375-3.375h-1.5V5.25A2.25 2.25 0 0012.375 3h-6.75a2.25 2.25 0 00-2.25 2.25v13.5A2.25 2.25 0 005.625 21h6.75a2.25 2.25 0 002.25-2.25v-1.5m4.875-3l2.25 2.25m0 0l-2.25 2.25m2.25-2.25H9", color: "bg-cyan-600" },
+  grade_change: { icon: "M11.48 3.499a.562.562 0 011.04 0l2.125 5.111a.563.563 0 00.475.345l5.518.442c.499.04.701.663.321.988l-4.204 3.602a.563.563 0 00-.182.557l1.285 5.385a.562.562 0 01-.84.61l-4.725-2.885a.563.563 0 00-.586 0L6.982 20.54a.562.562 0 01-.84-.61l1.285-5.386a.562.562 0 00-.182-.557l-4.204-3.602a.562.562 0 01.321-.988l5.518-.442a.563.563 0 00.475-.345L11.48 3.5z", color: "bg-amber-500" },
 };
 
 const formatTime = (d: string) => new Date(d).toLocaleTimeString("th-TH", { hour: "2-digit", minute: "2-digit" });
@@ -62,11 +64,27 @@ const TYPE_LABELS: Record<string, string> = {
   slip_uploaded: "อัปโหลดสลิป",
   slip_submitted: "ส่งสลิป",
   payment_rejected: "ปฏิเสธสลิป",
+  payment_undone: "ยกเลิกการชำระเงิน",
+  payment_cheque_received: "รับเช็ค",
+  payment_cheque_deposited: "นำฝากเช็ค",
+  payment_cheque_bounced: "เช็คเด้ง",
+  payment_cheque_cancelled: "ยกเลิกเช็ค",
+  slip_unsubmitted: "ยกเลิกส่งสลิป",
   line: "LINE",
   line_sent: "ส่ง LINE",
   sms_sent: "ส่ง SMS",
   step_completed: "ขั้นตอนเสร็จ",
   quotation: "ใบเสนอราคา",
+  grade_change: "กำหนด Grade",
+  order_accepted: "ยืนยัน Order",
+  order_plan: "แผนชำระเงิน",
+  install_extra: "ค่าใช้จ่ายติดตั้งเพิ่มเติม",
+  warranty: "ใบรับประกัน",
+  warranty_evidence: "หลักฐานรับประกัน",
+  after_sales: "บริการหลังการขาย",
+  grid_tie: "ขอขนานไฟ",
+  returned_to_prospect: "ส่งกลับ Seeker",
+  sla_assignment: "มอบหมาย SLA",
   other: "อื่นๆ",
 };
 
@@ -143,6 +161,9 @@ export default function ActivityItem({ activity, isLast }: { activity: Activity;
     : activity.activity_type === "status_change" && newStatusLabel
       ? `เปลี่ยนสถานะเป็น : ${newStatusLabel}`
       : (apptLabel ?? TYPE_LABELS[activity.activity_type] ?? "บันทึก");
+  const gradeChange = activity.activity_type === "grade_change"
+    ? /(?:กำหนด\s*)?Grade:\s*(.*?)\s*→\s*(.*?)$/.exec(activity.title)
+    : null;
   const eventDate = activity.followup_date || activity.created_at;
   // Status changes to 'lost' / 'returned' read as cancellations — render the
   // dot + label in red so the timeline visually flags them.
@@ -219,6 +240,19 @@ export default function ActivityItem({ activity, isLast }: { activity: Activity;
             </div>
           );
         })()}
+        {gradeChange && (
+          <div className="flex items-center gap-1.5 mt-1 text-xs">
+            <span className="px-2 py-0.5 rounded-full border border-gray-200 bg-gray-50 text-gray-600 font-semibold">
+              Grade {gradeChange[1] || "-"}
+            </span>
+            <svg className="w-3 h-3 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+              <path strokeLinecap="round" strokeLinejoin="round" d="M17 8l4 4m0 0l-4 4m4-4H3" />
+            </svg>
+            <span className="px-2 py-0.5 rounded-full border border-amber-200 bg-amber-50 text-amber-700 font-semibold">
+              Grade {gradeChange[2] || "-"}
+            </span>
+          </div>
+        )}
         {activity.note && (
           <div className={`text-sm mt-1 whitespace-pre-wrap ${noteColor}`}>{activity.note}</div>
         )}
@@ -234,5 +268,3 @@ export default function ActivityItem({ activity, isLast }: { activity: Activity;
     </div>
   );
 }
-
-export type { Activity };

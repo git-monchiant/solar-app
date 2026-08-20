@@ -457,8 +457,9 @@ export default function OrderStep({ lead, state, refresh, expanded, onToggle }: 
   }, [lead.id]);
   // Loan follow-up activities, fetched once + after each save. Keyed by row
   // installment index parsed from "[งวดที่ N]" prefix in activity title.
-  type LoanFollowupActivity = { id: number; title: string; note: string | null; created_at: string; created_by_name: string | null; follow_up_date: string | null };
+  type LoanFollowupActivity = { id: number; title: string; note: string | null; created_at: string; created_by_name: string | null; follow_up_date: string | null; contact_outcome_code: string | null };
   const [loanActivities, setLoanActivities] = useState<LoanFollowupActivity[]>([]);
+  const [loanMilestoneSaving, setLoanMilestoneSaving] = useState<string | null>(null);
   const [expandedRow, setExpandedRow] = useState<number | null>(null);
   const loadActivities = async () => {
     try {
@@ -468,6 +469,34 @@ export default function OrderStep({ lead, state, refresh, expanded, onToggle }: 
   };
   useEffect(() => { loadActivities(); /* eslint-disable-next-line react-hooks/exhaustive-deps */ }, [lead.id]);
   const followupsByRow = (idx: number) => loanActivities.filter(a => a.title.startsWith(`[งวดที่ ${idx + 1}]`));
+  const recordLoanMilestone = async (idx: number, code: "loan_documents_complete" | "loan_preapproved" | "loan_preapproval_rejected") => {
+    const key = `${idx}:${code}`;
+    setLoanMilestoneSaving(key);
+    const noteMap = {
+      loan_documents_complete: "สำรวจเสร็จและส่งเอกสารสินเชื่อให้ธนาคารครบถ้วนแล้ว",
+      loan_preapproved: "ธนาคารแจ้งผลอนุมัติเบื้องต้นแล้ว",
+      loan_preapproval_rejected: "ธนาคารแจ้งผลไม่อนุมัติเบื้องต้นแล้ว",
+    } as const;
+    try {
+      await apiFetch(`/api/leads/${lead.id}/activities`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          activity_type: "loan_followup",
+          installment_index: idx,
+          followup_method: "other",
+          note: noteMap[code],
+          contact_outcome_code: code,
+        }),
+      });
+      await loadActivities();
+      await refresh();
+    } catch (e) {
+      setNextError(e instanceof Error ? e.message : "บันทึกสถานะสินเชื่อไม่สำเร็จ");
+    } finally {
+      setLoanMilestoneSaving(null);
+    }
+  };
 
   // Track every installment idx that already has a payments row (pending OR
   // confirmed) so we don't re-seed placeholders for it on the next click.
@@ -1446,6 +1475,42 @@ export default function OrderStep({ lead, state, refresh, expanded, onToggle }: 
                         </button>
                       )}
                     </div>
+                    {row.method === "loan" && (() => {
+                      const documentsComplete = rowFollowups.some(a => a.contact_outcome_code === "loan_documents_complete");
+                      const result = rowFollowups.find(a => ["loan_preapproved", "loan_preapproval_rejected"].includes(a.contact_outcome_code || ""));
+                      return (
+                        <div className="mt-2 rounded-md border border-blue-100 bg-blue-50/60 p-2">
+                          <div className="flex flex-wrap items-center gap-2">
+                            <span className="text-xs font-semibold text-blue-900">SLA สินเชื่อ</span>
+                            <button
+                              type="button"
+                              disabled={!canSelectQuotation || documentsComplete || loanMilestoneSaving !== null}
+                              onClick={() => recordLoanMilestone(i, "loan_documents_complete")}
+                              className="h-8 px-3 rounded-md border border-blue-200 bg-white text-xs font-semibold text-blue-700 disabled:opacity-50"
+                            >
+                              {documentsComplete ? "✓ ส่งเอกสารครบแล้ว" : "ยืนยันส่งเอกสารครบ"}
+                            </button>
+                            <button
+                              type="button"
+                              disabled={!canSelectQuotation || !documentsComplete || !!result || loanMilestoneSaving !== null}
+                              onClick={() => recordLoanMilestone(i, "loan_preapproved")}
+                              className="h-8 px-3 rounded-md border border-emerald-200 bg-white text-xs font-semibold text-emerald-700 disabled:opacity-50"
+                            >
+                              {result?.contact_outcome_code === "loan_preapproved" ? "✓ อนุมัติเบื้องต้น" : "ผล: อนุมัติเบื้องต้น"}
+                            </button>
+                            <button
+                              type="button"
+                              disabled={!canSelectQuotation || !documentsComplete || !!result || loanMilestoneSaving !== null}
+                              onClick={() => recordLoanMilestone(i, "loan_preapproval_rejected")}
+                              className="h-8 px-3 rounded-md border border-red-200 bg-white text-xs font-semibold text-red-600 disabled:opacity-50"
+                            >
+                              {result?.contact_outcome_code === "loan_preapproval_rejected" ? "✓ ไม่อนุมัติเบื้องต้น" : "ผล: ไม่อนุมัติเบื้องต้น"}
+                            </button>
+                          </div>
+                          <div className="mt-1 text-xxs text-blue-700/80">เริ่มนับ 15 วันเมื่อสำรวจเสร็จและยืนยันส่งเอกสารครบถ้วน</div>
+                        </div>
+                      );
+                    })()}
                     {/* Inline PaymentSection — slip_field is per-installment so each row gets its own pending payments row */}
                     {paymentOpen && (
                       <div className="mt-3 pt-3 border-t border-gray-100">
@@ -1731,6 +1796,15 @@ export default function OrderStep({ lead, state, refresh, expanded, onToggle }: 
                     headers: { "Content-Type": "application/json" },
                     body: JSON.stringify({ quotation_sent_date: new Date().toISOString().slice(0, 10) }),
                   }).catch(console.error);
+                  await apiFetch(`/api/leads/${lead.id}/activities`, {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({
+                      activity_type: "quotation",
+                      title: "ส่งใบเสนอราคาให้ลูกค้าทาง LINE",
+                      note: "ลูกค้าได้รับใบเสนอราคาแล้ว เริ่มติดตามการชำระเงินงวดที่ 1",
+                    }),
+                  });
                   setLineSent(true);
                 } catch {
                   setLineSent(false);

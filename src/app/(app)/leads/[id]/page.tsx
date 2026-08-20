@@ -6,6 +6,7 @@ import { stripThaiTitle, houseNumberOrNull } from "@/lib/utils/name";
 import { useEffect, useState, use, useCallback, useRef } from "react";
 import { useSearchParams } from "next/navigation";
 import ActivityTimeline from "@/components/lead/detail/ActivityTimeline";
+import { LeadSlaStageRows, LeadSlaSummary, isSlaFinished, useLeadSlaTimeline } from "@/components/lead/detail/LeadSlaTimeline";
 import SerialsUploader from "@/components/lead/detail/SerialsUploader";
 import PhotosTab from "@/components/lead/detail/PhotosTab";
 import AddActivityModal, { ActivityType } from "@/components/lead/detail/AddActivityModal";
@@ -30,6 +31,7 @@ import type { Lead, Package, CardStateKind } from "@/components/lead/detail/step
 import { useDialog } from "@/components/ui/Dialog";
 import { useIsMobile } from "@/lib/hooks/useIsMobile";
 import { formatThaiDate as formatDate, formatThaiTime, formatNumber } from "@/lib/utils/formatters";
+import { formatSlotsRange } from "@/lib/time-slots";
 import { INFO_LABELS, PRIMARY_REASON_LABEL } from "@/lib/constants/info-labels";
 import FallbackImage from "@/components/ui/FallbackImage";
 import NotificationBell from "@/components/layout/NotificationBell";
@@ -52,6 +54,23 @@ const otherOrLabel = (v: string | null, labels: Record<string, string>): string 
   if (!v) return null;
   if (v.startsWith("other:")) return v.slice(6) || null;
   return labels[v] || v;
+};
+
+const SLA_STEP_BY_POLICY: Record<string, number> = {
+  ASSIGN_OWNER: 0,
+  FIRST_CONTACT: 0,
+  CONTACT_RETRY: 0,
+  GRADE_A_NEXT_ACTION: 0,
+  GRADE_PLAYBOOK: 0,
+  ELECTRICITY_ASSESSMENT: 0,
+  BOOK_SURVEY: 0,
+  SITE_SURVEY: 1,
+  PROPOSAL_ROI: 2,
+  DEPOSIT_CLOSE: 3,
+  SCHEDULE_INSTALLATION: 4,
+  INSTALLATION: 4,
+  AFTER_SALES: 5,
+  CLOSE_LEAD: 5,
 };
 
 // Questionnaire (PreSurveyForm §1-§8) label maps. Codes MUST stay in sync
@@ -714,7 +733,24 @@ export default function LeadDetailPage({ params }: { params: Promise<{ id: strin
   const dialog = useDialog();
   const [lead, setLead] = useState<Lead | null>(null);
   const [activities, setActivities] = useState<Activity[]>([]);
-  type TimelinePayment = { id: number; step_no: number; slip_field: string; amount: number; confirmed_at: string | null; confirmed_by_name: string | null; submitted_at: string | null; submitted_by_name: string | null };
+  type TimelinePayment = {
+    id: number;
+    step_no: number;
+    slip_field: string;
+    amount: number;
+    description?: string | null;
+    payment_method?: string | null;
+    confirmed_at: string | null;
+    confirmed_by_name: string | null;
+    submitted_at: string | null;
+    submitted_by_name: string | null;
+    cheque_received_at?: string | null;
+    cheque_deposited_at?: string | null;
+    cheque_due_date?: string | null;
+    cheque_status?: string | null;
+    cheque_status_at?: string | null;
+    cheque_status_note?: string | null;
+  };
   const [paymentRows, setPaymentRows] = useState<TimelinePayment[]>([]);
   const [packages, setPackages] = useState<Package[]>([]);
   const [loadingLead, setLoadingLead] = useState(true);
@@ -722,6 +758,7 @@ export default function LeadDetailPage({ params }: { params: Promise<{ id: strin
   const [modalType, setModalType] = useState<ActivityType | null>(null);
   const [showLostModal, setShowLostModal] = useState(false);
   const [tab, setTab] = useState<"info" | "workflow" | "timeline" | "serials" | "photos" | "log">("workflow");
+  const { items: slaItems, loading: loadingSla, error: slaError, now: slaNow, summary: slaSummary, refresh: refreshSla } = useLeadSlaTimeline(Number(id));
   const [openSections, setOpenSections] = useState<Record<string, boolean>>({
     contact: true, address: true, interest: true, usage: true, system: true, finance: true, source: true, note: true,
     // PreSurvey tree — every section expanded by default so reviewers see
@@ -875,8 +912,8 @@ export default function LeadDetailPage({ params }: { params: Promise<{ id: strin
   }, [fetchLead, fetchActivities, id]);
 
   const refresh = useCallback(() => {
-    return Promise.all([fetchLead(), fetchActivities()]);
-  }, [fetchLead, fetchActivities]);
+    return Promise.all([fetchLead(), fetchActivities(), refreshSla()]);
+  }, [fetchLead, fetchActivities, refreshSla]);
 
   // Inline edit for the PreSurvey questionnaire tree — PATCHes a single
   // field on the lead row, then re-fetches so the tree reflects the new
@@ -954,6 +991,29 @@ export default function LeadDetailPage({ params }: { params: Promise<{ id: strin
   const hasPreSurveyDone = STEP_ORDER.indexOf(lead.status.split('-')[0]) > 0 || lead.status === "closed";
   const currentStep = stepIndex(lead.status);
   const visibleStep = focus ? (focusedStep ?? currentStep) : null;
+  const slaStepIndex = lead.sla_policy_code ? SLA_STEP_BY_POLICY[lead.sla_policy_code] : undefined;
+  const slaStatusMeta = lead.sla_status ? {
+    breached: { label: "เกินกำหนด", dot: "bg-red-500", badge: "border-red-200 bg-red-50 text-red-700" },
+    critical: { label: "เร่งด่วน", dot: "bg-orange-500", badge: "border-orange-200 bg-orange-50 text-orange-700" },
+    warning: { label: "ใกล้กำหนด", dot: "bg-amber-400", badge: "border-amber-200 bg-amber-50 text-amber-700" },
+    active: { label: "กำลังดำเนินการ", dot: "bg-sky-500", badge: "border-sky-200 bg-sky-50 text-sky-700" },
+  }[lead.sla_status] : null;
+  const slaStatusCount = slaStatusMeta ? Math.max(1, slaItems.filter(item => {
+    if (isSlaFinished(item)) return false;
+    if (lead.sla_status === "breached") {
+      return item.status === "breached" || (slaNow !== null && new Date(item.due_at).getTime() < slaNow);
+    }
+    return item.status === lead.sla_status;
+  }).length) : 0;
+
+  const openSlaTimeline = () => {
+    setTab("timeline");
+    requestAnimationFrame(() => {
+      requestAnimationFrame(() => {
+        document.getElementById("lead-timeline-sla")?.scrollIntoView({ behavior: "smooth", block: "start" });
+      });
+    });
+  };
 
   const cardState = (stepIdx: number): CardStateKind => {
     if (isLost) return "locked";
@@ -991,19 +1051,6 @@ export default function LeadDetailPage({ params }: { params: Promise<{ id: strin
 
   return (
     <div className="flex flex-col h-full">
-      {lead.sla_status && lead.sla_due_at && (
-        <div className={`mx-3 mt-3 rounded-xl border px-3 py-2 text-sm flex items-center gap-2 ${
-          lead.sla_status === "breached" ? "border-red-200 bg-red-50 text-red-800" :
-          lead.sla_status === "critical" ? "border-orange-200 bg-orange-50 text-orange-800" :
-          lead.sla_status === "warning" ? "border-amber-200 bg-amber-50 text-amber-800" :
-          "border-sky-200 bg-sky-50 text-sky-800"
-        }`}>
-          <ClockIcon className="h-4 w-4 shrink-0" />
-          <span className="font-semibold">SLA {lead.sla_status === "breached" ? "เกินกำหนด" : lead.sla_status === "critical" ? "เร่งด่วน" : lead.sla_status === "warning" ? "ใกล้กำหนด" : "กำลังดำเนินการ"}</span>
-          <span className="truncate">{lead.sla_task_name}</span>
-          <span className="ml-auto shrink-0">ภายใน {formatDate(lead.sla_due_at)} {formatThaiTime(lead.sla_due_at)}</span>
-        </div>
-      )}
       {/* Header — subtle primary tint */}
       <div className="bg-gradient-to-b from-primary via-primary/50 to-white safe-top sticky top-0 z-40">
         {/* Top row: back + name + call */}
@@ -1125,6 +1172,20 @@ export default function LeadDetailPage({ params }: { params: Promise<{ id: strin
                   Scale Up
                 </span>
               </>
+            )}
+            {slaStatusMeta && lead.sla_due_at && (
+              <button
+                type="button"
+                onClick={openSlaTimeline}
+                title={`${lead.sla_task_name || "งาน SLA"} · กำหนด ${formatDate(lead.sla_due_at)} ${formatThaiTime(lead.sla_due_at)}`}
+                className={`inline-flex min-h-0 items-center gap-1 rounded-full border px-2 py-1 font-semibold transition-colors hover:brightness-95 ${slaStatusMeta.badge}`}
+              >
+                <ClockIcon className="h-3.5 w-3.5 shrink-0" strokeWidth={2} />
+                <span>SLA {slaStatusMeta.label}</span>
+                <span className="rounded-full bg-white/80 px-1.5 font-bold tabular-nums" aria-label={`${slaStatusCount} รายการ`}>
+                  {slaStatusCount}
+                </span>
+              </button>
             )}
           </div>
         </div>
@@ -1325,6 +1386,13 @@ export default function LeadDetailPage({ params }: { params: Promise<{ id: strin
                 >
                   <span className="text-xxs font-bold tabular-nums leading-none">{String(s.idx + 1).padStart(2, "0")}</span>
                   <span className="text-[10px] font-semibold leading-tight text-center px-1">{s.label}</span>
+                  {slaStatusMeta && slaStepIndex === s.idx && (
+                    <span
+                      title={`SLA ${slaStatusMeta.label}: ${lead.sla_task_name || "งานในขั้นตอนนี้"}`}
+                      className={`h-2 w-2 rounded-full ring-2 ring-white ${slaStatusMeta.dot}`}
+                      aria-label={`SLA ${slaStatusMeta.label}`}
+                    />
+                  )}
                   {isDone && (
                     <CheckIcon className="w-3 h-3 text-emerald-500" strokeWidth={3} />
                   )}
@@ -1443,7 +1511,15 @@ export default function LeadDetailPage({ params }: { params: Promise<{ id: strin
                             method: "PATCH",
                             headers: { "Content-Type": "application/json" },
                             body: JSON.stringify({ customer_grade: next, grade_change_reason: gradeChangeReason }),
-                          }).then(() => refresh()).catch(console.error);
+                          }).then(() => {
+                            refresh();
+                            // Grade F means "ไม่สนใจ — ปิดเคส ไม่ติดตามต่อ", so go
+                            // straight to the lost flow: it records the reason for
+                            // reporting and cancels every open SLA on the lead.
+                            // Closing the modal leaves the grade set and the lead
+                            // open — the sale can still close it from the toolbar.
+                            if (next === "F" && !isLost) setShowLostModal(true);
+                          }).catch(console.error);
                         }}
                         className={`col-span-1 md:col-span-1 flex flex-col items-center justify-center gap-0.5 px-2 py-2 rounded-lg border transition-all min-h-[56px] ${
                           active ? "bg-active text-white border-active"
@@ -2210,12 +2286,221 @@ export default function LeadDetailPage({ params }: { params: Promise<{ id: strin
               // / Warranty / Cancelled). Each section uses the InfoSection layout
               // from the Info tab so the look is consistent; rows inside are
               // "what happened · when" bullets sorted earliest → latest.
-              type Bullet = { date: string | null; label: string; sub?: string; tone?: "paid" | "pending"; slipPaymentId?: number };
-              const fmtIfDate = (d: string | null | undefined) => d ? formatDate(d) : "—";
+              type Bullet = {
+                key?: string;
+                date: string | null;
+                label: string;
+                timeLabel?: string;
+                missingDateLabel?: string;
+                sortAt?: number;
+                tiePriority?: number;
+                sub?: string;
+                tone?: "paid" | "pending";
+                slipPaymentId?: number;
+                mergeWithSlaCode?: "ELECTRICITY_ASSESSMENT";
+                gradeValue?: string;
+              };
+              const fmtIfDate = (row: Bullet) => {
+                if (!row.date) return row.missingDateLabel || "—";
+                const raw = String(row.date);
+                const hasRecordedClock = /T\d{2}:\d{2}/.test(raw)
+                  && !/T00:00(?::00(?:\.\d+)?)?(?:Z)?$/.test(raw);
+                const time = row.timeLabel || (hasRecordedClock ? formatThaiTime(row.date) : "ไม่ระบุเวลา");
+                return `${formatDate(row.date)} · ${time}`;
+              };
+
+              type TimelineStage = "pre" | "survey" | "quote" | "order" | "install" | "warranty" | "grid" | "lost";
+              const installCompletedMs = lead.install_completed_at ? new Date(lead.install_completed_at).getTime() : Number.POSITIVE_INFINITY;
+              const isInstallAppointment = (activity: Activity) => activity.title?.includes("ติดตั้ง");
+              const paymentActivityTypes = new Set([
+                "slip_uploaded", "slip_submitted", "slip_unsubmitted", "payment_confirmed",
+                "payment_rejected", "payment_undone", "payment_cheque_received",
+                "payment_cheque_deposited", "payment_cheque_bounced", "payment_cheque_cancelled",
+              ]);
+              const contactActivityTypes = new Set(["call", "visit", "line", "line_sent", "sms_sent", "other", "follow_up", "follow_up_cleared"]);
+              const firstAfterSalesContactId = activities
+                .filter(activity => {
+                  const occurredAt = new Date(activity.created_at).getTime();
+                  return ["call", "visit", "line", "other", "follow_up"].includes(activity.activity_type)
+                    && occurredAt >= installCompletedMs
+                    && (activity.contact_result === "connected" || activity.contact_result == null);
+                })
+                .sort((a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime() || a.id - b.id)[0]?.id;
+              // The central view is a business timeline, while Activity Log is
+              // the full audit trail. File clicks, queue submissions and
+              // reminders stay in Activity Log so SLA/milestones remain easy
+              // to scan. Payment outcomes and other state-changing events stay.
+              const isCentralTimelineActivity = (activity: Activity) => {
+                if ([
+                  "slip_uploaded", "slip_submitted", "slip_unsubmitted",
+                  "presurvey_doc_created", "sla_assignment", "warranty_evidence",
+                  "line_sent", "sms_sent", "follow_up_cleared",
+                ].includes(activity.activity_type)) return false;
+                if (activity.activity_type === "quotation" && /^เตือน/.test(activity.title.trim())) return false;
+                if (contactActivityTypes.has(activity.activity_type) && new Date(activity.created_at).getTime() >= installCompletedMs) {
+                  return activity.id === firstAfterSalesContactId;
+                }
+                return true;
+              };
+              const isRollbackActivity = (activity: Activity) =>
+                activity.activity_type === "status_change" && /revert|rollback|ย้อนกลับ/i.test(activity.title);
+              const rollbackTargetStage = (status: string | null): TimelineStage | null => {
+                if (status === "survey") return "survey";
+                if (status === "quote") return "quote";
+                if (status === "order") return "order";
+                if (status === "install") return "install";
+                if (status === "warranty") return "warranty";
+                if (status === "gridtie" || status === "closed") return "grid";
+                if (status === "lost" || status === "returned") return "lost";
+                return null;
+              };
+              const activityStage = (activity: Activity): TimelineStage | null => {
+                const title = activity.title || "";
+                const occurredAt = new Date(activity.created_at).getTime();
+                if (activity.activity_type === "grade_change" || activity.activity_type === "lead_created") return null;
+                if (activity.activity_type === "presurvey_doc_created" || activity.activity_type === "sla_assignment") return "pre";
+                if (activity.activity_type === "quotation") return "quote";
+                if (activity.activity_type === "loan_followup" || activity.activity_type === "order_plan" || activity.activity_type === "order_accepted") return "order";
+                if (activity.activity_type === "install_extra") return "install";
+                if (activity.activity_type === "warranty" || activity.activity_type === "warranty_evidence" || activity.activity_type === "after_sales") return "warranty";
+                if (activity.activity_type === "grid_tie") return "grid";
+                if (activity.activity_type === "returned_to_prospect") return "lost";
+                if (activity.activity_type.startsWith("appointment_")) return isInstallAppointment(activity) ? "install" : "survey";
+                if (paymentActivityTypes.has(activity.activity_type)) {
+                  if (/ค่า(จอง|สำรวจ)|Survey/i.test(title)) return "pre";
+                  if (/ค่าใช้จ่ายเพิ่มเติม|หลังติดตั้ง/i.test(title)) return "install";
+                  return "order";
+                }
+                if (activity.activity_type === "step_completed" && title.includes("ติดตั้ง")) return "install";
+                if (activity.activity_type === "status_change") {
+                  if (isRollbackActivity(activity)) return rollbackTargetStage(activity.new_status);
+                  if (activity.new_status === "quote") return "survey";
+                  if (activity.new_status === "order") return "quote";
+                  if (activity.new_status === "install") return "install";
+                  if (activity.new_status === "warranty") return "warranty";
+                  if (activity.new_status === "gridtie") return "grid";
+                  if (activity.new_status === "closed") return activity.old_status === "gridtie" ? "grid" : "warranty";
+                  if (activity.new_status === "lost" || activity.new_status === "returned") return "lost";
+                }
+                if (contactActivityTypes.has(activity.activity_type) && occurredAt >= installCompletedMs) return "warranty";
+                return null;
+              };
+              const appointmentMilestoneLabel = (activity: Activity) => {
+                const slotJson = activity.title.match(/(\[[^\]]*\])\s*$/)?.[1];
+                const base = activity.title.replace(/\s*\[[^\]]*\]\s*$/, "").trim();
+                const slotRange = slotJson ? formatSlotsRange(slotJson) : "";
+                const scheduledDate = isInstallAppointment(activity) ? lead.install_date : lead.survey_date;
+                const isBackdated = Boolean(scheduledDate)
+                  && String(scheduledDate).slice(0, 10) < String(activity.created_at).slice(0, 10);
+                return `${isBackdated ? "บันทึกย้อนหลัง · " : ""}${base}${slotRange ? ` · เวลา ${slotRange}` : ""}`;
+              };
+              const statusMilestoneLabel = (activity: Activity) => {
+                if (activity.activity_type.startsWith("appointment_")) return appointmentMilestoneLabel(activity);
+                if (activity.activity_type !== "status_change") return activity.title;
+                if (isRollbackActivity(activity)) {
+                  const targetLabel: Record<string, string> = {
+                    survey: "Survey",
+                    quote: "Quotation",
+                    order: "Order",
+                    install: "Install",
+                    warranty: "Warranty",
+                    gridtie: "Grid-Tie",
+                    closed: "ปิดงาน",
+                  };
+                  return `ย้อนกลับไปขั้น ${targetLabel[activity.new_status || ""] || "ก่อนหน้า"}`;
+                }
+                if (activity.new_status === "quote") return "สำรวจเสร็จและเข้าสู่ขั้นใบเสนอราคา";
+                if (activity.new_status === "order") return "ลูกค้ายืนยันใบเสนอราคาและเข้าสู่ขั้น Order";
+                if (activity.new_status === "install") return "เข้าสู่ขั้นติดตั้ง";
+                if (activity.new_status === "warranty") return "ติดตั้งเสร็จและเข้าสู่การรับประกัน";
+                if (activity.new_status === "gridtie") return "เข้าสู่ขั้นขอขนานไฟ";
+                if (activity.new_status === "closed") return "ปิดงานและส่งมอบครบถ้วน";
+                return activity.title;
+              };
+              // Autosave can write the same appointment date repeatedly while
+              // the user ticks time slots one by one. Collapse a <=60-second
+              // burst with the same from/to dates to the latest activity; the
+              // full sequence remains available in Activity Log.
+              const centralTimelineActivities = (() => {
+                const compacted: Activity[] = [];
+                const latestBurstIndex = new Map<string, number>();
+                const ordered = [...activities].sort((a, b) =>
+                  new Date(a.created_at).getTime() - new Date(b.created_at).getTime() || a.id - b.id);
+                for (const activity of ordered) {
+                  if (!isCentralTimelineActivity(activity)) continue;
+                  if (activity.activity_type !== "appointment_rescheduled") {
+                    compacted.push(activity);
+                    continue;
+                  }
+                  const baseTitle = activity.title.replace(/\s*\[[^\]]*\]\s*$/, "").trim();
+                  const key = `${isInstallAppointment(activity) ? "install" : "survey"}|${baseTitle}`;
+                  const previousIndex = latestBurstIndex.get(key);
+                  const previous = previousIndex == null ? null : compacted[previousIndex];
+                  const withinBurst = previous
+                    ? new Date(activity.created_at).getTime() - new Date(previous.created_at).getTime() <= 60_000
+                    : false;
+                  if (previousIndex != null && withinBurst) {
+                    compacted[previousIndex] = activity;
+                  } else {
+                    latestBurstIndex.set(key, compacted.length);
+                    compacted.push(activity);
+                  }
+                }
+                return compacted;
+              })();
+              const activityRows = (stage: TimelineStage): Bullet[] => centralTimelineActivities
+                .filter(activity => activityStage(activity) === stage)
+                .map(activity => {
+                  const isPositive = ["payment_confirmed", "payment_cheque_deposited", "appointment_confirmed", "step_completed", "warranty", "grid_tie"].includes(activity.activity_type)
+                    || activity.contact_outcome_code === "loan_preapproved";
+                  const isAttention = ["slip_uploaded", "slip_submitted", "payment_cheque_received"].includes(activity.activity_type);
+                  return {
+                    key: `activity-${activity.id}`,
+                    date: activity.created_at,
+                    label: statusMilestoneLabel(activity),
+                    sub: [
+                      activity.note,
+                      activity.followup_date && `วันที่ดำเนินการ ${formatDate(activity.followup_date)}`,
+                      activity.follow_up_date && `นัดติดตาม ${formatDate(activity.follow_up_date)}`,
+                      activity.created_by_name && `โดย ${activity.created_by_name}`,
+                    ].filter(Boolean).join(" · ") || undefined,
+                    tone: isPositive ? "paid" as const : isAttention ? "pending" as const : undefined,
+                  };
+                });
 
               const preSurveyRows: Bullet[] = [];
               if (lead.created_at) preSurveyRows.push({ date: lead.created_at, label: "ลงทะเบียน Lead" });
-              if (lead.pre_booked_at) preSurveyRows.push({
+              const gradeActivities = activities.filter(a => a.activity_type === "grade_change");
+              for (const activity of gradeActivities) {
+                const gradeMatch = /(?:กำหนด\s*)?Grade:\s*(.*?)\s*→\s*(.*?)$/.exec(activity.title);
+                const oldGrade = gradeMatch?.[1] || "-";
+                const newGrade = gradeMatch?.[2] || lead.customer_grade || "-";
+                preSurveyRows.push({
+                  date: activity.created_at,
+                  label: `กำหนด Grade Lead: ${oldGrade} → ${newGrade}`,
+                  tiePriority: 25,
+                  sub: [activity.note && `เหตุผล: ${activity.note}`, activity.created_by_name && `โดย ${activity.created_by_name}`].filter(Boolean).join(" · ") || undefined,
+                  mergeWithSlaCode: "ELECTRICITY_ASSESSMENT",
+                  gradeValue: newGrade,
+                });
+              }
+              // Legacy grades predate the audit trail, so their real change
+              // time cannot be reconstructed. Keep the milestone visible in
+              // the expected business position without inventing a timestamp.
+              if (lead.customer_grade && gradeActivities.length === 0) {
+                preSurveyRows.push({
+                  date: null,
+                  label: `กำหนด Grade Lead: ${lead.customer_grade}`,
+                  missingDateLabel: "ข้อมูลเดิม · ไม่มีประวัติเวลา",
+                  sortAt: lead.created_at ? new Date(lead.created_at).getTime() : 0,
+                  tiePriority: 25,
+                  sub: "Grade ถูกกำหนดก่อนเริ่มบันทึกประวัติ Activity",
+                  mergeWithSlaCode: "ELECTRICITY_ASSESSMENT",
+                  gradeValue: lead.customer_grade,
+                });
+              }
+              const preActivityRows = activityRows("pre");
+              if (lead.pre_booked_at && !preActivityRows.some(row => /ใบจอง|เลขเอกสาร/.test(row.label))) preSurveyRows.push({
                 date: lead.pre_booked_at,
                 label: "ออกใบจอง",
                 sub: [lead.pre_doc_no && `เลขที่ ${lead.pre_doc_no}`, lead.pre_total_price && `ค่าจอง ${formatNumber(lead.pre_total_price)} ฿`].filter(Boolean).join(" · ") || undefined,
@@ -2246,7 +2531,7 @@ export default function LeadDetailPage({ params }: { params: Promise<{ id: strin
                   } else {
                     parts.push("รอบัญชียืนยัน");
                   }
-                  preSurveyRows.push({
+                  if (!preActivityRows.some(row => /ค่า(จอง|สำรวจ)|Survey/.test(row.label))) preSurveyRows.push({
                     date: prePay.confirmed_at ?? prePay.submitted_at ?? lead.pre_booked_at ?? null,
                     label: `ชำระเงินจองสำรวจ${prePay.amount ? ` ${formatNumber(prePay.amount)} ฿` : ""}`,
                     sub: parts.length ? parts.join(" · ") : undefined,
@@ -2255,21 +2540,22 @@ export default function LeadDetailPage({ params }: { params: Promise<{ id: strin
                   });
                 }
               }
+              preSurveyRows.push(...preActivityRows);
 
-              const surveyRows: Bullet[] = [];
-              if (lead.survey_date) surveyRows.push({
+              const surveyRows: Bullet[] = activityRows("survey");
+              if (lead.survey_date && !surveyRows.some(row => /นัดสำรวจ|เลื่อนนัด|ยืนยันนัด/.test(row.label))) surveyRows.push({
                 date: lead.survey_date,
                 label: "นัดวันเข้าสำรวจ",
-                sub: lead.survey_time_slot ? `ช่วงเวลา ${lead.survey_time_slot}` : undefined,
+                timeLabel: formatSlotsRange(lead.survey_time_slot) || undefined,
               });
-              if (lead.survey_actual_date) surveyRows.push({
+              if (lead.survey_actual_date && !surveyRows.some(row => /สำรวจเสร็จ|เข้าสู่ขั้นใบเสนอราคา/.test(row.label))) surveyRows.push({
                 date: lead.survey_actual_date,
                 label: "เข้าสำรวจหน้างานจริง",
                 sub: lead.survey_actual_by ? `โดย ${lead.survey_actual_by}` : undefined,
               });
 
-              const quoteRows: Bullet[] = [];
-              if (lead.quotation_sent_date) quoteRows.push({
+              const quoteRows: Bullet[] = activityRows("quote");
+              if (lead.quotation_sent_date && !quoteRows.some(row => /ส่งใบเสนอราคาให้ลูกค้า/.test(row.label))) quoteRows.push({
                 date: lead.quotation_sent_date,
                 label: "ส่งใบเสนอราคา",
                 sub: lead.quotation_amount ? `ยอด ${formatNumber(lead.quotation_amount)} ฿` : undefined,
@@ -2281,7 +2567,7 @@ export default function LeadDetailPage({ params }: { params: Promise<{ id: strin
               })();
               const orderRows: Bullet[] = orderInstallments.map((r, i) => {
                 const pctStr = r.pct ? `${typeof r.pct === "number" ? r.pct.toFixed(0) : r.pct}%` : "";
-                const methodStr = r.method ? `${r.method === "cc" ? "บัตรเครดิต" : r.method === "loan" ? "สินเชื่อ" : "โอน"}` : "";
+                const methodStr = r.method ? `${r.method === "cc" ? "บัตรเครดิต" : r.method === "loan" ? "สินเชื่อ" : r.method === "cheque" ? "เช็ค" : "โอน"}` : "";
                 const pay = paymentRows.find(p => p.slip_field === `order_installment_${i}`);
                 // Amount preference: confirmed payment row → computed from pct
                 // × lead.order_total → null. Shown in label so it's visible
@@ -2293,6 +2579,7 @@ export default function LeadDetailPage({ params }: { params: Promise<{ id: strin
                 const subParts: string[] = [];
                 if (pctStr) subParts.push(pctStr);
                 if (methodStr) subParts.push(methodStr);
+                if (r.due_date) subParts.push(`กำหนดชำระ ${formatDate(r.due_date)}`);
                 if (pay?.submitted_at) {
                   subParts.push(`รับเงินโดย ${pay.submitted_by_name || "—"} ${formatDate(pay.submitted_at)} ${formatThaiTime(pay.submitted_at)}`);
                 }
@@ -2302,26 +2589,59 @@ export default function LeadDetailPage({ params }: { params: Promise<{ id: strin
                   subParts.push("รอบัญชียืนยัน");
                 }
                 const bullet: Bullet = {
-                  date: r.due_date || null,
-                  label: `งวดที่ ${i + 1} ${r.when === "after" ? "(หลังติดตั้ง)" : "(ก่อนติดตั้ง)"}${amount != null ? ` · ${formatNumber(amount)} ฿` : ""}`,
+                  key: `installment-plan-${i}`,
+                  date: null,
+                  sortAt: activities.find(a => a.activity_type === "order_plan")?.created_at
+                    ? new Date(activities.find(a => a.activity_type === "order_plan")!.created_at).getTime()
+                    : activities.find(a => a.activity_type === "status_change" && a.new_status === "order")?.created_at
+                      ? new Date(activities.find(a => a.activity_type === "status_change" && a.new_status === "order")!.created_at).getTime()
+                      : 0,
+                  missingDateLabel: "แผนปัจจุบัน",
+                  label: `แผนชำระงวดที่ ${i + 1} ${r.when === "after" ? "(หลังติดตั้ง)" : "(ก่อนติดตั้ง)"}${amount != null ? ` · ${formatNumber(amount)} ฿` : ""}`,
                   sub: subParts.length ? subParts.join(" · ") : undefined,
                   tone: pay?.confirmed_at ? "paid" : "pending",
-                  slipPaymentId: pay?.id,
                 };
                 return bullet;
-              }).filter(b => b.date);
+              });
+              orderRows.push(...activityRows("order"));
 
-              const installRows: Bullet[] = [];
-              if (lead.install_date) {
+              const installRows: Bullet[] = activityRows("install");
+              if (lead.install_date && !installRows.some(row => /นัดติดตั้ง|เลื่อนนัดติดตั้ง|ยืนยันนัดติดตั้ง/.test(row.label))) {
                 const endStr = lead.install_date_end && lead.install_date_end !== lead.install_date
                   ? ` – ${formatDate(lead.install_date_end)}`
                   : "";
-                installRows.push({ date: lead.install_date, label: `นัดวันติดตั้ง${endStr}` });
+                installRows.push({
+                  date: lead.install_date,
+                  label: `นัดวันติดตั้ง${endStr}`,
+                  timeLabel: formatSlotsRange(lead.install_time_slot) || undefined,
+                });
               }
-              if (lead.install_completed_at) installRows.push({ date: lead.install_actual_date || lead.install_completed_at, label: "ติดตั้งเสร็จสิ้น" });
+              if (lead.install_completed_at && !installRows.some(row => /ปิดงานติดตั้ง|ติดตั้งเสร็จ/.test(row.label))) installRows.push({ date: lead.install_completed_at, label: "ติดตั้งเสร็จสิ้น" });
 
-              const warrantyRows: Bullet[] = [];
-              if (lead.warranty_issued_at) warrantyRows.push({ date: lead.warranty_issued_at, label: "ออกใบรับประกัน" });
+              const warrantyRows: Bullet[] = activityRows("warranty");
+              if (lead.warranty_issued_at && !warrantyRows.some(row => /ใบรับประกัน/.test(row.label))) warrantyRows.push({
+                date: lead.warranty_issued_at,
+                label: "ออกใบรับประกัน",
+                sub: [lead.warranty_doc_no && `เลขที่ ${lead.warranty_doc_no}`, lead.warranty_start_date && lead.warranty_end_date && `คุ้มครอง ${formatDate(lead.warranty_start_date)} – ${formatDate(lead.warranty_end_date)}`].filter(Boolean).join(" · ") || undefined,
+              });
+              if (lead.review_rating != null && !warrantyRows.some(row => /ประเมิน|รีวิว/.test(row.label))) warrantyRows.push({
+                date: null,
+                label: `ผลประเมินหลังการขาย ${lead.review_rating}/5`,
+                missingDateLabel: "ข้อมูลเดิม · ไม่มีประวัติเวลา",
+                sub: lead.review_comment || undefined,
+              });
+
+              const gridRows: Bullet[] = activityRows("grid");
+              const gridFallbacks: Array<[string | null, string]> = [
+                [lead.grid_erc_submitted_date, "ยื่นเอกสาร ERC"],
+                [lead.grid_submitted_date, "ยื่นคำขอขนานไฟ"],
+                [lead.grid_inspection_date, "ตรวจระบบขนานไฟ"],
+                [lead.grid_approved_date, "อนุมัติขนานไฟ"],
+                [lead.grid_meter_changed_date, "เปลี่ยนมิเตอร์เรียบร้อย"],
+              ];
+              for (const [date, label] of gridFallbacks) {
+                if (date && !gridRows.some(row => row.label.includes(label))) gridRows.push({ date, label });
+              }
 
               const lostRows: Bullet[] = [];
               if (isLost) {
@@ -2333,21 +2653,26 @@ export default function LeadDetailPage({ params }: { params: Promise<{ id: strin
                 });
               }
 
+              // Superseded/cancelled SLA instances are rollback artifacts, not
+              // workflow events. Keeping them in the central timeline made an
+              // Order section appear for leads that never reached Order.
+              const visibleSlaItems = slaItems.filter(item => item.status !== "superseded" && item.status !== "cancelled");
               const sections = [
-                { id: "tl-pre",    title: "Pre-Survey",   rows: preSurveyRows, tone: "text-sky-700",     dot: "bg-sky-500" },
-                { id: "tl-survey", title: "Survey",       rows: surveyRows,    tone: "text-violet-700",  dot: "bg-violet-500" },
-                { id: "tl-quote",  title: "Quotation",    rows: quoteRows,     tone: "text-orange-700",  dot: "bg-orange-500" },
-                { id: "tl-order",  title: "Order · งวดชำระ", rows: orderRows,   tone: "text-emerald-700", dot: "bg-emerald-500" },
-                { id: "tl-install", title: "Install",     rows: installRows,   tone: "text-amber-700",   dot: "bg-amber-500" },
-                { id: "tl-warranty", title: "Warranty",   rows: warrantyRows,  tone: "text-teal-700",    dot: "bg-teal-500" },
-                ...(isLost ? [{ id: "tl-lost", title: "ยกเลิก", rows: lostRows, tone: "text-red-700", dot: "bg-red-500" }] : []),
-              ].filter(s => s.rows.length > 0);
+                { id: "tl-pre", title: "Pre-Survey", rows: preSurveyRows, tone: "text-sky-700", dot: "bg-sky-500", slaCodes: ["ASSIGN_OWNER", "FIRST_CONTACT", "CONTACT_RETRY", "GRADE_A_NEXT_ACTION", "GRADE_PLAYBOOK", "ELECTRICITY_ASSESSMENT", "BOOK_SURVEY"] },
+                { id: "tl-survey", title: "Survey", rows: surveyRows, tone: "text-violet-700", dot: "bg-violet-500", slaCodes: ["SITE_SURVEY"] },
+                { id: "tl-quote", title: "Quotation", rows: quoteRows, tone: "text-orange-700", dot: "bg-orange-500", slaCodes: ["PROPOSAL_ROI"] },
+                { id: "tl-order", title: "Order · งวดชำระ", rows: orderRows, tone: "text-emerald-700", dot: "bg-emerald-500", slaCodes: ["DEPOSIT_CLOSE", "PAYMENT_INSTALLMENT_1", "LOAN_PREAPPROVAL"] },
+                { id: "tl-install", title: "Install", rows: installRows, tone: "text-amber-700", dot: "bg-amber-500", slaCodes: ["SCHEDULE_INSTALLATION", "INSTALLATION"] },
+                { id: "tl-warranty", title: "Warranty / After Sales", rows: warrantyRows, tone: "text-teal-700", dot: "bg-teal-500", slaCodes: ["AFTER_SALES", "CLOSE_LEAD"] },
+                { id: "tl-grid", title: "Grid-Tie / ขอขนานไฟ", rows: gridRows, tone: "text-cyan-700", dot: "bg-cyan-500", slaCodes: [] },
+                ...(isLost ? [{ id: "tl-lost", title: "ยกเลิก", rows: lostRows, tone: "text-red-700", dot: "bg-red-500", slaCodes: [] as string[] }] : []),
+              ].filter(s => s.rows.length > 0 || visibleSlaItems.some(item => s.slaCodes.includes(item.policy_code)));
 
               // Sort bullets within each section earliest → latest
               sections.forEach(s => s.rows.sort((a, b) => {
-                const ta = a.date ? new Date(a.date).getTime() : Number.POSITIVE_INFINITY;
-                const tb = b.date ? new Date(b.date).getTime() : Number.POSITIVE_INFINITY;
-                return ta - tb;
+                const ta = a.sortAt ?? (a.date ? new Date(a.date).getTime() : Number.POSITIVE_INFINITY);
+                const tb = b.sortAt ?? (b.date ? new Date(b.date).getTime() : Number.POSITIVE_INFINITY);
+                return ta - tb || (a.tiePriority ?? 30) - (b.tiePriority ?? 30);
               }));
 
               if (sections.length === 0) {
@@ -2363,19 +2688,96 @@ export default function LeadDetailPage({ params }: { params: Promise<{ id: strin
                 );
               }
               return (
-                <div className="space-y-3 rounded-2xl bg-white border border-gray-200 px-4 py-4">
-                  {sections.map(s => (
-                    <InfoSection
-                      key={s.id}
-                      id={s.id}
-                      title={s.title}
-                      filled={s.rows.length}
-                      total={s.rows.length}
-                      open={openSections[s.id] ?? true}
-                      onToggle={toggleSection}
-                    >
+                <div id="lead-timeline-sla" className="scroll-mt-44 space-y-3 rounded-2xl bg-white border border-gray-200 px-4 py-4">
+                  <div className="pb-3 border-b border-gray-100 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+                    <div>
+                      <div className="text-sm font-bold text-gray-800 uppercase tracking-wide">Timeline & SLA</div>
+                      <div className="text-xs text-gray-500 mt-0.5">เหตุการณ์ กำหนดเวลา ผลจริง และผู้รับผิดชอบในแต่ละขั้น</div>
+                    </div>
+                    <LeadSlaSummary loading={loadingSla} error={slaError} summary={slaSummary} />
+                  </div>
+                  {sections.map(s => {
+                    const stageSlaItems = visibleSlaItems.filter(item => s.slaCodes.includes(item.policy_code));
+                    const qualificationSla = stageSlaItems.find(item => item.policy_code === "ELECTRICITY_ASSESSMENT");
+                    const mergeableGradeRows = qualificationSla
+                      ? s.rows.filter(row => row.mergeWithSlaCode === "ELECTRICITY_ASSESSMENT" && row.gradeValue === lead.customer_grade)
+                      : [];
+                    const qualificationAt = qualificationSla
+                      ? new Date(qualificationSla.completed_at || qualificationSla.started_at).getTime()
+                      : Number.NaN;
+                    const mergedGradeRow = mergeableGradeRows.reduce<Bullet | null>((closest, row) => {
+                      if (!closest) return row;
+                      const rowAt = row.date ? new Date(row.date).getTime() : Number.NaN;
+                      const closestAt = closest.date ? new Date(closest.date).getTime() : Number.NaN;
+                      if (!Number.isFinite(rowAt)) return closest;
+                      if (!Number.isFinite(closestAt)) return row;
+                      return Math.abs(rowAt - qualificationAt) < Math.abs(closestAt - qualificationAt) ? row : closest;
+                    }, null);
+                    const visibleMilestoneRows = mergedGradeRow ? s.rows.filter(row => row !== mergedGradeRow) : s.rows;
+                    const finishedSla = stageSlaItems.filter(isSlaFinished).length;
+                    const timelineItems = [
+                      ...stageSlaItems.map((item, index) => ({
+                        kind: "sla" as const,
+                        key: `sla-${item.id}`,
+                        sortAt: item === qualificationSla && mergedGradeRow
+                          ? mergedGradeRow.sortAt ?? (mergedGradeRow.date ? new Date(mergedGradeRow.date).getTime() : new Date(item.started_at).getTime())
+                          : new Date(item.started_at).getTime(),
+                        // Legacy leads can have several causal events stamped at
+                        // exactly 00:00. Preserve the business sequence for ties:
+                        // registration -> assignment -> first contact -> next
+                        // milestone -> SLA opened by that milestone.
+                        tiePriority: item === qualificationSla && mergedGradeRow
+                          ? mergedGradeRow.tiePriority ?? 25
+                          : item.policy_code === "ASSIGN_OWNER"
+                          ? 10
+                          : item.policy_code === "FIRST_CONTACT"
+                            ? 20
+                            : 40,
+                        stableIndex: index,
+                        item: item === qualificationSla && mergedGradeRow
+                          ? {
+                            ...item,
+                            task_name: mergedGradeRow.label.replace(/^กำหนด Grade Lead/, item.task_name),
+                            display_note: [
+                              !mergedGradeRow.date && mergedGradeRow.missingDateLabel,
+                              mergedGradeRow.sub,
+                            ].filter(Boolean).join(" · ") || undefined,
+                          }
+                          : item,
+                      })),
+                      ...visibleMilestoneRows.map((row, index) => ({
+                        kind: "milestone" as const,
+                        key: row.key || `milestone-${s.id}-${index}`,
+                        sortAt: row.sortAt ?? (row.date ? new Date(row.date).getTime() : Number.POSITIVE_INFINITY),
+                        tiePriority: row.tiePriority ?? (row.label === "ลงทะเบียน Lead" ? 0 : 30),
+                        stableIndex: stageSlaItems.length + index,
+                        row,
+                      })),
+                    ].sort((a, b) => a.sortAt - b.sortAt || a.tiePriority - b.tiePriority || a.stableIndex - b.stableIndex);
+                    return (
+                      <InfoSection
+                        key={s.id}
+                        id={s.id}
+                        title={s.title}
+                        filled={visibleMilestoneRows.length + finishedSla}
+                        total={visibleMilestoneRows.length + stageSlaItems.length}
+                        open={openSections[s.id] ?? true}
+                        onToggle={toggleSection}
+                      >
                       <ul className="space-y-2 py-1">
-                        {s.rows.map((r, i) => {
+                        {loadingSla && <LeadSlaStageRows items={[]} loading now={slaNow} />}
+                        {timelineItems.map(entry => {
+                          if (entry.kind === "sla") {
+                            return (
+                              <LeadSlaStageRows
+                                key={entry.key}
+                                items={[entry.item]}
+                                loading={false}
+                                now={slaNow}
+                              />
+                            );
+                          }
+                          const r = entry.row;
                           const isPaid = r.tone === "paid";
                           const isPending = r.tone === "pending";
                           const dotCls = isPaid ? "bg-emerald-500" : isPending ? "bg-orange-500" : s.dot;
@@ -2383,7 +2785,7 @@ export default function LeadDetailPage({ params }: { params: Promise<{ id: strin
                           const dateCls = isPaid ? "text-emerald-600" : isPending ? "text-orange-600" : "text-gray-500";
                           const subCls = isPaid ? "text-emerald-600" : isPending ? "text-orange-600" : "text-gray-500";
                           return (
-                            <li key={i} className="flex items-start gap-2.5 text-sm">
+                            <li key={entry.key} className="flex items-start gap-2.5 text-sm">
                               <span className={`mt-1.5 w-1.5 h-1.5 rounded-full shrink-0 ${dotCls}`} />
                               <div className="flex-1 min-w-0">
                                 <div className="flex items-baseline gap-2 flex-wrap">
@@ -2391,7 +2793,7 @@ export default function LeadDetailPage({ params }: { params: Promise<{ id: strin
                                   {isPending && (
                                     <span className="text-xxs font-bold uppercase tracking-wider px-1.5 py-0.5 rounded-md bg-orange-100 text-orange-700">รอรับชำระ</span>
                                   )}
-                                  <span className={`text-xs font-mono tabular-nums ${dateCls}`}>· {fmtIfDate(r.date)}</span>
+                                  <span className={`text-xs font-mono tabular-nums ${dateCls}`}>· {fmtIfDate(r)}</span>
                                 </div>
                                 {r.sub && <div className={`text-xs mt-0.5 ${subCls}`}>{r.sub}</div>}
                                 {/* Slip thumbnail — `/api/payments/{id}` streams
@@ -2413,8 +2815,9 @@ export default function LeadDetailPage({ params }: { params: Promise<{ id: strin
                           );
                         })}
                       </ul>
-                    </InfoSection>
-                  ))}
+                      </InfoSection>
+                    );
+                  })}
                 </div>
               );
             })()}

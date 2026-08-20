@@ -159,6 +159,20 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
       grid_application_doc_url: string | null;
       grid_permit_doc_url: string | null;
       customer_grade: string | null;
+      quotation_sent_date: Date | null;
+      quotation_doc_no: string | null;
+      quotation_accepted_idx: number | null;
+      order_installments: string | null;
+      install_extra_cost: number | null;
+      warranty_issued_at: Date | null;
+      warranty_doc_no: string | null;
+      review_sent: boolean | number | null;
+      review_rating: number | null;
+      grid_erc_submitted_date: Date | null;
+      grid_submitted_date: Date | null;
+      grid_inspection_date: Date | null;
+      grid_approved_date: Date | null;
+      grid_meter_changed_date: Date | null;
     } | null = null;
     {
       const current = await db.request().input("id", sql.Int, leadId).query(`
@@ -166,7 +180,12 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
                survey_date, survey_time_slot, install_date, install_time_slot, next_follow_up,
                survey_confirmed, install_confirmed, install_completed_at,
                grid_utility, grid_app_no, grid_applicant_type, grid_document_checklist,
-               grid_application_doc_url, grid_permit_doc_url, customer_grade
+               grid_application_doc_url, grid_permit_doc_url, customer_grade,
+               quotation_sent_date, quotation_doc_no, quotation_accepted_idx,
+               order_installments, install_extra_cost,
+               warranty_issued_at, warranty_doc_no, review_sent, review_rating,
+               grid_erc_submitted_date, grid_submitted_date, grid_inspection_date,
+               grid_approved_date, grid_meter_changed_date
         FROM leads WHERE id = @id
       `);
       if (current.recordset.length > 0) {
@@ -1519,6 +1538,87 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
         userId: gate.userId,
       });
     }
+    if (body.quotation_sent_date !== undefined && body.quotation_sent_date && !sameDay(oldRow?.quotation_sent_date ?? null, body.quotation_sent_date)) {
+      await logLeadActivity(db, {
+        leadId,
+        activityType: "quotation",
+        title: `ส่งใบเสนอราคาให้ลูกค้า ${fmtThaiDate(body.quotation_sent_date)}`,
+        note: body.quotation_doc_no || oldRow?.quotation_doc_no || null,
+        userId: gate.userId,
+      });
+    }
+    if (body.quotation_accepted_idx !== undefined && oldRow?.quotation_accepted_idx !== body.quotation_accepted_idx) {
+      await logLeadActivity(db, {
+        leadId,
+        activityType: "order_accepted",
+        title: `ลูกค้ายืนยันใบเสนอราคา${body.quotation_doc_no || oldRow?.quotation_doc_no ? ` ${body.quotation_doc_no || oldRow?.quotation_doc_no}` : ""}`,
+        userId: gate.userId,
+      });
+    }
+    if (body.order_installments !== undefined && String(oldRow?.order_installments || "") !== String(body.order_installments || "")) {
+      let installmentCount = 0;
+      try { installmentCount = JSON.parse(body.order_installments || "[]").length; } catch {}
+      await logLeadActivity(db, {
+        leadId,
+        activityType: "order_plan",
+        title: `กำหนดแผนชำระเงิน${installmentCount ? ` ${installmentCount} งวด` : ""}`,
+        userId: gate.userId,
+      });
+    }
+    if (body.install_extra_cost !== undefined && Number(oldRow?.install_extra_cost || 0) !== Number(body.install_extra_cost || 0)) {
+      await logLeadActivity(db, {
+        leadId,
+        activityType: "install_extra",
+        title: `ปรับค่าใช้จ่ายเพิ่มเติมหน้างานเป็น ${Number(body.install_extra_cost || 0).toLocaleString("th-TH")} บาท`,
+        note: body.install_extra_note || null,
+        userId: gate.userId,
+      });
+    }
+    if (body.warranty_issued_at !== undefined && !oldRow?.warranty_issued_at) {
+      await logLeadActivity(db, {
+        leadId,
+        activityType: "warranty",
+        title: `ออกใบรับประกัน${body.warranty_doc_no || oldRow?.warranty_doc_no ? ` ${body.warranty_doc_no || oldRow?.warranty_doc_no}` : ""}`,
+        note: body.warranty_start_date && body.warranty_end_date
+          ? `คุ้มครอง ${fmtThaiDate(body.warranty_start_date)} ถึง ${fmtThaiDate(body.warranty_end_date)}`
+          : null,
+        userId: gate.userId,
+      });
+    }
+    if (body.review_sent === true && !oldRow?.review_sent) {
+      await logLeadActivity(db, {
+        leadId,
+        activityType: "after_sales",
+        title: "ส่งแบบประเมินความพึงพอใจให้ลูกค้า",
+        userId: gate.userId,
+      });
+    }
+    if (body.review_rating !== undefined && body.review_rating != null && oldRow?.review_rating !== body.review_rating) {
+      await logLeadActivity(db, {
+        leadId,
+        activityType: "after_sales",
+        title: `ลูกค้าประเมินความพึงพอใจ ${body.review_rating}/5`,
+        note: body.review_comment || null,
+        userId: gate.userId,
+      });
+    }
+    const gridMilestones: Array<[string, string, Date | null | undefined]> = [
+      ["grid_erc_submitted_date", "ยื่นเอกสาร ERC", oldRow?.grid_erc_submitted_date],
+      ["grid_submitted_date", "ยื่นคำขอขนานไฟ", oldRow?.grid_submitted_date],
+      ["grid_inspection_date", "ตรวจระบบขนานไฟ", oldRow?.grid_inspection_date],
+      ["grid_approved_date", "อนุมัติขนานไฟ", oldRow?.grid_approved_date],
+      ["grid_meter_changed_date", "เปลี่ยนมิเตอร์เรียบร้อย", oldRow?.grid_meter_changed_date],
+    ];
+    for (const [field, label, oldValue] of gridMilestones) {
+      if (body[field] !== undefined && body[field] && !sameDay(oldValue ?? null, body[field])) {
+        await logLeadActivity(db, {
+          leadId,
+          activityType: "grid_tie",
+          title: `${label} ${fmtThaiDate(body[field])}`,
+          userId: gate.userId,
+        });
+      }
+    }
 
     // Auto-log status change as activity (with duplicate prevention)
     if (body.status !== undefined && oldStatus && oldStatus !== body.status) {
@@ -1563,7 +1663,7 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
       await logLeadActivity(db, {
         leadId,
         activityType: "grade_change",
-        title: `Grade: ${oldRow?.customer_grade || "-"} → ${body.customer_grade || "-"}`,
+        title: `กำหนด Grade: ${oldRow?.customer_grade || "-"} → ${body.customer_grade || "-"}`,
         note: body.grade_change_reason || null,
         userId: gate.userId,
       });
