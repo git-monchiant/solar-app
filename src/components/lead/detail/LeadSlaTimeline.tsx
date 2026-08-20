@@ -157,6 +157,11 @@ export function LeadSlaStageRows({ items, loading, now }: {
                 <span>เริ่ม {dateTimeText(item.started_at)}</span>
                 <span>กำหนด {dateTimeText(item.due_at)}</span>
                 <span className={`font-semibold ${style.text}`}>ใช้จริง {elapsed}</span>
+                {/* The elapsed time alone does not say when the work landed.
+                    Open and cancelled rows have no end timestamp — their badge
+                    already states why — so the stamp is shown only when the
+                    task actually finished. */}
+                {item.completed_at && <span>เสร็จ {dateTimeText(item.completed_at)}</span>}
                 <span>{item.owner_name || "ยังไม่มอบหมาย"} · {item.owner_role === "solar" ? "Solar" : "Sale"}</span>
               </div>
               {item.display_note && <div className="mt-0.5 text-xxs text-gray-500">{item.display_note}</div>}

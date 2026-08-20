@@ -10,6 +10,7 @@ Statuses:
 
 | Plan | Status | Mockup | Notes |
 | --- | --- | --- | --- |
+| [20260820-06-installation-fifteen-days-history.md](20260820-06-installation-fifteen-days-history.md) | done | - | SLA ติดตั้งแสดง 15 วันเท่ากันทุกใบ — คำนวณ instance เก่าที่ค้างค่า 7/14 วันจาก policy v1 ใหม่ พร้อมเพิ่มวันเวลาที่เสร็จจริงในแถว SLA ของ Timeline; migration 162 apply solardb_dev แล้ว ยังไม่ deploy Production |
 | [20260820-05-schedule-installation-three-days.md](20260820-05-schedule-installation-three-days.md) | done | - | นัดวันติดตั้งเปลี่ยนจาก 7 วัน เป็น 3 วัน เตือนก่อน 1 วัน; migration 161 apply solardb_dev แล้ว ยังไม่ deploy Production |
 | [20260820-04-proposal-roi-two-days.md](20260820-04-proposal-roi-two-days.md) | done | - | ส่ง Proposal เปลี่ยนจาก 24 ชม. เป็น 2 วัน เตือนก่อน 12 ชม.; migration 160 apply solardb_dev แล้ว ยังไม่ deploy Production |
 | [20260820-03-all-grades-same-policy.md](20260820-03-all-grades-same-policy.md) | done | - | ทุกเกรดใช้ policy ชุดเดียวกับ Grade A: เปิด BOOK_SURVEY/SITE_SURVEY/PROPOSAL_ROI/DEPOSIT_CLOSE/CLOSE_LEAD ให้ทุกเกรด และรวม playbook เป็น "โทรติดตามลูกค้า" 24 ชม. วนซ้ำ; เจอบั๊ก migration 152 ปิด DEPOSIT_CLOSE ทิ้งและแก้แล้ว; migration 159 apply solardb_dev ผ่าน (idempotent 3 รอบ) ยังไม่ deploy Production |
