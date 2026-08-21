@@ -10,6 +10,7 @@ Statuses:
 
 | Plan | Status | Mockup | Notes |
 | --- | --- | --- | --- |
+| [20260821-05-site-survey-latest-completion.md](20260821-05-site-survey-latest-completion.md) | done | - | SITE_SURVEY ใช้กิจกรรมเข้าสู่ Quotation ล่าสุดแล้ว; migration 170 ปรับย้อนหลัง 23 Lead บน solardb_dev, Lead 812 เปลี่ยนเป็น 20 ก.ค. 09:23 โดยคง start/due เดิม; test/type/lint/build ผ่าน ยังไม่ deploy Production |
 | [20260821-02-survey-confirm-before-start.md](20260821-02-survey-confirm-before-start.md) | done | - | SITE_SURVEY เริ่มหลังยืนยันนัดเสมอ โดยใช้เวลาที่ช้ากว่าระหว่างเวลานัดกับเวลายืนยัน; migration 167 แก้ anchor เดิม 45 ใบและหยุด SLA ที่ยังไม่ยืนยัน 2 ใบบน solardb_dev; Lead 686 เรียงยืนยัน 10:01:19 → เริ่ม SLA 10:01:19 → เสร็จ 11:07:37; test/type/lint/build ผ่าน ยังไม่ deploy Production |
 | [20260821-03-warranty-before-close-lead.md](20260821-03-warranty-before-close-lead.md) | done | - | งานรอบแรกใช้ migration 168; ความหมาย anchor ถูกแทนที่ด้วยกฎล่าสุดในแผน 20260821-04 ตามคำยืนยันว่าเวลาออกใบรับประกันคือเวลาปิด Lead |
 | [20260821-04-close-lead-at-warranty-issued.md](20260821-04-close-lead-at-warranty-issued.md) | done | - | CLOSE_LEAD เริ่มหลังติดตั้ง, SLA 3 วัน, และเสร็จ ณ เวลาออกใบรับประกัน; migration 169 ใช้กับ solardb_dev แล้ว, Lead 691 เสร็จใน SLA เวลา 11 ก.ค. 13:28; test/type/lint/build ผ่าน ยังไม่ deploy Production |

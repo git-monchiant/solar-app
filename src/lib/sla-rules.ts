@@ -239,6 +239,23 @@ export function resolveCloseLeadMilestones(input: {
 }
 
 /**
+ * Completed SLA rows are normally immutable audit history. Some workflow
+ * milestones, however, can legitimately occur again after a step rollback.
+ * Those definitions may refresh their evidence when the latest durable
+ * activity differs from the activity that originally completed the SLA.
+ */
+export function completionEvidenceChanged(input: {
+  existingCompletedAt: Date | null;
+  existingActivityId: number | string | null;
+  nextCompletedAt: Date | null;
+  nextActivityId: number | string | null;
+}): boolean {
+  if (!input.existingCompletedAt || !input.nextCompletedAt) return false;
+  return input.existingCompletedAt.getTime() !== input.nextCompletedAt.getTime()
+    || String(input.existingActivityId ?? "") !== String(input.nextActivityId ?? "");
+}
+
+/**
  * FIRST_CONTACT measures the first recorded contact attempt. For legacy leads
  * with no structured contact activity, a survey appointment is durable proof
  * that contact had already happened and is used as a fallback only.

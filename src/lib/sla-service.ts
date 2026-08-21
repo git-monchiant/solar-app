@@ -1,5 +1,5 @@
 import type sql from "mssql";
-import { addBangkokCalendarDays, firstContactHardDeadline, firstContactWarningAt, OPERATIONAL_SLA_MINUTES, resolveCloseLeadMilestones, resolveFirstContactEvidence, resolveInstallCompletion, resolveScheduledInstallAnchor, resolveScheduledSurveyAnchor, resolveSurveySlaMilestones, retryDeadlines, type ContactResult } from "@/lib/sla-rules";
+import { addBangkokCalendarDays, completionEvidenceChanged, firstContactHardDeadline, firstContactWarningAt, OPERATIONAL_SLA_MINUTES, resolveCloseLeadMilestones, resolveFirstContactEvidence, resolveInstallCompletion, resolveScheduledInstallAnchor, resolveScheduledSurveyAnchor, resolveSurveySlaMilestones, retryDeadlines, type ContactResult } from "@/lib/sla-rules";
 
 type Db = sql.ConnectionPool;
 
@@ -60,6 +60,7 @@ type OperationalDefinition = {
   ownerUserId: number | null;
   anchorSource?: string;
   freezeAnchorAfterCompletion?: boolean;
+  refreshCompletionAfterCompletion?: boolean;
 };
 
 function dateOrNull(value: unknown): Date | null {
@@ -85,7 +86,7 @@ async function reconcileOperationalInstance(db: Db, input: {
   const { definition } = input;
   const instanceKey = `operational:${definition.policyCode.toLowerCase()}:${input.leadId}`;
   const existingResult = await db.request().input("instance_key", instanceKey).query(`
-    SELECT TOP 1 id, status, started_at, completed_at
+    SELECT TOP 1 id, status, started_at, completed_at, completion_activity_id
     FROM lead_sla_instances WHERE instance_key = @instance_key
   `);
   const existing = existingResult.recordset[0];
@@ -111,10 +112,21 @@ async function reconcileOperationalInstance(db: Db, input: {
     return;
   }
 
+  const existingCompletedAt = dateOrNull(existing?.completed_at);
+  const shouldRefreshCompletedMilestone = Boolean(definition.refreshCompletionAfterCompletion)
+    && completionEvidenceChanged({
+      existingCompletedAt,
+      existingActivityId: existing?.completion_activity_id ?? null,
+      nextCompletedAt: definition.completionAt,
+      nextActivityId: definition.completionActivityId ?? null,
+    });
+
   // Completed operational SLA is audit history. Preserve the policy version,
   // anchor and deadline that were in force at completion; only a real workflow
-  // rollback (completionAt removed) is allowed to reopen/recalculate it.
-  if (existing?.status === "completed" && dateOrNull(existing.completed_at) && definition.completionAt) {
+  // rollback (completionAt removed), or a definition that explicitly follows a
+  // repeatable latest milestone, is allowed to reopen/recalculate it.
+  if (existing?.status === "completed" && existingCompletedAt && definition.completionAt
+    && !shouldRefreshCompletedMilestone) {
     return;
   }
 
@@ -247,6 +259,24 @@ async function reconcileOperationalInstance(db: Db, input: {
       eventAt: definition.completionAt || new Date(),
       detail: { policyCode: definition.policyCode, completionActivityId: definition.completionActivityId || null },
     });
+  } else if (shouldRefreshCompletedMilestone) {
+    await addEvent(db, {
+      instanceId: existing.id,
+      leadId: input.leadId,
+      type: "completion_changed",
+      eventKey: `sla-completion-changed:${existing.id}:${definition.completionActivityId || definition.completionAt?.getTime()}`,
+      fromStatus: existing.status,
+      toStatus: desiredStatus,
+      actorUserId: input.actorUserId,
+      eventAt: definition.completionAt,
+      detail: {
+        policyCode: definition.policyCode,
+        fromCompletedAt: existingCompletedAt?.toISOString() || null,
+        toCompletedAt: definition.completionAt?.toISOString() || null,
+        fromCompletionActivityId: existing.completion_activity_id || null,
+        toCompletionActivityId: definition.completionActivityId || null,
+      },
+    });
   }
 }
 
@@ -313,7 +343,7 @@ export async function syncOperationalSlas(db: Db, leadId: number, actorUserId?: 
     OUTER APPLY (
       SELECT TOP 1 a.id, a.created_at FROM lead_activities a
       WHERE a.lead_id = l.id AND a.activity_type = 'status_change' AND a.new_status = 'quote'
-      ORDER BY a.created_at, a.id
+      ORDER BY a.created_at DESC, a.id DESC
     ) survey_done
     OUTER APPLY (
       SELECT TOP 1 a.id, a.created_at FROM lead_activities a
@@ -475,7 +505,7 @@ export async function syncOperationalSlas(db: Db, leadId: number, actorUserId?: 
   const definitions: OperationalDefinition[] = [
     { policyCode: "ELECTRICITY_ASSESSMENT", policyVersion: 3, ownerRole: "sales", ownerUserId: lead.assigned_user_id || null, taskName: "ประเมินและกำหนด Grade Lead", anchorAt: qualificationAnchorAt, completionAt: qualificationCompletedAt, targetMinutes: OPERATIONAL_SLA_MINUTES.ELECTRICITY_ASSESSMENT.target, dueMinutes: OPERATIONAL_SLA_MINUTES.ELECTRICITY_ASSESSMENT.due, warningMinutes: OPERATIONAL_SLA_MINUTES.ELECTRICITY_ASSESSMENT.warning },
     { policyCode: "BOOK_SURVEY", policyVersion: 3, ownerRole: "sales", ownerUserId: lead.assigned_user_id || null, taskName: "ยืนยันวัน เวลา และนัดหมาย Pre-Survey", anchorAt: gradeAt || assessmentAt, completionAt: bookedAt, completionActivityId: lead.booked_activity_id || lead.survey_activity_id, targetMinutes: OPERATIONAL_SLA_MINUTES.BOOK_SURVEY.target, dueMinutes: OPERATIONAL_SLA_MINUTES.BOOK_SURVEY.due, warningMinutes: OPERATIONAL_SLA_MINUTES.BOOK_SURVEY.warning },
-    { policyCode: "SITE_SURVEY", policyVersion: 4, ownerRole: "solar", ownerUserId: lead.survey_assigned_user_id || lead.survey_completed_by || null, taskName: "เข้าตรวจสำรวจหน้างาน", anchorAt: scheduledSurveyAnchor.at, anchorSource: scheduledSurveyAnchor.source || undefined, freezeAnchorAfterCompletion: true, completionAt: surveyDoneAt, completionActivityId: lead.survey_activity_id, targetMinutes: OPERATIONAL_SLA_MINUTES.SITE_SURVEY.target, dueMinutes: OPERATIONAL_SLA_MINUTES.SITE_SURVEY.due, warningMinutes: OPERATIONAL_SLA_MINUTES.SITE_SURVEY.warning },
+    { policyCode: "SITE_SURVEY", policyVersion: 5, ownerRole: "solar", ownerUserId: lead.survey_assigned_user_id || lead.survey_completed_by || null, taskName: "เข้าตรวจสำรวจหน้างาน", anchorAt: scheduledSurveyAnchor.at, anchorSource: scheduledSurveyAnchor.source || undefined, freezeAnchorAfterCompletion: true, refreshCompletionAfterCompletion: true, completionAt: surveyDoneAt, completionActivityId: lead.survey_activity_id, targetMinutes: OPERATIONAL_SLA_MINUTES.SITE_SURVEY.target, dueMinutes: OPERATIONAL_SLA_MINUTES.SITE_SURVEY.due, warningMinutes: OPERATIONAL_SLA_MINUTES.SITE_SURVEY.warning },
     { policyCode: "PROPOSAL_ROI", policyVersion: 4, ownerRole: "sales", ownerUserId: lead.assigned_user_id || null, taskName: "จัดส่ง Proposal พร้อม ROI และทางเลือกการเงิน", anchorAt: surveyDoneAt, completionAt: proposalAt, completionActivityId: lead.proposal_activity_id, targetMinutes: OPERATIONAL_SLA_MINUTES.PROPOSAL_ROI.target, dueMinutes: OPERATIONAL_SLA_MINUTES.PROPOSAL_ROI.due, warningMinutes: OPERATIONAL_SLA_MINUTES.PROPOSAL_ROI.warning },
     { policyCode: "DEPOSIT_CLOSE", policyVersion: 3, ownerRole: "sales", ownerUserId: lead.assigned_user_id || null, taskName: "ติดตามปิดการขายและรับมัดจำ", anchorAt: proposalAt, completionAt: depositAt, completionActivityId: lead.deposit_payment_id, targetMinutes: OPERATIONAL_SLA_MINUTES.DEPOSIT_CLOSE.target, dueMinutes: OPERATIONAL_SLA_MINUTES.DEPOSIT_CLOSE.due, warningMinutes: OPERATIONAL_SLA_MINUTES.DEPOSIT_CLOSE.warning },
     { policyCode: "PAYMENT_INSTALLMENT_1", ownerRole: "sales", ownerUserId: lead.assigned_user_id || null, taskName: "ติดตามชำระเงินงวดที่ 1 เพื่อยืนยันราคา", anchorAt: firstInstallmentMethod && installment1Methods.has(firstInstallmentMethod) ? quotationReceivedAt : null, completionAt: installment1PaidAt, targetMinutes: OPERATIONAL_SLA_MINUTES.PAYMENT_INSTALLMENT_1.target, dueMinutes: OPERATIONAL_SLA_MINUTES.PAYMENT_INSTALLMENT_1.due, warningMinutes: OPERATIONAL_SLA_MINUTES.PAYMENT_INSTALLMENT_1.warning },

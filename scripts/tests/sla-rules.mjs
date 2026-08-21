@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import {
+  completionEvidenceChanged,
   contactResultFromOutcome,
   FIRST_CONTACT_WARNING_MINUTES,
   firstContactHardDeadline,
@@ -83,6 +84,25 @@ assert.deepEqual(resolveCloseLeadMilestones({
   anchorAt: new Date("2026-07-11T13:17:44.686Z"),
   completedAt: null,
 });
+
+assert.equal(completionEvidenceChanged({
+  existingCompletedAt: new Date("2026-07-19T09:33:47.260Z"),
+  existingActivityId: 3934,
+  nextCompletedAt: new Date("2026-07-20T09:23:15.390Z"),
+  nextActivityId: 3959,
+}), true);
+assert.equal(completionEvidenceChanged({
+  existingCompletedAt: new Date("2026-07-20T09:23:15.390Z"),
+  existingActivityId: 3959,
+  nextCompletedAt: new Date("2026-07-20T09:23:15.390Z"),
+  nextActivityId: 3959,
+}), false);
+assert.equal(completionEvidenceChanged({
+  existingCompletedAt: new Date("2026-07-20T09:23:15.390Z"),
+  existingActivityId: 3959,
+  nextCompletedAt: null,
+  nextActivityId: null,
+}), false);
 assert.deepEqual(resolveCloseLeadMilestones({
   installCompletedAt: new Date("2026-07-11T13:17:44.686Z"),
   warrantyIssuedAt: new Date("2026-07-11T13:00:00.000Z"),
