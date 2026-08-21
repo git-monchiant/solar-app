@@ -1,0 +1,1505 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="referrer" content="no-referrer">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'unsafe-inline' 'unsafe-eval' 'wasm-unsafe-eval' blob: data: https://cdnjs.cloudflare.com https://cdn.jsdelivr.net https://esm.sh https://fonts.bunny.net https://fonts.googleapis.com https://fonts.gstatic.com https://unpkg.com; style-src 'unsafe-inline' blob: data: https://cdnjs.cloudflare.com https://cdn.jsdelivr.net https://esm.sh https://fonts.bunny.net https://fonts.googleapis.com https://fonts.gstatic.com https://unpkg.com; img-src blob: data: https://cdnjs.cloudflare.com https://cdn.jsdelivr.net https://esm.sh https://fonts.bunny.net https://fonts.googleapis.com https://fonts.gstatic.com https://unpkg.com; font-src blob: data: https://cdnjs.cloudflare.com https://cdn.jsdelivr.net https://esm.sh https://fonts.bunny.net https://fonts.googleapis.com https://fonts.gstatic.com https://unpkg.com; media-src blob: data: https://cdnjs.cloudflare.com https://cdn.jsdelivr.net https://esm.sh https://fonts.bunny.net https://fonts.googleapis.com https://fonts.gstatic.com https://unpkg.com; worker-src blob:; connect-src blob: data:; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'none'">
+<title>SLA Step Visibility</title>
+<style>:root{color-scheme:light dark;background:light-dark(rgb(255 255 255), rgb(24 24 24))}html,body{margin:0}body{box-sizing:border-box;padding:1rem;background:inherit}iframe{display:block;width:100%;height:calc(100vh - 2rem);margin:0 auto;border:0}</style>
+</head>
+<body>
+<iframe sandbox="allow-scripts" referrerpolicy="no-referrer" title="SLA Step Visibility" srcdoc="&lt;!doctype html&gt;
+&lt;html lang=&quot;en&quot;&gt;
+&lt;head&gt;
+&lt;meta charset=&quot;utf-8&quot;&gt;
+&lt;meta name=&quot;viewport&quot; content=&quot;width=device-width, initial-scale=1&quot;&gt;
+&lt;meta name=&quot;referrer&quot; content=&quot;no-referrer&quot;&gt;
+&lt;meta http-equiv=&quot;Content-Security-Policy&quot; content=&quot;default-src &#x27;none&#x27;; script-src &#x27;unsafe-inline&#x27; &#x27;unsafe-eval&#x27; &#x27;wasm-unsafe-eval&#x27; blob: data: https://cdnjs.cloudflare.com https://cdn.jsdelivr.net https://esm.sh https://fonts.bunny.net https://fonts.googleapis.com https://fonts.gstatic.com https://unpkg.com; style-src &#x27;unsafe-inline&#x27; blob: data: https://cdnjs.cloudflare.com https://cdn.jsdelivr.net https://esm.sh https://fonts.bunny.net https://fonts.googleapis.com https://fonts.gstatic.com https://unpkg.com; img-src blob: data: https://cdnjs.cloudflare.com https://cdn.jsdelivr.net https://esm.sh https://fonts.bunny.net https://fonts.googleapis.com https://fonts.gstatic.com https://unpkg.com; font-src blob: data: https://cdnjs.cloudflare.com https://cdn.jsdelivr.net https://esm.sh https://fonts.bunny.net https://fonts.googleapis.com https://fonts.gstatic.com https://unpkg.com; media-src blob: data: https://cdnjs.cloudflare.com https://cdn.jsdelivr.net https://esm.sh https://fonts.bunny.net https://fonts.googleapis.com https://fonts.gstatic.com https://unpkg.com; worker-src blob:; connect-src blob: data:; frame-src &#x27;none&#x27;; object-src &#x27;none&#x27;; base-uri &#x27;none&#x27;; form-action &#x27;none&#x27;&quot;&gt;
+&lt;title&gt;SLA Step Visibility&lt;/title&gt;
+&lt;style&gt;:root {
+  color-scheme: light dark;
+  background-color: var(
+    --background,
+    var(--color-background-primary, light-dark(rgb(255 255 255), rgb(24 24 24)))
+  ) !important;
+
+  /* Agent-facing contract; keep in sync with SKILL.md. */
+  --background: var(
+    --color-background-primary,
+    light-dark(rgb(255 255 255), rgb(24 24 24))
+  );
+  --foreground: var(
+    --color-text-primary,
+    light-dark(rgb(26 28 31), rgb(255 255 255))
+  );
+  --card: color-mix(in oklab, var(--foreground) 5%, var(--background));
+  --card-foreground: var(
+    --color-text-primary,
+    light-dark(rgb(26 28 31), rgb(255 255 255))
+  );
+  --popover: var(
+    --color-background-secondary,
+    light-dark(rgb(255 255 255), rgb(45 45 45))
+  );
+  --popover-foreground: var(
+    --color-text-primary,
+    light-dark(rgb(26 28 31), rgb(255 255 255))
+  );
+  --primary: var(
+    --color-text-info,
+    light-dark(rgb(51 156 255), rgb(131 195 255))
+  );
+  --primary-foreground: var(
+    --color-text-inverse,
+    light-dark(rgb(255 255 255), rgb(13 13 13))
+  );
+  --secondary: var(
+    --color-background-secondary,
+    light-dark(rgb(255 255 255 / 96%), rgb(54 54 54 / 96%))
+  );
+  --secondary-foreground: var(
+    --color-text-primary,
+    light-dark(rgb(26 28 31), rgb(255 255 255))
+  );
+  --muted: color-mix(in srgb, var(--foreground) 10%, transparent);
+  --muted-foreground: var(
+    --color-text-secondary,
+    light-dark(rgb(26 28 31 / 49.4%), rgb(255 255 255 / 49.8%))
+  );
+  --accent: var(
+    --color-background-info,
+    light-dark(rgb(229 242 255), rgb(13 39 63))
+  );
+  --accent-foreground: var(
+    --color-text-info,
+    light-dark(rgb(51 156 255), rgb(131 195 255))
+  );
+  --destructive: var(
+    --color-text-warning,
+    light-dark(rgb(226 85 7), rgb(255 133 73))
+  );
+  --border: var(
+    --color-border-secondary,
+    light-dark(rgb(26 28 31 / 8%), rgb(255 255 255 / 8.2%))
+  );
+  --input: var(
+    --color-border-primary,
+    light-dark(
+      rgb(26 28 31 / 11.8%),
+      color-mix(in oklab, rgb(0 0 0) 10%, transparent)
+    )
+  );
+  --ring: var(
+    --color-ring-primary,
+    light-dark(rgb(51 156 255), rgb(131 195 255 / 76%))
+  );
+  --font-size-base: var(--font-text-md-size, 14px);
+  --blue: light-dark(rgb(51 156 255), rgb(51 156 255));
+  --orange: light-dark(rgb(226 85 7), rgb(251 106 34));
+  --green: light-dark(rgb(0 162 64), rgb(64 201 119));
+  --red: light-dark(rgb(224 46 42), rgb(255 103 100));
+  --purple: light-dark(rgb(146 79 247), rgb(173 123 249));
+  --yellow: light-dark(rgb(255 195 0), rgb(255 210 64));
+  --viz-series-1: var(--primary);
+  --viz-series-2: light-dark(rgb(243 136 59), rgb(245 154 86));
+  --viz-series-3: light-dark(rgb(93 201 119), rgb(116 213 139));
+  --viz-series-4: light-dark(rgb(235 119 177), rgb(240 143 192));
+  --viz-series-5: light-dark(rgb(155 121 236), rgb(170 145 239));
+  --viz-series-6: light-dark(rgb(58 185 177), rgb(90 203 194));
+
+  /* Internal implementation variables; not part of the agent contract. */
+  --font-sans: -apple-system, system-ui, &quot;Segoe UI&quot;, sans-serif;
+  --font-mono:
+    ui-monospace, SFMono-Regular, &quot;SF Mono&quot;, Menlo, Consolas, &quot;Liberation Mono&quot;,
+    monospace;
+  --font-size-normal: max(11px, var(--font-size-base));
+  --font-size-tooltip: calc(var(--font-size-base) - 1px);
+  --font-size-small: max(11px, calc(var(--font-size-base) - 2px));
+  --font-size-h1: calc(var(--font-size-normal) * 1.7142857143);
+  --font-size-h2: calc(var(--font-size-normal) * 1.4285714286);
+  --font-size-h3: calc(var(--font-size-normal) * 1.2857142857);
+  --font-weight-normal: 430;
+  --font-weight-medium: 500;
+  --line-height-normal: calc(var(--font-size-normal) * 1.5);
+  --line-height-tooltip: calc(var(--font-size-tooltip) * 1.4285714286);
+  --line-height-small: calc(var(--font-size-small) + 4px);
+  --radius: var(--border-radius-lg, 12.5px);
+  --radius-sm: calc(var(--radius) * 0.6);
+  --radius-md: calc(var(--radius) * 0.8);
+  --radius-lg: var(--radius);
+  --radius-2xl: calc(var(--radius) * 1.6);
+  --radius-full: 9999px;
+  --shadow-sm: 0 1px 2px -1px rgb(0 0 0 / 8%);
+  --checkmark-image: url(&quot;data:image/svg+xml,%3Csvg xmlns=&#x27;http://www.w3.org/2000/svg&#x27; viewBox=&#x27;0 0 17 17&#x27;%3E%3Cpath d=&#x27;M12.8961 3.64101C13.1297 3.41418 13.4984 3.37523 13.7779 3.56581C14.0571 3.75635 14.1554 4.11331 14.0299 4.41347L13.9615 4.53847L7.71151 13.7045C7.59411 13.8767 7.4063 13.9877 7.19881 14.0072C6.99136 14.0267 6.78564 13.9533 6.63826 13.806L2.88826 10.056L2.79842 9.9457C2.6192 9.67407 2.64927 9.30496 2.88826 9.06581C3.12738 8.82669 3.49647 8.79676 3.76815 8.97597L3.8785 9.06581L7.03084 12.2182L12.8053 3.74941L12.8961 3.64101Z&#x27;/%3E%3C/svg%3E&quot;);
+
+  /* Legacy aliases; not part of the current agent contract. */
+  --viz-bg: transparent;
+  --viz-panel: var(--card);
+  --viz-border: var(--border);
+  --viz-text: var(--foreground);
+  --viz-muted: var(--muted-foreground);
+  --viz-accent: var(--primary);
+  --viz-accent-text: var(--primary-foreground);
+  --viz-accent-bg: var(--accent);
+  --viz-font-size: var(--font-size-base);
+  --viz-warning: var(--destructive);
+}
+
+:root[data-theme=&quot;light&quot;] {
+  color-scheme: light;
+}
+
+:root[data-theme=&quot;dark&quot;] {
+  color-scheme: dark;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html &gt; body {
+  /* Preserve MCP aliases for older inline renderers without creating :root cycles. */
+  --color-background-primary: var(
+    --background,
+    light-dark(rgb(255 255 255), rgb(24 24 24))
+  );
+  --color-text-primary: var(
+    --foreground,
+    light-dark(rgb(26 28 31), rgb(255 255 255))
+  );
+  --color-border-secondary: var(
+    --border,
+    light-dark(rgb(26 28 31 / 8%), rgb(255 255 255 / 8.2%))
+  );
+
+  margin: 0;
+  padding: 5px;
+  color: var(--foreground);
+  background: transparent !important;
+  font-family: var(--font-sans) !important;
+  font-size: var(--font-size-normal);
+  font-weight: var(--font-weight-normal);
+  line-height: var(--line-height-normal);
+}
+
+a {
+  color: color-mix(in srgb, var(--viz-accent) 80%, var(--viz-text) 20%);
+  cursor: pointer;
+  font-weight: var(--font-weight-medium, 500);
+  text-decoration: none;
+  text-underline-offset: 2px;
+}
+
+a:is(:hover, :focus-visible) {
+  text-decoration-line: underline;
+  text-decoration-style: dashed;
+  text-decoration-thickness: 0.5px;
+}
+
+h1,
+h2,
+h3,
+h4,
+h5,
+h6,
+p {
+  margin-block: 0;
+}
+
+h1 {
+  font-size: var(--font-size-h1);
+  font-weight: var(--font-weight-medium);
+  line-height: 1.25;
+}
+
+h2 {
+  font-size: var(--font-size-h2);
+  font-weight: var(--font-weight-medium);
+  line-height: 1.25;
+}
+
+h3,
+h4,
+h5,
+h6 {
+  font-size: var(--font-size-h3);
+  font-weight: var(--font-weight-medium);
+  line-height: 1.3;
+}
+
+b,
+strong,
+th {
+  font-weight: var(--font-weight-medium);
+}
+
+code:not(pre code) {
+  display: inline;
+  padding: 1px 6px;
+  border-radius: var(--radius-sm);
+  corner-shape: superellipse(1.5);
+  background: var(--muted);
+  font-family: var(--font-mono);
+  font-size: 0.92em;
+  overflow-wrap: anywhere;
+  -webkit-box-decoration-break: clone;
+  box-decoration-break: clone;
+  word-break: break-word;
+}
+
+.table-responsive {
+  width: 100%;
+  overflow-x: auto;
+  scrollbar-width: thin;
+}
+
+.table {
+  width: 100%;
+  border-collapse: collapse;
+  color: var(--foreground);
+  font: inherit;
+  text-align: start;
+}
+
+.table :is(th, td) {
+  padding-block: 10px;
+  padding-inline: 0 24px;
+  overflow-wrap: anywhere;
+  border-bottom: 1px solid var(--border);
+  text-align: start;
+  vertical-align: top;
+}
+
+.table-responsive &gt; .table :is(th, td) {
+  overflow-wrap: break-word;
+}
+
+.table :is(th, td):last-child {
+  padding-inline-end: 0;
+}
+
+.table :is(caption, thead th) {
+  font-weight: 600;
+}
+
+.table thead th {
+  padding-block: 8px;
+  border-bottom-color: color-mix(in srgb, var(--foreground) 16%, transparent);
+}
+
+.table tbody tr:last-child :is(th, td) {
+  border-bottom: 0;
+}
+
+.table.table-sm :is(th, td) {
+  padding-block: 6px;
+}
+
+.table.table-sm :is(th, td):not(:last-child) {
+  padding-inline-end: 16px;
+}
+
+.table :is(.text-end, [align=&quot;right&quot;]) {
+  text-align: end;
+  font-variant-numeric: tabular-nums;
+}
+
+.table :is(.text-center, [align=&quot;center&quot;]) {
+  text-align: center;
+}
+
+.table .text-nowrap {
+  white-space: nowrap;
+}
+
+#widget {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  width: 100%;
+  padding: 0;
+  background: transparent !important;
+}
+
+.card {
+  min-width: 0;
+  padding: 12px;
+  overflow: hidden;
+  overflow-wrap: break-word;
+  border-radius: var(--radius-2xl);
+  corner-shape: superellipse(1.5);
+  color: var(--card-foreground);
+  background: var(--card);
+}
+
+#widget &gt; :not(.card, .progress) {
+  width: 100% !important;
+  max-width: none !important;
+  margin: 0 !important;
+  padding: 0 !important;
+  border: 0 !important;
+  border-radius: 0 !important;
+  background: transparent !important;
+  box-shadow: none !important;
+}
+
+.tooltip {
+  position: fixed;
+  z-index: 50;
+  top: 0;
+  left: 0;
+  width: max-content;
+  max-width: min(
+    20rem,
+    var(--tooltip-available-width, calc(100vw - 10px)),
+    calc(100vw - 10px)
+  );
+  max-height: min(
+    var(--tooltip-available-height, calc(100vh - 10px)),
+    calc(100vh - 10px)
+  );
+  padding: 4px 8px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  corner-shape: superellipse(1.5);
+  color: var(--popover-foreground);
+  background: var(--popover);
+  box-shadow: none;
+  font-size: var(--font-size-tooltip);
+  line-height: var(--line-height-tooltip);
+  overflow-wrap: break-word;
+  white-space: normal;
+  pointer-events: none;
+  user-select: none;
+}
+
+.viz-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(max(180px, 24%), 1fr));
+  gap: 10px;
+}
+
+.viz-stat {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.viz-stat-value {
+  font-size: var(--font-size-h2);
+  font-weight: var(--font-weight-medium);
+  line-height: 1.25;
+}
+
+.viz-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+}
+
+.progress {
+  display: flex;
+  height: 6px;
+  margin-block: calc((var(--line-height-normal, 1.5em) - 6px) / 2);
+  overflow: hidden;
+  border: 0;
+  border-radius: var(--radius-full);
+  background: var(--muted);
+}
+
+.progress-bar {
+  height: 100%;
+  flex-shrink: 0;
+  border: 0;
+  background: var(--viz-series-1);
+}
+
+.viz-badge {
+  padding: 3px 8px;
+  border-radius: var(--radius-full);
+  color: var(--accent-foreground);
+  background: var(--accent);
+  font-weight: var(--font-weight-medium);
+}
+
+small,
+.text-small,
+.viz-badge {
+  font-size: var(--font-size-small);
+  line-height: var(--line-height-small);
+}
+
+.text-muted {
+  color: var(--muted-foreground);
+}
+
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+.viz-controls {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
+.viz-controls &gt; .form-label {
+  display: grid;
+  min-width: min(100%, 260px);
+  flex: 1 1 280px;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: baseline;
+  gap: 2px 12px;
+  margin-bottom: 0;
+}
+
+.viz-controls &gt; .form-label &gt; :is(.form-control, .form-range, .form-select) {
+  grid-column: 1 / -1;
+}
+
+.btn,
+.form-check-input,
+.form-control,
+.form-range,
+.form-select {
+  font: inherit;
+}
+
+.btn {
+  appearance: button;
+  display: inline-flex;
+  inline-size: fit-content;
+  max-inline-size: 100%;
+  min-height: 28px;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  margin: 0;
+  padding: 0 8px;
+  -webkit-app-region: no-drag;
+  border: 1px solid var(--input);
+  border-radius: var(--radius-lg);
+  corner-shape: superellipse(1.5);
+  color: var(--secondary-foreground);
+  background: var(--secondary);
+  cursor: var(--cursor-interaction, pointer);
+  text-align: center;
+  text-decoration: none;
+  white-space: nowrap;
+  user-select: none;
+  -webkit-font-smoothing: antialiased;
+}
+
+.btn:is(.btn-block, .viz-tile) {
+  inline-size: 100%;
+}
+
+.btn.viz-tile {
+  min-width: 0;
+  overflow-wrap: anywhere;
+  white-space: normal;
+}
+
+a.btn {
+  cursor: pointer;
+  text-decoration: none;
+}
+
+.btn:not(:disabled):hover {
+  background: color-mix(in srgb, var(--foreground) 6%, var(--secondary));
+}
+
+.btn-primary {
+  border-color: transparent;
+  color: var(--primary-foreground);
+  background: var(--foreground);
+  background-clip: padding-box;
+}
+
+.btn-primary .text-muted {
+  color: color-mix(in srgb, var(--primary-foreground) 50%, transparent);
+}
+
+.btn-primary:not(:disabled):hover {
+  background: color-mix(in srgb, var(--foreground) 80%, transparent);
+  background-clip: padding-box;
+}
+
+.btn-ghost {
+  border-color: transparent;
+  color: var(--muted-foreground);
+  background: transparent;
+}
+
+.btn-ghost:not(:disabled):hover {
+  color: var(--foreground);
+  background: color-mix(in srgb, var(--foreground) 6%, var(--secondary));
+}
+
+.btn:disabled {
+  cursor: not-allowed;
+  opacity: 0.4;
+}
+
+[data-lucide] {
+  stroke-width: 1.6;
+}
+
+.form-label {
+  display: block;
+  margin-bottom: 6px;
+  color: var(--foreground);
+}
+
+.form-control {
+  display: block;
+  width: 100%;
+  min-height: 28px;
+  padding: 0 8px;
+  outline: none;
+  border: 1px solid var(--input);
+  border-radius: var(--radius-lg);
+  corner-shape: superellipse(1.5);
+  color: var(--foreground);
+  background: var(--secondary);
+}
+
+.form-control::placeholder {
+  color: var(--muted-foreground);
+}
+
+.form-control[type=&quot;file&quot;] {
+  padding: 0;
+  overflow: hidden;
+  cursor: var(--cursor-interaction, pointer);
+}
+
+.form-control[type=&quot;file&quot;]::file-selector-button {
+  min-height: 26px;
+  margin-right: 8px;
+  padding: 0 8px;
+  border: 0;
+  border-right: 1px solid var(--input);
+  color: var(--secondary-foreground);
+  background: var(--secondary);
+  cursor: inherit;
+  font: inherit;
+}
+
+.form-control[type=&quot;file&quot;]:not(:disabled):hover::file-selector-button {
+  background: color-mix(in srgb, var(--foreground) 6%, var(--secondary));
+}
+
+.form-control-color[type=&quot;color&quot;] {
+  width: 40px;
+  height: 28px;
+  padding: 3px;
+  cursor: var(--cursor-interaction, pointer);
+}
+
+.form-control-color[type=&quot;color&quot;]::-webkit-color-swatch-wrapper {
+  padding: 0;
+}
+
+.form-control-color[type=&quot;color&quot;]::-webkit-color-swatch {
+  border: 0;
+  border-radius: calc(var(--radius-lg) - 4px);
+  corner-shape: superellipse(1.5);
+}
+
+textarea.form-control {
+  height: auto;
+  min-height: 72px;
+  padding: 8px 10px;
+  resize: vertical;
+}
+
+.form-control:focus-visible {
+  border-color: var(--ring);
+  box-shadow: inset 0 0 0 1px var(--ring);
+}
+
+.form-control:disabled,
+.form-select:disabled {
+  cursor: not-allowed;
+  opacity: 0.4;
+}
+
+.form-select {
+  appearance: none;
+  display: block;
+  width: 100%;
+  min-height: 28px;
+  margin: 0;
+  padding: 0 32px 0 8px;
+  outline: none;
+  border: 1px solid var(--input);
+  border-radius: var(--radius-lg);
+  corner-shape: superellipse(1.5);
+  color: var(--foreground);
+  background-color: var(--secondary);
+  background-image:
+    linear-gradient(45deg, transparent 50%, var(--muted-foreground) 50%),
+    linear-gradient(135deg, var(--muted-foreground) 50%, transparent 50%);
+  background-position:
+    calc(100% - 14px) 50%,
+    calc(100% - 10px) 50%;
+  background-repeat: no-repeat;
+  background-size: 4px 4px;
+  cursor: var(--cursor-interaction, default);
+}
+
+.form-select:not(:disabled):hover {
+  background-color: color-mix(in srgb, var(--foreground) 6%, var(--secondary));
+}
+
+.form-select:focus-visible {
+  border-color: var(--ring);
+  box-shadow: inset 0 0 0 1px var(--ring);
+}
+
+.form-check {
+  display: flex;
+  min-height: 20px;
+  align-items: center;
+  gap: 6px;
+}
+
+.form-check-input {
+  appearance: none;
+  width: 14px;
+  height: 14px;
+  flex: 0 0 auto;
+  margin: 0;
+  border: 1px solid var(--input);
+  color: var(--primary-foreground);
+  background-color: transparent;
+  cursor: var(--cursor-interaction, default);
+  transition:
+    background-color 150ms,
+    border-color 150ms,
+    box-shadow 150ms;
+}
+
+.form-check:not(.form-switch) .form-check-input[type=&quot;checkbox&quot;] {
+  border-color: var(--input);
+  border-radius: var(--radius-sm);
+  corner-shape: superellipse(1.5);
+  background-color: var(--secondary);
+  box-shadow: var(--shadow-sm);
+}
+
+.form-check:not(.form-switch)
+  .form-check-input:not(:disabled):not(:checked):hover {
+  background-color: var(--card);
+}
+
+.form-check:not(.form-switch) .form-check-input[type=&quot;checkbox&quot;]:checked {
+  border-color: var(--primary);
+  background-color: var(--primary);
+}
+
+.form-check:not(.form-switch)
+  .form-check-input[type=&quot;checkbox&quot;]:checked::before {
+  display: block;
+  width: 100%;
+  height: 100%;
+  background: var(--primary-foreground);
+  content: &quot;&quot;;
+  mask: var(--checkmark-image) center / 12px 12px no-repeat;
+}
+
+.form-check-input[type=&quot;radio&quot;] {
+  width: 14px;
+  height: 14px;
+  border-radius: var(--radius-full);
+}
+
+.form-check-input[type=&quot;radio&quot;]:checked {
+  border: 2px solid var(--primary);
+  background:
+    radial-gradient(circle, var(--primary-foreground) 0 2.5px, transparent 3px),
+    var(--primary);
+}
+
+.form-check:not(.form-switch) .form-check-input:focus-visible {
+  outline: 2px solid var(--ring);
+  outline-offset: 2px;
+}
+
+.form-check:not(.form-switch) .form-check-input:disabled {
+  cursor: not-allowed;
+  pointer-events: none;
+}
+
+.form-check:not(.form-switch) .form-check-input:disabled + .form-check-label {
+  cursor: not-allowed;
+}
+
+.form-switch .form-check-input:disabled,
+.form-switch .form-check-input:disabled + .form-check-label {
+  cursor: not-allowed;
+  opacity: 0.6;
+}
+
+.form-check-label {
+  color: var(--foreground);
+  cursor: var(--cursor-interaction, default);
+}
+
+.form-switch .form-check-input {
+  position: relative;
+  width: 32px;
+  height: 20px;
+  border: 0;
+  border-radius: var(--radius-full);
+  background: var(--muted);
+  box-shadow: none;
+  transition: background-color 200ms cubic-bezier(0, 0, 0.2, 1);
+}
+
+.form-switch .form-check-input::before {
+  position: absolute;
+  top: 50%;
+  left: 0;
+  width: 16px;
+  height: 16px;
+  box-sizing: border-box;
+  border: 1px solid light-dark(var(--primary-foreground), var(--foreground));
+  border-radius: var(--radius-full);
+  background: light-dark(var(--primary-foreground), var(--foreground));
+  box-shadow: var(--shadow-sm);
+  content: &quot;&quot;;
+  transform: translate(2px, -50%);
+  transition: transform 200ms cubic-bezier(0, 0, 0.2, 1);
+}
+
+.form-switch .form-check-input:checked {
+  background: var(--primary);
+}
+
+.form-switch .form-check-input:checked::before {
+  transform: translate(14px, -50%);
+}
+
+.form-switch .form-check-input:focus-visible {
+  box-shadow: 0 0 0 2px var(--ring);
+}
+
+.form-range {
+  appearance: none;
+  display: block;
+  width: 100%;
+  height: 28px;
+  flex: 1;
+  margin: 0;
+  padding: 0;
+  outline: none;
+  border: 0;
+  accent-color: var(--primary);
+  background: linear-gradient(
+      color-mix(in srgb, var(--foreground) 7%, transparent),
+      color-mix(in srgb, var(--foreground) 7%, transparent)
+    )
+    center / 100% 2px no-repeat;
+}
+
+.form-range::-webkit-slider-runnable-track {
+  height: 28px;
+  background: transparent;
+}
+
+.form-range::-webkit-slider-thumb {
+  appearance: none;
+  width: 20px;
+  height: 20px;
+  margin-top: 4px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-full);
+  background: light-dark(var(--primary-foreground), var(--foreground));
+}
+
+.form-range:focus-visible::-webkit-slider-thumb {
+  border-color: var(--ring);
+  box-shadow: inset 0 0 0 1px var(--ring);
+}
+
+.form-range::-moz-range-track {
+  height: 28px;
+  background: transparent;
+}
+
+.form-range::-moz-range-thumb {
+  width: 20px;
+  height: 20px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-full);
+  background: light-dark(var(--primary-foreground), var(--foreground));
+}
+
+.form-range:focus-visible::-moz-range-thumb {
+  border-color: var(--ring);
+  box-shadow: inset 0 0 0 1px var(--ring);
+}
+
+.form-range:disabled {
+  cursor: not-allowed;
+  opacity: 0.4;
+}
+
+.btn:not(.btn-primary, .viz-tile):is(
+  [aria-pressed=&quot;true&quot;],
+  [aria-selected=&quot;true&quot;],
+  .is-selected
+) {
+  border-color: var(--primary);
+  color: var(--primary-foreground);
+  background: var(--primary);
+}
+
+.btn.viz-tile:is([aria-pressed=&quot;true&quot;], [aria-selected=&quot;true&quot;], .is-selected) {
+  border-color: var(--primary);
+  box-shadow: inset 0 0 0 1px var(--primary);
+}
+
+.btn:focus-visible {
+  outline: 2px solid var(--ring);
+  outline-offset: 2px;
+}
+
+svg {
+  display: block;
+  max-width: 100%;
+  height: auto;
+}
+
+#widget &gt; svg {
+  width: 100%;
+}
+
+/* Model-authored chart rules can otherwise stretch icons after these styles load. */
+svg.lucide {
+  display: block;
+  width: 16px !important;
+  height: 16px !important;
+  flex: none;
+  margin: 0 !important;
+  stroke-width: 1.6;
+}
+
+.text-warning,
+.text-destructive {
+  color: var(--destructive);
+}
+
+html&gt;body{padding:0}&lt;/style&gt;
+&lt;/head&gt;
+&lt;body&gt;
+&lt;div id=&quot;solar-sla-existing-page&quot;&gt;
+  &lt;style&gt;
+    #solar-sla-existing-page {
+      --solar-bg: light-dark(#f7f9fa, #11171a);
+      --solar-surface: light-dark(#ffffff, #182126);
+      --solar-soft: light-dark(#f2f5f7, #202a30);
+      --solar-text: light-dark(#14202b, #f2f6f8);
+      --solar-muted: light-dark(#7b8794, #a8b4bc);
+      --solar-border: light-dark(#dce3e7, #35434b);
+      --solar-teal: light-dark(#14c4c6, #42d4d5);
+      --solar-teal-soft: light-dark(#e2f8f8, #18383b);
+      --solar-red: light-dark(#e63543, #ff6975);
+      --solar-red-soft: light-dark(#fff3f4, #3b2025);
+      --solar-orange: light-dark(#f29a08, #ffad38);
+      --solar-green: light-dark(#128259, #43ce99);
+      --solar-green-soft: light-dark(#eaf9f2, #17382c);
+      --solar-purple: light-dark(#7658e9, #a994ff);
+      --solar-shadow: light-dark(rgba(32, 50, 60, .09), rgba(0, 0, 0, .22));
+      color-scheme: light dark;
+      width: 100%;
+      color: var(--solar-text);
+      background: transparent;
+      font-family: &quot;Noto Sans Thai&quot;, &quot;Leelawadee UI&quot;, system-ui, sans-serif;
+    }
+    #solar-sla-existing-page * { box-sizing: border-box; }
+    #solar-sla-existing-page button,
+    #solar-sla-existing-page select,
+    #solar-sla-existing-page input { font: inherit; }
+    #solar-sla-existing-page .solar-app {
+      display: grid;
+      grid-template-columns: 170px minmax(0, 1fr);
+      min-height: 800px;
+      overflow: hidden;
+      background: var(--solar-bg);
+      border: 1px solid var(--solar-border);
+      border-radius: 12px;
+      box-shadow: 0 12px 34px var(--solar-shadow);
+    }
+    #solar-sla-existing-page .solar-sidebar {
+      padding: 16px 10px;
+      background: var(--solar-surface);
+      border-right: 1px solid var(--solar-border);
+    }
+    #solar-sla-existing-page .solar-brand {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      min-height: 34px;
+      margin: 0 4px 16px;
+      color: var(--solar-muted);
+      letter-spacing: .07em;
+    }
+    #solar-sla-existing-page .solar-brand strong { color: var(--solar-teal); font-weight: 500; }
+    #solar-sla-existing-page .solar-menu-label { margin: 17px 9px 5px; color: var(--solar-muted); font-size: 10px; letter-spacing: .13em; text-transform: uppercase; }
+    #solar-sla-existing-page .solar-menu-item {
+      display: flex;
+      align-items: center;
+      gap: 9px;
+      width: 100%;
+      padding: 9px 10px;
+      border: 0;
+      border-radius: 8px;
+      background: transparent;
+      color: var(--solar-muted);
+      text-align: left;
+      font-size: 12px;
+    }
+    #solar-sla-existing-page .solar-menu-item[data-current=&quot;true&quot;] { color: var(--solar-teal); background: var(--solar-teal-soft); font-weight: 500; }
+    #solar-sla-existing-page .solar-workspace { min-width: 0; }
+    #solar-sla-existing-page .solar-environment {
+      height: 18px;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      color: light-dark(#ffffff, #161109);
+      background: var(--solar-orange);
+      font-size: 10px;
+      letter-spacing: .08em;
+      font-weight: 500;
+    }
+    #solar-sla-existing-page .solar-header { padding: 11px 18px 14px; background: linear-gradient(135deg, var(--solar-teal), color-mix(in srgb, var(--solar-teal) 38%, var(--solar-surface))); }
+    #solar-sla-existing-page .solar-header-row,
+    #solar-sla-existing-page .solar-list-heading,
+    #solar-sla-existing-page .solar-card-head,
+    #solar-sla-existing-page .solar-meta,
+    #solar-sla-existing-page .solar-overdue-top {
+      display: flex;
+      align-items: center;
+    }
+    #solar-sla-existing-page .solar-header-row { justify-content: space-between; gap: 14px; }
+    #solar-sla-existing-page .solar-title { font-size: 17px; font-weight: 500; }
+    #solar-sla-existing-page .solar-subtitle { margin-top: 2px; color: color-mix(in srgb, var(--solar-text) 60%, transparent); font-size: 11px; }
+    #solar-sla-existing-page .solar-role {
+      border: 1px solid color-mix(in srgb, var(--solar-surface) 65%, transparent);
+      border-radius: 8px;
+      padding: 7px 10px;
+      background: color-mix(in srgb, var(--solar-surface) 88%, transparent);
+      color: var(--solar-text);
+      font-size: 11px;
+    }
+    #solar-sla-existing-page .solar-search {
+      width: 100%;
+      margin-top: 10px;
+      padding: 9px 13px;
+      border: 1px solid color-mix(in srgb, var(--solar-surface) 58%, transparent);
+      border-radius: 999px;
+      background: color-mix(in srgb, var(--solar-surface) 52%, transparent);
+      color: var(--solar-text);
+      outline: none;
+    }
+    #solar-sla-existing-page .solar-content { padding: 15px 16px 22px; }
+    #solar-sla-existing-page .solar-tabs { display: flex; gap: 20px; overflow-x: auto; border-bottom: 1px solid var(--solar-border); }
+    #solar-sla-existing-page .solar-tab {
+      padding: 0 2px 9px;
+      border: 0;
+      border-bottom: 2px solid transparent;
+      background: transparent;
+      color: var(--solar-muted);
+      white-space: nowrap;
+      font-size: 12px;
+    }
+    #solar-sla-existing-page .solar-tab[data-current=&quot;true&quot;] { color: var(--solar-purple); border-bottom-color: var(--solar-purple); }
+    #solar-sla-existing-page .solar-overview-label { margin: 16px 2px 9px; color: var(--solar-muted); font-size: 11px; }
+    #solar-sla-existing-page .solar-summary { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; }
+    #solar-sla-existing-page .solar-summary-item { padding: 12px; border: 1px solid var(--solar-border); border-radius: 11px; background: var(--solar-surface); }
+    #solar-sla-existing-page .solar-summary-label { display: flex; align-items: center; gap: 7px; color: var(--solar-muted); font-size: 11px; }
+    #solar-sla-existing-page .solar-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--solar-red); }
+    #solar-sla-existing-page .solar-dot[data-tone=&quot;warning&quot;] { background: var(--solar-orange); }
+    #solar-sla-existing-page .solar-dot[data-tone=&quot;active&quot;] { background: var(--solar-teal); }
+    #solar-sla-existing-page .solar-summary-value { margin-top: 9px; font-size: 22px; font-weight: 500; }
+    #solar-sla-existing-page .solar-summary-leads { margin-top: 4px; color: var(--solar-muted); font-size: 11px; font-weight: 500; }
+    #solar-sla-existing-page .solar-list-heading { justify-content: space-between; gap: 12px; margin: 18px 2px 9px; }
+    #solar-sla-existing-page .solar-list-heading strong { font-weight: 500; }
+    #solar-sla-existing-page .solar-stage-select {
+      min-width: 150px;
+      padding: 7px 28px 7px 9px;
+      border: 1px solid var(--solar-border);
+      border-radius: 8px;
+      background: var(--solar-surface);
+      color: var(--solar-text);
+      font-size: 11px;
+    }
+    #solar-sla-existing-page .solar-list { display: grid; gap: 10px; }
+    #solar-sla-existing-page .solar-lead {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) 218px;
+      gap: 14px;
+      padding: 13px 14px;
+      border: 1px solid var(--solar-border);
+      border-left: 4px solid var(--solar-red);
+      border-radius: 11px;
+      background: var(--solar-surface);
+      box-shadow: 0 2px 4px var(--solar-shadow);
+    }
+    #solar-sla-existing-page .solar-lead[data-hidden=&quot;true&quot;] { display: none; }
+    #solar-sla-existing-page .solar-card-head { justify-content: space-between; gap: 10px; }
+    #solar-sla-existing-page .solar-badges { display: flex; flex-wrap: wrap; gap: 6px; }
+    #solar-sla-existing-page .solar-badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
+      padding: 4px 8px;
+      border-radius: 999px;
+      font-size: 10px;
+      font-weight: 500;
+    }
+    #solar-sla-existing-page .solar-badge[data-tone=&quot;late&quot;] { color: var(--solar-red); background: var(--solar-red-soft); }
+    #solar-sla-existing-page .solar-badge[data-tone=&quot;grade&quot;] { color: var(--solar-green); background: var(--solar-green-soft); }
+    #solar-sla-existing-page .solar-badge[data-tone=&quot;source&quot;] { color: var(--solar-green); background: var(--solar-green-soft); }
+    #solar-sla-existing-page .solar-lead-id { color: var(--solar-muted); font-size: 10px; }
+    #solar-sla-existing-page .solar-name { margin-top: 12px; font-weight: 500; }
+    #solar-sla-existing-page .solar-meta { flex-wrap: wrap; gap: 13px; margin-top: 6px; color: var(--solar-muted); font-size: 11px; }
+    #solar-sla-existing-page .solar-meta span { display: inline-flex; align-items: center; gap: 4px; }
+    #solar-sla-existing-page .solar-task { margin-top: 9px; font-size: 12px; }
+    #solar-sla-existing-page .solar-task-label { color: var(--solar-muted); }
+    #solar-sla-existing-page .solar-stage-inline {
+      display: inline-flex;
+      align-items: center;
+      gap: 5px;
+      margin-top: 9px;
+      padding: 5px 8px;
+      border-radius: 7px;
+      color: var(--solar-red);
+      background: var(--solar-red-soft);
+      font-size: 11px;
+      font-weight: 500;
+    }
+    #solar-sla-existing-page .solar-overdue {
+      display: flex;
+      flex-direction: column;
+      justify-content: space-between;
+      padding: 11px 12px;
+      border: 1px solid color-mix(in srgb, var(--solar-red) 35%, var(--solar-border));
+      border-radius: 10px;
+      background: var(--solar-red-soft);
+    }
+    #solar-sla-existing-page .solar-overdue-top { justify-content: space-between; gap: 8px; color: var(--solar-red); font-size: 10px; }
+    #solar-sla-existing-page .solar-overdue-time { margin-top: 3px; color: var(--solar-red); font-size: 19px; font-weight: 500; }
+    #solar-sla-existing-page .solar-overdue-step { margin-top: 10px; padding-top: 9px; border-top: 1px solid color-mix(in srgb, var(--solar-red) 22%, transparent); }
+    #solar-sla-existing-page .solar-overdue-step-label { color: var(--solar-muted); font-size: 10px; }
+    #solar-sla-existing-page .solar-overdue-step-value { margin-top: 2px; font-size: 13px; font-weight: 500; }
+    #solar-sla-existing-page .solar-deadline { margin-top: 8px; color: var(--solar-muted); font-size: 10px; }
+    #solar-sla-existing-page .solar-empty { display: none; padding: 24px; color: var(--solar-muted); text-align: center; }
+    @media (max-width: 820px) {
+      #solar-sla-existing-page .solar-app { grid-template-columns: 58px minmax(0, 1fr); }
+      #solar-sla-existing-page .solar-brand span,
+      #solar-sla-existing-page .solar-menu-item span,
+      #solar-sla-existing-page .solar-menu-label { display: none; }
+      #solar-sla-existing-page .solar-menu-item { justify-content: center; }
+    }
+    @media (max-width: 620px) {
+      #solar-sla-existing-page .solar-app { grid-template-columns: 1fr; }
+      #solar-sla-existing-page .solar-sidebar { display: none; }
+      #solar-sla-existing-page .solar-summary { grid-template-columns: 1fr; }
+      #solar-sla-existing-page .solar-lead { grid-template-columns: 1fr; }
+      #solar-sla-existing-page .solar-content,
+      #solar-sla-existing-page .solar-header { padding-inline: 11px; }
+      #solar-sla-existing-page .solar-list-heading { align-items: flex-end; }
+    }
+  &lt;/style&gt;
+
+  &lt;section class=&quot;solar-app&quot; aria-label=&quot;ตัวอย่างการเพิ่มขั้นตอนที่เกิน SLA บนหน้าเดิม&quot;&gt;
+    &lt;aside class=&quot;solar-sidebar&quot;&gt;
+      &lt;div class=&quot;solar-brand&quot;&gt;&lt;span&gt;SENA &lt;strong&gt;SOLAR&lt;/strong&gt;&lt;/span&gt;&lt;i data-lucide=&quot;menu&quot; aria-hidden=&quot;true&quot;&gt;&lt;/i&gt;&lt;/div&gt;
+      &lt;button class=&quot;solar-menu-item&quot;&gt;&lt;i data-lucide=&quot;calendar-days&quot; aria-hidden=&quot;true&quot;&gt;&lt;/i&gt;&lt;span&gt;TODAY&lt;/span&gt;&lt;/button&gt;
+      &lt;button class=&quot;solar-menu-item&quot;&gt;&lt;i data-lucide=&quot;list&quot; aria-hidden=&quot;true&quot;&gt;&lt;/i&gt;&lt;span&gt;PIPELINE&lt;/span&gt;&lt;/button&gt;
+      &lt;button class=&quot;solar-menu-item&quot;&gt;&lt;i data-lucide=&quot;circle-check&quot; aria-hidden=&quot;true&quot;&gt;&lt;/i&gt;&lt;span&gt;PENDING&lt;/span&gt;&lt;/button&gt;
+      &lt;button class=&quot;solar-menu-item&quot;&gt;&lt;i data-lucide=&quot;circle-user-round&quot; aria-hidden=&quot;true&quot;&gt;&lt;/i&gt;&lt;span&gt;ME&lt;/span&gt;&lt;/button&gt;
+      &lt;div class=&quot;solar-menu-label&quot;&gt;Reports&lt;/div&gt;
+      &lt;button class=&quot;solar-menu-item&quot;&gt;&lt;i data-lucide=&quot;chart-no-axes-column&quot; aria-hidden=&quot;true&quot;&gt;&lt;/i&gt;&lt;span&gt;DASHBOARD I&lt;/span&gt;&lt;/button&gt;
+      &lt;button class=&quot;solar-menu-item&quot;&gt;&lt;i data-lucide=&quot;chart-no-axes-column&quot; aria-hidden=&quot;true&quot;&gt;&lt;/i&gt;&lt;span&gt;DASHBOARD II&lt;/span&gt;&lt;/button&gt;
+      &lt;button class=&quot;solar-menu-item&quot;&gt;&lt;i data-lucide=&quot;scan-search&quot; aria-hidden=&quot;true&quot;&gt;&lt;/i&gt;&lt;span&gt;LEAD TRACKING&lt;/span&gt;&lt;/button&gt;
+      &lt;button class=&quot;solar-menu-item&quot; data-current=&quot;true&quot;&gt;&lt;i data-lucide=&quot;clock-3&quot; aria-hidden=&quot;true&quot;&gt;&lt;/i&gt;&lt;span&gt;SLA&lt;/span&gt;&lt;/button&gt;
+      &lt;button class=&quot;solar-menu-item&quot;&gt;&lt;i data-lucide=&quot;calendar&quot; aria-hidden=&quot;true&quot;&gt;&lt;/i&gt;&lt;span&gt;CALENDAR&lt;/span&gt;&lt;/button&gt;
+      &lt;button class=&quot;solar-menu-item&quot;&gt;&lt;i data-lucide=&quot;download&quot; aria-hidden=&quot;true&quot;&gt;&lt;/i&gt;&lt;span&gt;EXPORT&lt;/span&gt;&lt;/button&gt;
+    &lt;/aside&gt;
+
+    &lt;main class=&quot;solar-workspace&quot;&gt;
+      &lt;div class=&quot;solar-environment&quot;&gt;DEVELOPMENT / DEMO&lt;/div&gt;
+      &lt;header class=&quot;solar-header&quot;&gt;
+        &lt;div class=&quot;solar-header-row&quot;&gt;
+          &lt;div&gt;
+            &lt;div class=&quot;solar-title&quot;&gt;SLA Dashboard &lt;span style=&quot;color:var(--solar-red);font-size:11px&quot;&gt;v2.0.23&lt;/span&gt;&lt;/div&gt;
+            &lt;div class=&quot;solar-subtitle&quot;&gt;ติดตามงานตามผู้รับผิดชอบและ ACTIVE ROLE&lt;/div&gt;
+          &lt;/div&gt;
+          &lt;button class=&quot;solar-role&quot;&gt;⇄ Sale Manager⌄&lt;/button&gt;
+        &lt;/div&gt;
+        &lt;input class=&quot;solar-search&quot; aria-label=&quot;ค้นหา&quot; placeholder=&quot;ค้นหาชื่อ, เบอร์โทร, Owner, งาน SLA...&quot; /&gt;
+      &lt;/header&gt;
+
+      &lt;div class=&quot;solar-content&quot;&gt;
+        &lt;nav class=&quot;solar-tabs&quot; aria-label=&quot;สถานะ SLA&quot;&gt;
+          &lt;button class=&quot;solar-tab&quot; data-current=&quot;true&quot;&gt;ทั้งหมด (215)&lt;/button&gt;
+          &lt;button class=&quot;solar-tab&quot;&gt;เกินกำหนด SLA (214)&lt;/button&gt;
+          &lt;button class=&quot;solar-tab&quot;&gt;ใกล้กำหนด SLA (0)&lt;/button&gt;
+          &lt;button class=&quot;solar-tab&quot;&gt;กำลังดำเนินการ (1)&lt;/button&gt;
+        &lt;/nav&gt;
+
+        &lt;div class=&quot;solar-overview-label&quot;&gt;ภาพรวมสถานะ SLA&lt;/div&gt;
+        &lt;section class=&quot;solar-summary&quot; aria-label=&quot;ภาพรวมสถานะ SLA&quot;&gt;
+          &lt;div class=&quot;solar-summary-item&quot;&gt;&lt;div class=&quot;solar-summary-label&quot;&gt;&lt;span class=&quot;solar-dot&quot;&gt;&lt;/span&gt;เกินกำหนด SLA&lt;/div&gt;&lt;div class=&quot;solar-summary-value&quot;&gt;214 &lt;span style=&quot;font-size:11px;color:var(--solar-muted)&quot;&gt;งาน SLA&lt;/span&gt;&lt;/div&gt;&lt;div class=&quot;solar-summary-leads&quot;&gt;จำนวน Lead: 211&lt;/div&gt;&lt;/div&gt;
+          &lt;div class=&quot;solar-summary-item&quot;&gt;&lt;div class=&quot;solar-summary-label&quot;&gt;&lt;span class=&quot;solar-dot&quot; data-tone=&quot;warning&quot;&gt;&lt;/span&gt;ใกล้กำหนด SLA&lt;/div&gt;&lt;div class=&quot;solar-summary-value&quot;&gt;0 &lt;span style=&quot;font-size:11px;color:var(--solar-muted)&quot;&gt;งาน SLA&lt;/span&gt;&lt;/div&gt;&lt;div class=&quot;solar-summary-leads&quot;&gt;จำนวน Lead: 0&lt;/div&gt;&lt;/div&gt;
+          &lt;div class=&quot;solar-summary-item&quot;&gt;&lt;div class=&quot;solar-summary-label&quot;&gt;&lt;span class=&quot;solar-dot&quot; data-tone=&quot;active&quot;&gt;&lt;/span&gt;กำลังดำเนินการ&lt;/div&gt;&lt;div class=&quot;solar-summary-value&quot;&gt;1 &lt;span style=&quot;font-size:11px;color:var(--solar-muted)&quot;&gt;งาน SLA&lt;/span&gt;&lt;/div&gt;&lt;div class=&quot;solar-summary-leads&quot;&gt;จำนวน Lead: 1&lt;/div&gt;&lt;/div&gt;
+        &lt;/section&gt;
+
+        &lt;div class=&quot;solar-list-heading&quot;&gt;
+          &lt;strong&gt;คิวงานตามความเร่งด่วน&lt;/strong&gt;
+          &lt;label&gt;
+            &lt;span style=&quot;position:absolute;width:1px;height:1px;overflow:hidden&quot;&gt;กรองขั้นตอนที่เกิน SLA&lt;/span&gt;
+            &lt;select class=&quot;solar-stage-select&quot; aria-label=&quot;กรองขั้นตอนที่เกิน SLA&quot;&gt;
+              &lt;option value=&quot;all&quot;&gt;ทุกขั้นตอนที่เกิน SLA&lt;/option&gt;
+              &lt;option value=&quot;close&quot;&gt;ปิด Lead&lt;/option&gt;
+              &lt;option value=&quot;followup&quot;&gt;ติดตามปิดการขาย&lt;/option&gt;
+              &lt;option value=&quot;warranty&quot;&gt;ออกใบรับประกัน&lt;/option&gt;
+            &lt;/select&gt;
+          &lt;/label&gt;
+        &lt;/div&gt;
+
+        &lt;section class=&quot;solar-list&quot; aria-live=&quot;polite&quot;&gt;
+          &lt;article class=&quot;solar-lead&quot; data-step=&quot;close&quot;&gt;
+            &lt;div&gt;
+              &lt;div class=&quot;solar-card-head&quot;&gt;
+                &lt;div class=&quot;solar-badges&quot;&gt;&lt;span class=&quot;solar-badge&quot; data-tone=&quot;late&quot;&gt;● เกินกำหนด SLA&lt;/span&gt;&lt;span class=&quot;solar-badge&quot; data-tone=&quot;grade&quot;&gt;Grade A&lt;/span&gt;&lt;span class=&quot;solar-badge&quot; data-tone=&quot;source&quot;&gt;◇ EVENT · ออกบูธ&lt;/span&gt;&lt;/div&gt;
+                &lt;span class=&quot;solar-lead-id&quot;&gt;Lead #408&lt;/span&gt;
+              &lt;/div&gt;
+              &lt;div class=&quot;solar-name&quot;&gt;นายแพทย์ธีรธัช วุฒิพันธ์&lt;/div&gt;
+              &lt;div class=&quot;solar-meta&quot;&gt;&lt;span&gt;&lt;i data-lucide=&quot;phone&quot; aria-hidden=&quot;true&quot;&gt;&lt;/i&gt;0836624554&lt;/span&gt;&lt;span&gt;&lt;i data-lucide=&quot;user-round&quot; aria-hidden=&quot;true&quot;&gt;&lt;/i&gt;กัญญาณภัค อรรควิทยาพงศ์&lt;/span&gt;&lt;/div&gt;
+              &lt;div class=&quot;solar-task&quot;&gt;&lt;span class=&quot;solar-task-label&quot;&gt;งาน:&lt;/span&gt; ปิด Lead เนื่องจากใบรับประกัน&lt;/div&gt;
+              &lt;div class=&quot;solar-stage-inline&quot;&gt;&lt;i data-lucide=&quot;circle-alert&quot; aria-hidden=&quot;true&quot;&gt;&lt;/i&gt;เกิน SLA ที่ขั้นตอน “ปิด Lead”&lt;/div&gt;
+            &lt;/div&gt;
+            &lt;aside class=&quot;solar-overdue&quot; aria-label=&quot;เกิน SLA ที่ขั้นตอนปิด Lead มาแล้ว 118 วัน&quot;&gt;
+              &lt;div&gt;&lt;div class=&quot;solar-overdue-top&quot;&gt;&lt;span&gt;เกิน SLA มาแล้ว&lt;/span&gt;&lt;i data-lucide=&quot;clock-alert&quot; aria-hidden=&quot;true&quot;&gt;&lt;/i&gt;&lt;/div&gt;&lt;div class=&quot;solar-overdue-time&quot;&gt;118 วัน&lt;/div&gt;&lt;/div&gt;
+              &lt;div class=&quot;solar-overdue-step&quot;&gt;&lt;div class=&quot;solar-overdue-step-label&quot;&gt;ขั้นตอนที่เกิน&lt;/div&gt;&lt;div class=&quot;solar-overdue-step-value&quot;&gt;ปิด Lead&lt;/div&gt;&lt;div class=&quot;solar-deadline&quot;&gt;กำหนดเสร็จ 25 เม.ย. 23:59&lt;/div&gt;&lt;/div&gt;
+            &lt;/aside&gt;
+          &lt;/article&gt;
+
+          &lt;article class=&quot;solar-lead&quot; data-step=&quot;followup&quot;&gt;
+            &lt;div&gt;
+              &lt;div class=&quot;solar-card-head&quot;&gt;
+                &lt;div class=&quot;solar-badges&quot;&gt;&lt;span class=&quot;solar-badge&quot; data-tone=&quot;late&quot;&gt;● เกินกำหนด SLA&lt;/span&gt;&lt;span class=&quot;solar-badge&quot; data-tone=&quot;grade&quot;&gt;Grade A&lt;/span&gt;&lt;span class=&quot;solar-badge&quot; data-tone=&quot;source&quot;&gt;◇ LINE OA · SENA SOLAR&lt;/span&gt;&lt;/div&gt;
+                &lt;span class=&quot;solar-lead-id&quot;&gt;Lead #440&lt;/span&gt;
+              &lt;/div&gt;
+              &lt;div class=&quot;solar-name&quot;&gt;คุณศุภพิชญ์ วงศ์โชติวีรกิจ&lt;/div&gt;
+              &lt;div class=&quot;solar-meta&quot;&gt;&lt;span&gt;&lt;i data-lucide=&quot;phone&quot; aria-hidden=&quot;true&quot;&gt;&lt;/i&gt;0624639544&lt;/span&gt;&lt;span&gt;&lt;i data-lucide=&quot;user-round&quot; aria-hidden=&quot;true&quot;&gt;&lt;/i&gt;กัญญาณภัค อรรควิทยาพงศ์&lt;/span&gt;&lt;/div&gt;
+              &lt;div class=&quot;solar-task&quot;&gt;&lt;span class=&quot;solar-task-label&quot;&gt;งาน:&lt;/span&gt; ติดตามปิดการขายและรับมัดจำ&lt;/div&gt;
+              &lt;div class=&quot;solar-stage-inline&quot;&gt;&lt;i data-lucide=&quot;circle-alert&quot; aria-hidden=&quot;true&quot;&gt;&lt;/i&gt;เกิน SLA ที่ขั้นตอน “ติดตามปิดการขาย”&lt;/div&gt;
+            &lt;/div&gt;
+            &lt;aside class=&quot;solar-overdue&quot; aria-label=&quot;เกิน SLA ที่ขั้นตอนติดตามปิดการขายมาแล้ว 102 วัน&quot;&gt;
+              &lt;div&gt;&lt;div class=&quot;solar-overdue-top&quot;&gt;&lt;span&gt;เกิน SLA มาแล้ว&lt;/span&gt;&lt;i data-lucide=&quot;clock-alert&quot; aria-hidden=&quot;true&quot;&gt;&lt;/i&gt;&lt;/div&gt;&lt;div class=&quot;solar-overdue-time&quot;&gt;102 วัน&lt;/div&gt;&lt;/div&gt;
+              &lt;div class=&quot;solar-overdue-step&quot;&gt;&lt;div class=&quot;solar-overdue-step-label&quot;&gt;ขั้นตอนที่เกิน&lt;/div&gt;&lt;div class=&quot;solar-overdue-step-value&quot;&gt;ติดตามปิดการขาย&lt;/div&gt;&lt;div class=&quot;solar-deadline&quot;&gt;กำหนดเสร็จ 11 พ.ค. 15:19&lt;/div&gt;&lt;/div&gt;
+            &lt;/aside&gt;
+          &lt;/article&gt;
+
+          &lt;article class=&quot;solar-lead&quot; data-step=&quot;warranty&quot;&gt;
+            &lt;div&gt;
+              &lt;div class=&quot;solar-card-head&quot;&gt;
+                &lt;div class=&quot;solar-badges&quot;&gt;&lt;span class=&quot;solar-badge&quot; data-tone=&quot;late&quot;&gt;● เกินกำหนด SLA&lt;/span&gt;&lt;span class=&quot;solar-badge&quot; data-tone=&quot;grade&quot;&gt;Grade A&lt;/span&gt;&lt;span class=&quot;solar-badge&quot; data-tone=&quot;source&quot;&gt;◇ LINE OA · SENA SOLAR&lt;/span&gt;&lt;/div&gt;
+                &lt;span class=&quot;solar-lead-id&quot;&gt;Lead #400&lt;/span&gt;
+              &lt;/div&gt;
+              &lt;div class=&quot;solar-name&quot;&gt;คุณเสนีสา ปิ่นยานนท์&lt;/div&gt;
+              &lt;div class=&quot;solar-meta&quot;&gt;&lt;span&gt;&lt;i data-lucide=&quot;phone&quot; aria-hidden=&quot;true&quot;&gt;&lt;/i&gt;0824883199&lt;/span&gt;&lt;span&gt;&lt;i data-lucide=&quot;user-round&quot; aria-hidden=&quot;true&quot;&gt;&lt;/i&gt;กัญญาณภัค อรรควิทยาพงศ์&lt;/span&gt;&lt;/div&gt;
+              &lt;div class=&quot;solar-task&quot;&gt;&lt;span class=&quot;solar-task-label&quot;&gt;งาน:&lt;/span&gt; ปิด Lead เนื่องจากใบรับประกัน&lt;/div&gt;
+              &lt;div class=&quot;solar-stage-inline&quot;&gt;&lt;i data-lucide=&quot;circle-alert&quot; aria-hidden=&quot;true&quot;&gt;&lt;/i&gt;เกิน SLA ที่ขั้นตอน “ออกใบรับประกัน”&lt;/div&gt;
+            &lt;/div&gt;
+            &lt;aside class=&quot;solar-overdue&quot; aria-label=&quot;เกิน SLA ที่ขั้นตอนออกใบรับประกันมาแล้ว 101 วัน&quot;&gt;
+              &lt;div&gt;&lt;div class=&quot;solar-overdue-top&quot;&gt;&lt;span&gt;เกิน SLA มาแล้ว&lt;/span&gt;&lt;i data-lucide=&quot;clock-alert&quot; aria-hidden=&quot;true&quot;&gt;&lt;/i&gt;&lt;/div&gt;&lt;div class=&quot;solar-overdue-time&quot;&gt;101 วัน&lt;/div&gt;&lt;/div&gt;
+              &lt;div class=&quot;solar-overdue-step&quot;&gt;&lt;div class=&quot;solar-overdue-step-label&quot;&gt;ขั้นตอนที่เกิน&lt;/div&gt;&lt;div class=&quot;solar-overdue-step-value&quot;&gt;ออกใบรับประกัน&lt;/div&gt;&lt;div class=&quot;solar-deadline&quot;&gt;กำหนดเสร็จ 11 พ.ค. 16:59&lt;/div&gt;&lt;/div&gt;
+            &lt;/aside&gt;
+          &lt;/article&gt;
+          &lt;div class=&quot;solar-empty&quot;&gt;ไม่พบงานในขั้นตอนนี้&lt;/div&gt;
+        &lt;/section&gt;
+      &lt;/div&gt;
+    &lt;/main&gt;
+  &lt;/section&gt;
+
+  &lt;script&gt;
+    (() =&gt; {
+      const root = document.getElementById(&#x27;solar-sla-existing-page&#x27;);
+      const select = root.querySelector(&#x27;.solar-stage-select&#x27;);
+      const leads = [...root.querySelectorAll(&#x27;.solar-lead&#x27;)];
+      const empty = root.querySelector(&#x27;.solar-empty&#x27;);
+      select.addEventListener(&#x27;change&#x27;, () =&gt; {
+        let shown = 0;
+        leads.forEach((lead) =&gt; {
+          const visible = select.value === &#x27;all&#x27; || lead.dataset.step === select.value;
+          lead.dataset.hidden = String(!visible);
+          if (visible) shown += 1;
+        });
+        empty.style.display = shown ? &#x27;none&#x27; : &#x27;block&#x27;;
+      });
+    })();
+  &lt;/script&gt;
+&lt;/div&gt;
+
+&lt;script src=&quot;https://unpkg.com/@floating-ui/core@1.7.3/dist/floating-ui.core.umd.min.js&quot;&gt;&lt;/script&gt;
+&lt;script src=&quot;https://unpkg.com/@floating-ui/dom@1.7.4/dist/floating-ui.dom.umd.min.js&quot;&gt;&lt;/script&gt;
+&lt;script&gt;
+(() =&gt; {
+  if (window.FloatingUIDOM == null) {
+    return;
+  }
+  const { autoUpdate, computePosition, flip, offset, shift, size } =
+    window.FloatingUIDOM;
+  const tooltipPlacements = new Set([&quot;top&quot;, &quot;right&quot;, &quot;bottom&quot;, &quot;left&quot;]);
+  const tooltipId = `codex-visualization-tooltip-${
+    window.crypto?.randomUUID?.() ?? Date.now().toString(36)
+  }`;
+  const tooltipGap = 5;
+  const hoverDelay = 700;
+  const skipDelay = 300;
+  let activeTrigger = null;
+  let pendingTrigger = null;
+  let tooltip = null;
+  let openTimeout = null;
+  let autoUpdateCleanup = null;
+  let positionRequest = 0;
+  let skipDelayUntil = 0;
+
+  const getTrigger = (target) =&gt;
+    target?.nodeType === Node.ELEMENT_NODE
+      ? target.closest(&quot;[data-tooltip]&quot;)
+      : null;
+  const containsTarget = (trigger, target) =&gt;
+    target?.nodeType != null &amp;&amp; trigger.contains(target);
+  const getContent = (trigger) =&gt;
+    trigger.getAttribute(&quot;data-tooltip&quot;)?.trim() ?? &quot;&quot;;
+  const getPlacement = (trigger) =&gt; {
+    const placement = trigger.getAttribute(&quot;data-tooltip-placement&quot;);
+    return tooltipPlacements.has(placement) ? placement : &quot;top&quot;;
+  };
+  const getTooltip = () =&gt; {
+    if (tooltip == null) {
+      tooltip = document.createElement(&quot;div&quot;);
+      tooltip.id = tooltipId;
+      tooltip.className = &quot;tooltip&quot;;
+      tooltip.setAttribute(&quot;role&quot;, &quot;tooltip&quot;);
+    }
+    return tooltip;
+  };
+  const setDescribedBy = (trigger, described) =&gt; {
+    const ids = new Set(
+      (trigger.getAttribute(&quot;aria-describedby&quot;) ?? &quot;&quot;)
+        .split(/\s+/)
+        .filter(Boolean),
+    );
+    if (described) {
+      ids.add(tooltipId);
+    } else {
+      ids.delete(tooltipId);
+    }
+    if (ids.size === 0) {
+      trigger.removeAttribute(&quot;aria-describedby&quot;);
+    } else {
+      trigger.setAttribute(&quot;aria-describedby&quot;, [...ids].join(&quot; &quot;));
+    }
+  };
+  const clearOpenTimeout = () =&gt; {
+    if (openTimeout != null) {
+      window.clearTimeout(openTimeout);
+      openTimeout = null;
+    }
+    pendingTrigger = null;
+  };
+  const closeTooltip = (activateSkipDelay = true) =&gt; {
+    clearOpenTimeout();
+    positionRequest += 1;
+    autoUpdateCleanup?.();
+    autoUpdateCleanup = null;
+    if (activeTrigger == null) {
+      return;
+    }
+    setDescribedBy(activeTrigger, false);
+    activeTrigger = null;
+    tooltip?.remove();
+    if (activateSkipDelay) {
+      skipDelayUntil = Date.now() + skipDelay;
+    }
+  };
+  const updatePosition = (trigger, floating) =&gt; {
+    const request = ++positionRequest;
+    void computePosition(trigger, floating, {
+      middleware: [
+        offset(tooltipGap),
+        flip({ padding: tooltipGap }),
+        shift({ padding: tooltipGap }),
+        size({
+          padding: tooltipGap,
+          apply({ availableHeight, availableWidth, elements }) {
+            elements.floating.style.setProperty(
+              &quot;--tooltip-available-width&quot;,
+              `${Math.max(0, availableWidth)}px`,
+            );
+            elements.floating.style.setProperty(
+              &quot;--tooltip-available-height&quot;,
+              `${Math.max(0, availableHeight)}px`,
+            );
+          },
+        }),
+      ],
+      placement: getPlacement(trigger),
+      strategy: &quot;fixed&quot;,
+    })
+      .then(({ x, y }) =&gt; {
+        if (activeTrigger !== trigger || request !== positionRequest) {
+          return;
+        }
+        const scale = window.devicePixelRatio || 1;
+        floating.style.transform = `translate(${Math.round(x * scale) / scale}px, ${Math.round(y * scale) / scale}px)`;
+        floating.style.visibility = &quot;visible&quot;;
+      })
+      .catch(() =&gt; {
+        if (activeTrigger === trigger &amp;&amp; request === positionRequest) {
+          closeTooltip(false);
+        }
+      });
+  };
+  const openTooltip = (trigger) =&gt; {
+    const content = getContent(trigger);
+    if (!trigger.isConnected || content.length === 0) {
+      return;
+    }
+    clearOpenTimeout();
+    if (activeTrigger === trigger) {
+      return;
+    }
+    closeTooltip();
+    const floating = getTooltip();
+    floating.textContent = content;
+    floating.style.visibility = &quot;hidden&quot;;
+    floating.style.transform = &quot;translate(0, 0)&quot;;
+    document.body.appendChild(floating);
+    activeTrigger = trigger;
+    setDescribedBy(trigger, true);
+    autoUpdateCleanup = autoUpdate(trigger, floating, () =&gt; {
+      updatePosition(trigger, floating);
+    });
+  };
+  const requestOpen = (trigger, immediate = false) =&gt; {
+    if (
+      getContent(trigger).length === 0 ||
+      activeTrigger === trigger ||
+      pendingTrigger === trigger
+    ) {
+      return;
+    }
+    clearOpenTimeout();
+    pendingTrigger = trigger;
+    const delay =
+      immediate || activeTrigger != null || Date.now() &lt; skipDelayUntil
+        ? 0
+        : hoverDelay;
+    if (delay === 0) {
+      openTooltip(trigger);
+      return;
+    }
+    openTimeout = window.setTimeout(() =&gt; {
+      openTimeout = null;
+      pendingTrigger = null;
+      openTooltip(trigger);
+    }, delay);
+  };
+  const handlePointerOpen = (event) =&gt; {
+    if (event.pointerType === &quot;touch&quot;) {
+      return;
+    }
+    const trigger = getTrigger(event.target);
+    if (trigger == null || containsTarget(trigger, event.relatedTarget)) {
+      return;
+    }
+    requestOpen(trigger);
+  };
+  const handleLeave = (event) =&gt; {
+    const trigger = getTrigger(event.target);
+    if (trigger == null || containsTarget(trigger, event.relatedTarget)) {
+      return;
+    }
+    if (activeTrigger === trigger || pendingTrigger === trigger) {
+      closeTooltip();
+    }
+  };
+  const handleFocusIn = (event) =&gt; {
+    const trigger = getTrigger(event.target);
+    if (trigger?.matches(&quot;:focus-visible&quot;)) {
+      requestOpen(trigger, true);
+    }
+  };
+  const handleKeyDown = (event) =&gt; {
+    if (event.key === &quot;Escape&quot;) {
+      closeTooltip();
+    }
+  };
+  const handleContextMenu = (event) =&gt; {
+    const trigger = getTrigger(event.target);
+    if (activeTrigger === trigger || pendingTrigger === trigger) {
+      closeTooltip();
+    }
+  };
+  const destroy = () =&gt; {
+    closeTooltip(false);
+    document.removeEventListener(&quot;pointerover&quot;, handlePointerOpen);
+    document.removeEventListener(&quot;pointerout&quot;, handleLeave);
+    document.removeEventListener(&quot;focusin&quot;, handleFocusIn);
+    document.removeEventListener(&quot;focusout&quot;, handleLeave);
+    document.removeEventListener(&quot;keydown&quot;, handleKeyDown);
+    document.removeEventListener(&quot;contextmenu&quot;, handleContextMenu);
+    tooltip = null;
+  };
+
+  document.addEventListener(&quot;pointerover&quot;, handlePointerOpen);
+  document.addEventListener(&quot;pointerout&quot;, handleLeave);
+  document.addEventListener(&quot;focusin&quot;, handleFocusIn);
+  document.addEventListener(&quot;focusout&quot;, handleLeave);
+  document.addEventListener(&quot;keydown&quot;, handleKeyDown);
+  document.addEventListener(&quot;contextmenu&quot;, handleContextMenu);
+  window.addEventListener(&quot;pagehide&quot;, destroy, { once: true });
+})();
+&lt;/script&gt;
+&lt;script id=&quot;codex-visualization-lucide&quot; async src=&quot;https://unpkg.com/lucide@1.17.0/dist/umd/lucide.js&quot;&gt;&lt;/script&gt;
+&lt;script&gt;
+(() =&gt; {
+  const initialize = () =&gt; {
+    globalThis.lucide?.createIcons({ attrs: { width: 16, height: 16 } });
+  };
+  if (globalThis.lucide != null) {
+    initialize();
+    return;
+  }
+  document
+    .getElementById(&quot;codex-visualization-lucide&quot;)
+    ?.addEventListener(&quot;load&quot;, initialize, { once: true });
+})();
+&lt;/script&gt;
+
+&lt;/body&gt;
+&lt;/html&gt;
+"></iframe>
+</body>
+</html>

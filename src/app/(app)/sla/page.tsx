@@ -31,6 +31,7 @@ type SlaItem = {
 
 type DashboardData = {
   counts: Record<SlaStatus, number>;
+  leadCounts: Record<SlaStatus, number> & { near_due: number };
   items: SlaItem[];
   scope: {
     isAdmin: boolean;
@@ -51,16 +52,28 @@ const STATUS_LABEL: Record<SlaStatus, string> = {
   breached: "เกินกำหนด SLA",
 };
 
-const STATUS_STYLE: Record<SlaStatus, { chip: string; dot: string; card: string }> = {
-  active: { chip: "bg-sky-50 text-sky-700 ring-sky-200", dot: "bg-sky-500", card: "border-sky-200 bg-sky-50/40" },
-  warning: { chip: "bg-amber-50 text-amber-700 ring-amber-200", dot: "bg-amber-500", card: "border-amber-200 bg-amber-50/40" },
-  critical: { chip: "bg-orange-50 text-orange-700 ring-orange-200", dot: "bg-orange-500", card: "border-orange-200 bg-orange-50/40" },
-  breached: { chip: "bg-red-50 text-red-700 ring-red-200", dot: "bg-red-500", card: "border-red-200 bg-red-50/40" },
+const STATUS_STYLE: Record<SlaStatus, { chip: string; dot: string; card: string; edge: string }> = {
+  active: { chip: "bg-sky-50 text-sky-700 ring-sky-200", dot: "bg-sky-500", card: "border-sky-200 bg-sky-50/40", edge: "border-l-sky-400" },
+  warning: { chip: "bg-amber-50 text-amber-700 ring-amber-200", dot: "bg-amber-500", card: "border-amber-200 bg-amber-50/40", edge: "border-l-amber-400" },
+  critical: { chip: "bg-orange-50 text-orange-700 ring-orange-200", dot: "bg-orange-500", card: "border-orange-200 bg-orange-50/40", edge: "border-l-orange-400" },
+  breached: { chip: "bg-red-50 text-red-700 ring-red-200", dot: "bg-red-500", card: "border-red-200 bg-red-50/40", edge: "border-l-red-500" },
 };
 
-function SummaryCard({ status, count, active, onClick }: {
+function formatOverdueDuration(dueAt: string): string {
+  const milliseconds = Date.now() - Date.parse(dueAt);
+  if (!Number.isFinite(milliseconds) || milliseconds <= 0) return "เพิ่งเกินกำหนด";
+  const totalHours = Math.floor(milliseconds / 3_600_000);
+  const days = Math.floor(totalHours / 24);
+  const hours = totalHours % 24;
+  if (days > 0) return `${days.toLocaleString("th-TH")} วัน${hours > 0 ? ` ${hours} ชม.` : ""}`;
+  if (totalHours > 0) return `${totalHours.toLocaleString("th-TH")} ชม.`;
+  return `${Math.max(1, Math.floor(milliseconds / 60_000)).toLocaleString("th-TH")} นาที`;
+}
+
+function SummaryCard({ status, count, leadCount, active, onClick }: {
   status: SlaVisibleStatus;
   count: number;
+  leadCount: number;
   active: boolean;
   onClick: () => void;
 }) {
@@ -77,7 +90,13 @@ function SummaryCard({ status, count, active, onClick }: {
         <span className={`h-2.5 w-2.5 rounded-full ${style.dot}`} />
         <span className="text-xs font-semibold text-gray-500">{STATUS_LABEL[status]}</span>
       </div>
-      <div className="mt-1 text-2xl font-bold tabular-nums text-gray-900">{count}</div>
+      <div className="mt-1 flex items-baseline gap-1.5">
+        <span className="text-2xl font-bold tabular-nums text-gray-900">{count.toLocaleString("th-TH")}</span>
+        <span className="text-xxs font-semibold text-gray-400">งาน SLA</span>
+      </div>
+      <div className="mt-1 text-xs font-semibold text-gray-600">
+        จำนวน Lead: {leadCount.toLocaleString("th-TH")}
+      </div>
     </button>
   );
 }
@@ -103,6 +122,7 @@ export default function SlaDashboardPage() {
   const [refreshing, setRefreshing] = useState(false);
   const [search, setSearch] = useState("");
   const [tab, setTab] = useState<SlaTab>("all");
+  const [stageFilter, setStageFilter] = useState("all");
   const openLead = useOpenLead();
   const { activeRoles } = useActiveRoles();
   const { me } = useMe();
@@ -162,6 +182,7 @@ export default function SlaDashboardPage() {
   };
 
   const counts = data?.counts ?? { active: 0, warning: 0, critical: 0, breached: 0 };
+  const leadCounts = data?.leadCounts ?? { active: 0, warning: 0, critical: 0, breached: 0, near_due: 0 };
   const nearDueCount = counts.warning + counts.critical;
   const total = counts.active + counts.warning + counts.critical + counts.breached;
   const tabs = [
@@ -171,16 +192,24 @@ export default function SlaDashboardPage() {
     { key: "active", label: "กำลังดำเนินการ", count: counts.active },
   ];
 
+  const stageOptions = useMemo(() => {
+    const stages = new Map<string, string>();
+    for (const item of data?.items ?? []) stages.set(item.policy_code, item.task_name);
+    return Array.from(stages, ([value, label]) => ({ value, label }))
+      .sort((a, b) => a.label.localeCompare(b.label, "th"));
+  }, [data]);
+
   const filteredItems = useMemo(() => {
     const needle = search.trim().toLocaleLowerCase("th");
     return (data?.items ?? []).filter(item => {
       if (tab === "warning" && item.status !== "warning" && item.status !== "critical") return false;
       if (tab !== "all" && tab !== "warning" && item.status !== tab) return false;
+      if (stageFilter !== "all" && item.policy_code !== stageFilter) return false;
       if (!needle) return true;
-      return [item.full_name, item.phone, item.owner_name, item.task_name, item.source, String(item.lead_id)]
+      return [item.full_name, item.phone, item.owner_name, item.task_name, item.policy_code, item.source, String(item.lead_id)]
         .some(value => String(value || "").toLocaleLowerCase("th").includes(needle));
     });
-  }, [data, search, tab]);
+  }, [data, search, stageFilter, tab]);
 
   return (
     <div>
@@ -213,6 +242,7 @@ export default function SlaDashboardPage() {
                 key={status}
                 status={status}
                 count={status === "warning" ? nearDueCount : counts[status]}
+                leadCount={status === "warning" ? leadCounts.near_due : leadCounts[status]}
                 active={tab === status}
                 onClick={() => setTab(current => current === status ? "all" : status)}
               />
@@ -221,11 +251,23 @@ export default function SlaDashboardPage() {
         </section>
 
         <section>
-          <div className="mb-3 flex items-center justify-between px-1">
+          <div className="mb-3 flex flex-wrap items-center justify-between gap-2 px-1">
             <h2 className="text-xs font-bold uppercase tracking-wider text-gray-500">
               {tab === "all" ? "คิวงานตามความเร่งด่วน" : STATUS_LABEL[tab]}
             </h2>
-            <span className="rounded-full bg-primary/10 px-2 py-0.5 text-xs font-semibold text-active">{filteredItems.length}</span>
+            <div className="flex items-center gap-2">
+              <label className="sr-only" htmlFor="sla-stage-filter">กรองตามขั้นตอน SLA</label>
+              <select
+                id="sla-stage-filter"
+                value={stageFilter}
+                onChange={event => setStageFilter(event.target.value)}
+                className="h-8 max-w-52 rounded-lg border border-gray-200 bg-white px-2 pr-7 text-xs font-semibold text-gray-700 outline-none focus:border-active"
+              >
+                <option value="all">ทุกขั้นตอนที่เกิน SLA</option>
+                {stageOptions.map(option => <option key={option.value} value={option.value}>{option.label}</option>)}
+              </select>
+              <span className="rounded-full bg-primary/10 px-2 py-0.5 text-xs font-semibold text-active">{filteredItems.length}</span>
+            </div>
           </div>
 
           {loading && !data ? (
@@ -246,6 +288,7 @@ export default function SlaDashboardPage() {
             <div className="space-y-3">
               {filteredItems.map(item => {
                 const style = STATUS_STYLE[item.status];
+                const isBreached = item.status === "breached";
                 return (
                   <article
                     key={item.id}
@@ -253,7 +296,7 @@ export default function SlaDashboardPage() {
                     onKeyDown={event => { if (event.key === "Enter" || event.key === " ") openLead(item.lead_id); }}
                     role="button"
                     tabIndex={0}
-                    className="w-full cursor-pointer rounded-2xl border border-gray-300 bg-white p-4 text-left shadow-sm transition-all hover:border-gray-400 hover:shadow-md active:scale-[0.995]"
+                    className={`w-full cursor-pointer rounded-2xl border border-l-4 border-gray-300 bg-white p-4 text-left shadow-sm transition-all hover:border-gray-400 hover:shadow-md active:scale-[0.995] ${style.edge}`}
                   >
                     <div className="flex flex-wrap items-start gap-2">
                       <span className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-xxs font-bold uppercase tracking-wider ring-1 ring-inset ${style.chip}`}>
@@ -280,15 +323,44 @@ export default function SlaDashboardPage() {
                             {item.owner_name || (item.owner_role === "solar" ? "ยังไม่มอบหมายทีม Solar" : "ยังไม่มอบหมาย Owner")}
                           </span>
                         </div>
-                        <p className="mt-2 text-sm font-medium text-gray-700">{item.task_name}</p>
+                        <p className="mt-2 text-sm font-medium text-gray-700">
+                          <span className="text-xs font-normal text-gray-400">งาน: </span>{item.task_name}
+                        </p>
+                        {isBreached && (
+                          <div className="mt-2 inline-flex max-w-full items-start gap-1.5 rounded-lg bg-red-50 px-2.5 py-1.5 text-xs font-semibold text-red-700">
+                            <span className="flex h-4 w-4 shrink-0 items-center justify-center rounded-full border border-red-400 text-xxs">!</span>
+                            <span className="min-w-0 break-words">เกิน SLA ที่ขั้นตอน “{item.task_name}”</span>
+                          </div>
+                        )}
                       </div>
 
-                      <div className={`shrink-0 rounded-xl border px-3 py-2 md:min-w-44 md:text-right ${style.card}`}>
-                        <div className="text-xxs font-semibold uppercase tracking-wider text-gray-500">กำหนดเสร็จ</div>
-                        <div className="mt-0.5 inline-flex items-center gap-1.5 text-sm font-bold text-gray-800 md:justify-end">
-                          <ClockIcon className="h-4 w-4" />
-                          {formatThaiDateShort(item.due_at)} {formatThaiTime(item.due_at)}
-                        </div>
+                      <div className={`shrink-0 rounded-xl border px-3 py-2 md:w-60 ${style.card}`}>
+                        {isBreached ? (
+                          <>
+                            <div className="flex items-center justify-between gap-2 text-xxs font-semibold text-red-600">
+                              <span>เกิน SLA มาแล้ว</span>
+                              <ClockIcon className="h-4 w-4" />
+                            </div>
+                            <div className="mt-0.5 text-lg font-bold tabular-nums text-red-600">{formatOverdueDuration(item.due_at)}</div>
+                            <div className="mt-2 border-t border-red-200 pt-2">
+                              <div className="text-xxs font-semibold uppercase tracking-wider text-gray-500">ขั้นตอนที่เกิน</div>
+                              <div className="mt-0.5 text-sm font-bold text-gray-800">{item.task_name}</div>
+                              <div className="mt-1.5 text-xxs text-gray-500">กำหนดเสร็จ {formatThaiDateShort(item.due_at)} {formatThaiTime(item.due_at)}</div>
+                            </div>
+                          </>
+                        ) : (
+                          <>
+                            <div className="text-xxs font-semibold uppercase tracking-wider text-gray-500">กำหนดเสร็จ</div>
+                            <div className="mt-0.5 inline-flex items-center gap-1.5 text-sm font-bold text-gray-800">
+                              <ClockIcon className="h-4 w-4" />
+                              {formatThaiDateShort(item.due_at)} {formatThaiTime(item.due_at)}
+                            </div>
+                            <div className="mt-2 border-t border-gray-200 pt-2">
+                              <div className="text-xxs font-semibold uppercase tracking-wider text-gray-500">ขั้นตอน SLA</div>
+                              <div className="mt-0.5 text-sm font-bold text-gray-800">{item.task_name}</div>
+                            </div>
+                          </>
+                        )}
                         {item.owner_role === "solar" && (
                           <div className="mt-2" onClick={event => event.stopPropagation()} onKeyDown={event => event.stopPropagation()}>
                             {solarManagerView ? (
