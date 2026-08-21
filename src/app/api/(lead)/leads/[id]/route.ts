@@ -278,6 +278,13 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
           }
 
           if (body.status === "closed" && oldStatus !== "closed") {
+            const willHaveWarranty = Boolean(oldRow?.warranty_issued_at) || body.warranty_issued_at === true;
+            if (!willHaveWarranty) {
+              return NextResponse.json(
+                { error: "ต้องออกใบรับประกันก่อนปิด Lead" },
+                { status: 409 },
+              );
+            }
             const missing = getGridTieFinalMissing({
               grid_utility: body.grid_utility !== undefined ? body.grid_utility : oldRow?.grid_utility,
               grid_app_no: body.grid_app_no !== undefined ? body.grid_app_no : oldRow?.grid_app_no,

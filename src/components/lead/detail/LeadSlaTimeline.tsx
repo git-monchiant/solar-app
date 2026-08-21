@@ -64,6 +64,18 @@ function dateTimeText(value: string): string {
   return `${formatThaiDate(value)} ${formatThaiTime(value)}`;
 }
 
+/**
+ * Some milestones are known only to the day — the installation finish is a
+ * user-picked date, and the clock closes at the end of that day so a job never
+ * reads as finished before it started. Printing "23:59" would dress that up as
+ * a recorded time and contradict the audit stamp shown elsewhere, so the
+ * end-of-day marker prints the date alone. Midnight is treated the same way.
+ */
+function dayOrDateTimeText(value: string): string {
+  const clock = formatThaiTime(value);
+  return clock === "23:59" || clock === "00:00" ? formatThaiDate(value) : dateTimeText(value);
+}
+
 export function useLeadSlaTimeline(leadId: number) {
   const [items, setItems] = useState<LeadSlaItem[]>([]);
   const [loading, setLoading] = useState(true);
@@ -154,15 +166,24 @@ export function LeadSlaStageRows({ items, loading, now }: {
               </div>
               <div className="mt-0.5 flex flex-wrap items-center gap-x-2 gap-y-0.5 text-xxs text-gray-500">
                 <span>SLA {target}{!sameDeadline ? ` / สูงสุด ${due}` : ""}</span>
-                <span>เริ่ม {dateTimeText(item.started_at)}</span>
-                <span>กำหนด {dateTimeText(item.due_at)}</span>
+                <span>เริ่ม {dayOrDateTimeText(item.started_at)}</span>
+                <span>กำหนด {dayOrDateTimeText(item.due_at)}</span>
                 <span className={`font-semibold ${style.text}`}>ใช้จริง {elapsed}</span>
                 {/* The elapsed time alone does not say when the work landed.
                     Open and cancelled rows have no end timestamp — their badge
                     already states why — so the stamp is shown only when the
                     task actually finished. */}
-                {item.completed_at && <span>เสร็จ {dateTimeText(item.completed_at)}</span>}
-                <span>{item.owner_name || "ยังไม่มอบหมาย"} · {item.owner_role === "solar" ? "Solar" : "Sale"}</span>
+                {item.completed_at && <span>เสร็จ {dayOrDateTimeText(item.completed_at)}</span>}
+                {/* This is who the SLA is measured against, not who clicked.
+                    The two are often different people — a colleague can close
+                    the milestone that stops this clock — and the milestone row
+                    right below says "โดย <ผู้ทำ>", so the name is labelled to
+                    keep the two apart. */}
+                <span>
+                  {item.owner_name
+                    ? `รับผิดชอบ ${item.owner_name} · ${item.owner_role === "solar" ? "Solar" : "Sale"}`
+                    : `ยังไม่มอบหมายผู้รับผิดชอบ · ${item.owner_role === "solar" ? "Solar" : "Sale"}`}
+                </span>
               </div>
               {item.display_note && <div className="mt-0.5 text-xxs text-gray-500">{item.display_note}</div>}
             </div>

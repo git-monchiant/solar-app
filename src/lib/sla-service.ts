@@ -1,5 +1,5 @@
 import type sql from "mssql";
-import { addBangkokCalendarDays, firstContactHardDeadline, firstContactWarningAt, GRADE_PLAYBOOKS, isSalesGrade, OPERATIONAL_SLA_MINUTES, resolveFirstContactEvidence, resolveScheduledSurveyAnchor, resolveSurveySlaMilestones, retryDeadlines, type ContactResult, type SalesGrade } from "@/lib/sla-rules";
+import { addBangkokCalendarDays, firstContactHardDeadline, firstContactWarningAt, OPERATIONAL_SLA_MINUTES, resolveCloseLeadMilestones, resolveFirstContactEvidence, resolveInstallCompletion, resolveScheduledInstallAnchor, resolveScheduledSurveyAnchor, resolveSurveySlaMilestones, retryDeadlines, type ContactResult } from "@/lib/sla-rules";
 
 type Db = sql.ConnectionPool;
 
@@ -35,7 +35,6 @@ async function addEvent(db: Db, input: {
 }
 
 type OperationalPolicyCode =
-  | "ASSIGN_OWNER"
   | "ELECTRICITY_ASSESSMENT"
   | "BOOK_SURVEY"
   | "SITE_SURVEY"
@@ -45,7 +44,6 @@ type OperationalPolicyCode =
   | "LOAN_PREAPPROVAL"
   | "SCHEDULE_INSTALLATION"
   | "INSTALLATION"
-  | "AFTER_SALES"
   | "CLOSE_LEAD";
 
 type OperationalDefinition = {
@@ -252,170 +250,6 @@ async function reconcileOperationalInstance(db: Db, input: {
   }
 }
 
-async function createGradePlaybookInstance(db: Db, input: {
-  leadId: number;
-  grade: SalesGrade;
-  gradeHistoryId: number;
-  stepIndex: number;
-  cycle: number;
-  anchorAt: Date;
-  ownerUserId: number | null;
-  actorUserId?: number | null;
-}) {
-  const step = GRADE_PLAYBOOKS[input.grade][input.stepIndex];
-  if (!step) return null;
-  const instanceKey = `grade-playbook:v2:${input.leadId}:${input.grade}:${input.gradeHistoryId}:${input.cycle}:${input.stepIndex}`;
-  const dueAt = new Date(input.anchorAt.getTime() + step.dueMinutes * 60_000);
-  const warningAt = new Date(dueAt.getTime() - step.warningMinutes * 60_000);
-  const status = stateAt(new Date(), warningAt, dueAt);
-  const inserted = await db.request()
-    .input("lead_id", input.leadId)
-    .input("instance_key", instanceKey)
-    .input("task_name", step.taskName)
-    .input("owner_user_id", input.ownerUserId)
-    .input("started_at", input.anchorAt)
-    .input("due_at", dueAt)
-    .input("warning_at", warningAt)
-    .input("status", status)
-    .input("context_json", JSON.stringify({
-      grade: input.grade,
-      gradeHistoryId: input.gradeHistoryId,
-      stepIndex: input.stepIndex,
-      stepCode: step.code,
-      cycle: input.cycle,
-      ruleVersion: 2,
-      calendarDays: true,
-      timezone: "Asia/Bangkok",
-    }))
-    .query(`
-      IF NOT EXISTS (SELECT 1 FROM lead_sla_instances WHERE instance_key = @instance_key)
-      BEGIN
-        INSERT lead_sla_instances(
-          lead_id, policy_code, policy_version, instance_key, task_name,
-          owner_user_id, owner_role, started_at, target_at, due_at,
-          warning_at, status, context_json
-        )
-        OUTPUT INSERTED.id, INSERTED.status
-        VALUES(
-          @lead_id, 'GRADE_PLAYBOOK', 2, @instance_key, @task_name,
-          @owner_user_id, 'sales', @started_at, @due_at, @due_at,
-          @warning_at, @status, @context_json
-        )
-      END
-    `);
-  const created = inserted.recordset[0];
-  if (!created) return null;
-  await addEvent(db, {
-    instanceId: created.id,
-    leadId: input.leadId,
-    type: "created",
-    eventKey: `sla-created:${instanceKey}`,
-    toStatus: status,
-    actorUserId: input.actorUserId,
-    eventAt: input.anchorAt,
-    detail: { policyCode: "GRADE_PLAYBOOK", grade: input.grade, stepCode: step.code, dueAt: dueAt.toISOString() },
-  });
-  return created.id as number;
-}
-
-async function ensureGradePlaybookTask(db: Db, input: {
-  leadId: number;
-  grade: SalesGrade | null;
-  gradeHistoryId: number | null;
-  gradeAt: Date | null;
-  ownerUserId: number | null;
-  enabled: boolean;
-  actorUserId?: number | null;
-}) {
-  const open = await db.request().input("lead_id", input.leadId).query(`
-    SELECT id, status FROM lead_sla_instances
-    WHERE lead_id = @lead_id AND policy_code IN ('GRADE_PLAYBOOK','GRADE_A_NEXT_ACTION')
-      AND status IN ('active','warning','critical','breached')
-  `);
-  if (!input.enabled || !input.grade || !input.gradeHistoryId || !input.gradeAt) {
-    for (const row of open.recordset) {
-      await db.request().input("id", row.id).query(`
-        UPDATE lead_sla_instances SET status='superseded', superseded_at=GETDATE(), updated_at=GETDATE() WHERE id=@id
-      `);
-      await addEvent(db, {
-        instanceId: row.id,
-        leadId: input.leadId,
-        type: "superseded",
-        eventKey: `sla-superseded:${row.id}:grade-playbook-disabled`,
-        fromStatus: row.status,
-        toStatus: "superseded",
-        actorUserId: input.actorUserId,
-        detail: { reason: "grade_playbook_disabled" },
-      });
-    }
-    return;
-  }
-  if (open.recordset.some(row => row.status && row.id)) return;
-  const prefix = `grade-playbook:v2:${input.leadId}:${input.grade}:${input.gradeHistoryId}:%`;
-  const prior = await db.request().input("prefix", prefix).query(`
-    SELECT TOP 1 id FROM lead_sla_instances WHERE instance_key LIKE @prefix
-  `);
-  if (prior.recordset[0]) return;
-  await createGradePlaybookInstance(db, {
-    leadId: input.leadId,
-    grade: input.grade,
-    gradeHistoryId: input.gradeHistoryId,
-    stepIndex: 0,
-    cycle: 0,
-    anchorAt: input.gradeAt,
-    ownerUserId: input.ownerUserId,
-    actorUserId: input.actorUserId,
-  });
-}
-
-async function advanceGradePlaybook(db: Db, input: {
-  leadId: number;
-  activityId: number;
-  actorUserId: number;
-  occurredAt: Date;
-}) {
-  const result = await db.request().input("lead_id", input.leadId).query(`
-    SELECT TOP 1 si.id, si.status, si.context_json, si.owner_user_id, l.customer_grade
-    FROM lead_sla_instances si
-    JOIN leads l ON l.id=si.lead_id
-    WHERE si.lead_id=@lead_id AND si.policy_code='GRADE_PLAYBOOK'
-      AND si.status IN ('active','warning','critical','breached')
-    ORDER BY si.due_at, si.id
-  `);
-  const current = result.recordset[0];
-  if (!current || !isSalesGrade(current.customer_grade)) return;
-  let context: { grade?: unknown; gradeHistoryId?: unknown; stepIndex?: unknown; cycle?: unknown } = {};
-  try { context = JSON.parse(String(current.context_json || "{}")); } catch { return; }
-  if (context.grade !== current.customer_grade) return;
-  const stepIndex = Number(context.stepIndex);
-  const cycle = Number(context.cycle || 0);
-  const gradeHistoryId = Number(context.gradeHistoryId);
-  if (!Number.isInteger(stepIndex) || !Number.isInteger(gradeHistoryId)) return;
-  await completeInstance(db, {
-    instanceId: current.id,
-    leadId: input.leadId,
-    oldStatus: current.status,
-    activityId: input.activityId,
-    actorUserId: input.actorUserId,
-    eventSuffix: `grade-playbook:${input.activityId}`,
-    completedAt: input.occurredAt,
-  });
-  const steps = GRADE_PLAYBOOKS[current.customer_grade as SalesGrade];
-  const currentStep = steps[stepIndex];
-  const nextIndex = stepIndex + 1 < steps.length ? stepIndex + 1 : currentStep?.repeatFrom;
-  if (nextIndex === undefined) return;
-  await createGradePlaybookInstance(db, {
-    leadId: input.leadId,
-    grade: current.customer_grade,
-    gradeHistoryId,
-    stepIndex: nextIndex,
-    cycle: nextIndex <= stepIndex ? cycle + 1 : cycle,
-    anchorAt: input.occurredAt,
-    ownerUserId: current.owner_user_id || input.actorUserId,
-    actorUserId: input.actorUserId,
-  });
-}
-
 /**
  * Reconciles every operational Sales SLA from durable milestones already stored
  * by the lead workflow. It is idempotent and also reopens/cancels instances when
@@ -426,12 +260,15 @@ export async function syncOperationalSlas(db: Db, leadId: number, actorUserId?: 
     SELECT l.id, l.status, l.source, l.customer_grade, l.assigned_user_id, l.created_at, l.owner_assigned_at, l.pre_booked_at,
            l.survey_assigned_user_id, l.install_assigned_user_id,
            l.survey_completed_by, l.install_completed_by,
-           l.survey_date, l.survey_time_slot, l.install_date, l.install_completed_at, l.warranty_issued_at,
+           l.survey_date, l.survey_time_slot, l.survey_confirmed, l.install_date, l.install_time_slot, l.install_actual_date,
+           l.install_completed_at, l.warranty_issued_at,
            l.order_installments,
            contact.id AS contact_activity_id, contact.created_at AS contacted_at,
            first_attempt.id AS first_attempt_activity_id, first_attempt.created_at AS first_attempt_at,
            assessment.id AS assessment_activity_id, assessment.created_at AS assessment_at,
            booked.id AS booked_activity_id, booked.created_at AS booked_at,
+           survey_confirmed.id AS survey_confirmed_activity_id,
+           survey_confirmed.created_at AS survey_confirmed_at,
            survey_done.id AS survey_activity_id, survey_done.created_at AS survey_done_at,
            proposal.id AS proposal_activity_id, proposal.created_at AS proposal_at,
            deposit.id AS deposit_payment_id, deposit.confirmed_at AS deposit_at,
@@ -442,10 +279,9 @@ export async function syncOperationalSlas(db: Db, leadId: number, actorUserId?: 
            loan_docs.id AS loan_docs_activity_id, loan_docs.created_at AS loan_docs_at,
            loan_result.id AS loan_result_activity_id, loan_result.created_at AS loan_result_at,
            install_booked.id AS install_booked_activity_id, install_booked.created_at AS install_booked_at,
-           after_sales.id AS after_sales_activity_id, after_sales.created_at AS after_sales_at,
-           grade_history.id AS grade_history_id, grade_history.changed_at AS grade_at,
+           grade_history.changed_at AS grade_at,
            grade_history.reason AS grade_reason,
-           closed.id AS closed_activity_id, closed.created_at AS closed_at
+           warranty.id AS warranty_activity_id, warranty.created_at AS warranty_activity_at
     FROM leads l
     OUTER APPLY (
       SELECT TOP 1 a.id, a.created_at FROM lead_activities a
@@ -479,6 +315,13 @@ export async function syncOperationalSlas(db: Db, leadId: number, actorUserId?: 
       WHERE a.lead_id = l.id AND a.activity_type = 'status_change' AND a.new_status = 'quote'
       ORDER BY a.created_at, a.id
     ) survey_done
+    OUTER APPLY (
+      SELECT TOP 1 a.id, a.created_at FROM lead_activities a
+      WHERE a.lead_id = l.id
+        AND a.activity_type = 'appointment_confirmed' AND a.title LIKE N'%สำรวจ%'
+        AND (survey_done.created_at IS NULL OR a.created_at <= survey_done.created_at)
+      ORDER BY a.created_at DESC, a.id DESC
+    ) survey_confirmed
     OUTER APPLY (
       SELECT TOP 1 a.id, a.created_at FROM lead_activities a
       WHERE a.lead_id = l.id AND (
@@ -524,30 +367,20 @@ export async function syncOperationalSlas(db: Db, leadId: number, actorUserId?: 
       ) ORDER BY a.created_at, a.id
     ) install_booked
     OUTER APPLY (
-      SELECT TOP 1 a.id, a.created_at FROM lead_activities a
-      WHERE a.lead_id = l.id AND l.install_completed_at IS NOT NULL
-        AND a.created_at >= l.install_completed_at
-        AND a.activity_type IN ('call','visit','line','other','follow_up')
-        AND (a.contact_result = 'connected' OR a.contact_result IS NULL)
-      ORDER BY a.created_at, a.id
-    ) after_sales
-    OUTER APPLY (
       SELECT TOP 1 gh.id, gh.changed_at, gh.reason FROM lead_grade_history gh
       WHERE gh.lead_id=l.id AND gh.new_grade=l.customer_grade
       ORDER BY gh.changed_at DESC, gh.id DESC
     ) grade_history
     OUTER APPLY (
       SELECT TOP 1 a.id, a.created_at FROM lead_activities a
-      WHERE a.lead_id=l.id AND a.activity_type='status_change' AND a.new_status='closed'
+      WHERE a.lead_id=l.id AND a.activity_type='warranty'
       ORDER BY a.created_at, a.id
-    ) closed
+    ) warranty
     WHERE l.id = @lead_id
   `);
   const lead = result.recordset[0];
   if (!lead) return;
 
-  const createdAt = dateOrNull(lead.created_at)!;
-  const grade = isSalesGrade(lead.customer_grade) ? lead.customer_grade : null;
   const gradeAt = dateOrNull(lead.grade_at);
   const legacyGradeBackfill = String(lead.grade_reason || "") === "grade_sla_backfill_v1";
   const contactedAt = dateOrNull(lead.contacted_at);
@@ -562,6 +395,7 @@ export async function syncOperationalSlas(db: Db, leadId: number, actorUserId?: 
     surveyDate: lead.survey_date,
     surveyTimeSlot: lead.survey_time_slot ? String(lead.survey_time_slot) : null,
     appointmentSetAt: dateOrNull(lead.booked_at),
+    appointmentConfirmedAt: lead.survey_confirmed ? dateOrNull(lead.survey_confirmed_at) : null,
     completedAt: surveyDoneAt,
   });
   const firstContactEvidence = resolveFirstContactEvidence({
@@ -602,12 +436,27 @@ export async function syncOperationalSlas(db: Db, leadId: number, actorUserId?: 
     : null;
   const installment1Methods = new Set(["transfer", "cheque", "cc"]);
   const installBookedAt = dateOrNull(lead.install_booked_at);
-  const installCompletedAt = dateOrNull(lead.install_completed_at);
-  const afterSalesAt = dateOrNull(lead.after_sales_at) || dateOrNull(lead.warranty_issued_at);
-  const closedAt = dateOrNull(lead.closed_at);
+  // The installation clock now measures the crew's own window: it opens at the
+  // booked slot and closes on the day the crew recorded as the real finish.
+  // install_completed_at stays as the fallback for leads that never booked a
+  // date or never filled the real one in.
+  const installCompletedAt = resolveInstallCompletion({
+    actualDate: lead.install_actual_date || null,
+    completedAt: dateOrNull(lead.install_completed_at),
+  });
+  const scheduledInstallAnchor = resolveScheduledInstallAnchor({
+    installDate: lead.install_date || null,
+    installTimeSlot: lead.install_time_slot ? String(lead.install_time_slot) : null,
+    depositAt: dateOrNull(lead.deposit_at),
+    completedAt: installCompletedAt,
+  });
+  const warrantyIssuedAt = dateOrNull(lead.warranty_activity_at) || dateOrNull(lead.warranty_issued_at);
   const qualificationAnchorAt = legacyGradeBackfill && gradeAt ? gradeAt : contactedAt;
   const qualificationCompletedAt = gradeAt;
   const leadStatus = String(lead.status);
+  const closeLeadMilestones = ["warranty", "gridtie", "closed"].includes(leadStatus)
+    ? resolveCloseLeadMilestones({ installCompletedAt, warrantyIssuedAt })
+    : { anchorAt: null, completedAt: null };
   const cancelled = ["lost", "returned"].includes(leadStatus);
   const stageRank: Record<string, number> = {
     pre_survey: 0, "pre_survey-01": 0, "pre_survey-02": 0,
@@ -624,18 +473,16 @@ export async function syncOperationalSlas(db: Db, leadId: number, actorUserId?: 
   };
 
   const definitions: OperationalDefinition[] = [
-    { policyCode: "ASSIGN_OWNER", ownerRole: "sales", ownerUserId: lead.assigned_user_id || null, taskName: "ตรวจสอบข้อมูลและมอบหมายผู้รับผิดชอบ", anchorAt: createdAt, completionAt: dateOrNull(lead.owner_assigned_at), targetMinutes: OPERATIONAL_SLA_MINUTES.ASSIGN_OWNER.target, dueMinutes: OPERATIONAL_SLA_MINUTES.ASSIGN_OWNER.due, warningMinutes: OPERATIONAL_SLA_MINUTES.ASSIGN_OWNER.warning },
     { policyCode: "ELECTRICITY_ASSESSMENT", policyVersion: 3, ownerRole: "sales", ownerUserId: lead.assigned_user_id || null, taskName: "ประเมินและกำหนด Grade Lead", anchorAt: qualificationAnchorAt, completionAt: qualificationCompletedAt, targetMinutes: OPERATIONAL_SLA_MINUTES.ELECTRICITY_ASSESSMENT.target, dueMinutes: OPERATIONAL_SLA_MINUTES.ELECTRICITY_ASSESSMENT.due, warningMinutes: OPERATIONAL_SLA_MINUTES.ELECTRICITY_ASSESSMENT.warning },
     { policyCode: "BOOK_SURVEY", policyVersion: 3, ownerRole: "sales", ownerUserId: lead.assigned_user_id || null, taskName: "ยืนยันวัน เวลา และนัดหมาย Pre-Survey", anchorAt: gradeAt || assessmentAt, completionAt: bookedAt, completionActivityId: lead.booked_activity_id || lead.survey_activity_id, targetMinutes: OPERATIONAL_SLA_MINUTES.BOOK_SURVEY.target, dueMinutes: OPERATIONAL_SLA_MINUTES.BOOK_SURVEY.due, warningMinutes: OPERATIONAL_SLA_MINUTES.BOOK_SURVEY.warning },
-    { policyCode: "SITE_SURVEY", policyVersion: 3, ownerRole: "solar", ownerUserId: lead.survey_assigned_user_id || lead.survey_completed_by || null, taskName: "เข้าตรวจสำรวจหน้างาน", anchorAt: scheduledSurveyAnchor.at, anchorSource: scheduledSurveyAnchor.source || undefined, freezeAnchorAfterCompletion: true, completionAt: surveyDoneAt, completionActivityId: lead.survey_activity_id, targetMinutes: OPERATIONAL_SLA_MINUTES.SITE_SURVEY.target, dueMinutes: OPERATIONAL_SLA_MINUTES.SITE_SURVEY.due, warningMinutes: OPERATIONAL_SLA_MINUTES.SITE_SURVEY.warning },
+    { policyCode: "SITE_SURVEY", policyVersion: 4, ownerRole: "solar", ownerUserId: lead.survey_assigned_user_id || lead.survey_completed_by || null, taskName: "เข้าตรวจสำรวจหน้างาน", anchorAt: scheduledSurveyAnchor.at, anchorSource: scheduledSurveyAnchor.source || undefined, freezeAnchorAfterCompletion: true, completionAt: surveyDoneAt, completionActivityId: lead.survey_activity_id, targetMinutes: OPERATIONAL_SLA_MINUTES.SITE_SURVEY.target, dueMinutes: OPERATIONAL_SLA_MINUTES.SITE_SURVEY.due, warningMinutes: OPERATIONAL_SLA_MINUTES.SITE_SURVEY.warning },
     { policyCode: "PROPOSAL_ROI", policyVersion: 4, ownerRole: "sales", ownerUserId: lead.assigned_user_id || null, taskName: "จัดส่ง Proposal พร้อม ROI และทางเลือกการเงิน", anchorAt: surveyDoneAt, completionAt: proposalAt, completionActivityId: lead.proposal_activity_id, targetMinutes: OPERATIONAL_SLA_MINUTES.PROPOSAL_ROI.target, dueMinutes: OPERATIONAL_SLA_MINUTES.PROPOSAL_ROI.due, warningMinutes: OPERATIONAL_SLA_MINUTES.PROPOSAL_ROI.warning },
     { policyCode: "DEPOSIT_CLOSE", policyVersion: 3, ownerRole: "sales", ownerUserId: lead.assigned_user_id || null, taskName: "ติดตามปิดการขายและรับมัดจำ", anchorAt: proposalAt, completionAt: depositAt, completionActivityId: lead.deposit_payment_id, targetMinutes: OPERATIONAL_SLA_MINUTES.DEPOSIT_CLOSE.target, dueMinutes: OPERATIONAL_SLA_MINUTES.DEPOSIT_CLOSE.due, warningMinutes: OPERATIONAL_SLA_MINUTES.DEPOSIT_CLOSE.warning },
     { policyCode: "PAYMENT_INSTALLMENT_1", ownerRole: "sales", ownerUserId: lead.assigned_user_id || null, taskName: "ติดตามชำระเงินงวดที่ 1 เพื่อยืนยันราคา", anchorAt: firstInstallmentMethod && installment1Methods.has(firstInstallmentMethod) ? quotationReceivedAt : null, completionAt: installment1PaidAt, targetMinutes: OPERATIONAL_SLA_MINUTES.PAYMENT_INSTALLMENT_1.target, dueMinutes: OPERATIONAL_SLA_MINUTES.PAYMENT_INSTALLMENT_1.due, warningMinutes: OPERATIONAL_SLA_MINUTES.PAYMENT_INSTALLMENT_1.warning },
     { policyCode: "LOAN_PREAPPROVAL", ownerRole: "sales", ownerUserId: lead.assigned_user_id || null, taskName: "ติดตามผลอนุมัติเบื้องต้นจากธนาคาร", anchorAt: hasLoanInstallment ? loanAnchorAt : null, completionAt: loanResultAt, completionActivityId: lead.loan_result_activity_id, targetMinutes: OPERATIONAL_SLA_MINUTES.LOAN_PREAPPROVAL.target, dueMinutes: OPERATIONAL_SLA_MINUTES.LOAN_PREAPPROVAL.due, warningMinutes: OPERATIONAL_SLA_MINUTES.LOAN_PREAPPROVAL.warning },
     { policyCode: "SCHEDULE_INSTALLATION", policyVersion: 3, ownerRole: "sales", ownerUserId: lead.assigned_user_id || null, taskName: "นัดวันติดตั้งและแจ้งเตรียมเอกสาร", anchorAt: depositAt, completionAt: installBookedAt, completionActivityId: lead.install_booked_activity_id, targetMinutes: OPERATIONAL_SLA_MINUTES.SCHEDULE_INSTALLATION.target, dueMinutes: OPERATIONAL_SLA_MINUTES.SCHEDULE_INSTALLATION.due, warningMinutes: OPERATIONAL_SLA_MINUTES.SCHEDULE_INSTALLATION.warning },
-    { policyCode: "INSTALLATION", policyVersion: 2, ownerRole: "solar", ownerUserId: lead.install_assigned_user_id || lead.install_completed_by || null, taskName: "ติดตั้ง ทดสอบระบบ และส่งมอบงาน", anchorAt: depositAt, completionAt: installCompletedAt, targetMinutes: OPERATIONAL_SLA_MINUTES.INSTALLATION.target, dueMinutes: OPERATIONAL_SLA_MINUTES.INSTALLATION.due, warningMinutes: OPERATIONAL_SLA_MINUTES.INSTALLATION.warning },
-    { policyCode: "AFTER_SALES", ownerRole: "sales", ownerUserId: lead.assigned_user_id || null, taskName: "ติดตามหลังติดตั้งและสอบถามความพึงพอใจ", anchorAt: installCompletedAt, completionAt: afterSalesAt, completionActivityId: lead.after_sales_activity_id, targetMinutes: OPERATIONAL_SLA_MINUTES.AFTER_SALES.target, dueMinutes: OPERATIONAL_SLA_MINUTES.AFTER_SALES.due, warningMinutes: OPERATIONAL_SLA_MINUTES.AFTER_SALES.warning },
-    { policyCode: "CLOSE_LEAD", policyVersion: 2, ownerRole: "sales", ownerUserId: lead.assigned_user_id || null, taskName: "ปิด Lead หลังส่งมอบงาน", anchorAt: installCompletedAt, completionAt: closedAt, completionActivityId: lead.closed_activity_id, targetMinutes: OPERATIONAL_SLA_MINUTES.CLOSE_LEAD.target, dueMinutes: OPERATIONAL_SLA_MINUTES.CLOSE_LEAD.due, warningMinutes: OPERATIONAL_SLA_MINUTES.CLOSE_LEAD.warning },
+    { policyCode: "INSTALLATION", policyVersion: 3, ownerRole: "solar", ownerUserId: lead.install_assigned_user_id || lead.install_completed_by || null, taskName: "ติดตั้ง ทดสอบระบบ และส่งมอบงาน", anchorAt: scheduledInstallAnchor.at, anchorSource: scheduledInstallAnchor.source || undefined, freezeAnchorAfterCompletion: true, completionAt: installCompletedAt, targetMinutes: OPERATIONAL_SLA_MINUTES.INSTALLATION.target, dueMinutes: OPERATIONAL_SLA_MINUTES.INSTALLATION.due, warningMinutes: OPERATIONAL_SLA_MINUTES.INSTALLATION.warning },
+    { policyCode: "CLOSE_LEAD", policyVersion: 4, ownerRole: "sales", ownerUserId: lead.assigned_user_id || null, taskName: "ปิด Lead เมื่อออกใบรับประกัน", anchorAt: closeLeadMilestones.anchorAt, anchorSource: "installation_completed", completionAt: closeLeadMilestones.completedAt, completionActivityId: lead.warranty_activity_id, targetMinutes: OPERATIONAL_SLA_MINUTES.CLOSE_LEAD.target, dueMinutes: OPERATIONAL_SLA_MINUTES.CLOSE_LEAD.due, warningMinutes: OPERATIONAL_SLA_MINUTES.CLOSE_LEAD.warning },
   ];
 
   for (const definition of definitions) {
@@ -650,15 +497,6 @@ export async function syncOperationalSlas(db: Db, leadId: number, actorUserId?: 
       definition,
     });
   }
-  await ensureGradePlaybookTask(db, {
-    leadId,
-    grade,
-    gradeHistoryId: lead.grade_history_id ? Number(lead.grade_history_id) : null,
-    gradeAt,
-    ownerUserId: lead.assigned_user_id || null,
-    enabled: !cancelled && Boolean(grade) && !depositAt,
-    actorUserId,
-  });
   await refreshOpenSlaStates(db, leadId);
 }
 
@@ -933,14 +771,6 @@ export async function processContactActivity(db: Db, input: {
         AND status IN ('active','warning','critical','breached');
       UPDATE leads SET next_follow_up = NULL, updated_at = GETDATE() WHERE id = @lead_id;
     `);
-    if (input.result === "connected") {
-      await advanceGradePlaybook(db, {
-        leadId: input.leadId,
-        activityId: input.activityId,
-        actorUserId: input.actorUserId,
-        occurredAt: input.occurredAt || new Date(),
-      });
-    }
     return;
   }
 
@@ -974,7 +804,9 @@ export async function processGradeChange(db: Db, input: {
   reason?: string | null;
 }) {
   if (input.oldGrade === input.newGrade) return;
-  const gradeHistory = await db.request()
+  // Grade drives priority and talk track only; no SLA clock hangs off it any
+  // more, so the change is recorded and nothing else has to react to it.
+  await db.request()
     .input("lead_id", input.leadId)
     .input("old_grade", input.oldGrade)
     .input("new_grade", input.newGrade)
@@ -982,44 +814,6 @@ export async function processGradeChange(db: Db, input: {
     .input("changed_by", input.actorUserId)
     .query(`
       INSERT lead_grade_history(lead_id, old_grade, new_grade, reason, changed_by)
-      OUTPUT INSERTED.id, INSERTED.changed_at
       VALUES (@lead_id, @old_grade, @new_grade, @reason, @changed_by)
     `);
-
-  const superseded = await db.request().input("lead_id", input.leadId).query(`
-    UPDATE lead_sla_instances
-    SET status = 'superseded', superseded_at = GETDATE(), updated_at = GETDATE()
-    OUTPUT INSERTED.id, DELETED.status old_status
-    WHERE lead_id = @lead_id AND policy_code IN ('GRADE_A_NEXT_ACTION','GRADE_PLAYBOOK')
-      AND status IN ('active','warning','critical','breached')
-  `);
-  for (const row of superseded.recordset) {
-    await addEvent(db, {
-      instanceId: row.id,
-      leadId: input.leadId,
-      type: "superseded",
-      eventKey: `sla-superseded:${row.id}:grade-change:${gradeHistory.recordset[0]?.id}`,
-      fromStatus: row.old_status,
-      toStatus: "superseded",
-      actorUserId: input.actorUserId,
-      detail: { oldGrade: input.oldGrade, newGrade: input.newGrade },
-    });
-  }
-  if (!isSalesGrade(input.newGrade)) return;
-
-  const leadResult = await db.request().input("lead_id", input.leadId).query(`
-    SELECT assigned_user_id FROM leads WHERE id = @lead_id
-  `);
-  const lead = leadResult.recordset[0];
-  if (!lead) return;
-  await createGradePlaybookInstance(db, {
-    leadId: input.leadId,
-    grade: input.newGrade,
-    gradeHistoryId: Number(gradeHistory.recordset[0].id),
-    stepIndex: 0,
-    cycle: 0,
-    anchorAt: dateOrNull(gradeHistory.recordset[0].changed_at) || new Date(),
-    ownerUserId: lead.assigned_user_id || input.actorUserId,
-    actorUserId: input.actorUserId,
-  });
 }

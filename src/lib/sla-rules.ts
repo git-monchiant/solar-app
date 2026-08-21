@@ -2,7 +2,6 @@ export type SlaState = "active" | "warning" | "critical" | "breached" | "complet
 export type ContactResult = "connected" | "unreachable" | "invalid_contact" | "other";
 
 export const OPERATIONAL_SLA_MINUTES = {
-  ASSIGN_OWNER: { target: 15, due: 60, warning: 30 },
   // Qualification is 24 hours from the first contact that connected,
   // identical for every lead source (policy version 3, migration 158).
   ELECTRICITY_ASSESSMENT: { target: 1440, due: 1440, warning: 240 },
@@ -18,42 +17,19 @@ export const OPERATIONAL_SLA_MINUTES = {
   // policy already used in migration 150 (policy version 3, migration 161).
   SCHEDULE_INSTALLATION: { target: 3 * 24 * 60, due: 3 * 24 * 60, warning: 24 * 60 },
   INSTALLATION: { target: 15 * 24 * 60, due: 15 * 24 * 60, warning: 3 * 24 * 60 },
-  AFTER_SALES: { target: 4320, due: 4320, warning: 1440 },
-  CLOSE_LEAD: { target: 7 * 24 * 60, due: 7 * 24 * 60, warning: 2 * 24 * 60 },
+  // Closing the case measures the handoff from finished installation to the
+  // issued warranty. The certificate timestamp is also the Close Lead result.
+  // The business window is three calendar days, warned one day ahead.
+  CLOSE_LEAD: { target: 3 * 24 * 60, due: 3 * 24 * 60, warning: 24 * 60 },
 } as const;
 
-export type SalesGrade = "A" | "B" | "C" | "D" | "E" | "F";
-
-export type GradePlaybookStep = {
-  code: string;
-  taskName: string;
-  dueMinutes: number;
-  warningMinutes: number;
-  repeatFrom?: number;
-};
-
 /**
- * Every grade runs the same follow-up cadence that used to belong to Grade A:
- * one open task at a time, due 24 hours after the last connected contact, and
- * repeating for as long as the lead stays open. Grade still drives priority and
- * what the sales person says, but no longer changes the SLA clock.
+ * Grade no longer owns an SLA clock. The follow-up playbook it used to drive
+ * was retired once the business settled the rule "a lead we have reached needs
+ * no chasing": FIRST_CONTACT measures reaching the lead and CONTACT_RETRY
+ * chases the ones we could not reach, which leaves the playbook no state of
+ * its own. Grade still sets priority and what the sales person says.
  */
-export const UNIFIED_PLAYBOOK: readonly GradePlaybookStep[] = [
-  { code: "daily_follow_up", taskName: "โทรติดตามลูกค้า", dueMinutes: 24 * 60, warningMinutes: 4 * 60, repeatFrom: 0 },
-];
-
-export const GRADE_PLAYBOOKS: Record<SalesGrade, readonly GradePlaybookStep[]> = {
-  A: UNIFIED_PLAYBOOK,
-  B: UNIFIED_PLAYBOOK,
-  C: UNIFIED_PLAYBOOK,
-  D: UNIFIED_PLAYBOOK,
-  E: UNIFIED_PLAYBOOK,
-  F: UNIFIED_PLAYBOOK,
-};
-
-export function isSalesGrade(value: unknown): value is SalesGrade {
-  return typeof value === "string" && ["A", "B", "C", "D", "E", "F"].includes(value);
-}
 
 const BANGKOK_OFFSET_MS = 7 * 60 * 60 * 1000;
 
@@ -129,38 +105,137 @@ function earliestSurveyTime(value: string | null | undefined) {
 }
 
 /**
- * SITE_SURVEY begins at the appointment itself, not when the appointment was
- * entered. Survey dates are SQL `date` values (pool useUTC=false); build the
- * resulting instant explicitly in Asia/Bangkok so tests and servers agree.
+ * SITE_SURVEY begins only after the appointment has been confirmed. A timely
+ * confirmation keeps the booked slot as the anchor; a late confirmation moves
+ * the anchor forward because the Survey workflow is locked until that click.
+ * Survey dates are SQL `date` values (pool useUTC=false); build the resulting
+ * instant explicitly in Asia/Bangkok so tests and servers agree.
  */
 export function resolveScheduledSurveyAnchor(input: {
   surveyDate: Date | string | null;
   surveyTimeSlot: string | null;
   appointmentSetAt: Date | null;
+  appointmentConfirmedAt?: Date | null;
   completedAt?: Date | null;
 }): {
   at: Date | null;
-  source: "scheduled_date_time" | "appointment_recorded_at_fallback" | "completion_at_legacy_fallback" | "appointment_recorded_at_inconsistent_schedule" | "completion_at_inconsistent_schedule" | null;
+  source: "scheduled_date_time" | "confirmation_after_scheduled_time"
+    | "appointment_confirmation_fallback" | "completion_at_legacy_fallback"
+    | "appointment_confirmation_inconsistent_schedule"
+    | "appointment_recorded_at_inconsistent_schedule"
+    | "completion_at_inconsistent_schedule" | null;
 } {
   const date = surveyDateParts(input.surveyDate);
   if (!date) {
+    if (input.appointmentConfirmedAt) {
+      return { at: input.appointmentConfirmedAt, source: "appointment_confirmation_fallback" };
+    }
     return {
-      at: input.appointmentSetAt || input.completedAt || null,
-      source: input.appointmentSetAt
-        ? "appointment_recorded_at_fallback"
-        : input.completedAt ? "completion_at_legacy_fallback" : null,
+      // A completed legacy survey is durable evidence that the confirmation
+      // happened even when its activity predates the audit trail. An open,
+      // unconfirmed appointment must not start the field-work clock.
+      at: input.completedAt ? input.appointmentSetAt || input.completedAt : null,
+      source: input.completedAt ? "completion_at_legacy_fallback" : null,
     };
   }
   const earliest = earliestSurveyTime(input.surveyTimeSlot);
   const [hour, minute] = (earliest || "00:00").split(":").map(Number);
   const scheduledAt = fromBangkokParts({ ...date, hour, minute, second: 0 });
   if (input.completedAt && scheduledAt > input.completedAt) {
+    if (input.appointmentConfirmedAt && input.appointmentConfirmedAt <= input.completedAt) {
+      return { at: input.appointmentConfirmedAt, source: "appointment_confirmation_inconsistent_schedule" };
+    }
     if (input.appointmentSetAt && input.appointmentSetAt <= input.completedAt) {
       return { at: input.appointmentSetAt, source: "appointment_recorded_at_inconsistent_schedule" };
     }
     return { at: input.completedAt, source: "completion_at_inconsistent_schedule" };
   }
+  if (input.appointmentConfirmedAt) {
+    return input.appointmentConfirmedAt > scheduledAt
+      ? { at: input.appointmentConfirmedAt, source: "confirmation_after_scheduled_time" }
+      : { at: scheduledAt, source: "scheduled_date_time" };
+  }
+  if (!input.completedAt) return { at: null, source: null };
   return { at: scheduledAt, source: "scheduled_date_time" };
+}
+
+/**
+ * INSTALLATION measures the crew's work, so its clock opens at the booked
+ * installation slot exactly as SITE_SURVEY opens at the booked survey. A
+ * customer who postpones the visit must not burn the crew's time. Leads that
+ * never booked a date fall back to the deposit, where the clock used to start
+ * for everyone.
+ */
+export function resolveScheduledInstallAnchor(input: {
+  installDate: Date | string | null;
+  installTimeSlot: string | null;
+  depositAt: Date | null;
+  completedAt?: Date | null;
+}): {
+  at: Date | null;
+  source: "scheduled_date_time" | "deposit_fallback" | "completion_at_legacy_fallback"
+    | "deposit_inconsistent_schedule" | "completion_at_inconsistent_schedule" | null;
+} {
+  const date = surveyDateParts(input.installDate);
+  if (!date) {
+    return {
+      at: input.depositAt || input.completedAt || null,
+      source: input.depositAt
+        ? "deposit_fallback"
+        : input.completedAt ? "completion_at_legacy_fallback" : null,
+    };
+  }
+  const earliest = earliestSurveyTime(input.installTimeSlot);
+  const [hour, minute] = (earliest || "00:00").split(":").map(Number);
+  const scheduledAt = fromBangkokParts({ ...date, hour, minute, second: 0 });
+  // A job finished before its own booked slot means the schedule was edited
+  // after the fact. Fall back rather than report negative elapsed time.
+  if (input.completedAt && scheduledAt > input.completedAt) {
+    if (input.depositAt && input.depositAt <= input.completedAt) {
+      return { at: input.depositAt, source: "deposit_inconsistent_schedule" };
+    }
+    return { at: input.completedAt, source: "completion_at_inconsistent_schedule" };
+  }
+  return { at: scheduledAt, source: "scheduled_date_time" };
+}
+
+/**
+ * install_actual_date is the day the crew records as the real finish and is the
+ * display source of truth; install_completed_at only stamps when the button was
+ * pressed, routinely a day or more later. Prefer the real date, keeping the
+ * recorded time when both land on the same day. Otherwise close the clock at the
+ * end of that day: the date is all that is known, and ending it at 00:00 would
+ * report the job as finished before the crew arrived.
+ */
+export function resolveInstallCompletion(input: {
+  actualDate: Date | string | null;
+  completedAt: Date | null;
+}): Date | null {
+  const date = surveyDateParts(input.actualDate);
+  if (!date) return input.completedAt;
+  if (input.completedAt) {
+    const stamped = bangkokParts(input.completedAt);
+    if (stamped.year === date.year && stamped.month === date.month && stamped.day === date.day) {
+      return input.completedAt;
+    }
+  }
+  return fromBangkokParts({ ...date, hour: 23, minute: 59, second: 59 });
+}
+
+/**
+ * CLOSE_LEAD measures installation completion -> warranty issuance. A warranty
+ * timestamp before installation is inconsistent and must not create a negative
+ * elapsed result, so it remains an open SLA until the evidence is corrected.
+ */
+export function resolveCloseLeadMilestones(input: {
+  installCompletedAt: Date | null;
+  warrantyIssuedAt: Date | null;
+}): { anchorAt: Date | null; completedAt: Date | null } {
+  if (!input.installCompletedAt) return { anchorAt: null, completedAt: null };
+  const completedAt = input.warrantyIssuedAt && input.warrantyIssuedAt >= input.installCompletedAt
+    ? input.warrantyIssuedAt
+    : null;
+  return { anchorAt: input.installCompletedAt, completedAt };
 }
 
 /**
