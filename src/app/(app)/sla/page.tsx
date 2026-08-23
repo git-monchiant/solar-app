@@ -82,20 +82,20 @@ function SummaryCard({ status, count, leadCount, active, onClick }: {
     <button
       type="button"
       onClick={onClick}
-      className={`rounded-2xl border p-3 text-left transition-all hover:shadow-sm active:scale-[0.99] ${
+      className={`rounded-xl border px-3 py-2.5 text-left transition-all hover:shadow-sm active:scale-[0.99] ${
         active ? `${style.card} ring-2 ring-active/20` : "border-gray-200 bg-white hover:border-gray-300"
       }`}
     >
       <div className="flex items-center gap-2">
-        <span className={`h-2.5 w-2.5 rounded-full ${style.dot}`} />
+        <span className={`h-2 w-2 rounded-full ${style.dot}`} />
         <span className="text-xs font-semibold text-gray-500">{STATUS_LABEL[status]}</span>
       </div>
-      <div className="mt-1 flex items-baseline gap-1.5">
-        <span className="text-2xl font-bold tabular-nums text-gray-900">{count.toLocaleString("th-TH")}</span>
+      <div className="mt-1.5 flex items-baseline gap-1.5">
+        <span className="text-xl font-bold tabular-nums text-gray-900">{count.toLocaleString("th-TH")}</span>
         <span className="text-xxs font-semibold text-gray-400">งาน SLA</span>
-      </div>
-      <div className="mt-1 text-xs font-semibold text-gray-600">
-        จำนวน Lead: {leadCount.toLocaleString("th-TH")}
+        <span className="mx-1 h-3 w-px bg-gray-200" />
+        <span className="text-sm font-bold tabular-nums text-gray-700">{leadCount.toLocaleString("th-TH")}</span>
+        <span className="text-xxs font-semibold text-gray-400">Lead</span>
       </div>
     </button>
   );
@@ -230,13 +230,13 @@ export default function SlaDashboardPage() {
         onAction={() => load(true)}
       />
 
-      <main className="space-y-5 p-4">
+      <main className="space-y-4 p-4">
         <section>
-          <div className="mb-3 flex items-center justify-between px-1">
+          <div className="mb-2 flex items-center justify-between px-1">
             <h2 className="text-xs font-bold uppercase tracking-wider text-gray-500">ภาพรวมสถานะ SLA</h2>
             <span className="text-xxs text-gray-400">อัปเดตอัตโนมัติทุก 1 นาที</span>
           </div>
-          <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+          <div className="grid grid-cols-1 gap-2 sm:grid-cols-3">
             {(["breached", "warning", "active"] as SlaVisibleStatus[]).map(status => (
               <SummaryCard
                 key={status}
@@ -251,7 +251,7 @@ export default function SlaDashboardPage() {
         </section>
 
         <section>
-          <div className="mb-3 flex flex-wrap items-center justify-between gap-2 px-1">
+          <div className="mb-2 flex flex-wrap items-center justify-between gap-2 px-1">
             <h2 className="text-xs font-bold uppercase tracking-wider text-gray-500">
               {tab === "all" ? "คิวงานตามความเร่งด่วน" : STATUS_LABEL[tab]}
             </h2>
@@ -285,7 +285,7 @@ export default function SlaDashboardPage() {
               <p className="mt-1 text-xs text-gray-400">ลองเปลี่ยนสถานะหรือล้างคำค้นหา</p>
             </div>
           ) : (
-            <div className="space-y-3">
+            <div className="space-y-2">
               {filteredItems.map(item => {
                 const style = STATUS_STYLE[item.status];
                 const isBreached = item.status === "breached";
@@ -296,56 +296,49 @@ export default function SlaDashboardPage() {
                     onKeyDown={event => { if (event.key === "Enter" || event.key === " ") openLead(item.lead_id); }}
                     role="button"
                     tabIndex={0}
-                    className={`w-full cursor-pointer rounded-2xl border border-l-4 border-gray-300 bg-white p-4 text-left shadow-sm transition-all hover:border-gray-400 hover:shadow-md active:scale-[0.995] ${style.edge}`}
+                    className={`w-full cursor-pointer rounded-xl border border-l-4 border-gray-300 bg-white p-3 text-left shadow-sm transition-all hover:border-gray-400 hover:shadow-md active:scale-[0.995] ${style.edge}`}
                   >
-                    <div className="flex flex-wrap items-start gap-2">
-                      <span className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-xxs font-bold uppercase tracking-wider ring-1 ring-inset ${style.chip}`}>
-                        <span className={`h-1.5 w-1.5 rounded-full ${style.dot}`} />
-                        {STATUS_LABEL[item.status]}
-                      </span>
-                      {item.customer_grade && (
-                        <span className="inline-flex h-6 items-center rounded-full bg-emerald-50 px-2 text-xxs font-bold text-emerald-700 ring-1 ring-inset ring-emerald-200">Grade {item.customer_grade}</span>
-                      )}
-                      <SourceTag value={item.source} size="xs" />
-                      <span className="ml-auto text-xxs font-semibold text-gray-400">Lead #{item.lead_id}</span>
-                    </div>
-
-                    <div className="mt-3 flex flex-col gap-3 md:flex-row md:items-center">
-                      <div className="min-w-0 flex-1">
-                        <div className="truncate text-base font-bold text-gray-900">{item.full_name}</div>
+                    <div className="flex flex-col gap-3 md:flex-row md:items-stretch">
+                      <div className="min-w-0 flex-1 py-0.5">
+                        <div className="flex flex-wrap items-start gap-1.5">
+                          <span className={`inline-flex items-center gap-1.5 rounded-full px-2 py-0.5 text-xxs font-bold uppercase tracking-wider ring-1 ring-inset ${style.chip}`}>
+                            <span className={`h-1.5 w-1.5 rounded-full ${style.dot}`} />
+                            {STATUS_LABEL[item.status]}
+                          </span>
+                          {item.customer_grade && (
+                            <span className="inline-flex h-5 items-center rounded-full bg-emerald-50 px-2 text-xxs font-bold text-emerald-700 ring-1 ring-inset ring-emerald-200">Grade {item.customer_grade}</span>
+                          )}
+                          <SourceTag value={item.source} size="xs" />
+                          <span className="ml-auto text-xxs font-semibold text-gray-400">Lead #{item.lead_id}</span>
+                        </div>
+                        <div className="mt-2 truncate text-sm font-bold text-gray-900">{item.full_name}</div>
                         <div className="mt-1 flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-gray-500">
                           <span className="inline-flex items-center gap-1.5 font-mono tabular-nums">
-                            <PhoneIcon className="h-4 w-4 text-emerald-500" />
+                            <PhoneIcon className="h-3.5 w-3.5 text-emerald-500" />
                             {item.phone || "ไม่มีเบอร์โทร"}
                           </span>
                           <span className="inline-flex items-center gap-1.5">
-                            <UserIcon className="h-4 w-4 text-gray-400" />
+                            <UserIcon className="h-3.5 w-3.5 text-gray-400" />
                             {item.owner_name || (item.owner_role === "solar" ? "ยังไม่มอบหมายทีม Solar" : "ยังไม่มอบหมาย Owner")}
                           </span>
                         </div>
-                        <p className="mt-2 text-sm font-medium text-gray-700">
-                          <span className="text-xs font-normal text-gray-400">งาน: </span>{item.task_name}
-                        </p>
-                        {isBreached && (
-                          <div className="mt-2 inline-flex max-w-full items-start gap-1.5 rounded-lg bg-red-50 px-2.5 py-1.5 text-xs font-semibold text-red-700">
-                            <span className="flex h-4 w-4 shrink-0 items-center justify-center rounded-full border border-red-400 text-xxs">!</span>
-                            <span className="min-w-0 break-words">เกิน SLA ที่ขั้นตอน “{item.task_name}”</span>
-                          </div>
-                        )}
+                        {!isBreached && <p className="mt-1.5 text-xs font-medium text-gray-700">{item.task_name}</p>}
                       </div>
 
-                      <div className={`shrink-0 rounded-xl border px-3 py-2 md:w-60 ${style.card}`}>
+                      <div className={`shrink-0 rounded-lg border px-3 py-2 md:w-64 ${style.card}`}>
                         {isBreached ? (
                           <>
-                            <div className="flex items-center justify-between gap-2 text-xxs font-semibold text-red-600">
-                              <span>เกิน SLA มาแล้ว</span>
-                              <ClockIcon className="h-4 w-4" />
+                            <div className="flex items-center gap-2 text-xxs font-semibold text-red-600">
+                              <span>เกินมาแล้ว</span>
+                              <span className="ml-auto text-base font-bold tabular-nums">{formatOverdueDuration(item.due_at)}</span>
+                              <ClockIcon className="h-3.5 w-3.5" />
                             </div>
-                            <div className="mt-0.5 text-lg font-bold tabular-nums text-red-600">{formatOverdueDuration(item.due_at)}</div>
-                            <div className="mt-2 border-t border-red-200 pt-2">
-                              <div className="text-xxs font-semibold uppercase tracking-wider text-gray-500">ขั้นตอนที่เกิน</div>
-                              <div className="mt-0.5 text-sm font-bold text-gray-800">{item.task_name}</div>
-                              <div className="mt-1.5 text-xxs text-gray-500">กำหนดเสร็จ {formatThaiDateShort(item.due_at)} {formatThaiTime(item.due_at)}</div>
+                            <div className="mt-1.5 space-y-0.5 border-t border-red-200 pt-1.5">
+                              <div className="flex items-start justify-between gap-3">
+                                <span className="shrink-0 text-xxs text-gray-500">ขั้นตอน</span>
+                                <span className="text-right text-xs font-bold text-gray-800">{item.task_name}</span>
+                              </div>
+                              <div className="text-right text-xxs text-gray-500">กำหนดเดิม {formatThaiDateShort(item.due_at)} {formatThaiTime(item.due_at)}</div>
                             </div>
                           </>
                         ) : (
@@ -354,10 +347,6 @@ export default function SlaDashboardPage() {
                             <div className="mt-0.5 inline-flex items-center gap-1.5 text-sm font-bold text-gray-800">
                               <ClockIcon className="h-4 w-4" />
                               {formatThaiDateShort(item.due_at)} {formatThaiTime(item.due_at)}
-                            </div>
-                            <div className="mt-2 border-t border-gray-200 pt-2">
-                              <div className="text-xxs font-semibold uppercase tracking-wider text-gray-500">ขั้นตอน SLA</div>
-                              <div className="mt-0.5 text-sm font-bold text-gray-800">{item.task_name}</div>
                             </div>
                           </>
                         )}
