@@ -325,6 +325,7 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
 
       const tx = new sql.Transaction(db);
       await tx.begin();
+      let surveyReadyStarted = false;
       try {
         const firstSlip = slipRes.recordset[0] ?? null;
         const writeReq = new sql.Request(tx)
@@ -374,6 +375,25 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
         }
 
         await writeReq.query(`UPDATE payments SET ${setExprs.join(", ")} WHERE id = @id`);
+        if (pay.slip_field === "pre_slip_url") {
+          const readyRes = await new sql.Request(tx)
+            .input("lead_id", sql.Int, pay.lead_id)
+            .query(`SELECT survey_ready_at FROM leads WHERE id = @lead_id`);
+          surveyReadyStarted = !readyRes.recordset[0]?.survey_ready_at;
+          await new sql.Request(tx)
+            .input("lead_id", sql.Int, pay.lead_id)
+            .input("payment_url", sql.NVarChar(200), `/api/payments/${payId}`)
+            .input("survey_ready_by", sql.Int, gate.userId)
+            .query(`UPDATE leads SET
+                      pre_slip_url = @payment_url,
+                      payment_confirmed = 1,
+                      survey_ready_at = COALESCE(survey_ready_at, GETDATE()),
+                      survey_ready_by = COALESCE(survey_ready_by, @survey_ready_by),
+                      survey_ready_note = COALESCE(survey_ready_note, N'เริ่มอัตโนมัติจากการยืนยันชำระเงิน'),
+                      status = CASE WHEN status LIKE 'pre_survey%' THEN 'pre_survey-02' ELSE status END,
+                      updated_at = GETDATE()
+                    WHERE id = @lead_id`);
+        }
         await new sql.Request(tx)
           .input("lead_id", sql.Int, pay.lead_id)
           .input("slip_field", sql.NVarChar(50), pay.slip_field)
@@ -392,6 +412,15 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
         note: pay.description ?? null,
         userId: gate.userId,
       });
+      if (surveyReadyStarted) {
+        await logLeadActivity(db, {
+          leadId: pay.lead_id,
+          activityType: "survey_ready",
+          title: "เริ่ม SLA นัด Pre-Survey อัตโนมัติ",
+          note: "Account ยืนยันรับเงินจริงจากเช็คแล้ว",
+          userId: gate.userId,
+        });
+      }
       await syncOperationalSlas(db, pay.lead_id, gate.userId);
       await resolveAccountingNotifications(db, {
         paymentId: payId,
@@ -482,6 +511,7 @@ export async function DELETE(req: NextRequest, { params }: { params: Promise<{ i
         .query(`UPDATE leads SET
           pre_slip_url = NULL, payment_confirmed = 0,
           pre_doc_no = NULL, pre_total_price = NULL, pre_package_id = NULL, pre_booked_at = NULL,
+          survey_ready_at = NULL, survey_ready_by = NULL, survey_ready_note = NULL,
           status = CASE
             WHEN status LIKE 'pre_survey%' OR status = 'survey' THEN 'pre_survey'
             ELSE status
@@ -513,6 +543,16 @@ export async function DELETE(req: NextRequest, { params }: { params: Promise<{ i
       note: pay.doc_no || null,
       userId: gate.userId,
     });
+    if (slipField === "pre_slip_url") {
+      await logLeadActivity(db, {
+        leadId: pay.lead_id,
+        activityType: "survey_ready_cancelled",
+        title: "ยกเลิก SLA นัด Pre-Survey อัตโนมัติ",
+        note: "Admin ถอยการยืนยันชำระค่าจอง",
+        userId: gate.userId,
+      });
+    }
+    await syncOperationalSlas(db, pay.lead_id, gate.userId);
 
     return NextResponse.json({ ok: true, lead_id: pay.lead_id });
   } catch (e) {

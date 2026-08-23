@@ -211,6 +211,7 @@ export default function PreSurveyStep({ lead, state, refresh, packages, expanded
   // Pre-survey form state
   const [selectedPkg, setSelectedPkg] = useState(lead.interested_package_id ? String(lead.interested_package_id) : "");
   const [paymentMethod] = useState(lead.payment_type ?? "transfer");
+  const [preSurveyFeeType, setPreSurveyFeeType] = useState<"free" | "normal">(lead.pre_survey_fee_type ?? "normal");
   const [confirmSaving, setConfirmSaving] = useState(false);
   // Payment verification state — PaymentSection owns upload/verify and calls onVerified(url).
   // url may be "" when KBank authorized the payment but the slip file is unavailable.
@@ -315,7 +316,6 @@ export default function PreSurveyStep({ lead, state, refresh, packages, expanded
     } catch (e) { console.error(e); }
     if (formRef.current) await formRef.current.flushSave();
   };
-
 
   // Display when pre-survey is done (viewing)
   if (hasPreSurveyDone) {
@@ -585,16 +585,31 @@ export default function PreSurveyStep({ lead, state, refresh, packages, expanded
     );
   }
 
-  // Sub-step navigation is mostly free — except นัดสำรวจ (step 4) is locked
-  // until the booking payment is verified. Without that gate, ops can stamp
-  // a survey appointment on a lead that never paid the deposit, and the
-  // appointment + survey_date land on the row even though status is still
-  // pre_survey (see lead 437 incident, May 2026).
+  // นัดสำรวจเริ่ม SLA จากหลักฐานชำระเงินเพียงจุดเดียว:
+  // - ปกติ: Account ยืนยันรับเงินจริงใน PaymentSection
+  // - ฟรี: การกดถัดไปจากขั้นชำระเงินยืนยันยอด 0 และเปิดหน้านัดทันที
   const handleSubStepChange = async (i: number) => {
     setNextError(null);
     if (i === 3 && !paymentVerified) {
-      setNextError("ยังไม่สามารถนัดสำรวจได้ — ต้องยืนยันการชำระค่าจองก่อน");
-      return;
+      if (preSurveyFeeType !== "free") {
+        setNextError("ยังไม่สามารถนัดสำรวจได้ — ต้องให้ Account ยืนยันการชำระค่าจองก่อน");
+        return;
+      }
+      try {
+        await apiFetch(`/api/leads/${lead.id}`, {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            payment_confirmed: true,
+            ...(me?.id ? { payment_confirmed_by: me.id } : {}),
+          }),
+        });
+        setPaymentVerified(true);
+        await refresh();
+      } catch (error) {
+        setNextError(error instanceof Error ? error.message : "ยืนยันฟรีค่าจองไม่สำเร็จ");
+        return;
+      }
     }
     await flushAllSaves();
     setSubStep(i);
@@ -697,12 +712,13 @@ export default function PreSurveyStep({ lead, state, refresh, packages, expanded
             description="ค่าสำรวจ"
             docNo={lead.pre_doc_no ? `${lead.pre_doc_no}-0` : null}
             confirmed={!!lead.payment_confirmed}
-            feeType={lead.pre_survey_fee_type}
+            feeType={preSurveyFeeType}
             onFeeTypeChange={async (type) => {
               // Save type + price here. payment_confirmed stays untouched so
               // the radio doesn't lock itself — the advancement PATCH flips it
               // at close time when type='free'.
               const isFree = type === "free";
+              setPreSurveyFeeType(type);
               try {
                 await apiFetch(`/api/leads/${lead.id}`, {
                   method: "PATCH", headers: { "Content-Type": "application/json" },
@@ -730,32 +746,9 @@ export default function PreSurveyStep({ lead, state, refresh, packages, expanded
               // the only moment we flip paymentVerified so Next can unlock.
               // Stay on this sub-step; user clicks "ถัดไป" when they're ready.
               setPaymentVerified(true);
-              if (!lead.pre_doc_no && selectedPkg) {
-                try {
-                  await apiFetch(`/api/leads/${lead.id}/book`, {
-                    method: "POST", headers: { "Content-Type": "application/json" },
-                    body: JSON.stringify({ package_id: parseInt(selectedPkg), total_price: depositAmount }),
-                  });
-                } catch (e) { console.error("auto pre_doc_no failed:", e); }
-              }
-              // Always mirror the deposit amount + timestamp onto the lead row
-              // so the done-view payment summary can read them without
-              // re-querying the payments table. Without this, leads that
-              // skipped the /book path (e.g. seeker syncs that didn't pick a
-              // package) end up with pre_total_price/booked_at = null even
-              // after payment is confirmed. Also re-mirror when staff edited
-              // the deposit amount (override differs from the row's value).
-              if (lead.pre_total_price == null || lead.pre_total_price !== depositAmount) {
-                try {
-                  await apiFetch(`/api/leads/${lead.id}`, {
-                    method: "PATCH", headers: { "Content-Type": "application/json" },
-                    body: JSON.stringify({
-                      pre_total_price: depositAmount,
-                      pre_booked_at: lead.pre_booked_at || new Date().toISOString(),
-                    }),
-                  });
-                } catch (e) { console.error("mirror payment meta failed:", e); }
-              }
+              // The payment API atomically creates/preserves the booking before
+              // it stamps payment confirmation. Do not call /book or mirror
+              // pre_booked_at here: both used to move the booking time forward.
               // Stamp the user who confirmed payment so the receipt PDF can render their signature.
               if (me?.id) {
                 apiFetch(`/api/leads/${lead.id}`, {
@@ -889,9 +882,9 @@ export default function PreSurveyStep({ lead, state, refresh, packages, expanded
               if (!regIdCard) missing.push("เลขบัตรประชาชน");
               if (!regAddress) missing.push("ที่อยู่ตามบัตร");
               // หมายเหตุก่อน แล้วค่อย slip ตามที่ user request
-              if (otherTabInputMissing) missing.push("กรุณาใส่หมายเหตุการชำระ");
+              if (preSurveyFeeType !== "free" && otherTabInputMissing) missing.push("กรุณาใส่หมายเหตุการชำระ");
               // ฟรี = ไม่บังคับ slip; ปกติเท่านั้นถึง enforce slip
-              if (lead.pre_survey_fee_type !== "free" && !paymentVerified) {
+              if (preSurveyFeeType !== "free" && !paymentVerified) {
                 missing.push(slipVerifiedUrl ? "กรุณายืนยันชำระเงิน" : "กรุณาอัปโหลดสลิปชำระเงิน");
               }
               if (missing.length > 0) {
@@ -906,7 +899,7 @@ export default function PreSurveyStep({ lead, state, refresh, packages, expanded
                   // (not at radio click) so the radio doesn't lock itself while
                   // user is still browsing options. Satisfies the API's
                   // pre_survey→survey guard in one shot.
-                  const isFree = lead.pre_survey_fee_type === "free";
+                  const isFree = preSurveyFeeType === "free";
                   await apiFetch(`/api/leads/${lead.id}`, {
                     method: "PATCH",
                     headers: { "Content-Type": "application/json" },
@@ -988,15 +981,19 @@ export default function PreSurveyStep({ lead, state, refresh, packages, expanded
           }
           if (subStep === 2) {
             // หมายเหตุก่อน แล้วค่อย slip — ฟรีไม่เช็ค slip เลย
-            if (otherTabInputMissing) {
+            if (preSurveyFeeType !== "free" && otherTabInputMissing) {
               missingHere.push({ field: "other_method", label: "กรุณาใส่หมายเหตุการชำระ" });
             }
-            if (lead.pre_survey_fee_type !== "free" && !paymentVerified) {
+            if (preSurveyFeeType !== "free" && !paymentVerified) {
               missingHere.push({ field: "slip", label: (slipVerifiedUrl ? "กรุณายืนยันชำระเงิน" : "กรุณาอัปโหลดสลิปชำระเงิน") });
             }
           }
           if (missingHere.length > 0) {
             setNextError(missingHere.map(m => m.label).join(", "));
+            return;
+          }
+          if (subStep === 2) {
+            await handleSubStepChange(3);
             return;
           }
           await flushAllSaves();

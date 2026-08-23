@@ -10,6 +10,9 @@ export interface Lead {
   customer_type: string;
   customer_group: string | null;
   customer_grade: string | null;
+  survey_ready_at: string | null;
+  survey_ready_by: number | null;
+  survey_ready_note: string | null;
   status: string;
   source: string;
   note: string;

@@ -31,7 +31,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
     // idempotent — see lib/doc-number.ts).
     const docNo = await mintDocNo(db, leadId, "booking");
 
-    await db.request()
+    const bookingUpdate = await db.request()
       .input("id", sql.Int, leadId)
       .input("package_id", sql.Int, packageId)
       .input("total_price", sql.Decimal(12, 2), totalPrice)
@@ -41,19 +41,23 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
         SET pre_package_id = @package_id,
             pre_total_price = @total_price,
             pre_note = @note,
-            pre_booked_at = GETDATE(),
+            pre_booked_at = COALESCE(pre_booked_at, GETDATE()),
             updated_at = GETDATE()
+        OUTPUT DELETED.pre_booked_at AS previous_booked_at
         WHERE id = @id
       `);
 
-    await db.request()
-      .input("lead_id", sql.Int, leadId)
-      .input("title", sql.NVarChar(200), `Pre-survey doc created: ${docNo}`)
-      .input("note", sql.NVarChar(sql.MAX), body.note ?? null)
-      .query(`
-        INSERT INTO lead_activities (lead_id, activity_type, title, note, created_by)
-        VALUES (@lead_id, 'presurvey_doc_created', @title, @note, 1)
-      `);
+    if (!bookingUpdate.recordset[0]?.previous_booked_at) {
+      await db.request()
+        .input("lead_id", sql.Int, leadId)
+        .input("title", sql.NVarChar(200), `Pre-survey doc created: ${docNo}`)
+        .input("note", sql.NVarChar(sql.MAX), body.note ?? null)
+        .input("created_by", sql.Int, gate.userId)
+        .query(`
+          INSERT INTO lead_activities (lead_id, activity_type, title, note, created_by)
+          VALUES (@lead_id, 'presurvey_doc_created', @title, @note, @created_by)
+        `);
+    }
 
     await syncOperationalSlas(db, leadId, gate.userId);
 

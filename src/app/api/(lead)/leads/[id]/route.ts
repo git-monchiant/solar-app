@@ -149,6 +149,9 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
       install_date: Date | null;
       install_time_slot: string | null;
       next_follow_up: Date | null;
+      survey_ready_at: Date | null;
+      survey_ready_by: number | null;
+      survey_ready_note: string | null;
       survey_confirmed: boolean | number | null;
       install_confirmed: boolean | number | null;
       install_completed_at: Date | null;
@@ -178,6 +181,7 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
       const current = await db.request().input("id", sql.Int, leadId).query(`
         SELECT status, payment_confirmed,
                survey_date, survey_time_slot, install_date, install_time_slot, next_follow_up,
+               survey_ready_at, survey_ready_by, survey_ready_note,
                survey_confirmed, install_confirmed, install_completed_at,
                grid_utility, grid_app_no, grid_applicant_type, grid_document_checklist,
                grid_application_doc_url, grid_permit_doc_url, customer_grade,
@@ -191,6 +195,36 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
       if (current.recordset.length > 0) {
         oldRow = current.recordset[0];
         oldStatus = oldRow?.status ?? null;
+        // BOOK_SURVEY starts from confirmed payment. The lead PATCH path is
+        // used by the zero-baht/free flow; normal payments are stamped by the
+        // payments API at the Account confirmation transaction.
+        if (body.payment_confirmed === true && oldRow?.payment_confirmed !== true && !oldRow?.survey_ready_at) {
+          body.survey_ready = true;
+          body.survey_ready_note = body.survey_ready_note || "เริ่มอัตโนมัติจากการยืนยันชำระเงิน";
+        }
+        const nextGrade = body.customer_grade !== undefined ? body.customer_grade : oldRow?.customer_grade;
+        if (body.survey_ready === true && nextGrade === "F") {
+          return NextResponse.json({ error: "Grade F ไม่สามารถยืนยันพร้อมนัดสำรวจได้ กรุณาปิด Lead เป็น Lost" }, { status: 400 });
+        }
+        if (body.survey_ready === true) body.next_follow_up = null;
+        if (body.survey_ready === false) {
+          if (!String(body.survey_ready_cancel_reason || "").trim()) {
+            return NextResponse.json({ error: "กรุณาระบุเหตุผลที่ลูกค้ายังไม่พร้อมนัดสำรวจ" }, { status: 400 });
+          }
+          if (!body.next_follow_up) {
+            return NextResponse.json({ error: "กรุณากำหนดวันติดตามครั้งถัดไปเมื่อยกเลิก Survey Ready" }, { status: 400 });
+          }
+          const keepsSurveyDate = body.survey_date === undefined ? Boolean(oldRow?.survey_date) : Boolean(body.survey_date);
+          if (keepsSurveyDate || (oldStatus && !["pre_survey", "pre_survey-01", "pre_survey-02"].includes(oldStatus))) {
+            return NextResponse.json({ error: "ไม่สามารถยกเลิก Survey Ready หลังมีนัดหรือเข้าสู่ขั้นสำรวจแล้ว กรุณายกเลิกนัดก่อน" }, { status: 400 });
+          }
+        }
+        // A direct appointment is itself durable customer consent. Stamp the
+        // milestone automatically so existing calendar flows remain valid.
+        if (body.survey_date && !oldRow?.survey_date && !oldRow?.survey_ready_at && body.survey_ready === undefined) {
+          body.survey_ready = true;
+          body.survey_ready_note = body.survey_ready_note || "ยืนยันจากการนัด Pre-Survey";
+        }
         if (body.status !== undefined) {
           // Guard: can't move forward from pre_survey → survey (or beyond)
           // without a confirmed payment. The body may set payment_confirmed in
@@ -641,6 +675,17 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
       } catch {
         // Legacy quotation_files may be CSV. Those rows remain editable.
       }
+    }
+    if (body.survey_ready === true) {
+      sets.push("survey_ready_at = COALESCE(survey_ready_at, GETDATE())");
+      sets.push("survey_ready_by = COALESCE(survey_ready_by, @survey_ready_by)");
+      sets.push("survey_ready_note = COALESCE(@survey_ready_note, survey_ready_note)");
+      request.input("survey_ready_by", sql.Int, gate.userId);
+      request.input("survey_ready_note", sql.NVarChar(500), String(body.survey_ready_note || "").trim() || null);
+    } else if (body.survey_ready === false) {
+      sets.push("survey_ready_at = NULL");
+      sets.push("survey_ready_by = NULL");
+      sets.push("survey_ready_note = NULL");
     }
     if (body.order_total !== undefined) {
       sets.push("order_total = @order_total");
@@ -1542,6 +1587,23 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
         leadId,
         activityType: "step_completed",
         title: `ปิดงานติดตั้งเรียบร้อย`,
+        userId: gate.userId,
+      });
+    }
+    if (body.survey_ready === true && !oldRow?.survey_ready_at) {
+      await logLeadActivity(db, {
+        leadId,
+        activityType: "survey_ready",
+        title: "เริ่ม SLA นัด Pre-Survey อัตโนมัติ",
+        note: String(body.survey_ready_note || "").trim() || null,
+        userId: gate.userId,
+      });
+    } else if (body.survey_ready === false && oldRow?.survey_ready_at) {
+      await logLeadActivity(db, {
+        leadId,
+        activityType: "survey_ready_cancelled",
+        title: "ลูกค้ายังไม่พร้อมนัด Pre-Survey",
+        note: String(body.survey_ready_cancel_reason || "").trim(),
         userId: gate.userId,
       });
     }

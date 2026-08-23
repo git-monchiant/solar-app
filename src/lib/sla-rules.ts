@@ -76,6 +76,25 @@ export function resolveSurveySlaMilestones(input: {
   };
 }
 
+/**
+ * BOOK_SURVEY measures the team's response after the Pre-Survey payment gate.
+ * Runtime stores that durable trigger in survey_ready_at for compatibility;
+ * normal payment is confirmed by Account and free payment by Sales pressing
+ * Next. An appointment remains fallback evidence for legacy/direct booking.
+ */
+export function resolveBookSurveyMilestones(input: {
+  surveyReadyAt: Date | null;
+  appointmentSetAt: Date | null;
+  surveyDoneAt: Date | null;
+}) {
+  const completedAt = input.appointmentSetAt || input.surveyDoneAt;
+  return {
+    anchorAt: input.surveyReadyAt || completedAt,
+    completedAt,
+    anchorSource: input.surveyReadyAt ? "payment_confirmed" as const : completedAt ? "appointment_fallback" as const : null,
+  };
+}
+
 function surveyDateParts(value: Date | string | null | undefined) {
   if (!value) return null;
   if (value instanceof Date) {

@@ -10,6 +10,10 @@ Statuses:
 
 | Plan | Status | Mockup | Notes |
 | --- | --- | --- | --- |
+| [20260823-04-latest-order-transition-sla.md](20260823-04-latest-order-transition-sla.md) | done | - | PROPOSAL_ROI completion และ DEPOSIT_CLOSE anchor อ้างการเข้า Order รอบล่าสุดแล้ว; migration 178 apply solardb_dev, mismatch 0, test/type/lint/build ผ่าน ยังไม่ deploy Production |
+| [20260823-03-timeline-latest-stage-entry.md](20260823-03-timeline-latest-stage-entry.md) | done | - | Timeline กลางแสดงการเข้าสู่สถานะเดิมหลัง rollback เฉพาะครั้งล่าสุดทุก stage; Activity Log เก็บประวัติครบ และ test/type/lint/build ผ่าน ยังไม่ deploy Production |
+| [20260823-02-legacy-sla-timeline-correction.md](20260823-02-legacy-sla-timeline-correction.md) | done | - | Grade ที่ไม่มี Activity แสดงเป็นข้อมูลเดิมไม่ระบุเวลาปลอม; migration 176/177 ซ่อม SITE_SURVEY rollback และ BOOK_SURVEY anchor บน solardb_dev แล้ว, invariant/test/type/lint/build ผ่าน ยังไม่ deploy Production |
+| [20260823-01-survey-ready-sla-gate.md](20260823-01-survey-ready-sla-gate.md) | done | - | BOOK_SURVEY v5 เริ่มอัตโนมัติหลัง Account ยืนยันรับเงิน หรือเมื่อ Sales กดถัดไปหลังเลือกฟรีค่าจอง โดยไม่มี UI Survey Ready; migration 175 apply solardb_dev และ test/build ผ่าน ยังไม่ deploy Production |
 | [20260821-08-contact-retry-sequential-start.md](20260821-08-contact-retry-sequential-start.md) | done | - | CONTACT_RETRY ใช้วันเริ่มจริงต่อเนื่องและเปิดครั้งละหนึ่งรายการแล้ว; migration 172 apply solardb_dev, Lead 880 เริ่ม 27 ก.ค. → 29 ก.ค. → 6 ส.ค. และครั้งที่ 4 ยังไม่เริ่ม; test/type/lint/build ผ่าน ยังไม่ deploy Production |
 | [20260821-06-contact-retry-backfill-history.md](20260821-06-contact-retry-backfill-history.md) | done | - | migration 171 ซ่อม CONTACT_RETRY ที่ migration 166 ข้ามครั้งที่ 1–3 ครบ 4 Lead บน solardb_dev; Lead 880 มีครบ 4 รอบตามสถานะจริง, ไม่มี duplicate, test/type/lint/build ผ่าน ยังไม่ deploy Production |
 | [20260821-10-sla-step-visibility.md](20260821-10-sla-step-visibility.md) | done | [interactive mockup](../mockup/20260821-10-sla-step-visibility/) | หน้า `/sla` แสดงขั้นตอนและระยะเวลาที่เกิน SLA ในแต่ละ Lead card พร้อมตัวกรอง และแยกจำนวนงาน SLA/จำนวน Lead แบบไม่ซ้ำในกล่องสรุปแล้ว |

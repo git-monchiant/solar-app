@@ -35,6 +35,7 @@ import { formatSlotsRange } from "@/lib/time-slots";
 import { INFO_LABELS, PRIMARY_REASON_LABEL } from "@/lib/constants/info-labels";
 import FallbackImage from "@/components/ui/FallbackImage";
 import NotificationBell from "@/components/layout/NotificationBell";
+import { compactLatestForwardStatusActivities } from "@/lib/timeline-activities";
 
 const formatAcUnits = (s: string | null): string | null => {
   if (!s) return null;
@@ -2378,6 +2379,7 @@ export default function LeadDetailPage({ params }: { params: Promise<{ id: strin
                 if ([
                   "slip_uploaded", "slip_submitted", "slip_unsubmitted",
                   "presurvey_doc_created", "sla_assignment", "warranty_evidence",
+                  "survey_ready", "survey_ready_cancelled",
                   "line_sent", "sms_sent", "follow_up_cleared",
                 ].includes(activity.activity_type)) return false;
                 if (activity.activity_type === "step_completed"
@@ -2463,10 +2465,11 @@ export default function LeadDetailPage({ params }: { params: Promise<{ id: strin
                 if (activity.new_status === "closed") return "ปิดงานและส่งมอบครบถ้วน";
                 return activity.title;
               };
-              // Autosave can write the same appointment date repeatedly while
-              // the user ticks time slots one by one. Collapse a <=60-second
-              // burst with the same from/to dates to the latest activity; the
-              // full sequence remains available in Activity Log.
+              // The central Timeline is the current workflow summary. A status
+              // reached before a rollback is superseded when the lead later
+              // enters that same status again; keep only the latest forward
+              // transition per target. Activity Log retains the full audit.
+              // Autosave appointment bursts are compacted for the same reason.
               const centralTimelineActivities = (() => {
                 const compacted: Activity[] = [];
                 const latestBurstIndex = new Map<string, number>();
@@ -2492,7 +2495,7 @@ export default function LeadDetailPage({ params }: { params: Promise<{ id: strin
                     compacted.push(activity);
                   }
                 }
-                return compacted;
+                return compactLatestForwardStatusActivities(compacted, isRollbackActivity);
               })();
               const activityRows = (stage: TimelineStage): Bullet[] => {
                 const stageActivities = centralTimelineActivities.filter(activity => activityStage(activity) === stage);
@@ -2584,8 +2587,21 @@ export default function LeadDetailPage({ params }: { params: Promise<{ id: strin
                 });
               }
               const preActivityRows = activityRows("pre");
+              const prePay = paymentRows.find(p => p.slip_field === "pre_slip_url");
+              const firstPrePaymentActivityAt = activities
+                .filter(activity => activity.activity_type === "payment_confirmed" && activityStage(activity) === "pre")
+                .sort((a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime())[0]?.created_at;
               if (lead.pre_booked_at && !preActivityRows.filter(row => !row.detail).some(row => /ใบจอง|เลขเอกสาร/.test(row.label))) preSurveyRows.push({
                 date: lead.pre_booked_at,
+                // Older clients confirmed payment and only then called /book.
+                // Keep their original timestamps visible, but restore the
+                // causal business order in the summary Timeline. Use the
+                // Activity timestamp because Lead/Activity APIs normalize
+                // local SQL times alike; the payments API exposes raw Dates.
+                sortAt: firstPrePaymentActivityAt && new Date(lead.pre_booked_at).getTime() > new Date(firstPrePaymentActivityAt).getTime()
+                  ? new Date(firstPrePaymentActivityAt).getTime()
+                  : undefined,
+                tiePriority: 20,
                 label: "ออกใบจอง",
                 sub: [lead.pre_doc_no && `เลขที่ ${lead.pre_doc_no}`, lead.pre_total_price && `ค่าจอง ${formatNumber(lead.pre_total_price)} ฿`].filter(Boolean).join(" · ") || undefined,
               });
@@ -2604,7 +2620,6 @@ export default function LeadDetailPage({ params }: { params: Promise<{ id: strin
                   tone: "paid",
                 });
               } else {
-                const prePay = paymentRows.find(p => p.slip_field === "pre_slip_url");
                 if (prePay) {
                   const parts: string[] = [];
                   if (prePay.submitted_at) {
@@ -2790,9 +2805,13 @@ export default function LeadDetailPage({ params }: { params: Promise<{ id: strin
               }
 
               // Superseded/cancelled SLA instances are rollback artifacts, not
-              // workflow events. Keeping them in the central timeline made an
-              // Order section appear for leads that never reached Order.
-              const visibleSlaItems = slaItems.filter(item => item.status !== "superseded" && item.status !== "cancelled");
+              // workflow events. A Grade without grade_change Activity is also
+              // legacy state, not timed evidence: show the honest "ไม่มีประวัติ
+              // เวลา" milestone above instead of merging it with a backfill SLA
+              // whose migration timestamp looks like the work happened later.
+              const visibleSlaItems = slaItems.filter(item => item.status !== "superseded"
+                && item.status !== "cancelled"
+                && !(item.policy_code === "ELECTRICITY_ASSESSMENT" && gradeActivities.length === 0));
               const sections = [
                 { id: "tl-pre", title: "Pre-Survey", rows: preSurveyRows, tone: "text-sky-700", dot: "bg-sky-500", slaCodes: ["FIRST_CONTACT", "CONTACT_RETRY", "ELECTRICITY_ASSESSMENT", "BOOK_SURVEY"] },
                 { id: "tl-survey", title: "Survey", rows: surveyRows, tone: "text-violet-700", dot: "bg-violet-500", slaCodes: ["SITE_SURVEY"] },

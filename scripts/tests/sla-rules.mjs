@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 import {
   CONTACT_RETRY_DAYS,
   completionEvidenceChanged,
@@ -8,6 +9,7 @@ import {
   firstContactHardDeadline,
   firstContactWarningAt,
   OPERATIONAL_SLA_MINUTES,
+  resolveBookSurveyMilestones,
   resolveCloseLeadMilestones,
   resolveFirstContactEvidence,
   resolveInstallCompletion,
@@ -16,8 +18,26 @@ import {
   resolveSurveySlaMilestones,
 } from "../../src/lib/sla-rules.ts";
 import * as rules from "../../src/lib/sla-rules.ts";
+import { compactLatestForwardStatusActivities } from "../../src/lib/timeline-activities.ts";
 
 const iso = d => d.toISOString();
+
+// The central Timeline shows the workflow state that stands now. If a lead
+// enters Order, rolls back to Quotation, then enters Order again, the first
+// Order transition stays only in Activity Log.
+{
+  const activities = [
+    { id: 1, activity_type: "status_change", new_status: "order", rollback: false },
+    { id: 2, activity_type: "status_change", new_status: "quote", rollback: true },
+    { id: 3, activity_type: "note", new_status: null, rollback: false },
+    { id: 4, activity_type: "status_change", new_status: "order", rollback: false },
+    { id: 5, activity_type: "status_change", new_status: "install", rollback: false },
+  ];
+  assert.deepEqual(
+    compactLatestForwardStatusActivities(activities, activity => activity.rollback).map(activity => activity.id),
+    [2, 3, 4, 5],
+  );
+}
 
 assert.equal(iso(firstContactHardDeadline(new Date("2026-08-17T02:00:00.000Z"))), "2026-08-17T16:59:59.000Z"); // 09:00 BKK
 assert.equal(iso(firstContactHardDeadline(new Date("2026-08-17T11:59:59.000Z"))), "2026-08-17T16:59:59.000Z"); // 18:59:59 BKK
@@ -70,6 +90,24 @@ assert.deepEqual(OPERATIONAL_SLA_MINUTES.SCHEDULE_INSTALLATION, { target: 3 * 24
 assert.deepEqual(OPERATIONAL_SLA_MINUTES.INSTALLATION, { target: 15 * 24 * 60, due: 15 * 24 * 60, warning: 3 * 24 * 60 });
 assert.deepEqual(OPERATIONAL_SLA_MINUTES.CLOSE_LEAD, { target: 3 * 24 * 60, due: 3 * 24 * 60, warning: 24 * 60 });
 
+const readyAt = new Date("2026-08-23T03:00:00.000Z");
+const appointmentAt = new Date("2026-08-23T05:30:00.000Z");
+assert.deepEqual(resolveBookSurveyMilestones({
+  surveyReadyAt: readyAt,
+  appointmentSetAt: appointmentAt,
+  surveyDoneAt: null,
+}), { anchorAt: readyAt, completedAt: appointmentAt, anchorSource: "payment_confirmed" });
+assert.deepEqual(resolveBookSurveyMilestones({
+  surveyReadyAt: null,
+  appointmentSetAt: appointmentAt,
+  surveyDoneAt: null,
+}), { anchorAt: appointmentAt, completedAt: appointmentAt, anchorSource: "appointment_fallback" });
+assert.deepEqual(resolveBookSurveyMilestones({
+  surveyReadyAt: null,
+  appointmentSetAt: null,
+  surveyDoneAt: null,
+}), { anchorAt: null, completedAt: null, anchorSource: null });
+
 assert.deepEqual(resolveCloseLeadMilestones({
   installCompletedAt: new Date("2026-07-11T13:17:44.686Z"),
   warrantyIssuedAt: new Date("2026-07-11T13:28:36.993Z"),
@@ -119,6 +157,37 @@ assert.deepEqual(OPERATIONAL_SLA_MINUTES.ELECTRICITY_ASSESSMENT, { target: 24 * 
 for (const name of ["GRADE_PLAYBOOKS", "UNIFIED_PLAYBOOK", "isSalesGrade"]) {
   assert.equal(rules[name], undefined, `${name} must stay retired`);
 }
+
+// Runtime and migration guard: BOOK_SURVEY must never drift back to Grade as
+// its anchor. Confirmed payment is the automatic trigger; appointment remains
+// a compatibility fallback only.
+const slaServiceSource = readFileSync(new URL("../../src/lib/sla-service.ts", import.meta.url), "utf8");
+assert.match(slaServiceSource, /policyCode:\s*"BOOK_SURVEY"[\s\S]*?anchorAt:\s*bookSurveyMilestones\.anchorAt/);
+assert.doesNotMatch(slaServiceSource, /policyCode:\s*"BOOK_SURVEY"[\s\S]{0,300}?anchorAt:\s*gradeAt/);
+assert.match(slaServiceSource, /a\.new_status = 'quote'[\s\S]{0,400}?a\.old_status = 'survey'/);
+assert.match(slaServiceSource, /policyCode:\s*"SITE_SURVEY",\s*policyVersion:\s*6/);
+assert.match(slaServiceSource, /ORDER BY CASE WHEN a\.activity_type='status_change' THEN 0 ELSE 1 END,[\s\S]{0,100}?a\.created_at DESC/);
+assert.match(slaServiceSource, /policyCode:\s*"PROPOSAL_ROI",\s*policyVersion:\s*5[\s\S]{0,300}?refreshCompletionAfterCompletion:\s*true/);
+assert.match(slaServiceSource, /policyCode:\s*"DEPOSIT_CLOSE",\s*policyVersion:\s*4[\s\S]{0,300}?refreshAnchorAfterCompletion:\s*true/);
+const paymentAnchorMigration = readFileSync(new URL("../migrations/175_book_survey_from_payment.sql", import.meta.url), "utf8");
+assert.match(paymentAnchorMigration, /'BOOK_SURVEY',5/);
+assert.match(paymentAnchorMigration, /"anchor":"payment_confirmed"/);
+const forwardSurveyMigration = readFileSync(new URL("../migrations/176_site_survey_forward_completion.sql", import.meta.url), "utf8");
+assert.match(forwardSurveyMigration, /'SITE_SURVEY',6/);
+assert.match(forwardSurveyMigration, /a\.old_status='survey'/);
+const completedBookMigration = readFileSync(new URL("../migrations/177_completed_book_survey_payment_anchor.sql", import.meta.url), "utf8");
+assert.match(completedBookMigration, /appointment_before_payment/);
+const latestOrderMigration = readFileSync(new URL("../migrations/178_latest_order_transition_sla.sql", import.meta.url), "utf8");
+assert.match(latestOrderMigration, /latest_forward_order_transition/);
+assert.match(latestOrderMigration, /a\.created_at DESC,a\.id DESC/);
+const preSurveyStepSource = readFileSync(new URL("../../src/components/lead/detail/steps/PreSurveyStep.tsx", import.meta.url), "utf8");
+assert.match(preSurveyStepSource, /preSurveyFeeType !== "free"/);
+assert.match(preSurveyStepSource, /payment_confirmed: true/);
+assert.doesNotMatch(preSurveyStepSource, /surveyReadyPrompt|ลูกค้ายังไม่พร้อม/);
+const paymentRouteSource = readFileSync(new URL("../../src/app/api/(payment)/payments/route.ts", import.meta.url), "utf8");
+assert.match(paymentRouteSource, /survey_ready_at = COALESCE\(survey_ready_at, GETDATE\(\)\)/);
+const leadRouteSource = readFileSync(new URL("../../src/app/api/(lead)/leads/[id]/route.ts", import.meta.url), "utf8");
+assert.match(leadRouteSource, /body\.payment_confirmed === true[\s\S]{0,300}?body\.survey_ready = true/);
 
 const surveyMilestones = resolveSurveySlaMilestones({
   assessmentAt: null,
