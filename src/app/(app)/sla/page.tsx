@@ -124,6 +124,7 @@ export default function SlaDashboardPage() {
   const [tab, setTab] = useState<SlaTab>("all");
   const [stageFilter, setStageFilter] = useState("all");
   const [salesOwnerFilter, setSalesOwnerFilter] = useState("all");
+  const [solarOwnerFilter, setSolarOwnerFilter] = useState("all");
   const openLead = useOpenLead();
   const { activeRoles } = useActiveRoles();
   const { me } = useMe();
@@ -212,9 +213,28 @@ export default function SlaDashboardPage() {
       .sort((a, b) => a.label.localeCompare(b.label, "th"));
   }, [data]);
 
+  // Mirrors salesOwnerOptions so the Solar queue gets the same owner filter the
+  // Sales queue already has. Solar work is usually unassigned, so the list is
+  // seeded from the team roster and topped up with whoever owns a task now.
+  const solarOwnerOptions = useMemo(() => {
+    const owners = new Map<number, string>();
+    for (const user of solarUsers) owners.set(user.id, user.full_name);
+    for (const item of data?.items ?? []) {
+      if (item.owner_role === "solar" && item.owner_user_id && item.owner_name) {
+        owners.set(item.owner_user_id, item.owner_name);
+      }
+    }
+    return Array.from(owners, ([value, label]) => ({ value, label }))
+      .sort((a, b) => a.label.localeCompare(b.label, "th"));
+  }, [data, solarUsers]);
+
   useEffect(() => {
     if (!salesManagerView) setSalesOwnerFilter("all");
   }, [salesManagerView]);
+
+  useEffect(() => {
+    if (!solarManagerView) setSolarOwnerFilter("all");
+  }, [solarManagerView]);
 
   const filteredItems = useMemo(() => {
     const needle = search.trim().toLocaleLowerCase("th");
@@ -228,11 +248,17 @@ export default function SlaDashboardPage() {
           if (item.owner_user_id !== null) return false;
         } else if (item.owner_user_id !== Number(salesOwnerFilter)) return false;
       }
+      if (solarOwnerFilter !== "all") {
+        if (item.owner_role !== "solar") return false;
+        if (solarOwnerFilter === "unassigned") {
+          if (item.owner_user_id !== null) return false;
+        } else if (item.owner_user_id !== Number(solarOwnerFilter)) return false;
+      }
       if (!needle) return true;
       return [item.full_name, item.phone, item.owner_name, item.task_name, item.policy_code, item.source, String(item.lead_id)]
         .some(value => String(value || "").toLocaleLowerCase("th").includes(needle));
     });
-  }, [data, salesOwnerFilter, search, stageFilter, tab]);
+  }, [data, salesOwnerFilter, search, solarOwnerFilter, stageFilter, tab]);
 
   const filteredLeadCount = useMemo(
     () => new Set(filteredItems.map(item => item.lead_id)).size,
@@ -316,6 +342,23 @@ export default function SlaDashboardPage() {
                   </select>
                 </>
               )}
+              {solarManagerView && (
+                <>
+                  <label className="sr-only" htmlFor="sla-solar-owner-filter">กรองตาม Solar ผู้รับผิดชอบ</label>
+                  <select
+                    id="sla-solar-owner-filter"
+                    value={solarOwnerFilter}
+                    onChange={event => setSolarOwnerFilter(event.target.value)}
+                    className="h-8 w-48 rounded-lg border border-gray-200 bg-white px-2 pr-7 text-xs font-semibold text-gray-700 outline-none focus:border-active"
+                  >
+                    <option value="all">Solar ผู้รับผิดชอบทั้งหมด</option>
+                    <option value="unassigned">ยังไม่มอบหมายทีม Solar</option>
+                    {solarOwnerOptions.map(option => (
+                      <option key={option.value} value={option.value}>{option.label}</option>
+                    ))}
+                  </select>
+                </>
+              )}
               <span className="whitespace-nowrap rounded-full bg-primary/10 px-2 py-0.5 text-xs font-semibold text-active">
                 {filteredLeadCount.toLocaleString("th-TH")} Lead
               </span>
@@ -341,6 +384,8 @@ export default function SlaDashboardPage() {
               {filteredItems.map(item => {
                 const style = STATUS_STYLE[item.status];
                 const isBreached = item.status === "breached";
+                const canAssignSolar = item.owner_role === "solar" && solarManagerView;
+                const canClaimSolar = item.owner_role === "solar" && solarView && !solarManagerView && !item.owner_user_id;
                 return (
                   <article
                     key={item.id}
@@ -369,9 +414,43 @@ export default function SlaDashboardPage() {
                             <PhoneIcon className="h-3.5 w-3.5 text-emerald-500" />
                             {item.phone || "ไม่มีเบอร์โทร"}
                           </span>
-                          <span className="inline-flex items-center gap-1.5">
+                          {/* Solar assignment lives on the owner line rather than as an
+                              extra row under the due date, so the Solar card keeps the
+                              same height as the Sales one. */}
+                          <span
+                            className="inline-flex items-center gap-1.5"
+                            onClick={canAssignSolar || canClaimSolar ? event => event.stopPropagation() : undefined}
+                            onKeyDown={canAssignSolar || canClaimSolar ? event => event.stopPropagation() : undefined}
+                          >
                             <UserIcon className="h-3.5 w-3.5 text-gray-400" />
-                            {item.owner_name || (item.owner_role === "solar" ? "ยังไม่มอบหมายทีม Solar" : "ยังไม่มอบหมาย Owner")}
+                            {canAssignSolar ? (
+                              <select
+                                aria-label="มอบหมายผู้รับผิดชอบทีม Solar"
+                                value={item.owner_user_id ?? ""}
+                                disabled={assigningId === item.id}
+                                onChange={event => assignSolarWork(item, event.target.value ? Number(event.target.value) : null)}
+                                className="h-6 max-w-44 rounded-md border border-gray-300 bg-white px-1.5 pr-6 text-xs font-semibold text-gray-700 outline-none focus:border-active disabled:opacity-50"
+                              >
+                                <option value="">ยังไม่มอบหมาย</option>
+                                {solarUsers.map(user => <option key={user.id} value={user.id}>{user.full_name}</option>)}
+                              </select>
+                            ) : canClaimSolar ? (
+                              <button
+                                type="button"
+                                disabled={!me || assigningId === item.id}
+                                onClick={() => me && assignSolarWork(item, me.id)}
+                                className="h-6 rounded-md bg-active px-2.5 text-xs font-bold text-white hover:opacity-90 disabled:opacity-50"
+                              >
+                                {assigningId === item.id ? "กำลังรับงาน…" : "รับงานนี้"}
+                              </button>
+                            ) : (
+                              <>
+                                {item.owner_name || (item.owner_role === "solar" ? "ยังไม่มอบหมายทีม Solar" : "ยังไม่มอบหมาย Owner")}
+                                {item.owner_role === "solar" && item.owner_user_id === me?.id && (
+                                  <span className="rounded bg-emerald-50 px-1.5 py-0.5 text-xxs font-bold text-emerald-700">งานของฉัน</span>
+                                )}
+                              </>
+                            )}
                           </span>
                         </div>
                         {!isBreached && <p className="mt-1.5 text-xs font-medium text-gray-700">{item.task_name}</p>}
@@ -401,33 +480,6 @@ export default function SlaDashboardPage() {
                               {formatThaiDateShort(item.due_at)} {formatThaiTime(item.due_at)}
                             </div>
                           </>
-                        )}
-                        {item.owner_role === "solar" && (
-                          <div className="mt-2" onClick={event => event.stopPropagation()} onKeyDown={event => event.stopPropagation()}>
-                            {solarManagerView ? (
-                              <select
-                                aria-label="มอบหมายผู้รับผิดชอบทีม Solar"
-                                value={item.owner_user_id ?? ""}
-                                disabled={assigningId === item.id}
-                                onChange={event => assignSolarWork(item, event.target.value ? Number(event.target.value) : null)}
-                                className="h-8 w-full rounded-lg border border-gray-300 bg-white px-2 text-xs font-semibold text-gray-700 outline-none focus:border-active"
-                              >
-                                <option value="">ยังไม่มอบหมาย</option>
-                                {solarUsers.map(user => <option key={user.id} value={user.id}>{user.full_name}</option>)}
-                              </select>
-                            ) : solarView && !item.owner_user_id ? (
-                              <button
-                                type="button"
-                                disabled={!me || assigningId === item.id}
-                                onClick={() => me && assignSolarWork(item, me.id)}
-                                className="h-8 w-full rounded-lg bg-active px-3 text-xs font-bold text-white hover:opacity-90 disabled:opacity-50"
-                              >
-                                {assigningId === item.id ? "กำลังรับงาน…" : "รับงานนี้"}
-                              </button>
-                            ) : item.owner_user_id === me?.id ? (
-                              <span className="inline-flex h-8 w-full items-center justify-center rounded-lg bg-emerald-50 text-xs font-bold text-emerald-700">งานของฉัน</span>
-                            ) : null}
-                          </div>
                         )}
                       </div>
                     </div>
