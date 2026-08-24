@@ -389,8 +389,12 @@ export async function GET(
     {
       quotationAttached: true,
       watermark,
+      // §5 "รายการเพิ่มเติมนอกเหนือจากแพ็กเกจมาตรฐาน" lists the same add-on
+      // lines the quotation charges for, so the two documents can't disagree.
+      items: addOns,
       quotation: {
         docNo: String(q.doc_no || ""),
+        packageAmount: Number(q.package_price_snapshot || 0),
         grossAmount: Number(q.subtotal_incl_vat || 0),
         discountAmount: Number(q.discount_amount || 0),
         discountLabel: String(q.discount_label || "ส่วนลด"),

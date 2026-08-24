@@ -294,26 +294,13 @@ export function buildSurveyReportHtml(L, D, PKG, options = {}) {
   const panelCountTxt = panelCount > 0 ? `<span class="val">${baht(panelCount)}</span>` : '<span class="wr"></span>';
   const paybackMonths = Number(options.financial?.outputs?.payback_months || 0);
   const paybackTxt = paybackMonths > 0 ? `${baht(paybackMonths)} เดือน (${num(paybackMonths / 12, 1)} ปี)` : null;
-  // Price = mirror the quotation summary: gross package price − VIP discount −
-  // booking deposit = net. Show a breakdown when there's a discount/deposit;
-  // otherwise a single price bar. Net matches the quotation's "รวมยอดสุทธิ".
-  const gross = quotPrice ?? PKG?.price ?? null;
-  const discAmt = Number(quotation.discountAmount ?? L.order_discount_amount) || 0;
-  const discNote = String(quotation.discountLabel || L.order_discount_note || (L.order_discount_pct?`ส่วนลดพิเศษ ${L.order_discount_pct}%`:"ส่วนลด")).trim();
-  const bookingFee = Number(quotation.depositAmount ?? L.pre_total_price) || 0;   // เงินจอง/ค่าสำรวจ
-  const net = quotation.netAmount ?? (gross != null ? gross - discAmt - bookingFee : null);
-  const hasDeduction = discAmt > 0 || bookingFee > 0;
-  const priceRow = (label, amt, minus) => `<div class="pr-row"><span>${label}</span><span class="pr-amt${minus?" minus":""}">${minus?"−":""}${baht(Math.abs(amt))} บาท</span></div>`;
-  const priceBlock = gross == null
-    ? `<div class="price-bar"><span class="pb-l">ราคาแพ็กเกจ (รวม VAT)</span><span class="pb-r">${bl("บาท")}</span></div>`
-    : hasDeduction
-      ? `<div class="price-break">
-          ${priceRow("ราคาก่อนหักส่วนลด (รวม VAT)", gross, false)}
-          ${discAmt>0 ? priceRow(discNote, discAmt, true) : ""}
-          ${bookingFee>0 ? priceRow("หักเงินจอง (ค่าสำรวจ)", bookingFee, true) : ""}
-        </div>
-        <div class="price-bar"><span class="pb-l">ยอดสุทธิที่ต้องชำระ (รวม VAT)</span><span class="pb-r"><span class="val">${baht(net)}</span> บาท</span></div>`
-      : `<div class="price-bar"><span class="pb-l">ราคาแพ็กเกจ (รวม VAT)</span><span class="pb-r"><span class="val">${baht(gross)}</span> บาท</span></div>`;
+  // §4 prices the MAIN PACKAGE only (incl. VAT): the add-on lines get their
+  // own table and total in §5, and the discount / booking-deposit maths stays
+  // on the quotation itself — restating either here would show the customer
+  // the same money twice. quotPrice (package + add-ons) is only the fallback
+  // for legacy leads with no package row behind the quotation.
+  const gross = Number(quotation.packageAmount) || PKG?.price || quotPrice || null;
+  const priceBlock = `<div class="price-bar"><span class="pb-l">ราคาแพ็กเกจ (รวม VAT)</span><span class="pb-r">${gross == null ? bl("บาท") : `<span class="val">${baht(gross)}</span> บาท`}</span></div>`;
   const p8 = page(7, `${sect("4","แพ็กเกจโซลาร์เซลล์ที่นำเสนอ")}
     ${kv([
       ["ชื่อแพ็กเกจ", V(PKG?.name,"เช่น Package Standard 5 kWp")],
@@ -338,15 +325,54 @@ export function buildSurveyReportHtml(L, D, PKG, options = {}) {
       <li>ขนาดอินเวอร์เตอร์ที่เลือกรองรับการขยายระบบเพิ่มเติมในอนาคตได้ หากมีการใช้ไฟฟ้าเพิ่มขึ้น</li>
     </ul>`);
 
-  // ── PAGE 9 §5 add-ons (blank form) ──────────────────────────────────
-  const ADD=[["สายไฟ DC/AC ส่วนเกิน","โครงเหล็ก/ขาตั้งเสริมพิเศษ","ค่าติดตั้งนั่งร้าน","อัปเกรดขนาดเบรกเกอร์ / ตู้ไฟหลัก",ph("อื่นๆ ระบุ")]][0];
-  const ADD_REASON=["ระยะจากหลังคาถึงตำแหน่งติดตั้ง Inverter/ตู้ไฟไกลกว่ามาตรฐาน","โครงหลังคามีความลาดเอียง/สภาพพิเศษที่ต้องเสริมความแข็งแรง","ความสูงอาคาร/หลังคาเกินระดับที่เข้าถึงได้ปกติ","ตู้ไฟเดิม/เบรกเกอร์เดิมมีขนาดไม่รองรับกำลังไฟของระบบใหม่",ph("__")];
+  // ── PAGE 9 §5 add-ons — each quotation add-on line fills the fixed row it
+  // matches; anything matching none of them lands in "อื่นๆ ระบุ". Called
+  // without quotation items the page still prints as the blank form it was.
+  const ADD=["สายไฟ DC/AC ส่วนเกิน","โครงเหล็ก/ขาตั้งเสริมพิเศษ","ค่าติดตั้งนั่งร้าน","อัปเกรดขนาดเบรกเกอร์ / ตู้ไฟหลัก"];
+  const ADD_REASON=["ระยะจากหลังคาถึงตำแหน่งติดตั้ง Inverter/ตู้ไฟไกลกว่ามาตรฐาน","โครงหลังคามีความลาดเอียง/สภาพพิเศษที่ต้องเสริมความแข็งแรง","ความสูงอาคาร/หลังคาเกินระดับที่เข้าถึงได้ปกติ","ตู้ไฟเดิม/เบรกเกอร์เดิมมีขนาดไม่รองรับกำลังไฟของระบบใหม่"];
+  // Matched against the names the quotation builder produces — e.g.
+  // "เพิ่มตู้คอนซูมเมอร์ยูนิต 6 ช่อง [เพิ่มตู้ไฟ]" → row 4. Both เบรกเกอร์ and
+  // เบรคเกอร์ spellings exist in real rows, so accept either.
+  const ADD_MATCH=[/สายไฟ|สาย\s*(dc|ac)|เดินสาย/i,/โครงเหล็ก|ขาตั้ง|แร็ค|racking/i,/นั่งร้าน|scaffold/i,/เบร[กค]เกอร์|ตู้ไฟ|ตู้เมน|คอนซูม|consumer\s*unit|mdb/i];
+  const ADD_MAX_ROWS=10;  // the page is a fixed 297mm — rows past this would be cut off silently
+  const addLines=(options.items||[])
+    .filter(it=>!String(it.source_type||"").endsWith("_detail"))
+    .map(it=>{
+      const qty=Number(it.quantity)||0;
+      return {
+        // strip the builder's prefixes, turn its [red note] markup into plain
+        // parentheses, and drop angle brackets so a name can't break the table
+        name:String(it.item_name_snapshot||it.item_name||"").replace(/^Package เพิ่มเติม:\s*/i,"").replace(/^Scal(?:e)?\s*Up\s*:\s*/i,"").replace(/\[([^\]]+)\]/g,"($1)").replace(/[<>]/g,"").trim(),
+        qty, unit:String(it.unit||"").trim(),
+        amount:Number(it.line_total ?? qty*(Number(it.unit_price)||0))||0,
+      };
+    })
+    .filter(it=>it.name);
+  const addSlots=ADD.map(()=>[]);
+  const addOther=[];
+  addLines.forEach(line=>{
+    const slot=ADD_MATCH.findIndex(re=>re.test(line.name));
+    (slot>=0?addSlots[slot]:addOther).push(line);
+  });
+  const addRows=[
+    ...ADD.flatMap((label,i)=>addSlots[i].length
+      ? addSlots[i].map(line=>({label,reason:ADD_REASON[i],line}))
+      : [{label,reason:ADD_REASON[i],line:null}]),
+    ...(addOther.length
+      ? addOther.map(line=>({label:line.name,reason:"-",line,bare:true}))
+      : [{label:ph("อื่นๆ ระบุ"),reason:ph("__"),line:null,bare:true}]),
+  ];
+  const addHidden=Math.max(0,addRows.length-ADD_MAX_ROWS);
+  const addTotal=addLines.reduce((sum,line)=>sum+line.amount,0);
+  const addQty=line=>line&&line.qty>0?`<span class="val">${baht(line.qty)}${line.unit?` ${line.unit}`:""}</span>`:bl();
+  const addAmount=line=>line?(line.amount>0?`${baht(line.amount)} บาท`:"ไม่คิดค่าใช้จ่าย"):bl("บาท");
   const p9 = page(8, `${sect("5","รายการเพิ่มเติมนอกเหนือจากแพ็กเกจมาตรฐาน")}
     <p class="lead">จากสภาพหน้างานจริง มีรายการที่จำเป็นต้องเพิ่มเติมนอกเหนือจากแพ็กเกจมาตรฐาน (Standard Package) ดังนี้ พร้อมเหตุผลประกอบและค่าใช้จ่ายที่เพิ่มขึ้น</p>
     <table class="addon"><thead><tr><th style="width:18%">รายการเพิ่มเติม</th><th style="width:9%">จำนวน</th><th style="width:16%">มาตรฐาน Package</th><th>เหตุผลที่ต้องเพิ่ม (จากหน้างานจริง)</th><th style="width:13%">ค่าใช้จ่ายเพิ่มเติม</th></tr></thead>
-    <tbody>${ADD.map((n,i)=>`<tr><td class="dev">${n}</td><td>${bl()}</td><td>ไม่รวมในแพ็กเกจมาตรฐาน</td><td class="rz">${ADD_REASON[i]}</td><td class="org">${bl("บาท")}</td></tr>`).join("")}
-    <tr class="addon-total"><td colspan="4">รวมค่าใช้จ่ายเพิ่มเติมทั้งหมด</td><td class="tot-org">${bl("บาท")}</td></tr></tbody></table>
-    <div class="callout orange"><div class="co-h">ข้อเสนอเพิ่มเติม</div><ul><li>รายการเพิ่มเติมข้างต้นเป็นรายการที่จำเป็นตามสภาพหน้างานจริง ณ วันสำรวจ เพื่อให้ระบบทำงานได้อย่างปลอดภัยและมีประสิทธิภาพสูงสุด</li><li>ค่าใช้จ่ายนำมาจากใบเสนอราคา (Quotation) เลขที่ ${L.pre_doc_no||"—"} หากตัวเลขไม่ตรงกัน ให้ยึดใบเสนอราคาเป็นหลัก</li></ul></div>`);
+    <tbody>${addRows.slice(0,ADD_MAX_ROWS).map(r=>`<tr><td class="dev">${r.label}${r.line&&!r.bare?`<div class="ad-item">${r.line.name}</div>`:""}</td><td>${addQty(r.line)}</td><td>ไม่รวมในแพ็กเกจมาตรฐาน</td><td class="rz">${r.reason}</td><td class="org">${addAmount(r.line)}</td></tr>`).join("")}
+    ${addHidden?`<tr><td class="rz" colspan="4">และรายการเพิ่มเติมอื่นอีก ${addHidden} รายการ — ดูรายละเอียดทั้งหมดในใบเสนอราคา (ภาคผนวก ก)</td><td class="org"></td></tr>`:""}
+    <tr class="addon-total"><td colspan="4">รวมค่าใช้จ่ายเพิ่มเติมทั้งหมด</td><td class="tot-org">${addTotal>0?`${baht(addTotal)} บาท`:bl("บาท")}</td></tr></tbody></table>
+    <div class="callout orange"><div class="co-h">ข้อเสนอเพิ่มเติม</div><ul><li>รายการเพิ่มเติมข้างต้นเป็นรายการที่จำเป็นตามสภาพหน้างานจริง ณ วันสำรวจ เพื่อให้ระบบทำงานได้อย่างปลอดภัยและมีประสิทธิภาพสูงสุด</li><li>ค่าใช้จ่ายนำมาจากใบเสนอราคา (Quotation) เลขที่ ${quotDocNo||L.pre_doc_no||"—"} หากตัวเลขไม่ตรงกัน ให้ยึดใบเสนอราคาเป็นหลัก</li></ul></div>`);
 
   // ── PAGE 10 §6 journey ──────────────────────────────────────────────
   const JOURNEY=[["1","วางเงินมัดจำ 20%","เพื่อจองวันติดตั้ง"],["2","ขอสินเชื่อ","สำหรับส่วนที่เหลือ 80% (กรณีเลือกผ่อนชำระ)"],["3","ติดตั้งระบบ","ทีมช่างเข้าดำเนินการติดตั้งตามวันที่นัดหมายหลังจากการมัดจำ"],["4","ขนานไฟ","ยื่นเรื่องขนานไฟกับการไฟฟ้าและเริ่มใช้งานระบบ"]];
@@ -413,7 +439,7 @@ export function buildSurveyReportHtml(L, D, PKG, options = {}) {
   const ctRows = (rows) => `<table class="ct">${rows.map(r=>`<tr><td>${r[0]}</td><td class="${r[2]||''}">${r[1]}</td></tr>`).join("")}</table>`;
   // Use the contracted package price before booking/survey deposit. A deposit
   // is credited toward payment but must not make the system price/payback look lower.
-  const loanPrice = quotation.contractAmount ?? gross ?? net ?? PKG?.price ?? 112000;
+  const loanPrice = quotation.contractAmount ?? gross ?? quotation.netAmount ?? PKG?.price ?? 112000;
   const loanKw = PKG?.kwp ?? 3;
   const loanBill = L.survey_monthly_bill ?? D.monthly_bill ?? 5000;
   const financeInputs = options.financial?.inputs || {};
@@ -574,15 +600,9 @@ export function buildSurveyReportHtml(L, D, PKG, options = {}) {
   table.addon th{background:${NAVY};color:#fff;font-weight:500;padding:7px 6px;text-align:left;border:1px solid ${NAVY};}
   table.addon td{border:1px solid #cfd5de;padding:7px 6px;vertical-align:top;}
   table.addon td.dev{font-weight:700;color:${NAVY};}table.addon td.rz{font-size:12px;color:#4b5563;}
+  table.addon td.dev .ad-item{margin-top:3px;font-weight:400;font-size:12px;color:#4b5563;}
   table.addon td.org{color:#b26f16;font-weight:700;white-space:nowrap;}
   tr.addon-total td{background:${NAVY};color:#fff;font-weight:700;text-align:right;padding:8px;}
-  /* quotation-style price breakdown above the net bar */
-  .price-break{border:1px solid #d8dee7;border-bottom:none;border-radius:2px 2px 0 0;margin-top:14px;overflow:hidden;}
-  .pr-row{display:flex;justify-content:space-between;align-items:center;padding:7px 16px;font-size:14px;border-bottom:1px solid #eef1f5;background:#fafbfc;}
-  .pr-row span:first-child{color:#374151;}
-  .pr-amt{font-weight:500;color:${INK};white-space:nowrap;}
-  .pr-amt.minus{color:#c0392b;}
-  .price-break + .price-bar{margin-top:0;border-radius:0 0 2px 2px;}
   .price-bar{display:flex;margin:14px 0 6px;border-radius:2px;overflow:hidden;}
   .pb-l{background:${NAVY};color:#fff;font-weight:700;padding:11px 16px;font-size:16px;display:flex;align-items:center;}
   .pb-r{background:${ORANGE};color:#fff;font-weight:700;padding:11px 18px;font-size:19px;flex:1;display:flex;align-items:center;}
