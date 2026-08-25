@@ -18,14 +18,14 @@ import {
   resolveSurveySlaMilestones,
 } from "../../src/lib/sla-rules.ts";
 import * as rules from "../../src/lib/sla-rules.ts";
-import { SLA_CONDITION_TEXT, slaConditionText } from "../../src/lib/sla-display.ts";
+import { SLA_TIME_CONDITION_TEXT, slaTimeConditionText } from "../../src/lib/sla-display.ts";
 import { compactLatestForwardStatusActivities } from "../../src/lib/timeline-activities.ts";
 
 const iso = d => d.toISOString();
 
-// Every SLA process rendered in Lead Timeline explains the same start/end
-// condition the runtime uses to open and complete its clock.
-assert.deepEqual(Object.keys(SLA_CONDITION_TEXT).sort(), [
+// Every SLA process rendered in Lead Timeline explains the time window the
+// runtime applies to its clock.
+assert.deepEqual(Object.keys(SLA_TIME_CONDITION_TEXT).sort(), [
   "BOOK_SURVEY",
   "CLOSE_LEAD",
   "CONTACT_RETRY",
@@ -39,8 +39,20 @@ assert.deepEqual(Object.keys(SLA_CONDITION_TEXT).sort(), [
   "SCHEDULE_INSTALLATION",
   "SITE_SURVEY",
 ]);
-assert.equal(slaConditionText("FIRST_CONTACT"), "ลงทะเบียน Lead → บันทึกผลการติดต่อครั้งแรก");
-assert.equal(slaConditionText("UNKNOWN_POLICY"), null);
+assert.equal(
+  slaTimeConditionText("FIRST_CONTACT", "2026-08-17T06:17:00.000Z"),
+  "รับ Lead 09:00–18:59 → ไม่เกิน 23:59 วันเดียวกัน",
+);
+assert.equal(
+  slaTimeConditionText("FIRST_CONTACT", "2026-08-17T12:00:00.000Z"),
+  "รับ Lead 19:00–23:59 → ไม่เกิน 12:00 วันถัดไป",
+);
+assert.equal(
+  slaTimeConditionText("FIRST_CONTACT", "2026-08-17T01:59:59.000Z"),
+  "รับ Lead 00:00–08:59 → ไม่เกิน 12:00 วันเดียวกัน",
+);
+assert.equal(slaTimeConditionText("BOOK_SURVEY", "2026-08-17T00:00:00.000Z"), "ภายใน 24 ชม. หลังผ่านขั้นตอนยืนยันค่าสำรวจ");
+assert.equal(slaTimeConditionText("UNKNOWN_POLICY", "2026-08-17T00:00:00.000Z"), null);
 
 // The central Timeline shows the workflow state that stands now. If a lead
 // enters Order, rolls back to Quotation, then enters Order again, the first
