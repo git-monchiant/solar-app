@@ -163,12 +163,12 @@ export function LeadSlaStageRows({ items, loading, now }: {
             <span className={`mt-1.5 w-1.5 h-1.5 rounded-full shrink-0 ${style.dot}`} />
             <div className="flex-1 min-w-0">
               <div className="flex items-center gap-2 flex-wrap">
+                <span className={`font-semibold ${style.text}`}>{item.task_name || item.policy_name}</span>
+                <span className={`px-1.5 py-0.5 rounded border text-xxs font-bold ${style.badge}`}>{style.label}</span>
                 <span className="inline-flex flex-wrap items-center gap-x-2 text-xxs text-gray-500">
                   <span>SLA {target}{!sameDeadline ? ` / สูงสุด ${due}` : ""}</span>
                   {timeCondition && <span>เงื่อนไขเวลา: {timeCondition}</span>}
                 </span>
-                <span className={`font-semibold ${style.text}`}>{item.task_name || item.policy_name}</span>
-                <span className={`px-1.5 py-0.5 rounded border text-xxs font-bold ${style.badge}`}>{style.label}</span>
               </div>
               <div className="mt-0.5 flex flex-wrap items-center gap-x-2 gap-y-0.5 text-xxs text-gray-500">
                 <span>เริ่ม {dayOrDateTimeText(item.started_at)}</span>
