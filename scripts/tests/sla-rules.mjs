@@ -18,9 +18,29 @@ import {
   resolveSurveySlaMilestones,
 } from "../../src/lib/sla-rules.ts";
 import * as rules from "../../src/lib/sla-rules.ts";
+import { SLA_CONDITION_TEXT, slaConditionText } from "../../src/lib/sla-display.ts";
 import { compactLatestForwardStatusActivities } from "../../src/lib/timeline-activities.ts";
 
 const iso = d => d.toISOString();
+
+// Every SLA process rendered in Lead Timeline explains the same start/end
+// condition the runtime uses to open and complete its clock.
+assert.deepEqual(Object.keys(SLA_CONDITION_TEXT).sort(), [
+  "BOOK_SURVEY",
+  "CLOSE_LEAD",
+  "CONTACT_RETRY",
+  "DEPOSIT_CLOSE",
+  "ELECTRICITY_ASSESSMENT",
+  "FIRST_CONTACT",
+  "INSTALLATION",
+  "LOAN_PREAPPROVAL",
+  "PAYMENT_INSTALLMENT_1",
+  "PROPOSAL_ROI",
+  "SCHEDULE_INSTALLATION",
+  "SITE_SURVEY",
+]);
+assert.equal(slaConditionText("FIRST_CONTACT"), "ลงทะเบียน Lead → บันทึกผลการติดต่อครั้งแรก");
+assert.equal(slaConditionText("UNKNOWN_POLICY"), null);
 
 // The central Timeline shows the workflow state that stands now. If a lead
 // enters Order, rolls back to Quotation, then enters Order again, the first

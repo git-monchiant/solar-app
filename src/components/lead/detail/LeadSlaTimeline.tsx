@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { apiFetch } from "@/lib/api";
+import { slaConditionText } from "@/lib/sla-display";
 import { formatThaiDate, formatThaiTime } from "@/lib/utils/formatters";
 
 type SlaStatus = "active" | "warning" | "critical" | "breached" | "completed" | "superseded" | "cancelled";
@@ -156,6 +157,7 @@ export function LeadSlaStageRows({ items, loading, now }: {
         const target = durationText(new Date(item.target_at).getTime() - new Date(item.started_at).getTime());
         const due = durationText(new Date(item.due_at).getTime() - new Date(item.started_at).getTime());
         const sameDeadline = new Date(item.target_at).getTime() === new Date(item.due_at).getTime();
+        const condition = slaConditionText(item.policy_code);
         return (
           <li key={`sla-${item.id}`} className="flex items-start gap-2.5 text-sm py-1">
             <span className={`mt-1.5 w-1.5 h-1.5 rounded-full shrink-0 ${style.dot}`} />
@@ -166,6 +168,7 @@ export function LeadSlaStageRows({ items, loading, now }: {
               </div>
               <div className="mt-0.5 flex flex-wrap items-center gap-x-2 gap-y-0.5 text-xxs text-gray-500">
                 <span>SLA {target}{!sameDeadline ? ` / สูงสุด ${due}` : ""}</span>
+                {condition && <span>เงื่อนไข: {condition}</span>}
                 <span>เริ่ม {dayOrDateTimeText(item.started_at)}</span>
                 <span>กำหนด {dayOrDateTimeText(item.due_at)}</span>
                 <span className={`font-semibold ${style.text}`}>ใช้จริง {elapsed}</span>
