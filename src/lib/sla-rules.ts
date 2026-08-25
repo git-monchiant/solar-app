@@ -23,6 +23,8 @@ export const OPERATIONAL_SLA_MINUTES = {
   CLOSE_LEAD: { target: 3 * 24 * 60, due: 3 * 24 * 60, warning: 24 * 60 },
 } as const;
 
+export const CONTACT_RETRY_DAYS = [3, 5, 7, 30] as const;
+
 /**
  * Grade no longer owns an SLA clock. The follow-up playbook it used to drive
  * was retired once the business settled the rule "a lead we have reached needs
@@ -304,8 +306,13 @@ export function firstContactWarningAt(receivedAt: Date): Date {
   return new Date(firstContactHardDeadline(receivedAt).getTime() - FIRST_CONTACT_WARNING_MINUTES * 60_000);
 }
 
-export function retryDeadlines(firstFailedAttemptAt: Date): Date[] {
-  return [3, 5, 7, 30].map(days => addBangkokCalendarDays(firstFailedAttemptAt, days));
+/**
+ * CONTACT_RETRY is sequential: each rung starts when the preceding contact
+ * attempt is recorded, then owns its full Day 3/5/7/30 window.
+ */
+export function contactRetryDeadline(startedAt: Date, sequence: number): Date | null {
+  const days = CONTACT_RETRY_DAYS[sequence - 1];
+  return days ? addBangkokCalendarDays(startedAt, days) : null;
 }
 
 export function evaluateSlaState(now: Date, warningAt: Date | null, dueAt: Date): SlaState {

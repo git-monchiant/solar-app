@@ -123,6 +123,7 @@ export default function SlaDashboardPage() {
   const [search, setSearch] = useState("");
   const [tab, setTab] = useState<SlaTab>("all");
   const [stageFilter, setStageFilter] = useState("all");
+  const [salesOwnerFilter, setSalesOwnerFilter] = useState("all");
   const openLead = useOpenLead();
   const { activeRoles } = useActiveRoles();
   const { me } = useMe();
@@ -130,6 +131,7 @@ export default function SlaDashboardPage() {
   const [assigningId, setAssigningId] = useState<number | null>(null);
 
   const solarManagerView = activeRoles.includes("admin") || activeRoles.includes("solar_sup");
+  const salesManagerView = activeRoles.includes("admin") || activeRoles.includes("sales_sup");
   const solarView = activeRoles.includes("solar") || activeRoles.includes("solar_sup");
   const solarOnlyView = solarView && !activeRoles.includes("sales") && !activeRoles.includes("sales_sup") && !activeRoles.includes("admin");
 
@@ -199,17 +201,43 @@ export default function SlaDashboardPage() {
       .sort((a, b) => a.label.localeCompare(b.label, "th"));
   }, [data]);
 
+  const salesOwnerOptions = useMemo(() => {
+    const owners = new Map<number, string>();
+    for (const item of data?.items ?? []) {
+      if (item.owner_role === "sales" && item.owner_user_id && item.owner_name) {
+        owners.set(item.owner_user_id, item.owner_name);
+      }
+    }
+    return Array.from(owners, ([value, label]) => ({ value, label }))
+      .sort((a, b) => a.label.localeCompare(b.label, "th"));
+  }, [data]);
+
+  useEffect(() => {
+    if (!salesManagerView) setSalesOwnerFilter("all");
+  }, [salesManagerView]);
+
   const filteredItems = useMemo(() => {
     const needle = search.trim().toLocaleLowerCase("th");
     return (data?.items ?? []).filter(item => {
       if (tab === "warning" && item.status !== "warning" && item.status !== "critical") return false;
       if (tab !== "all" && tab !== "warning" && item.status !== tab) return false;
       if (stageFilter !== "all" && item.policy_code !== stageFilter) return false;
+      if (salesOwnerFilter !== "all") {
+        if (item.owner_role !== "sales") return false;
+        if (salesOwnerFilter === "unassigned") {
+          if (item.owner_user_id !== null) return false;
+        } else if (item.owner_user_id !== Number(salesOwnerFilter)) return false;
+      }
       if (!needle) return true;
       return [item.full_name, item.phone, item.owner_name, item.task_name, item.policy_code, item.source, String(item.lead_id)]
         .some(value => String(value || "").toLocaleLowerCase("th").includes(needle));
     });
-  }, [data, search, stageFilter, tab]);
+  }, [data, salesOwnerFilter, search, stageFilter, tab]);
+
+  const filteredLeadCount = useMemo(
+    () => new Set(filteredItems.map(item => item.lead_id)).size,
+    [filteredItems],
+  );
 
   return (
     <div>
@@ -252,10 +280,15 @@ export default function SlaDashboardPage() {
 
         <section>
           <div className="mb-2 flex flex-wrap items-center justify-between gap-2 px-1">
-            <h2 className="text-xs font-bold uppercase tracking-wider text-gray-500">
-              {tab === "all" ? "คิวงานตามความเร่งด่วน" : STATUS_LABEL[tab]}
-            </h2>
             <div className="flex items-center gap-2">
+              <h2 className="text-xs font-bold uppercase tracking-wider text-gray-500">
+                {tab === "all" ? "คิวงานตามความเร่งด่วน" : STATUS_LABEL[tab]}
+              </h2>
+              {tab === "breached" && (
+                <span className="text-xxs text-gray-400">เรียงตามเกินนานสุด</span>
+              )}
+            </div>
+            <div className="flex flex-wrap items-center justify-end gap-2">
               <label className="sr-only" htmlFor="sla-stage-filter">กรองตามขั้นตอน SLA</label>
               <select
                 id="sla-stage-filter"
@@ -266,7 +299,26 @@ export default function SlaDashboardPage() {
                 <option value="all">ทุกขั้นตอนที่เกิน SLA</option>
                 {stageOptions.map(option => <option key={option.value} value={option.value}>{option.label}</option>)}
               </select>
-              <span className="rounded-full bg-primary/10 px-2 py-0.5 text-xs font-semibold text-active">{filteredItems.length}</span>
+              {salesManagerView && (
+                <>
+                  <label className="sr-only" htmlFor="sla-sales-owner-filter">กรองตาม Sales ผู้รับผิดชอบ</label>
+                  <select
+                    id="sla-sales-owner-filter"
+                    value={salesOwnerFilter}
+                    onChange={event => setSalesOwnerFilter(event.target.value)}
+                    className="h-8 w-48 rounded-lg border border-gray-200 bg-white px-2 pr-7 text-xs font-semibold text-gray-700 outline-none focus:border-active"
+                  >
+                    <option value="all">Sales ผู้รับผิดชอบทั้งหมด</option>
+                    <option value="unassigned">ยังไม่มอบหมาย Owner</option>
+                    {salesOwnerOptions.map(option => (
+                      <option key={option.value} value={option.value}>{option.label}</option>
+                    ))}
+                  </select>
+                </>
+              )}
+              <span className="whitespace-nowrap rounded-full bg-primary/10 px-2 py-0.5 text-xs font-semibold text-active">
+                {filteredLeadCount.toLocaleString("th-TH")} Lead
+              </span>
             </div>
           </div>
 

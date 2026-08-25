@@ -10,6 +10,8 @@ Statuses:
 
 | Plan | Status | Mockup | Notes |
 | --- | --- | --- | --- |
+| [20260821-08-contact-retry-sequential-start.md](20260821-08-contact-retry-sequential-start.md) | done | - | CONTACT_RETRY ใช้วันเริ่มจริงต่อเนื่องและเปิดครั้งละหนึ่งรายการแล้ว; migration 172 apply solardb_dev, Lead 880 เริ่ม 27 ก.ค. → 29 ก.ค. → 6 ส.ค. และครั้งที่ 4 ยังไม่เริ่ม; test/type/lint/build ผ่าน ยังไม่ deploy Production |
+| [20260821-06-contact-retry-backfill-history.md](20260821-06-contact-retry-backfill-history.md) | done | - | migration 171 ซ่อม CONTACT_RETRY ที่ migration 166 ข้ามครั้งที่ 1–3 ครบ 4 Lead บน solardb_dev; Lead 880 มีครบ 4 รอบตามสถานะจริง, ไม่มี duplicate, test/type/lint/build ผ่าน ยังไม่ deploy Production |
 | [20260821-10-sla-step-visibility.md](20260821-10-sla-step-visibility.md) | done | [interactive mockup](../mockup/20260821-10-sla-step-visibility/) | หน้า `/sla` แสดงขั้นตอนและระยะเวลาที่เกิน SLA ในแต่ละ Lead card พร้อมตัวกรอง และแยกจำนวนงาน SLA/จำนวน Lead แบบไม่ซ้ำในกล่องสรุปแล้ว |
 | [20260821-05-site-survey-latest-completion.md](20260821-05-site-survey-latest-completion.md) | done | - | SITE_SURVEY ใช้กิจกรรมเข้าสู่ Quotation ล่าสุดแล้ว; migration 170 ปรับย้อนหลัง 23 Lead บน solardb_dev, Lead 812 เปลี่ยนเป็น 20 ก.ค. 09:23 โดยคง start/due เดิม; test/type/lint/build ผ่าน ยังไม่ deploy Production |
 | [20260821-02-survey-confirm-before-start.md](20260821-02-survey-confirm-before-start.md) | done | - | SITE_SURVEY เริ่มหลังยืนยันนัดเสมอ โดยใช้เวลาที่ช้ากว่าระหว่างเวลานัดกับเวลายืนยัน; migration 167 แก้ anchor เดิม 45 ใบและหยุด SLA ที่ยังไม่ยืนยัน 2 ใบบน solardb_dev; Lead 686 เรียงยืนยัน 10:01:19 → เริ่ม SLA 10:01:19 → เสร็จ 11:07:37; test/type/lint/build ผ่าน ยังไม่ deploy Production |

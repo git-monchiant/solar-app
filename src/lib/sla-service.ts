@@ -1,5 +1,5 @@
 import type sql from "mssql";
-import { addBangkokCalendarDays, completionEvidenceChanged, firstContactHardDeadline, firstContactWarningAt, OPERATIONAL_SLA_MINUTES, resolveCloseLeadMilestones, resolveFirstContactEvidence, resolveInstallCompletion, resolveScheduledInstallAnchor, resolveScheduledSurveyAnchor, resolveSurveySlaMilestones, retryDeadlines, type ContactResult } from "@/lib/sla-rules";
+import { addBangkokCalendarDays, completionEvidenceChanged, CONTACT_RETRY_DAYS, contactRetryDeadline, firstContactHardDeadline, firstContactWarningAt, OPERATIONAL_SLA_MINUTES, resolveCloseLeadMilestones, resolveFirstContactEvidence, resolveInstallCompletion, resolveScheduledInstallAnchor, resolveScheduledSurveyAnchor, resolveSurveySlaMilestones, type ContactResult } from "@/lib/sla-rules";
 
 type Db = sql.ConnectionPool;
 
@@ -708,58 +708,72 @@ async function completeInstance(db: Db, input: {
   });
 }
 
-async function createRetrySchedule(db: Db, input: {
+async function createRetryInstance(db: Db, input: {
   leadId: number;
   ownerUserId: number | null;
-  firstFailedAt: Date;
-  activityId: number;
+  sequence: number;
+  startedAt: Date;
+  anchorActivityId: number;
   actorUserId: number;
 }) {
-  const deadlines = retryDeadlines(input.firstFailedAt);
-  for (let index = 0; index < deadlines.length; index++) {
-    const day = [3, 5, 7, 30][index];
-    const dueAt = deadlines[index];
-    const warningAt = addBangkokCalendarDays(dueAt, -1);
-    const key = `contact-retry:${input.leadId}:d${day}:${input.activityId}`;
-    const result = await db.request()
-      .input("lead_id", input.leadId)
-      .input("instance_key", key)
-      .input("task_name", `ติดตามลูกค้าครั้งที่ ${index + 1} (Day ${day})`)
-      .input("owner_user_id", input.ownerUserId)
-      .input("started_at", input.firstFailedAt)
-      .input("due_at", dueAt)
-      .input("warning_at", warningAt)
-      .input("context_json", JSON.stringify({ sequence: index + 1, offsetDays: day, anchorActivityId: input.activityId }))
-      .query(`
-        IF NOT EXISTS (SELECT 1 FROM lead_sla_instances WITH (UPDLOCK, HOLDLOCK) WHERE instance_key = @instance_key)
-        BEGIN
-          INSERT lead_sla_instances(
-            lead_id, policy_code, policy_version, instance_key, task_name, owner_user_id, owner_role,
-            started_at, target_at, due_at, warning_at, context_json
-          )
-          OUTPUT INSERTED.id
-          VALUES (
-            @lead_id, 'CONTACT_RETRY', 1, @instance_key, @task_name, @owner_user_id, 'sales',
-            @started_at, @due_at, @due_at, @warning_at, @context_json
-          );
-        END
-      `);
-    const row = result.recordset[0];
-    if (row) {
-      await addEvent(db, {
-        instanceId: row.id,
-        leadId: input.leadId,
-        type: "created",
-        eventKey: `sla-created:${key}`,
-        toStatus: "active",
-        actorUserId: input.actorUserId,
-        detail: { sequence: index + 1, offsetDays: day },
-      });
-    }
+  const day = CONTACT_RETRY_DAYS[input.sequence - 1];
+  const dueAt = contactRetryDeadline(input.startedAt, input.sequence);
+  if (!day || !dueAt) {
+    await db.request().input("lead_id", input.leadId).query(`
+      UPDATE leads SET next_follow_up = NULL, updated_at = GETDATE() WHERE id = @lead_id
+    `);
+    return false;
   }
-  await db.request().input("lead_id", input.leadId).input("next_follow_up", deadlines[0]).query(`
+
+  const warningAt = addBangkokCalendarDays(dueAt, -1);
+  const key = `contact-retry:${input.leadId}:d${day}:${input.anchorActivityId}`;
+  const status = stateAt(new Date(), warningAt, dueAt);
+  const result = await db.request()
+    .input("lead_id", input.leadId)
+    .input("instance_key", key)
+    .input("task_name", `ติดตามลูกค้าครั้งที่ ${input.sequence}`)
+    .input("owner_user_id", input.ownerUserId)
+    .input("started_at", input.startedAt)
+    .input("due_at", dueAt)
+    .input("warning_at", warningAt)
+    .input("status", status)
+    .input("context_json", JSON.stringify({
+      sequence: input.sequence,
+      offsetDays: day,
+      anchorActivityId: input.anchorActivityId,
+      sequentialActualStart: true,
+    }))
+    .query(`
+      IF NOT EXISTS (SELECT 1 FROM lead_sla_instances WITH (UPDLOCK, HOLDLOCK) WHERE instance_key = @instance_key)
+      BEGIN
+        INSERT lead_sla_instances(
+          lead_id, policy_code, policy_version, instance_key, task_name, owner_user_id, owner_role,
+          started_at, target_at, due_at, warning_at, status, context_json
+        )
+        OUTPUT INSERTED.id,INSERTED.status
+        VALUES (
+          @lead_id, 'CONTACT_RETRY', 2, @instance_key, @task_name, @owner_user_id, 'sales',
+          @started_at, @due_at, @due_at, @warning_at, @status, @context_json
+        );
+      END
+    `);
+  const row = result.recordset[0];
+  if (row) {
+    await addEvent(db, {
+      instanceId: row.id,
+      leadId: input.leadId,
+      type: "created",
+      eventKey: `sla-created:${key}`,
+      toStatus: row.status,
+      actorUserId: input.actorUserId,
+      eventAt: input.startedAt,
+      detail: { sequence: input.sequence, offsetDays: day, sequentialActualStart: true },
+    });
+  }
+  await db.request().input("lead_id", input.leadId).input("next_follow_up", dueAt).query(`
     UPDATE leads SET next_follow_up = CAST(@next_follow_up AS DATE), updated_at = GETDATE() WHERE id = @lead_id
   `);
+  return true;
 }
 
 export async function processContactActivity(db: Db, input: {
@@ -773,13 +787,15 @@ export async function processContactActivity(db: Db, input: {
   await refreshOpenSlaStates(db, input.leadId);
 
   const active = await db.request().input("lead_id", input.leadId).query(`
-    SELECT TOP 1 id, policy_code, status, owner_user_id, started_at
+    SELECT TOP 1 id, policy_code, status, owner_user_id, started_at,
+           TRY_CONVERT(INT, JSON_VALUE(context_json, '$.sequence')) AS retry_sequence
     FROM lead_sla_instances
     WHERE lead_id = @lead_id AND status IN ('active','warning','critical','breached')
       AND policy_code IN ('FIRST_CONTACT','CONTACT_RETRY')
     ORDER BY CASE WHEN policy_code = 'FIRST_CONTACT' THEN 0 ELSE 1 END, due_at ASC
   `);
   const task = active.recordset[0];
+  const occurredAt = input.occurredAt || new Date();
   if (task) {
     await completeInstance(db, {
       instanceId: task.id,
@@ -788,7 +804,7 @@ export async function processContactActivity(db: Db, input: {
       activityId: input.activityId,
       actorUserId: input.actorUserId,
       eventSuffix: String(input.activityId),
-      completedAt: input.occurredAt,
+      completedAt: occurredAt,
     });
   }
 
@@ -806,23 +822,23 @@ export async function processContactActivity(db: Db, input: {
 
   if (input.result !== "unreachable") return;
   if (task?.policy_code === "FIRST_CONTACT") {
-    await createRetrySchedule(db, {
+    await createRetryInstance(db, {
       leadId: input.leadId,
       ownerUserId: task.owner_user_id || input.actorUserId,
-      firstFailedAt: input.occurredAt || new Date(),
-      activityId: input.activityId,
+      sequence: 1,
+      startedAt: occurredAt,
+      anchorActivityId: input.activityId,
       actorUserId: input.actorUserId,
     });
-  } else {
-    const next = await db.request().input("lead_id", input.leadId).query(`
-      SELECT TOP 1 due_at FROM lead_sla_instances
-      WHERE lead_id = @lead_id AND policy_code = 'CONTACT_RETRY'
-        AND status IN ('active','warning','critical','breached')
-      ORDER BY due_at ASC
-    `);
-    await db.request().input("lead_id", input.leadId).input("next_follow_up", next.recordset[0]?.due_at || null).query(`
-      UPDATE leads SET next_follow_up = CAST(@next_follow_up AS DATE), updated_at = GETDATE() WHERE id = @lead_id
-    `);
+  } else if (task?.policy_code === "CONTACT_RETRY") {
+    await createRetryInstance(db, {
+      leadId: input.leadId,
+      ownerUserId: task.owner_user_id || input.actorUserId,
+      sequence: Number(task.retry_sequence || 0) + 1,
+      startedAt: occurredAt,
+      anchorActivityId: input.activityId,
+      actorUserId: input.actorUserId,
+    });
   }
 }
 

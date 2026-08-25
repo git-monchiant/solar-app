@@ -1,6 +1,8 @@
 import assert from "node:assert/strict";
 import {
+  CONTACT_RETRY_DAYS,
   completionEvidenceChanged,
+  contactRetryDeadline,
   contactResultFromOutcome,
   FIRST_CONTACT_WARNING_MINUTES,
   firstContactHardDeadline,
@@ -12,7 +14,6 @@ import {
   resolveScheduledInstallAnchor,
   resolveScheduledSurveyAnchor,
   resolveSurveySlaMilestones,
-  retryDeadlines,
 } from "../../src/lib/sla-rules.ts";
 import * as rules from "../../src/lib/sla-rules.ts";
 
@@ -48,13 +49,12 @@ assert.ok(
   firstContactWarningAt(new Date("2026-08-17T01:59:59.000Z")) > new Date("2026-08-17T01:59:59.000Z"),
 );
 
-const retries = retryDeadlines(new Date("2026-08-17T03:30:00.000Z"));
-assert.deepEqual(retries.map(iso), [
-  "2026-08-20T03:30:00.000Z",
-  "2026-08-22T03:30:00.000Z",
-  "2026-08-24T03:30:00.000Z",
-  "2026-09-16T03:30:00.000Z",
-]);
+assert.deepEqual(CONTACT_RETRY_DAYS, [3, 5, 7, 30]);
+assert.equal(iso(contactRetryDeadline(new Date("2026-07-27T15:15:27.330Z"), 1)), "2026-07-30T15:15:27.000Z");
+assert.equal(iso(contactRetryDeadline(new Date("2026-07-29T11:42:21.356Z"), 2)), "2026-08-03T11:42:21.000Z");
+assert.equal(iso(contactRetryDeadline(new Date("2026-08-06T13:48:03.263Z"), 3)), "2026-08-13T13:48:03.000Z");
+assert.equal(iso(contactRetryDeadline(new Date("2026-08-13T13:48:03.263Z"), 4)), "2026-09-12T13:48:03.000Z");
+assert.equal(contactRetryDeadline(new Date("2026-08-13T13:48:03.263Z"), 5), null);
 
 assert.equal(contactResultFromOutcome("ติดต่อได้ - Sale เสนอขาย"), "connected");
 assert.equal(contactResultFromOutcome("ติดต่อไม่ได้ - ไม่รับสาย"), "unreachable");
