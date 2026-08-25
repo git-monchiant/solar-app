@@ -10,6 +10,7 @@ Statuses:
 
 | Plan | Status | Mockup | Notes |
 | --- | --- | --- | --- |
+| [20260825-02-today-sla-filter.md](20260825-02-today-sla-filter.md) | done | - | รวม SLA เข้า Lead Card เดิมใน Today ผ่าน Dropdown, redirect หน้าเดิม, version 2.0.25; test/type/lint/build/API ผ่าน, รอผู้ใช้ยืนยันภาพก่อน push; ไม่แก้ DB/ไม่ deploy |
 | [20260825-01-sla-only-release-preparation.md](20260825-01-sla-only-release-preparation.md) | done | - | branch `release/sla-only` พร้อม push แล้ว: SLA test/type/targeted lint/build ผ่าน, migrations 149–178 ครบ, `/sla` 200, `/dashboard-sla` 404, version 2.0.24; ยังไม่ push และไม่ deploy |
 | [20260823-04-latest-order-transition-sla.md](20260823-04-latest-order-transition-sla.md) | done | - | PROPOSAL_ROI completion และ DEPOSIT_CLOSE anchor อ้างการเข้า Order รอบล่าสุดแล้ว; migration 178 apply solardb_dev, mismatch 0, test/type/lint/build ผ่าน ยังไม่ deploy Production |
 | [20260823-03-timeline-latest-stage-entry.md](20260823-03-timeline-latest-stage-entry.md) | done | - | Timeline กลางแสดงการเข้าสู่สถานะเดิมหลัง rollback เฉพาะครั้งล่าสุดทุก stage; Activity Log เก็บประวัติครบ และ test/type/lint/build ผ่าน ยังไม่ deploy Production |

@@ -2,9 +2,11 @@
 import { CheckIcon, PlusIcon } from "@/components/ui/icons";
 
 import { apiFetch } from "@/lib/api";
-import { useEffect, useState } from "react";
+import { createContext, useCallback, useContext, useEffect, useMemo, useState, type ComponentProps } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
 import { useOpenLead } from "@/lib/hooks/useOpenLead";
-import LeadCard, { LeadData } from "@/components/lead/LeadCard";
+import BaseLeadCard, { LeadData } from "@/components/lead/LeadCard";
+import TodaySlaFooter, { type TodaySlaItem, type TodaySlaSolarUser, type TodaySlaStatus } from "@/components/sla/TodaySlaFooter";
 import ListPageHeader from "@/components/layout/ListPageHeader";
 import NewLeadModal from "@/components/modal/NewLeadModal";
 import ChannelPickerModal from "@/components/shared/ChannelPickerModal";
@@ -32,6 +34,81 @@ interface TodayData {
 
 type TodayTab = "sales_all" | "sales" | "booking" | "quote" | "deposit_paid" | "sales_wait_install" | "sales_solar" | "solar" | "solar_survey" | "solar_quote" | "solar_wait_install" | "solar_install" | "solar_installing" | "solar_warranty" | "solar_gridtie" | "calendar";
 
+type SlaFilter = "" | "all" | "breached" | "near_due" | "active" | "without";
+
+type SlaDashboardData = {
+  counts: Record<TodaySlaStatus, number>;
+  leadCounts: Record<TodaySlaStatus, number> & { near_due: number };
+  items: TodaySlaItem[];
+};
+
+const SLA_FILTER_LABEL: Record<SlaFilter, string> = {
+  "": "ทุกงาน",
+  all: "มี SLA",
+  breached: "SLA เกินกำหนด",
+  near_due: "SLA ใกล้กำหนด",
+  active: "SLA กำลังดำเนินการ",
+  without: "ไม่มี SLA",
+};
+
+function parseSlaFilter(value: string | null): SlaFilter {
+  return value === "all" || value === "breached" || value === "near_due" || value === "active" || value === "without"
+    ? value
+    : "";
+}
+
+function matchesSlaFilter(item: TodaySlaItem, filter: SlaFilter): boolean {
+  if (filter === "all") return true;
+  if (filter === "near_due") return item.status === "warning" || item.status === "critical";
+  return filter === "breached" || filter === "active" ? item.status === filter : false;
+}
+
+type TodaySlaCardContextValue = {
+  enabled: boolean;
+  itemsByLead: Map<number, TodaySlaItem[]>;
+  solarUsers: TodaySlaSolarUser[];
+  currentUserId?: number;
+  solarManagerView: boolean;
+  solarView: boolean;
+  assigningId: number | null;
+  onAssignSolar: (item: TodaySlaItem, userId: number | null) => void;
+};
+
+const TodaySlaCardContext = createContext<TodaySlaCardContextValue | null>(null);
+
+function LeadCard(props: ComponentProps<typeof BaseLeadCard>) {
+  const sla = useContext(TodaySlaCardContext);
+  if (!sla?.enabled) return <BaseLeadCard {...props} />;
+
+  const items = sla.itemsByLead.get(props.lead.id) ?? [];
+  const primary = items[0];
+  const lead = primary ? {
+    ...props.lead,
+    sla_policy_code: primary.policy_code,
+    sla_task_name: primary.task_name,
+    sla_status: primary.status,
+    sla_due_at: primary.due_at,
+  } : props.lead;
+
+  return (
+    <BaseLeadCard
+      {...props}
+      lead={lead}
+      slaFooter={items.length > 0 ? (
+        <TodaySlaFooter
+          items={items}
+          solarUsers={sla.solarUsers}
+          currentUserId={sla.currentUserId}
+          solarManagerView={sla.solarManagerView}
+          solarView={sla.solarView}
+          assigningId={sla.assigningId}
+          onAssignSolar={sla.onAssignSolar}
+        />
+      ) : null}
+    />
+  );
+}
+
 export default function TodayPage() {
   const [todayData, setTodayData] = useState<TodayData | null>(null);
   const [allLeads, setAllLeads] = useState<LeadData[] | null>(null);
@@ -45,8 +122,92 @@ export default function TodayPage() {
   const [sortField, setSortField] = useState<"follow_up" | "created" | "name" | "activity">("follow_up");
   const [sortOrder, setSortOrder] = useState<"asc" | "desc">("asc");
   const [mineOnly, setMineOnly] = useState(false);
+  const router = useRouter();
+  const searchParams = useSearchParams();
+  const [slaFilter, setSlaFilter] = useState<SlaFilter>(() => parseSlaFilter(searchParams.get("sla")));
+  const [slaData, setSlaData] = useState<SlaDashboardData | null>(null);
+  const [slaLoading, setSlaLoading] = useState(false);
+  const [slaRefreshing, setSlaRefreshing] = useState(false);
+  const [slaError, setSlaError] = useState<string | null>(null);
+  const [solarUsers, setSolarUsers] = useState<TodaySlaSolarUser[]>([]);
+  const [assigningSlaId, setAssigningSlaId] = useState<number | null>(null);
   const { activeRoles } = useActiveRoles();
   const { me } = useMe();
+  const slaEnabled = slaFilter !== "";
+  const slaAvailable = hasRole(activeRoles, "admin", "sales", "solar");
+  const solarManagerView = activeRoles.includes("admin") || activeRoles.includes("solar_sup");
+  const solarView = hasRole(activeRoles, "solar");
+
+  const loadSla = useCallback(async (silent = false) => {
+    if (silent) setSlaRefreshing(true);
+    else setSlaLoading(true);
+    setSlaError(null);
+    try {
+      setSlaData(await apiFetch("/api/sla/dashboard"));
+    } catch (error) {
+      setSlaError(error instanceof Error ? error.message : "ไม่สามารถโหลดข้อมูล SLA ได้");
+    } finally {
+      setSlaLoading(false);
+      setSlaRefreshing(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    setSlaFilter(parseSlaFilter(searchParams.get("sla")));
+  }, [searchParams]);
+
+  useEffect(() => {
+    if (!slaEnabled || !slaAvailable || loading) return;
+    loadSla();
+    const timer = window.setInterval(() => loadSla(true), 60_000);
+    return () => window.clearInterval(timer);
+  }, [loadSla, loading, slaAvailable, slaEnabled]);
+
+  useEffect(() => {
+    if (!slaEnabled || !solarManagerView) return;
+    Promise.all([
+      apiFetch("/api/users?role=solar") as Promise<TodaySlaSolarUser[]>,
+      apiFetch("/api/users?role=solar_sup") as Promise<TodaySlaSolarUser[]>,
+    ]).then(groups => {
+      const unique = new Map<number, TodaySlaSolarUser>();
+      groups.flat().forEach(user => unique.set(user.id, user));
+      setSolarUsers(Array.from(unique.values()).sort((a, b) => a.full_name.localeCompare(b.full_name, "th")));
+    }).catch(console.error);
+  }, [slaEnabled, solarManagerView]);
+
+  const assignSolarWork = useCallback(async (item: TodaySlaItem, userId: number | null) => {
+    setAssigningSlaId(item.id);
+    setSlaError(null);
+    try {
+      await apiFetch("/api/sla/assign", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ instance_id: item.id, user_id: userId }),
+      });
+      await loadSla(true);
+    } catch (error) {
+      setSlaError(error instanceof Error ? error.message : "มอบหมายงาน SLA ไม่สำเร็จ");
+    } finally {
+      setAssigningSlaId(null);
+    }
+  }, [loadSla]);
+
+  const allSlaLeadIds = useMemo(
+    () => new Set((slaData?.items ?? []).map(item => item.lead_id)),
+    [slaData],
+  );
+
+  const slaItemsByLead = useMemo(() => {
+    const grouped = new Map<number, TodaySlaItem[]>();
+    if (slaFilter === "without" || slaFilter === "") return grouped;
+    for (const item of slaData?.items ?? []) {
+      if (!matchesSlaFilter(item, slaFilter)) continue;
+      const items = grouped.get(item.lead_id) ?? [];
+      items.push(item);
+      grouped.set(item.lead_id, items);
+    }
+    return grouped;
+  }, [slaData, slaFilter]);
 
   useEffect(() => {
     const savedSortField = localStorage.getItem("today.sortField");
@@ -150,8 +311,16 @@ export default function TodayPage() {
 
   const filterLeads = (leads: LeadData[]) => {
     let out = leads;
+    if (slaEnabled) {
+      if (!slaData) return [];
+      out = slaFilter === "without"
+        ? out.filter(lead => !allSlaLeadIds.has(lead.id))
+        : out.filter(lead => slaItemsByLead.has(lead.id));
+    }
     if (mineOnly && me?.id) {
-      out = out.filter(l => l.assigned_user_id === me.id);
+      out = slaEnabled && slaFilter !== "without"
+        ? out.filter(lead => (slaItemsByLead.get(lead.id) ?? []).some(item => item.owner_user_id === me.id))
+        : out.filter(lead => lead.assigned_user_id === me.id);
     }
     if (!search.trim()) return out;
     const q = search.trim().toLowerCase();
@@ -165,7 +334,12 @@ export default function TodayPage() {
       l.source?.toLowerCase().includes(q) ||
       l.note?.toLowerCase().includes(q) ||
       l.assigned_name?.toLowerCase().includes(q) ||
-      l.pre_doc_no?.toLowerCase().includes(q)
+      l.pre_doc_no?.toLowerCase().includes(q) ||
+      (slaItemsByLead.get(l.id) ?? []).some(item =>
+        item.task_name.toLowerCase().includes(q) ||
+        item.policy_code.toLowerCase().includes(q) ||
+        item.owner_name?.toLowerCase().includes(q)
+      )
     );
   };
 
@@ -226,6 +400,17 @@ export default function TodayPage() {
     const ts = (v: string | null | undefined, fallback: number) =>
       v ? new Date(v).getTime() : fallback;
     const arr = [...leads];
+    if (slaEnabled && slaFilter !== "without") {
+      const priority: Record<TodaySlaStatus, number> = { breached: 0, critical: 1, warning: 2, active: 3 };
+      arr.sort((a, b) => {
+        const aItem = slaItemsByLead.get(a.id)?.[0];
+        const bItem = slaItemsByLead.get(b.id)?.[0];
+        if (!aItem || !bItem) return Number(!!bItem) - Number(!!aItem);
+        return priority[aItem.status] - priority[bItem.status]
+          || ts(aItem.due_at, Number.POSITIVE_INFINITY) - ts(bItem.due_at, Number.POSITIVE_INFINITY);
+      });
+      return arr;
+    }
     // Appointment-date sort: always ASC (เลย/ใกล้กำหนดสุดอยู่บน) and ignores
     // the global dropdown — sections with นัดสำรวจ/ติดตั้ง use this hard.
     if (dateField) {
@@ -254,6 +439,15 @@ export default function TodayPage() {
     return arr;
   };
 
+  const changeSlaFilter = (value: SlaFilter) => {
+    setSlaFilter(value);
+    const params = new URLSearchParams(searchParams.toString());
+    if (value) params.set("sla", value);
+    else params.delete("sla");
+    const query = params.toString();
+    router.replace(query ? `/today?${query}` : "/today", { scroll: false });
+  };
+
   // Sort controls — desktop only. Mobile section headers are already tight
   // (title + count + tab bar above) so hiding the filter strip keeps it clean.
   const sortControls = (
@@ -272,32 +466,38 @@ export default function TodayPage() {
         </span>
         งานของฉัน
       </button>
-      <select
-        value={sortField}
-        onChange={(e) => {
-          const v = e.target.value as typeof sortField;
-          setSortField(v);
-          localStorage.setItem("today.sortField", v);
-        }}
-        className="h-7 px-2 pr-6 rounded-md border border-gray-200 bg-white text-xxs font-medium text-gray-700 focus:outline-none focus:border-gray-400"
-      >
-        <option value="follow_up">วันนัดติดตาม</option>
-        <option value="created">วันที่สร้าง</option>
-        <option value="activity">กิจกรรมล่าสุด</option>
-        <option value="name">ชื่อลูกค้า</option>
-      </select>
-      <select
-        value={sortOrder}
-        onChange={(e) => {
-          const v = e.target.value as typeof sortOrder;
-          setSortOrder(v);
-          localStorage.setItem("today.sortOrder", v);
-        }}
-        className="h-7 px-2 pr-6 rounded-md border border-gray-200 bg-white text-xxs font-medium text-gray-700 focus:outline-none focus:border-gray-400"
-      >
-        <option value="asc">{sortField === "name" ? "ก-ฮ" : "เก่า → ใหม่"}</option>
-        <option value="desc">{sortField === "name" ? "ฮ-ก" : "ใหม่ → เก่า"}</option>
-      </select>
+      {slaEnabled ? (
+        <span className="text-xxs font-semibold text-gray-500">เรียงตามความเร่งด่วนของ SLA</span>
+      ) : (
+        <>
+          <select
+            value={sortField}
+            onChange={(e) => {
+              const v = e.target.value as typeof sortField;
+              setSortField(v);
+              localStorage.setItem("today.sortField", v);
+            }}
+            className="h-7 px-2 pr-6 rounded-md border border-gray-200 bg-white text-xxs font-medium text-gray-700 focus:outline-none focus:border-gray-400"
+          >
+            <option value="follow_up">วันนัดติดตาม</option>
+            <option value="created">วันที่สร้าง</option>
+            <option value="activity">กิจกรรมล่าสุด</option>
+            <option value="name">ชื่อลูกค้า</option>
+          </select>
+          <select
+            value={sortOrder}
+            onChange={(e) => {
+              const v = e.target.value as typeof sortOrder;
+              setSortOrder(v);
+              localStorage.setItem("today.sortOrder", v);
+            }}
+            className="h-7 px-2 pr-6 rounded-md border border-gray-200 bg-white text-xxs font-medium text-gray-700 focus:outline-none focus:border-gray-400"
+          >
+            <option value="asc">{sortField === "name" ? "ก-ฮ" : "เก่า → ใหม่"}</option>
+            <option value="desc">{sortField === "name" ? "ฮ-ก" : "ใหม่ → เก่า"}</option>
+          </select>
+        </>
+      )}
     </div>
   );
 
@@ -326,8 +526,20 @@ export default function TodayPage() {
 
   // While effect re-syncs an invalid tab, render against an in-bounds key
   const visibleTab = (allTabs.some(t => t.key === tab) ? tab : (allTabs[0]?.key ?? "calendar")) as TodayTab;
+  const selectedSlaTaskCount = Array.from(slaItemsByLead.values()).reduce((sum, items) => sum + items.length, 0);
+  const slaCardContext: TodaySlaCardContextValue = {
+    enabled: slaEnabled,
+    itemsByLead: slaItemsByLead,
+    solarUsers,
+    currentUserId: me?.id,
+    solarManagerView,
+    solarView,
+    assigningId: assigningSlaId,
+    onAssignSolar: assignSolarWork,
+  };
 
   return (
+    <TodaySlaCardContext.Provider value={slaCardContext}>
     <div>
       <ListPageHeader
         title="Today"
@@ -338,10 +550,45 @@ export default function TodayPage() {
         tabs={allTabs}
         activeTab={visibleTab}
         onTabChange={(k) => setTab(k as TodayTab)}
+        tabsRight={slaAvailable ? (
+          <label className="inline-flex items-center gap-1.5">
+            <span className="sr-only">ตัวกรอง SLA</span>
+            <select
+              aria-label="ตัวกรอง SLA"
+              value={slaFilter}
+              onChange={event => changeSlaFilter(event.target.value as SlaFilter)}
+              className={`h-8 max-w-44 rounded-lg border px-2 pr-7 text-xs font-semibold outline-none ${
+                slaEnabled ? "border-red-200 bg-red-50 text-red-700" : "border-gray-200 bg-white text-gray-700"
+              }`}
+            >
+              {(Object.entries(SLA_FILTER_LABEL) as [SlaFilter, string][]).map(([value, label]) => (
+                <option key={value || "default"} value={value}>{label}</option>
+              ))}
+            </select>
+          </label>
+        ) : undefined}
       />
 
       {/* Content */}
       <div className="p-4 space-y-5">
+        {slaEnabled && (
+          <div className={`flex flex-wrap items-center gap-2 rounded-xl border px-3 py-2 text-xs ${slaError ? "border-red-200 bg-red-50 text-red-700" : "border-gray-200 bg-gray-50 text-gray-600"}`}>
+            <span className="font-bold text-gray-800">ตัวกรอง: {SLA_FILTER_LABEL[slaFilter]}</span>
+            {slaFilter !== "without" && slaData && (
+              <>
+                <span>· {selectedSlaTaskCount.toLocaleString("th-TH")} งาน SLA</span>
+                <span>· {slaItemsByLead.size.toLocaleString("th-TH")} Lead</span>
+              </>
+            )}
+            {(slaLoading || slaRefreshing) && <span className="ml-auto font-semibold text-active">กำลังอัปเดต SLA…</span>}
+            {slaError && (
+              <>
+                <span>{slaError}</span>
+                <button type="button" onClick={() => loadSla()} className="ml-auto rounded-full bg-red-600 px-3 py-1 font-bold text-white">ลองใหม่</button>
+              </>
+            )}
+          </div>
+        )}
         {/* Sales · ทั้งหมด — เรียงตาม section เดิม + section "อื่นๆ" รวม leads
             ที่ไม่อยู่ใน bucket ใดข้างบน (เพื่อให้เห็น lead ครบทุกใบเหมือน pipeline) */}
         {visibleTab === "sales_all" && (
@@ -1041,6 +1288,7 @@ export default function TodayPage() {
         />
       )}
     </div>
+    </TodaySlaCardContext.Provider>
   );
 }
 

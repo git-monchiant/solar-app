@@ -1,5 +1,5 @@
 import { ClockIcon, LineIcon, PhoneIcon } from "@/components/ui/icons";
-import { useState } from "react";
+import { useState, type ReactNode } from "react";
 import { STATUS_CONFIG, getStatusLabel, getStatusColor, getMainStatus, getSubstep } from "@/lib/constants/statuses";
 import { formatSlotsRange } from "@/lib/time-slots";
 import { stripThaiTitle, houseNumberOrNull } from "@/lib/utils/name";
@@ -67,7 +67,7 @@ export interface LeadData {
   sla_due_at?: string | null;
 }
 
-export default function LeadCard({ lead, compact, onAssignChange, onOpen }: { lead: LeadData; compact?: boolean; onAssignChange?: () => void; onOpen?: (lead: LeadData) => void }) {
+export default function LeadCard({ lead, compact, onAssignChange, onOpen, slaFooter }: { lead: LeadData; compact?: boolean; onAssignChange?: () => void; onOpen?: (lead: LeadData) => void; slaFooter?: ReactNode }) {
   const openLead = useOpenLead();
   const config = STATUS_CONFIG[lead.status] || STATUS_CONFIG.pre_survey;
   const isUpgrade = lead.customer_type === "upgrade" || lead.customer_type?.includes("Upgrade") || lead.customer_type?.includes("เดิม");
@@ -414,7 +414,7 @@ export default function LeadCard({ lead, compact, onAssignChange, onOpen }: { le
           );
           })()}
         </div>
-        {lead.sla_status && lead.sla_due_at && (
+        {slaFooter !== undefined ? slaFooter : lead.sla_status && lead.sla_due_at && (
           <div className={`mb-2 inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-xs font-semibold ${
             lead.sla_status === "breached" ? "bg-red-100 text-red-700" :
             lead.sla_status === "critical" ? "bg-orange-100 text-orange-700" :
