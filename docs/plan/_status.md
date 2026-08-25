@@ -10,6 +10,7 @@ Statuses:
 
 | Plan | Status | Mockup | Notes |
 | --- | --- | --- | --- |
+| [20260825-01-sla-only-release-preparation.md](20260825-01-sla-only-release-preparation.md) | done | - | branch `release/sla-only` พร้อม push แล้ว: SLA test/type/targeted lint/build ผ่าน, migrations 149–178 ครบ, `/sla` 200, `/dashboard-sla` 404, version 2.0.24; ยังไม่ push และไม่ deploy |
 | [20260823-04-latest-order-transition-sla.md](20260823-04-latest-order-transition-sla.md) | done | - | PROPOSAL_ROI completion และ DEPOSIT_CLOSE anchor อ้างการเข้า Order รอบล่าสุดแล้ว; migration 178 apply solardb_dev, mismatch 0, test/type/lint/build ผ่าน ยังไม่ deploy Production |
 | [20260823-03-timeline-latest-stage-entry.md](20260823-03-timeline-latest-stage-entry.md) | done | - | Timeline กลางแสดงการเข้าสู่สถานะเดิมหลัง rollback เฉพาะครั้งล่าสุดทุก stage; Activity Log เก็บประวัติครบ และ test/type/lint/build ผ่าน ยังไม่ deploy Production |
 | [20260823-02-legacy-sla-timeline-correction.md](20260823-02-legacy-sla-timeline-correction.md) | done | - | Grade ที่ไม่มี Activity แสดงเป็นข้อมูลเดิมไม่ระบุเวลาปลอม; migration 176/177 ซ่อม SITE_SURVEY rollback และ BOOK_SURVEY anchor บน solardb_dev แล้ว, invariant/test/type/lint/build ผ่าน ยังไม่ deploy Production |
