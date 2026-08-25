@@ -38,6 +38,17 @@ const STATUS_STYLE: Record<TodaySlaStatus, { row: string; chip: string; dot: str
   breached: { row: "border-red-200 bg-red-50/80", chip: "bg-red-100 text-red-700", dot: "bg-red-500" },
 };
 
+function formatOverdueDuration(dueAt: string): string {
+  const milliseconds = Date.now() - Date.parse(dueAt);
+  if (!Number.isFinite(milliseconds) || milliseconds <= 0) return "เพิ่งเกินกำหนด";
+  const totalHours = Math.floor(milliseconds / 3_600_000);
+  const days = Math.floor(totalHours / 24);
+  const hours = totalHours % 24;
+  if (days > 0) return `${days.toLocaleString("th-TH")} วัน${hours > 0 ? ` ${hours.toLocaleString("th-TH")} ชม.` : ""}`;
+  if (totalHours > 0) return `${totalHours.toLocaleString("th-TH")} ชม.`;
+  return `${Math.max(1, Math.floor(milliseconds / 60_000)).toLocaleString("th-TH")} นาที`;
+}
+
 export default function TodaySlaFooter({
   items,
   solarUsers,
@@ -74,11 +85,26 @@ export default function TodaySlaFooter({
             <span className={`shrink-0 rounded-full px-2 py-0.5 text-xxs font-bold ${style.chip}`}>
               SLA {STATUS_LABEL[item.status]}
             </span>
-            <span className="min-w-40 flex-1 font-semibold text-gray-800">{item.task_name}</span>
-            <span className="inline-flex shrink-0 items-center gap-1 whitespace-nowrap font-medium text-gray-600">
-              <ClockIcon className="h-3.5 w-3.5" />
-              {formatThaiDateShort(item.due_at)} {formatThaiTime(item.due_at)}
+            <span className={`shrink-0 rounded-full px-2 py-0.5 text-xxs font-bold ${
+              item.owner_role === "sales"
+                ? "bg-violet-100 text-violet-700"
+                : "bg-emerald-100 text-emerald-700"
+            }`}>
+              ทีม {item.owner_role === "sales" ? "Sales" : "Solar"}
             </span>
+            <span className="min-w-40 flex-1 font-semibold text-gray-800">{item.task_name}</span>
+            {item.status === "breached" ? (
+              <span className="inline-flex shrink-0 flex-wrap items-center gap-x-1 whitespace-nowrap font-bold text-red-700">
+                <ClockIcon className="h-3.5 w-3.5" />
+                เกินมาแล้ว {formatOverdueDuration(item.due_at)}
+                <span className="font-normal text-red-500">· กำหนดเดิม {formatThaiDateShort(item.due_at)} {formatThaiTime(item.due_at)}</span>
+              </span>
+            ) : (
+              <span className="inline-flex shrink-0 items-center gap-1 whitespace-nowrap font-medium text-gray-600">
+                <ClockIcon className="h-3.5 w-3.5" />
+                กำหนด {formatThaiDateShort(item.due_at)} {formatThaiTime(item.due_at)}
+              </span>
+            )}
             <span className="inline-flex min-w-0 items-center gap-1 text-gray-500">
               <UserIcon className="h-3.5 w-3.5 shrink-0" />
               {canAssignSolar ? (

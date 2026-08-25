@@ -41,6 +41,8 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
       LEFT JOIN sla_policies p
         ON p.policy_code = si.policy_code AND p.version = si.policy_version
       WHERE si.lead_id = @lead_id
+        AND si.superseded_at IS NULL
+        AND si.status <> 'superseded'
       ORDER BY si.started_at ASC, si.due_at ASC, si.id ASC
     `);
 

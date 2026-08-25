@@ -660,6 +660,7 @@ async function reconcileFirstContactEvidence(db: Db, input: {
     SET status = 'cancelled', updated_at = GETDATE(),
         context_json = JSON_MODIFY(COALESCE(context_json, '{}'), '$.cancelReason', @reason)
     WHERE lead_id = @lead_id AND policy_code = 'CONTACT_RETRY'
+      AND policy_version = 2 AND superseded_at IS NULL
       AND status IN ('active','warning','critical','breached');
     UPDATE leads SET next_follow_up = NULL, updated_at = GETDATE() WHERE id = @lead_id;
   `);
@@ -681,6 +682,7 @@ export async function refreshOpenSlaStates(db: Db, leadId?: number) {
           ELSE 'active'
         END AS value) next_state
     WHERE si.status IN ('active','warning','critical','breached')
+      AND si.superseded_at IS NULL
       AND (@lead_id IS NULL OR si.lead_id = @lead_id)
       AND si.status <> next_state.value;
   `);
@@ -813,7 +815,8 @@ export async function processContactActivity(db: Db, input: {
            TRY_CONVERT(INT, JSON_VALUE(context_json, '$.sequence')) AS retry_sequence
     FROM lead_sla_instances
     WHERE lead_id = @lead_id AND status IN ('active','warning','critical','breached')
-      AND policy_code IN ('FIRST_CONTACT','CONTACT_RETRY')
+      AND superseded_at IS NULL
+      AND (policy_code = 'FIRST_CONTACT' OR (policy_code = 'CONTACT_RETRY' AND policy_version = 2))
     ORDER BY CASE WHEN policy_code = 'FIRST_CONTACT' THEN 0 ELSE 1 END, due_at ASC
   `);
   const task = active.recordset[0];
@@ -836,6 +839,7 @@ export async function processContactActivity(db: Db, input: {
       SET status = 'cancelled', updated_at = GETDATE(),
           context_json = JSON_MODIFY(COALESCE(context_json, '{}'), '$.cancelReason', @reason)
       WHERE lead_id = @lead_id AND policy_code = 'CONTACT_RETRY'
+        AND policy_version = 2 AND superseded_at IS NULL
         AND status IN ('active','warning','critical','breached');
       UPDATE leads SET next_follow_up = NULL, updated_at = GETDATE() WHERE id = @lead_id;
     `);

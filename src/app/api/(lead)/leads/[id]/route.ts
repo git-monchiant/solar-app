@@ -100,6 +100,7 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
           SELECT TOP 1 policy_code, task_name, status, target_at, due_at
           FROM lead_sla_instances si
           WHERE si.lead_id = l.id AND si.status IN ('active','warning','critical','breached')
+            AND si.superseded_at IS NULL
           ORDER BY si.due_at ASC
         ) sla
         WHERE l.id = @id

@@ -25,6 +25,17 @@ DECLARE @targets TABLE(
   FROM dbo.lead_sla_instances si
   WHERE si.policy_code='CONTACT_RETRY'
     AND JSON_VALUE(si.context_json,'$.backfilledBy')='migration_166'
+    -- Migration 172 converts this ladder to sequential v2 and changes its
+    -- instance keys. If dev migrations are replayed, do not recreate the
+    -- retired fixed-anchor v1 ladder or rewrite the v2 statuses.
+    AND NOT EXISTS(
+      SELECT 1
+      FROM dbo.lead_sla_instances v2
+      WHERE v2.lead_id=si.lead_id
+        AND v2.policy_code='CONTACT_RETRY'
+        AND v2.policy_version>=2
+        AND JSON_VALUE(v2.context_json,'$.sequentialActualStart')='true'
+    )
 )
 INSERT @targets(lead_id,owner_user_id,anchor_activity_id,anchor_at)
 SELECT lead_id,owner_user_id,anchor_activity_id,started_at

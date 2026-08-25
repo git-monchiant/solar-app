@@ -167,7 +167,7 @@ export function LeadSlaStageRows({ items, loading, now }: {
                 <span className={`px-1.5 py-0.5 rounded border text-xxs font-bold ${style.badge}`}>{style.label}</span>
                 <span className="inline-flex flex-wrap items-center gap-x-2 text-xxs text-gray-500">
                   <span>SLA {target}{!sameDeadline ? ` / สูงสุด ${due}` : ""}</span>
-                  {timeCondition && <span>เงื่อนไขเวลา: {timeCondition}</span>}
+                  {timeCondition && <span>เงื่อนไข: {timeCondition}</span>}
                 </span>
               </div>
               <div className="mt-0.5 flex flex-wrap items-center gap-x-2 gap-y-0.5 text-xxs text-gray-500">

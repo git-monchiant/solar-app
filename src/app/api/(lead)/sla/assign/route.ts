@@ -34,6 +34,8 @@ export async function PATCH(req: NextRequest) {
       FROM lead_sla_instances si
       JOIN leads l ON l.id = si.lead_id
       WHERE si.id = @id
+        AND si.superseded_at IS NULL
+        AND si.status <> 'superseded'
     `);
     const item = found.recordset[0];
     if (!item) return NextResponse.json({ error: "ไม่พบงาน SLA" }, { status: 404 });

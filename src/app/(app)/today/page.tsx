@@ -43,12 +43,12 @@ type SlaDashboardData = {
 };
 
 const SLA_FILTER_LABEL: Record<SlaFilter, string> = {
-  "": "ทุกงาน",
-  all: "มี SLA",
+  "": "แสดง Lead ทั้งหมด",
+  all: "มีงาน SLA",
   breached: "SLA เกินกำหนด",
   near_due: "SLA ใกล้กำหนด",
   active: "SLA กำลังดำเนินการ",
-  without: "ไม่มี SLA",
+  without: "ไม่มีงาน SLA",
 };
 
 function parseSlaFilter(value: string | null): SlaFilter {
@@ -126,45 +126,46 @@ export default function TodayPage() {
   const searchParams = useSearchParams();
   const [slaFilter, setSlaFilter] = useState<SlaFilter>(() => parseSlaFilter(searchParams.get("sla")));
   const [slaData, setSlaData] = useState<SlaDashboardData | null>(null);
-  const [slaLoading, setSlaLoading] = useState(false);
-  const [slaRefreshing, setSlaRefreshing] = useState(false);
+  const [slaDataRoleKey, setSlaDataRoleKey] = useState("");
   const [slaError, setSlaError] = useState<string | null>(null);
+  const [slaStageFilter, setSlaStageFilter] = useState("all");
+  const [slaSalesOwnerFilter, setSlaSalesOwnerFilter] = useState("all");
+  const [slaSolarOwnerFilter, setSlaSolarOwnerFilter] = useState("all");
   const [solarUsers, setSolarUsers] = useState<TodaySlaSolarUser[]>([]);
   const [assigningSlaId, setAssigningSlaId] = useState<number | null>(null);
   const { activeRoles } = useActiveRoles();
   const { me } = useMe();
   const slaEnabled = slaFilter !== "";
   const slaAvailable = hasRole(activeRoles, "admin", "sales", "solar");
+  const activeRoleKey = activeRoles.join("|");
+  const salesManagerView = activeRoles.includes("admin") || activeRoles.includes("sales_sup");
   const solarManagerView = activeRoles.includes("admin") || activeRoles.includes("solar_sup");
   const solarView = hasRole(activeRoles, "solar");
 
-  const loadSla = useCallback(async (silent = false) => {
-    if (silent) setSlaRefreshing(true);
-    else setSlaLoading(true);
+  const loadSla = useCallback(async () => {
     setSlaError(null);
     try {
-      setSlaData(await apiFetch("/api/sla/dashboard"));
+      const nextData = await apiFetch("/api/sla/dashboard") as SlaDashboardData;
+      setSlaData(nextData);
+      setSlaDataRoleKey(activeRoleKey);
     } catch (error) {
       setSlaError(error instanceof Error ? error.message : "ไม่สามารถโหลดข้อมูล SLA ได้");
-    } finally {
-      setSlaLoading(false);
-      setSlaRefreshing(false);
     }
-  }, []);
+  }, [activeRoleKey]);
 
   useEffect(() => {
     setSlaFilter(parseSlaFilter(searchParams.get("sla")));
   }, [searchParams]);
 
   useEffect(() => {
-    if (!slaEnabled || !slaAvailable || loading) return;
+    if (!slaAvailable || loading) return;
     loadSla();
-    const timer = window.setInterval(() => loadSla(true), 60_000);
+    const timer = window.setInterval(loadSla, 60_000);
     return () => window.clearInterval(timer);
-  }, [loadSla, loading, slaAvailable, slaEnabled]);
+  }, [activeRoleKey, loadSla, loading, slaAvailable]);
 
   useEffect(() => {
-    if (!slaEnabled || !solarManagerView) return;
+    if (!slaAvailable || !solarManagerView) return;
     Promise.all([
       apiFetch("/api/users?role=solar") as Promise<TodaySlaSolarUser[]>,
       apiFetch("/api/users?role=solar_sup") as Promise<TodaySlaSolarUser[]>,
@@ -173,7 +174,12 @@ export default function TodayPage() {
       groups.flat().forEach(user => unique.set(user.id, user));
       setSolarUsers(Array.from(unique.values()).sort((a, b) => a.full_name.localeCompare(b.full_name, "th")));
     }).catch(console.error);
-  }, [slaEnabled, solarManagerView]);
+  }, [slaAvailable, solarManagerView]);
+
+  useEffect(() => {
+    if (!salesManagerView) setSlaSalesOwnerFilter("all");
+    if (!solarManagerView) setSlaSolarOwnerFilter("all");
+  }, [salesManagerView, solarManagerView]);
 
   const assignSolarWork = useCallback(async (item: TodaySlaItem, userId: number | null) => {
     setAssigningSlaId(item.id);
@@ -184,7 +190,7 @@ export default function TodayPage() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ instance_id: item.id, user_id: userId }),
       });
-      await loadSla(true);
+      await loadSla();
     } catch (error) {
       setSlaError(error instanceof Error ? error.message : "มอบหมายงาน SLA ไม่สำเร็จ");
     } finally {
@@ -192,22 +198,61 @@ export default function TodayPage() {
     }
   }, [loadSla]);
 
+  const scopedSlaData = slaDataRoleKey === activeRoleKey ? slaData : null;
+
   const allSlaLeadIds = useMemo(
-    () => new Set((slaData?.items ?? []).map(item => item.lead_id)),
-    [slaData],
+    () => new Set((scopedSlaData?.items ?? []).map(item => item.lead_id)),
+    [scopedSlaData],
   );
+
+  const slaStageOptions = useMemo(() => {
+    const options = new Map<string, string>();
+    for (const item of scopedSlaData?.items ?? []) options.set(item.policy_code, item.task_name);
+    return Array.from(options, ([value, label]) => ({ value, label }))
+      .sort((a, b) => a.label.localeCompare(b.label, "th"));
+  }, [scopedSlaData]);
+
+  const slaOwnerOptions = useMemo(() => {
+    const sales = new Map<number, string>();
+    const solar = new Map<number, string>();
+    for (const item of scopedSlaData?.items ?? []) {
+      if (!item.owner_user_id || !item.owner_name) continue;
+      if (item.owner_role === "sales") sales.set(item.owner_user_id, item.owner_name);
+      if (item.owner_role === "solar") solar.set(item.owner_user_id, item.owner_name);
+    }
+    for (const user of solarUsers) solar.set(user.id, user.full_name);
+    const toOptions = (owners: Map<number, string>) => Array.from(owners, ([id, name]) => ({ id, name }))
+      .sort((a, b) => a.name.localeCompare(b.name, "th"));
+    return { sales: toOptions(sales), solar: toOptions(solar) };
+  }, [scopedSlaData, solarUsers]);
+
+  const filteredSlaItems = useMemo(() => (scopedSlaData?.items ?? []).filter(item => {
+    if (!slaEnabled) return true;
+    if (slaStageFilter !== "all" && item.policy_code !== slaStageFilter) return false;
+    if (slaSalesOwnerFilter !== "all") {
+      if (item.owner_role !== "sales") return false;
+      if (slaSalesOwnerFilter === "unassigned") return item.owner_user_id == null;
+      if (item.owner_user_id !== Number(slaSalesOwnerFilter)) return false;
+    }
+    if (slaSolarOwnerFilter !== "all") {
+      if (item.owner_role !== "solar") return false;
+      if (slaSolarOwnerFilter === "unassigned") return item.owner_user_id == null;
+      if (item.owner_user_id !== Number(slaSolarOwnerFilter)) return false;
+    }
+    return true;
+  }), [scopedSlaData, slaEnabled, slaSalesOwnerFilter, slaSolarOwnerFilter, slaStageFilter]);
 
   const slaItemsByLead = useMemo(() => {
     const grouped = new Map<number, TodaySlaItem[]>();
-    if (slaFilter === "without" || slaFilter === "") return grouped;
-    for (const item of slaData?.items ?? []) {
-      if (!matchesSlaFilter(item, slaFilter)) continue;
+    if (slaFilter === "without") return grouped;
+    for (const item of filteredSlaItems) {
+      if (slaFilter && !matchesSlaFilter(item, slaFilter)) continue;
       const items = grouped.get(item.lead_id) ?? [];
       items.push(item);
       grouped.set(item.lead_id, items);
     }
     return grouped;
-  }, [slaData, slaFilter]);
+  }, [filteredSlaItems, slaFilter]);
 
   useEffect(() => {
     const savedSortField = localStorage.getItem("today.sortField");
@@ -312,7 +357,7 @@ export default function TodayPage() {
   const filterLeads = (leads: LeadData[]) => {
     let out = leads;
     if (slaEnabled) {
-      if (!slaData) return [];
+      if (!scopedSlaData) return [];
       out = slaFilter === "without"
         ? out.filter(lead => !allSlaLeadIds.has(lead.id))
         : out.filter(lead => slaItemsByLead.has(lead.id));
@@ -441,6 +486,11 @@ export default function TodayPage() {
 
   const changeSlaFilter = (value: SlaFilter) => {
     setSlaFilter(value);
+    if (!value || value === "without") {
+      setSlaStageFilter("all");
+      setSlaSalesOwnerFilter("all");
+      setSlaSolarOwnerFilter("all");
+    }
     const params = new URLSearchParams(searchParams.toString());
     if (value) params.set("sla", value);
     else params.delete("sla");
@@ -448,10 +498,10 @@ export default function TodayPage() {
     router.replace(query ? `/today?${query}` : "/today", { scroll: false });
   };
 
-  // Sort controls — desktop only. Mobile section headers are already tight
-  // (title + count + tab bar above) so hiding the filter strip keeps it clean.
+  // Keep SLA controls next to "งานของฉัน" so users can narrow urgent work
+  // without leaving Today. Controls wrap on mobile instead of disappearing.
   const sortControls = (
-    <div className="hidden md:flex items-center justify-end gap-2 flex-wrap">
+    <div className="flex items-center justify-end gap-2 flex-wrap">
       <button
         type="button"
         onClick={() => {
@@ -466,8 +516,83 @@ export default function TodayPage() {
         </span>
         งานของฉัน
       </button>
+      {slaAvailable && (
+        <label className="inline-flex items-center">
+          <span className="sr-only">ตัวกรอง SLA</span>
+          <select
+            aria-label="ตัวกรอง SLA"
+            value={slaFilter}
+            onChange={event => changeSlaFilter(event.target.value as SlaFilter)}
+            className={`h-7 max-w-44 rounded-md border px-2 pr-7 text-xxs font-semibold outline-none ${
+              slaEnabled ? "border-red-200 bg-red-50 text-red-700" : "border-gray-200 bg-white text-gray-700"
+            }`}
+          >
+            {(Object.entries(SLA_FILTER_LABEL) as [SlaFilter, string][]).map(([value, label]) => (
+              <option key={value || "default"} value={value}>{label}</option>
+            ))}
+          </select>
+        </label>
+      )}
+      {slaEnabled && slaFilter !== "without" && (
+        <>
+          <label className="inline-flex items-center">
+            <span className="sr-only">กรองตามขั้นตอน SLA</span>
+            <select
+              aria-label="กรองตามขั้นตอน SLA"
+              value={slaStageFilter}
+              onChange={event => setSlaStageFilter(event.target.value)}
+              className="h-7 max-w-48 rounded-md border border-gray-200 bg-white px-2 pr-7 text-xxs font-medium text-gray-700 outline-none focus:border-gray-400"
+            >
+              <option value="all">ทุกขั้นตอน SLA</option>
+              {slaStageOptions.map(option => (
+                <option key={option.value} value={option.value}>{option.label}</option>
+              ))}
+            </select>
+          </label>
+          {salesManagerView && (
+            <label className="inline-flex items-center">
+              <span className="sr-only">กรองผู้รับผิดชอบ Sales</span>
+              <select
+                aria-label="กรองผู้รับผิดชอบ Sales"
+                value={slaSalesOwnerFilter}
+                onChange={event => {
+                  setSlaSalesOwnerFilter(event.target.value);
+                  if (event.target.value !== "all") setSlaSolarOwnerFilter("all");
+                }}
+                className="h-7 max-w-44 rounded-md border border-gray-200 bg-white px-2 pr-7 text-xxs font-medium text-gray-700 outline-none focus:border-gray-400"
+              >
+                <option value="all">Sales ทุกคน</option>
+                <option value="unassigned">Sales ยังไม่มอบหมาย</option>
+                {slaOwnerOptions.sales.map(owner => (
+                  <option key={owner.id} value={owner.id}>{owner.name}</option>
+                ))}
+              </select>
+            </label>
+          )}
+          {solarManagerView && (
+            <label className="inline-flex items-center">
+              <span className="sr-only">กรองผู้รับผิดชอบ Solar</span>
+              <select
+                aria-label="กรองผู้รับผิดชอบ Solar"
+                value={slaSolarOwnerFilter}
+                onChange={event => {
+                  setSlaSolarOwnerFilter(event.target.value);
+                  if (event.target.value !== "all") setSlaSalesOwnerFilter("all");
+                }}
+                className="h-7 max-w-44 rounded-md border border-gray-200 bg-white px-2 pr-7 text-xxs font-medium text-gray-700 outline-none focus:border-gray-400"
+              >
+                <option value="all">Solar ทุกคน</option>
+                <option value="unassigned">Solar ยังไม่มอบหมาย</option>
+                {slaOwnerOptions.solar.map(owner => (
+                  <option key={owner.id} value={owner.id}>{owner.name}</option>
+                ))}
+              </select>
+            </label>
+          )}
+        </>
+      )}
       {slaEnabled ? (
-        <span className="text-xxs font-semibold text-gray-500">เรียงตามความเร่งด่วนของ SLA</span>
+        <span className="hidden xl:inline text-xxs font-semibold text-gray-500">เรียงตามความเร่งด่วนของ SLA</span>
       ) : (
         <>
           <select
@@ -477,7 +602,7 @@ export default function TodayPage() {
               setSortField(v);
               localStorage.setItem("today.sortField", v);
             }}
-            className="h-7 px-2 pr-6 rounded-md border border-gray-200 bg-white text-xxs font-medium text-gray-700 focus:outline-none focus:border-gray-400"
+            className="hidden h-7 px-2 pr-6 rounded-md border border-gray-200 bg-white text-xxs font-medium text-gray-700 focus:outline-none focus:border-gray-400 md:block"
           >
             <option value="follow_up">วันนัดติดตาม</option>
             <option value="created">วันที่สร้าง</option>
@@ -491,7 +616,7 @@ export default function TodayPage() {
               setSortOrder(v);
               localStorage.setItem("today.sortOrder", v);
             }}
-            className="h-7 px-2 pr-6 rounded-md border border-gray-200 bg-white text-xxs font-medium text-gray-700 focus:outline-none focus:border-gray-400"
+            className="hidden h-7 px-2 pr-6 rounded-md border border-gray-200 bg-white text-xxs font-medium text-gray-700 focus:outline-none focus:border-gray-400 md:block"
           >
             <option value="asc">{sortField === "name" ? "ก-ฮ" : "เก่า → ใหม่"}</option>
             <option value="desc">{sortField === "name" ? "ฮ-ก" : "ใหม่ → เก่า"}</option>
@@ -526,9 +651,8 @@ export default function TodayPage() {
 
   // While effect re-syncs an invalid tab, render against an in-bounds key
   const visibleTab = (allTabs.some(t => t.key === tab) ? tab : (allTabs[0]?.key ?? "calendar")) as TodayTab;
-  const selectedSlaTaskCount = Array.from(slaItemsByLead.values()).reduce((sum, items) => sum + items.length, 0);
   const slaCardContext: TodaySlaCardContextValue = {
-    enabled: slaEnabled,
+    enabled: slaAvailable && scopedSlaData !== null,
     itemsByLead: slaItemsByLead,
     solarUsers,
     currentUserId: me?.id,
@@ -550,43 +674,14 @@ export default function TodayPage() {
         tabs={allTabs}
         activeTab={visibleTab}
         onTabChange={(k) => setTab(k as TodayTab)}
-        tabsRight={slaAvailable ? (
-          <label className="inline-flex items-center gap-1.5">
-            <span className="sr-only">ตัวกรอง SLA</span>
-            <select
-              aria-label="ตัวกรอง SLA"
-              value={slaFilter}
-              onChange={event => changeSlaFilter(event.target.value as SlaFilter)}
-              className={`h-8 max-w-44 rounded-lg border px-2 pr-7 text-xs font-semibold outline-none ${
-                slaEnabled ? "border-red-200 bg-red-50 text-red-700" : "border-gray-200 bg-white text-gray-700"
-              }`}
-            >
-              {(Object.entries(SLA_FILTER_LABEL) as [SlaFilter, string][]).map(([value, label]) => (
-                <option key={value || "default"} value={value}>{label}</option>
-              ))}
-            </select>
-          </label>
-        ) : undefined}
       />
 
       {/* Content */}
       <div className="p-4 space-y-5">
-        {slaEnabled && (
-          <div className={`flex flex-wrap items-center gap-2 rounded-xl border px-3 py-2 text-xs ${slaError ? "border-red-200 bg-red-50 text-red-700" : "border-gray-200 bg-gray-50 text-gray-600"}`}>
-            <span className="font-bold text-gray-800">ตัวกรอง: {SLA_FILTER_LABEL[slaFilter]}</span>
-            {slaFilter !== "without" && slaData && (
-              <>
-                <span>· {selectedSlaTaskCount.toLocaleString("th-TH")} งาน SLA</span>
-                <span>· {slaItemsByLead.size.toLocaleString("th-TH")} Lead</span>
-              </>
-            )}
-            {(slaLoading || slaRefreshing) && <span className="ml-auto font-semibold text-active">กำลังอัปเดต SLA…</span>}
-            {slaError && (
-              <>
-                <span>{slaError}</span>
-                <button type="button" onClick={() => loadSla()} className="ml-auto rounded-full bg-red-600 px-3 py-1 font-bold text-white">ลองใหม่</button>
-              </>
-            )}
+        {slaAvailable && slaError && visibleTab !== "calendar" && (
+          <div className="flex flex-wrap items-center gap-2 rounded-lg bg-red-50 px-3 py-1.5 text-xs font-semibold text-red-700">
+            <span>{slaError}</span>
+            <button type="button" onClick={() => loadSla()} className="ml-auto rounded-full bg-red-600 px-3 py-1 font-bold text-white">ลองใหม่</button>
           </div>
         )}
         {/* Sales · ทั้งหมด — เรียงตาม section เดิม + section "อื่นๆ" รวม leads
