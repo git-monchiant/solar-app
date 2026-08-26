@@ -2,13 +2,14 @@
 import { CheckIcon, PlusIcon } from "@/components/ui/icons";
 
 import { apiFetch } from "@/lib/api";
-import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ComponentProps } from "react";
+import { createContext, useCallback, useContext, useEffect, useMemo, useState, type ComponentProps } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useOpenLead } from "@/lib/hooks/useOpenLead";
 import BaseLeadCard, { LeadData } from "@/components/lead/LeadCard";
 import TodaySlaFooter, { type TodaySlaItem, type TodaySlaSolarUser, type TodaySlaStatus } from "@/components/sla/TodaySlaFooter";
 import { slaTaskLabel } from "@/lib/sla-display";
 import SlaFilterChips from "@/components/sla/SlaFilterChips";
+import SlaSubFilter, { SLA_SUB_SELECT_CLASS } from "@/components/sla/SlaSubFilter";
 import {
   matchesSlaStatus,
   parseSlaFilters,
@@ -114,8 +115,6 @@ export default function TodayPage() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const [slaFilters, setSlaFilters] = useState<SlaFilterKey[]>(() => parseSlaFilters(searchParams.get("sla")));
-  const [slaSubOpen, setSlaSubOpen] = useState(false);
-  const slaSubRef = useRef<HTMLSpanElement | null>(null);
   const [slaData, setSlaData] = useState<SlaDashboardData | null>(null);
   const [slaDataRoleKey, setSlaDataRoleKey] = useState("");
   const [slaError, setSlaError] = useState<string | null>(null);
@@ -154,15 +153,6 @@ export default function TodayPage() {
   useEffect(() => {
     setSlaFilters(parseSlaFilters(searchParams.get("sla")));
   }, [searchParams]);
-
-  useEffect(() => {
-    if (!slaSubOpen) return;
-    const close = (event: MouseEvent) => {
-      if (!slaSubRef.current?.contains(event.target as Node)) setSlaSubOpen(false);
-    };
-    document.addEventListener("mousedown", close);
-    return () => document.removeEventListener("mousedown", close);
-  }, [slaSubOpen]);
 
   useEffect(() => {
     if (!slaAvailable || loading) return;
@@ -517,11 +507,11 @@ export default function TodayPage() {
   const applySlaFilters = (next: SlaFilterKey[]) => {
     setSlaFilters(next);
     // ไม่มีสถานะไหนถูกเลือก = ไม่มีอะไรให้กรองย่อย ล้างทิ้งไม่ให้ค้างแบบมองไม่เห็น
+    // ตัว popover ไม่ต้องสั่งปิด — พอ slaStatusMode เป็น false ปุ่มจะ unmount ไปเอง
     if (next.length === 0 || next[0] === "without") {
       setSlaStageFilter("all");
       setSlaSalesOwnerFilter("all");
       setSlaSolarOwnerFilter("all");
-      setSlaSubOpen(false);
     }
     const params = new URLSearchParams(searchParams.toString());
     if (next.length > 0) params.set("sla", next.join(","));
@@ -624,32 +614,12 @@ export default function TodayPage() {
           counts={slaChipCounts}
           onToggle={toggleSlaFilter}
           trailing={slaStatusMode && (
-            <span className="relative inline-flex" ref={slaSubRef}>
-              <button
-                type="button"
-                aria-expanded={slaSubOpen}
-                onClick={() => setSlaSubOpen(open => !open)}
-                className={`h-7 inline-flex items-center gap-1.5 rounded-md border px-2.5 text-xxs font-semibold whitespace-nowrap transition-colors ${
-                  slaSubFilterCount > 0
-                    ? "border-gray-800 bg-white text-gray-900"
-                    : "border-dashed border-gray-300 bg-white text-gray-600 hover:border-gray-500"
-                }`}
-              >
-                ตัวกรองย่อย
-                {slaSubFilterCount > 0 && (
-                  <span className="inline-flex h-4 min-w-4 items-center justify-center rounded-full bg-gray-800 px-1 text-[10px] font-bold text-white">
-                    {slaSubFilterCount}
-                  </span>
-                )}
-              </button>
-              {slaSubOpen && (
-                <div className="absolute right-0 top-8 z-30 flex w-60 flex-col gap-1.5 rounded-lg border border-gray-300 bg-white p-2.5 text-left shadow-lg">
-                  <span className="text-xxs font-bold uppercase tracking-wider text-gray-400">กรองเฉพาะ</span>
+            <SlaSubFilter count={slaSubFilterCount}>
                   <select
                     aria-label="กรองตามขั้นตอน SLA"
                     value={slaStageFilter}
                     onChange={event => setSlaStageFilter(event.target.value)}
-                    className="h-7 w-full rounded-md border border-gray-200 bg-white px-2 pr-7 text-xxs font-medium text-gray-700 outline-none focus:border-gray-400"
+                    className={SLA_SUB_SELECT_CLASS}
                   >
                     <option value="all">ทุกขั้นตอน SLA</option>
                     {slaStageOptions.map(option => (
@@ -664,7 +634,7 @@ export default function TodayPage() {
                         setSlaSalesOwnerFilter(event.target.value);
                         if (event.target.value !== "all") setSlaSolarOwnerFilter("all");
                       }}
-                      className="h-7 w-full rounded-md border border-gray-200 bg-white px-2 pr-7 text-xxs font-medium text-gray-700 outline-none focus:border-gray-400"
+                      className={SLA_SUB_SELECT_CLASS}
                     >
                       <option value="all">Sales ทุกคน</option>
                       <option value="unassigned">Sales ยังไม่มอบหมาย</option>
@@ -681,7 +651,7 @@ export default function TodayPage() {
                         setSlaSolarOwnerFilter(event.target.value);
                         if (event.target.value !== "all") setSlaSalesOwnerFilter("all");
                       }}
-                      className="h-7 w-full rounded-md border border-gray-200 bg-white px-2 pr-7 text-xxs font-medium text-gray-700 outline-none focus:border-gray-400"
+                      className={SLA_SUB_SELECT_CLASS}
                     >
                       <option value="all">Solar ทุกคน</option>
                       <option value="unassigned">Solar ยังไม่มอบหมาย</option>
@@ -690,9 +660,7 @@ export default function TodayPage() {
                       ))}
                     </select>
                   )}
-                </div>
-              )}
-            </span>
+            </SlaSubFilter>
           )}
         />
       )}

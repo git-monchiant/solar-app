@@ -6,6 +6,8 @@ import ListPageHeader from "@/components/layout/ListPageHeader";
 import LeadCard, { type LeadData } from "@/components/lead/LeadCard";
 import { useActiveRoles, hasRole } from "@/lib/roles";
 import SlaFilterChips from "@/components/sla/SlaFilterChips";
+import SlaSubFilter, { SLA_SUB_SELECT_CLASS } from "@/components/sla/SlaSubFilter";
+import { slaTaskLabel } from "@/lib/sla-display";
 import {
   matchesSlaStatus,
   parseSlaFilters,
@@ -47,6 +49,9 @@ interface Lead {
   order_total_count?: number | null;
   /** งาน SLA ที่ใกล้ครบกำหนดที่สุดของ lead — /api/leads ส่งมาแค่ตัวบนสุดตัวเดียว */
   sla_status?: "active" | "warning" | "critical" | "breached" | null;
+  sla_policy_code?: string | null;
+  sla_task_name?: string | null;
+  sla_owner_name?: string | null;
 }
 
 type TabKey = "all" | "pre_survey" | "booking" | "survey" | "quotation" | "order" | "deposit" | "wait_install" | "install" | "installing" | "warranty" | "gridtie" | "lost";
@@ -134,10 +139,20 @@ export default function PipelinePage() {
     return parseSlaFilters(localStorage.getItem("pipeline.sla"));
   });
 
+  // ตัวกรองย่อยไม่จำข้ามรอบเหมือนชิป — เปิดหน้ามาแล้วเจอตัวกรองแคบ ๆ ที่มองไม่เห็น
+  // เป็นกับดักที่แย่กว่าความสะดวกที่ได้ (หน้า Today ก็ไม่จำเหมือนกัน)
+  const [slaStageFilter, setSlaStageFilter] = useState("all");
+  const [slaOwnerFilter, setSlaOwnerFilter] = useState("all");
+
   const onToggleSla = (key: SlaFilterKey) => {
     const next = toggleSlaFilter(slaFilters, key);
     setSlaFilters(next);
     localStorage.setItem("pipeline.sla", next.join(","));
+    // ไม่มีสถานะไหนถูกเลือก = ไม่มีอะไรให้กรองย่อย ล้างทิ้งไม่ให้ค้างแบบมองไม่เห็น
+    if (next.length === 0 || next[0] === "without") {
+      setSlaStageFilter("all");
+      setSlaOwnerFilter("all");
+    }
   };
 
   const fetchLeads = useCallback(() => {
@@ -207,14 +222,42 @@ export default function PipelinePage() {
   // แต่ก่อนกรอง SLA ไม่งั้นพอติ๊กปุ่มหนึ่ง ตัวเลขปุ่มที่เหลือจะกลายเป็น 0 หมด
   const tabScoped = leads.filter(l => matchesTab(l, tab, todayYmd)).filter(matchesSearch);
   const slaAvailable = leads.some(l => l.sla_status);
-  const slaChipCounts = tabScoped.reduce((counts, l) => {
+  const slaStatusKeys = slaFilters.filter((key): key is SlaStatusKey => key !== "without");
+  const slaStatusMode = slaStatusKeys.length > 0;
+
+  // ตัวเลือกสร้างจากรายการในแท็บก่อนกรอง SLA ตัวเลือกจึงไม่หายไปเองตอนกำลังเลือก
+  const slaStageOptions = Array.from(
+    tabScoped.reduce((map, l) => {
+      if (l.sla_policy_code) map.set(l.sla_policy_code, slaTaskLabel(l.sla_policy_code, l.sla_task_name));
+      return map;
+    }, new Map<string, string>()),
+    ([value, label]) => ({ value, label }),
+  ).sort((a, b) => a.label.localeCompare(b.label, "th"));
+
+  const slaOwnerOptions = Array.from(new Set(
+    tabScoped.filter(l => l.sla_status && l.sla_owner_name).map(l => l.sla_owner_name as string),
+  )).sort((a, b) => a.localeCompare(b, "th"));
+
+  const slaSubFilterCount = [slaStageFilter !== "all", slaOwnerFilter !== "all"].filter(Boolean).length;
+
+  // ตัวกรองย่อยมีผลกับทั้งตัวเลขบนชิปและรายการที่แสดง ตัวเลขจึงยังบอกความจริง
+  // Lead ที่ไม่มี SLA ปล่อยผ่าน ไม่งั้นชิป "ไม่มีงาน SLA" จะกลายเป็น 0 ทันทีที่เลือกขั้นตอน
+  const matchesSlaSub = (l: Lead) => {
+    if (!slaStatusMode || !l.sla_status) return true;
+    if (slaStageFilter !== "all" && l.sla_policy_code !== slaStageFilter) return false;
+    if (slaOwnerFilter === "unassigned") return !l.sla_owner_name;
+    if (slaOwnerFilter !== "all" && l.sla_owner_name !== slaOwnerFilter) return false;
+    return true;
+  };
+
+  const slaScoped = tabScoped.filter(matchesSlaSub);
+  const slaChipCounts = slaScoped.reduce((counts, l) => {
     const key = slaFilterKeyOf(l.sla_status);
     if (key) counts[key] += 1;
     return counts;
   }, { breached: 0, near_due: 0, active: 0, without: 0 } as Record<SlaFilterKey, number>);
 
-  const slaStatusKeys = slaFilters.filter((key): key is SlaStatusKey => key !== "without");
-  const filtered = sortLeads(tabScoped.filter(l => {
+  const filtered = sortLeads(slaScoped.filter(l => {
     if (slaFilters.length === 0) return true;
     // normalizeSlaFilters การันตีว่า "ไม่มีงาน SLA" อยู่ตัวเดียวเสมอ
     if (slaFilters.includes("without")) return !l.sla_status;
@@ -254,8 +297,48 @@ export default function PipelinePage() {
         tabs={TABS}
         activeTab={tab}
         onTabChange={(k) => { setTab(k as TabKey); localStorage.setItem("pipelineTab", k); }}
-        tabsRight={(
-          <div className="hidden md:flex items-center gap-2">
+      />
+
+      <div className="p-3 md:p-4">
+        {/* ทั้งแถวอยู่ในตัวหน้า ไม่ใช่ tabsRight — tabsRight ซ่อนบนจอแคบ ติ๊กไว้แล้วจะปลดไม่ได้
+            และแถวแท็บ 13 ปุ่มก็ไม่เหลือที่ให้ยืน · ปุ่มเรียงย้ายลงมาด้วย จะได้ไม่เบียดแท็บ
+            และใช้ได้บนมือถือด้วย (เดิมซ่อนทิ้งไปเลย) */}
+        <div className="mb-3 flex flex-wrap items-center gap-2 px-1">
+          {slaAvailable && (
+            <SlaFilterChips
+              filters={slaFilters}
+              counts={slaChipCounts}
+              onToggle={onToggleSla}
+              trailing={slaStatusMode && (
+                <SlaSubFilter count={slaSubFilterCount}>
+                  <select
+                    aria-label="กรองตามขั้นตอน SLA"
+                    value={slaStageFilter}
+                    onChange={(e) => setSlaStageFilter(e.target.value)}
+                    className={SLA_SUB_SELECT_CLASS}
+                  >
+                    <option value="all">ทุกขั้นตอน SLA</option>
+                    {slaStageOptions.map(option => (
+                      <option key={option.value} value={option.value}>{option.label}</option>
+                    ))}
+                  </select>
+                  <select
+                    aria-label="กรองผู้รับผิดชอบงาน SLA"
+                    value={slaOwnerFilter}
+                    onChange={(e) => setSlaOwnerFilter(e.target.value)}
+                    className={SLA_SUB_SELECT_CLASS}
+                  >
+                    <option value="all">ผู้รับผิดชอบทุกคน</option>
+                    <option value="unassigned">ยังไม่มอบหมาย</option>
+                    {slaOwnerOptions.map(name => (
+                      <option key={name} value={name}>{name}</option>
+                    ))}
+                  </select>
+                </SlaSubFilter>
+              )}
+            />
+          )}
+          <div className="ml-auto flex items-center gap-2">
             <select
               value={sortField}
               onChange={(e) => {
@@ -285,17 +368,7 @@ export default function PipelinePage() {
               <option value="desc">{sortField === "name" ? "ฮ-ก" : "ใหม่ → เก่า"}</option>
             </select>
           </div>
-        )}
-      />
-
-      <div className="p-3 md:p-4">
-        {/* อยู่ในตัวหน้า ไม่ใช่ tabsRight — tabsRight ซ่อนบนจอแคบ ติ๊กไว้แล้วจะปลดไม่ได้
-            และแถวแท็บของ Pipeline ยาว 13 ปุ่มอยู่แล้ว ไม่มีที่ให้ชิปยืน */}
-        {slaAvailable && (
-          <div className="mb-3 px-1">
-            <SlaFilterChips filters={slaFilters} counts={slaChipCounts} onToggle={onToggleSla} />
-          </div>
-        )}
+        </div>
         {loading ? (
           <div className="flex items-center justify-center py-16">
             <div className="w-10 h-10 border-3 border-gray-200 border-t-primary rounded-full animate-spin" />
