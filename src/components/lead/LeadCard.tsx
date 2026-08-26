@@ -1,12 +1,14 @@
-import { ClockIcon, LineIcon, PhoneIcon } from "@/components/ui/icons";
+import { CalendarIcon, ClockIcon, LineIcon, PhoneIcon } from "@/components/ui/icons";
 import { useState, type ReactNode } from "react";
 import { STATUS_CONFIG, getStatusLabel, getStatusColor, getMainStatus, getSubstep } from "@/lib/constants/statuses";
 import { formatSlotsRange } from "@/lib/time-slots";
 import { stripThaiTitle, houseNumberOrNull } from "@/lib/utils/name";
-import { formatTHB, formatThaiDateShort, formatThaiTime } from "@/lib/utils/formatters";
+import { formatTHB, formatThaiDateShort } from "@/lib/utils/formatters";
 import { useOpenLead } from "@/lib/hooks/useOpenLead";
 import AssignOwnerButton from "./AssignOwnerButton";
 import SourceTag from "@/components/SourceTag";
+import { SLA_STATUS_LABEL, SLA_TIMELINE_STYLE, SlaLeadSummary, formatSlaTimelineDuration } from "@/components/sla/SlaStatusDisplay";
+import { slaOwnsFollowUpDate, slaWorkflowStage } from "@/lib/sla-display";
 
 export interface LeadData {
   id: number;
@@ -65,6 +67,10 @@ export interface LeadData {
   sla_status?: "active" | "warning" | "critical" | "breached" | null;
   sla_target_at?: string | null;
   sla_due_at?: string | null;
+  sla_owner_role?: "sales" | "solar" | null;
+  sla_owner_name?: string | null;
+  /** Every open SLA the card shows, when the caller renders more than one. */
+  sla_items?: { policy_code: string; due_at: string }[];
 }
 
 export default function LeadCard({ lead, compact, onAssignChange, onOpen, slaFooter }: { lead: LeadData; compact?: boolean; onAssignChange?: () => void; onOpen?: (lead: LeadData) => void; slaFooter?: ReactNode }) {
@@ -80,6 +86,28 @@ export default function LeadCard({ lead, compact, onAssignChange, onOpen, slaFoo
     ? lead.is_followup_overdue
     : !!(now && lead.next_follow_up && new Date(String(lead.next_follow_up).slice(0, 10) + "T12:00:00").getTime() < now);
   const hasChequePendingMoney = (lead.order_ready_count ?? 0) > (lead.order_paid_count ?? 0);
+  const defaultSlaPanel = slaFooter === undefined && lead.sla_status && lead.sla_due_at ? (
+    <SlaLeadSummary
+      status={lead.sla_status}
+      policyCode={lead.sla_policy_code}
+      taskName={lead.sla_task_name}
+      dueAt={lead.sla_due_at}
+      ownerRole={lead.sla_owner_role}
+      ownerName={lead.sla_owner_name}
+    />
+  ) : null;
+  const slaPanel = slaFooter === undefined ? defaultSlaPanel : slaFooter;
+  const hasSlaPanel = slaPanel != null;
+  const slaStage = slaWorkflowStage(lead.sla_policy_code);
+  // Callers that render several SLA panels pass the whole set; everyone else
+  // has the single sla_* snapshot on the lead.
+  const slaItems = lead.sla_items
+    ?? (lead.sla_policy_code && lead.sla_due_at ? [{ policy_code: lead.sla_policy_code, due_at: lead.sla_due_at }] : []);
+  const hideSlaManagedFollowUp = slaOwnsFollowUpDate(slaItems, lead.next_follow_up);
+  // Always the meta row, panel or not: one fixed place to look for the
+  // appointment, and it costs no extra card height. What keeps it from reading
+  // as the SLA clock is the wording and the amber — never the red the SLA owns.
+  const showFollowUp = !compact && !!lead.next_follow_up && !hideSlaManagedFollowUp;
 
   const open = () => {
     if (onOpen) { onOpen(lead); return; }
@@ -95,6 +123,8 @@ export default function LeadCard({ lead, compact, onAssignChange, onOpen, slaFoo
       className="block rounded-2xl bg-white border border-gray-300 shadow-sm hover:border-gray-400 hover:shadow-md transition-all cursor-pointer"
     >
       <div className="p-5 md:p-3">
+        <div className={hasSlaPanel ? "2xl:grid 2xl:grid-cols-[minmax(0,1fr)_26rem] 2xl:items-stretch 2xl:gap-4" : undefined}>
+          <div className="min-w-0">
         {/* Header: name + status */}
         <div className="flex items-start gap-3 mb-3 md:mb-1.5">
           <div className="flex-1 min-w-0 md:w-52 md:flex-none lg:w-72">
@@ -160,14 +190,21 @@ export default function LeadCard({ lead, compact, onAssignChange, onOpen, slaFoo
                   const isCurrent = i === currentIdx;
                   const isPast = i < currentIdx;
                   const stageConfig = STATUS_CONFIG[s] ?? { label: FLOW_LABELS[s], color: "bg-amber-500", text: "text-amber-700" };
+                  const hasStageSla = s === slaStage && !!lead.sla_status && !!lead.sla_due_at;
+                  const slaTone = hasStageSla ? SLA_TIMELINE_STYLE[lead.sla_status!] : null;
+                  const slaDuration = hasStageSla ? formatSlaTimelineDuration(lead.sla_status!, lead.sla_due_at!) : null;
                   return (
-                    <div key={s} className="flex items-start" title={stageConfig?.label}>
-                      <div className="flex flex-col items-center w-10 lg:w-14 shrink-0">
-                        <div className={`w-5 h-5 lg:w-6 lg:h-6 rounded-full flex items-center justify-center transition-all ${
-                          isCurrent ? `${config.color} ring-2 ring-offset-1 ring-gray-200 shadow-sm scale-110`
+                    <div
+                      key={s}
+                      className="flex items-start"
+                      title={hasStageSla ? `${stageConfig?.label} · SLA ${SLA_STATUS_LABEL[lead.sla_status!]} · ${slaDuration}` : stageConfig?.label}
+                    >
+                      <div className="flex w-9 shrink-0 flex-col items-center lg:w-11 xl:w-12">
+                        <div className={`relative w-5 h-5 lg:w-6 lg:h-6 rounded-full flex items-center justify-center transition-all ${
+                          isCurrent ? `${config.color} ${hasStageSla ? "shadow-sm scale-110" : "ring-2 ring-offset-1 ring-gray-200 shadow-sm scale-110"}`
                           : isPast ? "bg-emerald-500"
                           : "bg-gray-200"
-                        }`}>
+                        } ${slaTone ? `ring-2 ring-offset-2 ${slaTone.ring}` : ""}`}>
                           {isPast && (
                             <svg className="w-3 h-3 lg:w-3.5 lg:h-3.5 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={3}>
                               <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
@@ -175,6 +212,11 @@ export default function LeadCard({ lead, compact, onAssignChange, onOpen, slaFoo
                           )}
                           {isCurrent && (
                             <span className="w-1 h-1 lg:w-1.5 lg:h-1.5 bg-white rounded-full" />
+                          )}
+                          {slaTone && (
+                            <span className={`absolute -right-1.5 -top-1.5 flex h-3.5 w-3.5 items-center justify-center rounded-full text-white shadow-sm ${slaTone.badge}`}>
+                              <ClockIcon className="h-2.5 w-2.5" />
+                            </span>
                           )}
                         </div>
                         <span className={`text-xxs lg:text-xxs mt-1 lg:mt-1.5 leading-none whitespace-nowrap ${
@@ -184,9 +226,14 @@ export default function LeadCard({ lead, compact, onAssignChange, onOpen, slaFoo
                         }`}>
                           {FLOW_LABELS[s]}
                         </span>
+                        {slaTone && slaDuration && (
+                          <span className={`mt-1 whitespace-nowrap text-[9px] font-bold leading-none ${slaTone.text}`}>
+                            {slaDuration}
+                          </span>
+                        )}
                       </div>
                       {i < FLOW_STAGES.length - 1 && (
-                        <div className={`h-0.5 w-1 lg:w-2 mt-[9px] lg:mt-[11px] ${isPast ? "bg-emerald-400" : "bg-gray-200"}`} />
+                        <div className={`mt-[9px] h-0.5 w-1 lg:mt-[11px] lg:w-1.5 ${isPast ? "bg-emerald-400" : "bg-gray-200"}`} />
                       )}
                     </div>
                   );
@@ -324,6 +371,15 @@ export default function LeadCard({ lead, compact, onAssignChange, onOpen, slaFoo
         })()}
 
         {/* Footer — mobile: 2 rows (badges+zone, meta); md+: 1 row */}
+          </div>
+
+          {hasSlaPanel && (
+            <div className="mt-3 min-w-0 2xl:mt-0 2xl:h-full">
+              {slaPanel}
+            </div>
+          )}
+        </div>
+
         {(() => {
           const amount = (() => {
             if (compact || !lead.pre_doc_no) return null;
@@ -405,27 +461,16 @@ export default function LeadCard({ lead, compact, onAssignChange, onOpen, slaFoo
               {lead.zone && (
                 <span className="truncate shrink-0">{lead.zone}</span>
               )}
-              {!compact && lead.next_follow_up && (
-                <span className={`ml-auto font-semibold ${isOverdue ? "text-red-600" : "text-amber-600"}`}>
-                  นัดติดตามครั้งถัดไป {formatThaiDateShort(lead.next_follow_up)}{isOverdue ? " (Overdue)" : ""}
+              {showFollowUp && (
+                <span className={`ml-auto inline-flex items-center gap-1 font-semibold ${isOverdue ? "text-amber-700" : "text-gray-500"}`}>
+                  <CalendarIcon className="h-3.5 w-3.5 shrink-0" />
+                  นัดลูกค้า {formatThaiDateShort(lead.next_follow_up!)}{isOverdue ? " · เลยนัดแล้ว" : ""}
                 </span>
               )}
             </div>
           );
           })()}
         </div>
-        {slaFooter !== undefined ? slaFooter : lead.sla_status && lead.sla_due_at && (
-          <div className={`mb-2 inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-xs font-semibold ${
-            lead.sla_status === "breached" ? "bg-red-100 text-red-700" :
-            lead.sla_status === "critical" ? "bg-orange-100 text-orange-700" :
-            lead.sla_status === "warning" ? "bg-amber-100 text-amber-700" :
-            "bg-sky-100 text-sky-700"
-          }`}>
-            <ClockIcon className="h-3.5 w-3.5" />
-            SLA {lead.sla_status === "breached" ? "เกินกำหนด" : lead.sla_status === "critical" ? "เร่งด่วน" : lead.sla_status === "warning" ? "ใกล้กำหนด" : "กำลังดำเนินการ"}
-            <span className="font-normal">· {lead.sla_task_name} · {formatThaiDateShort(lead.sla_due_at)} {formatThaiTime(lead.sla_due_at)}</span>
-          </div>
-        )}
     </div>
   );
 }

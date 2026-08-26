@@ -2,7 +2,8 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { apiFetch } from "@/lib/api";
-import { slaTimeConditionText } from "@/lib/sla-display";
+import { slaTaskLabel, slaTimeConditionText } from "@/lib/sla-display";
+import { summarizeSlaDisplayStatuses, type LeadSlaSummaryCounts } from "@/lib/timeline-activities";
 import { formatThaiDate, formatThaiTime } from "@/lib/utils/formatters";
 
 type SlaStatus = "active" | "warning" | "critical" | "breached" | "completed" | "superseded" | "cancelled";
@@ -93,7 +94,9 @@ export function useLeadSlaTimeline(leadId: number) {
   const refresh = useCallback(async () => {
     try {
       const response = await apiFetch(`/api/leads/${leadId}/sla`) as { items?: LeadSlaItem[] };
-      setItems(response.items || []);
+      // task_name in the row is a snapshot from the last reconcile, so resolve
+      // it through the policy map before anything downstream reads or merges it.
+      setItems((response.items || []).map(item => ({ ...item, task_name: slaTaskLabel(item.policy_code, item.task_name) })));
       setError("");
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : "ไม่สามารถโหลด SLA Timeline ได้");
@@ -104,14 +107,9 @@ export function useLeadSlaTimeline(leadId: number) {
 
   useEffect(() => { void refresh(); }, [refresh]);
 
-  const summary = useMemo(() => items.reduce((acc, item) => {
-    if (now === null) return acc;
-    const status = displayStatus(item, now);
-    if (status === "on_time") acc.onTime += 1;
-    else if (status === "late" || status === "breached") acc.overdue += 1;
-    else if (status !== "cancelled") acc.open += 1;
-    return acc;
-  }, { onTime: 0, overdue: 0, open: 0 }), [items, now]);
+  const summary = useMemo(() => summarizeSlaDisplayStatuses(
+    now === null ? [] : items.map(item => displayStatus(item, now)),
+  ), [items, now]);
 
   return { items, loading, error, now, summary, refresh };
 }
@@ -119,15 +117,18 @@ export function useLeadSlaTimeline(leadId: number) {
 export function LeadSlaSummary({ loading, error, summary }: {
   loading: boolean;
   error: string;
-  summary: { onTime: number; overdue: number; open: number };
+  summary: LeadSlaSummaryCounts;
 }) {
   if (loading) return <span className="h-6 w-28 rounded-full bg-gray-100 animate-pulse" />;
   if (error) return <span className="text-xs text-red-600">โหลด SLA ไม่สำเร็จ</span>;
+  const overdueTotal = summary.completedLate + summary.breachedOpen;
   return (
     <div className="flex flex-wrap items-center gap-1.5 text-xxs font-semibold">
       <span className="px-2 py-1 rounded-full bg-sky-50 text-sky-700">กำลังทำ {summary.open}</span>
       <span className="px-2 py-1 rounded-full bg-emerald-50 text-emerald-700">ผ่าน {summary.onTime}</span>
-      <span className="px-2 py-1 rounded-full bg-red-50 text-red-700">เกิน {summary.overdue}</span>
+      <span className="px-2 py-1 rounded-full bg-red-50 text-red-700">
+        เกิน SLA รวม {overdueTotal} · ปิดแล้ว {summary.completedLate} · ค้าง {summary.breachedOpen}
+      </span>
     </div>
   );
 }

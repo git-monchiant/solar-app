@@ -32,10 +32,11 @@ import { useDialog } from "@/components/ui/Dialog";
 import { useIsMobile } from "@/lib/hooks/useIsMobile";
 import { formatThaiDate as formatDate, formatThaiTime, formatNumber } from "@/lib/utils/formatters";
 import { formatSlotsRange } from "@/lib/time-slots";
+import { slaTaskLabel, slaWorkflowStage, type SlaWorkflowStage } from "@/lib/sla-display";
 import { INFO_LABELS, PRIMARY_REASON_LABEL } from "@/lib/constants/info-labels";
 import FallbackImage from "@/components/ui/FallbackImage";
 import NotificationBell from "@/components/layout/NotificationBell";
-import { compactLatestForwardStatusActivities } from "@/lib/timeline-activities";
+import { compactLatestForwardStatusActivities, shouldShowSlaTimelineItem } from "@/lib/timeline-activities";
 
 const formatAcUnits = (s: string | null): string | null => {
   if (!s) return null;
@@ -71,17 +72,15 @@ const GROUPED_SLA_SECTIONS = new Map<string, string[]>([
   // CLOSE_LEAD clock, and the milestone must sort before that result row.
 ]);
 
-const SLA_STEP_BY_POLICY: Record<string, number> = {
-  FIRST_CONTACT: 0,
-  CONTACT_RETRY: 0,
-  ELECTRICITY_ASSESSMENT: 0,
-  BOOK_SURVEY: 0,
-  SITE_SURVEY: 1,
-  PROPOSAL_ROI: 2,
-  DEPOSIT_CLOSE: 3,
-  SCHEDULE_INSTALLATION: 4,
-  INSTALLATION: 4,
-  CLOSE_LEAD: 5,
+const SLA_DETAIL_STEP_BY_STAGE: Record<SlaWorkflowStage, number> = {
+  pre_survey: 0,
+  booking: 0,
+  survey: 1,
+  quote: 2,
+  order: 3,
+  wait_install: 4,
+  install: 4,
+  warranty: 5,
 };
 
 // Questionnaire (PreSurveyForm §1-§8) label maps. Codes MUST stay in sync
@@ -1007,7 +1006,8 @@ export default function LeadDetailPage({ params }: { params: Promise<{ id: strin
   const hasPreSurveyDone = STEP_ORDER.indexOf(lead.status.split('-')[0]) > 0 || lead.status === "closed";
   const currentStep = stepIndex(lead.status);
   const visibleStep = focus ? (focusedStep ?? currentStep) : null;
-  const slaStepIndex = lead.sla_policy_code ? SLA_STEP_BY_POLICY[lead.sla_policy_code] : undefined;
+  const slaStage = slaWorkflowStage(lead.sla_policy_code);
+  const slaStepIndex = slaStage ? SLA_DETAIL_STEP_BY_STAGE[slaStage] : undefined;
   const slaStatusMeta = lead.sla_status ? {
     breached: { label: "เกินกำหนด", dot: "bg-red-500", badge: "border-red-200 bg-red-50 text-red-700" },
     critical: { label: "เร่งด่วน", dot: "bg-orange-500", badge: "border-orange-200 bg-orange-50 text-orange-700" },
@@ -1193,11 +1193,11 @@ export default function LeadDetailPage({ params }: { params: Promise<{ id: strin
               <button
                 type="button"
                 onClick={openSlaTimeline}
-                title={`${lead.sla_task_name || "งาน SLA"} · กำหนด ${formatDate(lead.sla_due_at)} ${formatThaiTime(lead.sla_due_at)}`}
+                title={`${slaTaskLabel(lead.sla_policy_code, lead.sla_task_name)} · กำหนด ${formatDate(lead.sla_due_at)} ${formatThaiTime(lead.sla_due_at)}`}
                 className={`inline-flex min-h-0 items-center gap-1 rounded-full border px-2 py-1 font-semibold transition-colors hover:brightness-95 ${slaStatusMeta.badge}`}
               >
                 <ClockIcon className="h-3.5 w-3.5 shrink-0" strokeWidth={2} />
-                <span>SLA {slaStatusMeta.label}</span>
+                <span>{lead.sla_status === "breached" ? "ค้างเกิน SLA" : `SLA ${slaStatusMeta.label}`}</span>
                 <span className="rounded-full bg-white/80 px-1.5 font-bold tabular-nums" aria-label={`${slaStatusCount} รายการ`}>
                   {slaStatusCount}
                 </span>
@@ -1404,7 +1404,7 @@ export default function LeadDetailPage({ params }: { params: Promise<{ id: strin
                   <span className="text-[10px] font-semibold leading-tight text-center px-1">{s.label}</span>
                   {slaStatusMeta && slaStepIndex === s.idx && (
                     <span
-                      title={`SLA ${slaStatusMeta.label}: ${lead.sla_task_name || "งานในขั้นตอนนี้"}`}
+                      title={`SLA ${slaStatusMeta.label}: ${slaTaskLabel(lead.sla_policy_code, lead.sla_task_name)}`}
                       className={`h-2 w-2 rounded-full ring-2 ring-white ${slaStatusMeta.dot}`}
                       aria-label={`SLA ${slaStatusMeta.label}`}
                     />
@@ -2805,13 +2805,12 @@ export default function LeadDetailPage({ params }: { params: Promise<{ id: strin
               }
 
               // Superseded/cancelled SLA instances are rollback artifacts, not
-              // workflow events. A Grade without grade_change Activity is also
-              // legacy state, not timed evidence: show the honest "ไม่มีประวัติ
-              // เวลา" milestone above instead of merging it with a backfill SLA
-              // whose migration timestamp looks like the work happened later.
-              const visibleSlaItems = slaItems.filter(item => item.status !== "superseded"
-                && item.status !== "cancelled"
-                && !(item.policy_code === "ELECTRICITY_ASSESSMENT" && gradeActivities.length === 0));
+              // workflow events. A completed Grade without grade_change Activity
+              // is legacy state, not timed evidence: show the honest "ไม่มีประวัติ
+              // เวลา" milestone instead. An open qualification SLA stays visible
+              // because the missing Grade is exactly the unfinished work it tracks.
+              const visibleSlaItems = slaItems.filter(item =>
+                shouldShowSlaTimelineItem(item, gradeActivities.length > 0));
               const sections = [
                 { id: "tl-pre", title: "Pre-Survey", rows: preSurveyRows, tone: "text-sky-700", dot: "bg-sky-500", slaCodes: ["FIRST_CONTACT", "CONTACT_RETRY", "ELECTRICITY_ASSESSMENT", "BOOK_SURVEY"] },
                 { id: "tl-survey", title: "Survey", rows: surveyRows, tone: "text-violet-700", dot: "bg-violet-500", slaCodes: ["SITE_SURVEY"] },

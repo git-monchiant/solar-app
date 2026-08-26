@@ -1,5 +1,74 @@
 const BANGKOK_OFFSET_MS = 7 * 60 * 60 * 1000;
 
+export type SlaWorkflowStage = "pre_survey" | "booking" | "survey" | "quote" | "order" | "wait_install" | "install" | "warranty";
+
+export const SLA_WORKFLOW_STAGE_BY_POLICY: Record<string, SlaWorkflowStage> = {
+  FIRST_CONTACT: "pre_survey",
+  CONTACT_RETRY: "pre_survey",
+  ELECTRICITY_ASSESSMENT: "pre_survey",
+  BOOK_SURVEY: "booking",
+  SITE_SURVEY: "survey",
+  PROPOSAL_ROI: "quote",
+  DEPOSIT_CLOSE: "order",
+  PAYMENT_INSTALLMENT_1: "order",
+  LOAN_PREAPPROVAL: "order",
+  SCHEDULE_INSTALLATION: "wait_install",
+  INSTALLATION: "install",
+  CLOSE_LEAD: "warranty",
+};
+
+export function slaWorkflowStage(policyCode?: string | null): SlaWorkflowStage | null {
+  return policyCode ? SLA_WORKFLOW_STAGE_BY_POLICY[policyCode] ?? null : null;
+}
+
+/**
+ * The one place a policy's step name is written. sla-service.ts reconciles
+ * instances with these strings and the UI reads them back through
+ * slaTaskLabel(), so a renamed step lands in both without a data migration.
+ *
+ * lead_sla_instances.task_name is only a snapshot taken when the row was last
+ * reconciled — refreshOpenSlaStates() rewrites `status` on every Today load but
+ * never the name, so rows created before a rename keep the old wording until
+ * someone edits that lead. Reading through the map avoids showing that stale
+ * copy. CONTACT_RETRY is absent on purpose: its name carries the round number
+ * ("ติดตามลูกค้าครั้งที่ 2"), so it falls back to the stored value.
+ */
+export const SLA_TASK_LABEL: Record<string, string> = {
+  FIRST_CONTACT: "ติดต่อ Lead ครั้งแรก",
+  ELECTRICITY_ASSESSMENT: "ประเมินและกำหนด Grade Lead",
+  BOOK_SURVEY: "ยืนยันวัน เวลา และนัดหมาย Pre-Survey",
+  SITE_SURVEY: "เข้าตรวจสำรวจหน้างาน",
+  PROPOSAL_ROI: "จัดส่ง Proposal พร้อม ROI และทางเลือกการเงิน",
+  DEPOSIT_CLOSE: "ติดตามปิดการขายและรับมัดจำ",
+  PAYMENT_INSTALLMENT_1: "ติดตามชำระเงินงวดที่ 1 เพื่อยืนยันราคา",
+  LOAN_PREAPPROVAL: "ติดตามผลอนุมัติเบื้องต้นจากธนาคาร",
+  SCHEDULE_INSTALLATION: "นัดวันติดตั้งและแจ้งเตรียมเอกสาร",
+  INSTALLATION: "ติดตั้ง ทดสอบระบบ และส่งมอบงาน",
+  CLOSE_LEAD: "ปิด Lead เมื่อออกใบรับประกัน",
+};
+
+export function slaTaskLabel(policyCode?: string | null, taskName?: string | null): string {
+  return (policyCode ? SLA_TASK_LABEL[policyCode] : null) ?? taskName ?? "งาน SLA";
+}
+
+/**
+ * True when one of the lead's SLA clocks already IS the follow-up appointment,
+ * so the card must not print the same date twice. Takes every SLA the card
+ * holds — CONTACT_RETRY is often not the most urgent one, and the collapsed
+ * card only renders the first.
+ */
+export function slaOwnsFollowUpDate(
+  items: { policy_code?: string | null; due_at?: string | null }[],
+  nextFollowUp?: string | null,
+): boolean {
+  if (!nextFollowUp) return false;
+  const followUpDay = String(nextFollowUp).slice(0, 10);
+  return items.some(item =>
+    item.policy_code === "CONTACT_RETRY"
+    && !!item.due_at
+    && String(item.due_at).slice(0, 10) === followUpDay);
+}
+
 function bangkokHour(value: Date): number {
   return new Date(value.getTime() + BANGKOK_OFFSET_MS).getUTCHours();
 }

@@ -2,11 +2,12 @@
 import { CheckIcon, PlusIcon } from "@/components/ui/icons";
 
 import { apiFetch } from "@/lib/api";
-import { createContext, useCallback, useContext, useEffect, useMemo, useState, type ComponentProps } from "react";
+import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ComponentProps } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useOpenLead } from "@/lib/hooks/useOpenLead";
 import BaseLeadCard, { LeadData } from "@/components/lead/LeadCard";
 import TodaySlaFooter, { type TodaySlaItem, type TodaySlaSolarUser, type TodaySlaStatus } from "@/components/sla/TodaySlaFooter";
+import { slaTaskLabel } from "@/lib/sla-display";
 import ListPageHeader from "@/components/layout/ListPageHeader";
 import NewLeadModal from "@/components/modal/NewLeadModal";
 import ChannelPickerModal from "@/components/shared/ChannelPickerModal";
@@ -34,7 +35,8 @@ interface TodayData {
 
 type TodayTab = "sales_all" | "sales" | "booking" | "quote" | "deposit_paid" | "sales_wait_install" | "sales_solar" | "solar" | "solar_survey" | "solar_quote" | "solar_wait_install" | "solar_install" | "solar_installing" | "solar_warranty" | "solar_gridtie" | "calendar";
 
-type SlaFilter = "" | "all" | "breached" | "near_due" | "active" | "without";
+type SlaFilterKey = "breached" | "near_due" | "active" | "without";
+type SlaStatusKey = Exclude<SlaFilterKey, "without">;
 
 type SlaDashboardData = {
   counts: Record<TodaySlaStatus, number>;
@@ -42,25 +44,39 @@ type SlaDashboardData = {
   items: TodaySlaItem[];
 };
 
-const SLA_FILTER_LABEL: Record<SlaFilter, string> = {
-  "": "แสดง Lead ทั้งหมด",
-  all: "มีงาน SLA",
-  breached: "SLA เกินกำหนด",
-  near_due: "SLA ใกล้กำหนด",
-  active: "SLA กำลังดำเนินการ",
-  without: "ไม่มีงาน SLA",
-};
+// เรียงตามความเร่งด่วน ใช้ทั้งลำดับปุ่มบนจอและลำดับค่าใน URL จะได้ลิงก์คงที่
+const SLA_FILTER_ORDER: SlaFilterKey[] = ["breached", "near_due", "active", "without"];
 
-function parseSlaFilter(value: string | null): SlaFilter {
-  return value === "all" || value === "breached" || value === "near_due" || value === "active" || value === "without"
-    ? value
-    : "";
+const SLA_CHIPS: { key: SlaFilterKey; label: string; on: string; tick: string }[] = [
+  { key: "breached", label: "เกินกำหนด", on: "border-red-200 bg-red-50 text-red-700", tick: "border-red-500 bg-red-500" },
+  { key: "near_due", label: "ใกล้กำหนด", on: "border-amber-200 bg-amber-50 text-amber-700", tick: "border-amber-500 bg-amber-500" },
+  { key: "active", label: "ตามแผน", on: "border-sky-200 bg-sky-50 text-sky-700", tick: "border-sky-500 bg-sky-500" },
+  { key: "without", label: "ไม่มีงาน SLA", on: "border-gray-300 bg-gray-100 text-gray-700", tick: "border-gray-600 bg-gray-600" },
+];
+
+/** "ไม่มีงาน SLA" กับสถานะอื่นอยู่ร่วมกันไม่ได้ — Lead ที่ไม่มี SLA ย่อมไม่มีสถานะ SLA */
+function normalizeSlaFilters(keys: SlaFilterKey[]): SlaFilterKey[] {
+  const unique = new Set(keys);
+  if (unique.has("without")) return ["without"];
+  return SLA_FILTER_ORDER.filter(key => unique.has(key));
 }
 
-function matchesSlaFilter(item: TodaySlaItem, filter: SlaFilter): boolean {
-  if (filter === "all") return true;
-  if (filter === "near_due") return item.status === "warning" || item.status === "critical";
-  return filter === "breached" || filter === "active" ? item.status === filter : false;
+function parseSlaFilters(value: string | null): SlaFilterKey[] {
+  if (!value) return [];
+  const keys: SlaFilterKey[] = [];
+  for (const part of value.split(",")) {
+    const key = part.trim();
+    // ลิงก์เดิม ?sla=all คือ "มีงาน SLA" ซึ่งเท่ากับติ๊กครบทั้งสามสถานะ
+    if (key === "all") keys.push("breached", "near_due", "active");
+    else if ((SLA_FILTER_ORDER as string[]).includes(key)) keys.push(key as SlaFilterKey);
+  }
+  return normalizeSlaFilters(keys);
+}
+
+function matchesSlaStatus(item: TodaySlaItem, keys: SlaStatusKey[]): boolean {
+  return keys.some(key => (key === "near_due"
+    ? item.status === "warning" || item.status === "critical"
+    : item.status === key));
 }
 
 type TodaySlaCardContextValue = {
@@ -88,6 +104,9 @@ function LeadCard(props: ComponentProps<typeof BaseLeadCard>) {
     sla_task_name: primary.task_name,
     sla_status: primary.status,
     sla_due_at: primary.due_at,
+    // The footer collapses to the most urgent SLA, so pass the rest too - the
+    // card needs all of them to tell whether one already owns the follow-up date.
+    sla_items: items.map(item => ({ policy_code: item.policy_code, due_at: item.due_at })),
   } : props.lead;
 
   return (
@@ -124,7 +143,9 @@ export default function TodayPage() {
   const [mineOnly, setMineOnly] = useState(false);
   const router = useRouter();
   const searchParams = useSearchParams();
-  const [slaFilter, setSlaFilter] = useState<SlaFilter>(() => parseSlaFilter(searchParams.get("sla")));
+  const [slaFilters, setSlaFilters] = useState<SlaFilterKey[]>(() => parseSlaFilters(searchParams.get("sla")));
+  const [slaSubOpen, setSlaSubOpen] = useState(false);
+  const slaSubRef = useRef<HTMLSpanElement | null>(null);
   const [slaData, setSlaData] = useState<SlaDashboardData | null>(null);
   const [slaDataRoleKey, setSlaDataRoleKey] = useState("");
   const [slaError, setSlaError] = useState<string | null>(null);
@@ -135,7 +156,14 @@ export default function TodayPage() {
   const [assigningSlaId, setAssigningSlaId] = useState<number | null>(null);
   const { activeRoles } = useActiveRoles();
   const { me } = useMe();
-  const slaEnabled = slaFilter !== "";
+  const slaEnabled = slaFilters.length > 0;
+  const slaWithoutOnly = slaFilters[0] === "without";
+  // slaStatusMode = กำลังกรองด้วย "สถานะ" จริง ๆ (ไม่ใช่ "ไม่มีงาน SLA" ซึ่งไม่มีสถานะให้กรอง)
+  const slaStatusKeys = useMemo(
+    () => slaFilters.filter((key): key is SlaStatusKey => key !== "without"),
+    [slaFilters],
+  );
+  const slaStatusMode = slaStatusKeys.length > 0;
   const slaAvailable = hasRole(activeRoles, "admin", "sales", "solar");
   const activeRoleKey = activeRoles.join("|");
   const salesManagerView = activeRoles.includes("admin") || activeRoles.includes("sales_sup");
@@ -154,8 +182,17 @@ export default function TodayPage() {
   }, [activeRoleKey]);
 
   useEffect(() => {
-    setSlaFilter(parseSlaFilter(searchParams.get("sla")));
+    setSlaFilters(parseSlaFilters(searchParams.get("sla")));
   }, [searchParams]);
+
+  useEffect(() => {
+    if (!slaSubOpen) return;
+    const close = (event: MouseEvent) => {
+      if (!slaSubRef.current?.contains(event.target as Node)) setSlaSubOpen(false);
+    };
+    document.addEventListener("mousedown", close);
+    return () => document.removeEventListener("mousedown", close);
+  }, [slaSubOpen]);
 
   useEffect(() => {
     if (!slaAvailable || loading) return;
@@ -207,7 +244,7 @@ export default function TodayPage() {
 
   const slaStageOptions = useMemo(() => {
     const options = new Map<string, string>();
-    for (const item of scopedSlaData?.items ?? []) options.set(item.policy_code, item.task_name);
+    for (const item of scopedSlaData?.items ?? []) options.set(item.policy_code, slaTaskLabel(item.policy_code, item.task_name));
     return Array.from(options, ([value, label]) => ({ value, label }))
       .sort((a, b) => a.label.localeCompare(b.label, "th"));
   }, [scopedSlaData]);
@@ -244,15 +281,43 @@ export default function TodayPage() {
 
   const slaItemsByLead = useMemo(() => {
     const grouped = new Map<number, TodaySlaItem[]>();
-    if (slaFilter === "without") return grouped;
+    if (slaWithoutOnly) return grouped;
     for (const item of filteredSlaItems) {
-      if (slaFilter && !matchesSlaFilter(item, slaFilter)) continue;
+      if (slaStatusKeys.length > 0 && !matchesSlaStatus(item, slaStatusKeys)) continue;
       const items = grouped.get(item.lead_id) ?? [];
       items.push(item);
       grouped.set(item.lead_id, items);
     }
     return grouped;
-  }, [filteredSlaItems, slaFilter]);
+  }, [filteredSlaItems, slaStatusKeys, slaWithoutOnly]);
+
+  // จำนวน Lead แบบไม่ซ้ำต่อสถานะ สำหรับตัวเลขบนชิป — ตั้งใจไม่เอาตัวกรองสถานะมาคิด
+  // ไม่งั้นพอติ๊ก "เกินกำหนด" ตัวเลขของชิปที่เหลือจะกลายเป็น 0 ทันที
+  const slaChipCounts = useMemo(() => {
+    const ids: Record<SlaStatusKey, Set<number>> = { breached: new Set(), near_due: new Set(), active: new Set() };
+    for (const item of filteredSlaItems) {
+      if (item.status === "breached") ids.breached.add(item.lead_id);
+      else if (item.status === "warning" || item.status === "critical") ids.near_due.add(item.lead_id);
+      else if (item.status === "active") ids.active.add(item.lead_id);
+    }
+    return { breached: ids.breached.size, near_due: ids.near_due.size, active: ids.active.size };
+  }, [filteredSlaItems]);
+
+  // Lead ในกองของวันนี้ที่ไม่มีงาน SLA เปิดอยู่เลย — Lead เดียวอยู่ได้หลาย section จึงนับผ่าน Set
+  const slaWithoutCount = useMemo(() => {
+    if (!todayData) return 0;
+    const seen = new Set<number>();
+    for (const value of Object.values(todayData)) {
+      if (!Array.isArray(value)) continue;
+      for (const lead of value as LeadData[]) {
+        if (!allSlaLeadIds.has(lead.id)) seen.add(lead.id);
+      }
+    }
+    return seen.size;
+  }, [todayData, allSlaLeadIds]);
+
+  const slaSubFilterCount = [slaStageFilter !== "all", slaSalesOwnerFilter !== "all", slaSolarOwnerFilter !== "all"]
+    .filter(Boolean).length;
 
   useEffect(() => {
     const savedSortField = localStorage.getItem("today.sortField");
@@ -358,12 +423,12 @@ export default function TodayPage() {
     let out = leads;
     if (slaEnabled) {
       if (!scopedSlaData) return [];
-      out = slaFilter === "without"
+      out = slaWithoutOnly
         ? out.filter(lead => !allSlaLeadIds.has(lead.id))
         : out.filter(lead => slaItemsByLead.has(lead.id));
     }
     if (mineOnly && me?.id) {
-      out = slaEnabled && slaFilter !== "without"
+      out = slaStatusMode
         ? out.filter(lead => (slaItemsByLead.get(lead.id) ?? []).some(item => item.owner_user_id === me.id))
         : out.filter(lead => lead.assigned_user_id === me.id);
     }
@@ -381,6 +446,7 @@ export default function TodayPage() {
       l.assigned_name?.toLowerCase().includes(q) ||
       l.pre_doc_no?.toLowerCase().includes(q) ||
       (slaItemsByLead.get(l.id) ?? []).some(item =>
+        slaTaskLabel(item.policy_code, item.task_name).toLowerCase().includes(q) ||
         item.task_name.toLowerCase().includes(q) ||
         item.policy_code.toLowerCase().includes(q) ||
         item.owner_name?.toLowerCase().includes(q)
@@ -445,7 +511,7 @@ export default function TodayPage() {
     const ts = (v: string | null | undefined, fallback: number) =>
       v ? new Date(v).getTime() : fallback;
     const arr = [...leads];
-    if (slaEnabled && slaFilter !== "without") {
+    if (slaStatusMode) {
       const priority: Record<TodaySlaStatus, number> = { breached: 0, critical: 1, warning: 2, active: 3 };
       arr.sort((a, b) => {
         const aItem = slaItemsByLead.get(a.id)?.[0];
@@ -484,24 +550,141 @@ export default function TodayPage() {
     return arr;
   };
 
-  const changeSlaFilter = (value: SlaFilter) => {
-    setSlaFilter(value);
-    if (!value || value === "without") {
+  const applySlaFilters = (next: SlaFilterKey[]) => {
+    setSlaFilters(next);
+    // ไม่มีสถานะไหนถูกเลือก = ไม่มีอะไรให้กรองย่อย ล้างทิ้งไม่ให้ค้างแบบมองไม่เห็น
+    if (next.length === 0 || next[0] === "without") {
       setSlaStageFilter("all");
       setSlaSalesOwnerFilter("all");
       setSlaSolarOwnerFilter("all");
+      setSlaSubOpen(false);
     }
     const params = new URLSearchParams(searchParams.toString());
-    if (value) params.set("sla", value);
+    if (next.length > 0) params.set("sla", next.join(","));
     else params.delete("sla");
     const query = params.toString();
     router.replace(query ? `/today?${query}` : "/today", { scroll: false });
+  };
+
+  const toggleSlaFilter = (key: SlaFilterKey) => {
+    if (slaFilters.includes(key)) {
+      applySlaFilters(slaFilters.filter(current => current !== key));
+      return;
+    }
+    // "ไม่มีงาน SLA" กับสถานะอื่นเลือกพร้อมกันไม่ได้ อันที่เพิ่งกดชนะ
+    applySlaFilters(key === "without"
+      ? ["without"]
+      : normalizeSlaFilters([...slaFilters.filter(current => current !== "without"), key]));
+  };
+
+  const renderSlaChip = (chip: (typeof SLA_CHIPS)[number]) => {
+    const on = slaFilters.includes(chip.key);
+    const count = chip.key === "without" ? slaWithoutCount : slaChipCounts[chip.key];
+    return (
+      <button
+        type="button"
+        aria-pressed={on}
+        onClick={() => toggleSlaFilter(chip.key)}
+        className={`h-7 inline-flex items-center gap-1.5 rounded-full border px-2.5 text-xxs font-semibold whitespace-nowrap transition-colors ${
+          on ? chip.on : "border-gray-200 bg-white text-gray-600 hover:border-gray-400"
+        }`}
+      >
+        <span className={`w-3 h-3 rounded border-2 flex items-center justify-center ${on ? chip.tick : "border-gray-300"}`}>
+          {on && <CheckIcon className="w-1.5 h-1.5 text-white" strokeWidth={4} />}
+        </span>
+        {chip.label}
+        <span className="font-mono tabular-nums font-bold">{count.toLocaleString("th-TH")}</span>
+      </button>
+    );
   };
 
   // Keep SLA controls next to "งานของฉัน" so users can narrow urgent work
   // without leaving Today. Controls wrap on mobile instead of disappearing.
   const sortControls = (
     <div className="flex items-center justify-end gap-2 flex-wrap">
+      {slaAvailable && (
+        <span className="inline-flex flex-wrap items-center gap-1.5">
+          <span className="text-xxs font-bold uppercase tracking-wider text-gray-400">SLA</span>
+          {SLA_CHIPS.map(chip => (
+            <span key={chip.key} className="inline-flex items-center gap-1.5">
+              {/* Lead ที่ไม่มี SLA เป็นคนละชุดกับสถานะ SLA — เส้นคั่นบอกว่าเลือกร่วมกันไม่ได้ */}
+              {chip.key === "without" && <span aria-hidden className="h-5 w-px bg-gray-200" />}
+              {renderSlaChip(chip)}
+            </span>
+          ))}
+          {slaStatusMode && (
+            <span className="relative inline-flex" ref={slaSubRef}>
+              <button
+                type="button"
+                aria-expanded={slaSubOpen}
+                onClick={() => setSlaSubOpen(open => !open)}
+                className={`h-7 inline-flex items-center gap-1.5 rounded-md border px-2.5 text-xxs font-semibold whitespace-nowrap transition-colors ${
+                  slaSubFilterCount > 0
+                    ? "border-gray-800 bg-white text-gray-900"
+                    : "border-dashed border-gray-300 bg-white text-gray-600 hover:border-gray-500"
+                }`}
+              >
+                ตัวกรองย่อย
+                {slaSubFilterCount > 0 && (
+                  <span className="inline-flex h-4 min-w-4 items-center justify-center rounded-full bg-gray-800 px-1 text-[10px] font-bold text-white">
+                    {slaSubFilterCount}
+                  </span>
+                )}
+              </button>
+              {slaSubOpen && (
+                <div className="absolute right-0 top-8 z-30 flex w-60 flex-col gap-1.5 rounded-lg border border-gray-300 bg-white p-2.5 text-left shadow-lg">
+                  <span className="text-xxs font-bold uppercase tracking-wider text-gray-400">กรองเฉพาะ</span>
+                  <select
+                    aria-label="กรองตามขั้นตอน SLA"
+                    value={slaStageFilter}
+                    onChange={event => setSlaStageFilter(event.target.value)}
+                    className="h-7 w-full rounded-md border border-gray-200 bg-white px-2 pr-7 text-xxs font-medium text-gray-700 outline-none focus:border-gray-400"
+                  >
+                    <option value="all">ทุกขั้นตอน SLA</option>
+                    {slaStageOptions.map(option => (
+                      <option key={option.value} value={option.value}>{option.label}</option>
+                    ))}
+                  </select>
+                  {salesManagerView && (
+                    <select
+                      aria-label="กรองผู้รับผิดชอบ Sales"
+                      value={slaSalesOwnerFilter}
+                      onChange={event => {
+                        setSlaSalesOwnerFilter(event.target.value);
+                        if (event.target.value !== "all") setSlaSolarOwnerFilter("all");
+                      }}
+                      className="h-7 w-full rounded-md border border-gray-200 bg-white px-2 pr-7 text-xxs font-medium text-gray-700 outline-none focus:border-gray-400"
+                    >
+                      <option value="all">Sales ทุกคน</option>
+                      <option value="unassigned">Sales ยังไม่มอบหมาย</option>
+                      {slaOwnerOptions.sales.map(owner => (
+                        <option key={owner.id} value={owner.id}>{owner.name}</option>
+                      ))}
+                    </select>
+                  )}
+                  {solarManagerView && (
+                    <select
+                      aria-label="กรองผู้รับผิดชอบ Solar"
+                      value={slaSolarOwnerFilter}
+                      onChange={event => {
+                        setSlaSolarOwnerFilter(event.target.value);
+                        if (event.target.value !== "all") setSlaSalesOwnerFilter("all");
+                      }}
+                      className="h-7 w-full rounded-md border border-gray-200 bg-white px-2 pr-7 text-xxs font-medium text-gray-700 outline-none focus:border-gray-400"
+                    >
+                      <option value="all">Solar ทุกคน</option>
+                      <option value="unassigned">Solar ยังไม่มอบหมาย</option>
+                      {slaOwnerOptions.solar.map(owner => (
+                        <option key={owner.id} value={owner.id}>{owner.name}</option>
+                      ))}
+                    </select>
+                  )}
+                </div>
+              )}
+            </span>
+          )}
+        </span>
+      )}
       <button
         type="button"
         onClick={() => {
@@ -511,87 +694,12 @@ export default function TodayPage() {
         }}
         className="h-7 inline-flex items-center gap-1.5 px-1 text-xxs font-medium text-gray-700 cursor-pointer whitespace-nowrap"
       >
-        <span className={`w-3.5 h-3.5 rounded-full border-2 flex items-center justify-center transition-colors ${mineOnly ? "border-gray-800 bg-gray-800" : "border-gray-300"}`}>
+        <span className={`w-3.5 h-3.5 rounded border-2 flex items-center justify-center transition-colors ${mineOnly ? "border-gray-800 bg-gray-800" : "border-gray-300"}`}>
           {mineOnly && <CheckIcon className="w-2 h-2 text-white" strokeWidth={4} />}
         </span>
         งานของฉัน
       </button>
-      {slaAvailable && (
-        <label className="inline-flex items-center">
-          <span className="sr-only">ตัวกรอง SLA</span>
-          <select
-            aria-label="ตัวกรอง SLA"
-            value={slaFilter}
-            onChange={event => changeSlaFilter(event.target.value as SlaFilter)}
-            className={`h-7 max-w-44 rounded-md border px-2 pr-7 text-xxs font-semibold outline-none ${
-              slaEnabled ? "border-red-200 bg-red-50 text-red-700" : "border-gray-200 bg-white text-gray-700"
-            }`}
-          >
-            {(Object.entries(SLA_FILTER_LABEL) as [SlaFilter, string][]).map(([value, label]) => (
-              <option key={value || "default"} value={value}>{label}</option>
-            ))}
-          </select>
-        </label>
-      )}
-      {slaEnabled && slaFilter !== "without" && (
-        <>
-          <label className="inline-flex items-center">
-            <span className="sr-only">กรองตามขั้นตอน SLA</span>
-            <select
-              aria-label="กรองตามขั้นตอน SLA"
-              value={slaStageFilter}
-              onChange={event => setSlaStageFilter(event.target.value)}
-              className="h-7 max-w-48 rounded-md border border-gray-200 bg-white px-2 pr-7 text-xxs font-medium text-gray-700 outline-none focus:border-gray-400"
-            >
-              <option value="all">ทุกขั้นตอน SLA</option>
-              {slaStageOptions.map(option => (
-                <option key={option.value} value={option.value}>{option.label}</option>
-              ))}
-            </select>
-          </label>
-          {salesManagerView && (
-            <label className="inline-flex items-center">
-              <span className="sr-only">กรองผู้รับผิดชอบ Sales</span>
-              <select
-                aria-label="กรองผู้รับผิดชอบ Sales"
-                value={slaSalesOwnerFilter}
-                onChange={event => {
-                  setSlaSalesOwnerFilter(event.target.value);
-                  if (event.target.value !== "all") setSlaSolarOwnerFilter("all");
-                }}
-                className="h-7 max-w-44 rounded-md border border-gray-200 bg-white px-2 pr-7 text-xxs font-medium text-gray-700 outline-none focus:border-gray-400"
-              >
-                <option value="all">Sales ทุกคน</option>
-                <option value="unassigned">Sales ยังไม่มอบหมาย</option>
-                {slaOwnerOptions.sales.map(owner => (
-                  <option key={owner.id} value={owner.id}>{owner.name}</option>
-                ))}
-              </select>
-            </label>
-          )}
-          {solarManagerView && (
-            <label className="inline-flex items-center">
-              <span className="sr-only">กรองผู้รับผิดชอบ Solar</span>
-              <select
-                aria-label="กรองผู้รับผิดชอบ Solar"
-                value={slaSolarOwnerFilter}
-                onChange={event => {
-                  setSlaSolarOwnerFilter(event.target.value);
-                  if (event.target.value !== "all") setSlaSalesOwnerFilter("all");
-                }}
-                className="h-7 max-w-44 rounded-md border border-gray-200 bg-white px-2 pr-7 text-xxs font-medium text-gray-700 outline-none focus:border-gray-400"
-              >
-                <option value="all">Solar ทุกคน</option>
-                <option value="unassigned">Solar ยังไม่มอบหมาย</option>
-                {slaOwnerOptions.solar.map(owner => (
-                  <option key={owner.id} value={owner.id}>{owner.name}</option>
-                ))}
-              </select>
-            </label>
-          )}
-        </>
-      )}
-      {slaEnabled ? (
+      {slaStatusMode ? (
         <span className="hidden xl:inline text-xxs font-semibold text-gray-500">เรียงตามความเร่งด่วนของ SLA</span>
       ) : (
         <>

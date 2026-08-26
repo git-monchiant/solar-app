@@ -19,9 +19,30 @@ import {
 } from "../../src/lib/sla-rules.ts";
 import * as rules from "../../src/lib/sla-rules.ts";
 import { SLA_TIME_CONDITION_TEXT, slaTimeConditionText } from "../../src/lib/sla-display.ts";
-import { compactLatestForwardStatusActivities } from "../../src/lib/timeline-activities.ts";
+import {
+  compactLatestForwardStatusActivities,
+  shouldShowSlaTimelineItem,
+  summarizeSlaDisplayStatuses,
+} from "../../src/lib/timeline-activities.ts";
 
 const iso = d => d.toISOString();
+
+assert.deepEqual(
+  summarizeSlaDisplayStatuses(["on_time", "late", "late", "breached", "active", "cancelled"]),
+  { onTime: 1, completedLate: 2, breachedOpen: 1, open: 1 },
+);
+
+// An ungraded lead has no grade activity yet because qualification is still
+// unfinished. Its live SLA must be visible; only completed legacy backfills
+// without activity evidence stay hidden.
+{
+  const base = { policy_code: "ELECTRICITY_ASSESSMENT", completed_at: null };
+  assert.equal(shouldShowSlaTimelineItem({ ...base, status: "breached" }, false), true);
+  assert.equal(shouldShowSlaTimelineItem({ ...base, status: "active" }, false), true);
+  assert.equal(shouldShowSlaTimelineItem({ ...base, status: "completed", completed_at: "2026-08-25T10:00:00" }, false), false);
+  assert.equal(shouldShowSlaTimelineItem({ ...base, status: "completed", completed_at: "2026-08-25T10:00:00" }, true), true);
+  assert.equal(shouldShowSlaTimelineItem({ ...base, status: "cancelled" }, false), false);
+}
 
 // Every SLA process rendered in Lead Timeline explains the time window the
 // runtime applies to its clock.
@@ -212,6 +233,11 @@ assert.match(completedBookMigration, /appointment_before_payment/);
 const latestOrderMigration = readFileSync(new URL("../migrations/178_latest_order_transition_sla.sql", import.meta.url), "utf8");
 assert.match(latestOrderMigration, /latest_forward_order_transition/);
 assert.match(latestOrderMigration, /a\.created_at DESC,a\.id DESC/);
+const siteSurveySevenDaysMigration = readFileSync(new URL("../migrations/179_site_survey_seven_days_all.sql", import.meta.url), "utf8");
+assert.match(siteSurveySevenDaysMigration, /DATEADD\(DAY, 7, si\.started_at\) AS due_at/);
+assert.match(siteSurveySevenDaysMigration, /DATEADD\(DAY, 5, si\.started_at\) AS warning_at/);
+assert.match(siteSurveySevenDaysMigration, /policy_code = 'SITE_SURVEY'/);
+assert.match(siteSurveySevenDaysMigration, /site_survey_seven_days_all/);
 const preSurveyStepSource = readFileSync(new URL("../../src/components/lead/detail/steps/PreSurveyStep.tsx", import.meta.url), "utf8");
 assert.match(preSurveyStepSource, /preSurveyFeeType !== "free"/);
 assert.match(preSurveyStepSource, /payment_confirmed: true/);
