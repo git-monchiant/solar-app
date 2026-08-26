@@ -144,7 +144,7 @@ export default function PipelinePage() {
     return parseSlaFilters(localStorage.getItem("pipeline.sla"));
   });
 
-  // ตัวกรองย่อยไม่จำข้ามรอบเหมือนชิป — เปิดหน้ามาแล้วเจอตัวกรองแคบ ๆ ที่มองไม่เห็น
+  // ตัวกรองใน popover ไม่จำข้ามรอบเหมือนชิป — เปิดหน้ามาแล้วเจอตัวกรองแคบ ๆ ที่มองไม่เห็น
   // เป็นกับดักที่แย่กว่าความสะดวกที่ได้ (หน้า Today ก็ไม่จำเหมือนกัน)
   const [slaStageFilter, setSlaStageFilter] = useState("all");
   const [slaSalesOwnerFilter, setSlaSalesOwnerFilter] = useState("all");
@@ -265,7 +265,7 @@ export default function PipelinePage() {
   const slaSubFilterCount = [slaStageFilter !== "all", salesOwnerFilter !== "all", solarOwnerFilter !== "all"]
     .filter(Boolean).length;
 
-  // ตัวกรองย่อยมีผลกับทั้งตัวเลขบนชิปและรายการที่แสดง ตัวเลขจึงยังบอกความจริง
+  // ตัวกรองใน popover มีผลกับทั้งตัวเลขบนชิปและรายการที่แสดง ตัวเลขจึงยังบอกความจริง
   // Lead ที่ไม่มี SLA ปล่อยผ่าน ไม่งั้นชิป "ไม่มีงาน SLA" จะกลายเป็น 0 ทันทีที่เลือกขั้นตอน
   const matchesSlaOwner = (l: Lead, value: string, role: "sales" | "solar") => {
     if (value === "all") return true;

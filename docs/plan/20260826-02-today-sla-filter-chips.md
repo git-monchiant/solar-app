@@ -201,6 +201,8 @@ version 2.0.27 → 2.0.28
 - แท็บ ติดตามใบเสนอราคา — ไม่พบข้อความ `เร่ง Solar` และไม่เหลือ `border-blue-200` ในหน้า
 - horizontal overflow 0 · console error 0 · tsc และ eslint ผ่าน
 
+> **ชื่อปุ่มเปลี่ยนแล้ว** — ปุ่ม "ตัวกรองย่อย" ที่เอกสารนี้อ้างถึง ตอนนี้ใช้ชื่อ "ตัวกรอง" เฉย ๆ ทั้งหน้า Today และ Pipeline (26 ส.ค.)
+
 ## Open Questions
 
 - ควรจำค่าที่เลือกไว้ใน localStorage เหมือน `today.mineOnly` ด้วยไหม

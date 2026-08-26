@@ -36,7 +36,7 @@ function SlaFilterChip({ chip, on, count, onToggle }: {
  * คนนับเองแล้วส่งมาทาง `counts` — สองหน้านับคนละแบบ (Today นับใบที่แสดงเพราะ
  * Lead เดียวโผล่ได้หลายกลุ่ม ส่วน Pipeline เป็น list แบนนับตัว Lead ตรง ๆ)
  *
- * @param trailing ปุ่มที่ต่อท้ายในกรอบเดียวกัน เช่น "ตัวกรองย่อย" ของหน้า Today
+ * @param trailing ปุ่มที่ต่อท้ายในกรอบเดียวกัน เช่น ปุ่ม "ตัวกรอง" (popover) ของหน้า Today
  */
 export default function SlaFilterChips({ filters, counts, onToggle, trailing }: {
   filters: SlaFilterKey[];
