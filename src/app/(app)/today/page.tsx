@@ -47,11 +47,11 @@ type SlaDashboardData = {
 // เรียงตามความเร่งด่วน ใช้ทั้งลำดับปุ่มบนจอและลำดับค่าใน URL จะได้ลิงก์คงที่
 const SLA_FILTER_ORDER: SlaFilterKey[] = ["breached", "near_due", "active", "without"];
 
-const SLA_CHIPS: { key: SlaFilterKey; label: string; on: string; tick: string }[] = [
-  { key: "breached", label: "เกินกำหนด", on: "border-red-200 bg-red-50 text-red-700", tick: "border-red-500 bg-red-500" },
-  { key: "near_due", label: "ใกล้กำหนด", on: "border-amber-200 bg-amber-50 text-amber-700", tick: "border-amber-500 bg-amber-500" },
-  { key: "active", label: "ตามแผน", on: "border-sky-200 bg-sky-50 text-sky-700", tick: "border-sky-500 bg-sky-500" },
-  { key: "without", label: "ไม่มีงาน SLA", on: "border-gray-300 bg-gray-100 text-gray-700", tick: "border-gray-600 bg-gray-600" },
+const SLA_CHIPS: { key: SlaFilterKey; label: string; on: string; tick: string; num: string }[] = [
+  { key: "breached", label: "เกินกำหนด", on: "border-red-200 bg-red-50 text-red-700", tick: "border-red-500 bg-red-500", num: "text-red-600" },
+  { key: "near_due", label: "ใกล้กำหนด", on: "border-amber-200 bg-amber-50 text-amber-700", tick: "border-amber-500 bg-amber-500", num: "text-amber-600" },
+  { key: "active", label: "ตามแผน", on: "border-sky-200 bg-sky-50 text-sky-700", tick: "border-sky-500 bg-sky-500", num: "text-sky-700" },
+  { key: "without", label: "ไม่มีงาน SLA", on: "border-gray-300 bg-gray-100 text-gray-700", tick: "border-gray-600 bg-gray-600", num: "text-gray-500" },
 ];
 
 /** "ไม่มีงาน SLA" กับสถานะอื่นอยู่ร่วมกันไม่ได้ — Lead ที่ไม่มี SLA ย่อมไม่มีสถานะ SLA */
@@ -669,7 +669,8 @@ export default function TodayPage() {
           {on && <CheckIcon className="w-1.5 h-1.5 text-white" strokeWidth={4} />}
         </span>
         {chip.label}
-        <span className="font-mono tabular-nums font-bold">{count.toLocaleString("th-TH")}</span>
+        {/* ยังไม่ติ๊กก็ยังคุมสีของตัวเอง — กวาดตาแถวเดียวรู้ว่าสีไหนคือเรื่องด่วน ตามม็อกอัพ */}
+        <span className={`font-mono tabular-nums font-bold ${on ? "" : chip.num}`}>{count.toLocaleString("th-TH")}</span>
       </button>
     );
   };
@@ -1133,9 +1134,6 @@ export default function TodayPage() {
         {/* Sales-Solar Tab — sales follows up on solar team's progress */}
         {visibleTab === "sales_solar" && (
           <>
-            <div className="rounded-lg bg-blue-50 border border-blue-200 px-3 py-2 text-xs text-blue-800">
-              รายการที่รอใบเสนอราคา — เร่ง Solar ให้รีบทำให้ลูกค้า
-            </div>
             {d.quotationPending.length > 0 && (
               <section>
                 <div className="flex items-center justify-between mb-3 px-1">
