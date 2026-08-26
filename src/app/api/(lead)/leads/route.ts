@@ -44,7 +44,7 @@ export async function GET(req: NextRequest) {
              u.full_name as assigned_name, u.username as assigned_username,
              sla.policy_code as sla_policy_code, sla.task_name as sla_task_name,
              sla.status as sla_status, sla.target_at as sla_target_at, sla.due_at as sla_due_at,
-             sla.owner_role as sla_owner_role, sla_owner.full_name as sla_owner_name,
+             sla.owner_role as sla_owner_role, sla.owner_user_id as sla_owner_user_id, sla_owner.full_name as sla_owner_name,
              (SELECT TOP 1 note FROM lead_activities WHERE lead_id = l.id AND note IS NOT NULL ORDER BY created_at DESC) as last_activity_note,
              (SELECT TOP 1 created_at FROM lead_activities WHERE lead_id = l.id AND activity_type IN ('call','visit','line','other','follow_up','loan_followup') ORDER BY created_at DESC) as last_activity_date,
              (SELECT TOP 1 title FROM lead_activities WHERE lead_id = l.id AND activity_type IN ('call','visit','line','other','follow_up','loan_followup') ORDER BY created_at DESC) as last_activity_title,

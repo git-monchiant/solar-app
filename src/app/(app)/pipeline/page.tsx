@@ -51,6 +51,8 @@ interface Lead {
   sla_status?: "active" | "warning" | "critical" | "breached" | null;
   sla_policy_code?: string | null;
   sla_task_name?: string | null;
+  sla_owner_role?: "sales" | "solar" | null;
+  sla_owner_user_id?: number | null;
   sla_owner_name?: string | null;
 }
 
@@ -121,6 +123,9 @@ export default function PipelinePage() {
   const isSolar = hasRole(activeRoles, "solar");
   const isAdmin = hasRole(activeRoles, "admin");
   const isAccount = hasRole(activeRoles, "account");
+  // เกณฑ์เดียวกับหน้า Today — คนที่ไม่ได้ดูแลทีมไม่ต้องมีตัวกรอง "ใครรับผิดชอบ"
+  const salesManagerView = activeRoles.includes("admin") || activeRoles.includes("sales_sup");
+  const solarManagerView = activeRoles.includes("admin") || activeRoles.includes("solar_sup");
 
   const [sortField, setSortField] = useState<SortField>(() => {
     if (typeof window === "undefined") return "follow_up";
@@ -142,7 +147,8 @@ export default function PipelinePage() {
   // ตัวกรองย่อยไม่จำข้ามรอบเหมือนชิป — เปิดหน้ามาแล้วเจอตัวกรองแคบ ๆ ที่มองไม่เห็น
   // เป็นกับดักที่แย่กว่าความสะดวกที่ได้ (หน้า Today ก็ไม่จำเหมือนกัน)
   const [slaStageFilter, setSlaStageFilter] = useState("all");
-  const [slaOwnerFilter, setSlaOwnerFilter] = useState("all");
+  const [slaSalesOwnerFilter, setSlaSalesOwnerFilter] = useState("all");
+  const [slaSolarOwnerFilter, setSlaSolarOwnerFilter] = useState("all");
 
   const onToggleSla = (key: SlaFilterKey) => {
     const next = toggleSlaFilter(slaFilters, key);
@@ -151,7 +157,8 @@ export default function PipelinePage() {
     // ไม่มีสถานะไหนถูกเลือก = ไม่มีอะไรให้กรองย่อย ล้างทิ้งไม่ให้ค้างแบบมองไม่เห็น
     if (next.length === 0 || next[0] === "without") {
       setSlaStageFilter("all");
-      setSlaOwnerFilter("all");
+      setSlaSalesOwnerFilter("all");
+      setSlaSolarOwnerFilter("all");
     }
   };
 
@@ -234,19 +241,44 @@ export default function PipelinePage() {
     ([value, label]) => ({ value, label }),
   ).sort((a, b) => a.label.localeCompare(b.label, "th"));
 
-  const slaOwnerOptions = Array.from(new Set(
-    tabScoped.filter(l => l.sla_status && l.sla_owner_name).map(l => l.sla_owner_name as string),
-  )).sort((a, b) => a.localeCompare(b, "th"));
+  // แยกตามทีมเหมือน Today — "Solar ยังไม่มอบหมาย" เป็นคำถามคนละข้อกับ "Sales ยังไม่มอบหมาย"
+  // ต่างจาก Today ตรงที่ไม่ยัดรายชื่อทีม Solar ทั้งทีมเข้ามา เพราะหน้านี้มอบหมายงานไม่ได้
+  // คนที่ไม่มีงาน SLA เลยจะกลายเป็นตัวเลือกที่กดแล้วว่างเปล่า
+  const slaOwnerOptions = (() => {
+    const sales = new Map<number, string>();
+    const solar = new Map<number, string>();
+    for (const l of tabScoped) {
+      if (!l.sla_status || !l.sla_owner_user_id || !l.sla_owner_name) continue;
+      if (l.sla_owner_role === "sales") sales.set(l.sla_owner_user_id, l.sla_owner_name);
+      if (l.sla_owner_role === "solar") solar.set(l.sla_owner_user_id, l.sla_owner_name);
+    }
+    const toOptions = (owners: Map<number, string>) => Array.from(owners, ([id, name]) => ({ id, name }))
+      .sort((a, b) => a.name.localeCompare(b.name, "th"));
+    return { sales: toOptions(sales), solar: toOptions(solar) };
+  })();
 
-  const slaSubFilterCount = [slaStageFilter !== "all", slaOwnerFilter !== "all"].filter(Boolean).length;
+  // สลับ role กลางคันแล้วปุ่มหาย ค่าที่เลือกไว้ต้องไม่ค้างกรองอยู่แบบมองไม่เห็น
+  // คิดสดตรงนี้แทนการ reset ผ่าน effect จะได้ไม่มีเฟรมที่ยังกรองด้วยค่าเก่า
+  const salesOwnerFilter = salesManagerView ? slaSalesOwnerFilter : "all";
+  const solarOwnerFilter = solarManagerView ? slaSolarOwnerFilter : "all";
+
+  const slaSubFilterCount = [slaStageFilter !== "all", salesOwnerFilter !== "all", solarOwnerFilter !== "all"]
+    .filter(Boolean).length;
 
   // ตัวกรองย่อยมีผลกับทั้งตัวเลขบนชิปและรายการที่แสดง ตัวเลขจึงยังบอกความจริง
   // Lead ที่ไม่มี SLA ปล่อยผ่าน ไม่งั้นชิป "ไม่มีงาน SLA" จะกลายเป็น 0 ทันทีที่เลือกขั้นตอน
+  const matchesSlaOwner = (l: Lead, value: string, role: "sales" | "solar") => {
+    if (value === "all") return true;
+    if (l.sla_owner_role !== role) return false;
+    if (value === "unassigned") return !l.sla_owner_user_id;
+    return String(l.sla_owner_user_id ?? "") === value;
+  };
+
   const matchesSlaSub = (l: Lead) => {
     if (!slaStatusMode || !l.sla_status) return true;
     if (slaStageFilter !== "all" && l.sla_policy_code !== slaStageFilter) return false;
-    if (slaOwnerFilter === "unassigned") return !l.sla_owner_name;
-    if (slaOwnerFilter !== "all" && l.sla_owner_name !== slaOwnerFilter) return false;
+    if (!matchesSlaOwner(l, salesOwnerFilter, "sales")) return false;
+    if (!matchesSlaOwner(l, solarOwnerFilter, "solar")) return false;
     return true;
   };
 
@@ -322,18 +354,40 @@ export default function PipelinePage() {
                       <option key={option.value} value={option.value}>{option.label}</option>
                     ))}
                   </select>
-                  <select
-                    aria-label="กรองผู้รับผิดชอบงาน SLA"
-                    value={slaOwnerFilter}
-                    onChange={(e) => setSlaOwnerFilter(e.target.value)}
-                    className={SLA_SUB_SELECT_CLASS}
-                  >
-                    <option value="all">ผู้รับผิดชอบทุกคน</option>
-                    <option value="unassigned">ยังไม่มอบหมาย</option>
-                    {slaOwnerOptions.map(name => (
-                      <option key={name} value={name}>{name}</option>
-                    ))}
-                  </select>
+                  {salesManagerView && (
+                    <select
+                      aria-label="กรองผู้รับผิดชอบ Sales"
+                      value={slaSalesOwnerFilter}
+                      onChange={(e) => {
+                        setSlaSalesOwnerFilter(e.target.value);
+                        if (e.target.value !== "all") setSlaSolarOwnerFilter("all");
+                      }}
+                      className={SLA_SUB_SELECT_CLASS}
+                    >
+                      <option value="all">Sales ทุกคน</option>
+                      <option value="unassigned">Sales ยังไม่มอบหมาย</option>
+                      {slaOwnerOptions.sales.map(owner => (
+                        <option key={owner.id} value={owner.id}>{owner.name}</option>
+                      ))}
+                    </select>
+                  )}
+                  {solarManagerView && (
+                    <select
+                      aria-label="กรองผู้รับผิดชอบ Solar"
+                      value={slaSolarOwnerFilter}
+                      onChange={(e) => {
+                        setSlaSolarOwnerFilter(e.target.value);
+                        if (e.target.value !== "all") setSlaSalesOwnerFilter("all");
+                      }}
+                      className={SLA_SUB_SELECT_CLASS}
+                    >
+                      <option value="all">Solar ทุกคน</option>
+                      <option value="unassigned">Solar ยังไม่มอบหมาย</option>
+                      {slaOwnerOptions.solar.map(owner => (
+                        <option key={owner.id} value={owner.id}>{owner.name}</option>
+                      ))}
+                    </select>
+                  )}
                 </SlaSubFilter>
               )}
             />
