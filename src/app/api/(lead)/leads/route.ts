@@ -3,6 +3,7 @@ import { getDb, sql, fixDates } from "@/lib/db";
 import { geocodeThaiPlace } from "@/lib/utils/geocode";
 import { requireAuth } from "@/lib/auth";
 import { ensureFirstContactSla, refreshOpenSlaStates, syncOperationalSlas } from "@/lib/sla-service";
+import { followUpOverdueSql, LAST_FOLLOW_UP_APPLY } from "@/lib/lead-followup-sql";
 
 async function maybeGeocodeProject(projectId: number) {
   const db = await getDb();
@@ -74,7 +75,10 @@ export async function GET(req: NextRequest) {
                WHEN l.payment_reject_notes IS NULL THEN 0
                WHEN LTRIM(RTRIM(l.payment_reject_notes)) IN ('', '{}', '[]') THEN 0
                ELSE 1
-             END as has_payment_reject
+             END as has_payment_reject,
+             -- กติกา "เลยนัดแล้ว" ก้อนเดียวกับ /api/today — ก่อนหน้านี้ route นี้ไม่ส่งมา
+             -- LeadCard เลยตกไปใช้สูตรสำรองฝั่ง browser ที่เทียบกับเที่ยงวัน
+             ${followUpOverdueSql("fu.last_followup_date")} as is_followup_overdue
       FROM leads l
       LEFT JOIN projects p ON l.project_id = p.id
       LEFT JOIN packages pk ON l.interested_package_id = pk.id
@@ -86,7 +90,7 @@ export async function GET(req: NextRequest) {
           AND si.superseded_at IS NULL
         ORDER BY si.due_at ASC
       ) sla
-      LEFT JOIN users sla_owner ON sla.owner_user_id = sla_owner.id
+      LEFT JOIN users sla_owner ON sla.owner_user_id = sla_owner.id${LAST_FOLLOW_UP_APPLY}
       ORDER BY l.created_at DESC
     `);
     return NextResponse.json(fixDates(result.recordset));

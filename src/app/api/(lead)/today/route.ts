@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { getDb, fixDates } from "@/lib/db";
 import { requireAuth } from "@/lib/auth";
 import { refreshOpenSlaStates } from "@/lib/sla-service";
+import { followUpOverdueSql } from "@/lib/lead-followup-sql";
 
 // LeadCard + today page only read ~30 columns from the leads table. The full
 // table is 60-80 cols per row (survey JSON blobs, photo URLs, etc.) so
@@ -38,13 +39,7 @@ const LEAD_COLS = `
   COALESCE(pay.total_count, 0) AS order_total_count,
   CAST(COALESCE(pay.paid_count, 0) AS NVARCHAR(10))
     + N'/' + CAST(COALESCE(pay.total_count, 0) AS NVARCHAR(10)) AS order_payment_progress,
-  CAST(CASE
-    WHEN l.next_follow_up IS NOT NULL
-     AND l.next_follow_up < CAST(GETDATE() AS DATE)
-     AND l.status NOT IN ('install', 'lost')
-     AND (act.last_followup_date IS NULL OR act.last_followup_date < l.next_follow_up)
-    THEN 1 ELSE 0
-  END AS BIT) AS is_followup_overdue
+  ${followUpOverdueSql("act.last_followup_date")} AS is_followup_overdue
 `;
 
 // Shared FROM clause for every today-list query. Two activity joins:
