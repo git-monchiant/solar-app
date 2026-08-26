@@ -291,30 +291,17 @@ export default function TodayPage() {
     return grouped;
   }, [filteredSlaItems, slaStatusKeys, slaWithoutOnly]);
 
-  // จำนวน Lead แบบไม่ซ้ำต่อสถานะ สำหรับตัวเลขบนชิป — ตั้งใจไม่เอาตัวกรองสถานะมาคิด
-  // ไม่งั้นพอติ๊ก "เกินกำหนด" ตัวเลขของชิปที่เหลือจะกลายเป็น 0 ทันที
-  const slaChipCounts = useMemo(() => {
-    const ids: Record<SlaStatusKey, Set<number>> = { breached: new Set(), near_due: new Set(), active: new Set() };
+  // จัดกลุ่มงาน SLA ตาม Lead โดยไม่กรองสถานะ ใช้เป็นฐานนับตัวเลขบนชิป
+  // ถ้านับจาก slaItemsByLead ตัวเลขของชิปที่ยังไม่ได้ติ๊กจะกลายเป็น 0 ทันทีที่ติ๊กอันแรก
+  const slaItemsByLeadAll = useMemo(() => {
+    const grouped = new Map<number, TodaySlaItem[]>();
     for (const item of filteredSlaItems) {
-      if (item.status === "breached") ids.breached.add(item.lead_id);
-      else if (item.status === "warning" || item.status === "critical") ids.near_due.add(item.lead_id);
-      else if (item.status === "active") ids.active.add(item.lead_id);
+      const items = grouped.get(item.lead_id) ?? [];
+      items.push(item);
+      grouped.set(item.lead_id, items);
     }
-    return { breached: ids.breached.size, near_due: ids.near_due.size, active: ids.active.size };
+    return grouped;
   }, [filteredSlaItems]);
-
-  // Lead ในกองของวันนี้ที่ไม่มีงาน SLA เปิดอยู่เลย — Lead เดียวอยู่ได้หลาย section จึงนับผ่าน Set
-  const slaWithoutCount = useMemo(() => {
-    if (!todayData) return 0;
-    const seen = new Set<number>();
-    for (const value of Object.values(todayData)) {
-      if (!Array.isArray(value)) continue;
-      for (const lead of value as LeadData[]) {
-        if (!allSlaLeadIds.has(lead.id)) seen.add(lead.id);
-      }
-    }
-    return seen.size;
-  }, [todayData, allSlaLeadIds]);
 
   const slaSubFilterCount = [slaStageFilter !== "all", slaSalesOwnerFilter !== "all", slaSolarOwnerFilter !== "all"]
     .filter(Boolean).length;
@@ -419,16 +406,18 @@ export default function TodayPage() {
 
   const raw = todayData!;
 
-  const filterLeads = (leads: LeadData[]) => {
+  // skipSla = ข้ามตัวกรอง SLA เพื่อดูว่าแท็บนี้มี Lead อะไรบ้าง "ก่อน" ถูกกรอง
+  // ใช้เป็นขอบเขตของตัวเลขบนชิป ตัวเลขจะได้ตรงกับผลที่ได้จริงเมื่อกดในแท็บนั้น
+  const filterLeads = (leads: LeadData[], skipSla = false) => {
     let out = leads;
-    if (slaEnabled) {
+    if (slaEnabled && !skipSla) {
       if (!scopedSlaData) return [];
       out = slaWithoutOnly
         ? out.filter(lead => !allSlaLeadIds.has(lead.id))
         : out.filter(lead => slaItemsByLead.has(lead.id));
     }
     if (mineOnly && me?.id) {
-      out = slaStatusMode
+      out = slaStatusMode && !skipSla
         ? out.filter(lead => (slaItemsByLead.get(lead.id) ?? []).some(item => item.owner_user_id === me.id))
         : out.filter(lead => lead.assigned_user_id === me.id);
     }
@@ -454,25 +443,30 @@ export default function TodayPage() {
     );
   };
 
-  const allInstallPending = filterLeads(raw.installPending);
-  const d = {
-    followUpOverdue: filterLeads(raw.followUpOverdue),
-    followUpToday: filterLeads(raw.followUpToday),
-    newLeads: filterLeads(raw.newLeads),
-    overduePreSurvey: filterLeads(raw.overduePreSurvey),
-    followUpUpcoming: filterLeads(raw.followUpUpcoming),
-    surveyToday: filterLeads(raw.surveyToday),
-    surveyPending: filterLeads(raw.surveyPending),
-    quotationPending: filterLeads(raw.quotationPending),
-    // Split รอเสนอราคา (no installment paid yet) from ชำระมัดจำ (≥1 confirmed)
-    installPending: allInstallPending.filter(l => (l.order_paid_count ?? 0) === 0),
-    depositPaid: allInstallPending.filter(l => (l.order_paid_count ?? 0) >= 1),
-    waitInstall: filterLeads(raw.waitInstall || []),
-    installScheduled: filterLeads(raw.installScheduled || []),
-    warranty: filterLeads(raw.warranty || []),
-    recentlyClosed: filterLeads(raw.recentlyClosed || []),
-    booking: filterLeads(raw.booking || []),
+  const buildBuckets = (skipSla: boolean) => {
+    const pick = (leads: LeadData[] | undefined) => filterLeads(leads || [], skipSla);
+    const installAll = pick(raw.installPending);
+    return {
+      followUpOverdue: pick(raw.followUpOverdue),
+      followUpToday: pick(raw.followUpToday),
+      newLeads: pick(raw.newLeads),
+      overduePreSurvey: pick(raw.overduePreSurvey),
+      followUpUpcoming: pick(raw.followUpUpcoming),
+      surveyToday: pick(raw.surveyToday),
+      surveyPending: pick(raw.surveyPending),
+      quotationPending: pick(raw.quotationPending),
+      // Split รอเสนอราคา (no installment paid yet) from ชำระมัดจำ (≥1 confirmed)
+      installPending: installAll.filter(l => (l.order_paid_count ?? 0) === 0),
+      depositPaid: installAll.filter(l => (l.order_paid_count ?? 0) >= 1),
+      waitInstall: pick(raw.waitInstall),
+      installScheduled: pick(raw.installScheduled),
+      warranty: pick(raw.warranty),
+      recentlyClosed: pick(raw.recentlyClosed),
+      booking: pick(raw.booking),
+    };
   };
+
+  const d = buildBuckets(false);
 
   const bookingCount = d.booking.length;
   // Solar เห็นเฉพาะ booking ที่จ่ายแล้ว (รอนัดสำรวจ); ส่วนที่รอชำระเป็นงาน sales
@@ -577,9 +571,91 @@ export default function TodayPage() {
       : normalizeSlaFilters([...slaFilters.filter(current => current !== "without"), key]));
   };
 
+  const salesAllCount = allLeads ? filterLeads(allLeads).length : 0;
+
+  const allTabs = [
+    isSales && { key: "sales_all", label: "ทั้งหมด", count: salesAllCount },
+    isSales && { key: "sales", label: "ติดตามลูกค้า", count: salesCount },
+    isSales && { key: "booking", label: "รายการจอง", count: bookingCount },
+    isSales && { key: "sales_solar", label: "ติดตามใบเสนอราคา", count: salesSolarCount },
+    isSales && { key: "quote", label: "รอเสนอลูกค้า", count: d.installPending.length },
+    isSales && { key: "deposit_paid", label: "ชำระมัดจำ", count: d.depositPaid.length },
+    isSales && { key: "sales_wait_install", label: "รอนัดติดตั้ง", count: solarWaitInstallCount },
+    isSolar && { key: "solar", label: "ทั้งหมด", count: solarCount },
+    isSolar && { key: "solar_survey", label: "รอสำรวจ", count: solarSurveyCount },
+    isSolar && { key: "solar_quote", label: "รอทำใบเสนอราคา", count: solarQuoteCount },
+    isSolar && { key: "solar_wait_install", label: "รอนัดติดตั้ง", count: solarWaitInstallCount },
+    isSolar && { key: "solar_install", label: "รอติดตั้ง", count: solarInstallCount },
+    isSolar && { key: "solar_installing", label: "กำลังติดตั้ง", count: solarInstallingCount },
+    isSolar && { key: "solar_warranty", label: "รอออกใบรับประกัน", count: solarWarrantyCount },
+    isSolar && { key: "solar_gridtie", label: "ขอขนานไฟ", count: solarGridtie.length },
+    { key: "calendar", label: "ปฏิทิน" },
+  ].filter(Boolean) as { key: string; label: string; count?: number }[];
+
+  // While effect re-syncs an invalid tab, render against an in-bounds key
+  const visibleTab = (allTabs.some(t => t.key === tab) ? tab : (allTabs[0]?.key ?? "calendar")) as TodayTab;
+  const slaCardContext: TodaySlaCardContextValue = {
+    enabled: slaAvailable && scopedSlaData !== null,
+    itemsByLead: slaItemsByLead,
+    solarUsers,
+    currentUserId: me?.id,
+    solarManagerView,
+    solarView,
+    assigningId: assigningSlaId,
+    onAssignSolar: assignSolarWork,
+  };
+
+  // Lead ที่แท็บนี้จะแสดงถ้ายังไม่กรองด้วย SLA — ต้องสะท้อนสูตรนับของแต่ละแท็บใน allTabs
+  const slaScopeLeads = (() => {
+    if (!slaAvailable || !scopedSlaData) return [] as LeadData[];
+    const b = buildBuckets(true);
+    const bookingReady = b.booking.filter(l => l.payment_confirmed);
+    const scheduled = (future: boolean) => b.installScheduled.filter(l =>
+      !!l.install_date && (future ? l.install_date.slice(0, 10) > todayYmd : l.install_date.slice(0, 10) <= todayYmd));
+    switch (visibleTab) {
+      case "sales_all": return filterLeads(allLeads || [], true);
+      case "sales": return [...b.followUpOverdue, ...b.followUpToday, ...b.newLeads];
+      case "booking": return b.booking;
+      case "sales_solar":
+      case "solar_quote": return b.quotationPending;
+      case "quote": return b.installPending;
+      case "deposit_paid": return b.depositPaid;
+      case "sales_wait_install":
+      case "solar_wait_install": return b.waitInstall;
+      case "solar": return [...bookingReady, ...b.surveyToday, ...b.surveyPending, ...b.quotationPending,
+        ...b.waitInstall, ...b.installScheduled, ...b.warranty];
+      case "solar_survey": return [...bookingReady, ...b.surveyToday, ...b.surveyPending];
+      case "solar_install": return scheduled(true);
+      case "solar_installing": return scheduled(false);
+      case "solar_warranty": return b.warranty;
+      case "solar_gridtie": return filterLeads(allLeads || [], true).filter(l => l.status === "gridtie");
+      default: return [] as LeadData[];
+    }
+  })();
+
+  const slaChipCounts = (() => {
+    const counts: Record<SlaFilterKey, number> = { breached: 0, near_due: 0, active: 0, without: 0 };
+    // ตั้งใจนับตาม "จำนวนที่แสดง" ไม่ใช่ Lead ไม่ซ้ำ — Lead เดียวอยู่ได้หลาย section
+    // ในแท็บเดียว (เช่น เลยกำหนดติดตาม + Lead ใหม่) และตัวเลขบนแท็บก็นับแบบนั้น
+    // ถ้านับไม่ซ้ำ ชิปจะบอก 11 แต่กดแล้วขึ้น 13 ซึ่งผิดคำสัญญาของตัวเลข
+    for (const lead of slaScopeLeads) {
+      const items = slaItemsByLeadAll.get(lead.id);
+      if (!items?.length) { counts.without += 1; continue; }
+      // Lead เดียวมีได้หลายงาน SLA — นับเข้าทุกสถานะที่มี แต่ไม่นับซ้ำในสถานะเดียวกัน
+      const statuses = new Set<SlaStatusKey>();
+      for (const item of items) {
+        if (item.status === "breached") statuses.add("breached");
+        else if (item.status === "warning" || item.status === "critical") statuses.add("near_due");
+        else if (item.status === "active") statuses.add("active");
+      }
+      for (const key of statuses) counts[key] += 1;
+    }
+    return counts;
+  })();
+
   const renderSlaChip = (chip: (typeof SLA_CHIPS)[number]) => {
     const on = slaFilters.includes(chip.key);
-    const count = chip.key === "without" ? slaWithoutCount : slaChipCounts[chip.key];
+    const count = slaChipCounts[chip.key];
     return (
       <button
         type="button"
@@ -601,7 +677,7 @@ export default function TodayPage() {
   // Keep SLA controls next to "งานของฉัน" so users can narrow urgent work
   // without leaving Today. Controls wrap on mobile instead of disappearing.
   const sortControls = (
-    <div className="flex items-center justify-end gap-2 flex-wrap">
+    <div className="flex items-center gap-2 flex-wrap">
       {slaAvailable && (
         <span className="inline-flex flex-wrap items-center gap-1.5">
           <span className="text-xxs font-bold uppercase tracking-wider text-gray-400">SLA</span>
@@ -692,7 +768,7 @@ export default function TodayPage() {
           setMineOnly(next);
           localStorage.setItem("today.mineOnly", next ? "1" : "0");
         }}
-        className="h-7 inline-flex items-center gap-1.5 px-1 text-xxs font-medium text-gray-700 cursor-pointer whitespace-nowrap"
+        className="h-7 ml-auto inline-flex items-center gap-1.5 px-1 text-xxs font-medium text-gray-700 cursor-pointer whitespace-nowrap"
       >
         <span className={`w-3.5 h-3.5 rounded border-2 flex items-center justify-center transition-colors ${mineOnly ? "border-gray-800 bg-gray-800" : "border-gray-300"}`}>
           {mineOnly && <CheckIcon className="w-2 h-2 text-white" strokeWidth={4} />}
@@ -736,39 +812,6 @@ export default function TodayPage() {
 
   // sales_all tab now shows ALL leads (same as Pipeline > ทั้งหมด), so count
   // matches the filtered all-leads list rather than summed today buckets.
-  const salesAllCount = allLeads ? filterLeads(allLeads).length : 0;
-
-  const allTabs = [
-    isSales && { key: "sales_all", label: "ทั้งหมด", count: salesAllCount },
-    isSales && { key: "sales", label: "ติดตามลูกค้า", count: salesCount },
-    isSales && { key: "booking", label: "รายการจอง", count: bookingCount },
-    isSales && { key: "sales_solar", label: "ติดตามใบเสนอราคา", count: salesSolarCount },
-    isSales && { key: "quote", label: "รอเสนอลูกค้า", count: d.installPending.length },
-    isSales && { key: "deposit_paid", label: "ชำระมัดจำ", count: d.depositPaid.length },
-    isSales && { key: "sales_wait_install", label: "รอนัดติดตั้ง", count: solarWaitInstallCount },
-    isSolar && { key: "solar", label: "ทั้งหมด", count: solarCount },
-    isSolar && { key: "solar_survey", label: "รอสำรวจ", count: solarSurveyCount },
-    isSolar && { key: "solar_quote", label: "รอทำใบเสนอราคา", count: solarQuoteCount },
-    isSolar && { key: "solar_wait_install", label: "รอนัดติดตั้ง", count: solarWaitInstallCount },
-    isSolar && { key: "solar_install", label: "รอติดตั้ง", count: solarInstallCount },
-    isSolar && { key: "solar_installing", label: "กำลังติดตั้ง", count: solarInstallingCount },
-    isSolar && { key: "solar_warranty", label: "รอออกใบรับประกัน", count: solarWarrantyCount },
-    isSolar && { key: "solar_gridtie", label: "ขอขนานไฟ", count: solarGridtie.length },
-    { key: "calendar", label: "ปฏิทิน" },
-  ].filter(Boolean) as { key: string; label: string; count?: number }[];
-
-  // While effect re-syncs an invalid tab, render against an in-bounds key
-  const visibleTab = (allTabs.some(t => t.key === tab) ? tab : (allTabs[0]?.key ?? "calendar")) as TodayTab;
-  const slaCardContext: TodaySlaCardContextValue = {
-    enabled: slaAvailable && scopedSlaData !== null,
-    itemsByLead: slaItemsByLead,
-    solarUsers,
-    currentUserId: me?.id,
-    solarManagerView,
-    solarView,
-    assigningId: assigningSlaId,
-    onAssignSolar: assignSolarWork,
-  };
 
   return (
     <TodaySlaCardContext.Provider value={slaCardContext}>
@@ -792,6 +835,9 @@ export default function TodayPage() {
             <button type="button" onClick={() => loadSla()} className="ml-auto rounded-full bg-red-600 px-3 py-1 font-bold text-white">ลองใหม่</button>
           </div>
         )}
+        {visibleTab !== "calendar" && (
+          <div className="-mt-1 px-1">{sortControls}</div>
+        )}
         {/* Sales · ทั้งหมด — เรียงตาม section เดิม + section "อื่นๆ" รวม leads
             ที่ไม่อยู่ใน bucket ใดข้างบน (เพื่อให้เห็น lead ครบทุกใบเหมือน pipeline) */}
         {visibleTab === "sales_all" && (
@@ -803,7 +849,6 @@ export default function TodayPage() {
                 <h2 className="text-xs font-bold tracking-wider uppercase text-red-600">เลยกำหนดติดตาม</h2>
               ) : <div />}
               <div className="flex items-center gap-2">
-                {sortControls}
                 {d.followUpOverdue.length > 0 && (
                   <span className="text-xs font-semibold text-red-600 bg-red-50 px-2 py-0.5 rounded-full">{d.followUpOverdue.length}</span>
                 )}
@@ -939,7 +984,6 @@ export default function TodayPage() {
                 <h2 className="text-xs font-bold tracking-wider uppercase text-red-600">เลยกำหนดติดตาม</h2>
               ) : <div />}
               <div className="flex items-center gap-2">
-                {sortControls}
                 {d.followUpOverdue.length > 0 && (
                   <span className="text-xs font-semibold text-red-600 bg-red-50 px-2 py-0.5 rounded-full">{d.followUpOverdue.length}</span>
                 )}
@@ -1001,7 +1045,6 @@ export default function TodayPage() {
               <div className="flex items-center justify-between mb-3 px-1">
                 <h2 className="text-xs font-bold tracking-wider uppercase text-emerald-700">รายการจอง · รอนัดสำรวจ</h2>
                 <div className="flex items-center gap-2">
-                  {sortControls}
                   <span className="text-xs font-semibold text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded-full">{d.booking.length}</span>
                 </div>
               </div>
@@ -1019,7 +1062,6 @@ export default function TodayPage() {
                 <div className="flex items-center justify-between mb-3 px-1">
                   <h2 className="text-xs font-bold tracking-wider uppercase text-violet-700">รอเสนอลูกค้า</h2>
                   <div className="flex items-center gap-2">
-                    {sortControls}
                     <span className="text-xs font-semibold text-violet-700 bg-violet-50 px-2 py-0.5 rounded-full">{d.installPending.length}</span>
                   </div>
                 </div>
@@ -1045,7 +1087,6 @@ export default function TodayPage() {
                 <div className="flex items-center justify-between mb-3 px-1">
                   <h2 className="text-xs font-bold tracking-wider uppercase text-emerald-700">ชำระมัดจำแล้ว</h2>
                   <div className="flex items-center gap-2">
-                    {sortControls}
                     <span className="text-xs font-semibold text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded-full">{d.depositPaid.length}</span>
                   </div>
                 </div>
@@ -1072,7 +1113,6 @@ export default function TodayPage() {
                 <div className="flex items-center justify-between mb-3 px-1">
                   <h2 className="text-xs font-bold tracking-wider uppercase text-orange-600">รอนัดติดตั้ง</h2>
                   <div className="flex items-center gap-2">
-                    {sortControls}
                     <span className="text-xs font-semibold text-orange-600 bg-orange-50 px-2 py-0.5 rounded-full">{d.waitInstall.length}</span>
                   </div>
                 </div>
@@ -1101,7 +1141,6 @@ export default function TodayPage() {
                 <div className="flex items-center justify-between mb-3 px-1">
                   <h2 className="text-xs font-bold tracking-wider uppercase text-violet-600">รอใบเสนอราคา</h2>
                   <div className="flex items-center gap-2">
-                    {sortControls}
                     <span className="text-xs font-semibold text-violet-600 bg-violet-50 px-2 py-0.5 rounded-full">{d.quotationPending.length}</span>
                   </div>
                 </div>
@@ -1125,7 +1164,6 @@ export default function TodayPage() {
           const bookingReady = d.booking.filter(l => l.payment_confirmed);
           return (
           <>
-            {sortControls}
             {/* Survey วันนี้ มาก่อน — เป็นคำถามแรกของช่างตอนเช้า "วันนี้มีนัดอะไร"
              * เรียงตาม survey_date (เวลานัด) เช้า → เย็น */}
             {d.surveyToday.length > 0 && (
@@ -1225,7 +1263,6 @@ export default function TodayPage() {
           const bookingReady = d.booking.filter(l => l.payment_confirmed);
           return (
           <>
-            {sortControls}
             {d.surveyToday.length > 0 && (
               <section>
                 <div className="flex items-center justify-between mb-3 px-1">
@@ -1280,7 +1317,6 @@ export default function TodayPage() {
                 <div className="flex items-center justify-between mb-3 px-1">
                   <h2 className="text-xs font-bold tracking-wider uppercase text-violet-600">รอใบเสนอราคา</h2>
                   <div className="flex items-center gap-2">
-                    {sortControls}
                     <span className="text-xs font-semibold text-violet-600 bg-violet-50 px-2 py-0.5 rounded-full">{d.quotationPending.length}</span>
                   </div>
                 </div>
@@ -1306,7 +1342,6 @@ export default function TodayPage() {
                 <div className="flex items-center justify-between mb-3 px-1">
                   <h2 className="text-xs font-bold tracking-wider uppercase text-orange-600">รอนัดติดตั้ง</h2>
                   <div className="flex items-center gap-2">
-                    {sortControls}
                     <span className="text-xs font-semibold text-orange-600 bg-orange-50 px-2 py-0.5 rounded-full">{d.waitInstall.length}</span>
                   </div>
                 </div>
@@ -1332,7 +1367,6 @@ export default function TodayPage() {
                 <div className="flex items-center justify-between mb-3 px-1">
                   <h2 className="text-xs font-bold tracking-wider uppercase text-emerald-600">รอติดตั้ง</h2>
                   <div className="flex items-center gap-2">
-                    {sortControls}
                     <span className="text-xs font-semibold text-emerald-600 bg-emerald-50 px-2 py-0.5 rounded-full">{installFuture.length}</span>
                   </div>
                 </div>
@@ -1357,7 +1391,6 @@ export default function TodayPage() {
                 <div className="flex items-center justify-between mb-3 px-1">
                   <h2 className="text-xs font-bold tracking-wider uppercase text-emerald-600">กำลังติดตั้ง</h2>
                   <div className="flex items-center gap-2">
-                    {sortControls}
                     <span className="text-xs font-semibold text-emerald-600 bg-emerald-50 px-2 py-0.5 rounded-full">{installInProgress.length}</span>
                   </div>
                 </div>
@@ -1383,7 +1416,6 @@ export default function TodayPage() {
                 <div className="flex items-center justify-between mb-3 px-1">
                   <h2 className="text-xs font-bold tracking-wider uppercase text-cyan-700">รอออกใบรับประกัน</h2>
                   <div className="flex items-center gap-2">
-                    {sortControls}
                     <span className="text-xs font-semibold text-cyan-700 bg-cyan-50 px-2 py-0.5 rounded-full">{d.warranty.length}</span>
                   </div>
                 </div>
@@ -1409,7 +1441,6 @@ export default function TodayPage() {
                 <div className="flex items-center justify-between mb-3 px-1">
                   <h2 className="text-xs font-bold tracking-wider uppercase text-amber-700">ขอขนานไฟ</h2>
                   <div className="flex items-center gap-2">
-                    {sortControls}
                     <span className="text-xs font-semibold text-amber-700 bg-amber-50 px-2 py-0.5 rounded-full">{solarGridtie.length}</span>
                   </div>
                 </div>
