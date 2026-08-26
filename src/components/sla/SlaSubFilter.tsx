@@ -7,7 +7,7 @@ export const SLA_SUB_SELECT_CLASS =
   "h-7 w-full rounded-md border border-gray-200 bg-white px-2 pr-7 text-xxs font-medium text-gray-700 outline-none focus:border-gray-400";
 
 /**
- * ปุ่ม "ตัวกรอง" พร้อม popover — ยุบตัวกรองที่ใช้นาน ๆ ครั้งไว้ข้างใน
+ * ปุ่ม "ตัวกรองเพิ่มเติม" พร้อม popover — ยุบตัวกรองที่ใช้นาน ๆ ครั้งไว้ข้างใน
  * แถวบนจะได้เหลือแต่ชิปที่กดทุกวัน
  *
  * เก็บ state เปิด/ปิดกับ click-outside ไว้ในตัวเอง ผู้เรียกส่งมาแค่จำนวนตัวกรอง
@@ -38,7 +38,7 @@ export default function SlaSubFilter({ count, children }: { count: number; child
             : "border-dashed border-gray-300 bg-white text-gray-600 hover:border-gray-500"
         }`}
       >
-        ตัวกรอง
+        ตัวกรองเพิ่มเติม
         {count > 0 && (
           <span className="inline-flex h-4 min-w-4 items-center justify-center rounded-full bg-gray-800 px-1 text-[10px] font-bold text-white">
             {count}
