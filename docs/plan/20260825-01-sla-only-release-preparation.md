@@ -74,3 +74,20 @@
 - Development verification ผ่าน: BOOK_SURVEY anchor/version mismatch = 0, Proposal mismatch = 0, Deposit mismatch = 0
 - HTTP smoke test: `/sla` = 200, `/dashboard-sla` = 404 และ `/api/version` = `2.0.24`
 - ไม่มีการ push, apply migration Production หรือ deploy
+
+## เพิ่มเข้ามาทีหลัง
+
+- `acca737` — cherry-pick `dd71fd0` "ปรับรายงานสำรวจหมวด 4-5 ให้ตัวเลขตรงกับใบเสนอราคา"
+  จาก `fix/dashboard-iv-clarity` (26 ส.ค.)
+
+  branch นี้แตกจาก `f4e078f` ซึ่งเก่ากว่า `dd71fd0` PDF ใบเสนอราคาบน branch นี้จึงยัง
+  เป็นของเก่า — §4 โชว์ส่วนลด/เงินจองซ้ำกับใบเสนอราคา และ §5 เป็นฟอร์มเปล่า
+  ทั้งที่ผู้ใช้แก้ไปแล้วบนอีก branch
+
+  หยิบมาเฉพาะ commit นี้ ไม่ merge ทั้ง branch เพราะอีก 16 commit เป็นงาน Dashboard IV
+  ที่ commit ล่าสุด (`77a27a7`) ยังซ่อนเมนูไว้รอพัฒนาต่อ ไม่ควรติดมากับ release ของ SLA
+
+  ไฟล์ทั้ง 3 ที่ commit นี้แตะ (`quotation-pdf/[id]/route.ts`, `survey-report.js`,
+  `survey-report.d.ts`) เหมือนกันทุก byte ระหว่าง branch นี้กับ `dd71fd0^` cherry-pick
+  จึงลงโดยไม่มี conflict · ตรวจ PDF จริงของ Quotation 69 แล้ว §4 เหลือบรรทัดเดียว
+  "ราคาแพ็กเกจ (รวม VAT) 114,000 บาท" และ §5 เติมรายการจริงพร้อมยอดรวม 3,250 บาท
