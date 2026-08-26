@@ -5,6 +5,15 @@ import { useEffect, useState, useCallback } from "react";
 import ListPageHeader from "@/components/layout/ListPageHeader";
 import LeadCard, { type LeadData } from "@/components/lead/LeadCard";
 import { useActiveRoles, hasRole } from "@/lib/roles";
+import SlaFilterChips from "@/components/sla/SlaFilterChips";
+import {
+  matchesSlaStatus,
+  parseSlaFilters,
+  slaFilterKeyOf,
+  toggleSlaFilter,
+  type SlaFilterKey,
+  type SlaStatusKey,
+} from "@/lib/sla-filter";
 
 interface Lead {
   id: number;
@@ -36,6 +45,8 @@ interface Lead {
   order_before_ready_count?: number | null;
   order_ready_count?: number | null;
   order_total_count?: number | null;
+  /** งาน SLA ที่ใกล้ครบกำหนดที่สุดของ lead — /api/leads ส่งมาแค่ตัวบนสุดตัวเดียว */
+  sla_status?: "active" | "warning" | "critical" | "breached" | null;
 }
 
 type TabKey = "all" | "pre_survey" | "booking" | "survey" | "quotation" | "order" | "deposit" | "wait_install" | "install" | "installing" | "warranty" | "gridtie" | "lost";
@@ -116,6 +127,18 @@ export default function PipelinePage() {
     return localStorage.getItem("pipeline.sortOrder") === "desc" ? "desc" : "asc";
   });
   const [search, setSearch] = useState("");
+  // จำค่าไว้แบบเดียวกับ pipeline.sortField เพราะ Pipeline เป็นหน้าที่เปิดค้างทั้งวัน
+  // ต่างจาก Today ที่จำใน URL เพราะใช้ส่งลิงก์หากันมากกว่า
+  const [slaFilters, setSlaFilters] = useState<SlaFilterKey[]>(() => {
+    if (typeof window === "undefined") return [];
+    return parseSlaFilters(localStorage.getItem("pipeline.sla"));
+  });
+
+  const onToggleSla = (key: SlaFilterKey) => {
+    const next = toggleSlaFilter(slaFilters, key);
+    setSlaFilters(next);
+    localStorage.setItem("pipeline.sla", next.join(","));
+  };
 
   const fetchLeads = useCallback(() => {
     apiFetch("/api/leads").then(setLeads).catch(console.error).finally(() => setLoading(false));
@@ -163,26 +186,40 @@ export default function PipelinePage() {
   }, [tab, sortField]);
 
   const todayYmd = new Date().toISOString().slice(0, 10);
-  const filtered = sortLeads(
-    leads
-      .filter(l => matchesTab(l, tab, todayYmd))
-      .filter(l => {
-        if (!search.trim()) return true;
-        const q = search.trim().toLowerCase();
-        return (
-          l.full_name?.toLowerCase().includes(q) ||
-          l.phone?.includes(q) ||
-          l.project_name?.toLowerCase().includes(q) ||
-          l.installation_address?.toLowerCase().includes(q) ||
-          l.house_number?.toLowerCase().includes(q) ||
-          l.email?.toLowerCase().includes(q) ||
-          l.source?.toLowerCase().includes(q) ||
-          l.note?.toLowerCase().includes(q) ||
-          l.assigned_name?.toLowerCase().includes(q) ||
-          l.pre_doc_no?.toLowerCase().includes(q)
-        );
-      })
-  );
+  const matchesSearch = (l: Lead) => {
+    if (!search.trim()) return true;
+    const q = search.trim().toLowerCase();
+    return (
+      l.full_name?.toLowerCase().includes(q) ||
+      l.phone?.includes(q) ||
+      l.project_name?.toLowerCase().includes(q) ||
+      l.installation_address?.toLowerCase().includes(q) ||
+      l.house_number?.toLowerCase().includes(q) ||
+      l.email?.toLowerCase().includes(q) ||
+      l.source?.toLowerCase().includes(q) ||
+      l.note?.toLowerCase().includes(q) ||
+      l.assigned_name?.toLowerCase().includes(q) ||
+      l.pre_doc_no?.toLowerCase().includes(q)
+    );
+  };
+
+  // ตัวเลขบนชิปต้องเป็น "จำนวนที่จะเห็นจริงเมื่อกด" จึงนับหลังกรองแท็บกับคำค้นแล้ว
+  // แต่ก่อนกรอง SLA ไม่งั้นพอติ๊กปุ่มหนึ่ง ตัวเลขปุ่มที่เหลือจะกลายเป็น 0 หมด
+  const tabScoped = leads.filter(l => matchesTab(l, tab, todayYmd)).filter(matchesSearch);
+  const slaAvailable = leads.some(l => l.sla_status);
+  const slaChipCounts = tabScoped.reduce((counts, l) => {
+    const key = slaFilterKeyOf(l.sla_status);
+    if (key) counts[key] += 1;
+    return counts;
+  }, { breached: 0, near_due: 0, active: 0, without: 0 } as Record<SlaFilterKey, number>);
+
+  const slaStatusKeys = slaFilters.filter((key): key is SlaStatusKey => key !== "without");
+  const filtered = sortLeads(tabScoped.filter(l => {
+    if (slaFilters.length === 0) return true;
+    // normalizeSlaFilters การันตีว่า "ไม่มีงาน SLA" อยู่ตัวเดียวเสมอ
+    if (slaFilters.includes("without")) return !l.sla_status;
+    return matchesSlaStatus(l.sla_status, slaStatusKeys);
+  }));
 
   const countFor = (key: TabKey) => key === "all" ? leads.length : leads.filter(l => matchesTab(l, key, todayYmd)).length;
 
@@ -252,6 +289,13 @@ export default function PipelinePage() {
       />
 
       <div className="p-3 md:p-4">
+        {/* อยู่ในตัวหน้า ไม่ใช่ tabsRight — tabsRight ซ่อนบนจอแคบ ติ๊กไว้แล้วจะปลดไม่ได้
+            และแถวแท็บของ Pipeline ยาว 13 ปุ่มอยู่แล้ว ไม่มีที่ให้ชิปยืน */}
+        {slaAvailable && (
+          <div className="mb-3 px-1">
+            <SlaFilterChips filters={slaFilters} counts={slaChipCounts} onToggle={onToggleSla} />
+          </div>
+        )}
         {loading ? (
           <div className="flex items-center justify-center py-16">
             <div className="w-10 h-10 border-3 border-gray-200 border-t-primary rounded-full animate-spin" />

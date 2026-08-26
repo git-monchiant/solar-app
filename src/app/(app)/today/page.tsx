@@ -8,6 +8,14 @@ import { useOpenLead } from "@/lib/hooks/useOpenLead";
 import BaseLeadCard, { LeadData } from "@/components/lead/LeadCard";
 import TodaySlaFooter, { type TodaySlaItem, type TodaySlaSolarUser, type TodaySlaStatus } from "@/components/sla/TodaySlaFooter";
 import { slaTaskLabel } from "@/lib/sla-display";
+import SlaFilterChips from "@/components/sla/SlaFilterChips";
+import {
+  matchesSlaStatus,
+  parseSlaFilters,
+  toggleSlaFilter as nextSlaFilters,
+  type SlaFilterKey,
+  type SlaStatusKey,
+} from "@/lib/sla-filter";
 import ListPageHeader from "@/components/layout/ListPageHeader";
 import NewLeadModal from "@/components/modal/NewLeadModal";
 import ChannelPickerModal from "@/components/shared/ChannelPickerModal";
@@ -35,49 +43,11 @@ interface TodayData {
 
 type TodayTab = "sales_all" | "sales" | "booking" | "quote" | "deposit_paid" | "sales_wait_install" | "sales_solar" | "solar" | "solar_survey" | "solar_quote" | "solar_wait_install" | "solar_install" | "solar_installing" | "solar_warranty" | "solar_gridtie" | "calendar";
 
-type SlaFilterKey = "breached" | "near_due" | "active" | "without";
-type SlaStatusKey = Exclude<SlaFilterKey, "without">;
-
 type SlaDashboardData = {
   counts: Record<TodaySlaStatus, number>;
   leadCounts: Record<TodaySlaStatus, number> & { near_due: number };
   items: TodaySlaItem[];
 };
-
-// เรียงตามความเร่งด่วน ใช้ทั้งลำดับปุ่มบนจอและลำดับค่าใน URL จะได้ลิงก์คงที่
-const SLA_FILTER_ORDER: SlaFilterKey[] = ["breached", "near_due", "active", "without"];
-
-const SLA_CHIPS: { key: SlaFilterKey; label: string; on: string; tick: string; num: string }[] = [
-  { key: "breached", label: "เกินกำหนด", on: "border-red-200 bg-red-50 text-red-700", tick: "border-red-500 bg-red-500", num: "text-red-600" },
-  { key: "near_due", label: "ใกล้กำหนด", on: "border-amber-200 bg-amber-50 text-amber-700", tick: "border-amber-500 bg-amber-500", num: "text-amber-600" },
-  { key: "active", label: "ตามแผน", on: "border-sky-200 bg-sky-50 text-sky-700", tick: "border-sky-500 bg-sky-500", num: "text-sky-700" },
-  { key: "without", label: "ไม่มีงาน SLA", on: "border-gray-300 bg-gray-100 text-gray-700", tick: "border-gray-600 bg-gray-600", num: "text-gray-500" },
-];
-
-/** "ไม่มีงาน SLA" กับสถานะอื่นอยู่ร่วมกันไม่ได้ — Lead ที่ไม่มี SLA ย่อมไม่มีสถานะ SLA */
-function normalizeSlaFilters(keys: SlaFilterKey[]): SlaFilterKey[] {
-  const unique = new Set(keys);
-  if (unique.has("without")) return ["without"];
-  return SLA_FILTER_ORDER.filter(key => unique.has(key));
-}
-
-function parseSlaFilters(value: string | null): SlaFilterKey[] {
-  if (!value) return [];
-  const keys: SlaFilterKey[] = [];
-  for (const part of value.split(",")) {
-    const key = part.trim();
-    // ลิงก์เดิม ?sla=all คือ "มีงาน SLA" ซึ่งเท่ากับติ๊กครบทั้งสามสถานะ
-    if (key === "all") keys.push("breached", "near_due", "active");
-    else if ((SLA_FILTER_ORDER as string[]).includes(key)) keys.push(key as SlaFilterKey);
-  }
-  return normalizeSlaFilters(keys);
-}
-
-function matchesSlaStatus(item: TodaySlaItem, keys: SlaStatusKey[]): boolean {
-  return keys.some(key => (key === "near_due"
-    ? item.status === "warning" || item.status === "critical"
-    : item.status === key));
-}
 
 type TodaySlaCardContextValue = {
   enabled: boolean;
@@ -283,7 +253,7 @@ export default function TodayPage() {
     const grouped = new Map<number, TodaySlaItem[]>();
     if (slaWithoutOnly) return grouped;
     for (const item of filteredSlaItems) {
-      if (slaStatusKeys.length > 0 && !matchesSlaStatus(item, slaStatusKeys)) continue;
+      if (slaStatusKeys.length > 0 && !matchesSlaStatus(item.status, slaStatusKeys)) continue;
       const items = grouped.get(item.lead_id) ?? [];
       items.push(item);
       grouped.set(item.lead_id, items);
@@ -560,16 +530,7 @@ export default function TodayPage() {
     router.replace(query ? `/today?${query}` : "/today", { scroll: false });
   };
 
-  const toggleSlaFilter = (key: SlaFilterKey) => {
-    if (slaFilters.includes(key)) {
-      applySlaFilters(slaFilters.filter(current => current !== key));
-      return;
-    }
-    // "ไม่มีงาน SLA" กับสถานะอื่นเลือกพร้อมกันไม่ได้ อันที่เพิ่งกดชนะ
-    applySlaFilters(key === "without"
-      ? ["without"]
-      : normalizeSlaFilters([...slaFilters.filter(current => current !== "without"), key]));
-  };
+  const toggleSlaFilter = (key: SlaFilterKey) => applySlaFilters(nextSlaFilters(slaFilters, key));
 
   const salesAllCount = allLeads ? filterLeads(allLeads).length : 0;
 
@@ -653,43 +614,16 @@ export default function TodayPage() {
     return counts;
   })();
 
-  const renderSlaChip = (chip: (typeof SLA_CHIPS)[number]) => {
-    const on = slaFilters.includes(chip.key);
-    const count = slaChipCounts[chip.key];
-    return (
-      <button
-        type="button"
-        aria-pressed={on}
-        onClick={() => toggleSlaFilter(chip.key)}
-        className={`h-7 inline-flex items-center gap-1.5 rounded-full border px-2.5 text-xxs font-semibold whitespace-nowrap transition-colors ${
-          on ? chip.on : "border-gray-200 bg-white text-gray-600 hover:border-gray-400"
-        }`}
-      >
-        <span className={`w-3 h-3 rounded border-2 flex items-center justify-center ${on ? chip.tick : "border-gray-300"}`}>
-          {on && <CheckIcon className="w-1.5 h-1.5 text-white" strokeWidth={4} />}
-        </span>
-        {chip.label}
-        {/* ยังไม่ติ๊กก็ยังคุมสีของตัวเอง — กวาดตาแถวเดียวรู้ว่าสีไหนคือเรื่องด่วน ตามม็อกอัพ */}
-        <span className={`font-mono tabular-nums font-bold ${on ? "" : chip.num}`}>{count.toLocaleString("th-TH")}</span>
-      </button>
-    );
-  };
-
   // Keep SLA controls next to "งานของฉัน" so users can narrow urgent work
   // without leaving Today. Controls wrap on mobile instead of disappearing.
   const sortControls = (
     <div className="flex items-center gap-2 flex-wrap">
       {slaAvailable && (
-        <span className="inline-flex flex-wrap items-center gap-1.5">
-          <span className="text-xxs font-bold uppercase tracking-wider text-gray-400">SLA</span>
-          {SLA_CHIPS.map(chip => (
-            <span key={chip.key} className="inline-flex items-center gap-1.5">
-              {/* Lead ที่ไม่มี SLA เป็นคนละชุดกับสถานะ SLA — เส้นคั่นบอกว่าเลือกร่วมกันไม่ได้ */}
-              {chip.key === "without" && <span aria-hidden className="h-5 w-px bg-gray-200" />}
-              {renderSlaChip(chip)}
-            </span>
-          ))}
-          {slaStatusMode && (
+        <SlaFilterChips
+          filters={slaFilters}
+          counts={slaChipCounts}
+          onToggle={toggleSlaFilter}
+          trailing={slaStatusMode && (
             <span className="relative inline-flex" ref={slaSubRef}>
               <button
                 type="button"
@@ -760,7 +694,7 @@ export default function TodayPage() {
               )}
             </span>
           )}
-        </span>
+        />
       )}
       <button
         type="button"
