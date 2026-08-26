@@ -156,17 +156,19 @@ for i in {1..12}; do
   if [[ "$code" == "200" && "$got" == "$WANT_VERSION" ]]; then
     echo "✅ ${PUBLIC_URL} → HTTP 200 · v${got}"
 
-    # 7. tag ไว้ให้รู้ว่า prod = commit ไหน และย้อนกลับได้
+    # 7. tag ไว้ในเครื่องให้รู้ว่า prod = commit ไหน และย้อนกลับได้
+    #
+    # สคริปต์นี้ "ไม่ push" อะไรทั้งสิ้น — การส่งขึ้น GitHub เป็นการตัดสินใจของคน
+    # ไม่ใช่ผลข้างเคียงของการ deploy · push เองภายหลังด้วย
+    #   git push && git push origin v<version>
     TAG="v${WANT_VERSION}"
     if [[ "${ALLOW_DIRTY:-0}" != "1" ]]; then
       if git rev-parse "$TAG" >/dev/null 2>&1; then
         echo "ℹ️  tag ${TAG} มีอยู่แล้ว ข้ามการสร้าง"
       else
         git tag -a "$TAG" -m "deploy to prod $(date '+%Y-%m-%d %H:%M')"
-        git push origin "$TAG" --quiet 2>/dev/null && echo "🏷️  สร้างและ push tag ${TAG}" \
-          || echo "🏷️  สร้าง tag ${TAG} แล้ว (push ไม่สำเร็จ — push เองภายหลัง)"
+        echo "🏷️  สร้าง tag ${TAG} ไว้ในเครื่อง (ยังไม่ push)"
       fi
-      git push --quiet 2>/dev/null && echo "⬆️  push ${BRANCH} ขึ้น origin แล้ว" || true
     fi
     exit 0
   fi

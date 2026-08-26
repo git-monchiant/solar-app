@@ -464,7 +464,7 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
     }
     if (body.survey_time_slot !== undefined) {
       sets.push("survey_time_slot = @survey_time_slot");
-      request.input("survey_time_slot", sql.NVarChar(100), body.survey_time_slot);
+      request.input("survey_time_slot", sql.NVarChar(200), body.survey_time_slot);
     }
     if (body.zone !== undefined) {
       sets.push("zone = @zone");
@@ -683,7 +683,7 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
     }
     if (body.install_time_slot !== undefined) {
       sets.push("install_time_slot = @install_time_slot");
-      request.input("install_time_slot", sql.NVarChar(100), body.install_time_slot);
+      request.input("install_time_slot", sql.NVarChar(200), body.install_time_slot);
     }
     if (body.install_confirmed !== undefined) {
       sets.push("install_confirmed = @install_confirmed");

@@ -999,6 +999,21 @@ const asLine = (raw: Record<string, unknown>): TreeLine => ({
   unit: String(raw.unit || ""),
 });
 
+/** บรรทัดแรกของแพ็กเกจหลัก: รวมจำนวน+หน่วยเข้าไปในชื่อเลย เพราะเอกสารพิมพ์ต่อกันอยู่แล้ว
+ *  ("...รวม 2.92 kWp" + 1 + "เฟส" → "...รวม 2.92 kWp 1 เฟส")
+ *  ทำเฉพาะหัวข้อสไตล์ Excel ที่ขึ้นต้นด้วย "งานจ้างเหมา" — ตรงกับเงื่อนไข usesExcelPackageTitle
+ *  ใน quotation-pdf · เรียกซ้ำได้ เพราะ unit ถูกล้างหลังรวมแล้ว */
+const mergeTitleUnit = (line: TreeLine): TreeLine =>
+  line.unit && line.item_name.startsWith("งานจ้างเหมา")
+    ? { ...line, item_name: `${line.item_name} ${line.quantity} ${line.unit}`.trim(), quantity: 1, unit: "" }
+    : line;
+
+/** รวมหน่วยเข้าชื่อให้เฉพาะกลุ่มแพ็กเกจบนสุด (แพ็กเกจหลัก) — กลุ่มอื่นคงเดิม */
+const withMergedMainTitle = (gs: TreeGroup[]): TreeGroup[] => {
+  const i = gs.findIndex((g) => g.kind === "package");
+  return i < 0 ? gs : gs.map((g, gi) => (gi === i ? { ...g, title: mergeTitleUnit(g.title) } : g));
+};
+
 /** แปลงรายการที่บันทึกไว้กลับเป็น tree ตอนเปิดใบเก่ามาแก้ */
 function hydrateGroups(quote: Quote | undefined): TreeGroup[] {
   const rows = (quote?.items || []) as unknown as Array<Record<string, unknown>>;
@@ -1047,7 +1062,7 @@ function hydrateGroups(quote: Quote | undefined): TreeGroup[] {
       open: false,
     });
   }
-  return groups;
+  return withMergedMainTitle(groups);
 }
 
 
@@ -1163,14 +1178,17 @@ function QuotationEditor({
         open: true,
       };
       setGroups((gs) => {
-        if (replaceKey) return gs.map((g) => (g.key === replaceKey ? group : g));
+        if (replaceKey)
+          return withMergedMainTitle(gs.map((g) => (g.key === replaceKey ? group : g)));
         // แพ็กเกจใหม่แทรกต่อท้ายกลุ่มแพ็กเกจ — "งานเพิ่ม" อยู่ล่างสุดเสมอ
         // และหุบหัวข้ออื่นไว้ (กางได้ทีละอัน)
         const closed = gs.map((g) => ({ ...g, open: false }));
         const firstCustom = closed.findIndex((g) => g.kind === "custom");
-        return firstCustom < 0
-          ? [...closed, group]
-          : [...closed.slice(0, firstCustom), group, ...closed.slice(firstCustom)];
+        return withMergedMainTitle(
+          firstCustom < 0
+            ? [...closed, group]
+            : [...closed.slice(0, firstCustom), group, ...closed.slice(firstCustom)],
+        );
       });
     } finally {
       setLoadingPackage(false);
