@@ -26,7 +26,7 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
       .query(`
         SELECT l.*,
                sla.policy_code as sla_policy_code, sla.task_name as sla_task_name,
-               sla.status as sla_status, sla.target_at as sla_target_at, sla.due_at as sla_due_at,
+               sla.status as sla_status, sla.started_at as sla_started_at, sla.target_at as sla_target_at, sla.due_at as sla_due_at,
                COALESCE(NULLIF(l.project_alias, N''), NULLIF(l.project_name, N''), p.name) as project_display_name,
                p.name as project_official_name,
                pk.name as package_name, pk.price as package_price,
@@ -97,7 +97,7 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
         LEFT JOIN line_users lu ON lu.line_user_id = l.line_id
         LEFT JOIN lead_data d ON d.lead_id = l.id
         OUTER APPLY (
-          SELECT TOP 1 policy_code, task_name, status, target_at, due_at
+          SELECT TOP 1 policy_code, task_name, status, started_at, target_at, due_at
           FROM lead_sla_instances si
           WHERE si.lead_id = l.id AND si.status IN ('active','warning','critical','breached')
             AND si.superseded_at IS NULL

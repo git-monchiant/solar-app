@@ -4,6 +4,7 @@ import { geocodeThaiPlace } from "@/lib/utils/geocode";
 import { requireAuth } from "@/lib/auth";
 import { ensureFirstContactSla, refreshOpenSlaStates, syncOperationalSlas } from "@/lib/sla-service";
 import { followUpOverdueSql, LAST_FOLLOW_UP_APPLY } from "@/lib/lead-followup-sql";
+import { LATE_SLA_STAGES_APPLY, LATE_SLA_STAGES_COLUMN } from "@/lib/lead-sla-sql";
 
 async function maybeGeocodeProject(projectId: number) {
   const db = await getDb();
@@ -43,8 +44,9 @@ export async function GET(req: NextRequest) {
              pk.name as package_name, pk.price as package_price,
              u.full_name as assigned_name, u.username as assigned_username,
              sla.policy_code as sla_policy_code, sla.task_name as sla_task_name,
-             sla.status as sla_status, sla.target_at as sla_target_at, sla.due_at as sla_due_at,
+             sla.status as sla_status, sla.started_at as sla_started_at, sla.target_at as sla_target_at, sla.due_at as sla_due_at,
              sla.owner_role as sla_owner_role, sla.owner_user_id as sla_owner_user_id, sla_owner.full_name as sla_owner_name,
+             ${LATE_SLA_STAGES_COLUMN},
              (SELECT TOP 1 note FROM lead_activities WHERE lead_id = l.id AND note IS NOT NULL ORDER BY created_at DESC) as last_activity_note,
              (SELECT TOP 1 created_at FROM lead_activities WHERE lead_id = l.id AND activity_type IN ('call','visit','line','other','follow_up','loan_followup') ORDER BY created_at DESC) as last_activity_date,
              (SELECT TOP 1 title FROM lead_activities WHERE lead_id = l.id AND activity_type IN ('call','visit','line','other','follow_up','loan_followup') ORDER BY created_at DESC) as last_activity_title,
@@ -84,13 +86,13 @@ export async function GET(req: NextRequest) {
       LEFT JOIN packages pk ON l.interested_package_id = pk.id
       LEFT JOIN users u ON l.assigned_user_id = u.id
       OUTER APPLY (
-        SELECT TOP 1 policy_code, task_name, status, target_at, due_at, owner_role, owner_user_id
+        SELECT TOP 1 policy_code, task_name, status, started_at, target_at, due_at, owner_role, owner_user_id
         FROM lead_sla_instances si
         WHERE si.lead_id = l.id AND si.status IN ('active','warning','critical','breached')
           AND si.superseded_at IS NULL
         ORDER BY si.due_at ASC
       ) sla
-      LEFT JOIN users sla_owner ON sla.owner_user_id = sla_owner.id${LAST_FOLLOW_UP_APPLY}
+      LEFT JOIN users sla_owner ON sla.owner_user_id = sla_owner.id${LATE_SLA_STAGES_APPLY}${LAST_FOLLOW_UP_APPLY}
       ORDER BY l.created_at DESC
     `);
     return NextResponse.json(fixDates(result.recordset));

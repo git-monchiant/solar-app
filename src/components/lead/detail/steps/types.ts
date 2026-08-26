@@ -278,6 +278,7 @@ export interface Lead {
   grid_note: string | null;
   sla_policy_code?: string | null;
   sla_task_name?: string | null;
+  sla_started_at?: string | null;
   sla_status?: "active" | "warning" | "critical" | "breached" | null;
   sla_target_at?: string | null;
   sla_due_at?: string | null;

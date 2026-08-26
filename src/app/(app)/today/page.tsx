@@ -7,7 +7,7 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { useOpenLead } from "@/lib/hooks/useOpenLead";
 import BaseLeadCard, { LeadData } from "@/components/lead/LeadCard";
 import TodaySlaFooter, { type TodaySlaItem, type TodaySlaSolarUser, type TodaySlaStatus } from "@/components/sla/TodaySlaFooter";
-import { slaTaskLabel } from "@/lib/sla-display";
+import { slaPolicyOrder, slaTaskLabel } from "@/lib/sla-display";
 import SlaFilterChips from "@/components/sla/SlaFilterChips";
 import SlaSubFilter, { SLA_SUB_SELECT_CLASS } from "@/components/sla/SlaSubFilter";
 import {
@@ -74,6 +74,7 @@ function LeadCard(props: ComponentProps<typeof BaseLeadCard>) {
     sla_policy_code: primary.policy_code,
     sla_task_name: primary.task_name,
     sla_status: primary.status,
+    sla_started_at: primary.started_at,
     sla_due_at: primary.due_at,
     // The footer collapses to the most urgent SLA, so pass the rest too - the
     // card needs all of them to tell whether one already owns the follow-up date.
@@ -206,7 +207,7 @@ export default function TodayPage() {
     const options = new Map<string, string>();
     for (const item of scopedSlaData?.items ?? []) options.set(item.policy_code, slaTaskLabel(item.policy_code, item.task_name));
     return Array.from(options, ([value, label]) => ({ value, label }))
-      .sort((a, b) => a.label.localeCompare(b.label, "th"));
+      .sort((a, b) => slaPolicyOrder(a.value) - slaPolicyOrder(b.value) || a.label.localeCompare(b.label, "th"));
   }, [scopedSlaData]);
 
   const slaOwnerOptions = useMemo(() => {

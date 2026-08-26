@@ -22,6 +22,32 @@ export function slaWorkflowStage(policyCode?: string | null): SlaWorkflowStage |
 }
 
 /**
+ * ลำดับขั้นตอนจริงตามเส้นทางงาน ใช้เรียงตัวเลือกในตัวกรอง — เรียงตามตัวอักษรแล้ว
+ * อ่านไม่ออกว่าขั้นไหนมาก่อนหลัง ("เข้าตรวจสำรวจ" ขึ้นก่อน "ติดต่อ Lead ครั้งแรก")
+ * CONTACT_RETRY ต่อจาก FIRST_CONTACT เพราะเป็นรอบตามต่อของการติดต่อครั้งแรก
+ */
+export const SLA_POLICY_ORDER: readonly string[] = [
+  "FIRST_CONTACT",
+  "CONTACT_RETRY",
+  "ELECTRICITY_ASSESSMENT",
+  "BOOK_SURVEY",
+  "SITE_SURVEY",
+  "PROPOSAL_ROI",
+  "DEPOSIT_CLOSE",
+  "PAYMENT_INSTALLMENT_1",
+  "LOAN_PREAPPROVAL",
+  "SCHEDULE_INSTALLATION",
+  "INSTALLATION",
+  "CLOSE_LEAD",
+];
+
+/** ลำดับสำหรับ .sort() — policy ที่ยังไม่ได้ขึ้นทะเบียนไว้ไปต่อท้าย */
+export function slaPolicyOrder(policyCode?: string | null): number {
+  const index = policyCode ? SLA_POLICY_ORDER.indexOf(policyCode) : -1;
+  return index === -1 ? SLA_POLICY_ORDER.length : index;
+}
+
+/**
  * The one place a policy's step name is written. sla-service.ts reconciles
  * instances with these strings and the UI reads them back through
  * slaTaskLabel(), so a renamed step lands in both without a data migration.
@@ -109,4 +135,40 @@ export function slaTimeConditionText(policyCode: string, startedAt: string): str
     }
   }
   return SLA_TIME_CONDITION_TEXT[policyCode as keyof typeof SLA_TIME_CONDITION_TEXT] ?? null;
+}
+
+/**
+ * ขั้นตอนที่เคย (หรือกำลัง) เกินกำหนด SLA สรุปต่อหนึ่งขั้นของแถบ pipeline
+ * รวมมาจากหลาย policy ที่ตกอยู่ขั้นเดียวกัน เช่น DEPOSIT_CLOSE /
+ * PAYMENT_INSTALLMENT_1 / LOAN_PREAPPROVAL ที่นับเป็นขั้น "ชำระเงิน" ทั้งหมด
+ */
+export type LateSlaStage = {
+  /** จำนวนงาน SLA ที่เกินกำหนดในขั้นนั้น (CONTACT_RETRY มีได้หลายรอบ) */
+  count: number;
+  /** เกินกำหนดนานสุดในขั้นนั้น หน่วยนาที — งานที่ปิดแล้วนับถึงเวลาที่ปิด */
+  overdueMinutes: number;
+  /** true = ยังมีงานที่นาฬิกาเดินค้างอยู่ ไม่ใช่ความช้าที่จบไปแล้ว */
+  stillOpen: boolean;
+};
+
+type LateSlaRow = { policy_code?: string; late_count?: number; overdue_minutes?: number; still_open?: number };
+
+/** แปลงคอลัมน์ sla_late_stages (FOR JSON PATH จาก LATE_SLA_STAGES_APPLY) เป็น map ต่อขั้นตอน */
+export function parseLateSlaStages(json?: string | null): Partial<Record<SlaWorkflowStage, LateSlaStage>> {
+  if (!json) return {};
+  let rows: unknown;
+  try { rows = JSON.parse(json); } catch { return {}; }
+  if (!Array.isArray(rows)) return {};
+  const stages: Partial<Record<SlaWorkflowStage, LateSlaStage>> = {};
+  for (const row of rows as LateSlaRow[]) {
+    const stage = slaWorkflowStage(row?.policy_code);
+    if (!stage) continue;
+    const previous = stages[stage];
+    stages[stage] = {
+      count: (previous?.count ?? 0) + Math.max(1, Number(row.late_count) || 1),
+      overdueMinutes: Math.max(previous?.overdueMinutes ?? 0, Math.max(0, Number(row.overdue_minutes) || 0)),
+      stillOpen: (previous?.stillOpen ?? false) || Number(row.still_open) === 1,
+    };
+  }
+  return stages;
 }

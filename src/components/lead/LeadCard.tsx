@@ -1,5 +1,5 @@
 import { CalendarIcon, ClockIcon, LineIcon, PhoneIcon } from "@/components/ui/icons";
-import { useState, type ReactNode } from "react";
+import { useMemo, useState, type ReactNode } from "react";
 import { STATUS_CONFIG, getStatusLabel, getStatusColor, getMainStatus, getSubstep } from "@/lib/constants/statuses";
 import { formatSlotsRange } from "@/lib/time-slots";
 import { stripThaiTitle, houseNumberOrNull } from "@/lib/utils/name";
@@ -7,8 +7,8 @@ import { formatTHB, formatThaiDateShort } from "@/lib/utils/formatters";
 import { useOpenLead } from "@/lib/hooks/useOpenLead";
 import AssignOwnerButton from "./AssignOwnerButton";
 import SourceTag from "@/components/SourceTag";
-import { SLA_STATUS_LABEL, SLA_TIMELINE_STYLE, SlaLeadSummary, formatSlaTimelineDuration } from "@/components/sla/SlaStatusDisplay";
-import { slaOwnsFollowUpDate, slaWorkflowStage } from "@/lib/sla-display";
+import { SLA_LATE_TIMELINE_STYLE, SLA_STATUS_LABEL, SLA_TIMELINE_STYLE, SlaLeadSummary, formatSlaOverdueMinutes, formatSlaTimelineDuration } from "@/components/sla/SlaStatusDisplay";
+import { parseLateSlaStages, slaOwnsFollowUpDate, slaWorkflowStage } from "@/lib/sla-display";
 
 export interface LeadData {
   id: number;
@@ -65,12 +65,15 @@ export interface LeadData {
   sla_policy_code?: string | null;
   sla_task_name?: string | null;
   sla_status?: "active" | "warning" | "critical" | "breached" | null;
+  sla_started_at?: string | null;
   sla_target_at?: string | null;
   sla_due_at?: string | null;
   sla_owner_role?: "sales" | "solar" | null;
   sla_owner_name?: string | null;
   /** Every open SLA the card shows, when the caller renders more than one. */
   sla_items?: { policy_code: string; due_at: string }[];
+  /** JSON สรุปขั้นตอนที่เคยเกิน SLA — ดู LATE_SLA_STAGES_APPLY ใน lib/lead-sla-sql.ts */
+  sla_late_stages?: string | null;
 }
 
 export default function LeadCard({ lead, compact, onAssignChange, onOpen, slaFooter }: { lead: LeadData; compact?: boolean; onAssignChange?: () => void; onOpen?: (lead: LeadData) => void; slaFooter?: ReactNode }) {
@@ -91,6 +94,7 @@ export default function LeadCard({ lead, compact, onAssignChange, onOpen, slaFoo
       status={lead.sla_status}
       policyCode={lead.sla_policy_code}
       taskName={lead.sla_task_name}
+      startedAt={lead.sla_started_at}
       dueAt={lead.sla_due_at}
       ownerRole={lead.sla_owner_role}
       ownerName={lead.sla_owner_name}
@@ -99,6 +103,9 @@ export default function LeadCard({ lead, compact, onAssignChange, onOpen, slaFoo
   const slaPanel = slaFooter === undefined ? defaultSlaPanel : slaFooter;
   const hasSlaPanel = slaPanel != null;
   const slaStage = slaWorkflowStage(lead.sla_policy_code);
+  // ความช้าที่ "ผ่านไปแล้ว" — การ์ดโชว์ SLA ที่กำลังเดินได้ตัวเดียว แถบ pipeline
+  // จึงเป็นที่เดียวที่เล่าได้ว่ารายนี้ช้าสะสมมาจากขั้นไหนบ้าง
+  const lateSlaStages = useMemo(() => parseLateSlaStages(lead.sla_late_stages), [lead.sla_late_stages]);
   // Callers that render several SLA panels pass the whole set; everyone else
   // has the single sla_* snapshot on the lead.
   const slaItems = lead.sla_items
@@ -191,17 +198,27 @@ export default function LeadCard({ lead, compact, onAssignChange, onOpen, slaFoo
                   const isPast = i < currentIdx;
                   const stageConfig = STATUS_CONFIG[s] ?? { label: FLOW_LABELS[s], color: "bg-amber-500", text: "text-amber-700" };
                   const hasStageSla = s === slaStage && !!lead.sla_status && !!lead.sla_due_at;
-                  const slaTone = hasStageSla ? SLA_TIMELINE_STYLE[lead.sla_status!] : null;
-                  const slaDuration = hasStageSla ? formatSlaTimelineDuration(lead.sla_status!, lead.sla_due_at!) : null;
+                  // นาฬิกาที่ยังเดินอยู่ของขั้นนี้มาก่อนเสมอ ประวัติที่ปิดไปแล้ว
+                  // ไม่ต้องแย่งที่กับตัวเลขที่ยังนับสด
+                  const lateSla = hasStageSla ? undefined : lateSlaStages[s];
+                  const slaTone = hasStageSla ? SLA_TIMELINE_STYLE[lead.sla_status!]
+                    : lateSla ? (lateSla.stillOpen ? SLA_TIMELINE_STYLE.breached : SLA_LATE_TIMELINE_STYLE)
+                    : null;
+                  const slaDuration = hasStageSla ? formatSlaTimelineDuration(lead.sla_status!, lead.sla_due_at!)
+                    : lateSla ? formatSlaOverdueMinutes(lateSla.overdueMinutes)
+                    : null;
+                  const slaTitle = hasStageSla ? `${stageConfig?.label} · SLA ${SLA_STATUS_LABEL[lead.sla_status!]} · ${slaDuration}`
+                    : lateSla ? `${stageConfig?.label} · ${lateSla.stillOpen ? "SLA ยังค้างเกินกำหนด" : "เคยเกิน SLA"} · ${slaDuration}${lateSla.count > 1 ? ` · ${lateSla.count} งาน` : ""}`
+                    : stageConfig?.label;
                   return (
                     <div
                       key={s}
                       className="flex items-start"
-                      title={hasStageSla ? `${stageConfig?.label} · SLA ${SLA_STATUS_LABEL[lead.sla_status!]} · ${slaDuration}` : stageConfig?.label}
+                      title={slaTitle}
                     >
                       <div className="flex w-9 shrink-0 flex-col items-center lg:w-11 xl:w-12">
                         <div className={`relative w-5 h-5 lg:w-6 lg:h-6 rounded-full flex items-center justify-center transition-all ${
-                          isCurrent ? `${config.color} ${hasStageSla ? "shadow-sm scale-110" : "ring-2 ring-offset-1 ring-gray-200 shadow-sm scale-110"}`
+                          isCurrent ? `${config.color} ${slaTone ? "shadow-sm scale-110" : "ring-2 ring-offset-1 ring-gray-200 shadow-sm scale-110"}`
                           : isPast ? "bg-emerald-500"
                           : "bg-gray-200"
                         } ${slaTone ? `ring-2 ring-offset-2 ${slaTone.ring}` : ""}`}>

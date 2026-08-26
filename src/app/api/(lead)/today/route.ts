@@ -3,6 +3,7 @@ import { getDb, fixDates } from "@/lib/db";
 import { requireAuth } from "@/lib/auth";
 import { refreshOpenSlaStates } from "@/lib/sla-service";
 import { followUpOverdueSql } from "@/lib/lead-followup-sql";
+import { LATE_SLA_STAGES_APPLY, LATE_SLA_STAGES_COLUMN } from "@/lib/lead-sla-sql";
 
 // LeadCard + today page only read ~30 columns from the leads table. The full
 // table is 60-80 cols per row (survey JSON blobs, photo URLs, etc.) so
@@ -29,7 +30,8 @@ const LEAD_COLS = `
   p.district, p.province, pk.name as package_name,
   u.full_name as assigned_name, u.username as assigned_username,
   sla.policy_code as sla_policy_code, sla.task_name as sla_task_name,
-  sla.status as sla_status, sla.target_at as sla_target_at, sla.due_at as sla_due_at,
+  sla.status as sla_status, sla.started_at as sla_started_at, sla.target_at as sla_target_at, sla.due_at as sla_due_at,
+  ${LATE_SLA_STAGES_COLUMN},
   COALESCE(act.contact_count, 0) AS contact_count,
   last_act.last_activity_date,
   last_act.last_activity_title,
@@ -71,12 +73,12 @@ const LEAD_FROM = `
   LEFT JOIN packages pk ON l.interested_package_id = pk.id
   LEFT JOIN users u ON l.assigned_user_id = u.id
   OUTER APPLY (
-    SELECT TOP 1 policy_code, task_name, status, target_at, due_at
+    SELECT TOP 1 policy_code, task_name, status, started_at, target_at, due_at
     FROM lead_sla_instances si
     WHERE si.lead_id = l.id AND si.status IN ('active','warning','critical','breached')
       AND si.superseded_at IS NULL
     ORDER BY si.due_at ASC
-  ) sla
+  ) sla${LATE_SLA_STAGES_APPLY}
   LEFT JOIN (
     SELECT
       a.lead_id,

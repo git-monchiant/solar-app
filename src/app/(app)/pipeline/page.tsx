@@ -7,7 +7,7 @@ import LeadCard, { type LeadData } from "@/components/lead/LeadCard";
 import { useActiveRoles, hasRole } from "@/lib/roles";
 import SlaFilterChips from "@/components/sla/SlaFilterChips";
 import SlaSubFilter, { SLA_SUB_SELECT_CLASS } from "@/components/sla/SlaSubFilter";
-import { slaTaskLabel } from "@/lib/sla-display";
+import { slaPolicyOrder, slaTaskLabel } from "@/lib/sla-display";
 import {
   matchesSlaStatus,
   parseSlaFilters,
@@ -49,6 +49,7 @@ interface Lead {
   order_total_count?: number | null;
   /** งาน SLA ที่ใกล้ครบกำหนดที่สุดของ lead — /api/leads ส่งมาแค่ตัวบนสุดตัวเดียว */
   sla_status?: "active" | "warning" | "critical" | "breached" | null;
+  sla_started_at?: string | null;
   sla_policy_code?: string | null;
   sla_task_name?: string | null;
   sla_owner_role?: "sales" | "solar" | null;
@@ -239,7 +240,7 @@ export default function PipelinePage() {
       return map;
     }, new Map<string, string>()),
     ([value, label]) => ({ value, label }),
-  ).sort((a, b) => a.label.localeCompare(b.label, "th"));
+  ).sort((a, b) => slaPolicyOrder(a.value) - slaPolicyOrder(b.value) || a.label.localeCompare(b.label, "th"));
 
   // แยกตามทีมเหมือน Today — "Solar ยังไม่มอบหมาย" เป็นคำถามคนละข้อกับ "Sales ยังไม่มอบหมาย"
   // ต่างจาก Today ตรงที่ไม่ยัดรายชื่อทีม Solar ทั้งทีมเข้ามา เพราะหน้านี้มอบหมายงานไม่ได้

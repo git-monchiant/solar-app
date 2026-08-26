@@ -14,6 +14,7 @@ export type TodaySlaItem = {
   policy_code: string;
   task_name: string;
   status: TodaySlaStatus;
+  started_at: string;
   due_at: string;
   full_name: string;
   phone: string;
@@ -89,6 +90,7 @@ export default function TodaySlaFooter({
               status={item.status}
               policyCode={item.policy_code}
               taskName={item.task_name}
+              startedAt={item.started_at}
               dueAt={item.due_at}
               ownerRole={item.owner_role}
               ownerContent={ownerContent}
