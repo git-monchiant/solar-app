@@ -123,7 +123,7 @@ export default function LeadCard({ lead, compact, onAssignChange, onOpen, slaFoo
       className="block rounded-2xl bg-white border border-gray-300 shadow-sm hover:border-gray-400 hover:shadow-md transition-all cursor-pointer"
     >
       <div className="p-5 md:p-3">
-        <div className={hasSlaPanel ? "2xl:grid 2xl:grid-cols-[minmax(0,1fr)_26rem] 2xl:items-stretch 2xl:gap-4" : undefined}>
+        <div className={hasSlaPanel ? "2xl:grid 2xl:grid-cols-[minmax(0,1fr)_22rem] 2xl:items-stretch 2xl:gap-4" : undefined}>
           <div className="min-w-0">
         {/* Header: name + status */}
         <div className="flex items-start gap-3 mb-3 md:mb-1.5">
@@ -227,7 +227,7 @@ export default function LeadCard({ lead, compact, onAssignChange, onOpen, slaFoo
                           {FLOW_LABELS[s]}
                         </span>
                         {slaTone && slaDuration && (
-                          <span className={`mt-1 whitespace-nowrap text-[9px] font-bold leading-none ${slaTone.text}`}>
+                          <span className={`mt-1 whitespace-nowrap text-[11px] font-bold leading-none lg:text-[13px] ${slaTone.text}`}>
                             {slaDuration}
                           </span>
                         )}
