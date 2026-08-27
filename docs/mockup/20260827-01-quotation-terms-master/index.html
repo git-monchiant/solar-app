@@ -1,0 +1,602 @@
+<!doctype html>
+<html lang="th">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>เงื่อนไขใบเสนอราคาแก้ได้จากหน้าจอ · Solar V0 Mockup</title>
+<style>
+@font-face{font-family:DB;src:url('../../../public/fonts/db_heavent_v3.2-webfont.woff');font-weight:400}
+@font-face{font-family:DB;src:url('../../../public/fonts/db_heavent_med_v3.2-webfont.woff');font-weight:500}
+@font-face{font-family:DB;src:url('../../../public/fonts/db_heavent_bd_v3.2-webfont.woff');font-weight:700}
+
+/* โทนสี/ขนาดตัวอักษร ยกมาจาก src/app/globals.css ของแอปจริง */
+:root{
+  --primary:#1ed0c7; --primary-dark:#18b5ad; --accent:#f8aa00;
+  --active:#8b5cf6; --active-light:#f5f3ff;
+  --danger:#ef4444; --success:#22c55e;
+  --ink:#111827; --g700:#374151; --g500:#6b7280; --g400:#9ca3af; --g300:#d1d5db;
+  --g200:#e5e7eb; --g100:#f3f4f6; --g50:#f9fafb;
+  --xxs:18px; --xs:20px; --sm:22px; --base:24px;
+}
+*{box-sizing:border-box}
+html,body{margin:0;background:#eef1f4;color:var(--ink);
+  font-family:DB,"Noto Sans Thai",-apple-system,"Segoe UI",sans-serif;font-size:var(--xs)}
+button,input,select,textarea{font:inherit;color:inherit}
+button{cursor:pointer}
+
+.devbar{height:26px;line-height:26px;background:var(--accent);color:#fff;text-align:center;
+  font-size:14px;font-weight:700;letter-spacing:.14em}
+.wrap{max-width:1380px;margin:0 auto;padding:14px 16px 40px}
+
+/* แถบสลับหน้าจอของ mockup (ไม่ใช่ส่วนของแอป) */
+.mock-nav{display:flex;flex-wrap:wrap;align-items:center;gap:8px;margin-bottom:14px}
+.mock-nav .lbl{font-size:var(--xxs);color:var(--g500);margin-right:2px}
+.mock-nav button{height:34px;padding:0 14px;border:1px solid var(--g300);border-radius:9px;
+  background:#fff;color:var(--g700);font-size:var(--xxs);font-weight:700}
+.mock-nav button.on{border-color:var(--primary);background:#e9fbfa;color:var(--primary-dark)}
+.screen{display:none}
+.screen.on{display:block}
+
+/* ── โครง modal แบบเดียวกับ QuotationEditor ของจริง ── */
+.modal{display:flex;flex-direction:column;overflow:hidden;background:#fff;border-radius:16px;
+  box-shadow:0 25px 50px -12px #0f172a40;min-height:760px}
+.modal-head{display:flex;flex-shrink:0;align-items:center;justify-content:space-between;gap:12px;
+  padding:12px 20px;border-bottom:1px solid var(--g100)}
+.modal-head .t{font-size:var(--sm);font-weight:700;color:var(--ink)}
+.modal-head .s{font-size:var(--xxs);color:var(--g400)}
+.x{width:34px;height:34px;border:0;border-radius:8px;background:transparent;color:var(--g400);font-size:26px;line-height:1}
+.x:hover{background:var(--g100)}
+.modal-body{flex:1;display:grid;grid-template-columns:minmax(0,1fr) 320px;gap:14px;padding:14px 20px;overflow:auto}
+.modal-foot{display:flex;flex-shrink:0;align-items:center;gap:12px;padding:12px 20px;
+  border-top:1px solid var(--g100);background:#fff}
+.btn-ghost{height:40px;padding:0 14px;border:0;border-radius:9px;background:transparent;color:var(--g500);font-weight:500}
+.btn-ghost:hover{background:var(--g100);color:var(--g700)}
+.btn-outline{height:40px;padding:0 16px;border:1px solid var(--g200);border-radius:9px;background:#fff;
+  color:var(--g700);font-size:var(--xxs);font-weight:700}
+.btn-primary{height:40px;padding:0 22px;border:0;border-radius:9px;background:var(--primary);color:#fff;
+  font-size:var(--xxs);font-weight:700;box-shadow:0 4px 10px #1ed0c740}
+.btn-primary:hover{background:var(--primary-dark)}
+.foot-tip{font-size:var(--xxs);color:var(--g400)}
+.push{margin-left:auto}
+
+/* ── การ์ดฝั่งขวา แบบเดียวกับของจริง ── */
+.card{border:1px solid var(--g200);border-radius:12px;background:#fff;padding:10px}
+.card + .card{margin-top:10px}
+.card-head{display:flex;align-items:center;justify-content:space-between;gap:8px}
+.card-title{font-size:var(--xs);font-weight:700;color:var(--g700)}
+.card-sub{margin-top:2px;font-size:var(--xxs);color:var(--g400)}
+.mini{height:26px;padding:0 10px;border:0;border-radius:7px;background:#1ed0c71a;color:var(--primary-dark);
+  font-size:var(--xxs);font-weight:700}
+.row-sum{display:flex;justify-content:space-between;align-items:center;padding:4px 0;font-size:var(--xxs);color:var(--g500)}
+.row-sum b{color:var(--g700)}
+.grand{display:flex;justify-content:space-between;align-items:center;margin-top:6px;padding-top:8px;
+  border-top:1px solid var(--g100);font-size:var(--xs);font-weight:700}
+.grand span:last-child{color:var(--primary);font-size:26px}
+
+/* ── ส่วนหัวคอลัมน์ซ้าย ── */
+.left-head{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-bottom:10px}
+.left-head .t{font-size:var(--xs);font-weight:700}
+.left-head .c{font-size:var(--xxs);color:var(--g400);font-weight:400;margin-left:6px}
+
+/* ── บล็อกหัวข้อเงื่อนไข (หน้าตาเดียวกับกลุ่มรายการในใบเสนอราคา) ── */
+.sec{border:1px solid var(--g200);border-radius:12px;background:#fff;margin-bottom:10px;overflow:hidden}
+.sec-head{display:grid;grid-template-columns:22px 34px minmax(0,1fr) auto;align-items:center;gap:10px;
+  padding:10px 12px;background:var(--g50);border-bottom:1px solid var(--g100)}
+.caret{border:0;background:transparent;color:var(--g400);font-size:16px;padding:0}
+.num{width:34px;height:34px;border-radius:9px;background:var(--primary);color:#fff;
+  display:grid;place-items:center;font-size:var(--xs);font-weight:700}
+.num.ghost{background:var(--g200);color:var(--g500)}
+.sec-title{min-width:0}
+.sec-title b{display:block;font-size:var(--xs);font-weight:700;line-height:1.25}
+.sec-title small{display:block;margin-top:1px;font-size:var(--xxs);color:var(--g400)}
+.sec-tools{display:flex;align-items:center;gap:2px}
+.tool{width:28px;height:28px;border:0;border-radius:7px;background:transparent;color:var(--g400);font-size:16px}
+.tool:hover{background:var(--g100);color:var(--g700)}
+.tool.del:hover{background:#fef2f2;color:var(--danger)}
+
+.lines{padding:4px 12px 10px}
+.line{display:grid;grid-template-columns:20px 20px minmax(0,1fr) 74px;align-items:start;gap:8px;
+  padding:7px 0;border-bottom:1px solid var(--g100)}
+.line:last-child{border-bottom:0}
+.dot{margin-top:9px;justify-self:center;width:5px;height:5px;border-radius:50%;background:var(--g300)}
+.numtag{margin-top:5px;font-size:var(--xxs);color:var(--g400);font-variant-numeric:tabular-nums}
+.body{min-width:0}
+.editable{width:100%;min-height:32px;padding:5px 8px;border:1px solid transparent;border-radius:8px;
+  background:transparent;font-size:var(--xxs);line-height:1.45;color:var(--g700)}
+.editable:hover{border-color:var(--g200)}
+.editable:focus{outline:0;border-color:var(--primary);background:#fff;box-shadow:0 0 0 3px #1ed0c71a}
+.line-tools{display:flex;justify-content:flex-end;gap:2px;padding-top:2px}
+
+/* ป้ายตัวแทนค่า — พิมพ์ทับข้างในไม่ได้ ลบได้ทั้งก้อน */
+.ph{display:inline-flex;align-items:center;gap:3px;margin:0 1px;padding:1px 7px;border-radius:6px;
+  background:var(--active-light);border:1px solid #ddd0fb;color:#6d3fd4;font-size:16px;font-weight:700;
+  white-space:nowrap;vertical-align:baseline}
+.ph:before{content:"⌗";opacity:.55;font-weight:400}
+.ph.warn{background:#fff7ed;border-color:#fed7aa;color:#b45309}
+
+/* แถบปุ่มแทรกค่า */
+.inserts{display:flex;flex-wrap:wrap;align-items:center;gap:6px;margin-top:8px;padding-top:8px;
+  border-top:1px dashed var(--g200)}
+.inserts .lbl{font-size:var(--xxs);color:var(--g400);margin-right:2px}
+.chip{height:26px;padding:0 10px;border:1px solid #ddd0fb;border-radius:99px;background:var(--active-light);
+  color:#6d3fd4;font-size:16px;font-weight:700}
+.chip:hover{background:#ece3ff}
+
+/* บรรทัดพรีวิว */
+.preview{margin-top:8px;padding:8px 10px;border:1px solid var(--g200);border-left:3px solid var(--primary);
+  border-radius:8px;background:var(--g50)}
+.preview .lbl{font-size:16px;color:var(--g400);font-weight:700;letter-spacing:.04em}
+.preview .txt{margin-top:2px;font-size:var(--xxs);color:var(--g700);line-height:1.45}
+.preview .txt em{font-style:normal;font-weight:700;color:var(--primary-dark);
+  background:#e9fbfa;border-radius:4px;padding:0 4px}
+
+.locked{background:var(--g50)}
+.lock-badge{display:inline-flex;align-items:center;gap:4px;padding:1px 7px;border-radius:99px;
+  background:var(--g100);color:var(--g500);font-size:15px;font-weight:700}
+.addline{display:inline-flex;align-items:center;gap:6px;margin-top:6px;height:30px;padding:0 12px;
+  border:1px dashed var(--g300);border-radius:8px;background:#fff;color:var(--g500);font-size:var(--xxs);font-weight:700}
+.addline:hover{border-color:var(--primary);color:var(--primary-dark);background:#f0fdfc}
+
+/* แถบเวอร์ชัน/เผยแพร่ */
+.verbar{display:flex;flex-wrap:wrap;align-items:center;gap:10px;margin-bottom:12px;padding:10px 12px;
+  border:1px solid #fde68a;border-radius:12px;background:#fffbeb}
+.verbar .pill{padding:2px 10px;border-radius:99px;background:#fef3c7;color:#92400e;font-size:16px;font-weight:700}
+.verbar .pill.live{background:#dcfce7;color:#166534}
+.verbar .txt{font-size:var(--xxs);color:#92400e}
+.verbar .txt b{color:#78350f}
+
+.seg{display:inline-flex;padding:3px;border:1px solid var(--g200);border-radius:10px;background:var(--g50)}
+.seg button{height:30px;padding:0 14px;border:0;border-radius:8px;background:transparent;
+  color:var(--g500);font-size:var(--xxs);font-weight:700}
+.seg button.on{background:#fff;color:var(--primary-dark);box-shadow:0 1px 3px #0f172a1a}
+
+/* ── หน้า /quotation-terms/manage ── */
+.page{background:#fff;border-radius:16px;box-shadow:0 25px 50px -12px #0f172a26;overflow:hidden;min-height:760px}
+.page-head{display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:12px;
+  padding:14px 20px;border-bottom:1px solid var(--g100)}
+.page-head .t{font-size:26px;font-weight:700}
+.page-head .s{margin-top:1px;font-size:var(--xxs);color:var(--g400)}
+.page-body{display:grid;grid-template-columns:minmax(0,1fr) 300px;gap:14px;padding:14px 20px 20px}
+.side-note{font-size:var(--xxs);color:var(--g500);line-height:1.5}
+.side-note b{color:var(--g700)}
+.hist{display:grid;gap:6px;margin-top:8px}
+.hist-row{display:grid;grid-template-columns:auto 1fr;gap:8px;padding:7px 8px;border:1px solid var(--g200);
+  border-radius:9px;background:#fff;font-size:16px}
+.hist-row .v{font-weight:700;color:var(--g700)}
+.hist-row .m{color:var(--g400);line-height:1.35}
+.hist-row.now{border-color:#bbf7d0;background:#f0fdf4}
+
+/* ── บล็อกเงื่อนไขรายใบ (ฝั่งขวาของ QuotationEditor) ── */
+.termline{display:grid;grid-template-columns:20px minmax(0,1fr);gap:7px;align-items:start;
+  padding:6px 0;border-bottom:1px solid var(--g100);font-size:var(--xxs);line-height:1.4}
+.termline:last-child{border-bottom:0}
+.termline.off .tx{color:var(--g300);text-decoration:line-through}
+.cb{margin-top:4px;width:16px;height:16px;accent-color:var(--primary)}
+.cb:disabled{accent-color:var(--g300)}
+.tx small{display:block;margin-top:1px;font-size:15px;color:var(--g400)}
+.groupname{margin:8px 0 2px;font-size:16px;font-weight:700;color:var(--g400);letter-spacing:.04em}
+.quota{display:flex;align-items:center;justify-content:space-between;gap:8px;margin-top:8px;
+  padding:7px 9px;border-radius:9px;background:#f0fdfc;border:1px solid #99e6e1;font-size:16px;color:#0f766e}
+.quota.warn{background:#fffbeb;border-color:#fde68a;color:#92400e}
+.bar{height:5px;border-radius:99px;background:#d1faf7;overflow:hidden;width:110px}
+.bar i{display:block;height:100%;background:var(--primary)}
+.bar.warn{background:#fef3c7}.bar.warn i{background:var(--accent)}
+
+.legend{margin-top:14px;padding:12px 14px;border:1px solid var(--g200);border-radius:12px;background:#fff}
+.legend h3{margin:0 0 6px;font-size:var(--xs)}
+.legend ul{margin:0;padding-left:18px;font-size:var(--xxs);color:var(--g500);line-height:1.6}
+.legend b{color:var(--g700)}
+
+@media(max-width:1080px){
+  .modal-body,.page-body{grid-template-columns:1fr}
+}
+</style>
+</head>
+<body>
+<div class="devbar">DEVELOPMENT / DEMO</div>
+
+<div class="wrap">
+  <div class="mock-nav">
+    <span class="lbl">Mockup · แผน 20260827-01 ·</span>
+    <button class="on" data-go="s1">1 · หน้าจัดการต้นแบบเงื่อนไข</button>
+    <button data-go="s2">2 · แก้เงื่อนไขเฉพาะใบ (ในหน้าสร้างใบเสนอราคา)</button>
+  </div>
+
+  <!-- ══════════ หน้าจอ 1 : /quotation-terms/manage ══════════ -->
+  <section class="screen on" id="s1">
+  <div class="page">
+    <div class="page-head">
+      <div>
+        <div class="t">เงื่อนไขใบเสนอราคา</div>
+        <div class="s">ข้อความที่จะพิมพ์บนใบเสนอราคาทุกใบที่สร้างหลังจากเผยแพร่</div>
+      </div>
+      <div class="seg">
+        <button class="on">ติดตั้งใหม่ทั้งระบบ</button>
+        <button>ติดตั้งเพิ่ม</button>
+      </div>
+    </div>
+
+    <div class="page-body">
+      <div>
+        <div class="verbar">
+          <span class="pill">ฉบับร่าง</span>
+          <span class="txt">กำลังแก้จากเวอร์ชัน <b>v4</b> ที่ใช้อยู่ตอนนี้ · แก้โดย <b>Admin</b> เมื่อ 27 ส.ค. 14:20 —
+            ใบเสนอราคายังใช้ <b>v4</b> จนกว่าจะกดเผยแพร่</span>
+          <button class="btn-outline push">ทิ้งฉบับร่าง</button>
+          <button class="btn-primary">เผยแพร่</button>
+        </div>
+
+        <div class="left-head">
+          <div class="t">หัวข้อและข้อความ <span class="c">4 หัวข้อ · 16 บรรทัด</span></div>
+          <div style="display:flex;gap:8px">
+            <button class="btn-outline">+ เพิ่มหัวข้อ</button>
+            <button class="btn-outline">↺ คืนค่าจากต้นฉบับ</button>
+          </div>
+        </div>
+
+        <!-- หัวข้อ 1 -->
+        <div class="sec">
+          <div class="sec-head">
+            <button class="caret">▾</button>
+            <div class="num">1</div>
+            <div class="sec-title">
+              <b>รายละเอียดการรับประกันสินค้า</b>
+              <small>หน้า 1 · แสดงทุกใบ</small>
+            </div>
+            <div class="sec-tools">
+              <button class="tool" title="เลื่อนขึ้น">↑</button>
+              <button class="tool" title="เลื่อนลง">↓</button>
+              <button class="tool del" title="ลบหัวข้อ">×</button>
+            </div>
+          </div>
+          <div class="lines">
+            <div class="line">
+              <span class="dot"></span><span class="numtag">1.1</span>
+              <div class="body"><div class="editable" contenteditable>การรับประกัน แผงโซลาร์เซลล์ PRODUCTION WARRANTY และ รับประกัน PERFORMANCE WARRANTY โดยจะรับประกันจากผู้ผลิต</div></div>
+              <div class="line-tools"><button class="tool">↑</button><button class="tool">↓</button><button class="tool del">×</button></div>
+            </div>
+            <div class="line">
+              <span class="dot"></span><span class="numtag">1.2</span>
+              <div class="body"><div class="editable" contenteditable>การรับประกัน INVERTER รับประกันมาตรฐาน โดยรับประกันจากผู้ผลิต</div></div>
+              <div class="line-tools"><button class="tool">↑</button><button class="tool">↓</button><button class="tool del">×</button></div>
+            </div>
+            <div class="line">
+              <span class="dot"></span><span class="numtag">1.3</span>
+              <div class="body"><div class="editable" contenteditable>การรับประกัน BATTERY รับประกันมาตรฐาน โดยรับประกันจากผู้ผลิต</div></div>
+              <div class="line-tools"><button class="tool">↑</button><button class="tool">↓</button><button class="tool del">×</button></div>
+            </div>
+
+            <!-- บรรทัดที่มีตัวแทนค่า — กำลังแก้อยู่ -->
+            <div class="line" style="background:#fbfdff;border-radius:9px">
+              <span class="dot"></span><span class="numtag">1.4</span>
+              <div class="body">
+                <div class="editable" style="border-color:var(--primary);background:#fff;box-shadow:0 0 0 3px #1ed0c71a">ยืนยันราคาภายใน <span class="ph" contenteditable="false">จำนวนวันยืนราคา</span> วัน นับจากวันที่ออกเอกสารใบเสนอราคา</div>
+                <div class="inserts">
+                  <span class="lbl">แทรกค่า:</span>
+                  <button class="chip">+ จำนวนวันยืนราคา</button>
+                  <button class="chip">+ จำนวนปี O&amp;M</button>
+                  <button class="chip">+ จำนวนครั้ง/ปี</button>
+                  <button class="chip">+ จำนวนปีรับประกันงานติดตั้ง</button>
+                </div>
+                <div class="preview">
+                  <div class="lbl">ตัวอย่างที่จะพิมพ์จริง (ใบ SSR-QT-26-0028 · ยืนราคา 7 วัน)</div>
+                  <div class="txt">1.4) ยืนยันราคาภายใน <em>7</em> วัน นับจากวันที่ออกเอกสารใบเสนอราคา</div>
+                </div>
+              </div>
+              <div class="line-tools"><button class="tool">↑</button><button class="tool">↓</button><button class="tool del">×</button></div>
+            </div>
+            <button class="addline">+ เพิ่มบรรทัด</button>
+          </div>
+        </div>
+
+        <!-- หัวข้อ 2 -->
+        <div class="sec">
+          <div class="sec-head">
+            <button class="caret">▾</button>
+            <div class="num">2</div>
+            <div class="sec-title">
+              <b>หมายเหตุ (กรณีติดตั้งใหม่ทั้งระบบ)</b>
+              <small>2.1–2.4 อยู่หน้า 1 · 2.5–2.6 อยู่หน้า 2</small>
+            </div>
+            <div class="sec-tools">
+              <button class="tool">↑</button><button class="tool">↓</button><button class="tool del">×</button>
+            </div>
+          </div>
+          <div class="lines">
+            <div class="line">
+              <span class="dot"></span><span class="numtag">2.1</span>
+              <div class="body"><div class="editable" contenteditable>ราคาดังกล่าวรวมค่าใช้จ่ายในการขอใบอนุญาต ได้แก่ ใบอนุญาตขนานไฟ เอกสารนอกเหนือจากนี้จะมีค่าใช้จ่ายเพิ่มเติม</div></div>
+              <div class="line-tools"><button class="tool">↑</button><button class="tool">↓</button><button class="tool del">×</button></div>
+            </div>
+            <div class="line">
+              <span class="dot"></span><span class="numtag">2.2</span>
+              <div class="body"><div class="editable" contenteditable>ราคานี้ไม่รวมงานปรับปรุงระบบและสายไฟฟ้าเพิ่มเติมภายในบ้าน ทางบริษัทฯ ยินดีเสนอราคาเพิ่มเติมตามความเหมาะสมของหน้างาน</div></div>
+              <div class="line-tools"><button class="tool">↑</button><button class="tool">↓</button><button class="tool del">×</button></div>
+            </div>
+            <div class="line locked">
+              <span class="dot"></span><span class="numtag">2.3</span>
+              <div class="body">
+                <div class="editable" style="color:var(--g500)">หากมีการเปลี่ยนแปลงจากที่ตกลง บริษัทฯ ขอสงวนสิทธิ์คิดค่าใช้จ่ายเป็นงานเพิ่ม
+                  <span class="lock-badge">🔒 บังคับมีทุกใบ</span></div>
+              </div>
+              <div class="line-tools"><button class="tool">↑</button><button class="tool">↓</button></div>
+            </div>
+            <div class="line">
+              <span class="dot"></span><span class="numtag">2.4</span>
+              <div class="body"><div class="editable" contenteditable>บ้านที่จะติดตั้งระบบโซลาร์เซลล์ ต้องยื่นขออนุญาตเรียบร้อยแล้ว พร้อมมีบ้านเลขที่และติดตั้งมิเตอร์จากการไฟฟ้าเป็นมิเตอร์ไฟจริงแล้ว</div></div>
+              <div class="line-tools"><button class="tool">↑</button><button class="tool">↓</button><button class="tool del">×</button></div>
+            </div>
+            <div class="line">
+              <span class="dot"></span><span class="numtag">2.5</span>
+              <div class="body"><div class="editable" contenteditable>รับประกันงานติดตั้งระบบโซลาร์เซลล์ เป็นระยะเวลา <span class="ph" contenteditable="false">จำนวนปีรับประกันงานติดตั้ง</span> ปี</div></div>
+              <div class="line-tools"><button class="tool">↑</button><button class="tool">↓</button><button class="tool del">×</button></div>
+            </div>
+            <div class="line">
+              <span class="dot"></span><span class="numtag">2.6</span>
+              <div class="body">
+                <div class="editable" contenteditable>ราคานี้รวมค่าดำเนินการ O&amp;M เป็นเวลา <span class="ph" contenteditable="false">จำนวนปี O&amp;M</span> ปี ปีละ <span class="ph" contenteditable="false">จำนวนครั้ง/ปี</span> ครั้ง ตามรายการดังนี้</div>
+                <div style="margin-top:4px;font-size:16px;color:var(--g400)">แสดงเฉพาะเมื่อใบนั้นเปิดบริการ O&amp;M</div>
+              </div>
+              <div class="line-tools"><button class="tool">↑</button><button class="tool">↓</button><button class="tool del">×</button></div>
+            </div>
+          </div>
+        </div>
+
+        <!-- หัวข้อ 3 : บล็อกวนตามบริการ -->
+        <div class="sec">
+          <div class="sec-head">
+            <button class="caret">▾</button>
+            <div class="num">3</div>
+            <div class="sec-title">
+              <b>การดำเนินงานและการบำรุงรักษาระยะเวลา <span class="ph" contenteditable="false">จำนวนปี O&amp;M</span> ปี</b>
+              <small>หน้า 2 · แสดงเฉพาะเมื่อเปิด O&amp;M · เลขข้อเลื่อนเป็น 3 หรือหายไปเองตามที่ใบนั้นตั้งค่า</small>
+            </div>
+            <div class="sec-tools"><button class="tool">↑</button><button class="tool">↓</button><button class="tool del">×</button></div>
+          </div>
+          <div class="lines">
+            <div class="line">
+              <span class="dot"></span><span class="numtag">3.1</span>
+              <div class="body">
+                <div class="editable" contenteditable>ล้างแผงโซลาร์เซลล์ ปีละ <span class="ph" contenteditable="false">จำนวนครั้ง/ปี ของบริการนี้</span> ครั้ง เป็นระยะเวลา <span class="ph" contenteditable="false">จำนวนปี ของบริการนี้</span> ปี หรือประเมินจากความสกปรก</div>
+                <div style="margin-top:4px;font-size:16px;color:var(--g400)">ผูกกับสวิตช์ “ล้างแผง” ในใบเสนอราคา</div>
+              </div>
+              <div class="line-tools"><button class="tool">↑</button><button class="tool">↓</button><button class="tool del">×</button></div>
+            </div>
+            <div class="line">
+              <span class="dot"></span><span class="numtag">3.2</span>
+              <div class="body"><div class="editable" contenteditable>ตรวจสอบระบบโซลาร์เซลล์ ตรวจสอบจุดเชื่อมต่อ พร้อมทำ THERMOSCAN ปีละ <span class="ph" contenteditable="false">จำนวนครั้ง/ปี ของบริการนี้</span> ครั้ง เป็นระยะเวลา <span class="ph" contenteditable="false">จำนวนปี ของบริการนี้</span> ปี</div></div>
+              <div class="line-tools"><button class="tool">↑</button><button class="tool">↓</button><button class="tool del">×</button></div>
+            </div>
+            <div class="line">
+              <span class="dot"></span><span class="numtag">3.3</span>
+              <div class="body"><div class="editable" contenteditable>ตรวจสอบความผิดปกติของแผงโซลาร์เซลล์ทางกายภาพ ปีละ <span class="ph" contenteditable="false">จำนวนครั้ง/ปี ของบริการนี้</span> ครั้ง เป็นระยะเวลา <span class="ph" contenteditable="false">จำนวนปี ของบริการนี้</span> ปี</div></div>
+              <div class="line-tools"><button class="tool">↑</button><button class="tool">↓</button><button class="tool del">×</button></div>
+            </div>
+          </div>
+        </div>
+
+        <!-- หัวข้อ 4 -->
+        <div class="sec">
+          <div class="sec-head">
+            <button class="caret">▸</button>
+            <div class="num">4</div>
+            <div class="sec-title">
+              <b>เงื่อนไขเพิ่มเติม</b>
+              <small>หน้า 2 · 3 บรรทัด — เลขจะเด้งเป็น “3.” อัตโนมัติถ้าใบนั้นปิด O&amp;M</small>
+            </div>
+            <div class="sec-tools"><button class="tool">↑</button><button class="tool">↓</button><button class="tool del">×</button></div>
+          </div>
+        </div>
+      </div>
+
+      <!-- คอลัมน์ขวาของหน้าจัดการ -->
+      <div>
+        <div class="card">
+          <div class="card-head"><div class="card-title">สรุปฉบับร่าง</div></div>
+          <div class="row-sum"><span>หัวข้อ</span><b>4</b></div>
+          <div class="row-sum"><span>บรรทัดข้อความ</span><b>16</b></div>
+          <div class="row-sum"><span>บรรทัดที่ล็อกไว้</span><b>1</b></div>
+          <div class="row-sum"><span>ตัวแทนค่าที่ใช้</span><b>6 จุด</b></div>
+          <div class="grand"><span>ต่างจาก v4</span><span style="font-size:var(--xs)">3 จุด</span></div>
+        </div>
+
+        <div class="card">
+          <div class="card-head"><div class="card-title">ตัวอย่างเต็มหน้า</div></div>
+          <div class="card-sub">เลือกใบจริงมาลองแทนค่า แล้วดูผลก่อนเผยแพร่</div>
+          <div style="margin-top:8px;display:grid;gap:6px">
+            <button class="btn-outline" style="width:100%;text-align:left">SSR-QT-26-0028 · เปิด O&amp;M 2 ปี</button>
+            <button class="btn-outline" style="width:100%;text-align:left">SSR-QT-26-0027 · ปิด O&amp;M</button>
+            <button class="btn-outline" style="width:100%;text-align:left">ใบติดตั้งเพิ่ม (Scale up)</button>
+          </div>
+        </div>
+
+        <div class="card">
+          <div class="card-head"><div class="card-title">ประวัติเวอร์ชัน</div></div>
+          <div class="hist">
+            <div class="hist-row now"><span class="v">v4</span><span class="m">ใช้อยู่ตอนนี้ · เผยแพร่โดย Admin · 12 ส.ค. 2569</span></div>
+            <div class="hist-row"><span class="v">v3</span><span class="m">เผยแพร่โดย ณัฏฐามณฑ์ · 30 ก.ค. 2569</span></div>
+            <div class="hist-row"><span class="v">v2</span><span class="m">เผยแพร่โดย Admin · 11 ก.ค. 2569</span></div>
+          </div>
+          <div class="side-note" style="margin-top:8px">
+            <b>ใบเสนอราคาที่อนุมัติไปแล้วไม่เปลี่ยนตาม</b> — ระบบเก็บข้อความไว้ในใบตั้งแต่ตอนส่งอนุมัติ
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="legend">
+    <h3>สิ่งที่หน้าจอนี้แก้ให้</h3>
+    <ul>
+      <li><b>เลขข้อไม่ต้องพิมพ์เอง</b> — เก็บแต่เนื้อความ ระบบไล่เลข <b>1.1 / 2.3 / 3.1</b> ให้ตอนออกเอกสาร แทรกข้อกลางได้โดยเลขไม่ชน</li>
+      <li><b>ป้ายสีม่วง = ตัวเลขที่วิ่งตามแต่ละใบ</b> — ลบทั้งก้อนได้ แต่พิมพ์ทับข้างในไม่ได้ จึงพิมพ์รหัสผิดไม่ได้</li>
+      <li><b>บรรทัดพรีวิว</b> ใต้ช่องพิมพ์ แสดงผลจริงที่จะขึ้นบน PDF ก่อนบันทึก</li>
+      <li><b>แก้ = สร้างเวอร์ชันใหม่</b> — เหมือนช่วงราคาของ Package กดเผยแพร่จึงมีผล ย้อนดูได้ว่าใครแก้อะไรเมื่อไหร่</li>
+      <li><b>🔒 บังคับมีทุกใบ</b> — ข้อกฎหมายที่ Sale ปิดหรือแก้รายใบไม่ได้</li>
+    </ul>
+  </div>
+  </section>
+
+  <!-- ══════════ หน้าจอ 2 : เงื่อนไขรายใบ ใน QuotationEditor ══════════ -->
+  <section class="screen" id="s2">
+  <div class="modal">
+    <div class="modal-head">
+      <div>
+        <div class="t">ใบเสนอราคา ชุด 1</div>
+        <div class="s">SSR-QT-26-0028</div>
+      </div>
+      <button class="x">×</button>
+    </div>
+
+    <div class="modal-body">
+      <!-- ซ้าย: รายการ (ย่อไว้ให้เห็นบริบทว่าเป็นหน้าเดิม) -->
+      <div>
+        <div class="left-head">
+          <div class="t">รายการในใบเสนอราคา <span class="c">3 หัวข้อ</span></div>
+          <div style="display:flex;gap:8px">
+            <button class="btn-outline">+ เพิ่มแพ็กเกจ</button>
+            <button class="btn-outline">+ งานเพิ่ม</button>
+          </div>
+        </div>
+        <div class="sec">
+          <div class="sec-head">
+            <button class="caret">▾</button>
+            <div class="num">1</div>
+            <div class="sec-title"><b>งานจ้างเหมาติดตั้งระบบผลิตไฟฟ้าจากพลังงานแสงอาทิตย์บนหลังคา ขนาดติดตั้งรวม 9.49 kWp 1 เฟส</b></div>
+            <div style="font-size:var(--xs);font-weight:700">229,000</div>
+          </div>
+          <div class="lines">
+            <div class="line"><span class="dot"></span><span></span><div class="body"><div class="editable">PV MODULE ยี่ห้อ TRINA SOLAR รุ่น Vertex N หรือเทียบเท่า ขนาด 730 W จำนวน</div></div><div style="font-size:var(--xxs);color:var(--g500);text-align:right">13 แผง</div></div>
+            <div class="line"><span class="dot"></span><span></span><div class="body"><div class="editable">INVERTER ยี่ห้อ HUAWEI Solar Inverters ( Model: SUN2000-10K-LC0 ) หรือเทียบเท่า จำนวน</div></div><div style="font-size:var(--xxs);color:var(--g500);text-align:right">1 เครื่อง</div></div>
+            <div class="line"><span class="dot"></span><span></span><div class="body"><div class="editable">MOUNTING AND ACCESSORIES</div></div><div style="font-size:var(--xxs);color:var(--g500);text-align:right">1 SET</div></div>
+          </div>
+        </div>
+        <div class="sec">
+          <div class="sec-head">
+            <button class="caret">▸</button>
+            <div class="num">2</div>
+            <div class="sec-title"><b>งานจ้างเหมาติดตั้งระบบแบตเตอรี่ ขนาดติดตั้ง แบตเตอรี่ 14 kWh [เพิ่มแบตเตอรี่]</b></div>
+            <div style="font-size:var(--xs);font-weight:700">240,000</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- ขวา: การ์ดเดิม + การ์ดเงื่อนไขใหม่ -->
+      <div>
+        <div class="card">
+          <div class="row-sum"><span>รวมรายการ</span><b style="font-size:var(--xs)">709,000</b></div>
+          <div class="row-sum"><span>ฟรีค่าสำรวจ</span><b>0</b></div>
+          <div class="grand"><span>ยอดสุทธิ</span><span>709,000</span></div>
+        </div>
+
+        <div class="card">
+          <div class="card-head">
+            <div class="card-title">งวดชำระเงิน</div>
+            <button class="mini">+ งวด</button>
+          </div>
+          <div class="row-sum"><span>งวดที่ 1 ชำระ 20%</span><b>141,800</b></div>
+          <div class="row-sum"><span>งวดที่ 2 ชำระ 80%</span><b>567,200</b></div>
+          <div class="card-sub">รวม 100% · งวดสุดท้ายปรับอัตโนมัติ</div>
+        </div>
+
+        <div class="card">
+          <div class="card-head">
+            <div class="card-title">บริการ O&amp;M</div>
+            <button class="mini" style="background:transparent;color:var(--g400)">ซ่อน ⌃</button>
+          </div>
+          <div class="card-sub">2 ปี · 3 รายการ</div>
+        </div>
+
+        <!-- ★ การ์ดใหม่แทน textarea เดิม -->
+        <div class="card" style="border-color:#99e6e1;box-shadow:0 0 0 3px #1ed0c714">
+          <div class="card-head">
+            <div class="card-title">เงื่อนไข/ข้อกำหนด</div>
+            <button class="mini">+ เพิ่มข้อ</button>
+          </div>
+          <div class="card-sub">ใช้ต้นแบบ <b style="color:var(--g500)">v4 · ติดตั้งใหม่ทั้งระบบ</b> — ติ๊กออกหรือแก้ถ้อยคำได้เฉพาะใบนี้</div>
+
+          <div class="groupname">1. รายละเอียดการรับประกันสินค้า</div>
+          <label class="termline"><input class="cb" type="checkbox" checked><span class="tx">การรับประกัน แผงโซลาร์เซลล์ PRODUCTION WARRANTY และ PERFORMANCE WARRANTY โดยจะรับประกันจากผู้ผลิต</span></label>
+          <label class="termline"><input class="cb" type="checkbox" checked><span class="tx">การรับประกัน INVERTER รับประกันมาตรฐาน โดยรับประกันจากผู้ผลิต</span></label>
+          <label class="termline off"><input class="cb" type="checkbox"><span class="tx">การรับประกัน BATTERY รับประกันมาตรฐาน โดยรับประกันจากผู้ผลิต<small>ปิดไว้ — ใบนี้ไม่มีแบตเตอรี่</small></span></label>
+          <label class="termline"><input class="cb" type="checkbox" checked><span class="tx">ยืนยันราคาภายใน <em style="font-style:normal;font-weight:700;color:var(--primary-dark);background:#e9fbfa;border-radius:4px;padding:0 4px">7</em> วัน นับจากวันที่ออกเอกสารใบเสนอราคา<small>ตัวเลขวิ่งตามช่อง “ยืนราคา” ของใบนี้</small></span></label>
+
+          <div class="groupname">2. หมายเหตุ (กรณีติดตั้งใหม่ทั้งระบบ)</div>
+          <label class="termline"><input class="cb" type="checkbox" checked disabled><span class="tx">หากมีการเปลี่ยนแปลงจากที่ตกลง บริษัทฯ ขอสงวนสิทธิ์คิดค่าใช้จ่ายเป็นงานเพิ่ม <span class="lock-badge">🔒</span></span></label>
+          <label class="termline"><input class="cb" type="checkbox" checked><span class="tx">ราคานี้ไม่รวมงานปรับปรุงระบบและสายไฟฟ้าเพิ่มเติมภายในบ้าน <b style="color:var(--active)">· แก้เฉพาะใบนี้</b><small>เดิม: “…ทางบริษัทฯ ยินดีเสนอราคาเพิ่มเติมตามความเหมาะสมของหน้างาน”</small></span></label>
+
+          <div class="groupname">4. เงื่อนไขเพิ่มเติม</div>
+          <label class="termline"><input class="cb" type="checkbox" checked><span class="tx">ใบเสนอราคานี้เป็นเพียงการประมาณการเบื้องต้น หากติดตั้งจริงอาจมีการเปลี่ยนแปลงราคาในภายหลัง</span></label>
+          <label class="termline"><input class="cb" type="checkbox" checked><span class="tx">ลูกค้าเตรียมพื้นที่วางตู้ควบคุมขนาด 1×1 เมตร ก่อนวันติดตั้ง <b style="color:var(--active)">· เพิ่มเองในใบนี้</b></span></label>
+
+          <div class="quota">
+            <span>พื้นที่เงื่อนไขบนหน้า 2 · ใช้ไป 11 จาก 18 บรรทัด</span>
+            <span class="bar"><i style="width:61%"></i></span>
+          </div>
+        </div>
+
+        <div class="card">
+          <div class="card-head"><div class="card-title">วันที่ใบเสนอราคา</div><b style="font-size:var(--xxs)">25/08/2569</b></div>
+        </div>
+      </div>
+    </div>
+
+    <div class="modal-foot">
+      <button class="btn-ghost">ยกเลิก</button>
+      <span class="foot-tip">💡 ติ๊กออก = ไม่พิมพ์ข้อนั้นในใบนี้ · ไม่กระทบต้นแบบ</span>
+      <button class="btn-outline push">ดูตัวอย่าง</button>
+      <button class="btn-primary">บันทึกฉบับร่าง</button>
+    </div>
+  </div>
+
+  <div class="legend">
+    <h3>เทียบกับของเดิม</h3>
+    <ul>
+      <li><b>ของเดิม</b> — มีแค่ textarea “เงื่อนไขเพิ่มเติม” ช่องเดียว พิมพ์ได้อย่างเดียว ปิดข้อที่ไม่ใช้ไม่ได้</li>
+      <li><b>ของใหม่</b> — เห็นเงื่อนไขทุกข้อที่จะพิมพ์จริง ติ๊กปิดได้ แก้ถ้อยคำเฉพาะใบได้ เพิ่มข้อใหม่ได้</li>
+      <li>ข้อที่แก้/เพิ่มเฉพาะใบมีป้ายสีม่วงกำกับ จะได้รู้ว่าต่างจากต้นแบบตรงไหน</li>
+      <li>แถบ <b>พื้นที่เงื่อนไขบนหน้า 2</b> เตือนก่อนที่ข้อความจะยาวจนล้นทับเลขหน้าใน PDF</li>
+      <li>ใบที่มี <code>terms_text</code> เดิมอยู่แล้ว จะถูกแสดงเป็นข้อที่ “เพิ่มเองในใบนี้” ข้อมูลไม่หาย</li>
+    </ul>
+  </div>
+  </section>
+</div>
+
+<script>
+document.querySelectorAll(".mock-nav button").forEach(b=>{
+  b.onclick=()=>{
+    document.querySelectorAll(".mock-nav button").forEach(x=>x.classList.remove("on"));
+    b.classList.add("on");
+    document.querySelectorAll(".screen").forEach(s=>s.classList.remove("on"));
+    document.getElementById(b.dataset.go).classList.add("on");
+    window.scrollTo({top:0});
+  };
+});
+// ติ๊กปิด/เปิดข้อเงื่อนไขในหน้าจอ 2
+document.querySelectorAll("#s2 .termline .cb").forEach(cb=>{
+  cb.onchange=()=>cb.closest(".termline").classList.toggle("off",!cb.checked);
+});
+// ปุ่มแทรกค่า — วางป้ายลงในบรรทัดที่กำลังแก้
+document.querySelectorAll(".chip").forEach(c=>{
+  c.onclick=()=>{
+    const target=c.closest(".body").querySelector(".editable");
+    const span=document.createElement("span");
+    span.className="ph"; span.contentEditable="false";
+    span.textContent=c.textContent.replace(/^\+\s*/,"");
+    target.appendChild(document.createTextNode(" "));
+    target.appendChild(span);
+  };
+});
+// ย่อ/ขยายหัวข้อ
+document.querySelectorAll(".caret").forEach(c=>{
+  c.onclick=()=>{
+    const lines=c.closest(".sec").querySelector(".lines");
+    if(!lines) return;
+    const hidden=lines.style.display==="none";
+    lines.style.display=hidden?"":"none";
+    c.textContent=hidden?"▾":"▸";
+  };
+});
+</script>
+</body>
+</html>
