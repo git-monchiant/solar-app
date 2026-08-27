@@ -201,10 +201,13 @@ export const MODULES: AppModule[] = [
   {
     key: "om", label: "O&M", emoji: "🛠️", tint: "bg-orange-50",
     group: "operation",
-    desc: "แจ้งซ่อม · งานซ่อม · สัญญา O&M",
+    desc: "แชต LINE · นัดหมาย · สิทธิ์ล้างแผง",
     roles: ["sales", "solar", "sales_sup", "solar_sup", "admin"],
-    soon: true,
-    menu: [],
+    defaultHref: "/om/inbox",
+    menu: [
+      { label: "แชต LINE", href: "/om/inbox", icon: <LineIcon className="w-6 h-6" /> },
+      { label: "LINE OA", href: "/om/line-oa", icon: <I d={D.cog} /> },
+    ],
   },
   {
     key: "package", label: "Package", emoji: "📦", tint: "bg-violet-50",
