@@ -10,6 +10,7 @@ Statuses:
 
 | Plan | Status | Mockup | Notes |
 | --- | --- | --- | --- |
+| [20260827-01-quotation-terms-master.md](20260827-01-quotation-terms-master.md) | backlog | - | ทำเงื่อนไข/ข้อกำหนดในใบเสนอราคาให้แก้ไขเพิ่มลบได้จากหน้าจอแบบเดียวกับ Package Management; ตัดสินใจแล้ว: admin/Sale/Sale Manager แก้ได้ทั้งต้นแบบและรายใบ, ใบที่อนุมัติแล้วไม่ย้อนหลัง, ครอบคลุมทุกหัวข้อ, ใช้ปุ่มแทรกค่าแทนการพิมพ์ placeholder เอง; แบ่ง 3 เฟส เฟส 0 (แช่แข็งเงื่อนไขตอน submit) ไม่มี migration; ยังไม่เริ่มเขียนโค้ด |
 | [20260813-03-sale-payment-result-notifications.md](20260813-03-sale-payment-result-notifications.md) | done | - | แจ้งทั้ง Sale ผู้รับผิดชอบ Lead และผู้ส่งหลักฐาน เมื่อ Account ยืนยันหรือส่งกลับ พร้อม deep-link/deduplicate และ backfill migration 148 |
 | [20260813-02-accounting-payment-notifications.md](20260813-02-accounting-payment-notifications.md) | done | - | เพิ่มแจ้งเตือน Account/Admin สำหรับสลิปรอตรวจ เช็ครอรับ และเช็ครับแล้วรอยืนยันเงินเข้า พร้อมปิดงานอัตโนมัติและ deep-link; apply Development และตรวจ lint/type/build/API ผ่าน |
 | [20260813-01-active-role-approval-authorization.md](20260813-01-active-role-approval-authorization.md) | done | - | จำกัดสิทธิ์คิวและการอนุมัติใบเสนอราคาตาม role ที่เลือก ตรวจซ้ำฝั่ง API และเตรียม migration 146 สำหรับบันทึก role ใน audit โดยยังไม่ deploy |
