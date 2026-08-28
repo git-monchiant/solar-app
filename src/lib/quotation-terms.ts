@@ -52,8 +52,6 @@ export type QuotationTermLine = {
   /** หน้าที่บรรทัดนี้ไปโผล่ (หัวข้อ 2 มีบรรทัดคร่อม 2 หน้า) */
   page: 1 | 2;
   showWhen?: QuotationTermVisibility;
-  /** ข้อกฎหมายที่ลบและแก้ถ้อยคำไม่ได้ (เลื่อนลำดับได้) */
-  locked?: boolean;
   /** standard = มาจากชุดในโค้ด · custom = ผู้ใช้เพิ่มเองในใบนั้น */
   origin?: "standard" | "custom";
 };
@@ -77,17 +75,6 @@ export type QuotationTermTree = {
   removed?: QuotationTermLine[];
 };
 
-/** ปุ่ม "แทรกค่า" ในหน้าจอ — ผู้ใช้ไม่ต้องพิมพ์ {{...}} เอง */
-export const QUOTATION_TERM_PLACEHOLDERS: ReadonlyArray<
-  Readonly<{ key: string; label: string; omServiceOnly?: boolean }>
-> = Object.freeze([
-  Object.freeze({ key: "valid_days", label: "จำนวนวันยืนราคา" }),
-  Object.freeze({ key: "om_years", label: "จำนวนปี O&M" }),
-  Object.freeze({ key: "om_visits_phrase", label: "ข้อความ “ปีละ N ครั้ง”" }),
-  Object.freeze({ key: "service_visits", label: "จำนวนครั้ง/ปี ของบริการนี้", omServiceOnly: true }),
-  Object.freeze({ key: "service_years", label: "จำนวนปี ของบริการนี้", omServiceOnly: true }),
-]);
-
 const WARRANTY_LINES: QuotationTermLine[] = [
   { key: "w-panel", page: 1, body: "การรับประกัน แผงโซลาร์เซลล์ PRODUCTION WARRANTY และ รับประกัน PERFORMANCE WARRANTY โดยจะรับประกันจากผู้ผลิต" },
   { key: "w-inverter", page: 1, body: "การรับประกัน INVERTER รับประกันมาตรฐาน โดยรับประกันจากผู้ผลิต" },
@@ -98,7 +85,7 @@ const WARRANTY_LINES: QuotationTermLine[] = [
 const SHARED_NOTE_LINES: QuotationTermLine[] = [
   { key: "n-permit", page: 1, body: "ราคาดังกล่าวรวมค่าใช้จ่ายในการขอใบอนุญาต ได้แก่ ใบอนุญาตขนานไฟ เอกสารนอกเหนือจากนี้จะมีค่าใช้จ่ายเพิ่มเติม" },
   { key: "n-wiring", page: 1, body: "ราคานี้ไม่รวมงานปรับปรุงระบบและสายไฟฟ้าเพิ่มเติมภายในบ้าน ทางบริษัทฯ ยินดีเสนอราคาเพิ่มเติมตามความเหมาะสมของหน้างาน" },
-  { key: "n-change", page: 1, locked: true, body: "หากมีการเปลี่ยนแปลงจากที่ตกลง บริษัทฯ ขอสงวนสิทธิ์คิดค่าใช้จ่ายเป็นงานเพิ่ม" },
+  { key: "n-change", page: 1, body: "หากมีการเปลี่ยนแปลงจากที่ตกลง บริษัทฯ ขอสงวนสิทธิ์คิดค่าใช้จ่ายเป็นงานเพิ่ม" },
   { key: "n-meter", page: 1, body: "บ้านที่จะติดตั้งระบบโซลาร์เซลล์ ต้องยื่นขออนุญาตเรียบร้อยแล้ว พร้อมมีบ้านเลขที่และติดตั้งมิเตอร์จากการไฟฟ้าเป็นมิเตอร์ไฟจริงแล้ว" },
 ];
 
@@ -163,7 +150,7 @@ export function getStandardQuotationTermTree(
   });
 }
 
-/** จับคู่บรรทัดมาตรฐานด้วย key เพื่อรู้ว่าอันไหน locked และอันไหนถูกแก้ถ้อยคำแล้ว */
+/** จับคู่บรรทัดมาตรฐานด้วย key เพื่อรู้ว่าบรรทัดไหนถูกแก้ถ้อยคำไปแล้ว */
 export function getStandardQuotationTermLines(
   profile: QuotationTermsProfile,
 ): Map<string, QuotationTermLine> {
@@ -231,6 +218,105 @@ function fillPlaceholders(text: string, values: Record<string, string>): string 
   return text.replace(/\{\{\s*([a-z_]+)\s*\}\}/gi, (_all, key: string) => values[key] ?? "");
 }
 
+/**
+ * แทนค่าให้ข้อความเดียว — ใช้ตอนโชว์ในตัวแก้ไข ให้ผู้ใช้เห็นข้อความสุดท้ายจริง ๆ
+ * ไม่ต้องเห็น {{...}} ดิบ ๆ · ตัวแก้ไขจะเทียบผลของฟังก์ชันนี้กับสิ่งที่ผู้ใช้พิมพ์
+ * ถ้าเท่ากันแปลว่ายังไม่ได้แก้ ก็เก็บ {{...}} ไว้ตามเดิมเพื่อให้ค่าตามใบต่อไป
+ */
+export function fillQuotationTermText(
+  text: string,
+  options: {
+    validDays: unknown;
+    om: QuotationOmSettings;
+    lineKey?: string;
+    sectionKind?: QuotationTermSection["kind"];
+    /** คีย์ที่ "ไม่" ต้องแทน — ปล่อย {{...}} ไว้ให้แทนตอนเรนเดอร์จริง */
+    keep?: readonly string[];
+  },
+): string {
+  const ctx = buildTermValues(options.validDays, options.om);
+  const service = options.lineKey ? OM_SERVICE_BY_LINE_KEY[options.lineKey] : undefined;
+  const values =
+    options.sectionKind === "om_services" && service
+      ? {
+          ...ctx.values,
+          service_visits: String(ctx.om[service].visits_per_year),
+          service_years: String(ctx.om[service].years),
+        }
+      : ctx.values;
+  if (!options.keep?.length) return fillPlaceholders(text, values);
+  const kept = new Set(options.keep);
+  return text.replace(/\{\{\s*([a-z_]+)\s*\}\}/gi, (all, key: string) =>
+    kept.has(key) ? all : values[key] ?? "",
+  );
+}
+
+/** บรรทัดนี้ถูกซ่อนด้วยการตั้งค่า O&M อยู่หรือเปล่า */
+export function isQuotationTermVisible(
+  showWhen: QuotationTermVisibility | undefined,
+  om: QuotationOmSettings,
+): boolean {
+  return isVisible(showWhen, buildTermValues(7, om));
+}
+
+/**
+ * ลำดับที่หัวข้อถูกพิมพ์จริงบนเอกสาร = ลำดับในรายการ ตรงตัว บนลงล่าง
+ *
+ * เอกสารมี 2 หน้า และหน้า 1 มีที่ว่างจำกัดใต้ตารางราคา หัวข้อจึงมี `page` กำกับ
+ * แต่ "หน้า" ต้องไม่ทำให้ลำดับสลับ — ถ้าปล่อยให้หัวข้อของหน้า 1 ที่อยู่ล่าง ๆ
+ * กระโดดขึ้นไปพิมพ์ก่อน เลขบนเอกสารจะอ่านได้เป็น 2, 3, 1, 4, 5
+ *
+ * กติกาคือ "ขึ้นหน้าใหม่แล้วไม่ย้อนกลับ": ไล่จากบนลงล่าง พอเจอหัวข้อแรกที่เป็น
+ * ของหน้า 2 ตัวที่เหลือด้านล่างก็อยู่หน้า 2 ทั้งหมด ลำดับพิมพ์จึงเท่ากับลำดับ
+ * ในรายการเสมอ · ชุด Master เรียง 1,1,2,2 อยู่แล้ว ผลจึงไม่เปลี่ยน
+ */
+function orderSectionsForDocument(
+  tree: QuotationTermTree,
+  ctx: ReturnType<typeof buildTermValues>,
+) {
+  // เฉพาะหัวข้อของชุด Master เท่านั้นที่ "หน้า" มีความหมาย (ชุดนี้ถูกออกแบบมาให้
+  // 2 หัวข้อแรกพอดีกับที่ว่างใต้ตารางราคา) หัวข้อที่ผู้ใช้เพิ่มเองไม่มีหน้าเป็นของ
+  // ตัวเอง — อยู่ตรงไหนก็ใช้หน้าเดียวกับหัวข้อเหนือมัน ไม่งั้นหัวข้อที่เพิ่มเองแล้ว
+  // เลื่อนขึ้นไปบนสุดจะลากทุกอย่างตกไปหน้า 2 จนหน้า 1 ว่างเปล่า
+  const masterPages = new Map(
+    getStandardQuotationTermTree(tree.profile).sections.map((section) => [
+      section.key,
+      section.page,
+    ]),
+  );
+  let currentPage: 1 | 2 = 1;
+  return tree.sections
+    .filter((section) => isVisible(section.showWhen, ctx))
+    .map((section) => ({
+      section,
+      lines: section.lines.filter((line) => isVisible(line.showWhen, ctx)),
+    }))
+    .filter((entry) => entry.lines.length > 0)
+    .map((entry) => {
+      if (masterPages.get(entry.section.key) === 2) currentPage = 2;
+      return { ...entry, page: currentPage };
+    });
+}
+
+/**
+ * เลขข้อของแต่ละหัวข้อ/บรรทัด ("2" · "2.3") ตามที่จะพิมพ์ออกจริง
+ * ตัวแก้ไขบนหน้าจอใช้ตัวนี้ จะได้ไม่มีทางไล่เลขคนละแบบกับ PDF
+ */
+export function getQuotationTermNumbering(
+  tree: QuotationTermTree,
+  options: { validDays: unknown; om: QuotationOmSettings },
+): Map<string, string> {
+  const ctx = buildTermValues(options.validDays, options.om);
+  const map = new Map<string, string>();
+  let sectionNumber = 0;
+  for (const { section, lines } of orderSectionsForDocument(tree, ctx)) {
+    sectionNumber += 1;
+    map.set(section.key, String(sectionNumber));
+    lines.forEach((line, index) => map.set(line.key, `${sectionNumber}.${index + 1}`));
+  }
+  return map;
+}
+
 /** ไล่เลขข้อ + แทนค่า + จัดหน้า ให้ออกมาเป็นรูปแบบที่ PDF route ใช้อยู่แล้ว */
 export function renderQuotationTermTree(
   tree: QuotationTermTree,
@@ -240,12 +326,14 @@ export function renderQuotationTermTree(
   const page1Sections: QuotationLegalSection[] = [];
   const page2LeadingParagraphs: string[] = [];
   const page2Sections: QuotationLegalSection[] = [];
-  let sectionNumber = 0;
+  // เหมือนหัวข้อ: "หน้า" ของบรรทัดมีความหมายเฉพาะบรรทัดของชุด Master
+  // (หัวข้อหมายเหตุถูกออกแบบให้คร่อม 2 หน้า) บรรทัดที่ผู้ใช้พิมพ์เองอยู่หน้าเดียว
+  // กับหัวข้อของมันเสมอ ไม่งั้นหัวข้อที่เพิ่มเองจะหายทั้งอันเพราะไม่มีบรรทัดไหน
+  // เหลืออยู่บนหน้าของหัวข้อ
+  const masterLinePages = getStandardQuotationTermLines(tree.profile);
 
-  for (const section of tree.sections) {
-    if (!isVisible(section.showWhen, ctx)) continue;
-    const visibleLines = section.lines.filter((line) => isVisible(line.showWhen, ctx));
-    if (visibleLines.length === 0) continue;
+  let sectionNumber = 0;
+  for (const { section, lines: visibleLines, page } of orderSectionsForDocument(tree, ctx)) {
     sectionNumber += 1;
 
     const rendered = visibleLines.map((line, index) => {
@@ -259,13 +347,13 @@ export function renderQuotationTermTree(
             }
           : ctx.values;
       return {
-        page: line.page,
+        page: page === 2 ? 2 : masterLinePages.get(line.key)?.page ?? 1,
         text: `${sectionNumber}.${index + 1}) ${fillPlaceholders(line.body, values)}`,
       };
     });
 
     const title = `${sectionNumber}. ${fillPlaceholders(section.title, ctx.values)}`;
-    if (section.page === 1) {
+    if (page === 1) {
       const onPage1 = rendered.filter((line) => line.page === 1).map((line) => line.text);
       if (onPage1.length) page1Sections.push({ title, paragraphs: onPage1 });
       page2LeadingParagraphs.push(
@@ -498,10 +586,8 @@ const TERM_VISIBILITIES: readonly QuotationTermVisibility[] = [
  * อ่านชุดเงื่อนไขที่ผู้ใช้แก้ไว้ในใบ (document_inputs_json.terms)
  * คืน null ถ้าไม่มีหรือพังจนใช้ไม่ได้ → ผู้เรียกจะ fallback ไปชุดมาตรฐานในโค้ด
  *
- * บังคับกติกาฝั่ง server ตรงนี้ด้วย ไม่ใช่แค่ซ่อนปุ่มใน UI:
- *   - บรรทัดที่ locked แก้ถ้อยคำไม่ได้ (ดึงข้อความมาตรฐานกลับมาทับ)
- *   - บรรทัดที่ locked ลบไม่ได้ (ถ้าหายไปจะถูกใส่กลับที่ตำแหน่งเดิม)
- *   - เงื่อนไขการซ่อน/แสดงของบรรทัดมาตรฐานยึดตามโค้ดเสมอ แก้จากใบไม่ได้
+ * ทุกบรรทัดแก้/ลบ/เรียงลำดับได้อิสระจากหน้าจอเดียว ที่นี่ทำแค่ล้างข้อมูลให้อยู่ในรูป
+ * ที่ปลอดภัย (ตัดความยาว ตัดฟิลด์แปลกปลอม กันคีย์ซ้ำ) ไม่บังคับถ้อยคำใด ๆ กลับมา
  */
 export function parseQuotationTermTree(
   value: unknown,
@@ -519,7 +605,6 @@ export function parseQuotationTermTree(
   const row = candidate as Record<string, unknown>;
   if (!Array.isArray(row.sections)) return null;
 
-  const standard = getStandardQuotationTermTree(profile);
   const standardLines = getStandardQuotationTermLines(profile);
   const pageOf = (raw: unknown, fallback: 1 | 2): 1 | 2 =>
     Number(raw) === 1 ? 1 : Number(raw) === 2 ? 2 : fallback;
@@ -546,15 +631,14 @@ export function parseQuotationTermTree(
       const key = String(line.key ?? "").trim().slice(0, 60);
       const std = key ? standardLines.get(key) : undefined;
       if (key && seenLineKeys.has(key)) continue;
-      const body = std?.locked ? std.body : String(line.body ?? "").trim().slice(0, 1000);
+      const body = String(line.body ?? "").trim().slice(0, 1000);
       if (!body) continue;
       if (key) seenLineKeys.add(key);
       lines.push({
         key: key || `${sectionKey}-${lines.length + 1}`,
         body,
         page: pageOf(line.page, std?.page ?? 2),
-        showWhen: std ? std.showWhen : visibilityOf(line.showWhen),
-        ...(std?.locked ? { locked: true as const } : {}),
+        showWhen: visibilityOf(line.showWhen),
         origin: std ? "standard" : "custom",
       });
     }
@@ -567,19 +651,11 @@ export function parseQuotationTermTree(
       lines,
     });
   }
-  if (sections.length === 0) return null;
-
-  // ข้อที่ล็อกไว้ถูกลบออกไป → ใส่กลับที่ตำแหน่งเดิมของชุดมาตรฐาน
-  for (const stdSection of standard.sections) {
-    for (const [index, stdLine] of stdSection.lines.entries()) {
-      if (!stdLine.locked || seenLineKeys.has(stdLine.key)) continue;
-      const restored: QuotationTermLine = { ...stdLine, origin: "standard" };
-      const target = sections.find((section) => section.key === stdSection.key);
-      if (target) target.lines.splice(Math.min(index, target.lines.length), 0, restored);
-      else sections.push({ ...stdSection, lines: [restored] });
-      seenLineKeys.add(stdLine.key);
-    }
-  }
+  // ลบหัวข้อออกหมด = ตั้งใจให้ใบนี้ไม่มีเงื่อนไขเลย ต้องเคารพตามนั้น
+  // ไม่ใช่ดึงชุด Master กลับมาให้เอง (เดิม return null ตรงนี้ ทำให้ลบหมดแล้ว
+  // เงื่อนไขทั้งชุดโผล่กลับมาบน PDF)
+  // แต่ถ้าส่งหัวข้อมาแล้วใช้ไม่ได้สักอัน = ข้อมูลพัง ค่อยถอยไปใช้ชุด Master
+  if (sections.length === 0 && row.sections.length > 0) return null;
 
   // เก็บเฉพาะข้อมาตรฐานที่ถูกลบจริง ๆ ไว้ให้กด "คืนข้อที่ลบ"
   const removed: QuotationTermLine[] = [];
@@ -587,7 +663,7 @@ export function parseQuotationTermTree(
     if (!rawLine || typeof rawLine !== "object") continue;
     const key = String((rawLine as Record<string, unknown>).key ?? "").trim();
     const std = standardLines.get(key);
-    if (std && !std.locked && !seenLineKeys.has(key)) {
+    if (std && !seenLineKeys.has(key)) {
       seenLineKeys.add(key);
       removed.push({ ...std, origin: "standard" });
     }
@@ -632,26 +708,3 @@ export function isStandardQuotationTermTree(
   );
 }
 
-/** นับส่วนต่างจากชุดมาตรฐาน — ใช้โชว์ "ต่างจากมาตรฐาน N จุด" ในหน้าจอ */
-export function getQuotationTermTreeDiff(tree: QuotationTermTree) {
-  const standardLines = getStandardQuotationTermLines(tree.profile);
-  let edited = 0;
-  let added = 0;
-  const present = new Set<string>();
-  for (const section of tree.sections) {
-    for (const line of section.lines) {
-      const std = standardLines.get(line.key);
-      if (!std) {
-        added += 1;
-        continue;
-      }
-      present.add(line.key);
-      if (std.body !== line.body) edited += 1;
-    }
-  }
-  let removed = 0;
-  for (const [key, line] of standardLines) {
-    if (!line.locked && !present.has(key)) removed += 1;
-  }
-  return { edited, added, removed, total: edited + added + removed };
-}

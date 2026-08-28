@@ -9,15 +9,11 @@ import ModalBase from "@/components/ui/ModalBase";
 import {
   balanceFinalQuotationPaymentTerm,
   getQuotationPaymentTermsTotal,
-  getQuotationTermTreeDiff,
   getQuotationTermsProfile,
-  getStandardQuotationOmSettings,
-  isStandardQuotationOmSettings,
   isStandardQuotationTermTree,
   parseQuotationOmSettings,
   parseQuotationPaymentTerms,
   parseQuotationTermTree,
-  type QuotationOmService,
   type QuotationOmSettings,
   type QuotationPaymentTerm,
   type QuotationTermTree,
@@ -292,37 +288,6 @@ const todayIso = () => {
   const d = new Date();
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
 };
-
-const OM_NUMBER_OPTIONS = [0, 1, 2, 3, 4] as const;
-
-function OmNumberSelect({
-  value,
-  max,
-  disabled,
-  className,
-  onChange,
-}: {
-  value: number;
-  max?: number;
-  disabled?: boolean;
-  className: string;
-  onChange: (value: number) => void;
-}) {
-  return (
-    <select
-      value={value}
-      disabled={disabled}
-      onChange={(event) => onChange(Number(event.target.value))}
-      className={className}
-    >
-      {OM_NUMBER_OPTIONS.map((option) => (
-        <option key={option} value={option} disabled={max !== undefined && option > max}>
-          {option}
-        </option>
-      ))}
-    </select>
-  );
-}
 
 const formatPackageSpecs = (pkg: Package) =>
   `ขนาด ${pkg.kwp} kWp · ${pkg.phase > 0 ? `${pkg.phase} เฟส` : "ทุกเฟส"}`;
@@ -1323,7 +1288,6 @@ function QuotationEditor({
       annual_degradation_percent: Number(saved.annual_degradation_percent ?? 0.5),
     };
   });
-  const [omOpen, setOmOpen] = useState(true);
   // ตั้งชื่อ activeTab ไม่ใช่ tab — previewQuotation มีตัวแปร tab (หน้าต่างที่เปิดใหม่) อยู่แล้ว
   const [activeTab, setActiveTab] = useState<"items" | "terms">("items");
   useEffect(() => {
@@ -1403,39 +1367,9 @@ function QuotationEditor({
           })),
       ),
     );
-  const patchOm = (patch: Partial<QuotationOmSettings>) =>
-    setDocumentInputs((current) => ({
-      ...current,
-      om: parseQuotationOmSettings({ ...current.om, ...patch }),
-    }));
-  const patchOmService = (
-    key: "cleaning" | "thermoscan" | "visual_inspection",
-    patch: Partial<QuotationOmService>,
-  ) =>
-    setDocumentInputs((current) => ({
-      ...current,
-      om: parseQuotationOmSettings({
-        ...current.om,
-        [key]: { ...current.om[key], ...patch },
-      }),
-    }));
-  const omActiveCount = [
-    documentInputs.om.cleaning,
-    documentInputs.om.thermoscan,
-    documentInputs.om.visual_inspection,
-  ].filter((service) => service.enabled).length;
   const termsProfile = getQuotationTermsProfile(
     mainPackage as unknown as Record<string, unknown> | undefined,
   );
-  const hasFullInstallTerms = termsProfile === "full_install";
-  // ป้ายบนแท็บ: บอกทันทีว่าใบนี้แก้เงื่อนไขไปแล้วกี่จุด โดยไม่ต้องกดเข้าไปดู
-  const termsDiff = documentInputs.terms
-    ? getQuotationTermTreeDiff(documentInputs.terms)
-    : null;
-  const termsSummary =
-    termsDiff && termsDiff.total > 0
-      ? `ต่างจากมาตรฐาน ${termsDiff.total} จุด`
-      : "ตามมาตรฐาน";
   // ชุดที่ยังเท่ากับมาตรฐานเป๊ะไม่ต้องบันทึกลงใบ — ปล่อยให้ใบรับข้อความมาตรฐาน
   // เวอร์ชันล่าสุดตอนเรนเดอร์ จนกว่าจะมีคนแก้จริง ๆ
   const payloadDocumentInputs = {
@@ -1508,8 +1442,6 @@ function QuotationEditor({
       return "กรุณาตั้งชื่อหัวข้อให้ครบทุกอัน";
     if (documentInputs.current_monthly_bill <= 0)
       return "กรุณาระบุค่าไฟปัจจุบันจากข้อมูลจริง";
-    if (hasFullInstallTerms && documentInputs.om.enabled && omActiveCount === 0)
-      return "กรุณาเลือกบริการ O&M อย่างน้อย 1 รายการ หรือปิดบริการ O&M";
     if (termsPercentTotal !== 100)
       return `ยอดรวมงวดชำระเงินต้องเท่ากับ 100% (ปัจจุบัน ${termsPercentTotal}%)`;
     if (issueDate > todayIso()) return "วันที่ใบเสนอราคาต้องไม่เป็นวันที่ล่วงหน้า";
@@ -1620,9 +1552,6 @@ function QuotationEditor({
     "h-8 w-full min-w-0 rounded-md border border-transparent bg-transparent px-1.5 text-xxs text-gray-700 outline-none transition-colors placeholder:text-gray-300 hover:border-gray-200 focus:border-primary focus:bg-white";
   const FIELD =
     "h-8 w-full rounded-lg border border-gray-200 bg-white px-2 text-xs text-gray-800 outline-none transition-colors placeholder:text-gray-300 hover:border-gray-300 focus:border-primary focus:ring-2 focus:ring-primary/10";
-  // ช่องเลือกตัวเลขของ O&M — ใช้ซ้ำทุกแถว จะได้กว้างเท่ากันหมด
-  const OM_SELECT =
-    "h-7 w-12 shrink-0 rounded-md border border-gray-200 bg-white px-0.5 text-center text-xxs font-semibold tabular-nums text-gray-700 outline-none focus:border-primary disabled:bg-gray-50 disabled:opacity-50";
 
   return (
     <div className="fixed inset-0 z-[80] flex items-center justify-center bg-slate-900/50 p-0 backdrop-blur-sm md:p-6">
@@ -1656,21 +1585,20 @@ function QuotationEditor({
             {/* แท็บในตัว modal — ตัวแก้เงื่อนไขต้องการความกว้างเต็ม ใส่ในคอลัมน์ขวาไม่พอ */}
             <div className="flex shrink-0 gap-1 border-b border-gray-100 px-4 pt-2">
               {([
-                ["items", "รายการในใบเสนอราคา", `${groups.length} หัวข้อ`],
-                ["terms", "เงื่อนไข/ข้อกำหนด", termsSummary],
-              ] as const).map(([key, label, hint]) => (
+                ["items", "รายการในใบเสนอราคา"],
+                ["terms", "เงื่อนไข/ข้อกำหนด"],
+              ] as const).map(([key, label]) => (
                 <button
                   key={key}
                   type="button"
                   onClick={() => setActiveTab(key)}
-                  className={`relative -mb-px h-9 rounded-t-lg border border-b-0 px-3 text-xxs font-bold transition-colors ${
+                  className={`relative -mb-px h-10 rounded-t-lg border border-b-0 px-4 text-sm font-bold transition-colors ${
                     activeTab === key
                       ? "border-gray-200 bg-white text-primary"
                       : "border-transparent text-gray-500 hover:bg-gray-50"
                   }`}
                 >
                   {label}
-                  <span className="ml-1.5 font-normal text-gray-400">{hint}</span>
                 </button>
               ))}
             </div>
@@ -2032,121 +1960,6 @@ function QuotationEditor({
                 </div>
               </div>
 
-              {hasFullInstallTerms && (
-                <div className="order-2 rounded-xl border border-gray-200 bg-white p-2.5">
-                  <button
-                    type="button"
-                    onClick={() => setOmOpen((open) => !open)}
-                    aria-expanded={omOpen}
-                    className="flex w-full items-start justify-between gap-2 text-left"
-                  >
-                    <span className="min-w-0">
-                      <span className="block text-xs font-bold text-gray-800">
-                        บริการ O&amp;M
-                      </span>
-                      <span className={`mt-0.5 block text-xxs ${
-                        isStandardQuotationOmSettings(documentInputs.om)
-                          ? "text-gray-400"
-                          : "text-amber-600"
-                      }`}>
-                        {documentInputs.om.enabled
-                          ? `${documentInputs.om.coverage_years} ปี · ${omActiveCount} รายการ`
-                          : "ไม่รวมค่าดำเนินการ O&M"}
-                        {!isStandardQuotationOmSettings(documentInputs.om) &&
-                          " · ปรับแต่งเฉพาะใบนี้"}
-                      </span>
-                    </span>
-                    <span className="shrink-0 text-xxs font-semibold text-primary">
-                      {omOpen ? "ซ่อน ︿" : "ตั้งค่า ﹀"}
-                    </span>
-                  </button>
-
-                  {omOpen && (
-                    <div className="mt-1.5 space-y-1 border-t border-gray-100 pt-1.5">
-                      <label className="flex items-center justify-between gap-2">
-                        <span className="flex items-center gap-2 text-xxs font-semibold text-gray-600">
-                          <input
-                            type="checkbox"
-                            checked={documentInputs.om.enabled}
-                            onChange={(event) => patchOm({ enabled: event.target.checked })}
-                            className="h-3.5 w-3.5 rounded border-gray-300 accent-primary"
-                          />
-                          รวมค่าดำเนินการ O&amp;M
-                        </span>
-                        <span className="flex items-center gap-1 text-xxs text-gray-400">
-                          ระยะเวลา
-                          <OmNumberSelect
-                            value={documentInputs.om.coverage_years}
-                            disabled={!documentInputs.om.enabled}
-                            onChange={(value) => patchOm({ coverage_years: value })}
-                            className={OM_SELECT}
-                          />
-                          ปี
-                        </span>
-                      </label>
-
-                      {/* ป้ายสั้นๆ พอให้กดเลือก — ข้อความจริงที่ขึ้นบนใบเสนอราคา
-                          อยู่ใน lib/quotation-terms.ts คนละชุดกัน แก้ตรงนี้ไม่กระทบเอกสาร
-                          ตัวเต็มอยู่ใน tooltip */}
-                      {([
-                        ["cleaning", "ล้างแผง", "ล้างแผงโซลาร์"],
-                        ["thermoscan", "ตรวจระบบ", "ตรวจสอบระบบโซลาร์ + THERMOSCAN"],
-                        ["visual_inspection", "ตรวจสภาพแผง", "ตรวจสอบความผิดปกติของแผงโซลาร์"],
-                      ] as const).map(([key, label, fullLabel]) => {
-                        const service = documentInputs.om[key];
-                        const disabled = !documentInputs.om.enabled;
-                        return (
-                          // ชื่อรายการกับช่องเลือกอยู่บรรทัดเดียวกัน — เดิมแยก 2 บรรทัด
-                          // ต่อรายการ ทำให้กล่องยาวเกินจำเป็น (3 รายการ = 6 บรรทัด)
-                          <label
-                            key={key}
-                            className="flex items-center gap-2 rounded-lg bg-slate-50/80 px-2 py-1 text-xxs font-medium text-gray-700"
-                          >
-                            <input
-                              type="checkbox"
-                              checked={service.enabled}
-                              disabled={disabled}
-                              onChange={(event) =>
-                                patchOmService(key, { enabled: event.target.checked })
-                              }
-                              className="h-3.5 w-3.5 shrink-0 rounded border-gray-300 accent-primary disabled:opacity-50"
-                            />
-                            <span className="min-w-0 flex-1 leading-tight" title={fullLabel}>{label}</span>
-                            <span className="flex shrink-0 items-center gap-1 text-gray-400">
-                              <OmNumberSelect
-                                value={service.visits_per_year}
-                                disabled={disabled || !service.enabled}
-                                onChange={(value) =>
-                                  patchOmService(key, { visits_per_year: value })
-                                }
-                                className={OM_SELECT}
-                              />
-                              ครั้ง
-                              <OmNumberSelect
-                                max={documentInputs.om.coverage_years}
-                                value={service.years}
-                                disabled={disabled || !service.enabled}
-                                onChange={(value) => patchOmService(key, { years: value })}
-                                className={OM_SELECT}
-                              />
-                              ปี
-                            </span>
-                          </label>
-                        );
-                      })}
-
-                      <button
-                        type="button"
-                        onClick={() => patchOm(getStandardQuotationOmSettings())}
-                        disabled={isStandardQuotationOmSettings(documentInputs.om)}
-                        className="text-xxs font-semibold text-primary hover:underline disabled:cursor-default disabled:text-gray-300 disabled:no-underline"
-                      >
-                        ↻ คืนค่าจาก Master
-                      </button>
-                    </div>
-                  )}
-                </div>
-              )}
               <div className="order-1 rounded-xl border border-gray-200 bg-white p-2.5">
                 <div className="flex items-center justify-between">
                   <span className="text-xs font-bold text-gray-800">งวดชำระเงิน</span>
@@ -2238,19 +2051,6 @@ function QuotationEditor({
                     className={`w-40 ${FIELD}`}
                   />
                 </div>
-                <button
-                  type="button"
-                  onClick={() => setActiveTab("terms")}
-                  className="mt-1.5 flex w-full items-center gap-2 rounded-lg border border-gray-200 bg-white px-2 py-2 text-left transition-colors hover:border-primary/40 hover:bg-primary/5"
-                >
-                  <span className="min-w-0 flex-1">
-                    <span className="block text-xxs font-semibold text-gray-700">
-                      เงื่อนไข/ข้อกำหนด
-                    </span>
-                    <span className="block text-[11px] text-gray-400">{termsSummary}</span>
-                  </span>
-                  <span className="shrink-0 text-xxs font-bold text-primary">แก้ไข →</span>
-                </button>
               </div>
             </div>
           </div>
