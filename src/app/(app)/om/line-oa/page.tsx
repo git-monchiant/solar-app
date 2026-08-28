@@ -63,6 +63,11 @@ export default function OmLineOaPage() {
   const [faqEdits, setFaqEdits] = useState<Record<number, { category: string; question: string; answer: string }>>({});
   const [cats, setCats] = useState<FaqCat[]>([]);
   const [newCat, setNewCat] = useState("");
+  // พรีวิว LIFF — เปิดหน้าจริงในกรอบมือถือ (dev ใช้โหมดจำลอง จึงเปิดนอก LINE ได้)
+  const [preview, setPreview] = useState<LiffApp | null>(null);
+  const [previewMissing, setPreviewMissing] = useState(false);
+  const [selApp, setSelApp] = useState("myhome");
+  const [showAppCfg, setShowAppCfg] = useState(false);
   const [faqFilter, setFaqFilter] = useState<string>("__all__");
   const [loading, setLoading] = useState(true);
   const [cells, setCells] = useState<Cell[]>(EMPTY_CELLS);
@@ -238,6 +243,16 @@ export default function OmLineOaPage() {
     await load();
   };
 
+  const openPreview = async (a: LiffApp) => {
+    setPreview(a);
+    setPreviewMissing(false);
+    // เช็คก่อนว่าหน้านั้นสร้างแล้วหรือยัง (บางแอปยังไม่ได้เขียน)
+    try {
+      const r = await fetch(a.endpoint_path, { method: "GET", cache: "no-store" });
+      setPreviewMissing(!r.ok);
+    } catch { setPreviewMissing(true); }
+  };
+
   const patchApp = async (id: number, patch: Partial<LiffApp>) => {
     await apiFetch("/api/om/line-oa/liff", { method: "PATCH", body: JSON.stringify({ id, ...patch }) });
     await load();
@@ -245,274 +260,8 @@ export default function OmLineOaPage() {
 
   if (loading) return <div><Header title="LINE OA" subtitle="LIFF · Rich Menu · Channel" /><Loading /></div>;
 
-  const shownFaqs = faqs.filter((q) =>
-    faqFilter === "__all__" ? true : faqFilter === "__none__" ? !q.category : q.category === faqFilter);
-  // เลื่อนลำดับได้เฉพาะภายในหมวดเดียวกัน (ย้ายหมวด = เปลี่ยน dropdown ไม่ใช่กดลูกศร)
-  const sameCat = (q: Faq) => shownFaqs.filter((x) => (x.category ?? "") === (q.category ?? ""));
-  const catIndex = (q: Faq) => sameCat(q).findIndex((x) => x.id === q.id);
-  const activeVersion = versions.find((v) => v.status === "active") || null;
-  const tmpl = templates.find((t) => t.id === tmplId) || templates[0] ||
-    { id: "large-6", group: "large", name: "ใหญ่ 6 ช่อง", size: { width: 2500, height: 1686 }, areas: [] };
-  const TABS = ["ภาพรวม Channel", "LIFF Apps", "Rich Menu", "FAQ"];
-  return (
-    <div>
-      <Header title="LINE OA" subtitle="LIFF · Rich Menu · Channel" />
-
-      <div className="bg-white border-b border-gray-200 px-4 md:px-6 flex gap-1.5 overflow-x-auto">
-        {TABS.map((t, i) => (
-          <button key={t} type="button" onClick={() => setTab(i)} style={{ minHeight: 0 }}
-            className={`px-4 py-2.5 text-sm font-semibold whitespace-nowrap border-b-2 -mb-px transition-colors cursor-pointer ${
-              tab === i ? "border-primary text-primary" : "border-transparent text-gray-500 hover:text-gray-700"}`}>
-            {t}
-          </button>
-        ))}
-      </div>
-
-      {msg && (
-        <div className="mx-4 md:mx-6 mt-4 rounded-xl border border-blue-200 bg-blue-50 px-4 py-3 text-sm font-semibold text-blue-800">
-          {msg}
-        </div>
-      )}
-
-      <div className="p-4 md:p-6">
-        {/* ─── ภาพรวม Channel ─── */}
-        {tab === 0 && status && (
-          <div className="space-y-4">
-            {/* สถิติขึ้นก่อน — ตอบคำถามแรกของแอดมิน: เผยแพร่แล้วถึงใครบ้าง */}
-            <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
-              <Stat n={status.stats.total} t="LINE user ทั้งหมด" />
-              <Stat n={status.stats.following} t="ยังเป็นเพื่อน" />
-              <Stat n={status.stats.verified} t="ยืนยันตัวตนแล้ว" />
-              <Stat n={status.stats.reachable} t="จะได้รับเมนู O&M" hi />
-            </div>
-
-            <div className="grid grid-cols-1 xl:grid-cols-3 gap-4 items-start">
-              <div className="xl:col-span-2 rounded-xl border border-gray-200 bg-white overflow-hidden">
-                <div className="px-5 py-3 border-b border-gray-100 font-bold text-gray-900">การเชื่อมต่อ</div>
-                <div className="p-5 grid grid-cols-1 md:grid-cols-2 gap-x-8 gap-y-2.5 text-sm">
-                  <Row k="สถานะ" v={status.enabled
-                    ? <Pill c="bg-emerald-50 text-emerald-700 border-emerald-200">เชื่อมต่อแล้ว</Pill>
-                    : <Pill c="bg-amber-50 text-amber-700 border-amber-200">ยังไม่ได้ต่อ channel (โหมดจำลอง)</Pill>} />
-                  <Row k="OA" v={status.bot?.displayName
-                    ? <span className="font-semibold">{status.bot.displayName} <span className="font-mono text-xs text-gray-500">{status.bot.basicId}</span></span>
-                    : <span className="text-gray-400">—</span>} />
-                  <Row k="โหมด" v={<span className="font-mono text-xs">{status.mode}</span>} />
-                  <Row k="Channel secret / token" v={<span>{status.has_secret ? "✓" : "✕"} secret · {status.has_token ? "✓" : "✕"} token</span>} />
-                  <Row k="Webhook" v={<span className="font-mono text-xs break-all">{status.webhook_path}</span>} />
-                  <Row k="เมนูที่ใช้อยู่" v={activeVersion
-                    ? <span className="font-semibold">v{activeVersion.version_no} <span className="text-gray-400 font-normal">· {activeVersion.name}</span></span>
-                    : <span className="text-gray-400">ยังไม่ได้เผยแพร่</span>} />
-                </div>
-              </div>
-
-              <div className="rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm font-semibold text-amber-800 leading-relaxed">
-                โมดูลนี้<b>ไม่ตั้ง default rich menu ของ OA</b> — เมนู O&M ผูกรายคนเฉพาะลูกค้าที่ยืนยันตัวตนแล้ว
-                ผู้ใช้อื่นยังเห็นเมนูเดิมที่ทีมขายตั้งไว้ ไม่กระทบกัน
-              </div>
-            </div>
-          </div>
-        )}
-
-        {/* ─── LIFF Apps ─── */}
-        {tab === 1 && (
-          <div>
-            <div className="rounded-xl border border-gray-200 bg-white overflow-hidden">
-              <table className="w-full text-sm">
-                <thead>
-                  <tr className="bg-gray-50 border-b border-gray-200 text-xs text-gray-500 uppercase tracking-wider">
-                    <th className="text-left px-4 py-3 font-semibold">แอป</th>
-                    <th className="text-left px-4 py-3 font-semibold">LIFF ID</th>
-                    <th className="text-left px-4 py-3 font-semibold">หน้าในระบบ</th>
-                    <th className="text-left px-4 py-3 font-semibold">ขนาด</th>
-                    <th className="text-left px-4 py-3 font-semibold">สถานะ</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {apps.map((a) => (
-                    <tr key={a.id} className="border-b border-gray-50">
-                      <td className="px-4 py-3">
-                        <div className="font-semibold text-gray-900">{a.name}</div>
-                        <div className="text-xs text-gray-400 font-mono">{a.code}</div>
-                      </td>
-                      <td className="px-4 py-3">
-                        <input defaultValue={a.liff_id || ""} placeholder="ยังไม่ได้ขอจากทีม"
-                          onBlur={(e) => e.target.value !== (a.liff_id || "") && patchApp(a.id, { liff_id: e.target.value })}
-                          className="w-44 border border-gray-200 rounded-lg px-2.5 py-1.5 text-xs font-mono focus:outline-none focus:border-primary" />
-                      </td>
-                      <td className="px-4 py-3 font-mono text-xs text-gray-600">{a.endpoint_path}</td>
-                      <td className="px-4 py-3 text-xs">{a.view_size}</td>
-                      <td className="px-4 py-3">
-                        {a.liff_id
-                          ? <Pill c="bg-emerald-50 text-emerald-700 border-emerald-200">พร้อมใช้</Pill>
-                          : <Pill c="bg-gray-100 text-gray-500 border-gray-200">รอ LIFF ID</Pill>}
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-            <p className="mt-3 text-xs text-gray-500 leading-relaxed">
-              LIFF ID ได้จาก LINE Developers Console — <b>ต้องสร้างใต้ provider เดียวกับ OA ที่ใช้จริง</b> ไม่งั้น
-              <span className="font-mono"> line_user_id </span>จะไม่ตรงกับที่ผูกบ้านไว้ · ใส่แล้วปุ่มในเมนูจะชี้ไปหน้าที่ถูกต้องอัตโนมัติ
-            </p>
-          </div>
-        )}
-
-        {/* ─── Rich Menu ─── */}
-        {tab === 2 && (
-          <>
-            {/* แถบสั่งงานหลัก */}
-            <div className="flex items-center gap-3 flex-wrap mb-4">
-              <div className="font-bold text-base text-gray-900">เมนูลูกค้า O&M</div>
-              <span className="text-xs text-gray-400">v{(versions[0]?.version_no ?? 0) + 1} (ร่างถัดไป)</span>
-              <button type="button" onClick={saveDraft} disabled={busy} style={{ minHeight: 0 }}
-                className="ml-auto h-8 px-5 rounded-lg bg-primary text-white text-sm font-semibold disabled:opacity-40 cursor-pointer">
-                บันทึกเป็นเวอร์ชันใหม่
-              </button>
-            </div>
-
-            <div className="grid gap-4 xl:grid-cols-[2fr_3fr] items-start">
-
-              {/* ═══ ซ้าย: เทมเพลต → พรีวิว → รูปพื้น ═══ */}
-              <div className="rounded-xl border border-gray-200 bg-white overflow-hidden">
-                <div className="px-5 py-3 border-b border-gray-100 flex items-center gap-3">
-                  <div className="font-bold text-base text-gray-900">ผังเมนู</div>
-                  <span className="text-xs text-gray-400 ml-auto">{tmpl.size.width}×{tmpl.size.height} · {tmpl.areas.length} ช่อง</span>
-                </div>
-                <div className="p-5 space-y-4">
-                  {/* เทมเพลต — อยู่เหนือพรีวิว เลือกแล้วเห็นผลทันที */}
-                  <div className="grid gap-2 grid-cols-2 sm:grid-cols-3">
-                    {templates.map((t) => (
-                      <button key={t.id} type="button" onClick={() => { setTmplId(t.id); setSel(null); }}
-                        style={{ minHeight: 0 }} title={`${t.size.width}×${t.size.height}`}
-                        className={`flex flex-col items-center justify-center gap-1.5 rounded-lg border bg-white px-2 py-2 transition-colors cursor-pointer ${
-                          tmplId === t.id ? "border-primary bg-teal-50" : "border-gray-200 hover:border-gray-300"}`}>
-                        <span className="flex h-6 items-center"><MiniTemplate t={t} on={tmplId === t.id} /></span>
-                        <span className="text-xs text-gray-600 whitespace-nowrap">{t.name}</span>
-                      </button>
-                    ))}
-                  </div>
-
-                  {/* พรีวิว */}
-                  <div className="relative w-full max-w-[400px] mx-auto border border-gray-300 rounded-lg overflow-hidden bg-gray-100"
-                       style={{ aspectRatio: `${tmpl.size.width} / ${tmpl.size.height}` }}>
-                    {tmpl.areas.map((b, i) => {
-                      const c = cells[i] || { label: "", kind: "", value: "" };
-                      return (
-                        <button key={i} type="button" onClick={() => setSel(i)} style={{
-                          minHeight: 0, position: "absolute",
-                          left: `${(b.x / tmpl.size.width) * 100}%`, top: `${(b.y / tmpl.size.height) * 100}%`,
-                          width: `${(b.width / tmpl.size.width) * 100}%`, height: `${(b.height / tmpl.size.height) * 100}%`,
-                        }}
-                          className={`border flex flex-col items-center justify-center px-1 text-center overflow-hidden transition-colors cursor-pointer ${
-                            sel === i ? "border-primary bg-teal-50 z-10" : "border-gray-300 bg-white hover:bg-gray-50"}`}>
-                          <span className="text-xxs font-bold text-gray-300 leading-none">{String.fromCharCode(65 + i)}</span>
-                          <span className="text-sm font-bold text-gray-900 leading-snug line-clamp-2">{c.label || "—"}</span>
-                        </button>
-                      );
-                    })}
-                  </div>
-
-                  {/* รูปพื้นเมนู */}
-                  <div className="border-t border-gray-100 pt-4">
-                    <h3 className="text-sm font-bold text-gray-900 mb-2">รูปพื้นเมนู</h3>
-                    <input type="file" accept="image/*" onChange={(e) => setImgFile(e.target.files?.[0] || null)}
-                      className="text-xs file:mr-2 file:px-3 file:py-1.5 file:rounded-lg file:border file:border-gray-200 file:bg-white file:text-xs file:font-bold file:text-gray-600 file:cursor-pointer" />
-                    <p className="mt-1.5 text-xs text-gray-400">
-                      {imgFile ? `เลือกแล้ว: ${imgFile.name}` : "ไม่เลือก = ใช้รูปเดิมจากเวอร์ชันล่าสุด"} ·
-                      อัปขนาดไหนก็ได้ ระบบย่อเป็น {tmpl.size.width}×{tmpl.size.height} และบีบ ≤1MB ให้เอง
-                    </p>
-                  </div>
-                </div>
-              </div>
-
-              {/* ═══ ขวา: ปุ่มในเมนู → ประวัติ ═══ */}
-              <div className="space-y-4 min-w-0">
-                <div className="rounded-xl border border-gray-200 bg-white overflow-hidden">
-                  <div className="px-5 py-3 border-b border-gray-100 flex items-center gap-3">
-                    <div className="font-bold text-base text-gray-900">ปุ่มในเมนู</div>
-                    <span className="text-xs text-gray-400">{tmpl.areas.length} ช่อง</span>
-                  </div>
-                  {/* หัวคอลัมน์ครั้งเดียว — แต่ละช่องจึงเป็นบรรทัดเดียว */}
-                  <div className="grid gap-2 items-center px-5 py-2 bg-gray-50 border-t border-gray-100
-                                  grid-cols-[64px_1fr_128px_1.6fr] text-xs font-bold text-gray-500">
-                    <span>ช่อง</span><span>ป้ายกำกับ</span><span>การทำงาน</span><span>ปลายทาง</span>
-                  </div>
-                  {tmpl.areas.map((b, i) => {
-                    const c = cells[i] || { label: "", kind: "message" as Cell["kind"], value: "" };
-                    const upd = (patch: Partial<Cell>) =>
-                      setCells(Array.from({ length: tmpl.areas.length }, (_, k) =>
-                        k === i ? { ...c, ...patch } : (cells[k] || { label: "", kind: "message", value: "" })));
-                    return (
-                      <div key={i} onFocus={() => setSel(i)} onMouseEnter={() => setSel(i)}
-                        className={`grid gap-2 items-center border-t border-gray-100 px-5 py-2
-                                    grid-cols-[64px_1fr_128px_1.6fr] ${sel === i ? "bg-teal-50/40" : ""}`}>
-                        <span className="text-sm font-bold text-gray-900"
-                          title={`${Math.round((b.width / tmpl.size.width) * 100)}% × ${Math.round((b.height / tmpl.size.height) * 100)}%`}>
-                          {String.fromCharCode(65 + i)}
-                        </span>
-                        <input value={c.label} onChange={(e) => upd({ label: e.target.value })} placeholder="ป้ายกำกับ"
-                          className="h-9 w-full rounded-lg border border-gray-200 px-3 text-sm font-semibold outline-none focus:border-primary" />
-                        <select value={c.kind} onChange={(e) => upd({ kind: e.target.value as Cell["kind"], value: "" })}
-                          className="h-9 w-full rounded-lg border border-gray-200 px-2 text-sm font-semibold outline-none focus:border-primary">
-                          <option value="liff">LIFF</option>
-                          <option value="message">ข้อความ</option>
-                          <option value="tel">โทร</option>
-                          <option value="url">ลิงก์</option>
-                        </select>
-                        {c.kind === "liff" ? (
-                          <select value={c.value} onChange={(e) => upd({ value: e.target.value })}
-                            className="h-9 w-full rounded-lg border border-gray-200 px-3 text-sm font-semibold outline-none focus:border-primary">
-                            {apps.map((a) => <option key={a.code} value={a.code}>{a.name}{a.liff_id ? "" : " (รอ LIFF ID)"}</option>)}
-                          </select>
-                        ) : (
-                          <input value={c.value} onChange={(e) => upd({ value: e.target.value })}
-                            placeholder={c.kind === "tel" ? "02-xxx-xxxx" : c.kind === "url" ? "https://…" : "ข้อความที่ส่ง"}
-                            className="h-9 w-full rounded-lg border border-gray-200 px-3 text-sm font-semibold outline-none focus:border-primary" />
-                        )}
-                      </div>
-                    );
-                  })}
-                  <div className="px-5 py-3 border-t border-gray-100 text-xs text-gray-400">
-                    LINE แก้เมนูที่สร้างแล้วไม่ได้ — ทุกการแก้จึงเป็นเวอร์ชันใหม่ · ย้อนกลับได้ (โควตา 1,000 เมนู/OA)
-                  </div>
-                </div>
-
-                <div className="rounded-xl border border-gray-200 bg-white overflow-hidden">
-                  <div className="px-5 py-3 border-b border-gray-100 font-bold text-base text-gray-900">ประวัติเวอร์ชัน</div>
-                  {versions.length === 0 ? (
-                    <div className="p-5 text-center text-xs text-gray-400">ยังไม่มีเวอร์ชัน</div>
-                  ) : (
-                    <div className="max-h-[280px] overflow-y-auto">
-                      {versions.map((v) => (
-                        <div key={v.id} className="px-5 py-2.5 border-b border-gray-50 last:border-0">
-                          <div className="flex items-center gap-2">
-                            <span className="font-bold text-sm">v{v.version_no}</span>
-                            <Pill c={STATUS_STYLE[v.status]?.c || ""}>{STATUS_STYLE[v.status]?.t || v.status}</Pill>
-                            <span className="text-xs text-gray-400 truncate">{v.name}</span>
-                            {(v.status === "history" || v.status === "draft") && (
-                              <button type="button" onClick={() => deploy(v.id)} disabled={busy} style={{ minHeight: 0 }}
-                                className="ml-auto shrink-0 px-2.5 py-0.5 rounded-md border border-gray-200 text-xs font-bold text-gray-600 hover:bg-gray-50 disabled:opacity-40 cursor-pointer">
-                                {v.status === "draft" ? "เผยแพร่" : "ย้อนกลับ"}
-                              </button>
-                            )}
-                          </div>
-                          <div className="text-xs text-gray-400 mt-0.5">
-                            {new Date(v.created_at).toLocaleString("th-TH", { dateStyle: "short", timeStyle: "short" })}
-                            {v.created_by_name ? ` · ${v.created_by_name}` : ""}
-                          </div>
-                        </div>
-                      ))}
-                    </div>
-                  )}
-                </div>
-              </div>
-            </div>
-          </>
-        )}
-
-        {/* ─── FAQ ─── */}
-        {tab === 3 && (
+  function FaqSettings() {
+    return (
           <div className="grid gap-4 xl:grid-cols-[2fr_3fr] items-start">
 
             {/* เพิ่มคำถามใหม่ + จัดการหมวด */}
@@ -690,7 +439,385 @@ export default function OmLineOaPage() {
               </div>
             </div>
           </div>
+    );
+  }
+
+  const shownFaqs = faqs.filter((q) =>
+    faqFilter === "__all__" ? true : faqFilter === "__none__" ? !q.category : q.category === faqFilter);
+  // เลื่อนลำดับได้เฉพาะภายในหมวดเดียวกัน (ย้ายหมวด = เปลี่ยน dropdown ไม่ใช่กดลูกศร)
+  const sameCat = (q: Faq) => shownFaqs.filter((x) => (x.category ?? "") === (q.category ?? ""));
+  const catIndex = (q: Faq) => sameCat(q).findIndex((x) => x.id === q.id);
+  const activeVersion = versions.find((v) => v.status === "active") || null;
+  const tmpl = templates.find((t) => t.id === tmplId) || templates[0] ||
+    { id: "large-6", group: "large", name: "ใหญ่ 6 ช่อง", size: { width: 2500, height: 1686 }, areas: [] };
+  const TABS = ["ภาพรวม Channel", "LIFF Apps", "Rich Menu"];
+  return (
+    <div>
+      <Header title="LINE OA" subtitle="LIFF · Rich Menu · Channel" />
+
+      <div className="bg-white border-b border-gray-200 px-4 md:px-6 flex gap-1.5 overflow-x-auto">
+        {TABS.map((t, i) => (
+          <button key={t} type="button" onClick={() => setTab(i)} style={{ minHeight: 0 }}
+            className={`px-4 py-2.5 text-sm font-semibold whitespace-nowrap border-b-2 -mb-px transition-colors cursor-pointer ${
+              tab === i ? "border-primary text-primary" : "border-transparent text-gray-500 hover:text-gray-700"}`}>
+            {t}
+          </button>
+        ))}
+      </div>
+
+      {msg && (
+        <div className="mx-4 md:mx-6 mt-4 rounded-xl border border-blue-200 bg-blue-50 px-4 py-3 text-sm font-semibold text-blue-800">
+          {msg}
+        </div>
+      )}
+
+      <div className="p-4 md:p-6">
+        {/* ─── ภาพรวม Channel ─── */}
+        {tab === 0 && status && (
+          <div className="space-y-4">
+            {/* สถิติขึ้นก่อน — ตอบคำถามแรกของแอดมิน: เผยแพร่แล้วถึงใครบ้าง */}
+            <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+              <Stat n={status.stats.total} t="LINE user ทั้งหมด" />
+              <Stat n={status.stats.following} t="ยังเป็นเพื่อน" />
+              <Stat n={status.stats.verified} t="ยืนยันตัวตนแล้ว" />
+              <Stat n={status.stats.reachable} t="จะได้รับเมนู O&M" hi />
+            </div>
+
+            <div className="grid grid-cols-1 xl:grid-cols-3 gap-4 items-start">
+              <div className="xl:col-span-2 rounded-xl border border-gray-200 bg-white overflow-hidden">
+                <div className="px-5 py-3 border-b border-gray-100 font-bold text-gray-900">การเชื่อมต่อ</div>
+                <div className="p-5 grid grid-cols-1 md:grid-cols-2 gap-x-8 gap-y-2.5 text-sm">
+                  <Row k="สถานะ" v={status.enabled
+                    ? <Pill c="bg-emerald-50 text-emerald-700 border-emerald-200">เชื่อมต่อแล้ว</Pill>
+                    : <Pill c="bg-amber-50 text-amber-700 border-amber-200">ยังไม่ได้ต่อ channel (โหมดจำลอง)</Pill>} />
+                  <Row k="OA" v={status.bot?.displayName
+                    ? <span className="font-semibold">{status.bot.displayName} <span className="font-mono text-xs text-gray-500">{status.bot.basicId}</span></span>
+                    : <span className="text-gray-400">—</span>} />
+                  <Row k="โหมด" v={<span className="font-mono text-xs">{status.mode}</span>} />
+                  <Row k="Channel secret / token" v={<span>{status.has_secret ? "✓" : "✕"} secret · {status.has_token ? "✓" : "✕"} token</span>} />
+                  <Row k="Webhook" v={<span className="font-mono text-xs break-all">{status.webhook_path}</span>} />
+                  <Row k="เมนูที่ใช้อยู่" v={activeVersion
+                    ? <span className="font-semibold">v{activeVersion.version_no} <span className="text-gray-400 font-normal">· {activeVersion.name}</span></span>
+                    : <span className="text-gray-400">ยังไม่ได้เผยแพร่</span>} />
+                </div>
+              </div>
+
+              <div className="rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm font-semibold text-amber-800 leading-relaxed">
+                โมดูลนี้<b>ไม่ตั้ง default rich menu ของ OA</b> — เมนู O&M ผูกรายคนเฉพาะลูกค้าที่ยืนยันตัวตนแล้ว
+                ผู้ใช้อื่นยังเห็นเมนูเดิมที่ทีมขายตั้งไว้ ไม่กระทบกัน
+              </div>
+            </div>
+          </div>
         )}
+
+        {/* ─── LIFF Apps ─── */}
+        {tab === 1 && (
+          <div className="grid gap-4 xl:grid-cols-[280px_minmax(0,1fr)] items-start">
+
+            {/* ── รายชื่อแอป ── */}
+            <div className="rounded-xl border border-gray-200 bg-white overflow-hidden">
+              <div className="px-4 py-3 border-b border-gray-100">
+                <div className="font-bold text-base text-gray-900">หน้า LIFF</div>
+                <div className="text-xs text-gray-400">เลือกเพื่อตั้งค่าของหน้านั้น</div>
+              </div>
+              {apps.map((a) => (
+                <button key={a.id} type="button" onClick={() => { setSelApp(a.code); setPreview(null); setShowAppCfg(false); }}
+                  style={{ minHeight: 0 }}
+                  className={`w-full text-left px-4 py-3 border-t border-gray-100 transition-colors cursor-pointer ${
+                    selApp === a.code ? "bg-teal-50" : "hover:bg-gray-50"}`}>
+                  <div className="flex items-center gap-2">
+                    <span className="font-bold text-sm text-gray-900">{a.name}</span>
+                    {!a.is_active && <Pill c="bg-gray-100 text-gray-500 border-gray-200">ปิด</Pill>}
+                  </div>
+                  <div className="flex items-center gap-2 mt-0.5">
+                    <span className="text-xs text-gray-400 font-mono">{a.code}</span>
+                    {a.liff_id
+                      ? <Pill c="bg-emerald-50 text-emerald-700 border-emerald-200">พร้อมใช้</Pill>
+                      : <Pill c="bg-amber-50 text-amber-700 border-amber-200">รอ LIFF ID</Pill>}
+                  </div>
+                </button>
+              ))}
+            </div>
+
+            {/* ── ตั้งค่าของแอปที่เลือก ── */}
+            {(() => {
+              const a = apps.find((x) => x.code === selApp);
+              if (!a) return <div className="rounded-xl border border-gray-200 bg-white p-10 text-center text-sm text-gray-400">เลือกหน้า LIFF จากรายการ</div>;
+              return (
+                <div className="space-y-4 min-w-0">
+                  <div className="rounded-xl border border-gray-200 bg-white overflow-hidden">
+                    <div className="px-5 py-3 border-b border-gray-100 flex items-center gap-3 flex-wrap">
+                      <div className="min-w-0">
+                        <div className="font-bold text-base text-gray-900 truncate">{a.name}</div>
+                        <div className="text-xs text-gray-400 font-mono truncate">{a.endpoint_path}</div>
+                      </div>
+                      <div className="ml-auto flex items-center gap-2 shrink-0">
+                        <button type="button" onClick={() => openPreview(a)} style={{ minHeight: 0 }}
+                          className="h-8 px-4 rounded-lg bg-primary text-white text-sm font-semibold cursor-pointer">
+                          แสดงผล
+                        </button>
+                        <button type="button" onClick={() => setShowAppCfg((v) => !v)} style={{ minHeight: 0 }}
+                          title={showAppCfg ? "ซ่อนการตั้งค่า" : "ตั้งค่า LIFF ID / ขนาดหน้าจอ"}
+                          className="h-8 px-3 rounded-lg border border-gray-200 text-xs font-bold text-gray-600 hover:bg-gray-50 cursor-pointer whitespace-nowrap">
+                          ตั้งค่า {showAppCfg ? "▴" : "▾"}
+                        </button>
+                      </div>
+                    </div>
+                    {showAppCfg && (
+                    <div className="p-5 grid gap-3 md:grid-cols-2">
+                      <label className="grid gap-1">
+                        <span className="text-xs font-bold text-gray-500">LIFF ID</span>
+                        <input defaultValue={a.liff_id || ""} placeholder="ยังไม่ได้ขอจากทีม"
+                          onBlur={(e) => e.target.value !== (a.liff_id || "") && patchApp(a.id, { liff_id: e.target.value })}
+                          className="h-9 rounded-lg border border-gray-200 px-3 text-sm font-mono outline-none focus:border-primary" />
+                      </label>
+                      <label className="grid gap-1">
+                        <span className="text-xs font-bold text-gray-500">ชื่อที่แสดง</span>
+                        <input defaultValue={a.name}
+                          onBlur={(e) => e.target.value.trim() && e.target.value !== a.name && patchApp(a.id, { name: e.target.value.trim() })}
+                          className="h-9 rounded-lg border border-gray-200 px-3 text-sm font-semibold outline-none focus:border-primary" />
+                      </label>
+                      <label className="grid gap-1">
+                        <span className="text-xs font-bold text-gray-500">ขนาดหน้าจอ</span>
+                        <select defaultValue={a.view_size} onChange={(e) => patchApp(a.id, { view_size: e.target.value })}
+                          className="h-9 rounded-lg border border-gray-200 px-3 text-sm font-semibold outline-none focus:border-primary">
+                          <option value="full">full — เต็มจอ</option>
+                          <option value="tall">tall — สูง 75%</option>
+                          <option value="compact">compact — เตี้ย</option>
+                        </select>
+                      </label>
+                      <label className="flex items-end gap-2 pb-1.5">
+                        <input type="checkbox" checked={a.is_active} onChange={() => patchApp(a.id, { is_active: !a.is_active })}
+                          className="w-4 h-4 accent-teal-500" />
+                        <span className="text-sm font-semibold text-gray-700">เปิดใช้งาน</span>
+                      </label>
+                      {a.note && <p className="md:col-span-2 text-xs text-gray-400">{a.note}</p>}
+                      <div className="md:col-span-2 border-t border-gray-100 pt-3">
+                        <a href={a.endpoint_path} target="_blank" rel="noreferrer"
+                          className="text-xs font-bold text-gray-500 hover:text-gray-700 underline">
+                          เปิดหน้านี้ในแท็บใหม่
+                        </a>
+                      </div>
+                    </div>
+                    )}
+                  </div>
+
+                  {/* ตั้งค่าเฉพาะของหน้านั้น */}
+                  {selApp === "faq" ? FaqSettings() : (
+                    <div className="rounded-xl border border-gray-200 bg-white p-8 text-center">
+                      <div className="text-sm font-bold text-gray-700">ยังไม่มีตั้งค่าเฉพาะของหน้านี้</div>
+                      <p className="mt-1.5 text-xs text-gray-400 leading-relaxed">
+                        จะเพิ่มเมื่อสร้างหน้านั้นจริง — เช่น จองบริการ (ช่วงเวลาที่จองได้) · ยืนยันตัวตน (อายุ OTP) · ร้านค้า (โซนที่เปิดขาย)
+                      </p>
+                    </div>
+                  )}
+                </div>
+              );
+            })()}
+          </div>
+        )}
+
+        {tab === 2 && (
+          <>
+            {/* แถบสั่งงานหลัก */}
+            <div className="flex items-center gap-3 flex-wrap mb-4">
+              <div className="font-bold text-base text-gray-900">เมนูลูกค้า O&M</div>
+              <span className="text-xs text-gray-400">v{(versions[0]?.version_no ?? 0) + 1} (ร่างถัดไป)</span>
+              <button type="button" onClick={saveDraft} disabled={busy} style={{ minHeight: 0 }}
+                className="ml-auto h-8 px-5 rounded-lg bg-primary text-white text-sm font-semibold disabled:opacity-40 cursor-pointer">
+                บันทึกเป็นเวอร์ชันใหม่
+              </button>
+            </div>
+
+            <div className="grid gap-4 xl:grid-cols-[2fr_3fr] items-start">
+
+              {/* ═══ ซ้าย: เทมเพลต → พรีวิว → รูปพื้น ═══ */}
+              <div className="rounded-xl border border-gray-200 bg-white overflow-hidden">
+                <div className="px-5 py-3 border-b border-gray-100 flex items-center gap-3">
+                  <div className="font-bold text-base text-gray-900">ผังเมนู</div>
+                  <span className="text-xs text-gray-400 ml-auto">{tmpl.size.width}×{tmpl.size.height} · {tmpl.areas.length} ช่อง</span>
+                </div>
+                <div className="p-5 space-y-4">
+                  {/* เทมเพลต — อยู่เหนือพรีวิว เลือกแล้วเห็นผลทันที */}
+                  <div className="grid gap-2 grid-cols-2 sm:grid-cols-3">
+                    {templates.map((t) => (
+                      <button key={t.id} type="button" onClick={() => { setTmplId(t.id); setSel(null); }}
+                        style={{ minHeight: 0 }} title={`${t.size.width}×${t.size.height}`}
+                        className={`flex flex-col items-center justify-center gap-1.5 rounded-lg border bg-white px-2 py-2 transition-colors cursor-pointer ${
+                          tmplId === t.id ? "border-primary bg-teal-50" : "border-gray-200 hover:border-gray-300"}`}>
+                        <span className="flex h-6 items-center"><MiniTemplate t={t} on={tmplId === t.id} /></span>
+                        <span className="text-xs text-gray-600 whitespace-nowrap">{t.name}</span>
+                      </button>
+                    ))}
+                  </div>
+
+                  {/* พรีวิว */}
+                  <div className="relative w-full max-w-[400px] mx-auto border border-gray-300 rounded-lg overflow-hidden bg-gray-100"
+                       style={{ aspectRatio: `${tmpl.size.width} / ${tmpl.size.height}` }}>
+                    {tmpl.areas.map((b, i) => {
+                      const c = cells[i] || { label: "", kind: "", value: "" };
+                      return (
+                        <button key={i} type="button" onClick={() => setSel(i)} style={{
+                          minHeight: 0, position: "absolute",
+                          left: `${(b.x / tmpl.size.width) * 100}%`, top: `${(b.y / tmpl.size.height) * 100}%`,
+                          width: `${(b.width / tmpl.size.width) * 100}%`, height: `${(b.height / tmpl.size.height) * 100}%`,
+                        }}
+                          className={`border flex flex-col items-center justify-center px-1 text-center overflow-hidden transition-colors cursor-pointer ${
+                            sel === i ? "border-primary bg-teal-50 z-10" : "border-gray-300 bg-white hover:bg-gray-50"}`}>
+                          <span className="text-xxs font-bold text-gray-300 leading-none">{String.fromCharCode(65 + i)}</span>
+                          <span className="text-sm font-bold text-gray-900 leading-snug line-clamp-2">{c.label || "—"}</span>
+                        </button>
+                      );
+                    })}
+                  </div>
+
+                  {/* รูปพื้นเมนู */}
+                  <div className="border-t border-gray-100 pt-4">
+                    <h3 className="text-sm font-bold text-gray-900 mb-2">รูปพื้นเมนู</h3>
+                    <input type="file" accept="image/*" onChange={(e) => setImgFile(e.target.files?.[0] || null)}
+                      className="text-xs file:mr-2 file:px-3 file:py-1.5 file:rounded-lg file:border file:border-gray-200 file:bg-white file:text-xs file:font-bold file:text-gray-600 file:cursor-pointer" />
+                    <p className="mt-1.5 text-xs text-gray-400">
+                      {imgFile ? `เลือกแล้ว: ${imgFile.name}` : "ไม่เลือก = ใช้รูปเดิมจากเวอร์ชันล่าสุด"} ·
+                      อัปขนาดไหนก็ได้ ระบบย่อเป็น {tmpl.size.width}×{tmpl.size.height} และบีบ ≤1MB ให้เอง
+                    </p>
+                  </div>
+                </div>
+              </div>
+
+              {/* ═══ ขวา: ปุ่มในเมนู → ประวัติ ═══ */}
+              <div className="space-y-4 min-w-0">
+                <div className="rounded-xl border border-gray-200 bg-white overflow-hidden">
+                  <div className="px-5 py-3 border-b border-gray-100 flex items-center gap-3">
+                    <div className="font-bold text-base text-gray-900">ปุ่มในเมนู</div>
+                    <span className="text-xs text-gray-400">{tmpl.areas.length} ช่อง</span>
+                  </div>
+                  {/* หัวคอลัมน์ครั้งเดียว — แต่ละช่องจึงเป็นบรรทัดเดียว */}
+                  <div className="grid gap-2 items-center px-5 py-2 bg-gray-50 border-t border-gray-100
+                                  grid-cols-[64px_1fr_128px_1.6fr] text-xs font-bold text-gray-500">
+                    <span>ช่อง</span><span>ป้ายกำกับ</span><span>การทำงาน</span><span>ปลายทาง</span>
+                  </div>
+                  {tmpl.areas.map((b, i) => {
+                    const c = cells[i] || { label: "", kind: "message" as Cell["kind"], value: "" };
+                    const upd = (patch: Partial<Cell>) =>
+                      setCells(Array.from({ length: tmpl.areas.length }, (_, k) =>
+                        k === i ? { ...c, ...patch } : (cells[k] || { label: "", kind: "message", value: "" })));
+                    return (
+                      <div key={i} onFocus={() => setSel(i)} onMouseEnter={() => setSel(i)}
+                        className={`grid gap-2 items-center border-t border-gray-100 px-5 py-2
+                                    grid-cols-[64px_1fr_128px_1.6fr] ${sel === i ? "bg-teal-50/40" : ""}`}>
+                        <span className="text-sm font-bold text-gray-900"
+                          title={`${Math.round((b.width / tmpl.size.width) * 100)}% × ${Math.round((b.height / tmpl.size.height) * 100)}%`}>
+                          {String.fromCharCode(65 + i)}
+                        </span>
+                        <input value={c.label} onChange={(e) => upd({ label: e.target.value })} placeholder="ป้ายกำกับ"
+                          className="h-9 w-full rounded-lg border border-gray-200 px-3 text-sm font-semibold outline-none focus:border-primary" />
+                        <select value={c.kind} onChange={(e) => upd({ kind: e.target.value as Cell["kind"], value: "" })}
+                          className="h-9 w-full rounded-lg border border-gray-200 px-2 text-sm font-semibold outline-none focus:border-primary">
+                          <option value="liff">LIFF</option>
+                          <option value="message">ข้อความ</option>
+                          <option value="tel">โทร</option>
+                          <option value="url">ลิงก์</option>
+                        </select>
+                        {c.kind === "liff" ? (
+                          <select value={c.value} onChange={(e) => upd({ value: e.target.value })}
+                            className="h-9 w-full rounded-lg border border-gray-200 px-3 text-sm font-semibold outline-none focus:border-primary">
+                            {apps.map((a) => <option key={a.code} value={a.code}>{a.name}{a.liff_id ? "" : " (รอ LIFF ID)"}</option>)}
+                          </select>
+                        ) : (
+                          <input value={c.value} onChange={(e) => upd({ value: e.target.value })}
+                            placeholder={c.kind === "tel" ? "02-xxx-xxxx" : c.kind === "url" ? "https://…" : "ข้อความที่ส่ง"}
+                            className="h-9 w-full rounded-lg border border-gray-200 px-3 text-sm font-semibold outline-none focus:border-primary" />
+                        )}
+                      </div>
+                    );
+                  })}
+                  <div className="px-5 py-3 border-t border-gray-100 text-xs text-gray-400">
+                    LINE แก้เมนูที่สร้างแล้วไม่ได้ — ทุกการแก้จึงเป็นเวอร์ชันใหม่ · ย้อนกลับได้ (โควตา 1,000 เมนู/OA)
+                  </div>
+                </div>
+
+                <div className="rounded-xl border border-gray-200 bg-white overflow-hidden">
+                  <div className="px-5 py-3 border-b border-gray-100 font-bold text-base text-gray-900">ประวัติเวอร์ชัน</div>
+                  {versions.length === 0 ? (
+                    <div className="p-5 text-center text-xs text-gray-400">ยังไม่มีเวอร์ชัน</div>
+                  ) : (
+                    <div className="max-h-[280px] overflow-y-auto">
+                      {versions.map((v) => (
+                        <div key={v.id} className="px-5 py-2.5 border-b border-gray-50 last:border-0">
+                          <div className="flex items-center gap-2">
+                            <span className="font-bold text-sm">v{v.version_no}</span>
+                            <Pill c={STATUS_STYLE[v.status]?.c || ""}>{STATUS_STYLE[v.status]?.t || v.status}</Pill>
+                            <span className="text-xs text-gray-400 truncate">{v.name}</span>
+                            {(v.status === "history" || v.status === "draft") && (
+                              <button type="button" onClick={() => deploy(v.id)} disabled={busy} style={{ minHeight: 0 }}
+                                className="ml-auto shrink-0 px-2.5 py-0.5 rounded-md border border-gray-200 text-xs font-bold text-gray-600 hover:bg-gray-50 disabled:opacity-40 cursor-pointer">
+                                {v.status === "draft" ? "เผยแพร่" : "ย้อนกลับ"}
+                              </button>
+                            )}
+                          </div>
+                          <div className="text-xs text-gray-400 mt-0.5">
+                            {new Date(v.created_at).toLocaleString("th-TH", { dateStyle: "short", timeStyle: "short" })}
+                            {v.created_by_name ? ` · ${v.created_by_name}` : ""}
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              </div>
+            </div>
+          </>
+        )}
+
+        {/* ─── FAQ ─── */}
+      {/* ── พรีวิว LIFF ── */}
+      {preview && (
+        <>
+          <div className="fixed inset-0 z-40 bg-black/50" onClick={() => setPreview(null)} />
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 pointer-events-none">
+            <div className="pointer-events-auto bg-white rounded-2xl shadow-xl w-full max-w-[440px] max-h-[92vh] flex flex-col">
+              <div className="px-5 py-3 border-b border-gray-200 flex items-center gap-3">
+                <div className="min-w-0">
+                  <div className="font-bold text-base text-gray-900 truncate">{preview.name}</div>
+                  <div className="text-xs text-gray-400 font-mono truncate">{preview.endpoint_path}</div>
+                </div>
+                <div className="ml-auto flex items-center gap-2 shrink-0">
+                  <a href={preview.endpoint_path} target="_blank" rel="noreferrer"
+                    className="px-3 py-1.5 rounded-lg border border-gray-200 text-xs font-bold text-gray-600 hover:bg-gray-50">
+                    เปิดแท็บใหม่
+                  </a>
+                  <button type="button" onClick={() => setPreview(null)} style={{ minHeight: 0 }}
+                    className="px-3 py-1.5 rounded-lg border border-gray-200 text-xs font-bold text-gray-600 hover:bg-gray-50 cursor-pointer">
+                    ปิด
+                  </button>
+                </div>
+              </div>
+
+              {previewMissing ? (
+                <div className="p-10 text-center">
+                  <div className="text-4xl">🚧</div>
+                  <div className="mt-3 font-bold text-gray-900">ยังไม่ได้สร้างหน้านี้</div>
+                  <p className="mt-1.5 text-xs text-gray-500 leading-relaxed">
+                    ทะเบียนชี้ไปที่ <span className="font-mono">{preview.endpoint_path}</span> แต่ยังไม่มีหน้าในระบบ<br />
+                    ปุ่มในเมนูที่ชี้มาที่นี่จะยังกดใช้ไม่ได้
+                  </p>
+                </div>
+              ) : (
+                <div className="p-4 overflow-y-auto bg-gray-100 rounded-b-2xl">
+                  {/* กรอบมือถือ — ให้เห็นสัดส่วนเดียวกับที่ลูกค้าเปิดใน LINE */}
+                  <div className="mx-auto w-[360px] max-w-full rounded-[28px] border-[6px] border-gray-800 overflow-hidden bg-white">
+                    <iframe src={preview.endpoint_path} title={preview.name}
+                      className="w-full h-[600px] border-0" />
+                  </div>
+                  <p className="mt-2.5 text-center text-xs text-gray-400 leading-relaxed">
+                    พรีวิวนี้เปิดหน้าจริงในโหมดจำลอง (นอก LINE) — ข้อมูลที่เห็นคือของบัญชีทดสอบที่ตั้งใน .env.local
+                  </p>
+                </div>
+              )}
+            </div>
+          </div>
+        </>
+      )}
 
       </div>
     </div>

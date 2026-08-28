@@ -5,6 +5,7 @@
 // หลายบ้าน = แบบ A ตัวสลับบ้าน (mockup 20260826_04) — คนมีหลังเดียวไม่เห็นตัวสลับ
 import { useEffect, useState } from "react";
 import { getProfile, liffFetch } from "@/lib/om/liff";
+import Verify from "./_Verify";
 
 const TEAL = "#009793";
 const ORANGE = "#DE8F00";
@@ -113,17 +114,8 @@ export default function OmLiffMyHome() {
 
       {!me && !error && <div className="px-5 py-16 text-center text-sm font-medium text-zinc-400">กำลังโหลดข้อมูล…</div>}
 
-      {me && !me.linked && (
-        <section className="mx-5 mt-6 border border-zinc-200 p-5 text-center">
-          <div className="text-lg font-bold">ยังไม่ได้ยืนยันตัวตน</div>
-          <p className="mt-2 text-sm font-medium leading-relaxed text-zinc-500">
-            ผูกบัญชี LINE กับบ้านของคุณเพื่อดูสิทธิ์ล้างแผง ประกัน และประวัติบริการ
-          </p>
-          <p className="mt-3 text-xs font-medium text-zinc-400">
-            (หน้ายืนยันตัวตนด้วยเบอร์โทร + OTP กำลังจะเปิดใช้ — ระหว่างนี้ติดต่อแอดมินทางแชต)
-          </p>
-        </section>
-      )}
+      {/* ยังไม่ผูกบ้าน = ยืนยันตัวตนตรงนี้เลย ไม่ต้องไป LIFF อื่น (ผู้ใช้ตัดสิน 27 ส.ค.) */}
+      {me && !me.linked && <Verify onDone={load} />}
 
       {me?.linked && me.house && (
         <>
