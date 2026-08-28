@@ -408,7 +408,7 @@ export default function ManagePackagesPage() {
                           <button type="button" onClick={() => toggleActive(pkg)} disabled={!isAdmin} className={`text-xs font-bold uppercase px-3 py-1.5 rounded-full ${!isAdmin ? "cursor-default " : ""}${pkg.is_active ? "bg-emerald-50 text-emerald-700" : "bg-gray-100 text-gray-500"}`}>
                             {pkg.is_active ? "ACTIVE" : "INACTIVE"}
                           </button>
-                          <button type="button" onClick={() => setEditing({ ...pkg })} className="text-sm text-primary font-semibold hover:underline">เนเธเนเนเธ</button>
+                          <button type="button" onClick={() => setEditing({ ...pkg })} className="text-sm text-primary font-semibold hover:underline">แก้ไข</button>
                         </div>
                       </td>
                     </tr>
