@@ -52,6 +52,8 @@ interface Data {
     installation_address: string | null;
     install_checklist_doc_no: string | null;
     install_completed_at: string | null;
+    install_actual_date: string | null;
+    install_date: string | null;
     install_customer_signature_url: string | null;
     install_photos: string | null;
     install_photos_extra: string | null;
@@ -154,10 +156,16 @@ export default function InstallDocPage() {
   const v3 = tests.voltage_3ph || {};
 
   const docNo = lead.install_checklist_doc_no || `SSE-CK-${new Date().getFullYear().toString().slice(-2)}${String(lead.id).padStart(4, "0")}`;
-  // Fall back to today if neither the checklist's inspection_date nor the
-  // lead's install_completed_at have a value — the printable doc should
-  // always carry a date even on leads that haven't filled the checklist yet.
-  const inspectionDate = checklist?.inspection_date || lead.install_completed_at || new Date().toISOString().slice(0, 10);
+  // วันที่บนเอกสาร = วันที่ติดตั้งจริง ไม่ใช่วันที่กดปิดงาน
+  // (install_completed_at เป็นเวลาที่กดปุ่ม ทีมมักไล่กดย้อนหลังทีเดียวหลายราย
+  //  เอกสารของงานเดือน พ.ค. จึงเคยลงวันที่เป็นวันที่กดในเดือน ส.ค.)
+  // ลำดับ: วันติดตั้งจริง → วันที่ตรวจในใบ checklist → วันนัดติดตั้ง → วันที่กดปิดงาน → วันนี้
+  const inspectionDate =
+    lead.install_actual_date ||
+    checklist?.inspection_date ||
+    lead.install_date ||
+    lead.install_completed_at ||
+    new Date().toISOString().slice(0, 10);
   const phase1 = (inv.phase || "").toLowerCase().includes("1") || inv.phase === "1_phase";
   const phase3 = (inv.phase || "").toLowerCase().includes("3") || inv.phase === "3_phase";
 

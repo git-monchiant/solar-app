@@ -19,6 +19,7 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
       SELECT l.id, l.full_name, l.phone, l.project_name, l.project_alias,
              l.installation_address, l.install_checklist_doc_no,
              l.install_completed_at, l.install_completed_by,
+             l.install_actual_date, l.install_date,
              l.install_customer_signature_url,
              l.install_photos, l.install_photos_extra,
              l.assigned_user_id,

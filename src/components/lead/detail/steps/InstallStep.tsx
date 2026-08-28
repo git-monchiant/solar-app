@@ -640,10 +640,14 @@ export default function InstallStep({ lead, state, refresh, expanded, onToggle }
             <div className="font-semibold text-gray-800 text-sm">{formatDate(lead.install_actual_date)}</div>
           </div>
         )}
-        {lead.install_completed_at && (
+        {(lead.install_actual_date || lead.install_completed_at) && (
           <div className="rounded-lg bg-emerald-50 border border-emerald-200 p-2.5">
             <div className="text-xs font-bold text-emerald-600 uppercase mb-0.5">วันที่ส่งมอบ</div>
-            <div className="font-semibold text-emerald-700 text-sm">{formatDate(lead.install_completed_at)}</div>
+            {/* วันที่ติดตั้งจริง ไม่ใช่วันที่กดปิดงาน — ทีมมักไล่กดย้อนหลังทีเดียวหลายราย
+                ใช้ install_completed_at เฉพาะตอนไม่มีวันติดตั้งจริง */}
+            <div className="font-semibold text-emerald-700 text-sm">
+              {formatDate(lead.install_actual_date || lead.install_completed_at)}
+            </div>
           </div>
         )}
       </div>
