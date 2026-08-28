@@ -6,6 +6,12 @@ import { useEffect, useState } from "react";
 import Header from "@/components/layout/Header";
 import { formatTHB as fmt, formatThaiDate as fmtDate } from "@/lib/utils/formatters";
 import { hasRole, useActiveRoles } from "@/lib/roles";
+import { getQuotationTermsProfile } from "@/lib/quotation-terms";
+
+const TERM_PROFILE_LABEL = {
+  full_install: "ติดตั้งใหม่ทั้งระบบ",
+  additional_install: "ติดตั้งเพิ่ม",
+} as const;
 
 interface Package {
   id: number;
@@ -35,6 +41,8 @@ interface Package {
   start_date: string | null;
   expire_date: string | null;
   remark?: string | null;
+  /** ชุดเงื่อนไขใบเสนอราคา · null = ให้ระบบเดาจากคุณสมบัติแพ็กเกจแบบเดิม */
+  term_set_profile?: "full_install" | "additional_install" | null;
 }
 type PackageItem = { item_name: string; quantity: number; unit: string | null };
 type PricePeriod = {
@@ -96,7 +104,7 @@ const empty: Omit<Package, "id"> = {
   battery_model: null, inverter_kw: null, inverter_brand: null, inverter_model: null,
   installed_kwp: null, panel_count: null, panel_watt: null, panel_brand: null,
   price: 0, monthly_installment: null,
-  monthly_saving: null, warranty_years: 10, is_active: true,
+  monthly_saving: null, warranty_years: 10, is_active: true, term_set_profile: null,
   start_date: new Date().toISOString().slice(0, 10),
   expire_date: `${new Date().getFullYear() + 99}-${String(new Date().getMonth() + 1).padStart(2, "0")}-${String(new Date().getDate()).padStart(2, "0")}`,
 };
@@ -533,6 +541,23 @@ export default function ManagePackagesPage() {
                         </button>
                       ))}
                     </div>
+                  </div>
+                  <div className="md:col-span-12">
+                    <label className={labelCls}>ชุดเงื่อนไขในใบเสนอราคา</label>
+                    <select
+                      value={editing.term_set_profile ?? ""}
+                      onChange={e => setEditing({ ...editing, term_set_profile: (e.target.value || null) as Package["term_set_profile"] })}
+                      className={fieldCls}
+                    >
+                      <option value="">ให้ระบบเลือกเอง (ปัจจุบันได้ “{TERM_PROFILE_LABEL[getQuotationTermsProfile({ ...editing, term_set_profile: null } as unknown as Record<string, unknown>)]}”)</option>
+                      <option value="full_install">{TERM_PROFILE_LABEL.full_install}</option>
+                      <option value="additional_install">{TERM_PROFILE_LABEL.additional_install}</option>
+                    </select>
+                    <p className="mt-1 text-xxs text-gray-500 leading-relaxed">
+                      ชุด “ติดตั้งเพิ่ม” จะ<b>ไม่มีหัวข้อ O&amp;M</b> และเปลี่ยนข้อความรับประกันงานติดตั้ง
+                      เป็น “เฉพาะอุปกรณ์ที่ติดตั้งเพิ่มเท่านั้น” · ถ้าปล่อยให้ระบบเลือกเอง จะเดาจาก
+                      Scale Up และอุปกรณ์ในแพ็กเกจ · มีผลกับใบเสนอราคาที่สร้างใหม่เท่านั้น ใบเดิมไม่เปลี่ยน
+                    </p>
                   </div>
                 </div>
               </section>

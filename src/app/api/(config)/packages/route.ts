@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { getDb, sql, fixDates, toSqlDate } from "@/lib/db";
 import { requireAnyRole, requireAuth } from "@/lib/auth";
 import { syncActivePricePeriods } from "@/lib/package-prices";
+import { isQuotationTermsProfile } from "@/lib/quotation-terms";
 
 export async function GET(req: NextRequest) {
   const gate = await requireAuth(req);
@@ -53,18 +54,21 @@ export async function POST(req: NextRequest) {
       .input("monthly_installment", sql.NVarChar(20), body.monthly_installment || null)
       .input("monthly_saving", sql.Decimal(10, 2), body.monthly_saving || null)
       .input("warranty_years", sql.Int, body.warranty_years || 10)
+      // null = ยังไม่ตั้งค่า → โค้ดเดาจากคุณสมบัติแพ็กเกจแบบเดิม
+      .input("term_set_profile", sql.VarChar(20),
+        isQuotationTermsProfile(body.term_set_profile) ? body.term_set_profile : null)
       .input("start_date", sql.Date, toSqlDate(body.start_date) ?? today)
       .input("expire_date", sql.Date, toSqlDate(body.expire_date) ?? default99)
       .query(`
         INSERT INTO packages (name, kwp, phase, has_battery, has_panel, has_inverter, is_upgrade, is_other,
           battery_kwh, battery_brand, battery_model, inverter_kw, inverter_brand, inverter_model,
           installed_kwp, panel_count, panel_watt, panel_brand,
-          price, monthly_installment, monthly_saving, warranty_years, start_date, expire_date)
+          price, monthly_installment, monthly_saving, warranty_years, term_set_profile, start_date, expire_date)
         OUTPUT INSERTED.*
         VALUES (@name, @kwp, @phase, @has_battery, @has_panel, @has_inverter, @is_upgrade, @is_other,
           @battery_kwh, @battery_brand, @battery_model, @inverter_kw, @inverter_brand, @inverter_model,
           @installed_kwp, @panel_count, @panel_watt, @panel_brand,
-          @price, @monthly_installment, @monthly_saving, @warranty_years, @start_date, @expire_date)
+          @price, @monthly_installment, @monthly_saving, @warranty_years, @term_set_profile, @start_date, @expire_date)
       `);
     return NextResponse.json(result.recordset[0], { status: 201 });
   } catch (error) {

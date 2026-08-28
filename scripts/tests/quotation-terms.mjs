@@ -45,6 +45,37 @@ assert.equal(getQuotationTermsProfile(hybrid), "full_install");
 assert.equal(getQuotationTermsProfile(scaleUp), "additional_install");
 assert.equal(getQuotationTermsProfile(batteryOnly), "additional_install");
 
+// ── packages.term_set_profile ชนะกติกาเดา ──
+// ค่าที่แอดมินตั้งไว้ต้องมาก่อน ทั้งสองทิศทาง
+assert.equal(
+  getQuotationTermsProfile({ ...onGrid, term_set_profile: "additional_install" }),
+  "additional_install",
+);
+assert.equal(
+  getQuotationTermsProfile({ ...scaleUp, term_set_profile: "full_install" }),
+  "full_install",
+);
+// ยังไม่ได้ตั้งค่า / ค่าพัง → ถอยไปใช้กติกาเดาแบบเดิม ไม่ใช่ throw และไม่ใช่ default ตายตัว
+for (const unset of [null, undefined, "", "  ", "FULL_INSTALL", "อะไรก็ไม่รู้", 1, true, {}]) {
+  assert.equal(
+    getQuotationTermsProfile({ ...scaleUp, term_set_profile: unset }),
+    "additional_install",
+    `term_set_profile=${JSON.stringify(unset)} ต้องถอยไปใช้กติกาเดา`,
+  );
+  assert.equal(getQuotationTermsProfile({ ...onGrid, term_set_profile: unset }), "full_install");
+}
+// snapshot ของใบเก่าที่แช่แข็งไว้ก่อนมีคอลัมน์นี้ต้องได้ผลเท่าเดิม
+assert.equal(getQuotationTermsProfile({ name: "10 kWp+Hybrid_1 เฟส" }), "full_install");
+
+// ข้อความจริงต้องสลับตามค่าที่ตั้ง ไม่ใช่แค่ค่า profile
+const forcedAdditional = getQuotationLegalContent(
+  { ...onGrid, term_set_profile: "additional_install" }, 7, "",
+);
+assert.ok(
+  !forcedAdditional.page2Sections.some((section) => section.title.includes("การดำเนินงาน")),
+  "ตั้งเป็นชุดติดตั้งเพิ่มแล้วต้องไม่มีหัวข้อ O&M",
+);
+
 const fullInstall = getQuotationLegalContent(onGrid, 7, "ข้อความเพิ่มเติม");
 assert.equal(fullInstall.page1Sections[1].title, "2. หมายเหตุ (กรณีติดตั้งใหม่ทั้งระบบ)");
 assert.ok(fullInstall.page2Sections.some((section) => section.title.startsWith("3. การดำเนินงาน")));
