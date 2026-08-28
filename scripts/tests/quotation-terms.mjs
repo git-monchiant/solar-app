@@ -87,6 +87,33 @@ assert.equal(withoutOm.page2LeadingParagraphs.some((text) => text.includes("O&M"
 assert.deepEqual(withoutOm.page2Sections.map((section) => section.title), ["3. เงื่อนไขเพิ่มเติม"]);
 assert.ok(withoutOm.page2Sections[0].paragraphs.includes("3.4) ข้อความเพิ่มเติม"));
 
+// ── เฟส 0: ถ้อยคำที่แช่แข็งลง snapshot ต้องเท่ากับที่ PDF route เคยคำนวณสด ──
+// buildQuotationDocumentSnapshot ส่ง `inputs.om` ตรง ๆ ส่วน quotation-pdf route
+// เดิมส่ง `parseDocumentInputs(snapshot.financial.inputs).om` คือ om ที่ถูก parse
+// ซ้ำอีกรอบ สองทางจะให้ผลเท่ากันก็ต่อเมื่อ parseQuotationOmSettings เป็น idempotent
+const omShapes = [
+  undefined,
+  getStandardQuotationOmSettings(),
+  customizedOm,
+  { ...getStandardQuotationOmSettings(), enabled: false },
+  { coverage_years: 2, cleaning: { visits_per_year: 9, years: 9 } },
+];
+for (const om of omShapes) {
+  const once = parseQuotationOmSettings(om);
+  assert.deepEqual(parseQuotationOmSettings(once), once, "parseQuotationOmSettings ต้อง idempotent");
+}
+for (const pkg of [onGrid, hybrid, scaleUp, batteryOnly]) {
+  for (const om of omShapes) {
+    assert.equal(
+      JSON.stringify(getQuotationLegalContent(pkg, 7, "ข้อความเพิ่มเติม", om)),
+      JSON.stringify(
+        getQuotationLegalContent(pkg, 7, "ข้อความเพิ่มเติม", parseQuotationOmSettings(om)),
+      ),
+      `ถ้อยคำต้องตรงกันทุกตัวอักษร: ${pkg.name}`,
+    );
+  }
+}
+
 assert.deepEqual(getStandardQuotationPaymentTerms(), [
   {
     label: "งวดที่ 1 ชำระ",

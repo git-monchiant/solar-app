@@ -9,15 +9,20 @@ import ModalBase from "@/components/ui/ModalBase";
 import {
   balanceFinalQuotationPaymentTerm,
   getQuotationPaymentTermsTotal,
+  getQuotationTermTreeDiff,
   getQuotationTermsProfile,
   getStandardQuotationOmSettings,
   isStandardQuotationOmSettings,
+  isStandardQuotationTermTree,
   parseQuotationOmSettings,
   parseQuotationPaymentTerms,
+  parseQuotationTermTree,
   type QuotationOmService,
   type QuotationOmSettings,
   type QuotationPaymentTerm,
+  type QuotationTermTree,
 } from "@/lib/quotation-terms";
+import QuotationTermsEditor from "./QuotationTermsEditor";
 import type { Lead, Package } from "./types";
 
 type Item = {
@@ -43,6 +48,8 @@ type Item = {
 };
 type DocumentInputs = {
   om: QuotationOmSettings;
+  // ชุดเงื่อนไข/ข้อกำหนดที่แก้เฉพาะใบนี้ · null = ยังใช้ชุดมาตรฐานในโค้ด
+  terms: QuotationTermTree | null;
   recommendation_reason: string;
   loan_enabled: boolean;
   loan_bank: string;
@@ -62,6 +69,7 @@ type Quote = {
   option_no: number;
   doc_no: string;
   issue_date?: string;
+  valid_days?: number;
   revision_no: number;
   status: string;
   package_id: number;
@@ -1277,7 +1285,9 @@ function QuotationEditor({
       parseQuotationPaymentTerms(quote?.payment_terms_json),
     ),
   );
-  const [termsText, setTermsText] = useState(quote?.terms_text || "");
+  // อ่านอย่างเดียว — แท็บ "เงื่อนไข/ข้อกำหนด" มาแทนช่องพิมพ์เดิมแล้ว แต่ยังส่งค่าเดิม
+  // กลับไปตามเดิมเพื่อไม่ให้ข้อมูลของใบเก่าหาย และใช้เป็นบรรทัดตั้งต้นในแท็บนั้น
+  const [termsText] = useState(quote?.terms_text || "");
   const [issueDate, setIssueDate] = useState(
     quote?.issue_date ? String(quote.issue_date).slice(0, 10) : todayIso(),
   );
@@ -1290,6 +1300,10 @@ function QuotationEditor({
     } catch {}
     return {
       om: parseQuotationOmSettings(saved.om),
+      terms: parseQuotationTermTree(
+        saved.terms,
+        saved.terms?.profile === "additional_install" ? "additional_install" : "full_install",
+      ),
       recommendation_reason: saved.recommendation_reason || "",
       loan_enabled: saved.loan_enabled ?? GSB_SOLAR_LOAN_DEFAULTS.loan_enabled,
       loan_bank:
@@ -1328,6 +1342,8 @@ function QuotationEditor({
     };
   });
   const [omOpen, setOmOpen] = useState(true);
+  // ตั้งชื่อ activeTab ไม่ใช่ tab — previewQuotation มีตัวแปร tab (หน้าต่างที่เปิดใหม่) อยู่แล้ว
+  const [activeTab, setActiveTab] = useState<"items" | "terms">("items");
   useEffect(() => {
     if (quote || templateId || !defaultTemplate) return;
     setTemplateId(defaultTemplate.id);
@@ -1426,9 +1442,28 @@ function QuotationEditor({
     documentInputs.om.thermoscan,
     documentInputs.om.visual_inspection,
   ].filter((service) => service.enabled).length;
-  const hasFullInstallTerms = getQuotationTermsProfile(
+  const termsProfile = getQuotationTermsProfile(
     mainPackage as unknown as Record<string, unknown> | undefined,
-  ) === "full_install";
+  );
+  const hasFullInstallTerms = termsProfile === "full_install";
+  // ป้ายบนแท็บ: บอกทันทีว่าใบนี้แก้เงื่อนไขไปแล้วกี่จุด โดยไม่ต้องกดเข้าไปดู
+  const termsDiff = documentInputs.terms
+    ? getQuotationTermTreeDiff(documentInputs.terms)
+    : null;
+  const termsSummary =
+    termsDiff && termsDiff.total > 0
+      ? `ต่างจากมาตรฐาน ${termsDiff.total} จุด`
+      : "ตามมาตรฐาน";
+  // ชุดที่ยังเท่ากับมาตรฐานเป๊ะไม่ต้องบันทึกลงใบ — ปล่อยให้ใบรับข้อความมาตรฐาน
+  // เวอร์ชันล่าสุดตอนเรนเดอร์ จนกว่าจะมีคนแก้จริง ๆ
+  const payloadDocumentInputs = {
+    ...documentInputs,
+    terms:
+      documentInputs.terms &&
+      !isStandardQuotationTermTree(documentInputs.terms, termsText)
+        ? documentInputs.terms
+        : null,
+  };
 
   /** tree → payload ของ API (package_items = หัวข้อหลัก, items = หัวข้ออื่น + ลูก) */
   const serializeTree = () => {
@@ -1538,7 +1573,7 @@ function QuotationEditor({
           outstanding,
           terms,
           termsText,
-          documentInputs,
+          documentInputs: payloadDocumentInputs,
         }),
       });
       if (!response.ok) {
@@ -1586,7 +1621,7 @@ function QuotationEditor({
             payment_template_id: templateId,
             payment_terms: terms,
             terms_text: termsText,
-            document_inputs: documentInputs,
+            document_inputs: payloadDocumentInputs,
           }),
         },
       );
@@ -1636,6 +1671,30 @@ function QuotationEditor({
         <div className="flex min-h-0 flex-1 flex-col md:flex-row">
           {/* ── ซ้าย: ต้นไม้รายการ (เลื่อนในกรอบตัวเอง หน้าไม่ยาว) ── */}
           <div className="flex min-h-0 flex-1 flex-col border-b border-gray-100 md:border-b-0 md:border-r">
+            {/* แท็บในตัว modal — ตัวแก้เงื่อนไขต้องการความกว้างเต็ม ใส่ในคอลัมน์ขวาไม่พอ */}
+            <div className="flex shrink-0 gap-1 border-b border-gray-100 px-4 pt-2">
+              {([
+                ["items", "รายการในใบเสนอราคา", `${groups.length} หัวข้อ`],
+                ["terms", "เงื่อนไข/ข้อกำหนด", termsSummary],
+              ] as const).map(([key, label, hint]) => (
+                <button
+                  key={key}
+                  type="button"
+                  onClick={() => setActiveTab(key)}
+                  className={`relative -mb-px h-9 rounded-t-lg border border-b-0 px-3 text-xxs font-bold transition-colors ${
+                    activeTab === key
+                      ? "border-gray-200 bg-white text-primary"
+                      : "border-transparent text-gray-500 hover:bg-gray-50"
+                  }`}
+                >
+                  {label}
+                  <span className="ml-1.5 font-normal text-gray-400">{hint}</span>
+                </button>
+              ))}
+            </div>
+
+            {activeTab === "items" && (
+              <>
             <div className="flex shrink-0 items-center gap-2 px-4 py-2">
               <span className="text-xs font-bold text-gray-800">รายการในใบเสนอราคา</span>
               <span className="text-xxs text-gray-400">{groups.length} หัวข้อ</span>
@@ -1901,6 +1960,21 @@ function QuotationEditor({
                 ))}
               </div>
             </div>
+              </>
+            )}
+
+            {activeTab === "terms" && (
+              <QuotationTermsEditor
+                value={documentInputs.terms}
+                profile={termsProfile}
+                legacyTermsText={termsText}
+                om={documentInputs.om}
+                validDays={Number(quote?.valid_days) || 7}
+                onChange={(next) =>
+                  setDocumentInputs((current) => ({ ...current, terms: next }))
+                }
+              />
+            )}
           </div>
 
           {/* ── ขวา: การเงิน (บีบให้พอดีจอ ไม่ต้องเลื่อน) ── */}
@@ -2182,13 +2256,19 @@ function QuotationEditor({
                     className={`w-40 ${FIELD}`}
                   />
                 </div>
-                <textarea
-                  value={termsText}
-                  onChange={(e) => setTermsText(e.target.value)}
-                  rows={2}
-                  placeholder="เงื่อนไขเพิ่มเติม"
-                  className="mt-1.5 h-16 w-full resize-none rounded-lg border border-gray-200 bg-white px-2 py-1.5 text-xs outline-none transition-colors placeholder:text-gray-300 hover:border-gray-300 focus:border-primary focus:ring-2 focus:ring-primary/10"
-                />
+                <button
+                  type="button"
+                  onClick={() => setActiveTab("terms")}
+                  className="mt-1.5 flex w-full items-center gap-2 rounded-lg border border-gray-200 bg-white px-2 py-2 text-left transition-colors hover:border-primary/40 hover:bg-primary/5"
+                >
+                  <span className="min-w-0 flex-1">
+                    <span className="block text-xxs font-semibold text-gray-700">
+                      เงื่อนไข/ข้อกำหนด
+                    </span>
+                    <span className="block text-[11px] text-gray-400">{termsSummary}</span>
+                  </span>
+                  <span className="shrink-0 text-xxs font-bold text-primary">แก้ไข →</span>
+                </button>
               </div>
             </div>
           </div>

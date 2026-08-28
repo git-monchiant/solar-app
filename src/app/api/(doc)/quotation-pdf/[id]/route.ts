@@ -215,6 +215,13 @@ export async function POST(req: NextRequest) {
     items: previewAllItems.map((item: Record<string, unknown>) => ({ ...item, item_name_snapshot: item.item_name_snapshot || item.item_name || "", line_total: Number(item.line_total || (Number(item.quantity) || 0) * (Number(item.unit_price) || 0)) })),
     settings: {},
     financial: calculateFinancialSnapshot(inputs, quotation, packageRow),
+    legal: getQuotationLegalContent(
+      packageRow,
+      quotation.valid_days,
+      String(quotation.terms_text || ""),
+      inputs.om,
+      inputs.terms,
+    ),
   };
   const token = randomUUID();
   previewCache.set(token, { detail: quotation, snapshot });
@@ -547,12 +554,19 @@ export async function GET(
     })
     .join("");
 
-  const legalContent = getQuotationLegalContent(
-    snapshot.package,
-    q.valid_days,
-    String(q.terms_text || ""),
-    parseDocumentInputs(snapshot.financial?.inputs || {}).om,
-  );
+  // ใบที่ freeze snapshot ไว้แล้ว (v5 ขึ้นไป) ใช้ถ้อยคำที่เก็บไว้ในใบ — แก้ข้อความ
+  // ในโค้ดทีหลังจะไม่ย้อนไปเปลี่ยนใบที่ลูกค้าเซ็นไปแล้ว ส่วนใบ draft และ snapshot
+  // เก่าก่อน v5 ที่ไม่มีคีย์นี้ ยังคำนวณสดจากชุดมาตรฐานในโค้ดเหมือนเดิม
+  const snapshotInputs = parseDocumentInputs(snapshot.financial?.inputs || {});
+  const legalContent =
+    snapshot.legal ??
+    getQuotationLegalContent(
+      snapshot.package,
+      q.valid_days,
+      String(q.terms_text || ""),
+      snapshotInputs.om,
+      snapshotInputs.terms,
+    );
   const renderLegalSections = (sections: QuotationLegalSection[]) =>
     sections
       .map(
