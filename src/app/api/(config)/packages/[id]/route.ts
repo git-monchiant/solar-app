@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getDb, sql, fixDates, toSqlDate } from "@/lib/db";
 import { requireAnyRole } from "@/lib/auth";
+import { isQuotationTermsProfile } from "@/lib/quotation-terms";
 
 export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const gate = await requireAnyRole(req, ["admin"]);
@@ -36,6 +37,14 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
       monthly_installment: { type: sql.NVarChar(20), value: body.monthly_installment },
       monthly_saving: { type: sql.Decimal(10, 2), value: body.monthly_saving },
       warranty_years: { type: sql.Int, value: body.warranty_years },
+      // ค่าที่ไม่รู้จักถูกปัดเป็น null → โค้ดถอยไปเดาจากคุณสมบัติแพ็กเกจแทน
+      // (DB มี CK_packages_term_set_profile กันไว้อีกชั้น)
+      term_set_profile: {
+        type: sql.VarChar(20),
+        value: body.term_set_profile === undefined
+          ? undefined
+          : isQuotationTermsProfile(body.term_set_profile) ? body.term_set_profile : null,
+      },
       is_active: { type: sql.Bit, value: body.is_active },
       start_date: { type: sql.Date, value: body.start_date ? toSqlDate(body.start_date) : undefined },
       expire_date: { type: sql.Date, value: body.expire_date ? toSqlDate(body.expire_date) : undefined },

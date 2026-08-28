@@ -432,10 +432,19 @@ export function balanceFinalQuotationPaymentTerm(
 const asBoolean = (value: unknown) =>
   value === true || value === 1 || value === "1" || value === "true";
 
+export function isQuotationTermsProfile(value: unknown): value is QuotationTermsProfile {
+  return value === "full_install" || value === "additional_install";
+}
+
 export function getQuotationTermsProfile(
   pkg: Record<string, unknown> | null | undefined,
 ): QuotationTermsProfile {
   if (!pkg) return "full_install";
+
+  // ค่าที่แอดมินตั้งไว้ที่แพ็กเกจชนะเสมอ ที่เหลือด้านล่างคือกติกาเดาแบบเดิม
+  // ซึ่งยังต้องมีอยู่: แพ็กเกจที่ยังไม่ได้ตั้งค่า และ snapshot ของใบเก่าที่
+  // แช่แข็งไว้ก่อนมีคอลัมน์นี้ จะไม่มีค่าให้อ่าน
+  if (isQuotationTermsProfile(pkg.term_set_profile)) return pkg.term_set_profile;
 
   const name = String(pkg.name || "").trim();
   if (asBoolean(pkg.is_upgrade) || /^scale\s*up\s*:/i.test(name)) {

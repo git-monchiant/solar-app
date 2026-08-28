@@ -310,6 +310,8 @@ export interface Package {
   has_panel: boolean;
   has_inverter: boolean;
   warranty_years: number;
+  /** ชุดเงื่อนไขใบเสนอราคาที่แอดมินตั้งไว้ · null = ให้เดาจากคุณสมบัติแพ็กเกจ */
+  term_set_profile?: "full_install" | "additional_install" | null;
 }
 
 export type CardStateKind = "done" | "active" | "locked";
