@@ -9,7 +9,7 @@ import Loading from "@/components/ui/Loading";
 
 interface LiffApp {
   id: number; code: string; name: string; liff_id: string | null;
-  endpoint_path: string; view_size: string; is_active: boolean; note: string | null;
+  endpoint_path: string; external_url: string | null; view_size: string; is_active: boolean; note: string | null;
 }
 interface RmVersion {
   id: number; version_no: number; name: string; chat_bar_text: string;
@@ -46,7 +46,9 @@ const EMPTY_CELLS: Cell[] = [
   { label: "แจ้งซ่อม / นัดบริการ", kind: "liff", value: "booking" },
   { label: "ติดต่อเจ้าหน้าที่", kind: "message", value: "ติดต่อเจ้าหน้าที่" },
   { label: "FAQ", kind: "liff", value: "faq" },
-  { label: "Referral", kind: "liff", value: "referral" },
+  // ★ ผู้ใช้เคาะ 31 ส.ค.: referral ไม่ทำเป็น LIFF ของเรา — ลิงก์ออกไปหน้าสมัคร agent ตรง ๆ (แบบ ก.)
+  //   URL ตั้งค่าได้ที่แท็บ LIFF Apps → "แนะนำเพื่อน" ช่อง "ลิงก์ภายนอก" (om_liff_apps.external_url)
+  { label: "Referral", kind: "url", value: "" },
 ];
 
 export default function OmLineOaPage() {
@@ -106,6 +108,8 @@ export default function OmLineOaPage() {
 
   const liffUri = (code: string) => {
     const app = apps.find((a) => a.code === code);
+    // ★ แอปที่เป็นลิงก์ออกนอก LINE (เช่น referral) ใช้ URL ปลายทางตรง ๆ ไม่ผ่าน liff.line.me
+    if (app?.external_url) return app.external_url;
     return app?.liff_id ? `https://liff.line.me/${app.liff_id}` : `https://liff.line.me/PENDING-${code}`;
   };
   const toAction = (c: Cell) => {
@@ -531,9 +535,11 @@ export default function OmLineOaPage() {
                   </div>
                   <div className="flex items-center gap-2 mt-0.5">
                     <span className="text-xs text-gray-400 font-mono">{a.code}</span>
-                    {a.liff_id
-                      ? <Pill c="bg-emerald-50 text-emerald-700 border-emerald-200">พร้อมใช้</Pill>
-                      : <Pill c="bg-amber-50 text-amber-700 border-amber-200">รอ LIFF ID</Pill>}
+                    {a.external_url
+                      ? <Pill c="bg-sky-50 text-sky-700 border-sky-200">ลิงก์ภายนอก</Pill>
+                      : a.liff_id
+                        ? <Pill c="bg-emerald-50 text-emerald-700 border-emerald-200">พร้อมใช้</Pill>
+                        : <Pill c="bg-amber-50 text-amber-700 border-amber-200">รอ LIFF ID</Pill>}
                   </div>
                 </button>
               ))}
@@ -549,13 +555,22 @@ export default function OmLineOaPage() {
                     <div className="px-5 py-3 border-b border-gray-100 flex items-center gap-3 flex-wrap">
                       <div className="min-w-0">
                         <div className="font-bold text-base text-gray-900 truncate">{a.name}</div>
-                        <div className="text-xs text-gray-400 font-mono truncate">{a.endpoint_path}</div>
+                        <div className="text-xs text-gray-400 font-mono truncate">
+                          {a.external_url || a.endpoint_path || "— ยังไม่ได้ตั้งลิงก์ —"}
+                        </div>
                       </div>
                       <div className="ml-auto flex items-center gap-2 shrink-0">
-                        <button type="button" onClick={() => openPreview(a)} style={{ minHeight: 0 }}
-                          className="h-8 px-4 rounded-lg bg-primary text-white text-sm font-semibold cursor-pointer">
-                          แสดงผล
-                        </button>
+                        {a.external_url ? (
+                          <a href={a.external_url} target="_blank" rel="noreferrer"
+                            className="h-8 px-4 rounded-lg bg-primary text-white text-sm font-semibold cursor-pointer inline-flex items-center">
+                            เปิดลิงก์
+                          </a>
+                        ) : (
+                          <button type="button" onClick={() => openPreview(a)} style={{ minHeight: 0 }}
+                            className="h-8 px-4 rounded-lg bg-primary text-white text-sm font-semibold cursor-pointer">
+                            แสดงผล
+                          </button>
+                        )}
                         <button type="button" onClick={() => setShowAppCfg((v) => !v)} style={{ minHeight: 0 }}
                           title={showAppCfg ? "ซ่อนการตั้งค่า" : "ตั้งค่า LIFF ID / ขนาดหน้าจอ"}
                           className="h-8 px-3 rounded-lg border border-gray-200 text-xs font-bold text-gray-600 hover:bg-gray-50 cursor-pointer whitespace-nowrap">
@@ -577,6 +592,14 @@ export default function OmLineOaPage() {
                           onBlur={(e) => e.target.value.trim() && e.target.value !== a.name && patchApp(a.id, { name: e.target.value.trim() })}
                           className="h-9 rounded-lg border border-gray-200 px-3 text-sm font-semibold outline-none focus:border-primary" />
                       </label>
+                      <label className="grid gap-1 md:col-span-2">
+                        <span className="text-xs font-bold text-gray-500">
+                          ลิงก์ภายนอก <span className="font-medium text-gray-400">— ใส่แล้วปุ่มในเมนูจะพาออกนอก LINE ไปหน้านี้แทน LIFF</span>
+                        </span>
+                        <input defaultValue={a.external_url || ""} placeholder="https://…  (เช่น หน้าสมัคร agent)"
+                          onBlur={(e) => e.target.value.trim() !== (a.external_url || "") && patchApp(a.id, { external_url: e.target.value.trim() })}
+                          className="h-9 rounded-lg border border-gray-200 px-3 text-sm font-mono outline-none focus:border-primary" />
+                      </label>
                       <label className="grid gap-1">
                         <span className="text-xs font-bold text-gray-500">ขนาดหน้าจอ</span>
                         <select defaultValue={a.view_size} onChange={(e) => patchApp(a.id, { view_size: e.target.value })}
@@ -593,7 +616,7 @@ export default function OmLineOaPage() {
                       </label>
                       {a.note && <p className="md:col-span-2 text-xs text-gray-400">{a.note}</p>}
                       <div className="md:col-span-2 border-t border-gray-100 pt-3">
-                        <a href={a.endpoint_path} target="_blank" rel="noreferrer"
+                        <a href={a.external_url || a.endpoint_path || "#"} target="_blank" rel="noreferrer"
                           className="text-xs font-bold text-gray-500 hover:text-gray-700 underline">
                           เปิดหน้านี้ในแท็บใหม่
                         </a>
