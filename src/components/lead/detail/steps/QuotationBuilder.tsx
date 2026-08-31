@@ -19,6 +19,7 @@ import {
   type QuotationTermTree,
 } from "@/lib/quotation-terms";
 import QuotationTermsEditor from "./QuotationTermsEditor";
+import { measureQuotationPageFit } from "@/lib/quotation-page-fit";
 import type { Lead, Package } from "./types";
 
 type Item = {
@@ -1367,6 +1368,13 @@ function QuotationEditor({
           })),
       ),
     );
+  // ตารางรายการล้นหน้า 1 = ยอดเงินถูกตัดหายจากเอกสาร (.page ตั้ง overflow:hidden)
+  // เตือนตั้งแต่ตอนแก้ ไม่ต้องรอไปเจอตอนกดส่งอนุมัติแล้วโดนปฏิเสธ
+  const pageFit = measureQuotationPageFit(
+    groups.flatMap((g) => [g.title.item_name, ...g.details.map((d) => d.item_name)]),
+    terms.length,
+  );
+
   const termsProfile = getQuotationTermsProfile(
     mainPackage as unknown as Record<string, unknown> | undefined,
   );
@@ -1608,6 +1616,22 @@ function QuotationEditor({
             <div className="flex shrink-0 items-center gap-2 px-4 py-2">
               <span className="text-xs font-bold text-gray-800">รายการในใบเสนอราคา</span>
               <span className="text-xxs text-gray-400">{groups.length} หัวข้อ</span>
+              <span
+                title={
+                  pageFit.over
+                    ? "ตารางยาวเกินหน้าเอกสาร ยอดเงินจะถูกตัดหาย — ส่งขออนุมัติไม่ได้"
+                    : "จำนวนบรรทัดที่ตารางกินบนหน้า 1 · ชื่อยาวเกิน 75 ตัวอักษรจะกิน 2 บรรทัด"
+                }
+                className={`rounded-full px-2 py-0.5 text-xxs font-bold ${
+                  pageFit.over
+                    ? "bg-red-50 text-red-600"
+                    : pageFit.tight
+                      ? "bg-amber-50 text-amber-700"
+                      : "text-gray-400"
+                }`}
+              >
+                {pageFit.used} / {pageFit.capacity} บรรทัด
+              </span>
               <div className="ml-auto flex items-center gap-2">
                 <button
                   type="button"
