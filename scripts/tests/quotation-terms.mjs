@@ -1,5 +1,10 @@
 import assert from "node:assert/strict";
 import {
+  countQuotationRowLines,
+  getQuotationRowCapacity,
+  measureQuotationPageFit,
+} from "../../src/lib/quotation-page-fit.ts";
+import {
   balanceFinalQuotationPaymentTerm,
   fillQuotationTermText,
   isQuotationTermVisible,
@@ -452,6 +457,41 @@ assert.deepEqual(
     const seq = printed(tree, [om, { ...om, enabled: false }][i % 2]).seq;
     assert.deepEqual(seq, seq.map((_, index) => index + 1), `เลขไม่เรียง: ${JSON.stringify(seq)}`);
   }
+}
+
+// ── ความจุตารางรายการบนหน้า 1 ──
+// .page สูงตายตัว + overflow:hidden ถ้ารายการยาวเกิน ยอดเงินจะถูกตัดหายเงียบ ๆ
+// ตัวเลขได้จากการวัดหน้าจริงด้วย headless Chrome — เทสนี้ล็อกไว้ไม่ให้เพี้ยน
+{
+  // ความจุลดลง 1 บรรทัดต่องวดชำระที่เพิ่มมา 1 งวด (วัดจริง 2→24, 3→23, 4→22, 5→21)
+  assert.equal(getQuotationRowCapacity(2), 24);
+  assert.equal(getQuotationRowCapacity(3), 23);
+  assert.equal(getQuotationRowCapacity(4), 22);
+  assert.equal(getQuotationRowCapacity(5), 21);
+  assert.ok(getQuotationRowCapacity(0) >= 8, "งวดผิดรูปต้องไม่ทำให้ความจุติดลบ");
+  assert.ok(getQuotationRowCapacity(99) >= 8);
+
+  // ชื่อยาวเกิน 75 ตัวอักษรถูกตัดขึ้นบรรทัดใหม่ กินที่เพิ่ม
+  assert.equal(countQuotationRowLines("รายการสั้น"), 1);
+  assert.equal(countQuotationRowLines(""), 1, "แถวว่างก็ยังกิน 1 บรรทัด");
+  assert.equal(countQuotationRowLines("ก".repeat(75)), 1);
+  assert.equal(countQuotationRowLines("ก".repeat(76)), 2);
+  assert.equal(countQuotationRowLines("ก".repeat(150)), 2);
+  assert.equal(countQuotationRowLines("ก".repeat(200)), 3);
+
+  const shortRows = (n) => Array.from({ length: n }, () => "รายการ");
+  assert.deepEqual(measureQuotationPageFit(shortRows(23), 2),
+    { used: 23, capacity: 24, over: false, tight: false });
+  assert.deepEqual(measureQuotationPageFit(shortRows(24), 2),
+    { used: 24, capacity: 24, over: false, tight: true });
+  assert.deepEqual(measureQuotationPageFit(shortRows(25), 2),
+    { used: 25, capacity: 24, over: true, tight: false });
+  // งวดเยอะขึ้น ความจุน้อยลง จำนวนแถวเท่าเดิมก็ล้นได้
+  assert.equal(measureQuotationPageFit(shortRows(24), 3).over, true);
+  // ชื่อยาวกินสองบรรทัด ทำให้ล้นเร็วขึ้นเป็นเท่าตัว
+  const longRows = Array.from({ length: 13 }, () => "ก".repeat(80));
+  assert.equal(measureQuotationPageFit(longRows, 2).used, 26);
+  assert.equal(measureQuotationPageFit(longRows, 2).over, true);
 }
 
 console.log("quotation terms/payment tests passed");

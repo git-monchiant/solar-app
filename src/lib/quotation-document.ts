@@ -4,11 +4,13 @@ import { GSB_SOLAR_LOAN_DEFAULTS } from "@/lib/loan-defaults";
 import {
   getQuotationLegalContent,
   parseQuotationOmSettings,
+  parseQuotationPaymentTerms,
   parseQuotationTermTree,
   type QuotationLegalContent,
   type QuotationOmSettings,
   type QuotationTermTree,
 } from "@/lib/quotation-terms";
+import { measureQuotationPageFit } from "@/lib/quotation-page-fit";
 
 // v5 = snapshot เก็บข้อความเงื่อนไข/ข้อกำหนด (legal) ไว้ในตัวด้วย ก่อนหน้านี้ PDF
 // เรนเดอร์จากข้อความในโค้ดสด ๆ ทุกครั้ง ใบที่อนุมัติไปแล้วจึงเปลี่ยนตามการแก้โค้ด
@@ -248,6 +250,30 @@ export function calculateFinancialSnapshot(inputs: QuotationDocumentInputs, quot
   };
 }
 
+/**
+ * ข้อความของ "ทุกแถว" ที่จะขึ้นบนตารางรายการ เรียงตามที่พิมพ์จริง
+ * ต้องตรงกับ itemRows ใน quotation-pdf route: ทุกรายการได้ 1 แถวเสมอ
+ *   - มีแพ็กเกจหลัก → 1 แถวหัวข้อ + แถวรายละเอียด (source_type = "package" ตัวที่ 2 ขึ้นไป)
+ *   - ไม่มีแพ็กเกจหลัก → ข้ามแถวแพ็กเกจทั้งชุด เหลือแต่งานเพิ่ม
+ */
+export function getQuotationTableRowTexts(snapshot: QuotationDocumentSnapshot): string[] {
+  const items = Array.isArray(snapshot.items) ? snapshot.items : [];
+  const packageItems = items.filter((item) => item.source_type === "package");
+  const addOns = items.filter((item) => item.source_type !== "package");
+  const nameOf = (item: Record<string, unknown>) =>
+    String(item.item_name_snapshot ?? item.item_name ?? "");
+  const hasPackage = snapshot.quotation.package_id != null;
+  return [
+    ...(hasPackage
+      ? [
+          String(snapshot.quotation.package_name_snapshot ?? snapshot.package?.name ?? ""),
+          ...packageItems.slice(1).map(nameOf),
+        ]
+      : []),
+    ...addOns.map(nameOf),
+  ];
+}
+
 export function validateQuotationDocument(snapshot: QuotationDocumentSnapshot): string[] {
   const errors: string[] = [];
   const q = snapshot.quotation;
@@ -263,6 +289,18 @@ export function validateQuotationDocument(snapshot: QuotationDocumentSnapshot): 
   if (finance.inputs.current_monthly_bill <= 0) errors.push("กรุณาระบุค่าไฟปัจจุบันจากข้อมูลจริง");
   if (finance.inputs.electricity_rate <= 0) errors.push("กรุณาระบุค่าไฟต่อหน่วย");
   if (finance.inputs.production_kwh_per_kw_month <= 0) errors.push("กรุณาระบุสมมติฐานผลผลิตไฟต่อ kWp");
+  // ตารางรายการล้นหน้า 1 = ยอดรวมและตัวหนังสือจำนวนเงินถูกตัดหายจากเอกสาร
+  // โดยไม่มีใครรู้ (`.page` ตั้ง overflow:hidden) — ต้องกันไม่ให้ส่งอนุมัติ
+  const fit = measureQuotationPageFit(
+    getQuotationTableRowTexts(snapshot),
+    parseQuotationPaymentTerms(q.payment_terms_json).length,
+  );
+  if (fit.over) {
+    errors.push(
+      `รายการยาวเกินหน้าเอกสาร (${fit.used}/${fit.capacity} บรรทัด) ` +
+        `ยอดเงินจะถูกตัดหาย — ลดรายการหรือย่อชื่อรายการลง ${fit.used - fit.capacity} บรรทัด`,
+    );
+  }
   if (finance.inputs.loan_enabled) {
     if (!finance.inputs.loan_bank) errors.push("กรุณาระบุธนาคาร/ผลิตภัณฑ์สินเชื่อ");
     if (finance.inputs.loan_term_months < 12) errors.push("กรุณาระบุระยะเวลาสินเชื่ออย่างน้อย 12 เดือน");
