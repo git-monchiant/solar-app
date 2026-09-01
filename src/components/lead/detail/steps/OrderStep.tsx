@@ -506,7 +506,12 @@ export default function OrderStep({ lead, state, refresh, expanded, onToggle }: 
         if (!m) continue;
         const idx = parseInt(m[1]);
         existing.add(idx);
-        allAmtMap.set(idx, Number(p.amount || 0));
+        // เก็บยอดไว้สรุปตอน DONE เฉพาะงวดที่มีเงินเข้าจริงแล้วเท่านั้น
+        // (ยืนยันแล้ว หรือรับเช็คแล้วรอเคลียร์) — งวดที่ยังไม่ได้จ่ายต้องกลับไป
+        // ใช้ยอดตามแผน ไม่ใช่ยอดที่เคยกรอกค้างไว้ตอนอัปสลิป ไม่งั้นงวดที่ถอย
+        // การชำระไปแล้วจะยังโชว์ยอดเดิมเหมือนรับเงินมาแล้ว
+        if (p.confirmed_at || (p.payment_method === "cheque" && p.cheque_received_at))
+          allAmtMap.set(idx, Number(p.amount || 0));
         if (p.confirmed_at) {
           paid.add(idx);
           idMap.set(idx, p.id);
@@ -747,8 +752,8 @@ export default function OrderStep({ lead, state, refresh, expanded, onToggle }: 
   const doneNetTotal = Math.max(0, doneEffTotal - doneDeposit);
   const donePctBefore = lead.order_pct_before ?? 100;
   const donePctAfter = 100 - donePctBefore;
-  // ยอดแต่ละงวด — อ่านจากตาราง payments ที่บันทึกไว้จริงก่อน (rowAmountByIdx)
-  // ถ้างวดไหนยังไม่มีแถวใน DB ค่อยประมาณจากแผน % (หักค่าสำรวจแล้วแบ่งตาม %)
+  // ยอดแต่ละงวด — งวดที่มีเงินเข้าแล้วใช้ยอดจริงจากตาราง payments (rowAmountByIdx)
+  // งวดที่ยังไม่ได้จ่าย (หรือถูกถอยการชำระ) ใช้ยอดตามแผน % (หักค่าสำรวจแล้วแบ่งตาม %)
   const doneRows = parseInstallments(lead.order_installments, donePctBefore);
   const doneRowAmount = (idx: number, pct: number) =>
     rowAmountByIdx.get(idx) ?? Math.round((doneNetTotal * pct) / 100);

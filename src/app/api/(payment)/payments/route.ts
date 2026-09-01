@@ -3,7 +3,7 @@ import { readdir, unlink } from "fs/promises";
 import path from "path";
 import { getDb, sql } from "@/lib/db";
 import { requireAdmin, requireAuth } from "@/lib/auth";
-import { syncOrderPaidFlags } from "@/lib/payments-helpers";
+import { syncOrderPaidFlags, plannedInstallmentAmount } from "@/lib/payments-helpers";
 import { mintPreDocNo } from "@/lib/doc-number";
 import { logLeadActivity, paymentStepLabel, fmtBaht } from "@/lib/lead-activity-log";
 import { notifyAccountingRole, notifyLeadOwner, resolveAccountingNotifications } from "@/lib/accounting-notifications";
@@ -68,6 +68,35 @@ export async function POST(req: NextRequest) {
     // in the payments table — no leads column to flip.
     const paidFlag = PAID_FLAG[slipField] ?? null;
     const pool = await getDb();
+
+    // ── กันยอดงวดเพี้ยน ────────────────────────────────────────────────
+    // เดิม API เชื่อ body.amount ที่หน้าจอส่งมาโดยไม่ตรวจ ถ้าหน้าจอคำนวณจาก
+    // ข้อมูลเก่ายอดผิดจะถูกบันทึกเงียบ ๆ แล้วไปโผล่เป็น "เงินขาด" ตอนปิดงาน
+    // (lead 686 งวด 2 บันทึก 117,400 ทั้งที่แผนคือ 117,600)
+    // ตอนนี้ server คำนวณยอดที่ควรเก็บเอง แล้วเทียบก่อนบันทึก:
+    //   ต่างกัน + ไม่ได้ระบุเหตุผล → 409 พร้อมบอกทั้งสองตัวเลข
+    //   ต่างกัน + ระบุเหตุผลมา    → บันทึกตามจริงและลง payment_logs ไว้ตรวจสอบ
+    const plannedAmount = await plannedInstallmentAmount(pool, leadId, slipField);
+    const amountReason = String(body.amount_override_reason || "").trim();
+    if (plannedAmount !== null && Math.round(amount) !== plannedAmount) {
+      if (!amountReason) {
+        return NextResponse.json({
+          error: `ยอดไม่ตรงกับแผนผ่อน — ${paymentStepLabel(slipField, stepNo)} ตามแผนต้องเป็น ${fmtBaht(plannedAmount)} บาท แต่ที่กรอกมาคือ ${fmtBaht(amount)} บาท`,
+          planned_amount: plannedAmount,
+          submitted_amount: Math.round(amount),
+        }, { status: 409 });
+      }
+      await pool.request()
+        .input("lead_id", sql.Int, leadId)
+        .input("slip_field", sql.NVarChar(50), slipField)
+        .input("step_no", sql.Int, stepNo)
+        .input("details", sql.NVarChar(sql.MAX), JSON.stringify({
+          planned: plannedAmount, submitted: Math.round(amount), reason: amountReason,
+        }))
+        .input("user_id", sql.Int, gate.userId)
+        .query(`INSERT INTO payment_logs (lead_id, action, slip_field, step_no, details, user_id)
+                VALUES (@lead_id, 'amount_mismatch_accepted', @slip_field, @step_no, @details, @user_id)`);
+    }
 
     // Atomic commit: SELECT staging → INSERT payment → UPDATE lead → DELETE staging.
     // Any failure rolls back so the lead flag never flips while staging lingers.

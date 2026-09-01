@@ -56,3 +56,47 @@ export async function syncOrderPaidFlags(db: ConnectionPool, leadId: number): Pr
     .input("after_paid", sql.Bit, afterAllPaid ? 1 : 0)
     .query(`UPDATE leads SET order_before_paid = @before_paid, order_after_paid = @after_paid, updated_at = GETDATE() WHERE id = @id`);
 }
+
+/** ยอดที่ "ควรเก็บ" ของงวด order_installment_<idx> คำนวณฝั่ง server ด้วยสูตรเดียว
+ *  กับที่ OrderStep ใช้บนหน้าจอ:
+ *
+ *    netTotal = order_total − ส่วนลด − ค่าสำรวจที่จ่ายแล้ว
+ *    ยอดงวด  = round(netTotal × pct / 100)
+ *
+ *  มีไว้ตรวจยอดที่ client ส่งมาก่อนบันทึก — เดิม API เชื่อ body.amount ตรง ๆ
+ *  ถ้าหน้าจอคำนวณจากข้อมูลเก่า (เช่นยังไม่ทันโหลดค่าสำรวจ) ยอดผิดจะถูกบันทึกเงียบ ๆ
+ *  แล้วไปโผล่เป็นเงินขาดตอนปิดงาน เช่น lead 686 งวด 2 บันทึก 117,400 ทั้งที่แผนคือ 117,600
+ *
+ *  คืน null เมื่อไม่ใช่ slip_field แบบงวด หรือข้อมูลไม่พอให้คำนวณ
+ */
+export async function plannedInstallmentAmount(
+  db: ConnectionPool,
+  leadId: number,
+  slipField: string,
+): Promise<number | null> {
+  const m = /^order_installment_(\d+)$/.exec(slipField);
+  if (!m) return null;
+  const idx = parseInt(m[1]);
+  const r = await db.request().input("id", sql.Int, leadId).query(
+    `SELECT order_total, order_discount_amount, pre_total_price, order_installments
+       FROM leads WHERE id = @id`,
+  );
+  const row = r.recordset[0];
+  if (!row) return null;
+
+  let arr: Array<{ pct?: number }> = [];
+  try {
+    const parsed = JSON.parse(row.order_installments || "[]");
+    if (Array.isArray(parsed)) arr = parsed;
+  } catch { return null; }
+  const pct = Number(arr[idx]?.pct);
+  if (!Number.isFinite(pct)) return null;
+
+  const total = Number(row.order_total) || 0;
+  if (total <= 0) return null;
+  const discount = Math.min(total, Number(row.order_discount_amount) || 0);
+  const effTotal = Math.max(0, total - discount);
+  const deposit = Math.min(effTotal, Number(row.pre_total_price) || 0);
+  const netTotal = Math.max(0, effTotal - deposit);
+  return Math.round((netTotal * pct) / 100);
+}

@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getDb, sql } from "@/lib/db";
 import { requireAuth } from "@/lib/auth";
+import { plannedInstallmentAmount } from "@/lib/payments-helpers";
 
 export const runtime = "nodejs";
 
@@ -18,7 +19,7 @@ export async function POST(req: NextRequest) {
     const leadId = parseInt(String(body.lead_id || 0));
     const stepNo = parseInt(String(body.step_no ?? -1));
     const slipField = String(body.slip_field || "");
-    const amount = parseFloat(String(body.amount || 0));
+    let amount = parseFloat(String(body.amount || 0));
     if (!leadId || stepNo < 0 || !slipField || !amount) {
       return NextResponse.json({ error: "lead_id, step_no, slip_field, amount required" }, { status: 400 });
     }
@@ -33,6 +34,17 @@ export async function POST(req: NextRequest) {
     const ccSurchargeAmount = body.cc_surcharge_amount != null ? parseFloat(String(body.cc_surcharge_amount)) : null;
 
     const pool = await getDb();
+
+    // ยอดของ "งวด" ให้ server คำนวณเองเสมอ ไม่เชื่อค่าที่หน้าจอส่งมา
+    // แถวนี้คือใบแจ้งยอดที่ยังไม่มีเงินเข้า ยอดจึงต้องเป็นยอดตามแผนล้วน ๆ
+    // ถ้าหน้าจอคำนวณจากข้อมูลเก่า (เช่นค่าสำรวจยังไม่ถูกหัก) ยอดผิดจะฝังลง DB
+    // แล้วกลายเป็นเงินขาดตอนปิดงาน — เคส lead 686 งวด 2 (117,400 แทน 117,600)
+    const planned = await plannedInstallmentAmount(pool, leadId, slipField);
+    if (planned !== null && planned > 0 && Math.round(amount) !== planned) {
+      console.log(`[payments/intent] lead ${leadId} ${slipField}: ปรับยอดตามแผน ${amount} → ${planned}`);
+      amount = planned;
+    }
+
     const tx = new sql.Transaction(pool);
     await tx.begin();
     try {
