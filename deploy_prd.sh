@@ -91,21 +91,24 @@ echo ""
 
 # 3. stream source tarball to prod (excludes dev artifacts + secrets)
 echo "📦 Streaming source to ${PRD_HOST}:${PRD_DIR} ..."
+# ส่งเฉพาะรายการที่ระบุไว้ ไม่ใช้ --exclude กับชื่อโฟลเดอร์บนสุด
+# เหตุผล: bsdtar ตีความ --exclude='docs' (และแม้แต่ './docs') เป็น "ทุกโฟลเดอร์ชื่อ
+# docs ในทุกชั้น" ทำให้ src/lib/docs/ (ตัวสร้างรายงานสำรวจ) ไม่เคยถูกส่งขึ้น prod
+# เลยตั้งแต่ ส.ค. โค้ดบน prod จึงค้างเวอร์ชันเก่าเงียบ ๆ จนกระทั่ง build พังเพราะ
+# type ไม่ตรงกับไฟล์ที่ส่งขึ้นไป · การไล่ชื่อแบบนี้ทำให้ของใหม่ที่ลืมเพิ่มจะ "ไม่ขึ้น"
+# ซึ่งเห็นได้ทันทีตอน build มากกว่าจะหายไปเงียบ ๆ
+SEND=(
+  src public scripts
+  package.json package-lock.json tsconfig.json next.config.ts
+  postcss.config.mjs eslint.config.mjs next-env.d.ts
+  Dockerfile docker-compose.yml .dockerignore
+)
 tar \
   --exclude='node_modules' \
   --exclude='.next' \
   --exclude='.turbo' \
-  --exclude='.git' \
-  --exclude='.claude' \
   --exclude='public/uploads/*' \
-  --exclude='.env.local' \
-  --exclude='.env' \
-  --exclude='backup' \
-  --exclude='Project Infomation' \
-  --exclude='tmp-files' \
-  --exclude='docs' \
-  --exclude='sql' \
-  -czf - . | \
+  -czf - "${SEND[@]}" | \
 sshpass -p "${PRD_PASS}" ssh \
   -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null \
   -p "${PRD_PORT}" "${PRD_USER}@${PRD_HOST}" \
