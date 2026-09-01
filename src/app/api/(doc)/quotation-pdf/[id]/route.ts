@@ -396,6 +396,19 @@ export async function GET(
     {
       quotationAttached: true,
       watermark,
+      // package ที่ไม่ใช่ตัวหลัก + งานเพิ่ม → ไปโผล่ในตาราง §5 "รายการเพิ่มเติม"
+      // ส่งเฉพาะแถวหัวข้อ (ไม่เอาบรรทัดรายละเอียดย่อย) พร้อมยอดจริงของแต่ละรายการ
+      addOns: items
+        .filter((item) => item.source_type === "addon_package" || item.source_type === "custom_group"
+          || item.source_type === "custom" || item.source_type === "addon")
+        .map((item) => ({
+          name: String(item.item_name_snapshot || item.item_name || "")
+            .replace(/^Package เพิ่มเติม:\s*/i, "")
+            .replace(/^Scal(?:e)?\s*Up\s*:\s*/i, ""),
+          quantity: Number(item.quantity) || 0,
+          unit: String(item.unit || ""),
+          amount: Number(item.line_total) || 0,
+        })),
       quotation: {
         docNo: String(q.doc_no || ""),
         grossAmount: Number(q.subtotal_incl_vat || 0),

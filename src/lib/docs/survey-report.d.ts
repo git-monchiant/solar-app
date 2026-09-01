@@ -12,6 +12,13 @@ type SurveyReportOptions = {
     depositAmount?: number;
     netAmount?: number;
   };
+  /** package ที่ไม่ใช่ตัวหลัก + งานเพิ่ม — แสดงในตาราง §5 รายการเพิ่มเติม */
+  addOns?: Array<{
+    name: string;
+    quantity?: number;
+    unit?: string;
+    amount?: number;
+  }>;
   financial?: {
     inputs?: Record<string, unknown>;
     outputs?: Record<string, unknown>;
