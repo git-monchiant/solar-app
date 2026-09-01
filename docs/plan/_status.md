@@ -46,3 +46,4 @@ Statuses:
 | [20260720-02-quotation-package-options.md](20260720-02-quotation-package-options.md) | done | [interactive mockup](../mockup/20260720-02-quotation-package-options/) | ออกแบบ Step 03 ให้สร้างใบเสนอราคาได้สูงสุด 3 ฉบับจากแพ็กเกจหลักและ Add-on โดยคงหน้าตาตามระบบเดิม |
 | [20260722-01-quotation-system.md](20260722-01-quotation-system.md) | in-progress | [existing mockup](../mockup/20260720-02-quotation-package-options/) | Core Development implementation complete; รอ UAT, final 23-Package/PDF regression และอนุมัติก่อน Deploy |
 | [20260807-01-package-price-periods.md](20260807-01-package-price-periods.md) | done | - | Package มีได้หลายช่วงราคา active ครั้งละ 1 ช่วง; ช่วงที่ใช้งานและเริ่มแล้วล็อกราคา ต้องเพิ่มช่วงใหม่ |
+| [20260901-01-quotation-table-pagination.md](20260901-01-quotation-table-pagination.md) | done | - | ตารางรายการล้นหน้าแล้วขึ้นตารางหน้าใหม่ หัวตารางซ้ำทุกหน้า เลขหน้าไดนามิก และเปลี่ยนกระดาษใบเสนอราคาจาก Letter เป็น A4 ให้เท่ารายงานสำรวจ |

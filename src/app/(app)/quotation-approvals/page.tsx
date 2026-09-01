@@ -129,7 +129,7 @@ export default function QuotationApprovalsPage() {
         message:
           quote.status === "pending_solar_sup"
             ? "ยืนยันว่า Solar Manager ตรวจเอกสารแล้ว และส่งต่อให้ Sale Manager อนุมัติขั้นสุดท้าย"
-            : "ยืนยันว่าได้ตรวจและรับรองข้อมูล Survey, Package, ราคา เงื่อนไขชำระเงิน และเอกสารทั้ง 17 หน้าแล้ว",
+            : "ยืนยันว่าได้ตรวจและรับรองข้อมูล Survey, Package, ราคา เงื่อนไขชำระเงิน และเอกสารทั้งชุดแล้ว",
       });
       if (!ok) return;
     }
@@ -289,7 +289,7 @@ export default function QuotationApprovalsPage() {
                               ชุด {quote.option_no}
                             </span>
                             <span className="rounded bg-cyan-50 px-2 py-1 text-xxs font-semibold text-cyan-700">
-                              17 หน้า
+                              เอกสารชุดเต็ม
                             </span>
                             <span className={`rounded px-2 py-1 text-xxs font-semibold ${quote.status === "pending_solar_sup" ? "bg-amber-50 text-amber-700" : "bg-violet-50 text-violet-700"}`}>
                               รอ {quote.status === "pending_solar_sup" ? "Solar Manager" : "Sale Manager"}

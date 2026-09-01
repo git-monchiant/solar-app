@@ -1,8 +1,9 @@
 import assert from "node:assert/strict";
 import {
   countQuotationRowLines,
-  getQuotationRowCapacity,
-  measureQuotationPageFit,
+  estimateQuotationMetrics,
+  estimateQuotationPageCount,
+  paginateQuotationRows,
 } from "../../src/lib/quotation-page-fit.ts";
 import {
   balanceFinalQuotationPaymentTerm,
@@ -459,18 +460,9 @@ assert.deepEqual(
   }
 }
 
-// ── ความจุตารางรายการบนหน้า 1 ──
-// .page สูงตายตัว + overflow:hidden ถ้ารายการยาวเกิน ยอดเงินจะถูกตัดหายเงียบ ๆ
-// ตัวเลขได้จากการวัดหน้าจริงด้วย headless Chrome — เทสนี้ล็อกไว้ไม่ให้เพี้ยน
+// ── การแบ่งหน้าตารางรายการ ──
+// รายการยาวเกินหน้าไม่ถูกตัดทิ้งแล้ว แต่ขึ้นตารางหน้าใหม่พร้อมยอดยกไป/ยอดยกมา
 {
-  // ความจุลดลง 1 บรรทัดต่องวดชำระที่เพิ่มมา 1 งวด (วัดจริง 2→24, 3→23, 4→22, 5→21)
-  assert.equal(getQuotationRowCapacity(2), 24);
-  assert.equal(getQuotationRowCapacity(3), 23);
-  assert.equal(getQuotationRowCapacity(4), 22);
-  assert.equal(getQuotationRowCapacity(5), 21);
-  assert.ok(getQuotationRowCapacity(0) >= 8, "งวดผิดรูปต้องไม่ทำให้ความจุติดลบ");
-  assert.ok(getQuotationRowCapacity(99) >= 8);
-
   // ชื่อยาวเกิน 75 ตัวอักษรถูกตัดขึ้นบรรทัดใหม่ กินที่เพิ่ม
   assert.equal(countQuotationRowLines("รายการสั้น"), 1);
   assert.equal(countQuotationRowLines(""), 1, "แถวว่างก็ยังกิน 1 บรรทัด");
@@ -479,19 +471,58 @@ assert.deepEqual(
   assert.equal(countQuotationRowLines("ก".repeat(150)), 2);
   assert.equal(countQuotationRowLines("ก".repeat(200)), 3);
 
-  const shortRows = (n) => Array.from({ length: n }, () => "รายการ");
-  assert.deepEqual(measureQuotationPageFit(shortRows(23), 2),
-    { used: 23, capacity: 24, over: false, tight: false });
-  assert.deepEqual(measureQuotationPageFit(shortRows(24), 2),
-    { used: 24, capacity: 24, over: false, tight: true });
-  assert.deepEqual(measureQuotationPageFit(shortRows(25), 2),
-    { used: 25, capacity: 24, over: true, tight: false });
-  // งวดเยอะขึ้น ความจุน้อยลง จำนวนแถวเท่าเดิมก็ล้นได้
-  assert.equal(measureQuotationPageFit(shortRows(24), 3).over, true);
-  // ชื่อยาวกินสองบรรทัด ทำให้ล้นเร็วขึ้นเป็นเท่าตัว
-  const longRows = Array.from({ length: 13 }, () => "ก".repeat(80));
-  assert.equal(measureQuotationPageFit(longRows, 2).used, 26);
-  assert.equal(measureQuotationPageFit(longRows, 2).over, true);
+  // ค่าประมาณต้องตรงกับความจุที่วัดจริงด้วย headless Chrome บนกระดาษ A4:
+  // ใบที่จบในหน้าเดียว งวดชำระ n งวด จุได้ 27 − n แถว
+  const rows = (n, isHead = false) =>
+    Array.from({ length: n }, () => ({ text: "รายการ", isHead }));
+  const onePage = (n, terms) =>
+    estimateQuotationPageCount(rows(n), terms) === 2;
+  for (const [terms, capacity] of [[2, 25], [3, 24], [4, 23], [5, 22]]) {
+    assert.ok(onePage(capacity, terms), `${terms} งวด ต้องจุ ${capacity} แถวในหน้าเดียว`);
+    assert.ok(!onePage(capacity + 1, terms), `${terms} งวด เกิน ${capacity} แถวต้องขึ้นหน้าใหม่`);
+  }
+
+  // ใบสั้น = 2 หน้าเท่าเดิม (ตาราง 1 + เงื่อนไข/ลายเซ็น 1) · ยาวขึ้นก็เพิ่มหน้า
+  assert.equal(estimateQuotationPageCount(rows(10), 2), 2);
+  assert.equal(estimateQuotationPageCount(rows(26), 2), 3);
+  assert.ok(estimateQuotationPageCount(rows(200), 2) > 5);
+  // ชื่อยาวกินสองบรรทัด ทำให้เต็มหน้าเร็วขึ้นเป็นเท่าตัว
+  const longRows = Array.from({ length: 13 }, () => ({ text: "ก".repeat(80), isHead: false }));
+  assert.equal(estimateQuotationPageCount(longRows, 2), 3);
+
+  // ทุกแถวต้องถูกพิมพ์ครบ ไม่ตกหล่นและไม่ซ้ำ ไม่ว่าจะกี่หน้า
+  for (const count of [0, 1, 9, 24, 25, 60, 137]) {
+    const pages = paginateQuotationRows(
+      rows(count).map(() => ({ height: 1.05, isHead: false })),
+      estimateQuotationMetrics(2),
+    );
+    assert.equal(pages[0].start, 0);
+    assert.equal(pages[pages.length - 1].end, count);
+    assert.equal(pages.filter((page) => page.isLast).length, 1, "บล็อกท้ายต้องลงหน้าเดียว");
+    assert.ok(pages[pages.length - 1].isLast, "บล็อกท้ายต้องอยู่หน้าสุดท้ายของตาราง");
+    pages.reduce((previousEnd, page) => {
+      assert.equal(page.start, previousEnd, "หน้าต่อกันต้องไม่ข้ามหรือซ้ำแถว");
+      return page.end;
+    }, 0);
+  }
+
+  // แถวหัวข้อห้ามค้างท้ายหน้าโดยรายละเอียดไปขึ้นหน้าใหม่
+  {
+    const metrics = estimateQuotationMetrics(2);
+    // 23 แถวธรรมดา แล้วปิดท้ายด้วยหัวข้อพอดีเส้นแบ่ง + รายละเอียดอีก 5 แถว
+    const grouped = [
+      ...Array.from({ length: 23 }, () => ({ height: 1.05, isHead: false })),
+      { height: 1.05, isHead: true },
+      ...Array.from({ length: 5 }, () => ({ height: 1.05, isHead: false })),
+    ];
+    const pages = paginateQuotationRows(grouped, metrics);
+    for (const page of pages)
+      if (page.end < grouped.length)
+        assert.ok(
+          !grouped[page.end - 1].isHead,
+          "แถวหัวข้อต้องไม่ถูกทิ้งไว้ท้ายหน้าตามลำพัง",
+        );
+  }
 }
 
 console.log("quotation terms/payment tests passed");

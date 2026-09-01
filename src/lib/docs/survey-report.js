@@ -533,6 +533,9 @@ export function buildSurveyReportHtml(L, D, PKG, options = {}) {
     <div class="callout blue"><div class="co-h">หมายเหตุ</div><ul><li>เลขที่ใบเสนอราคาที่แนบต้องตรงกับเลขที่เอกสาร (${quotDocNo||"—"}) ที่ระบุไว้ในหน้าปกของรายงานฉบับนี้</li><li>ใบเสนอราคามีอายุตามระยะเวลาที่ระบุในเอกสาร หากเกินกำหนด กรุณาติดต่อบริษัทเพื่อขอใบเสนอราคาฉบับใหม่</li></ul></div>`);
   const html = `<!DOCTYPE html><html lang="th"><head><meta charset="utf-8"/><style>
   ${font("li",300)}${font("rg",400)}${font("md",500)}${font("bd",700)}
+  /* ระบุขนาดกระดาษเป็นมิลลิเมตรตรง ๆ ให้เท่ากับ .page เป๊ะ — ใบเสนอราคาที่ถูก merge
+     ต่อท้ายก็ใช้ค่าเดียวกัน เล่มเดียวจึงมีกระดาษขนาดเดียวทุกหน้า (A4 210x297mm) */
+  @page{size:210mm 297mm;margin:0;}
   *{margin:0;padding:0;box-sizing:border-box;-webkit-print-color-adjust:exact;print-color-adjust:exact;}
   html,body{font-family:'DB Heavent',sans-serif;color:${INK};font-size:16px;line-height:1.5;}
   .page{position:relative;width:210mm;height:297mm;padding:16mm 15mm 14mm;page-break-after:always;overflow:hidden;}
