@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getDb, sql, fixDates, toSqlDate } from "@/lib/db";
 import { requireAnyRole } from "@/lib/auth";
+import { PACKAGE_EDIT_ROLES } from "@/lib/role-permissions";
 import { syncActivePricePeriods } from "@/lib/package-prices";
 
 type PeriodInput = {
@@ -63,8 +64,10 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
   return NextResponse.json(fixDates(r.recordset).map(row => ({ ...row, locked: isLocked(row as never) })));
 }
 
+// เขียนได้เฉพาะ admin — เดิมเปิดให้ sales/solar/solar_sup ทั้งที่มีแต่หน้า
+// /packages/manage เรียก และปุ่มบันทึกที่นั่นก็กดได้เฉพาะ admin อยู่แล้ว
 export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
-  const gate = await requireAnyRole(req, ["admin", "sales", "solar", "solar_sup"]);
+  const gate = await requireAnyRole(req, PACKAGE_EDIT_ROLES);
   if (gate.error) return gate.error;
   const { id } = await params;
   const packageId = Number(id);

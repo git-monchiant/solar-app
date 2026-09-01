@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getDb, sql, fixDates, toSqlDate } from "@/lib/db";
 import { requireAnyRole, requireAuth } from "@/lib/auth";
+import { PACKAGE_EDIT_ROLES } from "@/lib/role-permissions";
 import { syncActivePricePeriods } from "@/lib/package-prices";
 import { isQuotationTermsProfile } from "@/lib/quotation-terms";
 
@@ -23,7 +24,7 @@ export async function GET(req: NextRequest) {
 }
 
 export async function POST(req: NextRequest) {
-  const gate = await requireAnyRole(req, ["admin"]);
+  const gate = await requireAnyRole(req, PACKAGE_EDIT_ROLES);
   if (gate.error) return gate.error;
   try {
     const body = await req.json();

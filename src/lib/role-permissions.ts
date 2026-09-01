@@ -64,3 +64,10 @@ export function hasAnyGrantedRole(
     (grantedRole) => requiredRoles.some((requiredRole) => grantsRole(grantedRole, requiredRole)),
   );
 }
+
+// สิทธิ์หน้า Packages — แยก "ดูได้" ออกจาก "แก้ได้" ชัดเจน
+// Solar Manager เปิดดูรายละเอียดได้ครบทุกแพ็กเกจ (ช่วงราคาทุกช่วง + อุปกรณ์)
+// แต่การเขียนสงวนไว้ให้ admin เท่านั้น
+// ทั้งฝั่ง UI และ API route อ่านค่าคู่นี้ที่เดียวกัน — เพิ่ม/ถอนบทบาทจึงแก้จุดเดียว
+export const PACKAGE_VIEW_ROLES = ["admin", "solar_sup"] as const satisfies readonly AppRole[];
+export const PACKAGE_EDIT_ROLES = ["admin"] as const satisfies readonly AppRole[];

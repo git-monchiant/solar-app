@@ -6,6 +6,7 @@ import { useEffect, useState } from "react";
 import Header from "@/components/layout/Header";
 import { formatTHB as fmt, formatThaiDate as fmtDate } from "@/lib/utils/formatters";
 import { hasRole, useActiveRoles } from "@/lib/roles";
+import { PACKAGE_EDIT_ROLES, PACKAGE_VIEW_ROLES } from "@/lib/role-permissions";
 import { getQuotationTermsProfile } from "@/lib/quotation-terms";
 
 const TERM_PROFILE_LABEL = {
@@ -119,7 +120,12 @@ export default function ManagePackagesPage() {
   const [periods, setPeriods] = useState<PricePeriod[]>([]);
   const [leadConfigKey, setLeadConfigKey] = useState<string | null>(null);
   const { activeRoles } = useActiveRoles();
-  const isAdmin = hasRole(activeRoles, "admin");
+  // canEdit = แก้ได้จริง · canView = เปิดดูรายละเอียดได้แต่แก้ไม่ได้ (เช่น Solar Manager)
+  const canEdit = hasRole(activeRoles, ...PACKAGE_EDIT_ROLES);
+  const canView = hasRole(activeRoles, ...PACKAGE_VIEW_ROLES);
+  // ใช้ modal ตัวเดียวกับตอนแก้ไข แค่ล็อกเป็นอ่านอย่างเดียว — ไม่แยกหน้า view
+  // เพื่อไม่ให้ layout สองชุดเพี้ยนจากกันเมื่อฟอร์มมีการเปลี่ยนแปลงในอนาคต
+  const viewOnly = !!editing && !canEdit;
   const [search, setSearch] = useState("");
   const [filter, setFilter] = useState<"all" | "active" | "inactive">("all");
   const [filterPhase, setFilterPhase] = useState<"all" | "0" | "1" | "3">("all");
@@ -255,6 +261,7 @@ export default function ManagePackagesPage() {
   };
 
   const save = async () => {
+    if (!canEdit) return;                 // กันพลาด — โหมดดูอย่างเดียวไม่ควรมาถึงตรงนี้
     if (!editing || !editing.name.trim()) return;
     setSaveError("");
     setSaving(true);
@@ -309,6 +316,7 @@ export default function ManagePackagesPage() {
   };
 
   const toggleActive = async (pkg: Package) => {
+    if (!canEdit) return;
     await apiFetch(`/api/packages/${pkg.id}`, { method: "PATCH", body: JSON.stringify({ is_active: !pkg.is_active }) });
     load();
   };
@@ -317,7 +325,9 @@ export default function ManagePackagesPage() {
   // input in the form lines up instead of drifting per-section.
   // แยกขนาดตัวอักษรออกจาก base เพราะ Tailwind เรียง utility ตาม scale ไม่ใช่ตามลำดับใน className
   // ถ้ารวม text-sm ไว้ใน base แล้วต่อท้ายด้วย text-xs จะไม่มีผล (text-sm ชนะเสมอ)
-  const fieldBase = "w-full h-9 px-3 rounded-lg border border-gray-200 bg-white outline-none transition-colors hover:border-gray-300 focus:border-primary focus:ring-2 focus:ring-primary/10";
+  // disabled:* ทำงานกับ input/select ที่อยู่ใน <fieldset disabled> ด้วย — โหมดดูอย่างเดียว
+  // จึงได้หน้าตาพื้นเทาแบบเดียวกับ readOnlyCell ของช่วงราคาที่ล็อก โดยไม่ต้องแก้ทีละช่อง
+  const fieldBase = "w-full h-9 px-3 rounded-lg border border-gray-200 bg-white outline-none transition-colors hover:border-gray-300 focus:border-primary focus:ring-2 focus:ring-primary/10 disabled:bg-gray-50 disabled:text-gray-600 disabled:hover:border-gray-200 disabled:cursor-default";
   const fieldCls = `${fieldBase} text-sm`;
   const labelCls = "block text-xs font-semibold text-gray-500 mb-1";
 
@@ -352,7 +362,7 @@ export default function ManagePackagesPage() {
             <option value="no">ไม่ใช่ Scale Up</option>
             <option value="other">อื่นๆ</option>
           </select>
-          {isAdmin && (
+          {canEdit && (
             <button type="button" onClick={() => { setSaveError(""); setEditing({ ...empty }); }} className="h-8 px-5 rounded-lg bg-primary text-white text-sm font-semibold hover:bg-primary-dark transition-colors">+ เพิ่ม Package</button>
           )}
         </div>
@@ -413,10 +423,12 @@ export default function ManagePackagesPage() {
                       </td>
                       <td className="px-4 py-3 align-top">
                         <div className="flex flex-col items-end gap-2">
-                          <button type="button" onClick={() => toggleActive(pkg)} disabled={!isAdmin} className={`text-xs font-bold uppercase px-3 py-1.5 rounded-full ${!isAdmin ? "cursor-default " : ""}${pkg.is_active ? "bg-emerald-50 text-emerald-700" : "bg-gray-100 text-gray-500"}`}>
+                          <button type="button" onClick={() => toggleActive(pkg)} disabled={!canEdit} className={`text-xs font-bold uppercase px-3 py-1.5 rounded-full ${!canEdit ? "cursor-default " : ""}${pkg.is_active ? "bg-emerald-50 text-emerald-700" : "bg-gray-100 text-gray-500"}`}>
                             {pkg.is_active ? "ACTIVE" : "INACTIVE"}
                           </button>
-                          <button type="button" onClick={() => setEditing({ ...pkg })} className="text-sm text-primary font-semibold hover:underline">แก้ไข</button>
+                          {(canEdit || canView) && (
+                            <button type="button" onClick={() => setEditing({ ...pkg })} className="text-sm text-primary font-semibold hover:underline">{canEdit ? "แก้ไข" : "ดูรายละเอียด"}</button>
+                          )}
                         </div>
                       </td>
                     </tr>
@@ -471,12 +483,16 @@ export default function ManagePackagesPage() {
 
                 {/* Right: status + edit */}
                 <div className="flex flex-col items-end gap-2 shrink-0">
-                  <button type="button" onClick={() => toggleActive(pkg)} disabled={!isAdmin} className={`text-xs font-bold uppercase px-3 py-1.5 rounded-full ${!isAdmin ? "cursor-default " : ""}${pkg.is_active ? "bg-emerald-50 text-emerald-700" : "bg-gray-100 text-gray-500"}`}>
+                  <button type="button" onClick={() => toggleActive(pkg)} disabled={!canEdit} className={`text-xs font-bold uppercase px-3 py-1.5 rounded-full ${!canEdit ? "cursor-default " : ""}${pkg.is_active ? "bg-emerald-50 text-emerald-700" : "bg-gray-100 text-gray-500"}`}>
                     {pkg.is_active ? "ACTIVE" : "INACTIVE"}
                   </button>
-                  {isAdmin && (
+                  {canEdit ? (
                     <button type="button" onClick={() => setEditing({ ...pkg })} className="text-sm text-primary font-semibold hover:underline">แก้ไข</button>
-                  )}
+                  ) : canView ? (
+                    <button type="button" onClick={() => setEditing({ ...pkg })}
+                      title="ดูรายละเอียดแพ็กเกจ (แก้ไขไม่ได้)"
+                      className="text-sm text-primary font-semibold hover:underline">ดูรายละเอียด</button>
+                  ) : null}
                 </div>
               </div>
             </div>
@@ -492,7 +508,14 @@ export default function ManagePackagesPage() {
           <div className="bg-white rounded-2xl shadow-2xl shadow-slate-900/20 w-full max-w-6xl my-2">
             <div className="bg-white px-6 py-4 border-b border-gray-100 flex items-center justify-between rounded-t-2xl">
               <div className="min-w-0">
-                <h2 className="text-lg font-bold text-gray-900 truncate">{editing.id ? "แก้ไข Package" : "เพิ่ม Package ใหม่"}</h2>
+                <div className="flex items-center gap-2">
+                  <h2 className="text-lg font-bold text-gray-900 truncate">
+                    {!editing.id ? "เพิ่ม Package ใหม่" : viewOnly ? "รายละเอียด Package" : "แก้ไข Package"}
+                  </h2>
+                  {viewOnly && (
+                    <span className="shrink-0 rounded-full border border-gray-200 bg-gray-50 px-2 py-0.5 text-xxs font-bold text-gray-500">อ่านอย่างเดียว</span>
+                  )}
+                </div>
                 <p className="text-xs text-gray-400 mt-0.5">{editing.id ? `รหัส #${editing.id} · ${editing.name || "ไม่มีชื่อ"}` : "กรอกรายละเอียดแพ็กเกจใหม่"}</p>
               </div>
               <button type="button" onClick={() => setEditing(null)} className="w-9 h-9 shrink-0 rounded-full hover:bg-gray-100 flex items-center justify-center transition-colors">
@@ -500,7 +523,9 @@ export default function ManagePackagesPage() {
               </button>
             </div>
 
-            <div className="p-4 md:p-6 space-y-4 bg-slate-50/50">
+            {/* fieldset disabled = ปิด input/select/button ทุกตัวข้างในทีเดียว ไม่ต้องไล่ใส่ทีละช่อง
+                min-w-0 กัน min-inline-size:min-content ของ fieldset ดัน layout บาน */}
+            <fieldset disabled={viewOnly} className="min-w-0 p-4 md:p-6 space-y-4 bg-slate-50/50">
               {/* ── ข้อมูลหลัก ─────────────────────────────── */}
               <section className="rounded-xl border border-gray-200 bg-white p-4">
                 <div className="text-xs font-bold text-gray-800 mb-3">ข้อมูลหลัก</div>
@@ -635,10 +660,12 @@ export default function ManagePackagesPage() {
                       ราคาขาย &amp; ช่วงเวลาใช้งาน
                     </div>
                   </div>
-                  <button type="button" onClick={() => setPeriods(v => sortByStart([...v, blankPeriod(v.length === 0, nextStartAfter(v))]))}
-                    className="h-8 px-3 shrink-0 rounded-lg border border-primary/30 bg-primary/5 text-xs font-semibold text-primary hover:bg-primary/10 transition-colors">
-                    + เพิ่มช่วงราคา
-                  </button>
+                  {!viewOnly && (
+                    <button type="button" onClick={() => setPeriods(v => sortByStart([...v, blankPeriod(v.length === 0, nextStartAfter(v))]))}
+                      className="h-8 px-3 shrink-0 rounded-lg border border-primary/30 bg-primary/5 text-xs font-semibold text-primary hover:bg-primary/10 transition-colors">
+                      + เพิ่มช่วงราคา
+                    </button>
+                  )}
                 </div>
 
                 {/* หัวตาราง — ใช้ flex ครอบ grid เพื่อให้ปุ่มลบอยู่นอกคอลัมน์ ทุกช่องเลยกว้างเท่ากันทุกแถว */}
@@ -655,7 +682,9 @@ export default function ManagePackagesPage() {
                 </div>
 
                 <div className="space-y-1.5">{periods.map((p, index) => {
-                  const locked = periodLocked(p);
+                  // โหมดดูอย่างเดียวบังคับล็อกทุกแถว เพื่อให้ได้เซลล์อ่านอย่างเดียวแบบเดียว
+                  // กับช่วงราคาที่ระบบล็อกไว้อยู่แล้ว แทนที่จะเป็นช่อง input ที่ถูก disable
+                  const locked = viewOnly || periodLocked(p);
                   const upcoming = !p.is_active && (p.start_date || "").slice(0, 10) > todayStr();
                   const set = (patch: Partial<PricePeriod>) => setPeriods(v => v.map((x, i) => i === index ? { ...x, ...patch } : x));
                   const readOnlyCell = "flex items-center h-9 px-3 rounded-lg bg-gray-50 border border-gray-200 text-xs text-gray-500";
@@ -730,7 +759,10 @@ export default function ManagePackagesPage() {
                         )}
                       </div>
 
-                      {locked && !p.is_active && isAdmin ? (
+                      {viewOnly ? (
+                        // ตัวเว้นให้คอลัมน์ตรงกับหัวตาราง (หัวตารางมี span w-9 ปิดท้าย)
+                        <span className="w-9 shrink-0" aria-hidden="true" />
+                      ) : locked && !p.is_active && canEdit ? (
                         <button type="button"
                           onClick={() => setLeadConfigKey(rowKey === leadConfigKey ? null : rowKey)}
                           aria-label="กำหนด Lead ที่ใช้ราคานี้ได้"
@@ -745,7 +777,14 @@ export default function ManagePackagesPage() {
                       )}
                     </div>
 
-                    {leadConfigKey === rowKey && (
+                    {/* โหมดดูอย่างเดียวไม่มีปุ่ม ⚙ ให้กด จึงกางรายการ Lead ให้เห็นเลยถ้ามี
+                        — Solar Manager ต้องเห็นข้อมูลครบ แค่แก้ไม่ได้ */}
+                    {viewOnly ? (p.allowed_lead_ids ? (
+                      <div className="flex items-center gap-2 rounded-lg border border-gray-200 bg-gray-50 p-2 pl-3">
+                        <span className="shrink-0 text-xxs font-semibold text-gray-500">Lead ที่ใช้ชุดราคาย้อนหลังนี้ได้</span>
+                        <span className="flex-1 font-mono text-xs text-gray-700">{p.allowed_lead_ids}</span>
+                      </div>
+                    ) : null) : leadConfigKey === rowKey && (
                       <div className="flex items-center gap-2 rounded-lg border border-primary/30 bg-primary/5 p-2 pl-3">
                         <span className="shrink-0 text-xxs font-semibold text-gray-500"
                           title="มีผลกับทุก Package ที่มีช่วงราคาเริ่มวันเดียวกัน">
@@ -771,10 +810,12 @@ export default function ManagePackagesPage() {
                       <div className="text-xs font-bold text-gray-800">อุปกรณ์หลักใน Package</div>
 
                     </div>
-                    <button type="button" onClick={() => setPackageItems(v => [...v, { item_name: "", quantity: 1, unit: "ชุด" }])}
-                      className="h-8 px-3 shrink-0 rounded-lg border border-primary/30 bg-primary/5 text-xs font-semibold text-primary hover:bg-primary/10 transition-colors">
-                      + เพิ่มอุปกรณ์
-                    </button>
+                    {!viewOnly && (
+                      <button type="button" onClick={() => setPackageItems(v => [...v, { item_name: "", quantity: 1, unit: "ชุด" }])}
+                        className="h-8 px-3 shrink-0 rounded-lg border border-primary/30 bg-primary/5 text-xs font-semibold text-primary hover:bg-primary/10 transition-colors">
+                        + เพิ่มอุปกรณ์
+                      </button>
+                    )}
                   </div>
                   {packageItems.length === 0 ? (
                     <div className="rounded-lg border border-dashed border-gray-200 py-6 text-center text-xs text-gray-400">ยังไม่มีรายการอุปกรณ์</div>
@@ -805,8 +846,12 @@ export default function ManagePackagesPage() {
                               </div>
                               <input type="number" min="1" value={item.quantity || ""} onChange={e => setPackageItems(v => v.map((x, i) => i === index ? { ...x, quantity: Number(e.target.value) } : x))} className={`col-span-1 text-center ${fieldBase} ${isHead ? "text-sm" : "text-xs"}`} />
                               <input value={item.unit ?? ""} onChange={e => setPackageItems(v => v.map((x, i) => i === index ? { ...x, unit: e.target.value || null } : x))} placeholder="หน่วย" className={`col-span-1 ${fieldBase} ${isHead ? "text-sm" : "text-xs"}`} />
-                              <button type="button" onClick={() => setPackageItems(v => v.filter((_, i) => i !== index))} aria-label="ลบรายการ"
-                                className="col-span-1 h-9 flex items-center justify-center rounded-lg text-gray-300 hover:bg-red-50 hover:text-red-600 transition-colors">×</button>
+                              {viewOnly ? (
+                                <span className="col-span-1" aria-hidden="true" />
+                              ) : (
+                                <button type="button" onClick={() => setPackageItems(v => v.filter((_, i) => i !== index))} aria-label="ลบรายการ"
+                                  className="col-span-1 h-9 flex items-center justify-center rounded-lg text-gray-300 hover:bg-red-50 hover:text-red-600 transition-colors">×</button>
+                              )}
                             </div>
                             {isHead && packageItems.length > 1 && (
                               <div className="mt-2 mb-1 pl-7 text-xxs font-semibold text-gray-400">รายละเอียดใต้หัวข้อ</div>
@@ -817,10 +862,23 @@ export default function ManagePackagesPage() {
                     </>
                   )}
               </section>
-            </div>
+            </fieldset>
 
             {/* Actions — active toggle + save/cancel */}
             <div className="bg-white px-6 py-3 border-t border-gray-100 flex items-center gap-3 rounded-b-2xl">
+              {viewOnly ? (
+                <>
+                  {/* toggle ข้างล่างเป็น div ไม่ใช่ปุ่มจริง fieldset disabled จึงกันไม่ได้
+                      โหมดดูอย่างเดียวเลยเปลี่ยนเป็นป้ายสถานะแทนไปเลย */}
+                  <span className={`text-xs font-bold uppercase px-3 py-1.5 rounded-full ${editing.is_active ? "bg-emerald-50 text-emerald-700" : "bg-gray-100 text-gray-500"}`}>
+                    {editing.is_active ? "ACTIVE" : "INACTIVE"}
+                  </span>
+                  <div className="ml-auto">
+                    <button type="button" onClick={() => setEditing(null)} className="h-9 px-6 rounded-lg border border-gray-200 text-sm font-semibold text-gray-600 hover:bg-gray-50 transition-colors">ปิด</button>
+                  </div>
+                </>
+              ) : (
+              <>
               <div className="flex items-center gap-2.5">
                 <div role="button" onClick={() => setEditing({ ...editing, is_active: !editing.is_active })}
                   className={`relative cursor-pointer rounded-full transition-colors ${editing.is_active ? "bg-emerald-500" : "bg-gray-300"}`}
@@ -837,6 +895,8 @@ export default function ManagePackagesPage() {
                   {saving ? "กำลังบันทึก..." : "บันทึก"}
                 </button>
               </div>
+              </>
+              )}
             </div>
           </div>
         </div>

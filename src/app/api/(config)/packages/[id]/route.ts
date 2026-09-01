@@ -1,10 +1,11 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getDb, sql, fixDates, toSqlDate } from "@/lib/db";
 import { requireAnyRole } from "@/lib/auth";
+import { PACKAGE_EDIT_ROLES } from "@/lib/role-permissions";
 import { isQuotationTermsProfile } from "@/lib/quotation-terms";
 
 export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
-  const gate = await requireAnyRole(req, ["admin"]);
+  const gate = await requireAnyRole(req, PACKAGE_EDIT_ROLES);
   if (gate.error) return gate.error;
   try {
     const { id } = await params;
@@ -68,7 +69,7 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
 }
 
 export async function DELETE(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
-  const gate = await requireAnyRole(req, ["admin"]);
+  const gate = await requireAnyRole(req, PACKAGE_EDIT_ROLES);
   if (gate.error) return gate.error;
   try {
     const { id } = await params;
