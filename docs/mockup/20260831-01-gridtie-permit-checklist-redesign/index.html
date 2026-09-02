@@ -1,0 +1,458 @@
+<!doctype html>
+<html lang="th">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>ชุดยื่นคำขอขนานไฟ</title>
+<style>
+/* ── ฟอนต์และโทนสี ยกจากแอปจริงทั้งหมด ────────────────────────────────
+   @font-face + ตัวแปรสี/ขนาดตัวอักษร copy มาจาก src/app/globals.css
+   แอปไม่มีโหมดมืด mockup นี้จึงเป็นธีมสว่างอย่างเดียวเหมือนกัน            */
+@font-face{font-family:DB;src:url('../../../public/fonts/db_heavent_v3.2-webfont.woff');font-weight:400;font-display:swap}
+@font-face{font-family:DB;src:url('../../../public/fonts/db_heavent_med_v3.2-webfont.woff');font-weight:500;font-display:swap}
+@font-face{font-family:DB;src:url('../../../public/fonts/db_heavent_bd_v3.2-webfont.woff');font-weight:700;font-display:swap}
+
+:root{
+  /* globals.css */
+  --primary:#1ed0c7; --primary-dark:#18b5ad; --accent:#f8aa00;
+  --active:#8b5cf6; --active-dark:#7c3aed; --active-light:#f5f3ff;
+  --danger:#ef4444; --success:#22c55e; --warning:#f59e0b;
+  --fg:#1b1b1b;
+  /* tailwind scale ที่แอปใช้จริง */
+  --g50:#f9fafb; --g100:#f3f4f6; --g200:#e5e7eb; --g300:#d1d5db;
+  --g400:#9ca3af; --g500:#6b7280; --g700:#374151; --g800:#1f2937;
+  --em50:#ecfdf5; --em100:#d1fae5; --em500:#10b981; --em600:#059669; --em700:#047857;
+  --vi50:#f5f3ff; --vi100:#ede9fe; --vi200:#ddd6fe; --vi600:#7c3aed; --vi700:#6d28d9; --vi800:#5b21b6;
+  --rd50:#fef2f2; --rd200:#fecaca; --rd500:#ef4444; --rd700:#b91c1c;
+  --am50:#fffbeb; --am200:#fde68a; --am600:#d97706; --am700:#b45309;
+  --bl50:#eff6ff; --bl200:#bfdbfe; --bl700:#1d4ed8;
+  /* ขนาดตัวอักษรของแอป — DB Heavent เรนเดอร์เล็ก ค่าจึงสูงกว่าปกติ */
+  --xxs:18px; --xs:20px; --sm:22px; --base:24px; --xl:32px;
+}
+
+*{box-sizing:border-box}
+body{margin:0;background:var(--g100);color:var(--fg);
+  font-family:DB,"Noto Sans Thai",-apple-system,"Segoe UI",sans-serif;
+  font-size:var(--xs);line-height:1.35;-webkit-font-smoothing:antialiased}
+button,input,select,textarea{font:inherit;color:inherit}
+button{cursor:pointer;border:0;background:none}
+:focus-visible{outline:2px solid var(--active);outline-offset:2px}
+
+.devbar{background:var(--accent);color:#fff;text-align:center;
+  font-size:14px;font-weight:700;letter-spacing:.14em;padding:6px}
+.wrap{max-width:1180px;margin:0 auto;padding:20px 16px 60px;
+  display:flex;flex-direction:column;gap:20px}
+
+/* ── หัวเรื่องของ mockup (ไม่ใช่ส่วนของแอป) ───────────────────────── */
+.mockhd{display:flex;flex-direction:column;gap:6px}
+.mockhd .eyebrow{font-size:var(--xxs);font-weight:700;letter-spacing:.1em;color:var(--g400)}
+.mockhd h1{margin:0;font-size:var(--xl);font-weight:700;line-height:1.15;text-wrap:balance}
+.mockhd p{margin:0;max-width:64ch;color:var(--g500);font-size:var(--xs)}
+.srcpill{align-self:flex-start;margin-top:2px;padding:3px 12px;border-radius:999px;
+  background:#fff;border:1px solid var(--g200);font-size:var(--xxs);color:var(--g500)}
+
+/* ── StepCard ของแอป (สถานะ active) ──────────────────────────────── */
+.stepcard{background:var(--active-light);border:1px solid var(--active);border-radius:14px;
+  box-shadow:0 1px 2px rgba(139,92,246,.1);padding:12px}
+.sc-hd{display:flex;align-items:center;gap:10px;margin-bottom:10px}
+.sc-ic{width:36px;height:36px;border-radius:10px;background:var(--active);color:#fff;
+  display:flex;align-items:center;justify-content:center;flex:none}
+.sc-ic svg{width:19px;height:19px}
+.sc-t{font-size:var(--sm);font-weight:700;color:var(--g800)}
+.sc-s{font-size:var(--xxs);color:var(--g500);margin-top:-2px}
+.sc-step{margin-left:auto;font-size:var(--xxs);font-weight:700;color:var(--vi700);
+  background:#fff;border:1px solid var(--vi200);border-radius:999px;padding:2px 11px}
+.sc-body{background:#fff;border-radius:11px;padding:12px;display:flex;flex-direction:column;gap:11px}
+
+/* ── ฟอร์มสไตล์แอป ────────────────────────────────────────────────── */
+.savebar{display:flex;justify-content:flex-end;min-height:20px;font-size:var(--xxs)}
+.savebar b{color:var(--em600);font-weight:700}
+label.fl{display:block;margin-bottom:4px;font-size:var(--xxs);font-weight:700;
+  letter-spacing:.08em;text-transform:uppercase;color:var(--g400)}
+select,input[type=text],textarea{width:100%;border:1px solid var(--g200);border-radius:9px;
+  background:#fff;padding:0 12px}
+select,input[type=text]{height:44px}
+textarea{padding:8px 12px;resize:none;line-height:1.4}
+select:focus,input:focus,textarea:focus{outline:none;border-color:var(--primary)}
+.grid2{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+
+/* segmented control — ประเภทผู้ยื่น (คัดลอกจาก GridTieForm) */
+.seg{display:grid;grid-template-columns:1fr 1fr;gap:8px;background:var(--g100);
+  border-radius:9px;padding:4px}
+.seg button{height:36px;border-radius:7px;font-size:var(--xs);font-weight:700;color:var(--g500)}
+.seg button[aria-pressed=true]{background:#fff;color:var(--primary-dark);
+  box-shadow:0 1px 2px rgba(0,0,0,.06)}
+
+/* ── ChecklistPanel ───────────────────────────────────────────────── */
+.clp{border:1px solid var(--g200);border-radius:12px;overflow:hidden;background:#fff}
+.clp-hd{display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:8px;
+  padding:9px 12px;background:var(--g50);border-bottom:1px solid var(--g200)}
+.clp-t{font-size:var(--xxs);font-weight:700;letter-spacing:.1em;text-transform:uppercase;color:var(--g500)}
+.clp-s{font-size:var(--xxs);color:var(--g400);margin-top:1px}
+.pill{border-radius:999px;padding:2px 11px;font-size:var(--xxs);font-weight:700;
+  background:var(--vi100);color:var(--vi700)}
+.pill.ok{background:var(--em100);color:var(--em700)}
+.pill.pm{background:var(--am50);color:var(--am700);border:1px solid var(--am200)}
+
+.clp-cols{display:none;gap:8px;padding:6px 12px;background:#fff;
+  border-bottom:1px solid var(--g100);font-size:var(--xxs);font-weight:700;
+  letter-spacing:.06em;text-transform:uppercase;color:var(--g400)}
+.row{display:grid;gap:8px;padding:9px 12px;align-items:center;border-top:1px solid var(--g100)}
+.row:first-child{border-top:0}
+.row.off{background:var(--g50);opacity:.5}
+@media(min-width:900px){
+  .clp-cols,.row{grid-template-columns:minmax(270px,1fr) 232px 158px minmax(150px,.62fr)}
+  .clp-cols{display:grid}
+}
+
+.rt{min-width:0}
+.rt-n{display:flex;gap:7px;align-items:flex-start}
+.rt-i{font-size:var(--xxs);font-weight:700;color:var(--g400);min-width:16px;padding-top:2px}
+.rt-l{font-size:var(--xs);font-weight:700;color:var(--g800);line-height:1.3}
+.rt-d{font-size:var(--xxs);color:var(--g500);margin-top:1px}
+.tags{display:flex;flex-wrap:wrap;gap:4px;margin-top:4px}
+.tag{font-size:15px;font-weight:700;padding:1px 7px;border-radius:5px;
+  border:1px solid transparent;letter-spacing:.01em;font-style:normal}
+.tag.who{background:var(--g100);color:var(--g500)}
+.tag.cond{background:var(--am50);color:var(--am700);border-color:var(--am200)}
+.tag.auto{background:var(--bl50);color:var(--bl700);border-color:var(--bl200)}
+.tag.newf{background:var(--rd50);color:var(--rd700);border-color:var(--rd200)}
+.tag.file{background:var(--vi50);color:var(--vi700);border-color:var(--vi200)}
+
+/* ปุ่มคู่ ได้รับแล้ว / ยังไม่ได้รับ — สไตล์เดิมของแอปเป๊ะ */
+.duo{display:grid;grid-template-columns:1fr 1fr;gap:7px}
+.duo button{height:36px;border-radius:9px;border:1px solid var(--g200);background:#fff;
+  font-size:var(--xs);font-weight:700;color:var(--g500)}
+.duo button[data-v=yes][aria-pressed=true]{background:var(--em500);border-color:var(--em500);color:#fff}
+.duo button[data-v=no][aria-pressed=true]{background:var(--rd500);border-color:var(--rd500);color:#fff}
+.duo.small button{height:32px;font-size:var(--xxs)}
+.duo.small button[data-v=has][aria-pressed=true]{background:var(--am600);border-color:var(--am600);color:#fff}
+.duo.small button[data-v=none][aria-pressed=true]{background:var(--g500);border-color:var(--g500);color:#fff}
+.note{height:36px;border:1px solid var(--g200);border-radius:9px;padding:0 11px;
+  font-size:var(--xs);width:100%}
+.note::placeholder{color:var(--g400)}
+.subf{display:flex;flex-wrap:wrap;gap:4px;margin-top:5px}
+.sf{display:inline-flex;gap:5px;align-items:baseline;padding:2px 8px;border-radius:6px;
+  background:var(--g50);border:1px dashed var(--g300);font-size:15px;color:var(--g500)}
+.sf b{font-weight:700;color:var(--g700)}
+.condchk{display:inline-flex;align-items:center;gap:6px;margin-top:5px;cursor:pointer;
+  font-size:var(--xxs);font-weight:700;color:var(--g500)}
+.condchk input{width:15px;height:15px;accent-color:var(--active)}
+
+/* ── กล่องอัปโหลด / ปุ่มปิดงาน ─────────────────────────────────────── */
+.up{display:flex;align-items:center;justify-content:center;gap:8px;
+  border:2px dashed var(--g300);border-radius:10px;padding:11px;
+  font-size:var(--xs);color:var(--g500)}
+.up b{font-size:var(--sm);color:var(--g400);font-weight:400}
+.closebtn{height:44px;border-radius:10px;width:100%;font-size:var(--xs);font-weight:700;color:#fff;
+  background:linear-gradient(90deg,var(--em500),var(--em600))}
+.closebtn[disabled]{opacity:.5;cursor:not-allowed}
+.gatemsg{border:1px solid var(--rd200);background:var(--rd50);border-radius:9px;
+  padding:7px 12px;font-size:var(--xxs);color:var(--rd700)}
+.gatemsg.ok{border-color:var(--em500);background:var(--em50);color:var(--em700)}
+.banner{border:1px solid var(--vi200);background:var(--vi50);border-radius:9px;padding:8px 12px}
+.banner b{display:block;font-size:var(--xs);font-weight:700;color:var(--vi800)}
+.banner span{font-size:var(--xxs);color:var(--vi600)}
+.sect{padding:6px 12px;background:var(--g50);border-top:1px solid var(--g200);
+  border-bottom:1px solid var(--g200);font-size:15px;font-weight:700;
+  letter-spacing:.11em;text-transform:uppercase;color:var(--g500)}
+
+/* ── แผงอธิบาย (นอกแอป) ───────────────────────────────────────────── */
+.doc{background:#fff;border:1px solid var(--g200);border-radius:14px;overflow:hidden}
+.doc-hd{padding:10px 16px;background:var(--g50);border-bottom:1px solid var(--g200);
+  font-size:var(--xxs);font-weight:700;letter-spacing:.11em;text-transform:uppercase;color:var(--g500)}
+.doc-b{padding:14px 16px;display:flex;flex-direction:column;gap:10px}
+.doc-b p{margin:0;max-width:66ch;color:var(--g700);font-size:var(--xs)}
+.dl{display:flex;flex-direction:column;gap:8px;margin:0}
+.dl > div{display:grid;grid-template-columns:24px 1fr;gap:10px;align-items:start}
+.dl dt{font-size:var(--xxs);font-weight:700;color:var(--active);padding-top:1px}
+.dl dd{margin:0;font-size:var(--xs);color:var(--g700)}
+.dl dd b{color:var(--g800)}
+.q{border-left:3px solid var(--accent);background:var(--am50);
+  border-radius:0 9px 9px 0;padding:10px 14px}
+.q p{color:var(--g700);font-size:var(--xxs);max-width:66ch}
+.q p+p{margin-top:6px}
+.q b{color:var(--g800)}
+code{font-family:inherit;background:var(--g100);border-radius:4px;padding:0 5px}
+.legend{display:flex;flex-wrap:wrap;gap:12px;padding:10px 16px;background:var(--g50);
+  border-top:1px solid var(--g200);font-size:var(--xxs);color:var(--g500)}
+.legend span{display:inline-flex;align-items:center;gap:5px}
+@media(prefers-reduced-motion:reduce){*{transition:none!important}}
+</style>
+</head>
+<body>
+<div class="devbar">MOCKUP · ยังไม่ได้แก้โค้ดจริง</div>
+<div class="wrap">
+
+  <header class="mockhd">
+    <div class="eyebrow">SOLAR V0 · STEP 07 · แผน 20260831-01</div>
+    <h1>ชุดยื่นคำขอขนานไฟ</h1>
+    <p>หน้าตา ตัวอักษร และโทนสีเดียวกับ Step 07 ในแอปจริง เปลี่ยนเฉพาะข้างในให้ตรงฟอร์มกระดาษของทีม Permit —
+      เอกสาร 14 รายการ บวกรายละเอียดอุปกรณ์ 5 กลุ่ม และเพิ่มคอลัมน์ Permit ที่แอปยังไม่มี</p>
+    <div class="srcpill">อ้างอิงฟอร์ม File Permit : Up 20082026 · ชุดของบุคคลธรรมดา</div>
+  </header>
+
+  <!-- ══ การ์ด Step 07 ตามแอปจริง ══════════════════════════════════ -->
+  <section class="stepcard">
+    <div class="sc-hd">
+      <div class="sc-ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+        stroke-linecap="round" stroke-linejoin="round"><path d="M3.75 13.5l10.5-11.25L12 10.5h8.25L9.75 21.75 12 13.5H3.75z"/></svg></div>
+      <div>
+        <div class="sc-t">ขอขนานไฟ</div>
+        <div class="sc-s">Lead #4821 · คุณสมชาย ใจดี</div>
+      </div>
+      <div class="sc-step">STEP 07</div>
+    </div>
+
+    <div class="sc-body">
+      <div class="savebar"><b>✓ บันทึกแล้ว</b></div>
+
+      <div class="grid2">
+        <div><label class="fl" for="u">การไฟฟ้า</label>
+          <select id="u"><option value="MEA">MEA (นครหลวง)</option><option value="PEA">PEA (ส่วนภูมิภาค)</option></select></div>
+        <div><label class="fl" for="n">เลขที่ใบรับ</label>
+          <input id="n" type="text" value="MEA-2569-04182"></div>
+      </div>
+
+      <div class="grid2">
+        <div><label class="fl" for="m">โหมด</label>
+          <select id="m"><option value="sell">ขายไฟ</option><option value="parallel">ขนานไฟอย่างเดียว</option><option value="cod">COD</option></select></div>
+        <div><label class="fl">ประเภทผู้ยื่น</label>
+          <div class="seg" id="seg">
+            <button data-a="individual" aria-pressed="true">บุคคลธรรมดา</button>
+            <button data-a="juristic" aria-pressed="false">นิติบุคคล</button>
+          </div></div>
+      </div>
+
+      <div class="banner" id="jbanner" hidden>
+        <b>ชุดเอกสารนิติบุคคล — ยังไม่มีฟอร์มกระดาษ</b>
+        <span>รายการด้านล่างยกมาจากของเดิมใน gridTie.ts รอฟอร์มจริงของทีม Permit มายืนยันอีกที</span>
+      </div>
+
+      <!-- ── Checklist ───────────────────────────────────────────── -->
+      <div class="clp">
+        <div class="clp-hd">
+          <div>
+            <div class="clp-t">Checklist เอกสารยื่นขอขนานไฟ</div>
+            <div class="clp-s" id="clpsub">MEA · บุคคลธรรมดา · ตรวจรับก่อนจัดชุดยื่น</div>
+          </div>
+          <div style="display:flex;gap:6px;flex-wrap:wrap">
+            <span class="pill" id="pillRecv">—</span>
+            <span class="pill pm" id="pillPerm">—</span>
+          </div>
+        </div>
+        <div class="clp-cols">
+          <div>เอกสาร</div><div>ตรวจรับ</div><div>Permit</div><div>หมายเหตุ</div>
+        </div>
+        <div id="rows"></div>
+      </div>
+
+      <!-- ── เอกสารชุดยื่นและใบอนุญาต ─────────────────────────────── -->
+      <div>
+        <label class="fl">เอกสารยื่นขอขนานไฟ</label>
+        <div class="up"><b>＋</b> อัปโหลดเอกสารยื่นขอขนานไฟ</div>
+      </div>
+      <div>
+        <label class="fl">ใบอนุญาต / PPA</label>
+        <div class="up"><b>＋</b> อัปโหลดใบอนุญาต / PPA</div>
+      </div>
+
+      <div>
+        <label class="fl" for="note">หมายเหตุ</label>
+        <textarea id="note" rows="2" placeholder="เช่น โซน, เจ้าหน้าที่ติดต่อ..."></textarea>
+      </div>
+
+      <div class="gatemsg" id="gate">—</div>
+      <button class="closebtn" id="closebtn">ปิดงาน — ขนานไฟเสร็จสิ้น</button>
+    </div>
+  </section>
+
+  <!-- ══ อธิบาย ═══════════════════════════════════════════════════ -->
+  <section class="doc">
+    <div class="doc-hd">เปลี่ยนอะไรจากของเดิม</div>
+    <div class="doc-b">
+      <p>วันนี้ <code>gridTie.ts</code> เก็บ checklist 5–7 รายการ และมีช่องแนบไฟล์รวมแค่ 2 ช่อง
+        เทียบกับฟอร์มกระดาษแล้วขาด 5 เรื่อง</p>
+      <dl class="dl">
+        <div><dt>01</dt><dd><b>รายการครบตามฟอร์ม</b> — เอกสารยื่น 14 รายการ + อุปกรณ์ 5 กลุ่ม
+          แทนของเดิม 5–7 รายการ · ชุดนี้เป็นของ <b>บุคคลธรรมดา</b> ส่วนนิติบุคคลยังแยกชุดเหมือนเดิม</dd></div>
+        <div><dt>02</dt><dd><b>คอลัมน์ Permit</b> — เพิ่มสถานะชั้นที่สอง ฝ่ายที่ยื่น MEA/PEA จริงติ๊ก มี/ไม่มี
+          แยกจากช่องตรวจรับของหน้างาน <b>Gate ปิดงานนับเฉพาะชั้น Permit</b></dd></div>
+        <div><dt>03</dt><dd><b>ไฟล์แนบรายแถว</b> — แทนที่จะยัดเอกสาร 14 ใบรวมเป็นไฟล์เดียว
+          ตรวจย้อนได้ว่าขาดใบไหน</dd></div>
+        <div><dt>04</dt><dd><b>ส่วนอุปกรณ์</b> — สเปคที่ต้องแนบไปกับคำขอ วันนี้ไม่มีที่เก็บเลย
+          ข้อเสนอคือฝากไว้ใน <code>install_checklists.system_specs</code> ที่มีอยู่แล้ว
+          เพิ่มแค่ <code>zero_export</code> กับ <code>ct</code></dd></div>
+        <div><dt>05</dt><dd><b>เลิกใส่ prefix ใน key</b> — ของเดิม <code>MEA:individual:id_card</code>
+          ทำให้สลับ MEA↔PEA แล้วตัวนับกลับไปศูนย์ เปลี่ยนเป็น <code>id_card</code> เฉย ๆ
+          แล้วอ่านเงื่อนไขจากคอลัมน์แทน แถวที่ไม่เข้าเงื่อนไขให้จางแต่เก็บข้อมูลไว้</dd></div>
+      </dl>
+      <div class="q">
+        <p><b>รอยืนยัน 3 ข้อ</b></p>
+        <p><b>1.</b> ยังไม่มีฟอร์มกระดาษของ <b>นิติบุคคล</b> — ชุดที่แสดงตอนนี้ยกจากของเดิมในโค้ด
+          ถ้ามีฟอร์มจริงส่งมาได้เลยครับ เดี๋ยวปรับให้ตรง</p>
+        <p><b>2.</b> “หนังสือยินยอมให้ใช้สถานที่ + บัตร ปชช. เจ้าของที่ดิน” กรณีเช่าอยู่
+          มีใน <code>docs/grid-tie-application-documents.md</code> แต่ไม่มีในฟอร์มใหม่ — เอาเข้าด้วยไหม</p>
+        <p><b>3.</b> แถวบัญชีธนาคาร (3–4) ใช้เฉพาะ MEA + ขายไฟ ใช่ไหม — PEA ขายไฟไม่ต้องใช้?</p>
+      </div>
+    </div>
+    <div class="legend">
+      <span><i class="tag who">เซลล์ / ลูกค้า</i> ผู้รับผิดชอบตามฟอร์ม</span>
+      <span><i class="tag cond">MEA เท่านั้น</i> เงื่อนไขการแสดงแถว</span>
+      <span><i class="tag auto">ดึงอัตโนมัติ</i> มีข้อมูลในระบบแล้ว</span>
+      <span><i class="tag newf">ต้องเพิ่มใหม่</i> ยังไม่มีที่เก็บ</span>
+    </div>
+  </section>
+</div>
+
+<script>
+/* ── ชุดเอกสารของบุคคลธรรมดา — ยกจากฟอร์มกระดาษ 14 แถว ───────────── */
+const INDIVIDUAL = [
+  {id:"electricity_bill", t:"สำเนาใบแจ้งค่าไฟ", d:"ชื่อต้องตรงกับผู้ใช้ไฟเดิม", w:"เซลล์ / ลูกค้า",
+   auto:"รูปบิลจาก Pre-Survey", sub:[["ประเภทผู้ใช้ไฟ","1.1"],["ขนาดเครื่องวัด","15(45) A"],["แรงดัน","220 V"],["เฟส","1"],["สาย","2"]]},
+  {id:"premise_consent", t:"หนังสือยินยอมของผู้ครอบครองอาคาร / สถานที่", w:"เซลล์ / ลูกค้า", cond:"MEA", ph:"ชื่อเจ้าของเรื่อง"},
+  {id:"bank_account_notice", t:"หนังสือแจ้งเลขที่บัญชีธนาคาร", w:"เซลล์ / ลูกค้า", cond:"MEA+sell", ph:"เลขที่บัญชี"},
+  {id:"bank_book_copy", t:"สำเนาบัญชีธนาคารหน้าแรก", w:"เซลล์ / ลูกค้า", cond:"MEA+sell", ph:"ธนาคาร"},
+  {id:"intent_letter", t:"หนังสือแสดงเจตนา", d:"ขายไฟ / ขนานไฟ / ภาษี", w:"เซลล์ / ลูกค้า", ph:"ขายไฟ | ขนานไฟ | COD"},
+  {id:"id_card", t:"สำเนาบัตรประชาชน", d:"เจ้าของบ้าน / ผู้มอบอำนาจ", w:"เซลล์ / ลูกค้า"},
+  {id:"house_registration", t:"สำเนาทะเบียนบ้าน", d:"เจ้าของบ้าน / ผู้มอบอำนาจ", w:"เซลล์ / ลูกค้า"},
+  {id:"solar_house_registration", t:"สำเนาทะเบียนบ้าน", d:"บ้านที่ติดตั้ง Solar", w:"เซลล์ / ลูกค้า"},
+  {id:"site_coordinates", t:"พิกัดสถานที่ติดตั้ง", d:"ละติจูด / ลองจิจูด · Google Map", w:"เซลล์ + ทีมติดตั้ง", ph:"lat, lng"},
+  {id:"site_photo_timestamp", t:"รูปถ่ายหน้าบ้าน", d:"มี time stamp ตรงกับสถานที่ติดตั้ง", w:"ทีมติดตั้ง"},
+  {id:"single_line_diagram", t:"แบบระบบไฟฟ้า Single Line", d:"พร้อมตำแหน่งติดตั้ง", w:"ทีมติดตั้ง"},
+  {id:"engineer_cert", t:"หนังสือรับรองวิศวกร + ใบ กว.", w:"ทีมติดตั้ง", cond:"MEA"},
+  {id:"architect_cert", t:"หนังสือรับรองสถาปนิก + ใบ กส.", w:"ทีมติดตั้ง", cond:"PEA"},
+  {id:"boq_quotation", t:"ใบเสนอราคา / BOQ", w:"ทีมติดตั้ง", auto:"ใบเสนอราคาที่อนุมัติ"},
+];
+/* ── ชุดนิติบุคคล — ยังไม่มีฟอร์มกระดาษ ยกของเดิมใน gridTie.ts มาก่อน ── */
+const JURISTIC = [
+  {id:"power_of_attorney", t:"หนังสือมอบอำนาจ", d:"ลงนามกรรมการผู้มีอำนาจและประทับตราบริษัท", w:"เซลล์ / ลูกค้า"},
+  {id:"company_certificate", t:"หนังสือรับรองบริษัท", d:"อายุไม่เกิน 3 เดือน · ประทับตราบริษัท", w:"เซลล์ / ลูกค้า"},
+  {id:"director_id_card", t:"สำเนาบัตรประชาชนกรรมการผู้ลงนาม", w:"เซลล์ / ลูกค้า"},
+  {id:"director_house_registration", t:"สำเนาทะเบียนบ้านกรรมการผู้ลงนาม", w:"เซลล์ / ลูกค้า"},
+  {id:"electricity_bill", t:"สำเนาใบแจ้งค่าไฟ", d:"ชื่อต้องตรงกับผู้มอบอำนาจ", w:"เซลล์ / ลูกค้า", auto:"รูปบิลจาก Pre-Survey"},
+  {id:"solar_house_registration_j", t:"สำเนาทะเบียนบ้านหลังติดตั้ง Solar", d:"กรณีลูกค้ายังไม่ย้ายทะเบียนบ้าน", w:"เซลล์ / ลูกค้า", opt:true},
+  {id:"site_coordinates", t:"พิกัดสถานที่ติดตั้ง", d:"ละติจูด / ลองจิจูด · Google Map", w:"เซลล์ + ทีมติดตั้ง"},
+  {id:"site_photo_timestamp", t:"รูปถ่ายหน้าบ้าน", d:"มี time stamp ตรงกับสถานที่ติดตั้ง", w:"ทีมติดตั้ง"},
+  {id:"single_line_diagram", t:"แบบระบบไฟฟ้า Single Line", d:"พร้อมตำแหน่งติดตั้ง", w:"ทีมติดตั้ง"},
+  {id:"engineer_cert", t:"หนังสือรับรองวิศวกร + ใบ กว.", w:"ทีมติดตั้ง", cond:"MEA"},
+  {id:"architect_cert", t:"หนังสือรับรองสถาปนิก + ใบ กส.", w:"ทีมติดตั้ง", cond:"PEA"},
+  {id:"boq_quotation", t:"ใบเสนอราคา / BOQ", w:"ทีมติดตั้ง", auto:"ใบเสนอราคาที่อนุมัติ"},
+];
+/* ── อุปกรณ์ 5 กลุ่ม — งานทีมติดตั้ง ใช้ร่วมทั้งบุคคลและนิติบุคคล ────── */
+const EQUIP = [
+  {id:"panel", t:"แผงเซลล์ Solar", w:"ทีมติดตั้ง", auto:"ใบตรวจติดตั้ง",
+   sub:[["ยี่ห้อ","JINKO"],["รุ่น","JKM625N-78HL4"],["ต่อแผง","640 W"],["จำนวน","16 แผง"],["Datasheet","มี"]]},
+  {id:"inverter", t:"Inverter", w:"ทีมติดตั้ง", auto:"ใบตรวจติดตั้ง",
+   sub:[["ยี่ห้อ","DEYE"],["รุ่น","SUN2000-10K-SGOSLP3"],["พิกัด","10 kW"],["จำนวน","1 ตัว"],["รูป S/N","มี"]]},
+  {id:"zero_export", t:"อุปกรณ์ Zero Export / กันไหลย้อน", d:"พร้อมจุดเชื่อมต่อ", w:"ทีมติดตั้ง", newf:true,
+   sub:[["ยี่ห้อ","Huawei"],["รุ่น","DDSU666-H"],["Datasheet","มี"]]},
+  {id:"ct", t:"Current Transformer (CT)", w:"ทีมติดตั้ง", newf:true,
+   sub:[["ยี่ห้อ","DEYE"],["รุ่น","22"],["พิกัด","100 A / 50 mA"],["Class","0.5"],["IEC","มี"]]},
+  {id:"battery", t:"Battery Energy Storage System", w:"ทีมติดตั้ง", auto:"ใบตรวจติดตั้ง · ขาด Ah / kW",
+   sub:[["ยี่ห้อ","LFP Battery Rack"],["รุ่น","ZTT481008"],["จำนวน","2 ตัว"],["Capacity","4.8 kWh"]]},
+];
+
+/* สถานะตัวอย่าง — จำลองงานที่เดินมาได้ครึ่งทาง */
+const SEED = {electricity_bill:["yes","has"], premise_consent:["yes","has"], bank_account_notice:["yes",null],
+  bank_book_copy:["no",null], intent_letter:["yes","has"], id_card:["yes","has"], house_registration:["yes","has"],
+  solar_house_registration:[null,null], site_coordinates:["yes","has"], site_photo_timestamp:["yes","none"],
+  single_line_diagram:["yes","has"], engineer_cert:[null,null], boq_quotation:["yes","has"],
+  power_of_attorney:["yes","has"], company_certificate:["yes",null], director_id_card:["yes","has"],
+  director_house_registration:["no",null],
+  panel:["yes","has"], inverter:["yes","has"], zero_export:["yes",null], ct:["no",null], battery:["yes","has"]};
+const st = {};
+function ent(id){ return st[id] || (st[id] = {r:(SEED[id]||[])[0]||null, p:(SEED[id]||[])[1]||null, need:false}); }
+
+const $ = s => document.querySelector(s);
+let applicant = "individual";
+
+function visible(x, u, m){
+  if (!x.cond) return true;
+  if (x.cond === "MEA") return u === "MEA";
+  if (x.cond === "PEA") return u === "PEA";
+  if (x.cond === "MEA+sell") return u === "MEA" && m === "sell";
+  return true;
+}
+/* แถวที่เป็น optional ต้องติ๊ก "จำเป็นสำหรับงานนี้" ก่อนถึงจะถูกนับ (กติกาเดิมของแอป) */
+function counted(x, u, m){ return visible(x, u, m) && (!x.opt || ent(x.id).need); }
+
+function rowHTML(x, i, u, m){
+  const e = ent(x.id), on = visible(x, u, m);
+  const tags = [
+    `<i class="tag who">${x.w}</i>`,
+    x.cond ? `<i class="tag cond">${x.cond === "MEA+sell" ? "MEA · ขายไฟ" : x.cond + " เท่านั้น"}</i>` : "",
+    x.auto ? `<i class="tag auto">ดึงอัตโนมัติ · ${x.auto}</i>` : "",
+    x.newf ? `<i class="tag newf">ต้องเพิ่มใหม่</i>` : "",
+    `<i class="tag file">แนบไฟล์</i>`,
+  ].join("");
+  const sub = x.sub ? `<div class="subf">${x.sub.map(([k, v]) => `<span class="sf">${k} <b>${v}</b></span>`).join("")}</div>` : "";
+  const opt = x.opt ? `<label class="condchk"><input type="checkbox" data-need="${x.id}"${e.need ? " checked" : ""}>จำเป็นสำหรับงานนี้</label>` : "";
+  return `<div class="row${on ? "" : " off"}">
+    <div class="rt">
+      <div class="rt-n"><span class="rt-i">${i}.</span><span>
+        <span class="rt-l">${x.t}</span>
+        ${x.d ? `<div class="rt-d">${x.d}</div>` : ""}
+        <div class="tags">${tags}</div>${sub}${opt}</span></div>
+    </div>
+    <div class="duo">
+      <button data-r="${x.id}" data-v="yes" aria-pressed="${e.r === "yes"}">ได้รับแล้ว</button>
+      <button data-r="${x.id}" data-v="no" aria-pressed="${e.r === "no"}">ยังไม่ได้รับ</button>
+    </div>
+    <div class="duo small">
+      <button data-p="${x.id}" data-v="has" aria-pressed="${e.p === "has"}">มี</button>
+      <button data-p="${x.id}" data-v="none" aria-pressed="${e.p === "none"}">ไม่มี</button>
+    </div>
+    <div><input class="note" placeholder="${x.ph || "หมายเหตุ"}"></div>
+  </div>`;
+}
+
+function render(){
+  const u = $("#u").value, m = $("#m").value;
+  const docs = applicant === "juristic" ? JURISTIC : INDIVIDUAL;
+  $("#jbanner").hidden = applicant !== "juristic";
+  $("#clpsub").textContent = `${u} · ${applicant === "juristic" ? "นิติบุคคล" : "บุคคลธรรมดา"} · ตรวจรับก่อนจัดชุดยื่น`;
+
+  let html = "";
+  docs.forEach((x, i) => { html += rowHTML(x, i + 1, u, m); });
+  html += `<div class="sect">รายละเอียดทางเทคนิค · สเปคและรูปอุปกรณ์ที่ติดตั้ง / Datasheet</div>`;
+  EQUIP.forEach((x, i) => { html += rowHTML(x, docs.length + i + 1, u, m); });
+  $("#rows").innerHTML = html;
+
+  const all = [...docs, ...EQUIP].filter(x => counted(x, u, m));
+  const recv = all.filter(x => ent(x.id).r === "yes").length;
+  const perm = all.filter(x => ent(x.id).p === "has").length;
+  const pr = $("#pillRecv");
+  pr.textContent = `ตรวจรับ ${recv}/${all.length}`;
+  pr.className = "pill" + (recv === all.length ? " ok" : "");
+  $("#pillPerm").textContent = `Permit ${perm}/${all.length}`;
+
+  const ok = perm === all.length;
+  const g = $("#gate");
+  g.className = "gatemsg" + (ok ? " ok" : "");
+  g.textContent = ok
+    ? "ข้อมูลครบ — ปิดงานได้"
+    : `ข้อมูลยังไม่ครบ: Permit ยังยืนยันไม่ครบอีก ${all.length - perm} รายการ`;
+  $("#closebtn").disabled = !ok;
+}
+
+$("#rows").addEventListener("click", e => {
+  const r = e.target.closest("[data-r]"), p = e.target.closest("[data-p]");
+  if (r) { const s = ent(r.dataset.r); s.r = s.r === r.dataset.v ? null : r.dataset.v; render(); }
+  else if (p) { const s = ent(p.dataset.p); s.p = s.p === p.dataset.v ? null : p.dataset.v; render(); }
+});
+$("#rows").addEventListener("change", e => {
+  const c = e.target.closest("[data-need]");
+  if (c) { ent(c.dataset.need).need = c.checked; render(); }
+});
+$("#seg").addEventListener("click", e => {
+  const b = e.target.closest("[data-a]"); if (!b) return;
+  applicant = b.dataset.a;
+  document.querySelectorAll("#seg button").forEach(x => x.setAttribute("aria-pressed", String(x === b)));
+  render();
+});
+["u", "m"].forEach(id => $("#" + id).addEventListener("change", render));
+render();
+</script>
+</body>
+</html>
