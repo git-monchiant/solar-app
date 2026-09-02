@@ -383,15 +383,17 @@ const COL_TEMPLATE = "md:grid-cols-[minmax(260px,1fr)_216px_148px_minmax(150px,0
 // ชุดนิติบุคคลไม่มีคอลัมน์ Permit — ต้องมี 3 คอลัมน์ ไม่งั้นช่องหมายเหตุไปตกในช่องแคบของ Permit
 const COL_TEMPLATE_LEGACY = "md:grid-cols-[minmax(280px,1fr)_216px_minmax(200px,0.8fr)]";
 // โซนสถานะ (ตรวจรับ + Permit) พื้นเทาอ่อนวิ่งตลอดความสูง จับเป็นกลุ่มเดียว
-const ZONE = "bg-gray-50/70 md:border-gray-200";
+const ZONE = "bg-gray-50/70";
+// เส้นคั่นคอลัมน์ — ทุกเซลล์ยกเว้นคอลัมน์สุดท้ายมีเส้นขวา เกิดเป็นตารางเส้นเต็ม
+const CELL_DIVIDER = "md:border-r md:border-gray-200";
 
-function ColumnHeader() {
+function ColumnHeader({ legacy }: { legacy: boolean }) {
   return (
-    <div className={`hidden border-b border-gray-200 text-xs font-bold uppercase tracking-wide text-gray-500 md:grid ${COL_TEMPLATE}`}>
-      <div className="px-3 py-2">เอกสารแนบ (ชุดยื่นคำขอขนานไฟ)</div>
-      {/* สองคอลัมน์กลางจัดกึ่งกลางให้ตรงกับปุ่มคู่ที่อยู่ข้างล่าง */}
-      <div className={`px-3 py-2 text-center ${ZONE}`}>ตรวจรับ</div>
-      <div className={`px-3 py-2 text-center ${ZONE} md:border-l md:border-r`}>Permit</div>
+    <div className={`hidden border-b border-gray-200 text-xs font-bold uppercase tracking-wide text-gray-500 md:grid ${legacy ? COL_TEMPLATE_LEGACY : COL_TEMPLATE}`}>
+      <div className={`px-3 py-2 ${CELL_DIVIDER}`}>เอกสารแนบ (ชุดยื่นคำขอขนานไฟ)</div>
+      {/* คอลัมน์ปุ่มจัดกึ่งกลางให้ตรงกับปุ่มคู่ที่อยู่ข้างล่าง */}
+      <div className={`px-3 py-2 text-center ${ZONE} ${CELL_DIVIDER}`}>ตรวจรับ</div>
+      {!legacy && <div className={`px-3 py-2 text-center ${ZONE} ${CELL_DIVIDER}`}>Permit</div>}
       <div className="px-3 py-2">หมายเหตุ</div>
     </div>
   );
@@ -449,17 +451,17 @@ function ChecklistPanel({
         </div>
       </div>
 
-      {!legacy && <ColumnHeader />}
+      <ColumnHeader legacy={legacy} />
 
       <div className="divide-y divide-gray-300">{renderRows(docItems, 0)}</div>
 
       {equipmentItems.length > 0 && (
         <>
           <div className="border-y border-gray-300 bg-gray-100 px-3 py-2 text-xxs font-bold uppercase tracking-wider text-gray-600">
-            รายละเอียดทางเทคนิค (ทีมติดตั้ง) · สเปค และอุปกรณ์ติดตั้ง / Datasheet : มี / ไม่มี
+            รายละเอียดทางเทคนิค (ทีมติดตั้ง)
           </div>
           {/* ทวนหัวคอลัมน์อีกรอบ — เลื่อนมาถึงตรงนี้จะห่างจากหัวตารางแรก 14 แถวแล้ว */}
-          {!legacy && <ColumnHeader />}
+          <ColumnHeader legacy={legacy} />
           <div className="divide-y divide-gray-300">{renderRows(equipmentItems, docItems.length)}</div>
         </>
       )}
@@ -484,28 +486,65 @@ function ChecklistRow({
 
   const fields = item.fields && !legacy ? item.fields : null;
 
+  // เซลล์ยืดเต็มความสูงแถว (ไม่ใส่ items-start) เส้นคั่นจึงลากตลอดทุกแถวเหมือนฟอร์มกระดาษ
   return (
-    <div>
-      {/* แถวบน — 4 คอลัมน์เท่ากันทุกแถว ปุ่มจึงอยู่ระดับเดียวกับชื่อเอกสารเสมอ */}
-      <div className={`grid grid-cols-1 gap-2 ${legacy ? COL_TEMPLATE_LEGACY : COL_TEMPLATE} md:items-start ${isRequired ? "" : "opacity-60"}`}>
-        <div className="min-w-0 px-3 py-2.5">
-          <div className="flex items-start gap-2">
-            <span className="mt-0.5 w-8 shrink-0 text-xs font-bold text-gray-400">{index}.</span>
-            <div className="min-w-0">
-              <div className="text-sm font-semibold text-gray-800">{item.label}</div>
-              {item.detail && <div className="mt-0.5 text-xs text-gray-500">{item.detail}</div>}
-              {item.conditional && (
-                <label className="mt-1 inline-flex cursor-pointer items-center gap-2 text-xs font-semibold text-gray-600">
-                  <input type="checkbox" checked={isRequired} onChange={event => onChange(item.id, { required: event.target.checked })} className="h-4 w-4" />
-                  จำเป็นสำหรับงานนี้
-                </label>
-              )}
-            </div>
+    <div className={`grid grid-cols-1 gap-2 md:gap-0 ${legacy ? COL_TEMPLATE_LEGACY : COL_TEMPLATE} ${isRequired ? "" : "opacity-60"}`}>
+      <div className={`min-w-0 px-3 py-2.5 ${CELL_DIVIDER}`}>
+        <div className="flex items-start gap-2">
+          <span className="mt-0.5 w-8 shrink-0 text-xs font-bold text-gray-400">{index}.</span>
+          <div className="min-w-0">
+            <div className="text-sm font-semibold text-gray-800">{item.label}</div>
+            {item.detail && <div className="mt-0.5 text-xs text-gray-500">{item.detail}</div>}
+            {item.conditional && (
+              <label className="mt-1 inline-flex cursor-pointer items-center gap-2 text-xs font-semibold text-gray-600">
+                <input type="checkbox" checked={isRequired} onChange={event => onChange(item.id, { required: event.target.checked })} className="h-4 w-4" />
+                จำเป็นสำหรับงานนี้
+              </label>
+            )}
+
+            {fields && (
+              <div className="mt-2 flex flex-wrap items-baseline gap-x-4 gap-y-2">
+                {fields.map(field => {
+                  const typed = entry.fields?.[field.key];
+                  const auto = typed === undefined || typed === "" ? defaults[field.key] : undefined;
+                  const current = typed ?? defaults[field.key] ?? "";
+                  const inputTone = auto ? "text-blue-700" : "text-gray-800";
+                  return (
+                    <label
+                      key={field.key}
+                      title={auto ? "ระบบเติมให้จากขั้นตอนก่อนหน้า — แก้ทับได้" : undefined}
+                      className="inline-flex items-baseline gap-1.5 text-xxs text-gray-500"
+                    >
+                      <span className="whitespace-nowrap">{field.label}</span>
+                      {field.options ? (
+                        <select
+                          value={current}
+                          onChange={event => onFieldChange(item.id, field.key, event.target.value)}
+                          className={`border-b border-dotted border-gray-400 bg-transparent pb-0.5 font-semibold focus:border-solid focus:border-primary focus:outline-none ${inputTone} ${field.wide ? "w-40" : "w-24"}`}
+                        >
+                          <option value="">—</option>
+                          {field.options.map(option => <option key={option.value} value={option.value}>{option.label}</option>)}
+                        </select>
+                      ) : (
+                        <input
+                          value={current}
+                          placeholder={field.placeholder}
+                          onChange={event => onFieldChange(item.id, field.key, event.target.value)}
+                          className={`border-b border-dotted border-gray-400 bg-transparent pb-0.5 font-semibold placeholder:font-normal placeholder:text-gray-300 focus:border-solid focus:border-primary focus:outline-none ${inputTone} ${field.wide ? "w-40" : "w-24"}`}
+                        />
+                      )}
+                      {field.suffix && <span className="whitespace-nowrap">{field.suffix}</span>}
+                    </label>
+                  );
+                })}
+              </div>
+            )}
           </div>
         </div>
+      </div>
 
-        {/* โซนสถานะ — พื้นเทาอ่อนวิ่งตลอด จับ ตรวจรับ กับ Permit เป็นกลุ่มเดียว */}
-        <div className={`grid grid-cols-2 gap-2 px-3 py-2.5 ${ZONE} ${legacy ? "md:border-r" : ""}`}>
+      <div className={`px-3 py-2.5 ${ZONE} ${CELL_DIVIDER}`}>
+        <div className="grid grid-cols-2 gap-2">
           <button type="button" disabled={!isRequired} onClick={() => onChange(item.id, { received: true })}
             className={`h-9 rounded-lg border text-sm font-semibold disabled:opacity-40 ${entry.received && isRequired ? "border-emerald-500 bg-emerald-500 text-white" : "border-gray-200 bg-white text-gray-600"}`}>
             ได้รับแล้ว
@@ -515,72 +554,40 @@ function ChecklistRow({
             ยังไม่ได้รับ
           </button>
         </div>
-
-        {!legacy && (
-          <div className={`flex flex-col gap-1.5 px-3 py-2.5 ${ZONE} md:border-l md:border-r`}>
-            <div className="grid grid-cols-2 gap-2">
-              <button type="button" onClick={() => onChange(item.id, { permit: entry.permit === "has" ? null : "has" })}
-                className={`h-9 rounded-lg border text-xs font-semibold ${entry.permit === "has" ? "border-amber-600 bg-amber-600 text-white" : "border-gray-200 bg-white text-gray-600"}`}>
-                มี
-              </button>
-              <button type="button" onClick={() => onChange(item.id, { permit: entry.permit === "none" ? null : "none" })}
-                className={`h-9 rounded-lg border text-xs font-semibold ${entry.permit === "none" ? "border-gray-500 bg-gray-500 text-white" : "border-gray-200 bg-white text-gray-600"}`}>
-                ไม่มี
-              </button>
-            </div>
-            {item.datasheet && (
-              <label className="inline-flex cursor-pointer items-center gap-1.5 text-xxs font-semibold text-gray-500">
-                <input type="checkbox" checked={entry.datasheet === "has"} onChange={event => onChange(item.id, { datasheet: event.target.checked ? "has" : "none" })} className="h-3.5 w-3.5" />
-                มี Datasheet
-              </label>
-            )}
-          </div>
-        )}
-
-        <div className="px-3 py-2.5">
-          <input value={entry.note ?? ""} disabled={!isRequired} onChange={event => onChange(item.id, { note: event.target.value })}
-            placeholder="หมายเหตุ" className="h-9 w-full rounded-lg border border-gray-200 px-3 text-sm disabled:bg-gray-100" />
-        </div>
       </div>
 
-      {/* แถวล่าง — ช่องกรอกกินเต็มความกว้าง เหมือนบรรทัดใต้ชื่อเอกสารในฟอร์มกระดาษ */}
-      {fields && (
-        <div className="-mt-1 flex flex-wrap items-baseline gap-x-4 gap-y-2 px-3 pb-3 pl-[52px]">
-          {fields.map(field => {
-            const typed = entry.fields?.[field.key];
-            const auto = typed === undefined || typed === "" ? defaults[field.key] : undefined;
-            const current = typed ?? defaults[field.key] ?? "";
-            const inputTone = auto ? "text-blue-700" : "text-gray-800";
-            return (
-              <label
-                key={field.key}
-                title={auto ? "ระบบเติมให้จากขั้นตอนก่อนหน้า — แก้ทับได้" : undefined}
-                className="inline-flex items-baseline gap-1.5 text-xxs text-gray-500"
-              >
-                <span className="whitespace-nowrap">{field.label}</span>
-                {field.options ? (
-                  <select
-                    value={current}
-                    onChange={event => onFieldChange(item.id, field.key, event.target.value)}
-                    className={`border-b border-dotted border-gray-400 bg-transparent pb-0.5 font-semibold focus:border-solid focus:border-primary focus:outline-none ${inputTone} ${field.wide ? "w-40" : "w-24"}`}
-                  >
-                    <option value="">—</option>
-                    {field.options.map(option => <option key={option.value} value={option.value}>{option.label}</option>)}
-                  </select>
-                ) : (
-                  <input
-                    value={current}
-                    placeholder={field.placeholder}
-                    onChange={event => onFieldChange(item.id, field.key, event.target.value)}
-                    className={`border-b border-dotted border-gray-400 bg-transparent pb-0.5 font-semibold placeholder:font-normal placeholder:text-gray-300 focus:border-solid focus:border-primary focus:outline-none ${inputTone} ${field.wide ? "w-44" : "w-24"}`}
-                  />
-                )}
-                {field.suffix && <span className="whitespace-nowrap">{field.suffix}</span>}
-              </label>
-            );
-          })}
+      {!legacy && (
+        <div className={`px-3 py-2.5 ${ZONE} ${CELL_DIVIDER}`}>
+          <div className="grid grid-cols-2 gap-2">
+            <button type="button" onClick={() => onChange(item.id, { permit: entry.permit === "has" ? null : "has" })}
+              className={`h-9 rounded-lg border text-xs font-semibold ${entry.permit === "has" ? "border-amber-600 bg-amber-600 text-white" : "border-gray-200 bg-white text-gray-600"}`}>
+              มี
+            </button>
+            <button type="button" onClick={() => onChange(item.id, { permit: entry.permit === "none" ? null : "none" })}
+              className={`h-9 rounded-lg border text-xs font-semibold ${entry.permit === "none" ? "border-gray-500 bg-gray-500 text-white" : "border-gray-200 bg-white text-gray-600"}`}>
+              ไม่มี
+            </button>
+          </div>
         </div>
       )}
+
+      <div className="flex flex-col gap-1.5 px-3 py-2.5">
+        {item.datasheet && (
+          <div className="flex items-center gap-1.5">
+            <span className="text-xxs font-semibold text-gray-500">Datasheet</span>
+            <button type="button" onClick={() => onChange(item.id, { datasheet: entry.datasheet === "has" ? null : "has" })}
+              className={`h-7 flex-1 rounded-lg border text-xxs font-semibold ${entry.datasheet === "has" ? "border-amber-600 bg-amber-600 text-white" : "border-gray-200 bg-white text-gray-600"}`}>
+              มี
+            </button>
+            <button type="button" onClick={() => onChange(item.id, { datasheet: entry.datasheet === "none" ? null : "none" })}
+              className={`h-7 flex-1 rounded-lg border text-xxs font-semibold ${entry.datasheet === "none" ? "border-gray-500 bg-gray-500 text-white" : "border-gray-200 bg-white text-gray-600"}`}>
+              ไม่มี
+            </button>
+          </div>
+        )}
+        <input value={entry.note ?? ""} disabled={!isRequired} onChange={event => onChange(item.id, { note: event.target.value })}
+          placeholder="หมายเหตุ" className="h-9 w-full rounded-lg border border-gray-200 px-3 text-sm disabled:bg-gray-100" />
+      </div>
     </div>
   );
 }

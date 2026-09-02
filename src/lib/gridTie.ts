@@ -71,7 +71,7 @@ export type GridTieChecklistState = Record<string, GridTieChecklistEntry>;
  * เก็บไว้ใน checklist JSON ที่เดียว ไม่มีคอลัมน์แยก (ตัดสินใจ 2 ก.ย. 2026)
  */
 export const GRID_TIE_MODES = [
-  { value: "parallel", label: "ขนานไฟอย่างเดียว" },
+  { value: "parallel", label: "ขนานไฟ" },
   { value: "sell", label: "ขายไฟ" },
   { value: "cod", label: "COD" },
 ] as const;
@@ -171,7 +171,8 @@ const INDIVIDUAL_DOCS: readonly GridTieChecklistItem[] = [
   {
     id: "power_of_attorney", section: "doc", owner: "sale",
     label: "หนังสือมอบอำนาจ (ขายไฟ/ขนานไฟ/ภาษี)",
-    fields: [{ key: "intent", label: "ขายไฟ/ขนานไฟ/COD", options: GRID_TIE_MODES }],
+    // ป้ายเป็นคำถาม ไม่ซ้ำกับตัวเลือกที่อยู่ในดรอปดาวน์อยู่แล้ว
+    fields: [{ key: "intent", label: "มอบอำนาจเพื่อ", options: GRID_TIE_MODES }],
   },
   {
     id: "id_card", section: "doc", owner: "sale",
