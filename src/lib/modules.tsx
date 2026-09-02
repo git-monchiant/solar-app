@@ -201,12 +201,15 @@ export const MODULES: AppModule[] = [
   {
     key: "om", label: "O&M", emoji: "🛠️", tint: "bg-orange-50",
     group: "operation",
-    desc: "แชต LINE · นัดหมาย · สิทธิ์ล้างแผง",
+    desc: "ลูกค้า · บ้าน · แชต LINE · นัดหมาย",
     roles: ["sales", "solar", "sales_sup", "solar_sup", "admin"],
     defaultHref: "/om/inbox",
     menu: [
+      { label: "ลูกค้า", href: "/om/customers", icon: <I d={D.users} /> },
+      { label: "บ้าน / ระบบติดตั้ง", href: "/om/houses", icon: <I d={D.mapPin} /> },
       { label: "แชต LINE", href: "/om/inbox", icon: <LineIcon className="w-6 h-6" /> },
       { label: "LINE OA", href: "/om/line-oa", icon: <I d={D.cog} /> },
+      { label: "ตั้งค่า O&M", href: "/om/settings", icon: <I d={D.cog} />, roles: ["admin", "solar_sup", "sales_sup"] },
     ],
   },
   {
