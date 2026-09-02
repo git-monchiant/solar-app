@@ -1,10 +1,9 @@
 import assert from "node:assert/strict";
 import {
-  GRID_TIE_MILESTONES,
   getGridTieChecklistItems,
   getGridTieFinalMissing,
-  getGridTieOutOfOrderMilestones,
   getGridTieProgress,
+  matchesGridTieUtility,
   parseGridTieChecklist,
 } from "../../src/lib/gridTie.ts";
 
@@ -21,26 +20,52 @@ const json = state => JSON.stringify(state);
 
   // ใบ กว. (MEA) กับ ใบ กส. (PEA) ต้องโผล่พร้อมกัน — คนกรอกเลือกเองว่าใช้อันไหน
   const list = ids(individual);
-  assert.ok(list.includes("engineer_cert") && list.includes("architect_cert"),
-    "ทั้งใบ กว. และใบ กส. ต้องแสดงพร้อมกัน");
+  assert.ok(list.includes("engineer_cert") && list.includes("council_engineer_cert"),
+    "หนังสือรับรองไฟฟ้า (MEA) และหนังสือสภาวิศวกร (PEA) ต้องแสดงพร้อมกัน");
   assert.ok(list.includes("bank_account_notice") && list.includes("bank_book_copy"),
     "แถวบัญชีธนาคารแสดงเสมอ ไม่ผูกกับโหมดขายไฟแล้ว");
 
   // id ของ 8 แถวแรกต้องตรงกับที่แอปเคยใช้ ไม่งั้นติ๊กของ Lead เก่าจะจับคู่ไม่ติด
-  assert.deepEqual(list.slice(0, 8), [
+  assert.deepEqual(list.slice(0, 14), [
     "latest_electricity_bill", "tax_measure_consent", "bank_account_notice", "bank_book_copy",
     "power_of_attorney", "id_card", "house_registration", "post_solar_house_registration",
-  ], "id และลำดับ 8 แถวแรกต้องตรงตามฟอร์มและใช้ id เดิมของแอป");
+    "site_coordinates", "site_photo_timestamp", "single_line_diagram",
+    "engineer_cert", "council_engineer_cert", "boq_quotation",
+  ], "id และลำดับ 14 แถวต้องตรงตามฟอร์ม และ 4 ตัวแรกใช้ id เดิมของแอป");
 
   // ชื่อเอกสารต้องตรงฟอร์มกระดาษ รวมวงเล็บกำกับ
   const label = id => individual.find(i => i.id === id).label;
   assert.equal(label("tax_measure_consent"), "หนังสือยินยอมการเข้าร่วมโครงการภาษี (เฉพาะ MEA)");
   assert.equal(label("power_of_attorney"), "หนังสือมอบอำนาจ (ขายไฟ/ขนานไฟ/ภาษี)");
   assert.equal(label("bank_book_copy"), "สำเนาบัญชีธนาคารโอนค่าขายไฟ (เฉพาะ MEA-ขายไฟ)");
-  // 8 แถวแรกยกจากฟอร์มโดยตรง คำกำกับอยู่ในวงเล็บท้ายชื่อ ไม่แยกเป็นบรรทัด detail
-  // (แถว 9-14 กับอุปกรณ์ยังใช้ detail อยู่ เพราะอ่านข้อความจากฟอร์มไม่ชัด ยังไม่ได้ยืนยัน)
-  assert.ok(individual.slice(0, 8).every(i => !i.detail),
-    "8 แถวแรกต้องไม่มีบรรทัด detail แยก");
+  assert.equal(label("site_photo_timestamp"), "รูปถ่ายติดตั้งหน้างาน (มี Time stamp ระบุวันที่ + สถานที่ติดตั้ง)");
+  assert.equal(label("single_line_diagram"), "แบบผังวงจรไฟฟ้า Single Line + ลงนามวิศวกรไฟฟ้า");
+  assert.equal(label("engineer_cert"), "หนังสือรับรองไฟฟ้า + ใบ กว. (เฉพาะ MEA)");
+  assert.equal(label("council_engineer_cert"), "หนังสือสภาวิศวกร + ใบ กว. (เฉพาะ PEA)");
+  assert.equal(label("boq_quotation"), "ใบเสนอราคา / BOQ (ฝ่ายบัญชี)");
+  assert.equal(label("house_registration"), "สำเนาทะเบียนบ้าน (ชื่อผู้มอบ / ผู้รับมอบ)");
+  assert.equal(label("post_solar_house_registration"), "สำเนาทะเบียนบ้าน (บ้านติดตั้ง Solar)");
+
+  // คอลัมน์ติ๊กในฟอร์ม: แถว 1-8 เป็นของ Sale/ลูกค้า · แถว 9-14 เป็นของทีมติดตั้ง
+  const docs = individual.filter(i => i.section === "doc");
+  assert.ok(docs.slice(0, 8).every(i => i.owner === "sale"), "แถว 1-8 เป็นงานเซลล์/ลูกค้า");
+  assert.ok(docs.slice(8, 14).every(i => i.owner === "install"), "แถว 9-14 เป็นงานทีมติดตั้ง");
+  assert.ok(individual.filter(i => i.section === "equipment").every(i => i.owner === "install"),
+    "กลุ่มอุปกรณ์เป็นงานทีมติดตั้งทั้งหมด");
+
+  // ช่องของกลุ่มอุปกรณ์ต้องครบตามฟอร์ม
+  const fieldsOf = id => individual.find(i => i.id === id).fields.map(f => f.key);
+  assert.deepEqual(fieldsOf("panel"), ["brand", "model", "watt", "count", "nameplate_photo"]);
+  assert.deepEqual(fieldsOf("inverter"), ["brand", "model", "kw", "count", "sn_photo"]);
+  assert.deepEqual(fieldsOf("zero_export"), ["brand", "model"]);
+  assert.deepEqual(fieldsOf("ct"), ["brand", "model", "rating_a", "rating_ma", "class", "iec"]);
+  assert.deepEqual(fieldsOf("battery"), ["brand", "model", "count", "capacity_ma", "capacity_kwh", "capacity_kw"]);
+  assert.ok(individual.filter(i => i.section === "equipment").every(i => i.datasheet),
+    "อุปกรณ์ทุกกลุ่มต้องมีธง Datasheet");
+  // เอกสารทั้ง 14 แถวยกจากฟอร์มโดยตรง คำกำกับอยู่ในวงเล็บท้ายชื่อ ไม่แยกเป็นบรรทัด detail
+  // (กลุ่มอุปกรณ์ยังใช้ detail อยู่ เพราะยังไม่ได้เทียบกับฟอร์ม)
+  assert.ok(individual.filter(i => i.section === "doc").every(i => !i.detail),
+    "แถวเอกสารทั้งหมดต้องไม่มีบรรทัด detail แยก");
 
   // แถว 1 ต้องมีช่องครบตามฟอร์มกระดาษ — 2 ช่องแรกอยู่ใต้ชื่อเอกสาร ที่เหลืออยู่คอลัมน์หมายเหตุ
   const bill = individual.find(i => i.id === "latest_electricity_bill");
@@ -82,11 +107,14 @@ const json = state => JSON.stringify(state);
   const juristic = getGridTieChecklistItems("juristic");
   const state = {};
   for (const item of juristic) state[item.id] = { received: true, permit: "has" };
-  const without = getGridTieProgress("juristic", json(state));
+  const without = getGridTieProgress("juristic", "MEA", json(state));
   assert.equal(without.total, 6, "7 แถว แต่นับ 6 เพราะยังไม่ติ๊กว่าแถวสุดท้ายจำเป็น");
+  // นิติบุคคลบน PEA ตัดหนังสือยินยอมภาษี (เฉพาะ MEA) ออกอีกใบ
+  assert.equal(getGridTieProgress("juristic", "PEA", json(state)).total, 5,
+    "PEA ไม่นับหนังสือยินยอมภาษีที่เป็นของ MEA");
 
   state.post_solar_house_registration.required = true;
-  const withIt = getGridTieProgress("juristic", json(state));
+  const withIt = getGridTieProgress("juristic", "MEA", json(state));
   assert.equal(withIt.total, 7, "ติ๊กว่าจำเป็นแล้วนับครบ 7");
 }
 
@@ -151,21 +179,22 @@ assert.deepEqual(parseGridTieChecklist("[1,2,3]"), {}, "array ไม่ใช่
   const state = {};
   for (const item of items) state[item.id] = { received: true, permit: "has" };
 
-  const full = getGridTieProgress("individual", json(state));
-  assert.equal(full.total, items.length, "ชุดบุคคลธรรมดานับทุกแถว ไม่มี conditional แล้ว");
-  assert.equal(full.received, items.length);
-  assert.equal(full.permit, items.length);
+  const full = getGridTieProgress("individual", "MEA", json(state));
+  // MEA → แถวของ PEA (ใบสภาวิศวกร) ไม่ถูกนับ
+  assert.equal(full.total, items.length - 1, "MEA ไม่นับแถวที่ระบุว่าเฉพาะ PEA");
+  assert.equal(full.received, full.total, "ติ๊กครบทุกแถวที่นับ");
+  assert.equal(full.permit, full.total);
   assert.equal(full.complete, true);
 
   const partial = { ...state, [items[0].id]: { received: true, permit: null } };
-  const half = getGridTieProgress("individual", json(partial));
-  assert.equal(half.received, items.length, "ตรวจรับยังครบ");
-  assert.equal(half.permit, items.length - 1, "Permit ขาดไปหนึ่ง");
+  const half = getGridTieProgress("individual", "MEA", json(partial));
+  assert.equal(half.received, half.total, "ตรวจรับยังครบ");
+  assert.equal(half.permit, half.total - 1, "Permit ขาดไปหนึ่ง");
   assert.equal(half.complete, false);
 }
 
-assert.equal(getGridTieProgress("individual", null).complete, false, "ยังไม่กรอกอะไร = ยังไม่ครบ");
-assert.equal(getGridTieProgress("", null).total, 0, "ไม่มีประเภทผู้ยื่น = ไม่มีอะไรให้นับ");
+assert.equal(getGridTieProgress("individual", "MEA", null).complete, false, "ยังไม่กรอกอะไร = ยังไม่ครบ");
+assert.equal(getGridTieProgress("", "MEA", null).total, 0, "ไม่มีประเภทผู้ยื่น = ไม่มีอะไรให้นับ");
 
 // ── เกณฑ์ปิดงาน — ไม่บังคับ checklist ──────────────────────────────────────
 
@@ -194,50 +223,56 @@ assert.equal(getGridTieProgress("", null).total, 0, "ไม่มีประเ
     "หลักฐานปลายทางยังบังคับอยู่");
 }
 
-// ── ขั้นตอนกับการไฟฟ้า 5 วันที่ ─────────────────────────────────────────────
+// ── เงื่อนไขการไฟฟ้า — จางและไม่นับ แต่ไม่ซ่อน ─────────────────────────────
 
-assert.equal(GRID_TIE_MILESTONES.length, 5, "มี 5 ขั้นตามคอลัมน์ที่มีใน leads");
-assert.deepEqual(
-  GRID_TIE_MILESTONES.map(m => m.key),
-  ["grid_erc_submitted_date", "grid_submitted_date", "grid_inspection_date",
-   "grid_approved_date", "grid_meter_changed_date"],
-  "ลำดับต้องตรงกับขั้นตอนจริงและชื่อคอลัมน์",
-);
+{
+  const items = getGridTieChecklistItems("individual");
+  assert.equal(items.length, 19, "ยังไม่เลือกการไฟฟ้า = แสดงครบทุกแถว");
 
-assert.deepEqual(getGridTieOutOfOrderMilestones({}), [], "ยังไม่กรอกอะไร = ไม่มีอะไรผิดลำดับ");
+  // เลือกการไฟฟ้าแล้ว แถวของอีกเจ้าต้องหายไปเลย ไม่ใช่แค่จาง
+  const mea = ids(getGridTieChecklistItems("individual", "MEA"));
+  const pea = ids(getGridTieChecklistItems("individual", "PEA"));
+  assert.equal(mea.length, 18, "MEA ตัดแถวของ PEA ออก 1 แถว");
+  assert.equal(pea.length, 15, "PEA ตัดแถวของ MEA ออก 4 แถว");
+  assert.ok(mea.includes("engineer_cert") && !mea.includes("council_engineer_cert"));
+  assert.ok(pea.includes("council_engineer_cert") && !pea.includes("engineer_cert"));
+  assert.ok(!pea.includes("tax_measure_consent") && !pea.includes("bank_account_notice"));
+  assert.ok(pea.includes("id_card"), "แถวที่ไม่มีเงื่อนไขต้องอยู่ครบทั้งสองเจ้า");
+  assert.equal(getGridTieChecklistItems("juristic", "PEA").length, 6,
+    "นิติบุคคลบน PEA ตัดหนังสือยินยอมภาษีออก เหลือ 6");
 
-assert.deepEqual(
-  getGridTieOutOfOrderMilestones({
-    grid_erc_submitted_date: "2026-01-10",
-    grid_submitted_date: "2026-02-01",
-    grid_approved_date: "2026-03-01",
-  }),
-  [], "เรียงถูกและข้ามขั้นได้ = ไม่เตือน",
-);
+  const meaOnly = items.filter(i => i.cond === "MEA").map(i => i.id);
+  const peaOnly = items.filter(i => i.cond === "PEA").map(i => i.id);
+  assert.deepEqual(meaOnly,
+    ["tax_measure_consent", "bank_account_notice", "bank_book_copy", "engineer_cert"],
+    "แถวที่ฟอร์มระบุว่าเฉพาะ MEA");
+  assert.deepEqual(peaOnly, ["council_engineer_cert"], "แถวที่ฟอร์มระบุว่าเฉพาะ PEA");
 
-assert.deepEqual(
-  getGridTieOutOfOrderMilestones({
-    grid_submitted_date: "2026-02-01",
-    grid_inspection_date: "2026-01-15",
-  }),
-  ["grid_inspection_date"], "ขั้นหลังมาก่อนขั้นหน้า = เตือนที่ขั้นหลัง",
-);
+  const cert = items.find(i => i.id === "engineer_cert");
+  const council = items.find(i => i.id === "council_engineer_cert");
+  const plain = items.find(i => i.id === "id_card");
 
-assert.deepEqual(
-  getGridTieOutOfOrderMilestones({
-    grid_erc_submitted_date: "2026-03-01",
-    grid_submitted_date: "2026-02-01",
-    grid_inspection_date: "2026-01-01",
-  }),
-  ["grid_submitted_date", "grid_inspection_date"], "ผิดลำดับต่อเนื่องต้องเตือนทุกขั้น",
-);
+  assert.equal(matchesGridTieUtility(cert, "MEA"), true);
+  assert.equal(matchesGridTieUtility(cert, "PEA"), false, "ใบ กว. ของ MEA ไม่เข้าเงื่อนไขตอนเลือก PEA");
+  assert.equal(matchesGridTieUtility(council, "PEA"), true);
+  assert.equal(matchesGridTieUtility(council, "MEA"), false);
+  assert.equal(matchesGridTieUtility(plain, "PEA"), true, "แถวที่ไม่มีเงื่อนไขใช้ได้ทุกการไฟฟ้า");
+  assert.equal(matchesGridTieUtility(cert, ""), true, "ยังไม่เลือกการไฟฟ้า = ยังไม่ตัดอะไรออก");
+}
 
-assert.deepEqual(
-  getGridTieOutOfOrderMilestones({
-    grid_erc_submitted_date: "2026-02-01",
-    grid_submitted_date: "2026-02-01",
-  }),
-  [], "วันเดียวกันไม่ถือว่าผิดลำดับ",
-);
+{
+  // ตัวนับต้องไปถึงเต็มได้จริงในแต่ละการไฟฟ้า
+  const items = getGridTieChecklistItems("individual").filter(i => !i.conditional);
+  const state = {};
+  for (const item of items) state[item.id] = { received: true, permit: "has" };
+  for (const utility of ["MEA", "PEA"]) {
+    const p = getGridTieProgress("individual", utility, json(state));
+    assert.equal(p.complete, true, `${utility}: ติ๊กครบแล้วต้องนับว่าครบ`);
+    assert.ok(p.total < items.length, `${utility}: ต้องตัดแถวของอีกเจ้าออกจากตัวนับ`);
+  }
+  // ติ๊กของแถวที่ถูกซ่อนยังอยู่ใน JSON สลับการไฟฟ้ากลับมาก็เห็นเหมือนเดิม
+  assert.equal(parseGridTieChecklist(json(state)).council_engineer_cert.received, true,
+    "ข้อมูลของแถวที่ถูกซ่อนต้องไม่หาย");
+}
 
 console.log("grid-tie: ผ่านทั้งหมด");

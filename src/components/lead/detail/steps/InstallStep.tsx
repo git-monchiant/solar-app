@@ -50,7 +50,7 @@ export default function InstallStep({ lead, state, refresh, expanded, onToggle }
   const [nextError, setNextError] = useState<string | null>(null);
   const gridTieFormRef = useRef<GridTieFormHandle>(null);
   const [gridTieProgress, setGridTieProgress] = useState(() => getGridTieProgress(
-    lead.grid_applicant_type || "", lead.grid_document_checklist,
+    lead.grid_applicant_type || "", lead.grid_utility || "", lead.grid_document_checklist,
   ));
   const [photos, setPhotos] = useState<string[]>(lead.install_photos ? lead.install_photos.split(",").filter(Boolean) : []);
   // Install checklist (system_specs / visual_checks / function_tests) lives

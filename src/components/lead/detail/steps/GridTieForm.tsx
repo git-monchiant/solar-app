@@ -7,8 +7,6 @@ import { useFileViewer } from "@/lib/hooks/useFileViewer";
 import FallbackImage from "@/components/ui/FallbackImage";
 import type { Lead } from "./types";
 import {
-  GRID_TIE_MILESTONES,
-  getGridTieOutOfOrderMilestones,
   getGridTieChecklistItems,
   getGridTieFinalMissing,
   getGridTieProgress,
@@ -17,13 +15,12 @@ import {
   type GridTieChecklistEntry,
   type GridTieChecklistItem,
   type GridTieChecklistState,
-  type GridTieMilestoneKey,
 } from "@/lib/gridTie";
 
 /** สเปคอุปกรณ์ที่ทีมติดตั้งกรอกไว้ในใบตรวจติดตั้ง — ใช้เติมแถวอุปกรณ์ให้อัตโนมัติ */
 interface SystemSpecs {
   panel?: { brand?: string; model?: string; count?: number | null; watt?: number | null };
-  inverter?: { brand?: string; model?: string; kw?: number | null; sn?: string };
+  inverter?: { brand?: string; model?: string; kw?: number | null };
   battery?: { brand?: string; model?: string; kwh?: number | null };
 }
 
@@ -95,7 +92,6 @@ function autofillFor(
     put("brand", specs.inverter.brand);
     put("model", specs.inverter.model);
     put("kw", specs.inverter.kw);
-    put("sn", specs.inverter.sn);
     return out;
   }
   if (item.id === "battery" && specs?.battery) {
@@ -119,9 +115,6 @@ const GridTieForm = forwardRef<GridTieFormHandle, Props>(function GridTieForm(
     lead.grid_applicant_type === "individual" || lead.grid_applicant_type === "juristic" ? lead.grid_applicant_type : "",
   );
   const [checklist, setChecklist] = useState<GridTieChecklistState>(() => parseGridTieChecklist(lead.grid_document_checklist));
-  const [milestones, setMilestones] = useState<Record<string, string>>(() =>
-    Object.fromEntries(GRID_TIE_MILESTONES.map(m => [m.key, lead[m.key] ? String(lead[m.key]).slice(0, 10) : ""])),
-  );
   const [note, setNote] = useState(lead.grid_note || "");
   const [applicationDocUrl, setApplicationDocUrl] = useState<string | null>(lead.grid_application_doc_url);
   const [permitUrl, setPermitUrl] = useState<string | null>(lead.grid_permit_doc_url);
@@ -132,7 +125,7 @@ const GridTieForm = forwardRef<GridTieFormHandle, Props>(function GridTieForm(
   const [saveState, setSaveState] = useState<"idle" | "saving" | "saved" | "error">("idle");
   const [error, setError] = useState<string | null>(null);
 
-  const checklistItems = useMemo(() => getGridTieChecklistItems(applicantType), [applicantType]);
+  const checklistItems = useMemo(() => getGridTieChecklistItems(applicantType, utility), [applicantType, utility]);
 
   // สเปคอุปกรณ์อยู่คนละตารางกับ lead — ดึงมาเติมแถวอุปกรณ์ให้เอง เงียบ ๆ ถ้าไม่มีใบตรวจ
   useEffect(() => {
@@ -151,16 +144,14 @@ const GridTieForm = forwardRef<GridTieFormHandle, Props>(function GridTieForm(
     grid_app_no: appNo || null,
     grid_applicant_type: applicantType || null,
     grid_document_checklist: Object.keys(checklist).length > 0 ? JSON.stringify(checklist) : null,
-    ...Object.fromEntries(GRID_TIE_MILESTONES.map(m => [m.key, milestones[m.key] || null])),
     grid_note: note || null,
-  }), [utility, appNo, applicantType, checklist, milestones, note]);
+  }), [utility, appNo, applicantType, checklist, note]);
   const signature = JSON.stringify(payload);
   const savedSignature = useRef(JSON.stringify({
     grid_utility: lead.grid_utility || null,
     grid_app_no: lead.grid_app_no || null,
     grid_applicant_type: lead.grid_applicant_type || null,
     grid_document_checklist: lead.grid_document_checklist || null,
-    ...Object.fromEntries(GRID_TIE_MILESTONES.map(m => [m.key, lead[m.key] ? String(lead[m.key]).slice(0, 10) : null])),
     grid_note: lead.grid_note || null,
   }));
 
@@ -193,8 +184,8 @@ const GridTieForm = forwardRef<GridTieFormHandle, Props>(function GridTieForm(
   }, [payload, save, signature]);
 
   useEffect(() => {
-    onProgressChange?.(getGridTieProgress(applicantType, payload.grid_document_checklist));
-  }, [applicantType, onProgressChange, payload.grid_document_checklist]);
+    onProgressChange?.(getGridTieProgress(applicantType, utility, payload.grid_document_checklist));
+  }, [applicantType, utility, onProgressChange, payload.grid_document_checklist]);
 
   const updateChecklistItem = useCallback((id: string, patch: Partial<GridTieChecklistEntry>) => {
     setChecklist(current => ({ ...current, [id]: { ...current[id], ...patch } }));
@@ -273,7 +264,7 @@ const GridTieForm = forwardRef<GridTieFormHandle, Props>(function GridTieForm(
     }
   };
 
-  const ready = Boolean(applicantType);
+  const ready = Boolean(applicantType && utility);
 
   return (
     <div className="space-y-3">
@@ -316,13 +307,6 @@ const GridTieForm = forwardRef<GridTieFormHandle, Props>(function GridTieForm(
         </div>
       </div>
 
-      {applicantType === "juristic" && (
-        <div className="rounded-lg border border-violet-200 bg-violet-50 px-3 py-2">
-          <div className="text-sm font-bold text-violet-800">ชุดเอกสารนิติบุคคล</div>
-          <div className="text-xxs text-violet-600">เอกสารฝั่งลูกค้าล้วน ไม่มีส่วนงานหน้างานและอุปกรณ์ — ฟอร์มของทีม Permit ใช้กับบุคคลธรรมดา</div>
-        </div>
-      )}
-
       {ready ? (
         <ChecklistPanel
           items={checklistItems}
@@ -336,8 +320,8 @@ const GridTieForm = forwardRef<GridTieFormHandle, Props>(function GridTieForm(
         />
       ) : (
         <div className="rounded-lg border border-dashed border-gray-300 bg-gray-50 px-4 py-5 text-center">
-          <div className="text-sm font-semibold text-gray-600">เลือกประเภทผู้ยื่น</div>
-          <div className="mt-1 text-xs text-gray-400">ระบบจะแสดง Checklist เอกสารของชุดนั้น</div>
+          <div className="text-sm font-semibold text-gray-600">เลือกการไฟฟ้าและประเภทผู้ยื่น</div>
+          <div className="mt-1 text-xs text-gray-400">ระบบจะแสดง Checklist เอกสารที่ต้องใช้ให้ตรงกับงาน</div>
         </div>
       )}
 
@@ -351,13 +335,6 @@ const GridTieForm = forwardRef<GridTieFormHandle, Props>(function GridTieForm(
         onUpload={file => uploadDocument(file, "permit")} onRemove={() => removeDocument("permit")}
         onOpen={fileViewer.handler(permitUrl || "", "ใบอนุญาต / PPA")}
       />
-
-      {mode === "final" && (
-        <MilestoneDates
-          value={milestones}
-          onChange={(key, next) => setMilestones(current => ({ ...current, [key]: next }))}
-        />
-      )}
 
       <div>
         <label className="mb-1 block text-xs font-semibold uppercase tracking-wider text-gray-400">หมายเหตุ</label>
@@ -375,54 +352,6 @@ const GridTieForm = forwardRef<GridTieFormHandle, Props>(function GridTieForm(
 });
 
 export default GridTieForm;
-
-/**
- * ขั้นตอนกับการไฟฟ้าหลังยื่นคำขอ — 5 วันที่ตาม GRID_TIE_MILESTONES
- * แสดงเฉพาะ mode "final" เพราะตอน Step 5 (ส่งมอบงานติดตั้ง) ยังไม่มีวันไหนเกิดขึ้น
- * เตือนเมื่อวันย้อนหลังกว่าขั้นก่อนหน้า แต่ไม่บล็อก — งานจริงมีเคสลำดับสลับได้
- */
-function MilestoneDates({ value, onChange }: {
-  value: Record<string, string>;
-  onChange: (key: GridTieMilestoneKey, next: string) => void;
-}) {
-  const outOfOrder = new Set(getGridTieOutOfOrderMilestones(value));
-  const done = GRID_TIE_MILESTONES.filter(m => value[m.key]).length;
-
-  return (
-    <section className="overflow-hidden rounded-xl border border-gray-200 bg-white">
-      <div className="flex flex-wrap items-center justify-between gap-2 border-b border-gray-200 bg-gray-50 px-3 py-2.5">
-        <div>
-          <div className="text-xs font-bold uppercase tracking-wider text-gray-500">ขั้นตอนกับการไฟฟ้า</div>
-          <div className="mt-0.5 text-xxs text-gray-400">บันทึกวันที่เมื่อแต่ละขั้นเสร็จ · ไม่บังคับกรอก</div>
-        </div>
-        <span className={`rounded-full px-2.5 py-1 text-xs font-bold ${done === GRID_TIE_MILESTONES.length ? "bg-emerald-100 text-emerald-700" : "bg-gray-100 text-gray-500"}`}>
-          {done}/{GRID_TIE_MILESTONES.length}
-        </span>
-      </div>
-      <div className="divide-y divide-gray-100">
-        {GRID_TIE_MILESTONES.map((milestone, index) => {
-          const filled = Boolean(value[milestone.key]);
-          const warn = outOfOrder.has(milestone.key);
-          return (
-            <div key={milestone.key} className="flex flex-wrap items-center gap-2 px-3 py-2">
-              <span className={filled ? "text-emerald-600" : "text-gray-300"}>{filled ? "●" : "○"}</span>
-              <div className="min-w-0 flex-1">
-                <div className="text-sm font-semibold text-gray-800">{index + 1}. {milestone.label}</div>
-                {warn && <div className="text-xxs font-semibold text-amber-600">วันที่ย้อนหลังกว่าขั้นก่อนหน้า — ตรวจอีกครั้ง</div>}
-              </div>
-              <input
-                type="date"
-                value={value[milestone.key] || ""}
-                onChange={event => onChange(milestone.key, event.target.value)}
-                className={`h-9 w-40 rounded-lg border px-2 text-sm focus:outline-none ${warn ? "border-amber-400" : "border-gray-200 focus:border-primary"}`}
-              />
-            </div>
-          );
-        })}
-      </div>
-    </section>
-  );
-}
 
 function DocumentUpload({ label, url, uploading, onUpload, onRemove, onOpen }: {
   label: string; url: string | null; uploading: boolean; onUpload: (file: File) => void; onRemove: () => void; onOpen: (event: React.MouseEvent<HTMLAnchorElement>) => void;
@@ -445,6 +374,25 @@ function DocumentUpload({ label, url, uploading, onUpload, onRemove, onOpen }: {
           <input type="file" accept="image/*,.pdf" disabled={uploading} className="hidden" onChange={event => event.target.files?.[0] && onUpload(event.target.files[0])} />
         </label>
       )}
+    </div>
+  );
+}
+
+// โครงคอลัมน์ใช้ค่าเดียวกันทั้งหัวตารางและทุกแถว จะได้ตรงกันเสมอ
+const COL_TEMPLATE = "md:grid-cols-[minmax(260px,1fr)_216px_148px_minmax(150px,0.6fr)]";
+// ชุดนิติบุคคลไม่มีคอลัมน์ Permit — ต้องมี 3 คอลัมน์ ไม่งั้นช่องหมายเหตุไปตกในช่องแคบของ Permit
+const COL_TEMPLATE_LEGACY = "md:grid-cols-[minmax(280px,1fr)_216px_minmax(200px,0.8fr)]";
+// โซนสถานะ (ตรวจรับ + Permit) พื้นเทาอ่อนวิ่งตลอดความสูง จับเป็นกลุ่มเดียว
+const ZONE = "bg-gray-50/70 md:border-gray-200";
+
+function ColumnHeader() {
+  return (
+    <div className={`hidden border-b border-gray-200 text-xs font-bold uppercase tracking-wide text-gray-500 md:grid ${COL_TEMPLATE}`}>
+      <div className="px-3 py-2">เอกสารแนบ (ชุดยื่นคำขอขนานไฟ)</div>
+      {/* สองคอลัมน์กลางจัดกึ่งกลางให้ตรงกับปุ่มคู่ที่อยู่ข้างล่าง */}
+      <div className={`px-3 py-2 text-center ${ZONE}`}>ตรวจรับ</div>
+      <div className={`px-3 py-2 text-center ${ZONE} md:border-l md:border-r`}>Permit</div>
+      <div className="px-3 py-2">หมายเหตุ</div>
     </div>
   );
 }
@@ -486,12 +434,12 @@ function ChecklistPanel({
           <div className="mt-0.5 text-xxs text-gray-400">
             {legacy
               ? `${utility || "—"} · ตรวจรับก่อนจัดชุดยื่นขอขนานไฟ`
-              : "บุคคลธรรมดา · เครื่องมือติดตามงาน ไม่บังคับให้ครบก่อนปิดงาน"}
+              : "บุคคลธรรมดา"}
           </div>
         </div>
         <div className="flex flex-wrap gap-1.5">
           <span className={`rounded-full px-2.5 py-1 text-xs font-bold ${receivedCount === counted.length ? "bg-emerald-100 text-emerald-700" : "bg-violet-100 text-violet-700"}`}>
-            {legacy ? `${receivedCount}/${counted.length} ได้รับแล้ว` : `ตรวจรับ ${receivedCount}/${counted.length}`}
+            {receivedCount}/{counted.length} ได้รับแล้ว
           </span>
           {!legacy && (
             <span className={`rounded-full border px-2.5 py-1 text-xs font-bold ${permitCount === counted.length ? "border-emerald-200 bg-emerald-100 text-emerald-700" : "border-amber-200 bg-amber-50 text-amber-700"}`}>
@@ -501,20 +449,18 @@ function ChecklistPanel({
         </div>
       </div>
 
-      {!legacy && (
-        <div className="hidden gap-2 border-b border-gray-100 px-3 py-1.5 text-xxs font-bold uppercase tracking-wide text-gray-400 md:grid md:grid-cols-[minmax(260px,1fr)_216px_148px_minmax(150px,0.6fr)]">
-          <div>เอกสาร</div><div>ตรวจรับ</div><div>Permit</div><div>หมายเหตุ</div>
-        </div>
-      )}
+      {!legacy && <ColumnHeader />}
 
-      <div className="divide-y divide-gray-100">{renderRows(docItems, 0)}</div>
+      <div className="divide-y divide-gray-300">{renderRows(docItems, 0)}</div>
 
       {equipmentItems.length > 0 && (
         <>
-          <div className="border-y border-gray-200 bg-gray-50 px-3 py-1.5 text-xxs font-bold uppercase tracking-wider text-gray-500">
-            รายละเอียดทางเทคนิค · สเปคและรูปอุปกรณ์ที่ติดตั้ง / Datasheet
+          <div className="border-y border-gray-300 bg-gray-100 px-3 py-2 text-xxs font-bold uppercase tracking-wider text-gray-600">
+            รายละเอียดทางเทคนิค (ทีมติดตั้ง) · สเปค และอุปกรณ์ติดตั้ง / Datasheet : มี / ไม่มี
           </div>
-          <div className="divide-y divide-gray-100">{renderRows(equipmentItems, docItems.length)}</div>
+          {/* ทวนหัวคอลัมน์อีกรอบ — เลื่อนมาถึงตรงนี้จะห่างจากหัวตารางแรก 14 แถวแล้ว */}
+          {!legacy && <ColumnHeader />}
+          <div className="divide-y divide-gray-300">{renderRows(equipmentItems, docItems.length)}</div>
         </>
       )}
     </section>
@@ -536,107 +482,105 @@ function ChecklistRow({
   const isRequired = !item.conditional || entry.required === true;
   const defaults = autofillFor(item, lead, specs);
 
+  const fields = item.fields && !legacy ? item.fields : null;
+
   return (
-    <div className={`grid grid-cols-1 gap-2 px-3 py-2.5 md:items-start ${
-      legacy ? "md:grid-cols-[minmax(280px,1fr)_minmax(230px,300px)_minmax(180px,0.75fr)]"
-             : "md:grid-cols-[minmax(260px,1fr)_216px_148px_minmax(150px,0.6fr)]"
-    } ${isRequired ? "bg-white" : "bg-gray-50/70"}`}>
-      <div className="min-w-0">
-        <div className="flex items-start gap-2">
-          <span className="mt-0.5 text-xs font-bold text-gray-400">{index}.</span>
-          <div className="min-w-0">
-            <div className="text-sm font-semibold text-gray-800">{item.label}</div>
-            {item.detail && <div className="mt-0.5 text-xs text-gray-500">{item.detail}</div>}
-
-            {item.fields && !legacy && (() => {
-              // เส้นประ = "ตรงนี้เขียน" ใช้ภาษาเดียวกับฟอร์มกระดาษที่ทีมถืออยู่
-              // ค่าที่ระบบเติมให้แสดงเป็นสีฟ้า เพื่อแยกจากช่องที่ต้องกรอกเอง
-              return (
-                <div className="mt-2">
-                  <div className="flex flex-wrap items-baseline gap-x-4 gap-y-2">
-                    {item.fields.map(field => {
-                      const typed = entry.fields?.[field.key];
-                      const auto = typed === undefined || typed === "" ? defaults[field.key] : undefined;
-                      const current = typed ?? defaults[field.key] ?? "";
-                      const inputTone = auto ? "text-blue-700" : "text-gray-800";
-                      return (
-                        <label
-                          key={field.key}
-                          title={auto ? "ระบบเติมให้จากขั้นตอนก่อนหน้า — แก้ทับได้" : undefined}
-                          className="inline-flex items-baseline gap-1.5 text-xxs text-gray-500"
-                        >
-                          <span className="whitespace-nowrap">{field.label}</span>
-                          {field.options ? (
-                            <select
-                              value={current}
-                              onChange={event => onFieldChange(item.id, field.key, event.target.value)}
-                              className={`border-b border-dotted border-gray-400 bg-transparent pb-0.5 font-semibold focus:border-solid focus:border-primary focus:outline-none ${inputTone} ${field.wide ? "w-40" : "w-24"}`}
-                            >
-                              <option value="">—</option>
-                              {field.options.map(option => <option key={option.value} value={option.value}>{option.label}</option>)}
-                            </select>
-                          ) : (
-                            <input
-                              value={current}
-                              placeholder={field.placeholder}
-                              onChange={event => onFieldChange(item.id, field.key, event.target.value)}
-                              className={`border-b border-dotted border-gray-400 bg-transparent pb-0.5 font-semibold placeholder:font-normal placeholder:text-gray-300 focus:border-solid focus:border-primary focus:outline-none ${inputTone} ${field.wide ? "w-44" : "w-24"}`}
-                            />
-                          )}
-                          {field.suffix && <span className="whitespace-nowrap">{field.suffix}</span>}
-                        </label>
-                      );
-                    })}
-                  </div>
-                </div>
-              );
-            })()}
-
-            {item.conditional && (
-              <label className="mt-1 inline-flex cursor-pointer items-center gap-2 text-xs font-semibold text-gray-600">
-                <input type="checkbox" checked={isRequired} onChange={event => onChange(item.id, { required: event.target.checked })} className="h-4 w-4" />
-                จำเป็นสำหรับงานนี้
-              </label>
-            )}
-
+    <div>
+      {/* แถวบน — 4 คอลัมน์เท่ากันทุกแถว ปุ่มจึงอยู่ระดับเดียวกับชื่อเอกสารเสมอ */}
+      <div className={`grid grid-cols-1 gap-2 ${legacy ? COL_TEMPLATE_LEGACY : COL_TEMPLATE} md:items-start ${isRequired ? "" : "opacity-60"}`}>
+        <div className="min-w-0 px-3 py-2.5">
+          <div className="flex items-start gap-2">
+            <span className="mt-0.5 w-8 shrink-0 text-xs font-bold text-gray-400">{index}.</span>
+            <div className="min-w-0">
+              <div className="text-sm font-semibold text-gray-800">{item.label}</div>
+              {item.detail && <div className="mt-0.5 text-xs text-gray-500">{item.detail}</div>}
+              {item.conditional && (
+                <label className="mt-1 inline-flex cursor-pointer items-center gap-2 text-xs font-semibold text-gray-600">
+                  <input type="checkbox" checked={isRequired} onChange={event => onChange(item.id, { required: event.target.checked })} className="h-4 w-4" />
+                  จำเป็นสำหรับงานนี้
+                </label>
+              )}
+            </div>
           </div>
         </div>
-      </div>
 
-      <div className="grid grid-cols-2 gap-2">
-        <button type="button" disabled={!isRequired} onClick={() => onChange(item.id, { received: true })}
-          className={`h-9 rounded-lg border text-sm font-semibold disabled:opacity-40 ${entry.received && isRequired ? "border-emerald-500 bg-emerald-500 text-white" : "border-gray-200 bg-white text-gray-600"}`}>
-          ได้รับแล้ว
-        </button>
-        <button type="button" disabled={!isRequired} onClick={() => onChange(item.id, { received: false })}
-          className={`h-9 rounded-lg border text-sm font-semibold disabled:opacity-40 ${!entry.received && isRequired ? "border-red-500 bg-red-500 text-white" : "border-gray-200 bg-white text-gray-600"}`}>
-          ยังไม่ได้รับ
-        </button>
-      </div>
-
-      {!legacy && (
-      <div className="flex flex-col gap-1.5">
-        <div className="grid grid-cols-2 gap-2">
-          <button type="button" onClick={() => onChange(item.id, { permit: entry.permit === "has" ? null : "has" })}
-            className={`h-9 rounded-lg border text-xs font-semibold ${entry.permit === "has" ? "border-amber-600 bg-amber-600 text-white" : "border-gray-200 bg-white text-gray-600"}`}>
-            มี
+        {/* โซนสถานะ — พื้นเทาอ่อนวิ่งตลอด จับ ตรวจรับ กับ Permit เป็นกลุ่มเดียว */}
+        <div className={`grid grid-cols-2 gap-2 px-3 py-2.5 ${ZONE} ${legacy ? "md:border-r" : ""}`}>
+          <button type="button" disabled={!isRequired} onClick={() => onChange(item.id, { received: true })}
+            className={`h-9 rounded-lg border text-sm font-semibold disabled:opacity-40 ${entry.received && isRequired ? "border-emerald-500 bg-emerald-500 text-white" : "border-gray-200 bg-white text-gray-600"}`}>
+            ได้รับแล้ว
           </button>
-          <button type="button" onClick={() => onChange(item.id, { permit: entry.permit === "none" ? null : "none" })}
-            className={`h-9 rounded-lg border text-xs font-semibold ${entry.permit === "none" ? "border-gray-500 bg-gray-500 text-white" : "border-gray-200 bg-white text-gray-600"}`}>
-            ไม่มี
+          <button type="button" disabled={!isRequired} onClick={() => onChange(item.id, { received: false })}
+            className={`h-9 rounded-lg border text-sm font-semibold disabled:opacity-40 ${!entry.received && isRequired ? "border-red-500 bg-red-500 text-white" : "border-gray-200 bg-white text-gray-600"}`}>
+            ยังไม่ได้รับ
           </button>
         </div>
-        {item.datasheet && (
-          <label className="inline-flex cursor-pointer items-center gap-1.5 text-xxs font-semibold text-gray-500">
-            <input type="checkbox" checked={entry.datasheet === "has"} onChange={event => onChange(item.id, { datasheet: event.target.checked ? "has" : "none" })} className="h-3.5 w-3.5" />
-            มี Datasheet
-          </label>
-        )}
-      </div>
-      )}
 
-      <input value={entry.note ?? ""} disabled={!isRequired} onChange={event => onChange(item.id, { note: event.target.value })}
-        placeholder="หมายเหตุ" className="h-9 w-full rounded-lg border border-gray-200 px-3 text-sm disabled:bg-gray-100" />
+        {!legacy && (
+          <div className={`flex flex-col gap-1.5 px-3 py-2.5 ${ZONE} md:border-l md:border-r`}>
+            <div className="grid grid-cols-2 gap-2">
+              <button type="button" onClick={() => onChange(item.id, { permit: entry.permit === "has" ? null : "has" })}
+                className={`h-9 rounded-lg border text-xs font-semibold ${entry.permit === "has" ? "border-amber-600 bg-amber-600 text-white" : "border-gray-200 bg-white text-gray-600"}`}>
+                มี
+              </button>
+              <button type="button" onClick={() => onChange(item.id, { permit: entry.permit === "none" ? null : "none" })}
+                className={`h-9 rounded-lg border text-xs font-semibold ${entry.permit === "none" ? "border-gray-500 bg-gray-500 text-white" : "border-gray-200 bg-white text-gray-600"}`}>
+                ไม่มี
+              </button>
+            </div>
+            {item.datasheet && (
+              <label className="inline-flex cursor-pointer items-center gap-1.5 text-xxs font-semibold text-gray-500">
+                <input type="checkbox" checked={entry.datasheet === "has"} onChange={event => onChange(item.id, { datasheet: event.target.checked ? "has" : "none" })} className="h-3.5 w-3.5" />
+                มี Datasheet
+              </label>
+            )}
+          </div>
+        )}
+
+        <div className="px-3 py-2.5">
+          <input value={entry.note ?? ""} disabled={!isRequired} onChange={event => onChange(item.id, { note: event.target.value })}
+            placeholder="หมายเหตุ" className="h-9 w-full rounded-lg border border-gray-200 px-3 text-sm disabled:bg-gray-100" />
+        </div>
+      </div>
+
+      {/* แถวล่าง — ช่องกรอกกินเต็มความกว้าง เหมือนบรรทัดใต้ชื่อเอกสารในฟอร์มกระดาษ */}
+      {fields && (
+        <div className="-mt-1 flex flex-wrap items-baseline gap-x-4 gap-y-2 px-3 pb-3 pl-[52px]">
+          {fields.map(field => {
+            const typed = entry.fields?.[field.key];
+            const auto = typed === undefined || typed === "" ? defaults[field.key] : undefined;
+            const current = typed ?? defaults[field.key] ?? "";
+            const inputTone = auto ? "text-blue-700" : "text-gray-800";
+            return (
+              <label
+                key={field.key}
+                title={auto ? "ระบบเติมให้จากขั้นตอนก่อนหน้า — แก้ทับได้" : undefined}
+                className="inline-flex items-baseline gap-1.5 text-xxs text-gray-500"
+              >
+                <span className="whitespace-nowrap">{field.label}</span>
+                {field.options ? (
+                  <select
+                    value={current}
+                    onChange={event => onFieldChange(item.id, field.key, event.target.value)}
+                    className={`border-b border-dotted border-gray-400 bg-transparent pb-0.5 font-semibold focus:border-solid focus:border-primary focus:outline-none ${inputTone} ${field.wide ? "w-40" : "w-24"}`}
+                  >
+                    <option value="">—</option>
+                    {field.options.map(option => <option key={option.value} value={option.value}>{option.label}</option>)}
+                  </select>
+                ) : (
+                  <input
+                    value={current}
+                    placeholder={field.placeholder}
+                    onChange={event => onFieldChange(item.id, field.key, event.target.value)}
+                    className={`border-b border-dotted border-gray-400 bg-transparent pb-0.5 font-semibold placeholder:font-normal placeholder:text-gray-300 focus:border-solid focus:border-primary focus:outline-none ${inputTone} ${field.wide ? "w-44" : "w-24"}`}
+                  />
+                )}
+                {field.suffix && <span className="whitespace-nowrap">{field.suffix}</span>}
+              </label>
+            );
+          })}
+        </div>
+      )}
     </div>
   );
 }

@@ -4,8 +4,7 @@ import type { StepCommonProps } from "./types";
 import DoneSection from "./DoneSection";
 import StepLayout from "../StepLayout";
 import GridTieForm from "./GridTieForm";
-import { GRID_TIE_MILESTONES, getGridTieChecklistItems, parseGridTieChecklist } from "@/lib/gridTie";
-import { formatThaiDate } from "@/lib/utils/formatters";
+import { getGridTieChecklistItems, parseGridTieChecklist } from "@/lib/gridTie";
 import { useFileViewer } from "@/lib/hooks/useFileViewer";
 
 interface Props extends StepCommonProps {
@@ -16,10 +15,8 @@ interface Props extends StepCommonProps {
 export default function GridTieStep({ lead, state, refresh, expanded, onToggle }: Props) {
   const fileViewer = useFileViewer();
   const checklist = parseGridTieChecklist(lead.grid_document_checklist);
-  const visibleItems = getGridTieChecklistItems(lead.grid_applicant_type || "");
+  const visibleItems = getGridTieChecklistItems(lead.grid_applicant_type || "", lead.grid_utility || "");
   const permitCount = visibleItems.filter(item => checklist[item.id]?.permit === "has").length;
-  // Timeline ของ Grid-Tie ยังไม่มีบน main (อยู่บน branch quotation) จึงสรุป 5 วันที่ไว้ที่นี่
-  const milestones = GRID_TIE_MILESTONES.filter(m => lead[m.key]);
 
   const renderDoneContent = () => (
     <>
@@ -49,18 +46,6 @@ export default function GridTieStep({ lead, state, refresh, expanded, onToggle }
                 </div>
               );
             })}
-          </div>
-        </DoneSection>
-      )}
-      {milestones.length > 0 && (
-        <DoneSection color="gray" title={`ขั้นตอนกับการไฟฟ้า · ${milestones.length}/${GRID_TIE_MILESTONES.length}`}>
-          <div className="space-y-1.5">
-            {milestones.map(milestone => (
-              <div key={milestone.key} className="flex items-center justify-between gap-2 text-xs">
-                <span className="font-medium text-gray-700">{milestone.label}</span>
-                <span className="font-semibold text-gray-800">{formatThaiDate(lead[milestone.key])}</span>
-              </div>
-            ))}
           </div>
         </DoneSection>
       )}

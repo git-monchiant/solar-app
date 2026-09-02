@@ -2,8 +2,9 @@
 // โครงสร้างตามฟอร์มกระดาษของทีม Permit (`File Permit : Up 20082026`)
 // แผน: docs/plan/20260831-01-gridtie-permit-checklist-redesign.md
 //
-// รายการทั้งหมดโผล่พร้อมกันเสมอ — ไม่มีเงื่อนไขซ่อน/แสดงตาม MEA/PEA หรือเจตนา
-// คนกรอกเป็นคนตัดสินเองว่าแถวไหนเกี่ยวกับงานนี้ (ตัดสินใจ 2 ก.ย. 2026)
+// แถวที่ฟอร์มระบุว่าใช้เฉพาะการไฟฟ้าเจ้าเดียว จะไม่แสดงเลยเมื่อเลือกอีกเจ้า
+// (ข้อมูลที่เคยติ๊กไว้ยังอยู่ใน JSON แค่ไม่ถูกแสดงและไม่ถูกนับ สลับกลับมาก็เห็นเหมือนเดิม)
+// ไม่ผูกกับเจตนาขายไฟ — ฟอร์มเขียนว่า MEA-ขายไฟ แต่ตัดสินให้ดูแค่ MEA พอ (2 ก.ย. 2026)
 // มีแค่ applicantType (individual | juristic) ที่เลือกว่าใช้ชุดเอกสารชุดไหน
 //
 // สถานะของแต่ละแถวมี 2 ชั้น แยกคนละคน:
@@ -36,6 +37,8 @@ export interface GridTieChecklistItem {
   detail?: string;
   owner: GridTieOwner;
   section: "doc" | "equipment";
+  /** ฟอร์มระบุว่าใช้กับการไฟฟ้าเจ้าเดียว — เจ้าอื่นจะจางและไม่ถูกนับ */
+  cond?: "MEA" | "PEA";
   /** ชุดนิติบุคคลใช้ — ต้องติ๊ก "จำเป็นสำหรับงานนี้" ก่อนถึงจะกดได้และถูกนับ */
   conditional?: boolean;
   /** อุปกรณ์ทุกกลุ่มมีธง Datasheet มี/ไม่มี */
@@ -63,37 +66,6 @@ export type GridTieChecklistState = Record<string, GridTieChecklistEntry>;
 
 // ── ตัวเลือกที่ใช้ซ้ำ ────────────────────────────────────────────────────────
 
-// ขั้นตอนกับการไฟฟ้าหลังยื่นคำขอ — 5 วันที่นี้มีคอลัมน์ใน leads มาตั้งแต่ sql/052
-// แต่ไม่เคยมีหน้าจอไหนกรอก นิยามไว้ที่เดียวเพื่อให้ฟอร์มกับหน้าสรุปใช้ลำดับและคำเดียวกัน
-// (คำเดียวกับที่ Timeline บน branch quotation ใช้ เพื่อไม่ให้ขัดกันตอน merge)
-export const GRID_TIE_MILESTONES = [
-  { key: "grid_erc_submitted_date", label: "ยื่นเอกสาร ERC" },
-  { key: "grid_submitted_date", label: "ยื่นคำขอขนานไฟ" },
-  { key: "grid_inspection_date", label: "ตรวจระบบขนานไฟ" },
-  { key: "grid_approved_date", label: "อนุมัติขนานไฟ" },
-  { key: "grid_meter_changed_date", label: "เปลี่ยนมิเตอร์เรียบร้อย" },
-] as const;
-
-export type GridTieMilestoneKey = (typeof GRID_TIE_MILESTONES)[number]["key"];
-
-/**
- * วันที่ที่ย้อนหลังกว่าขั้นก่อนหน้า — คืน key ของขั้นที่ผิดลำดับ
- * ใช้เตือนเฉย ๆ ไม่บล็อกการบันทึก เพราะงานจริงมีเคสที่ลำดับสลับได้
- */
-export function getGridTieOutOfOrderMilestones(
-  dates: Partial<Record<GridTieMilestoneKey, string | null>>,
-): GridTieMilestoneKey[] {
-  const out: GridTieMilestoneKey[] = [];
-  let previous: { key: GridTieMilestoneKey; value: string } | null = null;
-  for (const milestone of GRID_TIE_MILESTONES) {
-    const value = dates[milestone.key];
-    if (!value) continue;
-    if (previous && value < previous.value) out.push(milestone.key);
-    previous = { key: milestone.key, value };
-  }
-  return out;
-}
-
 /**
  * เจตนาของงาน — ใช้เป็นตัวเลือกของช่อง `intent` ในแถว "หนังสือแสดงเจตนา"
  * เก็บไว้ใน checklist JSON ที่เดียว ไม่มีคอลัมน์แยก (ตัดสินใจ 2 ก.ย. 2026)
@@ -112,6 +84,12 @@ const METER_SIZE_OPTIONS = [
   { value: "other", label: "อื่นๆ" },
 ] as const;
 
+// ฟอร์มกระดาษเขียน "มี/ไม่มี" ไว้ท้ายบางช่อง — ทำเป็นตัวเลือกแทนให้กรอกง่าย
+const HAS_OPTIONS = [
+  { value: "has", label: "มี" },
+  { value: "none", label: "ไม่มี" },
+] as const;
+
 const PHASE_OPTIONS = [
   { value: "1", label: "1 เฟส" },
   { value: "3", label: "3 เฟส" },
@@ -121,8 +99,8 @@ const PHASE_OPTIONS = [
 
 const SITE_DOCS: readonly GridTieChecklistItem[] = [
   {
-    id: "site_coordinates", section: "doc", owner: "both",
-    label: "พิกัดสถานที่ติดตั้ง", detail: "ละติจูด / ลองจิจูด · Google Map",
+    id: "site_coordinates", section: "doc", owner: "install",
+    label: "พิกัดระบุสถานที่ตั้ง ลองจิจูด ละติจูด / Google Map",
     fields: [
       { key: "lat", label: "ละติจูด", placeholder: "13.7563" },
       { key: "lng", label: "ลองจิจูด", placeholder: "100.5018" },
@@ -131,25 +109,28 @@ const SITE_DOCS: readonly GridTieChecklistItem[] = [
   },
   {
     id: "site_photo_timestamp", section: "doc", owner: "install",
-    label: "รูปถ่ายหน้าบ้าน", detail: "ต้องมี time stamp ตรงกับสถานที่ติดตั้ง",
+    label: "รูปถ่ายติดตั้งหน้างาน (มี Time stamp ระบุวันที่ + สถานที่ติดตั้ง)",
   },
   {
     id: "single_line_diagram", section: "doc", owner: "install",
-    label: "แบบระบบไฟฟ้า Single Line", detail: "พร้อมตำแหน่งติดตั้งอุปกรณ์",
+    label: "แบบผังวงจรไฟฟ้า Single Line + ลงนามวิศวกรไฟฟ้า",
   },
   {
-    id: "engineer_cert", section: "doc", owner: "install",
-    label: "หนังสือรับรองวิศวกร + ใบ กว.",
+    id: "engineer_cert", section: "doc", owner: "install", cond: "MEA",
+    label: "หนังสือรับรองไฟฟ้า + ใบ กว. (เฉพาะ MEA)",
   },
   {
-    id: "architect_cert", section: "doc", owner: "install",
-    label: "หนังสือรับรองสถาปนิก + ใบ กส.",
+    // เดิมตั้ง id ว่า architect_cert เพราะถอดความจากรูปเบลอผิดเป็น "สถาปนิก + ใบ กส."
+    // ที่จริงเป็นหนังสือสภาวิศวกร + ใบ กว. เหมือนกัน ต่างกันแค่ใช้กับ PEA
+    id: "council_engineer_cert", section: "doc", owner: "install", cond: "PEA",
+    label: "หนังสือสภาวิศวกร + ใบ กว. (เฉพาะ PEA)",
   },
   {
     id: "boq_quotation", section: "doc", owner: "install",
-    label: "ใบเสนอราคา / BOQ", autofill: "ใบเสนอราคาที่อนุมัติ",
+    label: "ใบเสนอราคา / BOQ (ฝ่ายบัญชี)", autofill: "ใบเสนอราคาที่อนุมัติ",
   },
 ];
+
 
 // ── ชุดบุคคลธรรมดา — ยกจากฟอร์มกระดาษ 14 แถว ────────────────────────────────
 
@@ -173,17 +154,17 @@ const INDIVIDUAL_DOCS: readonly GridTieChecklistItem[] = [
     ],
   },
   {
-    id: "tax_measure_consent", section: "doc", owner: "sale",
+    id: "tax_measure_consent", section: "doc", owner: "sale", cond: "MEA",
     label: "หนังสือยินยอมการเข้าร่วมโครงการภาษี (เฉพาะ MEA)",
     fields: [{ key: "online_ref_no", label: "เลขรับเรื่องออนไลน์", wide: true, placeholder: "เลขที่ได้จากระบบ MEA" }],
   },
   {
-    id: "bank_account_notice", section: "doc", owner: "sale",
+    id: "bank_account_notice", section: "doc", owner: "sale", cond: "MEA",
     label: "หนังสือแจ้งข้อมูลบัญชีธนาคาร (เฉพาะ MEA-ขายไฟ)",
     fields: [{ key: "issued_date", label: "ลงวันที่", wide: true, placeholder: "เช่น 01/09/2569" }],
   },
   {
-    id: "bank_book_copy", section: "doc", owner: "sale",
+    id: "bank_book_copy", section: "doc", owner: "sale", cond: "MEA",
     label: "สำเนาบัญชีธนาคารโอนค่าขายไฟ (เฉพาะ MEA-ขายไฟ)",
     fields: [{ key: "gridtie_fee_paid", label: "ชำระเงินค่าขนานไฟ", wide: true, placeholder: "เช่น 2,140 บาท" }],
   },
@@ -198,11 +179,11 @@ const INDIVIDUAL_DOCS: readonly GridTieChecklistItem[] = [
   },
   {
     id: "house_registration", section: "doc", owner: "sale",
-    label: "สำเนาทะเบียนบ้าน (เจ้าของบ้าน / ผู้จัดสรร)",
+    label: "สำเนาทะเบียนบ้าน (ชื่อผู้มอบ / ผู้รับมอบ)",
   },
   {
     id: "post_solar_house_registration", section: "doc", owner: "sale",
-    label: "สำเนาทะเบียนบ้าน (บ้านที่ติดตั้ง Solar)",
+    label: "สำเนาทะเบียนบ้าน (บ้านติดตั้ง Solar)",
   },
   ...SITE_DOCS,
 ];
@@ -222,7 +203,7 @@ const JURISTIC_DOCS: readonly GridTieChecklistItem[] = [
     label: "หนังสือมอบอำนาจ", detail: "ลงนามกรรมการผู้มีอำนาจและประทับตราบริษัท",
   },
   {
-    id: "tax_measure_consent", section: "doc", owner: "sale",
+    id: "tax_measure_consent", section: "doc", owner: "sale", cond: "MEA",
     label: "หนังสือยินยอมเข้าร่วมโครงการมาตรการทางภาษี",
     detail: "ฉบับที่ 805 พ.ศ. 2569 ตามเอกสารแนบ (เฉพาะ MEA)",
   },
@@ -260,68 +241,76 @@ const EQUIPMENT: readonly GridTieChecklistItem[] = [
     fields: [
       { key: "brand", label: "ยี่ห้อ", placeholder: "ระบุ" },
       { key: "model", label: "รุ่น", wide: true, placeholder: "ระบุ" },
-      { key: "watt", label: "ขนาดต่อแผง", suffix: "W" },
-      { key: "count", label: "จำนวน", suffix: "แผง" },
+      { key: "watt", label: "ขนาดต่อแผง", suffix: "วัตต์", placeholder: "640" },
+      { key: "count", label: "จำนวนแผง", suffix: "แผง", placeholder: "16" },
+      { key: "nameplate_photo", label: "รูปถ่ายเนมเพลทใต้แผง (ถ้ามี)", options: HAS_OPTIONS },
     ],
   },
   {
     id: "inverter", section: "equipment", owner: "install", datasheet: true,
-    label: "Inverter", detail: "แนบรูปถ่ายพร้อมป้าย S/N", autofill: "ใบตรวจติดตั้ง",
+    label: "Inverter", autofill: "ใบตรวจติดตั้ง",
     fields: [
       { key: "brand", label: "ยี่ห้อ", placeholder: "ระบุ" },
       { key: "model", label: "รุ่น", wide: true, placeholder: "ระบุ" },
-      { key: "kw", label: "ขนาดพิกัด", suffix: "kW" },
-      { key: "count", label: "จำนวน", suffix: "ตัว" },
-      { key: "sn", label: "S/N" },
+      { key: "kw", label: "ขนาดต่อตัว", suffix: "กิโลวัตต์", placeholder: "10" },
+      { key: "count", label: "จำนวน", suffix: "ตัว", placeholder: "1" },
+      { key: "sn_photo", label: "รูปถ่ายเลขซีเรียล S/N", options: HAS_OPTIONS },
     ],
   },
   {
     id: "zero_export", section: "equipment", owner: "install", datasheet: true,
-    label: "อุปกรณ์ Zero Export / กันไหลย้อน", detail: "พร้อมจุดเชื่อมต่อ",
+    label: "อุปกรณ์ Zero Export / กันไฟย้อน / จุดเชื่อมต่อ",
     fields: [
       { key: "brand", label: "ยี่ห้อ", placeholder: "ระบุ" },
       { key: "model", label: "รุ่น", wide: true, placeholder: "ระบุ" },
-      { key: "connection_point", label: "จุดเชื่อมต่อ" },
     ],
   },
   {
     id: "ct", section: "equipment", owner: "install", datasheet: true,
-    label: "Current Transformer (CT)",
+    label: "อุปกรณ์ Current Transformer : CT",
     fields: [
       { key: "brand", label: "ยี่ห้อ", placeholder: "ระบุ" },
       { key: "model", label: "รุ่น", wide: true, placeholder: "ระบุ" },
-      { key: "rating_a", label: "พิกัด", suffix: "A" },
-      { key: "rating_ma", label: "พิกัด", suffix: "mA" },
-      { key: "class", label: "Class" },
-      { key: "iec", label: "มาตรฐาน IEC" },
+      { key: "rating_a", label: "พิกัด", suffix: "A", placeholder: "100" },
+      { key: "rating_ma", label: "พิกัด", suffix: "mA", placeholder: "50" },
+      { key: "class", label: "Class", placeholder: "0.5" },
+      { key: "iec", label: "มาตรฐาน IEC", options: HAS_OPTIONS },
     ],
   },
   {
     id: "battery", section: "equipment", owner: "install", datasheet: true,
-    label: "Battery Energy Storage System", detail: "เฉพาะงานที่มีแบตเตอรี่",
-    autofill: "ใบตรวจติดตั้ง",
+    label: "แบตเตอรี่ Battery Energy Storage System", autofill: "ใบตรวจติดตั้ง",
     fields: [
       { key: "brand", label: "ยี่ห้อ", placeholder: "ระบุ" },
       { key: "model", label: "รุ่น", wide: true, placeholder: "ระบุ" },
-      { key: "count", label: "จำนวน", suffix: "ตัว" },
-      { key: "capacity_ah", label: "Capacity", suffix: "Ah" },
-      { key: "capacity_kwh", label: "Capacity", suffix: "kWh" },
+      { key: "count", label: "จำนวน", suffix: "ตัว", placeholder: "2" },
+      // ฟอร์มเขียนหน่วยนี้ว่า mA ซึ่งน่าจะพิมพ์ตก (ความจุแบตปกติเป็น Ah)
+      // ทำตามฟอร์มไว้ก่อน รอผู้ใช้ยืนยัน
+      { key: "capacity_ma", label: "Capacity", suffix: "mA" },
+      { key: "capacity_kwh", label: "Capacity ต่อตัว", suffix: "kWh", placeholder: "4.8" },
       { key: "capacity_kw", label: "Capacity", suffix: "kW" },
     ],
   },
 ];
 
+
 // ── การเลือกรายการ ──────────────────────────────────────────────────────────
 
+/** แถวนี้ใช้กับการไฟฟ้าที่เลือกไว้ไหม — ยังไม่เลือกถือว่าใช้ได้ทุกแถว */
+export function matchesGridTieUtility(item: GridTieChecklistItem, utility: string): boolean {
+  return !item.cond || !utility || item.cond === utility;
+}
+
 /**
- * รายการทั้งหมดของงานนี้
+ * รายการที่ต้องแสดงของงานนี้
  *   บุคคลธรรมดา — 14 แถวตามฟอร์มกระดาษ + อุปกรณ์ 5 กลุ่ม
  *   นิติบุคคล   — รายการเดิมของแอป เอกสารฝั่งลูกค้าล้วน ไม่มีส่วนอุปกรณ์
+ * แล้วตัดแถวที่เป็นของการไฟฟ้าอีกเจ้าออก
  */
-export function getGridTieChecklistItems(applicantType: string): GridTieChecklistItem[] {
+export function getGridTieChecklistItems(applicantType: string, utility = ""): GridTieChecklistItem[] {
   if (!applicantType) return [];
-  if (applicantType === "juristic") return [...JURISTIC_DOCS];
-  return [...INDIVIDUAL_DOCS, ...EQUIPMENT];
+  const all = applicantType === "juristic" ? JURISTIC_DOCS : [...INDIVIDUAL_DOCS, ...EQUIPMENT];
+  return all.filter(item => matchesGridTieUtility(item, utility));
 }
 
 // ── อ่าน / แปลงข้อมูลเก่า ───────────────────────────────────────────────────
@@ -393,10 +382,11 @@ export interface GridTieProgress {
 
 export function getGridTieProgress(
   applicantType: string,
+  utility: string,
   checklistValue: string | null | undefined,
 ): GridTieProgress {
   const checklist = parseGridTieChecklist(checklistValue);
-  const items = getGridTieChecklistItems(applicantType)
+  const items = getGridTieChecklistItems(applicantType, utility)
     .filter(item => !item.conditional || checklist[item.id]?.required === true);
   const received = items.filter(item => checklist[item.id]?.received === true).length;
   const permit = items.filter(item => checklist[item.id]?.permit === "has").length;
