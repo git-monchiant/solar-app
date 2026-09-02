@@ -413,40 +413,6 @@ export async function GET(
     name: q.package_name_snapshot || snapshot.package.name,
     price: q.package_price_snapshot || snapshot.package.price,
   };
-  const surveyHtml = buildSurveyReportHtml(
-    reportLead,
-    snapshot.lead_data || {},
-    reportPackage,
-    {
-      quotationAttached: true,
-      watermark,
-      // package ที่ไม่ใช่ตัวหลัก + งานเพิ่ม → ไปโผล่ในตาราง §5 "รายการเพิ่มเติม"
-      // ส่งเฉพาะแถวหัวข้อ (ไม่เอาบรรทัดรายละเอียดย่อย) พร้อมยอดจริงของแต่ละรายการ
-      addOns: items
-        .filter((item) => item.source_type === "addon_package" || item.source_type === "custom_group"
-          || item.source_type === "custom" || item.source_type === "addon")
-        .map((item) => ({
-          name: String(item.item_name_snapshot || item.item_name || "")
-            .replace(/^Package เพิ่มเติม:\s*/i, "")
-            .replace(/^Scal(?:e)?\s*Up\s*:\s*/i, ""),
-          quantity: Number(item.quantity) || 0,
-          unit: String(item.unit || ""),
-          amount: Number(item.line_total) || 0,
-        })),
-      quotation: {
-        docNo: String(q.doc_no || ""),
-        grossAmount: Number(q.subtotal_incl_vat || 0),
-        discountAmount: Number(q.discount_amount || 0),
-        discountLabel: String(q.discount_label || "ส่วนลด"),
-        contractAmount: Number(
-          q.contract_total_incl_vat || q.subtotal_incl_vat || 0,
-        ),
-        depositAmount: Number(q.deposit_paid_amount || 0),
-        netAmount: Number(q.outstanding_amount || 0),
-      },
-      financial: snapshot.financial,
-    },
-  );
   const quotationHeader = `
     <div class="header">
       <div class="brand"><img src="${logoDataUrl}" alt="SENA Solar Energy"></div>
@@ -529,47 +495,112 @@ export async function GET(
       .replace(/^Package เพิ่มเติม:\s*/i, "")
       .replace(/^Scal(?:e)?\s*Up\s*:\s*/i, "");
   let addOnSequence = addOnBaseSeq;
-  const addOnRows = addOns.flatMap<QuoteTableRow>((item) => {
-    if (
-      item.source_type === "addon_package_detail" ||
-      item.source_type === "custom_detail"
-    ) {
-      const detailText = otherPackageItemText(item);
-      return [
-        {
-          html: `<tr><td></td><td>${otherPackageTextHtml(
-            item.source_type === "custom_detail" &&
-              !detailText.trimStart().startsWith("-")
-              ? `- ${detailText}`
-              : detailText,
-          )}</td><td></td></tr>`,
-          isHead: false,
-          amount: 0,
-        },
-      ];
+  const isAddOnHead = (item: Record<string, unknown>) =>
+    item.source_type !== "addon_package_detail" && item.source_type !== "custom_detail";
+  // จับบรรทัดรายละเอียดเข้ากับหัวข้อของตัวเอง เพื่อรวมรายการที่ซ้ำกันได้ทั้งก้อน
+  const addOnGroups: Array<{ head: Record<string, unknown>; details: Record<string, unknown>[] }> = [];
+  for (const item of addOns) {
+    if (isAddOnHead(item)) addOnGroups.push({ head: item, details: [] });
+    else addOnGroups[addOnGroups.length - 1]?.details.push(item);
+  }
+  // รายการเดียวกันที่เลือกซ้ำหลายครั้ง (เช่นแบตก้อนละชุด × 6) ให้ยุบเหลือแถวเดียว
+  // จำนวนบวกกัน ราคาบวกกัน — คีย์เทียบจากชนิด + ชื่อ + รายละเอียดย่อยทั้งชุด
+  // เพื่อไม่ให้รายการชื่อเหมือนกันแต่สเปกต่างกันถูกยุบรวมผิด
+  const mergedAddOns: Array<{ head: Record<string, unknown>; details: Record<string, unknown>[]; count: number }> = [];
+  const mergedIndexByKey = new Map<string, number>();
+  for (const group of addOnGroups) {
+    const key = [
+      String(group.head.source_type || ""),
+      String(group.head.item_name_snapshot || group.head.item_name || "").trim(),
+      String(group.head.unit || "").trim(),
+      group.details.map((d) => String(d.item_name_snapshot || d.item_name || "").trim()).join("|"),
+    ].join("~");
+    const at = mergedIndexByKey.get(key);
+    if (at === undefined) {
+      mergedIndexByKey.set(key, mergedAddOns.length);
+      mergedAddOns.push({ head: { ...group.head }, details: group.details, count: 1 });
+      continue;
     }
+    const target = mergedAddOns[at];
+    target.count += 1;
+    target.head.quantity = (Number(target.head.quantity) || 0) + (Number(group.head.quantity) || 0);
+    target.head.line_total = (Number(target.head.line_total) || 0) + (Number(group.head.line_total) || 0);
+  }
+  const addOnRows = mergedAddOns.flatMap<QuoteTableRow>(({ head, details }) => {
     addOnSequence += 1;
     // งานเพิ่มที่ราคา 0 = แถมให้ → แสดงเฉพาะชื่อรายการ ไม่ต้องมีจำนวน/หน่วย และไม่ต้องมียอด 0.00
-    const isFree = !(Number(item.line_total) > 0);
-    const amount = isFree ? 0 : Number(item.line_total) || 0;
-    if (item.source_type === "addon_package") {
-      return [
-        {
-          html: `<tr class="head-row"><td class="center">${addOnSequence}</td><td>${otherPackageTextHtml(isFree ? normalizeOtherPackageText(item.item_name_snapshot) : otherPackageItemText(item))}</td><td class="right">${isFree ? "" : money(item.line_total)}</td></tr>`,
-          isHead: true,
-          amount,
-        },
-      ];
-    }
-    // งานเพิ่มแสดงชื่อรายการอย่างเดียว ไม่ต่อท้ายด้วยจำนวน/หน่วย ("1 งาน")
-    return [
-      {
-        html: `<tr class="head-row"><td class="center">${addOnSequence}</td><td>${itemHtml(addOnDisplayName(item))}</td><td class="right">${isFree ? "" : money(item.line_total)}</td></tr>`,
-        isHead: true,
-        amount,
-      },
-    ];
+    const isFree = !(Number(head.line_total) > 0);
+    const amount = isFree ? 0 : Number(head.line_total) || 0;
+    const headRow: QuoteTableRow =
+      head.source_type === "addon_package"
+        ? {
+            html: `<tr class="head-row"><td class="center">${addOnSequence}</td><td>${otherPackageTextHtml(isFree ? normalizeOtherPackageText(head.item_name_snapshot) : otherPackageItemText(head))}</td><td class="right">${isFree ? "" : money(head.line_total)}</td></tr>`,
+            isHead: true,
+            amount,
+          }
+        : {
+            // งานเพิ่มแสดงชื่อรายการอย่างเดียว ไม่ต่อท้ายด้วยจำนวน/หน่วย ("1 งาน")
+            html: `<tr class="head-row"><td class="center">${addOnSequence}</td><td>${itemHtml(addOnDisplayName(head))}</td><td class="right">${isFree ? "" : money(head.line_total)}</td></tr>`,
+            isHead: true,
+            amount,
+          };
+    const detailRows = details.map<QuoteTableRow>((item) => {
+      const detailText = otherPackageItemText(item);
+      return {
+        html: `<tr><td></td><td>${otherPackageTextHtml(
+          item.source_type === "custom_detail" &&
+            !detailText.trimStart().startsWith("-")
+            ? `- ${detailText}`
+            : detailText,
+        )}</td><td></td></tr>`,
+        isHead: false,
+        amount: 0,
+      };
+    });
+    return [headRow, ...detailRows];
   });
+  const surveyHtml = buildSurveyReportHtml(
+    reportLead,
+    snapshot.lead_data || {},
+    reportPackage,
+    {
+      quotationAttached: true,
+      watermark,
+      // §4 ในรายงานให้โชว์ชื่อเดียวกับบรรทัดแรกของตารางในใบเสนอราคา
+      // (คำนวณตรงนี้เพราะ packageTitle ตัวเต็มถูกประกาศทีหลังในไฟล์)
+      packageTitle: (() => {
+        const head = snapshot.items.find((it) => it.source_type === "package");
+        const name = String(head?.item_name_snapshot || head?.item_name || "").trim();
+        if (!name) return String(q.package_name_snapshot || snapshot.package.name || "");
+        const qty = Number(head?.quantity);
+        const unit = String(head?.unit || "").trim();
+        return unit && Number.isFinite(qty) && qty > 0 ? `${name} ${qty} ${unit}` : name;
+      })(),
+      // package ที่ไม่ใช่ตัวหลัก + งานเพิ่ม → ไปโผล่ในตาราง §5 "รายการเพิ่มเติม"
+      // ใช้ชุดที่รวมรายการซ้ำแล้ว (mergedAddOns) ให้ตรงกับตารางในใบเสนอราคา
+      addOns: mergedAddOns.map(({ head }) => ({
+        name: String(head.item_name_snapshot || head.item_name || "")
+          .replace(/^Package เพิ่มเติม:\s*/i, "")
+          .replace(/^Scal(?:e)?\s*Up\s*:\s*/i, ""),
+        quantity: Number(head.quantity) || 0,
+        unit: String(head.unit || ""),
+        amount: Number(head.line_total) || 0,
+      })),
+      quotation: {
+        docNo: String(q.doc_no || ""),
+        grossAmount: Number(q.subtotal_incl_vat || 0),
+        discountAmount: Number(q.discount_amount || 0),
+        discountLabel: String(q.discount_label || "ส่วนลด"),
+        contractAmount: Number(
+          q.contract_total_incl_vat || q.subtotal_incl_vat || 0,
+        ),
+        depositAmount: Number(q.deposit_paid_amount || 0),
+        netAmount: Number(q.outstanding_amount || 0),
+      },
+      financial: snapshot.financial,
+    },
+  );
+
   const itemRows: QuoteTableRow[] = [
     ...(hasPackage
       ? [

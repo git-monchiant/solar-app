@@ -731,7 +731,8 @@ export default function ManagePackagesPage() {
                         )}
 
                         {locked ? (
-                          <div className={`col-span-12 md:col-span-2 justify-end gap-1.5 ${readOnlyCell}`} title="ช่วงนี้แก้ราคาไม่ได้">
+                          // กุญแจชิดซ้ายของกล่อง ตัวเลขชิดขวาให้ตรงแนวกับช่องกรอกราคาแถวอื่น
+                          <div className={`col-span-12 md:col-span-2 justify-between gap-1.5 ${readOnlyCell}`} title="ช่วงนี้แก้ราคาไม่ได้">
                             <span aria-hidden="true" className="text-gray-400">🔒</span>
                             <span className="font-mono font-bold tabular-nums text-gray-800">{fmt(p.price)}</span>
                           </div>

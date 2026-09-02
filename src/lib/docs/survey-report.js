@@ -248,6 +248,13 @@ export function buildSurveyReportHtml(L, D, PKG, options = {}) {
   // blank fill-in cell — no [ __ ] placeholder, just the unit right-aligned
   // (mostly empty so it can be written by hand). bl("") = fully empty cell.
   const bl = (unit="") => `<span class="bl">${unit}</span>`;
+  // ตัวเลข + หน่วย ต้องอยู่บรรทัดเดียวกันเสมอ ไม่งั้นจะตัดเป็น "... 1" / "เฟส"
+  const keepUnit = (t) => t
+    // ไม่ใช้ \b ปิดท้าย — อักษรไทยไม่ใช่ word char ของ JS regex ขอบเขตจึงไม่เกิด
+    // ("1 เฟส" เลยไม่แมตช์ แล้วถูกตัดคนละบรรทัดเหมือนเดิม)
+    ? String(t).replace(/(\d+(?:[.,]\d+)?)\s+(kWp|kWh|kW|เฟส|ชุด|แผง|เครื่อง|กล่อง|งาน|SET|W)/gi,
+        '<span class="nw">$1 $2</span>')
+    : t;
   const acCell = (list, n) => list ? `<span class="val">${n}</span>` : bl();
   const acSize = (list) => list ? `<span class="val">${list}</span>` : bl("BTU");
   // rows: [device, qtyCell, sizeCell, dayHrsFixed?, nightHrsFixed?]
@@ -309,10 +316,14 @@ export function buildSurveyReportHtml(L, D, PKG, options = {}) {
   // ยอดสุทธิที่ต้องชำระจริงอยู่ในใบเสนอราคา (ภาคผนวก ก) และหมวดทางเลือกการชำระเงิน
   const priceBlock = packageGross == null
     ? `<div class="price-bar"><span class="pb-l">ราคาแพ็กเกจ (รวม VAT)</span><span class="pb-r">${bl("บาท")}</span></div>`
-    : `<div class="price-bar"><span class="pb-l">ราคาแพ็กเกจ (รวม VAT)</span><span class="pb-r"><span class="val">${baht(packageGross)}</span> บาท</span></div>`;
+    : `<div class="price-bar"><span class="pb-l">ราคาแพ็กเกจ (รวม VAT)</span><span class="pb-r"><span class="val">${baht(packageGross)}</span><span class="pb-unit">บาท</span></span></div>`;
   const p8 = page(7, `${sect("4","แพ็กเกจโซลาร์เซลล์ที่นำเสนอ")}
     ${kv([
-      ["ชื่อแพ็กเกจ", V(PKG?.name,"เช่น Package Standard 5 kWp")],
+      // ชื่อที่แสดง = บรรทัดแรกของรายการในใบเสนอราคา (เช่น "งานจ้างเหมาติดตั้ง...
+      // ขนาดติดตั้งรวม 2.92 kWp 1 เฟส") ให้ตรงกับที่ลูกค้าเห็นในใบเสนอราคา
+      // ถ้าเปิดรายงานเดี่ยว ๆ ที่ไม่มีใบเสนอราคา ค่อยใช้ชื่อแพ็กเกจใน Master
+      // keepUnit() กันไม่ให้ตัวเลขกับหน่วยถูกตัดคนละบรรทัด ("2.92 kWp" / "1 เฟส")
+      ["ชื่อแพ็กเกจ", V(keepUnit(options.packageTitle) || PKG?.name,"เช่น Package Standard 5 kWp")],
       ["ขนาดระบบ (System Size)", PKG?.kwp ? `<span class="val">${PKG.kwp} kWp</span>${PKG.phase?` · ${PKG.phase} เฟส`:""}` : bl("kWp")],
       ["แบตเตอรี่ (Battery)", PKG ? (PKG.has_battery ? `<span class="val">${PKG.battery_kwh?`${PKG.battery_kwh} kWh`:""}${PKG.battery_brand?` · ${PKG.battery_brand}`:""}</span>` : `<span class="val">ไม่มี</span>`) : V(null,"ไม่มี / ระบุขนาด")],
       ["อินเวอร์เตอร์ (Inverter)", V(invTxt,"ยี่ห้อ/รุ่น ขนาด kW")],
@@ -599,6 +610,7 @@ export function buildSurveyReportHtml(L, D, PKG, options = {}) {
   table.load td.dev{text-align:left;font-weight:500;color:#2f3b4d;}
   /* blank fill-in cell: unit right-aligned, muted; empty space to write on */
   .bl{display:block;text-align:right;color:#aeb4bd;font-weight:400;padding-right:2px;}
+  .nw{white-space:nowrap;}
   table.addon td.org .bl .amt-val{color:${ORANGE};font-weight:700;}
   .wr{display:inline-block;min-width:32px;border-bottom:1px solid #cbd2dc;margin:0 3px;vertical-align:baseline;}
   .wr-lg{min-width:56px;}
@@ -629,8 +641,9 @@ export function buildSurveyReportHtml(L, D, PKG, options = {}) {
   .price-break + .price-bar{margin-top:0;border-radius:0 0 2px 2px;}
   .price-bar{display:flex;margin:14px 0 6px;border-radius:2px;overflow:hidden;}
   .pb-l{background:${NAVY};color:#fff;font-weight:700;padding:11px 16px;font-size:16px;display:flex;align-items:center;}
-  .pb-r{background:${ORANGE};color:#fff;font-weight:700;padding:11px 18px;font-size:19px;flex:1;display:flex;align-items:center;}
+  .pb-r{background:${ORANGE};color:#fff;font-weight:700;padding:11px 18px;font-size:19px;flex:1;display:flex;align-items:center;gap:6px;}
   .pb-r .val{color:#fff;}.pb-r .ipx{color:#fdeacb;}
+  .pb-r .pb-unit{margin-left:auto;}
   .tiny-note{font-size:12px;color:${GRAY};font-style:italic;line-height:1.5;margin-bottom:4px;}
   .journey{display:flex;align-items:stretch;margin:10px 0 6px;}
   .jstep{background:${NAVY_DK};color:#fff;flex:1;padding:14px 10px;text-align:center;border-radius:3px;}

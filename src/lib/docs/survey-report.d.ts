@@ -12,6 +12,8 @@ type SurveyReportOptions = {
     depositAmount?: number;
     netAmount?: number;
   };
+  /** ชื่อแพ็กเกจที่จะแสดงใน §4 — บรรทัดแรกของรายการในใบเสนอราคา */
+  packageTitle?: string;
   /** package ที่ไม่ใช่ตัวหลัก + งานเพิ่ม — แสดงในตาราง §5 รายการเพิ่มเติม */
   addOns?: Array<{
     name: string;
