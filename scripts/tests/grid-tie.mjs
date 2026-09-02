@@ -25,10 +25,32 @@ const json = state => JSON.stringify(state);
     "ทั้งใบ กว. และใบ กส. ต้องแสดงพร้อมกัน");
   assert.ok(list.includes("bank_account_notice") && list.includes("bank_book_copy"),
     "แถวบัญชีธนาคารแสดงเสมอ ไม่ผูกกับโหมดขายไฟแล้ว");
-  assert.ok(list.includes("premise_consent"), "หนังสือยินยอมแสดงเสมอ ไม่ผูกกับ MEA แล้ว");
+
+  // id ของ 8 แถวแรกต้องตรงกับที่แอปเคยใช้ ไม่งั้นติ๊กของ Lead เก่าจะจับคู่ไม่ติด
+  assert.deepEqual(list.slice(0, 8), [
+    "latest_electricity_bill", "tax_measure_consent", "bank_account_notice", "bank_book_copy",
+    "power_of_attorney", "id_card", "house_registration", "post_solar_house_registration",
+  ], "id และลำดับ 8 แถวแรกต้องตรงตามฟอร์มและใช้ id เดิมของแอป");
+
+  // ชื่อเอกสารต้องตรงฟอร์มกระดาษ รวมวงเล็บกำกับ
+  const label = id => individual.find(i => i.id === id).label;
+  assert.equal(label("tax_measure_consent"), "หนังสือยินยอมการเข้าร่วมโครงการภาษี (เฉพาะ MEA)");
+  assert.equal(label("power_of_attorney"), "หนังสือมอบอำนาจ (ขายไฟ/ขนานไฟ/ภาษี)");
+  assert.equal(label("bank_book_copy"), "สำเนาบัญชีธนาคารโอนค่าขายไฟ (เฉพาะ MEA-ขายไฟ)");
+  // 8 แถวแรกยกจากฟอร์มโดยตรง คำกำกับอยู่ในวงเล็บท้ายชื่อ ไม่แยกเป็นบรรทัด detail
+  // (แถว 9-14 กับอุปกรณ์ยังใช้ detail อยู่ เพราะอ่านข้อความจากฟอร์มไม่ชัด ยังไม่ได้ยืนยัน)
+  assert.ok(individual.slice(0, 8).every(i => !i.detail),
+    "8 แถวแรกต้องไม่มีบรรทัด detail แยก");
+
+  // แถว 1 ต้องมีช่องครบตามฟอร์มกระดาษ — 2 ช่องแรกอยู่ใต้ชื่อเอกสาร ที่เหลืออยู่คอลัมน์หมายเหตุ
+  const bill = individual.find(i => i.id === "latest_electricity_bill");
+  assert.deepEqual(bill.fields.map(f => f.key),
+    ["ca_no", "meter_code", "customer_type", "meter_size", "voltage", "phase", "wire"],
+    "ช่องของแถวสำเนาใบแจ้งค่าไฟต้องครบและเรียงตามฟอร์ม");
+  assert.ok(bill.fields.find(f => f.key === "ca_no").wide, "ช่องเลขผู้ใช้ไฟกรอกเลขยาว ต้องกว้างพิเศษ");
 
   // เจตนา (ขายไฟ/ขนานไฟ/COD) เก็บเป็นช่องกรอกในแถวหนังสือแสดงเจตนาที่เดียว ไม่มีคอลัมน์แยก
-  const intent = individual.find(i => i.id === "intent_letter");
+  const intent = individual.find(i => i.id === "power_of_attorney");
   const intentField = intent.fields.find(f => f.key === "intent");
   assert.deepEqual(intentField.options.map(o => o.value), ["parallel", "sell", "cod"],
     "ตัวเลือกเจตนาต้องครบ 3 แบบ");
@@ -92,8 +114,8 @@ assert.notDeepEqual(
   assert.equal(parsed.house_registration.received, false, "status missing → received: false");
   assert.equal(parsed.house_registration.permit, null, "ยังไม่ได้รับ → Permit ยังว่าง");
   assert.ok(!("MEA:individual:id_card" in parsed), "prefix ต้องถูกตัดทิ้ง");
-  assert.ok(!ids(getGridTieChecklistItems("individual")).includes("tax_measure_consent"),
-    "หนังสือยินยอมภาษีอยู่เฉพาะชุดนิติบุคคล ไม่อยู่ในชุดบุคคลธรรมดา");
+  assert.ok(ids(getGridTieChecklistItems("individual")).includes("tax_measure_consent"),
+    "หนังสือยินยอมภาษีอยู่ในทั้งสองชุด — เป็นเอกสารใบเดียวกัน id เดียวกัน");
 }
 
 {

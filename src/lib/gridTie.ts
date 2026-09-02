@@ -24,6 +24,10 @@ export interface GridTieFieldDef {
   /** ตัวเลือกแบบ dropdown — ไม่ใส่ = ช่องพิมพ์อิสระ */
   options?: readonly { value: string; label: string }[];
   suffix?: string;
+  /** ช่องที่กรอกเลขยาว — ขยายความกว้างในฟอร์ม */
+  wide?: boolean;
+  /** ตัวอย่างค่า ช่วยให้รู้ว่าต้องกรอกอะไรลงไป */
+  placeholder?: string;
 }
 
 export interface GridTieChecklistItem {
@@ -120,9 +124,9 @@ const SITE_DOCS: readonly GridTieChecklistItem[] = [
     id: "site_coordinates", section: "doc", owner: "both",
     label: "พิกัดสถานที่ติดตั้ง", detail: "ละติจูด / ลองจิจูด · Google Map",
     fields: [
-      { key: "lat", label: "ละติจูด" },
-      { key: "lng", label: "ลองจิจูด" },
-      { key: "map_url", label: "ลิงก์ Google Map" },
+      { key: "lat", label: "ละติจูด", placeholder: "13.7563" },
+      { key: "lng", label: "ลองจิจูด", placeholder: "100.5018" },
+      { key: "map_url", label: "ลิงก์ Google Map", wide: true, placeholder: "วางลิงก์" },
     ],
   },
   {
@@ -149,50 +153,56 @@ const SITE_DOCS: readonly GridTieChecklistItem[] = [
 
 // ── ชุดบุคคลธรรมดา — ยกจากฟอร์มกระดาษ 14 แถว ────────────────────────────────
 
+// id หลายตัวจงใจใช้ของเดิมที่แอปเคยใช้ (latest_electricity_bill, tax_measure_consent,
+// power_of_attorney, post_solar_house_registration) เพราะเป็นเอกสารใบเดียวกัน
+// ทำให้ติ๊กของ Lead เก่าที่ parseGridTieChecklist() แปลงมา จับคู่ได้ทันที — ห้ามเปลี่ยน
 const INDIVIDUAL_DOCS: readonly GridTieChecklistItem[] = [
   {
-    id: "electricity_bill", section: "doc", owner: "sale",
-    label: "สำเนาใบแจ้งค่าไฟ", detail: "ชื่อต้องตรงกับผู้ใช้ไฟเดิม",
+    id: "latest_electricity_bill", section: "doc", owner: "sale",
+    label: "สำเนาใบแจ้งค่าไฟ (ชื่อเดียวกับผู้ใช้ไฟตามมิเตอร์)",
     autofill: "รูปบิลจาก Pre-Survey",
     fields: [
-      { key: "customer_type", label: "ประเภทผู้ใช้ไฟ" },
+      // สองช่องแรกอยู่ใต้ชื่อเอกสารในฟอร์มกระดาษ ที่เหลืออยู่คอลัมน์หมายเหตุ
+      { key: "ca_no", label: "เลขผู้ใช้ไฟฟ้า / บัญชีแสดงสัญญา", wide: true, placeholder: "เช่น 0201234567890" },
+      { key: "meter_code", label: "เลขรหัสเครื่องวัด", wide: true, placeholder: "เช่น 12345678" },
+      { key: "customer_type", label: "ประเภทผู้ใช้ไฟ", placeholder: "เช่น 1.1" },
       { key: "meter_size", label: "ขนาดเครื่องวัด", options: METER_SIZE_OPTIONS },
-      { key: "voltage", label: "แรงดัน", suffix: "V" },
+      { key: "voltage", label: "แรงดัน", suffix: "V", placeholder: "เช่น 230" },
       { key: "phase", label: "จำนวนเฟส", options: PHASE_OPTIONS },
-      { key: "wire", label: "จำนวนสาย", suffix: "สาย" },
+      { key: "wire", label: "จำนวนสาย", suffix: "สาย", placeholder: "เช่น 2" },
     ],
   },
   {
-    id: "premise_consent", section: "doc", owner: "sale",
-    label: "หนังสือยินยอมของผู้ครอบครองอาคาร / สถานที่",
-    fields: [{ key: "owner_name", label: "ชื่อเจ้าของเรื่อง" }],
+    id: "tax_measure_consent", section: "doc", owner: "sale",
+    label: "หนังสือยินยอมการเข้าร่วมโครงการภาษี (เฉพาะ MEA)",
+    fields: [{ key: "online_ref_no", label: "เลขรับเรื่องออนไลน์", wide: true, placeholder: "เลขที่ได้จากระบบ MEA" }],
   },
   {
     id: "bank_account_notice", section: "doc", owner: "sale",
-    label: "หนังสือแจ้งเลขที่บัญชีธนาคาร",
-    fields: [{ key: "bank_account_no", label: "เลขที่บัญชี" }],
+    label: "หนังสือแจ้งข้อมูลบัญชีธนาคาร (เฉพาะ MEA-ขายไฟ)",
+    fields: [{ key: "issued_date", label: "ลงวันที่", wide: true, placeholder: "เช่น 01/09/2569" }],
   },
   {
     id: "bank_book_copy", section: "doc", owner: "sale",
-    label: "สำเนาบัญชีธนาคารหน้าแรก",
-    fields: [{ key: "bank_name", label: "ธนาคาร" }],
+    label: "สำเนาบัญชีธนาคารโอนค่าขายไฟ (เฉพาะ MEA-ขายไฟ)",
+    fields: [{ key: "gridtie_fee_paid", label: "ชำระเงินค่าขนานไฟ", wide: true, placeholder: "เช่น 2,140 บาท" }],
   },
   {
-    id: "intent_letter", section: "doc", owner: "sale",
-    label: "หนังสือแสดงเจตนา", detail: "ขายไฟ / ขนานไฟ / ภาษี",
-    fields: [{ key: "intent", label: "เจตนา", options: GRID_TIE_MODES }],
+    id: "power_of_attorney", section: "doc", owner: "sale",
+    label: "หนังสือมอบอำนาจ (ขายไฟ/ขนานไฟ/ภาษี)",
+    fields: [{ key: "intent", label: "ขายไฟ/ขนานไฟ/COD", options: GRID_TIE_MODES }],
   },
   {
     id: "id_card", section: "doc", owner: "sale",
-    label: "สำเนาบัตรประชาชน", detail: "เจ้าของบ้าน / ผู้มอบอำนาจ",
+    label: "สำเนาบัตรประชาชน (ชื่อผู้มอบ / ผู้รับมอบ)",
   },
   {
     id: "house_registration", section: "doc", owner: "sale",
-    label: "สำเนาทะเบียนบ้าน", detail: "เจ้าของบ้าน / ผู้มอบอำนาจ",
+    label: "สำเนาทะเบียนบ้าน (เจ้าของบ้าน / ผู้จัดสรร)",
   },
   {
-    id: "solar_house_registration", section: "doc", owner: "sale",
-    label: "สำเนาทะเบียนบ้าน", detail: "บ้านที่ติดตั้ง Solar",
+    id: "post_solar_house_registration", section: "doc", owner: "sale",
+    label: "สำเนาทะเบียนบ้าน (บ้านที่ติดตั้ง Solar)",
   },
   ...SITE_DOCS,
 ];
@@ -248,8 +258,8 @@ const EQUIPMENT: readonly GridTieChecklistItem[] = [
     id: "panel", section: "equipment", owner: "install", datasheet: true,
     label: "แผงเซลล์ Solar", autofill: "ใบตรวจติดตั้ง",
     fields: [
-      { key: "brand", label: "ยี่ห้อ" },
-      { key: "model", label: "รุ่น" },
+      { key: "brand", label: "ยี่ห้อ", placeholder: "ระบุ" },
+      { key: "model", label: "รุ่น", wide: true, placeholder: "ระบุ" },
       { key: "watt", label: "ขนาดต่อแผง", suffix: "W" },
       { key: "count", label: "จำนวน", suffix: "แผง" },
     ],
@@ -258,8 +268,8 @@ const EQUIPMENT: readonly GridTieChecklistItem[] = [
     id: "inverter", section: "equipment", owner: "install", datasheet: true,
     label: "Inverter", detail: "แนบรูปถ่ายพร้อมป้าย S/N", autofill: "ใบตรวจติดตั้ง",
     fields: [
-      { key: "brand", label: "ยี่ห้อ" },
-      { key: "model", label: "รุ่น" },
+      { key: "brand", label: "ยี่ห้อ", placeholder: "ระบุ" },
+      { key: "model", label: "รุ่น", wide: true, placeholder: "ระบุ" },
       { key: "kw", label: "ขนาดพิกัด", suffix: "kW" },
       { key: "count", label: "จำนวน", suffix: "ตัว" },
       { key: "sn", label: "S/N" },
@@ -269,8 +279,8 @@ const EQUIPMENT: readonly GridTieChecklistItem[] = [
     id: "zero_export", section: "equipment", owner: "install", datasheet: true,
     label: "อุปกรณ์ Zero Export / กันไหลย้อน", detail: "พร้อมจุดเชื่อมต่อ",
     fields: [
-      { key: "brand", label: "ยี่ห้อ" },
-      { key: "model", label: "รุ่น" },
+      { key: "brand", label: "ยี่ห้อ", placeholder: "ระบุ" },
+      { key: "model", label: "รุ่น", wide: true, placeholder: "ระบุ" },
       { key: "connection_point", label: "จุดเชื่อมต่อ" },
     ],
   },
@@ -278,8 +288,8 @@ const EQUIPMENT: readonly GridTieChecklistItem[] = [
     id: "ct", section: "equipment", owner: "install", datasheet: true,
     label: "Current Transformer (CT)",
     fields: [
-      { key: "brand", label: "ยี่ห้อ" },
-      { key: "model", label: "รุ่น" },
+      { key: "brand", label: "ยี่ห้อ", placeholder: "ระบุ" },
+      { key: "model", label: "รุ่น", wide: true, placeholder: "ระบุ" },
       { key: "rating_a", label: "พิกัด", suffix: "A" },
       { key: "rating_ma", label: "พิกัด", suffix: "mA" },
       { key: "class", label: "Class" },
@@ -291,8 +301,8 @@ const EQUIPMENT: readonly GridTieChecklistItem[] = [
     label: "Battery Energy Storage System", detail: "เฉพาะงานที่มีแบตเตอรี่",
     autofill: "ใบตรวจติดตั้ง",
     fields: [
-      { key: "brand", label: "ยี่ห้อ" },
-      { key: "model", label: "รุ่น" },
+      { key: "brand", label: "ยี่ห้อ", placeholder: "ระบุ" },
+      { key: "model", label: "รุ่น", wide: true, placeholder: "ระบุ" },
       { key: "count", label: "จำนวน", suffix: "ตัว" },
       { key: "capacity_ah", label: "Capacity", suffix: "Ah" },
       { key: "capacity_kwh", label: "Capacity", suffix: "kWh" },

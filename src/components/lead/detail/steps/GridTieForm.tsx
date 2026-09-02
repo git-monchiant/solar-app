@@ -20,6 +20,13 @@ import {
   type GridTieMilestoneKey,
 } from "@/lib/gridTie";
 
+/** สเปคอุปกรณ์ที่ทีมติดตั้งกรอกไว้ในใบตรวจติดตั้ง — ใช้เติมแถวอุปกรณ์ให้อัตโนมัติ */
+interface SystemSpecs {
+  panel?: { brand?: string; model?: string; count?: number | null; watt?: number | null };
+  inverter?: { brand?: string; model?: string; kw?: number | null; sn?: string };
+  battery?: { brand?: string; model?: string; kwh?: number | null };
+}
+
 export interface GridTieFormHandle {
   flush: () => Promise<boolean>;
 }
@@ -36,19 +43,70 @@ interface Props {
  * ค่าที่ระบบรู้อยู่แล้วจากขั้นตอนก่อนหน้า — เติมให้เป็นค่าตั้งต้นของช่องในแถว
  * ผู้ใช้แก้ทับได้ และเมื่อแก้แล้วค่าจะถูกเก็บลง checklist ไม่ย้อนกลับไปทับของเดิม
  */
-function autofillFor(item: GridTieChecklistItem, lead: Lead): Record<string, string> {
-  if (item.id !== "electricity_bill") return {};
+function autofillFor(
+  item: GridTieChecklistItem,
+  lead: Lead,
+  specs: SystemSpecs | null,
+): Record<string, string> {
   const out: Record<string, string> = {};
-  if (lead.meter_size) out.meter_size = lead.meter_size;
-  if (lead.pre_electrical_phase === "1_phase") out.phase = "1";
-  else if (lead.pre_electrical_phase === "3_phase") out.phase = "3";
-  return out;
-}
+  const put = (key: string, value: unknown) => {
+    if (value !== null && value !== undefined && String(value).trim() !== "") out[key] = String(value);
+  };
 
-/** ไฟล์ที่ระบบมีอยู่แล้ว แสดงเป็นไฟล์แนบตั้งต้นของแถวนั้น */
-function autofillFiles(item: GridTieChecklistItem, lead: Lead): string[] {
-  if (item.id === "electricity_bill" && lead.pre_bill_photo_url) return [lead.pre_bill_photo_url];
-  return [];
+  if (item.id === "latest_electricity_bill") {
+    // ขนาดเครื่องวัด — Pre-Survey ก่อน ถ้าไม่มีค่อยใช้ผลสำรวจหน้างาน
+    put("meter_size", lead.meter_size || lead.survey_meter_size);
+
+    const phase = lead.pre_electrical_phase || lead.survey_electrical_phase;
+    if (phase === "1_phase") out.phase = "1";
+    else if (phase === "3_phase") out.phase = "3";
+
+    // แรงดัน — 1 เฟสอ่านค่าเฟส-นิวทรัล, 3 เฟสอ่านค่าเฟส-เฟส
+    put("voltage", out.phase === "3"
+      ? lead.survey_voltage_ll ?? lead.survey_voltage_ln
+      : lead.survey_voltage_ln ?? lead.survey_voltage_ll);
+
+    // จำนวนสายอนุมานจากเฟส — เป็นค่าตั้งต้น แก้ทับได้
+    if (out.phase === "1") out.wire = "2";
+    else if (out.phase === "3") out.wire = "4";
+
+    // เลขผู้ใช้ไฟ / เลขรหัสเครื่องวัด / ประเภทผู้ใช้ไฟ ยังไม่มีที่เก็บในระบบ ต้องกรอกมือ
+    return out;
+  }
+
+  if (item.id === "site_coordinates") {
+    put("lat", lead.survey_lat);
+    put("lng", lead.survey_lng);
+    if (lead.survey_lat != null && lead.survey_lng != null) {
+      out.map_url = `https://www.google.com/maps?q=${lead.survey_lat},${lead.survey_lng}`;
+    }
+    return out;
+  }
+
+  // แถวอุปกรณ์ — ยกค่าจากใบตรวจติดตั้งที่ทีมกรอกไว้แล้ว
+  if (item.id === "panel" && specs?.panel) {
+    put("brand", specs.panel.brand);
+    put("model", specs.panel.model);
+    put("watt", specs.panel.watt);
+    put("count", specs.panel.count);
+    return out;
+  }
+  if (item.id === "inverter" && specs?.inverter) {
+    put("brand", specs.inverter.brand);
+    put("model", specs.inverter.model);
+    put("kw", specs.inverter.kw);
+    put("sn", specs.inverter.sn);
+    return out;
+  }
+  if (item.id === "battery" && specs?.battery) {
+    put("brand", specs.battery.brand);
+    put("model", specs.battery.model);
+    put("capacity_kwh", specs.battery.kwh);
+    return out;
+  }
+
+  // Zero Export กับ CT ไม่มีที่เก็บที่ไหนในระบบเลย ต้องกรอกมือทั้งหมด
+  return out;
 }
 
 const GridTieForm = forwardRef<GridTieFormHandle, Props>(function GridTieForm(
@@ -69,12 +127,24 @@ const GridTieForm = forwardRef<GridTieFormHandle, Props>(function GridTieForm(
   const [permitUrl, setPermitUrl] = useState<string | null>(lead.grid_permit_doc_url);
   const [uploadingApplicationDoc, setUploadingApplicationDoc] = useState(false);
   const [uploadingPermit, setUploadingPermit] = useState(false);
-  const [uploadingRow, setUploadingRow] = useState<string | null>(null);
+  const [systemSpecs, setSystemSpecs] = useState<SystemSpecs | null>(null);
   const [closing, setClosing] = useState(false);
   const [saveState, setSaveState] = useState<"idle" | "saving" | "saved" | "error">("idle");
   const [error, setError] = useState<string | null>(null);
 
   const checklistItems = useMemo(() => getGridTieChecklistItems(applicantType), [applicantType]);
+
+  // สเปคอุปกรณ์อยู่คนละตารางกับ lead — ดึงมาเติมแถวอุปกรณ์ให้เอง เงียบ ๆ ถ้าไม่มีใบตรวจ
+  useEffect(() => {
+    let alive = true;
+    apiFetch(`/api/install-checklist/${lead.id}`)
+      .then((row: { system_specs?: string | null }) => {
+        if (!alive || !row?.system_specs) return;
+        try { setSystemSpecs(JSON.parse(row.system_specs)); } catch { /* ข้อมูลเสีย ปล่อยว่าง */ }
+      })
+      .catch(() => {});
+    return () => { alive = false; };
+  }, [lead.id]);
 
   const payload = useMemo(() => ({
     grid_utility: utility || null,
@@ -136,34 +206,6 @@ const GridTieForm = forwardRef<GridTieFormHandle, Props>(function GridTieForm(
       return { ...current, [id]: { ...entry, fields: { ...entry.fields, [key]: value } } };
     });
   }, []);
-
-  /** อัปโหลดไฟล์แนบของแถว — ต่อท้ายรายการเดิม ไม่ทับของที่มีอยู่ */
-  const uploadRowFile = async (item: GridTieChecklistItem, file: File) => {
-    setUploadingRow(item.id);
-    setError(null);
-    try {
-      const compressed = await compressImage(file).catch(() => file);
-      const formData = new FormData();
-      formData.append("file", compressed);
-      formData.append("filename", `gridtie_${item.id}_${lead.id}`);
-      const result = await apiFetch("/api/upload", { method: "POST", body: formData });
-      setChecklist(current => {
-        const entry = current[item.id] || {};
-        return { ...current, [item.id]: { ...entry, files: [...(entry.files || []), result.url] } };
-      });
-    } catch (uploadError) {
-      setError(uploadError instanceof Error ? uploadError.message : "อัปโหลดเอกสารไม่สำเร็จ");
-    } finally {
-      setUploadingRow(null);
-    }
-  };
-
-  const removeRowFile = (id: string, url: string) => {
-    setChecklist(current => {
-      const entry = current[id] || {};
-      return { ...current, [id]: { ...entry, files: (entry.files || []).filter(f => f !== url) } };
-    });
-  };
 
   const uploadDocument = async (file: File, kind: "application" | "permit") => {
     const setUploading = kind === "application" ? setUploadingApplicationDoc : setUploadingPermit;
@@ -286,14 +328,11 @@ const GridTieForm = forwardRef<GridTieFormHandle, Props>(function GridTieForm(
           items={checklistItems}
           value={checklist}
           lead={lead}
+          specs={systemSpecs}
           utility={utility}
           applicantType={applicantType}
-          uploadingRow={uploadingRow}
-          fileViewer={fileViewer}
           onChange={updateChecklistItem}
           onFieldChange={updateChecklistField}
-          onUpload={uploadRowFile}
-          onRemoveFile={removeRowFile}
         />
       ) : (
         <div className="rounded-lg border border-dashed border-gray-300 bg-gray-50 px-4 py-5 text-center">
@@ -410,29 +449,17 @@ function DocumentUpload({ label, url, uploading, onUpload, onRemove, onOpen }: {
   );
 }
 
-const OWNER_LABEL: Record<string, string> = {
-  sale: "เซลล์ / ลูกค้า",
-  install: "ทีมติดตั้ง",
-  both: "เซลล์ + ทีมติดตั้ง",
-};
-
-type FileViewer = ReturnType<typeof useFileViewer>;
-
 function ChecklistPanel({
-  items, value, lead, utility, applicantType, uploadingRow, fileViewer,
-  onChange, onFieldChange, onUpload, onRemoveFile,
+  items, value, lead, specs, utility, applicantType, onChange, onFieldChange,
 }: {
   items: GridTieChecklistItem[];
   value: GridTieChecklistState;
   lead: Lead;
+  specs: SystemSpecs | null;
   utility: string;
   applicantType: string;
-  uploadingRow: string | null;
-  fileViewer: FileViewer;
   onChange: (id: string, patch: Partial<GridTieChecklistEntry>) => void;
   onFieldChange: (id: string, key: string, value: string) => void;
-  onUpload: (item: GridTieChecklistItem, file: File) => void;
-  onRemoveFile: (id: string, url: string) => void;
 }) {
   // ชุดนิติบุคคลใช้หน้าตาเดิมของแอป — ไม่มีคอลัมน์ Permit, ป้ายกำกับ, ปุ่มแนบไฟล์
   const legacy = applicantType === "juristic";
@@ -444,9 +471,8 @@ function ChecklistPanel({
 
   const renderRows = (rows: GridTieChecklistItem[], offset: number) => rows.map((item, index) => (
     <ChecklistRow
-      key={item.id} item={item} index={offset + index + 1} lead={lead} legacy={legacy}
-      entry={value[item.id] || {}} uploading={uploadingRow === item.id} fileViewer={fileViewer}
-      onChange={onChange} onFieldChange={onFieldChange} onUpload={onUpload} onRemoveFile={onRemoveFile}
+      key={item.id} item={item} index={offset + index + 1} lead={lead} specs={specs} legacy={legacy}
+      entry={value[item.id] || {}} onChange={onChange} onFieldChange={onFieldChange}
     />
   ));
 
@@ -496,25 +522,19 @@ function ChecklistPanel({
 }
 
 function ChecklistRow({
-  item, index, lead, legacy, entry, uploading, fileViewer, onChange, onFieldChange, onUpload, onRemoveFile,
+  item, index, lead, specs, legacy, entry, onChange, onFieldChange,
 }: {
   item: GridTieChecklistItem;
   index: number;
   lead: Lead;
+  specs: SystemSpecs | null;
   legacy: boolean;
   entry: GridTieChecklistEntry;
-  uploading: boolean;
-  fileViewer: FileViewer;
   onChange: (id: string, patch: Partial<GridTieChecklistEntry>) => void;
   onFieldChange: (id: string, key: string, value: string) => void;
-  onUpload: (item: GridTieChecklistItem, file: File) => void;
-  onRemoveFile: (id: string, url: string) => void;
 }) {
   const isRequired = !item.conditional || entry.required === true;
-  const defaults = autofillFor(item, lead);
-  // ไฟล์จากขั้นตอนก่อนหน้าแสดงต่อท้ายไฟล์ที่แนบเอง และลบจากที่นี่ไม่ได้ (เจ้าของอยู่คนละขั้น)
-  const inheritedFiles = autofillFiles(item, lead);
-  const ownFiles = entry.files || [];
+  const defaults = autofillFor(item, lead, specs);
 
   return (
     <div className={`grid grid-cols-1 gap-2 px-3 py-2.5 md:items-start ${
@@ -527,42 +547,50 @@ function ChecklistRow({
           <div className="min-w-0">
             <div className="text-sm font-semibold text-gray-800">{item.label}</div>
             {item.detail && <div className="mt-0.5 text-xs text-gray-500">{item.detail}</div>}
-            {!legacy && (
-              <div className="mt-1 flex flex-wrap gap-1">
-                <Tag className="bg-gray-100 text-gray-500">{OWNER_LABEL[item.owner]}</Tag>
-                {item.autofill && <Tag className="border border-blue-200 bg-blue-50 text-blue-700">ดึงอัตโนมัติ · {item.autofill}</Tag>}
-              </div>
-            )}
 
-            {item.fields && !legacy && (
-              <div className="mt-1.5 flex flex-wrap gap-1.5">
-                {item.fields.map(field => {
-                  const current = entry.fields?.[field.key] ?? defaults[field.key] ?? "";
-                  return (
-                    <label key={field.key} className="inline-flex items-center gap-1 rounded-md border border-dashed border-gray-300 bg-gray-50 px-1.5 py-0.5 text-xxs text-gray-500">
-                      <span className="whitespace-nowrap">{field.label}</span>
-                      {field.options ? (
-                        <select
-                          value={current}
-                          onChange={event => onFieldChange(item.id, field.key, event.target.value)}
-                          className="w-24 bg-transparent font-semibold text-gray-700 focus:outline-none"
+            {item.fields && !legacy && (() => {
+              // เส้นประ = "ตรงนี้เขียน" ใช้ภาษาเดียวกับฟอร์มกระดาษที่ทีมถืออยู่
+              // ค่าที่ระบบเติมให้แสดงเป็นสีฟ้า เพื่อแยกจากช่องที่ต้องกรอกเอง
+              return (
+                <div className="mt-2">
+                  <div className="flex flex-wrap items-baseline gap-x-4 gap-y-2">
+                    {item.fields.map(field => {
+                      const typed = entry.fields?.[field.key];
+                      const auto = typed === undefined || typed === "" ? defaults[field.key] : undefined;
+                      const current = typed ?? defaults[field.key] ?? "";
+                      const inputTone = auto ? "text-blue-700" : "text-gray-800";
+                      return (
+                        <label
+                          key={field.key}
+                          title={auto ? "ระบบเติมให้จากขั้นตอนก่อนหน้า — แก้ทับได้" : undefined}
+                          className="inline-flex items-baseline gap-1.5 text-xxs text-gray-500"
                         >
-                          <option value="">—</option>
-                          {field.options.map(option => <option key={option.value} value={option.value}>{option.label}</option>)}
-                        </select>
-                      ) : (
-                        <input
-                          value={current}
-                          onChange={event => onFieldChange(item.id, field.key, event.target.value)}
-                          className="w-20 bg-transparent font-semibold text-gray-700 focus:outline-none"
-                        />
-                      )}
-                      {field.suffix && <span className="whitespace-nowrap">{field.suffix}</span>}
-                    </label>
-                  );
-                })}
-              </div>
-            )}
+                          <span className="whitespace-nowrap">{field.label}</span>
+                          {field.options ? (
+                            <select
+                              value={current}
+                              onChange={event => onFieldChange(item.id, field.key, event.target.value)}
+                              className={`border-b border-dotted border-gray-400 bg-transparent pb-0.5 font-semibold focus:border-solid focus:border-primary focus:outline-none ${inputTone} ${field.wide ? "w-40" : "w-24"}`}
+                            >
+                              <option value="">—</option>
+                              {field.options.map(option => <option key={option.value} value={option.value}>{option.label}</option>)}
+                            </select>
+                          ) : (
+                            <input
+                              value={current}
+                              placeholder={field.placeholder}
+                              onChange={event => onFieldChange(item.id, field.key, event.target.value)}
+                              className={`border-b border-dotted border-gray-400 bg-transparent pb-0.5 font-semibold placeholder:font-normal placeholder:text-gray-300 focus:border-solid focus:border-primary focus:outline-none ${inputTone} ${field.wide ? "w-44" : "w-24"}`}
+                            />
+                          )}
+                          {field.suffix && <span className="whitespace-nowrap">{field.suffix}</span>}
+                        </label>
+                      );
+                    })}
+                  </div>
+                </div>
+              );
+            })()}
 
             {item.conditional && (
               <label className="mt-1 inline-flex cursor-pointer items-center gap-2 text-xs font-semibold text-gray-600">
@@ -571,26 +599,6 @@ function ChecklistRow({
               </label>
             )}
 
-            {!legacy && (
-            <div className="mt-1.5 flex flex-wrap items-center gap-1.5">
-                {inheritedFiles.map(url => (
-                  <a key={url} href={url} onClick={fileViewer.handler(url, item.label)}
-                    className="inline-flex items-center gap-1 rounded-md border border-blue-200 bg-blue-50 px-1.5 py-0.5 text-xxs font-semibold text-blue-700 hover:bg-blue-100">
-                    ▣ จากขั้นตอนก่อนหน้า
-                  </a>
-                ))}
-                {ownFiles.map((url, fileIndex) => (
-                  <span key={url} className="inline-flex items-center gap-1 rounded-md border border-gray-200 bg-gray-50 px-1.5 py-0.5 text-xxs font-semibold text-gray-600">
-                    <a href={url} onClick={fileViewer.handler(url, item.label)} className="hover:text-primary">▣ ไฟล์ {fileIndex + 1}</a>
-                    <button type="button" onClick={() => onRemoveFile(item.id, url)} aria-label={`ลบไฟล์ ${fileIndex + 1}`} className="text-gray-400 hover:text-red-500" style={{ minHeight: 0 }}>✕</button>
-                  </span>
-                ))}
-                <label className={`inline-flex items-center gap-1 rounded-md border border-dashed border-gray-300 px-1.5 py-0.5 text-xxs font-semibold text-gray-500 ${uploading ? "cursor-wait opacity-60" : "cursor-pointer hover:border-primary hover:text-primary"}`}>
-                  ＋ {uploading ? "กำลังอัปโหลด..." : "แนบไฟล์"}
-                  <input type="file" accept="image/*,.pdf" disabled={uploading} className="hidden" onChange={event => event.target.files?.[0] && onUpload(item, event.target.files[0])} />
-                </label>
-            </div>
-            )}
           </div>
         </div>
       </div>
@@ -633,6 +641,3 @@ function ChecklistRow({
   );
 }
 
-function Tag({ className, children }: { className: string; children: React.ReactNode }) {
-  return <span className={`rounded px-1.5 py-0.5 text-xxs font-bold ${className}`}>{children}</span>;
-}
