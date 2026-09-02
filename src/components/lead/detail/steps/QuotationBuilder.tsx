@@ -951,6 +951,8 @@ type TreeLine = {
   package_item_id?: number | null;
   item_name: string;
   quantity: number;
+  /** จำนวนต่อ 1 ชุดของหัวข้อ — ฐานสำหรับคูณเวลาแก้จำนวนชุด */
+  unitQuantity?: number;
   unit: string;
 };
 type TreeGroup = {
@@ -958,6 +960,10 @@ type TreeGroup = {
   kind: "package" | "custom";
   source_package_id?: number;
   price: number;
+  /** ราคา/จำนวนอุปกรณ์ ต่อ 1 ชุด — ใช้เป็นฐานคำนวณเวลาแก้จำนวน
+   *  (ถ้าคูณทบจากค่าปัจจุบัน พอผู้ใช้ลบเลขทิ้งแล้วพิมพ์ใหม่ ตัวคูณเดิมจะหาย
+   *   แล้วค่าจะบานปลาย เช่น 10 → ลบ → 5 กลายเป็น ×50) */
+  unitPrice?: number;
   title: TreeLine;   // = item แรกของ package (บรรทัดที่โชว์บนเอกสาร)
   details: TreeLine[];
   open: boolean;
@@ -1057,25 +1063,32 @@ function QuotationEditor({
       gs.map((g) => ({ ...g, open: g.key === key ? !g.open : false })),
     );
   /** เปลี่ยนจำนวนที่บรรทัดแรกของแพ็กเกจ = ซื้อชุดนั้นกี่ชุด
-   *  คิดให้อัตโนมัติจากของเดิม 1 ชุด: ราคา × N และจำนวนของบรรทัดย่อย × N
-   *  (คิดจากค่าปัจจุบันหารจำนวนเดิม เพื่อไม่ให้ทบไปเรื่อย ๆ เวลาพิมพ์แก้หลายรอบ) */
+   *  คิดจาก "ค่าต่อ 1 ชุด" เสมอ (ราคา × N, จำนวนอุปกรณ์ × N) ไม่ใช่คูณทบจาก
+   *  ค่าปัจจุบัน — เพิ่มแล้วลดกลับจึงได้ค่าเดิมเป๊ะ และลบเลขทิ้งแล้วพิมพ์ใหม่
+   *  ก็ไม่บานปลาย · ฐานตั้งจากค่าปัจจุบันหารจำนวนที่ใช้อยู่ ครั้งแรกที่แก้
+   */
   const setGroupQuantity = (groupKey: string, nextQty: number) =>
     setGroups((gs) =>
       gs.map((g) => {
         if (g.key !== groupKey || g.kind !== "package") return g;
-        const prev = Number(g.title.quantity) || 1;
+        const shown = Number(g.title.quantity) || 1;
+        const basePrice = g.unitPrice ?? (Number(g.price) || 0) / shown;
+        const details = g.details.map((d) => ({
+          ...d,
+          unitQuantity: d.unitQuantity ?? (Number(d.quantity) || 0) / shown,
+        }));
         const next = Number(nextQty) || 0;
-        if (next <= 0) return { ...g, title: { ...g.title, quantity: next } };
-        const factor = next / prev;
-        if (!Number.isFinite(factor) || factor === 1)
-          return { ...g, title: { ...g.title, quantity: next } };
+        // ยังไม่ได้ใส่ตัวเลข (ลบทิ้งหมด) → เก็บแค่ค่าที่พิมพ์ ยังไม่คิดราคาใหม่
+        if (next <= 0)
+          return { ...g, unitPrice: basePrice, details, title: { ...g.title, quantity: next } };
         return {
           ...g,
-          price: Math.round((Number(g.price) || 0) * factor),
+          unitPrice: basePrice,
+          price: Math.round(basePrice * next),
           title: { ...g.title, quantity: next },
-          details: g.details.map((d) => ({
+          details: details.map((d) => ({
             ...d,
-            quantity: Math.round((Number(d.quantity) || 0) * factor * 100) / 100,
+            quantity: Math.round((d.unitQuantity ?? 0) * next * 100) / 100,
           })),
         };
       }),
@@ -1897,9 +1910,17 @@ function QuotationEditor({
                             <input
                               type="number"
                               min="0"
-                              value={d.quantity}
+                              // ลบจนหมดต้องเป็นช่องว่าง ไม่ใช่เลข 0 ค้าง ไม่งั้นพิมพ์ต่อได้ "010"
+                              value={Number(d.quantity) > 0 ? d.quantity : ""}
                               onChange={(e) =>
-                                patchLine(g.key, d.key, { quantity: Number(e.target.value) })
+                                patchLine(g.key, d.key, {
+                                  quantity: Number(e.target.value.replace(/^0+(?=\d)/, "")),
+                                  // แก้จำนวนเอง = ตั้งฐานต่อชุดใหม่ตามที่พิมพ์
+                                  // ไม่งั้นพอไปแก้จำนวนชุดทีหลัง ค่าจะถูกดึงกลับไปฐานเดิม
+                                  unitQuantity:
+                                    Number(e.target.value.replace(/^0+(?=\d)/, "")) /
+                                    (Number(g.title.quantity) || 1),
+                                })
                               }
                               className={`text-center ${CELL}`}
                             />
