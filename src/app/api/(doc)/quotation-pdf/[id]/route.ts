@@ -503,73 +503,20 @@ export async function GET(
     if (isAddOnHead(item)) addOnGroups.push({ head: item, details: [] });
     else addOnGroups[addOnGroups.length - 1]?.details.push(item);
   }
-  // รายการเดียวกันที่เลือกซ้ำหลายครั้ง (เช่นแบตก้อนละชุด × 6) ให้ยุบเหลือแถวเดียว
-  // จำนวนบวกกัน ราคาบวกกัน — คีย์เทียบจากชนิด + ชื่อ + รายละเอียดย่อยทั้งชุด
-  // เพื่อไม่ให้รายการชื่อเหมือนกันแต่สเปกต่างกันถูกยุบรวมผิด
-  const mergedAddOns: Array<{ head: Record<string, unknown>; details: Record<string, unknown>[]; count: number }> = [];
-  const mergedIndexByKey = new Map<string, number>();
-  for (const group of addOnGroups) {
-    const key = [
-      String(group.head.source_type || ""),
-      String(group.head.item_name_snapshot || group.head.item_name || "").trim(),
-      String(group.head.unit || "").trim(),
-      group.details.map((d) => String(d.item_name_snapshot || d.item_name || "").trim()).join("|"),
-    ].join("~");
-    const at = mergedIndexByKey.get(key);
-    if (at === undefined) {
-      mergedIndexByKey.set(key, mergedAddOns.length);
-      mergedAddOns.push({ head: { ...group.head }, details: group.details, count: 1 });
-      continue;
-    }
-    const target = mergedAddOns[at];
-    target.count += 1;
-    target.head.quantity = (Number(target.head.quantity) || 0) + (Number(group.head.quantity) || 0);
-    target.head.line_total = (Number(target.head.line_total) || 0) + (Number(group.head.line_total) || 0);
-  }
-  // รวบ N รายการเข้าด้วยกัน = ระบบใหญ่ขึ้น N เท่า → คูณเฉพาะ kWp/kWh ที่เป็น
-  // ขนาดรวมของงาน ไม่แตะหน่วยที่เป็นสเปกต่อชิ้น (เช่น "ขนาด 730 W" ของแผงหนึ่งแผ่น)
-  // และไม่แตะ "(ระบบเดิม N kWp)" ซึ่งเป็นขนาดระบบที่ลูกค้ามีอยู่แล้ว
-  // ลูกค้าซื้อชุดเพิ่ม 14 ชุด ระบบเดิมก็ยังเท่าเดิม ไม่ได้กลายเป็น 42 kWp
-  const KEEP_AS_IS = /ระบบเดิม\s*[\d.,]+\s*(?:kWp|kWh)/gi;
-  const scaleKwUnits = (text: unknown, factor: number) => {
-    const raw = String(text || "");
-    if (!(factor > 1)) return raw;
-    const scalePart = (part: string) =>
-      part.replace(/(\d+(?:[.,]\d+)?)\s*(kWp|kWh)/gi, (_m, num: string, unit: string) => {
-        const scaled = Number(String(num).replace(/,/g, "")) * factor;
-        if (!Number.isFinite(scaled)) return `${num} ${unit}`;
-        return `${Number(scaled.toFixed(2)).toLocaleString("en-US", { maximumFractionDigits: 2 })} ${unit}`;
-      });
-    let out = "";
-    let last = 0;
-    for (const m of raw.matchAll(KEEP_AS_IS)) {
-      const at = m.index ?? 0;
-      out += scalePart(raw.slice(last, at)) + m[0];
-      last = at + m[0].length;
-    }
-    return out + scalePart(raw.slice(last));
-  };
-  const addOnRows = mergedAddOns.flatMap<QuoteTableRow>(({ head: rawHead, details: rawDetails, count }) => {
+  // ไม่รวบรายการซ้ำ — พิมพ์ทุกแถวตามที่กรอกไว้ในหน้าใบเสนอราคา
+  const addOnRows = addOnGroups.flatMap<QuoteTableRow>(({ head, details }) => {
     addOnSequence += 1;
-    // แถวหัวข้อที่รวบมา: ไม่โชว์ "N ชุด" แต่ให้ขนาดรวม (kWp/kWh) ในชื่อคูณ N แทน
-    const head: Record<string, unknown> = count > 1
-      ? { ...rawHead, item_name_snapshot: scaleKwUnits(rawHead.item_name_snapshot ?? rawHead.item_name, count), quantity: 0, unit: "" }
-      : rawHead;
-    // บรรทัดย่อย: จำนวนของแต่ละชิ้นคูณ N (x ลูก / x ชิ้น / x SET) และ kWp/kWh คูณ N ด้วย
-    const details: Record<string, unknown>[] = count > 1
-      ? rawDetails.map((d) => ({
-          ...d,
-          item_name_snapshot: scaleKwUnits(d.item_name_snapshot ?? d.item_name, count),
-          quantity: (Number(d.quantity) || 0) * count,
-        }))
-      : rawDetails;
     // งานเพิ่มที่ราคา 0 = แถมให้ → แสดงเฉพาะชื่อรายการ ไม่ต้องมีจำนวน/หน่วย และไม่ต้องมียอด 0.00
     const isFree = !(Number(head.line_total) > 0);
     const amount = isFree ? 0 : Number(head.line_total) || 0;
     const headRow: QuoteTableRow =
       head.source_type === "addon_package"
         ? {
-            html: `<tr class="head-row"><td class="center">${addOnSequence}</td><td>${otherPackageTextHtml(isFree ? normalizeOtherPackageText(head.item_name_snapshot) : otherPackageItemText(head))}</td><td class="right">${isFree ? "" : money(head.line_total)}</td></tr>`,
+            // แสดงจำนวน+หน่วยตรง ๆ ตามที่เก็บไว้ (เหมือนที่เห็นในหน้าใบเสนอราคา)
+            // ยกเว้นรายการแถมราคา 0 ที่โชว์แต่ชื่อ
+            html: `<tr class="head-row"><td class="center">${addOnSequence}</td><td>${otherPackageTextHtml(
+              isFree ? normalizeOtherPackageText(head.item_name_snapshot) : otherPackageItemText(head),
+            )}</td><td class="right">${isFree ? "" : money(head.line_total)}</td></tr>`,
             isHead: true,
             amount,
           }
@@ -612,15 +559,33 @@ export async function GET(
         return unit && Number.isFinite(qty) && qty > 0 ? `${name} ${qty} ${unit}` : name;
       })(),
       // package ที่ไม่ใช่ตัวหลัก + งานเพิ่ม → ไปโผล่ในตาราง §5 "รายการเพิ่มเติม"
-      // ใช้ชุดที่รวมรายการซ้ำแล้ว (mergedAddOns) ให้ตรงกับตารางในใบเสนอราคา
-      addOns: mergedAddOns.map(({ head }) => ({
-        name: String(head.item_name_snapshot || head.item_name || "")
-          .replace(/^Package เพิ่มเติม:\s*/i, "")
-          .replace(/^Scal(?:e)?\s*Up\s*:\s*/i, ""),
-        quantity: Number(head.quantity) || 0,
-        unit: String(head.unit || ""),
-        amount: Number(head.line_total) || 0,
-      })),
+      // §5 ในรายงานสำรวจ "รวบ" รายการที่ซ้ำกันให้เหลือแถวเดียว บวกทั้งจำนวนและเงิน
+      // (ตารางในใบเสนอราคาไม่รวบ — พิมพ์ทุกแถวตามที่กรอก คนละมุมกันคนละเอกสาร)
+      addOns: (() => {
+        const rows: Array<{ name: string; quantity: number; unit: string; amount: number }> = [];
+        const seen = new Map<string, number>();
+        for (const { head } of addOnGroups) {
+          const name = String(head.item_name_snapshot || head.item_name || "")
+            .replace(/^Package เพิ่มเติม:\s*/i, "")
+            .replace(/^Scal(?:e)?\s*Up\s*:\s*/i, "");
+          const unit = String(head.unit || "");
+          const key = `${String(head.source_type || "")}~${name.trim()}~${unit.trim()}`;
+          const at = seen.get(key);
+          if (at === undefined) {
+            seen.set(key, rows.length);
+            rows.push({
+              name,
+              quantity: Number(head.quantity) || 0,
+              unit,
+              amount: Number(head.line_total) || 0,
+            });
+            continue;
+          }
+          rows[at].quantity += Number(head.quantity) || 0;
+          rows[at].amount += Number(head.line_total) || 0;
+        }
+        return rows;
+      })(),
       quotation: {
         docNo: String(q.doc_no || ""),
         grossAmount: Number(q.subtotal_incl_vat || 0),

@@ -1062,38 +1062,6 @@ function QuotationEditor({
     setGroups((gs) =>
       gs.map((g) => ({ ...g, open: g.key === key ? !g.open : false })),
     );
-  /** เปลี่ยนจำนวนที่บรรทัดแรกของแพ็กเกจ = ซื้อชุดนั้นกี่ชุด
-   *  คิดจาก "ค่าต่อ 1 ชุด" เสมอ (ราคา × N, จำนวนอุปกรณ์ × N) ไม่ใช่คูณทบจาก
-   *  ค่าปัจจุบัน — เพิ่มแล้วลดกลับจึงได้ค่าเดิมเป๊ะ และลบเลขทิ้งแล้วพิมพ์ใหม่
-   *  ก็ไม่บานปลาย · ฐานตั้งจากค่าปัจจุบันหารจำนวนที่ใช้อยู่ ครั้งแรกที่แก้
-   */
-  const setGroupQuantity = (groupKey: string, nextQty: number) =>
-    setGroups((gs) =>
-      gs.map((g) => {
-        if (g.key !== groupKey || g.kind !== "package") return g;
-        const shown = Number(g.title.quantity) || 1;
-        const basePrice = g.unitPrice ?? (Number(g.price) || 0) / shown;
-        const details = g.details.map((d) => ({
-          ...d,
-          unitQuantity: d.unitQuantity ?? (Number(d.quantity) || 0) / shown,
-        }));
-        const next = Number(nextQty) || 0;
-        // ยังไม่ได้ใส่ตัวเลข (ลบทิ้งหมด) → เก็บแค่ค่าที่พิมพ์ ยังไม่คิดราคาใหม่
-        if (next <= 0)
-          return { ...g, unitPrice: basePrice, details, title: { ...g.title, quantity: next } };
-        return {
-          ...g,
-          unitPrice: basePrice,
-          price: Math.round(basePrice * next),
-          title: { ...g.title, quantity: next },
-          details: details.map((d) => ({
-            ...d,
-            quantity: Math.round((d.unitQuantity ?? 0) * next * 100) / 100,
-          })),
-        };
-      }),
-    );
-
   const patchLine = (
     groupKey: string,
     lineKey: string,
@@ -1733,31 +1701,26 @@ function QuotationEditor({
                               min="0"
                               // ลบจนหมดต้องได้ช่องว่าง ไม่ใช่เลข 0 ค้างไว้ ไม่งั้นพิมพ์ต่อ
                               // จะกลายเป็น "010" แล้วตัวคูณเพี้ยนตามไปด้วย
+                              // จำนวนบนแถวหัวข้อแก้ไม่ได้ทุกกลุ่ม — ค่ามาจาก Package Master
+                              // ถ้าลูกค้าเอาหลายชุด ให้เพิ่มแพ็กเกจซ้ำ เอกสารจะพิมพ์
+                              // ทุกแถวตามที่กรอกไว้ ไม่รวบให้
                               value={Number(g.title.quantity) > 0 ? g.title.quantity : ""}
-                              onChange={(e) =>
-                                setGroupQuantity(g.key, Number(e.target.value.replace(/^0+(?=\d)/, "")))
-                              }
-                              readOnly={gi === mainIndex}
-                              tabIndex={gi === mainIndex ? -1 : undefined}
-                              title={gi === mainIndex
-                                ? "แพ็กเกจหลักแก้จำนวนไม่ได้ — ค่ามาจาก Package Master"
-                                : "ใส่จำนวนชุด ระบบจะคิดราคาและจำนวนอุปกรณ์ให้อัตโนมัติ"}
-                              aria-label="จำนวนชุดของแพ็กเกจนี้"
-                              className={`text-center ${CELL} ${
-                                gi === mainIndex ? "cursor-default text-gray-400 hover:border-transparent" : ""}`}
+                              readOnly
+                              tabIndex={-1}
+                              title="แก้จำนวนที่นี่ไม่ได้ — ค่ามาจาก Package Master"
+                              aria-label="จำนวนของแพ็กเกจนี้"
+                              className={`text-center cursor-default text-gray-400 hover:border-transparent ${CELL}`}
                             />
                           </div>
                           <div className="w-[72px] shrink-0">
                             <input
                               value={g.title.unit}
-                              onChange={(e) => patchLine(g.key, g.title.key, { unit: e.target.value })}
-                              readOnly={gi === mainIndex}
-                              tabIndex={gi === mainIndex ? -1 : undefined}
+                              readOnly
+                              tabIndex={-1}
                               placeholder="หน่วย"
-                              title={gi === mainIndex ? "แพ็กเกจหลักแก้หน่วยไม่ได้ — ค่ามาจาก Package Master" : undefined}
+                              title="แก้หน่วยที่นี่ไม่ได้ — ค่ามาจาก Package Master"
                               aria-label="หน่วยบนบรรทัดแรก"
-                              className={`${CELL} ${
-                                gi === mainIndex ? "cursor-default text-gray-400 hover:border-transparent" : ""}`}
+                              className={`cursor-default text-gray-400 hover:border-transparent ${CELL}`}
                             />
                           </div>
                         </>
