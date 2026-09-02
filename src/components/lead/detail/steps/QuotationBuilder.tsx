@@ -972,21 +972,6 @@ const asLine = (raw: Record<string, unknown>): TreeLine => ({
   unit: String(raw.unit || ""),
 });
 
-/** บรรทัดแรกของแพ็กเกจหลัก: รวมจำนวน+หน่วยเข้าไปในชื่อเลย เพราะเอกสารพิมพ์ต่อกันอยู่แล้ว
- *  ("...รวม 2.92 kWp" + 1 + "เฟส" → "...รวม 2.92 kWp 1 เฟส")
- *  ทำเฉพาะหัวข้อสไตล์ Excel ที่ขึ้นต้นด้วย "งานจ้างเหมา" — ตรงกับเงื่อนไข usesExcelPackageTitle
- *  ใน quotation-pdf · เรียกซ้ำได้ เพราะ unit ถูกล้างหลังรวมแล้ว */
-const mergeTitleUnit = (line: TreeLine): TreeLine =>
-  line.unit && line.item_name.startsWith("งานจ้างเหมา")
-    ? { ...line, item_name: `${line.item_name} ${line.quantity} ${line.unit}`.trim(), quantity: 1, unit: "" }
-    : line;
-
-/** รวมหน่วยเข้าชื่อให้เฉพาะกลุ่มแพ็กเกจบนสุด (แพ็กเกจหลัก) — กลุ่มอื่นคงเดิม */
-const withMergedMainTitle = (gs: TreeGroup[]): TreeGroup[] => {
-  const i = gs.findIndex((g) => g.kind === "package");
-  return i < 0 ? gs : gs.map((g, gi) => (gi === i ? { ...g, title: mergeTitleUnit(g.title) } : g));
-};
-
 /** แปลงรายการที่บันทึกไว้กลับเป็น tree ตอนเปิดใบเก่ามาแก้ */
 function hydrateGroups(quote: Quote | undefined): TreeGroup[] {
   const rows = (quote?.items || []) as unknown as Array<Record<string, unknown>>;
@@ -1035,7 +1020,7 @@ function hydrateGroups(quote: Quote | undefined): TreeGroup[] {
       open: false,
     });
   }
-  return withMergedMainTitle(groups);
+  return groups;
 }
 
 
@@ -1071,6 +1056,31 @@ function QuotationEditor({
     setGroups((gs) =>
       gs.map((g) => ({ ...g, open: g.key === key ? !g.open : false })),
     );
+  /** เปลี่ยนจำนวนที่บรรทัดแรกของแพ็กเกจ = ซื้อชุดนั้นกี่ชุด
+   *  คิดให้อัตโนมัติจากของเดิม 1 ชุด: ราคา × N และจำนวนของบรรทัดย่อย × N
+   *  (คิดจากค่าปัจจุบันหารจำนวนเดิม เพื่อไม่ให้ทบไปเรื่อย ๆ เวลาพิมพ์แก้หลายรอบ) */
+  const setGroupQuantity = (groupKey: string, nextQty: number) =>
+    setGroups((gs) =>
+      gs.map((g) => {
+        if (g.key !== groupKey || g.kind !== "package") return g;
+        const prev = Number(g.title.quantity) || 1;
+        const next = Number(nextQty) || 0;
+        if (next <= 0) return { ...g, title: { ...g.title, quantity: next } };
+        const factor = next / prev;
+        if (!Number.isFinite(factor) || factor === 1)
+          return { ...g, title: { ...g.title, quantity: next } };
+        return {
+          ...g,
+          price: Math.round((Number(g.price) || 0) * factor),
+          title: { ...g.title, quantity: next },
+          details: g.details.map((d) => ({
+            ...d,
+            quantity: Math.round((Number(d.quantity) || 0) * factor * 100) / 100,
+          })),
+        };
+      }),
+    );
+
   const patchLine = (
     groupKey: string,
     lineKey: string,
@@ -1151,17 +1161,14 @@ function QuotationEditor({
         open: true,
       };
       setGroups((gs) => {
-        if (replaceKey)
-          return withMergedMainTitle(gs.map((g) => (g.key === replaceKey ? group : g)));
+        if (replaceKey) return gs.map((g) => (g.key === replaceKey ? group : g));
         // แพ็กเกจใหม่แทรกต่อท้ายกลุ่มแพ็กเกจ — "งานเพิ่ม" อยู่ล่างสุดเสมอ
         // และหุบหัวข้ออื่นไว้ (กางได้ทีละอัน)
         const closed = gs.map((g) => ({ ...g, open: false }));
         const firstCustom = closed.findIndex((g) => g.kind === "custom");
-        return withMergedMainTitle(
-          firstCustom < 0
-            ? [...closed, group]
-            : [...closed.slice(0, firstCustom), group, ...closed.slice(firstCustom)],
-        );
+        return firstCustom < 0
+          ? [...closed, group]
+          : [...closed.slice(0, firstCustom), group, ...closed.slice(firstCustom)];
       });
     } finally {
       setLoadingPackage(false);
@@ -1421,16 +1428,19 @@ function QuotationEditor({
                 source_package_id: g.source_package_id,
                 package_item_id: g.title.package_item_id ?? null,
                 item_name: g.title.item_name,
-                quantity: 1,
-                unit: g.title.unit || "ชุด",
+                // ส่งจำนวน/หน่วยตามที่กรอกจริง — เดิม hard-code 1 กับ "ชุด"
+                // เอกสารเลยพิมพ์ "… 1 ชุด" ต่อท้ายทุกใบ ทั้งที่ผู้ใช้ใส่ 20 ชุด
+                // และทั้งที่บางแพ็กเกจไม่ได้ตั้งหน่วยไว้เลย
+                quantity: Number(g.title.quantity) || 1,
+                unit: g.title.unit || null,
                 unit_price: price,
                 line_total: price,
               }
             : {
                 source_type: "custom_group" as const,
                 item_name: g.title.item_name,
-                quantity: 1,
-                unit: g.title.unit || "งาน",
+                quantity: Number(g.title.quantity) || 1,
+                unit: g.title.unit || null,
                 unit_price: price,
                 line_total: price,
               };
@@ -1693,6 +1703,52 @@ function QuotationEditor({
                         aria-label="ชื่อหัวข้อบนเอกสาร"
                         className="min-w-0 flex-1 resize-none overflow-hidden rounded-md border border-transparent bg-transparent px-1.5 py-1 text-sm font-semibold leading-snug text-gray-800 outline-none transition-colors placeholder:font-normal placeholder:text-gray-300 hover:border-gray-200 focus:border-primary focus:bg-white"
                       />
+                      {/* จำนวน+หน่วยของบรรทัดแรก — เอกสารเอาไปต่อท้ายชื่อ
+                          ("...ขนาดติดตั้งรวม 2.92 kWp" + "1 เฟส")
+                          ความกว้างเท่าบรรทัดย่อยด้านล่าง คอลัมน์จะได้ตรงกันทั้งกลุ่ม */}
+                      {g.kind === "package" && (
+                        // ครอบด้วย div กำหนดความกว้าง — CELL มี w-full อยู่ข้างใน
+                        // ถ้าใส่ w-14 ต่อท้าย CELL ตรง ๆ Tailwind จะให้ w-full ชนะ
+                        // (ลำดับใน stylesheet ไม่ใช่ลำดับใน className) แถวจะล้นจนชื่อหด
+                        // แพ็กเกจหลัก = ตัวที่ผูกกับใบเสนอราคาโดยตรง จำนวน/หน่วยของบรรทัดแรก
+                        // ต้องมาจาก Package Master เท่านั้น แก้ที่นี่ไม่ได้ (ซื้อหลายชุดให้เพิ่ม
+                        // เป็นแพ็กเกจรองแทน) · แพ็กเกจรองแก้จำนวนได้ ระบบคิดราคา/อุปกรณ์ให้เอง
+                        <>
+                          <div className="w-14 shrink-0">
+                            <input
+                              type="number"
+                              min="0"
+                              // ลบจนหมดต้องได้ช่องว่าง ไม่ใช่เลข 0 ค้างไว้ ไม่งั้นพิมพ์ต่อ
+                              // จะกลายเป็น "010" แล้วตัวคูณเพี้ยนตามไปด้วย
+                              value={Number(g.title.quantity) > 0 ? g.title.quantity : ""}
+                              onChange={(e) =>
+                                setGroupQuantity(g.key, Number(e.target.value.replace(/^0+(?=\d)/, "")))
+                              }
+                              readOnly={gi === mainIndex}
+                              tabIndex={gi === mainIndex ? -1 : undefined}
+                              title={gi === mainIndex
+                                ? "แพ็กเกจหลักแก้จำนวนไม่ได้ — ค่ามาจาก Package Master"
+                                : "ใส่จำนวนชุด ระบบจะคิดราคาและจำนวนอุปกรณ์ให้อัตโนมัติ"}
+                              aria-label="จำนวนชุดของแพ็กเกจนี้"
+                              className={`text-center ${CELL} ${
+                                gi === mainIndex ? "cursor-default text-gray-400 hover:border-transparent" : ""}`}
+                            />
+                          </div>
+                          <div className="w-[72px] shrink-0">
+                            <input
+                              value={g.title.unit}
+                              onChange={(e) => patchLine(g.key, g.title.key, { unit: e.target.value })}
+                              readOnly={gi === mainIndex}
+                              tabIndex={gi === mainIndex ? -1 : undefined}
+                              placeholder="หน่วย"
+                              title={gi === mainIndex ? "แพ็กเกจหลักแก้หน่วยไม่ได้ — ค่ามาจาก Package Master" : undefined}
+                              aria-label="หน่วยบนบรรทัดแรก"
+                              className={`${CELL} ${
+                                gi === mainIndex ? "cursor-default text-gray-400 hover:border-transparent" : ""}`}
+                            />
+                          </div>
+                        </>
+                      )}
                       {g.kind === "package" ? (
                         (() => {
                           const options = pricePeriods[g.source_package_id ?? -1] || [];

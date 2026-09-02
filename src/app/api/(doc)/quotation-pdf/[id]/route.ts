@@ -526,8 +526,43 @@ export async function GET(
     target.head.quantity = (Number(target.head.quantity) || 0) + (Number(group.head.quantity) || 0);
     target.head.line_total = (Number(target.head.line_total) || 0) + (Number(group.head.line_total) || 0);
   }
-  const addOnRows = mergedAddOns.flatMap<QuoteTableRow>(({ head, details }) => {
+  // รวบ N รายการเข้าด้วยกัน = ระบบใหญ่ขึ้น N เท่า → คูณเฉพาะ kWp/kWh ที่เป็น
+  // ขนาดรวมของงาน ไม่แตะหน่วยที่เป็นสเปกต่อชิ้น (เช่น "ขนาด 730 W" ของแผงหนึ่งแผ่น)
+  // และไม่แตะ "(ระบบเดิม N kWp)" ซึ่งเป็นขนาดระบบที่ลูกค้ามีอยู่แล้ว
+  // ลูกค้าซื้อชุดเพิ่ม 14 ชุด ระบบเดิมก็ยังเท่าเดิม ไม่ได้กลายเป็น 42 kWp
+  const KEEP_AS_IS = /ระบบเดิม\s*[\d.,]+\s*(?:kWp|kWh)/gi;
+  const scaleKwUnits = (text: unknown, factor: number) => {
+    const raw = String(text || "");
+    if (!(factor > 1)) return raw;
+    const scalePart = (part: string) =>
+      part.replace(/(\d+(?:[.,]\d+)?)\s*(kWp|kWh)/gi, (_m, num: string, unit: string) => {
+        const scaled = Number(String(num).replace(/,/g, "")) * factor;
+        if (!Number.isFinite(scaled)) return `${num} ${unit}`;
+        return `${Number(scaled.toFixed(2)).toLocaleString("en-US", { maximumFractionDigits: 2 })} ${unit}`;
+      });
+    let out = "";
+    let last = 0;
+    for (const m of raw.matchAll(KEEP_AS_IS)) {
+      const at = m.index ?? 0;
+      out += scalePart(raw.slice(last, at)) + m[0];
+      last = at + m[0].length;
+    }
+    return out + scalePart(raw.slice(last));
+  };
+  const addOnRows = mergedAddOns.flatMap<QuoteTableRow>(({ head: rawHead, details: rawDetails, count }) => {
     addOnSequence += 1;
+    // แถวหัวข้อที่รวบมา: ไม่โชว์ "N ชุด" แต่ให้ขนาดรวม (kWp/kWh) ในชื่อคูณ N แทน
+    const head: Record<string, unknown> = count > 1
+      ? { ...rawHead, item_name_snapshot: scaleKwUnits(rawHead.item_name_snapshot ?? rawHead.item_name, count), quantity: 0, unit: "" }
+      : rawHead;
+    // บรรทัดย่อย: จำนวนของแต่ละชิ้นคูณ N (x ลูก / x ชิ้น / x SET) และ kWp/kWh คูณ N ด้วย
+    const details: Record<string, unknown>[] = count > 1
+      ? rawDetails.map((d) => ({
+          ...d,
+          item_name_snapshot: scaleKwUnits(d.item_name_snapshot ?? d.item_name, count),
+          quantity: (Number(d.quantity) || 0) * count,
+        }))
+      : rawDetails;
     // งานเพิ่มที่ราคา 0 = แถมให้ → แสดงเฉพาะชื่อรายการ ไม่ต้องมีจำนวน/หน่วย และไม่ต้องมียอด 0.00
     const isFree = !(Number(head.line_total) > 0);
     const amount = isFree ? 0 : Number(head.line_total) || 0;
