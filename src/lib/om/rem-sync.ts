@@ -63,7 +63,8 @@ export async function syncProject(db: sql.ConnectionPool, projectId: string): Pr
         .input("g", sql.NVarChar(100), t.houseNumber ?? null).input("h", sql.NVarChar(100), houseKey(t.houseNumber) || null)
         .input("i", sql.DateTimeOffset, thaiDate(t.transferDate)).input("j", sql.DateTimeOffset, thaiDate(t.condominiumRegisterDate))
         .input("k", sql.NVarChar(40), t.latitude || null).input("l", sql.NVarChar(40), t.longitude || null)
-        .input("m", sql.NVarChar(sql.MAX), JSON.stringify({ ...t, owners: undefined })),
+        // ★ ตัด owners กับ promotions ออกจาก raw — promotions มีราคาฝังอยู่ ซึ่งเราไม่เก็บ
+        .input("m", sql.NVarChar(sql.MAX), JSON.stringify({ ...t, owners: undefined, promotions: undefined })),
       "contract_id, project_id, project_name, project_type, unit_id, unit_number, house_number, house_number_key, transfer_date, condo_register_date, latitude, longitude, raw",
       "@a,@b,@c,@d,@e,@f,@g,@h,@i,@j,@k,@l,@m");
 
@@ -95,16 +96,15 @@ export async function syncProject(db: sql.ConnectionPool, projectId: string): Pr
           .input("c", sql.NVarChar(40), p.promotionID ?? "").input("d", sql.NVarChar(40), p.mPromotionID ?? null)
           .input("e", sql.NVarChar(4), p.promotionType ?? null).input("f", sql.NVarChar(400), p.promotionName ?? null)
           .input("g", sql.NVarChar(400), p.description1 ?? null).input("h", sql.NVarChar(400), p.description2 ?? null)
-          .input("i", sql.Decimal(14, 2), Number.isFinite(p.price) ? p.price! : null)
-          .input("j", sql.NVarChar(40), p.percentFrom || null).input("k", sql.Bit, p.isStandard ? 1 : 0)
+          .input("k", sql.Bit, p.isStandard ? 1 : 0)
           .input("l", sql.Bit, isSolarPromo(p) ? 1 : 0)
           .input("m", sql.Decimal(8, 2), isSolarPromo(p) ? promoSolarKw(p) : null)
           .input("n", sql.Int, promoOmYears(p))
           .input("o", sql.Bit, isCancelledPromo(p) ? 1 : 0)
           .query(`INSERT INTO om_rem_promotions (contract_id, p_detail_id, promotion_id, m_promotion_id,
-                    promotion_type, promotion_name, description1, description2, price, percent_from, is_standard,
+                    promotion_type, promotion_name, description1, description2, is_standard,
                     is_solar, solar_kw, om_years, is_cancelled)
-                  VALUES (@a,@b,@c,@d,@e,@f,@g,@h,@i,@j,@k,@l,@m,@n,@o)`);
+                  VALUES (@a,@b,@c,@d,@e,@f,@g,@h,@k,@l,@m,@n,@o)`);
         promotions++;
       }
     }
@@ -167,14 +167,13 @@ async function writePromos(db: sql.ConnectionPool, contractId: string, promos: R
         .input("c", sql.NVarChar(40), String(p.promotionID ?? "")).input("d", sql.NVarChar(40), p.mPromotionID ?? null)
         .input("e", sql.NVarChar(4), p.promotionType ?? null).input("f", sql.NVarChar(400), p.promotionName ?? null)
         .input("g", sql.NVarChar(400), p.description1 ?? null).input("h", sql.NVarChar(400), p.description2 ?? null)
-        .input("i", sql.Decimal(14, 2), Number.isFinite(p.price) ? p.price! : null)
-        .input("j", sql.NVarChar(40), p.percentFrom || null).input("k", sql.Bit, p.isStandard ? 1 : 0)
+        .input("k", sql.Bit, p.isStandard ? 1 : 0)
         .input("l", sql.Bit, solar ? 1 : 0).input("m", sql.Decimal(8, 2), solar ? promoSolarKw(p) : null)
         .input("n", sql.Int, promoOmYears(p)).input("o", sql.Bit, isCancelledPromo(p) ? 1 : 0)
         .query(`INSERT INTO om_rem_promotions (contract_id, p_detail_id, promotion_id, m_promotion_id,
-                  promotion_type, promotion_name, description1, description2, price, percent_from, is_standard,
+                  promotion_type, promotion_name, description1, description2, is_standard,
                   is_solar, solar_kw, om_years, is_cancelled)
-                VALUES (@a,@b,@c,@d,@e,@f,@g,@h,@i,@j,@k,@l,@m,@n,@o)`);
+                VALUES (@a,@b,@c,@d,@e,@f,@g,@h,@k,@l,@m,@n,@o)`);
       n++;
     }
     await new sql.Request(tx).input("c", sql.NVarChar(80), contractId).input("n", sql.Int, n)

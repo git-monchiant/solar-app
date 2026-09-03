@@ -21,7 +21,9 @@ export type RemOwner = {
 export type RemPromotion = {
   contractID?: string; pDetailID?: number; promotionID?: string; mPromotionID?: string;
   promotionType?: string; promotionName?: string; description1?: string; description2?: string;
-  price?: number; percentFrom?: string; isStandard?: boolean;
+  isStandard?: boolean;
+  // ★ REM ส่ง price / percentFrom มาด้วย แต่เราไม่รับเข้าระบบ (ผู้ใช้เคาะ 2 ก.ย.)
+  //   ราคาของแถมเป็นข้อมูลฝั่งขาย งาน O&M ไม่มีเหตุต้องรู้ — ไม่เก็บดีกว่าเก็บแล้วต้องระวัง
 };
 
 // ★ ที่เดียวที่ REM บอกว่า "แถมโซลาร์ตอนขายไหม" — ชื่อโปรฯ ว่างได้บ่อย ต้องดู description ด้วย

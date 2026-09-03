@@ -33,7 +33,9 @@ export async function GET(req: NextRequest) {
            MAX(CASE WHEN i.inverter_brand IS NOT NULL THEN 1 ELSE 0 END) has_inv,
            -- "มีสเปกระบบ" = รู้อย่างน้อยหนึ่งใน kWp / ยี่ห้ออินเวอร์เตอร์ / SN  (นิยามเดียวกับ filter=nospec)
            MAX(CASE WHEN i.rem_size_kwp IS NOT NULL OR i.inverter_brand IS NOT NULL
-                         OR i.inverter_sn IS NOT NULL THEN 1 ELSE 0 END) has_spec
+                         OR i.inverter_sn IS NOT NULL
+                         -- ★ ขนาดที่ได้จากโปรฯ ของ REM ก็ถือว่ารู้สเปกแล้ว (เติมเข้ามา 2 ก.ย.)
+                         OR i.promo_size_kw IS NOT NULL THEN 1 ELSE 0 END) has_spec
     INTO #inst FROM om_installations i GROUP BY i.house_id;
 
     SELECT i.house_id, ISNULL(SUM(g.qty), 0) granted

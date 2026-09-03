@@ -15,12 +15,14 @@ export async function GET(req: NextRequest, ctx: { params: Promise<{ id: string 
     SELECT h.id, h.house_number, h.project_name raw_project, h.project_id, h.project_code,
            ISNULL(pj.name_th, h.project_name) project_name, h.segment, h.is_vip, h.has_solar,
            h.unit_status, h.note, h.address, h.lead_id, h.is_om,
+           h.latitude, h.longitude, h.model_name, h.titledeed_area,
            h.om_excluded_reason, CONVERT(varchar(33), h.om_excluded_at, 126) om_excluded_at,
            u.full_name om_excluded_by_name
     FROM om_houses h LEFT JOIN om_projects pj ON pj.project_id = h.project_id
     LEFT JOIN users u ON u.id = h.om_excluded_by WHERE h.id = @id;
 
-    SELECT i.id, i.rem_size_kwp kwp, i.inverter_kw, i.inverter_brand, i.inverter_sn,
+    SELECT i.id, i.rem_size_kwp kwp, i.promo_size_kw, i.promo_om_years, i.promo_name, i.promo_contract_id,
+           i.inverter_kw, i.inverter_brand, i.inverter_sn,
            CONVERT(char(10), i.install_date, 23) install_date,
            CONVERT(char(10), i.transfer_date, 23) transfer_date,
            CONVERT(char(10), i.warranty_start, 23) warranty_start,
@@ -54,20 +56,24 @@ export async function GET(req: NextRequest, ctx: { params: Promise<{ id: string 
     FROM om_bookings b LEFT JOIN om_service_type st ON st.id = b.service_type_id
     WHERE b.house_id = @id ORDER BY b.scheduled_at DESC;
 
-    -- ★ โปรฯ ที่ REM บอกว่าแถมตอนขาย — ที่เดียวที่ตอบได้ว่า "โซลาร์หลังนี้มาจากของแถมหรือเปล่า"
-    --   จับสัญญาจาก om_installations.rem_contract_id ก่อน ถ้าไม่มีค่อยเดาจากโครงการ+บ้านเลขที่
-    SELECT pr.contract_id, pr.promotion_name, pr.description1, pr.price, pr.is_standard, pr.is_solar,
-           CONVERT(varchar(33), t.transfer_date, 126) transfer_date
+    -- ★ ของแถมตอนขาย — ผู้ใช้เคาะ 2 ก.ย.: ไม่ต้องโชว์รายการและ "ห้ามโชว์ราคา"
+    --   ทีม O&M ไม่ต้องรู้ว่าลูกค้าได้ชุดครัว/แอร์ราคาเท่าไหร่ · เอาแค่ "เจอรายการของแถมใน REM"
+    --   กับข้อมูลโซลาร์ซึ่งเป็นที่มาของขนาดระบบ  ⇒ ไม่ส่ง price / ชื่อรายการอื่นออกไปที่เบราว์เซอร์เลย
+    SELECT COUNT(*) n_items,
+           SUM(CASE WHEN pr.is_solar = 1 AND pr.is_cancelled = 0 THEN 1 ELSE 0 END) n_solar,
+           MAX(CASE WHEN pr.is_solar = 1 AND pr.is_cancelled = 0 THEN pr.solar_kw END) solar_kw,
+           MAX(CASE WHEN pr.is_solar = 1 AND pr.is_cancelled = 0 THEN pr.om_years END) om_years,
+           MAX(CASE WHEN pr.is_solar = 1 AND pr.is_cancelled = 0
+                    THEN ISNULL(NULLIF(pr.promotion_name, N''), pr.description1) END) solar_name,
+           MAX(pr.contract_id) contract_id
     FROM om_rem_promotions pr
-    JOIN om_rem_transfers t ON t.contract_id = pr.contract_id
     WHERE pr.contract_id IN (SELECT i.rem_contract_id FROM om_installations i WHERE i.house_id = @id AND i.rem_contract_id IS NOT NULL)
        OR pr.contract_id IN (
             SELECT t2.contract_id FROM om_rem_transfers t2 JOIN om_houses h2 ON h2.id = @id
             WHERE h2.project_id IS NOT NULL AND t2.project_id = h2.project_id
               -- ★ house_number_key เป็น Latin1_General_BIN2 ส่วน house_number เป็น Thai_CI_AS
               --   ถ้าไม่ใส่ COLLATE จะได้ collation conflict (error 468) ตอนเทียบ
-              AND t2.house_number_key = REPLACE(h2.house_number, N' ', N'') COLLATE Latin1_General_BIN2)
-    ORDER BY pr.is_solar DESC, pr.promotion_name;`);
+              AND t2.house_number_key = REPLACE(h2.house_number, N' ', N'') COLLATE Latin1_General_BIN2);`);
 
   const rs = r.recordsets as sql.IRecordSet<Record<string, unknown>>[];
   const house = rs[0][0];
@@ -80,7 +86,7 @@ export async function GET(req: NextRequest, ctx: { params: Promise<{ id: string 
     redemptions: rs[3],
     customers: rs[4],
     bookings: fixDates(rs[5]),
-    promotions: rs[6],
+    promo: (rs[6][0]?.n_items ? rs[6][0] : null),
   });
 }
 

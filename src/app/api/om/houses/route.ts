@@ -38,7 +38,8 @@ export async function GET(req: NextRequest) {
     filter === "nosolar" ? "AND h.has_solar = 0" :
     // รอตรวจ: ไม่มีสเปกระบบเลย (ไม่รู้ kWp / อินเวอร์เตอร์ / SN) — 222 หลังที่ยังไม่กล้าซ่อน
     filter === "nospec"  ? `AND NOT EXISTS (SELECT 1 FROM om_installations i WHERE i.house_id = h.id
-        AND (i.rem_size_kwp IS NOT NULL OR i.inverter_brand IS NOT NULL OR i.inverter_sn IS NOT NULL))
+        AND (i.rem_size_kwp IS NOT NULL OR i.inverter_brand IS NOT NULL OR i.inverter_sn IS NOT NULL
+             OR i.promo_size_kw IS NOT NULL))
       AND NOT EXISTS (SELECT 1 FROM om_redemptions rd JOIN om_installations i ON i.id = rd.installation_id
         WHERE i.house_id = h.id AND rd.status <> 'void')` :
     filter === "nowarr"  ? `AND NOT EXISTS (SELECT 1 FROM om_installations i WHERE i.house_id = h.id AND i.warranty_start IS NOT NULL)` :
@@ -107,8 +108,9 @@ export async function GET(req: NextRequest) {
       h.is_vip, h.has_solar, h.unit_status, h.note, h.om_excluded_reason,
       CONVERT(varchar(33), h.om_excluded_at, 126) om_excluded_at,
       (SELECT COUNT(*) FROM om_installations i WHERE i.house_id = h.id) system_count,
-      (SELECT STRING_AGG(CAST(i.rem_size_kwp AS varchar(12)), ' + ') FROM om_installations i
-       WHERE i.house_id = h.id AND i.rem_size_kwp IS NOT NULL) kwp_list,
+      -- ขนาดระบบ: ไฟล์นำเข้าก่อน · ถ้าไม่มีใช้ที่แกะจากโปรฯ REM (promo_size_kw)
+      (SELECT STRING_AGG(CAST(COALESCE(i.rem_size_kwp, i.promo_size_kw) AS varchar(12)), ' + ') FROM om_installations i
+       WHERE i.house_id = h.id AND COALESCE(i.rem_size_kwp, i.promo_size_kw) IS NOT NULL) kwp_list,
       (SELECT MIN(CONVERT(char(10), i.warranty_start, 23)) FROM om_installations i
        WHERE i.house_id = h.id AND i.warranty_start IS NOT NULL) warranty_start,
       (SELECT ISNULL(SUM(g.qty), 0) FROM om_entitlement_grants g JOIN om_installations i ON i.id = g.installation_id

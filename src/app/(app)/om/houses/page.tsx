@@ -25,8 +25,11 @@ interface Stats { total: number; nophone: number; nowarr: number; noinv: number;
 interface Detail {
   house: { id: number; house_number: string | null; project_name: string | null; project_id: string | null;
     segment: string; is_vip: boolean; has_solar: boolean; unit_status: string | null; note: string | null;
+    latitude?: string | null; longitude?: string | null; model_name?: string | null; titledeed_area?: number | null;
     om_excluded_reason?: string | null; om_excluded_at?: string | null };
-  systems: { id: number; kwp: number | null; inverter_kw: number | null; inverter_brand: string | null; inverter_sn: string | null;
+  systems: { id: number; kwp: number | null; promo_size_kw: number | null; promo_om_years: number | null;
+    promo_name: string | null; promo_contract_id: string | null;
+    inverter_kw: number | null; inverter_brand: string | null; inverter_sn: string | null;
     install_date: string | null; transfer_date: string | null; warranty_start: string | null;
     warranty_doc_no: string | null; battery_brand: string | null; battery_kwh: number | null; lead_id: number | null;
     rem_contract_id: string | null; rem_contract_status: string | null; rem_transfer_date: string | null;
@@ -36,6 +39,9 @@ interface Detail {
   redemptions: { id: number; service_date: string; note?: string | null }[];
   customers: { link_id: number; role: string; customer_id: number; full_name: string; phone: string | null }[];
   bookings: { id: number; scheduled_at: string; status: string; service_type: string | null }[];
+  // ของแถมตอนขาย — เก็บแค่ "เจอกี่รายการ" กับข้อมูลโซลาร์ · ★ ไม่มีราคา ไม่มีรายชื่อของแถม
+  promo?: { n_items: number; n_solar: number; solar_kw: number | null; om_years: number | null;
+    solar_name: string | null; contract_id: string | null } | null;
 }
 const ROLE: Record<string, string> = { owner: "เจ้าของ", resident: "ผู้อยู่อาศัย", contact: "ผู้ติดต่อ" };
 const SRC: Record<string, string> = { contract_base: "สิทธิ์ตั้งต้น", renewal: "ต่อสัญญา", purchase: "ซื้อเพิ่ม", import: "import", manual_adjust: "ปรับมือ" };
@@ -472,6 +478,17 @@ export default function OmHousesPage() {
                       <option value="">—</option>
                       {["occupied", "ห้องว่าง", "บ้านตัวอย่าง", "พร้อมขาย"].map((s) => <option key={s}>{s}</option>)}
                     </select></label>
+                  {/* ★ แบบบ้าน · เนื้อที่ · พิกัด จาก REM (อ่านอย่างเดียว) — ช่างใช้ประเมินงาน + นำทาง */}
+                  {(sel.house.model_name || sel.house.titledeed_area || sel.house.latitude) && (
+                    <div className="sm:col-span-2 flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-gray-600 bg-gray-50 rounded-lg px-3 py-2">
+                      {sel.house.model_name && <span>แบบบ้าน <b className="text-gray-800">{sel.house.model_name}</b></span>}
+                      {sel.house.titledeed_area ? <span>เนื้อที่ <b className="text-gray-800">{sel.house.titledeed_area}</b> ตร.ว.</span> : null}
+                      {sel.house.latitude && sel.house.longitude && (
+                        <a href={`https://www.google.com/maps?q=${sel.house.latitude},${sel.house.longitude}`} target="_blank" rel="noreferrer"
+                          className="font-bold text-active hover:underline">📍 เปิดแผนที่</a>
+                      )}
+                    </div>
+                  )}
                   <label className="grid gap-1 sm:col-span-2">
                     <span className="text-xs font-bold text-gray-700">note ทีม <small className="font-medium text-gray-400">— ลูกค้าไม่เห็น</small></span>
                     <input value={sel.house.note ?? ""} onChange={(e) => upd({ note: e.target.value })}
@@ -508,6 +525,21 @@ export default function OmHousesPage() {
                 </div>
 
                 <Sec t={`ระบบติดตั้ง (${sel.systems.length})`} />
+                {/* ★ ผู้ใช้เคาะ 2 ก.ย.: ของแถมไม่ต้องโชว์เป็นรายการและห้ามโชว์ราคา
+                    บอกแค่ว่า "เจอใน REM" กับข้อมูลโซลาร์ซึ่งเป็นที่มาของขนาดระบบ */}
+                {!!sel.promo?.n_items && (
+                  <div className="mx-5 mb-2 text-xxs text-gray-500">
+                    พบรายการของแถมใน REM {sel.promo.n_items} รายการ
+                    {sel.promo.n_solar > 0 && (
+                      <span className="text-active-dark font-bold">
+                        {" · ☀ มีโซลาร์"}
+                        {sel.promo.solar_kw ? ` ${sel.promo.solar_kw} kW` : ""}
+                        {sel.promo.om_years ? ` · O&M ${sel.promo.om_years} ปี` : ""}
+                      </span>
+                    )}
+                    {sel.promo.contract_id && <span className="text-gray-400"> · {sel.promo.contract_id}</span>}
+                  </div>
+                )}
                 {sel.systems.length === 0 && (
                   <div className="px-5 py-2 text-xs text-gray-400">ไม่มีระบบติดตั้ง{sel.house.has_solar ? "" : " (has_solar=0)"}</div>
                 )}
@@ -518,7 +550,12 @@ export default function OmHousesPage() {
                       {s.lead_id && <span className="text-xxs font-bold px-2 rounded-full bg-active-light text-active">จากระบบขาย · lead {s.lead_id}</span>}
                     </div>
                     <div className="grid grid-cols-2 gap-x-4 px-3.5 py-2 text-xxs leading-relaxed">
-                      <span className="text-gray-500">ขนาด</span><span className="text-right font-semibold">{s.kwp ? `${s.kwp} kWp` : "— ขาด"}</span>
+                      <span className="text-gray-500">ขนาด</span>
+                      <span className="text-right font-semibold">
+                        {s.kwp ? `${s.kwp} kWp`
+                          : s.promo_size_kw ? <>{s.promo_size_kw} kW <small className="font-medium text-gray-400">— จากของแถม</small></>
+                          : "— ขาด"}
+                      </span>
                       <span className="text-gray-500">Inverter</span><span className="text-right font-semibold">{s.inverter_brand || "—"}{s.inverter_sn ? ` · ${s.inverter_sn}` : ""}</span>
                       <span className="text-gray-500">วันเริ่มประกัน</span><span className="text-right font-semibold">{s.warranty_start || "ยังไม่มี"}</span>
                       <span className="text-gray-500">ใบรับประกัน</span><span className="text-right font-semibold">{s.warranty_doc_no || "—"}</span>
@@ -549,6 +586,15 @@ export default function OmHousesPage() {
                           <span className="text-xxs font-bold px-2 rounded-full bg-gray-200 text-gray-600">นำเข้า</span>{" "}
                           {s.batch_file}{s.batch_at ? ` · ${s.batch_at}` : ""}
                           {s.batch_note ? <span className="block pl-1 text-gray-400">{s.batch_note}</span> : null}
+                        </div>
+                      )}
+                      {/* ★ ของแถมโซลาร์จาก REM — ที่มาของ "ขนาดระบบ" เวลาไฟล์นำเข้าไม่มี kWp */}
+                      {sel.promo && sel.promo.n_solar > 0 && (
+                        <div>
+                          <span className="text-xxs font-bold px-2 rounded-full bg-active-light text-active">ของแถม</span>{" "}
+                          <span className="text-active-dark font-bold">☀ {sel.promo.solar_name || "Solar Roof"}</span>
+                          {sel.promo.solar_kw ? ` · ${sel.promo.solar_kw} kW` : ""}
+                          {sel.promo.om_years ? ` · O&M ${sel.promo.om_years} ปี` : ""}
                         </div>
                       )}
                       {!s.rem_contract_id && !s.lead_id && !s.batch_file && <div className="text-gray-400">ไม่มีข้อมูลที่มา (กรอกมือ)</div>}

@@ -21,6 +21,7 @@ const GROUP: Record<string, { title: string; desc: string }> = {
   booking:    { title: "การจองนัด",   desc: "ลูกค้าจองผ่าน LIFF ได้แค่ไหน · ความจุต่อทีม" },
   reschedule: { title: "การเลื่อนนัด", desc: "ใครเลื่อนได้ · เลื่อนได้กี่ครั้ง · เลื่อนแล้วเกิดอะไร" },
   cancel:     { title: "การยกเลิก / ลูกค้าไม่อยู่บ้าน", desc: "เงื่อนไขคืนสิทธิ์ล้างแผง" },
+  sync:       { title: "ซิงค์ข้อมูลจาก REM", desc: "ดึงทะเบียนโอน/เจ้าของ/ของแถมอัตโนมัติ · บ้านโอนใหม่โผล่เอง ไม่ต้องกด" },
 };
 
 // หน่วยท้ายช่องกรอก — ช่วยให้อ่านออกว่าเลขนี้คืออะไร
@@ -31,6 +32,8 @@ const UNIT: Record<string, string> = {
   "reschedule.max_times": "ครั้ง",
   "reschedule.min_hours_before": "ชั่วโมง",
   "cancel.min_hours_before": "ชั่วโมง",
+  "sync.rem_every_min": "นาที",
+  "sync.rem_batch": "โครงการ/รอบ",
 };
 
 export default function OmSettingsPage() {

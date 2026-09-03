@@ -4,6 +4,8 @@ import { sql } from "@/lib/db";
 import { getOmDb } from "@/lib/om/line";
 import { remConfigured } from "@/lib/om/rem";
 import { finishSync, logSync, syncProject, syncPromotionsByUnit } from "@/lib/om/rem-sync";
+import { syncBookingPromos, fetchBookingInfoRaw } from "@/lib/om/rem-booking";
+import { reconcileRemLinks } from "@/lib/om/rem-reconcile";
 
 // ดึงทะเบียน REM ลง staging
 // ★ ดึงทั้งโครงการทีเดียวเสมอ — วัดแล้วดึง 1 หลังกับทั้งโครงการใช้เวลาพอกัน (~2.5 กับ ~3.0 วิ)
@@ -36,6 +38,9 @@ export async function GET(req: NextRequest) {
 // POST { stale: true, limit: n } — ดึงชุดที่เก่าที่สุด n โครงการ (ไว้ให้ cron เรียกซ้ำจนครบ)
 // POST { promo: true, limit: n, only_om?: bool, redo?: bool }
 //   — ★ ดึงโปรโมชันรายหลัง (ยิงทั้งโครงการได้ไม่ครบ) · เรียกซ้ำได้จนกว่า remaining = 0
+// POST { booking: true, limit: n, only_om?: bool }
+//   — ★★ ดึงของแถม "ครบทุกรายการ" จาก REMAPIV2/BookingInfo (itf ยังตัดโซลาร์ทิ้ง)
+//        มี guard เช็ค contract_id ตอบกลับตรงเป๊ะ · ไม่เก็บราคา
 export async function POST(req: NextRequest) {
   const gate = await requireAnyRole(req, ADMIN);
   if (gate.error) return gate.error;
@@ -43,6 +48,50 @@ export async function POST(req: NextRequest) {
 
   const b = await req.json().catch(() => ({}));
   const db = await getOmDb();
+
+  // เชื่อมทะเบียน REM กลับเข้าข้อมูลจริง (กดเองจากหน้าเว็บได้ · ปกติ cron ทำเองหลัง sync)
+  if (b.reconcile === true) {
+    const logId = await logSync(db, "rem_reconcile", "manual", gate.userId ?? null);
+    try {
+      const r = await reconcileRemLinks(db);
+      await finishSync(db, logId, { status: "ok", inserted: r.contractsLinked + r.owners.created,
+        message: `เชื่อมสัญญา ${r.contractsLinked} · เติม unit ${r.unitsLinked} · สร้างเจ้าของ ${r.owners.created} · สิทธิ์ ${r.grantsCreated}` });
+      return NextResponse.json({ ok: true, contractsLinked: r.contractsLinked, unitsLinked: r.unitsLinked,
+        ownersCreated: r.owners.created, ownersReused: r.owners.reused, grantsCreated: r.grantsCreated });
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : "reconcile ไม่สำเร็จ";
+      await finishSync(db, logId, { status: "error", message: msg });
+      return NextResponse.json({ error: msg }, { status: 500 });
+    }
+  }
+
+  // ทดสอบยิงเจาะสัญญาเดียว — ดูโครงสร้างดิบว่า BookingInfo คืนอะไร (ไม่เขียนฐาน · ไม่โชว์ราคา)
+  if (b.booking === true && typeof b.contract === "string" && b.contract.trim()) {
+    const info = await fetchBookingInfoRaw(b.contract.trim());
+    if (!info.ok) return NextResponse.json({ ok: true, contract: b.contract, matched: false, status: info.status, note: info.note });
+    const promos = (info.data?.promotions ?? []) as { name?: string }[];
+    return NextResponse.json({ ok: true, contract: b.contract, matched: true,
+      keys: Object.keys(info.data ?? {}),                    // ★ ดูว่ามี field อะไรบ้าง
+      echoed_contract_id: info.data?.contract_id,            // contract_id ที่ตอบกลับ
+      n_promos: promos.length,
+      n_solar: promos.filter((x) => /solar|โซลาร|โซล่า/i.test(String(x.name ?? ""))).length,
+      names: promos.map((x) => x.name) });
+  }
+
+  if (b.booking === true) {
+    const limit = Math.min(Number(b.limit) || 100, 2000);
+    const logId = await logSync(db, "rem_booking", b.only_om ? "om" : "all", gate.userId ?? null);
+    try {
+      const r = await syncBookingPromos(db, limit, { onlyOm: b.only_om === true });
+      await finishSync(db, logId, { status: "ok", fetched: r.done, inserted: r.rows, skipped: r.failed + r.mismatch,
+        message: `ดึง ${r.done} สัญญา · ของแถม ${r.rows} แถว · มีโซลาร์ ${r.solar} · ตัดกันข้อมูลผิด ${r.mismatch} · เหลือ ${r.remaining}` });
+      return NextResponse.json({ ok: true, ...r });
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : "ดึง BookingInfo ไม่สำเร็จ";
+      await finishSync(db, logId, { status: "error", message: msg });
+      return NextResponse.json({ error: msg }, { status: 500 });
+    }
+  }
 
   if (b.promo === true) {
     const limit = Math.min(Number(b.limit) || 100, 2000);
