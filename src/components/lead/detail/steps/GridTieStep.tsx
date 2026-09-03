@@ -15,9 +15,8 @@ interface Props extends StepCommonProps {
 export default function GridTieStep({ lead, state, refresh, expanded, onToggle }: Props) {
   const fileViewer = useFileViewer();
   const checklist = parseGridTieChecklist(lead.grid_document_checklist);
-  const checklistItems = getGridTieChecklistItems(lead.grid_utility || "", lead.grid_applicant_type || "");
-  const visibleItems = checklistItems.filter(item => !item.conditional || checklist[item.id]?.required);
-  const receivedCount = visibleItems.filter(item => checklist[item.id]?.status === "received").length;
+  const visibleItems = getGridTieChecklistItems(lead.grid_applicant_type || "", lead.grid_utility || "");
+  const permitCount = visibleItems.filter(item => checklist[item.id]?.permit === "has").length;
 
   const renderDoneContent = () => (
     <>
@@ -27,15 +26,21 @@ export default function GridTieStep({ lead, state, refresh, expanded, onToggle }
         <Info label="ประเภทผู้ยื่น" value={lead.grid_applicant_type === "individual" ? "บุคคลธรรมดา" : lead.grid_applicant_type === "juristic" ? "นิติบุคคล" : null} />
       </div>
       {visibleItems.length > 0 && (
-        <DoneSection color="gray" title={`Checklist เอกสาร · ${receivedCount}/${visibleItems.length} ได้รับแล้ว`}>
+        <DoneSection color="gray" title={`Checklist เอกสาร · Permit ยืนยัน ${permitCount}/${visibleItems.length}`}>
           <div className="space-y-1.5">
             {visibleItems.map(item => {
-              const entry = checklist[item.id] || { status: "missing", note: "" };
+              const entry = checklist[item.id] || {};
+              const confirmed = entry.permit === "has";
               return (
                 <div key={item.id} className="flex items-start gap-2 text-xs">
-                  <span className={entry.status === "received" ? "text-emerald-600" : "text-gray-400"}>{entry.status === "received" ? "✓" : "○"}</span>
+                  <span className={confirmed ? "text-emerald-600" : "text-gray-400"}>{confirmed ? "✓" : "○"}</span>
                   <div className="min-w-0 flex-1">
-                    <div className="flex flex-wrap items-center justify-between gap-2"><span className="font-medium text-gray-700">{item.label}</span><span className={entry.status === "received" ? "font-semibold text-emerald-600" : "font-semibold text-gray-400"}>{entry.status === "received" ? "ได้รับแล้ว" : "ยังไม่ได้รับ"}</span></div>
+                    <div className="flex flex-wrap items-center justify-between gap-2">
+                      <span className="font-medium text-gray-700">{item.label}</span>
+                      <span className={confirmed ? "font-semibold text-emerald-600" : "font-semibold text-gray-400"}>
+                        {confirmed ? "Permit ได้รับแล้ว" : entry.received ? "ตรวจรับแล้ว · รอ Permit" : "ยังไม่ได้รับ"}
+                      </span>
+                    </div>
                     {entry.note && <div className="mt-0.5 text-gray-400">{entry.note}</div>}
                   </div>
                 </div>
