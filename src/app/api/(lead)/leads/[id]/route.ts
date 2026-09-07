@@ -4,6 +4,7 @@ import { requireAuth } from "@/lib/auth";
 import { logLeadActivity, fmtThaiDate } from "@/lib/lead-activity-log";
 import { validateDocNo } from "@/lib/doc-number";
 import { getGridTieFinalMissing } from "@/lib/gridTie";
+import { installmentAmount, netTotalOf, parseInstallmentRows, type InstallmentRow } from "@/lib/installments";
 
 const statusLabels: Record<string, string> = {
   pre_survey: "รอติดตาม",
@@ -225,11 +226,12 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
               0,
             );
             const autoPct = Math.max(0, 100 - fixedPct);
+            // ยอดงวดมาจากชุดคำนวณกลางที่ @/lib/installments เท่านั้น
             const requiredBefore = plan
               .map((row, idx) => ({
                 idx,
                 when: row?.when === "after" ? "after" : "before",
-                amount: Math.round((netTotal * (idx === autoIdx ? autoPct : Number(row?.pct) || 0)) / 100),
+                amount: installmentAmount(plan as InstallmentRow[], idx, netTotal, paidIdx),
               }))
               .filter(row => row.when === "before" && row.amount > 0);
             const missingBefore = paidFields.has("order_before_slip")

@@ -20,6 +20,7 @@ import { parseQuotationFiles } from "@/lib/utils/quotation";
 import { useFileViewer } from "@/lib/hooks/useFileViewer";
 import DoneSection from "./DoneSection";
 import { hasRole, useActiveRoles } from "@/lib/roles";
+import { installmentAmount, netTotalOf as sharedNetTotal, type InstallmentRow } from "@/lib/installments";
 
 type PayMethod = "transfer" | "loan" | "cc" | "cheque";
 type LoanBank = "ghb" | "gsb";
@@ -34,6 +35,10 @@ const CC_DEFAULT = 3;
 
 type Installment = {
   pct: number;
+  /** ยอดเงินของงวด — เก็บไว้เป็นค่าจริงที่ใช้คิดทุกที่
+   *  % ใช้แค่ตอนกรอกเพื่อคำนวณยอดครั้งแรกเท่านั้น หลังจากนั้นไม่เกี่ยวอีก
+   *  (null = งวดเก่าที่บันทึกก่อนมีฟิลด์นี้ ให้คำนวณจาก % ไปก่อน) */
+  amount: number | null;
   when: "before" | "after";
   due_date: string | null;
   method: PayMethod;
@@ -53,6 +58,7 @@ function parseInstallments(raw: string | null | undefined, fallbackPctBefore: nu
       if (Array.isArray(arr) && arr.length > 0) {
         return arr.map((r) => ({
           pct: Number(r?.pct) || 0,
+          amount: r?.amount != null && !isNaN(Number(r.amount)) ? Number(r.amount) : null,
           when: r?.when === "after" ? "after" : "before",
           due_date: typeof r?.due_date === "string" && r.due_date ? r.due_date : todayISO(),
           method: r?.method === "loan" ? "loan" : r?.method === "cc" ? "cc" : r?.method === "cheque" ? "cheque" : "transfer",
@@ -67,7 +73,7 @@ function parseInstallments(raw: string | null | undefined, fallbackPctBefore: nu
   // Backward-compat: derive from order_pct_before — single row "before" if 100,
   // otherwise งวด 1 = pctBefore (before), งวด 2 = remainder (after).
   const today = todayISO();
-  const base = { method: "transfer" as const, loan_bank: null, cc_pct: null };
+  const base = { method: "transfer" as const, loan_bank: null, cc_pct: null, amount: null };
   if (fallbackPctBefore >= 100) return [{ pct: 100, when: "before", due_date: today, ...base }];
   return [
     { pct: fallbackPctBefore, when: "before", due_date: today, ...base },
@@ -280,9 +286,6 @@ export default function OrderStep({ lead, state, refresh, expanded, onToggle }: 
   // while the cheque booked 117,400. We keep the real amount so the mismatch
   // can be surfaced instead of hidden.
   const [paidAmountByIdx, setPaidAmountByIdx] = useState<Map<number, number>>(new Map());
-  // ยอดของทุกงวดที่บันทึกไว้ใน DB (รวมงวดที่ยังไม่ confirm) — สรุปยอดตอน DONE
-  // อ่านจากตัวนี้แทนการคำนวณ % เอง จะได้ตรงกับเงินจริงเสมอ
-  const [rowAmountByIdx, setRowAmountByIdx] = useState<Map<number, number>>(new Map());
   // Sum of pct from rows that aren't the auto-computed remainder row.
   // Auto row = highest-index unpaid row (or fallback to last row when no
   // payment data is loaded yet / nothing is paid).
@@ -312,7 +315,7 @@ export default function OrderStep({ lead, state, refresh, expanded, onToggle }: 
       ? [
           ...installments,
           ...Array.from({ length: n - installments.length }, () => ({
-            pct: 0, when: "before" as const, due_date: today, method: "transfer" as const, loan_bank: null, cc_pct: null,
+            pct: 0, amount: null, when: "before" as const, due_date: today, method: "transfer" as const, loan_bank: null, cc_pct: null,
           })),
         ]
       : installments.slice(0, n);
@@ -489,7 +492,6 @@ export default function OrderStep({ lead, state, refresh, expanded, onToggle }: 
       const paid = new Set<number>();
       const idMap = new Map<number, number>();
       const amtMap = new Map<number, number>();
-      const allAmtMap = new Map<number, number>();
       const existing = new Set<number>();
       const chequeReceived = new Set<number>();
       const chequePending: ChequePendingPayment[] = [];
@@ -506,12 +508,6 @@ export default function OrderStep({ lead, state, refresh, expanded, onToggle }: 
         if (!m) continue;
         const idx = parseInt(m[1]);
         existing.add(idx);
-        // เก็บยอดไว้สรุปตอน DONE เฉพาะงวดที่มีเงินเข้าจริงแล้วเท่านั้น
-        // (ยืนยันแล้ว หรือรับเช็คแล้วรอเคลียร์) — งวดที่ยังไม่ได้จ่ายต้องกลับไป
-        // ใช้ยอดตามแผน ไม่ใช่ยอดที่เคยกรอกค้างไว้ตอนอัปสลิป ไม่งั้นงวดที่ถอย
-        // การชำระไปแล้วจะยังโชว์ยอดเดิมเหมือนรับเงินมาแล้ว
-        if (p.confirmed_at || (p.payment_method === "cheque" && p.cheque_received_at))
-          allAmtMap.set(idx, Number(p.amount || 0));
         if (p.confirmed_at) {
           paid.add(idx);
           idMap.set(idx, p.id);
@@ -539,8 +535,7 @@ export default function OrderStep({ lead, state, refresh, expanded, onToggle }: 
       setPaidIdxSet(paid);
       setPaidIdToId(idMap);
       setPaidAmountByIdx(amtMap);
-      setRowAmountByIdx(allAmtMap);
-      setExistingIdxSet(existing);
+        setExistingIdxSet(existing);
       setPendingApprovalIdxSet(pendingApproval);
       setChequeReceivedIdxSet(chequeReceived);
       setChequePendingPayments(chequePending.sort((a, b) => a.idx - b.idx));
@@ -639,23 +634,31 @@ export default function OrderStep({ lead, state, refresh, expanded, onToggle }: 
   // net cash to collect. No per-row deposit credit needed.
   const totalDiscount = Math.min(total, discountAmount || 0);
   const effTotal = Math.max(0, total - totalDiscount);
-  const netTotal = Math.max(0, effTotal - depositPaid);
+  // สูตรเดียวกับที่ server/เอกสารใช้ — อยู่ที่ @/lib/installments
+  const netTotal = sharedNetTotal({
+    order_total: total,
+    order_discount_amount: discountAmount || 0,
+    pre_total_price: depositPaid,
+  });
 
-  const rowGross = (idx: number) => {
-    const pct = idx === _autoIdx ? lastPct : (installments[idx]?.pct ?? 0);
-    return netTotal > 0 ? Math.round((netTotal * pct) / 100) : 0;
-  };
-  const rowNet = (idx: number) => rowGross(idx);
+  // ── ยอดของแต่ละงวด: มีชุดเดียว ทุกที่เรียกใช้ตัวเดียวกัน ────────────────
+  // ยอดของงวด = ตัวเลขที่บันทึกไว้ในงวดนั้น (ไม่ใช่เงินที่รับเข้ามาจริง)
+  // % ใช้แค่ตอนกรอกเพื่อคำนวณยอดครั้งแรก หลังจากนั้นไม่เกี่ยวอีก
+  // เงินที่รับจริงอยู่ในตาราง payments แยกต่างหาก ใช้เทียบหาส่วนต่างเท่านั้น
+  // (lead 704 งวด 2: ยอดงวด 232,000 · เงินเข้าจริง 231,803 → ขาด 197)
+  const rowAmount = (idx: number): number =>
+    installmentAmount(installments as InstallmentRow[], idx, netTotal, paidIdxSet);
+
   const beforeInstallRows = () => persistedInstallments
     .map((r, i) => ({ r, i }))
     .filter(({ r }) => r.when === "before")
-    .filter(({ i }) => rowNet(i) > 0);
+    .filter(({ i }) => rowAmount(i) > 0);
   // If deposit > eff (rare — refund-due to customer), surface the excess.
   const refund = Math.max(0, depositPaid - effTotal);
   // Credit-card surcharge: each "cc" installment row adds rowGross × cc_pct/100
   // to what the customer actually pays. Summed across all rows for the summary.
   const ccSurcharge = installments.reduce((s, r, idx) => {
-    if (r.method === "cc" && r.cc_pct) return s + Math.round((rowGross(idx) * r.cc_pct) / 100);
+    if (r.method === "cc" && r.cc_pct) return s + Math.round((rowAmount(idx) * r.cc_pct) / 100);
     return s;
   }, 0);
   const totalToCharge = netTotal + ccSurcharge;
@@ -671,7 +674,7 @@ export default function OrderStep({ lead, state, refresh, expanded, onToggle }: 
       if (!paidIdxSet.has(i)) return null;
       const actual = paidAmountByIdx.get(i);
       if (actual == null) return null;
-      const plan = rowNet(i);
+      const plan = rowAmount(i);
       const diff = Math.round(actual) - Math.round(plan);
       return diff !== 0 ? { idx: i, plan: Math.round(plan), actual: Math.round(actual), diff } : null;
     })
@@ -749,16 +752,22 @@ export default function OrderStep({ lead, state, refresh, expanded, onToggle }: 
   const doneDiscount = Math.min(doneTotal, lead.order_discount_amount || 0);
   const doneEffTotal = Math.max(0, doneTotal - doneDiscount);
   const doneDeposit = Math.min(doneEffTotal, lead.pre_total_price || 0);
-  const doneNetTotal = Math.max(0, doneEffTotal - doneDeposit);
+  const doneNetTotal = sharedNetTotal({
+    order_total: doneTotal,
+    order_discount_amount: doneDiscount,
+    pre_total_price: lead.pre_total_price || 0,
+  });
   const donePctBefore = lead.order_pct_before ?? 100;
   const donePctAfter = 100 - donePctBefore;
   // ยอดแต่ละงวด — งวดที่มีเงินเข้าแล้วใช้ยอดจริงจากตาราง payments (rowAmountByIdx)
   // งวดที่ยังไม่ได้จ่าย (หรือถูกถอยการชำระ) ใช้ยอดตามแผน % (หักค่าสำรวจแล้วแบ่งตาม %)
   const doneRows = parseInstallments(lead.order_installments, donePctBefore);
-  const doneRowAmount = (idx: number, pct: number) =>
-    rowAmountByIdx.get(idx) ?? Math.round((doneNetTotal * pct) / 100);
+  // ใช้ชุดเดียวกับโหมดแก้ไข: ยอดที่บันทึกไว้ในงวด → คิดจาก % เฉพาะงวดเก่า
+  // ที่บันทึกก่อนมีฟิลด์ amount · ไม่เอาเงินที่รับจริงมาแทน ไม่งั้นสองหน้าจะไม่ตรงกัน
+  const doneRowAmount = (idx: number) =>
+    installmentAmount(doneRows as InstallmentRow[], idx, doneNetTotal);
   const doneNetBefore = doneRows
-    .map((r, i) => ({ ...r, amount: doneRowAmount(i, r.pct) }))
+    .map((r, i) => ({ ...r, amount: doneRowAmount(i) }))
     .filter(r => r.when !== "after")
     .reduce((sum, r) => sum + r.amount, 0);
   // % = หักค่าสำรวจออกจากยอดรวมก่อน แล้วค่อยคิดสัดส่วนจากยอดที่เหลือ
@@ -768,7 +777,7 @@ export default function OrderStep({ lead, state, refresh, expanded, onToggle }: 
     ? Number(((doneNetBefore / doneNetTotal) * 100).toFixed(2))
     : donePctBefore;
   const doneNetAfter = doneRows
-    .map((r, i) => ({ ...r, amount: doneRowAmount(i, r.pct) }))
+    .map((r, i) => ({ ...r, amount: doneRowAmount(i) }))
     .filter(r => r.when === "after")
     .reduce((sum, r) => sum + r.amount, 0);
   const doneRefund = Math.max(0, (lead.pre_total_price || 0) - doneDeposit);
@@ -969,7 +978,7 @@ export default function OrderStep({ lead, state, refresh, expanded, onToggle }: 
       const row = persistedInstallments[i];
       if (row.when !== "after") continue;
       if (existingIdxSet.has(i)) continue;
-      const net = rowNet(i);
+      const net = rowAmount(i);
       if (net <= 0) continue;
       tasks.push(apiFetch(`/api/payments/intent`, {
         method: "POST",
@@ -1139,8 +1148,8 @@ export default function OrderStep({ lead, state, refresh, expanded, onToggle }: 
               {installments.map((row, i) => {
                 const isAutoRow = i === _autoIdx;
                 const paid = isPaid(i);
-                const rowAmount = rowGross(i);
-                const rowNetAmount = rowNet(i);
+                const rowAmountValue = rowAmount(i);
+                const rowNetAmount = rowAmount(i);
                 const loanCheckbox = (
                   <label className={`flex items-center gap-1.5 text-xs text-gray-600 shrink-0 ${paid ? "cursor-default opacity-60" : "cursor-pointer"}`}>
                     <input
@@ -1270,7 +1279,7 @@ export default function OrderStep({ lead, state, refresh, expanded, onToggle }: 
                 const rowFollowups = row.method === "loan" ? followupsByRow(i) : [];
                 const expanded = expandedRow === i;
                 return (
-                  <div data-order-payment-row={i} key={i} className={`rounded-lg border p-2 transition-colors ${paid ? "bg-emerald-50 border-emerald-200" : paymentOpen ? "bg-active-light border-active border-2 shadow-md shadow-active/20" : "bg-white border-gray-200"} ${row.method === "cc" && row.cc_pct && rowGross(i) > 0 ? "pb-6" : ""}`}>
+                  <div data-order-payment-row={i} key={i} className={`rounded-lg border p-2 transition-colors ${paid ? "bg-emerald-50 border-emerald-200" : paymentOpen ? "bg-active-light border-active border-2 shadow-md shadow-active/20" : "bg-white border-gray-200"} ${row.method === "cc" && row.cc_pct && rowAmount(i) > 0 ? "pb-6" : ""}`}>
                     {/* Mobile: 12-col grid (existing) · Desktop: flex single line */}
                     <div className="grid grid-cols-12 gap-2 items-center md:flex md:flex-nowrap">
                       <div className="order-1 col-span-4 md:w-24 text-xs font-semibold text-gray-700 md:shrink-0 flex items-center gap-1">
@@ -1309,7 +1318,8 @@ export default function OrderStep({ lead, state, refresh, expanded, onToggle }: 
                           onChange={e => {
                             const cleaned = e.target.value.replace(/[^\d.]/g, "");
                             const v = cleaned === "" ? 0 : Math.min(100, parseFloat(cleaned) || 0);
-                            updateInstallment(i, { pct: v });
+                            // % ใช้คำนวณยอดตรงนี้ครั้งเดียว จากนั้นระบบใช้ยอดเป็นหลัก
+                            updateInstallment(i, { pct: v, amount: Math.round((netTotal * v) / 100) });
                           }}
                           className={`w-full h-8 pl-2 pr-7 rounded-md border text-sm font-mono tabular-nums focus:outline-none ${isAutoRow || paid ? "bg-gray-50 border-gray-200 text-gray-700" : "border-gray-200 focus:border-primary"}`}
                         />
@@ -1328,25 +1338,25 @@ export default function OrderStep({ lead, state, refresh, expanded, onToggle }: 
                             <input
                               type="text"
                               inputMode="numeric"
-                              value={netTotal > 0 ? rowAmount : ""}
+                              value={netTotal > 0 ? rowAmountValue : ""}
                               disabled={isAutoRow || paid}
                               onChange={e => {
                                 const digits = e.target.value.replace(/[^\d]/g, "");
                                 const amt = digits === "" ? 0 : Math.min(netTotal, parseInt(digits));
-                                // Full precision so amt → pct → rowGross round-trips exactly.
+                                // เก็บยอดเป็นค่าหลัก · % คิดกลับไว้โชว์เฉย ๆ
                                 const pct = netTotal > 0 ? (amt / netTotal) * 100 : 0;
-                                updateInstallment(i, { pct });
+                                updateInstallment(i, { pct, amount: amt });
                               }}
                               placeholder={netTotal > 0 ? "" : "—"}
                               className={`w-full h-8 pl-2 pr-6 rounded-md border text-sm font-mono tabular-nums text-right focus:outline-none ${isAutoRow || paid ? "bg-gray-50 border-gray-200 text-gray-700" : "border-gray-200 focus:border-primary"}`}
                             />
                             <span className="absolute right-2 top-1/2 -translate-y-1/2 text-[10px] text-gray-400 pointer-events-none">฿</span>
                           </div>
-                          {row.method === "cc" && row.cc_pct && rowAmount > 0 && (() => {
-                            const fee = Math.round((rowAmount * row.cc_pct) / 100);
+                          {row.method === "cc" && row.cc_pct && rowAmountValue > 0 && (() => {
+                            const fee = Math.round((rowAmountValue * row.cc_pct) / 100);
                             return (
                               <span className="absolute top-full left-0 right-0 mt-0.5 text-xs text-gray-500 whitespace-nowrap text-right pointer-events-none">
-                                +ค่าธรรมเนียม {row.cc_pct}% = {fmt(fee)} ฿ · รวม <span className="font-semibold text-gray-700">{fmt(rowAmount + fee)}</span> ฿
+                                +ค่าธรรมเนียม {row.cc_pct}% = {fmt(fee)} ฿ · รวม <span className="font-semibold text-gray-700">{fmt(rowAmountValue + fee)}</span> ฿
                               </span>
                             );
                           })()}
@@ -1707,7 +1717,7 @@ export default function OrderStep({ lead, state, refresh, expanded, onToggle }: 
                     details.push({ label: "ชำระโดย", value: fmtMethod(persistedInstallments[0]) });
                   } else {
                     persistedInstallments.forEach((r, idx) => {
-                      const gross = rowGross(idx);
+                      const gross = rowAmount(idx);
                       const isCc = r.method === "cc" && r.cc_pct;
                       const ccFee = isCc ? Math.round((gross * (r.cc_pct as number)) / 100) : 0;
                       const totalRow = gross + ccFee;

@@ -1,5 +1,6 @@
 import sql from "mssql";
 import type { ConnectionPool } from "mssql";
+import { installmentAmount, netTotalOf, parseInstallmentRows } from "@/lib/installments";
 
 // Re-derive order_before_paid / order_after_paid from the lead's
 // order_installments JSON + confirmed payments. Called after a per-installment
@@ -57,17 +58,10 @@ export async function syncOrderPaidFlags(db: ConnectionPool, leadId: number): Pr
     .query(`UPDATE leads SET order_before_paid = @before_paid, order_after_paid = @after_paid, updated_at = GETDATE() WHERE id = @id`);
 }
 
-/** ยอดที่ "ควรเก็บ" ของงวด order_installment_<idx> คำนวณฝั่ง server ด้วยสูตรเดียว
- *  กับที่ OrderStep ใช้บนหน้าจอ:
- *
- *    netTotal = order_total − ส่วนลด − ค่าสำรวจที่จ่ายแล้ว
- *    ยอดงวด  = round(netTotal × pct / 100)
- *
- *  มีไว้ตรวจยอดที่ client ส่งมาก่อนบันทึก — เดิม API เชื่อ body.amount ตรง ๆ
- *  ถ้าหน้าจอคำนวณจากข้อมูลเก่า (เช่นยังไม่ทันโหลดค่าสำรวจ) ยอดผิดจะถูกบันทึกเงียบ ๆ
- *  แล้วไปโผล่เป็นเงินขาดตอนปิดงาน เช่น lead 686 งวด 2 บันทึก 117,400 ทั้งที่แผนคือ 117,600
- *
- *  คืน null เมื่อไม่ใช่ slip_field แบบงวด หรือข้อมูลไม่พอให้คำนวณ
+/** ยอดที่ "ควรเก็บ" ของงวด order_installment_<idx> — เรียกจากชุดคำนวณกลาง
+ *  (@/lib/installments) ตัวเดียวกับที่หน้าจอและเอกสารใช้ ห้ามคำนวณเองซ้ำที่นี่
+ *  มีไว้ตรวจยอดที่ client ส่งมาก่อนบันทึก · คืน null เมื่อไม่ใช่ slip_field แบบงวด
+ *  หรือข้อมูลไม่พอให้คำนวณ
  */
 export async function plannedInstallmentAmount(
   db: ConnectionPool,
@@ -84,19 +78,9 @@ export async function plannedInstallmentAmount(
   const row = r.recordset[0];
   if (!row) return null;
 
-  let arr: Array<{ pct?: number }> = [];
-  try {
-    const parsed = JSON.parse(row.order_installments || "[]");
-    if (Array.isArray(parsed)) arr = parsed;
-  } catch { return null; }
-  const pct = Number(arr[idx]?.pct);
-  if (!Number.isFinite(pct)) return null;
-
-  const total = Number(row.order_total) || 0;
-  if (total <= 0) return null;
-  const discount = Math.min(total, Number(row.order_discount_amount) || 0);
-  const effTotal = Math.max(0, total - discount);
-  const deposit = Math.min(effTotal, Number(row.pre_total_price) || 0);
-  const netTotal = Math.max(0, effTotal - deposit);
-  return Math.round((netTotal * pct) / 100);
+  const rows = parseInstallmentRows(row.order_installments);
+  if (!rows[idx]) return null;
+  const netTotal = netTotalOf(row);
+  if (netTotal <= 0) return null;
+  return installmentAmount(rows, idx, netTotal);
 }
