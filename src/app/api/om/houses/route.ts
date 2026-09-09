@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { requireAuth } from "@/lib/auth";
 import { fixDates, sql } from "@/lib/db";
 import { getOmDb } from "@/lib/om/line";
+import { HIDDEN_GROUPS, bucketSql } from "@/lib/om/house-scope";
 
 // ทะเบียนบ้าน/ระบบติดตั้ง — ค้นหา + กรอง + แบ่งหน้า
 // สิทธิ์ล้างอยู่ที่บ้าน (installations → grants/redemptions) ไม่ใช่ที่คน
@@ -15,8 +16,7 @@ export async function GET(req: NextRequest) {
   const seg = (u.get("segment") ?? "").trim();
   const filter = u.get("filter") ?? "";           // vip | nosolar | nowarr | noted | multi | duewash | nophone | noinv | nocust
   const proj = (u.get("project") ?? "").trim();   // project_id | __none__ (ไม่ระบุโครงการ)
-  const grp = (u.get("group") ?? "").trim();      // ว่าง/__ALL__ = ทุกกลุ่ม | __VIP__ | __SITE__ | __NOPJ__ | project_id
-  const noSite = u.get("nosite") === "1";        // ซ่อนคอนโด/สำนักงานขาย/ส่วนกลาง (ไม่ใช่บ้านลูกค้า)
+  const grp = (u.get("group") ?? "").trim();      // ว่าง/__ALL__ = ลิสต์หลัก (แสดง) | __VIP__ | __NOPJ__ | __CONDO__/__SALES__/__FACILITY__/__UNSOLD__/__DEMO__ (ซ่อน) | project_id
   const page = Math.max(1, Number(u.get("page")) || 1);
   const size = Math.min(100, Math.max(10, Number(u.get("size")) || 30));
 
@@ -58,18 +58,26 @@ export async function GET(req: NextRequest) {
 
   // ★ ใช้ temp table แทน CTE ซ้อน — วัดจริง 1 ก.ย.: CTE(hit→base→page) ถูก optimizer
   //   ขยาย inline จน plan พัง 22 วินาที · #temp จบใน ~100ms เพราะ materialize ครั้งเดียว
+  // ★ กรอง "กลุ่ม" ด้วย bucket จาก #scope (logic เดียวกับ /groups) — ตัวเลขหัวกลุ่ม = ที่เห็นจริง
+  //   __ALL__/ว่าง (ไม่ค้นหา) = ลิสต์หลัก แสดงเฉพาะ bucket ที่ไม่ซ่อน · เลือกกลุ่มเจาะจง = bucket นั้น
+  //   กำลังค้นหา (@q) → ข้ามตัวกรองกลุ่ม ค้นทั้งระบบ (เจอบ้านในกลุ่มซ่อนด้วย)
+  // correlated EXISTS แพงถ้าเรียกทุกแถวใน WHERE — คำนวณ bucket ครั้งเดียวลง #scope แล้ว join
+  const bucketExpr = bucketSql({
+    seg: "h.segment", vip: "h.is_vip", demo: "ISNULL(pj.is_demo, 0)",
+    unit: "ISNULL(h.unit_status, N'')", pid: "h.project_id",
+    washed: "(CASE WHEN EXISTS(SELECT 1 FROM om_redemptions rd JOIN om_installations i ON i.id = rd.installation_id WHERE i.house_id = h.id AND rd.status <> 'void') THEN 1 ELSE 0 END)",
+    rem: "(CASE WHEN EXISTS(SELECT 1 FROM om_installations i WHERE i.house_id = h.id AND i.rem_contract_id IS NOT NULL) THEN 1 ELSE 0 END)",
+  });
+  const hiddenList = HIDDEN_GROUPS.map((g) => `N'${g}'`).join(", ");
+  const scopeFilter = showHidden ? "" : `
+      AND ( @q <> N'%%'
+        OR (@grp IN (N'', N'__ALL__') AND sc.bucket NOT IN (${hiddenList}))
+        OR sc.bucket = @grp )`;
+
   const where = `WHERE ${showHidden ? "h.om_excluded_reason IS NOT NULL" : "h.is_om = 1"} ${extra}
       AND (@seg = N'' OR h.segment = @seg)
       AND (@pid = N'' OR (@pid = N'__none__' AND h.project_id IS NULL) OR h.project_id = @pid)
-      ${noSite ? `AND NOT (h.is_vip = 0 AND (h.segment IN ('condo','sales_office','facility') OR pj.is_demo = 1))` : ""}
-      AND (@grp = N'' OR @grp = N'__ALL__'
-        OR (@grp = N'__VIP__'      AND h.is_vip = 1)
-        OR (@grp = N'__DEMO__'     AND h.is_vip = 0 AND pj.is_demo = 1)
-        OR (@grp = N'__CONDO__'    AND h.is_vip = 0 AND ISNULL(pj.is_demo, 0) = 0 AND h.segment = 'condo')
-        OR (@grp = N'__SALES__'    AND h.is_vip = 0 AND ISNULL(pj.is_demo, 0) = 0 AND h.segment = 'sales_office')
-        OR (@grp = N'__FACILITY__' AND h.is_vip = 0 AND ISNULL(pj.is_demo, 0) = 0 AND h.segment = 'facility')
-        OR (@grp = N'__NOPJ__' AND h.is_vip = 0 AND ISNULL(pj.is_demo, 0) = 0 AND h.segment NOT IN ('condo','sales_office','facility') AND h.project_id IS NULL)
-        OR (h.is_vip = 0 AND ISNULL(pj.is_demo, 0) = 0 AND h.segment NOT IN ('condo','sales_office','facility') AND h.project_id = @grp))
+      ${scopeFilter}
       AND (@q = N'%%'
         OR h.house_number LIKE @q OR h.project_name LIKE @q OR pj.name_th LIKE @q
         OR h.id IN (SELECT house_id FROM #hit))`;
@@ -95,13 +103,19 @@ export async function GET(req: NextRequest) {
       WHERE @q <> N'%%' AND p.phone LIKE @qp
     ) x;
 
+    ${showHidden ? "" : `SELECT h.id, ${bucketExpr} bucket INTO #scope
+    FROM om_houses h LEFT JOIN om_projects pj ON pj.project_id = h.project_id
+    WHERE h.is_om = 1;`}
+
     SELECT h.id INTO #page
     FROM om_houses h LEFT JOIN om_projects pj ON pj.project_id = h.project_id
+    ${showHidden ? "" : "LEFT JOIN #scope sc ON sc.id = h.id"}
     ${where}
     ${orderBy} OFFSET @off ROWS FETCH NEXT @size ROWS ONLY;
 
     SELECT COUNT(*) total
     FROM om_houses h LEFT JOIN om_projects pj ON pj.project_id = h.project_id
+    ${showHidden ? "" : "LEFT JOIN #scope sc ON sc.id = h.id"}
     ${where};
 
     SELECT h.id, h.house_number, ISNULL(pj.name_th, h.project_name) project_name, h.project_id, h.segment,
@@ -137,7 +151,7 @@ export async function GET(req: NextRequest) {
     LEFT JOIN om_projects pj ON pj.project_id = h.project_id
     ${orderBy};
 
-    DROP TABLE #hit; DROP TABLE #page;`);
+    DROP TABLE #hit; DROP TABLE #page;${showHidden ? "" : " DROP TABLE #scope;"}`);
 
   const rs = rows.recordsets as sql.IRecordSet<Record<string, unknown>>[];
   return NextResponse.json({ houses: fixDates(rs[1]), total: rs[0][0].total, page, size });

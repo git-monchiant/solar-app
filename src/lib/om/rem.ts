@@ -28,9 +28,20 @@ export type RemPromotion = {
 
 // ★ ที่เดียวที่ REM บอกว่า "แถมโซลาร์ตอนขายไหม" — ชื่อโปรฯ ว่างได้บ่อย ต้องดู description ด้วย
 //   ตัวอย่างที่เจอจริง: "Solar Roof 3.0 kw." · "ระบบบ้าน ZEH และ Solar Rooftop 3 kw.+O&M 2 ปี" · "ฟรี Solar Roof 1.28 kw."
-const SOLAR_RE = /solar|โซลาร|โซล่า|โซลา|พลังงานแสง|photovolt/i;
+// ★ 8 ก.ย. 69 — เพิ่ม "sola roof" (ไม่มี R) ที่เจอจริงในรายงาน RP_CT_003 ของโครงการ CKL2
+//   "SOLA ROOF" 2 ยูนิต — กติกาเดิม /solar/ จับไม่ได้
+const SOLAR_RE = /solar|sola\s*roof|โซลาร|โซล่า|โซลา|พลังงานแสง|photovolt/i;
+
+// ★★ 8 ก.ย. 69 — "ส่วนลดแทน Solar roof" คือลูกค้า *รับเงินแทน* ไม่ได้ติดโซลาร์
+//   "ส่วนลดแทน Solar roof 5 kw. ภายหลังรับโอนกรรมสิทธิ์ 150,000.00 บาท"
+//   "ส่วนลด แทนการรับ Solar roof ภายหลังรับโอนกรรมสิทธิ์ 190,000.00 บาท"
+//   เจอ 162 แถว / 161 สัญญา — เดิมนับเป็นโซลาร์ ทำให้ 34 หลังได้สิทธิ์ล้างแผงทั้งที่ไม่มีแผง
+//   เพิ่ม "แทนการไม่รับ..." ที่เจอในรายงาน RP_CT_003 ("ส่วนลด 51,920 บาท แทนการไม่รับแอร์")
+const DISCOUNT_INSTEAD_RE = /ส่วนลด\s*(?:แทนการรับ|แทน)|แทน\s*การ(?:ไม่)?รับ/i;
 export function isSolarPromo(p: RemPromotion): boolean {
-  return SOLAR_RE.test(promoText(p));
+  const t = promoText(p);
+  if (DISCOUNT_INSTEAD_RE.test(t)) return false;
+  return SOLAR_RE.test(t);
 }
 
 const promoText = (p: RemPromotion) =>
@@ -45,10 +56,29 @@ export function promoSolarKw(p: RemPromotion): number | null {
   return Number.isFinite(v) && v > 0 && v < 100 ? v : null;
 }
 
+// ★★ 8 ก.ย. 69 — กติกาเดิมจับแค่รูปแบบ "O&M n ปี" ได้ 112 จาก 723 แถว (15%)
+//   ข้อความจริงส่วนใหญ่เขียนคนละแบบ วัดจากของแถมโซลาร์ 2,473 แถว:
+//     "ฟรี การดูแลและบำรุงรักษาระบบ Solar นาน 2 ปี มูลค่ากว่า 20,000 บาท"        ~1,498
+//     "ค่าใช้จ่าย O&M (Operate & Maintenance) ของระบบ Solar เป็นเวลา 4 ปี"        ~234
+//     "แผนการบำรุงรักษาระบบ Solar เป็นเวลา n ปี"                                    ~5
+//   กติกาใหม่: ต้องมีคำที่แปลว่า "ดูแล/บำรุงรักษา" นำหน้าตัวเลขไม่เกิน 40 ตัวอักษร
+//   ทดสอบกับข้อมูลจริงแล้ว: ได้ 723 แถว · ค่าขัดกับของเดิม 0 · กำกวม 0 · false positive 0
+//   ค่าที่พบมีแค่ 2 ปี (422) และ 4 ปี (301) ไม่มีค่าอื่นเลย
+const OM_CARE = "(?:O\\s*&\\s*M|Operation\\s*&\\s*Maintenance|Operate\\s*&\\s*Maintenance"
+              + "|Maintenance|ดูแลและบำรุงรักษา|บำรุงรักษา|ดูแลรักษา|ดูแล)";
+const OM_YEARS_RE = new RegExp(OM_CARE + "[^0-9]{0,40}?(\\d{1,2})\\s*ปี", "i");
 export function promoOmYears(p: RemPromotion): number | null {
-  const m = promoText(p).match(/O\s*&\s*M\s*(\d+)\s*ปี/i);
+  const m = promoText(p).match(OM_YEARS_RE);
   const v = m ? Number(m[1]) : NaN;
   return Number.isInteger(v) && v > 0 && v <= 20 ? v : null;
+}
+
+// ★ กติกาแปลง "ปี" → "จำนวนครั้งล้างแผง" — REM ไม่เคยระบุจำนวนครั้งเลยสักแถว (ตรวจ 2,473 แถว = 0)
+//   อัตรา 2 ครั้ง/ปี ยืนยันจากข้อมูลที่ import แล้ว: contract_term=2 → qty 4 · contract_term=4 → qty 8
+//   ผู้ใช้เคาะ 8 ก.ย. 69 ให้ใช้อัตรานี้ไปก่อน — ★ ควรย้ายไป om_settings เมื่อทำหน้าตั้งค่า
+export const VISITS_PER_YEAR = 2;
+export function omYearsToVisits(years: number | null | undefined): number | null {
+  return years == null ? null : years * VISITS_PER_YEAR;
 }
 
 // REM เก็บโปรฯ ที่ยกเลิกไว้ในชื่อเลย ("… -ยกเลิก" / "(ยกเลิก)") — ต้องไม่นับเป็นของแถมที่ได้จริง

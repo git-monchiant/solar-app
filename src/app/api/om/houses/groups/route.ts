@@ -2,20 +2,14 @@ import { NextRequest, NextResponse } from "next/server";
 import { requireAuth } from "@/lib/auth";
 import { sql } from "@/lib/db";
 import { getOmDb } from "@/lib/om/line";
+import { HG, HIDDEN_GROUPS, GROUP_LABEL, bucketSql } from "@/lib/om/house-scope";
 
-// กลุ่มโครงการสำหรับลิสต์ซ้ายของหน้าบ้าน — VIP กับไซต์บริษัทรวมเป็นกลุ่มเดียว
-// เพราะ VIP 31 หลังเก็บชื่อคนไว้ในช่องโครงการ ("บ้านคุณปลิว") ถ้าไม่รวมจะแตกเป็น 31 กลุ่มกลุ่มละหลัง
-export const GROUP_VIP = "__VIP__";
-export const GROUP_CONDO = "__CONDO__";
-export const GROUP_SALES = "__SALES__";
-export const GROUP_FACILITY = "__FACILITY__";
-export const GROUP_DEMO = "__DEMO__";
-export const GROUP_GENERAL = "__NOPJ__";  // บ้านนอกโครงการเสนาที่ไม่ใช่ VIP = ลูกค้าทั่วไป (ซื้อโซลาร์เอง)
-// กลุ่มที่ "ไม่ใช่บ้านลูกค้า" — ซ่อนจากลิสต์และตัวนับตามค่าเริ่มต้น
-export const NON_HOUSE_GROUPS = [GROUP_CONDO, GROUP_SALES, GROUP_FACILITY, GROUP_DEMO];
+// กลุ่มโครงการสำหรับลิสต์ซ้ายของหน้าบ้าน — logic การจัดกลุ่มอยู่ที่ src/lib/om/house-scope.ts
+// (ใช้ร่วมกับ /api/om/houses เพื่อให้ตัวเลขหัวกลุ่ม = จำนวนที่เปิดเข้าไปเห็นจริง)
+// VIP เก็บชื่อคนไว้ในช่องโครงการ ("บ้านคุณปลิว") จึงรวมเป็นกลุ่มเดียว ไม่งั้นแตกเป็น 31 กลุ่มกลุ่มละหลัง
 
 type Group = {
-  grp: string; pid: string | null; name: string; special: boolean; nonHouse: boolean;
+  grp: string; pid: string | null; name: string; special: boolean; nonHouse: boolean; hidden: boolean;
   houses: number; vip: number; nophone: number; nowarr: number;
   noinv: number; nocust: number; duewash: number; nosolar: number; nospec: number; bal: number;
 };
@@ -31,6 +25,8 @@ export async function GET(req: NextRequest) {
     SELECT i.house_id, COUNT(*) n_sys,
            MAX(CASE WHEN i.warranty_start IS NOT NULL THEN 1 ELSE 0 END) has_warr,
            MAX(CASE WHEN i.inverter_brand IS NOT NULL THEN 1 ELSE 0 END) has_inv,
+           -- โอนแล้ว (REM มีสัญญาผูก) — ใช้จัด bucket "แสดง/ซ่อน"
+           MAX(CASE WHEN i.rem_contract_id IS NOT NULL THEN 1 ELSE 0 END) has_rem,
            -- "มีสเปกระบบ" = รู้อย่างน้อยหนึ่งใน kWp / ยี่ห้ออินเวอร์เตอร์ / SN  (นิยามเดียวกับ filter=nospec)
            MAX(CASE WHEN i.rem_size_kwp IS NOT NULL OR i.inverter_brand IS NOT NULL
                          OR i.inverter_sn IS NOT NULL
@@ -58,12 +54,12 @@ export async function GET(req: NextRequest) {
            SUM(nospec) nospec, SUM(bal) bal
     FROM (
       SELECT
-        CASE WHEN h.is_vip = 1 THEN '${GROUP_VIP}'
-             WHEN pj.is_demo = 1 THEN '${GROUP_DEMO}'
-             WHEN h.segment = 'condo' THEN '${GROUP_CONDO}'
-             WHEN h.segment = 'sales_office' THEN '${GROUP_SALES}'
-             WHEN h.segment = 'facility' THEN '${GROUP_FACILITY}'
-             ELSE ISNULL(h.project_id, '${GROUP_GENERAL}') END grp,
+        ${bucketSql({
+          seg: "h.segment", vip: "h.is_vip", demo: "ISNULL(pj.is_demo, 0)",
+          unit: "ISNULL(h.unit_status, N'')", pid: "h.project_id",
+          washed: "CASE WHEN rd.last_wash IS NOT NULL THEN 1 ELSE 0 END",
+          rem: "ISNULL(ins.has_rem, 0)",
+        })} grp,
         h.project_id pid, ISNULL(pj.name_th, h.project_name) name, CAST(h.is_vip AS int) vip,
         CASE WHEN ISNULL(c.has_phone, 0) = 0 THEN 1 ELSE 0 END nophone,
         CASE WHEN ISNULL(ins.has_warr, 0) = 0 THEN 1 ELSE 0 END nowarr,
@@ -90,25 +86,21 @@ export async function GET(req: NextRequest) {
 
     DROP TABLE #inst; DROP TABLE #grant; DROP TABLE #red; DROP TABLE #cust;`);
 
-  const label: Record<string, string> = {
-    [GROUP_VIP]: "VIP · นอกโครงการ",
-    [GROUP_CONDO]: "คอนโด",
-    [GROUP_SALES]: "สำนักงานขาย",
-    [GROUP_FACILITY]: "ส่วนกลาง",
-    [GROUP_DEMO]: "บ้านตัวอย่าง · Demo",
-    [GROUP_GENERAL]: "ลูกค้าทั่วไป · นอกโครงการ",
-  };
+  const nonHouseKeys: string[] = [HG.CONDO, HG.SALES, HG.FACILITY];
   const rs = r.recordsets as sql.IRecordSet<Record<string, unknown>>[];
   const groups: Group[] = rs[0].map((g) => {
     const key = String(g.grp);
+    const special = key in GROUP_LABEL;
     return {
       ...(g as unknown as Group),
-      name: label[key] ?? String(g.name ?? ""),
-      pid: label[key] ? null : (g.pid as string | null),
-      special: key in label,
-      nonHouse: NON_HOUSE_GROUPS.includes(key),
+      name: GROUP_LABEL[key] ?? String(g.name ?? ""),
+      pid: special ? null : (g.pid as string | null),
+      special,
+      hidden: HIDDEN_GROUPS.includes(key),      // ซ่อนจากลิสต์หลัก (คอนโด/สนง.ขาย/ส่วนกลาง/ยังไม่ขาย/บ้านตัวอย่าง)
+      nonHouse: nonHouseKeys.includes(key),     // ไม่ใช่แนวราบ (subset ของ hidden)
     };
-  }).sort((a, b) => Number(a.special) - Number(b.special) || b.houses - a.houses);
+  }).sort((a, b) =>
+    Number(a.hidden) - Number(b.hidden) || Number(a.special) - Number(b.special) || b.houses - a.houses);
 
   const sum = (k: keyof Group) => groups.reduce((s, g) => s + (Number(g[k]) || 0), 0);
   return NextResponse.json({

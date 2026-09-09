@@ -70,7 +70,7 @@ export async function runJobs(
     try {
       const r = await reconcileRemLinks(db);
       await finishSync(db, logId, { status: "ok", inserted: r.contractsLinked + r.owners.created,
-        message: `เชื่อมสัญญา ${r.contractsLinked} · เติม unit ${r.unitsLinked} · สร้างเจ้าของ ${r.owners.created} · สิทธิ์ ${r.grantsCreated}` });
+        message: `เปิดบ้าน ${r.housesOpened} · เติมระบบ ${r.installationsCreated} · สร้างบ้าน ${r.housesCreated} · เชื่อมสัญญา ${r.contractsLinked} · เติม unit ${r.unitsLinked} · สร้างเจ้าของ ${r.owners.created} · สิทธิ์ ${r.grantsCreated}` });
       out.reconcile = { contractsLinked: r.contractsLinked, unitsLinked: r.unitsLinked, ownersCreated: r.owners.created };
     } catch (e) {
       const msg = e instanceof Error ? e.message : "reconcile ไม่สำเร็จ";

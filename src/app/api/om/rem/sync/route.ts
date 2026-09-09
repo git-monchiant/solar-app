@@ -55,8 +55,8 @@ export async function POST(req: NextRequest) {
     try {
       const r = await reconcileRemLinks(db);
       await finishSync(db, logId, { status: "ok", inserted: r.contractsLinked + r.owners.created,
-        message: `เชื่อมสัญญา ${r.contractsLinked} · เติม unit ${r.unitsLinked} · สร้างเจ้าของ ${r.owners.created} · สิทธิ์ ${r.grantsCreated}` });
-      return NextResponse.json({ ok: true, contractsLinked: r.contractsLinked, unitsLinked: r.unitsLinked,
+        message: `เปิดบ้าน ${r.housesOpened} · เติมระบบ ${r.installationsCreated} · สร้างบ้าน ${r.housesCreated} · เชื่อมสัญญา ${r.contractsLinked} · เติม unit ${r.unitsLinked} · สร้างเจ้าของ ${r.owners.created} · สิทธิ์ ${r.grantsCreated}` });
+      return NextResponse.json({ ok: true, housesOpened: r.housesOpened, installationsCreated: r.installationsCreated, housesCreated: r.housesCreated, contractsLinked: r.contractsLinked, unitsLinked: r.unitsLinked,
         ownersCreated: r.owners.created, ownersReused: r.owners.reused, grantsCreated: r.grantsCreated });
     } catch (e) {
       const msg = e instanceof Error ? e.message : "reconcile ไม่สำเร็จ";

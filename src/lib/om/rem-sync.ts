@@ -1,6 +1,6 @@
 import { sql } from "@/lib/db";
 import { fetchTransferByUnit, fetchTransfers, fetchUnits, houseKey, isCancelledPromo, isSolarPromo, phoneKey,
-  promoOmYears, promoSolarKw, type RemPromotion, type RemTransfer, type RemUnit } from "@/lib/om/rem";
+  promoOmYears, promoSolarKw, type RemOwner, type RemPromotion, type RemTransfer, type RemUnit } from "@/lib/om/rem";
 
 // ดึงทะเบียน REM ลง staging (om_rem_units / om_rem_transfers / om_rem_owners)
 // ★ staging เป็น "ของที่ REM ส่งมา" ล้วน ๆ — ไม่แตะ om_houses/om_installations ตรงนี้
@@ -16,6 +16,11 @@ function thaiDate(s: string | null | undefined): string | null {
   return m ? `${m[1]}T${m[2] ?? "00:00:00"}+07:00` : null;
 }
 
+// ★ เวอร์ชันของกติกาแยกของแถม — บันทึกลงทุกแถวเพื่อให้รู้ว่า om_years/is_solar มาจากกติกาไหน
+//   v1 = ก่อน 8 ก.ย. 69 (จับแค่ "O&M n ปี" · นับ "ส่วนลดแทน Solar" เป็นโซลาร์)
+//   v2 = 8 ก.ย. 69 เป็นต้นไป
+export const PARSER_VERSION = "v2";
+
 async function replaceProject<T>(
   tx: sql.Transaction, table: string, projectId: string, rows: T[],
   bind: (r: sql.Request, row: T) => sql.Request, cols: string, vals: string,
@@ -27,8 +32,35 @@ async function replaceProject<T>(
   }
 }
 
+// เขียนเจ้าของ 1 คนลง staging — แยกออกมาเพราะเรียกจากทั้งชุดทั้งโครงการและชุดที่ยิงรายหลัง
+async function writeOwner(tx: sql.Transaction, contractId: string, o: RemOwner) {
+  await new sql.Request(tx)
+    .input("a", sql.NVarChar(80), contractId).input("b", sql.NVarChar(60), o.customerItemID ?? null)
+    .input("c", sql.NVarChar(200), o.firstName ?? null).input("d", sql.NVarChar(200), o.lastName ?? null)
+    .input("e", sql.Bit, o.isMainCustomer ? 1 : 0)
+    .input("f", sql.NVarChar(20), /^\d{13}$/.test(String(o.citizenID)) ? o.citizenID! : null)
+    .input("g", sql.NVarChar(40), o.passportID || null).input("h", sql.NVarChar(30), o.phoneNo1 || null)
+    .input("i", sql.NVarChar(20), phoneKey(o.phoneNo1) || null).input("j", sql.NVarChar(200), o.email || null)
+    .input("k", sql.NVarChar(100), o.nationalityName || null)
+    .query(`INSERT INTO om_rem_owners (contract_id, customer_item_id, first_name, last_name, is_main, citizen_id, passport_id, phone, phone_key, email, nationality_name)
+            VALUES (@a,@b,@c,@d,@e,@f,@g,@h,@i,@j,@k)`);
+}
+
+// ยิงเติมเจ้าของรายหลังพร้อมกันได้กี่เส้น — เท่ากับที่ใช้กับ promotions
+const OWNER_CONCURRENCY = 4;
+
 export async function syncProject(db: sql.ConnectionPool, projectId: string): Promise<SyncResult> {
-  const [units, transfers] = await Promise.all([fetchUnits(projectId), fetchTransfers(projectId)]);
+  const body = JSON.stringify({ projectID: projectId, unitID: "", unitNumber: "", houseNumber: "" });
+  let units: RemUnit[], transfers: RemTransfer[];
+  try {
+    [units, transfers] = await Promise.all([fetchUnits(projectId), fetchTransfers(projectId)]);
+  } catch (e) {
+    // ★ หลักฐาน — ยิงล้มก็ต้องมีร่องรอย ไม่ใช่เงียบหาย
+    await logScan(db, { kind: "units", projectId, body, ok: false, error: String(e).slice(0, 380) });
+    throw e;
+  }
+  await logScan(db, { kind: "units", projectId, body, ok: true, nReturned: units.length });
+  await logScan(db, { kind: "transfers", projectId, body, ok: true, nReturned: transfers.length });
 
   // ★ กันข้อมูลหาย: ถ้า REM ตอบว่างทั้งที่เคยมี แปลว่าน่าจะพลาด ไม่ใช่ว่าโครงการโล่ง — ข้ามไป
   const had = await db.request().input("p", sql.NVarChar(20), projectId).query(`
@@ -68,19 +100,39 @@ export async function syncProject(db: sql.ConnectionPool, projectId: string): Pr
       "contract_id, project_id, project_name, project_type, unit_id, unit_number, house_number, house_number_key, transfer_date, condo_register_date, latitude, longitude, raw",
       "@a,@b,@c,@d,@e,@f,@g,@h,@i,@j,@k,@l,@m");
 
+    // ★★ 9 ก.ย. 69 — ยิงทั้งโครงการได้ owners ไม่ครบ (อาการเดียวกับ promotions ที่เจอ 2 ก.ย.)
+    //   หลักฐาน LIFK6: 45/216 กับ 45/209 ได้ 0 คน · 45/215 ได้ 4 คนทั้งที่มีจริง 2 (ส่งซ้ำ)
+    //   ยิงรายหลัง (unitID) ได้ครบถูกต้องทุกครั้ง ⇒ เติมของที่ขาดด้วยการยิงรายหลัง
+    //   ทำหลังจากใส่ชุดที่ได้จากทั้งโครงการแล้ว จะได้ยิงเฉพาะสัญญาที่ยังว่าง
+    const ownersByContract = new Map<string, RemOwner[]>();
+    for (const t of transfers) {
+      const list = (t.owners ?? []).filter((o) => !o.contractID || String(o.contractID) === t.contractID);
+      if (list.length) ownersByContract.set(t.contractID, list);
+    }
+    const missing = transfers.filter((t) => !ownersByContract.has(t.contractID) && t.unitID);
+    for (let i = 0; i < missing.length; i += OWNER_CONCURRENCY) {
+      const chunk = missing.slice(i, i + OWNER_CONCURRENCY);
+      const got = await Promise.all(chunk.map(async (t) => {
+        try {
+          const one = await fetchTransferByUnit(projectId, t.unitID!);
+          const row = one.find((x) => String(x.contractID) === t.contractID);
+          return { cid: t.contractID, list: (row?.owners ?? []).filter((o) => !o.contractID || String(o.contractID) === t.contractID) };
+        } catch { return { cid: t.contractID, list: [] as RemOwner[] }; }
+      }));
+      for (const g of got) if (g.list.length) ownersByContract.set(g.cid, g.list);
+    }
+
     let owners = 0;
-    for (const t of transfers) for (const o of t.owners ?? []) {
-      await new sql.Request(tx)
-        .input("a", sql.NVarChar(80), t.contractID).input("b", sql.NVarChar(60), o.customerItemID ?? null)
-        .input("c", sql.NVarChar(200), o.firstName ?? null).input("d", sql.NVarChar(200), o.lastName ?? null)
-        .input("e", sql.Bit, o.isMainCustomer ? 1 : 0)
-        .input("f", sql.NVarChar(20), /^\d{13}$/.test(String(o.citizenID)) ? o.citizenID! : null)
-        .input("g", sql.NVarChar(40), o.passportID || null).input("h", sql.NVarChar(30), o.phoneNo1 || null)
-        .input("i", sql.NVarChar(20), phoneKey(o.phoneNo1) || null).input("j", sql.NVarChar(200), o.email || null)
-        .input("k", sql.NVarChar(100), o.nationalityName || null)
-        .query(`INSERT INTO om_rem_owners (contract_id, customer_item_id, first_name, last_name, is_main, citizen_id, passport_id, phone, phone_key, email, nationality_name)
-                VALUES (@a,@b,@c,@d,@e,@f,@g,@h,@i,@j,@k)`);
-      owners++;
+    for (const [cid, list] of ownersByContract) {
+      const seen = new Set<string>();
+      for (const o of list) {
+        // REM ส่งเจ้าของซ้ำได้ — ตัดออกก่อนเขียน ไม่งั้นบ้านหลังเดียวได้ชื่อซ้ำ
+        const k = `${o.customerItemID ?? ""}|${o.firstName ?? ""}|${o.lastName ?? ""}`;
+        if (seen.has(k)) continue;
+        seen.add(k);
+        await writeOwner(tx, cid, o);
+        owners++;
+      }
     }
     // ── โปรโมชันที่แถมตอนขาย (★ ที่เดียวที่บอกว่าแถมโซลาร์ไหม)
     //    REM ส่งแถวซ้ำหลายแถวต่อโปรฯ เดียว — กันซ้ำด้วยคีย์ก่อนค่อย insert
@@ -170,10 +222,14 @@ async function writePromos(db: sql.ConnectionPool, contractId: string, promos: R
         .input("k", sql.Bit, p.isStandard ? 1 : 0)
         .input("l", sql.Bit, solar ? 1 : 0).input("m", sql.Decimal(8, 2), solar ? promoSolarKw(p) : null)
         .input("n", sql.Int, promoOmYears(p)).input("o", sql.Bit, isCancelledPromo(p) ? 1 : 0)
+        // ★ หลักฐาน (8 ก.ย. 69) — เก็บ JSON ดิบเฉพาะแถวโซลาร์ เพราะเป็นแถวที่กระทบสิทธิ์ลูกค้า
+        //   เก็บทุกแถวจะโต 32,139 แถว · เฉพาะโซลาร์ ~2,500 แถว (ผู้ใช้เคาะ)
+        .input("q", sql.NVarChar(sql.MAX), solar ? JSON.stringify(p) : null)
+        .input("r", sql.VarChar(10), PARSER_VERSION)
         .query(`INSERT INTO om_rem_promotions (contract_id, p_detail_id, promotion_id, m_promotion_id,
                   promotion_type, promotion_name, description1, description2, is_standard,
-                  is_solar, solar_kw, om_years, is_cancelled)
-                VALUES (@a,@b,@c,@d,@e,@f,@g,@h,@k,@l,@m,@n,@o)`);
+                  is_solar, solar_kw, om_years, is_cancelled, raw, parser_version, parsed_at)
+                VALUES (@a,@b,@c,@d,@e,@f,@g,@h,@k,@l,@m,@n,@o,@q,@r,SYSDATETIMEOFFSET())`);
       n++;
     }
     await new sql.Request(tx).input("c", sql.NVarChar(80), contractId).input("n", sql.Int, n)
@@ -184,6 +240,29 @@ async function writePromos(db: sql.ConnectionPool, contractId: string, promos: R
     await tx.rollback();
     throw e;
   }
+}
+
+// ★ หลักฐานการยิง REM — ตอบได้ว่า "ของแถมหลังนี้มาจากการยิงครั้งไหน ด้วย body อะไร"
+export async function logScan(db: sql.ConnectionPool, x: {
+  kind: string; projectId?: string | null; contractId?: string | null; unitId?: string | null;
+  body?: string | null; ok?: boolean | null; nReturned?: number | null;
+  nPromos?: number | null; nSolar?: number | null; nYears?: number | null; error?: string | null;
+}) {
+  try {
+    await db.request()
+      .input("a", sql.VarChar(12), x.kind)
+      .input("b", sql.NVarChar(40), x.projectId ?? null)
+      .input("c", sql.NVarChar(80), x.contractId ?? null)
+      .input("d", sql.NVarChar(80), x.unitId ?? null)
+      .input("e", sql.NVarChar(400), x.body ?? null)
+      .input("f", sql.Bit, x.ok == null ? null : x.ok ? 1 : 0)
+      .input("g", sql.Int, x.nReturned ?? null).input("h", sql.Int, x.nPromos ?? null)
+      .input("k", sql.Int, x.nSolar ?? null).input("l", sql.Int, x.nYears ?? null)
+      .input("m", sql.NVarChar(400), x.error ?? null)
+      .query(`INSERT INTO om_rem_scan_log (scan_kind, project_id, contract_id, unit_id,
+                request_body, http_ok, n_returned, n_promos, n_solar, n_om_years, error, finished_at)
+              VALUES (@a,@b,@c,@d,@e,@f,@g,@h,@k,@l,@m, SYSDATETIMEOFFSET())`);
+  } catch { /* log ล้มเหลวต้องไม่ทำให้ sync ล้ม */ }
 }
 
 export async function syncPromotionsByUnit(
@@ -210,12 +289,29 @@ export async function syncPromotionsByUnit(
       } catch { return { t, promos: null }; }
     }));
     for (const gt of got) {
-      if (gt.promos === null) { failed++; continue; }
+      // ★ หลักฐาน — บันทึกทุกครั้งที่ยิง REM ว่ายิงอะไรไป ได้อะไรกลับมา (ผู้ใช้สั่ง 8 ก.ย. 69)
+      const body = JSON.stringify({ projectID: gt.t.project_id, unitID: gt.t.unit_id,
+        unitNumber: "", houseNumber: "" });
+      const nSolar = gt.promos ? gt.promos.filter(isSolarPromo).length : null;
+      const nYears = gt.promos ? gt.promos.filter((p) => promoOmYears(p) != null).length : null;
+      if (gt.promos === null) {
+        failed++;
+        await logScan(db, { kind: "promos", projectId: gt.t.project_id, contractId: gt.t.contract_id,
+          unitId: gt.t.unit_id, body, ok: false, error: "fetch ล้มเหลว" });
+        continue;
+      }
       try {
-        rows += await writePromos(db, gt.t.contract_id, gt.promos);
-        solar += gt.promos.some(isSolarPromo) ? 1 : 0;
+        const n = await writePromos(db, gt.t.contract_id, gt.promos);
+        rows += n;
+        solar += nSolar! > 0 ? 1 : 0;
         done++;
-      } catch { failed++; }
+        await logScan(db, { kind: "promos", projectId: gt.t.project_id, contractId: gt.t.contract_id,
+          unitId: gt.t.unit_id, body, ok: true, nPromos: n, nSolar, nYears });
+      } catch (e) {
+        failed++;
+        await logScan(db, { kind: "promos", projectId: gt.t.project_id, contractId: gt.t.contract_id,
+          unitId: gt.t.unit_id, body, ok: false, error: String(e).slice(0, 380) });
+      }
     }
   }
   const left = await db.request().query(

@@ -1,7 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
-import { requireAuth } from "@/lib/auth";
+import { requireAuth, requireAnyRole } from "@/lib/auth";
 import { fixDates, sql } from "@/lib/db";
 import { getOmDb } from "@/lib/om/line";
+import { finishSync, logSync } from "@/lib/om/rem-sync";
 
 // บ้านรายหลัง — ดูครบ (ระบบติดตั้ง · สิทธิ์ ledger · ลูกค้า · นัด) + แก้ข้อมูลบ้าน
 
@@ -27,6 +28,7 @@ export async function GET(req: NextRequest, ctx: { params: Promise<{ id: string 
            CONVERT(char(10), i.transfer_date, 23) transfer_date,
            CONVERT(char(10), i.warranty_start, 23) warranty_start,
            i.warranty_doc_no, i.battery_brand, i.battery_kwh, i.rem_contract_id, i.lead_id, i.note,
+           i.po_number,
            -- ที่มาของข้อมูล: มาจาก REM / ไฟล์ import ชุดไหน / เช็คกับ REM ล่าสุดเมื่อไร
            i.rem_contract_status, CONVERT(char(10), i.rem_transfer_date, 23) rem_transfer_date,
            CONVERT(varchar(33), i.rem_checked_at, 126) rem_checked_at,
@@ -73,7 +75,26 @@ export async function GET(req: NextRequest, ctx: { params: Promise<{ id: string 
             WHERE h2.project_id IS NOT NULL AND t2.project_id = h2.project_id
               -- ★ house_number_key เป็น Latin1_General_BIN2 ส่วน house_number เป็น Thai_CI_AS
               --   ถ้าไม่ใส่ COLLATE จะได้ collation conflict (error 468) ตอนเทียบ
-              AND t2.house_number_key = REPLACE(h2.house_number, N' ', N'') COLLATE Latin1_General_BIN2);`);
+              AND t2.house_number_key = REPLACE(h2.house_number, N' ', N'') COLLATE Latin1_General_BIN2);
+
+    -- ★ ที่มาข้อมูลรายฟิลด์ (om_field_sources) — ค่าไหนมาจากไฟล์ไหน แถวไหน จับคู่ด้วยอะไร
+    --   ของเดิมผูกที่มาไว้กับ "ระเบียน" (source_batch_id) จึงบอกได้แค่ว่าแถวเกิดจาก import ไหน
+    --   ตารางนี้บอกรายช่อง ⇒ ปุ่ม "ดูรายละเอียด" ในหน้าบ้านเอาไปแสดงเป็นตารางรวมทุกช่อง
+    SELECT fs.id, fs.installation_id, fs.column_name, fs.new_value, fs.old_value,
+           fs.source_kind, fs.source_ref, fs.match_method, fs.confidence,
+           CONVERT(char(10), fs.created_at, 23) created_at,
+           ib2.source_file batch_file, ib2.note batch_note
+    FROM om_field_sources fs
+    LEFT JOIN om_import_batches ib2 ON ib2.id = fs.batch_id
+    WHERE fs.house_id = @id ORDER BY fs.id;
+
+    -- ★ เลข PO ทุกใบ (om_installation_pos) — บ้านหนึ่งมีได้หลายใบ ทั้งงานติดตั้งและงานบริการ
+    --   om_installations.po_number เก็บได้ใบเดียว จึงใช้ตารางลูกเป็นตัวจริง
+    SELECT po.id, po.installation_id, po.po_number, CONVERT(char(10), po.po_date, 23) po_date,
+           po.kind, po.note, po.amount_kw, po.source_ref, ib3.source_file batch_file
+    FROM om_installation_pos po
+    LEFT JOIN om_import_batches ib3 ON ib3.id = po.batch_id
+    WHERE po.house_id = @id ORDER BY po.po_date, po.id;`);
 
   const rs = r.recordsets as sql.IRecordSet<Record<string, unknown>>[];
   const house = rs[0][0];
@@ -87,6 +108,8 @@ export async function GET(req: NextRequest, ctx: { params: Promise<{ id: string 
     customers: rs[4],
     bookings: fixDates(rs[5]),
     promo: (rs[6][0]?.n_items ? rs[6][0] : null),
+    fieldSources: rs[7] ?? [],
+    pos: rs[8] ?? [],
   });
 }
 
@@ -138,4 +161,73 @@ export async function PATCH(req: NextRequest, ctx: { params: Promise<{ id: strin
             WHERE id = @id`);
 
   return NextResponse.json({ ok: true });
+}
+
+// DELETE — ★ ลบบ้านถาวร เฉพาะ "แอดมินสูงสุด" (role admin) · สำหรับล้างข้อมูลขยะจริง ๆ
+//   กติกาความปลอดภัย (แนวเดียวกับลบลูกค้า): บ้านที่ "มีประวัติงานจริง" ห้ามลบถาวร → ให้ใช้ "ซ่อน" แทน
+//   ★ ไม่มี ON DELETE CASCADE — ต้องลบตารางลูกเองตามลำดับใน transaction · เก็บ audit ลง om_sync_log ก่อนลบ
+export async function DELETE(req: NextRequest, ctx: { params: Promise<{ id: string }> }) {
+  const gate = await requireAnyRole(req, ["admin"]);   // เฉพาะแอดมินสูงสุด
+  if (gate.error) return gate.error;
+  const id = Number((await ctx.params).id);
+  // ★ force=1 → ลบทั้งบ้านที่มีประวัติจริง (ล้าง/นัด/LINE) ด้วย · ใช้ได้เฉพาะแอดมิน (gate ด้านบนแล้ว)
+  const force = req.nextUrl.searchParams.get("force") === "1";
+
+  const db = await getOmDb();
+  const chk = await db.request().input("id", sql.Int, id).query(`
+    SELECT
+      (SELECT COUNT(*) FROM om_houses WHERE id = @id) found,
+      (SELECT house_number FROM om_houses WHERE id = @id) house_number,
+      (SELECT ISNULL(pj.name_th, h.project_name) FROM om_houses h
+         LEFT JOIN om_projects pj ON pj.project_id = h.project_id WHERE h.id = @id) project_name,
+      (SELECT COUNT(*) FROM om_redemptions rd JOIN om_installations i ON i.id = rd.installation_id
+         WHERE i.house_id = @id AND rd.status <> 'void') washes,
+      (SELECT COUNT(*) FROM om_bookings WHERE house_id = @id) bookings,
+      (SELECT COUNT(*) FROM om_line_user_houses WHERE house_id = @id)
+        + (SELECT COUNT(*) FROM om_line_users WHERE house_id = @id) line_links,
+      (SELECT COUNT(*) FROM om_installations WHERE house_id = @id) systems,
+      (SELECT COUNT(*) FROM om_house_customers WHERE house_id = @id AND is_current = 1) customers`);
+  const c = chk.recordset[0] as Record<string, number | string | null>;
+  if (!c.found) return NextResponse.json({ error: "ไม่พบบ้าน" }, { status: 404 });
+
+  // มีประวัติงานจริง = ล้างแผง / มีนัด / ผูก LINE — ปกติลบถาวรไม่ได้ ให้ซ่อนแทน (ข้อมูลมีค่า)
+  //   ★ force=1 (แอดมิน) = ข้ามด่านนี้ ลบทั้งประวัติ · UI จะถามยืนยันซ้ำก่อนส่ง force
+  const washes = Number(c.washes), bookings = Number(c.bookings), lineLinks = Number(c.line_links);
+  if (!force && (washes > 0 || bookings > 0 || lineLinks > 0)) {
+    return NextResponse.json({
+      error: `บ้านนี้มีประวัติงานจริง (ล้าง ${washes} · นัด ${bookings} · LINE ${lineLinks}) — ลบถาวรไม่ได้ ให้ใช้ “ซ่อนออกจากงาน O&M” แทน`,
+      locked: true, washes, bookings, lineLinks,
+    }, { status: 409 });
+  }
+
+  const logId = await logSync(db, "house_delete",
+    `บ้าน ${id} · ${c.house_number ?? "—"} · ${c.project_name ?? "—"}${force ? " · FORCE" : ""}`, gate.userId);
+  const tx = new sql.Transaction(db);
+  await tx.begin();
+  try {
+    const rq = () => new sql.Request(tx).input("id", sql.Int, id);
+    // ★ ลำดับสำคัญ (ไม่มี ON DELETE CASCADE) — redemption เป็นลูกของ installation/booking/grant → ต้องลบก่อนสุด
+    await rq().query(`DELETE rd FROM om_redemptions rd JOIN om_installations i ON i.id = rd.installation_id WHERE i.house_id = @id`);
+    await rq().query(`DELETE bh FROM om_booking_history bh JOIN om_bookings b ON b.id = bh.booking_id WHERE b.house_id = @id`);
+    await rq().query(`DELETE g FROM om_entitlement_grants g JOIN om_installations i ON i.id = g.installation_id WHERE i.house_id = @id`);
+    await rq().query(`DELETE FROM om_bookings WHERE house_id = @id`);
+    await rq().query(`DELETE FROM om_installations WHERE house_id = @id`);
+    // ลูกตรงอื่น ๆ ของบ้าน
+    await rq().query(`DELETE FROM om_house_customers WHERE house_id = @id`);
+    await rq().query(`DELETE FROM om_entitlement_history WHERE house_id = @id`);
+    await rq().query(`DELETE FROM om_line_user_houses WHERE house_id = @id`);
+    // FK แบบ nullable — เก็บแถวไว้ แค่ตัดการผูกกับบ้าน
+    await rq().query(`UPDATE om_identity_requests SET house_id = NULL WHERE house_id = @id`);
+    await rq().query(`UPDATE om_line_users SET house_id = NULL WHERE house_id = @id`);
+    await rq().query(`DELETE FROM om_houses WHERE id = @id`);
+    await tx.commit();
+  } catch (e) {
+    await tx.rollback();
+    const msg = e instanceof Error ? e.message : "ลบไม่สำเร็จ";
+    await finishSync(db, logId, { status: "error", message: msg });
+    return NextResponse.json({ error: msg }, { status: 500 });
+  }
+  await finishSync(db, logId, { status: "ok", inserted: 1,
+    message: `ลบถาวร${force ? "(FORCE)" : ""} — ระบบ ${Number(c.systems)} · ลูกค้า ${Number(c.customers)} · ล้าง ${washes} · นัด ${bookings} · LINE ${lineLinks}` });
+  return NextResponse.json({ ok: true, deleted: true, force });
 }
