@@ -53,7 +53,7 @@ const RESULT: Record<RowResult, { label: string; chip: string }> = {
   breached:    { label: "เกินกำหนด SLA",    chip: "bg-red-50 text-red-700 border-red-200" },
   open:        { label: "อยู่ระหว่างดำเนินการ", chip: "bg-sky-50 text-sky-700 border-sky-200" },
   cancelled:   { label: "ยกเลิกรายการ",     chip: "bg-gray-50 text-gray-500 border-gray-200" },
-  not_started: { label: "ยังไม่ถึงขั้นตอนนี้",  chip: "bg-gray-50 text-gray-400 border-gray-200" },
+  not_started: { label: "ยังไม่ถึงขั้นตอน",  chip: "bg-gray-50 text-gray-400 border-gray-200" },
 };
 
 function minutesText(minutes?: number | null): string {
@@ -81,7 +81,7 @@ function stamp(value?: string | null): string {
  * "SLA ที่ตั้งไว้" ของขั้นตอนหนึ่ง — ต้องเป็นค่าที่ตั้งไว้จริงในนโยบายเท่านั้น
  *
  * ห้ามคำนวณจาก เริ่มนับ→ครบกำหนด ของรอบที่เกิดขึ้นจริง เพราะบางนโยบายผูกกับ
- * เวลานาฬิกา (ติดต่อครั้งแรกต้องจบภายใน 23:59 ของวันนั้น) ค่าที่ได้จึงเปลี่ยนไป
+ * เวลานาฬิกา (ติดต่อครั้งแรกต้องแล้วเสร็จภายใน 23:59 ของวันเดียวกัน) ค่าที่ได้จึงเปลี่ยนไป
  * ทุก Lead ตามเวลาที่รับเข้ามา เช่น 13.1 ชั่วโมง ซึ่งไม่ใช่ "ข้อตกลง" ที่ใครตั้งไว้
  * นโยบายพวกนี้เก็บกติกาไว้ใน config_json จึงอ่านจากตรงนั้นมาอธิบายแทนตัวเลข
  */
@@ -98,8 +98,8 @@ function slaTargetLines(policy?: SlaPolicy): string[] {
     const nightDeadline = String(config.nightDeadline ?? "12:00:00").slice(0, 5);
     // สองเงื่อนไขคนละบรรทัด อ่านทีละข้อได้ ไม่ต้องไล่หาจุดคั่นกลางพืดข้อความ
     return [
-      `${day} ภายใน ${dayDeadline} วันนั้น`,
-      `นอกเวลา ภายใน ${nightDeadline} วันถัดไป`,
+      `${day} ภายใน ${dayDeadline} ของวันเดียวกัน`,
+      `นอกช่วงเวลา ภายใน ${nightDeadline} ของวันถัดไป`,
     ];
   }
   if (policy.deadline_rule === "SEQUENTIAL_CALENDAR_DAYS") {
@@ -148,7 +148,7 @@ export default function LeadSlaTracking({ leadId }: { leadId: number }) {
 
   useEffect(() => { load(); }, [load]);
 
-  if (loading) return <div className="p-6 text-sm text-gray-400">กำลังโหลดข้อมูล SLA…</div>;
+  if (loading) return <div className="p-6 text-sm text-gray-400">กำลังโหลดข้อมูล SLA</div>;
   if (error) return <div className="p-6 text-sm text-red-600">{error}</div>;
 
   const policyByCode = new Map(policies.map(p => [p.policy_code, p]));
@@ -183,7 +183,7 @@ export default function LeadSlaTracking({ leadId }: { leadId: number }) {
           <span className="px-2 py-1 rounded-full bg-emerald-50 text-emerald-700">ภายในกำหนด SLA {done}</span>
           <span className="px-2 py-1 rounded-full bg-red-50 text-red-700">เกินกำหนด SLA {lateCount}</span>
           <span className="px-2 py-1 rounded-full bg-sky-50 text-sky-700">อยู่ระหว่างดำเนินการ {openCount}</span>
-          <span className="px-2 py-1 rounded-full bg-gray-100 text-gray-500">ยังไม่ถึง {notStarted}</span>
+          <span className="px-2 py-1 rounded-full bg-gray-100 text-gray-500">ยังไม่ถึงขั้นตอน {notStarted}</span>
         </div>
       </div>
 
@@ -249,7 +249,7 @@ export default function LeadSlaTracking({ leadId }: { leadId: number }) {
                       {instance?.completed_at
                         ? durationText(instance.started_at, instance.completed_at)
                         : instance?.started_at && result !== "cancelled"
-                        ? <span className="text-gray-500">{durationText(instance.started_at, new Date().toISOString())} <span className="text-gray-400">(ยังไม่จบ)</span></span>
+                        ? <span className="text-gray-500">{durationText(instance.started_at, new Date().toISOString())} <span className="text-gray-400">(ยังไม่แล้วเสร็จ)</span></span>
                         : "—"}
                       {(result === "breached" || result === "late") && overdueText(instance) && (
                         <span className={`font-semibold ${result === "late" ? "text-rose-600" : "text-red-600"}`}>

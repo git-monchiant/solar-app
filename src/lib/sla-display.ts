@@ -108,7 +108,7 @@ function bangkokHour(value: Date): number {
 export const SLA_TIME_CONDITION_TEXT = {
   FIRST_CONTACT: "กำหนดตามช่วงเวลาที่รับ Lead",
   CONTACT_RETRY: "แต่ละรอบนับ 3/5/7/30 วันปฏิทินจากครั้งก่อนที่ติดต่อไม่ได้",
-  ELECTRICITY_ASSESSMENT: "ภายใน 24 ชม. หลังติดต่อ Lead สำเร็จ",
+  ELECTRICITY_ASSESSMENT: "ภายใน 1 วัน หลังติดต่อ Lead สำเร็จ",
   BOOK_SURVEY: "ภายใน 1 วัน นับตั้งแต่ Lead เข้ามา",
   SITE_SURVEY: "ภายใน 7 วัน นับจากเวลานัดสำรวจที่ยืนยันแล้ว",
   PROPOSAL_ROI: "ภายใน 2 วัน หลังสำรวจเสร็จ",

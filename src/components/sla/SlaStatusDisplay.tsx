@@ -31,7 +31,8 @@ function durationLabel(milliseconds: number, longUnits = false): string {
   const totalHours = Math.floor(milliseconds / 3_600_000);
   const days = Math.floor(totalHours / 24);
   const hours = totalHours % 24;
-  const hourUnit = longUnits ? "ชั่วโมง" : "ชม.";
+  // ใช้ "ชั่วโมง" เต็มคำทุกที่ — ระบบนี้ไม่ใช้ตัวย่อในข้อความที่ผู้ใช้เห็น
+  const hourUnit = "ชั่วโมง";
   if (days > 0) return `${days.toLocaleString("th-TH")} วัน${hours > 0 ? ` ${hours.toLocaleString("th-TH")} ${hourUnit}` : ""}`;
   if (totalHours > 0) return `${totalHours.toLocaleString("th-TH")} ${hourUnit}`;
   return `${Math.max(1, Math.floor(milliseconds / 60_000)).toLocaleString("th-TH")} นาที`;
@@ -69,7 +70,7 @@ export function formatSlaTimelineDuration(status: SlaStatus, dueAt: string): str
   const days = Math.floor(totalHours / 24);
   const prefix = status === "breached" ? "เกิน" : "เหลือ";
   if (days > 0) return `${prefix} ${days.toLocaleString("th-TH")} วัน`;
-  if (totalHours > 0) return `${prefix} ${totalHours.toLocaleString("th-TH")} ชม.`;
+  if (totalHours > 0) return `${prefix} ${totalHours.toLocaleString("th-TH")} ชั่วโมง`;
   const minutes = Math.max(1, Math.floor(difference / 60_000));
   return `${prefix} ${minutes.toLocaleString("th-TH")} นาที`;
 }
@@ -84,7 +85,7 @@ export function formatSlaOverdueMinutes(minutes: number): string {
   const totalHours = Math.floor(minutes / 60);
   const days = Math.floor(totalHours / 24);
   if (days > 0) return `เกิน ${days.toLocaleString("th-TH")} วัน`;
-  if (totalHours > 0) return `เกิน ${totalHours.toLocaleString("th-TH")} ชม.`;
+  if (totalHours > 0) return `เกิน ${totalHours.toLocaleString("th-TH")} ชั่วโมง`;
   return `เกิน ${Math.max(1, Math.floor(minutes)).toLocaleString("th-TH")} นาที`;
 }
 
