@@ -48,6 +48,13 @@ export default function Dropdown({
   }, [open]);
 
   const selected = options.find(o => o.value === value);
+  // A stored value that isn't in `options` (brand spelled differently by an
+  // OCR/import, catalogue trimmed after the record was saved) used to render
+  // as the placeholder — the value was still in state, invisible, and one
+  // stray click on any option wiped it. Promote it to a real option so it
+  // shows in the button and survives the round-trip.
+  const unlisted = !selected && value ? { value, label: value } : null;
+  const shownOptions = unlisted ? [unlisted, ...options] : options;
 
   return (
     <div ref={rootRef} className={`relative ${className ?? ""}`}>
@@ -57,8 +64,8 @@ export default function Dropdown({
           : open    ? "bg-white border-primary"
                     : "bg-white border-gray-200 hover:border-active/40"
         } ${buttonClassName ?? ""}`}>
-        <span className={`flex-1 truncate ${selected ? "text-gray-800" : "text-gray-400"}`}>
-          {selected?.label ?? placeholder}
+        <span className={`flex-1 truncate ${selected || unlisted ? "text-gray-800" : "text-gray-400"}`}>
+          {selected?.label ?? unlisted?.label ?? placeholder}
         </span>
         <svg
           className={`absolute right-2 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400 transition-transform ${open ? "rotate-180" : ""}`}
@@ -69,7 +76,7 @@ export default function Dropdown({
 
       {open && !disabled && (
         <div className="absolute z-20 left-0 right-0 mt-1 max-h-60 overflow-auto rounded-lg border border-gray-200 bg-white shadow-lg py-1">
-          {options.map(opt => {
+          {shownOptions.map(opt => {
             const active = opt.value === value;
             return (
               <button key={opt.value} type="button"

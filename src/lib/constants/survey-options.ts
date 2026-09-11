@@ -73,9 +73,11 @@ export type BatteryBrand = (typeof BATTERY_BRANDS)[number];
 export const BATTERY_KWH_SIZES = [4.8, 7, 9.6, 14] as const;
 export type BatteryKwhSize = (typeof BATTERY_KWH_SIZES)[number];
 
-// Panel brand catalogue — same convention. Today we only stock JINKO but
-// keeping it in a list lets callers render <option> arrays uniformly.
-export const PANEL_BRANDS = ["JINKO"] as const;
+// Panel brand catalogue — same convention. Mirrors the seed list in
+// sql/024_create_panels_table.sql so these dropdowns and the `panels` table
+// agree on spelling. A value outside this list still renders (Dropdown falls
+// back to the raw string) — it just isn't pickable until it's added here.
+export const PANEL_BRANDS = ["JINKO", "Trina Solar", "Longi", "Canadian Solar"] as const;
 export type PanelBrand = (typeof PANEL_BRANDS)[number];
 
 export const WIFI_LABEL: Record<string, string> = {
