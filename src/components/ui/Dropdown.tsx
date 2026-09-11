@@ -107,6 +107,16 @@ export default function Dropdown({
 
       {open && !disabled && (
         <div className="absolute z-20 left-0 right-0 mt-1 max-h-60 overflow-auto rounded-lg border border-gray-200 bg-white shadow-lg py-1">
+          {/* ล้างค่าโดยไม่ต้องรู้ทริค: เดิมทำได้ด้วยการกดตัวที่เลือกอยู่ซ้ำ ซึ่งไม่มี
+              อะไรบอกเลยว่าทำได้ ตั้งชื่อว่า "ไม่ระบุ" ไม่ใช่ "ยกเลิก" เพราะมันคือค่า
+              ไม่ใช่การกระทำ — คนที่อยากแค่ปิด dropdown จะได้ไม่กดแล้วค่าหาย
+              โผล่เฉพาะตอนมีค่าอยู่ ไม่งั้นจะเป็นตัวเลือกที่กดแล้วไม่เกิดอะไรขึ้น */}
+          {!!value && (
+            <button type="button" onClick={() => { onChange(""); setOpen(false); }}
+              className="w-full h-8 px-3 text-left text-sm flex items-center text-gray-400 hover:bg-gray-50 border-b border-gray-100 mb-1 pb-1">
+              <span className="truncate">— ไม่ระบุ —</span>
+            </button>
+          )}
           {shownOptions.map(opt => {
             const active = opt.value === value;
             return (

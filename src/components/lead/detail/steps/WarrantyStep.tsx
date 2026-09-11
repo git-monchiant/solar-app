@@ -706,6 +706,24 @@ export default function WarrantyStep({ lead, state, refresh, packages, expanded,
   useEffect(() => {
     if (state !== "active") return;
     const t = setTimeout(() => {
+      // รายการแบตในคอลัมน์เก่า warranty_batteries
+      //
+      // แถวพวกนี้ไม่มี UI ให้แก้แล้ว (updateBatt ไม่ถูกเรียกจากที่ไหน) เหลือหน้าที่
+      // เดียวคือเป็นเงาของช่องสรุปด้านบน แต่ตอน mount มันถูก seed จากช่องสรุป แล้ว
+      // ไม่มีอะไรพามันเดินตามเมื่อช่องสรุปถูกแก้ — ล้างช่องสรุปทิ้ง แถวเก่ายังค้าง
+      // แล้วถูกเขียนกลับลง DB ทุกครั้ง พอโหลดหน้าใหม่ก็ seed จาก JSON ตัวเองต่อ
+      // กลายเป็นแบตผีที่ลบไม่ออกและโผล่บนใบรับประกัน (เกิดกับ lead 856 จริง)
+      //
+      // ถ้าไม่มีแถวไหนมี serial เลย = เป็นเงาล้วน ๆ สร้างใหม่จากช่องสรุปทุกครั้ง
+      // ถ้ามี serial = ข้อมูลจริงของงานเก่าที่บันทึกไว้ก่อนมีตาราง lead_batteries
+      // อันนั้นห้ามแตะ
+      const keptRows = batteries.filter(b => b.brand || b.kwh || b.serial);
+      const battRows = keptRows.some(b => b.serial)
+        ? keptRows.map(b => ({ brand: b.brand || null, kwh: b.kwh ? parseFloat(b.kwh) : null, serial: b.serial || null }))
+        : (battBrand.trim() || battKwh !== ""
+            ? [{ brand: battBrand || null, kwh: battKwh === "" ? null : Number(battKwh), serial: null }]
+            : []);
+
       // 1. legacy PATCH
       apiFetch(`/api/leads/${lead.id}`, {
         method: "PATCH", headers: { "Content-Type": "application/json" },
@@ -727,15 +745,14 @@ export default function WarrantyStep({ lead, state, refresh, packages, expanded,
           warranty_inverter_brand: invBrand || null,
           warranty_inverter_kw: invKw === "" ? null : invKw,
           warranty_electrical_phase: phase || null,
-          warranty_batteries: JSON.stringify(batteries.filter(b => b.brand || b.kwh || b.serial).map(b => ({ brand: b.brand || null, kwh: b.kwh ? parseFloat(b.kwh) : null, serial: b.serial || null }))),
-          warranty_has_battery: batteries.some(b => b.brand || b.kwh || b.serial),
+          warranty_batteries: battRows.length ? JSON.stringify(battRows) : null,
+          warranty_has_battery: battRows.length > 0,
           warranty_panel_serials: panelSerials.some(s => s.trim()) ? JSON.stringify(panelSerials.map(s => s.trim())) : null,
           warranty_no_inverter: noInverter,
           // "งานนี้ไม่มีแบต" = ไม่มีข้อมูลแบตเลยสักที่ ทั้งช่องสรุปและแถว serial
           // คำนวณเอาแทนการให้คนติ๊ก เพื่อให้ช่องแบตใช้งานเหมือนช่องแผงทุกประการ
           // ธงนี้ทำให้ใบรับประกันไม่ต้องเดาจากค่าที่ค้างอยู่ในคอลัมน์เก่าหรือในแพ็กเกจ
-          warranty_no_battery: !(battBrand.trim() || battModel.trim() || battKwh !== ""
-            || batteries.some(b => b.brand || b.kwh || b.serial)),
+          warranty_no_battery: !(battBrand.trim() || battModel.trim() || battKwh !== "" || battRows.length),
         }),
       }).catch(console.error);
       // NOTE: PUT to /api/leads/[id]/devices was removed here. The new
