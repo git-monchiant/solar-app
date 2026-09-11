@@ -105,6 +105,15 @@ function slaTargetText(policy?: SlaPolicy): string {
   return "—";
 }
 
+/** เกินกำหนดมาแล้วเท่าไร — งานที่ปิดแล้ววัดถึงเวลาปิด งานที่ยังค้างวัดถึงตอนนี้ */
+function overdueText(instance?: SlaInstance): string {
+  if (!instance?.due_at) return "";
+  const endedAt = instance.completed_at ? Date.parse(instance.completed_at) : Date.now();
+  const over = endedAt - Date.parse(instance.due_at);
+  if (!Number.isFinite(over) || over <= 0) return "";
+  return minutesText(Math.max(1, Math.round(over / 60_000)));
+}
+
 function resultOf(instance?: SlaInstance): RowResult {
   if (!instance) return "not_started";
   if (instance.status === "cancelled") return "cancelled";
@@ -227,12 +236,19 @@ export default function LeadSlaTracking({ leadId }: { leadId: number }) {
                     : "text-gray-300"}`}>
                     {stamp(instance?.completed_at)}
                   </td>
+                  {/* งานที่ยังไม่จบต้องเห็นว่าเดินมากี่วันแล้ว ไม่ใช่ขีดว่าง — ไม่งั้นหน้า
+                      รายการบอก "เกิน 5 วัน" แต่เปิดเข้ามาแล้วหาไม่เจอว่าเกินตรงไหน */}
                   <td className={`px-3 py-2 whitespace-nowrap ${muted ? "text-gray-300" : "text-gray-700"}`}>
-                    {durationText(instance?.started_at, instance?.completed_at)}
+                    {instance?.completed_at
+                      ? durationText(instance.started_at, instance.completed_at)
+                      : instance?.started_at && result !== "cancelled"
+                      ? <span className="text-gray-500">{durationText(instance.started_at, new Date().toISOString())} <span className="text-gray-400">(ยังไม่จบ)</span></span>
+                      : "—"}
                   </td>
                   <td className="px-3 py-2">
                     <span className={`inline-block rounded border px-1.5 py-0.5 text-xxs font-bold whitespace-nowrap ${RESULT[result].chip}`}>
                       {RESULT[result].label}
+                      {(result === "breached" || result === "late") && overdueText(instance) && ` ${overdueText(instance)}`}
                     </span>
                   </td>
                   <td className={`px-3 py-2 ${muted ? "text-gray-300" : "text-gray-600"}`}>
