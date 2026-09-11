@@ -5,6 +5,7 @@ type SurveyReportOptions = {
   watermark?: string;
   quotation?: {
     docNo?: string;
+    /** Package + add-ons before discount, i.e. the quotation subtotal. */
     grossAmount?: number;
     discountAmount?: number;
     discountLabel?: string;

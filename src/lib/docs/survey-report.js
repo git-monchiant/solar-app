@@ -463,7 +463,7 @@ export function buildSurveyReportHtml(L, D, PKG, options = {}) {
   const ctRows = (rows) => `<table class="ct">${rows.map(r=>`<tr><td>${r[0]}</td><td class="${r[2]||''}">${r[1]}</td></tr>`).join("")}</table>`;
   // Use the contracted package price before booking/survey deposit. A deposit
   // is credited toward payment but must not make the system price/payback look lower.
-  const loanPrice = quotation.contractAmount ?? gross ?? net ?? PKG?.price ?? 112000;
+  const loanPrice = quotation.contractAmount ?? gross ?? quotation.netAmount ?? PKG?.price ?? 112000;
   const loanKw = PKG?.kwp ?? 3;
   const loanBill = L.survey_monthly_bill ?? D.monthly_bill ?? 5000;
   const financeInputs = options.financial?.inputs || {};
@@ -632,13 +632,6 @@ export function buildSurveyReportHtml(L, D, PKG, options = {}) {
   table.addon td.dev .sub{display:block;margin-top:2px;font-weight:400;font-size:11.5px;color:#4b5563;}
   table.addon td.org{color:#b26f16;font-weight:700;white-space:nowrap;}
   tr.addon-total td{background:${NAVY};color:#fff;font-weight:700;text-align:right;padding:8px;}
-  /* quotation-style price breakdown above the net bar */
-  .price-break{border:1px solid #d8dee7;border-bottom:none;border-radius:2px 2px 0 0;margin-top:14px;overflow:hidden;}
-  .pr-row{display:flex;justify-content:space-between;align-items:center;padding:7px 16px;font-size:14px;border-bottom:1px solid #eef1f5;background:#fafbfc;}
-  .pr-row span:first-child{color:#374151;}
-  .pr-amt{font-weight:500;color:${INK};white-space:nowrap;}
-  .pr-amt.minus{color:#c0392b;}
-  .price-break + .price-bar{margin-top:0;border-radius:0 0 2px 2px;}
   .price-bar{display:flex;margin:14px 0 6px;border-radius:2px;overflow:hidden;}
   .pb-l{background:${NAVY};color:#fff;font-weight:700;padding:11px 16px;font-size:16px;display:flex;align-items:center;}
   .pb-r{background:${ORANGE};color:#fff;font-weight:700;padding:11px 18px;font-size:19px;flex:1;display:flex;align-items:center;gap:6px;}

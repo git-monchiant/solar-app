@@ -9,7 +9,7 @@ import PaymentHeader from "./PaymentHeader";
 import { buildPaymentFlex } from "@/lib/utils/line-flex";
 import { compressSlipFile } from "@/lib/utils/compress-slip";
 import { formatTHB } from "@/lib/utils/formatters";
-import { useActiveRoles } from "@/lib/roles";
+import { hasRole, useActiveRoles } from "@/lib/roles";
 import { useDialog } from "@/components/ui/Dialog";
 import ActualReceiptUpload from "@/components/lead/detail/ActualReceiptUpload";
 
@@ -229,8 +229,8 @@ export default function PaymentSection({
   // Gate by the *active* role view, not the user's available roles — when an
   // admin switches to seeker mode, payment confirm/rollback should disappear.
   const isAdmin = activeRoles.includes("admin");
-  // Step-1 (uploader) — admin/sales/solar can submit slips for review.
-  const canStep1 = activeRoles.some(r => r === "admin" || r === "sales" || r === "solar");
+  // Step-1 (uploader) — supervisors inherit their sales/solar team's permission.
+  const canStep1 = hasRole(activeRoles, "admin", "sales", "solar");
   // Step-2 (accountant) — only account/admin can confirm receipt of money.
   const canStep2 = activeRoles.some(r => r === "admin" || r === "account");
 
@@ -444,11 +444,11 @@ export default function PaymentSection({
     if (effectiveWaived) setTab("other");
   }, [effectiveWaived]);
   // Surface "อื่นๆ tab needs a รายละเอียด" requirement up to the parent so its
-  // "ถัดไป" validator can list it. Textarea is required for BOTH normal and
-  // free (free needs a reason; normal needs a payment-method note).
+  // "ถัดไป" validator can list it. ฟรีค่าสำรวจไม่ต้องกรอกเหตุผลเพิ่มเติม —
+  // เลือกฟรีแล้วกดถัดไปเพื่อเริ่ม SLA นัดสำรวจได้ทันที.
   useEffect(() => {
-    onOtherTabInputMissing?.(tab === "other" && otherMethod.trim() === "" && !confirmed);
-  }, [tab, otherMethod, confirmed, onOtherTabInputMissing]);
+    onOtherTabInputMissing?.(!effectiveWaived && tab === "other" && otherMethod.trim() === "" && !confirmed);
+  }, [effectiveWaived, tab, otherMethod, confirmed, onOtherTabInputMissing]);
 
   // Allocate a payment_no (Ref2) up-front so the QR carries a stable per-payment
   // reference. Skipped if confirmed (payment row already exists; pending lookup

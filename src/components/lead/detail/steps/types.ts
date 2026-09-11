@@ -10,6 +10,9 @@ export interface Lead {
   customer_type: string;
   customer_group: string | null;
   customer_grade: string | null;
+  survey_ready_at: string | null;
+  survey_ready_by: number | null;
+  survey_ready_note: string | null;
   status: string;
   source: string;
   note: string;
@@ -273,6 +276,12 @@ export interface Lead {
   grid_application_doc_url: string | null;
   grid_permit_doc_url: string | null;
   grid_note: string | null;
+  sla_policy_code?: string | null;
+  sla_task_name?: string | null;
+  sla_started_at?: string | null;
+  sla_status?: "active" | "warning" | "critical" | "breached" | null;
+  sla_target_at?: string | null;
+  sla_due_at?: string | null;
 }
 
 export interface Panel {

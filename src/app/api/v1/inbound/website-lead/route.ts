@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getDb, sql } from "@/lib/db";
+import { ensureFirstContactSla } from "@/lib/sla-service";
 
 // POST /api/v1/inbound/website-lead
 //
@@ -358,6 +359,8 @@ export async function POST(req: NextRequest) {
         `INSERT INTO lead_activities (lead_id, activity_type, title, note)
          VALUES (@lead_id, 'lead_created', 'Lead created (' + @source + ')', @note)`
       );
+
+    await ensureFirstContactSla(db, leadId);
 
     // Response — enough for the caller to (a) confirm the lead landed,
     // (b) get our internal id for correlation, (c) reflect what we

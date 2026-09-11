@@ -5,6 +5,7 @@ import { logLeadActivity, fmtThaiDate } from "@/lib/lead-activity-log";
 import { validateDocNo } from "@/lib/doc-number";
 import { getGridTieFinalMissing } from "@/lib/gridTie";
 import { installmentAmount, netTotalOf, parseInstallmentRows, type InstallmentRow } from "@/lib/installments";
+import { processGradeChange, syncOperationalSlas } from "@/lib/sla-service";
 
 const statusLabels: Record<string, string> = {
   pre_survey: "รอติดตาม",
@@ -19,11 +20,14 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
   try {
     const { id } = await params;
     const db = await getDb();
+    await syncOperationalSlas(db, parseInt(id), gate.userId);
     const result = await db
       .request()
       .input("id", sql.Int, parseInt(id))
       .query(`
         SELECT l.*,
+               sla.policy_code as sla_policy_code, sla.task_name as sla_task_name,
+               sla.status as sla_status, sla.started_at as sla_started_at, sla.target_at as sla_target_at, sla.due_at as sla_due_at,
                COALESCE(NULLIF(l.project_alias, N''), NULLIF(l.project_name, N''), p.name) as project_display_name,
                p.name as project_official_name,
                pk.name as package_name, pk.price as package_price,
@@ -93,6 +97,13 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
         LEFT JOIN users u ON l.assigned_user_id = u.id
         LEFT JOIN line_users lu ON lu.line_user_id = l.line_id
         LEFT JOIN lead_data d ON d.lead_id = l.id
+        OUTER APPLY (
+          SELECT TOP 1 policy_code, task_name, status, started_at, target_at, due_at
+          FROM lead_sla_instances si
+          WHERE si.lead_id = l.id AND si.status IN ('active','warning','critical','breached')
+            AND si.superseded_at IS NULL
+          ORDER BY si.due_at ASC
+        ) sla
         WHERE l.id = @id
       `);
 
@@ -123,6 +134,10 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
     const db = await getDb();
     const leadId = parseInt(id);
 
+    if (body.customer_grade === "A" && !String(body.grade_change_reason || "").trim()) {
+      return NextResponse.json({ error: "กรุณาระบุสัญญาณความสนใจหรือเหตุผลที่ปรับเป็น Grade A" }, { status: 400 });
+    }
+
     // Snapshot fields we care about for activity logging — read once so any
     // appointment changes (survey_date, install_date, next_follow_up,
     // survey_confirmed, install_confirmed, install_completed_at) and status
@@ -136,6 +151,9 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
       install_date: Date | null;
       install_time_slot: string | null;
       next_follow_up: Date | null;
+      survey_ready_at: Date | null;
+      survey_ready_by: number | null;
+      survey_ready_note: string | null;
       survey_confirmed: boolean | number | null;
       install_confirmed: boolean | number | null;
       install_completed_at: Date | null;
@@ -145,19 +163,70 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
       grid_document_checklist: string | null;
       grid_application_doc_url: string | null;
       grid_permit_doc_url: string | null;
+      customer_grade: string | null;
+      quotation_sent_date: Date | null;
+      quotation_doc_no: string | null;
+      quotation_accepted_idx: number | null;
+      order_installments: string | null;
+      install_extra_cost: number | null;
+      warranty_issued_at: Date | null;
+      warranty_doc_no: string | null;
+      review_sent: boolean | number | null;
+      review_rating: number | null;
+      grid_erc_submitted_date: Date | null;
+      grid_submitted_date: Date | null;
+      grid_inspection_date: Date | null;
+      grid_approved_date: Date | null;
+      grid_meter_changed_date: Date | null;
     } | null = null;
     {
       const current = await db.request().input("id", sql.Int, leadId).query(`
         SELECT status, payment_confirmed,
                survey_date, survey_time_slot, install_date, install_time_slot, next_follow_up,
+               survey_ready_at, survey_ready_by, survey_ready_note,
                survey_confirmed, install_confirmed, install_completed_at,
                grid_utility, grid_app_no, grid_applicant_type, grid_document_checklist,
-               grid_application_doc_url, grid_permit_doc_url
+               grid_application_doc_url, grid_permit_doc_url, customer_grade,
+               quotation_sent_date, quotation_doc_no, quotation_accepted_idx,
+               order_installments, install_extra_cost,
+               warranty_issued_at, warranty_doc_no, review_sent, review_rating,
+               grid_erc_submitted_date, grid_submitted_date, grid_inspection_date,
+               grid_approved_date, grid_meter_changed_date
         FROM leads WHERE id = @id
       `);
       if (current.recordset.length > 0) {
         oldRow = current.recordset[0];
         oldStatus = oldRow?.status ?? null;
+        // BOOK_SURVEY starts from confirmed payment. The lead PATCH path is
+        // used by the zero-baht/free flow; normal payments are stamped by the
+        // payments API at the Account confirmation transaction.
+        if (body.payment_confirmed === true && oldRow?.payment_confirmed !== true && !oldRow?.survey_ready_at) {
+          body.survey_ready = true;
+          body.survey_ready_note = body.survey_ready_note || "เริ่มอัตโนมัติจากการยืนยันชำระเงิน";
+        }
+        const nextGrade = body.customer_grade !== undefined ? body.customer_grade : oldRow?.customer_grade;
+        if (body.survey_ready === true && nextGrade === "F") {
+          return NextResponse.json({ error: "Grade F ไม่สามารถยืนยันพร้อมนัดสำรวจได้ กรุณาปิด Lead เป็น Lost" }, { status: 400 });
+        }
+        if (body.survey_ready === true) body.next_follow_up = null;
+        if (body.survey_ready === false) {
+          if (!String(body.survey_ready_cancel_reason || "").trim()) {
+            return NextResponse.json({ error: "กรุณาระบุเหตุผลที่ลูกค้ายังไม่พร้อมนัดสำรวจ" }, { status: 400 });
+          }
+          if (!body.next_follow_up) {
+            return NextResponse.json({ error: "กรุณากำหนดวันติดตามครั้งถัดไปเมื่อยกเลิก Survey Ready" }, { status: 400 });
+          }
+          const keepsSurveyDate = body.survey_date === undefined ? Boolean(oldRow?.survey_date) : Boolean(body.survey_date);
+          if (keepsSurveyDate || (oldStatus && !["pre_survey", "pre_survey-01", "pre_survey-02"].includes(oldStatus))) {
+            return NextResponse.json({ error: "ไม่สามารถยกเลิก Survey Ready หลังมีนัดหรือเข้าสู่ขั้นสำรวจแล้ว กรุณายกเลิกนัดก่อน" }, { status: 400 });
+          }
+        }
+        // A direct appointment is itself durable customer consent. Stamp the
+        // milestone automatically so existing calendar flows remain valid.
+        if (body.survey_date && !oldRow?.survey_date && !oldRow?.survey_ready_at && body.survey_ready === undefined) {
+          body.survey_ready = true;
+          body.survey_ready_note = body.survey_ready_note || "ยืนยันจากการนัด Pre-Survey";
+        }
         if (body.status !== undefined) {
           // Guard: can't move forward from pre_survey → survey (or beyond)
           // without a confirmed payment. The body may set payment_confirmed in
@@ -246,6 +315,13 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
           }
 
           if (body.status === "closed" && oldStatus !== "closed") {
+            const willHaveWarranty = Boolean(oldRow?.warranty_issued_at) || body.warranty_issued_at === true;
+            if (!willHaveWarranty) {
+              return NextResponse.json(
+                { error: "ต้องออกใบรับประกันก่อนปิด Lead" },
+                { status: 409 },
+              );
+            }
             const missing = getGridTieFinalMissing({
               grid_utility: body.grid_utility !== undefined ? body.grid_utility : oldRow?.grid_utility,
               grid_app_no: body.grid_app_no !== undefined ? body.grid_app_no : oldRow?.grid_app_no,
@@ -446,6 +522,7 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
     }
     if (body.assigned_user_id !== undefined) {
       sets.push("assigned_user_id = @assigned_user_id");
+      sets.push("owner_assigned_at = CASE WHEN @assigned_user_id IS NULL THEN NULL ELSE GETDATE() END");
       request.input("assigned_user_id", sql.Int, body.assigned_user_id);
     }
     if (body.survey_date !== undefined) {
@@ -601,6 +678,17 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
       } catch {
         // Legacy quotation_files may be CSV. Those rows remain editable.
       }
+    }
+    if (body.survey_ready === true) {
+      sets.push("survey_ready_at = COALESCE(survey_ready_at, GETDATE())");
+      sets.push("survey_ready_by = COALESCE(survey_ready_by, @survey_ready_by)");
+      sets.push("survey_ready_note = COALESCE(@survey_ready_note, survey_ready_note)");
+      request.input("survey_ready_by", sql.Int, gate.userId);
+      request.input("survey_ready_note", sql.NVarChar(500), String(body.survey_ready_note || "").trim() || null);
+    } else if (body.survey_ready === false) {
+      sets.push("survey_ready_at = NULL");
+      sets.push("survey_ready_by = NULL");
+      sets.push("survey_ready_note = NULL");
     }
     if (body.order_total !== undefined) {
       sets.push("order_total = @order_total");
@@ -1505,6 +1593,104 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
         userId: gate.userId,
       });
     }
+    if (body.survey_ready === true && !oldRow?.survey_ready_at) {
+      await logLeadActivity(db, {
+        leadId,
+        activityType: "survey_ready",
+        title: "เริ่ม SLA นัด Pre-Survey อัตโนมัติ",
+        note: String(body.survey_ready_note || "").trim() || null,
+        userId: gate.userId,
+      });
+    } else if (body.survey_ready === false && oldRow?.survey_ready_at) {
+      await logLeadActivity(db, {
+        leadId,
+        activityType: "survey_ready_cancelled",
+        title: "ลูกค้ายังไม่พร้อมนัด Pre-Survey",
+        note: String(body.survey_ready_cancel_reason || "").trim(),
+        userId: gate.userId,
+      });
+    }
+    if (body.quotation_sent_date !== undefined && body.quotation_sent_date && !sameDay(oldRow?.quotation_sent_date ?? null, body.quotation_sent_date)) {
+      await logLeadActivity(db, {
+        leadId,
+        activityType: "quotation",
+        title: `ส่งใบเสนอราคาให้ลูกค้า ${fmtThaiDate(body.quotation_sent_date)}`,
+        note: body.quotation_doc_no || oldRow?.quotation_doc_no || null,
+        userId: gate.userId,
+      });
+    }
+    if (body.quotation_accepted_idx !== undefined && oldRow?.quotation_accepted_idx !== body.quotation_accepted_idx) {
+      await logLeadActivity(db, {
+        leadId,
+        activityType: "order_accepted",
+        title: `ลูกค้ายืนยันใบเสนอราคา${body.quotation_doc_no || oldRow?.quotation_doc_no ? ` ${body.quotation_doc_no || oldRow?.quotation_doc_no}` : ""}`,
+        userId: gate.userId,
+      });
+    }
+    if (body.order_installments !== undefined && String(oldRow?.order_installments || "") !== String(body.order_installments || "")) {
+      let installmentCount = 0;
+      try { installmentCount = JSON.parse(body.order_installments || "[]").length; } catch {}
+      await logLeadActivity(db, {
+        leadId,
+        activityType: "order_plan",
+        title: `กำหนดแผนชำระเงิน${installmentCount ? ` ${installmentCount} งวด` : ""}`,
+        userId: gate.userId,
+      });
+    }
+    if (body.install_extra_cost !== undefined && Number(oldRow?.install_extra_cost || 0) !== Number(body.install_extra_cost || 0)) {
+      await logLeadActivity(db, {
+        leadId,
+        activityType: "install_extra",
+        title: `ปรับค่าใช้จ่ายเพิ่มเติมหน้างานเป็น ${Number(body.install_extra_cost || 0).toLocaleString("th-TH")} บาท`,
+        note: body.install_extra_note || null,
+        userId: gate.userId,
+      });
+    }
+    if (body.warranty_issued_at !== undefined && !oldRow?.warranty_issued_at) {
+      await logLeadActivity(db, {
+        leadId,
+        activityType: "warranty",
+        title: `ออกใบรับประกัน${body.warranty_doc_no || oldRow?.warranty_doc_no ? ` ${body.warranty_doc_no || oldRow?.warranty_doc_no}` : ""}`,
+        note: body.warranty_start_date && body.warranty_end_date
+          ? `คุ้มครอง ${fmtThaiDate(body.warranty_start_date)} ถึง ${fmtThaiDate(body.warranty_end_date)}`
+          : null,
+        userId: gate.userId,
+      });
+    }
+    if (body.review_sent === true && !oldRow?.review_sent) {
+      await logLeadActivity(db, {
+        leadId,
+        activityType: "after_sales",
+        title: "ส่งแบบประเมินความพึงพอใจให้ลูกค้า",
+        userId: gate.userId,
+      });
+    }
+    if (body.review_rating !== undefined && body.review_rating != null && oldRow?.review_rating !== body.review_rating) {
+      await logLeadActivity(db, {
+        leadId,
+        activityType: "after_sales",
+        title: `ลูกค้าประเมินความพึงพอใจ ${body.review_rating}/5`,
+        note: body.review_comment || null,
+        userId: gate.userId,
+      });
+    }
+    const gridMilestones: Array<[string, string, Date | null | undefined]> = [
+      ["grid_erc_submitted_date", "ยื่นเอกสาร ERC", oldRow?.grid_erc_submitted_date],
+      ["grid_submitted_date", "ยื่นคำขอขนานไฟ", oldRow?.grid_submitted_date],
+      ["grid_inspection_date", "ตรวจระบบขนานไฟ", oldRow?.grid_inspection_date],
+      ["grid_approved_date", "อนุมัติขนานไฟ", oldRow?.grid_approved_date],
+      ["grid_meter_changed_date", "เปลี่ยนมิเตอร์เรียบร้อย", oldRow?.grid_meter_changed_date],
+    ];
+    for (const [field, label, oldValue] of gridMilestones) {
+      if (body[field] !== undefined && body[field] && !sameDay(oldValue ?? null, body[field])) {
+        await logLeadActivity(db, {
+          leadId,
+          activityType: "grid_tie",
+          title: `${label} ${fmtThaiDate(body[field])}`,
+          userId: gate.userId,
+        });
+      }
+    }
 
     // Auto-log status change as activity (with duplicate prevention)
     if (body.status !== undefined && oldStatus && oldStatus !== body.status) {
@@ -1537,6 +1723,25 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
           `);
       }
     }
+
+    if (body.customer_grade !== undefined && oldRow?.customer_grade !== body.customer_grade) {
+      await processGradeChange(db, {
+        leadId,
+        oldGrade: oldRow?.customer_grade ?? null,
+        newGrade: body.customer_grade || null,
+        actorUserId: gate.userId,
+        reason: body.grade_change_reason || null,
+      });
+      await logLeadActivity(db, {
+        leadId,
+        activityType: "grade_change",
+        title: `กำหนด Grade: ${oldRow?.customer_grade || "-"} → ${body.customer_grade || "-"}`,
+        note: body.grade_change_reason || null,
+        userId: gate.userId,
+      });
+    }
+
+    await syncOperationalSlas(db, leadId, gate.userId);
 
     // When only lead_data was touched, the UPDATE leads above was skipped so
     // result.recordset is empty. Echo the current row by re-reading so the
