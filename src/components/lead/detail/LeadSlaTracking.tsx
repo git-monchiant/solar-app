@@ -98,7 +98,7 @@ function slaTargetLines(policy?: SlaPolicy): string[] {
     const nightDeadline = String(config.nightDeadline ?? "12:00:00").slice(0, 5);
     // สองเงื่อนไขคนละบรรทัด อ่านทีละข้อได้ ไม่ต้องไล่หาจุดคั่นกลางพืดข้อความ
     return [
-      `รับ ${day} ภายใน ${dayDeadline} วันเดียวกัน`,
+      `${day} ภายใน ${dayDeadline} วันนั้น`,
       `นอกเวลา ภายใน ${nightDeadline} วันถัดไป`,
     ];
   }
@@ -196,15 +196,13 @@ export default function LeadSlaTracking({ leadId }: { leadId: number }) {
               {/* ความกว้างคุมด้วย % — คอลัมน์ SLA เป็นข้อความกติกาที่ตัดบรรทัดได้
                   จึงบีบให้แคบ ส่วนระยะเวลาที่ใช้มีสองบรรทัด (ใช้ไป + เกินไปเท่าไร)
                   และห้ามตัดคำ จึงต้องกว้างพอ */}
-              <th className="w-[16%] px-3 py-2 text-left font-semibold border-b border-gray-200">ขั้นตอน</th>
-              <th className="w-[8%] px-3 py-2 text-left font-semibold border-b border-gray-200">ทีม</th>
-              <th className="w-[13%] px-3 py-2 text-left font-semibold border-b border-gray-200">SLA</th>
-              <th className="w-[10%] px-3 py-2 text-left font-semibold border-b border-gray-200">เริ่มนับ</th>
-              <th className="w-[10%] px-3 py-2 text-left font-semibold border-b border-gray-200">ครบกำหนด</th>
-              <th className="w-[10%] px-3 py-2 text-left font-semibold border-b border-gray-200">เสร็จจริง</th>
-              <th className="w-[14%] px-3 py-2 text-left font-semibold border-b border-gray-200">ระยะเวลาที่ใช้</th>
-              <th className="w-[9%] px-3 py-2 text-left font-semibold border-b border-gray-200">ผล</th>
-              <th className="w-[10%] px-3 py-2 text-left font-semibold border-b border-gray-200">ผู้รับผิดชอบ</th>
+              <th className="w-[19%] px-3 py-2 text-left font-semibold border-b border-gray-200">ขั้นตอน</th>
+              <th className="w-[9%] px-3 py-2 text-left font-semibold border-b border-gray-200">ทีม</th>
+              <th className="w-[15%] px-3 py-2 text-left font-semibold border-b border-gray-200">SLA</th>
+              <th className="w-[16%] px-3 py-2 text-left font-semibold border-b border-gray-200">เริ่มนับ · ครบกำหนด</th>
+              <th className="w-[18%] px-3 py-2 text-left font-semibold border-b border-gray-200">เสร็จจริง · ระยะเวลาที่ใช้</th>
+              <th className="w-[10%] px-3 py-2 text-left font-semibold border-b border-gray-200">ผล</th>
+              <th className="w-[11%] px-3 py-2 text-left font-semibold border-b border-gray-200">ผู้รับผิดชอบ</th>
             </tr>
           </thead>
           <tbody>
@@ -230,36 +228,40 @@ export default function LeadSlaTracking({ leadId }: { leadId: number }) {
                   <td className={`px-3 py-2 ${muted ? "text-gray-400" : "text-gray-700"}`}>
                     {slaTargetLines(policy).map((line, i) => <div key={i}>{line}</div>)}
                   </td>
+                  {/* เริ่มนับกับครบกำหนดเป็นช่วงเวลาเดียวกัน อยู่คอลัมน์เดียวคนละบรรทัด
+                      มีป้ายกำกับในตัว จะได้ไม่ต้องเดาว่าบรรทัดไหนคืออะไร */}
                   <td className={`px-3 py-2 whitespace-nowrap ${muted ? "text-gray-300" : "text-gray-600"}`}>
-                    {stamp(instance?.started_at)}
+                    <div><span className="text-gray-400">เริ่มนับ</span> {stamp(instance?.started_at)}</div>
+                    <div><span className="text-gray-400">ครบกำหนด</span> {stamp(instance?.due_at)}</div>
                   </td>
-                  <td className={`px-3 py-2 whitespace-nowrap ${muted ? "text-gray-300" : "text-gray-600"}`}>
-                    {stamp(instance?.due_at)}
-                  </td>
-                  {/* ช่อง Actual ที่ผู้ใช้ขอ — ยังไม่เสร็จก็เว้นว่างไว้ ไม่เดาแทน */}
-                  <td className={`px-3 py-2 whitespace-nowrap font-semibold ${
-                    result === "on_time" ? "text-emerald-700"
-                    : result === "late" ? "text-rose-600"
-                    : "text-gray-300"}`}>
-                    {stamp(instance?.completed_at)}
-                  </td>
-                  {/* งานที่ยังไม่จบต้องเห็นว่าเดินมากี่วันแล้ว ไม่ใช่ขีดว่าง และถ้าเลยกำหนด
-                      ต้องบอกตรงนี้ว่าเกินไปเท่าไร — ไม่งั้นหน้ารายการบอก "เกิน 5 วัน"
-                      แต่เปิดเข้ามาแล้วหาไม่เจอว่าเกินตรงไหน */}
+                  {/* ผลที่เกิดขึ้นจริง: เสร็จเมื่อไร ใช้เวลาไปเท่าไร และเกินไปเท่าไร
+                      ยังไม่เสร็จก็เว้นช่องเสร็จจริงไว้ ไม่เดาแทน แต่เวลาที่เดินไปแล้ว
+                      ต้องเห็น ไม่งั้นหน้ารายการบอก "เกิน 5 วัน" แล้วเปิดมาหาไม่เจอ */}
                   <td className={`px-3 py-2 whitespace-nowrap ${muted ? "text-gray-300" : "text-gray-700"}`}>
-                    {instance?.completed_at
-                      ? durationText(instance.started_at, instance.completed_at)
-                      : instance?.started_at && result !== "cancelled"
-                      ? <span className="text-gray-500">{durationText(instance.started_at, new Date().toISOString())} <span className="text-gray-400">(ยังไม่จบ)</span></span>
-                      : "—"}
-                    {(result === "breached" || result === "late") && overdueText(instance) && (
-                      <div className={`font-semibold ${result === "late" ? "text-rose-600" : "text-red-600"}`}>
-                        เกิน {overdueText(instance)}
-                      </div>
-                    )}
+                    <div className={`font-semibold ${
+                      result === "on_time" ? "text-emerald-700"
+                      : result === "late" ? "text-rose-600"
+                      : "text-gray-300"}`}>
+                      <span className="font-normal text-gray-400">เสร็จจริง</span> {stamp(instance?.completed_at)}
+                    </div>
+                    <div>
+                      <span className="text-gray-400">ใช้เวลา</span>{" "}
+                      {instance?.completed_at
+                        ? durationText(instance.started_at, instance.completed_at)
+                        : instance?.started_at && result !== "cancelled"
+                        ? <span className="text-gray-500">{durationText(instance.started_at, new Date().toISOString())} <span className="text-gray-400">(ยังไม่จบ)</span></span>
+                        : "—"}
+                      {(result === "breached" || result === "late") && overdueText(instance) && (
+                        <span className={`font-semibold ${result === "late" ? "text-rose-600" : "text-red-600"}`}>
+                          <span className="px-1 font-normal text-gray-300">·</span>เกิน {overdueText(instance)}
+                        </span>
+                      )}
+                    </div>
                   </td>
                   <td className="px-3 py-2">
-                    <span className={`inline-block rounded border px-1.5 py-0.5 text-xxs font-bold whitespace-nowrap ${RESULT[result].chip}`}>
+                    {/* block w-full — ป้ายทุกใบในคอลัมน์นี้กว้างเท่ากัน กวาดตาลงมาแล้ว
+                        ขอบซ้ายขวาตรงกันทุกแถว ไม่กระโดดตามความยาวข้อความ */}
+                    <span className={`block rounded border px-1.5 py-0.5 text-center text-xxs font-bold whitespace-nowrap ${RESULT[result].chip}`}>
                       {RESULT[result].label}
                     </span>
                   </td>
