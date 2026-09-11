@@ -283,9 +283,12 @@ export default function EventCalendarList({ monthsBack, monthsForward, days, zon
                             // Bar colour by team (survey vs install), block → gray.
                             // Replaces the old per-zone tint so the calendar reads
                             // as "which team owns this slot".
+                            // ม่วง = ทีมสำรวจ · ส้ม = ทีมติดตั้ง ใช้ชุดเดียวกับป้ายทีม
+                            // ใน SLA_TEAM (lib/sla-display) เดิมแถบสำรวจเป็น #1ed0c7
+                            // ซึ่งไม่ตรงกับ legend ของหน้า Calendar ที่วาดเป็นม่วงมาตลอด
                             const barColor = isBlock
                               ? null
-                              : j.event_type === "install" ? "#f97316" : "#1ed0c7";
+                              : j.event_type === "install" ? "#f97316" : "#8b5cf6";
                             const bg = isBlock ? "bg-gray-100" : "bg-gray-50 hover:bg-gray-100";
                             const inner = (
                               <>

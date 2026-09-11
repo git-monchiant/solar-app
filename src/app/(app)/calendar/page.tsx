@@ -85,7 +85,7 @@ export default function CalendarPage() {
             </>
           )}
           <span className="inline-flex items-center gap-3 text-xs ml-2 flex-wrap">
-            <span className="inline-flex items-center gap-1.5"><span className="w-3 h-3 rounded-sm bg-primary" />ทีมสำรวจ</span>
+            <span className="inline-flex items-center gap-1.5"><span className="w-3 h-3 rounded-sm bg-active" />ทีมสำรวจ</span>
             <span className="inline-flex items-center gap-1.5"><span className="w-3 h-3 rounded-sm bg-orange-500" />ทีมติดตั้ง</span>
             <span className="inline-flex items-center gap-1.5"><span className="w-3 h-3 rounded-sm bg-gray-300 border border-gray-400" />งานอื่น</span>
           </span>

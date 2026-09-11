@@ -138,7 +138,7 @@ export default function EventCalendarMonth({ toolbarRight, year: controlledYear,
                       const isSurvey = !isBlock && (ev.status === "survey" || ev.event_type === "survey");
                       // Border + icon-tint coloured by team (survey vs install)
                       // so teams are distinguishable at a glance. Block stays gray.
-                      const tc = isBlock ? null : isSurvey ? "#1ed0c7" : "#f97316";
+                      const tc = isBlock ? null : isSurvey ? "#8b5cf6" : "#f97316";
                       const baseCls = isBlock
                         ? "bg-gray-100 text-gray-700 border-gray-300"
                         : "bg-white text-gray-800 border-gray-200";

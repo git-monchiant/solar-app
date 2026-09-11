@@ -181,16 +181,15 @@ export function parseLateSlaStages(json?: string | null): Partial<Record<SlaWork
  * ระบบ ป้ายบนจอที่คนอ่านจึงแยกทีมจาก policy_code แทน ได้ชื่อทีมตรงกับงานจริง
  * โดยไม่แตะกติกาสิทธิ์ — owner_role ยังเป็นตัวตัดสินว่าใครมอบหมาย/เห็นงานได้
  *
- * สีของทีมสำรวจกับทีมติดตั้งยึดตามแถบ event ในหน้า Calendar ที่ใช้มาก่อนแล้ว
- * (สำรวจ #1ed0c7 · ติดตั้ง #f97316 ดู EventCalendarList) ทีมเดียวกันจะได้สีเดียว
- * กันทุกหน้า ส่วนทีมขายเลี่ยงม่วงเพราะม่วงคือสี --active ของทั้งแอป (แท็บที่เลือก
- * step ที่กำลังทำ) ถ้าใช้ซ้ำจะอ่านเป็น "กำลังทำอยู่" แทนที่จะเป็นชื่อทีม
+ * ม่วงเป็นสีประจำทีมสำรวจ ตามที่ใช้กันมาใน legend ของหน้า Calendar จึงห้ามเอาไป
+ * ใช้กับทีมอื่น ส้มเป็นของทีมติดตั้งตามแถบ event ในหน้าเดียวกัน ทีมขายจึงใช้
+ * น้ำเงิน และทีมหลังการขายใช้บานเย็น ทีมเดียวกันได้สีเดียวกันทุกหน้า
  */
 export type SlaTeamKey = "sales" | "survey" | "install" | "after_sales";
 
 export const SLA_TEAM: Record<SlaTeamKey, { label: string; chip: string; dot: string }> = {
-  sales:       { label: "ทีมขาย",       chip: "bg-indigo-100 text-indigo-700",   dot: "bg-indigo-500" },
-  survey:      { label: "ทีมสำรวจ",     chip: "bg-teal-100 text-teal-700",       dot: "bg-primary" },
+  sales:       { label: "ทีมขาย",       chip: "bg-blue-100 text-blue-700",       dot: "bg-blue-500" },
+  survey:      { label: "ทีมสำรวจ",     chip: "bg-violet-100 text-violet-700",   dot: "bg-active" },
   install:     { label: "ทีมติดตั้ง",    chip: "bg-orange-100 text-orange-700",   dot: "bg-orange-500" },
   after_sales: { label: "ทีมหลังการขาย", chip: "bg-fuchsia-100 text-fuchsia-700", dot: "bg-fuchsia-500" },
 };

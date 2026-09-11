@@ -38,7 +38,7 @@ interface Props {
 // Team colours mirror the calendar page legend so the picker reads the same
 // regardless of where it's opened.
 const TEAM_COLOR: Record<string, string> = {
-  survey: "#1ed0c7",
+  survey: "#8b5cf6",
   install: "#f97316",
 };
 
@@ -77,7 +77,7 @@ export default function CalendarPicker({
   // Same-day tint. Real bookings (survey/install) take the team colour, while
   // manual blocks (admin "ทีมไปทำอย่างอื่น") show as neutral gray — they
   // aren't actual jobs, just unavailability.
-  const dayColor = TEAM_COLOR[teamContext] ?? "#1ed0c7";
+  const dayColor = TEAM_COLOR[teamContext] ?? "#8b5cf6";
   const BLOCK_GRAY = "#9ca3af";
   const zoneByDate = useMemo(() => {
     // Per date: prefer the team colour if any same-team booking exists;
