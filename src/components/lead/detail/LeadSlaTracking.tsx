@@ -44,7 +44,14 @@ type SlaPolicy = {
   config_json: string | null;
 };
 
-/** ผลของแต่ละขั้นเมื่อมองย้อนหลัง — ใช้คุมทั้งสีและคำ จะได้ไม่หลุดกัน */
+/**
+ * ผลของแต่ละขั้นเมื่อมองย้อนหลัง — ใช้คุมทั้งสีและคำ จะได้ไม่หลุดกัน
+ *
+ * not_started ใช้คำว่า "ไม่มีรายการ" ไม่ใช่ "ยังไม่ถึงขั้นตอน" เพราะบางขั้นอาจ
+ * ไม่เกิดขึ้นกับ Lead รายนั้นเลย เช่น ติดตามผลอนุมัติสินเชื่อ จะไม่มีวันเกิดกับ
+ * ลูกค้าที่จ่ายเงินสด การเขียนว่า "ยังไม่ถึง" จึงเป็นการสัญญาแทนระบบว่าเดี๋ยวจะมา
+ * ทั้งที่อาจไม่มี
+ */
 type RowResult = "on_time" | "late" | "open" | "breached" | "cancelled" | "not_started";
 
 const RESULT: Record<RowResult, { label: string; chip: string }> = {
@@ -53,7 +60,7 @@ const RESULT: Record<RowResult, { label: string; chip: string }> = {
   breached:    { label: "เกินกำหนด SLA",    chip: "bg-red-50 text-red-700 border-red-200" },
   open:        { label: "อยู่ระหว่างดำเนินการ", chip: "bg-sky-50 text-sky-700 border-sky-200" },
   cancelled:   { label: "ยกเลิกรายการ",     chip: "bg-gray-50 text-gray-500 border-gray-200" },
-  not_started: { label: "ยังไม่ถึงขั้นตอน",  chip: "bg-gray-50 text-gray-400 border-gray-200" },
+  not_started: { label: "ไม่มีรายการ",  chip: "bg-gray-50 text-gray-400 border-gray-200" },
 };
 
 function minutesText(minutes?: number | null): string {
@@ -183,13 +190,13 @@ export default function LeadSlaTracking({ leadId }: { leadId: number }) {
           <span className="px-2 py-1 rounded-full bg-emerald-50 text-emerald-700">ภายในกำหนด SLA {done}</span>
           <span className="px-2 py-1 rounded-full bg-red-50 text-red-700">เกินกำหนด SLA {lateCount}</span>
           <span className="px-2 py-1 rounded-full bg-sky-50 text-sky-700">อยู่ระหว่างดำเนินการ {openCount}</span>
-          <span className="px-2 py-1 rounded-full bg-gray-100 text-gray-500">ยังไม่ถึงขั้นตอน {notStarted}</span>
+          <span className="px-2 py-1 rounded-full bg-gray-100 text-gray-500">ไม่มีรายการ {notStarted}</span>
         </div>
       </div>
 
       {/* ตารางกว้างเกินจอมือถือแน่นอน ให้เลื่อนในกรอบตัวเอง ไม่ให้ทั้งหน้าเลื่อนแนวนอน */}
       <div className="overflow-x-auto rounded-xl border border-gray-200">
-        <table className="w-full min-w-[1368px] table-fixed border-collapse text-xs">
+        <table className="w-full min-w-[1384px] table-fixed border-collapse text-xs">
           <thead>
             <tr className="bg-gray-50 text-gray-600">
               <th className="w-9 px-2 py-2 text-center font-semibold border-b border-gray-200">#</th>
@@ -201,7 +208,7 @@ export default function LeadSlaTracking({ leadId }: { leadId: number }) {
               <th className="w-[248px] px-3 py-2 text-left font-semibold border-b border-gray-200">SLA</th>
               <th className="w-[190px] px-3 py-2 text-left font-semibold border-b border-gray-200">เริ่มนับ · ครบกำหนด</th>
               <th className="px-3 py-2 text-left font-semibold border-b border-gray-200">เสร็จจริง · ระยะเวลาที่ใช้</th>
-              <th className="w-[110px] px-3 py-2 text-left font-semibold border-b border-gray-200">ผล</th>
+              <th className="w-[126px] px-3 py-2 text-left font-semibold border-b border-gray-200">ผล</th>
               <th className="w-[140px] px-3 py-2 text-left font-semibold border-b border-gray-200">ผู้รับผิดชอบ</th>
             </tr>
           </thead>

@@ -33,7 +33,7 @@ import { useDialog } from "@/components/ui/Dialog";
 import { useIsMobile } from "@/lib/hooks/useIsMobile";
 import { formatThaiDate as formatDate, formatThaiTime, formatNumber } from "@/lib/utils/formatters";
 import { formatSlotsRange } from "@/lib/time-slots";
-import { slaTaskLabel, slaWorkflowStage, type SlaWorkflowStage } from "@/lib/sla-display";
+import { slaTaskLabel } from "@/lib/sla-display";
 import { INFO_LABELS, PRIMARY_REASON_LABEL } from "@/lib/constants/info-labels";
 import FallbackImage from "@/components/ui/FallbackImage";
 import NotificationBell from "@/components/layout/NotificationBell";
@@ -57,17 +57,6 @@ const otherOrLabel = (v: string | null, labels: Record<string, string>): string 
   if (!v) return null;
   if (v.startsWith("other:")) return v.slice(6) || null;
   return labels[v] || v;
-};
-
-const SLA_DETAIL_STEP_BY_STAGE: Record<SlaWorkflowStage, number> = {
-  pre_survey: 0,
-  booking: 0,
-  survey: 1,
-  quote: 2,
-  order: 3,
-  wait_install: 4,
-  install: 4,
-  warranty: 5,
 };
 
 // Questionnaire (PreSurveyForm §1-§8) label maps. Codes MUST stay in sync
@@ -993,8 +982,6 @@ export default function LeadDetailPage({ params }: { params: Promise<{ id: strin
   const hasPreSurveyDone = STEP_ORDER.indexOf(lead.status.split('-')[0]) > 0 || lead.status === "closed";
   const currentStep = stepIndex(lead.status);
   const visibleStep = focus ? (focusedStep ?? currentStep) : null;
-  const slaStage = slaWorkflowStage(lead.sla_policy_code);
-  const slaStepIndex = slaStage ? SLA_DETAIL_STEP_BY_STAGE[slaStage] : undefined;
   const slaStatusMeta = lead.sla_status ? {
     breached: { label: "เกินกำหนด", dot: "bg-red-500", badge: "border-red-200 bg-red-50 text-red-700" },
     critical: { label: "เร่งด่วน", dot: "bg-orange-500", badge: "border-orange-200 bg-orange-50 text-orange-700" },
@@ -1399,13 +1386,6 @@ export default function LeadDetailPage({ params }: { params: Promise<{ id: strin
                 >
                   <span className="text-xxs font-bold tabular-nums leading-none">{String(s.idx + 1).padStart(2, "0")}</span>
                   <span className="text-[10px] font-semibold leading-tight text-center px-1">{s.label}</span>
-                  {slaStatusMeta && slaStepIndex === s.idx && (
-                    <span
-                      title={`SLA ${slaStatusMeta.label}: ${slaTaskLabel(lead.sla_policy_code, lead.sla_task_name)}`}
-                      className={`h-2 w-2 rounded-full ring-2 ring-white ${slaStatusMeta.dot}`}
-                      aria-label={`SLA ${slaStatusMeta.label}`}
-                    />
-                  )}
                   {isDone && (
                     <CheckIcon className="w-3 h-3 text-emerald-500" strokeWidth={3} />
                   )}
