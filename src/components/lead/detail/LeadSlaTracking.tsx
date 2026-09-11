@@ -236,19 +236,24 @@ export default function LeadSlaTracking({ leadId }: { leadId: number }) {
                     : "text-gray-300"}`}>
                     {stamp(instance?.completed_at)}
                   </td>
-                  {/* งานที่ยังไม่จบต้องเห็นว่าเดินมากี่วันแล้ว ไม่ใช่ขีดว่าง — ไม่งั้นหน้า
-                      รายการบอก "เกิน 5 วัน" แต่เปิดเข้ามาแล้วหาไม่เจอว่าเกินตรงไหน */}
+                  {/* งานที่ยังไม่จบต้องเห็นว่าเดินมากี่วันแล้ว ไม่ใช่ขีดว่าง และถ้าเลยกำหนด
+                      ต้องบอกตรงนี้ว่าเกินไปเท่าไร — ไม่งั้นหน้ารายการบอก "เกิน 5 วัน"
+                      แต่เปิดเข้ามาแล้วหาไม่เจอว่าเกินตรงไหน */}
                   <td className={`px-3 py-2 whitespace-nowrap ${muted ? "text-gray-300" : "text-gray-700"}`}>
                     {instance?.completed_at
                       ? durationText(instance.started_at, instance.completed_at)
                       : instance?.started_at && result !== "cancelled"
                       ? <span className="text-gray-500">{durationText(instance.started_at, new Date().toISOString())} <span className="text-gray-400">(ยังไม่จบ)</span></span>
                       : "—"}
+                    {(result === "breached" || result === "late") && overdueText(instance) && (
+                      <div className={`font-semibold ${result === "late" ? "text-rose-600" : "text-red-600"}`}>
+                        เกิน {overdueText(instance)}
+                      </div>
+                    )}
                   </td>
                   <td className="px-3 py-2">
                     <span className={`inline-block rounded border px-1.5 py-0.5 text-xxs font-bold whitespace-nowrap ${RESULT[result].chip}`}>
                       {RESULT[result].label}
-                      {(result === "breached" || result === "late") && overdueText(instance) && ` ${overdueText(instance)}`}
                     </span>
                   </td>
                   <td className={`px-3 py-2 ${muted ? "text-gray-300" : "text-gray-600"}`}>
