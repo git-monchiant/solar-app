@@ -85,7 +85,11 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
                d.future_usage_trend,
                -- Questionnaire §8 (migration 043 + 049).
                d.decision_factors,
-               d.decision_timeline
+               d.decision_timeline,
+               -- Questionnaire §9 (migration 153).
+               d.occupation,
+               d.age_range,
+               d.household_income
         FROM leads l
         LEFT JOIN projects p ON l.project_id = p.id
         LEFT JOIN packages pk ON l.interested_package_id = pk.id
@@ -324,6 +328,10 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
     // Questionnaire §8 (migration 043 + 049).
     pushLd("decision_factors",      sql.NVarChar(sql.MAX), body.decision_factors);
     pushLd("decision_timeline",     sql.NVarChar(200),     body.decision_timeline);
+    // Questionnaire §9 (migration 153).
+    pushLd("occupation",       sql.NVarChar(200), body.occupation);
+    pushLd("age_range",        sql.NVarChar(20),  body.age_range);
+    pushLd("household_income", sql.NVarChar(20),  body.household_income);
     // ─────────────────────────────────────────────────────────────────────
 
     if (body.status !== undefined) {

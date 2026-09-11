@@ -84,6 +84,10 @@ const Q_LABELS: Record<string, Record<string, string>> = {
   usageTrend:         { more: "มากขึ้น", same: "เท่าเดิม", less: "น้อยลง" },
   // §8 Decision making
   decisionTimeline:   { "1-3m": "ภายใน 1-3 เดือน", "6m": "ภายใน 6 เดือน", "1y+": "มากกว่า 1 ปี" },
+  // §9 Customer demographics
+  occupation:         { business_owner: "เจ้าของกิจการ", private_employee: "พนง.บริษัทเอกชน", government: "รับราชการ/รัฐวิสาหกิจ", homemaker: "แม่บ้าน/พ่อบ้าน", freelance: "อาชีพอิสระ", medical: "แพทย์/พยาบาล", retired: "เกษียณอายุ" },
+  ageRange:           { lt21: "ต่ำกว่า 21 ปี", "21_30": "21-30 ปี", "31_40": "31-40 ปี", "41_50": "41-50 ปี", "51_60": "51-60 ปี", gte61: "61 ปีขึ้นไป" },
+  householdIncome:    { lt30k: "ต่ำกว่า 30,000 บาท", "30k_50k": "30,000–49,999 บาท", "50k_75k": "50,000–74,999 บาท", "75k_100k": "75,000–99,999 บาท", "100k_150k": "100,000–149,999 บาท", gte150k: "150,000 บาทขึ้นไป", no_answer: "ไม่สะดวกให้ข้อมูล" },
 };
 
 // Decode a single coded value to its form label. Handles the "other"/"other:..."
@@ -560,6 +564,7 @@ function qSectionIcon(id: string) {
   const wrap = "w-7 h-7 rounded-lg bg-active/10 text-active flex items-center justify-center shrink-0";
   if (id === "q1") return <span className={wrap}><UserIcon className="w-4 h-4" /></span>;
   if (id === "q2") return <span className={wrap}><BoltIcon className="w-4 h-4" strokeWidth={1.8} /></span>;
+  if (id === "q9") return <span className={wrap}><UserIcon className="w-4 h-4" /></span>;
   return <span className={wrap}><DocumentIcon className="w-4 h-4" /></span>;
 }
 
@@ -1616,12 +1621,25 @@ export default function LeadDetailPage({ params }: { params: Promise<{ id: strin
                     { label: "โน้ต", value: lead.note },
                   ],
                 },
-                // Questionnaire (PreSurvey §1-§8). Row shape carries edit
+                // Questionnaire (PreSurvey §1-§9). Row shape carries edit
                 // metadata (field / kind / options / suffix) so the tree can
                 // render an inline editor per cell — see EditableQCell above.
                 // `value` is the FORMATTED display value (kept for the flat
                 // sections rendering the same list below). Editable cells go
                 // through `raw` + `kind` + `field` instead.
+                // §9 leads the list even though it is numbered last, mirroring
+                // the order PreSurveyForm renders — both follow the paper form.
+                {
+                  id: "q9",
+                  title: "แบบสอบถาม · ข้อมูลลูกค้า",
+                  rows: [
+                    // อาชีพ carries the shared "other:<text>" pattern, so the
+                    // picker gets an explicit "อื่นๆ" entry like ประเภทบ้าน does.
+                    { label: "อาชีพ", value: qLabel(lead.occupation, "occupation"), field: "occupation", kind: "dropdown" as QCellKind, options: [...optsFromQ("occupation"), { value: "other", label: "อื่นๆ" }], raw: lead.occupation ?? "", allowOther: true },
+                    { label: "อายุ", value: qLabel(lead.age_range, "ageRange"), field: "age_range", kind: "dropdown" as QCellKind, options: optsFromQ("ageRange"), raw: lead.age_range ?? "" },
+                    { label: "รายได้ครัวเรือน/เดือน", value: qLabel(lead.household_income, "householdIncome"), field: "household_income", kind: "dropdown" as QCellKind, options: optsFromQ("householdIncome"), raw: lead.household_income ?? "" },
+                  ],
+                },
                 {
                   id: "q1",
                   title: "แบบสอบถาม · บ้าน + ผู้อยู่อาศัย",

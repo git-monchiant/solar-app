@@ -18,7 +18,7 @@ export type CustomerDashboardData = {
   meta: {
     cohortLeads: number;
     respondents: number;
-    completeEight: number;
+    completeAllSections: number;
     coveragePct: number;
     latestUpdatedAt: string | null;
     averageMonthlyBill: number | null;
@@ -83,6 +83,13 @@ export type CustomerDashboardData = {
         average: number | null;
         scores: number[];
       }[];
+    };
+    demographics: {
+      occupation: CountSeries;
+      ageRange: CountSeries;
+      // "ไม่สะดวกให้ข้อมูล" is a real option inside householdIncome, not a
+      // separate counter — declining to answer is an answer.
+      householdIncome: CountSeries;
     };
   };
 };

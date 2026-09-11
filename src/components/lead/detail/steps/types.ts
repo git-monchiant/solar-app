@@ -92,6 +92,10 @@ export interface Lead {
   // questionnaire §8 — decision making factor (JSON)
   decision_factors: string | null;
   decision_timeline: string | null;
+  // questionnaire §9 — customer demographics
+  occupation: string | null;
+  age_range: string | null;
+  household_income: string | null;
   interested_package_id: number | null;
   interested_package_ids: string | null;
   package_note: string | null;

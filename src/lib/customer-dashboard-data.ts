@@ -1,10 +1,10 @@
 import { getDb, sql, toSqlDate } from "@/lib/db";
 import { getSourceStyle, normalizeSourceKey } from "@/lib/source-tag";
 import {
-  ABLE_OR_NOT, BILL_RISE_ACTIONS, BUSINESS_TYPES, DAYTIME_OCCUPANTS,
+  ABLE_OR_NOT, AGE_RANGES, BILL_RISE_ACTIONS, BUSINESS_TYPES, DAYTIME_OCCUPANTS,
   DECISION_FACTORS, DECISION_TIMELINES, ELECTRICAL_PHASES, EV_CHARGE_PERIODS,
-  EV_READY_OPTIONS, HOUSE_AGES, METER_SIZES, MONTHLY_BILL_BUCKETS,
-  OUTAGE_PRIORITIES, PEAK_USAGE, QUESTIONNAIRE_SECTIONS, RESIDENCE_TYPES,
+  EV_READY_OPTIONS, HOUSEHOLD_INCOMES, HOUSE_AGES, METER_SIZES, MONTHLY_BILL_BUCKETS,
+  OCCUPATIONS, OUTAGE_PRIORITIES, PEAK_USAGE, QUESTIONNAIRE_SECTIONS, RESIDENCE_TYPES,
   ROOF_SHAPES, USAGE_TREND_OPTIONS, WORK_DAYS_PER_WEEK, YES_NO, YES_NO_BIN,
   YES_NO_CONSIDERING, YES_NO_MAYBE, monthlyBillBucket, optionLabel,
 } from "@/lib/customer-questionnaire";
@@ -64,6 +64,9 @@ type QuestionnaireRow = {
   future_usage_trend: string | null;
   decision_factors: string | null;
   decision_timeline: string | null;
+  occupation: string | null;
+  age_range: string | null;
+  household_income: string | null;
   [key: string]: unknown;
 };
 
@@ -193,7 +196,7 @@ function respondent(row: QuestionnaireRow): boolean {
   return QUESTIONNAIRE_SECTIONS.some((_, index) => sectionAnswered(row, index));
 }
 
-function completeEight(row: QuestionnaireRow): boolean {
+function completeAllSections(row: QuestionnaireRow): boolean {
   return QUESTIONNAIRE_SECTIONS.every((_, index) => sectionAnswered(row, index));
 }
 
@@ -238,7 +241,8 @@ async function queryRows(filters: CustomerDashboardFilters): Promise<Questionnai
       d.bill_rise_action, d.had_roof_leak, d.did_roof_repair,
       d.had_electrical_issue, d.did_panel_replacement, d.self_generates,
       d.ev_ready, d.blackout_resilient, d.future_usage_trend,
-      d.decision_factors, d.decision_timeline
+      d.decision_factors, d.decision_timeline,
+      d.occupation, d.age_range, d.household_income
     FROM leads l
     LEFT JOIN projects p ON p.id = l.project_id
     LEFT JOIN lead_data d ON d.lead_id = l.id
@@ -261,7 +265,7 @@ export async function getCustomerDashboard(filters: CustomerDashboardFilters): P
   const dateRows = await queryRows(filters);
   const rows = applyDimensionFilters(dateRows, filters);
   const respondents = rows.filter(respondent);
-  const complete = respondents.filter(completeEight);
+  const complete = respondents.filter(completeAllSections);
   const customerGroups = classificationSeries(rows, "customer_group", CUSTOMER_GROUPS, "unclassified", "ยังไม่ระบุ");
   const salesGrades = classificationSeries(rows, "customer_grade", SALES_GRADES, "ungraded", "ยังไม่จัด");
   const answeredSlots = respondents.reduce((total, row) => total + QUESTIONNAIRE_SECTIONS.filter((_, index) => sectionAnswered(row, index)).length, 0);
@@ -316,8 +320,8 @@ export async function getCustomerDashboard(filters: CustomerDashboardFilters): P
     meta: {
       cohortLeads: rows.length,
       respondents: respondents.length,
-      completeEight: complete.length,
-      coveragePct: respondents.length ? Math.round((answeredSlots / (respondents.length * 8)) * 100) : 0,
+      completeAllSections: complete.length,
+      coveragePct: respondents.length ? Math.round((answeredSlots / (respondents.length * QUESTIONNAIRE_SECTIONS.length)) * 100) : 0,
       latestUpdatedAt: iso(latest),
       averageMonthlyBill: positiveAverage(monthlyBills),
       medianMonthlyBill: median(monthlyBills),
@@ -382,6 +386,11 @@ export async function getCustomerDashboard(filters: CustomerDashboardFilters): P
         timeline: singleSeries(respondents, "decision_timeline", DECISION_TIMELINES),
         factors,
       },
+      demographics: {
+        occupation: singleSeries(respondents, "occupation", OCCUPATIONS),
+        ageRange: singleSeries(respondents, "age_range", AGE_RANGES),
+        householdIncome: singleSeries(respondents, "household_income", HOUSEHOLD_INCOMES),
+      },
     },
   };
 }
@@ -391,13 +400,13 @@ const HOME_HEALTH_KEYS = ["had_roof_leak", "did_roof_repair", "had_electrical_is
 function matches(row: QuestionnaireRow, dimension: string, value: string, score: number | null): boolean {
   if (dimension === "questionnaire_status") {
     if (value === "unanswered") return !respondent(row);
-    if (value === "partial") return respondent(row) && !completeEight(row);
-    return value === "complete" && completeEight(row);
+    if (value === "partial") return respondent(row) && !completeAllSections(row);
+    return value === "complete" && completeAllSections(row);
   }
   if (dimension === "customer_group") return value === "unclassified" ? !isAnswered(row.customer_group) : row.customer_group === value;
   if (dimension === "sales_grade") return value === "ungraded" ? !isAnswered(row.customer_grade) : row.customer_grade === value;
   if (dimension === "respondent") return respondent(row);
-  if (dimension === "complete") return completeEight(row);
+  if (dimension === "complete") return completeAllSections(row);
   if (dimension === "monthly_bill") return monthlyBillBucket(Number(row.monthly_bill)) === value;
   if (dimension === "occupant_elderly" || dimension === "occupant_kids" || dimension === "occupant_pets") return Number(row[dimension]) > 0;
   if (dimension === "daytime_occupants" || dimension === "outage_priorities") return csvValues(row[dimension] as string | null).some(v => normalizedValue(v) === value);
@@ -415,12 +424,13 @@ function matches(row: QuestionnaireRow, dimension: string, value: string, score:
     "future_ev", "future_ev_charger", "future_extend_home", "future_more_members", "future_smart_home", "future_battery",
     "bill_rise_action", "had_roof_leak", "did_roof_repair", "had_electrical_issue", "did_panel_replacement",
     "self_generates", "ev_ready", "blackout_resilient", "future_usage_trend", "decision_timeline",
+    "occupation", "age_range", "household_income",
   ]);
   return allowed.has(dimension) && normalizedValue(row[dimension] as string | null) === value;
 }
 
 function answerLabel(row: QuestionnaireRow, dimension: string, value: string, score: number | null): string {
-  if (dimension === "questionnaire_status") return value === "complete" ? "ตอบครบทั้ง 8 หัวข้อ" : value === "partial" ? "ตอบแบบสอบถามบางส่วน" : "ยังไม่ตอบแบบสอบถาม";
+  if (dimension === "questionnaire_status") return value === "complete" ? `ตอบครบทั้ง ${QUESTIONNAIRE_SECTIONS.length} หัวข้อ` : value === "partial" ? "ตอบแบบสอบถามบางส่วน" : "ยังไม่ตอบแบบสอบถาม";
   if (dimension === "customer_group") return value === "unclassified" ? "ยังไม่ระบุกลุ่มลูกค้า" : optionLabel(CUSTOMER_GROUPS, row.customer_group);
   if (dimension === "sales_grade") return value === "ungraded" ? "ยังไม่จัด Sales Grade" : `Grade ${row.customer_grade || "—"} · ${optionLabel(SALES_GRADES, row.customer_grade)}`;
   if (dimension === "decision_timeline" && value === "unanswered") return "ยังไม่ตอบระยะเวลาในการตัดสินใจ";
@@ -445,9 +455,10 @@ function answerLabel(row: QuestionnaireRow, dimension: string, value: string, sc
     did_panel_replacement: [{ value: "yes", label: "เคย" }, { value: "no", label: "ไม่เคย" }],
     self_generates: ABLE_OR_NOT, ev_ready: EV_READY_OPTIONS, blackout_resilient: ABLE_OR_NOT,
     future_usage_trend: USAGE_TREND_OPTIONS, decision_timeline: DECISION_TIMELINES,
+    occupation: OCCUPATIONS, age_range: AGE_RANGES, household_income: HOUSEHOLD_INCOMES,
   };
   if (dimension === "respondent") return "มีคำตอบอย่างน้อย 1 หัวข้อ";
-  if (dimension === "complete") return "ตอบครบทั้ง 8 หัวข้อ";
+  if (dimension === "complete") return `ตอบครบทั้ง ${QUESTIONNAIRE_SECTIONS.length} หัวข้อ`;
   if (dimension === "ev_charger") return value === "yes" ? "มีที่ชาร์จรถ EV" : "ไม่มีที่ชาร์จรถ EV";
   if (dimension === "home_health_risk") return "พบประวัติความเสี่ยงด้านหลังคาหรือระบบไฟฟ้า";
   return optionLabel(optionsByField[dimension] || [], row[dimension] as string | null);
