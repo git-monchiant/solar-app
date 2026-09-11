@@ -18,7 +18,7 @@ import Dropdown from "@/components/ui/Dropdown";
 import {
   EMPTY_EQUIPMENT_OPTIONS, fetchEquipmentOptions, snapToCatalog,
   batteryBrandOptions, batteryKwhOptions, inverterBrandOptions, inverterKwOptions,
-  panelBrandOptions, modelOptions,
+  panelBrandOptions, modelOptions, existsInCatalog,
   type EquipmentOptions,
 } from "@/lib/equipment-options";
 import NumberStepper from "@/components/ui/NumberStepper";
@@ -430,7 +430,11 @@ export default function InstallChecklist({ lead, leadId }: Props) {
                 <label className={fieldLabel}>ยี่ห้อ</label>
                 <Dropdown
                   value={specs.inverter?.brand ?? ""}
-                  onChange={v => setSpec("inverter", { brand: v })}
+                  onChange={v => {
+                    const kw = specs.inverter?.kw;
+                    const keepKw = v.trim() && (kw == null || inverterKwOptions(equip, v).includes(kw));
+                    setSpec("inverter", { brand: v, ...(keepKw ? {} : { kw: null }) });
+                  }}
                   options={inverterBrandOptions(equip).map(b => ({ value: b, label: b }))}
                   allowCustom
                   disabled={locked}
@@ -488,7 +492,11 @@ export default function InstallChecklist({ lead, leadId }: Props) {
                 <label className={fieldLabel}>ยี่ห้อ</label>
                 <Dropdown
                   value={specs.panel?.brand ?? ""}
-                  onChange={v => setSpec("panel", { brand: v })}
+                  onChange={v => {
+                    const model = specs.panel?.model;
+                    const keep = v.trim() && existsInCatalog(model ?? "", modelOptions(equip.panels, v));
+                    setSpec("panel", { brand: v, ...(keep ? {} : { model: "" }) });
+                  }}
                   options={panelBrandOptions(equip).map(b => ({ value: b, label: b }))}
                   allowCustom
                   disabled={locked}
@@ -544,7 +552,13 @@ export default function InstallChecklist({ lead, leadId }: Props) {
               <div className="col-span-1 md:col-span-1"><label className={fieldLabel}>ยี่ห้อ</label>
                 <Dropdown
                   value={specs.battery?.brand ?? ""}
-                  onChange={v => setSpec("battery", { brand: v })}
+                  onChange={v => {
+                    const model = specs.battery?.model;
+                    const kwh = specs.battery?.kwh;
+                    const keepModel = v.trim() && existsInCatalog(model ?? "", modelOptions(equip.batteries, v));
+                    const keepKwh = v.trim() && (kwh == null || batteryKwhOptions(equip, v, "").includes(kwh));
+                    setSpec("battery", { brand: v, ...(keepModel ? {} : { model: "" }), ...(keepKwh ? {} : { kwh: null }) });
+                  }}
                   options={batteryBrandOptions(equip).map(b => ({ value: b, label: b }))}
                   allowCustom
                   disabled={locked}
@@ -553,7 +567,11 @@ export default function InstallChecklist({ lead, leadId }: Props) {
               <div className="col-span-1 md:col-span-2"><label className={fieldLabel}>รุ่น</label>
                 <Dropdown
                   value={specs.battery?.model ?? ""}
-                  onChange={v => setSpec("battery", { model: v })}
+                  onChange={v => {
+                    const kwh = specs.battery?.kwh;
+                    const keepKwh = v.trim() && (kwh == null || batteryKwhOptions(equip, specs.battery?.brand ?? "", v).includes(kwh));
+                    setSpec("battery", { model: v, ...(keepKwh ? {} : { kwh: null }) });
+                  }}
                   options={modelOptions(equip.batteries, specs.battery?.brand ?? "").map(m => ({ value: m, label: m }))}
                   allowCustom
                   disabled={locked}

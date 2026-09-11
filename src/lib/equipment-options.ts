@@ -76,6 +76,15 @@ export function snapToCatalog(value: string, catalog: string[]): string {
   return catalog.find(c => loose(c) === loose(value)) ?? value;
 }
 
+/**
+ * ค่านี้ยังอยู่ในลิสต์ที่เลือกได้ไหม (ไม่สนตัวพิมพ์/เว้นวรรค) — ใช้ตอนเปลี่ยนยี่ห้อ
+ * เพื่อดูว่ารุ่น/ขนาดที่ค้างอยู่ยังใช้กับยี่ห้อใหม่ได้หรือเปล่า
+ */
+export function existsInCatalog(value: string, catalog: string[]): boolean {
+  if (!value.trim()) return true;
+  return catalog.some(c => loose(c) === loose(value));
+}
+
 /** ยี่ห้อที่เลือกได้ — จากแพ็กเกจก่อน แล้วต่อท้ายด้วยค่าคงที่เดิมที่แพ็กเกจไม่มี */
 export function brandOptions(items: EquipmentOption[], fallback: readonly string[]): string[] {
   const out: string[] = [];
