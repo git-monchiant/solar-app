@@ -51,6 +51,7 @@ export async function POST(req: NextRequest) {
       .input("panel_count", sql.Int, body.panel_count || null)
       .input("panel_watt", sql.Int, body.panel_watt || null)
       .input("panel_brand", sql.NVarChar(100), body.panel_brand || null)
+      .input("panel_model", sql.NVarChar(100), body.panel_model || null)
       .input("price", sql.Decimal(12, 2), body.price || 0)
       .input("monthly_installment", sql.NVarChar(20), body.monthly_installment || null)
       .input("monthly_saving", sql.Decimal(10, 2), body.monthly_saving || null)
@@ -63,12 +64,12 @@ export async function POST(req: NextRequest) {
       .query(`
         INSERT INTO packages (name, kwp, phase, has_battery, has_panel, has_inverter, is_upgrade, is_other,
           battery_kwh, battery_brand, battery_model, inverter_kw, inverter_brand, inverter_model,
-          installed_kwp, panel_count, panel_watt, panel_brand,
+          installed_kwp, panel_count, panel_watt, panel_brand, panel_model,
           price, monthly_installment, monthly_saving, warranty_years, term_set_profile, start_date, expire_date)
         OUTPUT INSERTED.*
         VALUES (@name, @kwp, @phase, @has_battery, @has_panel, @has_inverter, @is_upgrade, @is_other,
           @battery_kwh, @battery_brand, @battery_model, @inverter_kw, @inverter_brand, @inverter_model,
-          @installed_kwp, @panel_count, @panel_watt, @panel_brand,
+          @installed_kwp, @panel_count, @panel_watt, @panel_brand, @panel_model,
           @price, @monthly_installment, @monthly_saving, @warranty_years, @term_set_profile, @start_date, @expire_date)
       `);
     return NextResponse.json(result.recordset[0], { status: 201 });

@@ -17,8 +17,14 @@ import { useFileViewer } from "@/lib/hooks/useFileViewer";
 import { buildWarrantyFlex } from "@/lib/utils/line-flex";
 import { compressImage } from "@/lib/utils/compressImage";
 import { formatThaiDate } from "@/lib/utils/formatters";
-import { INVERTER_BRANDS, INVERTER_KW_SIZES, PANEL_BRANDS, PHASE_LABEL } from "@/lib/constants/survey-options";
+import { PHASE_LABEL } from "@/lib/constants/survey-options";
 import Dropdown from "@/components/ui/Dropdown";
+import {
+  EMPTY_EQUIPMENT_OPTIONS, fetchEquipmentOptions, snapToCatalog,
+  batteryBrandOptions, batteryKwhOptions, inverterBrandOptions, inverterKwOptions,
+  panelBrandOptions, modelOptions,
+  type EquipmentOptions,
+} from "@/lib/equipment-options";
 import NumberStepper from "@/components/ui/NumberStepper";
 import SerialsUploader, { AddDeviceModal } from "@/components/lead/detail/SerialsUploader";
 
@@ -165,6 +171,8 @@ export default function WarrantyStep({ lead, state, refresh, packages, expanded,
   const [panelWatt, setPanelWatt] = useState<number | "">(lead.warranty_panel_watt ?? "");
   const [panelBrand, setPanelBrand] = useState<string>(lead.warranty_panel_brand ?? "");
   const [panelModel, setPanelModel] = useState<string>(lead.warranty_panel_model ?? "");
+  // ยี่ห้อ/รุ่น/ขนาด ที่บริษัทขายจริง (จากตาราง packages) + แพ็กเกจของลูกค้ารายนี้
+  const [equip, setEquip] = useState<EquipmentOptions>(EMPTY_EQUIPMENT_OPTIONS);
   // BATTERY summary on subStep 0 — mirrors Install §1.4. Independent from
   // subStep 2's per-row battery list (which has its own multi-row + OCR UI).
   const [battBrand, setBattBrand] = useState<string>(lead.warranty_battery_brand ?? "");
@@ -290,7 +298,9 @@ export default function WarrantyStep({ lead, state, refresh, packages, expanded,
         batteries?: Array<{ brand: string | null; kwh: number | null; serial_no: string | null }>;
         panels?: Array<{ brand: string | null; serial_no: string | null }>;
       } | null>,
-    ]).then(([row, dev]) => {
+      fetchEquipmentOptions(lead.id),
+    ]).then(([row, dev, eq]) => {
+      setEquip(eq);
       let specs: { inverter?: { brand?: string; kw?: number | null; phase?: string; sn?: string }; panel?: { brand?: string; model?: string; count?: number | null; watt?: number | null; total_kwp?: number | null }; battery?: { brand?: string; model?: string; kwh?: number | null } } = {};
       if (row?.system_specs) {
         try { specs = JSON.parse(row.system_specs); } catch { /* fall through to devices-only mirror */ }
@@ -331,9 +341,37 @@ export default function WarrantyStep({ lead, state, refresh, packages, expanded,
       const firstPanelBrand = panelRows.find(p => p.brand)?.brand;
       if (firstPanelBrand && !panelBrand && !pn.brand) setPanelBrand(firstPanelBrand);
       if (panelRows.length > 0 && panelCount === "" && pn.count == null) setPanelCount(panelRows.length);
+      // Last resort: the package the customer actually bought ─────────────
+      // Sales maintains brand/model there through the config screen, so its
+      // spelling is the clean one — free text typed on site is where
+      // "LUNAA2000-7-E1" and "LUNA2000-7" came from. Gap-fill only, so
+      // equipment swapped out on site still wins.
+      const pk = eq.leadPackage;
+      if (pk) {
+        if (!invBrand && !inv.brand && !invRow?.brand && pk.inverter_brand) setInvBrand(pk.inverter_brand);
+        if (invKw === "" && inv.kw == null && invRow?.kw == null && typeof pk.inverter_kw === "number") setInvKw(pk.inverter_kw);
+        if (!battBrand && !bt.brand && !battRow?.brand && pk.battery_brand) setBattBrand(pk.battery_brand);
+        if (!battModel && !bt.model && pk.battery_model) setBattModel(pk.battery_model);
+        if (battKwh === "" && bt.kwh == null && battRow?.kwh == null && typeof pk.battery_kwh === "number") setBattKwh(pk.battery_kwh);
+        if (!panelBrand && !pn.brand && !firstPanelBrand && pk.panel_brand) setPanelBrand(pk.panel_brand);
+        if (!panelModel && !pn.model && pk.panel_model) setPanelModel(pk.panel_model);
+        if (panelWatt === "" && pn.watt == null && typeof pk.panel_watt === "number") setPanelWatt(pk.panel_watt);
+      }
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [lead.id]);
+
+  // ข้อมูลเก่ามีทั้ง " LUNA2000-7-E1" และ "LUNA2000-7-E1 " — พอ catalogue โหลดเสร็จ
+  // ก็ดึงให้ตรงตัวสะกดเดียวกัน (ต่างกันแค่ตัวพิมพ์/เว้นวรรคเท่านั้นถึงจะเปลี่ยน ถ้าเป็น
+  // คนละค่าจริง ๆ จะปล่อยไว้) autosave เขียนกลับเองเมื่อ step นี้ active อยู่
+  useEffect(() => {
+    if (!equip.batteries.length && !equip.inverters.length) return;
+    setInvBrand(b => snapToCatalog(b, inverterBrandOptions(equip)));
+    setBattBrand(b => snapToCatalog(b, batteryBrandOptions(equip)));
+    setBattModel(m => snapToCatalog(m, modelOptions(equip.batteries, "")));
+    setPanelBrand(b => snapToCatalog(b, panelBrandOptions(equip)));
+    setPanelModel(m => snapToCatalog(m, modelOptions(equip.panels, "")));
+  }, [equip]);
 
   // Battery serial bulk-scan — auto-process pipeline mirroring panel scan.
   // Each uploaded photo is OCR'd individually, results stream into next empty
@@ -843,7 +881,8 @@ export default function WarrantyStep({ lead, state, refresh, packages, expanded,
                 <Dropdown
                   value={invBrand}
                   onChange={v => setInvBrand(v)}
-                  options={INVERTER_BRANDS.map(b => ({ value: b, label: b }))}
+                  options={inverterBrandOptions(equip).map(b => ({ value: b, label: b }))}
+                  allowCustom
                   disabled={noInverter}
                 />
               </div>
@@ -851,8 +890,9 @@ export default function WarrantyStep({ lead, state, refresh, packages, expanded,
                 <label className="text-xs text-gray-500 block mb-1">ขนาด (kW)</label>
                 <Dropdown
                   value={invKw === "" ? "" : String(invKw)}
-                  onChange={v => setInvKw(v ? parseFloat(v) : "")}
-                  options={INVERTER_KW_SIZES.map(kw => ({ value: String(kw), label: `${kw} kW` }))}
+                  onChange={v => setInvKw(v && !isNaN(parseFloat(v)) ? parseFloat(v) : "")}
+                  options={inverterKwOptions(equip, invBrand).map(kw => ({ value: String(kw), label: `${kw} kW` }))}
+                  allowCustom
                   buttonClassName="font-mono tabular-nums"
                   disabled={noInverter}
                 />
@@ -953,12 +993,18 @@ export default function WarrantyStep({ lead, state, refresh, packages, expanded,
                 <Dropdown
                   value={panelBrand}
                   onChange={v => setPanelBrand(v)}
-                  options={PANEL_BRANDS.map(b => ({ value: b, label: b }))}
+                  options={panelBrandOptions(equip).map(b => ({ value: b, label: b }))}
+                  allowCustom
                 />
               </div>
               <div className="col-span-1 md:col-span-2">
                 <label className="text-xs text-gray-500 block mb-1">รุ่น</label>
-                <input type="text" value={panelModel} onChange={e => setPanelModel(e.target.value)} placeholder="JKM640N-66HL4M-BDV-Z1-EU" className="w-full h-8 px-3 rounded-lg border border-gray-200 text-sm focus:outline-none focus:border-primary" />
+                <Dropdown
+                  value={panelModel}
+                  onChange={v => setPanelModel(v)}
+                  options={modelOptions(equip.panels, panelBrand).map(m => ({ value: m, label: m }))}
+                  allowCustom
+                />
               </div>
               <div className="col-span-1 md:col-span-1">
                 <label className="text-xs text-gray-500 block mb-1">จำนวน (แผง)</label>
@@ -986,15 +1032,31 @@ export default function WarrantyStep({ lead, state, refresh, packages, expanded,
             <div className="grid grid-cols-2 md:grid-cols-7 gap-2">
               <div className="col-span-1 md:col-span-1">
                 <label className="text-xs text-gray-500 block mb-1">ยี่ห้อ</label>
-                <input type="text" value={battBrand} onChange={e => setBattBrand(e.target.value)} className="w-full h-8 px-3 rounded-lg border border-gray-200 text-sm focus:outline-none focus:border-primary" />
+                <Dropdown
+                  value={battBrand}
+                  onChange={v => setBattBrand(v)}
+                  options={batteryBrandOptions(equip).map(b => ({ value: b, label: b }))}
+                  allowCustom
+                />
               </div>
               <div className="col-span-1 md:col-span-2">
                 <label className="text-xs text-gray-500 block mb-1">รุ่น</label>
-                <input type="text" value={battModel} onChange={e => setBattModel(e.target.value)} className="w-full h-8 px-3 rounded-lg border border-gray-200 text-sm focus:outline-none focus:border-primary" />
+                <Dropdown
+                  value={battModel}
+                  onChange={v => setBattModel(v)}
+                  options={modelOptions(equip.batteries, battBrand).map(m => ({ value: m, label: m }))}
+                  allowCustom
+                />
               </div>
               <div className="col-span-1 md:col-span-1">
                 <label className="text-xs text-gray-500 block mb-1">ขนาด (kWh)</label>
-                <input type="number" step="0.1" value={battKwh} onChange={e => setBattKwh(e.target.value ? parseFloat(e.target.value) : "")} className="w-full h-8 px-3 rounded-lg border border-gray-200 font-mono text-sm focus:outline-none focus:border-primary" />
+                <Dropdown
+                  value={battKwh === "" ? "" : String(battKwh)}
+                  onChange={v => setBattKwh(v && !isNaN(parseFloat(v)) ? parseFloat(v) : "")}
+                  options={batteryKwhOptions(equip, battBrand, battModel).map(k => ({ value: String(k), label: `${k} kWh` }))}
+                  buttonClassName="font-mono tabular-nums"
+                  allowCustom
+                />
               </div>
             </div>
           </div>
