@@ -1,10 +1,11 @@
 "use client";
 
 import { apiFetch } from "@/lib/api";
+import { CheckIcon } from "@/components/ui/icons";
 import { useEffect, useState, useCallback } from "react";
 import ListPageHeader from "@/components/layout/ListPageHeader";
 import LeadCard, { type LeadData } from "@/components/lead/LeadCard";
-import { useActiveRoles, hasRole } from "@/lib/roles";
+import { useActiveRoles, hasRole, useMe } from "@/lib/roles";
 import SlaFilterChips from "@/components/sla/SlaFilterChips";
 import SlaSubFilter, { SLA_SUB_SELECT_CLASS } from "@/components/sla/SlaSubFilter";
 import { slaPolicyOrder, slaTaskLabel } from "@/lib/sla-display";
@@ -40,6 +41,7 @@ interface Lead {
   pre_doc_no: string | null;
   payment_confirmed?: boolean | number | null;
   assigned_name: string | null;
+  assigned_user_id?: number | null;
   order_paid_count?: number | null;
   /** งวดที่ต้องจ่าย "ก่อนติดตั้ง" เท่านั้น — งวดที่ติ๊กชำระหลังติดตั้งไม่ถูกนับ */
   order_before_total_count?: number | null;
@@ -151,6 +153,13 @@ export default function PipelinePage() {
   const [slaSalesOwnerFilter, setSlaSalesOwnerFilter] = useState("all");
   const [slaSolarOwnerFilter, setSlaSolarOwnerFilter] = useState("all");
 
+  // "งานของฉัน" — ให้เหมือนหน้า Today ทั้งความหมายและการจำค่า ต่างกันแค่คีย์
+  const { me } = useMe();
+  const [mineOnly, setMineOnly] = useState(() => {
+    if (typeof window === "undefined") return false;
+    return localStorage.getItem("pipeline.mineOnly") === "1";
+  });
+
   const onToggleSla = (key: SlaFilterKey) => {
     const next = toggleSlaFilter(slaFilters, key);
     setSlaFilters(next);
@@ -226,12 +235,20 @@ export default function PipelinePage() {
     );
   };
 
-  // ตัวเลขบนชิปต้องเป็น "จำนวนที่จะเห็นจริงเมื่อกด" จึงนับหลังกรองแท็บกับคำค้นแล้ว
-  // แต่ก่อนกรอง SLA ไม่งั้นพอติ๊กปุ่มหนึ่ง ตัวเลขปุ่มที่เหลือจะกลายเป็น 0 หมด
-  const tabScoped = leads.filter(l => matchesTab(l, tab, todayYmd)).filter(matchesSearch);
   const slaAvailable = leads.some(l => l.sla_status);
   const slaStatusKeys = slaFilters.filter((key): key is SlaStatusKey => key !== "without");
   const slaStatusMode = slaStatusKeys.length > 0;
+
+  // ความหมายเดียวกับ Today: ถ้ากำลังกรองด้วยสถานะ SLA อยู่ "ของฉัน" = งาน SLA ที่ฉันเป็นเจ้าของ
+  // นอกนั้น = lead ที่ฉันเป็นผู้ดูแล (Pipeline มี SLA ต่อ lead แถวเดียว จึงเทียบ owner ตรง ๆ ได้)
+  const matchesMine = (l: Lead) => {
+    if (!mineOnly || !me?.id) return true;
+    return slaStatusMode ? l.sla_owner_user_id === me.id : l.assigned_user_id === me.id;
+  };
+
+  // ตัวเลขบนชิปต้องเป็น "จำนวนที่จะเห็นจริงเมื่อกด" จึงนับหลังกรองแท็บ คำค้น และงานของฉันแล้ว
+  // แต่ก่อนกรอง SLA ไม่งั้นพอติ๊กปุ่มหนึ่ง ตัวเลขปุ่มที่เหลือจะกลายเป็น 0 หมด
+  const tabScoped = leads.filter(l => matchesTab(l, tab, todayYmd)).filter(matchesSearch).filter(matchesMine);
 
   // ตัวเลือกสร้างจากรายการในแท็บก่อนกรอง SLA ตัวเลือกจึงไม่หายไปเองตอนกำลังเลือก
   const slaStageOptions = Array.from(
@@ -394,6 +411,20 @@ export default function PipelinePage() {
             />
           )}
           <div className="ml-auto flex items-center gap-2">
+            <button
+              type="button"
+              onClick={() => {
+                const next = !mineOnly;
+                setMineOnly(next);
+                localStorage.setItem("pipeline.mineOnly", next ? "1" : "0");
+              }}
+              className="h-7 inline-flex items-center gap-1.5 px-1 text-xxs font-medium text-gray-700 cursor-pointer whitespace-nowrap"
+            >
+              <span className={`w-3.5 h-3.5 rounded border-2 flex items-center justify-center transition-colors ${mineOnly ? "border-gray-800 bg-gray-800" : "border-gray-300"}`}>
+                {mineOnly && <CheckIcon className="w-2 h-2 text-white" strokeWidth={4} />}
+              </span>
+              งานของฉัน
+            </button>
             <select
               value={sortField}
               onChange={(e) => {

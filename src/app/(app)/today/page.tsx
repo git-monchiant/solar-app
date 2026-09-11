@@ -17,7 +17,7 @@ import {
   type SlaFilterKey,
   type SlaStatusKey,
 } from "@/lib/sla-filter";
-import ListPageHeader from "@/components/layout/ListPageHeader";
+import ListPageHeader, { type ListPageTab } from "@/components/layout/ListPageHeader";
 import NewLeadModal from "@/components/modal/NewLeadModal";
 import ChannelPickerModal from "@/components/shared/ChannelPickerModal";
 import type { ChannelValue } from "@/lib/constants/channels";
@@ -526,23 +526,23 @@ export default function TodayPage() {
   const salesAllCount = allLeads ? filterLeads(allLeads).length : 0;
 
   const allTabs = [
-    isSales && { key: "sales_all", label: "ทั้งหมด", count: salesAllCount },
-    isSales && { key: "sales", label: "ติดตามลูกค้า", count: salesCount },
-    isSales && { key: "booking", label: "รายการจอง", count: bookingCount },
-    isSales && { key: "sales_solar", label: "ติดตามใบเสนอราคา", count: salesSolarCount },
-    isSales && { key: "quote", label: "รอเสนอลูกค้า", count: d.installPending.length },
-    isSales && { key: "deposit_paid", label: "ชำระมัดจำ", count: d.depositPaid.length },
-    isSales && { key: "sales_wait_install", label: "รอนัดติดตั้ง", count: solarWaitInstallCount },
-    isSolar && { key: "solar", label: "ทั้งหมด", count: solarCount },
-    isSolar && { key: "solar_survey", label: "รอสำรวจ", count: solarSurveyCount },
-    isSolar && { key: "solar_quote", label: "รอทำใบเสนอราคา", count: solarQuoteCount },
-    isSolar && { key: "solar_wait_install", label: "รอนัดติดตั้ง", count: solarWaitInstallCount },
-    isSolar && { key: "solar_install", label: "รอติดตั้ง", count: solarInstallCount },
-    isSolar && { key: "solar_installing", label: "กำลังติดตั้ง", count: solarInstallingCount },
-    isSolar && { key: "solar_warranty", label: "รอออกใบรับประกัน", count: solarWarrantyCount },
-    isSolar && { key: "solar_gridtie", label: "ขอขนานไฟ", count: solarGridtie.length },
+    isSales && { key: "sales_all", label: "ทั้งหมด", count: salesAllCount, group: "SALES" },
+    isSales && { key: "sales", label: "ติดตามลูกค้า", count: salesCount, group: "SALES" },
+    isSales && { key: "booking", label: "รายการจอง", count: bookingCount, group: "SALES" },
+    isSales && { key: "sales_solar", label: "ติดตามใบเสนอราคา", count: salesSolarCount, group: "SALES" },
+    isSales && { key: "quote", label: "รอเสนอลูกค้า", count: d.installPending.length, group: "SALES" },
+    isSales && { key: "deposit_paid", label: "ชำระมัดจำ", count: d.depositPaid.length, group: "SALES" },
+    isSales && { key: "sales_wait_install", label: "รอนัดติดตั้ง", count: solarWaitInstallCount, group: "SALES" },
+    isSolar && { key: "solar", label: "ทั้งหมด", count: solarCount, group: "SOLAR" },
+    isSolar && { key: "solar_survey", label: "รอสำรวจ", count: solarSurveyCount, group: "SOLAR" },
+    isSolar && { key: "solar_quote", label: "รอทำใบเสนอราคา", count: solarQuoteCount, group: "SOLAR" },
+    isSolar && { key: "solar_wait_install", label: "รอนัดติดตั้ง", count: solarWaitInstallCount, group: "SOLAR" },
+    isSolar && { key: "solar_install", label: "รอติดตั้ง", count: solarInstallCount, group: "SOLAR" },
+    isSolar && { key: "solar_installing", label: "กำลังติดตั้ง", count: solarInstallingCount, group: "SOLAR" },
+    isSolar && { key: "solar_warranty", label: "รอออกใบรับประกัน", count: solarWarrantyCount, group: "SOLAR" },
+    isSolar && { key: "solar_gridtie", label: "ขอขนานไฟ", count: solarGridtie.length, group: "SOLAR" },
     { key: "calendar", label: "ปฏิทิน" },
-  ].filter(Boolean) as { key: string; label: string; count?: number }[];
+  ].filter(Boolean) as ListPageTab[];
 
   // While effect re-syncs an invalid tab, render against an in-bounds key
   const visibleTab = (allTabs.some(t => t.key === tab) ? tab : (allTabs[0]?.key ?? "calendar")) as TodayTab;

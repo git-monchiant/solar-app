@@ -1,12 +1,19 @@
 "use client";
 
-import { useEffect, useRef } from "react";
+import { Fragment, useEffect, useRef } from "react";
 import Header from "./Header";
 
 export interface ListPageTab {
   key: string;
   label: string;
   count?: number;
+  /**
+   * ชื่อกลุ่มของแท็บ เช่น "SALES" / "SOLAR" — ใส่เมื่อแถบแท็บเอางานหลายทีมมาต่อกัน
+   * แล้วชื่อแท็บซ้ำกันได้ (คนที่มีทั้งสอง role จะเห็น "ทั้งหมด" และ "รอนัดติดตั้ง"
+   * อย่างละสองอัน) ป้ายกลุ่มจะโผล่ก็ต่อเมื่อมีมากกว่าหนึ่งกลุ่มจริง ๆ
+   * คนที่มี role เดียวจึงเห็นเหมือนเดิมทุกประการ
+   */
+  group?: string;
 }
 
 interface Props {
@@ -43,6 +50,8 @@ export default function ListPageHeader({
 }: Props) {
   const tabsRef = useRef<HTMLDivElement>(null);
   const activeRef = useRef<HTMLButtonElement>(null);
+  // ป้ายกลุ่มมีประโยชน์ก็ต่อเมื่อมีมากกว่าหนึ่งกลุ่ม — role เดียวไม่ต้องเห็น
+  const showGroups = new Set(tabs.map(t => t.group).filter(Boolean)).size > 1;
 
   useEffect(() => {
     const el = activeRef.current;
@@ -93,20 +102,27 @@ export default function ListPageHeader({
       {/* Tabs */}
       <div className="flex items-center px-5">
       <div ref={tabsRef} className="flex-1 flex overflow-x-auto overflow-y-hidden scrollbar-hide overscroll-x-contain touch-pan-x">
-        {tabs.map((t) => (
-          <button
-            key={t.key}
-            ref={activeTab === t.key ? activeRef : undefined}
-            onClick={() => onTabChange(t.key)}
-            className={`px-2.5 py-3 text-xs font-semibold uppercase tracking-wider border-b-2 -mb-px transition-colors whitespace-nowrap shrink-0 ${
-              activeTab === t.key ? "text-active border-active" : "text-gray-500 border-transparent hover:text-gray-700"
-            }`}
-          >
-            {t.label}
-            {t.count !== undefined && (
-              <span className="ml-1 text-xs text-gray-400 normal-case">({t.count})</span>
+        {tabs.map((t, i) => (
+          <Fragment key={t.key}>
+            {showGroups && t.group && t.group !== tabs[i - 1]?.group && (
+              <span className="flex items-center gap-2 pl-3 pr-1 shrink-0 select-none" aria-hidden>
+                {i > 0 && <span className="h-4 w-px bg-gray-300" />}
+                <span className="text-[10px] font-bold uppercase tracking-widest text-gray-400">{t.group}</span>
+              </span>
             )}
-          </button>
+            <button
+              ref={activeTab === t.key ? activeRef : undefined}
+              onClick={() => onTabChange(t.key)}
+              className={`px-2.5 py-3 text-xs font-semibold uppercase tracking-wider border-b-2 -mb-px transition-colors whitespace-nowrap shrink-0 ${
+                activeTab === t.key ? "text-active border-active" : "text-gray-500 border-transparent hover:text-gray-700"
+              }`}
+            >
+              {t.label}
+              {t.count !== undefined && (
+                <span className="ml-1 text-xs text-gray-400 normal-case">({t.count})</span>
+              )}
+            </button>
+          </Fragment>
         ))}
       </div>
       {tabsRight && <div className="shrink-0 ml-2">{tabsRight}</div>}
