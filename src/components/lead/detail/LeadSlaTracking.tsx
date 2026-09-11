@@ -85,9 +85,9 @@ function stamp(value?: string | null): string {
  * ทุก Lead ตามเวลาที่รับเข้ามา เช่น 13.1 ชั่วโมง ซึ่งไม่ใช่ "ข้อตกลง" ที่ใครตั้งไว้
  * นโยบายพวกนี้เก็บกติกาไว้ใน config_json จึงอ่านจากตรงนั้นมาอธิบายแทนตัวเลข
  */
-function slaTargetText(policy?: SlaPolicy): string {
-  if (!policy) return "—";
-  if (policy.target_minutes) return minutesText(policy.target_minutes);
+function slaTargetLines(policy?: SlaPolicy): string[] {
+  if (!policy) return ["—"];
+  if (policy.target_minutes) return [minutesText(policy.target_minutes)];
 
   let config: Record<string, unknown> = {};
   try { config = policy.config_json ? JSON.parse(policy.config_json) : {}; } catch { config = {}; }
@@ -96,13 +96,17 @@ function slaTargetText(policy?: SlaPolicy): string {
     const day = String(config.dayWindow ?? "09:00-19:00").replace("-", "–");
     const dayDeadline = String(config.dayDeadline ?? "23:59:59").slice(0, 5);
     const nightDeadline = String(config.nightDeadline ?? "12:00:00").slice(0, 5);
-    return `รับ ${day} ภายใน ${dayDeadline} วันเดียวกัน · นอกเวลา ภายใน ${nightDeadline} วันถัดไป`;
+    // สองเงื่อนไขคนละบรรทัด อ่านทีละข้อได้ ไม่ต้องไล่หาจุดคั่นกลางพืดข้อความ
+    return [
+      `รับ ${day} ภายใน ${dayDeadline} วันเดียวกัน`,
+      `นอกเวลา ภายใน ${nightDeadline} วันถัดไป`,
+    ];
   }
   if (policy.deadline_rule === "SEQUENTIAL_CALENDAR_DAYS") {
     const days = Array.isArray(config.daysBySequence) ? config.daysBySequence : [];
-    if (days.length) return `${days.join(" / ")} วัน (ตามรอบที่ติดตาม)`;
+    if (days.length) return [`${days.join(" / ")} วัน`, "(ตามรอบที่ติดตาม)"];
   }
-  return "—";
+  return ["—"];
 }
 
 /** เกินกำหนดมาแล้วเท่าไร — งานที่ปิดแล้ววัดถึงเวลาปิด งานที่ยังค้างวัดถึงตอนนี้ */
@@ -185,19 +189,22 @@ export default function LeadSlaTracking({ leadId }: { leadId: number }) {
 
       {/* ตารางกว้างเกินจอมือถือแน่นอน ให้เลื่อนในกรอบตัวเอง ไม่ให้ทั้งหน้าเลื่อนแนวนอน */}
       <div className="overflow-x-auto rounded-xl border border-gray-200">
-        <table className="w-full min-w-[1000px] border-collapse text-xs">
+        <table className="w-full min-w-[1080px] table-fixed border-collapse text-xs">
           <thead>
             <tr className="bg-gray-50 text-gray-600">
               <th className="w-9 px-2 py-2 text-center font-semibold border-b border-gray-200">#</th>
-              <th className="px-3 py-2 text-left font-semibold border-b border-gray-200">ขั้นตอน</th>
-              <th className="px-3 py-2 text-left font-semibold border-b border-gray-200">ทีม</th>
-              <th className="px-3 py-2 text-left font-semibold border-b border-gray-200">SLA</th>
-              <th className="px-3 py-2 text-left font-semibold border-b border-gray-200">เริ่มนับ</th>
-              <th className="px-3 py-2 text-left font-semibold border-b border-gray-200">ครบกำหนด</th>
-              <th className="px-3 py-2 text-left font-semibold border-b border-gray-200">เสร็จจริง</th>
-              <th className="px-3 py-2 text-left font-semibold border-b border-gray-200">ระยะเวลาที่ใช้</th>
-              <th className="px-3 py-2 text-left font-semibold border-b border-gray-200">ผล</th>
-              <th className="px-3 py-2 text-left font-semibold border-b border-gray-200">ผู้รับผิดชอบ</th>
+              {/* ความกว้างคุมด้วย % — คอลัมน์ SLA เป็นข้อความกติกาที่ตัดบรรทัดได้
+                  จึงบีบให้แคบ ส่วนระยะเวลาที่ใช้มีสองบรรทัด (ใช้ไป + เกินไปเท่าไร)
+                  และห้ามตัดคำ จึงต้องกว้างพอ */}
+              <th className="w-[16%] px-3 py-2 text-left font-semibold border-b border-gray-200">ขั้นตอน</th>
+              <th className="w-[8%] px-3 py-2 text-left font-semibold border-b border-gray-200">ทีม</th>
+              <th className="w-[13%] px-3 py-2 text-left font-semibold border-b border-gray-200">SLA</th>
+              <th className="w-[10%] px-3 py-2 text-left font-semibold border-b border-gray-200">เริ่มนับ</th>
+              <th className="w-[10%] px-3 py-2 text-left font-semibold border-b border-gray-200">ครบกำหนด</th>
+              <th className="w-[10%] px-3 py-2 text-left font-semibold border-b border-gray-200">เสร็จจริง</th>
+              <th className="w-[14%] px-3 py-2 text-left font-semibold border-b border-gray-200">ระยะเวลาที่ใช้</th>
+              <th className="w-[9%] px-3 py-2 text-left font-semibold border-b border-gray-200">ผล</th>
+              <th className="w-[10%] px-3 py-2 text-left font-semibold border-b border-gray-200">ผู้รับผิดชอบ</th>
             </tr>
           </thead>
           <tbody>
@@ -221,7 +228,7 @@ export default function LeadSlaTracking({ leadId }: { leadId: number }) {
                   </td>
                   {/* ค่าที่ตั้งไว้ในนโยบายเท่านั้น ไม่ใช่ค่าที่คำนวณจากรอบจริง — ดู slaTargetText() */}
                   <td className={`px-3 py-2 ${muted ? "text-gray-400" : "text-gray-700"}`}>
-                    {slaTargetText(policy)}
+                    {slaTargetLines(policy).map((line, i) => <div key={i}>{line}</div>)}
                   </td>
                   <td className={`px-3 py-2 whitespace-nowrap ${muted ? "text-gray-300" : "text-gray-600"}`}>
                     {stamp(instance?.started_at)}
