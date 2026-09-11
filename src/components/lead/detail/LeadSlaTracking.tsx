@@ -189,14 +189,14 @@ export default function LeadSlaTracking({ leadId }: { leadId: number }) {
 
       {/* ตารางกว้างเกินจอมือถือแน่นอน ให้เลื่อนในกรอบตัวเอง ไม่ให้ทั้งหน้าเลื่อนแนวนอน */}
       <div className="overflow-x-auto rounded-xl border border-gray-200">
-        <table className="w-full min-w-[1300px] table-fixed border-collapse text-xs">
+        <table className="w-full min-w-[1368px] table-fixed border-collapse text-xs">
           <thead>
             <tr className="bg-gray-50 text-gray-600">
               <th className="w-9 px-2 py-2 text-center font-semibold border-b border-gray-200">#</th>
               {/* ความกว้างเป็น px คงที่ทุกคอลัมน์ ยกเว้น "เสร็จจริง · ระยะเวลาที่ใช้"
                   ที่ปล่อยอิสระให้กินที่เหลือ — ใช้ % แล้วคอลัมน์ยืดหดตามกันไปหมด
                   ปรับอันหนึ่งกระทบทุกอัน คุมยาก */}
-              <th className="w-[200px] px-3 py-2 text-left font-semibold border-b border-gray-200">ขั้นตอน</th>
+              <th className="w-[268px] px-3 py-2 text-left font-semibold border-b border-gray-200">ขั้นตอน</th>
               <th className="w-[84px] px-2 py-2 text-left font-semibold border-b border-gray-200">ทีม</th>
               <th className="w-[248px] px-3 py-2 text-left font-semibold border-b border-gray-200">SLA</th>
               <th className="w-[190px] px-3 py-2 text-left font-semibold border-b border-gray-200">เริ่มนับ · ครบกำหนด</th>
@@ -213,7 +213,8 @@ export default function LeadSlaTracking({ leadId }: { leadId: number }) {
                   <td className={`px-2 py-2 text-center tabular-nums ${muted ? "text-gray-300" : "text-gray-400"}`}>
                     {index + 1}
                   </td>
-                  <td className={`px-3 py-2 font-semibold ${muted ? "text-gray-400" : "text-gray-800"}`}>
+                  {/* ชื่อขั้นตอนต้องอยู่บรรทัดเดียวจบ คอลัมน์จึงกว้างพอสำหรับชื่อที่ยาวที่สุด */}
+                  <td className={`whitespace-nowrap px-3 py-2 font-semibold ${muted ? "text-gray-400" : "text-gray-800"}`}>
                     {slaTaskLabel(code, instance?.task_name ?? policy?.name_th)}
                     {all.length > 1 && (
                       <span className="ml-1.5 font-normal text-gray-400">({all.length} รอบ)</span>
