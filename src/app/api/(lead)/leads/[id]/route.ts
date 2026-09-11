@@ -1010,6 +1010,19 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
     }
     if (body.warranty_issued_at !== undefined) {
       sets.push("warranty_issued_at = GETDATE()");
+      // Freeze whose name + signature this certificate prints. It re-renders
+      // from the DB on every open, so without the stamp a later change of the
+      // designated signer would rewrite certs already sent to customers.
+      // COALESCE keeps a re-issue from moving a signer that is already set.
+      const signerCfg = await db.request()
+        .query(`SELECT value FROM app_settings WHERE [key] = 'warranty_signer_user_id'`);
+      const signerUserId = signerCfg.recordset[0]?.value
+        ? parseInt(signerCfg.recordset[0].value) || null
+        : null;
+      if (signerUserId) {
+        sets.push("warranty_signer_user_id = COALESCE(warranty_signer_user_id, @warranty_signer_user_id)");
+        request.input("warranty_signer_user_id", sql.Int, signerUserId);
+      }
     }
     if (body.warranty_doc_url !== undefined) {
       sets.push("warranty_doc_url = @warranty_doc_url");
