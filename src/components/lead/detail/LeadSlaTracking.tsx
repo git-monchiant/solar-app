@@ -189,20 +189,20 @@ export default function LeadSlaTracking({ leadId }: { leadId: number }) {
 
       {/* ตารางกว้างเกินจอมือถือแน่นอน ให้เลื่อนในกรอบตัวเอง ไม่ให้ทั้งหน้าเลื่อนแนวนอน */}
       <div className="overflow-x-auto rounded-xl border border-gray-200">
-        <table className="w-full min-w-[1080px] table-fixed border-collapse text-xs">
+        <table className="w-full min-w-[1264px] table-fixed border-collapse text-xs">
           <thead>
             <tr className="bg-gray-50 text-gray-600">
               <th className="w-9 px-2 py-2 text-center font-semibold border-b border-gray-200">#</th>
-              {/* ความกว้างคุมด้วย % — คอลัมน์ SLA เป็นข้อความกติกาที่ตัดบรรทัดได้
-                  จึงบีบให้แคบ ส่วนระยะเวลาที่ใช้มีสองบรรทัด (ใช้ไป + เกินไปเท่าไร)
-                  และห้ามตัดคำ จึงต้องกว้างพอ */}
-              <th className="w-[17%] px-3 py-2 text-left font-semibold border-b border-gray-200">ขั้นตอน</th>
-              <th className="w-[8%] px-2 py-2 text-left font-semibold border-b border-gray-200">ทีม</th>
-              <th className="w-[13%] px-3 py-2 text-left font-semibold border-b border-gray-200">SLA</th>
-              <th className="w-[15%] px-3 py-2 text-left font-semibold border-b border-gray-200">เริ่มนับ · ครบกำหนด</th>
+              {/* ความกว้างเป็น px คงที่ทุกคอลัมน์ ยกเว้น "เสร็จจริง · ระยะเวลาที่ใช้"
+                  ที่ปล่อยอิสระให้กินที่เหลือ — ใช้ % แล้วคอลัมน์ยืดหดตามกันไปหมด
+                  ปรับอันหนึ่งกระทบทุกอัน คุมยาก */}
+              <th className="w-[200px] px-3 py-2 text-left font-semibold border-b border-gray-200">ขั้นตอน</th>
+              <th className="w-[84px] px-2 py-2 text-left font-semibold border-b border-gray-200">ทีม</th>
+              <th className="w-[200px] px-3 py-2 text-left font-semibold border-b border-gray-200">SLA</th>
+              <th className="w-[190px] px-3 py-2 text-left font-semibold border-b border-gray-200">เริ่มนับ · ครบกำหนด</th>
               <th className="px-3 py-2 text-left font-semibold border-b border-gray-200">เสร็จจริง · ระยะเวลาที่ใช้</th>
-              <th className="w-[10%] px-3 py-2 text-left font-semibold border-b border-gray-200">ผล</th>
-              <th className="w-[10%] px-3 py-2 text-left font-semibold border-b border-gray-200">ผู้รับผิดชอบ</th>
+              <th className="w-[110px] px-3 py-2 text-left font-semibold border-b border-gray-200">ผล</th>
+              <th className="w-[140px] px-3 py-2 text-left font-semibold border-b border-gray-200">ผู้รับผิดชอบ</th>
             </tr>
           </thead>
           <tbody>
