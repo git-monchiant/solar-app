@@ -41,12 +41,7 @@ type SlaPolicy = {
   target_minutes: number | null;
   warning_minutes: number | null;
   deadline_rule: string | null;
-};
-
-/** นโยบายที่ไม่ได้ให้เวลาเป็นจำนวนคงที่ ต้องอธิบายกติกาแทนตัวเลข */
-const RULE_TEXT: Record<string, string> = {
-  BANGKOK_CONTACT_WINDOW: "ตามช่วงเวลาที่รับ Lead",
-  SEQUENTIAL_CALENDAR_DAYS: "ไล่ตามวันปฏิทิน",
+  config_json: string | null;
 };
 
 /** ผลของแต่ละขั้นเมื่อมองย้อนหลัง — ใช้คุมทั้งสีและคำ จะได้ไม่หลุดกัน */
@@ -80,6 +75,34 @@ function durationText(fromIso?: string | null, toIso?: string | null): string {
 function stamp(value?: string | null): string {
   if (!value) return "—";
   return `${formatThaiDate(value)} ${formatThaiTime(value)}`;
+}
+
+/**
+ * "SLA ที่ตั้งไว้" ของขั้นตอนหนึ่ง — ต้องเป็นค่าที่ตั้งไว้จริงในนโยบายเท่านั้น
+ *
+ * ห้ามคำนวณจาก เริ่มนับ→ครบกำหนด ของรอบที่เกิดขึ้นจริง เพราะบางนโยบายผูกกับ
+ * เวลานาฬิกา (ติดต่อครั้งแรกต้องจบภายใน 23:59 ของวันนั้น) ค่าที่ได้จึงเปลี่ยนไป
+ * ทุก Lead ตามเวลาที่รับเข้ามา เช่น 13.1 ชั่วโมง ซึ่งไม่ใช่ "ข้อตกลง" ที่ใครตั้งไว้
+ * นโยบายพวกนี้เก็บกติกาไว้ใน config_json จึงอ่านจากตรงนั้นมาอธิบายแทนตัวเลข
+ */
+function slaTargetText(policy?: SlaPolicy): string {
+  if (!policy) return "—";
+  if (policy.target_minutes) return minutesText(policy.target_minutes);
+
+  let config: Record<string, unknown> = {};
+  try { config = policy.config_json ? JSON.parse(policy.config_json) : {}; } catch { config = {}; }
+
+  if (policy.deadline_rule === "BANGKOK_CONTACT_WINDOW") {
+    const day = String(config.dayWindow ?? "09:00-19:00").replace("-", "–");
+    const dayDeadline = String(config.dayDeadline ?? "23:59:59").slice(0, 5);
+    const nightDeadline = String(config.nightDeadline ?? "12:00:00").slice(0, 5);
+    return `รับ ${day} ภายใน ${dayDeadline} วันเดียวกัน · นอกเวลา ภายใน ${nightDeadline} วันถัดไป`;
+  }
+  if (policy.deadline_rule === "SEQUENTIAL_CALENDAR_DAYS") {
+    const days = Array.isArray(config.daysBySequence) ? config.daysBySequence : [];
+    if (days.length) return `${days.join(" / ")} วัน (ตามรอบที่ติดตาม)`;
+  }
+  return "—";
 }
 
 function resultOf(instance?: SlaInstance): RowResult {
@@ -187,15 +210,9 @@ export default function LeadSlaTracking({ leadId }: { leadId: number }) {
                       {team.label}
                     </span>
                   </td>
-                  {/* บาง policy ไม่ได้ตั้งเวลาเป็นตัวเลขคงที่ (เช่น ติดต่อครั้งแรกที่ผูกกับ
-                      ช่วงเวลาที่รับ Lead) ถ้ามีรอบจริงแล้วให้คิดจาก เริ่มนับ→ครบกำหนด
-                      ของรอบนั้น ยังไม่มีรอบก็อธิบายกติกาแทน จะได้ไม่ขึ้นขีดว่างเฉย ๆ */}
-                  <td className={`px-3 py-2 whitespace-nowrap ${muted ? "text-gray-400" : "text-gray-700"}`}>
-                    {policy?.target_minutes
-                      ? minutesText(policy.target_minutes)
-                      : instance?.started_at && instance?.due_at
-                      ? durationText(instance.started_at, instance.due_at)
-                      : RULE_TEXT[policy?.deadline_rule ?? ""] ?? "—"}
+                  {/* ค่าที่ตั้งไว้ในนโยบายเท่านั้น ไม่ใช่ค่าที่คำนวณจากรอบจริง — ดู slaTargetText() */}
+                  <td className={`px-3 py-2 ${muted ? "text-gray-400" : "text-gray-700"}`}>
+                    {slaTargetText(policy)}
                   </td>
                   <td className={`px-3 py-2 whitespace-nowrap ${muted ? "text-gray-300" : "text-gray-600"}`}>
                     {stamp(instance?.started_at)}

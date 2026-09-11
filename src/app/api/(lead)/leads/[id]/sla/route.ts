@@ -50,7 +50,7 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
     // แม้ขั้นที่ lead รายนี้ยังไม่เริ่ม จึงต้องรู้ "SLA ให้กี่วัน" จากนโยบายโดยตรง
     // ไม่ใช่จาก instance ที่ยังไม่มี
     const policies = await db.request().query(`
-      SELECT policy_code, version, name_th, target_minutes, warning_minutes, deadline_rule
+      SELECT policy_code, version, name_th, target_minutes, warning_minutes, deadline_rule, config_json
       FROM sla_policies WHERE is_active = 1
     `);
 
