@@ -46,7 +46,18 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
       ORDER BY si.started_at ASC, si.due_at ASC, si.id ASC
     `);
 
-    return NextResponse.json({ items: fixDates(result.recordset) });
+    // แคตตาล็อกนโยบายที่ยังใช้อยู่ — แท็บ SLA Tracking ต้องโชว์ครบทุกขั้นตอน
+    // แม้ขั้นที่ lead รายนี้ยังไม่เริ่ม จึงต้องรู้ "SLA ให้กี่วัน" จากนโยบายโดยตรง
+    // ไม่ใช่จาก instance ที่ยังไม่มี
+    const policies = await db.request().query(`
+      SELECT policy_code, version, name_th, target_minutes, warning_minutes, deadline_rule
+      FROM sla_policies WHERE is_active = 1
+    `);
+
+    return NextResponse.json({
+      items: fixDates(result.recordset),
+      policies: policies.recordset,
+    });
   } catch (error) {
     console.error("GET /api/leads/[id]/sla error:", error);
     return NextResponse.json({ error: "Failed to fetch Lead SLA timeline" }, { status: 500 });

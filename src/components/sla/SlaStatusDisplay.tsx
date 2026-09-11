@@ -133,9 +133,11 @@ export function SlaPanel({
   const countdown = slaCountdown(status, dueAt);
   return (
     <div className={`flex h-full flex-col justify-center rounded-xl border px-4 py-3 text-xs ${style.row}`}>
+      {/* ชื่อทีมดันไปมุมขวาบนเสมอ สายตาจึงกวาดหาเจ้าของงานได้ที่ตำแหน่งเดียว
+          ทุกใบ ไม่ต้องอ่านผ่านชื่อสถานะที่ยาวไม่เท่ากันก่อน */}
       <div className="flex flex-wrap items-center gap-2">
         <SlaStatusChip status={status} />
-        <SlaTeamChip policyCode={policyCode} ownerRole={ownerRole} />
+        <span className="ml-auto"><SlaTeamChip policyCode={policyCode} ownerRole={ownerRole} /></span>
       </div>
 
       <div className="mt-2 leading-5">
@@ -229,7 +231,7 @@ export function SlaDonePanel({
       <div className="flex flex-wrap items-center gap-2">
         <span className={`h-1.5 w-1.5 shrink-0 rounded-full ${style.dot}`} />
         <span className={`shrink-0 rounded-full px-2 py-0.5 text-xxs font-bold ${style.chip}`}>SLA {style.label}</span>
-        <SlaTeamChip policyCode={policyCode} ownerRole={ownerRole} />
+        <span className="ml-auto"><SlaTeamChip policyCode={policyCode} ownerRole={ownerRole} /></span>
       </div>
 
       <div className="mt-2 leading-5">

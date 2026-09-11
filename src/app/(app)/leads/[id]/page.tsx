@@ -7,6 +7,7 @@ import { Fragment, useEffect, useState, use, useCallback, useRef } from "react";
 import { useSearchParams } from "next/navigation";
 import ActivityTimeline from "@/components/lead/detail/ActivityTimeline";
 import { LeadSlaStageRows, LeadSlaSummary, isSlaFinished, useLeadSlaTimeline } from "@/components/lead/detail/LeadSlaTimeline";
+import LeadSlaTracking from "@/components/lead/detail/LeadSlaTracking";
 import SerialsUploader from "@/components/lead/detail/SerialsUploader";
 import PhotosTab from "@/components/lead/detail/PhotosTab";
 import AddActivityModal, { ActivityType } from "@/components/lead/detail/AddActivityModal";
@@ -767,7 +768,7 @@ export default function LeadDetailPage({ params }: { params: Promise<{ id: strin
   const [loadingAct, setLoadingAct] = useState(true);
   const [modalType, setModalType] = useState<ActivityType | null>(null);
   const [showLostModal, setShowLostModal] = useState(false);
-  const [tab, setTab] = useState<"info" | "workflow" | "timeline" | "serials" | "photos" | "log">("workflow");
+  const [tab, setTab] = useState<"info" | "workflow" | "timeline" | "sla" | "serials" | "photos" | "log">("workflow");
   const { items: slaItems, loading: loadingSla, error: slaError, now: slaNow, summary: slaSummary, refresh: refreshSla } = useLeadSlaTimeline(Number(id));
   const [openSections, setOpenSections] = useState<Record<string, boolean>>({
     contact: true, address: true, interest: true, usage: true, system: true, finance: true, source: true, note: true,
@@ -1286,6 +1287,16 @@ export default function LeadDetailPage({ params }: { params: Promise<{ id: strin
               <path strokeLinecap="round" strokeLinejoin="round" d="M6.75 3v2.25M17.25 3v2.25M3 18.75V7.5a2.25 2.25 0 012.25-2.25h13.5A2.25 2.25 0 0121 7.5v11.25" />
             </svg>
             <span className={tab === "timeline" ? "" : "hidden md:inline"}>Timeline</span>
+          </button>
+          <button
+            onClick={() => setTab("sla")}
+            title="SLA - Tracking"
+            className={`py-3 text-xs font-semibold uppercase tracking-wider border-b-2 -mb-px transition-colors inline-flex items-center gap-1.5 ${tab === "sla" ? "px-4 text-active border-active" : "px-3 md:px-4 text-gray-500 border-transparent hover:text-gray-700"}`}
+          >
+            <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+              <path strokeLinecap="round" strokeLinejoin="round" d="M12 6v6l4 2m5-2a9 9 0 11-18 0 9 9 0 0118 0z" />
+            </svg>
+            <span className={tab === "sla" ? "" : "hidden md:inline"}>SLA - Tracking</span>
           </button>
           {/* Activity Log tab removed on mobile — desktop still shows the log
               in the right side panel. On desktop the tab itself never existed. */}
@@ -2295,6 +2306,8 @@ export default function LeadDetailPage({ params }: { params: Promise<{ id: strin
             {/* Lost action — moved to the top of the tab (next to the
                 กลุ่มลูกค้า header) so it's visible without scrolling. */}
           </div>
+        ) : tab === "sla" ? (
+          <LeadSlaTracking leadId={Number(id)} />
         ) : tab === "timeline" ? (
           <div className="p-4">
             {(() => {
