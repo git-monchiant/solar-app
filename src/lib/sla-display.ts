@@ -109,7 +109,7 @@ export const SLA_TIME_CONDITION_TEXT = {
   FIRST_CONTACT: "กำหนดตามช่วงเวลาที่รับ Lead",
   CONTACT_RETRY: "แต่ละรอบนับ 3/5/7/30 วันปฏิทินจากครั้งก่อนที่ติดต่อไม่ได้",
   ELECTRICITY_ASSESSMENT: "ภายใน 24 ชม. หลังติดต่อ Lead สำเร็จ",
-  BOOK_SURVEY: "ภายใน 24 ชม. หลังผ่านขั้นตอนยืนยันค่าสำรวจ",
+  BOOK_SURVEY: "ภายใน 1 วัน นับตั้งแต่ Lead เข้ามา",
   SITE_SURVEY: "ภายใน 7 วัน นับจากเวลานัดสำรวจที่ยืนยันแล้ว",
   PROPOSAL_ROI: "ภายใน 2 วัน หลังสำรวจเสร็จ",
   DEPOSIT_CLOSE: "ภายใน 3 วัน หลังส่ง Proposal/เข้า Order",
@@ -197,9 +197,9 @@ export const SLA_TEAM: Record<SlaTeamKey, { label: string; chip: string; dot: st
 /**
  * policy ไหนเป็นของทีมไหน
  *
- * SCHEDULE_INSTALLATION อยู่ทีมติดตั้ง เพราะทีมติดตั้งเป็นคนนัดวันเอง (หน้า Today
- * ฝั่ง Sales ใช้แค่ "ตามว่านัดให้หรือยัง" ดูคอมเมนต์ sales_wait_install)
- * CLOSE_LEAD อยู่หลังการขาย เพราะเป็นงานออกใบรับประกันและปิดงานหลังส่งมอบ
+ * ยึดตามตาราง SLA ที่บริษัทกำหนด (คอลัมน์ role) — ข้อ 7 นัดวันติดตั้ง = sale,
+ * ข้อ 4 Site Survey / ข้อ 8 ติดตั้ง / ข้อ 9 รับประกัน = solar
+ * ฝั่ง solar แตกเป็นทีมสำรวจ / ติดตั้ง / หลังการขาย ตามที่บริษัทแบ่งทีมจริง
  */
 const SLA_TEAM_BY_POLICY: Record<string, SlaTeamKey> = {
   FIRST_CONTACT: "sales",
@@ -214,7 +214,9 @@ const SLA_TEAM_BY_POLICY: Record<string, SlaTeamKey> = {
   PAYMENT_INSTALLMENT_1: "sales",
   LOAN_PREAPPROVAL: "sales",
   SITE_SURVEY: "survey",
-  SCHEDULE_INSTALLATION: "install",
+  // นัดวันติดตั้งเป็นงานของฝ่ายขายตามตาราง SLA ที่บริษัทกำหนด (ข้อ 7 role = sale)
+  // ไม่ใช่ทีมติดตั้ง — เคยใส่ผิดเพราะเดาจากคอมเมนต์ในโค้ดแทนที่จะยึดเอกสาร
+  SCHEDULE_INSTALLATION: "sales",
   INSTALLATION: "install",
   AFTER_SALES: "after_sales",
   CLOSE_LEAD: "after_sales",

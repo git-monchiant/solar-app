@@ -62,17 +62,17 @@ assert.deepEqual(Object.keys(SLA_TIME_CONDITION_TEXT).sort(), [
 ]);
 assert.equal(
   slaTimeConditionText("FIRST_CONTACT", "2026-08-17T06:17:00.000Z"),
-  "รับ Lead 09:00–18:59 → ไม่เกิน 23:59 วันเดียวกัน",
+  "รับ Lead เวลา 09:00–18:59 ครบกำหนดภายใน 23:59 ของวันเดียวกัน",
 );
 assert.equal(
   slaTimeConditionText("FIRST_CONTACT", "2026-08-17T12:00:00.000Z"),
-  "รับ Lead 19:00–23:59 → ไม่เกิน 12:00 วันถัดไป",
+  "รับ Lead เวลา 19:00–23:59 ครบกำหนดภายใน 12:00 ของวันถัดไป",
 );
 assert.equal(
   slaTimeConditionText("FIRST_CONTACT", "2026-08-17T01:59:59.000Z"),
-  "รับ Lead 00:00–08:59 → ไม่เกิน 12:00 วันเดียวกัน",
+  "รับ Lead เวลา 00:00–08:59 ครบกำหนดภายใน 12:00 ของวันเดียวกัน",
 );
-assert.equal(slaTimeConditionText("BOOK_SURVEY", "2026-08-17T00:00:00.000Z"), "ภายใน 24 ชม. หลังผ่านขั้นตอนยืนยันค่าสำรวจ");
+assert.equal(slaTimeConditionText("BOOK_SURVEY", "2026-08-17T00:00:00.000Z"), "ภายใน 1 วัน นับตั้งแต่ Lead เข้ามา");
 assert.equal(slaTimeConditionText("UNKNOWN_POLICY", "2026-08-17T00:00:00.000Z"), null);
 
 // The central Timeline shows the workflow state that stands now. If a lead
@@ -143,19 +143,32 @@ assert.deepEqual(OPERATIONAL_SLA_MINUTES.SCHEDULE_INSTALLATION, { target: 3 * 24
 assert.deepEqual(OPERATIONAL_SLA_MINUTES.INSTALLATION, { target: 15 * 24 * 60, due: 15 * 24 * 60, warning: 3 * 24 * 60 });
 assert.deepEqual(OPERATIONAL_SLA_MINUTES.CLOSE_LEAD, { target: 3 * 24 * 60, due: 3 * 24 * 60, warning: 24 * 60 });
 
+const createdAt = new Date("2026-08-22T02:00:00.000Z");
 const readyAt = new Date("2026-08-23T03:00:00.000Z");
 const appointmentAt = new Date("2026-08-23T05:30:00.000Z");
+// ตาราง SLA ข้อ 3: นับตั้งแต่ Lead เข้ามา ไม่ใช่ตั้งแต่จ่ายค่าสำรวจ
 assert.deepEqual(resolveBookSurveyMilestones({
+  leadCreatedAt: createdAt,
   surveyReadyAt: readyAt,
   appointmentSetAt: appointmentAt,
   surveyDoneAt: null,
-}), { anchorAt: readyAt, completedAt: appointmentAt, anchorSource: "payment_confirmed" });
+}), { anchorAt: createdAt, completedAt: appointmentAt, anchorSource: "lead_created" });
+// Lead ที่ยังไม่จ่ายและยังไม่นัด ก็ต้องมีนาฬิกาเดินตั้งแต่วันที่เข้ามา
 assert.deepEqual(resolveBookSurveyMilestones({
+  leadCreatedAt: createdAt,
+  surveyReadyAt: null,
+  appointmentSetAt: null,
+  surveyDoneAt: null,
+}), { anchorAt: createdAt, completedAt: null, anchorSource: "lead_created" });
+// ข้อมูลเก่าที่ไม่มีวันที่สร้าง ยังถอยไปใช้ลำดับเดิมได้
+assert.deepEqual(resolveBookSurveyMilestones({
+  leadCreatedAt: null,
   surveyReadyAt: null,
   appointmentSetAt: appointmentAt,
   surveyDoneAt: null,
 }), { anchorAt: appointmentAt, completedAt: appointmentAt, anchorSource: "appointment_fallback" });
 assert.deepEqual(resolveBookSurveyMilestones({
+  leadCreatedAt: null,
   surveyReadyAt: null,
   appointmentSetAt: null,
   surveyDoneAt: null,

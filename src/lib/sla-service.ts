@@ -440,6 +440,7 @@ export async function syncOperationalSlas(db: Db, leadId: number, actorUserId?: 
   const contactedAt = dateOrNull(lead.contacted_at);
   const surveyDoneAt = dateOrNull(lead.survey_done_at);
   const bookSurveyMilestones = resolveBookSurveyMilestones({
+    leadCreatedAt: dateOrNull(lead.created_at),
     surveyReadyAt: dateOrNull(lead.survey_ready_at),
     appointmentSetAt: dateOrNull(lead.booked_at),
     surveyDoneAt,
@@ -535,7 +536,7 @@ export async function syncOperationalSlas(db: Db, leadId: number, actorUserId?: 
     { policyCode: "LOAN_PREAPPROVAL", ownerRole: "sales", ownerUserId: lead.assigned_user_id || null, taskName: SLA_TASK_LABEL.LOAN_PREAPPROVAL, anchorAt: hasLoanInstallment ? loanAnchorAt : null, completionAt: loanResultAt, completionActivityId: lead.loan_result_activity_id, targetMinutes: OPERATIONAL_SLA_MINUTES.LOAN_PREAPPROVAL.target, dueMinutes: OPERATIONAL_SLA_MINUTES.LOAN_PREAPPROVAL.due, warningMinutes: OPERATIONAL_SLA_MINUTES.LOAN_PREAPPROVAL.warning },
     { policyCode: "SCHEDULE_INSTALLATION", policyVersion: 3, ownerRole: "sales", ownerUserId: lead.assigned_user_id || null, taskName: SLA_TASK_LABEL.SCHEDULE_INSTALLATION, anchorAt: depositAt, completionAt: installBookedAt, completionActivityId: lead.install_booked_activity_id, targetMinutes: OPERATIONAL_SLA_MINUTES.SCHEDULE_INSTALLATION.target, dueMinutes: OPERATIONAL_SLA_MINUTES.SCHEDULE_INSTALLATION.due, warningMinutes: OPERATIONAL_SLA_MINUTES.SCHEDULE_INSTALLATION.warning },
     { policyCode: "INSTALLATION", policyVersion: 3, ownerRole: "solar", ownerUserId: lead.install_assigned_user_id || lead.install_completed_by || null, taskName: SLA_TASK_LABEL.INSTALLATION, anchorAt: scheduledInstallAnchor.at, anchorSource: scheduledInstallAnchor.source || undefined, freezeAnchorAfterCompletion: true, completionAt: installCompletedAt, targetMinutes: OPERATIONAL_SLA_MINUTES.INSTALLATION.target, dueMinutes: OPERATIONAL_SLA_MINUTES.INSTALLATION.due, warningMinutes: OPERATIONAL_SLA_MINUTES.INSTALLATION.warning },
-    { policyCode: "CLOSE_LEAD", policyVersion: 4, ownerRole: "sales", ownerUserId: lead.assigned_user_id || null, taskName: SLA_TASK_LABEL.CLOSE_LEAD, anchorAt: closeLeadMilestones.anchorAt, anchorSource: "installation_completed", completionAt: closeLeadMilestones.completedAt, completionActivityId: lead.warranty_activity_id, targetMinutes: OPERATIONAL_SLA_MINUTES.CLOSE_LEAD.target, dueMinutes: OPERATIONAL_SLA_MINUTES.CLOSE_LEAD.due, warningMinutes: OPERATIONAL_SLA_MINUTES.CLOSE_LEAD.warning },
+    { policyCode: "CLOSE_LEAD", policyVersion: 4, ownerRole: "solar", ownerUserId: lead.assigned_user_id || null, taskName: SLA_TASK_LABEL.CLOSE_LEAD, anchorAt: closeLeadMilestones.anchorAt, anchorSource: "installation_completed", completionAt: closeLeadMilestones.completedAt, completionActivityId: lead.warranty_activity_id, targetMinutes: OPERATIONAL_SLA_MINUTES.CLOSE_LEAD.target, dueMinutes: OPERATIONAL_SLA_MINUTES.CLOSE_LEAD.due, warningMinutes: OPERATIONAL_SLA_MINUTES.CLOSE_LEAD.warning },
   ];
 
   for (const definition of definitions) {

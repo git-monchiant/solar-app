@@ -82,16 +82,31 @@ export function resolveSurveySlaMilestones(input: {
  * normal payment is confirmed by Account and free payment by Sales pressing
  * Next. An appointment remains fallback evidence for legacy/direct booking.
  */
+/**
+ * Book Survey — ตาราง SLA ข้อ 3: ภายใน 1 วัน "นับตั้งแต่ Lead เข้ามา"
+ *
+ * เดิมนับจากวันที่ลูกค้าจ่ายค่าสำรวจ (surveyReadyAt) ผลคือ Lead ที่ยังไม่จ่ายไม่มี
+ * นาฬิกาเดินเลย ทั้งที่งานนัดสำรวจเป็นหน้าที่ของทีมขายตั้งแต่ Lead เข้ามา — ตอน
+ * สำรวจพบว่ามี Lead ค้างแบบนี้ 223 ราย ไม่มี SLA จับสักตัว ซึ่งกลับหัวกลับหางกับ
+ * เจตนาของตาราง เพราะกลุ่มที่ยังไม่ตกลงคือกลุ่มที่ต้องไล่ที่สุด
+ *
+ * surveyReadyAt ยังรับเข้ามาเพื่อบันทึกไว้ว่าจ่ายเมื่อไร แต่ไม่ใช่จุดเริ่มนับอีกแล้ว
+ */
 export function resolveBookSurveyMilestones(input: {
+  leadCreatedAt: Date | null;
   surveyReadyAt: Date | null;
   appointmentSetAt: Date | null;
   surveyDoneAt: Date | null;
 }) {
   const completedAt = input.appointmentSetAt || input.surveyDoneAt;
+  const anchorAt = input.leadCreatedAt || input.surveyReadyAt || completedAt;
   return {
-    anchorAt: input.surveyReadyAt || completedAt,
+    anchorAt,
     completedAt,
-    anchorSource: input.surveyReadyAt ? "payment_confirmed" as const : completedAt ? "appointment_fallback" as const : null,
+    anchorSource: input.leadCreatedAt
+      ? "lead_created" as const
+      : input.surveyReadyAt ? "payment_confirmed" as const
+      : completedAt ? "appointment_fallback" as const : null,
   };
 }
 
