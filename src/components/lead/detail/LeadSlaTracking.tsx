@@ -196,13 +196,13 @@ export default function LeadSlaTracking({ leadId }: { leadId: number }) {
               {/* ความกว้างคุมด้วย % — คอลัมน์ SLA เป็นข้อความกติกาที่ตัดบรรทัดได้
                   จึงบีบให้แคบ ส่วนระยะเวลาที่ใช้มีสองบรรทัด (ใช้ไป + เกินไปเท่าไร)
                   และห้ามตัดคำ จึงต้องกว้างพอ */}
-              <th className="w-[19%] px-3 py-2 text-left font-semibold border-b border-gray-200">ขั้นตอน</th>
-              <th className="w-[9%] px-3 py-2 text-left font-semibold border-b border-gray-200">ทีม</th>
-              <th className="w-[15%] px-3 py-2 text-left font-semibold border-b border-gray-200">SLA</th>
-              <th className="w-[16%] px-3 py-2 text-left font-semibold border-b border-gray-200">เริ่มนับ · ครบกำหนด</th>
-              <th className="w-[18%] px-3 py-2 text-left font-semibold border-b border-gray-200">เสร็จจริง · ระยะเวลาที่ใช้</th>
+              <th className="w-[17%] px-3 py-2 text-left font-semibold border-b border-gray-200">ขั้นตอน</th>
+              <th className="w-[8%] px-2 py-2 text-left font-semibold border-b border-gray-200">ทีม</th>
+              <th className="w-[13%] px-3 py-2 text-left font-semibold border-b border-gray-200">SLA</th>
+              <th className="w-[15%] px-3 py-2 text-left font-semibold border-b border-gray-200">เริ่มนับ · ครบกำหนด</th>
+              <th className="px-3 py-2 text-left font-semibold border-b border-gray-200">เสร็จจริง · ระยะเวลาที่ใช้</th>
               <th className="w-[10%] px-3 py-2 text-left font-semibold border-b border-gray-200">ผล</th>
-              <th className="w-[11%] px-3 py-2 text-left font-semibold border-b border-gray-200">ผู้รับผิดชอบ</th>
+              <th className="w-[10%] px-3 py-2 text-left font-semibold border-b border-gray-200">ผู้รับผิดชอบ</th>
             </tr>
           </thead>
           <tbody>
@@ -219,9 +219,11 @@ export default function LeadSlaTracking({ leadId }: { leadId: number }) {
                       <span className="ml-1.5 font-normal text-gray-400">({all.length} รอบ)</span>
                     )}
                   </td>
-                  <td className="px-3 py-2">
-                    <span className={`inline-block rounded-full px-2 py-0.5 text-xxs font-bold ${muted ? "bg-gray-100 text-gray-400" : team.chip}`}>
-                      {team.label}
+                  <td className="px-2 py-2">
+                    <span className={`inline-block rounded-full px-1.5 py-0.5 text-xxs font-bold whitespace-nowrap ${muted ? "bg-gray-100 text-gray-400" : team.chip}`}>
+                      {/* หัวคอลัมน์บอกว่า "ทีม" อยู่แล้ว ในป้ายจึงไม่ต้องซ้ำ
+                          ช่วยให้คอลัมน์แคบลงได้โดยชื่อทีมยาวสุดยังไม่ล้นกรอบ */}
+                      {team.label.replace(/^ทีม/, "")}
                     </span>
                   </td>
                   {/* ค่าที่ตั้งไว้ในนโยบายเท่านั้น ไม่ใช่ค่าที่คำนวณจากรอบจริง — ดู slaTargetText() */}
