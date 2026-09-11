@@ -172,3 +172,59 @@ export function parseLateSlaStages(json?: string | null): Partial<Record<SlaWork
   }
   return stages;
 }
+
+/**
+ * ทีมเจ้าของงานตามที่บริษัทแบ่งจริง — Sales · สำรวจ · ติดตั้ง · After Sales
+ *
+ * `lead_sla_instances.owner_role` เก็บได้แค่ 'sales' กับ 'solar' เพราะถูกใช้คุม
+ * สิทธิ์และการมอบหมายงาน (ดู sla-service) การเพิ่มค่าใหม่จึงกระทบเรื่องสิทธิ์ทั้ง
+ * ระบบ ป้ายบนจอที่คนอ่านจึงแยกทีมจาก policy_code แทน ได้ชื่อทีมตรงกับงานจริง
+ * โดยไม่แตะกติกาสิทธิ์ — owner_role ยังเป็นตัวตัดสินว่าใครมอบหมาย/เห็นงานได้
+ *
+ * สีเลี่ยงชุดที่ใช้บอกสถานะ SLA ไปแล้ว (ฟ้า=กำลังทำ เหลือง/ส้ม=ใกล้ครบ แดง=เกิน
+ * เขียว=ภายในกำหนด โรส=เสร็จช้า เทา=ไม่มีงาน) ไม่งั้นป้ายทีมจะอ่านปนกับสถานะ
+ */
+export type SlaTeamKey = "sales" | "survey" | "install" | "after_sales";
+
+export const SLA_TEAM: Record<SlaTeamKey, { label: string; chip: string; dot: string }> = {
+  sales:       { label: "ทีมขาย",       chip: "bg-violet-100 text-violet-700",   dot: "bg-violet-500" },
+  survey:      { label: "ทีมสำรวจ",     chip: "bg-teal-100 text-teal-700",       dot: "bg-teal-500" },
+  install:     { label: "ทีมติดตั้ง",    chip: "bg-indigo-100 text-indigo-700",   dot: "bg-indigo-500" },
+  after_sales: { label: "ทีมหลังการขาย", chip: "bg-fuchsia-100 text-fuchsia-700", dot: "bg-fuchsia-500" },
+};
+
+/**
+ * policy ไหนเป็นของทีมไหน
+ *
+ * SCHEDULE_INSTALLATION อยู่ทีมติดตั้ง เพราะทีมติดตั้งเป็นคนนัดวันเอง (หน้า Today
+ * ฝั่ง Sales ใช้แค่ "ตามว่านัดให้หรือยัง" ดูคอมเมนต์ sales_wait_install)
+ * CLOSE_LEAD อยู่หลังการขาย เพราะเป็นงานออกใบรับประกันและปิดงานหลังส่งมอบ
+ */
+const SLA_TEAM_BY_POLICY: Record<string, SlaTeamKey> = {
+  FIRST_CONTACT: "sales",
+  CONTACT_RETRY: "sales",
+  ASSIGN_OWNER: "sales",
+  GRADE_PLAYBOOK: "sales",
+  GRADE_A_NEXT_ACTION: "sales",
+  ELECTRICITY_ASSESSMENT: "sales",
+  BOOK_SURVEY: "sales",
+  PROPOSAL_ROI: "sales",
+  DEPOSIT_CLOSE: "sales",
+  PAYMENT_INSTALLMENT_1: "sales",
+  LOAN_PREAPPROVAL: "sales",
+  SITE_SURVEY: "survey",
+  SCHEDULE_INSTALLATION: "install",
+  INSTALLATION: "install",
+  AFTER_SALES: "after_sales",
+  CLOSE_LEAD: "after_sales",
+};
+
+/**
+ * ทีมของงาน SLA ชิ้นหนึ่ง — ถ้าเป็น policy ที่ยังไม่ได้จับคู่ไว้ ถอยไปใช้
+ * owner_role เดิม (solar ตีความเป็นทีมติดตั้ง) จะได้ไม่มีป้ายว่างเวลาเพิ่ม policy ใหม่
+ */
+export function slaTeamOf(policyCode?: string | null, ownerRole?: string | null): SlaTeamKey {
+  const mapped = policyCode ? SLA_TEAM_BY_POLICY[policyCode] : undefined;
+  if (mapped) return mapped;
+  return ownerRole === "solar" ? "install" : "sales";
+}

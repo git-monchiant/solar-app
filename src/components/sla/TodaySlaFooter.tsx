@@ -5,6 +5,7 @@ import {
   SlaPanel,
   type SlaStatus,
 } from "./SlaStatusDisplay";
+import { SLA_TEAM, slaTeamOf } from "@/lib/sla-display";
 
 export type TodaySlaStatus = SlaStatus;
 
@@ -58,7 +59,7 @@ export default function TodaySlaFooter({
         const canClaimSolar = item.owner_role === "solar" && solarView && !solarManagerView && !item.owner_user_id;
         const ownerContent = canAssignSolar ? (
           <select
-            aria-label="มอบหมายผู้รับผิดชอบทีม Solar"
+            aria-label="มอบหมายผู้รับผิดชอบทีมติดตั้ง/สำรวจ"
             value={item.owner_user_id ?? ""}
             disabled={assigningId === item.id}
             onChange={event => onAssignSolar(item, event.target.value ? Number(event.target.value) : null)}
@@ -78,7 +79,7 @@ export default function TodaySlaFooter({
           </button>
         ) : (
           <span className="truncate">
-            {item.owner_name || (item.owner_role === "solar" ? "ยังไม่มอบหมายทีม Solar" : "ยังไม่มอบหมาย Owner")}
+            {item.owner_name || `ยังไม่ได้มอบหมายผู้รับผิดชอบ (${SLA_TEAM[slaTeamOf(item.policy_code, item.owner_role)].label})`}
             {item.owner_role === "solar" && item.owner_user_id === currentUserId && (
               <span className="ml-1 rounded bg-emerald-100 px-1.5 py-0.5 text-xxs font-bold text-emerald-700">งานของฉัน</span>
             )}

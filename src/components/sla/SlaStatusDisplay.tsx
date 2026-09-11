@@ -1,6 +1,6 @@
 import { ClockIcon, UserIcon } from "@/components/ui/icons";
 import { formatThaiDate, formatThaiTime } from "@/lib/utils/formatters";
-import { slaTaskLabel } from "@/lib/sla-display";
+import { SLA_TEAM, slaTaskLabel, slaTeamOf } from "@/lib/sla-display";
 import type { ReactNode } from "react";
 
 export type SlaStatus = "active" | "warning" | "critical" | "breached";
@@ -100,14 +100,12 @@ export function SlaStatusChip({ status }: { status: SlaStatus }) {
   );
 }
 
-export function SlaTeamChip({ ownerRole }: { ownerRole: SlaOwnerRole }) {
+/** ป้ายทีมเจ้าของงาน — แยกทีมจาก policy ไม่ใช่จาก owner_role ดู slaTeamOf() */
+export function SlaTeamChip({ policyCode, ownerRole }: { policyCode?: string | null; ownerRole?: SlaOwnerRole | null }) {
+  const team = SLA_TEAM[slaTeamOf(policyCode, ownerRole)];
   return (
-    <span className={`shrink-0 rounded-full px-2 py-0.5 text-xxs font-bold ${
-      ownerRole === "sales"
-        ? "bg-violet-100 text-violet-700"
-        : "bg-emerald-100 text-emerald-700"
-    }`}>
-      ทีม {ownerRole === "sales" ? "Sales" : "Solar"}
+    <span className={`shrink-0 rounded-full px-2 py-0.5 text-xxs font-bold ${team.chip}`}>
+      {team.label}
     </span>
   );
 }
@@ -137,7 +135,7 @@ export function SlaPanel({
     <div className={`flex h-full flex-col justify-center rounded-xl border px-4 py-3 text-xs ${style.row}`}>
       <div className="flex flex-wrap items-center gap-2">
         <SlaStatusChip status={status} />
-        {ownerRole && <SlaTeamChip ownerRole={ownerRole} />}
+        <SlaTeamChip policyCode={policyCode} ownerRole={ownerRole} />
       </div>
 
       <div className="mt-2 leading-5">
@@ -231,7 +229,7 @@ export function SlaDonePanel({
       <div className="flex flex-wrap items-center gap-2">
         <span className={`h-1.5 w-1.5 shrink-0 rounded-full ${style.dot}`} />
         <span className={`shrink-0 rounded-full px-2 py-0.5 text-xxs font-bold ${style.chip}`}>SLA {style.label}</span>
-        {ownerRole && <SlaTeamChip ownerRole={ownerRole} />}
+        <SlaTeamChip policyCode={policyCode} ownerRole={ownerRole} />
       </div>
 
       <div className="mt-2 leading-5">
@@ -301,7 +299,7 @@ export function SlaLeadSummary({
       startedAt={startedAt}
       dueAt={dueAt}
       ownerRole={ownerRole}
-      ownerContent={ownerName || (ownerRole === "solar" ? "ยังไม่มอบหมายทีม Solar" : "ยังไม่มอบหมาย Owner")}
+      ownerContent={ownerName || `ยังไม่ได้มอบหมายผู้รับผิดชอบ (${SLA_TEAM[slaTeamOf(policyCode, ownerRole)].label})`}
     />
   );
 }

@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { apiFetch } from "@/lib/api";
-import { slaTaskLabel, slaTimeConditionText } from "@/lib/sla-display";
+import { SLA_TEAM, slaTaskLabel, slaTeamOf, slaTimeConditionText } from "@/lib/sla-display";
 import { summarizeSlaDisplayStatuses, type LeadSlaSummaryCounts } from "@/lib/timeline-activities";
 import { formatThaiDate, formatThaiTime } from "@/lib/utils/formatters";
 
@@ -187,8 +187,8 @@ export function LeadSlaStageRows({ items, loading, now }: {
                     keep the two apart. */}
                 <span>
                   {item.owner_name
-                    ? `ผู้รับผิดชอบ ${item.owner_name} · ${item.owner_role === "solar" ? "Solar" : "Sale"}`
-                    : `ยังไม่ได้มอบหมายผู้รับผิดชอบ · ${item.owner_role === "solar" ? "Solar" : "Sale"}`}
+                    ? `ผู้รับผิดชอบ ${item.owner_name} · ${SLA_TEAM[slaTeamOf(item.policy_code, item.owner_role)].label}`
+                    : `ยังไม่ได้มอบหมายผู้รับผิดชอบ · ${SLA_TEAM[slaTeamOf(item.policy_code, item.owner_role)].label}`}
                 </span>
               </div>
               {item.display_note && <div className="mt-0.5 text-xxs text-gray-500">{item.display_note}</div>}

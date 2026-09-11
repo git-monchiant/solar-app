@@ -85,8 +85,8 @@ export default function CalendarPage() {
             </>
           )}
           <span className="inline-flex items-center gap-3 text-xs ml-2 flex-wrap">
-            <span className="inline-flex items-center gap-1.5"><span className="w-3 h-3 rounded-sm bg-active" />ทีม Survey</span>
-            <span className="inline-flex items-center gap-1.5"><span className="w-3 h-3 rounded-sm bg-orange-500" />ทีม Solar</span>
+            <span className="inline-flex items-center gap-1.5"><span className="w-3 h-3 rounded-sm bg-teal-500" />ทีมสำรวจ</span>
+            <span className="inline-flex items-center gap-1.5"><span className="w-3 h-3 rounded-sm bg-indigo-500" />ทีมติดตั้ง</span>
             <span className="inline-flex items-center gap-1.5"><span className="w-3 h-3 rounded-sm bg-gray-300 border border-gray-400" />งานอื่น</span>
           </span>
           <div className="flex-1" />
@@ -117,8 +117,8 @@ export default function CalendarPage() {
           <div className="flex gap-2 flex-wrap mt-2">
             {[
               { value: "all" as const, label: "ทั้งหมด" },
-              { value: "survey" as const, label: "ทีม Survey" },
-              { value: "install" as const, label: "ทีม Solar" },
+              { value: "survey" as const, label: "ทีมสำรวจ" },
+              { value: "install" as const, label: "ทีมติดตั้ง" },
             ].map((opt) => {
               const active = selectedTeam === opt.value;
               return (
