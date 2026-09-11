@@ -181,15 +181,17 @@ export function parseLateSlaStages(json?: string | null): Partial<Record<SlaWork
  * ระบบ ป้ายบนจอที่คนอ่านจึงแยกทีมจาก policy_code แทน ได้ชื่อทีมตรงกับงานจริง
  * โดยไม่แตะกติกาสิทธิ์ — owner_role ยังเป็นตัวตัดสินว่าใครมอบหมาย/เห็นงานได้
  *
- * สีเลี่ยงชุดที่ใช้บอกสถานะ SLA ไปแล้ว (ฟ้า=กำลังทำ เหลือง/ส้ม=ใกล้ครบ แดง=เกิน
- * เขียว=ภายในกำหนด โรส=เสร็จช้า เทา=ไม่มีงาน) ไม่งั้นป้ายทีมจะอ่านปนกับสถานะ
+ * สีของทีมสำรวจกับทีมติดตั้งยึดตามแถบ event ในหน้า Calendar ที่ใช้มาก่อนแล้ว
+ * (สำรวจ #1ed0c7 · ติดตั้ง #f97316 ดู EventCalendarList) ทีมเดียวกันจะได้สีเดียว
+ * กันทุกหน้า ส่วนทีมขายเลี่ยงม่วงเพราะม่วงคือสี --active ของทั้งแอป (แท็บที่เลือก
+ * step ที่กำลังทำ) ถ้าใช้ซ้ำจะอ่านเป็น "กำลังทำอยู่" แทนที่จะเป็นชื่อทีม
  */
 export type SlaTeamKey = "sales" | "survey" | "install" | "after_sales";
 
 export const SLA_TEAM: Record<SlaTeamKey, { label: string; chip: string; dot: string }> = {
-  sales:       { label: "ทีมขาย",       chip: "bg-violet-100 text-violet-700",   dot: "bg-violet-500" },
-  survey:      { label: "ทีมสำรวจ",     chip: "bg-teal-100 text-teal-700",       dot: "bg-teal-500" },
-  install:     { label: "ทีมติดตั้ง",    chip: "bg-indigo-100 text-indigo-700",   dot: "bg-indigo-500" },
+  sales:       { label: "ทีมขาย",       chip: "bg-indigo-100 text-indigo-700",   dot: "bg-indigo-500" },
+  survey:      { label: "ทีมสำรวจ",     chip: "bg-teal-100 text-teal-700",       dot: "bg-primary" },
+  install:     { label: "ทีมติดตั้ง",    chip: "bg-orange-100 text-orange-700",   dot: "bg-orange-500" },
   after_sales: { label: "ทีมหลังการขาย", chip: "bg-fuchsia-100 text-fuchsia-700", dot: "bg-fuchsia-500" },
 };
 
