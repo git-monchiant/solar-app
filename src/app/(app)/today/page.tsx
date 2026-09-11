@@ -85,6 +85,9 @@ function LeadCard(props: ComponentProps<typeof BaseLeadCard>) {
     <BaseLeadCard
       {...props}
       lead={lead}
+      // ไม่มีงาน SLA ค้าง ต้องส่ง undefined ไม่ใช่ null — null คือ "ไม่ต้องมีกล่อง"
+      // ส่วน undefined คือ "ให้การ์ดตัดสินใจเอง" ซึ่งจะไปขึ้นกล่องเขียวของงานที่ปิดแล้ว
+      // (เคยเป็น null ทำให้กล่องขึ้นแว็บหนึ่งตอนข้อมูล SLA ยังมาไม่ถึงแล้วหายไป)
       slaFooter={items.length > 0 ? (
         <TodaySlaFooter
           items={items}
@@ -95,7 +98,7 @@ function LeadCard(props: ComponentProps<typeof BaseLeadCard>) {
           assigningId={sla.assigningId}
           onAssignSolar={sla.onAssignSolar}
         />
-      ) : null}
+      ) : undefined}
     />
   );
 }

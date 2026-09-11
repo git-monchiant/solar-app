@@ -7,7 +7,7 @@ import { formatTHB, formatThaiDateShort } from "@/lib/utils/formatters";
 import { useOpenLead } from "@/lib/hooks/useOpenLead";
 import AssignOwnerButton from "./AssignOwnerButton";
 import SourceTag from "@/components/SourceTag";
-import { SLA_LATE_TIMELINE_STYLE, SLA_STATUS_LABEL, SLA_TIMELINE_STYLE, SlaLeadSummary, formatSlaOverdueMinutes, formatSlaTimelineDuration } from "@/components/sla/SlaStatusDisplay";
+import { SLA_LATE_TIMELINE_STYLE, SLA_STATUS_LABEL, SLA_TIMELINE_STYLE, SlaDonePanel, SlaLeadSummary, formatSlaOverdueMinutes, formatSlaTimelineDuration } from "@/components/sla/SlaStatusDisplay";
 import { parseLateSlaStages, slaOwnsFollowUpDate, slaWorkflowStage } from "@/lib/sla-display";
 
 export interface LeadData {
@@ -74,6 +74,15 @@ export interface LeadData {
   sla_items?: { policy_code: string; due_at: string }[];
   /** JSON สรุปขั้นตอนที่เคยเกิน SLA — ดู LATE_SLA_STAGES_APPLY ใน lib/lead-sla-sql.ts */
   sla_late_stages?: string | null;
+  /** SLA ที่ปิดงานไปแล้วล่าสุด — ใช้ตอนไม่มีงานค้าง ดู SLA_DONE_APPLY */
+  sla_done_policy_code?: string | null;
+  sla_done_task_name?: string | null;
+  sla_done_started_at?: string | null;
+  sla_done_due_at?: string | null;
+  sla_done_completed_at?: string | null;
+  sla_done_breached_at?: string | null;
+  sla_done_owner_role?: "sales" | "solar" | null;
+  sla_done_owner_name?: string | null;
 }
 
 export default function LeadCard({ lead, compact, onAssignChange, onOpen, slaFooter }: { lead: LeadData; compact?: boolean; onAssignChange?: () => void; onOpen?: (lead: LeadData) => void; slaFooter?: ReactNode }) {
@@ -89,17 +98,31 @@ export default function LeadCard({ lead, compact, onAssignChange, onOpen, slaFoo
     ? lead.is_followup_overdue
     : !!(now && lead.next_follow_up && new Date(String(lead.next_follow_up).slice(0, 10) + "T12:00:00").getTime() < now);
   const hasChequePendingMoney = (lead.order_ready_count ?? 0) > (lead.order_paid_count ?? 0);
-  const defaultSlaPanel = slaFooter === undefined && lead.sla_status && lead.sla_due_at ? (
-    <SlaLeadSummary
-      status={lead.sla_status}
-      policyCode={lead.sla_policy_code}
-      taskName={lead.sla_task_name}
-      startedAt={lead.sla_started_at}
-      dueAt={lead.sla_due_at}
-      ownerRole={lead.sla_owner_role}
-      ownerName={lead.sla_owner_name}
-    />
-  ) : null;
+  // ยังมีงานค้าง → กล่องตามสถานะ · ไม่มีงานค้างแต่เคยปิดงานไปแล้ว → กล่องเขียว
+  // (ทำครบแล้วต้องเห็นว่าทำครบ ไม่ใช่กล่องหายไปจนดูเหมือนระบบลืม lead รายนี้)
+  const defaultSlaPanel = slaFooter !== undefined ? null
+    : lead.sla_status && lead.sla_due_at ? (
+      <SlaLeadSummary
+        status={lead.sla_status}
+        policyCode={lead.sla_policy_code}
+        taskName={lead.sla_task_name}
+        startedAt={lead.sla_started_at}
+        dueAt={lead.sla_due_at}
+        ownerRole={lead.sla_owner_role}
+        ownerName={lead.sla_owner_name}
+      />
+    ) : lead.sla_done_completed_at ? (
+      <SlaDonePanel
+        policyCode={lead.sla_done_policy_code}
+        taskName={lead.sla_done_task_name}
+        startedAt={lead.sla_done_started_at}
+        dueAt={lead.sla_done_due_at}
+        completedAt={lead.sla_done_completed_at}
+        breachedAt={lead.sla_done_breached_at}
+        ownerRole={lead.sla_done_owner_role}
+        ownerContent={lead.sla_done_owner_name || "ไม่ระบุผู้รับผิดชอบ"}
+      />
+    ) : null;
   const slaPanel = slaFooter === undefined ? defaultSlaPanel : slaFooter;
   const hasSlaPanel = slaPanel != null;
   const slaStage = slaWorkflowStage(lead.sla_policy_code);

@@ -186,6 +186,96 @@ export function SlaPanel({
   );
 }
 
+/** โทนของงานที่ปิดไปแล้ว — เขียวคือทำทันกำหนด, โรสคือปิดช้า
+    ไม่ใช้แดงเต็มของ breached ที่สงวนไว้ให้งานที่ยังค้างอยู่ */
+const SLA_DONE_STYLE = {
+  ontime: { row: "border-emerald-200 bg-emerald-50/70", chip: "bg-emerald-100 text-emerald-700", dot: "bg-emerald-500", text: "text-emerald-700", label: "เสร็จตามกำหนด" },
+  late:   { row: "border-rose-200 bg-rose-50/70",       chip: "bg-rose-100 text-rose-700",       dot: "bg-rose-400",   text: "text-rose-600",   label: "เสร็จเกินกำหนด" },
+};
+
+/**
+ * กล่อง SLA ของงานที่ "ปิดไปแล้ว" — ใช้ตอน lead ไม่มีงาน SLA ค้างอยู่เลย
+ *
+ * ทำครบแล้วต้องเห็นว่าทำครบ ไม่ใช่กล่องหายไปเฉย ๆ จนอ่านเหมือนระบบลืม lead
+ * รายนั้น โครงหน้าตาเหมือน SlaPanel ทุกอย่างเพื่อให้สายตาอ่านตำแหน่งเดิมได้
+ * ต่างแค่สีกับบรรทัดสุดท้ายที่บอก "เสร็จจริงเมื่อไร ใช้เวลาไปเท่าไร"
+ */
+export function SlaDonePanel({
+  policyCode,
+  taskName,
+  startedAt,
+  dueAt,
+  completedAt,
+  breachedAt,
+  ownerRole,
+  ownerContent,
+}: {
+  policyCode?: string | null;
+  taskName?: string | null;
+  startedAt?: string | null;
+  dueAt?: string | null;
+  completedAt: string;
+  breachedAt?: string | null;
+  ownerRole?: SlaOwnerRole | null;
+  ownerContent: ReactNode;
+}) {
+  // ปิดช้าหรือไม่ ยึด breached_at เป็นหลักฐานเหมือน LATE_SLA_STAGES_APPLY
+  // เทียบเวลาเองเป็นทางสำรองสำหรับแถวเก่าที่ไม่มี breached_at
+  const late = breachedAt != null
+    || (dueAt != null && Date.parse(completedAt) > Date.parse(dueAt));
+  const style = late ? SLA_DONE_STYLE.late : SLA_DONE_STYLE.ontime;
+  const allowance = startedAt && dueAt ? slaAllowanceText(startedAt, dueAt) : "";
+  const took = startedAt ? durationLabel(Math.max(60_000, Date.parse(completedAt) - Date.parse(startedAt)), true) : "";
+  return (
+    <div className={`flex h-full flex-col justify-center rounded-xl border px-4 py-3 text-xs ${style.row}`}>
+      <div className="flex flex-wrap items-center gap-2">
+        <span className={`h-1.5 w-1.5 shrink-0 rounded-full ${style.dot}`} />
+        <span className={`shrink-0 rounded-full px-2 py-0.5 text-xxs font-bold ${style.chip}`}>SLA {style.label}</span>
+        {ownerRole && <SlaTeamChip ownerRole={ownerRole} />}
+      </div>
+
+      <div className="mt-2 leading-5">
+        <span className="font-semibold text-gray-500">ขั้นตอนล่าสุด:</span>{" "}
+        <span className="font-bold text-gray-900">{slaTaskLabel(policyCode, taskName)}</span>
+      </div>
+
+      <div className="mt-2 space-y-1.5 border-t border-current/10 pt-2">
+        <div className="flex min-w-0 items-start gap-1.5">
+          <ClockIcon className="mt-0.5 h-3.5 w-3.5 shrink-0 text-gray-500" />
+          <div className="min-w-0 flex-1 space-y-0.5 leading-5">
+            {allowance && (
+              <div>
+                <span className="text-gray-500">SLA</span>{" "}
+                <span className="font-semibold text-gray-700">{allowance}</span>
+              </div>
+            )}
+            {dueAt && (
+              <div className="text-gray-600">
+                {startedAt && (
+                  <>
+                    <span className="text-gray-500">เริ่ม</span> {dateTimeText(startedAt)}
+                    <span className="px-1 text-gray-400">·</span>
+                  </>
+                )}
+                <span className="text-gray-500">กำหนด</span> {dateTimeText(dueAt)}
+              </div>
+            )}
+            <div>
+              <span className="font-semibold text-gray-500">เสร็จจริง:</span>{" "}
+              <span className={style.text}>{dateTimeText(completedAt)}{took && ` · ใช้เวลา ${took}`}</span>
+            </div>
+            <div className="text-gray-500">ไม่มีงาน SLA ค้างอยู่</div>
+          </div>
+        </div>
+        <div className="flex min-w-0 items-center gap-1.5 text-gray-500">
+          <UserIcon className="h-3.5 w-3.5 shrink-0" />
+          <div className="min-w-0 flex-1 truncate">{ownerContent}</div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export function SlaLeadSummary({
   status,
   policyCode,

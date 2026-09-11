@@ -4,7 +4,7 @@ import { geocodeThaiPlace } from "@/lib/utils/geocode";
 import { requireAuth } from "@/lib/auth";
 import { ensureFirstContactSla, refreshOpenSlaStates, syncOperationalSlas } from "@/lib/sla-service";
 import { followUpOverdueSql, LAST_FOLLOW_UP_APPLY } from "@/lib/lead-followup-sql";
-import { LATE_SLA_STAGES_APPLY, LATE_SLA_STAGES_COLUMN } from "@/lib/lead-sla-sql";
+import { LATE_SLA_STAGES_APPLY, LATE_SLA_STAGES_COLUMN, SLA_DONE_APPLY, SLA_DONE_COLUMNS } from "@/lib/lead-sla-sql";
 
 async function maybeGeocodeProject(projectId: number) {
   const db = await getDb();
@@ -47,6 +47,7 @@ export async function GET(req: NextRequest) {
              sla.status as sla_status, sla.started_at as sla_started_at, sla.target_at as sla_target_at, sla.due_at as sla_due_at,
              sla.owner_role as sla_owner_role, sla.owner_user_id as sla_owner_user_id, sla_owner.full_name as sla_owner_name,
              ${LATE_SLA_STAGES_COLUMN},
+             ${SLA_DONE_COLUMNS},
              (SELECT TOP 1 note FROM lead_activities WHERE lead_id = l.id AND note IS NOT NULL ORDER BY created_at DESC) as last_activity_note,
              (SELECT TOP 1 created_at FROM lead_activities WHERE lead_id = l.id AND activity_type IN ('call','visit','line','other','follow_up','loan_followup') ORDER BY created_at DESC) as last_activity_date,
              (SELECT TOP 1 title FROM lead_activities WHERE lead_id = l.id AND activity_type IN ('call','visit','line','other','follow_up','loan_followup') ORDER BY created_at DESC) as last_activity_title,
@@ -92,7 +93,7 @@ export async function GET(req: NextRequest) {
           AND si.superseded_at IS NULL
         ORDER BY si.due_at ASC
       ) sla
-      LEFT JOIN users sla_owner ON sla.owner_user_id = sla_owner.id${LATE_SLA_STAGES_APPLY}${LAST_FOLLOW_UP_APPLY}
+      LEFT JOIN users sla_owner ON sla.owner_user_id = sla_owner.id${LATE_SLA_STAGES_APPLY}${SLA_DONE_APPLY}${LAST_FOLLOW_UP_APPLY}
       ORDER BY l.created_at DESC
     `);
     return NextResponse.json(fixDates(result.recordset));

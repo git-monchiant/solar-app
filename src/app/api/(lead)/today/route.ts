@@ -3,7 +3,7 @@ import { getDb, fixDates } from "@/lib/db";
 import { requireAuth } from "@/lib/auth";
 import { refreshOpenSlaStates } from "@/lib/sla-service";
 import { followUpOverdueSql } from "@/lib/lead-followup-sql";
-import { LATE_SLA_STAGES_APPLY, LATE_SLA_STAGES_COLUMN } from "@/lib/lead-sla-sql";
+import { LATE_SLA_STAGES_APPLY, LATE_SLA_STAGES_COLUMN, SLA_DONE_APPLY, SLA_DONE_COLUMNS } from "@/lib/lead-sla-sql";
 
 // LeadCard + today page only read ~30 columns from the leads table. The full
 // table is 60-80 cols per row (survey JSON blobs, photo URLs, etc.) so
@@ -41,6 +41,7 @@ const LEAD_COLS = `
   COALESCE(pay.total_count, 0) AS order_total_count,
   CAST(COALESCE(pay.paid_count, 0) AS NVARCHAR(10))
     + N'/' + CAST(COALESCE(pay.total_count, 0) AS NVARCHAR(10)) AS order_payment_progress,
+  ${SLA_DONE_COLUMNS},
   ${followUpOverdueSql("act.last_followup_date")} AS is_followup_overdue
 `;
 
@@ -78,7 +79,7 @@ const LEAD_FROM = `
     WHERE si.lead_id = l.id AND si.status IN ('active','warning','critical','breached')
       AND si.superseded_at IS NULL
     ORDER BY si.due_at ASC
-  ) sla${LATE_SLA_STAGES_APPLY}
+  ) sla${LATE_SLA_STAGES_APPLY}${SLA_DONE_APPLY}
   LEFT JOIN (
     SELECT
       a.lead_id,
