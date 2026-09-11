@@ -2556,7 +2556,7 @@ export default function LeadDetailPage({ params }: { params: Promise<{ id: strin
               };
 
               const preSurveyRows: Bullet[] = [];
-              if (lead.created_at) preSurveyRows.push({ date: lead.created_at, label: "ลงทะเบียน Lead" });
+              if (lead.created_at) preSurveyRows.push({ date: lead.created_at, label: "บันทึก Lead เข้าระบบ" });
               const gradeActivities = activities.filter(a => a.activity_type === "grade_change");
               for (const activity of gradeActivities) {
                 const gradeMatch = /(?:กำหนด\s*)?Grade:\s*(.*?)\s*→\s*(.*?)$/.exec(activity.title);
@@ -2566,7 +2566,7 @@ export default function LeadDetailPage({ params }: { params: Promise<{ id: strin
                   date: activity.created_at,
                   label: `กำหนด Grade Lead: ${oldGrade} → ${newGrade}`,
                   tiePriority: 25,
-                  sub: [activity.note && `เหตุผล: ${activity.note}`, activity.created_by_name && `โดย ${activity.created_by_name}`].filter(Boolean).join(" · ") || undefined,
+                  sub: [activity.note && `เหตุผล: ${activity.note}`, activity.created_by_name && `ผู้บันทึก: ${activity.created_by_name}`].filter(Boolean).join(" · ") || undefined,
                   mergeWithSlaCode: "ELECTRICITY_ASSESSMENT",
                   gradeValue: newGrade,
                 });
@@ -2578,10 +2578,10 @@ export default function LeadDetailPage({ params }: { params: Promise<{ id: strin
                 preSurveyRows.push({
                   date: null,
                   label: `กำหนด Grade Lead: ${lead.customer_grade}`,
-                  missingDateLabel: "ข้อมูลเดิม · ไม่มีประวัติเวลา",
+                  missingDateLabel: "ข้อมูลก่อนใช้ระบบ · ไม่ปรากฏวันเวลา",
                   sortAt: lead.created_at ? new Date(lead.created_at).getTime() : 0,
                   tiePriority: 25,
-                  sub: "Grade ถูกกำหนดก่อนเริ่มบันทึกประวัติ Activity",
+                  sub: "กำหนด Grade ก่อนเริ่มจัดเก็บประวัติกิจกรรมในระบบ",
                   mergeWithSlaCode: "ELECTRICITY_ASSESSMENT",
                   gradeValue: lead.customer_grade,
                 });
@@ -2778,7 +2778,7 @@ export default function LeadDetailPage({ params }: { params: Promise<{ id: strin
               if (lead.review_rating != null && !warrantyRows.filter(row => !row.detail).some(row => /ประเมิน|รีวิว/.test(row.label))) warrantyRows.push({
                 date: null,
                 label: `ผลประเมินหลังการขาย ${lead.review_rating}/5`,
-                missingDateLabel: "ข้อมูลเดิม · ไม่มีประวัติเวลา",
+                missingDateLabel: "ข้อมูลก่อนใช้ระบบ · ไม่ปรากฏวันเวลา",
                 sub: lead.review_comment || undefined,
               });
 
@@ -2846,7 +2846,7 @@ export default function LeadDetailPage({ params }: { params: Promise<{ id: strin
                   <div className="pb-3 border-b border-gray-100 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
                     <div>
                       <div className="text-sm font-bold text-gray-800 uppercase tracking-wide">Timeline & SLA</div>
-                      <div className="text-xs text-gray-500 mt-0.5">เหตุการณ์ กำหนดเวลา ผลจริง และผู้รับผิดชอบในแต่ละขั้น</div>
+                      <div className="text-xs text-gray-500 mt-0.5">เหตุการณ์ กำหนดเวลา ผลการดำเนินงาน และผู้รับผิดชอบในแต่ละขั้นตอน</div>
                     </div>
                     <LeadSlaSummary loading={loadingSla} error={slaError} summary={slaSummary} />
                   </div>
@@ -2903,7 +2903,7 @@ export default function LeadDetailPage({ params }: { params: Promise<{ id: strin
                         kind: "milestone" as const,
                         key: row.key || `milestone-${s.id}-${index}`,
                         sortAt: row.sortAt ?? (row.date ? new Date(row.date).getTime() : Number.POSITIVE_INFINITY),
-                        tiePriority: row.tiePriority ?? (row.label === "ลงทะเบียน Lead" ? 0 : 30),
+                        tiePriority: row.tiePriority ?? (row.label === "บันทึก Lead เข้าระบบ" ? 0 : 30),
                         stableIndex: stageSlaItems.length + index,
                         row,
                       })),

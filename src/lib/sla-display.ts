@@ -126,12 +126,12 @@ export function slaTimeConditionText(policyCode: string, startedAt: string): str
     if (!Number.isNaN(receivedAt.getTime())) {
       const hour = bangkokHour(receivedAt);
       if (hour >= 9 && hour < 19) {
-        return "รับ Lead 09:00–18:59 → ไม่เกิน 23:59 วันเดียวกัน";
+        return "รับ Lead เวลา 09:00–18:59 ครบกำหนดภายใน 23:59 ของวันเดียวกัน";
       }
       if (hour >= 19) {
-        return "รับ Lead 19:00–23:59 → ไม่เกิน 12:00 วันถัดไป";
+        return "รับ Lead เวลา 19:00–23:59 ครบกำหนดภายใน 12:00 ของวันถัดไป";
       }
-      return "รับ Lead 00:00–08:59 → ไม่เกิน 12:00 วันเดียวกัน";
+      return "รับ Lead เวลา 00:00–08:59 ครบกำหนดภายใน 12:00 ของวันเดียวกัน";
     }
   }
   return SLA_TIME_CONDITION_TEXT[policyCode as keyof typeof SLA_TIME_CONDITION_TEXT] ?? null;

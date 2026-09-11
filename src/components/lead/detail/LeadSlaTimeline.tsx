@@ -28,13 +28,13 @@ export type LeadSlaItem = {
 };
 
 const STATUS_STYLE: Record<DisplayStatus, { label: string; dot: string; text: string; badge: string }> = {
-  on_time: { label: "เสร็จใน SLA", dot: "bg-emerald-500", text: "text-emerald-700", badge: "bg-emerald-50 text-emerald-700 border-emerald-200" },
-  late: { label: "เสร็จเกิน SLA", dot: "bg-red-500", text: "text-red-700", badge: "bg-red-50 text-red-700 border-red-200" },
-  breached: { label: "เกินกำหนด", dot: "bg-red-500", text: "text-red-700", badge: "bg-red-50 text-red-700 border-red-200" },
+  on_time: { label: "ภายในกำหนด", dot: "bg-emerald-500", text: "text-emerald-700", badge: "bg-emerald-50 text-emerald-700 border-emerald-200" },
+  late: { label: "เกินกำหนด", dot: "bg-red-500", text: "text-red-700", badge: "bg-red-50 text-red-700 border-red-200" },
+  breached: { label: "เกินกำหนด (ยังไม่แล้วเสร็จ)", dot: "bg-red-500", text: "text-red-700", badge: "bg-red-50 text-red-700 border-red-200" },
   critical: { label: "ใกล้เกินกำหนด", dot: "bg-orange-500", text: "text-orange-700", badge: "bg-orange-50 text-orange-700 border-orange-200" },
   warning: { label: "ใกล้ครบกำหนด", dot: "bg-amber-400", text: "text-amber-700", badge: "bg-amber-50 text-amber-700 border-amber-200" },
   active: { label: "กำลังดำเนินการ", dot: "bg-sky-500", text: "text-sky-700", badge: "bg-sky-50 text-sky-700 border-sky-200" },
-  cancelled: { label: "ยกเลิก", dot: "bg-gray-300", text: "text-gray-500", badge: "bg-gray-50 text-gray-500 border-gray-200" },
+  cancelled: { label: "ยกเลิกรายการ", dot: "bg-gray-300", text: "text-gray-500", badge: "bg-gray-50 text-gray-500 border-gray-200" },
 };
 
 function displayStatus(item: LeadSlaItem, now: number): DisplayStatus {
@@ -56,10 +56,10 @@ function durationText(milliseconds: number): string {
   if (minutes < 60) return `${minutes} นาที`;
   const hours = Math.floor(minutes / 60);
   const remainingMinutes = minutes % 60;
-  if (hours < 24) return remainingMinutes ? `${hours} ชม. ${remainingMinutes} นาที` : `${hours} ชม.`;
+  if (hours < 24) return remainingMinutes ? `${hours} ชั่วโมง ${remainingMinutes} นาที` : `${hours} ชั่วโมง`;
   const days = Math.floor(hours / 24);
   const remainingHours = hours % 24;
-  return remainingHours ? `${days} วัน ${remainingHours} ชม.` : `${days} วัน`;
+  return remainingHours ? `${days} วัน ${remainingHours} ชั่วโมง` : `${days} วัน`;
 }
 
 function dateTimeText(value: string): string {
@@ -120,14 +120,14 @@ export function LeadSlaSummary({ loading, error, summary }: {
   summary: LeadSlaSummaryCounts;
 }) {
   if (loading) return <span className="h-6 w-28 rounded-full bg-gray-100 animate-pulse" />;
-  if (error) return <span className="text-xs text-red-600">โหลด SLA ไม่สำเร็จ</span>;
+  if (error) return <span className="text-xs text-red-600">ไม่สามารถโหลดข้อมูล SLA ได้</span>;
   const overdueTotal = summary.completedLate + summary.breachedOpen;
   return (
     <div className="flex flex-wrap items-center gap-1.5 text-xxs font-semibold">
-      <span className="px-2 py-1 rounded-full bg-sky-50 text-sky-700">กำลังทำ {summary.open}</span>
-      <span className="px-2 py-1 rounded-full bg-emerald-50 text-emerald-700">ผ่าน {summary.onTime}</span>
+      <span className="px-2 py-1 rounded-full bg-sky-50 text-sky-700">อยู่ระหว่างดำเนินการ {summary.open}</span>
+      <span className="px-2 py-1 rounded-full bg-emerald-50 text-emerald-700">ภายในกำหนด {summary.onTime}</span>
       <span className="px-2 py-1 rounded-full bg-red-50 text-red-700">
-        เกิน SLA รวม {overdueTotal} · ปิดแล้ว {summary.completedLate} · ค้าง {summary.breachedOpen}
+        เกินกำหนดรวม {overdueTotal} รายการ · แล้วเสร็จ {summary.completedLate} · คงค้าง {summary.breachedOpen}
       </span>
     </div>
   );
@@ -167,19 +167,19 @@ export function LeadSlaStageRows({ items, loading, now }: {
                 <span className={`font-semibold ${style.text}`}>{item.task_name || item.policy_name}</span>
                 <span className={`px-1.5 py-0.5 rounded border text-xxs font-bold ${style.badge}`}>{style.label}</span>
                 <span className="inline-flex flex-wrap items-center gap-x-2 text-xxs text-gray-500">
-                  <span>SLA {target}{!sameDeadline ? ` / สูงสุด ${due}` : ""}</span>
-                  {timeCondition && <span>เงื่อนไข: {timeCondition}</span>}
+                  <span>ระยะเวลาตามกำหนด {target}{!sameDeadline ? ` · ไม่เกิน ${due}` : ""}</span>
+                  {timeCondition && <span>เงื่อนไขการนับ: {timeCondition}</span>}
                 </span>
               </div>
               <div className="mt-0.5 flex flex-wrap items-center gap-x-2 gap-y-0.5 text-xxs text-gray-500">
-                <span>เริ่ม {dayOrDateTimeText(item.started_at)}</span>
-                <span>กำหนด {dayOrDateTimeText(item.due_at)}</span>
-                <span className={`font-semibold ${style.text}`}>ใช้จริง {elapsed}</span>
+                <span>เริ่มนับ {dayOrDateTimeText(item.started_at)}</span>
+                <span>ครบกำหนด {dayOrDateTimeText(item.due_at)}</span>
+                <span className={`font-semibold ${style.text}`}>ระยะเวลาที่ใช้ {elapsed}</span>
                 {/* The elapsed time alone does not say when the work landed.
                     Open and cancelled rows have no end timestamp — their badge
                     already states why — so the stamp is shown only when the
                     task actually finished. */}
-                {item.completed_at && <span>เสร็จ {dayOrDateTimeText(item.completed_at)}</span>}
+                {item.completed_at && <span>แล้วเสร็จ {dayOrDateTimeText(item.completed_at)}</span>}
                 {/* This is who the SLA is measured against, not who clicked.
                     The two are often different people — a colleague can close
                     the milestone that stops this clock — and the milestone row
@@ -187,8 +187,8 @@ export function LeadSlaStageRows({ items, loading, now }: {
                     keep the two apart. */}
                 <span>
                   {item.owner_name
-                    ? `รับผิดชอบ ${item.owner_name} · ${item.owner_role === "solar" ? "Solar" : "Sale"}`
-                    : `ยังไม่มอบหมายผู้รับผิดชอบ · ${item.owner_role === "solar" ? "Solar" : "Sale"}`}
+                    ? `ผู้รับผิดชอบ ${item.owner_name} · ${item.owner_role === "solar" ? "Solar" : "Sale"}`
+                    : `ยังไม่ได้มอบหมายผู้รับผิดชอบ · ${item.owner_role === "solar" ? "Solar" : "Sale"}`}
                 </span>
               </div>
               {item.display_note && <div className="mt-0.5 text-xxs text-gray-500">{item.display_note}</div>}
