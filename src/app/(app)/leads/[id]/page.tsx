@@ -6,7 +6,7 @@ import { stripThaiTitle, houseNumberOrNull } from "@/lib/utils/name";
 import { Fragment, useEffect, useState, use, useCallback, useRef } from "react";
 import { useSearchParams } from "next/navigation";
 import ActivityTimeline from "@/components/lead/detail/ActivityTimeline";
-import { LeadSlaStageRows, LeadSlaSummary, isSlaFinished, useLeadSlaTimeline } from "@/components/lead/detail/LeadSlaTimeline";
+import { isSlaFinished, useLeadSlaTimeline } from "@/components/lead/detail/LeadSlaTimeline";
 import LeadSlaTracking from "@/components/lead/detail/LeadSlaTracking";
 import SerialsUploader from "@/components/lead/detail/SerialsUploader";
 import PhotosTab from "@/components/lead/detail/PhotosTab";
@@ -37,7 +37,7 @@ import { slaTaskLabel, slaWorkflowStage, type SlaWorkflowStage } from "@/lib/sla
 import { INFO_LABELS, PRIMARY_REASON_LABEL } from "@/lib/constants/info-labels";
 import FallbackImage from "@/components/ui/FallbackImage";
 import NotificationBell from "@/components/layout/NotificationBell";
-import { compactLatestForwardStatusActivities, shouldShowSlaTimelineItem } from "@/lib/timeline-activities";
+import { compactLatestForwardStatusActivities } from "@/lib/timeline-activities";
 
 const formatAcUnits = (s: string | null): string | null => {
   if (!s) return null;
@@ -58,20 +58,6 @@ const otherOrLabel = (v: string | null, labels: Record<string, string>): string 
   if (v.startsWith("other:")) return v.slice(6) || null;
   return labels[v] || v;
 };
-
-// Stages where the SLA rows are the headings and every milestone follows the
-// one it belongs to. Install reads as two jobs — arranging the visit, then
-// doing it — so a flat list of six rows buried which was which.
-// The value is the order the headings appear in, which is the order the work
-// happens, NOT the order the clocks open: the installation clock starts at the
-// booked date (midnight, since a booking has no time of day) while the booking
-// clock starts at the deposit, so on a lead booked and installed the same day
-// plain chronology puts the installation first.
-const GROUPED_SLA_SECTIONS = new Map<string, string[]>([
-  ["tl-install", ["SCHEDULE_INSTALLATION", "INSTALLATION"]],
-  // Warranty intentionally stays flat: issuing the certificate completes the
-  // CLOSE_LEAD clock, and the milestone must sort before that result row.
-]);
 
 const SLA_DETAIL_STEP_BY_STAGE: Record<SlaWorkflowStage, number> = {
   pre_survey: 0,
@@ -769,7 +755,7 @@ export default function LeadDetailPage({ params }: { params: Promise<{ id: strin
   const [modalType, setModalType] = useState<ActivityType | null>(null);
   const [showLostModal, setShowLostModal] = useState(false);
   const [tab, setTab] = useState<"info" | "workflow" | "timeline" | "sla" | "serials" | "photos" | "log">("workflow");
-  const { items: slaItems, loading: loadingSla, error: slaError, now: slaNow, summary: slaSummary, refresh: refreshSla } = useLeadSlaTimeline(Number(id));
+  const { items: slaItems, now: slaNow, refresh: refreshSla } = useLeadSlaTimeline(Number(id));
   const [openSections, setOpenSections] = useState<Record<string, boolean>>({
     contact: true, address: true, interest: true, usage: true, system: true, finance: true, source: true, note: true,
     // PreSurvey tree — every section expanded by default so reviewers see
@@ -2817,23 +2803,18 @@ export default function LeadDetailPage({ params }: { params: Promise<{ id: strin
                 });
               }
 
-              // Superseded/cancelled SLA instances are rollback artifacts, not
-              // workflow events. A completed Grade without grade_change Activity
-              // is legacy state, not timed evidence: show the honest "ไม่มีประวัติ
-              // เวลา" milestone instead. An open qualification SLA stays visible
-              // because the missing Grade is exactly the unfinished work it tracks.
-              const visibleSlaItems = slaItems.filter(item =>
-                shouldShowSlaTimelineItem(item, gradeActivities.length > 0));
+              // Timeline เล่าเฉพาะ "สิ่งที่เกิดขึ้นจริง" แล้ว ส่วนกำหนดเวลาและผลตาม SLA
+              // ย้ายไปอยู่แท็บ SLA - Tracking ทั้งหมด ไม่เอามาปนกันอีก
               const sections = [
-                { id: "tl-pre", title: "Pre-Survey", rows: preSurveyRows, tone: "text-sky-700", dot: "bg-sky-500", slaCodes: ["FIRST_CONTACT", "CONTACT_RETRY", "ELECTRICITY_ASSESSMENT", "BOOK_SURVEY"] },
-                { id: "tl-survey", title: "Survey", rows: surveyRows, tone: "text-violet-700", dot: "bg-violet-500", slaCodes: ["SITE_SURVEY"] },
-                { id: "tl-quote", title: "Quotation", rows: quoteRows, tone: "text-orange-700", dot: "bg-orange-500", slaCodes: ["PROPOSAL_ROI"] },
-                { id: "tl-order", title: "Order · งวดชำระ", rows: orderRows, tone: "text-emerald-700", dot: "bg-emerald-500", slaCodes: ["DEPOSIT_CLOSE", "PAYMENT_INSTALLMENT_1", "LOAN_PREAPPROVAL"] },
-                { id: "tl-install", title: "Install", rows: installRows, tone: "text-amber-700", dot: "bg-amber-500", slaCodes: ["SCHEDULE_INSTALLATION", "INSTALLATION"] },
-                { id: "tl-warranty", title: "Warranty / After Sales", rows: warrantyRows, tone: "text-teal-700", dot: "bg-teal-500", slaCodes: ["CLOSE_LEAD"] },
-                { id: "tl-grid", title: "Grid-Tie / ขอขนานไฟ", rows: gridRows, tone: "text-cyan-700", dot: "bg-cyan-500", slaCodes: [] },
-                ...(isLost ? [{ id: "tl-lost", title: "ยกเลิก", rows: lostRows, tone: "text-red-700", dot: "bg-red-500", slaCodes: [] as string[] }] : []),
-              ].filter(s => s.rows.length > 0 || visibleSlaItems.some(item => s.slaCodes.includes(item.policy_code)));
+                { id: "tl-pre", title: "Pre-Survey", rows: preSurveyRows, tone: "text-sky-700", dot: "bg-sky-500" },
+                { id: "tl-survey", title: "Survey", rows: surveyRows, tone: "text-violet-700", dot: "bg-violet-500" },
+                { id: "tl-quote", title: "Quotation", rows: quoteRows, tone: "text-orange-700", dot: "bg-orange-500" },
+                { id: "tl-order", title: "Order · งวดชำระ", rows: orderRows, tone: "text-emerald-700", dot: "bg-emerald-500" },
+                { id: "tl-install", title: "Install", rows: installRows, tone: "text-amber-700", dot: "bg-amber-500" },
+                { id: "tl-warranty", title: "Warranty / After Sales", rows: warrantyRows, tone: "text-teal-700", dot: "bg-teal-500" },
+                { id: "tl-grid", title: "Grid-Tie / ขอขนานไฟ", rows: gridRows, tone: "text-cyan-700", dot: "bg-cyan-500" },
+                ...(isLost ? [{ id: "tl-lost", title: "ยกเลิก", rows: lostRows, tone: "text-red-700", dot: "bg-red-500" }] : []),
+              ].filter(s => s.rows.length > 0);
 
               // Sort bullets within each section earliest → latest
               sections.forEach(s => s.rows.sort((a, b) => {
@@ -2858,73 +2839,20 @@ export default function LeadDetailPage({ params }: { params: Promise<{ id: strin
                 <div id="lead-timeline-sla" className="scroll-mt-44 space-y-3 rounded-2xl bg-white border border-gray-200 px-4 py-4">
                   <div className="pb-3 border-b border-gray-100 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
                     <div>
-                      <div className="text-sm font-bold text-gray-800 uppercase tracking-wide">Timeline & SLA</div>
-                      <div className="text-xs text-gray-500 mt-0.5">เหตุการณ์ กำหนดเวลา ผลการดำเนินงาน และผู้รับผิดชอบในแต่ละขั้นตอน</div>
+                      <div className="text-sm font-bold text-gray-800 uppercase tracking-wide">Timeline</div>
+                      <div className="text-xs text-gray-500 mt-0.5">ลำดับเหตุการณ์ที่เกิดขึ้นจริงในแต่ละขั้นตอน · กำหนดเวลาและผลตาม SLA ดูที่แท็บ SLA - Tracking</div>
                     </div>
-                    <LeadSlaSummary loading={loadingSla} error={slaError} summary={slaSummary} />
                   </div>
                   {sections.map(s => {
-                    const stageSlaItems = visibleSlaItems.filter(item => s.slaCodes.includes(item.policy_code));
-                    const qualificationSla = stageSlaItems.find(item => item.policy_code === "ELECTRICITY_ASSESSMENT");
-                    const mergeableGradeRows = qualificationSla
-                      ? s.rows.filter(row => row.mergeWithSlaCode === "ELECTRICITY_ASSESSMENT" && row.gradeValue === lead.customer_grade)
-                      : [];
-                    const qualificationAt = qualificationSla
-                      ? new Date(qualificationSla.completed_at || qualificationSla.started_at).getTime()
-                      : Number.NaN;
-                    const mergedGradeRow = mergeableGradeRows.reduce<Bullet | null>((closest, row) => {
-                      if (!closest) return row;
-                      const rowAt = row.date ? new Date(row.date).getTime() : Number.NaN;
-                      const closestAt = closest.date ? new Date(closest.date).getTime() : Number.NaN;
-                      if (!Number.isFinite(rowAt)) return closest;
-                      if (!Number.isFinite(closestAt)) return row;
-                      return Math.abs(rowAt - qualificationAt) < Math.abs(closestAt - qualificationAt) ? row : closest;
-                    }, null);
-                    const visibleMilestoneRows = mergedGradeRow ? s.rows.filter(row => row !== mergedGradeRow) : s.rows;
-                    const finishedSla = stageSlaItems.filter(isSlaFinished).length;
-                    const timelineItems = [
-                      ...stageSlaItems.map((item, index) => ({
-                        kind: "sla" as const,
-                        key: `sla-${item.id}`,
-                        sortAt: item.policy_code === "CLOSE_LEAD" && item.completed_at
-                          ? new Date(item.completed_at).getTime()
-                          : item === qualificationSla && mergedGradeRow
-                          ? mergedGradeRow.sortAt ?? (mergedGradeRow.date ? new Date(mergedGradeRow.date).getTime() : new Date(item.started_at).getTime())
-                          : new Date(item.started_at).getTime(),
-                        // Legacy leads can have several causal events stamped at
-                        // exactly 00:00. Preserve the business sequence for ties:
-                        // registration -> first contact -> next milestone ->
-                        // SLA opened by that milestone.
-                        tiePriority: item === qualificationSla && mergedGradeRow
-                          ? mergedGradeRow.tiePriority ?? 25
-                          : item.policy_code === "FIRST_CONTACT"
-                            ? 20
-                            : 40,
-                        stableIndex: index,
-                        item: item === qualificationSla && mergedGradeRow
-                          ? {
-                            ...item,
-                            task_name: mergedGradeRow.label.replace(/^กำหนด Grade Lead/, item.task_name),
-                            display_note: [
-                              !mergedGradeRow.date && mergedGradeRow.missingDateLabel,
-                              mergedGradeRow.sub,
-                            ].filter(Boolean).join(" · ") || undefined,
-                          }
-                          : item,
-                      })),
-                      ...visibleMilestoneRows.map((row, index) => ({
-                        kind: "milestone" as const,
-                        key: row.key || `milestone-${s.id}-${index}`,
-                        sortAt: row.sortAt ?? (row.date ? new Date(row.date).getTime() : Number.POSITIVE_INFINITY),
-                        tiePriority: row.tiePriority ?? (row.label === "บันทึก Lead เข้าระบบ" ? 0 : 30),
-                        stableIndex: stageSlaItems.length + index,
-                        row,
-                      })),
-                    // Every stage reads in real time. An SLA row sorts on started_at,
-                    // the moment its clock opened, which in practice comes before the
-                    // work it measures — so the clock appears, then the events that
-                    // answer it. When timestamps tie, milestones lead (tiePriority).
-                    ].sort((a, b) => a.sortAt - b.sortAt || a.tiePriority - b.tiePriority || a.stableIndex - b.stableIndex);
+                    const visibleMilestoneRows = s.rows;
+                    const timelineItems = visibleMilestoneRows.map((row, index) => ({
+                      kind: "milestone" as const,
+                      key: row.key || `milestone-${s.id}-${index}`,
+                      sortAt: row.sortAt ?? (row.date ? new Date(row.date).getTime() : Number.POSITIVE_INFINITY),
+                      tiePriority: row.tiePriority ?? (row.label === "บันทึก Lead เข้าระบบ" ? 0 : 30),
+                      stableIndex: index,
+                      row,
+                    })).sort((a, b) => a.sortAt - b.sortAt || a.tiePriority - b.tiePriority || a.stableIndex - b.stableIndex);
                     // Edit history is split by what it edited. Appointment
                     // changes hang off the booking that stands; status and
                     // contact history sit at the end of the stage.
@@ -2942,29 +2870,10 @@ export default function LeadDetailPage({ params }: { params: Promise<{ id: strin
                     if (appointmentDetails.length > 0 && !hasAppointmentAnchor) {
                       stageDetailGroups.unshift({ group: "appointment" as never, label: "การแก้ไขนัดหมาย", rows: appointmentDetails });
                     }
-                    // A reversal only earns a row while it still explains
-                    // something. Rolling back reopens the SLA it lands on —
-                    // sla-service clears completed_at and recalculates — so an
-                    // open SLA in the stage is the reading the reversal accounts
-                    // for. Once the stage has closed again, the reversal is
-                    // bookkeeping about a clock nobody is watching; Activity Log
-                    // keeps every one. A stage with no SLA at all has nothing
-                    // else to tell the story, so its reversals stay.
-                    const stageExplainsRollback = stageSlaItems.length === 0
-                      || stageSlaItems.some(item => !isSlaFinished(item));
-                    // Grouped stages drop "เข้าสู่ขั้น X" outright: it says nothing
-                    // the SLA rows do not already say, and says it at the wrong
-                    // moment — the status moves days after the stage's work began.
-                    // Warranty is flat for certificate-before-SLA ordering, but
-                    // its routine entry row is still the same duplicate.
-                    const hiddenStatusFlow = (row: Bullet) => row.statusFlow === "rollback"
-                      ? !stageExplainsRollback
-                      : Boolean(row.statusFlow) && (GROUPED_SLA_SECTIONS.has(s.id) || s.id === "tl-warranty");
-                    // The header count describes the collapsed view so it does
-                    // not jump when a group is opened, and skips every status
-                    // row the stage does not render.
-                    const summaryMilestoneCount = visibleMilestoneRows
-                      .filter(row => !row.detail && !hiddenStatusFlow(row)).length;
+                    // เดิมซ่อนแถว "เข้าสู่ขั้น X" ในขั้นที่มีแถว SLA อยู่แล้ว เพราะถือว่า
+                    // แถว SLA พูดแทนไปแล้ว ตอนนี้ไทม์ไลน์ไม่มีแถว SLA อีก แถวสถานะจึง
+                    // กลับมาเป็นสิ่งเดียวที่บอกว่า Lead เข้าขั้นนี้เมื่อไร ต้องแสดงทั้งหมด
+                    const summaryMilestoneCount = visibleMilestoneRows.filter(row => !row.detail).length;
                     const detailGroupBlock = (key: string, label: string, rows: Bullet[]) => {
                       const open = openTimelineDetail[key] ?? false;
                       return (
@@ -3045,83 +2954,18 @@ export default function LeadDetailPage({ params }: { params: Promise<{ id: strin
                         </li>
                       );
                     };
-                    // Grouped stages read as one heading per SLA with the
-                    // milestones that belong to it underneath. Anything no
-                    // heading claims still shows, after the groups, so a new
-                    // activity type can never vanish from the timeline.
-                    const slaHeadings = shownItems.flatMap(entry => entry.kind === "sla" ? [entry] : []);
-                    const milestoneEntries = shownItems.flatMap(entry => entry.kind === "milestone" ? [entry] : []);
-                    const claimedGroups = new Set(slaHeadings.map(entry => entry.item.policy_code));
-                    // Entering a stage is bookkeeping, not the job, and drops out
-                    // of grouped stages. A rollback that still holds an SLA open
-                    // reads as an ordinary row where it happened — it is the only
-                    // thing on the page that says why the clock above it is
-                    // running again, so burying it behind a toggle hid the answer
-                    // next to the question.
-                    const groupOrder = GROUPED_SLA_SECTIONS.get(s.id);
-                    const orderOf = (policyCode: string) => {
-                      const at = groupOrder?.indexOf(policyCode) ?? -1;
-                      return at < 0 ? Number.MAX_SAFE_INTEGER : at;
-                    };
-                    const groupedSlaEntries = groupOrder
-                      ? [...slaHeadings]
-                        .sort((a, b) => orderOf(a.item.policy_code) - orderOf(b.item.policy_code))
-                        .map(entry => {
-                          const own = milestoneEntries.filter(m => m.row.slaGroup === entry.item.policy_code);
-                          return {
-                            entry,
-                            children: own.filter(m => !hiddenStatusFlow(m.row)),
-                          };
-                        })
-                      : null;
-                    const ungroupedMilestones = groupedSlaEntries
-                      ? milestoneEntries.filter(m => !hiddenStatusFlow(m.row)
-                        && (!m.row.slaGroup || !claimedGroups.has(m.row.slaGroup)))
-                      : [];
-                    // Flat stages keep their status rows, minus the reversals
-                    // that no longer explain anything.
-                    const flatItems = shownItems.filter(entry =>
-                      entry.kind !== "milestone" || !hiddenStatusFlow(entry.row));
                     return (
                       <InfoSection
                         key={s.id}
                         id={s.id}
                         title={s.title}
-                        filled={summaryMilestoneCount + finishedSla}
-                        total={summaryMilestoneCount + stageSlaItems.length}
+                        filled={summaryMilestoneCount}
+                        total={summaryMilestoneCount}
                         open={openSections[s.id] ?? true}
                         onToggle={toggleSection}
                       >
                       <ul className="space-y-2 py-1">
-                        {loadingSla && <LeadSlaStageRows items={[]} loading now={slaNow} />}
-                        {groupedSlaEntries
-                          ? (
-                            <>
-                              {groupedSlaEntries.map(({ entry, children }) => (
-                                <Fragment key={entry.key}>
-                                  {/* Children sit at the same level as the SLA
-                                      heading, not indented under it — the
-                                      heading is already told apart by its badge
-                                      and SLA line. Grouping here is about order:
-                                      each milestone follows the SLA it belongs
-                                      to instead of plain chronology. */}
-                                  <LeadSlaStageRows items={[entry.item]} loading={false} now={slaNow} />
-                                  {children.map(renderMilestone)}
-                                </Fragment>
-                              ))}
-                              {ungroupedMilestones.map(renderMilestone)}
-                            </>
-                          )
-                          : flatItems.map(entry => entry.kind === "sla"
-                            ? (
-                              <LeadSlaStageRows
-                                key={entry.key}
-                                items={[entry.item]}
-                                loading={false}
-                                now={slaNow}
-                              />
-                            )
-                            : renderMilestone(entry))}
+                        {shownItems.map(renderMilestone)}
                       </ul>
                       {stageDetailGroups.map(g => detailGroupBlock(`${s.id}:${g.group}`, g.label, g.rows))}
                       </InfoSection>
