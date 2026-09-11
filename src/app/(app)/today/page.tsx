@@ -131,9 +131,13 @@ export default function TodayPage() {
   const { me } = useMe();
   const slaEnabled = slaFilters.length > 0;
   const slaWithoutOnly = slaFilters[0] === "without";
+  const slaDoneOnTimeOnly = slaFilters[0] === "done_ontime";
+  // งานปิดแล้วและทันกำหนด — ใช้ฟิลด์ sla_done_* ที่ /api/today ส่งมา (ดู SLA_DONE_APPLY)
+  const isDoneOnTime = (lead: LeadData) =>
+    !!lead.sla_done_completed_at && !lead.sla_done_breached_at;
   // slaStatusMode = กำลังกรองด้วย "สถานะ" จริง ๆ (ไม่ใช่ "ไม่มีงาน SLA" ซึ่งไม่มีสถานะให้กรอง)
   const slaStatusKeys = useMemo(
-    () => slaFilters.filter((key): key is SlaStatusKey => key !== "without"),
+    () => slaFilters.filter((key): key is SlaStatusKey => key !== "without" && key !== "done_ontime"),
     [slaFilters],
   );
   const slaStatusMode = slaStatusKeys.length > 0;
@@ -377,7 +381,9 @@ export default function TodayPage() {
     if (slaEnabled && !skipSla) {
       if (!scopedSlaData) return [];
       out = slaWithoutOnly
-        ? out.filter(lead => !allSlaLeadIds.has(lead.id))
+        ? out.filter(lead => !allSlaLeadIds.has(lead.id) && !isDoneOnTime(lead))
+        : slaDoneOnTimeOnly
+        ? out.filter(lead => !allSlaLeadIds.has(lead.id) && isDoneOnTime(lead))
         : out.filter(lead => slaItemsByLead.has(lead.id));
     }
     if (mineOnly && me?.id) {
@@ -589,13 +595,13 @@ export default function TodayPage() {
   })();
 
   const slaChipCounts = (() => {
-    const counts: Record<SlaFilterKey, number> = { breached: 0, near_due: 0, active: 0, without: 0 };
+    const counts: Record<SlaFilterKey, number> = { breached: 0, near_due: 0, active: 0, done_ontime: 0, without: 0 };
     // ตั้งใจนับตาม "จำนวนที่แสดง" ไม่ใช่ Lead ไม่ซ้ำ — Lead เดียวอยู่ได้หลาย section
     // ในแท็บเดียว (เช่น เลยกำหนดติดตาม + Lead ใหม่) และตัวเลขบนแท็บก็นับแบบนั้น
     // ถ้านับไม่ซ้ำ ชิปจะบอก 11 แต่กดแล้วขึ้น 13 ซึ่งผิดคำสัญญาของตัวเลข
     for (const lead of slaScopeLeads) {
       const items = slaItemsByLeadAll.get(lead.id);
-      if (!items?.length) { counts.without += 1; continue; }
+      if (!items?.length) { counts[isDoneOnTime(lead) ? "done_ontime" : "without"] += 1; continue; }
       // Lead เดียวมีได้หลายงาน SLA — นับเข้าทุกสถานะที่มี แต่ไม่นับซ้ำในสถานะเดียวกัน
       const statuses = new Set<SlaStatusKey>();
       for (const item of items) {

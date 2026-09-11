@@ -57,6 +57,8 @@ interface Lead {
   sla_owner_role?: "sales" | "solar" | null;
   sla_owner_user_id?: number | null;
   sla_owner_name?: string | null;
+  sla_done_completed_at?: string | null;
+  sla_done_breached_at?: string | null;
 }
 
 type TabKey = "all" | "pre_survey" | "booking" | "survey" | "quotation" | "order" | "deposit" | "wait_install" | "install" | "installing" | "warranty" | "gridtie" | "lost";
@@ -302,15 +304,17 @@ export default function PipelinePage() {
 
   const slaScoped = tabScoped.filter(matchesSlaSub);
   const slaChipCounts = slaScoped.reduce((counts, l) => {
-    const key = slaFilterKeyOf(l.sla_status);
+    const key = slaFilterKeyOf(l.sla_status, { completedAt: l.sla_done_completed_at, breachedAt: l.sla_done_breached_at });
     if (key) counts[key] += 1;
     return counts;
-  }, { breached: 0, near_due: 0, active: 0, without: 0 } as Record<SlaFilterKey, number>);
+  }, { breached: 0, near_due: 0, active: 0, done_ontime: 0, without: 0 } as Record<SlaFilterKey, number>);
 
   const filtered = sortLeads(slaScoped.filter(l => {
     if (slaFilters.length === 0) return true;
-    // normalizeSlaFilters การันตีว่า "ไม่มีงาน SLA" อยู่ตัวเดียวเสมอ
-    if (slaFilters.includes("without")) return !l.sla_status;
+    // normalizeSlaFilters การันตีว่า "ไม่มีงาน SLA" กับ "เสร็จตามกำหนด" อยู่ตัวเดียวเสมอ
+    if (slaFilters.includes("without") || slaFilters.includes("done_ontime")) {
+      return slaFilterKeyOf(l.sla_status, { completedAt: l.sla_done_completed_at, breachedAt: l.sla_done_breached_at }) === slaFilters[0];
+    }
     return matchesSlaStatus(l.sla_status, slaStatusKeys);
   }));
 
