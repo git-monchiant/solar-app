@@ -189,7 +189,7 @@ export default function LeadSlaTracking({ leadId }: { leadId: number }) {
 
       {/* ตารางกว้างเกินจอมือถือแน่นอน ให้เลื่อนในกรอบตัวเอง ไม่ให้ทั้งหน้าเลื่อนแนวนอน */}
       <div className="overflow-x-auto rounded-xl border border-gray-200">
-        <table className="w-full min-w-[1264px] table-fixed border-collapse text-xs">
+        <table className="w-full min-w-[1300px] table-fixed border-collapse text-xs">
           <thead>
             <tr className="bg-gray-50 text-gray-600">
               <th className="w-9 px-2 py-2 text-center font-semibold border-b border-gray-200">#</th>
@@ -198,7 +198,7 @@ export default function LeadSlaTracking({ leadId }: { leadId: number }) {
                   ปรับอันหนึ่งกระทบทุกอัน คุมยาก */}
               <th className="w-[200px] px-3 py-2 text-left font-semibold border-b border-gray-200">ขั้นตอน</th>
               <th className="w-[84px] px-2 py-2 text-left font-semibold border-b border-gray-200">ทีม</th>
-              <th className="w-[200px] px-3 py-2 text-left font-semibold border-b border-gray-200">SLA</th>
+              <th className="w-[248px] px-3 py-2 text-left font-semibold border-b border-gray-200">SLA</th>
               <th className="w-[190px] px-3 py-2 text-left font-semibold border-b border-gray-200">เริ่มนับ · ครบกำหนด</th>
               <th className="px-3 py-2 text-left font-semibold border-b border-gray-200">เสร็จจริง · ระยะเวลาที่ใช้</th>
               <th className="w-[110px] px-3 py-2 text-left font-semibold border-b border-gray-200">ผล</th>
@@ -228,7 +228,9 @@ export default function LeadSlaTracking({ leadId }: { leadId: number }) {
                   </td>
                   {/* ค่าที่ตั้งไว้ในนโยบายเท่านั้น ไม่ใช่ค่าที่คำนวณจากรอบจริง — ดู slaTargetText() */}
                   <td className={`px-3 py-2 ${muted ? "text-gray-400" : "text-gray-700"}`}>
-                    {slaTargetLines(policy).map((line, i) => <div key={i}>{line}</div>)}
+                    {/* แต่ละเงื่อนไขต้องอยู่บรรทัดเดียวจบ ห้ามตัดคำ คอลัมน์จึงกว้างพอ
+                        สำหรับบรรทัดที่ยาวที่สุด */}
+                    {slaTargetLines(policy).map((line, i) => <div key={i} className="whitespace-nowrap">{line}</div>)}
                   </td>
                   {/* เริ่มนับกับครบกำหนดเป็นช่วงเวลาเดียวกัน อยู่คอลัมน์เดียวคนละบรรทัด
                       มีป้ายกำกับในตัว จะได้ไม่ต้องเดาว่าบรรทัดไหนคืออะไร */}
