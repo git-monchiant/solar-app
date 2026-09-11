@@ -658,6 +658,16 @@ async function reconcileFirstContactEvidence(db: Db, input: {
     });
   }
 
+  // ล้าง next_follow_up ได้เฉพาะเมื่อเพิ่งยกเลิกบันได CONTACT_RETRY ไปจริง ๆ เท่านั้น
+  //
+  // เดิมคำสั่งล้างอยู่นอกเงื่อนไข จึงรันทุกครั้งที่ sync แม้ไม่มีอะไรให้ยกเลิก และ
+  // ฟังก์ชันนี้ถูกเรียกทุกครั้งที่เปิดหน้า Lead ผลคือ "แค่เปิดดู" ก็ลบวันนัดติดตาม
+  // ที่เซลส์ตั้งไว้ทิ้ง แล้ว Lead ก็หลุดจากกอง ติดตามวันนี้ / เลยกำหนดติดตาม
+  // ทันที เหมือนรายการขยับเองทั้งที่ผู้ใช้ไม่ได้แตะอะไร
+  //
+  // วันที่ที่ล้างคือวันที่บันได retry เป็นคนตั้งไว้เอง (ดู createContactRetryInstance)
+  // พอติดต่อลูกค้าได้แล้วบันไดถูกยกเลิก วันนั้นจึงไม่มีความหมายต่อ — แต่ถ้าไม่มี
+  // บันไดให้ยกเลิก วันในช่องนั้นเป็นของเซลส์ ห้ามแตะ
   await db.request().input("lead_id", input.leadId).input("reason", "first_contact_evidence").query(`
     UPDATE lead_sla_instances
     SET status = 'cancelled', updated_at = GETDATE(),
@@ -665,7 +675,8 @@ async function reconcileFirstContactEvidence(db: Db, input: {
     WHERE lead_id = @lead_id AND policy_code = 'CONTACT_RETRY'
       AND policy_version = 2 AND superseded_at IS NULL
       AND status IN ('active','warning','critical','breached');
-    UPDATE leads SET next_follow_up = NULL, updated_at = GETDATE() WHERE id = @lead_id;
+    IF @@ROWCOUNT > 0
+      UPDATE leads SET next_follow_up = NULL, updated_at = GETDATE() WHERE id = @lead_id;
   `);
 }
 
@@ -844,7 +855,10 @@ export async function processContactActivity(db: Db, input: {
       WHERE lead_id = @lead_id AND policy_code = 'CONTACT_RETRY'
         AND policy_version = 2 AND superseded_at IS NULL
         AND status IN ('active','warning','critical','breached');
-      UPDATE leads SET next_follow_up = NULL, updated_at = GETDATE() WHERE id = @lead_id;
+      -- เหตุผลเดียวกับใน reconcileFirstContactEvidence: ล้างได้เฉพาะวันที่บันได
+      -- retry เป็นคนตั้ง ถ้าไม่มีบันไดให้ยกเลิก วันในช่องนั้นเป็นของเซลส์
+      IF @@ROWCOUNT > 0
+        UPDATE leads SET next_follow_up = NULL, updated_at = GETDATE() WHERE id = @lead_id;
     `);
     return;
   }
