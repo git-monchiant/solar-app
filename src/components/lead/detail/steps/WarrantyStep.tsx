@@ -183,6 +183,7 @@ export default function WarrantyStep({ lead, state, refresh, packages, expanded,
   // Number / Phase from the issue-warranty checks — they can't be filled in for
   // hardware that isn't ours.
   const [noInverter, setNoInverter] = useState<boolean>(!!lead.warranty_no_inverter);
+  const [noBattery, setNoBattery] = useState<boolean>(!!lead.warranty_no_battery);
   const [invBrand, setInvBrand] = useState<string>(lead.warranty_inverter_brand ?? defaultPkg?.inverter_brand ?? "");
   const [invKw, setInvKw] = useState<number | "">(lead.warranty_inverter_kw ?? defaultPkg?.inverter_kw ?? "");
 
@@ -347,7 +348,7 @@ export default function WarrantyStep({ lead, state, refresh, packages, expanded,
       // "LUNAA2000-7-E1" and "LUNA2000-7" came from. Gap-fill only, so
       // equipment swapped out on site still wins.
       const pk = eq.leadPackage;
-      if (pk) {
+      if (pk && !noBattery) {
         if (!invBrand && !inv.brand && !invRow?.brand && pk.inverter_brand) setInvBrand(pk.inverter_brand);
         if (invKw === "" && inv.kw == null && invRow?.kw == null && typeof pk.inverter_kw === "number") setInvKw(pk.inverter_kw);
         if (!battBrand && !bt.brand && !battRow?.brand && pk.battery_brand) setBattBrand(pk.battery_brand);
@@ -701,6 +702,7 @@ export default function WarrantyStep({ lead, state, refresh, packages, expanded,
           warranty_has_battery: batteries.some(b => b.brand || b.kwh || b.serial),
           warranty_panel_serials: panelSerials.some(s => s.trim()) ? JSON.stringify(panelSerials.map(s => s.trim())) : null,
           warranty_no_inverter: noInverter,
+          warranty_no_battery: noBattery,
         }),
       }).catch(console.error);
       // NOTE: PUT to /api/leads/[id]/devices was removed here. The new
@@ -711,7 +713,7 @@ export default function WarrantyStep({ lead, state, refresh, packages, expanded,
     }, 800);
     return () => clearTimeout(t);
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [sn, docNo, startDate, sysKwp, panelCount, panelWatt, panelBrand, panelModel, battBrand, battModel, battKwh, durationYears, omPerYear, invBrand, invKw, phase, batteries, panelSerials, inverterCertUrl, noInverter]);
+  }, [sn, docNo, startDate, sysKwp, panelCount, panelWatt, panelBrand, panelModel, battBrand, battModel, battKwh, durationYears, omPerYear, invBrand, invKw, phase, batteries, panelSerials, inverterCertUrl, noInverter, noBattery]);
 
   const issueWarranty = async () => {
     const missing: string[] = [];
@@ -1028,7 +1030,21 @@ export default function WarrantyStep({ lead, state, refresh, packages, expanded,
               lives in subStep 2. This card is just the aggregate brand/model/
               kWh for the warranty cert. */}
           <div className="rounded-lg border border-gray-200 bg-white/50 p-3 space-y-2">
-            <div className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Battery</div>
+            <div className="flex items-center justify-between gap-2">
+              <div className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Battery</div>
+              {/* ติ๊กเพื่อยืนยันว่างานนี้ไม่มีแบต — แยกจาก "ยังไม่ได้กรอก" ที่หน้าตา
+                  เหมือนกันเป๊ะ ค่าที่เคยกรอกไว้ไม่ถูกล้าง เผื่อติ๊กออกทีหลัง
+                  (พฤติกรรมเดียวกับ ไม่มีการติดตั้ง ของ Inverter) */}
+              <label className="flex items-center gap-1.5 text-xs text-gray-600 cursor-pointer select-none whitespace-nowrap">
+                <input
+                  type="checkbox"
+                  checked={noBattery}
+                  onChange={e => setNoBattery(e.target.checked)}
+                  className="w-3.5 h-3.5 rounded border-gray-300 text-active focus:ring-0 cursor-pointer shrink-0"
+                />
+                ไม่มีการติดตั้ง
+              </label>
+            </div>
             <div className="grid grid-cols-2 md:grid-cols-7 gap-2">
               <div className="col-span-1 md:col-span-1">
                 <label className="text-xs text-gray-500 block mb-1">ยี่ห้อ</label>
@@ -1037,6 +1053,7 @@ export default function WarrantyStep({ lead, state, refresh, packages, expanded,
                   onChange={v => setBattBrand(v)}
                   options={batteryBrandOptions(equip).map(b => ({ value: b, label: b }))}
                   allowCustom
+                  disabled={noBattery}
                 />
               </div>
               <div className="col-span-1 md:col-span-2">
@@ -1046,6 +1063,7 @@ export default function WarrantyStep({ lead, state, refresh, packages, expanded,
                   onChange={v => setBattModel(v)}
                   options={modelOptions(equip.batteries, battBrand).map(m => ({ value: m, label: m }))}
                   allowCustom
+                  disabled={noBattery}
                 />
               </div>
               <div className="col-span-1 md:col-span-1">
@@ -1056,6 +1074,7 @@ export default function WarrantyStep({ lead, state, refresh, packages, expanded,
                   options={batteryKwhOptions(equip, battBrand, battModel).map(k => ({ value: String(k), label: `${k} kWh` }))}
                   buttonClassName="font-mono tabular-nums"
                   allowCustom
+                  disabled={noBattery}
                 />
               </div>
             </div>

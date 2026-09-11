@@ -29,22 +29,29 @@ const clean = (v: string | null) => {
   return t === "" ? null : t;
 };
 
-// ชื่อยี่ห้อในตารางสะกดไม่นิ่ง ("HUAWEI" กับ "Huawei" ปนกัน) — ยุบเป็นตัวเดียวโดย
-// เลือกตัวสะกดที่ใช้ในแพ็กเกจมากที่สุด ไม่ประดิษฐ์รูปแบบใหม่ขึ้นมาเอง เสมอกันก็เรียง
-// ตามตัวอักษรเพื่อให้ผลลัพธ์เหมือนเดิมทุกครั้ง
+// ชื่อยี่ห้อในตารางสะกดไม่นิ่ง ("HUAWEI" กับ "Huawei" ปนกัน) — ยุบเป็นตัวเดียว
+// ไม่ประดิษฐ์รูปแบบใหม่ขึ้นมาเอง
+//
+// นับแพ็กเกจที่ยังขายอยู่ก่อนเสมอ ค่อยดูยอดรวมเป็นตัวตัดสินรอง แล้วปิดท้ายด้วยการ
+// เรียงตามตัวอักษร: ตัวสะกดที่ได้ต้องนิ่ง เพราะ snapToCatalog เอาไปเขียนทับค่าใน
+// ฐานข้อมูล ถ้าผลพลิกไปมาตามการเปิด/ปิดแพ็กเกจ ข้อมูลของลีดเก่าจะถูกเขียนใหม่
+// ทุกครั้งที่มีคนเปิดหน้า โดยไม่ได้แก้อะไรจริง ๆ เลย
 function canonicalBrands(rows: Row[]): Map<string, string> {
-  const tally = new Map<string, Map<string, number>>();
+  const tally = new Map<string, Map<string, { active: number; total: number }>>();
   for (const r of rows) {
     const brand = clean(r.brand);
     if (!brand) continue;
     const key = brand.toLowerCase();
-    const spellings = tally.get(key) ?? new Map<string, number>();
-    spellings.set(brand, (spellings.get(brand) ?? 0) + r.n);
+    const spellings = tally.get(key) ?? new Map<string, { active: number; total: number }>();
+    const cur = spellings.get(brand) ?? { active: 0, total: 0 };
+    spellings.set(brand, { active: cur.active + r.active, total: cur.total + r.n });
     tally.set(key, spellings);
   }
   const winner = new Map<string, string>();
   for (const [key, spellings] of tally) {
-    const best = [...spellings.entries()].sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))[0];
+    const best = [...spellings.entries()].sort((a, b) =>
+      b[1].active - a[1].active || b[1].total - a[1].total || a[0].localeCompare(b[0])
+    )[0];
     winner.set(key, best[0]);
   }
   return winner;
@@ -86,38 +93,22 @@ export async function GET(req: NextRequest) {
     const col = await db.request().query<{ c: number | null }>(
       `SELECT COL_LENGTH('dbo.packages', 'panel_model') AS c`
     );
-    const hasPanelModel = col.recordset[0]?.c != null;
-    // แทรกชื่อคอลัมน์ตรง ๆ ไม่ได้ตอนยังไม่มี — `GROUP BY NULL` กับ `p.NULL`
-    // เป็น syntax error ทั้งคู่ จึงต้องแยกข้อความคิวรีเป็นสองแบบ
-    const panelGrouped = hasPanelModel
-      ? `SELECT panel_brand AS brand, panel_model AS model, panel_watt AS spec, COUNT(*) AS n,
-                SUM(CASE WHEN is_active = 1 THEN 1 ELSE 0 END) AS active
-         FROM packages
-         WHERE has_panel = 1 AND panel_brand IS NOT NULL AND LTRIM(RTRIM(panel_brand)) <> ''
-         GROUP BY panel_brand, panel_model, panel_watt`
-      : `SELECT panel_brand AS brand, CAST(NULL AS NVARCHAR(100)) AS model, panel_watt AS spec, COUNT(*) AS n,
-                SUM(CASE WHEN is_active = 1 THEN 1 ELSE 0 END) AS active
-         FROM packages
-         WHERE has_panel = 1 AND panel_brand IS NOT NULL AND LTRIM(RTRIM(panel_brand)) <> ''
-         GROUP BY panel_brand, panel_watt`;
-    const panelModelSelect = hasPanelModel ? "p.panel_model" : "CAST(NULL AS NVARCHAR(100))";
+    const panelModelCol = col.recordset[0]?.c != null ? "panel_model" : "CAST(NULL AS NVARCHAR(100))";
+
+    // ดึงมาทีละแถวไม่ GROUP BY: ฐานข้อมูลใช้ collation Thai_CI_AS ที่ไม่แยกตัวพิมพ์
+    // ใหญ่เล็ก GROUP BY จึงยุบ 'HUAWEI' กับ 'Huawei' เป็นกลุ่มเดียวแล้วคืนตัวสะกดมา
+    // แบบสุ่ม — ตัวนับใน canonicalBrands เลยไม่มีวันเห็นทั้งสองแบบ และตัวสะกดที่ได้
+    // ก็พลิกไปมาเองโดยไม่มีใครแก้อะไร ตาราง packages มีไม่กี่สิบแถว นับในโค้ดถูกกว่า
+    const rowsOf = (brand: string, model: string, spec: string, flag: string) => `
+      SELECT ${brand} AS brand, ${model} AS model, ${spec} AS spec,
+             1 AS n, CAST(is_active AS INT) AS active
+      FROM packages
+      WHERE ${flag} = 1 AND ${brand} IS NOT NULL AND LTRIM(RTRIM(${brand})) <> ''`;
 
     const [batt, inv, pan] = await Promise.all([
-      db.request().query<Row>(`
-        SELECT battery_brand AS brand, battery_model AS model, battery_kwh AS spec, COUNT(*) AS n,
-               SUM(CASE WHEN is_active = 1 THEN 1 ELSE 0 END) AS active
-        FROM packages
-        WHERE has_battery = 1 AND battery_brand IS NOT NULL AND LTRIM(RTRIM(battery_brand)) <> ''
-        GROUP BY battery_brand, battery_model, battery_kwh
-      `),
-      db.request().query<Row>(`
-        SELECT inverter_brand AS brand, inverter_model AS model, inverter_kw AS spec, COUNT(*) AS n,
-               SUM(CASE WHEN is_active = 1 THEN 1 ELSE 0 END) AS active
-        FROM packages
-        WHERE has_inverter = 1 AND inverter_brand IS NOT NULL AND LTRIM(RTRIM(inverter_brand)) <> ''
-        GROUP BY inverter_brand, inverter_model, inverter_kw
-      `),
-      db.request().query<Row>(panelGrouped),
+      db.request().query<Row>(rowsOf("battery_brand", "battery_model", "battery_kwh", "has_battery")),
+      db.request().query<Row>(rowsOf("inverter_brand", "inverter_model", "inverter_kw", "has_inverter")),
+      db.request().query<Row>(rowsOf("panel_brand", panelModelCol, "panel_watt", "has_panel")),
     ]);
 
     let leadPackage: LeadPackageEquipment | null = null;
@@ -126,7 +117,7 @@ export async function GET(req: NextRequest) {
         SELECT p.id, p.name,
                p.battery_brand, p.battery_model, p.battery_kwh,
                p.inverter_brand, p.inverter_model, p.inverter_kw,
-               p.panel_brand, ${panelModelSelect} AS panel_model, p.panel_watt,
+               p.panel_brand, ${panelModelCol} AS panel_model, p.panel_watt,
                p.has_battery, p.has_inverter, p.has_panel
         FROM leads l JOIN packages p ON p.id = l.interested_package_id
         WHERE l.id = @id

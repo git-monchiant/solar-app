@@ -1114,6 +1114,12 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
       sets.push("warranty_no_inverter = @warranty_no_inverter");
       request.input("warranty_no_inverter", sql.Bit, body.warranty_no_inverter ? 1 : 0);
     }
+    // ระบบนี้ไม่มีแบตเตอรี่ — ยืนยันโดยคนกรอก ไม่ใช่เดาจากช่องว่าง ใบรับประกัน
+    // ข้ามส่วนแบตไปเลยเมื่อธงนี้ตั้งไว้
+    if (body.warranty_no_battery !== undefined) {
+      sets.push("warranty_no_battery = @warranty_no_battery");
+      request.input("warranty_no_battery", sql.Bit, body.warranty_no_battery ? 1 : 0);
+    }
     if (body.warranty_batteries !== undefined) {
       sets.push("warranty_batteries = @warranty_batteries");
       request.input("warranty_batteries", sql.NVarChar(sql.MAX), body.warranty_batteries);

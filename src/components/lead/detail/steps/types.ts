@@ -238,6 +238,7 @@ export interface Lead {
   warranty_has_battery: boolean | null;
   /** true = ไม่ได้ติดตั้ง inverter ที่นี่ — inverter fields disabled + not required. */
   warranty_no_inverter: boolean | null;
+  warranty_no_battery: boolean | null;
   warranty_inverter_sn_photo_url: string | null;
   warranty_batteries: string | null;
   warranty_panel_serials: string | null;
