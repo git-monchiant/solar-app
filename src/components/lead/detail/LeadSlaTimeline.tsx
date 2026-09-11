@@ -28,13 +28,13 @@ export type LeadSlaItem = {
 };
 
 const STATUS_STYLE: Record<DisplayStatus, { label: string; dot: string; text: string; badge: string }> = {
-  on_time: { label: "ภายในกำหนด", dot: "bg-emerald-500", text: "text-emerald-700", badge: "bg-emerald-50 text-emerald-700 border-emerald-200" },
-  late: { label: "เกินกำหนด", dot: "bg-red-500", text: "text-red-700", badge: "bg-red-50 text-red-700 border-red-200" },
-  breached: { label: "เกินกำหนด (ยังไม่แล้วเสร็จ)", dot: "bg-red-500", text: "text-red-700", badge: "bg-red-50 text-red-700 border-red-200" },
-  critical: { label: "ใกล้เกินกำหนด", dot: "bg-orange-500", text: "text-orange-700", badge: "bg-orange-50 text-orange-700 border-orange-200" },
-  warning: { label: "ใกล้ครบกำหนด", dot: "bg-amber-400", text: "text-amber-700", badge: "bg-amber-50 text-amber-700 border-amber-200" },
-  active: { label: "กำลังดำเนินการ", dot: "bg-sky-500", text: "text-sky-700", badge: "bg-sky-50 text-sky-700 border-sky-200" },
-  cancelled: { label: "ยกเลิกรายการ", dot: "bg-gray-300", text: "text-gray-500", badge: "bg-gray-50 text-gray-500 border-gray-200" },
+  on_time: { label: "ภายในกำหนด SLA", dot: "bg-emerald-500", text: "text-emerald-700", badge: "bg-emerald-50 text-emerald-700 border-emerald-200" },
+  late: { label: "เกินกำหนด SLA", dot: "bg-red-500", text: "text-red-700", badge: "bg-red-50 text-red-700 border-red-200" },
+  breached: { label: "เกินกำหนด SLA (ยังไม่แล้วเสร็จ)", dot: "bg-red-500", text: "text-red-700", badge: "bg-red-50 text-red-700 border-red-200" },
+  critical: { label: "ใกล้เกินกำหนด SLA", dot: "bg-orange-500", text: "text-orange-700", badge: "bg-orange-50 text-orange-700 border-orange-200" },
+  warning: { label: "ใกล้ครบกำหนด SLA", dot: "bg-amber-400", text: "text-amber-700", badge: "bg-amber-50 text-amber-700 border-amber-200" },
+  active: { label: "อยู่ระหว่างดำเนินการตาม SLA", dot: "bg-sky-500", text: "text-sky-700", badge: "bg-sky-50 text-sky-700 border-sky-200" },
+  cancelled: { label: "ยกเลิกรายการ SLA", dot: "bg-gray-300", text: "text-gray-500", badge: "bg-gray-50 text-gray-500 border-gray-200" },
 };
 
 function displayStatus(item: LeadSlaItem, now: number): DisplayStatus {
@@ -124,10 +124,10 @@ export function LeadSlaSummary({ loading, error, summary }: {
   const overdueTotal = summary.completedLate + summary.breachedOpen;
   return (
     <div className="flex flex-wrap items-center gap-1.5 text-xxs font-semibold">
-      <span className="px-2 py-1 rounded-full bg-sky-50 text-sky-700">อยู่ระหว่างดำเนินการ {summary.open}</span>
-      <span className="px-2 py-1 rounded-full bg-emerald-50 text-emerald-700">ภายในกำหนด {summary.onTime}</span>
+      <span className="px-2 py-1 rounded-full bg-sky-50 text-sky-700">อยู่ระหว่างดำเนินการตาม SLA {summary.open}</span>
+      <span className="px-2 py-1 rounded-full bg-emerald-50 text-emerald-700">ภายในกำหนด SLA {summary.onTime}</span>
       <span className="px-2 py-1 rounded-full bg-red-50 text-red-700">
-        เกินกำหนดรวม {overdueTotal} รายการ · แล้วเสร็จ {summary.completedLate} · คงค้าง {summary.breachedOpen}
+        เกินกำหนด SLA รวม {overdueTotal} รายการ · แล้วเสร็จ {summary.completedLate} · คงค้าง {summary.breachedOpen}
       </span>
     </div>
   );
@@ -167,13 +167,13 @@ export function LeadSlaStageRows({ items, loading, now }: {
                 <span className={`font-semibold ${style.text}`}>{item.task_name || item.policy_name}</span>
                 <span className={`px-1.5 py-0.5 rounded border text-xxs font-bold ${style.badge}`}>{style.label}</span>
                 <span className="inline-flex flex-wrap items-center gap-x-2 text-xxs text-gray-500">
-                  <span>ระยะเวลาตามกำหนด {target}{!sameDeadline ? ` · ไม่เกิน ${due}` : ""}</span>
-                  {timeCondition && <span>เงื่อนไขการนับ: {timeCondition}</span>}
+                  <span>ระยะเวลาตาม SLA {target}{!sameDeadline ? ` · ไม่เกิน ${due}` : ""}</span>
+                  {timeCondition && <span>เงื่อนไขการนับ SLA: {timeCondition}</span>}
                 </span>
               </div>
               <div className="mt-0.5 flex flex-wrap items-center gap-x-2 gap-y-0.5 text-xxs text-gray-500">
-                <span>เริ่มนับ {dayOrDateTimeText(item.started_at)}</span>
-                <span>ครบกำหนด {dayOrDateTimeText(item.due_at)}</span>
+                <span>เริ่มนับ SLA {dayOrDateTimeText(item.started_at)}</span>
+                <span>ครบกำหนด SLA {dayOrDateTimeText(item.due_at)}</span>
                 <span className={`font-semibold ${style.text}`}>ระยะเวลาที่ใช้ {elapsed}</span>
                 {/* The elapsed time alone does not say when the work landed.
                     Open and cancelled rows have no end timestamp — their badge
