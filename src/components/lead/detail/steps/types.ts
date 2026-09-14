@@ -95,6 +95,10 @@ export interface Lead {
   // questionnaire §8 — decision making factor (JSON)
   decision_factors: string | null;
   decision_timeline: string | null;
+  // questionnaire §9 — customer demographics
+  occupation: string | null;
+  age_range: string | null;
+  household_income: string | null;
   interested_package_id: number | null;
   interested_package_ids: string | null;
   package_note: string | null;
@@ -237,6 +241,7 @@ export interface Lead {
   warranty_has_battery: boolean | null;
   /** true = ไม่ได้ติดตั้ง inverter ที่นี่ — inverter fields disabled + not required. */
   warranty_no_inverter: boolean | null;
+  warranty_no_battery: boolean | null;
   warranty_inverter_sn_photo_url: string | null;
   warranty_batteries: string | null;
   warranty_panel_serials: string | null;

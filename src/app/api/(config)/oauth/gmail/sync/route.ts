@@ -4,6 +4,7 @@ import { getGmailClient } from "@/lib/gmail";
 import { extractEmailBody, parseRegistrationEmail } from "@/lib/gmail-parser";
 import { getDb, sql } from "@/lib/db";
 import { ensureFirstContactSla } from "@/lib/sla-service";
+import { parseThaiLocation } from "@/lib/thai-location";
 
 // POST /api/oauth/gmail/sync
 // Pulls Sena Solar registration emails and inserts them as leads.
@@ -57,6 +58,10 @@ export async function POST(req: NextRequest) {
           `จังหวัด: ${parsed.province || "-"}\nประเภทที่อยู่: ${parsed.residence || "-"}\n` +
           `ค่าไฟต่อเดือน: ${parsed.monthly_bill || "-"}\nหลังคา: ${parsed.roof_shape || "-"}`;
 
+        // ที่อยู่เต็มให้ข้อมูลมากกว่า ถ้าแกะไม่ได้ค่อยถอยไปใช้ช่อง "จังหวัด" ของฟอร์ม
+        const fromAddress = parseThaiLocation(parsed.address);
+        const location = fromAddress.province ? fromAddress : parseThaiLocation(parsed.province);
+
         const leadInsert = await db.request()
           .input("full_name", sql.NVarChar(200), parsed.full_name.slice(0, 200) || "(no name)")
           .input("phone", sql.NVarChar(20), parsed.phone.slice(0, 20))
@@ -64,20 +69,22 @@ export async function POST(req: NextRequest) {
           .input("source", sql.NVarChar(50), "email")
           .input("note", sql.NVarChar(sql.MAX), note)
           .input("zone", sql.NVarChar(100), parsed.province ? parsed.province.slice(0, 100) : null)
+          .input("district", sql.NVarChar(100), location.district)
+          .input("province", sql.NVarChar(100), location.province)
           .input("installation_address", sql.NVarChar(500), parsed.address ? parsed.address.slice(0, 500) : null)
           .input("house_number", sql.NVarChar(50), parsed.house_number ? parsed.house_number.slice(0, 50) : null)
           .input("gmail_id", sql.NVarChar(64), id)
           .query(`
             INSERT INTO leads (
               full_name, phone, email, source, status, note,
-              zone,
+              zone, district, province,
               installation_address, house_number,
               gmail_message_id, contact_date, created_at
             )
             OUTPUT INSERTED.id
             VALUES (
               @full_name, @phone, @email, @source, 'pre_survey', @note,
-              @zone,
+              @zone, @district, @province,
               @installation_address, @house_number,
               @gmail_id, GETDATE(), GETDATE()
             )

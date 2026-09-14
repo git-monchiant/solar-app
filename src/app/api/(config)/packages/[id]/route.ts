@@ -34,6 +34,7 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
       panel_count: { type: sql.Int, value: body.panel_count },
       panel_watt: { type: sql.Int, value: body.panel_watt },
       panel_brand: { type: sql.NVarChar(100), value: body.panel_brand },
+      panel_model: { type: sql.NVarChar(100), value: body.panel_model },
       price: { type: sql.Decimal(12, 2), value: body.price },
       monthly_installment: { type: sql.NVarChar(20), value: body.monthly_installment },
       monthly_saving: { type: sql.Decimal(10, 2), value: body.monthly_saving },

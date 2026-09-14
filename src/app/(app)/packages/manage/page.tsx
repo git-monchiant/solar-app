@@ -34,6 +34,7 @@ interface Package {
   panel_count: number | null;
   panel_watt: number | null;
   panel_brand: string | null;
+  panel_model: string | null;
   price: number;
   monthly_installment: string | null;
   monthly_saving: number | null;
@@ -103,7 +104,7 @@ const empty: Omit<Package, "id"> = {
   name: "", kwp: 0, phase: 1, has_battery: false, has_panel: true, has_inverter: true, is_upgrade: false, is_other: false,
   battery_kwh: null, battery_brand: null,
   battery_model: null, inverter_kw: null, inverter_brand: null, inverter_model: null,
-  installed_kwp: null, panel_count: null, panel_watt: null, panel_brand: null,
+  installed_kwp: null, panel_count: null, panel_watt: null, panel_brand: null, panel_model: null,
   price: 0, monthly_installment: null,
   monthly_saving: null, warranty_years: 10, is_active: true, term_set_profile: null,
   start_date: new Date().toISOString().slice(0, 10),
@@ -243,6 +244,7 @@ export default function ManagePackagesPage() {
 
   const panelLabel = (pkg: Package) => [
     pkg.panel_brand,
+    pkg.panel_model,
     pkg.panel_count != null
       ? pkg.panel_watt != null
         ? `${pkg.panel_count}×${pkg.panel_watt}W`
@@ -637,6 +639,10 @@ export default function ManagePackagesPage() {
                   <div>
                     <label className={labelCls}>ยี่ห้อ</label>
                     <input type="text" value={editing.panel_brand ?? ""} onChange={e => setEditing({ ...editing, panel_brand: e.target.value || null })} placeholder="เช่น JINKO" className={fieldCls} />
+                  </div>
+                  <div>
+                    <label className={labelCls}>รุ่น</label>
+                    <input type="text" value={editing.panel_model ?? ""} onChange={e => setEditing({ ...editing, panel_model: e.target.value || null })} placeholder="เช่น Vertex N" className={fieldCls} />
                   </div>
                   <div className="grid grid-cols-2 gap-2">
                     <div>

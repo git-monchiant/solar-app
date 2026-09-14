@@ -93,7 +93,11 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
                d.future_usage_trend,
                -- Questionnaire §8 (migration 043 + 049).
                d.decision_factors,
-               d.decision_timeline
+               d.decision_timeline,
+               -- Questionnaire §9 (migration 153).
+               d.occupation,
+               d.age_range,
+               d.household_income
         FROM leads l
         LEFT JOIN projects p ON l.project_id = p.id
         LEFT JOIN packages pk ON l.interested_package_id = pk.id
@@ -405,6 +409,10 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
     // Questionnaire §8 (migration 043 + 049).
     pushLd("decision_factors",      sql.NVarChar(sql.MAX), body.decision_factors);
     pushLd("decision_timeline",     sql.NVarChar(200),     body.decision_timeline);
+    // Questionnaire §9 (migration 153).
+    pushLd("occupation",       sql.NVarChar(200), body.occupation);
+    pushLd("age_range",        sql.NVarChar(20),  body.age_range);
+    pushLd("household_income", sql.NVarChar(20),  body.household_income);
     // ─────────────────────────────────────────────────────────────────────
 
     if (body.status !== undefined) {
@@ -1095,6 +1103,19 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
     }
     if (body.warranty_issued_at !== undefined) {
       sets.push("warranty_issued_at = GETDATE()");
+      // Freeze whose name + signature this certificate prints. It re-renders
+      // from the DB on every open, so without the stamp a later change of the
+      // designated signer would rewrite certs already sent to customers.
+      // COALESCE keeps a re-issue from moving a signer that is already set.
+      const signerCfg = await db.request()
+        .query(`SELECT value FROM app_settings WHERE [key] = 'warranty_signer_user_id'`);
+      const signerUserId = signerCfg.recordset[0]?.value
+        ? parseInt(signerCfg.recordset[0].value) || null
+        : null;
+      if (signerUserId) {
+        sets.push("warranty_signer_user_id = COALESCE(warranty_signer_user_id, @warranty_signer_user_id)");
+        request.input("warranty_signer_user_id", sql.Int, signerUserId);
+      }
     }
     if (body.warranty_doc_url !== undefined) {
       sets.push("warranty_doc_url = @warranty_doc_url");
@@ -1185,6 +1206,12 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
     if (body.warranty_no_inverter !== undefined) {
       sets.push("warranty_no_inverter = @warranty_no_inverter");
       request.input("warranty_no_inverter", sql.Bit, body.warranty_no_inverter ? 1 : 0);
+    }
+    // ระบบนี้ไม่มีแบตเตอรี่ — ยืนยันโดยคนกรอก ไม่ใช่เดาจากช่องว่าง ใบรับประกัน
+    // ข้ามส่วนแบตไปเลยเมื่อธงนี้ตั้งไว้
+    if (body.warranty_no_battery !== undefined) {
+      sets.push("warranty_no_battery = @warranty_no_battery");
+      request.input("warranty_no_battery", sql.Bit, body.warranty_no_battery ? 1 : 0);
     }
     if (body.warranty_batteries !== undefined) {
       sets.push("warranty_batteries = @warranty_batteries");

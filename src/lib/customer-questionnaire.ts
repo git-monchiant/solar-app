@@ -1,4 +1,4 @@
-// Single source of truth for the eight Customer Info / Pre-Survey sections.
+// Single source of truth for the nine Customer Info / Pre-Survey sections.
 // The form and Dashboard III both import these definitions so labels, option
 // codes, bill boundaries, and factor keys cannot silently drift apart.
 
@@ -185,15 +185,65 @@ export const BATTERY_OPTIONS = [
   { value: "upgrade", label: "+ Upgrade" },
 ] as const;
 
+// §1 Customer Demographics. Single-choice codes; `occupation` also accepts the
+// shared "other:<free text>" pattern that optionLabel() below decodes.
+// (Stored by migration 153, which predates the renumber and still says §9.)
+export const OCCUPATIONS = [
+  { value: "business_owner", label: "เจ้าของกิจการ" },
+  { value: "private_employee", label: "พนง.บริษัทเอกชน" },
+  { value: "government", label: "รับราชการ/รัฐวิสาหกิจ" },
+  { value: "homemaker", label: "แม่บ้าน/พ่อบ้าน" },
+  { value: "freelance", label: "อาชีพอิสระ" },
+  { value: "medical", label: "แพทย์/พยาบาล" },
+  { value: "retired", label: "เกษียณอายุ" },
+  { value: "other", label: "อื่นๆ" },
+] as const;
+
+// Buckets are contiguous on purpose — the paper form's "ต่ำกว่า 20 / 21-30"
+// left age 20 with nowhere to go, so the first bucket is "ต่ำกว่า 21 ปี".
+export const AGE_RANGES = [
+  { value: "lt21", label: "ต่ำกว่า 21 ปี" },
+  { value: "21_30", label: "21-30 ปี" },
+  { value: "31_40", label: "31-40 ปี" },
+  { value: "41_50", label: "41-50 ปี" },
+  { value: "51_60", label: "51-60 ปี" },
+  { value: "gte61", label: "61 ปีขึ้นไป" },
+] as const;
+
+// "ไม่สะดวกให้ข้อมูล" is a real stored answer, not NULL — declining to answer
+// and never being asked are different facts, and collapsing them into NULL
+// would skew every `answered` count on Dashboard III.
+export const HOUSEHOLD_INCOMES = [
+  { value: "lt30k", label: "ต่ำกว่า 30,000 บาท" },
+  { value: "30k_50k", label: "30,000–49,999 บาท" },
+  { value: "50k_75k", label: "50,000–74,999 บาท" },
+  { value: "75k_100k", label: "75,000–99,999 บาท" },
+  { value: "100k_150k", label: "100,000–149,999 บาท" },
+  { value: "gte150k", label: "150,000 บาทขึ้นไป" },
+  { value: "no_answer", label: "ไม่สะดวกให้ข้อมูล" },
+] as const;
+
+// Array order IS the order every surface presents the questionnaire in — the
+// form, the Customer Info tab, Dashboard III's cards, and the Excel column
+// groups. `id` is just that position spelled out for the badges and group
+// labels; `key` is the stable identifier, so reordering renumbers nothing that
+// code depends on (nothing reads `id`, and the aggregate helpers below iterate
+// order-independently).
+//
+// Heads up when reading the rest of the codebase: the `§N (migration NNN)`
+// comments on lead_data columns use the order the sections were BUILT, which
+// stopped matching these ids when demographics moved to the front. Match on
+// `key` / column name, never on the number in those comments.
 export const QUESTIONNAIRE_SECTIONS = [
-  { id: 1, key: "customer_profile", title: "Customer Profile", subtitle: "ข้อมูลบ้านและผู้อยู่อาศัย", fields: ["residence_type", "house_age", "roof_shape", "occupant_total", "occupant_elderly", "occupant_kids", "occupant_pets"] },
-  { id: 2, key: "energy_profile", title: "Energy Profile", subtitle: "การใช้พลังงานปัจจุบัน", fields: ["monthly_bill", "monthly_bill_max", "electrical_phase", "meter_size", "peak_usage"] },
-  { id: 3, key: "lifestyle", title: "Lifestyle Assessment", subtitle: "รูปแบบการใช้ชีวิต", fields: ["home_at_daytime", "daytime_occupants", "work_at_home", "business_type", "work_days_per_week", "ac_split", "appliances", "ev_charge_period"] },
-  { id: 4, key: "future_home", title: "Future Home Assessment", subtitle: "แผนบ้านใน 5 ปี", fields: ["future_ev", "future_ev_charger", "future_extend_home", "future_more_members", "future_smart_home", "future_battery"] },
-  { id: 5, key: "energy_security", title: "Energy Security Assessment", subtitle: "ความมั่นคงด้านพลังงาน", fields: ["outage_priorities", "bill_rise_action"] },
-  { id: 6, key: "home_health", title: "Home Health Check", subtitle: "สุขภาพบ้าน", fields: ["had_roof_leak", "did_roof_repair", "had_electrical_issue", "did_panel_replacement"] },
-  { id: 7, key: "beyond", title: "Beyond Question", subtitle: "ความพร้อมด้านพลังงานในอนาคต", fields: ["self_generates", "ev_ready", "blackout_resilient", "future_usage_trend"] },
-  { id: 8, key: "decision", title: "Decision Making Factor", subtitle: "การตัดสินใจติดตั้ง", fields: ["decision_factors", "decision_timeline"] },
+  { id: 1, key: "demographics", title: "Customer Demographics", subtitle: "ข้อมูลลูกค้า", fields: ["occupation", "age_range", "household_income"] },
+  { id: 2, key: "customer_profile", title: "Customer Profile", subtitle: "ข้อมูลบ้านและผู้อยู่อาศัย", fields: ["residence_type", "house_age", "roof_shape", "occupant_total", "occupant_elderly", "occupant_kids", "occupant_pets"] },
+  { id: 3, key: "energy_profile", title: "Energy Profile", subtitle: "การใช้พลังงานปัจจุบัน", fields: ["monthly_bill", "monthly_bill_max", "electrical_phase", "meter_size", "peak_usage"] },
+  { id: 4, key: "lifestyle", title: "Lifestyle Assessment", subtitle: "รูปแบบการใช้ชีวิต", fields: ["home_at_daytime", "daytime_occupants", "work_at_home", "business_type", "work_days_per_week", "ac_split", "appliances", "ev_charge_period"] },
+  { id: 5, key: "future_home", title: "Future Home Assessment", subtitle: "แผนบ้านใน 5 ปี", fields: ["future_ev", "future_ev_charger", "future_extend_home", "future_more_members", "future_smart_home", "future_battery"] },
+  { id: 6, key: "energy_security", title: "Energy Security Assessment", subtitle: "ความมั่นคงด้านพลังงาน", fields: ["outage_priorities", "bill_rise_action"] },
+  { id: 7, key: "home_health", title: "Home Health Check", subtitle: "สุขภาพบ้าน", fields: ["had_roof_leak", "did_roof_repair", "had_electrical_issue", "did_panel_replacement"] },
+  { id: 8, key: "beyond", title: "Beyond Question", subtitle: "ความพร้อมด้านพลังงานในอนาคต", fields: ["self_generates", "ev_ready", "blackout_resilient", "future_usage_trend"] },
+  { id: 9, key: "decision", title: "Decision Making Factor", subtitle: "การตัดสินใจติดตั้ง", fields: ["decision_factors", "decision_timeline"] },
 ] as const;
 
 export function optionLabel(options: readonly { value: string; label: string }[], raw: string | null | undefined): string {
