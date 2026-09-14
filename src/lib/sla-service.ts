@@ -470,26 +470,18 @@ export async function syncOperationalSlas(db: Db, leadId: number, actorUserId?: 
   }
   const proposalAt = dateOrNull(lead.proposal_at);
   const depositAt = dateOrNull(lead.deposit_at);
-  const quotationReceivedAt = dateOrNull(lead.quotation_received_at);
   const installment1PaidAt = dateOrNull(lead.installment_1_paid_at);
-  const loanDocsAt = dateOrNull(lead.loan_docs_at);
   const loanResultAt = dateOrNull(lead.loan_result_at);
-  let firstInstallmentMethod: string | null = null;
   let hasLoanInstallment = false;
   try {
     const plan = lead.order_installments ? JSON.parse(String(lead.order_installments)) : [];
     if (Array.isArray(plan)) {
-      firstInstallmentMethod = String(plan[0]?.method || "transfer");
       hasLoanInstallment = plan.some(row => row?.method === "loan");
     }
   } catch {
     // Invalid legacy plans are already guarded by the write API. Do not create
     // a payment-method SLA until the plan can be read reliably.
   }
-  const loanAnchorAt = surveyDoneAt && loanDocsAt
-    ? new Date(Math.max(surveyDoneAt.getTime(), loanDocsAt.getTime()))
-    : null;
-  const installment1Methods = new Set(["transfer", "cheque", "cc"]);
   const installBookedAt = dateOrNull(lead.install_booked_at);
   // The installation clock now measures the crew's own window: it opens at the
   // booked slot and closes on the day the crew recorded as the real finish.
@@ -534,8 +526,18 @@ export async function syncOperationalSlas(db: Db, leadId: number, actorUserId?: 
     // DEPOSIT_CLOSE (ติดตามปิดการขายและรับมัดจำ) ถูกถอดตามคำสั่งผู้ใช้ — ไม่อยู่ในตาราง
     // SLA ที่บริษัทกำหนด ข้อ 6 ชำระมัดจำของตารางคือ PAYMENT_INSTALLMENT_1 /
     // LOAN_PREAPPROVAL งานเดิมทุกแถวถูกยกเลิกใน migration 182
-    { policyCode: "PAYMENT_INSTALLMENT_1", ownerRole: "sales", ownerUserId: lead.assigned_user_id || null, taskName: SLA_TASK_LABEL.PAYMENT_INSTALLMENT_1, anchorAt: firstInstallmentMethod && installment1Methods.has(firstInstallmentMethod) ? quotationReceivedAt : null, completionAt: installment1PaidAt, targetMinutes: OPERATIONAL_SLA_MINUTES.PAYMENT_INSTALLMENT_1.target, dueMinutes: OPERATIONAL_SLA_MINUTES.PAYMENT_INSTALLMENT_1.due, warningMinutes: OPERATIONAL_SLA_MINUTES.PAYMENT_INSTALLMENT_1.warning },
-    { policyCode: "LOAN_PREAPPROVAL", ownerRole: "sales", ownerUserId: lead.assigned_user_id || null, taskName: SLA_TASK_LABEL.LOAN_PREAPPROVAL, anchorAt: hasLoanInstallment ? loanAnchorAt : null, completionAt: loanResultAt, completionActivityId: lead.loan_result_activity_id, targetMinutes: OPERATIONAL_SLA_MINUTES.LOAN_PREAPPROVAL.target, dueMinutes: OPERATIONAL_SLA_MINUTES.LOAN_PREAPPROVAL.due, warningMinutes: OPERATIONAL_SLA_MINUTES.LOAN_PREAPPROVAL.warning },
+    //
+    // ข้อ 6 ทั้งสองแบบนับจาก "วันที่เสนอราคา" = proposalAt ซึ่งเป็นเวลาเดียวกับที่
+    // งาน PROPOSAL_ROI ถือว่าเสนอราคาเสร็จ โซ่งานจึงต่อกันพอดี
+    // เดิมเงินสด/โอนรอ activity 'ส่งใบเสนอราคาให้ลูกค้า' ที่ไม่มีโค้ดตรงไหนเขียน และ
+    // สินเชื่อรอทั้งสำรวจเสร็จและเอกสารสินเชื่อครบ ทั้งสองจึงไม่เคยสร้างงานได้เลย
+    // จุดเริ่มนับเดียวกันยังรองรับกรณีลูกค้าเปลี่ยนจากสินเชื่อเป็นเงินสด ตามตาราง
+    // ("กรณีลูกค้าเปลี่ยนใจให้นับวันต่อเลย") เพราะไม่ต้องเริ่มนับใหม่
+    //
+    // ข้อ 7 ติดตามชำระงวดที่ 1 เริ่มทันทีที่ปิดใบเสนอราคา ไม่รอดูวิธีชำระ (ผู้ใช้กำหนด)
+    // ข้อ 8 ติดตามผลอนุมัติสินเชื่อ รอจนรู้ว่ามีงวดที่ชำระด้วยสินเชื่อก่อนถึงจะเปิด
+    { policyCode: "PAYMENT_INSTALLMENT_1", ownerRole: "sales", ownerUserId: lead.assigned_user_id || null, taskName: SLA_TASK_LABEL.PAYMENT_INSTALLMENT_1, anchorAt: proposalAt, completionAt: installment1PaidAt, targetMinutes: OPERATIONAL_SLA_MINUTES.PAYMENT_INSTALLMENT_1.target, dueMinutes: OPERATIONAL_SLA_MINUTES.PAYMENT_INSTALLMENT_1.due, warningMinutes: OPERATIONAL_SLA_MINUTES.PAYMENT_INSTALLMENT_1.warning },
+    { policyCode: "LOAN_PREAPPROVAL", ownerRole: "sales", ownerUserId: lead.assigned_user_id || null, taskName: SLA_TASK_LABEL.LOAN_PREAPPROVAL, anchorAt: hasLoanInstallment ? proposalAt : null, completionAt: loanResultAt, completionActivityId: lead.loan_result_activity_id, targetMinutes: OPERATIONAL_SLA_MINUTES.LOAN_PREAPPROVAL.target, dueMinutes: OPERATIONAL_SLA_MINUTES.LOAN_PREAPPROVAL.due, warningMinutes: OPERATIONAL_SLA_MINUTES.LOAN_PREAPPROVAL.warning },
     { policyCode: "SCHEDULE_INSTALLATION", policyVersion: 3, ownerRole: "sales", ownerUserId: lead.assigned_user_id || null, taskName: SLA_TASK_LABEL.SCHEDULE_INSTALLATION, anchorAt: depositAt, completionAt: installBookedAt, completionActivityId: lead.install_booked_activity_id, targetMinutes: OPERATIONAL_SLA_MINUTES.SCHEDULE_INSTALLATION.target, dueMinutes: OPERATIONAL_SLA_MINUTES.SCHEDULE_INSTALLATION.due, warningMinutes: OPERATIONAL_SLA_MINUTES.SCHEDULE_INSTALLATION.warning },
     { policyCode: "INSTALLATION", policyVersion: 3, ownerRole: "solar", ownerUserId: lead.install_assigned_user_id || lead.install_completed_by || null, taskName: SLA_TASK_LABEL.INSTALLATION, anchorAt: scheduledInstallAnchor.at, anchorSource: scheduledInstallAnchor.source || undefined, freezeAnchorAfterCompletion: true, completionAt: installCompletedAt, targetMinutes: OPERATIONAL_SLA_MINUTES.INSTALLATION.target, dueMinutes: OPERATIONAL_SLA_MINUTES.INSTALLATION.due, warningMinutes: OPERATIONAL_SLA_MINUTES.INSTALLATION.warning },
     { policyCode: "CLOSE_LEAD", policyVersion: 4, ownerRole: "solar", ownerUserId: lead.assigned_user_id || null, taskName: SLA_TASK_LABEL.CLOSE_LEAD, anchorAt: closeLeadMilestones.anchorAt, anchorSource: "installation_completed", completionAt: closeLeadMilestones.completedAt, completionActivityId: lead.warranty_activity_id, targetMinutes: OPERATIONAL_SLA_MINUTES.CLOSE_LEAD.target, dueMinutes: OPERATIONAL_SLA_MINUTES.CLOSE_LEAD.due, warningMinutes: OPERATIONAL_SLA_MINUTES.CLOSE_LEAD.warning },

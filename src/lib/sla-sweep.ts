@@ -34,7 +34,14 @@ const LOCK_NAME = "solar-app:sla-sweep";
 
 type SweepGlobal = typeof globalThis & { __slaSweepRunning?: boolean };
 
-export async function runSlaSweep(trigger: string): Promise<SlaSweepResult> {
+/**
+ * scope เลือกเฉพาะกลุ่ม Lead ที่ได้รับผลจากการแก้ ไม่ต้องไล่ทั้งระบบทุกครั้ง
+ * เช่น แก้กติกาขั้นชำระเงินกระทบเฉพาะ Lead ที่ผ่านขั้นเสนอราคาแล้ว
+ * ไม่ส่ง scope = ทุก Lead ที่ยังไม่ปิดจบ (รอบตามเวลาใช้แบบนี้)
+ */
+export type SlaSweepScope = { statuses?: string[]; leadIds?: number[] };
+
+export async function runSlaSweep(trigger: string, scope: SlaSweepScope = {}): Promise<SlaSweepResult> {
   const g = globalThis as SweepGlobal;
   const startedAt = Date.now();
   if (g.__slaSweepRunning) {
@@ -63,9 +70,13 @@ export async function runSlaSweep(trigger: string): Promise<SlaSweepResult> {
       return { ran: false, reason: "มีรอบอื่นกำลังรันอยู่", leads: 0, failed: 0, ms: Date.now() - startedAt };
     }
 
+    const statuses = (scope.statuses ?? []).filter(s => /^[a-z_-]+$/.test(s));
+    const leadIds = (scope.leadIds ?? []).filter(id => Number.isInteger(id) && id > 0);
     const leads = await db.request().query(`
       SELECT id FROM leads
       WHERE status NOT IN ('lost', 'returned', 'closed')
+        ${statuses.length ? `AND status IN (${statuses.map(s => `'${s}'`).join(",")})` : ""}
+        ${leadIds.length ? `AND id IN (${leadIds.join(",")})` : ""}
       ORDER BY id
     `);
 

@@ -8,15 +8,19 @@ import { runSlaSweep } from "@/lib/sla-sweep";
  *
  * ค่าเริ่มต้นสั่งแล้วตอบกลับทันที (202) งานวิ่งต่อเบื้องหลังเพราะใช้เวลาหลายนาที
  * ใส่ ?wait=1 เพื่อรอจนจบแล้วรับผลสรุป
+ * เลือกกลุ่มได้: ?status=order,install หรือ ?leadId=650,974
  */
 export async function POST(req: NextRequest) {
   const gate = await requireAdmin(req);
   if (gate.error) return gate.error;
 
   const trigger = `manual:user-${gate.userId}`;
-  if (req.nextUrl.searchParams.get("wait") === "1") {
-    return NextResponse.json(await runSlaSweep(trigger));
+  const params = req.nextUrl.searchParams;
+  const list = (key: string) => (params.get(key) ?? "").split(",").map(v => v.trim()).filter(Boolean);
+  const scope = { statuses: list("status"), leadIds: list("leadId").map(Number) };
+  if (params.get("wait") === "1") {
+    return NextResponse.json(await runSlaSweep(trigger, scope));
   }
-  runSlaSweep(trigger).catch(error => console.error("[sla-sweep] manual run failed:", error));
+  runSlaSweep(trigger, scope).catch(error => console.error("[sla-sweep] manual run failed:", error));
   return NextResponse.json({ started: true }, { status: 202 });
 }
