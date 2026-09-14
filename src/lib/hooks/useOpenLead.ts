@@ -14,9 +14,12 @@ import { useCallback } from "react";
 // LeadLink delegates here for the primary click.
 export function useOpenLead() {
   const router = useRouter();
-  return useCallback((id: number | string) => {
+  // options.tab เปิดหน้า Lead ที่แท็บนั้นแทนแท็บ Workflow เช่น คลิกกล่อง SLA บนการ์ด
+  // แล้วเปิดแท็บ SLA - Tracking ทันที ไม่ต้องไปกดหาเอง
+  return useCallback((id: number | string, options?: { tab?: "sla" }) => {
+    const tab = options?.tab ? `tab=${options.tab}` : "";
     const isLarge = typeof window !== "undefined" && window.matchMedia("(min-width: 500px)").matches;
-    if (isLarge) window.open(`/leads/${id}?focus=1`, "_blank", "noreferrer");
-    else router.push(`/leads/${id}`);
+    if (isLarge) window.open(`/leads/${id}?focus=1${tab ? `&${tab}` : ""}`, "_blank", "noreferrer");
+    else router.push(`/leads/${id}${tab ? `?${tab}` : ""}`);
   }, [router]);
 }

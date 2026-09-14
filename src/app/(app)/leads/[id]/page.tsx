@@ -743,7 +743,10 @@ export default function LeadDetailPage({ params }: { params: Promise<{ id: strin
   const [loadingAct, setLoadingAct] = useState(true);
   const [modalType, setModalType] = useState<ActivityType | null>(null);
   const [showLostModal, setShowLostModal] = useState(false);
-  const [tab, setTab] = useState<"info" | "workflow" | "timeline" | "sla" | "serials" | "photos" | "log">("workflow");
+  // ?tab=sla มาจากการคลิกกล่อง SLA บนการ์ด Lead — เปิดแท็บ SLA - Tracking ทันที
+  const [tab, setTab] = useState<"info" | "workflow" | "timeline" | "sla" | "serials" | "photos" | "log">(
+    () => (searchParams.get("tab") === "sla" ? "sla" : "workflow"),
+  );
   const { items: slaItems, now: slaNow, refresh: refreshSla } = useLeadSlaTimeline(Number(id));
   const [openSections, setOpenSections] = useState<Record<string, boolean>>({
     contact: true, address: true, interest: true, usage: true, system: true, finance: true, source: true, note: true,

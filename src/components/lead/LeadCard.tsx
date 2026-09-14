@@ -414,7 +414,18 @@ export default function LeadCard({ lead, compact, onAssignChange, onOpen, slaFoo
           </div>
 
           {hasSlaPanel && (
-            <div className="mt-3 min-w-0 2xl:mt-0 2xl:h-full">
+            // คลิกกล่อง SLA เปิดหน้า Lead ที่แท็บ SLA - Tracking เลย ส่วนอื่นของการ์ด
+            // ยังเปิดแท็บ Workflow ตามเดิม ปุ่ม/ช่องเลือกในกล่อง (เช่น มอบหมายผู้รับผิดชอบ)
+            // ต้องทำงานของตัวเอง ไม่เปิดหน้า
+            <div
+              className="mt-3 min-w-0 cursor-pointer 2xl:mt-0 2xl:h-full"
+              title="เปิดแท็บ SLA - Tracking"
+              onClick={(event) => {
+                if ((event.target as HTMLElement).closest("button, select, input, textarea, a")) return;
+                event.stopPropagation();
+                openLead(lead.id, { tab: "sla" });
+              }}
+            >
               {slaPanel}
             </div>
           )}
