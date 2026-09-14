@@ -83,7 +83,7 @@ SET started_at = d.scheduled_at,
                   ELSE 'active' END,
     breached_at = CASE WHEN d.survey_done_at > d.due_at THEN d.survey_done_at
                        WHEN d.survey_done_at IS NULL AND GETDATE() > d.due_at
-                         THEN COALESCE(si.breached_at, GETDATE())
+                         THEN COALESCE(si.breached_at, d.due_at)
                        ELSE NULL END,
     context_json = JSON_MODIFY(
       JSON_MODIFY(COALESCE(si.context_json, '{}'), '$.anchorSource', d.anchor_source),

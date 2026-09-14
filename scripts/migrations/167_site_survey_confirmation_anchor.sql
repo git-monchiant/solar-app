@@ -90,7 +90,7 @@ SET policy_version=CASE WHEN d.completed_at IS NULL THEN 4 ELSE si.policy_versio
     breached_at=CASE
       WHEN d.completed_at IS NOT NULL
         THEN CASE WHEN d.completed_at>d.new_due_at THEN d.completed_at ELSE NULL END
-      WHEN GETDATE()>d.new_due_at THEN COALESCE(si.breached_at,GETDATE())
+      WHEN GETDATE()>d.new_due_at THEN COALESCE(si.breached_at, d.new_due_at)
       ELSE NULL
     END,
     context_json=JSON_MODIFY(

@@ -70,7 +70,7 @@ SET policy_version=3, superseded_at=NULL,
     breached_at=CASE
       WHEN p.completed_at IS NOT NULL
         THEN CASE WHEN p.completed_at>DATEADD(MINUTE,p.due_minutes,p.started_at) THEN p.completed_at ELSE NULL END
-      WHEN GETDATE()>DATEADD(MINUTE,p.due_minutes,p.started_at) THEN GETDATE()
+      WHEN GETDATE()>DATEADD(MINUTE,p.due_minutes,p.started_at) THEN DATEADD(MINUTE,p.due_minutes,p.started_at)
       ELSE NULL END,
     context_json=JSON_MODIFY(JSON_MODIFY(COALESCE(si.context_json,'{}'),'$.supersedeReason',NULL),'$.reinstatedBy','all_grades_v1'),
     updated_at=GETDATE()
@@ -111,7 +111,7 @@ SET policy_version=3, superseded_at=NULL,
       WHEN DATEDIFF(MINUTE,GETDATE(),DATEADD(MINUTE,4320,f.started_at))<=30 THEN 'critical'
       WHEN GETDATE()>=DATEADD(MINUTE,2880,f.started_at) THEN 'warning'
       ELSE 'active' END,
-    breached_at=CASE WHEN GETDATE()>DATEADD(MINUTE,4320,f.started_at) THEN COALESCE(si.breached_at,GETDATE()) END,
+    breached_at=CASE WHEN GETDATE()>DATEADD(MINUTE,4320,f.started_at) THEN COALESCE(si.breached_at, DATEADD(MINUTE,4320,f.started_at)) END,
     context_json=JSON_MODIFY(COALESCE(si.context_json,'{}'),'$.reinstatedBy','deposit_close_v1'),
     updated_at=GETDATE()
 FROM dbo.lead_sla_instances si JOIN from_152 f ON f.id=si.id;
@@ -145,7 +145,7 @@ SET status=CASE
       WHEN GETDATE()>=DATEADD(MINUTE,1200,si.started_at) THEN 'warning'
       ELSE 'active' END,
     superseded_at=NULL,
-    breached_at=CASE WHEN GETDATE()>DATEADD(MINUTE,1440,si.started_at) THEN COALESCE(si.breached_at,GETDATE()) END,
+    breached_at=CASE WHEN GETDATE()>DATEADD(MINUTE,1440,si.started_at) THEN COALESCE(si.breached_at, DATEADD(MINUTE,1440,si.started_at)) END,
     context_json=JSON_MODIFY(si.context_json,'$.supersedeReason',NULL),
     updated_at=GETDATE()
 FROM dbo.lead_sla_instances si
@@ -193,7 +193,7 @@ SELECT e.lead_id,'GRADE_PLAYBOOK',2,
   CASE WHEN GETDATE()>DATEADD(MINUTE,1440,e.anchor_at) THEN 'breached'
        WHEN DATEDIFF(MINUTE,GETDATE(),DATEADD(MINUTE,1440,e.anchor_at))<=30 THEN 'critical'
        WHEN GETDATE()>=DATEADD(MINUTE,1200,e.anchor_at) THEN 'warning' ELSE 'active' END,
-  CASE WHEN GETDATE()>DATEADD(MINUTE,1440,e.anchor_at) THEN GETDATE() END,
+  CASE WHEN GETDATE()>DATEADD(MINUTE,1440,e.anchor_at) THEN DATEADD(MINUTE,1440,e.anchor_at) END,
   CONCAT('{"grade":"',e.customer_grade,'","gradeHistoryId":',e.grade_history_id,
          ',"stepIndex":0,"stepCode":"daily_follow_up","cycle":0,"ruleVersion":2,"calendarDays":true,"timezone":"Asia/Bangkok"}')
 FROM eligible e

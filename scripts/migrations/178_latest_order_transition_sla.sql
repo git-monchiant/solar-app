@@ -132,7 +132,7 @@ SET policy_version=4,
       ELSE 'active' END,
     breached_at=CASE
       WHEN si.completed_at IS NOT NULL AND si.completed_at>DATEADD(DAY,3,o.occurred_at) THEN si.completed_at
-      WHEN si.completed_at IS NULL AND GETDATE()>DATEADD(DAY,3,o.occurred_at) THEN COALESCE(si.breached_at,GETDATE())
+      WHEN si.completed_at IS NULL AND GETDATE()>DATEADD(DAY,3,o.occurred_at) THEN COALESCE(si.breached_at, DATEADD(DAY,3,o.occurred_at))
       ELSE NULL END,
     context_json=JSON_MODIFY(COALESCE(si.context_json,'{}'),'$.anchorSource','latest_forward_order_transition'),
     updated_at=GETDATE()

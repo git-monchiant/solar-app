@@ -170,7 +170,7 @@ SET owner_user_id = COALESCE(l.assigned_user_id, si.owner_user_id),
                   ELSE 'active' END,
     completed_at = l.owner_assigned_at,
     breached_at = CASE WHEN l.owner_assigned_at > si.due_at THEN COALESCE(si.breached_at, l.owner_assigned_at)
-                       WHEN l.owner_assigned_at IS NULL AND GETDATE() > si.due_at THEN COALESCE(si.breached_at, GETDATE())
+                       WHEN l.owner_assigned_at IS NULL AND GETDATE() > si.due_at THEN COALESCE(si.breached_at, si.due_at)
                        ELSE NULL END,
     updated_at = GETDATE()
 FROM dbo.lead_sla_instances si

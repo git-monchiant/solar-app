@@ -98,7 +98,7 @@ SET policy_version=3,
     breached_at=CASE
       WHEN d.closed_at IS NOT NULL
         THEN CASE WHEN d.closed_at>DATEADD(MINUTE,4320,d.anchor_at) THEN d.closed_at ELSE NULL END
-      WHEN GETDATE()>DATEADD(MINUTE,4320,d.anchor_at) THEN COALESCE(si.breached_at,GETDATE())
+      WHEN GETDATE()>DATEADD(MINUTE,4320,d.anchor_at) THEN COALESCE(si.breached_at, DATEADD(MINUTE,4320,d.anchor_at))
       ELSE NULL
     END,
     context_json=JSON_MODIFY(
@@ -170,7 +170,7 @@ SELECT d.lead_id,'CLOSE_LEAD',3,CONCAT('operational:close_lead:',d.lead_id),
        d.closed_at,d.closed_activity_id,
        CASE
          WHEN d.closed_at>DATEADD(MINUTE,4320,d.anchor_at) THEN d.closed_at
-         WHEN d.closed_at IS NULL AND GETDATE()>DATEADD(MINUTE,4320,d.anchor_at) THEN GETDATE()
+         WHEN d.closed_at IS NULL AND GETDATE()>DATEADD(MINUTE,4320,d.anchor_at) THEN DATEADD(MINUTE,4320,d.anchor_at)
          ELSE NULL
        END,
        N'{"operational":true,"calendarDays":true,"timezone":"Asia/Bangkok","anchorSource":"installation_and_warranty_completed","warrantyBeforeClose":true}'

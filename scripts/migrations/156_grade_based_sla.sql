@@ -130,7 +130,7 @@ SET policy_version=2, task_name=N'ยืนยันวัน เวลา แ�
     status=CASE WHEN GETDATE()>DATEADD(DAY,1,g.grade_at) THEN 'breached'
                 WHEN DATEDIFF(MINUTE,GETDATE(),DATEADD(DAY,1,g.grade_at))<=30 THEN 'critical'
                 WHEN GETDATE()>=DATEADD(HOUR,20,g.grade_at) THEN 'warning' ELSE 'active' END,
-    breached_at=CASE WHEN GETDATE()>DATEADD(DAY,1,g.grade_at) THEN COALESCE(si.breached_at,GETDATE()) ELSE NULL END,
+    breached_at=CASE WHEN GETDATE()>DATEADD(DAY,1,g.grade_at) THEN COALESCE(si.breached_at, DATEADD(DAY,1,g.grade_at)) ELSE NULL END,
     context_json=JSON_MODIFY(JSON_MODIFY(COALESCE(si.context_json,'{}'),'$.grade','A'),'$.gradeRuleVersion',1),
     updated_at=GETDATE()
 FROM dbo.lead_sla_instances si JOIN grade_epoch g ON g.lead_id=si.lead_id
@@ -143,7 +143,7 @@ SET policy_version=2,target_at=DATEADD(DAY,7,started_at),due_at=DATEADD(DAY,7,st
     status=CASE WHEN GETDATE()>DATEADD(DAY,7,started_at) THEN 'breached'
                 WHEN DATEDIFF(MINUTE,GETDATE(),DATEADD(DAY,7,started_at))<=30 THEN 'critical'
                 WHEN GETDATE()>=DATEADD(DAY,5,started_at) THEN 'warning' ELSE 'active' END,
-    breached_at=CASE WHEN GETDATE()>DATEADD(DAY,7,started_at) THEN COALESCE(breached_at,GETDATE()) ELSE NULL END,
+    breached_at=CASE WHEN GETDATE()>DATEADD(DAY,7,started_at) THEN COALESCE(breached_at, DATEADD(DAY,7,started_at)) ELSE NULL END,
     updated_at=GETDATE()
 FROM dbo.lead_sla_instances si JOIN dbo.leads l ON l.id=si.lead_id
 WHERE si.policy_code='SITE_SURVEY' AND l.customer_grade='A' AND si.status IN ('active','warning','critical','breached');
@@ -154,7 +154,7 @@ SET policy_version=2,target_at=DATEADD(DAY,1,started_at),due_at=DATEADD(DAY,1,st
     status=CASE WHEN GETDATE()>DATEADD(DAY,1,started_at) THEN 'breached'
                 WHEN DATEDIFF(MINUTE,GETDATE(),DATEADD(DAY,1,started_at))<=30 THEN 'critical'
                 WHEN GETDATE()>=DATEADD(HOUR,20,started_at) THEN 'warning' ELSE 'active' END,
-    breached_at=CASE WHEN GETDATE()>DATEADD(DAY,1,started_at) THEN COALESCE(breached_at,GETDATE()) ELSE NULL END,
+    breached_at=CASE WHEN GETDATE()>DATEADD(DAY,1,started_at) THEN COALESCE(breached_at, DATEADD(DAY,1,started_at)) ELSE NULL END,
     updated_at=GETDATE()
 FROM dbo.lead_sla_instances si JOIN dbo.leads l ON l.id=si.lead_id
 WHERE si.policy_code='PROPOSAL_ROI' AND l.customer_grade='A' AND si.status IN ('active','warning','critical','breached');
@@ -165,7 +165,7 @@ SET policy_version=2,target_at=DATEADD(DAY,3,started_at),due_at=DATEADD(DAY,3,st
     status=CASE WHEN GETDATE()>DATEADD(DAY,3,started_at) THEN 'breached'
                 WHEN DATEDIFF(MINUTE,GETDATE(),DATEADD(DAY,3,started_at))<=30 THEN 'critical'
                 WHEN GETDATE()>=DATEADD(DAY,2,started_at) THEN 'warning' ELSE 'active' END,
-    breached_at=CASE WHEN GETDATE()>DATEADD(DAY,3,started_at) THEN COALESCE(breached_at,GETDATE()) ELSE NULL END,
+    breached_at=CASE WHEN GETDATE()>DATEADD(DAY,3,started_at) THEN COALESCE(breached_at, DATEADD(DAY,3,started_at)) ELSE NULL END,
     updated_at=GETDATE()
 FROM dbo.lead_sla_instances si JOIN dbo.leads l ON l.id=si.lead_id
 WHERE si.policy_code='DEPOSIT_CLOSE' AND l.customer_grade='A' AND si.status IN ('active','warning','critical','breached');
@@ -176,7 +176,7 @@ SET policy_version=2,target_at=DATEADD(DAY,7,started_at),due_at=DATEADD(DAY,7,st
     warning_at=DATEADD(DAY,5,started_at),
     status=CASE WHEN GETDATE()>DATEADD(DAY,7,started_at) THEN 'breached'
                 WHEN GETDATE()>=DATEADD(DAY,5,started_at) THEN 'warning' ELSE 'active' END,
-    breached_at=CASE WHEN GETDATE()>DATEADD(DAY,7,started_at) THEN COALESCE(breached_at,GETDATE()) ELSE NULL END,
+    breached_at=CASE WHEN GETDATE()>DATEADD(DAY,7,started_at) THEN COALESCE(breached_at, DATEADD(DAY,7,started_at)) ELSE NULL END,
     updated_at=GETDATE()
 WHERE policy_code='SCHEDULE_INSTALLATION' AND status IN ('active','warning','critical','breached');
 
@@ -185,7 +185,7 @@ SET policy_version=2,target_at=DATEADD(DAY,15,started_at),due_at=DATEADD(DAY,15,
     warning_at=DATEADD(DAY,12,started_at),
     status=CASE WHEN GETDATE()>DATEADD(DAY,15,started_at) THEN 'breached'
                 WHEN GETDATE()>=DATEADD(DAY,12,started_at) THEN 'warning' ELSE 'active' END,
-    breached_at=CASE WHEN GETDATE()>DATEADD(DAY,15,started_at) THEN COALESCE(breached_at,GETDATE()) ELSE NULL END,
+    breached_at=CASE WHEN GETDATE()>DATEADD(DAY,15,started_at) THEN COALESCE(breached_at, DATEADD(DAY,15,started_at)) ELSE NULL END,
     updated_at=GETDATE()
 WHERE policy_code='INSTALLATION' AND status IN ('active','warning','critical','breached');
 

@@ -178,7 +178,7 @@ DECLARE @changed TABLE(
            WHEN s.activity_id IS NOT NULL AND s.activity_completed_at>s.due_at THEN s.activity_completed_at
            WHEN s.activity_id IS NOT NULL THEN NULL
            WHEN s.terminal_sequence IS NOT NULL AND s.sequence>s.terminal_sequence THEN NULL
-           WHEN @now>s.due_at THEN COALESCE(s.breached_at,@now)
+           WHEN @now>s.due_at THEN COALESCE(s.breached_at, s.due_at)
            ELSE NULL
          END AS desired_breached_at
   FROM source s

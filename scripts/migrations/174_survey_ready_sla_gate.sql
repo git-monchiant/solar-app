@@ -102,7 +102,7 @@ SET policy_version=4,
                 WHEN GETDATE()>=DATEADD(HOUR,20,l.survey_ready_at) THEN 'warning'
                 ELSE 'active' END,
     breached_at=CASE WHEN GETDATE()>DATEADD(DAY,1,l.survey_ready_at)
-                     THEN COALESCE(si.breached_at,GETDATE()) ELSE NULL END,
+                     THEN COALESCE(si.breached_at, DATEADD(DAY,1,l.survey_ready_at)) ELSE NULL END,
     context_json=JSON_MODIFY(COALESCE(si.context_json,'{}'),'$.anchorSource','survey_ready'),
     updated_at=GETDATE()
 FROM dbo.lead_sla_instances si

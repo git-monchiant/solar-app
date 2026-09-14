@@ -50,7 +50,7 @@ SET policy_version = 3,
     breached_at = CASE
       WHEN si.status = 'completed'
         THEN CASE WHEN si.completed_at > r.new_due_at THEN si.completed_at ELSE NULL END
-      WHEN GETDATE() > r.new_due_at THEN COALESCE(si.breached_at, GETDATE())
+      WHEN GETDATE() > r.new_due_at THEN COALESCE(si.breached_at, r.new_due_at)
       ELSE NULL
     END,
     context_json = JSON_MODIFY(COALESCE(si.context_json, '{}'), '$.deadlineRule', 'BANGKOK_CONTACT_WINDOW'),

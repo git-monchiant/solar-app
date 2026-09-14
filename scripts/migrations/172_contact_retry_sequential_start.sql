@@ -5,6 +5,13 @@
 -- as open work; completing it as unreachable starts the next rung at that exact
 -- activity time. Future legacy rows are superseded, never deleted.
 -- Forward-only and idempotent.
+--
+-- แก้ให้รันซ้ำได้จริง (ก่อนขึ้น prod): เดิมรันรอบสองพังด้วย UQ_lead_sla_instance_key
+-- เพราะหลัง migration 180 Lead หนึ่งราย sequence เดียวกันมีได้หลายแถว (แถว v2 ที่
+-- ใช้งาน + แถว v1 ที่ถูกถอดเป็น superseded) UPDATE เดิมจับทุกแถวด้วย (lead, sequence)
+-- แล้วตั้ง instance_key ค่าเดียวกันให้ทุกแถว จึงชน UNIQUE และยังล้าง superseded_at
+-- ปลุกแถวที่ถอดแล้วให้กลับมาด้วย ตอนนี้เลือก "แถวหลัก" แถวเดียวต่อ (lead, sequence)
+-- ก่อน แล้วค่อยแก้เฉพาะแถวนั้น แถวซ้ำที่เหลือไปอยู่ขั้น supersede
 
 SET NOCOUNT ON;
 SET XACT_ABORT ON;
@@ -147,7 +154,7 @@ SELECT t.lead_id,t.sequence,t.offset_days,t.owner_user_id,t.anchor_activity_id,
             ELSE 'active' END,
        t.completed_at,t.completion_activity_id,
        CASE WHEN t.completion_activity_id IS NOT NULL AND t.completed_at>t.due_at THEN t.completed_at
-            WHEN t.completion_activity_id IS NULL AND @now>t.due_at THEN @now
+            WHEN t.completion_activity_id IS NULL AND @now>t.due_at THEN t.due_at
             ELSE NULL END,
        CONCAT('contact-retry:',t.lead_id,':d',t.offset_days,':',t.anchor_activity_id),
        CONCAT('{"sequence":',t.sequence,
@@ -165,6 +172,38 @@ DECLARE @changed TABLE(
   old_started_at DATETIME2 NULL,
   new_started_at DATETIME2 NULL
 );
+
+-- แถวหลักหนึ่งแถวต่อ (lead, sequence): เลือกแถวที่ถือ instance_key ที่ต้องการอยู่แล้ว
+-- ก่อน (กันไม่ให้มีแถวอื่นถือคีย์ซ้ำ) รองลงมาคือแถวที่ยังไม่ถูกถอด แล้วเวอร์ชันใหม่กว่า
+-- รวมแถวที่ถือคีย์ตรงกันแม้ sequence ใน JSON จะหาย เพื่อไม่ให้ UPDATE ไปชนคีย์ของแถวนั้น
+DECLARE @canonical TABLE(
+  id BIGINT PRIMARY KEY,
+  lead_id INT NOT NULL,
+  sequence INT NOT NULL
+);
+
+;WITH candidates AS (
+  SELECT si.id,d.lead_id,d.sequence,
+         ROW_NUMBER() OVER(
+           PARTITION BY d.lead_id,d.sequence
+           ORDER BY CASE WHEN si.instance_key=d.instance_key THEN 0 ELSE 1 END,
+                    CASE WHEN si.superseded_at IS NULL AND si.status<>'superseded' THEN 0 ELSE 1 END,
+                    si.policy_version DESC,
+                    si.id
+         ) AS rn
+  FROM dbo.lead_sla_instances si
+  JOIN @desired d
+    ON d.lead_id=si.lead_id
+   AND si.policy_code='CONTACT_RETRY'
+   AND (d.sequence=TRY_CONVERT(INT,JSON_VALUE(si.context_json,'$.sequence'))
+        OR si.instance_key=d.instance_key)
+), winners AS (
+  -- แถวเดียวอาจชนะได้สองกลุ่ม (ตรง sequence กลุ่มหนึ่ง ตรงคีย์อีกกลุ่ม) ให้เหลือกลุ่มเดียว
+  SELECT c.*,ROW_NUMBER() OVER(PARTITION BY c.id ORDER BY c.sequence) AS id_rn
+  FROM candidates c WHERE c.rn=1
+)
+INSERT @canonical(id,lead_id,sequence)
+SELECT id,lead_id,sequence FROM winners WHERE id_rn=1;
 
 UPDATE si
 SET policy_version=2,
@@ -188,9 +227,8 @@ OUTPUT INSERTED.id,INSERTED.lead_id,d.sequence,DELETED.status,INSERTED.status,
        DELETED.started_at,INSERTED.started_at
 INTO @changed(id,lead_id,sequence,old_status,new_status,old_started_at,new_started_at)
 FROM dbo.lead_sla_instances si
-JOIN @desired d
-  ON d.lead_id=si.lead_id
- AND d.sequence=TRY_CONVERT(INT,JSON_VALUE(si.context_json,'$.sequence'))
+JOIN @canonical c ON c.id=si.id
+JOIN @desired d ON d.lead_id=c.lead_id AND d.sequence=c.sequence
 WHERE si.policy_version<>2
    OR si.instance_key<>d.instance_key
    OR si.started_at<>d.started_at
@@ -234,10 +272,10 @@ SELECT d.lead_id,'CONTACT_RETRY',2,d.instance_key,
        d.status,d.completed_at,d.completion_activity_id,d.breached_at,d.context_json
 FROM @desired d
 WHERE NOT EXISTS(
-  SELECT 1 FROM dbo.lead_sla_instances si
-  WHERE si.lead_id=d.lead_id
-    AND si.policy_code='CONTACT_RETRY'
-    AND TRY_CONVERT(INT,JSON_VALUE(si.context_json,'$.sequence'))=d.sequence
+  SELECT 1 FROM @canonical c WHERE c.lead_id=d.lead_id AND c.sequence=d.sequence
+)
+  AND NOT EXISTS(
+  SELECT 1 FROM dbo.lead_sla_instances si WHERE si.instance_key=d.instance_key
 );
 
 DECLARE @superseded TABLE(
@@ -263,11 +301,8 @@ FROM dbo.lead_sla_instances si
 JOIN @targets t ON t.lead_id=si.lead_id
 WHERE si.policy_code='CONTACT_RETRY'
   AND si.status<>'superseded'
-  AND NOT EXISTS(
-    SELECT 1 FROM @desired d
-    WHERE d.lead_id=si.lead_id
-      AND d.sequence=TRY_CONVERT(INT,JSON_VALUE(si.context_json,'$.sequence'))
-  );
+  AND NOT EXISTS(SELECT 1 FROM @canonical c WHERE c.id=si.id)
+  AND NOT EXISTS(SELECT 1 FROM @created n WHERE n.id=si.id);
 
 INSERT dbo.lead_sla_events(
   sla_instance_id,lead_id,event_type,event_key,to_status,event_at,detail_json
@@ -320,8 +355,12 @@ WHERE NOT EXISTS(
    AND si.status IN ('active','warning','critical','breached')
   GROUP BY t.lead_id
 )
+-- ตั้งวันนัดติดตามตามขั้นบันไดที่ยังเปิดอยู่เท่านั้น ห้ามล้างเป็น NULL — Lead ที่
+-- ไม่มีขั้นบันไดค้าง วันในช่องนี้เป็นของเซลส์ที่ตั้งเอง (บั๊กเดียวกับที่เคยทำให้
+-- "แค่เปิดดู Lead ก็ลบวันนัดติดตาม" ดู reconcileFirstContactEvidence ใน sla-service)
 UPDATE l
 SET next_follow_up=CAST(n.next_due_at AS DATE),updated_at=@now
 FROM dbo.leads l
 JOIN next_open n ON n.lead_id=l.id
-WHERE ISNULL(l.next_follow_up,'19000101')<>ISNULL(CAST(n.next_due_at AS DATE),'19000101');
+WHERE n.next_due_at IS NOT NULL
+  AND ISNULL(l.next_follow_up,'19000101')<>CAST(n.next_due_at AS DATE);

@@ -51,7 +51,7 @@ SET started_at = d.started_at,
     breached_at = CASE WHEN d.completed_at > DATEADD(MINUTE, d.due_minutes, d.started_at)
                          THEN COALESCE(si.breached_at, d.completed_at)
                        WHEN d.completed_at IS NULL AND GETDATE() > DATEADD(MINUTE, d.due_minutes, d.started_at)
-                         THEN COALESCE(si.breached_at, GETDATE())
+                         THEN COALESCE(si.breached_at, DATEADD(MINUTE, d.due_minutes, d.started_at))
                        ELSE NULL END,
     context_json = JSON_MODIFY(COALESCE(si.context_json, '{}'), '$.surveyMilestoneRule', 2),
     updated_at = GETDATE()

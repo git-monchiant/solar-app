@@ -68,7 +68,7 @@ SET policy_version=3,
     breached_at=CASE
       WHEN r.new_completed_at IS NOT NULL
         THEN CASE WHEN r.new_completed_at>DATEADD(MINUTE,21600,r.new_started_at) THEN r.new_completed_at ELSE NULL END
-      WHEN GETDATE()>DATEADD(MINUTE,21600,r.new_started_at) THEN COALESCE(si.breached_at,GETDATE())
+      WHEN GETDATE()>DATEADD(MINUTE,21600,r.new_started_at) THEN COALESCE(si.breached_at, DATEADD(MINUTE,21600,r.new_started_at))
       ELSE NULL
     END,
     updated_at=GETDATE()
