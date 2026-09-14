@@ -6,6 +6,7 @@ import { validateDocNo } from "@/lib/doc-number";
 import { getGridTieFinalMissing } from "@/lib/gridTie";
 import { installmentAmount, netTotalOf, parseInstallmentRows, type InstallmentRow } from "@/lib/installments";
 import { processGradeChange, syncOperationalSlas } from "@/lib/sla-service";
+import { slaLiveStatusSql } from "@/lib/lead-sla-sql";
 
 const statusLabels: Record<string, string> = {
   pre_survey: "รอติดตาม",
@@ -20,7 +21,9 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
   try {
     const { id } = await params;
     const db = await getDb();
-    await syncOperationalSlas(db, parseInt(id), gate.userId);
+    // การอ่านต้องไม่เขียน — เดิม sync ตรงนี้ทำให้ "แค่เปิดดู" ก็สร้าง/ยกเลิกงาน SLA
+    // และเคยลบวันนัดติดตามของเซลส์ งาน SLA เกิดจากการกระทำจริง (PATCH / กิจกรรม /
+    // ชำระเงิน ฯลฯ) และจากงานเบื้องหลังตามรอบเวลา (src/lib/sla-sweep.ts) เท่านั้น
     const result = await db
       .request()
       .input("id", sql.Int, parseInt(id))
@@ -98,7 +101,7 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
         LEFT JOIN line_users lu ON lu.line_user_id = l.line_id
         LEFT JOIN lead_data d ON d.lead_id = l.id
         OUTER APPLY (
-          SELECT TOP 1 policy_code, task_name, status, started_at, target_at, due_at
+          SELECT TOP 1 policy_code, task_name, ${slaLiveStatusSql("si")} AS status, started_at, target_at, due_at
           FROM lead_sla_instances si
           WHERE si.lead_id = l.id AND si.status IN ('active','warning','critical','breached')
             AND si.superseded_at IS NULL

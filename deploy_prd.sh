@@ -130,6 +130,21 @@ sshpass -p "${PRD_PASS}" ssh \
    fi && \
    grep '^LINE_ENABLED=' .env"
 
+# 4b. ensure SLA_SWEEP_ENABLED=true on prod — เปิดงานเบื้องหลังคำนวณ SLA ตามรอบเวลา
+# (src/instrumentation.ts → src/lib/sla-sweep.ts) รอบแรกรัน 1 นาทีหลัง container
+# ขึ้น จึงเป็น backfill หลัง deploy ไปในตัว dev ไม่ได้ตั้งค่านี้จึงไม่รันเอง
+echo "🔧 Ensuring SLA_SWEEP_ENABLED=true on prod .env ..."
+sshpass -p "${PRD_PASS}" ssh \
+  -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null \
+  -p "${PRD_PORT}" "${PRD_USER}@${PRD_HOST}" \
+  "cd ${PRD_DIR} && touch .env && \
+   if grep -q '^SLA_SWEEP_ENABLED=' .env; then \
+     sed -i 's/^SLA_SWEEP_ENABLED=.*/SLA_SWEEP_ENABLED=true/' .env; \
+   else \
+     echo 'SLA_SWEEP_ENABLED=true' >> .env; \
+   fi && \
+   grep '^SLA_SWEEP_ENABLED=' .env"
+
 # 4. ensure uploads dir is writable by the container (uid 1001 = nextjs user
 #    inside the image; host dir must be owned by that uid so bind-mount writes
 #    don't EACCES).

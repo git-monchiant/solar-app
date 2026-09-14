@@ -1,4 +1,5 @@
 import type sql from "mssql";
+import { slaTimeStatusSql } from "@/lib/lead-sla-sql";
 import { addBangkokCalendarDays, completionEvidenceChanged, CONTACT_RETRY_DAYS, contactRetryDeadline, firstContactHardDeadline, firstContactWarningAt, OPERATIONAL_SLA_MINUTES, resolveBookSurveyMilestones, resolveCloseLeadMilestones, resolveFirstContactEvidence, resolveInstallCompletion, resolveScheduledInstallAnchor, resolveScheduledSurveyAnchor, type ContactResult } from "@/lib/sla-rules";
 import { SLA_TASK_LABEL } from "@/lib/sla-display";
 
@@ -531,7 +532,12 @@ export async function syncOperationalSlas(db: Db, leadId: number, actorUserId?: 
     { policyCode: "BOOK_SURVEY", policyVersion: 5, ownerRole: "sales", ownerUserId: lead.assigned_user_id || null, taskName: SLA_TASK_LABEL.BOOK_SURVEY, anchorAt: bookSurveyMilestones.anchorAt, anchorSource: bookSurveyMilestones.anchorSource || undefined, completionAt: bookSurveyMilestones.completedAt, completionActivityId: lead.booked_activity_id || lead.survey_activity_id, targetMinutes: OPERATIONAL_SLA_MINUTES.BOOK_SURVEY.target, dueMinutes: OPERATIONAL_SLA_MINUTES.BOOK_SURVEY.due, warningMinutes: OPERATIONAL_SLA_MINUTES.BOOK_SURVEY.warning },
     { policyCode: "SITE_SURVEY", policyVersion: 6, ownerRole: "solar", ownerUserId: lead.survey_assigned_user_id || lead.survey_completed_by || null, taskName: SLA_TASK_LABEL.SITE_SURVEY, anchorAt: scheduledSurveyAnchor.at, anchorSource: scheduledSurveyAnchor.source || undefined, freezeAnchorAfterCompletion: true, refreshCompletionAfterCompletion: true, completionAt: surveyDoneAt, completionActivityId: lead.survey_activity_id, targetMinutes: OPERATIONAL_SLA_MINUTES.SITE_SURVEY.target, dueMinutes: OPERATIONAL_SLA_MINUTES.SITE_SURVEY.due, warningMinutes: OPERATIONAL_SLA_MINUTES.SITE_SURVEY.warning },
     { policyCode: "PROPOSAL_ROI", policyVersion: 5, ownerRole: "sales", ownerUserId: lead.assigned_user_id || null, taskName: SLA_TASK_LABEL.PROPOSAL_ROI, anchorAt: surveyDoneAt, refreshCompletionAfterCompletion: true, completionAt: proposalAt, completionActivityId: lead.proposal_activity_id, targetMinutes: OPERATIONAL_SLA_MINUTES.PROPOSAL_ROI.target, dueMinutes: OPERATIONAL_SLA_MINUTES.PROPOSAL_ROI.due, warningMinutes: OPERATIONAL_SLA_MINUTES.PROPOSAL_ROI.warning },
-    { policyCode: "DEPOSIT_CLOSE", policyVersion: 4, ownerRole: "sales", ownerUserId: lead.assigned_user_id || null, taskName: SLA_TASK_LABEL.DEPOSIT_CLOSE, anchorAt: proposalAt, refreshAnchorAfterCompletion: true, completionAt: depositAt, completionActivityId: lead.deposit_payment_id, targetMinutes: OPERATIONAL_SLA_MINUTES.DEPOSIT_CLOSE.target, dueMinutes: OPERATIONAL_SLA_MINUTES.DEPOSIT_CLOSE.due, warningMinutes: OPERATIONAL_SLA_MINUTES.DEPOSIT_CLOSE.warning },
+    // DEPOSIT_CLOSE ปิดงานด้วยการยืนยันรับเงินมัดจำ ซึ่งหลักฐานอยู่ในตาราง payments
+    // ไม่ใช่ lead_activities เดิมส่ง deposit_payment_id (เลข payment) เข้าช่อง
+    // completion_activity_id ที่มี FK ชี้ไป lead_activities เลขจึงไม่ตรงตารางและ
+    // FK_lead_sla_activity พัง ตรวจเจอ 9 ราย (lead 652, 686, 704, 726, 763, 848,
+    // 948, 1015, 1032) sync ของรายเหล่านี้ล้มทั้งชุด เวลาปิดงานยังได้จาก depositAt ครบ
+    { policyCode: "DEPOSIT_CLOSE", policyVersion: 4, ownerRole: "sales", ownerUserId: lead.assigned_user_id || null, taskName: SLA_TASK_LABEL.DEPOSIT_CLOSE, anchorAt: proposalAt, refreshAnchorAfterCompletion: true, completionAt: depositAt, completionActivityId: null, targetMinutes: OPERATIONAL_SLA_MINUTES.DEPOSIT_CLOSE.target, dueMinutes: OPERATIONAL_SLA_MINUTES.DEPOSIT_CLOSE.due, warningMinutes: OPERATIONAL_SLA_MINUTES.DEPOSIT_CLOSE.warning },
     { policyCode: "PAYMENT_INSTALLMENT_1", ownerRole: "sales", ownerUserId: lead.assigned_user_id || null, taskName: SLA_TASK_LABEL.PAYMENT_INSTALLMENT_1, anchorAt: firstInstallmentMethod && installment1Methods.has(firstInstallmentMethod) ? quotationReceivedAt : null, completionAt: installment1PaidAt, targetMinutes: OPERATIONAL_SLA_MINUTES.PAYMENT_INSTALLMENT_1.target, dueMinutes: OPERATIONAL_SLA_MINUTES.PAYMENT_INSTALLMENT_1.due, warningMinutes: OPERATIONAL_SLA_MINUTES.PAYMENT_INSTALLMENT_1.warning },
     { policyCode: "LOAN_PREAPPROVAL", ownerRole: "sales", ownerUserId: lead.assigned_user_id || null, taskName: SLA_TASK_LABEL.LOAN_PREAPPROVAL, anchorAt: hasLoanInstallment ? loanAnchorAt : null, completionAt: loanResultAt, completionActivityId: lead.loan_result_activity_id, targetMinutes: OPERATIONAL_SLA_MINUTES.LOAN_PREAPPROVAL.target, dueMinutes: OPERATIONAL_SLA_MINUTES.LOAN_PREAPPROVAL.due, warningMinutes: OPERATIONAL_SLA_MINUTES.LOAN_PREAPPROVAL.warning },
     { policyCode: "SCHEDULE_INSTALLATION", policyVersion: 3, ownerRole: "sales", ownerUserId: lead.assigned_user_id || null, taskName: SLA_TASK_LABEL.SCHEDULE_INSTALLATION, anchorAt: depositAt, completionAt: installBookedAt, completionActivityId: lead.install_booked_activity_id, targetMinutes: OPERATIONAL_SLA_MINUTES.SCHEDULE_INSTALLATION.target, dueMinutes: OPERATIONAL_SLA_MINUTES.SCHEDULE_INSTALLATION.due, warningMinutes: OPERATIONAL_SLA_MINUTES.SCHEDULE_INSTALLATION.warning },
@@ -689,12 +695,7 @@ export async function refreshOpenSlaStates(db: Db, leadId?: number) {
         updated_at = GETDATE()
     OUTPUT INSERTED.id, INSERTED.lead_id, DELETED.status AS old_status, INSERTED.status AS new_status
     FROM lead_sla_instances si
-    CROSS APPLY (SELECT CASE
-          WHEN GETDATE() > due_at THEN 'breached'
-          WHEN DATEDIFF(MINUTE, GETDATE(), due_at) <= 30 THEN 'critical'
-          WHEN warning_at IS NOT NULL AND GETDATE() >= warning_at THEN 'warning'
-          ELSE 'active'
-        END AS value) next_state
+    CROSS APPLY (SELECT ${slaTimeStatusSql("si")} AS value) next_state
     WHERE si.status IN ('active','warning','critical','breached')
       AND si.superseded_at IS NULL
       AND (@lead_id IS NULL OR si.lead_id = @lead_id)

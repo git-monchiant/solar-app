@@ -2,9 +2,9 @@ import { NextRequest, NextResponse } from "next/server";
 import { getDb, sql, fixDates } from "@/lib/db";
 import { geocodeThaiPlace } from "@/lib/utils/geocode";
 import { requireAuth } from "@/lib/auth";
-import { ensureFirstContactSla, refreshOpenSlaStates, syncOperationalSlas } from "@/lib/sla-service";
+import { ensureFirstContactSla, syncOperationalSlas } from "@/lib/sla-service";
 import { followUpOverdueSql, LAST_FOLLOW_UP_APPLY } from "@/lib/lead-followup-sql";
-import { LATE_SLA_STAGES_APPLY, LATE_SLA_STAGES_COLUMN, SLA_DONE_APPLY, SLA_DONE_COLUMNS } from "@/lib/lead-sla-sql";
+import { LATE_SLA_STAGES_APPLY, LATE_SLA_STAGES_COLUMN, SLA_DONE_APPLY, SLA_DONE_COLUMNS, slaLiveStatusSql } from "@/lib/lead-sla-sql";
 
 async function maybeGeocodeProject(projectId: number) {
   const db = await getDb();
@@ -28,7 +28,6 @@ export async function GET(req: NextRequest) {
   if (gate.error) return gate.error;
   try {
     const db = await getDb();
-    await refreshOpenSlaStates(db);
     // Explicit column list — `leads` has 180+ columns but the card UI uses
     // ~30. Picking only what LeadCard/pipeline render keeps the response
     // ~3-4× smaller (1MB → ~250KB at 150 leads).
@@ -87,7 +86,7 @@ export async function GET(req: NextRequest) {
       LEFT JOIN packages pk ON l.interested_package_id = pk.id
       LEFT JOIN users u ON l.assigned_user_id = u.id
       OUTER APPLY (
-        SELECT TOP 1 policy_code, task_name, status, started_at, target_at, due_at, owner_role, owner_user_id
+        SELECT TOP 1 policy_code, task_name, ${slaLiveStatusSql("si")} AS status, started_at, target_at, due_at, owner_role, owner_user_id
         FROM lead_sla_instances si
         WHERE si.lead_id = l.id AND si.status IN ('active','warning','critical','breached')
           AND si.superseded_at IS NULL

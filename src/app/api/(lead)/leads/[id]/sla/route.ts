@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { requireAuth } from "@/lib/auth";
 import { fixDates, getDb, sql } from "@/lib/db";
-import { syncOperationalSlas } from "@/lib/sla-service";
+import { slaLiveBreachedAtSql, slaLiveStatusSql } from "@/lib/lead-sla-sql";
 
 export async function GET(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const gate = await requireAuth(req);
@@ -22,8 +22,7 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
     }
 
     // Keep the timeline consistent with the latest durable workflow milestones.
-    // This operation is idempotent and also reopens/cancels tasks after rollback.
-    await syncOperationalSlas(db, leadId, gate.userId);
+    // อ่านอย่างเดียว ไม่ sync — ดูเหตุผลใน /api/leads/[id] GET
 
     const result = await db.request().input("lead_id", sql.Int, leadId).query(`
       SELECT si.id, si.policy_code, si.policy_version, si.instance_key,
@@ -32,7 +31,7 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
                CASE WHEN si.policy_code IN ('SITE_SURVEY','INSTALLATION') THEN 'solar' ELSE 'sales' END
              ) AS owner_role,
              si.started_at, si.target_at, si.due_at, si.warning_at,
-             si.status, si.completed_at, si.breached_at, si.superseded_at,
+             ${slaLiveStatusSql("si")} AS status, si.completed_at, ${slaLiveBreachedAtSql("si")} AS breached_at, si.superseded_at,
              si.created_at, si.updated_at,
              u.full_name AS owner_name,
              p.name_th AS policy_name

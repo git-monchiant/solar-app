@@ -1,4 +1,39 @@
 /**
+ * สถานะของงาน SLA ที่ยังเปิดอยู่ ณ วินาทีที่อ่าน — คิดจากนาฬิกาอย่างเดียว
+ *
+ * active / warning / critical / breached ไม่ได้เกิดจากการกระทำของใคร เป็นแค่การ
+ * เทียบเวลาปัจจุบันกับ due_at / warning_at จึงคำนวณตอน SELECT ได้เลย ไม่ต้องมีงาน
+ * ไล่ UPDATE ลงตาราง เดิมหน้า Today / Pipeline / Dashboard ต้องเรียก
+ * refreshOpenSlaStates() เขียนฐานข้อมูลทุกครั้งที่เปิดหน้า การอ่านจึงมีผลข้างเคียง
+ * และสถานะของ Lead ที่ไม่มีใครเปิดดูก็ค้างอยู่ค่าเดิม
+ *
+ * refreshOpenSlaStates() ในงานเบื้องหลังใช้นิยามเดียวกันนี้บันทึกค่าลงตาราง
+ * เพื่อเก็บประวัติเหตุการณ์ ตัวเลขบนจอกับค่าที่บันทึกจึงไม่มีทางต่างกัน
+ *
+ * @param a alias ของตาราง lead_sla_instances ในคำสั่งนั้น เช่น "si"
+ */
+export const slaTimeStatusSql = (a: string) => `CASE
+          WHEN GETDATE() > ${a}.due_at THEN 'breached'
+          WHEN DATEDIFF(MINUTE, GETDATE(), ${a}.due_at) <= 30 THEN 'critical'
+          WHEN ${a}.warning_at IS NOT NULL AND GETDATE() >= ${a}.warning_at THEN 'warning'
+          ELSE 'active'
+        END`;
+
+/** สถานะที่ใช้แสดงผล — งานที่ยังเปิดคิดสดจากนาฬิกา งานที่ปิด/ยกเลิกแล้วใช้ค่าที่บันทึก */
+export const slaLiveStatusSql = (a: string) =>
+  `CASE WHEN ${a}.status IN ('active','warning','critical','breached') THEN ${slaTimeStatusSql(a)} ELSE ${a}.status END`;
+
+/**
+ * เวลาที่เกินกำหนด — ใช้ค่าที่บันทึกไว้ถ้ามี ไม่มีก็คิดเอง (ครบกำหนดแล้วยังไม่เสร็จ
+ * หรือเสร็จหลังครบกำหนด) งานที่ยังไม่เคยผ่านงานเบื้องหลังจึงไม่ถูกนับว่าทันเวลา
+ * ทั้งที่จริงเลยกำหนดไปแล้ว งานที่ยกเลิก/ถูกแทนที่ไม่นับ
+ */
+export const slaLiveBreachedAtSql = (a: string) => `COALESCE(${a}.breached_at,
+          CASE WHEN ${a}.status IN ('active','warning','critical','breached','completed')
+                AND COALESCE(${a}.completed_at, GETDATE()) > ${a}.due_at
+               THEN ${a}.due_at END)`;
+
+/**
  * SLA ของขั้นตอนที่ "ผ่านไปแล้ว" ของ lead หนึ่งราย — สรุปเป็น JSON ก้อนเดียว
  *
  * การ์ด Lead แสดง SLA ที่กำลังเดินอยู่แค่ตัวเดียว (ตัวที่ใกล้กำหนดสุด) แถบ
@@ -24,7 +59,7 @@ export const LATE_SLA_STAGES_APPLY = `
           FROM lead_sla_instances si
           WHERE si.lead_id = l.id
             AND si.superseded_at IS NULL
-            AND si.breached_at IS NOT NULL
+            AND ${slaLiveBreachedAtSql("si")} IS NOT NULL
             AND si.status IN ('active','warning','critical','breached','completed')
           GROUP BY si.policy_code
           FOR JSON PATH
@@ -52,7 +87,7 @@ export const LATE_SLA_STAGES_COLUMN = `sla_late.stages_json as sla_late_stages`;
 export const SLA_DONE_APPLY = `
       OUTER APPLY (
         SELECT TOP 1 si.policy_code, si.task_name, si.started_at, si.due_at,
-               si.completed_at, si.breached_at, si.owner_role,
+               si.completed_at, ${slaLiveBreachedAtSql("si")} AS breached_at, si.owner_role,
                (SELECT full_name FROM users WHERE id = si.owner_user_id) AS owner_name
         FROM lead_sla_instances si
         WHERE si.lead_id = l.id

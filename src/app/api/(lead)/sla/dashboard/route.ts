@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getDb, fixDates, sql } from "@/lib/db";
 import { requireAnyActiveRole } from "@/lib/auth";
-import { refreshOpenSlaStates } from "@/lib/sla-service";
+import { slaLiveStatusSql } from "@/lib/lead-sla-sql";
 
 type SlaOpenStatus = "active" | "warning" | "critical" | "breached";
 
@@ -10,7 +10,6 @@ export async function GET(req: NextRequest) {
   if (gate.error) return gate.error;
   try {
     const db = await getDb();
-    await refreshOpenSlaStates(db);
     const isAdmin = gate.roles.includes("admin");
     const isSalesSup = gate.roles.includes("sales_sup");
     const isSolarSup = gate.roles.includes("solar_sup");
@@ -25,7 +24,7 @@ export async function GET(req: NextRequest) {
       .input("is_sales", sql.Bit, isSales ? 1 : 0)
       .input("is_solar", sql.Bit, isSolar ? 1 : 0)
       .query(`
-        SELECT si.id, si.lead_id, si.policy_code, si.task_name, si.status,
+        SELECT si.id, si.lead_id, si.policy_code, si.task_name, ${slaLiveStatusSql("si")} AS status,
                si.started_at, si.target_at, si.due_at, si.owner_user_id,
                COALESCE(si.owner_role, CASE WHEN si.policy_code IN ('SITE_SURVEY','INSTALLATION') THEN 'solar' ELSE 'sales' END) owner_role,
                l.full_name, l.phone, l.customer_grade, l.source,
@@ -48,7 +47,7 @@ export async function GET(req: NextRequest) {
               AND (si.owner_user_id = @user_id OR si.owner_user_id IS NULL)
             )
           )
-        ORDER BY CASE si.status WHEN 'breached' THEN 0 WHEN 'critical' THEN 1 WHEN 'warning' THEN 2 ELSE 3 END,
+        ORDER BY CASE ${slaLiveStatusSql("si")} WHEN 'breached' THEN 0 WHEN 'critical' THEN 1 WHEN 'warning' THEN 2 ELSE 3 END,
                  si.due_at ASC
       `);
     const items = fixDates(result.recordset);
