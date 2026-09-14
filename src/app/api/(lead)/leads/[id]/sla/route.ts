@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { requireAuth } from "@/lib/auth";
 import { fixDates, getDb, sql } from "@/lib/db";
-import { slaLiveBreachedAtSql, slaLiveStatusSql } from "@/lib/lead-sla-sql";
+import { slaLegacyGradeAssessmentSql, slaLiveBreachedAtSql, slaLiveStatusSql } from "@/lib/lead-sla-sql";
 
 export async function GET(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const gate = await requireAuth(req);
@@ -31,6 +31,7 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
                CASE WHEN si.policy_code IN ('SITE_SURVEY','INSTALLATION') THEN 'solar' ELSE 'sales' END
              ) AS owner_role,
              si.started_at, si.target_at, si.due_at, si.warning_at,
+             CAST(CASE WHEN ${slaLegacyGradeAssessmentSql("si")} THEN 1 ELSE 0 END AS BIT) AS legacy_backfill,
              ${slaLiveStatusSql("si")} AS status, si.completed_at, ${slaLiveBreachedAtSql("si")} AS breached_at, si.superseded_at,
              si.created_at, si.updated_at,
              u.full_name AS owner_name,

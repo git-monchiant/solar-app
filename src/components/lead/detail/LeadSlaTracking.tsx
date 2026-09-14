@@ -33,6 +33,8 @@ type SlaInstance = {
   status: string;
   completed_at: string | null;
   breached_at: string | null;
+  /** งานประเมิน Grade ของ Lead ที่ Grade ถูกตั้งก่อนมีระบบ เวลาในแถวนี้ไม่ใช่เหตุการณ์จริง */
+  legacy_backfill?: boolean;
 };
 
 type SlaPolicy = {
@@ -52,7 +54,7 @@ type SlaPolicy = {
  * ลูกค้าที่จ่ายเงินสด การเขียนว่า "ยังไม่ถึง" จึงเป็นการสัญญาแทนระบบว่าเดี๋ยวจะมา
  * ทั้งที่อาจไม่มี
  */
-type RowResult = "on_time" | "late" | "open" | "breached" | "cancelled" | "not_started";
+type RowResult = "on_time" | "late" | "open" | "breached" | "cancelled" | "not_started" | "legacy";
 
 const RESULT: Record<RowResult, { label: string; chip: string }> = {
   on_time:     { label: "ภายในกำหนด SLA",  chip: "bg-emerald-50 text-emerald-700 border-emerald-200" },
@@ -61,6 +63,8 @@ const RESULT: Record<RowResult, { label: string; chip: string }> = {
   open:        { label: "อยู่ระหว่างดำเนินการ", chip: "bg-sky-50 text-sky-700 border-sky-200" },
   cancelled:   { label: "ยกเลิกรายการ",     chip: "bg-gray-50 text-gray-500 border-gray-200" },
   not_started: { label: "ไม่มีรายการ",  chip: "bg-gray-50 text-gray-400 border-gray-200" },
+  // ถ้อยคำเดียวกับหน้า Timeline ("ข้อมูลก่อนใช้ระบบ · ไม่ปรากฏวันเวลา")
+  legacy:      { label: "ข้อมูลก่อนใช้ระบบ", chip: "bg-gray-50 text-gray-500 border-gray-200" },
 };
 
 function minutesText(minutes?: number | null): string {
@@ -127,6 +131,7 @@ function overdueText(instance?: SlaInstance): string {
 
 function resultOf(instance?: SlaInstance): RowResult {
   if (!instance) return "not_started";
+  if (instance.legacy_backfill) return "legacy";
   if (instance.status === "cancelled") return "cancelled";
   if (instance.completed_at) return instance.breached_at ? "late" : "on_time";
   if (instance.status === "breached") return "breached";
@@ -214,7 +219,10 @@ export default function LeadSlaTracking({ leadId }: { leadId: number }) {
           </thead>
           <tbody>
             {rows.map(({ code, index, all, instance, policy, result, team }) => {
-              const muted = result === "not_started";
+              const muted = result === "not_started" || result === "legacy";
+              // แถวข้อมูลก่อนใช้ระบบ: เวลาที่บันทึกคือเวลาที่ migration รัน ไม่ใช่เหตุการณ์จริง
+              // จึงไม่แสดงวันเวลาและระยะเวลาใด ๆ ของแถวนี้
+              const timed = result === "legacy" ? undefined : instance;
               return (
                 <tr key={code} className={`border-b border-gray-100 last:border-0 ${muted ? "bg-gray-50/40" : ""}`}>
                   <td className={`px-2 py-2 text-center tabular-nums ${muted ? "text-gray-300" : "text-gray-400"}`}>
@@ -243,8 +251,8 @@ export default function LeadSlaTracking({ leadId }: { leadId: number }) {
                   {/* เริ่มนับกับครบกำหนดเป็นช่วงเวลาเดียวกัน อยู่คอลัมน์เดียวคนละบรรทัด
                       มีป้ายกำกับในตัว จะได้ไม่ต้องเดาว่าบรรทัดไหนคืออะไร */}
                   <td className={`px-3 py-2 whitespace-nowrap ${muted ? "text-gray-300" : "text-gray-600"}`}>
-                    <div><span className="text-gray-400">เริ่มนับ</span> {stamp(instance?.started_at)}</div>
-                    <div><span className="text-gray-400">ครบกำหนด</span> {stamp(instance?.due_at)}</div>
+                    <div><span className="text-gray-400">เริ่มนับ</span> {stamp(timed?.started_at)}</div>
+                    <div><span className="text-gray-400">ครบกำหนด</span> {stamp(timed?.due_at)}</div>
                   </td>
                   {/* ผลที่เกิดขึ้นจริง: เสร็จเมื่อไร ใช้เวลาไปเท่าไร และเกินไปเท่าไร
                       ยังไม่เสร็จก็เว้นช่องเสร็จจริงไว้ ไม่เดาแทน แต่เวลาที่เดินไปแล้ว
@@ -254,18 +262,18 @@ export default function LeadSlaTracking({ leadId }: { leadId: number }) {
                       result === "on_time" ? "text-emerald-700"
                       : result === "late" ? "text-rose-600"
                       : "text-gray-300"}`}>
-                      <span className="font-normal text-gray-400">เสร็จจริง</span> {stamp(instance?.completed_at)}
+                      <span className="font-normal text-gray-400">เสร็จจริง</span> {stamp(timed?.completed_at)}
                     </div>
                     <div>
                       <span className="text-gray-400">ใช้เวลา</span>{" "}
-                      {instance?.completed_at
-                        ? durationText(instance.started_at, instance.completed_at)
-                        : instance?.started_at && result !== "cancelled"
-                        ? <span className="text-gray-500">{durationText(instance.started_at, new Date().toISOString())} <span className="text-gray-400">(ยังไม่แล้วเสร็จ)</span></span>
+                      {timed?.completed_at
+                        ? durationText(timed.started_at, timed.completed_at)
+                        : timed?.started_at && result !== "cancelled"
+                        ? <span className="text-gray-500">{durationText(timed.started_at, new Date().toISOString())} <span className="text-gray-400">(ยังไม่แล้วเสร็จ)</span></span>
                         : "—"}
-                      {(result === "breached" || result === "late") && overdueText(instance) && (
+                      {(result === "breached" || result === "late") && overdueText(timed) && (
                         <span className={`font-semibold ${result === "late" ? "text-rose-600" : "text-red-600"}`}>
-                          <span className="px-1 font-normal text-gray-300">·</span>เกิน {overdueText(instance)}
+                          <span className="px-1 font-normal text-gray-300">·</span>เกิน {overdueText(timed)}
                         </span>
                       )}
                     </div>

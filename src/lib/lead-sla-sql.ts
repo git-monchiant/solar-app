@@ -1,3 +1,27 @@
+import { SLA_POLICY_ORDER } from "@/lib/sla-display";
+
+/**
+ * ลำดับขั้นตอนของ policy เป็นตัวเลขใน SQL — มาจาก SLA_POLICY_ORDER ที่เดียว
+ * ใช้ตัดสินว่างานไหน "อยู่ขั้นหลังสุด" แทนการดูจากเวลาที่บันทึก เพราะเวลาที่บันทึก
+ * บอกแค่ว่าแถวถูกเขียนเมื่อไร ไม่ได้บอกว่างานนั้นอยู่ช่วงไหนของกระบวนการ
+ */
+export const slaPolicyRankSql = (a: string) =>
+  `CASE ${a}.policy_code ${SLA_POLICY_ORDER.map((code, i) => `WHEN '${code}' THEN ${i}`).join(" ")} ELSE -1 END`;
+
+/**
+ * งานประเมิน Grade ของ Lead เก่าที่ Grade ถูกตั้งไว้ก่อนมีระบบบันทึกประวัติ
+ *
+ * migration เติมประวัติ Grade ให้ Lead กลุ่มนี้ (reason = grade_sla_backfill_v1)
+ * โดยประทับเวลา "ตอนรัน migration" engine จึงได้งานที่เริ่มและเสร็จในวินาทีเดียวกัน
+ * ในวันที่รัน ซึ่งไม่ใช่เหตุการณ์จริง (ตรวจเจอ 33 ราย เช่น Lead ที่ติดตั้งเสร็จไป
+ * ตั้งแต่มิถุนายน กลับขึ้นว่า "ประเมิน Grade เสร็จวันนี้ ใช้เวลา 1 นาที")
+ * หน้า Timeline ซ่อนงานพวกนี้อยู่แล้ว (shouldShowSlaTimelineItem) ที่นี่ใช้กฎเดียวกัน
+ */
+export const slaLegacyGradeAssessmentSql = (a: string) => `(${a}.policy_code = 'ELECTRICITY_ASSESSMENT'
+          AND (SELECT TOP 1 gh.reason FROM lead_grade_history gh
+               WHERE gh.lead_id = ${a}.lead_id
+               ORDER BY gh.changed_at DESC, gh.id DESC) = 'grade_sla_backfill_v1')`;
+
 /**
  * สถานะของงาน SLA ที่ยังเปิดอยู่ ณ วินาทีที่อ่าน — คิดจากนาฬิกาอย่างเดียว
  *
@@ -94,7 +118,10 @@ export const SLA_DONE_APPLY = `
           AND si.status = 'completed'
           AND si.completed_at IS NOT NULL
           AND si.superseded_at IS NULL
-        ORDER BY si.completed_at DESC, si.id DESC
+          AND NOT ${slaLegacyGradeAssessmentSql("si")}
+        -- "ล่าสุด" คือขั้นหลังสุดของกระบวนการ ไม่ใช่แถวที่เพิ่งถูกเขียน — เดิมเรียงตาม
+        -- completed_at ทำให้ Lead ที่อยู่ขั้นใบรับประกันโชว์งานประเมิน Grade แทน
+        ORDER BY ${slaPolicyRankSql("si")} DESC, si.completed_at DESC, si.id DESC
       ) sla_done`;
 
 /** คู่กับ {@link SLA_DONE_APPLY} — การ์ดใช้เมื่อ sla_status ว่าง */
