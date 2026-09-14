@@ -9,7 +9,10 @@ export type SlaFilterKey = "breached" | "near_due" | "active" | "done_ontime" | 
 export type SlaStatusKey = Exclude<SlaFilterKey, "without" | "done_ontime">;
 
 /** เรียงตามความเร่งด่วน ใช้ทั้งลำดับปุ่มบนจอและลำดับค่าใน URL จะได้ลิงก์คงที่ */
-export const SLA_FILTER_ORDER: SlaFilterKey[] = ["breached", "near_due", "active", "done_ontime", "without"];
+// ไม่มีชิป "ไม่มีงาน SLA" แล้ว (ผู้ใช้สั่งเอาออก) — รายการที่ได้เกือบทั้งหมดเป็น Lead
+// ที่ยกเลิกไปแล้ว ไม่มีประโยชน์ในการทำงาน การไม่ใส่ไว้ในลำดับนี้ทำให้ค่าเก่าที่จำไว้
+// (?sla=without หรือ localStorage) ถูกตัดทิ้งตอนอ่าน ไม่ค้างเป็นตัวกรองที่มองไม่เห็น
+export const SLA_FILTER_ORDER: SlaFilterKey[] = ["breached", "near_due", "active", "done_ontime"];
 
 export type SlaChip = {
   key: SlaFilterKey;
@@ -27,7 +30,6 @@ export const SLA_CHIPS: SlaChip[] = [
   { key: "near_due", label: "ใกล้กำหนด", on: "border-amber-200 bg-amber-50 text-amber-700", tick: "border-amber-500 bg-amber-500", num: "text-amber-600" },
   { key: "active", label: "กำลังดำเนินการ", on: "border-sky-200 bg-sky-50 text-sky-700", tick: "border-sky-500 bg-sky-500", num: "text-sky-700" },
   { key: "done_ontime", label: "เสร็จตามกำหนด", on: "border-emerald-200 bg-emerald-50 text-emerald-700", tick: "border-emerald-500 bg-emerald-500", num: "text-emerald-600" },
-  { key: "without", label: "ไม่มีงาน SLA", on: "border-gray-300 bg-gray-100 text-gray-700", tick: "border-gray-600 bg-gray-600", num: "text-gray-500" },
 ];
 
 /**
