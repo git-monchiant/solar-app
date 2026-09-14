@@ -70,7 +70,7 @@ export const SLA_TASK_LABEL: Record<string, string> = {
   LOAN_PREAPPROVAL: "ติดตามผลอนุมัติเบื้องต้นจากธนาคาร",
   SCHEDULE_INSTALLATION: "นัดวันติดตั้งและแจ้งเตรียมเอกสาร",
   INSTALLATION: "ติดตั้ง ทดสอบระบบ และส่งมอบงาน",
-  CLOSE_LEAD: "ปิด Lead เมื่อออกใบรับประกัน",
+  CLOSE_LEAD: "ออกใบรับประกัน",
 };
 
 export function slaTaskLabel(policyCode?: string | null, taskName?: string | null): string {
