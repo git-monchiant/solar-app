@@ -201,7 +201,7 @@ export default function LeadSlaTracking({ leadId }: { leadId: number }) {
 
       {/* ตารางกว้างเกินจอมือถือแน่นอน ให้เลื่อนในกรอบตัวเอง ไม่ให้ทั้งหน้าเลื่อนแนวนอน */}
       <div className="overflow-x-auto rounded-xl border border-gray-200">
-        <table className="w-full min-w-[1384px] table-fixed border-collapse text-xs">
+        <table className="w-full min-w-[1398px] table-fixed border-collapse text-xs">
           <thead>
             <tr className="bg-gray-50 text-gray-600">
               <th className="w-9 px-2 py-2 text-center font-semibold border-b border-gray-200">#</th>
@@ -213,7 +213,7 @@ export default function LeadSlaTracking({ leadId }: { leadId: number }) {
               <th className="w-[248px] px-3 py-2 text-left font-semibold border-b border-gray-200">SLA</th>
               <th className="w-[190px] px-3 py-2 text-left font-semibold border-b border-gray-200">เริ่มนับ · ครบกำหนด</th>
               <th className="px-3 py-2 text-left font-semibold border-b border-gray-200">เสร็จจริง · ระยะเวลาที่ใช้</th>
-              <th className="w-[126px] px-3 py-2 text-left font-semibold border-b border-gray-200">ผล</th>
+              <th className="w-[140px] px-3 py-2 text-left font-semibold border-b border-gray-200">ผล</th>
               <th className="w-[140px] px-3 py-2 text-left font-semibold border-b border-gray-200">ผู้รับผิดชอบ</th>
             </tr>
           </thead>
