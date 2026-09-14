@@ -234,7 +234,8 @@ assert.match(slaServiceSource, /a\.new_status = 'quote'[\s\S]{0,400}?a\.old_stat
 assert.match(slaServiceSource, /policyCode:\s*"SITE_SURVEY",\s*policyVersion:\s*6/);
 assert.match(slaServiceSource, /ORDER BY CASE WHEN a\.activity_type='status_change' THEN 0 ELSE 1 END,[\s\S]{0,100}?a\.created_at DESC/);
 assert.match(slaServiceSource, /policyCode:\s*"PROPOSAL_ROI",\s*policyVersion:\s*5[\s\S]{0,300}?refreshCompletionAfterCompletion:\s*true/);
-assert.match(slaServiceSource, /policyCode:\s*"DEPOSIT_CLOSE",\s*policyVersion:\s*4[\s\S]{0,300}?refreshAnchorAfterCompletion:\s*true/);
+// DEPOSIT_CLOSE ถูกถอดแล้ว (migration 182) engine ต้องไม่สร้างงานนี้อีก
+assert.doesNotMatch(slaServiceSource, /policyCode:\s*"DEPOSIT_CLOSE"/);
 const paymentAnchorMigration = readFileSync(new URL("../migrations/175_book_survey_from_payment.sql", import.meta.url), "utf8");
 assert.match(paymentAnchorMigration, /'BOOK_SURVEY',5/);
 assert.match(paymentAnchorMigration, /"anchor":"payment_confirmed"/);

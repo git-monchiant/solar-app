@@ -522,7 +522,6 @@ export async function syncOperationalSlas(db: Db, leadId: number, actorUserId?: 
     BOOK_SURVEY: 0,
     SITE_SURVEY: 1,
     PROPOSAL_ROI: 2,
-    DEPOSIT_CLOSE: 3,
     SCHEDULE_INSTALLATION: 4,
     INSTALLATION: 4,
   };
@@ -532,12 +531,9 @@ export async function syncOperationalSlas(db: Db, leadId: number, actorUserId?: 
     { policyCode: "BOOK_SURVEY", policyVersion: 5, ownerRole: "sales", ownerUserId: lead.assigned_user_id || null, taskName: SLA_TASK_LABEL.BOOK_SURVEY, anchorAt: bookSurveyMilestones.anchorAt, anchorSource: bookSurveyMilestones.anchorSource || undefined, completionAt: bookSurveyMilestones.completedAt, completionActivityId: lead.booked_activity_id || lead.survey_activity_id, targetMinutes: OPERATIONAL_SLA_MINUTES.BOOK_SURVEY.target, dueMinutes: OPERATIONAL_SLA_MINUTES.BOOK_SURVEY.due, warningMinutes: OPERATIONAL_SLA_MINUTES.BOOK_SURVEY.warning },
     { policyCode: "SITE_SURVEY", policyVersion: 6, ownerRole: "solar", ownerUserId: lead.survey_assigned_user_id || lead.survey_completed_by || null, taskName: SLA_TASK_LABEL.SITE_SURVEY, anchorAt: scheduledSurveyAnchor.at, anchorSource: scheduledSurveyAnchor.source || undefined, freezeAnchorAfterCompletion: true, refreshCompletionAfterCompletion: true, completionAt: surveyDoneAt, completionActivityId: lead.survey_activity_id, targetMinutes: OPERATIONAL_SLA_MINUTES.SITE_SURVEY.target, dueMinutes: OPERATIONAL_SLA_MINUTES.SITE_SURVEY.due, warningMinutes: OPERATIONAL_SLA_MINUTES.SITE_SURVEY.warning },
     { policyCode: "PROPOSAL_ROI", policyVersion: 5, ownerRole: "sales", ownerUserId: lead.assigned_user_id || null, taskName: SLA_TASK_LABEL.PROPOSAL_ROI, anchorAt: surveyDoneAt, refreshCompletionAfterCompletion: true, completionAt: proposalAt, completionActivityId: lead.proposal_activity_id, targetMinutes: OPERATIONAL_SLA_MINUTES.PROPOSAL_ROI.target, dueMinutes: OPERATIONAL_SLA_MINUTES.PROPOSAL_ROI.due, warningMinutes: OPERATIONAL_SLA_MINUTES.PROPOSAL_ROI.warning },
-    // DEPOSIT_CLOSE ปิดงานด้วยการยืนยันรับเงินมัดจำ ซึ่งหลักฐานอยู่ในตาราง payments
-    // ไม่ใช่ lead_activities เดิมส่ง deposit_payment_id (เลข payment) เข้าช่อง
-    // completion_activity_id ที่มี FK ชี้ไป lead_activities เลขจึงไม่ตรงตารางและ
-    // FK_lead_sla_activity พัง ตรวจเจอ 9 ราย (lead 652, 686, 704, 726, 763, 848,
-    // 948, 1015, 1032) sync ของรายเหล่านี้ล้มทั้งชุด เวลาปิดงานยังได้จาก depositAt ครบ
-    { policyCode: "DEPOSIT_CLOSE", policyVersion: 4, ownerRole: "sales", ownerUserId: lead.assigned_user_id || null, taskName: SLA_TASK_LABEL.DEPOSIT_CLOSE, anchorAt: proposalAt, refreshAnchorAfterCompletion: true, completionAt: depositAt, completionActivityId: null, targetMinutes: OPERATIONAL_SLA_MINUTES.DEPOSIT_CLOSE.target, dueMinutes: OPERATIONAL_SLA_MINUTES.DEPOSIT_CLOSE.due, warningMinutes: OPERATIONAL_SLA_MINUTES.DEPOSIT_CLOSE.warning },
+    // DEPOSIT_CLOSE (ติดตามปิดการขายและรับมัดจำ) ถูกถอดตามคำสั่งผู้ใช้ — ไม่อยู่ในตาราง
+    // SLA ที่บริษัทกำหนด ข้อ 6 ชำระมัดจำของตารางคือ PAYMENT_INSTALLMENT_1 /
+    // LOAN_PREAPPROVAL งานเดิมทุกแถวถูกยกเลิกใน migration 182
     { policyCode: "PAYMENT_INSTALLMENT_1", ownerRole: "sales", ownerUserId: lead.assigned_user_id || null, taskName: SLA_TASK_LABEL.PAYMENT_INSTALLMENT_1, anchorAt: firstInstallmentMethod && installment1Methods.has(firstInstallmentMethod) ? quotationReceivedAt : null, completionAt: installment1PaidAt, targetMinutes: OPERATIONAL_SLA_MINUTES.PAYMENT_INSTALLMENT_1.target, dueMinutes: OPERATIONAL_SLA_MINUTES.PAYMENT_INSTALLMENT_1.due, warningMinutes: OPERATIONAL_SLA_MINUTES.PAYMENT_INSTALLMENT_1.warning },
     { policyCode: "LOAN_PREAPPROVAL", ownerRole: "sales", ownerUserId: lead.assigned_user_id || null, taskName: SLA_TASK_LABEL.LOAN_PREAPPROVAL, anchorAt: hasLoanInstallment ? loanAnchorAt : null, completionAt: loanResultAt, completionActivityId: lead.loan_result_activity_id, targetMinutes: OPERATIONAL_SLA_MINUTES.LOAN_PREAPPROVAL.target, dueMinutes: OPERATIONAL_SLA_MINUTES.LOAN_PREAPPROVAL.due, warningMinutes: OPERATIONAL_SLA_MINUTES.LOAN_PREAPPROVAL.warning },
     { policyCode: "SCHEDULE_INSTALLATION", policyVersion: 3, ownerRole: "sales", ownerUserId: lead.assigned_user_id || null, taskName: SLA_TASK_LABEL.SCHEDULE_INSTALLATION, anchorAt: depositAt, completionAt: installBookedAt, completionActivityId: lead.install_booked_activity_id, targetMinutes: OPERATIONAL_SLA_MINUTES.SCHEDULE_INSTALLATION.target, dueMinutes: OPERATIONAL_SLA_MINUTES.SCHEDULE_INSTALLATION.due, warningMinutes: OPERATIONAL_SLA_MINUTES.SCHEDULE_INSTALLATION.warning },
