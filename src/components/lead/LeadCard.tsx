@@ -421,8 +421,10 @@ export default function LeadCard({ lead, compact, onAssignChange, onOpen, slaFoo
               className="mt-3 min-w-0 cursor-pointer 2xl:mt-0 2xl:h-full"
               title="เปิดแท็บ SLA - Tracking"
               onClick={(event) => {
-                if ((event.target as HTMLElement).closest("button, select, input, textarea, a")) return;
                 event.stopPropagation();
+                // ปุ่ม/ช่องเลือกในกล่อง (มอบหมายผู้รับผิดชอบ, รับงานนี้, ดู SLA เพิ่ม)
+                // ทำงานของตัวเอง ไม่เปิดหน้า Lead และไม่ให้ทะลุไปเปิดการ์ด
+                if ((event.target as HTMLElement).closest("button, select, input, textarea, a, option")) return;
                 openLead(lead.id, { tab: "sla" });
               }}
             >

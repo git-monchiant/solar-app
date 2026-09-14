@@ -49,9 +49,11 @@ export default function TodaySlaFooter({
   const visibleItems = expanded ? items : items.slice(0, 1);
 
   return (
+    // ไม่กันการคลิกทั้งกล่องแล้ว — เดิม stopPropagation ตรงนี้ทำให้คลิกกล่อง SLA บน
+    // หน้า Today ไม่ไปไหนเลย การกันคลิกของปุ่ม/ช่องเลือกย้ายไปอยู่ที่ LeadCard
+    // ส่วนคีย์บอร์ดยังกันไว้ ไม่งั้นกด Enter/Space บนช่องเลือกจะไปเปิดการ์ด
     <div
       className="flex h-full flex-col gap-1.5"
-      onClick={event => event.stopPropagation()}
       onKeyDown={event => event.stopPropagation()}
     >
       {visibleItems.map(item => {
