@@ -13,8 +13,14 @@ import { Fragment, useEffect, useRef, useState } from "react";
 import { apiFetch, getUserIdHeader } from "@/lib/api";
 import { BoltIcon, CameraIcon, CheckIcon, DocumentIcon } from "@/components/ui/icons";
 import { compressImage } from "@/lib/utils/compressImage";
-import { INVERTER_BRANDS, INVERTER_KW_SIZES, PANEL_BRANDS, PHASE_LABEL } from "@/lib/constants/survey-options";
+import { PHASE_LABEL } from "@/lib/constants/survey-options";
 import Dropdown from "@/components/ui/Dropdown";
+import {
+  EMPTY_EQUIPMENT_OPTIONS, fetchEquipmentOptions, snapToCatalog,
+  batteryBrandOptions, batteryKwhOptions, inverterBrandOptions, inverterKwOptions,
+  panelBrandOptions, modelOptions, existsInCatalog,
+  type EquipmentOptions,
+} from "@/lib/equipment-options";
 import NumberStepper from "@/components/ui/NumberStepper";
 import { AddDeviceModal } from "@/components/lead/detail/SerialsUploader";
 
@@ -109,6 +115,9 @@ export default function InstallChecklist({ lead, leadId }: Props) {
   });
   const [inspectionDate, setInspectionDate] = useState("");
   const [specs, setSpecs] = useState<SystemSpecs>({});
+  // ตัวเลือกยี่ห้อ/รุ่น/ขนาด จากตาราง packages — ที่นี่ใช้แค่เติมรายการให้เลือก
+  // ไม่เติมค่าให้อัตโนมัติ เพราะใบนี้คือบันทึกว่า "หน้างานติดอะไรจริง" ไม่ใช่ของที่ขาย
+  const [equip, setEquip] = useState<EquipmentOptions>(EMPTY_EQUIPMENT_OPTIONS);
   const [checks, setChecks] = useState<VisualChecks>({});
   const [tests, setTests] = useState<FunctionTests>({});
   const [notes, setNotes] = useState("");
@@ -132,9 +141,10 @@ export default function InstallChecklist({ lead, leadId }: Props) {
     // Normalise the brand against the catalogue so case mismatches from OCR
     // (e.g. "HUAWEI") match the Dropdown options ("Huawei") and the chip
     // shows as selected. Falls back to the raw value for custom brands not
-    // in the catalogue.
+    // in the catalogue. Catalogue comes from `packages` now, so a brand sales
+    // added on the config screen is recognised without a code change.
     const brandFromWizard = first.brand
-      ? (INVERTER_BRANDS.find(b => b.toLowerCase() === first.brand!.toLowerCase()) ?? first.brand)
+      ? snapToCatalog(first.brand, inverterBrandOptions(equip))
       : undefined;
     // Use setSpecs directly (setSpec is declared later in this component, so
     // it's not in scope at this point — same render-order tradeoff). All
@@ -243,6 +253,31 @@ export default function InstallChecklist({ lead, leadId }: Props) {
       .catch(console.error)
       .finally(() => setLoading(false));
   }, [leadId]);
+
+  useEffect(() => { fetchEquipmentOptions().then(setEquip); }, []);
+
+  // ข้อมูลเก่าสะกดไม่ตรงกัน (เว้นวรรคหน้า/หลัง, HUAWEI vs Huawei) — พอ catalogue
+  // มาถึงก็ดึงให้ตรงตัวสะกดเดียวกัน เปลี่ยนเฉพาะที่ต่างกันแค่ตัวพิมพ์/เว้นวรรค
+  useEffect(() => {
+    if (!equip.batteries.length && !equip.inverters.length) return;
+    const invBrands  = inverterBrandOptions(equip);
+    const battBrands = batteryBrandOptions(equip);
+    const battModels = modelOptions(equip.batteries, "");
+    setSpecs(prev => ({
+      ...prev,
+      ...(prev.inverter?.brand ? { inverter: { ...prev.inverter, brand: snapToCatalog(prev.inverter.brand, invBrands) } } : {}),
+      ...(prev.battery ? { battery: {
+        ...prev.battery,
+        ...(prev.battery.brand ? { brand: snapToCatalog(prev.battery.brand, battBrands) } : {}),
+        ...(prev.battery.model ? { model: snapToCatalog(prev.battery.model, battModels) } : {}),
+      } } : {}),
+      ...(prev.panel ? { panel: {
+        ...prev.panel,
+        ...(prev.panel.brand ? { brand: snapToCatalog(prev.panel.brand, panelBrandOptions(equip)) } : {}),
+        ...(prev.panel.model ? { model: snapToCatalog(prev.panel.model, modelOptions(equip.panels, "")) } : {}),
+      } } : {}),
+    }));
+  }, [equip]);
 
   // Mint a doc-no on first visit so the checklist always has one to display.
   // Idempotent: the endpoint returns the existing value if one is already
@@ -395,8 +430,13 @@ export default function InstallChecklist({ lead, leadId }: Props) {
                 <label className={fieldLabel}>ยี่ห้อ</label>
                 <Dropdown
                   value={specs.inverter?.brand ?? ""}
-                  onChange={v => setSpec("inverter", { brand: v })}
-                  options={INVERTER_BRANDS.map(b => ({ value: b, label: b }))}
+                  onChange={v => {
+                    const kw = specs.inverter?.kw;
+                    const keepKw = v.trim() && (kw == null || inverterKwOptions(equip, v).includes(kw));
+                    setSpec("inverter", { brand: v, ...(keepKw ? {} : { kw: null }) });
+                  }}
+                  options={inverterBrandOptions(equip).map(b => ({ value: b, label: b }))}
+                  allowCustom
                   disabled={locked}
                 />
               </div>
@@ -404,8 +444,9 @@ export default function InstallChecklist({ lead, leadId }: Props) {
                 <label className={fieldLabel}>ขนาด (kW)</label>
                 <Dropdown
                   value={specs.inverter?.kw != null ? String(specs.inverter.kw) : ""}
-                  onChange={v => setSpec("inverter", { kw: v ? parseFloat(v) : null })}
-                  options={INVERTER_KW_SIZES.map(kw => ({ value: String(kw), label: `${kw} kW` }))}
+                  onChange={v => setSpec("inverter", { kw: v && !isNaN(parseFloat(v)) ? parseFloat(v) : null })}
+                  options={inverterKwOptions(equip, specs.inverter?.brand ?? "").map(kw => ({ value: String(kw), label: `${kw} kW` }))}
+                  allowCustom
                   disabled={locked}
                   buttonClassName="font-mono tabular-nums"
                 />
@@ -451,13 +492,24 @@ export default function InstallChecklist({ lead, leadId }: Props) {
                 <label className={fieldLabel}>ยี่ห้อ</label>
                 <Dropdown
                   value={specs.panel?.brand ?? ""}
-                  onChange={v => setSpec("panel", { brand: v })}
-                  options={PANEL_BRANDS.map(b => ({ value: b, label: b }))}
+                  onChange={v => {
+                    const model = specs.panel?.model;
+                    const keep = v.trim() && existsInCatalog(model ?? "", modelOptions(equip.panels, v));
+                    setSpec("panel", { brand: v, ...(keep ? {} : { model: "" }) });
+                  }}
+                  options={panelBrandOptions(equip).map(b => ({ value: b, label: b }))}
+                  allowCustom
                   disabled={locked}
                 />
               </div>
               <div className="col-span-2 md:col-span-2"><label className={fieldLabel}>รุ่น</label>
-                <input type="text" value={specs.panel?.model ?? ""} onChange={e => setSpec("panel", { model: e.target.value })} placeholder="JKM640N-66HL4M-BDV-Z1-EU" disabled={locked} className={inputCls} />
+                <Dropdown
+                  value={specs.panel?.model ?? ""}
+                  onChange={v => setSpec("panel", { model: v })}
+                  options={modelOptions(equip.panels, specs.panel?.brand ?? "").map(m => ({ value: m, label: m }))}
+                  allowCustom
+                  disabled={locked}
+                />
               </div>
               <div className="col-span-1 md:col-span-1"><label className={fieldLabel}>จำนวน (แผง)</label>
                 <NumberStepper value={specs.panel?.count ?? null} onChange={v => setSpec("panel", { count: v })} disabled={locked} />
@@ -498,13 +550,42 @@ export default function InstallChecklist({ lead, leadId }: Props) {
             <div className="text-xs font-semibold text-gray-500 uppercase tracking-wide">1.4 BATTERY</div>
             <div className="grid grid-cols-2 md:grid-cols-7 gap-2">
               <div className="col-span-1 md:col-span-1"><label className={fieldLabel}>ยี่ห้อ</label>
-                <input type="text" value={specs.battery?.brand ?? ""} onChange={e => setSpec("battery", { brand: e.target.value })} disabled={locked} className={inputCls} />
+                <Dropdown
+                  value={specs.battery?.brand ?? ""}
+                  onChange={v => {
+                    const model = specs.battery?.model;
+                    const kwh = specs.battery?.kwh;
+                    const keepModel = v.trim() && existsInCatalog(model ?? "", modelOptions(equip.batteries, v));
+                    const keepKwh = v.trim() && (kwh == null || batteryKwhOptions(equip, v, "").includes(kwh));
+                    setSpec("battery", { brand: v, ...(keepModel ? {} : { model: "" }), ...(keepKwh ? {} : { kwh: null }) });
+                  }}
+                  options={batteryBrandOptions(equip).map(b => ({ value: b, label: b }))}
+                  allowCustom
+                  disabled={locked}
+                />
               </div>
               <div className="col-span-1 md:col-span-2"><label className={fieldLabel}>รุ่น</label>
-                <input type="text" value={specs.battery?.model ?? ""} onChange={e => setSpec("battery", { model: e.target.value })} disabled={locked} className={inputCls} />
+                <Dropdown
+                  value={specs.battery?.model ?? ""}
+                  onChange={v => {
+                    const kwh = specs.battery?.kwh;
+                    const keepKwh = v.trim() && (kwh == null || batteryKwhOptions(equip, specs.battery?.brand ?? "", v).includes(kwh));
+                    setSpec("battery", { model: v, ...(keepKwh ? {} : { kwh: null }) });
+                  }}
+                  options={modelOptions(equip.batteries, specs.battery?.brand ?? "").map(m => ({ value: m, label: m }))}
+                  allowCustom
+                  disabled={locked}
+                />
               </div>
               <div className="col-span-1 md:col-span-1"><label className={fieldLabel}>ขนาด (kWh)</label>
-                <input type="number" step="0.1" value={specs.battery?.kwh ?? ""} onChange={e => setSpec("battery", { kwh: e.target.value ? parseFloat(e.target.value) : null })} disabled={locked} className={inputCls + " font-mono tabular-nums"} />
+                <Dropdown
+                  value={specs.battery?.kwh != null ? String(specs.battery.kwh) : ""}
+                  onChange={v => setSpec("battery", { kwh: v && !isNaN(parseFloat(v)) ? parseFloat(v) : null })}
+                  options={batteryKwhOptions(equip, specs.battery?.brand ?? "", specs.battery?.model ?? "").map(k => ({ value: String(k), label: `${k} kWh` }))}
+                  buttonClassName="font-mono tabular-nums"
+                  allowCustom
+                  disabled={locked}
+                />
               </div>
             </div>
           </div>

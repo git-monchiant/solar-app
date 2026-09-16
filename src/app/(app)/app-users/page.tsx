@@ -358,7 +358,7 @@ function UserEditor({ user, currentUserId, existingUsernames, onClose, onSaved }
             </div>
           </Field>
           <Field label="ตำแหน่ง (แสดงใต้ลายเซ็นใน PDF)">
-            <input type="text" value={jobTitle} onChange={e => setJobTitle(e.target.value)} placeholder="เช่น Sale Supervisor"
+            <input type="text" value={jobTitle} onChange={e => setJobTitle(e.target.value)} placeholder="เช่น Sale Manager"
               className="w-full h-8 px-3 rounded-lg border border-gray-200 text-sm focus:outline-none focus:border-primary" />
           </Field>
           <Field label="Team">

@@ -1,11 +1,24 @@
 import "server-only";
 import { getDb, sql } from "@/lib/db";
 import { GSB_SOLAR_LOAN_DEFAULTS } from "@/lib/loan-defaults";
+import {
+  getQuotationLegalContent,
+  parseQuotationOmSettings,
+  parseQuotationTermTree,
+  type QuotationLegalContent,
+  type QuotationOmSettings,
+  type QuotationTermTree,
+} from "@/lib/quotation-terms";
 
-export const QUOTATION_DOCUMENT_VERSION = 3;
+// v5 = snapshot เก็บข้อความเงื่อนไข/ข้อกำหนด (legal) ไว้ในตัวด้วย ก่อนหน้านี้ PDF
+// เรนเดอร์จากข้อความในโค้ดสด ๆ ทุกครั้ง ใบที่อนุมัติไปแล้วจึงเปลี่ยนตามการแก้โค้ด
+export const QUOTATION_DOCUMENT_VERSION = 5;
 export const QUOTATION_FINANCE_FORMULA_VERSION = "contract-price-before-deposit-v2";
 
 export type QuotationDocumentInputs = {
+  om: QuotationOmSettings;
+  // ชุดเงื่อนไข/ข้อกำหนดที่ผู้ใช้แก้ไว้เฉพาะใบนี้ · null = ยังใช้ชุดมาตรฐานในโค้ด
+  terms: QuotationTermTree | null;
   recommendation_reason: string;
   loan_enabled: boolean;
   loan_bank: string;
@@ -51,6 +64,10 @@ export type QuotationDocumentSnapshot = {
   items: Array<Record<string, unknown>>;
   settings: Record<string, string>;
   financial: FinancialSnapshot;
+  // ข้อความเงื่อนไข/ข้อกำหนดที่ถูกแช่แข็งไว้กับใบ (snapshot v5 ขึ้นไป)
+  // optional เพราะ snapshot ที่ freeze ไว้ก่อน v5 ไม่มีคีย์นี้ — ผู้อ่านต้อง
+  // fallback ไปคำนวณสดเอง
+  legal?: QuotationLegalContent;
 };
 
 export async function expandOtherPackageAddOns(
@@ -131,6 +148,22 @@ export async function expandOtherPackageAddOns(
 
 const round2 = (value: number) => Math.round((value + Number.EPSILON) * 100) / 100;
 
+// อ่านชุดเงื่อนไขของใบแบบหลวม ๆ ตรงนี้ (ยังไม่รู้ package จึงยังไม่รู้ profile ที่แท้จริง)
+// การบังคับกติกา locked ของจริงเกิดตอน getQuotationLegalContent() ซึ่ง parse ซ้ำ
+// ด้วย profile ที่ derive จาก package — ที่นั่นคือด่านความปลอดภัย ไม่ใช่ที่นี่
+function readTermTree(raw: unknown): QuotationTermTree | null {
+  if (!raw) return null;
+  let value: unknown = raw;
+  if (typeof value === "string") {
+    try { value = JSON.parse(value); } catch { return null; }
+  }
+  const declared = (value as Record<string, unknown> | null)?.profile;
+  return parseQuotationTermTree(
+    value,
+    declared === "additional_install" ? "additional_install" : "full_install",
+  );
+}
+
 export function parseDocumentInputs(raw: unknown, fallback: Partial<QuotationDocumentInputs> = {}): QuotationDocumentInputs {
   let parsed: Partial<QuotationDocumentInputs> = {};
   try {
@@ -138,6 +171,14 @@ export function parseDocumentInputs(raw: unknown, fallback: Partial<QuotationDoc
   } catch { /* use fallbacks */ }
   const number = (value: unknown, defaultValue: number) => Number.isFinite(Number(value)) ? Number(value) : defaultValue;
   return {
+    om: parseQuotationOmSettings(parsed.om ?? fallback.om),
+    // ต้องแยก "ไม่ได้ส่งมา" ออกจาก "ส่ง null มา" — ปุ่มคืนค่าชุดมาตรฐานส่ง null
+    // มาโดยตั้งใจ ถ้าใช้ ?? ค่าเดิมใน DB จะถูก fallback กลับมาทับ ปุ่มจะไม่มีผล
+    terms: readTermTree(
+      Object.prototype.hasOwnProperty.call(parsed ?? {}, "terms")
+        ? parsed.terms
+        : fallback.terms,
+    ),
     recommendation_reason: String(parsed.recommendation_reason ?? fallback.recommendation_reason ?? "").trim(),
     loan_enabled: Boolean(parsed.loan_enabled ?? fallback.loan_enabled ?? GSB_SOLAR_LOAN_DEFAULTS.loan_enabled),
     loan_bank: String(parsed.loan_bank ?? fallback.loan_bank ?? GSB_SOLAR_LOAN_DEFAULTS.loan_bank).trim(),
@@ -222,6 +263,8 @@ export function validateQuotationDocument(snapshot: QuotationDocumentSnapshot): 
   if (finance.inputs.current_monthly_bill <= 0) errors.push("กรุณาระบุค่าไฟปัจจุบันจากข้อมูลจริง");
   if (finance.inputs.electricity_rate <= 0) errors.push("กรุณาระบุค่าไฟต่อหน่วย");
   if (finance.inputs.production_kwh_per_kw_month <= 0) errors.push("กรุณาระบุสมมติฐานผลผลิตไฟต่อ kWp");
+  // ตารางรายการยาวเกินหน้าไม่ใช่ข้อผิดพลาดอีกต่อไป — ตัวเรนเดอร์ขึ้นตารางหน้าใหม่
+  // ให้เอง พร้อมแถวยอดยกไป/ยอดยกมา (ดู paginateQuotationRows)
   if (finance.inputs.loan_enabled) {
     if (!finance.inputs.loan_bank) errors.push("กรุณาระบุธนาคาร/ผลิตภัณฑ์สินเชื่อ");
     if (finance.inputs.loan_term_months < 12) errors.push("กรุณาระบุระยะเวลาสินเชื่ออย่างน้อย 12 เดือน");
@@ -243,7 +286,8 @@ export async function buildQuotationDocumentSnapshot(quotationId: number, transa
       p.name package_current_name, p.kwp, p.phase, p.is_upgrade, p.is_other, p.has_panel,
       p.has_inverter, p.has_battery, p.battery_kwh, p.battery_brand,
       p.battery_model, p.inverter_kw, p.inverter_brand, p.inverter_model,
-      p.installed_kwp, p.panel_count, p.panel_watt, p.panel_brand, p.warranty_years
+      p.installed_kwp, p.panel_count, p.panel_watt, p.panel_brand, p.warranty_years,
+      p.term_set_profile
     FROM quotations q
     JOIN leads l ON l.id=q.lead_id
     LEFT JOIN packages p ON p.id=q.package_id
@@ -261,7 +305,7 @@ export async function buildQuotationDocumentSnapshot(quotationId: number, transa
   const row = sets[0]?.[0];
   if (!row) return null;
   const quotationKeys = new Set(["id","lead_id","option_no","doc_no","revision_no","status","package_id","package_name_snapshot","package_price_snapshot","issue_date","valid_days","subtotal_incl_vat","discount_label","discount_type","discount_value","discount_amount","discount_reason","contract_total_incl_vat","deposit_paid_amount","outstanding_amount","vat_rate","amount_before_vat","vat_amount","payment_terms_json","terms_text","note","created_by","created_by_name","created_by_title","submitted_at","approved_at","approver_name_snapshot","approver_title_snapshot","project_display_name"]);
-  const packageKeys = new Set(["package_id","package_current_name","kwp","installed_kwp","phase","is_upgrade","is_other","has_panel","has_inverter","has_battery","battery_kwh","battery_brand","battery_model","solar_panels","panel_count","panel_watt","panel_brand","inverter_kw","inverter_brand","inverter_model","warranty_years"]);
+  const packageKeys = new Set(["package_id","package_current_name","kwp","installed_kwp","phase","is_upgrade","is_other","has_panel","has_inverter","has_battery","battery_kwh","battery_brand","battery_model","solar_panels","panel_count","panel_watt","panel_brand","inverter_kw","inverter_brand","inverter_model","warranty_years","term_set_profile"]);
   const quotation: Record<string, unknown> = {};
   const pkg: Record<string, unknown> = {};
   const lead: Record<string, unknown> = {};
@@ -288,5 +332,14 @@ export async function buildQuotationDocumentSnapshot(quotationId: number, transa
     items: await expandOtherPackageAddOns(sets[2] || [], transaction),
     settings: Object.fromEntries((sets[3] || []).map(setting => [String(setting.key), String(setting.value || "")])),
     financial,
+    // อาร์กิวเมนต์ชุดเดียวกับที่ quotation-pdf route เคยเรียกสดตอนเรนเดอร์ —
+    // ย้ายมาคำนวณตรงนี้เพื่อให้ถ้อยคำถูกแช่แข็งไปพร้อมกับ snapshot ตอนส่งอนุมัติ
+    legal: getQuotationLegalContent(
+      pkg,
+      quotation.valid_days,
+      String(quotation.terms_text || ""),
+      inputs.om,
+      inputs.terms,
+    ),
   };
 }

@@ -17,8 +17,14 @@ import { useFileViewer } from "@/lib/hooks/useFileViewer";
 import { buildWarrantyFlex } from "@/lib/utils/line-flex";
 import { compressImage } from "@/lib/utils/compressImage";
 import { formatThaiDate } from "@/lib/utils/formatters";
-import { INVERTER_BRANDS, INVERTER_KW_SIZES, PANEL_BRANDS, PHASE_LABEL } from "@/lib/constants/survey-options";
+import { PHASE_LABEL } from "@/lib/constants/survey-options";
 import Dropdown from "@/components/ui/Dropdown";
+import {
+  EMPTY_EQUIPMENT_OPTIONS, fetchEquipmentOptions, snapToCatalog,
+  batteryBrandOptions, batteryKwhOptions, inverterBrandOptions, inverterKwOptions,
+  panelBrandOptions, modelOptions, existsInCatalog,
+  type EquipmentOptions,
+} from "@/lib/equipment-options";
 import NumberStepper from "@/components/ui/NumberStepper";
 import SerialsUploader, { AddDeviceModal } from "@/components/lead/detail/SerialsUploader";
 
@@ -165,6 +171,8 @@ export default function WarrantyStep({ lead, state, refresh, packages, expanded,
   const [panelWatt, setPanelWatt] = useState<number | "">(lead.warranty_panel_watt ?? "");
   const [panelBrand, setPanelBrand] = useState<string>(lead.warranty_panel_brand ?? "");
   const [panelModel, setPanelModel] = useState<string>(lead.warranty_panel_model ?? "");
+  // ยี่ห้อ/รุ่น/ขนาด ที่บริษัทขายจริง (จากตาราง packages) + แพ็กเกจของลูกค้ารายนี้
+  const [equip, setEquip] = useState<EquipmentOptions>(EMPTY_EQUIPMENT_OPTIONS);
   // BATTERY summary on subStep 0 — mirrors Install §1.4. Independent from
   // subStep 2's per-row battery list (which has its own multi-row + OCR UI).
   const [battBrand, setBattBrand] = useState<string>(lead.warranty_battery_brand ?? "");
@@ -175,6 +183,18 @@ export default function WarrantyStep({ lead, state, refresh, packages, expanded,
   // Number / Phase from the issue-warranty checks — they can't be filled in for
   // hardware that isn't ours.
   const [noInverter, setNoInverter] = useState<boolean>(!!lead.warranty_no_inverter);
+  // ช่องแบตทำงานเหมือนช่องแผง: เปิดให้กรอกตลอด เติม default จาก Checklist →
+  // Serial → แพ็กเกจ แล้วแก้เองทับได้ ไม่มีเช็กบ็อกซ์เปิด/ปิด
+  //
+  // ต่างจากแผงตรงที่แบตมีแค่บางงาน (14 จาก 37 ใบรับประกัน) ใบรับประกันจึงต้องรู้ว่า
+  // จะพิมพ์ส่วนแบตหรือไม่ — ตัดสินจาก "มีข้อมูลแบตไหม" แทนการให้คนติ๊ก ดู
+  // warranty_no_battery ในกล่อง autosave ข้างล่าง
+  //
+  // หน้างานมีบันทึกแบตไหม (Install Checklist หรือแท็บ EQUIPMENT-SERIAL)
+  // null = ยังโหลดไม่เสร็จ ยังไม่ต้องเตือน จะได้ไม่ขึ้นวาบตอนเปิดหน้า
+  // ไม่นับแพ็กเกจเป็นหลักฐาน เพราะแพ็กเกจคือ 'สิ่งที่ขาย' ไม่ใช่ 'สิ่งที่ติด' —
+  // ข้อมูลจริงบอกว่า 4 ใน 10 งานที่ติดแบต แพ็กเกจไม่ได้ระบุแบตไว้
+  const [battOnSite, setBattOnSite] = useState<boolean | null>(null);
   const [invBrand, setInvBrand] = useState<string>(lead.warranty_inverter_brand ?? defaultPkg?.inverter_brand ?? "");
   const [invKw, setInvKw] = useState<number | "">(lead.warranty_inverter_kw ?? defaultPkg?.inverter_kw ?? "");
 
@@ -290,7 +310,9 @@ export default function WarrantyStep({ lead, state, refresh, packages, expanded,
         batteries?: Array<{ brand: string | null; kwh: number | null; serial_no: string | null }>;
         panels?: Array<{ brand: string | null; serial_no: string | null }>;
       } | null>,
-    ]).then(([row, dev]) => {
+      fetchEquipmentOptions(lead.id),
+    ]).then(([row, dev, eq]) => {
+      setEquip(eq);
       let specs: { inverter?: { brand?: string; kw?: number | null; phase?: string; sn?: string }; panel?: { brand?: string; model?: string; count?: number | null; watt?: number | null; total_kwp?: number | null }; battery?: { brand?: string; model?: string; kwh?: number | null } } = {};
       if (row?.system_specs) {
         try { specs = JSON.parse(row.system_specs); } catch { /* fall through to devices-only mirror */ }
@@ -314,6 +336,7 @@ export default function WarrantyStep({ lead, state, refresh, packages, expanded,
       // Second-hand from Equipment-Serial tables (gap-fill only) ─────────
       // lead_batteries[].brand / .kwh — use the first row that has the value.
       const battRow = dev?.batteries?.find(b => b.brand || b.kwh != null);
+      setBattOnSite(!!(bt.brand || bt.model || bt.kwh != null || battRow));
       if (battRow) {
         if (!battBrand && !bt.brand && battRow.brand) setBattBrand(battRow.brand);
         if (battKwh === "" && bt.kwh == null && typeof battRow.kwh === "number") setBattKwh(battRow.kwh);
@@ -331,9 +354,37 @@ export default function WarrantyStep({ lead, state, refresh, packages, expanded,
       const firstPanelBrand = panelRows.find(p => p.brand)?.brand;
       if (firstPanelBrand && !panelBrand && !pn.brand) setPanelBrand(firstPanelBrand);
       if (panelRows.length > 0 && panelCount === "" && pn.count == null) setPanelCount(panelRows.length);
+      // Last resort: the package the customer actually bought ─────────────
+      // Sales maintains brand/model there through the config screen, so its
+      // spelling is the clean one — free text typed on site is where
+      // "LUNAA2000-7-E1" and "LUNA2000-7" came from. Gap-fill only, so
+      // equipment swapped out on site still wins.
+      const pk = eq.leadPackage;
+      if (pk) {
+        if (!invBrand && !inv.brand && !invRow?.brand && pk.inverter_brand) setInvBrand(pk.inverter_brand);
+        if (invKw === "" && inv.kw == null && invRow?.kw == null && typeof pk.inverter_kw === "number") setInvKw(pk.inverter_kw);
+        if (!battBrand && !bt.brand && !battRow?.brand && pk.battery_brand) setBattBrand(pk.battery_brand);
+        if (!battModel && !bt.model && pk.battery_model) setBattModel(pk.battery_model);
+        if (battKwh === "" && bt.kwh == null && battRow?.kwh == null && typeof pk.battery_kwh === "number") setBattKwh(pk.battery_kwh);
+        if (!panelBrand && !pn.brand && !firstPanelBrand && pk.panel_brand) setPanelBrand(pk.panel_brand);
+        if (!panelModel && !pn.model && pk.panel_model) setPanelModel(pk.panel_model);
+        if (panelWatt === "" && pn.watt == null && typeof pk.panel_watt === "number") setPanelWatt(pk.panel_watt);
+      }
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [lead.id]);
+
+  // ข้อมูลเก่ามีทั้ง " LUNA2000-7-E1" และ "LUNA2000-7-E1 " — พอ catalogue โหลดเสร็จ
+  // ก็ดึงให้ตรงตัวสะกดเดียวกัน (ต่างกันแค่ตัวพิมพ์/เว้นวรรคเท่านั้นถึงจะเปลี่ยน ถ้าเป็น
+  // คนละค่าจริง ๆ จะปล่อยไว้) autosave เขียนกลับเองเมื่อ step นี้ active อยู่
+  useEffect(() => {
+    if (!equip.batteries.length && !equip.inverters.length) return;
+    setInvBrand(b => snapToCatalog(b, inverterBrandOptions(equip)));
+    setBattBrand(b => snapToCatalog(b, batteryBrandOptions(equip)));
+    setBattModel(m => snapToCatalog(m, modelOptions(equip.batteries, "")));
+    setPanelBrand(b => snapToCatalog(b, panelBrandOptions(equip)));
+    setPanelModel(m => snapToCatalog(m, modelOptions(equip.panels, "")));
+  }, [equip]);
 
   // Battery serial bulk-scan — auto-process pipeline mirroring panel scan.
   // Each uploaded photo is OCR'd individually, results stream into next empty
@@ -625,6 +676,23 @@ export default function WarrantyStep({ lead, state, refresh, packages, expanded,
     await apiFetch(`/api/leads/${lead.id}`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ warranty_other_docs_url: next.length ? next.join(",") : null }) });
   };
 
+  // เปลี่ยนยี่ห้อแล้วต้องเก็บกวาดค่าที่ผูกกับยี่ห้อเดิม ไม่งั้นจะเหลือรุ่นของยี่ห้อหนึ่ง
+  // ค้างอยู่คู่กับอีกยี่ห้อหนึ่ง หรือแย่กว่านั้นคือล้างยี่ห้อทิ้งแล้วรุ่น/ขนาดยังอยู่
+  // โดยไม่มีอะไรอ้างอิง (เกิดขึ้นจริงกับ lead 856: ยี่ห้อว่างแต่ยังมี LUNA2000-7-E1)
+  //
+  // ล้างยี่ห้อ = ไม่เอาแล้ว → ล้างรุ่นกับขนาดตามไปด้วย
+  // เปลี่ยนเป็นอีกยี่ห้อ = ล้างเฉพาะค่าที่ใช้กับยี่ห้อใหม่ไม่ได้ ของที่ยังใช้ได้เก็บไว้
+  const rebindOnBrandChange = (
+    nextBrand: string,
+    current: { model?: string; spec?: number | "" },
+    valid: { models: string[]; specs: number[] },
+    clear: { model?: () => void; spec?: () => void },
+  ) => {
+    if (!nextBrand.trim()) { clear.model?.(); clear.spec?.(); return; }
+    if (current.model && !existsInCatalog(current.model, valid.models)) clear.model?.();
+    if (current.spec !== "" && current.spec != null && !valid.specs.includes(current.spec)) clear.spec?.();
+  };
+
   const endDate = addYears(startDate, durationYears);
 
   // Auto-save SN / doc no / start date / equipment snapshot.
@@ -638,6 +706,24 @@ export default function WarrantyStep({ lead, state, refresh, packages, expanded,
   useEffect(() => {
     if (state !== "active") return;
     const t = setTimeout(() => {
+      // รายการแบตในคอลัมน์เก่า warranty_batteries
+      //
+      // แถวพวกนี้ไม่มี UI ให้แก้แล้ว (updateBatt ไม่ถูกเรียกจากที่ไหน) เหลือหน้าที่
+      // เดียวคือเป็นเงาของช่องสรุปด้านบน แต่ตอน mount มันถูก seed จากช่องสรุป แล้ว
+      // ไม่มีอะไรพามันเดินตามเมื่อช่องสรุปถูกแก้ — ล้างช่องสรุปทิ้ง แถวเก่ายังค้าง
+      // แล้วถูกเขียนกลับลง DB ทุกครั้ง พอโหลดหน้าใหม่ก็ seed จาก JSON ตัวเองต่อ
+      // กลายเป็นแบตผีที่ลบไม่ออกและโผล่บนใบรับประกัน (เกิดกับ lead 856 จริง)
+      //
+      // ถ้าไม่มีแถวไหนมี serial เลย = เป็นเงาล้วน ๆ สร้างใหม่จากช่องสรุปทุกครั้ง
+      // ถ้ามี serial = ข้อมูลจริงของงานเก่าที่บันทึกไว้ก่อนมีตาราง lead_batteries
+      // อันนั้นห้ามแตะ
+      const keptRows = batteries.filter(b => b.brand || b.kwh || b.serial);
+      const battRows = keptRows.some(b => b.serial)
+        ? keptRows.map(b => ({ brand: b.brand || null, kwh: b.kwh ? parseFloat(b.kwh) : null, serial: b.serial || null }))
+        : (battBrand.trim() || battKwh !== ""
+            ? [{ brand: battBrand || null, kwh: battKwh === "" ? null : Number(battKwh), serial: null }]
+            : []);
+
       // 1. legacy PATCH
       apiFetch(`/api/leads/${lead.id}`, {
         method: "PATCH", headers: { "Content-Type": "application/json" },
@@ -659,10 +745,14 @@ export default function WarrantyStep({ lead, state, refresh, packages, expanded,
           warranty_inverter_brand: invBrand || null,
           warranty_inverter_kw: invKw === "" ? null : invKw,
           warranty_electrical_phase: phase || null,
-          warranty_batteries: JSON.stringify(batteries.filter(b => b.brand || b.kwh || b.serial).map(b => ({ brand: b.brand || null, kwh: b.kwh ? parseFloat(b.kwh) : null, serial: b.serial || null }))),
-          warranty_has_battery: batteries.some(b => b.brand || b.kwh || b.serial),
+          warranty_batteries: battRows.length ? JSON.stringify(battRows) : null,
+          warranty_has_battery: battRows.length > 0,
           warranty_panel_serials: panelSerials.some(s => s.trim()) ? JSON.stringify(panelSerials.map(s => s.trim())) : null,
           warranty_no_inverter: noInverter,
+          // "งานนี้ไม่มีแบต" = ไม่มีข้อมูลแบตเลยสักที่ ทั้งช่องสรุปและแถว serial
+          // คำนวณเอาแทนการให้คนติ๊ก เพื่อให้ช่องแบตใช้งานเหมือนช่องแผงทุกประการ
+          // ธงนี้ทำให้ใบรับประกันไม่ต้องเดาจากค่าที่ค้างอยู่ในคอลัมน์เก่าหรือในแพ็กเกจ
+          warranty_no_battery: !(battBrand.trim() || battModel.trim() || battKwh !== "" || battRows.length),
         }),
       }).catch(console.error);
       // NOTE: PUT to /api/leads/[id]/devices was removed here. The new
@@ -842,8 +932,13 @@ export default function WarrantyStep({ lead, state, refresh, packages, expanded,
                 <label className="text-xs text-gray-500 block mb-1">ยี่ห้อ</label>
                 <Dropdown
                   value={invBrand}
-                  onChange={v => setInvBrand(v)}
-                  options={INVERTER_BRANDS.map(b => ({ value: b, label: b }))}
+                  onChange={v => {
+                    setInvBrand(v);
+                    rebindOnBrandChange(v, { spec: invKw }, { models: [], specs: inverterKwOptions(equip, v) },
+                      { spec: () => setInvKw("") });
+                  }}
+                  options={inverterBrandOptions(equip).map(b => ({ value: b, label: b }))}
+                  allowCustom
                   disabled={noInverter}
                 />
               </div>
@@ -851,8 +946,9 @@ export default function WarrantyStep({ lead, state, refresh, packages, expanded,
                 <label className="text-xs text-gray-500 block mb-1">ขนาด (kW)</label>
                 <Dropdown
                   value={invKw === "" ? "" : String(invKw)}
-                  onChange={v => setInvKw(v ? parseFloat(v) : "")}
-                  options={INVERTER_KW_SIZES.map(kw => ({ value: String(kw), label: `${kw} kW` }))}
+                  onChange={v => setInvKw(v && !isNaN(parseFloat(v)) ? parseFloat(v) : "")}
+                  options={inverterKwOptions(equip, invBrand).map(kw => ({ value: String(kw), label: `${kw} kW` }))}
+                  allowCustom
                   buttonClassName="font-mono tabular-nums"
                   disabled={noInverter}
                 />
@@ -952,13 +1048,23 @@ export default function WarrantyStep({ lead, state, refresh, packages, expanded,
                 <label className="text-xs text-gray-500 block mb-1">ยี่ห้อ</label>
                 <Dropdown
                   value={panelBrand}
-                  onChange={v => setPanelBrand(v)}
-                  options={PANEL_BRANDS.map(b => ({ value: b, label: b }))}
+                  onChange={v => {
+                    setPanelBrand(v);
+                    rebindOnBrandChange(v, { model: panelModel }, { models: modelOptions(equip.panels, v), specs: [] },
+                      { model: () => setPanelModel("") });
+                  }}
+                  options={panelBrandOptions(equip).map(b => ({ value: b, label: b }))}
+                  allowCustom
                 />
               </div>
               <div className="col-span-1 md:col-span-2">
                 <label className="text-xs text-gray-500 block mb-1">รุ่น</label>
-                <input type="text" value={panelModel} onChange={e => setPanelModel(e.target.value)} placeholder="JKM640N-66HL4M-BDV-Z1-EU" className="w-full h-8 px-3 rounded-lg border border-gray-200 text-sm focus:outline-none focus:border-primary" />
+                <Dropdown
+                  value={panelModel}
+                  onChange={v => setPanelModel(v)}
+                  options={modelOptions(equip.panels, panelBrand).map(m => ({ value: m, label: m }))}
+                  allowCustom
+                />
               </div>
               <div className="col-span-1 md:col-span-1">
                 <label className="text-xs text-gray-500 block mb-1">จำนวน (แผง)</label>
@@ -986,17 +1092,52 @@ export default function WarrantyStep({ lead, state, refresh, packages, expanded,
             <div className="grid grid-cols-2 md:grid-cols-7 gap-2">
               <div className="col-span-1 md:col-span-1">
                 <label className="text-xs text-gray-500 block mb-1">ยี่ห้อ</label>
-                <input type="text" value={battBrand} onChange={e => setBattBrand(e.target.value)} className="w-full h-8 px-3 rounded-lg border border-gray-200 text-sm focus:outline-none focus:border-primary" />
+                <Dropdown
+                  value={battBrand}
+                  onChange={v => {
+                    setBattBrand(v);
+                    rebindOnBrandChange(v, { model: battModel, spec: battKwh },
+                      { models: modelOptions(equip.batteries, v), specs: batteryKwhOptions(equip, v, "") },
+                      { model: () => setBattModel(""), spec: () => setBattKwh("") });
+                  }}
+                  options={batteryBrandOptions(equip).map(b => ({ value: b, label: b }))}
+                  allowCustom
+                />
               </div>
               <div className="col-span-1 md:col-span-2">
                 <label className="text-xs text-gray-500 block mb-1">รุ่น</label>
-                <input type="text" value={battModel} onChange={e => setBattModel(e.target.value)} className="w-full h-8 px-3 rounded-lg border border-gray-200 text-sm focus:outline-none focus:border-primary" />
+                <Dropdown
+                  value={battModel}
+                  onChange={v => {
+                    setBattModel(v);
+                    // ขนาดแบตเป็นสเปกของรุ่น ล้างรุ่นแล้วขนาดไม่ควรค้างอยู่ลอย ๆ
+                    if (!v.trim()) setBattKwh("");
+                    else if (battKwh !== "" && !batteryKwhOptions(equip, battBrand, v).includes(battKwh)) setBattKwh("");
+                  }}
+                  options={modelOptions(equip.batteries, battBrand).map(m => ({ value: m, label: m }))}
+                  allowCustom
+                />
               </div>
               <div className="col-span-1 md:col-span-1">
                 <label className="text-xs text-gray-500 block mb-1">ขนาด (kWh)</label>
-                <input type="number" step="0.1" value={battKwh} onChange={e => setBattKwh(e.target.value ? parseFloat(e.target.value) : "")} className="w-full h-8 px-3 rounded-lg border border-gray-200 font-mono text-sm focus:outline-none focus:border-primary" />
+                <Dropdown
+                  value={battKwh === "" ? "" : String(battKwh)}
+                  onChange={v => setBattKwh(v && !isNaN(parseFloat(v)) ? parseFloat(v) : "")}
+                  options={batteryKwhOptions(equip, battBrand, battModel).map(k => ({ value: String(k), label: `${k} kWh` }))}
+                  buttonClassName="font-mono tabular-nums"
+                  allowCustom
+                />
               </div>
             </div>
+            {/* กรอกแบตไว้ทั้งที่หน้างานไม่มีบันทึก = ใบรับประกันกำลังจะรับประกันของที่
+                ไม่มีหลักฐานว่าติดตั้งจริง เตือนอย่างเดียวไม่บล็อก เพราะบางครั้งช่างกรอก
+                Checklist ไม่ครบ แต่แบตติดจริง — ถ้าบล็อกจะออกเอกสารไม่ได้เลย */}
+            {battOnSite === false && (battBrand.trim() || battModel.trim() || battKwh !== "") && (
+              <div className="text-xs text-amber-800 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2">
+                ไม่พบบันทึกแบตเตอรี่ที่หน้างาน — ไม่มีทั้งใน Install Checklist และแท็บ EQUIPMENT–SERIAL
+                กรุณาตรวจสอบก่อนออกใบรับประกัน
+              </div>
+            )}
           </div>
         </div>
       </>)}

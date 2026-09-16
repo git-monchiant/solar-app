@@ -10,6 +10,9 @@ export interface Lead {
   customer_type: string;
   customer_group: string | null;
   customer_grade: string | null;
+  survey_ready_at: string | null;
+  survey_ready_by: number | null;
+  survey_ready_note: string | null;
   status: string;
   source: string;
   note: string;
@@ -92,6 +95,10 @@ export interface Lead {
   // questionnaire §8 — decision making factor (JSON)
   decision_factors: string | null;
   decision_timeline: string | null;
+  // questionnaire §9 — customer demographics
+  occupation: string | null;
+  age_range: string | null;
+  household_income: string | null;
   interested_package_id: number | null;
   interested_package_ids: string | null;
   package_note: string | null;
@@ -234,6 +241,7 @@ export interface Lead {
   warranty_has_battery: boolean | null;
   /** true = ไม่ได้ติดตั้ง inverter ที่นี่ — inverter fields disabled + not required. */
   warranty_no_inverter: boolean | null;
+  warranty_no_battery: boolean | null;
   warranty_inverter_sn_photo_url: string | null;
   warranty_batteries: string | null;
   warranty_panel_serials: string | null;
@@ -273,6 +281,12 @@ export interface Lead {
   grid_application_doc_url: string | null;
   grid_permit_doc_url: string | null;
   grid_note: string | null;
+  sla_policy_code?: string | null;
+  sla_task_name?: string | null;
+  sla_started_at?: string | null;
+  sla_status?: "active" | "warning" | "critical" | "breached" | null;
+  sla_target_at?: string | null;
+  sla_due_at?: string | null;
 }
 
 export interface Panel {
@@ -301,6 +315,8 @@ export interface Package {
   has_panel: boolean;
   has_inverter: boolean;
   warranty_years: number;
+  /** ชุดเงื่อนไขใบเสนอราคาที่แอดมินตั้งไว้ · null = ให้เดาจากคุณสมบัติแพ็กเกจ */
+  term_set_profile?: "full_install" | "additional_install" | null;
 }
 
 export type CardStateKind = "done" | "active" | "locked";

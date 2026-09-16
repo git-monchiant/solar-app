@@ -6,6 +6,7 @@ import { useRouter } from "next/navigation";
 import { apiFetch } from "@/lib/api";
 import Header from "@/components/layout/Header";
 import { useFileViewer } from "@/lib/hooks/useFileViewer";
+import { useDialog } from "@/components/ui/Dialog";
 
 type Settings = Record<string, string>;
 
@@ -87,6 +88,7 @@ function TabBtn({ active, onClick, label }: { active: boolean; onClick: () => vo
 type GmailStatus = { connected: boolean; email: string | null; connected_at: string | null };
 
 function GmailSection() {
+  const dialog = useDialog();
   const [status, setStatus] = useState<GmailStatus | null>(null);
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
@@ -109,7 +111,7 @@ function GmailSection() {
   };
 
   const disconnect = async () => {
-    if (!confirm("ตัดการเชื่อม Gmail?")) return;
+    if (!(await dialog.confirm("ตัดการเชื่อม Gmail?"))) return;
     setBusy(true);
     try {
       await apiFetch("/api/oauth/gmail/status", { method: "DELETE" });
@@ -331,9 +333,10 @@ function RunningNumbersSection() {
   );
 }
 
-// Pick the default signer that warranty certificates print under. Saved as
-// app_settings.warranty_signer_user_id; the warranty data route reads it as
-// the default when no per-lead warranty_issued_by is set.
+// Pick the signer that warranty certificates print under. Saved as
+// app_settings.warranty_signer_user_id. Applies to certs issued from now on —
+// issuing stamps leads.warranty_signer_user_id, which outranks this value, so
+// changing it here never rewrites a cert a customer already holds.
 type UserOpt = { id: number; full_name: string; has_signature: 0 | 1 | boolean };
 
 function WarrantySignerSection() {
@@ -381,7 +384,7 @@ function WarrantySignerSection() {
     <section className="bg-white rounded-xl border border-gray-200 overflow-hidden">
       <div className="px-5 py-4 border-b border-gray-100">
         <h2 className="text-sm font-bold text-gray-900">ผู้ลงนามใบรับประกัน</h2>
-        <p className="text-xs text-gray-500 mt-1">ตั้งค่า user เริ่มต้นที่ชื่อ + ลายเซ็นจะปรากฏบนใบรับประกันทุกฉบับ — ใช้แทน lead.warranty_issued_by ที่ยังไม่ถูกกำหนด</p>
+        <p className="text-xs text-gray-500 mt-1">ตั้งค่า user ที่ชื่อ + ลายเซ็นจะปรากฏบนใบรับประกัน — มีผลกับใบที่ออกใหม่เท่านั้น ใบที่ออกไปแล้วจะล็อกชื่อผู้ลงนาม ณ วันที่ออกไว้ถาวร</p>
       </div>
       {loading ? (
         <div className="p-5 text-sm text-gray-500">กำลังโหลด...</div>
@@ -527,6 +530,7 @@ function ChannelsSection() {
 // ใช้ได้ทุก lead — ส่ง URL เก็บไว้ที่ app_settings.customer_checklist_pdf_url.
 // step ไหนที่ download — รอ user บอก (จะใส่ลิงก์ลง step นั้นภายหลัง)
 function CustomerDocsSection() {
+  const dialog = useDialog();
   const [url, setUrl] = useState<string | null>(null);
   const [name, setName] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
@@ -583,7 +587,7 @@ function CustomerDocsSection() {
 
   const remove = async () => {
     if (!url) return;
-    if (!confirm("ลบไฟล์ checklist นี้?")) return;
+    if (!(await dialog.confirm({ message: "ลบไฟล์ checklist นี้?", variant: "danger" }))) return;
     setBusy(true);
     try {
       await apiFetch("/api/settings", {

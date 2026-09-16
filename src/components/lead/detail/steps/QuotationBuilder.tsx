@@ -9,9 +9,16 @@ import ModalBase from "@/components/ui/ModalBase";
 import {
   balanceFinalQuotationPaymentTerm,
   getQuotationPaymentTermsTotal,
+  getQuotationTermsProfile,
+  isStandardQuotationTermTree,
+  parseQuotationOmSettings,
   parseQuotationPaymentTerms,
+  parseQuotationTermTree,
+  type QuotationOmSettings,
   type QuotationPaymentTerm,
+  type QuotationTermTree,
 } from "@/lib/quotation-terms";
+import QuotationTermsEditor from "./QuotationTermsEditor";
 import type { Lead, Package } from "./types";
 
 type Item = {
@@ -36,6 +43,9 @@ type Item = {
   source_package_id?: number;
 };
 type DocumentInputs = {
+  om: QuotationOmSettings;
+  // ชุดเงื่อนไข/ข้อกำหนดที่แก้เฉพาะใบนี้ · null = ยังใช้ชุดมาตรฐานในโค้ด
+  terms: QuotationTermTree | null;
   recommendation_reason: string;
   loan_enabled: boolean;
   loan_bank: string;
@@ -55,6 +65,7 @@ type Quote = {
   option_no: number;
   doc_no: string;
   issue_date?: string;
+  valid_days?: number;
   revision_no: number;
   status: string;
   package_id: number;
@@ -76,9 +87,17 @@ type Quote = {
   returned_by_role?: string;
   created_by_name?: string;
   created_at?: string;
+  submitted_by_name?: string;
+  submitted_at?: string;
+  solar_approved_by_name?: string;
+  solar_approved_at?: string;
+  approved_by_name?: string;
+  approved_at?: string;
   document_inputs_json?: string;
   document_snapshot_at?: string;
   approval_certified_at?: string;
+  last_reminded_at?: string | null;
+  last_reminded_by_name?: string | null;
   items: Item[];
 };
 type Template = {
@@ -89,19 +108,187 @@ type Template = {
 };
 const statusLabel: Record<string, string> = {
   draft: "ฉบับร่าง",
-  pending_solar_sup: "รอ Solar Sup อนุมัติ",
-  pending_sales_sup: "รอ Sale Sup อนุมัติ",
-  pending_approval: "รอ Sale Sup อนุมัติ",
+  pending_solar_sup: "รอ Solar Manager อนุมัติ",
+  pending_sales_sup: "รอ Sale Manager อนุมัติ",
+  pending_approval: "รอ Sale Manager อนุมัติ",
   approved: "อนุมัติแล้ว",
   changes_required: "ส่งกลับแก้ไข",
   cancelled: "ยกเลิกแล้ว",
 };
+
+function formatApprovalDateTime(value: string): string {
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return "—";
+  const shortDate = date.toLocaleDateString("th-TH", {
+    day: "2-digit",
+    month: "2-digit",
+  });
+  return `${shortDate} ${formatThaiTime(value)}`;
+}
+
+type ApprovalFlowStepState =
+  | "completed"
+  | "active"
+  | "returned"
+  | "upcoming"
+  | "cancelled";
+
+function ApprovalFlowStatus({
+  status,
+  returnedByRole,
+  submittedByName,
+  submittedAt,
+  solarApprovedByName,
+  solarApprovedAt,
+  approvedByName,
+  approvedAt,
+}: {
+  status: string;
+  returnedByRole?: string;
+  submittedByName?: string;
+  submittedAt?: string;
+  solarApprovedByName?: string;
+  solarApprovedAt?: string;
+  approvedByName?: string;
+  approvedAt?: string;
+}) {
+  const currentStep =
+    status === "approved"
+      ? 3
+      : ["pending_sales_sup", "pending_approval"].includes(status)
+        ? 2
+        : status === "pending_solar_sup"
+          ? 1
+          : 0;
+  const isReturned = status === "changes_required";
+  const isCancelled = status === "cancelled";
+  const approvalDetails = [
+    { name: submittedByName, approvedAt: submittedAt },
+    { name: solarApprovedByName, approvedAt: solarApprovedAt },
+    { name: approvedByName, approvedAt },
+  ];
+  const steps = ["Sale", "Solar Manager", "Sale Manager"].map((label, index) => {
+    let state: ApprovalFlowStepState = "upcoming";
+    if (isCancelled) state = "cancelled";
+    else if (isReturned && index === 0) state = "returned";
+    else if (index < currentStep) state = "completed";
+    else if (index === currentStep && currentStep < 3) state = "active";
+
+    const detail =
+      state === "completed"
+        ? index === 0
+          ? "ส่งแล้ว"
+          : "อนุมัติแล้ว"
+        : state === "returned"
+          ? "รอแก้ไข"
+          : state === "active"
+            ? index === 0
+              ? "รอส่ง"
+              : "ยังไม่อนุมัติ"
+            : state === "cancelled"
+              ? "ยกเลิก"
+              : "ยังไม่อนุมัติ";
+    return { label, state, detail, approval: approvalDetails[index] };
+  });
+  const title = `${statusLabel[status] || status}${isReturned && returnedByRole ? `โดย ${returnedByRole}` : ""}`;
+
+  return (
+    <ol
+      className="flex min-w-0 flex-1 items-start"
+      aria-label={`Approval flow: ${title}`}
+      title={title}
+    >
+      {steps.map((step, index) => {
+        const isCurrent = step.state === "active" || step.state === "returned";
+        const isCompleted = step.state === "completed";
+        const nodeClass = isCompleted
+          ? "bg-emerald-500"
+          : step.state === "active"
+            ? "bg-amber-500 ring-2 ring-amber-200 shadow-sm"
+            : step.state === "returned"
+              ? "bg-red-500 ring-2 ring-red-200 shadow-sm"
+              : "bg-gray-200";
+        const textClass =
+          isCompleted
+            ? "text-emerald-700"
+            : step.state === "active"
+              ? "text-amber-700"
+              : step.state === "returned"
+                ? "text-red-600"
+                : "text-gray-400";
+        const connectorComplete = index < currentStep && !isCancelled && !isReturned;
+
+        return (
+          <li key={step.label} className="relative flex min-w-0 flex-1 items-start">
+            {index < steps.length - 1 && (
+              <span
+                aria-hidden="true"
+                className={`absolute left-[calc(50%+16px)] right-[calc(-50%+16px)] top-[13px] h-0.5 ${connectorComplete ? "bg-emerald-400" : "bg-gray-200"}`}
+              />
+            )}
+            <div className="flex w-full min-w-0 flex-col items-center">
+              <span
+                className={`flex h-7 w-7 items-center justify-center rounded-full transition-all ${nodeClass}`}
+              >
+                {isCompleted && (
+                  <svg
+                    className="h-4 w-4 text-white"
+                    fill="none"
+                    viewBox="0 0 24 24"
+                    stroke="currentColor"
+                    strokeWidth="3"
+                  >
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
+                  </svg>
+                )}
+                {isCurrent && <span className="h-1.5 w-1.5 rounded-full bg-white" />}
+              </span>
+              <span className={`mt-1.5 max-w-full text-center text-xs font-semibold leading-tight ${textClass}`}>
+                {step.label}
+              </span>
+              {isCompleted && step.approval?.name ? (
+                <>
+                  {/* ใช้ "โดย :" สั้นๆ แทน "จัดทำโดย/อนุมัติโดย" ที่ยาวจนโดนตัด
+                      ข้อความเต็มยังอยู่ใน tooltip */}
+                  <span
+                    className={`mt-1 line-clamp-2 max-w-full text-center text-xxs leading-tight ${textClass}`}
+                    title={`${index === 0 ? "จัดทำโดย" : "อนุมัติโดย"} ${step.approval.name}`}
+                  >
+                    โดย : {step.approval.name}
+                  </span>
+                  {step.approval.approvedAt && (
+                    <span
+                      className={`mt-0.5 max-w-full truncate whitespace-nowrap text-xxs leading-tight ${textClass}`}
+                      title={`${formatThaiDateShort(step.approval.approvedAt)} ${formatThaiTime(step.approval.approvedAt)} น.`}
+                    >
+                      {formatApprovalDateTime(step.approval.approvedAt)}
+                    </span>
+                  )}
+                </>
+              ) : (
+                <>
+                  <span
+                    className={`mt-1 line-clamp-2 max-w-full text-center text-xxs leading-tight ${textClass}`}
+                    title={step.state === "returned" && returnedByRole ? `ส่งกลับโดย ${returnedByRole}` : undefined}
+                  >
+                    {step.detail}
+                  </span>
+                </>
+              )}
+            </div>
+          </li>
+        );
+      })}
+    </ol>
+  );
+}
 // Local-time YYYY-MM-DD for the quotation date input default (never UTC —
 // toISOString would roll to the next day for evening edits in +07:00).
 const todayIso = () => {
   const d = new Date();
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
 };
+
 const formatPackageSpecs = (pkg: Package) =>
   `ขนาด ${pkg.kwp} kWp · ${pkg.phase > 0 ? `${pkg.phase} เฟส` : "ทุกเฟส"}`;
 // ชื่อรายการใน Package Master บางบรรทัดมี "–" นำหน้า (ไว้จัดรูปแบบใน PDF)
@@ -294,7 +481,7 @@ export default function QuotationBuilder({
         confirmText: "อนุมัติ",
         message:
           status === "pending_solar_sup"
-            ? "ยืนยันว่า Solar Sup ตรวจเอกสารแล้ว และส่งต่อให้ Sale Sup อนุมัติขั้นสุดท้าย"
+            ? "ยืนยันว่า Solar Manager ตรวจเอกสารแล้ว และส่งต่อให้ Sale Manager อนุมัติขั้นสุดท้าย"
             : "ยืนยันว่าได้ตรวจสอบและรับรองข้อมูล Survey, Package, ราคา, เงื่อนไขชำระเงิน และผลคำนวณทั้งชุดแล้ว",
       });
       if (!ok) return;
@@ -407,7 +594,7 @@ export default function QuotationBuilder({
                     <div className="h-3 w-14 rounded bg-gray-200" />
                     <div className="h-2 w-24 rounded bg-gray-100" />
                   </div>
-                  <div className="h-7 w-16 rounded-full bg-gray-100" />
+                  <div className="h-10 w-60 rounded-lg bg-gray-100" />
                 </div>
                 <div className="mt-4 h-20 rounded-xl bg-gray-100" />
                 <div className="mt-2 h-6 w-40 rounded-full bg-gray-100" />
@@ -426,7 +613,7 @@ export default function QuotationBuilder({
               (i) =>
                 i.source_type !== "package" &&
                 i.source_type !== "addon_package_detail" &&
-                i.source_type !== "custom_detail",
+              i.source_type !== "custom_detail",
             ) || [];
           return q ? (
             <article
@@ -434,31 +621,41 @@ export default function QuotationBuilder({
               className="rounded-xl border border-gray-200 bg-white p-4 min-h-[342px] flex flex-col shadow-sm"
             >
               <div className="flex items-start gap-3">
-                <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-primary to-cyan-400 text-white flex items-center justify-center shrink-0">
-                  <svg
-                    className="w-4 h-4"
-                    viewBox="0 0 24 24"
-                    fill="none"
-                    stroke="currentColor"
-                    strokeWidth="2"
-                  >
-                    <path d="M5 12l4 4L19 6" />
-                  </svg>
-                </div>
-                <div className="min-w-0 flex-1">
-                  <div className="font-bold text-sm text-gray-900">
-                    ชุด {option}
+                <div className="w-[100px] shrink-0 overflow-hidden">
+                  <div className="flex items-center gap-3">
+                    <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-primary to-cyan-400 text-white flex items-center justify-center shrink-0">
+                      <svg
+                        className="w-4 h-4"
+                        viewBox="0 0 24 24"
+                        fill="none"
+                        stroke="currentColor"
+                        strokeWidth="2"
+                      >
+                        <path d="M5 12l4 4L19 6" />
+                      </svg>
+                    </div>
+                    <div className="whitespace-nowrap font-bold text-sm text-gray-900">
+                      ชุด {option}
+                    </div>
                   </div>
-                  <div className="text-xxs text-gray-400 font-mono mt-0.5 truncate">
+                  <div
+                    className="mt-1 truncate whitespace-nowrap text-center font-mono text-xxs text-gray-400"
+                    title={`${q.doc_no}${q.revision_no > 0 ? ` · Rev.${q.revision_no}` : ""}`}
+                  >
                     {q.doc_no}
                     {q.revision_no > 0 ? ` · Rev.${q.revision_no}` : ""}
                   </div>
                 </div>
-                <span
-                  className={`rounded-full px-3 py-1.5 text-sm font-bold leading-none whitespace-nowrap ${q.status === "approved" ? "bg-emerald-50 text-emerald-700" : isPendingQuotation(q.status) ? "bg-amber-50 text-amber-700" : q.status === "changes_required" ? "bg-red-50 text-red-700" : "bg-violet-50 text-violet-700"}`}
-                >
-                  {statusLabel[q.status]}
-                </span>
+                <ApprovalFlowStatus
+                  status={q.status}
+                  returnedByRole={q.returned_by_role}
+                  submittedByName={q.submitted_by_name}
+                  submittedAt={q.submitted_at}
+                  solarApprovedByName={q.solar_approved_by_name}
+                  solarApprovedAt={q.solar_approved_at}
+                  approvedByName={q.approved_by_name}
+                  approvedAt={q.approved_at}
+                />
               </div>
               <div className="mt-4 rounded-xl border border-gray-200 bg-gray-50/70 p-3">
                 <div className="text-xxs font-semibold text-gray-400">
@@ -503,6 +700,11 @@ export default function QuotationBuilder({
                   {q.returned_by_name ? ` (${q.returned_by_name})` : ""}: {q.approval_note}
                 </div>
               )}
+              {isPendingQuotation(q.status) && q.last_reminded_at && (
+                <div className="mt-2 text-xxs text-amber-700">
+                  แจ้งเตือนล่าสุดโดย {q.last_reminded_by_name || "ผู้ใช้งาน"} · {formatThaiDateShort(q.last_reminded_at)} {formatThaiTime(q.last_reminded_at)} น.
+                </div>
+              )}
               <div className="mt-auto pt-4 flex items-end justify-between">
                 <span className="text-xxs text-gray-400">ยอดที่ต้องชำระ</span>
                 <div className="text-right">
@@ -523,18 +725,18 @@ export default function QuotationBuilder({
                   </div>
                 );
               })()}
-              <div className="grid grid-cols-3 gap-2 mt-3">
+              <div className="mt-3 grid h-14 grid-cols-3 gap-2">
                 {["draft", "changes_required"].includes(q.status) ? (
-                  <div className="col-span-3 flex gap-2">
+                  <div className="col-span-3 flex h-full gap-2">
                     <button
                       onClick={() => setEditing(option)}
-                      className="h-9 px-3 rounded-lg border border-violet-300 bg-violet-50 text-violet-700 text-xs font-semibold whitespace-nowrap"
+                      className="h-full px-3 rounded-lg border border-violet-300 bg-violet-50 text-violet-700 text-xs font-semibold whitespace-nowrap"
                     >
                       ✎ แก้ไข
                     </button>
                     <button
                       onClick={() => openPdf(q.id)}
-                      className="flex-1 h-9 rounded-lg border border-gray-200 text-gray-700 text-xs font-semibold"
+                      className="h-full flex-1 rounded-lg border border-gray-200 text-gray-700 text-xs font-semibold"
                     >
                       ▣ ดูใบเสนอราคา
                     </button>
@@ -544,7 +746,7 @@ export default function QuotationBuilder({
                         onClick={() => remove(q.id)}
                         aria-label="ลบฉบับร่าง"
                         title="ลบฉบับร่าง"
-                        className="h-9 px-3 shrink-0 flex items-center justify-center rounded-lg border border-gray-200 text-gray-500 text-xs font-semibold hover:text-red-600 hover:border-red-200 hover:bg-red-50 transition-colors disabled:cursor-not-allowed disabled:opacity-40"
+                        className="h-full px-3 shrink-0 flex items-center justify-center rounded-lg border border-gray-200 text-gray-500 text-xs font-semibold hover:text-red-600 hover:border-red-200 hover:bg-red-50 transition-colors disabled:cursor-not-allowed disabled:opacity-40"
                       >
                         <svg className="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
                           <path d="M3 6h18M8 6V4h8v2M6 6l1 14h10l1-14" />
@@ -556,7 +758,7 @@ export default function QuotationBuilder({
                   <>
                     <button
                       onClick={() => openPdf(q.id)}
-                      className="h-9 rounded-lg border border-gray-200 text-xs font-semibold"
+                      className="h-full rounded-lg border border-gray-200 px-2 text-xs font-semibold leading-4"
                     >
                       ▣ ดูใบเสนอราคา
                     </button>
@@ -566,32 +768,39 @@ export default function QuotationBuilder({
                         setReturnNote("");
                         setReturnModal({ id: q.id });
                       }}
-                      className="h-9 rounded-lg bg-red-50 text-red-700 text-xs font-semibold"
+                      className="h-full rounded-lg bg-red-50 px-2 text-red-700 text-xs font-semibold leading-4"
                     >
                       ส่งกลับ
                     </button>
                     <button
                       disabled={busy}
                       onClick={() => act(q.id, "approve", "", q.status)}
-                      className="h-9 rounded-lg bg-emerald-600 text-white text-xs font-semibold"
+                      className="h-full rounded-lg bg-emerald-600 px-2 text-white text-xs font-semibold leading-4"
                     >
                       {q.status === "pending_solar_sup"
                         ? "อนุมัติส่งต่อ"
                         : "อนุมัติ"}
                     </button>
                   </>
+                ) : isPendingQuotation(q.status) ? (
+                  <button
+                    onClick={() => openPdf(q.id)}
+                    className="col-span-3 h-full rounded-lg border border-gray-200 px-2 text-xs font-semibold leading-4"
+                  >
+                    ดูใบเสนอราคา
+                  </button>
                 ) : q.status === "approved" ? (
                   <>
                     <button
                       onClick={() => openPdf(q.id)}
-                      className="col-span-2 h-9 rounded-lg border border-gray-200 text-xs font-semibold"
+                      className="col-span-2 h-full rounded-lg border border-gray-200 px-2 text-xs font-semibold leading-4"
                     >
                       ▣ ดูใบเสนอราคา
                     </button>
                     <button
                       disabled={busy}
                       onClick={() => act(q.id, "revise")}
-                      className="h-9 rounded-lg border border-gray-200 text-xs font-semibold"
+                      className="h-full rounded-lg border border-gray-200 px-2 text-xs font-semibold leading-4"
                     >
                       Revision
                     </button>
@@ -600,7 +809,7 @@ export default function QuotationBuilder({
                   <>
                     <button
                       onClick={() => openPdf(q.id)}
-                      className="col-span-3 h-9 rounded-lg border border-gray-200 text-xs font-semibold"
+                      className="col-span-3 h-full rounded-lg border border-gray-200 px-2 text-xs font-semibold leading-4"
                     >
                       ▣ ดูใบเสนอราคา
                     </button>
@@ -742,6 +951,8 @@ type TreeLine = {
   package_item_id?: number | null;
   item_name: string;
   quantity: number;
+  /** จำนวนต่อ 1 ชุดของหัวข้อ — ฐานสำหรับคูณเวลาแก้จำนวนชุด */
+  unitQuantity?: number;
   unit: string;
 };
 type TreeGroup = {
@@ -749,6 +960,10 @@ type TreeGroup = {
   kind: "package" | "custom";
   source_package_id?: number;
   price: number;
+  /** ราคา/จำนวนอุปกรณ์ ต่อ 1 ชุด — ใช้เป็นฐานคำนวณเวลาแก้จำนวน
+   *  (ถ้าคูณทบจากค่าปัจจุบัน พอผู้ใช้ลบเลขทิ้งแล้วพิมพ์ใหม่ ตัวคูณเดิมจะหาย
+   *   แล้วค่าจะบานปลาย เช่น 10 → ลบ → 5 กลายเป็น ×50) */
+  unitPrice?: number;
   title: TreeLine;   // = item แรกของ package (บรรทัดที่โชว์บนเอกสาร)
   details: TreeLine[];
   open: boolean;
@@ -1023,18 +1238,25 @@ function QuotationEditor({
       parseQuotationPaymentTerms(quote?.payment_terms_json),
     ),
   );
-  const [termsText, setTermsText] = useState(quote?.terms_text || "");
+  // อ่านอย่างเดียว — แท็บ "เงื่อนไข/ข้อกำหนด" มาแทนช่องพิมพ์เดิมแล้ว แต่ยังส่งค่าเดิม
+  // กลับไปตามเดิมเพื่อไม่ให้ข้อมูลของใบเก่าหาย และใช้เป็นบรรทัดตั้งต้นในแท็บนั้น
+  const [termsText] = useState(quote?.terms_text || "");
   const [issueDate, setIssueDate] = useState(
     quote?.issue_date ? String(quote.issue_date).slice(0, 10) : todayIso(),
   );
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
-  const [documentInputs] = useState<DocumentInputs>(() => {
+  const [documentInputs, setDocumentInputs] = useState<DocumentInputs>(() => {
     let saved: Partial<DocumentInputs> = {};
     try {
       saved = JSON.parse(quote?.document_inputs_json || "{}");
     } catch {}
     return {
+      om: parseQuotationOmSettings(saved.om),
+      terms: parseQuotationTermTree(
+        saved.terms,
+        saved.terms?.profile === "additional_install" ? "additional_install" : "full_install",
+      ),
       recommendation_reason: saved.recommendation_reason || "",
       loan_enabled: saved.loan_enabled ?? GSB_SOLAR_LOAN_DEFAULTS.loan_enabled,
       loan_bank:
@@ -1072,6 +1294,8 @@ function QuotationEditor({
       annual_degradation_percent: Number(saved.annual_degradation_percent ?? 0.5),
     };
   });
+  // ตั้งชื่อ activeTab ไม่ใช่ tab — previewQuotation มีตัวแปร tab (หน้าต่างที่เปิดใหม่) อยู่แล้ว
+  const [activeTab, setActiveTab] = useState<"items" | "terms">("items");
   useEffect(() => {
     if (quote || templateId || !defaultTemplate) return;
     setTemplateId(defaultTemplate.id);
@@ -1150,6 +1374,20 @@ function QuotationEditor({
       ),
     );
 
+  const termsProfile = getQuotationTermsProfile(
+    mainPackage as unknown as Record<string, unknown> | undefined,
+  );
+  // ชุดที่ยังเท่ากับมาตรฐานเป๊ะไม่ต้องบันทึกลงใบ — ปล่อยให้ใบรับข้อความมาตรฐาน
+  // เวอร์ชันล่าสุดตอนเรนเดอร์ จนกว่าจะมีคนแก้จริง ๆ
+  const payloadDocumentInputs = {
+    ...documentInputs,
+    terms:
+      documentInputs.terms &&
+      !isStandardQuotationTermTree(documentInputs.terms, termsText)
+        ? documentInputs.terms
+        : null,
+  };
+
   /** tree → payload ของ API (package_items = หัวข้อหลัก, items = หัวข้ออื่น + ลูก) */
   const serializeTree = () => {
     const packageItems = mainGroup
@@ -1171,16 +1409,19 @@ function QuotationEditor({
                 source_package_id: g.source_package_id,
                 package_item_id: g.title.package_item_id ?? null,
                 item_name: g.title.item_name,
-                quantity: 1,
-                unit: g.title.unit || "ชุด",
+                // ส่งจำนวน/หน่วยตามที่กรอกจริง — เดิม hard-code 1 กับ "ชุด"
+                // เอกสารเลยพิมพ์ "… 1 ชุด" ต่อท้ายทุกใบ ทั้งที่ผู้ใช้ใส่ 20 ชุด
+                // และทั้งที่บางแพ็กเกจไม่ได้ตั้งหน่วยไว้เลย
+                quantity: Number(g.title.quantity) || 1,
+                unit: g.title.unit || null,
                 unit_price: price,
                 line_total: price,
               }
             : {
                 source_type: "custom_group" as const,
                 item_name: g.title.item_name,
-                quantity: 1,
-                unit: g.title.unit || "งาน",
+                quantity: Number(g.title.quantity) || 1,
+                unit: g.title.unit || null,
                 unit_price: price,
                 line_total: price,
               };
@@ -1256,7 +1497,7 @@ function QuotationEditor({
           outstanding,
           terms,
           termsText,
-          documentInputs,
+          documentInputs: payloadDocumentInputs,
         }),
       });
       if (!response.ok) {
@@ -1304,7 +1545,7 @@ function QuotationEditor({
             payment_template_id: templateId,
             payment_terms: terms,
             terms_text: termsText,
-            document_inputs: documentInputs,
+            document_inputs: payloadDocumentInputs,
           }),
         },
       );
@@ -1351,6 +1592,29 @@ function QuotationEditor({
         <div className="flex min-h-0 flex-1 flex-col md:flex-row">
           {/* ── ซ้าย: ต้นไม้รายการ (เลื่อนในกรอบตัวเอง หน้าไม่ยาว) ── */}
           <div className="flex min-h-0 flex-1 flex-col border-b border-gray-100 md:border-b-0 md:border-r">
+            {/* แท็บในตัว modal — ตัวแก้เงื่อนไขต้องการความกว้างเต็ม ใส่ในคอลัมน์ขวาไม่พอ */}
+            <div className="flex shrink-0 gap-1 border-b border-gray-100 px-4 pt-2">
+              {([
+                ["items", "รายการในใบเสนอราคา"],
+                ["terms", "เงื่อนไข/ข้อกำหนด"],
+              ] as const).map(([key, label]) => (
+                <button
+                  key={key}
+                  type="button"
+                  onClick={() => setActiveTab(key)}
+                  className={`relative -mb-px h-10 rounded-t-lg border border-b-0 px-4 text-sm font-bold transition-colors ${
+                    activeTab === key
+                      ? "border-gray-200 bg-white text-primary"
+                      : "border-transparent text-gray-500 hover:bg-gray-50"
+                  }`}
+                >
+                  {label}
+                </button>
+              ))}
+            </div>
+
+            {activeTab === "items" && (
+              <>
             <div className="flex shrink-0 items-center gap-2 px-4 py-2">
               <span className="text-xs font-bold text-gray-800">รายการในใบเสนอราคา</span>
               <span className="text-xxs text-gray-400">{groups.length} หัวข้อ</span>
@@ -1420,6 +1684,47 @@ function QuotationEditor({
                         aria-label="ชื่อหัวข้อบนเอกสาร"
                         className="min-w-0 flex-1 resize-none overflow-hidden rounded-md border border-transparent bg-transparent px-1.5 py-1 text-sm font-semibold leading-snug text-gray-800 outline-none transition-colors placeholder:font-normal placeholder:text-gray-300 hover:border-gray-200 focus:border-primary focus:bg-white"
                       />
+                      {/* จำนวน+หน่วยของบรรทัดแรก — เอกสารเอาไปต่อท้ายชื่อ
+                          ("...ขนาดติดตั้งรวม 2.92 kWp" + "1 เฟส")
+                          ความกว้างเท่าบรรทัดย่อยด้านล่าง คอลัมน์จะได้ตรงกันทั้งกลุ่ม */}
+                      {g.kind === "package" && (
+                        // ครอบด้วย div กำหนดความกว้าง — CELL มี w-full อยู่ข้างใน
+                        // ถ้าใส่ w-14 ต่อท้าย CELL ตรง ๆ Tailwind จะให้ w-full ชนะ
+                        // (ลำดับใน stylesheet ไม่ใช่ลำดับใน className) แถวจะล้นจนชื่อหด
+                        // แพ็กเกจหลัก = ตัวที่ผูกกับใบเสนอราคาโดยตรง จำนวน/หน่วยของบรรทัดแรก
+                        // ต้องมาจาก Package Master เท่านั้น แก้ที่นี่ไม่ได้ (ซื้อหลายชุดให้เพิ่ม
+                        // เป็นแพ็กเกจรองแทน) · แพ็กเกจรองแก้จำนวนได้ ระบบคิดราคา/อุปกรณ์ให้เอง
+                        <>
+                          <div className="w-14 shrink-0">
+                            <input
+                              type="number"
+                              min="0"
+                              // ลบจนหมดต้องได้ช่องว่าง ไม่ใช่เลข 0 ค้างไว้ ไม่งั้นพิมพ์ต่อ
+                              // จะกลายเป็น "010" แล้วตัวคูณเพี้ยนตามไปด้วย
+                              // จำนวนบนแถวหัวข้อแก้ไม่ได้ทุกกลุ่ม — ค่ามาจาก Package Master
+                              // ถ้าลูกค้าเอาหลายชุด ให้เพิ่มแพ็กเกจซ้ำ เอกสารจะพิมพ์
+                              // ทุกแถวตามที่กรอกไว้ ไม่รวบให้
+                              value={Number(g.title.quantity) > 0 ? g.title.quantity : ""}
+                              readOnly
+                              tabIndex={-1}
+                              title="แก้จำนวนที่นี่ไม่ได้ — ค่ามาจาก Package Master"
+                              aria-label="จำนวนของแพ็กเกจนี้"
+                              className={`text-center cursor-default text-gray-400 hover:border-transparent ${CELL}`}
+                            />
+                          </div>
+                          <div className="w-[72px] shrink-0">
+                            <input
+                              value={g.title.unit}
+                              readOnly
+                              tabIndex={-1}
+                              placeholder="หน่วย"
+                              title="แก้หน่วยที่นี่ไม่ได้ — ค่ามาจาก Package Master"
+                              aria-label="หน่วยบนบรรทัดแรก"
+                              className={`cursor-default text-gray-400 hover:border-transparent ${CELL}`}
+                            />
+                          </div>
+                        </>
+                      )}
                       {g.kind === "package" ? (
                         (() => {
                           const options = pricePeriods[g.source_package_id ?? -1] || [];
@@ -1454,7 +1759,7 @@ function QuotationEditor({
                                 }`}
                               >
                                 {formatTHB(g.price)}
-                                <span aria-hidden="true" className="text-[9px] text-gray-400">▾</span>
+                                <span aria-hidden="true" className="text-xxs leading-none text-gray-400">▾</span>
                               </button>
                               {open && (
                                 <>
@@ -1568,9 +1873,17 @@ function QuotationEditor({
                             <input
                               type="number"
                               min="0"
-                              value={d.quantity}
+                              // ลบจนหมดต้องเป็นช่องว่าง ไม่ใช่เลข 0 ค้าง ไม่งั้นพิมพ์ต่อได้ "010"
+                              value={Number(d.quantity) > 0 ? d.quantity : ""}
                               onChange={(e) =>
-                                patchLine(g.key, d.key, { quantity: Number(e.target.value) })
+                                patchLine(g.key, d.key, {
+                                  quantity: Number(e.target.value.replace(/^0+(?=\d)/, "")),
+                                  // แก้จำนวนเอง = ตั้งฐานต่อชุดใหม่ตามที่พิมพ์
+                                  // ไม่งั้นพอไปแก้จำนวนชุดทีหลัง ค่าจะถูกดึงกลับไปฐานเดิม
+                                  unitQuantity:
+                                    Number(e.target.value.replace(/^0+(?=\d)/, "")) /
+                                    (Number(g.title.quantity) || 1),
+                                })
                               }
                               className={`text-center ${CELL}`}
                             />
@@ -1616,6 +1929,21 @@ function QuotationEditor({
                 ))}
               </div>
             </div>
+              </>
+            )}
+
+            {activeTab === "terms" && (
+              <QuotationTermsEditor
+                value={documentInputs.terms}
+                profile={termsProfile}
+                legacyTermsText={termsText}
+                om={documentInputs.om}
+                validDays={Number(quote?.valid_days) || 7}
+                onChange={(next) =>
+                  setDocumentInputs((current) => ({ ...current, terms: next }))
+                }
+              />
+            )}
           </div>
 
           {/* ── ขวา: การเงิน (บีบให้พอดีจอ ไม่ต้องเลื่อน) ── */}
@@ -1691,7 +2019,7 @@ function QuotationEditor({
                 </div>
               </div>
 
-              <div className="rounded-xl border border-gray-200 bg-white p-2.5">
+              <div className="order-1 rounded-xl border border-gray-200 bg-white p-2.5">
                 <div className="flex items-center justify-between">
                   <span className="text-xs font-bold text-gray-800">งวดชำระเงิน</span>
                   <button
@@ -1771,7 +2099,7 @@ function QuotationEditor({
                 </p>
               </div>
 
-              <div className="rounded-xl border border-gray-200 bg-white p-2.5">
+              <div className="order-3 rounded-xl border border-gray-200 bg-white p-2.5">
                 <div className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-2">
                   <span className="text-xxs font-semibold text-gray-500">วันที่ใบเสนอราคา</span>
                   <input
@@ -1782,13 +2110,6 @@ function QuotationEditor({
                     className={`w-40 ${FIELD}`}
                   />
                 </div>
-                <textarea
-                  value={termsText}
-                  onChange={(e) => setTermsText(e.target.value)}
-                  rows={2}
-                  placeholder="เงื่อนไขเพิ่มเติม"
-                  className="mt-1.5 h-16 w-full resize-none rounded-lg border border-gray-200 bg-white px-2 py-1.5 text-xs outline-none transition-colors placeholder:text-gray-300 hover:border-gray-300 focus:border-primary focus:ring-2 focus:ring-primary/10"
-                />
               </div>
             </div>
           </div>

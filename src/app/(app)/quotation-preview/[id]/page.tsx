@@ -105,7 +105,12 @@ export default function QuotationPreviewPage() {
     `<style>@media screen{html,body{background:#e2e8f0!important;padding:12px 0!important}.page{margin:0 auto 18px!important;background:#fff!important;box-shadow:0 2px 8px rgba(15,23,42,.18);page-break-after:auto!important}}</style><style>body{zoom:${zoom}%}</style></head>`,
   );
   const previewWidth = Math.round((860 * zoom) / 100);
-  const previewHeight = Math.round((2240 * zoom) / 100 + 80);
+  // ใบที่รายการยาวมีมากกว่า 2 หน้า — ยืด iframe ตามจำนวนหน้าที่ได้มาจริง
+  const pageCount = Math.max(
+    2,
+    previewHtml.split('<section class="page').length - 1,
+  );
+  const previewHeight = Math.round((1120 * pageCount * zoom) / 100 + 80);
   const changeZoom = (delta: number) =>
     setZoom((value) => Math.min(160, Math.max(75, value + delta)));
 
@@ -116,7 +121,7 @@ export default function QuotationPreviewPage() {
           <h1 className="text-base font-bold text-slate-800">
             ตัวอย่างใบเสนอราคาบนหน้าจอ
           </h1>
-          <p className="text-xs text-slate-500">แสดงเฉพาะใบเสนอราคา 2 หน้า</p>
+          <p className="text-xs text-slate-500">แสดงเฉพาะส่วนใบเสนอราคา (ไม่รวมรายงานสำรวจ)</p>
         </div>
         <div className="flex items-center gap-2">
           <div className="flex overflow-hidden rounded-lg border border-primary/30 bg-white text-sm font-semibold text-primary">

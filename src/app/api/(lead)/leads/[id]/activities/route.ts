@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getDb, sql, fixDates, toSqlDate } from "@/lib/db";
 import { getUserIdFromReq } from "@/lib/auth";
+import { processContactActivity, syncOperationalSlas } from "@/lib/sla-service";
+import type { ContactResult } from "@/lib/sla-rules";
 
 const titleMap: Record<string, string> = {
   call: "Called customer",
@@ -71,11 +73,14 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
       // timestamp via the DB's GETDATE() default.
       .input("followup_date", sql.Date, body.contact_date ? toSqlDate(body.contact_date) : null);
 
+    request.input("contact_result", sql.NVarChar(30), body.contact_result || null);
+    request.input("contact_outcome_code", sql.NVarChar(60), body.contact_outcome_code || null);
+
     request.input("created_by", sql.Int, userId);
     const result = await request.query(`
-      INSERT INTO lead_activities (lead_id, activity_type, title, note, follow_up_date, followup_date, created_by)
+      INSERT INTO lead_activities (lead_id, activity_type, title, note, follow_up_date, followup_date, created_by, contact_result, contact_outcome_code)
       OUTPUT INSERTED.*
-      VALUES (@lead_id, @activity_type, @title, @note, @follow_up_date, @followup_date, @created_by)
+      VALUES (@lead_id, @activity_type, @title, @note, @follow_up_date, @followup_date, @created_by, @contact_result, @contact_outcome_code)
     `);
 
     // Update lead's next_follow_up whenever a follow-up date is provided
@@ -92,8 +97,19 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
       await db.request()
         .input("lead_id", sql.Int, leadId)
         .input("user_id", sql.Int, userId)
-        .query(`UPDATE leads SET assigned_user_id = @user_id, updated_at = GETDATE() WHERE id = @lead_id`);
+        .query(`UPDATE leads SET assigned_user_id = @user_id, owner_assigned_at = GETDATE(), updated_at = GETDATE() WHERE id = @lead_id AND assigned_user_id IS NULL`);
     }
+
+    const contactResult = body.contact_result as ContactResult | undefined;
+    if (["call", "visit", "line", "other", "follow_up"].includes(activityType) && contactResult) {
+      await processContactActivity(db, {
+        leadId,
+        activityId: result.recordset[0].id,
+        actorUserId: userId,
+        result: contactResult,
+      });
+    }
+    await syncOperationalSlas(db, leadId, userId);
 
     return NextResponse.json(result.recordset[0], { status: 201 });
   } catch (error) {

@@ -7,10 +7,10 @@ import FallbackImage from "@/components/ui/FallbackImage";
 import type { Lead, Package } from "./types";
 import { formatTHB as formatPrice } from "@/lib/utils/formatters";
 import {
-  ABLE_OR_NOT, AC_TIERS, BATTERY_OPTIONS, BILL_RISE_ACTIONS, BUSINESS_TYPES,
+  ABLE_OR_NOT, AC_TIERS, AGE_RANGES, BATTERY_OPTIONS, BILL_RISE_ACTIONS, BUSINESS_TYPES,
   DAYTIME_OCCUPANTS, DECISION_FACTORS, ELECTRICAL_PHASES, EVER_NEVER,
-  EV_CHARGE_PERIODS, EV_READY_OPTIONS, HOUSE_AGES, METER_SIZES,
-  MONTHLY_BILL_BUCKETS, monthlyBillBucket, OUTAGE_PRIORITIES, PEAK_USAGE, RESIDENCE_TYPES, ROOF_SHAPES,
+  EV_CHARGE_PERIODS, EV_READY_OPTIONS, HOUSEHOLD_INCOMES, HOUSE_AGES, METER_SIZES,
+  MONTHLY_BILL_BUCKETS, monthlyBillBucket, OCCUPATIONS, OUTAGE_PRIORITIES, PEAK_USAGE, RESIDENCE_TYPES, ROOF_SHAPES,
   USAGE_TREND_OPTIONS, WORK_DAYS_PER_WEEK, YES_NO, YES_NO_BIN,
   YES_NO_CONSIDERING, YES_NO_MAYBE,
 } from "@/lib/customer-questionnaire";
@@ -170,6 +170,11 @@ const PreSurveyForm = forwardRef<PreSurveyFormHandle, Props>(function PreSurveyF
   // §8b Decision Timeline — single string code (migration 049). "other:<text>"
   // pattern follows the same shape as residenceType/roofShape.
   const [decisionTimeline, setDecisionTimeline] = useState<string>(lead.decision_timeline ?? "");
+  // §9 Customer Demographics (migration 153). All three optional — income and
+  // age are personal data, so no `required` marker on the labels below.
+  const [occupation, setOccupation]             = useState<string>(lead.occupation        ?? "");
+  const [ageRange, setAgeRange]                 = useState<string>(lead.age_range         ?? "");
+  const [householdIncome, setHouseholdIncome]   = useState<string>(lead.household_income  ?? "");
   const setFactorScore = (key: string, score: number) => {
     setDecisionFactors(prev => {
       const cur = (prev as Record<string, number>)[key];
@@ -271,11 +276,14 @@ const PreSurveyForm = forwardRef<PreSurveyFormHandle, Props>(function PreSurveyF
       future_usage_trend:      futureUsageTrend      || null,
       decision_factors:        stringifyDecisionFactors(decisionFactors, decisionOtherText),
       decision_timeline:       decisionTimeline || null,
+      occupation:              occupation       || null,
+      age_range:               ageRange         || null,
+      household_income:        householdIncome  || null,
       interested_package_ids: selectedPkgs.length ? selectedPkgs.join(",") : null,
       interested_package_id: selectedPkgs.length ? parseInt(selectedPkgs[0]) : null,
     } as Partial<Lead>);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [residenceType, monthlyBill, peakUsage, electricalPhase, wantsBattery, acUnits, pre_appliances, roofShape, houseAge, occupantTotal, occupantElderly, occupantKids, occupantPets, monthlyBillMax, meterSize, homeAtDaytime, daytimeOccupants, workAtHome, businessType, workDaysPerWeek, acSplit, evChargePeriod, futureEv, futureEvCharger, futureExtendHome, futureMoreMembers, futureSmartHome, futureBattery, outagePriorities, outageOtherText, billRiseAction, hadRoofLeak, didRoofRepair, hadElectricalIssue, didPanelReplacement, selfGenerates, evReady, blackoutResilient, futureUsageTrend, decisionFactors, decisionOtherText, decisionTimeline, selectedPkgs]);
+  }, [residenceType, monthlyBill, peakUsage, electricalPhase, wantsBattery, acUnits, pre_appliances, roofShape, houseAge, occupantTotal, occupantElderly, occupantKids, occupantPets, monthlyBillMax, meterSize, homeAtDaytime, daytimeOccupants, workAtHome, businessType, workDaysPerWeek, acSplit, evChargePeriod, futureEv, futureEvCharger, futureExtendHome, futureMoreMembers, futureSmartHome, futureBattery, outagePriorities, outageOtherText, billRiseAction, hadRoofLeak, didRoofRepair, hadElectricalIssue, didPanelReplacement, selfGenerates, evReady, blackoutResilient, futureUsageTrend, decisionFactors, decisionOtherText, decisionTimeline, occupation, ageRange, householdIncome, selectedPkgs]);
 
   // Auto-save to DB (debounced). Pending payload is held in a ref so it can
   // flush on unmount — otherwise navigating to the next sub-step within 600ms
@@ -338,6 +346,9 @@ const PreSurveyForm = forwardRef<PreSurveyFormHandle, Props>(function PreSurveyF
       future_usage_trend:      futureUsageTrend      || null,
       decision_factors:        stringifyDecisionFactors(decisionFactors, decisionOtherText),
       decision_timeline:       decisionTimeline || null,
+      occupation:              occupation       || null,
+      age_range:               ageRange         || null,
+      household_income:        householdIncome  || null,
       interested_package_ids: selectedPkgs.length ? selectedPkgs.join(",") : null,
       interested_package_id: selectedPkgs.length ? parseInt(selectedPkgs[0]) : null,
     };
@@ -352,7 +363,7 @@ const PreSurveyForm = forwardRef<PreSurveyFormHandle, Props>(function PreSurveyF
     }, 600);
     pendingRef.current = { payload, timer };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [residenceType, monthlyBill, peakUsage, electricalPhase, wantsBattery, acUnits, pre_appliances, roofShape, houseAge, occupantTotal, occupantElderly, occupantKids, occupantPets, monthlyBillMax, meterSize, homeAtDaytime, daytimeOccupants, workAtHome, businessType, workDaysPerWeek, acSplit, evChargePeriod, futureEv, futureEvCharger, futureExtendHome, futureMoreMembers, futureSmartHome, futureBattery, outagePriorities, outageOtherText, billRiseAction, hadRoofLeak, didRoofRepair, hadElectricalIssue, didPanelReplacement, selfGenerates, evReady, blackoutResilient, futureUsageTrend, decisionFactors, decisionOtherText, decisionTimeline, selectedPkgs]);
+  }, [residenceType, monthlyBill, peakUsage, electricalPhase, wantsBattery, acUnits, pre_appliances, roofShape, houseAge, occupantTotal, occupantElderly, occupantKids, occupantPets, monthlyBillMax, meterSize, homeAtDaytime, daytimeOccupants, workAtHome, businessType, workDaysPerWeek, acSplit, evChargePeriod, futureEv, futureEvCharger, futureExtendHome, futureMoreMembers, futureSmartHome, futureBattery, outagePriorities, outageOtherText, billRiseAction, hadRoofLeak, didRoofRepair, hadElectricalIssue, didPanelReplacement, selfGenerates, evReady, blackoutResilient, futureUsageTrend, decisionFactors, decisionOtherText, decisionTimeline, occupation, ageRange, householdIncome, selectedPkgs]);
 
   // Flush any pending debounced save on unmount.
   useEffect(() => {
@@ -483,6 +494,58 @@ const PreSurveyForm = forwardRef<PreSurveyFormHandle, Props>(function PreSurveyF
               onChange={e => setDecisionTimeline(e.target.value ? `other:${e.target.value}` : "other")}
               className="col-span-2 md:col-span-3 w-full h-8 px-3 rounded-lg border border-gray-200 text-sm focus:outline-none focus:border-active" />
           )}
+        </div>
+      </div>
+
+      {/* CUSTOMER DEMOGRAPHICS — questionnaire §9, rendered first even though
+          it is numbered last. Sales staff transcribe this from a paper form
+          that opens with these three questions, so matching that order cuts
+          mis-keyed answers. Within the card the sensitive one (income) still
+          sits at the bottom. All optional — no red asterisk anywhere here. */}
+      <div className={`${sectionCls} ${onlyPackages ? "hidden" : ""}`}>
+        <div className={sectionTitle}>
+          <span className={sectionIconWrap}><UserIcon className="w-4 h-4" /></span>
+          Customer Demographics
+        </div>
+        <p className="text-xs text-gray-500 -mt-1 mb-3">
+          ข้อมูลส่วนนี้ใช้เพื่อออกแบบระบบและข้อเสนอให้เหมาะกับลูกค้า · ไม่บังคับกรอก
+        </p>
+        <div className="space-y-3">
+          <div>
+            <label className={fieldLabel}>อาชีพ</label>
+            <div className="grid grid-cols-2 md:grid-cols-7 gap-2">
+              {OCCUPATIONS.map(o => (
+                <button key={o.value} type="button"
+                  onClick={() => setOccupation(
+                    o.value === "other"
+                      ? (occupation.startsWith("other") ? "" : "other")
+                      : (occupation === o.value ? "" : o.value)
+                  )}
+                  className={chipBtn(occupation === o.value || (o.value === "other" && occupation.startsWith("other")))}>
+                  {o.label}
+                </button>
+              ))}
+            </div>
+            {occupation.startsWith("other") && (
+              <input type="text" placeholder="ระบุอาชีพ..." value={occupation.startsWith("other:") ? occupation.slice(6) : ""} onChange={e => setOccupation(e.target.value ? `other:${e.target.value}` : "other")} className="w-full mt-2 h-8 px-3 rounded-lg border border-gray-200 text-sm focus:outline-none focus:border-active" />
+            )}
+          </div>
+          <div>
+            <label className={fieldLabel}>อายุ</label>
+            <div className="grid grid-cols-2 md:grid-cols-7 gap-2">
+              {AGE_RANGES.map(o => (
+                <button key={o.value} type="button" onClick={() => setAgeRange(ageRange === o.value ? "" : o.value)} className={chipBtn(ageRange === o.value)}>{o.label}</button>
+              ))}
+            </div>
+          </div>
+          <div>
+            <label className={fieldLabel}>รายได้รวมของครัวเรือนต่อเดือนโดยประมาณ</label>
+            <div className="grid grid-cols-2 md:grid-cols-7 gap-2">
+              {HOUSEHOLD_INCOMES.map(o => (
+                <button key={o.value} type="button" onClick={() => setHouseholdIncome(householdIncome === o.value ? "" : o.value)} className={chipBtn(householdIncome === o.value)}>{o.label}</button>
+              ))}
+            </div>
+          </div>
         </div>
       </div>
 

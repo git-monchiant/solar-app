@@ -31,13 +31,18 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
     delete lead.project_official_name;
 
     // Signer priority (first non-null wins):
-    //   1. app_settings.warranty_signer_user_id — admin-configured default
-    //      wins everything else (the cert is a corporate doc — one designated
-    //      signer for the whole company)
-    //   2. lead.warranty_issued_by — per-lead explicit issuer (legacy /
-    //      pre-config rows)
-    //   3. userIdParam — current viewer
-    //   4. lead.assigned_user_id — sales owner (last-resort fallback)
+    //   1. lead.warranty_signer_user_id — frozen at issue time. The cert has no
+    //      stored PDF (it re-renders on every open) and the LINE message carries
+    //      a link, not a file, so without this stamp a change of designated
+    //      signer would rewrite certificates already in customers' hands. Once
+    //      set it never moves — see migration 154.
+    //   2. app_settings.warranty_signer_user_id — the currently designated
+    //      signer, for certs not yet issued (the cert is a corporate doc — one
+    //      designated signer for the whole company)
+    //   3. lead.warranty_issued_by — who pressed "ออกเอกสาร". An audit stamp,
+    //      not a statement about who signs; legacy rows only.
+    //   4. userIdParam — current viewer
+    //   5. lead.assigned_user_id — sales owner (last-resort fallback)
     const viewerId = userIdParam ? parseInt(userIdParam) : null;
     const defaultSignerRow = await db.request()
       .query(`SELECT value FROM app_settings WHERE [key] = 'warranty_signer_user_id'`);
@@ -45,7 +50,7 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
       ? parseInt(defaultSignerRow.recordset[0].value) || null
       : null;
     let signer: { full_name: string; signature_url: string | null } | null = null;
-    const signerId = configSignerId || lead.warranty_issued_by || viewerId || lead.assigned_user_id;
+    const signerId = lead.warranty_signer_user_id || configSignerId || lead.warranty_issued_by || viewerId || lead.assigned_user_id;
     if (signerId) {
       const u = await db.request().input("id", sql.Int, signerId)
         .query(`SELECT full_name, signature_url FROM users WHERE id = @id`);

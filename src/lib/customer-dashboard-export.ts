@@ -3,10 +3,10 @@ import { getDb, sql, toSqlDate } from "@/lib/db";
 import { STATUS_CONFIG } from "@/lib/constants/statuses";
 import { getSourceStyle, normalizeSourceKey } from "@/lib/source-tag";
 import {
-  ABLE_OR_NOT, AC_TIERS, BILL_RISE_ACTIONS, BUSINESS_TYPES,
+  ABLE_OR_NOT, AC_TIERS, AGE_RANGES, BILL_RISE_ACTIONS, BUSINESS_TYPES,
   DAYTIME_OCCUPANTS, DECISION_FACTORS, DECISION_TIMELINES,
   ELECTRICAL_PHASES, EVER_NEVER, EV_CHARGE_PERIODS, EV_READY_OPTIONS,
-  HOUSE_AGES, METER_SIZES, OUTAGE_PRIORITIES, PEAK_USAGE,
+  HOUSEHOLD_INCOMES, HOUSE_AGES, METER_SIZES, OCCUPATIONS, OUTAGE_PRIORITIES, PEAK_USAGE,
   QUESTIONNAIRE_SECTIONS, RESIDENCE_TYPES, ROOF_SHAPES,
   USAGE_TREND_OPTIONS, WORK_DAYS_PER_WEEK, YES_NO, YES_NO_BIN,
   YES_NO_CONSIDERING, YES_NO_MAYBE, optionLabel,
@@ -73,6 +73,9 @@ export type CustomerExportRow = {
   future_usage_trend: string | null;
   decision_factors: string | null;
   decision_timeline: string | null;
+  occupation: string | null;
+  age_range: string | null;
+  household_income: string | null;
   [key: string]: unknown;
 };
 
@@ -156,7 +159,7 @@ function answeredSectionCount(row: CustomerExportRow): number {
 
 function responseStatus(row: CustomerExportRow): string {
   const count = answeredSectionCount(row);
-  return count === 0 ? "ยังไม่ตอบ" : count === QUESTIONNAIRE_SECTIONS.length ? "ตอบครบ 8 หัวข้อ" : "ตอบบางส่วน";
+  return count === 0 ? "ยังไม่ตอบ" : count === QUESTIONNAIRE_SECTIONS.length ? `ตอบครบ ${QUESTIONNAIRE_SECTIONS.length} หัวข้อ` : "ตอบบางส่วน";
 }
 
 function column(
@@ -193,58 +196,61 @@ const LEAD_COLUMNS: ExportColumn[] = [
 ];
 
 const QUESTIONNAIRE_COLUMNS: ExportColumn[] = [
-  column("1. Customer Profile", "residence_type", "ประเภทที่อยู่อาศัย", "choice", row => optionText(RESIDENCE_TYPES, row.residence_type), optionList(RESIDENCE_TYPES), 22),
-  column("1. Customer Profile", "house_age", "อายุบ้าน", "choice", row => optionText(HOUSE_AGES, row.house_age), optionList(HOUSE_AGES), 18),
-  column("1. Customer Profile", "roof_shape", "ประเภทหลังคา", "choice", row => optionText(ROOF_SHAPES, row.roof_shape), optionList(ROOF_SHAPES), 28),
-  column("1. Customer Profile", "occupant_total", "จำนวนผู้อยู่อาศัย", "number", row => row.occupant_total, undefined, 16),
-  column("1. Customer Profile", "occupant_elderly", "จำนวนผู้สูงอายุ", "number", row => row.occupant_elderly, undefined, 16),
-  column("1. Customer Profile", "occupant_kids", "จำนวนเด็ก", "number", row => row.occupant_kids, undefined, 14),
-  column("1. Customer Profile", "occupant_pets", "จำนวนสัตว์เลี้ยง", "number", row => row.occupant_pets, undefined, 16),
+  column("1. Customer Demographics", "occupation", "อาชีพ", "choice", row => optionText(OCCUPATIONS, row.occupation), optionList(OCCUPATIONS), 24),
+  column("1. Customer Demographics", "age_range", "อายุ", "choice", row => optionText(AGE_RANGES, row.age_range), optionList(AGE_RANGES), 18),
+  column("1. Customer Demographics", "household_income", "รายได้ครัวเรือน/เดือน", "choice", row => optionText(HOUSEHOLD_INCOMES, row.household_income), optionList(HOUSEHOLD_INCOMES), 26),
+  column("2. Customer Profile", "residence_type", "ประเภทที่อยู่อาศัย", "choice", row => optionText(RESIDENCE_TYPES, row.residence_type), optionList(RESIDENCE_TYPES), 22),
+  column("2. Customer Profile", "house_age", "อายุบ้าน", "choice", row => optionText(HOUSE_AGES, row.house_age), optionList(HOUSE_AGES), 18),
+  column("2. Customer Profile", "roof_shape", "ประเภทหลังคา", "choice", row => optionText(ROOF_SHAPES, row.roof_shape), optionList(ROOF_SHAPES), 28),
+  column("2. Customer Profile", "occupant_total", "จำนวนผู้อยู่อาศัย", "number", row => row.occupant_total, undefined, 16),
+  column("2. Customer Profile", "occupant_elderly", "จำนวนผู้สูงอายุ", "number", row => row.occupant_elderly, undefined, 16),
+  column("2. Customer Profile", "occupant_kids", "จำนวนเด็ก", "number", row => row.occupant_kids, undefined, 14),
+  column("2. Customer Profile", "occupant_pets", "จำนวนสัตว์เลี้ยง", "number", row => row.occupant_pets, undefined, 16),
 
-  column("2. Energy Profile", "monthly_bill", "ค่าไฟเฉลี่ยต่อเดือน", "currency", row => row.monthly_bill, undefined, 18),
-  column("2. Energy Profile", "monthly_bill_max", "ค่าไฟสูงสุดต่อเดือน", "currency", row => row.monthly_bill_max, undefined, 18),
-  column("2. Energy Profile", "electrical_phase", "ระบบไฟปัจจุบัน", "choice", row => optionText(ELECTRICAL_PHASES, row.electrical_phase), optionList(ELECTRICAL_PHASES), 18),
-  column("2. Energy Profile", "meter_size", "ขนาดมิเตอร์", "choice", row => optionText(METER_SIZES, row.meter_size), optionList(METER_SIZES), 18),
-  column("2. Energy Profile", "peak_usage", "ช่วงเวลาที่ใช้ไฟสูงสุด", "choice", row => optionText(PEAK_USAGE, row.peak_usage), optionList(PEAK_USAGE), 22),
+  column("3. Energy Profile", "monthly_bill", "ค่าไฟเฉลี่ยต่อเดือน", "currency", row => row.monthly_bill, undefined, 18),
+  column("3. Energy Profile", "monthly_bill_max", "ค่าไฟสูงสุดต่อเดือน", "currency", row => row.monthly_bill_max, undefined, 18),
+  column("3. Energy Profile", "electrical_phase", "ระบบไฟปัจจุบัน", "choice", row => optionText(ELECTRICAL_PHASES, row.electrical_phase), optionList(ELECTRICAL_PHASES), 18),
+  column("3. Energy Profile", "meter_size", "ขนาดมิเตอร์", "choice", row => optionText(METER_SIZES, row.meter_size), optionList(METER_SIZES), 18),
+  column("3. Energy Profile", "peak_usage", "ช่วงเวลาที่ใช้ไฟสูงสุด", "choice", row => optionText(PEAK_USAGE, row.peak_usage), optionList(PEAK_USAGE), 22),
 
-  column("3. Lifestyle Assessment", "home_at_daytime", "อยู่บ้านช่วงกลางวัน", "choice", row => optionText(YES_NO, row.home_at_daytime), optionList(YES_NO), 20),
-  column("3. Lifestyle Assessment", "daytime_occupants", "ผู้อยู่บ้านช่วงกลางวัน", "multi-choice", row => multiText(DAYTIME_OCCUPANTS, row.daytime_occupants), optionList(DAYTIME_OCCUPANTS), 30),
-  column("3. Lifestyle Assessment", "work_at_home", "ทำงาน/ทำธุรกิจที่บ้าน", "choice", row => optionText(YES_NO, row.work_at_home), optionList(YES_NO), 22),
-  column("3. Lifestyle Assessment", "business_type", "ประเภทธุรกิจที่บ้าน", "choice", row => optionText(BUSINESS_TYPES, row.business_type), optionList(BUSINESS_TYPES), 28),
-  column("3. Lifestyle Assessment", "work_days_per_week", "จำนวนวันทำงานที่บ้าน", "choice", row => optionText(WORK_DAYS_PER_WEEK, row.work_days_per_week), optionList(WORK_DAYS_PER_WEEK), 22),
-  column("3. Lifestyle Assessment", "ac_split_day", "แอร์ช่วงกลางวัน", "structured text", row => acPeriodText(row.ac_split, "day"), "จำนวนเครื่อง แยกตาม BTU", 34),
-  column("3. Lifestyle Assessment", "ac_split_night", "แอร์ช่วงกลางคืน", "structured text", row => acPeriodText(row.ac_split, "night"), "จำนวนเครื่อง แยกตาม BTU", 34),
-  column("3. Lifestyle Assessment", "appliances", "อุปกรณ์/ที่ชาร์จ EV", "multi-choice", row => multiText(APPLIANCE_OPTIONS, row.appliances), optionList(APPLIANCE_OPTIONS), 22),
-  column("3. Lifestyle Assessment", "ev_charge_period", "ช่วงเวลาชาร์จ EV", "choice", row => optionText(EV_CHARGE_PERIODS, row.ev_charge_period), optionList(EV_CHARGE_PERIODS), 20),
+  column("4. Lifestyle Assessment", "home_at_daytime", "อยู่บ้านช่วงกลางวัน", "choice", row => optionText(YES_NO, row.home_at_daytime), optionList(YES_NO), 20),
+  column("4. Lifestyle Assessment", "daytime_occupants", "ผู้อยู่บ้านช่วงกลางวัน", "multi-choice", row => multiText(DAYTIME_OCCUPANTS, row.daytime_occupants), optionList(DAYTIME_OCCUPANTS), 30),
+  column("4. Lifestyle Assessment", "work_at_home", "ทำงาน/ทำธุรกิจที่บ้าน", "choice", row => optionText(YES_NO, row.work_at_home), optionList(YES_NO), 22),
+  column("4. Lifestyle Assessment", "business_type", "ประเภทธุรกิจที่บ้าน", "choice", row => optionText(BUSINESS_TYPES, row.business_type), optionList(BUSINESS_TYPES), 28),
+  column("4. Lifestyle Assessment", "work_days_per_week", "จำนวนวันทำงานที่บ้าน", "choice", row => optionText(WORK_DAYS_PER_WEEK, row.work_days_per_week), optionList(WORK_DAYS_PER_WEEK), 22),
+  column("4. Lifestyle Assessment", "ac_split_day", "แอร์ช่วงกลางวัน", "structured text", row => acPeriodText(row.ac_split, "day"), "จำนวนเครื่อง แยกตาม BTU", 34),
+  column("4. Lifestyle Assessment", "ac_split_night", "แอร์ช่วงกลางคืน", "structured text", row => acPeriodText(row.ac_split, "night"), "จำนวนเครื่อง แยกตาม BTU", 34),
+  column("4. Lifestyle Assessment", "appliances", "อุปกรณ์/ที่ชาร์จ EV", "multi-choice", row => multiText(APPLIANCE_OPTIONS, row.appliances), optionList(APPLIANCE_OPTIONS), 22),
+  column("4. Lifestyle Assessment", "ev_charge_period", "ช่วงเวลาชาร์จ EV", "choice", row => optionText(EV_CHARGE_PERIODS, row.ev_charge_period), optionList(EV_CHARGE_PERIODS), 20),
 
-  column("4. Future Home Assessment", "future_ev", "แผนซื้อรถยนต์ EV", "choice", row => optionText(YES_NO_CONSIDERING, row.future_ev), optionList(YES_NO_CONSIDERING), 22),
-  column("4. Future Home Assessment", "future_ev_charger", "แผนติดตั้ง EV Charger", "choice", row => optionText(YES_NO_BIN, row.future_ev_charger), optionList(YES_NO_BIN), 22),
-  column("4. Future Home Assessment", "future_extend_home", "แผนต่อเติมบ้าน", "choice", row => optionText(YES_NO_BIN, row.future_extend_home), optionList(YES_NO_BIN), 20),
-  column("4. Future Home Assessment", "future_more_members", "แผนเพิ่มสมาชิกในบ้าน", "choice", row => optionText(YES_NO_BIN, row.future_more_members), optionList(YES_NO_BIN), 22),
-  column("4. Future Home Assessment", "future_smart_home", "แผนติดตั้ง Smart Home", "choice", row => optionText(YES_NO_BIN, row.future_smart_home), optionList(YES_NO_BIN), 22),
-  column("4. Future Home Assessment", "future_battery", "แผนติดตั้ง Battery", "choice", row => optionText(YES_NO_MAYBE, row.future_battery), optionList(YES_NO_MAYBE), 22),
+  column("5. Future Home Assessment", "future_ev", "แผนซื้อรถยนต์ EV", "choice", row => optionText(YES_NO_CONSIDERING, row.future_ev), optionList(YES_NO_CONSIDERING), 22),
+  column("5. Future Home Assessment", "future_ev_charger", "แผนติดตั้ง EV Charger", "choice", row => optionText(YES_NO_BIN, row.future_ev_charger), optionList(YES_NO_BIN), 22),
+  column("5. Future Home Assessment", "future_extend_home", "แผนต่อเติมบ้าน", "choice", row => optionText(YES_NO_BIN, row.future_extend_home), optionList(YES_NO_BIN), 20),
+  column("5. Future Home Assessment", "future_more_members", "แผนเพิ่มสมาชิกในบ้าน", "choice", row => optionText(YES_NO_BIN, row.future_more_members), optionList(YES_NO_BIN), 22),
+  column("5. Future Home Assessment", "future_smart_home", "แผนติดตั้ง Smart Home", "choice", row => optionText(YES_NO_BIN, row.future_smart_home), optionList(YES_NO_BIN), 22),
+  column("5. Future Home Assessment", "future_battery", "แผนติดตั้ง Battery", "choice", row => optionText(YES_NO_MAYBE, row.future_battery), optionList(YES_NO_MAYBE), 22),
 
-  column("5. Energy Security Assessment", "outage_priorities", "อุปกรณ์สำคัญเมื่อไฟดับ", "multi-choice", row => multiText(OUTAGE_PRIORITIES, row.outage_priorities), optionList(OUTAGE_PRIORITIES), 38),
-  column("5. Energy Security Assessment", "bill_rise_action", "การรับมือเมื่อค่าไฟเพิ่ม 30%", "choice", row => optionText(BILL_RISE_ACTIONS, row.bill_rise_action), optionList(BILL_RISE_ACTIONS), 34),
+  column("6. Energy Security Assessment", "outage_priorities", "อุปกรณ์สำคัญเมื่อไฟดับ", "multi-choice", row => multiText(OUTAGE_PRIORITIES, row.outage_priorities), optionList(OUTAGE_PRIORITIES), 38),
+  column("6. Energy Security Assessment", "bill_rise_action", "การรับมือเมื่อค่าไฟเพิ่ม 30%", "choice", row => optionText(BILL_RISE_ACTIONS, row.bill_rise_action), optionList(BILL_RISE_ACTIONS), 34),
 
-  column("6. Home Health Check", "had_roof_leak", "เคยมีหลังคารั่ว", "choice", row => optionText(EVER_NEVER, row.had_roof_leak), optionList(EVER_NEVER), 20),
-  column("6. Home Health Check", "did_roof_repair", "เคยซ่อมหลังคา", "choice", row => optionText(EVER_NEVER, row.did_roof_repair), optionList(EVER_NEVER), 20),
-  column("6. Home Health Check", "had_electrical_issue", "เคยมีปัญหาระบบไฟ", "choice", row => optionText(EVER_NEVER, row.had_electrical_issue), optionList(EVER_NEVER), 22),
-  column("6. Home Health Check", "did_panel_replacement", "เคยเปลี่ยนตู้ควบคุมไฟ", "choice", row => optionText(EVER_NEVER, row.did_panel_replacement), optionList(EVER_NEVER), 24),
+  column("7. Home Health Check", "had_roof_leak", "เคยมีหลังคารั่ว", "choice", row => optionText(EVER_NEVER, row.had_roof_leak), optionList(EVER_NEVER), 20),
+  column("7. Home Health Check", "did_roof_repair", "เคยซ่อมหลังคา", "choice", row => optionText(EVER_NEVER, row.did_roof_repair), optionList(EVER_NEVER), 20),
+  column("7. Home Health Check", "had_electrical_issue", "เคยมีปัญหาระบบไฟ", "choice", row => optionText(EVER_NEVER, row.had_electrical_issue), optionList(EVER_NEVER), 22),
+  column("7. Home Health Check", "did_panel_replacement", "เคยเปลี่ยนตู้ควบคุมไฟ", "choice", row => optionText(EVER_NEVER, row.did_panel_replacement), optionList(EVER_NEVER), 24),
 
-  column("7. Beyond Question", "self_generates", "บ้านผลิตไฟใช้เองได้", "choice", row => optionText(ABLE_OR_NOT, row.self_generates), optionList(ABLE_OR_NOT), 22),
-  column("7. Beyond Question", "ev_ready", "ความพร้อมรองรับ EV", "choice", row => optionText(EV_READY_OPTIONS, row.ev_ready), optionList(EV_READY_OPTIONS), 22),
-  column("7. Beyond Question", "blackout_resilient", "ใช้ชีวิตได้ตามปกติเมื่อไฟดับ", "choice", row => optionText(ABLE_OR_NOT, row.blackout_resilient), optionList(ABLE_OR_NOT), 26),
-  column("7. Beyond Question", "future_usage_trend", "แนวโน้มใช้ไฟใน 10 ปี", "choice", row => optionText(USAGE_TREND_OPTIONS, row.future_usage_trend), optionList(USAGE_TREND_OPTIONS), 22),
+  column("8. Beyond Question", "self_generates", "บ้านผลิตไฟใช้เองได้", "choice", row => optionText(ABLE_OR_NOT, row.self_generates), optionList(ABLE_OR_NOT), 22),
+  column("8. Beyond Question", "ev_ready", "ความพร้อมรองรับ EV", "choice", row => optionText(EV_READY_OPTIONS, row.ev_ready), optionList(EV_READY_OPTIONS), 22),
+  column("8. Beyond Question", "blackout_resilient", "ใช้ชีวิตได้ตามปกติเมื่อไฟดับ", "choice", row => optionText(ABLE_OR_NOT, row.blackout_resilient), optionList(ABLE_OR_NOT), 26),
+  column("8. Beyond Question", "future_usage_trend", "แนวโน้มใช้ไฟใน 10 ปี", "choice", row => optionText(USAGE_TREND_OPTIONS, row.future_usage_trend), optionList(USAGE_TREND_OPTIONS), 22),
 
-  column("8. Decision Making Factor", "decision_timeline", "ระยะเวลาตัดสินใจ", "choice", row => optionText(DECISION_TIMELINES, row.decision_timeline), optionList(DECISION_TIMELINES), 22),
-  ...DECISION_FACTORS.map(factor => column("8. Decision Making Factor", `decision_${factor.key}`, factor.label, "score 1-5", row => factorScore(row, factor.key), "1 = สำคัญน้อยที่สุด; 5 = สำคัญมากที่สุด", 38)),
-  column("8. Decision Making Factor", "decision_other_text", "ปัจจัยอื่นๆ", "text", row => otherFactor(row).text, undefined, 32),
-  column("8. Decision Making Factor", "decision_other_score", "คะแนนปัจจัยอื่นๆ", "score 1-5", row => otherFactor(row).score, "1-5", 18),
+  column("9. Decision Making Factor", "decision_timeline", "ระยะเวลาตัดสินใจ", "choice", row => optionText(DECISION_TIMELINES, row.decision_timeline), optionList(DECISION_TIMELINES), 22),
+  ...DECISION_FACTORS.map(factor => column("9. Decision Making Factor", `decision_${factor.key}`, factor.label, "score 1-5", row => factorScore(row, factor.key), "1 = สำคัญน้อยที่สุด; 5 = สำคัญมากที่สุด", 38)),
+  column("9. Decision Making Factor", "decision_other_text", "ปัจจัยอื่นๆ", "text", row => otherFactor(row).text, undefined, 32),
+  column("9. Decision Making Factor", "decision_other_score", "คะแนนปัจจัยอื่นๆ", "score 1-5", row => otherFactor(row).score, "1-5", 18),
 ];
 
 const RESPONSE_COLUMNS: ExportColumn[] = [
-  column("สถานะคำตอบ", "response_status", "สถานะการตอบแบบสอบถาม", "text", row => responseStatus(row), "ยังไม่ตอบ; ตอบบางส่วน; ตอบครบ 8 หัวข้อ", 24),
+  column("สถานะคำตอบ", "response_status", "สถานะการตอบแบบสอบถาม", "text", row => responseStatus(row), `ยังไม่ตอบ; ตอบบางส่วน; ตอบครบ ${QUESTIONNAIRE_SECTIONS.length} หัวข้อ`, 24),
   column("สถานะคำตอบ", "answered_sections", "จำนวนหัวข้อที่ตอบ", "number", row => answeredSectionCount(row), "0-8", 18),
   column("สถานะคำตอบ", "coverage_pct", "Coverage", "percentage", row => answeredSectionCount(row) / QUESTIONNAIRE_SECTIONS.length, "0-100%", 14),
 ];
@@ -277,7 +283,8 @@ export async function getCustomerExportRows(filters: CustomerDashboardFilters): 
       d.future_smart_home, d.future_battery, d.outage_priorities, d.bill_rise_action,
       d.had_roof_leak, d.did_roof_repair, d.had_electrical_issue, d.did_panel_replacement,
       d.self_generates, d.ev_ready, d.blackout_resilient, d.future_usage_trend,
-      d.decision_factors, d.decision_timeline
+      d.decision_factors, d.decision_timeline,
+      d.occupation, d.age_range, d.household_income
     FROM leads l
     LEFT JOIN projects p ON p.id = l.project_id
     LEFT JOIN users u ON u.id = l.assigned_user_id

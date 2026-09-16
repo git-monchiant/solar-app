@@ -6,6 +6,23 @@ export function getUserIdHeader(): Record<string, string> {
   return id ? { "x-user-id": id } : {};
 }
 
+export function getActiveRolesHeader(): Record<string, string> {
+  if (typeof window === "undefined") return {};
+  const raw = window.localStorage.getItem("activeRoles");
+  if (!raw) return {};
+  try {
+    const parsed = JSON.parse(raw) as unknown;
+    if (!Array.isArray(parsed) || !parsed.every((role) => typeof role === "string")) return {};
+    return { "x-active-roles": JSON.stringify(parsed) };
+  } catch {
+    return {};
+  }
+}
+
+export function getUserContextHeaders(): Record<string, string> {
+  return { ...getUserIdHeader(), ...getActiveRolesHeader() };
+}
+
 // Fire-and-forget POST to /api/client-log. Never throws; never returns a
 // promise the caller needs to await. Used by both apiFetch (on non-OK
 // responses) and the global window error handlers.
@@ -25,7 +42,7 @@ export function reportClientError(payload: {
       headers: {
         "Content-Type": "application/json",
         "ngrok-skip-browser-warning": "true",
-        ...getUserIdHeader(),
+        ...getUserContextHeaders(),
       },
       body: JSON.stringify({
         ...payload,
@@ -42,7 +59,7 @@ export async function apiFetch(url: string, options?: RequestInit): Promise<any>
     ...options,
     headers: {
       "ngrok-skip-browser-warning": "true",
-      ...getUserIdHeader(),
+      ...getUserContextHeaders(),
       ...options?.headers,
     },
   });
@@ -56,6 +73,7 @@ export async function apiFetch(url: string, options?: RequestInit): Promise<any>
   }
   if (res.status === 401 && typeof window !== "undefined") {
     window.localStorage.removeItem("userId");
+    window.localStorage.removeItem("activeRoles");
     if (!window.location.pathname.startsWith("/login")) {
       window.location.href = "/login";
     }

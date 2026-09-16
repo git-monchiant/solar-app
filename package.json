@@ -7,7 +7,11 @@
     "build": "next build",
     "start": "next start",
     "lint": "eslint",
-    "test:quotation-terms": "node --experimental-strip-types scripts/tests/quotation-terms.mjs"
+    "test:role-permissions": "node --experimental-strip-types scripts/tests/role-permissions.mjs",
+    "test:quotation-terms": "node --experimental-strip-types scripts/tests/quotation-terms.mjs",
+    "test:grid-tie": "node --experimental-strip-types scripts/tests/grid-tie.mjs",
+    "test:sla": "node --experimental-strip-types scripts/tests/sla-rules.mjs",
+    "test:thai-location": "node --experimental-strip-types scripts/tests/thai-location.mjs"
   },
   "dependencies": {
     "browser-image-compression": "^2.0.2",

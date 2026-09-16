@@ -7,6 +7,7 @@ import { apiFetch } from "@/lib/api";
 import { houseNumberOrNull } from "@/lib/utils/name";
 import { getStatusLabel } from "@/lib/constants/statuses";
 import { formatSlotsRange } from "@/lib/time-slots";
+import { useDialog } from "@/components/ui/Dialog";
 
 // List-style calendar view used by Today's "ปฏิทิน" tab and the standalone
 // /calendar page. Fetches /api/surveys/scheduled and renders one row per day
@@ -88,6 +89,7 @@ function ymdLocal(d: Date) {
 }
 
 export default function EventCalendarList({ monthsBack, monthsForward, days, zoneFilter = "all", showZoneChips = false, toolbarRight, anchor: controlledAnchor, hideNav = false, controlledZone, controlledTeam = "all", onVisibleMonthChange }: Props) {
+  const dialog = useDialog();
   const [events, setEvents] = useState<ScheduledEvent[]>([]);
   const [zones, setZones] = useState<{ id: number; name: string; color?: string | null }[]>([]);
   const [loading, setLoading] = useState(true);
@@ -281,9 +283,12 @@ export default function EventCalendarList({ monthsBack, monthsForward, days, zon
                             // Bar colour by team (survey vs install), block → gray.
                             // Replaces the old per-zone tint so the calendar reads
                             // as "which team owns this slot".
+                            // ม่วง = ทีมสำรวจ · ส้ม = ทีมติดตั้ง ใช้ชุดเดียวกับป้ายทีม
+                            // ใน SLA_TEAM (lib/sla-display) เดิมแถบสำรวจเป็น #1ed0c7
+                            // ซึ่งไม่ตรงกับ legend ของหน้า Calendar ที่วาดเป็นม่วงมาตลอด
                             const barColor = isBlock
                               ? null
-                              : j.event_type === "install" ? "#f97316" : "#1ed0c7";
+                              : j.event_type === "install" ? "#f97316" : "#8b5cf6";
                             const bg = isBlock ? "bg-gray-100" : "bg-gray-50 hover:bg-gray-100";
                             const inner = (
                               <>
@@ -307,7 +312,7 @@ export default function EventCalendarList({ monthsBack, monthsForward, days, zon
                                   type="button"
                                   title="ลบ block นี้"
                                   onClick={async () => {
-                                    if (!confirm("ลบ block นี้?")) return;
+                                    if (!(await dialog.confirm({ message: "ลบ block นี้?", variant: "danger" }))) return;
                                     // Block ids in /api/surveys/scheduled are
                                     // emitted negative so they don't collide
                                     // with lead ids — flip back for the route.

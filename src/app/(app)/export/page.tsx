@@ -5,9 +5,11 @@ import { useState } from "react";
 import Header from "@/components/layout/Header";
 import { useMe } from "@/lib/roles";
 import { getUserIdHeader } from "@/lib/api";
+import { useDialog } from "@/components/ui/Dialog";
 
 // Temporary admin-only export page. Will be replaced by a proper reports page.
 export default function ExportPage() {
+  const dialog = useDialog();
   const { me } = useMe();
   const isAdmin = (me?.roles || []).includes("admin");
   const [busy, setBusy] = useState(false);
@@ -41,7 +43,7 @@ export default function ExportPage() {
       a.remove();
       URL.revokeObjectURL(url);
     } catch (e) {
-      alert(e instanceof Error ? e.message : "Export failed");
+      dialog.alert({ message: e instanceof Error ? e.message : "ดาวน์โหลดไฟล์ไม่สำเร็จ", variant: "danger" });
     } finally {
       setBusy(false);
     }

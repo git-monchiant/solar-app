@@ -6,6 +6,7 @@ import { getWithTtl, setWithTtl, TWO_HOURS_MS } from "@/lib/storage-ttl";
 import { useEffect, useMemo, useState } from "react";
 import Header from "@/components/layout/Header";
 import { useMe } from "@/lib/roles";
+import { useDialog } from "@/components/ui/Dialog";
 
 interface DevData {
   funnel: {
@@ -30,6 +31,7 @@ interface DevData {
 }
 
 export default function DashboardDevPage() {
+  const dialog = useDialog();
   const { me } = useMe();
   const [data, setData] = useState<DevData | null>(null);
   const [loading, setLoading] = useState(true);
@@ -122,7 +124,7 @@ export default function DashboardDevPage() {
                     if (dateTo)   qs.set("to",   dateTo);
                     qs.set("mode", filterMode);
                     const res = await fetch(`/api/report/dashboard-pdf?${qs.toString()}`, { headers: { ...getUserIdHeader() } });
-                    if (!res.ok) { alert("ดาวน์โหลด PDF ไม่สำเร็จ"); return; }
+                    if (!res.ok) { dialog.alert({ message: "ดาวน์โหลด PDF ไม่สำเร็จ", variant: "danger" }); return; }
                     const blob = await res.blob();
                     const url = URL.createObjectURL(blob);
                     const a = document.createElement("a");

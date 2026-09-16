@@ -50,7 +50,7 @@ export default function InstallStep({ lead, state, refresh, expanded, onToggle }
   const [nextError, setNextError] = useState<string | null>(null);
   const gridTieFormRef = useRef<GridTieFormHandle>(null);
   const [gridTieProgress, setGridTieProgress] = useState(() => getGridTieProgress(
-    lead.grid_utility || "", lead.grid_applicant_type || "", lead.grid_document_checklist,
+    lead.grid_applicant_type || "", lead.grid_utility || "", lead.grid_document_checklist,
   ));
   const [photos, setPhotos] = useState<string[]>(lead.install_photos ? lead.install_photos.split(",").filter(Boolean) : []);
   // Install checklist (system_specs / visual_checks / function_tests) lives
@@ -640,10 +640,14 @@ export default function InstallStep({ lead, state, refresh, expanded, onToggle }
             <div className="font-semibold text-gray-800 text-sm">{formatDate(lead.install_actual_date)}</div>
           </div>
         )}
-        {lead.install_completed_at && (
+        {(lead.install_actual_date || lead.install_completed_at) && (
           <div className="rounded-lg bg-emerald-50 border border-emerald-200 p-2.5">
             <div className="text-xs font-bold text-emerald-600 uppercase mb-0.5">วันที่ส่งมอบ</div>
-            <div className="font-semibold text-emerald-700 text-sm">{formatDate(lead.install_completed_at)}</div>
+            {/* วันที่ติดตั้งจริง ไม่ใช่วันที่กดปิดงาน — ทีมมักไล่กดย้อนหลังทีเดียวหลายราย
+                ใช้ install_completed_at เฉพาะตอนไม่มีวันติดตั้งจริง */}
+            <div className="font-semibold text-emerald-700 text-sm">
+              {formatDate(lead.install_actual_date || lead.install_completed_at)}
+            </div>
           </div>
         )}
       </div>
@@ -1173,7 +1177,7 @@ export default function InstallStep({ lead, state, refresh, expanded, onToggle }
               <div className="text-xs font-bold text-violet-800">เอกสารขอขนานไฟ</div>
               <div className="mt-0.5 text-xs text-violet-600">
                 {gridTieProgress.total > 0
-                  ? `ได้รับแล้ว ${gridTieProgress.received} จาก ${gridTieProgress.total} รายการ`
+                  ? `ตรวจรับ ${gridTieProgress.received}/${gridTieProgress.total} · Permit ยืนยัน ${gridTieProgress.permit}/${gridTieProgress.total}`
                   : "ยังไม่ได้เริ่มกรอกข้อมูล"}
                 <span className="text-violet-500"> · ไม่กระทบการยืนยันนัดติดตั้ง</span>
               </div>
