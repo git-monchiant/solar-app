@@ -22,27 +22,42 @@ export function normalizePhone(raw: string): string | null {
   return null;
 }
 
-/**
- * ส่ง SMS — ยังไม่ได้ project_key ของ smsmkt จึงมีโหมด dev ที่คืนรหัสกลับมาแสดงบนจอ
- * ★ โหมด dev ต้องปิดตายบน production ไม่งั้นใครก็ยืนยันเป็นใครก็ได้
- */
+/** โหมด dev — คืนรหัสกลับมาแสดงบนจอ ไม่ส่ง SMS จริง (ต้องปิดตายบน production) */
 export const SMS_DEV_MODE =
   process.env.NODE_ENV === "development" && process.env.OM_OTP_DEV === "1";
 
+/**
+ * ส่ง SMS ผ่าน smsmkt (Clicknext)
+ * ★ 10 ก.ย. 69: ของเดิมอ่าน env ชื่อ SMSMKT_PROJECT_KEY ซึ่ง "ไม่มีอยู่จริง" ⇒ ส่งไม่เคยออกเลย
+ *   เปลี่ยนมาใช้ชุดเดียวกับที่ระบบขายใช้อยู่และส่งได้จริง (src/app/api/(sms)/sms/send/route.ts)
+ *   ปลายทางคือ /send-message · สำเร็จเมื่อ HTTP 200 และ code = "000"
+ * ★ โหมด dev (OM_OTP_DEV=1) คืนรหัสกลับมาแสดงบนจอ ไม่ส่งจริง — ต้องปิดตายบน production
+ */
+export const SMS_API_URL = process.env.SMSMKT_API_URL || "https://portal-otp.smsmkt.com/api";
+
 export async function sendOtpSms(phone: string, code: string, ref: string):
-  Promise<{ ok: boolean; via: "dev" | "smsmkt"; devCode?: string; error?: string }> {
+  Promise<{ ok: boolean; via: "dev" | "smsmkt"; devCode?: string; error?: string; txId?: string | null }> {
   if (SMS_DEV_MODE) return { ok: true, via: "dev", devCode: code };
 
-  const key = process.env.SMSMKT_PROJECT_KEY;
+  const apiKey = process.env.SMSMKT_API_KEY;
   const secret = process.env.SMSMKT_SECRET_KEY;
-  if (!key || !secret) return { ok: false, via: "smsmkt", error: "ยังไม่ได้ตั้งค่า SMS (project_key)" };
+  const sender = process.env.SMSMKT_SENDER;
+  if (!apiKey || !secret || !sender)
+    return { ok: false, via: "smsmkt", error: "ยังไม่ได้ตั้งค่า SMS (api_key / secret_key / sender)" };
 
-  const res = await fetch("https://portal-otp.smsmkt.com/api/otp-send", {
+  const res = await fetch(`${SMS_API_URL}/send-message`, {
     method: "POST",
-    headers: { "Content-Type": "application/json", "api_key": key, "secret_key": secret },
-    body: JSON.stringify({ project_key: key, phone, ref_code: ref, message: `รหัสยืนยัน SENA Solar: ${code}` }),
+    headers: { "Content-Type": "application/json", api_key: apiKey, secret_key: secret },
+    body: JSON.stringify({
+      message: `รหัสยืนยัน SENA Solar: ${code} (อ้างอิง ${ref}) ใช้ได้ ${OTP_TTL_MIN} นาที`,
+      phone,
+      sender,
+      ...(process.env.SMSMKT_PROJECT_ID ? { project_id: process.env.SMSMKT_PROJECT_ID } : {}),
+    }),
   }).catch(() => null);
 
-  if (!res?.ok) return { ok: false, via: "smsmkt", error: `ส่ง SMS ไม่สำเร็จ (${res?.status ?? "network"})` };
-  return { ok: true, via: "smsmkt" };
+  const data = (await res?.json().catch(() => ({}))) as { code?: string; detail?: unknown; result?: { transaction_id?: string } };
+  if (!res?.ok || data?.code !== "000")
+    return { ok: false, via: "smsmkt", error: `ส่ง SMS ไม่สำเร็จ (${data?.code ?? res?.status ?? "network"})` };
+  return { ok: true, via: "smsmkt", txId: data?.result?.transaction_id ?? null };
 }

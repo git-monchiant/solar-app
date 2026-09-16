@@ -20,7 +20,7 @@ interface Faq {
   id: number; category: string | null; question: string; answer: string;
   sort_order: number; is_active: boolean; view_count: number; updated_at: string;
 }
-interface FaqCat { id: number; name: string; sort_order: number; is_active: boolean; used_count: number }
+interface FaqCat { name: string; sort_order: number; is_active: boolean; used_count: number }
 interface Status {
   enabled: boolean; mode: string; has_token: boolean; has_secret: boolean; webhook_path: string;
   bot: { displayName?: string; basicId?: string } | null;
@@ -199,16 +199,16 @@ export default function OmLineOaPage() {
     } catch (e) { setMsg(e instanceof Error ? e.message : "เพิ่มหมวดไม่สำเร็จ"); }
     finally { setBusy(false); }
   };
-  const patchCat = async (id: number, patch: Partial<FaqCat>) => {
+  const patchCat = async (name: string, patch: Partial<FaqCat> & { new_name?: string }) => {
     try {
-      await apiFetch("/api/om/faq/categories", { method: "PATCH", body: JSON.stringify({ id, ...patch }) });
+      await apiFetch("/api/om/faq/categories", { method: "PATCH", body: JSON.stringify({ name, ...patch }) });
       await load();
     } catch (e) { setMsg(e instanceof Error ? e.message : "แก้หมวดไม่สำเร็จ"); }
   };
   const delCat = async (c: FaqCat) => {
     if (!confirm(`ลบหมวด "${c.name}"?`)) return;
     try {
-      await apiFetch(`/api/om/faq/categories?id=${c.id}`, { method: "DELETE" });
+      await apiFetch(`/api/om/faq/categories?name=${encodeURIComponent(c.name)}`, { method: "DELETE" });
       await load();
     } catch (e) { setMsg(e instanceof Error ? e.message : "ลบหมวดไม่สำเร็จ"); }
   };
@@ -281,7 +281,7 @@ export default function OmLineOaPage() {
                   <select value={newFaq.category} onChange={(e) => setNewFaq({ ...newFaq, category: e.target.value })}
                     className="h-9 rounded-lg border border-gray-200 px-3 text-sm font-semibold outline-none focus:border-primary">
                     <option value="">— ไม่จัดหมวด —</option>
-                    {cats.filter((c) => c.is_active).map((c) => <option key={c.id} value={c.name}>{c.name}</option>)}
+                    {cats.filter((c) => c.is_active).map((c) => <option key={c.name} value={c.name}>{c.name}</option>)}
                   </select>
                 </label>
                 <label className="grid gap-1">
@@ -319,19 +319,19 @@ export default function OmLineOaPage() {
                   <div className="mt-3 space-y-1.5">
                     {cats.length === 0 && <div className="text-xs text-gray-400 py-2">ยังไม่มีหมวด</div>}
                     {cats.map((c, i) => (
-                      <div key={c.id} className={`flex items-center gap-2 rounded-lg border px-2.5 py-1.5 ${
+                      <div key={c.name} className={`flex items-center gap-2 rounded-lg border px-2.5 py-1.5 ${
                         c.is_active ? "border-gray-200" : "border-gray-200 bg-gray-50"}`}>
                         <input defaultValue={c.name}
-                          onBlur={(ev) => ev.target.value.trim() && ev.target.value !== c.name && patchCat(c.id, { name: ev.target.value.trim() })}
+                          onBlur={(ev) => ev.target.value.trim() && ev.target.value !== c.name && patchCat(c.name, { new_name: ev.target.value.trim() })}
                           className="flex-1 min-w-0 bg-transparent text-sm font-semibold outline-none" />
                         <span className="text-xs text-gray-400 shrink-0">{c.used_count} ข้อ</span>
                         <button type="button" title="เลื่อนขึ้น" disabled={i === 0} style={{ minHeight: 0 }}
-                          onClick={() => patchCat(c.id, { sort_order: (cats[i - 1]?.sort_order ?? 0) - 1 })}
+                          onClick={() => patchCat(c.name, { sort_order: (cats[i - 1]?.sort_order ?? 0) - 1 })}
                           className="px-1.5 rounded border border-gray-200 text-xs font-bold text-gray-500 hover:bg-gray-50 disabled:opacity-30 cursor-pointer">↑</button>
                         <button type="button" title="เลื่อนลง" disabled={i === cats.length - 1} style={{ minHeight: 0 }}
-                          onClick={() => patchCat(c.id, { sort_order: (cats[i + 1]?.sort_order ?? 0) + 1 })}
+                          onClick={() => patchCat(c.name, { sort_order: (cats[i + 1]?.sort_order ?? 0) + 1 })}
                           className="px-1.5 rounded border border-gray-200 text-xs font-bold text-gray-500 hover:bg-gray-50 disabled:opacity-30 cursor-pointer">↓</button>
-                        <button type="button" onClick={() => patchCat(c.id, { is_active: !c.is_active })} style={{ minHeight: 0 }}
+                        <button type="button" onClick={() => patchCat(c.name, { is_active: !c.is_active })} style={{ minHeight: 0 }}
                           className="px-2 rounded border border-gray-200 text-xs font-bold text-gray-600 hover:bg-gray-50 cursor-pointer">
                           {c.is_active ? "ซ่อน" : "แสดง"}
                         </button>
@@ -397,7 +397,7 @@ export default function OmLineOaPage() {
                         onChange={(ev) => editFaq(q, { category: ev.target.value })}
                         className="w-32 h-7 rounded-md border border-gray-200 px-1.5 text-xs font-bold text-gray-600 outline-none focus:border-primary">
                         <option value="">ไม่จัดหมวด</option>
-                        {cats.map((c) => <option key={c.id} value={c.name}>{c.name}</option>)}
+                        {cats.map((c) => <option key={c.name} value={c.name}>{c.name}</option>)}
                       </select>
                       {!q.is_active && <Pill c="bg-amber-50 text-amber-700 border-amber-200">ซ่อนอยู่</Pill>}
                       {dirty && <Pill c="bg-amber-100 text-amber-800 border-amber-300">ยังไม่บันทึก</Pill>}

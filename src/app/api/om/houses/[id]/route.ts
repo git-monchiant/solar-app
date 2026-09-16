@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { requireAuth, requireAnyRole } from "@/lib/auth";
 import { fixDates, sql } from "@/lib/db";
 import { getOmDb } from "@/lib/om/line";
+import { CLEANING_ID_SQL } from "@/lib/om/entitlement";
 import { finishSync, logSync } from "@/lib/om/rem-sync";
 
 // บ้านรายหลัง — ดูครบ (ระบบติดตั้ง · สิทธิ์ ledger · ลูกค้า · นัด) + แก้ข้อมูลบ้าน
@@ -38,13 +39,20 @@ export async function GET(req: NextRequest, ctx: { params: Promise<{ id: string 
     LEFT JOIN om_import_batches ib ON ib.id = i.source_batch_id
     WHERE i.house_id = @id ORDER BY i.id;
 
+    -- ★ สิทธิ์แบบนับครั้งผูกกับประเภทงานแล้ว (9 ก.ย. 69) — NULL = ล้างแผง เพื่อความเข้ากันได้ย้อนหลัง
     SELECT g.id, g.qty, g.source, g.reason, g.installation_id,
+           ISNULL(g.service_type_id, ${CLEANING_ID_SQL}) service_type_id,
+           ISNULL(gst.label_th, N'ล้างแผง') service_type,
            CONVERT(char(10), g.created_at, 23) created_at
     FROM om_entitlement_grants g JOIN om_installations i ON i.id = g.installation_id
+    LEFT JOIN om_service_type gst ON gst.id = g.service_type_id
     WHERE i.house_id = @id ORDER BY g.id;
 
-    SELECT rd.id, CONVERT(char(10), rd.service_date, 23) service_date, rd.status, rd.installation_id
+    SELECT rd.id, CONVERT(char(10), rd.service_date, 23) service_date, rd.status, rd.installation_id,
+           ISNULL(rd.service_type_id, ${CLEANING_ID_SQL}) service_type_id,
+           ISNULL(rst.label_th, N'ล้างแผง') service_type
     FROM om_redemptions rd JOIN om_installations i ON i.id = rd.installation_id
+    LEFT JOIN om_service_type rst ON rst.id = rd.service_type_id
     WHERE i.house_id = @id AND rd.status <> 'void' ORDER BY rd.service_date;
 
     SELECT hc.id link_id, hc.role, c.id customer_id, c.full_name,
@@ -94,7 +102,21 @@ export async function GET(req: NextRequest, ctx: { params: Promise<{ id: string 
            po.kind, po.note, po.amount_kw, po.source_ref, ib3.source_file batch_file
     FROM om_installation_pos po
     LEFT JOIN om_import_batches ib3 ON ib3.id = po.batch_id
-    WHERE po.house_id = @id ORDER BY po.po_date, po.id;`);
+    WHERE po.house_id = @id ORDER BY po.po_date, po.id;
+
+    -- ★ ยอดสิทธิ์คงเหลือ "แยกตามประเภทงาน" — วิว om_entitlement_balance ละเอียดระดับ (ระบบติดตั้ง, ชนิดงาน)
+    SELECT eb.service_type_id, eb.service_type_code, eb.service_type_label,
+           SUM(eb.total_granted) total_granted, SUM(eb.total_used) total_used, SUM(eb.balance) balance,
+           MIN(st2.sort_order) sort_order
+    FROM om_entitlement_balance eb
+    JOIN om_service_type st2 ON st2.id = eb.service_type_id
+    WHERE eb.house_id = @id
+    GROUP BY eb.service_type_id, eb.service_type_code, eb.service_type_label
+    ORDER BY sort_order;
+
+    -- ประเภทงานทั้งหมด (พร้อมรอบกี่เดือน) — ฟอร์มเพิ่มสิทธิ์/บันทึกงานเลือกจากตัวนี้ ไม่ hardcode
+    SELECT id, code, label_th, CAST(consumes_quota AS int) consumes_quota, cycle_months
+    FROM om_service_type WHERE active = 1 ORDER BY sort_order, id;`);
 
   const rs = r.recordsets as sql.IRecordSet<Record<string, unknown>>[];
   const house = rs[0][0];
@@ -110,6 +132,8 @@ export async function GET(req: NextRequest, ctx: { params: Promise<{ id: string 
     promo: (rs[6][0]?.n_items ? rs[6][0] : null),
     fieldSources: rs[7] ?? [],
     pos: rs[8] ?? [],
+    balances: rs[9] ?? [],
+    serviceTypes: rs[10] ?? [],
   });
 }
 

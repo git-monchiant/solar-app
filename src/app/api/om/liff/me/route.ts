@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { authenticateLiff, readJsonBody } from "@/lib/om/liff-auth";
 import { fixDates, sql } from "@/lib/db";
 import { getOmDb } from "@/lib/om/line";
+import { isCleaning } from "@/lib/om/entitlement";
 
 // ข้อมูล "บ้านของฉัน" ของลูกค้า LIFF — รองรับหลายบ้านต่อคน (แบบ A: ตัวสลับบ้าน)
 // บ้านทั้งหมดมาจาก om_line_user_houses · บ้านที่กำลังดู = om_line_users.house_id (fallback หลังแรก)
@@ -16,7 +17,9 @@ async function getLinkedHouses(lineUserId: string) {
       FROM om_line_user_houses luh
       JOIN om_houses h ON h.id = luh.house_id
       LEFT JOIN om_projects p ON p.project_id = h.project_id
-      LEFT JOIN (SELECT house_id, SUM(balance) balance FROM om_entitlement_balance GROUP BY house_id) b
+      -- ★ วิวละเอียดระดับประเภทงานแล้ว — ฝั่งลูกค้าโชว์ "สิทธิ์ล้างแผงคงเหลือ" จึงกรองเฉพาะ cleaning
+      LEFT JOIN (SELECT house_id, SUM(balance) balance FROM om_entitlement_balance
+                 WHERE service_type_code = 'cleaning' GROUP BY house_id) b
         ON b.house_id = h.id
       WHERE luh.line_user_id = @id
       ORDER BY luh.linked_at`);
@@ -60,7 +63,7 @@ export async function GET(req: NextRequest) {
       SELECT TOP 10 CAST(r.service_date AS date) AS service_date, r.status
       FROM om_redemptions r
       JOIN om_installations i ON i.id = r.installation_id
-      WHERE i.house_id = @hid AND r.status <> 'void'
+      WHERE i.house_id = @hid AND r.status <> 'void' AND ${isCleaning("r")}
       ORDER BY r.service_date DESC`),
   ]);
 

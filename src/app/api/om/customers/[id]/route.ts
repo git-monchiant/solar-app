@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { requireAuth } from "@/lib/auth";
 import { fixDates, sql } from "@/lib/db";
 import { getOmDb } from "@/lib/om/line";
+import { isCleaning } from "@/lib/om/entitlement";
 
 // ลูกค้ารายคน — ดู · แก้ · ลบ (ตัดสิน hard/soft เองตามเงื่อนไขที่ผู้ใช้เคาะ 1 ก.ย.)
 
@@ -26,10 +27,11 @@ export async function GET(req: NextRequest, ctx: { params: Promise<{ id: string 
     LEFT JOIN om_projects pj ON pj.project_id = h.project_id
     WHERE hc.customer_id = @id ORDER BY hc.is_current DESC, hc.id;
 
+    -- ★ "จำนวนครั้งที่ล้าง" ต้องนับเฉพาะใบของล้างแผง ไม่รวมสิทธิ์ชนิดอื่นที่ขายเป็นครั้ง
     SELECT COUNT(*) washes FROM om_redemptions rd
     JOIN om_installations i ON i.id = rd.installation_id
     JOIN om_house_customers hc ON hc.house_id = i.house_id
-    WHERE hc.customer_id = @id AND rd.status <> 'void';
+    WHERE hc.customer_id = @id AND rd.status <> 'void' AND ${isCleaning("rd")};
 
     SELECT COUNT(*) bookings FROM om_bookings b
     JOIN om_house_customers hc ON hc.house_id = b.house_id
@@ -111,6 +113,7 @@ export async function DELETE(req: NextRequest, ctx: { params: Promise<{ id: stri
   const db = await getOmDb();
   const chk = await db.request().input("id", sql.Int, id).query(`
     SELECT
+      -- ตัวนี้เป็นด่านกันลบ — นับ "ทุกชนิด" ไว้ก่อน ปลอดภัยกว่านับเฉพาะล้างแผง
       (SELECT COUNT(*) FROM om_redemptions rd JOIN om_installations i ON i.id = rd.installation_id
        JOIN om_house_customers hc ON hc.house_id = i.house_id WHERE hc.customer_id = @id) washes,
       (SELECT COUNT(*) FROM om_bookings bk JOIN om_house_customers hc ON hc.house_id = bk.house_id

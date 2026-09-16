@@ -2,8 +2,9 @@ import { NextRequest, NextResponse } from "next/server";
 import { requireAuth } from "@/lib/auth";
 import { sql } from "@/lib/db";
 import { getOmDb } from "@/lib/om/line";
+import { resolveServiceType } from "@/lib/om/entitlement";
 
-// แก้สิทธิ์ล้างแผงรายบ้าน — ข้อมูล import cutoff แค่ มิ.ย. 69
+// แก้สิทธิ์รายบ้าน — เดิมมีแต่ล้างแผง ตั้งแต่ 9 ก.ย. 69 ระบุประเภทงานได้ (เผื่อขายแพ็คตรวจเช็ก) — ข้อมูล import cutoff แค่ มิ.ย. 69
 // แอดมินต้องเติมรายการล้างที่เกิดหลังจากนั้น · ปรับสิทธิ์ซื้อเพิ่ม/ต่อสัญญา/หมดอายุได้เอง
 // ทุกการกระทำลง om_entitlement_history ในทรานแซกชันเดียวกัน
 
@@ -52,8 +53,9 @@ export async function GET(req: NextRequest, ctx: { params: Promise<{ id: string 
 }
 
 // POST — บันทึกการล้าง หรือปรับสิทธิ์
-//   { kind: "redemption", service_date, note?, installation_id? }
-//   { kind: "grant", qty (+/-), source, reason?, installation_id? }
+//   { kind: "redemption", service_date, note?, installation_id?, service_type_id? }
+//   { kind: "grant", qty (+/-), source, reason?, installation_id?, service_type_id? }
+//   ★ ไม่ส่ง service_type_id = ล้างแผง (ค่าเดิมของระบบ)
 export async function POST(req: NextRequest, ctx: { params: Promise<{ id: string }> }) {
   const gate = await requireAuth(req);
   if (gate.error) return gate.error;
@@ -69,16 +71,21 @@ export async function POST(req: NextRequest, ctx: { params: Promise<{ id: string
   try {
     if (b.kind === "redemption") {
       const date = String(b.service_date ?? "").slice(0, 10);
-      if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) throw new Error("ต้องระบุวันที่ล้าง (YYYY-MM-DD)");
+      if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) throw new Error("ต้องระบุวันที่ (YYYY-MM-DD)");
       const note = b.note ? String(b.note).slice(0, 300) : null;
+      // ★ ตัดสิทธิ์ได้เฉพาะงานที่ตั้งไว้ว่า "กินสิทธิ์" — ชนิดที่ไม่กินสิทธิ์ไม่มีอะไรให้ตัด
+      const type = await resolveServiceType(db, b.service_type_id);
+      if (!type.consumes_quota)
+        throw new Error(`งาน "${type.label_th}" ไม่ได้ตั้งค่าว่าใช้สิทธิ์ — ถ้าจะขายเป็นครั้ง ให้เปิด consumes_quota ก่อน`);
       const ins = await new sql.Request(tx)
         .input("i", sql.Int, instId).input("d", sql.Date, date)
+        .input("t", sql.Int, type.id)
         .input("n", sql.NVarChar(300), note).input("u", sql.Int, gate.userId)
-        .query(`INSERT INTO om_redemptions (installation_id, service_date, status, note, created_by)
-                OUTPUT INSERTED.id VALUES (@i, @d, 'used', @n, @u)`);
+        .query(`INSERT INTO om_redemptions (installation_id, service_date, status, note, created_by, service_type_id)
+                OUTPUT INSERTED.id VALUES (@i, @d, 'used', @n, @u, @t)`);
       const id = ins.recordset[0].id as number;
       await logEnt(tx, { houseId, installationId: instId, kind: "redemption", action: "add",
-        refId: id, qty: -1, detail: `ล้างวันที่ ${date}${note ? ` · ${note}` : ""}`, reason: note, actor: gate.userId });
+        refId: id, qty: -1, detail: `${type.label_th} วันที่ ${date}${note ? ` · ${note}` : ""}`, reason: note, actor: gate.userId });
       await tx.commit();
       return NextResponse.json({ ok: true, id });
     }
@@ -90,15 +97,18 @@ export async function POST(req: NextRequest, ctx: { params: Promise<{ id: string
       const source = String(b.source ?? "manual_adjust");
       if (!GRANT_SOURCES.includes(source)) throw new Error("ประเภทสิทธิ์ไม่ถูกต้อง");
       const reason = b.reason ? String(b.reason).slice(0, 300) : null;
+      // ★ สิทธิ์ผูกกับประเภทงาน — ขายแพ็คตรวจเช็ก 3 ครั้ง = grant qty 3 ของชนิด "ตรวจเช็กประจำปี"
+      const type = await resolveServiceType(db, b.service_type_id);
       const ins = await new sql.Request(tx)
         .input("i", sql.Int, instId).input("q", sql.Int, qty)
         .input("s", sql.NVarChar(20), source).input("r", sql.NVarChar(300), reason)
+        .input("t", sql.Int, type.id)
         .input("u", sql.Int, gate.userId)
-        .query(`INSERT INTO om_entitlement_grants (installation_id, qty, source, reason, created_by)
-                OUTPUT INSERTED.id VALUES (@i, @q, @s, @r, @u)`);
+        .query(`INSERT INTO om_entitlement_grants (installation_id, qty, source, reason, created_by, service_type_id)
+                OUTPUT INSERTED.id VALUES (@i, @q, @s, @r, @u, @t)`);
       const id = ins.recordset[0].id as number;
       await logEnt(tx, { houseId, installationId: instId, kind: "grant", action: "add",
-        refId: id, qty, detail: `${qty > 0 ? "+" : ""}${qty} · ${source}${reason ? ` · ${reason}` : ""}`,
+        refId: id, qty, detail: `${type.label_th} ${qty > 0 ? "+" : ""}${qty} · ${source}${reason ? ` · ${reason}` : ""}`,
         reason, actor: gate.userId });
       await tx.commit();
       return NextResponse.json({ ok: true, id });
@@ -127,17 +137,22 @@ export async function DELETE(req: NextRequest, ctx: { params: Promise<{ id: stri
   // ต้องเป็นแถวของบ้านหลังนี้เท่านั้น
   const cur = await db.request().input("r", sql.Int, ref).input("h", sql.Int, houseId).query(
     kind === "grant"
-      ? `SELECT g.id, g.installation_id, g.qty, g.source, g.reason FROM om_entitlement_grants g
-         JOIN om_installations i ON i.id = g.installation_id WHERE g.id = @r AND i.house_id = @h`
-      : `SELECT rd.id, rd.installation_id, CONVERT(char(10), rd.service_date, 23) service_date, rd.note
+      ? `SELECT g.id, g.installation_id, g.qty, g.source, g.reason,
+                ISNULL(st.label_th, N'ล้างแผง') service_type
+         FROM om_entitlement_grants g JOIN om_installations i ON i.id = g.installation_id
+         LEFT JOIN om_service_type st ON st.id = g.service_type_id
+         WHERE g.id = @r AND i.house_id = @h`
+      : `SELECT rd.id, rd.installation_id, CONVERT(char(10), rd.service_date, 23) service_date, rd.note,
+                ISNULL(st.label_th, N'ล้างแผง') service_type
          FROM om_redemptions rd JOIN om_installations i ON i.id = rd.installation_id
+         LEFT JOIN om_service_type st ON st.id = rd.service_type_id
          WHERE rd.id = @r AND i.house_id = @h`);
   const row = cur.recordset[0];
   if (!row) return NextResponse.json({ error: "ไม่พบรายการในบ้านหลังนี้" }, { status: 404 });
 
   const detail = kind === "grant"
-    ? `${row.qty > 0 ? "+" : ""}${row.qty} · ${row.source}${row.reason ? ` · ${row.reason}` : ""}`
-    : `ล้างวันที่ ${row.service_date}${row.note ? ` · ${row.note}` : ""}`;
+    ? `${row.service_type} ${row.qty > 0 ? "+" : ""}${row.qty} · ${row.source}${row.reason ? ` · ${row.reason}` : ""}`
+    : `${row.service_type} วันที่ ${row.service_date}${row.note ? ` · ${row.note}` : ""}`;
 
   const tx = new sql.Transaction(db);
   await tx.begin();

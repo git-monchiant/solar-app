@@ -11,8 +11,7 @@ export async function GET(req: NextRequest) {
   const r = await db.request().query(
     `SELECT f.id, f.category, f.question, f.answer, f.sort_order, f.is_active, f.view_count, f.updated_at
      FROM om_faq f
-     LEFT JOIN om_faq_categories c ON c.name = f.category
-     ORDER BY ISNULL(c.sort_order, 999999), f.sort_order, f.id`);
+     ORDER BY f.category_sort, f.sort_order, f.id`);
   return NextResponse.json({ faqs: fixDates(r.recordset) });
 }
 

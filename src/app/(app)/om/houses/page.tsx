@@ -36,8 +36,15 @@ interface Detail {
     rem_contract_id: string | null; rem_contract_status: string | null; rem_transfer_date: string | null;
     rem_checked_at: string | null; source_batch_id: number | null; batch_file: string | null;
     batch_note: string | null; batch_at: string | null; po_number: string | null }[];
-  grants: { id: number; qty: number; source: string; reason: string | null; created_at: string }[];
-  redemptions: { id: number; service_date: string; note?: string | null }[];
+  grants: { id: number; qty: number; source: string; reason: string | null; created_at: string;
+    service_type_id: number; service_type: string }[];
+  redemptions: { id: number; service_date: string; note?: string | null;
+    service_type_id: number; service_type: string }[];
+  // ★ ยอดสิทธิ์คงเหลือแยกตามประเภทงาน (9 ก.ย. 69) — ล้างแผงเป็นแค่ชนิดหนึ่ง ไม่ใช่ทั้งหมด
+  balances?: { service_type_id: number; service_type_code: string; service_type_label: string;
+    total_granted: number; total_used: number; balance: number }[];
+  serviceTypes?: { id: number; code: string; label_th: string; consumes_quota: number;
+    cycle_months: number | null }[];
   customers: { link_id: number; role: string; customer_id: number; full_name: string; phone: string | null }[];
   bookings: { id: number; scheduled_at: string; status: string; service_type: string | null }[];
   // ของแถมตอนขาย — เก็บแค่ "เจอกี่รายการ" กับข้อมูลโซลาร์ · ★ ไม่มีราคา ไม่มีรายชื่อของแถม
@@ -81,16 +88,18 @@ const TABS: { k: string; t: string; s: keyof Stats }[] = [
   { k: "hidden", t: "ซ่อนไว้", s: "hidden" },
 ];
 
-// วันล้างล่าสุด → ข้อความ "ผ่านมานานแค่ไหน" + ธงเกิน 1 ปี
-function washAgo(d: string | null): { text: string; old: boolean } | null {
+// วันล้างล่าสุด → ข้อความ "ผ่านมานานแค่ไหน" + ธง "เลยรอบแล้ว"
+// ★ รอบมาจาก om_service_type.cycle_months (ตอนนี้ 6 เดือน) ส่งมากับ API — อย่า hardcode 1 ปี
+function washAgo(d: string | null, cycleMonths: number | null): { text: string; old: boolean } | null {
   if (!d) return null;
   const days = Math.floor((Date.now() - new Date(d).getTime()) / 86400000);
   const text = days < 31 ? `${days} วัน` : days < 365 ? `${Math.round(days / 30)} เดือน` : `${(days / 365).toFixed(1)} ปี`;
-  return { text, old: days > 365 };
+  return { text, old: days > (cycleMonths ?? 12) * 30.4 };
 }
 
 export default function OmHousesPage() {
   const [rows, setRows] = useState<Row[] | null>(null);
+  const [washCycle, setWashCycle] = useState<number | null>(null);   // รอบล้าง (เดือน) จาก om_service_type
   const [total, setTotal] = useState(0);
   const [q, setQ] = useState("");
   const [groups, setGroups] = useState<Group[] | null>(null);
@@ -110,6 +119,8 @@ export default function OmHousesPage() {
   const [washNote, setWashNote] = useState("");
   const [grantQty, setGrantQty] = useState("1");
   const [grantSrc, setGrantSrc] = useState("renewal");
+  const [washType, setWashType] = useState("");    // ชนิดงานของใบตัดสิทธิ์ (ว่าง = ล้างแผง)
+  const [grantType, setGrantType] = useState("");  // ชนิดงานของสิทธิ์ที่จะเพิ่ม (ว่าง = ล้างแผง)
   const [grantWhy, setGrantWhy] = useState("");
   const [err, setErr] = useState("");
   const [toast, setToast] = useState("");
@@ -132,7 +143,7 @@ export default function OmHousesPage() {
       ...(q ? {} : { group: grp }),
     });
     apiFetch(`/api/om/houses?${u}`)
-      .then((d) => { setRows(d.houses ?? []); setTotal(d.total ?? 0); })
+      .then((d) => { setRows(d.houses ?? []); setTotal(d.total ?? 0); setWashCycle(d.cleaningCycleMonths ?? null); })
       .catch((e) => setErr(e instanceof Error ? e.message : String(e)));
   }, [q, filter, grp, page, size]);
   useEffect(() => { const t = setTimeout(load, q ? 300 : 0); return () => clearTimeout(t); }, [load, q]);
@@ -211,14 +222,30 @@ export default function OmHousesPage() {
     } catch (e) { setErr(e instanceof Error ? e.message : String(e)); }
     finally { setBusy(false); }
   };
-  const addWash = () => entCall({ method: "POST", body: JSON.stringify({ kind: "redemption", service_date: washDate, note: washNote || null }) });
-  const addGrant = () => entCall({ method: "POST", body: JSON.stringify({ kind: "grant", qty: Number(grantQty), source: grantSrc, reason: grantWhy || null }) });
+  const addWash = () => entCall({ method: "POST", body: JSON.stringify({ kind: "redemption", service_date: washDate, note: washNote || null, service_type_id: washType || null }) });
+  const addGrant = () => entCall({ method: "POST", body: JSON.stringify({ kind: "grant", qty: Number(grantQty), source: grantSrc, reason: grantWhy || null, service_type_id: grantType || null }) });
   const delEnt = (kind: "grant" | "redemption", ref: number, label: string) => {
     if (!confirm(`ลบ "${label}" ออกจากสิทธิ์บ้านหลังนี้?`)) return;
     entCall({ method: "DELETE" }, `?kind=${kind}&ref=${ref}`);
   };
 
-  const balance = sel ? Math.max(0, sel.grants.reduce((s, g) => s + g.qty, 0) - sel.redemptions.length) : 0;
+  // ★ ยอดคงเหลือมาจากวิว om_entitlement_balance ซึ่งแยกตามประเภทงานแล้ว
+  //   "balance" ตัวเดียวหมายถึงล้างแผงเสมอ (เลขใหญ่บนหัวข้อ) ชนิดอื่นโชว์เป็นชิปข้าง ๆ
+  const bals = sel?.balances ?? [];
+  const balance = Math.max(0, bals.find((b) => b.service_type_code === "cleaning")?.balance ?? 0);
+  const otherBals = bals.filter((b) => b.service_type_code !== "cleaning" && b.total_granted !== 0);
+  const types = sel?.serviceTypes ?? [];
+  const quotaTypes = types.filter((t) => t.consumes_quota === 1);
+  const cleaningId = types.find((t) => t.code === "cleaning")?.id ?? 0;
+  // ลำดับ "ครั้งที่" ต้องนับแยกตามชนิดงาน ไม่ใช่นับรวมทั้งกอง
+  const redIndex = new Map<number, number>();
+  {
+    const n = new Map<number, number>();
+    for (const r of sel?.redemptions ?? []) {
+      const k = (n.get(r.service_type_id) ?? 0) + 1;
+      n.set(r.service_type_id, k); redIndex.set(r.id, k);
+    }
+  }
 
   const cur = groups?.find((g) => g.grp === grp) ?? null;
   // ★ กลุ่ม "ซ่อนจากลิสต์หลัก" (คอนโด/สนง.ขาย/ส่วนกลาง/ยังไม่ขาย/บ้านตัวอย่าง) — แสดงแยกส่วนล่าง
@@ -392,7 +419,7 @@ export default function OmHousesPage() {
                       </td>
                       <td className="px-4 py-2 border-b border-gray-100 text-sm whitespace-nowrap">
                         {(() => {
-                          const w = washAgo(h.last_wash);
+                          const w = washAgo(h.last_wash, washCycle);
                           if (!w) return <span className="text-gray-400 text-xs">ยังไม่เคยล้าง</span>;
                           return <>
                             <span className={w.old ? "text-amber-600 font-bold" : ""}>{h.last_wash}</span>
@@ -433,7 +460,7 @@ export default function OmHousesPage() {
                     </div>
                     <div className="text-xs font-medium text-gray-500">
                       {(() => {
-                        const w = washAgo(h.last_wash);
+                        const w = washAgo(h.last_wash, washCycle);
                         return w
                           ? <>ล้างล่าสุด <span className={w.old ? "text-amber-600 font-bold" : ""}>{h.last_wash}</span> · {w.text}</>
                           : <span className="text-gray-400">ยังไม่เคยล้าง</span>;
@@ -678,12 +705,23 @@ export default function OmHousesPage() {
 
                 <Sec t="สิทธิ์ล้างแผง" action={<span className="text-xl font-bold text-primary-dark">{balance} <small className="text-xxs font-medium text-gray-500">ครั้ง คงเหลือ</small></span>} />
 
+                {/* ★ สิทธิ์ชนิดอื่นที่ขายเป็นครั้ง (แพ็คตรวจเช็ก ฯลฯ) — ยอดแยกกันคนละใบ ไม่ปนกับล้างแผง */}
+                {otherBals.length > 0 && (
+                  <div className="flex flex-wrap gap-1.5 px-5 py-2 border-b border-gray-100">
+                    {otherBals.map((b) => (
+                      <span key={b.service_type_id} className="text-xxs font-bold px-2 py-0.5 rounded-full bg-sky-50 text-sky-700">
+                        {b.service_type_label} เหลือ {Math.max(0, b.balance)}/{b.total_granted}
+                      </span>
+                    ))}
+                  </div>
+                )}
+
                 {/* ปุ่มแก้ไข — ข้อมูล import ถึงแค่ มิ.ย. 69 ต้องเติมของใหม่เองได้ */}
                 <div className="flex gap-2 px-5 py-2 border-b border-gray-100">
                   <button type="button" style={{ minHeight: 0 }} disabled={!sel.systems.length}
                     onClick={() => { setEntForm(entForm === "wash" ? "" : "wash"); setWashDate(new Date().toISOString().slice(0, 10)); }}
                     className="h-8 px-3 rounded-lg border border-gray-200 text-xs font-bold text-gray-700 hover:bg-gray-50 cursor-pointer disabled:opacity-40">
-                    + บันทึกล้างแผง</button>
+                    {quotaTypes.length > 1 ? "+ บันทึกใช้สิทธิ์" : "+ บันทึกล้างแผง"}</button>
                   <button type="button" style={{ minHeight: 0 }} disabled={!sel.systems.length}
                     onClick={() => setEntForm(entForm === "grant" ? "" : "grant")}
                     className="h-8 px-3 rounded-lg border border-gray-200 text-xs font-bold text-gray-700 hover:bg-gray-50 cursor-pointer disabled:opacity-40">
@@ -694,7 +732,14 @@ export default function OmHousesPage() {
                 {entForm === "wash" && (
                   <div className="px-5 py-3 border-b border-gray-100 bg-gray-50 grid gap-2">
                     <div className="flex gap-2 flex-wrap">
-                      <label className="grid gap-1"><span className="text-xxs font-bold text-gray-600">วันที่ล้าง</span>
+                      {quotaTypes.length > 1 && (
+                        <label className="grid gap-1"><span className="text-xxs font-bold text-gray-600">งานที่ทำ</span>
+                          <select value={washType || String(cleaningId)} onChange={(e) => setWashType(e.target.value)}
+                            className="h-9 rounded-lg border border-gray-200 px-2 text-sm font-semibold bg-white outline-none focus:border-primary">
+                            {quotaTypes.map((t) => <option key={t.id} value={String(t.id)}>{t.label_th}</option>)}
+                          </select></label>
+                      )}
+                      <label className="grid gap-1"><span className="text-xxs font-bold text-gray-600">วันที่</span>
                         <input type="date" value={washDate} onChange={(e) => setWashDate(e.target.value)}
                           className="h-9 rounded-lg border border-gray-200 px-2 text-sm font-semibold bg-white outline-none focus:border-primary" /></label>
                       <label className="grid gap-1 flex-1 min-w-[160px]"><span className="text-xxs font-bold text-gray-600">หมายเหตุ</span>
@@ -716,7 +761,12 @@ export default function OmHousesPage() {
                       <label className="grid gap-1 w-24"><span className="text-xxs font-bold text-gray-600">จำนวน (+/−)</span>
                         <input type="number" value={grantQty} onChange={(e) => setGrantQty(e.target.value)}
                           className="h-9 rounded-lg border border-gray-200 px-2 text-sm font-semibold bg-white outline-none focus:border-primary" /></label>
-                      <label className="grid gap-1"><span className="text-xxs font-bold text-gray-600">ประเภท</span>
+                      <label className="grid gap-1"><span className="text-xxs font-bold text-gray-600">สิทธิ์ของงาน</span>
+                        <select value={grantType || String(cleaningId)} onChange={(e) => setGrantType(e.target.value)}
+                          className="h-9 rounded-lg border border-gray-200 px-2 text-sm font-semibold bg-white outline-none focus:border-primary">
+                          {types.map((t) => <option key={t.id} value={String(t.id)}>{t.label_th}</option>)}
+                        </select></label>
+                      <label className="grid gap-1"><span className="text-xxs font-bold text-gray-600">ที่มา</span>
                         <select value={grantSrc} onChange={(e) => setGrantSrc(e.target.value)}
                           className="h-9 rounded-lg border border-gray-200 px-2 text-sm font-semibold bg-white outline-none focus:border-primary">
                           <option value="renewal">ต่อสัญญา</option>
@@ -741,19 +791,23 @@ export default function OmHousesPage() {
                   <div key={`g${g.id}`} className="flex items-center gap-2.5 px-5 py-1.5 border-b border-gray-100 text-xxs text-gray-500">
                     <b className={`min-w-[38px] ${g.qty < 0 ? "text-red-600" : "text-gray-700"}`}>{g.qty > 0 ? "+" : ""}{g.qty}</b>
                     <span className="text-xxs font-bold px-2 rounded-full bg-emerald-50 text-emerald-700">{SRC[g.source] ?? g.source}</span>
+                    {g.service_type_id !== cleaningId && (
+                      <span className="text-xxs font-bold px-2 rounded-full bg-sky-50 text-sky-700">{g.service_type}</span>
+                    )}
                     <span className="flex-1 truncate">{g.reason || ""}</span>
                     <button type="button" style={{ minHeight: 0 }} disabled={busy}
                       onClick={() => delEnt("grant", g.id, `${g.qty > 0 ? "+" : ""}${g.qty} ${SRC[g.source] ?? g.source}`)}
                       className="w-6 h-6 rounded-md text-gray-400 hover:bg-red-50 hover:text-red-600 cursor-pointer shrink-0">×</button>
                   </div>
                 ))}
-                {sel.redemptions.map((r, i) => (
+                {sel.redemptions.map((r) => (
                   <div key={`r${r.id}`} className="flex items-center gap-2.5 px-5 py-1.5 border-b border-gray-100 text-xxs text-gray-500">
                     <b className="text-gray-700 min-w-[38px]">−1</b>
-                    <span className="text-xxs font-bold px-2 rounded-full bg-gray-100 text-gray-500">ล้างครั้งที่ {i + 1}</span>
+                    <span className={`text-xxs font-bold px-2 rounded-full ${r.service_type_id === cleaningId ? "bg-gray-100 text-gray-500" : "bg-sky-50 text-sky-700"}`}>
+                      {r.service_type_id === cleaningId ? `ล้างครั้งที่ ${redIndex.get(r.id)}` : `${r.service_type} ครั้งที่ ${redIndex.get(r.id)}`}</span>
                     <span className="flex-1 truncate">{r.service_date}{r.note ? ` · ${r.note}` : ""}</span>
                     <button type="button" style={{ minHeight: 0 }} disabled={busy}
-                      onClick={() => delEnt("redemption", r.id, `ล้างวันที่ ${r.service_date}`)}
+                      onClick={() => delEnt("redemption", r.id, `${r.service_type} วันที่ ${r.service_date}`)}
                       className="w-6 h-6 rounded-md text-gray-400 hover:bg-red-50 hover:text-red-600 cursor-pointer shrink-0">×</button>
                   </div>
                 ))}

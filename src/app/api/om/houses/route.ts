@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { requireAuth } from "@/lib/auth";
+import { DUE_WASH_SQL, isCleaning } from "@/lib/om/entitlement";
 import { fixDates, sql } from "@/lib/db";
 import { getOmDb } from "@/lib/om/line";
 import { HIDDEN_GROUPS, bucketSql } from "@/lib/om/house-scope";
@@ -41,7 +42,7 @@ export async function GET(req: NextRequest) {
         AND (i.rem_size_kwp IS NOT NULL OR i.inverter_brand IS NOT NULL OR i.inverter_sn IS NOT NULL
              OR i.promo_size_kw IS NOT NULL))
       AND NOT EXISTS (SELECT 1 FROM om_redemptions rd JOIN om_installations i ON i.id = rd.installation_id
-        WHERE i.house_id = h.id AND rd.status <> 'void')` :
+        WHERE i.house_id = h.id AND rd.status <> 'void' AND ${isCleaning("rd")})` :
     filter === "nowarr"  ? `AND NOT EXISTS (SELECT 1 FROM om_installations i WHERE i.house_id = h.id AND i.warranty_start IS NOT NULL)` :
     filter === "noted"   ? "AND h.note IS NOT NULL AND h.note <> ''" :
     filter === "multi"   ? `AND (SELECT COUNT(*) FROM om_installations i WHERE i.house_id = h.id) > 1` :
@@ -50,11 +51,8 @@ export async function GET(req: NextRequest) {
         WHERE hc.house_id = h.id AND hc.is_current = 1)` :
     filter === "noinv"   ? `AND NOT EXISTS (SELECT 1 FROM om_installations i WHERE i.house_id = h.id AND i.inverter_brand IS NOT NULL)` :
     filter === "nocust"  ? `AND NOT EXISTS (SELECT 1 FROM om_house_customers hc WHERE hc.house_id = h.id AND hc.is_current = 1)` :
-    // ถึงคิวล้าง = ไม่เคยล้าง หรือล้างล่าสุดเกิน 1 ปี
-    filter === "duewash" ? `AND NOT EXISTS (SELECT 1 FROM om_redemptions rd
-        JOIN om_installations i ON i.id = rd.installation_id
-        WHERE i.house_id = h.id AND rd.status <> 'void'
-          AND DATEDIFF(day, rd.service_date, SYSDATETIMEOFFSET()) <= 365)` : "";
+    // ถึงคิวล้าง = ไม่เคยล้าง หรือครบรอบแล้ว · รอบอ่านจาก om_service_type.cycle_months (ตอนนี้ 6 เดือน)
+    filter === "duewash" ? `AND ${DUE_WASH_SQL}` : "";
 
   // ★ ใช้ temp table แทน CTE ซ้อน — วัดจริง 1 ก.ย.: CTE(hit→base→page) ถูก optimizer
   //   ขยาย inline จน plan พัง 22 วินาที · #temp จบใน ~100ms เพราะ materialize ครั้งเดียว
@@ -65,7 +63,7 @@ export async function GET(req: NextRequest) {
   const bucketExpr = bucketSql({
     seg: "h.segment", vip: "h.is_vip", demo: "ISNULL(pj.is_demo, 0)",
     unit: "ISNULL(h.unit_status, N'')", pid: "h.project_id",
-    washed: "(CASE WHEN EXISTS(SELECT 1 FROM om_redemptions rd JOIN om_installations i ON i.id = rd.installation_id WHERE i.house_id = h.id AND rd.status <> 'void') THEN 1 ELSE 0 END)",
+    washed: `(CASE WHEN EXISTS(SELECT 1 FROM om_redemptions rd JOIN om_installations i ON i.id = rd.installation_id WHERE i.house_id = h.id AND rd.status <> 'void' AND ${isCleaning("rd")}) THEN 1 ELSE 0 END)`,
     rem: "(CASE WHEN EXISTS(SELECT 1 FROM om_installations i WHERE i.house_id = h.id AND i.rem_contract_id IS NOT NULL) THEN 1 ELSE 0 END)",
   });
   const hiddenList = HIDDEN_GROUPS.map((g) => `N'${g}'`).join(", ");
@@ -127,15 +125,16 @@ export async function GET(req: NextRequest) {
        WHERE i.house_id = h.id AND COALESCE(i.rem_size_kwp, i.promo_size_kw) IS NOT NULL) kwp_list,
       (SELECT MIN(CONVERT(char(10), i.warranty_start, 23)) FROM om_installations i
        WHERE i.house_id = h.id AND i.warranty_start IS NOT NULL) warranty_start,
+      -- ★ ยอดสิทธิ์/ล้างล่าสุด/จำนวนครั้ง = เฉพาะ "ล้างแผง" — สิทธิ์ชนิดอื่นแยกยอดกันคนละใบ
       (SELECT ISNULL(SUM(g.qty), 0) FROM om_entitlement_grants g JOIN om_installations i ON i.id = g.installation_id
-       WHERE i.house_id = h.id)
+       WHERE i.house_id = h.id AND ${isCleaning("g")})
       - (SELECT COUNT(*) FROM om_redemptions rd JOIN om_installations i ON i.id = rd.installation_id
-         WHERE i.house_id = h.id AND rd.status <> 'void') balance,
+         WHERE i.house_id = h.id AND rd.status <> 'void' AND ${isCleaning("rd")}) balance,
       (SELECT CONVERT(char(10), MAX(rd.service_date), 23) FROM om_redemptions rd
        JOIN om_installations i ON i.id = rd.installation_id
-       WHERE i.house_id = h.id AND rd.status <> 'void') last_wash,
+       WHERE i.house_id = h.id AND rd.status <> 'void' AND ${isCleaning("rd")}) last_wash,
       (SELECT COUNT(*) FROM om_redemptions rd JOIN om_installations i ON i.id = rd.installation_id
-       WHERE i.house_id = h.id AND rd.status <> 'void') wash_count,
+       WHERE i.house_id = h.id AND rd.status <> 'void' AND ${isCleaning("rd")}) wash_count,
       (SELECT TOP 1 c.full_name FROM om_house_customers hc JOIN om_customers c ON c.id = hc.customer_id
        WHERE hc.house_id = h.id AND hc.is_current = 1
        ORDER BY CASE hc.role WHEN 'owner' THEN 0 ELSE 1 END, hc.id) customer_name,
@@ -154,5 +153,9 @@ export async function GET(req: NextRequest) {
     DROP TABLE #hit; DROP TABLE #page;${showHidden ? "" : " DROP TABLE #scope;"}`);
 
   const rs = rows.recordsets as sql.IRecordSet<Record<string, unknown>>[];
-  return NextResponse.json({ houses: fixDates(rs[1]), total: rs[0][0].total, page, size });
+  // ★ รอบล้าง (เดือน) ส่งไปด้วย — หน้าจอใช้ตัดสินว่าจะขึ้นสีเตือน "เลยรอบ" ตอนไหน ห้าม hardcode
+  const cyc = await db.request().query(
+    `SELECT TOP 1 cycle_months FROM om_service_type WHERE code = N'cleaning'`);
+  return NextResponse.json({ houses: fixDates(rs[1]), total: rs[0][0].total, page, size,
+    cleaningCycleMonths: (cyc.recordset[0]?.cycle_months as number | null) ?? null });
 }

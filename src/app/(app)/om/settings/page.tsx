@@ -6,6 +6,11 @@
 import { useEffect, useState } from "react";
 import { apiFetch } from "@/lib/api";
 import Loading from "@/components/ui/Loading";
+import ConflictsTab from "@/components/om/ConflictsTab";
+import TeamsTab from "@/components/om/TeamsTab";
+import ProjectsTab from "@/components/om/ProjectsTab";
+import MatchQueuePanel from "@/components/om/MatchQueuePanel";
+import JobFormsTab from "@/components/om/JobFormsTab";
 
 interface Setting {
   key: string;
@@ -36,7 +41,7 @@ const UNIT: Record<string, string> = {
   "sync.rem_batch": "โครงการ/รอบ",
 };
 
-export default function OmSettingsPage() {
+function RulesTab() {
   const [items, setItems] = useState<Setting[] | null>(null);
   const [saving, setSaving] = useState<string | null>(null);
   const [err, setErr] = useState("");
@@ -68,7 +73,7 @@ export default function OmSettingsPage() {
   const groups = Object.keys(GROUP).filter((g) => items.some((x) => x.group_key === g));
 
   return (
-    <div className="p-4 md:p-6 flex flex-col gap-4">
+    <div className="flex flex-col gap-4">
       {err && <div className="border border-red-200 bg-red-50 p-4 text-sm font-semibold text-red-700 rounded-xl">{err}</div>}
 
       {pending.length > 0 && (
@@ -145,6 +150,63 @@ export default function OmSettingsPage() {
       <p className="text-xs text-gray-400 px-1">
         ค่าเหล่านี้มีผลทันทีกับการจอง/เลื่อนนัดทั้งฝั่งแอดมินและ LIFF ลูกค้า — ไม่ต้อง deploy ใหม่
       </p>
+    </div>
+  );
+}
+
+// ★ ผู้ใช้เคาะ 9 ก.ย. 69: "ไม่อยากเพิ่มเมนู" — งานจัดการที่เหลือยัดเข้าหน้านี้เป็นแท็บ
+//   กติกา (ของเดิม) · ค่าขัดกัน (414 รายการรอตัดสิน) · โครงการ (แก้ชื่อ/ดูสถานะ sync) · คิวจับคู่
+const TABS = [
+  { k: "rules", t: "กติกา" },
+  { k: "conflicts", t: "ค่าขัดกัน" },
+  { k: "projects", t: "โครงการ" },
+  { k: "queue", t: "คิวจับคู่" },
+  { k: "teams", t: "ทีมช่าง" },
+  { k: "forms", t: "ใบตรวจรับงาน" },
+] as const;
+type TabKey = (typeof TABS)[number]["k"];
+
+export default function OmSettingsPage() {
+  const [tab, setTab] = useState<TabKey>("rules");
+  const [counts, setCounts] = useState<{ conflicts: number; projects: number; queue: number } | null>(null);
+
+  useEffect(() => {
+    Promise.all([
+      apiFetch("/api/om/conflicts?size=10").then((d) => d.total ?? 0).catch(() => 0),
+      apiFetch("/api/om/projects").then((d) => d.stats?.total ?? 0).catch(() => 0),
+      apiFetch("/api/om/sweep?status=pending").then((d) => (d.queue ?? []).length).catch(() => 0),
+    ]).then(([conflicts, projects, queue]) => setCounts({ conflicts, projects, queue }));
+  }, []);
+
+  const n = (k: TabKey) =>
+    k === "conflicts" ? counts?.conflicts : k === "projects" ? counts?.projects : k === "queue" ? counts?.queue : undefined;
+
+  return (
+    <div className="p-3 md:p-5 flex flex-col gap-3">
+      <div className="rounded-xl border border-gray-200 bg-white overflow-hidden">
+        <div className="flex items-center px-4 overflow-x-auto">
+          {TABS.map((t) => (
+            <button key={t.k} type="button" style={{ minHeight: 0 }} onClick={() => setTab(t.k)}
+              className={`px-2.5 py-3 text-xs font-bold uppercase tracking-wider border-b-2 -mb-px whitespace-nowrap shrink-0 cursor-pointer ${
+                tab === t.k ? "text-active border-active" : "text-gray-500 border-transparent hover:text-gray-700"}`}>
+              {t.t}
+              {n(t.k) !== undefined && (
+                <span className={`ml-1 text-xs font-medium normal-case ${
+                  tab === t.k ? "text-active" : t.k !== "projects" && (n(t.k) ?? 0) > 0 ? "text-amber-600 font-bold" : "text-gray-400"}`}>
+                  ({(n(t.k) ?? 0).toLocaleString()})
+                </span>
+              )}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      {tab === "teams" && <TeamsTab />}
+      {tab === "rules" && <RulesTab />}
+      {tab === "conflicts" && <ConflictsTab onChanged={(left) => setCounts((c) => (c ? { ...c, conflicts: left } : c))} />}
+      {tab === "projects" && <ProjectsTab />}
+      {tab === "queue" && <MatchQueuePanel />}
+      {tab === "forms" && <JobFormsTab />}
     </div>
   );
 }

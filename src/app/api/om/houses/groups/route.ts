@@ -3,6 +3,7 @@ import { requireAuth } from "@/lib/auth";
 import { sql } from "@/lib/db";
 import { getOmDb } from "@/lib/om/line";
 import { HG, HIDDEN_GROUPS, GROUP_LABEL, bucketSql } from "@/lib/om/house-scope";
+import { CLEANING_CYCLE_SQL, isCleaning } from "@/lib/om/entitlement";
 
 // กลุ่มโครงการสำหรับลิสต์ซ้ายของหน้าบ้าน — logic การจัดกลุ่มอยู่ที่ src/lib/om/house-scope.ts
 // (ใช้ร่วมกับ /api/om/houses เพื่อให้ตัวเลขหัวกลุ่ม = จำนวนที่เปิดเข้าไปเห็นจริง)
@@ -34,14 +35,16 @@ export async function GET(req: NextRequest) {
                          OR i.promo_size_kw IS NOT NULL THEN 1 ELSE 0 END) has_spec
     INTO #inst FROM om_installations i GROUP BY i.house_id;
 
+    -- ★ นับเฉพาะสิทธิ์/ใบตัดสิทธิ์ของ "ล้างแผง" — แพ็คชนิดอื่นแยกยอดกัน ไม่ปนหัวกลุ่ม
     SELECT i.house_id, ISNULL(SUM(g.qty), 0) granted
     INTO #grant FROM om_entitlement_grants g
-    JOIN om_installations i ON i.id = g.installation_id GROUP BY i.house_id;
+    JOIN om_installations i ON i.id = g.installation_id
+    WHERE ${isCleaning("g")} GROUP BY i.house_id;
 
     SELECT i.house_id, COUNT(*) used, MAX(rd.service_date) last_wash
     INTO #red FROM om_redemptions rd
     JOIN om_installations i ON i.id = rd.installation_id
-    WHERE rd.status <> 'void' GROUP BY i.house_id;
+    WHERE rd.status <> 'void' AND ${isCleaning("rd")} GROUP BY i.house_id;
 
     SELECT hc.house_id, MAX(CASE WHEN p.phone IS NOT NULL THEN 1 ELSE 0 END) has_phone, COUNT(DISTINCT hc.customer_id) n_cust
     INTO #cust FROM om_house_customers hc
@@ -70,7 +73,7 @@ export async function GET(req: NextRequest) {
         -- รอตรวจ: ไม่มีสเปกระบบ และไม่เคยล้าง — จับไม่ได้ว่ามีโซลาร์จริงไหม
         CASE WHEN ISNULL(ins.has_spec, 0) = 0 AND rd.last_wash IS NULL THEN 1 ELSE 0 END nospec,
         CASE WHEN rd.last_wash IS NULL
-               OR DATEDIFF(day, rd.last_wash, SYSDATETIMEOFFSET()) > 365 THEN 1 ELSE 0 END duewash,
+               OR DATEADD(month, ${CLEANING_CYCLE_SQL}, rd.last_wash) <= SYSDATETIMEOFFSET() THEN 1 ELSE 0 END duewash,
         ISNULL(gr.granted, 0) - ISNULL(rd.used, 0) bal
       FROM om_houses h
       LEFT JOIN om_projects pj ON pj.project_id = h.project_id

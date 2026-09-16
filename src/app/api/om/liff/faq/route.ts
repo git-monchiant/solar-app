@@ -9,12 +9,13 @@ export async function GET(_req: NextRequest) {
     db.request().query(
       `SELECT f.id, f.category, f.question, f.answer
        FROM om_faq f
-       LEFT JOIN om_faq_categories c ON c.name = f.category
        WHERE f.is_active = 1
-       ORDER BY ISNULL(c.sort_order, 999999), f.sort_order, f.id`),
+       ORDER BY f.category_sort, f.sort_order, f.id`),
     // ชิปกรองเรียงตามลำดับที่แอดมินตั้งไว้ (ไม่ใช่ลำดับที่บังเอิญเจอใน FAQ)
     db.request().query(
-      `SELECT name FROM om_faq_categories WHERE is_active = 1 ORDER BY sort_order, id`),
+      `SELECT category name, MIN(category_sort) s FROM om_faq
+       WHERE is_active = 1 AND category IS NOT NULL AND category <> N''
+       GROUP BY category ORDER BY s, category`),
   ]);
   return NextResponse.json(
     { faqs: fixDates(r.recordset), categories: c.recordset.map((x) => x.name as string) },
