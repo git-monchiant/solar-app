@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { getDb, sql, fixDates } from "@/lib/db";
 import { geocodeThaiPlace } from "@/lib/utils/geocode";
 import { requireAuth } from "@/lib/auth";
+import { gzipJson } from "@/lib/gzip-json";
 import { refreshJourneySafe, flipJourneyDatesIfDue } from "@/lib/journey";
 import { ensureFirstContactSla, syncOperationalSlas } from "@/lib/sla-service";
 import { followUpOverdueSql, LAST_FOLLOW_UP_APPLY } from "@/lib/lead-followup-sql";
@@ -97,7 +98,7 @@ export async function GET(req: NextRequest) {
       LEFT JOIN users sla_owner ON sla.owner_user_id = sla_owner.id${LATE_SLA_STAGES_APPLY}${SLA_DONE_APPLY}${LAST_FOLLOW_UP_APPLY}
       ORDER BY l.created_at DESC
     `);
-    return NextResponse.json(fixDates(result.recordset));
+    return gzipJson(req, fixDates(result.recordset));
   } catch (error) {
     console.error("GET /api/leads error:", error);
     return NextResponse.json({ error: "Failed to fetch leads" }, { status: 500 });

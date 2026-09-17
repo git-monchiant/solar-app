@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { getDb, fixDates } from "@/lib/db";
 import { flipJourneyDatesIfDue } from "@/lib/journey";
 import { requireAuth } from "@/lib/auth";
+import { gzipJson } from "@/lib/gzip-json";
 import { followUpOverdueSql } from "@/lib/lead-followup-sql";
 import { LATE_SLA_STAGES_APPLY, LATE_SLA_STAGES_COLUMN, SLA_DONE_APPLY, SLA_DONE_COLUMNS, slaLiveStatusSql } from "@/lib/lead-sla-sql";
 
@@ -254,7 +255,7 @@ export async function GET(req: NextRequest) {
       `),
     ]);
 
-    return NextResponse.json({
+    return gzipJson(req, {
       newLeads: fix(newLeads.recordset),
       overduePreSurvey: fix(overduePreSurvey.recordset),
       followUpToday: fix(followUpToday.recordset),
