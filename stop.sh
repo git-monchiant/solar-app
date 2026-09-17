@@ -3,12 +3,20 @@
 
 set -eu
 
-PORT=3010
+PORT="${PORT:-3010}"
 NGROK_DOMAIN="senasolar.ngrok.app"
+
+# supervisor ต้องตายก่อน ไม่งั้นมันปลุก dev กลับมาใน 2 วิ
+echo "▶ kill dev supervisor"
+if PIDS=$(pgrep -f "solar-dev-supervisor" 2>/dev/null); then
+  kill ${PIDS} 2>/dev/null && echo "  killed ${PIDS}"
+else
+  echo "  no supervisor running"
+fi
 
 echo "▶ kill dev on :${PORT}"
 if PID=$(lsof -ti ":${PORT}" 2>/dev/null); then
-  kill "${PID}" && echo "  killed ${PID}"
+  kill ${PID} && echo "  killed ${PID}"
 else
   echo "  nothing on :${PORT}"
 fi
