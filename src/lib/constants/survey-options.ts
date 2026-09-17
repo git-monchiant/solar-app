@@ -73,9 +73,12 @@ export type BatteryBrand = (typeof BATTERY_BRANDS)[number];
 export const BATTERY_KWH_SIZES = [4.8, 7, 9.6, 14] as const;
 export type BatteryKwhSize = (typeof BATTERY_KWH_SIZES)[number];
 
-// Panel brand catalogue — same convention. Today we only stock JINKO but
-// keeping it in a list lets callers render <option> arrays uniformly.
-export const PANEL_BRANDS = ["JINKO"] as const;
+// Panel brand catalogue — ตาข่ายรองรับเท่านั้น แหล่งจริงคือตาราง packages ที่ทีมขาย
+// ดูแลอยู่ (ดู lib/equipment-options.ts) รายชื่อตรงนี้เหลือไว้เผื่อ API ล่มหรือยังโหลด
+// ไม่เสร็จ จึงใส่เฉพาะยี่ห้อที่ติดตั้งจริง — JINKO (33 ลีด) และ TRINA SOLAR (2 ลีด)
+// เคยมี Longi/Canadian Solar ที่ลอกมาจาก seed sql/024 ซึ่งไม่เคยขายเลยสักรายการ
+// ค่าที่ไม่อยู่ในลิสต์ยังแสดงได้ปกติ Dropdown ไม่กลืนทิ้ง
+export const PANEL_BRANDS = ["JINKO", "TRINA SOLAR"] as const;
 export type PanelBrand = (typeof PANEL_BRANDS)[number];
 
 export const WIFI_LABEL: Record<string, string> = {

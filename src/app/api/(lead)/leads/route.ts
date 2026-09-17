@@ -3,6 +3,9 @@ import { getDb, sql, fixDates } from "@/lib/db";
 import { geocodeThaiPlace } from "@/lib/utils/geocode";
 import { requireAuth } from "@/lib/auth";
 import { refreshJourneySafe, flipJourneyDatesIfDue } from "@/lib/journey";
+import { ensureFirstContactSla, syncOperationalSlas } from "@/lib/sla-service";
+import { followUpOverdueSql, LAST_FOLLOW_UP_APPLY } from "@/lib/lead-followup-sql";
+import { LATE_SLA_STAGES_APPLY, LATE_SLA_STAGES_COLUMN, SLA_DONE_APPLY, SLA_DONE_COLUMNS, slaLiveStatusSql } from "@/lib/lead-sla-sql";
 
 async function maybeGeocodeProject(projectId: number) {
   const db = await getDb();
@@ -41,6 +44,11 @@ export async function GET(req: NextRequest) {
              l.project_alias, p.district, p.province,
              pk.name as package_name, pk.price as package_price,
              u.full_name as assigned_name, u.username as assigned_username,
+             sla.policy_code as sla_policy_code, sla.task_name as sla_task_name,
+             sla.status as sla_status, sla.started_at as sla_started_at, sla.target_at as sla_target_at, sla.due_at as sla_due_at,
+             sla.owner_role as sla_owner_role, sla.owner_user_id as sla_owner_user_id, sla_owner.full_name as sla_owner_name,
+             ${LATE_SLA_STAGES_COLUMN},
+             ${SLA_DONE_COLUMNS},
              (SELECT TOP 1 note FROM lead_activities WHERE lead_id = l.id AND note IS NOT NULL ORDER BY created_at DESC) as last_activity_note,
              (SELECT TOP 1 created_at FROM lead_activities WHERE lead_id = l.id AND activity_type IN ('call','visit','line','other','follow_up','loan_followup') ORDER BY created_at DESC) as last_activity_date,
              (SELECT TOP 1 title FROM lead_activities WHERE lead_id = l.id AND activity_type IN ('call','visit','line','other','follow_up','loan_followup') ORDER BY created_at DESC) as last_activity_title,
@@ -71,11 +79,22 @@ export async function GET(req: NextRequest) {
                WHEN l.payment_reject_notes IS NULL THEN 0
                WHEN LTRIM(RTRIM(l.payment_reject_notes)) IN ('', '{}', '[]') THEN 0
                ELSE 1
-             END as has_payment_reject
+             END as has_payment_reject,
+             -- กติกา "เลยนัดแล้ว" ก้อนเดียวกับ /api/today — ก่อนหน้านี้ route นี้ไม่ส่งมา
+             -- LeadCard เลยตกไปใช้สูตรสำรองฝั่ง browser ที่เทียบกับเที่ยงวัน
+             ${followUpOverdueSql("fu.last_followup_date")} as is_followup_overdue
       FROM leads l
       LEFT JOIN projects p ON l.project_id = p.id
       LEFT JOIN packages pk ON l.interested_package_id = pk.id
       LEFT JOIN users u ON l.assigned_user_id = u.id
+      OUTER APPLY (
+        SELECT TOP 1 policy_code, task_name, ${slaLiveStatusSql("si")} AS status, started_at, target_at, due_at, owner_role, owner_user_id
+        FROM lead_sla_instances si
+        WHERE si.lead_id = l.id AND si.status IN ('active','warning','critical','breached')
+          AND si.superseded_at IS NULL
+        ORDER BY si.due_at ASC
+      ) sla
+      LEFT JOIN users sla_owner ON sla.owner_user_id = sla_owner.id${LATE_SLA_STAGES_APPLY}${SLA_DONE_APPLY}${LAST_FOLLOW_UP_APPLY}
       ORDER BY l.created_at DESC
     `);
     return NextResponse.json(fixDates(result.recordset));
@@ -198,6 +217,9 @@ export async function POST(request: NextRequest) {
       .input("note", sql.NVarChar(sql.MAX), body.note || body.requirement || null)
       .input("created_by", sql.Int, gate.userId)
       .query(`INSERT INTO lead_activities (lead_id, activity_type, title, note, created_by) VALUES (@lead_id, 'lead_created', 'Lead created (' + @source + ')', @note, @created_by)`);
+
+    await ensureFirstContactSla(db, leadId);
+    await syncOperationalSlas(db, leadId, gate.userId);
 
     // lead_data row — populate any of the 9 profile fields that came in on
     // the create payload. Always insert a row even when all 9 are null so

@@ -1,5 +1,6 @@
 import sql from "mssql";
 import type { ConnectionPool } from "mssql";
+import { installmentAmount, netTotalOf, parseInstallmentRows } from "@/lib/installments";
 
 // Re-derive order_before_paid / order_after_paid from the lead's
 // order_installments JSON + confirmed payments. Called after a per-installment
@@ -55,4 +56,31 @@ export async function syncOrderPaidFlags(db: ConnectionPool, leadId: number): Pr
     .input("before_paid", sql.Bit, beforeAllPaid ? 1 : 0)
     .input("after_paid", sql.Bit, afterAllPaid ? 1 : 0)
     .query(`UPDATE leads SET order_before_paid = @before_paid, order_after_paid = @after_paid, updated_at = GETDATE() WHERE id = @id`);
+}
+
+/** ยอดที่ "ควรเก็บ" ของงวด order_installment_<idx> — เรียกจากชุดคำนวณกลาง
+ *  (@/lib/installments) ตัวเดียวกับที่หน้าจอและเอกสารใช้ ห้ามคำนวณเองซ้ำที่นี่
+ *  มีไว้ตรวจยอดที่ client ส่งมาก่อนบันทึก · คืน null เมื่อไม่ใช่ slip_field แบบงวด
+ *  หรือข้อมูลไม่พอให้คำนวณ
+ */
+export async function plannedInstallmentAmount(
+  db: ConnectionPool,
+  leadId: number,
+  slipField: string,
+): Promise<number | null> {
+  const m = /^order_installment_(\d+)$/.exec(slipField);
+  if (!m) return null;
+  const idx = parseInt(m[1]);
+  const r = await db.request().input("id", sql.Int, leadId).query(
+    `SELECT order_total, order_discount_amount, pre_total_price, order_installments
+       FROM leads WHERE id = @id`,
+  );
+  const row = r.recordset[0];
+  if (!row) return null;
+
+  const rows = parseInstallmentRows(row.order_installments);
+  if (!rows[idx]) return null;
+  const netTotal = netTotalOf(row);
+  if (netTotal <= 0) return null;
+  return installmentAmount(rows, idx, netTotal);
 }

@@ -33,7 +33,7 @@ export async function POST(req: NextRequest) {
       .input("title", sql.NVarChar(200), String(body.title))
       .input("block_date", sql.Date, body.block_date)
       .input("end_date", sql.Date, endDate)
-      .input("time_slot", sql.NVarChar(100), body.time_slot || null)
+      .input("time_slot", sql.NVarChar(200), body.time_slot || null)
       .input("note", sql.NVarChar(sql.MAX), body.note || null)
       .input("zone", sql.NVarChar(50), body.zone || null)
       .input("team", sql.NVarChar(20), team)

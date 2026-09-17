@@ -132,9 +132,34 @@ export default function CustomerDashboardPage() {
         {!data && !error && <div className="h-64 grid place-items-center"><span className="w-9 h-9 border-3 border-gray-200 border-t-primary rounded-full animate-spin" /></div>}
 
         {data && <>
+          <ReportGroup title="Who They Are" subtitle="ข้อมูลลูกค้า สำหรับแบ่งกลุ่มและออกแบบข้อเสนอ">
+          {/* All three §1 answers live in one card: they come from one section
+              of the questionnaire and share a respondent base, so splitting
+              them meant two cards both badged the same with the same "ตอบ n คน".
+              One encoding for all three — they are the same kind of thing (a
+              count per category), and three different chart types in one card
+              made the eye re-learn the card twice.
+              อาชีพ is nominal so it sorts by size; อายุ and รายได้ are scales
+              and keep their own order with empty buckets left visible. */}
+          <SectionCard id="insight-1" number={1} title="Customer Demographics" subtitle="ข้อมูลลูกค้า · อาชีพ อายุ และรายได้ครัวเรือน" answered={Math.max(data.sections.demographics.occupation.answered, data.sections.demographics.ageRange.answered, data.sections.demographics.householdIncome.answered)} className="">
+            <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-x-6 gap-y-5">
+              <div>
+                <ChartTitle title="อาชีพ" answered={data.sections.demographics.occupation.answered} />
+                <HorizontalBars series={data.sections.demographics.occupation} color="bg-fuchsia-500" sortByCount mutedValues={["other"]} onClick={(item) => openDrill(`อาชีพ · ${item.label}`, "occupation", item.value)} />
+              </div>
+              <div>
+                <ChartTitle title="อายุ" answered={data.sections.demographics.ageRange.answered} />
+                <HorizontalBars series={data.sections.demographics.ageRange} color="bg-violet-500" showZero onClick={(item) => openDrill(`อายุ · ${item.label}`, "age_range", item.value)} />
+              </div>
+              <div>
+                <ChartTitle title="รายได้ครัวเรือน/เดือน" answered={data.sections.demographics.householdIncome.answered} />
+                <HorizontalBars series={data.sections.demographics.householdIncome} color="bg-lime-500" showZero mutedValues={["no_answer"]} onClick={(item) => openDrill(`รายได้ครัวเรือน · ${item.label}`, "household_income", item.value)} />
+              </div>
+            </div>
+          </SectionCard>
           <ReportGroup title="Customer & Energy" subtitle="ลูกค้าเป็นใคร และใช้พลังงานอย่างไรในปัจจุบัน">
           <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4 items-stretch">
-            <SectionCard id="insight-1" number={1} title="Customer Profile" subtitle="ข้อมูลบ้านและผู้อยู่อาศัย" answered={sectionMax(data.sections.customerProfile.residenceType, data.sections.customerProfile.houseAge, data.sections.customerProfile.roofShape)} className="">
+            <SectionCard id="insight-2" number={2} title="Customer Profile" subtitle="ข้อมูลบ้านและผู้อยู่อาศัย" answered={sectionMax(data.sections.customerProfile.residenceType, data.sections.customerProfile.houseAge, data.sections.customerProfile.roofShape)} className="">
               <VerticalBars series={data.sections.customerProfile.residenceType} color="bg-orange-500" onClick={(item) => openDrill(item.label, "residence_type", item.value)} />
               <div className="space-y-3">
               <SeriesChips title="อายุบ้าน" series={data.sections.customerProfile.houseAge} onClick={(item) => openDrill(`อายุบ้าน · ${item.label}`, "house_age", item.value)} />
@@ -148,7 +173,7 @@ export default function CustomerDashboardPage() {
               </div>
             </SectionCard>
 
-            <SectionCard id="insight-2" number={2} title="Energy Profile" subtitle="การใช้พลังงานปัจจุบัน" answered={data.sections.energyProfile.monthlyBill.answered} className="">
+            <SectionCard id="insight-3" number={3} title="Energy Profile" subtitle="การใช้พลังงานปัจจุบัน" answered={data.sections.energyProfile.monthlyBill.answered} className="">
               <HorizontalBars series={data.sections.energyProfile.monthlyBill} color="bg-emerald-500" onClick={(item) => openDrill(`ค่าไฟ · ${item.label}`, "monthly_bill", item.value)} />
               <div className="grid grid-cols-2 gap-2"><MiniStat label="ค่าไฟเฉลี่ย" value={data.sections.energyProfile.monthlyBill.average ? `฿${fmt(data.sections.energyProfile.monthlyBill.average)}` : "—"} /><MiniStat label="ค่าไฟสูงสุดเฉลี่ย" value={data.sections.energyProfile.monthlyBillMaxAverage ? `฿${fmt(data.sections.energyProfile.monthlyBillMaxAverage)}` : "—"} /></div>
               <div className="space-y-3">
@@ -158,7 +183,7 @@ export default function CustomerDashboardPage() {
               </div>
             </SectionCard>
 
-            <SectionCard id="insight-3" number={3} title="Lifestyle Assessment" subtitle="รูปแบบการใช้ชีวิต" answered={Math.max(data.sections.lifestyle.homeAtDaytime.answered, data.sections.lifestyle.workAtHome.answered, data.sections.lifestyle.acAnswered)} className="">
+            <SectionCard id="insight-4" number={4} title="Lifestyle Assessment" subtitle="รูปแบบการใช้ชีวิต" answered={Math.max(data.sections.lifestyle.homeAtDaytime.answered, data.sections.lifestyle.workAtHome.answered, data.sections.lifestyle.acAnswered)} className="">
               <div className="grid grid-cols-2 gap-2">
                 <YesStat label="อยู่บ้านช่วงกลางวัน" series={data.sections.lifestyle.homeAtDaytime} onClick={() => openDrill("อยู่บ้านช่วงกลางวัน", "home_at_daytime", "yes")} />
                 <YesStat label="ทำงาน/เปิดธุรกิจที่บ้าน" series={data.sections.lifestyle.workAtHome} onClick={() => openDrill("ทำงาน/เปิดธุรกิจที่บ้าน", "work_at_home", "yes")} />
@@ -178,19 +203,19 @@ export default function CustomerDashboardPage() {
 
           <ReportGroup title="Future & Risk" subtitle="แผนในอนาคต ความมั่นคงด้านพลังงาน และความเสี่ยงของบ้าน">
           <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4 items-stretch">
-            <SectionCard id="insight-4" number={4} title="Future Home Assessment" subtitle="แผนบ้านใน 5 ปี" answered={Math.max(...data.sections.futureHome.fields.map(f => f.series.answered), 0)} className="">
+            <SectionCard id="insight-5" number={5} title="Future Home Assessment" subtitle="แผนบ้านใน 5 ปี" answered={Math.max(...data.sections.futureHome.fields.map(f => f.series.answered), 0)} className="">
               <div className="space-y-2">{data.sections.futureHome.fields.map(field => <StackedSeries key={field.key} label={field.label} series={field.series} onClick={(item) => openDrill(`${field.label} · ${item.label}`, field.key, item.value)} />)}</div>
               <StackLegend />
             </SectionCard>
 
-            <SectionCard id="insight-5" number={5} title="Energy Security Assessment" subtitle="ความมั่นคงด้านพลังงาน" answered={Math.max(data.sections.energySecurity.outagePriorities.answered, data.sections.energySecurity.billRiseAction.answered)} className="">
+            <SectionCard id="insight-6" number={6} title="Energy Security Assessment" subtitle="ความมั่นคงด้านพลังงาน" answered={Math.max(data.sections.energySecurity.outagePriorities.answered, data.sections.energySecurity.billRiseAction.answered)} className="">
               <HorizontalBars series={data.sections.energySecurity.outagePriorities} color="bg-amber-400" multi onClick={(item) => openDrill(`ไฟดับ 6 ชั่วโมง · ${item.label}`, "outage_priorities", item.value)} />
               <div>
               <SeriesChips title="หากค่าไฟเพิ่มขึ้นอีก 30%" series={data.sections.energySecurity.billRiseAction} onClick={(item) => openDrill(`ค่าไฟเพิ่ม 30% · ${item.label}`, "bill_rise_action", item.value)} />
               </div>
             </SectionCard>
 
-            <SectionCard id="insight-6" number={6} title="Home Health Check" subtitle="สุขภาพบ้าน" answered={Math.max(...data.sections.homeHealth.fields.map(f => f.series.answered), 0)} className="">
+            <SectionCard id="insight-7" number={7} title="Home Health Check" subtitle="สุขภาพบ้าน" answered={Math.max(...data.sections.homeHealth.fields.map(f => f.series.answered), 0)} className="">
               <div className="grid grid-cols-2 gap-2">{data.sections.homeHealth.fields.map(field => {
                 const yes = field.series.items.find(i => i.value === "yes")?.count || 0;
                 return <MiniStat key={field.key} label={field.label} value={field.series.answered < 30 ? `${fmt(yes)} / ${fmt(field.series.answered)}` : `${pct(yes, field.series.answered)}%`} detail={field.series.answered < 30 ? `${pct(yes, field.series.answered)}% · ข้อมูลยังน้อย` : `${fmt(yes)} / ${fmt(field.series.answered)} คน`} danger={yes > 0} onClick={() => openDrill(field.label, field.key, "yes")} />;
@@ -202,17 +227,18 @@ export default function CustomerDashboardPage() {
 
           <ReportGroup title="Readiness & Decision" subtitle="ความพร้อมของบ้านและปัจจัยที่มีผลต่อการตัดสินใจ">
           <div className="grid grid-cols-1 xl:grid-cols-2 gap-4 items-stretch">
-            <SectionCard id="insight-7" number={7} title="Beyond Question" subtitle="ความพร้อมด้านพลังงานในอนาคต" answered={Math.max(...data.sections.beyond.fields.map(f => f.series.answered), 0)} className="">
+            <SectionCard id="insight-8" number={8} title="Beyond Question" subtitle="ความพร้อมด้านพลังงานในอนาคต" answered={Math.max(...data.sections.beyond.fields.map(f => f.series.answered), 0)} className="">
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">{data.sections.beyond.fields.map(field => <div key={field.key} className="rounded-lg border border-gray-200 bg-gray-50 p-3"><div className="text-xs font-semibold text-gray-600 mb-2">{field.label}</div><SeriesDistribution series={field.series} onClick={(item) => openDrill(`${field.label} · ${item.label}`, field.key, item.value)} /></div>)}</div>
             </SectionCard>
 
-            <SectionCard id="insight-8" number={8} title="Decision Making Factor" subtitle="การตัดสินใจติดตั้ง" answered={Math.max(data.sections.decision.timeline.answered, ...data.sections.decision.factors.map(f => f.answered), 0)} className="">
+            <SectionCard id="insight-9" number={9} title="Decision Making Factor" subtitle="การตัดสินใจติดตั้ง" answered={Math.max(data.sections.decision.timeline.answered, ...data.sections.decision.factors.map(f => f.answered), 0)} className="">
               <SeriesChips title="ระยะเวลาในการตัดสินใจติดตั้ง" series={data.sections.decision.timeline} onClick={(item) => openDrill(`ระยะเวลาตัดสินใจ · ${item.label}`, "decision_timeline", item.value)} />
               <div>
               <DecisionMatrix factors={data.sections.decision.factors} onClick={(key, label, score) => openDrill(`${label}${score ? ` · ${score}/5` : ""}`, "decision_factor", key, score)} />
               </div>
             </SectionCard>
           </div>
+          </ReportGroup>
           </ReportGroup>
           <div className="text-xxs text-gray-400">อัปเดต Customer Info ล่าสุด {formatThaiDate(data.meta.latestUpdatedAt, { time: true })} · NULL ถือว่ายังไม่ตอบและไม่นับเป็น “ไม่”</div>
         </>}
@@ -253,7 +279,10 @@ function FilterBanner({ from, to }: { from: string; to: string }) {
   return <div className="rounded-lg border border-gray-200 bg-gray-50 px-3 py-2 text-xs text-gray-700 flex items-center gap-2 flex-wrap"><span className="font-semibold text-gray-500 uppercase tracking-wider">Filter</span><span className="font-mono">{thai(from)} – {thai(to)}</span></div>;
 }
 
-const SECTION_TONES: Record<number, string> = { 1: "bg-orange-50 text-orange-600", 2: "bg-emerald-50 text-emerald-600", 3: "bg-sky-50 text-sky-600", 4: "bg-violet-50 text-violet-600", 5: "bg-amber-50 text-amber-600", 6: "bg-rose-50 text-rose-600", 7: "bg-teal-50 text-teal-600", 8: "bg-indigo-50 text-indigo-600" };
+// Tones follow the SECTION, not the slot — each card kept the colour it had
+// before demographics moved to the front, so anyone used to "the teal one" or
+// "the rose one" still finds the same card.
+const SECTION_TONES: Record<number, string> = { 1: "bg-fuchsia-50 text-fuchsia-600", 2: "bg-orange-50 text-orange-600", 3: "bg-emerald-50 text-emerald-600", 4: "bg-sky-50 text-sky-600", 5: "bg-violet-50 text-violet-600", 6: "bg-amber-50 text-amber-600", 7: "bg-rose-50 text-rose-600", 8: "bg-teal-50 text-teal-600", 9: "bg-indigo-50 text-indigo-600" };
 function SectionCard({ id, number, title, subtitle, answered, className, children }: { id: string; number: number; title: string; subtitle: string; answered: number; className: string; children: React.ReactNode }) {
   return <section id={id} className={`scroll-mt-24 rounded-2xl bg-white border border-gray-200 p-5 flex flex-col gap-4 shadow-sm hover:shadow-md transition-shadow ${className}`}><div className="flex items-start justify-between gap-3"><div className="flex items-start gap-3"><span className={`w-8 h-8 rounded-xl grid place-items-center text-sm font-bold font-mono shrink-0 ${SECTION_TONES[number]}`}>{number}</span><div><div className="text-sm font-bold text-gray-800 tracking-tight">{title}</div><div className="text-xs text-gray-400 mt-0.5">{subtitle}</div></div></div><div className="flex flex-col items-end gap-1 shrink-0"><span className="text-xxs text-gray-400">ตอบ {fmt(answered)} คน</span>{answered > 0 && answered < 30 && <span className="rounded-full bg-amber-50 px-2 py-0.5 text-xxs font-semibold text-amber-600">ข้อมูลยังน้อย</span>}</div></div>{children}</section>;
 }
@@ -265,9 +294,46 @@ function VerticalBars({ series, color, onClick }: { series: CountSeries; color: 
   return <div><div className="flex items-end gap-1.5 h-40 border-b border-gray-200">{items.map(item => <button type="button" key={item.value} onClick={() => onClick(item)} className="cursor-pointer flex-1 min-w-0 h-full flex flex-col justify-end hover:bg-gray-50 rounded-t"><span className="text-xxs font-bold font-mono text-gray-700 mb-1">{item.count}</span><span className={`${color} w-full rounded-t-sm`} style={{ height: `${Math.max(3, (item.count / max) * 115)}px` }} /></button>)}</div><div className="flex gap-1.5 mt-1">{items.map(item => <div key={item.value} className="flex-1 min-w-0 text-center text-xxs text-gray-500 truncate" title={item.label}>{item.label}</div>)}</div></div>;
 }
 
-function HorizontalBars({ series, color, onClick, multi = false }: { series: { answered: number; items: CountItem[] }; color: string; onClick: (item: CountItem) => void; multi?: boolean }) {
-  const items = series.items.filter(i => i.count > 0); if (!items.length) return <Empty />; const max = Math.max(...items.map(i => i.count), 1);
-  return <div><div className="space-y-2">{items.map(item => <button type="button" key={item.value} onClick={() => onClick(item)} className="cursor-pointer w-full grid grid-cols-[minmax(90px,1.3fr)_3fr_42px] gap-2 items-center text-left hover:bg-gray-50 rounded px-1 py-0.5"><span className="text-xs text-gray-600 truncate" title={item.label}>{item.label}</span><span className="h-3.5 bg-gray-100 rounded-sm overflow-hidden"><span className={`block h-full ${color}`} style={{ width: `${(item.count / max) * 100}%` }} /></span><span className="text-xs font-bold font-mono text-right">{item.count}</span></button>)}</div>{multi && <div className="text-xxs text-gray-400 mt-2">เลือกได้มากกว่า 1 ข้อ · ฐานผู้ตอบ {fmt(series.answered)} คน</div>}</div>;
+// `mutedValues` greys out rows that are answers but not points on the scale —
+// "ไม่สะดวกให้ข้อมูล" is a refusal, not an income band. They stay in the list
+// (and in `max`, so every bar keeps one honest scale) but read as set apart.
+// Three knobs, each there to keep a distribution honest rather than pretty:
+//
+// `sortByCount` — only for NOMINAL fields (อาชีพ). Ordinal scales (อายุ, รายได้)
+//   must keep the series order or the shape of the distribution is unreadable,
+//   so it stays off by default and every existing caller is unaffected.
+// `showZero`    — keeps empty buckets visible. On an ordinal scale a silently
+//   dropped bucket reads as "no such range" instead of "nobody here".
+// `mutedValues` — rows that are answers but not points on the scale ("อื่นๆ",
+//   "ไม่สะดวกให้ข้อมูล"): greyed AND always sunk to the bottom, so a catch-all
+//   can never headline the chart just by being the biggest pile.
+function HorizontalBars({ series, color, onClick, multi = false, mutedValues, sortByCount = false, showZero = false }: { series: { answered: number; items: CountItem[] }; color: string; onClick: (item: CountItem) => void; multi?: boolean; mutedValues?: readonly string[]; sortByCount?: boolean; showZero?: boolean }) {
+  const muted = new Set(mutedValues || []);
+  const shown = series.items.filter(i => showZero || i.count > 0);
+  if (!shown.length || !series.answered) return <Empty />;
+  const main = shown.filter(i => !muted.has(i.value));
+  const rest = shown.filter(i => muted.has(i.value));
+  const items = [...(sortByCount ? [...main].sort((a, b) => b.count - a.count) : main), ...rest];
+  const max = Math.max(...items.map(i => i.count), 1);
+  return <div>
+    <div className="space-y-2">{items.map(item => {
+      const isMuted = muted.has(item.value);
+      const isEmpty = item.count === 0;
+      return <button type="button" key={item.value} onClick={() => onClick(item)} disabled={isEmpty}
+        className={`w-full grid grid-cols-[minmax(90px,1.3fr)_3fr_42px] gap-2 items-center text-left rounded px-1 py-0.5 ${isEmpty ? "cursor-default" : "cursor-pointer hover:bg-gray-50"}`}>
+        <span className={`text-xs truncate ${isEmpty ? "text-gray-300" : isMuted ? "text-gray-400 italic" : "text-gray-600"}`} title={item.label}>{item.label}</span>
+        <span className="h-3.5 bg-gray-100 rounded-sm overflow-hidden"><span className={`block h-full ${isMuted ? "bg-gray-300" : color}`} style={{ width: `${(item.count / max) * 100}%` }} /></span>
+        <span className={`text-xs font-bold font-mono text-right ${isEmpty ? "text-gray-300" : isMuted ? "text-gray-400" : ""}`}>{item.count}</span>
+      </button>;
+    })}</div>
+    {multi && <div className="text-xxs text-gray-400 mt-2">เลือกได้มากกว่า 1 ข้อ · ฐานผู้ตอบ {fmt(series.answered)} คน</div>}
+  </div>;
+}
+
+// Same heading SeriesChips renders inline, pulled out so a bare VerticalBars /
+// HorizontalBars can sit beside chips in one card and still read as a sibling.
+function ChartTitle({ title, answered }: { title: string; answered: number }) {
+  return <div className="text-xxs font-semibold uppercase tracking-wider text-gray-400 mb-2">{title} <span className="normal-case font-normal text-gray-300">(n={answered})</span></div>;
 }
 
 function SeriesChips({ title, series, onClick }: { title: string; series: CountSeries; onClick: (item: CountItem) => void }) {

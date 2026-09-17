@@ -314,7 +314,7 @@ export default function EventCalendarList({ monthsBack, monthsForward, days, zon
                             // Bar colour by team (survey vs install), block → gray.
                             // Replaces the old per-zone tint so the calendar reads
                             // as "which team owns this slot".
-                            // สีต้องตรง legend ในหน้า calendar: Survey = ม่วง (--active), Solar = ส้ม
+                            // สีต้องตรง legend ในหน้า calendar: สำรวจ = ม่วง · ติดตั้ง = ส้ม · ติดตาม = น้ำเงิน
                             const barColor = isBlock
                               ? null
                               : j.event_type === "install" ? "#f97316"

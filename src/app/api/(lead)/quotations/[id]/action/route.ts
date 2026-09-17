@@ -13,6 +13,7 @@ import {
   notifyQuotationRole,
   notifyQuotationUser,
 } from "@/lib/quotation-notifications";
+import { syncOperationalSlas } from "@/lib/sla-service";
 
 const SOLAR_PENDING = "pending_solar_sup";
 const SALES_PENDING = "pending_sales_sup";
@@ -625,6 +626,7 @@ export async function POST(
 
     await tx.commit();
     await refreshJourneySafe(db, quotation.lead_id);
+    await syncOperationalSlas(db, quotation.lead_id, gate.userId);
     return NextResponse.json({
       ok: true,
       status: next,

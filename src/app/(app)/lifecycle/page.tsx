@@ -17,6 +17,9 @@ import Loading from "@/components/ui/Loading";
 interface Row {
   id: number;
   house_number: string | null;
+  // เก็บแบบไม่มีคำนำหน้า ("ลำลูกกา" / "กรุงเทพมหานคร") — ดู src/lib/thai-location.ts
+  district: string | null;
+  province: string | null;
   full_name: string;
   source: string | null;
   status: string;
@@ -302,7 +305,7 @@ export default function LifecyclePage() {
     // (See dataCells for the exact mapping.) Group total = 2 quote/payment
     // workflow dates + 11 money + 1 followup date = 14.
     const groupSpec: { title: string; cols: number }[] = [
-      { title: "ลีด", cols: showSource ? 10 : 9 }, // + ชื่อ Sales + ที่มา (ตาม Role) + Grade + กลุ่ม
+      { title: "ลีด", cols: showSource ? 12 : 11 }, // + เขต/อำเภอ + จังหวัด + ชื่อ Sales + ที่มา (ตาม Role) + Grade + กลุ่ม
       { title: "การติดต่อ", cols: 6 },
       { title: "Pre-Survey / Survey", cols: 3 },
       // Quote/Order = 2 workflow dates + 11 money + 5 payment dates (one
@@ -317,7 +320,7 @@ export default function LifecyclePage() {
       for (let i = 1; i < g.cols; i++) groupRow.push("");
     }
     const colRow = [
-      "#", "บ้านเลขที่", "ชื่อ",
+      "#", "บ้านเลขที่", "เขต/อำเภอ", "จังหวัด", "ชื่อ",
       ...(showSource ? ["ที่มา"] : []),
       "ชื่อ Sales", "สถานะ", "Grade", "กลุ่ม", "วันสร้าง", "Aging",
       "ครั้งที่ 1", "ครั้งที่ 2", "ครั้งที่ 3", "ครั้งที่ 4", "ครั้งที่ 5", "เสนอขาย",
@@ -358,6 +361,8 @@ export default function LifecyclePage() {
       return [
         { v: i + 1 },
         { v: r.house_number ?? "" },
+        { v: r.district ?? "" },
+        { v: r.province ?? "" },
         { v: r.full_name },
         ...(showSource ? [{ v: r.source ? getSourceStyle(r.source).label : "" }] : []),
         { v: r.assigned_name ?? "" },
@@ -508,12 +513,12 @@ export default function LifecyclePage() {
     }
 
     // Widths track the column order:
-    //   ลีด (9, or 10 when ที่มา is visible) | การติดต่อ (6) | Pre-Survey/Survey (3)
+    //   ลีด (11, or 12 when ที่มา is visible) | การติดต่อ (6) | Pre-Survey/Survey (3)
     //   | Quote/Order: 2 workflow dates + 16 money/paid-date + 1 followup = 19
     //   | ติดตั้ง/รับประกัน (4)
     ws["!cols"] = [
-      // ลีด
-      { wch: 4 }, { wch: 10 }, { wch: 24 },
+      // ลีด — #, บ้านเลขที่, เขต/อำเภอ, จังหวัด, ชื่อ
+      { wch: 4 }, { wch: 10 }, { wch: 16 }, { wch: 16 }, { wch: 24 },
       ...(showSource ? [{ wch: 28 }] : []),
       { wch: 16 }, { wch: 14 }, { wch: 14 }, { wch: 8 }, { wch: 16 }, { wch: 16 },
       // การติดต่อ
@@ -672,7 +677,7 @@ export default function LifecyclePage() {
                     trigger a hydration error, so we keep all <col>s as direct
                     array children with no surrounding whitespace. */}
                 {[
-                  ["#", "w-8"], ["house", "w-16"], ["name", "w-28"],
+                  ["#", "w-8"], ["house", "w-16"], ["district", "w-20"], ["province", "w-20"], ["name", "w-28"],
                   ...(showSource ? [["source", "w-36"]] : []),
                   ["status", "w-20"], ["grade", "w-10"], ["group", "w-14"],
                   ["created", "w-14"], ["aging", "w-12"],
@@ -693,7 +698,7 @@ export default function LifecyclePage() {
               <thead>
                 {/* Group header row — sticky at top of scroll container */}
                 <tr className="border-b border-gray-200">
-                  <th colSpan={8 + (showSource ? 1 : 0)} className="sticky top-16 z-20 bg-gray-50 px-2 py-1.5 text-left text-xxs font-semibold text-gray-700 border-r border-gray-200">ลีด</th>
+                  <th colSpan={10 + (showSource ? 1 : 0)} className="sticky top-16 z-20 bg-gray-50 px-2 py-1.5 text-left text-xxs font-semibold text-gray-700 border-r border-gray-200">ลีด</th>
                   {GROUPS.map(g => (
                     <th key={g.title} colSpan={g.cols.length} className={`sticky top-16 z-20 px-2 py-1.5 text-left text-xxs font-semibold border-r border-gray-200 ${g.tone}`}>
                       {g.title}
@@ -704,6 +709,8 @@ export default function LifecyclePage() {
                 <tr className="border-b border-gray-200 text-gray-600">
                   <th className="sticky top-[100px] z-20 bg-gray-50 px-2 py-1.5 text-right font-medium">#</th>
                   <th className="sticky top-[100px] z-20 bg-gray-50 px-2 py-1.5 text-left font-medium">บ้านเลขที่</th>
+                  <th className="sticky top-[100px] z-20 bg-gray-50 px-2 py-1.5 text-left font-medium">เขต/อำเภอ</th>
+                  <th className="sticky top-[100px] z-20 bg-gray-50 px-2 py-1.5 text-left font-medium">จังหวัด</th>
                   <th className="sticky top-[100px] z-20 bg-gray-50 px-2 py-1.5 text-left font-medium">ชื่อ</th>
                   {showSource && <th className="sticky top-[100px] z-20 bg-gray-50 px-2 py-1.5 text-left font-medium">ที่มา</th>}
                   <th className="sticky top-[100px] z-20 bg-gray-50 px-2 py-1.5 text-left font-medium">สถานะ</th>
@@ -735,6 +742,8 @@ export default function LifecyclePage() {
                   <tr key={r.id} className="border-b border-gray-100 hover:bg-gray-50">
                     <td className="px-2 py-1.5 text-right text-gray-500 tabular-nums">{idx + 1}</td>
                     <td className="px-2 py-1.5 text-gray-700 truncate" title={r.house_number ?? ""}>{r.house_number || <span className="text-gray-300">—</span>}</td>
+                    <td className="px-2 py-1.5 text-gray-700 truncate" title={r.district ?? ""}>{r.district || <span className="text-gray-300">—</span>}</td>
+                    <td className="px-2 py-1.5 text-gray-700 truncate" title={r.province ?? ""}>{r.province || <span className="text-gray-300">—</span>}</td>
                     <td className="px-2 py-1.5 truncate" title={r.full_name}>
                       <LeadLink id={r.id} className="text-primary hover:underline">{r.full_name}</LeadLink>
                     </td>
@@ -769,7 +778,7 @@ export default function LifecyclePage() {
                   </tr>
                 ))}
                 {filtered.length === 0 && (
-                  <tr><td colSpan={8 + (showSource ? 1 : 0) + flatCols.length} className="text-center py-8 text-gray-400">ไม่มีลีด</td></tr>
+                  <tr><td colSpan={10 + (showSource ? 1 : 0) + flatCols.length} className="text-center py-8 text-gray-400">ไม่มีลีด</td></tr>
                 )}
               </tbody>
             </table>

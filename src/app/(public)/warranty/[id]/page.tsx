@@ -46,6 +46,7 @@ interface Data {
     warranty_battery_kwh: number | null;
     warranty_has_battery: boolean | null;
     warranty_no_inverter: boolean | null;
+    warranty_no_battery: boolean | null;
     warranty_batteries: string | null;
     warranty_panel_serials: string | null;
     warranty_duration_years: number | null;
@@ -115,8 +116,16 @@ export default function WarrantyPage() {
   const battBrand = firstBatt?.brand ?? lead.warranty_battery_brand ?? pkg?.battery_brand ?? "";
   const battKwh = firstBatt?.kwh ?? lead.warranty_battery_kwh ?? pkg?.battery_kwh ?? null;
   const battModel = lead.warranty_battery_model ?? "";
-  const hasBattery = (d.devices?.batteries.length ?? 0) > 0
-    || (lead.warranty_has_battery ?? !!pkg?.has_battery);
+  // ยืนยันว่าไม่มีแบตแล้ว ชนะทุก fallback ข้างล่าง — เหมือน noInverter ด้านบน
+  // ไม่งั้นค่าที่ค้างอยู่ในคอลัมน์เก่าหรือในแพ็กเกจจะพิมพ์แบตที่ไม่ได้ติดลงใบรับประกัน
+  // ช่องสรุปที่พนักงานกรอกเองนับเป็นหลักฐานว่ามีแบตด้วย — ไม่งั้นงานที่มีแต่ยี่ห้อ/รุ่น
+  // ในฟอร์ม (ยังไม่ได้เก็บ serial) จะกรอกแล้วไม่ขึ้นเอกสาร
+  const hasBattery = !lead.warranty_no_battery
+    && ((d.devices?.batteries.length ?? 0) > 0
+      || !!lead.warranty_battery_brand?.trim()
+      || !!lead.warranty_battery_model?.trim()
+      || lead.warranty_battery_kwh != null
+      || (lead.warranty_has_battery ?? !!pkg?.has_battery));
 
   // Battery & panel list — new tables win; legacy JSON used only when new
   // tables are empty (lead never went through the post-Phase-2 save flow).

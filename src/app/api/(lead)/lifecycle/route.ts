@@ -9,6 +9,9 @@ export const runtime = "nodejs";
 // Each column is the FIRST time a milestone was reached so the row tells a
 // monotonic story (later columns can never be earlier than earlier ones).
 //
+// district / province มาจากคอลัมน์จริงบน leads (migration 151) ไม่ได้ join projects
+// ตอนอ่าน — migration 152 backfill ค่ามาให้แล้ว และตอนสร้างลีดใหม่ก็เขียนลงไปเลย
+//
 // Column → source:
 //   created_at         leads.created_at
 //   first_contact_at   created_at of the EARLIEST contact activity (call /
@@ -79,6 +82,8 @@ export async function GET(req: NextRequest) {
       SELECT
         l.id,
         l.house_number,
+        l.district,
+        l.province,
         l.full_name,
         l.source,
         l.phone,

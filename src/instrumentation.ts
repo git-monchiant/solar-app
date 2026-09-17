@@ -1,10 +1,23 @@
-// ตัวตั้งเวลาในแอป — รัน sync REM อัตโนมัติตามค่าใน settings (ผู้ใช้เคาะ 3 ก.ย.)
-// Next.js เรียก register() ครั้งเดียวตอน server บูต · ไม่ต้องพึ่ง crontab ข้างนอก
-// ★ ตื่นทุก 1 นาที เช็คว่าถึงรอบไหม (รอบจาก sync.rem_every_min) — เปลี่ยนค่าใน settings มีผลรอบถัดไป
-// ★ ทำงานเฉพาะ runtime nodejs · กัน double-run ด้วย flag ระดับ process
+// ตัวตั้งเวลาในแอป — Next.js เรียก register() ครั้งเดียวตอน server บูต · ไม่ต้องพึ่ง crontab ข้างนอก
+// มี 2 งานเบื้องหลัง:
+// 1) sync REM อัตโนมัติตามค่าใน settings (ผู้ใช้เคาะ 3 ก.ย.)
+//    ★ ตื่นทุก 1 นาที เช็คว่าถึงรอบไหม (รอบจาก sync.rem_every_min) — เปลี่ยนค่าใน settings มีผลรอบถัดไป
+//    ★ ทำงานเฉพาะ runtime nodejs · กัน double-run ด้วย flag ระดับ process
+// 2) รอบคำนวณ SLA (ดู src/lib/sla-sweep.ts) เปิดด้วย SLA_SWEEP_ENABLED=true
+//    ซึ่ง deploy_prd.sh ใส่ให้ใน .env ของ prod — dev ไม่ได้ตั้งไว้จึงไม่รันเอง
+//    เรียกทดสอบผ่าน POST /api/sla/sweep แทน
 
 export async function register() {
   if (process.env.NEXT_RUNTIME !== "nodejs") return;
+
+  // ---- SLA sweep (งาน v2) ----
+  if (process.env.SLA_SWEEP_ENABLED === "true") {
+    // ห้าม await ตัวงาน — register ต้องจบก่อน server รับ request ได้
+    const { startSlaSweepSchedule } = await import("@/lib/sla-sweep");
+    startSlaSweepSchedule();
+  }
+
+  // ---- OM REM sync (งานทีม O&M) ----
   // ปิดได้ด้วย env (เช่นเครื่อง dev ที่ไม่อยากให้ยิง REM)
   if (process.env.OM_SCHEDULER_DISABLED === "true") return;
 

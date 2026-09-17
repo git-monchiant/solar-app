@@ -91,21 +91,24 @@ echo ""
 
 # 3. stream source tarball to prod (excludes dev artifacts + secrets)
 echo "📦 Streaming source to ${PRD_HOST}:${PRD_DIR} ..."
+# ส่งเฉพาะรายการที่ระบุไว้ ไม่ใช้ --exclude กับชื่อโฟลเดอร์บนสุด
+# เหตุผล: bsdtar ตีความ --exclude='docs' (และแม้แต่ './docs') เป็น "ทุกโฟลเดอร์ชื่อ
+# docs ในทุกชั้น" ทำให้ src/lib/docs/ (ตัวสร้างรายงานสำรวจ) ไม่เคยถูกส่งขึ้น prod
+# เลยตั้งแต่ ส.ค. โค้ดบน prod จึงค้างเวอร์ชันเก่าเงียบ ๆ จนกระทั่ง build พังเพราะ
+# type ไม่ตรงกับไฟล์ที่ส่งขึ้นไป · การไล่ชื่อแบบนี้ทำให้ของใหม่ที่ลืมเพิ่มจะ "ไม่ขึ้น"
+# ซึ่งเห็นได้ทันทีตอน build มากกว่าจะหายไปเงียบ ๆ
+SEND=(
+  src public scripts
+  package.json package-lock.json tsconfig.json next.config.ts
+  postcss.config.mjs eslint.config.mjs next-env.d.ts
+  Dockerfile docker-compose.yml .dockerignore
+)
 tar \
   --exclude='node_modules' \
   --exclude='.next' \
   --exclude='.turbo' \
-  --exclude='.git' \
-  --exclude='.claude' \
   --exclude='public/uploads/*' \
-  --exclude='.env.local' \
-  --exclude='.env' \
-  --exclude='backup' \
-  --exclude='Project Infomation' \
-  --exclude='tmp-files' \
-  --exclude='docs' \
-  --exclude='sql' \
-  -czf - . | \
+  -czf - "${SEND[@]}" | \
 sshpass -p "${PRD_PASS}" ssh \
   -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null \
   -p "${PRD_PORT}" "${PRD_USER}@${PRD_HOST}" \
@@ -126,6 +129,21 @@ sshpass -p "${PRD_PASS}" ssh \
      echo 'LINE_ENABLED=true' >> .env; \
    fi && \
    grep '^LINE_ENABLED=' .env"
+
+# 4b. ensure SLA_SWEEP_ENABLED=true on prod — เปิดงานเบื้องหลังคำนวณ SLA ตามรอบเวลา
+# (src/instrumentation.ts → src/lib/sla-sweep.ts) รอบแรกรัน 1 นาทีหลัง container
+# ขึ้น จึงเป็น backfill หลัง deploy ไปในตัว dev ไม่ได้ตั้งค่านี้จึงไม่รันเอง
+echo "🔧 Ensuring SLA_SWEEP_ENABLED=true on prod .env ..."
+sshpass -p "${PRD_PASS}" ssh \
+  -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null \
+  -p "${PRD_PORT}" "${PRD_USER}@${PRD_HOST}" \
+  "cd ${PRD_DIR} && touch .env && \
+   if grep -q '^SLA_SWEEP_ENABLED=' .env; then \
+     sed -i 's/^SLA_SWEEP_ENABLED=.*/SLA_SWEEP_ENABLED=true/' .env; \
+   else \
+     echo 'SLA_SWEEP_ENABLED=true' >> .env; \
+   fi && \
+   grep '^SLA_SWEEP_ENABLED=' .env"
 
 # 4. ensure uploads dir is writable by the container (uid 1001 = nextjs user
 #    inside the image; host dir must be owned by that uid so bind-mount writes
@@ -156,17 +174,19 @@ for i in {1..12}; do
   if [[ "$code" == "200" && "$got" == "$WANT_VERSION" ]]; then
     echo "✅ ${PUBLIC_URL} → HTTP 200 · v${got}"
 
-    # 7. tag ไว้ให้รู้ว่า prod = commit ไหน และย้อนกลับได้
+    # 7. tag ไว้ในเครื่องให้รู้ว่า prod = commit ไหน และย้อนกลับได้
+    #
+    # สคริปต์นี้ "ไม่ push" อะไรทั้งสิ้น — การส่งขึ้น GitHub เป็นการตัดสินใจของคน
+    # ไม่ใช่ผลข้างเคียงของการ deploy · push เองภายหลังด้วย
+    #   git push && git push origin v<version>
     TAG="v${WANT_VERSION}"
     if [[ "${ALLOW_DIRTY:-0}" != "1" ]]; then
       if git rev-parse "$TAG" >/dev/null 2>&1; then
         echo "ℹ️  tag ${TAG} มีอยู่แล้ว ข้ามการสร้าง"
       else
         git tag -a "$TAG" -m "deploy to prod $(date '+%Y-%m-%d %H:%M')"
-        git push origin "$TAG" --quiet 2>/dev/null && echo "🏷️  สร้างและ push tag ${TAG}" \
-          || echo "🏷️  สร้าง tag ${TAG} แล้ว (push ไม่สำเร็จ — push เองภายหลัง)"
+        echo "🏷️  สร้าง tag ${TAG} ไว้ในเครื่อง (ยังไม่ push)"
       fi
-      git push --quiet 2>/dev/null && echo "⬆️  push ${BRANCH} ขึ้น origin แล้ว" || true
     fi
     exit 0
   fi

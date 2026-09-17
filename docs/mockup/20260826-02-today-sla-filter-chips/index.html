@@ -1,0 +1,459 @@
+<!doctype html>
+<html lang="th">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Today · ตัวกรอง SLA แบบชิป</title>
+<style>
+  :root {
+    --gray-50:#f9fafb; --gray-100:#f3f4f6; --gray-200:#e5e7eb; --gray-300:#d1d5db;
+    --gray-400:#9ca3af; --gray-500:#6b7280; --gray-600:#4b5563; --gray-700:#374151;
+    --gray-800:#1f2937; --gray-900:#111827;
+    --red-50:#fef2f2; --red-100:#fee2e2; --red-200:#fecaca; --red-500:#ef4444; --red-600:#dc2626; --red-700:#b91c1c;
+    --amber-50:#fffbeb; --amber-200:#fde68a; --amber-500:#f59e0b; --amber-600:#d97706; --amber-700:#b45309;
+    --sky-50:#f0f9ff; --sky-200:#bae6fd; --sky-500:#0ea5e9; --sky-700:#0369a1;
+    --green-700:#047857; --green-50:#ecfdf5; --green-200:#a7f3d0;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin:0; }
+  body {
+    font-family: "IBM Plex Sans Thai", "Noto Sans Thai", "Sarabun", -apple-system, "Segoe UI", sans-serif;
+    background: var(--gray-100); color: var(--gray-900);
+    padding: 28px 20px 64px; line-height: 1.55;
+  }
+  .wrap { max-width: 1240px; margin: 0 auto; }
+
+  header.page { margin-bottom: 26px; }
+  header.page h1 { font-size: 22px; margin: 0 0 6px; letter-spacing: -.01em; }
+  header.page p { margin: 0; color: var(--gray-600); font-size: 14px; max-width: 76ch; }
+
+  section { margin-bottom: 32px; }
+  h2 { font-size: 11px; text-transform: uppercase; letter-spacing: .09em;
+       color: var(--gray-500); margin: 0 0 4px; font-weight: 700; }
+  h2 + .sub { margin: 0 0 12px; font-size: 13px; color: var(--gray-600); }
+
+  .frame { background:#fff; border:1px solid var(--gray-300); border-radius: 14px;
+           overflow: hidden; box-shadow: 0 1px 2px rgb(0 0 0 / .05); }
+  .frame.pick { border-color: var(--green-200); box-shadow: 0 0 0 3px var(--green-50); }
+  .frame .browserbar { background: var(--gray-50); border-bottom:1px solid var(--gray-200);
+                       padding: 7px 12px; font-size: 11px; color: var(--gray-500); font-family: ui-monospace, monospace; }
+  .frame .body { padding: 14px 16px 16px; }
+
+  .variant { margin-bottom: 14px; }
+  .variant .tag { display:inline-flex; align-items:center; gap:7px; margin-bottom:6px;
+                  font-size:12px; font-weight:800; color: var(--gray-700); }
+  .variant .tag .k { background: var(--gray-800); color:#fff; width:18px; height:18px; border-radius:5px;
+                     display:inline-flex; align-items:center; justify-content:center; font-size:11px; }
+  .variant.rec .tag .k { background: var(--green-700); }
+  .variant.rec .tag { color: var(--green-700); }
+  .verdict { margin:8px 0 0; font-size:12.5px; color: var(--gray-600); display:flex; gap:7px; }
+  .verdict .mark { flex:0 0 auto; font-weight:800; }
+  .verdict.ok .mark { color: var(--green-700); }
+  .verdict.no .mark { color: var(--red-600); }
+
+  /* --- app toolbar replica --- */
+  .toolbar { display:flex; align-items:center; justify-content:space-between; gap:12px; flex-wrap:wrap; }
+  .section-title { font-size:12px; font-weight:800; color: var(--red-600); letter-spacing:.04em; white-space:nowrap; }
+  .controls { display:flex; align-items:center; gap:8px; flex-wrap:wrap; justify-content:flex-end; }
+
+  select.app {
+    height:28px; border-radius:6px; border:1px solid var(--gray-200); background-color:#fff;
+    padding:0 24px 0 8px; font-size:11px; font-weight:600; color: var(--gray-700);
+    font-family: inherit; appearance:none;
+    background-image:url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='10' height='10' viewBox='0 0 24 24' fill='none' stroke='%236b7280' stroke-width='3'><path d='M6 9l6 6 6-6'/></svg>");
+    background-repeat:no-repeat; background-position: right 7px center;
+  }
+  .mine { height:28px; display:inline-flex; align-items:center; gap:6px; padding:0 4px;
+          font-size:11px; font-weight:500; color: var(--gray-700); background:none; border:0;
+          font-family:inherit; cursor:pointer; white-space:nowrap; }
+  .mine .box { width:14px; height:14px; border:2px solid var(--gray-300); display:inline-flex;
+               align-items:center; justify-content:center; transition:.12s; }
+  .mine .box.circle { border-radius:999px; }
+  .mine .box.square { border-radius:4px; }
+  .mine.on .box { border-color: var(--gray-800); background: var(--gray-800); }
+  .mine .box svg { display:none; }
+  .mine.on .box svg { display:block; }
+  .count-badge { font-size:11px; font-weight:700; color:var(--red-600); background:var(--red-50);
+                 padding:1px 8px; border-radius:999px; }
+
+  /* --- chips --- */
+  .chipset { display:inline-flex; align-items:center; gap:7px; flex-wrap:wrap; }
+  .chiprow { display:flex; align-items:center; gap:8px; flex-wrap:wrap;
+             border-top:1px solid var(--gray-200); margin-top:12px; padding-top:11px; }
+  .lbl { font-size:11px; font-weight:800; letter-spacing:.08em; color:var(--gray-400);
+         text-transform:uppercase; margin-right:1px; }
+  .divider { width:1px; height:20px; background:var(--gray-200); margin:0 2px; }
+
+  .chip { display:inline-flex; align-items:center; gap:7px; height:28px; padding:0 11px;
+    border-radius:999px; border:1px solid var(--gray-200); background:#fff;
+    font-size:11.5px; font-weight:600; color:var(--gray-600);
+    font-family:inherit; cursor:pointer; transition:.12s; white-space:nowrap; }
+  .chip:hover:not(:disabled) { border-color: var(--gray-400); }
+  .chip:disabled { cursor:default; }
+  .chip .tick { width:13px; height:13px; border-radius:4px; border:2px solid var(--gray-300);
+    display:inline-flex; align-items:center; justify-content:center; flex:0 0 auto; transition:.12s; }
+  .chip .tick svg { display:none; }
+  .chip .n { font-variant-numeric: tabular-nums; font-weight:800; }
+  .chip[data-k="breached"] .n { color: var(--red-600); }
+  .chip[data-k="near_due"] .n { color: var(--amber-600); }
+  .chip[data-k="active"]   .n { color: var(--sky-700); }
+  .chip[data-k="without"]  .n { color: var(--gray-500); }
+  .chip.on .tick svg { display:block; }
+  .chip.on[data-k="breached"] { background:var(--red-50); border-color:var(--red-200); color:var(--red-700); }
+  .chip.on[data-k="breached"] .tick { background:var(--red-500); border-color:var(--red-500); }
+  .chip.on[data-k="breached"] .n { color: var(--red-700); }
+  .chip.on[data-k="near_due"] { background:var(--amber-50); border-color:var(--amber-200); color:var(--amber-700); }
+  .chip.on[data-k="near_due"] .tick { background:var(--amber-500); border-color:var(--amber-500); }
+  .chip.on[data-k="near_due"] .n { color: var(--amber-700); }
+  .chip.on[data-k="active"] { background:var(--sky-50); border-color:var(--sky-200); color:var(--sky-700); }
+  .chip.on[data-k="active"] .tick { background:var(--sky-500); border-color:var(--sky-500); }
+  .chip.on[data-k="active"] .n { color: var(--sky-700); }
+  .chip.on[data-k="without"] { background:var(--gray-100); border-color:var(--gray-300); color:var(--gray-700); }
+  .chip.on[data-k="without"] .tick { background:var(--gray-600); border-color:var(--gray-600); }
+
+  /* more-filters button + popover */
+  .more { position:relative; display:inline-flex; }
+  .morebtn { height:28px; display:inline-flex; align-items:center; gap:6px; padding:0 10px;
+    border-radius:6px; border:1px dashed var(--gray-300); background:#fff; cursor:pointer;
+    font-family:inherit; font-size:11px; font-weight:600; color:var(--gray-600); white-space:nowrap; }
+  .morebtn:hover { border-color: var(--gray-500); }
+  .morebtn.on { border-style:solid; border-color:var(--gray-800); color:var(--gray-900); }
+  .morebtn .dot { background:var(--gray-800); color:#fff; border-radius:999px; min-width:15px; height:15px;
+    display:inline-flex; align-items:center; justify-content:center; font-size:10px; font-weight:800; }
+  .pop { position:absolute; top:34px; right:0; z-index:5; background:#fff; border:1px solid var(--gray-300);
+    border-radius:10px; padding:11px; box-shadow:0 8px 24px rgb(0 0 0 / .12); display:none;
+    flex-direction:column; gap:7px; min-width:215px; }
+  .pop.show { display:flex; }
+  .pop .ttl { font-size:10.5px; font-weight:800; letter-spacing:.07em; text-transform:uppercase; color:var(--gray-400); }
+  .pop select.app { width:100%; }
+
+  .strike { position:relative; opacity:.45; }
+  .strike::after { content:""; position:absolute; inset:50% -3px auto -3px; height:1.5px; background:var(--red-500); }
+
+  .outcome { margin-top:12px; padding:9px 12px; border-radius:9px; background:var(--gray-50);
+    border:1px solid var(--gray-200); font-size:12px; color:var(--gray-600);
+    display:flex; gap:14px; align-items:center; flex-wrap:wrap; }
+  .outcome code { font-family:ui-monospace, monospace; font-size:11.5px; background:#fff;
+    border:1px solid var(--gray-200); border-radius:5px; padding:2px 7px; color:var(--gray-800); }
+  .outcome b { color: var(--gray-900); }
+
+  .phone { width:390px; max-width:100%; }
+  .phone .controls { justify-content:flex-start; }
+
+  .notes { display:grid; grid-template-columns: repeat(auto-fit, minmax(255px,1fr)); gap:12px; }
+  .note { background:#fff; border:1px solid var(--gray-200); border-radius:11px; padding:13px 15px; }
+  .note h3 { margin:0 0 5px; font-size:13px; }
+  .note p { margin:0; font-size:12.5px; color:var(--gray-600); }
+  .note code { font-family:ui-monospace,monospace; font-size:11.5px; background:var(--gray-100);
+               border-radius:4px; padding:1px 5px; }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <header class="page">
+    <h1>Today · ตัวกรอง SLA แบบชิปติ๊กได้</h1>
+    <p>
+      เปลี่ยน dropdown “แสดง Lead ทั้งหมด” เป็นชิปที่ติ๊กได้หลายอันและมีตัวเลขกำกับ
+      เพื่อให้รู้ว่ามีงานเกินกำหนดกี่ Lead ตั้งแต่ยังไม่กด และเลือก “เกินกำหนด + ใกล้กำหนด” พร้อมกันได้ ·
+      ตัวเลขในหน้านี้เป็นของจริงจาก Development เมื่อ 26 ส.ค. 2026
+    </p>
+  </header>
+
+  <section>
+    <h2>ตอนนี้</h2>
+    <p class="sub">สถานะตัวกรองซ่อนอยู่ใน dropdown — ต้องกดเปิดถึงจะรู้ว่าเลือกอะไรได้บ้าง และไม่มีตัวเลขให้เห็นเลย</p>
+    <div class="frame">
+      <div class="browserbar">172.22.40.9:3000/today</div>
+      <div class="body">
+        <div class="toolbar">
+          <span class="section-title">เลยกำหนดติดตาม</span>
+          <div class="controls">
+            <button class="mine" type="button" disabled>
+              <span class="box circle"><svg width="8" height="8" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="4"><path d="M5 13l4 4L19 7"/></svg></span>
+              งานของฉัน
+            </button>
+            <select class="app"><option>แสดง Lead ทั้งหมด</option></select>
+            <select class="app"><option>วันที่สร้าง</option></select>
+            <select class="app"><option>เก่า → ใหม่</option></select>
+            <span class="count-badge">7</span>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section>
+    <h2>วางตรงไหนดี · 3 แบบ</h2>
+    <p class="sub">ทุกแบบใช้ชิปเหมือนกัน ต่างกันที่ตำแหน่งและวิธีจัดการตัวกรองย่อยของ SLA (ขั้นตอน · ผู้รับผิดชอบ) · ตัวเลขความกว้างวัดจากหน้านี้จริง</p>
+
+    <div class="variant">
+      <div class="tag"><span class="k">A</span> แยก SLA ลงมาแถวล่าง</div>
+      <div class="frame">
+        <div class="browserbar">172.22.40.9:3000/today</div>
+        <div class="body">
+          <div class="toolbar">
+            <span class="section-title">เลยกำหนดติดตาม</span>
+            <div class="controls">
+              <button class="mine" type="button" disabled><span class="box square"><svg width="8" height="8" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="4"><path d="M5 13l4 4L19 7"/></svg></span>งานของฉัน</button>
+              <select class="app"><option>วันที่สร้าง</option></select>
+              <select class="app"><option>เก่า → ใหม่</option></select>
+              <span class="count-badge">7</span>
+            </div>
+          </div>
+          <div class="chiprow">
+            <span class="lbl">SLA</span>
+            <button class="chip on" type="button" data-k="breached" disabled><span class="tick"><svg width="8" height="8" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="4"><path d="M5 13l4 4L19 7"/></svg></span>เกินกำหนด <span class="n">62</span></button>
+            <button class="chip on" type="button" data-k="near_due" disabled><span class="tick"><svg width="8" height="8" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="4"><path d="M5 13l4 4L19 7"/></svg></span>ใกล้กำหนด <span class="n">4</span></button>
+            <button class="chip" type="button" data-k="active" disabled><span class="tick"><svg width="8" height="8" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="4"><path d="M5 13l4 4L19 7"/></svg></span>ตามแผน <span class="n">13</span></button>
+            <span class="divider"></span>
+            <button class="chip" type="button" data-k="without" disabled><span class="tick"><svg width="8" height="8" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="4"><path d="M5 13l4 4L19 7"/></svg></span>ไม่มีงาน SLA <span class="n">246</span></button>
+            <span class="controls" style="margin-left:auto">
+              <select class="app"><option>ทุกขั้นตอน SLA</option></select>
+              <select class="app"><option>ผู้รับผิดชอบ Sales ทุกคน</option></select>
+            </span>
+          </div>
+        </div>
+      </div>
+      <p class="verdict ok"><span class="mark">+</span> ไม่มีอะไรหาย ไม่เบียดกัน แถว SLA เป็นกลุ่มของตัวเองชัดเจน · ต้องการแค่ 409px จึงไม่ตัดบรรทัดบนจอไหนเลย</p>
+      <p class="verdict no"><span class="mark">−</span> กินความสูงเพิ่ม 1 แถวตลอดเวลา แม้ยังไม่ได้ใช้ตัวกรอง และปล่อยพื้นที่ว่างกลางแถวบนทิ้งไว้</p>
+    </div>
+
+    <div class="variant">
+      <div class="tag"><span class="k">B</span> ยกชิปขึ้นแถวบน · เอาตัวกรองย่อยแทนที่ปุ่มเรียง</div>
+      <div class="frame">
+        <div class="browserbar">172.22.40.9:3000/today</div>
+        <div class="body">
+          <div class="toolbar">
+            <span class="section-title">เลยกำหนดติดตาม</span>
+            <span class="chipset">
+              <span class="lbl">SLA</span>
+              <button class="chip on" type="button" data-k="breached" disabled><span class="tick"><svg width="8" height="8" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="4"><path d="M5 13l4 4L19 7"/></svg></span>เกินกำหนด <span class="n">62</span></button>
+              <button class="chip on" type="button" data-k="near_due" disabled><span class="tick"><svg width="8" height="8" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="4"><path d="M5 13l4 4L19 7"/></svg></span>ใกล้กำหนด <span class="n">4</span></button>
+              <button class="chip" type="button" data-k="active" disabled><span class="tick"><svg width="8" height="8" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="4"><path d="M5 13l4 4L19 7"/></svg></span>ตามแผน <span class="n">13</span></button>
+              <span class="divider"></span>
+              <button class="chip" type="button" data-k="without" disabled><span class="tick"><svg width="8" height="8" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="4"><path d="M5 13l4 4L19 7"/></svg></span>ไม่มีงาน SLA <span class="n">246</span></button>
+            </span>
+            <div class="controls">
+              <button class="mine" type="button" disabled><span class="box square"><svg width="8" height="8" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="4"><path d="M5 13l4 4L19 7"/></svg></span>งานของฉัน</button>
+              <span class="strike"><select class="app"><option>วันที่สร้าง</option></select></span>
+              <span class="strike"><select class="app"><option>เก่า → ใหม่</option></select></span>
+              <select class="app"><option>ทุกขั้นตอน SLA</option></select>
+              <span class="count-badge">7</span>
+            </div>
+          </div>
+        </div>
+      </div>
+      <p class="verdict ok"><span class="mark">+</span> แถวเดียวจบ ใช้พื้นที่ว่างกลางแถวบนได้เต็มที่ · แคบที่สุดในสามแบบ ต้องการ 902px</p>
+      <p class="verdict no"><span class="mark">−</span> ปุ่มเรียงหายไป ทั้งที่เป็นของที่ใช้ทุกวันและระบบจำค่าไว้แล้วใน <code>today.sortField</code> · พอกรองเหลือ 62 งานเกินกำหนด นั่นคือตอนที่อยากเรียงมากที่สุด</p>
+      <p class="verdict no"><span class="mark">−</span> ในภาพใส่ตัวกรองย่อยไว้ช่องเดียว แต่ผู้จัดการมีถึง 3 ช่อง (ขั้นตอน · Sales · Solar) ใส่ครบแล้วกว้างเท่าแบบ C พอดี — แลกปุ่มเรียงไปโดยไม่ได้พื้นที่คืน</p>
+    </div>
+
+    <div class="variant rec">
+      <div class="tag"><span class="k">C</span> ยกชิปขึ้นแถวบน · ยุบตัวกรองย่อยเป็นปุ่มเดียว — แนะนำ</div>
+      <div class="frame pick">
+        <div class="browserbar">172.22.40.9:3000/today</div>
+        <div class="body">
+          <div class="toolbar">
+            <span class="section-title">เลยกำหนดติดตาม</span>
+            <span class="chipset">
+              <span class="lbl">SLA</span>
+              <button class="chip on" type="button" data-k="breached" disabled><span class="tick"><svg width="8" height="8" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="4"><path d="M5 13l4 4L19 7"/></svg></span>เกินกำหนด <span class="n">62</span></button>
+              <button class="chip on" type="button" data-k="near_due" disabled><span class="tick"><svg width="8" height="8" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="4"><path d="M5 13l4 4L19 7"/></svg></span>ใกล้กำหนด <span class="n">4</span></button>
+              <button class="chip" type="button" data-k="active" disabled><span class="tick"><svg width="8" height="8" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="4"><path d="M5 13l4 4L19 7"/></svg></span>ตามแผน <span class="n">13</span></button>
+              <span class="divider"></span>
+              <button class="chip" type="button" data-k="without" disabled><span class="tick"><svg width="8" height="8" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="4"><path d="M5 13l4 4L19 7"/></svg></span>ไม่มีงาน SLA <span class="n">246</span></button>
+              <span class="more">
+                <button class="morebtn on" type="button" disabled>ตัวกรองย่อย <span class="dot">1</span></button>
+              </span>
+            </span>
+            <div class="controls">
+              <button class="mine" type="button" disabled><span class="box square"><svg width="8" height="8" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="4"><path d="M5 13l4 4L19 7"/></svg></span>งานของฉัน</button>
+              <select class="app"><option>วันที่สร้าง</option></select>
+              <select class="app"><option>เก่า → ใหม่</option></select>
+              <span class="count-badge">7</span>
+            </div>
+          </div>
+        </div>
+      </div>
+      <p class="verdict ok"><span class="mark">+</span> แถวเดียวจบ เก็บปุ่มเรียงไว้ครบ และตัวกรองย่อยจะมีกี่ช่องก็ได้เพราะยุบอยู่ในปุ่มเดียว</p>
+      <p class="verdict ok"><span class="mark">+</span> ตัวเลขบนปุ่มบอกว่ากำลังกรองอยู่กี่ชั้น ไม่ต้องเปิดดูก็รู้ว่ามีตัวกรองซ่อนอยู่</p>
+      <p class="verdict ok"><span class="mark">+</span> ต้องการ 1080px — จอ 1366 พอดี ถ้าแคบกว่านั้นมันตกเป็น 2 บรรทัดเอง ซึ่งก็คือหน้าตาแบบ A พอดี ไม่พังกลางคัน</p>
+      <p class="verdict no"><span class="mark">−</span> ต้องกด 1 ครั้งถึงเห็นตัวกรองย่อย — แลกกับการที่มันเป็นของที่ผู้จัดการใช้เป็นครั้งคราว ไม่ใช่ทุกวัน</p>
+    </div>
+  </section>
+
+  <section>
+    <h2>แบบ C · กดเล่นได้</h2>
+    <p class="sub">ติ๊กชิป กดปุ่มตัวกรองย่อย แล้วดู URL ด้านล่างเปลี่ยน</p>
+    <div class="frame pick">
+      <div class="browserbar">172.22.40.9:3000/today</div>
+      <div class="body">
+        <div class="toolbar">
+          <span class="section-title">เลยกำหนดติดตาม</span>
+          <span class="chipset" id="chipset">
+            <span class="lbl">SLA</span>
+            <button class="chip" type="button" data-k="breached" data-n="62"><span class="tick"><svg width="8" height="8" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="4"><path d="M5 13l4 4L19 7"/></svg></span>เกินกำหนด <span class="n">62</span></button>
+            <button class="chip" type="button" data-k="near_due" data-n="4"><span class="tick"><svg width="8" height="8" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="4"><path d="M5 13l4 4L19 7"/></svg></span>ใกล้กำหนด <span class="n">4</span></button>
+            <button class="chip" type="button" data-k="active" data-n="13"><span class="tick"><svg width="8" height="8" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="4"><path d="M5 13l4 4L19 7"/></svg></span>ตามแผน <span class="n">13</span></button>
+            <span class="divider"></span>
+            <button class="chip" type="button" data-k="without" data-n="246"><span class="tick"><svg width="8" height="8" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="4"><path d="M5 13l4 4L19 7"/></svg></span>ไม่มีงาน SLA <span class="n">246</span></button>
+            <span class="more" id="more" hidden>
+              <button class="morebtn" type="button" id="morebtn">ตัวกรองย่อย</button>
+              <span class="pop" id="pop">
+                <span class="ttl">กรองเฉพาะ</span>
+                <select class="app" id="stage"><option value="">ทุกขั้นตอน SLA</option><option>ประเมินและกำหนด Grade Lead</option><option>ติดตามปิดการขายและรับมัดจำ</option><option>เข้าตรวจสำรวจหน้างาน</option></select>
+                <select class="app" id="owner"><option value="">ผู้รับผิดชอบ Sales ทุกคน</option><option>ณัฏฐามณฑ์ อรรควิทยาพงศ์</option><option>การันต์ แก้งทอง</option></select>
+              </span>
+            </span>
+          </span>
+          <div class="controls">
+            <button class="mine" type="button" id="mine"><span class="box square"><svg width="8" height="8" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="4"><path d="M5 13l4 4L19 7"/></svg></span>งานของฉัน</button>
+            <select class="app"><option>วันที่สร้าง</option></select>
+            <select class="app"><option>เก่า → ใหม่</option></select>
+            <span class="count-badge">7</span>
+          </div>
+        </div>
+
+        <div class="outcome">
+          <span>ผลลัพธ์: <b id="result">แสดง Lead ทั้งหมด</b></span>
+          <span>URL: <code id="url">/today</code></span>
+          <span id="hint" style="color:var(--gray-400); font-size:11.5px;"></span>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section>
+    <h2>มือถือ · 390px</h2>
+    <p class="sub">ชิป wrap ลงบรรทัดถัดไป ยังอ่านตัวเลขได้ครบโดยไม่ต้องกดเปิดอะไร</p>
+    <div class="frame phone">
+      <div class="browserbar">172.22.40.9:3000/today</div>
+      <div class="body">
+        <div class="toolbar">
+          <div class="controls">
+            <button class="mine" type="button" disabled><span class="box square"><svg width="8" height="8" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="4"><path d="M5 13l4 4L19 7"/></svg></span>งานของฉัน</button>
+            <select class="app"><option>วันที่สร้าง</option></select>
+            <select class="app"><option>เก่า → ใหม่</option></select>
+          </div>
+        </div>
+        <div class="chiprow">
+          <span class="lbl">SLA</span>
+          <button class="chip on" type="button" data-k="breached" disabled><span class="tick"><svg width="8" height="8" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="4"><path d="M5 13l4 4L19 7"/></svg></span>เกินกำหนด <span class="n">62</span></button>
+          <button class="chip on" type="button" data-k="near_due" disabled><span class="tick"><svg width="8" height="8" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="4"><path d="M5 13l4 4L19 7"/></svg></span>ใกล้กำหนด <span class="n">4</span></button>
+          <button class="chip" type="button" data-k="active" disabled><span class="tick"><svg width="8" height="8" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="4"><path d="M5 13l4 4L19 7"/></svg></span>ตามแผน <span class="n">13</span></button>
+          <button class="chip" type="button" data-k="without" disabled><span class="tick"><svg width="8" height="8" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="4"><path d="M5 13l4 4L19 7"/></svg></span>ไม่มีงาน SLA <span class="n">246</span></button>
+        </div>
+      </div>
+    </div>
+    <p class="verdict ok" style="max-width:70ch"><span class="mark">+</span> บนจอแคบทั้ง 3 แบบตกลงมาเหมือนกันหมด เพราะ flex-wrap — ความต่างของ A/B/C มีผลเฉพาะจอกว้าง</p>
+  </section>
+
+  <section>
+    <h2>กติกา</h2>
+    <div class="notes">
+      <div class="note">
+        <h3>ไม่ติ๊กอะไรเลย = แสดงทั้งหมด</h3>
+        <p>ค่าเริ่มต้นเหมือนเดิม ไม่ต้องมีปุ่ม “แสดง Lead ทั้งหมด” แยก · กดชิปที่ติ๊กอยู่ซ้ำเพื่อปลด</p>
+      </div>
+      <div class="note">
+        <h3>ติ๊กครบ 3 = “มีงาน SLA” เดิม</h3>
+        <p>ตัวเลือกนั้นจึงตัดทิ้งได้ เหลือ 4 ปุ่มจาก 6 ตัวเลือก</p>
+      </div>
+      <div class="note">
+        <h3>“ไม่มีงาน SLA” อยู่คนละกลุ่ม</h3>
+        <p>ขัดกับอีก 3 สถานะโดยธรรมชาติ ติ๊กแล้วปลดอีก 3 ให้อัตโนมัติ และกลับกัน · คั่นด้วยเส้นแบ่งให้เห็นว่าเป็นคนละชุด</p>
+      </div>
+      <div class="note">
+        <h3>ตัวกรองย่อยโผล่เมื่อจำเป็น</h3>
+        <p>ปุ่ม “ตัวกรองย่อย” แสดงเฉพาะตอนติ๊กสถานะ SLA อยู่ · ตัวเลขบนปุ่มบอกจำนวนชั้นที่กรองอยู่</p>
+      </div>
+      <div class="note">
+        <h3>ตัวเลขขยับตามตัวกรองย่อย</h3>
+        <p>นับจาก <code>filteredSlaItems</code> ไม่ใช่ <code>leadCounts</code> จาก API จึงสะท้อนขั้นตอน/ผู้รับผิดชอบที่เลือกอยู่ และนับ Lead แบบไม่ซ้ำ</p>
+      </div>
+      <div class="note">
+        <h3>ลิงก์เดิมไม่พัง</h3>
+        <p><code>?sla=breached</code> ยังเข้าได้เหมือนเดิม เพิ่มรองรับ <code>?sla=breached,near_due</code> · drill-down จาก Dashboard ใช้ได้ต่อ</p>
+      </div>
+      <div class="note">
+        <h3>“งานของฉัน” เปลี่ยนเป็นสี่เหลี่ยม</h3>
+        <p>ของเดิมเป็นวงกลมซึ่งภาษา UI แปลว่า radio (เลือกได้อันเดียวในกลุ่ม) แต่จริง ๆ เป็น toggle อิสระ · สี่เหลี่ยมมุมมนสื่อถูกกว่าและเข้าชุดกับชิป</p>
+      </div>
+      <div class="note">
+        <h3>ปุ่มเรียงอยู่ที่เดิม</h3>
+        <p>เป็นของที่ใช้ทุกวันและระบบจำค่าไว้แล้วใน <code>today.sortField</code> / <code>today.sortOrder</code> · ยิ่งกรองเหลืองานเร่ง ยิ่งต้องเรียง</p>
+      </div>
+    </div>
+  </section>
+
+</div>
+
+<script>
+  const LABEL = { breached: "เกินกำหนด", near_due: "ใกล้กำหนด", active: "ตามแผน", without: "ไม่มีงาน SLA" };
+  const set = document.getElementById("chipset");
+  const chips = [...set.querySelectorAll(".chip")];
+  const more = document.getElementById("more");
+  const morebtn = document.getElementById("morebtn");
+  const pop = document.getElementById("pop");
+  const stage = document.getElementById("stage");
+  const owner = document.getElementById("owner");
+  const resultEl = document.getElementById("result");
+  const urlEl = document.getElementById("url");
+  const hint = document.getElementById("hint");
+  const mine = document.getElementById("mine");
+
+  mine.addEventListener("click", () => mine.classList.toggle("on"));
+  morebtn.addEventListener("click", e => { e.stopPropagation(); pop.classList.toggle("show"); });
+  document.addEventListener("click", () => pop.classList.remove("show"));
+  pop.addEventListener("click", e => e.stopPropagation());
+  stage.addEventListener("change", render);
+  owner.addEventListener("change", render);
+
+  chips.forEach(chip => chip.addEventListener("click", () => {
+    const key = chip.dataset.k;
+    const turningOn = !chip.classList.contains("on");
+    chip.classList.toggle("on", turningOn);
+    if (turningOn) {
+      // "ไม่มีงาน SLA" กับ 3 สถานะอยู่ร่วมกันไม่ได้
+      chips.forEach(other => {
+        if (other === chip) return;
+        const clash = key === "without" ? other.dataset.k !== "without" : other.dataset.k === "without";
+        if (clash) other.classList.remove("on");
+      });
+    }
+    render();
+  }));
+
+  function render() {
+    const on = chips.filter(c => c.classList.contains("on"));
+    const keys = on.map(c => c.dataset.k);
+    const statusPicked = keys.length > 0 && !keys.includes("without");
+
+    more.hidden = !statusPicked;
+    if (!statusPicked) { pop.classList.remove("show"); stage.selectedIndex = 0; owner.selectedIndex = 0; }
+
+    const subs = [stage.selectedIndex > 0, owner.selectedIndex > 0].filter(Boolean).length;
+    morebtn.classList.toggle("on", subs > 0);
+    morebtn.innerHTML = subs > 0 ? 'ตัวกรองย่อย <span class="dot">' + subs + "</span>" : "ตัวกรองย่อย";
+
+    if (!keys.length) {
+      resultEl.textContent = "แสดง Lead ทั้งหมด";
+      urlEl.textContent = "/today";
+      hint.textContent = "";
+      return;
+    }
+    const total = on.reduce((sum, c) => sum + Number(c.dataset.n), 0);
+    const scale = subs > 0 ? 0.4 : 1;   // ตัวกรองย่อยทำให้เหลือน้อยลง — ตัวเลขสมมติเพื่อให้เห็นว่ามันขยับ
+    const shown = Math.max(1, Math.round(total * scale));
+    resultEl.textContent = keys.map(k => LABEL[k]).join(" + ") + " — ≈ " + shown.toLocaleString("th-TH") + " Lead";
+
+    const params = ["sla=" + keys.join(",")];
+    if (stage.selectedIndex > 0) params.push("stage=ELECTRICITY_ASSESSMENT");
+    if (owner.selectedIndex > 0) params.push("owner=14");
+    urlEl.textContent = "/today?" + params.join("&");
+    hint.textContent = keys.length > 1 ? "ตัวอย่างนี้บวกตรง ๆ · ของจริงนับ Lead แบบไม่ซ้ำ" : "";
+  }
+</script>
+</body>
+</html>

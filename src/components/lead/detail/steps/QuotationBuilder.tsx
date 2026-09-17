@@ -10,14 +10,15 @@ import {
   balanceFinalQuotationPaymentTerm,
   getQuotationPaymentTermsTotal,
   getQuotationTermsProfile,
-  getStandardQuotationOmSettings,
-  isStandardQuotationOmSettings,
+  isStandardQuotationTermTree,
   parseQuotationOmSettings,
   parseQuotationPaymentTerms,
-  type QuotationOmService,
+  parseQuotationTermTree,
   type QuotationOmSettings,
   type QuotationPaymentTerm,
+  type QuotationTermTree,
 } from "@/lib/quotation-terms";
+import QuotationTermsEditor from "./QuotationTermsEditor";
 import type { Lead, Package } from "./types";
 
 type Item = {
@@ -43,6 +44,8 @@ type Item = {
 };
 type DocumentInputs = {
   om: QuotationOmSettings;
+  // ชุดเงื่อนไข/ข้อกำหนดที่แก้เฉพาะใบนี้ · null = ยังใช้ชุดมาตรฐานในโค้ด
+  terms: QuotationTermTree | null;
   recommendation_reason: string;
   loan_enabled: boolean;
   loan_bank: string;
@@ -62,6 +65,7 @@ type Quote = {
   option_no: number;
   doc_no: string;
   issue_date?: string;
+  valid_days?: number;
   revision_no: number;
   status: string;
   package_id: number;
@@ -284,37 +288,6 @@ const todayIso = () => {
   const d = new Date();
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
 };
-
-const OM_NUMBER_OPTIONS = [0, 1, 2, 3, 4] as const;
-
-function OmNumberSelect({
-  value,
-  max,
-  disabled,
-  className,
-  onChange,
-}: {
-  value: number;
-  max?: number;
-  disabled?: boolean;
-  className: string;
-  onChange: (value: number) => void;
-}) {
-  return (
-    <select
-      value={value}
-      disabled={disabled}
-      onChange={(event) => onChange(Number(event.target.value))}
-      className={className}
-    >
-      {OM_NUMBER_OPTIONS.map((option) => (
-        <option key={option} value={option} disabled={max !== undefined && option > max}>
-          {option}
-        </option>
-      ))}
-    </select>
-  );
-}
 
 const formatPackageSpecs = (pkg: Package) =>
   `ขนาด ${pkg.kwp} kWp · ${pkg.phase > 0 ? `${pkg.phase} เฟส` : "ทุกเฟส"}`;
@@ -978,6 +951,8 @@ type TreeLine = {
   package_item_id?: number | null;
   item_name: string;
   quantity: number;
+  /** จำนวนต่อ 1 ชุดของหัวข้อ — ฐานสำหรับคูณเวลาแก้จำนวนชุด */
+  unitQuantity?: number;
   unit: string;
 };
 type TreeGroup = {
@@ -985,6 +960,10 @@ type TreeGroup = {
   kind: "package" | "custom";
   source_package_id?: number;
   price: number;
+  /** ราคา/จำนวนอุปกรณ์ ต่อ 1 ชุด — ใช้เป็นฐานคำนวณเวลาแก้จำนวน
+   *  (ถ้าคูณทบจากค่าปัจจุบัน พอผู้ใช้ลบเลขทิ้งแล้วพิมพ์ใหม่ ตัวคูณเดิมจะหาย
+   *   แล้วค่าจะบานปลาย เช่น 10 → ลบ → 5 กลายเป็น ×50) */
+  unitPrice?: number;
   title: TreeLine;   // = item แรกของ package (บรรทัดที่โชว์บนเอกสาร)
   details: TreeLine[];
   open: boolean;
@@ -1259,7 +1238,9 @@ function QuotationEditor({
       parseQuotationPaymentTerms(quote?.payment_terms_json),
     ),
   );
-  const [termsText, setTermsText] = useState(quote?.terms_text || "");
+  // อ่านอย่างเดียว — แท็บ "เงื่อนไข/ข้อกำหนด" มาแทนช่องพิมพ์เดิมแล้ว แต่ยังส่งค่าเดิม
+  // กลับไปตามเดิมเพื่อไม่ให้ข้อมูลของใบเก่าหาย และใช้เป็นบรรทัดตั้งต้นในแท็บนั้น
+  const [termsText] = useState(quote?.terms_text || "");
   const [issueDate, setIssueDate] = useState(
     quote?.issue_date ? String(quote.issue_date).slice(0, 10) : todayIso(),
   );
@@ -1272,6 +1253,10 @@ function QuotationEditor({
     } catch {}
     return {
       om: parseQuotationOmSettings(saved.om),
+      terms: parseQuotationTermTree(
+        saved.terms,
+        saved.terms?.profile === "additional_install" ? "additional_install" : "full_install",
+      ),
       recommendation_reason: saved.recommendation_reason || "",
       loan_enabled: saved.loan_enabled ?? GSB_SOLAR_LOAN_DEFAULTS.loan_enabled,
       loan_bank:
@@ -1309,7 +1294,8 @@ function QuotationEditor({
       annual_degradation_percent: Number(saved.annual_degradation_percent ?? 0.5),
     };
   });
-  const [omOpen, setOmOpen] = useState(true);
+  // ตั้งชื่อ activeTab ไม่ใช่ tab — previewQuotation มีตัวแปร tab (หน้าต่างที่เปิดใหม่) อยู่แล้ว
+  const [activeTab, setActiveTab] = useState<"items" | "terms">("items");
   useEffect(() => {
     if (quote || templateId || !defaultTemplate) return;
     setTemplateId(defaultTemplate.id);
@@ -1387,30 +1373,20 @@ function QuotationEditor({
           })),
       ),
     );
-  const patchOm = (patch: Partial<QuotationOmSettings>) =>
-    setDocumentInputs((current) => ({
-      ...current,
-      om: parseQuotationOmSettings({ ...current.om, ...patch }),
-    }));
-  const patchOmService = (
-    key: "cleaning" | "thermoscan" | "visual_inspection",
-    patch: Partial<QuotationOmService>,
-  ) =>
-    setDocumentInputs((current) => ({
-      ...current,
-      om: parseQuotationOmSettings({
-        ...current.om,
-        [key]: { ...current.om[key], ...patch },
-      }),
-    }));
-  const omActiveCount = [
-    documentInputs.om.cleaning,
-    documentInputs.om.thermoscan,
-    documentInputs.om.visual_inspection,
-  ].filter((service) => service.enabled).length;
-  const hasFullInstallTerms = getQuotationTermsProfile(
+
+  const termsProfile = getQuotationTermsProfile(
     mainPackage as unknown as Record<string, unknown> | undefined,
-  ) === "full_install";
+  );
+  // ชุดที่ยังเท่ากับมาตรฐานเป๊ะไม่ต้องบันทึกลงใบ — ปล่อยให้ใบรับข้อความมาตรฐาน
+  // เวอร์ชันล่าสุดตอนเรนเดอร์ จนกว่าจะมีคนแก้จริง ๆ
+  const payloadDocumentInputs = {
+    ...documentInputs,
+    terms:
+      documentInputs.terms &&
+      !isStandardQuotationTermTree(documentInputs.terms, termsText)
+        ? documentInputs.terms
+        : null,
+  };
 
   /** tree → payload ของ API (package_items = หัวข้อหลัก, items = หัวข้ออื่น + ลูก) */
   const serializeTree = () => {
@@ -1433,16 +1409,19 @@ function QuotationEditor({
                 source_package_id: g.source_package_id,
                 package_item_id: g.title.package_item_id ?? null,
                 item_name: g.title.item_name,
-                quantity: 1,
-                unit: g.title.unit || "ชุด",
+                // ส่งจำนวน/หน่วยตามที่กรอกจริง — เดิม hard-code 1 กับ "ชุด"
+                // เอกสารเลยพิมพ์ "… 1 ชุด" ต่อท้ายทุกใบ ทั้งที่ผู้ใช้ใส่ 20 ชุด
+                // และทั้งที่บางแพ็กเกจไม่ได้ตั้งหน่วยไว้เลย
+                quantity: Number(g.title.quantity) || 1,
+                unit: g.title.unit || null,
                 unit_price: price,
                 line_total: price,
               }
             : {
                 source_type: "custom_group" as const,
                 item_name: g.title.item_name,
-                quantity: 1,
-                unit: g.title.unit || "งาน",
+                quantity: Number(g.title.quantity) || 1,
+                unit: g.title.unit || null,
                 unit_price: price,
                 line_total: price,
               };
@@ -1473,8 +1452,6 @@ function QuotationEditor({
       return "กรุณาตั้งชื่อหัวข้อให้ครบทุกอัน";
     if (documentInputs.current_monthly_bill <= 0)
       return "กรุณาระบุค่าไฟปัจจุบันจากข้อมูลจริง";
-    if (hasFullInstallTerms && documentInputs.om.enabled && omActiveCount === 0)
-      return "กรุณาเลือกบริการ O&M อย่างน้อย 1 รายการ หรือปิดบริการ O&M";
     if (termsPercentTotal !== 100)
       return `ยอดรวมงวดชำระเงินต้องเท่ากับ 100% (ปัจจุบัน ${termsPercentTotal}%)`;
     if (issueDate > todayIso()) return "วันที่ใบเสนอราคาต้องไม่เป็นวันที่ล่วงหน้า";
@@ -1520,7 +1497,7 @@ function QuotationEditor({
           outstanding,
           terms,
           termsText,
-          documentInputs,
+          documentInputs: payloadDocumentInputs,
         }),
       });
       if (!response.ok) {
@@ -1568,7 +1545,7 @@ function QuotationEditor({
             payment_template_id: templateId,
             payment_terms: terms,
             terms_text: termsText,
-            document_inputs: documentInputs,
+            document_inputs: payloadDocumentInputs,
           }),
         },
       );
@@ -1585,9 +1562,6 @@ function QuotationEditor({
     "h-8 w-full min-w-0 rounded-md border border-transparent bg-transparent px-1.5 text-xxs text-gray-700 outline-none transition-colors placeholder:text-gray-300 hover:border-gray-200 focus:border-primary focus:bg-white";
   const FIELD =
     "h-8 w-full rounded-lg border border-gray-200 bg-white px-2 text-xs text-gray-800 outline-none transition-colors placeholder:text-gray-300 hover:border-gray-300 focus:border-primary focus:ring-2 focus:ring-primary/10";
-  // ช่องเลือกตัวเลขของ O&M — ใช้ซ้ำทุกแถว จะได้กว้างเท่ากันหมด
-  const OM_SELECT =
-    "h-7 w-12 shrink-0 rounded-md border border-gray-200 bg-white px-0.5 text-center text-xxs font-semibold tabular-nums text-gray-700 outline-none focus:border-primary disabled:bg-gray-50 disabled:opacity-50";
 
   return (
     <div className="fixed inset-0 z-[80] flex items-center justify-center bg-slate-900/50 p-0 backdrop-blur-sm md:p-6">
@@ -1618,6 +1592,29 @@ function QuotationEditor({
         <div className="flex min-h-0 flex-1 flex-col md:flex-row">
           {/* ── ซ้าย: ต้นไม้รายการ (เลื่อนในกรอบตัวเอง หน้าไม่ยาว) ── */}
           <div className="flex min-h-0 flex-1 flex-col border-b border-gray-100 md:border-b-0 md:border-r">
+            {/* แท็บในตัว modal — ตัวแก้เงื่อนไขต้องการความกว้างเต็ม ใส่ในคอลัมน์ขวาไม่พอ */}
+            <div className="flex shrink-0 gap-1 border-b border-gray-100 px-4 pt-2">
+              {([
+                ["items", "รายการในใบเสนอราคา"],
+                ["terms", "เงื่อนไข/ข้อกำหนด"],
+              ] as const).map(([key, label]) => (
+                <button
+                  key={key}
+                  type="button"
+                  onClick={() => setActiveTab(key)}
+                  className={`relative -mb-px h-10 rounded-t-lg border border-b-0 px-4 text-sm font-bold transition-colors ${
+                    activeTab === key
+                      ? "border-gray-200 bg-white text-primary"
+                      : "border-transparent text-gray-500 hover:bg-gray-50"
+                  }`}
+                >
+                  {label}
+                </button>
+              ))}
+            </div>
+
+            {activeTab === "items" && (
+              <>
             <div className="flex shrink-0 items-center gap-2 px-4 py-2">
               <span className="text-xs font-bold text-gray-800">รายการในใบเสนอราคา</span>
               <span className="text-xxs text-gray-400">{groups.length} หัวข้อ</span>
@@ -1687,6 +1684,47 @@ function QuotationEditor({
                         aria-label="ชื่อหัวข้อบนเอกสาร"
                         className="min-w-0 flex-1 resize-none overflow-hidden rounded-md border border-transparent bg-transparent px-1.5 py-1 text-sm font-semibold leading-snug text-gray-800 outline-none transition-colors placeholder:font-normal placeholder:text-gray-300 hover:border-gray-200 focus:border-primary focus:bg-white"
                       />
+                      {/* จำนวน+หน่วยของบรรทัดแรก — เอกสารเอาไปต่อท้ายชื่อ
+                          ("...ขนาดติดตั้งรวม 2.92 kWp" + "1 เฟส")
+                          ความกว้างเท่าบรรทัดย่อยด้านล่าง คอลัมน์จะได้ตรงกันทั้งกลุ่ม */}
+                      {g.kind === "package" && (
+                        // ครอบด้วย div กำหนดความกว้าง — CELL มี w-full อยู่ข้างใน
+                        // ถ้าใส่ w-14 ต่อท้าย CELL ตรง ๆ Tailwind จะให้ w-full ชนะ
+                        // (ลำดับใน stylesheet ไม่ใช่ลำดับใน className) แถวจะล้นจนชื่อหด
+                        // แพ็กเกจหลัก = ตัวที่ผูกกับใบเสนอราคาโดยตรง จำนวน/หน่วยของบรรทัดแรก
+                        // ต้องมาจาก Package Master เท่านั้น แก้ที่นี่ไม่ได้ (ซื้อหลายชุดให้เพิ่ม
+                        // เป็นแพ็กเกจรองแทน) · แพ็กเกจรองแก้จำนวนได้ ระบบคิดราคา/อุปกรณ์ให้เอง
+                        <>
+                          <div className="w-14 shrink-0">
+                            <input
+                              type="number"
+                              min="0"
+                              // ลบจนหมดต้องได้ช่องว่าง ไม่ใช่เลข 0 ค้างไว้ ไม่งั้นพิมพ์ต่อ
+                              // จะกลายเป็น "010" แล้วตัวคูณเพี้ยนตามไปด้วย
+                              // จำนวนบนแถวหัวข้อแก้ไม่ได้ทุกกลุ่ม — ค่ามาจาก Package Master
+                              // ถ้าลูกค้าเอาหลายชุด ให้เพิ่มแพ็กเกจซ้ำ เอกสารจะพิมพ์
+                              // ทุกแถวตามที่กรอกไว้ ไม่รวบให้
+                              value={Number(g.title.quantity) > 0 ? g.title.quantity : ""}
+                              readOnly
+                              tabIndex={-1}
+                              title="แก้จำนวนที่นี่ไม่ได้ — ค่ามาจาก Package Master"
+                              aria-label="จำนวนของแพ็กเกจนี้"
+                              className={`text-center cursor-default text-gray-400 hover:border-transparent ${CELL}`}
+                            />
+                          </div>
+                          <div className="w-[72px] shrink-0">
+                            <input
+                              value={g.title.unit}
+                              readOnly
+                              tabIndex={-1}
+                              placeholder="หน่วย"
+                              title="แก้หน่วยที่นี่ไม่ได้ — ค่ามาจาก Package Master"
+                              aria-label="หน่วยบนบรรทัดแรก"
+                              className={`cursor-default text-gray-400 hover:border-transparent ${CELL}`}
+                            />
+                          </div>
+                        </>
+                      )}
                       {g.kind === "package" ? (
                         (() => {
                           const options = pricePeriods[g.source_package_id ?? -1] || [];
@@ -1835,9 +1873,17 @@ function QuotationEditor({
                             <input
                               type="number"
                               min="0"
-                              value={d.quantity}
+                              // ลบจนหมดต้องเป็นช่องว่าง ไม่ใช่เลข 0 ค้าง ไม่งั้นพิมพ์ต่อได้ "010"
+                              value={Number(d.quantity) > 0 ? d.quantity : ""}
                               onChange={(e) =>
-                                patchLine(g.key, d.key, { quantity: Number(e.target.value) })
+                                patchLine(g.key, d.key, {
+                                  quantity: Number(e.target.value.replace(/^0+(?=\d)/, "")),
+                                  // แก้จำนวนเอง = ตั้งฐานต่อชุดใหม่ตามที่พิมพ์
+                                  // ไม่งั้นพอไปแก้จำนวนชุดทีหลัง ค่าจะถูกดึงกลับไปฐานเดิม
+                                  unitQuantity:
+                                    Number(e.target.value.replace(/^0+(?=\d)/, "")) /
+                                    (Number(g.title.quantity) || 1),
+                                })
                               }
                               className={`text-center ${CELL}`}
                             />
@@ -1883,6 +1929,21 @@ function QuotationEditor({
                 ))}
               </div>
             </div>
+              </>
+            )}
+
+            {activeTab === "terms" && (
+              <QuotationTermsEditor
+                value={documentInputs.terms}
+                profile={termsProfile}
+                legacyTermsText={termsText}
+                om={documentInputs.om}
+                validDays={Number(quote?.valid_days) || 7}
+                onChange={(next) =>
+                  setDocumentInputs((current) => ({ ...current, terms: next }))
+                }
+              />
+            )}
           </div>
 
           {/* ── ขวา: การเงิน (บีบให้พอดีจอ ไม่ต้องเลื่อน) ── */}
@@ -1958,121 +2019,6 @@ function QuotationEditor({
                 </div>
               </div>
 
-              {hasFullInstallTerms && (
-                <div className="order-2 rounded-xl border border-gray-200 bg-white p-2.5">
-                  <button
-                    type="button"
-                    onClick={() => setOmOpen((open) => !open)}
-                    aria-expanded={omOpen}
-                    className="flex w-full items-start justify-between gap-2 text-left"
-                  >
-                    <span className="min-w-0">
-                      <span className="block text-xs font-bold text-gray-800">
-                        บริการ O&amp;M
-                      </span>
-                      <span className={`mt-0.5 block text-xxs ${
-                        isStandardQuotationOmSettings(documentInputs.om)
-                          ? "text-gray-400"
-                          : "text-amber-600"
-                      }`}>
-                        {documentInputs.om.enabled
-                          ? `${documentInputs.om.coverage_years} ปี · ${omActiveCount} รายการ`
-                          : "ไม่รวมค่าดำเนินการ O&M"}
-                        {!isStandardQuotationOmSettings(documentInputs.om) &&
-                          " · ปรับแต่งเฉพาะใบนี้"}
-                      </span>
-                    </span>
-                    <span className="shrink-0 text-xxs font-semibold text-primary">
-                      {omOpen ? "ซ่อน ︿" : "ตั้งค่า ﹀"}
-                    </span>
-                  </button>
-
-                  {omOpen && (
-                    <div className="mt-1.5 space-y-1 border-t border-gray-100 pt-1.5">
-                      <label className="flex items-center justify-between gap-2">
-                        <span className="flex items-center gap-2 text-xxs font-semibold text-gray-600">
-                          <input
-                            type="checkbox"
-                            checked={documentInputs.om.enabled}
-                            onChange={(event) => patchOm({ enabled: event.target.checked })}
-                            className="h-3.5 w-3.5 rounded border-gray-300 accent-primary"
-                          />
-                          รวมค่าดำเนินการ O&amp;M
-                        </span>
-                        <span className="flex items-center gap-1 text-xxs text-gray-400">
-                          ระยะเวลา
-                          <OmNumberSelect
-                            value={documentInputs.om.coverage_years}
-                            disabled={!documentInputs.om.enabled}
-                            onChange={(value) => patchOm({ coverage_years: value })}
-                            className={OM_SELECT}
-                          />
-                          ปี
-                        </span>
-                      </label>
-
-                      {/* ป้ายสั้นๆ พอให้กดเลือก — ข้อความจริงที่ขึ้นบนใบเสนอราคา
-                          อยู่ใน lib/quotation-terms.ts คนละชุดกัน แก้ตรงนี้ไม่กระทบเอกสาร
-                          ตัวเต็มอยู่ใน tooltip */}
-                      {([
-                        ["cleaning", "ล้างแผง", "ล้างแผงโซลาร์"],
-                        ["thermoscan", "ตรวจระบบ", "ตรวจสอบระบบโซลาร์ + THERMOSCAN"],
-                        ["visual_inspection", "ตรวจสภาพแผง", "ตรวจสอบความผิดปกติของแผงโซลาร์"],
-                      ] as const).map(([key, label, fullLabel]) => {
-                        const service = documentInputs.om[key];
-                        const disabled = !documentInputs.om.enabled;
-                        return (
-                          // ชื่อรายการกับช่องเลือกอยู่บรรทัดเดียวกัน — เดิมแยก 2 บรรทัด
-                          // ต่อรายการ ทำให้กล่องยาวเกินจำเป็น (3 รายการ = 6 บรรทัด)
-                          <label
-                            key={key}
-                            className="flex items-center gap-2 rounded-lg bg-slate-50/80 px-2 py-1 text-xxs font-medium text-gray-700"
-                          >
-                            <input
-                              type="checkbox"
-                              checked={service.enabled}
-                              disabled={disabled}
-                              onChange={(event) =>
-                                patchOmService(key, { enabled: event.target.checked })
-                              }
-                              className="h-3.5 w-3.5 shrink-0 rounded border-gray-300 accent-primary disabled:opacity-50"
-                            />
-                            <span className="min-w-0 flex-1 leading-tight" title={fullLabel}>{label}</span>
-                            <span className="flex shrink-0 items-center gap-1 text-gray-400">
-                              <OmNumberSelect
-                                value={service.visits_per_year}
-                                disabled={disabled || !service.enabled}
-                                onChange={(value) =>
-                                  patchOmService(key, { visits_per_year: value })
-                                }
-                                className={OM_SELECT}
-                              />
-                              ครั้ง
-                              <OmNumberSelect
-                                max={documentInputs.om.coverage_years}
-                                value={service.years}
-                                disabled={disabled || !service.enabled}
-                                onChange={(value) => patchOmService(key, { years: value })}
-                                className={OM_SELECT}
-                              />
-                              ปี
-                            </span>
-                          </label>
-                        );
-                      })}
-
-                      <button
-                        type="button"
-                        onClick={() => patchOm(getStandardQuotationOmSettings())}
-                        disabled={isStandardQuotationOmSettings(documentInputs.om)}
-                        className="text-xxs font-semibold text-primary hover:underline disabled:cursor-default disabled:text-gray-300 disabled:no-underline"
-                      >
-                        ↻ คืนค่าจาก Master
-                      </button>
-                    </div>
-                  )}
-                </div>
-              )}
               <div className="order-1 rounded-xl border border-gray-200 bg-white p-2.5">
                 <div className="flex items-center justify-between">
                   <span className="text-xs font-bold text-gray-800">งวดชำระเงิน</span>
@@ -2164,13 +2110,6 @@ function QuotationEditor({
                     className={`w-40 ${FIELD}`}
                   />
                 </div>
-                <textarea
-                  value={termsText}
-                  onChange={(e) => setTermsText(e.target.value)}
-                  rows={2}
-                  placeholder="เงื่อนไขเพิ่มเติม"
-                  className="mt-1.5 h-16 w-full resize-none rounded-lg border border-gray-200 bg-white px-2 py-1.5 text-xs outline-none transition-colors placeholder:text-gray-300 hover:border-gray-300 focus:border-primary focus:ring-2 focus:ring-primary/10"
-                />
               </div>
             </div>
           </div>

@@ -3,11 +3,12 @@ import { readdir, unlink } from "fs/promises";
 import path from "path";
 import { getDb, sql } from "@/lib/db";
 import { requireAdmin, requireAuth } from "@/lib/auth";
-import { syncOrderPaidFlags } from "@/lib/payments-helpers";
+import { syncOrderPaidFlags, plannedInstallmentAmount } from "@/lib/payments-helpers";
 import { mintPreDocNo } from "@/lib/doc-number";
 import { logLeadActivity, paymentStepLabel, fmtBaht } from "@/lib/lead-activity-log";
 import { refreshJourneySafe } from "@/lib/journey";
 import { notifyAccountingRole, notifyLeadOwner, resolveAccountingNotifications } from "@/lib/accounting-notifications";
+import { syncOperationalSlas } from "@/lib/sla-service";
 
 export const runtime = "nodejs";
 export const maxDuration = 30;
@@ -70,12 +71,43 @@ export async function POST(req: NextRequest) {
     const paidFlag = PAID_FLAG[slipField] ?? null;
     const pool = await getDb();
 
+    // ── กันยอดงวดเพี้ยน ────────────────────────────────────────────────
+    // เดิม API เชื่อ body.amount ที่หน้าจอส่งมาโดยไม่ตรวจ ถ้าหน้าจอคำนวณจาก
+    // ข้อมูลเก่ายอดผิดจะถูกบันทึกเงียบ ๆ แล้วไปโผล่เป็น "เงินขาด" ตอนปิดงาน
+    // (lead 686 งวด 2 บันทึก 117,400 ทั้งที่แผนคือ 117,600)
+    // ตอนนี้ server คำนวณยอดที่ควรเก็บเอง แล้วเทียบก่อนบันทึก:
+    //   ต่างกัน + ไม่ได้ระบุเหตุผล → 409 พร้อมบอกทั้งสองตัวเลข
+    //   ต่างกัน + ระบุเหตุผลมา    → บันทึกตามจริงและลง payment_logs ไว้ตรวจสอบ
+    const plannedAmount = await plannedInstallmentAmount(pool, leadId, slipField);
+    const amountReason = String(body.amount_override_reason || "").trim();
+    if (plannedAmount !== null && Math.round(amount) !== plannedAmount) {
+      if (!amountReason) {
+        return NextResponse.json({
+          error: `ยอดไม่ตรงกับแผนผ่อน — ${paymentStepLabel(slipField, stepNo)} ตามแผนต้องเป็น ${fmtBaht(plannedAmount)} บาท แต่ที่กรอกมาคือ ${fmtBaht(amount)} บาท`,
+          planned_amount: plannedAmount,
+          submitted_amount: Math.round(amount),
+        }, { status: 409 });
+      }
+      await pool.request()
+        .input("lead_id", sql.Int, leadId)
+        .input("slip_field", sql.NVarChar(50), slipField)
+        .input("step_no", sql.Int, stepNo)
+        .input("details", sql.NVarChar(sql.MAX), JSON.stringify({
+          planned: plannedAmount, submitted: Math.round(amount), reason: amountReason,
+        }))
+        .input("user_id", sql.Int, gate.userId)
+        .query(`INSERT INTO payment_logs (lead_id, action, slip_field, step_no, details, user_id)
+                VALUES (@lead_id, 'amount_mismatch_accepted', @slip_field, @step_no, @details, @user_id)`);
+    }
+
     // Atomic commit: SELECT staging → INSERT payment → UPDATE lead → DELETE staging.
     // Any failure rolls back so the lead flag never flips while staging lingers.
     const tx = new sql.Transaction(pool);
     await tx.begin();
     let paymentId: number;
     let slipCount: number;
+    let surveyReadyStarted = false;
+    let bookingActivityTitle: string | null = null;
     try {
       const slipRes = await new sql.Request(tx)
         .input("lead_id", sql.Int, leadId)
@@ -151,6 +183,29 @@ export async function POST(req: NextRequest) {
         `);
       const pendingId: number | null = pendingRes.recordset[0]?.id ?? null;
 
+      // A Pre-Survey payment belongs to an existing booking. Persist that
+      // booking first, inside the same transaction, so both the stored facts
+      // and the Timeline read "ออกใบจอง -> ยืนยันชำระเงิน". COALESCE keeps
+      // retries from moving the original booking time forward.
+      let bookingDocNo: string | null = null;
+      if (slipField === "pre_slip_url") {
+        const bookingState = await new sql.Request(tx)
+          .input("lead_id", sql.Int, leadId)
+          .query(`SELECT pre_doc_no, pre_booked_at FROM leads WHERE id = @lead_id`);
+        const hadBooking = Boolean(bookingState.recordset[0]?.pre_doc_no && bookingState.recordset[0]?.pre_booked_at);
+        bookingDocNo = await mintPreDocNo(tx, leadId);
+        await new sql.Request(tx)
+          .input("lead_id", sql.Int, leadId)
+          .input("amount", sql.Decimal(12, 2), amount)
+          .query(`UPDATE leads SET
+                    pre_package_id = COALESCE(pre_package_id, interested_package_id),
+                    pre_total_price = @amount,
+                    pre_booked_at = COALESCE(pre_booked_at, GETDATE()),
+                    updated_at = GETDATE()
+                  WHERE id = @lead_id`);
+        if (!hadBooking) bookingActivityTitle = `Pre-survey doc created: ${bookingDocNo}`;
+      }
+
       // Use the first slip's extracted fields as the canonical record on the
       // payment row. Multiple slips per payment are rare; if present they
       // usually re-confirm the same amount/ref so picking the earliest is fine.
@@ -160,7 +215,7 @@ export async function POST(req: NextRequest) {
         .input("lead_id", sql.Int, leadId)
         .input("step_no", sql.Int, stepNo)
         .input("slip_field", sql.NVarChar(50), slipField)
-        .input("doc_no", sql.NVarChar(50), body.doc_no ?? null)
+        .input("doc_no", sql.NVarChar(50), body.doc_no ?? (bookingDocNo ? `${bookingDocNo}-0` : null))
         .input("amount", sql.Decimal(12, 2), amount)
         .input("description", sql.NVarChar(200), body.description ?? null)
         // confirmed_by stores the human-readable name. Default to the
@@ -250,10 +305,22 @@ export async function POST(req: NextRequest) {
       // order_after_slip) — dynamic per-installment slips (order_installment_N)
       // don't have a column, so the payments row alone is the source of truth.
       if (paidFlag && !isChequePayment) {
+        if (slipField === "pre_slip_url") {
+          const readyRes = await new sql.Request(tx)
+            .input("lead_id", sql.Int, leadId)
+            .query(`SELECT survey_ready_at FROM leads WHERE id = @lead_id`);
+          surveyReadyStarted = !readyRes.recordset[0]?.survey_ready_at;
+        }
         await new sql.Request(tx)
           .input("lead_id", sql.Int, leadId)
           .input("url", sql.NVarChar(200), paymentUrl)
-          .query(`UPDATE leads SET ${slipField} = @url, ${paidFlag} = 1, updated_at = GETDATE() WHERE id = @lead_id`);
+          .input("survey_ready_by", sql.Int, gate.userId)
+          .query(`UPDATE leads SET ${slipField} = @url, ${paidFlag} = 1,
+                    ${slipField === "pre_slip_url" ? `survey_ready_at = COALESCE(survey_ready_at, GETDATE()),
+                    survey_ready_by = COALESCE(survey_ready_by, @survey_ready_by),
+                    survey_ready_note = COALESCE(survey_ready_note, N'เริ่มอัตโนมัติจากการยืนยันชำระเงิน'),` : ""}
+                    updated_at = GETDATE()
+                  WHERE id = @lead_id`);
       }
 
       // Pre-survey deposit confirm → advance status to pre_survey-02 (จอง).
@@ -264,12 +331,6 @@ export async function POST(req: NextRequest) {
           .input("lead_id", sql.Int, leadId)
           .query(`UPDATE leads SET status = 'pre_survey-02', updated_at = GETDATE()
                   WHERE id = @lead_id AND status LIKE 'pre_survey%'`);
-        // Mint pre_doc_no if the lead skipped the /book endpoint (line/LINE
-        // flow PATCHes pre_booked_at + pre_total_price directly, leaving
-        // pre_doc_no NULL). Idempotent — won't overwrite an existing doc-no,
-        // so re-confirms are safe. Without this the receipt falls back to
-        // SSE-{yy}{leadId}-{n} which doesn't match the SM-26xxx convention.
-        await mintPreDocNo(tx, leadId);
       }
 
       await new sql.Request(tx)
@@ -294,6 +355,15 @@ export async function POST(req: NextRequest) {
 
     await refreshJourneySafe(pool, leadId);
 
+    if (bookingActivityTitle) {
+      await logLeadActivity(pool, {
+        leadId,
+        activityType: "presurvey_doc_created",
+        title: bookingActivityTitle,
+        note: body.description ?? null,
+        userId: gate.userId,
+      });
+    }
     await logLeadActivity(pool, {
       leadId,
       activityType: isChequePayment ? "payment_cheque_received" : "payment_confirmed",
@@ -303,6 +373,15 @@ export async function POST(req: NextRequest) {
       note: body.description ?? null,
       userId: gate.userId,
     });
+    if (surveyReadyStarted) {
+      await logLeadActivity(pool, {
+        leadId,
+        activityType: "survey_ready",
+        title: "เริ่ม SLA นัด Pre-Survey อัตโนมัติ",
+        note: "Account ยืนยันการชำระค่าจองแล้ว",
+        userId: gate.userId,
+      });
+    }
 
     await resolveAccountingNotifications(pool, {
       paymentId,
@@ -334,6 +413,7 @@ export async function POST(req: NextRequest) {
       }).catch((error) => console.error("create Sale payment notification failed:", error));
     }
 
+    await syncOperationalSlas(pool, leadId, gate.userId);
     return NextResponse.json({ id: paymentId, url: `/api/payments/${paymentId}`, slip_count: slipCount });
   } catch (e) {
     console.error("POST /api/payments error:", e);

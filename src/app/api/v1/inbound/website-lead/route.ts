@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getDb, sql } from "@/lib/db";
 import { refreshJourneySafe } from "@/lib/journey";
+import { ensureFirstContactSla } from "@/lib/sla-service";
+import { parseThaiLocation } from "@/lib/thai-location";
 
 // POST /api/v1/inbound/website-lead
 //
@@ -188,6 +190,7 @@ export async function POST(req: NextRequest) {
   const email = g("email", "อีเมล");
   const lineId = g("line_id", "lineId", "Line ID");
   const province = g("province", "installation_address", "จังหวัด / พื้นที่ติดตั้ง");
+  const parsedLocation = parseThaiLocation(province);
   const noteBody = g("note", "message", "ข้อความเพิ่มเติม (ถ้ามี)");
 
   const customerTypeRaw = g("customer_type", "เลือกประเภทการใช้งาน");
@@ -316,6 +319,10 @@ export async function POST(req: NextRequest) {
       .input("email", sql.NVarChar(200), email)
       .input("line_id", sql.NVarChar(100), lineId)
       .input("installation_address", sql.NVarChar(500), province)
+      // ฟอร์มเว็บส่งช่อง "จังหวัด / พื้นที่ติดตั้ง" มาเป็นข้อความอิสระ — แยกเก็บเป็น
+      // คอลัมน์จริงตั้งแต่ตอนรับเข้า จะได้ไม่ต้องมา backfill ย้อนหลังอีก
+      .input("district", sql.NVarChar(100), parsedLocation.district)
+      .input("province", sql.NVarChar(100), parsedLocation.province)
       .input("customer_type", sql.NVarChar(20), customerType)
       .input("interested_package_id", sql.Int, interestedPackageId)
       .input("source", sql.NVarChar(50), source)
@@ -324,13 +331,13 @@ export async function POST(req: NextRequest) {
       .input("webform_meta", sql.NVarChar(sql.MAX), JSON.stringify(webformMeta))
       .query(`
         INSERT INTO leads (
-          full_name, phone, email, line_id, installation_address,
+          full_name, phone, email, line_id, installation_address, district, province,
           customer_type, interested_package_id, source, refer_external_id, note,
           webform_meta, status
         )
         OUTPUT INSERTED.id
         VALUES (
-          @full_name, @phone, @email, @line_id, @installation_address,
+          @full_name, @phone, @email, @line_id, @installation_address, @district, @province,
           @customer_type, @interested_package_id, @source, @refer_external_id, @note,
           @webform_meta, 'pre_survey'
         )
@@ -360,6 +367,8 @@ export async function POST(req: NextRequest) {
         `INSERT INTO lead_activities (lead_id, activity_type, title, note)
          VALUES (@lead_id, 'lead_created', 'Lead created (' + @source + ')', @note)`
       );
+
+    await ensureFirstContactSla(db, leadId);
 
     // Response — enough for the caller to (a) confirm the lead landed,
     // (b) get our internal id for correlation, (c) reflect what we

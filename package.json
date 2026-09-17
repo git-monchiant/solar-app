@@ -8,7 +8,10 @@
     "start": "next start",
     "lint": "eslint",
     "test:role-permissions": "node --experimental-strip-types scripts/tests/role-permissions.mjs",
-    "test:quotation-terms": "node --experimental-strip-types scripts/tests/quotation-terms.mjs"
+    "test:quotation-terms": "node --experimental-strip-types scripts/tests/quotation-terms.mjs",
+    "test:grid-tie": "node --experimental-strip-types scripts/tests/grid-tie.mjs",
+    "test:sla": "node --experimental-strip-types scripts/tests/sla-rules.mjs",
+    "test:thai-location": "node --experimental-strip-types scripts/tests/thai-location.mjs"
   },
   "dependencies": {
     "@line/liff": "^2.30.0",
