@@ -42,6 +42,8 @@ dev-server*.log
 *.tsbuildinfo
 next-env.d.ts
 public/uploads
+# รูปหน้างาน O&M — อยู่นอก public/ โดยตั้งใจ (public/ ถูกเสิร์ฟตรงโดยไม่เช็คสิทธิ์)
+storage/
 
 # Adhoc / personal
 .claude/
