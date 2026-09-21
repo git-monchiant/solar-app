@@ -6,7 +6,7 @@ import {
   EV_READY_OPTIONS, HOUSEHOLD_INCOMES, HOUSE_AGES, METER_SIZES, MONTHLY_BILL_BUCKETS,
   OCCUPATIONS, OUTAGE_PRIORITIES, PAYMENT_INTERESTS, PEAK_USAGE, QUESTIONNAIRE_SECTIONS, RESIDENCE_TYPES,
   ROOF_SHAPES, USAGE_TREND_OPTIONS, WORK_DAYS_PER_WEEK, YES_NO, YES_NO_BIN,
-  YES_NO_CONSIDERING, YES_NO_MAYBE, monthlyBillBucket, optionLabel,
+  YES_NO_CONSIDERING, YES_NO_MAYBE, FIELD_LABELS, monthlyBillBucket, optionLabel,
 } from "@/lib/customer-questionnaire";
 import type {
   CountItem, CountSeries, CustomerDashboardData, CustomerDashboardFilters,
@@ -440,19 +440,10 @@ function matches(row: QuestionnaireRow, dimension: string, value: string, score:
   return allowed.has(dimension) && normalizedValue(row[dimension] as string | null) === value;
 }
 
-function answerLabel(row: QuestionnaireRow, dimension: string, value: string, score: number | null): string {
-  if (dimension === "questionnaire_status") return value === "complete" ? `ตอบครบทั้ง ${QUESTIONNAIRE_SECTIONS.length} หัวข้อ` : value === "partial" ? "ตอบแบบสอบถามบางส่วน" : "ยังไม่ตอบแบบสอบถาม";
-  if (dimension === "customer_group") return value === "unclassified" ? "ยังไม่ระบุกลุ่มลูกค้า" : optionLabel(CUSTOMER_GROUPS, row.customer_group);
-  if (dimension === "sales_grade") return value === "ungraded" ? "ยังไม่จัด Sales Grade" : `Grade ${row.customer_grade || "—"} · ${optionLabel(SALES_GRADES, row.customer_grade)}`;
-  if (dimension === "decision_timeline" && value === "unanswered") return "ยังไม่ตอบระยะเวลาในการตัดสินใจ";
-  if (dimension === "monthly_bill") return row.monthly_bill ? `${Number(row.monthly_bill).toLocaleString("th-TH")} บาท` : "—";
-  if (dimension === "decision_factor") {
-    const factor = DECISION_FACTORS.find(f => f.key === value);
-    return `${factor?.label || value}: ${score || parseFactors(row.decision_factors)[value] || "—"}/5`;
-  }
-  if (dimension === "occupant_elderly" || dimension === "occupant_kids" || dimension === "occupant_pets") return `${Number(row[dimension]) || 0} คน`;
-  if (dimension === "ac_period") { const ac = parseAcSplit(row.ac_split); return `${value === "day" ? "กลางวัน" : "กลางคืน"} ${ac?.[value as "day" | "night"] || 0} เครื่อง`; }
-  const optionsByField: Record<string, readonly Option[]> = {
+// Decoder table: which option list turns a stored code into Thai. Module scope
+// because two things read it now — answerLabel for a single answer, and
+// fieldAnswer for every answer in a section.
+const OPTIONS_BY_FIELD: Record<string, readonly Option[]> = {
     residence_type: RESIDENCE_TYPES, house_age: HOUSE_AGES, roof_shape: [...ROOF_SHAPES, ...LEGACY_ROOF_SHAPES],
     electrical_phase: ELECTRICAL_PHASES, meter_size: METER_SIZES, peak_usage: [...PEAK_USAGE, ...LEGACY_PEAK_USAGE],
     home_at_daytime: YES_NO, daytime_occupants: DAYTIME_OCCUPANTS, work_at_home: YES_NO,
@@ -468,11 +459,52 @@ function answerLabel(row: QuestionnaireRow, dimension: string, value: string, sc
     future_usage_trend: USAGE_TREND_OPTIONS, decision_timeline: DECISION_TIMELINES,
     occupation: OCCUPATIONS, age_range: AGE_RANGES, household_income: HOUSEHOLD_INCOMES,
     payment_interest: PAYMENT_INTERESTS,
-  };
+};
+
+// One person's answer to one question, already decoded — "—" is reserved for
+// "not answered" so a blank cell in the sheet never has to be guessed at.
+function fieldAnswer(row: QuestionnaireRow, field: string): string {
+  const raw = row[field];
+  if (raw === null || raw === undefined || raw === "") return "";
+  if (field === "monthly_bill" || field === "monthly_bill_max") return `${Number(raw).toLocaleString("th-TH")} บาท`;
+  if (field.startsWith("occupant_")) return `${Number(raw)}`;
+  if (field === "ac_split") { const ac = parseAcSplit(row.ac_split); return ac ? `กลางวัน ${ac.day} / กลางคืน ${ac.night}` : ""; }
+  if (field === "decision_factors") { const n = Object.keys(parseFactors(row.decision_factors)).length; return n ? `ให้คะแนน ${n} ปัจจัย` : ""; }
+  if (field === "appliances" || field === "daytime_occupants" || field === "outage_priorities") {
+    const options = OPTIONS_BY_FIELD[field];
+    return csvValues(raw as string).map(v => options ? optionLabel(options, v) : v).join(", ");
+  }
+  const options = OPTIONS_BY_FIELD[field];
+  return options ? optionLabel(options, raw as string) : String(raw);
+}
+
+// Every question in a section, decoded, including the ones this person left
+// blank — a column that disappears whenever nobody answered it would make the
+// sheet's shape depend on the data.
+function sectionAnswers(row: QuestionnaireRow, fields: readonly string[]): { label: string; value: string }[] {
+  return fields.map(field => ({ label: FIELD_LABELS[field] || field, value: fieldAnswer(row, field) }));
+}
+
+function answerLabel(row: QuestionnaireRow, dimension: string, value: string, score: number | null): string {
+  if (dimension === "questionnaire_status") return value === "complete" ? `ตอบครบทั้ง ${QUESTIONNAIRE_SECTIONS.length} หัวข้อ` : value === "partial" ? "ตอบแบบสอบถามบางส่วน" : "ยังไม่ตอบแบบสอบถาม";
+  if (dimension === "customer_group") return value === "unclassified" ? "ยังไม่ระบุกลุ่มลูกค้า" : optionLabel(CUSTOMER_GROUPS, row.customer_group);
+  if (dimension === "sales_grade") return value === "ungraded" ? "ยังไม่จัด Sales Grade" : `Grade ${row.customer_grade || "—"} · ${optionLabel(SALES_GRADES, row.customer_grade)}`;
+  if (dimension === "decision_timeline" && value === "unanswered") return "ยังไม่ตอบระยะเวลาในการตัดสินใจ";
+  if (dimension === "monthly_bill") return row.monthly_bill ? `${Number(row.monthly_bill).toLocaleString("th-TH")} บาท` : "—";
+  if (dimension === "decision_factor") {
+    const factor = DECISION_FACTORS.find(f => f.key === value);
+    return `${factor?.label || value}: ${score || parseFactors(row.decision_factors)[value] || "—"}/5`;
+  }
+  if (dimension === "occupant_elderly" || dimension === "occupant_kids" || dimension === "occupant_pets") return `${Number(row[dimension]) || 0} คน`;
+  if (dimension === "ac_period") { const ac = parseAcSplit(row.ac_split); return `${value === "day" ? "กลางวัน" : "กลางคืน"} ${ac?.[value as "day" | "night"] || 0} เครื่อง`; }
   if (dimension === "respondent") return "มีคำตอบอย่างน้อย 1 หัวข้อ";
   if (dimension === "section") {
     const section = QUESTIONNAIRE_SECTIONS.find(item => item.key === value);
-    return section ? `ตอบหัวข้อ ${section.subtitle} แล้ว` : "ตอบหัวข้อนี้แล้ว";
+    if (!section) return "ตอบหัวข้อนี้แล้ว";
+    const answered = sectionAnswers(row, section.fields).filter(item => item.value);
+    return answered.length
+      ? answered.map(item => `${item.label}: ${item.value}`).join(" · ")
+      : `ตอบหัวข้อ ${section.subtitle} แล้ว`;
   }
   if (dimension === "complete") return `ตอบครบทั้ง ${QUESTIONNAIRE_SECTIONS.length} หัวข้อ`;
   if (dimension === "ev_charger") return value === "yes" ? "มีที่ชาร์จรถ EV" : "ไม่มีที่ชาร์จรถ EV";
@@ -480,9 +512,9 @@ function answerLabel(row: QuestionnaireRow, dimension: string, value: string, sc
   // Multi-selects hold a CSV, so decode every code — matching the whole
   // string against a single option would just echo the raw "a,b" back.
   if (dimension === "daytime_occupants" || dimension === "outage_priorities") {
-    return csvValues(row[dimension] as string | null).map(v => optionLabel(optionsByField[dimension] || [], v)).join(", ") || "—";
+    return csvValues(row[dimension] as string | null).map(v => optionLabel(OPTIONS_BY_FIELD[dimension] || [], v)).join(", ") || "—";
   }
-  return optionLabel(optionsByField[dimension] || [], row[dimension] as string | null);
+  return optionLabel(OPTIONS_BY_FIELD[dimension] || [], row[dimension] as string | null);
 }
 
 export async function getCustomerDrilldown(filters: CustomerDashboardFilters, dimension: string, value: string, score: number | null): Promise<CustomerDrilldownRow[]> {
@@ -497,5 +529,8 @@ export async function getCustomerDrilldown(filters: CustomerDashboardFilters, di
     project_name: row.project_name,
     source: row.source,
     answer: answerLabel(row, dimension, value, score),
+    ...(dimension === "section"
+      ? { answers: sectionAnswers(row, QUESTIONNAIRE_SECTIONS.find(item => item.key === value)?.fields || []) }
+      : {}),
   }));
 }

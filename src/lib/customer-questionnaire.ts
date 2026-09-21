@@ -268,6 +268,33 @@ export const QUESTIONNAIRE_SECTIONS = [
   { id: 9, key: "decision", title: "Decision Making Factor", subtitle: "การตัดสินใจติดตั้ง", fields: ["decision_factors", "decision_timeline"] },
 ] as const;
 
+// Short Thai label per questionnaire field, for surfaces that list a section's
+// answers one after another (the drilldown behind a card's headline figure).
+// The Excel export keeps its own spreadsheet-header wording; these are the
+// in-app names, and both are read from this module's field keys.
+export const FIELD_LABELS: Record<string, string> = {
+  occupation: "อาชีพ", age_range: "อายุ", household_income: "รายได้ครัวเรือน/เดือน",
+  payment_interest: "รูปแบบการชำระเงินที่สนใจ",
+  residence_type: "ประเภทที่อยู่อาศัย", house_age: "อายุบ้าน", roof_shape: "ประเภทหลังคา",
+  occupant_total: "จำนวนผู้อยู่อาศัย", occupant_elderly: "จำนวนผู้สูงอายุ",
+  occupant_kids: "จำนวนเด็ก", occupant_pets: "จำนวนสัตว์เลี้ยง",
+  monthly_bill: "ค่าไฟเฉลี่ยต่อเดือน", monthly_bill_max: "ค่าไฟสูงสุดต่อเดือน",
+  electrical_phase: "ระบบไฟปัจจุบัน", meter_size: "ขนาดมิเตอร์", peak_usage: "ช่วงเวลาที่ใช้ไฟสูงสุด",
+  home_at_daytime: "อยู่บ้านช่วงกลางวัน", daytime_occupants: "ผู้อยู่บ้านช่วงกลางวัน",
+  work_at_home: "ทำงาน/ทำธุรกิจที่บ้าน", business_type: "ประเภทธุรกิจที่บ้าน",
+  work_days_per_week: "จำนวนวันทำงานที่บ้าน", ac_split: "จำนวนแอร์", appliances: "อุปกรณ์/ที่ชาร์จ EV",
+  ev_charge_period: "ช่วงเวลาชาร์จ EV",
+  future_ev: "แผนซื้อรถยนต์ EV", future_ev_charger: "แผนติดตั้ง EV Charger",
+  future_extend_home: "แผนต่อเติมบ้าน", future_more_members: "แผนเพิ่มสมาชิกในบ้าน",
+  future_smart_home: "แผนติดตั้ง Smart Home", future_battery: "แผนติดตั้ง Battery",
+  outage_priorities: "อุปกรณ์สำคัญเมื่อไฟดับ", bill_rise_action: "การรับมือเมื่อค่าไฟเพิ่ม 30%",
+  had_roof_leak: "เคยมีหลังคารั่ว", did_roof_repair: "เคยซ่อมหลังคา",
+  had_electrical_issue: "เคยมีปัญหาระบบไฟ", did_panel_replacement: "เคยเปลี่ยนตู้ควบคุมไฟ",
+  self_generates: "บ้านผลิตไฟใช้เองได้", ev_ready: "ความพร้อมรองรับ EV",
+  blackout_resilient: "ใช้ชีวิตได้ตามปกติเมื่อไฟดับ", future_usage_trend: "แนวโน้มใช้ไฟใน 10 ปี",
+  decision_timeline: "ระยะเวลาตัดสินใจ", decision_factors: "คะแนนปัจจัยตัดสินใจ",
+};
+
 export function optionLabel(options: readonly { value: string; label: string }[], raw: string | null | undefined): string {
   if (!raw) return "—";
   const base = raw.startsWith("other:") ? "other" : raw;

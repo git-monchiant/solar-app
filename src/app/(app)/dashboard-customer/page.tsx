@@ -154,42 +154,35 @@ export default function CustomerDashboardPage() {
                 sub-charts: whitespace alone is enough when charts stack in one
                 column, but this is the one card with a chart to the LEFT and a
                 chart ABOVE, and the eye needs a boundary to know which axis
-                belongs to which question.
-                Two COLUMNS rather than a 2×2 grid, and each box is its own
-                height. A grid row stretches its cells to match the tallest, so
-                the share bar — two lines of content — was sitting in a box
-                three times its height. The split also groups by kind: the
-                nominal lists on the left, the two scales on the right. */}
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-3 items-start">
-              <div className="space-y-3">
-              {/* อาชีพ — nominal, eight options, long Thai names: rows, sorted
-                  by size, "อื่นๆ" greyed and sunk to the bottom. */}
+                belongs to which question. The four read in questionnaire order,
+                left to right: that is the order they were asked in. */}
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+              {/* อาชีพ — sorted by size, "อื่นๆ" greyed and sunk to the bottom:
+                  a catch-all must not headline the chart by being the biggest
+                  pile. */}
               <div className="rounded-lg border border-gray-200 p-3">
                 <ChartTitle title="อาชีพ" answered={data.sections.demographics.occupation.answered} />
-                <HorizontalBars series={data.sections.demographics.occupation} color="bg-fuchsia-400" topColor="bg-fuchsia-600" sortByCount mutedValues={["other"]} onClick={(item) => openDrill(`อาชีพ · ${item.label}`, "occupation", item.value)} />
+                <HorizontalBars series={data.sections.demographics.occupation} color="bg-blue-400" topColor="bg-blue-600" sortByCount mutedValues={["other"]} onClick={(item) => openDrill(`อาชีพ · ${item.label}`, "occupation", item.value)} />
               </div>
-              {/* การชำระเงิน — three options and the question is "how much of
-                  the pipeline needs financing", which is a share, not a count. */}
-              <div className="rounded-lg border border-gray-200 p-3">
-                <ChartTitle title="รูปแบบการชำระเงินที่สนใจ" answered={data.sections.demographics.paymentInterest.answered} />
-                <SeriesDistribution series={data.sections.demographics.paymentInterest} tones={["bg-fuchsia-600", "bg-fuchsia-400", "bg-fuchsia-200"]} sortBySize onClick={(item) => openDrill(`รูปแบบการชำระเงิน · ${item.label}`, "payment_interest", item.value)} />
-              </div>
-              </div>
-              <div className="space-y-3">
-              {/* อายุ — a scale, so columns in series order: the shape of the
-                  distribution is the answer, and rows cannot show a shape. */}
+              {/* อายุ and รายได้ are scales, so they keep the series order —
+                  sorting them by size would destroy the shape of the
+                  distribution — and empty buckets stay visible, because a
+                  dropped bucket reads as "no such range" rather than
+                  "nobody here". */}
               <div className="rounded-lg border border-gray-200 p-3">
                 <ChartTitle title="อายุ" answered={data.sections.demographics.ageRange.answered} />
-                <VerticalBars series={data.sections.demographics.ageRange} color="bg-fuchsia-400" topColor="bg-fuchsia-600" ordered showZero onClick={(item) => openDrill(`อายุ · ${item.label}`, "age_range", item.value)} />
+                <HorizontalBars series={data.sections.demographics.ageRange} color="bg-blue-400" topColor="bg-blue-600" showZero onClick={(item) => openDrill(`อายุ · ${item.label}`, "age_range", item.value)} />
               </div>
-              {/* รายได้ — same treatment. "ไม่สะดวกให้ข้อมูล" gets a column too,
-                  but grey and past a gap: declining to answer is a real answer
-                  worth seeing next to the others, it is just not a point on the
-                  income scale. */}
+              {/* "ไม่สะดวกให้ข้อมูล" is an answer, but not a point on the income
+                  scale: greyed and always last, never counted as the leader. */}
               <div className="rounded-lg border border-gray-200 p-3">
                 <ChartTitle title="รายได้ครัวเรือน/เดือน" answered={data.sections.demographics.householdIncome.answered} />
-                <VerticalBars series={data.sections.demographics.householdIncome} color="bg-fuchsia-400" topColor="bg-fuchsia-600" ordered showZero mutedValues={["no_answer"]} onClick={(item) => openDrill(`รายได้ครัวเรือน · ${item.label}`, "household_income", item.value)} />
+                <HorizontalBars series={data.sections.demographics.householdIncome} color="bg-blue-400" topColor="bg-blue-600" showZero mutedValues={["no_answer"]} onClick={(item) => openDrill(`รายได้ครัวเรือน · ${item.label}`, "household_income", item.value)} />
               </div>
+              {/* การชำระเงิน — nominal like อาชีพ, so it sorts by size too. */}
+              <div className="rounded-lg border border-gray-200 p-3">
+                <ChartTitle title="รูปแบบการชำระเงินที่สนใจ" answered={data.sections.demographics.paymentInterest.answered} />
+                <HorizontalBars series={data.sections.demographics.paymentInterest} color="bg-blue-400" topColor="bg-blue-600" sortByCount showZero onClick={(item) => openDrill(`รูปแบบการชำระเงิน · ${item.label}`, "payment_interest", item.value)} />
               </div>
             </div>
           </SectionCard>
@@ -319,10 +312,10 @@ function FilterBanner({ from, to }: { from: string; to: string }) {
 // Tones follow the SECTION, not the slot — each card kept the colour it had
 // before demographics moved to the front, so anyone used to "the teal one" or
 // "the rose one" still finds the same card.
-const SECTION_TONES: Record<number, string> = { 1: "bg-fuchsia-50 text-fuchsia-600", 2: "bg-orange-50 text-orange-600", 3: "bg-emerald-50 text-emerald-600", 4: "bg-sky-50 text-sky-600", 5: "bg-violet-50 text-violet-600", 6: "bg-amber-50 text-amber-600", 7: "bg-rose-50 text-rose-600", 8: "bg-teal-50 text-teal-600", 9: "bg-indigo-50 text-indigo-600" };
+const SECTION_TONES: Record<number, string> = { 1: "bg-blue-50 text-blue-600", 2: "bg-orange-50 text-orange-600", 3: "bg-emerald-50 text-emerald-600", 4: "bg-sky-50 text-sky-600", 5: "bg-violet-50 text-violet-600", 6: "bg-amber-50 text-amber-600", 7: "bg-rose-50 text-rose-600", 8: "bg-teal-50 text-teal-600", 9: "bg-indigo-50 text-indigo-600" };
 // Same hue as the badge, two steps darker — a -600 on white is a chip colour,
 // not a reading colour for a figure this size.
-const SECTION_INK: Record<number, string> = { 1: "text-fuchsia-700", 2: "text-orange-700", 3: "text-emerald-700", 4: "text-sky-700", 5: "text-violet-700", 6: "text-amber-700", 7: "text-rose-700", 8: "text-teal-700", 9: "text-indigo-700" };
+const SECTION_INK: Record<number, string> = { 1: "text-blue-700", 2: "text-orange-700", 3: "text-emerald-700", 4: "text-sky-700", 5: "text-violet-700", 6: "text-amber-700", 7: "text-rose-700", 8: "text-teal-700", 9: "text-indigo-700" };
 function SectionCard({ id, number, title, subtitle, answered, className, children, onCountClick }: { id: string; number: number; title: string; subtitle: string; answered: number; className: string; children: React.ReactNode; onCountClick?: () => void }) {
   return <section id={id} className={`scroll-mt-24 rounded-2xl bg-white border border-gray-200 p-5 flex flex-col gap-4 shadow-sm hover:shadow-md transition-shadow ${className}`}><div className="flex items-start justify-between gap-3"><div className="flex items-start gap-3"><span className={`w-8 h-8 rounded-xl grid place-items-center text-sm font-bold font-mono shrink-0 ${SECTION_TONES[number]}`}>{number}</span><div><div className="text-sm font-bold text-gray-800 tracking-tight">{title}</div><div className="text-xs text-gray-400 mt-0.5">{subtitle}</div></div></div>{/* Headline figure: how many people answered this section, in the card's own
       hue, opening the list of exactly those people — the same shape as the
@@ -412,7 +405,10 @@ function HorizontalBars({ series, color, onClick, multi = false, mutedValues, so
   const max = Math.max(...items.map(i => i.count), 1);
   const hasLeader = max > 0 && items.filter(i => !muted.has(i.value) && i.count === max).length === 1;
   return <div>
-    <div className="space-y-2">{items.map(item => {
+    {/* space-y-1: an 8px bar sitting in a 36px pitch read as loose rows that
+        happened to be near each other rather than one chart. The row is still
+        28px tall, which keeps the click target comfortable. */}
+    <div className="space-y-1">{items.map(item => {
       const isMuted = muted.has(item.value);
       const isEmpty = item.count === 0;
       // Emphasis marks the leader, so it only applies when there IS one: a
@@ -424,7 +420,7 @@ function HorizontalBars({ series, color, onClick, multi = false, mutedValues, so
       // same wherever the pointer lands — and a label the grid had to truncate
       // is still recoverable by hovering it.
       return <button type="button" key={item.value} onClick={() => onClick(item)} disabled={isEmpty} title={`${item.label} · ${item.count}`}
-        className={`w-full grid grid-cols-[minmax(90px,1.3fr)_3fr_42px] gap-2 items-center text-left rounded px-1 py-0.5 ${isEmpty ? "cursor-default" : "cursor-pointer hover:bg-gray-50"}`}>
+        className={`w-full ${BAR_ROW} text-left rounded py-0.5 ${isEmpty ? "cursor-default" : "cursor-pointer hover:bg-gray-50"}`}>
         <span className={`text-xs truncate ${isEmpty ? "text-gray-300" : isMuted ? "text-gray-400 italic" : "text-gray-600"}`}>{item.label}</span>
         {/* No grey track behind the bar: it drew a full-width block on every
             row regardless of the value, which made a card of small counts read
@@ -457,8 +453,16 @@ function YesStat({ label, series, onClick }: { label: string; series: CountSerie
 }
 
 const STACK_COLORS: Record<string, string> = { yes: "bg-emerald-500", considering: "bg-amber-400", maybe: "bg-amber-400", no: "bg-gray-300" };
+// BAR_ROW is shared with HorizontalBars so every bar on the page starts and
+// ends at the same x inside cards of equal width. The third column is the
+// value readout; a stacked bar has no single value to print, so it leaves the
+// cell empty rather than reclaiming the space and breaking the alignment.
+// px-1 rides along in the token: HorizontalBars needs it for the row hover
+// highlight to have a margin, and if only one of the two carried it the bars
+// would sit 4px apart — which is exactly the misalignment this token fixes.
+const BAR_ROW = "grid grid-cols-[minmax(120px,1.3fr)_3fr_42px] gap-2 items-center px-1";
 function StackedSeries({ label, series, onClick }: { label: string; series: CountSeries; onClick: (item: CountItem) => void }) {
-  return <div className="grid grid-cols-[120px_1fr] gap-2 items-center"><div className="text-xs text-gray-600 leading-tight">{label}</div><div className="h-5 rounded overflow-hidden bg-gray-100 flex">{series.items.filter(i => i.count > 0).map(item => <button type="button" key={item.value} title={`${item.label} ${item.count}`} onClick={() => onClick(item)} className={`cursor-pointer h-full ${STACK_COLORS[item.value] || "bg-sky-400"}`} style={{ width: `${pct(item.count, series.answered)}%` }} />)}</div></div>;
+  return <div className={BAR_ROW}><div className="text-xs text-gray-600 leading-tight">{label}</div><div className="h-5 rounded overflow-hidden bg-gray-100 flex">{series.items.filter(i => i.count > 0).map(item => <button type="button" key={item.value} title={`${item.label} ${item.count}`} onClick={() => onClick(item)} className={`cursor-pointer h-full ${STACK_COLORS[item.value] || "bg-sky-400"}`} style={{ width: `${pct(item.count, series.answered)}%` }} />)}</div><div /></div>;
 }
 function StackLegend() { return <div className="flex gap-3 text-xxs text-gray-500"><span><i className="inline-block w-2 h-2 bg-emerald-500 mr-1" />มี</span><span><i className="inline-block w-2 h-2 bg-amber-400 mr-1" />กำลังพิจารณา/ไม่แน่ใจ</span><span><i className="inline-block w-2 h-2 bg-gray-300 mr-1" />ไม่มี</span></div>; }
 
@@ -488,9 +492,18 @@ function DecisionMatrix({ factors, onClick }: { factors: CustomerDashboardData["
 
 function exportDrilldownExcel(state: NonNullable<DrillState>) {
   if (!state.rows.length) return;
-  const header = ["ID", "ชื่อ-นามสกุล", "เบอร์โทร", "บ้านเลขที่", "โครงการ", "Source", "สถานะ", "คำตอบ", "วันที่สร้าง"];
+  // A drilldown on one bar has one answer, so one "คำตอบ" column says it all.
+  // A drilldown on a card's headline figure is the whole section, and pouring
+  // four questions into one cell makes the sheet unsortable — so those rows
+  // carry `answers`, and each question gets its own column instead.
+  const answerLabels = state.rows[0]?.answers?.map(item => item.label) ?? null;
+  const answerHeaders = answerLabels ?? ["คำตอบ"];
+  const header = ["ID", "ชื่อ-นามสกุล", "เบอร์โทร", "บ้านเลขที่", "โครงการ", "Source", "สถานะ", ...answerHeaders, "วันที่สร้าง"];
   const rows = state.rows.map(row => {
     const cfg = STATUS_CONFIG[row.status] || STATUS_CONFIG[row.status.split("-")[0]];
+    const answerCells = answerLabels
+      ? answerLabels.map(label => row.answers?.find(item => item.label === label)?.value ?? "")
+      : [row.answer];
     return [
       row.id,
       row.full_name,
@@ -499,14 +512,16 @@ function exportDrilldownExcel(state: NonNullable<DrillState>) {
       row.project_name || "",
       row.source || "",
       cfg?.label || row.status,
-      row.answer,
+      ...answerCells,
       row.created_at ? new Date(row.created_at).toLocaleDateString("th-TH") : "",
     ];
   });
   const worksheet = XLSX.utils.aoa_to_sheet([header, ...rows]);
   worksheet["!cols"] = [
     { wch: 8 }, { wch: 28 }, { wch: 14 }, { wch: 14 }, { wch: 28 },
-    { wch: 18 }, { wch: 18 }, { wch: 42 }, { wch: 14 },
+    { wch: 18 }, { wch: 18 },
+    ...answerHeaders.map(label => ({ wch: Math.min(Math.max(label.length + 6, 16), 42) })),
+    { wch: 14 },
   ];
   // Not ws["!freeze"]: xlsx-js-style's writer drops it without a word, so the
   // header row never froze. Filter dropdowns are what the freeze was for, and
@@ -569,7 +584,9 @@ function DrilldownModal({ state, onClose }: { state: NonNullable<DrillState>; on
                     <span className="truncate">บ้าน {row.house_number || "—"}</span>
                     <span className="truncate">{row.project_name || "ไม่ระบุโครงการ"}</span>
                   </div>
-                  <div className="text-xs text-sky-700 truncate mt-0.5">{row.answer}</div>
+                  {/* A section drilldown packs every answer into this line, so
+                      it can run past the row — the tooltip carries the rest. */}
+                  <div className="text-xs text-sky-700 truncate mt-0.5" title={row.answer}>{row.answer}</div>
                 </div>
                 <span className={`text-xxs font-bold uppercase tracking-wider px-2 py-0.5 rounded text-white shrink-0 ${cfg?.color || "bg-gray-400"}`}>{cfg?.label || row.status}</span>
               </LeadLink>

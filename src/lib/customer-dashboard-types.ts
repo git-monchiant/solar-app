@@ -109,4 +109,9 @@ export type CustomerDrilldownRow = {
   project_name: string | null;
   source: string | null;
   answer: string;
+  // Filled only for a section drilldown, where "why is this person on the list"
+  // is not one answer but the whole section: one entry per question, in the
+  // order the questionnaire asks them. The Excel export turns these into
+  // columns so each question stays sortable on its own.
+  answers?: { label: string; value: string }[];
 };
