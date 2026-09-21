@@ -97,6 +97,10 @@ export async function GET(req: NextRequest) {
         l.pre_doc_no,
         l.payment_confirmed,
         l.lost_reason,
+        -- Why a still-unbooked lead hasn't paid yet. Carried on the row so
+        -- the dashboard's เหตุผลที่ยังไม่จอง card can open a bucket popup per reason,
+        -- the same way lost_reason backs the Lost card.
+        l.undecided_reason,
         l.order_installments,
         l.order_total,
         l.order_discount_amount,
