@@ -6,7 +6,8 @@ import {
   ABLE_OR_NOT, AC_TIERS, AGE_RANGES, BILL_RISE_ACTIONS, BUSINESS_TYPES,
   DAYTIME_OCCUPANTS, DECISION_FACTORS, DECISION_TIMELINES,
   ELECTRICAL_PHASES, EVER_NEVER, EV_CHARGE_PERIODS, EV_READY_OPTIONS,
-  HOUSEHOLD_INCOMES, HOUSE_AGES, METER_SIZES, OCCUPATIONS, OUTAGE_PRIORITIES, PEAK_USAGE,
+  HOUSEHOLD_INCOMES, HOUSE_AGES, METER_SIZES, OCCUPATIONS, OUTAGE_PRIORITIES,
+  PAYMENT_INTERESTS, PEAK_USAGE,
   QUESTIONNAIRE_SECTIONS, RESIDENCE_TYPES, ROOF_SHAPES,
   USAGE_TREND_OPTIONS, WORK_DAYS_PER_WEEK, YES_NO, YES_NO_BIN,
   YES_NO_CONSIDERING, YES_NO_MAYBE, optionLabel,
@@ -18,6 +19,7 @@ type Option = { value: string; label: string };
 export type CustomerExportRow = {
   id: number;
   full_name: string;
+  phone: string | null;
   installation_address: string | null;
   house_number: string | null;
   meter_number: string | null;
@@ -76,6 +78,7 @@ export type CustomerExportRow = {
   occupation: string | null;
   age_range: string | null;
   household_income: string | null;
+  payment_interest: string | null;
   [key: string]: unknown;
 };
 
@@ -177,6 +180,10 @@ function column(
 const LEAD_COLUMNS: ExportColumn[] = [
   column("ข้อมูล Lead", "id", "Lead ID", "number", row => row.id, undefined, 10),
   column("ข้อมูล Lead", "full_name", "ชื่อ-นามสกุล", "text", row => safeText(row.full_name), undefined, 24),
+  // Whatever list someone opens, the next thing they do with it is call the
+  // people on it — the same reason every bucket export on Dashboard I carries
+  // the phone. Text, not number: leading zeros are part of a Thai phone number.
+  column("ข้อมูล Lead", "phone", "เบอร์โทร", "text", row => safeText(row.phone), undefined, 14),
   column("ข้อมูล Lead", "installation_address", "ที่อยู่ติดตั้ง", "text", row => safeText(row.installation_address), undefined, 38),
   column("ข้อมูล Lead", "house_number", "บ้านเลขที่", "text", row => safeText(row.house_number), undefined, 14),
   column("ข้อมูล Lead", "meter_number", "เลขมิเตอร์", "text", row => safeText(row.meter_number), undefined, 18),
@@ -199,6 +206,7 @@ const QUESTIONNAIRE_COLUMNS: ExportColumn[] = [
   column("1. Customer Demographics", "occupation", "อาชีพ", "choice", row => optionText(OCCUPATIONS, row.occupation), optionList(OCCUPATIONS), 24),
   column("1. Customer Demographics", "age_range", "อายุ", "choice", row => optionText(AGE_RANGES, row.age_range), optionList(AGE_RANGES), 18),
   column("1. Customer Demographics", "household_income", "รายได้ครัวเรือน/เดือน", "choice", row => optionText(HOUSEHOLD_INCOMES, row.household_income), optionList(HOUSEHOLD_INCOMES), 26),
+  column("1. Customer Demographics", "payment_interest", "รูปแบบการชำระเงินที่สนใจ", "choice", row => optionText(PAYMENT_INTERESTS, row.payment_interest), optionList(PAYMENT_INTERESTS), 30),
   column("2. Customer Profile", "residence_type", "ประเภทที่อยู่อาศัย", "choice", row => optionText(RESIDENCE_TYPES, row.residence_type), optionList(RESIDENCE_TYPES), 22),
   column("2. Customer Profile", "house_age", "อายุบ้าน", "choice", row => optionText(HOUSE_AGES, row.house_age), optionList(HOUSE_AGES), 18),
   column("2. Customer Profile", "roof_shape", "ประเภทหลังคา", "choice", row => optionText(ROOF_SHAPES, row.roof_shape), optionList(ROOF_SHAPES), 28),
@@ -244,6 +252,7 @@ const QUESTIONNAIRE_COLUMNS: ExportColumn[] = [
   column("8. Beyond Question", "future_usage_trend", "แนวโน้มใช้ไฟใน 10 ปี", "choice", row => optionText(USAGE_TREND_OPTIONS, row.future_usage_trend), optionList(USAGE_TREND_OPTIONS), 22),
 
   column("9. Decision Making Factor", "decision_timeline", "ระยะเวลาตัดสินใจ", "choice", row => optionText(DECISION_TIMELINES, row.decision_timeline), optionList(DECISION_TIMELINES), 22),
+
   ...DECISION_FACTORS.map(factor => column("9. Decision Making Factor", `decision_${factor.key}`, factor.label, "score 1-5", row => factorScore(row, factor.key), "1 = สำคัญน้อยที่สุด; 5 = สำคัญมากที่สุด", 38)),
   column("9. Decision Making Factor", "decision_other_text", "ปัจจัยอื่นๆ", "text", row => otherFactor(row).text, undefined, 32),
   column("9. Decision Making Factor", "decision_other_score", "คะแนนปัจจัยอื่นๆ", "score 1-5", row => otherFactor(row).score, "1-5", 18),
@@ -267,7 +276,7 @@ export async function getCustomerExportRows(filters: CustomerDashboardFilters): 
   if (to) { request.input("to", sql.Date, to); clauses.push("CAST(l.created_at AS DATE) <= @to"); }
   const where = clauses.length ? `WHERE ${clauses.join(" AND ")}` : "";
   const result = await request.query(`
-    SELECT l.id, l.full_name, l.installation_address,
+    SELECT l.id, l.full_name, l.phone, l.installation_address,
       l.house_number, l.meter_number,
       l.project_id, COALESCE(NULLIF(l.project_alias, N''), NULLIF(l.project_name, N''), p.name) AS project_name,
       p.district AS project_district, p.province AS project_province,
@@ -284,7 +293,7 @@ export async function getCustomerExportRows(filters: CustomerDashboardFilters): 
       d.had_roof_leak, d.did_roof_repair, d.had_electrical_issue, d.did_panel_replacement,
       d.self_generates, d.ev_ready, d.blackout_resilient, d.future_usage_trend,
       d.decision_factors, d.decision_timeline,
-      d.occupation, d.age_range, d.household_income
+      d.occupation, d.age_range, d.household_income, d.payment_interest
     FROM leads l
     LEFT JOIN projects p ON p.id = l.project_id
     LEFT JOIN users u ON u.id = l.assigned_user_id

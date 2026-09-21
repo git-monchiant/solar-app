@@ -1,4 +1,4 @@
-export type CountItem = { value: string; label: string; count: number };
+export type CountItem = { value: string; label: string; count: number; short?: string };
 export type CountSeries = { answered: number; items: CountItem[] };
 
 export type CustomerDashboardFilters = {
@@ -25,6 +25,10 @@ export type CustomerDashboardData = {
     medianMonthlyBill: number | null;
     monthlyBillAnswered: number;
     decisionSoon: number;
+    // Respondents per questionnaire section, keyed by QUESTIONNAIRE_SECTIONS.key.
+    // A card's headline figure and the list behind it read the same number from
+    // here, so clicking "9" can never open a list of 11.
+    sectionRespondents: Record<string, number>;
   };
   summary: {
     customerGroups: CountSeries;
@@ -90,6 +94,7 @@ export type CustomerDashboardData = {
       // "ไม่สะดวกให้ข้อมูล" is a real option inside householdIncome, not a
       // separate counter — declining to answer is an answer.
       householdIncome: CountSeries;
+      paymentInterest: CountSeries;
     };
   };
 };
@@ -97,6 +102,7 @@ export type CustomerDashboardData = {
 export type CustomerDrilldownRow = {
   id: number;
   full_name: string;
+  phone: string | null;
   house_number: string | null;
   status: string;
   created_at: string;

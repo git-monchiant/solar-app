@@ -99,6 +99,8 @@ export interface Lead {
   occupation: string | null;
   age_range: string | null;
   household_income: string | null;
+  // asked right after income; one PAYMENT_INTERESTS code (migration 194)
+  payment_interest: string | null;
   interested_package_id: number | null;
   interested_package_ids: string | null;
   package_note: string | null;

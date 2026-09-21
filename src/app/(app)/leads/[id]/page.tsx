@@ -16,6 +16,7 @@ import LostModal from "@/components/lead/detail/LostModal";
 import ProfileModal from "@/components/lead/detail/ProfileModal";
 import LinePickerModal from "@/components/modal/LinePickerModal";
 import { getSourceStyle } from "@/lib/source-tag";
+import { PAYMENT_INTERESTS, optionLabel } from "@/lib/customer-questionnaire";
 import { Activity } from "@/components/lead/detail/ActivityItem";
 import PreSurveyStep from "@/components/lead/detail/steps/PreSurveyStep";
 import PreSurveyForm, { type PreSurveyFormHandle, DECISION_FACTORS } from "@/components/lead/detail/steps/PreSurveyForm";
@@ -113,6 +114,7 @@ const qCsvLabel = (csv: string | null | undefined, kind: keyof typeof Q_LABELS):
   if (parts.length === 0) return null;
   return parts.map(p => qLabel(p, kind)).filter(Boolean).join(", ");
 };
+
 
 // Convert a Q_LABELS map (code -> Thai label) into an ordered dropdown
 // options list. Insertion order is preserved, matching the picker order in
@@ -1728,6 +1730,10 @@ export default function LeadDetailPage({ params }: { params: Promise<{ id: strin
                     { label: "อาชีพ", value: qLabel(lead.occupation, "occupation"), field: "occupation", kind: "dropdown" as QCellKind, options: [...optsFromQ("occupation"), { value: "other", label: "อื่นๆ" }], raw: lead.occupation ?? "", allowOther: true },
                     { label: "อายุ", value: qLabel(lead.age_range, "ageRange"), field: "age_range", kind: "dropdown" as QCellKind, options: optsFromQ("ageRange"), raw: lead.age_range ?? "" },
                     { label: "รายได้ครัวเรือน/เดือน", value: qLabel(lead.household_income, "householdIncome"), field: "household_income", kind: "dropdown" as QCellKind, options: optsFromQ("householdIncome"), raw: lead.household_income ?? "" },
+                    // Options come straight from PAYMENT_INTERESTS rather than a
+                    // Q_LABELS copy — the list is new, so there is no legacy
+                    // code to decode and no reason to duplicate the labels.
+                    { label: "รูปแบบการชำระเงินที่สนใจ", value: lead.payment_interest ? optionLabel(PAYMENT_INTERESTS, lead.payment_interest) : null, field: "payment_interest", kind: "dropdown" as QCellKind, options: [...PAYMENT_INTERESTS], raw: lead.payment_interest ?? "" },
                   ],
                 },
                 {
