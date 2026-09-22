@@ -18,6 +18,8 @@ import { formatThaiDate, formatThaiTime } from "@/lib/utils/formatters";
 import {
   SLA_POLICY_ORDER,
   SLA_TEAM,
+  slaAnchorDetail,
+  slaAnchorLabel,
   slaTaskLabel,
   slaTeamOf,
 } from "@/lib/sla-display";
@@ -96,12 +98,24 @@ function stamp(value?: string | null): string {
  * ทุก Lead ตามเวลาที่รับเข้ามา เช่น 13.1 ชั่วโมง ซึ่งไม่ใช่ "ข้อตกลง" ที่ใครตั้งไว้
  * นโยบายพวกนี้เก็บกติกาไว้ใน config_json จึงอ่านจากตรงนั้นมาอธิบายแทนตัวเลข
  */
-function slaTargetLines(policy?: SlaPolicy): string[] {
-  if (!policy) return ["—"];
-  if (policy.target_minutes) return [minutesText(policy.target_minutes)];
+type TargetLine = { text: string; title?: string };
+
+function slaTargetLines(policy?: SlaPolicy): TargetLine[] {
+  if (!policy) return [{ text: "—" }];
 
   let config: Record<string, unknown> = {};
   try { config = policy.config_json ? JSON.parse(policy.config_json) : {}; } catch { config = {}; }
+
+  // จุดเริ่มนับต่อท้ายตัวเลขเสมอ — "1 วัน" เฉย ๆ ไม่บอกว่าเริ่มจับเวลาตอนไหน ซึ่งเป็น
+  // สิ่งที่คนอ่านเข้าใจผิดบ่อยที่สุด (ดู SLA_ANCHOR_LABEL ใน sla-display.ts)
+  const anchorKey = typeof config.anchor === "string" ? config.anchor : null;
+  const anchor = slaAnchorLabel(anchorKey);
+  if (policy.target_minutes) {
+    const target: TargetLine = { text: minutesText(policy.target_minutes) };
+    if (!anchor) return [target];
+    const detail = slaAnchorDetail(anchorKey);
+    return [target, { text: anchor, title: detail !== anchor ? detail ?? undefined : undefined }];
+  }
 
   if (policy.deadline_rule === "BANGKOK_CONTACT_WINDOW") {
     const day = String(config.dayWindow ?? "09:00-19:00").replace("-", "–");
@@ -109,15 +123,15 @@ function slaTargetLines(policy?: SlaPolicy): string[] {
     const nightDeadline = String(config.nightDeadline ?? "12:00:00").slice(0, 5);
     // สองเงื่อนไขคนละบรรทัด อ่านทีละข้อได้ ไม่ต้องไล่หาจุดคั่นกลางพืดข้อความ
     return [
-      `${day} ภายใน ${dayDeadline} ของวันเดียวกัน`,
-      `นอกช่วงเวลา ภายใน ${nightDeadline} ของวันถัดไป`,
+      { text: `${day} ภายใน ${dayDeadline} ของวันเดียวกัน` },
+      { text: `นอกช่วงเวลา ภายใน ${nightDeadline} ของวันถัดไป` },
     ];
   }
   if (policy.deadline_rule === "SEQUENTIAL_CALENDAR_DAYS") {
     const days = Array.isArray(config.daysBySequence) ? config.daysBySequence : [];
-    if (days.length) return [`${days.join(" / ")} วัน`, "(ตามรอบที่ติดตาม)"];
+    if (days.length) return [{ text: `${days.join(" / ")} วัน` }, { text: "(ตามรอบที่ติดตาม)" }];
   }
-  return ["—"];
+  return [{ text: "—" }];
 }
 
 /** เกินกำหนดมาแล้วเท่าไร — งานที่ปิดแล้ววัดถึงเวลาปิด งานที่ยังค้างวัดถึงตอนนี้ */
@@ -246,7 +260,12 @@ export default function LeadSlaTracking({ leadId }: { leadId: number }) {
                   <td className={`px-3 py-2 ${muted ? "text-gray-400" : "text-gray-700"}`}>
                     {/* แต่ละเงื่อนไขต้องอยู่บรรทัดเดียวจบ ห้ามตัดคำ คอลัมน์จึงกว้างพอ
                         สำหรับบรรทัดที่ยาวที่สุด */}
-                    {slaTargetLines(policy).map((line, i) => <div key={i} className="whitespace-nowrap">{line}</div>)}
+                    {/* ห้าม whitespace-nowrap — ตารางเป็น table-fixed คอลัมน์นี้กว้างคงที่ 248px
+                        ข้อความที่ยาวกว่านั้น (เช่น จุดเริ่มนับของ Site Survey) จะล้นไปทับคอลัมน์
+                        "เริ่มนับ · ครบกำหนด" แทนที่จะตัดบรรทัดลงมา */}
+                    {slaTargetLines(policy).map((line, i) => (
+                      <div key={i} className="break-words" title={line.title}>{line.text}</div>
+                    ))}
                   </td>
                   {/* เริ่มนับกับครบกำหนดเป็นช่วงเวลาเดียวกัน อยู่คอลัมน์เดียวคนละบรรทัด
                       มีป้ายกำกับในตัว จะได้ไม่ต้องเดาว่าบรรทัดไหนคืออะไร */}

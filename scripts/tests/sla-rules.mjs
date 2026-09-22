@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import {
   CONTACT_RETRY_DAYS,
   completionEvidenceChanged,
@@ -18,6 +18,20 @@ import {
   resolveSurveySlaMilestones,
 } from "../../src/lib/sla-rules.ts";
 import * as rules from "../../src/lib/sla-rules.ts";
+
+/**
+ * migration ถูกย้ายเข้า _archive/ ทันทีที่ deploy ขึ้น prod สำเร็จ (ดู
+ * scripts/migrations/README.md) เทสต์ที่ชี้ path ตรง ๆ จึงพังทั้งไฟล์ทุกครั้งที่มีการ
+ * deploy — ตายตั้งแต่ตอน import ก่อนรัน assert สักข้อ เคยเกิดมาแล้วตอน 175-179 ถูกย้าย
+ * อ่านจากที่ไหนก็ได้ที่เจอก่อน เทสต์จะได้ผูกกับเนื้อหาของ migration ไม่ใช่ตำแหน่งไฟล์
+ */
+function readMigration(name) {
+  for (const dir of ["../migrations/", "../_archive/migrations/"]) {
+    const url = new URL(dir + name, import.meta.url);
+    if (existsSync(url)) return readFileSync(url, "utf8");
+  }
+  throw new Error(`ไม่พบ migration ${name} ทั้งใน scripts/migrations และ scripts/_archive/migrations`);
+}
 import { SLA_TIME_CONDITION_TEXT, slaTimeConditionText } from "../../src/lib/sla-display.ts";
 import {
   compactLatestForwardStatusActivities,
@@ -72,7 +86,11 @@ assert.equal(
   slaTimeConditionText("FIRST_CONTACT", "2026-08-17T01:59:59.000Z"),
   "รับ Lead เวลา 00:00–08:59 ครบกำหนดภายใน 12:00 ของวันเดียวกัน",
 );
-assert.equal(slaTimeConditionText("BOOK_SURVEY", "2026-08-17T00:00:00.000Z"), "ภายใน 1 วัน นับตั้งแต่ Lead เข้ามา");
+// migration 195 — ข้อความบนแท็บ Timeline ต้องเล่าเรื่องเดียวกับ resolveBookSurveyMilestones
+// เคยหลุดมาแล้วรอบหนึ่ง: แก้ตัวคำนวณแต่ลืมแก้ข้อความ ผู้ใช้เลยอ่านเจอกติกาเก่าบนหน้าจอ
+assert.equal(slaTimeConditionText("BOOK_SURVEY", "2026-08-17T00:00:00.000Z"),
+  "ภายใน 1 วัน นับตั้งแต่ได้รับค่าสำรวจ หรือยืนยันฟรีค่าสำรวจ");
+assert.doesNotMatch(SLA_TIME_CONDITION_TEXT.BOOK_SURVEY, /Lead เข้ามา/);
 assert.equal(slaTimeConditionText("UNKNOWN_POLICY", "2026-08-17T00:00:00.000Z"), null);
 
 // The central Timeline shows the workflow state that stands now. If a lead
@@ -143,36 +161,34 @@ assert.deepEqual(OPERATIONAL_SLA_MINUTES.SCHEDULE_INSTALLATION, { target: 3 * 24
 assert.deepEqual(OPERATIONAL_SLA_MINUTES.INSTALLATION, { target: 15 * 24 * 60, due: 15 * 24 * 60, warning: 3 * 24 * 60 });
 assert.deepEqual(OPERATIONAL_SLA_MINUTES.CLOSE_LEAD, { target: 3 * 24 * 60, due: 3 * 24 * 60, warning: 24 * 60 });
 
-const createdAt = new Date("2026-08-22T02:00:00.000Z");
 const readyAt = new Date("2026-08-23T03:00:00.000Z");
 const appointmentAt = new Date("2026-08-23T05:30:00.000Z");
-// ตาราง SLA ข้อ 3: นับตั้งแต่ Lead เข้ามา ไม่ใช่ตั้งแต่จ่ายค่าสำรวจ
+// migration 195: จุดเริ่มนับคือหลักฐานการชำระค่าสำรวจ ไม่ใช่วันที่ Lead เข้ามา
 assert.deepEqual(resolveBookSurveyMilestones({
-  leadCreatedAt: createdAt,
   surveyReadyAt: readyAt,
   appointmentSetAt: appointmentAt,
   surveyDoneAt: null,
-}), { anchorAt: createdAt, completedAt: appointmentAt, anchorSource: "lead_created" });
-// Lead ที่ยังไม่จ่ายและยังไม่นัด ก็ต้องมีนาฬิกาเดินตั้งแต่วันที่เข้ามา
+}), { anchorAt: readyAt, completedAt: appointmentAt, anchorSource: "payment_confirmed" });
+// จ่ายแล้วแต่ยังไม่นัด นาฬิกาเดินแล้วแต่ยังไม่ปิดงาน
 assert.deepEqual(resolveBookSurveyMilestones({
-  leadCreatedAt: createdAt,
-  surveyReadyAt: null,
+  surveyReadyAt: readyAt,
   appointmentSetAt: null,
   surveyDoneAt: null,
-}), { anchorAt: createdAt, completedAt: null, anchorSource: "lead_created" });
-// ข้อมูลเก่าที่ไม่มีวันที่สร้าง ยังถอยไปใช้ลำดับเดิมได้
+}), { anchorAt: readyAt, completedAt: null, anchorSource: "payment_confirmed" });
+// หัวใจของ migration 195 — ยังไม่จ่ายและยังไม่นัด ต้องไม่มีนาฬิกาเลย ไม่ใช่ถอยไปใช้
+// วันที่สร้าง Lead reconcileOperationalInstance อาศัย anchorAt = null ตัวนี้ในการ
+// ยกเลิกงานที่ค้างอยู่ ถ้ามีใครเติม fallback กลับเข้ามาการยกเลิกจะไม่เกิดขึ้นเลย
 assert.deepEqual(resolveBookSurveyMilestones({
-  leadCreatedAt: null,
-  surveyReadyAt: null,
-  appointmentSetAt: appointmentAt,
-  surveyDoneAt: null,
-}), { anchorAt: appointmentAt, completedAt: appointmentAt, anchorSource: "appointment_fallback" });
-assert.deepEqual(resolveBookSurveyMilestones({
-  leadCreatedAt: null,
   surveyReadyAt: null,
   appointmentSetAt: null,
   surveyDoneAt: null,
 }), { anchorAt: null, completedAt: null, anchorSource: null });
+// ข้อมูลเก่า/direct booking ที่ไม่มีหลักฐานชำระเงิน ใช้นัดเป็นหลักฐานสำรอง
+assert.deepEqual(resolveBookSurveyMilestones({
+  surveyReadyAt: null,
+  appointmentSetAt: appointmentAt,
+  surveyDoneAt: null,
+}), { anchorAt: appointmentAt, completedAt: appointmentAt, anchorSource: "appointment_fallback" });
 
 assert.deepEqual(resolveCloseLeadMilestones({
   installCompletedAt: new Date("2026-07-11T13:17:44.686Z"),
@@ -236,18 +252,52 @@ assert.match(slaServiceSource, /ORDER BY CASE WHEN a\.activity_type='status_chan
 assert.match(slaServiceSource, /policyCode:\s*"PROPOSAL_ROI",\s*policyVersion:\s*5[\s\S]{0,300}?refreshCompletionAfterCompletion:\s*true/);
 // DEPOSIT_CLOSE ถูกถอดแล้ว (migration 182) engine ต้องไม่สร้างงานนี้อีก
 assert.doesNotMatch(slaServiceSource, /policyCode:\s*"DEPOSIT_CLOSE"/);
-const paymentAnchorMigration = readFileSync(new URL("../migrations/175_book_survey_from_payment.sql", import.meta.url), "utf8");
+const paymentAnchorMigration = readMigration("175_book_survey_from_payment.sql");
 assert.match(paymentAnchorMigration, /'BOOK_SURVEY',5/);
 assert.match(paymentAnchorMigration, /"anchor":"payment_confirmed"/);
-const forwardSurveyMigration = readFileSync(new URL("../migrations/176_site_survey_forward_completion.sql", import.meta.url), "utf8");
+// migration 195 พาจุดเริ่มนับกลับมาที่หลักฐานการชำระเงิน หลัง 181 ย้ายไปวันที่ Lead
+// เข้ามา ตัวคำนวณใน sla-rules กับตารางนโยบายใน sla_policies ต้องเล่าเรื่องเดียวกัน
+// ไม่งั้นคนที่เปิดอ่าน sla_policies จะได้กติกาที่ไม่ตรงกับที่ระบบใช้จริง
+const slaRulesSource = readFileSync(new URL("../../src/lib/sla-rules.ts", import.meta.url), "utf8");
+assert.doesNotMatch(slaRulesSource, /"lead_created" as const/);
+assert.match(slaServiceSource, /policyCode:\s*"BOOK_SURVEY",\s*policyVersion:\s*6/);
+// ข้อความ "นับจากอะไร" ที่ขึ้นบนแท็บ SLA Tracking ต้องตรงกับถ้อยคำที่ธุรกิจตกลงไว้
+// (2026-09-22) — ตัวเลข "1 วัน" อย่างเดียวไม่บอกจุดเริ่มนับ ซึ่งเป็นสิ่งที่เข้าใจผิดกันมาตลอด
+const { slaAnchorLabel, slaAnchorDetail, SLA_ANCHOR_LABEL } = await import("../../src/lib/sla-display.ts");
+assert.equal(slaAnchorLabel("payment_confirmed"), "นับจากได้รับค่าสำรวจ หรือยืนยันฟรี");
+assert.equal(slaAnchorLabel(null), null);
+// ป้ายบนจอต้องสั้นพอจบในบรรทัดเดียวของช่องกว้าง 248px ไม่งั้นแถวสูงขึ้นจนตารางอ่านยาก
+// (ผู้ใช้แจ้งเมื่อ 2026-09-22 ว่ายาวเกิน 2 บรรทัด) รายละเอียดที่ตัดออกไปอยู่ใน tooltip
+for (const [anchor, label] of Object.entries(SLA_ANCHOR_LABEL)) {
+  assert.ok(label.length <= 36, `ป้าย "${label}" ของ ${anchor} ยาว ${label.length} ตัว เกิน 36 จะขึ้นบรรทัดที่สอง`);
+}
+assert.equal(slaAnchorDetail("later_of_scheduled_or_confirmation"),
+  "นับจากเวลานัดสำรวจ หรือเวลายืนยันนัด แล้วแต่อย่างไหนช้ากว่า");
+// anchor ที่ไม่ได้ย่อ ใช้ป้ายเดิมเป็น tooltip ได้เลย ไม่ต้องเขียนซ้ำสองที่
+assert.equal(slaAnchorDetail("survey_completed"), SLA_ANCHOR_LABEL.survey_completed);
+assert.equal(slaAnchorDetail(null), null);
+assert.equal(slaAnchorLabel("ยังไม่ได้ลงทะเบียน"), null, "anchor ที่ไม่รู้จักต้องไม่แสดงอะไร ดีกว่าเดาผิด");
+// anchor ทุกตัวที่ sla_policies ใช้อยู่จริงต้องมีคำอธิบาย ไม่งั้นแถวนั้นจะโชว์แค่ตัวเลขเปล่า
+for (const anchor of ["payment_confirmed", "first_connected_contact", "survey_completed",
+  "proposal_sent", "deposit_confirmed", "scheduled_installation", "installation_completed",
+  "later_of_scheduled_or_confirmation"]) {
+  assert.ok(SLA_ANCHOR_LABEL[anchor], `ไม่มีคำอธิบายของ anchor "${anchor}"`);
+}
+const trackingSource = readFileSync(new URL("../../src/components/lead/detail/LeadSlaTracking.tsx", import.meta.url), "utf8");
+assert.match(trackingSource, /slaAnchorLabel\(/);
+
+const bookSurveyPaymentMigration = readMigration("195_book_survey_payment_anchor_restored.sql");
+assert.match(bookSurveyPaymentMigration, /'BOOK_SURVEY', 6/);
+assert.match(bookSurveyPaymentMigration, /"anchor":"payment_confirmed"/);
+const forwardSurveyMigration = readMigration("176_site_survey_forward_completion.sql");
 assert.match(forwardSurveyMigration, /'SITE_SURVEY',6/);
 assert.match(forwardSurveyMigration, /a\.old_status='survey'/);
-const completedBookMigration = readFileSync(new URL("../migrations/177_completed_book_survey_payment_anchor.sql", import.meta.url), "utf8");
+const completedBookMigration = readMigration("177_completed_book_survey_payment_anchor.sql");
 assert.match(completedBookMigration, /appointment_before_payment/);
-const latestOrderMigration = readFileSync(new URL("../migrations/178_latest_order_transition_sla.sql", import.meta.url), "utf8");
+const latestOrderMigration = readMigration("178_latest_order_transition_sla.sql");
 assert.match(latestOrderMigration, /latest_forward_order_transition/);
 assert.match(latestOrderMigration, /a\.created_at DESC,a\.id DESC/);
-const siteSurveySevenDaysMigration = readFileSync(new URL("../migrations/179_site_survey_seven_days_all.sql", import.meta.url), "utf8");
+const siteSurveySevenDaysMigration = readMigration("179_site_survey_seven_days_all.sql");
 assert.match(siteSurveySevenDaysMigration, /DATEADD\(DAY, 7, si\.started_at\) AS due_at/);
 assert.match(siteSurveySevenDaysMigration, /DATEADD\(DAY, 5, si\.started_at\) AS warning_at/);
 assert.match(siteSurveySevenDaysMigration, /policy_code = 'SITE_SURVEY'/);
