@@ -37,6 +37,12 @@ type SlaInstance = {
   breached_at: string | null;
   /** งานประเมิน Grade ของ Lead ที่ Grade ถูกตั้งก่อนมีระบบ เวลาในแถวนี้ไม่ใช่เหตุการณ์จริง */
   legacy_backfill?: boolean;
+  /** กติกาของเวอร์ชันที่จับเวลาแถวนี้จริง — ดูคอมเมนต์ใน slaTargetLines() */
+  policy_version?: number | null;
+  policy_target_minutes?: number | null;
+  policy_warning_minutes?: number | null;
+  policy_deadline_rule?: string | null;
+  policy_config_json?: string | null;
 };
 
 type SlaPolicy = {
@@ -99,6 +105,28 @@ function stamp(value?: string | null): string {
  * นโยบายพวกนี้เก็บกติกาไว้ใน config_json จึงอ่านจากตรงนั้นมาอธิบายแทนตัวเลข
  */
 type TargetLine = { text: string; title?: string };
+
+/**
+ * แถวที่มีการจับเวลาไปแล้วต้องอธิบายด้วยกติกาของเวอร์ชันที่จับเวลาแถวนั้นจริง
+ *
+ * นโยบายหนึ่งข้อถูกแก้จุดเริ่มนับได้หลายรอบ (BOOK_SURVEY: v5 นับจากวันที่ Lead เข้ามา
+ * v6 นับจากวันยืนยันรับค่าสำรวจ) ถ้าอ่านจากนโยบายที่ active อย่างเดียว แถวเก่าจะเขียนว่า
+ * "นับจากได้รับค่าสำรวจ" ทั้งที่ช่อง เริ่มนับ เป็นวันที่ Lead เข้ามา — ข้อความกับวันที่
+ * ขัดกันเอง ส่วนขั้นที่ Lead รายนี้ยังไม่เริ่ม ไม่มีแถวให้อ้างอิง จึงใช้นโยบายที่ใช้อยู่
+ */
+function effectivePolicy(policy?: SlaPolicy, instance?: SlaInstance): SlaPolicy | undefined {
+  // แถวที่หาเวอร์ชันของตัวเองไม่เจอ (นโยบายเก่าถูกลบทิ้ง) ยังดีกว่าไม่บอกอะไรเลย
+  // จึงถอยไปใช้นโยบายที่ใช้อยู่ แทนที่จะโชว์ "—"
+  if (!instance || (instance.policy_config_json == null && instance.policy_target_minutes == null)) return policy;
+  return {
+    policy_code: instance.policy_code,
+    name_th: policy?.name_th ?? null,
+    target_minutes: instance.policy_target_minutes ?? null,
+    warning_minutes: instance.policy_warning_minutes ?? null,
+    deadline_rule: instance.policy_deadline_rule ?? null,
+    config_json: instance.policy_config_json ?? null,
+  };
+}
 
 function slaTargetLines(policy?: SlaPolicy): TargetLine[] {
   if (!policy) return [{ text: "—" }];
@@ -263,7 +291,7 @@ export default function LeadSlaTracking({ leadId }: { leadId: number }) {
                     {/* ห้าม whitespace-nowrap — ตารางเป็น table-fixed คอลัมน์นี้กว้างคงที่ 248px
                         ข้อความที่ยาวกว่านั้น (เช่น จุดเริ่มนับของ Site Survey) จะล้นไปทับคอลัมน์
                         "เริ่มนับ · ครบกำหนด" แทนที่จะตัดบรรทัดลงมา */}
-                    {slaTargetLines(policy).map((line, i) => (
+                    {slaTargetLines(effectivePolicy(policy, instance)).map((line, i) => (
                       <div key={i} className="break-words" title={line.title}>{line.text}</div>
                     ))}
                   </td>

@@ -91,6 +91,12 @@ export const SLA_ANCHOR_LABEL: Record<string, string> = {
   deposit_confirmed: "นับจากยืนยันรับมัดจำ",
   scheduled_installation: "นับจากเวลานัดติดตั้ง",
   installation_completed: "นับจากติดตั้งเสร็จ",
+  // จุดเริ่มนับของนโยบายเวอร์ชันก่อน ๆ — ไม่ได้ใช้กับงานใหม่แล้ว แต่แถวที่ถูกจับเวลา
+  // ด้วยกติกาเหล่านี้ยังอยู่ในประวัติ และต้องอธิบายตัวเองได้ว่าตอนนั้นนับจากอะไร
+  lead_created: "นับจากวันที่ Lead เข้าระบบ",
+  survey_ready: "นับจากวันที่พร้อมนัดสำรวจ",
+  grade_assigned: "นับจากวันที่กำหนด Grade ของ Lead",
+  assessment_completed: "นับจากวันที่ประเมินค่าไฟแล้วเสร็จ",
 };
 
 /**

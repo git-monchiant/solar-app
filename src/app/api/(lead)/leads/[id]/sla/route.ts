@@ -35,7 +35,15 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
              ${slaLiveStatusSql("si")} AS status, si.completed_at, ${slaLiveBreachedAtSql("si")} AS breached_at, si.superseded_at,
              si.created_at, si.updated_at,
              u.full_name AS owner_name,
-             p.name_th AS policy_name
+             p.name_th AS policy_name,
+             -- กติกาของ "เวอร์ชันที่จับเวลาแถวนี้จริง" ไม่ใช่เวอร์ชันที่ใช้อยู่ตอนนี้
+             -- BOOK_SURVEY ย้ายจุดเริ่มนับมาแล้วหลายรอบ (v5 = วันที่ Lead เข้ามา,
+             -- v6 = วันยืนยันรับค่าสำรวจ) ถ้าหน้าจออ่านจากนโยบายที่ active อย่างเดียว
+             -- แถวเก่าจะเขียนว่า "นับจากได้รับค่าสำรวจ" ทั้งที่ เริ่มนับ เป็นวันที่ลีดเข้ามา
+             p.target_minutes AS policy_target_minutes,
+             p.warning_minutes AS policy_warning_minutes,
+             p.deadline_rule AS policy_deadline_rule,
+             p.config_json AS policy_config_json
       FROM lead_sla_instances si
       LEFT JOIN users u ON u.id = si.owner_user_id
       LEFT JOIN sla_policies p
