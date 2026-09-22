@@ -264,7 +264,11 @@ export default function LeadSlaTracking({ leadId }: { leadId: number }) {
               const muted = result === "not_started" || result === "legacy";
               // แถวข้อมูลก่อนใช้ระบบ: เวลาที่บันทึกคือเวลาที่ migration รัน ไม่ใช่เหตุการณ์จริง
               // จึงไม่แสดงวันเวลาและระยะเวลาใด ๆ ของแถวนี้
-              const timed = result === "legacy" ? undefined : instance;
+              //
+              // แถวที่ถูกยกเลิกก็เช่นกัน — ถูกยกเลิกเพราะเหตุการณ์ที่ใช้เริ่มจับเวลาไม่เกิดขึ้น
+              // (เช่น ยังไม่ได้รับค่าสำรวจ) วันที่ค้างอยู่ในแถวจึงเป็นของกติกาเดิมที่เลิกใช้แล้ว
+              // แสดงต่อไปจะอ่านเหมือนว่านาฬิกาเดินจริง ทั้งที่ขั้นตอนนี้ยังไม่เริ่มนับ
+              const timed = result === "legacy" || result === "cancelled" ? undefined : instance;
               return (
                 <tr key={code} className={`border-b border-gray-100 last:border-0 ${muted ? "bg-gray-50/40" : ""}`}>
                   <td className={`px-2 py-2 text-center tabular-nums ${muted ? "text-gray-300" : "text-gray-400"}`}>
@@ -291,7 +295,9 @@ export default function LeadSlaTracking({ leadId }: { leadId: number }) {
                     {/* ห้าม whitespace-nowrap — ตารางเป็น table-fixed คอลัมน์นี้กว้างคงที่ 248px
                         ข้อความที่ยาวกว่านั้น (เช่น จุดเริ่มนับของ Site Survey) จะล้นไปทับคอลัมน์
                         "เริ่มนับ · ครบกำหนด" แทนที่จะตัดบรรทัดลงมา */}
-                    {slaTargetLines(effectivePolicy(policy, instance)).map((line, i) => (
+                    {/* แถวที่ไม่แสดงเวลาของตัวเอง (ยกเลิก / ข้อมูลก่อนใช้ระบบ) ใช้กติกาที่บังคับ
+                        ใช้อยู่ตอนนี้ ไม่ใช่กติกาของเวอร์ชันเดิม เพราะไม่มีวันที่ให้เทียบแล้ว */}
+                    {slaTargetLines(effectivePolicy(policy, timed)).map((line, i) => (
                       <div key={i} className="break-words" title={line.title}>{line.text}</div>
                     ))}
                   </td>
