@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getDb, sql, toSqlDate } from "@/lib/db";
+import { getDb, sql, toSqlDate, fixDates } from "@/lib/db";
 import { requireAuth } from "@/lib/auth";
 
 // Aggregations for the experimental admin-only Dashboard-Dev page.
@@ -44,7 +44,7 @@ export async function GET(req: NextRequest) {
                 AND CAST(a.created_at AS DATE) BETWEEN @from AND @to
             )`;
 
-    const [funnel, daily, sources, lostReasons, contactStatus, contactOutcomes, contactRecency, financeBreakdown, interestReasons, interestedCount, undecidedReasons] = await Promise.all([
+    const [funnel, daily, sources, lostReasons, contactStatus, contactOutcomes, contactRecency, financeBreakdown, interestReasons, interestedCount, undecidedReasons, interestProspects] = await Promise.all([
       // Funnel — cumulative stages matching main dashboard's KPI cards.
       // Each stage = leads who reached this point (left→right narrows).
       //   total      = total leads
@@ -350,6 +350,21 @@ export async function GET(req: NextRequest) {
         GROUP BY ISNULL(NULLIF(undecided_reason, N''), N'ไม่ระบุเหตุผล')
         ORDER BY cnt DESC
       `),
+      // The interested prospects themselves, one row each — backs the popup the
+      // เหตุผลที่สนใจ card opens when a bar is clicked. interest_reasons stays a raw
+      // CSV: the client splits it and matches the clicked code, so one prospect
+      // shows up under every reason they ticked — exactly how the counts above
+      // are built. Same WHERE as those two queries so the popup reconciles.
+      bindRange(db.request()).query(`
+        SELECT p.id, p.project_id, p.house_number, p.full_name, p.phone,
+               p.interest_reasons, p.lead_id, p.created_at,
+               COALESCE(NULLIF(p.project_name, N''), pr.name) AS project_name
+        FROM prospects p
+        LEFT JOIN projects pr ON p.project_id = pr.id
+        WHERE p.interest = 'interested'
+          ${hasRange ? "AND CAST(p.created_at AS DATE) BETWEEN @from AND @to" : ""}
+        ORDER BY p.created_at DESC
+      `),
     ]);
 
     const f = funnel.recordset[0];
@@ -373,6 +388,7 @@ export async function GET(req: NextRequest) {
       interest_reasons: interestReasons.recordset,
       interested_count: interestedCount.recordset[0].cnt,
       undecided_reasons: undecidedReasons.recordset,
+      interest_prospects: fixDates(interestProspects.recordset),
     });
   } catch (error) {
     console.error("GET /api/dashboard-dev error:", error);

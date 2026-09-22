@@ -97,7 +97,9 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
                -- Questionnaire §9 (migration 153).
                d.occupation,
                d.age_range,
-               d.household_income
+               d.household_income,
+               -- Asked with the demographics block (migration 194).
+               d.payment_interest
         FROM leads l
         LEFT JOIN projects p ON l.project_id = p.id
         LEFT JOIN packages pk ON l.interested_package_id = pk.id
@@ -413,6 +415,8 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
     pushLd("occupation",       sql.NVarChar(200), body.occupation);
     pushLd("age_range",        sql.NVarChar(20),  body.age_range);
     pushLd("household_income", sql.NVarChar(20),  body.household_income);
+    // Single PAYMENT_INTERESTS code, asked with the block above (migration 194).
+    pushLd("payment_interest", sql.NVarChar(100), body.payment_interest);
     // ─────────────────────────────────────────────────────────────────────
 
     if (body.status !== undefined) {

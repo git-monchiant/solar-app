@@ -71,11 +71,58 @@ const fmtBaht = (v: number) => `฿${Math.round(v).toLocaleString("th-TH")}`;
 
 type LifecycleRow = { [K in LifecycleCol]: string | null }
   & { [K in ContactStateField]: "yes" | "no" | null }
-  & { id: number; full_name: string; phone: string | null; house_number: string | null; source: string | null; status: string; pre_doc_no: string | null; payment_confirmed: boolean | null; pre_slip_uploaded: 0 | 1; lost_reason: string | null; order_installments: string | null; order_paid_count: number; created_at: string | null }
+  & { id: number; full_name: string; phone: string | null; house_number: string | null; source: string | null; status: string; pre_doc_no: string | null; payment_confirmed: boolean | null; pre_slip_uploaded: 0 | 1; lost_reason: string | null; undecided_reason: string | null; order_installments: string | null; order_paid_count: number; created_at: string | null }
   // Money columns — the bucket popup shows per-lead value/paid/outstanding and
   // totals them in its header. payment_dates_json is a FOR JSON PATH array of
   // { slip_field, amount, confirmed_at } covering confirmed payments only.
   & { order_total: number | null; install_extra_cost: number | null; order_discount_amount: number | null; payment_dates_json: string | null; install_actual_date: string | null; pending_amount: number | null; lost_at: string | null };
+
+// One interested prospect from the SEEKER side. Prospects live in their own
+// table — no lifecycle, no money — so the เหตุผลที่สนใจ card opens its own
+// popup instead of reusing the lead bucket one. `interest_reasons` arrives as
+// the raw CSV of reason codes the seeker ticked.
+type ProspectRow = {
+  id: number; project_id: number | null; project_name: string | null;
+  house_number: string | null; full_name: string; phone: string | null;
+  interest_reasons: string | null; lead_id: number | null; created_at: string | null;
+};
+
+// Both popup exports describe their sheet as a column spec, then hand it here.
+// A column with nothing in it for this particular bucket is dropped instead of
+// shipping an empty strip: the ยังไม่จอง list has no order yet, so six money
+// columns and เหตุผลที่ยกเลิก would all be blank. `always` pins the few columns
+// that identify a row even when they happen to be empty.
+type SheetCol<T> = { label: string; wch: number; always?: boolean; value: (row: T) => string | number };
+
+function sheetOf<T>(cols: SheetCol<T>[], rows: T[], sheetName: string) {
+  const cells = rows.map(r => cols.map(c => c.value(r)));
+  const used = cols.filter((c, i) => c.always || cells.some(row => row[i] !== ""));
+  const keep = cols.map((c, i) => c.always || cells.some(row => row[i] !== ""));
+  const aoa: (string | number)[][] = [
+    used.map(c => c.label),
+    ...cells.map(row => row.filter((_, i) => keep[i])),
+  ];
+  const ws = XLSX.utils.aoa_to_sheet(aoa);
+  ws["!cols"] = used.map(c => ({ wch: c.wch }));
+  // Frozen panes aren't in this library's writer — ws["!freeze"] silently did
+  // nothing — so the header row gets filter dropdowns instead, which is what
+  // the frozen row was meant to help with anyway.
+  ws["!autofilter"] = { ref: XLSX.utils.encode_range({ s: { r: 0, c: 0 }, e: { r: rows.length, c: Math.max(used.length - 1, 0) } }) };
+  used.forEach((_, c) => {
+    const ref = XLSX.utils.encode_cell({ r: 0, c });
+    if (ws[ref]) ws[ref].s = { font: { bold: true }, fill: { fgColor: { rgb: "F3F4F6" } } };
+  });
+  const wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, ws, sheetName);
+  return wb;
+}
+
+// interest_reasons is a CSV of reason codes ("save_bill,has_ev"). The card,
+// the popup and the export all split it the same way through these two.
+const reasonCodesOf = (p: ProspectRow) =>
+  (p.interest_reasons || "").split(",").map(s => s.trim()).filter(Boolean);
+const reasonLabelsOf = (p: ProspectRow) =>
+  reasonCodesOf(p).map(c => PRIMARY_REASON_LABEL[c] || c);
 
 // Moved over from /dashboard-dev — subset of fields the 5-card row needs.
 interface DevData {
@@ -86,6 +133,7 @@ interface DevData {
   interest_reasons: { code: string; cnt: number }[];
   interested_count: number;
   undecided_reasons: { reason: string; cnt: number }[];
+  interest_prospects: ProspectRow[];
 }
 
 interface DashboardData {
@@ -129,59 +177,60 @@ export default function DashboardPage() {
   // Click any KPI count → popup lists the leads behind it. Click a name to open
   // that lead's detail in a new tab.
   const [bucket, setBucket] = useState<{ title: string; rows: LifecycleRow[] } | null>(null);
+  // Same idea for the เหตุผลที่สนใจ card, but its rows are prospects, not leads —
+  // different columns, different destination on click — so it gets its own
+  // state and its own popup rather than bending the lead one out of shape.
+  const [prospectBucket, setProspectBucket] = useState<{ title: string; rows: ProspectRow[] } | null>(null);
 
   // Export the open bucket popup's leads to .xlsx — same columns the popup
   // shows, so the sheet matches what the user is looking at.
   const exportBucketExcel = () => {
     if (!bucket || bucket.rows.length === 0) return;
-    // Cancelled-after-booking is the one bucket sales actually calls back, so
-    // it carries a phone column the other buckets don't need.
-    const withPhone = bucket.title === "ยกเลิกหลังจอง";
-    const header = [
-      "ID", "ชื่อ-นามสกุล",
-      ...(withPhone ? ["เบอร์โทร"] : []),
+    const money = (r: LifecycleRow) => moneyOf(r);
+    const cols: SheetCol<LifecycleRow>[] = [
+      { label: "ID", wch: 8, always: true, value: r => r.id },
+      { label: "ชื่อ-นามสกุล", wch: 28, always: true, value: r => r.full_name },
+      // Every bucket carries the phone now — whatever list sales opens, the
+      // next thing they do with it is call the people on it.
+      { label: "เบอร์โทร", wch: 14, value: r => r.phone || "" },
+      { label: "บ้านเลขที่", wch: 14, value: r => r.house_number || "" },
+      { label: "สถานะ", wch: 16, always: true, value: r => (STATUS_CONFIG[r.status] || STATUS_CONFIG[r.status.split("-")[0]])?.label || r.status },
+      { label: "จ่าย (%)", wch: 9, value: r => paidPctOf(r) ?? "" },
       // ราคาเต็ม / ส่วนลด are split out here (the popup only has room for the
       // net figure) so the sheet still shows how มูลค่างาน was arrived at.
-      "บ้านเลขที่", "สถานะ", "จ่าย (%)", "ราคาเต็ม", "ส่วนลด", "มูลค่างาน", "รับแล้ว", "ยังค้างรับ", "วันนัดติดตั้ง", "วันติดตั้งจริง", "วันที่สร้าง", "เหตุผลที่ยกเลิก",
+      { label: "ราคาเต็ม", wch: 13, value: r => money(r).value || "" },
+      { label: "ส่วนลด", wch: 11, value: r => money(r).discount || "" },
+      { label: "มูลค่างาน", wch: 13, value: r => money(r).value ? money(r).net : "" },
+      { label: "รับแล้ว", wch: 13, value: r => money(r).value ? money(r).paid : "" },
+      { label: "ยังค้างรับ", wch: 13, value: r => money(r).value ? money(r).due : "" },
+      { label: "วันนัดติดตั้ง", wch: 14, value: r => thDate(r.install_date) },
+      { label: "วันติดตั้งจริง", wch: 14, value: r => thDate(r.install_actual_date || r.install_done_at) },
+      { label: "วันที่สร้าง", wch: 14, always: true, value: r => thDate(r.created_at) },
+      { label: "เหตุผลที่ยกเลิก", wch: 48, value: r => r.lost_reason || "" },
+      { label: "เหตุผลที่ยังไม่จอง", wch: 28, value: r => r.undecided_reason || "" },
     ];
-    const data = bucket.rows.map((r) => {
-      const cfg = STATUS_CONFIG[r.status] || STATUS_CONFIG[r.status.split("-")[0]];
-      const pct = paidPctOf(r);
-      const m = moneyOf(r);
-      return [
-        r.id,
-        r.full_name,
-        ...(withPhone ? [r.phone || ""] : []),
-        r.house_number || "",
-        cfg?.label || r.status,
-        pct ?? "",
-        m.value || "",
-        m.discount || "",
-        m.value ? m.net : "",
-        m.value ? m.paid : "",
-        m.value ? m.due : "",
-        thDate(r.install_date),
-        thDate(r.install_actual_date || r.install_done_at),
-        thDate(r.created_at),
-        r.lost_reason || "",
-      ];
-    });
-    const ws = XLSX.utils.aoa_to_sheet([header, ...data]);
-    ws["!cols"] = [
-      { wch: 8 }, { wch: 28 },
-      ...(withPhone ? [{ wch: 14 }] : []),
-      { wch: 14 }, { wch: 16 }, { wch: 9 }, { wch: 13 }, { wch: 11 }, { wch: 13 }, { wch: 13 }, { wch: 13 }, { wch: 14 }, { wch: 14 }, { wch: 14 }, { wch: 48 },
-    ];
-    ws["!freeze"] = { xSplit: 0, ySplit: 1 };
-    header.forEach((_, c) => {
-      const ref = XLSX.utils.encode_cell({ r: 0, c });
-      if (ws[ref]) ws[ref].s = { font: { bold: true }, fill: { fgColor: { rgb: "F3F4F6" } } };
-    });
-    const wb = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(wb, ws, "Leads");
+    const wb = sheetOf(cols, bucket.rows, "Leads");
     // Excel rejects \ / : * ? [ ] in names — strip them out of the bucket title.
     const safe = bucket.title.replace(/[\\/:*?[\]]/g, "-");
     XLSX.writeFile(wb, `${safe}_${new Date().toISOString().slice(0, 10)}.xlsx`);
+  };
+  // Prospect popup export — mirrors exportBucketExcel but for the SEEKER-side
+  // columns (no money: a prospect has no order yet).
+  const exportProspectExcel = () => {
+    if (!prospectBucket || prospectBucket.rows.length === 0) return;
+    const cols: SheetCol<ProspectRow>[] = [
+      { label: "ID", wch: 8, always: true, value: p => p.id },
+      { label: "ชื่อ-นามสกุล", wch: 28, always: true, value: p => p.full_name },
+      { label: "เบอร์โทร", wch: 14, value: p => p.phone || "" },
+      { label: "บ้านเลขที่", wch: 14, value: p => p.house_number || "" },
+      { label: "โครงการ", wch: 24, value: p => p.project_name || "" },
+      { label: "เหตุผลที่สนใจ", wch: 40, value: p => reasonLabelsOf(p).join(", ") },
+      { label: "Lead ID", wch: 10, value: p => p.lead_id || "" },
+      { label: "วันที่บันทึก", wch: 14, always: true, value: p => thDate(p.created_at) },
+    ];
+    const wb = sheetOf(cols, prospectBucket.rows, "Prospects");
+    const safe = prospectBucket.title.replace(/[\/:*?[\]]/g, "-");
+    XLSX.writeFile(wb, `prospects_${safe}_${new Date().toISOString().slice(0, 10)}.xlsx`);
   };
   // Global filter — every chip/funnel/popup downstream uses
   // `filteredLifecycleRows`. Default window: 1 Jan 2026 → today (persists
@@ -394,7 +443,31 @@ export default function DashboardPage() {
                 const m = moneyOf(r);
                 return { value: a.value + m.net, paid: a.paid + m.paid, due: a.due + m.due };
               }, { value: 0, paid: 0, due: 0 });
-              if (t.value === 0) return null;
+              if (bucket.rows.length === 0) return null;
+              // Nothing priced in this bucket (ยังไม่จอง is all pre-order) — a
+              // money strip would just read ฿0 four times over. Swap in what
+              // these rows are actually about: how many have been reached at
+              // all. Every bucket keeps a header either way.
+              if (t.value === 0) {
+                const reached = bucket.rows.filter(r =>
+                  r.first_contact_state === "yes" || r.contact2_state === "yes" || r.contact3_state === "yes"
+                  || r.contact4_state === "yes" || r.contact5_state === "yes"
+                ).length;
+                return (
+                  <div className="grid grid-cols-3 gap-px bg-gray-200 border-b border-gray-200 text-center">
+                    {[
+                      ["จำนวนงาน", `${bucket.rows.length} งาน`, "text-gray-900"],
+                      ["ติดต่อได้แล้ว", `${reached} งาน`, "text-emerald-700"],
+                      ["ยังติดต่อไม่ได้", `${bucket.rows.length - reached} งาน`, "text-amber-700"],
+                    ].map(([label, val, cls]) => (
+                      <div key={label} className="bg-gray-50 px-2 py-2">
+                        <div className="text-xxs text-gray-500">{label}</div>
+                        <div className={`text-sm font-bold font-mono tabular-nums ${cls}`}>{val}</div>
+                      </div>
+                    ))}
+                  </div>
+                );
+              }
               return (
                 <div className="grid grid-cols-4 gap-px bg-gray-200 border-b border-gray-200 text-center">
                   {[
@@ -456,6 +529,11 @@ export default function DashboardPage() {
                       {r.status === "lost" && r.lost_reason && (
                         <div className="text-xs text-rose-700 truncate mt-0.5">เหตุผล: {r.lost_reason}</div>
                       )}
+                      {/* Same idea for the ยังไม่จอง buckets — matters most in
+                          the all-up one, where the rows carry mixed reasons. */}
+                      {r.status === "pre_survey" && r.undecided_reason && (
+                        <div className="text-xs text-amber-700 truncate mt-0.5">เหตุผล: {r.undecided_reason}</div>
+                      )}
                     </div>
                     {/* Money as its own fixed column — kept out of the meta line
                         so it can't run under the status badge on narrow rows. */}
@@ -480,6 +558,118 @@ export default function DashboardPage() {
             </div>
             <div className="px-4 py-2 border-t border-gray-100 text-xxs text-gray-400 text-center">
               คลิกชื่อเพื่อเปิด lead detail ใน tab ใหม่
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Prospect popup — the เหตุผลที่สนใจ card's click-through. Same shell as
+          the bucket popup above, different rows: prospects carry no money and
+          no lifecycle, so the summary strip counts heads instead and the row
+          shows project / reasons. A prospect that already became a lead links
+          to that lead; the rest open their project in SEEKER. */}
+      {prospectBucket && (
+        <div
+          className="fixed inset-0 z-50 bg-black/50 flex items-end md:items-center justify-center p-0 md:p-4"
+          onClick={() => setProspectBucket(null)}
+        >
+          <div
+            className="bg-white rounded-t-2xl md:rounded-2xl w-full max-w-3xl max-h-[85vh] flex flex-col shadow-2xl"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-center justify-between p-4 border-b border-gray-200">
+              <h3 className="text-lg font-bold text-gray-900">
+                {prospectBucket.title} <span className="text-base font-normal text-gray-500 ml-1">({prospectBucket.rows.length})</span>
+              </h3>
+              <div className="flex items-center gap-2">
+                {prospectBucket.rows.length > 0 && (
+                  <button
+                    type="button"
+                    onClick={exportProspectExcel}
+                    className="cursor-pointer inline-flex items-center gap-1.5 h-8 px-3 rounded-lg bg-white border border-gray-200 text-xs font-semibold text-gray-700 hover:border-gray-300 transition-colors"
+                    title={`Export ${prospectBucket.rows.length} rows to Excel`}
+                  >
+                    <DownloadIcon className="w-3.5 h-3.5 text-gray-400" strokeWidth={2} />
+                    <span>Excel</span>
+                  </button>
+                )}
+                <button
+                  type="button"
+                  onClick={() => setProspectBucket(null)}
+                  className="cursor-pointer w-8 h-8 rounded-full hover:bg-gray-100 flex items-center justify-center text-gray-500 text-xl"
+                  aria-label="ปิด"
+                >✕</button>
+              </div>
+            </div>
+            {/* How many of these prospects already became leads — the one thing
+                sales asks of this list. */}
+            {(() => {
+              const became = prospectBucket.rows.filter(r => r.lead_id).length;
+              return (
+                <div className="grid grid-cols-3 gap-px bg-gray-200 border-b border-gray-200 text-center">
+                  {[
+                    ["ผู้สนใจ", `${prospectBucket.rows.length} คน`, "text-gray-900"],
+                    ["เป็นลีดแล้ว", `${became} คน`, "text-emerald-700"],
+                    ["ยังไม่เป็นลีด", `${prospectBucket.rows.length - became} คน`, "text-amber-700"],
+                  ].map(([label, val, cls]) => (
+                    <div key={label} className="bg-gray-50 px-2 py-2">
+                      <div className="text-xxs text-gray-500">{label}</div>
+                      <div className={`text-sm font-bold font-mono tabular-nums ${cls}`}>{val}</div>
+                    </div>
+                  ))}
+                </div>
+              );
+            })()}
+            <div className="overflow-auto divide-y divide-gray-100">
+              {prospectBucket.rows.length === 0 ? (
+                <div className="text-center py-10 text-gray-400 text-sm">ไม่มีรายการ</div>
+              ) : prospectBucket.rows.map((pr) => {
+                const labels = reasonLabelsOf(pr);
+                const body = (
+                  <>
+                    <div className="w-8 h-8 rounded-full bg-gray-100 flex items-center justify-center shrink-0 text-gray-600 font-bold text-sm">
+                      {pr.full_name.charAt(0)}
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <div className="text-sm font-semibold text-gray-900 truncate flex items-baseline gap-2">
+                        <span className="truncate">{pr.full_name}</span>
+                        {pr.created_at && (
+                          <span className="text-xs font-normal text-gray-400 shrink-0">
+                            บันทึก {new Date(pr.created_at).toLocaleDateString("th-TH", { day: "numeric", month: "short", year: "2-digit" })}
+                          </span>
+                        )}
+                      </div>
+                      <div className="text-xs text-gray-500 flex items-baseline gap-3 font-mono tabular-nums whitespace-nowrap">
+                        <span className="w-12 shrink-0">ID {pr.id}</span>
+                        <span className="w-24 shrink-0 truncate">บ้าน {pr.house_number || "—"}</span>
+                        <span className="w-24 shrink-0 truncate">{pr.phone || "—"}</span>
+                        <span className="flex-1 min-w-0 truncate">{pr.project_name || ""}</span>
+                      </div>
+                      {labels.length > 0 && (
+                        <div className="text-xs text-emerald-700 truncate mt-0.5">เหตุผล: {labels.join(" · ")}</div>
+                      )}
+                    </div>
+                    <span className={`text-xxs font-bold uppercase tracking-wider px-2 py-0.5 rounded text-white shrink-0 w-20 text-center ${pr.lead_id ? "bg-emerald-500" : "bg-gray-400"}`}>
+                      {pr.lead_id ? `LEAD ${pr.lead_id}` : "PROSPECT"}
+                    </span>
+                  </>
+                );
+                const rowCls = "cursor-pointer flex items-center gap-3 px-4 py-2.5 hover:bg-gray-50";
+                return pr.lead_id ? (
+                  <LeadLink key={pr.id} id={pr.lead_id} className={rowCls}>{body}</LeadLink>
+                ) : (
+                  <a
+                    key={pr.id}
+                    href={pr.project_id ? `/seeker?pid=${pr.project_id}` : "/seeker"}
+                    target="_blank"
+                    rel="noreferrer"
+                    className={rowCls}
+                  >{body}</a>
+                );
+              })}
+            </div>
+            <div className="px-4 py-2 border-t border-gray-100 text-xxs text-gray-400 text-center">
+              คนที่เป็นลีดแล้ว → เปิด lead detail · ที่เหลือ → เปิดโครงการนั้นใน SEEKER
             </div>
           </div>
         </div>
@@ -865,19 +1055,36 @@ export default function DashboardPage() {
           // Pulled in locally — the outer IIFE that owns openBucket/lostRows
           // closes before this block, so the click handlers need their own.
           const lostRows = filteredLifecycleRows.filter(r => r.status === "lost");
+          // ยังไม่จอง = the exact cohort /api/dashboard-dev groups by
+          // undecided_reason: still pre_survey, no booking doc. Re-deriving it
+          // from the rows (instead of trusting the bar's own count) is what
+          // keeps the popup and the bar above it in lockstep.
+          const undecidedRows = filteredLifecycleRows.filter(r => r.status === "pre_survey" && !r.pre_doc_no);
+          // Server folds NULL/'' into this label; match it when filtering back.
+          const NO_REASON = "ไม่ระบุเหตุผล";
+          const prospects = devData.interest_prospects || [];
           const bigNumCls = "cursor-pointer hover:underline decoration-2 underline-offset-4";
           const openBucket = (title: string, rows: LifecycleRow[]) => () => setBucket({ title, rows });
+          const openProspects = (title: string, rows: ProspectRow[]) => () => setProspectBucket({ title, rows });
           return (
             <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
               <div className="rounded-xl bg-white border border-gray-300 p-4">
                 <div className="flex items-baseline justify-between mb-3">
                   <div className="text-sm font-semibold uppercase tracking-wider text-gray-400">เหตุผลที่สนใจ <span className="normal-case text-gray-300">(prospects)</span></div>
-                  <div className="text-lg font-bold font-mono tabular-nums text-emerald-700">{devData.interested_count}</div>
+                  <button
+                    type="button"
+                    onClick={openProspects("ผู้สนใจทั้งหมด", prospects)}
+                    className={`text-lg font-bold font-mono tabular-nums text-emerald-700 ${bigNumCls}`}
+                  >{devData.interested_count}</button>
                 </div>
                 {devData.interest_reasons.length > 0 ? (
                   <BarList
-                    items={devData.interest_reasons.map(r => ({ label: PRIMARY_REASON_LABEL[r.code] || r.code, value: r.cnt }))}
+                    items={devData.interest_reasons.map(r => ({ code: r.code, label: PRIMARY_REASON_LABEL[r.code] || r.code, value: r.cnt }))}
                     color="bg-emerald-500"
+                    onSelect={(code, label) => setProspectBucket({
+                      title: `สนใจเพราะ ${label}`,
+                      rows: prospects.filter(pr => reasonCodesOf(pr).includes(code)),
+                    })}
                   />
                 ) : (
                   <div className="text-xs text-gray-400 text-center py-4">ยังไม่มีข้อมูล</div>
@@ -887,12 +1094,20 @@ export default function DashboardPage() {
               <div className="rounded-xl bg-white border border-gray-300 p-4">
                 <div className="flex items-baseline justify-between mb-3">
                   <div className="text-sm font-semibold uppercase tracking-wider text-gray-400">เหตุผลที่ยังไม่จอง</div>
-                  <div className="text-lg font-bold font-mono tabular-nums text-amber-700">{devData.undecided_reasons.reduce((a, b) => a + b.cnt, 0)}</div>
+                  <button
+                    type="button"
+                    onClick={openBucket("ยังไม่จอง", undecidedRows)}
+                    className={`text-lg font-bold font-mono tabular-nums text-amber-700 ${bigNumCls}`}
+                  >{devData.undecided_reasons.reduce((a, b) => a + b.cnt, 0)}</button>
                 </div>
                 {devData.undecided_reasons.length > 0 ? (
                   <BarList
-                    items={devData.undecided_reasons.map(r => ({ label: r.reason, value: r.cnt }))}
+                    items={devData.undecided_reasons.map(r => ({ code: r.reason, label: r.reason, value: r.cnt }))}
                     color="bg-amber-400"
+                    onSelect={(reason) => setBucket({
+                      title: reason,
+                      rows: undecidedRows.filter(r => (r.undecided_reason?.trim() || NO_REASON) === reason),
+                    })}
                   />
                 ) : (
                   <div className="text-xs text-gray-400 text-center py-4">ยังไม่มีข้อมูล</div>
@@ -1497,14 +1712,22 @@ function SourceQualityChart({
 
 // BarList — moved over from /dashboard-dev so the 5-card row above can render
 // without the dev page.
-function BarList({ items, color }: { items: { label: string; value: number }[]; color: string }) {
+// `onSelect` turns every bar into a button — same click-through the Lost card
+// has. It hands back `code`, not the label: the caller filters its own rows by
+// the raw value (a reason code, or the reason text itself), while the label is
+// already translated for display.
+function BarList({ items, color, onSelect }: {
+  items: { code: string; label: string; value: number }[];
+  color: string;
+  onSelect?: (code: string, label: string) => void;
+}) {
   const max = Math.max(...items.map(i => i.value), 1);
   return (
     <div className="space-y-1.5">
       {items.map((it, i) => {
         const pct = (it.value / max) * 100;
-        return (
-          <div key={i}>
+        const body = (
+          <>
             <div className="flex items-center justify-between mb-0.5">
               <span className="text-xs font-medium text-gray-700 truncate">{it.label}</span>
               <span className="text-xs font-bold font-mono tabular-nums text-gray-900 ml-2">{it.value}</span>
@@ -1512,7 +1735,17 @@ function BarList({ items, color }: { items: { label: string; value: number }[]; 
             <div className="h-1.5 bg-gray-100 overflow-hidden">
               <div className={`h-full ${color}`} style={{ width: `${pct}%` }} />
             </div>
-          </div>
+          </>
+        );
+        return onSelect ? (
+          <button
+            type="button"
+            key={i}
+            onClick={() => onSelect(it.code, it.label)}
+            className="w-full text-left hover:bg-gray-50 rounded px-1 py-0.5 cursor-pointer transition-colors"
+          >{body}</button>
+        ) : (
+          <div key={i}>{body}</div>
         );
       })}
     </div>

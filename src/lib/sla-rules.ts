@@ -78,34 +78,39 @@ export function resolveSurveySlaMilestones(input: {
 
 /**
  * BOOK_SURVEY measures the team's response after the Pre-Survey payment gate.
- * Runtime stores that durable trigger in survey_ready_at for compatibility;
- * normal payment is confirmed by Account and free payment by Sales pressing
- * Next. An appointment remains fallback evidence for legacy/direct booking.
+ * Runtime stores that durable trigger in survey_ready_at; normal payment is
+ * confirmed by Account and free payment by Sales pressing Next. An appointment
+ * remains fallback evidence for legacy/direct booking.
  */
 /**
- * Book Survey — ตาราง SLA ข้อ 3: ภายใน 1 วัน "นับตั้งแต่ Lead เข้ามา"
+ * Book Survey — เริ่มนับเมื่อได้รับค่าสำรวจ หรือยืนยันฟรีค่าสำรวจแล้วเท่านั้น
  *
- * เดิมนับจากวันที่ลูกค้าจ่ายค่าสำรวจ (surveyReadyAt) ผลคือ Lead ที่ยังไม่จ่ายไม่มี
- * นาฬิกาเดินเลย ทั้งที่งานนัดสำรวจเป็นหน้าที่ของทีมขายตั้งแต่ Lead เข้ามา — ตอน
- * สำรวจพบว่ามี Lead ค้างแบบนี้ 223 ราย ไม่มี SLA จับสักตัว ซึ่งกลับหัวกลับหางกับ
- * เจตนาของตาราง เพราะกลุ่มที่ยังไม่ตกลงคือกลุ่มที่ต้องไล่ที่สุด
+ * รอบก่อน (migration 181) ย้ายจุดเริ่มนับไปที่วันที่ Lead เข้ามา เพื่อไม่ให้ Lead ที่
+ * ยังไม่จ่ายหลุดจากเรดาร์ ตอนนั้นพบค้างแบบนั้น 223 ราย แต่ผลข้างเคียงคือนาฬิกาเดิน
+ * คร่อมช่วงที่ทีมขายยังรอลูกค้าตัดสินใจ ซึ่งไม่ใช่งาน "ยืนยันวันเวลานัดสำรวจ" งานนี้
+ * จึงขึ้นแดงทั้งที่ทีมทำงานตามปกติ และตัวเลขไม่สะท้อนผลงานจริง
  *
- * surveyReadyAt ยังรับเข้ามาเพื่อบันทึกไว้ว่าจ่ายเมื่อไร แต่ไม่ใช่จุดเริ่มนับอีกแล้ว
+ * ธุรกิจตัดสินใจให้กลับมานับจากหลักฐานการชำระเงิน: จะนัดสำรวจได้ต้องมีเงินก่อน
+ * leadCreatedAt จึงถูกถอดออกจากการเลือกจุดเริ่มนับทั้งหมด ไม่ใช่ย้ายไปต่อท้าย —
+ * ถ้าเก็บไว้ท้ายแถว Lead ที่ยังไม่จ่ายก็ยังได้นาฬิกาจากวันที่สร้างอยู่ดี ไม่ได้อะไรเลย
+ * ต้องปล่อยให้ anchorAt เป็น null เพื่อให้ reconcileOperationalInstance ยกเลิกงานนั้น
+ *
+ * ผลที่ต้องรู้: Lead ที่ติดต่อได้แล้วแต่ลูกค้ายังไม่ตัดสินใจจ่ายจะไม่มีนาฬิกาจับเลย
+ * เพราะ CONTACT_RETRY สร้างเฉพาะตอนติดต่อไม่ได้ (unreachable) การไล่ตามกลุ่มนี้
+ * อยู่นอกระบบ SLA ตามที่ธุรกิจรับทราบแล้ว
  */
 export function resolveBookSurveyMilestones(input: {
-  leadCreatedAt: Date | null;
   surveyReadyAt: Date | null;
   appointmentSetAt: Date | null;
   surveyDoneAt: Date | null;
 }) {
   const completedAt = input.appointmentSetAt || input.surveyDoneAt;
-  const anchorAt = input.leadCreatedAt || input.surveyReadyAt || completedAt;
+  const anchorAt = input.surveyReadyAt || completedAt;
   return {
     anchorAt,
     completedAt,
-    anchorSource: input.leadCreatedAt
-      ? "lead_created" as const
-      : input.surveyReadyAt ? "payment_confirmed" as const
+    anchorSource: input.surveyReadyAt
+      ? "payment_confirmed" as const
       : completedAt ? "appointment_fallback" as const : null,
   };
 }

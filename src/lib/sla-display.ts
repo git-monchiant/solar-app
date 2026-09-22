@@ -72,6 +72,50 @@ export const SLA_TASK_LABEL: Record<string, string> = {
   CLOSE_LEAD: "ออกใบรับประกัน",
 };
 
+/**
+ * "นับจากอะไร" ของแต่ละนโยบาย — คู่กับ config_json.anchor ใน sla_policies
+ *
+ * ตัวเลข "1 วัน / 7 วัน" อย่างเดียวบอกไม่ได้ว่าเริ่มจับเวลาตอนไหน ซึ่งเป็นจุดที่เข้าใจ
+ * ผิดกันบ่อยที่สุด — BOOK_SURVEY ถูกย้ายจุดเริ่มนับมาแล้ว 3 รอบโดยที่ตัวเลข "1 วัน"
+ * ไม่เคยเปลี่ยนเลย คนอ่านหน้าจอจึงแยกไม่ออกว่าตอนนี้ระบบใช้กติกาไหนอยู่
+ *
+ * ข้อความต้องตรงกับ anchorAt ที่ syncOperationalSlas เลือกจริงใน sla-service.ts
+ * ไม่ใช่ตรงกับที่เอกสารอยากให้เป็น — ถ้าสองอย่างไม่ตรงกันต้องแก้ที่ต้นทาง ไม่ใช่แก้คำ
+ */
+export const SLA_ANCHOR_LABEL: Record<string, string> = {
+  payment_confirmed: "นับจากได้รับค่าสำรวจ หรือยืนยันฟรี",
+  first_connected_contact: "นับจากติดต่อลูกค้าได้ครั้งแรก",
+  later_of_scheduled_or_confirmation: "นับจากเวลานัดสำรวจ หรือเวลายืนยันนัด",
+  survey_completed: "นับจากสำรวจหน้างานเสร็จ",
+  proposal_sent: "นับจากวันที่เสนอราคา",
+  deposit_confirmed: "นับจากยืนยันรับมัดจำ",
+  scheduled_installation: "นับจากเวลานัดติดตั้ง",
+  installation_completed: "นับจากติดตั้งเสร็จ",
+};
+
+/**
+ * ข้อความเต็มสำหรับ tooltip — ใส่เฉพาะ anchor ที่ย่อแล้วเสียรายละเอียดสำคัญไป
+ *
+ * ช่อง SLA กว้างคงที่ 248px ข้อความที่ยาวกว่าหนึ่งบรรทัดทำให้แถวสูงขึ้นจนตารางอ่านยาก
+ * ป้ายบนจอจึงย่อให้จบในบรรทัดเดียว ส่วนเงื่อนไขที่ตัดออก (เช่น Site Survey นับจาก
+ * "อย่างไหนช้ากว่า") เก็บไว้ให้เอาเมาส์ชี้ดู ไม่ได้หายไปเฉย ๆ
+ */
+export const SLA_ANCHOR_DETAIL: Record<string, string> = {
+  payment_confirmed: "นับจากเวลาที่ได้รับค่าสำรวจ หรือเวลาที่ยืนยันฟรีค่าสำรวจ",
+  later_of_scheduled_or_confirmation: "นับจากเวลานัดสำรวจ หรือเวลายืนยันนัด แล้วแต่อย่างไหนช้ากว่า",
+};
+
+/** คำอธิบายจุดเริ่มนับ — anchor ที่ยังไม่ได้ลงทะเบียนไว้ไม่ต้องแสดงอะไร ดีกว่าเดาผิด */
+export function slaAnchorLabel(anchor?: string | null): string | null {
+  return anchor ? SLA_ANCHOR_LABEL[anchor] ?? null : null;
+}
+
+/** ข้อความเต็มของจุดเริ่มนับ ถ้าไม่มีก็ใช้ป้ายบนจอไปเลย (ไม่ได้ย่อจนเสียความหมาย) */
+export function slaAnchorDetail(anchor?: string | null): string | null {
+  if (!anchor) return null;
+  return SLA_ANCHOR_DETAIL[anchor] ?? SLA_ANCHOR_LABEL[anchor] ?? null;
+}
+
 export function slaTaskLabel(policyCode?: string | null, taskName?: string | null): string {
   return (policyCode ? SLA_TASK_LABEL[policyCode] : null) ?? taskName ?? "งาน SLA";
 }
@@ -108,7 +152,7 @@ export const SLA_TIME_CONDITION_TEXT = {
   FIRST_CONTACT: "กำหนดตามช่วงเวลาที่รับ Lead",
   CONTACT_RETRY: "แต่ละรอบนับ 3/5/7/30 วันปฏิทินจากครั้งก่อนที่ติดต่อไม่ได้",
   ELECTRICITY_ASSESSMENT: "ภายใน 1 วัน หลังติดต่อ Lead สำเร็จ",
-  BOOK_SURVEY: "ภายใน 1 วัน นับตั้งแต่ Lead เข้ามา",
+  BOOK_SURVEY: "ภายใน 1 วัน นับตั้งแต่ได้รับค่าสำรวจ หรือยืนยันฟรีค่าสำรวจ",
   SITE_SURVEY: "ภายใน 7 วัน นับจากเวลานัดสำรวจที่ยืนยันแล้ว",
   PROPOSAL_ROI: "ภายใน 2 วัน หลังสำรวจเสร็จ",
   DEPOSIT_CLOSE: "ภายใน 3 วัน หลังส่ง Proposal/เข้า Order",

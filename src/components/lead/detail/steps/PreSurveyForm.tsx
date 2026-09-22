@@ -10,7 +10,7 @@ import {
   ABLE_OR_NOT, AC_TIERS, AGE_RANGES, BATTERY_OPTIONS, BILL_RISE_ACTIONS, BUSINESS_TYPES,
   DAYTIME_OCCUPANTS, DECISION_FACTORS, ELECTRICAL_PHASES, EVER_NEVER,
   EV_CHARGE_PERIODS, EV_READY_OPTIONS, HOUSEHOLD_INCOMES, HOUSE_AGES, METER_SIZES,
-  MONTHLY_BILL_BUCKETS, monthlyBillBucket, OCCUPATIONS, OUTAGE_PRIORITIES, PEAK_USAGE, RESIDENCE_TYPES, ROOF_SHAPES,
+  MONTHLY_BILL_BUCKETS, monthlyBillBucket, OCCUPATIONS, OUTAGE_PRIORITIES, PAYMENT_INTERESTS, PEAK_USAGE, RESIDENCE_TYPES, ROOF_SHAPES,
   USAGE_TREND_OPTIONS, WORK_DAYS_PER_WEEK, YES_NO, YES_NO_BIN,
   YES_NO_CONSIDERING, YES_NO_MAYBE,
 } from "@/lib/customer-questionnaire";
@@ -170,6 +170,9 @@ const PreSurveyForm = forwardRef<PreSurveyFormHandle, Props>(function PreSurveyF
   // §8b Decision Timeline — single string code (migration 049). "other:<text>"
   // pattern follows the same shape as residenceType/roofShape.
   const [decisionTimeline, setDecisionTimeline] = useState<string>(lead.decision_timeline ?? "");
+  // §1 Payment interest — single code (migration 194). Lives with the other
+  // demographics answers: it is asked right after household income.
+  const [paymentInterest, setPaymentInterest] = useState<string>(lead.payment_interest ?? "");
   // §9 Customer Demographics (migration 153). All three optional — income and
   // age are personal data, so no `required` marker on the labels below.
   const [occupation, setOccupation]             = useState<string>(lead.occupation        ?? "");
@@ -276,6 +279,7 @@ const PreSurveyForm = forwardRef<PreSurveyFormHandle, Props>(function PreSurveyF
       future_usage_trend:      futureUsageTrend      || null,
       decision_factors:        stringifyDecisionFactors(decisionFactors, decisionOtherText),
       decision_timeline:       decisionTimeline || null,
+      payment_interest:        paymentInterest || null,
       occupation:              occupation       || null,
       age_range:               ageRange         || null,
       household_income:        householdIncome  || null,
@@ -283,7 +287,7 @@ const PreSurveyForm = forwardRef<PreSurveyFormHandle, Props>(function PreSurveyF
       interested_package_id: selectedPkgs.length ? parseInt(selectedPkgs[0]) : null,
     } as Partial<Lead>);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [residenceType, monthlyBill, peakUsage, electricalPhase, wantsBattery, acUnits, pre_appliances, roofShape, houseAge, occupantTotal, occupantElderly, occupantKids, occupantPets, monthlyBillMax, meterSize, homeAtDaytime, daytimeOccupants, workAtHome, businessType, workDaysPerWeek, acSplit, evChargePeriod, futureEv, futureEvCharger, futureExtendHome, futureMoreMembers, futureSmartHome, futureBattery, outagePriorities, outageOtherText, billRiseAction, hadRoofLeak, didRoofRepair, hadElectricalIssue, didPanelReplacement, selfGenerates, evReady, blackoutResilient, futureUsageTrend, decisionFactors, decisionOtherText, decisionTimeline, occupation, ageRange, householdIncome, selectedPkgs]);
+  }, [residenceType, monthlyBill, peakUsage, electricalPhase, wantsBattery, acUnits, pre_appliances, roofShape, houseAge, occupantTotal, occupantElderly, occupantKids, occupantPets, monthlyBillMax, meterSize, homeAtDaytime, daytimeOccupants, workAtHome, businessType, workDaysPerWeek, acSplit, evChargePeriod, futureEv, futureEvCharger, futureExtendHome, futureMoreMembers, futureSmartHome, futureBattery, outagePriorities, outageOtherText, billRiseAction, hadRoofLeak, didRoofRepair, hadElectricalIssue, didPanelReplacement, selfGenerates, evReady, blackoutResilient, futureUsageTrend, decisionFactors, decisionOtherText, decisionTimeline, paymentInterest, occupation, ageRange, householdIncome, selectedPkgs]);
 
   // Auto-save to DB (debounced). Pending payload is held in a ref so it can
   // flush on unmount — otherwise navigating to the next sub-step within 600ms
@@ -346,6 +350,7 @@ const PreSurveyForm = forwardRef<PreSurveyFormHandle, Props>(function PreSurveyF
       future_usage_trend:      futureUsageTrend      || null,
       decision_factors:        stringifyDecisionFactors(decisionFactors, decisionOtherText),
       decision_timeline:       decisionTimeline || null,
+      payment_interest:        paymentInterest || null,
       occupation:              occupation       || null,
       age_range:               ageRange         || null,
       household_income:        householdIncome  || null,
@@ -363,7 +368,7 @@ const PreSurveyForm = forwardRef<PreSurveyFormHandle, Props>(function PreSurveyF
     }, 600);
     pendingRef.current = { payload, timer };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [residenceType, monthlyBill, peakUsage, electricalPhase, wantsBattery, acUnits, pre_appliances, roofShape, houseAge, occupantTotal, occupantElderly, occupantKids, occupantPets, monthlyBillMax, meterSize, homeAtDaytime, daytimeOccupants, workAtHome, businessType, workDaysPerWeek, acSplit, evChargePeriod, futureEv, futureEvCharger, futureExtendHome, futureMoreMembers, futureSmartHome, futureBattery, outagePriorities, outageOtherText, billRiseAction, hadRoofLeak, didRoofRepair, hadElectricalIssue, didPanelReplacement, selfGenerates, evReady, blackoutResilient, futureUsageTrend, decisionFactors, decisionOtherText, decisionTimeline, occupation, ageRange, householdIncome, selectedPkgs]);
+  }, [residenceType, monthlyBill, peakUsage, electricalPhase, wantsBattery, acUnits, pre_appliances, roofShape, houseAge, occupantTotal, occupantElderly, occupantKids, occupantPets, monthlyBillMax, meterSize, homeAtDaytime, daytimeOccupants, workAtHome, businessType, workDaysPerWeek, acSplit, evChargePeriod, futureEv, futureEvCharger, futureExtendHome, futureMoreMembers, futureSmartHome, futureBattery, outagePriorities, outageOtherText, billRiseAction, hadRoofLeak, didRoofRepair, hadElectricalIssue, didPanelReplacement, selfGenerates, evReady, blackoutResilient, futureUsageTrend, decisionFactors, decisionOtherText, decisionTimeline, paymentInterest, occupation, ageRange, householdIncome, selectedPkgs]);
 
   // Flush any pending debounced save on unmount.
   useEffect(() => {
@@ -495,6 +500,7 @@ const PreSurveyForm = forwardRef<PreSurveyFormHandle, Props>(function PreSurveyF
               className="col-span-2 md:col-span-3 w-full h-8 px-3 rounded-lg border border-gray-200 text-sm focus:outline-none focus:border-active" />
           )}
         </div>
+
       </div>
 
       {/* CUSTOMER DEMOGRAPHICS — questionnaire §9, rendered first even though
@@ -543,6 +549,18 @@ const PreSurveyForm = forwardRef<PreSurveyFormHandle, Props>(function PreSurveyF
             <div className="grid grid-cols-2 md:grid-cols-7 gap-2">
               {HOUSEHOLD_INCOMES.map(o => (
                 <button key={o.value} type="button" onClick={() => setHouseholdIncome(householdIncome === o.value ? "" : o.value)} className={chipBtn(householdIncome === o.value)}>{o.label}</button>
+              ))}
+            </div>
+          </div>
+          {/* รูปแบบการชำระเงิน — asked right after income because the two are
+              one conversation about what the customer can and wants to pay.
+              Same 7-col chip grid as the rows above; the labels are no longer
+              than the income buckets, so they fit the same column. */}
+          <div>
+            <label className={fieldLabel}>รูปแบบการชำระเงินที่ลูกค้าสนใจ</label>
+            <div className="grid grid-cols-2 md:grid-cols-7 gap-2">
+              {PAYMENT_INTERESTS.map(o => (
+                <button key={o.value} type="button" onClick={() => setPaymentInterest(paymentInterest === o.value ? "" : o.value)} className={chipBtn(paymentInterest === o.value)}>{o.label}</button>
               ))}
             </div>
           </div>

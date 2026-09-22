@@ -178,6 +178,7 @@ export const DECISION_FACTORS = [
   { key: "affordable_price", label: "ราคาย่อมเยา" },
 ] as const;
 
+
 export const BATTERY_OPTIONS = [
   { value: "no", label: "ไม่ต้องการ" },
   { value: "yes", label: "ต้องการ" },
@@ -201,26 +202,47 @@ export const OCCUPATIONS = [
 
 // Buckets are contiguous on purpose — the paper form's "ต่ำกว่า 20 / 21-30"
 // left age 20 with nowhere to go, so the first bucket is "ต่ำกว่า 21 ปี".
+// `short` is the axis form: the full label is what the form, the drilldown
+// table and the Excel export say, but it does not fit under a column on
+// Dashboard III. Only the charts read `short`; nothing else may substitute it.
 export const AGE_RANGES = [
-  { value: "lt21", label: "ต่ำกว่า 21 ปี" },
-  { value: "21_30", label: "21-30 ปี" },
-  { value: "31_40", label: "31-40 ปี" },
-  { value: "41_50", label: "41-50 ปี" },
-  { value: "51_60", label: "51-60 ปี" },
-  { value: "gte61", label: "61 ปีขึ้นไป" },
+  { value: "lt21", label: "ต่ำกว่า 21 ปี", short: "<21" },
+  { value: "21_30", label: "21-30 ปี", short: "21–30" },
+  { value: "31_40", label: "31-40 ปี", short: "31–40" },
+  { value: "41_50", label: "41-50 ปี", short: "41–50" },
+  { value: "51_60", label: "51-60 ปี", short: "51–60" },
+  { value: "gte61", label: "61 ปีขึ้นไป", short: "61+" },
 ] as const;
 
 // "ไม่สะดวกให้ข้อมูล" is a real stored answer, not NULL — declining to answer
 // and never being asked are different facts, and collapsing them into NULL
 // would skew every `answered` count on Dashboard III.
+// Axis forms switch from หมื่น to แสน at 100,000 because that is how the
+// amount is said out loud — "10–15 หมื่น" is not Thai. The unit word rides
+// along on every label, so the two scales never get confused.
 export const HOUSEHOLD_INCOMES = [
-  { value: "lt30k", label: "ต่ำกว่า 30,000 บาท" },
-  { value: "30k_50k", label: "30,000–49,999 บาท" },
-  { value: "50k_75k", label: "50,000–74,999 บาท" },
-  { value: "75k_100k", label: "75,000–99,999 บาท" },
-  { value: "100k_150k", label: "100,000–149,999 บาท" },
-  { value: "gte150k", label: "150,000 บาทขึ้นไป" },
-  { value: "no_answer", label: "ไม่สะดวกให้ข้อมูล" },
+  { value: "lt30k", label: "ต่ำกว่า 30,000 บาท", short: "< 3 หมื่น" },
+  { value: "30k_50k", label: "30,000–49,999 บาท", short: "3–5 หมื่น" },
+  { value: "50k_75k", label: "50,000–74,999 บาท", short: "5–7.5 หมื่น" },
+  { value: "75k_100k", label: "75,000–99,999 บาท", short: "7.5–10 หมื่น" },
+  { value: "100k_150k", label: "100,000–149,999 บาท", short: "1–1.5 แสน" },
+  { value: "gte150k", label: "150,000 บาทขึ้นไป", short: "1.5 แสน+" },
+  { value: "no_answer", label: "ไม่สะดวกให้ข้อมูล", short: "ไม่ตอบ" },
+] as const;
+
+// The payment form the customer is interested in — asked right after household
+// income because the two answer the same question about what they can and want
+// to pay. Single-select: one code on lead_data.payment_interest (migration
+// 194), NULL until answered.
+//
+// Distinct from PAYMENT_TYPES in lib/constants/statuses.ts: that list is the
+// method used to pay the pre-survey fee, picked once the deal is real. This one
+// is what the customer SAYS they are interested in while still a lead, so the
+// two can (and should) be compared later.
+export const PAYMENT_INTERESTS = [
+  { value: "cash", label: "เงินสด / โอนเงิน" },
+  { value: "loan", label: "สินเชื่อ / กู้ธนาคาร" },
+  { value: "credit_card", label: "บัตรเครดิต" },
 ] as const;
 
 // Array order IS the order every surface presents the questionnaire in — the
@@ -235,7 +257,7 @@ export const HOUSEHOLD_INCOMES = [
 // stopped matching these ids when demographics moved to the front. Match on
 // `key` / column name, never on the number in those comments.
 export const QUESTIONNAIRE_SECTIONS = [
-  { id: 1, key: "demographics", title: "Customer Demographics", subtitle: "ข้อมูลลูกค้า", fields: ["occupation", "age_range", "household_income"] },
+  { id: 1, key: "demographics", title: "Customer Demographics", subtitle: "ข้อมูลลูกค้า", fields: ["occupation", "age_range", "household_income", "payment_interest"] },
   { id: 2, key: "customer_profile", title: "Customer Profile", subtitle: "ข้อมูลบ้านและผู้อยู่อาศัย", fields: ["residence_type", "house_age", "roof_shape", "occupant_total", "occupant_elderly", "occupant_kids", "occupant_pets"] },
   { id: 3, key: "energy_profile", title: "Energy Profile", subtitle: "การใช้พลังงานปัจจุบัน", fields: ["monthly_bill", "monthly_bill_max", "electrical_phase", "meter_size", "peak_usage"] },
   { id: 4, key: "lifestyle", title: "Lifestyle Assessment", subtitle: "รูปแบบการใช้ชีวิต", fields: ["home_at_daytime", "daytime_occupants", "work_at_home", "business_type", "work_days_per_week", "ac_split", "appliances", "ev_charge_period"] },
@@ -245,6 +267,33 @@ export const QUESTIONNAIRE_SECTIONS = [
   { id: 8, key: "beyond", title: "Beyond Question", subtitle: "ความพร้อมด้านพลังงานในอนาคต", fields: ["self_generates", "ev_ready", "blackout_resilient", "future_usage_trend"] },
   { id: 9, key: "decision", title: "Decision Making Factor", subtitle: "การตัดสินใจติดตั้ง", fields: ["decision_factors", "decision_timeline"] },
 ] as const;
+
+// Short Thai label per questionnaire field, for surfaces that list a section's
+// answers one after another (the drilldown behind a card's headline figure).
+// The Excel export keeps its own spreadsheet-header wording; these are the
+// in-app names, and both are read from this module's field keys.
+export const FIELD_LABELS: Record<string, string> = {
+  occupation: "อาชีพ", age_range: "อายุ", household_income: "รายได้ครัวเรือน/เดือน",
+  payment_interest: "รูปแบบการชำระเงินที่สนใจ",
+  residence_type: "ประเภทที่อยู่อาศัย", house_age: "อายุบ้าน", roof_shape: "ประเภทหลังคา",
+  occupant_total: "จำนวนผู้อยู่อาศัย", occupant_elderly: "จำนวนผู้สูงอายุ",
+  occupant_kids: "จำนวนเด็ก", occupant_pets: "จำนวนสัตว์เลี้ยง",
+  monthly_bill: "ค่าไฟเฉลี่ยต่อเดือน", monthly_bill_max: "ค่าไฟสูงสุดต่อเดือน",
+  electrical_phase: "ระบบไฟปัจจุบัน", meter_size: "ขนาดมิเตอร์", peak_usage: "ช่วงเวลาที่ใช้ไฟสูงสุด",
+  home_at_daytime: "อยู่บ้านช่วงกลางวัน", daytime_occupants: "ผู้อยู่บ้านช่วงกลางวัน",
+  work_at_home: "ทำงาน/ทำธุรกิจที่บ้าน", business_type: "ประเภทธุรกิจที่บ้าน",
+  work_days_per_week: "จำนวนวันทำงานที่บ้าน", ac_split: "จำนวนแอร์", appliances: "อุปกรณ์/ที่ชาร์จ EV",
+  ev_charge_period: "ช่วงเวลาชาร์จ EV",
+  future_ev: "แผนซื้อรถยนต์ EV", future_ev_charger: "แผนติดตั้ง EV Charger",
+  future_extend_home: "แผนต่อเติมบ้าน", future_more_members: "แผนเพิ่มสมาชิกในบ้าน",
+  future_smart_home: "แผนติดตั้ง Smart Home", future_battery: "แผนติดตั้ง Battery",
+  outage_priorities: "อุปกรณ์สำคัญเมื่อไฟดับ", bill_rise_action: "การรับมือเมื่อค่าไฟเพิ่ม 30%",
+  had_roof_leak: "เคยมีหลังคารั่ว", did_roof_repair: "เคยซ่อมหลังคา",
+  had_electrical_issue: "เคยมีปัญหาระบบไฟ", did_panel_replacement: "เคยเปลี่ยนตู้ควบคุมไฟ",
+  self_generates: "บ้านผลิตไฟใช้เองได้", ev_ready: "ความพร้อมรองรับ EV",
+  blackout_resilient: "ใช้ชีวิตได้ตามปกติเมื่อไฟดับ", future_usage_trend: "แนวโน้มใช้ไฟใน 10 ปี",
+  decision_timeline: "ระยะเวลาตัดสินใจ", decision_factors: "คะแนนปัจจัยตัดสินใจ",
+};
 
 export function optionLabel(options: readonly { value: string; label: string }[], raw: string | null | undefined): string {
   if (!raw) return "—";
