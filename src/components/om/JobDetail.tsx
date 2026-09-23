@@ -10,6 +10,9 @@
 import { useEffect, useState } from "react";
 import { apiFetch } from "@/lib/api";
 import { CALL_OUTCOME } from "@/lib/om/booking";
+import Timeline from "@/components/ui/Timeline";
+import JobHistoryItem from "@/components/om/JobHistoryItem";
+import JobFormPanel from "@/components/om/JobFormPanel";
 import {
   BUCKET_LABEL, FLOW, TONE, thD, thDT,
   type HistoryRow, type Item, type Team,
@@ -203,10 +206,22 @@ export default function JobDetail({ item, history, onBack, onSaved }: {
 
           {step === 3 && (
             <StepBox n="04" t="เข้า O&M — ช่างทำงานหน้างาน">
-              <div className="text-sm text-gray-600">ช่างกรอกเช็คลิสต์และถ่ายรูปในหน้าช่างบนมือถือ แอดมินดูอย่างเดียว</div>
-              {item.booking_id && (
-                <a href={`/om/field/${item.booking_id}`}
-                  className="inline-flex mt-3 h-9 px-5 items-center rounded-xl bg-primary text-white text-sm font-bold no-underline">เปิดใบตรวจรับงาน</a>
+              {item.booking_id ? (
+                <>
+                  {/* ★ เฟส 3: ใบตรวจรับงานฝังมาเลย ไม่ต้องเด้งออกไปหน้าอื่นแล้ว
+                      ใบเดียวกับ /om/field/[id] เป๊ะ (components/om/JobFormPanel) แก้ที่เดียวได้ทั้งสองที่
+                      wrapClass ตัด h-full/overflow ทิ้ง กันเกิด scroll ซ้อนในกล่องนี้ */}
+                  <div className="text-sm text-gray-600 mb-3">
+                    ช่างกรอกจากหน้าช่างบนมือถือได้เหมือนเดิม · ตรงนี้คือใบเดียวกัน
+                    <a href={`/om/field/${item.booking_id}`}
+                      className="ml-2 text-primary font-bold no-underline hover:underline">เปิดเต็มจอ ›</a>
+                  </div>
+                  <div className="-mx-3.5 -mb-3.5 rounded-b-xl overflow-hidden">
+                    <JobFormPanel jobId={String(item.booking_id)} wrapClass="bg-gray-50" embedded />
+                  </div>
+                </>
+              ) : (
+                <div className="text-sm text-gray-500">ยังไม่มีใบงาน — ใบตรวจรับงานจะขึ้นเมื่อสร้างนัดแล้ว</div>
               )}
             </StepBox>
           )}
@@ -220,20 +235,18 @@ export default function JobDetail({ item, history, onBack, onSaved }: {
             </StepBox>
           )}
 
-          {history.length > 0 && (
-            <div className="mt-5 max-w-[880px]">
-              <div className="text-xs font-bold tracking-widest text-gray-500 uppercase mb-2">ประวัติงานนี้</div>
-              <div className="space-y-1.5">
-                {history.map((h) => (
-                  <div key={String(h.id)} className="flex gap-3 text-sm border-b border-gray-100 pb-1.5">
-                    <span className="font-semibold w-32 shrink-0">{String(h.action_label ?? h.action)}</span>
-                    <span className="flex-1 text-gray-600 truncate">{String(h.reason ?? "")}</span>
-                    <span className="text-xs text-gray-400 whitespace-nowrap">{thDT(String(h.created_at))} · {String(h.actor_name ?? "—")}</span>
-                  </div>
-                ))}
-              </div>
-            </div>
-          )}
+          {/* ไทม์ไลน์ประวัติ — เปลือกกลาง ui/Timeline ตัวเดียวกับหน้า lead ของฝั่งขาย
+              เดิมเป็นรายการแบนไม่จัดกลุ่มวัน และตัดข้อความยาวทิ้งด้วย truncate */}
+          <div className="mt-5 max-w-[880px]">
+            <div className="text-xs font-bold tracking-widest text-gray-500 uppercase mb-2">ประวัติบ้านหลังนี้</div>
+            <Timeline
+              items={history}
+              renderItem={(h, isLast) => <JobHistoryItem h={h} isLast={isLast} />}
+              labels={{ today: "วันนี้", yesterday: "เมื่อวาน", locale: "th-TH",
+                        empty: "ยังไม่มีประวัติ", emptyHint: "บันทึกการโทรหรือสร้างนัดแล้วจะขึ้นที่นี่" }}
+              className="px-0 py-1"
+            />
+          </div>
         </div>
       </div>
     </div>
