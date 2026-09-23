@@ -1,0 +1,46 @@
+// คิวรีนับงาน O&M ต่อ journey code — ฝั่ง server เท่านั้น (ลาก mssql ผ่าน entitlement.ts)
+// ค่าคงที่/ทะเบียนเลขอยู่ที่ journey.ts ซึ่ง client import ได้
+
+import { DUE_WASH_SQL } from "./entitlement";
+import { ACTIVE_STATUS } from "./booking";
+import { OM_FOLLOW_STEP, OM_STEP_BY_STATUS } from "./journey";
+
+const quote = (xs: readonly string[]) => xs.map((s) => `'${s}'`).join(",");
+
+const caseSql = (col: string) =>
+  `CASE ${col} ${Object.entries(OM_STEP_BY_STATUS)
+    .map(([s, code]) => `WHEN '${s}' THEN ${code}`)
+    .join(" ")} END`;
+
+/**
+ * แถวสรุปฝั่ง O&M — รูปแบบเดียวกับที่ /api/journey-summary คืนให้ฝั่งขาย
+ * ({journey_step, journey_sub, n}) เพื่อให้ countForMenuItem/countForModule ใช้ได้เลย
+ * โดยไม่ต้องแก้โค้ดนับแม้แต่บรรทัดเดียว
+ *
+ * ★ สองท่อน เพราะ "ติดตาม" ไม่ได้อยู่บนใบงาน
+ *   A = บ้านถึงรอบล้างที่ยังไม่มีใครแตะ (คำนวณสดจาก om_houses)
+ *   B = ใบงานทั้งหมด (follow ที่โทรแล้วแต่ยังไม่ได้วันนัด ก็เป็น 2100 เหมือนกัน)
+ *
+ * ★ ท่อน A ตัดบ้านที่มีใบงานค้างอยู่แล้วออก — ผู้ใช้เคาะ 23 ก.ย. เลือกแบบ (ก) "นับครั้งเดียว"
+ *   บ้านที่นัดไปแล้วไม่ใช่งานโทรค้างอีกต่อไป มันย้ายไปขั้นถัดไปแล้ว
+ *   ⇒ การ์ดโมดูลตอบ "ค้างกี่ชิ้น" ได้ถูก ไม่บวมเพราะนับซ้ำ
+ *   และตัดที่ท่อน A ไม่ใช่ท่อน B เพราะใบงานจริงชนะการคำนวณสดเสมอ
+ *   (ท่อน B ยังนับ follow ไว้ ไม่งั้นงานที่โทรแล้วจะหายไปทั้งสองท่อน)
+ *
+ * ★ ท่อน A ใช้ derived table + GROUP BY แทน COUNT(*) เปล่า ๆ เพื่อไม่ให้คืนแถว n = 0
+ *   ตอนไม่มีบ้านค้าง — ให้เหมือนฝั่งขายที่ GROUP BY แล้วขั้นว่างหายไปเอง
+ */
+export const OM_JOURNEY_SUMMARY_SQL = `
+  SELECT journey_step, journey_sub, COUNT(*) AS n FROM (
+    SELECT ${OM_FOLLOW_STEP} AS journey_step, 0 AS journey_sub
+      FROM om_houses h
+     WHERE EXISTS (SELECT 1 FROM om_installations i WHERE i.house_id = h.id)
+       AND ${DUE_WASH_SQL}
+       AND NOT EXISTS (SELECT 1 FROM om_bookings b
+                        WHERE b.house_id = h.id AND b.status IN (${quote(ACTIVE_STATUS)}))
+  ) a GROUP BY journey_step, journey_sub
+  UNION ALL
+  SELECT ${caseSql("b.status")} AS journey_step, 0 AS journey_sub, COUNT(*) AS n
+    FROM om_bookings b
+   WHERE b.status IN (${quote(Object.keys(OM_STEP_BY_STATUS))})
+   GROUP BY ${caseSql("b.status")}`;

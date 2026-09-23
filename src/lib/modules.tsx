@@ -1,4 +1,5 @@
 import { hasRole, type Role } from "@/lib/roles";
+import { OM_ACTIVE_STEPS, OM_FIELD_STEPS, OM_SCHEDULED_STEPS } from "@/lib/om/journey";
 import {
   BoltIcon, CheckIcon, ClockIcon, DocumentIcon, DownloadIcon, LineIcon, PhoneIcon, XIcon,
 } from "@/components/ui/icons";
@@ -203,16 +204,21 @@ export const MODULES: AppModule[] = [
     group: "operation",
     desc: "ลูกค้า · บ้าน · งานบริการ · ปฏิทิน · เช็คลิสต์ · แชต LINE",
     roles: ["sales", "solar", "sales_sup", "solar_sup", "admin"],
-    defaultHref: "/om/inbox",
+    // จอแรกของโมดูล = งานบริการ (2100–2500) — เท่ากับ badge การ์ดพอดี แบบเดียวกับ Warranty/Quotation
+    // ★ แก้ 23 ก.ย. 69: เดิมลง /om/inbox เพราะตอนนั้นยังไม่มีหน้างานบริการ แชตเป็นที่เดียวที่มีงานเข้า
+    //   พอการ์ดมีตัวเลขแล้ว (เฟส 1) กดเข้าไปต้องเจองานที่นับให้ดู ไม่ใช่หน้าแชต
+    defaultHref: "/om/services",
     menu: [
+      // ★ เลข journey สาย 2000 = งานบริการ (ผู้ใช้เคาะ 23 ก.ย. 69 · แผน 20260922-01)
+      //   ทะเบียนเลขอยู่ที่ src/lib/om/journey.ts — ลูกค้า/บ้านเป็น "ทะเบียน" ไม่ใช่คิวงาน จึงไม่มีเลข
       { label: "ลูกค้า", href: "/om/customers", icon: <I d={D.users} /> },
       { label: "บ้าน / ระบบติดตั้ง", href: "/om/houses", icon: <I d={D.mapPin} /> },
       // ★ ผู้ใช้เคาะ 9 ก.ย. 69 "ไม่อยากเพิ่มเมนูเพิ่มแล้ว" — ทีมช่าง = แท็บในปฏิทิน/จ่ายงาน
       //   ★ แก้ 16 ก.ย. 69: ผู้ใช้สั่งให้ "เช็คลิสต์" เป็นเมนูซ้ายของตัวเอง (เดิมเป็นแท็บในงานบริการ)
       //   /om/field/[id] ต้องมีเลขใบงาน เมนูจึงชี้ไปหน้ารายการ /om/field ก่อน
-      { label: "งานบริการ", href: "/om/services", icon: <I d={D.wrench} /> },
-      { label: "ปฏิทิน / จ่ายงาน", href: "/om/calendar", icon: <I d={D.calendar} /> },
-      { label: "เช็คลิสต์", href: "/om/field", icon: <I d={D.clipboardCheck} /> },
+      { label: "งานบริการ", href: "/om/services", icon: <I d={D.wrench} />, steps: OM_ACTIVE_STEPS },
+      { label: "ปฏิทิน / จ่ายงาน", href: "/om/calendar", icon: <I d={D.calendar} />, steps: OM_SCHEDULED_STEPS },
+      { label: "เช็คลิสต์", href: "/om/field", icon: <I d={D.clipboardCheck} />, steps: OM_FIELD_STEPS },
       { label: "แชต LINE", href: "/om/inbox", icon: <LineIcon className="w-6 h-6" /> },
       { label: "LINE OA", href: "/om/line-oa", icon: <I d={D.cog} /> },
       { label: "ตั้งค่า O&M", href: "/om/settings", icon: <I d={D.cog} />, roles: ["admin", "solar_sup", "sales_sup"] },
