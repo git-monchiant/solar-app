@@ -4,7 +4,7 @@ import { fixDates, sql } from "@/lib/db";
 import { getOmDb } from "@/lib/om/line";
 import { CLEANING_CYCLE_SQL, isCleaning } from "@/lib/om/entitlement";
 import { getSettings } from "@/lib/om/settings";
-import { logBooking } from "@/lib/om/booking-log";
+import { actionLabel, logBooking } from "@/lib/om/booking-log";
 import { toThaiOffset } from "@/lib/om/booking";
 
 // แท็บ "ติดตาม" ของงานบริการ — ★ การ์ดคำนวณสด ไม่มีแถวงานรอไว้ล่วงหน้า
@@ -32,6 +32,11 @@ export async function GET(req: NextRequest) {
   const group = (u.get("group") ?? "").trim();
   const q = (u.get("q") ?? "").trim();
   const sort = SORT[u.get("sort") ?? "overdue"] ?? SORT.overdue;
+  // ★ house=<id> = โหมด "บ้านเดียว" ของหน้ารายละเอียด (เฟส 3 แผน 20260922-01)
+  //   ข้ามตัวกรองแท็บ/โครงการ/ค้นหาทั้งหมด — เปิดจาก URL ตรง ๆ ต้องได้ของเสมอ
+  //   ไม่ทำเป็น endpoint ใหม่เพราะเกณฑ์ #due/#call/#job ต้องตรงกับลิสต์เป๊ะ
+  //   (แยกไปเขียนใหม่แล้วจะเพี้ยนคนละที่เวลาแก้ทีหลัง — กติกาเดียวกับ house-scope.ts)
+  const houseOnly = Math.max(0, Number(u.get("house")) || 0);
   const page = Math.max(1, Number(u.get("page")) || 1);
   const size = Math.min(100, Math.max(10, Number(u.get("size")) || 30));
 
@@ -41,6 +46,7 @@ export async function GET(req: NextRequest) {
   const db = await getOmDb();
   try {
   const r = await db.request()
+    .input("house", sql.Int, houseOnly)
     .input("g", sql.NVarChar(20), group)
     .input("tab", sql.VarChar(20), tab)
     .input("q", sql.NVarChar(80), q ? `%${q}%` : "")
@@ -158,14 +164,30 @@ export async function GET(req: NextRequest) {
        AND (@q = '' OR d.house_number LIKE @q OR d.customer_name LIKE @q OR d.phone LIKE @q);
 
     SELECT d.* FROM #x d
-     WHERE d.bucket = @tab
-       AND (@g = '' OR d.project_id = @g)
-       AND (@q = '' OR d.house_number LIKE @q OR d.customer_name LIKE @q OR d.phone LIKE @q)
+     WHERE (@house > 0 AND d.house_id = @house)
+        OR (@house = 0
+            AND d.bucket = @tab
+            AND (@g = '' OR d.project_id = @g)
+            AND (@q = '' OR d.house_number LIKE @q OR d.customer_name LIKE @q OR d.phone LIKE @q))
      ORDER BY ${sort}
      OFFSET @off ROWS FETCH NEXT @size ROWS ONLY;
 
     SELECT d.project_id, MAX(d.project_name) project_name, COUNT(*) n
       FROM #x d WHERE d.bucket = 'follow' GROUP BY d.project_id ORDER BY n DESC;
+
+    -- ประวัติของบ้านหลังนี้ (โหมดบ้านเดียว) — รวมทั้งที่ผูกกับบ้านตรง ๆ (การโทรก่อนมีใบงาน)
+    -- และที่ผูกกับใบงานของบ้านหลังนี้ทุกใบ ⇒ ไทม์ไลน์เส้นเดียวไม่ขาดตอน
+    IF @house > 0
+      SELECT TOP 200 bh.id, bh.booking_id, bh.[action],
+             JSON_VALUE(bh.to_json, '$.outcome') outcome,
+             bh.reason, u2.full_name actor_name,
+             CONVERT(varchar(33), bh.created_at, 126) created_at,
+             CONVERT(char(10), bh.next_action_date, 23) next_action_date
+        FROM om_booking_history bh
+        LEFT JOIN users u2 ON u2.id = bh.actor_user_id
+       WHERE bh.house_id = @house
+          OR bh.booking_id IN (SELECT b3.id FROM om_bookings b3 WHERE b3.house_id = @house)
+       ORDER BY bh.id DESC;
 
     DROP TABLE #due; DROP TABLE #call; DROP TABLE #last; DROP TABLE #job; DROP TABLE #x;`);
 
@@ -177,6 +199,10 @@ export async function GET(req: NextRequest) {
     total: Number(rs[1][0]?.total ?? 0),
     items: fixDates(rs[2]),
     projects: rs[3],
+    // rs[4] มีเฉพาะโหมดบ้านเดียว (IF @house > 0) — ต่อท้ายสุดไว้ index 0-3 ของโหมดลิสต์จะได้ไม่ขยับ
+    history: houseOnly > 0
+      ? fixDates(rs[4] ?? []).map((h) => ({ ...h, action_label: actionLabel(String(h.action)) }))
+      : [],
     rules: cfg,
     page, size,
   });

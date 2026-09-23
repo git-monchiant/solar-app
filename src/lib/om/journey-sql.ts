@@ -29,12 +29,18 @@ const caseSql = (col: string) =>
  *
  * ★ ท่อน A ใช้ derived table + GROUP BY แทน COUNT(*) เปล่า ๆ เพื่อไม่ให้คืนแถว n = 0
  *   ตอนไม่มีบ้านค้าง — ให้เหมือนฝั่งขายที่ GROUP BY แล้วขั้นว่างหายไปเอง
+ *
+ * ★★ เงื่อนไขท่อน A ต้องตรงกับ #due ใน /api/om/follow เป๊ะ ไม่งั้น badge โกหก
+ *   โดยเฉพาะ h.is_om = 1 — ตกไปตอนแรกทำให้ badge เกินจริง 190 หลัง (บ้านที่ถูกกันออกจาก O&M
+ *   แต่ยังเข้าเกณฑ์ถึงรอบล้าง) วัดจริง 23 ก.ย.: ไม่กรอง 1,847 · กรองแล้ว 1,657
+ *   แก้ตรงนี้ทีไร ต้องไปเทียบกับ #due ทุกครั้ง (กติกา ui-rules: badge = จำนวนที่กดเข้าไปเห็นจริง)
  */
 export const OM_JOURNEY_SUMMARY_SQL = `
   SELECT journey_step, journey_sub, COUNT(*) AS n FROM (
     SELECT ${OM_FOLLOW_STEP} AS journey_step, 0 AS journey_sub
       FROM om_houses h
-     WHERE EXISTS (SELECT 1 FROM om_installations i WHERE i.house_id = h.id)
+     WHERE h.is_om = 1
+       AND EXISTS (SELECT 1 FROM om_installations i WHERE i.house_id = h.id)
        AND ${DUE_WASH_SQL}
        AND NOT EXISTS (SELECT 1 FROM om_bookings b
                         WHERE b.house_id = h.id AND b.status IN (${quote(ACTIVE_STATUS)}))
