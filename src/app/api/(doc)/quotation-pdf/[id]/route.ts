@@ -19,6 +19,7 @@ import {
 } from "@/lib/quotation-document";
 import { buildSurveyReportHtml } from "@/lib/docs/survey-report";
 import { buildContentDisposition } from "@/lib/doc-filename";
+import { buildOmQuoteSnapshot } from "@/lib/om/om-quotation";
 import {
   getQuotationLegalContent,
   parseQuotationPaymentTerms,
@@ -261,12 +262,16 @@ export async function GET(
     : undefined;
   const quotationId = Number(id);
   const htmlPreview = req.nextUrl.searchParams.get("format") === "html";
-  const quotationOnly =
-    req.nextUrl.searchParams.get("quotation_only") === "1" || htmlPreview;
   const detail =
     cachedPreview?.detail || (await getQuotationDetail(quotationId));
   if (!detail)
     return NextResponse.json({ error: "ไม่พบใบเสนอราคา" }, { status: 404 });
+  // ★ ใบเสนอราคางานบริการ O&M (แผน 20260924-02 เฟส 3) ใช้ตัวเรนเดอร์เดียวกันทั้งก้อน
+  //   ต่างแค่ไม่แนบรายงานสำรวจ (งานล้างแผงไม่มีการสำรวจ) → เข้าทาง quotation-only เสมอ
+  //   ชุดข้อมูลเอกสารมาจาก buildOmQuoteSnapshot (แถวแพ็กเกจ O&M + ข้อความท้ายใบของ O&M)
+  const isOm = detail.om_booking_id != null;
+  const quotationOnly =
+    isOm || req.nextUrl.searchParams.get("quotation_only") === "1" || htmlPreview;
 
   const db = await getDb();
   if (detail.status === "approved" && !quotationOnly) {
@@ -321,7 +326,10 @@ export async function GET(
       /* regenerate below */
     }
   }
-  if (!snapshot) snapshot = await buildQuotationDocumentSnapshot(quotationId);
+  if (!snapshot)
+    snapshot = isOm
+      ? await buildOmQuoteSnapshot(quotationId)
+      : await buildQuotationDocumentSnapshot(quotationId);
   if (!snapshot)
     return NextResponse.json(
       { error: "สร้างข้อมูลเอกสารไม่สำเร็จ" },
@@ -1026,9 +1034,11 @@ export async function GET(
 
     const quotationPageCount = rowPages.length + (mergeTermsPage ? 0 : 1);
     // เลขหน้าอ้างอิงชุดเอกสารเต็ม (รายงานสำรวจ 15 หน้า + ใบเสนอราคา)
-    const bundleTotal = 15 + quotationPageCount;
+    // ใบ O&M ไม่มีรายงานสำรวจนำหน้า — ตัวใบคือเอกสารทั้งชุด เลขหน้าเริ่มที่ 1
+    const surveyPages = isOm ? 0 : 15;
+    const bundleTotal = surveyPages + quotationPageCount;
     const footer = (index: number) =>
-      `<div class="footer">หน้า ${16 + index} / ${bundleTotal} · ใบเสนอราคา ${index + 1} / ${quotationPageCount} · ${esc(q.doc_no)}</div>`;
+      `<div class="footer">หน้า ${surveyPages + 1 + index} / ${bundleTotal} · ใบเสนอราคา ${index + 1} / ${quotationPageCount} · ${esc(q.doc_no)}</div>`;
 
     const tablePages = rowPages.map((rowPage, index) => {
       const isFirst = index === 0;
@@ -1148,7 +1158,15 @@ export async function GET(
       return new NextResponse(Buffer.from(quotationBytes), {
         headers: {
           "Content-Type": "application/pdf",
-          "Content-Disposition": `inline; filename="${q.doc_no}-quotation.pdf"`,
+          // ใบ O&M ใบนี้คือเอกสารฉบับจริงที่ส่งลูกค้า — ตั้งชื่อไฟล์แบบเดียวกับเอกสารชุดเต็มของฝั่งขาย
+          "Content-Disposition": isOm
+            ? buildContentDisposition({
+                base: String(q.doc_no),
+                ext: "pdf",
+                customerName: (detail.customer_name as string) || null,
+                disposition: req.nextUrl.searchParams.get("download") === "1" ? "attachment" : "inline",
+              })
+            : `inline; filename="${q.doc_no}-quotation.pdf"`,
           "X-Quotation-Document-Pages": String(quotationPageCount),
         },
       });

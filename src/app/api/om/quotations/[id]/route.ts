@@ -18,10 +18,16 @@ const readQuote = async (id: number) => {
            q.package_name_snapshot, q.package_price_snapshot, q.subtotal_incl_vat, q.discount_value,
            q.discount_amount, q.discount_reason, q.contract_total_incl_vat, q.amount_before_vat, q.vat_amount,
            q.terms_text, q.note, q.created_at, q.updated_at, cu.full_name created_by_name,
-           b.house_id, q.om_package_id
+           b.house_id, q.om_package_id,
+           -- ลำดับอนุมัติ Solar Sup → Sale Sup (เฟส 3) — ชุดคอลัมน์เดียวกับฝั่งขาย
+           q.submitted_at, q.solar_approved_at, q.solar_approval_note, su.full_name solar_approved_by_name,
+           q.approved_at, q.approval_note, au.full_name approved_by_name,
+           (SELECT MAX(q2.id) FROM quotations q2 WHERE q2.om_booking_id = q.om_booking_id) latest_id
       FROM quotations q
       JOIN om_bookings b ON b.id = q.om_booking_id
       LEFT JOIN users cu ON cu.id = q.created_by
+      LEFT JOIN users su ON su.id = q.solar_approved_by
+      LEFT JOIN users au ON au.id = q.approved_by
      WHERE q.id = @id AND q.om_booking_id IS NOT NULL;
     SELECT id, item_name_snapshot item_name, quantity, unit, unit_price, line_total
       FROM quotation_items WHERE quotation_id = @id ORDER BY sort_order, id;`);

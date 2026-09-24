@@ -196,6 +196,43 @@
 - PDF ใบเสนอราคาใช้ข้อความท้ายใบของงานติดตั้ง — ใบ O&M ต้องมีแบบของตัวเอง (terms_text มีหมายเหตุ Package O&M แล้ว)
 - ยังไม่มีปุ่มยกเลิกใบเสนอราคา O&M (ยกเลิกทั้งใบงานได้ผ่าน quote → cancelled)
 
+## ผลเฟส 3 (เสร็จ 24 ก.ย. 69)
+
+**ลำดับอนุมัติ** — ใช้ endpoint เดียวกับฝั่งขาย `/api/quotations/[id]/action` แยกทางด้วย `isOm` (om_booking_id)
+- ส่งอนุมัติ: ผู้ส่ง = Sale เท่านั้น · ชุดข้อมูลเอกสาร `buildOmQuoteSnapshot` + ตัวตรวจ `validateOmQuoteSnapshot`
+  (ของฝั่งขายบังคับวันสำรวจ/ค่าไฟ/ผลผลิต ซึ่งงาน O&M ไม่มี)
+- Revision: นับในใบงาน O&M (`om_booking_id`) ไม่ใช่ lead+ชุด · เลขที่ชุด O&M · คัดลอก om_booking_id/om_package_id
+  (ฝั่งขายเติม `AND om_booking_id IS NULL` ในการนับ Revision — lead ที่ใช้ร่วมจะไม่นับเลขปนกัน)
+- **ปิดกับดัก**: `handoff_to_sales` ของใบ O&M ถูกปฏิเสธ 409 — ไม่ถึง `UPDATE leads SET status = 'order'`
+- ประวัติลงไทม์ไลน์ใบงาน O&M (quote_submit / quote_approve / quote_return / quote_revise) ไม่ลง lead activity
+  · ไม่คำนวณ journey / SLA ของฝั่งขาย
+- แจ้งเตือนผู้อนุมัติ: หัวข้อขึ้นต้น "[O&M]" · กดแล้วไปหน้างาน O&M (`target_url` จาก `/api/notifications`)
+
+**คิวอนุมัติ `/quotation-approvals`** — กลุ่มแยกตามใบงาน (ไม่รวมกับใบขายของ lead เดียวกัน) · ป้าย "งานบริการ O&M"
+· ลิงก์ไป `/om/services/[house]` · ไม่มีป้ายชุด/เอกสารชุดเต็ม · เตือนราคาไม่ตรงเดือนเทียบกับ Package O&M · ข้อความยืนยันของ O&M
+
+**PDF** — ตัวเรนเดอร์ของฝั่งขายทั้งก้อน ใบ O&M เข้าทาง quotation-only เสมอ (ไม่แนบรายงานสำรวจ 15 หน้า)
+· แถวแรกเป็น Package O&M · จำนวน/หน่วยต่อท้ายชื่อรายการ · ข้อความท้ายใบ ขอบเขตงาน / หมายเหตุ Package O&M /
+อายุใบ · เลขหน้าเริ่ม 1 (ของฝั่งขายยังเริ่ม 16 หลังรายงานสำรวจ — ตรวจแล้วไม่เปลี่ยน) · ชื่อไฟล์มีชื่อลูกค้า
+
+**หน้างาน O&M ขั้น 02** — ปุ่มดู PDF · ส่งอนุมัติ Solar Sup (มีกล่องยืนยัน) · กล่องสถานะ Solar Sup / Sale Sup
+· เหตุผลที่ถูกส่งกลับ · อนุมัติครบแล้วบอกขั้นถัดไป · สร้าง Revision จากใบล่าสุด
+
+**ตรวจ (ผู้ใช้จริงตาม role จริง)** — Angcanaj (sales) สร้าง+ส่ง · ekkawitp (solar_sup) ส่งไม่ได้ 403 / อนุมัติขั้น 1 ·
+Manits (sales_sup) ส่งกลับ · ส่งใหม่ · Auchariyas (sales_sup) อนุมัติขั้นสุดท้าย · handoff 409 · Revision ได้ SSR-OM-QT-26-0002
+· ขั้นย่อย journey เดินถูก 2210 → 2220 → 2240 → 2250 → 2210 · คิว/แจ้งเตือน/PDF ถูก · ตัวเลขฝั่งขายเท่าเดิมทุกจุด
+· tsc/eslint ผ่าน · ลบข้อมูลทดสอบแล้ว (รวมแจ้งเตือน 47 แถวที่เด้งเข้ากระดิ่งผู้อนุมัติระหว่างทดสอบ)
+
+**ฐาน solardb_v3 ขาด migration ของ v2 (เจอระหว่างทดสอบ — ไม่ได้เกิดจากงานนี้)**
+- `packages.term_set_profile` (`scripts/_archive/migrations/20260828-1305_add_packages_term_set_profile.sql`)
+  และ `lead_data.payment_interest` มีใน solardb / solardb_dev แต่ไม่มีใน solardb_v3
+- ผล: **ส่งอนุมัติใบเสนอราคาฝั่งขายบน v3 พังอยู่แล้ว** ("Invalid column name 'term_set_profile'") และ PDF ใบร่างฝั่งขายด้วย
+- ใบ O&M ไม่พึ่งคอลัมน์นี้แล้ว (buildOmQuoteSnapshot คิวรีเอง ไม่ JOIN packages ของฝั่งขาย)
+- **แก้แล้ว 24 ก.ย. (ผู้ใช้เคาะ)**: `scripts/migrations-v3/20260924-2100_sync_v2_packages_term_set_profile.sql`
+  (เนื้อหาเดียวกับต้นฉบับ v2 รันซ้ำได้) apply ผ่าน deploy_migrations แล้ว — v3 มี term_set_profile ครบ 47 แพ็กเกจ
+  (additional 26 · full 21 ค่าตรงกับ prod) + CHECK constraint · PDF ใบร่างฝั่งขายเปิดได้แล้ว (คิวรีเดียวกับตอนส่งอนุมัติ)
+- `lead_data.payment_interest` **ไม่เพิ่ม** — ไม่มีโค้ดส่วนไหนใช้ และไม่มี migration ต้นฉบับ (น่าจะเพิ่มมือบน prod มีค่า 7 แถว)
+
 ## ตรวจสอบเมื่อลงมือ
 
 - `npx tsc --noEmit` + eslint · หน้าที่แก้ curl ได้ 200

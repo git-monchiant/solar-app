@@ -23,7 +23,8 @@ export function getNotificationTarget(
     (item.approval_stage === "sales_sup" &&
       ["pending_sales_sup", "pending_approval"].includes(item.quotation_status || ""));
 
+  // ยังรอคนที่กดอยู่อนุมัติ → คิวอนุมัติ · ไม่งั้นไปที่ตัวงาน: ใบ O&M มี target_url ไปหน้างาน O&M
   return waitingForActiveApprovalRole && stillWaitingForNotifiedStage
     ? "/quotation-approvals"
-    : `/leads/${item.lead_id}?focus=1`;
+    : item.target_url || `/leads/${item.lead_id}?focus=1`;
 }

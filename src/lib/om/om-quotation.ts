@@ -1,8 +1,12 @@
 import "server-only";
 import type { Transaction } from "mssql";
-import { sql } from "@/lib/db";
+import { getDb, sql } from "@/lib/db";
 import { calculateQuotation, type QuotationInputItem } from "@/lib/quotation";
-import type { QuotationPaymentTerm } from "@/lib/quotation-terms";
+import {
+  QUOTATION_DOCUMENT_VERSION, calculateFinancialSnapshot, parseDocumentInputs,
+  type QuotationDocumentSnapshot,
+} from "@/lib/quotation-document";
+import type { QuotationLegalContent, QuotationPaymentTerm } from "@/lib/quotation-terms";
 
 // ใบเสนอราคางานบริการ O&M (แผน docs/plan/20260924-02-om-quotation-approval-flow.md เฟส 2)
 //
@@ -181,4 +185,113 @@ export async function writeOmQuoteBody(tx: Transaction, quotationId: number, inp
               VALUES (@q, 'custom', @name, @qty, @unit, @price, @total, @sort)`);
   }
   return { total: t.total };
+}
+
+// ── เอกสาร / การส่งอนุมัติ (เฟส 3) ─────────────────────────────────────────
+
+/**
+ * ข้อความท้ายใบของงาน O&M — แทนเงื่อนไขงานติดตั้งของฝั่งขาย (ประกัน/สำรวจ/สินเชื่อ ไม่เกี่ยวกับงานล้างแผง)
+ * อ่านจาก terms_text ที่แช่ไว้ในใบตอนออก/แก้ (ขอบเขตงานของแพ็กเกจ + หมายเหตุ Package O&M)
+ * เลขข้อไล่ใหม่ทุกครั้ง หัวข้อไหนว่างก็ไม่พิมพ์ เลขถัดไปเลื่อนขึ้นมาเอง
+ */
+export function omLegalContent(termsText: unknown, validDays: unknown): QuotationLegalContent {
+  const lines = String(termsText ?? "").split(/\r?\n/).map((x) => x.trim()).filter(Boolean);
+  const scope = lines.filter((x) => x.startsWith("ขอบเขตงาน:")).map((x) => x.replace(/^ขอบเขตงาน:\s*/, ""));
+  const notes = lines.filter((x) => !x.startsWith("ขอบเขตงาน:")).map((x) => x.replace(/^\d+[.)]\s*/, ""));
+  const days = Number(validDays) || 7;
+  const raw: { title: string; paragraphs: string[] }[] = [
+    { title: "ขอบเขตงาน", paragraphs: scope },
+    { title: "หมายเหตุ", paragraphs: notes },
+    { title: "อายุใบเสนอราคา", paragraphs: [`ใบเสนอราคานี้มีผล ${days} วัน นับจากวันที่ออกใบเสนอราคา`] },
+  ].filter((x) => x.paragraphs.length);
+  return {
+    profile: "additional_install",
+    page1Sections: raw.map((sec, i) => ({
+      title: `${i + 1}. ${sec.title}`,
+      paragraphs: sec.paragraphs.map((p, j) => `${i + 1}.${j + 1} ${p}`),
+    })),
+    page2LeadingParagraphs: [],
+    page2Sections: [],
+  };
+}
+
+/** คอลัมน์ของใบ (ที่เหลือจาก SELECT l.*, q.* เป็นของ lead) — ชุดเดียวกับที่ buildQuotationDocumentSnapshot แยก */
+const QUOTE_KEYS = new Set(["id", "lead_id", "option_no", "doc_no", "revision_no", "status", "package_id",
+  "package_name_snapshot", "package_price_snapshot", "issue_date", "valid_days", "subtotal_incl_vat",
+  "discount_label", "discount_type", "discount_value", "discount_amount", "discount_reason",
+  "contract_total_incl_vat", "deposit_paid_amount", "outstanding_amount", "vat_rate", "amount_before_vat",
+  "vat_amount", "payment_terms_json", "terms_text", "note", "created_by", "created_by_name",
+  "created_by_title", "submitted_at", "approved_at", "approver_name_snapshot", "approver_title_snapshot",
+  "project_display_name", "om_booking_id", "om_package_id"]);
+
+/**
+ * ชุดข้อมูลเอกสารของใบ O&M — "รูปเดียวกับ" ของฝั่งขาย เพื่อใช้ตัวสร้าง PDF / ขั้นอนุมัติตัวเดียวกันได้ทั้งก้อน
+ * ★ ไม่เรียก buildQuotationDocumentSnapshot ของฝั่งขาย เพราะมัน JOIN packages ของฝั่งขายแล้วเลือกคอลัมน์
+ *   แพ็กเกจขาย (kwp, term_set_profile …) — ใบ O&M ไม่มีแพ็กเกจขาย และถ้าฐานไหนขาดคอลัมน์ของแพ็กเกจขาย
+ *   (เจอจริง 24 ก.ย. 69: solardb_v3 ไม่มี packages.term_set_profile) การส่งอนุมัติ O&M จะพังตามไปด้วย
+ * ★ ต่างจากของฝั่งขาย 3 จุด
+ *   ① ใส่แพ็กเกจ O&M เป็นแถวแรกของตาราง — ใบ O&M ไม่มี package_id ตัวเรนเดอร์จึงไม่วาดแถวแพ็กเกจให้
+ *   ② จำนวน/หน่วยต่อท้ายชื่อรายการ — ตัวเรนเดอร์พิมพ์รายการเพิ่มแค่ชื่อ + ยอด ("เปลี่ยนสาย MC4 2 จุด")
+ *   ③ ข้อความท้ายใบเป็นของ O&M (omLegalContent) · package ว่าง · ข้อมูลการเงินค่าไฟเป็นค่าตั้งต้น (ไม่ได้ใช้)
+ */
+export async function buildOmQuoteSnapshot(quotationId: number, tx?: Transaction): Promise<QuotationDocumentSnapshot | null> {
+  const req = tx ? new sql.Request(tx) : (await getDb()).request();
+  const r = await req.input("id", sql.Int, quotationId).query(`
+    SELECT l.*, q.*,
+      l.full_name customer_name, l.phone customer_phone, l.email customer_email,
+      COALESCE(NULLIF(l.project_alias, N''), NULLIF(l.project_name, N''), pr.name) project_display_name,
+      creator.full_name created_by_name, creator.job_title created_by_title
+    FROM quotations q
+    JOIN leads l ON l.id = q.lead_id
+    LEFT JOIN projects pr ON pr.id = l.project_id
+    LEFT JOIN users creator ON creator.id = q.created_by
+    WHERE q.id = @id AND q.om_booking_id IS NOT NULL;
+    SELECT TOP 1 * FROM lead_data WHERE lead_id = (SELECT lead_id FROM quotations WHERE id = @id);
+    SELECT source_type, package_item_id, item_name_snapshot, quantity, unit, unit_price, line_total, sort_order
+      FROM quotation_items WHERE quotation_id = @id ORDER BY sort_order, id;
+    SELECT [key], value FROM app_settings
+     WHERE [key] IN ('bank_account_bank','bank_account_branch','bank_account_number','bank_account_name');`);
+  const sets = r.recordsets as unknown as Array<Array<Record<string, unknown>>>;
+  const row = sets[0]?.[0];
+  if (!row) return null;
+  const q: Record<string, unknown> = {};
+  const lead: Record<string, unknown> = {};
+  for (const [key, value] of Object.entries(row)) {
+    if (key.includes("signature_data") || key === "document_snapshot_json" || key === "financial_snapshot_json") continue;
+    if (QUOTE_KEYS.has(key)) q[key] = value;
+    else if (!key.startsWith("approval_") && !key.startsWith("approver_") && !key.startsWith("sent_to_customer_")) lead[key] = value;
+  }
+  const withQty = (it: Record<string, unknown>) => {
+    const qty = Number(it.quantity) || 0;
+    const unit = String(it.unit ?? "").trim();
+    const name = String(it.item_name_snapshot ?? "");
+    return qty !== 1 || unit ? { ...it, item_name_snapshot: `${name} ${qty.toLocaleString("th-TH")}${unit ? ` ${unit}` : ""}` } : it;
+  };
+  const pkgPrice = Number(q.package_price_snapshot) || 0;
+  const pkgRow = pkgPrice > 0
+    ? [{ source_type: "custom", package_item_id: null, item_name_snapshot: String(q.package_name_snapshot ?? "Package O&M"),
+         quantity: 1, unit: null, unit_price: pkgPrice, line_total: pkgPrice, sort_order: 0 }]
+    : [];
+  return {
+    version: QUOTATION_DOCUMENT_VERSION,
+    generated_at: new Date().toISOString(),
+    quotation: q,
+    lead,
+    lead_data: sets[1]?.[0] || {},
+    package: {},
+    items: [...pkgRow, ...(sets[2] || []).map(withQty)],
+    settings: Object.fromEntries((sets[3] || []).map((s) => [String(s.key), String(s.value || "")])),
+    financial: calculateFinancialSnapshot(parseDocumentInputs(null), q, {}),
+    legal: omLegalContent(q.terms_text, q.valid_days),
+  };
+}
+
+/** ตรวจก่อนส่งอนุมัติ — แทน validateQuotationDocument ของฝั่งขายที่บังคับวันสำรวจ/ค่าไฟ/ผลผลิต */
+export function validateOmQuoteSnapshot(snap: QuotationDocumentSnapshot): string[] {
+  const errors: string[] = [];
+  const q = snap.quotation;
+  if (!String(snap.lead.full_name ?? "").trim()) errors.push("ไม่พบชื่อลูกค้า");
+  if (!String(q.doc_no ?? "").trim()) errors.push("ไม่พบเลขใบเสนอราคา");
+  if (!(Number(q.subtotal_incl_vat) > 0)) errors.push("ยอดใบเสนอราคาเป็น 0 — เลือก Package O&M หรือใส่ราคารายการ");
+  return errors;
 }

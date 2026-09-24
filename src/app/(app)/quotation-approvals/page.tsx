@@ -25,11 +25,17 @@ type Row = {
   submitted_by_name: string | null;
   solar_approved_at: string | null;
   solar_approved_by_name: string | null;
+  /** ใบเสนอราคางานบริการ O&M (แผน 20260924-02 เฟส 3) — ว่าง = ใบของฝั่งขาย */
+  om_booking_id: number | null;
+  om_house_id: number | null;
 };
 
 type LeadGroup = {
+  key: string;
   leadId: number;
   customerName: string;
+  /** กลุ่มของงาน O&M — ลิงก์ไปหน้างาน O&M และไม่ปนกับใบขายของ lead เดียวกัน */
+  omHouseId: number | null;
   quotes: Row[];
 };
 
@@ -100,15 +106,19 @@ export default function QuotationApprovalsPage() {
   }, [rows, search]);
 
   const groups = useMemo(() => {
-    const grouped = new Map<number, LeadGroup>();
+    // ใบ O&M แยกกลุ่มตามใบงาน — บ้านที่ใช้ lead ร่วมกับฝั่งขายจะไม่ถูกรวมหัวเดียวกับใบขาย
+    const grouped = new Map<string, LeadGroup>();
     for (const row of filteredRows) {
-      const current = grouped.get(row.lead_id);
+      const key = row.om_booking_id ? `om-${row.om_booking_id}` : `lead-${row.lead_id}`;
+      const current = grouped.get(key);
       if (current) {
         current.quotes.push(row);
       } else {
-        grouped.set(row.lead_id, {
+        grouped.set(key, {
+          key,
           leadId: row.lead_id,
           customerName: row.customer_name,
+          omHouseId: row.om_booking_id ? row.om_house_id : null,
           quotes: [row],
         });
       }
@@ -129,7 +139,9 @@ export default function QuotationApprovalsPage() {
         message:
           quote.status === "pending_solar_sup"
             ? "ยืนยันว่า Solar Manager ตรวจเอกสารแล้ว และส่งต่อให้ Sale Manager อนุมัติขั้นสุดท้าย"
-            : "ยืนยันว่าได้ตรวจและรับรองข้อมูล Survey, Package, ราคา เงื่อนไขชำระเงิน และเอกสารทั้งชุดแล้ว",
+            : quote.om_booking_id
+              ? "ยืนยันว่าได้ตรวจ Package O&M ราคา ส่วนลด และเงื่อนไขชำระเงินของงานบริการแล้ว"
+              : "ยืนยันว่าได้ตรวจและรับรองข้อมูล Survey, Package, ราคา เงื่อนไขชำระเงิน และเอกสารทั้งชุดแล้ว",
       });
       if (!ok) return;
     }
@@ -242,7 +254,7 @@ export default function QuotationApprovalsPage() {
           <div className="space-y-3">
             {groups.map((group) => (
               <article
-                key={group.leadId}
+                key={group.key}
                 className="overflow-hidden rounded-xl border border-gray-300 bg-white"
               >
                 <header className="border-b border-gray-200 bg-slate-50/80 px-4 py-3">
@@ -251,14 +263,20 @@ export default function QuotationApprovalsPage() {
                       {/* focus=1 — เปิดหน้า lead ในโหมดโฟกัสขั้นตอนปัจจุบัน
                           (ผู้อนุมัติเข้ามาดูใบเสนอราคาโดยตรง ไม่ต้องเลื่อนหา) */}
                       <Link
-                        href={`/leads/${group.leadId}?focus=1`}
+                        href={group.omHouseId ? `/om/services/${group.omHouseId}` : `/leads/${group.leadId}?focus=1`}
                         className="font-semibold text-gray-900 hover:text-primary"
                       >
                         {group.customerName}
                       </Link>
-                      <span className="rounded-md bg-primary/10 px-2 py-0.5 text-xxs font-semibold text-primary">
-                        Lead #{group.leadId}
-                      </span>
+                      {group.omHouseId ? (
+                        <span className="rounded-md bg-pink-50 px-2 py-0.5 text-xxs font-semibold text-pink-700">
+                          งานบริการ O&amp;M
+                        </span>
+                      ) : (
+                        <span className="rounded-md bg-primary/10 px-2 py-0.5 text-xxs font-semibold text-primary">
+                          Lead #{group.leadId}
+                        </span>
+                      )}
                       <span className="rounded-md bg-violet-50 px-2 py-0.5 text-xxs font-semibold text-violet-700">
                         {group.quotes.length} ฉบับ
                       </span>
@@ -285,12 +303,21 @@ export default function QuotationApprovalsPage() {
                             <span className="font-mono text-xs font-bold text-gray-900">
                               {quote.doc_no}
                             </span>
-                            <span className="rounded bg-gray-100 px-2 py-1 text-xxs font-semibold text-gray-600">
-                              ชุด {quote.option_no}
-                            </span>
-                            <span className="rounded bg-cyan-50 px-2 py-1 text-xxs font-semibold text-cyan-700">
-                              เอกสารชุดเต็ม
-                            </span>
+                            {quote.om_booking_id ? (
+                              // ใบ O&M มีใบเดียวต่อใบงาน ไม่มีชุด 1–3 และไม่มีรายงานสำรวจแนบ
+                              <span className="rounded bg-pink-50 px-2 py-1 text-xxs font-semibold text-pink-700">
+                                O&amp;M
+                              </span>
+                            ) : (
+                              <>
+                                <span className="rounded bg-gray-100 px-2 py-1 text-xxs font-semibold text-gray-600">
+                                  ชุด {quote.option_no}
+                                </span>
+                                <span className="rounded bg-cyan-50 px-2 py-1 text-xxs font-semibold text-cyan-700">
+                                  เอกสารชุดเต็ม
+                                </span>
+                              </>
+                            )}
                             <span className={`rounded px-2 py-1 text-xxs font-semibold ${quote.status === "pending_solar_sup" ? "bg-amber-50 text-amber-700" : "bg-violet-50 text-violet-700"}`}>
                               รอ {quote.status === "pending_solar_sup" ? "Solar Manager" : "Sale Manager"}
                             </span>

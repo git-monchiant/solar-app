@@ -14,7 +14,9 @@ export type BookingAction =
   //   ตอนโทรครั้งแรกยังไม่มีใบงาน ⇒ booking_id ว่างได้ ผูกกับ house_id แทน
   | "call"
   // ★ 24 ก.ย. 69 แผน 20260924-02 เฟส 2: ใบเสนอราคาของงานเสียเงิน
-  | "quote" | "quote_edit";
+  | "quote" | "quote_edit"
+  // ★ เฟส 3: ลำดับอนุมัติ Solar Sup → Sale Sup (เขียนจาก /api/quotations/[id]/action)
+  | "quote_submit" | "quote_approve" | "quote_return" | "quote_revise";
 
 export type ActorRole = "admin" | "technician" | "customer" | "system";
 
@@ -64,6 +66,8 @@ const LABEL: Record<BookingAction, string> = {
   check: "ตรวจงานเสร็จ รอปิด", done: "ปิดงาน", cancel: "ยกเลิกนัด", no_show: "ลูกค้าไม่อยู่บ้าน",
   call: "บันทึกการโทร",
   quote: "ออกใบเสนอราคา", quote_edit: "แก้ใบเสนอราคา",
+  quote_submit: "ส่งใบเสนอราคาขออนุมัติ", quote_approve: "อนุมัติใบเสนอราคา",
+  quote_return: "ส่งใบเสนอราคากลับแก้", quote_revise: "สร้าง Revision ใบเสนอราคา",
 };
 
 export const actionLabel = (a: string): string => LABEL[a as BookingAction] ?? a;

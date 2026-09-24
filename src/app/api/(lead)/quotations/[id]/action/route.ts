@@ -14,6 +14,13 @@ import {
   notifyQuotationUser,
 } from "@/lib/quotation-notifications";
 import { syncOperationalSlas } from "@/lib/sla-service";
+import { logBooking, type BookingAction } from "@/lib/om/booking-log";
+import {
+  buildOmQuoteSnapshot,
+  canIssueOmQuotation,
+  nextOmQuotationDocNo,
+  validateOmQuoteSnapshot,
+} from "@/lib/om/om-quotation";
 
 const SOLAR_PENDING = "pending_solar_sup";
 const SALES_PENDING = "pending_sales_sup";
@@ -71,6 +78,14 @@ export async function POST(
       isAdmin || effectiveRoles.includes("solar_sup");
     const canActAsSalesSup =
       isAdmin || effectiveRoles.includes("sales_sup");
+    // ★ ใบเสนอราคางานบริการ O&M (แผน 20260924-02 เฟส 3) ใช้ลำดับอนุมัติเดียวกับฝั่งขาย
+    //   Solar Sup → Sale Sup แต่ต่างกัน 5 จุด: ผู้ส่ง = Sale เท่านั้น · ชุดข้อมูลเอกสาร/ตัวตรวจของ O&M ·
+    //   Revision ผูกใบงาน O&M ไม่ใช่ชุดของ lead · ไม่มีขั้นส่งให้ทีมขาย (ไม่แตะสถานะ lead) ·
+    //   ประวัติลงใบงาน O&M แทน lead activity และไม่คำนวณ journey/SLA ของฝั่งขาย
+    const isOm = quotation.om_booking_id != null;
+    const canManage = isOm
+      ? canIssueOmQuotation(effectiveRoles)
+      : canManageQuotation(effectiveRoles);
 
     let next = "";
     let eventAction = action;
@@ -85,7 +100,7 @@ export async function POST(
           { status: 409 },
         );
       }
-      if (!canManageQuotation(effectiveRoles)) {
+      if (!canManage) {
         await tx.rollback();
         return NextResponse.json(
           { error: "ไม่มีสิทธิ์สร้าง Revision" },
@@ -93,13 +108,17 @@ export async function POST(
         );
       }
 
+      // ใบ O&M นับ Revision ในใบงานของตัวเอง — lead เดียวกันอาจมีใบขายชุด 1 อยู่ด้วย (บ้านที่ใช้ lead ร่วม)
       const latest = await new sql.Request(tx)
         .input("lead_id", sql.Int, quotation.lead_id)
         .input("option", sql.Int, quotation.option_no)
+        .input("om_booking", sql.Int, quotation.om_booking_id ?? null)
         .query(`
           SELECT MAX(revision_no) revision_no
           FROM quotations WITH (UPDLOCK, HOLDLOCK)
-          WHERE lead_id = @lead_id AND option_no = @option
+          WHERE ${isOm
+            ? "om_booking_id = @om_booking"
+            : "lead_id = @lead_id AND option_no = @option AND om_booking_id IS NULL"}
         `);
       if (
         Number(latest.recordset[0]?.revision_no) !==
@@ -112,7 +131,7 @@ export async function POST(
         );
       }
 
-      const newDocNo = await nextQuotationDocNo(tx);
+      const newDocNo = isOm ? await nextOmQuotationDocNo(tx) : await nextQuotationDocNo(tx);
       const inserted = await new sql.Request(tx)
         .input("id", sql.Int, quotationId)
         .input("doc", sql.NVarChar(30), newDocNo)
@@ -126,7 +145,7 @@ export async function POST(
             contract_total_incl_vat, deposit_paid_amount, outstanding_amount,
             vat_rate, amount_before_vat, vat_amount, payment_template_id,
             payment_terms_json, terms_text, note, document_inputs_json,
-            created_by, updated_by
+            created_by, updated_by, om_booking_id, om_package_id
           )
           OUTPUT INSERTED.id
           SELECT
@@ -137,7 +156,7 @@ export async function POST(
             contract_total_incl_vat, deposit_paid_amount, outstanding_amount,
             vat_rate, amount_before_vat, vat_amount, payment_template_id,
             payment_terms_json, terms_text, note, document_inputs_json,
-            @uid, @uid
+            @uid, @uid, om_booking_id, om_package_id
           FROM quotations WHERE id = @id
         `);
       createdRevisionId = inserted.recordset[0].id;
@@ -164,15 +183,18 @@ export async function POST(
           { status: 409 },
         );
       }
-      if (!canManageQuotation(effectiveRoles)) {
+      if (!canManage) {
         await tx.rollback();
         return NextResponse.json(
-          { error: "ไม่มีสิทธิ์ส่งใบเสนอราคา" },
+          { error: isOm ? "ใบเสนอราคา O&M ส่งอนุมัติได้เฉพาะ Sale" : "ไม่มีสิทธิ์ส่งใบเสนอราคา" },
           { status: 403 },
         );
       }
 
-      const snapshot = await buildQuotationDocumentSnapshot(quotationId, tx);
+      // ใบ O&M ไม่มีข้อมูลสำรวจ/ค่าไฟ/ผลผลิต — ใช้ชุดข้อมูลและตัวตรวจของ O&M (lib/om/om-quotation.ts)
+      const snapshot = isOm
+        ? await buildOmQuoteSnapshot(quotationId, tx)
+        : await buildQuotationDocumentSnapshot(quotationId, tx);
       if (!snapshot) {
         await tx.rollback();
         return NextResponse.json(
@@ -180,7 +202,9 @@ export async function POST(
           { status: 500 },
         );
       }
-      const validationErrors = validateQuotationDocument(snapshot);
+      const validationErrors = isOm
+        ? validateOmQuoteSnapshot(snapshot)
+        : validateQuotationDocument(snapshot);
       if (validationErrors.length) {
         await tx.rollback();
         return NextResponse.json(
@@ -391,6 +415,16 @@ export async function POST(
         `);
       activityTitle = `${reviewer} ส่งใบเสนอราคา ${quotation.doc_no} กลับให้ Sale แก้ไข`;
     } else if (action === "handoff_to_sales") {
+      // ★ ใบ O&M ห้ามผ่านทางนี้ — ด้านล่าง UPDATE leads SET status = 'order' ทับ lead ทั้งตัว
+      //   บ้าน O&M ที่ใช้ lead ร่วมกับฝั่งขาย (5 หลัง) lead ขายจะกลายเป็น order ทันที
+      //   ขั้นถัดไปของใบ O&M คือรับชำระเงินที่หน้างาน O&M (เฟส 4)
+      if (isOm) {
+        await tx.rollback();
+        return NextResponse.json(
+          { error: "ใบเสนอราคา O&M ไม่ต้องส่งให้ทีมขาย — ขั้นถัดไปคือรับชำระเงินที่หน้างาน O&M" },
+          { status: 409 },
+        );
+      }
       if (quotation.status !== "approved") {
         await tx.rollback();
         return NextResponse.json(
@@ -398,7 +432,7 @@ export async function POST(
           { status: 409 },
         );
       }
-      if (!canManageQuotation(effectiveRoles)) {
+      if (!canManage) {
         await tx.rollback();
         return NextResponse.json(
           { error: "ไม่มีสิทธิ์ส่งใบเสนอราคาให้ทีมขาย" },
@@ -565,6 +599,8 @@ export async function POST(
         `);
     }
 
+    // ป้ายนำหน้าให้ผู้อนุมัติแยกออกในกระดิ่งว่าเป็นงาน O&M (กดแล้วพาไปหน้างาน O&M — ดู /api/notifications)
+    const tag = isOm ? "[O&M] " : "";
     if (eventAction === "submit") {
       await closeQuotationStageNotifications(tx, quotationId, "solar_sup");
       await closeQuotationStageNotifications(tx, quotationId, "sales_sup");
@@ -573,7 +609,7 @@ export async function POST(
         leadId: quotation.lead_id,
         type: "approval_requested",
         stage: "solar_sup",
-        title: `มีใบเสนอราคา ${quotation.doc_no} รออนุมัติ`,
+        title: `${tag}มีใบเสนอราคา ${quotation.doc_no} รออนุมัติ`,
         message: `${actor.full_name} ส่งใบเสนอราคาของ ${quotation.customer_name} ให้ Solar Manager ตรวจสอบ`,
         createdBy: gate.userId,
       });
@@ -584,7 +620,7 @@ export async function POST(
         leadId: quotation.lead_id,
         type: "approval_requested",
         stage: "sales_sup",
-        title: `มีใบเสนอราคา ${quotation.doc_no} รออนุมัติขั้นสุดท้าย`,
+        title: `${tag}มีใบเสนอราคา ${quotation.doc_no} รออนุมัติขั้นสุดท้าย`,
         message: `Solar Manager อนุมัติใบเสนอราคาของ ${quotation.customer_name} แล้ว`,
         createdBy: gate.userId,
       });
@@ -595,7 +631,7 @@ export async function POST(
         leadId: quotation.lead_id,
         type: "approval_completed",
         stage: "approved",
-        title: `ใบเสนอราคา ${quotation.doc_no} อนุมัติครบแล้ว`,
+        title: `${tag}ใบเสนอราคา ${quotation.doc_no} อนุมัติครบแล้ว`,
         message: `${actor.full_name} อนุมัติใบเสนอราคาของ ${quotation.customer_name} ขั้นสุดท้ายแล้ว`,
         createdBy: gate.userId,
       });
@@ -610,23 +646,45 @@ export async function POST(
         leadId: quotation.lead_id,
         type: "changes_required",
         stage: next,
-        title: `ใบเสนอราคา ${quotation.doc_no} ถูกส่งกลับแก้ไข`,
+        title: `${tag}ใบเสนอราคา ${quotation.doc_no} ถูกส่งกลับแก้ไข`,
         message: note,
         createdBy: gate.userId,
       });
     }
 
-    await logLeadActivity(tx, {
-      leadId: quotation.lead_id,
-      activityType: "quotation",
-      title: activityTitle || eventAction,
-      note: note || null,
-      userId: gate.userId,
-    });
+    if (isOm) {
+      // ใบ O&M: ประวัติลงไทม์ไลน์ใบงาน O&M (ทีม O&M ดูที่นั่น) ไม่ลง lead —
+      // บ้านที่ใช้ lead ร่วมกับฝั่งขาย ไทม์ไลน์ของทีมขายจะไม่มีงาน O&M ปน
+      const OM_ACTION: Record<string, BookingAction> = {
+        revise: "quote_revise", submit: "quote_submit",
+        approve_solar: "quote_approve", approve_sales: "quote_approve",
+        changes_required_solar: "quote_return", changes_required_sales: "quote_return",
+      };
+      await logBooking(tx, {
+        bookingId: quotation.om_booking_id,
+        action: OM_ACTION[eventAction] ?? "quote_edit",
+        actorUserId: gate.userId,
+        from: { status: quotation.status },
+        to: { doc_no: quotation.doc_no, status: next, step: eventAction },
+        reason: note || activityTitle || null,
+      });
+    } else {
+      await logLeadActivity(tx, {
+        leadId: quotation.lead_id,
+        activityType: "quotation",
+        title: activityTitle || eventAction,
+        note: note || null,
+        userId: gate.userId,
+      });
+    }
 
     await tx.commit();
-    await refreshJourneySafe(db, quotation.lead_id);
-    await syncOperationalSlas(db, quotation.lead_id, gate.userId);
+    // journey / SLA ของฝั่งขายไม่เกี่ยวกับใบ O&M — lead om_only ไม่มีอยู่แล้ว ส่วน lead ขายที่ใช้ร่วม
+    // ต้องไม่ถูกคำนวณใหม่เพราะเหตุการณ์ของงาน O&M
+    if (!isOm) {
+      await refreshJourneySafe(db, quotation.lead_id);
+      await syncOperationalSlas(db, quotation.lead_id, gate.userId);
+    }
     return NextResponse.json({
       ok: true,
       status: next,

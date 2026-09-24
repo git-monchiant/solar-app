@@ -10,6 +10,7 @@ import { useEffect, useMemo, useState } from "react";
 import { apiFetch } from "@/lib/api";
 import { formatTHB } from "@/lib/utils/formatters";
 import { hasRole, useActiveRoles } from "@/lib/roles";
+import { useDialog } from "@/components/ui/Dialog";
 import { QUOTE_STATUS, thD, type Item } from "@/lib/om/service-view";
 
 type Pkg = {
@@ -25,6 +26,20 @@ type Quote = {
   contract_total_incl_vat: number; amount_before_vat: number; vat_amount: number;
   terms_text: string | null; note: string | null; created_at: string; created_by_name: string | null;
   items: { id: number; item_name: string; quantity: number; unit: string | null; unit_price: number; line_total: number }[];
+  // ลำดับอนุมัติ (เฟส 3)
+  submitted_at: string | null; solar_approved_at: string | null; solar_approved_by_name: string | null;
+  approved_at: string | null; approved_by_name: string | null; approval_note: string | null;
+  /** ใบล่าสุดของใบงาน — สร้าง Revision ได้เฉพาะจากใบล่าสุด */
+  latest_id: number;
+};
+
+// เปิด PDF ตรง ๆ (ไม่ใช่ blob) ให้ชื่อไฟล์จาก server ติดไปถึงปุ่มดาวน์โหลด — แบบเดียวกับหน้าคิวอนุมัติ
+const openPdf = (id: number) => {
+  const uid = typeof window !== "undefined" ? window.localStorage.getItem("userId") : null;
+  const url = `/api/quotation-pdf/${id}${uid ? `?user_id=${uid}` : ""}`;
+  const tab = window.open(url, "_blank");
+  if (tab) tab.opener = null;
+  else window.location.href = url;
 };
 
 const EDITABLE = ["draft", "changes_required"];
@@ -52,11 +67,33 @@ export default function OmQuotationPanel({ item, skip, onSaved, onReload }: {
   const quote = loaded && loaded.id === item.q_id ? loaded : null;
   const [editing, setEditing] = useState(false);
   const [err, setErr] = useState("");
+  const [actErr, setActErr] = useState("");
+  const [busy, setBusy] = useState(false);
+  const dialog = useDialog();
 
   useEffect(() => {
     if (!item.q_id) return;
     apiFetch(`/api/om/quotations/${item.q_id}`).then(setQuote).catch((e) => setErr(e instanceof Error ? e.message : String(e)));
   }, [item.q_id]);
+
+  /** ส่งอนุมัติ / สร้าง Revision — ใช้ endpoint ลำดับอนุมัติตัวเดียวกับฝั่งขาย (แยกทาง O&M ข้างในเอง) */
+  const act = async (action: "submit" | "revise") => {
+    if (!quote) return;
+    const ok = await dialog.confirm(action === "submit"
+      ? { title: "ส่งใบเสนอราคาขออนุมัติ", confirmText: "ส่งอนุมัติ",
+          message: `ส่ง ${quote.doc_no} ให้ Solar Sup ตรวจ แล้วต่อ Sale Sup · ระหว่างรออนุมัติแก้ใบไม่ได้ จนกว่าผู้อนุมัติจะส่งกลับ` }
+      : { title: "สร้าง Revision ใหม่", confirmText: "สร้าง Revision",
+          message: `คัดลอก ${quote.doc_no} เป็นใบร่างเลขที่ใหม่ แก้แล้วต้องส่งอนุมัติใหม่ทั้งสองขั้น` });
+    if (!ok) return;
+    setBusy(true); setActErr("");
+    try {
+      await apiFetch(`/api/quotations/${quote.id}/action`, { method: "POST", body: JSON.stringify({ action }) });
+      if (action === "submit") setQuote(await apiFetch(`/api/om/quotations/${quote.id}`));
+      onSaved(action === "submit" ? `ส่ง ${quote.doc_no} ให้ Solar Sup อนุมัติแล้ว` : `สร้าง Revision จาก ${quote.doc_no} แล้ว`);
+      onReload?.();
+    } catch (e) { setActErr(e instanceof Error ? e.message : String(e)); }
+    finally { setBusy(false); }
+  };
 
   if (skip && !item.q_id) {
     return <div className="text-sm text-gray-600">งานนี้<b>ใช้สิทธิ์ฟรี</b> — ข้ามขั้นเสนอราคา</div>;
@@ -127,8 +164,52 @@ export default function OmQuotationPanel({ item, skip, onSaved, onReload }: {
 
       <div className="mt-3 text-xs text-gray-500">ชำระเต็มจำนวน<b>ก่อนวันนัดหมาย</b>เข้าให้บริการ</div>
       {quote.note && <div className="mt-1 text-xs text-gray-500">โน้ต: {quote.note}</div>}
-      <div className="mt-3 rounded-xl bg-gray-50 border border-gray-200 px-3.5 py-2.5 text-xs text-gray-500 leading-relaxed">
-        ขั้นถัดไป: ส่งอนุมัติ <b>Solar Sup → Sale Sup</b> แล้วส่งให้ลูกค้า — <b>ยังไม่เปิดใช้</b> (เฟส 3)
+
+      {/* ลำดับอนุมัติ Solar Sup → Sale Sup (เฟส 3) — ชุดเดียวกับฝั่งขาย ผู้อนุมัติกดที่คิว /quotation-approvals */}
+      {quote.status === "changes_required" && quote.approval_note && (
+        <div className="mt-3 rounded-xl bg-red-50 border border-red-200 px-3.5 py-2.5 text-sm text-red-700">
+          <b>ถูกส่งกลับแก้:</b> {quote.approval_note}
+        </div>
+      )}
+      <div className="mt-3 grid gap-2 sm:grid-cols-2">
+        <Stage label="Solar Sup" at={quote.solar_approved_at} by={quote.solar_approved_by_name}
+          waiting={quote.status === "pending_solar_sup"} />
+        <Stage label="Sale Sup" at={quote.approved_at} by={quote.approved_by_name}
+          waiting={quote.status === "pending_sales_sup" || quote.status === "pending_approval"} />
+      </div>
+      {quote.status === "approved" && (
+        <div className="mt-2 rounded-xl bg-emerald-50 border border-emerald-200 px-3.5 py-2.5 text-xs text-emerald-800">
+          อนุมัติครบแล้ว — ขั้นถัดไป <b>ส่งใบให้ลูกค้า แล้วรับชำระเงินก่อนนัด</b> (ระบบรับเงินของ O&amp;M เปิดใช้เฟส 4)
+        </div>
+      )}
+
+      {actErr && <div className="mt-3 rounded-lg bg-red-50 border border-red-200 px-3 py-2 text-sm text-red-700">{actErr}</div>}
+      <div className="mt-3 flex gap-2 flex-wrap">
+        <button type="button" style={{ minHeight: 0 }} onClick={() => openPdf(quote.id)}
+          className="h-9 px-4 rounded-xl border border-gray-200 text-sm font-semibold text-gray-700 bg-white cursor-pointer">ดูใบเสนอราคา (PDF)</button>
+        {canIssue && EDITABLE.includes(quote.status) && (
+          <button type="button" disabled={busy} style={{ minHeight: 0 }} onClick={() => act("submit")}
+            className="h-9 px-5 rounded-xl bg-primary text-white text-sm font-bold cursor-pointer disabled:opacity-50">
+            {busy ? "กำลังส่ง…" : "ส่งอนุมัติ Solar Sup"}</button>
+        )}
+        {canIssue && quote.status === "approved" && quote.latest_id === quote.id && (
+          <button type="button" disabled={busy} style={{ minHeight: 0 }} onClick={() => act("revise")}
+            className="h-9 px-4 rounded-xl border border-gray-200 text-sm font-semibold text-gray-600 bg-white cursor-pointer disabled:opacity-50">
+            แก้ใบที่อนุมัติแล้ว (สร้าง Revision)</button>
+        )}
+      </div>
+    </div>
+  );
+}
+
+/** กล่องสถานะของผู้อนุมัติ 1 ขั้น */
+function Stage({ label, at, by, waiting }: { label: string; at: string | null; by: string | null; waiting: boolean }) {
+  const done = !!at;
+  return (
+    <div className={`rounded-xl border px-3 py-2 text-xs ${done ? "border-emerald-200 bg-emerald-50/60" : waiting ? "border-amber-200 bg-amber-50" : "border-gray-200 bg-gray-50"}`}>
+      <div className="font-bold text-gray-700">{label}</div>
+      <div className={done ? "text-emerald-700" : waiting ? "text-amber-700 font-semibold" : "text-gray-400"}>
+        {done ? <>✓ อนุมัติแล้ว · {by ?? "—"} · {thD(at)}</> : waiting ? "รออนุมัติ" : "ยังไม่ถึงขั้นนี้"}
       </div>
     </div>
   );

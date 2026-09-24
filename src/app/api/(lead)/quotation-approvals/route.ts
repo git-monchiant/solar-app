@@ -41,7 +41,11 @@ export async function GET(req: NextRequest) {
       q.package_name_snapshot,
       q.package_price_snapshot,
       -- ราคาปัจจุบันของแพ็กเกจ ใช้เตือนว่าใบนี้ออกด้วยราคาคนละเดือนกับที่ใช้อยู่
-      pk.price current_package_price,
+      -- (ใบ O&M ไม่มี package_id — เทียบกับ Package O&M ที่ใบเลือกแทน)
+      COALESCE(pk.price, omp.price) current_package_price,
+      -- ใบเสนอราคางานบริการ O&M (แผน 20260924-02 เฟส 3) — หน้าคิวติดป้าย O&M และลิงก์ไปหน้างาน O&M
+      q.om_booking_id,
+      ob.house_id om_house_id,
       q.contract_total_incl_vat,
       -- ยอดที่ลูกค้าต้องชำระจริง (หักมัดจำแล้ว) — ต้องตรงกับ "รวมยอดที่ต้องชำระสุทธิ" ในใบเสนอราคา
       q.outstanding_amount,
@@ -54,6 +58,8 @@ export async function GET(req: NextRequest) {
     FROM quotations q
     JOIN leads l ON l.id = q.lead_id
     LEFT JOIN packages pk ON pk.id = q.package_id
+    LEFT JOIN om_packages omp ON omp.id = q.om_package_id
+    LEFT JOIN om_bookings ob ON ob.id = q.om_booking_id
     LEFT JOIN users submitter ON submitter.id = q.submitted_by
     LEFT JOIN users solar_approver ON solar_approver.id = q.solar_approved_by
     WHERE q.status IN (${statuses.map((status) => `'${status}'`).join(",")})

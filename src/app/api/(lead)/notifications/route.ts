@@ -80,13 +80,16 @@ export async function GET(req: NextRequest) {
           N'quotation' notification_source,
           n.id, n.quotation_id, CAST(NULL AS INT) payment_id, n.lead_id,
           n.notification_type, n.approval_stage, n.title, n.message,
-          CAST(NULL AS NVARCHAR(500)) target_url,
+          -- ใบเสนอราคางาน O&M พาไปหน้างาน O&M ของบ้านนั้น ไม่ใช่หน้า lead (แผน 20260924-02 เฟส 3)
+          CAST(CASE WHEN ob.house_id IS NOT NULL
+                    THEN CONCAT(N'/om/services/', ob.house_id) END AS NVARCHAR(500)) target_url,
           n.read_at, CAST(NULL AS DATETIME2) resolved_at, n.created_at,
           q.doc_no, q.status quotation_status, l.full_name customer_name,
           creator.full_name created_by_name
         FROM dbo.quotation_approval_notifications n
         JOIN dbo.quotations q ON q.id = n.quotation_id
         JOIN dbo.leads l ON l.id = n.lead_id
+        LEFT JOIN dbo.om_bookings ob ON ob.id = q.om_booking_id
         LEFT JOIN dbo.users creator ON creator.id = n.created_by
         WHERE @includeQuotation = 1
           AND n.recipient_user_id = @uid
