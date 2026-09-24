@@ -143,7 +143,8 @@ export const MODULES: AppModule[] = [
   {
     // กระบวนการใบเสนอราคาครบวงจร สำหรับฝั่ง solar (ไม่เห็นโมดูล Sales)
     // — solar ปกติดู list ได้ · เมนูอนุมัติเห็นเฉพาะ Manager/Admin
-    key: "quotation", label: "Quotation", emoji: "🧾", tint: "bg-rose-50",
+    // 📄 ไม่ใช่ 🧾 — เหตุผลเดียวกับการ์ด Package O&M (emoji รุ่นใหม่ ฟอนต์ Windows บางเครื่องไม่มี)
+    key: "quotation", label: "Quotation", emoji: "📄", tint: "bg-rose-50",
     group: "operation",
     desc: "อนุมัติ · รอใบเสนอราคา · รอชำระเงิน",
     roles: ["solar", "solar_sup"],
@@ -236,7 +237,8 @@ export const MODULES: AppModule[] = [
     ],
   },
   {
-    key: "om_package", label: "Package O&M", emoji: "🧰", tint: "bg-orange-50",
+    // 📋 ไม่ใช่ 🧰 — 🧰 เป็น emoji รุ่นใหม่ ฟอนต์ Windows บางเครื่องไม่มี ขึ้นเป็นกล่องเปล่า
+    key: "om_package", label: "Package O&M", emoji: "📋", tint: "bg-orange-50",
     group: "setup",
     desc: "แพ็คเกจบริการ O&M · สัญญา",
     roles: ["admin"],
