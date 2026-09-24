@@ -4,19 +4,26 @@ import { sql } from "@/lib/db";
 import { getOmDb } from "@/lib/om/line";
 import { PACKAGE_EDIT_ROLES } from "@/lib/role-permissions";
 import { readOmPackageBody } from "@/lib/om/packages";
+import { syncOmPricePeriods } from "@/lib/om/package-prices";
 
 // แพ็คเกจบริการ O&M — สิทธิ์แก้ชุดเดียวกับ Package ฝั่งขาย (PACKAGE_EDIT_ROLES)
 // GET ?all=1 = รวมตัวที่ปิดใช้งาน (หน้าจัดการ) · ไม่ใส่ = เฉพาะที่เปิดขาย (แคตตาล็อก)
 export async function GET(req: NextRequest) {
   const gate = await requireAuth(req);
   if (gate.error) return gate.error;
+  await syncOmPricePeriods();   // ราคาที่ถึงกำหนดใช้วันนี้ต้องมีผลโดยไม่ต้องรอใครกด
   const all = req.nextUrl.searchParams.get("all") === "1";
   const db = await getOmDb();
   const [pkgs, notes] = await Promise.all([
     db.request().query(`
-      SELECT id, kw_min, kw_max, max_panels, plan_type, contract_months, visits, price, scope, is_active
-      FROM om_packages ${all ? "" : "WHERE is_active = 1"}
-      ORDER BY kw_min, kw_max, CASE plan_type WHEN 'per_visit' THEN 0 ELSE 1 END, contract_months, id`),
+      SELECT p.id, p.kw_min, p.kw_max, p.max_panels, p.plan_type, p.contract_months, p.visits, p.price, p.scope, p.is_active,
+             CONVERT(char(10), pp.start_date, 23) start_date, CONVERT(char(10), pp.expire_date, 23) expire_date
+      FROM om_packages p
+      -- ช่วงราคาที่แสดงบนการ์ด = ช่วง Active · ไม่มี = ช่วงล่าสุด (จะเห็นป้ายหมดอายุ/ยังไม่เริ่ม)
+      OUTER APPLY (SELECT TOP 1 start_date, expire_date FROM om_package_price_periods x
+                   WHERE x.om_package_id = p.id ORDER BY x.is_active DESC, x.start_date DESC, x.id DESC) pp
+      ${all ? "" : "WHERE p.is_active = 1"}
+      ORDER BY p.kw_min, p.kw_max, CASE p.plan_type WHEN 'per_visit' THEN 0 ELSE 1 END, p.contract_months, p.id`),
     db.request().query(`SELECT id, body FROM om_package_notes ORDER BY sort_order, id`),
   ]);
   const toNum = (v: unknown) => (v == null ? null : Number(v));

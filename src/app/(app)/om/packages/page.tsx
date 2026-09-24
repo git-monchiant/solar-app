@@ -5,9 +5,10 @@ import { useEffect, useState } from "react";
 import ListPageHeader from "@/components/layout/ListPageHeader";
 import { formatTHB } from "@/lib/utils/formatters";
 import Loading from "@/components/ui/Loading";
+import { CheckIcon } from "@/components/ui/icons";
 import {
-  omPlanLabel, omTierKey, omTierKw, omTierLabel,
-  type OmPackage, type OmPackageNote, type OmPlanType,
+  omPlanLabel, omScopeItems, omTierKey, omTierKw, omTierLabel,
+  type OmPackage, type OmPlanType,
 } from "@/lib/om/packages";
 
 // แคตตาล็อกแพ็คเกจบริการ O&M — เปลือกยกจาก /packages ทั้งก้อน (header · แท็บ · การ์ด)
@@ -17,14 +18,13 @@ type TabKey = "all" | OmPlanType;
 
 export default function OmPackagesPage() {
   const [packages, setPackages] = useState<OmPackage[]>([]);
-  const [notes, setNotes] = useState<OmPackageNote[]>([]);
   const [tab, setTab] = useState<TabKey>("all");
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState("");
 
   useEffect(() => {
     apiFetch("/api/om/packages")
-      .then((r: { packages: OmPackage[]; notes: OmPackageNote[] }) => { setPackages(r.packages); setNotes(r.notes); })
+      .then((r: { packages: OmPackage[] }) => setPackages(r.packages))
       .catch(console.error)
       .finally(() => setLoading(false));
   }, []);
@@ -97,10 +97,16 @@ export default function OmPackagesPage() {
                           </div>
                         </div>
                         {p.scope && (
-                          <div className="mt-2 flex items-baseline justify-between gap-3">
-                            <span className="text-xs font-semibold uppercase tracking-wider text-gray-400 shrink-0">Scope</span>
-                            <span className="text-sm text-gray-700 text-right leading-relaxed">{p.scope.split("+").join(" + ")}</span>
-                          </div>
+                          <ul className="mt-2.5 space-y-1.5">
+                            {omScopeItems(p.scope).map((s) => (
+                              <li key={s} className="flex items-start gap-2 text-sm leading-snug">
+                                <span className="mt-0.5 w-4 h-4 shrink-0 rounded-full flex items-center justify-center bg-emerald-50 text-emerald-600">
+                                  <CheckIcon className="w-2.5 h-2.5" strokeWidth={3} />
+                                </span>
+                                <span className="text-gray-700">{s}</span>
+                              </li>
+                            ))}
+                          </ul>
                         )}
                       </div>
                     ))}
@@ -111,15 +117,6 @@ export default function OmPackagesPage() {
 
             {tiers.length === 0 && (
               <div className="rounded-xl bg-white border border-gray-300 px-5 py-10 text-center text-sm text-gray-400">ไม่พบแพ็คเกจตามเงื่อนไขที่เลือก</div>
-            )}
-
-            {notes.length > 0 && (
-              <div className="rounded-xl bg-white border border-gray-300 px-4 py-3 space-y-1.5">
-                <div className="text-xs font-semibold uppercase tracking-wider text-gray-400">หมายเหตุ</div>
-                {notes.map((n, i) => (
-                  <p key={n.id ?? i} className="text-sm text-gray-600 leading-relaxed">{n.body}</p>
-                ))}
-              </div>
             )}
           </>
         )}

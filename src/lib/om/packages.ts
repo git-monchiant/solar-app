@@ -13,6 +13,9 @@ export type OmPackage = {
   price: number;
   scope: string | null;
   is_active: boolean;
+  /** ช่วงราคาที่แสดง (Active หรือช่วงล่าสุด) — มาจาก GET /api/om/packages เท่านั้น */
+  start_date?: string | null;
+  expire_date?: string | null;
 };
 
 export type OmPackageNote = { id?: number; body: string };
@@ -37,7 +40,11 @@ export const omPlanLabel = (p: Pick<OmPackage, "plan_type" | "contract_months" |
     .filter(Boolean).join(" ");
 };
 
-type Parsed = Omit<OmPackage, "id">;
+/** ขอบเขตงานเก็บเป็นข้อความคั่นด้วย "+" (แบบตารางราคาต้นฉบับ) → แยกเป็นรายข้อสำหรับ bullet */
+export const omScopeItems = (scope: string | null | undefined) =>
+  (scope ?? "").split("+").map((s) => s.trim()).filter(Boolean);
+
+type Parsed =Omit<OmPackage, "id">;
 
 /** ตรวจ body ของ POST/PATCH — คืนค่าที่พร้อมลงฐาน หรือข้อความ error ภาษาไทย */
 export function readOmPackageBody(b: Record<string, unknown>): { value: Parsed } | { error: string } {
