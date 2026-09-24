@@ -1,12 +1,40 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getDb, sql, fixDates, toSqlDate } from "@/lib/db";
-import { requireAuth } from "@/lib/auth";
+import { getEffectiveRolesFromReq, requireAuth } from "@/lib/auth";
 import { logLeadActivity, fmtThaiDate } from "@/lib/lead-activity-log";
 import { validateDocNo } from "@/lib/doc-number";
 import { getGridTieFinalMissing } from "@/lib/gridTie";
 import { installmentAmount, netTotalOf, parseInstallmentRows, type InstallmentRow } from "@/lib/installments";
 import { processGradeChange, syncOperationalSlas } from "@/lib/sla-service";
 import { slaLiveStatusSql } from "@/lib/lead-sla-sql";
+
+type PlanRowLike = { pct?: unknown; amount?: unknown; when?: unknown; method?: unknown; loan_bank?: unknown; cc_pct?: unknown };
+
+/**
+ * แผนงวดเปลี่ยนในส่วนที่กระทบยอดเงินหรือไม่ — จำนวนงวด, %, ยอด, ก่อน/หลังติดตั้ง, วิธีชำระ
+ *
+ * หน้าจอส่ง order_installments มาทุกครั้งที่บันทึกอัตโนมัติ แม้ผู้ใช้แก้แค่วันติดตั้ง
+ * จึงต้องเทียบแบบทนต่อรูปแบบข้อมูล (null กับค่าว่าง, "10" กับ 10) ไม่อย่างนั้นการบันทึก
+ * ช่องอื่นจะโดนปฏิเสธไปด้วยทั้งที่แผนไม่ได้เปลี่ยน · ไม่เทียบวันครบกำหนดเพราะไม่กระทบยอด
+ * · ไม่เทียบ % ของงวดสุดท้ายที่ไม่ได้กำหนดยอด เพราะหน้าจอคำนวณใหม่จากงวดอื่นทุกครั้ง
+ */
+function planMoneyChanged(prev: PlanRowLike[], next: PlanRowLike[]): boolean {
+  if (!Array.isArray(prev) || !Array.isArray(next)) return true;
+  if (prev.length !== next.length) return true;
+  const num = (v: unknown) => (v == null || v === "" ? null : Math.round(Number(v) * 100) / 100);
+  const txt = (v: unknown, fallback: string | null) => (v == null || v === "" ? fallback : String(v));
+  let remainderIdx = -1;
+  next.forEach((row, i) => { if (num(row?.amount) == null) remainderIdx = i; });
+  return next.some((n, i) => {
+    const p = prev[i] ?? {};
+    return (i !== remainderIdx && num(p.pct) !== num(n?.pct))
+      || num(p.amount) !== num(n?.amount)
+      || txt(p.when, "before") !== txt(n?.when, "before")
+      || txt(p.method, "transfer") !== txt(n?.method, "transfer")
+      || txt(p.loan_bank, null) !== txt(n?.loan_bank, null)
+      || num(p.cc_pct) !== num(n?.cc_pct);
+  });
+}
 
 const statusLabels: Record<string, string> = {
   pre_survey: "รอติดตาม",
@@ -624,6 +652,43 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
             const changed = prev.pct !== next.pct || prev.when !== next.when || prev.method !== next.method || prev.loan_bank !== next.loan_bank;
             if (changed) {
               return NextResponse.json({ error: `งวดที่ ${idx + 1} ชำระแล้ว — แก้ไขข้อมูลไม่ได้ ต้องถอน confirm ก่อน` }, { status: 409 });
+            }
+          }
+          // 3. แผนงวดล็อกตั้งแต่ส่งสลิป ไม่ต้องรอบัญชียืนยัน — หน้าจอล็อกให้แล้ว แต่หน้าที่
+          //    เปิดค้างไว้ก่อนเซลส์ส่งสลิปยังไม่รู้ว่ามีสลิปรออยู่ จึงต้องกันที่นี่อีกชั้น
+          //    (ลีด 1070: แผน 30/60/10 กลายเป็น 30/0/70 ระหว่างรอบัญชียืนยัน)
+          //    Admin ผ่านได้ สำหรับกรณีต้องแก้ข้อมูลด้วยมือ
+          if (planMoneyChanged(prevArr, newArr)) {
+            const pending = await db.request()
+              .input("lead_id", sql.Int, leadId)
+              .query(`
+                SELECT slip_field FROM slip_files
+                WHERE lead_id = @lead_id AND submitted_at IS NOT NULL
+                  AND slip_field LIKE 'order_installment_%'
+                UNION
+                SELECT slip_field FROM payments
+                WHERE lead_id = @lead_id AND confirmed_at IS NULL AND cheque_received_at IS NOT NULL
+                  AND slip_field LIKE 'order_installment_%'
+              `);
+            if (pending.recordset.length > 0) {
+              const roleRow = await db.request().input("uid", sql.Int, gate.userId)
+                .query(`SELECT roles FROM users WHERE id = @uid`);
+              let assignedRoles: string[] = [];
+              try {
+                const parsed = JSON.parse(roleRow.recordset[0]?.roles || "[]");
+                if (Array.isArray(parsed)) assignedRoles = parsed;
+              } catch { assignedRoles = []; }
+              if (!getEffectiveRolesFromReq(req, assignedRoles).includes("admin")) {
+                const rows = pending.recordset
+                  .map((r: { slip_field: string }) => parseInt(r.slip_field.replace("order_installment_", "")) + 1)
+                  .filter((n: number) => !isNaN(n))
+                  .sort((a: number, b: number) => a - b)
+                  .map((n: number) => `งวดที่ ${n}`)
+                  .join(", ");
+                return NextResponse.json({
+                  error: `สลิป${rows} รอบัญชียืนยัน — แก้แผนงวดได้หลังบัญชียืนยันหรือตีกลับสลิป (โหลดหน้าใหม่เพื่อดูสถานะล่าสุด)`,
+                }, { status: 409 });
+              }
             }
           }
         }
