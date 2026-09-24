@@ -16,7 +16,9 @@ export type BookingAction =
   // ★ 24 ก.ย. 69 แผน 20260924-02 เฟส 2: ใบเสนอราคาของงานเสียเงิน
   | "quote" | "quote_edit"
   // ★ เฟส 3: ลำดับอนุมัติ Solar Sup → Sale Sup (เขียนจาก /api/quotations/[id]/action)
-  | "quote_submit" | "quote_approve" | "quote_return" | "quote_revise";
+  | "quote_submit" | "quote_approve" | "quote_return" | "quote_revise"
+  // ★ เฟส 4: ส่งใบให้ลูกค้า → ขั้นชำระเงิน · Account ยืนยันรับเงิน (+ เติมสิทธิ์ที่ซื้อ)
+  | "quote_send" | "paid" | "pay_submit" | "pay_reject";
 
 export type ActorRole = "admin" | "technician" | "customer" | "system";
 
@@ -68,6 +70,8 @@ const LABEL: Record<BookingAction, string> = {
   quote: "ออกใบเสนอราคา", quote_edit: "แก้ใบเสนอราคา",
   quote_submit: "ส่งใบเสนอราคาขออนุมัติ", quote_approve: "อนุมัติใบเสนอราคา",
   quote_return: "ส่งใบเสนอราคากลับแก้", quote_revise: "สร้าง Revision ใบเสนอราคา",
+  quote_send: "ส่งใบเสนอราคาให้ลูกค้า", paid: "ยืนยันรับเงินแล้ว",
+  pay_submit: "แนบสลิปค่าบริการ รอ Account ยืนยัน", pay_reject: "Account ปฏิเสธสลิป",
 };
 
 export const actionLabel = (a: string): string => LABEL[a as BookingAction] ?? a;

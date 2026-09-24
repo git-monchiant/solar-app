@@ -3,9 +3,16 @@
 
 import { DUE_WASH_SQL } from "./entitlement";
 import { ACTIVE_STATUS } from "./booking";
-import { OM_FOLLOW_STEP, OM_QUOTE_SUB_BY_STATUS, OM_STEP_BY_STATUS, OM_SUB_BY_STATUS } from "./journey";
+import { OM_FOLLOW_STEP, OM_PAY_SUB, OM_QUOTE_SUB_BY_STATUS, OM_STEP_BY_STATUS, OM_SUB_BY_STATUS } from "./journey";
 
 const quote = (xs: readonly string[]) => xs.map((s) => `'${s}'`).join(",");
+
+const PAY_SUB_SQL = `(SELECT CASE
+             WHEN EXISTS (SELECT 1 FROM payments op WHERE op.lead_id = oq.lead_id
+                            AND op.slip_field = CONCAT(N'om_quote_', oq.id) AND op.confirmed_at IS NOT NULL) THEN ${OM_PAY_SUB.paid}
+             WHEN EXISTS (SELECT 1 FROM payments op WHERE op.lead_id = oq.lead_id
+                            AND op.slip_field = CONCAT(N'om_quote_', oq.id) AND op.confirmed_at IS NULL) THEN ${OM_PAY_SUB.verifying}
+             ELSE ${OM_PAY_SUB.unpaid} END)`;
 
 const caseSql = (col: string, map: Record<string, number>, fallback?: number) =>
   `CASE ${col} ${Object.entries(map)
@@ -52,10 +59,12 @@ export const OM_JOURNEY_SUMMARY_SQL = `
   SELECT journey_step, journey_sub, COUNT(*) AS n FROM (
     SELECT ${caseSql("b.status", OM_STEP_BY_STATUS)} AS journey_step,
            CASE WHEN b.status = 'quote' THEN ${caseSql("oq.status", OM_QUOTE_SUB_BY_STATUS, 2210)}
+                -- ชำระเงิน (เฟส 4): อ่านจากแถว payments ของใบล่าสุด slip_field = om_quote_<id>
+                WHEN b.status = 'payment' THEN ${PAY_SUB_SQL}
                 ELSE ${caseSql("b.status", OM_SUB_BY_STATUS, 0)} END AS journey_sub
       FROM om_bookings b
       -- ใบเสนอราคาล่าสุดของใบงาน (เฟส 2 แผน 20260924-02) — ใช้แยกขั้นย่อยของเสนอราคา 2210–2250
-      OUTER APPLY (SELECT TOP 1 q.status FROM quotations q
+      OUTER APPLY (SELECT TOP 1 q.id, q.lead_id, q.status FROM quotations q
                     WHERE q.om_booking_id = b.id ORDER BY q.id DESC) oq
      WHERE b.status IN (${quote(Object.keys(OM_STEP_BY_STATUS))})
   ) j GROUP BY journey_step, journey_sub`;

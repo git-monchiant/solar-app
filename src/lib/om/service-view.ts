@@ -46,11 +46,19 @@ export const QUOTE_STATUS: Record<string, { t: string; tone: string }> = {
   approved: { t: "อนุมัติแล้ว", tone: "bg-emerald-50 text-emerald-700" },
 };
 
+/** สถานะเงินของใบงานขั้นชำระเงิน (เฟส 4) — ชุดเดียวกับขั้นย่อย journey 2310/2320/2330 */
+export const PAY_STATE: Record<"unpaid" | "verifying" | "paid", { t: string; tone: string }> = {
+  unpaid: { t: "รอชำระ", tone: "bg-fuchsia-50 text-fuchsia-800" },
+  verifying: { t: "รอ Account ยืนยันรับเงิน", tone: "bg-amber-50 text-amber-800" },
+  paid: { t: "ชำระแล้ว · รอโทรนัด", tone: "bg-emerald-50 text-emerald-800" },
+};
+
 /** แท็บของหน้ารายการ — ขั้นที่มีงานอยู่จริง + 3 ทางออก
- *  (เสนอราคาเปิดแท็บเฟส 2 · ชำระเงินจะเพิ่มเฟส 4 · นัดหมายแยก 2 แท็บตามขั้นย่อย 2410/2420) */
+ *  (เสนอราคาเปิดแท็บเฟส 2 · ชำระเงินเฟส 4 · นัดหมายแยก 2 แท็บตามขั้นย่อย 2410/2420) */
 export const TABS = [
   { k: "follow", t: "ติดตาม" },
   { k: "quote", t: "เสนอราคา" },
+  { k: "payment", t: "ชำระเงิน" },
   { k: "pending", t: "รอยืนยันนัด" },
   { k: "confirmed", t: "นัดแล้ว" },
   { k: "progress", t: "เข้างาน" },
@@ -62,13 +70,13 @@ export const TABS = [
 ] as const;
 
 export const TONE: Record<string, string> = {
-  follow: "bg-gray-500", quote: "bg-pink-600", pending: "bg-amber-500", confirmed: "bg-blue-600",
+  follow: "bg-gray-500", quote: "bg-pink-600", payment: "bg-fuchsia-600", pending: "bg-amber-500", confirmed: "bg-blue-600",
   progress: "bg-violet-600", checked: "bg-teal-600", closed: "bg-emerald-600",
   unreachable: "bg-red-500", declined: "bg-gray-400", noquota: "bg-orange-500",
 };
 /** สีอ่อนของแท็บเดียวกัน — ใช้กับชิปบนหน้าภาพรวม (พื้นเข้มอ่านเลขโต ๆ ไม่ออก) */
 export const TONE_SOFT: Record<string, string> = {
-  follow: "bg-gray-100 text-gray-700", quote: "bg-pink-50 text-pink-700", pending: "bg-amber-50 text-amber-700",
+  follow: "bg-gray-100 text-gray-700", quote: "bg-pink-50 text-pink-700", payment: "bg-fuchsia-50 text-fuchsia-700", pending: "bg-amber-50 text-amber-700",
   confirmed: "bg-blue-50 text-blue-700", progress: "bg-violet-50 text-violet-700",
   checked: "bg-teal-50 text-teal-700", closed: "bg-emerald-50 text-emerald-700",
   unreachable: "bg-red-50 text-red-700", declined: "bg-gray-50 text-gray-500",
@@ -99,6 +107,8 @@ export interface Item {
   owner_user_id: number | null; owner_name: string | null;
   /** ใบเสนอราคาล่าสุดของใบงาน (เฟส 2 แผน 20260924-02) — ว่าง = ยังไม่เคยออกใบ */
   q_id: number | null; q_doc_no: string | null; q_status: string | null; q_total: number | null;
+  /** การรับเงินของใบเสนอราคา (เฟส 4) — unpaid ยังไม่มีสลิป · verifying รอ Account ยืนยัน · paid รับเงินแล้ว */
+  pay_state: "unpaid" | "verifying" | "paid" | null;
   bucket: string;
 }
 

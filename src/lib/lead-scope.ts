@@ -13,3 +13,13 @@
 //   ถ้าคิวรีเดิมไม่มี alias ใช้ `FROM ${SALES_LEADS} leads` ชื่อคอลัมน์ที่อ้างถึงยังเหมือนเดิม
 //   ห้ามใช้กับ INSERT / UPDATE / DELETE — ใช้กับการอ่านเท่านั้น
 export const SALES_LEADS = "(SELECT * FROM leads WHERE om_only = 0)";
+
+// ขอบเขต "เงินของงานขาย" — ใช้แทนชื่อตาราง payments ในคิวรีรายงาน/ตัวเลขของฝั่งขาย
+//
+// ★ แผน 20260924-02 เฟส 4 (ผู้ใช้เคาะ 24 ก.ย. 69): ค่าบริการ O&M ลงตาราง payments ตัวเดียวกัน
+//   (Account มีบัญชีรับเงินชุดเดียว คิวรอยืนยันรับเงินคิวเดียว) แยกด้วย slip_field ขึ้นต้น "om_quote_"
+//   (OM_SLIP_PREFIX ใน lib/om/om-quotation.ts — ไฟล์นี้ import ไม่ได้เพราะต้องไม่ลาก server-only)
+//   รายรับ O&M แยกรายงานของตัวเอง ⇒ dashboard / รายงานรายรับของฝั่งขายต้องไม่นับเงินก้อนนี้
+//   โดยเฉพาะบ้าน 5 หลังที่ใช้ lead ร่วมกับฝั่งขาย (SALES_LEADS กันไม่ได้ เพราะ lead เป็น om_only = 0)
+// วิธีใช้เหมือน SALES_LEADS: `FROM ${SALES_PAYMENTS} p` · ไม่มี alias ใช้ `FROM ${SALES_PAYMENTS} payments`
+export const SALES_PAYMENTS = "(SELECT * FROM payments WHERE slip_field NOT LIKE 'om[_]quote[_]%')";

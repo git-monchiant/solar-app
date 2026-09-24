@@ -86,6 +86,20 @@ export async function POST(
     const canManage = isOm
       ? canIssueOmQuotation(effectiveRoles)
       : canManageQuotation(effectiveRoles);
+    // ใบ O&M ส่งอนุมัติ/สร้าง Revision ได้เฉพาะตอนใบงานยังอยู่ขั้นเสนอราคา (เฟส 4)
+    // ส่งให้ลูกค้าแล้ว = ราคาถูกแจ้งไปแล้วและอาจรับเงินแล้ว ห้ามมีใบใหม่งอกขึ้นมาทับ
+    if (isOm && (action === "submit" || action === "revise")) {
+      const job = await new sql.Request(tx)
+        .input("b", sql.Int, quotation.om_booking_id)
+        .query(`SELECT status FROM om_bookings WHERE id = @b`);
+      if (job.recordset[0]?.status !== "quote") {
+        await tx.rollback();
+        return NextResponse.json(
+          { error: "ใบงานเลยขั้นเสนอราคาแล้ว (ส่งให้ลูกค้าแล้ว) — แก้หรือส่งใบใหม่ไม่ได้" },
+          { status: 409 },
+        );
+      }
+    }
 
     let next = "";
     let eventAction = action;

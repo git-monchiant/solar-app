@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getDb, sql, fixDates, toSqlDate } from "@/lib/db";
 import { requireAuth } from "@/lib/auth";
-import { SALES_LEADS } from "@/lib/lead-scope";
+import { SALES_LEADS, SALES_PAYMENTS } from "@/lib/lead-scope";
 
 export async function GET(req: NextRequest) {
   const gate = await requireAuth(req);
@@ -69,7 +69,7 @@ export async function GET(req: NextRequest) {
     const schedPredFor = (a: string) => (hasRange
       ? `CAST(${a}.install_date AS DATE) BETWEEN @from AND @to`
       : `${a}.install_date IS NOT NULL`)
-      + ` AND EXISTS (SELECT 1 FROM payments fp
+      + ` AND EXISTS (SELECT 1 FROM ${SALES_PAYMENTS} fp
                        WHERE fp.lead_id = ${a}.id AND fp.confirmed_at IS NOT NULL
                          AND fp.slip_field <> 'pre_slip_url')`;
     const schedPred = schedPredFor("l");
@@ -90,7 +90,7 @@ export async function GET(req: NextRequest) {
     // confirmed, with pre_booked_at covering ฟรีค่าสำรวจ (no payments row).
     const bookedPredL = hasRange
       ? `CAST(COALESCE(
-           (SELECT MIN(confirmed_at) FROM payments
+           (SELECT MIN(confirmed_at) FROM ${SALES_PAYMENTS} payments
              WHERE lead_id = l.id AND slip_field = 'pre_slip_url' AND confirmed_at IS NOT NULL),
            l.pre_booked_at
          ) AS DATE) BETWEEN @from AND @to`
@@ -110,7 +110,7 @@ export async function GET(req: NextRequest) {
             OR CAST(l.install_date AS DATE) BETWEEN @from AND @to
             OR CAST(l.install_completed_at AS DATE) BETWEEN @from AND @to
             OR EXISTS (
-              SELECT 1 FROM payments p WHERE p.lead_id = l.id
+              SELECT 1 FROM ${SALES_PAYMENTS} p WHERE p.lead_id = l.id
                 AND p.confirmed_at IS NOT NULL
                 AND CAST(p.confirmed_at AS DATE) BETWEEN @from AND @to
             )
@@ -150,14 +150,14 @@ export async function GET(req: NextRequest) {
           -- filter it hid ฿1,541,320 from 10 April-born leads, so the card read
           -- "รับเงินแล้ว 2.3M" against "รายได้ 3.5M" and looked like ฿1.2M was
           -- uncollected — those jobs were in fact paid in full.
-          (SELECT ISNULL(SUM(p.amount), 0) FROM payments p
+          (SELECT ISNULL(SUM(p.amount), 0) FROM ${SALES_PAYMENTS} p
             WHERE p.confirmed_at IS NOT NULL AND ${receivedPred}) as total_received,
           -- The slice of that cash we have NOT earned yet: money confirmed in the
           -- window against a job that is neither delivered nor cancelled. It is a
           -- liability, not revenue — the customer is owed an installation. Splits
           -- total_received into "earned" (closed_value) + "held" so the card adds
           -- up: 3,475,850 delivered + 14,000 forfeited + 395,200 held = 3,885,050.
-          (SELECT ISNULL(SUM(p.amount), 0) FROM payments p
+          (SELECT ISNULL(SUM(p.amount), 0) FROM ${SALES_PAYMENTS} p
              JOIN ${SALES_LEADS} l ON l.id = p.lead_id
             WHERE p.confirmed_at IS NOT NULL AND ${receivedPred}
               AND l.install_completed_at IS NULL AND l.status <> 'lost') as unearned_received,
@@ -170,25 +170,25 @@ export async function GET(req: NextRequest) {
           -- stays inside unearned_received because the card's split must add up.
           -- Deliberately NOT the contract value of those jobs either: the card
           -- splits cash received, and unbilled order value was never that cash.
-          (SELECT COUNT(DISTINCT l.id) FROM payments p
+          (SELECT COUNT(DISTINCT l.id) FROM ${SALES_PAYMENTS} p
              JOIN ${SALES_LEADS} l ON l.id = p.lead_id
             WHERE p.confirmed_at IS NOT NULL AND ${receivedPred}
               AND p.slip_field <> 'pre_slip_url'
               AND l.install_completed_at IS NULL AND l.status <> 'lost') as unearned_count,
           -- Undelivered leads holding ONLY a survey deposit — the remainder of
           -- unearned_received, shown as a footnote so nothing is unaccounted for.
-          (SELECT ISNULL(SUM(p.amount), 0) FROM payments p
+          (SELECT ISNULL(SUM(p.amount), 0) FROM ${SALES_PAYMENTS} p
              JOIN ${SALES_LEADS} l ON l.id = p.lead_id
             WHERE p.confirmed_at IS NOT NULL AND ${receivedPred}
               AND l.install_completed_at IS NULL AND l.status <> 'lost'
-              AND NOT EXISTS (SELECT 1 FROM payments p2
+              AND NOT EXISTS (SELECT 1 FROM ${SALES_PAYMENTS} p2
                                WHERE p2.lead_id = l.id AND p2.confirmed_at IS NOT NULL
                                  AND p2.slip_field <> 'pre_slip_url')) as survey_only_value,
-          (SELECT COUNT(DISTINCT l.id) FROM payments p
+          (SELECT COUNT(DISTINCT l.id) FROM ${SALES_PAYMENTS} p
              JOIN ${SALES_LEADS} l ON l.id = p.lead_id
             WHERE p.confirmed_at IS NOT NULL AND ${receivedPred}
               AND l.install_completed_at IS NULL AND l.status <> 'lost'
-              AND NOT EXISTS (SELECT 1 FROM payments p2
+              AND NOT EXISTS (SELECT 1 FROM ${SALES_PAYMENTS} p2
                                WHERE p2.lead_id = l.id AND p2.confirmed_at IS NOT NULL
                                  AND p2.slip_field <> 'pre_slip_url')) as survey_only_count,
           -- HEADLINE: work booked onto the installation calendar in the selected
@@ -200,7 +200,7 @@ export async function GET(req: NextRequest) {
             (SELECT ISNULL(SUM(ISNULL(l.order_total,0) + ISNULL(l.install_extra_cost,0)
                               - ISNULL(l.order_discount_amount,0)), 0)
                FROM ${SALES_LEADS} l WHERE ${schedPred})
-            + (SELECT ISNULL(SUM(p.amount), 0) FROM payments p
+            + (SELECT ISNULL(SUM(p.amount), 0) FROM ${SALES_PAYMENTS} p
                 WHERE p.slip_field = 'pre_slip_url' AND p.confirmed_at IS NOT NULL
                   AND ${receivedPred} AND p.lead_id NOT IN (${schedCohort}))
           ) as scheduled_total,
@@ -223,10 +223,10 @@ export async function GET(req: NextRequest) {
           -- adding the full fee pot on top billed it twice (฿24,000 over the
           -- 1 Jan–22 Jul window). Cancelled leads still count — the whole point
           -- is that a forfeited fee is money we kept.
-          (SELECT ISNULL(SUM(p.amount), 0) FROM payments p
+          (SELECT ISNULL(SUM(p.amount), 0) FROM ${SALES_PAYMENTS} p
             WHERE p.slip_field = 'pre_slip_url' AND p.confirmed_at IS NOT NULL
               AND ${receivedPred} AND p.lead_id NOT IN (${schedCohort})) as survey_fee_value,
-          (SELECT COUNT(*) FROM payments p
+          (SELECT COUNT(*) FROM ${SALES_PAYMENTS} p
             WHERE p.slip_field = 'pre_slip_url' AND p.confirmed_at IS NOT NULL
               AND ${receivedPred} AND p.lead_id NOT IN (${schedCohort})) as survey_fee_count,
           -- Receivables are a CURRENT snapshot, deliberately NOT scoped by the
@@ -244,18 +244,18 @@ export async function GET(req: NextRequest) {
                             - ISNULL(l.order_discount_amount,0) - ISNULL(cp.paid,0)), 0)
              FROM ${SALES_LEADS} l
              LEFT JOIN (
-               SELECT lead_id, SUM(amount) AS paid FROM payments
+               SELECT lead_id, SUM(amount) AS paid FROM ${SALES_PAYMENTS} payments
                WHERE confirmed_at IS NOT NULL GROUP BY lead_id
              ) cp ON cp.lead_id = l.id
              LEFT JOIN (
-               SELECT lead_id, SUM(amount) AS pend FROM payments
+               SELECT lead_id, SUM(amount) AS pend FROM ${SALES_PAYMENTS} payments
                WHERE submitted_at IS NOT NULL AND confirmed_at IS NULL GROUP BY lead_id
              ) pp ON pp.lead_id = l.id
              WHERE l.install_completed_at IS NOT NULL OR ISNULL(pp.pend,0) > 0) as receivable_total,
           (SELECT COUNT(*)
              FROM ${SALES_LEADS} l
              LEFT JOIN (
-               SELECT lead_id, SUM(amount) AS pend FROM payments
+               SELECT lead_id, SUM(amount) AS pend FROM ${SALES_PAYMENTS} payments
                WHERE submitted_at IS NOT NULL AND confirmed_at IS NULL GROUP BY lead_id
              ) pp ON pp.lead_id = l.id
              WHERE l.install_completed_at IS NOT NULL OR ISNULL(pp.pend,0) > 0) as receivable_count
@@ -282,15 +282,15 @@ export async function GET(req: NextRequest) {
           -- date the fee was collected — that is when it stopped being refundable.
           (
             (SELECT ISNULL(SUM(ISNULL(order_total,0) + ISNULL(install_extra_cost,0) - ISNULL(order_discount_amount,0)), 0) FROM ${SALES_LEADS} leads WHERE ${instPred})
-            + (SELECT ISNULL(SUM(pm.amount), 0) FROM payments pm
+            + (SELECT ISNULL(SUM(pm.amount), 0) FROM ${SALES_PAYMENTS} pm
                  JOIN ${SALES_LEADS} l ON l.id = pm.lead_id
                 WHERE pm.confirmed_at IS NOT NULL AND l.status = 'lost' AND ${lostPredL})
           ) as closed_value,
           -- Broken out so the card can show what the headline is made of.
-          (SELECT ISNULL(SUM(pm.amount), 0) FROM payments pm
+          (SELECT ISNULL(SUM(pm.amount), 0) FROM ${SALES_PAYMENTS} pm
              JOIN ${SALES_LEADS} l ON l.id = pm.lead_id
             WHERE pm.confirmed_at IS NOT NULL AND l.status = 'lost' AND ${lostPredL}) as forfeited_value,
-          (SELECT COUNT(DISTINCT l.id) FROM payments pm
+          (SELECT COUNT(DISTINCT l.id) FROM ${SALES_PAYMENTS} pm
              JOIN ${SALES_LEADS} l ON l.id = pm.lead_id
             WHERE pm.confirmed_at IS NOT NULL AND l.status = 'lost' AND ${lostPredL}) as forfeited_count,
           -- order_discount_amount must come off the obligation before comparing
@@ -306,7 +306,7 @@ export async function GET(req: NextRequest) {
                -- includes it), so filtering it out made fully-paid leads look
                -- ฿1K outstanding on the dashboard.
                SELECT lead_id, SUM(amount) AS paid
-               FROM payments
+               FROM ${SALES_PAYMENTS} payments
                WHERE confirmed_at IS NOT NULL
                GROUP BY lead_id
              ) cp ON cp.lead_id = l.id

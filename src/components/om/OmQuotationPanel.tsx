@@ -76,6 +76,20 @@ export default function OmQuotationPanel({ item, skip, onSaved, onReload }: {
     apiFetch(`/api/om/quotations/${item.q_id}`).then(setQuote).catch((e) => setErr(e instanceof Error ? e.message : String(e)));
   }, [item.q_id]);
 
+  /** ส่งใบให้ลูกค้าแล้ว → ใบงานไปขั้นชำระเงิน (เฟส 4) */
+  const send = async () => {
+    if (!quote) return;
+    const ok = await dialog.confirm({ title: "ส่งใบเสนอราคาให้ลูกค้าแล้ว", confirmText: "ยืนยัน",
+      message: `บันทึกว่าส่ง ${quote.doc_no} ให้ลูกค้าแล้ว — ใบงานจะไปขั้นชำระเงิน และแก้ใบนี้ไม่ได้อีก` });
+    if (!ok) return;
+    setBusy(true); setActErr("");
+    try {
+      await apiFetch(`/api/om/quotations/${quote.id}/send`, { method: "POST" });
+      onSaved(`ส่ง ${quote.doc_no} ให้ลูกค้าแล้ว — รอชำระเงิน`); onReload?.();
+    } catch (e) { setActErr(e instanceof Error ? e.message : String(e)); }
+    finally { setBusy(false); }
+  };
+
   /** ส่งอนุมัติ / สร้าง Revision — ใช้ endpoint ลำดับอนุมัติตัวเดียวกับฝั่งขาย (แยกทาง O&M ข้างในเอง) */
   const act = async (action: "submit" | "revise") => {
     if (!quote) return;
@@ -179,7 +193,9 @@ export default function OmQuotationPanel({ item, skip, onSaved, onReload }: {
       </div>
       {quote.status === "approved" && (
         <div className="mt-2 rounded-xl bg-emerald-50 border border-emerald-200 px-3.5 py-2.5 text-xs text-emerald-800">
-          อนุมัติครบแล้ว — ขั้นถัดไป <b>ส่งใบให้ลูกค้า แล้วรับชำระเงินก่อนนัด</b> (ระบบรับเงินของ O&amp;M เปิดใช้เฟส 4)
+          {item.job_status === "quote"
+            ? <>อนุมัติครบแล้ว — ส่ง PDF ให้ลูกค้า แล้วกด <b>&ldquo;ส่งใบให้ลูกค้าแล้ว&rdquo;</b> ใบงานจะไปขั้นชำระเงิน</>
+            : <>ส่งให้ลูกค้าแล้ว — ขั้นถัดไป <b>รับชำระเงินก่อนนัด</b> ที่ขั้น 03</>}
         </div>
       )}
 
@@ -192,7 +208,13 @@ export default function OmQuotationPanel({ item, skip, onSaved, onReload }: {
             className="h-9 px-5 rounded-xl bg-primary text-white text-sm font-bold cursor-pointer disabled:opacity-50">
             {busy ? "กำลังส่ง…" : "ส่งอนุมัติ Solar Sup"}</button>
         )}
-        {canIssue && quote.status === "approved" && quote.latest_id === quote.id && (
+        {/* ส่งให้ลูกค้า (เฟส 4) — ใบงานเสนอราคา → ชำระเงิน · Revision ทำได้เฉพาะก่อนส่ง */}
+        {canIssue && quote.status === "approved" && quote.latest_id === quote.id && item.job_status === "quote" && (
+          <button type="button" disabled={busy} style={{ minHeight: 0 }} onClick={send}
+            className="h-9 px-5 rounded-xl bg-primary text-white text-sm font-bold cursor-pointer disabled:opacity-50">
+            {busy ? "กำลังบันทึก…" : "ส่งใบให้ลูกค้าแล้ว"}</button>
+        )}
+        {canIssue && quote.status === "approved" && quote.latest_id === quote.id && item.job_status === "quote" && (
           <button type="button" disabled={busy} style={{ minHeight: 0 }} onClick={() => act("revise")}
             className="h-9 px-4 rounded-xl border border-gray-200 text-sm font-semibold text-gray-600 bg-white cursor-pointer disabled:opacity-50">
             แก้ใบที่อนุมัติแล้ว (สร้าง Revision)</button>

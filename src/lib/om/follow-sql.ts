@@ -94,13 +94,20 @@ export const OM_FOLLOW_SCOPE_SQL = `
            b.team_id, t.name team_name, st.label_th service_type,
            b.owner_user_id, uo.full_name owner_name,     -- เจ้าของเคส (เฟส 4)
            -- ใบเสนอราคาล่าสุดของใบงาน (แผน 20260924-02 เฟส 2) — มี = งานเส้นเสียเงิน
-           oq.id q_id, oq.doc_no q_doc_no, oq.status q_status, oq.contract_total_incl_vat q_total
+           oq.id q_id, oq.doc_no q_doc_no, oq.status q_status, oq.contract_total_incl_vat q_total,
+           -- การรับเงินของใบเสนอราคา (เฟส 4) — มีใบแล้วเท่านั้น (ไม่มีใบ = NULL)
+           CASE WHEN oq.id IS NULL THEN NULL ELSE (SELECT CASE
+             WHEN EXISTS (SELECT 1 FROM payments op WHERE op.lead_id = oq.lead_id
+                            AND op.slip_field = CONCAT(N'om_quote_', oq.id) AND op.confirmed_at IS NOT NULL) THEN 'paid'
+             WHEN EXISTS (SELECT 1 FROM payments op WHERE op.lead_id = oq.lead_id
+                            AND op.slip_field = CONCAT(N'om_quote_', oq.id) AND op.confirmed_at IS NULL) THEN 'verifying'
+             ELSE 'unpaid' END) END pay_state
       INTO #job
       FROM om_bookings b
       LEFT JOIN om_teams t ON t.id = b.team_id
       LEFT JOIN users uo ON uo.id = b.owner_user_id
       LEFT JOIN om_service_type st ON st.id = b.service_type_id
-      OUTER APPLY (SELECT TOP 1 q.id, q.doc_no, q.status, q.contract_total_incl_vat
+      OUTER APPLY (SELECT TOP 1 q.id, q.lead_id, q.doc_no, q.status, q.contract_total_incl_vat
                      FROM quotations q WHERE q.om_booking_id = b.id ORDER BY q.id DESC) oq
      WHERE b.id = (SELECT TOP 1 b2.id FROM om_bookings b2
                     WHERE b2.house_id = b.house_id
@@ -113,10 +120,10 @@ export const OM_FOLLOW_SCOPE_SQL = `
            CONVERT(char(10), c.next_call, 23) next_call,
            l.outcome last_outcome, l.by_name last_by,
            j.booking_id, j.status job_status, j.scheduled_at, j.team_id, j.team_name, j.service_type,
-           j.owner_user_id, j.owner_name, j.q_id, j.q_doc_no, j.q_status, j.q_total,
+           j.owner_user_id, j.owner_name, j.q_id, j.q_doc_no, j.q_status, j.q_total, j.pay_state,
            CASE
              -- ใบงานเดินหน้าแล้วให้ยึดสถานะใบงานเป็นหลัก (ออกจากแท็บติดตาม)
-             WHEN j.status IN ('quote','pending','confirmed','progress','checked','closed') THEN j.status
+             WHEN j.status IN ('quote','payment','pending','confirmed','progress','checked','closed') THEN j.status
              WHEN l.outcome = 'declined'                      THEN 'declined'
              WHEN d.phone IS NULL OR l.outcome = 'wrong_number' THEN 'unreachable'
              WHEN ISNULL(c.no_answer, 0) >= @max              THEN 'unreachable'

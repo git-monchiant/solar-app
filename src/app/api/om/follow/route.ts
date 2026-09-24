@@ -6,6 +6,7 @@ import { OM_FOLLOW_DROP_SQL, OM_FOLLOW_SCOPE_SQL } from "@/lib/om/follow-sql";
 import { getSettings } from "@/lib/om/settings";
 import { actionLabel, logBooking } from "@/lib/om/booking-log";
 import { ACTIVE_STATUS, toThaiOffset } from "@/lib/om/booking";
+import { OM_BOOKING_PAID_SQL } from "@/lib/om/om-quotation";
 
 // แท็บ "ติดตาม" ของงานบริการ — ★ การ์ดคำนวณสด ไม่มีแถวงานรอไว้ล่วงหน้า
 //   เกณฑ์: บ้าน O&M ที่มีระบบติดตั้ง + เลยรอบล้าง (om_service_type.cycle_months)
@@ -176,11 +177,24 @@ export async function POST(req: NextRequest) {
         return NextResponse.json(
           { error: "บ้านนี้อยู่ระหว่างเสนอราคา — นัดได้หลังลูกค้าชำระเงินแล้ว" }, { status: 409 });
       }
+      // ★ เฟส 4: ขั้นชำระเงิน ตกลงนัดได้เมื่อ Account ยืนยันรับเงินแล้วเท่านั้น (เก็บค่าบริการก่อนนัดหมาย)
+      const paid = cur?.status === "payment"
+        ? Boolean((await new sql.Request(tx).input("b", sql.Int, cur.id)
+            .query(`SELECT CASE WHEN ${OM_BOOKING_PAID_SQL("bk")} THEN 1 ELSE 0 END paid
+                      FROM om_bookings bk WHERE bk.id = @b`)).recordset[0]?.paid)
+        : false;
+      if (cur?.status === "payment" && outcome === "agreed" && !paid) {
+        await tx.rollback();
+        return NextResponse.json(
+          { error: "ยังไม่ได้รับเงินค่าบริการ — นัดได้หลัง Account ยืนยันรับเงินแล้ว" }, { status: 409 });
+      }
+      // ใบงานที่อยู่ขั้นเสนอราคา/ชำระเงิน "ขอเลื่อน" ได้ แต่ต้องค้างขั้นเดิม ห้ามถอยไปติดตาม
+      const keep = cur?.status === "quote" || (cur?.status === "payment" && outcome !== "agreed");
 
       if (cur) {
         bookingId = cur.id as number;
         await new sql.Request(tx).input("id", sql.Int, bookingId)
-          .input("s", sql.NVarChar(20), cur.status === "quote" ? "quote" : status).input("w", sql.DateTimeOffset, when)
+          .input("s", sql.NVarChar(20), keep ? cur.status : status).input("w", sql.DateTimeOffset, when)
           .query(`UPDATE om_bookings SET status = @s,
                     scheduled_at = COALESCE(@w, scheduled_at), updated_at = SYSDATETIMEOFFSET()
                   WHERE id = @id`);

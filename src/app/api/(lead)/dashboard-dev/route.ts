@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { getDb, sql, toSqlDate } from "@/lib/db";
 import { flipJourneyDatesIfDue } from "@/lib/journey";
 import { requireAuth } from "@/lib/auth";
-import { SALES_LEADS } from "@/lib/lead-scope";
+import { SALES_LEADS, SALES_PAYMENTS } from "@/lib/lead-scope";
 
 // Aggregations for the experimental admin-only Dashboard-Dev page.
 // Returns chart-ready buckets so the client can render without further math.
@@ -38,7 +38,7 @@ export async function GET(req: NextRequest) {
             OR CAST(l.install_date AS DATE) BETWEEN @from AND @to
             OR CAST(l.install_completed_at AS DATE) BETWEEN @from AND @to
             OR EXISTS (
-              SELECT 1 FROM payments p WHERE p.lead_id = l.id
+              SELECT 1 FROM ${SALES_PAYMENTS} p WHERE p.lead_id = l.id
                 AND p.confirmed_at IS NOT NULL
                 AND CAST(p.confirmed_at AS DATE) BETWEEN @from AND @to
             )
@@ -104,11 +104,11 @@ export async function GET(req: NextRequest) {
           SUM(CASE WHEN l.install_completed_at IS NOT NULL THEN 1 ELSE 0 END) as installed
         FROM ${SALES_LEADS} l
         LEFT JOIN (
-          SELECT DISTINCT lead_id FROM payments
+          SELECT DISTINCT lead_id FROM ${SALES_PAYMENTS} payments
           WHERE slip_field = 'pre_slip_url' AND confirmed_at IS NOT NULL
         ) bp ON bp.lead_id = l.id
         LEFT JOIN (
-          SELECT DISTINCT lead_id FROM payments
+          SELECT DISTINCT lead_id FROM ${SALES_PAYMENTS} payments
           WHERE slip_field LIKE 'order_installment_%' AND confirmed_at IS NOT NULL
         ) op ON op.lead_id = l.id
         WHERE l.id IN (${eligibleSet})
@@ -176,7 +176,7 @@ export async function GET(req: NextRequest) {
         ),
         booking_paid AS (
           SELECT lead_id, MIN(confirmed_at) as paid_at
-          FROM payments
+          FROM ${SALES_PAYMENTS} payments
           WHERE slip_field = 'pre_slip_url' AND confirmed_at IS NOT NULL
           GROUP BY lead_id
         ),
@@ -219,7 +219,7 @@ export async function GET(req: NextRequest) {
             END as bucket
           FROM ${SALES_LEADS} l
           WHERE EXISTS (
-            SELECT 1 FROM payments p
+            SELECT 1 FROM ${SALES_PAYMENTS} p
             WHERE p.lead_id = l.id AND p.confirmed_at IS NOT NULL
           )
           AND l.id IN (${eligibleSet})

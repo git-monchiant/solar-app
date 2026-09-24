@@ -8,7 +8,7 @@
 import { CALL_OUTCOME, EXIT_STATUS, statusLabel, statusTone } from "@/lib/om/booking";
 import { formatTHB } from "@/lib/utils/formatters";
 import {
-  BUCKET_LABEL, FLOW, QUOTE_STATUS, TONE, flowIndex, monthsAgo, skipsPaidSteps, thD, thDT,
+  BUCKET_LABEL, FLOW, PAY_STATE, QUOTE_STATUS, TONE, flowIndex, monthsAgo, skipsPaidSteps, thD, thDT,
   type Item,
 } from "@/lib/om/service-view";
 
@@ -121,6 +121,10 @@ export default function JobCard({ r, onOpen }: { r: Item; onOpen: () => void }) 
               ใบเสนอราคา <b className="font-mono">{r.q_doc_no}</b> · {QUOTE_STATUS[r.q_status ?? ""]?.t ?? r.q_status}
               {r.q_total != null && <> · <b>{formatTHB(Number(r.q_total))}</b> บาท</>}
             </span>
+          )}
+          {/* สถานะเงิน (เฟส 4) — โชว์เฉพาะใบงานขั้นชำระเงิน · ชำระแล้ว = ถึงคิวโทรนัด */}
+          {r.job_status === "payment" && r.pay_state && (
+            <span className={`px-2 py-0.5 rounded-md font-semibold ${PAY_STATE[r.pay_state].tone}`}>{PAY_STATE[r.pay_state].t}</span>
           )}
         </div>
       </div>

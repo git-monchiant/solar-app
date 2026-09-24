@@ -28,6 +28,69 @@ export const OM_PAYMENT_TERMS: QuotationPaymentTerm[] = [
   { label: "ชำระเต็มจำนวน", percent: 100, due: "ก่อนวันนัดหมายเข้าให้บริการ" },
 ];
 
+/** slip_field ของเงินค่าบริการ O&M ในตาราง payments (เฟส 4) — ประเภทของตัวเอง ไม่ใช่ order_installment_%
+ *  ★ journey ฝั่งขายนับงวดจาก slip_field LIKE 'order_installment_%' (lib/journey.ts) — ใช้ชื่ออื่นจึงไม่ปนงวดขาย
+ *    ของบ้านที่ใช้ lead ร่วมกับฝั่งขาย · 1 ใบเสนอราคา = 1 slip_field */
+export const OM_SLIP_PREFIX = "om_quote_";
+export const omSlipField = (quotationId: number) => `${OM_SLIP_PREFIX}${quotationId}`;
+
+/** step_no ของแถวค่าบริการ O&M ใน payments — คอลัมน์บังคับ NOT NULL ของฝั่งขาย (1 ค่าสำรวจ · 10+i งวด ·
+ *  99 เก็บหลังติดตั้ง · 100+n ค่าใช้จ่ายเพิ่ม) · 900 ไม่ชนเลขไหน และแถว O&M ไม่ผ่าน API ขายที่อ่าน step_no */
+export const OM_PAY_STEP_NO = 900;
+
+/**
+ * เติมสิทธิ์ที่ลูกค้าซื้อ เมื่อ Account ยืนยันรับเงิน (แผน 20260924-02 เฟส 4)
+ * ★ ทำไมต้องเติม: ปิดงานตัดสิทธิ์ 1 ครั้งเสมอ (bookings/[id] PATCH → om_redemptions) แม้ยอดจะติดลบ
+ *   เติมที่จ่ายเงินแล้วให้ปิดงานตัดตามปกติ ยอดคงเหลือจึงถูกโดยไม่ต้องแก้ตรรกะปิดงานเลย
+ *   · รายครั้ง / ใบที่ไม่มีแพ็กเกจ (งานซ่อม/งานเพิ่ม) = +1 ของชนิดงานของใบงาน → ใช้หมดกับงานนี้
+ *   · สัญญา 12 เดือน เข้า 2 ครั้ง = +2 ล้างแผง ใช้กับงานนี้ 1 เหลือ 1 · จด valid_from/valid_to ไว้
+ *     (วิว om_entitlement_balance ยังไม่ตัดสิทธิ์หมดอายุ — ข้อจำกัดเดิมของโมดูล ไม่ได้แก้ในเฟสนี้)
+ * ★ ผูกกับ installation แรกของบ้าน ตัวเดียวกับที่ปิดงานใช้ตัดสิทธิ์
+ */
+export async function grantPurchasedRights(tx: Transaction, v: {
+  houseId: number; serviceTypeId: number; omPackageId: number | null; docNo: string; actorUserId: number;
+}): Promise<{ qty: number; grantId: number | null }> {
+  const inst = (await new sql.Request(tx).input("h", sql.Int, v.houseId)
+    .query(`SELECT TOP 1 id FROM om_installations WHERE house_id = @h ORDER BY id`)).recordset[0];
+  if (!inst) return { qty: 0, grantId: null };
+  const pkg = v.omPackageId
+    ? (await new sql.Request(tx).input("id", sql.Int, v.omPackageId)
+        .query(`SELECT kw_min, kw_max, plan_type, contract_months, visits FROM om_packages WHERE id = @id`)).recordset[0]
+    : null;
+  const contract = pkg?.plan_type === "contract";
+  const qty = contract ? Math.max(1, Number(pkg.visits) || 2) : 1;
+  const months = contract ? Math.max(1, Number(pkg.contract_months) || 12) : null;
+  const typeId = contract
+    ? (await new sql.Request(tx).query(`SELECT TOP 1 id FROM om_service_type WHERE code = 'cleaning'`)).recordset[0].id
+    : v.serviceTypeId;
+  const label = pkg ? omPackageLabel(pkg) : "งานบริการตามใบเสนอราคา";
+  const reason = `ซื้อ ${label} · ${v.docNo}`.slice(0, 300);
+  const g = await new sql.Request(tx)
+    .input("i", sql.Int, inst.id).input("q", sql.Int, qty).input("r", sql.NVarChar(300), reason)
+    .input("ct", sql.NVarChar(20), contract ? `${months}เดือน${qty}ครั้ง` : null)
+    .input("m", sql.Int, months).input("t", sql.Int, typeId).input("u", sql.Int, v.actorUserId)
+    .query(`INSERT INTO om_entitlement_grants
+              (installation_id, qty, source, reason, contract_term, valid_from, valid_to, created_by, service_type_id)
+            OUTPUT INSERTED.id
+            VALUES (@i, @q, 'purchase', @r, @ct, CAST(GETDATE() AS DATE),
+                    CASE WHEN @m IS NULL THEN NULL ELSE DATEADD(month, @m, CAST(GETDATE() AS DATE)) END, @u, @t)`);
+  const grantId = Number(g.recordset[0].id);
+  await new sql.Request(tx)
+    .input("h", sql.Int, v.houseId).input("i", sql.Int, inst.id).input("r", sql.Int, grantId)
+    .input("q", sql.Int, qty).input("d", sql.NVarChar(400), `เติมสิทธิ์ +${qty} · ${label}`.slice(0, 400))
+    .input("rs", sql.NVarChar(300), reason).input("u", sql.Int, v.actorUserId)
+    .query(`INSERT INTO om_entitlement_history
+              (house_id, installation_id, kind, [action], ref_id, qty, detail, reason, actor_user_id)
+            VALUES (@h, @i, N'grant', N'add', @r, @q, @d, @rs, @u)`);
+  return { qty, grantId };
+}
+
+/** SQL: ใบงาน alias `b` ได้รับเงินแล้ว (Account ยืนยัน confirmed_at) จากใบเสนอราคาใบใดใบหนึ่งของใบงาน */
+export const OM_BOOKING_PAID_SQL = (b: string) => `EXISTS (
+  SELECT 1 FROM quotations oq JOIN payments op
+      ON op.lead_id = oq.lead_id AND op.slip_field = CONCAT(N'${OM_SLIP_PREFIX}', oq.id)
+   WHERE oq.om_booking_id = ${b}.id AND op.confirmed_at IS NOT NULL)`;
+
 /** เลขที่ใบเสนอราคา O&M — แยก prefix จากฝั่งขาย (ผู้ใช้เคาะ 24 ก.ย. ข้อ 8)
  *  ฝั่งขาย SSR-QT-26-0001 · ใบตรวจรับงาน O&M OM-6909-0007 · ของเรา SSR-OM-QT-26-0001 รันแยกชุด
  *  (nextQuotationDocNo ของฝั่งขายค้น LIKE 'SSR-QT-yy-%' ไม่ชนกับ prefix นี้) */

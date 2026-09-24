@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getDb, fixDates } from "@/lib/db";
 import { requireAuth } from "@/lib/auth";
+import { SALES_LEADS, SALES_PAYMENTS } from "@/lib/lead-scope";
 
 // Per-lead transaction rollup for the accounting report.
 // Total value = order_total + install_extra_cost (fallback to pre_total_price when no order yet).
@@ -22,13 +23,13 @@ export async function GET(req: NextRequest) {
              COALESCE(pk.kwp, pk2.kwp) as kwp,
              COALESCE(pk.price, pk2.price) as package_price,
              u.full_name as created_by_name
-      FROM leads l
+      FROM ${SALES_LEADS} l
       LEFT JOIN projects p ON l.project_id = p.id
       LEFT JOIN packages pk ON l.pre_package_id = pk.id
       LEFT JOIN packages pk2 ON l.interested_package_id = pk2.id
       LEFT JOIN users u ON l.assigned_user_id = u.id
       WHERE (l.pre_doc_no IS NOT NULL AND LTRIM(RTRIM(l.pre_doc_no)) <> '')
-         OR EXISTS (SELECT 1 FROM payments p WHERE p.lead_id = l.id AND p.confirmed_at IS NULL)
+         OR EXISTS (SELECT 1 FROM ${SALES_PAYMENTS} p WHERE p.lead_id = l.id AND p.confirmed_at IS NULL)
       ORDER BY l.pre_booked_at DESC, l.id DESC
     `);
 
@@ -50,9 +51,42 @@ export async function GET(req: NextRequest) {
              p.cheque_deposited_at, p.cheque_status, p.cheque_status_note,
              p.cheque_status_by, p.cheque_status_at, p.slip_cheque_no,
              ${slotCols}
-      FROM payments p
+      FROM ${SALES_PAYMENTS} p
       ORDER BY p.step_no ASC, p.id ASC
     `);
+
+    // ★ ค่าบริการงาน O&M ที่รอ Account ยืนยัน (แผน 20260924-02 เฟส 4) — แยกออกมาเป็นก้อนของตัวเอง
+    //   ยอด/แถวของฝั่งขายด้านบนไม่มีเงิน O&M ปน (SALES_LEADS / SALES_PAYMENTS) หน้ารายรับเดิมจึงไม่เปลี่ยน
+    //   หน้า /report/pending เอาก้อนนี้ไปแสดงในคิวเดียวกัน ติดป้าย O&M · ยืนยัน/ปฏิเสธผ่าน /api/om/payments/[id]
+    const omPendingRes = await db.request().query(`
+      SELECT p.id, p.lead_id, p.amount, p.description, p.payment_method, p.submitted_at,
+             su.full_name submitted_by_name,
+             q.id quotation_id, q.doc_no quotation_doc_no, q.package_name_snapshot,
+             b.id booking_id, b.house_id, h.house_number,
+             COALESCE(pj.name_th, h.project_name) project_name,
+             l.full_name customer_name, l.phone,
+             ${slotCols}
+        FROM payments p
+        JOIN quotations q ON q.lead_id = p.lead_id AND p.slip_field = CONCAT(N'om_quote_', q.id)
+        JOIN om_bookings b ON b.id = q.om_booking_id
+        JOIN om_houses h ON h.id = b.house_id
+        LEFT JOIN om_projects pj ON pj.project_id = h.project_id
+        JOIN leads l ON l.id = p.lead_id
+        LEFT JOIN users su ON su.id = p.submitted_by
+       WHERE p.slip_field LIKE 'om[_]quote[_]%' AND p.confirmed_at IS NULL
+       ORDER BY p.id ASC
+    `);
+    const omPending = (fixDates(omPendingRes.recordset) as Array<Record<string, unknown>>).map((row) => {
+      const slipUrls: string[] = [];
+      for (let n = 1; n <= MAX_SLOTS; n++) {
+        if (Number(row[`bytes_${n}`] || 0) > 0) {
+          slipUrls.push(n === 1 ? `/api/payments/${row.id}` : `/api/payments/${row.id}?slot=${n}`);
+        }
+      }
+      const out: Record<string, unknown> = { ...row, amount: Number(row.amount || 0), slip_urls: slipUrls };
+      for (let n = 1; n <= MAX_SLOTS; n++) delete out[`bytes_${n}`];
+      return out;
+    });
 
     // PromptPay Ref1 — for pending rows that haven't been confirmed yet, ref1
     // hasn't been written to the row. Compute it the same way /api/qr does so
@@ -242,7 +276,7 @@ export async function GET(req: NextRequest) {
       { count: rows.length, total_value: 0, received: 0, outstanding: 0 },
     );
 
-    return NextResponse.json({ rows, summary });
+    return NextResponse.json({ rows, summary, om_pending: omPending });
   } catch (error) {
     console.error("GET /api/report/payments error:", error);
     return NextResponse.json({ error: "Failed" }, { status: 500 });

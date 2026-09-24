@@ -1,5 +1,5 @@
 import { hasRole, type Role } from "@/lib/roles";
-import { OM_ACTIVE_STEPS, OM_FIELD_STEPS, OM_FIELD_SUBS, OM_SCHEDULED_STEPS } from "@/lib/om/journey";
+import { OM_ACTIVE_STEPS, OM_FIELD_STEPS, OM_FIELD_SUBS, OM_PAY_SUB, OM_SCHEDULED_STEPS } from "@/lib/om/journey";
 import {
   BoltIcon, CheckIcon, ClockIcon, DocumentIcon, DownloadIcon, LineIcon, PhoneIcon, XIcon,
 } from "@/components/ui/icons";
@@ -226,6 +226,8 @@ export const MODULES: AppModule[] = [
       { label: "งานบริการ", href: "/om/services", icon: <I d={D.wrench} />, steps: OM_ACTIVE_STEPS },
       { label: "ปฏิทิน / จ่ายงาน", href: "/om/calendar", icon: <I d={D.calendar} />, steps: OM_SCHEDULED_STEPS },
       { label: "เช็คลิสต์", href: "/om/field", icon: <I d={D.clipboardCheck} />, steps: OM_FIELD_STEPS, subs: OM_FIELD_SUBS },
+      // ★ เฟส 4 แผน 20260924-02: รายรับ O&M หน้าเดียวกับในโมดูลบัญชี — ให้หัวหน้าดูผลงาน O&M ได้โดยไม่ต้องสลับโมดูล
+      { label: "รายรับ O&M", href: "/report/om", icon: <I d={D.wallet} />, roles: ["admin", "sales_sup", "solar_sup"] },
       { label: "แชต LINE", href: "/om/inbox", icon: <LineIcon className="w-6 h-6" /> },
       { label: "LINE OA", href: "/om/line-oa", icon: <I d={D.cog} /> },
       { label: "ตั้งค่า O&M", href: "/om/settings", icon: <I d={D.cog} />, roles: ["admin", "solar_sup", "sales_sup"] },
@@ -281,6 +283,9 @@ export const MODULES: AppModule[] = [
       },
       { label: "รอออกใบรับประกัน", href: "/pipeline?tab=warranty", icon: <I d={D.shield} />, steps: [800] },
       { label: "รายรับ/ใบแจ้งหนี้", href: "/report", icon: <I d={D.wallet} /> },
+      // ★ รายรับค่าบริการ O&M แยกรายงาน (ผู้ใช้เคาะ 24 ก.ย. 69 · แผน 20260924-02 เฟส 4) — Account อยู่โมดูลนี้
+      //   และเข้าโมดูล O&M ไม่ได้ จึงวางไว้ติดรายรับของฝั่งขาย
+      { label: "รายรับ O&M", href: "/report/om", icon: <I d={D.wallet} /> },
     ],
   },
   {
@@ -402,7 +407,8 @@ export const APPROVAL_MENU_ITEM: ModuleMenuItem = {
 // คิวของบัญชี — inject แบบเดียวกับเมนูอนุมัติ (โมดูลที่มีเมนูนี้อยู่แล้วจะไม่ถูกเบิ้ล)
 export const ACCOUNT_PENDING_MENU_ITEM: ModuleMenuItem = {
   label: "รอยืนยันรับเงิน", href: "/report/pending", icon: <I d={D.banknotes} />,
-  subs: [210, 520],
+  // + ค่าบริการ O&M ที่รอ Account ยืนยัน (2320) — หน้าเดียวกันแสดงรวม (แผน 20260924-02 เฟส 4)
+  subs: [210, 520, OM_PAY_SUB.verifying],
   roles: ["admin", "account"],
 };
 
@@ -431,7 +437,7 @@ const SOLAR_BAR: ModuleMenuItem[] = [
 const ACCOUNT_BAR: ModuleMenuItem[] = [
   { label: "ทั้งหมด", href: "/pipeline?tab=all", icon: <I d={D.lines} />, steps: [100, 200, 300, 400, 500, 600, 700, 800, 900, 1000, 9800, 9900] },
   { label: "รายรับ", href: "/report", icon: <I d={D.wallet} /> },
-  { label: "ยืนยันรับเงิน", href: "/report/pending", icon: <I d={D.banknotes} />, subs: [210, 520] },
+  { label: "ยืนยันรับเงิน", href: "/report/pending", icon: <I d={D.banknotes} />, subs: [210, 520, OM_PAY_SUB.verifying] },
 ];
 // ★ แถบล่างของทีม O&M (เฟส 4 แผน 20260922-01) — ยังไม่ผูกกับ role ไหน
 //   เพราะ solar ใช้ SOLAR_BAR เป็นหลักอยู่ และยังไม่มี role om แยก

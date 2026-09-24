@@ -14,6 +14,7 @@ import Timeline from "@/components/ui/Timeline";
 import JobHistoryItem from "@/components/om/JobHistoryItem";
 import JobFormPanel from "@/components/om/JobFormPanel";
 import OmQuotationPanel from "@/components/om/OmQuotationPanel";
+import OmPaymentPanel from "@/components/om/OmPaymentPanel";
 import AssignOwnerButton from "@/components/lead/AssignOwnerButton";
 import {
   BUCKET_LABEL, FLOW, TONE, flowIndex, skipsPaidSteps, thD, thDT,
@@ -210,16 +211,10 @@ export default function JobDetail({ item, history, onBack, onSaved, onReload }: 
             </StepBox>
           )}
 
+          {/* เฟส 4: แนบสลิป → Account ยืนยันในคิวเดิม → เติมสิทธิ์ที่ซื้อ → โทรนัดได้ */}
           {step === 2 && (
             <StepBox n="03" t="ชำระเงิน">
-              {skip ? (
-                <div className="text-sm text-gray-600">งานนี้<b>ใช้สิทธิ์ฟรี</b> — ไม่มีค่าบริการ</div>
-              ) : (
-                <div className="text-sm text-gray-600 leading-relaxed">
-                  เก็บค่าบริการ<b>ก่อนนัดหมาย</b> — Account ยืนยันรับเงินแล้วจึงนัดได้
-                  <div className="mt-1 text-xs text-gray-400">ระบบรับเงินของ O&amp;M ยังไม่เปิดใช้</div>
-                </div>
-              )}
+              <OmPaymentPanel item={item} skip={skip} onSaved={onSaved} onReload={onReload} />
             </StepBox>
           )}
 

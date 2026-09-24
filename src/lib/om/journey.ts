@@ -33,6 +33,7 @@ export const OM_STEP = {
 export const OM_STEP_BY_STATUS: Record<string, number> = {
   follow: OM_STEP.follow,
   quote: OM_STEP.quote,
+  payment: OM_STEP.payment,
   pending: OM_STEP.appoint,
   confirmed: OM_STEP.appoint,
   progress: OM_STEP.progress,
@@ -58,6 +59,9 @@ export const OM_QUOTE_SUB_BY_STATUS: Record<string, number> = {
   changes_required: 2240,
   approved: 2250,
 };
+
+/** ขั้นย่อยของชำระเงิน 2300 — อ่านจากแถว payments ของใบเสนอราคา (slip_field = om_quote_<id>) ใน journey-sql.ts */
+export const OM_PAY_SUB = { unpaid: 2310, verifying: 2320, paid: 2330 } as const;
 
 /** งานที่ยังค้างอยู่ = badge การ์ดโมดูล · ไม่รวมปิดงาน/ยกเลิก/ไม่อยู่บ้าน */
 export const OM_ACTIVE_STEPS = [2100, 2200, 2300, 2400, 2500, 2600];
