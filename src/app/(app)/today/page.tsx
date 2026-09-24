@@ -24,8 +24,6 @@ import NewLeadModal from "@/components/modal/NewLeadModal";
 import ChannelPickerModal from "@/components/shared/ChannelPickerModal";
 import type { ChannelValue } from "@/lib/constants/channels";
 import { useActiveRoles, hasRole, useMe } from "@/lib/roles";
-import JobCard from "@/components/om/JobCard";
-import type { Item as OmItem } from "@/lib/om/service-view";
 import EventCalendarList from "@/components/calendar/EventCalendarList";
 import Loading from "@/components/ui/Loading";
 
@@ -47,7 +45,7 @@ interface TodayData {
   stats: { pipeline: number; won: number; lost: number; new_this_week: number };
 }
 
-type TodayTab = "sales_all" | "sales" | "booking" | "quote" | "deposit_paid" | "sales_wait_install" | "sales_solar" | "solar" | "solar_survey" | "solar_quote" | "solar_wait_install" | "solar_install" | "solar_installing" | "solar_warranty" | "solar_gridtie" | "om_mine" | "calendar";
+type TodayTab = "sales_all" | "sales" | "booking" | "quote" | "deposit_paid" | "sales_wait_install" | "sales_solar" | "solar" | "solar_survey" | "solar_quote" | "solar_wait_install" | "solar_install" | "solar_installing" | "solar_warranty" | "solar_gridtie" | "calendar";
 
 type SlaDashboardData = {
   counts: Record<TodaySlaStatus, number>;
@@ -120,9 +118,6 @@ export default function TodayPage() {
   useEffect(() => {
     if (moduleMode) setTab("sales_all");
   }, [moduleMode]);
-  // งาน O&M ของฉัน (เฟส 4 แผน 20260922-01) — ใช้ /api/om/follow?mine=1 ซึ่งเป็นคิวรีชุดเดียว
-  // กับหน้างานบริการ จึงได้การ์ดหน้าตาเดียวกันและตัวเลขตรงกันเสมอ
-  const [omMine, setOmMine] = useState<OmItem[] | null>(null);
   const [zones, setZones] = useState<{ id: number; name: string; color?: string | null }[]>([]);
   const [selectedZone, setSelectedZone] = useState<string>("");
   const [channelPickerOpen, setChannelPickerOpen] = useState(false);
@@ -300,10 +295,6 @@ export default function TodayPage() {
     if (localStorage.getItem("today.mineOnly") === "1") setMineOnly(true);
 
     apiFetch("/api/zones").then(setZones).catch(console.error);
-    // ไม่มีสิทธิ์ O&M ก็ยิงได้ไม่พัง — API กันด้วย requireAuth และคืน items ว่าง
-    apiFetch("/api/om/follow?mine=1")
-      .then((d) => setOmMine((d.items ?? []) as OmItem[]))
-      .catch(() => setOmMine([]));
 
   }, []);
 
@@ -569,7 +560,6 @@ export default function TodayPage() {
     isSolar && { key: "solar_installing", label: "กำลังติดตั้ง", count: solarInstallingCount, group: "SOLAR" },
     isSolar && { key: "solar_warranty", label: "รอออกใบรับประกัน", count: solarWarrantyCount, group: "SOLAR" },
     isSolar && { key: "solar_gridtie", label: "ขอขนานไฟ", count: solarGridtie.length, group: "SOLAR" },
-    isSolar && { key: "om_mine", label: "งาน O&M ของฉัน", count: omMine?.length ?? 0, group: "O&M" },
     { key: "calendar", label: "ปฏิทิน" },
   ].filter(Boolean) as ListPageTab[];
 
@@ -1357,35 +1347,6 @@ export default function TodayPage() {
         )}
 
         {/* Solar · ขอขนานไฟ — รายการเดียวกับ Pipeline > ขอขนานไฟ */}
-        {/* งาน O&M ของฉัน (เฟส 4) — การ์ดตัวเดียวกับหน้างานบริการ กดแล้วไปหน้ารายละเอียดเดิม
-            ★ ไม่ทำการ์ดใหม่ ไม่ทำคิวรีใหม่ — ตัวเลขกับหน้าตาจะได้ไม่เพี้ยนกันสองที่ */}
-        {visibleTab === "om_mine" && (
-          <>
-            {omMine === null ? (
-              <div className="text-center text-gray-400 py-16 text-sm">กำลังโหลด…</div>
-            ) : omMine.length > 0 ? (
-              <section>
-                <div className="flex items-center justify-between mb-3 px-1">
-                  <h2 className="text-xs font-bold tracking-wider uppercase text-orange-700">งานบริการที่ฉันรับผิดชอบ</h2>
-                  <span className="text-xs font-semibold text-orange-700 bg-orange-50 px-2 py-0.5 rounded-full">{omMine.length}</span>
-                </div>
-                <div className="space-y-3">
-                  {omMine.map((r) => (
-                    <JobCard key={r.house_id} r={r} onOpen={() => router.push(`/om/services/${r.house_id}`)} />
-                  ))}
-                </div>
-              </section>
-            ) : (
-              <div className="text-center py-16">
-                <div className="text-base font-semibold text-gray-900">ยังไม่มีงาน O&M ที่รับผิดชอบ</div>
-                <div className="text-sm text-gray-500 mt-1">
-                  เปิดงานจากหน้างานบริการ แล้วกดรับงานที่มุมขวาบนของหน้ารายละเอียด
-                </div>
-              </div>
-            )}
-          </>
-        )}
-
         {visibleTab === "solar_gridtie" && (
           <>
             {solarGridtie.length > 0 ? (

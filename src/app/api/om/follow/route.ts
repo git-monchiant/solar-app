@@ -39,8 +39,9 @@ export async function GET(req: NextRequest) {
   //   ไม่ทำเป็น endpoint ใหม่เพราะเกณฑ์ #due/#call/#job ต้องตรงกับลิสต์เป๊ะ
   //   (แยกไปเขียนใหม่แล้วจะเพี้ยนคนละที่เวลาแก้ทีหลัง — กติกาเดียวกับ house-scope.ts)
   const houseOnly = Math.max(0, Number(u.get("house")) || 0);
-  // ★ mine=1 = "งาน O&M ของฉัน" สำหรับหน้า Today (เฟส 4) — เฉพาะใบที่ตัวเองเป็นเจ้าของ
-  //   และยังไม่ปิด · ข้ามตัวกรองแท็บเหมือนโหมดบ้านเดียว ใช้เกณฑ์ #due ชุดเดียวกับลิสต์
+  // ★ mine=1 = ติ๊ก "งานของฉัน" ในหน้างานบริการ (เฟส 4 · ผู้ใช้เคาะ 24 ก.ย. ให้อยู่ในโมดูล O&M)
+  //   เป็นตัวกรอง "ซ้อนบน" แท็บ/โครงการ/คำค้น ไม่ใช่ตัวแทน — แบบเดียวกับ Pipeline
+  //   และต้องกรองตัวเลขบนแท็บด้วย เพราะเลขบนแท็บต้องเท่ากับจำนวนที่กดเข้าไปเห็นจริง
   const mineOnly = u.get("mine") === "1" ? (gate.userId ?? 0) : 0;
   const page = Math.max(1, Number(u.get("page")) || 1);
   const size = Math.min(100, Math.max(10, Number(u.get("size")) || 30));
@@ -165,21 +166,23 @@ export async function GET(req: NextRequest) {
       LEFT JOIN #last l ON l.house_id = d.house_id
       LEFT JOIN #job  j ON j.house_id = d.house_id;
 
-    SELECT bucket, COUNT(*) n FROM #x GROUP BY bucket;
+    SELECT bucket, COUNT(*) n FROM #x
+     WHERE (@mine = 0 OR owner_user_id = @mine)
+     GROUP BY bucket;
 
     SELECT COUNT(*) total FROM #x d
      WHERE d.bucket = @tab
        AND (@g = '' OR d.project_id = @g)
-       AND (@q = '' OR d.house_number LIKE @q OR d.customer_name LIKE @q OR d.phone LIKE @q);
+       AND (@q = '' OR d.house_number LIKE @q OR d.customer_name LIKE @q OR d.phone LIKE @q)
+       AND (@mine = 0 OR d.owner_user_id = @mine);
 
     SELECT d.* FROM #x d
      WHERE (@house > 0 AND d.house_id = @house)
-        OR (@mine > 0 AND d.owner_user_id = @mine
-            AND d.job_status IN ('follow','pending','confirmed','progress','checked'))
-        OR (@house = 0 AND @mine = 0
+        OR (@house = 0
             AND d.bucket = @tab
             AND (@g = '' OR d.project_id = @g)
-            AND (@q = '' OR d.house_number LIKE @q OR d.customer_name LIKE @q OR d.phone LIKE @q))
+            AND (@q = '' OR d.house_number LIKE @q OR d.customer_name LIKE @q OR d.phone LIKE @q)
+            AND (@mine = 0 OR d.owner_user_id = @mine))
      ORDER BY ${sort}
      OFFSET @off ROWS FETCH NEXT @size ROWS ONLY;
 

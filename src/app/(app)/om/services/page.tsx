@@ -19,6 +19,7 @@ import ListPageHeader from "@/components/layout/ListPageHeader";
 import Dropdown from "@/components/ui/Dropdown";
 import { useActiveMenuItem } from "@/lib/hooks/useActiveModule";
 import JobCard from "@/components/om/JobCard";
+import { CheckIcon } from "@/components/ui/icons";
 
 export default function OmServicesPage() {
   const { item: activeItem } = useActiveMenuItem();   // หัวเรื่อง = ชื่อเมนู (กติกา ui-rules)
@@ -30,6 +31,14 @@ export default function OmServicesPage() {
   const [sort, setSort] = useState("overdue");
   const [q, setQ] = useState("");
   const [view, setView] = useState<"card" | "table">("card");
+  // ★ ติ๊ก "งานของฉัน" — ยกบล็อกจาก Pipeline ทั้งก้อน (กติกา ui-rules) รวมถึงการจำค่าไว้
+  //   ผู้ใช้เคาะ 24 ก.ย. 69: งาน O&M ให้อยู่ในโมดูล O&M ก่อน ยังไม่ขึ้นหน้า Today
+  //   ⇒ ตอบ "งานของฉัน" ได้โดยไม่ต้องออกจากโมดูล
+  //   กรองที่ฝั่ง server (mine=1) ไม่ใช่ฝั่ง client เพราะลิสต์แบ่งหน้าอยู่
+  const [mineOnly, setMineOnly] = useState(() => {
+    if (typeof window === "undefined") return false;
+    return localStorage.getItem("om.services.mineOnly") === "1";
+  });
   const [items, setItems] = useState<Item[] | null>(null);
   const [counts, setCounts] = useState<Record<string, number>>({});
   const [projects, setProjects] = useState<{ project_id: string; project_name: string; n: number }[]>([]);
@@ -41,13 +50,14 @@ export default function OmServicesPage() {
     const p = new URLSearchParams({ tab, sort, size: "40" });
     if (group) p.set("group", group);
     if (q.trim()) p.set("q", q.trim());
+    if (mineOnly) p.set("mine", "1");
     apiFetch(`/api/om/follow?${p}`)
       .then((d) => {
         setItems(d.items ?? []); setCounts(d.counts ?? {});
         setTotal(d.total ?? 0); setProjects(d.projects ?? []);
       })
       .catch((e) => { setErr(e instanceof Error ? e.message : String(e)); setItems([]); });
-  }, [tab, group, sort, q]);
+  }, [tab, group, sort, q, mineOnly]);
   useEffect(() => { const t = setTimeout(load, q ? 350 : 0); return () => clearTimeout(t); }, [load, q]);
 
   const totalAll = Object.values(counts).reduce((s, n) => s + n, 0);
@@ -87,6 +97,21 @@ export default function OmServicesPage() {
             options={SORTS.map((s) => ({ value: s.k, label: `เรียง: ${s.t}` }))}
           />
           <span className="ml-auto flex items-center gap-2">
+            <button
+              type="button"
+              style={{ minHeight: 0 }}
+              onClick={() => {
+                const next = !mineOnly;
+                setMineOnly(next);
+                localStorage.setItem("om.services.mineOnly", next ? "1" : "0");
+              }}
+              className="h-7 inline-flex items-center gap-1.5 px-1 text-xxs font-medium text-gray-700 cursor-pointer whitespace-nowrap"
+            >
+              <span className={`w-3.5 h-3.5 rounded border-2 flex items-center justify-center transition-colors ${mineOnly ? "border-gray-800 bg-gray-800" : "border-gray-300"}`}>
+                {mineOnly && <CheckIcon className="w-2 h-2 text-white" strokeWidth={4} />}
+              </span>
+              งานของฉัน
+            </button>
             <span className="text-xs text-gray-500">มุมมอง</span>
             <span className="flex rounded-full border border-gray-200 overflow-hidden">
               {(["table", "card"] as const).map((v) => (
