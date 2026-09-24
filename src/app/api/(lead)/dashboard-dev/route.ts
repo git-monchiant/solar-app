@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { getDb, sql, toSqlDate } from "@/lib/db";
 import { flipJourneyDatesIfDue } from "@/lib/journey";
 import { requireAuth } from "@/lib/auth";
+import { SALES_LEADS } from "@/lib/lead-scope";
 
 // Aggregations for the experimental admin-only Dashboard-Dev page.
 // Returns chart-ready buckets so the client can render without further math.
@@ -28,10 +29,10 @@ export async function GET(req: NextRequest) {
       return r;
     };
     const eligibleSet = !hasRange
-      ? "SELECT id FROM leads"
+      ? `SELECT id FROM ${SALES_LEADS} leads`
       : mode === "created"
-      ? "SELECT id FROM leads WHERE CAST(created_at AS DATE) BETWEEN @from AND @to"
-      : `SELECT id FROM leads l WHERE
+      ? `SELECT id FROM ${SALES_LEADS} leads WHERE CAST(created_at AS DATE) BETWEEN @from AND @to`
+      : `SELECT id FROM ${SALES_LEADS} l WHERE
             CAST(l.created_at AS DATE) BETWEEN @from AND @to
             OR CAST(l.survey_date AS DATE) BETWEEN @from AND @to
             OR CAST(l.install_date AS DATE) BETWEEN @from AND @to
@@ -69,7 +70,7 @@ export async function GET(req: NextRequest) {
           SUM(CASE WHEN l.journey_step BETWEEN 500 AND 1000 THEN 1 ELSE 0 END) as quoted,
           SUM(CASE WHEN l.install_completed_at IS NOT NULL THEN 1 ELSE 0 END) as installed,
           SUM(CASE WHEN l.journey_step = 9900 THEN 1 ELSE 0 END) as total_lost
-        FROM leads l
+        FROM ${SALES_LEADS} l
         WHERE l.id IN (${eligibleSet})
       `),
       // Daily new leads — when a filter range is set, scope to that range so
@@ -80,7 +81,7 @@ export async function GET(req: NextRequest) {
           SUM(CASE WHEN line_id IS NOT NULL AND line_id <> '' THEN 1 ELSE 0 END) as with_line,
           SUM(CASE WHEN line_id IS NULL OR line_id = '' THEN 1 ELSE 0 END) as without_line,
           COUNT(*) as cnt
-        FROM leads
+        FROM ${SALES_LEADS} leads
         WHERE ${hasRange
           ? "id IN (" + eligibleSet + ")"
           : "created_at >= DATEADD(day, -29, CAST(GETDATE() AS date))"}
@@ -101,7 +102,7 @@ export async function GET(req: NextRequest) {
           SUM(CASE WHEN bp.lead_id IS NOT NULL THEN 1 ELSE 0 END) as booked,
           SUM(CASE WHEN op.lead_id IS NOT NULL THEN 1 ELSE 0 END) as paid,
           SUM(CASE WHEN l.install_completed_at IS NOT NULL THEN 1 ELSE 0 END) as installed
-        FROM leads l
+        FROM ${SALES_LEADS} l
         LEFT JOIN (
           SELECT DISTINCT lead_id FROM payments
           WHERE slip_field = 'pre_slip_url' AND confirmed_at IS NOT NULL
@@ -116,7 +117,7 @@ export async function GET(req: NextRequest) {
       `),
       bindRange(db.request()).query(`
         SELECT lost_reason as reason, COUNT(*) as cnt
-        FROM leads
+        FROM ${SALES_LEADS} leads
         WHERE status = 'lost' AND lost_reason IS NOT NULL AND lost_reason <> ''
           AND id IN (${eligibleSet})
         GROUP BY lost_reason
@@ -134,7 +135,7 @@ export async function GET(req: NextRequest) {
               WHEN l.journey_sub = 120 THEN 'no_contact'
               ELSE 'never_contacted'
             END as bucket
-          FROM leads l
+          FROM ${SALES_LEADS} l
           WHERE l.id IN (${eligibleSet})
         ) x
         GROUP BY bucket
@@ -152,7 +153,7 @@ export async function GET(req: NextRequest) {
             WHEN l.journey_sub = 140 THEN '2_in_pitch'
             ELSE '1_no_pitch'
           END as stage
-          FROM leads l
+          FROM ${SALES_LEADS} l
           WHERE (l.journey_sub IN (130, 140) OR l.journey_step BETWEEN 200 AND 1000)
             AND l.id IN (${eligibleSet})
         ) x
@@ -165,7 +166,7 @@ export async function GET(req: NextRequest) {
       // "5_never" here = "never_contacted" in contact_status exactly.
       bindRange(db.request()).query(`
         WITH active AS (
-          SELECT * FROM leads WHERE status <> 'lost' AND id IN (${eligibleSet})
+          SELECT * FROM ${SALES_LEADS} leads WHERE status <> 'lost' AND id IN (${eligibleSet})
         ),
         last_contact AS (
           SELECT lead_id, MAX(created_at) as last_at
@@ -216,7 +217,7 @@ export async function GET(req: NextRequest) {
                 THEN N'สินเชื่อ - ' + ISNULL(NULLIF(finance_bank, ''), N'ไม่ระบุธนาคาร')
               ELSE N'เงินสด/โอน'
             END as bucket
-          FROM leads l
+          FROM ${SALES_LEADS} l
           WHERE EXISTS (
             SELECT 1 FROM payments p
             WHERE p.lead_id = l.id AND p.confirmed_at IS NOT NULL
@@ -252,7 +253,7 @@ export async function GET(req: NextRequest) {
         SELECT
           ISNULL(NULLIF(undecided_reason, N''), N'ไม่ระบุเหตุผล') as reason,
           COUNT(*) as cnt
-        FROM leads
+        FROM ${SALES_LEADS} leads
         WHERE status = 'pre_survey' AND pre_doc_no IS NULL
           AND id IN (${eligibleSet})
         GROUP BY ISNULL(NULLIF(undecided_reason, N''), N'ไม่ระบุเหตุผล')

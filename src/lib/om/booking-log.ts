@@ -12,7 +12,9 @@ export type BookingAction =
   | "assign_owner"
   // ★ 10 ก.ย. 69: บันทึกการโทรใช้ตารางนี้ด้วย (ไม่มี om_call_log แยก)
   //   ตอนโทรครั้งแรกยังไม่มีใบงาน ⇒ booking_id ว่างได้ ผูกกับ house_id แทน
-  | "call";
+  | "call"
+  // ★ 24 ก.ย. 69 แผน 20260924-02 เฟส 2: ใบเสนอราคาของงานเสียเงิน
+  | "quote" | "quote_edit";
 
 export type ActorRole = "admin" | "technician" | "customer" | "system";
 
@@ -61,6 +63,7 @@ const LABEL: Record<BookingAction, string> = {
   reorder: "สลับลำดับคิว", start: "เริ่มงาน",
   check: "ตรวจงานเสร็จ รอปิด", done: "ปิดงาน", cancel: "ยกเลิกนัด", no_show: "ลูกค้าไม่อยู่บ้าน",
   call: "บันทึกการโทร",
+  quote: "ออกใบเสนอราคา", quote_edit: "แก้ใบเสนอราคา",
 };
 
 export const actionLabel = (a: string): string => LABEL[a as BookingAction] ?? a;

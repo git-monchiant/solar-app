@@ -75,6 +75,7 @@ export async function runSlaSweep(trigger: string, scope: SlaSweepScope = {}): P
     const leads = await db.request().query(`
       SELECT id FROM leads
       WHERE status NOT IN ('lost', 'returned', 'closed')
+        AND om_only = 0   -- lead ของ O&M ไม่มี SLA ฝั่งขาย (แผน 20260924-02)
         ${statuses.length ? `AND status IN (${statuses.map(s => `'${s}'`).join(",")})` : ""}
         ${leadIds.length ? `AND id IN (${leadIds.join(",")})` : ""}
       ORDER BY id

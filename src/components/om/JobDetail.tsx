@@ -13,6 +13,7 @@ import { CALL_OUTCOME, EXIT_STATUS, statusLabel, statusTone } from "@/lib/om/boo
 import Timeline from "@/components/ui/Timeline";
 import JobHistoryItem from "@/components/om/JobHistoryItem";
 import JobFormPanel from "@/components/om/JobFormPanel";
+import OmQuotationPanel from "@/components/om/OmQuotationPanel";
 import AssignOwnerButton from "@/components/lead/AssignOwnerButton";
 import {
   BUCKET_LABEL, FLOW, TONE, flowIndex, skipsPaidSteps, thD, thDT,
@@ -84,7 +85,8 @@ export default function JobDetail({ item, history, onBack, onSaved, onReload }: 
             <span className={`text-xxs px-2 py-0.5 rounded-full text-white font-semibold ${TONE[item.bucket] ?? "bg-gray-400"}`}>{BUCKET_LABEL[item.bucket] ?? item.bucket}</span>
             {isExit && <span className={`text-xxs px-2 py-0.5 rounded-full text-white font-bold ${statusTone(cur)}`}>งานล่าสุด {statusLabel(cur)}</span>}
             {item.team_name ? <span className="text-xxs px-2 py-0.5 rounded-full bg-gray-100 text-gray-600 font-semibold">ทีม {item.team_name}</span>
-              : item.booking_id && <span className="text-xxs px-2 py-0.5 rounded-full bg-amber-100 text-amber-800 font-bold">⚠ ยังไม่จ่ายทีม</span>}
+              // เตือนจ่ายทีมเฉพาะงานที่ถึงขั้นนัดหมายแล้ว — ขั้นเสนอราคา/ชำระเงินยังไม่ถึงเวลาจ่ายทีม
+              : item.booking_id && at >= 3 && <span className="text-xxs px-2 py-0.5 rounded-full bg-amber-100 text-amber-800 font-bold">⚠ ยังไม่จ่ายทีม</span>}
           </div>
           <div className="flex gap-3 flex-wrap text-xs text-gray-500 mt-0.5">
             <span>{item.project_name}</span>
@@ -200,18 +202,11 @@ export default function JobDetail({ item, history, onBack, onSaved, onReload }: 
             </div>
           )}
 
-          {/* ★ ขั้น 02–03 เป็นของงานเสียเงิน (แผน 20260924-02) — ระบบเสนอราคา/รับเงินของ O&M มาเฟส 2–4
-              ตอนนี้บอกแค่ว่างานนี้ข้ามเพราะอะไร หรือจะต้องผ่านอะไรต่อ */}
+          {/* ★ ขั้น 02–03 เป็นของงานเสียเงิน (แผน 20260924-02)
+              เฟส 2: ออก/แก้ใบเสนอราคาได้แล้ว (OmQuotationPanel) · ส่งอนุมัติเฟส 3 · รับเงินเฟส 4 */}
           {step === 1 && (
             <StepBox n="02" t="เสนอราคา">
-              {skip ? (
-                <div className="text-sm text-gray-600">งานนี้<b>ใช้สิทธิ์ฟรี</b> — ข้ามขั้นเสนอราคา</div>
-              ) : (
-                <div className="text-sm text-gray-600 leading-relaxed">
-                  บ้านนี้<b>สิทธิ์หมดแล้ว</b> งานถัดไปต้องออกใบเสนอราคา — Sale ออกใบ → Solar Sup → Sale Sup อนุมัติ
-                  <div className="mt-1 text-xs text-gray-400">ระบบเสนอราคาของ O&amp;M ยังไม่เปิดใช้</div>
-                </div>
-              )}
+              <OmQuotationPanel item={item} skip={skip} onSaved={onSaved} onReload={onReload} />
             </StepBox>
           )}
 

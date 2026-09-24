@@ -3,6 +3,7 @@ import { getDb, sql, fixDates } from "@/lib/db";
 import { computeStageCode, getStatusLabel } from "@/lib/constants/statuses";
 import { toLegacyStageCode } from "@/lib/journey-rules.mjs";
 import { flipJourneyDatesIfDue } from "@/lib/journey";
+import { SALES_LEADS } from "@/lib/lead-scope";
 
 // GET /api/v1/bi/leads
 //
@@ -105,7 +106,7 @@ export async function GET(req: NextRequest) {
     // 4. Count
     const countReq = db.request();
     applyInputs(countReq);
-    const countRes = await countReq.query(`SELECT COUNT(*) AS n FROM dbo.leads l ${whereSql}`);
+    const countRes = await countReq.query(`SELECT COUNT(*) AS n FROM ${SALES_LEADS} l ${whereSql}`);
     const total = countRes.recordset[0]?.n ?? 0;
 
     // 5. Page. `SELECT l.*` gives BI the full schema — new columns light up
@@ -206,7 +207,7 @@ export async function GET(req: NextRequest) {
         -- Sales owner
         u.full_name  AS assigned_name,
         u.email      AS assigned_email
-      FROM dbo.leads l
+      FROM ${SALES_LEADS} l
       LEFT JOIN users u ON l.assigned_user_id = u.id
       LEFT JOIN contacts c1 ON c1.lead_id = l.id AND c1.rn = 1
       LEFT JOIN contacts c2 ON c2.lead_id = l.id AND c2.rn = 2

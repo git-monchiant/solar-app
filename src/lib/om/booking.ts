@@ -5,6 +5,9 @@
 //   (การ์ด "ทำนัด" · ใบงาน "รอยืนยัน" · แท็บ ...) ป้ายแท็บ/แถบขั้นใน service-view.ts ต้องตรงกับชุดนี้
 export const BOOKING_STATUS = [
   { k: "follow",    t: "ติดตาม",      onCal: false, tone: "bg-gray-500" },
+  // ★ เฟส 2 แผน 20260924-02: งานเสียเงินอยู่ขั้นนี้ระหว่างออกใบเสนอราคา/รออนุมัติ (ใบอยู่ตาราง quotations
+  //   ผูกด้วย quotations.om_booking_id) · สีชมพู เพราะส้มเป็นของ "สิทธิ์หมด" ในหน้ารายการไปแล้ว
+  { k: "quote",     t: "เสนอราคา",    onCal: false, tone: "bg-pink-600" },
   { k: "pending",   t: "รอยืนยันนัด", onCal: true,  tone: "bg-amber-500" },
   { k: "confirmed", t: "นัดแล้ว",     onCal: true,  tone: "bg-blue-600" },
   { k: "progress",  t: "เข้างาน",     onCal: true,  tone: "bg-violet-600" },
@@ -19,7 +22,7 @@ export const EXIT_STATUS = [
 export type BookingStatus = (typeof BOOKING_STATUS)[number]["k"] | (typeof EXIT_STATUS)[number]["k"];
 export const ALL_STATUS: string[] = [...BOOKING_STATUS.map((s) => s.k), ...EXIT_STATUS.map((s) => s.k)];
 // สถานะที่ยังนับเป็น "งานค้าง" — ใช้กันจองซ้ำประเภทเดียวกัน
-export const ACTIVE_STATUS: string[] = ["follow", "pending", "confirmed", "progress", "checked"];
+export const ACTIVE_STATUS: string[] = ["follow", "quote", "pending", "confirmed", "progress", "checked"];
 
 export const statusLabel = (k: string) =>
   [...BOOKING_STATUS, ...EXIT_STATUS].find((s) => s.k === k)?.t ?? k;
@@ -28,7 +31,9 @@ export const statusTone = (k: string) =>
 
 // เดินหน้าได้ทีละขั้น ถอยหลังได้เฉพาะที่สมเหตุผล · ยกเลิก/ไม่อยู่บ้าน ทำได้ตลอดก่อนปิดงาน
 const NEXT: Record<string, string[]> = {
-  follow:    ["pending", "cancelled"],
+  follow:    ["quote", "pending", "cancelled"],
+  // เฟส 3–4 จะต่อ quote → payment → pending · ตอนนี้ออกได้แค่กลับไปติดตาม/ยกเลิก
+  quote:     ["follow", "cancelled"],
   pending:   ["confirmed", "follow", "cancelled", "no_show"],
   confirmed: ["progress", "pending", "cancelled", "no_show"],
   progress:  ["checked", "confirmed", "cancelled", "no_show"],

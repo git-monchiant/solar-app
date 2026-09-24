@@ -32,6 +32,7 @@ export const OM_STEP = {
 /** status ของใบงาน → เลข journey */
 export const OM_STEP_BY_STATUS: Record<string, number> = {
   follow: OM_STEP.follow,
+  quote: OM_STEP.quote,
   pending: OM_STEP.appoint,
   confirmed: OM_STEP.appoint,
   progress: OM_STEP.progress,
@@ -45,6 +46,17 @@ export const OM_STEP_BY_STATUS: Record<string, number> = {
 export const OM_SUB_BY_STATUS: Record<string, number> = {
   pending: 2410,
   confirmed: 2420,
+};
+
+/** ขั้นย่อยของเสนอราคา 2200 — อ่านจากสถานะใบเสนอราคาล่าสุดของใบงาน (quotations.om_booking_id)
+ *  สถานะชุดเดียวกับฝั่งขาย (lib/quotation.ts) · pending_approval = รุ่นเก่าก่อนมี 2 ชั้น นับเป็นรอ Sale Sup */
+export const OM_QUOTE_SUB_BY_STATUS: Record<string, number> = {
+  draft: 2210,
+  pending_solar_sup: 2220,
+  pending_sales_sup: 2230,
+  pending_approval: 2230,
+  changes_required: 2240,
+  approved: 2250,
 };
 
 /** งานที่ยังค้างอยู่ = badge การ์ดโมดูล · ไม่รวมปิดงาน/ยกเลิก/ไม่อยู่บ้าน */

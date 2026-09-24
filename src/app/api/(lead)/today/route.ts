@@ -5,6 +5,7 @@ import { requireAuth } from "@/lib/auth";
 import { gzipJson } from "@/lib/gzip-json";
 import { followUpOverdueSql } from "@/lib/lead-followup-sql";
 import { LATE_SLA_STAGES_APPLY, LATE_SLA_STAGES_COLUMN, SLA_DONE_APPLY, SLA_DONE_COLUMNS, slaLiveStatusSql } from "@/lib/lead-sla-sql";
+import { SALES_LEADS } from "@/lib/lead-scope";
 
 // LeadCard + today page only read ~30 columns from the leads table. The full
 // table is 60-80 cols per row (survey JSON blobs, photo URLs, etc.) so
@@ -71,7 +72,7 @@ const HAS_UNPAID_BEFORE_INSTALLMENT = `
   )`;
 
 const LEAD_FROM = `
-  FROM leads l
+  FROM ${SALES_LEADS} l
   LEFT JOIN projects p ON l.project_id = p.id
   LEFT JOIN packages pk ON l.interested_package_id = pk.id
   LEFT JOIN users u ON l.assigned_user_id = u.id
@@ -248,10 +249,10 @@ export async function GET(req: NextRequest) {
       // Quick stats
       db.request().query(`
         SELECT
-          (SELECT COUNT(*) FROM leads WHERE status NOT IN ('install', 'lost')) as pipeline,
-          (SELECT COUNT(*) FROM leads WHERE status IN ('order', 'install')) as won,
-          (SELECT COUNT(*) FROM leads WHERE status = 'lost') as lost,
-          (SELECT COUNT(*) FROM leads WHERE created_at >= DATEADD(day, -7, GETDATE())) as new_this_week
+          (SELECT COUNT(*) FROM ${SALES_LEADS} leads WHERE status NOT IN ('install', 'lost')) as pipeline,
+          (SELECT COUNT(*) FROM ${SALES_LEADS} leads WHERE status IN ('order', 'install')) as won,
+          (SELECT COUNT(*) FROM ${SALES_LEADS} leads WHERE status = 'lost') as lost,
+          (SELECT COUNT(*) FROM ${SALES_LEADS} leads WHERE created_at >= DATEADD(day, -7, GETDATE())) as new_this_week
       `),
     ]);
 

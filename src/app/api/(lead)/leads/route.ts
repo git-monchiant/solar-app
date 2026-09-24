@@ -96,6 +96,7 @@ export async function GET(req: NextRequest) {
         ORDER BY si.due_at ASC
       ) sla
       LEFT JOIN users sla_owner ON sla.owner_user_id = sla_owner.id${LATE_SLA_STAGES_APPLY}${SLA_DONE_APPLY}${LAST_FOLLOW_UP_APPLY}
+      WHERE l.om_only = 0   -- ไม่รวม lead ที่ระบบ O&M สร้าง (แผน 20260924-02) — งานนั้นอยู่ในโมดูล O&M
       ORDER BY l.created_at DESC
     `);
     return gzipJson(req, fixDates(result.recordset));

@@ -10,6 +10,8 @@ const stripTitle = (s: string | null | undefined) => String(s ?? "").trim().repl
 // ★ กันซ้ำด้วย om_installations.lead_id — รันกี่รอบก็ไม่เพิ่มซ้ำ
 // ★ ไม่มั่นใจ = ไม่แตะข้อมูลจริง → เข้า om_match_queue ให้คนตัดสิน (ไม่หายเงียบ)
 // ★ ห้ามเขียนอะไรลง leads / projects — เป็นตารางของระบบขาย อ่านได้อย่างเดียว
+//   (ยกเว้นเดียว: src/lib/om/om-quotation.ts สร้าง lead om_only ให้เจ้าของบ้านตอนออกใบเสนอราคา O&M
+//    ผู้ใช้เคาะ 24 ก.ย. 69 แผน 20260924-02 — ไฟล์นี้ยังอ่านอย่างเดียวเหมือนเดิม)
 
 export type SweepOutcome = {
   lead_id: number; name: string; tier: MatchResult["tier"]; reason: string;
@@ -35,6 +37,7 @@ const PENDING_LEADS = `
          l.warranty_doc_no, l.warranty_inverter_kw, l.warranty_battery_brand, l.warranty_battery_kwh
   FROM leads l
   WHERE l.install_completed_at IS NOT NULL
+    AND l.om_only = 0   -- lead ที่ O&M สร้างเองตอนออกใบเสนอราคา ไม่ใช่งานติดตั้งจากฝั่งขาย (แผน 20260924-02)
     AND NOT EXISTS (SELECT 1 FROM om_installations i WHERE i.lead_id = l.id)`;
 
 async function upsertQueue(db: sql.ConnectionPool, m: MatchResult) {

@@ -12,6 +12,7 @@ import {
   YES_NO_CONSIDERING, YES_NO_MAYBE, optionLabel,
 } from "@/lib/customer-questionnaire";
 import type { CustomerDashboardFilters } from "@/lib/customer-dashboard-types";
+import { SALES_LEADS } from "@/lib/lead-scope";
 
 type Option = { value: string; label: string };
 
@@ -285,7 +286,7 @@ export async function getCustomerExportRows(filters: CustomerDashboardFilters): 
       d.self_generates, d.ev_ready, d.blackout_resilient, d.future_usage_trend,
       d.decision_factors, d.decision_timeline,
       d.occupation, d.age_range, d.household_income
-    FROM leads l
+    FROM ${SALES_LEADS} l
     LEFT JOIN projects p ON p.id = l.project_id
     LEFT JOIN users u ON u.id = l.assigned_user_id
     LEFT JOIN lead_data d ON d.lead_id = l.id

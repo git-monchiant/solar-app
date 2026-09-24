@@ -17,14 +17,17 @@ export async function refreshJourney(db: DbOrTx, leadId: number): Promise<void> 
     .input("id", sql.Int, leadId)
     .query(`
       SELECT l.status, l.survey_date, l.install_date, l.install_completed_at,
-             l.journey_step, l.journey_sub,
+             l.journey_step, l.journey_sub, l.om_only,
              ${JOURNEY_FLAGS_SQL}
       FROM leads l WHERE l.id = @id
     `);
   const row = r.recordset[0];
   if (!row) return;
 
-  const j = computeJourney(row);
+  // ★ lead ที่ระบบ O&M สร้าง (om_only) ไม่มีขั้นฝั่งขาย — journey = NULL เสมอ
+  //   ไม่งั้นพอใบเสนอราคา O&M อนุมัติ/รับเงิน lead จะไหลเข้าขั้น 400/500 แล้วโผล่ใน badge ขาย
+  //   งาน O&M นับขั้นจากใบงานเองในสาย 2000 (src/lib/om/journey.ts) — แผน 20260924-02 เฟส 2
+  const j = row.om_only ? null : computeJourney(row);
   const step = j ? j.step : null;
   const sub = j ? j.sub : null;
   if (row.journey_step === step && row.journey_sub === sub) return;

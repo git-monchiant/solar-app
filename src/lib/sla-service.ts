@@ -293,7 +293,7 @@ async function reconcileOperationalInstance(db: Db, input: {
  */
 export async function syncOperationalSlas(db: Db, leadId: number, actorUserId?: number | null) {
   const result = await db.request().input("lead_id", leadId).query(`
-    SELECT l.id, l.status, l.source, l.customer_grade, l.assigned_user_id, l.created_at, l.owner_assigned_at, l.pre_booked_at,
+    SELECT l.id, l.om_only, l.status, l.source, l.customer_grade, l.assigned_user_id, l.created_at, l.owner_assigned_at, l.pre_booked_at,
            l.survey_ready_at, l.survey_ready_by, l.survey_ready_note,
            l.survey_assigned_user_id, l.install_assigned_user_id,
            l.survey_completed_by, l.install_completed_by,
@@ -435,6 +435,9 @@ export async function syncOperationalSlas(db: Db, leadId: number, actorUserId?: 
   `);
   const lead = result.recordset[0];
   if (!lead) return;
+  // ★ lead ที่ระบบ O&M สร้าง (om_only) ไม่มี SLA ฝั่งขาย — ไม่งั้นทีมขายโดนเตือน "ยังไม่ติดต่อ lead ใหม่"
+  //   ทั้งที่เป็นงานของ O&M (แผน 20260924-02 เฟส 2)
+  if (lead.om_only) return;
 
   const gradeAt = dateOrNull(lead.grade_at);
   const legacyGradeBackfill = String(lead.grade_reason || "") === "grade_sla_backfill_v1";
@@ -560,11 +563,12 @@ export async function syncOperationalSlas(db: Db, leadId: number, actorUserId?: 
 
 export async function ensureFirstContactSla(db: Db, leadId: number) {
   const leadResult = await db.request().input("lead_id", leadId).query(`
-    SELECT id, source, assigned_user_id, created_at
+    SELECT id, source, assigned_user_id, created_at, om_only
     FROM leads WHERE id = @lead_id
   `);
   const lead = leadResult.recordset[0];
   if (!lead) return null;
+  if (lead.om_only) return null;   // lead ของ O&M ไม่มี SLA ฝั่งขาย ดู syncOperationalSlas
 
   // One deadline for every source: the Bangkok contact window decides it.
   const startedAt = new Date(lead.created_at);

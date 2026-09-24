@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getDb, sql, fixDates, toSqlDate } from "@/lib/db";
 import { requireAuth } from "@/lib/auth";
+import { SALES_LEADS } from "@/lib/lead-scope";
 
 export async function GET(req: NextRequest) {
   const gate = await requireAuth(req);
@@ -74,7 +75,7 @@ export async function GET(req: NextRequest) {
     const schedPred = schedPredFor("l");
     // Same cohort as an id list, for excluding it elsewhere. NOT IN is safe here
     // because leads.id is the PK and can never be NULL.
-    const schedCohort = `SELECT sl.id FROM leads sl WHERE ${schedPredFor("sl")}`;
+    const schedCohort = `SELECT sl.id FROM ${SALES_LEADS} sl WHERE ${schedPredFor("sl")}`;
     // Forfeited survey fees are recognized on the day the lead was cancelled.
     // Every lost lead holding money has a status_change→lost activity (verified:
     // 0 without one), so no fallback is needed. MAX because a lead can be
@@ -100,10 +101,10 @@ export async function GET(req: NextRequest) {
     // without coordinating a shared scope. Without range it degenerates to
     // every lead — keeps the rest of the SQL identical regardless of filter.
     const eligibleSet = !hasRange
-      ? "SELECT id FROM leads"
+      ? `SELECT id FROM ${SALES_LEADS} leads`
       : mode === "created"
-      ? "SELECT id FROM leads WHERE CAST(created_at AS DATE) BETWEEN @from AND @to"
-      : `SELECT id FROM leads l WHERE
+      ? `SELECT id FROM ${SALES_LEADS} leads WHERE CAST(created_at AS DATE) BETWEEN @from AND @to`
+      : `SELECT id FROM ${SALES_LEADS} l WHERE
             CAST(l.created_at AS DATE) BETWEEN @from AND @to
             OR CAST(l.survey_date AS DATE) BETWEEN @from AND @to
             OR CAST(l.install_date AS DATE) BETWEEN @from AND @to
@@ -130,15 +131,15 @@ export async function GET(req: NextRequest) {
     ] = await Promise.all([
       bindRange(db.request()).query(`
         SELECT
-          (SELECT COUNT(*) FROM leads WHERE id IN (${eligibleSet})) as total_leads,
-          (SELECT COUNT(*) FROM leads WHERE pre_doc_no IS NOT NULL AND id IN (${eligibleSet})) as total_deposits,
+          (SELECT COUNT(*) FROM ${SALES_LEADS} leads WHERE id IN (${eligibleSet})) as total_leads,
+          (SELECT COUNT(*) FROM ${SALES_LEADS} leads WHERE pre_doc_no IS NOT NULL AND id IN (${eligibleSet})) as total_deposits,
           -- Booking money, scoped by when the deposit was confirmed — same rule
           -- as total_received: a money figure follows the money's own date, not
           -- the lead's created_at. Free surveys have no payments row, so they
           -- fall back to pre_booked_at (matching /api/lifecycle's booking_paid_at).
-          (SELECT ISNULL(SUM(l.pre_total_price), 0) FROM leads l
+          (SELECT ISNULL(SUM(l.pre_total_price), 0) FROM ${SALES_LEADS} l
             WHERE l.pre_doc_no IS NOT NULL AND ${bookedPredL}) as total_deposit_value,
-          (SELECT COUNT(*) FROM leads WHERE status = 'order' AND id IN (${eligibleSet})) as total_won,
+          (SELECT COUNT(*) FROM ${SALES_LEADS} leads WHERE status = 'order' AND id IN (${eligibleSet})) as total_won,
           -- All cash received that accounting has confirmed (level-2 sign-off).
           -- Covers every slip_field — booking deposit, order installments, etc.
           --
@@ -157,7 +158,7 @@ export async function GET(req: NextRequest) {
           -- total_received into "earned" (closed_value) + "held" so the card adds
           -- up: 3,475,850 delivered + 14,000 forfeited + 395,200 held = 3,885,050.
           (SELECT ISNULL(SUM(p.amount), 0) FROM payments p
-             JOIN leads l ON l.id = p.lead_id
+             JOIN ${SALES_LEADS} l ON l.id = p.lead_id
             WHERE p.confirmed_at IS NOT NULL AND ${receivedPred}
               AND l.install_completed_at IS NULL AND l.status <> 'lost') as unearned_received,
           -- Job count for that money — only jobs that have actually paid toward
@@ -170,21 +171,21 @@ export async function GET(req: NextRequest) {
           -- Deliberately NOT the contract value of those jobs either: the card
           -- splits cash received, and unbilled order value was never that cash.
           (SELECT COUNT(DISTINCT l.id) FROM payments p
-             JOIN leads l ON l.id = p.lead_id
+             JOIN ${SALES_LEADS} l ON l.id = p.lead_id
             WHERE p.confirmed_at IS NOT NULL AND ${receivedPred}
               AND p.slip_field <> 'pre_slip_url'
               AND l.install_completed_at IS NULL AND l.status <> 'lost') as unearned_count,
           -- Undelivered leads holding ONLY a survey deposit — the remainder of
           -- unearned_received, shown as a footnote so nothing is unaccounted for.
           (SELECT ISNULL(SUM(p.amount), 0) FROM payments p
-             JOIN leads l ON l.id = p.lead_id
+             JOIN ${SALES_LEADS} l ON l.id = p.lead_id
             WHERE p.confirmed_at IS NOT NULL AND ${receivedPred}
               AND l.install_completed_at IS NULL AND l.status <> 'lost'
               AND NOT EXISTS (SELECT 1 FROM payments p2
                                WHERE p2.lead_id = l.id AND p2.confirmed_at IS NOT NULL
                                  AND p2.slip_field <> 'pre_slip_url')) as survey_only_value,
           (SELECT COUNT(DISTINCT l.id) FROM payments p
-             JOIN leads l ON l.id = p.lead_id
+             JOIN ${SALES_LEADS} l ON l.id = p.lead_id
             WHERE p.confirmed_at IS NOT NULL AND ${receivedPred}
               AND l.install_completed_at IS NULL AND l.status <> 'lost'
               AND NOT EXISTS (SELECT 1 FROM payments p2
@@ -198,15 +199,15 @@ export async function GET(req: NextRequest) {
           (
             (SELECT ISNULL(SUM(ISNULL(l.order_total,0) + ISNULL(l.install_extra_cost,0)
                               - ISNULL(l.order_discount_amount,0)), 0)
-               FROM leads l WHERE ${schedPred})
+               FROM ${SALES_LEADS} l WHERE ${schedPred})
             + (SELECT ISNULL(SUM(p.amount), 0) FROM payments p
                 WHERE p.slip_field = 'pre_slip_url' AND p.confirmed_at IS NOT NULL
                   AND ${receivedPred} AND p.lead_id NOT IN (${schedCohort}))
           ) as scheduled_total,
           (SELECT ISNULL(SUM(ISNULL(l.order_total,0) + ISNULL(l.install_extra_cost,0)
                             - ISNULL(l.order_discount_amount,0)), 0)
-             FROM leads l WHERE ${schedPred}) as scheduled_value,
-          (SELECT COUNT(*) FROM leads l WHERE ${schedPred}) as scheduled_count,
+             FROM ${SALES_LEADS} l WHERE ${schedPred}) as scheduled_value,
+          (SELECT COUNT(*) FROM ${SALES_LEADS} l WHERE ${schedPred}) as scheduled_count,
           -- The delivered slice of that same cohort: booked into the window and
           -- already handed over. Same predicate + install_completed_at, so it
           -- nests inside scheduled_value instead of being a separate population
@@ -214,8 +215,8 @@ export async function GET(req: NextRequest) {
           -- purpose — the window is about the appointment, not the sign-off).
           (SELECT ISNULL(SUM(ISNULL(l.order_total,0) + ISNULL(l.install_extra_cost,0)
                             - ISNULL(l.order_discount_amount,0)), 0)
-             FROM leads l WHERE ${schedPred} AND l.install_completed_at IS NOT NULL) as delivered_value,
-          (SELECT COUNT(*) FROM leads l
+             FROM ${SALES_LEADS} l WHERE ${schedPred} AND l.install_completed_at IS NOT NULL) as delivered_value,
+          (SELECT COUNT(*) FROM ${SALES_LEADS} l
             WHERE ${schedPred} AND l.install_completed_at IS NOT NULL) as delivered_count,
           -- Survey fees taken in the range, EXCLUDING the jobs already counted
           -- in scheduled_value: order_total contains that lead's ฿1,000 fee, so
@@ -241,7 +242,7 @@ export async function GET(req: NextRequest) {
           -- sitting on a pending payment, whether or not it shipped yet.
           (SELECT ISNULL(SUM(ISNULL(l.order_total,0) + ISNULL(l.install_extra_cost,0)
                             - ISNULL(l.order_discount_amount,0) - ISNULL(cp.paid,0)), 0)
-             FROM leads l
+             FROM ${SALES_LEADS} l
              LEFT JOIN (
                SELECT lead_id, SUM(amount) AS paid FROM payments
                WHERE confirmed_at IS NOT NULL GROUP BY lead_id
@@ -252,7 +253,7 @@ export async function GET(req: NextRequest) {
              ) pp ON pp.lead_id = l.id
              WHERE l.install_completed_at IS NOT NULL OR ISNULL(pp.pend,0) > 0) as receivable_total,
           (SELECT COUNT(*)
-             FROM leads l
+             FROM ${SALES_LEADS} l
              LEFT JOIN (
                SELECT lead_id, SUM(amount) AS pend FROM payments
                WHERE submitted_at IS NOT NULL AND confirmed_at IS NULL GROUP BY lead_id
@@ -268,8 +269,8 @@ export async function GET(req: NextRequest) {
       // No range → falls back to month-to-date (the original behaviour).
       bindRange(db.request().input("first_day", firstDay)).query(`
         SELECT
-          (SELECT COUNT(*) FROM leads WHERE ${createdPred}) as new_leads,
-          (SELECT COUNT(*) FROM leads WHERE ${instPred}) as closed_count,
+          (SELECT COUNT(*) FROM ${SALES_LEADS} leads WHERE ${createdPred}) as new_leads,
+          (SELECT COUNT(*) FROM ${SALES_LEADS} leads WHERE ${instPred}) as closed_count,
           -- Net of order_discount_amount — the discounted total is what the
           -- customer is actually billed, so that is the revenue. Leaving the
           -- discount in made this figure disagree with closed_outstanding /
@@ -280,24 +281,24 @@ export async function GET(req: NextRequest) {
           -- lead is written off. Recognized on the cancellation date, not the
           -- date the fee was collected — that is when it stopped being refundable.
           (
-            (SELECT ISNULL(SUM(ISNULL(order_total,0) + ISNULL(install_extra_cost,0) - ISNULL(order_discount_amount,0)), 0) FROM leads WHERE ${instPred})
+            (SELECT ISNULL(SUM(ISNULL(order_total,0) + ISNULL(install_extra_cost,0) - ISNULL(order_discount_amount,0)), 0) FROM ${SALES_LEADS} leads WHERE ${instPred})
             + (SELECT ISNULL(SUM(pm.amount), 0) FROM payments pm
-                 JOIN leads l ON l.id = pm.lead_id
+                 JOIN ${SALES_LEADS} l ON l.id = pm.lead_id
                 WHERE pm.confirmed_at IS NOT NULL AND l.status = 'lost' AND ${lostPredL})
           ) as closed_value,
           -- Broken out so the card can show what the headline is made of.
           (SELECT ISNULL(SUM(pm.amount), 0) FROM payments pm
-             JOIN leads l ON l.id = pm.lead_id
+             JOIN ${SALES_LEADS} l ON l.id = pm.lead_id
             WHERE pm.confirmed_at IS NOT NULL AND l.status = 'lost' AND ${lostPredL}) as forfeited_value,
           (SELECT COUNT(DISTINCT l.id) FROM payments pm
-             JOIN leads l ON l.id = pm.lead_id
+             JOIN ${SALES_LEADS} l ON l.id = pm.lead_id
             WHERE pm.confirmed_at IS NOT NULL AND l.status = 'lost' AND ${lostPredL}) as forfeited_count,
           -- order_discount_amount must come off the obligation before comparing
           -- to payments: the customer is billed the discounted total, so leaving
           -- it in reported every discounted lead as outstanding by exactly the
           -- discount (a fully-paid lead showed "จ่าย 100%" and a balance).
           (SELECT ISNULL(SUM(ISNULL(l.order_total,0) + ISNULL(l.install_extra_cost,0) - ISNULL(l.order_discount_amount,0) - ISNULL(cp.paid,0)), 0)
-             FROM leads l
+             FROM ${SALES_LEADS} l
              LEFT JOIN (
                -- Sum every confirmed payment, not just order_installment_*. The
                -- ฿1,000 booking deposit lives under slip_field='pre_slip_url' and
@@ -313,24 +314,24 @@ export async function GET(req: NextRequest) {
       `),
       db.request().input("lm_start", lastMonthFirst).input("lm_end", lastMonthEnd).query(`
         SELECT
-          (SELECT COUNT(*) FROM leads WHERE created_at >= @lm_start AND created_at <= @lm_end) as new_leads,
-          (SELECT COUNT(*) FROM leads WHERE install_completed_at >= @lm_start AND install_completed_at <= @lm_end) as closed_count
+          (SELECT COUNT(*) FROM ${SALES_LEADS} leads WHERE created_at >= @lm_start AND created_at <= @lm_end) as new_leads,
+          (SELECT COUNT(*) FROM ${SALES_LEADS} leads WHERE install_completed_at >= @lm_start AND install_completed_at <= @lm_end) as closed_count
       `),
-      db.request().query(`SELECT status, COUNT(*) as count FROM leads GROUP BY status`),
+      db.request().query(`SELECT status, COUNT(*) as count FROM ${SALES_LEADS} leads GROUP BY status`),
       db.request().query(`
         SELECT TOP 8 l.id, l.full_name, l.status, l.created_at, p.name as project_name
-        FROM leads l LEFT JOIN projects p ON l.project_id = p.id
+        FROM ${SALES_LEADS} l LEFT JOIN projects p ON l.project_id = p.id
         ORDER BY l.created_at DESC
       `),
       db.request().query(`
         SELECT TOP 5 p.name, COUNT(*) as lead_count, SUM(CASE WHEN l.status = 'order' THEN 1 ELSE 0 END) as won
-        FROM leads l JOIN projects p ON l.project_id = p.id
+        FROM ${SALES_LEADS} l JOIN projects p ON l.project_id = p.id
         GROUP BY p.name ORDER BY lead_count DESC
       `),
       db.request().query(`
         SELECT TOP 5 la.title, la.activity_type, la.created_at, l.full_name, u.full_name as by_name
         FROM lead_activities la
-        JOIN leads l ON la.lead_id = l.id
+        JOIN ${SALES_LEADS} l ON la.lead_id = l.id
         LEFT JOIN users u ON la.created_by = u.id
         ORDER BY la.created_at DESC
       `),
@@ -360,7 +361,7 @@ export async function GET(req: NextRequest) {
                    AND CAST(created_at AS DATE) = COALESCE(la.followup_date, CAST(la.created_at AS DATE))
                ) THEN 1 ELSE 0 END as has_paid
         FROM lead_activities la
-        JOIN leads l ON la.lead_id = l.id
+        JOIN ${SALES_LEADS} l ON la.lead_id = l.id
         WHERE la.activity_type IN ('lead_created','call','visit','line','other','follow_up','loan_followup')
           AND (la.created_at >= DATEADD(day, -33, CAST(GETDATE() AS DATE))
             OR la.followup_date >= DATEADD(day, -33, CAST(GETDATE() AS DATE)))

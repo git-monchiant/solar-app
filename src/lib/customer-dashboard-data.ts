@@ -9,6 +9,7 @@ import {
   ROOF_SHAPES, USAGE_TREND_OPTIONS, WORK_DAYS_PER_WEEK, YES_NO, YES_NO_BIN,
   YES_NO_CONSIDERING, YES_NO_MAYBE, monthlyBillBucket, optionLabel,
 } from "@/lib/customer-questionnaire";
+import { SALES_LEADS } from "@/lib/lead-scope";
 import type {
   CountItem, CountSeries, CustomerDashboardData, CustomerDashboardFilters,
   CustomerDrilldownRow,
@@ -244,7 +245,7 @@ async function queryRows(filters: CustomerDashboardFilters): Promise<Questionnai
       d.ev_ready, d.blackout_resilient, d.future_usage_trend,
       d.decision_factors, d.decision_timeline,
       d.occupation, d.age_range, d.household_income
-    FROM leads l
+    FROM ${SALES_LEADS} l
     LEFT JOIN projects p ON p.id = l.project_id
     LEFT JOIN lead_data d ON d.lead_id = l.id
     ${where}

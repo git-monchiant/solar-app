@@ -22,21 +22,35 @@ export const FLOW = [
  *  (เดิมต่างคน findIndex เอง หน้ารายละเอียดเลยพาใบงาน "รอลูกค้ายืนยัน" กลับไปขั้น 01)
  *  ยกเลิก/ไม่อยู่บ้าน = บ้านกลับมาแท็บติดตามแล้ว จึงยืนที่ขั้นติดตาม (ป้ายแดงบนการ์ดบอกเหตุ) */
 const FLOW_AT: Record<string, number> = {
-  follow: 0, pending: 3, confirmed: 3, progress: 4, checked: 5, closed: 6, cancelled: 0, no_show: 0,
+  follow: 0, quote: 1, payment: 2, pending: 3, confirmed: 3, progress: 4, checked: 5, closed: 6, cancelled: 0, no_show: 0,
 };
 export const flowIndex = (status: string | null) => FLOW_AT[status ?? "follow"] ?? 0;
 
 /** งานนี้ข้ามขั้นเสนอราคา/ชำระเงินไหม (เส้นฟรี)
- *  ★ เฟส 1 ยังไม่มีใบเสนอราคา O&M — ใบงานที่เลยขั้นติดตามไปแล้วจึงมาทางฟรีทั้งหมด
- *    ส่วนที่ยังติดตามอยู่ดูจากสิทธิ์: หมดแล้ว = งานถัดไปต้องเสนอราคา
- *    เฟส 2+ ต้องเปลี่ยนมาอ่านจากใบเสนอราคาจริง / ติ๊ก "ในประกัน" ของใบงานซ่อม */
-export const skipsPaidSteps = (r: Pick<Item, "balance" | "job_status">) =>
-  flowIndex(r.job_status) > 0 || r.balance > 0;
+ *  ★ เฟส 2: ใบงานที่มีใบเสนอราคา (q_id) หรือยืนอยู่ขั้น 2–3 = เส้นเสียเงินแน่นอน
+ *    ที่เหลือ: เลยขั้นติดตามไปแล้วโดยไม่มีใบ = มาทางฟรี · ยังติดตามอยู่ดูจากสิทธิ์ (หมด = ต้องเสนอราคา)
+ *    เฟส 5 จะเพิ่มติ๊ก "ในประกัน" ของใบงานซ่อม */
+export const skipsPaidSteps = (r: Pick<Item, "balance" | "job_status"> & { q_id?: number | null }) => {
+  const at = flowIndex(r.job_status);
+  if (r.q_id || at === 1 || at === 2) return false;
+  return at > 0 || r.balance > 0;
+};
+
+/** สถานะใบเสนอราคา → ป้าย (ชุดเดียวกับลำดับอนุมัติฝั่งขาย แผน 20260730-01) */
+export const QUOTE_STATUS: Record<string, { t: string; tone: string }> = {
+  draft: { t: "ร่าง", tone: "bg-gray-100 text-gray-700" },
+  pending_solar_sup: { t: "รอ Solar Sup อนุมัติ", tone: "bg-amber-50 text-amber-700" },
+  pending_sales_sup: { t: "รอ Sale Sup อนุมัติ", tone: "bg-amber-50 text-amber-700" },
+  pending_approval: { t: "รอ Sale Sup อนุมัติ", tone: "bg-amber-50 text-amber-700" },
+  changes_required: { t: "ส่งกลับแก้", tone: "bg-red-50 text-red-700" },
+  approved: { t: "อนุมัติแล้ว", tone: "bg-emerald-50 text-emerald-700" },
+};
 
 /** แท็บของหน้ารายการ — ขั้นที่มีงานอยู่จริง + 3 ทางออก
- *  (เสนอราคา/ชำระเงินยังไม่มีแท็บ จะเพิ่มพร้อมเฟสที่เปิดใช้ · นัดหมายแยก 2 แท็บตามขั้นย่อย 2410/2420) */
+ *  (เสนอราคาเปิดแท็บเฟส 2 · ชำระเงินจะเพิ่มเฟส 4 · นัดหมายแยก 2 แท็บตามขั้นย่อย 2410/2420) */
 export const TABS = [
   { k: "follow", t: "ติดตาม" },
+  { k: "quote", t: "เสนอราคา" },
   { k: "pending", t: "รอยืนยันนัด" },
   { k: "confirmed", t: "นัดแล้ว" },
   { k: "progress", t: "เข้างาน" },
@@ -48,13 +62,13 @@ export const TABS = [
 ] as const;
 
 export const TONE: Record<string, string> = {
-  follow: "bg-gray-500", pending: "bg-amber-500", confirmed: "bg-blue-600",
+  follow: "bg-gray-500", quote: "bg-pink-600", pending: "bg-amber-500", confirmed: "bg-blue-600",
   progress: "bg-violet-600", checked: "bg-teal-600", closed: "bg-emerald-600",
   unreachable: "bg-red-500", declined: "bg-gray-400", noquota: "bg-orange-500",
 };
 /** สีอ่อนของแท็บเดียวกัน — ใช้กับชิปบนหน้าภาพรวม (พื้นเข้มอ่านเลขโต ๆ ไม่ออก) */
 export const TONE_SOFT: Record<string, string> = {
-  follow: "bg-gray-100 text-gray-700", pending: "bg-amber-50 text-amber-700",
+  follow: "bg-gray-100 text-gray-700", quote: "bg-pink-50 text-pink-700", pending: "bg-amber-50 text-amber-700",
   confirmed: "bg-blue-50 text-blue-700", progress: "bg-violet-50 text-violet-700",
   checked: "bg-teal-50 text-teal-700", closed: "bg-emerald-50 text-emerald-700",
   unreachable: "bg-red-50 text-red-700", declined: "bg-gray-50 text-gray-500",
@@ -83,6 +97,8 @@ export interface Item {
   team_id: number | null; team_name: string | null; service_type: string | null;
   /** เจ้าของเคส (เฟส 4) — คนคุมงาน/คนโทร คนละอย่างกับ team_id ที่เป็นทีมช่างไปหน้างาน */
   owner_user_id: number | null; owner_name: string | null;
+  /** ใบเสนอราคาล่าสุดของใบงาน (เฟส 2 แผน 20260924-02) — ว่าง = ยังไม่เคยออกใบ */
+  q_id: number | null; q_doc_no: string | null; q_status: string | null; q_total: number | null;
   bucket: string;
 }
 

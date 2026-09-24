@@ -3,7 +3,7 @@
 
 import { DUE_WASH_SQL } from "./entitlement";
 import { ACTIVE_STATUS } from "./booking";
-import { OM_FOLLOW_STEP, OM_STEP_BY_STATUS, OM_SUB_BY_STATUS } from "./journey";
+import { OM_FOLLOW_STEP, OM_QUOTE_SUB_BY_STATUS, OM_STEP_BY_STATUS, OM_SUB_BY_STATUS } from "./journey";
 
 const quote = (xs: readonly string[]) => xs.map((s) => `'${s}'`).join(",");
 
@@ -51,7 +51,11 @@ export const OM_JOURNEY_SUMMARY_SQL = `
   UNION ALL
   SELECT journey_step, journey_sub, COUNT(*) AS n FROM (
     SELECT ${caseSql("b.status", OM_STEP_BY_STATUS)} AS journey_step,
-           ${caseSql("b.status", OM_SUB_BY_STATUS, 0)} AS journey_sub
+           CASE WHEN b.status = 'quote' THEN ${caseSql("oq.status", OM_QUOTE_SUB_BY_STATUS, 2210)}
+                ELSE ${caseSql("b.status", OM_SUB_BY_STATUS, 0)} END AS journey_sub
       FROM om_bookings b
+      -- ใบเสนอราคาล่าสุดของใบงาน (เฟส 2 แผน 20260924-02) — ใช้แยกขั้นย่อยของเสนอราคา 2210–2250
+      OUTER APPLY (SELECT TOP 1 q.status FROM quotations q
+                    WHERE q.om_booking_id = b.id ORDER BY q.id DESC) oq
      WHERE b.status IN (${quote(Object.keys(OM_STEP_BY_STATUS))})
   ) j GROUP BY journey_step, journey_sub`;

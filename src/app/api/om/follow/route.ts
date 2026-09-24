@@ -5,7 +5,7 @@ import { getOmDb } from "@/lib/om/line";
 import { OM_FOLLOW_DROP_SQL, OM_FOLLOW_SCOPE_SQL } from "@/lib/om/follow-sql";
 import { getSettings } from "@/lib/om/settings";
 import { actionLabel, logBooking } from "@/lib/om/booking-log";
-import { toThaiOffset } from "@/lib/om/booking";
+import { ACTIVE_STATUS, toThaiOffset } from "@/lib/om/booking";
 
 // แท็บ "ติดตาม" ของงานบริการ — ★ การ์ดคำนวณสด ไม่มีแถวงานรอไว้ล่วงหน้า
 //   เกณฑ์: บ้าน O&M ที่มีระบบติดตั้ง + เลยรอบล้าง (om_service_type.cycle_months)
@@ -164,14 +164,23 @@ export async function POST(req: NextRequest) {
       const status = outcome === "agreed" ? "pending" : "follow";
 
       const cur = (await new sql.Request(tx).input("h", sql.Int, houseId).input("t", sql.Int, typeId)
-        .query(`SELECT TOP 1 id FROM om_bookings
+        .query(`SELECT TOP 1 id, status FROM om_bookings
                  WHERE house_id = @h AND service_type_id = @t
-                   AND status IN ('follow','pending','confirmed','progress','checked')`)).recordset[0];
+                   AND status IN (${ACTIVE_STATUS.map((s) => `'${s}'`).join(",")})`)).recordset[0];
+
+      // ★ แผน 20260924-02 เฟส 2: งานที่อยู่ขั้นเสนอราคา = งานเสียเงิน "เก็บค่าบริการก่อนนัดหมาย"
+      //   ห้ามตกลงนัดข้ามขั้นไป (เดิมรายการสถานะเขียนตายตัว ไม่เห็นใบงาน quote แล้วจะสร้างใบงานซ้อน)
+      //   ขอเลื่อนได้ แต่ใบงานต้องค้างที่ขั้นเสนอราคาเหมือนเดิม
+      if (cur?.status === "quote" && outcome === "agreed") {
+        await tx.rollback();
+        return NextResponse.json(
+          { error: "บ้านนี้อยู่ระหว่างเสนอราคา — นัดได้หลังลูกค้าชำระเงินแล้ว" }, { status: 409 });
+      }
 
       if (cur) {
         bookingId = cur.id as number;
         await new sql.Request(tx).input("id", sql.Int, bookingId)
-          .input("s", sql.NVarChar(20), status).input("w", sql.DateTimeOffset, when)
+          .input("s", sql.NVarChar(20), cur.status === "quote" ? "quote" : status).input("w", sql.DateTimeOffset, when)
           .query(`UPDATE om_bookings SET status = @s,
                     scheduled_at = COALESCE(@w, scheduled_at), updated_at = SYSDATETIMEOFFSET()
                   WHERE id = @id`);

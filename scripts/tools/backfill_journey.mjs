@@ -39,6 +39,8 @@ const rows = (await pool.request().query(`
          l.journey_step, l.journey_sub,
          ${JOURNEY_FLAGS_SQL}
   FROM leads l
+  -- lead ที่ระบบ O&M สร้างไม่มีขั้นฝั่งขาย (journey = NULL) — ข้ามไปเลย ดู refreshJourney ใน src/lib/journey.ts
+  WHERE l.om_only = 0
 `)).recordset;
 
 const codeOf = (step, sub) => (step == null ? 'NULL' : `${step}/${sub}`);

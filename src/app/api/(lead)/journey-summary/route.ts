@@ -14,6 +14,7 @@ export async function GET(req: NextRequest) {
     const r = await db.request().query(`
       SELECT journey_step, journey_sub, COUNT(*) AS n
       FROM leads
+      WHERE om_only = 0   -- lead ที่ระบบ O&M สร้างไม่มีขั้นฝั่งขาย (journey = NULL) — ไม่ต้องมีแถว NULL ปน
       GROUP BY journey_step, journey_sub
     `);
 

@@ -14,6 +14,10 @@
 //                          #job (ใบงานล่าสุด) · #x (รวมร่าง + คอลัมน์ bucket)
 
 import { CLEANING_CYCLE_SQL, isCleaning } from "@/lib/om/entitlement";
+import { ACTIVE_STATUS } from "@/lib/om/booking";
+
+// รายการสถานะงานค้างชุดเดียวกับ booking.ts — เดิมเขียนตายตัวในคิวรี พอเพิ่มสถานะ quote แล้วตกหล่น
+const ACTIVE_SQL = ACTIVE_STATUS.map((s) => `'${s}'`).join(",");
 
 export const OM_FOLLOW_SCOPE_SQL = `
     -- ① บ้านที่ถึงรอบล้าง (คำนวณสด) + สิทธิ์คงเหลือ + ล้างล่าสุด + เบอร์
@@ -59,7 +63,7 @@ export const OM_FOLLOW_SCOPE_SQL = `
                 AND DATEADD(month, ${CLEANING_CYCLE_SQL}, rd.service_date) > SYSDATETIMEOFFSET())
          -- หรือมีใบงานค้างอยู่ (เช่น งานซ่อมของบ้านที่ยังไม่ถึงรอบล้าง)
          OR EXISTS (SELECT 1 FROM om_bookings b WHERE b.house_id = h.id
-                     AND b.status IN ('follow','pending','confirmed','progress','checked'))
+                     AND b.status IN (${ACTIVE_SQL}))
          OR EXISTS (SELECT 1 FROM om_bookings b WHERE b.house_id = h.id AND b.status = 'closed'
                      AND DATEDIFF(day, b.updated_at, SYSDATETIMEOFFSET()) <= 90));
 
@@ -88,15 +92,19 @@ export const OM_FOLLOW_SCOPE_SQL = `
     SELECT b.house_id, b.id booking_id, b.status,
            CONVERT(varchar(33), b.scheduled_at, 126) scheduled_at,
            b.team_id, t.name team_name, st.label_th service_type,
-           b.owner_user_id, uo.full_name owner_name      -- เจ้าของเคส (เฟส 4)
+           b.owner_user_id, uo.full_name owner_name,     -- เจ้าของเคส (เฟส 4)
+           -- ใบเสนอราคาล่าสุดของใบงาน (แผน 20260924-02 เฟส 2) — มี = งานเส้นเสียเงิน
+           oq.id q_id, oq.doc_no q_doc_no, oq.status q_status, oq.contract_total_incl_vat q_total
       INTO #job
       FROM om_bookings b
       LEFT JOIN om_teams t ON t.id = b.team_id
       LEFT JOIN users uo ON uo.id = b.owner_user_id
       LEFT JOIN om_service_type st ON st.id = b.service_type_id
+      OUTER APPLY (SELECT TOP 1 q.id, q.doc_no, q.status, q.contract_total_incl_vat
+                     FROM quotations q WHERE q.om_booking_id = b.id ORDER BY q.id DESC) oq
      WHERE b.id = (SELECT TOP 1 b2.id FROM om_bookings b2
                     WHERE b2.house_id = b.house_id
-                    ORDER BY CASE WHEN b2.status IN ('follow','pending','confirmed','progress','checked')
+                    ORDER BY CASE WHEN b2.status IN (${ACTIVE_SQL})
                                   THEN 0 ELSE 1 END, b2.id DESC);
 
     -- ④ รวมร่าง + จัดว่าแต่ละหลังอยู่แท็บไหน
@@ -105,10 +113,10 @@ export const OM_FOLLOW_SCOPE_SQL = `
            CONVERT(char(10), c.next_call, 23) next_call,
            l.outcome last_outcome, l.by_name last_by,
            j.booking_id, j.status job_status, j.scheduled_at, j.team_id, j.team_name, j.service_type,
-           j.owner_user_id, j.owner_name,
+           j.owner_user_id, j.owner_name, j.q_id, j.q_doc_no, j.q_status, j.q_total,
            CASE
              -- ใบงานเดินหน้าแล้วให้ยึดสถานะใบงานเป็นหลัก (ออกจากแท็บติดตาม)
-             WHEN j.status IN ('pending','confirmed','progress','checked','closed') THEN j.status
+             WHEN j.status IN ('quote','pending','confirmed','progress','checked','closed') THEN j.status
              WHEN l.outcome = 'declined'                      THEN 'declined'
              WHEN d.phone IS NULL OR l.outcome = 'wrong_number' THEN 'unreachable'
              WHEN ISNULL(c.no_answer, 0) >= @max              THEN 'unreachable'

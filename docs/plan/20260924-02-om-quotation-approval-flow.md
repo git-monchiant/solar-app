@@ -14,6 +14,8 @@
 | 5 | ใบเสนอราคาผูกกับอะไร | **lead ของเจ้าของบ้าน** — ยังไม่มีก็สร้างให้ตอนออกใบครั้งแรก (รายละเอียดด้านล่าง) |
 | 6 | เลข journey | **เรียงใหม่ทั้งสาย 2100–2900** ตามลำดับขั้นใหม่ |
 | 7 | งานซ่อมในประกันการติดตั้ง | **ข้ามขั้นเสนอราคา + ชำระเงิน** ไปนัดได้เลย (เข้าเส้นฟรี) |
+| 8 | เลขที่ใบเสนอราคา O&M | **แยก prefix** จากฝั่งขาย — เสนอ `SSR-OM-QT-{ปี ค.ศ. 2 หลัก}-{รัน 4 หลัก}` รันแยกชุด (ขาย = `SSR-QT-26-0001` · ใบตรวจรับงาน O&M = `OM-6909-0007` ไม่ชนทั้งคู่) |
+| 9 | รายรับ O&M ในรายงาน Account | **แยกรายงาน** — รายงานรายรับขายต้องไม่มีเงิน O&M ปน (กรองด้วย slip_field ของ O&M) · ตำแหน่งหน้ารายงาน O&M เคาะตอนเฟส 4 |
 
 ## ของฝั่งขายที่ยกมาทั้งก้อน (กติกา ui-rules: ยกบล็อกเดิม ไม่ประดิษฐ์ใหม่)
 
@@ -97,6 +99,31 @@
   solar_sup: ekkawitp, Manits · sales_sup: Auchariyas, Manits · account ล้วน: siripornt, natramons, warinp
   ⚠ Manits ถือทั้ง solar_sup และ sales_sup → คนเดียวอนุมัติครบ 2 ขั้นของใบเดียวกันได้ (เป็นแบบนี้กับฝั่งขายอยู่แล้ว)
 
+## ผลกระทบฝั่งขาย (สำรวจ 24 ก.ย. 69 ก่อนเริ่มเฟส 2)
+
+มี 58 ไฟล์ที่อ่านตาราง `leads` — ส่วนใหญ่อ่านทีละ lead ด้วย id ไม่ต้องแก้ · ที่ต้องแตะแบ่ง 3 กลุ่ม
+
+1. **เพิ่มคอลัมน์ (nullable ตามกติกา README ไม่ลบ/ไม่เปลี่ยนชนิด)**
+   - `leads` — ธง lead ที่ระบบ O&M สร้าง (ห้ามใช้ `customer_type` เพราะ Sale แก้ได้จากฟอร์ม
+     และมีค่าเก่า `o_and_m` ค้างอยู่ 1 lead สถานะ lost ที่ไม่มีโค้ดไหนใช้)
+   - `quotations` — `om_booking_id` = ใบนี้เป็นงาน O&M
+2. **กรอง lead O&M ออกจากหน้ารายการ/ตัวเลขฝั่งขาย** — pipeline · Today · dashboard · lifecycle · prospects
+   · SLA (dashboard + sweep) · BI/export · customer dashboard · badge (`journey-summary` นับจาก `leads.journey_step`)
+   → lead O&M ต้องไม่ถูกคำนวณ journey ฝั่งขาย และไม่ถูกสร้าง SLA ขาย (ติดตาม lead ใหม่ ฯลฯ)
+3. **ใช้ร่วม + ติดป้าย O&M** — คิวอนุมัติ · คิว Account รอยืนยันรับเงิน · แจ้งเตือน · PDF ใบเสนอราคา
+   (ข้อความท้ายใบแบบ O&M ไม่ใช่เงื่อนไขติดตั้ง) · รายงานรายรับ · ลิงก์จากคิวต้องพาไปหน้างาน O&M ไม่ใช่หน้า lead
+
+**กับดักที่เจอ**
+- journey ขายนับงวดเงินจาก `payments.lead_id` + `slip_field LIKE 'order_installment_%'` (`src/lib/journey.ts:130`)
+  → บ้าน 5 หลังที่มี lead ขายอยู่แล้ว ถ้าเงิน O&M ใช้ slip_field เดียวกัน ขั้นของ lead ขายจะขยับ
+  ⇒ เงิน O&M ต้องใช้ slip_field ของตัวเอง (เช่น `om_...`) และใบ O&M ต้องไม่ถูกนับใน journey ขาย
+- ใบเสนอราคาขายผูก `packages` ของฝั่งขาย (`package_id` + `package_items`) แต่ Package O&M อยู่ `om_packages`
+  ⇒ ใส่เป็นรายการในใบ (API รับใบที่ไม่มี Package หลักแต่มีรายการอย่างน้อย 1 ได้อยู่แล้ว) ไม่ต้องแตะระบบ Package ขาย
+- งวดชำระต้องรวม 100% → งาน O&M = งวดเดียว 100% (เก็บก่อนนัด)
+
+**วิธีพิสูจน์ว่าไม่กระทบ** — ถ่ายตัวเลขฝั่งขายทุกจุด (badge ทุกเมนู · dashboard · Today · SLA) ก่อน/หลัง ต้องเท่ากันเป๊ะ
+แบบเดียวกับที่ทำตอนเฟส 1
+
 ## เฟสที่เสนอ
 
 1. ชื่อขั้นชุดใหม่ + เลข journey ชุดใหม่ + แถบ 7 ขั้นบนการ์ด/รายละเอียด + แท็บหน้างานบริการ
@@ -121,6 +148,53 @@
 - ตรวจ: badge ก่อน/หลังตรงกันเป๊ะ (งานบริการ 1,661 · ปฏิทิน 2 · เช็คลิสต์ 1) · ตัวเลขแท็บไม่ขยับ
   · tsc/eslint ผ่าน · 9 หน้าตอบ 200 · screenshot headless 4 หน้า ไม่มี error ใน console
 - เฟสนี้ **ไม่แตะไฟล์ฝั่งขาย** (modules.tsx แก้เฉพาะเมนู O&M)
+
+## ผลเฟส 2 (เสร็จ 24 ก.ย. 69)
+
+**ฐานข้อมูล** (apply `solardb_v3` แล้ว)
+- `20260924-2000_om_quotation_link.sql` — `leads.om_only` (NOT NULL DEFAULT 0) · `quotations.om_booking_id` + index
+  · ป้ายขั้นย่อย 2210–2250
+- `20260924-2030_om_quotation_package.sql` — `quotations.om_package_id` (ใบ O&M ห้ามใช้ `package_id` เพราะฝั่งขาย
+  JOIN กับ `packages` ของตัวเอง จะไปชนแพ็กเกจขายที่ id ตรงกัน)
+
+**ฝั่งขาย (กันไม่ให้ lead/ใบของ O&M โผล่)**
+- `lib/lead-scope.ts` — `SALES_LEADS` = derived table `(SELECT * FROM leads WHERE om_only = 0)` (ไม่ใช้ VIEW
+  เพราะ SELECT * ใน view จำคอลัมน์ตอนสร้าง ฝั่งขายเพิ่มคอลัมน์ทีหลังจะพัง) ใช้ใน today · dashboard ·
+  dashboard-dev · lifecycle · me · BI · customer dashboard ×2 (58 จุด) · pipeline (`leads` GET) ใส่ WHERE ตรง
+- journey ขาย: `refreshJourney` คืน NULL ให้ om_only · `backfill_journey.mjs` ข้าม · `journey-summary` กรอง
+- SLA ขาย: `syncOperationalSlas` / `ensureFirstContactSla` ออกทันทีถ้า om_only · `sla-sweep` กรอง
+- ใบเสนอราคาของ lead (GET + เช็คชุดซ้ำตอน POST) กรอง `om_booking_id IS NULL` — กัน 5 หลังที่ใช้ lead ร่วม
+
+**ฝั่ง O&M**
+- สถานะใบงานใหม่ `quote` (เสนอราคา) → journey 2200 + ขั้นย่อยจากสถานะใบ · แท็บ "เสนอราคา" · การ์ดมีชิปเลขที่/สถานะ/ยอด
+- `lib/om/om-quotation.ts` — สร้าง/ผูก lead เจ้าของบ้าน (`ensureOmLead`) · เลขที่ `SSR-OM-QT-yy-nnnn`
+  · คำนวณยอดด้วย `calculateQuotation` ตัวเดียวกับฝั่งขาย · งวดเดียว 100% ก่อนนัด · หมายเหตุ Package O&M เป็น terms
+- API `POST /api/om/quotations` · `GET/PATCH /api/om/quotations/[id]` — ออก/แก้ได้เฉพาะ admin/sales/sales_sup
+  แก้ได้เฉพาะสถานะ draft / changes_required
+- หน้ารายละเอียดขั้น 02 = `components/om/OmQuotationPanel.tsx` (เลือกแพ็กเกจตามขนาด kW บ้าน + รายการเพิ่ม + ส่วนลดต้องมีเหตุผล)
+- **ปิดช่องโหว่**: บันทึกการโทร "ตกลงนัด" บนบ้านที่อยู่ขั้นเสนอราคา → ปฏิเสธ 409 (เดิมรายการสถานะเขียนตายตัว
+  จะสร้างใบงานซ้อนแล้วนัดได้โดยไม่ผ่านการจ่ายเงิน) · follow-sql / follow route ใช้ `ACTIVE_STATUS` ชุดเดียว
+
+**ตรวจ**
+- ตัวเลขฝั่งขายก่อน/หลัง ขณะมี lead O&M อยู่จริง 2 ราย: badge ทุกเมนูเท่าเดิม · pipeline 523 ราย id ชุดเดิม
+  (lead O&M ไม่โผล่) · Today ทุกกองเท่าเดิม · dashboard / dashboard-dev / lifecycle / me / SLA dashboard /
+  customer dashboard / คิวอนุมัติ ตรงกันทุกไบต์ (BI เปิดบน dev ไม่ได้ ไม่มี API key — ตรวจด้วยการอ่านโค้ด)
+- API ครบทุกเคส: สร้าง · ซ้ำ 409 · ส่วนลดไม่มีเหตุผล 400 · ไม่เลือกอะไร 400 · บ้านมีงานค้าง 409
+  · account / solar_sup 403 · แก้ใบ (5,000 + 500 − 200 = 5,300 VAT แยกถูก)
+- สร้างผ่านหน้าจอจริง (puppeteer) ได้ `SSR-OM-QT-26-0002` ภาษาไทยถูก ยอด 3,700 · console ไม่มี error
+- **ลบข้อมูลทดสอบออกแล้ว** (lead 1018–1019 · ใบ 68–69 · ใบงาน 12–13 · ประวัติ · lead_id ของบ้าน) ตัวเลขกลับเท่าเดิม
+- tsc / eslint ผ่านทุกไฟล์ที่แก้
+
+**แก้ของเฟส 1 ที่พลาด**: commit เฟส 1 (cd473c2) แปลง 5 ไฟล์เป็น CRLF (Python บน Windows) — แปลงกลับ LF แล้ว
+เนื้อหาไม่เปลี่ยน (`git diff --ignore-cr-at-eol` ว่าง) · ต่อจากนี้เขียนไฟล์ด้วย `newline=""`
+
+## กับดักที่ต้องจัดการในเฟส 3 (เจอระหว่างทำเฟส 2)
+
+- `quotations/[id]/action/route.ts:512` ตอนส่งใบหลังอนุมัติ `UPDATE leads SET status = 'order', quotation_files…`
+  → ใบ O&M ต้องแยกทาง: ไม่แตะ lead แต่ย้ายใบงานไปขั้นชำระเงินแทน (ไม่งั้น lead ขายของ 5 หลังจะกลายเป็น order)
+- คิวอนุมัติ / แจ้งเตือน ลิงก์ไปหน้า lead — ใบ O&M ต้องพาไป `/om/services/[house]` + ป้าย "O&M"
+- PDF ใบเสนอราคาใช้ข้อความท้ายใบของงานติดตั้ง — ใบ O&M ต้องมีแบบของตัวเอง (terms_text มีหมายเหตุ Package O&M แล้ว)
+- ยังไม่มีปุ่มยกเลิกใบเสนอราคา O&M (ยกเลิกทั้งใบงานได้ผ่าน quote → cancelled)
 
 ## ตรวจสอบเมื่อลงมือ
 
