@@ -14,11 +14,19 @@ interface User {
 }
 
 interface Props {
-  leadId: number;
+  /** โหมด lead (เดิม) — คอมโพเนนต์ PATCH /api/leads/<id> ให้เอง */
+  leadId?: number;
+  /** โหมดทั่วไป — ผู้เรียกบันทึกเอง · ใช้กับงานบริการ O&M ที่บันทึกคนละ endpoint
+   *  (เพิ่มตอนเฟส 4 แผน 20260922-01 · ถ้าใส่มาจะชนะ leadId) */
+  onAssign?: (userId: number | null) => Promise<void>;
+  /** role ที่ดึงมาเป็นตัวเลือก — ฝั่งขายใช้ sales · O&M ใช้ solar */
+  usersRole?: string;
   assignedUserId: number | null;
   assignedName: string | null;
   onChanged?: () => void;
   size?: "sm" | "md" | "lg";
+  /** ป้ายบนหัว dropdown */
+  title?: string;
 }
 
 function initialsOf(name: string | null | undefined): string | null {
@@ -40,7 +48,7 @@ function colorOf(id: number | null): string {
   return palette[Math.abs((id ?? 0) % palette.length)];
 }
 
-export default function AssignOwnerButton({ leadId, assignedUserId, assignedName, onChanged, size = "sm" }: Props) {
+export default function AssignOwnerButton({ leadId, onAssign, usersRole = "sales", assignedUserId, assignedName, onChanged, size = "sm", title }: Props) {
   const { me } = useMe();
   const [open, setOpen] = useState(false);
   const [users, setUsers] = useState<User[]>([]);
@@ -54,8 +62,8 @@ export default function AssignOwnerButton({ leadId, assignedUserId, assignedName
 
   useEffect(() => {
     if (!open || users.length > 0) return;
-    apiFetch("/api/users?role=sales").then(setUsers).catch(console.error);
-  }, [open, users.length]);
+    apiFetch(`/api/users?role=${usersRole}`).then(setUsers).catch(console.error);
+  }, [open, users.length, usersRole]);
 
   useEffect(() => {
     if (!open) return;
@@ -73,7 +81,9 @@ export default function AssignOwnerButton({ leadId, assignedUserId, assignedName
     setOpen(false);
     setSaving(true);
     try {
-      await apiFetch(`/api/leads/${leadId}`, {
+      // onAssign มาก่อน — โมดูลอื่นบันทึกคนละ endpoint (O&M ใช้ /api/om/bookings/<id>)
+      if (onAssign) await onAssign(userId);
+      else if (leadId != null) await apiFetch(`/api/leads/${leadId}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ assigned_user_id: userId }),
@@ -118,7 +128,7 @@ export default function AssignOwnerButton({ leadId, assignedUserId, assignedName
       {open && (
         <div className="absolute left-0 bottom-8 z-50 w-56 rounded-xl bg-white border border-gray-200 shadow-lg overflow-hidden">
           <div className="px-3 py-2 text-xxs font-bold uppercase tracking-wider text-gray-400 border-b border-gray-100">
-            Assign Owner
+            {title ?? "Assign Owner"}
           </div>
           {me && localUserId !== me.id && (
             <button

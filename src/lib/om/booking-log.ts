@@ -8,6 +8,8 @@ import { sql } from "@/lib/db";
 export type BookingAction =
   | "create" | "confirm" | "reschedule" | "assign_team" | "reorder"
   | "start" | "check" | "done" | "cancel" | "no_show"
+  // ★ 24 ก.ย. 69 (เฟส 4): เจ้าของเคส — คนละอย่างกับ assign_team (ทีมช่างที่ไปหน้างาน)
+  | "assign_owner"
   // ★ 10 ก.ย. 69: บันทึกการโทรใช้ตารางนี้ด้วย (ไม่มี om_call_log แยก)
   //   ตอนโทรครั้งแรกยังไม่มีใบงาน ⇒ booking_id ว่างได้ ผูกกับ house_id แทน
   | "call";
@@ -55,7 +57,8 @@ export async function logBooking(tx: Transaction, a: LogArgs): Promise<void> {
 
 const LABEL: Record<BookingAction, string> = {
   create: "สร้างนัด", confirm: "ยืนยันนัด", reschedule: "เลื่อนนัด",
-  assign_team: "จ่ายทีมช่าง", reorder: "สลับลำดับคิว", start: "เริ่มงาน",
+  assign_team: "จ่ายทีมช่าง", assign_owner: "เปลี่ยนเจ้าของงาน",
+  reorder: "สลับลำดับคิว", start: "เริ่มงาน",
   check: "ตรวจงานเสร็จ รอปิด", done: "ปิดงาน", cancel: "ยกเลิกนัด", no_show: "ลูกค้าไม่อยู่บ้าน",
   call: "บันทึกการโทร",
 };

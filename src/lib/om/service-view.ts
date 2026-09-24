@@ -51,6 +51,8 @@ export interface Item {
   last_outcome: string | null; last_by: string | null;
   booking_id: number | null; job_status: string | null; scheduled_at: string | null;
   team_id: number | null; team_name: string | null; service_type: string | null;
+  /** เจ้าของเคส (เฟส 4) — คนคุมงาน/คนโทร คนละอย่างกับ team_id ที่เป็นทีมช่างไปหน้างาน */
+  owner_user_id: number | null; owner_name: string | null;
   bucket: string;
 }
 

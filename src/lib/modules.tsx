@@ -422,6 +422,17 @@ const ACCOUNT_BAR: ModuleMenuItem[] = [
   { label: "รายรับ", href: "/report", icon: <I d={D.wallet} /> },
   { label: "ยืนยันรับเงิน", href: "/report/pending", icon: <I d={D.banknotes} />, subs: [210, 520] },
 ];
+// ★ แถบล่างของทีม O&M (เฟส 4 แผน 20260922-01) — ยังไม่ผูกกับ role ไหน
+//   เพราะ solar ใช้ SOLAR_BAR เป็นหลักอยู่ และยังไม่มี role om แยก
+//   เปิดใช้เมื่อไหร่: เพิ่มเงื่อนไขใน mobileBarForRoles ด้านล่าง (ผู้ใช้ต้องเคาะก่อน
+//   เพราะสลับแถบล่าง = เปลี่ยนปุ่มที่ทีมกดทุกวัน)
+export const OM_BAR: ModuleMenuItem[] = [
+  { label: "งานบริการ", href: "/om/services", icon: <I d={D.wrench} />, steps: OM_ACTIVE_STEPS },
+  { label: "ปฏิทิน", href: "/om/calendar", icon: <I d={D.calendar} />, steps: OM_SCHEDULED_STEPS },
+  { label: "เช็คลิสต์", href: "/om/field", icon: <I d={D.clipboardCheck} />, steps: OM_FIELD_STEPS },
+  { label: "แชต", href: "/om/inbox", icon: <LineIcon className="w-6 h-6" /> },
+];
+
 const SEEKER_BAR: ModuleMenuItem[] = [
   { label: "Seeker", href: "/seeker", icon: <I d={D.mapPin} /> },
   { label: "Insights", href: "/seeker/dashboard", icon: <I d={D.chart} /> },

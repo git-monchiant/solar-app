@@ -9,7 +9,9 @@ import { toThaiOffset } from "@/lib/om/booking";
 
 // แท็บ "ติดตาม" ของงานบริการ — ★ การ์ดคำนวณสด ไม่มีแถวงานรอไว้ล่วงหน้า
 //   เกณฑ์: บ้าน O&M ที่มีระบบติดตั้ง + เลยรอบล้าง (om_service_type.cycle_months)
-// ★ ผู้ใช้เคาะ 10 ก.ย. 69: ไม่มี "รอบโทร" ไม่มีเจ้าของงาน — ใครเปิดหน้านี้ก็โทรต่อได้
+// ★ ผู้ใช้เคาะ 10 ก.ย. 69: ไม่มี "รอบโทร" — ใครเปิดหน้านี้ก็โทรต่อได้
+//   (24 ก.ย. เฟส 4 เพิ่ม owner_user_id = เจ้าของเคส แต่เป็นของเสริมไม่ใช่ประตูล็อก
+//    ว่างไว้ได้ ใครก็หยิบต่อได้เหมือนเดิม — มีไว้ให้ถามได้ว่า "งานของฉัน" คืออะไร)
 //   ประวัติการโทรอยู่ที่ om_booking_history (booking_id ว่างได้ ผูกกับ house_id แทน)
 //   ⇒ ไม่มีตาราง om_call_log แยก
 
@@ -37,6 +39,9 @@ export async function GET(req: NextRequest) {
   //   ไม่ทำเป็น endpoint ใหม่เพราะเกณฑ์ #due/#call/#job ต้องตรงกับลิสต์เป๊ะ
   //   (แยกไปเขียนใหม่แล้วจะเพี้ยนคนละที่เวลาแก้ทีหลัง — กติกาเดียวกับ house-scope.ts)
   const houseOnly = Math.max(0, Number(u.get("house")) || 0);
+  // ★ mine=1 = "งาน O&M ของฉัน" สำหรับหน้า Today (เฟส 4) — เฉพาะใบที่ตัวเองเป็นเจ้าของ
+  //   และยังไม่ปิด · ข้ามตัวกรองแท็บเหมือนโหมดบ้านเดียว ใช้เกณฑ์ #due ชุดเดียวกับลิสต์
+  const mineOnly = u.get("mine") === "1" ? (gate.userId ?? 0) : 0;
   const page = Math.max(1, Number(u.get("page")) || 1);
   const size = Math.min(100, Math.max(10, Number(u.get("size")) || 30));
 
@@ -47,6 +52,7 @@ export async function GET(req: NextRequest) {
   try {
   const r = await db.request()
     .input("house", sql.Int, houseOnly)
+    .input("mine", sql.Int, mineOnly)
     .input("g", sql.NVarChar(20), group)
     .input("tab", sql.VarChar(20), tab)
     .input("q", sql.NVarChar(80), q ? `%${q}%` : "")
@@ -125,10 +131,12 @@ export async function GET(req: NextRequest) {
     -- ใบงานล่าสุดของบ้าน (งานค้างมาก่อน ถ้าไม่มีค่อยเอางานที่เพิ่งปิด)
     SELECT b.house_id, b.id booking_id, b.status,
            CONVERT(varchar(33), b.scheduled_at, 126) scheduled_at,
-           b.team_id, t.name team_name, st.label_th service_type
+           b.team_id, t.name team_name, st.label_th service_type,
+           b.owner_user_id, uo.full_name owner_name      -- เจ้าของเคส (เฟส 4)
       INTO #job
       FROM om_bookings b
       LEFT JOIN om_teams t ON t.id = b.team_id
+      LEFT JOIN users uo ON uo.id = b.owner_user_id
       LEFT JOIN om_service_type st ON st.id = b.service_type_id
      WHERE b.id = (SELECT TOP 1 b2.id FROM om_bookings b2
                     WHERE b2.house_id = b.house_id
@@ -141,6 +149,7 @@ export async function GET(req: NextRequest) {
            CONVERT(char(10), c.next_call, 23) next_call,
            l.outcome last_outcome, l.by_name last_by,
            j.booking_id, j.status job_status, j.scheduled_at, j.team_id, j.team_name, j.service_type,
+           j.owner_user_id, j.owner_name,
            CASE
              -- ใบงานเดินหน้าแล้วให้ยึดสถานะใบงานเป็นหลัก (ออกจากแท็บติดตาม)
              WHEN j.status IN ('pending','confirmed','progress','checked','closed') THEN j.status
@@ -165,7 +174,9 @@ export async function GET(req: NextRequest) {
 
     SELECT d.* FROM #x d
      WHERE (@house > 0 AND d.house_id = @house)
-        OR (@house = 0
+        OR (@mine > 0 AND d.owner_user_id = @mine
+            AND d.job_status IN ('follow','pending','confirmed','progress','checked'))
+        OR (@house = 0 AND @mine = 0
             AND d.bucket = @tab
             AND (@g = '' OR d.project_id = @g)
             AND (@q = '' OR d.house_number LIKE @q OR d.customer_name LIKE @q OR d.phone LIKE @q))

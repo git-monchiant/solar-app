@@ -55,6 +55,7 @@ export default function OmServiceDetailPage({ params }: { params: Promise<{ hous
         history={history}
         onBack={back}
         onSaved={(m) => { setToast(m); setTimeout(() => setToast(""), 2600); }}
+        onReload={load}
       />
       {toast && <div className="fixed bottom-6 left-1/2 -translate-x-1/2 bg-gray-900 text-white text-sm px-5 py-2.5 rounded-full shadow-lg z-50">{toast}</div>}
     </>

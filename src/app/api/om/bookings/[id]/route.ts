@@ -61,7 +61,7 @@ export async function PATCH(req: NextRequest, ctx: { params: Promise<{ id: strin
 
   const db = await getOmDb();
   const cur = (await db.request().input("id", sql.Int, id).query(`
-    SELECT b.id, b.house_id, b.status, b.team_id, b.queue_index, b.rescheduled_count, b.service_type_id,
+    SELECT b.id, b.house_id, b.status, b.team_id, b.owner_user_id, b.queue_index, b.rescheduled_count, b.service_type_id,
            CONVERT(varchar(33), b.scheduled_at, 126) scheduled_at,
            CAST(st.consumes_quota AS int) consumes_quota
     FROM om_bookings b LEFT JOIN om_service_type st ON st.id = b.service_type_id
@@ -102,6 +102,16 @@ export async function PATCH(req: NextRequest, ctx: { params: Promise<{ id: strin
       if (!newStatus && !hasWhen) action = "assign_team";
     }
   }
+  // เจ้าของเคส (เฟส 4) — คนละอย่างกับ team_id ที่เป็นทีมช่างไปหน้างาน
+  // NULL = ปล่อยว่าง ใครก็หยิบต่อได้ ตามที่ผู้ใช้เคาะ 10 ก.ย.
+  if (Object.prototype.hasOwnProperty.call(b, "owner_user_id")) {
+    const o = b.owner_user_id === null || b.owner_user_id === "" ? null : Number(b.owner_user_id);
+    if (o !== cur.owner_user_id) {
+      set.push("owner_user_id = @ow", "owner_assigned_at = CASE WHEN @ow IS NULL THEN NULL ELSE SYSDATETIMEOFFSET() END");
+      from.owner_user_id = cur.owner_user_id; to.owner_user_id = o;
+      if (!newStatus && !hasWhen) action = "assign_owner";
+    }
+  }
   if (Object.prototype.hasOwnProperty.call(b, "queue_index")) {
     const qi = b.queue_index === null ? null : Number(b.queue_index);
     if (qi !== cur.queue_index) {
@@ -122,6 +132,7 @@ export async function PATCH(req: NextRequest, ctx: { params: Promise<{ id: strin
       .input("st", sql.NVarChar(20), newStatus || null)
       .input("w", sql.DateTimeOffset, when)
       .input("tm", sql.Int, b.team_id === null || b.team_id === "" ? null : Number(b.team_id))
+      .input("ow", sql.Int, b.owner_user_id === null || b.owner_user_id === "" || b.owner_user_id === undefined ? null : Number(b.owner_user_id))
       .input("qi", sql.Int, b.queue_index === null || b.queue_index === undefined ? null : Number(b.queue_index))
       .input("n", sql.NVarChar(sql.MAX), typeof b.note === "string" ? b.note.trim() || null : null)
       .input("rs", sql.NVarChar(300), typeof b.reason === "string" ? b.reason.trim() || null : null);

@@ -13,17 +13,20 @@ import { CALL_OUTCOME } from "@/lib/om/booking";
 import Timeline from "@/components/ui/Timeline";
 import JobHistoryItem from "@/components/om/JobHistoryItem";
 import JobFormPanel from "@/components/om/JobFormPanel";
+import AssignOwnerButton from "@/components/lead/AssignOwnerButton";
 import {
   BUCKET_LABEL, FLOW, TONE, thD, thDT,
   type HistoryRow, type Item, type Team,
 } from "@/lib/om/service-view";
 
-export default function JobDetail({ item, history, onBack, onSaved }: {
+export default function JobDetail({ item, history, onBack, onSaved, onReload }: {
   item: Item;
   /** ประวัติของบ้านหลังนี้ — หน้าเรียกใช้เป็นคนโหลด (มาพร้อม /api/om/follow?house=) */
   history: HistoryRow[];
   onBack: () => void;
   onSaved: (m: string) => void;
+  /** โหลดข้อมูลบ้านใหม่โดยไม่ออกจากหน้า (ใช้ตอนเปลี่ยนเจ้าของงาน) */
+  onReload?: () => void;
 }) {
   const cur = item.job_status ?? "follow";
   const [step, setStep] = useState(Math.max(0, FLOW.findIndex((f) => f.k === cur)));
@@ -85,6 +88,29 @@ export default function JobDetail({ item, history, onBack, onSaved }: {
             {item.booking_id && <span>ใบงาน #{item.booking_id}</span>}
           </div>
         </div>
+        {/* เจ้าของเคส (เฟส 4) — ปุ่มตัวเดียวกับฝั่งขาย ต่างแค่ endpoint ที่บันทึกกับ role ที่ดึงมาเลือก
+            ★ ว่างไว้ได้ ไม่ใช่ประตูล็อก — ใครเปิดหน้านี้ก็ยังทำงานต่อได้ (ผู้ใช้เคาะ 10 ก.ย.)
+            มีไว้ให้หน้า Today ตอบได้ว่า "งาน O&M ของฉัน" คืออะไร */}
+        {item.booking_id && (
+          <div className="flex items-center gap-1.5 shrink-0">
+            <span className="text-xxs text-gray-500 whitespace-nowrap">เจ้าของงาน</span>
+            <AssignOwnerButton
+              size="md"
+              usersRole="solar"
+              title="เจ้าของงานบริการ"
+              assignedUserId={item.owner_user_id}
+              assignedName={item.owner_name}
+              onAssign={async (userId) => {
+                await apiFetch(`/api/om/bookings/${item.booking_id}`, {
+                  method: "PATCH",
+                  headers: { "Content-Type": "application/json" },
+                  body: JSON.stringify({ owner_user_id: userId }),
+                });
+              }}
+              onChanged={onReload}
+            />
+          </div>
+        )}
         <button type="button" onClick={onBack} style={{ minHeight: 0 }}
           className="h-8 px-3.5 rounded-full border border-gray-200 text-xs font-bold text-gray-700 bg-white cursor-pointer">‹ กลับรายการ</button>
       </div>
