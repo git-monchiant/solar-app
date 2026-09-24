@@ -240,8 +240,11 @@ export const MODULES: AppModule[] = [
     group: "setup",
     desc: "แพ็คเกจบริการ O&M · สัญญา",
     roles: ["admin"],
-    soon: true,
-    menu: [],
+    // เมนูชุดเดียวกับการ์ด Package — แคตตาล็อก (ดูราคา) + จัดการ (แก้ราคา/เงื่อนไข)
+    menu: [
+      { label: "แคตตาล็อก", href: "/om/packages", icon: <I d={D.sun} /> },
+      { label: "จัดการ Package O&M", href: "/om/packages/manage", icon: <I d={D.archive} />, roles: ["admin"] },
+    ],
   },
   {
     key: "account", label: "บัญชี", emoji: "💰", tint: "bg-amber-50",
