@@ -1,13 +1,15 @@
 // โมเดลสถานะงานบริการ O&M — ★ ผู้ใช้เคาะ 7 ก.ย. 69 (แผน 20260907_01 ข้อ 13)
 //   6 สถานะเดินหน้าเดียว + 2 ทางออก · ทีมช่างเป็น "ฟิลด์" ไม่ใช่สถานะ (จ่ายทีมตอนไหนก็ได้)
 //   follow = ยังไม่มีวันนัด (ถึงรอบ/กำลังโทร/ลูกค้าขอมา) — ไม่ขึ้นปฏิทิน
+// ★ ชื่อชุดเดียวทุกหน้าจอ 24 ก.ย. 69 (แผน 20260924-02 เฟส 1) — เดิมสถานะเดียวมี 3 ชื่อ
+//   (การ์ด "ทำนัด" · ใบงาน "รอยืนยัน" · แท็บ ...) ป้ายแท็บ/แถบขั้นใน service-view.ts ต้องตรงกับชุดนี้
 export const BOOKING_STATUS = [
-  { k: "follow",    t: "ติดตาม",     onCal: false, tone: "bg-gray-500" },
-  { k: "pending",   t: "รอยืนยัน",   onCal: true,  tone: "bg-amber-500" },
-  { k: "confirmed", t: "ยืนยันแล้ว", onCal: true,  tone: "bg-blue-600" },
-  { k: "progress",  t: "กำลังทำ",    onCal: true,  tone: "bg-violet-600" },
-  { k: "checked",   t: "รอปิดงาน",   onCal: true,  tone: "bg-teal-600" },
-  { k: "closed",    t: "ปิดงาน",     onCal: true,  tone: "bg-emerald-600" },
+  { k: "follow",    t: "ติดตาม",      onCal: false, tone: "bg-gray-500" },
+  { k: "pending",   t: "รอยืนยันนัด", onCal: true,  tone: "bg-amber-500" },
+  { k: "confirmed", t: "นัดแล้ว",     onCal: true,  tone: "bg-blue-600" },
+  { k: "progress",  t: "เข้างาน",     onCal: true,  tone: "bg-violet-600" },
+  { k: "checked",   t: "รอปิด",       onCal: true,  tone: "bg-teal-600" },
+  { k: "closed",    t: "ปิดงาน",      onCal: true,  tone: "bg-emerald-600" },
 ] as const;
 export const EXIT_STATUS = [
   { k: "cancelled", t: "ยกเลิก",             tone: "bg-red-500" },

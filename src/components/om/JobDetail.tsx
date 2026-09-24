@@ -9,13 +9,13 @@
 
 import { useEffect, useState } from "react";
 import { apiFetch } from "@/lib/api";
-import { CALL_OUTCOME } from "@/lib/om/booking";
+import { CALL_OUTCOME, EXIT_STATUS, statusLabel, statusTone } from "@/lib/om/booking";
 import Timeline from "@/components/ui/Timeline";
 import JobHistoryItem from "@/components/om/JobHistoryItem";
 import JobFormPanel from "@/components/om/JobFormPanel";
 import AssignOwnerButton from "@/components/lead/AssignOwnerButton";
 import {
-  BUCKET_LABEL, FLOW, TONE, thD, thDT,
+  BUCKET_LABEL, FLOW, TONE, flowIndex, skipsPaidSteps, thD, thDT,
   type HistoryRow, type Item, type Team,
 } from "@/lib/om/service-view";
 
@@ -29,7 +29,12 @@ export default function JobDetail({ item, history, onBack, onSaved, onReload }: 
   onReload?: () => void;
 }) {
   const cur = item.job_status ?? "follow";
-  const [step, setStep] = useState(Math.max(0, FLOW.findIndex((f) => f.k === cur)));
+  // ★ ตำแหน่งบนแถบมาจาก flowIndex ที่เดียวกับการ์ด (แผน 20260924-02 เฟส 1)
+  //   เดิม findIndex เอง ใบงาน "รอลูกค้ายืนยัน" (checked) ไม่อยู่ใน FLOW เลยเปิดมาที่ขั้น 01
+  const at = flowIndex(cur);
+  const skip = skipsPaidSteps(item);
+  const isExit = (EXIT_STATUS.map((x) => x.k) as string[]).includes(cur);
+  const [step, setStep] = useState(at);
   const [outcome, setOutcome] = useState<string>("agreed");
   const [note, setNote] = useState("");
   const [when, setWhen] = useState("");
@@ -77,6 +82,7 @@ export default function JobDetail({ item, history, onBack, onSaved, onReload }: 
           <div className="flex items-center gap-2 flex-wrap">
             <h1 className="text-lg font-bold leading-tight">{item.house_number} — {item.customer_name || "ไม่มีชื่อในฐาน"}</h1>
             <span className={`text-xxs px-2 py-0.5 rounded-full text-white font-semibold ${TONE[item.bucket] ?? "bg-gray-400"}`}>{BUCKET_LABEL[item.bucket] ?? item.bucket}</span>
+            {isExit && <span className={`text-xxs px-2 py-0.5 rounded-full text-white font-bold ${statusTone(cur)}`}>งานล่าสุด {statusLabel(cur)}</span>}
             {item.team_name ? <span className="text-xxs px-2 py-0.5 rounded-full bg-gray-100 text-gray-600 font-semibold">ทีม {item.team_name}</span>
               : item.booking_id && <span className="text-xxs px-2 py-0.5 rounded-full bg-amber-100 text-amber-800 font-bold">⚠ ยังไม่จ่ายทีม</span>}
           </div>
@@ -119,13 +125,16 @@ export default function JobDetail({ item, history, onBack, onSaved, onReload }: 
         <div className="w-20 border-r border-gray-200 bg-gray-50 p-2 flex flex-col gap-1.5 shrink-0 overflow-y-auto">
           <div className="text-xxs text-gray-400 text-center font-bold tracking-widest">STEPS</div>
           {FLOW.map((f, i) => {
-            const at = Math.max(0, FLOW.findIndex((x) => x.k === cur));
-            const cls = i === step ? "bg-active text-white" : i < at ? "text-green-700" : i === at ? "text-gray-700" : "text-gray-400";
+            // เสนอราคา/ชำระเงิน ของงานใช้สิทธิ์ฟรี = ข้าม · ยังกดเข้าไปอ่านได้ว่าทำไมข้าม
+            const skipped = skip && "paid" in f && f.paid;
+            const cls = i === step ? "bg-active text-white" : skipped ? "text-gray-300"
+              : i < at ? "text-green-700" : i === at ? "text-gray-700" : "text-gray-400";
             return (
               <button key={f.k} type="button" onClick={() => setStep(i)} style={{ minHeight: 0 }}
                 className={`w-full py-1.5 rounded-xl flex flex-col items-center gap-0.5 cursor-pointer ${cls}`}>
                 <span className="text-sm font-bold leading-none">{String(i + 1).padStart(2, "0")}</span>
                 <span className="text-xxs leading-tight text-center">{f.t}</span>
+                {skipped && <span className="text-[9px] leading-none">ข้าม</span>}
               </button>
             );
           })}
@@ -174,7 +183,7 @@ export default function JobDetail({ item, history, onBack, onSaved, onReload }: 
                 </div>
 
                 <div className="mt-3 rounded-xl bg-gray-50 border border-gray-200 px-3.5 py-2.5 text-xs leading-relaxed text-gray-600">
-                  {outcome === "agreed" && <>กดบันทึกแล้ว <b>สร้างใบงาน</b> ขั้น <b>ทำนัด</b> พร้อมวันเวลาที่เลือก การ์ดจะย้ายออกจากแท็บติดตาม</>}
+                  {outcome === "agreed" && <>กดบันทึกแล้ว <b>สร้างใบงาน</b> ขั้น <b>นัดหมาย</b> (รอยืนยันนัด) พร้อมวันเวลาที่เลือก การ์ดจะย้ายออกจากแท็บติดตาม</>}
                   {outcome === "postponed" && <>สร้างใบงานขั้น <b>ติดตาม</b> พร้อมวันนัดโทรใหม่ ยังอยู่แท็บเดิมแต่จะไม่โผล่ซ้ำจนถึงวันนัด</>}
                   {outcome === "no_answer" && <><b>ไม่สร้างใบงาน</b> บันทึกประวัติอย่างเดียว · ครบจำนวนครั้งที่ตั้งไว้จะย้ายไปแท็บติดต่อไม่ได้</>}
                   {outcome === "declined" && <><b>ไม่สร้างใบงาน</b> ย้ายไปแท็บไม่เอา · <b>สิทธิ์ไม่ถูกตัด</b> ยังใช้ได้ถ้าเปลี่ยนใจ</>}
@@ -191,47 +200,81 @@ export default function JobDetail({ item, history, onBack, onSaved, onReload }: 
             </div>
           )}
 
+          {/* ★ ขั้น 02–03 เป็นของงานเสียเงิน (แผน 20260924-02) — ระบบเสนอราคา/รับเงินของ O&M มาเฟส 2–4
+              ตอนนี้บอกแค่ว่างานนี้ข้ามเพราะอะไร หรือจะต้องผ่านอะไรต่อ */}
           {step === 1 && (
-            <StepBox n="02" t="ทำนัด — รอลูกค้ายืนยัน">
-              {item.scheduled_at ? (
-                <>
-                  <div className="text-sm mb-3">นัดไว้ <b>{thDT(item.scheduled_at)}</b></div>
-                  <div className="flex gap-2 flex-wrap">
-                    <button type="button" disabled={busy || !item.booking_id} style={{ minHeight: 0 }}
-                      onClick={() => patchJob({ status: "confirmed" }, "ยืนยันนัดแล้ว")}
-                      className="h-9 px-5 rounded-xl bg-primary text-white text-sm font-bold cursor-pointer disabled:opacity-50">ลูกค้ายืนยันแล้ว</button>
-                    <button type="button" disabled={busy || !item.booking_id} style={{ minHeight: 0 }}
-                      onClick={() => patchJob({ status: "follow" }, "ย้ายกลับไปติดตาม")}
-                      className="h-9 px-4 rounded-xl border border-gray-200 text-sm font-semibold text-gray-600 bg-white cursor-pointer">กลับไปติดตาม</button>
-                  </div>
-                </>
-              ) : <div className="text-sm text-gray-500">ยังไม่มีวันนัด — กลับไปขั้นติดตามเพื่อบันทึกการโทร</div>}
-            </StepBox>
-          )}
-
-          {step === 2 && (
-            <StepBox n="03" t="รอ O&M — จ่ายทีมช่าง">
-              <div className="text-sm text-gray-600 mb-2">ปกติจ่ายงานด้วยการลากวางในปฏิทิน ตรงนี้เป็นทางลัดสำหรับงานเดี่ยว</div>
-              <div className="flex gap-2 flex-wrap">
-                {teams.map((t) => (
-                  <button key={t.id} type="button" disabled={busy || !item.booking_id} style={{ minHeight: 0 }}
-                    onClick={() => patchJob({ team_id: t.id }, `จ่ายงานให้ทีม ${t.name} แล้ว`)}
-                    className={`h-9 px-4 rounded-xl border text-sm font-bold cursor-pointer ${item.team_id === t.id ? "border-active bg-active-light text-active-dark" : "border-gray-200 bg-white text-gray-700"}`}>
-                    ทีม {t.name} <span className="font-normal text-gray-400">· ค้าง {t.open_jobs}</span>
-                  </button>
-                ))}
-                {!teams.length && <span className="text-sm text-gray-400">ยังไม่มีทีมช่างในระบบ</span>}
-              </div>
-              {item.team_id && (
-                <button type="button" disabled={busy} style={{ minHeight: 0 }}
-                  onClick={() => patchJob({ status: "progress" }, "เริ่มงานแล้ว")}
-                  className="mt-3 h-9 px-5 rounded-xl bg-primary text-white text-sm font-bold cursor-pointer disabled:opacity-50">ช่างถึงหน้างานแล้ว</button>
+            <StepBox n="02" t="เสนอราคา">
+              {skip ? (
+                <div className="text-sm text-gray-600">งานนี้<b>ใช้สิทธิ์ฟรี</b> — ข้ามขั้นเสนอราคา</div>
+              ) : (
+                <div className="text-sm text-gray-600 leading-relaxed">
+                  บ้านนี้<b>สิทธิ์หมดแล้ว</b> งานถัดไปต้องออกใบเสนอราคา — Sale ออกใบ → Solar Sup → Sale Sup อนุมัติ
+                  <div className="mt-1 text-xs text-gray-400">ระบบเสนอราคาของ O&amp;M ยังไม่เปิดใช้</div>
+                </div>
               )}
             </StepBox>
           )}
 
+          {step === 2 && (
+            <StepBox n="03" t="ชำระเงิน">
+              {skip ? (
+                <div className="text-sm text-gray-600">งานนี้<b>ใช้สิทธิ์ฟรี</b> — ไม่มีค่าบริการ</div>
+              ) : (
+                <div className="text-sm text-gray-600 leading-relaxed">
+                  เก็บค่าบริการ<b>ก่อนนัดหมาย</b> — Account ยืนยันรับเงินแล้วจึงนัดได้
+                  <div className="mt-1 text-xs text-gray-400">ระบบรับเงินของ O&amp;M ยังไม่เปิดใช้</div>
+                </div>
+              )}
+            </StepBox>
+          )}
+
+          {/* ★ นัดหมาย = รวมขั้น "ทำนัด" กับ "รอ O&M" เดิม (ขั้นย่อย 2410 รอยืนยันนัด · 2420 นัดแล้ว)
+              ปุ่มโผล่เฉพาะสถานะที่กดได้จริง — เดิมโผล่ตลอด กดผิดสถานะแล้วค่อยโดน API ปฏิเสธ */}
           {step === 3 && (
-            <StepBox n="04" t="เข้า O&M — ช่างทำงานหน้างาน">
+            <StepBox n="04" t="นัดหมาย — ยืนยันนัด · จ่ายทีมช่าง">
+              <div className="text-xs font-bold text-gray-500 mb-1.5">ยืนยันนัด</div>
+              {item.scheduled_at ? (
+                <>
+                  <div className="text-sm mb-2">นัดไว้ <b>{thDT(item.scheduled_at)}</b>
+                    {cur !== "pending" && at >= 3 && <span className="ml-2 text-green-700 font-bold">✓ ลูกค้ายืนยันแล้ว</span>}
+                  </div>
+                  {cur === "pending" && (
+                    <div className="flex gap-2 flex-wrap">
+                      <button type="button" disabled={busy || !item.booking_id} style={{ minHeight: 0 }}
+                        onClick={() => patchJob({ status: "confirmed" }, "ยืนยันนัดแล้ว")}
+                        className="h-9 px-5 rounded-xl bg-primary text-white text-sm font-bold cursor-pointer disabled:opacity-50">ลูกค้ายืนยันแล้ว</button>
+                      <button type="button" disabled={busy || !item.booking_id} style={{ minHeight: 0 }}
+                        onClick={() => patchJob({ status: "follow" }, "ย้ายกลับไปติดตาม")}
+                        className="h-9 px-4 rounded-xl border border-gray-200 text-sm font-semibold text-gray-600 bg-white cursor-pointer">กลับไปติดตาม</button>
+                    </div>
+                  )}
+                </>
+              ) : <div className="text-sm text-gray-500">ยังไม่มีวันนัด — กลับไปขั้นติดตามเพื่อบันทึกการโทร</div>}
+
+              <div className="border-t border-gray-100 mt-3.5 pt-3">
+                <div className="text-xs font-bold text-gray-500 mb-1.5">จ่ายทีมช่าง</div>
+                <div className="text-sm text-gray-600 mb-2">ปกติจ่ายงานด้วยการลากวางในปฏิทิน ตรงนี้เป็นทางลัดสำหรับงานเดี่ยว</div>
+                <div className="flex gap-2 flex-wrap">
+                  {teams.map((t) => (
+                    <button key={t.id} type="button" disabled={busy || !item.booking_id} style={{ minHeight: 0 }}
+                      onClick={() => patchJob({ team_id: t.id }, `จ่ายงานให้ทีม ${t.name} แล้ว`)}
+                      className={`h-9 px-4 rounded-xl border text-sm font-bold cursor-pointer ${item.team_id === t.id ? "border-active bg-active-light text-active-dark" : "border-gray-200 bg-white text-gray-700"}`}>
+                      ทีม {t.name} <span className="font-normal text-gray-400">· ค้าง {t.open_jobs}</span>
+                    </button>
+                  ))}
+                  {!teams.length && <span className="text-sm text-gray-400">ยังไม่มีทีมช่างในระบบ</span>}
+                </div>
+                {item.team_id && cur === "confirmed" && (
+                  <button type="button" disabled={busy} style={{ minHeight: 0 }}
+                    onClick={() => patchJob({ status: "progress" }, "เริ่มงานแล้ว")}
+                    className="mt-3 h-9 px-5 rounded-xl bg-primary text-white text-sm font-bold cursor-pointer disabled:opacity-50">ช่างถึงหน้างานแล้ว</button>
+                )}
+              </div>
+            </StepBox>
+          )}
+
+          {step === 4 && (
+            <StepBox n="05" t="เข้างาน — ช่างทำงานหน้างาน">
               {item.booking_id ? (
                 <>
                   {/* ★ เฟส 3: ใบตรวจรับงานฝังมาเลย ไม่ต้องเด้งออกไปหน้าอื่นแล้ว
@@ -252,11 +295,26 @@ export default function JobDetail({ item, history, onBack, onSaved, onReload }: 
             </StepBox>
           )}
 
-          {step === 4 && (
-            <StepBox n="05" t="ปิดงาน">
+          {/* ★ ขั้นใหม่ (เดิมไม่มีบนแถบ) — ช่างทำเสร็จแล้ว รอลูกค้าตรวจรับก่อนปิด */}
+          {step === 5 && (
+            <StepBox n="06" t="รอปิด — ลูกค้าตรวจรับ">
+              <div className="text-sm text-gray-600 leading-relaxed">
+                ช่างทำงานเสร็จแล้ว รอลูกค้า<b>เซ็นรับที่หน้างาน</b>หรือ<b>ยืนยันทาง LINE</b> · ปิดงานทำที่ใบตรวจรับงาน
+                {item.booking_id && (
+                  <a href={`/om/field/${item.booking_id}`}
+                    className="ml-2 text-primary font-bold no-underline hover:underline">เปิดใบตรวจรับงาน ›</a>
+                )}
+              </div>
+            </StepBox>
+          )}
+
+          {step === 6 && (
+            <StepBox n="07" t="ปิดงาน">
               <div className="text-sm text-gray-600">
-                ปิดงานทำที่หน้าช่าง หลังลูกค้าเซ็นรับหรือยืนยันทาง LINE ·
-                ปิดแล้วระบบจะ<b>ตัดสิทธิ์ล้าง 1 ครั้ง</b> เหลือ {Math.max(0, item.balance - 1)} ครั้ง
+                {cur === "closed" ? <b className="text-green-700">ปิดงานแล้ว</b> : "ปิดงานทำที่หน้าช่าง หลังลูกค้าเซ็นรับหรือยืนยันทาง LINE"}
+                {skip
+                  ? <> · ปิดแล้วระบบ{cur === "closed" ? "ตัด" : "จะตัด"}<b>สิทธิ์ล้าง 1 ครั้ง</b>{cur !== "closed" && <> เหลือ {Math.max(0, item.balance - 1)} ครั้ง</>}</>
+                  : <> · งานเสียเงิน <b>ไม่ตัดสิทธิ์</b></>}
               </div>
             </StepBox>
           )}

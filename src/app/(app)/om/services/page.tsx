@@ -1,6 +1,6 @@
 "use client";
 
-// งานบริการ O&M — ไปป์ไลน์ ติดตาม → ทำนัด → รอ O&M → เข้า O&M → ปิดงาน
+// งานบริการ O&M — ไปป์ไลน์ 7 ขั้น (แผน 20260924-02) ติดตาม → [เสนอราคา → ชำระเงิน เฉพาะงานเสียเงิน] → นัดหมาย → เข้างาน → รอปิด → ปิดงาน
 // mockup: 20260907_01 (โครงหน้า+ใบงาน) · 20260909_05 (แท็บติดตาม+บันทึกการโทร)
 // ★ ผู้ใช้เคาะ 10 ก.ย. 69
 //   - การ์ดในแท็บติดตาม "คำนวณสด" ไม่มีแถวงานรอไว้ · แถวงานเกิดตอนโทรแล้วได้ความเท่านั้น
@@ -74,7 +74,7 @@ export default function OmServicesPage() {
             (tabsRight ซ่อนบนจอแคบ ของพวกนี้ต้องใช้บนมือถือได้) */}
       <ListPageHeader
         title={activeItem?.label ?? "งานบริการ"}
-        subtitle="O&M · ติดตาม → ทำนัด → รอ O&M → เข้า O&M → ปิดงาน"
+        subtitle="O&M · ติดตาม → (เสนอราคา → ชำระเงิน) → นัดหมาย → เข้างาน → รอปิด → ปิดงาน"
         search={q}
         onSearchChange={setQ}
         searchPlaceholder="ค้นบ้านเลขที่ · ชื่อลูกค้า · เบอร์โทร"
@@ -85,6 +85,7 @@ export default function OmServicesPage() {
       />
 
       <div className="p-3 md:p-4">
+        {/* ★ 24 ก.ย. 69 จัดแถวเครื่องมือตามแนว Pipeline: ซ้าย = จำนวน+กรอง · ขวา = งานของฉัน/เรียง/มุมมอง */}
         <div className="mb-3 flex flex-wrap items-center gap-2 px-1">
           <span className="text-sm font-bold text-gray-700 whitespace-nowrap">{total.toLocaleString("th-TH")} หลังในแท็บนี้</span>
           <Dropdown
@@ -93,12 +94,6 @@ export default function OmServicesPage() {
             onChange={(v) => setGroup(v)}
             options={[{ value: "", label: `ทุกโครงการ (${projects.length})` },
               ...projects.map((p) => ({ value: p.project_id, label: `${p.project_name} · ${p.n}` }))]}
-          />
-          <Dropdown
-            className="w-44"
-            value={sort}
-            onChange={(v) => { if (v) setSort(v); }}
-            options={SORTS.map((s) => ({ value: s.k, label: `เรียง: ${s.t}` }))}
           />
           <span className="ml-auto flex items-center gap-2">
             <button
@@ -116,7 +111,12 @@ export default function OmServicesPage() {
               </span>
               งานของฉัน
             </button>
-            <span className="text-xs text-gray-500">มุมมอง</span>
+            <Dropdown
+              className="w-44"
+              value={sort}
+              onChange={(v) => { if (v) setSort(v); }}
+              options={SORTS.map((s) => ({ value: s.k, label: `เรียง: ${s.t}` }))}
+            />
             <span className="flex rounded-full border border-gray-200 overflow-hidden">
               {(["table", "card"] as const).map((v) => (
                 <button key={v} type="button" style={{ minHeight: 0 }} onClick={() => setView(v)}
@@ -130,19 +130,21 @@ export default function OmServicesPage() {
 
         {err && <div className="mb-3 rounded-lg bg-red-50 border border-red-200 px-4 py-2 text-sm text-red-700">{err}</div>}
         {tab === "follow" && (
-          <div className="mb-3 rounded-xl bg-amber-50 border border-amber-200 px-4 py-2 text-xs text-amber-900 leading-relaxed">
-            การ์ดในแท็บนี้<b>คำนวณสดจากฐาน</b> ยังไม่มีแถวงาน — เกณฑ์คือมีระบบติดตั้งและเลยรอบล้างแล้ว ·
-            แถวงานจะเกิดตอนโทรแล้วลูกค้า<b>ตกลงนัด</b>หรือ<b>ขอเลื่อน</b>เท่านั้น
-          </div>
+          // เดิมเป็นกล่องเหลืองเต็มแถว แย่งสายตาจากการ์ด — ย่อเป็นบรรทัดหมายเหตุ
+          <p className="mb-2.5 px-1 flex items-start gap-1.5 text-xxs text-gray-500 leading-relaxed">
+            <span className="shrink-0 w-3.5 h-3.5 mt-px rounded-full border border-gray-400 text-[9px] font-bold flex items-center justify-center">i</span>
+            <span>แท็บนี้<b className="text-gray-700">คำนวณสดจากฐาน</b> (มีระบบติดตั้งและเลยรอบล้างแล้ว) ·
+              แถวงานจะเกิดเมื่อโทรแล้วลูกค้า<b className="text-gray-700">ตกลงนัด</b>หรือ<b className="text-gray-700">ขอเลื่อน</b>เท่านั้น</span>
+          </p>
         )}
         {items === null ? <Loading /> : items.length === 0 ? (
           <div className="text-center text-gray-400 py-16 text-sm">ไม่มีรายการในแท็บนี้</div>
         ) : view === "card" ? (
-          <div className="space-y-2.5 max-w-[1600px]">
+          <div className="space-y-2">
             {items.map((r) => <JobCard key={r.house_id} r={r} onOpen={() => open(r.house_id)} />)}
           </div>
         ) : (
-          <div className="bg-white border border-gray-200 rounded-xl overflow-hidden max-w-[1600px]">
+          <div className="bg-white border border-gray-200 rounded-xl overflow-x-auto">
             <table className="w-full">
               <thead>
                 <tr className="bg-gray-50 border-b border-gray-200">

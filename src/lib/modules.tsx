@@ -1,5 +1,5 @@
 import { hasRole, type Role } from "@/lib/roles";
-import { OM_ACTIVE_STEPS, OM_FIELD_STEPS, OM_SCHEDULED_STEPS } from "@/lib/om/journey";
+import { OM_ACTIVE_STEPS, OM_FIELD_STEPS, OM_FIELD_SUBS, OM_SCHEDULED_STEPS } from "@/lib/om/journey";
 import {
   BoltIcon, CheckIcon, ClockIcon, DocumentIcon, DownloadIcon, LineIcon, PhoneIcon, XIcon,
 } from "@/components/ui/icons";
@@ -206,7 +206,7 @@ export const MODULES: AppModule[] = [
     group: "operation",
     desc: "ลูกค้า · บ้าน · งานบริการ · ปฏิทิน · เช็คลิสต์ · แชต LINE",
     roles: ["sales", "solar", "sales_sup", "solar_sup", "admin"],
-    // จอแรกของโมดูล = งานบริการ (2100–2500) — เท่ากับ badge การ์ดพอดี แบบเดียวกับ Warranty/Quotation
+    // จอแรกของโมดูล = งานบริการ (2100–2600) — เท่ากับ badge การ์ดพอดี แบบเดียวกับ Warranty/Quotation
     // ★ แก้ 23 ก.ย. 69: เดิมลง /om/inbox เพราะตอนนั้นยังไม่มีหน้างานบริการ แชตเป็นที่เดียวที่มีงานเข้า
     //   พอการ์ดมีตัวเลขแล้ว (เฟส 1) กดเข้าไปต้องเจองานที่นับให้ดู ไม่ใช่หน้าแชต
     defaultHref: "/om/services",
@@ -225,7 +225,7 @@ export const MODULES: AppModule[] = [
       //   /om/field/[id] ต้องมีเลขใบงาน เมนูจึงชี้ไปหน้ารายการ /om/field ก่อน
       { label: "งานบริการ", href: "/om/services", icon: <I d={D.wrench} />, steps: OM_ACTIVE_STEPS },
       { label: "ปฏิทิน / จ่ายงาน", href: "/om/calendar", icon: <I d={D.calendar} />, steps: OM_SCHEDULED_STEPS },
-      { label: "เช็คลิสต์", href: "/om/field", icon: <I d={D.clipboardCheck} />, steps: OM_FIELD_STEPS },
+      { label: "เช็คลิสต์", href: "/om/field", icon: <I d={D.clipboardCheck} />, steps: OM_FIELD_STEPS, subs: OM_FIELD_SUBS },
       { label: "แชต LINE", href: "/om/inbox", icon: <LineIcon className="w-6 h-6" /> },
       { label: "LINE OA", href: "/om/line-oa", icon: <I d={D.cog} /> },
       { label: "ตั้งค่า O&M", href: "/om/settings", icon: <I d={D.cog} />, roles: ["admin", "solar_sup", "sales_sup"] },
@@ -440,7 +440,7 @@ const ACCOUNT_BAR: ModuleMenuItem[] = [
 export const OM_BAR: ModuleMenuItem[] = [
   { label: "งานบริการ", href: "/om/services", icon: <I d={D.wrench} />, steps: OM_ACTIVE_STEPS },
   { label: "ปฏิทิน", href: "/om/calendar", icon: <I d={D.calendar} />, steps: OM_SCHEDULED_STEPS },
-  { label: "เช็คลิสต์", href: "/om/field", icon: <I d={D.clipboardCheck} />, steps: OM_FIELD_STEPS },
+  { label: "เช็คลิสต์", href: "/om/field", icon: <I d={D.clipboardCheck} />, steps: OM_FIELD_STEPS, subs: OM_FIELD_SUBS },
   { label: "แชต", href: "/om/inbox", icon: <LineIcon className="w-6 h-6" /> },
 ];
 

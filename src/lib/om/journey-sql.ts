@@ -3,14 +3,14 @@
 
 import { DUE_WASH_SQL } from "./entitlement";
 import { ACTIVE_STATUS } from "./booking";
-import { OM_FOLLOW_STEP, OM_STEP_BY_STATUS } from "./journey";
+import { OM_FOLLOW_STEP, OM_STEP_BY_STATUS, OM_SUB_BY_STATUS } from "./journey";
 
 const quote = (xs: readonly string[]) => xs.map((s) => `'${s}'`).join(",");
 
-const caseSql = (col: string) =>
-  `CASE ${col} ${Object.entries(OM_STEP_BY_STATUS)
+const caseSql = (col: string, map: Record<string, number>, fallback?: number) =>
+  `CASE ${col} ${Object.entries(map)
     .map(([s, code]) => `WHEN '${s}' THEN ${code}`)
-    .join(" ")} END`;
+    .join(" ")}${fallback != null ? ` ELSE ${fallback}` : ""} END`;
 
 /**
  * แถวสรุปฝั่ง O&M — รูปแบบเดียวกับที่ /api/journey-summary คืนให้ฝั่งขาย
@@ -26,6 +26,9 @@ const caseSql = (col: string) =>
  *   ⇒ การ์ดโมดูลตอบ "ค้างกี่ชิ้น" ได้ถูก ไม่บวมเพราะนับซ้ำ
  *   และตัดที่ท่อน A ไม่ใช่ท่อน B เพราะใบงานจริงชนะการคำนวณสดเสมอ
  *   (ท่อน B ยังนับ follow ไว้ ไม่งั้นงานที่โทรแล้วจะหายไปทั้งสองท่อน)
+ *
+ * ★ ท่อน B คืน sub ด้วย (24 ก.ย. 69) — นัดหมาย 2400 แยก 2410 รอยืนยันนัด / 2420 นัดแล้ว
+ *   เมนูเช็คลิสต์นับเฉพาะ 2420 (ยังไม่ยืนยันนัด = ยังไม่ถึงคิวช่าง)
  *
  * ★ ท่อน A ใช้ derived table + GROUP BY แทน COUNT(*) เปล่า ๆ เพื่อไม่ให้คืนแถว n = 0
  *   ตอนไม่มีบ้านค้าง — ให้เหมือนฝั่งขายที่ GROUP BY แล้วขั้นว่างหายไปเอง
@@ -46,7 +49,9 @@ export const OM_JOURNEY_SUMMARY_SQL = `
                         WHERE b.house_id = h.id AND b.status IN (${quote(ACTIVE_STATUS)}))
   ) a GROUP BY journey_step, journey_sub
   UNION ALL
-  SELECT ${caseSql("b.status")} AS journey_step, 0 AS journey_sub, COUNT(*) AS n
-    FROM om_bookings b
-   WHERE b.status IN (${quote(Object.keys(OM_STEP_BY_STATUS))})
-   GROUP BY ${caseSql("b.status")}`;
+  SELECT journey_step, journey_sub, COUNT(*) AS n FROM (
+    SELECT ${caseSql("b.status", OM_STEP_BY_STATUS)} AS journey_step,
+           ${caseSql("b.status", OM_SUB_BY_STATUS, 0)} AS journey_sub
+      FROM om_bookings b
+     WHERE b.status IN (${quote(Object.keys(OM_STEP_BY_STATUS))})
+  ) j GROUP BY journey_step, journey_sub`;
