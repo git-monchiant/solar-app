@@ -12,6 +12,7 @@ import { runJobs } from "@/lib/om/cron-jobs";
 //   pm2 start "curl ..." --name om-cron --cron "5 * * * *" --no-autorestart
 //
 // ?job=sweep  กวาดงานขาย · ?job=rem  ดึงทะเบียน REM 1 ชุด · ?job=promo ดึงโปรโมชันรายหลัง
+// ?job=notify เตือนเจ้าของเคสก่อนถึงวันนัด
 // ?job=all    ทั้งหมด (ค่าเริ่มต้น)
 // ?limit=n    จำนวนโครงการต่อรอบของ rem (ค่าเริ่มต้น 5 · 113 โครงการจะครบใน ~23 ชั่วโมง)
 
@@ -35,6 +36,7 @@ export async function GET(req: NextRequest) {
     rem: all || job === "rem",
     reconcile: all || job === "rem" || job === "reconcile",
     promo: all || job === "promo",
+    notify: all || job === "notify",
   }, { remLimit, promoLimit });
 
   return NextResponse.json({ ok: true, at: new Date().toISOString(), ...out });

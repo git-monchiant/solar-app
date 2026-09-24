@@ -34,8 +34,12 @@ export async function register() {
       const db = await getOmDb();               // throw ถ้า DB_NAME ไม่ใช่ v3 — กันยิงผิดฐาน
       void db;
       const auto = await getSetting<boolean>("sync.rem_auto");
+      // ★ เฟส 6: เตือนนัดล่วงหน้าอาศัยรอบนี้ด้วย — ถ้าเช็คแค่ sync.rem_auto
+      //   ปิด sync REM ทีเดียวการเตือนจะเงียบไปด้วยโดยไม่มีใครรู้
+      //   (runScheduledJobs เช็คธงของแต่ละงานเองอยู่แล้ว ปล่อยผ่านตรงนี้ไม่ทำให้ REM ถูกยิง)
+      const notifyAuto = await getSetting<boolean>("notify.job_reminder");
       const everyMin = Number(await getSetting("sync.rem_every_min")) || 60;
-      if (auto === false) return;
+      if (auto === false && notifyAuto === false) return;
       if (Date.now() - lastRun < everyMin * 60_000) return;   // ยังไม่ถึงรอบ
       running = true;
       lastRun = Date.now();

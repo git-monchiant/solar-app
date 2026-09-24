@@ -31,6 +31,15 @@ export const TONE: Record<string, string> = {
   progress: "bg-violet-600", checked: "bg-teal-600", closed: "bg-emerald-600",
   unreachable: "bg-red-500", declined: "bg-gray-400", noquota: "bg-orange-500",
 };
+/** สีอ่อนของแท็บเดียวกัน — ใช้กับชิปบนหน้าภาพรวม (พื้นเข้มอ่านเลขโต ๆ ไม่ออก) */
+export const TONE_SOFT: Record<string, string> = {
+  follow: "bg-gray-100 text-gray-700", pending: "bg-amber-50 text-amber-700",
+  confirmed: "bg-blue-50 text-blue-700", progress: "bg-violet-50 text-violet-700",
+  checked: "bg-teal-50 text-teal-700", closed: "bg-emerald-50 text-emerald-700",
+  unreachable: "bg-red-50 text-red-700", declined: "bg-gray-50 text-gray-500",
+  noquota: "bg-orange-50 text-orange-700",
+};
+
 export const BUCKET_LABEL: Record<string, string> = Object.fromEntries(TABS.map((t) => [t.k, t.t]));
 
 export const SORTS = [

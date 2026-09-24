@@ -4,6 +4,8 @@ import { fixDates, sql } from "@/lib/db";
 import { getOmDb } from "@/lib/om/line";
 import { actionLabel, logBooking, type BookingAction } from "@/lib/om/booking-log";
 import { canMove, toThaiOffset } from "@/lib/om/booking";
+import { notifyOmUser, resolveOmNotifications } from "@/lib/om/notifications";
+import { getSettings } from "@/lib/om/settings";
 
 // งานบริการรายชิ้น — ดูรายละเอียด + ประวัติ · เปลี่ยนสถานะ/วันนัด/ทีม/ลำดับคิว
 // ★ ทุกการเปลี่ยนต้องลง om_booking_history ในทรานแซกชันเดียวกัน (booking-log.ts)
@@ -63,8 +65,11 @@ export async function PATCH(req: NextRequest, ctx: { params: Promise<{ id: strin
   const cur = (await db.request().input("id", sql.Int, id).query(`
     SELECT b.id, b.house_id, b.status, b.team_id, b.owner_user_id, b.queue_index, b.rescheduled_count, b.service_type_id,
            CONVERT(varchar(33), b.scheduled_at, 126) scheduled_at,
-           CAST(st.consumes_quota AS int) consumes_quota
-    FROM om_bookings b LEFT JOIN om_service_type st ON st.id = b.service_type_id
+           CAST(st.consumes_quota AS int) consumes_quota,
+           h.house_number, st.label_th service_type
+    FROM om_bookings b
+    JOIN om_houses h ON h.id = b.house_id
+    LEFT JOIN om_service_type st ON st.id = b.service_type_id
     WHERE b.id = @id`)).recordset[0];
   if (!cur) return NextResponse.json({ error: "ไม่พบงานนี้" }, { status: 404 });
 
@@ -172,6 +177,33 @@ export async function PATCH(req: NextRequest, ctx: { params: Promise<{ id: strin
 
     await logBooking(tx, { bookingId: id, action, actorUserId: gate.userId ?? null,
       from, to, reason: typeof b.reason === "string" ? b.reason.trim() || null : null });
+
+    // ── แจ้งเตือน (เฟส 6) — อยู่ใน transaction เดียวกับการแก้ใบงาน
+    //    rollback แล้วต้องไม่มีใครได้กระดิ่งเรื่องที่ไม่เคยเกิดขึ้น
+    const ownerChanged = Object.prototype.hasOwnProperty.call(to, "owner_user_id");
+    const newOwner = ownerChanged ? (to.owner_user_id as number | null) : null;
+    const jobDone = newStatus === "closed" || newStatus === "cancelled" || newStatus === "no_show";
+
+    if (ownerChanged || jobDone) {
+      // ปิดของเก่าก่อนเสมอ: เปลี่ยนมือแล้วคนเดิมไม่ต้องถือเรื่องนี้ไว้ · งานจบแล้วก็ไม่ต้องเตือนใคร
+      await resolveOmNotifications(tx, { bookingId: id, exceptUserId: jobDone ? null : newOwner });
+    }
+    if (ownerChanged && newOwner) {
+      const cfg = await getSettings("notify.");
+      if (cfg["notify.assign_owner"] !== false) {
+        await notifyOmUser(tx, {
+          recipientUserId: newOwner,
+          type: "om_owner_assigned",
+          eventKey: `om_owner_assigned:${id}`,
+          title: "มีงาน O&M ถูกมอบหมายให้คุณ",
+          message: `บ้าน ${cur.house_number ?? "-"} · ${cur.service_type ?? "งานบริการ"}`,
+          houseId: cur.house_id,
+          bookingId: id,
+          createdBy: gate.userId ?? null,
+        });
+      }
+    }
+
     await tx.commit();
     return NextResponse.json({ ok: true, id, status: newStatus || cur.status });
   } catch (e) {

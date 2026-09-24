@@ -9,7 +9,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { apiFetch } from "@/lib/api";
 import Loading from "@/components/ui/Loading";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import { CALL_OUTCOME } from "@/lib/om/booking";
 import {
   BUCKET_LABEL, SORTS, TABS, TONE, monthsAgo, thD,
@@ -26,8 +26,12 @@ export default function OmServicesPage() {
   const router = useRouter();
   // เปิดรายละเอียดเป็น URL จริง — back/refresh/ส่งลิงก์ใช้ได้ (เฟส 3)
   const open = (houseId: number) => router.push(`/om/services/${houseId}`);
-  const [tab, setTab] = useState<string>("follow");
-  const [group, setGroup] = useState("");
+  // ★ เฟส 6: รับ ?tab= / ?group= จาก URL — หน้าภาพรวมลิงก์เข้ามาที่แท็บ/โครงการที่กดบนตัวเลข
+  //   อ่านเป็นค่าตั้งต้นเท่านั้น กดแท็บต่อในหน้านี้ไม่ต้องเขียน URL กลับ
+  //   (ถ้าเขียนกลับ ปุ่ม back จะกลายเป็นย้อนแท็บทีละอัน แทนที่จะกลับหน้าเดิม)
+  const sp = useSearchParams();
+  const [tab, setTab] = useState<string>(() => sp.get("tab") || "follow");
+  const [group, setGroup] = useState(() => sp.get("group") || "");
   const [sort, setSort] = useState("overdue");
   const [q, setQ] = useState("");
   const [view, setView] = useState<"card" | "table">("card");

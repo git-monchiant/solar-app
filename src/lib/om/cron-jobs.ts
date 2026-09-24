@@ -5,11 +5,12 @@ import { finishSync, logSync, syncProject, syncPromotionsByUnit } from "@/lib/om
 import { reconcileRemLinks } from "@/lib/om/rem-reconcile";
 import { runSweep } from "@/lib/om/sales-sweep";
 import { getSetting } from "@/lib/om/settings";
+import { notifyOmUser } from "@/lib/om/notifications";
 
 // ตัวรันงานเบื้องหลัง — ใช้ร่วมกันทั้ง endpoint /api/om/cron (ตัวตั้งเวลาข้างนอกเรียก)
 // และ scheduler ในแอป (instrumentation) · ทุกงานเขียน om_sync_log ดูย้อนได้
 
-export type JobFlags = { sweep?: boolean; rem?: boolean; reconcile?: boolean; promo?: boolean };
+export type JobFlags = { sweep?: boolean; rem?: boolean; reconcile?: boolean; promo?: boolean; notify?: boolean };
 
 export async function runJobs(
   db: sql.ConnectionPool, flags: JobFlags, opts: { remLimit?: number; promoLimit?: number; actor?: number | null } = {},
@@ -94,6 +95,51 @@ export async function runJobs(
     }
   }
 
+  // 5) เตือนเจ้าของเคสก่อนถึงวันนัด (เฟส 6 ของแผน 20260922-01)
+  //    ★ ไม่มี SLA ในรอบนี้ (ผู้ใช้สั่งข้ามเฟส 5) — อันนี้คือเตือนตามวันนัดที่มีอยู่จริง ไม่ใช่การทวงงานเกินกำหนด
+  //    ★ event_key มีวันที่นัดอยู่ด้วย ⇒ เลื่อนนัดแล้วได้เตือนใหม่ · รันซ้ำวันเดียวกันไม่แจ้งซ้ำ
+  if (flags.notify) {
+    const logId = await logSync(db, "om_notify", "cron", actor);
+    try {
+      const days = Number(await getSetting("notify.reminder_days")) || 1;
+      const r = await db.request().input("d", sql.Int, days).query(`
+        SELECT b.id, b.house_id, b.owner_user_id, h.house_number,
+               CONVERT(char(10), b.scheduled_at, 23) ymd, st.label_th service_type
+          FROM om_bookings b
+          JOIN om_houses h ON h.id = b.house_id
+          LEFT JOIN om_service_type st ON st.id = b.service_type_id
+         WHERE b.status IN (N'pending', N'confirmed')
+           AND b.owner_user_id IS NOT NULL
+           AND b.scheduled_at IS NOT NULL
+           AND CAST(b.scheduled_at AS date)
+               BETWEEN CAST(SYSDATETIMEOFFSET() AS date)
+                   AND DATEADD(day, @d, CAST(SYSDATETIMEOFFSET() AS date))`);
+      let sent = 0;
+      // วันนี้ตามเวลาไทย — toISOString() เปล่า ๆ เป็น UTC ช่วงตีหนึ่งถึงเจ็ดโมงจะเพี้ยนไปหนึ่งวัน
+      const thToday = new Date(Date.now() + 7 * 3600_000).toISOString().slice(0, 10);
+      for (const row of r.recordset) {
+        const when = String(row.ymd) === thToday ? "วันนี้" : "วันที่ " + String(row.ymd);
+        const ok = await notifyOmUser(db, {
+          recipientUserId: Number(row.owner_user_id),
+          type: "om_job_reminder",
+          eventKey: `om_job_reminder:${row.id}:${row.ymd}`,
+          title: `ใกล้ถึงนัด O&M ${when}`,
+          message: `บ้าน ${row.house_number ?? "-"} · ${row.service_type ?? "งานบริการ"}`,
+          houseId: Number(row.house_id),
+          bookingId: Number(row.id),
+        });
+        if (ok) sent++;
+      }
+      await finishSync(db, logId, { status: "ok", fetched: r.recordset.length, inserted: sent,
+        message: `นัดใน ${days} วัน ${r.recordset.length} ใบ · แจ้ง ${sent}` });
+      out.notify = { due: r.recordset.length, sent };
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : "แจ้งเตือนไม่สำเร็จ";
+      await finishSync(db, logId, { status: "error", message: msg });
+      out.notify = { error: msg };
+    }
+  }
+
   return out;
 }
 
@@ -103,12 +149,14 @@ export async function runScheduledJobs(): Promise<Record<string, unknown> | null
   const remAuto = await getSetting<boolean>("sync.rem_auto");
   const sweepAuto = await getSetting<boolean>("sync.sweep_auto");
   const promoAuto = await getSetting<boolean>("sync.promo_auto");
-  if (!remAuto && !sweepAuto && !promoAuto) return null;
+  const notifyAuto = await getSetting<boolean>("notify.job_reminder");
+  if (!remAuto && !sweepAuto && !promoAuto && !notifyAuto) return null;
   const batch = Number(await getSetting("sync.rem_batch")) || 5;
   return runJobs(db, {
     sweep: sweepAuto !== false,
     rem: remAuto !== false,
     reconcile: remAuto !== false,   // เชื่อมกลับคู่กับ rem เสมอ
     promo: promoAuto !== false,
+    notify: notifyAuto !== false,
   }, { remLimit: batch });
 }
