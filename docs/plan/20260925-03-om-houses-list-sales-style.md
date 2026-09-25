@@ -67,7 +67,7 @@ mockup: [docs/mockup/20260925-03-om-houses-list-sales-style/](../mockup/20260925
 ## ตรวจ
 
 - [x] `npx tsc --noEmit` + eslint ผ่าน · dev (พอร์ต 3020) `/om/houses` = 200
-- [ ] ผู้ใช้ดูหน้าจริง desktop + mobile (ต้อง login — ตรวจเองไม่ได้)
+- [x] ผู้ใช้ดูหน้าจริงแล้ว OK (25 ก.ย. 69)
 
 ## ขอบเขตโค้ด (ชุดแนะนำ)
 

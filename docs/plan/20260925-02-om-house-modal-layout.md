@@ -31,4 +31,4 @@ modal (`/om/houses` → กดบ้าน) เรียงทุกอย่า
 ## ตรวจ
 
 - [x] `npx tsc --noEmit` + eslint ผ่าน · dev (พอร์ต 3020) `/om/houses` = 200
-- [ ] ผู้ใช้ดูหน้าจริง desktop + mobile
+- [x] ผู้ใช้ดูหน้าจริงแล้ว OK (25 ก.ย. 69)
