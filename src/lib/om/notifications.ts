@@ -18,7 +18,10 @@ type DbExecutor = sql.ConnectionPool | sql.Transaction;
 
 export type OmNotificationType =
   | "om_owner_assigned"     // ถูกมอบหมายให้ดูแลใบงาน
-  | "om_job_reminder";      // ใกล้ถึงวันนัดแล้ว
+  | "om_job_reminder"       // ใกล้ถึงวันนัดแล้ว
+  // ★ แผน 20260924-02 เฟส 4: ผลการตรวจสลิปค่าบริการของ Account → แจ้ง Sale ในกล่อง O&M
+  | "om_payment_confirmed"  // รับเงินแล้ว — โทรนัดได้
+  | "om_payment_rejected";  // Account ปฏิเสธสลิป — แนบใหม่
 
 export interface OmNotificationInput {
   recipientUserId: number;

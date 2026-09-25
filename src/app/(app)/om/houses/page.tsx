@@ -73,7 +73,7 @@ const FIELD_LABEL: Record<string, string> = {
   warranty_start: "วันเริ่มประกัน", transfer_date: "วันโอน", inverter_brand: "ยี่ห้ออินเวอร์เตอร์",
 };
 const ROLE: Record<string, string> = { owner: "เจ้าของ", resident: "ผู้อยู่อาศัย", contact: "ผู้ติดต่อ" };
-const SRC: Record<string, string> = { contract_base: "สิทธิ์ตั้งต้น", renewal: "ต่อสัญญา", purchase: "ซื้อเพิ่ม", import: "import", manual_adjust: "ปรับมือ" };
+const SRC: Record<string, string> = { contract_base: "สิทธิ์ตั้งต้น", renewal: "ต่อสัญญา", purchase: "ซื้อเพิ่ม", import: "import", manual_adjust: "ปรับมือ", expire: "หมดอายุ" };
 // แท็บกรอง — key ตรงกับทั้ง /api/om/houses?filter= และธงใน /api/om/houses/groups
 const TABS: { k: string; t: string; s: keyof Stats }[] = [
   { k: "", t: "ทั้งหมด", s: "total" },

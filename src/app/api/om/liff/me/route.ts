@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { expireOmGrantsIfDue } from "@/lib/om/entitlement-expiry";
 import { authenticateLiff, readJsonBody } from "@/lib/om/liff-auth";
 import { fixDates, sql } from "@/lib/db";
 import { getOmDb } from "@/lib/om/line";
@@ -32,6 +33,7 @@ export async function GET(req: NextRequest) {
   const lineUserId = auth.identity.lineUserId;
 
   const db = await getOmDb();
+  await expireOmGrantsIfDue(db);   // สิทธิ์ที่หมดอายุตัดวันละครั้ง ก่อนอ่านยอด (แผน 20260924-02 เฟส 4)
   const houses = await getLinkedHouses(lineUserId);
   if (houses.length === 0) {
     const u = await db.request().input("id", sql.NVarChar(64), lineUserId)

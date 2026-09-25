@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { expireOmGrantsIfDue } from "@/lib/om/entitlement-expiry";
 import { requireAuth, requireAnyRole } from "@/lib/auth";
 import { fixDates, sql } from "@/lib/db";
 import { getOmDb } from "@/lib/om/line";
@@ -13,6 +14,7 @@ export async function GET(req: NextRequest, ctx: { params: Promise<{ id: string 
   const id = Number((await ctx.params).id);
 
   const db = await getOmDb();
+  await expireOmGrantsIfDue(db);   // สิทธิ์ที่หมดอายุตัดวันละครั้ง ก่อนอ่านยอด (แผน 20260924-02 เฟส 4)
   const r = await db.request().input("id", sql.Int, id).query(`
     SELECT h.id, h.house_number, h.project_name raw_project, h.project_id, h.project_code,
            ISNULL(pj.name_th, h.project_name) project_name, h.segment, h.is_vip, h.has_solar,

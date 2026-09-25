@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { expireOmGrantsIfDue } from "@/lib/om/entitlement-expiry";
 import { requireAuth } from "@/lib/auth";
 import { sql } from "@/lib/db";
 import { getOmDb } from "@/lib/om/line";
@@ -32,6 +33,7 @@ export async function GET(req: NextRequest) {
   const maxAttempts = Number(cfg["call.max_attempts"] ?? 3);
 
   const db = await getOmDb();
+  await expireOmGrantsIfDue(db);   // สิทธิ์ที่หมดอายุตัดวันละครั้ง ก่อนอ่านยอด (แผน 20260924-02 เฟส 4)
   const r = await db.request()
     .input("max", sql.Int, maxAttempts)
     .query(`

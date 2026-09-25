@@ -6,6 +6,7 @@ import { logBooking } from "@/lib/om/booking-log";
 import { getQuotationActor } from "@/lib/quotation";
 import { resolveAccountingNotifications } from "@/lib/accounting-notifications";
 import { grantPurchasedRights } from "@/lib/om/om-quotation";
+import { notifyOmUser, resolveOmNotifications } from "@/lib/om/notifications";
 
 // Account ยืนยันรับเงิน / ปฏิเสธสลิป ค่าบริการงาน O&M (แผน docs/plan/20260924-02 เฟส 4)
 // ★ ผู้ใช้เคาะ 24 ก.ย. ข้อ 1 "Account เหมือนฝั่งขาย" — ยืนยันรับเงินอย่างเดียว สิทธิ์ account / admin
@@ -34,11 +35,15 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
   await tx.begin();
   try {
     const p = (await new sql.Request(tx).input("id", sql.Int, id).query(`
-      SELECT p.id, p.lead_id, p.amount, p.slip_field, p.confirmed_at,
-             q.id quotation_id, q.doc_no, q.om_package_id, b.id booking_id, b.house_id, b.status job_status, b.service_type_id
+      SELECT p.id, p.lead_id, p.amount, p.slip_field, p.confirmed_at, p.submitted_by,
+             q.id quotation_id, q.doc_no, q.om_package_id, q.created_by quote_by,
+             b.id booking_id, b.house_id, b.status job_status, b.service_type_id, b.owner_user_id,
+             h.house_number, l.full_name customer_name
         FROM payments p WITH (UPDLOCK)
         JOIN quotations q ON q.lead_id = p.lead_id AND p.slip_field = CONCAT(N'om_quote_', q.id)
         JOIN om_bookings b WITH (UPDLOCK) ON b.id = q.om_booking_id
+        JOIN om_houses h ON h.id = b.house_id
+        JOIN leads l ON l.id = p.lead_id
        WHERE p.id = @id AND p.slip_field LIKE 'om[_]quote[_]%'`)).recordset[0];
     const fail = async (error: string, status = 409) => { await tx.rollback(); return NextResponse.json({ error }, { status }); };
     if (!p) return fail("ไม่พบรายการค่าบริการ O&M", 404);
@@ -64,6 +69,24 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
       });
     }
     await resolveAccountingNotifications(tx, { paymentId: id });
+
+    // ★ แจ้ง Sale ในกล่องแจ้งเตือนของ O&M (ไม่ใช่กระดิ่งกลาง — ดูเหตุผลใน lib/om/notifications.ts)
+    //   ผู้รับ: คนแนบสลิป · Sale ที่ออกใบ · เจ้าของใบงาน (ไม่ซ้ำ · ไม่แจ้งคนที่กดเอง)
+    const recipients = [...new Set([p.submitted_by, p.quote_by, p.owner_user_id].filter((u): u is number => !!u))];
+    const who = `${p.customer_name}${p.house_number ? ` · บ้าน ${p.house_number}` : ""}`;
+    for (const uid of recipients) {
+      await notifyOmUser(tx, action === "confirm"
+        ? { recipientUserId: uid, type: "om_payment_confirmed", eventKey: `om_payment_confirmed:${id}`,
+            title: `รับเงินค่าบริการ ${p.doc_no} แล้ว — โทรนัดได้`,
+            message: `${who} · ${Number(p.amount).toLocaleString("th-TH")} บาท · ยืนยันโดย ${actor.full_name}`,
+            houseId: p.house_id, bookingId: p.booking_id, createdBy: gate.userId }
+        : { recipientUserId: uid, type: "om_payment_rejected", eventKey: `om_payment_rejected:${id}`,
+            title: `Account ปฏิเสธสลิป ${p.doc_no} — แนบใหม่`,
+            message: `${who} · เหตุผล: ${reason}`,
+            houseId: p.house_id, bookingId: p.booking_id, createdBy: gate.userId });
+    }
+    // รับเงินแล้ว = เรื่องสลิปที่เคยถูกปฏิเสธของใบงานนี้จบแล้ว
+    if (action === "confirm") await resolveOmNotifications(tx, { bookingId: p.booking_id, types: ["om_payment_rejected"] });
     await tx.commit();
     return NextResponse.json({ ok: true });
   } catch (e) {

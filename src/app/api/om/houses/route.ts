@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { expireOmGrantsIfDue } from "@/lib/om/entitlement-expiry";
 import { requireAuth } from "@/lib/auth";
 import { DUE_WASH_SQL, isCleaning } from "@/lib/om/entitlement";
 import { fixDates, sql } from "@/lib/db";
@@ -22,6 +23,7 @@ export async function GET(req: NextRequest) {
   const size = Math.min(100, Math.max(10, Number(u.get("size")) || 30));
 
   const db = await getOmDb();
+  await expireOmGrantsIfDue(db);   // สิทธิ์ที่หมดอายุตัดวันละครั้ง ก่อนอ่านยอด (แผน 20260924-02 เฟส 4)
   const r = db.request()
     .input("q", sql.NVarChar(120), `%${q}%`)
     .input("qp", sql.VarChar(24), `%${q.replace(/\D/g, "") || " "}%`)
