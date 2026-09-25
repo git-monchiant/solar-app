@@ -170,6 +170,7 @@ export async function commitLead(db: sql.ConnectionPool, lead: LeadRow, o: Commi
     // ── ระบบติดตั้ง
     // ★ warranty_start เป็น computed column (ตัวหลังสุดระหว่าง install_date กับ transfer_date/rem_transfer_date)
     //   เขียนตรง ๆ ไม่ได้ — ใส่ install_date กับ rem_transfer_date แล้วมันคำนวณเอง
+    //   ถ้า lead มีใบรับประกันแล้ว syncSalesWarranty() ด้านล่างเติม sales_warranty_start ซึ่งชนะสูตรนี้เสมอ
     const instIns = await new sql.Request(tx)
       .input("h", sql.Int, houseId).input("l", sql.Int, lead.id)
       .input("d", sql.Date, lead.install_actual_date ?? lead.install_completed_at ?? null)
@@ -190,6 +191,7 @@ export async function commitLead(db: sql.ConnectionPool, lead: LeadRow, o: Commi
                       CASE WHEN @ct IS NULL THEN NULL ELSE N'transferred' END, SYSDATETIMEOFFSET(),
                       N'สร้างอัตโนมัติจากงานขายที่ติดตั้งเสร็จ')`);
     const instId = instIns.recordset[0].id as number;
+    await syncSalesWarranty(() => new sql.Request(tx), instId);
 
     // ── สิทธิ์ล้างแผง: qty = ครั้งต่อปี × จำนวนปี (ตามที่ข้อมูลนำเข้าใช้: contract_term 2 → qty 4)
     // ★ ถ้าฝั่งขายไม่ได้กรอก จะไม่เดาให้ — สร้างบ้านไว้ก่อน แล้วแจ้งว่ายังไม่มีสิทธิ์
@@ -225,7 +227,49 @@ export async function commitLead(db: sql.ConnectionPool, lead: LeadRow, o: Commi
   }
 }
 
+// ── วันประกันตามใบรับประกันฝั่งขาย (แผน docs/plan/20260925-01)
+// ★ ตามค่าจาก leads ทุกรอบ ไม่ใช่คัดลอกครั้งเดียว — ใบรับประกันมักออกหลังกดติดตั้งเสร็จ
+//   และฝ่ายขายแก้/ออกใบใหม่ได้ · computed warranty_start ใช้ sales_warranty_start ก่อนเสมอ
+//   ฝั่งขายไม่มีวัน / ลบทิ้ง → NULL → ถอยกลับสูตรวันติดตั้ง/วันโอนเดิม
+// ★ วันเริ่มเปลี่ยนเมื่อไรจด om_field_sources ให้หน้า "ที่มาข้อมูล" ตอบได้ว่าทำไมวันขยับ
+//   ตรรกะเดียวกับ backfill ใน migration 20260925-1000_om_warranty_from_sales.sql
+const SYNC_SALES_WARRANTY = (oneInstallation: boolean) => `
+  DECLARE @chg TABLE (installation_id INT, house_id INT, lead_id INT, doc_no NVARCHAR(100),
+                      old_sws DATE, new_sws DATE, old_ws DATE, new_ws DATE);
+  UPDATE i SET sales_warranty_start = l.warranty_start_date, sales_warranty_end = l.warranty_end_date,
+               updated_at = SYSDATETIMEOFFSET()
+  OUTPUT inserted.id, inserted.house_id, inserted.lead_id, l.warranty_doc_no,
+         deleted.sales_warranty_start, inserted.sales_warranty_start, deleted.warranty_start, inserted.warranty_start
+    INTO @chg
+  FROM om_installations i JOIN leads l ON l.id = i.lead_id
+  WHERE l.om_only = 0 ${oneInstallation ? "AND i.id = @inst" : ""}
+    AND EXISTS (SELECT i.sales_warranty_start, i.sales_warranty_end
+                EXCEPT SELECT l.warranty_start_date, l.warranty_end_date);
+
+  INSERT INTO om_field_sources (house_id, installation_id, table_name, column_name, new_value, old_value,
+                                source_kind, source_ref, match_method, confidence)
+  SELECT house_id, installation_id, 'om_installations', 'warranty_start',
+         CONVERT(char(10), new_ws, 23), CONVERT(char(10), old_ws, 23), 'sales',
+         CONCAT(N'lead ', lead_id, CASE WHEN doc_no IS NULL THEN N'' ELSE N' · ใบรับประกัน ' + doc_no END),
+         CASE WHEN new_sws IS NULL THEN N'ฝั่งขายลบวันประกัน → กลับไปใช้วันติดตั้ง/วันโอน'
+              ELSE N'วันเริ่มประกันบนใบรับประกันฝั่งขาย' END,
+         'confirmed'
+    FROM @chg c
+   WHERE EXISTS (SELECT c.old_sws EXCEPT SELECT c.new_sws);
+
+  SELECT COUNT(*) n FROM @chg;`;
+
+export async function syncSalesWarranty(req: () => sql.Request, installationId?: number): Promise<number> {
+  const rq = req();
+  if (installationId) rq.input("inst", sql.Int, installationId);
+  const r = await rq.query(SYNC_SALES_WARRANTY(!!installationId));
+  return Number(r.recordset[0]?.n ?? 0);
+}
+
 export async function runSweep(db: sql.ConnectionPool, opts: { dryRun?: boolean } = {}) {
+  // ตามวันประกันก่อนกวาด — lead ตัวไหนพังกลางรอบ บ้านที่อยู่ในระบบแล้วก็ยังได้วันล่าสุด
+  // (บ้านที่เพิ่งสร้างในรอบนี้ commitLead ตามให้เองแล้ว)
+  const warrantySynced = opts.dryRun ? 0 : await syncSalesWarranty(() => db.request());
   const leads = (await db.request().query(PENDING_LEADS)).recordset as unknown as LeadRow[];
   const out: SweepOutcome[] = [];
   for (const lead of leads) {
@@ -241,7 +285,7 @@ export async function runSweep(db: sql.ConnectionPool, opts: { dryRun?: boolean 
         action: "queued", contract_id: m.best?.contract_id ?? null });
     }
   }
-  return { scanned: leads.length, results: out };
+  return { scanned: leads.length, results: out, warrantySynced };
 }
 
 // ดึง lead รายตัวสำหรับปุ่มในคิว (คอลัมน์ชุดเดียวกับตอนกวาด)

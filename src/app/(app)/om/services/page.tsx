@@ -11,11 +11,7 @@ import { apiFetch } from "@/lib/api";
 import Loading from "@/components/ui/Loading";
 import { useSearchParams } from "next/navigation";
 import { useOpenOmService } from "@/lib/hooks/useOpenOmService";
-import { CALL_OUTCOME } from "@/lib/om/booking";
-import {
-  BUCKET_LABEL, SORTS, TABS, TONE, monthsAgo, thD,
-  type Item,
-} from "@/lib/om/service-view";
+import { SORTS, TABS, type Item } from "@/lib/om/service-view";
 import ListPageHeader from "@/components/layout/ListPageHeader";
 import Dropdown from "@/components/ui/Dropdown";
 import { useActiveMenuItem } from "@/lib/hooks/useActiveModule";
@@ -35,7 +31,6 @@ export default function OmServicesPage() {
   const [group, setGroup] = useState(() => sp.get("group") || "");
   const [sort, setSort] = useState("overdue");
   const [q, setQ] = useState("");
-  const [view, setView] = useState<"card" | "table">("card");
   // ★ ติ๊ก "งานของฉัน" — ยกบล็อกจาก Pipeline ทั้งก้อน (กติกา ui-rules) รวมถึงการจำค่าไว้
   //   ผู้ใช้เคาะ 24 ก.ย. 69: งาน O&M ให้อยู่ในโมดูล O&M ก่อน ยังไม่ขึ้นหน้า Today
   //   ⇒ ตอบ "งานของฉัน" ได้โดยไม่ต้องออกจากโมดูล
@@ -86,7 +81,8 @@ export default function OmServicesPage() {
       />
 
       <div className="p-3 md:p-4">
-        {/* ★ 24 ก.ย. 69 จัดแถวเครื่องมือตามแนว Pipeline: ซ้าย = จำนวน+กรอง · ขวา = งานของฉัน/เรียง/มุมมอง */}
+        {/* ★ 24 ก.ย. 69 จัดแถวเครื่องมือตามแนว Pipeline: ซ้าย = จำนวน+กรอง · ขวา = งานของฉัน/เรียง
+            ★ 25 ก.ย. 69 ผู้ใช้สั่งยกเลิกมุมมองแบบตาราง — เหลือแบบการ์ดอย่างเดียว */}
         <div className="mb-3 flex flex-wrap items-center gap-2 px-1">
           <span className="text-sm font-bold text-gray-700 whitespace-nowrap">{total.toLocaleString("th-TH")} หลังในแท็บนี้</span>
           <Dropdown
@@ -118,14 +114,6 @@ export default function OmServicesPage() {
               onChange={(v) => { if (v) setSort(v); }}
               options={SORTS.map((s) => ({ value: s.k, label: `เรียง: ${s.t}` }))}
             />
-            <span className="flex rounded-full border border-gray-200 overflow-hidden">
-              {(["table", "card"] as const).map((v) => (
-                <button key={v} type="button" style={{ minHeight: 0 }} onClick={() => setView(v)}
-                  className={`px-3 py-1 text-xs font-bold cursor-pointer ${view === v ? "bg-active-light text-active-dark" : "bg-white text-gray-500"}`}>
-                  {v === "table" ? "แบบตาราง" : "แบบการ์ด"}
-                </button>
-              ))}
-            </span>
           </span>
         </div>
 
@@ -140,34 +128,9 @@ export default function OmServicesPage() {
         )}
         {items === null ? <Loading /> : items.length === 0 ? (
           <div className="text-center text-gray-400 py-16 text-sm">ไม่มีรายการในแท็บนี้</div>
-        ) : view === "card" ? (
+        ) : (
           <div className="space-y-2">
             {items.map((r) => <JobCard key={r.house_id} r={r} onOpen={() => open(r.house_id)} />)}
-          </div>
-        ) : (
-          <div className="bg-white border border-gray-200 rounded-xl overflow-x-auto">
-            <table className="w-full">
-              <thead>
-                <tr className="bg-gray-50 border-b border-gray-200">
-                  {["บ้าน", "ลูกค้า", "เบอร์", "สิทธิ์", "ล้างล่าสุด", "สถานะ", "โทรล่าสุด"].map((h) => (
-                    <th key={h} className="text-left px-4 py-2 text-xxs font-bold uppercase tracking-wide text-gray-500 whitespace-nowrap">{h}</th>
-                  ))}
-                </tr>
-              </thead>
-              <tbody>
-                {items.map((r) => (
-                  <tr key={r.house_id} onClick={() => open(r.house_id)} className="border-b border-gray-100 last:border-0 hover:bg-teal-50/40 cursor-pointer">
-                    <td className="px-4 py-2 text-sm font-bold">{r.house_number}</td>
-                    <td className="px-4 py-2 text-sm">{r.customer_name || <span className="text-gray-400">ไม่มีชื่อ</span>}</td>
-                    <td className="px-4 py-2 text-sm tabular-nums">{r.phone || <span className="text-amber-600 font-bold">ไม่มีเบอร์</span>}</td>
-                    <td className="px-4 py-2 text-sm font-bold text-primary-dark">{Math.max(0, r.balance)}</td>
-                    <td className="px-4 py-2 text-sm">{r.last_wash ? `${thD(r.last_wash)} (${monthsAgo(r.last_wash)} ด.)` : <span className="text-amber-600 font-bold">ยังไม่เคยล้าง</span>}</td>
-                    <td className="px-4 py-2"><span className={`text-xxs px-2 py-0.5 rounded-full text-white font-semibold ${TONE[r.bucket] ?? "bg-gray-400"}`}>{BUCKET_LABEL[r.bucket] ?? r.bucket}</span></td>
-                    <td className="px-4 py-2 text-xs text-gray-500">{r.last_outcome ? `${CALL_OUTCOME[r.last_outcome]?.t ?? r.last_outcome} · ${thD(r.last_call_at)}` : "ยังไม่มีใครโทร"}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
           </div>
         )}
       </div>

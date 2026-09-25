@@ -28,6 +28,7 @@ interface MeData {
     rem_size_kwp: number | null;
     warranty_start: string | null;
     warranty_install_until: string | null;
+    warranty_install_years: number | null;
     warranty_inverter_until: string | null;
     warranty_panel_until: string | null;
   } | null;
@@ -160,7 +161,7 @@ export default function OmLiffMyHome() {
               <div className="mb-2 text-xs font-medium text-zinc-400">เริ่ม {TH_DATE(me.installation.warranty_start)}</div>
             )}
             <div className="border-t border-zinc-200">
-              <WarrantyRow label="ประกันติดตั้ง" years={2} until={me.installation?.warranty_install_until} />
+              <WarrantyRow label="ประกันติดตั้ง" years={me.installation?.warranty_install_years ?? 2} until={me.installation?.warranty_install_until} />
               <WarrantyRow label="ประกัน Inverter" years={5} until={me.installation?.warranty_inverter_until} />
               <WarrantyRow label="ประกันแผง" years={10} until={me.installation?.warranty_panel_until} />
             </div>

@@ -30,7 +30,11 @@ export async function GET(req: NextRequest, ctx: { params: Promise<{ id: string 
            CONVERT(char(10), i.install_date, 23) install_date,
            CONVERT(char(10), i.transfer_date, 23) transfer_date,
            CONVERT(char(10), i.warranty_start, 23) warranty_start,
+           -- ช่วงประกันบนใบรับประกันฝั่งขาย (มีเฉพาะบ้านจากงานขาย) — warranty_start ใช้ตัวนี้ก่อนแล้ว
+           CONVERT(char(10), i.sales_warranty_start, 23) sales_warranty_start,
+           CONVERT(char(10), i.sales_warranty_end, 23) sales_warranty_end,
            i.warranty_doc_no, i.battery_brand, i.battery_kwh, i.rem_contract_id, i.lead_id, i.note,
+           CONVERT(char(10), i.created_at, 23) created_at,
            i.po_number,
            -- ที่มาของข้อมูล: มาจาก REM / ไฟล์ import ชุดไหน / เช็คกับ REM ล่าสุดเมื่อไร
            i.rem_contract_status, CONVERT(char(10), i.rem_transfer_date, 23) rem_transfer_date,

@@ -26,13 +26,22 @@ export async function runJobs(
       const made = r.results.filter((x) => x.action === "created" || x.action === "linked").length;
       const queued = r.results.filter((x) => x.action === "queued").length;
       await finishSync(db, logId, { status: "ok", fetched: r.scanned, inserted: made, skipped: queued,
-        message: `กวาด ${r.scanned} · เข้าระบบ ${made} · เข้าคิว ${queued}` });
-      out.sweep = { scanned: r.scanned, committed: made, queued };
+        message: `กวาด ${r.scanned} · เข้าระบบ ${made} · เข้าคิว ${queued} · ตามวันประกัน ${r.warrantySynced}` });
+      out.sweep = { scanned: r.scanned, committed: made, queued, warrantySynced: r.warrantySynced };
     } catch (e) {
       const msg = e instanceof Error ? e.message : "กวาดไม่สำเร็จ";
       await finishSync(db, logId, { status: "error", message: msg });
       out.sweep = { error: msg };
     }
+  }
+
+  // ★ 25 ก.ย. 69: ไม่มี REM_API_KEY เดิมข้ามเงียบ ๆ — ทะเบียนค้างตั้งแต่ 9 ก.ย. โดยไม่มีบันทึกสักแถว
+  //   ตัวตั้งเวลารันครบทุกรอบแต่ไม่เคยดึง REM เลย · จดเป็น error ทุกรอบที่ข้าม (ครอบทั้งทะเบียนและของแถม)
+  if ((flags.rem || flags.promo) && !remConfigured()) {
+    const logId = await logSync(db, "rem_sync", "cron", actor);
+    await finishSync(db, logId, { status: "error",
+      message: "ยังไม่ได้ตั้ง REM_API_KEY บนเซิร์ฟเวอร์นี้ — ข้ามดึงทะเบียน REM และของแถม" });
+    out.rem = { error: "ยังไม่ได้ตั้ง REM_API_KEY" };
   }
 
   // 2) ดึงทะเบียน REM — เอาโครงการที่ค้างนานสุดก่อน
@@ -144,7 +153,12 @@ export async function runJobs(
 }
 
 // รันตามค่าใน settings (เรียกจาก scheduler) — ถ้าปิด sync.rem_auto จะไม่ทำอะไร
-export async function runScheduledJobs(): Promise<Record<string, unknown> | null> {
+// ★ 25 ก.ย. 69: แยก 2 รอบ — เดิมทุกงานรันตามรอบ sync.rem_every_min (ตอนนี้ 360 = ทุก 6 ชม.)
+//   ทำให้กวาดงานขายช้ากว่าที่เคาะไว้ 1 ก.ย. ("รอบละ 1 ชั่วโมง") ทั้งที่หน้าจอบอกว่าทุกชั่วโมง
+//   due.sweep = รอบกวาดงานขาย (ทุก 1 ชม.) · due.rem = รอบ REM + เชื่อมกลับ + ของแถม + เตือนนัด (ตาม rem_every_min)
+export async function runScheduledJobs(
+  due: { rem: boolean; sweep: boolean } = { rem: true, sweep: true },
+): Promise<Record<string, unknown> | null> {
   const db = await getOmDb();
   const remAuto = await getSetting<boolean>("sync.rem_auto");
   const sweepAuto = await getSetting<boolean>("sync.sweep_auto");
@@ -153,10 +167,10 @@ export async function runScheduledJobs(): Promise<Record<string, unknown> | null
   if (!remAuto && !sweepAuto && !promoAuto && !notifyAuto) return null;
   const batch = Number(await getSetting("sync.rem_batch")) || 5;
   return runJobs(db, {
-    sweep: sweepAuto !== false,
-    rem: remAuto !== false,
-    reconcile: remAuto !== false,   // เชื่อมกลับคู่กับ rem เสมอ
-    promo: promoAuto !== false,
-    notify: notifyAuto !== false,
+    sweep: due.sweep && sweepAuto !== false,
+    rem: due.rem && remAuto !== false,
+    reconcile: due.rem && remAuto !== false,   // เชื่อมกลับคู่กับ rem เสมอ
+    promo: due.rem && promoAuto !== false,
+    notify: due.rem && notifyAuto !== false,
   }, { remLimit: batch });
 }

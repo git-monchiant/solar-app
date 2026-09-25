@@ -53,7 +53,7 @@ export async function POST(req: NextRequest) {
     const made = out.results.filter((x) => x.action === "created" || x.action === "linked").length;
     const queued = out.results.filter((x) => x.action === "queued").length;
     if (!dryRun) await finishSync(db, logId, { status: "ok", fetched: out.scanned, inserted: made, skipped: queued,
-      message: `กวาด ${out.scanned} · เข้าระบบ ${made} · เข้าคิว ${queued}` });
+      message: `กวาด ${out.scanned} · เข้าระบบ ${made} · เข้าคิว ${queued} · ตามวันประกัน ${out.warrantySynced}` });
     return NextResponse.json({ ok: true, dry_run: dryRun, ...out });
   } catch (e) {
     const msg = e instanceof Error ? e.message : "กวาดไม่สำเร็จ";

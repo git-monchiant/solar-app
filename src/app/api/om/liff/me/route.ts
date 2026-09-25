@@ -57,7 +57,12 @@ export async function GET(req: NextRequest) {
     db.request().input("hid", sql.Int, activeId).query(`
       SELECT TOP 1 id, inverter_brand, rem_size_kwp,
              CAST(warranty_start AS date) AS warranty_start,
-             CAST(DATEADD(year, 2,  warranty_start) AS date) AS warranty_install_until,
+             -- ★ ประกันงานติดตั้ง: บ้านที่มีใบรับประกันฝั่งขาย ใช้วันสิ้นสุด/จำนวนปีบนใบ (แผน 20260925-01)
+             --   ไม่มีใบ → 2 ปีนับจากวันเริ่มประกันแบบเดิม · Inverter/แผง เป็นประกันผู้ผลิต นับแบบเดิม
+             CAST(COALESCE(sales_warranty_end, DATEADD(year, 2, warranty_start)) AS date) AS warranty_install_until,
+             CASE WHEN sales_warranty_start IS NOT NULL AND sales_warranty_end IS NOT NULL
+                  THEN CAST(ROUND(DATEDIFF(day, sales_warranty_start, sales_warranty_end) / 365.25, 0) AS int)
+                  ELSE 2 END AS warranty_install_years,
              CAST(DATEADD(year, 5,  warranty_start) AS date) AS warranty_inverter_until,
              CAST(DATEADD(year, 10, warranty_start) AS date) AS warranty_panel_until
       FROM om_installations WHERE house_id = @hid ORDER BY id`),
