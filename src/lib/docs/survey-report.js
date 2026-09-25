@@ -207,7 +207,7 @@ export function buildSurveyReportHtml(L, D, PKG, options = {}) {
       ["อายุบ้าน", V(HOUSE_AGE[D.house_age],"ต่ำกว่า 5 ปี / 5-10 ปี / 10-20 ปี / มากกว่า 20 ปี")],
       ["ลักษณะหลังคา", V(roofLabel(L.survey_roof_material) || roofLabel(D.roof_shape),"หลังคากระเบื้อง / เมทัลชีท / คอนกรีต")],
       ["มิเตอร์ไฟฟ้า (การไฟฟ้า)", V(meterTxt || (D.meter_size?`${METER[D.meter_size]||D.meter_size}${D.electrical_phase?` ${PHASE[D.electrical_phase]}`:""}`:null),"กฟน. / กฟภ. - ขนาดมิเตอร์ เช่น 15(45)A 1 เฟส")],
-      ["ค่าไฟฟ้าเฉลี่ยต่อเดือน<br/>(ก่อนติดตั้ง)", V(L.survey_monthly_bill?`${baht(L.survey_monthly_bill)} บาท/เดือน`:(D.monthly_bill?`${baht(D.monthly_bill)} บาท/เดือน`:null),"กรอกจากบิลค่าไฟย้อนหลัง")],
+      ["ค่าไฟฟ้าเฉลี่ยต่อเดือน<br/>(ก่อนติดตั้ง)", V(D.monthly_bill?`${baht(D.monthly_bill)} บาท/เดือน`:(L.survey_monthly_bill?`${baht(L.survey_monthly_bill)} บาท/เดือน`:null),"กรอกจากบิลค่าไฟย้อนหลัง")],
       ["วันที่เข้าสำรวจ", V(thDate(L.survey_date),"วว/ดด/ปปปป")],
       ["ผู้สำรวจหน้างาน", V(L.surveyor,"ชื่อทีมสำรวจ")],
     ])}
@@ -465,8 +465,12 @@ export function buildSurveyReportHtml(L, D, PKG, options = {}) {
   // is credited toward payment but must not make the system price/payback look lower.
   const loanPrice = quotation.contractAmount ?? gross ?? quotation.netAmount ?? PKG?.price ?? 112000;
   const loanKw = PKG?.kwp ?? 3;
-  const loanBill = L.survey_monthly_bill ?? D.monthly_bill ?? 5000;
   const financeInputs = options.financial?.inputs || {};
+  // ค่าไฟของหน้านี้ต้องเป็นตัวเดียวกับที่ใบเสนอราคาใช้คำนวณยอดประหยัดและระยะคืนทุน
+  // (financeOutputs ด้านล่าง) ไม่อย่างนั้นในหน้าเดียวกันจะมีค่าไฟสองชุด — เดิมอ่านจาก
+  // ฟอร์มสำรวจตรง ๆ ซึ่งมีตัวเลขที่ไม่ใช่ค่าจริงปนอยู่ (999,999) ทำให้ "ค่าไฟรวมถ้าไม่ติด"
+  // ขึ้นหลักสิบล้าน · ถ้าใบไม่มีค่า ใช้แบบสอบถามก่อนฟอร์มสำรวจ ตามกติกาเดียวกับใบเสนอราคา
+  const loanBill = Number(financeInputs.current_monthly_bill) || Number(D.monthly_bill) || Number(L.survey_monthly_bill) || 5000;
   const financeOutputs = options.financial?.outputs || {};
   const downPct = Number(financeInputs.down_payment_percent ?? 20);
   const rate1 = Number(financeInputs.interest_rate_year_1_2 ?? 3.5);
@@ -488,6 +492,11 @@ export function buildSurveyReportHtml(L, D, PKG, options = {}) {
     co2Yr: financeOutputs.co2_reduction_tons_per_year ?? C.co2Yr,
     trees: financeOutputs.equivalent_trees ?? C.trees,
   });
+  // ยอดประหยัดรวมตลอดสัญญาต้องคิดจากยอดประหยัดต่อเดือนตัวเดียวกับที่แสดงในหน้านี้
+  // calcLoan คิด save จากกำลังผลิตเต็ม (ไม่จำกัดด้วยค่าไฟจริง) แล้วคูณเป็น saveTot ไว้ก่อน
+  // พอ save ถูกแทนด้วยค่าจากใบเสนอราคา (จำกัดไม่เกินค่าไฟ) saveTot จึงค้างเป็นค่าเดิม
+  // เช่น ประหยัด 9,000/เดือน แต่ยอดรวม 84 เดือนขึ้น 1,008,000 (= 12,000 × 84)
+  C.saveTot = C.save * C.n;
   const CALC_INDEP=[["มูลค่า Solar Package (บาท)",baht(C.price),"in"],["เงินดาวน์ (%)",num(downPct,1)+"%","in"],["ดอกเบี้ย ปีที่ 1-2 (% ต่อปี)",num(rate1,3)+"%","in"],["ดอกเบี้ย ปีที่ 3 เป็นต้นไป (% ต่อปี)",num(rate2,3)+"%","in"],["ระยะเวลากู้",termMonths+" เดือน","in"]];
   const CALC_CALC=[["เงินดาวน์ (บาท)",baht(C.down)],["วงเงินกู้ (บาท)",baht(C.loan)],["ดอกเบี้ยรายเดือน ปีที่ 1-2",num(C.m1*100,4)+"%"],["ดอกเบี้ยรายเดือน ปีที่ 3 เป็นต้นไป",num(C.m2*100,4)+"%"],["จำนวนงวดช่วงที่ 1",C.n1+" งวด"],["จำนวนงวดช่วงที่ 2",C.n2+" งวด"],["ดอกเบี้ยถัวเฉลี่ยถ่วงน้ำหนัก/ปี",num(C.wAvg*100,3)+"%"]];
   const CALC_RESULT=[["ค่างวดผ่อน (บาท/เดือน) — เท่ากันทุกงวด",baht(C.pmt),"big"],["ยอดจ่ายรวมตลอดสัญญา (บาท)",baht(C.total)],["ดอกเบี้ยรวมตลอดสัญญา (บาท)",baht(C.interest)],["ดอกเบี้ยถัวเฉลี่ย EIR / ปี",num(C.eir*100,3)+"%"]];
