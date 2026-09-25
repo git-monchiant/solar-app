@@ -26,7 +26,7 @@ export type OmNotificationType =
 export interface OmNotificationInput {
   recipientUserId: number;
   type: OmNotificationType;
-  /** กันแจ้งซ้ำ — คีย์เดิมยิงซ้ำจะอัปเดตแถวเดิมแล้วปลุกให้เป็น "ยังไม่อ่าน" ใหม่ */
+  /** กันแจ้งซ้ำ — คีย์เดิมยิงซ้ำจะอัปเดตแถวเดิมแล้วปลุกให้เป็น "ยังไม่อ่าน" ใหม่ (ยกเว้น oncePerDay ด้านล่าง) */
   eventKey: string;
   title: string;
   message?: string | null;
@@ -35,6 +35,13 @@ export interface OmNotificationInput {
   /** ไม่ส่ง = เด้งไปหน้ารายละเอียดของบ้านหลังนั้น (ต้องมี houseId) */
   targetUrl?: string | null;
   createdBy?: number | null;
+  /**
+   * ★ สำหรับการเตือนตามรอบ (om_job_reminder) — คีย์เดิมที่แจ้งไปแล้ว "วันนี้" จะไม่ถูกปลุกซ้ำ
+   *   ตัวตั้งเวลารันทุกรอบ REM (6 ชม.) + ทุกครั้งที่ server บูต · เดิมตั้งแจ้งเตือนเดิมกลับเป็น "ยังไม่อ่าน"
+   *   และดันขึ้นบนสุดทุกรอบ (เจอ 25 ก.ย. 69) · ข้ามวันยังปลุกได้ เช่น เมื่อวาน "นัดพรุ่งนี้" → วันนี้ "นัดวันนี้"
+   *   ไม่ส่ง = พฤติกรรมเดิม (เหตุการณ์ใหม่จริง เช่น มอบหมายซ้ำ/ผลตรวจสลิป ต้องปลุกทุกครั้ง)
+   */
+  oncePerDay?: boolean;
 }
 
 function request(db: DbExecutor) {
@@ -43,7 +50,7 @@ function request(db: DbExecutor) {
 
 /**
  * แจ้งเตือน 1 คน — ไม่แจ้งตัวเอง (คนกดมอบหมายรู้อยู่แล้วว่าทำอะไรไป)
- * คืน false เมื่อข้ามการแจ้ง เพื่อให้ผู้เรียกเขียน log ได้ตรงความจริง
+ * คืน false เมื่อข้ามการแจ้ง (รวมกรณี oncePerDay แล้ววันนี้แจ้งไปแล้ว) เพื่อให้ผู้เรียกเขียน log ได้ตรงความจริง
  */
 export async function notifyOmUser(db: DbExecutor, input: OmNotificationInput): Promise<boolean> {
   if (!input.recipientUserId) return false;
@@ -53,7 +60,7 @@ export async function notifyOmUser(db: DbExecutor, input: OmNotificationInput): 
     // ?focus=1 เหมือนแจ้งเตือนฝั่งขาย (/leads/<id>?focus=1) — เปิดมาแบบไม่มีเมนูซ้าย บันทึกแล้วอยู่หน้าเดิม
     ?? (input.houseId ? `/om/services/${input.houseId}?focus=1` : "/om/services");
 
-  await request(db)
+  const r = await request(db)
     .input("houseId", sql.Int, input.houseId ?? null)
     .input("bookingId", sql.Int, input.bookingId ?? null)
     .input("uid", sql.Int, input.recipientUserId)
@@ -63,12 +70,14 @@ export async function notifyOmUser(db: DbExecutor, input: OmNotificationInput): 
     .input("message", sql.NVarChar(1000), input.message ?? null)
     .input("targetUrl", sql.NVarChar(500), targetUrl)
     .input("createdBy", sql.Int, input.createdBy ?? null)
+    .input("oncePerDay", sql.Bit, input.oncePerDay ? 1 : 0)
     .query(`
       MERGE dbo.om_notifications WITH (HOLDLOCK) AS target
       USING (SELECT @uid recipient_user_id, @eventKey event_key) AS source
         ON target.recipient_user_id = source.recipient_user_id
        AND target.event_key = source.event_key
-      WHEN MATCHED THEN UPDATE SET
+      -- created_at = เวลาที่ปลุกครั้งล่าสุด (ตั้งใหม่ทุกครั้งที่ปลุก) · oncePerDay ข้ามถ้าปลุกไปแล้ววันนี้
+      WHEN MATCHED AND (@oncePerDay = 0 OR CAST(target.created_at AS date) < CAST(GETDATE() AS date)) THEN UPDATE SET
         house_id = @houseId, booking_id = @bookingId,
         notification_type = @type, title = @title, message = @message,
         target_url = @targetUrl, created_by = @createdBy,
@@ -81,7 +90,8 @@ export async function notifyOmUser(db: DbExecutor, input: OmNotificationInput): 
         @houseId, @bookingId, source.recipient_user_id, @type,
         source.event_key, @title, @message, @targetUrl, @createdBy
       );`);
-  return true;
+  // ไม่มี oncePerDay ทุกครั้งกระทบ 1 แถวเหมือนเดิม · มี = 0 แถวเมื่อวันนี้ปลุกไปแล้ว
+  return (r.rowsAffected?.[0] ?? 0) > 0;
 }
 
 /**

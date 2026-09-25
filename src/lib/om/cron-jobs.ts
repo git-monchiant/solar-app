@@ -136,6 +136,7 @@ export async function runJobs(
           message: `บ้าน ${row.house_number ?? "-"} · ${row.service_type ?? "งานบริการ"}`,
           houseId: Number(row.house_id),
           bookingId: Number(row.id),
+          oncePerDay: true,   // รอบนี้รันซ้ำหลายครั้งต่อวัน — วันนี้เตือนแล้วไม่ปลุกซ้ำ
         });
         if (ok) sent++;
       }
