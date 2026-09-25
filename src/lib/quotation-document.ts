@@ -316,7 +316,12 @@ export async function buildQuotationDocumentSnapshot(quotationId: number, transa
     else if (!key.startsWith("approval_") && !key.startsWith("approver_") && !key.startsWith("sent_to_customer_")) lead[key] = value;
   }
   const defaults: Partial<QuotationDocumentInputs> = {
-    current_monthly_bill: Number(row.survey_monthly_bill || row.pre_monthly_bill || row.monthly_bill_max || 0),
+    // ลำดับเดียวกับ QuotationBuilder: คำตอบในแบบสอบถาม (lead_data.monthly_bill) ก่อน
+    // ถ้าลูกค้าไม่ได้ตอบค่อยใช้ค่าจากฟอร์มสำรวจ · row มาจาก leads.* ซึ่งไม่มีคอลัมน์
+    // ค่าไฟของแบบสอบถาม ต้องอ่านจากชุด lead_data แยก (sets[1])
+    current_monthly_bill: Number(
+      sets[1]?.[0]?.monthly_bill || row.survey_monthly_bill || sets[1]?.[0]?.monthly_bill_max || 0,
+    ),
     loan_bank: String(row.finance_loan_bank || row.finance_bank || ""),
     loan_term_months: Number(row.finance_months || 84),
   };
