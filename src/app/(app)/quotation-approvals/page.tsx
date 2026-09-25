@@ -263,7 +263,7 @@ export default function QuotationApprovalsPage() {
                       {/* focus=1 — เปิดหน้า lead ในโหมดโฟกัสขั้นตอนปัจจุบัน
                           (ผู้อนุมัติเข้ามาดูใบเสนอราคาโดยตรง ไม่ต้องเลื่อนหา) */}
                       <Link
-                        href={group.omHouseId ? `/om/services/${group.omHouseId}` : `/leads/${group.leadId}?focus=1`}
+                        href={group.omHouseId ? `/om/services/${group.omHouseId}?focus=1` : `/leads/${group.leadId}?focus=1`}
                         className="font-semibold text-gray-900 hover:text-primary"
                       >
                         {group.customerName}

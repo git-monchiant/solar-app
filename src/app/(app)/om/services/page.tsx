@@ -9,7 +9,8 @@
 import { useCallback, useEffect, useState } from "react";
 import { apiFetch } from "@/lib/api";
 import Loading from "@/components/ui/Loading";
-import { useRouter, useSearchParams } from "next/navigation";
+import { useSearchParams } from "next/navigation";
+import { useOpenOmService } from "@/lib/hooks/useOpenOmService";
 import { CALL_OUTCOME } from "@/lib/om/booking";
 import {
   BUCKET_LABEL, SORTS, TABS, TONE, monthsAgo, thD,
@@ -23,9 +24,9 @@ import { CheckIcon } from "@/components/ui/icons";
 
 export default function OmServicesPage() {
   const { item: activeItem } = useActiveMenuItem();   // หัวเรื่อง = ชื่อเมนู (กติกา ui-rules)
-  const router = useRouter();
   // เปิดรายละเอียดเป็น URL จริง — back/refresh/ส่งลิงก์ใช้ได้ (เฟส 3)
-  const open = (houseId: number) => router.push(`/om/services/${houseId}`);
+  // ★ จอกว้างเปิดแท็บใหม่ ?focus=1 เหมือนกดการ์ด lead ฝั่งขาย (useOpenLead) · มือถือเปิดแท็บเดิม
+  const open = useOpenOmService();
   // ★ เฟส 6: รับ ?tab= / ?group= จาก URL — หน้าภาพรวมลิงก์เข้ามาที่แท็บ/โครงการที่กดบนตัวเลข
   //   อ่านเป็นค่าตั้งต้นเท่านั้น กดแท็บต่อในหน้านี้ไม่ต้องเขียน URL กลับ
   //   (ถ้าเขียนกลับ ปุ่ม back จะกลายเป็นย้อนแท็บทีละอัน แทนที่จะกลับหน้าเดิม)

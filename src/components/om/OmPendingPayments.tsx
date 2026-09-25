@@ -13,6 +13,7 @@ import { useDialog } from "@/components/ui/Dialog";
 import FallbackImage from "@/components/ui/FallbackImage";
 import { formatTHB } from "@/lib/utils/formatters";
 import { hasRole, useActiveRoles } from "@/lib/roles";
+import { OmServiceLink } from "@/components/om/OmServiceLink";
 
 export type OmPendingPayment = {
   id: number; lead_id: number; amount: number; description: string | null; payment_method: string | null;
@@ -79,7 +80,7 @@ export default function OmPendingPayments({ items, focusedId, onChanged }: {
             </div>
           );
           const name = isAdmin
-            ? <a href={`/om/services/${it.house_id}`} className="font-semibold text-gray-900 hover:text-primary">{it.customer_name}</a>
+            ? <OmServiceLink houseId={it.house_id} className="font-semibold text-gray-900 hover:text-primary">{it.customer_name}</OmServiceLink>
             : <span className="font-semibold text-gray-900">{it.customer_name}</span>;
           return (
             <div key={it.id} id={`pending-payment-${it.id}`}

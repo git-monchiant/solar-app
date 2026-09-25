@@ -50,7 +50,8 @@ export async function notifyOmUser(db: DbExecutor, input: OmNotificationInput): 
   if (input.createdBy && input.createdBy === input.recipientUserId) return false;
 
   const targetUrl = input.targetUrl
-    ?? (input.houseId ? `/om/services/${input.houseId}` : "/om/services");
+    // ?focus=1 เหมือนแจ้งเตือนฝั่งขาย (/leads/<id>?focus=1) — เปิดมาแบบไม่มีเมนูซ้าย บันทึกแล้วอยู่หน้าเดิม
+    ?? (input.houseId ? `/om/services/${input.houseId}?focus=1` : "/om/services");
 
   await request(db)
     .input("houseId", sql.Int, input.houseId ?? null)

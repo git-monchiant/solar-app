@@ -12,6 +12,7 @@ import FallbackImage from "@/components/ui/FallbackImage";
 import { formatTHB, formatThaiDate as fmtDate } from "@/lib/utils/formatters";
 import Loading from "@/components/ui/Loading";
 import { hasRole, useActiveRoles } from "@/lib/roles";
+import { OmServiceLink } from "@/components/om/OmServiceLink";
 
 interface OmPay {
   id: number; amount: number; payment_method: string | null; submitted_at: string | null;
@@ -94,7 +95,7 @@ export default function OmRevenueReportPage() {
     ? { t: "รับครบ", cls: "bg-emerald-50 text-emerald-700" }
     : r.pending > 0 ? { t: "รอยืนยัน", cls: "bg-amber-50 text-amber-700" } : { t: "ค้างรับ", cls: "bg-red-50 text-red-700" };
   const nameCell = (r: OmRow, cls: string) => isAdmin
-    ? <a href={`/om/services/${r.house_id}`} className={`${cls} hover:text-primary`}>{r.customer_name}</a>
+    ? <OmServiceLink houseId={r.house_id} className={`${cls} hover:text-primary`}>{r.customer_name}</OmServiceLink>
     : <span className={cls}>{r.customer_name}</span>;
   const slips = (r: OmRow, size: string) => {
     const urls = r.payments.flatMap((p) => p.slip_urls);

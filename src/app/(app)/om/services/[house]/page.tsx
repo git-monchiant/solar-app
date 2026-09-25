@@ -9,9 +9,13 @@
 //
 // ★ คีย์เป็น house_id ไม่ใช่ booking_id — การ์ดในแท็บ "ติดตาม" คำนวณสดจากบ้าน
 //   ยังไม่มีใบงานให้อ้าง (ผู้ใช้เคาะ 10 ก.ย.) บ้านจึงเป็นคีย์เดียวที่มีครบทุกแท็บ
+//
+// ★ ?focus=1 = เปิดมาในแท็บใหม่จากหน้ารายการ (useOpenOmService) เหมือนหน้า lead ฝั่งขาย
+//   layout ซ่อนเมนูซ้ายให้เอง · หน้านี้ซ่อนปุ่มย้อนกลับ (แท็บใหม่ไม่มีที่ให้ย้อน)
+//   และบันทึกแล้วโหลดข้อมูลใหม่อยู่หน้าเดิม แทนการเด้งไปหน้ารายการซ้อนในแท็บนี้
 
 import { use, useCallback, useEffect, useState } from "react";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import { apiFetch } from "@/lib/api";
 import Loading from "@/components/ui/Loading";
 import JobDetail from "@/components/om/JobDetail";
@@ -20,12 +24,16 @@ import type { HistoryRow, Item } from "@/lib/om/service-view";
 export default function OmServiceDetailPage({ params }: { params: Promise<{ house: string }> }) {
   const { house } = use(params);
   const router = useRouter();
+  const focus = useSearchParams().get("focus") === "1";
   const [item, setItem] = useState<Item | null>(null);
   const [history, setHistory] = useState<HistoryRow[]>([]);
   const [err, setErr] = useState("");
   const [toast, setToast] = useState("");
+  // เปลี่ยนค่าหลังบันทึกในโหมด focus → JobDetail ขึ้นใหม่ทั้งตัว
+  // ฟอร์มล้างค่า และรางกระโดดไปขั้นปัจจุบันตัวใหม่ของงาน
+  const [ver, setVer] = useState(0);
 
-  const load = useCallback(() => {
+  const load = useCallback(() =>
     apiFetch(`/api/om/follow?house=${encodeURIComponent(house)}`)
       .then((d) => {
         const row = (d.items ?? [])[0] as Item | undefined;
@@ -33,11 +41,12 @@ export default function OmServiceDetailPage({ params }: { params: Promise<{ hous
         setItem(row);
         setHistory((d.history ?? []) as HistoryRow[]);
       })
-      .catch((e) => setErr(e instanceof Error ? e.message : String(e)));
-  }, [house]);
-  useEffect(load, [load]);
+      .catch((e) => setErr(e instanceof Error ? e.message : String(e))),
+  [house]);
+  useEffect(() => { load(); }, [load]);
 
   const back = () => router.push("/om/services");
+  const done = focus ? () => { load().then(() => setVer((v) => v + 1)); } : back;
 
   if (err) return (
     <div className="p-6">
@@ -51,9 +60,11 @@ export default function OmServiceDetailPage({ params }: { params: Promise<{ hous
   return (
     <>
       <JobDetail
+        key={ver}
         item={item}
         history={history}
-        onBack={back}
+        onBack={focus ? undefined : back}
+        onDone={done}
         onSaved={(m) => { setToast(m); setTimeout(() => setToast(""), 2600); }}
         onReload={load}
       />

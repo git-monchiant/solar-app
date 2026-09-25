@@ -82,7 +82,7 @@ export async function GET(req: NextRequest) {
           n.notification_type, n.approval_stage, n.title, n.message,
           -- ใบเสนอราคางาน O&M พาไปหน้างาน O&M ของบ้านนั้น ไม่ใช่หน้า lead (แผน 20260924-02 เฟส 3)
           CAST(CASE WHEN ob.house_id IS NOT NULL
-                    THEN CONCAT(N'/om/services/', ob.house_id) END AS NVARCHAR(500)) target_url,
+                    THEN CONCAT(N'/om/services/', ob.house_id, N'?focus=1') END AS NVARCHAR(500)) target_url,
           n.read_at, CAST(NULL AS DATETIME2) resolved_at, n.created_at,
           q.doc_no, q.status quotation_status, l.full_name customer_name,
           creator.full_name created_by_name
