@@ -44,6 +44,9 @@ export default function OmPaymentPanel({ item, skip, onSaved, onReload }: {
 
   if (skip && !item.q_id) return <div className="text-sm text-gray-600">งานนี้<b>ใช้สิทธิ์ฟรี</b> — ไม่มีค่าบริการ</div>;
   if (!item.q_id) return <div className="text-sm text-gray-500">ยังไม่มีใบเสนอราคา — ออกใบที่ขั้น 02 ก่อน</div>;
+  // ลูกค้าไม่เอา — ใบงานยกเลิกแล้ว ไม่มีอะไรให้ชำระ (API รับสลิปเฉพาะใบงานขั้นชำระเงินอยู่แล้ว)
+  if (item.job_status === "cancelled")
+    return <div className="text-sm text-gray-500">ใบงานนี้ยกเลิกแล้ว — ไม่ต้องชำระค่าบริการ</div>;
   if (item.job_status === "quote") {
     return (
       <div className="text-sm text-gray-600 leading-relaxed">

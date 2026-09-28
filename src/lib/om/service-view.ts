@@ -50,6 +50,8 @@ export const QUOTE_STATUS: Record<string, { t: string; tone: string }> = {
   pending_approval: { t: "รอ Sale Sup อนุมัติ", tone: "bg-amber-50 text-amber-700" },
   changes_required: { t: "ส่งกลับแก้", tone: "bg-red-50 text-red-700" },
   approved: { t: "อนุมัติแล้ว", tone: "bg-emerald-50 text-emerald-700" },
+  // ลูกค้าไม่เอา — ยกเลิกทั้งใบงาน (POST /api/om/bookings/[id]/cancel) · สถานะเดียวกับที่ฝั่งขายเตรียมไว้
+  cancelled: { t: "ยกเลิกแล้ว", tone: "bg-gray-100 text-gray-500" },
 };
 
 /** สถานะเงินของใบงานขั้นชำระเงิน (เฟส 4) — ชุดเดียวกับขั้นย่อย journey 2310/2320/2330 */

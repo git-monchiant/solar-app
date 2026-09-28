@@ -12,6 +12,7 @@
 
 import { useEffect, useState } from "react";
 import { apiFetch } from "@/lib/api";
+import { hasRole, useActiveRoles } from "@/lib/roles";
 import { CALL_OUTCOME, EXIT_STATUS, statusLabel, statusTone } from "@/lib/om/booking";
 import Timeline from "@/components/ui/Timeline";
 import { CheckIcon, ChevronLeftIcon, ClockIcon, PhoneIcon } from "@/components/ui/icons";
@@ -97,8 +98,15 @@ export default function JobDetail({ item, history, onBack, onDone, onSaved, onRe
   const [cancelOpen, setCancelOpen] = useState(false);
   const [cancelReason, setCancelReason] = useState("");
   const isRepairJob = !!item.parent_booking_id && item.in_warranty != null;
-  // ยกเลิกใบซ่อมได้ก่อนมีใบเสนอราคา — มีใบแล้วต้องจัดการใบในลำดับอนุมัติก่อน (ยังไม่มีปุ่มยกเลิกใบเสนอราคา O&M)
-  const canCancelRepair = isRepairJob && (cur === "follow" || (cur === "quote" && !item.q_id));
+  // ── ลูกค้าไม่เอา — ยกเลิกใบงานก่อนนัด พร้อมใบเสนอราคา (POST /api/om/bookings/[id]/cancel) ──
+  // ใบซ่อมยกเลิกได้ตั้งแต่ขั้นติดตาม · ใบงานทั่วไปเฉพาะขั้นเสนอราคา/ชำระเงิน (ขั้นติดตามบันทึกโทร "ปฏิเสธ" อยู่แล้ว)
+  // มีใบเสนอราคาแล้ว = เฉพาะ Sale · เงินเข้าแล้ว/สลิปรอตรวจ = ไม่มีปุ่ม ต้องผ่าน Account ก่อน (API กันซ้ำอีกชั้น)
+  const { activeRoles } = useActiveRoles();
+  const canIssue = hasRole(activeRoles, "admin", "sales", "sales_sup");
+  const moneyIn = item.pay_state === "verifying" || item.pay_state === "paid";
+  const canDecline = !!item.booking_id && !moneyIn
+    && (isRepairJob ? ["follow", "quote", "payment"] : ["quote", "payment"]).includes(cur)
+    && (!item.q_id || canIssue);
 
   useEffect(() => {
     apiFetch("/api/om/teams").then((d) => setTeams(d.teams ?? [])).catch(() => {});
@@ -163,6 +171,42 @@ export default function JobDetail({ item, history, onBack, onDone, onSaved, onRe
     } catch (e) { setErr(e instanceof Error ? e.message : String(e)); }
     finally { setBusy(false); }
   };
+
+  const declineJob = async () => {
+    if (!item.booking_id || !cancelReason.trim()) return;
+    setBusy(true); setErr("");
+    try {
+      await apiFetch(`/api/om/bookings/${item.booking_id}/cancel`, {
+        method: "POST", body: JSON.stringify({ reason: cancelReason.trim() }),
+      });
+      onSaved(isRepairJob ? "ยกเลิกใบงานซ่อมแล้ว" : "บันทึกลูกค้าไม่เอา — ยกเลิกใบงานแล้ว"); onDone();
+    } catch (e) { setErr(e instanceof Error ? e.message : String(e)); }
+    finally { setBusy(false); }
+  };
+  // ช่องเหตุผล + ปุ่มยืนยัน — ใช้ทั้งแถบใบซ่อมและขั้นเสนอราคา/ชำระเงินของใบงานทั่วไป
+  const cancelForm = (
+    <div className="mt-3 flex gap-2 flex-wrap items-center">
+      <input value={cancelReason} onChange={(e) => setCancelReason(e.target.value)} autoFocus
+        placeholder={isRepairJob ? "เหตุผล เช่น ลูกค้าไม่ซ่อม / ซ่อมเองแล้ว" : "เหตุผล เช่น ราคาสูงเกินไป / ไม่สะดวกช่วงนี้"}
+        className={`${INPUT} flex-1 min-w-[220px]`} />
+      <button type="button" disabled={busy || !cancelReason.trim()} style={{ minHeight: 0 }} onClick={declineJob}
+        className="h-8 px-4 rounded-lg text-xs font-semibold text-white bg-red-600 hover:brightness-110 cursor-pointer disabled:opacity-50">ยืนยันยกเลิก</button>
+      <button type="button" onClick={() => setCancelOpen(false)} style={{ minHeight: 0 }}
+        className="h-8 px-3 rounded-lg text-xs font-semibold border border-gray-200 bg-white text-gray-600 cursor-pointer">ไม่ยกเลิก</button>
+    </div>
+  );
+  // ใบงานทั่วไป — ปุ่มอยู่ท้ายการ์ดขั้นเสนอราคา/ชำระเงิน
+  const declineBox = !isRepairJob && canDecline && (
+    <div className="mt-3 rounded-lg border border-gray-200 bg-white/60 px-3 py-2.5">
+      {!cancelOpen ? (
+        <div className="text-xs text-gray-500 flex items-center gap-2 flex-wrap">
+          <button type="button" onClick={() => setCancelOpen(true)} style={{ minHeight: 0 }}
+            className="font-semibold text-red-600 hover:underline cursor-pointer">ลูกค้าไม่เอา — ยกเลิกงานนี้</button>
+          <span>ยกเลิกใบงานและใบเสนอราคา · บ้านย้ายไปแท็บ<b>ไม่เอา</b> · สิทธิ์ไม่ถูกตัด</span>
+        </div>
+      ) : cancelForm}
+    </div>
+  );
 
   // ช่องเบอร์อาจมีหลายเบอร์คั่นกัน — ปุ่มโทรใช้เบอร์แรก
   const telNo = item.phone?.split(/[,/\s]+/).find(Boolean) ?? null;
@@ -336,23 +380,13 @@ export default function JobDetail({ item, history, onBack, onDone, onSaved, onRe
                   <span className={`text-xxs font-bold px-2 py-0.5 rounded-full text-white ${item.in_warranty ? "bg-emerald-600" : "bg-pink-600"}`}>
                     {item.in_warranty ? "ในประกัน — ไม่เก็บเงิน" : "นอกประกัน — เสนอราคาก่อนนัด"}
                   </span>
-                  {canCancelRepair && !cancelOpen && (
+                  {canDecline && !cancelOpen && (
                     <button type="button" onClick={() => setCancelOpen(true)} style={{ minHeight: 0 }}
                       className="ml-auto text-xs font-semibold text-red-600 hover:underline cursor-pointer">ยกเลิกใบงานซ่อม</button>
                   )}
                 </div>
                 {item.job_note && <div className="mt-1.5 text-gray-700 whitespace-pre-line">อาการ: {item.job_note}</div>}
-                {cancelOpen && (
-                  <div className="mt-3 flex gap-2 flex-wrap items-center">
-                    <input value={cancelReason} onChange={(e) => setCancelReason(e.target.value)} autoFocus
-                      placeholder="เหตุผล เช่น ลูกค้าไม่ซ่อม / ซ่อมเองแล้ว" className={`${INPUT} flex-1 min-w-[220px]`} />
-                    <button type="button" disabled={busy || !cancelReason.trim()} style={{ minHeight: 0 }}
-                      onClick={() => patchJob({ status: "cancelled", reason: cancelReason.trim() }, "ยกเลิกใบงานซ่อมแล้ว")}
-                      className="h-8 px-4 rounded-lg text-xs font-semibold text-white bg-red-600 hover:brightness-110 cursor-pointer disabled:opacity-50">ยืนยันยกเลิก</button>
-                    <button type="button" onClick={() => setCancelOpen(false)} style={{ minHeight: 0 }}
-                      className="h-8 px-3 rounded-lg text-xs font-semibold border border-gray-200 bg-white text-gray-600 cursor-pointer">ไม่ยกเลิก</button>
-                  </div>
-                )}
+                {canDecline && cancelOpen && cancelForm}
               </div>
             )}
 
@@ -412,6 +446,7 @@ export default function JobDetail({ item, history, onBack, onDone, onSaved, onRe
                 <div className={SECTION}>
                   <OmQuotationPanel item={item} skip={skip} onSaved={onSaved} onReload={onReload} />
                 </div>
+                {declineBox}
               </StepCard>
             )}
 
@@ -421,6 +456,7 @@ export default function JobDetail({ item, history, onBack, onDone, onSaved, onRe
                 <div className={SECTION}>
                   <OmPaymentPanel item={item} skip={skip} onSaved={onSaved} onReload={onReload} />
                 </div>
+                {declineBox}
               </StepCard>
             )}
 

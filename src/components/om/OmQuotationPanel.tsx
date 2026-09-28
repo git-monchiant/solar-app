@@ -66,6 +66,8 @@ export default function OmQuotationPanel({ item, skip, onSaved, onReload }: {
   // ใบที่โหลดไว้ต้องเป็นใบของใบงานนี้ — กันโชว์ใบเก่าค้างตอนเปลี่ยนบ้าน
   const quote = loaded && loaded.id === item.q_id ? loaded : null;
   const [editing, setEditing] = useState(false);
+  // ใบงานยกเลิกแล้ว (ลูกค้าไม่เอา) แล้วลูกค้าเปลี่ยนใจ — ออกใบใหม่ = ใบงานใหม่ (ไม่แก้ใบที่ยกเลิก)
+  const [fresh, setFresh] = useState(false);
   const [err, setErr] = useState("");
   const [actErr, setActErr] = useState("");
   const [busy, setBusy] = useState(false);
@@ -114,6 +116,13 @@ export default function OmQuotationPanel({ item, skip, onSaved, onReload }: {
   }
   if (err) return <div className="rounded-lg bg-red-50 border border-red-200 px-3 py-2 text-sm text-red-700">{err}</div>;
 
+  if (fresh) {
+    return (
+      <QuoteForm item={item} quote={null} onCancel={() => setFresh(false)}
+        onDone={(msg, q) => { setQuote(q); setFresh(false); onSaved(msg); onReload?.(); }} />
+    );
+  }
+
   if (!item.q_id || editing) {
     if (!canIssue) {
       return (
@@ -145,6 +154,16 @@ export default function OmQuotationPanel({ item, skip, onSaved, onReload }: {
             className="ml-auto h-8 px-3.5 rounded-lg border border-gray-200 text-xs font-bold text-gray-700 bg-white cursor-pointer">แก้ใบเสนอราคา</button>
         )}
       </div>
+
+      {item.job_status === "cancelled" && (
+        <div className="mb-3 rounded-xl bg-gray-50 border border-gray-200 px-3.5 py-2.5 text-sm text-gray-600 flex items-center gap-2 flex-wrap">
+          <span>ลูกค้าไม่เอา — ใบงาน #{item.booking_id} และใบเสนอราคานี้<b>ยกเลิกแล้ว</b></span>
+          {canIssue && (
+            <button type="button" style={{ minHeight: 0 }} onClick={() => setFresh(true)}
+              className="ml-auto h-8 px-3.5 rounded-lg bg-primary text-white text-xs font-bold cursor-pointer">ลูกค้าเปลี่ยนใจ? ออกใบเสนอราคาใหม่</button>
+          )}
+        </div>
+      )}
 
       <table className="w-full text-sm">
         <thead>
