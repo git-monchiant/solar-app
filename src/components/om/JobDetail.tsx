@@ -22,6 +22,7 @@ import JobFormPanel from "@/components/om/JobFormPanel";
 import OmQuotationPanel from "@/components/om/OmQuotationPanel";
 import OmPaymentPanel from "@/components/om/OmPaymentPanel";
 import OmRescheduler from "@/components/om/OmRescheduler";
+import ServiceDocButton from "@/components/om/ServiceDocButton";
 import { HouseEquipmentTab, HouseInfoTab, JobPhotosTab } from "@/components/om/HouseTabs";
 import AssignOwnerButton from "@/components/lead/AssignOwnerButton";
 import ModalBase from "@/components/ui/ModalBase";
@@ -532,7 +533,7 @@ export default function JobDetail({ item, history, onBack, onDone, onSaved, onRe
                   {resched && item.booking_id ? (
                     <OmRescheduler bookingId={item.booking_id} currentAt={item.scheduled_at}
                       onCancel={() => setResched(false)}
-                      onSaved={() => { setResched(false); onSaved("เลื่อนนัดแล้ว"); onDone(); }} />
+                      onSaved={(m) => { setResched(false); onSaved(m); onDone(); }} />
                   ) : (() => {
                     const confirmed = cur !== "pending" && at >= 3;
                     const canResched = !!item.booking_id && (cur === "pending" || cur === "confirmed");
@@ -626,14 +627,20 @@ export default function JobDetail({ item, history, onBack, onDone, onSaved, onRe
 
             {step === 5 && (
               <StepCard n={5} state={stepState(5)} title="ปิดงาน">
-                <div className={`${SECTION} text-sm text-gray-600`}>
-                  {cur === "closed" ? <b className="text-emerald-600">ปิดงานแล้ว</b> : "ปิดงานที่ขั้นส่งมอบของใบตรวจรับงาน (ขั้นเข้างาน) หลังลูกค้าเซ็นรับ"}
-                  {/* ★ เฟส 5: ซ่อม (ในประกัน) เป็นงานฟรีที่ไม่ใช้สิทธิ์ล้าง — ดูจาก consumes_quota ของชนิดงาน ไม่ใช่ skip อย่างเดียว */}
-                  {skip && item.consumes_quota !== 0
-                    ? <> · ปิดแล้วระบบ{cur === "closed" ? "ตัด" : "จะตัด"}<b>สิทธิ์ล้าง 1 ครั้ง</b>{cur !== "closed" && <> เหลือ {Math.max(0, item.balance - 1)} ครั้ง</>}</>
-                    : skip
-                    ? <> · งาน{item.service_type ?? "นี้"}ฟรี <b>ไม่ตัดสิทธิ์ล้าง</b></>
-                    : <> · งานเสียเงิน <b>ไม่ตัดสิทธิ์</b></>}
+                <div className={`${SECTION} text-sm text-gray-600 flex items-center gap-2 flex-wrap`}>
+                  <span className="min-w-0">
+                    {cur === "closed" ? <b className="text-emerald-600">ปิดงานแล้ว</b> : "ปิดงานที่ขั้นส่งมอบของใบตรวจรับงาน (ขั้นเข้างาน) หลังลูกค้าเซ็นรับ"}
+                    {/* ★ เฟส 5: ซ่อม (ในประกัน) เป็นงานฟรีที่ไม่ใช้สิทธิ์ล้าง — ดูจาก consumes_quota ของชนิดงาน ไม่ใช่ skip อย่างเดียว */}
+                    {skip && item.consumes_quota !== 0
+                      ? <> · ปิดแล้วระบบ{cur === "closed" ? "ตัด" : "จะตัด"}<b>สิทธิ์ล้าง 1 ครั้ง</b>{cur !== "closed" && <> เหลือ {Math.max(0, item.balance - 1)} ครั้ง</>}</>
+                      : skip
+                      ? <> · งาน{item.service_type ?? "นี้"}ฟรี <b>ไม่ตัดสิทธิ์ล้าง</b></>
+                      : <> · งานเสียเงิน <b>ไม่ตัดสิทธิ์</b></>}
+                  </span>
+                  {/* ★ ใบบริการ PDF (แผน 20260928-04 ข้อ 9) — ตำแหน่งเดียวกับปุ่ม "ใบส่งมอบ" ในหัวขั้นติดตั้งที่เสร็จแล้วฝั่งขาย */}
+                  {cur === "closed" && item.booking_id && (
+                    <span className="ml-auto"><ServiceDocButton bookingId={item.booking_id} /></span>
+                  )}
                 </div>
 
                 {/* ใบงานซ่อม (เฟส 5) — ช่างแจ้งในใบตรวจรับงาน ทีม O&M เปิดใบใหม่ต่อจากตรงนี้

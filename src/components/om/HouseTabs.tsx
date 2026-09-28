@@ -13,6 +13,7 @@ import { formatThaiDate } from "@/lib/utils/formatters";
 import { statusLabel, statusTone } from "@/lib/om/booking";
 import { thD } from "@/lib/om/service-view";
 import { SystemCard, type HouseDetail } from "@/components/om/HouseSystemCard";
+import { useOmPhotoUrls } from "@/lib/hooks/useOmPhotoUrls";
 
 const ROLE: Record<string, string> = { owner: "เจ้าของ", resident: "ผู้อยู่อาศัย", contact: "ผู้ติดต่อ" };
 const SRC: Record<string, string> = { contract_base: "สิทธิ์ตั้งต้น", renewal: "ต่อสัญญา", purchase: "ซื้อเพิ่ม", import: "import", manual_adjust: "ปรับมือ", expire: "หมดอายุ" };
@@ -242,16 +243,20 @@ export function JobPhotosTab({ bookingIds }: { bookingIds: number[] }) {
       .catch((e) => setErr(e instanceof Error ? e.message : String(e)));
   }, [key]);
 
-  if (err) return <Err m={err} />;
-  if (!jobs) return <Loading />;
-  const withPhotos = jobs.filter((j) => j.photos.length > 0);
+  const withPhotos = (jobs ?? []).filter((j) => j.photos.length > 0);
   const KINDS = ["before", "after"] as const;
   // แกลเลอรีเดียวทั้งบ้าน — เปิดรูปไหนก็เลื่อนดูต่อได้ทุกใบงาน (แบบ HANDOVER PHOTOS ฝั่งขาย)
   // ★ ลำดับต้องตรงกับที่วาดด้านล่างเป๊ะ (ใบงาน → ก่อน → หลัง) ไม่งั้นกดรูปแล้ว lightbox เปิดผิดรูป
-  const gallery = withPhotos.flatMap((j) => KINDS.flatMap((kind) => j.photos.filter((p) => p.kind === kind).map((p) => ({
-    url: `/api/om/jobs/${j.id}/photos/${p.file}`,
+  const items = withPhotos.flatMap((j) => KINDS.flatMap((kind) => j.photos.filter((p) => p.kind === kind).map((p) => ({
+    src: `/api/om/jobs/${j.id}/photos/${p.file}`,
     label: `ใบงาน #${j.id} · ${kind === "before" ? "ก่อนทำงาน" : "หลังทำงาน"}`,
   }))));
+  // ★ <img src> ตรงไปที่ API ไม่ได้ (แนบ header สิทธิ์ไม่ได้ → 403) — ดึงเป็น blob URL ก่อน (เรียกก่อน return ใด ๆ)
+  const blobs = useOmPhotoUrls(items.map((i) => i.src));
+
+  if (err) return <Err m={err} />;
+  if (!jobs) return <Loading />;
+  const gallery = items.map((i) => ({ url: blobs[i.src] ?? "", label: i.label }));
   let gi = 0;
 
   return (
@@ -281,11 +286,11 @@ export function JobPhotosTab({ bookingIds }: { bookingIds: number[] }) {
                 <div className="grid grid-cols-3 md:grid-cols-6 lg:grid-cols-8 gap-2">
                   {list.map((p) => {
                     const idx = gi++;
-                    return (
+                    return gallery[idx].url ? (
                       <FallbackImage key={p.file} src={gallery[idx].url} alt={gallery[idx].label}
                         className="w-full aspect-square object-cover rounded-lg border border-gray-200"
                         gallery={gallery} galleryIndex={idx} />
-                    );
+                    ) : <div key={p.file} className="w-full aspect-square rounded-lg border border-gray-200 bg-gray-100 animate-pulse" />;
                   })}
                 </div>
               </div>

@@ -15,6 +15,8 @@ import Loading from "@/components/ui/Loading";
 import ErrorPopup from "@/components/ui/ErrorPopup";
 import StepLayout from "@/components/lead/detail/StepLayout";
 import { useSubStep } from "@/lib/hooks/useSubStep";
+import { useOmPhotoUrls } from "@/lib/hooks/useOmPhotoUrls";
+import ServiceDocButton from "@/components/om/ServiceDocButton";
 import {
   CameraIcon, CheckIcon, ChevronLeftIcon, ChevronRightIcon, DocumentIcon, PlusIcon, UserIcon,
 } from "@/components/ui/icons";
@@ -224,6 +226,9 @@ function PhotoBox({ jobId, kind, label, photos, disabled, onChanged }: {
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState("");
   const mine = photos.filter((p) => p.kind === kind);
+  // ★ <img src> ตรงไปที่ API ไม่ได้ (แนบ header สิทธิ์ไม่ได้ → 403) — ดึงเป็น blob URL ก่อน
+  const srcOf = (p: JobPhoto) => `/api/om/jobs/${jobId}/photos/${p.file}`;
+  const blobs = useOmPhotoUrls(mine.map(srcOf));
 
   const send = async (file: File | null | undefined) => {
     if (!file) return;
@@ -282,9 +287,11 @@ function PhotoBox({ jobId, kind, label, photos, disabled, onChanged }: {
             <div className="p-3 grid grid-cols-3 md:grid-cols-4 gap-2">
               {mine.map((p) => (
                 <div key={p.file} className="relative">
-                  {/* eslint-disable-next-line @next/next/no-img-element */}
-                  <img src={`/api/om/jobs/${jobId}/photos/${p.file}`} alt={label}
-                    className="w-full aspect-square object-cover rounded-lg border border-gray-200" />
+                  {blobs[srcOf(p)] ? (
+                    // eslint-disable-next-line @next/next/no-img-element
+                    <img src={blobs[srcOf(p)]} alt={label}
+                      className="w-full aspect-square object-cover rounded-lg border border-gray-200" />
+                  ) : <div className="w-full aspect-square rounded-lg border border-gray-200 bg-gray-100 animate-pulse" />}
                   {!disabled && (
                     <button type="button" style={{ minHeight: 0 }} disabled={busy} onClick={() => drop(p.file)}
                       className="absolute top-1 right-1 w-6 h-6 bg-black/50 rounded-full text-white flex items-center justify-center text-xs z-10 cursor-pointer">✕</button>
@@ -678,6 +685,10 @@ export default function JobFormPanel({ jobId, wrapClass = "h-full overflow-auto 
                 <button type="button" onClick={() => goSub(subStep + 1)} className={NAV_NEXT}>
                   ถัดไป<ChevronRightIcon className="w-4 h-4" strokeWidth={2} />
                 </button>
+              ) : closed ? (
+                // ★ ปิดงานแล้ว — ปุ่มท้ายการ์ดกลายเป็นเปิดใบบริการ PDF (แผน 20260928-04 ข้อ 9) แทนปุ่มเทากดไม่ได้
+                <ServiceDocButton bookingId={Number(id)} label="ใบบริการ PDF" className={NAV_NEXT}
+                  wrapClassName="flex flex-1 md:flex-none items-center gap-2" />
               ) : (
                 <button type="button" disabled={busy || closed} onClick={closeJob} className={NAV_CLOSE}>
                   {closed ? "ปิดงานแล้ว" : busy ? "กำลังบันทึก…" : "ปิดงาน"}
