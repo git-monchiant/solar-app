@@ -77,6 +77,18 @@ export const TABS = [
   { k: "noquota", t: "สิทธิ์หมด" },
 ] as const;
 
+/** แท็บของหน้า Today ของ O&M (/om/today · แผน 20260928-01) — 1 บ้านอยู่แท็บเดียว เกณฑ์อยู่ที่ /api/om/today */
+export const TODAY_TABS = [
+  { k: "appt_today", t: "นัดวันนี้", empty: "วันนี้ไม่มีนัดเข้าบ้าน",
+    hint: "ใบงานที่นัดเข้าบ้านวันนี้ (รอยืนยันนัด · นัดแล้ว · เข้างาน · รอปิด)" },
+  { k: "call_today", t: "โทรวันนี้", empty: "วันนี้ไม่มีบ้านที่ถึงวันนัดโทร",
+    hint: "บ้านที่ยังไม่ได้นัด และถึงวันนัดโทรใหม่แล้ว (ตั้งจากผลโทร \"ไม่รับสาย\" / \"ขอเลื่อน\")" },
+  { k: "overdue", t: "เลยนัด", empty: "ไม่มีงานที่เลยวันนัด",
+    hint: "ใบงานที่เลยวันนัดแล้วแต่ยังไม่ปิด — ตามช่าง/ลูกค้า หรือเลื่อนนัดใหม่" },
+  { k: "money", t: "เสนอราคา / รอเงิน", empty: "ไม่มีใบงานค้างเสนอราคาหรือรอชำระ",
+    hint: "ใบงานเสียเงินที่ค้างขั้นเสนอราคาหรือชำระเงิน — งานของ Sale" },
+] as const;
+
 export const TONE: Record<string, string> = {
   follow: "bg-gray-500", quote: "bg-pink-600", payment: "bg-fuchsia-600", pending: "bg-amber-500", confirmed: "bg-blue-600",
   progress: "bg-violet-600", checked: "bg-teal-600", closed: "bg-emerald-600",

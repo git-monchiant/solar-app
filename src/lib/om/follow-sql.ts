@@ -106,6 +106,7 @@ export const OM_FOLLOW_SCOPE_SQL = `
     -- ใบงานล่าสุดของบ้าน (งานค้างมาก่อน ถ้าไม่มีค่อยเอางานที่เพิ่งปิด)
     SELECT b.house_id, b.id booking_id, b.status,
            CONVERT(varchar(33), b.scheduled_at, 126) scheduled_at,
+           CAST(SWITCHOFFSET(b.scheduled_at, '+07:00') AS date) scheduled_day,   -- วันนัดตามเวลาไทย (Today ของ O&M)
            b.team_id, t.name team_name, st.label_th service_type,
            st.code service_code, CAST(st.consumes_quota AS int) consumes_quota,
            b.owner_user_id, uo.full_name owner_name,     -- เจ้าของเคส (เฟส 4)
@@ -150,7 +151,7 @@ export const OM_FOLLOW_SCOPE_SQL = `
            CONVERT(varchar(33), c.last_call_at, 126) last_call_at,
            CONVERT(char(10), c.next_call, 23) next_call,
            l.outcome last_outcome, l.by_name last_by,
-           j.booking_id, j.status job_status, j.scheduled_at, j.team_id, j.team_name, j.service_type,
+           j.booking_id, j.status job_status, j.scheduled_at, j.scheduled_day, j.team_id, j.team_name, j.service_type,
            j.owner_user_id, j.owner_name, j.q_id, j.q_doc_no, j.q_status, j.q_total, j.pay_state,
            j.service_code, j.consumes_quota, j.parent_booking_id, j.in_warranty, j.job_note,
            j.repair_needed, j.repair_detail, j.repair_child_id, j.repair_cancel_id, j.repair_cancel_reason,
