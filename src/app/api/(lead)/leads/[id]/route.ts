@@ -7,6 +7,7 @@ import { getGridTieFinalMissing } from "@/lib/gridTie";
 import { installmentAmount, netTotalOf, parseInstallmentRows, type InstallmentRow } from "@/lib/installments";
 import { processGradeChange, syncOperationalSlas } from "@/lib/sla-service";
 import { slaLiveStatusSql } from "@/lib/lead-sla-sql";
+import { hasEvCharger, parseLoadProfile, serializeLoadProfile } from "@/lib/load-assumption";
 
 type PlanRowLike = { pct?: unknown; amount?: unknown; when?: unknown; method?: unknown; loan_bank?: unknown; cc_pct?: unknown };
 
@@ -87,6 +88,7 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
                -- these were never on leads to begin with.
                d.house_age,
                d.occupant_total,
+               d.occupant_adults,
                d.occupant_elderly,
                d.occupant_kids,
                d.occupant_pets,
@@ -101,6 +103,7 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
                d.work_days_per_week,
                d.ac_split,
                d.ev_charge_period,
+               d.load_profile,
                -- Questionnaire §4 (migration 041).
                d.future_ev,
                d.future_ev_charger,
@@ -403,7 +406,10 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
     pushLd("bill_photo_url",   sql.NVarChar(500),     body.pre_bill_photo_url);
     // Questionnaire §1 fields (migration 038).
     pushLd("house_age",        sql.NVarChar(20),      body.house_age);
-    pushLd("occupant_total",   sql.Int,               body.occupant_total);
+    // occupant_total is NOT taken from the body — it is derived below from the
+    // people counts (migration 199), so a stale or pet-inclusive total from any
+    // client can never land.
+    pushLd("occupant_adults",  sql.Int,               body.occupant_adults);
     pushLd("occupant_elderly", sql.Int,               body.occupant_elderly);
     pushLd("occupant_kids",    sql.Int,               body.occupant_kids);
     pushLd("occupant_pets",    sql.Int,               body.occupant_pets);
@@ -418,6 +424,10 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
     pushLd("work_days_per_week", sql.NVarChar(20),      body.work_days_per_week);
     pushLd("ac_split",           sql.NVarChar(sql.MAX), body.ac_split);
     pushLd("ev_charge_period",   sql.NVarChar(20),      body.ev_charge_period);
+    // Appliance load answers (migration 198). Re-serialised through the shared
+    // parser so a hand-made PATCH can't store garbage or absurd numbers.
+    pushLd("load_profile",       sql.NVarChar(sql.MAX),
+      body.load_profile === undefined ? undefined : serializeLoadProfile(parseLoadProfile(body.load_profile)));
     // Questionnaire §4 (migration 041).
     pushLd("future_ev",           sql.NVarChar(20), body.future_ev);
     pushLd("future_ev_charger",   sql.NVarChar(10), body.future_ev_charger);
@@ -1498,6 +1508,34 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
           INSERT (${insertCols}, updated_at)
           VALUES (${insertVals}, SYSUTCDATETIME());
       `);
+      // ผู้อยู่อาศัยรวม = ผู้ใหญ่ + ผู้สูงอายุ + เด็ก — never pets. Recomputed from
+      // the stored parts because the info tab PATCHes one counter at a time.
+      if (ldFields.some(f => f.col.startsWith("occupant_"))) {
+        await db.request().input("ld_lead_id", sql.Int, leadId).query(`
+          UPDATE lead_data
+          SET occupant_total = NULLIF(ISNULL(occupant_adults, 0) + ISNULL(occupant_elderly, 0) + ISNULL(occupant_kids, 0), 0)
+          WHERE lead_id = @ld_lead_id
+        `);
+      }
+      // EV answers mean something only when the customer HAS a charger.
+      // Refuse a charge period / EV load answers without one, and drop both
+      // when the charger is switched to "ไม่มี" — same as the form does, but
+      // enforced here so no client (info tab, a stale form instance) can
+      // bring back the leftovers migration 201 cleaned up.
+      if (ldFields.some(f => f.col === "ev_charge_period" || f.col === "appliances" || f.col === "load_profile")) {
+        const cur = (await db.request().input("ld_lead_id", sql.Int, leadId)
+          .query(`SELECT appliances, ev_charge_period, load_profile FROM lead_data WHERE lead_id = @ld_lead_id`)).recordset[0];
+        if (cur && !hasEvCharger(cur.appliances)) {
+          const profile = parseLoadProfile(cur.load_profile);
+          const hadEvAnswers = !!profile.ev;
+          delete profile.ev;
+          if (cur.ev_charge_period !== null || hadEvAnswers) {
+            await db.request().input("ld_lead_id", sql.Int, leadId)
+              .input("lp", sql.NVarChar(sql.MAX), serializeLoadProfile(profile))
+              .query(`UPDATE lead_data SET ev_charge_period = NULL, load_profile = @lp WHERE lead_id = @ld_lead_id`);
+          }
+        }
+      }
     }
     // If the leads UPDATE was skipped (only lead_data fields), recordset is
     // empty — caller doesn't get the updated lead echoed. Most callers

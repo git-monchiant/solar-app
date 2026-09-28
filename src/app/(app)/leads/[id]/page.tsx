@@ -17,6 +17,8 @@ import ProfileModal from "@/components/lead/detail/ProfileModal";
 import LinePickerModal from "@/components/modal/LinePickerModal";
 import { getSourceStyle } from "@/lib/source-tag";
 import { PAYMENT_INTERESTS, optionLabel } from "@/lib/customer-questionnaire";
+import { LoadProfileField } from "@/components/lead/detail/LoadProfileEditor";
+import { computeLoad, hasEvCharger, loadSummaryText, setEvCharger } from "@/lib/load-assumption";
 import { Activity } from "@/components/lead/detail/ActivityItem";
 import PreSurveyStep from "@/components/lead/detail/steps/PreSurveyStep";
 import PreSurveyForm, { type PreSurveyFormHandle, DECISION_FACTORS } from "@/components/lead/detail/steps/PreSurveyForm";
@@ -220,7 +222,7 @@ const isFilled = (v: unknown) => v != null && v !== "" && v !== false;
 // based on `kind`. Every change fires the parent's `onCommit` immediately,
 // which debounces + PATCHes the lead row. The `readonly` kind is the escape
 // hatch for values we don't yet know how to edit inline (stars / JSON).
-type QCellKind = "dropdown" | "number" | "stepper" | "multi_csv" | "text" | "factors" | "bill_range" | "ac_split" | "readonly";
+type QCellKind = "dropdown" | "number" | "stepper" | "multi_csv" | "text" | "factors" | "bill_range" | "ac_split" | "load_profile" | "readonly";
 interface QCellProps {
   label: string;
   kind: QCellKind;
@@ -1613,6 +1615,10 @@ export default function LeadDetailPage({ params }: { params: Promise<{ id: strin
                 required?: boolean;
                 allowOther?: boolean;
                 chipIcon?: React.ReactNode;
+                /** Custom save for rows whose chip value isn't the stored
+                 *  value (e.g. EV มี/ไม่มี → 'ev' inside the appliances CSV).
+                 *  Without it the row PATCHes `field` with the raw value. */
+                commit?: (next: string | number | null) => void;
               };
               // Clock icon reused by the peak-usage row (rendered on the left
               // of each time-range chip).
@@ -1743,10 +1749,13 @@ export default function LeadDetailPage({ params }: { params: Promise<{ id: strin
                     { label: "ประเภทบ้าน", value: otherOrLabel(lead.pre_residence_type, INFO_LABELS.residence), field: "pre_residence_type", kind: "dropdown" as QCellKind, options: [...optsFromInfo(INFO_LABELS.residence), { value: "other", label: "อื่นๆ" }], raw: lead.pre_residence_type ?? "", required: true, allowOther: true },
                     { label: "ทรงหลังคา", value: lead.pre_roof_shape ? INFO_LABELS.roofShape[lead.pre_roof_shape] : null, field: "pre_roof_shape", kind: "dropdown" as QCellKind, options: [...optsFromInfo(INFO_LABELS.roofShape), { value: "other", label: "อื่นๆ" }], raw: lead.pre_roof_shape ?? "", allowOther: true, chipIcon: roofIcon },
                     { label: "อายุบ้าน", value: qLabel(lead.house_age, "houseAge"), field: "house_age", kind: "dropdown" as QCellKind, options: optsFromQ("houseAge"), raw: lead.house_age ?? "" },
-                    { label: "ผู้อยู่อาศัยรวม", value: lead.occupant_total != null ? `${lead.occupant_total} คน` : null, field: "occupant_total", kind: "stepper" as QCellKind, suffix: "คน", raw: lead.occupant_total ?? "" },
+                    // Total is derived by the API (adults + elderly + kids —
+                    // never pets, migration 199), so it is shown, not edited.
+                    { label: "ผู้ใหญ่", value: lead.occupant_adults != null ? `${lead.occupant_adults} คน` : null, field: "occupant_adults", kind: "stepper" as QCellKind, suffix: "คน", raw: lead.occupant_adults ?? "" },
                     { label: "ผู้สูงอายุ", value: lead.occupant_elderly != null ? `${lead.occupant_elderly} คน` : null, field: "occupant_elderly", kind: "stepper" as QCellKind, suffix: "คน", raw: lead.occupant_elderly ?? "" },
                     { label: "เด็ก", value: lead.occupant_kids != null ? `${lead.occupant_kids} คน` : null, field: "occupant_kids", kind: "stepper" as QCellKind, suffix: "คน", raw: lead.occupant_kids ?? "" },
                     { label: "สัตว์เลี้ยง", value: lead.occupant_pets != null ? `${lead.occupant_pets} ตัว` : null, field: "occupant_pets", kind: "stepper" as QCellKind, suffix: "ตัว", raw: lead.occupant_pets ?? "" },
+                    { label: "ผู้อยู่อาศัยรวม (ไม่นับสัตว์เลี้ยง)", value: lead.occupant_total != null ? `${lead.occupant_total} คน` : null, kind: "readonly" as QCellKind, raw: lead.occupant_total ?? "" },
                   ],
                 },
                 {
@@ -1780,7 +1789,21 @@ export default function LeadDetailPage({ params }: { params: Promise<{ id: strin
                     { label: "ประเภทธุรกิจ", value: qLabel(lead.business_type, "businessType"), field: "business_type", kind: "dropdown" as QCellKind, options: optsFromQ("businessType"), raw: lead.business_type ?? "" },
                     { label: "วันทำงาน/สัปดาห์", value: qLabel(lead.work_days_per_week, "workDaysPerWeek"), field: "work_days_per_week", kind: "dropdown" as QCellKind, options: optsFromQ("workDaysPerWeek"), raw: lead.work_days_per_week ?? "" },
                     { label: "จำนวนแอร์ (แยกช่วงเวลา)", value: null, field: "ac_split", kind: "ac_split" as QCellKind, raw: lead.ac_split ?? "" },
-                    { label: "ช่วงชาร์จ EV", value: qLabel(lead.ev_charge_period, "evChargePeriod"), field: "ev_charge_period", kind: "dropdown" as QCellKind, options: optsFromQ("evChargePeriod"), raw: lead.ev_charge_period ?? "" },
+                    // Mirrors the form's มี/ไม่มี. Stored as 'ev' inside the
+                    // appliances CSV, so it commits through setEvCharger()
+                    // instead of writing the chip value. "ไม่มี" (or tapping
+                    // มี again) removes it; the API then drops the charge
+                    // period and EV load answers, exactly like the form.
+                    { label: "ที่ชาร์จรถ EV", value: hasEvCharger(lead.pre_appliances) ? "มี" : "ไม่มี", field: "pre_appliances", kind: "dropdown" as QCellKind, options: [{ value: "yes", label: "มี" }, { value: "no", label: "ไม่มี" }], raw: hasEvCharger(lead.pre_appliances) ? "yes" : "no",
+                      commit: (next: string | number | null) => updateLeadField("pre_appliances", setEvCharger(lead.pre_appliances, next === "yes")) },
+                    // Only for homes that HAVE a charger — the API refuses a
+                    // period otherwise (migration 201 cleared the leftovers).
+                    ...(hasEvCharger(lead.pre_appliances) ? [
+                      { label: "ช่วงชาร์จ EV", value: qLabel(lead.ev_charge_period, "evChargePeriod"), field: "ev_charge_period", kind: "dropdown" as QCellKind, options: optsFromQ("evChargePeriod"), raw: lead.ev_charge_period ?? "" },
+                    ] : []),
+                    // Appliance count + hours → Load Assumption (§3) of the survey
+                    // report. `value` is the kWh summary so the filled count works.
+                    { label: "การใช้เครื่องใช้ไฟฟ้า (ประมาณการ kWh)", value: lead.load_profile ? (loadSummaryText(computeLoad({ load_profile: lead.load_profile, ac_split: lead.ac_split, appliances: lead.pre_appliances, ev_charge_period: lead.ev_charge_period, meter_size: lead.survey_meter_size || lead.meter_size, electrical_phase: lead.survey_electrical_phase || lead.pre_electrical_phase })) || "ตอบบางส่วน") : null, field: "load_profile", kind: "load_profile" as QCellKind, raw: lead.load_profile ?? "" },
                   ],
                 },
                 {
@@ -1929,6 +1952,23 @@ export default function LeadDetailPage({ params }: { params: Promise<{ id: strin
                                 s.rows.forEach((r, i) => {
                                   if (r.kind === "stepper") {
                                     group.push(r);
+                                  } else if (r.kind === "load_profile") {
+                                    flushGroup(`grp-${i}`);
+                                    out.push(
+                                      <div key={i}>
+                                        <label className="block text-xs text-gray-500 mb-1.5">{r.label}</label>
+                                        <LoadProfileField
+                                          key={lead.load_profile ?? ""}
+                                          value={lead.load_profile}
+                                          acSplit={lead.ac_split}
+                                          hasEv={hasEvCharger(lead.pre_appliances)}
+                                          evChargePeriod={lead.ev_charge_period}
+                                          meterSize={lead.survey_meter_size || lead.meter_size}
+                                          electricalPhase={lead.survey_electrical_phase || lead.pre_electrical_phase}
+                                          onCommit={(json) => updateLeadField("load_profile", json)}
+                                        />
+                                      </div>
+                                    );
                                   } else {
                                     flushGroup(`grp-${i}`);
                                     out.push(
@@ -1943,7 +1983,7 @@ export default function LeadDetailPage({ params }: { params: Promise<{ id: strin
                                         allowOther={r.allowOther}
                                         chipIcon={r.chipIcon}
                                         readonlyDisplay={r.value}
-                                        onCommit={(next) => r.field && updateLeadField(r.field, next)}
+                                        onCommit={(next) => r.commit ? r.commit(next) : r.field && updateLeadField(r.field, next)}
                                       />
                                     );
                                   }

@@ -69,6 +69,7 @@ interface Lead {
   survey_db_distance_m: number | null;
   survey_wants_battery: string | null;
   survey_appliances: string | null;
+  pre_appliances: string | null;
   // Roof / house
   survey_roof_material: string | null;
   survey_roof_orientation: string | null;
@@ -143,7 +144,7 @@ export default function SurveyPdfPage() {
 
   const docNo = `SRV${new Date().getFullYear().toString().slice(-2)}${String(lead.id).padStart(4, "0")}`;
   const slotTime = lead.survey_time_slot ? (formatSlotsRange(lead.survey_time_slot) || lead.survey_time_slot) : "—";
-  const appliances = (lead.survey_appliances || "").split(",").filter(Boolean).map(v => APPLIANCE_MAP[v] || v);
+  const appliances = (lead.pre_appliances || "").split(",").filter(Boolean).map(v => APPLIANCE_MAP[v] || v);
 
   const photoSlots: { url: string | null; label: string }[] = [
     { url: lead.survey_photo_building_url, label: "อาคาร / ตัวบ้าน" },

@@ -5,6 +5,8 @@ import { Fragment, forwardRef, useEffect, useImperativeHandle, useRef, useState 
 import { apiFetch, getUserIdHeader } from "@/lib/api";
 import FallbackImage from "@/components/ui/FallbackImage";
 import type { Lead, Package } from "./types";
+import LoadProfileEditor from "../LoadProfileEditor";
+import { parseLoadProfile, serializeLoadProfile, type LoadProfile } from "@/lib/load-assumption";
 import { formatTHB as formatPrice } from "@/lib/utils/formatters";
 import {
   ABLE_OR_NOT, AC_TIERS, AGE_RANGES, BATTERY_OPTIONS, BILL_RISE_ACTIONS, BUSINESS_TYPES,
@@ -113,6 +115,7 @@ const PreSurveyForm = forwardRef<PreSurveyFormHandle, Props>(function PreSurveyF
   // controlled input handles "user typed and deleted" cleanly.
   const [houseAge, setHouseAge]                 = useState<string>(lead.house_age ?? "");
   const [occupantTotal, setOccupantTotal]       = useState<number | "">(lead.occupant_total ?? "");
+  const [occupantAdults, setOccupantAdults]     = useState<number | "">(lead.occupant_adults ?? "");
   const [occupantElderly, setOccupantElderly]   = useState<number | "">(lead.occupant_elderly ?? "");
   const [occupantKids, setOccupantKids]         = useState<number | "">(lead.occupant_kids ?? "");
   const [occupantPets, setOccupantPets]         = useState<number | "">(lead.occupant_pets ?? "");
@@ -129,6 +132,10 @@ const PreSurveyForm = forwardRef<PreSurveyFormHandle, Props>(function PreSurveyF
   const [workDaysPerWeek, setWorkDaysPerWeek]     = useState<string>(lead.work_days_per_week ?? "");
   const [acSplit, setAcSplit]                     = useState<AcSplit>(parseAcSplit(lead.ac_split));
   const [evChargePeriod, setEvChargePeriod]       = useState<string>(lead.ev_charge_period ?? "");
+  // Appliance load answers → Load Assumption table of the survey report
+  // (migration 198). Parsed/serialised by the shared module so the form, the
+  // API and the report agree on what "not answered" vs "none" means.
+  const [loadProfile, setLoadProfile]             = useState<LoadProfile>(() => parseLoadProfile(lead.load_profile));
   // Questionnaire §4 — future home assessment (migration 041).
   const [futureEv, setFutureEv]                   = useState<string>(lead.future_ev ?? "");
   const [futureEvCharger, setFutureEvCharger]     = useState<string>(lead.future_ev_charger ?? "");
@@ -240,13 +247,15 @@ const PreSurveyForm = forwardRef<PreSurveyFormHandle, Props>(function PreSurveyF
       pre_appliances: pre_appliances.length ? pre_appliances.join(",") : null,
       pre_roof_shape: roofShape || null,
       house_age: houseAge || null,
-      // รวม is derived — no user input, just sum of the 3 subcounts. 0 → null
-      // so we don't pollute lead_data with explicit 0s.
+      // รวม = people only (adults + elderly + kids); pets are not occupants.
+      // The API derives the stored total itself — this copy only feeds the
+      // parent's draft. 0 → null so we don't pollute lead_data with 0s.
       occupant_total: (
-        (typeof occupantElderly === "number" ? occupantElderly : 0)
+        (typeof occupantAdults  === "number" ? occupantAdults  : 0)
+        + (typeof occupantElderly === "number" ? occupantElderly : 0)
         + (typeof occupantKids    === "number" ? occupantKids    : 0)
-        + (typeof occupantPets    === "number" ? occupantPets    : 0)
       ) || null,
+      occupant_adults:  typeof occupantAdults  === "number" ? occupantAdults  : null,
       occupant_elderly: typeof occupantElderly === "number" ? occupantElderly : null,
       occupant_kids:    typeof occupantKids    === "number" ? occupantKids    : null,
       occupant_pets:    typeof occupantPets    === "number" ? occupantPets    : null,
@@ -259,6 +268,7 @@ const PreSurveyForm = forwardRef<PreSurveyFormHandle, Props>(function PreSurveyF
       work_days_per_week: workDaysPerWeek || null,
       ac_split:           stringifyAcSplit(acSplit),
       ev_charge_period:   evChargePeriod || null,
+      load_profile:       serializeLoadProfile(loadProfile),
       future_ev:           futureEv          || null,
       future_ev_charger:   futureEvCharger   || null,
       future_extend_home:  futureExtendHome  || null,
@@ -287,7 +297,7 @@ const PreSurveyForm = forwardRef<PreSurveyFormHandle, Props>(function PreSurveyF
       interested_package_id: selectedPkgs.length ? parseInt(selectedPkgs[0]) : null,
     } as Partial<Lead>);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [residenceType, monthlyBill, peakUsage, electricalPhase, wantsBattery, acUnits, pre_appliances, roofShape, houseAge, occupantTotal, occupantElderly, occupantKids, occupantPets, monthlyBillMax, meterSize, homeAtDaytime, daytimeOccupants, workAtHome, businessType, workDaysPerWeek, acSplit, evChargePeriod, futureEv, futureEvCharger, futureExtendHome, futureMoreMembers, futureSmartHome, futureBattery, outagePriorities, outageOtherText, billRiseAction, hadRoofLeak, didRoofRepair, hadElectricalIssue, didPanelReplacement, selfGenerates, evReady, blackoutResilient, futureUsageTrend, decisionFactors, decisionOtherText, decisionTimeline, paymentInterest, occupation, ageRange, householdIncome, selectedPkgs]);
+  }, [residenceType, monthlyBill, peakUsage, electricalPhase, wantsBattery, acUnits, pre_appliances, roofShape, houseAge, occupantTotal, occupantAdults, occupantElderly, occupantKids, occupantPets, monthlyBillMax, meterSize, homeAtDaytime, daytimeOccupants, workAtHome, businessType, workDaysPerWeek, acSplit, evChargePeriod, loadProfile, futureEv, futureEvCharger, futureExtendHome, futureMoreMembers, futureSmartHome, futureBattery, outagePriorities, outageOtherText, billRiseAction, hadRoofLeak, didRoofRepair, hadElectricalIssue, didPanelReplacement, selfGenerates, evReady, blackoutResilient, futureUsageTrend, decisionFactors, decisionOtherText, decisionTimeline, paymentInterest, occupation, ageRange, householdIncome, selectedPkgs]);
 
   // Auto-save to DB (debounced). Pending payload is held in a ref so it can
   // flush on unmount — otherwise navigating to the next sub-step within 600ms
@@ -311,13 +321,15 @@ const PreSurveyForm = forwardRef<PreSurveyFormHandle, Props>(function PreSurveyF
       pre_appliances: pre_appliances.length ? pre_appliances.join(",") : null,
       pre_roof_shape: roofShape || null,
       house_age: houseAge || null,
-      // รวม is derived — no user input, just sum of the 3 subcounts. 0 → null
-      // so we don't pollute lead_data with explicit 0s.
+      // รวม = people only (adults + elderly + kids); pets are not occupants.
+      // The API derives the stored total itself — this copy only feeds the
+      // parent's draft. 0 → null so we don't pollute lead_data with 0s.
       occupant_total: (
-        (typeof occupantElderly === "number" ? occupantElderly : 0)
+        (typeof occupantAdults  === "number" ? occupantAdults  : 0)
+        + (typeof occupantElderly === "number" ? occupantElderly : 0)
         + (typeof occupantKids    === "number" ? occupantKids    : 0)
-        + (typeof occupantPets    === "number" ? occupantPets    : 0)
       ) || null,
+      occupant_adults:  typeof occupantAdults  === "number" ? occupantAdults  : null,
       occupant_elderly: typeof occupantElderly === "number" ? occupantElderly : null,
       occupant_kids:    typeof occupantKids    === "number" ? occupantKids    : null,
       occupant_pets:    typeof occupantPets    === "number" ? occupantPets    : null,
@@ -330,6 +342,7 @@ const PreSurveyForm = forwardRef<PreSurveyFormHandle, Props>(function PreSurveyF
       work_days_per_week: workDaysPerWeek || null,
       ac_split:           stringifyAcSplit(acSplit),
       ev_charge_period:   evChargePeriod || null,
+      load_profile:       serializeLoadProfile(loadProfile),
       future_ev:           futureEv          || null,
       future_ev_charger:   futureEvCharger   || null,
       future_extend_home:  futureExtendHome  || null,
@@ -368,7 +381,7 @@ const PreSurveyForm = forwardRef<PreSurveyFormHandle, Props>(function PreSurveyF
     }, 600);
     pendingRef.current = { payload, timer };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [residenceType, monthlyBill, peakUsage, electricalPhase, wantsBattery, acUnits, pre_appliances, roofShape, houseAge, occupantTotal, occupantElderly, occupantKids, occupantPets, monthlyBillMax, meterSize, homeAtDaytime, daytimeOccupants, workAtHome, businessType, workDaysPerWeek, acSplit, evChargePeriod, futureEv, futureEvCharger, futureExtendHome, futureMoreMembers, futureSmartHome, futureBattery, outagePriorities, outageOtherText, billRiseAction, hadRoofLeak, didRoofRepair, hadElectricalIssue, didPanelReplacement, selfGenerates, evReady, blackoutResilient, futureUsageTrend, decisionFactors, decisionOtherText, decisionTimeline, paymentInterest, occupation, ageRange, householdIncome, selectedPkgs]);
+  }, [residenceType, monthlyBill, peakUsage, electricalPhase, wantsBattery, acUnits, pre_appliances, roofShape, houseAge, occupantTotal, occupantAdults, occupantElderly, occupantKids, occupantPets, monthlyBillMax, meterSize, homeAtDaytime, daytimeOccupants, workAtHome, businessType, workDaysPerWeek, acSplit, evChargePeriod, loadProfile, futureEv, futureEvCharger, futureExtendHome, futureMoreMembers, futureSmartHome, futureBattery, outagePriorities, outageOtherText, billRiseAction, hadRoofLeak, didRoofRepair, hadElectricalIssue, didPanelReplacement, selfGenerates, evReady, blackoutResilient, futureUsageTrend, decisionFactors, decisionOtherText, decisionTimeline, paymentInterest, occupation, ageRange, householdIncome, selectedPkgs]);
 
   // Flush any pending debounced save on unmount.
   useEffect(() => {
@@ -617,12 +630,14 @@ const PreSurveyForm = forwardRef<PreSurveyFormHandle, Props>(function PreSurveyF
           </div>
 
           {/* จำนวนผู้อยู่อาศัย — questionnaire §1.
-              Side-by-side columns (label on top, stepper below). 3 sub-counts
-              + auto-derived total all in the same 7-col grid as chip groups. */}
+              Side-by-side columns (label on top, stepper below). People
+              counts + pets + auto-derived total in the same 7-col grid as
+              chip groups. The total counts PEOPLE only (migration 199). */}
           <div className="mt-3">
             <label className={fieldLabel}>จำนวนผู้อยู่อาศัย</label>
             <div className="grid grid-cols-2 md:grid-cols-7 gap-2">
               {[
+                { state: occupantAdults,  setter: setOccupantAdults,  label: "ผู้ใหญ่" },
                 { state: occupantElderly, setter: setOccupantElderly, label: "ผู้สูงอายุ" },
                 { state: occupantKids,    setter: setOccupantKids,    label: "เด็ก" },
                 { state: occupantPets,    setter: setOccupantPets,    label: "สัตว์เลี้ยง" },
@@ -642,12 +657,12 @@ const PreSurveyForm = forwardRef<PreSurveyFormHandle, Props>(function PreSurveyF
               {/* รวม — auto-sum cell. No buttons, just the computed total
                   styled to match the stepper height/border so it lines up. */}
               <div className="flex flex-col gap-1">
-                <span className="text-xs text-gray-500 font-semibold">รวมผู้อยู่อาศัย</span>
+                <span className="text-xs text-gray-500 font-semibold">รวมผู้อยู่อาศัย (คน)</span>
                 <div className="flex items-center justify-center h-8 rounded-lg border border-gray-200 bg-gray-50 px-2">
                   <span className="text-sm font-mono tabular-nums font-bold text-active">
-                    {(typeof occupantElderly === "number" ? occupantElderly : 0)
-                     + (typeof occupantKids    === "number" ? occupantKids    : 0)
-                     + (typeof occupantPets    === "number" ? occupantPets    : 0)}
+                    {(typeof occupantAdults  === "number" ? occupantAdults  : 0)
+                     + (typeof occupantElderly === "number" ? occupantElderly : 0)
+                     + (typeof occupantKids    === "number" ? occupantKids    : 0)}
                   </span>
                 </div>
               </div>
@@ -837,7 +852,14 @@ const PreSurveyForm = forwardRef<PreSurveyFormHandle, Props>(function PreSurveyF
             <label className={fieldLabel}>ที่ชาร์จรถ EV</label>
             <div className="grid grid-cols-2 md:grid-cols-7 gap-2">
               <button type="button" onClick={() => { if (!pre_appliances.includes("ev")) toggleAppliance("ev"); }} className={chipBtn(pre_appliances.includes("ev"))}>มี</button>
-              <button type="button" onClick={() => { if (pre_appliances.includes("ev")) toggleAppliance("ev"); }} className={chipBtn(!pre_appliances.includes("ev"))}>ไม่มี</button>
+              {/* "ไม่มี" also clears the charge period and EV load answers —
+                  leaving them behind is how 49 leads ended up printing a
+                  charge period with no charger (sales asked about a planned EV). */}
+              <button type="button" onClick={() => {
+                if (pre_appliances.includes("ev")) toggleAppliance("ev");
+                setEvChargePeriod("");
+                setLoadProfile(prev => { const { ev: _ev, ...rest } = prev; void _ev; return rest; });
+              }} className={chipBtn(!pre_appliances.includes("ev"))}>ไม่มี</button>
             </div>
           </div>
           {pre_appliances.includes("ev") && (
@@ -850,6 +872,21 @@ const PreSurveyForm = forwardRef<PreSurveyFormHandle, Props>(function PreSurveyF
               </div>
             </div>
           )}
+
+          {/* เครื่องใช้ไฟฟ้า — feeds the Load Assumption table (§3) of the
+              survey report. Asks count + hours only; wattage is a default. */}
+          <div>
+            <label className={fieldLabel}>การใช้เครื่องใช้ไฟฟ้า (ใช้ประมาณการ kWh ในรายงานสำรวจ)</label>
+            <LoadProfileEditor
+              profile={loadProfile}
+              acSplit={stringifyAcSplit(acSplit)}
+              hasEv={pre_appliances.includes("ev")}
+              evChargePeriod={evChargePeriod || null}
+              meterSize={lead.survey_meter_size || meterSize || null}
+              electricalPhase={lead.survey_electrical_phase || electricalPhase || null}
+              onChange={setLoadProfile}
+            />
+          </div>
         </div>
       </div>
 
