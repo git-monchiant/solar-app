@@ -171,7 +171,7 @@ export async function POST(req: NextRequest) {
       //   ระบบหาใบล้างไม่เจอแล้วสร้างใบล้างใหม่ซ้อน ใบซ่อมค้างอยู่ที่ติดตามตลอดไป
       const cur = (await new sql.Request(tx).input("h", sql.Int, houseId).input("t", sql.Int, typeId)
         .input("bk", sql.Int, bookingId)
-        .query(`SELECT TOP 1 id, status FROM om_bookings
+        .query(`SELECT TOP 1 id, status, service_type_id FROM om_bookings
                  WHERE house_id = @h AND (id = @bk OR service_type_id = @t)
                    AND status IN (${ACTIVE_STATUS.map((s) => `'${s}'`).join(",")})
                  ORDER BY CASE WHEN id = @bk THEN 0 ELSE 1 END, id DESC`)).recordset[0];
@@ -194,6 +194,25 @@ export async function POST(req: NextRequest) {
         await tx.rollback();
         return NextResponse.json(
           { error: "ยังไม่ได้รับเงินค่าบริการ — นัดได้หลัง Account ยืนยันรับเงินแล้ว" }, { status: 409 });
+      }
+      // ★ บ้านสิทธิ์หมดต้องเสนอราคาก่อน (ผู้ใช้เคาะ 28 ก.ย. 69 — ปิดทางลัดตกลงนัดตรง ๆ)
+      //   ตรงกับคำตอบข้อ 2 ของแผน 20260924-02 "ต้องเสนอราคาทั้งหมด รวมสิทธิ์หมด" + "เก็บค่าบริการก่อนนัดหมาย"
+      //   เดิมบ้านที่ยังไม่มีใบงานกดตกลงนัดได้เลย ปิดงานแล้วสิทธิ์ติดลบ ต้องตามเก็บเงินทีหลัง
+      //   กันเฉพาะงานที่กินสิทธิ์ (ล้างแผง) ที่กำลังจะเข้านัดหมายครั้งแรก — ยังไม่มีใบ / ใบค้างขั้นติดตาม
+      //   ใบซ่อมในประกันไม่ใช้สิทธิ์ · ใบที่จ่ายแล้ว (payment) ได้สิทธิ์ที่ซื้อตอน Account ยืนยันแล้ว · เลื่อนนัดเดิมไม่กัน
+      if (outcome === "agreed" && (!cur || cur.status === "follow")) {
+        const need = (await new sql.Request(tx).input("h", sql.Int, houseId)
+          .input("t", sql.Int, cur ? Number(cur.service_type_id) : typeId)
+          .query(`SELECT CAST(st.consumes_quota AS int) quota,
+                         (SELECT ISNULL(SUM(e.balance), 0) FROM om_entitlement_balance e
+                           WHERE e.house_id = @h AND e.service_type_id = @t) balance
+                    FROM om_service_type st WHERE st.id = @t`)).recordset[0];
+        if (need?.quota === 1 && Number(need.balance) <= 0) {
+          await tx.rollback();
+          return NextResponse.json({ error:
+            "บ้านนี้สิทธิ์ล้างหมดแล้ว — ออกใบเสนอราคาที่ขั้น 02 และรับเงินก่อนนัด · ถ้าตัวเลขสิทธิ์ผิด แก้ที่หน้าบ้าน / ระบบติดตั้ง" },
+            { status: 409 });
+        }
       }
       // ใบงานที่อยู่ขั้นเสนอราคา/ชำระเงิน "ขอเลื่อน" ได้ แต่ต้องค้างขั้นเดิม ห้ามถอยไปติดตาม
       const keep = cur?.status === "quote" || (cur?.status === "payment" && outcome !== "agreed");

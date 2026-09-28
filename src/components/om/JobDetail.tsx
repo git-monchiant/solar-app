@@ -79,6 +79,10 @@ export default function JobDetail({ item, history, onBack, onDone, onSaved, onRe
   const at = flowIndex(cur);
   const skip = skipsPaidSteps(item);
   const isExit = (EXIT_STATUS.map((x) => x.k) as string[]).includes(cur);
+  // ★ บ้านสิทธิ์หมด นัดตรงไม่ได้ ต้องเสนอราคาก่อน (ผู้ใช้เคาะ 28 ก.ย. 69 · API /api/om/follow กันอีกชั้น)
+  //   งานถัดไป = ยังไม่มีใบ / ใบล่าสุดจบแล้ว → ใบล้างใหม่ (กินสิทธิ์) · ใบค้างขั้นติดตาม → ดูชนิดงานของใบนั้น
+  const nextJob = !item.booking_id || cur === "closed" || isExit;
+  const needQuote = item.balance <= 0 && (nextJob || (cur === "follow" && item.consumes_quota === 1));
   const [step, setStep] = useState(at);
   const [outcome, setOutcome] = useState<string>("agreed");
   const [note, setNote] = useState("");
@@ -422,6 +426,14 @@ export default function JobDetail({ item, history, onBack, onDone, onSaved, onRe
                     </div>
                   </div>
 
+                  {outcome === "agreed" && needQuote ? (
+                    <div className="mt-3 rounded-lg bg-amber-50 border border-amber-200 px-3 py-2 text-xs leading-relaxed text-amber-900 flex items-center gap-2 flex-wrap">
+                      <span>บ้านนี้<b>สิทธิ์ล้างหมดแล้ว</b> — ตกลงนัดตรงไม่ได้ ต้องออกใบเสนอราคาและรับเงินก่อนนัด (เก็บค่าบริการก่อนนัดหมาย)
+                        · ถ้าตัวเลขสิทธิ์ผิด แก้ที่หน้าบ้าน / ระบบติดตั้ง</span>
+                      <button type="button" onClick={() => setStep(1)} style={{ minHeight: 0 }}
+                        className="font-semibold text-active hover:underline cursor-pointer">ไปขั้น 02 เสนอราคา ›</button>
+                    </div>
+                  ) : (
                   <div className="mt-3 rounded-lg bg-gray-50 border border-gray-200 px-3 py-2 text-xs leading-relaxed text-gray-600">
                     {outcome === "agreed" && <>กดบันทึกแล้ว{item.booking_id && cur === "follow" ? <> ใบงาน #{item.booking_id} ย้ายไป</> : <> <b>สร้างใบงาน</b></>} ขั้น <b>นัดหมาย</b> (รอยืนยันนัด) พร้อมวันเวลาที่เลือก การ์ดจะย้ายออกจากแท็บติดตาม</>}
                     {outcome === "postponed" && <>สร้างใบงานขั้น <b>ติดตาม</b> พร้อมวันนัดโทรใหม่ ยังอยู่แท็บเดิมแต่จะไม่โผล่ซ้ำจนถึงวันนัด</>}
@@ -429,10 +441,11 @@ export default function JobDetail({ item, history, onBack, onDone, onSaved, onRe
                     {outcome === "declined" && <><b>ไม่สร้างใบงาน</b> ย้ายไปแท็บไม่เอา · <b>สิทธิ์ไม่ถูกตัด</b> ยังใช้ได้ถ้าเปลี่ยนใจ</>}
                     {outcome === "wrong_number" && <>ทำเครื่องหมายเบอร์นี้ว่า <b>ใช้ไม่ได้</b> ถ้าไม่เหลือเบอร์อื่นจะตกไปแท็บติดต่อไม่ได้</>}
                   </div>
+                  )}
                 </div>
 
                 <div className="mt-3 flex md:justify-end">
-                  <button type="button" disabled={busy} onClick={saveCall} className={`${PRIMARY_BTN} flex-1 md:flex-none md:w-64`}>
+                  <button type="button" disabled={busy || (outcome === "agreed" && needQuote)} onClick={saveCall} className={`${PRIMARY_BTN} flex-1 md:flex-none md:w-64`}>
                     {busy ? "กำลังบันทึก…" : "บันทึกการโทร"}
                   </button>
                 </div>

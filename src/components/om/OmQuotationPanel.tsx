@@ -111,17 +111,35 @@ export default function OmQuotationPanel({ item, skip, onSaved, onReload }: {
     finally { setBusy(false); }
   };
 
-  if (skip && !item.q_id) {
-    return <div className="text-sm text-gray-600">งานนี้<b>ใช้สิทธิ์ฟรี</b> — ข้ามขั้นเสนอราคา</div>;
-  }
-  if (err) return <div className="rounded-lg bg-red-50 border border-red-200 px-3 py-2 text-sm text-red-700">{err}</div>;
-
   if (fresh) {
+    // ใบของงานถัดไป — POST /api/om/quotations สร้างใบงานล้างแผงใหม่เสมอ ไม่ใช่ชนิดของใบงานล่าสุด (อาจเป็นซ่อม)
     return (
-      <QuoteForm item={item} quote={null} onCancel={() => setFresh(false)}
+      <QuoteForm item={{ ...item, service_code: "cleaning" }} quote={null} onCancel={() => setFresh(false)}
         onDone={(msg, q) => { setQuote(q); setFresh(false); onSaved(msg); onReload?.(); }} />
     );
   }
+
+  // ★ งานล่าสุดจบแล้ว + บ้านสิทธิ์ล้างหมด = งานถัดไปต้องเสนอราคา (ผู้ใช้เคาะ 28 ก.ย. 69 ปิดทางลัดตกลงนัดตรง)
+  //   ต้องมีทางออกใบให้งานถัดไปจากตรงนี้ ไม่งั้นบ้านที่งานล่าสุดใช้สิทธิ์ฟรีจะเจอแค่ "ข้ามขั้น" นัดก็ไม่ได้
+  const finished = item.job_status === "closed" || item.job_status === "cancelled" || item.job_status === "no_show";
+  const nextNeedsQuote = finished && item.balance <= 0;
+  const nextQuoteBtn = canIssue
+    ? <button type="button" style={{ minHeight: 0 }} onClick={() => setFresh(true)}
+        className="ml-auto h-8 px-3.5 rounded-lg bg-primary text-white text-xs font-bold cursor-pointer">ออกใบเสนอราคางานถัดไป</button>
+    : <b className="ml-auto text-xs">รอ Sale ออกใบ</b>;
+
+  if (skip && !item.q_id) {
+    if (nextNeedsQuote) {
+      return (
+        <div className="text-sm text-gray-600 leading-relaxed flex items-center gap-2 flex-wrap">
+          <span>งานล่าสุด<b>ใช้สิทธิ์ฟรี</b>และจบแล้ว · บ้านนี้<b>สิทธิ์ล้างหมด</b> งานถัดไปต้องออกใบเสนอราคาก่อนนัด</span>
+          {nextQuoteBtn}
+        </div>
+      );
+    }
+    return <div className="text-sm text-gray-600">งานนี้<b>ใช้สิทธิ์ฟรี</b> — ข้ามขั้นเสนอราคา</div>;
+  }
+  if (err) return <div className="rounded-lg bg-red-50 border border-red-200 px-3 py-2 text-sm text-red-700">{err}</div>;
 
   if (!item.q_id || editing) {
     if (!canIssue) {
@@ -162,6 +180,13 @@ export default function OmQuotationPanel({ item, skip, onSaved, onReload }: {
             <button type="button" style={{ minHeight: 0 }} onClick={() => setFresh(true)}
               className="ml-auto h-8 px-3.5 rounded-lg bg-primary text-white text-xs font-bold cursor-pointer">ลูกค้าเปลี่ยนใจ? ออกใบเสนอราคาใหม่</button>
           )}
+        </div>
+      )}
+      {/* ใบนี้เป็นของงานที่ปิดไปแล้ว — บ้านสิทธิ์หมด งานถัดไปต้องมีใบใหม่ (ใบเดิมแก้ไม่ได้แล้ว) */}
+      {item.job_status === "closed" && nextNeedsQuote && (
+        <div className="mb-3 rounded-xl bg-gray-50 border border-gray-200 px-3.5 py-2.5 text-sm text-gray-600 flex items-center gap-2 flex-wrap">
+          <span>ใบนี้เป็นของใบงาน #{item.booking_id} ที่ปิดแล้ว · บ้านนี้<b>สิทธิ์ล้างหมด</b> งานถัดไปต้องออกใบใหม่</span>
+          {nextQuoteBtn}
         </div>
       )}
 
