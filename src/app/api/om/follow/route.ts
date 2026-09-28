@@ -6,7 +6,7 @@ import { getOmDb } from "@/lib/om/line";
 import { OM_FOLLOW_DROP_SQL, OM_FOLLOW_SCOPE_SQL } from "@/lib/om/follow-sql";
 import { getSettings } from "@/lib/om/settings";
 import { historyLabel, logBooking } from "@/lib/om/booking-log";
-import { ACTIVE_STATUS, toThaiOffset } from "@/lib/om/booking";
+import { ACTIVE_STATUS, canMove, statusLabel, toThaiOffset } from "@/lib/om/booking";
 import { OM_BOOKING_PAID_SQL } from "@/lib/om/om-quotation";
 
 // แท็บ "ติดตาม" ของงานบริการ — ★ การ์ดคำนวณสด ไม่มีแถวงานรอไว้ล่วงหน้า
@@ -237,6 +237,19 @@ export async function POST(req: NextRequest) {
       }
       // ใบงานที่อยู่ขั้นเสนอราคา/ชำระเงิน "ขอเลื่อน" ได้ แต่ต้องค้างขั้นเดิม ห้ามถอยไปติดตาม
       const keep = cur?.status === "quote" || (cur?.status === "payment" && outcome !== "agreed");
+
+      // ★ 29 ก.ย. 69 (แผน 20260929-01): การโทรที่จะเปลี่ยนสถานะใบงานต้องผ่านลำดับสถานะกลาง (canMove) เหมือน PATCH
+      //   เดิมหาใบค้างรวมเข้างาน/รอปิดด้วย แล้วตั้งสถานะใหม่ตรง ๆ — กดฟอร์มขั้นติดตามที่ปิดไปแล้ว
+      //   "ตกลงนัด" ใบที่ช่างเข้างานแล้วถอยเป็นรอยืนยันนัด · "ขอเลื่อน" ถอยเป็นติดตาม (ประวัติเห็นแค่บันทึกการโทร)
+      //   สถานะเดิมซ้ำ (รอยืนยันนัด ตกลงนัดวันใหม่) = อัปเดตวันนัดเหมือนเดิม ไม่นับเป็นการเปลี่ยนสถานะ
+      const target = keep ? String(cur?.status) : status;
+      if (cur && target !== cur.status && !canMove(String(cur.status), target)) {
+        await tx.rollback();
+        return NextResponse.json({ error:
+          `ใบงาน #${cur.id} อยู่ขั้น "${statusLabel(String(cur.status))}" แล้ว — ${outcome === "agreed" ? "ตกลงนัด" : "ขอเลื่อน"}จากการโทรไม่ได้`
+          + (["pending", "confirmed"].includes(String(cur.status)) ? " · เลื่อนนัดใช้ปุ่ม Reschedule ที่ขั้นนัดหมาย" : "") },
+          { status: 409 });
+      }
 
       if (cur) {
         bookingId = cur.id as number;

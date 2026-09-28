@@ -21,6 +21,7 @@ import {
   CameraIcon, CheckIcon, ChevronLeftIcon, ChevronRightIcon, DocumentIcon, PlusIcon, UserIcon,
 } from "@/components/ui/icons";
 import { PROXY_REASONS, failCount, type Checks, type FormItem, type JobForm } from "@/lib/om/job-form";
+import { statusLabel } from "@/lib/om/booking";
 
 type Job = {
   id: number; house_id: number; status: string; team_name: string | null; scheduled_at: string | null;
@@ -451,6 +452,13 @@ export default function JobFormPanel({ jobId, wrapClass = "h-full overflow-auto 
   };
 
   const closeJob = () => {
+    // ★ 29 ก.ย. 69 (แผน 20260929-01): ปิดงานได้เฉพาะใบที่ช่างอยู่หน้างาน — ยืนยันนัดแล้ว / เข้างาน / รอปิด
+    //   เดิมกดได้จากทุกสถานะ แล้วหน้าเว็บเดินสถานะให้ทีละขั้นจนปิด (ข้ามการยืนยันนัด/จ่ายทีม)
+    //   API กันซ้ำอีกชั้น: เริ่มงานต้องจ่ายทีมแล้ว · ปิดงานต้องมีใบตรวจแล้ว
+    if (!["confirmed", "progress", "checked"].includes(job.status)) {
+      setErr(`ใบงานยังไม่ถึงขั้นเข้างาน (ตอนนี้ "${statusLabel(job.status)}") — ยืนยันนัดและจ่ายทีมที่ขั้นนัดหมายก่อน`);
+      return;
+    }
     const missing = method === "onsite_sign" && !custSign ? "ลายเซ็นลูกค้า"
       : method === "tech_proxy" && !techSign ? "ลายเซ็นช่าง (เซ็นแทนลูกค้า)" : null;
     if (missing) { setNextError(missing); return; }

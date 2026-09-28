@@ -3,7 +3,7 @@ import { requireAuth } from "@/lib/auth";
 import { fixDates, sql } from "@/lib/db";
 import { getOmDb } from "@/lib/om/line";
 import { actionLabel, logBooking, type BookingAction } from "@/lib/om/booking-log";
-import { canMove, toThaiOffset } from "@/lib/om/booking";
+import { canMove, statusLabel, toThaiOffset } from "@/lib/om/booking";
 import { notifyOmUser, resolveOmNotifications } from "@/lib/om/notifications";
 import { getSettings } from "@/lib/om/settings";
 
@@ -79,6 +79,30 @@ export async function PATCH(req: NextRequest, ctx: { params: Promise<{ id: strin
   let action: BookingAction = "reschedule";
 
   const newStatus = typeof b.status === "string" ? b.status.trim() : "";
+
+  // ★ 29 ก.ย. 69 (แผน 20260929-01) กันแก้ใบงานผิดลำดับ — หน้าจอซ่อนปุ่มแล้วก็ต้องกันที่นี่ด้วย
+  // 1) ใบที่จบแล้วแก้ทีม/คิว/วันนัดไม่ได้ (เจอ 28 ก.ย.: ใบ #99 ถูกจ่ายทีมหลังปิดงาน)
+  //    ยกเว้นคำขอที่เปิดใบกลับมาตามลำดับสถานะ (ยกเลิก/ไม่อยู่บ้าน → ติดตาม/รอยืนยันนัด)
+  const FINISHED = ["closed", "cancelled", "no_show"];
+  const has = (k: string) => Object.prototype.hasOwnProperty.call(b, k);
+  const reopening = !!newStatus && !FINISHED.includes(newStatus);
+  if (FINISHED.includes(String(cur.status)) && !reopening && ["team_id", "queue_index", "scheduled_at"].some(has))
+    return NextResponse.json({ error: `ใบงาน #${id} ${statusLabel(String(cur.status))}แล้ว — แก้ทีม คิว หรือวันนัดไม่ได้` }, { status: 400 });
+  // 2) เริ่มงานต้องจ่ายทีมแล้ว — ตรงกับปุ่ม "ช่างถึงหน้างานแล้ว" ที่โผล่เมื่อจ่ายทีมแล้วเท่านั้น
+  //    (ใบตรวจที่กดปิดงานจากใบที่ยังไม่เข้างาน เดินผ่านขั้นนี้ด้วย จึงกันการปิดงานใบที่ยังไม่จ่ายทีมไปในตัว)
+  if (newStatus === "progress" && newStatus !== cur.status) {
+    const teamAfter = has("team_id") ? (b.team_id === null || b.team_id === "" ? null : Number(b.team_id)) : cur.team_id;
+    if (!teamAfter)
+      return NextResponse.json({ error: "ยังไม่ได้จ่ายทีมช่าง — จ่ายทีมที่ขั้นนัดหมายก่อนเริ่มงาน" }, { status: 400 });
+  }
+  // 3) ปิดงานต้องมีใบตรวจรับงานแล้ว — ทางปิดงานทางเดียวคือปุ่มท้ายใบตรวจ (บันทึกใบก่อนแล้วค่อยเปลี่ยนสถานะ)
+  if (newStatus === "closed" && newStatus !== cur.status) {
+    const rep = (await db.request().input("id", sql.Int, id)
+      .query(`SELECT TOP 1 id FROM om_job_report WHERE booking_id = @id`)).recordset[0];
+    if (!rep)
+      return NextResponse.json({ error: "ยังไม่มีใบตรวจรับงาน — กรอกใบตรวจแล้วกดปิดงานท้ายใบ" }, { status: 400 });
+  }
+
   if (newStatus && newStatus !== cur.status) {
     if (!canMove(String(cur.status), newStatus))
       return NextResponse.json({ error: `เปลี่ยนจาก ${cur.status} ไป ${newStatus} ไม่ได้` }, { status: 400 });
