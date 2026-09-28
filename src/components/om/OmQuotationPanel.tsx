@@ -34,7 +34,8 @@ type Quote = {
 };
 
 // เปิด PDF ตรง ๆ (ไม่ใช่ blob) ให้ชื่อไฟล์จาก server ติดไปถึงปุ่มดาวน์โหลด — แบบเดียวกับหน้าคิวอนุมัติ
-const openPdf = (id: number) => {
+// ★ export ให้ปุ่มเอกสารในบรรทัดสรุปขั้นเสนอราคาที่ปิดแล้ว (JobDetail · แผน 20260929-02) ใช้ตัวเดียวกัน
+export const openQuotationPdf = (id: number) => {
   const uid = typeof window !== "undefined" ? window.localStorage.getItem("userId") : null;
   const url = `/api/quotation-pdf/${id}${uid ? `?user_id=${uid}` : ""}`;
   const tab = window.open(url, "_blank");
@@ -247,7 +248,7 @@ export default function OmQuotationPanel({ item, skip, onSaved, onReload }: {
 
       {actErr && <div className="mt-3 rounded-lg bg-red-50 border border-red-200 px-3 py-2 text-sm text-red-700">{actErr}</div>}
       <div className="mt-3 flex gap-2 flex-wrap">
-        <button type="button" style={{ minHeight: 0 }} onClick={() => openPdf(quote.id)}
+        <button type="button" style={{ minHeight: 0 }} onClick={() => openQuotationPdf(quote.id)}
           className="h-9 px-4 rounded-xl border border-gray-200 text-sm font-semibold text-gray-700 bg-white cursor-pointer">ดูใบเสนอราคา (PDF)</button>
         {canIssue && EDITABLE.includes(quote.status) && (
           <button type="button" disabled={busy} style={{ minHeight: 0 }} onClick={() => act("submit")}

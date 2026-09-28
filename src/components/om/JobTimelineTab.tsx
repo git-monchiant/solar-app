@@ -15,13 +15,15 @@ import {
 } from "@/lib/om/service-view";
 import ServiceDocButton from "@/components/om/ServiceDocButton";
 
-type StageKey = (typeof FLOW)[number]["k"];
+export type StageKey = (typeof FLOW)[number]["k"];
 type Tone = "paid" | "pending" | "bad";
 type DetailKey = "call" | "appoint" | "team" | "quote" | "report";
-type Row = {
+export type Row = {
   key: string; at: string; label: string; sub?: string | null; tone?: Tone;
   /** อยู่ในกลุ่มพับ (เส้นประ) แทนที่จะเป็นรายการหลัก */
   detail?: DetailKey;
+  /** action ของแถวประวัติ + ผลโทร — บรรทัดสรุปขั้นติดตามในการ์ดที่ปิดแล้วนับการโทรจากตรงนี้ (แผน 20260929-02) */
+  action?: string; outcome?: string | null;
 };
 
 const DETAIL_LABEL: Record<DetailKey, string> = {
@@ -44,7 +46,7 @@ const money = (v: unknown) => (v === null || v === undefined || v === "" ? "" : 
 /** 1 แถวประวัติ → ขั้น + รายการ (null = ไม่ขึ้นใน Timeline) */
 function toRow(h: HistoryRow, teamName: (id: unknown) => string): { stage: StageKey; row: Row } | null {
   const to = parse(h.to_json), from = parse(h.from_json);
-  const base = { key: String(h.id), at: h.created_at };
+  const base = { key: String(h.id), at: h.created_at, action: h.action };
   const by = h.actor_name ? `โดย ${h.actor_name}` : null;
   const withReason = (s: string | null) => [s, h.reason].filter(Boolean).join(" · ") || null;
   switch (h.action) {
@@ -55,9 +57,9 @@ function toRow(h: HistoryRow, teamName: (id: unknown) => string): { stage: Stage
       if (oc === "declined" && to.status === "cancelled")
         return { stage: "closed", row: { ...base, label: "ลูกค้าไม่เอา — ยกเลิกใบงาน", tone: "bad", sub: withReason(by) } };
       if (oc === "agreed")
-        return { stage: "follow", row: { ...base, label: `โทร · ${t}`, sub: withReason(to.scheduled_at ? `นัด ${thDT(str(to.scheduled_at))}` : by) } };
+        return { stage: "follow", row: { ...base, outcome: oc, label: `โทร · ${t}`, sub: withReason(to.scheduled_at ? `นัด ${thDT(str(to.scheduled_at))}` : by) } };
       const next = h.next_action_date ?? str(to.next_date);
-      return { stage: "follow", row: { ...base, label: `โทร · ${t}`, detail: "call", sub: withReason(next ? `นัดโทรใหม่ ${thD(next)}` : by) } };
+      return { stage: "follow", row: { ...base, outcome: oc, label: `โทร · ${t}`, detail: "call", sub: withReason(next ? `นัดโทรใหม่ ${thD(next)}` : by) } };
     }
     case "create":
       // เปิดใบงานพร้อมวันนัด = วันนัดไปอยู่หัวขั้นนัดหมายแล้ว ไม่ต้องขึ้นซ้ำ
@@ -193,9 +195,8 @@ function Milestone({ r, dot }: { r: Row; dot: string }) {
 
 type Group = { key: string; booking: BookingSummary | null; stages: Map<StageKey, Row[]> };
 
-export default function JobTimelineTab({ bookings, history, teams }: {
-  bookings: BookingSummary[]; history: HistoryRow[]; teams: Team[];
-}) {
+/** จัดประวัติทั้งบ้านเข้ากลุ่มใบงาน แล้วแบ่งตามขั้น — แท็บนี้วาดทุกกลุ่ม · การ์ดขั้นที่ปิดแล้วใช้ของใบงานเดียว */
+function groupHistory(bookings: BookingSummary[], history: HistoryRow[], teams: Team[]) {
   const teamName = (id: unknown) => teams.find((t) => t.id === Number(id))?.name ?? `#${str(id)}`;
 
   // ── จัดประวัติเข้ากลุ่มใบงาน ──
@@ -236,6 +237,38 @@ export default function JobTimelineTab({ bookings, history, teams }: {
       done.sub,
     ].filter(Boolean).join(" · ") || null;
   }
+  return { byBooking, pending };
+}
+
+/** เหตุการณ์ของใบงานเดียว แบ่งตามขั้น — สรุปในการ์ดขั้นที่ปิดแล้วของหน้ารายละเอียด (แผน 20260929-02)
+ *  ★ ชุดเดียวกับที่แท็บนี้วาด ป้าย/การจัดกลุ่มการโทรก่อนมีใบงานจึงตรงกันทั้งสองที่ */
+export function bookingStages(bookings: BookingSummary[], history: HistoryRow[], teams: Team[], bookingId: number) {
+  return groupHistory(bookings, history, teams).byBooking.get(bookingId)?.stages ?? new Map<StageKey, Row[]>();
+}
+
+/** เหตุการณ์ในขั้นเดียว — รายการหลัก (หัวนัดอยู่บนสุดเสมอ) + กลุ่มรายการยิบย่อยพับไว้ */
+export function StageEvents({ stage, rows }: { stage: StageKey; rows: Row[] }) {
+  const sorted = [...rows].sort((a, b) => a.at.localeCompare(b.at));
+  const main = sorted.filter((r) => !r.detail);
+  // หัวนัด (anchor) อยู่บนสุดของขั้นนัดหมายเสมอ ถึงเวลาจะไม่ใช่แถวแรก
+  const anchor = main.find((r) => r.key.startsWith("anchor"));
+  const shown = anchor ? [anchor, ...main.filter((r) => r !== anchor)] : main;
+  const details = (Object.keys(DETAIL_LABEL) as DetailKey[])
+    .map((k) => ({ k, rows: sorted.filter((r) => r.detail === k) })).filter((d) => d.rows.length);
+  return (
+    <>
+      <ul className="space-y-2 py-1">
+        {shown.map((r) => <Milestone key={r.key} r={r} dot={STAGE_DOT[stage]} />)}
+      </ul>
+      {details.map((d) => <DetailGroup key={d.k} label={DETAIL_LABEL[d.k]} rows={d.rows} />)}
+    </>
+  );
+}
+
+export default function JobTimelineTab({ bookings, history, teams }: {
+  bookings: BookingSummary[]; history: HistoryRow[]; teams: Team[];
+}) {
+  const { byBooking, pending } = groupHistory(bookings, history, teams);
 
   // ใบล่าสุดก่อน · กลุ่ม "รอบใหม่" (ยังไม่มีใบงาน) อยู่บนสุดถ้ามี
   const groups: Group[] = [
@@ -317,21 +350,12 @@ export default function JobTimelineTab({ bookings, history, teams }: {
             {open && (
               <div className="px-3 py-2 space-y-1">
                 {FLOW.filter((f) => g.stages.has(f.k)).map((f) => {
-                  const rows = [...(g.stages.get(f.k) ?? [])].sort((a, b2) => a.at.localeCompare(b2.at));
-                  const main = rows.filter((r) => !r.detail);
-                  // หัวนัด (anchor) อยู่บนสุดของขั้นนัดหมายเสมอ ถึงเวลาจะไม่ใช่แถวแรก
-                  const anchor = main.find((r) => r.key.startsWith("anchor"));
-                  const shown = anchor ? [anchor, ...main.filter((r) => r !== anchor)] : main;
-                  const details = (Object.keys(DETAIL_LABEL) as DetailKey[])
-                    .map((k) => ({ k, rows: rows.filter((r) => r.detail === k) })).filter((d) => d.rows.length);
+                  const rows = g.stages.get(f.k) ?? [];
                   const sk = `${g.key}:${f.k}`;
                   return (
-                    <StageSection key={f.k} title={f.t} count={main.length} open={!closedStage[sk]}
+                    <StageSection key={f.k} title={f.t} count={rows.filter((r) => !r.detail).length} open={!closedStage[sk]}
                       onToggle={() => setClosedStage((s) => ({ ...s, [sk]: !s[sk] }))}>
-                      <ul className="space-y-2 py-1">
-                        {shown.map((r) => <Milestone key={r.key} r={r} dot={STAGE_DOT[f.k]} />)}
-                      </ul>
-                      {details.map((d) => <DetailGroup key={d.k} label={DETAIL_LABEL[d.k]} rows={d.rows} />)}
+                      <StageEvents stage={f.k} rows={rows} />
                     </StageSection>
                   );
                 })}

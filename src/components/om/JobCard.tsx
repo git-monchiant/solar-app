@@ -8,7 +8,7 @@
 import { CALL_OUTCOME, EXIT_STATUS, statusLabel, statusTone } from "@/lib/om/booking";
 import { formatTHB } from "@/lib/utils/formatters";
 import {
-  BUCKET_LABEL, FLOW, PAY_STATE, QUOTE_STATUS, TONE, flowIndex, monthsAgo, repairPending, skipsPaidSteps, teamLabel, thD, thDT,
+  BUCKET_LABEL, FLOW, PAY_STATE, QUOTE_STATUS, TONE, jobAt, monthsAgo, repairPending, skipsPaidSteps, teamLabel, thD, thDT,
   type Item,
 } from "@/lib/om/service-view";
 
@@ -26,14 +26,14 @@ const D = {
 
 /** แถบ 6 ขั้นในการ์ด (โผล่ตั้งแต่จอ lg — กว้างเกินจอ md ที่มีเมนูซ้าย · มือถือดูป้ายสถานะแทน)
  *  ★ 24 ก.ย. 69 แผน 20260924-02 เฟส 1 เพิ่ม "รอปิด" เป็น 7 ขั้น → 28 ก.ย. 69 ตัดออก เหลือ 6 (ปิดงานจบที่เข้างาน)
- *    ตำแหน่งมาจาก flowIndex ที่เดียวกับหน้ารายละเอียด
+ *    ตำแหน่งมาจาก jobAt ที่เดียวกับหน้ารายละเอียด (ชำระครบแล้วรอโทรนัด = นัดหมาย · แผน 20260929-02)
  *  ★ เสนอราคา/ชำระเงิน = ขั้นของงานเสียเงิน — งานใช้สิทธิ์ฟรีวาดเป็นวงเส้นประ "ข้าม"
  *    ความกว้างทุกใบเท่ากัน แนวตรงกันทั้งหน้า และมองออกทันทีว่าบ้านไหนต้องเสนอราคา
  *  ★ ยกเลิก/ไม่อยู่บ้าน ไม่ซ่อนแถบแล้ว (เดิมซ่อน) — บ้านกลับมาแท็บติดตาม แถบยืนที่ติดตาม
  *    ส่วนเหตุผลบอกด้วยป้ายแดงข้างขวา
  */
 function Flow({ r }: { r: Item }) {
-  const idx = flowIndex(r.job_status);
+  const idx = jobAt(r);
   const skip = skipsPaidSteps(r);
   return (
     <div className="hidden lg:flex items-start mt-1 shrink-0" aria-label="Flow progress">

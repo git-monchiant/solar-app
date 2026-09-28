@@ -102,7 +102,8 @@ export default function OmPaymentPanel({ item, skip, onSaved, onReload }: {
           )}
           {current.confirmed_at && (
             <div className="mt-2 text-xs text-emerald-800 leading-relaxed">
-              เติมสิทธิ์ที่ซื้อให้บ้านแล้ว · ขั้นถัดไป <b>โทรตกลงนัด</b> ที่ขั้น 01 (บันทึกการโทร &ldquo;รับสาย · ตกลงนัด&rdquo;)
+              {/* ★ 29 ก.ย. 69 (แผน 20260929-02): ขั้น 01 ปิดแล้วอ่านอย่างเดียว — โทรตกลงวันนัดย้ายไปการ์ดนัดหมาย */}
+              เติมสิทธิ์ที่ซื้อให้บ้านแล้ว · ขั้นถัดไป <b>โทรตกลงวันนัด</b> ที่ขั้น 04 นัดหมาย
             </div>
           )}
         </div>
