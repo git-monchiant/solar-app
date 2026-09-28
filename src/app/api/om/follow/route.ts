@@ -5,7 +5,7 @@ import { fixDates, sql } from "@/lib/db";
 import { getOmDb } from "@/lib/om/line";
 import { OM_FOLLOW_DROP_SQL, OM_FOLLOW_SCOPE_SQL } from "@/lib/om/follow-sql";
 import { getSettings } from "@/lib/om/settings";
-import { actionLabel, logBooking } from "@/lib/om/booking-log";
+import { historyLabel, logBooking } from "@/lib/om/booking-log";
 import { ACTIVE_STATUS, toThaiOffset } from "@/lib/om/booking";
 import { OM_BOOKING_PAID_SQL } from "@/lib/om/om-quotation";
 
@@ -91,17 +91,36 @@ export async function GET(req: NextRequest) {
 
     -- ประวัติของบ้านหลังนี้ (โหมดบ้านเดียว) — รวมทั้งที่ผูกกับบ้านตรง ๆ (การโทรก่อนมีใบงาน)
     -- และที่ผูกกับใบงานของบ้านหลังนี้ทุกใบ ⇒ ไทม์ไลน์เส้นเดียวไม่ขาดตอน
+    -- ★ 28 ก.ย. 69 (แผน 20260928-05): เพิ่ม from_json/to_json ให้แท็บ Timeline อ่านรายละเอียด
+    --   (วันนัดเดิม→ใหม่ · เลขใบเสนอราคา/ยอด · ยอดเงิน · ทีม) — Activity Log ไม่ได้ใช้ ไม่กระทบ
     IF @house > 0
       SELECT TOP 200 bh.id, bh.booking_id, bh.[action],
              JSON_VALUE(bh.to_json, '$.outcome') outcome,
              bh.reason, u2.full_name actor_name,
              CONVERT(varchar(33), bh.created_at, 126) created_at,
-             CONVERT(char(10), bh.next_action_date, 23) next_action_date
+             CONVERT(char(10), bh.next_action_date, 23) next_action_date,
+             bh.from_json, bh.to_json
         FROM om_booking_history bh
         LEFT JOIN users u2 ON u2.id = bh.actor_user_id
        WHERE bh.house_id = @house
           OR bh.booking_id IN (SELECT b3.id FROM om_bookings b3 WHERE b3.house_id = @house)
        ORDER BY bh.id DESC;
+
+    -- ใบงานทุกใบของบ้าน (โหมดบ้านเดียว) — หัวกลุ่มของแท็บ Timeline (แผน 20260928-05)
+    IF @house > 0
+      SELECT b.id, b.status, st.label_th service_type, CAST(st.consumes_quota AS int) consumes_quota,
+             CONVERT(varchar(33), b.scheduled_at, 126) scheduled_at,
+             CONVERT(varchar(33), b.created_at, 126) created_at,
+             b.parent_booking_id, CAST(b.in_warranty AS int) in_warranty, b.cancelled_reason,
+             ISNULL(b.rescheduled_count, 0) rescheduled_count, t.name team_name,
+             r.job_no, r.result, CONVERT(varchar(33), r.finished_at, 126) finished_at,
+             (SELECT COUNT(*) FROM om_redemptions rd WHERE rd.booking_id = b.id AND rd.status <> 'void') redeemed
+        FROM om_bookings b
+        LEFT JOIN om_service_type st ON st.id = b.service_type_id
+        LEFT JOIN om_teams t ON t.id = b.team_id
+        LEFT JOIN om_job_report r ON r.booking_id = b.id
+       WHERE b.house_id = @house
+       ORDER BY b.id DESC;
 
     ${OM_FOLLOW_DROP_SQL}`);
 
@@ -115,8 +134,10 @@ export async function GET(req: NextRequest) {
     projects: rs[3],
     // rs[4] มีเฉพาะโหมดบ้านเดียว (IF @house > 0) — ต่อท้ายสุดไว้ index 0-3 ของโหมดลิสต์จะได้ไม่ขยับ
     history: houseOnly > 0
-      ? fixDates(rs[4] ?? []).map((h) => ({ ...h, action_label: actionLabel(String(h.action)) }))
+      ? fixDates(rs[4] ?? []).map((h) => ({ ...h, action_label: historyLabel(String(h.action), h.to_json as string | null) }))
       : [],
+    // rs[5] โหมดบ้านเดียว — ใบงานทุกใบของบ้าน (แท็บ Timeline)
+    bookings: houseOnly > 0 ? fixDates(rs[5] ?? []) : [],
     rules: cfg,
     page, size,
   });

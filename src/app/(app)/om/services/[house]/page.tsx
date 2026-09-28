@@ -19,7 +19,7 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { apiFetch } from "@/lib/api";
 import Loading from "@/components/ui/Loading";
 import JobDetail from "@/components/om/JobDetail";
-import type { HistoryRow, Item } from "@/lib/om/service-view";
+import type { BookingSummary, HistoryRow, Item } from "@/lib/om/service-view";
 
 export default function OmServiceDetailPage({ params }: { params: Promise<{ house: string }> }) {
   const { house } = use(params);
@@ -27,6 +27,8 @@ export default function OmServiceDetailPage({ params }: { params: Promise<{ hous
   const focus = useSearchParams().get("focus") === "1";
   const [item, setItem] = useState<Item | null>(null);
   const [history, setHistory] = useState<HistoryRow[]>([]);
+  // ใบงานทุกใบของบ้าน — แท็บ Timeline (แผน 20260928-05) มาในคำขอเดียวกับประวัติ
+  const [bookings, setBookings] = useState<BookingSummary[]>([]);
   const [err, setErr] = useState("");
   const [toast, setToast] = useState("");
   // เปลี่ยนค่าหลังบันทึกในโหมด focus → JobDetail ขึ้นใหม่ทั้งตัว
@@ -40,6 +42,7 @@ export default function OmServiceDetailPage({ params }: { params: Promise<{ hous
         if (!row) { setErr("ไม่พบบ้านหลังนี้ในรายการงานบริการ"); return; }
         setItem(row);
         setHistory((d.history ?? []) as HistoryRow[]);
+        setBookings((d.bookings ?? []) as BookingSummary[]);
       })
       .catch((e) => setErr(e instanceof Error ? e.message : String(e))),
   [house]);
@@ -63,6 +66,7 @@ export default function OmServiceDetailPage({ params }: { params: Promise<{ hous
         key={ver}
         item={item}
         history={history}
+        bookings={bookings}
         onBack={focus ? undefined : back}
         onDone={done}
         onSaved={(m) => { setToast(m); setTimeout(() => setToast(""), 2600); }}

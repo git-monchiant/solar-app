@@ -152,6 +152,21 @@ export interface HistoryRow {
   action_label?: string;
   outcome: string | null; reason: string | null; actor_name: string | null;
   created_at: string; next_action_date: string | null;
+  /** ค่าเดิม/ค่าใหม่เฉพาะฟิลด์ที่เปลี่ยน (JSON string) — แท็บ Timeline อ่านรายละเอียด (แผน 20260928-05) */
+  from_json?: string | null; to_json?: string | null;
+}
+
+/** ใบงาน 1 ใบของบ้าน — หัวกลุ่มของแท็บ Timeline (`bookings` จาก /api/om/follow?house= · แผน 20260928-05) */
+export interface BookingSummary {
+  id: number; status: string; service_type: string | null; consumes_quota: number | null;
+  scheduled_at: string | null; created_at: string;
+  /** ใบงานซ่อม — มาจากใบงานไหน · 1 ในประกัน / 0 นอกประกัน */
+  parent_booking_id: number | null; in_warranty: number | null;
+  cancelled_reason: string | null; rescheduled_count: number; team_name: string | null;
+  /** จากใบตรวจรับงาน — เลขใบบริการ · ผลตรวจ · เวลาปิด */
+  job_no: string | null; result: string | null; finished_at: string | null;
+  /** จำนวนใบตัดสิทธิ์ที่ผูกกับใบงานนี้ (ไม่นับที่ยกเลิก) */
+  redeemed: number;
 }
 
 export const thD = (s: string | null) =>

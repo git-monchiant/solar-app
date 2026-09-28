@@ -82,3 +82,15 @@ const LABEL: Record<BookingAction, string> = {
 };
 
 export const actionLabel = (a: string): string => LABEL[a as BookingAction] ?? a;
+
+/**
+ * ป้ายของ 1 แถวประวัติ — เหมือน actionLabel แต่ดู to_json ด้วย
+ * ★ 28 ก.ย. 69 (แผน 20260928-05): action "check" มาจาก 2 ทาง
+ *   · เปลี่ยนสถานะเป็นรอปิด (to_json มี status) → "ตรวจงานเสร็จ รอปิด" ตามเดิม
+ *   · API ใบตรวจจดทุกครั้งที่กดบันทึก (บันทึกร่าง/ปิดงาน — to_json มีแต่ result/fail) → "บันทึกใบตรวจรับงาน"
+ *   เดิมขึ้น "ตรวจงานเสร็จ รอปิด" ทุกแถว ใบที่กดบันทึกร่างหลายรอบเลยดูเหมือนตรวจเสร็จหลายรอบ
+ */
+export function historyLabel(action: string, toJson: string | null | undefined): string {
+  if (action === "check" && !/"status"\s*:/.test(toJson ?? "")) return "บันทึกใบตรวจรับงาน";
+  return actionLabel(action);
+}
