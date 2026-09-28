@@ -46,18 +46,25 @@ export const OM_PAY_STEP_NO = 900;
  *   · สัญญา 12 เดือน เข้า 2 ครั้ง = +2 ล้างแผง ใช้กับงานนี้ 1 เหลือ 1 · จด valid_from/valid_to ไว้
  *     (วิว om_entitlement_balance ยังไม่ตัดสิทธิ์หมดอายุ — ข้อจำกัดเดิมของโมดูล ไม่ได้แก้ในเฟสนี้)
  * ★ ผูกกับ installation แรกของบ้าน ตัวเดียวกับที่ปิดงานใช้ตัดสิทธิ์
+ * ★ เฟส 5: งานชนิดที่ไม่ใช้สิทธิ์ (ซ่อม · consumes_quota = 0) ไม่เติม — ปิดงานชนิดนี้ไม่ตัดสิทธิ์
+ *   เดิมเติม "สิทธิ์ซ่อม +1" ให้ทุกครั้งที่จ่าย แล้วไม่มีใครตัด ยอดค้าง +1 ตลอดไป · เงินอยู่ใน payments แล้ว
  */
 export async function grantPurchasedRights(tx: Transaction, v: {
   houseId: number; serviceTypeId: number; omPackageId: number | null; docNo: string; actorUserId: number;
-}): Promise<{ qty: number; grantId: number | null }> {
+}): Promise<{ qty: number; grantId: number | null; skip?: "no_install" | "no_quota" }> {
   const inst = (await new sql.Request(tx).input("h", sql.Int, v.houseId)
     .query(`SELECT TOP 1 id FROM om_installations WHERE house_id = @h ORDER BY id`)).recordset[0];
-  if (!inst) return { qty: 0, grantId: null };
+  if (!inst) return { qty: 0, grantId: null, skip: "no_install" };
   const pkg = v.omPackageId
     ? (await new sql.Request(tx).input("id", sql.Int, v.omPackageId)
         .query(`SELECT kw_min, kw_max, plan_type, contract_months, visits FROM om_packages WHERE id = @id`)).recordset[0]
     : null;
   const contract = pkg?.plan_type === "contract";
+  if (!contract) {
+    const quota = (await new sql.Request(tx).input("t", sql.Int, v.serviceTypeId)
+      .query(`SELECT CAST(consumes_quota AS int) q FROM om_service_type WHERE id = @t`)).recordset[0]?.q;
+    if (quota === 0) return { qty: 0, grantId: null, skip: "no_quota" };
+  }
   const qty = contract ? Math.max(1, Number(pkg.visits) || 2) : 1;
   const months = contract ? Math.max(1, Number(pkg.contract_months) || 12) : null;
   const typeId = contract

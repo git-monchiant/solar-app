@@ -86,6 +86,19 @@ export default function JobDetail({ item, history, onBack, onDone, onSaved, onRe
   const [teams, setTeams] = useState<Team[]>([]);
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState("");
+  // ── ใบงานซ่อม (เฟส 5 แผน 20260924-02) ──
+  // ในประกัน: ระบบเลือกให้ก่อนเมื่อมีวันหมดประกันจากใบรับประกันฝั่งขาย (ผู้ใช้เคาะ 28 ก.ย.)
+  //   ยังไม่หมด = ในประกัน · หมดแล้ว = นอกประกัน · ไม่มีข้อมูล (บ้าน REM) = ไม่เลือกให้ ทีมต้องเลือกเอง
+  const today = new Date().toLocaleDateString("sv-SE");   // YYYY-MM-DD ตามเวลาเครื่อง
+  const [rpOpen, setRpOpen] = useState(item.repair_needed === 1 && !item.repair_cancel_id);
+  const [rpDetail, setRpDetail] = useState(item.repair_detail ?? "");
+  const [rpWarranty, setRpWarranty] = useState<boolean | null>(
+    item.warranty_end ? item.warranty_end >= today : null);
+  const [cancelOpen, setCancelOpen] = useState(false);
+  const [cancelReason, setCancelReason] = useState("");
+  const isRepairJob = !!item.parent_booking_id && item.in_warranty != null;
+  // ยกเลิกใบซ่อมได้ก่อนมีใบเสนอราคา — มีใบแล้วต้องจัดการใบในลำดับอนุมัติก่อน (ยังไม่มีปุ่มยกเลิกใบเสนอราคา O&M)
+  const canCancelRepair = isRepairJob && (cur === "follow" || (cur === "quote" && !item.q_id));
 
   useEffect(() => {
     apiFetch("/api/om/teams").then((d) => setTeams(d.teams ?? [])).catch(() => {});
@@ -132,6 +145,21 @@ export default function JobDetail({ item, history, onBack, onDone, onSaved, onRe
     try {
       await apiFetch(`/api/om/bookings/${item.booking_id}`, { method: "PATCH", body: JSON.stringify(patch) });
       onSaved(msg); onDone();
+    } catch (e) { setErr(e instanceof Error ? e.message : String(e)); }
+    finally { setBusy(false); }
+  };
+
+  // เปิดใบงานซ่อมจากใบนี้ (ปิดแล้ว) — ใบใหม่เริ่มขั้นติดตาม (ในประกัน) หรือเสนอราคา (นอกประกัน)
+  const openRepair = async () => {
+    if (!item.booking_id) return;
+    if (!rpDetail.trim()) { setErr("ต้องระบุอาการ / สิ่งที่ต้องซ่อม"); return; }
+    if (rpWarranty === null) { setErr("เลือกก่อนว่างานซ่อมนี้อยู่ในประกันหรือนอกประกัน"); return; }
+    setBusy(true); setErr("");
+    try {
+      const d = await apiFetch(`/api/om/bookings/${item.booking_id}/repair`, {
+        method: "POST", body: JSON.stringify({ in_warranty: rpWarranty, detail: rpDetail.trim() }),
+      });
+      onSaved(`เปิดใบงานซ่อม #${d.id} แล้ว`); onDone();
     } catch (e) { setErr(e instanceof Error ? e.message : String(e)); }
     finally { setBusy(false); }
   };
@@ -298,6 +326,36 @@ export default function JobDetail({ item, history, onBack, onDone, onSaved, onRe
           <div className="px-4 pb-4 pt-3 space-y-3">
             {err && <div className="rounded-lg bg-red-50 border border-red-200 px-4 py-2 text-sm text-red-700">{err}</div>}
 
+            {/* ใบงานซ่อม (เฟส 5) — บอกที่มา ประกัน และอาการไว้บนสุด เห็นได้ทุกขั้น
+                ยกเลิกได้ก่อนมีใบเสนอราคา (ลูกค้าไม่ซ่อม) — O&M ยังไม่มีปุ่มยกเลิกใบงานที่อื่นเลย */}
+            {isRepairJob && (
+              <div className={`rounded-lg border px-4 py-3 text-sm ${item.in_warranty ? "bg-emerald-50 border-emerald-200" : "bg-pink-50 border-pink-200"}`}>
+                <div className="flex items-center gap-2 flex-wrap">
+                  <b className="text-gray-900">ใบงานซ่อม</b>
+                  <span className="text-gray-500">มาจากใบงาน #{item.parent_booking_id}</span>
+                  <span className={`text-xxs font-bold px-2 py-0.5 rounded-full text-white ${item.in_warranty ? "bg-emerald-600" : "bg-pink-600"}`}>
+                    {item.in_warranty ? "ในประกัน — ไม่เก็บเงิน" : "นอกประกัน — เสนอราคาก่อนนัด"}
+                  </span>
+                  {canCancelRepair && !cancelOpen && (
+                    <button type="button" onClick={() => setCancelOpen(true)} style={{ minHeight: 0 }}
+                      className="ml-auto text-xs font-semibold text-red-600 hover:underline cursor-pointer">ยกเลิกใบงานซ่อม</button>
+                  )}
+                </div>
+                {item.job_note && <div className="mt-1.5 text-gray-700 whitespace-pre-line">อาการ: {item.job_note}</div>}
+                {cancelOpen && (
+                  <div className="mt-3 flex gap-2 flex-wrap items-center">
+                    <input value={cancelReason} onChange={(e) => setCancelReason(e.target.value)} autoFocus
+                      placeholder="เหตุผล เช่น ลูกค้าไม่ซ่อม / ซ่อมเองแล้ว" className={`${INPUT} flex-1 min-w-[220px]`} />
+                    <button type="button" disabled={busy || !cancelReason.trim()} style={{ minHeight: 0 }}
+                      onClick={() => patchJob({ status: "cancelled", reason: cancelReason.trim() }, "ยกเลิกใบงานซ่อมแล้ว")}
+                      className="h-8 px-4 rounded-lg text-xs font-semibold text-white bg-red-600 hover:brightness-110 cursor-pointer disabled:opacity-50">ยืนยันยกเลิก</button>
+                    <button type="button" onClick={() => setCancelOpen(false)} style={{ minHeight: 0 }}
+                      className="h-8 px-3 rounded-lg text-xs font-semibold border border-gray-200 bg-white text-gray-600 cursor-pointer">ไม่ยกเลิก</button>
+                  </div>
+                )}
+              </div>
+            )}
+
             {step === 0 && (
               <StepCard n={0} state={stepState(0)} title="ติดตาม — บันทึกการโทร">
                 <div className={SECTION}>
@@ -331,7 +389,7 @@ export default function JobDetail({ item, history, onBack, onDone, onSaved, onRe
                   </div>
 
                   <div className="mt-3 rounded-lg bg-gray-50 border border-gray-200 px-3 py-2 text-xs leading-relaxed text-gray-600">
-                    {outcome === "agreed" && <>กดบันทึกแล้ว <b>สร้างใบงาน</b> ขั้น <b>นัดหมาย</b> (รอยืนยันนัด) พร้อมวันเวลาที่เลือก การ์ดจะย้ายออกจากแท็บติดตาม</>}
+                    {outcome === "agreed" && <>กดบันทึกแล้ว{item.booking_id && cur === "follow" ? <> ใบงาน #{item.booking_id} ย้ายไป</> : <> <b>สร้างใบงาน</b></>} ขั้น <b>นัดหมาย</b> (รอยืนยันนัด) พร้อมวันเวลาที่เลือก การ์ดจะย้ายออกจากแท็บติดตาม</>}
                     {outcome === "postponed" && <>สร้างใบงานขั้น <b>ติดตาม</b> พร้อมวันนัดโทรใหม่ ยังอยู่แท็บเดิมแต่จะไม่โผล่ซ้ำจนถึงวันนัด</>}
                     {outcome === "no_answer" && <><b>ไม่สร้างใบงาน</b> บันทึกประวัติอย่างเดียว · ครบจำนวนครั้งที่ตั้งไว้จะย้ายไปแท็บติดต่อไม่ได้</>}
                     {outcome === "declined" && <><b>ไม่สร้างใบงาน</b> ย้ายไปแท็บไม่เอา · <b>สิทธิ์ไม่ถูกตัด</b> ยังใช้ได้ถ้าเปลี่ยนใจ</>}
@@ -449,6 +507,9 @@ export default function JobDetail({ item, history, onBack, onDone, onSaved, onRe
                     <a href={`/om/field/${item.booking_id}`}
                       className="ml-2 text-active font-semibold no-underline hover:underline">เปิดใบตรวจรับงาน ›</a>
                   )}
+                  {cur === "checked" && item.repair_needed === 1 && (
+                    <div className="mt-2 text-amber-800">⚠ ช่างแจ้งพบงานซ่อม — ปิดงานนี้ก่อน แล้วเปิดใบงานซ่อมได้ที่ขั้นปิดงาน</div>
+                  )}
                 </div>
               </StepCard>
             )}
@@ -457,10 +518,71 @@ export default function JobDetail({ item, history, onBack, onDone, onSaved, onRe
               <StepCard n={6} state={stepState(6)} title="ปิดงาน">
                 <div className={`${SECTION} text-sm text-gray-600`}>
                   {cur === "closed" ? <b className="text-emerald-600">ปิดงานแล้ว</b> : "ปิดงานทำที่หน้าช่าง หลังลูกค้าเซ็นรับหรือยืนยันทาง LINE"}
-                  {skip
+                  {/* ★ เฟส 5: ซ่อม (ในประกัน) เป็นงานฟรีที่ไม่ใช้สิทธิ์ล้าง — ดูจาก consumes_quota ของชนิดงาน ไม่ใช่ skip อย่างเดียว */}
+                  {skip && item.consumes_quota !== 0
                     ? <> · ปิดแล้วระบบ{cur === "closed" ? "ตัด" : "จะตัด"}<b>สิทธิ์ล้าง 1 ครั้ง</b>{cur !== "closed" && <> เหลือ {Math.max(0, item.balance - 1)} ครั้ง</>}</>
+                    : skip
+                    ? <> · งาน{item.service_type ?? "นี้"}ฟรี <b>ไม่ตัดสิทธิ์ล้าง</b></>
                     : <> · งานเสียเงิน <b>ไม่ตัดสิทธิ์</b></>}
                 </div>
+
+                {/* ใบงานซ่อม (เฟส 5) — ช่างแจ้งในใบตรวจรับงาน ทีม O&M เปิดใบใหม่ต่อจากตรงนี้
+                    ★ เปิดได้เฉพาะใบที่ปิดแล้ว (ใบงานนี้คือใบล่าสุดของบ้าน = บ้านไม่มีใบค้าง) · เปิดได้แม้ช่างไม่ได้ติ๊ก */}
+                {cur === "closed" && item.booking_id && !item.repair_child_id && (
+                  <div className={`mt-3 rounded-lg border p-3 ${item.repair_needed === 1 && !item.repair_cancel_id ? "bg-amber-50 border-amber-200" : "bg-white/60 border-active/15"}`}>
+                    {/* เปิดใบซ่อมแล้วยกเลิก — บอกว่าจบไปแล้วด้วยเหตุผลอะไร · ลูกค้าเปลี่ยนใจเปิดใหม่ได้ */}
+                    {item.repair_cancel_id
+                      ? !rpOpen && (
+                        <div className="text-sm text-gray-600 flex items-center gap-2 flex-wrap">
+                          <span>ใบงานซ่อม #{item.repair_cancel_id} ถูกยกเลิกแล้ว{item.repair_cancel_reason && <> — เหตุผล: <b>{item.repair_cancel_reason}</b></>}</span>
+                          <button type="button" onClick={() => setRpOpen(true)} style={{ minHeight: 0 }}
+                            className="text-active font-semibold hover:underline cursor-pointer">ลูกค้าเปลี่ยนใจ? เปิดใบงานซ่อมใหม่ ›</button>
+                        </div>
+                      )
+                      : item.repair_needed === 1
+                      ? <div className="text-sm font-semibold text-amber-800">⚠ ช่างแจ้งพบงานซ่อม — ยังไม่เปิดใบงานซ่อม</div>
+                      : !rpOpen && (
+                        <div className="text-sm text-gray-600 flex items-center gap-2 flex-wrap">
+                          ช่างไม่ได้แจ้งงานซ่อม
+                          <button type="button" onClick={() => setRpOpen(true)} style={{ minHeight: 0 }}
+                            className="text-active font-semibold hover:underline cursor-pointer">พบปัญหาภายหลัง? เปิดใบงานซ่อม ›</button>
+                        </div>
+                      )}
+
+                    {rpOpen && (
+                      <div className="mt-3 space-y-3">
+                        <div>
+                          <label className={FIELD_LABEL}>อาการ / สิ่งที่ต้องซ่อม <span className="text-red-500">*</span></label>
+                          <textarea value={rpDetail} onChange={(e) => setRpDetail(e.target.value)} rows={3} maxLength={1000}
+                            placeholder="เช่น อินเวอร์เตอร์ขึ้น error E-21 · สาย DC หลวม"
+                            className="w-full px-3 py-2 rounded-lg border border-gray-200 text-sm bg-white focus:outline-none focus:border-active" />
+                        </div>
+                        <div>
+                          <label className={FIELD_LABEL}>ประกันการติดตั้ง <span className="text-red-500">*</span></label>
+                          <div className="flex gap-2 flex-wrap">
+                            <button type="button" onClick={() => setRpWarranty(true)} className={chipBtn(rpWarranty === true)}>ในประกัน — ไม่เก็บเงิน</button>
+                            <button type="button" onClick={() => setRpWarranty(false)} className={chipBtn(rpWarranty === false)}>นอกประกัน — ต้องเสนอราคา</button>
+                          </div>
+                          <span className="block mt-1.5 text-xxs text-gray-500">
+                            {item.warranty_end
+                              ? <>ใบรับประกันฝั่งขาย: ประกันถึง <b>{thD(item.warranty_end)}</b> ({item.warranty_end >= today ? "ยังไม่หมด" : "หมดแล้ว"}) — ระบบเลือกให้ตามนี้ แก้ได้</>
+                              : <>ไม่มีวันหมดประกันในระบบ{item.warranty_start && <> · เริ่มประกัน {thD(item.warranty_start)}</>} — ตรวจสอบก่อนเลือก</>}
+                          </span>
+                        </div>
+                        <div className="rounded-lg bg-gray-50 border border-gray-200 px-3 py-2 text-xs leading-relaxed text-gray-600">
+                          {rpWarranty === true && <>สร้าง<b>ใบงานซ่อม</b>ขั้น <b>ติดตาม</b> → โทรนัดได้เลย ข้ามเสนอราคา/ชำระเงิน · ปิดงานแล้ว<b>ไม่ตัดสิทธิ์ล้าง</b></>}
+                          {rpWarranty === false && <>สร้าง<b>ใบงานซ่อม</b>ขั้น <b>เสนอราคา</b> → Sale ออกใบ → อนุมัติ → รับเงิน → นัด</>}
+                          {rpWarranty === null && <>เลือกก่อนว่าในประกันหรือนอกประกัน</>}
+                        </div>
+                        <div className="flex md:justify-end">
+                          <button type="button" disabled={busy} onClick={openRepair} className={`${PRIMARY_BTN} flex-1 md:flex-none md:w-64`}>
+                            {busy ? "กำลังเปิด…" : "เปิดใบงานซ่อม"}
+                          </button>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                )}
               </StepCard>
             )}
 

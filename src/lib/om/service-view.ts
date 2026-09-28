@@ -29,12 +29,18 @@ export const flowIndex = (status: string | null) => FLOW_AT[status ?? "follow"] 
 /** งานนี้ข้ามขั้นเสนอราคา/ชำระเงินไหม (เส้นฟรี)
  *  ★ เฟส 2: ใบงานที่มีใบเสนอราคา (q_id) หรือยืนอยู่ขั้น 2–3 = เส้นเสียเงินแน่นอน
  *    ที่เหลือ: เลยขั้นติดตามไปแล้วโดยไม่มีใบ = มาทางฟรี · ยังติดตามอยู่ดูจากสิทธิ์ (หมด = ต้องเสนอราคา)
- *    เฟส 5 จะเพิ่มติ๊ก "ในประกัน" ของใบงานซ่อม */
-export const skipsPaidSteps = (r: Pick<Item, "balance" | "job_status"> & { q_id?: number | null }) => {
+ *  ★ เฟส 5: ใบงานซ่อมที่ทีมเลือก "ในประกัน" = ฟรีเสมอ ไม่ดูสิทธิ์ล้าง (ซ่อมไม่ใช้สิทธิ์ล้างอยู่แล้ว) */
+export const skipsPaidSteps = (r: Pick<Item, "balance" | "job_status"> & { q_id?: number | null; in_warranty?: number | null }) => {
   const at = flowIndex(r.job_status);
   if (r.q_id || at === 1 || at === 2) return false;
+  if (r.in_warranty === 1) return true;
   return at > 0 || r.balance > 0;
 };
+
+/** ช่างแจ้งพบงานซ่อมในใบงานล่าสุด (ปิดแล้ว) แต่ยังไม่มีใครเปิดใบงานซ่อม — ชิปเตือนบนการ์ด (เฟส 5)
+ *  เปิดแล้วยกเลิก (ลูกค้าไม่ซ่อม) = มีคนตัดสินใจแล้ว ไม่เตือนซ้ำ */
+export const repairPending = (r: Pick<Item, "job_status" | "repair_needed" | "repair_child_id" | "repair_cancel_id">) =>
+  r.job_status === "closed" && r.repair_needed === 1 && !r.repair_child_id && !r.repair_cancel_id;
 
 /** สถานะใบเสนอราคา → ป้าย (ชุดเดียวกับลำดับอนุมัติฝั่งขาย แผน 20260730-01) */
 export const QUOTE_STATUS: Record<string, { t: string; tone: string }> = {
@@ -99,6 +105,8 @@ export interface Item {
   balance: number; last_wash: string | null; wash_count: number;
   customer_id: number | null; customer_name: string | null; phone: string | null;
   kwp_list: string | null; warranty_start: string | null;
+  /** วันหมดประกันจากใบรับประกันฝั่งขาย — บ้าน REM ไม่มี (เฟส 5 ใช้เลือก "ในประกัน" ให้ก่อน) */
+  warranty_end: string | null;
   calls: number; no_answer: number; last_call_at: string | null; next_call: string | null;
   last_outcome: string | null; last_by: string | null;
   booking_id: number | null; job_status: string | null; scheduled_at: string | null;
@@ -109,6 +117,14 @@ export interface Item {
   q_id: number | null; q_doc_no: string | null; q_status: string | null; q_total: number | null;
   /** การรับเงินของใบเสนอราคา (เฟส 4) — unpaid ยังไม่มีสลิป · verifying รอ Account ยืนยัน · paid รับเงินแล้ว */
   pay_state: "unpaid" | "verifying" | "paid" | null;
+  /** ชนิดงานของใบงานล่าสุด — cleaning / repair / … · consumes_quota 1 = ปิดงานแล้วตัดสิทธิ์ */
+  service_code: string | null; consumes_quota: number | null;
+  /** ใบงานซ่อม (เฟส 5 แผน 20260924-02) — มาจากใบงานไหน · ในประกันไหม (1 ฟรี / 0 เสียเงิน) · อาการ */
+  parent_booking_id: number | null; in_warranty: number | null; job_note: string | null;
+  /** ช่างแจ้งพบงานซ่อมในใบตรวจรับงานของใบงานล่าสุด · ใบซ่อมที่เปิดจากใบนี้แล้ว (ไม่นับที่ยกเลิก) */
+  repair_needed: number | null; repair_detail: string | null; repair_child_id: number | null;
+  /** ใบซ่อมที่เปิดจากใบนี้แล้วถูกยกเลิก (ล่าสุด) + เหตุผล — ถือว่าตัดสินใจแล้ว แต่ยังเปิดใหม่ได้ */
+  repair_cancel_id: number | null; repair_cancel_reason: string | null;
   bucket: string;
 }
 

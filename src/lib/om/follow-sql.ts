@@ -49,7 +49,11 @@ export const OM_FOLLOW_SCOPE_SQL = `
               FROM om_installations i WHERE i.house_id = h.id
                AND COALESCE(i.rem_size_kwp, i.promo_size_kw) IS NOT NULL) kwp_list,
            (SELECT MIN(CONVERT(char(10), i.warranty_start, 23)) FROM om_installations i
-             WHERE i.house_id = h.id AND i.warranty_start IS NOT NULL) warranty_start
+             WHERE i.house_id = h.id AND i.warranty_start IS NOT NULL) warranty_start,
+           -- วันหมดประกันจากใบรับประกันฝั่งขาย (แผน 20260925-01) — ใช้เลือก "ในประกัน" ให้ก่อนตอนเปิดใบซ่อม
+           -- บ้าน REM ไม่มีค่านี้ = NULL → ทีมต้องเลือกเอง (ไม่เดาอายุประกันจากวันเริ่ม)
+           (SELECT MAX(CONVERT(char(10), i.sales_warranty_end, 23)) FROM om_installations i
+             WHERE i.house_id = h.id AND i.sales_warranty_end IS NOT NULL) warranty_end
       INTO #due
       FROM om_houses h
       LEFT JOIN om_projects pj ON pj.project_id = h.project_id
@@ -92,7 +96,16 @@ export const OM_FOLLOW_SCOPE_SQL = `
     SELECT b.house_id, b.id booking_id, b.status,
            CONVERT(varchar(33), b.scheduled_at, 126) scheduled_at,
            b.team_id, t.name team_name, st.label_th service_type,
+           st.code service_code, CAST(st.consumes_quota AS int) consumes_quota,
            b.owner_user_id, uo.full_name owner_name,     -- เจ้าของเคส (เฟส 4)
+           -- ใบงานซ่อม (แผน 20260924-02 เฟส 5): ที่มา + ในประกันไหม + อาการ (note ของใบซ่อม)
+           b.parent_booking_id, CAST(b.in_warranty AS int) in_warranty, b.note job_note,
+           -- ช่างแจ้งพบงานซ่อมในใบตรวจรับงานของใบนี้ + เปิดใบซ่อมไปแล้วหรือยัง (ยกเลิกแล้วถือว่ายัง)
+           CAST(jr.repair_needed AS int) repair_needed, jr.repair_detail,
+           (SELECT TOP 1 c.id FROM om_bookings c
+             WHERE c.parent_booking_id = b.id AND c.status <> 'cancelled' ORDER BY c.id DESC) repair_child_id,
+           -- ใบซ่อมที่เปิดจากใบนี้แล้วถูกยกเลิก (ลูกค้าไม่ซ่อม) — ถือว่าตัดสินใจแล้ว ไม่เตือนซ้ำ แต่ยังเปิดใหม่ได้
+           rc.id repair_cancel_id, rc.cancelled_reason repair_cancel_reason,
            -- ใบเสนอราคาล่าสุดของใบงาน (แผน 20260924-02 เฟส 2) — มี = งานเส้นเสียเงิน
            oq.id q_id, oq.doc_no q_doc_no, oq.status q_status, oq.contract_total_incl_vat q_total,
            -- การรับเงินของใบเสนอราคา (เฟส 4) — มีใบแล้วเท่านั้น (ไม่มีใบ = NULL)
@@ -107,10 +120,17 @@ export const OM_FOLLOW_SCOPE_SQL = `
       LEFT JOIN om_teams t ON t.id = b.team_id
       LEFT JOIN users uo ON uo.id = b.owner_user_id
       LEFT JOIN om_service_type st ON st.id = b.service_type_id
+      LEFT JOIN om_job_report jr ON jr.booking_id = b.id
+      OUTER APPLY (SELECT TOP 1 c.id, c.cancelled_reason FROM om_bookings c
+                    WHERE c.parent_booking_id = b.id AND c.status = 'cancelled' ORDER BY c.id DESC) rc
       OUTER APPLY (SELECT TOP 1 q.id, q.lead_id, q.doc_no, q.status, q.contract_total_incl_vat
                      FROM quotations q WHERE q.om_booking_id = b.id ORDER BY q.id DESC) oq
+     -- ★ ข้ามใบซ่อมที่ถูกยกเลิก (เฟส 5) — ยกเลิกใบซ่อม = ถอยกลับไปสถานะของใบต้นทาง (ปิดงานแล้ว)
+     --   ถ้าให้ใบที่ยกเลิกเป็นใบล่าสุด บ้านจะตกไปแท็บติดตามเหมือนต้องโทรนัดล้าง ทั้งที่เพิ่งล้างไป
+     --   (ใบล้างที่ยกเลิกยังกลับไปติดตามเหมือนเดิม เพราะล้างไม่ได้เกิดขึ้นจริง)
      WHERE b.id = (SELECT TOP 1 b2.id FROM om_bookings b2
                     WHERE b2.house_id = b.house_id
+                      AND NOT (b2.parent_booking_id IS NOT NULL AND b2.status = 'cancelled')
                     ORDER BY CASE WHEN b2.status IN (${ACTIVE_SQL})
                                   THEN 0 ELSE 1 END, b2.id DESC);
 
@@ -121,9 +141,16 @@ export const OM_FOLLOW_SCOPE_SQL = `
            l.outcome last_outcome, l.by_name last_by,
            j.booking_id, j.status job_status, j.scheduled_at, j.team_id, j.team_name, j.service_type,
            j.owner_user_id, j.owner_name, j.q_id, j.q_doc_no, j.q_status, j.q_total, j.pay_state,
+           j.service_code, j.consumes_quota, j.parent_booking_id, j.in_warranty, j.job_note,
+           j.repair_needed, j.repair_detail, j.repair_child_id, j.repair_cancel_id, j.repair_cancel_reason,
            CASE
              -- ใบงานเดินหน้าแล้วให้ยึดสถานะใบงานเป็นหลัก (ออกจากแท็บติดตาม)
              WHEN j.status IN ('quote','payment','pending','confirmed','progress','checked','closed') THEN j.status
+             -- ใบซ่อมในประกันที่ยังไม่ได้นัด = งานโทรนัดใหม่ของบ้านนี้ (เฟส 5) — อยู่แท็บติดตามเสมอ
+             -- ห้ามให้กติกาด้านล่างตัดสิน: สิทธิ์ล้าง 0 จะตกแท็บสิทธิ์หมด ทั้งที่ซ่อมในประกันไม่ใช้สิทธิ์
+             -- และประวัติโทรของรอบล้างก่อน ๆ (นับทั้งบ้าน) จะดันไปติดต่อไม่ได้/ไม่เอา
+             -- ลูกค้าไม่ซ่อม = กดยกเลิกใบงานซ่อมในหน้ารายละเอียด
+             WHEN j.status = 'follow' AND j.in_warranty = 1   THEN 'follow'
              WHEN l.outcome = 'declined'                      THEN 'declined'
              WHEN d.phone IS NULL OR l.outcome = 'wrong_number' THEN 'unreachable'
              WHEN ISNULL(c.no_answer, 0) >= @max              THEN 'unreachable'

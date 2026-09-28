@@ -22,6 +22,7 @@ type Report = {
   job_no: string | null; checks: Checks; measures: Record<string, number | null>;
   note: string | null; result: string | null; tech_sign: string | null; cust_sign: string | null;
   close_method: string | null; proxy_reason: string | null;
+  repair_needed: number | null; repair_detail: string | null;
 };
 type FormWithItems = JobForm & { items: FormItem[] };
 
@@ -232,6 +233,9 @@ export default function JobFormPanel({ jobId, wrapClass = "h-full overflow-auto 
   const [custSign, setCustSign] = useState<string | null>(null);
   const [jobNoTxt, setJobNo] = useState<string | null>(null);
   const [photos, setPhotos] = useState<JobPhoto[]>([]);
+  // พบงานซ่อม (แผน 20260924-02 เฟส 5) — ช่างแจ้ง ทีม O&M เปิดใบงานซ่อมต่อจากหน้ารายละเอียด
+  const [repair, setRepair] = useState(false);
+  const [repairDetail, setRepairDetail] = useState("");
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState("");
   const [toast, setToast] = useState("");
@@ -253,6 +257,8 @@ export default function JobFormPanel({ jobId, wrapClass = "h-full overflow-auto 
           if (d.report.close_method) setMethod(d.report.close_method as typeof method);
           // API แปลง JSON ให้แล้วเสมอ (คืน [] เมื่อยังไม่มีรูป)
           setPhotos(((d.report as { photos?: JobPhoto[] }).photos ?? []));
+          setRepair(d.report.repair_needed === 1);
+          setRepairDetail(d.report.repair_detail ?? "");
         }
       })
       .catch((e) => setErr(e instanceof Error ? e.message : String(e)));
@@ -272,11 +278,13 @@ export default function JobFormPanel({ jobId, wrapClass = "h-full overflow-auto 
   });
 
   const save = async (close: boolean) => {
+    if (repair && !repairDetail.trim()) { setErr("ติ๊กพบงานซ่อมแล้ว ต้องเล่าอาการ / สิ่งที่ต้องซ่อมด้วย"); return; }
     setBusy(true); setErr("");
     try {
       const g = await gps();
       const body = {
         checks, note,
+        repair_needed: repair, repair_detail: repair ? repairDetail.trim() : null,
         measures: Object.fromEntries(Object.entries(measures).map(([k, v]) => [k, v === "" ? null : Number(v)])),
         result: close ? result : null,
         tech_sign: techSign, cust_sign: custSign,
@@ -410,6 +418,38 @@ export default function JobFormPanel({ jobId, wrapClass = "h-full overflow-auto 
                 <input value={note} onChange={(e) => setNote(e.target.value)} disabled={closed}
                   placeholder="เช่น ล้างแผง เครื่องทำงานปกติ เชื่อมไวไฟแล้ว"
                   className="w-full h-9 rounded-lg border border-gray-200 px-3 text-sm outline-none focus:border-primary" />
+              </div>
+            </div>
+
+            {/* ★ เฟส 5 แผน 20260924-02: ช่างแจ้งพบงานซ่อม — ใบงานนี้ปิดตามปกติ (1 ใบงาน = 1 เส้นทาง)
+                แล้วทีม O&M เปิดใบงานซ่อมต่อที่ขั้นปิดงานของหน้ารายละเอียด พร้อมเลือกในประกัน/นอกประกัน */}
+            <div className={CARD}>
+              <div className={CARD_HEAD}>
+                พบงานซ่อม
+                <span className="ml-2 font-normal normal-case text-gray-400">ทีม O&amp;M เปิดใบงานซ่อมต่อให้</span>
+              </div>
+              <div className="p-3">
+                <div className="flex gap-2">
+                  {([[false, "ไม่พบ"], [true, "พบ ต้องซ่อม"]] as const).map(([k, t]) => (
+                    <button key={t} type="button" disabled={closed} style={{ minHeight: 0 }}
+                      onClick={() => {
+                        setRepair(k);
+                        // ติ๊กพบครั้งแรก — ดึงข้อที่ไม่ผ่าน (พร้อมรายการที่ต้องแก้) มาเติมให้ ช่างแก้ต่อได้
+                        if (k && !repairDetail.trim())
+                          setRepairDetail(items
+                            .filter((i) => i.kind === "bool" && checks[i.code]?.pass === false)
+                            .map((i) => checks[i.code]?.fix?.trim() || i.label_th).join(" · "));
+                      }}
+                      className={`h-9 px-4 rounded-xl border text-sm font-bold cursor-pointer ${repair === k
+                        ? (k ? "bg-amber-100 border-amber-300 text-amber-800" : "bg-green-100 border-green-300 text-green-700")
+                        : "border-gray-200 bg-white text-gray-500"}`}>{t}</button>
+                  ))}
+                </div>
+                {repair && (
+                  <textarea value={repairDetail} onChange={(e) => setRepairDetail(e.target.value)} disabled={closed}
+                    rows={3} maxLength={1000} placeholder="อาการ / สิ่งที่ต้องซ่อม เช่น อินเวอร์เตอร์ขึ้น error E-21 · สาย DC หลวม"
+                    className="mt-2 w-full rounded-lg border border-amber-300 bg-amber-50/40 px-3 py-2 text-sm outline-none focus:border-amber-500" />
+                )}
               </div>
             </div>
           </div>

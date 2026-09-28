@@ -8,7 +8,7 @@
 import { CALL_OUTCOME, EXIT_STATUS, statusLabel, statusTone } from "@/lib/om/booking";
 import { formatTHB } from "@/lib/utils/formatters";
 import {
-  BUCKET_LABEL, FLOW, PAY_STATE, QUOTE_STATUS, TONE, flowIndex, monthsAgo, skipsPaidSteps, thD, thDT,
+  BUCKET_LABEL, FLOW, PAY_STATE, QUOTE_STATUS, TONE, flowIndex, monthsAgo, repairPending, skipsPaidSteps, thD, thDT,
   type Item,
 } from "@/lib/om/service-view";
 
@@ -125,6 +125,18 @@ export default function JobCard({ r, onOpen }: { r: Item; onOpen: () => void }) 
           {/* สถานะเงิน (เฟส 4) — โชว์เฉพาะใบงานขั้นชำระเงิน · ชำระแล้ว = ถึงคิวโทรนัด */}
           {r.job_status === "payment" && r.pay_state && (
             <span className={`px-2 py-0.5 rounded-md font-semibold ${PAY_STATE[r.pay_state].tone}`}>{PAY_STATE[r.pay_state].t}</span>
+          )}
+          {/* ใบงานซ่อม (เฟส 5) — บอกทันทีว่างานนี้ฟรีหรือต้องเก็บเงิน */}
+          {r.parent_booking_id && r.in_warranty != null && (
+            <span className={`px-2 py-0.5 rounded-md font-semibold ${r.in_warranty ? "bg-emerald-50 text-emerald-800" : "bg-pink-50 text-pink-800"}`}>
+              ใบงานซ่อม · {r.in_warranty ? "ในประกัน" : "นอกประกัน"}
+            </span>
+          )}
+          {/* ช่างแจ้งพบงานซ่อมแต่ยังไม่มีใครเปิดใบ — ให้ทีมเห็นจากหน้ารายการโดยไม่ต้องเปิดทีละบ้าน */}
+          {repairPending(r) && (
+            <span className="px-2 py-0.5 rounded-md bg-amber-100 text-amber-800 font-bold" title={r.repair_detail ?? undefined}>
+              ⚠ ช่างแจ้งพบงานซ่อม · ยังไม่เปิดใบงาน
+            </span>
           )}
         </div>
       </div>

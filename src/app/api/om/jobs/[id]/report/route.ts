@@ -90,7 +90,8 @@ export async function GET(req: NextRequest, ctx: { params: Promise<{ id: string 
            CONVERT(varchar(33), started_at, 126) started_at,
            CONVERT(varchar(33), finished_at, 126) finished_at,
            tech_sign, cust_sign, cust_name, qc_sign, close_method, proxy_reason,
-           lat, lng, gps_accuracy, evidence_hash
+           lat, lng, gps_accuracy, evidence_hash,
+           CAST(repair_needed AS int) repair_needed, repair_detail
     FROM om_job_report WHERE booking_id = @id;`);
 
   const rs = r.recordsets as sql.IRecordSet<Record<string, unknown>>[];
@@ -118,6 +119,14 @@ export async function PUT(req: NextRequest, ctx: { params: Promise<{ id: string 
   const id = Number((await ctx.params).id);
   const b = await req.json().catch(() => ({}));
   const checks = (b.checks ?? {}) as Checks;
+
+  // ★ พบงานซ่อม (แผน 20260924-02 เฟส 5) — ช่างแจ้ง ทีม O&M เป็นคนเปิดใบงานซ่อมทีหลัง
+  //   ส่งคีย์มาเมื่อไรถึงเขียน (แบบเดียวกับ photos) · ติ๊กพบแล้วต้องมีอาการ ไม่งั้นทีมไม่รู้จะเปิดใบซ่อมเรื่องอะไร
+  const hasRepair = Object.prototype.hasOwnProperty.call(b, "repair_needed");
+  const repairNeeded = hasRepair ? b.repair_needed === true : null;
+  const repairDetail = repairNeeded && typeof b.repair_detail === "string" ? b.repair_detail.trim().slice(0, 1000) : "";
+  if (repairNeeded && !repairDetail)
+    return NextResponse.json({ error: "ติ๊กพบงานซ่อมแล้ว ต้องเล่าอาการ / สิ่งที่ต้องซ่อมด้วย" }, { status: 400 });
 
   const db = await getOmDb();
   const cur = (await db.request().input("id", sql.Int, id)
@@ -155,7 +164,10 @@ export async function PUT(req: NextRequest, ctx: { params: Promise<{ id: string 
       .input("acc", sql.Int, b.gps_accuracy ?? null)
       .input("ip", sql.NVarChar(45), req.headers.get("x-forwarded-for")?.split(",")[0]?.trim() ?? null)
       .input("dev", sql.NVarChar(200), req.headers.get("user-agent")?.slice(0, 200) ?? null)
-      .input("u", sql.Int, gate.userId ?? null);
+      .input("u", sql.Int, gate.userId ?? null)
+      .input("hrp", sql.Bit, hasRepair ? 1 : 0)
+      .input("rp", sql.Bit, repairNeeded)
+      .input("rpd", sql.NVarChar(1000), repairDetail || null);
 
     // ★ เลี่ยง MERGE — UPDATE ก่อน ถ้าไม่โดนแถวค่อย INSERT
     //   form_id ใช้ COALESCE: ใบที่เคยผูกใบตรวจไว้แล้วห้ามย้ายใบกลางคัน
@@ -172,19 +184,22 @@ export async function PUT(req: NextRequest, ctx: { params: Promise<{ id: string 
         ip = COALESCE(@ip, ip), device = COALESCE(@dev, device),
         tech_user_id = COALESCE(tech_user_id, @u),
         finished_at = CASE WHEN @res IS NOT NULL THEN SYSDATETIMEOFFSET() ELSE finished_at END,
+        repair_needed = CASE WHEN @hrp = 1 THEN @rp ELSE repair_needed END,
+        repair_detail = CASE WHEN @hrp = 1 THEN @rpd ELSE repair_detail END,
         updated_at = SYSDATETIMEOFFSET()
       WHERE booking_id = @id`);
     if (up.rowsAffected[0] === 0)
       await rq().query(`
         INSERT INTO om_job_report (booking_id, form_id, job_no, paper_ref, checks, measures, photos, note,
           result, fail_count, started_at, tech_user_id, tech_sign, cust_sign, cust_name,
-          close_method, proxy_reason, lat, lng, gps_accuracy, ip, device)
+          close_method, proxy_reason, lat, lng, gps_accuracy, ip, device, repair_needed, repair_detail)
         VALUES (@id, @fid, @no, @paper, @c, @m, @ph, @n, @res, @fc, SYSDATETIMEOFFSET(), @u, @ts, @cs, @cn,
-          @cm, @pr, @lat, @lng, @acc, @ip, @dev)`);
+          @cm, @pr, @lat, @lng, @acc, @ip, @dev, @rp, @rpd)`);
 
     await logBooking(tx, {
       bookingId: id, action: "check", actorUserId: gate.userId ?? null, actorRole: "technician",
-      to: { result: b.result ?? null, fail: fails, close_method: b.close_method ?? null },
+      to: { result: b.result ?? null, fail: fails, close_method: b.close_method ?? null,
+            ...(repairNeeded ? { repair: repairDetail } : {}) },
       reason: typeof b.note === "string" ? b.note.trim() || null : null,
     });
     await tx.commit();

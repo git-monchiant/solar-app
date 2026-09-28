@@ -59,7 +59,9 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
       await logBooking(tx, {
         bookingId: p.booking_id, houseId: p.house_id, action: "paid", actorUserId: gate.userId,
         to: { payment_id: id, amount: Number(p.amount), grant_qty: grant.qty },
-        reason: grant.qty ? `เติมสิทธิ์ +${grant.qty} ครั้ง` : "บ้านนี้ไม่มีระบบติดตั้งในทะเบียน — ไม่ได้เติมสิทธิ์",
+        reason: grant.qty ? `เติมสิทธิ์ +${grant.qty} ครั้ง`
+          : grant.skip === "no_quota" ? "งานชนิดนี้ไม่ใช้สิทธิ์ (เช่น ซ่อม) — จ่ายรายงาน ไม่ต้องเติมสิทธิ์"
+          : "บ้านนี้ไม่มีระบบติดตั้งในทะเบียน — ไม่ได้เติมสิทธิ์",
       });
     } else {
       await new sql.Request(tx).input("id", sql.Int, id).query(`DELETE FROM payments WHERE id = @id`);

@@ -166,10 +166,15 @@ export async function POST(req: NextRequest) {
       const when = outcome === "agreed" ? toThaiOffset(b.scheduled_at) : null;
       const status = outcome === "agreed" ? "pending" : "follow";
 
+      // ★ ใบงานที่หน้ารายละเอียดเปิดอยู่ (booking_id) มาก่อน ไม่ว่าชนิดไหน — แผน 20260924-02 เฟส 5
+      //   เดิมหาด้วยชนิดงาน (ไม่ส่ง = ล้างแผง) ⇒ ใบซ่อมในประกันที่ค้างขั้นติดตาม พอตกลงนัด
+      //   ระบบหาใบล้างไม่เจอแล้วสร้างใบล้างใหม่ซ้อน ใบซ่อมค้างอยู่ที่ติดตามตลอดไป
       const cur = (await new sql.Request(tx).input("h", sql.Int, houseId).input("t", sql.Int, typeId)
+        .input("bk", sql.Int, bookingId)
         .query(`SELECT TOP 1 id, status FROM om_bookings
-                 WHERE house_id = @h AND service_type_id = @t
-                   AND status IN (${ACTIVE_STATUS.map((s) => `'${s}'`).join(",")})`)).recordset[0];
+                 WHERE house_id = @h AND (id = @bk OR service_type_id = @t)
+                   AND status IN (${ACTIVE_STATUS.map((s) => `'${s}'`).join(",")})
+                 ORDER BY CASE WHEN id = @bk THEN 0 ELSE 1 END, id DESC`)).recordset[0];
 
       // ★ แผน 20260924-02 เฟส 2: งานที่อยู่ขั้นเสนอราคา = งานเสียเงิน "เก็บค่าบริการก่อนนัดหมาย"
       //   ห้ามตกลงนัดข้ามขั้นไป (เดิมรายการสถานะเขียนตายตัว ไม่เห็นใบงาน quote แล้วจะสร้างใบงานซ้อน)

@@ -118,7 +118,9 @@ export default function OmQuotationPanel({ item, skip, onSaved, onReload }: {
     if (!canIssue) {
       return (
         <div className="text-sm text-gray-600 leading-relaxed">
-          บ้านนี้<b>สิทธิ์หมดแล้ว</b> งานถัดไปต้องมีใบเสนอราคา — <b>รอ Sale ออกใบ</b>
+          {item.service_code === "repair"
+            ? <>งาน<b>ซ่อมนอกประกัน</b>ต้องมีใบเสนอราคา</>
+            : <>บ้านนี้<b>สิทธิ์หมดแล้ว</b> งานถัดไปต้องมีใบเสนอราคา</>} — <b>รอ Sale ออกใบ</b>
           <div className="mt-1 text-xs text-gray-400">ใบเสนอราคา O&amp;M ออกได้เฉพาะ Sale</div>
         </div>
       );
@@ -264,8 +266,11 @@ function QuoteForm({ item, quote, onCancel, onDone }: {
 }) {
   const [pkgs, setPkgs] = useState<Pkg[]>([]);
   const [pkgId, setPkgId] = useState<number | null>(quote?.om_package_id ?? null);
+  // ใบงานซ่อม (เฟส 5) — ไม่มีแพ็กเกจล้างแผงมาเกี่ยว · เริ่มด้วยแถวค่าซ่อม 1 แถวให้ Sale ใส่ราคา
+  const isRepair = item.service_code === "repair";
   const [lines, setLines] = useState<Line[]>(
-    quote?.items.map((x) => ({ item_name: x.item_name, quantity: Number(x.quantity), unit: x.unit ?? "", unit_price: Number(x.unit_price) })) ?? []);
+    quote?.items.map((x) => ({ item_name: x.item_name, quantity: Number(x.quantity), unit: x.unit ?? "", unit_price: Number(x.unit_price) }))
+      ?? (isRepair ? [{ item_name: "ค่าบริการซ่อม", quantity: 1, unit: "งาน", unit_price: 0 }] : []));
   const [discount, setDiscount] = useState<number>(Number(quote?.discount_value ?? 0));
   const [reason, setReason] = useState(quote?.discount_reason ?? "");
   const [note, setNote] = useState(quote?.note ?? "");
@@ -277,13 +282,13 @@ function QuoteForm({ item, quote, onCancel, onDone }: {
     apiFetch("/api/om/packages").then((d) => {
       const list = (d.packages ?? []) as Pkg[];
       setPkgs(list);
-      // ใบใหม่: เลือกแพ็กเกจรายครั้งของช่วงขนาดบ้านไว้ให้ก่อน (ยังเปลี่ยนได้)
-      if (!quote && kw > 0) {
+      // ใบใหม่: เลือกแพ็กเกจรายครั้งของช่วงขนาดบ้านไว้ให้ก่อน (ยังเปลี่ยนได้) — ยกเว้นใบงานซ่อม
+      if (!quote && kw > 0 && !isRepair) {
         const hit = list.find((p) => p.plan_type === "per_visit" && kw >= p.kw_min && kw <= p.kw_max);
         if (hit) setPkgId(hit.id);
       }
     }).catch((e) => setErr(e instanceof Error ? e.message : String(e)));
-  }, [quote, kw]);
+  }, [quote, kw, isRepair]);
 
   const tiers = useMemo(() => {
     const m = new Map<string, Pkg[]>();
