@@ -1,16 +1,23 @@
 "use client";
 
 // ใบตรวจรับงาน / ใบบริการ — แยกออกมาจาก /om/field/[id] ตอนเฟส 3 (แผน 20260922-01)
-// ใช้ร่วมกัน 2 ที่: หน้าช่างเต็มจอ (route เดิม) กับแท็บในหน้ารายละเอียดงานบริการ
-// หน้าช่าง — ใบตรวจรับงาน / ใบบริการ (mockup 20260910_01)
+// ใช้ร่วมกัน 2 ที่: หน้าช่างเต็มจอ (route เดิม) กับการ์ดขั้นเข้างานในหน้ารายละเอียดงานบริการ
 // ★ 16 ก.ย. 69: หัวข้อในใบไม่ใช่ const ในโค้ดแล้ว — มาจากฐาน (om_job_form + om_job_form_item)
 //   API คืน form.items มาให้ · หน้านี้วนตามข้อมูล แต่ละชนิดงานจึงเห็นใบของตัวเอง
 //   ช่องกรอกเลือกจาก kind: bool = ผ่าน/ไม่ผ่าน · num = ใส่ตัวเลข+หน่วย · text/photo ยังเป็นโครง
-// ★ ใช้ได้ทั้งมือถือและคอม — จอเล็กเรียงลงมาทีละส่วน จอกว้างแบ่งสองคอลัมน์เห็นทั้งใบ
+// ★ 28 ก.ย. 69 (แผน 20260928-03): โครง + หน้าตายกจากขั้นติดตั้งฝั่งขายทั้งก้อน
+//   แถบขั้นย่อย = StepLayout ตัวเดียวกับ InstallStep · ปุ่มย้อนกลับ/ถัดไป = InstallStep
+//   กล่อง/หัวข้อ/ปุ่มผ่าน-ไม่ผ่าน/ช่องวัดค่า = InstallChecklist — แก้ฝั่งนั้นแล้วตามมาแก้ที่นี่ด้วย
 import { useCallback, useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { apiFetch } from "@/lib/api";
 import Loading from "@/components/ui/Loading";
+import ErrorPopup from "@/components/ui/ErrorPopup";
+import StepLayout from "@/components/lead/detail/StepLayout";
+import { useSubStep } from "@/lib/hooks/useSubStep";
+import {
+  CameraIcon, CheckIcon, ChevronLeftIcon, ChevronRightIcon, DocumentIcon, PlusIcon, UserIcon,
+} from "@/components/ui/icons";
 import { PROXY_REASONS, failCount, type Checks, type FormItem, type JobForm } from "@/lib/om/job-form";
 
 type Job = {
@@ -29,20 +36,81 @@ type FormWithItems = JobForm & { items: FormItem[] };
 const thDT = (s: string | null) =>
   !s ? "—" : new Date(s).toLocaleString("th-TH", { day: "numeric", month: "short", year: "2-digit", hour: "2-digit", minute: "2-digit" });
 
-// ชื่อหมวดบนการ์ด — หมวดที่ยังไม่รู้จักใช้ code ของหมวดไปก่อน ไม่ทำให้ข้อหาย
-const SECTION_TH: Record<string, string> = {
-  quality: "คุณภาพงาน",
-  measure: "การทดสอบระบบ",
-  photo: "รูปถ่าย",
+// ขั้นย่อยของขั้นเข้างาน — แบบ SUB_STEPS ของ InstallStep (นัด / ตรวจ / … / ส่งมอบ)
+const SUB_STEPS = ["ตรวจ", "รูป · บันทึก", "ส่งมอบ"] as const;
+
+// หัวหมวดแบบ InstallChecklist (อังกฤษตัวใหญ่) ต่อท้ายชื่อไทยให้ช่างอ่านง่าย
+// หมวดที่ยังไม่รู้จักใช้ code ของหมวดไปก่อน ไม่ทำให้ข้อหาย
+const SECTION_META: Record<string, { en: string; th: string }> = {
+  quality: { en: "Visual Inspection", th: "คุณภาพงาน" },
+  measure: { en: "Function Tests", th: "การทดสอบระบบ" },
+  photo: { en: "Photos", th: "รูปถ่าย" },
 };
 
-const CARD = "bg-white border border-gray-200 rounded-2xl overflow-hidden";
-const CARD_HEAD = "px-4 py-2 border-b border-gray-200 bg-gray-50 text-xs font-bold uppercase tracking-wide text-gray-600";
+// ── ชุดคลาสเดียวกับ InstallChecklist ──
+const SECTION = "rounded-lg bg-white/60 border border-active/15 p-3";
+const SECTION_TITLE = "text-xs font-semibold text-gray-500 uppercase tracking-wider mb-2 flex items-center gap-2";
+const SECTION_ICON = "w-7 h-7 rounded-lg bg-active/10 text-active flex items-center justify-center shrink-0";
+const SUB_CARD = "rounded-lg border border-gray-200 bg-white/50 p-3 space-y-2";
+const SUB_TITLE = "text-xs font-semibold text-gray-500 uppercase tracking-wide";
+const FIELD_LABEL = "text-xs text-gray-500 block mb-1";
+const INPUT = "w-full h-8 px-3 rounded-lg border border-gray-200 bg-white text-sm focus:outline-none focus:border-primary disabled:bg-gray-50 disabled:text-gray-500";
+const PASS_BTN = (on: boolean) => `h-8 rounded-lg text-sm font-semibold border transition-all ${on
+  ? "bg-emerald-500 text-white border-emerald-500" : "bg-white text-gray-600 border-gray-200 hover:border-emerald-300"}`;
+const FAIL_BTN = (on: boolean) => `h-8 rounded-lg text-sm font-semibold border transition-all ${on
+  ? "bg-red-500 text-white border-red-500" : "bg-white text-gray-600 border-gray-200 hover:border-red-300"}`;
+// ปุ่มเลือก = chipBtn ของ JobDetail (ชุดเดียวกับ PreSurveyForm ฝั่งขาย)
+const chipBtn = (on: boolean) =>
+  `h-8 px-3 rounded-lg text-xxs font-semibold border transition-all cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed ${on
+    ? "bg-active text-white border-active shadow-sm shadow-active/20"
+    : "bg-white text-gray-600 border-gray-200 hover:border-active/40 hover:text-active"}`;
+// ปุ่มท้ายการ์ด = ย้อนกลับ / ถัดไป / ยืนยันส่งมอบงาน ของ InstallStep
+const NAV_BACK = "flex-1 md:flex-none md:w-64 h-11 rounded-lg text-sm font-semibold border border-gray-200 text-gray-600 bg-white hover:bg-gray-50 transition-colors flex items-center justify-center gap-1 cursor-pointer";
+const NAV_DRAFT = "flex-1 md:flex-none md:w-40 h-11 rounded-lg text-sm font-semibold border border-gray-200 text-gray-700 bg-white hover:bg-gray-50 transition-colors flex items-center justify-center cursor-pointer disabled:opacity-50";
+const NAV_NEXT = "flex-1 md:flex-none md:w-64 h-11 rounded-lg text-sm font-semibold text-white bg-active hover:brightness-110 transition-colors flex items-center justify-center gap-1 cursor-pointer";
+const NAV_CLOSE = "flex-1 md:flex-none md:w-64 h-11 rounded-lg text-sm font-semibold text-white bg-gradient-to-r from-primary to-primary-dark hover:brightness-110 disabled:from-gray-300 disabled:to-gray-300 disabled:cursor-not-allowed transition-colors flex items-center justify-center gap-2 cursor-pointer";
 
-/** แผ่นเซ็น — วาดด้วยนิ้วหรือเมาส์ แล้วเก็บเป็น data URL */
-function SignPad({ value, onChange, label }: { value: string | null; onChange: (v: string | null) => void; label: string }) {
+// ไม่มีในชุด ui/icons — path เดียวกับไอคอนขั้นเข้างานใน JobDetail (heroicons wrench)
+const WrenchIcon = ({ className }: { className?: string }) => (
+  <svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+    <path strokeLinecap="round" strokeLinejoin="round" d="M21.75 6.75a4.5 4.5 0 01-4.884 4.484c-1.076-.091-2.264.071-2.95.904l-7.152 8.684a2.548 2.548 0 11-3.586-3.586l8.684-7.152c.833-.686.995-1.874.904-2.95a4.5 4.5 0 016.336-4.486l-3.276 3.276a3.004 3.004 0 002.25 2.25l3.276-3.276c.256.565.398 1.192.398 1.852z" />
+  </svg>
+);
+
+/** หัวกล่อง — ไอคอนม่วง + ชื่ออังกฤษตัวใหญ่ แบบ InstallChecklist · th/right = ตัวอักษรปกติสีจาง */
+function SectionHead({ icon, en, th, right }: {
+  icon: React.ReactNode; en: string; th?: React.ReactNode; right?: React.ReactNode;
+}) {
+  return (
+    <div className={SECTION_TITLE}>
+      <span className={SECTION_ICON}>{icon}</span>
+      {en}
+      {th && <span className="normal-case tracking-normal font-normal text-gray-400">{th}</span>}
+      {right && <span className="ml-auto normal-case tracking-normal font-normal text-gray-400">{right}</span>}
+    </div>
+  );
+}
+
+/** แผ่นเซ็น — วาดด้วยนิ้วหรือเมาส์ แล้วเก็บเป็น data URL · หน้าตาแบบ SignaturePad ฝั่งขาย
+ *  (ใช้ตัวนั้นตรง ๆ ไม่ได้ เพราะมันบันทึกลงคอลัมน์ของ lead เอง) */
+function SignPad({ value, onChange, label, required, disabled }: {
+  value: string | null; onChange: (v: string | null) => void; label: string; required?: boolean; disabled?: boolean;
+}) {
   const ref = useRef<HTMLCanvasElement>(null);
   const drawing = useRef(false);
+  // ค่าที่แผ่นนี้ส่งออกไปเอง — ไม่ต้องวาดทับซ้ำ วาดเฉพาะค่าที่มาจากฐาน (เปิดใบที่เซ็นไว้แล้ว / สลับขั้นย่อยกลับมา)
+  const emitted = useRef<string | null>(null);
+  useEffect(() => {
+    const c = ref.current;
+    if (!c || value === emitted.current) return;
+    const ctx = c.getContext("2d")!;
+    ctx.clearRect(0, 0, c.width, c.height);
+    if (!value) return;
+    const img = new Image();
+    img.onload = () => ctx.drawImage(img, 0, 0, c.width, c.height);
+    img.src = value;
+  }, [value]);
+
   const pos = (e: React.PointerEvent) => {
     const c = ref.current!, r = c.getBoundingClientRect();
     return { x: (e.clientX - r.left) * (c.width / r.width), y: (e.clientY - r.top) * (c.height / r.height) };
@@ -59,73 +127,79 @@ function SignPad({ value, onChange, label }: { value: string | null; onChange: (
     ctx.lineWidth = 2.2; ctx.lineCap = "round"; ctx.strokeStyle = "#111827";
     const p = pos(e); ctx.lineTo(p.x, p.y); ctx.stroke();
   };
-  const up = () => { if (drawing.current) { drawing.current = false; onChange(ref.current!.toDataURL("image/png")); } };
+  const up = () => {
+    if (!drawing.current) return;
+    drawing.current = false;
+    const url = ref.current!.toDataURL("image/png");
+    emitted.current = url; onChange(url);
+  };
   const clear = () => {
-    const c = ref.current!; c.getContext("2d")!.clearRect(0, 0, c.width, c.height); onChange(null);
+    const c = ref.current!; c.getContext("2d")!.clearRect(0, 0, c.width, c.height);
+    emitted.current = null; onChange(null);
   };
   return (
-    <div>
-      <div className="flex items-center gap-2 mb-1">
-        <span className="text-xs font-bold text-gray-600">{label}</span>
-        {value && <button type="button" onClick={clear} style={{ minHeight: 0 }}
-          className="ml-auto text-xxs px-2 py-0.5 rounded-md border border-gray-200 text-gray-500 bg-white cursor-pointer">ล้าง</button>}
+    <div className="space-y-2">
+      <label className={FIELD_LABEL}>{label} {required && <span className="text-red-500">*</span>}</label>
+      <div className={`relative bg-white border rounded-lg overflow-hidden ${value ? "border-primary" : "border-gray-200"}`}
+        style={{ touchAction: "none" }}>
+        <canvas ref={ref} width={520} height={150} onPointerDown={down} onPointerMove={move} onPointerUp={up} onPointerLeave={up}
+          className={`w-full h-32 ${disabled ? "pointer-events-none" : "cursor-crosshair"}`} />
+        {!value && (
+          <div className="absolute inset-0 flex items-center justify-center text-gray-300 text-sm pointer-events-none">
+            {disabled ? "ไม่มีลายเซ็น" : "เซ็นชื่อที่นี่"}
+          </div>
+        )}
       </div>
-      <canvas ref={ref} width={520} height={150} onPointerDown={down} onPointerMove={move} onPointerUp={up} onPointerLeave={up}
-        className={`w-full h-[104px] rounded-xl bg-white touch-none ${value ? "border border-primary" : "border border-dashed border-gray-300"}`} />
-      {!value && <div className="text-xxs text-gray-400 mt-1">เซ็นในกรอบด้านบน</div>}
+      {!disabled && (
+        <button type="button" onClick={clear} disabled={!value}
+          className="w-full h-8 rounded-lg text-xs font-semibold text-gray-600 border border-gray-200 bg-white hover:bg-gray-50 disabled:opacity-40 cursor-pointer">ล้าง</button>
+      )}
     </div>
   );
 }
 
-/** 1 ข้อในใบตรวจ — รูปแบบช่องกรอกมาจาก kind ที่นิยามไว้ในฐาน ไม่ใช่จากหมวด */
+/** 1 ข้อในใบตรวจ — รูปแบบช่องกรอกมาจาก kind ที่นิยามไว้ในฐาน ไม่ใช่จากหมวด
+ *  วางในกริด 6 คอลัมน์ของหมวด: bool/อื่น ๆ เต็มแถว · num ครึ่งแถว (2 ช่องต่อแถวแบบ FUNCTION TESTS) */
 function ItemRow({ it, n, disabled, value, num, onPass, onFix, onNum }: {
   it: FormItem; n: number; disabled: boolean;
   value: { pass?: boolean; fix?: string }; num: string;
-  onPass: (pass: boolean) => void; onFix: (fix: string) => void; onNum: (v: string) => void;
+  onPass: (pass: boolean | undefined) => void; onFix: (fix: string) => void; onNum: (v: string) => void;
 }) {
-  const label = (
-    <span className="flex-1 text-sm">
-      <span className="text-gray-400 font-bold mr-1.5">{n}.</span>{it.label_th}
-      {!it.required && <span className="ml-1.5 text-xxs text-gray-400">(ไม่บังคับ)</span>}
-    </span>
-  );
+  const optional = !it.required && <span className="ml-1 text-[10px] text-gray-400">(ไม่บังคับ)</span>;
 
+  // แถวแบบ VISUAL INSPECTION: ชื่อข้อ (3) + ผ่าน (1) + ไม่ผ่าน (1) + หมายเหตุ (2) = 7 · กดซ้ำ = ยกเลิกเลือก
+  // ★ ช่องหมายเหตุเก็บใน fix เดิม — ข้อไม่ผ่านใช้เป็น "รายการที่ต้องแก้ไข" (ดึงไปเติมอาการตอนติ๊กพบงานซ่อม)
   if (it.kind === "bool") return (
-    <div className="py-2 border-b border-gray-100 last:border-0">
-      <div className="flex items-center gap-3">
-        {label}
-        <span className="flex gap-1.5 shrink-0">
-          <button type="button" disabled={disabled} style={{ minHeight: 0 }} onClick={() => onPass(true)}
-            className={`w-10 h-8 rounded-lg border flex items-center justify-center cursor-pointer ${value.pass === true ? "bg-green-100 border-green-300 text-green-700" : "border-gray-200 text-gray-300"}`}>
-            <svg viewBox="0 0 24 24" className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth={3}><path strokeLinecap="round" strokeLinejoin="round" d="M4.5 12.75l6 6 9-13.5" /></svg>
-          </button>
-          <button type="button" disabled={disabled} style={{ minHeight: 0 }} onClick={() => onPass(false)}
-            className={`w-10 h-8 rounded-lg border flex items-center justify-center cursor-pointer ${value.pass === false ? "bg-red-100 border-red-300 text-red-700" : "border-gray-200 text-gray-300"}`}>
-            <svg viewBox="0 0 24 24" className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth={3}><path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" /></svg>
-          </button>
-        </span>
+    <div className="md:col-span-6 grid grid-cols-2 md:grid-cols-7 gap-2 items-center">
+      <div className="col-span-2 md:col-span-3 text-xs text-gray-700">
+        <span className="text-gray-400 font-semibold mr-1.5">{n}.</span>{it.label_th}{optional}
       </div>
-      {value.pass === false && (
-        <input value={value.fix ?? ""} onChange={(e) => onFix(e.target.value)} disabled={disabled}
-          placeholder="รายการที่ต้องแก้ไข"
-          className="mt-1.5 w-full h-8 rounded-lg border border-red-300 bg-red-50/50 px-2.5 text-sm outline-none" />
-      )}
+      <button type="button" disabled={disabled} onClick={() => onPass(value.pass === true ? undefined : true)}
+        className={`col-span-1 ${PASS_BTN(value.pass === true)}`}>ผ่าน</button>
+      <button type="button" disabled={disabled} onClick={() => onPass(value.pass === false ? undefined : false)}
+        className={`col-span-1 ${FAIL_BTN(value.pass === false)}`}>ไม่ผ่าน</button>
+      <input type="text" value={value.fix ?? ""} onChange={(e) => onFix(e.target.value)} disabled={disabled}
+        placeholder={value.pass === false ? "รายการที่ต้องแก้ไข" : "หมายเหตุ"}
+        className={`col-span-2 md:col-span-2 ${INPUT}`} />
     </div>
   );
 
+  // MeasureField ของ InstallChecklist — ป้ายชิดขวา · หน่วยอยู่ในช่อง
   if (it.kind === "num") return (
-    <div className="flex items-center gap-3 py-1.5 border-b border-gray-100 last:border-0">
-      {label}
-      <input value={num} disabled={disabled} inputMode="decimal" onChange={(e) => onNum(e.target.value)}
-        className="w-24 h-8 rounded-lg border border-gray-200 px-2 text-sm text-right tabular-nums outline-none focus:border-primary" />
-      <span className="w-8 text-xs font-bold text-gray-500">{it.unit ?? ""}</span>
+    <div className="md:col-span-3 flex items-center gap-2">
+      <span className="text-xs text-gray-700 shrink-0 w-36 text-right">{it.label_th}{optional}</span>
+      <div className="relative flex-1">
+        <input value={num} disabled={disabled} inputMode="decimal" onChange={(e) => onNum(e.target.value)}
+          className="w-full h-8 pl-3 pr-12 rounded-lg border border-gray-200 bg-white text-sm font-mono tabular-nums focus:outline-none focus:border-primary disabled:bg-gray-50" />
+        <span className="absolute right-2 top-1/2 -translate-y-1/2 text-[10px] text-gray-400 pointer-events-none">{it.unit ?? ""}</span>
+      </div>
     </div>
   );
 
   // text / photo — โครงไว้ก่อน ยังไม่มีที่เก็บคำตอบ (ไม่มีข้อชนิดนี้ในใบที่ seed ไว้)
   return (
-    <div className="flex items-center gap-3 py-2 border-b border-gray-100 last:border-0">
-      {label}
+    <div className="md:col-span-6 flex items-center gap-3">
+      <span className="flex-1 text-xs text-gray-700"><span className="text-gray-400 font-semibold mr-1.5">{n}.</span>{it.label_th}</span>
       <span className="text-xxs px-2 py-0.5 rounded-full bg-amber-100 text-amber-800 shrink-0">
         ยังไม่เปิดใช้ ({it.kind})
       </span>
@@ -138,9 +212,10 @@ function ItemRow({ it, n, disabled, value, num, onPass, onFix, onNum }: {
 type JobPhoto = { file: string; kind: string; at: string; size: number };
 
 /** กล่องรูปก่อน/หลัง — ★ ไม่บังคับ (ผู้ใช้เคาะ 16 ก.ย. 69) ปิดงานได้โดยไม่มีรูป
- *  ★ รูปเก็บนอก public/ ทางเข้าเดียวคือ /api/om/jobs/<id>/photos/<file> ที่ตรวจสิทธิ์ก่อนเสมอ */
-function PhotoBox({ jobId, kind, label, tone, photos, disabled, onChanged }: {
-  jobId: string; kind: "before" | "after"; label: string; tone: string;
+ *  ★ รูปเก็บนอก public/ ทางเข้าเดียวคือ /api/om/jobs/<id>/photos/<file> ที่ตรวจสิทธิ์ก่อนเสมอ
+ *  หน้าตาแบบ HANDOVER PHOTOS ของ InstallStep: ว่าง = กล่องประให้แตะ · มีรูป = รูปจัตุรัส + ช่อง + */
+function PhotoBox({ jobId, kind, label, photos, disabled, onChanged }: {
+  jobId: string; kind: "before" | "after"; label: string;
   photos: JobPhoto[]; disabled: boolean; onChanged: (p: JobPhoto[]) => void;
 }) {
   const [busy, setBusy] = useState(false);
@@ -171,55 +246,73 @@ function PhotoBox({ jobId, kind, label, tone, photos, disabled, onChanged }: {
     finally { setBusy(false); }
   };
 
+  // capture=environment = เปิดกล้องหลังให้เลยบนมือถือ ช่างไม่ต้องหาไฟล์
+  const picker = (
+    <input type="file" accept="image/*" capture="environment" disabled={busy} className="hidden"
+      onChange={(e) => { send(e.target.files?.[0]); e.target.value = ""; }} />
+  );
+  const spinner = <div className="w-8 h-8 border-2 border-current/30 border-t-current rounded-full animate-spin" />;
+
   return (
-    <div className={CARD}>
-      <div className={CARD_HEAD}>
+    <div className={SUB_CARD}>
+      <div className={SUB_TITLE}>
         {label}
-        <span className="ml-2 font-normal normal-case text-gray-400">ไม่บังคับ</span>
         {mine.length > 0 && <span className="ml-1 font-normal normal-case text-gray-400">· {mine.length} รูป</span>}
       </div>
-      <div className="p-3">
-        {err && <div className="mb-2 rounded-lg bg-red-50 border border-red-200 px-3 py-1.5 text-xs text-red-700">{err}</div>}
+      {err && <div className="rounded-lg bg-red-50 border border-red-200 px-3 py-1.5 text-xs text-red-700">{err}</div>}
 
-        {mine.length > 0 && (
-          <div className="grid grid-cols-3 gap-2 mb-2">
-            {mine.map((p) => (
-              <div key={p.file} className="relative">
-                {/* eslint-disable-next-line @next/next/no-img-element */}
-                <img src={`/api/om/jobs/${jobId}/photos/${p.file}`} alt={label}
-                  className="w-full h-20 object-cover rounded-lg border border-gray-200" />
-                {!disabled && (
-                  <button type="button" style={{ minHeight: 0 }} disabled={busy} onClick={() => drop(p.file)}
-                    className="absolute -top-1.5 -right-1.5 w-6 h-6 rounded-full bg-white border border-gray-300 text-gray-500 text-xs cursor-pointer shadow-sm">×</button>
-                )}
-              </div>
-            ))}
-          </div>
-        )}
-
-        {disabled ? (
-          !mine.length && <div className="text-xs text-gray-400 text-center py-3">ไม่มีรูป</div>
-        ) : (
-          <label className={`block rounded-xl border border-dashed px-3 py-4 text-center text-xs cursor-pointer ${tone} ${busy ? "opacity-50" : ""}`}>
-            {/* capture=environment = เปิดกล้องหลังให้เลยบนมือถือ ช่างไม่ต้องหาไฟล์ */}
-            <input type="file" accept="image/*" capture="environment" disabled={busy} className="hidden"
-              onChange={(e) => { send(e.target.files?.[0]); e.target.value = ""; }} />
-            {busy ? "กำลังอัปโหลด…" : mine.length ? "+ เพิ่มรูป" : "แตะเพื่อถ่ายรูปหรือเลือกจากเครื่อง"}
-          </label>
-        )}
-      </div>
+      {disabled && !mine.length ? (
+        <div className="rounded-lg border border-dashed border-gray-200 py-6 text-center text-xs text-gray-400">ไม่มีรูป</div>
+      ) : (
+        <div className="rounded-lg border-2 border-dashed border-gray-300">
+          {mine.length === 0 ? (
+            <label className="flex flex-col items-center justify-center gap-2 px-4 py-8 min-h-[140px] cursor-pointer transition-colors text-gray-500 hover:text-primary">
+              {busy ? spinner : (
+                <>
+                  <svg className="w-10 h-8" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}><path strokeLinecap="round" strokeLinejoin="round" d="M12 16.5V9.75m0 0l3 3m-3-3l-3 3M6.75 19.5a4.5 4.5 0 01-1.41-8.775 5.25 5.25 0 0110.233-2.33 3 3 0 013.758 3.848A3.752 3.752 0 0118 19.5H6.75z" /></svg>
+                  <span className="text-sm font-semibold">แตะเพื่อถ่ายรูปหรือเลือกจากเครื่อง</span>
+                </>
+              )}
+              {picker}
+            </label>
+          ) : (
+            <div className="p-3 grid grid-cols-3 md:grid-cols-4 gap-2">
+              {mine.map((p) => (
+                <div key={p.file} className="relative">
+                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                  <img src={`/api/om/jobs/${jobId}/photos/${p.file}`} alt={label}
+                    className="w-full aspect-square object-cover rounded-lg border border-gray-200" />
+                  {!disabled && (
+                    <button type="button" style={{ minHeight: 0 }} disabled={busy} onClick={() => drop(p.file)}
+                      className="absolute top-1 right-1 w-6 h-6 bg-black/50 rounded-full text-white flex items-center justify-center text-xs z-10 cursor-pointer">✕</button>
+                  )}
+                </div>
+              ))}
+              {!disabled && (
+                <label title="เพิ่มรูป"
+                  className="relative aspect-square flex items-center justify-center rounded-lg border-2 border-dashed border-gray-300 text-gray-400 hover:border-primary hover:text-primary cursor-pointer transition-colors">
+                  {busy ? <div className="w-6 h-6 border-2 border-current/30 border-t-current rounded-full animate-spin" /> : <PlusIcon className="w-8 h-8" strokeWidth={1.5} />}
+                  {picker}
+                </label>
+              )}
+            </div>
+          )}
+        </div>
+      )}
     </div>
   );
 }
 
-export default function JobFormPanel({ jobId, wrapClass = "h-full overflow-auto bg-gray-50", embedded, onClosed }: {
+export default function JobFormPanel({ jobId, wrapClass = "h-full overflow-auto bg-gray-50", embedded, intro, onClosed }: {
   jobId: string;
   /** กล่องนอกสุด — หน้า /om/field/[id] ใช้ค่า default (เต็มจอ มี scroll ของตัวเอง)
-   *  ส่วนตอนฝังเป็นแท็บในหน้ารายละเอียด ส่งคลาสที่ไม่สร้าง scroll ซ้อนเข้ามาแทน */
+   *  ส่วนตอนฝังในการ์ดขั้นของหน้ารายละเอียด ส่งคลาสที่ไม่สร้าง scroll ซ้อนเข้ามาแทน */
   wrapClass?: string;
-  /** ฝังอยู่ในหน้าอื่น — ซ่อนปุ่มกลับของตัวเอง (หน้าที่ฝังมีปุ่มกลับอยู่แล้ว)
+  /** ฝังอยู่ในหน้าอื่น — ไม่มีแถบหัวของตัวเอง (การ์ดขั้นของหน้าที่ฝังเป็นหัวให้แล้ว)
    *  และหัวใบเหลือแต่ข้อมูลของใบ (ข้อมูลลูกค้า/บ้านอยู่ที่ header ของหน้าที่ฝังแล้ว) */
   embedded?: boolean;
+  /** บรรทัดคำอธิบายใต้แถบขั้นย่อย — หน้าที่ฝังส่งมา (เช่น ลิงก์เปิดเต็มจอ) */
+  intro?: React.ReactNode;
   /** ปิดงานสำเร็จ — หน้าที่ฝังต้องโหลดใหม่ ไม่งั้น header/ราง/สิทธิ์/Activity log ค้างที่ "เข้างาน"
    *  (เจอ 28 ก.ย. 69: ใบ #99 ปิดในฐานแล้ว แต่หน้ารายละเอียดยังโชว์เข้างาน สิทธิ์เหลือ 4) */
   onClosed?: () => void;
@@ -243,6 +336,10 @@ export default function JobFormPanel({ jobId, wrapClass = "h-full overflow-auto 
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState("");
   const [toast, setToast] = useState("");
+  // ขั้นย่อย — จำไว้ใน localStorage แบบ installSubStep ของฝั่งขาย · หน้าช่างกับหน้ารายละเอียดใช้ key เดียวกัน
+  const [subStep, setSubStep] = useSubStep(`omJobSubStep_${id}`, 0, SUB_STEPS.length);
+  const [nextError, setNextError] = useState<string | null>(null);
+  const rootRef = useRef<HTMLDivElement>(null);
   const say = (m: string) => { setToast(m); setTimeout(() => setToast(""), 2600); };
 
   const load = useCallback(() => {
@@ -269,7 +366,7 @@ export default function JobFormPanel({ jobId, wrapClass = "h-full overflow-auto 
   }, [id]);
   useEffect(load, [load]);
 
-  const setPass = (k: string, pass: boolean) =>
+  const setPass = (k: string, pass: boolean | undefined) =>
     setChecks((c) => ({ ...c, [k]: { ...c[k], pass } }));
   const setFix = (k: string, fix: string) =>
     setChecks((c) => ({ ...c, [k]: { ...c[k], fix } }));
@@ -282,7 +379,7 @@ export default function JobFormPanel({ jobId, wrapClass = "h-full overflow-auto 
   });
 
   const save = async (close: boolean) => {
-    if (repair && !repairDetail.trim()) { setErr("ติ๊กพบงานซ่อมแล้ว ต้องเล่าอาการ / สิ่งที่ต้องซ่อมด้วย"); return; }
+    if (repair && !repairDetail.trim()) { setNextError("อาการ / สิ่งที่ต้องซ่อม (ติ๊กพบงานซ่อมไว้)"); return; }
     setBusy(true); setErr("");
     try {
       const g = await gps();
@@ -324,11 +421,36 @@ export default function JobFormPanel({ jobId, wrapClass = "h-full overflow-auto 
   const items = form?.items ?? [];
   const fails = failCount(checks, items);
   const closed = job.status === "closed";
-  const needSign = method === "onsite_sign" ? !custSign : method === "tech_proxy" ? !techSign : false;
+  const last = SUB_STEPS.length - 1;
 
-  // จัดกลุ่มตามหมวด — quality อยู่คอลัมน์ซ้าย ที่เหลืออยู่คอลัมน์ขวา (หมวดแปลก ๆ ก็ยังโผล่)
-  const quality = items.filter((i) => i.section === "quality");
-  const rest = [...new Set(items.filter((i) => i.section !== "quality").map((i) => i.section))];
+  // ประตูเดียวกับปุ่มถัดไป + แท็บขั้นย่อย (แบบ onSubStepChange ของ InstallStep)
+  // ★ ข้อมูลที่กรอกไม่หายตอนสลับขั้นย่อย (state อยู่ที่ใบ) · ไม่บันทึกอัตโนมัติ เพราะ PUT เขียน Activity log ทุกครั้ง
+  const goSub = (n: number) => {
+    if (!closed && n > subStep && n > 1 && repair && !repairDetail.trim()) {
+      setNextError("อาการ / สิ่งที่ต้องซ่อม (ติ๊กพบงานซ่อมไว้)"); return;
+    }
+    setNextError(null);
+    setSubStep(n);
+    // เลื่อนกลับขึ้นแถบขั้นย่อย — หน้าช่างเต็มจอ กล่องนอกสุดคือตัว scroll เอง · ตอนฝัง scroll อยู่ที่หน้าที่ฝัง
+    setTimeout(() => {
+      const el = rootRef.current;
+      if (!el) return;
+      if (el.scrollHeight > el.clientHeight) el.scrollTo({ top: 0, behavior: "smooth" });
+      else el.scrollIntoView({ behavior: "smooth", block: "start" });
+    }, 50);
+  };
+
+  const closeJob = () => {
+    const missing = method === "onsite_sign" && !custSign ? "ลายเซ็นลูกค้า"
+      : method === "tech_proxy" && !techSign ? "ลายเซ็นช่าง (เซ็นแทนลูกค้า)" : null;
+    if (missing) { setNextError(missing); return; }
+    save(true);
+  };
+
+  // จัดกลุ่มตามหมวด — quality ขึ้นก่อน ที่เหลือตามลำดับที่เจอ (หมวดแปลก ๆ ก็ยังโผล่)
+  const sections = [...new Set(["quality", ...items.map((i) => i.section)])]
+    .map((sec) => ({ sec, list: items.filter((i) => i.section === sec) }))
+    .filter((s) => s.list.length > 0);
 
   const row = (it: FormItem, n: number) => (
     <ItemRow key={it.code} it={it} n={n} disabled={closed}
@@ -337,201 +459,234 @@ export default function JobFormPanel({ jobId, wrapClass = "h-full overflow-auto 
       onNum={(v) => setMeasures((s) => ({ ...s, [it.code]: v }))} />
   );
 
+  // หัวใบงาน — ระบบเติมให้ ช่างไม่ต้องเขียนเหมือนกระดาษ · ช่องอ่านอย่างเดียวหน้าตาแบบเลขที่เอกสารของ InstallChecklist
+  // ★ ตอนฝังในหน้ารายละเอียด ตัดลูกค้า/บ้าน/โครงการ/เบอร์/ทีม ที่ header หน้าแสดงอยู่แล้ว
+  const kw = job.kwp_list ? `${job.kwp_list} kW` : null;
+  const formName = form ? `${form.label_th} · v${form.version}` : null;
+  const docFields: { k: string; v: string | null; wide?: boolean; mono?: boolean }[] = [
+    { k: "เลขที่เอกสาร", v: jobNoTxt, mono: true },
+    ...(embedded ? [] : [
+      { k: "ลูกค้า", v: job.customer_name, wide: true }, { k: "บ้านเลขที่", v: job.house_number },
+      { k: "โครงการ", v: job.project_name, wide: true }, { k: "เบอร์", v: job.phone }, { k: "ทีม", v: job.team_name },
+    ]),
+    { k: "ประเภทงาน", v: job.service_type }, { k: "วันนัด", v: thDT(job.scheduled_at) },
+    { k: "ขนาดติดตั้ง", v: kw }, { k: "ใบตรวจ", v: formName, wide: true },
+  ];
+
   return (
-    <div className={wrapClass}>
-      <div className="bg-white border-b border-gray-200 px-4 py-2.5 sticky top-0 z-10">
-        <div className="flex items-center gap-2 flex-wrap">
-          <h1 className="text-lg font-bold leading-tight">{form?.label_th ?? "ใบตรวจรับงาน / ใบบริการ"}</h1>
-          {form && <span className="text-xxs px-2 py-0.5 rounded-full bg-gray-100 text-gray-600 font-semibold">v{form.version}</span>}
-          {jobNoTxt && !embedded && <span className="text-xs font-bold text-gray-500 tabular-nums">{jobNoTxt}</span>}
-          <span className={`text-xxs px-2 py-0.5 rounded-full text-white font-semibold ${closed ? "bg-emerald-600" : "bg-violet-600"}`}>
-            {closed ? "ปิดงานแล้ว" : "กำลังทำ"}
-          </span>
-          {!embedded && <Link href="/om/services" className="ml-auto text-xs font-bold text-gray-600 no-underline border border-gray-200 rounded-full px-3 py-1">‹ กลับ</Link>}
-        </div>
-      </div>
-
-      <div className="p-4 max-w-[1400px] mx-auto">
-        {err && <div className="mb-3 rounded-lg bg-red-50 border border-red-200 px-4 py-2 text-sm text-red-700">{err}</div>}
-
-        {/* ยังไม่มีใบของชนิดงานนี้ — ยืมใบติดตั้งมาใช้ ต้องบอกช่างให้รู้ ไม่ใช่เงียบ */}
-        {form?.fallback && (
-          <div className="mb-3 rounded-xl bg-amber-50 border border-amber-200 px-4 py-2 text-xs text-amber-900">
-            งาน{job.service_type ? `“${job.service_type}”` : "ชนิดนี้"}ยังไม่มีใบตรวจของตัวเอง — ใช้ “{form.label_th}” ไปก่อน
-          </div>
-        )}
-        {form === null && (
-          <div className="mb-3 rounded-xl bg-red-50 border border-red-200 px-4 py-2 text-xs text-red-800">
-            ยังไม่มีใบตรวจในระบบเลย — ต้องตั้งใบตรวจที่หน้าตั้งค่าก่อน
-          </div>
-        )}
-
-        {/* หัวใบงาน — ระบบเติมให้ ช่างไม่ต้องเขียนเหมือนกระดาษ
-            ★ 28 ก.ย. 69: ตอนฝังในหน้ารายละเอียด ตัดลูกค้า/บ้าน/โครงการ/เบอร์/ทีม ที่ header หน้าแสดงอยู่แล้ว
-              เหลือแต่ข้อมูลของใบ แบบ DOCUMENT HEADER ของใบตรวจติดตั้งฝั่งขาย (InstallChecklist) */}
-        <div className="bg-white border border-gray-200 rounded-2xl px-4 py-3 mb-3 flex gap-x-6 gap-y-2 flex-wrap">
-          {(embedded
-            ? [["เลขที่เอกสาร", jobNoTxt ?? "ออกเลขเมื่อบันทึกครั้งแรก"], ["ประเภทงาน", job.service_type],
-                ["วันนัด", thDT(job.scheduled_at)], ["ขนาดติดตั้ง", job.kwp_list ? `${job.kwp_list} kW` : "—"]]
-            : [["ลูกค้า", job.customer_name], ["บ้านเลขที่", job.house_number], ["โครงการ", job.project_name],
-                ["เบอร์", job.phone], ["ขนาดติดตั้ง", job.kwp_list ? `${job.kwp_list} kW` : "—"],
-                ["ประเภทงาน", job.service_type], ["ทีม", job.team_name], ["วันนัด", thDT(job.scheduled_at)]]
-          ).map(([k, v]) => (
-            <div key={String(k)}>
-              <div className="text-xxs text-gray-400">{k}</div>
-              <div className="text-sm font-bold">{v || "—"}</div>
-            </div>
-          ))}
-        </div>
-
-        <div className="grid gap-3 lg:grid-cols-[1.15fr_.85fr]">
-          {/* คุณภาพงาน — จำนวนข้อมาจากใบในฐาน ไม่ใช่เลข 7 ที่ฝังไว้ */}
-          <div className={CARD}>
-            <div className="px-4 py-2 border-b border-gray-200 bg-gray-50 flex items-center">
-              <span className="text-xs font-bold uppercase tracking-wide text-gray-600">{SECTION_TH.quality}</span>
-              <span className="ml-auto text-xs text-gray-400">
-                {quality.length} ข้อ{fails > 0 && ` · ไม่ผ่าน ${fails}`}
-              </span>
-            </div>
-            <div className="px-4 py-1">
-              {quality.length === 0
-                ? <div className="py-4 text-sm text-gray-400">ใบนี้ไม่มีข้อตรวจคุณภาพงาน</div>
-                : quality.map((it, i) => row(it, i + 1))}
-            </div>
-          </div>
-
-          <div className="grid gap-3 content-start">
-            {/* หมวดที่เหลือของใบ — การทดสอบระบบ ฯลฯ */}
-            {rest.map((sec) => {
-              const list = items.filter((i) => i.section === sec);
-              return (
-                <div key={sec} className={CARD}>
-                  <div className="px-4 py-2 border-b border-gray-200 bg-gray-50 flex items-center">
-                    <span className="text-xs font-bold uppercase tracking-wide text-gray-600">{SECTION_TH[sec] ?? sec}</span>
-                    <span className="ml-auto text-xs text-gray-400">{list.length} ข้อ</span>
-                  </div>
-                  <div className="px-4 py-1">{list.map((it, i) => row(it, i + 1))}</div>
-                </div>
-              );
-            })}
-
-            {/* รูปก่อน / หลัง — แยกสองกล่องตามที่ผู้ใช้สั่ง · ★ ไม่บังคับ ปิดงานได้โดยไม่มีรูป
-                ชื่อกล่างเป็นกลาง ไม่ผูกกับงานล้าง เพราะใบนี้ใช้กับงาน O&M ทุกชนิด */}
-            <div className="grid gap-3 sm:grid-cols-2">
-              <PhotoBox jobId={id} kind="before" label="รูปก่อนทำงาน" photos={photos}
-                tone="bg-amber-50 border-amber-200 text-amber-800" disabled={closed} onChanged={setPhotos} />
-              <PhotoBox jobId={id} kind="after" label="รูปหลังทำงาน" photos={photos}
-                tone="bg-emerald-50 border-emerald-200 text-emerald-800" disabled={closed} onChanged={setPhotos} />
-            </div>
-
-            <div className={CARD}>
-              <div className={CARD_HEAD}>รายละเอียดอื่น ๆ</div>
-              <div className="p-3">
-                <input value={note} onChange={(e) => setNote(e.target.value)} disabled={closed}
-                  placeholder="เช่น ล้างแผง เครื่องทำงานปกติ เชื่อมไวไฟแล้ว"
-                  className="w-full h-9 rounded-lg border border-gray-200 px-3 text-sm outline-none focus:border-primary" />
-              </div>
-            </div>
-
-            {/* ★ เฟส 5 แผน 20260924-02: ช่างแจ้งพบงานซ่อม — ใบงานนี้ปิดตามปกติ (1 ใบงาน = 1 เส้นทาง)
-                แล้วทีม O&M เปิดใบงานซ่อมต่อที่ขั้นปิดงานของหน้ารายละเอียด พร้อมเลือกในประกัน/นอกประกัน */}
-            <div className={CARD}>
-              <div className={CARD_HEAD}>
-                พบงานซ่อม
-                <span className="ml-2 font-normal normal-case text-gray-400">ทีม O&amp;M เปิดใบงานซ่อมต่อให้</span>
-              </div>
-              <div className="p-3">
-                <div className="flex gap-2">
-                  {([[false, "ไม่พบ"], [true, "พบ ต้องซ่อม"]] as const).map(([k, t]) => (
-                    <button key={t} type="button" disabled={closed} style={{ minHeight: 0 }}
-                      onClick={() => {
-                        setRepair(k);
-                        // ติ๊กพบครั้งแรก — ดึงข้อที่ไม่ผ่าน (พร้อมรายการที่ต้องแก้) มาเติมให้ ช่างแก้ต่อได้
-                        if (k && !repairDetail.trim())
-                          setRepairDetail(items
-                            .filter((i) => i.kind === "bool" && checks[i.code]?.pass === false)
-                            .map((i) => checks[i.code]?.fix?.trim() || i.label_th).join(" · "));
-                      }}
-                      className={`h-9 px-4 rounded-xl border text-sm font-bold cursor-pointer ${repair === k
-                        ? (k ? "bg-amber-100 border-amber-300 text-amber-800" : "bg-green-100 border-green-300 text-green-700")
-                        : "border-gray-200 bg-white text-gray-500"}`}>{t}</button>
-                  ))}
-                </div>
-                {repair && (
-                  <textarea value={repairDetail} onChange={(e) => setRepairDetail(e.target.value)} disabled={closed}
-                    rows={3} maxLength={1000} placeholder="อาการ / สิ่งที่ต้องซ่อม เช่น อินเวอร์เตอร์ขึ้น error E-21 · สาย DC หลวม"
-                    className="mt-2 w-full rounded-lg border border-amber-300 bg-amber-50/40 px-3 py-2 text-sm outline-none focus:border-amber-500" />
-                )}
-              </div>
-            </div>
-          </div>
-        </div>
-
-        {/* ผลการตรวจ + ลายเซ็น */}
-        <div className={`${CARD} mt-3`}>
-          <div className={CARD_HEAD}>ผลการตรวจ และลายเซ็น</div>
-          <div className="p-4">
-            <div className="flex gap-2 mb-3">
-              {([["pass", "ผ่าน"], ["fail", "ไม่ผ่าน"]] as const).map(([k, t]) => (
-                <button key={k} type="button" disabled={closed} style={{ minHeight: 0 }} onClick={() => setResult(k)}
-                  className={`h-9 px-6 rounded-xl border text-sm font-bold cursor-pointer ${result === k
-                    ? (k === "pass" ? "bg-green-100 border-green-300 text-green-700" : "bg-red-100 border-red-300 text-red-700")
-                    : "border-gray-200 bg-white text-gray-500"}`}>{t}</button>
-              ))}
-            </div>
-
-            <div className="text-xs font-bold text-gray-600 mb-1.5">ปิดงานด้วยวิธีไหน</div>
-            <div className="flex gap-2 flex-wrap mb-3">
-              {([["onsite_sign", "ลูกค้าเซ็นที่หน้างาน"], ["line_otp", "ส่งให้ลูกค้ายืนยันทาง LINE"], ["tech_proxy", "ช่างเซ็นแทน"]] as const).map(([k, t]) => (
-                <button key={k} type="button" disabled={closed} style={{ minHeight: 0 }} onClick={() => setMethod(k)}
-                  className={`h-9 px-4 rounded-xl border text-sm font-bold cursor-pointer ${method === k ? "border-active bg-active-light text-active-dark" : "border-gray-200 bg-white text-gray-700"}`}>{t}</button>
-              ))}
-            </div>
-            {method === "tech_proxy" && (
-              <div className="mb-3">
-                <div className="rounded-xl bg-amber-50 border border-amber-200 px-3.5 py-2 text-xs text-amber-900 mb-2">
-                  ใช้เมื่อติดต่อลูกค้าไม่ได้จริง ๆ เท่านั้น ระบบจะทำเครื่องหมายไว้ว่าไม่ใช่ลายเซ็นลูกค้า
-                </div>
-                <select value={proxyReason} onChange={(e) => setProxyReason(e.target.value)} disabled={closed}
-                  className="w-full max-w-[420px] h-9 rounded-lg border border-gray-200 px-2.5 text-sm bg-white outline-none">
-                  {PROXY_REASONS.map((r) => <option key={r}>{r}</option>)}
-                </select>
-              </div>
-            )}
-            {method === "line_otp" && (
-              <div className="rounded-xl bg-sky-50 border border-sky-200 px-3.5 py-2 text-xs text-sky-900 mb-3">
-                ยังไม่เปิดใช้ — รอเชื่อม LINE OA และ OTP (ตาราง <code>om_otp_requests</code> เตรียมไว้แล้ว)
-              </div>
-            )}
-
-            <div className="grid gap-4 sm:grid-cols-3">
-              <SignPad label="ช่างผู้ปฏิบัติงาน" value={techSign} onChange={setTechSign} />
-              <SignPad label="ลูกค้า" value={custSign} onChange={setCustSign} />
-              <div>
-                <div className="text-xs font-bold text-gray-600 mb-1">
-                  ผู้ตรวจสอบ / Q.C. <span className="text-xxs px-2 py-0.5 rounded-full bg-amber-100 text-amber-800">ยังไม่บังคับ</span>
-                </div>
-                <div className="h-[104px] rounded-xl border border-dashed border-gray-300 bg-white flex items-center justify-center text-xs text-gray-400">
-                  เว้นไว้ก่อน
-                </div>
-              </div>
-            </div>
-          </div>
-
-          <div className="border-t border-gray-200 bg-gray-50 px-4 py-3 flex items-center gap-3 flex-wrap">
-            <span className="text-xxs text-gray-500">บันทึกพิกัดและเวลาอัตโนมัติตอนกดปิดงาน</span>
-            <span className="ml-auto flex gap-2">
-              <button type="button" disabled={busy || closed} onClick={() => save(false)} style={{ minHeight: 0 }}
-                className="h-9 px-4 rounded-xl border border-gray-200 bg-white text-sm font-bold text-gray-700 cursor-pointer disabled:opacity-50">บันทึกร่าง</button>
-              <button type="button" disabled={busy || closed || needSign} onClick={() => save(true)} style={{ minHeight: 0 }}
-                className="h-9 px-6 rounded-xl bg-primary text-white text-sm font-bold cursor-pointer disabled:opacity-50">
-                {closed ? "ปิดงานแล้ว" : busy ? "กำลังบันทึก…" : "ปิดงาน"}
-              </button>
+    <div ref={rootRef} className={wrapClass}>
+      {!embedded && (
+        <div className="bg-white border-b border-gray-200 px-4 py-2.5 sticky top-0 z-10">
+          <div className="flex items-center gap-2 flex-wrap">
+            <h1 className="text-lg font-bold leading-tight">{form?.label_th ?? "ใบตรวจรับงาน / ใบบริการ"}</h1>
+            {form && <span className="text-xxs px-2 py-0.5 rounded-full bg-gray-100 text-gray-600 font-semibold">v{form.version}</span>}
+            {jobNoTxt && <span className="text-xs font-bold text-gray-500 tabular-nums">{jobNoTxt}</span>}
+            <span className={`text-xxs px-2 py-0.5 rounded-full text-white font-semibold ${closed ? "bg-emerald-600" : "bg-violet-600"}`}>
+              {closed ? "ปิดงานแล้ว" : "กำลังทำ"}
             </span>
+            <Link href="/om/services" className="ml-auto text-xs font-bold text-gray-600 no-underline border border-gray-200 rounded-full px-3 py-1">‹ กลับ</Link>
           </div>
         </div>
+      )}
+
+      <div className={embedded ? "" : "p-4 max-w-[1400px] mx-auto"}>
+        {/* แถบขั้นย่อย — StepLayout ตัวเดียวกับการ์ด Install ฝั่งขาย (state active เสมอ ใบปิดแล้วยังเปิดอ่านได้ทุกขั้น) */}
+        <StepLayout state="active" doneHeader={null} subSteps={SUB_STEPS} subStep={subStep} onSubStepChange={goSub}>
+          {intro}
+          <div className="space-y-3">
+            {/* ใบปิดแล้ว — แถบ lock แบบ InstallChecklist (หน้าช่างเต็มจอมีป้ายที่แถบหัวอยู่แล้ว) */}
+            {closed && embedded && (
+              <div className="rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 text-xs text-emerald-800 flex items-center gap-2">
+                <CheckIcon className="w-4 h-4 shrink-0" />
+                <span>ปิดงานแล้ว — ใบตรวจถูก lock แก้ไขไม่ได้</span>
+              </div>
+            )}
+
+            {/* ── ขั้นย่อย 1: ตรวจ ── */}
+            {subStep === 0 && (
+              <>
+                {/* ยังไม่มีใบของชนิดงานนี้ — ยืมใบติดตั้งมาใช้ ต้องบอกช่างให้รู้ ไม่ใช่เงียบ */}
+                {form?.fallback && (
+                  <div className="rounded-lg bg-amber-50 border border-amber-200 px-3 py-2 text-xs text-amber-900">
+                    งาน{job.service_type ? `“${job.service_type}”` : "ชนิดนี้"}ยังไม่มีใบตรวจของตัวเอง — ใช้ “{form.label_th}” ไปก่อน
+                  </div>
+                )}
+                {form === null && (
+                  <div className="rounded-lg bg-red-50 border border-red-200 px-3 py-2 text-xs text-red-800">
+                    ยังไม่มีใบตรวจในระบบเลย — ต้องตั้งใบตรวจที่หน้าตั้งค่าก่อน
+                  </div>
+                )}
+
+                <div className={SECTION}>
+                  <SectionHead icon={<DocumentIcon className="w-4 h-4" />} en="Document Header" />
+                  <div className="grid grid-cols-2 md:grid-cols-7 gap-2">
+                    {docFields.map(({ k, v, wide, mono }, i) => (
+                      <div key={k} className={`${i === 0 || wide ? "col-span-2" : "col-span-1"} ${wide ? "md:col-span-2" : "md:col-span-1"} min-w-0`}>
+                        <label className={FIELD_LABEL}>{k}</label>
+                        <div title={v ?? (i === 0 ? "ออกเลขเมื่อบันทึกครั้งแรก" : undefined)}
+                          className={`h-8 px-3 rounded-lg border border-gray-200 bg-gray-50 text-sm flex items-center min-w-0 ${v ? "text-gray-700" : "text-gray-400"} ${mono && v ? "font-mono" : ""}`}>
+                          <span className="truncate">{v || (i === 0 ? "ยังไม่ออกเลข" : "—")}</span>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+
+                {/* หมวดของใบ — จำนวนข้อมาจากใบในฐาน ไม่ใช่เลขที่ฝังไว้ */}
+                {sections.map(({ sec, list }) => {
+                  const meta = SECTION_META[sec];
+                  return (
+                    <div key={sec} className={SECTION}>
+                      <SectionHead
+                        icon={sec === "quality" ? <DocumentIcon className="w-4 h-4" /> : <CheckIcon className="w-4 h-4" />}
+                        en={meta?.en ?? sec} th={meta?.th}
+                        right={<>{list.length} ข้อ{sec === "quality" && fails > 0 && <b className="text-red-600"> · ไม่ผ่าน {fails}</b>}</>} />
+                      <div className="grid grid-cols-1 md:grid-cols-6 gap-2">{list.map((it, i) => row(it, i + 1))}</div>
+                    </div>
+                  );
+                })}
+                {form && !sections.length && (
+                  <div className={`${SECTION} text-sm text-gray-400`}>ใบนี้ยังไม่มีข้อตรวจ</div>
+                )}
+              </>
+            )}
+
+            {/* ── ขั้นย่อย 2: รูป · บันทึก ── */}
+            {subStep === 1 && (
+              <>
+                {/* รูปก่อน / หลัง — แยกสองกล่องตามที่ผู้ใช้สั่ง · ★ ไม่บังคับ ปิดงานได้โดยไม่มีรูป
+                    ชื่อกล่องเป็นกลาง ไม่ผูกกับงานล้าง เพราะใบนี้ใช้กับงาน O&M ทุกชนิด */}
+                <div className={SECTION}>
+                  <SectionHead icon={<CameraIcon className="w-4 h-4" />} en="Photos" th="รูปก่อน / หลังทำงาน · ไม่บังคับ" />
+                  <div className="grid gap-3 md:grid-cols-2">
+                    <PhotoBox jobId={id} kind="before" label="รูปก่อนทำงาน" photos={photos} disabled={closed} onChanged={setPhotos} />
+                    <PhotoBox jobId={id} kind="after" label="รูปหลังทำงาน" photos={photos} disabled={closed} onChanged={setPhotos} />
+                  </div>
+                </div>
+
+                <div className={SECTION}>
+                  <SectionHead icon={<DocumentIcon className="w-4 h-4" />} en="Notes" th="รายละเอียดอื่น ๆ" />
+                  <textarea value={note} onChange={(e) => setNote(e.target.value)} disabled={closed} rows={3}
+                    placeholder="เช่น ล้างแผง เครื่องทำงานปกติ เชื่อมไวไฟแล้ว"
+                    className="w-full px-3 py-2 rounded-lg border border-gray-200 bg-white text-sm focus:outline-none focus:border-primary resize-none disabled:bg-gray-50 disabled:text-gray-500" />
+                </div>
+
+                {/* ★ เฟส 5 แผน 20260924-02: ช่างแจ้งพบงานซ่อม — ใบงานนี้ปิดตามปกติ (1 ใบงาน = 1 เส้นทาง)
+                    แล้วทีม O&M เปิดใบงานซ่อมต่อที่ขั้นปิดงานของหน้ารายละเอียด พร้อมเลือกในประกัน/นอกประกัน */}
+                <div className={SECTION}>
+                  <SectionHead icon={<WrenchIcon className="w-4 h-4" />} en="Repair" th="พบงานซ่อม · ทีม O&M เปิดใบงานซ่อมต่อให้" />
+                  <div className="grid grid-cols-2 md:grid-cols-7 gap-2">
+                    {([[false, "ไม่พบ"], [true, "พบ ต้องซ่อม"]] as const).map(([k, t]) => (
+                      <button key={t} type="button" disabled={closed} className={chipBtn(repair === k)}
+                        onClick={() => {
+                          setRepair(k);
+                          // ติ๊กพบครั้งแรก — ดึงข้อที่ไม่ผ่าน (พร้อมรายการที่ต้องแก้) มาเติมให้ ช่างแก้ต่อได้
+                          if (k && !repairDetail.trim())
+                            setRepairDetail(items
+                              .filter((i) => i.kind === "bool" && checks[i.code]?.pass === false)
+                              .map((i) => checks[i.code]?.fix?.trim() || i.label_th).join(" · "));
+                        }}>{t}</button>
+                    ))}
+                  </div>
+                  {repair && (
+                    <div className="mt-2">
+                      <label className={FIELD_LABEL}>อาการ / สิ่งที่ต้องซ่อม <span className="text-red-500">*</span></label>
+                      <textarea value={repairDetail} onChange={(e) => setRepairDetail(e.target.value)} disabled={closed}
+                        rows={3} maxLength={1000} placeholder="เช่น อินเวอร์เตอร์ขึ้น error E-21 · สาย DC หลวม"
+                        className="w-full px-3 py-2 rounded-lg border border-amber-300 bg-amber-50/40 text-sm focus:outline-none focus:border-amber-500 resize-none" />
+                    </div>
+                  )}
+                </div>
+              </>
+            )}
+
+            {/* ── ขั้นย่อย 3: ส่งมอบ — ผลการตรวจ · วิธีปิดงาน · ลายเซ็น ── */}
+            {subStep === 2 && (
+              <>
+                <div className={SECTION}>
+                  <SectionHead icon={<CheckIcon className="w-4 h-4" />} en="Result" th="ผลการตรวจ"
+                    right={fails > 0 ? <span className="text-red-600 font-semibold">ไม่ผ่าน {fails} ข้อ</span> : undefined} />
+                  <div className="grid grid-cols-2 md:grid-cols-7 gap-2">
+                    <button type="button" disabled={closed} onClick={() => setResult("pass")} className={PASS_BTN(result === "pass")}>ผ่าน</button>
+                    <button type="button" disabled={closed} onClick={() => setResult("fail")} className={FAIL_BTN(result === "fail")}>ไม่ผ่าน</button>
+                  </div>
+
+                  <label className={`${FIELD_LABEL} mt-3`}>ปิดงานด้วยวิธีไหน</label>
+                  <div className="flex gap-2 flex-wrap">
+                    {([["onsite_sign", "ลูกค้าเซ็นที่หน้างาน"], ["line_otp", "ส่งให้ลูกค้ายืนยันทาง LINE"], ["tech_proxy", "ช่างเซ็นแทน"]] as const).map(([k, t]) => (
+                      <button key={k} type="button" disabled={closed} onClick={() => setMethod(k)} className={chipBtn(method === k)}>{t}</button>
+                    ))}
+                  </div>
+                  {method === "tech_proxy" && (
+                    <div className="mt-3 space-y-2">
+                      <div className="rounded-lg bg-amber-50 border border-amber-200 px-3 py-2 text-xs text-amber-900">
+                        ใช้เมื่อติดต่อลูกค้าไม่ได้จริง ๆ เท่านั้น ระบบจะทำเครื่องหมายไว้ว่าไม่ใช่ลายเซ็นลูกค้า
+                      </div>
+                      <select value={proxyReason} onChange={(e) => setProxyReason(e.target.value)} disabled={closed}
+                        className={`${INPUT} max-w-[420px]`}>
+                        {PROXY_REASONS.map((r) => <option key={r}>{r}</option>)}
+                      </select>
+                    </div>
+                  )}
+                  {method === "line_otp" && (
+                    <div className="mt-3 rounded-lg bg-sky-50 border border-sky-200 px-3 py-2 text-xs text-sky-900">
+                      ยังไม่เปิดใช้ — รอเชื่อม LINE OA และ OTP (ตาราง <code>om_otp_requests</code> เตรียมไว้แล้ว)
+                    </div>
+                  )}
+                </div>
+
+                <div className={SECTION}>
+                  <SectionHead icon={<UserIcon className="w-4 h-4" />} en="Signatures" th="ลายเซ็น" />
+                  <div className="grid gap-3 md:grid-cols-3">
+                    <SignPad label="ช่างผู้ปฏิบัติงาน" value={techSign} onChange={setTechSign}
+                      required={method === "tech_proxy"} disabled={closed} />
+                    <SignPad label="ลูกค้า" value={custSign} onChange={setCustSign}
+                      required={method === "onsite_sign"} disabled={closed} />
+                    <div className="space-y-2">
+                      <label className={FIELD_LABEL}>
+                        ผู้ตรวจสอบ / Q.C. <span className="text-xxs px-2 py-0.5 rounded-full bg-amber-100 text-amber-800">ยังไม่บังคับ</span>
+                      </label>
+                      <div className="h-32 rounded-lg border border-dashed border-gray-300 bg-white flex items-center justify-center text-sm text-gray-300">
+                        เว้นไว้ก่อน
+                      </div>
+                    </div>
+                  </div>
+                  {!closed && <div className="mt-3 text-xxs text-gray-500">บันทึกพิกัดและเวลาอัตโนมัติตอนกดปิดงาน</div>}
+                </div>
+              </>
+            )}
+          </div>
+
+          {err && <div className="mt-3 rounded-lg bg-red-50 border border-red-200 px-4 py-2 text-sm text-red-700">{err}</div>}
+
+          {/* ปุ่มท้ายการ์ด — แบบ InstallStep: ย้อนกลับชิดซ้าย · ถัดไป/ปิดงานชิดขวา (+ บันทึกร่างข้าง ๆ)
+              มือถือ 3 ปุ่มแบ่งเท่ากันในแถวเดียว (กลุ่มขวาเป็น contents) */}
+          <div className="flex gap-2 mt-3 md:justify-between">
+            {subStep > 0
+              ? <button type="button" onClick={() => goSub(subStep - 1)} className={NAV_BACK}>
+                  <ChevronLeftIcon className="w-4 h-4" strokeWidth={2} />ย้อนกลับ
+                </button>
+              : <span className="hidden md:block md:w-64" />}
+            <div className="contents md:flex md:gap-2">
+              {!closed && (
+                <button type="button" disabled={busy} onClick={() => save(false)} className={NAV_DRAFT}>บันทึกร่าง</button>
+              )}
+              {subStep < last ? (
+                <button type="button" onClick={() => goSub(subStep + 1)} className={NAV_NEXT}>
+                  ถัดไป<ChevronRightIcon className="w-4 h-4" strokeWidth={2} />
+                </button>
+              ) : (
+                <button type="button" disabled={busy || closed} onClick={closeJob} className={NAV_CLOSE}>
+                  {closed ? "ปิดงานแล้ว" : busy ? "กำลังบันทึก…" : "ปิดงาน"}
+                  {!closed && !busy && <ChevronRightIcon className="w-4 h-4" strokeWidth={2} />}
+                </button>
+              )}
+            </div>
+          </div>
+        </StepLayout>
       </div>
 
+      <ErrorPopup message={nextError} onClose={() => setNextError(null)} />
       {toast && <div className="fixed bottom-6 left-1/2 -translate-x-1/2 bg-gray-900 text-white text-sm px-5 py-2.5 rounded-full shadow-lg z-50">{toast}</div>}
     </div>
   );

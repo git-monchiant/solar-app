@@ -527,24 +527,23 @@ export default function JobDetail({ item, history, onBack, onDone, onSaved, onRe
             {step === 4 && (
               <StepCard n={4} state={stepState(4)} title="เข้างาน — ช่างทำงาน · ลูกค้าเซ็นรับ">
                 {item.booking_id ? (
-                  <div className={SECTION}>
-                    {/* ★ เฟส 3: ใบตรวจรับงานฝังมาเลย ไม่ต้องเด้งออกไปหน้าอื่นแล้ว
-                        ใบเดียวกับ /om/field/[id] เป๊ะ (components/om/JobFormPanel) แก้ที่เดียวได้ทั้งสองที่
-                        wrapClass ตัด h-full/overflow ทิ้ง กันเกิด scroll ซ้อนในกล่องนี้ */}
-                    <div className="text-sm text-gray-600 mb-3">
-                      กรอกใบตรวจ ให้ลูกค้าเซ็นรับ แล้วกด<b>ปิดงาน</b>ท้ายใบ · ช่างกรอกจากมือถือได้ ใบเดียวกัน
-                      <a href={`/om/field/${item.booking_id}`}
-                        className="ml-2 text-active font-semibold no-underline hover:underline">เปิดเต็มจอ ›</a>
-                      {/* ใบเก่าที่ค้างสถานะรอปิด (ก่อนตัดขั้น) — บอกให้ปิดต่อจากใบนี้ได้เลย */}
-                      {cur === "checked" && (
-                        <div className="mt-2 text-teal-700 font-semibold">ช่างทำงานเสร็จแล้ว รอปิดงาน — ปิดต่อได้ที่ท้ายใบ</div>
-                      )}
-                    </div>
-                    <div className="-mx-3 -mb-3 rounded-b-lg overflow-hidden">
-                      <JobFormPanel jobId={String(item.booking_id)} wrapClass="bg-gray-50" embedded
-                        onClosed={() => { onSaved("ปิดงานเรียบร้อย"); onDone(); }} />
-                    </div>
-                  </div>
+                  // ★ เฟส 3: ใบตรวจรับงานฝังมาเลย ไม่ต้องเด้งออกไปหน้าอื่นแล้ว
+                  //   ใบเดียวกับ /om/field/[id] เป๊ะ (components/om/JobFormPanel) แก้ที่เดียวได้ทั้งสองที่
+                  // ★ 28 ก.ย. 69 (แผน 20260928-03): วางตรงในการ์ดแบบ InstallChecklist ในการ์ด Install — ไม่ห่อ SECTION ซ้อน
+                  //   ใบมีแถบขั้นย่อย (ตรวจ / รูป · บันทึก / ส่งมอบ) ของตัวเอง · wrapClass ว่าง = ไม่สร้าง scroll ซ้อน
+                  <JobFormPanel jobId={String(item.booking_id)} wrapClass="" embedded
+                    onClosed={() => { onSaved("ปิดงานเรียบร้อย"); onDone(); }}
+                    intro={
+                      <div className="text-xs text-gray-500 mb-3">
+                        กรอกใบตรวจ ให้ลูกค้าเซ็นรับ แล้วกด<b>ปิดงาน</b>ที่ขั้นส่งมอบ · ช่างกรอกจากมือถือได้ ใบเดียวกัน
+                        <a href={`/om/field/${item.booking_id}`}
+                          className="ml-2 text-active font-semibold no-underline hover:underline">เปิดเต็มจอ ›</a>
+                        {/* ใบเก่าที่ค้างสถานะรอปิด (ก่อนตัดขั้น) — บอกให้ปิดต่อจากใบนี้ได้เลย */}
+                        {cur === "checked" && (
+                          <div className="mt-1 text-teal-700 font-semibold">ช่างทำงานเสร็จแล้ว รอปิดงาน — ปิดต่อได้ที่ขั้นส่งมอบ</div>
+                        )}
+                      </div>
+                    } />
                 ) : (
                   <div className={`${SECTION} text-sm text-gray-500`}>ยังไม่มีใบงาน — ใบตรวจรับงานจะขึ้นเมื่อสร้างนัดแล้ว</div>
                 )}
@@ -554,7 +553,7 @@ export default function JobDetail({ item, history, onBack, onDone, onSaved, onRe
             {step === 5 && (
               <StepCard n={5} state={stepState(5)} title="ปิดงาน">
                 <div className={`${SECTION} text-sm text-gray-600`}>
-                  {cur === "closed" ? <b className="text-emerald-600">ปิดงานแล้ว</b> : "ปิดงานที่ท้ายใบตรวจรับงานในขั้นเข้างาน หลังลูกค้าเซ็นรับ"}
+                  {cur === "closed" ? <b className="text-emerald-600">ปิดงานแล้ว</b> : "ปิดงานที่ขั้นส่งมอบของใบตรวจรับงาน (ขั้นเข้างาน) หลังลูกค้าเซ็นรับ"}
                   {/* ★ เฟส 5: ซ่อม (ในประกัน) เป็นงานฟรีที่ไม่ใช้สิทธิ์ล้าง — ดูจาก consumes_quota ของชนิดงาน ไม่ใช่ skip อย่างเดียว */}
                   {skip && item.consumes_quota !== 0
                     ? <> · ปิดแล้วระบบ{cur === "closed" ? "ตัด" : "จะตัด"}<b>สิทธิ์ล้าง 1 ครั้ง</b>{cur !== "closed" && <> เหลือ {Math.max(0, item.balance - 1)} ครั้ง</>}</>
