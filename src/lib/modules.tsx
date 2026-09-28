@@ -215,23 +215,33 @@ export const MODULES: AppModule[] = [
       //   ทะเบียนเลขอยู่ที่ src/lib/om/journey.ts — ลูกค้า/บ้านเป็น "ทะเบียน" ไม่ใช่คิวงาน จึงไม่มีเลข
       // ★ 28 ก.ย. 69 (แผน 20260928-01): Today ของ O&M เอง — บนสุดตำแหน่งเดียวกับ Sales / สำรวจ & ติดตั้ง
       //   ชี้ /om/today ไม่ใช่ /today เพราะผู้ใช้เคาะให้งาน O&M แสดงเฉพาะในการ์ด O&M · ไม่มี badge เหมือน Today ฝั่งขาย
+      // ★ 28 ก.ย. 69: เรียงเมนูเป็น 4 ชั้นแบบโมดูล Sales (ผู้ใช้เคาะ) — งานประจำวัน → ข้อมูลอ้างอิง → รายงาน → ตั้งค่า
+      //   เดิมลูกค้า/บ้านแทรกอยู่ระหว่าง Today กับงานบริการ ดันคิวงานไปอยู่ลำดับที่ 6
       { label: "Today", href: "/om/today", icon: <I d={D.calendar} /> },
+      // ── งานประจำวัน (เรียงตาม journey 2100 → 2600) ──
+      // ★ ผู้ใช้เคาะ 9 ก.ย. 69 "ไม่อยากเพิ่มเมนูเพิ่มแล้ว" — ทีมช่าง = แท็บในปฏิทิน/จ่ายงาน
+      // ★ 28 ก.ย. 69: ตัดเมนู "เช็คลิสต์" ออกจากเมนูซ้าย (ผู้ใช้เคาะ · เดิมสั่งเพิ่ม 16 ก.ย. ตอนใบตรวจยังซ่อนเป็นแท็บ)
+      //   ตอนนี้ใบตรวจฝังอยู่ในขั้นเข้างานของหน้ารายละเอียดแบบเดียวกับขั้นติดตั้งฝั่งขาย
+      //   และ Today "นัดวันนี้" / แท็บงานบริการครอบทุกแท็บของหน้าเช็คลิสต์แล้ว
+      //   หน้า /om/field ยังอยู่ — เป็นมุมมองช่างบนมือถือ รอเปิดผ่านแถบล่าง OM_BAR · badge การ์ดไม่เปลี่ยน (2420/2500/2600 อยู่ในงานบริการ)
+      { label: "งานบริการ", href: "/om/services", icon: <I d={D.wrench} />, steps: OM_ACTIVE_STEPS },
+      { label: "ปฏิทิน / จ่ายงาน", href: "/om/calendar", icon: <I d={D.calendar} />, steps: OM_SCHEDULED_STEPS },
+      { label: "แชต LINE", href: "/om/inbox", icon: <LineIcon className="w-6 h-6" /> },
+      // ★ กล่องแจ้งเตือนของ O&M เอง ไม่ใช่กระดิ่งกลางบน Header (ดูเหตุผลใน src/lib/om/notifications.ts)
+      { label: "แจ้งเตือน", href: "/om/notifications", icon: <I d={D.bell} /> },
+      // ── ข้อมูลอ้างอิง ──
+      { label: "ลูกค้า", href: "/om/customers", icon: <I d={D.users} /> },
+      { label: "บ้าน / ระบบติดตั้ง", href: "/om/houses", icon: <I d={D.mapPin} /> },
+      // ★ 28 ก.ย. 69: การ์ด Package O&M เป็น admin อย่างเดียว ทีม O&M ที่ต้องเสนอราคาบ้านสิทธิ์หมดเลยไม่มีทางดูราคา
+      //   — ดูแคตตาล็อกจากเมนูในโมดูลตัวเอง แบบเดียวกับ "แคตตาล็อก" ท้ายเมนู Sales
+      { label: "แคตตาล็อก", href: "/om/packages", icon: <I d={D.sun} /> },
+      // ── รายงาน ──
       // ★ เฟส 6 (24 ก.ย. 69): ภาพรวมของ O&M อยู่ในโมดูลตัวเอง ไม่ใช่แท็บใน /dashboard ฝั่งขาย
       //   ตามที่ผู้ใช้เคาะไว้ว่างาน O&M ให้สมบูรณ์ในการ์ดตัวเองก่อนค่อยไปโผล่การ์ดอื่น
       { label: "ภาพรวม", href: "/om/dashboard", icon: <I d={D.chart} /> },
-      // ★ กล่องแจ้งเตือนของ O&M เอง ไม่ใช่กระดิ่งกลางบน Header (ดูเหตุผลใน src/lib/om/notifications.ts)
-      { label: "แจ้งเตือน", href: "/om/notifications", icon: <I d={D.bell} /> },
-      { label: "ลูกค้า", href: "/om/customers", icon: <I d={D.users} /> },
-      { label: "บ้าน / ระบบติดตั้ง", href: "/om/houses", icon: <I d={D.mapPin} /> },
-      // ★ ผู้ใช้เคาะ 9 ก.ย. 69 "ไม่อยากเพิ่มเมนูเพิ่มแล้ว" — ทีมช่าง = แท็บในปฏิทิน/จ่ายงาน
-      //   ★ แก้ 16 ก.ย. 69: ผู้ใช้สั่งให้ "เช็คลิสต์" เป็นเมนูซ้ายของตัวเอง (เดิมเป็นแท็บในงานบริการ)
-      //   /om/field/[id] ต้องมีเลขใบงาน เมนูจึงชี้ไปหน้ารายการ /om/field ก่อน
-      { label: "งานบริการ", href: "/om/services", icon: <I d={D.wrench} />, steps: OM_ACTIVE_STEPS },
-      { label: "ปฏิทิน / จ่ายงาน", href: "/om/calendar", icon: <I d={D.calendar} />, steps: OM_SCHEDULED_STEPS },
-      { label: "เช็คลิสต์", href: "/om/field", icon: <I d={D.clipboardCheck} />, steps: OM_FIELD_STEPS, subs: OM_FIELD_SUBS },
       // ★ เฟส 4 แผน 20260924-02: รายรับ O&M หน้าเดียวกับในโมดูลบัญชี — ให้หัวหน้าดูผลงาน O&M ได้โดยไม่ต้องสลับโมดูล
       { label: "รายรับ O&M", href: "/report/om", icon: <I d={D.wallet} />, roles: ["admin", "sales_sup", "solar_sup"] },
-      { label: "แชต LINE", href: "/om/inbox", icon: <LineIcon className="w-6 h-6" /> },
+      // ── ตั้งค่า ──
       { label: "LINE OA", href: "/om/line-oa", icon: <I d={D.cog} /> },
       { label: "ตั้งค่า O&M", href: "/om/settings", icon: <I d={D.cog} />, roles: ["admin", "solar_sup", "sales_sup"] },
     ],

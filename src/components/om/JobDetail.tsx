@@ -41,9 +41,7 @@ const STEP_ICON = [
   "M6.75 3v2.25M17.25 3v2.25M3 18.75V7.5a2.25 2.25 0 012.25-2.25h13.5A2.25 2.25 0 0121 7.5v11.25m-18 0A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75m-18 0v-7.5A2.25 2.25 0 015.25 9h13.5A2.25 2.25 0 0121 11.25v7.5",
   // เข้างาน
   "M11.42 15.17L17.25 21A2.652 2.652 0 0021 17.25l-5.877-5.877M11.42 15.17l2.496-3.03c.317-.384.74-.626 1.208-.766M11.42 15.17l-4.655 5.653a2.548 2.548 0 11-3.586-3.586l6.837-5.63m5.108-.233c.55-.164 1.163-.188 1.743-.14a4.5 4.5 0 004.486-6.336l-3.276 3.277a3.004 3.004 0 01-2.25-2.25l3.276-3.276a4.5 4.5 0 00-6.336 4.486c.091 1.076-.071 2.264-.904 2.95l-.102.085m-1.745 1.437L5.909 7.5H4.5L2.25 3.75l1.5-1.5L7.5 4.5v1.409l4.26 4.26m-1.745 1.437l1.745-1.437m6.615 8.206L15.75 15.75M4.867 19.125h.008v.008h-.008v-.008z",
-  // รอปิด
-  "M11.35 3.836c-.065.21-.1.433-.1.664 0 .414.336.75.75.75h4.5a.75.75 0 00.75-.75 2.25 2.25 0 00-.1-.664m-5.8 0A2.251 2.251 0 0113.5 2.25H15c1.012 0 1.867.668 2.15 1.586m-5.8 0c-.376.023-.75.05-1.124.08C9.095 4.01 8.25 4.973 8.25 6.108V8.25m8.9-4.414c.376.023.75.05 1.124.08 1.131.094 1.976 1.057 1.976 2.192V16.5A2.25 2.25 0 0118 18.75h-2.25m-7.5-10.5H4.875c-.621 0-1.125.504-1.125 1.125v11.25c0 .621.504 1.125 1.125 1.125h9.75c.621 0 1.125-.504 1.125-1.125V18.75m-7.5-10.5h6.375c.621 0 1.125.504 1.125 1.125v9.375m-8.25-3l1.5 1.5 3-3.75",
-  // ปิดงาน
+  // ปิดงาน (★ 28 ก.ย. 69 ตัดขั้นรอปิดออกแล้ว — ไอคอนลำดับเดียวกับ FLOW 6 ขั้น)
   "M9 12.75L11.25 15 15 9.75M21 12a9 9 0 11-18 0 9 9 0 0118 0z",
 ];
 
@@ -75,7 +73,7 @@ export default function JobDetail({ item, history, onBack, onDone, onSaved, onRe
 }) {
   const cur = item.job_status ?? "follow";
   // ★ ตำแหน่งบนแถบมาจาก flowIndex ที่เดียวกับการ์ด (แผน 20260924-02 เฟส 1)
-  //   เดิม findIndex เอง ใบงาน "รอลูกค้ายืนยัน" (checked) ไม่อยู่ใน FLOW เลยเปิดมาที่ขั้น 01
+  //   เดิม findIndex เอง ใบงานที่ status ไม่อยู่ใน FLOW เลยเปิดมาที่ขั้น 01 · checked (ไม่มีขั้นแล้ว) ยืนที่เข้างาน
   const at = flowIndex(cur);
   const skip = skipsPaidSteps(item);
   const isExit = (EXIT_STATUS.map((x) => x.k) as string[]).includes(cur);
@@ -525,20 +523,26 @@ export default function JobDetail({ item, history, onBack, onDone, onSaved, onRe
               </StepCard>
             )}
 
+            {/* ★ 28 ก.ย. 69 ตัดขั้น "รอปิด" — เข้างานเป็นขั้นสุดท้ายก่อนปิด: กรอกใบ + ลูกค้าเซ็น → กดปิดงานท้ายใบจบเลย */}
             {step === 4 && (
-              <StepCard n={4} state={stepState(4)} title="เข้างาน — ช่างทำงานหน้างาน">
+              <StepCard n={4} state={stepState(4)} title="เข้างาน — ช่างทำงาน · ลูกค้าเซ็นรับ">
                 {item.booking_id ? (
                   <div className={SECTION}>
                     {/* ★ เฟส 3: ใบตรวจรับงานฝังมาเลย ไม่ต้องเด้งออกไปหน้าอื่นแล้ว
                         ใบเดียวกับ /om/field/[id] เป๊ะ (components/om/JobFormPanel) แก้ที่เดียวได้ทั้งสองที่
                         wrapClass ตัด h-full/overflow ทิ้ง กันเกิด scroll ซ้อนในกล่องนี้ */}
                     <div className="text-sm text-gray-600 mb-3">
-                      ช่างกรอกจากหน้าช่างบนมือถือได้เหมือนเดิม · ตรงนี้คือใบเดียวกัน
+                      กรอกใบตรวจ ให้ลูกค้าเซ็นรับ แล้วกด<b>ปิดงาน</b>ท้ายใบ · ช่างกรอกจากมือถือได้ ใบเดียวกัน
                       <a href={`/om/field/${item.booking_id}`}
                         className="ml-2 text-active font-semibold no-underline hover:underline">เปิดเต็มจอ ›</a>
+                      {/* ใบเก่าที่ค้างสถานะรอปิด (ก่อนตัดขั้น) — บอกให้ปิดต่อจากใบนี้ได้เลย */}
+                      {cur === "checked" && (
+                        <div className="mt-2 text-teal-700 font-semibold">ช่างทำงานเสร็จแล้ว รอปิดงาน — ปิดต่อได้ที่ท้ายใบ</div>
+                      )}
                     </div>
                     <div className="-mx-3 -mb-3 rounded-b-lg overflow-hidden">
-                      <JobFormPanel jobId={String(item.booking_id)} wrapClass="bg-gray-50" embedded />
+                      <JobFormPanel jobId={String(item.booking_id)} wrapClass="bg-gray-50" embedded
+                        onClosed={() => { onSaved("ปิดงานเรียบร้อย"); onDone(); }} />
                     </div>
                   </div>
                 ) : (
@@ -547,26 +551,10 @@ export default function JobDetail({ item, history, onBack, onDone, onSaved, onRe
               </StepCard>
             )}
 
-            {/* ★ ขั้นใหม่ (เดิมไม่มีบนแถบ) — ช่างทำเสร็จแล้ว รอลูกค้าตรวจรับก่อนปิด */}
             {step === 5 && (
-              <StepCard n={5} state={stepState(5)} title="รอปิด — ลูกค้าตรวจรับ">
-                <div className={`${SECTION} text-sm text-gray-600 leading-relaxed`}>
-                  ช่างทำงานเสร็จแล้ว รอลูกค้า<b>เซ็นรับที่หน้างาน</b>หรือ<b>ยืนยันทาง LINE</b> · ปิดงานทำที่ใบตรวจรับงาน
-                  {item.booking_id && (
-                    <a href={`/om/field/${item.booking_id}`}
-                      className="ml-2 text-active font-semibold no-underline hover:underline">เปิดใบตรวจรับงาน ›</a>
-                  )}
-                  {cur === "checked" && item.repair_needed === 1 && (
-                    <div className="mt-2 text-amber-800">⚠ ช่างแจ้งพบงานซ่อม — ปิดงานนี้ก่อน แล้วเปิดใบงานซ่อมได้ที่ขั้นปิดงาน</div>
-                  )}
-                </div>
-              </StepCard>
-            )}
-
-            {step === 6 && (
-              <StepCard n={6} state={stepState(6)} title="ปิดงาน">
+              <StepCard n={5} state={stepState(5)} title="ปิดงาน">
                 <div className={`${SECTION} text-sm text-gray-600`}>
-                  {cur === "closed" ? <b className="text-emerald-600">ปิดงานแล้ว</b> : "ปิดงานทำที่หน้าช่าง หลังลูกค้าเซ็นรับหรือยืนยันทาง LINE"}
+                  {cur === "closed" ? <b className="text-emerald-600">ปิดงานแล้ว</b> : "ปิดงานที่ท้ายใบตรวจรับงานในขั้นเข้างาน หลังลูกค้าเซ็นรับ"}
                   {/* ★ เฟส 5: ซ่อม (ในประกัน) เป็นงานฟรีที่ไม่ใช้สิทธิ์ล้าง — ดูจาก consumes_quota ของชนิดงาน ไม่ใช่ skip อย่างเดียว */}
                   {skip && item.consumes_quota !== 0
                     ? <> · ปิดแล้วระบบ{cur === "closed" ? "ตัด" : "จะตัด"}<b>สิทธิ์ล้าง 1 ครั้ง</b>{cur !== "closed" && <> เหลือ {Math.max(0, item.balance - 1)} ครั้ง</>}</>

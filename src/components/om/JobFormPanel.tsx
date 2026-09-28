@@ -212,13 +212,17 @@ function PhotoBox({ jobId, kind, label, tone, photos, disabled, onChanged }: {
   );
 }
 
-export default function JobFormPanel({ jobId, wrapClass = "h-full overflow-auto bg-gray-50", embedded }: {
+export default function JobFormPanel({ jobId, wrapClass = "h-full overflow-auto bg-gray-50", embedded, onClosed }: {
   jobId: string;
   /** กล่องนอกสุด — หน้า /om/field/[id] ใช้ค่า default (เต็มจอ มี scroll ของตัวเอง)
    *  ส่วนตอนฝังเป็นแท็บในหน้ารายละเอียด ส่งคลาสที่ไม่สร้าง scroll ซ้อนเข้ามาแทน */
   wrapClass?: string;
-  /** ฝังอยู่ในหน้าอื่น — ซ่อนปุ่มกลับของตัวเอง (หน้าที่ฝังมีปุ่มกลับอยู่แล้ว) */
+  /** ฝังอยู่ในหน้าอื่น — ซ่อนปุ่มกลับของตัวเอง (หน้าที่ฝังมีปุ่มกลับอยู่แล้ว)
+   *  และหัวใบเหลือแต่ข้อมูลของใบ (ข้อมูลลูกค้า/บ้านอยู่ที่ header ของหน้าที่ฝังแล้ว) */
   embedded?: boolean;
+  /** ปิดงานสำเร็จ — หน้าที่ฝังต้องโหลดใหม่ ไม่งั้น header/ราง/สิทธิ์/Activity log ค้างที่ "เข้างาน"
+   *  (เจอ 28 ก.ย. 69: ใบ #99 ปิดในฐานแล้ว แต่หน้ารายละเอียดยังโชว์เข้างาน สิทธิ์เหลือ 4) */
+  onClosed?: () => void;
 }) {
   const id = jobId;
   const [job, setJob] = useState<Job | null>(null);
@@ -298,11 +302,13 @@ export default function JobFormPanel({ jobId, wrapClass = "h-full overflow-auto 
       if (!close) { say("บันทึกร่างแล้ว"); return; }
 
       // เดินสถานะให้ครบเส้น — state machine ห้ามข้ามขั้น (เช่น pending → progress ตรง ๆ ไม่ได้)
-      const ORDER = ["follow", "pending", "confirmed", "progress", "checked", "closed"];
-      const from = ORDER.indexOf(job?.status ?? "follow");
+      // ★ 28 ก.ย. 69: ไม่ผ่าน "รอปิด" แล้ว (เข้างาน → ปิดงานตรง) · ใบเก่าที่ค้าง checked ปิดต่อได้เลย
+      const ORDER = ["follow", "pending", "confirmed", "progress", "closed"];
+      const from = ORDER.indexOf(job?.status === "checked" ? "progress" : job?.status ?? "follow");
       const path = ORDER.slice(Math.max(0, from) + 1);
       for (const st of path)
         await apiFetch(`/api/om/bookings/${id}`, { method: "PATCH", body: JSON.stringify({ status: st }) });
+      if (onClosed) { onClosed(); return; }
       say("ปิดงานเรียบร้อย");
       load();
     } catch (e) { setErr(e instanceof Error ? e.message : String(e)); }
@@ -337,7 +343,7 @@ export default function JobFormPanel({ jobId, wrapClass = "h-full overflow-auto 
         <div className="flex items-center gap-2 flex-wrap">
           <h1 className="text-lg font-bold leading-tight">{form?.label_th ?? "ใบตรวจรับงาน / ใบบริการ"}</h1>
           {form && <span className="text-xxs px-2 py-0.5 rounded-full bg-gray-100 text-gray-600 font-semibold">v{form.version}</span>}
-          {jobNoTxt && <span className="text-xs font-bold text-gray-500 tabular-nums">{jobNoTxt}</span>}
+          {jobNoTxt && !embedded && <span className="text-xs font-bold text-gray-500 tabular-nums">{jobNoTxt}</span>}
           <span className={`text-xxs px-2 py-0.5 rounded-full text-white font-semibold ${closed ? "bg-emerald-600" : "bg-violet-600"}`}>
             {closed ? "ปิดงานแล้ว" : "กำลังทำ"}
           </span>
@@ -360,11 +366,17 @@ export default function JobFormPanel({ jobId, wrapClass = "h-full overflow-auto 
           </div>
         )}
 
-        {/* หัวใบงาน — ระบบเติมให้ ช่างไม่ต้องเขียนเหมือนกระดาษ */}
+        {/* หัวใบงาน — ระบบเติมให้ ช่างไม่ต้องเขียนเหมือนกระดาษ
+            ★ 28 ก.ย. 69: ตอนฝังในหน้ารายละเอียด ตัดลูกค้า/บ้าน/โครงการ/เบอร์/ทีม ที่ header หน้าแสดงอยู่แล้ว
+              เหลือแต่ข้อมูลของใบ แบบ DOCUMENT HEADER ของใบตรวจติดตั้งฝั่งขาย (InstallChecklist) */}
         <div className="bg-white border border-gray-200 rounded-2xl px-4 py-3 mb-3 flex gap-x-6 gap-y-2 flex-wrap">
-          {[["ลูกค้า", job.customer_name], ["บ้านเลขที่", job.house_number], ["โครงการ", job.project_name],
-            ["เบอร์", job.phone], ["ขนาดติดตั้ง", job.kwp_list ? `${job.kwp_list} kW` : "—"],
-            ["ประเภทงาน", job.service_type], ["ทีม", job.team_name], ["วันนัด", thDT(job.scheduled_at)]].map(([k, v]) => (
+          {(embedded
+            ? [["เลขที่เอกสาร", jobNoTxt ?? "ออกเลขเมื่อบันทึกครั้งแรก"], ["ประเภทงาน", job.service_type],
+                ["วันนัด", thDT(job.scheduled_at)], ["ขนาดติดตั้ง", job.kwp_list ? `${job.kwp_list} kW` : "—"]]
+            : [["ลูกค้า", job.customer_name], ["บ้านเลขที่", job.house_number], ["โครงการ", job.project_name],
+                ["เบอร์", job.phone], ["ขนาดติดตั้ง", job.kwp_list ? `${job.kwp_list} kW` : "—"],
+                ["ประเภทงาน", job.service_type], ["ทีม", job.team_name], ["วันนัด", thDT(job.scheduled_at)]]
+          ).map(([k, v]) => (
             <div key={String(k)}>
               <div className="text-xxs text-gray-400">{k}</div>
               <div className="text-sm font-bold">{v || "—"}</div>

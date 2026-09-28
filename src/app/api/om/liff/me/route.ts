@@ -3,7 +3,7 @@ import { expireOmGrantsIfDue } from "@/lib/om/entitlement-expiry";
 import { authenticateLiff, readJsonBody } from "@/lib/om/liff-auth";
 import { fixDates, sql } from "@/lib/db";
 import { getOmDb } from "@/lib/om/line";
-import { isCleaning } from "@/lib/om/entitlement";
+import { DUE_WASH_SQL, NEXT_WASH_SQL, isCleaning } from "@/lib/om/entitlement";
 
 // ข้อมูล "บ้านของฉัน" ของลูกค้า LIFF — รองรับหลายบ้านต่อคน (แบบ A: ตัวสลับบ้าน)
 // บ้านทั้งหมดมาจาก om_line_user_houses · บ้านที่กำลังดู = om_line_users.house_id (fallback หลังแรก)
@@ -51,7 +51,9 @@ export async function GET(req: NextRequest) {
 
   const [house, installation, redemptions] = await Promise.all([
     db.request().input("hid", sql.Int, activeId).query(`
-      SELECT h.id, h.house_number, h.segment, h.unit_status, p.name_th AS project_name, p.brand
+      SELECT h.id, h.house_number, h.segment, h.unit_status, p.name_th AS project_name, p.brand,
+             -- รอบล้างถัดไป (แผน 20260928-02) — เกณฑ์เดียวกับที่ทีมเห็นในทะเบียนบ้าน/แท็บติดตาม
+             ${NEXT_WASH_SQL} AS next_wash, CASE WHEN ${DUE_WASH_SQL} THEN 1 ELSE 0 END AS wash_due
       FROM om_houses h LEFT JOIN om_projects p ON p.project_id = h.project_id
       WHERE h.id = @hid`),
     db.request().input("hid", sql.Int, activeId).query(`

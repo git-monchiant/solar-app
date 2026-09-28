@@ -10,7 +10,7 @@ import { linkOwnersFromRem, type OwnerLinkResult } from "@/lib/om/rem-owner-link
 
 export type ReconcileResult = {
   contractsLinked: number; unitsLinked: number; owners: OwnerLinkResult; grantsCreated: number;
-  housesOpened: number; housesCreated: number; installationsCreated: number;
+  housesOpened: number; housesCreated: number; installationsCreated: number; promoFilled: number;
 };
 
 // ★ 8 ก.ย. 69 — สาเหตุที่บ้านโอนใหม่ (2569) หลุดจากระบบ 97 หลัง:
@@ -158,6 +158,33 @@ async function linkContracts(db: sql.ConnectionPool): Promise<{ contracts: numbe
   return { contracts: rs[0][0].c, units: rs[1][0].u };
 }
 
+// ขั้น 2 — เติมขนาดระบบ/ปี O&M จากของแถมโซลาร์ในสัญญา (promo_size_kw …) ให้ installation ที่ยังว่าง
+// ★ 28 ก.ย. 69 — เดิมเติมครั้งเดียวตอน migration 20260902-1800 ไม่มีขั้นไหนเติมต่อ
+//   installation ที่ขั้น 0a'/0b สร้าง (8 ก.ย. เป็นต้นไป) เลยไม่รู้ขนาด 233 แถว ทั้งที่ REM มี "Solar Roof 5.0 kw."
+//   ⇒ การ์ดขึ้น "— ขาด" · kW บนการ์ดงานบริการ/ใบตรวจว่าง · บ้านตกแท็บ "รอตรวจ · ไม่มีสเปก"
+// ★ ไม่เดา: สัญญาที่โปรฯ โซลาร์มีหลายขนาด (เช่น 2 kW กับ 3 kW) ข้าม · บ้านที่มีหลายระบบใต้สัญญาเดียวข้าม
+//   (เติมทุกระบบ = kW ซ้ำใน kwp_list) · แถวที่มีค่าแล้วไม่เขียนทับ — รันซ้ำได้
+async function fillPromoSpec(db: sql.ConnectionPool): Promise<number> {
+  const r = await db.request().query(`
+    ;WITH one AS (
+      SELECT i.id inst_id, MAX(pr.solar_kw) kw, MAX(pr.om_years) yrs,
+             MAX(CASE WHEN pr.solar_kw IS NOT NULL
+                      THEN ISNULL(NULLIF(pr.promotion_name, N''), pr.description1) END) nm
+      FROM om_houses h JOIN om_installations i ON i.house_id = h.id
+      JOIN om_rem_promotions pr ON pr.contract_id = i.rem_contract_id
+        AND pr.is_solar = 1 AND ISNULL(pr.is_cancelled, 0) = 0
+      WHERE h.is_om = 1 AND i.promo_size_kw IS NULL
+        AND NOT EXISTS (SELECT 1 FROM om_installations i2 WHERE i2.house_id = i.house_id
+                         AND i2.rem_contract_id = i.rem_contract_id AND i2.id <> i.id)
+      GROUP BY i.id HAVING COUNT(DISTINCT pr.solar_kw) = 1)
+    UPDATE i SET i.promo_size_kw = o.kw, i.promo_om_years = ISNULL(i.promo_om_years, o.yrs),
+                 i.promo_name = ISNULL(i.promo_name, LEFT(o.nm, 400)),
+                 i.promo_contract_id = i.rem_contract_id, i.updated_at = SYSDATETIMEOFFSET()
+    FROM om_installations i JOIN one o ON o.inst_id = i.id;
+    SELECT @@ROWCOUNT n;`);
+  return r.recordset[0].n as number;
+}
+
 // ขั้น 3 — สร้างสิทธิ์ล้างแผงตอนบ้านขายจริง
 // ★ บ้านยังไม่ขายถูกคลีนสิทธิ์ออก (unit เปล่า) · พอมีสัญญาโอน + โปรฯ บอกจำนวนปี O&M → ให้สิทธิ์
 //   จำนวน = ปีสัญญา O&M × 2 ครั้ง/ปี (ตามที่ข้อมูลนำเข้าใช้: 2 ปี → 4 ครั้ง)
@@ -185,9 +212,10 @@ export async function reconcileRemLinks(db: sql.ConnectionPool): Promise<Reconci
   const installationsCreated = await ensureInstallations(db);   // ★ หลังเปิดธง ก่อนผูกสัญญา
   const housesCreated = await createHousesFromRem(db);
   const link = await linkContracts(db);
+  const promoFilled = await fillPromoSpec(db);   // ★ หลังผูกสัญญา — สัญญาที่เพิ่งผูกรอบนี้ได้ขนาดด้วย
   // สร้างเจ้าของจาก REM ให้บ้านโอนแล้วที่ยังไม่มีลูกค้า (limit สูงพอสำหรับรอบเดียว)
   const owners = await linkOwnersFromRem(db, 500);
   const grants = await grantOnSale(db);
   return { contractsLinked: link.contracts, unitsLinked: link.units, owners, grantsCreated: grants,
-           housesOpened, housesCreated, installationsCreated };
+           housesOpened, housesCreated, installationsCreated, promoFilled };
 }

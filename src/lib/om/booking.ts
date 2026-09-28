@@ -14,6 +14,7 @@ export const BOOKING_STATUS = [
   { k: "pending",   t: "รอยืนยันนัด", onCal: true,  tone: "bg-amber-500" },
   { k: "confirmed", t: "นัดแล้ว",     onCal: true,  tone: "bg-blue-600" },
   { k: "progress",  t: "เข้างาน",     onCal: true,  tone: "bg-violet-600" },
+  // ★ 28 ก.ย. 69: ไม่มีขั้นบนแถบ/แท็บแล้ว ปุ่มปิดงานไม่ผ่านสถานะนี้ — สงวนไว้ (ยืนยันทาง LINE / Q.C. ในอนาคต)
   { k: "checked",   t: "รอปิด",       onCal: true,  tone: "bg-teal-600" },
   { k: "closed",    t: "ปิดงาน",      onCal: true,  tone: "bg-emerald-600" },
 ] as const;
@@ -40,7 +41,8 @@ const NEXT: Record<string, string[]> = {
   payment:   ["pending", "cancelled"],
   pending:   ["confirmed", "follow", "cancelled", "no_show"],
   confirmed: ["progress", "pending", "cancelled", "no_show"],
-  progress:  ["checked", "confirmed", "cancelled", "no_show"],
+  // ★ 28 ก.ย. 69: เข้างาน → ปิดงานได้ตรง (ตัดขั้นรอปิดออกจากแถบ) · checked ยังรับไว้ให้ใบเก่า/LINE/Q.C. ในอนาคต
+  progress:  ["closed", "checked", "confirmed", "cancelled", "no_show"],
   checked:   ["closed", "progress"],
   closed:    [],
   cancelled: ["follow"],

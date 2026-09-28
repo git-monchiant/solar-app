@@ -22,7 +22,8 @@ interface MeData {
   linked: boolean;
   identity_status?: string;
   houses?: LinkedHouse[];
-  house?: { house_number: string | null; segment: string; unit_status: string | null; project_name: string | null; brand: string | null };
+  house?: { house_number: string | null; segment: string; unit_status: string | null; project_name: string | null; brand: string | null;
+    next_wash?: string | null; wash_due?: number };
   installation?: {
     inverter_brand: string | null;
     rem_size_kwp: number | null;
@@ -147,6 +148,12 @@ export default function OmLiffMyHome() {
             <div>
               <div className="text-xxs font-medium uppercase tracking-[0.22em] text-zinc-500">สิทธิ์ล้างแผงคงเหลือ</div>
               <div className="mt-1 text-xs font-medium text-zinc-400">{multi ? "ของบ้านหลังนี้เท่านั้น" : "ใช้ตอนจองนัดล้างแผง"}</div>
+              {/* รอบล้างถัดไป (แผน 20260928-02) — สิทธิ์หมดไม่โชว์ กันเข้าใจว่าถึงรอบแล้วได้ล้างฟรี */}
+              {(me.remaining ?? 0) > 0 && me.house && (
+                <div className="mt-2 text-xs font-bold" style={{ color: me.house.wash_due ? ORANGE : TEAL }}>
+                  {me.house.wash_due ? "ถึงรอบล้างแล้ว" : `รอบล้างถัดไป ${TH_DATE(me.house.next_wash)}`}
+                </div>
+              )}
             </div>
             <div className="text-right">
               <span className="text-4xl font-bold tracking-tight" style={{ color: TEAL }}>{me.remaining ?? 0}</span>

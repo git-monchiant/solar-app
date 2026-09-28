@@ -157,7 +157,9 @@ export const OM_FOLLOW_SCOPE_SQL = `
            j.repair_needed, j.repair_detail, j.repair_child_id, j.repair_cancel_id, j.repair_cancel_reason,
            CASE
              -- ใบงานเดินหน้าแล้วให้ยึดสถานะใบงานเป็นหลัก (ออกจากแท็บติดตาม)
-             WHEN j.status IN ('quote','payment','pending','confirmed','progress','checked','closed') THEN j.status
+             -- ★ 28 ก.ย. 69 ตัดขั้น/แท็บ "รอปิด" — ใบเก่าที่ค้าง checked อยู่แท็บเข้างาน (ปุ่มปิดงานอยู่ขั้นนั้น) ไม่หายจากจอ
+             WHEN j.status = 'checked' THEN 'progress'
+             WHEN j.status IN ('quote','payment','pending','confirmed','progress','closed') THEN j.status
              -- ใบซ่อมในประกันที่ยังไม่ได้นัด = งานโทรนัดใหม่ของบ้านนี้ (เฟส 5) — อยู่แท็บติดตามเสมอ
              -- ห้ามให้กติกาด้านล่างตัดสิน: สิทธิ์ล้าง 0 จะตกแท็บสิทธิ์หมด ทั้งที่ซ่อมในประกันไม่ใช้สิทธิ์
              -- และประวัติโทรของรอบล้างก่อน ๆ (นับทั้งบ้าน) จะดันไปติดต่อไม่ได้/ไม่เอา

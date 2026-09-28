@@ -15,6 +15,7 @@ import Dropdown from "@/components/ui/Dropdown";
 import Loading from "@/components/ui/Loading";
 import ModalBase from "@/components/ui/ModalBase";
 import SyncBar from "@/components/om/SyncBar";
+import { formatThaiDate } from "@/lib/utils/formatters";
 
 interface Row {
   id: number; house_number: string | null; project_name: string | null; project_id: string | null;
@@ -35,7 +36,9 @@ interface Detail {
   house: { id: number; house_number: string | null; project_name: string | null; project_id: string | null;
     segment: string; is_vip: boolean; has_solar: boolean; unit_status: string | null; note: string | null;
     latitude?: string | null; longitude?: string | null; model_name?: string | null; titledeed_area?: number | null;
-    om_excluded_reason?: string | null; om_excluded_at?: string | null };
+    om_excluded_reason?: string | null; om_excluded_at?: string | null;
+    // ครบรอบล้างถัดไป (YYYY-MM-DD · ไม่เคยล้าง = null) + ถึงรอบแล้วไหม — เกณฑ์เดียวกับแท็บติดตาม
+    next_wash?: string | null; wash_due?: number };
   systems: { id: number; kwp: number | null; promo_size_kw: number | null; promo_om_years: number | null;
     promo_name: string | null; promo_contract_id: string | null;
     inverter_kw: number | null; inverter_brand: string | null; inverter_sn: string | null;
@@ -46,7 +49,7 @@ interface Detail {
     rem_checked_at: string | null; source_batch_id: number | null; batch_file: string | null;
     batch_note: string | null; batch_at: string | null; po_number: string | null; created_at: string | null }[];
   grants: { id: number; qty: number; source: string; reason: string | null; created_at: string;
-    service_type_id: number; service_type: string }[];
+    service_type_id: number; service_type: string; contract_term?: string | null }[];
   redemptions: { id: number; service_date: string; note?: string | null;
     service_type_id: number; service_type: string }[];
   // ★ ยอดสิทธิ์คงเหลือแยกตามประเภทงาน (9 ก.ย. 69) — ล้างแผงเป็นแค่ชนิดหนึ่ง ไม่ใช่ทั้งหมด
@@ -313,6 +316,13 @@ export default function OmHousesPage() {
   const types = sel?.serviceTypes ?? [];
   const quotaTypes = types.filter((t) => t.consumes_quota === 1);
   const cleaningId = types.find((t) => t.code === "cleaning")?.id ?? 0;
+  const cleaningCycle = types.find((t) => t.code === "cleaning")?.cycle_months ?? null;
+  // สัญญาที่มีเทอม (ปี) → บอกที่มาของเลขสิทธิ์ "4 = 2 ครั้ง/ปี × 2 ปี" · ไม่มีเทอม/หารไม่ลงตัว = ไม่เดา
+  const termText = (g: Detail["grants"][number]) => {
+    const yrs = Number(g.contract_term);
+    if (!(yrs > 0) || g.qty <= 0 || g.qty % yrs !== 0) return "";
+    return `สัญญา ${yrs} ปี · ${g.qty / yrs} ครั้ง/ปี`;
+  };
   // ลำดับ "ครั้งที่" ต้องนับแยกตามชนิดงาน ไม่ใช่นับรวมทั้งกอง
   const redIndex = new Map<number, number>();
   {
@@ -713,7 +723,11 @@ export default function OmHousesPage() {
                               : <span className="text-amber-600">— ขาด</span>}
                           </span>
                           <span className="text-gray-500">Inverter</span>
-                          <span className="text-right font-semibold break-all">{s.inverter_brand || "—"}{s.inverter_sn ? ` · ${s.inverter_sn}` : ""}</span>
+                          {/* ★ 28 ก.ย. 69 ไฟล์บัญชีส่งมาแค่ kW ไม่มียี่ห้อ/SN (737 ระบบ) — เดิมขึ้น "—" ทั้งที่รู้ขนาด */}
+                          <span className="text-right font-semibold break-all">
+                            {[s.inverter_brand, s.inverter_sn, s.inverter_kw ? `${s.inverter_kw} kW` : null].filter(Boolean).join(" · ") || "—"}
+                            {!!s.inverter_kw && !s.inverter_brand &&<small className="font-medium text-gray-400"> — ยังไม่รู้ยี่ห้อ</small>}
+                          </span>
                           {/* ★ บ้านจากงานขาย: ช่วงประกันตามใบรับประกันฝั่งขาย (แผน 20260925-01) */}
                           <span className="text-gray-500">{s.sales_warranty_end ? "ช่วงประกันติดตั้ง" : "วันเริ่มประกัน"}</span>
                           <span className="text-right font-semibold">
@@ -769,6 +783,18 @@ export default function OmHousesPage() {
                     })}
 
                     <Sec t="สิทธิ์ล้างแผง" action={<span className="text-xl font-bold text-primary-dark">{balance} <small className="text-xxs font-medium text-gray-500">ครั้ง คงเหลือ</small></span>} />
+
+                    {/* ★ ครบรอบถัดไป (แผน 20260928-02) — ลูกค้าโทรถาม "ล้างได้อีกเมื่อไร" ตอบได้ทันที ไม่ต้องบวกเดือนเอง
+                        วันที่มาจาก API สูตรเดียวกับแท็บติดตาม · สิทธิ์หมด+ถึงรอบ = ต้องเสนอราคาก่อนนัด (gate /api/om/follow) */}
+                    {sel.systems.length > 0 && (
+                      <div className="px-5 py-2 border-b border-gray-100 text-xs text-gray-600">
+                        {cleaningCycle ? <>ล้างทุก {cleaningCycle} เดือน · </> : null}
+                        {sel.house.wash_due
+                          ? <b className="text-orange-600">ถึงรอบล้างแล้ว{sel.house.next_wash ? "" : " · ยังไม่เคยล้าง"}</b>
+                          : <>ครบรอบถัดไป <b className="text-gray-900">{formatThaiDate(sel.house.next_wash)}</b></>}
+                        {sel.house.wash_due && balance <= 0 ? <span className="text-red-600"> · สิทธิ์หมด ต้องเสนอราคาก่อนนัด</span> : null}
+                      </div>
+                    )}
 
                     {/* ปุ่มแก้ไข — ข้อมูล import ถึงแค่ มิ.ย. 69 ต้องเติมของใหม่เองได้
                         ★ สิทธิ์ชนิดอื่นที่ขายเป็นครั้ง (แพ็คตรวจเช็ก ฯลฯ) ยอดแยกกันคนละใบ — ชิปอยู่แถวเดียวกับปุ่ม */}
@@ -854,7 +880,8 @@ export default function OmHousesPage() {
                         {g.service_type_id !== cleaningId && (
                           <span className="text-xxs font-bold px-2 rounded-full bg-sky-50 text-sky-700">{g.service_type}</span>
                         )}
-                        <span className="flex-1 truncate">{g.reason || ""}</span>
+                        <span className="flex-1 truncate">
+                          {termText(g) && <b className="text-gray-700">{termText(g)} · </b>}{g.reason || ""}</span>
                         <button type="button" style={{ minHeight: 0 }} disabled={busy}
                           onClick={() => delEnt("grant", g.id, `${g.qty > 0 ? "+" : ""}${g.qty} ${SRC[g.source] ?? g.source}`)}
                           className="w-6 h-6 rounded-md text-gray-400 hover:bg-red-50 hover:text-red-600 cursor-pointer shrink-0">×</button>

@@ -3,7 +3,7 @@ import { expireOmGrantsIfDue } from "@/lib/om/entitlement-expiry";
 import { requireAuth, requireAnyRole } from "@/lib/auth";
 import { fixDates, sql } from "@/lib/db";
 import { getOmDb } from "@/lib/om/line";
-import { CLEANING_ID_SQL } from "@/lib/om/entitlement";
+import { CLEANING_ID_SQL, DUE_WASH_SQL, NEXT_WASH_SQL } from "@/lib/om/entitlement";
 import { finishSync, logSync } from "@/lib/om/rem-sync";
 
 // บ้านรายหลัง — ดูครบ (ระบบติดตั้ง · สิทธิ์ ledger · ลูกค้า · นัด) + แก้ข้อมูลบ้าน
@@ -21,7 +21,9 @@ export async function GET(req: NextRequest, ctx: { params: Promise<{ id: string 
            h.unit_status, h.note, h.address, h.lead_id, h.is_om,
            h.latitude, h.longitude, h.model_name, h.titledeed_area,
            h.om_excluded_reason, CONVERT(varchar(33), h.om_excluded_at, 126) om_excluded_at,
-           u.full_name om_excluded_by_name
+           u.full_name om_excluded_by_name,
+           -- ครบรอบล้างถัดไป — ตอบลูกค้าที่ถาม "ล้างได้อีกเมื่อไร" (แผน 20260928-02 · เกณฑ์เดียวกับแท็บติดตาม)
+           ${NEXT_WASH_SQL} next_wash, CASE WHEN ${DUE_WASH_SQL} THEN 1 ELSE 0 END wash_due
     FROM om_houses h LEFT JOIN om_projects pj ON pj.project_id = h.project_id
     LEFT JOIN users u ON u.id = h.om_excluded_by WHERE h.id = @id;
 
@@ -46,7 +48,7 @@ export async function GET(req: NextRequest, ctx: { params: Promise<{ id: string 
     WHERE i.house_id = @id ORDER BY i.id;
 
     -- ★ สิทธิ์แบบนับครั้งผูกกับประเภทงานแล้ว (9 ก.ย. 69) — NULL = ล้างแผง เพื่อความเข้ากันได้ย้อนหลัง
-    SELECT g.id, g.qty, g.source, g.reason, g.installation_id,
+    SELECT g.id, g.qty, g.source, g.reason, g.installation_id, g.contract_term,
            ISNULL(g.service_type_id, ${CLEANING_ID_SQL}) service_type_id,
            ISNULL(gst.label_th, N'ล้างแผง') service_type,
            CONVERT(char(10), g.created_at, 23) created_at

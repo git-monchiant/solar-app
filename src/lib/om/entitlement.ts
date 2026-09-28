@@ -24,6 +24,13 @@ export const DUE_WASH_SQL = `NOT EXISTS (
       WHERE i.house_id = h.id AND rd.status <> 'void' AND ${isCleaning("rd")}
         AND DATEADD(month, ${CLEANING_CYCLE_SQL}, rd.service_date) > SYSDATETIMEOFFSET())`;
 
+/** ครบรอบล้างถัดไป (YYYY-MM-DD) = ล้างล่าสุด + รอบ — สูตรเดียวกับ DUE_WASH_SQL
+ *  วันที่โชว์ต้องเป็นวันเดียวกับที่บ้านเด้งเข้าแท็บติดตาม · ไม่เคยล้าง = NULL · alias บ้านชื่อ h (แผน 20260928-02) */
+export const NEXT_WASH_SQL = `(
+      SELECT CONVERT(char(10), DATEADD(month, ${CLEANING_CYCLE_SQL}, MAX(rd.service_date)), 23)
+      FROM om_redemptions rd JOIN om_installations i ON i.id = rd.installation_id
+      WHERE i.house_id = h.id AND rd.status <> 'void' AND ${isCleaning("rd")})`;
+
 export type ServiceType = {
   id: number; code: string; label_th: string;
   consumes_quota: boolean; cycle_months: number | null; active: boolean;
