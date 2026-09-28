@@ -770,8 +770,12 @@ export default function JobDetail({ item, history, bookings = [], onBack, onDone
             {step === 5 && (
               <StepCard n={5} state={stepState(5)} title="ปิดงาน" doneTitle="ปิดงานแล้ว" onHeaderClick={toggleDone}>
                 {doneView(
+                  // วันปิด = เวลาปิดในใบตรวจ · ใบเก่าที่ไม่มี (ปิดตอนบันทึกครั้งแรกก่อนแก้ API 29 ก.ย.) ใช้เวลาเหตุการณ์ปิดงาน แบบแท็บ Timeline
                   <DoneHead text={<>
-                    ปิดงาน{report?.finished_at ? ` ${thD(report.finished_at)}` : ""} · {report
+                    ปิดงาน{(() => {
+                      const at = report?.finished_at ?? rowsOf("closed").find((r) => r.action === "done")?.at ?? null;
+                      return at ? ` ${thD(at)}` : "";
+                    })()} · {report
                       ? (report.redeemed > 0 ? `ตัดสิทธิ์ล้าง ${report.redeemed} ครั้ง` : "ไม่ตัดสิทธิ์")
                       : quotaNote}
                   </>}>

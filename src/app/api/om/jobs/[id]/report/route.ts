@@ -99,12 +99,16 @@ export async function PUT(req: NextRequest, ctx: { params: Promise<{ id: string 
         repair_detail = CASE WHEN @hrp = 1 THEN @rpd ELSE repair_detail END,
         updated_at = SYSDATETIMEOFFSET()
       WHERE booking_id = @id`);
+    // ★ 29 ก.ย. 69 (เจอตอนทดสอบเส้นเสียเงินครบวงจร แผน 20260929-02): finished_at ต้องลงตั้งแต่แถวแรก
+    //   เดิมมีแค่ใน UPDATE — ช่างกดปิดงานเลยโดยไม่เคยบันทึกร่าง = ใบปิดแล้วแต่ไม่มีเวลาปิด
+    //   (ใบบริการ PDF พิมพ์วันนัดแทนวันปิด · หน้ารายละเอียดไม่มีวันปิด)
     if (up.rowsAffected[0] === 0)
       await rq().query(`
         INSERT INTO om_job_report (booking_id, form_id, job_no, paper_ref, checks, measures, photos, note,
-          result, fail_count, started_at, tech_user_id, tech_sign, cust_sign, cust_name,
+          result, fail_count, started_at, finished_at, tech_user_id, tech_sign, cust_sign, cust_name,
           close_method, proxy_reason, lat, lng, gps_accuracy, ip, device, repair_needed, repair_detail)
-        VALUES (@id, @fid, @no, @paper, @c, @m, @ph, @n, @res, @fc, SYSDATETIMEOFFSET(), @u, @ts, @cs, @cn,
+        VALUES (@id, @fid, @no, @paper, @c, @m, @ph, @n, @res, @fc, SYSDATETIMEOFFSET(),
+          CASE WHEN @res IS NOT NULL THEN SYSDATETIMEOFFSET() END, @u, @ts, @cs, @cn,
           @cm, @pr, @lat, @lng, @acc, @ip, @dev, @rp, @rpd)`);
 
     await logBooking(tx, {
