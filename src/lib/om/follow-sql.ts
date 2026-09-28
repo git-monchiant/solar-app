@@ -13,7 +13,7 @@
 // ตารางชั่วคราวที่สร้างให้: #due (บ้านเข้าข่าย) · #call (สรุปการโทร) · #last (โทรครั้งล่าสุด)
 //                          #job (ใบงานล่าสุด) · #x (รวมร่าง + คอลัมน์ bucket)
 
-import { CLEANING_CYCLE_SQL, isCleaning } from "@/lib/om/entitlement";
+import { DUE_WASH_SQL, isCleaning } from "@/lib/om/entitlement";
 import { ACTIVE_STATUS } from "@/lib/om/booking";
 
 // รายการสถานะงานค้างชุดเดียวกับ booking.ts — เดิมเขียนตายตัวในคิวรี พอเพิ่มสถานะ quote แล้วตกหล่น
@@ -53,25 +53,32 @@ export const OM_FOLLOW_SCOPE_SQL = `
            -- วันหมดประกันจากใบรับประกันฝั่งขาย (แผน 20260925-01) — ใช้เลือก "ในประกัน" ให้ก่อนตอนเปิดใบซ่อม
            -- บ้าน REM ไม่มีค่านี้ = NULL → ทีมต้องเลือกเอง (ไม่เดาอายุประกันจากวันเริ่ม)
            (SELECT MAX(CONVERT(char(10), i.sales_warranty_end, 23)) FROM om_installations i
-             WHERE i.house_id = h.id AND i.sales_warranty_end IS NOT NULL) warranty_end
+             WHERE i.house_id = h.id AND i.sales_warranty_end IS NOT NULL) warranty_end,
+           -- ★ เฟส 6: ถึงรอบล้างไหม (1/0) — เกณฑ์ตัวเดียวกับท่อน A ของ badge (DUE_WASH_SQL)
+           --   ใช้ตัดสินว่าใบงานที่ปิดแล้วยังเป็น "งานปัจจุบัน" ของบ้านอยู่ไหม (ดู #x)
+           CASE WHEN ${DUE_WASH_SQL} THEN 1 ELSE 0 END due_wash,
+           -- ★ เฟส 6: รอบนี้เริ่มเมื่อไร = วันถัดจากล้างล่าสุด (เวลาไทย) — ประวัติโทรก่อนหน้านั้นเป็นของรอบก่อน
+           --   เดิมนับตลอดกาล: รอบใหม่ติด "ไม่รับสายครบ" / "ไม่เอา" ของรอบก่อน บ้านตกแท็บผิดทั้งที่ยังไม่มีใครโทรรอบนี้
+           (SELECT TODATETIMEOFFSET(DATEADD(day, 1, CAST(MAX(rd.service_date) AS datetime2)), '+07:00')
+              FROM om_redemptions rd JOIN om_installations i ON i.id = rd.installation_id
+             WHERE i.house_id = h.id AND rd.status <> 'void' AND ${isCleaning("rd")}) cycle_from
       INTO #due
       FROM om_houses h
       LEFT JOIN om_projects pj ON pj.project_id = h.project_id
      WHERE h.is_om = 1
        AND EXISTS (SELECT 1 FROM om_installations i WHERE i.house_id = h.id)
        AND (
-         -- ถึงรอบล้าง (คำนวณสด)
-         NOT EXISTS (
-             SELECT 1 FROM om_redemptions rd JOIN om_installations i ON i.id = rd.installation_id
-              WHERE i.house_id = h.id AND rd.status <> 'void' AND ${isCleaning("rd")}
-                AND DATEADD(month, ${CLEANING_CYCLE_SQL}, rd.service_date) > SYSDATETIMEOFFSET())
+         -- ถึงรอบล้าง (คำนวณสด) — ตัวเดียวกับ badge ท่อน A (journey-sql.ts)
+         ${DUE_WASH_SQL}
          -- หรือมีใบงานค้างอยู่ (เช่น งานซ่อมของบ้านที่ยังไม่ถึงรอบล้าง)
          OR EXISTS (SELECT 1 FROM om_bookings b WHERE b.house_id = h.id
                      AND b.status IN (${ACTIVE_SQL}))
          OR EXISTS (SELECT 1 FROM om_bookings b WHERE b.house_id = h.id AND b.status = 'closed'
                      AND DATEDIFF(day, b.updated_at, SYSDATETIMEOFFSET()) <= 90));
 
-    -- ② สรุปการโทรของแต่ละบ้าน (ประวัติอยู่ใน om_booking_history ผูกกับ house_id)
+    -- ② สรุปการโทรของแต่ละบ้าน "ในรอบนี้" (ประวัติอยู่ใน om_booking_history ผูกกับ house_id)
+    --   ★ เฟส 6: บ้านที่ถึงรอบใหม่แล้ว นับเฉพาะหลังล้างล่าสุด (#due.cycle_from) — ไทม์ไลน์หน้ารายละเอียดยังเห็นครบ
+    --     บ้านที่ยังไม่ถึงรอบ (ปิดงาน/ใบซ่อมค้าง) นับทั้งหมดเหมือนเดิม — การ์ดแท็บปิดงานยังโชว์ "โทรล่าสุด ตกลงนัด" ของรอบนี้
     SELECT bh.house_id,
            COUNT(*) calls,
            SUM(CASE WHEN JSON_VALUE(bh.to_json, '$.outcome') = 'no_answer' THEN 1 ELSE 0 END) no_answer,
@@ -79,17 +86,21 @@ export const OM_FOLLOW_SCOPE_SQL = `
            MAX(bh.next_action_date) next_call
       INTO #call
       FROM om_booking_history bh
-     WHERE bh.house_id IS NOT NULL AND bh.[action] = 'call'
+      JOIN #due d ON d.house_id = bh.house_id
+     WHERE bh.[action] = 'call'
+       AND (d.due_wash = 0 OR d.cycle_from IS NULL OR bh.created_at >= d.cycle_from)
      GROUP BY bh.house_id;
 
     SELECT bh.house_id, JSON_VALUE(bh.to_json, '$.outcome') outcome, u.full_name by_name,
            CONVERT(varchar(33), bh.created_at, 126) at
       INTO #last
       FROM om_booking_history bh
+      JOIN #due d ON d.house_id = bh.house_id
       LEFT JOIN users u ON u.id = bh.actor_user_id
-     WHERE bh.house_id IS NOT NULL AND bh.[action] = 'call'
+     WHERE bh.[action] = 'call'
        AND bh.id = (SELECT MAX(b2.id) FROM om_booking_history b2
-                     WHERE b2.house_id = bh.house_id AND b2.[action] = 'call');
+                     WHERE b2.house_id = bh.house_id AND b2.[action] = 'call'
+                       AND (d.due_wash = 0 OR d.cycle_from IS NULL OR b2.created_at >= d.cycle_from));
 
     -- ③ ใบงานที่เปิดค้างอยู่ของบ้านนั้น
     -- ใบงานล่าสุดของบ้าน (งานค้างมาก่อน ถ้าไม่มีค่อยเอางานที่เพิ่งปิด)
@@ -161,7 +172,11 @@ export const OM_FOLLOW_SCOPE_SQL = `
       FROM #due d
       LEFT JOIN #call c ON c.house_id = d.house_id
       LEFT JOIN #last l ON l.house_id = d.house_id
-      LEFT JOIN #job  j ON j.house_id = d.house_id;
+      -- ★ เฟส 6: ใบที่ปิดแล้วของบ้านที่ถึงรอบล้างใหม่ ไม่ใช่ "งานปัจจุบัน" อีกต่อไป → บ้านเริ่มรอบใหม่แบบไม่มีใบ
+      --   (การ์ด "คำนวณสด" · รางเริ่มขั้น 01 · แท็บตามผลโทรรอบนี้) — ตรงกับท่อน A ของ badge ที่นับบ้านนี้เป็น 2100
+      --   เดิมใบปิดค้างเป็นใบล่าสุดตลอดกาล บ้านติดแท็บปิดงาน ไม่กลับเข้าคิวโทรอีกเลย (ยืนยันด้วยข้อมูลจริง 28 ก.ย.)
+      --   ประวัติของใบเก่ายังอยู่ในไทม์ไลน์หน้ารายละเอียดครบ
+      LEFT JOIN #job  j ON j.house_id = d.house_id AND NOT (j.status = 'closed' AND d.due_wash = 1);
 `;
 
 export const OM_FOLLOW_DROP_SQL =

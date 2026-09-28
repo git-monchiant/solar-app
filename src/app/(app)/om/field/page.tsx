@@ -28,11 +28,17 @@ export default function OmFieldListPage() {
 
   const today = ymd(new Date());
 
+  // ★ เฟส 6 (เทียบตัวเลข): งานค้างดึงทั้งหมดไม่ผูกช่วงวัน — badge เมนูนับงานค้างทุกใบ
+  //   เดิมดึงแค่นัด 7 วันก่อนถึง 30 วันหน้า งานที่เลยนัดเกิน 7 วันแต่ยังไม่ปิด (งานที่ควรตามที่สุด)
+  //   นับใน badge แต่หายจากแท็บ "ยังไม่ปิดงาน" · แท็บ "ปิดแล้ว" ยังเป็นประวัติช่วงเดิม
   const load = useCallback(() => {
     const from = ymd(new Date(Date.now() - 7 * 864e5));
     const to = ymd(new Date(Date.now() + 30 * 864e5));
-    apiFetch(`/api/om/bookings?from=${from}&to=${to}&size=200`)
-      .then((d) => setRows(d.rows ?? []))
+    Promise.all([
+      apiFetch(`/api/om/bookings?statuses=${FIELD_STATUS.join(",")}&size=200`),
+      apiFetch(`/api/om/bookings?status=closed&from=${from}&to=${to}&size=200`),
+    ])
+      .then(([open, done]) => setRows([...(open.rows ?? []), ...(done.rows ?? [])]))
       .catch((e) => setErr(e instanceof Error ? e.message : String(e)));
   }, []);
   useEffect(() => { load(); }, [load]);
@@ -118,7 +124,8 @@ export default function OmFieldListPage() {
       </div>
 
       <p className="text-xs text-gray-400 px-1">
-        ★ แสดงงานที่ถึงคิวช่างแล้ว (นัดแล้ว · เข้างาน · รอปิด) ในช่วง 7 วันก่อนถึง 30 วันข้างหน้า ·
+        ★ แสดงงานที่ถึงคิวช่างแล้ว (นัดแล้ว · เข้างาน · รอปิด) ครบทุกใบ รวมที่เลยวันนัดแล้ว ·
+        แท็บปิดแล้วแสดงช่วง 7 วันก่อนถึง 30 วันข้างหน้า ·
         กดที่งานเพื่อเปิดใบตรวจรับงานและกรอกเช็คลิสต์
       </p>
     </div>

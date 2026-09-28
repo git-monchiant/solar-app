@@ -21,8 +21,13 @@ export async function GET(req: NextRequest) {
   const page = Math.max(1, Number(u.get("page") ?? 1));
   const size = Math.min(200, Math.max(10, Number(u.get("size") ?? 50)));
 
+  // ★ เฟส 6: statuses=a,b,c หลายสถานะในคำขอเดียว — หน้าเช็คลิสต์ดึงงานค้างทั้งหมดโดยไม่ผูกช่วงวัน
+  //   (ค่าผ่าน ALL_STATUS ก่อนเสมอ จึงใส่ในคิวรีตรง ๆ ได้)
+  const statuses = (u.get("statuses") ?? "").split(",").map((s) => s.trim()).filter((s) => ALL_STATUS.includes(s));
+
   const where: string[] = ["1=1"];
   if (status && ALL_STATUS.includes(status)) where.push("b.status = @st");
+  if (statuses.length) where.push(`b.status IN (${statuses.map((s) => `'${s}'`).join(",")})`);
   if (team === "none") where.push("b.team_id IS NULL");
   else if (team) where.push("b.team_id = @team");
   if (from) where.push("b.scheduled_at >= @from");
