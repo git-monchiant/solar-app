@@ -203,6 +203,12 @@ export type LoadInput = {
 };
 
 const r1 = (n: number) => Math.round(n * 10) / 10;
+// Power and hours are shown to 2 decimals and every kWh is computed FROM the
+// shown figures, so a reader who multiplies จำนวน × กำลังไฟ × ชม. off the
+// printed row lands on the printed kWh. (Computing from exact values and
+// showing 1 decimal made rows disagree by 0.1–0.3 — e.g. ≈2.3 kW × 9 h
+// printed as 21 because the real figure was 2.334 kW.)
+const r2 = (n: number) => Math.round(n * 100) / 100;
 const fmt = (n: number) => n.toLocaleString("en-US", { maximumFractionDigits: 2 });
 const kwText = (kw: number) => kw < 1 ? `${fmt(kw * 1000)} W` : `${fmt(kw)} kW`;
 
@@ -218,8 +224,8 @@ function hoursRow(key: string, label: string, e: LoadEntry | undefined, kw: numb
   if (!e) return row(key, label, { size: kwText(kw) });
   if (e.unknown) return row(key, label, { status: "unknown", size: kwText(kw) });
   const div = hourKeys[0] === "day_min" ? 60 : 1;
-  const dayH = e[hourKeys[0]] !== undefined ? (e[hourKeys[0]] as number) / div : null;
-  const nightH = e[hourKeys[1]] !== undefined ? (e[hourKeys[1]] as number) / div : null;
+  const dayH = e[hourKeys[0]] !== undefined ? r2((e[hourKeys[0]] as number) / div) : null;
+  const nightH = e[hourKeys[1]] !== undefined ? r2((e[hourKeys[1]] as number) / div) : null;
   const qty = e.qty ?? null;
   if (qty === 0) return row(key, label, { status: "answered", qty: "0", size: kwText(kw), dayHours: 0, nightHours: 0, dayKwh: 0, nightKwh: 0 });
   const complete = qty !== null && dayH !== null && nightH !== null;
@@ -243,9 +249,9 @@ function acRows(profile: LoadProfile, acRaw: unknown): LoadRow[] {
     const seg = split?.[period] || {};
     const tiers = Object.entries(seg).filter(([, n]) => n > 0);
     const units = tiers.reduce((a, [, n]) => a + n, 0);
-    const kw = tiers.reduce((a, [k, n]) => a + n * AC_TIER_KW[k], 0);
+    const kw = r2(tiers.reduce((a, [k, n]) => a + n * AC_TIER_KW[k], 0));
     const size = tiers.length
-      ? `${tiers.map(([k, n]) => `${AC_TIER_LABEL[k]} BTU × ${n}`).join(", ")} · ≈${fmt(r1(kw))} kW`
+      ? `${tiers.map(([k, n]) => `${AC_TIER_LABEL[k]} BTU × ${n}`).join(", ")} · ≈${fmt(kw)} kW`
       : null;
     // ac_split is only stored when some period has a machine, so a split with
     // nothing in THIS period is a known zero. No split and no hours answer →
@@ -272,9 +278,8 @@ function washerRow(e: LoadEntry | undefined): LoadRow {
   if (loads === 0) return row("washer", label, { status: "answered", qty: "0", size: kwText(kw), dayHours: 0, nightHours: 0, dayKwh: 0, nightKwh: 0 });
   const qty = loads !== undefined ? `${fmt(loads)} ครั้ง/สัปดาห์` : null;
   if (loads === undefined || !e.period) return row("washer", label, { status: "partial", qty, size: kwText(kw) });
-  const exact = (loads * WASHER_HOURS_PER_LOAD) / 7;
-  const hours = r1(exact);
-  const kwh = r1(kw * exact);
+  const hours = r2((loads * WASHER_HOURS_PER_LOAD) / 7);
+  const kwh = r1(kw * hours);
   return row("washer", label, {
     status: "answered", qty, size: kwText(kw),
     dayHours: e.period === "day" ? hours : 0, nightHours: e.period === "night" ? hours : 0,
@@ -297,9 +302,8 @@ function evRow(e: LoadEntry | undefined, hasEv: boolean, period: unknown, asked:
   if (e.sessions_per_week === undefined || e.hours_per_session === undefined || !p) {
     return row("ev", label, { ...base, status: "partial" });
   }
-  const exact = (e.sessions_per_week * e.hours_per_session) / 7;
-  const hours = r1(exact);
-  const kwh = r1(kw * exact);
+  const hours = r2((e.sessions_per_week * e.hours_per_session) / 7);
+  const kwh = r1(kw * hours);
   return row("ev", label, {
     ...base, status: "answered",
     dayHours: p === "day" ? hours : 0, nightHours: p === "night" ? hours : 0,

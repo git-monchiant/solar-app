@@ -70,28 +70,50 @@ const row = (result, key) => result.rows.find(r => r.key === key);
   const r = computeLoad(input);
   assert.equal(r.asked, true);
   assert.equal(r.computedRows, 9);
-  // AC: day 2 × 0.934 kW × 6 h; night (0.934 + 1.401) kW × 8 h
+  // AC: day 1.87 kW (2 × 0.934) × 6 h; night 2.34 kW (0.934 + 1.401) × 8 h
   assert.equal(row(r, "ac_day").dayKwh, 11.2);
   assert.equal(row(r, "ac_day").nightApplies, false, "daytime-AC row has no night cells");
   assert.equal(row(r, "ac_night").nightKwh, 18.7);
   assert.equal(row(r, "ac_night").qty, "2");
-  assert.match(row(r, "ac_night").size, /12,000 BTU × 1, 18,000 BTU × 1 · ≈2\.3 kW/);
+  assert.match(row(r, "ac_night").size, /12,000 BTU × 1, 18,000 BTU × 1 · ≈2\.34 kW/);
   assert.equal(row(r, "fridge").dayKwh, 0.6);             // 0.05 kW × 12 h
   assert.equal(row(r, "fridge").nightHours, 12);
   assert.equal(row(r, "water_heater").nightKwh, 3.5);     // 2 × 3.5 kW × 0.5 h
   assert.equal(row(r, "water_heater").dayKwh, 0);
   assert.equal(row(r, "water_pump").dayKwh, 0.3);
-  assert.equal(row(r, "washer").dayKwh, 0.3);             // 0.5 kW × 4/7 h
+  assert.equal(row(r, "washer").dayHours, 0.57);          // 4 loads × 1 h ÷ 7
+  assert.equal(row(r, "washer").dayKwh, 0.3);             // 0.5 kW × 0.57 h
   assert.equal(row(r, "washer").nightKwh, 0);
   assert.equal(row(r, "electronics").nightKwh, 1.5);
   assert.equal(row(r, "lighting").nightKwh, 0.8);         // 15 × 10 W × 5 h = 0.75
-  assert.equal(row(r, "ev").nightKwh, 12.7);              // 7.4 kW × 12/7 h
+  assert.equal(row(r, "ev").nightHours, 1.71);            // 3 × 4 h ÷ 7
+  assert.equal(row(r, "ev").nightKwh, 12.7);              // 7.4 kW × 1.71 h
   assert.equal(row(r, "ev").dayKwh, 0);
   assert.equal(r.dayKwh, 13.6);
   assert.equal(r.nightKwh, 37.8);
   assert.equal(Math.round(r.nightShare * 100), 74);
   assert.equal(missingLoadAnswers(input).length, 0);
   assert.equal(loadSummaryText(r), "กลางวัน 13.6 kWh · กลางคืน 37.8 kWh/วัน (กลางคืน 74%)");
+}
+
+// ── printed figures multiply out (lead 974's answers, 28 Sep 2026) ──
+{
+  const r = computeLoad({
+    ac_split: JSON.stringify({ day: { "9000": 2 }, night: { "9000": 2, "12000": 1 } }),
+    appliances: "ev", ev_charge_period: "night",
+    load_profile: { ac: { day_h: 7, night_h: 9 }, water_heater: { qty: 2, day_min: 10, night_min: 30 },
+      washer: { loads_per_week: 2, period: "day" }, ev: { charger_kw: 3.6, sessions_per_week: 5, hours_per_session: 6 } },
+  });
+  // each printed row: kW × hours (as shown) → the kWh shown, to 1 decimal
+  const acN = row(r, "ac_night");
+  assert.match(acN.size, /≈2\.33 kW$/, "2 × 0.70 + 0.934, shown to 2 decimals");
+  assert.equal(acN.nightKwh, 21);                          // 2.33 × 9 = 20.97
+  assert.equal(row(r, "water_heater").dayHours, 0.17);     // 10 min
+  assert.equal(row(r, "water_heater").dayKwh, 1.2);        // 2 × 3.5 × 0.17 = 1.19
+  assert.equal(row(r, "washer").dayHours, 0.29);           // 2 ÷ 7
+  assert.equal(row(r, "washer").dayKwh, 0.1);              // 0.5 × 0.29 = 0.145
+  assert.equal(row(r, "ev").nightHours, 4.29);             // 30 ÷ 7
+  assert.equal(row(r, "ev").nightKwh, 15.4);               // 3.6 × 4.29 = 15.44
 }
 
 // ── none / unknown / partial ────────────────────────────────────────

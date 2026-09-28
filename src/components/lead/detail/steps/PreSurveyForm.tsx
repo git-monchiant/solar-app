@@ -900,7 +900,9 @@ const PreSurveyForm = forwardRef<PreSurveyFormHandle, Props>(function PreSurveyF
         <div className="space-y-3">
           {[
             { state: futureEv,          setter: setFutureEv,          label: "แผนซื้อรถยนต์ EV",            choices: YES_NO_CONSIDERING },
-            { state: futureEvCharger,   setter: setFutureEvCharger,   label: "แผนติดตั้ง EV Charger",       choices: YES_NO_BIN },
+            { state: futureEvCharger,   setter: setFutureEvCharger,   label: "แผนติดตั้ง EV Charger",       choices: YES_NO_BIN,
+              // a home that already has one tends to answer มี here (8 on dev)
+              hint: pre_appliances.includes("ev") ? "บ้านนี้มีที่ชาร์จแล้ว — ตอบ มี เฉพาะถ้าจะติดเพิ่ม" : undefined },
             { state: futureExtendHome,  setter: setFutureExtendHome,  label: "แผนต่อเติมบ้าน",              choices: YES_NO_BIN },
             { state: futureMoreMembers, setter: setFutureMoreMembers, label: "แผนเพิ่มจำนวนสมาชิกในบ้าน",   choices: YES_NO_BIN },
             { state: futureSmartHome,   setter: setFutureSmartHome,   label: "แผนติดตั้งระบบ Smart Home",   choices: YES_NO_BIN },
@@ -908,6 +910,7 @@ const PreSurveyForm = forwardRef<PreSurveyFormHandle, Props>(function PreSurveyF
           ].map((row, i) => (
             <div key={i}>
               <label className={fieldLabel}>{row.label}</label>
+              {"hint" in row && row.hint && <div className="text-xxs text-amber-700 -mt-1 mb-1.5">{row.hint}</div>}
               <div className="grid grid-cols-2 md:grid-cols-7 gap-2">
                 {row.choices.map(o => (
                   <button key={o.value} type="button" onClick={() => row.setter(row.state === o.value ? "" : o.value)} className={chipBtn(row.state === o.value)}>{o.label}</button>

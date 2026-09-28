@@ -78,8 +78,8 @@ const Q_LABELS: Record<string, Record<string, string>> = {
   workDaysPerWeek:    { "1_2": "1-2 วัน/สัปดาห์", "3_5": "3-5 วัน/สัปดาห์", daily: "ทุกวัน" },
   evChargePeriod:     { day: "กลางวัน", night: "กลางคืน" },
   // §4 Future plans
-  yesNoConsidering:   { yes: "มี", no: "ไม่มี", considering: "กำลังพิจารณา" },                  // future_ev, future_ev_charger
-  yesNoBin:           { yes: "มี", no: "ไม่มี" },                                              // future_extend_home, future_more_members, future_smart_home
+  yesNoConsidering:   { yes: "มี", no: "ไม่มี", considering: "กำลังพิจารณา" },                  // future_ev
+  yesNoBin:           { yes: "มี", no: "ไม่มี" },                                              // future_ev_charger, future_extend_home, future_more_members, future_smart_home
   yesNoMaybe:         { yes: "มี", no: "ไม่มี", maybe: "ยังไม่แน่ใจ" },                          // future_battery
   // §5 Energy security
   outagePriorities:   { ac: "แอร์", lights: "ไฟส่องสว่าง", internet: "Internet", cctv: "กล้องวงจรปิด", fridge: "ตู้เย็น", ev_charger: "EV Charger", gate: "ระบบประตูรั้ว", ups: "ระบบสำรองฉุกเฉิน" },
@@ -245,10 +245,12 @@ interface QCellProps {
   chipIcon?: React.ReactNode;
   /** Fallback display for `readonly` kind (already-formatted string). */
   readonlyDisplay?: React.ReactNode;
+  /** Short note under the label — context the answer depends on. */
+  hint?: string;
   /** Called with the new raw value; parent handles the PATCH + refresh. */
   onCommit: (next: string | number | null) => void;
 }
-function EditableQCell({ label, kind, value, options, suffix, required, allowOther, chipIcon, readonlyDisplay, onCommit }: QCellProps) {
+function EditableQCell({ label, kind, value, options, suffix, required, allowOther, chipIcon, readonlyDisplay, hint, onCommit }: QCellProps) {
   const currentStr = value == null ? "" : String(value);
   // Chip button — exact mirror of PreSurveyForm.chipBtn so the info tab
   // reads as the same questionnaire the customer answers in the workflow.
@@ -271,6 +273,7 @@ function EditableQCell({ label, kind, value, options, suffix, required, allowOth
           <span className="ml-1 text-gray-400 font-normal">({suffix})</span>
         )}
       </label>
+      {hint && <div className="text-xxs text-amber-700 -mt-1 mb-1.5">{hint}</div>}
       {kind === "dropdown" && (
         <>
           <div className="grid grid-cols-2 md:grid-cols-7 gap-2">
@@ -1619,6 +1622,7 @@ export default function LeadDetailPage({ params }: { params: Promise<{ id: strin
                  *  value (e.g. EV มี/ไม่มี → 'ev' inside the appliances CSV).
                  *  Without it the row PATCHes `field` with the raw value. */
                 commit?: (next: string | number | null) => void;
+                hint?: string;
               };
               // Clock icon reused by the peak-usage row (rendered on the left
               // of each time-range chip).
@@ -1808,10 +1812,16 @@ export default function LeadDetailPage({ params }: { params: Promise<{ id: strin
                 },
                 {
                   id: "q4",
-                  title: "แบบสอบถาม · แผนอนาคต",
+                  title: "แบบสอบถาม · แผนอนาคต (ภายใน 5 ปี)",
                   rows: [
-                    { label: "ซื้อ EV อนาคต", value: qLabel(lead.future_ev, "yesNoConsidering"), field: "future_ev", kind: "dropdown" as QCellKind, options: optsFromQ("yesNoConsidering"), raw: lead.future_ev ?? "" },
-                    { label: "ติด EV Charger", value: qLabel(lead.future_ev_charger, "yesNoConsidering"), field: "future_ev_charger", kind: "dropdown" as QCellKind, options: optsFromQ("yesNoConsidering"), raw: lead.future_ev_charger ?? "" },
+                    // Labels match the form's "แผน…" wording: the short "ติด EV
+                    // Charger" read as "has a charger now" and got answered มี
+                    // by homes that already had one (8 leads on dev, Sep 2026).
+                    // Charger options are มี/ไม่มี like the form and Dashboard
+                    // III (YES_NO_BIN) — "กำลังพิจารณา" was offered only here.
+                    { label: "แผนซื้อรถยนต์ EV (ภายใน 5 ปี)", value: qLabel(lead.future_ev, "yesNoConsidering"), field: "future_ev", kind: "dropdown" as QCellKind, options: optsFromQ("yesNoConsidering"), raw: lead.future_ev ?? "" },
+                    { label: "แผนติดตั้ง EV Charger (ภายใน 5 ปี)", value: qLabel(lead.future_ev_charger, "yesNoBin"), field: "future_ev_charger", kind: "dropdown" as QCellKind, options: optsFromQ("yesNoBin"), raw: lead.future_ev_charger ?? "",
+                      hint: hasEvCharger(lead.pre_appliances) ? "บ้านนี้มีที่ชาร์จแล้ว — ตอบ มี เฉพาะถ้าจะติดเพิ่ม" : undefined },
                     { label: "ต่อเติมบ้าน", value: qLabel(lead.future_extend_home, "yesNoBin"), field: "future_extend_home", kind: "dropdown" as QCellKind, options: optsFromQ("yesNoBin"), raw: lead.future_extend_home ?? "" },
                     { label: "สมาชิกเพิ่ม", value: qLabel(lead.future_more_members, "yesNoBin"), field: "future_more_members", kind: "dropdown" as QCellKind, options: optsFromQ("yesNoBin"), raw: lead.future_more_members ?? "" },
                     { label: "Smart Home", value: qLabel(lead.future_smart_home, "yesNoBin"), field: "future_smart_home", kind: "dropdown" as QCellKind, options: optsFromQ("yesNoBin"), raw: lead.future_smart_home ?? "" },
@@ -1983,6 +1993,7 @@ export default function LeadDetailPage({ params }: { params: Promise<{ id: strin
                                         allowOther={r.allowOther}
                                         chipIcon={r.chipIcon}
                                         readonlyDisplay={r.value}
+                                        hint={r.hint}
                                         onCommit={(next) => r.commit ? r.commit(next) : r.field && updateLeadField(r.field, next)}
                                       />
                                     );

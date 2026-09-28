@@ -49,7 +49,9 @@ function Stepper({ label, value, onChange, step = 1, max, disabled }: {
     <div className={disabled ? "opacity-40 pointer-events-none" : ""}>
       <div className="text-xs text-gray-500 mb-1">{label}</div>
       <div className="flex items-center gap-1">
-        <button type="button" disabled={!has || value === 0} onClick={() => onChange(Math.max(0, (value ?? 0) - step))} className={stepBtn}>−</button>
+        {/* From "–" (not answered) the − button records 0 — "not used" in one
+            tap, instead of + then −. */}
+        <button type="button" disabled={value === 0} onClick={() => onChange(has ? Math.max(0, value - step) : 0)} className={stepBtn}>−</button>
         <span className={`w-10 text-center text-sm font-mono tabular-nums ${has ? "text-gray-800" : "text-gray-400"}`}>{has ? value : "–"}</span>
         <button type="button" disabled={has && value >= max} onClick={() => onChange(Math.min(max, has ? value + step : step))} className={stepBtn}>+</button>
       </div>

@@ -256,6 +256,9 @@ export function buildSurveyReportHtml(L, D, PKG, options = {}) {
         '<span class="nw">$1 $2</span>')
     : t;
   const n1 = v => Number(v).toLocaleString("th-TH", { maximumFractionDigits: 1 });
+  // hours keep 2 decimals (4.29 ชม.) — the kWh beside them is computed from
+  // exactly this figure, so the printed row multiplies out
+  const n2 = v => Number(v).toLocaleString("th-TH", { maximumFractionDigits: 2 });
   const na = `<span class="muted">—</span>`;
   // unit shown in an empty ขนาด cell, matching what the surveyor would write
   const SIZE_UNIT = { ac_day:"BTU", ac_night:"BTU", electronics:"W", lighting:"W" };
@@ -263,7 +266,7 @@ export function buildSurveyReportHtml(L, D, PKG, options = {}) {
     const known = r.status === "answered" || r.status === "partial";
     const size = r.qty === "0" ? na   // "ไม่มี" — nothing to size
       : known && r.size ? `<span class="val">${keepUnit(r.size)}</span>` : bl(SIZE_UNIT[r.key] || "kW");
-    const hrs = (applies, h) => !applies ? na : h == null ? bl("ชม.") : `<span class="val nw">${n1(h)} ชม.</span>`;
+    const hrs = (applies, h) => !applies ? na : h == null ? bl("ชม.") : `<span class="val nw">${n2(h)} ชม.</span>`;
     const kwh = (applies, k) => !applies ? na : k == null ? bl() : `<span class="val">${n1(k)}</span>`;
     return `<tr><td class="dev">${r.label}</td><td>${r.qty != null ? `<span class="val">${r.qty}</span>` : bl()}</td><td>${size}</td>`
       + `<td>${hrs(r.dayApplies, r.dayHours)}</td><td>${hrs(r.nightApplies, r.nightHours)}</td>`
