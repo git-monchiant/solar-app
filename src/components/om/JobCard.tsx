@@ -8,7 +8,7 @@
 import { CALL_OUTCOME, EXIT_STATUS, statusLabel, statusTone } from "@/lib/om/booking";
 import { formatTHB } from "@/lib/utils/formatters";
 import {
-  BUCKET_LABEL, FLOW, PAY_STATE, QUOTE_STATUS, TONE, flowIndex, monthsAgo, repairPending, skipsPaidSteps, thD, thDT,
+  BUCKET_LABEL, FLOW, PAY_STATE, QUOTE_STATUS, TONE, flowIndex, monthsAgo, repairPending, skipsPaidSteps, teamLabel, thD, thDT,
   type Item,
 } from "@/lib/om/service-view";
 
@@ -147,7 +147,7 @@ export default function JobCard({ r, onOpen }: { r: Item; onOpen: () => void }) 
               ครั้งที่ {r.calls} {CALL_OUTCOME[r.last_outcome]?.t ?? r.last_outcome} {thDT(r.last_call_at)}</i>
           </span>
         ) : <span>ยังไม่มีใครโทร</span>}
-        {r.team_name && <span className="px-2 py-0.5 rounded-full bg-gray-100 text-gray-600 font-semibold">ทีม {r.team_name}</span>}
+        {r.team_name && <span className="px-2 py-0.5 rounded-full bg-gray-100 text-gray-600 font-semibold">{teamLabel(r.team_name)}</span>}
         {r.next_call && <span className="ml-auto font-semibold text-gray-500">นัดโทรใหม่ {thD(r.next_call)}</span>}
         {!r.next_call && r.no_answer > 0 && <span className="ml-auto font-bold text-danger">ไม่รับสายแล้ว {r.no_answer} ครั้ง</span>}
       </div>

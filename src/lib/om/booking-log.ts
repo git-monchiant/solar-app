@@ -20,7 +20,10 @@ export type BookingAction =
   // ★ เฟส 4: ส่งใบให้ลูกค้า → ขั้นชำระเงิน · Account ยืนยันรับเงิน (+ เติมสิทธิ์ที่ซื้อ)
   | "quote_send" | "paid" | "pay_submit" | "pay_reject"
   // ★ เฟส 5: ทีม O&M เปิดใบงานซ่อมจากใบที่ช่างแจ้งพบงานซ่อม (ผูก parent_booking_id)
-  | "repair_open";
+  | "repair_open"
+  // ★ 28 ก.ย. 69 (แผน 20260928-04 ข้อ 7): ปุ่ม Note ในหน้ารายละเอียด — โน้ตอิสระลงไทม์ไลน์ของบ้าน
+  //   แบบ Note ของหน้า lead ฝั่งขาย · ข้อความอยู่ในช่อง reason (300 ตัวอักษร)
+  | "note";
 
 export type ActorRole = "admin" | "technician" | "customer" | "system";
 
@@ -75,6 +78,7 @@ const LABEL: Record<BookingAction, string> = {
   quote_send: "ส่งใบเสนอราคาให้ลูกค้า", paid: "ยืนยันรับเงินแล้ว",
   pay_submit: "แนบสลิปค่าบริการ รอ Account ยืนยัน", pay_reject: "Account ปฏิเสธสลิป",
   repair_open: "เปิดใบงานซ่อม",
+  note: "บันทึกโน้ต",
 };
 
 export const actionLabel = (a: string): string => LABEL[a as BookingAction] ?? a;

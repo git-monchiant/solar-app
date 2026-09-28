@@ -3,9 +3,14 @@
 // ปฏิทิน / จ่ายงาน — ดูนัดตามวัน แล้วลากจ่ายให้ทีมช่าง (mockup 20260831_01 · แผน 20260907_01)
 // ★ ผู้ใช้เคาะ 9 ก.ย. 69 "ไม่อยากเพิ่มเมนู" — ทีมช่างเป็นแท็บที่นี่ ไม่แยกเมนู
 // ★ mobile = list · desktop = month (กติกา ui-rules)
+// ★ 28 ก.ย. 69 (แผน 20260928-04 ข้อ 1 + 5): โครงหน้ายกจาก /calendar ฝั่งขาย
+//   Header (หัวเรื่อง = ชื่อเมนู) + แถบแท็บ + toolbar เดือนติดอยู่ใต้หัว (sticky) · desktop เพิ่มมุมมอง "รายการ"
+//   แบบปุ่มสลับ เดือน/รายการ ของฝั่งขาย — ลากวางจ่ายงาน + สัปดาห์/วัน เป็นของ O&M คงไว้ตามเดิม
 import { Fragment, useCallback, useEffect, useState } from "react";
 import { apiFetch } from "@/lib/api";
 import Loading from "@/components/ui/Loading";
+import Header from "@/components/layout/Header";
+import { useActiveMenuItem } from "@/lib/hooks/useActiveModule";
 import { statusLabel, statusTone } from "@/lib/om/booking";
 
 interface Row {
@@ -25,36 +30,83 @@ const ymd = (d: Date) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart
 const thTime = (s: string | null) => (s ? new Date(s).toLocaleTimeString("th-TH", { hour: "2-digit", minute: "2-digit" }) : "");
 const MONTH = ["ม.ค.", "ก.พ.", "มี.ค.", "เม.ย.", "พ.ค.", "มิ.ย.", "ก.ค.", "ส.ค.", "ก.ย.", "ต.ค.", "พ.ย.", "ธ.ค."];
 
+type View = "month" | "week" | "day" | "list";
+const firstOfMonth = () => { const d = new Date(); d.setDate(1); return d; };
+
 export default function OmCalendarPage() {
+  const { item: activeItem } = useActiveMenuItem();   // หัวเรื่อง = ชื่อเมนู (กติกา ui-rules)
   const [tab, setTab] = useState<"cal" | "teams">("cal");
+  // ★ state ของ toolbar ยกขึ้นมาอยู่ระดับหน้า — toolbar อยู่ใน Header (sticky) แบบ /calendar ฝั่งขาย
+  const [cur, setCur] = useState(firstOfMonth);
+  // desktop สลับ เดือน/สัปดาห์/วัน/รายการ ได้ · mobile เป็น list เสมอ (ui-rules)
+  const [view, setView] = useState<View>("month");
+  const [pickDay, setPickDay] = useState<string | null>(null);
+  const [count, setCount] = useState<number | null>(null);
+
+  // ปุ่ม "วันนี้" แบบฝั่งขาย — กลับเดือนนี้ และมุมมองวัน/สัปดาห์กลับมาที่วันนี้
+  const goToday = () => { setCur(firstOfMonth()); if (view === "day" || view === "week") setPickDay(ymd(new Date())); };
+
   return (
-    <div className="p-3 md:p-5 flex flex-col gap-3">
-      <div className="rounded-xl border border-gray-200 bg-white overflow-hidden">
-        <div className="flex items-center px-4">
+    <div>
+      <Header title={activeItem?.label ?? "ปฏิทิน / จ่ายงาน"} subtitle="O&M · CALENDAR">
+        {/* แถบแท็บ — คลาสแถวแท็บเดียวกับ ListPageHeader */}
+        <div className="flex items-center px-5 border-t border-gray-100 overflow-x-auto scrollbar-hide">
           {([["cal", "ปฏิทิน / จ่ายงาน"], ["teams", "ทีมช่าง"]] as const).map(([k, t]) => (
-            <button key={k} type="button" style={{ minHeight: 0 }} onClick={() => setTab(k)}
-              className={`px-2.5 py-3 text-xs font-bold uppercase tracking-wider border-b-2 -mb-px whitespace-nowrap cursor-pointer ${
+            <button key={k} type="button" onClick={() => setTab(k)}
+              className={`px-2.5 py-3 text-xs font-semibold uppercase tracking-wider border-b-2 -mb-px transition-colors whitespace-nowrap shrink-0 cursor-pointer ${
                 tab === k ? "text-active border-active" : "text-gray-500 border-transparent hover:text-gray-700"}`}>{t}</button>
           ))}
         </div>
+
+        {/* Toolbar — ยกจาก /calendar ฝั่งขาย: ‹ › วันนี้ · ชื่อเดือน · … · ปุ่มสลับมุมมอง */}
+        {tab === "cal" && (
+          <div className="bg-white border-t border-gray-100 px-3 md:px-5 py-2">
+            <div className="flex items-center gap-2 flex-wrap">
+              <button type="button" onClick={() => setCur(new Date(cur.getFullYear(), cur.getMonth() - 1, 1))}
+                className="w-8 h-8 rounded-lg border border-gray-200 bg-white hover:bg-gray-50 flex items-center justify-center" title="เดือนก่อน">
+                <svg className="w-4 h-4 text-gray-600" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}><path strokeLinecap="round" strokeLinejoin="round" d="M15 19l-7-7 7-7" /></svg>
+              </button>
+              <button type="button" onClick={() => setCur(new Date(cur.getFullYear(), cur.getMonth() + 1, 1))}
+                className="w-8 h-8 rounded-lg border border-gray-200 bg-white hover:bg-gray-50 flex items-center justify-center" title="เดือนถัดไป">
+                <svg className="w-4 h-4 text-gray-600" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}><path strokeLinecap="round" strokeLinejoin="round" d="M9 5l7 7-7 7" /></svg>
+              </button>
+              <button type="button" onClick={goToday} className="h-8 px-3 rounded-lg border border-gray-200 bg-white text-xs font-semibold hover:bg-gray-50">วันนี้</button>
+              <div className="text-sm md:text-base font-bold ml-1 mr-1">{MONTH[cur.getMonth()]} {cur.getFullYear() + 543}</div>
+              {count !== null && <span className="text-xs text-gray-500">{count} งานในเดือนนี้</span>}
+              <div className="flex-1" />
+              {/* สลับมุมมอง — desktop เท่านั้น (mobile เป็น list เสมอตาม ui-rules) · หน้าตาปุ่มสลับของ /calendar */}
+              <div className="hidden md:inline-flex rounded-lg border border-gray-200 bg-white overflow-hidden">
+                {([["month", "เดือน"], ["week", "สัปดาห์"], ["day", "วัน"], ["list", "รายการ"]] as const).map(([k, t]) => (
+                  <button key={k} type="button" onClick={() => setView(k)}
+                    className={`h-8 px-3 text-xs font-semibold ${view === k ? "bg-primary text-white" : "text-gray-600 hover:bg-gray-50"}`}>{t}</button>
+                ))}
+              </div>
+            </div>
+          </div>
+        )}
+      </Header>
+
+      <div className="px-3 md:px-5 pt-3 pb-4">
+        {tab === "cal"
+          ? <CalendarTab cur={cur} view={view} setView={setView} pickDay={pickDay} setPickDay={setPickDay} onCount={setCount} />
+          : <TeamsTab />}
       </div>
-      {tab === "cal" ? <CalendarTab /> : <TeamsTab />}
     </div>
   );
 }
 
-function CalendarTab() {
-  const [cur, setCur] = useState(() => { const d = new Date(); d.setDate(1); return d; });
+function CalendarTab({ cur, view, setView, pickDay, setPickDay, onCount }: {
+  cur: Date; view: View; setView: (v: View) => void;
+  pickDay: string | null; setPickDay: (k: string | null) => void; onCount: (n: number | null) => void;
+}) {
   const [rows, setRows] = useState<Row[] | null>(null);
   const [teams, setTeams] = useState<Team[]>([]);
   // ★ ช่วงเวลา/ความจุมาจาก om_slot_config เสมอ (กติกาโปรเจกต์ ห้าม hardcode)
   const [slots, setSlots] = useState<Slot[]>([]);
   const [blocks, setBlocks] = useState<Block[]>([]);
-  const [pickDay, setPickDay] = useState<string | null>(null);
-  // desktop สลับ เดือน/สัปดาห์/วัน ได้ · mobile เป็น list เสมอ (ui-rules)
-  const [view, setView] = useState<"month" | "week" | "day">("month");
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState("");
+  useEffect(() => { onCount(rows ? rows.length : null); }, [rows, onCount]);
 
   const first = new Date(cur.getFullYear(), cur.getMonth(), 1);
   const last = new Date(cur.getFullYear(), cur.getMonth() + 1, 0);
@@ -109,37 +161,32 @@ function CalendarTab() {
   const today = ymd(new Date());
   const dayRows = pickDay ? (byDay.get(pickDay) ?? []) : [];
 
+  // รายการเรียงตามวัน — มือถือใช้เสมอ · desktop เมื่อกดสลับเป็น "รายการ" (แบบ EventCalendarList ฝั่งขาย)
+  const dayList = (
+    <>
+      {[...byDay.entries()].sort().map(([k, list]) => (
+        <div key={k} className="border-b border-gray-100 last:border-0">
+          <div className={`px-4 py-1.5 text-xs font-bold ${k === today ? "bg-teal-50 text-primary-dark" : "bg-gray-50 text-gray-600"}`}>
+            {new Date(`${k}T00:00:00`).toLocaleDateString("th-TH", { weekday: "short", day: "numeric", month: "short" })} · {list.length} งาน
+            {k === today && <span className="ml-1.5">· วันนี้</span>}
+          </div>
+          {list.map((r) => <JobLine key={r.id} r={r} teams={teams} busy={busy} onAssign={assign} />)}
+        </div>
+      ))}
+      {!byDay.size && <div className="px-4 py-10 text-center text-sm text-gray-400">เดือนนี้ยังไม่มีนัด</div>}
+    </>
+  );
+
   return (
     <div className="flex flex-col gap-3">
       {err && <div className="border border-red-200 bg-red-50 p-3 rounded-xl text-sm font-semibold text-red-700">{err}</div>}
 
       <div className="rounded-xl border border-gray-200 bg-white overflow-hidden">
-        <div className="px-4 py-2.5 flex items-center gap-2 border-b border-gray-100">
-          <button type="button" style={{ minHeight: 0 }} onClick={() => setCur(new Date(cur.getFullYear(), cur.getMonth() - 1, 1))}
-            className="w-8 h-8 rounded-lg border border-gray-200 cursor-pointer">‹</button>
-          <b className="text-base font-bold">{MONTH[cur.getMonth()]} {cur.getFullYear() + 543}</b>
-          <button type="button" style={{ minHeight: 0 }} onClick={() => setCur(new Date(cur.getFullYear(), cur.getMonth() + 1, 1))}
-            className="w-8 h-8 rounded-lg border border-gray-200 cursor-pointer">›</button>
-          <button type="button" style={{ minHeight: 0 }} onClick={() => { const d = new Date(); d.setDate(1); setCur(d); }}
-            className="h-8 px-3 rounded-lg border border-gray-200 text-xs font-bold text-gray-600 cursor-pointer">เดือนนี้</button>
-
-          {/* สลับมุมมอง — desktop เท่านั้น (mobile เป็น list เสมอตาม ui-rules) */}
-          <span className="hidden md:inline-flex rounded-lg border border-gray-200 overflow-hidden ml-1">
-            {([["month", "เดือน"], ["week", "สัปดาห์"], ["day", "วัน"]] as const).map(([k, t]) => (
-              <button key={k} type="button" style={{ minHeight: 0 }} onClick={() => setView(k)}
-                className={`h-8 px-3 text-xs font-bold cursor-pointer border-l first:border-l-0 border-gray-200 ${
-                  view === k ? "bg-primary text-white" : "text-gray-600 hover:bg-gray-50"}`}>{t}</button>
-            ))}
-          </span>
-
-          <span className="ml-auto text-xs text-gray-500">{(rows ?? []).length} งานในเดือนนี้</span>
-        </div>
-
         {rows === null ? <Loading /> : (
           <>
-            {/* desktop = เดือน / สัปดาห์ / วัน */}
-            <div className="hidden md:block p-3">
-              {view === "day" ? (
+            {/* desktop = เดือน / สัปดาห์ / วัน / รายการ */}
+            <div className={`hidden md:block ${view === "list" ? "" : "p-3"}`}>
+              {view === "list" ? dayList : view === "day" ? (
                 <DayTimeline day={pickDay ?? today} rows={rows ?? []} teams={teams} slots={slots} blocks={blocks}
                   busy={busy} onDay={setPickDay} onPatch={patch} />
               ) : view === "week" ? (
@@ -176,22 +223,13 @@ function CalendarTab() {
             </div>
 
             {/* mobile = list */}
-            <div className="md:hidden">
-              {[...byDay.entries()].sort().map(([k, list]) => (
-                <div key={k} className="border-b border-gray-100">
-                  <div className="px-4 py-1.5 bg-gray-50 text-xs font-bold text-gray-600">
-                    {new Date(k).toLocaleDateString("th-TH", { weekday: "short", day: "numeric", month: "short" })} · {list.length} งาน
-                  </div>
-                  {list.map((r) => <JobLine key={r.id} r={r} teams={teams} busy={busy} onAssign={assign} />)}
-                </div>
-              ))}
-              {!byDay.size && <div className="px-4 py-10 text-center text-sm text-gray-400">เดือนนี้ยังไม่มีนัด</div>}
-            </div>
+            <div className="md:hidden">{dayList}</div>
           </>
         )}
       </div>
 
-      {pickDay && (
+      {/* แผงงานของวันที่เลือก (จ่ายทีมแบบเลือกจาก dropdown) — มุมมองรายการเห็นทุกวันอยู่แล้ว ไม่ต้องซ้อน */}
+      {pickDay && view !== "list" && (
         <div className="rounded-xl border border-gray-200 bg-white overflow-hidden hidden md:block">
           <div className="px-4 py-2.5 border-b border-gray-100 flex items-center gap-2">
             <b className="text-base font-bold">

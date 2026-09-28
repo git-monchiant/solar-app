@@ -84,9 +84,12 @@ function SectionHead({ icon, en, th, right }: {
   return (
     <div className={SECTION_TITLE}>
       <span className={SECTION_ICON}>{icon}</span>
-      {en}
-      {th && <span className="normal-case tracking-normal font-normal text-gray-400">{th}</span>}
-      {right && <span className="ml-auto normal-case tracking-normal font-normal text-gray-400">{right}</span>}
+      {/* จอเล็ก (มือถือช่าง) ชื่อไทยลงบรรทัดใหม่ — เดิมบีบอยู่แถวเดียวกับชื่ออังกฤษ+จำนวนข้อจนตัดคำกลางชื่อ */}
+      <span className="min-w-0 leading-tight">
+        {en}
+        {th && <span className="block sm:inline sm:ml-2 normal-case tracking-normal font-normal text-gray-400">{th}</span>}
+      </span>
+      {right && <span className="ml-auto shrink-0 whitespace-nowrap normal-case tracking-normal font-normal text-gray-400">{right}</span>}
     </div>
   );
 }

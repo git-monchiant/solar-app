@@ -6,6 +6,7 @@ import { useEffect, useState } from "react";
 import { apiFetch } from "@/lib/api";
 import Header from "@/components/layout/Header";
 import Loading from "@/components/ui/Loading";
+import { useDialog } from "@/components/ui/Dialog";
 
 interface LiffApp {
   id: number; code: string; name: string; liff_id: string | null;
@@ -52,6 +53,7 @@ const EMPTY_CELLS: Cell[] = [
 ];
 
 export default function OmLineOaPage() {
+  const dialog = useDialog();   // ยืนยันลบ — dialog กลางแบบมี title (กติกา ui-rules) แทน confirm() ของเบราว์เซอร์
   const [tab, setTab] = useState(0);
   const [status, setStatus] = useState<Status | null>(null);
   const [apps, setApps] = useState<LiffApp[]>([]);
@@ -206,7 +208,7 @@ export default function OmLineOaPage() {
     } catch (e) { setMsg(e instanceof Error ? e.message : "แก้หมวดไม่สำเร็จ"); }
   };
   const delCat = async (c: FaqCat) => {
-    if (!confirm(`ลบหมวด "${c.name}"?`)) return;
+    if (!(await dialog.confirm({ title: "ลบหมวด FAQ", message: `ลบหมวด "${c.name}"?`, variant: "danger", confirmText: "ลบ" }))) return;
     try {
       await apiFetch(`/api/om/faq/categories?name=${encodeURIComponent(c.name)}`, { method: "DELETE" });
       await load();
@@ -242,7 +244,7 @@ export default function OmLineOaPage() {
     setFaqEdits((prev) => { const n = { ...prev }; delete n[id]; return n; });
 
   const delFaq = async (id: number) => {
-    if (!confirm("ลบคำถามนี้?")) return;
+    if (!(await dialog.confirm({ title: "ลบคำถาม FAQ", message: "ลบคำถามนี้?", variant: "danger", confirmText: "ลบ" }))) return;
     await apiFetch(`/api/om/faq?id=${id}`, { method: "DELETE" });
     await load();
   };

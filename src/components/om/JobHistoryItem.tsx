@@ -21,6 +21,7 @@ const DOT: Record<string, string> = {
   done: "bg-emerald-600",
   cancel: "bg-red-500",
   no_show: "bg-rose-500",
+  note: "bg-emerald-500",   // สีเดียวกับไอคอนโน้ตของฝั่งขาย (AddActivityModal)
 };
 
 export default function JobHistoryItem({ h, isLast }: { h: HistoryRow; isLast?: boolean }) {

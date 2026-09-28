@@ -3,6 +3,7 @@ import { useEffect, useRef, useState } from "react";
 import { apiFetch } from "@/lib/api";
 import Header from "@/components/layout/Header";
 import Loading from "@/components/ui/Loading";
+import { useDialog } from "@/components/ui/Dialog";
 import { UserIcon } from "@/components/ui/icons";
 import { formatThaiDate } from "@/lib/utils/formatters";
 
@@ -73,6 +74,7 @@ const fmtTime = (d: string | null) =>
   d ? formatThaiDate(d, { year: false, time: true, timeZone: "Asia/Bangkok" }) : "";
 
 export default function OmInboxPage() {
+  const dialog = useDialog();
   const [conversations, setConversations] = useState<Conversation[]>([]);
   const [loading, setLoading] = useState(true);
   const [active, setActive] = useState<Conversation | null>(null);
@@ -141,7 +143,8 @@ export default function OmInboxPage() {
       });
       openChat(active);
     } catch (e) {
-      alert(e instanceof Error ? e.message : "ส่งไฟล์ไม่สำเร็จ");
+      // alert() ของเบราว์เซอร์ → dialog กลางแบบมี title (กติกา ui-rules)
+      void dialog.alert({ title: "ส่งไฟล์ไม่สำเร็จ", message: e instanceof Error ? e.message : "ส่งไฟล์ไม่สำเร็จ", variant: "danger" });
     } finally {
       setUploading(false);
       if (fileRef.current) fileRef.current.value = "";

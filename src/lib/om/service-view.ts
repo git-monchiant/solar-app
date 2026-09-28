@@ -160,3 +160,5 @@ export const thDT = (s: string | null) =>
   !s ? "—" : new Date(s).toLocaleString("th-TH", { day: "numeric", month: "short", year: "2-digit", hour: "2-digit", minute: "2-digit" });
 export const monthsAgo = (s: string | null) =>
   !s ? null : Math.round((Date.now() - new Date(s).getTime()) / 2592000000);
+/** ชื่อทีมช่างพร้อมคำว่า "ทีม" — ชื่อในฐานบางทีมมีคำว่าทีมอยู่แล้ว ("ทีม A") ไม่งั้นขึ้น "ทีม ทีม A" */
+export const teamLabel = (name: string) => (name.trim().startsWith("ทีม") ? name.trim() : `ทีม ${name.trim()}`);

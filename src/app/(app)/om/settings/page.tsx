@@ -6,6 +6,8 @@
 import { useEffect, useState } from "react";
 import { apiFetch } from "@/lib/api";
 import Loading from "@/components/ui/Loading";
+import Header from "@/components/layout/Header";
+import { useActiveMenuItem } from "@/lib/hooks/useActiveModule";
 import ConflictsTab from "@/components/om/ConflictsTab";
 import TeamsTab from "@/components/om/TeamsTab";
 import ProjectsTab from "@/components/om/ProjectsTab";
@@ -167,6 +169,7 @@ const TABS = [
 type TabKey = (typeof TABS)[number]["k"];
 
 export default function OmSettingsPage() {
+  const { item: activeItem } = useActiveMenuItem();   // หัวเรื่อง = ชื่อเมนู (กติกา ui-rules)
   const [tab, setTab] = useState<TabKey>("rules");
   const [counts, setCounts] = useState<{ conflicts: number; projects: number; queue: number } | null>(null);
 
@@ -181,17 +184,20 @@ export default function OmSettingsPage() {
   const n = (k: TabKey) =>
     k === "conflicts" ? counts?.conflicts : k === "projects" ? counts?.projects : k === "queue" ? counts?.queue : undefined;
 
+  // ★ 28 ก.ย. 69 (แผน 20260928-04 ข้อ 1): หัวหน้าจอ = Header ฝั่งขาย · หัวเรื่อง = ชื่อเมนู
+  //   แถบแท็บย้ายเข้าใต้หัว (คลาสแถวแท็บเดียวกับ ListPageHeader) — เดิมเป็นกล่องแท็บลอยไม่มีหัวหน้าจอ
+  //   ตัวเลขค้างตัดสินยังเป็นสีส้มตามเดิม ให้เห็นว่ามีงานรอ
   return (
-    <div className="p-3 md:p-5 flex flex-col gap-3">
-      <div className="rounded-xl border border-gray-200 bg-white overflow-hidden">
-        <div className="flex items-center px-4 overflow-x-auto">
+    <div>
+      <Header title={activeItem?.label ?? "ตั้งค่า O&M"} subtitle="O&M · CONFIGURATION">
+        <div className="flex items-center px-5 border-t border-gray-100 overflow-x-auto scrollbar-hide">
           {TABS.map((t) => (
-            <button key={t.k} type="button" style={{ minHeight: 0 }} onClick={() => setTab(t.k)}
-              className={`px-2.5 py-3 text-xs font-bold uppercase tracking-wider border-b-2 -mb-px whitespace-nowrap shrink-0 cursor-pointer ${
+            <button key={t.k} type="button" onClick={() => setTab(t.k)}
+              className={`px-2.5 py-3 text-xs font-semibold uppercase tracking-wider border-b-2 -mb-px transition-colors whitespace-nowrap shrink-0 cursor-pointer ${
                 tab === t.k ? "text-active border-active" : "text-gray-500 border-transparent hover:text-gray-700"}`}>
               {t.t}
               {n(t.k) !== undefined && (
-                <span className={`ml-1 text-xs font-medium normal-case ${
+                <span className={`ml-1 text-xs normal-case ${
                   tab === t.k ? "text-active" : t.k !== "projects" && (n(t.k) ?? 0) > 0 ? "text-amber-600 font-bold" : "text-gray-400"}`}>
                   ({(n(t.k) ?? 0).toLocaleString()})
                 </span>
@@ -199,14 +205,16 @@ export default function OmSettingsPage() {
             </button>
           ))}
         </div>
-      </div>
+      </Header>
 
-      {tab === "teams" && <TeamsTab />}
-      {tab === "rules" && <RulesTab />}
-      {tab === "conflicts" && <ConflictsTab onChanged={(left) => setCounts((c) => (c ? { ...c, conflicts: left } : c))} />}
-      {tab === "projects" && <ProjectsTab />}
-      {tab === "queue" && <MatchQueuePanel />}
-      {tab === "forms" && <JobFormsTab />}
+      <div className="p-3 md:p-4 flex flex-col gap-3">
+        {tab === "teams" && <TeamsTab />}
+        {tab === "rules" && <RulesTab />}
+        {tab === "conflicts" && <ConflictsTab onChanged={(left) => setCounts((c) => (c ? { ...c, conflicts: left } : c))} />}
+        {tab === "projects" && <ProjectsTab />}
+        {tab === "queue" && <MatchQueuePanel />}
+        {tab === "forms" && <JobFormsTab />}
+      </div>
     </div>
   );
 }

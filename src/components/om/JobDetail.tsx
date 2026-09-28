@@ -21,9 +21,12 @@ import JobHistoryItem from "@/components/om/JobHistoryItem";
 import JobFormPanel from "@/components/om/JobFormPanel";
 import OmQuotationPanel from "@/components/om/OmQuotationPanel";
 import OmPaymentPanel from "@/components/om/OmPaymentPanel";
+import OmRescheduler from "@/components/om/OmRescheduler";
+import { HouseEquipmentTab, HouseInfoTab, JobPhotosTab } from "@/components/om/HouseTabs";
 import AssignOwnerButton from "@/components/lead/AssignOwnerButton";
+import ModalBase from "@/components/ui/ModalBase";
 import {
-  BUCKET_LABEL, FLOW, TONE, flowIndex, skipsPaidSteps, thD, thDT,
+  BUCKET_LABEL, FLOW, TONE, flowIndex, skipsPaidSteps, teamLabel, thD, thDT,
   type HistoryRow, type Item, type Team,
 } from "@/lib/om/service-view";
 
@@ -82,6 +85,13 @@ export default function JobDetail({ item, history, onBack, onDone, onSaved, onRe
   const nextJob = !item.booking_id || cur === "closed" || isExit;
   const needQuote = item.balance <= 0 && (nextJob || (cur === "follow" && item.consumes_quota === 1));
   const [step, setStep] = useState(at);
+  // แท็บบนหน้าแบบ lead ฝั่งขาย (แผน 20260928-04 ข้อ 6) — Workflow · ข้อมูลบ้าน · อุปกรณ์ · รูป
+  const [tab, setTab] = useState<"workflow" | "info" | "equipment" | "photos">("workflow");
+  // ปุ่ม Note (ข้อ 7) · เลื่อนนัดในขั้นนัดหมาย (ข้อ 8)
+  const [noteOpen, setNoteOpen] = useState(false);
+  const [noteText, setNoteText] = useState("");
+  const [noteErr, setNoteErr] = useState("");
+  const [resched, setResched] = useState(false);
   const [outcome, setOutcome] = useState<string>("agreed");
   const [note, setNote] = useState("");
   const [when, setWhen] = useState("");
@@ -210,6 +220,22 @@ export default function JobDetail({ item, history, onBack, onDone, onSaved, onRe
     </div>
   );
 
+  // โน้ตลงไทม์ไลน์ของบ้าน — ผูกใบงานล่าสุดด้วยถ้ามี (POST /api/om/houses/[id]/note)
+  const saveNote = async () => {
+    if (!noteText.trim()) return;
+    setBusy(true); setNoteErr("");
+    try {
+      await apiFetch(`/api/om/houses/${item.house_id}/note`, {
+        method: "POST", body: JSON.stringify({ text: noteText.trim(), booking_id: item.booking_id }),
+      });
+      setNoteOpen(false); setNoteText("");
+      onSaved("บันทึกโน้ตแล้ว"); onReload?.();
+    } catch (e) { setNoteErr(e instanceof Error ? e.message : String(e)); }
+    finally { setBusy(false); }
+  };
+  // ใบงานทุกใบของบ้าน (แท็บรูป) — จากไทม์ไลน์ที่ดึงทั้งบ้านมาแล้ว ไม่ต้องยิง API เพิ่ม
+  const bookingIds = [...new Set([item.booking_id, ...history.map((h) => h.booking_id)].filter((x): x is number => !!x))];
+
   // ช่องเบอร์อาจมีหลายเบอร์คั่นกัน — ปุ่มโทรใช้เบอร์แรก
   const telNo = item.phone?.split(/[,/\s]+/).find(Boolean) ?? null;
 
@@ -277,7 +303,7 @@ export default function JobDetail({ item, history, onBack, onDone, onSaved, onRe
                     : <span className="font-semibold text-amber-600">ยังไม่เคยล้าง</span>}
                   {item.booking_id && <><span className="text-gray-300 mx-1.5">·</span>ใบงาน #{item.booking_id}</>}
                   {item.team_name
-                    ? <><span className="text-gray-300 mx-1.5">·</span>ทีม {item.team_name}</>
+                    ? <><span className="text-gray-300 mx-1.5">·</span>{teamLabel(item.team_name)}</>
                     // เตือนจ่ายทีมเฉพาะงานที่ถึงขั้นนัดหมายแล้ว — ขั้นเสนอราคา/ชำระเงินยังไม่ถึงเวลาจ่ายทีม
                     : item.booking_id && at >= 3 && <><span className="text-gray-300 mx-1.5">·</span><span className="font-semibold text-amber-600">⚠ ยังไม่จ่ายทีม</span></>}
                 </span>
@@ -325,12 +351,31 @@ export default function JobDetail({ item, history, onBack, onDone, onSaved, onRe
           <div className="hidden md:flex w-20 border-r border-gray-200 px-2 items-center justify-center py-3 text-xs font-semibold uppercase tracking-wider text-gray-500">
             <span className="text-[10px]">Steps</span>
           </div>
-          <div className="flex-1 flex px-5 gap-1 min-w-0">
-            <div className="py-3 px-4 text-xs font-semibold uppercase tracking-wider border-b-2 -mb-px inline-flex items-center gap-1.5 text-active border-active">
-              <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                <path strokeLinecap="round" strokeLinejoin="round" d="M3.75 6h16.5M3.75 12h16.5m-16.5 6h16.5" />
-              </svg>
-              Workflow
+          {/* ★ แท็บยกจากหน้า lead ทั้งก้อน (คลาสปุ่ม · ไอคอน · มือถือโชว์ชื่อแค่แท็บที่เลือก) — แผน 20260928-04 ข้อ 6
+              ปุ่ม Note ชิดขวาของแถบแท็บแบบ Follow-up/Note ของหน้า lead (ข้อ 7) */}
+          <div className="flex-1 flex px-5 gap-1 min-w-0 overflow-x-auto scrollbar-hide">
+            {([
+              ["workflow", "Workflow", "M3.75 6h16.5M3.75 12h16.5m-16.5 6h16.5"],
+              ["info", "House Info", "M11.25 11.25l.041-.02a.75.75 0 011.063.852l-.708 2.836a.75.75 0 001.063.853l.041-.021M21 12a9 9 0 11-18 0 9 9 0 0118 0zm-9-3.75h.008v.008H12V8.25z"],
+              ["equipment", "Equipment", "M3.75 7.5l16.5-4.125M12 6.75c-2.708 0-5.363.224-7.948.655C2.999 7.58 2.25 8.507 2.25 9.574v9.176A2.25 2.25 0 004.5 21h15a2.25 2.25 0 002.25-2.25V9.574c0-1.067-.75-1.994-1.802-2.169A48.329 48.329 0 0012 6.75zM7.5 12.75a.75.75 0 11-1.5 0 .75.75 0 011.5 0zm6.75 0a.75.75 0 11-1.5 0 .75.75 0 011.5 0zm3 0a.75.75 0 11-1.5 0 .75.75 0 011.5 0z"],
+              ["photos", "Photos", "M2.25 15.75l5.159-5.159a2.25 2.25 0 013.182 0l5.159 5.159m-1.5-1.5l1.409-1.409a2.25 2.25 0 013.182 0l2.909 2.909m-18 3.75h16.5a1.5 1.5 0 001.5-1.5V6a1.5 1.5 0 00-1.5-1.5H3.75A1.5 1.5 0 002.25 6v12a1.5 1.5 0 001.5 1.5zm10.5-11.25h.008v.008h-.008V8.25zm.375 0a.375.375 0 11-.75 0 .375.375 0 01.75 0z"],
+            ] as const).map(([k, t, d]) => (
+              <button key={k} type="button" onClick={() => setTab(k)} title={t}
+                className={`py-3 text-xs font-semibold uppercase tracking-wider border-b-2 -mb-px transition-colors inline-flex items-center gap-1.5 shrink-0 cursor-pointer ${tab === k ? "px-4 text-active border-active" : "px-3 md:px-4 text-gray-500 border-transparent hover:text-gray-700"}`}>
+                <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                  <path strokeLinecap="round" strokeLinejoin="round" d={d} />
+                </svg>
+                <span className={tab === k ? "" : "hidden md:inline"}>{t}</span>
+              </button>
+            ))}
+            <div className="ml-auto flex items-center pb-2 self-end pl-2 shrink-0">
+              <button type="button" onClick={() => { setNoteErr(""); setNoteOpen(true); }} title="บันทึกโน้ตลงไทม์ไลน์ของบ้าน"
+                className="flex items-center gap-1.5 px-3 h-8 rounded-lg bg-gray-100 text-gray-700 text-sm font-semibold border border-gray-200 hover:bg-gray-200 transition-colors cursor-pointer" style={{ minHeight: 0 }}>
+                <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M16.862 4.487l1.687-1.688a1.875 1.875 0 112.652 2.652L10.582 16.07a4.5 4.5 0 01-1.897 1.13L6 18l.8-2.685a4.5 4.5 0 011.13-1.897l8.932-8.931z" />
+                </svg>
+                <span className="max-md:hidden">Note</span>
+              </button>
             </div>
           </div>
           <div className="hidden md:flex w-80 border-l border-gray-200 px-4 items-center py-3 text-xs font-semibold uppercase tracking-wider text-gray-500 gap-1.5">
@@ -356,7 +401,7 @@ export default function JobDetail({ item, history, onBack, onDone, onSaved, onRe
               ? "bg-white text-gray-300 border border-dashed border-gray-200 hover:text-gray-500"
               : "bg-white text-gray-500 border border-gray-200 hover:border-active hover:text-active";
             return (
-              <button key={f.k} type="button" onClick={() => setStep(i)}
+              <button key={f.k} type="button" onClick={() => { setStep(i); setTab("workflow"); setResched(false); }}
                 className={`flex flex-col items-center gap-0.5 py-2 rounded-lg transition-colors cursor-pointer ${cls}`}>
                 <span className="text-xxs font-bold tabular-nums leading-none">{String(i + 1).padStart(2, "0")}</span>
                 <span className="text-[10px] font-semibold leading-tight text-center px-1">{f.t}</span>
@@ -372,6 +417,12 @@ export default function JobDetail({ item, history, onBack, onDone, onSaved, onRe
           <div className="px-4 pb-4 pt-3 space-y-3">
             {err && <div className="rounded-lg bg-red-50 border border-red-200 px-4 py-2 text-sm text-red-700">{err}</div>}
 
+            {/* แท็บอื่นนอกจาก Workflow — แสดงอย่างเดียว แก้ที่ modal หน้าบ้าน (ปุ่ม "แก้ไขข้อมูลบ้าน") */}
+            {tab === "info" && <HouseInfoTab houseId={item.house_id} />}
+            {tab === "equipment" && <HouseEquipmentTab houseId={item.house_id} />}
+            {tab === "photos" && <JobPhotosTab bookingIds={bookingIds} />}
+
+            {tab === "workflow" && <>
             {/* ใบงานซ่อม (เฟส 5) — บอกที่มา ประกัน และอาการไว้บนสุด เห็นได้ทุกขั้น
                 ยกเลิกได้ก่อนมีใบเสนอราคา (ลูกค้าไม่ซ่อม) — O&M ยังไม่มีปุ่มยกเลิกใบงานที่อื่นเลย */}
             {isRepairJob && (
@@ -476,15 +527,38 @@ export default function JobDetail({ item, history, onBack, onDone, onSaved, onRe
             {step === 3 && (
               <StepCard n={3} state={stepState(3)} title="นัดหมาย — ยืนยันนัด · จ่ายทีมช่าง">
                 <div className="space-y-3">
-                  <div className={SECTION}>
-                    <div className={FIELD_LABEL}>ยืนยันนัด</div>
-                    {item.scheduled_at ? (
+                  {/* ★ แถบนัด + ปุ่ม Reschedule ยกจากขั้นย่อย "นัด" ของ Install ฝั่งขาย (แผน 20260928-04 ข้อ 8)
+                      สีม่วง = นัดแล้ว รอยืนยัน · สีเขียว = ลูกค้ายืนยันแล้ว · เลื่อนได้จนกว่าช่างจะเริ่มงาน */}
+                  {resched && item.booking_id ? (
+                    <OmRescheduler bookingId={item.booking_id} currentAt={item.scheduled_at}
+                      onCancel={() => setResched(false)}
+                      onSaved={() => { setResched(false); onSaved("เลื่อนนัดแล้ว"); onDone(); }} />
+                  ) : (() => {
+                    const confirmed = cur !== "pending" && at >= 3;
+                    const canResched = !!item.booking_id && (cur === "pending" || cur === "confirmed");
+                    return (
                       <>
-                        <div className="text-sm">นัดไว้ <b>{thDT(item.scheduled_at)}</b>
-                          {cur !== "pending" && at >= 3 && <span className="ml-2 text-emerald-600 font-semibold">✓ ลูกค้ายืนยันแล้ว</span>}
+                        <div className={`flex items-center gap-2.5 px-3 py-2.5 rounded-lg border ${confirmed ? "bg-emerald-50 border-emerald-600/15" : "bg-active-light border-active/20"}`}>
+                          <svg className={`w-4 h-4 shrink-0 ${confirmed ? "text-emerald-600" : "text-active"}`} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                            <path strokeLinecap="round" strokeLinejoin="round" d="M6.75 3v2.25M17.25 3v2.25M3 18.75V7.5a2.25 2.25 0 012.25-2.25h13.5A2.25 2.25 0 0121 7.5v11.25" />
+                          </svg>
+                          <div className="flex-1 flex items-baseline gap-1.5 flex-wrap min-w-0">
+                            <span className={`text-xs font-semibold tracking-wider uppercase ${confirmed ? "text-emerald-700/70" : "text-active/70"}`}>
+                              {confirmed ? "ยืนยันแล้ว" : "นัดหมายแล้ว"}
+                            </span>
+                            {item.scheduled_at
+                              ? <span className={`text-sm font-bold ${confirmed ? "text-emerald-900" : "text-active"}`}>{thDT(item.scheduled_at)}</span>
+                              : <span className="text-sm text-gray-500 italic">ยังไม่มีวันนัด — กลับไปขั้นติดตามเพื่อบันทึกการโทร</span>}
+                          </div>
+                          {canResched && item.scheduled_at && (
+                            <button type="button" onClick={() => setResched(true)} style={{ minHeight: 0 }}
+                              className={`shrink-0 text-xs font-semibold uppercase tracking-wider px-2.5 py-1 rounded-md border transition-colors cursor-pointer ${confirmed ? "border-emerald-600/20 text-emerald-700 hover:bg-emerald-100" : "border-active/30 text-active hover:bg-active/10"}`}>
+                              Reschedule
+                            </button>
+                          )}
                         </div>
-                        {cur === "pending" && (
-                          <div className="mt-3 flex gap-2 flex-wrap">
+                        {cur === "pending" && item.scheduled_at && (
+                          <div className="flex gap-2 flex-wrap">
                             <button type="button" disabled={busy || !item.booking_id}
                               onClick={() => patchJob({ status: "confirmed" }, "ยืนยันนัดแล้ว")}
                               className={PRIMARY_BTN}>ลูกค้ายืนยันแล้ว</button>
@@ -494,8 +568,8 @@ export default function JobDetail({ item, history, onBack, onDone, onSaved, onRe
                           </div>
                         )}
                       </>
-                    ) : <div className="text-sm text-gray-500">ยังไม่มีวันนัด — กลับไปขั้นติดตามเพื่อบันทึกการโทร</div>}
-                  </div>
+                    );
+                  })()}
 
                   <div className={SECTION}>
                     <div className={FIELD_LABEL}>จ่ายทีมช่าง</div>
@@ -505,7 +579,7 @@ export default function JobDetail({ item, history, onBack, onDone, onSaved, onRe
                         <button key={t.id} type="button" disabled={busy || !item.booking_id}
                           onClick={() => patchJob({ team_id: t.id }, `จ่ายงานให้ทีม ${t.name} แล้ว`)}
                           className={chipBtn(item.team_id === t.id)}>
-                          ทีม {t.name} <span className={`font-normal ${item.team_id === t.id ? "text-white/70" : "text-gray-400"}`}>· ค้าง {t.open_jobs}</span>
+                          {teamLabel(t.name)} <span className={`font-normal ${item.team_id === t.id ? "text-white/70" : "text-gray-400"}`}>· ค้าง {t.open_jobs}</span>
                         </button>
                       ))}
                     </div>
@@ -630,6 +704,7 @@ export default function JobDetail({ item, history, onBack, onDone, onSaved, onRe
               </div>
               {historyTimeline}
             </div>
+            </>}
           </div>
         </div>
 
@@ -638,6 +713,44 @@ export default function JobDetail({ item, history, onBack, onDone, onSaved, onRe
           <div className="flex-1 overflow-y-auto p-4">{historyTimeline}</div>
         </aside>
       </div>
+
+      {/* บันทึกโน้ต — หน้าตายกจาก AddActivityModal โหมด note ของหน้า lead ทั้งก้อน (แผน 20260928-04 ข้อ 7) */}
+      {noteOpen && (
+        <ModalBase
+          title={
+            <div className="flex items-center gap-2">
+              <span className="w-7 h-7 rounded-full bg-emerald-100 text-emerald-600 flex items-center justify-center">
+                <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M16.862 4.487l1.687-1.688a1.875 1.875 0 112.652 2.652L10.582 16.07a4.5 4.5 0 01-1.897 1.13L6 18l.8-2.685a4.5 4.5 0 011.13-1.897l8.932-8.931z" />
+                </svg>
+              </span>
+              <span>บันทึกโน้ต</span>
+            </div>
+          }
+          onClose={() => setNoteOpen(false)}
+          size="md"
+          footer={
+            <div className="flex gap-2">
+              <button type="button" onClick={() => setNoteOpen(false)}
+                className="flex-1 py-3 rounded-xl border border-gray-200 text-sm font-semibold text-gray-700 bg-white cursor-pointer">
+                ยกเลิก
+              </button>
+              <button type="button" onClick={saveNote} disabled={busy || !noteText.trim()}
+                className="flex-1 py-3 rounded-xl bg-primary text-white text-sm font-bold disabled:opacity-50 active:scale-[0.98] transition-all cursor-pointer">
+                {busy ? "กำลังบันทึก..." : "บันทึก"}
+              </button>
+            </div>
+          }
+        >
+          <div className="space-y-2">
+            <textarea value={noteText} onChange={(e) => setNoteText(e.target.value)}
+              placeholder="บันทึกโน้ต... (ขึ้นใน Activity Log ของบ้านนี้)" rows={4} autoFocus maxLength={300}
+              className="w-full px-4 py-3 rounded-xl border border-gray-200 bg-white focus:outline-none focus:border-primary text-sm resize-none" />
+            <div className="text-right text-xxs text-gray-400">{noteText.length}/300</div>
+            {noteErr && <div className="rounded-lg bg-red-50 border border-red-200 px-3 py-2 text-xs text-red-700">{noteErr}</div>}
+          </div>
+        </ModalBase>
+      )}
     </div>
   );
 }
