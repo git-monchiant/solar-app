@@ -29,6 +29,8 @@ export default function OmServiceDetailPage({ params }: { params: Promise<{ hous
   const [history, setHistory] = useState<HistoryRow[]>([]);
   // ใบงานทุกใบของบ้าน — แท็บ Timeline (แผน 20260928-05) มาในคำขอเดียวกับประวัติ
   const [bookings, setBookings] = useState<BookingSummary[]>([]);
+  // ค่าในหน้าตั้งค่า O&M (call.* · booking.*) — ค่าเริ่มนัดโทรใหม่ · ช่วงวันนัด · ไม่รับสายกี่ครั้งตกแท็บ (แผน 20260929-03)
+  const [rules, setRules] = useState<Record<string, unknown>>({});
   const [err, setErr] = useState("");
   const [toast, setToast] = useState("");
   // เปลี่ยนค่าหลังบันทึกในโหมด focus → JobDetail ขึ้นใหม่ทั้งตัว
@@ -43,6 +45,7 @@ export default function OmServiceDetailPage({ params }: { params: Promise<{ hous
         setItem(row);
         setHistory((d.history ?? []) as HistoryRow[]);
         setBookings((d.bookings ?? []) as BookingSummary[]);
+        setRules((d.rules ?? {}) as Record<string, unknown>);
       })
       .catch((e) => setErr(e instanceof Error ? e.message : String(e))),
   [house]);
@@ -67,6 +70,7 @@ export default function OmServiceDetailPage({ params }: { params: Promise<{ hous
         item={item}
         history={history}
         bookings={bookings}
+        rules={rules}
         onBack={focus ? undefined : back}
         onDone={done}
         onSaved={(m) => { setToast(m); setTimeout(() => setToast(""), 2600); }}

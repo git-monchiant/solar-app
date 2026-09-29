@@ -23,6 +23,8 @@ import JobFormPanel from "@/components/om/JobFormPanel";
 import OmQuotationPanel, { openQuotationPdf } from "@/components/om/OmQuotationPanel";
 import OmPaymentPanel from "@/components/om/OmPaymentPanel";
 import OmRescheduler from "@/components/om/OmRescheduler";
+import OmSlotPicker from "@/components/om/OmSlotPicker";
+import DateSlider from "@/components/ui/DateSlider";
 import ServiceDocButton from "@/components/om/ServiceDocButton";
 import { HouseEquipmentTab, HouseInfoTab, JobPhotosTab } from "@/components/om/HouseTabs";
 import JobTimelineTab, { StageEvents, bookingStages, type Row, type StageKey } from "@/components/om/JobTimelineTab";
@@ -71,12 +73,26 @@ const chipBtn = (selected: boolean) =>
 const PRIMARY_BTN = "h-11 px-6 rounded-lg text-sm font-semibold text-white bg-active hover:brightness-110 transition-colors flex items-center justify-center gap-1 cursor-pointer disabled:opacity-50";
 const SECONDARY_BTN = "h-11 px-5 rounded-lg text-sm font-semibold border border-gray-200 text-gray-600 bg-white hover:bg-gray-50 transition-colors flex items-center justify-center gap-1 cursor-pointer disabled:opacity-50";
 
-export default function JobDetail({ item, history, bookings = [], onBack, onDone, onSaved, onReload }: {
+// ผลการโทรแบ่ง 2 กลุ่มแบบ modal Follow-up ฝั่งขาย (แผน 20260929-03 ข้อ 2)
+// ป้ายสั้นใช้เฉพาะในฟอร์ม — หัวกลุ่มบอก "ติดต่อได้" แล้ว · ประวัติ/Timeline/การ์ดรายการยังใช้ CALL_OUTCOME ตัวเต็ม
+const OUTCOME_GROUPS = [
+  { t: "ติดต่อได้", ok: true, keys: ["agreed", "postponed", "declined"] },
+  { t: "ติดต่อไม่ได้", ok: false, keys: ["no_answer", "wrong_number"] },
+] as const;
+const OUTCOME_SHORT: Record<string, string> = {
+  agreed: "ตกลงนัด", postponed: "ขอเลื่อน", declined: "ปฏิเสธ ไม่เอา", no_answer: "ไม่รับสาย", wrong_number: "เบอร์ผิด",
+};
+const PHONE_ICON = "M2.25 6.75c0 8.284 6.716 15 15 15h2.25a2.25 2.25 0 002.25-2.25v-1.372c0-.516-.351-.966-.852-1.091l-4.423-1.106c-.44-.11-.902.055-1.173.417l-.97 1.293c-.282.376-.769.542-1.21.38a12.035 12.035 0 01-7.143-7.143c-.162-.441.004-.928.38-1.21l1.293-.97c.363-.271.527-.734.417-1.173L6.963 3.102a1.125 1.125 0 00-1.091-.852H4.5A2.25 2.25 0 002.25 4.5v2.25z";
+const PHONE_X_ICON = "M15.75 3.75L18 6m0 0l2.25 2.25M18 6l2.25-2.25M18 6l-2.25 2.25m1.5 13.5c-8.284 0-15-6.716-15-15V4.5A2.25 2.25 0 014.5 2.25h1.372c.516 0 .966.351 1.091.852l1.106 4.423c.11.44-.054.902-.417 1.173l-1.293.97a1.062 1.062 0 00-.38 1.21 12.035 12.035 0 007.143 7.143c.441.162.928-.004 1.21-.38l.97-1.293a1.125 1.125 0 011.173-.417l4.423 1.106c.5.125.852.575.852 1.091V19.5a2.25 2.25 0 01-2.25 2.25h-2.25z";
+
+export default function JobDetail({ item, history, bookings = [], rules, onBack, onDone, onSaved, onReload }: {
   item: Item;
   /** ประวัติของบ้านหลังนี้ — หน้าเรียกใช้เป็นคนโหลด (มาพร้อม /api/om/follow?house=) */
   history: HistoryRow[];
   /** ใบงานทุกใบของบ้าน — หัวกลุ่มของแท็บ Timeline (มาพร้อม /api/om/follow?house= · แผน 20260928-05) */
   bookings?: BookingSummary[];
+  /** ค่าในหน้าตั้งค่า O&M (call.* · booking.*) — มาพร้อม /api/om/follow?house= (แผน 20260929-03) */
+  rules?: Record<string, unknown>;
   /** ปุ่ม ‹ กลับรายการ — ไม่ส่งมา (โหมด focus/แท็บใหม่) = ซ่อนปุ่ม เหมือนหน้า lead */
   onBack?: () => void;
   /** หลังบันทึกการโทร/เปลี่ยนสถานะสำเร็จ — ปกติกลับรายการ · โหมด focus โหลดใหม่อยู่หน้าเดิม */
@@ -103,7 +119,9 @@ export default function JobDetail({ item, history, bookings = [], onBack, onDone
   const quoteOpen = needQuote && at === 0 && !skip;
   const [step, setStep] = useState(at);
   // การ์ดขั้นที่ปิดแล้วกาง/พับ — เปิดขั้นไหนจากราง กางให้เลยแบบโหมด focus ของหน้า lead (ดูทีละขั้นอยู่แล้ว)
-  const [doneOpen, setDoneOpen] = useState(true);
+  // ★ แผน 20260929-03 ข้อ 4: มือถือเรียงทุกการ์ดต่อกัน ⇒ แยกพับ/กางรายการ์ด (เดิมตัวเดียวใช้ร่วม)
+  //   เริ่มกางเฉพาะขั้นที่เปิดมา — ขั้นก่อนหน้าบนมือถือพับเหลือบรรทัดสรุป ขั้นที่ทำอยู่เลยอยู่บนสุดเอง
+  const [openDone, setOpenDone] = useState<Set<number>>(() => new Set([at]));
   // แท็บบนหน้าแบบ lead ฝั่งขาย (แผน 20260928-04 ข้อ 6) — Workflow · ข้อมูลบ้าน · อุปกรณ์ · รูป
   const [tab, setTab] = useState<"workflow" | "info" | "equipment" | "photos" | "timeline">("workflow");
   // ปุ่ม Note (ข้อ 7) · เลื่อนนัดในขั้นนัดหมาย (ข้อ 8)
@@ -111,9 +129,12 @@ export default function JobDetail({ item, history, bookings = [], onBack, onDone
   const [noteText, setNoteText] = useState("");
   const [noteErr, setNoteErr] = useState("");
   const [resched, setResched] = useState(false);
-  const [outcome, setOutcome] = useState<string>("agreed");
+  // ★ ไม่เลือกผลไว้ก่อน แบบ Follow-up ฝั่งขาย (แผน 20260929-03 ข้อ 2 · เดิมเลือก "ตกลงนัด" ไว้ให้)
+  const [outcome, setOutcome] = useState<string>("");
   const [note, setNote] = useState("");
-  const [when, setWhen] = useState("");
+  // วันนัด + เวลาเริ่มของช่วง (om_slot_config) — เดิมช่อง datetime-local ช่องเดียว
+  const [apDate, setApDate] = useState("");
+  const [apTime, setApTime] = useState("");
   const [nextDate, setNextDate] = useState("");
   const [teams, setTeams] = useState<Team[]>([]);
   const [busy, setBusy] = useState(false);
@@ -122,6 +143,10 @@ export default function JobDetail({ item, history, bookings = [], onBack, onDone
   // ในประกัน: ระบบเลือกให้ก่อนเมื่อมีวันหมดประกันจากใบรับประกันฝั่งขาย (ผู้ใช้เคาะ 28 ก.ย.)
   //   ยังไม่หมด = ในประกัน · หมดแล้ว = นอกประกัน · ไม่มีข้อมูล (บ้าน REM) = ไม่เลือกให้ ทีมต้องเลือกเอง
   const today = new Date().toLocaleDateString("sv-SE");   // YYYY-MM-DD ตามเวลาเครื่อง
+  const plusDays = (n: number) => { const d = new Date(); d.setDate(d.getDate() + n); return d.toLocaleDateString("sv-SE"); };
+  const num = (k: string, d: number) => (rules?.[k] != null && !Number.isNaN(Number(rules[k])) ? Number(rules[k]) : d);
+  // นัดโทรใหม่ — เลือกวันที่ระบบจะตั้งให้ไว้ก่อน (กติกาเดียวกับ API /api/om/follow) คนกดเห็นว่าวันไหน แก้ได้
+  const autoNext: Record<string, number> = { postponed: num("call.postpone_days", 30), no_answer: num("call.retry_days", 3) };
   const [rpOpen, setRpOpen] = useState(item.repair_needed === 1 && !item.repair_cancel_id);
   const [rpDetail, setRpDetail] = useState(item.repair_detail ?? "");
   const [rpWarranty, setRpWarranty] = useState<boolean | null>(
@@ -160,7 +185,14 @@ export default function JobDetail({ item, history, bookings = [], onBack, onDone
     if (i === at || (i === 1 && quoteOpen)) return "active";
     return "locked";
   };
-  const go = (i: number) => { setStep(i); setTab("workflow"); setResched(false); setDoneOpen(true); };
+  const go = (i: number) => { setStep(i); setTab("workflow"); setResched(false); setOpenDone((s) => new Set(s).add(i)); };
+  const toggleDone = (i: number) => setOpenDone((s) => {
+    const n = new Set(s);
+    if (n.has(i)) n.delete(i); else n.add(i);
+    return n;
+  });
+  // desktop เปิดทีละการ์ดจากราง · มือถือ (ไม่มีราง) เรียงทุกการ์ดต่อกันแบบหน้า lead — แผน 20260929-03 ข้อ 4
+  const cardWrap = (i: number) => (i === step ? "" : "md:hidden");
 
   // เหตุการณ์ของใบงานนี้แบ่งตามขั้น — เนื้อในการ์ดที่ปิดแล้ว (ชุดเดียวกับแท็บ Timeline ป้ายไม่เพี้ยนสองที่)
   const stages = useMemo(
@@ -170,16 +202,25 @@ export default function JobDetail({ item, history, bookings = [], onBack, onDone
   // ใบตรวจ/ใบตัดสิทธิ์ของใบงานนี้ (ผลตรวจ · เลขใบบริการ · เวลาปิด) — มาพร้อม bookings ของแท็บ Timeline
   const report = bookings.find((b) => b.id === item.booking_id) ?? null;
 
+  const pickOutcome = (k: string) => {
+    setOutcome(k); setErr("");
+    if (k in autoNext) setNextDate(plusDays(autoNext[k]));
+    // ตกลงนัดเริ่มที่พรุ่งนี้ — DateSlider เลือก "วันนี้" ให้เองถ้าว่าง
+    if (k === "agreed" && !apDate) setApDate(plusDays(1));
+  };
+
   const saveCall = async () => {
-    if (outcome === "agreed" && !when) { setErr("ตกลงนัดแล้วต้องระบุวันและเวลา"); return; }
+    if (!outcome) return;
+    if (outcome === "agreed" && (!apDate || !apTime)) { setErr("ตกลงนัดแล้วต้องเลือกวันและช่วงเวลา"); return; }
     setBusy(true); setErr("");
     try {
       await apiFetch("/api/om/follow", {
         method: "POST",
         body: JSON.stringify({
           house_id: item.house_id, booking_id: item.booking_id, outcome,
-          note: note || null, next_date: nextDate || null,
-          scheduled_at: outcome === "agreed" ? when : null,
+          note: note || null,
+          next_date: outcome in autoNext ? nextDate || null : null,
+          scheduled_at: outcome === "agreed" ? `${apDate}T${apTime}` : null,
           phone: item.phone,
         }),
       });
@@ -278,9 +319,8 @@ export default function JobDetail({ item, history, bookings = [], onBack, onDone
   );
 
   // ── การ์ดขั้นที่ปิดแล้ว (แผน 20260929-02) — StepLayout โหมด done ของฝั่งขาย: บรรทัดสรุป + ลูกศร · กางแล้วอ่านอย่างเดียว ──
-  const toggleDone = () => setDoneOpen((v) => !v);
-  const doneView = (head: React.ReactNode, body: () => React.ReactNode) => (
-    <StepLayout state="done" expanded={doneOpen} onToggle={toggleDone} doneHeader={head} renderDone={body} />
+  const doneView = (i: number, head: React.ReactNode, body: () => React.ReactNode) => (
+    <StepLayout state="done" expanded={openDone.has(i)} onToggle={() => toggleDone(i)} doneHeader={head} renderDone={body} />
   );
   // เหตุการณ์ของขั้นในกล่อง DoneSection — ชุดเดียวกับแท็บ Timeline
   const events = (k: StageKey, color: React.ComponentProps<typeof DoneSection>["color"], title: string) => (
@@ -298,51 +338,112 @@ export default function JobDetail({ item, history, bookings = [], onBack, onDone
     ? <>งาน{item.service_type ?? "นี้"}ฟรี <b>ไม่ตัดสิทธิ์ล้าง</b></>
     : <>งานเสียเงิน <b>ไม่ตัดสิทธิ์</b></>;
 
+  // ── แถบสรุปการโทรรอบนี้ (แผน 20260929-03 ข้อ 3) — ข้อมูลชุดเดียวกับการ์ดในรายการ (JobCard) ──
+  //   เดิม API ส่งมาแล้วแต่การ์ดไม่แสดง ต้องไล่ Activity Log เอง · ไม่รู้ว่าอีกกี่ครั้งจะตกแท็บติดต่อไม่ได้
+  //   "รอบนี้" = หลังล้างล่าสุด (follow-sql ②) — Activity Log ขวามือเห็นทุกรอบ ป้ายต้องบอกให้ชัด
+  const maxTry = num("call.max_attempts", 3);
+  const lastDay = item.last_call_at ? new Date(item.last_call_at).toLocaleDateString("sv-SE") : null;
+  // นัดโทรใหม่ที่ยังค้าง — โทรตั้งแต่วันนัดไปแล้ว (เช่น ตกลงนัด) ถือว่าตามแล้ว แบบ "✓ ติดตามแล้ว" หน้า lead
+  const pendingNext = item.next_call && (!lastDay || item.next_call > lastDay) ? item.next_call : null;
+  const callSummary = (schedule: boolean) => {
+    // กติกาครบ N ครั้งย้ายแท็บติดต่อไม่ได้ ใช้เฉพาะบ้านที่ยังไม่มีใบงานเดินหน้า (follow-sql bucket)
+    // ใบซ่อมในประกันค้างติดตาม · ใบที่ชำระเงินแล้ว ยึดสถานะใบงาน ไม่ตกแท็บ
+    const unreachRule = !schedule && !(cur === "follow" && !!item.in_warranty);
+    const lastLeft = unreachRule && maxTry > 1 && item.no_answer === maxTry - 1;
+    const reached = unreachRule && item.no_answer >= maxTry;
+    const nextTone = !pendingNext ? "" : pendingNext < today ? "text-red-600" : pendingNext === today ? "text-amber-700" : "text-gray-600";
+    const out = item.last_outcome ? CALL_OUTCOME[item.last_outcome] : null;
+    return (
+      <div className={`mb-3 px-3 py-2 rounded-lg border text-xs text-gray-600 flex flex-wrap items-center gap-x-2 gap-y-1 ${lastLeft ? "bg-amber-50 border-amber-200" : "bg-white border-gray-200"}`}>
+        <ClockIcon className="w-4 h-4 text-gray-400 shrink-0" strokeWidth={2} />
+        {!item.calls ? <span>ยังไม่เคยโทรรอบนี้</span> : <>
+          <span>โทรรอบนี้ <b className="text-gray-900">{item.calls}</b> ครั้ง</span>
+          <span className="text-gray-300">·</span>
+          <span>ไม่รับสาย <b className="text-gray-900">{item.no_answer}/{maxTry}</b></span>
+          {lastLeft && <><span className="text-gray-300">·</span><b className="text-amber-700">ไม่รับสายอีก 1 ครั้งจะย้ายไปแท็บติดต่อไม่ได้</b></>}
+          {reached && <><span className="text-gray-300">·</span><b className="text-red-600">ครบ {maxTry} ครั้ง — อยู่แท็บติดต่อไม่ได้</b></>}
+          {!lastLeft && item.last_call_at && (
+            <span className="inline-flex items-center gap-1.5 flex-wrap">
+              <span className="text-gray-300">·</span>ล่าสุด
+              {out && <span className={`text-xxs font-bold px-2 rounded-full text-white ${out.tone}`}>{out.t}</span>}
+              {thD(item.last_call_at)}{item.last_by && <> โดย {item.last_by}</>}
+            </span>
+          )}
+        </>}
+        {pendingNext && (
+          <b className={`md:ml-auto ${nextTone}`}>
+            นัดโทรใหม่ {pendingNext === today ? "วันนี้" : thD(pendingNext)}{pendingNext < today && " (เลยกำหนด)"}
+          </b>
+        )}
+      </div>
+    );
+  };
+
   // ── ฟอร์มบันทึกการโทร — ก้อนเดียว ใช้สองที่ (แผน 20260929-02) ──
   //   ขั้น 01 ติดตาม = ครบ 5 ผล · การ์ดนัดหมายตอนชำระเงินครบแล้ว (schedule) = ตกลงนัด / ไม่รับสาย / ขอเลื่อน
   //   (ลูกค้าจ่ายเงินแล้ว — ไม่เอา/เบอร์ผิดไม่ใช่ทางของขั้นนี้ ยกเลิกหลังรับเงินต้องผ่าน Account)
-  const callForm = (schedule: boolean) => (
+  // ★ แผน 20260929-03: ผลแบ่งกลุ่ม ติดต่อได้/ไม่ได้ · วันนัด = แถบวัน + ช่วงเวลา (OmSlotPicker) · นัดโทรใหม่ = แถบวัน
+  const callForm = (schedule: boolean) => {
+    const blockQuote = !schedule && outcome === "agreed" && needQuote;
+    return (
     <>
+      {callSummary(schedule)}
       <div className={SECTION}>
         <label className={FIELD_LABEL}>ผลการโทรครั้งนี้ <span className="text-red-500">*</span></label>
-        <div className="grid grid-cols-2 md:grid-cols-7 gap-2">
-          {Object.entries(CALL_OUTCOME)
-            .filter(([k]) => !schedule || ["agreed", "no_answer", "postponed"].includes(k))
-            .map(([k, v]) => (
-              <button key={k} type="button" onClick={() => setOutcome(k)} className={chipBtn(outcome === k)}>
-                {v.t}
-              </button>
-            ))}
+        <div className="grid gap-3 sm:grid-cols-2">
+          {OUTCOME_GROUPS.map((g) => {
+            const keys = g.keys.filter((k) => !schedule || ["agreed", "no_answer", "postponed"].includes(k));
+            return (
+              <div key={g.t}>
+                <div className={`flex items-center gap-1.5 text-xxs font-semibold mb-1.5 ${g.ok ? "text-emerald-600" : "text-red-500"}`}>
+                  <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                    <path strokeLinecap="round" strokeLinejoin="round" d={g.ok ? PHONE_ICON : PHONE_X_ICON} />
+                  </svg>
+                  {g.t}
+                </div>
+                <div className="flex flex-wrap gap-2">
+                  {keys.map((k) => (
+                    <button key={k} type="button" onClick={() => pickOutcome(k)} style={{ minHeight: 0 }}
+                      className={`${chipBtn(outcome === k)} whitespace-nowrap`}>
+                      {OUTCOME_SHORT[k]}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            );
+          })}
         </div>
 
-        <div className="grid gap-3 sm:grid-cols-2 mt-3">
-          {outcome === "agreed" && (
-            <div>
-              <label className={FIELD_LABEL}>วันและเวลานัด <span className="text-red-500">*</span></label>
-              <input type="datetime-local" value={when} onChange={(e) => setWhen(e.target.value)} className={INPUT} />
-            </div>
-          )}
-          {(outcome === "postponed" || outcome === "no_answer") && (
-            <div>
-              <label className={FIELD_LABEL}>นัดโทรใหม่</label>
-              <input type="date" value={nextDate} onChange={(e) => setNextDate(e.target.value)} className={INPUT} />
-              <span className="block mt-1 text-xxs text-gray-400">ไม่ใส่ = ระบบตั้งให้ตามกติกาในหน้าตั้งค่า</span>
-            </div>
-          )}
-          <div>
+        {outcome === "agreed" && !blockQuote && (
+          <div className="mt-3">
+            <OmSlotPicker date={apDate} time={apTime} excludeId={item.booking_id} rules={rules} pickedLabel="นัดเป็น"
+              onChange={(d, t) => { setApDate(d); setApTime(t); }} />
+          </div>
+        )}
+        {outcome in autoNext && (
+          <div className="mt-3">
+            <label className={FIELD_LABEL}>นัดโทรใหม่</label>
+            <DateSlider date={nextDate} onDateChange={setNextDate} pastDays={0} futureDays={Math.max(60, autoNext.postponed + 30)} />
+            <span className="block mt-1 text-xxs text-gray-400">
+              ค่าเริ่มต้น +{autoNext[outcome]} วันตามหน้าตั้งค่า — เลือกวันอื่นได้
+            </span>
+          </div>
+        )}
+        {outcome && (
+          <div className="mt-3">
             <label className={FIELD_LABEL}>โน้ต</label>
             <input value={note} onChange={(e) => setNote(e.target.value)} placeholder="เช่น ลูกค้าไม่อยู่บ้านช่วงเช้า" className={INPUT} />
           </div>
-        </div>
+        )}
 
-        {!schedule && outcome === "agreed" && needQuote ? (
+        {blockQuote ? (
           <div className="mt-3 rounded-lg bg-amber-50 border border-amber-200 px-3 py-2 text-xs leading-relaxed text-amber-900 flex items-center gap-2 flex-wrap">
             <span>บ้านนี้<b>สิทธิ์ล้างหมดแล้ว</b> — ตกลงนัดตรงไม่ได้ ต้องออกใบเสนอราคาและรับเงินก่อนนัด (เก็บค่าบริการก่อนนัดหมาย)
               · ถ้าตัวเลขสิทธิ์ผิด แก้ที่หน้าบ้าน / ระบบติดตั้ง</span>
             <button type="button" onClick={() => go(1)} style={{ minHeight: 0 }}
               className="font-semibold text-active hover:underline cursor-pointer">ไปขั้น 02 เสนอราคา ›</button>
           </div>
-        ) : (
+        ) : outcome && (
         <div className="mt-3 rounded-lg bg-gray-50 border border-gray-200 px-3 py-2 text-xs leading-relaxed text-gray-600">
           {schedule ? <>
             {outcome === "agreed" && <>กดบันทึกแล้วใบงาน #{item.booking_id} ย้ายไปขั้น <b>นัดหมาย</b> (รอยืนยันนัด) พร้อมวันเวลาที่เลือก</>}
@@ -360,12 +461,13 @@ export default function JobDetail({ item, history, bookings = [], onBack, onDone
       </div>
 
       <div className="mt-3 flex md:justify-end">
-        <button type="button" disabled={busy || (!schedule && outcome === "agreed" && needQuote)} onClick={saveCall} className={`${PRIMARY_BTN} flex-1 md:flex-none md:w-64`}>
-          {busy ? "กำลังบันทึก…" : "บันทึกการโทร"}
+        <button type="button" disabled={busy || !outcome || blockQuote} onClick={saveCall} className={`${PRIMARY_BTN} flex-1 md:flex-none md:w-64`}>
+          {busy ? "กำลังบันทึก…" : !outcome ? "เลือกผลการโทร" : "บันทึกการโทร"}
         </button>
       </div>
     </>
-  );
+    );
+  };
 
   return (
     <div className="flex flex-col h-full min-h-0 bg-white">
@@ -490,7 +592,8 @@ export default function JobDetail({ item, history, bookings = [], onBack, onDone
                 <span className={tab === k ? "" : "hidden md:inline"}>{t}</span>
               </button>
             ))}
-            <div className="ml-auto flex items-center pb-2 self-end pl-2 shrink-0">
+            {/* มือถือย้ายไปแถบล่างติดจอ (แผน 20260929-03) — เดิมโดนตัดขอบขวาของแถบแท็บ */}
+            <div className="max-md:hidden ml-auto flex items-center pb-2 self-end pl-2 shrink-0">
               <button type="button" onClick={() => { setNoteErr(""); setNoteOpen(true); }} title="บันทึกโน้ตลงไทม์ไลน์ของบ้าน"
                 className="flex items-center gap-1.5 px-3 h-8 rounded-lg bg-gray-100 text-gray-700 text-sm font-semibold border border-gray-200 hover:bg-gray-200 transition-colors cursor-pointer" style={{ minHeight: 0 }}>
                 <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
@@ -509,8 +612,9 @@ export default function JobDetail({ item, history, bookings = [], onBack, onDone
 
       <div className="flex-1 flex min-h-0">
         {/* ราง STEPS — ทึบม่วง = ขั้นที่เปิดดูอยู่ · ขอบม่วง = ขั้นที่งานอยู่จริง · ✓ = ผ่านแล้ว · จาง = ยังไม่ถึง (กดไม่ได้)
-            ★ ต่างจากหน้า lead ตรงที่โชว์บนมือถือด้วย เพราะหน้านี้เปิดการ์ดทีละขั้น ไม่มีทางอื่นให้สลับขั้น */}
-        <aside className="w-20 border-r border-gray-200 bg-gray-50/40 flex flex-col py-3 px-1.5 gap-1.5 shrink-0 overflow-y-auto">
+            ★ แผน 20260929-03 ข้อ 4: ซ่อนบนมือถือแบบหน้า lead — เดิมกิน 80px การ์ดแคบจนชื่อขั้นตกบรรทัด
+              มือถือเรียงการ์ดทุกขั้นต่อกันแทน (cardWrap) · desktop ยังเปิดทีละการ์ดจากราง */}
+        <aside className="hidden md:flex w-20 border-r border-gray-200 bg-gray-50/40 flex-col py-3 px-1.5 gap-1.5 shrink-0 overflow-y-auto">
           {FLOW.map((f, i) => {
             const st = stepState(i);
             const locked = st === "locked";
@@ -569,281 +673,269 @@ export default function JobDetail({ item, history, bookings = [], onBack, onDone
               </div>
             )}
 
-            {step === 0 && (
-              <StepCard n={0} state={stepState(0)} title="ติดตาม — บันทึกการโทร" doneTitle="ติดตามแล้ว" onHeaderClick={toggleDone}>
-                {stepState(0) === "done"
-                  ? doneView(
-                      <DoneHead text={(() => {
-                        const calls = rowsOf("follow").filter((r) => r.action === "call");
-                        const last = calls.reduce<Row | null>((a, r) => (!a || r.at >= a.at ? r : a), null);
-                        return last
-                          ? `โทร ${calls.length} ครั้ง · ล่าสุด ${CALL_OUTCOME[last.outcome ?? ""]?.t ?? last.outcome ?? "-"} · ${thD(last.at)}`
-                          : "ไม่มีบันทึกการโทรของใบงานนี้";
-                      })()} />,
-                      () => events("follow", "gray", "การโทร · เปิดใบงาน"))
-                  : callForm(false)}
-              </StepCard>
-            )}
+            <StepCard n={0} className={cardWrap(0)} state={stepState(0)} title="ติดตาม — บันทึกการโทร" doneTitle="ติดตามแล้ว" onHeaderClick={() => toggleDone(0)}>
+              {stepState(0) === "done"
+                ? doneView(0,
+                    <DoneHead text={(() => {
+                      const calls = rowsOf("follow").filter((r) => r.action === "call");
+                      const last = calls.reduce<Row | null>((a, r) => (!a || r.at >= a.at ? r : a), null);
+                      return last
+                        ? `โทร ${calls.length} ครั้ง · ล่าสุด ${CALL_OUTCOME[last.outcome ?? ""]?.t ?? last.outcome ?? "-"} · ${thD(last.at)}`
+                        : "ไม่มีบันทึกการโทรของใบงานนี้";
+                    })()} />,
+                    () => events("follow", "gray", "การโทร · เปิดใบงาน"))
+                : callForm(false)}
+            </StepCard>
 
             {/* ★ ขั้น 02–03 เป็นของงานเสียเงิน (แผน 20260924-02)
                 เฟส 2: ออก/แก้ใบเสนอราคาได้แล้ว (OmQuotationPanel) · ส่งอนุมัติเฟส 3 · รับเงินเฟส 4 */}
             {/* ★ ปิดขั้นแล้ว: แผงใบเสนอราคา/ชำระเงินไม่มีปุ่มแก้อยู่แล้ว (แก้/ส่งอนุมัติเฉพาะใบร่าง · ส่งลูกค้าเฉพาะขั้นเสนอราคา
                 · ฟอร์มแนบสลิปเฉพาะยังไม่มีสลิป) ⇒ กางดูได้ทั้งแผง · ออกใบของงานถัดไปยังกดได้ (ไม่ได้แก้ใบงานนี้) */}
-            {step === 1 && (
-              <StepCard n={1} state={stepState(1)} title="เสนอราคา" doneTitle="เสนอราคาแล้ว" onHeaderClick={toggleDone}>
-                {stepState(1) === "done"
-                  ? doneView(
-                      <DoneHead text={item.q_doc_no
-                        ? `${item.q_doc_no} · ${QUOTE_STATUS[item.q_status ?? ""]?.t ?? item.q_status ?? "-"} · ${formatTHB(Number(item.q_total ?? 0))} บาท`
-                        : "ไม่มีใบเสนอราคา"}>
-                        {item.q_id && <DocButton label="ใบเสนอราคา" onClick={() => openQuotationPdf(item.q_id!)} />}
-                      </DoneHead>,
-                      () => (
-                        <DoneSection color="rose" title="ใบเสนอราคา">
-                          <OmQuotationPanel item={item} skip={skip} onSaved={onSaved} onReload={onReload} />
-                        </DoneSection>
-                      ))
-                  : <>
-                      <div className={SECTION}>
+            <StepCard n={1} className={cardWrap(1)} state={stepState(1)} title="เสนอราคา" doneTitle="เสนอราคาแล้ว" onHeaderClick={() => toggleDone(1)}>
+              {stepState(1) === "done"
+                ? doneView(1,
+                    <DoneHead text={item.q_doc_no
+                      ? `${item.q_doc_no} · ${QUOTE_STATUS[item.q_status ?? ""]?.t ?? item.q_status ?? "-"} · ${formatTHB(Number(item.q_total ?? 0))} บาท`
+                      : "ไม่มีใบเสนอราคา"}>
+                      {item.q_id && <DocButton label="ใบเสนอราคา" onClick={() => openQuotationPdf(item.q_id!)} />}
+                    </DoneHead>,
+                    () => (
+                      <DoneSection color="rose" title="ใบเสนอราคา">
                         <OmQuotationPanel item={item} skip={skip} onSaved={onSaved} onReload={onReload} />
-                      </div>
-                      {stepState(1) === "active" && declineBox}
-                    </>}
-              </StepCard>
-            )}
+                      </DoneSection>
+                    ))
+                : <>
+                    <div className={SECTION}>
+                      <OmQuotationPanel item={item} skip={skip} onSaved={onSaved} onReload={onReload} />
+                    </div>
+                    {stepState(1) === "active" && declineBox}
+                  </>}
+            </StepCard>
 
             {/* เฟส 4: แนบสลิป → Account ยืนยันในคิวเดิม → เติมสิทธิ์ที่ซื้อ → โทรนัดได้ (ที่การ์ดนัดหมาย · แผน 20260929-02) */}
-            {step === 2 && (
-              <StepCard n={2} state={stepState(2)} title="ชำระเงิน" doneTitle="ชำระเงินแล้ว" onHeaderClick={toggleDone}>
-                {stepState(2) === "done"
-                  ? doneView(
-                      <DoneHead text={`${item.pay_state === "paid" ? "ชำระแล้ว" : "ชำระเงิน"} ${formatTHB(Number(item.q_total ?? 0))} บาท${item.q_doc_no ? ` · ตามใบ ${item.q_doc_no}` : ""}`} />,
-                      () => (
-                        <DoneSection color="indigo" title="ชำระเงิน">
-                          <OmPaymentPanel item={item} skip={skip} onSaved={onSaved} onReload={onReload} />
-                        </DoneSection>
-                      ))
-                  : <>
-                      <div className={SECTION}>
+            <StepCard n={2} className={cardWrap(2)} state={stepState(2)} title="ชำระเงิน" doneTitle="ชำระเงินแล้ว" onHeaderClick={() => toggleDone(2)}>
+              {stepState(2) === "done"
+                ? doneView(2,
+                    <DoneHead text={`${item.pay_state === "paid" ? "ชำระแล้ว" : "ชำระเงิน"} ${formatTHB(Number(item.q_total ?? 0))} บาท${item.q_doc_no ? ` · ตามใบ ${item.q_doc_no}` : ""}`} />,
+                    () => (
+                      <DoneSection color="indigo" title="ชำระเงิน">
                         <OmPaymentPanel item={item} skip={skip} onSaved={onSaved} onReload={onReload} />
-                      </div>
-                      {stepState(2) === "active" && declineBox}
-                    </>}
-              </StepCard>
-            )}
+                      </DoneSection>
+                    ))
+                : <>
+                    <div className={SECTION}>
+                      <OmPaymentPanel item={item} skip={skip} onSaved={onSaved} onReload={onReload} />
+                    </div>
+                    {stepState(2) === "active" && declineBox}
+                  </>}
+            </StepCard>
 
             {/* ★ นัดหมาย = รวมขั้น "ทำนัด" กับ "รอ O&M" เดิม (ขั้นย่อย 2410 รอยืนยันนัด · 2420 นัดแล้ว)
                 ปุ่มโผล่เฉพาะสถานะที่กดได้จริง — เดิมโผล่ตลอด กดผิดสถานะแล้วค่อยโดน API ปฏิเสธ */}
-            {step === 3 && (
-              <StepCard n={3} state={stepState(3)} doneTitle="นัดหมายแล้ว" onHeaderClick={toggleDone}
-                title={paidWaiting ? "นัดหมาย — โทรตกลงวันนัด" : "นัดหมาย — ยืนยันนัด · จ่ายทีมช่าง"}>
-                {stepState(3) === "done" ? doneView(
-                  <DoneHead text={`นัด ${thDT(item.scheduled_at)}${item.team_name ? ` · ${teamLabel(item.team_name)}` : ""}`} />,
-                  () => events("appoint", "blue", "นัดหมาย · ทีมช่าง"),
-                ) : paidWaiting ? (
-                  // ★ ชำระเงินครบแล้ว — โทรตกลงวันนัดที่นี่ แบบขั้นย่อย "นัด" ของ Install ฝั่งขาย (แผน 20260929-02)
-                  //   เดิมให้ย้อนไปบันทึกการโทรที่ขั้น 01 ซึ่งตอนนี้ปิดขั้นแล้วเป็นอ่านอย่างเดียว
-                  <div className="space-y-3">
-                    <div className="flex items-center gap-2.5 px-3 py-2.5 rounded-lg border bg-emerald-50 border-emerald-600/15 text-sm text-emerald-900">
-                      <CheckIcon className="w-4 h-4 shrink-0 text-emerald-600" strokeWidth={2.5} />
-                      <span className="min-w-0">ชำระค่าบริการแล้ว{item.q_doc_no && <> ตามใบ <b className="font-mono">{item.q_doc_no}</b></>} — โทรตกลงวันนัดกับลูกค้า</span>
-                    </div>
-                    {callForm(true)}
-                  </div>
-                ) : (
+            <StepCard n={3} className={cardWrap(3)} state={stepState(3)} doneTitle="นัดหมายแล้ว" onHeaderClick={() => toggleDone(3)}
+              title={paidWaiting ? "นัดหมาย — โทรตกลงวันนัด" : "นัดหมาย — ยืนยันนัด · จ่ายทีมช่าง"}>
+              {stepState(3) === "done" ? doneView(3,
+                <DoneHead text={`นัด ${thDT(item.scheduled_at)}${item.team_name ? ` · ${teamLabel(item.team_name)}` : ""}`} />,
+                () => events("appoint", "blue", "นัดหมาย · ทีมช่าง"),
+              ) : paidWaiting ? (
+                // ★ ชำระเงินครบแล้ว — โทรตกลงวันนัดที่นี่ แบบขั้นย่อย "นัด" ของ Install ฝั่งขาย (แผน 20260929-02)
+                //   เดิมให้ย้อนไปบันทึกการโทรที่ขั้น 01 ซึ่งตอนนี้ปิดขั้นแล้วเป็นอ่านอย่างเดียว
                 <div className="space-y-3">
-                  {/* ★ แถบนัด + ปุ่ม Reschedule ยกจากขั้นย่อย "นัด" ของ Install ฝั่งขาย (แผน 20260928-04 ข้อ 8)
-                      สีม่วง = นัดแล้ว รอยืนยัน · สีเขียว = ลูกค้ายืนยันแล้ว · เลื่อนได้จนกว่าช่างจะเริ่มงาน */}
-                  {resched && item.booking_id ? (
-                    <OmRescheduler bookingId={item.booking_id} currentAt={item.scheduled_at}
-                      onCancel={() => setResched(false)}
-                      onSaved={(m) => { setResched(false); onSaved(m); onDone(); }} />
-                  ) : (() => {
-                    const confirmed = cur !== "pending" && at >= 3;
-                    const canResched = !!item.booking_id && (cur === "pending" || cur === "confirmed");
-                    return (
-                      <>
-                        <div className={`flex items-center gap-2.5 px-3 py-2.5 rounded-lg border ${confirmed ? "bg-emerald-50 border-emerald-600/15" : "bg-active-light border-active/20"}`}>
-                          <svg className={`w-4 h-4 shrink-0 ${confirmed ? "text-emerald-600" : "text-active"}`} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                            <path strokeLinecap="round" strokeLinejoin="round" d="M6.75 3v2.25M17.25 3v2.25M3 18.75V7.5a2.25 2.25 0 012.25-2.25h13.5A2.25 2.25 0 0121 7.5v11.25" />
-                          </svg>
-                          <div className="flex-1 flex items-baseline gap-1.5 flex-wrap min-w-0">
-                            <span className={`text-xs font-semibold tracking-wider uppercase ${confirmed ? "text-emerald-700/70" : "text-active/70"}`}>
-                              {confirmed ? "ยืนยันแล้ว" : "นัดหมายแล้ว"}
-                            </span>
-                            {/* ★ ขั้น 01 ปิดแล้วเป็นอ่านอย่างเดียว (แผน 20260929-02) — ทางกลับคือปุ่ม "กลับไปติดตาม" ด้านล่าง */}
-                            {item.scheduled_at
-                              ? <span className={`text-sm font-bold ${confirmed ? "text-emerald-900" : "text-active"}`}>{thDT(item.scheduled_at)}</span>
-                              : <span className="text-sm text-gray-500 italic">ยังไม่มีวันนัด{cur === "pending" && <> — กด &ldquo;กลับไปติดตาม&rdquo; แล้วโทรตกลงนัดใหม่</>}</span>}
-                          </div>
-                          {canResched && item.scheduled_at && (
-                            <button type="button" onClick={() => setResched(true)} style={{ minHeight: 0 }}
-                              className={`shrink-0 text-xs font-semibold uppercase tracking-wider px-2.5 py-1 rounded-md border transition-colors cursor-pointer ${confirmed ? "border-emerald-600/20 text-emerald-700 hover:bg-emerald-100" : "border-active/30 text-active hover:bg-active/10"}`}>
-                              Reschedule
-                            </button>
-                          )}
-                        </div>
-                        {cur === "pending" && (
-                          <div className="flex gap-2 flex-wrap">
-                            {item.scheduled_at && (
-                              <button type="button" disabled={busy || !item.booking_id}
-                                onClick={() => patchJob({ status: "confirmed" }, "ยืนยันนัดแล้ว")}
-                                className={PRIMARY_BTN}>ลูกค้ายืนยันแล้ว</button>
-                            )}
-                            <button type="button" disabled={busy || !item.booking_id}
-                              onClick={() => patchJob({ status: "follow" }, "ย้ายกลับไปติดตาม")}
-                              className={SECONDARY_BTN}>กลับไปติดตาม</button>
-                          </div>
-                        )}
-                      </>
-                    );
-                  })()}
-
-                  <div className={SECTION}>
-                    <div className={FIELD_LABEL}>จ่ายทีมช่าง</div>
-                    <div className="text-xs text-gray-500 mb-2">ปกติจ่ายงานด้วยการลากวางในปฏิทิน ตรงนี้เป็นทางลัดสำหรับงานเดี่ยว</div>
-                    <div className="grid grid-cols-2 md:grid-cols-7 gap-2">
-                      {teams.map((t) => (
-                        <button key={t.id} type="button" disabled={busy || !item.booking_id}
-                          onClick={() => patchJob({ team_id: t.id }, `จ่ายงานให้ทีม ${t.name} แล้ว`)}
-                          className={chipBtn(item.team_id === t.id)}>
-                          {teamLabel(t.name)} <span className={`font-normal ${item.team_id === t.id ? "text-white/70" : "text-gray-400"}`}>· ค้าง {t.open_jobs}</span>
-                        </button>
-                      ))}
-                    </div>
-                    {!teams.length && <span className="text-sm text-gray-400">ยังไม่มีทีมช่างในระบบ</span>}
+                  <div className="flex items-center gap-2.5 px-3 py-2.5 rounded-lg border bg-emerald-50 border-emerald-600/15 text-sm text-emerald-900">
+                    <CheckIcon className="w-4 h-4 shrink-0 text-emerald-600" strokeWidth={2.5} />
+                    <span className="min-w-0">ชำระค่าบริการแล้ว{item.q_doc_no && <> ตามใบ <b className="font-mono">{item.q_doc_no}</b></>} — โทรตกลงวันนัดกับลูกค้า</span>
                   </div>
-
-                  {item.team_id && cur === "confirmed" && (
-                    <div className="flex md:justify-end">
-                      <button type="button" disabled={busy}
-                        onClick={() => patchJob({ status: "progress" }, "เริ่มงานแล้ว")}
-                        className={`${PRIMARY_BTN} flex-1 md:flex-none md:w-64`}>ช่างถึงหน้างานแล้ว</button>
-                    </div>
-                  )}
+                  {callForm(true)}
                 </div>
-                )}
-              </StepCard>
-            )}
-
-            {/* ★ 28 ก.ย. 69 ตัดขั้น "รอปิด" — เข้างานเป็นขั้นสุดท้ายก่อนปิด: กรอกใบ + ลูกค้าเซ็น → กดปิดงานท้ายใบจบเลย */}
-            {step === 4 && (
-              <StepCard n={4} state={stepState(4)} title="เข้างาน — ช่างทำงาน · ลูกค้าเซ็นรับ" doneTitle="เข้างานเสร็จ" onHeaderClick={toggleDone}>
-                {stepState(4) === "done" && item.booking_id ? doneView(
-                  <DoneHead text={<>
-                    {report?.result === "pass" ? "ผลตรวจ ผ่าน" : report?.result === "fail" ? "ผลตรวจ ไม่ผ่าน" : "ตรวจงานเสร็จ"}
-                    {/* เลขใบห้ามตัดกลางขีด (มือถือเคยขึ้น "OM-" / "6909-0099") */}
-                    {report?.job_no && <> · ใบบริการ <span className="whitespace-nowrap">{report.job_no}</span></>}
-                  </>}>
-                    <ServiceDocButton bookingId={item.booking_id} />
-                  </DoneHead>,
-                  // ใบที่ปิดแล้วล็อกอ่านอย่างเดียวเอง (ทุกช่อง/ปุ่ม disabled + แถบ lock) — ไล่ดูขั้นย่อยได้ครบ
-                  () => <JobFormPanel jobId={String(item.booking_id)} wrapClass="" embedded />,
-                ) : item.booking_id ? (
-                  // ★ เฟส 3: ใบตรวจรับงานฝังมาเลย ไม่ต้องเด้งออกไปหน้าอื่นแล้ว
-                  //   ใบเดียวกับ /om/field/[id] เป๊ะ (components/om/JobFormPanel) แก้ที่เดียวได้ทั้งสองที่
-                  // ★ 28 ก.ย. 69 (แผน 20260928-03): วางตรงในการ์ดแบบ InstallChecklist ในการ์ด Install — ไม่ห่อ SECTION ซ้อน
-                  //   ใบมีแถบขั้นย่อย (ตรวจ / รูป · บันทึก / ส่งมอบ) ของตัวเอง · wrapClass ว่าง = ไม่สร้าง scroll ซ้อน
-                  <JobFormPanel jobId={String(item.booking_id)} wrapClass="" embedded
-                    onClosed={() => { onSaved("ปิดงานเรียบร้อย"); onDone(); }}
-                    intro={
-                      <div className="text-xs text-gray-500 mb-3">
-                        {/* ตัดสิทธิ์ไหม — เดิมอยู่การ์ดปิดงาน ซึ่งตอนนี้ล็อกจนกว่าจะปิด (แผน 20260929-02) */}
-                        กรอกใบตรวจ ให้ลูกค้าเซ็นรับ แล้วกด<b>ปิดงาน</b>ที่ขั้นส่งมอบ · {quotaNote} · ช่างกรอกจากมือถือได้ ใบเดียวกัน
-                        <a href={`/om/field/${item.booking_id}`}
-                          className="ml-2 text-active font-semibold no-underline hover:underline">เปิดเต็มจอ ›</a>
-                        {/* ใบเก่าที่ค้างสถานะรอปิด (ก่อนตัดขั้น) — บอกให้ปิดต่อจากใบนี้ได้เลย */}
-                        {cur === "checked" && (
-                          <div className="mt-1 text-teal-700 font-semibold">ช่างทำงานเสร็จแล้ว รอปิดงาน — ปิดต่อได้ที่ขั้นส่งมอบ</div>
+              ) : (
+              <div className="space-y-3">
+                {/* ★ แถบนัด + ปุ่ม Reschedule ยกจากขั้นย่อย "นัด" ของ Install ฝั่งขาย (แผน 20260928-04 ข้อ 8)
+                    สีม่วง = นัดแล้ว รอยืนยัน · สีเขียว = ลูกค้ายืนยันแล้ว · เลื่อนได้จนกว่าช่างจะเริ่มงาน */}
+                {resched && item.booking_id ? (
+                  <OmRescheduler bookingId={item.booking_id} currentAt={item.scheduled_at} rules={rules}
+                    onCancel={() => setResched(false)}
+                    onSaved={(m) => { setResched(false); onSaved(m); onDone(); }} />
+                ) : (() => {
+                  const confirmed = cur !== "pending" && at >= 3;
+                  const canResched = !!item.booking_id && (cur === "pending" || cur === "confirmed");
+                  return (
+                    <>
+                      <div className={`flex items-center gap-2.5 px-3 py-2.5 rounded-lg border ${confirmed ? "bg-emerald-50 border-emerald-600/15" : "bg-active-light border-active/20"}`}>
+                        <svg className={`w-4 h-4 shrink-0 ${confirmed ? "text-emerald-600" : "text-active"}`} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                          <path strokeLinecap="round" strokeLinejoin="round" d="M6.75 3v2.25M17.25 3v2.25M3 18.75V7.5a2.25 2.25 0 012.25-2.25h13.5A2.25 2.25 0 0121 7.5v11.25" />
+                        </svg>
+                        <div className="flex-1 flex items-baseline gap-1.5 flex-wrap min-w-0">
+                          <span className={`text-xs font-semibold tracking-wider uppercase ${confirmed ? "text-emerald-700/70" : "text-active/70"}`}>
+                            {confirmed ? "ยืนยันแล้ว" : "นัดหมายแล้ว"}
+                          </span>
+                          {/* ★ ขั้น 01 ปิดแล้วเป็นอ่านอย่างเดียว (แผน 20260929-02) — ทางกลับคือปุ่ม "กลับไปติดตาม" ด้านล่าง */}
+                          {item.scheduled_at
+                            ? <span className={`text-sm font-bold ${confirmed ? "text-emerald-900" : "text-active"}`}>{thDT(item.scheduled_at)}</span>
+                            : <span className="text-sm text-gray-500 italic">ยังไม่มีวันนัด{cur === "pending" && <> — กด &ldquo;กลับไปติดตาม&rdquo; แล้วโทรตกลงนัดใหม่</>}</span>}
+                        </div>
+                        {canResched && item.scheduled_at && (
+                          <button type="button" onClick={() => setResched(true)} style={{ minHeight: 0 }}
+                            className={`shrink-0 text-xs font-semibold uppercase tracking-wider px-2.5 py-1 rounded-md border transition-colors cursor-pointer ${confirmed ? "border-emerald-600/20 text-emerald-700 hover:bg-emerald-100" : "border-active/30 text-active hover:bg-active/10"}`}>
+                            Reschedule
+                          </button>
                         )}
                       </div>
-                    } />
-                ) : (
-                  <div className={`${SECTION} text-sm text-gray-500`}>ยังไม่มีใบงาน — ใบตรวจรับงานจะขึ้นเมื่อสร้างนัดแล้ว</div>
+                      {cur === "pending" && (
+                        <div className="flex gap-2 flex-wrap">
+                          {item.scheduled_at && (
+                            <button type="button" disabled={busy || !item.booking_id}
+                              onClick={() => patchJob({ status: "confirmed" }, "ยืนยันนัดแล้ว")}
+                              className={PRIMARY_BTN}>ลูกค้ายืนยันแล้ว</button>
+                          )}
+                          <button type="button" disabled={busy || !item.booking_id}
+                            onClick={() => patchJob({ status: "follow" }, "ย้ายกลับไปติดตาม")}
+                            className={SECONDARY_BTN}>กลับไปติดตาม</button>
+                        </div>
+                      )}
+                    </>
+                  );
+                })()}
+
+                <div className={SECTION}>
+                  <div className={FIELD_LABEL}>จ่ายทีมช่าง</div>
+                  <div className="text-xs text-gray-500 mb-2">ปกติจ่ายงานด้วยการลากวางในปฏิทิน ตรงนี้เป็นทางลัดสำหรับงานเดี่ยว</div>
+                  <div className="grid grid-cols-2 md:grid-cols-7 gap-2">
+                    {teams.map((t) => (
+                      <button key={t.id} type="button" disabled={busy || !item.booking_id}
+                        onClick={() => patchJob({ team_id: t.id }, `จ่ายงานให้ทีม ${t.name} แล้ว`)}
+                        className={chipBtn(item.team_id === t.id)}>
+                        {teamLabel(t.name)} <span className={`font-normal ${item.team_id === t.id ? "text-white/70" : "text-gray-400"}`}>· ค้าง {t.open_jobs}</span>
+                      </button>
+                    ))}
+                  </div>
+                  {!teams.length && <span className="text-sm text-gray-400">ยังไม่มีทีมช่างในระบบ</span>}
+                </div>
+
+                {item.team_id && cur === "confirmed" && (
+                  <div className="flex md:justify-end">
+                    <button type="button" disabled={busy}
+                      onClick={() => patchJob({ status: "progress" }, "เริ่มงานแล้ว")}
+                      className={`${PRIMARY_BTN} flex-1 md:flex-none md:w-64`}>ช่างถึงหน้างานแล้ว</button>
+                  </div>
                 )}
-              </StepCard>
-            )}
+              </div>
+              )}
+            </StepCard>
+
+            {/* ★ 28 ก.ย. 69 ตัดขั้น "รอปิด" — เข้างานเป็นขั้นสุดท้ายก่อนปิด: กรอกใบ + ลูกค้าเซ็น → กดปิดงานท้ายใบจบเลย */}
+            <StepCard n={4} className={cardWrap(4)} state={stepState(4)} title="เข้างาน — ช่างทำงาน · ลูกค้าเซ็นรับ" doneTitle="เข้างานเสร็จ" onHeaderClick={() => toggleDone(4)}>
+              {stepState(4) === "done" && item.booking_id ? doneView(4,
+                <DoneHead text={<>
+                  {report?.result === "pass" ? "ผลตรวจ ผ่าน" : report?.result === "fail" ? "ผลตรวจ ไม่ผ่าน" : "ตรวจงานเสร็จ"}
+                  {/* เลขใบห้ามตัดกลางขีด (มือถือเคยขึ้น "OM-" / "6909-0099") */}
+                  {report?.job_no && <> · ใบบริการ <span className="whitespace-nowrap">{report.job_no}</span></>}
+                </>}>
+                  <ServiceDocButton bookingId={item.booking_id} />
+                </DoneHead>,
+                // ใบที่ปิดแล้วล็อกอ่านอย่างเดียวเอง (ทุกช่อง/ปุ่ม disabled + แถบ lock) — ไล่ดูขั้นย่อยได้ครบ
+                () => <JobFormPanel jobId={String(item.booking_id)} wrapClass="" embedded />,
+              ) : item.booking_id ? (
+                // ★ เฟส 3: ใบตรวจรับงานฝังมาเลย ไม่ต้องเด้งออกไปหน้าอื่นแล้ว
+                //   ใบเดียวกับ /om/field/[id] เป๊ะ (components/om/JobFormPanel) แก้ที่เดียวได้ทั้งสองที่
+                // ★ 28 ก.ย. 69 (แผน 20260928-03): วางตรงในการ์ดแบบ InstallChecklist ในการ์ด Install — ไม่ห่อ SECTION ซ้อน
+                //   ใบมีแถบขั้นย่อย (ตรวจ / รูป · บันทึก / ส่งมอบ) ของตัวเอง · wrapClass ว่าง = ไม่สร้าง scroll ซ้อน
+                <JobFormPanel jobId={String(item.booking_id)} wrapClass="" embedded
+                  onClosed={() => { onSaved("ปิดงานเรียบร้อย"); onDone(); }}
+                  intro={
+                    <div className="text-xs text-gray-500 mb-3">
+                      {/* ตัดสิทธิ์ไหม — เดิมอยู่การ์ดปิดงาน ซึ่งตอนนี้ล็อกจนกว่าจะปิด (แผน 20260929-02) */}
+                      กรอกใบตรวจ ให้ลูกค้าเซ็นรับ แล้วกด<b>ปิดงาน</b>ที่ขั้นส่งมอบ · {quotaNote} · ช่างกรอกจากมือถือได้ ใบเดียวกัน
+                      <a href={`/om/field/${item.booking_id}`}
+                        className="ml-2 text-active font-semibold no-underline hover:underline">เปิดเต็มจอ ›</a>
+                      {/* ใบเก่าที่ค้างสถานะรอปิด (ก่อนตัดขั้น) — บอกให้ปิดต่อจากใบนี้ได้เลย */}
+                      {cur === "checked" && (
+                        <div className="mt-1 text-teal-700 font-semibold">ช่างทำงานเสร็จแล้ว รอปิดงาน — ปิดต่อได้ที่ขั้นส่งมอบ</div>
+                      )}
+                    </div>
+                  } />
+              ) : (
+                <div className={`${SECTION} text-sm text-gray-500`}>ยังไม่มีใบงาน — ใบตรวจรับงานจะขึ้นเมื่อสร้างนัดแล้ว</div>
+              )}
+            </StepCard>
 
             {/* ★ ปิดงาน = ขั้นสุดท้าย มีแค่ปิดแล้ว (done) กับยังไม่ถึง (locked · ไม่มีเนื้อใน) — แผน 20260929-02
                 บรรทัดสรุป = วันปิด · ตัดสิทธิ์ + ปุ่มใบบริการ (ตำแหน่งเดียวกับปุ่ม "ใบส่งมอบ" ในหัวขั้นติดตั้งที่เสร็จแล้วฝั่งขาย)
                 กางดู = เหตุการณ์ปิดงาน + เปิดใบงานซ่อม (งานถัดไป ไม่ได้แก้ใบงานนี้) */}
-            {step === 5 && (
-              <StepCard n={5} state={stepState(5)} title="ปิดงาน" doneTitle="ปิดงานแล้ว" onHeaderClick={toggleDone}>
-                {doneView(
-                  // วันปิด = เวลาปิดในใบตรวจ · ใบเก่าที่ไม่มี (ปิดตอนบันทึกครั้งแรกก่อนแก้ API 29 ก.ย.) ใช้เวลาเหตุการณ์ปิดงาน แบบแท็บ Timeline
-                  <DoneHead text={<>
-                    ปิดงาน{(() => {
-                      const at = report?.finished_at ?? rowsOf("closed").find((r) => r.action === "done")?.at ?? null;
-                      return at ? ` ${thD(at)}` : "";
-                    })()} · {report
-                      ? (report.redeemed > 0 ? `ตัดสิทธิ์ล้าง ${report.redeemed} ครั้ง` : "ไม่ตัดสิทธิ์")
-                      : quotaNote}
-                  </>}>
-                    {item.booking_id && <ServiceDocButton bookingId={item.booking_id} />}
-                  </DoneHead>,
-                  () => <>
-                {events("closed", "emerald", "ปิดงาน")}
+            <StepCard n={5} className={cardWrap(5)} state={stepState(5)} title="ปิดงาน" doneTitle="ปิดงานแล้ว" onHeaderClick={() => toggleDone(5)}>
+              {doneView(5,
+                // วันปิด = เวลาปิดในใบตรวจ · ใบเก่าที่ไม่มี (ปิดตอนบันทึกครั้งแรกก่อนแก้ API 29 ก.ย.) ใช้เวลาเหตุการณ์ปิดงาน แบบแท็บ Timeline
+                <DoneHead text={<>
+                  ปิดงาน{(() => {
+                    const at = report?.finished_at ?? rowsOf("closed").find((r) => r.action === "done")?.at ?? null;
+                    return at ? ` ${thD(at)}` : "";
+                  })()} · {report
+                    ? (report.redeemed > 0 ? `ตัดสิทธิ์ล้าง ${report.redeemed} ครั้ง` : "ไม่ตัดสิทธิ์")
+                    : quotaNote}
+                </>}>
+                  {item.booking_id && <ServiceDocButton bookingId={item.booking_id} />}
+                </DoneHead>,
+                () => <>
+              {events("closed", "emerald", "ปิดงาน")}
 
-                {/* ใบงานซ่อม (เฟส 5) — ช่างแจ้งในใบตรวจรับงาน ทีม O&M เปิดใบใหม่ต่อจากตรงนี้
-                    ★ เปิดได้เฉพาะใบที่ปิดแล้ว (ใบงานนี้คือใบล่าสุดของบ้าน = บ้านไม่มีใบค้าง) · เปิดได้แม้ช่างไม่ได้ติ๊ก */}
-                {cur === "closed" && item.booking_id && !item.repair_child_id && (
-                  <div className={`rounded-lg border p-3 ${item.repair_needed === 1 && !item.repair_cancel_id ? "bg-amber-50 border-amber-200" : "bg-white/60 border-active/15"}`}>
-                    {/* เปิดใบซ่อมแล้วยกเลิก — บอกว่าจบไปแล้วด้วยเหตุผลอะไร · ลูกค้าเปลี่ยนใจเปิดใหม่ได้ */}
-                    {item.repair_cancel_id
-                      ? !rpOpen && (
-                        <div className="text-sm text-gray-600 flex items-center gap-2 flex-wrap">
-                          <span>ใบงานซ่อม #{item.repair_cancel_id} ถูกยกเลิกแล้ว{item.repair_cancel_reason && <> — เหตุผล: <b>{item.repair_cancel_reason}</b></>}</span>
-                          <button type="button" onClick={() => setRpOpen(true)} style={{ minHeight: 0 }}
-                            className="text-active font-semibold hover:underline cursor-pointer">ลูกค้าเปลี่ยนใจ? เปิดใบงานซ่อมใหม่ ›</button>
-                        </div>
-                      )
-                      : item.repair_needed === 1
-                      ? <div className="text-sm font-semibold text-amber-800">⚠ ช่างแจ้งพบงานซ่อม — ยังไม่เปิดใบงานซ่อม</div>
-                      : !rpOpen && (
-                        <div className="text-sm text-gray-600 flex items-center gap-2 flex-wrap">
-                          ช่างไม่ได้แจ้งงานซ่อม
-                          <button type="button" onClick={() => setRpOpen(true)} style={{ minHeight: 0 }}
-                            className="text-active font-semibold hover:underline cursor-pointer">พบปัญหาภายหลัง? เปิดใบงานซ่อม ›</button>
-                        </div>
-                      )}
-
-                    {rpOpen && (
-                      <div className="mt-3 space-y-3">
-                        <div>
-                          <label className={FIELD_LABEL}>อาการ / สิ่งที่ต้องซ่อม <span className="text-red-500">*</span></label>
-                          <textarea value={rpDetail} onChange={(e) => setRpDetail(e.target.value)} rows={3} maxLength={1000}
-                            placeholder="เช่น อินเวอร์เตอร์ขึ้น error E-21 · สาย DC หลวม"
-                            className="w-full px-3 py-2 rounded-lg border border-gray-200 text-sm bg-white focus:outline-none focus:border-active" />
-                        </div>
-                        <div>
-                          <label className={FIELD_LABEL}>ประกันการติดตั้ง <span className="text-red-500">*</span></label>
-                          <div className="flex gap-2 flex-wrap">
-                            <button type="button" onClick={() => setRpWarranty(true)} className={chipBtn(rpWarranty === true)}>ในประกัน — ไม่เก็บเงิน</button>
-                            <button type="button" onClick={() => setRpWarranty(false)} className={chipBtn(rpWarranty === false)}>นอกประกัน — ต้องเสนอราคา</button>
-                          </div>
-                          <span className="block mt-1.5 text-xxs text-gray-500">
-                            {item.warranty_end
-                              ? <>ใบรับประกันฝั่งขาย: ประกันถึง <b>{thD(item.warranty_end)}</b> ({item.warranty_end >= today ? "ยังไม่หมด" : "หมดแล้ว"}) — ระบบเลือกให้ตามนี้ แก้ได้</>
-                              : <>ไม่มีวันหมดประกันในระบบ{item.warranty_start && <> · เริ่มประกัน {thD(item.warranty_start)}</>} — ตรวจสอบก่อนเลือก</>}
-                          </span>
-                        </div>
-                        <div className="rounded-lg bg-gray-50 border border-gray-200 px-3 py-2 text-xs leading-relaxed text-gray-600">
-                          {rpWarranty === true && <>สร้าง<b>ใบงานซ่อม</b>ขั้น <b>ติดตาม</b> → โทรนัดได้เลย ข้ามเสนอราคา/ชำระเงิน · ปิดงานแล้ว<b>ไม่ตัดสิทธิ์ล้าง</b></>}
-                          {rpWarranty === false && <>สร้าง<b>ใบงานซ่อม</b>ขั้น <b>เสนอราคา</b> → Sale ออกใบ → อนุมัติ → รับเงิน → นัด</>}
-                          {rpWarranty === null && <>เลือกก่อนว่าในประกันหรือนอกประกัน</>}
-                        </div>
-                        <div className="flex md:justify-end">
-                          <button type="button" disabled={busy} onClick={openRepair} className={`${PRIMARY_BTN} flex-1 md:flex-none md:w-64`}>
-                            {busy ? "กำลังเปิด…" : "เปิดใบงานซ่อม"}
-                          </button>
-                        </div>
+              {/* ใบงานซ่อม (เฟส 5) — ช่างแจ้งในใบตรวจรับงาน ทีม O&M เปิดใบใหม่ต่อจากตรงนี้
+                  ★ เปิดได้เฉพาะใบที่ปิดแล้ว (ใบงานนี้คือใบล่าสุดของบ้าน = บ้านไม่มีใบค้าง) · เปิดได้แม้ช่างไม่ได้ติ๊ก */}
+              {cur === "closed" && item.booking_id && !item.repair_child_id && (
+                <div className={`rounded-lg border p-3 ${item.repair_needed === 1 && !item.repair_cancel_id ? "bg-amber-50 border-amber-200" : "bg-white/60 border-active/15"}`}>
+                  {/* เปิดใบซ่อมแล้วยกเลิก — บอกว่าจบไปแล้วด้วยเหตุผลอะไร · ลูกค้าเปลี่ยนใจเปิดใหม่ได้ */}
+                  {item.repair_cancel_id
+                    ? !rpOpen && (
+                      <div className="text-sm text-gray-600 flex items-center gap-2 flex-wrap">
+                        <span>ใบงานซ่อม #{item.repair_cancel_id} ถูกยกเลิกแล้ว{item.repair_cancel_reason && <> — เหตุผล: <b>{item.repair_cancel_reason}</b></>}</span>
+                        <button type="button" onClick={() => setRpOpen(true)} style={{ minHeight: 0 }}
+                          className="text-active font-semibold hover:underline cursor-pointer">ลูกค้าเปลี่ยนใจ? เปิดใบงานซ่อมใหม่ ›</button>
+                      </div>
+                    )
+                    : item.repair_needed === 1
+                    ? <div className="text-sm font-semibold text-amber-800">⚠ ช่างแจ้งพบงานซ่อม — ยังไม่เปิดใบงานซ่อม</div>
+                    : !rpOpen && (
+                      <div className="text-sm text-gray-600 flex items-center gap-2 flex-wrap">
+                        ช่างไม่ได้แจ้งงานซ่อม
+                        <button type="button" onClick={() => setRpOpen(true)} style={{ minHeight: 0 }}
+                          className="text-active font-semibold hover:underline cursor-pointer">พบปัญหาภายหลัง? เปิดใบงานซ่อม ›</button>
                       </div>
                     )}
-                  </div>
-                )}
-                  </>)}
-              </StepCard>
-            )}
+
+                  {rpOpen && (
+                    <div className="mt-3 space-y-3">
+                      <div>
+                        <label className={FIELD_LABEL}>อาการ / สิ่งที่ต้องซ่อม <span className="text-red-500">*</span></label>
+                        <textarea value={rpDetail} onChange={(e) => setRpDetail(e.target.value)} rows={3} maxLength={1000}
+                          placeholder="เช่น อินเวอร์เตอร์ขึ้น error E-21 · สาย DC หลวม"
+                          className="w-full px-3 py-2 rounded-lg border border-gray-200 text-sm bg-white focus:outline-none focus:border-active" />
+                      </div>
+                      <div>
+                        <label className={FIELD_LABEL}>ประกันการติดตั้ง <span className="text-red-500">*</span></label>
+                        <div className="flex gap-2 flex-wrap">
+                          <button type="button" onClick={() => setRpWarranty(true)} className={chipBtn(rpWarranty === true)}>ในประกัน — ไม่เก็บเงิน</button>
+                          <button type="button" onClick={() => setRpWarranty(false)} className={chipBtn(rpWarranty === false)}>นอกประกัน — ต้องเสนอราคา</button>
+                        </div>
+                        <span className="block mt-1.5 text-xxs text-gray-500">
+                          {item.warranty_end
+                            ? <>ใบรับประกันฝั่งขาย: ประกันถึง <b>{thD(item.warranty_end)}</b> ({item.warranty_end >= today ? "ยังไม่หมด" : "หมดแล้ว"}) — ระบบเลือกให้ตามนี้ แก้ได้</>
+                            : <>ไม่มีวันหมดประกันในระบบ{item.warranty_start && <> · เริ่มประกัน {thD(item.warranty_start)}</>} — ตรวจสอบก่อนเลือก</>}
+                        </span>
+                      </div>
+                      <div className="rounded-lg bg-gray-50 border border-gray-200 px-3 py-2 text-xs leading-relaxed text-gray-600">
+                        {rpWarranty === true && <>สร้าง<b>ใบงานซ่อม</b>ขั้น <b>ติดตาม</b> → โทรนัดได้เลย ข้ามเสนอราคา/ชำระเงิน · ปิดงานแล้ว<b>ไม่ตัดสิทธิ์ล้าง</b></>}
+                        {rpWarranty === false && <>สร้าง<b>ใบงานซ่อม</b>ขั้น <b>เสนอราคา</b> → Sale ออกใบ → อนุมัติ → รับเงิน → นัด</>}
+                        {rpWarranty === null && <>เลือกก่อนว่าในประกันหรือนอกประกัน</>}
+                      </div>
+                      <div className="flex md:justify-end">
+                        <button type="button" disabled={busy} onClick={openRepair} className={`${PRIMARY_BTN} flex-1 md:flex-none md:w-64`}>
+                          {busy ? "กำลังเปิด…" : "เปิดใบงานซ่อม"}
+                        </button>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )}
+                </>)}
+            </StepCard>
 
             {/* มือถือไม่มีแผง Activity Log ด้านขวา — แสดงประวัติต่อท้ายการ์ดแทน */}
             <div className="md:hidden pt-2">
@@ -862,6 +954,20 @@ export default function JobDetail({ item, history, bookings = [], onBack, onDone
           <div className="flex-1 overflow-y-auto p-4">{historyTimeline}</div>
         </aside>
       </div>
+
+      {/* ปุ่มล่างติดจอ มือถือเท่านั้น — ยกจาก footer quick actions ของหน้า lead (แผน 20260929-03 ข้อ 4)
+          O&M ไม่มีปุ่ม Follow-up (ผลโทรอยู่ในการ์ดขั้นติดตาม) ⇒ Note ปุ่มเดียวเต็มแถว */}
+      {(tab === "info" || tab === "workflow") && (
+        <div className="fixed left-0 right-0 md:hidden above-nav bg-white border-t border-gray-100 z-40 px-3 py-2 flex gap-2">
+          <button type="button" onClick={() => { setNoteErr(""); setNoteOpen(true); }}
+            className="flex-1 flex items-center justify-center gap-1.5 py-2.5 rounded-xl bg-gray-100 text-sm font-semibold active:bg-gray-200 transition-colors cursor-pointer">
+            <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+              <path strokeLinecap="round" strokeLinejoin="round" d="M16.862 4.487l1.687-1.688a1.875 1.875 0 112.652 2.652L10.582 16.07a4.5 4.5 0 01-1.897 1.13L6 18l.8-2.685a4.5 4.5 0 011.13-1.897l8.932-8.931z" />
+            </svg>
+            Note
+          </button>
+        </div>
+      )}
 
       {/* บันทึกโน้ต — หน้าตายกจาก AddActivityModal โหมด note ของหน้า lead ทั้งก้อน (แผน 20260928-04 ข้อ 7) */}
       {noteOpen && (
@@ -909,8 +1015,10 @@ export default function JobDetail({ item, history, bookings = [], onBack, onDone
 //   ปิดแล้ว = ชื่อเปลี่ยนเป็น "…แล้ว" + ✓ DONE/PAID · กดหัวการ์ดพับ/กางสรุปได้ (onHeaderClick แบบหน้า lead)
 //   ยังไม่ถึง (locked) = เส้นประ กดไม่ได้ ไม่มีเนื้อใน · ข้าม (งานใช้สิทธิ์ฟรี) = เส้นประ ยังบอกได้ว่าทำไมข้าม
 //   เดิมขั้นที่ยังไม่ถึงแสดงเนื้อในและกดปุ่มได้ทุกขั้น
-function StepCard({ n, state, title, doneTitle, onHeaderClick, children }: {
+function StepCard({ n, state, title, doneTitle, onHeaderClick, className = "", children }: {
   n: number; state: StepState; title: string;
+  /** คลาสเพิ่มที่กรอบนอก — ใช้ซ่อนการ์ดที่ไม่ได้เลือกบน desktop (มือถือเรียงทุกการ์ด · แผน 20260929-03) */
+  className?: string;
   /** ชื่อตอนปิดขั้นแล้ว (แบบ "Survey Done" ของหน้า lead) */
   doneTitle?: string;
   /** กดหัวการ์ดตอนปิดขั้นแล้ว = พับ/กางสรุป */
@@ -933,7 +1041,7 @@ function StepCard({ n, state, title, doneTitle, onHeaderClick, children }: {
   const headerClick = state === "done" ? onHeaderClick : undefined;
 
   return (
-    <div className={`rounded-2xl overflow-hidden transition-all ${container}`}>
+    <div className={`rounded-2xl overflow-hidden transition-all ${container} ${className}`}>
       <div className={`flex items-center gap-3 px-5 py-4 ${headerClick ? "cursor-pointer" : ""}`} onClick={headerClick}>
         <div className={`w-10 h-8 rounded-xl flex items-center justify-center shrink-0 ${iconBox}`}>
           <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.8}>
@@ -966,7 +1074,10 @@ function StepCard({ n, state, title, doneTitle, onHeaderClick, children }: {
           <span className="text-xs font-semibold uppercase tracking-wider text-gray-400 shrink-0">ข้าม</span>
         )}
       </div>
-      {state !== "locked" && <div className="px-5 pb-5 pt-3 border-t border-gray-100">{children}</div>}
+      {/* ข้าม (งานใช้สิทธิ์ฟรี) บนมือถือเหลือหัวการ์ด — เรียงต่อกันแล้วเนื้อใน "ทำไมข้าม" ดันขั้นถัดไปตกจอ (แผน 20260929-03) */}
+      {state !== "locked" && (
+        <div className={`px-5 pb-5 pt-3 border-t border-gray-100 ${state === "skipped" ? "max-md:hidden" : ""}`}>{children}</div>
+      )}
     </div>
   );
 }
