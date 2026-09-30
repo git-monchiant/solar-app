@@ -7,7 +7,9 @@ import {
   OCCUPATIONS, OUTAGE_PRIORITIES, PAYMENT_INTERESTS, PEAK_USAGE, QUESTIONNAIRE_SECTIONS, RESIDENCE_TYPES,
   ROOF_SHAPES, USAGE_TREND_OPTIONS, WORK_DAYS_PER_WEEK, YES_NO, YES_NO_BIN,
   YES_NO_CONSIDERING, YES_NO_MAYBE, FIELD_LABELS, monthlyBillBucket, optionLabel,
+  LEGACY_PEAK_USAGE as LEGACY_PEAK_USAGE_CODES,
 } from "@/lib/customer-questionnaire";
+import { computeLoad, loadSummaryText } from "@/lib/load-assumption";
 import type {
   CountItem, CountSeries, CustomerDashboardData, CustomerDashboardFilters,
   CustomerDrilldownRow,
@@ -35,6 +37,7 @@ type QuestionnaireRow = {
   roof_shape: string | null;
   house_age: string | null;
   occupant_total: number | null;
+  occupant_adults: number | null;
   occupant_elderly: number | null;
   occupant_kids: number | null;
   occupant_pets: number | null;
@@ -47,6 +50,7 @@ type QuestionnaireRow = {
   work_days_per_week: string | null;
   ac_split: string | null;
   ev_charge_period: string | null;
+  load_profile: string | null;
   future_ev: string | null;
   future_ev_charger: string | null;
   future_extend_home: string | null;
@@ -74,11 +78,7 @@ type QuestionnaireRow = {
 
 type Option = { value: string; label: string; short?: string };
 
-const LEGACY_PEAK_USAGE: Option[] = [
-  { value: "day", label: "กลางวัน (ข้อมูลเดิม)" },
-  { value: "night", label: "กลางคืน (ข้อมูลเดิม)" },
-  { value: "both", label: "กลางวันและกลางคืน (ข้อมูลเดิม)" },
-];
+const LEGACY_PEAK_USAGE: Option[] = LEGACY_PEAK_USAGE_CODES.map(o => ({ value: o.value, label: `${o.label} (ข้อมูลเดิม)` }));
 
 const LEGACY_ROOF_SHAPES: Option[] = [
   { value: "gable", label: "หน้าจั่ว (ข้อมูลเดิม)" },
@@ -234,10 +234,10 @@ async function queryRows(filters: CustomerDashboardFilters): Promise<Questionnai
       l.project_id, p.name AS project_name,
       d.updated_at, d.residence_type, d.monthly_bill, d.peak_usage,
       d.electrical_phase, d.wants_battery, d.appliances, d.roof_shape,
-      d.house_age, d.occupant_total, d.occupant_elderly, d.occupant_kids,
+      d.house_age, d.occupant_total, d.occupant_adults, d.occupant_elderly, d.occupant_kids,
       d.occupant_pets, d.monthly_bill_max, d.meter_size, d.home_at_daytime,
       d.daytime_occupants, d.work_at_home, d.business_type,
-      d.work_days_per_week, d.ac_split, d.ev_charge_period, d.future_ev,
+      d.work_days_per_week, d.ac_split, d.ev_charge_period, d.load_profile, d.future_ev,
       d.future_ev_charger, d.future_extend_home, d.future_more_members,
       d.future_smart_home, d.future_battery, d.outage_priorities,
       d.bill_rise_action, d.had_roof_leak, d.did_roof_repair,
@@ -469,6 +469,7 @@ function fieldAnswer(row: QuestionnaireRow, field: string): string {
   if (field === "monthly_bill" || field === "monthly_bill_max") return `${Number(raw).toLocaleString("th-TH")} บาท`;
   if (field.startsWith("occupant_")) return `${Number(raw)}`;
   if (field === "ac_split") { const ac = parseAcSplit(row.ac_split); return ac ? `กลางวัน ${ac.day} / กลางคืน ${ac.night}` : ""; }
+  if (field === "load_profile") return loadSummaryText(computeLoad(row));
   if (field === "decision_factors") { const n = Object.keys(parseFactors(row.decision_factors)).length; return n ? `ให้คะแนน ${n} ปัจจัย` : ""; }
   if (field === "appliances" || field === "daytime_occupants" || field === "outage_priorities") {
     const options = OPTIONS_BY_FIELD[field];

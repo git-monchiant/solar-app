@@ -188,12 +188,10 @@ const SurveyForm = forwardRef<SurveyFormHandle, Props>(function SurveyForm({ lea
     } finally { setUploadingPhotoNoteIdx(null); }
   };
 
-  // Duplicates of pre_* (default from pre_*)
+  // Duplicates of pre_* (default from pre_*). The EV-charger checkbox that
+  // used to sit here (survey_appliances) is gone: Customer Info is the single
+  // place appliances are recorded, and migration 200 copied the ticks across.
   const [monthlyBill, setMonthlyBill] = useState<number | "">(lead.survey_monthly_bill ?? lead.pre_monthly_bill ?? "");
-  const [appliances, setAppliances] = useState<string[]>(
-    (lead.survey_appliances ?? lead.pre_appliances ?? "").split(",").filter(Boolean)
-  );
-  const toggleAppliance = (v: string) => setAppliances(prev => prev.includes(v) ? prev.filter(a => a !== v) : [...prev, v]);
 
   // Payload builder — returns ONLY fields relevant to the current section.
   // Critical: SurveyForm is mounted per-subStep, and state inits from lead
@@ -214,7 +212,6 @@ const SurveyForm = forwardRef<SurveyFormHandle, Props>(function SurveyForm({ lea
       survey_main_cable_sqmm: mainCableSqmm || null,
       survey_panel_to_inverter_m: typeof panelToInverterM === "number" ? panelToInverterM : null,
       survey_db_distance_m: typeof dbDistance === "number" ? dbDistance : null,
-      survey_appliances: appliances.length ? appliances.join(",") : null,
     };
     const house = {
       survey_roof_material: roofMaterial || null,
@@ -252,7 +249,7 @@ const SurveyForm = forwardRef<SurveyFormHandle, Props>(function SurveyForm({ lea
   useEffect(() => {
     onFormChange?.(buildPayload());
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [roofMaterial, roofOrientations, roofOrientationNotes, floors, roofArea, meterSize, dbDistance, shading, roofTilt, monthlyBill, appliances, electricalPhase, voltageLN, voltageLL, mdbBrand, mdbModel, mdbSlots, breakerType, mainBreakerAmp, mainCableSqmm, panelToInverterM, roofStructure, roofWidth, roofLength, inverterLocation, wifiSignal, accessMethod, photoNotes]);
+  }, [roofMaterial, roofOrientations, roofOrientationNotes, floors, roofArea, meterSize, dbDistance, shading, roofTilt, monthlyBill, electricalPhase, voltageLN, voltageLL, mdbBrand, mdbModel, mdbSlots, breakerType, mainBreakerAmp, mainCableSqmm, panelToInverterM, roofStructure, roofWidth, roofLength, inverterLocation, wifiSignal, accessMethod, photoNotes]);
 
   // Auto-save to DB (debounced). Pending payload lives in a ref so it can
   // flush on unmount — otherwise navigating between SurveyForm sections within
@@ -273,7 +270,7 @@ const SurveyForm = forwardRef<SurveyFormHandle, Props>(function SurveyForm({ lea
     }, 600);
     pendingRef.current = { payload, timer };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [roofMaterial, roofOrientations, roofOrientationNotes, floors, roofArea, meterSize, dbDistance, shading, roofTilt, monthlyBill, appliances, electricalPhase, voltageLN, voltageLL, mdbBrand, mdbModel, mdbSlots, breakerType, mainBreakerAmp, mainCableSqmm, panelToInverterM, roofStructure, roofWidth, roofLength, inverterLocation, wifiSignal, accessMethod, photoNotes]);
+  }, [roofMaterial, roofOrientations, roofOrientationNotes, floors, roofArea, meterSize, dbDistance, shading, roofTilt, monthlyBill, electricalPhase, voltageLN, voltageLL, mdbBrand, mdbModel, mdbSlots, breakerType, mainBreakerAmp, mainCableSqmm, panelToInverterM, roofStructure, roofWidth, roofLength, inverterLocation, wifiSignal, accessMethod, photoNotes]);
 
   // Flush any pending debounced save when this section unmounts (e.g. user
   // navigates subStep before the 600ms timer fires).
@@ -531,21 +528,10 @@ const SurveyForm = forwardRef<SurveyFormHandle, Props>(function SurveyForm({ lea
         </div>
       </div>
 
-      {/* EV charger — single checkbox-style toggle */}
-      <div className={card}>
-        <div className="space-y-4">
-          <div>
-            <label className="inline-flex items-center gap-2 cursor-pointer select-none">
-              <input
-                type="checkbox"
-                checked={appliances.includes("ev")}
-                onChange={() => toggleAppliance("ev")}
-                className="w-4 h-4 rounded border-gray-300 accent-active"
-              />
-              <span className="text-sm font-semibold text-gray-700">มีจุดชาร์จรถ EV</span>
-            </label>
-          </div>
-        </div>
+      {/* EV charger / appliances moved to Customer Info — say where, so a
+          surveyor who notices a charger on site knows where to record it. */}
+      <div className="rounded-lg border border-dashed border-gray-300 bg-gray-50 px-3 py-2 text-xs text-gray-500">
+        ที่ชาร์จรถ EV และเครื่องใช้ไฟฟ้า (ใช้คำนวณ Load Assumption ในรายงานสำรวจ) บันทึกที่แบบสอบถามลูกค้า — แท็บ Customer Info หัวข้อไลฟ์สไตล์
       </div></>}
 
       {/* =============== §3 Roof — PDF top-down order =============== */}

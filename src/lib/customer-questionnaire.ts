@@ -49,6 +49,17 @@ export const PEAK_USAGE = [
   { value: "all_day", label: "ตลอดวัน" },
 ] as const;
 
+// Codes the form no longer offers but older leads still hold (62 day / 52 both
+// / 10 night on solardb_dev, Sep 2026). Every surface that prints an answer
+// must decode both lists — the site survey report once knew only these three
+// plus "afternoon", so 211 leads answering all_day/evening printed "—".
+// Plain labels here; Dashboard III appends its own "(ข้อมูลเดิม)" marker.
+export const LEGACY_PEAK_USAGE = [
+  { value: "day", label: "กลางวัน" },
+  { value: "night", label: "กลางคืน" },
+  { value: "both", label: "กลางวันและกลางคืน" },
+] as const;
+
 export const MONTHLY_BILL_BUCKETS = [
   { value: "lt2k", label: "ต่ำกว่า 2,000 บาท", min: null, max: 2000, maxInclusive: false },
   { value: "2k4k", label: "2,000–ต่ำกว่า 4,000 บาท", min: 2000, max: 4000, maxInclusive: false },
@@ -258,9 +269,9 @@ export const PAYMENT_INTERESTS = [
 // `key` / column name, never on the number in those comments.
 export const QUESTIONNAIRE_SECTIONS = [
   { id: 1, key: "demographics", title: "Customer Demographics", subtitle: "ข้อมูลลูกค้า", fields: ["occupation", "age_range", "household_income", "payment_interest"] },
-  { id: 2, key: "customer_profile", title: "Customer Profile", subtitle: "ข้อมูลบ้านและผู้อยู่อาศัย", fields: ["residence_type", "house_age", "roof_shape", "occupant_total", "occupant_elderly", "occupant_kids", "occupant_pets"] },
+  { id: 2, key: "customer_profile", title: "Customer Profile", subtitle: "ข้อมูลบ้านและผู้อยู่อาศัย", fields: ["residence_type", "house_age", "roof_shape", "occupant_total", "occupant_adults", "occupant_elderly", "occupant_kids", "occupant_pets"] },
   { id: 3, key: "energy_profile", title: "Energy Profile", subtitle: "การใช้พลังงานปัจจุบัน", fields: ["monthly_bill", "monthly_bill_max", "electrical_phase", "meter_size", "peak_usage"] },
-  { id: 4, key: "lifestyle", title: "Lifestyle Assessment", subtitle: "รูปแบบการใช้ชีวิต", fields: ["home_at_daytime", "daytime_occupants", "work_at_home", "business_type", "work_days_per_week", "ac_split", "appliances", "ev_charge_period"] },
+  { id: 4, key: "lifestyle", title: "Lifestyle Assessment", subtitle: "รูปแบบการใช้ชีวิต", fields: ["home_at_daytime", "daytime_occupants", "work_at_home", "business_type", "work_days_per_week", "ac_split", "appliances", "ev_charge_period", "load_profile"] },
   { id: 5, key: "future_home", title: "Future Home Assessment", subtitle: "แผนบ้านใน 5 ปี", fields: ["future_ev", "future_ev_charger", "future_extend_home", "future_more_members", "future_smart_home", "future_battery"] },
   { id: 6, key: "energy_security", title: "Energy Security Assessment", subtitle: "ความมั่นคงด้านพลังงาน", fields: ["outage_priorities", "bill_rise_action"] },
   { id: 7, key: "home_health", title: "Home Health Check", subtitle: "สุขภาพบ้าน", fields: ["had_roof_leak", "did_roof_repair", "had_electrical_issue", "did_panel_replacement"] },
@@ -276,14 +287,14 @@ export const FIELD_LABELS: Record<string, string> = {
   occupation: "อาชีพ", age_range: "อายุ", household_income: "รายได้ครัวเรือน/เดือน",
   payment_interest: "รูปแบบการชำระเงินที่สนใจ",
   residence_type: "ประเภทที่อยู่อาศัย", house_age: "อายุบ้าน", roof_shape: "ประเภทหลังคา",
-  occupant_total: "จำนวนผู้อยู่อาศัย", occupant_elderly: "จำนวนผู้สูงอายุ",
+  occupant_total: "จำนวนผู้อยู่อาศัย", occupant_adults: "จำนวนผู้ใหญ่", occupant_elderly: "จำนวนผู้สูงอายุ",
   occupant_kids: "จำนวนเด็ก", occupant_pets: "จำนวนสัตว์เลี้ยง",
   monthly_bill: "ค่าไฟเฉลี่ยต่อเดือน", monthly_bill_max: "ค่าไฟสูงสุดต่อเดือน",
   electrical_phase: "ระบบไฟปัจจุบัน", meter_size: "ขนาดมิเตอร์", peak_usage: "ช่วงเวลาที่ใช้ไฟสูงสุด",
   home_at_daytime: "อยู่บ้านช่วงกลางวัน", daytime_occupants: "ผู้อยู่บ้านช่วงกลางวัน",
   work_at_home: "ทำงาน/ทำธุรกิจที่บ้าน", business_type: "ประเภทธุรกิจที่บ้าน",
   work_days_per_week: "จำนวนวันทำงานที่บ้าน", ac_split: "จำนวนแอร์", appliances: "อุปกรณ์/ที่ชาร์จ EV",
-  ev_charge_period: "ช่วงเวลาชาร์จ EV",
+  ev_charge_period: "ช่วงเวลาชาร์จ EV", load_profile: "การใช้ไฟต่อวัน (ประมาณการ)",
   future_ev: "แผนซื้อรถยนต์ EV", future_ev_charger: "แผนติดตั้ง EV Charger",
   future_extend_home: "แผนต่อเติมบ้าน", future_more_members: "แผนเพิ่มสมาชิกในบ้าน",
   future_smart_home: "แผนติดตั้ง Smart Home", future_battery: "แผนติดตั้ง Battery",
