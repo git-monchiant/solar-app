@@ -113,12 +113,11 @@ export const TONE_SOFT: Record<string, string> = {
 
 export const BUCKET_LABEL: Record<string, string> = Object.fromEntries(TABS.map((t) => [t.k, t.t]));
 
-export const SORTS = [
-  { k: "overdue", t: "ค้างนานที่สุดก่อน" },
-  { k: "recent", t: "เพิ่งถึงรอบก่อน" },
-  { k: "quota", t: "สิทธิ์เหลือมากก่อน" },
-  { k: "project", t: "รวมตามโครงการ" },
-  { k: "house", t: "บ้านเลขที่" },
+// เรียง 2 ช่องแบบ Pipeline: ช่องแรก = เรียงตามอะไร · ช่องสอง = ทิศทาง (ป้ายเปลี่ยนตามช่องแรก)
+//   def = ทิศที่ตั้งให้เองตอนเปลี่ยนช่องแรก — สิทธิ์ต้องมาก → น้อย ถึงจะได้บ้านที่ยังล้างฟรีได้ขึ้นก่อน
+export const SORTS: { k: string; t: string; asc: string; desc: string; def: "asc" | "desc" }[] = [
+  { k: "wash", t: "ล้างครั้งล่าสุด", asc: "เก่า → ใหม่", desc: "ใหม่ → เก่า", def: "asc" },
+  { k: "quota", t: "สิทธิ์ล้างคงเหลือ", asc: "น้อย → มาก", desc: "มาก → น้อย", def: "desc" },
 ];
 
 /** 1 แถวของ /api/om/follow — บ้าน 1 หลัง พร้อมใบงานล่าสุด (ถ้ามี) */

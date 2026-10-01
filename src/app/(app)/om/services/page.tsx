@@ -29,7 +29,9 @@ export default function OmServicesPage() {
   const sp = useSearchParams();
   const [tab, setTab] = useState<string>(() => sp.get("tab") || "follow");
   const [group, setGroup] = useState(() => sp.get("group") || "");
-  const [sort, setSort] = useState("overdue");
+  const [sort, setSort] = useState("wash");
+  const [dir, setDir] = useState<"asc" | "desc">("asc");
+  const sortDef = SORTS.find((s) => s.k === sort) ?? SORTS[0];
   const [q, setQ] = useState("");
   // ★ ติ๊ก "งานของฉัน" — ยกบล็อกจาก Pipeline ทั้งก้อน (กติกา ui-rules) รวมถึงการจำค่าไว้
   //   ผู้ใช้เคาะ 24 ก.ย. 69: งาน O&M ให้อยู่ในโมดูล O&M ก่อน ยังไม่ขึ้นหน้า Today
@@ -47,7 +49,7 @@ export default function OmServicesPage() {
 
   const load = useCallback(() => {
     setItems(null);
-    const p = new URLSearchParams({ tab, sort, size: "40" });
+    const p = new URLSearchParams({ tab, sort, dir, size: "40" });
     if (group) p.set("group", group);
     if (q.trim()) p.set("q", q.trim());
     if (mineOnly) p.set("mine", "1");
@@ -57,7 +59,7 @@ export default function OmServicesPage() {
         setTotal(d.total ?? 0); setProjects(d.projects ?? []);
       })
       .catch((e) => { setErr(e instanceof Error ? e.message : String(e)); setItems([]); });
-  }, [tab, group, sort, q, mineOnly]);
+  }, [tab, group, sort, dir, q, mineOnly]);
   useEffect(() => { const t = setTimeout(load, q ? 350 : 0); return () => clearTimeout(t); }, [load, q]);
 
   const totalAll = Object.values(counts).reduce((s, n) => s + n, 0);
@@ -82,17 +84,20 @@ export default function OmServicesPage() {
 
       <div className="p-3 md:p-4">
         {/* ★ 24 ก.ย. 69 จัดแถวเครื่องมือตามแนว Pipeline: ซ้าย = จำนวน+กรอง · ขวา = งานของฉัน/เรียง
-            ★ 25 ก.ย. 69 ผู้ใช้สั่งยกเลิกมุมมองแบบตาราง — เหลือแบบการ์ดอย่างเดียว */}
+            ★ 25 ก.ย. 69 ผู้ใช้สั่งยกเลิกมุมมองแบบตาราง — เหลือแบบการ์ดอย่างเดียว
+            ★ 1 ต.ค. 69 ผู้ใช้สั่งให้เรียงเหมือน Pipeline เป๊ะ: 2 ช่อง เรียงตามอะไร + ทิศทาง */}
         <div className="mb-3 flex flex-wrap items-center gap-2 px-1">
           <span className="text-sm font-bold text-gray-700 whitespace-nowrap">{total.toLocaleString("th-TH")} หลังในแท็บนี้</span>
+          {/* ★ 1 ต.ค. 69 ผู้ใช้ขอพิมพ์ค้นได้ + กว้างขึ้น — ขนาด/searchable ชุดเดียวกับช่องโครงการหน้ารายชื่อบ้าน O&M */}
           <Dropdown
-            className="w-48 font-normal"
+            className="w-full md:w-72 font-normal"
             value={group}
             onChange={(v) => setGroup(v)}
             options={[{ value: "", label: `ทุกโครงการ (${projects.length})` },
               ...projects.map((p) => ({ value: p.project_id, label: `${p.project_name} · ${p.n}` }))]}
+            searchable
           />
-          <span className="ml-auto flex items-center gap-2">
+          <div className="ml-auto flex items-center gap-2">
             <button
               type="button"
               style={{ minHeight: 0 }}
@@ -109,12 +114,25 @@ export default function OmServicesPage() {
               งานของฉัน
             </button>
             <Dropdown
-              className="w-44"
+              className="w-36"
               value={sort}
-              onChange={(v) => { if (v) setSort(v); }}
-              options={SORTS.map((s) => ({ value: s.k, label: `เรียง: ${s.t}` }))}
+              onChange={(v) => {
+                if (!v) return;
+                setSort(v);
+                setDir(SORTS.find((s) => s.k === v)?.def ?? "asc");
+              }}
+              options={SORTS.map((s) => ({ value: s.k, label: s.t }))}
             />
-          </span>
+            <Dropdown
+              className="w-32"
+              value={dir}
+              onChange={(v) => { if (v) setDir(v as "asc" | "desc"); }}
+              options={[
+                { value: "asc", label: sortDef.asc },
+                { value: "desc", label: sortDef.desc },
+              ]}
+            />
+          </div>
         </div>
 
         {err && <div className="mb-3 rounded-lg bg-red-50 border border-red-200 px-4 py-2 text-sm text-red-700">{err}</div>}

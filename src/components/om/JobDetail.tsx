@@ -75,12 +75,14 @@ const SECONDARY_BTN = "h-11 px-5 rounded-lg text-sm font-semibold border border-
 
 // ผลการโทรแบ่ง 2 กลุ่มแบบ modal Follow-up ฝั่งขาย (แผน 20260929-03 ข้อ 2)
 // ป้ายสั้นใช้เฉพาะในฟอร์ม — หัวกลุ่มบอก "ติดต่อได้" แล้ว · ประวัติ/Timeline/การ์ดรายการยังใช้ CALL_OUTCOME ตัวเต็ม
+// ★ 1 ต.ค. 69 ผู้ใช้สั่งยุบปุ่ม "ขอเลื่อน" — ลูกค้าขอเลื่อน = กด "ตกลงนัด" แล้วเลือกวันที่สะดวกในปฏิทินแทน
+//   API ยังรับ postponed อยู่ (ประวัติเก่ายังแสดงป้าย "รับสาย · ขอเลื่อน" จาก CALL_OUTCOME)
 const OUTCOME_GROUPS = [
-  { t: "ติดต่อได้", ok: true, keys: ["agreed", "postponed", "declined"] },
+  { t: "ติดต่อได้", ok: true, keys: ["agreed", "declined"] },
   { t: "ติดต่อไม่ได้", ok: false, keys: ["no_answer", "wrong_number"] },
 ] as const;
 const OUTCOME_SHORT: Record<string, string> = {
-  agreed: "ตกลงนัด", postponed: "ขอเลื่อน", declined: "ปฏิเสธ ไม่เอา", no_answer: "ไม่รับสาย", wrong_number: "เบอร์ผิด",
+  agreed: "ตกลงนัด", declined: "ปฏิเสธ ไม่เอา", no_answer: "ไม่รับสาย", wrong_number: "เบอร์ผิด",
 };
 const PHONE_ICON = "M2.25 6.75c0 8.284 6.716 15 15 15h2.25a2.25 2.25 0 002.25-2.25v-1.372c0-.516-.351-.966-.852-1.091l-4.423-1.106c-.44-.11-.902.055-1.173.417l-.97 1.293c-.282.376-.769.542-1.21.38a12.035 12.035 0 01-7.143-7.143c-.162-.441.004-.928.38-1.21l1.293-.97c.363-.271.527-.734.417-1.173L6.963 3.102a1.125 1.125 0 00-1.091-.852H4.5A2.25 2.25 0 002.25 4.5v2.25z";
 const PHONE_X_ICON = "M15.75 3.75L18 6m0 0l2.25 2.25M18 6l2.25-2.25M18 6l-2.25 2.25m1.5 13.5c-8.284 0-15-6.716-15-15V4.5A2.25 2.25 0 014.5 2.25h1.372c.516 0 .966.351 1.091.852l1.106 4.423c.11.44-.054.902-.417 1.173l-1.293.97a1.062 1.062 0 00-.38 1.21 12.035 12.035 0 007.143 7.143c.441.162.928-.004 1.21-.38l.97-1.293a1.125 1.125 0 011.173-.417l4.423 1.106c.5.125.852.575.852 1.091V19.5a2.25 2.25 0 01-2.25 2.25h-2.25z";
@@ -146,7 +148,7 @@ export default function JobDetail({ item, history, bookings = [], rules, onBack,
   const plusDays = (n: number) => { const d = new Date(); d.setDate(d.getDate() + n); return d.toLocaleDateString("sv-SE"); };
   const num = (k: string, d: number) => (rules?.[k] != null && !Number.isNaN(Number(rules[k])) ? Number(rules[k]) : d);
   // นัดโทรใหม่ — เลือกวันที่ระบบจะตั้งให้ไว้ก่อน (กติกาเดียวกับ API /api/om/follow) คนกดเห็นว่าวันไหน แก้ได้
-  const autoNext: Record<string, number> = { postponed: num("call.postpone_days", 30), no_answer: num("call.retry_days", 3) };
+  const autoNext: Record<string, number> = { no_answer: num("call.retry_days", 3) };
   const [rpOpen, setRpOpen] = useState(item.repair_needed === 1 && !item.repair_cancel_id);
   const [rpDetail, setRpDetail] = useState(item.repair_detail ?? "");
   const [rpWarranty, setRpWarranty] = useState<boolean | null>(
@@ -205,9 +207,10 @@ export default function JobDetail({ item, history, bookings = [], rules, onBack,
   const pickOutcome = (k: string) => {
     setOutcome(k); setErr("");
     if (k in autoNext) setNextDate(plusDays(autoNext[k]));
-    // ตกลงนัดเริ่มที่พรุ่งนี้ — DateSlider เลือก "วันนี้" ให้เองถ้าว่าง
+    // ตกลงนัดเลือกพรุ่งนี้ไว้ก่อน — ช่วงเวลาของวันนั้นขึ้นให้เลือกเลย ไม่ต้องกดวันก่อน
     if (k === "agreed" && !apDate) setApDate(plusDays(1));
   };
+  const resetCall = () => { setOutcome(""); setNote(""); setApDate(""); setApTime(""); setNextDate(""); setErr(""); };
 
   const saveCall = async () => {
     if (!outcome) return;
@@ -380,11 +383,15 @@ export default function JobDetail({ item, history, bookings = [], rules, onBack,
   };
 
   // ── ฟอร์มบันทึกการโทร — ก้อนเดียว ใช้สองที่ (แผน 20260929-02) ──
-  //   ขั้น 01 ติดตาม = ครบ 5 ผล · การ์ดนัดหมายตอนชำระเงินครบแล้ว (schedule) = ตกลงนัด / ไม่รับสาย / ขอเลื่อน
+  //   ขั้น 01 ติดตาม = ครบ 4 ผล · การ์ดนัดหมายตอนชำระเงินครบแล้ว (schedule) = ตกลงนัด / ไม่รับสาย
   //   (ลูกค้าจ่ายเงินแล้ว — ไม่เอา/เบอร์ผิดไม่ใช่ทางของขั้นนี้ ยกเลิกหลังรับเงินต้องผ่าน Account)
-  // ★ แผน 20260929-03: ผลแบ่งกลุ่ม ติดต่อได้/ไม่ได้ · วันนัด = แถบวัน + ช่วงเวลา (OmSlotPicker) · นัดโทรใหม่ = แถบวัน
+  // ★ แผน 20260929-03: ผลแบ่งกลุ่ม ติดต่อได้/ไม่ได้ · นัดโทรใหม่ (ไม่รับสาย) = แถบวัน
+  // ★ 1 ต.ค. 69 ผู้ใช้สั่งให้ส่วนเลือกวันนัดเหมือน "เลื่อนนัดสำรวจ" ฝั่งขาย (AppointmentRescheduler) ทั้งก้อน
+  //   หัวข้อ → ปฏิทิน 3 เดือน → ช่วงเวลา → แถบ "นัดเป็น" → ยกเลิก/✓ยืนยัน วางบนพื้นการ์ดตรง ๆ ไม่อยู่ในกล่องผลการโทร
+  //   ⇒ คำอธิบายผล/โน้ตย้ายขึ้นไปอยู่ใต้ปุ่มผลการโทร ปฏิทินจะได้ต่อกับปุ่มยืนยันเลยแบบตัวอย่าง
   const callForm = (schedule: boolean) => {
     const blockQuote = !schedule && outcome === "agreed" && needQuote;
+    const needSlot = outcome === "agreed" && (!apDate || !apTime);
     return (
     <>
       {callSummary(schedule)}
@@ -392,7 +399,7 @@ export default function JobDetail({ item, history, bookings = [], rules, onBack,
         <label className={FIELD_LABEL}>ผลการโทรครั้งนี้ <span className="text-red-500">*</span></label>
         <div className="grid gap-3 sm:grid-cols-2">
           {OUTCOME_GROUPS.map((g) => {
-            const keys = g.keys.filter((k) => !schedule || ["agreed", "no_answer", "postponed"].includes(k));
+            const keys = g.keys.filter((k) => !schedule || ["agreed", "no_answer"].includes(k));
             return (
               <div key={g.t}>
                 <div className={`flex items-center gap-1.5 text-xxs font-semibold mb-1.5 ${g.ok ? "text-emerald-600" : "text-red-500"}`}>
@@ -414,28 +421,6 @@ export default function JobDetail({ item, history, bookings = [], rules, onBack,
           })}
         </div>
 
-        {outcome === "agreed" && !blockQuote && (
-          <div className="mt-3">
-            <OmSlotPicker date={apDate} time={apTime} excludeId={item.booking_id} rules={rules} pickedLabel="นัดเป็น"
-              onChange={(d, t) => { setApDate(d); setApTime(t); }} />
-          </div>
-        )}
-        {outcome in autoNext && (
-          <div className="mt-3">
-            <label className={FIELD_LABEL}>นัดโทรใหม่</label>
-            <DateSlider date={nextDate} onDateChange={setNextDate} pastDays={0} futureDays={Math.max(60, autoNext.postponed + 30)} />
-            <span className="block mt-1 text-xxs text-gray-400">
-              ค่าเริ่มต้น +{autoNext[outcome]} วันตามหน้าตั้งค่า — เลือกวันอื่นได้
-            </span>
-          </div>
-        )}
-        {outcome && (
-          <div className="mt-3">
-            <label className={FIELD_LABEL}>โน้ต</label>
-            <input value={note} onChange={(e) => setNote(e.target.value)} placeholder="เช่น ลูกค้าไม่อยู่บ้านช่วงเช้า" className={INPUT} />
-          </div>
-        )}
-
         {blockQuote ? (
           <div className="mt-3 rounded-lg bg-amber-50 border border-amber-200 px-3 py-2 text-xs leading-relaxed text-amber-900 flex items-center gap-2 flex-wrap">
             <span>บ้านนี้<b>สิทธิ์ล้างหมดแล้ว</b> — ตกลงนัดตรงไม่ได้ ต้องออกใบเสนอราคาและรับเงินก่อนนัด (เก็บค่าบริการก่อนนัดหมาย)
@@ -447,22 +432,54 @@ export default function JobDetail({ item, history, bookings = [], rules, onBack,
         <div className="mt-3 rounded-lg bg-gray-50 border border-gray-200 px-3 py-2 text-xs leading-relaxed text-gray-600">
           {schedule ? <>
             {outcome === "agreed" && <>กดบันทึกแล้วใบงาน #{item.booking_id} ย้ายไปขั้น <b>นัดหมาย</b> (รอยืนยันนัด) พร้อมวันเวลาที่เลือก</>}
-            {outcome === "postponed" && <>ใบงานรอโทรนัดอยู่ขั้นนี้ต่อ พร้อมวันนัดโทรใหม่</>}
             {outcome === "no_answer" && <>บันทึกประวัติอย่างเดียว ใบงานรอโทรนัดอยู่ขั้นนี้ต่อ</>}
           </> : <>
             {outcome === "agreed" && <>กดบันทึกแล้ว{item.booking_id && cur === "follow" ? <> ใบงาน #{item.booking_id} ย้ายไป</> : <> <b>สร้างใบงาน</b></>} ขั้น <b>นัดหมาย</b> (รอยืนยันนัด) พร้อมวันเวลาที่เลือก การ์ดจะย้ายออกจากแท็บติดตาม</>}
-            {outcome === "postponed" && <>สร้างใบงานขั้น <b>ติดตาม</b> พร้อมวันนัดโทรใหม่ ยังอยู่แท็บเดิมแต่จะไม่โผล่ซ้ำจนถึงวันนัด</>}
             {outcome === "no_answer" && <><b>ไม่สร้างใบงาน</b> บันทึกประวัติอย่างเดียว · ครบจำนวนครั้งที่ตั้งไว้จะย้ายไปแท็บติดต่อไม่ได้</>}
             {outcome === "declined" && <><b>ไม่สร้างใบงาน</b> ย้ายไปแท็บไม่เอา · <b>สิทธิ์ไม่ถูกตัด</b> ยังใช้ได้ถ้าเปลี่ยนใจ</>}
             {outcome === "wrong_number" && <>ทำเครื่องหมายเบอร์นี้ว่า <b>ใช้ไม่ได้</b> ถ้าไม่เหลือเบอร์อื่นจะตกไปแท็บติดต่อไม่ได้</>}
           </>}
         </div>
         )}
+
+        {outcome in autoNext && (
+          <div className="mt-3">
+            <label className={FIELD_LABEL}>นัดโทรใหม่</label>
+            <DateSlider date={nextDate} onDateChange={setNextDate} pastDays={0} futureDays={60} />
+            <span className="block mt-1 text-xxs text-gray-400">
+              ค่าเริ่มต้น +{autoNext[outcome]} วันตามหน้าตั้งค่า — เลือกวันอื่นได้
+            </span>
+          </div>
+        )}
+        {outcome && !blockQuote && (
+          <div className="mt-3">
+            <label className={FIELD_LABEL}>โน้ต</label>
+            <input value={note} onChange={(e) => setNote(e.target.value)} placeholder="เช่น ลูกค้าไม่อยู่บ้านช่วงเช้า" className={INPUT} />
+          </div>
+        )}
       </div>
 
-      <div className="mt-3 flex md:justify-end">
-        <button type="button" disabled={busy || !outcome || blockQuote} onClick={saveCall} className={`${PRIMARY_BTN} flex-1 md:flex-none md:w-64`}>
-          {busy ? "กำลังบันทึก…" : !outcome ? "เลือกผลการโทร" : "บันทึกการโทร"}
+      {/* ส่วนเลือกวันนัด = "เลื่อนนัดสำรวจ" ฝั่งขาย: หัวข้อตัวเทา → ปฏิทิน/ช่วงเวลา → แถบ "นัดเป็น" (อยู่ใน OmSlotPicker) */}
+      {outcome === "agreed" && !blockQuote && (
+        <div className="mt-4 space-y-3">
+          <div className="text-xs font-semibold tracking-wider uppercase text-gray-400">นัดเข้าบริการ</div>
+          <OmSlotPicker date={apDate} time={apTime} excludeId={item.booking_id} rules={rules} pickedLabel="นัดเป็น"
+            onChange={(d, t) => { setApDate(d); setApTime(t); }} />
+        </div>
+      )}
+
+      {/* ปุ่มคู่ ยกเลิก / ✓ยืนยัน เต็มแถว — ยกจาก AppointmentRescheduler ฝั่งขาย
+          ยกเลิก = ล้างที่เลือกไว้กลับไปก่อนเลือกผลการโทร (ฟอร์มนี้ฝังในการ์ด ไม่มีอะไรให้ปิด) */}
+      <div className="mt-3 flex gap-2 pt-1">
+        <button type="button" disabled={busy || !outcome} onClick={resetCall}
+          className="flex-1 h-11 rounded-lg text-sm font-semibold bg-white border border-gray-200 text-gray-700 hover:border-gray-400 cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed">
+          ยกเลิก
+        </button>
+        <button type="button" disabled={busy || !outcome || blockQuote || needSlot} onClick={saveCall}
+          className="flex-[2] h-11 rounded-lg text-sm font-bold text-white bg-active hover:bg-active-dark disabled:opacity-40 disabled:cursor-not-allowed shadow-sm shadow-active/30 flex items-center justify-center gap-2 cursor-pointer">
+          {busy ? "กำลังบันทึก…" : !outcome ? "เลือกผลการโทร" : needSlot && !blockQuote ? "เลือกวันและเวลา" : (
+            <><CheckIcon className="w-4 h-4" strokeWidth={2.5} />บันทึกการโทร</>
+          )}
         </button>
       </div>
     </>

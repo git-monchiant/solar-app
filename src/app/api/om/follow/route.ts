@@ -20,12 +20,10 @@ import { OM_BOOKING_PAID_SQL } from "@/lib/om/om-quotation";
 const OUTCOME = ["agreed", "postponed", "no_answer", "declined", "wrong_number"] as const;
 type Outcome = (typeof OUTCOME)[number];
 
-const SORT: Record<string, string> = {
-  overdue: "d.last_wash ASC, d.house_number",            // ค้างนานสุดก่อน (ไม่เคยล้าง = ค้างสุด)
-  recent:  "d.last_wash DESC, d.house_number",           // เพิ่งถึงรอบก่อน
-  quota:   "d.balance DESC, d.last_wash ASC",            // สิทธิ์เหลือมากก่อน
-  project: "d.project_name, d.house_number",
-  house:   "d.house_number",
+// sort = เรียงตามอะไร · dir = asc/desc (หน้าจอเป็น 2 ช่องแบบ Pipeline — SORTS ใน service-view.ts)
+const SORT: Record<string, (dir: "ASC" | "DESC") => string> = {
+  wash:  (dir) => `d.last_wash ${dir}, d.house_number`,  // ASC = ค้างนานสุดก่อน (ไม่เคยล้าง = NULL ขึ้นก่อน)
+  quota: (dir) => `d.balance ${dir}, d.last_wash ASC`,
 };
 
 export async function GET(req: NextRequest) {
@@ -35,7 +33,7 @@ export async function GET(req: NextRequest) {
   const tab = (u.get("tab") ?? "follow").trim();
   const group = (u.get("group") ?? "").trim();
   const q = (u.get("q") ?? "").trim();
-  const sort = SORT[u.get("sort") ?? "overdue"] ?? SORT.overdue;
+  const sort = (SORT[u.get("sort") ?? "wash"] ?? SORT.wash)(u.get("dir") === "desc" ? "DESC" : "ASC");
   // ★ house=<id> = โหมด "บ้านเดียว" ของหน้ารายละเอียด (เฟส 3 แผน 20260922-01)
   //   ข้ามตัวกรองแท็บ/โครงการ/ค้นหาทั้งหมด — เปิดจาก URL ตรง ๆ ต้องได้ของเสมอ
   //   ไม่ทำเป็น endpoint ใหม่เพราะเกณฑ์ #due/#call/#job ต้องตรงกับลิสต์เป๊ะ
