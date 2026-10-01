@@ -18,7 +18,11 @@ import { omSlotsFor } from "@/lib/om/time-slot";
 //   ประวัติการโทรอยู่ที่ om_booking_history (booking_id ว่างได้ ผูกกับ house_id แทน)
 //   ⇒ ไม่มีตาราง om_call_log แยก
 
-const OUTCOME = ["agreed", "postponed", "no_answer", "declined", "wrong_number"] as const;
+// informed / busy / other = ปุ่ม Follow-up แบบหน้า lead (1 ต.ค. 69) — จดประวัติอย่างเดียว ไม่สร้างใบงาน ไม่ย้ายแท็บ
+//   (แท็บคัดจาก declined / wrong_number / จำนวน no_answer เท่านั้น — follow-sql.ts)
+const OUTCOME = ["agreed", "postponed", "no_answer", "declined", "wrong_number", "informed", "busy", "other"] as const;
+// ช่องทางติดต่อ — ชุดเดียวกับ FOLLOW_UP_METHODS หน้า lead · ไม่ส่ง = โทร (ฟอร์มโทรในการ์ด)
+const CHANNEL = ["call", "visit", "line", "other"] as const;
 type Outcome = (typeof OUTCOME)[number];
 
 // sort = เรียงตามอะไร · dir = asc/desc (หน้าจอเป็น 2 ช่องแบบ Pipeline — SORTS ใน service-view.ts)
@@ -171,6 +175,13 @@ export async function POST(req: NextRequest) {
     .query(`SELECT id, house_number FROM om_houses WHERE id = @h AND is_om = 1`)).recordset[0];
   if (!house) return NextResponse.json({ error: "ไม่พบบ้านหลังนี้" }, { status: 404 });
 
+  const channel = (CHANNEL as readonly string[]).includes(String(b.channel)) ? String(b.channel) : "call";
+  // วันที่ติดตามจริง (ปุ่ม Follow-up เลือกย้อนหลังได้ 15 วันแบบหน้า lead) — จดใน to_json · created_at ยังเป็นเวลาบันทึก
+  const today = new Date(Date.now() + 7 * 3600000).toISOString().slice(0, 10);
+  const contactDate = typeof b.contact_date === "string" && /^\d{4}-\d{2}-\d{2}$/.test(b.contact_date)
+    && b.contact_date <= today && b.contact_date >= new Date(Date.now() + 7 * 3600000 - 15 * 86400000).toISOString().slice(0, 10)
+    ? b.contact_date : null;
+
   // วันนัดโทรครั้งหน้า — ลูกค้าระบุเองมาก่อน ไม่งั้นใช้กติกาในตั้งค่า
   const auto = outcome === "no_answer" ? retryDays : outcome === "postponed" ? postponeDays : null;
   const next = b.next_date
@@ -295,7 +306,8 @@ export async function POST(req: NextRequest) {
     }
 
     // เบอร์ผิด → ทำเครื่องหมายว่าใช้ไม่ได้ (ไม่ลบทิ้ง เก็บไว้ในประวัติ)
-    if (outcome === "wrong_number" && b.phone)
+    //   เฉพาะติดตามทางโทร — "ข้อมูลติดต่อไม่ถูกต้อง" ทาง LINE/เยี่ยม ไม่ได้แปลว่าเบอร์ใช้ไม่ได้
+    if (outcome === "wrong_number" && channel === "call" && b.phone)
       await new sql.Request(tx).input("h", sql.Int, houseId).input("p", sql.NVarChar(20), String(b.phone))
         .query(`UPDATE p SET p.status = 'invalid'
                 FROM om_customer_phones p
@@ -304,7 +316,8 @@ export async function POST(req: NextRequest) {
 
     await logBooking(tx, {
       bookingId, houseId, action: "call", actorUserId: gate.userId ?? null,
-      to: { outcome, next_date: next, scheduled_at: apptAt ?? b.scheduled_at ?? null, time_slot: apptSlot },
+      to: { outcome, next_date: next, scheduled_at: apptAt ?? b.scheduled_at ?? null, time_slot: apptSlot,
+            ...(channel !== "call" ? { channel } : {}), ...(contactDate && contactDate !== today ? { contact_date: contactDate } : {}) },
       reason: typeof b.note === "string" ? b.note.trim() || null : null,
       nextActionDate: next,
     });

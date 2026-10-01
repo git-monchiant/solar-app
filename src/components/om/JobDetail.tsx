@@ -24,7 +24,7 @@ import OmQuotationPanel, { openQuotationPdf } from "@/components/om/OmQuotationP
 import OmPaymentPanel from "@/components/om/OmPaymentPanel";
 import OmRescheduler from "@/components/om/OmRescheduler";
 import OmSlotPicker from "@/components/om/OmSlotPicker";
-import DateSlider from "@/components/ui/DateSlider";
+import OmFollowupModal from "@/components/om/OmFollowupModal";
 import ServiceDocButton from "@/components/om/ServiceDocButton";
 import { HouseEquipmentTab, HouseInfoTab, JobPhotosTab } from "@/components/om/HouseTabs";
 import JobTimelineTab, { StageEvents, bookingStages, type Row, type StageKey } from "@/components/om/JobTimelineTab";
@@ -73,19 +73,14 @@ const chipBtn = (selected: boolean) =>
 const PRIMARY_BTN = "h-11 px-6 rounded-lg text-sm font-semibold text-white bg-active hover:brightness-110 transition-colors flex items-center justify-center gap-1 cursor-pointer disabled:opacity-50";
 const SECONDARY_BTN = "h-11 px-5 rounded-lg text-sm font-semibold border border-gray-200 text-gray-600 bg-white hover:bg-gray-50 transition-colors flex items-center justify-center gap-1 cursor-pointer disabled:opacity-50";
 
-// ผลการโทรแบ่ง 2 กลุ่มแบบ modal Follow-up ฝั่งขาย (แผน 20260929-03 ข้อ 2)
-// ป้ายสั้นใช้เฉพาะในฟอร์ม — หัวกลุ่มบอก "ติดต่อได้" แล้ว · ประวัติ/Timeline/การ์ดรายการยังใช้ CALL_OUTCOME ตัวเต็ม
-// ★ 1 ต.ค. 69 ผู้ใช้สั่งยุบปุ่ม "ขอเลื่อน" — ลูกค้าขอเลื่อน = กด "ตกลงนัด" แล้วเลือกวันที่สะดวกในปฏิทินแทน
-//   API ยังรับ postponed อยู่ (ประวัติเก่ายังแสดงป้าย "รับสาย · ขอเลื่อน" จาก CALL_OUTCOME)
-const OUTCOME_GROUPS = [
-  { t: "ติดต่อได้", ok: true, keys: ["agreed", "declined"] },
-  { t: "ติดต่อไม่ได้", ok: false, keys: ["no_answer", "wrong_number"] },
+// ผลการโทรในการ์ดขั้นติดตาม — เฉพาะ "ติดต่อได้" ที่ทำให้งานเดินหน้า (แถวแบบ modal Follow-up ฝั่งขาย)
+// ★ 1 ต.ค. 69 (ผู้ใช้เคาะ "ตามแนะนำ"): ติดต่อไม่ได้ (ไม่รับสาย / เบอร์ผิด) ย้ายไปปุ่ม Follow-up ข้าง Note แบบหน้า lead
+//   (OmFollowupModal) · ยุบ "ขอเลื่อน" ไปก่อนหน้านี้แล้ว — ลูกค้าขอเลื่อน = ตกลงนัดวันที่สะดวก
+//   API ยังรับทุกผล (ประวัติเก่ายังแสดงป้ายจาก CALL_OUTCOME)
+const CALL_ROWS = [
+  { value: "agreed", label: "ตกลงนัด" },
+  { value: "declined", label: "ปฏิเสธ ไม่เอา" },
 ] as const;
-const OUTCOME_SHORT: Record<string, string> = {
-  agreed: "ตกลงนัด", declined: "ปฏิเสธ ไม่เอา", no_answer: "ไม่รับสาย", wrong_number: "เบอร์ผิด",
-};
-const PHONE_ICON = "M2.25 6.75c0 8.284 6.716 15 15 15h2.25a2.25 2.25 0 002.25-2.25v-1.372c0-.516-.351-.966-.852-1.091l-4.423-1.106c-.44-.11-.902.055-1.173.417l-.97 1.293c-.282.376-.769.542-1.21.38a12.035 12.035 0 01-7.143-7.143c-.162-.441.004-.928.38-1.21l1.293-.97c.363-.271.527-.734.417-1.173L6.963 3.102a1.125 1.125 0 00-1.091-.852H4.5A2.25 2.25 0 002.25 4.5v2.25z";
-const PHONE_X_ICON = "M15.75 3.75L18 6m0 0l2.25 2.25M18 6l2.25-2.25M18 6l-2.25 2.25m1.5 13.5c-8.284 0-15-6.716-15-15V4.5A2.25 2.25 0 014.5 2.25h1.372c.516 0 .966.351 1.091.852l1.106 4.423c.11.44-.054.902-.417 1.173l-1.293.97a1.062 1.062 0 00-.38 1.21 12.035 12.035 0 007.143 7.143c.441.162.928-.004 1.21-.38l.97-1.293a1.125 1.125 0 011.173-.417l4.423 1.106c.5.125.852.575.852 1.091V19.5a2.25 2.25 0 01-2.25 2.25h-2.25z";
 
 export default function JobDetail({ item, history, bookings = [], rules, onBack, onDone, onSaved, onReload }: {
   item: Item;
@@ -138,7 +133,8 @@ export default function JobDetail({ item, history, bookings = [], rules, onBack,
   const [apDate, setApDate] = useState("");
   // ช่องที่จอง (JSON array แบบนัดสำรวจ) — แผน 20261001-01 เฟส 3 · เดิมเวลาเริ่มของช่วงเดียว
   const [apSlot, setApSlot] = useState("");
-  const [nextDate, setNextDate] = useState("");
+  // ปุ่ม Follow-up — บันทึกติดต่อไม่ได้ (OmFollowupModal)
+  const [followOpen, setFollowOpen] = useState(false);
   const [teams, setTeams] = useState<Team[]>([]);
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState("");
@@ -148,8 +144,6 @@ export default function JobDetail({ item, history, bookings = [], rules, onBack,
   const today = new Date().toLocaleDateString("sv-SE");   // YYYY-MM-DD ตามเวลาเครื่อง
   const plusDays = (n: number) => { const d = new Date(); d.setDate(d.getDate() + n); return d.toLocaleDateString("sv-SE"); };
   const num = (k: string, d: number) => (rules?.[k] != null && !Number.isNaN(Number(rules[k])) ? Number(rules[k]) : d);
-  // นัดโทรใหม่ — เลือกวันที่ระบบจะตั้งให้ไว้ก่อน (กติกาเดียวกับ API /api/om/follow) คนกดเห็นว่าวันไหน แก้ได้
-  const autoNext: Record<string, number> = { no_answer: num("call.retry_days", 3) };
   const [rpOpen, setRpOpen] = useState(item.repair_needed === 1 && !item.repair_cancel_id);
   const [rpDetail, setRpDetail] = useState(item.repair_detail ?? "");
   const [rpWarranty, setRpWarranty] = useState<boolean | null>(
@@ -207,25 +201,24 @@ export default function JobDetail({ item, history, bookings = [], rules, onBack,
 
   const pickOutcome = (k: string) => {
     setOutcome(k); setErr("");
-    if (k in autoNext) setNextDate(plusDays(autoNext[k]));
     // ตกลงนัดเลือกพรุ่งนี้ไว้ก่อน — ช่วงเวลาของวันนั้นขึ้นให้เลือกเลย ไม่ต้องกดวันก่อน
     if (k === "agreed" && !apDate) setApDate(plusDays(1));
   };
-  const resetCall = () => { setOutcome(""); setNote(""); setApDate(""); setApSlot(""); setNextDate(""); setErr(""); };
+  const resetCall = () => { setOutcome(""); setNote(""); setApDate(""); setApSlot(""); setErr(""); };
 
-  const saveCall = async () => {
-    if (!outcome) return;
-    if (outcome === "agreed" && (!apDate || !apSlot)) { setErr("ตกลงนัดแล้วต้องเลือกวันและช่วงเวลา"); return; }
+  // oc = ผลที่จะบันทึก — การ์ดนัดหมายหลังชำระเงินเป็น "ตกลงนัด" เสมอ (ไม่มีให้เลือก)
+  const saveCall = async (oc: string) => {
+    if (!oc) return;
+    if (oc === "agreed" && (!apDate || !apSlot)) { setErr("ตกลงนัดแล้วต้องเลือกวันและช่วงเวลา"); return; }
     setBusy(true); setErr("");
     try {
       await apiFetch("/api/om/follow", {
         method: "POST",
         body: JSON.stringify({
-          house_id: item.house_id, booking_id: item.booking_id, outcome,
+          house_id: item.house_id, booking_id: item.booking_id, outcome: oc,
           note: note || null,
-          next_date: outcome in autoNext ? nextDate || null : null,
-          scheduled_at: outcome === "agreed" ? apDate : null,
-          time_slot: outcome === "agreed" ? apSlot : null,
+          scheduled_at: oc === "agreed" ? apDate : null,
+          time_slot: oc === "agreed" ? apSlot : null,
           phone: item.phone,
         }),
       });
@@ -362,7 +355,7 @@ export default function JobDetail({ item, history, bookings = [], rules, onBack,
       <div className={`mb-3 px-3 py-2 rounded-lg border text-xs text-gray-600 flex flex-wrap items-center gap-x-2 gap-y-1 ${lastLeft ? "bg-amber-50 border-amber-200" : "bg-white border-gray-200"}`}>
         <ClockIcon className="w-4 h-4 text-gray-400 shrink-0" strokeWidth={2} />
         {!item.calls ? <span>ยังไม่เคยโทรรอบนี้</span> : <>
-          <span>โทรรอบนี้ <b className="text-gray-900">{item.calls}</b> ครั้ง</span>
+          <span>ติดตามรอบนี้ <b className="text-gray-900">{item.calls}</b> ครั้ง</span>
           <span className="text-gray-300">·</span>
           <span>ไม่รับสาย <b className="text-gray-900">{item.no_answer}/{maxTry}</b></span>
           {lastLeft && <><span className="text-gray-300">·</span><b className="text-amber-700">ไม่รับสายอีก 1 ครั้งจะย้ายไปแท็บติดต่อไม่ได้</b></>}
@@ -385,42 +378,49 @@ export default function JobDetail({ item, history, bookings = [], rules, onBack,
   };
 
   // ── ฟอร์มบันทึกการโทร — ก้อนเดียว ใช้สองที่ (แผน 20260929-02) ──
-  //   ขั้น 01 ติดตาม = ครบ 4 ผล · การ์ดนัดหมายตอนชำระเงินครบแล้ว (schedule) = ตกลงนัด / ไม่รับสาย
-  //   (ลูกค้าจ่ายเงินแล้ว — ไม่เอา/เบอร์ผิดไม่ใช่ทางของขั้นนี้ ยกเลิกหลังรับเงินต้องผ่าน Account)
-  // ★ แผน 20260929-03: ผลแบ่งกลุ่ม ติดต่อได้/ไม่ได้ · นัดโทรใหม่ (ไม่รับสาย) = แถบวัน
-  // ★ 1 ต.ค. 69 ผู้ใช้สั่งให้ส่วนเลือกวันนัดเหมือน "เลื่อนนัดสำรวจ" ฝั่งขาย (AppointmentRescheduler) ทั้งก้อน
+  //   ขั้น 01 ติดตาม = ตกลงนัด / ปฏิเสธ · การ์ดนัดหมายตอนชำระเงินครบแล้ว (schedule) = ตกลงนัดอย่างเดียว เปิดปฏิทินให้เลย
+  //   (ลูกค้าจ่ายเงินแล้ว — ไม่เอาไม่ใช่ทางของขั้นนี้ ยกเลิกหลังรับเงินต้องผ่าน Account)
+  // ★ 1 ต.ค. 69 ติดต่อไม่ได้ (ไม่รับสาย / เบอร์ผิด) ย้ายไปปุ่ม Follow-up แบบหน้า lead — ผลที่เหลือเป็นแถวแบบ modal Follow-up
+  // ★ 1 ต.ค. 69 ส่วนเลือกวันนัดเหมือน "เลื่อนนัดสำรวจ" ฝั่งขาย (AppointmentRescheduler) ทั้งก้อน
   //   หัวข้อ → ปฏิทิน 3 เดือน → ช่วงเวลา → แถบ "นัดเป็น" → ยกเลิก/✓ยืนยัน วางบนพื้นการ์ดตรง ๆ ไม่อยู่ในกล่องผลการโทร
-  //   ⇒ คำอธิบายผล/โน้ตย้ายขึ้นไปอยู่ใต้ปุ่มผลการโทร ปฏิทินจะได้ต่อกับปุ่มยืนยันเลยแบบตัวอย่าง
   const callForm = (schedule: boolean) => {
-    const blockQuote = !schedule && outcome === "agreed" && needQuote;
-    const needSlot = outcome === "agreed" && (!apDate || !apSlot);
+    const oc = schedule ? "agreed" : outcome;
+    const blockQuote = !schedule && oc === "agreed" && needQuote;
+    const needSlot = oc === "agreed" && (!apDate || !apSlot);
     return (
     <>
       {callSummary(schedule)}
       <div className={SECTION}>
-        <label className={FIELD_LABEL}>ผลการโทรครั้งนี้ <span className="text-red-500">*</span></label>
-        <div className="grid gap-3 sm:grid-cols-2">
-          {OUTCOME_GROUPS.map((g) => {
-            const keys = g.keys.filter((k) => !schedule || ["agreed", "no_answer"].includes(k));
-            return (
-              <div key={g.t}>
-                <div className={`flex items-center gap-1.5 text-xxs font-semibold mb-1.5 ${g.ok ? "text-emerald-600" : "text-red-500"}`}>
-                  <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                    <path strokeLinecap="round" strokeLinejoin="round" d={g.ok ? PHONE_ICON : PHONE_X_ICON} />
-                  </svg>
-                  {g.t}
-                </div>
-                <div className="flex flex-wrap gap-2">
-                  {keys.map((k) => (
-                    <button key={k} type="button" onClick={() => pickOutcome(k)} style={{ minHeight: 0 }}
-                      className={`${chipBtn(outcome === k)} whitespace-nowrap`}>
-                      {OUTCOME_SHORT[k]}
-                    </button>
-                  ))}
-                </div>
-              </div>
-            );
-          })}
+        {!schedule && <>
+          {/* หัว + แถวผล ยกจาก modal Follow-up ฝั่งขาย (จุดเขียว = ติดต่อได้) */}
+          <div className="text-xs font-bold text-gray-400 uppercase tracking-wider mb-1.5 flex items-center gap-1.5">
+            <svg className="w-3.5 h-3.5 text-green-600" fill="currentColor" viewBox="0 0 20 20">
+              <path d="M2 3a1 1 0 011-1h2.153a1 1 0 01.986.836l.74 4.435a1 1 0 01-.54 1.06l-1.548.773a11.037 11.037 0 006.105 6.105l.774-1.548a1 1 0 011.059-.54l4.435.74a1 1 0 01.836.986V17a1 1 0 01-1 1h-2C7.82 18 2 12.18 2 5V3z" />
+            </svg>
+            <span>ติดต่อได้ — ผลการโทรครั้งนี้ <span className="text-red-500">*</span></span>
+          </div>
+          <div className="space-y-1.5">
+            {CALL_ROWS.map((o) => {
+              const selected = outcome === o.value;
+              return (
+                <button key={o.value} type="button" onClick={() => pickOutcome(o.value)}
+                  className={`w-full text-left px-3 py-2.5 rounded-lg border text-sm transition-colors flex items-center gap-3 cursor-pointer ${
+                    selected ? "border-gray-800 bg-gray-50 text-gray-900 font-semibold" : "border-gray-200 bg-white text-gray-700 hover:border-gray-300"}`}>
+                  <span className={`w-2 h-2 rounded-full flex-shrink-0 ${selected ? "bg-emerald-500" : "bg-emerald-300"}`} />
+                  <span className="flex-1">{o.label}</span>
+                  {selected && <CheckIcon className="w-4 h-4 text-gray-700" strokeWidth={3} />}
+                </button>
+              );
+            })}
+          </div>
+        </>}
+        {/* ทางไปบันทึกโทรไม่ติด — คนที่ชินกับปุ่มเดิมในการ์ดจะได้ไม่หลง */}
+        <div className={`${schedule ? "" : "mt-2 "}text-xs text-gray-500 flex items-center gap-1.5 flex-wrap`}>
+          <span>ติดต่อแล้วยังไม่ได้ข้อสรุป หรือติดต่อไม่ได้? บันทึกที่ปุ่ม</span>
+          <button type="button" onClick={() => setFollowOpen(true)} style={{ minHeight: 0 }}
+            className="inline-flex items-center gap-1 px-2 h-6 rounded-md bg-amber-50 text-amber-700 border border-amber-200 font-semibold hover:bg-amber-100 cursor-pointer">
+            <ClockIcon className="w-3.5 h-3.5" strokeWidth={2} />Follow-up
+          </button>
         </div>
 
         {blockQuote ? (
@@ -430,30 +430,18 @@ export default function JobDetail({ item, history, bookings = [], rules, onBack,
             <button type="button" onClick={() => go(1)} style={{ minHeight: 0 }}
               className="font-semibold text-active hover:underline cursor-pointer">ไปขั้น 02 เสนอราคา ›</button>
           </div>
-        ) : outcome && (
+        ) : oc && (
         <div className="mt-3 rounded-lg bg-gray-50 border border-gray-200 px-3 py-2 text-xs leading-relaxed text-gray-600">
-          {schedule ? <>
-            {outcome === "agreed" && <>กดบันทึกแล้วใบงาน #{item.booking_id} ย้ายไปขั้น <b>นัดหมาย</b> (รอยืนยันนัด) พร้อมวันเวลาที่เลือก</>}
-            {outcome === "no_answer" && <>บันทึกประวัติอย่างเดียว ใบงานรอโทรนัดอยู่ขั้นนี้ต่อ</>}
-          </> : <>
-            {outcome === "agreed" && <>กดบันทึกแล้ว{item.booking_id && cur === "follow" ? <> ใบงาน #{item.booking_id} ย้ายไป</> : <> <b>สร้างใบงาน</b></>} ขั้น <b>นัดหมาย</b> (รอยืนยันนัด) พร้อมวันเวลาที่เลือก การ์ดจะย้ายออกจากแท็บติดตาม</>}
-            {outcome === "no_answer" && <><b>ไม่สร้างใบงาน</b> บันทึกประวัติอย่างเดียว · ครบจำนวนครั้งที่ตั้งไว้จะย้ายไปแท็บติดต่อไม่ได้</>}
-            {outcome === "declined" && <><b>ไม่สร้างใบงาน</b> ย้ายไปแท็บไม่เอา · <b>สิทธิ์ไม่ถูกตัด</b> ยังใช้ได้ถ้าเปลี่ยนใจ</>}
-            {outcome === "wrong_number" && <>ทำเครื่องหมายเบอร์นี้ว่า <b>ใช้ไม่ได้</b> ถ้าไม่เหลือเบอร์อื่นจะตกไปแท็บติดต่อไม่ได้</>}
-          </>}
+          {schedule
+            ? <>กดบันทึกแล้วใบงาน #{item.booking_id} ย้ายไปขั้น <b>นัดหมาย</b> (รอยืนยันนัด) พร้อมวันเวลาที่เลือก</>
+            : <>
+              {oc === "agreed" && <>กดบันทึกแล้ว{item.booking_id && cur === "follow" ? <> ใบงาน #{item.booking_id} ย้ายไป</> : <> <b>สร้างใบงาน</b></>} ขั้น <b>นัดหมาย</b> (รอยืนยันนัด) พร้อมวันเวลาที่เลือก การ์ดจะย้ายออกจากแท็บติดตาม</>}
+              {oc === "declined" && <><b>ไม่สร้างใบงาน</b> ย้ายไปแท็บไม่เอา · <b>สิทธิ์ไม่ถูกตัด</b> ยังใช้ได้ถ้าเปลี่ยนใจ</>}
+            </>}
         </div>
         )}
 
-        {outcome in autoNext && (
-          <div className="mt-3">
-            <label className={FIELD_LABEL}>นัดโทรใหม่</label>
-            <DateSlider date={nextDate} onDateChange={setNextDate} pastDays={0} futureDays={60} />
-            <span className="block mt-1 text-xxs text-gray-400">
-              ค่าเริ่มต้น +{autoNext[outcome]} วันตามหน้าตั้งค่า — เลือกวันอื่นได้
-            </span>
-          </div>
-        )}
-        {outcome && !blockQuote && (
+        {oc && !blockQuote && (
           <div className="mt-3">
             <label className={FIELD_LABEL}>โน้ต</label>
             <input value={note} onChange={(e) => setNote(e.target.value)} placeholder="เช่น ลูกค้าไม่อยู่บ้านช่วงเช้า" className={INPUT} />
@@ -462,7 +450,7 @@ export default function JobDetail({ item, history, bookings = [], rules, onBack,
       </div>
 
       {/* ส่วนเลือกวันนัด = "เลื่อนนัดสำรวจ" ฝั่งขาย: หัวข้อตัวเทา → ปฏิทิน/ช่วงเวลา → แถบ "นัดเป็น" (อยู่ใน OmSlotPicker) */}
-      {outcome === "agreed" && !blockQuote && (
+      {oc === "agreed" && !blockQuote && (
         <div className="mt-4 space-y-3">
           <div className="text-xs font-semibold tracking-wider uppercase text-gray-400">นัดเข้าบริการ</div>
           <OmSlotPicker date={apDate} slot={apSlot} excludeId={item.booking_id} rules={rules} pickedLabel="นัดเป็น"
@@ -473,13 +461,13 @@ export default function JobDetail({ item, history, bookings = [], rules, onBack,
       {/* ปุ่มคู่ ยกเลิก / ✓ยืนยัน เต็มแถว — ยกจาก AppointmentRescheduler ฝั่งขาย
           ยกเลิก = ล้างที่เลือกไว้กลับไปก่อนเลือกผลการโทร (ฟอร์มนี้ฝังในการ์ด ไม่มีอะไรให้ปิด) */}
       <div className="mt-3 flex gap-2 pt-1">
-        <button type="button" disabled={busy || !outcome} onClick={resetCall}
+        <button type="button" disabled={busy || (!schedule && !outcome) || (schedule && !apDate && !apSlot)} onClick={resetCall}
           className="flex-1 h-11 rounded-lg text-sm font-semibold bg-white border border-gray-200 text-gray-700 hover:border-gray-400 cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed">
           ยกเลิก
         </button>
-        <button type="button" disabled={busy || !outcome || blockQuote || needSlot} onClick={saveCall}
+        <button type="button" disabled={busy || !oc || blockQuote || needSlot} onClick={() => saveCall(oc)}
           className="flex-[2] h-11 rounded-lg text-sm font-bold text-white bg-active hover:bg-active-dark disabled:opacity-40 disabled:cursor-not-allowed shadow-sm shadow-active/30 flex items-center justify-center gap-2 cursor-pointer">
-          {busy ? "กำลังบันทึก…" : !outcome ? "เลือกผลการโทร" : needSlot && !blockQuote ? "เลือกวันและเวลา" : (
+          {busy ? "กำลังบันทึก…" : !oc ? "เลือกผลการโทร" : needSlot && !blockQuote ? "เลือกวันและเวลา" : (
             <><CheckIcon className="w-4 h-4" strokeWidth={2.5} />บันทึกการโทร</>
           )}
         </button>
@@ -608,7 +596,13 @@ export default function JobDetail({ item, history, bookings = [], rules, onBack,
               </button>
             ))}
             {/* มือถือย้ายไปแถบล่างติดจอ (แผน 20260929-03) — เดิมโดนตัดขอบขวาของแถบแท็บ */}
-            <div className="max-md:hidden ml-auto flex items-center pb-2 self-end pl-2 shrink-0">
+            <div className="max-md:hidden ml-auto flex items-center gap-2 pb-2 self-end pl-2 shrink-0">
+              {/* Follow-up = บันทึกติดต่อไม่ได้ (1 ต.ค. 69) — คู่กับ Note แบบหน้า lead ทั้งคลาสและไอคอน */}
+              <button type="button" onClick={() => setFollowOpen(true)} title="บันทึกการติดตาม — ยังไม่ได้ข้อสรุป / ติดต่อไม่ได้"
+                className="flex items-center gap-1.5 px-3 h-8 rounded-lg bg-amber-50 text-amber-700 text-sm font-semibold border border-amber-200 hover:bg-amber-100 transition-colors cursor-pointer" style={{ minHeight: 0 }}>
+                <ClockIcon className="w-4 h-4" strokeWidth={2} />
+                Follow-up
+              </button>
               <button type="button" onClick={() => { setNoteErr(""); setNoteOpen(true); }} title="บันทึกโน้ตลงไทม์ไลน์ของบ้าน"
                 className="flex items-center gap-1.5 px-3 h-8 rounded-lg bg-gray-100 text-gray-700 text-sm font-semibold border border-gray-200 hover:bg-gray-200 transition-colors cursor-pointer" style={{ minHeight: 0 }}>
                 <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
@@ -958,9 +952,14 @@ export default function JobDetail({ item, history, bookings = [], rules, onBack,
       </div>
 
       {/* ปุ่มล่างติดจอ มือถือเท่านั้น — ยกจาก footer quick actions ของหน้า lead (แผน 20260929-03 ข้อ 4)
-          O&M ไม่มีปุ่ม Follow-up (ผลโทรอยู่ในการ์ดขั้นติดตาม) ⇒ Note ปุ่มเดียวเต็มแถว */}
+          ★ 1 ต.ค. 69 มีปุ่ม Follow-up แล้ว (บันทึกติดต่อไม่ได้) ⇒ สองปุ่มแบบหน้า lead */}
       {(tab === "info" || tab === "workflow") && (
         <div className="fixed left-0 right-0 md:hidden above-nav bg-white border-t border-gray-100 z-40 px-3 py-2 flex gap-2">
+          <button type="button" onClick={() => setFollowOpen(true)}
+            className="flex-1 flex items-center justify-center gap-1.5 py-2.5 rounded-xl bg-amber-50 text-amber-700 text-sm font-semibold active:bg-amber-100 transition-colors cursor-pointer">
+            <ClockIcon className="w-4 h-4" strokeWidth={2} />
+            Follow-up
+          </button>
           <button type="button" onClick={() => { setNoteErr(""); setNoteOpen(true); }}
             className="flex-1 flex items-center justify-center gap-1.5 py-2.5 rounded-xl bg-gray-100 text-sm font-semibold active:bg-gray-200 transition-colors cursor-pointer">
             <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
@@ -969,6 +968,14 @@ export default function JobDetail({ item, history, bookings = [], rules, onBack,
             Note
           </button>
         </div>
+      )}
+
+      {/* บันทึกการติดตาม (ติดต่อไม่ได้) — บันทึกแล้วอยู่หน้าเดิม โหลดข้อมูลใหม่ แบบปุ่ม Note */}
+      {followOpen && (
+        <OmFollowupModal houseId={item.house_id} bookingId={item.booking_id} phone={item.phone} rules={rules}
+          jobActive={!!item.booking_id && cur !== "follow" && cur !== "closed" && !isExit}
+          onClose={() => setFollowOpen(false)}
+          onSaved={(m) => { setFollowOpen(false); onSaved(m); if (onReload) onReload(); else onDone(); }} />
       )}
 
       {/* บันทึกโน้ต — หน้าตายกจาก AddActivityModal โหมด note ของหน้า lead ทั้งก้อน (แผน 20260928-04 ข้อ 7) */}

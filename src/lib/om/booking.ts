@@ -66,5 +66,13 @@ export const CALL_OUTCOME: Record<string, { t: string; tone: string }> = {
   postponed:    { t: "รับสาย · ขอเลื่อน",  tone: "bg-amber-500" },
   no_answer:    { t: "ไม่รับสาย",          tone: "bg-gray-500" },
   declined:     { t: "ปฏิเสธ ไม่เอา",      tone: "bg-red-500" },
-  wrong_number: { t: "เบอร์ผิด",           tone: "bg-rose-500" },
+  wrong_number: { t: "ข้อมูลติดต่อไม่ถูกต้อง", tone: "bg-rose-500" },   // เดิม "เบอร์ผิด" — ชื่อตามหน้าต่าง Follow-up ฝั่งขาย
+  // ★ 1 ต.ค. 69 ปุ่ม Follow-up แบบหน้า lead (OmFollowupModal) — ติดต่อแล้วยังไม่มีข้อสรุป · จดประวัติอย่างเดียว ไม่ย้ายแท็บ
+  informed:     { t: "แจ้งรอบล้างแล้ว",      tone: "bg-emerald-500" },
+  busy:         { t: "ลูกค้าไม่สะดวกคุย",    tone: "bg-amber-500" },
+  other:        { t: "อื่นๆ",                tone: "bg-gray-400" },
 };
+
+// ช่องทางติดต่อของบันทึกการติดตาม — ชุดเดียวกับ FOLLOW_UP_METHODS ของหน้า lead (ไม่มี SMS)
+//   ไม่มีค่า = โทร (ประวัติก่อนมีปุ่ม Follow-up บันทึกจากฟอร์มโทรอย่างเดียว)
+export const CONTACT_CHANNEL: Record<string, string> = { call: "โทร", visit: "เยี่ยม", line: "LINE", other: "อื่นๆ" };

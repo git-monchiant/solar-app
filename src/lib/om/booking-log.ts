@@ -92,5 +92,10 @@ export const actionLabel = (a: string): string => LABEL[a as BookingAction] ?? a
  */
 export function historyLabel(action: string, toJson: string | null | undefined): string {
   if (action === "check" && !/"status"\s*:/.test(toJson ?? "")) return "บันทึกใบตรวจรับงาน";
+  // บันทึกการติดตามทางอื่นที่ไม่ใช่โทร (ปุ่ม Follow-up · 1 ต.ค. 69) — ไม่เรียกว่า "บันทึกการโทร"
+  if (action === "call") {
+    const ch = /"channel"\s*:\s*"(visit|line|other)"/.exec(toJson ?? "")?.[1];
+    if (ch) return `บันทึกการติดตาม · ${{ visit: "เยี่ยม", line: "LINE", other: "อื่นๆ" }[ch]}`;
+  }
   return actionLabel(action);
 }

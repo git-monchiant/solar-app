@@ -8,7 +8,7 @@
 // ★ ยังไม่มีส่วน SLA (เฟส 5 ผู้ใช้เคาะรอใช้งานจริง)
 // ★ ไม่ขึ้นใน Timeline (ดูใน Activity Log): เปลี่ยนเจ้าของงาน · สลับคิว · โน้ต · action ที่ยังไม่รู้จัก
 import { useState } from "react";
-import { CALL_OUTCOME, statusLabel, statusTone } from "@/lib/om/booking";
+import { CALL_OUTCOME, CONTACT_CHANNEL, statusLabel, statusTone } from "@/lib/om/booking";
 import { formatTHB } from "@/lib/utils/formatters";
 import {
   FLOW, teamLabel, thD, thAppt, thDT, type BookingSummary, type HistoryRow, type Team,
@@ -53,13 +53,16 @@ function toRow(h: HistoryRow, teamName: (id: unknown) => string): { stage: Stage
     case "call": {
       const oc = h.outcome ?? str(to.outcome) ?? "";
       const t = CALL_OUTCOME[oc]?.t ?? oc;
+      // ปุ่ม Follow-up (1 ต.ค. 69) — ช่องทางอื่นที่ไม่ใช่โทร + วันที่ติดตามจริงถ้าไม่ใช่วันบันทึก
+      const via = CONTACT_CHANNEL[str(to.channel) ?? "call"] ?? "โทร";
+      const on = str(to.contact_date) ? `ติดต่อ ${thD(str(to.contact_date))} · ` : "";
       // ลูกค้าไม่เอา ตอนขั้นเสนอราคา/ชำระเงิน — /cancel จดเป็นการโทร + ยกเลิกทั้งใบ ⇒ เป็นทางออกของใบงาน
       if (oc === "declined" && to.status === "cancelled")
         return { stage: "closed", row: { ...base, label: "ลูกค้าไม่เอา — ยกเลิกใบงาน", tone: "bad", sub: withReason(by) } };
       if (oc === "agreed")
         return { stage: "follow", row: { ...base, outcome: oc, label: `โทร · ${t}`, sub: withReason(to.scheduled_at ? `นัด ${thAppt(str(to.scheduled_at), str(to.time_slot) || null)}` : by) } };
       const next = h.next_action_date ?? str(to.next_date);
-      return { stage: "follow", row: { ...base, outcome: oc, label: `โทร · ${t}`, detail: "call", sub: withReason(next ? `นัดโทรใหม่ ${thD(next)}` : by) } };
+      return { stage: "follow", row: { ...base, outcome: oc, label: `${via} · ${t}`, detail: "call", sub: withReason(`${on}${next ? `นัดโทรใหม่ ${thD(next)}` : by}`) } };
     }
     case "create":
       // เปิดใบงานพร้อมวันนัด = วันนัดไปอยู่หัวขั้นนัดหมายแล้ว ไม่ต้องขึ้นซ้ำ

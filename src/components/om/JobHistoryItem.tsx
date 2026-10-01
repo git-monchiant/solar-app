@@ -6,7 +6,7 @@
 //   (old_status/new_status/contact_result + STATUS_CONFIG ของงานขาย) ยกมาใช้ตรง ๆ ไม่ได้
 
 import { CALL_OUTCOME } from "@/lib/om/booking";
-import { thDT, type HistoryRow } from "@/lib/om/service-view";
+import { thD, thDT, type HistoryRow } from "@/lib/om/service-view";
 
 // สีจุดตามชนิดเหตุการณ์ — ใช้โทนเดียวกับป้ายสถานะงานบริการ
 const DOT: Record<string, string> = {
@@ -26,6 +26,8 @@ const DOT: Record<string, string> = {
 
 export default function JobHistoryItem({ h, isLast }: { h: HistoryRow; isLast?: boolean }) {
   const outcome = h.outcome ? CALL_OUTCOME[h.outcome]?.t ?? h.outcome : null;
+  // วันที่ติดตามจริงที่เลือกย้อนหลังในปุ่ม Follow-up (1 ต.ค. 69) — API จดใน to_json เฉพาะตอนไม่ใช่วันบันทึก
+  const contactOn = /"contact_date"\s*:\s*"(\d{4}-\d{2}-\d{2})"/.exec(h.to_json ?? "")?.[1] ?? null;
   return (
     <div className="flex gap-3">
       <div className="flex flex-col items-center shrink-0">
@@ -44,6 +46,7 @@ export default function JobHistoryItem({ h, isLast }: { h: HistoryRow; isLast?: 
         {h.reason && <div className="text-sm text-gray-600 mt-0.5 break-words">{h.reason}</div>}
         <div className="text-xs text-gray-400 mt-0.5">
           {thDT(h.created_at)} · {h.actor_name ?? "—"}
+          {contactOn && <> · ติดต่อเมื่อ {thD(contactOn)}</>}
           {h.next_action_date && <> · นัดต่อ {h.next_action_date}</>}
         </div>
       </div>
