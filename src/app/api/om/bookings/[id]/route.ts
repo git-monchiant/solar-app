@@ -90,13 +90,9 @@ export async function PATCH(req: NextRequest, ctx: { params: Promise<{ id: strin
   const reopening = !!newStatus && !FINISHED.includes(newStatus);
   if (FINISHED.includes(String(cur.status)) && !reopening && ["team_id", "queue_index", "scheduled_at", "time_slot"].some(has))
     return NextResponse.json({ error: `ใบงาน #${id} ${statusLabel(String(cur.status))}แล้ว — แก้ทีม คิว หรือวันนัดไม่ได้` }, { status: 400 });
-  // 2) เริ่มงานต้องจ่ายทีมแล้ว — ตรงกับปุ่ม "ช่างถึงหน้างานแล้ว" ที่โผล่เมื่อจ่ายทีมแล้วเท่านั้น
-  //    (ใบตรวจที่กดปิดงานจากใบที่ยังไม่เข้างาน เดินผ่านขั้นนี้ด้วย จึงกันการปิดงานใบที่ยังไม่จ่ายทีมไปในตัว)
-  if (newStatus === "progress" && newStatus !== cur.status) {
-    const teamAfter = has("team_id") ? (b.team_id === null || b.team_id === "" ? null : Number(b.team_id)) : cur.team_id;
-    if (!teamAfter)
-      return NextResponse.json({ error: "ยังไม่ได้จ่ายทีมช่าง — จ่ายทีมที่ขั้นนัดหมายก่อนเริ่มงาน" }, { status: 400 });
-  }
+  // 2) (เลิกแล้ว 1 ต.ค. 69) เดิมเริ่มงานต้องจ่ายทีมก่อน — ผู้ใช้เคาะเลิกใช้ทีม A/B/C
+  //    ทีมสำรวจกับทีมล้างเป็นชุดเดียวกัน ไม่มีขั้นจ่ายทีมแล้ว (แผน 20261001-01 เฟส 4)
+  //    ถ้ายังกันไว้ ใบงานใหม่ (ไม่มีทีม) จะกด "ช่างถึงหน้างานแล้ว" และปิดงานจากใบตรวจไม่ได้
   // 3) ปิดงานต้องมีใบตรวจรับงานแล้ว — ทางปิดงานทางเดียวคือปุ่มท้ายใบตรวจ (บันทึกใบก่อนแล้วค่อยเปลี่ยนสถานะ)
   if (newStatus === "closed" && newStatus !== cur.status) {
     const rep = (await db.request().input("id", sql.Int, id)

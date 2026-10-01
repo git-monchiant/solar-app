@@ -35,7 +35,7 @@ import StepLayout from "@/components/lead/detail/StepLayout";
 import DoneSection from "@/components/lead/detail/steps/DoneSection";
 import ModalBase from "@/components/ui/ModalBase";
 import {
-  BUCKET_LABEL, FLOW, QUOTE_STATUS, TONE, flowIndex, jobAt, skipsPaidSteps, teamLabel, thD, thAppt,
+  BUCKET_LABEL, FLOW, QUOTE_STATUS, TONE, jobAt, skipsPaidSteps, thD, thAppt,
   type BookingSummary, type HistoryRow, type Item, type Team,
 } from "@/lib/om/service-view";
 
@@ -542,11 +542,7 @@ export default function JobDetail({ item, history, bookings = [], rules, onBack,
                     ? <>ล้างล่าสุด <b className="text-gray-900">{thD(item.last_wash)}</b></>
                     : <span className="font-semibold text-amber-600">ยังไม่เคยล้าง</span>}
                   {item.booking_id && <><span className="text-gray-300 mx-1.5">·</span>ใบงาน #{item.booking_id}</>}
-                  {item.team_name
-                    ? <><span className="text-gray-300 mx-1.5">·</span>{teamLabel(item.team_name)}</>
-                    // เตือนจ่ายทีมเฉพาะงานที่ถึงขั้นนัดหมายแล้ว — ขั้นเสนอราคา/ชำระเงินยังไม่ถึงเวลาจ่ายทีม
-                    //   ดูสถานะจริง ไม่ใช่ at: ชำระแล้วรอโทรนัด ยืนที่ขั้นนัดหมายแต่ยังไม่มีวันนัดให้จ่ายทีม
-                    : item.booking_id && flowIndex(cur) >= 3 && <><span className="text-gray-300 mx-1.5">·</span><span className="font-semibold text-amber-600">⚠ ยังไม่จ่ายทีม</span></>}
+                  {/* ★ 1 ต.ค. 69 เลิกใช้ทีม A/B/C (แผน 20261001-01 เฟส 4) — เอาชื่อทีม / "⚠ ยังไม่จ่ายทีม" ออกจากหัว */}
                 </span>
               </div>
             </div>
@@ -752,9 +748,9 @@ export default function JobDetail({ item, history, bookings = [], rules, onBack,
             {/* ★ นัดหมาย = รวมขั้น "ทำนัด" กับ "รอ O&M" เดิม (ขั้นย่อย 2410 รอยืนยันนัด · 2420 นัดแล้ว)
                 ปุ่มโผล่เฉพาะสถานะที่กดได้จริง — เดิมโผล่ตลอด กดผิดสถานะแล้วค่อยโดน API ปฏิเสธ */}
             <StepCard n={3} className={cardWrap(3)} state={stepState(3)} doneTitle="นัดหมายแล้ว" onHeaderClick={() => toggleDone(3)}
-              title={paidWaiting ? "นัดหมาย — โทรตกลงวันนัด" : "นัดหมาย — ยืนยันนัด · จ่ายทีมช่าง"}>
+              title={paidWaiting ? "นัดหมาย — โทรตกลงวันนัด" : "นัดหมาย — ยืนยันนัด"}>
               {stepState(3) === "done" ? doneView(3,
-                <DoneHead text={`นัด ${thAppt(item.scheduled_at, item.time_slot)}${item.team_name ? ` · ${teamLabel(item.team_name)}` : ""}`} />,
+                <DoneHead text={`นัด ${thAppt(item.scheduled_at, item.time_slot)}`} />,
                 () => events("appoint", "blue", "นัดหมาย · ทีมช่าง"),
               ) : paidWaiting ? (
                 // ★ ชำระเงินครบแล้ว — โทรตกลงวันนัดที่นี่ แบบขั้นย่อย "นัด" ของ Install ฝั่งขาย (แผน 20260929-02)
@@ -815,22 +811,9 @@ export default function JobDetail({ item, history, bookings = [], rules, onBack,
                   );
                 })()}
 
-                <div className={SECTION}>
-                  <div className={FIELD_LABEL}>จ่ายทีมช่าง</div>
-                  <div className="text-xs text-gray-500 mb-2">ปกติจ่ายงานด้วยการลากวางในปฏิทิน ตรงนี้เป็นทางลัดสำหรับงานเดี่ยว</div>
-                  <div className="grid grid-cols-2 md:grid-cols-7 gap-2">
-                    {teams.map((t) => (
-                      <button key={t.id} type="button" disabled={busy || !item.booking_id}
-                        onClick={() => patchJob({ team_id: t.id }, `จ่ายงานให้ทีม ${t.name} แล้ว`)}
-                        className={chipBtn(item.team_id === t.id)}>
-                        {teamLabel(t.name)} <span className={`font-normal ${item.team_id === t.id ? "text-white/70" : "text-gray-400"}`}>· ค้าง {t.open_jobs}</span>
-                      </button>
-                    ))}
-                  </div>
-                  {!teams.length && <span className="text-sm text-gray-400">ยังไม่มีทีมช่างในระบบ</span>}
-                </div>
-
-                {item.team_id && cur === "confirmed" && (
+                {/* ★ 1 ต.ค. 69 เลิกขั้น "จ่ายทีมช่าง" (ทีมสำรวจ = ทีมล้าง ชุดเดียว · แผน 20261001-01 เฟส 4)
+                    ปุ่มช่างถึงหน้างานขึ้นทันทีที่ลูกค้ายืนยันนัด — API เลิกบังคับทีมแล้ว */}
+                {cur === "confirmed" && (
                   <div className="flex md:justify-end">
                     <button type="button" disabled={busy}
                       onClick={() => patchJob({ status: "progress" }, "เริ่มงานแล้ว")}

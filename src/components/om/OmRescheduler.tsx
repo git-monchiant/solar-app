@@ -5,13 +5,12 @@
 //   ใช้ตัวนั้นตรง ๆ ไม่ได้ เพราะ CalendarPicker ข้างในนับช่องว่างจากปฏิทินทีมสำรวจ/ติดตั้งของ lead
 //   ส่วนงาน O&M ช่วงเวลา + ความจุมาจาก om_slot_config (ห้าม hardcode) — ชุดเดียวกับปฏิทิน / จ่ายงาน
 // ★ บันทึกผ่าน POST /api/om/bookings/[id]/reschedule — ใช้กติกา "การเลื่อนนัด" ในหน้าตั้งค่า O&M
-//   (กลับเป็นรอยืนยัน · ปลดทีม · แจ้ง LINE · เกินเพดานแค่เตือน — ผู้ใช้เคาะ 28 ก.ย. 69 ข้อ 4 ข)
+//   (กลับเป็นรอยืนยัน · แจ้ง LINE · เกินเพดานแค่เตือน — ผู้ใช้เคาะ 28 ก.ย. 69 ข้อ 4 ข · ปลดทีมเลิกแล้ว 1 ต.ค. 69)
 //   GET ของ endpoint เดียวกันบอกล่วงหน้าว่ากดแล้วจะเกิดอะไร ให้คนกดเห็นก่อนยืนยัน
 // ★ การลากในปฏิทินยังใช้ PATCH เดิม ไม่มีผลตามมา (เครื่องมือจัดคิวของคนจ่ายงาน)
 import { useEffect, useState } from "react";
 import { apiFetch } from "@/lib/api";
 import { CheckIcon } from "@/components/ui/icons";
-import { teamLabel } from "@/lib/om/service-view";
 // ★ วัน + ช่วงเวลา ย้ายไป OmSlotPicker (แผน 20260929-03) — ใช้ร่วมกับฟอร์มโทรตกลงนัด
 import OmSlotPicker from "@/components/om/OmSlotPicker";
 
@@ -83,11 +82,10 @@ export default function OmRescheduler({ bookingId, currentAt, currentSlot, rules
       </div>
 
       {/* ผลที่จะเกิดเมื่อยืนยัน — มาจากหน้าตั้งค่า O&M › กติกา › การเลื่อนนัด (บอกก่อนกด ไม่ให้ทีมหลุดแบบไม่รู้ตัว) */}
-      {preview && (preview.will.to_pending || preview.will.clear_team || preview.rules.notify_line || preview.warnings.length > 0) && (
+      {preview && (preview.will.to_pending || preview.rules.notify_line || preview.warnings.length > 0) && (
         <div className="rounded-lg bg-gray-50 border border-gray-200 px-3 py-2.5 text-xs text-gray-700 space-y-1">
           <div className="font-semibold text-gray-500">เมื่อยืนยันเลื่อนนัด</div>
           {preview.will.to_pending && <div>• ใบงานกลับเป็น <b>รอยืนยันนัด</b> — ตกลงวันใหม่กับลูกค้าแล้วกด &quot;ลูกค้ายืนยันแล้ว&quot; อีกครั้ง</div>}
-          {preview.will.clear_team && preview.team_name && <div>• ปลด <b>{teamLabel(preview.team_name)}</b> ออก — จ่ายทีมใหม่ที่ขั้นนี้หรือในปฏิทิน</div>}
           {preview.rules.notify_line && (preview.will.notify_line
             ? <div>• แจ้งลูกค้าทาง LINE ({preview.line_links} บัญชีที่ผูกบ้านนี้){!preview.line_enabled && <span className="text-amber-700"> — LINE ยังไม่เปิดใช้ จะยังไม่ส่งจริง</span>}</div>
             : <div className="text-gray-500">• บ้านนี้ยังไม่ผูก LINE — ไม่ได้แจ้งลูกค้า โทรแจ้งเอง</div>)}

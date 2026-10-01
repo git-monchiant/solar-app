@@ -15,7 +15,6 @@ import Loading from "@/components/ui/Loading";
 import ListPageHeader from "@/components/layout/ListPageHeader";
 import { useActiveMenuItem } from "@/lib/hooks/useActiveModule";
 import { statusLabel, statusTone } from "@/lib/om/booking";
-import { teamLabel } from "@/lib/om/service-view";
 import { formatSlotsRange } from "@/lib/time-slots";
 
 type Row = {
@@ -71,7 +70,7 @@ export default function OmFieldListPage() {
   // ★ ตัวเลขบนแท็บนับหลังค้นหา = จำนวนที่จะเห็นจริงเมื่อกด (กติกา ui-rules)
   const needle = q.trim().toLowerCase();
   const found = (rows ?? []).filter((r) => !needle ||
-    [r.house_number, r.customer_name, r.customer_phone, r.project_name, r.service_type, r.team_name]
+    [r.house_number, r.customer_name, r.customer_phone, r.project_name, r.service_type]
       .some((v) => (v ?? "").toLowerCase().includes(needle)));
   const openJobs = found.filter((r) => FIELD_STATUS.includes(r.status));
   const todayJobs = openJobs.filter((r) => (r.scheduled_at ?? "").slice(0, 10) === today);
@@ -147,16 +146,10 @@ export default function OmFieldListPage() {
                           <div className="flex items-center gap-1.5 text-sm text-gray-500 min-w-0 mb-1.5">
                             <I d={D.pin} c="#f43f5e" /><span className="truncate">{r.project_name ?? "—"}</span>
                           </div>
-                          {/* ชิปเรียงแถวเดียวแบบ JobCard — เวลา · ชนิดงาน · ทีม/คิว */}
+                          {/* ชิปเรียงแถวเดียวแบบ JobCard — เวลา · ชนิดงาน (ทีม/คิวเลิกแล้ว 1 ต.ค. 69 · แผน 20261001-01 เฟส 4) */}
                           <div className="flex flex-wrap items-center gap-1.5 text-xs">
                             <span className="px-2 py-0.5 rounded-md bg-sky-50 text-sky-800">นัด <b className="tabular-nums">{formatSlotsRange(r.time_slot) || thTime(r.scheduled_at)}</b></span>
                             {r.service_type && <span className="px-2 py-0.5 rounded-md bg-gray-100 text-gray-700">{r.service_type}</span>}
-                            {r.team_name
-                              ? <span className="px-2 py-0.5 rounded-md bg-gray-100 text-gray-700 inline-flex items-center gap-1.5">
-                                  <span className="w-2 h-2 rounded-full" style={{ background: r.team_color ?? "#9ca3af" }} />
-                                  {teamLabel(r.team_name)}{r.queue_index ? ` · คิว ${r.queue_index}` : ""}
-                                </span>
-                              : <span className="px-2 py-0.5 rounded-md bg-amber-50 text-amber-700 font-bold">ยังไม่จ่ายทีม</span>}
                           </div>
                         </div>
                       </Link>

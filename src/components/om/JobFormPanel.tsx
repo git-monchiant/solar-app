@@ -454,9 +454,9 @@ export default function JobFormPanel({ jobId, wrapClass = "h-full overflow-auto 
   const closeJob = () => {
     // ★ 29 ก.ย. 69 (แผน 20260929-01): ปิดงานได้เฉพาะใบที่ช่างอยู่หน้างาน — ยืนยันนัดแล้ว / เข้างาน / รอปิด
     //   เดิมกดได้จากทุกสถานะ แล้วหน้าเว็บเดินสถานะให้ทีละขั้นจนปิด (ข้ามการยืนยันนัด/จ่ายทีม)
-    //   API กันซ้ำอีกชั้น: เริ่มงานต้องจ่ายทีมแล้ว · ปิดงานต้องมีใบตรวจแล้ว
+    //   API กันซ้ำอีกชั้น: ปิดงานต้องมีใบตรวจแล้ว (เริ่มงานต้องจ่ายทีม — เลิกแล้ว 1 ต.ค. 69)
     if (!["confirmed", "progress", "checked"].includes(job.status)) {
-      setErr(`ใบงานยังไม่ถึงขั้นเข้างาน (ตอนนี้ "${statusLabel(job.status)}") — ยืนยันนัดและจ่ายทีมที่ขั้นนัดหมายก่อน`);
+      setErr(`ใบงานยังไม่ถึงขั้นเข้างาน (ตอนนี้ "${statusLabel(job.status)}") — ยืนยันนัดที่ขั้นนัดหมายก่อน`);
       return;
     }
     const missing = method === "onsite_sign" && !custSign ? "ลายเซ็นลูกค้า"
@@ -485,7 +485,7 @@ export default function JobFormPanel({ jobId, wrapClass = "h-full overflow-auto 
     { k: "เลขที่เอกสาร", v: jobNoTxt, mono: true },
     ...(embedded ? [] : [
       { k: "ลูกค้า", v: job.customer_name, wide: true }, { k: "บ้านเลขที่", v: job.house_number },
-      { k: "โครงการ", v: job.project_name, wide: true }, { k: "เบอร์", v: job.phone }, { k: "ทีม", v: job.team_name },
+      { k: "โครงการ", v: job.project_name, wide: true }, { k: "เบอร์", v: job.phone },
     ]),
     { k: "ประเภทงาน", v: job.service_type }, { k: "วันนัด", v: thAppt(job.scheduled_at, job.time_slot) },
     { k: "ขนาดติดตั้ง", v: kw }, { k: "ใบตรวจ", v: formName, wide: true },

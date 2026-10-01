@@ -31,7 +31,11 @@ export default function CalendarPage() {
   // (install) team's bookings. Replaced the per-zone chips since we don't
   // split work by zone any more.
   // "om" = งาน O&M ในปฏิทินร่วม (แผน 20261001-01 — ทีมสำรวจ/ติดตั้งกับทีมล้างเป็นชุดเดียวกัน)
-  const [selectedTeam, setSelectedTeam] = useState<"all" | "survey" | "install" | "om" | "block">("all");
+  //   ?team=om (เมนูปฏิทินของโมดูล O&M) / survey / install / block = เปิดมาที่ตัวกรองนั้น กดเปลี่ยนต่อได้
+  const [selectedTeam, setSelectedTeam] = useState<"all" | "survey" | "install" | "om" | "block">(() => {
+    const t = searchParams.get("team");
+    return t === "survey" || t === "install" || t === "om" || t === "block" ? t : "all";
+  });
   const team = followupMode ? ("followup" as const) : selectedTeam;
 
   // เลื่อนไปแถววันนี้: วัดความสูง sticky header สดๆ แล้ว scroll เอง — offset

@@ -1,6 +1,6 @@
 # นัดงาน O&M ใช้ปฏิทินร่วมกับทีมสำรวจ/ติดตั้ง (เห็นกันหมด · จองชนได้แต่เตือน)
 
-สถานะ: **in-progress** · เขียน 1 ต.ค. 69 · เฟส 1–3 ✅ 1 ต.ค. 69 · เฟส 4 ยังไม่เริ่ม
+สถานะ: **done 1 ต.ค. 69** · เฟส 1–4 ✅
 
 ## ที่มา
 
@@ -145,7 +145,21 @@
   `JobCard.tsx:117` · `JobDetail.tsx` (หัวการ์ดนัดหมาย) · `JobTimelineTab.tsx` · `JobFormPanel.tsx:490` · `om/field/page.tsx` · `om/houses/page.tsx:745` · PDF `lib/om/service-doc.ts:49-55,114`
 - LINE แจ้งเลื่อนนัด `bookings/[id]/reschedule/route.ts:147-154` → "เวลา 09:00–10:30 น." (เดิมเวลาเริ่มอย่างเดียว)
 
-### เฟส 4 — เลิกใช้ทีม A/B/C + หน้าปฏิทิน O&M
+### เฟส 4 — เลิกใช้ทีม A/B/C + หน้าปฏิทิน O&M ✅ 1 ต.ค. 69
+
+ทำแล้ว:
+- API: เลิกบังคับ `team_id` ก่อนเข้า `progress` (ปิดงานจากใบตรวจ/ช่างถึงหน้างานได้โดยไม่มีทีม) · reschedule ไม่ปลดทีมแล้ว (`unassign_team` = false เสมอ)
+- `JobDetail`: เอาปุ่มจ่ายทีม · "⚠ ยังไม่จ่ายทีม" · ชื่อทีมบนหัว/สรุปขั้นออก · ชื่อขั้น "นัดหมาย — ยืนยันนัด" · ปุ่มช่างถึงหน้างานขึ้นเมื่อยืนยันนัดแล้ว
+- เอาทีมออกจาก: `OmRescheduler` (บรรทัดปลดทีม) · `JobCard` · หน้างานช่าง (ชิปทีม/คิว + ค้นตามทีม) · ใบตรวจ (ช่องทีม + ข้อความเตือน) · PDF (แถวทีมช่าง)
+- Dashboard O&M: เอาการ์ด "ทีมช่าง · งานที่ถืออยู่" ออก (การ์ดเจ้าของเคสเต็มแถว) — API ยังส่ง teams (ผลลัพธ์อ้างด้วย index)
+- หน้าตั้งค่า O&M: เอาแท็บ "ทีมช่าง" ออก (ลบ `components/om/TeamsTab.tsx` — มีตัวแก้วันหยุด O&M อยู่ในนั้นด้วย ตารางว่าง) · ซ่อน `booking.slot_per_team` / `reschedule.unassign_team`
+- ปฏิทิน: เมนู O&M "ปฏิทิน / จ่ายงาน" → "ปฏิทิน" ชี้ `/calendar?team=om` (เมนูซ้ายยังเป็นโมดูล O&M เพราะเลือกโมดูลจาก localStorage) · `/calendar` รับ `?team=` เปิดตัวกรองนั้น
+  - `/om/calendar` เหลือ `redirect("/calendar?team=om")` — มุมมองวัน/สัปดาห์ลากวางจ่ายทีม + แท็บทีมช่างเดิมดูได้ใน git ก่อน commit เฟส 4
+  - วันหยุด/ปิดช่องสร้างจากปุ่ม "สร้างนัด" ของ `/calendar` (calendar_blocks) ที่เดียว
+- DB ไม่ลบอะไร: `om_teams` / `om_team_members` / `om_bookings.team_id` / `om_calendar_blocks` / `/api/om/teams` ยังอยู่ — ประวัติ "จ่ายทีม X" เดิมยังอ่านได้ใน Timeline/Activity Log
+- ทดสอบ: ใบงานทดสอบไม่มีทีม ยืนยันนัด → เริ่มงาน ได้ (เดิม 400) · preview เลื่อนนัด `clear_team` = false · `/om/calendar` → `/calendar?team=om` · ถ่ายจอใบงาน #116 / ปฏิทิน / หน้าตั้งค่า (เหลือ 5 แท็บ)
+
+แผนเดิม:
 
 - **DB ไม่ลบ** (`scripts/migrations-v3/README.md`: 3 เดือนแรกห้าม drop) — `om_teams` / `om_team_members` / `om_bookings.team_id` / `om_calendar_blocks` คงไว้ แค่เลิกเขียน · ประวัติเก่า "จ่ายทีม X" ยังอ่านได้
 - API

@@ -170,8 +170,10 @@ export default function OmDashboardPage() {
               </div>
             </div>
 
-            {/* แถว 4 — ใครถืองานอยู่ */}
-            <div className="grid grid-cols-1 lg:grid-cols-2 gap-3">
+            {/* แถว 4 — ใครถืองานอยู่
+                ★ 1 ต.ค. 69 เอาการ์ด "ทีมช่าง · งานที่ถืออยู่" ออก — เลิกใช้ทีม A/B/C (แผน 20261001-01 เฟส 4)
+                  API ยังส่ง teams มา (ลำดับผลลัพธ์อ้างด้วย index) แต่ไม่แสดงแล้ว */}
+            <div className="grid grid-cols-1 gap-3">
               <div className="rounded-2xl bg-white border border-gray-200 p-4">
                 <div className="text-sm font-bold uppercase tracking-[0.15em] text-gray-500 mb-3">เจ้าของเคส · ใบงานที่ยังไม่ปิด</div>
                 {d.owners.length === 0 ? <div className="text-sm text-gray-400 py-6 text-center">ยังไม่มีใบงานค้าง</div> : (
@@ -182,23 +184,6 @@ export default function OmDashboardPage() {
                           {o.owner_name || "ยังไม่มีเจ้าของ"}
                         </span>
                         <span className="text-sm font-bold font-mono tabular-nums text-gray-900">{n(o.n)}</span>
-                      </div>
-                    ))}
-                  </div>
-                )}
-              </div>
-
-              <div className="rounded-2xl bg-white border border-gray-200 p-4">
-                <div className="flex items-baseline justify-between mb-3">
-                  <span className="text-sm font-bold uppercase tracking-[0.15em] text-gray-500">ทีมช่าง · งานที่ถืออยู่</span>
-                  <Link href="/om/calendar" className="text-xs font-semibold text-gray-500 hover:underline">จ่ายงาน →</Link>
-                </div>
-                {d.teams.length === 0 ? <div className="text-sm text-gray-400 py-6 text-center">ยังไม่มีทีม</div> : (
-                  <div className="space-y-1">
-                    {d.teams.map((t) => (
-                      <div key={t.team_id} className="flex items-center gap-3 px-2 py-1.5">
-                        <span className="flex-1 text-sm text-gray-700">{t.team_name}</span>
-                        <span className={`text-sm font-bold font-mono tabular-nums ${t.n ? "text-gray-900" : "text-gray-300"}`}>{n(t.n)}</span>
                       </div>
                     ))}
                   </div>

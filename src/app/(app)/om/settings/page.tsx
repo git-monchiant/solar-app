@@ -9,7 +9,6 @@ import Loading from "@/components/ui/Loading";
 import Header from "@/components/layout/Header";
 import { useActiveMenuItem } from "@/lib/hooks/useActiveModule";
 import ConflictsTab from "@/components/om/ConflictsTab";
-import TeamsTab from "@/components/om/TeamsTab";
 import ProjectsTab from "@/components/om/ProjectsTab";
 import MatchQueuePanel from "@/components/om/MatchQueuePanel";
 import JobFormsTab from "@/components/om/JobFormsTab";
@@ -25,11 +24,15 @@ interface Setting {
 }
 
 const GROUP: Record<string, { title: string; desc: string }> = {
-  booking:    { title: "การจองนัด",   desc: "ลูกค้าจองผ่าน LIFF ได้แค่ไหน · ความจุต่อทีม" },
+  booking:    { title: "การจองนัด",   desc: "นัดล่วงหน้าได้ไกลแค่ไหน · ต้องนัดล่วงหน้าอย่างน้อยกี่ชั่วโมง" },
   reschedule: { title: "การเลื่อนนัด", desc: "ใครเลื่อนได้ · เลื่อนได้กี่ครั้ง · เลื่อนแล้วเกิดอะไร" },
   cancel:     { title: "การยกเลิก / ลูกค้าไม่อยู่บ้าน", desc: "เงื่อนไขคืนสิทธิ์ล้างแผง" },
   sync:       { title: "ซิงค์ข้อมูลจาก REM", desc: "ดึงทะเบียนโอน/เจ้าของ/ของแถมอัตโนมัติ · บ้านโอนใหม่โผล่เอง ไม่ต้องกด" },
 };
+
+// ค่าที่เลิกใช้แล้ว — ยังอยู่ใน om_settings (ห้ามลบช่วง 3 เดือนแรก) แต่ไม่แสดง เพราะไม่มีผลกับอะไรแล้ว
+//   ★ 1 ต.ค. 69 เลิกใช้ทีม A/B/C (แผน 20261001-01 เฟส 4): คิวต่อทีม · ปลดทีมเมื่อเลื่อนนัด
+const RETIRED = new Set(["booking.slot_per_team", "reschedule.unassign_team"]);
 
 // หน่วยท้ายช่องกรอก — ช่วยให้อ่านออกว่าเลขนี้คืออะไร
 const UNIT: Record<string, string> = {
@@ -71,7 +74,7 @@ function RulesTab() {
 
   if (!items) return <Loading />;
 
-  const pending = items.filter((x) => x.pending_biz && x.value === null);
+  const pending = items.filter((x) => x.pending_biz && x.value === null && !RETIRED.has(x.key));
   const groups = Object.keys(GROUP).filter((g) => items.some((x) => x.group_key === g));
 
   return (
@@ -97,7 +100,7 @@ function RulesTab() {
             <div className="text-xs text-gray-400">{GROUP[g].desc}</div>
           </div>
 
-          {items.filter((x) => x.group_key === g).map((x) => {
+          {items.filter((x) => x.group_key === g && !RETIRED.has(x.key)).map((x) => {
             const isBool = typeof x.value === "boolean" || /by_customer|reset_to_pending|unassign_team|notify_line|refund_quota|consume_quota/.test(x.key);
             return (
               <div key={x.key} className="px-5 py-3 border-t border-gray-100 flex items-start gap-4 flex-wrap">
@@ -163,7 +166,6 @@ const TABS = [
   { k: "conflicts", t: "ค่าขัดกัน" },
   { k: "projects", t: "โครงการ" },
   { k: "queue", t: "คิวจับคู่" },
-  { k: "teams", t: "ทีมช่าง" },
   { k: "forms", t: "ใบตรวจรับงาน" },
 ] as const;
 type TabKey = (typeof TABS)[number]["k"];
@@ -208,7 +210,6 @@ export default function OmSettingsPage() {
       </Header>
 
       <div className="p-3 md:p-4 flex flex-col gap-3">
-        {tab === "teams" && <TeamsTab />}
         {tab === "rules" && <RulesTab />}
         {tab === "conflicts" && <ConflictsTab onChanged={(left) => setCounts((c) => (c ? { ...c, conflicts: left } : c))} />}
         {tab === "projects" && <ProjectsTab />}

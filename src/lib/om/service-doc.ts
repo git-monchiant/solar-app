@@ -113,7 +113,7 @@ export function renderServiceDocHtml(d: ServiceDocInput): string {
     ["โครงการ", dash(d.job.project_name)], ["บ้านเลขที่", dash(d.job.house_number)],
     ["ลูกค้า", dash(d.job.customer_name)], ["โทร.", dash(d.job.phone)],
     ["ประเภทงาน", dash(d.job.service_type)], ["ขนาดติดตั้ง", d.job.kwp_list ? `${esc(d.job.kwp_list)} kW` : "-"],
-    ["ทีมช่าง", dash(d.job.team_name)], ["วันนัด", formatSlotsRange(d.job.time_slot) && d.job.scheduled_at
+    ["วันนัด", formatSlotsRange(d.job.time_slot) && d.job.scheduled_at
       ? `${thDate(d.job.scheduled_at)} เวลา ${formatSlotsRange(d.job.time_slot)} น.`   // ช่วงที่จอง (แผน 20261001-01)
       : thDate(d.job.scheduled_at, true)],
   ];
