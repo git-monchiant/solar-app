@@ -134,7 +134,25 @@ export async function GET(req: NextRequest) {
       ${followupUnion}
       OPTION (MAXRECURSION 366)
     `);
-    return NextResponse.json(fixDates(result.recordset));
+    // ★ งาน O&M ลงปฏิทินร่วม (แผน 20261001-01 เฟส 2 · ทีมสำรวจ/ติดตั้งกับทีมล้างเป็นชุดเดียวกัน)
+    //   team='om' ⇒ CalendarPicker ฝั่งขายที่กรอง team === teamContext ไม่นับเป็นคิว — นัดทับกันได้ แค่เห็น/เตือน
+    //   id = เลขใบงาน O&M คนละชุดกับเลข lead ⇒ คนใช้ต้องดู event_type ก่อนเอา id ไปเปิด lead
+    //   แยก query ไม่ต่อ UNION ข้างบน — คอลัมน์ไม่ตรงกัน (house_id/om_service) และ route นี้ใช้ร่วมกับ v2:
+    //   DB ที่ไม่มีตาราง O&M (ไม่ใช่ v3) ข้ามเงียบ ๆ
+    const om = await db.request().query(`
+      IF OBJECT_ID('dbo.om_bookings', 'U') IS NOT NULL
+        SELECT b.id, b.house_id,
+               ISNULL((SELECT TOP 1 c.full_name FROM om_house_customers hc JOIN om_customers c ON c.id = hc.customer_id
+                        WHERE hc.house_id = b.house_id AND hc.is_current = 1
+                        ORDER BY CASE hc.role WHEN 'owner' THEN 0 ELSE 1 END, hc.id), N'ไม่มีชื่อในฐาน') full_name,
+               h.house_number, CAST(b.scheduled_at AS date) event_date, b.time_slot,
+               'om' event_type, b.status, NULL zone, 'om' team, st.label_th om_service
+          FROM om_bookings b
+          JOIN om_houses h ON h.id = b.house_id
+          LEFT JOIN om_service_type st ON st.id = b.service_type_id
+         WHERE b.scheduled_at IS NOT NULL
+           AND b.status IN ('pending', 'confirmed', 'progress', 'checked')`);
+    return NextResponse.json(fixDates([...result.recordset, ...(om.recordset ?? [])]));
   } catch (error) {
     console.error("GET /api/surveys/scheduled error:", error);
     return NextResponse.json({ error: "Failed" }, { status: 500 });

@@ -3,8 +3,10 @@ import { BoltIcon } from "@/components/ui/icons";
 
 import { useEffect, useMemo, useState } from "react";
 import { useOpenLead } from "@/lib/hooks/useOpenLead";
+import { useOpenOmService } from "@/lib/hooks/useOpenOmService";
 import { apiFetch } from "@/lib/api";
 import { houseNumberOrNull } from "@/lib/utils/name";
+import { OM_EVENT_COLOR, OmWrenchIcon, omEventLabel, type OmEventFields } from "./OmEvent";
 
 // Month-grid sibling of EventCalendarList. Same data source
 // (/api/surveys/scheduled) — different layout. Shows up to 4 events per cell.
@@ -20,7 +22,7 @@ type ScheduledEvent = {
   zone: string | null;
   // เฉพาะ event_type='followup': จำนวนครั้งที่ติดต่อไปแล้ว
   contact_count?: number | null;
-};
+} & OmEventFields;
 
 const TH_MONTHS = [
   "มกราคม", "กุมภาพันธ์", "มีนาคม", "เมษายน", "พฤษภาคม", "มิถุนายน",
@@ -44,13 +46,15 @@ interface MonthProps {
   // Team filter — กติกาเดียวกับ EventCalendarList.controlledTeam:
   // block ที่ไม่ระบุทีม (null) เห็นทุกทีม · "block" = งานอื่นล้วน
   // "followup" = นัดติดตามของ sales ล้วน (fetch เพิ่มจาก API ด้วย include=followup)
-  team?: "all" | "survey" | "install" | "block" | "followup";
+  // "om" = งาน O&M (แผน 20261001-01) — กรองแบบเดียวกับ survey/install (event_type ตรง + block ทุกทีม)
+  team?: "all" | "survey" | "install" | "block" | "followup" | "om";
   // parent คุมเดือนเอง (nav อยู่ใน sticky header ของหน้า) → ซ่อน nav ภายใน
   hideNav?: boolean;
 }
 
 export default function EventCalendarMonth({ toolbarRight, year: controlledYear, month: controlledMonth, onEmptyDayClick, team = "all", hideNav = false }: MonthProps) {
   const openLead = useOpenLead();
+  const openOm = useOpenOmService();
   const today = new Date();
   const [internalYear, setInternalYear] = useState(today.getFullYear());
   const [internalMonth, setInternalMonth] = useState(today.getMonth());
@@ -160,11 +164,12 @@ export default function EventCalendarMonth({ toolbarRight, year: controlledYear,
                     {evs.slice(0, 4).map((ev, j) => {
                       const isBlock = ev.event_type === "block";
                       const isFollowup = ev.event_type === "followup";
-                      const isSurvey = !isBlock && !isFollowup && (ev.status === "survey" || ev.event_type === "survey");
+                      const isOm = ev.event_type === "om";
+                      const isSurvey = !isBlock && !isFollowup && !isOm && (ev.status === "survey" || ev.event_type === "survey");
                       // Border + icon-tint coloured by team (survey vs install)
                       // so teams are distinguishable at a glance. Block stays gray.
-                      // สีต้องตรง legend ในหน้า calendar: Survey = ม่วง (--active), Solar = ส้ม, นัดติดตาม = น้ำเงิน
-                      const tc = isBlock ? null : isFollowup ? "#3b82f6" : isSurvey ? "#8b5cf6" : "#f97316";
+                      // สีต้องตรง legend ในหน้า calendar: Survey = ม่วง (--active), Solar = ส้ม, นัดติดตาม = น้ำเงิน, O&M = teal
+                      const tc = isBlock ? null : isOm ? OM_EVENT_COLOR : isFollowup ? "#3b82f6" : isSurvey ? "#8b5cf6" : "#f97316";
                       const baseCls = isBlock
                         ? "bg-gray-100 text-gray-700 border-gray-300"
                         : "bg-white text-gray-800 border-gray-200";
@@ -173,8 +178,13 @@ export default function EventCalendarMonth({ toolbarRight, year: controlledYear,
                       const inlineStyle: React.CSSProperties | undefined = tc
                         ? { borderColor: isOverdueFollowup ? "#ef4444" : tc, color: tc, backgroundColor: `${tc}14` }
                         : undefined;
-                      const kindLabel = isBlock ? "งานอื่น" : isFollowup ? "นัดติดตาม" : isSurvey ? "สำรวจ" : "ติดตั้ง";
-                      const handleClick = () => { if (!isBlock) openLead(ev.id); };
+                      const kindLabel = isBlock ? "งานอื่น" : isOm ? omEventLabel(ev.om_service) : isFollowup ? "นัดติดตาม" : isSurvey ? "สำรวจ" : "ติดตั้ง";
+                      // งาน O&M: id = เลขใบงาน ไม่ใช่ lead — เปิดหน้างานบริการของบ้าน
+                      const handleClick = () => {
+                        if (isBlock) return;
+                        if (isOm) { if (ev.house_id) openOm(ev.house_id); return; }
+                        openLead(ev.id);
+                      };
                       return (
                         <button
                           key={`${ev.id}-${ev.event_type}-${j}`}
@@ -189,6 +199,8 @@ export default function EventCalendarMonth({ toolbarRight, year: controlledYear,
                             <svg className="w-3 h-3 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
                               <path strokeLinecap="round" strokeLinejoin="round" d="M18.364 18.364A9 9 0 005.636 5.636m12.728 12.728A9 9 0 015.636 5.636m12.728 12.728L5.636 5.636" />
                             </svg>
+                          ) : isOm ? (
+                            <OmWrenchIcon className="w-3 h-3 shrink-0" />
                           ) : isFollowup ? (
                             <svg className="w-3 h-3 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
                               <path strokeLinecap="round" strokeLinejoin="round" d="M2.25 6.75c0 8.284 6.716 15 15 15h2.25a2.25 2.25 0 002.25-2.25v-1.372c0-.516-.351-.966-.852-1.091l-4.423-1.106c-.44-.11-.902.055-1.173.417l-.97 1.293c-.282.376-.769.542-1.21.38a12.035 12.035 0 01-7.143-7.143c-.162-.441.004-.928.38-1.21l1.293-.97c.363-.271.527-.734.417-1.173L6.963 3.102a1.125 1.125 0 00-1.091-.852H4.5A2.25 2.25 0 002.25 4.5v2.25z" />

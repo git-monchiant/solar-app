@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { apiFetch } from "@/lib/api";
 import { HOURLY_SLOTS, parseSlots, serializeSlots, slotLabel } from "@/lib/time-slots";
+import { OM_EVENT_COLOR } from "./OmEvent";
 
 const WEEKDAYS = ["อา", "จ", "อ", "พ", "พฤ", "ศ", "ส"];
 
@@ -64,9 +65,26 @@ export default function CalendarPicker({
   useEffect(() => {
     if (!showSurveySlots) return;
     apiFetch("/api/surveys/scheduled")
-      .then((data) => setSurveys(excludeLeadId ? data.filter((s: { id: number }) => s.id !== excludeLeadId) : data))
+      // ตัดนัดของ lead ตัวเอง — เฉพาะแถวของ lead: งาน O&M id = เลขใบงาน อาจตรงกับเลข lead (แผน 20261001-01)
+      .then((data) => setSurveys(excludeLeadId
+        ? data.filter((s: { id: number; event_type?: string }) => !(s.id === excludeLeadId && s.event_type !== "om"))
+        : data))
       .catch(console.error);
   }, [showSurveySlots, excludeLeadId]);
+
+  // งาน O&M (แผน 20261001-01 เฟส 2) — ทีมเดียวกัน แต่ผู้ใช้เคาะให้นัดทับได้
+  //   ⇒ ไม่นับเป็นคิว (API ส่ง team='om' ไม่ตรง teamContext) แค่ติดจุดให้เห็นว่าวัน/ช่วงไหนทีมมีงาน O&M
+  const omByDate = useMemo(() => {
+    const m: Record<string, { n: number; slots: Set<string> }> = {};
+    for (const s of surveys) {
+      if (s.event_type !== "om" || !s.event_date) continue;
+      const e = (m[s.event_date.slice(0, 10)] ??= { n: 0, slots: new Set() });
+      e.n++;
+      parseSlots(s.time_slot ?? null).forEach(h => e.slots.add(h));
+    }
+    return m;
+  }, [surveys]);
+  const omOnDate = date ? omByDate[date] : undefined;
 
   // Team-scoped events. Block events with team=null apply to both teams.
   const teamEvents = useMemo(() => surveys.filter(s => {
@@ -229,7 +247,8 @@ export default function CalendarPicker({
                           }
                         }}
                         style={bookedStyle ? { minHeight: 0, ...bookedStyle } : { minHeight: 0 }}
-                        className={`w-8 h-8 rounded-full flex items-center justify-center text-sm leading-none font-semibold transition-all ${
+                        title={omByDate[iso] ? `มีงาน O&M ${omByDate[iso].n} งาน (นัดทับได้)` : undefined}
+                        className={`relative w-8 h-8 rounded-full flex items-center justify-center text-sm leading-none font-semibold transition-all ${
                           selected
                             ? "bg-active text-white shadow-sm shadow-active/30"
                             : isInRange
@@ -246,6 +265,11 @@ export default function CalendarPicker({
                         }`}
                       >
                         {d.getDate()}
+                        {/* วันที่ทีมมีงาน O&M — จุดเล็กใต้เลข ไม่ล็อก */}
+                        {omByDate[iso] && (
+                          <span className="absolute bottom-0.5 left-1/2 -translate-x-1/2 w-1 h-1 rounded-full"
+                            style={{ backgroundColor: selected ? "#fff" : OM_EVENT_COLOR }} />
+                        )}
                       </button>
                     </div>
                   );
@@ -268,18 +292,20 @@ export default function CalendarPicker({
               const selected = selectedSlots.includes(s);
               const dayBooked = date && showSurveySlots ? bookedSlotsByDate[date] : null;
               const taken = !!dayBooked && dayBooked.has(s) && !selected;
+              const om = !!omOnDate?.slots.has(s);
               return (
                 <button
                   key={s}
                   type="button"
                   disabled={taken}
+                  title={om && !taken ? "ช่วงนี้ทีมมีงาน O&M — นัดทับได้" : undefined}
                   onClick={() => {
                     const next = selected
                       ? selectedSlots.filter(x => x !== s)
                       : [...selectedSlots, s].sort();
                     onTimeSlotChange(serializeSlots(next) || "");
                   }}
-                  className={`flex items-center justify-center h-8 px-1 rounded-md border transition-all ${
+                  className={`flex items-center justify-center gap-1 h-8 px-1 rounded-md border transition-all ${
                     selected
                       ? "bg-active border-active text-white shadow-sm shadow-active/20"
                       : taken
@@ -288,10 +314,19 @@ export default function CalendarPicker({
                   }`}
                 >
                   <span className="text-[11px] md:text-xxs font-semibold font-mono tabular-nums">{slotLabel(s)}</span>
+                  {om && !taken && (
+                    <span className="w-1.5 h-1.5 rounded-full shrink-0" style={{ backgroundColor: selected ? "#fff" : OM_EVENT_COLOR }} />
+                  )}
                 </button>
               );
             })}
           </div>
+          {omOnDate && (
+            <div className="mt-1.5 flex items-center gap-1.5 text-xxs text-gray-500">
+              <span className="w-1.5 h-1.5 rounded-full shrink-0" style={{ backgroundColor: OM_EVENT_COLOR }} />
+              วันที่เลือกทีมมีงาน O&M {omOnDate.n} งาน — จุดคือช่วงที่ติดงาน · ยังนัดทับได้
+            </div>
+          )}
         </div>
       )}
     </div>

@@ -30,7 +30,8 @@ export default function CalendarPage() {
   // Team filter — calendar shows the survey team's bookings or the solar
   // (install) team's bookings. Replaced the per-zone chips since we don't
   // split work by zone any more.
-  const [selectedTeam, setSelectedTeam] = useState<"all" | "survey" | "install" | "block">("all");
+  // "om" = งาน O&M ในปฏิทินร่วม (แผน 20261001-01 — ทีมสำรวจ/ติดตั้งกับทีมล้างเป็นชุดเดียวกัน)
+  const [selectedTeam, setSelectedTeam] = useState<"all" | "survey" | "install" | "om" | "block">("all");
   const team = followupMode ? ("followup" as const) : selectedTeam;
 
   // เลื่อนไปแถววันนี้: วัดความสูง sticky header สดๆ แล้ว scroll เอง — offset
@@ -153,6 +154,7 @@ export default function CalendarPage() {
                 { value: "all" as const, label: "ทั้งหมด", dot: null, activeCls: "bg-gray-800 text-white border-gray-800" },
                 { value: "survey" as const, label: "ทีม Survey", dot: "bg-active", activeCls: "bg-active text-white border-active" },
                 { value: "install" as const, label: "ทีมติดตั้ง", dot: "bg-orange-500", activeCls: "bg-orange-500 text-white border-orange-500" },
+                { value: "om" as const, label: "O&M", dot: "bg-teal-600", activeCls: "bg-teal-600 text-white border-teal-600" },
                 { value: "block" as const, label: "งานอื่น", dot: "bg-gray-400", activeCls: "bg-gray-500 text-white border-gray-500" },
               ].map((opt) => {
                 const active = selectedTeam === opt.value;

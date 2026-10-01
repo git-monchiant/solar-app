@@ -9,6 +9,7 @@ import { houseNumberOrNull } from "@/lib/utils/name";
 import { getStatusLabel } from "@/lib/constants/statuses";
 import { formatSlotsRange } from "@/lib/time-slots";
 import { formatThaiDate } from "@/lib/utils/formatters";
+import { OM_EVENT_COLOR, OmServiceLink, OmWrenchIcon, omEventLabel, type OmEventFields } from "./OmEvent";
 
 // List-style calendar view used by Today's "ปฏิทิน" tab and the standalone
 // /calendar page. Fetches /api/surveys/scheduled and renders one row per day
@@ -28,7 +29,7 @@ type ScheduledEvent = {
   last_title?: string | null;
   last_note?: string | null;
   last_type?: string | null;
-};
+} & OmEventFields;
 
 // Pill background neutral; the colored bar on the left is what carries the
 // zone identity. Label text still says survey/install so the row stays
@@ -38,6 +39,7 @@ const STATUS_LABEL = (j: ScheduledEvent): string => {
   if (j.event_type === "survey") return "นัดสำรวจ";
   if (j.event_type === "install") return "นัดติดตั้ง";
   if (j.event_type === "followup") return "นัดติดตาม";
+  if (j.event_type === "om") return omEventLabel(j.om_service);
   return getStatusLabel(j);
 };
 
@@ -62,6 +64,7 @@ function EventIcon({ type, channel }: { type: string; channel?: string | null })
       <BoltIcon className="w-3.5 h-3.5 shrink-0 text-gray-600" strokeWidth={2} />
     );
   }
+  if (type === "om") return <OmWrenchIcon className="w-3.5 h-3.5 shrink-0 text-gray-600" />;
   if (type === "followup") {
     // ไอคอนตามช่องทางของ log ที่ลงนัดไว้: LINE / เยี่ยมบ้าน / โทร (default)
     if (channel === "line") {
@@ -104,7 +107,8 @@ interface Props {
   // "survey"/"install" is set, only events whose event_type matches are listed
   // (block events stay visible since they apply globally). "block" = งานอื่นล้วน.
   // "followup" = นัดติดตามของ sales ล้วน (fetch เพิ่มจาก API ด้วย include=followup)
-  controlledTeam?: "all" | "survey" | "install" | "block" | "followup";
+  // "om" = งาน O&M (แผน 20261001-01) — กรองแบบเดียวกับ survey/install
+  controlledTeam?: "all" | "survey" | "install" | "block" | "followup" | "om";
   // Fires whenever the most-visible month section changes due to scroll.
   // Lets the parent's sticky header reflect "what month am I looking at".
   onVisibleMonthChange?: (mk: string) => void;
@@ -318,6 +322,7 @@ export default function EventCalendarList({ monthsBack, monthsForward, days, zon
                             const barColor = isBlock
                               ? null
                               : j.event_type === "install" ? "#f97316"
+                              : j.event_type === "om" ? OM_EVENT_COLOR
                               : j.event_type === "followup" ? "#3b82f6" : "#8b5cf6";
                             const bg = isBlock ? "bg-gray-100" : "bg-gray-50 hover:bg-gray-100";
                             const inner = (
@@ -378,6 +383,9 @@ export default function EventCalendarList({ monthsBack, monthsForward, days, zon
                                   <XIcon className="w-4 h-4" strokeWidth={2} />
                                 </button>
                               </div>
+                            ) : j.event_type === "om" ? (
+                              // งาน O&M: id = เลขใบงาน ไม่ใช่ lead — เปิดหน้างานบริการของบ้าน
+                              <OmServiceLink key={`om-${j.id}`} houseId={j.house_id ?? ""} className={`flex items-center gap-2 p-2 rounded-lg transition-colors ${bg}`}>{inner}</OmServiceLink>
                             ) : (
                               <LeadLink key={`${j.event_type}-${j.id}`} id={j.id} className={`flex items-center gap-2 p-2 rounded-lg transition-colors ${bg}`}>{inner}</LeadLink>
                             );
