@@ -22,11 +22,11 @@ type Preview = {
   rules: { notify_line: boolean };
 };
 
-const hm = (s: string | null) => (s ? s.slice(11, 16) : "");
-
-export default function OmRescheduler({ bookingId, currentAt, rules, onCancel, onSaved }: {
+export default function OmRescheduler({ bookingId, currentAt, currentSlot, rules, onCancel, onSaved }: {
   bookingId: number;
   currentAt: string | null;
+  /** ช่องที่จองอยู่ (JSON array · แผน 20261001-01) — เริ่มฟอร์มด้วยช่องเดิม */
+  currentSlot?: string | null;
   /** ค่าในหน้าตั้งค่า O&M — ช่วงวัน/ระยะล่วงหน้าของตัวเลือกวัน */
   rules?: Record<string, unknown>;
   onCancel: () => void;
@@ -34,7 +34,7 @@ export default function OmRescheduler({ bookingId, currentAt, rules, onCancel, o
   onSaved: (msg: string) => void;
 }) {
   const [date, setDate] = useState(currentAt ? currentAt.slice(0, 10) : "");
-  const [time, setTime] = useState(currentAt ? hm(currentAt) : "");
+  const [slot, setSlot] = useState(currentSlot ?? "");
   const [reason, setReason] = useState("");
   const [preview, setPreview] = useState<Preview | null>(null);
   const [saving, setSaving] = useState(false);
@@ -45,7 +45,8 @@ export default function OmRescheduler({ bookingId, currentAt, rules, onCancel, o
     apiFetch(`/api/om/bookings/${bookingId}/reschedule`).then(setPreview).catch(() => setPreview(null));
   }, [bookingId]);
 
-  const canSave = !!date && !!time && `${date}T${time}` !== (currentAt ? `${currentAt.slice(0, 10)}T${hm(currentAt)}` : "");
+  // เลื่อนได้เมื่อวันหรือช่องต่างจากเดิม — วันเดิมแต่เพิ่ม/ลดช่องก็นับ (API ใช้กติกาเดียวกัน)
+  const canSave = !!date && !!slot && (date !== (currentAt?.slice(0, 10) ?? "") || slot !== (currentSlot ?? ""));
 
   const save = async () => {
     if (!canSave) return;
@@ -53,7 +54,7 @@ export default function OmRescheduler({ bookingId, currentAt, rules, onCancel, o
     try {
       const r: { line: { enabled: boolean; linked: number; sent: number } } = await apiFetch(`/api/om/bookings/${bookingId}/reschedule`, {
         method: "POST",
-        body: JSON.stringify({ scheduled_at: `${date}T${time}`, reason: reason.trim() || null }),
+        body: JSON.stringify({ scheduled_at: date, time_slot: slot, reason: reason.trim() || null }),
       });
       // บอกผลแจ้ง LINE ตามจริง — ผูกไว้แต่ส่งไม่ออก (เช่น LINE ยังไม่เปิดใช้) ต้องไม่เงียบ
       const line = !r.line.linked ? ""
@@ -70,8 +71,8 @@ export default function OmRescheduler({ bookingId, currentAt, rules, onCancel, o
       <div className="text-xs font-semibold tracking-wider uppercase text-gray-400">เลื่อนนัด</div>
 
       <div className="rounded-lg bg-white/60 border border-active/15 p-3 space-y-3">
-        <OmSlotPicker date={date} time={time} excludeId={bookingId} rules={rules} pickedLabel="เลื่อนเป็น"
-          onChange={(d, t) => { setDate(d); setTime(t); }} />
+        <OmSlotPicker date={date} slot={slot} excludeId={bookingId} rules={rules} pickedLabel="เลื่อนเป็น"
+          onDateChange={setDate} onSlotChange={setSlot} />
 
         <div>
           <label className="text-xs text-gray-500 block mb-1.5">เหตุผลที่เลื่อน</label>
@@ -105,7 +106,7 @@ export default function OmRescheduler({ bookingId, currentAt, rules, onCancel, o
         </button>
         <button type="button" onClick={save} disabled={!canSave || saving}
           className="flex-[2] h-11 rounded-lg text-sm font-bold text-white bg-active hover:bg-active-dark disabled:opacity-40 disabled:cursor-not-allowed shadow-sm shadow-active/30 flex items-center justify-center gap-2 cursor-pointer">
-          {saving ? "กำลังบันทึก…" : !date || !time ? "เลือกวันและเวลา" : !canSave ? "ยังเป็นวันเวลาเดิม" : (
+          {saving ? "กำลังบันทึก…" : !date || !slot ? "เลือกวันและเวลา" : !canSave ? "ยังเป็นวันเวลาเดิม" : (
             <><CheckIcon className="w-4 h-4" strokeWidth={2.5} />ยืนยันเลื่อนนัด</>
           )}
         </button>

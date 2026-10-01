@@ -19,6 +19,7 @@ import { useDialog } from "@/components/ui/Dialog";
 import SyncBar from "@/components/om/SyncBar";
 import { SystemCard, type HouseDetail } from "@/components/om/HouseSystemCard";
 import { formatThaiDate } from "@/lib/utils/formatters";
+import { formatSlotsRange } from "@/lib/time-slots";
 
 interface Row {
   id: number; house_number: string | null; project_name: string | null; project_id: string | null;
@@ -742,7 +743,7 @@ export default function OmHousesPage() {
                         <Sec t="นัดล่าสุด" />
                         {sel.bookings.map((b) => (
                           <div key={b.id} className="flex gap-2 px-5 py-1.5 border-b border-gray-100 text-xs">
-                            <span>{b.scheduled_at?.slice(0, 16).replace("T", " · ")}</span>
+                            <span>{b.scheduled_at?.slice(0, 10)} · {formatSlotsRange(b.time_slot) || b.scheduled_at?.slice(11, 16)}</span>
                             <span className="font-semibold">{b.service_type || "—"}</span>
                             <span className="ml-auto text-xxs font-bold px-2 rounded-full bg-gray-100 text-gray-500">{b.status}</span>
                           </div>

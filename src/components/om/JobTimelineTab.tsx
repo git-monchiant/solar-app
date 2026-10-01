@@ -11,7 +11,7 @@ import { useState } from "react";
 import { CALL_OUTCOME, statusLabel, statusTone } from "@/lib/om/booking";
 import { formatTHB } from "@/lib/utils/formatters";
 import {
-  FLOW, teamLabel, thD, thDT, type BookingSummary, type HistoryRow, type Team,
+  FLOW, teamLabel, thD, thAppt, thDT, type BookingSummary, type HistoryRow, type Team,
 } from "@/lib/om/service-view";
 import ServiceDocButton from "@/components/om/ServiceDocButton";
 
@@ -57,7 +57,7 @@ function toRow(h: HistoryRow, teamName: (id: unknown) => string): { stage: Stage
       if (oc === "declined" && to.status === "cancelled")
         return { stage: "closed", row: { ...base, label: "ลูกค้าไม่เอา — ยกเลิกใบงาน", tone: "bad", sub: withReason(by) } };
       if (oc === "agreed")
-        return { stage: "follow", row: { ...base, outcome: oc, label: `โทร · ${t}`, sub: withReason(to.scheduled_at ? `นัด ${thDT(str(to.scheduled_at))}` : by) } };
+        return { stage: "follow", row: { ...base, outcome: oc, label: `โทร · ${t}`, sub: withReason(to.scheduled_at ? `นัด ${thAppt(str(to.scheduled_at), str(to.time_slot) || null)}` : by) } };
       const next = h.next_action_date ?? str(to.next_date);
       return { stage: "follow", row: { ...base, outcome: oc, label: `โทร · ${t}`, detail: "call", sub: withReason(next ? `นัดโทรใหม่ ${thD(next)}` : by) } };
     }
@@ -100,7 +100,7 @@ function toRow(h: HistoryRow, teamName: (id: unknown) => string): { stage: Stage
         "team_id" in to && to.team_id === null && from.team_id ? "ปลดทีม" : null,
       ].filter(Boolean).join(" · ");
       const moved = from.scheduled_at || to.scheduled_at
-        ? `เลื่อนนัด ${thDT(str(from.scheduled_at))} → ${thDT(str(to.scheduled_at))}` : (h.action_label ?? "เลื่อนนัด");
+        ? `เลื่อนนัด ${thAppt(str(from.scheduled_at), str(from.time_slot) || null)} → ${thAppt(str(to.scheduled_at), str(to.time_slot) || null)}` : (h.action_label ?? "เลื่อนนัด");
       return { stage: "appoint", row: { ...base, detail: "appoint", label: moved, sub: withReason(extra || by) } };
     }
     case "assign_team":
@@ -221,7 +221,7 @@ function groupHistory(bookings: BookingSummary[], history: HistoryRow[], teams: 
       const setters = history.filter((h) => h.booking_id === b.id && (h.action === "reschedule" || h.action === "create"
         || (h.action === "call" && (h.outcome ?? parse(h.to_json).outcome) === "agreed")));
       const at = setters.map((h) => h.created_at).sort().pop() ?? b.created_at;
-      appoint.unshift({ key: `anchor${b.id}`, at, label: `นัด ${thDT(b.scheduled_at)}`,
+      appoint.unshift({ key: `anchor${b.id}`, at, label: `นัด ${thAppt(b.scheduled_at, b.time_slot)}`,
         sub: [b.rescheduled_count > 0 ? `เลื่อนมาแล้ว ${b.rescheduled_count} ครั้ง` : null, b.team_name ? teamLabel(b.team_name) : null]
           .filter(Boolean).join(" · ") || null });
     }

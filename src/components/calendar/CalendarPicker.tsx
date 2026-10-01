@@ -2,7 +2,8 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { apiFetch } from "@/lib/api";
-import { HOURLY_SLOTS, parseSlots, serializeSlots, slotLabel } from "@/lib/time-slots";
+import { HOURLY_SLOTS, formatSlotsRange, parseSlots, serializeSlots, slotLabel } from "@/lib/time-slots";
+import { houseNumberOrNull } from "@/lib/utils/name";
 import { OM_EVENT_COLOR } from "./OmEvent";
 
 const WEEKDAYS = ["อา", "จ", "อ", "พ", "พฤ", "ศ", "ส"];
@@ -34,6 +35,16 @@ interface Props {
    * 3rd click = reset to new start. Click on start clears the range. */
   dateEnd?: string;
   onDateEndChange?: (d: string) => void;
+  /** "warn" = เห็นนัดทุกทีม (สำรวจ/ติดตั้ง/O&M) เป็นจุด แต่ไม่ล็อก — ล็อกเฉพาะปิดช่อง (block)
+   *  ใช้กับงาน O&M ที่ทีมเดียวกับสำรวจ แต่ผู้ใช้เคาะให้นัดทับได้ (แผน 20261001-01 เฟส 3)
+   *  ค่าเริ่มต้น "block" = แบบเดิมของฝั่งขาย (นัดทีมเดียวกันล็อก · งาน O&M เป็นจุด) */
+  overlap?: "block" | "warn";
+  /** เลื่อนนัดใบงาน O&M — ไม่นับใบตัวเองเป็นนัดทับ */
+  excludeOmBookingId?: number | null;
+  /** วันไกลสุดที่เลือกได้ (YYYY-MM-DD) — เกินนี้กดไม่ได้ */
+  maxDate?: string;
+  /** ช่องที่กดไม่ได้เพิ่มเติม เช่น ช่วงที่เริ่มไปแล้วของวันนี้ */
+  slotDisabled?: (date: string, slot: string) => boolean;
 }
 
 // Team colours mirror the calendar page legend so the picker reads the same
@@ -42,6 +53,10 @@ const TEAM_COLOR: Record<string, string> = {
   survey: "#8b5cf6",
   install: "#f97316",
 };
+// นัดที่ "เห็นแต่ไม่ล็อก" (จุดบนวัน/ช่วงเวลา) — สีตรง legend หน้า /calendar
+const INFO_COLOR: Record<string, string> = { ...TEAM_COLOR, om: OM_EVENT_COLOR };
+const INFO_LABEL: Record<string, string> = { survey: "สำรวจ", install: "ติดตั้ง", om: "O&M" };
+type Info = { kind: string; label: string; slots: string[] | null };   // slots null = ทั้งวัน
 
 export default function CalendarPicker({
   date,
@@ -57,40 +72,58 @@ export default function CalendarPicker({
   allowPast = false,
   dateEnd,
   onDateEndChange,
+  overlap = "block",
+  excludeOmBookingId,
+  maxDate,
+  slotDisabled,
 }: Props) {
   const rangeMode = !!onDateEndChange;
   void zoneFilter;
-  const [surveys, setSurveys] = useState<{ id: number; event_date?: string; time_slot?: string | null; event_type?: string; survey_date?: string; survey_time_slot?: string | null; zone?: string | null; team?: string | null }[]>([]);
+  const [surveys, setSurveys] = useState<{ id: number; event_date?: string; time_slot?: string | null; event_type?: string; survey_date?: string; survey_time_slot?: string | null; zone?: string | null; team?: string | null; house_number?: string | null; full_name?: string | null }[]>([]);
 
   useEffect(() => {
     if (!showSurveySlots) return;
     apiFetch("/api/surveys/scheduled")
-      // ตัดนัดของ lead ตัวเอง — เฉพาะแถวของ lead: งาน O&M id = เลขใบงาน อาจตรงกับเลข lead (แผน 20261001-01)
-      .then((data) => setSurveys(excludeLeadId
-        ? data.filter((s: { id: number; event_type?: string }) => !(s.id === excludeLeadId && s.event_type !== "om"))
-        : data))
+      // ตัดนัดของตัวเอง — lead ตัดเฉพาะแถว lead · ใบงาน O&M ตัดเฉพาะแถว O&M
+      //   (id ของงาน O&M = เลขใบงาน อาจตรงกับเลข lead — แผน 20261001-01)
+      .then((data: { id: number; event_type?: string }[]) => setSurveys(data.filter(s =>
+        !(excludeLeadId && s.id === excludeLeadId && s.event_type !== "om")
+        && !(excludeOmBookingId && s.id === excludeOmBookingId && s.event_type === "om"))))
       .catch(console.error);
-  }, [showSurveySlots, excludeLeadId]);
+  }, [showSurveySlots, excludeLeadId, excludeOmBookingId]);
 
-  // งาน O&M (แผน 20261001-01 เฟส 2) — ทีมเดียวกัน แต่ผู้ใช้เคาะให้นัดทับได้
-  //   ⇒ ไม่นับเป็นคิว (API ส่ง team='om' ไม่ตรง teamContext) แค่ติดจุดให้เห็นว่าวัน/ช่วงไหนทีมมีงาน O&M
-  const omByDate = useMemo(() => {
-    const m: Record<string, { n: number; slots: Set<string> }> = {};
+  // นัดที่ "เห็นแต่ไม่ล็อก" (แผน 20261001-01) — จุดบนวัน/ช่วงเวลา + เตือนเมื่อเลือกทับ
+  //   โหมดปกติ (ฝั่งขาย) = งาน O&M อย่างเดียว (นัดทีมเดียวกันล็อกอยู่แล้ว) · โหมด warn (O&M) = นัดทุกทีม
+  //   ติดตั้งไม่มีช่วงเวลา = ทั้งวัน
+  const infoByDate = useMemo(() => {
+    const kinds = overlap === "warn" ? ["survey", "install", "om"] : ["om"];
+    const m: Record<string, Info[]> = {};
     for (const s of surveys) {
-      if (s.event_type !== "om" || !s.event_date) continue;
-      const e = (m[s.event_date.slice(0, 10)] ??= { n: 0, slots: new Set() });
-      e.n++;
-      parseSlots(s.time_slot ?? null).forEach(h => e.slots.add(h));
+      const kind = s.event_type ?? "";
+      if (!kinds.includes(kind) || !s.event_date) continue;
+      const slots = kind === "install" ? [] : parseSlots(s.time_slot ?? null);
+      (m[s.event_date.slice(0, 10)] ??= []).push({
+        kind, label: houseNumberOrNull(s.house_number ?? null) ?? s.full_name ?? "", slots: slots.length ? slots : null,
+      });
     }
     return m;
-  }, [surveys]);
-  const omOnDate = date ? omByDate[date] : undefined;
+  }, [surveys, overlap]);
+  const kindsAt = (iso: string, slot?: string) =>
+    [...new Set((infoByDate[iso] ?? []).filter(i => !slot || !i.slots || i.slots.includes(slot)).map(i => i.kind))];
+  const infoTitle = (iso: string) => {
+    const list = infoByDate[iso];
+    if (!list?.length) return undefined;
+    const n = (k: string) => list.filter(i => i.kind === k).length;
+    return `มีนัด ${kindsAt(iso).map(k => `${INFO_LABEL[k]} ${n(k)}`).join(" · ")} (นัดทับได้)`;
+  };
 
   // Team-scoped events. Block events with team=null apply to both teams.
+  // โหมด warn: นัดไม่ล็อก — ล็อกเฉพาะปิดช่อง (block) ของทีมนี้/ทุกทีม
   const teamEvents = useMemo(() => surveys.filter(s => {
     if (s.event_type === "block") return s.team == null || s.team === teamContext;
+    if (overlap === "warn") return false;
     return s.team === teamContext;
-  }), [surveys, teamContext]);
+  }), [surveys, teamContext, overlap]);
 
   // Same-day tint. Real bookings (survey/install) take the team colour, while
   // manual blocks (admin "ทีมไปทำอย่างอื่น") show as neutral gray — they
@@ -134,6 +167,7 @@ export default function CalendarPicker({
 
   // Currently selected hourly slots for this picker (multi-select).
   const selectedSlots = parseSlots(timeSlot);
+  const infoOn = date ? infoByDate[date] ?? [] : [];
 
   const today = new Date(); today.setHours(0, 0, 0, 0);
   // Back-dating view shifts the window one month earlier so the user can
@@ -183,7 +217,8 @@ export default function CalendarPicker({
                   const isPartial = !!booked && bookedCount > 0 && !isFull;
                   // Full-day picker (install) — any prior booking blocks the day.
                   const fullDayEvent = !showTimeSlot;
-                  const pastBlocks = isPast && !allowPast;
+                  // ไกลเกิน maxDate (เช่น ระยะนัดล่วงหน้าของ O&M) กดไม่ได้ หน้าตาแบบวันที่ผ่านแล้ว
+                  const pastBlocks = (isPast && !allowPast) || (!!maxDate && iso > maxDate);
                   const disabled = pastBlocks || (showSurveySlots && (isFull || (fullDayEvent && isPartial)));
                   // Tint booked cells by the zone of the first booking on
                   // that date. Falls back to neutral red/amber when the zone
@@ -247,7 +282,7 @@ export default function CalendarPicker({
                           }
                         }}
                         style={bookedStyle ? { minHeight: 0, ...bookedStyle } : { minHeight: 0 }}
-                        title={omByDate[iso] ? `มีงาน O&M ${omByDate[iso].n} งาน (นัดทับได้)` : undefined}
+                        title={infoTitle(iso)}
                         className={`relative w-8 h-8 rounded-full flex items-center justify-center text-sm leading-none font-semibold transition-all ${
                           selected
                             ? "bg-active text-white shadow-sm shadow-active/30"
@@ -265,10 +300,13 @@ export default function CalendarPicker({
                         }`}
                       >
                         {d.getDate()}
-                        {/* วันที่ทีมมีงาน O&M — จุดเล็กใต้เลข ไม่ล็อก */}
-                        {omByDate[iso] && (
-                          <span className="absolute bottom-0.5 left-1/2 -translate-x-1/2 w-1 h-1 rounded-full"
-                            style={{ backgroundColor: selected ? "#fff" : OM_EVENT_COLOR }} />
+                        {/* วันที่มีนัดแบบเห็นแต่ไม่ล็อก — จุดเล็กใต้เลข 1 จุดต่อทีม */}
+                        {infoByDate[iso] && (
+                          <span className="absolute bottom-0.5 left-1/2 -translate-x-1/2 flex gap-px">
+                            {kindsAt(iso).map(k => (
+                              <span key={k} className="w-1 h-1 rounded-full" style={{ backgroundColor: selected ? "#fff" : INFO_COLOR[k] }} />
+                            ))}
+                          </span>
                         )}
                       </button>
                     </div>
@@ -291,14 +329,16 @@ export default function CalendarPicker({
             {HOURLY_SLOTS.map(s => {
               const selected = selectedSlots.includes(s);
               const dayBooked = date && showSurveySlots ? bookedSlotsByDate[date] : null;
-              const taken = !!dayBooked && dayBooked.has(s) && !selected;
-              const om = !!omOnDate?.slots.has(s);
+              // ช่องที่คนเรียกปิดเพิ่ม (เช่น เลยเวลาแล้ว) — ช่องที่เลือกอยู่ยังกดเอาออกได้
+              const taken = (!!dayBooked && dayBooked.has(s) && !selected)
+                || (!!date && !selected && !!slotDisabled?.(date, s));
+              const kinds = date && !taken ? kindsAt(date, s) : [];
               return (
                 <button
                   key={s}
                   type="button"
                   disabled={taken}
-                  title={om && !taken ? "ช่วงนี้ทีมมีงาน O&M — นัดทับได้" : undefined}
+                  title={kinds.length ? `ช่วงนี้มีนัด ${kinds.map(k => INFO_LABEL[k]).join(" · ")} — นัดทับได้` : undefined}
                   onClick={() => {
                     const next = selected
                       ? selectedSlots.filter(x => x !== s)
@@ -314,21 +354,43 @@ export default function CalendarPicker({
                   }`}
                 >
                   <span className="text-[11px] md:text-xxs font-semibold font-mono tabular-nums">{slotLabel(s)}</span>
-                  {om && !taken && (
-                    <span className="w-1.5 h-1.5 rounded-full shrink-0" style={{ backgroundColor: selected ? "#fff" : OM_EVENT_COLOR }} />
-                  )}
+                  {kinds.map(k => (
+                    <span key={k} className="w-1.5 h-1.5 rounded-full shrink-0" style={{ backgroundColor: selected ? "#fff" : INFO_COLOR[k] }} />
+                  ))}
                 </button>
               );
             })}
           </div>
-          {omOnDate && (
-            <div className="mt-1.5 flex items-center gap-1.5 text-xxs text-gray-500">
-              <span className="w-1.5 h-1.5 rounded-full shrink-0" style={{ backgroundColor: OM_EVENT_COLOR }} />
-              วันที่เลือกทีมมีงาน O&M {omOnDate.n} งาน — จุดคือช่วงที่ติดงาน · ยังนัดทับได้
-            </div>
-          )}
         </div>
       )}
+
+      {/* นัดของวันที่เลือกที่ "เห็นแต่ไม่ล็อก" — บอกความหมายของจุด + เตือนเมื่อเลือกทับ (ยังบันทึกได้) */}
+      {date && infoOn.length > 0 && (() => {
+        const clash = showTimeSlot
+          ? infoOn.filter(i => selectedSlots.length > 0 && (!i.slots || i.slots.some(x => selectedSlots.includes(x))))
+          : infoOn;
+        return (
+          <div className="mt-1.5 space-y-1">
+            {showTimeSlot && (
+              <div className="flex items-center gap-x-2 gap-y-0.5 flex-wrap text-xxs text-gray-500">
+                <span>วันที่เลือกมีนัด</span>
+                {kindsAt(date).map(k => (
+                  <span key={k} className="inline-flex items-center gap-1">
+                    <span className="w-1.5 h-1.5 rounded-full" style={{ backgroundColor: INFO_COLOR[k] }} />
+                    {INFO_LABEL[k]} {infoOn.filter(i => i.kind === k).length}
+                  </span>
+                ))}
+                <span>— จุดคือช่วงที่ติดนัด · ยังนัดทับได้</span>
+              </div>
+            )}
+            {clash.length > 0 && (
+              <div className="text-xxs font-semibold text-amber-700 leading-relaxed">
+                ⚠ ทับนัด {clash.map(i => `${INFO_LABEL[i.kind]} ${i.label} (${i.slots ? formatSlotsRange(serializeSlots(i.slots)) : "ทั้งวัน"})`).join(" · ")} — ยังบันทึกได้
+              </div>
+            )}
+          </div>
+        );
+      })()}
     </div>
   );
 }

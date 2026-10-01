@@ -32,7 +32,7 @@ export interface HouseDetail {
   serviceTypes?: { id: number; code: string; label_th: string; consumes_quota: number;
     cycle_months: number | null }[];
   customers: { link_id: number; role: string; customer_id: number; full_name: string; phone: string | null }[];
-  bookings: { id: number; scheduled_at: string; status: string; service_type: string | null }[];
+  bookings: { id: number; scheduled_at: string; time_slot?: string | null; status: string; service_type: string | null }[];
   // ของแถมตอนขาย — เก็บแค่ "เจอกี่รายการ" กับข้อมูลโซลาร์ · ★ ไม่มีราคา ไม่มีรายชื่อของแถม
   promo?: { n_items: number; n_solar: number; solar_kw: number | null; om_years: number | null;
     solar_name: string | null; contract_id: string | null } | null;

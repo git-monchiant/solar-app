@@ -59,7 +59,7 @@ export async function loadForm(db: sql.ConnectionPool, bookingId: number) {
 export async function loadJobReport(db: sql.ConnectionPool, id: number) {
   const r = await db.request().input("id", sql.Int, id).query(`
     SELECT b.id, b.house_id, b.status, b.team_id, t.name team_name,
-           CONVERT(varchar(33), b.scheduled_at, 126) scheduled_at,
+           CONVERT(varchar(33), b.scheduled_at, 126) scheduled_at, b.time_slot,
            st.label_th service_type, st.code service_code, CAST(st.consumes_quota AS int) consumes_quota,
            h.house_number, h.project_id, ISNULL(pj.name_th, h.project_name) project_name,
            (SELECT TOP 1 c.full_name FROM om_house_customers hc JOIN om_customers c ON c.id = hc.customer_id

@@ -1,4 +1,5 @@
 import type { FormItem } from "@/lib/om/job-form";
+import { formatSlotsRange } from "@/lib/time-slots";
 
 // ใบบริการ PDF (ใบตรวจรับงาน / ใบบริการ) — สร้าง HTML ฝั่ง server แล้วให้ puppeteer พิมพ์เป็น A4
 // ★ แผน 20260928-04 ข้อ 9 (ผู้ใช้เคาะ "ทำตามแนะนำ" 28 ก.ย. 69)
@@ -26,6 +27,7 @@ export type ServiceDocInput = {
   bookingId: number;
   job: {
     status: string; scheduled_at: string | null; service_type: string | null; team_name: string | null;
+    time_slot?: string | null;
     house_number: string | null; project_name: string | null; customer_name: string | null;
     phone: string | null; kwp_list: string | null;
   };
@@ -111,7 +113,9 @@ export function renderServiceDocHtml(d: ServiceDocInput): string {
     ["โครงการ", dash(d.job.project_name)], ["บ้านเลขที่", dash(d.job.house_number)],
     ["ลูกค้า", dash(d.job.customer_name)], ["โทร.", dash(d.job.phone)],
     ["ประเภทงาน", dash(d.job.service_type)], ["ขนาดติดตั้ง", d.job.kwp_list ? `${esc(d.job.kwp_list)} kW` : "-"],
-    ["ทีมช่าง", dash(d.job.team_name)], ["วันนัด", thDate(d.job.scheduled_at, true)],
+    ["ทีมช่าง", dash(d.job.team_name)], ["วันนัด", formatSlotsRange(d.job.time_slot) && d.job.scheduled_at
+      ? `${thDate(d.job.scheduled_at)} เวลา ${formatSlotsRange(d.job.time_slot)} น.`   // ช่วงที่จอง (แผน 20261001-01)
+      : thDate(d.job.scheduled_at, true)],
   ];
 
   let n = 0;

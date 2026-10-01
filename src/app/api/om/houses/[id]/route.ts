@@ -69,7 +69,7 @@ export async function GET(req: NextRequest, ctx: { params: Promise<{ id: string 
     FROM om_house_customers hc JOIN om_customers c ON c.id = hc.customer_id
     WHERE hc.house_id = @id AND hc.is_current = 1 ORDER BY CASE hc.role WHEN 'owner' THEN 0 ELSE 1 END, hc.id;
 
-    SELECT TOP 5 b.id, CONVERT(varchar(33), b.scheduled_at, 126) scheduled_at, b.status,
+    SELECT TOP 5 b.id, CONVERT(varchar(33), b.scheduled_at, 126) scheduled_at, b.time_slot, b.status,
            st.label_th service_type
     FROM om_bookings b LEFT JOIN om_service_type st ON st.id = b.service_type_id
     WHERE b.house_id = @id ORDER BY b.scheduled_at DESC;

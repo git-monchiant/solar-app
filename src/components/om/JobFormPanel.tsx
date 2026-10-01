@@ -22,9 +22,11 @@ import {
 } from "@/components/ui/icons";
 import { PROXY_REASONS, failCount, type Checks, type FormItem, type JobForm } from "@/lib/om/job-form";
 import { statusLabel } from "@/lib/om/booking";
+import { thAppt } from "@/lib/om/service-view";
 
 type Job = {
   id: number; house_id: number; status: string; team_name: string | null; scheduled_at: string | null;
+  time_slot?: string | null;
   service_type: string | null; consumes_quota: number; house_number: string | null;
   project_name: string | null; customer_name: string | null; phone: string | null; kwp_list: string | null;
 };
@@ -36,8 +38,6 @@ type Report = {
 };
 type FormWithItems = JobForm & { items: FormItem[] };
 
-const thDT = (s: string | null) =>
-  !s ? "—" : new Date(s).toLocaleString("th-TH", { day: "numeric", month: "short", year: "2-digit", hour: "2-digit", minute: "2-digit" });
 
 // ขั้นย่อยของขั้นเข้างาน — แบบ SUB_STEPS ของ InstallStep (นัด / ตรวจ / … / ส่งมอบ)
 const SUB_STEPS = ["ตรวจ", "รูป · บันทึก", "ส่งมอบ"] as const;
@@ -487,7 +487,7 @@ export default function JobFormPanel({ jobId, wrapClass = "h-full overflow-auto 
       { k: "ลูกค้า", v: job.customer_name, wide: true }, { k: "บ้านเลขที่", v: job.house_number },
       { k: "โครงการ", v: job.project_name, wide: true }, { k: "เบอร์", v: job.phone }, { k: "ทีม", v: job.team_name },
     ]),
-    { k: "ประเภทงาน", v: job.service_type }, { k: "วันนัด", v: thDT(job.scheduled_at) },
+    { k: "ประเภทงาน", v: job.service_type }, { k: "วันนัด", v: thAppt(job.scheduled_at, job.time_slot) },
     { k: "ขนาดติดตั้ง", v: kw }, { k: "ใบตรวจ", v: formName, wide: true },
   ];
 

@@ -3,6 +3,7 @@
 //  พอรายละเอียดมี URL ของตัวเองแล้วต้อง import ข้ามไฟล์ได้)
 //
 // ★ ค่าคงที่ล้วน ห้ามลาก mssql เข้ามา — ทั้งสองฝั่งเป็น "use client"
+import { formatSlotsRange } from "@/lib/time-slots";
 
 /** แถบความคืบหน้าในการ์ด/หน้ารายละเอียด — 6 ขั้น · ชื่อต้องตรงกับ BOOKING_STATUS ใน booking.ts
  *  paid = ขั้นของงานเสียเงินเท่านั้น (สิทธิ์หมด / ซ่อมนอกประกัน / งานเพิ่ม) งานใช้สิทธิ์ฟรีข้ามไป
@@ -131,6 +132,8 @@ export interface Item {
   calls: number; no_answer: number; last_call_at: string | null; next_call: string | null;
   last_outcome: string | null; last_by: string | null;
   booking_id: number | null; job_status: string | null; scheduled_at: string | null;
+  /** ช่องที่จอง (JSON array แบบนัดสำรวจ · แผน 20261001-01) — ใบเก่าที่ไม่มีวันนัด = null */
+  time_slot?: string | null;
   team_id: number | null; team_name: string | null; service_type: string | null;
   /** เจ้าของเคส (เฟส 4) — คนคุมงาน/คนโทร คนละอย่างกับ team_id ที่เป็นทีมช่างไปหน้างาน */
   owner_user_id: number | null; owner_name: string | null;
@@ -166,6 +169,8 @@ export interface HistoryRow {
 export interface BookingSummary {
   id: number; status: string; service_type: string | null; consumes_quota: number | null;
   scheduled_at: string | null; created_at: string;
+  /** ช่องที่จอง (แผน 20261001-01) */
+  time_slot?: string | null;
   /** ใบงานซ่อม — มาจากใบงานไหน · 1 ในประกัน / 0 นอกประกัน */
   parent_booking_id: number | null; in_warranty: number | null;
   cancelled_reason: string | null; rescheduled_count: number; team_name: string | null;
@@ -179,6 +184,10 @@ export const thD = (s: string | null) =>
   !s ? "—" : new Date(s).toLocaleDateString("th-TH", { day: "numeric", month: "short", year: "2-digit" });
 export const thDT = (s: string | null) =>
   !s ? "—" : new Date(s).toLocaleString("th-TH", { day: "numeric", month: "short", year: "2-digit", hour: "2-digit", minute: "2-digit" });
+/** วันนัด O&M แบบช่วงเวลา — "2 ต.ค. 69 09:00 - 10:30" (แผน 20261001-01 · ช่องแบบนัดสำรวจ)
+ *  ใบที่ยังไม่มี time_slot (ไม่มีวันนัด/ข้อมูลก่อน migration) ใช้วันเวลาเริ่มแบบเดิม */
+export const thAppt = (at: string | null, slot?: string | null) =>
+  !at ? "—" : formatSlotsRange(slot) ? `${thD(at)} ${formatSlotsRange(slot)}` : thDT(at);
 export const monthsAgo = (s: string | null) =>
   !s ? null : Math.round((Date.now() - new Date(s).getTime()) / 2592000000);
 /** ชื่อทีมช่างพร้อมคำว่า "ทีม" — ชื่อในฐานบางทีมมีคำว่าทีมอยู่แล้ว ("ทีม A") ไม่งั้นขึ้น "ทีม ทีม A" */

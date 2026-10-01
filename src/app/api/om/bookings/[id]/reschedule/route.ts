@@ -7,6 +7,7 @@ import { logBooking } from "@/lib/om/booking-log";
 import { resolveOmNotifications } from "@/lib/om/notifications";
 import { toThaiOffset } from "@/lib/om/booking";
 import { omSlotsFor } from "@/lib/om/time-slot";
+import { formatSlotsRange } from "@/lib/time-slots";
 
 // เลื่อนนัดจากปุ่ม Reschedule ในหน้ารายละเอียด (แผน 20260928-04 · ผู้ใช้เคาะ "ทำตามแนะนำ" ข้อ 4 ข)
 // ★ ใช้กติกาในหน้าตั้งค่า O&M (กลุ่ม "การเลื่อนนัด") กับการเลื่อนโดยทีมงาน:
@@ -156,7 +157,7 @@ export async function POST(req: NextRequest, ctx: { params: Promise<{ id: string
     const time = d.toLocaleTimeString("th-TH", { timeZone: "Asia/Bangkok", hour: "2-digit", minute: "2-digit" });
     const text = [
       `แจ้งเลื่อนนัด${cur.service_type ? `${cur.service_type}` : "งานบริการ"} บ้านเลขที่ ${cur.house_number ?? "-"}`,
-      `นัดใหม่: ${day} เวลา ${time} น.`,
+      `นัดใหม่: ${day} เวลา ${formatSlotsRange(picked.slot) || time} น.`,   // ช่วงที่จอง (แผน 20261001-01)
       toPending ? "เจ้าหน้าที่จะติดต่อยืนยันนัดอีกครั้ง" : null,
     ].filter(Boolean).join("\n");
     for (const u of lineUsers) {

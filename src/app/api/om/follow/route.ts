@@ -112,7 +112,7 @@ export async function GET(req: NextRequest) {
     -- ใบงานทุกใบของบ้าน (โหมดบ้านเดียว) — หัวกลุ่มของแท็บ Timeline (แผน 20260928-05)
     IF @house > 0
       SELECT b.id, b.status, st.label_th service_type, CAST(st.consumes_quota AS int) consumes_quota,
-             CONVERT(varchar(33), b.scheduled_at, 126) scheduled_at,
+             CONVERT(varchar(33), b.scheduled_at, 126) scheduled_at, b.time_slot,
              CONVERT(varchar(33), b.created_at, 126) created_at,
              b.parent_booking_id, CAST(b.in_warranty AS int) in_warranty, b.cancelled_reason,
              ISNULL(b.rescheduled_count, 0) rescheduled_count, t.name team_name,
@@ -179,6 +179,9 @@ export async function POST(req: NextRequest) {
       ? new Date(Date.now() + auto * 86400000).toISOString().slice(0, 10)
       : null;
 
+  // วันเวลานัดที่ server คิดแล้ว — จดลงประวัติการโทรด้วย (เดิมจดค่าที่ client ส่งมา)
+  let apptAt: string | null = null;
+  let apptSlot: string | null = null;
   const tx = new sql.Transaction(db);
   await tx.begin();
   try {
@@ -200,6 +203,8 @@ export async function POST(req: NextRequest) {
         }
         when = toThaiOffset(r.at);
         slot = r.slot;
+        apptAt = when;
+        apptSlot = slot;
       }
       const status = outcome === "agreed" ? "pending" : "follow";
 
@@ -299,7 +304,7 @@ export async function POST(req: NextRequest) {
 
     await logBooking(tx, {
       bookingId, houseId, action: "call", actorUserId: gate.userId ?? null,
-      to: { outcome, next_date: next, scheduled_at: b.scheduled_at ?? null },
+      to: { outcome, next_date: next, scheduled_at: apptAt ?? b.scheduled_at ?? null, time_slot: apptSlot },
       reason: typeof b.note === "string" ? b.note.trim() || null : null,
       nextActionDate: next,
     });

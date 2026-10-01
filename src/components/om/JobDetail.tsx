@@ -35,7 +35,7 @@ import StepLayout from "@/components/lead/detail/StepLayout";
 import DoneSection from "@/components/lead/detail/steps/DoneSection";
 import ModalBase from "@/components/ui/ModalBase";
 import {
-  BUCKET_LABEL, FLOW, QUOTE_STATUS, TONE, flowIndex, jobAt, skipsPaidSteps, teamLabel, thD, thDT,
+  BUCKET_LABEL, FLOW, QUOTE_STATUS, TONE, flowIndex, jobAt, skipsPaidSteps, teamLabel, thD, thAppt,
   type BookingSummary, type HistoryRow, type Item, type Team,
 } from "@/lib/om/service-view";
 
@@ -136,7 +136,8 @@ export default function JobDetail({ item, history, bookings = [], rules, onBack,
   const [note, setNote] = useState("");
   // วันนัด + เวลาเริ่มของช่วง (om_slot_config) — เดิมช่อง datetime-local ช่องเดียว
   const [apDate, setApDate] = useState("");
-  const [apTime, setApTime] = useState("");
+  // ช่องที่จอง (JSON array แบบนัดสำรวจ) — แผน 20261001-01 เฟส 3 · เดิมเวลาเริ่มของช่วงเดียว
+  const [apSlot, setApSlot] = useState("");
   const [nextDate, setNextDate] = useState("");
   const [teams, setTeams] = useState<Team[]>([]);
   const [busy, setBusy] = useState(false);
@@ -210,11 +211,11 @@ export default function JobDetail({ item, history, bookings = [], rules, onBack,
     // ตกลงนัดเลือกพรุ่งนี้ไว้ก่อน — ช่วงเวลาของวันนั้นขึ้นให้เลือกเลย ไม่ต้องกดวันก่อน
     if (k === "agreed" && !apDate) setApDate(plusDays(1));
   };
-  const resetCall = () => { setOutcome(""); setNote(""); setApDate(""); setApTime(""); setNextDate(""); setErr(""); };
+  const resetCall = () => { setOutcome(""); setNote(""); setApDate(""); setApSlot(""); setNextDate(""); setErr(""); };
 
   const saveCall = async () => {
     if (!outcome) return;
-    if (outcome === "agreed" && (!apDate || !apTime)) { setErr("ตกลงนัดแล้วต้องเลือกวันและช่วงเวลา"); return; }
+    if (outcome === "agreed" && (!apDate || !apSlot)) { setErr("ตกลงนัดแล้วต้องเลือกวันและช่วงเวลา"); return; }
     setBusy(true); setErr("");
     try {
       await apiFetch("/api/om/follow", {
@@ -223,7 +224,8 @@ export default function JobDetail({ item, history, bookings = [], rules, onBack,
           house_id: item.house_id, booking_id: item.booking_id, outcome,
           note: note || null,
           next_date: outcome in autoNext ? nextDate || null : null,
-          scheduled_at: outcome === "agreed" ? `${apDate}T${apTime}` : null,
+          scheduled_at: outcome === "agreed" ? apDate : null,
+          time_slot: outcome === "agreed" ? apSlot : null,
           phone: item.phone,
         }),
       });
@@ -391,7 +393,7 @@ export default function JobDetail({ item, history, bookings = [], rules, onBack,
   //   ⇒ คำอธิบายผล/โน้ตย้ายขึ้นไปอยู่ใต้ปุ่มผลการโทร ปฏิทินจะได้ต่อกับปุ่มยืนยันเลยแบบตัวอย่าง
   const callForm = (schedule: boolean) => {
     const blockQuote = !schedule && outcome === "agreed" && needQuote;
-    const needSlot = outcome === "agreed" && (!apDate || !apTime);
+    const needSlot = outcome === "agreed" && (!apDate || !apSlot);
     return (
     <>
       {callSummary(schedule)}
@@ -463,8 +465,8 @@ export default function JobDetail({ item, history, bookings = [], rules, onBack,
       {outcome === "agreed" && !blockQuote && (
         <div className="mt-4 space-y-3">
           <div className="text-xs font-semibold tracking-wider uppercase text-gray-400">นัดเข้าบริการ</div>
-          <OmSlotPicker date={apDate} time={apTime} excludeId={item.booking_id} rules={rules} pickedLabel="นัดเป็น"
-            onChange={(d, t) => { setApDate(d); setApTime(t); }} />
+          <OmSlotPicker date={apDate} slot={apSlot} excludeId={item.booking_id} rules={rules} pickedLabel="นัดเป็น"
+            onDateChange={setApDate} onSlotChange={setApSlot} />
         </div>
       )}
 
@@ -752,7 +754,7 @@ export default function JobDetail({ item, history, bookings = [], rules, onBack,
             <StepCard n={3} className={cardWrap(3)} state={stepState(3)} doneTitle="นัดหมายแล้ว" onHeaderClick={() => toggleDone(3)}
               title={paidWaiting ? "นัดหมาย — โทรตกลงวันนัด" : "นัดหมาย — ยืนยันนัด · จ่ายทีมช่าง"}>
               {stepState(3) === "done" ? doneView(3,
-                <DoneHead text={`นัด ${thDT(item.scheduled_at)}${item.team_name ? ` · ${teamLabel(item.team_name)}` : ""}`} />,
+                <DoneHead text={`นัด ${thAppt(item.scheduled_at, item.time_slot)}${item.team_name ? ` · ${teamLabel(item.team_name)}` : ""}`} />,
                 () => events("appoint", "blue", "นัดหมาย · ทีมช่าง"),
               ) : paidWaiting ? (
                 // ★ ชำระเงินครบแล้ว — โทรตกลงวันนัดที่นี่ แบบขั้นย่อย "นัด" ของ Install ฝั่งขาย (แผน 20260929-02)
@@ -769,7 +771,7 @@ export default function JobDetail({ item, history, bookings = [], rules, onBack,
                 {/* ★ แถบนัด + ปุ่ม Reschedule ยกจากขั้นย่อย "นัด" ของ Install ฝั่งขาย (แผน 20260928-04 ข้อ 8)
                     สีม่วง = นัดแล้ว รอยืนยัน · สีเขียว = ลูกค้ายืนยันแล้ว · เลื่อนได้จนกว่าช่างจะเริ่มงาน */}
                 {resched && item.booking_id ? (
-                  <OmRescheduler bookingId={item.booking_id} currentAt={item.scheduled_at} rules={rules}
+                  <OmRescheduler bookingId={item.booking_id} currentAt={item.scheduled_at} currentSlot={item.time_slot} rules={rules}
                     onCancel={() => setResched(false)}
                     onSaved={(m) => { setResched(false); onSaved(m); onDone(); }} />
                 ) : (() => {
@@ -787,7 +789,7 @@ export default function JobDetail({ item, history, bookings = [], rules, onBack,
                           </span>
                           {/* ★ ขั้น 01 ปิดแล้วเป็นอ่านอย่างเดียว (แผน 20260929-02) — ทางกลับคือปุ่ม "กลับไปติดตาม" ด้านล่าง */}
                           {item.scheduled_at
-                            ? <span className={`text-sm font-bold ${confirmed ? "text-emerald-900" : "text-active"}`}>{thDT(item.scheduled_at)}</span>
+                            ? <span className={`text-sm font-bold ${confirmed ? "text-emerald-900" : "text-active"}`}>{thAppt(item.scheduled_at, item.time_slot)}</span>
                             : <span className="text-sm text-gray-500 italic">ยังไม่มีวันนัด{cur === "pending" && <> — กด &ldquo;กลับไปติดตาม&rdquo; แล้วโทรตกลงนัดใหม่</>}</span>}
                         </div>
                         {canResched && item.scheduled_at && (

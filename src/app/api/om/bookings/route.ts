@@ -46,7 +46,7 @@ export async function GET(req: NextRequest) {
   // ★ CTE มีผลแค่ statement แรกของ batch — batch นี้มีหลาย statement จึงต้องพักไว้ใน temp table
   const r = await rq.query(`
     SELECT b.id, b.house_id, b.service_type_id, b.status, b.note, b.queue_index,
-           b.rescheduled_count, b.source, b.cancelled_reason, b.team_id, b.scheduled_at, b.created_at,
+           b.rescheduled_count, b.source, b.cancelled_reason, b.team_id, b.scheduled_at, b.time_slot, b.created_at,
            h.house_number, h.project_id, ISNULL(pj.name_th, h.project_name) project_name,
            st.label_th service_type, CAST(st.consumes_quota AS int) consumes_quota,
            t.name team_name, t.color team_color,
@@ -69,7 +69,7 @@ export async function GET(req: NextRequest) {
 
     SELECT id, house_id, house_number, project_id, project_name,
            service_type_id, service_type, consumes_quota, status,
-           CONVERT(varchar(33), scheduled_at, 126) scheduled_at,
+           CONVERT(varchar(33), scheduled_at, 126) scheduled_at, time_slot,
            team_id, team_name, team_color, queue_index, note,
            rescheduled_count, source, cancelled_reason,
            customer_name, customer_phone,

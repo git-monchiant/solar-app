@@ -16,10 +16,11 @@ import ListPageHeader from "@/components/layout/ListPageHeader";
 import { useActiveMenuItem } from "@/lib/hooks/useActiveModule";
 import { statusLabel, statusTone } from "@/lib/om/booking";
 import { teamLabel } from "@/lib/om/service-view";
+import { formatSlotsRange } from "@/lib/time-slots";
 
 type Row = {
   id: number; house_number: string | null; project_name: string | null;
-  service_type: string | null; status: string; scheduled_at: string | null;
+  service_type: string | null; status: string; scheduled_at: string | null; time_slot?: string | null;
   team_id: number | null; team_name: string | null; team_color: string | null;
   queue_index: number | null; customer_name: string | null; customer_phone: string | null;
 };
@@ -148,7 +149,7 @@ export default function OmFieldListPage() {
                           </div>
                           {/* ชิปเรียงแถวเดียวแบบ JobCard — เวลา · ชนิดงาน · ทีม/คิว */}
                           <div className="flex flex-wrap items-center gap-1.5 text-xs">
-                            <span className="px-2 py-0.5 rounded-md bg-sky-50 text-sky-800">นัด <b className="tabular-nums">{thTime(r.scheduled_at)}</b></span>
+                            <span className="px-2 py-0.5 rounded-md bg-sky-50 text-sky-800">นัด <b className="tabular-nums">{formatSlotsRange(r.time_slot) || thTime(r.scheduled_at)}</b></span>
                             {r.service_type && <span className="px-2 py-0.5 rounded-md bg-gray-100 text-gray-700">{r.service_type}</span>}
                             {r.team_name
                               ? <span className="px-2 py-0.5 rounded-md bg-gray-100 text-gray-700 inline-flex items-center gap-1.5">

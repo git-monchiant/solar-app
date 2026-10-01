@@ -8,7 +8,7 @@
 import { CALL_OUTCOME, EXIT_STATUS, statusLabel, statusTone } from "@/lib/om/booking";
 import { formatTHB } from "@/lib/utils/formatters";
 import {
-  BUCKET_LABEL, FLOW, PAY_STATE, QUOTE_STATUS, TONE, jobAt, monthsAgo, repairPending, skipsPaidSteps, teamLabel, thD, thDT,
+  BUCKET_LABEL, FLOW, PAY_STATE, QUOTE_STATUS, TONE, jobAt, monthsAgo, repairPending, skipsPaidSteps, teamLabel, thD, thAppt, thDT,
   type Item,
 } from "@/lib/om/service-view";
 
@@ -114,7 +114,7 @@ export default function JobCard({ r, onOpen }: { r: Item; onOpen: () => void }) 
           {r.last_wash
             ? <span className="px-2 py-0.5 rounded-md bg-gray-100 text-gray-700">ล้างล่าสุด <b>{thD(r.last_wash)}</b> <span className="text-gray-400">({m} เดือน)</span></span>
             : <span className="px-2 py-0.5 rounded-md bg-amber-50 text-amber-700 font-bold">ยังไม่เคยล้าง</span>}
-          {r.scheduled_at && <span className="px-2 py-0.5 rounded-md bg-sky-50 text-sky-800">นัด <b>{thDT(r.scheduled_at)}</b></span>}
+          {r.scheduled_at && <span className="px-2 py-0.5 rounded-md bg-sky-50 text-sky-800">นัด <b>{thAppt(r.scheduled_at, r.time_slot)}</b></span>}
           {/* ใบเสนอราคาของงานเสียเงิน (แผน 20260924-02 เฟส 2) — เห็นเลขที่ สถานะ ยอด โดยไม่ต้องเปิดใบงาน */}
           {r.q_doc_no && (
             <span className="px-2 py-0.5 rounded-md bg-pink-50 text-pink-800">
