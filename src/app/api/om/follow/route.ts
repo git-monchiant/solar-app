@@ -217,7 +217,8 @@ export async function POST(req: NextRequest) {
         apptAt = when;
         apptSlot = slot;
       }
-      const status = outcome === "agreed" ? "pending" : "follow";
+      // confirm = ปุ่ม "ยืนยันและเข้างาน" ขั้น 04 (1 ต.ค. 69) — ตกลงวันกันในสายแล้ว ไม่ต้องรอยืนยันอีกรอบ
+      const status = outcome === "agreed" ? (b.confirm === true ? "confirmed" : "pending") : "follow";
 
       // ★ ใบงานที่หน้ารายละเอียดเปิดอยู่ (booking_id) มาก่อน ไม่ว่าชนิดไหน — แผน 20260924-02 เฟส 5
       //   เดิมหาด้วยชนิดงาน (ไม่ส่ง = ล้างแผง) ⇒ ใบซ่อมในประกันที่ค้างขั้นติดตาม พอตกลงนัด

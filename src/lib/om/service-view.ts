@@ -32,8 +32,13 @@ export const flowIndex = (status: string | null) => FLOW_AT[status ?? "follow"] 
  *  ★ 29 ก.ย. 69 (แผน 20260929-02): ขั้นที่ปิดแล้วอ่านอย่างเดียวแบบฝั่งขาย — เดิมให้กลับไปโทรตกลงนัดที่ขั้น 01
  *    ตอนนี้ฟอร์มโทรตกลงวันนัดอยู่การ์ดนัดหมาย (แบบขั้นย่อย "นัด" ของ Install) · สถานะในฐานยังเป็น payment จนตกลงนัด
  *    ใช้ทั้งรางหน้ารายละเอียดและแถบในการ์ดหน้ารายการ ตำแหน่งต้องตรงกัน */
-export const jobAt = (r: Pick<Item, "job_status" | "pay_state">) =>
-  r.job_status === "payment" && r.pay_state === "paid" ? 3 : flowIndex(r.job_status);
+// ★ 1 ต.ค. 69 (ผู้ใช้สั่ง): กด "ยืนยันและเข้างาน" แล้วไปขั้น 05 — ใบที่มีวันนัดแล้ว (รอยืนยัน/นัดแล้ว) อยู่ขั้นเข้างาน
+//   แถบนัด + Reschedule + ช่างถึงหน้างานอยู่การ์ดขั้น 05 · ขั้น 04 นัดหมาย = เลือกวันนัดอย่างเดียว
+//   รอยืนยันนัดที่ยังไม่มีวัน (ข้อมูลเก่า) ยังอยู่ขั้น 04 ให้เลือกวัน
+export const jobAt = (r: Pick<Item, "job_status" | "pay_state"> & { scheduled_at?: string | null }) =>
+  r.job_status === "payment" && r.pay_state === "paid" ? 3
+  : r.job_status === "pending" || r.job_status === "confirmed" ? (r.scheduled_at ? 4 : 3)
+  : flowIndex(r.job_status);
 
 /** งานนี้ข้ามขั้นเสนอราคา/ชำระเงินไหม (เส้นฟรี)
  *  ★ เฟส 2: ใบงานที่มีใบเสนอราคา (q_id) หรือยืนอยู่ขั้น 2–3 = เส้นเสียเงินแน่นอน

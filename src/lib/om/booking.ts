@@ -35,10 +35,11 @@ export const statusTone = (k: string) =>
 
 // เดินหน้าได้ทีละขั้น ถอยหลังได้เฉพาะที่สมเหตุผล · ยกเลิก/ไม่อยู่บ้าน ทำได้ตลอดก่อนปิดงาน
 const NEXT: Record<string, string[]> = {
-  follow:    ["quote", "pending", "cancelled"],
+  // ★ 1 ต.ค. 69 "ยืนยันและเข้างาน" = ตกลงวันกันในสายแล้ว ⇒ ติดตาม/ชำระแล้ว → นัดแล้ว ได้ตรง (ข้ามรอยืนยัน)
+  follow:    ["quote", "pending", "confirmed", "cancelled"],
   quote:     ["payment", "follow", "cancelled"],
   // payment → pending ผ่านการบันทึกโทร "ตกลงนัด" เท่านั้น และต้องรับเงินครบก่อน (ดู /api/om/follow)
-  payment:   ["pending", "cancelled"],
+  payment:   ["pending", "confirmed", "cancelled"],
   pending:   ["confirmed", "follow", "cancelled", "no_show"],
   confirmed: ["progress", "pending", "cancelled", "no_show"],
   // ★ 28 ก.ย. 69: เข้างาน → ปิดงานได้ตรง (ตัดขั้นรอปิดออกจากแถบ) · checked ยังรับไว้ให้ใบเก่า/LINE/Q.C. ในอนาคต

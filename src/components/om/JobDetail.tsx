@@ -180,6 +180,8 @@ export default function JobDetail({ item, history, bookings = [], rules, onBack,
   // ★ ยังไม่ถึง = locked แบบฝั่งขาย: รางกดไม่ได้ · การ์ดไม่มีเนื้อใน (แผน 20260929-02 ผู้ใช้เคาะ "แบบฝั่งขาย")
   // งานฟรีที่ตกลงที่ขั้น 01 แล้ว กำลังเลือกวันนัดที่ขั้น 04
   const schedFree = schedNow && at === 0 && !needQuote;
+  // รอยืนยันนัดแต่ยังไม่มีวัน (ข้อมูลเก่า) — เลือกวันที่ขั้น 04 แบบงานที่ชำระแล้ว
+  const pendingNoDate = at === 3 && cur === "pending" && !item.scheduled_at;
   const stepState = (i: number): StepState => {
     const f = FLOW[i];
     if (skip && "paid" in f && f.paid) return "skipped";
@@ -231,7 +233,8 @@ export default function JobDetail({ item, history, bookings = [], rules, onBack,
   const resetCall = () => { setOutcome(""); setNote(""); setApDate(""); setApSlot(""); setErr(""); };
 
   // oc = ผลที่จะบันทึก — การ์ดนัดหมายหลังชำระเงินเป็น "ตกลงนัด" เสมอ (ไม่มีให้เลือก)
-  const saveCall = async (oc: string) => {
+  // confirm = ปุ่ม "ยืนยันและเข้างาน" ขั้น 04 — บันทึกเป็นนัดแล้ว แล้วพาไปขั้น 05
+  const saveCall = async (oc: string, confirm = false) => {
     if (!oc) return;
     if (oc === "agreed" && (!apDate || !apSlot)) { setErr("ตกลงนัดแล้วต้องเลือกวันและช่วงเวลา"); return; }
     setBusy(true); setErr("");
@@ -243,10 +246,12 @@ export default function JobDetail({ item, history, bookings = [], rules, onBack,
           note: note || null,
           scheduled_at: oc === "agreed" ? apDate : null,
           time_slot: oc === "agreed" ? apSlot : null,
+          confirm: oc === "agreed" && confirm,
           phone: item.phone,
         }),
       });
-      onSaved("บันทึกการโทรแล้ว"); onDone();
+      if (confirm) { setSchedNow(false); go(4); }
+      onSaved(confirm ? "ยืนยันนัดแล้ว" : "บันทึกการโทรแล้ว"); onDone();
     } catch (e) { setErr(e instanceof Error ? e.message : String(e)); }
     finally { setBusy(false); }
   };
@@ -503,7 +508,7 @@ export default function JobDetail({ item, history, bookings = [], rules, onBack,
             {needQuote ? "ไปขั้น 02 เสนอราคา ›" : "ไปเลือกวันนัด ›"}
           </button>
         ) : (
-          <button type="button" disabled={busy || !oc || needSlot} onClick={() => saveCall(oc)}
+          <button type="button" disabled={busy || !oc || needSlot} onClick={() => saveCall(oc, schedule)}
             className="flex-[2] h-11 rounded-lg text-sm font-bold text-white bg-active hover:bg-active-dark disabled:opacity-40 disabled:cursor-not-allowed shadow-sm shadow-active/30 flex items-center justify-center gap-2 cursor-pointer">
             {/* ★ 1 ต.ค. 69 ผู้ใช้ตั้งชื่อปุ่มขั้น 04 = "ยืนยันและเข้างาน" ทุกสถานะ (ยังไม่เลือกช่วงเวลา = ปุ่มจาง กดไม่ได้)
                 ขั้น 01 (ปฏิเสธ) ยังเป็นบันทึกการโทร */}
@@ -783,7 +788,7 @@ export default function JobDetail({ item, history, bookings = [], rules, onBack,
             {/* ★ นัดหมาย = รวมขั้น "ทำนัด" กับ "รอ O&M" เดิม (ขั้นย่อย 2410 รอยืนยันนัด · 2420 นัดแล้ว)
                 ปุ่มโผล่เฉพาะสถานะที่กดได้จริง — เดิมโผล่ตลอด กดผิดสถานะแล้วค่อยโดน API ปฏิเสธ */}
             <StepCard n={3} className={cardWrap(3)} state={stepState(3)} doneTitle="นัดหมายแล้ว" onHeaderClick={() => toggleDone(3)}
-              title={paidWaiting || schedFree ? "นัดหมาย — เลือกวันนัด" : "นัดหมาย — ยืนยันนัด"}>
+              title="นัดหมาย — เลือกวันนัด">
               {stepState(3) === "done" ? doneView(3,
                 <DoneHead text={`นัด ${thAppt(item.scheduled_at, item.time_slot)}`} />,
                 () => events("appoint", "blue", "นัดหมาย · ทีมช่าง"),
@@ -806,16 +811,41 @@ export default function JobDetail({ item, history, bookings = [], rules, onBack,
                   </div>
                   {callForm("free")}
                 </div>
-              ) : (
+              ) : pendingNoDate ? (
+                <div className="space-y-3">
+                  <div className="flex items-center gap-2.5 px-3 py-2.5 rounded-lg border bg-active-light border-active/20 text-sm text-gray-800">
+                    <CheckIcon className="w-4 h-4 shrink-0 text-active" strokeWidth={2.5} />
+                    <span className="min-w-0 flex-1">ลูกค้าตกลงแล้ว แต่ยังไม่มีวันนัด — เลือกวันนัดกับลูกค้า</span>
+                  </div>
+                  {callForm("paid")}
+                </div>
+              ) : null}
+            </StepCard>
+
+            {/* ★ 28 ก.ย. 69 ตัดขั้น "รอปิด" — เข้างานเป็นขั้นสุดท้ายก่อนปิด: กรอกใบ + ลูกค้าเซ็น → กดปิดงานท้ายใบจบเลย */}
+            <StepCard n={4} className={cardWrap(4)} state={stepState(4)} doneTitle="เข้างานเสร็จ" onHeaderClick={() => toggleDone(4)}
+              title={cur === "pending" || cur === "confirmed" ? "เข้างาน — รอถึงวันนัด · ช่างถึงหน้างาน" : "เข้างาน — ช่างทำงาน · ลูกค้าเซ็นรับ"}>
+              {stepState(4) === "done" && item.booking_id ? doneView(4,
+                <DoneHead text={<>
+                  {report?.result === "pass" ? "ผลตรวจ ผ่าน" : report?.result === "fail" ? "ผลตรวจ ไม่ผ่าน" : "ตรวจงานเสร็จ"}
+                  {/* เลขใบห้ามตัดกลางขีด (มือถือเคยขึ้น "OM-" / "6909-0099") */}
+                  {report?.job_no && <> · ใบบริการ <span className="whitespace-nowrap">{report.job_no}</span></>}
+                </>}>
+                  <ServiceDocButton bookingId={item.booking_id} />
+                </DoneHead>,
+                // ใบที่ปิดแล้วล็อกอ่านอย่างเดียวเอง (ทุกช่อง/ปุ่ม disabled + แถบ lock) — ไล่ดูขั้นย่อยได้ครบ
+                () => <JobFormPanel jobId={String(item.booking_id)} wrapClass="" embedded />,
+              ) : (cur === "pending" || cur === "confirmed") && item.scheduled_at ? (
               <div className="space-y-3">
-                {/* ★ แถบนัด + ปุ่ม Reschedule ยกจากขั้นย่อย "นัด" ของ Install ฝั่งขาย (แผน 20260928-04 ข้อ 8)
+                {/* ★ 1 ต.ค. 69 ย้ายมาการ์ดขั้น 05 (ผู้ใช้สั่ง: ยืนยันแล้วไปขั้น 5 · Reschedule ทำที่ขั้น 5)
+                    ★ แถบนัด + ปุ่ม Reschedule ยกจากขั้นย่อย "นัด" ของ Install ฝั่งขาย (แผน 20260928-04 ข้อ 8)
                     สีม่วง = นัดแล้ว รอยืนยัน · สีเขียว = ลูกค้ายืนยันแล้ว · เลื่อนได้จนกว่าช่างจะเริ่มงาน */}
                 {resched && item.booking_id ? (
                   <OmRescheduler bookingId={item.booking_id} currentAt={item.scheduled_at} currentSlot={item.time_slot} rules={rules}
                     onCancel={() => setResched(false)}
                     onSaved={(m) => { setResched(false); onSaved(m); onDone(); }} />
                 ) : (() => {
-                  const confirmed = cur !== "pending" && at >= 3;
+                  const confirmed = cur === "confirmed";
                   const canResched = !!item.booking_id && (cur === "pending" || cur === "confirmed");
                   return (
                     <>
@@ -865,21 +895,6 @@ export default function JobDetail({ item, history, bookings = [], rules, onBack,
                   </div>
                 )}
               </div>
-              )}
-            </StepCard>
-
-            {/* ★ 28 ก.ย. 69 ตัดขั้น "รอปิด" — เข้างานเป็นขั้นสุดท้ายก่อนปิด: กรอกใบ + ลูกค้าเซ็น → กดปิดงานท้ายใบจบเลย */}
-            <StepCard n={4} className={cardWrap(4)} state={stepState(4)} title="เข้างาน — ช่างทำงาน · ลูกค้าเซ็นรับ" doneTitle="เข้างานเสร็จ" onHeaderClick={() => toggleDone(4)}>
-              {stepState(4) === "done" && item.booking_id ? doneView(4,
-                <DoneHead text={<>
-                  {report?.result === "pass" ? "ผลตรวจ ผ่าน" : report?.result === "fail" ? "ผลตรวจ ไม่ผ่าน" : "ตรวจงานเสร็จ"}
-                  {/* เลขใบห้ามตัดกลางขีด (มือถือเคยขึ้น "OM-" / "6909-0099") */}
-                  {report?.job_no && <> · ใบบริการ <span className="whitespace-nowrap">{report.job_no}</span></>}
-                </>}>
-                  <ServiceDocButton bookingId={item.booking_id} />
-                </DoneHead>,
-                // ใบที่ปิดแล้วล็อกอ่านอย่างเดียวเอง (ทุกช่อง/ปุ่ม disabled + แถบ lock) — ไล่ดูขั้นย่อยได้ครบ
-                () => <JobFormPanel jobId={String(item.booking_id)} wrapClass="" embedded />,
               ) : item.booking_id ? (
                 // ★ เฟส 3: ใบตรวจรับงานฝังมาเลย ไม่ต้องเด้งออกไปหน้าอื่นแล้ว
                 //   ใบเดียวกับ /om/field/[id] เป๊ะ (components/om/JobFormPanel) แก้ที่เดียวได้ทั้งสองที่
