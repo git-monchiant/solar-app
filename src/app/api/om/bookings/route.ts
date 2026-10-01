@@ -4,6 +4,7 @@ import { fixDates, sql } from "@/lib/db";
 import { getOmDb } from "@/lib/om/line";
 import { logBooking } from "@/lib/om/booking-log";
 import { ACTIVE_STATUS, ALL_STATUS, toThaiOffset } from "@/lib/om/booking";
+import { omSlotsFor } from "@/lib/om/time-slot";
 
 // งานบริการ O&M — ลิสต์ + สร้างนัด
 // ★ กติกาที่ต้องรักษา (CLAUDE.md): เวลานัดใช้ +07:00 เสมอ · ห้ามจองซ้ำประเภทเดียวกันถ้ายังมีงานค้าง
@@ -109,8 +110,9 @@ export async function GET(req: NextRequest) {
   });
 }
 
-// POST { house_id, service_type_id, scheduled_at?, status?, note?, team_id? }
+// POST { house_id, service_type_id, scheduled_at?, time_slot?, status?, note?, team_id? }
 //   ไม่ส่ง scheduled_at = งานติดตาม (ยังไม่มีวันนัด) → status follow
+//   time_slot = ช่อง 30 นาทีที่จอง (แผน 20261001-01) — ส่งมาแล้ว scheduled_at ใช้แค่วัน
 export async function POST(req: NextRequest) {
   const gate = await requireAuth(req);
   if (gate.error) return gate.error;
@@ -118,10 +120,18 @@ export async function POST(req: NextRequest) {
   const houseId = Number(b.house_id);
   const typeId = Number(b.service_type_id);
   if (!houseId || !typeId) return NextResponse.json({ error: "ต้องระบุบ้านและประเภทงาน" }, { status: 400 });
-  const when = toThaiOffset(b.scheduled_at);
-  const status = when ? (typeof b.status === "string" && ALL_STATUS.includes(b.status) ? b.status : "pending") : "follow";
 
   const db = await getOmDb();
+  let when: string | null = null;
+  let slot: string | null = null;
+  if (b.scheduled_at || b.time_slot) {
+    const r = await omSlotsFor(db, b.scheduled_at, b.time_slot);
+    if ("error" in r) return NextResponse.json({ error: r.error }, { status: 400 });
+    when = toThaiOffset(r.at);
+    slot = r.slot;
+  }
+  const status = when ? (typeof b.status === "string" && ALL_STATUS.includes(b.status) ? b.status : "pending") : "follow";
+
   const house = (await db.request().input("h", sql.Int, houseId)
     .query(`SELECT id, house_number FROM om_houses WHERE id = @h AND is_om = 1`)).recordset[0];
   if (!house) return NextResponse.json({ error: "ไม่พบบ้านหลังนี้ในระบบ O&M" }, { status: 404 });
@@ -138,15 +148,16 @@ export async function POST(req: NextRequest) {
   try {
     const ins = await new sql.Request(tx)
       .input("h", sql.Int, houseId).input("t", sql.Int, typeId)
-      .input("w", sql.DateTimeOffset, when).input("s", sql.NVarChar(20), status)
+      .input("w", sql.DateTimeOffset, when).input("ts", sql.NVarChar(200), slot)
+      .input("s", sql.NVarChar(20), status)
       .input("n", sql.NVarChar(sql.MAX), typeof b.note === "string" ? b.note.trim() || null : null)
       .input("tm", sql.Int, b.team_id ? Number(b.team_id) : null)
       .input("u", sql.Int, gate.userId ?? null)
-      .query(`INSERT INTO om_bookings (house_id, service_type_id, scheduled_at, status, note, team_id, created_by, source)
-              OUTPUT INSERTED.id VALUES (@h, @t, @w, @s, @n, @tm, @u, 'admin')`);
+      .query(`INSERT INTO om_bookings (house_id, service_type_id, scheduled_at, time_slot, status, note, team_id, created_by, source)
+              OUTPUT INSERTED.id VALUES (@h, @t, @w, @ts, @s, @n, @tm, @u, 'admin')`);
     const id = ins.recordset[0].id as number;
     await logBooking(tx, { bookingId: id, action: "create", actorUserId: gate.userId ?? null,
-      to: { status, scheduled_at: when, team_id: b.team_id ?? null } });
+      to: { status, scheduled_at: when, time_slot: slot, team_id: b.team_id ?? null } });
     await tx.commit();
     return NextResponse.json({ ok: true, id, status });
   } catch (e) {

@@ -4,6 +4,8 @@ import { fixDates, sql } from "@/lib/db";
 import { getOmDb } from "@/lib/om/line";
 import { actionLabel, logBooking, type BookingAction } from "@/lib/om/booking-log";
 import { canMove, statusLabel, toThaiOffset } from "@/lib/om/booking";
+import { omSlotsFor, shiftSlots, thaiLocal } from "@/lib/om/time-slot";
+import { serializeSlots } from "@/lib/time-slots";
 import { notifyOmUser, resolveOmNotifications } from "@/lib/om/notifications";
 import { getSettings } from "@/lib/om/settings";
 
@@ -64,7 +66,7 @@ export async function PATCH(req: NextRequest, ctx: { params: Promise<{ id: strin
   const db = await getOmDb();
   const cur = (await db.request().input("id", sql.Int, id).query(`
     SELECT b.id, b.house_id, b.status, b.team_id, b.owner_user_id, b.queue_index, b.rescheduled_count, b.service_type_id,
-           CONVERT(varchar(33), b.scheduled_at, 126) scheduled_at,
+           CONVERT(varchar(33), b.scheduled_at, 126) scheduled_at, b.time_slot,
            CAST(st.consumes_quota AS int) consumes_quota,
            h.house_number, st.label_th service_type
     FROM om_bookings b
@@ -86,7 +88,7 @@ export async function PATCH(req: NextRequest, ctx: { params: Promise<{ id: strin
   const FINISHED = ["closed", "cancelled", "no_show"];
   const has = (k: string) => Object.prototype.hasOwnProperty.call(b, k);
   const reopening = !!newStatus && !FINISHED.includes(newStatus);
-  if (FINISHED.includes(String(cur.status)) && !reopening && ["team_id", "queue_index", "scheduled_at"].some(has))
+  if (FINISHED.includes(String(cur.status)) && !reopening && ["team_id", "queue_index", "scheduled_at", "time_slot"].some(has))
     return NextResponse.json({ error: `ใบงาน #${id} ${statusLabel(String(cur.status))}แล้ว — แก้ทีม คิว หรือวันนัดไม่ได้` }, { status: 400 });
   // 2) เริ่มงานต้องจ่ายทีมแล้ว — ตรงกับปุ่ม "ช่างถึงหน้างานแล้ว" ที่โผล่เมื่อจ่ายทีมแล้วเท่านั้น
   //    (ใบตรวจที่กดปิดงานจากใบที่ยังไม่เข้างาน เดินผ่านขั้นนี้ด้วย จึงกันการปิดงานใบที่ยังไม่จ่ายทีมไปในตัว)
@@ -113,13 +115,26 @@ export async function PATCH(req: NextRequest, ctx: { params: Promise<{ id: strin
       : newStatus === "cancelled" ? "cancel" : newStatus === "no_show" ? "no_show" : "reschedule";
   }
 
-  const when = b.scheduled_at === null ? null : toThaiOffset(b.scheduled_at);
-  const hasWhen = Object.prototype.hasOwnProperty.call(b, "scheduled_at");
-  if (hasWhen && when !== cur.scheduled_at) {
-    set.push("scheduled_at = @w");
+  // ★ แผน 20261001-01 เฟส 1: ช่วงเวลาที่จอง (time_slot) แบบนัดสำรวจ
+  //   ส่ง time_slot มา = ใช้ช่องนั้น (วันจาก scheduled_at ที่ส่งมา ไม่งั้นวันเดิม) · เวลาเริ่ม = ช่องแรก
+  //   ลากในปฏิทินส่งแค่ scheduled_at = เลื่อนช่องเดิมตามเวลาเริ่มใหม่ (จำนวนช่องคงเดิม) · ล้างวันนัด = ล้างช่องด้วย
+  let when = b.scheduled_at === null ? null : toThaiOffset(b.scheduled_at);
+  let slot: string | null = cur.time_slot ?? null;
+  if (has("time_slot") && b.scheduled_at !== null) {
+    const r = await omSlotsFor(db, has("scheduled_at") ? b.scheduled_at : cur.scheduled_at, b.time_slot);
+    if ("error" in r) return NextResponse.json({ error: r.error }, { status: 400 });
+    when = toThaiOffset(r.at);
+    slot = r.slot;
+  } else if (has("scheduled_at")) {
+    slot = when ? serializeSlots(await shiftSlots(db, cur.time_slot ?? null, thaiLocal(when).slice(11, 16))) : null;
+  }
+  const hasWhen = has("scheduled_at") || has("time_slot");
+  if (hasWhen && (when !== cur.scheduled_at || slot !== (cur.time_slot ?? null))) {
+    set.push("scheduled_at = @w", "time_slot = @ts");
     // นับจำนวนครั้งที่เลื่อน เฉพาะตอนที่มีวันเดิมอยู่แล้ว
     if (cur.scheduled_at && when) set.push("rescheduled_count = rescheduled_count + 1");
     from.scheduled_at = cur.scheduled_at; to.scheduled_at = when;
+    from.time_slot = cur.time_slot ?? null; to.time_slot = slot;
     if (!newStatus) action = "reschedule";
   }
 
@@ -160,6 +175,7 @@ export async function PATCH(req: NextRequest, ctx: { params: Promise<{ id: strin
     const rq = new sql.Request(tx).input("id", sql.Int, id)
       .input("st", sql.NVarChar(20), newStatus || null)
       .input("w", sql.DateTimeOffset, when)
+      .input("ts", sql.NVarChar(200), slot)
       .input("tm", sql.Int, b.team_id === null || b.team_id === "" ? null : Number(b.team_id))
       .input("ow", sql.Int, b.owner_user_id === null || b.owner_user_id === "" || b.owner_user_id === undefined ? null : Number(b.owner_user_id))
       .input("qi", sql.Int, b.queue_index === null || b.queue_index === undefined ? null : Number(b.queue_index))

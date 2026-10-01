@@ -8,6 +8,7 @@ import { getSettings } from "@/lib/om/settings";
 import { historyLabel, logBooking } from "@/lib/om/booking-log";
 import { ACTIVE_STATUS, canMove, statusLabel, toThaiOffset } from "@/lib/om/booking";
 import { OM_BOOKING_PAID_SQL } from "@/lib/om/om-quotation";
+import { omSlotsFor } from "@/lib/om/time-slot";
 
 // แท็บ "ติดตาม" ของงานบริการ — ★ การ์ดคำนวณสด ไม่มีแถวงานรอไว้ล่วงหน้า
 //   เกณฑ์: บ้าน O&M ที่มีระบบติดตั้ง + เลยรอบล้าง (om_service_type.cycle_months)
@@ -46,7 +47,11 @@ export async function GET(req: NextRequest) {
   const page = Math.max(1, Number(u.get("page")) || 1);
   const size = Math.min(100, Math.max(10, Number(u.get("size")) || 30));
 
-  const cfg = await getSettings("call.");
+  // ★ cfg ส่งต่อเป็น rules ให้ตัวเลือกวันนัดด้วย — เดิมอ่านแค่ call.* ⇒ booking.advance_* ที่แก้ในหน้าตั้งค่า
+  //   ไม่ถึงหน้าจอ ได้ค่า fallback (60 วัน / 24 ชม.) ตลอด (เจอตอนสำรวจแผน 20261001-01)
+  //   getSettings ใส่ fallback ทุกกลุ่มมาให้ ⇒ ต้องเอาค่าจริงของ booking.* ทับทีหลัง
+  const [callCfg, bookingCfg] = await Promise.all([getSettings("call."), getSettings("booking.")]);
+  const cfg = { ...callCfg, ...bookingCfg };
   const maxAttempts = Number(cfg["call.max_attempts"] ?? 3);
 
   const db = await getOmDb();
@@ -145,7 +150,8 @@ export async function GET(req: NextRequest) {
 }
 
 // POST — บันทึกผลการโทร 1 ครั้ง
-// { house_id, outcome, note?, next_date?, scheduled_at?, service_type_id? }
+// { house_id, outcome, note?, next_date?, scheduled_at?, time_slot?, service_type_id? }
+//   time_slot = ช่อง 30 นาทีที่จอง (array / JSON) — ส่งมาแล้ว scheduled_at ใช้แค่วัน (แผน 20261001-01)
 // ★ แถวงานเกิดเฉพาะตอน "ตกลงนัด" หรือ "ขอเลื่อน" — ไม่รับสาย/ปฏิเสธ บันทึกประวัติอย่างเดียว
 export async function POST(req: NextRequest) {
   const gate = await requireAuth(req);
@@ -182,7 +188,19 @@ export async function POST(req: NextRequest) {
       const typeId = Number(b.service_type_id) ||
         (await new sql.Request(tx).query(
           `SELECT TOP 1 id FROM om_service_type WHERE code = 'cleaning'`)).recordset[0].id;
-      const when = outcome === "agreed" ? toThaiOffset(b.scheduled_at) : null;
+      // ★ แผน 20261001-01 เฟส 1: ตกลงนัดเก็บช่วงเวลาที่จอง (time_slot) แบบนัดสำรวจ
+      //   ส่ง time_slot มา = เวลาเริ่มคิดจากช่องแรก · ไม่ส่ง (หน้าจอเดิม) = คิดช่องจากเวลาเริ่มตามช่วงเดิม
+      let when: string | null = null;
+      let slot: string | null = null;
+      if (outcome === "agreed" && (b.scheduled_at || b.time_slot)) {
+        const r = await omSlotsFor(tx, b.scheduled_at, b.time_slot);
+        if ("error" in r) {
+          await tx.rollback();
+          return NextResponse.json({ error: r.error }, { status: 400 });
+        }
+        when = toThaiOffset(r.at);
+        slot = r.slot;
+      }
       const status = outcome === "agreed" ? "pending" : "follow";
 
       // ★ ใบงานที่หน้ารายละเอียดเปิดอยู่ (booking_id) มาก่อน ไม่ว่าชนิดไหน — แผน 20260924-02 เฟส 5
@@ -253,16 +271,20 @@ export async function POST(req: NextRequest) {
         bookingId = cur.id as number;
         await new sql.Request(tx).input("id", sql.Int, bookingId)
           .input("s", sql.NVarChar(20), keep ? cur.status : status).input("w", sql.DateTimeOffset, when)
+          .input("ts", sql.NVarChar(200), slot)
           .query(`UPDATE om_bookings SET status = @s,
-                    scheduled_at = COALESCE(@w, scheduled_at), updated_at = SYSDATETIMEOFFSET()
+                    scheduled_at = COALESCE(@w, scheduled_at),
+                    time_slot = CASE WHEN @w IS NULL THEN time_slot ELSE @ts END,
+                    updated_at = SYSDATETIMEOFFSET()
                   WHERE id = @id`);
       } else {
         const ins = await new sql.Request(tx)
           .input("h", sql.Int, houseId).input("t", sql.Int, typeId)
-          .input("w", sql.DateTimeOffset, when).input("s", sql.NVarChar(20), status)
+          .input("w", sql.DateTimeOffset, when).input("ts", sql.NVarChar(200), slot)
+          .input("s", sql.NVarChar(20), status)
           .input("u", sql.Int, gate.userId ?? null)
-          .query(`INSERT INTO om_bookings (house_id, service_type_id, scheduled_at, status, created_by, source)
-                  OUTPUT INSERTED.id VALUES (@h, @t, @w, @s, @u, 'call')`);
+          .query(`INSERT INTO om_bookings (house_id, service_type_id, scheduled_at, time_slot, status, created_by, source)
+                  OUTPUT INSERTED.id VALUES (@h, @t, @w, @ts, @s, @u, 'call')`);
         bookingId = ins.recordset[0].id as number;
       }
     }

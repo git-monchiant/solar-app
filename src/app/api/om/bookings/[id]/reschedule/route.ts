@@ -6,6 +6,7 @@ import { getSettings } from "@/lib/om/settings";
 import { logBooking } from "@/lib/om/booking-log";
 import { resolveOmNotifications } from "@/lib/om/notifications";
 import { toThaiOffset } from "@/lib/om/booking";
+import { omSlotsFor } from "@/lib/om/time-slot";
 
 // เลื่อนนัดจากปุ่ม Reschedule ในหน้ารายละเอียด (แผน 20260928-04 · ผู้ใช้เคาะ "ทำตามแนะนำ" ข้อ 4 ข)
 // ★ ใช้กติกาในหน้าตั้งค่า O&M (กลุ่ม "การเลื่อนนัด") กับการเลื่อนโดยทีมงาน:
@@ -18,7 +19,7 @@ const OPEN = ["pending", "confirmed"];   // ยังไม่เริ่มง
 
 type Cur = {
   id: number; house_id: number; status: string; team_id: number | null; team_name: string | null;
-  queue_index: number | null; rescheduled_count: number; scheduled_at: string | null;
+  queue_index: number | null; rescheduled_count: number; scheduled_at: string | null; time_slot: string | null;
   house_number: string | null; service_type: string | null; line_links: number;
 };
 
@@ -26,7 +27,7 @@ async function load(db: sql.ConnectionPool, id: number): Promise<Cur | undefined
   return (await db.request().input("id", sql.Int, id).query(`
     SELECT b.id, b.house_id, b.status, b.team_id, t.name team_name, b.queue_index,
            ISNULL(b.rescheduled_count, 0) rescheduled_count,
-           CONVERT(varchar(33), b.scheduled_at, 126) scheduled_at,
+           CONVERT(varchar(33), b.scheduled_at, 126) scheduled_at, b.time_slot,
            h.house_number, st.label_th service_type,
            (SELECT COUNT(*) FROM om_line_user_houses l WHERE l.house_id = b.house_id) line_links
       FROM om_bookings b
@@ -83,7 +84,8 @@ export async function GET(req: NextRequest, ctx: { params: Promise<{ id: string 
   });
 }
 
-// POST { scheduled_at: "YYYY-MM-DDTHH:mm", reason? }
+// POST { scheduled_at: "YYYY-MM-DDTHH:mm" | "YYYY-MM-DD", time_slot?, reason? }
+//   time_slot = ช่อง 30 นาทีที่จอง (แผน 20261001-01) — ส่งมาแล้ว scheduled_at ใช้แค่วัน เวลาเริ่ม = ช่องแรก
 export async function POST(req: NextRequest, ctx: { params: Promise<{ id: string }> }) {
   const gate = await requireAuth(req);
   if (gate.error) return gate.error;
@@ -96,12 +98,16 @@ export async function POST(req: NextRequest, ctx: { params: Promise<{ id: string
   if (!OPEN.includes(cur.status))
     return NextResponse.json({ error: "เลื่อนนัดได้เฉพาะงานที่ยังไม่เริ่ม (รอยืนยันนัด / นัดแล้ว)" }, { status: 400 });
 
-  const when = toThaiOffset(typeof b.scheduled_at === "string" ? b.scheduled_at : null);
+  const picked = await omSlotsFor(db, b.scheduled_at, b.time_slot);
+  if ("error" in picked) return NextResponse.json({ error: picked.error }, { status: 400 });
+  const when = toThaiOffset(picked.at);
   if (!when || Number.isNaN(new Date(when).getTime()))
     return NextResponse.json({ error: "ต้องระบุวันเวลานัดใหม่" }, { status: 400 });
   if (new Date(when).getTime() < Date.now())
     return NextResponse.json({ error: "วันเวลานัดใหม่ต้องเป็นเวลาข้างหน้า" }, { status: 400 });
-  if (cur.scheduled_at && new Date(when).getTime() === new Date(cur.scheduled_at).getTime())
+  // เวลาเริ่มเดิม แต่จองช่องเพิ่ม/ลด = เลื่อนได้ (เช่น ขยายจาก 1 ชม. เป็น 2 ชม.)
+  if (cur.scheduled_at && new Date(when).getTime() === new Date(cur.scheduled_at).getTime()
+      && (picked.slot ?? "") === (cur.time_slot ?? ""))
     return NextResponse.json({ error: "ยังเป็นวันเวลาเดิม" }, { status: 400 });
 
   const r = await rules();
@@ -110,9 +116,9 @@ export async function POST(req: NextRequest, ctx: { params: Promise<{ id: string
   const clearTeam = r.unassign_team && cur.team_id != null;
   const reason = typeof b.reason === "string" ? b.reason.trim().slice(0, 300) || null : null;
 
-  const set = ["scheduled_at = @w"];
-  const from: Record<string, unknown> = { scheduled_at: cur.scheduled_at };
-  const to: Record<string, unknown> = { scheduled_at: when };
+  const set = ["scheduled_at = @w", "time_slot = @ts"];
+  const from: Record<string, unknown> = { scheduled_at: cur.scheduled_at, time_slot: cur.time_slot };
+  const to: Record<string, unknown> = { scheduled_at: when, time_slot: picked.slot };
   // นับครั้งที่เลื่อน เฉพาะตอนที่มีวันเดิมอยู่แล้ว (กติกาเดียวกับ PATCH)
   if (cur.scheduled_at) set.push("rescheduled_count = rescheduled_count + 1");
   if (toPending) { set.push("status = 'pending'"); from.status = cur.status; to.status = "pending"; }
@@ -126,6 +132,7 @@ export async function POST(req: NextRequest, ctx: { params: Promise<{ id: string
   await tx.begin();
   try {
     await new sql.Request(tx).input("id", sql.Int, id).input("w", sql.DateTimeOffset, when)
+      .input("ts", sql.NVarChar(200), picked.slot)
       .query(`UPDATE om_bookings SET ${set.join(", ")}, updated_at = SYSDATETIMEOFFSET() WHERE id = @id`);
     await logBooking(tx, { bookingId: id, action: "reschedule", actorUserId: gate.userId ?? null, from, to, reason });
     // เตือน "ใกล้ถึงวันนัด" ของวันเดิมหมดความหมายแล้ว — ตัวตั้งเวลาจะเตือนวันใหม่ให้เอง (event_key มีวันนัดอยู่)
