@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { apiFetch } from "@/lib/api";
-import { HOURLY_SLOTS, formatSlotsRange, parseSlots, serializeSlots, slotLabel } from "@/lib/time-slots";
+import { HOURLY_SLOTS, parseSlots, serializeSlots, slotLabel } from "@/lib/time-slots";
 import { houseNumberOrNull } from "@/lib/utils/name";
 import { OM_EVENT_COLOR } from "./OmEvent";
 
@@ -364,33 +364,20 @@ export default function CalendarPicker({
         </div>
       )}
 
-      {/* นัดของวันที่เลือกที่ "เห็นแต่ไม่ล็อก" — บอกความหมายของจุด + เตือนเมื่อเลือกทับ (ยังบันทึกได้) */}
-      {date && infoOn.length > 0 && (() => {
-        const clash = showTimeSlot
-          ? infoOn.filter(i => selectedSlots.length > 0 && (!i.slots || i.slots.some(x => selectedSlots.includes(x))))
-          : infoOn;
-        return (
-          <div className="mt-1.5 space-y-1">
-            {showTimeSlot && (
-              <div className="flex items-center gap-x-2 gap-y-0.5 flex-wrap text-xxs text-gray-500">
-                <span>วันที่เลือกมีนัด</span>
-                {kindsAt(date).map(k => (
-                  <span key={k} className="inline-flex items-center gap-1">
-                    <span className="w-1.5 h-1.5 rounded-full" style={{ backgroundColor: INFO_COLOR[k] }} />
-                    {INFO_LABEL[k]} {infoOn.filter(i => i.kind === k).length}
-                  </span>
-                ))}
-                <span>— จุดคือช่วงที่ติดนัด · ยังนัดทับได้</span>
-              </div>
-            )}
-            {clash.length > 0 && (
-              <div className="text-xxs font-semibold text-amber-700 leading-relaxed">
-                ⚠ ทับนัด {clash.map(i => `${INFO_LABEL[i.kind]} ${i.label} (${i.slots ? formatSlotsRange(serializeSlots(i.slots)) : "ทั้งวัน"})`).join(" · ")} — ยังบันทึกได้
-              </div>
-            )}
-          </div>
-        );
-      })()}
+      {/* นัดของวันที่เลือกที่ "เห็นแต่ไม่ล็อก" — บอกความหมายของจุด
+          ★ 1 ต.ค. 69 ผู้ใช้สั่งเอาแถบเตือนเหลือง "⚠ ทับนัด …" ออก — เหลือจุด + บรรทัดนี้ (ยังนัดทับได้) */}
+      {date && infoOn.length > 0 && showTimeSlot && (
+        <div className="mt-1.5 flex items-center gap-x-2 gap-y-0.5 flex-wrap text-xxs text-gray-500">
+          <span>วันที่เลือกมีนัด</span>
+          {kindsAt(date).map(k => (
+            <span key={k} className="inline-flex items-center gap-1">
+              <span className="w-1.5 h-1.5 rounded-full" style={{ backgroundColor: INFO_COLOR[k] }} />
+              {INFO_LABEL[k]} {infoOn.filter(i => i.kind === k).length}
+            </span>
+          ))}
+          <span>— จุดคือช่วงที่ติดนัด · ยังนัดทับได้</span>
+        </div>
+      )}
     </div>
   );
 }

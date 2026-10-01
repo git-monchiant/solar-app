@@ -82,16 +82,14 @@ export default function OmRescheduler({ bookingId, currentAt, currentSlot, rules
       </div>
 
       {/* ผลที่จะเกิดเมื่อยืนยัน — มาจากหน้าตั้งค่า O&M › กติกา › การเลื่อนนัด (บอกก่อนกด ไม่ให้ทีมหลุดแบบไม่รู้ตัว) */}
-      {preview && (preview.will.to_pending || preview.rules.notify_line || preview.warnings.length > 0) && (
+      {preview && (preview.will.to_pending || preview.rules.notify_line) && (
         <div className="rounded-lg bg-gray-50 border border-gray-200 px-3 py-2.5 text-xs text-gray-700 space-y-1">
           <div className="font-semibold text-gray-500">เมื่อยืนยันเลื่อนนัด</div>
           {preview.will.to_pending && <div>• ใบงานกลับเป็น <b>รอยืนยันนัด</b> — ตกลงวันใหม่กับลูกค้าแล้วกด &quot;ลูกค้ายืนยันแล้ว&quot; อีกครั้ง</div>}
           {preview.rules.notify_line && (preview.will.notify_line
             ? <div>• แจ้งลูกค้าทาง LINE ({preview.line_links} บัญชีที่ผูกบ้านนี้){!preview.line_enabled && <span className="text-amber-700"> — LINE ยังไม่เปิดใช้ จะยังไม่ส่งจริง</span>}</div>
             : <div className="text-gray-500">• บ้านนี้ยังไม่ผูก LINE — ไม่ได้แจ้งลูกค้า โทรแจ้งเอง</div>)}
-          {preview.warnings.map((w) => (
-            <div key={w} className="text-amber-700 font-semibold">⚠ {w} — ทีมงานเลื่อนต่อได้ ระบบจดไว้ในประวัติ</div>
-          ))}
+          {/* ★ 1 ต.ค. 69 ผู้ใช้สั่งเอาเตือนเกินเพดาน (เลื่อนเกินกี่ครั้ง / ใกล้นัดเดิม) ออกจากจอ — API ยังจดไว้ในประวัติเหมือนเดิม */}
         </div>
       )}
 

@@ -78,7 +78,7 @@ const SECONDARY_BTN = "h-11 px-5 rounded-lg text-sm font-semibold border border-
 //   (OmFollowupModal) · ยุบ "ขอเลื่อน" ไปก่อนหน้านี้แล้ว — ลูกค้าขอเลื่อน = ตกลงนัดวันที่สะดวก
 //   API ยังรับทุกผล (ประวัติเก่ายังแสดงป้ายจาก CALL_OUTCOME)
 const CALL_ROWS = [
-  { value: "agreed", label: "ตกลงนัด" },
+  { value: "agreed", label: "ตกลงรับบริการ" },   // ขั้น 01 ไม่เลือกวันแล้ว — วันนัดเลือกที่ขั้น 04
   { value: "declined", label: "ปฏิเสธ ไม่เอา" },
 ] as const;
 
@@ -128,6 +128,9 @@ export default function JobDetail({ item, history, bookings = [], rules, onBack,
   const [resched, setResched] = useState(false);
   // ★ ไม่เลือกผลไว้ก่อน แบบ Follow-up ฝั่งขาย (แผน 20260929-03 ข้อ 2 · เดิมเลือก "ตกลงนัด" ไว้ให้)
   const [outcome, setOutcome] = useState<string>("");
+  // ★ 1 ต.ค. 69 เลือกวันนัดที่ขั้น 04 ที่เดียว (ผู้ใช้เคาะ "ตามแนะนำ") — งานฟรีตกลงที่ขั้น 01 แล้วมาเลือกวันที่ขั้น 04
+  //   true = ตกลงแล้ว กำลังเลือกวัน · ยังไม่บันทึกอะไรจนกดบันทึกที่ขั้น 04 (ยกเลิก = กลับขั้น 01)
+  const [schedNow, setSchedNow] = useState(false);
   const [note, setNote] = useState("");
   // วันนัด + เวลาเริ่มของช่วง (om_slot_config) — เดิมช่อง datetime-local ช่องเดียว
   const [apDate, setApDate] = useState("");
@@ -175,11 +178,13 @@ export default function JobDetail({ item, history, bookings = [], rules, onBack,
   // สถานะของแต่ละขั้น — ใช้ทั้งราง STEPS และการ์ด (แบบ cardState ของหน้า lead)
   // เสนอราคา/ชำระเงิน ของงานใช้สิทธิ์ฟรี = ข้าม · ยังกดเข้าไปอ่านได้ว่าทำไมข้าม
   // ★ ยังไม่ถึง = locked แบบฝั่งขาย: รางกดไม่ได้ · การ์ดไม่มีเนื้อใน (แผน 20260929-02 ผู้ใช้เคาะ "แบบฝั่งขาย")
+  // งานฟรีที่ตกลงที่ขั้น 01 แล้ว กำลังเลือกวันนัดที่ขั้น 04
+  const schedFree = schedNow && at === 0 && !needQuote;
   const stepState = (i: number): StepState => {
     const f = FLOW[i];
     if (skip && "paid" in f && f.paid) return "skipped";
     if (i < at || cur === "closed") return "done";
-    if (i === at || (i === 1 && quoteOpen)) return "active";
+    if (i === at || (i === 1 && quoteOpen) || (i === 3 && schedFree)) return "active";
     return "locked";
   };
   const go = (i: number) => { setStep(i); setTab("workflow"); setResched(false); setOpenDone((s) => new Set(s).add(i)); };
@@ -199,10 +204,29 @@ export default function JobDetail({ item, history, bookings = [], rules, onBack,
   // ใบตรวจ/ใบตัดสิทธิ์ของใบงานนี้ (ผลตรวจ · เลขใบบริการ · เวลาปิด) — มาพร้อม bookings ของแท็บ Timeline
   const report = bookings.find((b) => b.id === item.booking_id) ?? null;
 
+  // มือถือเรียงการ์ดต่อกัน — ข้ามไปขั้นอื่นแล้วเลื่อนจอไปการ์ดนั้น (หาตัวที่เลื่อนได้จริงตอนกด ไม่ใช้ค่า fix · ui-rules)
+  const scrollToCard = (n: number) => {
+    if (typeof window === "undefined" || !window.matchMedia("(max-width: 767px)").matches) return;
+    setTimeout(() => {
+      const el = document.getElementById(`om-step-${n}`);
+      if (!el) return;
+      let p = el.parentElement;
+      while (p && !(p.scrollHeight > p.clientHeight && /(auto|scroll)/.test(getComputedStyle(p).overflowY))) p = p.parentElement;
+      if (p) p.scrollTo({ top: el.getBoundingClientRect().top - p.getBoundingClientRect().top + p.scrollTop - 12, behavior: "smooth" });
+      else el.scrollIntoView({ behavior: "smooth", block: "start" });
+    }, 60);
+  };
+  // ขั้น 01 ลูกค้าตกลง — งานเสียเงิน (สิทธิ์หมด) ไปขั้น 02 เสนอราคา · งานฟรีไปเลือกวันนัดที่ขั้น 04
+  const goAgree = () => {
+    if (needQuote) { go(1); scrollToCard(1); return; }
+    setSchedNow(true);
+    if (!apDate) setApDate(plusDays(1));   // เลือกพรุ่งนี้ไว้ก่อน ช่วงเวลาขึ้นให้เลือกเลย
+    go(3); scrollToCard(3);
+  };
+  const backToFollow = () => { setSchedNow(false); setOutcome(""); setApDate(""); setApSlot(""); setErr(""); go(0); scrollToCard(0); };
   const pickOutcome = (k: string) => {
     setOutcome(k); setErr("");
-    // ตกลงนัดเลือกพรุ่งนี้ไว้ก่อน — ช่วงเวลาของวันนั้นขึ้นให้เลือกเลย ไม่ต้องกดวันก่อน
-    if (k === "agreed" && !apDate) setApDate(plusDays(1));
+    if (k === "agreed") goAgree();
   };
   const resetCall = () => { setOutcome(""); setNote(""); setApDate(""); setApSlot(""); setErr(""); };
 
@@ -377,21 +401,27 @@ export default function JobDetail({ item, history, bookings = [], rules, onBack,
     );
   };
 
-  // ── ฟอร์มบันทึกการโทร — ก้อนเดียว ใช้สองที่ (แผน 20260929-02) ──
-  //   ขั้น 01 ติดตาม = ตกลงนัด / ปฏิเสธ · การ์ดนัดหมายตอนชำระเงินครบแล้ว (schedule) = ตกลงนัดอย่างเดียว เปิดปฏิทินให้เลย
+  // ── ฟอร์มบันทึกการโทร — ก้อนเดียว ใช้ 3 แบบ (แผน 20260929-02 · 1 ต.ค. 69) ──
+  //   "follow" = การ์ดขั้น 01: ลูกค้าตกลงรับบริการไหม (ตกลง / ปฏิเสธ) — ไม่มีปฏิทิน
+  //   "free"   = การ์ดขั้น 04 หลังตกลงที่ขั้น 01 (งานฟรี) — เลือกวันนัดแล้วบันทึกทีเดียว
+  //   "paid"   = การ์ดขั้น 04 หลังชำระเงินครบ — โทรตกลงวันนัด
   //   (ลูกค้าจ่ายเงินแล้ว — ไม่เอาไม่ใช่ทางของขั้นนี้ ยกเลิกหลังรับเงินต้องผ่าน Account)
-  // ★ 1 ต.ค. 69 ติดต่อไม่ได้ (ไม่รับสาย / เบอร์ผิด) ย้ายไปปุ่ม Follow-up แบบหน้า lead — ผลที่เหลือเป็นแถวแบบ modal Follow-up
-  // ★ 1 ต.ค. 69 ส่วนเลือกวันนัดเหมือน "เลื่อนนัดสำรวจ" ฝั่งขาย (AppointmentRescheduler) ทั้งก้อน
-  //   หัวข้อ → ปฏิทิน 3 เดือน → ช่วงเวลา → แถบ "นัดเป็น" → ยกเลิก/✓ยืนยัน วางบนพื้นการ์ดตรง ๆ ไม่อยู่ในกล่องผลการโทร
-  const callForm = (schedule: boolean) => {
+  // ★ 1 ต.ค. 69 ผู้ใช้เคาะ "ตามแนะนำ": เลือกวันนัดที่ขั้น 04 ที่เดียว ทั้งงานฟรีและงานเสียเงิน
+  //   งานฟรีไม่บันทึกตอนกดตกลงที่ 01 — บันทึกครั้งเดียวตอนเลือกวันเสร็จ (ไม่มีใบ "ตกลงแต่ไม่มีวันนัด")
+  //   ติดต่อไม่ได้ / ยังไม่ได้ข้อสรุป → ปุ่ม Follow-up (OmFollowupModal)
+  // ★ ส่วนเลือกวันนัดเหมือน "เลื่อนนัดสำรวจ" ฝั่งขาย (AppointmentRescheduler) ทั้งก้อน
+  //   หัวข้อ → ปฏิทิน 3 เดือน → ช่วงเวลา → แถบ "นัดเป็น" → ยกเลิก/✓ยืนยัน วางบนพื้นการ์ดตรง ๆ
+  const callForm = (mode: "follow" | "paid" | "free") => {
+    const schedule = mode !== "follow";
     const oc = schedule ? "agreed" : outcome;
-    const blockQuote = !schedule && oc === "agreed" && needQuote;
-    const needSlot = oc === "agreed" && (!apDate || !apSlot);
+    const needSlot = schedule && (!apDate || !apSlot);
     return (
     <>
-      {callSummary(schedule)}
-      <div className={SECTION}>
-        {!schedule && <>
+      {mode !== "free" && callSummary(schedule)}
+      {/* ★ 1 ต.ค. 69 ผู้ใช้สั่งเอากล่องคำอธิบาย + โน้ตออกจากขั้น 04 — การ์ดเลือกวันนัดเหลือแถบหัว → ปฏิทิน → ปุ่ม
+          งานชำระแล้วคงบรรทัดชี้ปุ่ม Follow-up ไว้ (โทรตกลงวันนัด อาจโทรไม่ติด) */}
+      {mode !== "free" && <div className={SECTION}>
+        {mode === "follow" && <>
           {/* หัว + แถวผล ยกจาก modal Follow-up ฝั่งขาย (จุดเขียว = ติดต่อได้) */}
           <div className="text-xs font-bold text-gray-400 uppercase tracking-wider mb-1.5 flex items-center gap-1.5">
             <svg className="w-3.5 h-3.5 text-green-600" fill="currentColor" viewBox="0 0 20 20">
@@ -414,7 +444,7 @@ export default function JobDetail({ item, history, bookings = [], rules, onBack,
             })}
           </div>
         </>}
-        {/* ทางไปบันทึกโทรไม่ติด — คนที่ชินกับปุ่มเดิมในการ์ดจะได้ไม่หลง */}
+        {/* ทางไปบันทึกติดต่อไม่ได้ — คนที่ชินกับปุ่มเดิมในการ์ดจะได้ไม่หลง */}
         <div className={`${schedule ? "" : "mt-2 "}text-xs text-gray-500 flex items-center gap-1.5 flex-wrap`}>
           <span>ติดต่อแล้วยังไม่ได้ข้อสรุป หรือติดต่อไม่ได้? บันทึกที่ปุ่ม</span>
           <button type="button" onClick={() => setFollowOpen(true)} style={{ minHeight: 0 }}
@@ -423,35 +453,34 @@ export default function JobDetail({ item, history, bookings = [], rules, onBack,
           </button>
         </div>
 
-        {blockQuote ? (
-          <div className="mt-3 rounded-lg bg-amber-50 border border-amber-200 px-3 py-2 text-xs leading-relaxed text-amber-900 flex items-center gap-2 flex-wrap">
-            <span>บ้านนี้<b>สิทธิ์ล้างหมดแล้ว</b> — ตกลงนัดตรงไม่ได้ ต้องออกใบเสนอราคาและรับเงินก่อนนัด (เก็บค่าบริการก่อนนัดหมาย)
-              · ถ้าตัวเลขสิทธิ์ผิด แก้ที่หน้าบ้าน / ระบบติดตั้ง</span>
-            <button type="button" onClick={() => go(1)} style={{ minHeight: 0 }}
-              className="font-semibold text-active hover:underline cursor-pointer">ไปขั้น 02 เสนอราคา ›</button>
+        {/* ผลของตัวเลือก — บอกก่อนกด */}
+        {mode === "follow" && oc === "agreed" && (needQuote ? (
+          <div className="mt-3 rounded-lg bg-amber-50 border border-amber-200 px-3 py-2 text-xs leading-relaxed text-amber-900">
+            บ้านนี้<b>สิทธิ์ล้างหมดแล้ว</b> — ออกใบเสนอราคาที่ขั้น <b>02</b> และรับเงินก่อนนัด (เก็บค่าบริการก่อนนัดหมาย)
+            · ถ้าตัวเลขสิทธิ์ผิด แก้ที่หน้าบ้าน / ระบบติดตั้ง
           </div>
-        ) : oc && (
-        <div className="mt-3 rounded-lg bg-gray-50 border border-gray-200 px-3 py-2 text-xs leading-relaxed text-gray-600">
-          {schedule
-            ? <>กดบันทึกแล้วใบงาน #{item.booking_id} ย้ายไปขั้น <b>นัดหมาย</b> (รอยืนยันนัด) พร้อมวันเวลาที่เลือก</>
-            : <>
-              {oc === "agreed" && <>กดบันทึกแล้ว{item.booking_id && cur === "follow" ? <> ใบงาน #{item.booking_id} ย้ายไป</> : <> <b>สร้างใบงาน</b></>} ขั้น <b>นัดหมาย</b> (รอยืนยันนัด) พร้อมวันเวลาที่เลือก การ์ดจะย้ายออกจากแท็บติดตาม</>}
-              {oc === "declined" && <><b>ไม่สร้างใบงาน</b> ย้ายไปแท็บไม่เอา · <b>สิทธิ์ไม่ถูกตัด</b> ยังใช้ได้ถ้าเปลี่ยนใจ</>}
-            </>}
-        </div>
+        ) : (
+          <div className="mt-3 rounded-lg bg-gray-50 border border-gray-200 px-3 py-2 text-xs leading-relaxed text-gray-600">
+            เลือกวันนัดต่อที่ขั้น <b>04 นัดหมาย</b> — ยังไม่บันทึกจนกว่าจะเลือกวันเสร็จ
+          </div>
+        ))}
+        {mode === "follow" && oc === "declined" && (
+          <div className="mt-3 rounded-lg bg-gray-50 border border-gray-200 px-3 py-2 text-xs leading-relaxed text-gray-600">
+            <b>ไม่สร้างใบงาน</b> ย้ายไปแท็บไม่เอา · <b>สิทธิ์ไม่ถูกตัด</b> ยังใช้ได้ถ้าเปลี่ยนใจ
+          </div>
         )}
 
-        {oc && !blockQuote && (
+        {mode === "follow" && oc === "declined" && (
           <div className="mt-3">
             <label className={FIELD_LABEL}>โน้ต</label>
             <input value={note} onChange={(e) => setNote(e.target.value)} placeholder="เช่น ลูกค้าไม่อยู่บ้านช่วงเช้า" className={INPUT} />
           </div>
         )}
-      </div>
+      </div>}
 
       {/* ส่วนเลือกวันนัด = "เลื่อนนัดสำรวจ" ฝั่งขาย: หัวข้อตัวเทา → ปฏิทิน/ช่วงเวลา → แถบ "นัดเป็น" (อยู่ใน OmSlotPicker) */}
-      {oc === "agreed" && !blockQuote && (
-        <div className="mt-4 space-y-3">
+      {schedule && (
+        <div className={`${mode === "free" ? "" : "mt-4 "}space-y-3`}>
           <div className="text-xs font-semibold tracking-wider uppercase text-gray-400">นัดเข้าบริการ</div>
           <OmSlotPicker date={apDate} slot={apSlot} excludeId={item.booking_id} rules={rules} pickedLabel="นัดเป็น"
             onDateChange={setApDate} onSlotChange={setApSlot} />
@@ -459,18 +488,30 @@ export default function JobDetail({ item, history, bookings = [], rules, onBack,
       )}
 
       {/* ปุ่มคู่ ยกเลิก / ✓ยืนยัน เต็มแถว — ยกจาก AppointmentRescheduler ฝั่งขาย
-          ยกเลิก = ล้างที่เลือกไว้กลับไปก่อนเลือกผลการโทร (ฟอร์มนี้ฝังในการ์ด ไม่มีอะไรให้ปิด) */}
+          ขั้น 01: ยกเลิก = ล้างที่เลือก · ตกลงแล้วปุ่มหลักพาไปขั้นถัดไป
+          ขั้น 04 งานฟรี: ยกเลิก = กลับขั้น 01 (ยังไม่มีอะไรถูกบันทึก) · งานชำระแล้ว: ยกเลิก = ล้างวันที่เลือก */}
       <div className="mt-3 flex gap-2 pt-1">
-        <button type="button" disabled={busy || (!schedule && !outcome) || (schedule && !apDate && !apSlot)} onClick={resetCall}
+        <button type="button"
+          disabled={busy || (mode === "follow" && !outcome) || (mode === "paid" && !apDate && !apSlot)}
+          onClick={mode === "free" ? backToFollow : resetCall}
           className="flex-1 h-11 rounded-lg text-sm font-semibold bg-white border border-gray-200 text-gray-700 hover:border-gray-400 cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed">
-          ยกเลิก
+          {mode === "free" ? "‹ กลับขั้น 01" : "ยกเลิก"}
         </button>
-        <button type="button" disabled={busy || !oc || blockQuote || needSlot} onClick={() => saveCall(oc)}
-          className="flex-[2] h-11 rounded-lg text-sm font-bold text-white bg-active hover:bg-active-dark disabled:opacity-40 disabled:cursor-not-allowed shadow-sm shadow-active/30 flex items-center justify-center gap-2 cursor-pointer">
-          {busy ? "กำลังบันทึก…" : !oc ? "เลือกผลการโทร" : needSlot && !blockQuote ? "เลือกวันและเวลา" : (
-            <><CheckIcon className="w-4 h-4" strokeWidth={2.5} />บันทึกการโทร</>
-          )}
-        </button>
+        {mode === "follow" && oc === "agreed" ? (
+          <button type="button" onClick={goAgree}
+            className="flex-[2] h-11 rounded-lg text-sm font-bold text-white bg-active hover:bg-active-dark shadow-sm shadow-active/30 flex items-center justify-center gap-2 cursor-pointer">
+            {needQuote ? "ไปขั้น 02 เสนอราคา ›" : "ไปเลือกวันนัด ›"}
+          </button>
+        ) : (
+          <button type="button" disabled={busy || !oc || needSlot} onClick={() => saveCall(oc)}
+            className="flex-[2] h-11 rounded-lg text-sm font-bold text-white bg-active hover:bg-active-dark disabled:opacity-40 disabled:cursor-not-allowed shadow-sm shadow-active/30 flex items-center justify-center gap-2 cursor-pointer">
+            {/* ★ 1 ต.ค. 69 ผู้ใช้ตั้งชื่อปุ่มขั้น 04 = "ยืนยันและเข้างาน" ทุกสถานะ (ยังไม่เลือกช่วงเวลา = ปุ่มจาง กดไม่ได้)
+                ขั้น 01 (ปฏิเสธ) ยังเป็นบันทึกการโทร */}
+            {busy ? "กำลังบันทึก…" : !oc ? "เลือกผลการโทร" : (
+              <><CheckIcon className="w-4 h-4" strokeWidth={2.5} />{schedule ? "ยืนยันและเข้างาน" : "บันทึกการโทร"}</>
+            )}
+          </button>
+        )}
       </div>
     </>
     );
@@ -693,7 +734,7 @@ export default function JobDetail({ item, history, bookings = [], rules, onBack,
                         : "ไม่มีบันทึกการโทรของใบงานนี้";
                     })()} />,
                     () => events("follow", "gray", "การโทร · เปิดใบงาน"))
-                : callForm(false)}
+                : callForm("follow")}
             </StepCard>
 
             {/* ★ ขั้น 02–03 เป็นของงานเสียเงิน (แผน 20260924-02)
@@ -742,7 +783,7 @@ export default function JobDetail({ item, history, bookings = [], rules, onBack,
             {/* ★ นัดหมาย = รวมขั้น "ทำนัด" กับ "รอ O&M" เดิม (ขั้นย่อย 2410 รอยืนยันนัด · 2420 นัดแล้ว)
                 ปุ่มโผล่เฉพาะสถานะที่กดได้จริง — เดิมโผล่ตลอด กดผิดสถานะแล้วค่อยโดน API ปฏิเสธ */}
             <StepCard n={3} className={cardWrap(3)} state={stepState(3)} doneTitle="นัดหมายแล้ว" onHeaderClick={() => toggleDone(3)}
-              title={paidWaiting ? "นัดหมาย — โทรตกลงวันนัด" : "นัดหมาย — ยืนยันนัด"}>
+              title={paidWaiting || schedFree ? "นัดหมาย — เลือกวันนัด" : "นัดหมาย — ยืนยันนัด"}>
               {stepState(3) === "done" ? doneView(3,
                 <DoneHead text={`นัด ${thAppt(item.scheduled_at, item.time_slot)}`} />,
                 () => events("appoint", "blue", "นัดหมาย · ทีมช่าง"),
@@ -754,7 +795,16 @@ export default function JobDetail({ item, history, bookings = [], rules, onBack,
                     <CheckIcon className="w-4 h-4 shrink-0 text-emerald-600" strokeWidth={2.5} />
                     <span className="min-w-0">ชำระค่าบริการแล้ว{item.q_doc_no && <> ตามใบ <b className="font-mono">{item.q_doc_no}</b></>} — โทรตกลงวันนัดกับลูกค้า</span>
                   </div>
-                  {callForm(true)}
+                  {callForm("paid")}
+                </div>
+              ) : schedFree ? (
+                // ★ 1 ต.ค. 69 งานฟรีตกลงที่ขั้น 01 แล้ว — เลือกวันนัดที่นี่ที่เดียวแบบงานที่ชำระเงินแล้ว
+                <div className="space-y-3">
+                  <div className="flex items-center gap-2.5 px-3 py-2.5 rounded-lg border bg-active-light border-active/20 text-sm text-gray-800">
+                    <CheckIcon className="w-4 h-4 shrink-0 text-active" strokeWidth={2.5} />
+                    <span className="min-w-0 flex-1">ลูกค้าตกลงรับบริการ{skip && <> · งานนี้<b>ไม่ต้องชำระเงิน</b></>} — เลือกวันนัดกับลูกค้า</span>
+                  </div>
+                  {callForm("free")}
                 </div>
               ) : (
               <div className="space-y-3">
@@ -1050,7 +1100,7 @@ function StepCard({ n, state, title, doneTitle, onHeaderClick, className = "", c
   const headerClick = state === "done" ? onHeaderClick : undefined;
 
   return (
-    <div className={`rounded-2xl overflow-hidden transition-all ${container} ${className}`}>
+    <div id={`om-step-${n}`} className={`rounded-2xl overflow-hidden transition-all ${container} ${className}`}>
       <div className={`flex items-center gap-3 px-5 py-4 ${headerClick ? "cursor-pointer" : ""}`} onClick={headerClick}>
         <div className={`w-10 h-8 rounded-xl flex items-center justify-center shrink-0 ${iconBox}`}>
           <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.8}>

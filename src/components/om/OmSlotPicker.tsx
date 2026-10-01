@@ -8,11 +8,11 @@
 //   เลือกทับนัดอื่น → CalendarPicker ขึ้นเตือนเหลืองว่าทับนัดอะไร
 // ★ ค่าที่ได้ = วัน + time_slot (JSON array แบบ leads.survey_time_slot) — API คิดเวลาเริ่มจากช่องแรกเอง
 // ★ กติกาหน้าตั้งค่า O&M (booking.advance_days_max · booking.advance_hours_min)
-//   ไกลเกิน advance_days_max = วันกดไม่ได้ · ใกล้กว่า advance_hours_min = เตือนเฉย ๆ ไม่บล็อก
+//   ไกลเกิน advance_days_max = วันกดไม่ได้ · (เตือนใกล้กว่า advance_hours_min — ผู้ใช้สั่งเอาออก 1 ต.ค. 69)
 //   ช่องที่เริ่มไปแล้วของวันนี้กดไม่ได้ — API รับเฉพาะเวลาข้างหน้า (เลื่อนนัด)
 import CalendarPicker from "@/components/calendar/CalendarPicker";
 import { formatThaiDate } from "@/lib/utils/formatters";
-import { formatSlotsRange, parseSlots } from "@/lib/time-slots";
+import { formatSlotsRange } from "@/lib/time-slots";
 
 export default function OmSlotPicker({ date, slot, onDateChange, onSlotChange, excludeId, rules, pickedLabel }: {
   /** YYYY-MM-DD · "" = ยังไม่เลือก */
@@ -34,11 +34,7 @@ export default function OmSlotPicker({ date, slot, onDateChange, onSlotChange, e
   const nowHm = now.toTimeString().slice(0, 5);
   const num = (k: string, d: number) => (rules?.[k] != null && !Number.isNaN(Number(rules[k])) ? Number(rules[k]) : d);
   const maxDays = num("booking.advance_days_max", 60);
-  const minHours = num("booking.advance_hours_min", 0);
   const lastDay = (() => { const d = new Date(); d.setDate(d.getDate() + maxDays); return d.toLocaleDateString("sv-SE"); })();
-  const first = parseSlots(slot).sort()[0] ?? "";
-  const tooSoon = !!(date && first && minHours > 0
-    && new Date(`${date}T${first}:00`).getTime() - now.getTime() < minHours * 3600000);
 
   return (
     <div className="space-y-3">
@@ -71,11 +67,6 @@ export default function OmSlotPicker({ date, slot, onDateChange, onSlotChange, e
               {slot && <span className="ml-1.5 font-mono tabular-nums">{formatSlotsRange(slot)}</span>}
             </div>
           </div>
-        </div>
-      )}
-      {tooSoon && (
-        <div className="text-xs font-semibold text-amber-700">
-          ⚠ นัดล่วงหน้าไม่ถึง {minHours} ชม. ตามหน้าตั้งค่า — ยังบันทึกได้ ตรวจคิวทีมช่างก่อน
         </div>
       )}
     </div>
