@@ -6,6 +6,8 @@
 // ★ ต่างจากฝั่งขายตรงที่ยืนยัน/ปฏิเสธในคิวได้เลย — ของขายพาไปกดใน PaymentSection บนหน้า lead
 //   แต่ Account เข้าโมดูล O&M ไม่ได้ และหน้า lead ของงาน O&M ไม่มีช่องรับเงินนี้
 // ★ ปุ่มพาไปหน้างาน O&M มีให้ admin เท่านั้น (Account ไม่มีสิทธิ์โมดูล O&M)
+// ★ เช็ค / บัตรเครดิต แบบฝั่งขาย (แผน 20261002-11): เช็คกด "ยืนยันรับเช็ค" ก่อน (Sale โทรนัดได้) แล้วค่อย "ยืนยันรับเงิน" ตอนเงินเข้า
+//   บัตรเครดิตแสดงยอดรวมค่าธรรมเนียม (amount = ยอดใบ · ค่าธรรมเนียมแยกคอลัมน์)
 
 import { useState } from "react";
 import { apiFetch } from "@/lib/api";
@@ -21,10 +23,20 @@ export type OmPendingPayment = {
   quotation_id: number; quotation_doc_no: string; package_name_snapshot: string | null;
   booking_id: number; house_id: number; house_number: string | null; project_name: string | null;
   customer_name: string; phone: string | null; slip_urls: string[];
+  cheque_received_at: string | null; cheque_received_by: string | null;
+  cc_surcharge_pct: number | null; cc_surcharge_amount: number;
 };
 
-const METHOD: Record<string, string> = { transfer: "โอน / QR", cash: "เงินสด", other: "อื่น ๆ" };
+const METHOD: Record<string, string> = { transfer: "โอน / QR", cash: "เงินสด", other: "อื่น ๆ",
+  qr: "Thai QR", bank_transfer: "โอนเข้าบัญชี", cheque: "เช็ค", cc: "บัตรเครดิต" };
 const fmt = (n: number) => formatTHB(Math.round(n));
+/** ยอดที่ลูกค้าจ่ายจริง — บัตรเครดิตรวมค่าธรรมเนียม */
+const paidTotal = (it: OmPendingPayment) => it.amount + Number(it.cc_surcharge_amount || 0);
+const methodText = (it: OmPendingPayment) => (METHOD[it.payment_method ?? ""] ?? it.payment_method)
+  + (it.cc_surcharge_amount > 0 ? ` +${it.cc_surcharge_pct}% (ค่าธรรมเนียม ${fmt(it.cc_surcharge_amount)})` : "")
+  + (it.payment_method === "cheque"
+    ? (it.cheque_received_at ? ` · รับเช็คแล้ว${it.cheque_received_by ? ` โดย ${it.cheque_received_by}` : ""} รอเงินเข้า` : " · รอรับเช็ค")
+    : "");
 
 export default function OmPendingPayments({ items, focusedId, onChanged }: {
   items: OmPendingPayment[];
@@ -41,11 +53,18 @@ export default function OmPendingPayments({ items, focusedId, onChanged }: {
 
   if (items.length === 0) return null;
 
-  const act = async (it: OmPendingPayment, action: "confirm" | "reject", why = "") => {
+  const act = async (it: OmPendingPayment, action: "confirm" | "reject" | "cheque_received", why = "") => {
     if (action === "confirm") {
       const ok = await dialog.confirm({
         title: "ยืนยันรับเงินค่าบริการ O&M", confirmText: "ยืนยันรับเงิน", variant: "success",
-        message: `${it.customer_name} · ${it.quotation_doc_no} · ${fmt(it.amount)} บาท\nยืนยันแล้วระบบเติมสิทธิ์ที่ลูกค้าซื้อให้บ้าน และ Sale โทรนัดได้`,
+        message: `${it.customer_name} · ${it.quotation_doc_no} · ${fmt(paidTotal(it))} บาท\nยืนยันแล้วระบบเติมสิทธิ์ที่ลูกค้าซื้อให้บ้าน${it.payment_method === "cheque" ? "" : " และ Sale โทรนัดได้"}`,
+      });
+      if (!ok) return;
+    }
+    if (action === "cheque_received") {
+      const ok = await dialog.confirm({
+        title: "ยืนยันรับเช็คค่าบริการ O&M", confirmText: "ยืนยันรับเช็ค",
+        message: `${it.customer_name} · ${it.quotation_doc_no} · ${fmt(it.amount)} บาท\nรับเช็คแล้ว Sale โทรนัดได้ · กดยืนยันรับเงินอีกครั้งเมื่อเงินเข้าจริง (ตอนนั้นจึงเติมสิทธิ์)`,
       });
       if (!ok) return;
     }
@@ -74,9 +93,15 @@ export default function OmPendingPayments({ items, focusedId, onChanged }: {
             <div className={`flex gap-2 ${cls}`}>
               <button type="button" disabled={busy === it.id} onClick={() => { setReason(""); setRejecting(it); }}
                 className="h-8 px-3 rounded-lg text-sm font-semibold text-red-700 bg-red-50 hover:bg-red-100 disabled:opacity-50 flex-1 md:flex-none">ปฏิเสธ</button>
-              <button type="button" disabled={busy === it.id} onClick={() => act(it, "confirm")}
-                className="h-8 px-3 rounded-lg text-sm font-semibold text-white bg-emerald-500 hover:bg-emerald-600 disabled:opacity-50 flex-1 md:flex-none">
-                {busy === it.id ? "กำลังบันทึก…" : "ยืนยันรับเงิน"}</button>
+              {it.payment_method === "cheque" && !it.cheque_received_at ? (
+                <button type="button" disabled={busy === it.id} onClick={() => act(it, "cheque_received")}
+                  className="h-8 px-3 rounded-lg text-sm font-semibold text-white bg-amber-500 hover:bg-amber-600 disabled:opacity-50 flex-1 md:flex-none">
+                  {busy === it.id ? "กำลังบันทึก…" : "ยืนยันรับเช็ค"}</button>
+              ) : (
+                <button type="button" disabled={busy === it.id} onClick={() => act(it, "confirm")}
+                  className="h-8 px-3 rounded-lg text-sm font-semibold text-white bg-emerald-500 hover:bg-emerald-600 disabled:opacity-50 flex-1 md:flex-none">
+                  {busy === it.id ? "กำลังบันทึก…" : "ยืนยันรับเงิน"}</button>
+              )}
             </div>
           );
           const name = isAdmin
@@ -93,13 +118,13 @@ export default function OmPendingPayments({ items, focusedId, onChanged }: {
                     <div className="text-[11px] text-gray-400 font-mono truncate">{it.quotation_doc_no}{where ? ` · ${where}` : ""}</div>
                   </div>
                   <div className="text-right shrink-0">
-                    <div className="text-xl font-bold font-mono tabular-nums text-amber-600 leading-none">{fmt(it.amount)}</div>
+                    <div className="text-xl font-bold font-mono tabular-nums text-amber-600 leading-none">{fmt(paidTotal(it))}</div>
                     <div className="text-[10px] text-gray-400 mt-0.5">บาท</div>
                   </div>
                 </div>
                 <div className="text-xs">
                   <span className="font-semibold text-gray-800">{label}</span>
-                  <span className="text-gray-500"> · {METHOD[it.payment_method ?? ""] ?? it.payment_method} · แนบโดย {it.submitted_by_name ?? "—"}</span>
+                  <span className="text-gray-500"> · {methodText(it)} · แนบโดย {it.submitted_by_name ?? "—"}</span>
                 </div>
                 {it.slip_urls.length > 0 && (
                   <div className="flex items-center gap-1 overflow-x-auto pb-1 -mx-1 px-1">
@@ -129,11 +154,11 @@ export default function OmPendingPayments({ items, focusedId, onChanged }: {
                   </div>
                   <div className="text-xs text-gray-500 mt-0.5">
                     <span className="font-semibold text-gray-700">{label}</span>
-                    <span> · {METHOD[it.payment_method ?? ""] ?? it.payment_method} · แนบโดย {it.submitted_by_name ?? "—"}</span>
+                    <span> · {methodText(it)} · แนบโดย {it.submitted_by_name ?? "—"}</span>
                   </div>
                 </div>
                 <div className="text-right shrink-0">
-                  <div className="text-lg font-bold font-mono tabular-nums text-amber-600">{fmt(it.amount)}</div>
+                  <div className="text-lg font-bold font-mono tabular-nums text-amber-600">{fmt(paidTotal(it))}</div>
                   <div className="text-xs text-gray-400">บาท</div>
                 </div>
                 {actions()}

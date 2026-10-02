@@ -53,6 +53,7 @@ const TYPE: Record<string, { icon: string; color: string }> = {
   pay_submit: { icon: I.pay, color: "bg-amber-500" },
   paid: { icon: I.pay, color: "bg-emerald-600" },
   pay_reject: { icon: I.alert, color: "bg-red-500" },
+  pay_cheque: { icon: I.pay, color: "bg-amber-500" },
   repair_open: { icon: I.plus, color: "bg-orange-500" },
 };
 // บันทึกการติดตามทางอื่น (ปุ่ม Follow-up) — ไอคอนตามช่องทางแบบฝั่งขาย

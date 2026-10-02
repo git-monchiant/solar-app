@@ -296,7 +296,9 @@ export default function JobDetail({ item, history, bookings = [], rules, onBack,
     } catch (e) { setErr(e instanceof Error ? e.message : String(e)); }
     finally { setBusy(false); }
   };
-  // ช่องเหตุผล + ปุ่มยืนยัน — ใช้ทั้งแถบใบซ่อมและขั้นเสนอราคา/ชำระเงินของใบงานทั่วไป
+  // ช่องเหตุผล + ปุ่มยืนยัน — แถบใบซ่อมบนสุด
+  // ★ 2 ต.ค. 69 ผู้ใช้สั่งเอาแถบ "ลูกค้าไม่เอา — ยกเลิกงานนี้" ท้ายการ์ดขั้น 02/03 ของใบงานทั่วไปออก (แผน 20261002-09/10)
+  //   ใบงานทั่วไปจึงไม่มีปุ่มยกเลิกบนหน้านี้แล้ว · API /api/om/bookings/[id]/cancel ยังอยู่
   const cancelForm = (
     <div className="mt-3 flex gap-2 flex-wrap items-center">
       <input value={cancelReason} onChange={(e) => setCancelReason(e.target.value)} autoFocus
@@ -306,18 +308,6 @@ export default function JobDetail({ item, history, bookings = [], rules, onBack,
         className="h-8 px-4 rounded-lg text-xs font-semibold text-white bg-red-600 hover:brightness-110 cursor-pointer disabled:opacity-50">ยืนยันยกเลิก</button>
       <button type="button" onClick={() => setCancelOpen(false)} style={{ minHeight: 0 }}
         className="h-8 px-3 rounded-lg text-xs font-semibold border border-gray-200 bg-white text-gray-600 cursor-pointer">ไม่ยกเลิก</button>
-    </div>
-  );
-  // ใบงานทั่วไป — ปุ่มอยู่ท้ายการ์ดขั้นเสนอราคา/ชำระเงิน
-  const declineBox = !isRepairJob && canDecline && (
-    <div className="mt-3 rounded-lg border border-gray-200 bg-white/60 px-3 py-2.5">
-      {!cancelOpen ? (
-        <div className="text-xs text-gray-500 flex items-center gap-2 flex-wrap">
-          <button type="button" onClick={() => setCancelOpen(true)} style={{ minHeight: 0 }}
-            className="font-semibold text-red-600 hover:underline cursor-pointer">ลูกค้าไม่เอา — ยกเลิกงานนี้</button>
-          <span>ยกเลิกใบงานและใบเสนอราคา · บ้านย้ายไปแท็บ<b>ไม่เอา</b> · สิทธิ์ไม่ถูกตัด</span>
-        </div>
-      ) : cancelForm}
     </div>
   );
 
@@ -821,12 +811,10 @@ export default function JobDetail({ item, history, bookings = [], rules, onBack,
                         <OmQuotationPanel item={item} skip={skip} onSaved={onSaved} onReload={onReload} />
                       </DoneSection>
                     ))
-                : <>
-                    <div className={SECTION}>
-                      <OmQuotationPanel item={item} skip={skip} onSaved={onSaved} onReload={onReload} />
-                    </div>
-                    {stepState(1) === "active" && declineBox}
-                  </>}
+                // ★ 2 ต.ค. 69 ผู้ใช้สั่งเอาแถบ "ลูกค้าไม่เอา — ยกเลิกงานนี้" ออกจากขั้นนี้ (แผน 20261002-09) · ขั้น 03 เอาออกด้วยแล้ว
+                : <div className={SECTION}>
+                    <OmQuotationPanel item={item} skip={skip} onSaved={onSaved} onReload={onReload} />
+                  </div>}
             </StepCard>
 
             {/* เฟส 4: แนบสลิป → Account ยืนยันในคิวเดิม → เติมสิทธิ์ที่ซื้อ → โทรนัดได้ (ที่การ์ดนัดหมาย · แผน 20260929-02) */}
@@ -839,12 +827,13 @@ export default function JobDetail({ item, history, bookings = [], rules, onBack,
                         <OmPaymentPanel item={item} skip={skip} onSaved={onSaved} onReload={onReload} />
                       </DoneSection>
                     ))
-                : <>
-                    <div className={SECTION}>
+                // ★ แผน 20261002-10: ขั้นที่กำลังทำ = ขั้นย่อยแบบ Order ฝั่งขาย วางบนพื้นการ์ดตรง ๆ (ไม่ห่อ SECTION แบบ OrderStep)
+                //   2 ต.ค. 69 ผู้ใช้สั่งเอาแถบ "ลูกค้าไม่เอา — ยกเลิกงานนี้" ออก (ขั้น 02 ออกไปก่อนแล้ว)
+                : cur === "payment"
+                  ? <OmPaymentPanel item={item} skip={skip} onSaved={onSaved} onReload={onReload} steps />
+                  : <div className={SECTION}>
                       <OmPaymentPanel item={item} skip={skip} onSaved={onSaved} onReload={onReload} />
-                    </div>
-                    {stepState(2) === "active" && declineBox}
-                  </>}
+                    </div>}
             </StepCard>
 
             {/* ★ นัดหมาย = รวมขั้น "ทำนัด" กับ "รอ O&M" เดิม (ขั้นย่อย 2410 รอยืนยันนัด · 2420 นัดแล้ว)

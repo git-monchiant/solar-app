@@ -19,7 +19,7 @@ import {
 } from "@/lib/quotation-document";
 import { buildSurveyReportHtml } from "@/lib/docs/survey-report";
 import { buildContentDisposition } from "@/lib/doc-filename";
-import { buildOmQuoteSnapshot } from "@/lib/om/om-quotation";
+import { buildOmPreviewSnapshot, buildOmQuoteSnapshot, parseOmQuoteInput } from "@/lib/om/om-quotation";
 import {
   getQuotationLegalContent,
   parseQuotationPaymentTerms,
@@ -148,6 +148,25 @@ export async function POST(req: NextRequest) {
   if (!userId || !(await getQuotationActor(userId)))
     return NextResponse.json({ error: "Not authenticated" }, { status: 401 });
   const body = await req.json();
+  // ★ ใบ O&M — ปุ่ม "ดูตัวอย่าง" ใน popup ทำใบเสนอราคา O&M (แผน 20261002-04)
+  //   ชุดข้อมูลสร้างแบบ buildOmQuoteSnapshot จากค่าในฟอร์ม · detail.om_booking_id ไม่ว่าง ⇒ GET เข้าทาง O&M เอง
+  if (body.om) {
+    const input = parseOmQuoteInput(body);
+    if (typeof input === "string") return NextResponse.json({ error: input }, { status: 400 });
+    const houseId = Number(body.house_id);
+    if (!houseId) return NextResponse.json({ error: "ต้องระบุบ้าน" }, { status: 400 });
+    try {
+      const built = await buildOmPreviewSnapshot(houseId, input, {
+        docNo: body.docNo ? String(body.docNo) : null, validDays: Number(body.validDays) || null, actorUserId: userId,
+      });
+      const token = randomUUID();
+      previewCache.set(token, built);
+      setTimeout(() => previewCache.delete(token), 10 * 60_000);
+      return NextResponse.json({ token });
+    } catch (e) {
+      return NextResponse.json({ error: e instanceof Error ? e.message : "สร้างตัวอย่างไม่สำเร็จ" }, { status: 400 });
+    }
+  }
   const now = new Date().toISOString();
   let packageRow = body.package || {};
   let previewAllItems: Array<Record<string, unknown>> = Array.isArray(body.allItems) ? body.allItems : [];
@@ -810,7 +829,8 @@ export async function GET(
   // เพราะแถวลงครบหน้าก่อนพอดี → ไม่มีตารางอยู่ข้างบน ต้องมีเส้นขอบบนของตัวเอง
   const paymentBlockHtml = (joined: boolean) =>
     `<table class="quote-table payment-block${joined ? " joined" : ""}"><tbody>${joined ? '<tr class="payment-spacer"><td style="width:12mm"></td><td></td><td style="width:32.5mm"></td></tr>' : ""}<tr class="payment-shell"><td colspan="2" class="payment-cell"${joined ? "" : ' style="width:auto"'}><div class="payment-title">เงื่อนไขการชำระเงิน</div><table class="payment-table"><tbody>${paymentRows}</tbody></table><div class="payment-bank-row"><div class="bank-copy"><b>ธนาคาร${esc(bankName)}</b><br>ชื่อบัญชี : ${esc(bankAccountName)}<br>เลขที่บัญชี : ${esc(bankAccountNumber)} สาขา ${esc(bankBranch)}<div class="payment-notice"><b>โปรดตรวจสอบก่อนโอนเงิน</b> <span class="sep"></span> ชำระเงินเข้าบัญชีบริษัทที่ SENA SOLAR ENERGY กำหนดเท่านั้น <span class="sep"></span> ห้ามโอนเข้าบัญชีส่วนบุคคลของ Agent พนักงาน หรือบุคคลอื่น <span class="sep"></span> การชำระเงินนอกเหนือจากช่องทางที่บริษัทกำหนด บริษัทฯ ขอสงวนสิทธิ์ไม่รับผิดชอบต่อความเสียหายที่เกิดขึ้น</div></div><div class="qr"><img src="${paymentQrDataUrl}" alt="QR Payment"></div></div></td><td class="payment-side" style="width:32.5mm"></td></tr></tbody></table>`;
-  const financialsHtml = `<table class="financials"><tbody><tr class="strong"><td></td><td class="summary-label">ราคาก่อนหักส่วนลด (รวมภาษีมูลค่าเพิ่ม)</td><td class="summary-value">${money(q.subtotal_incl_vat)}</td></tr>${Number(q.discount_amount) > 0 ? `<tr><td></td><td class="summary-label">${esc(q.discount_label || "ส่วนลด")}</td><td class="summary-value">-${money(q.discount_amount)}</td></tr>` : ""}<tr><td></td><td class="summary-label">หัก เงินจอง</td><td class="summary-value">${Number(q.deposit_paid_amount) > 0 ? `-${money(q.deposit_paid_amount)}` : money(0)}</td></tr><tr class="strong"><td></td><td class="summary-label">ราคาหลังหักส่วนลด (รวมภาษีมูลค่าเพิ่ม)</td><td class="summary-value">${money(q.outstanding_amount)}</td></tr><tr><td></td><td class="summary-label">ราคาสินค้าก่อนภาษีมูลค่าเพิ่ม</td><td class="summary-value">${money(q.amount_before_vat)}</td></tr><tr><td></td><td class="summary-label">ภาษีมูลค่าเพิ่ม (VAT) 7%</td><td class="summary-value">${money(q.vat_amount)}</td></tr><tr class="grand"><td class="amount-words">( ${thaiBahtText(q.outstanding_amount)} )</td><td class="summary-label">รวมยอดที่ต้องชำระสุทธิ</td><td class="summary-value">${money(q.outstanding_amount)}</td></tr></tbody></table>`;
+  // ใบ O&M ไม่มีเงินจอง (ไม่มีขั้นจอง/สำรวจ) — ไม่พิมพ์แถว "หัก เงินจอง 0.00" (ผู้ใช้ตรวจ PDF 2 ต.ค. 69)
+  const financialsHtml = `<table class="financials"><tbody><tr class="strong"><td></td><td class="summary-label">ราคาก่อนหักส่วนลด (รวมภาษีมูลค่าเพิ่ม)</td><td class="summary-value">${money(q.subtotal_incl_vat)}</td></tr>${Number(q.discount_amount) > 0 ? `<tr><td></td><td class="summary-label">${esc(q.discount_label || "ส่วนลด")}</td><td class="summary-value">-${money(q.discount_amount)}</td></tr>` : ""}${isOm ? "" : `<tr><td></td><td class="summary-label">หัก เงินจอง</td><td class="summary-value">${Number(q.deposit_paid_amount) > 0 ? `-${money(q.deposit_paid_amount)}` : money(0)}</td></tr>`}<tr class="strong"><td></td><td class="summary-label">ราคาหลังหักส่วนลด (รวมภาษีมูลค่าเพิ่ม)</td><td class="summary-value">${money(q.outstanding_amount)}</td></tr><tr><td></td><td class="summary-label">ราคาสินค้าก่อนภาษีมูลค่าเพิ่ม</td><td class="summary-value">${money(q.amount_before_vat)}</td></tr><tr><td></td><td class="summary-label">ภาษีมูลค่าเพิ่ม (VAT) 7%</td><td class="summary-value">${money(q.vat_amount)}</td></tr><tr class="grand"><td class="amount-words">( ${thaiBahtText(q.outstanding_amount)} )</td><td class="summary-label">รวมยอดที่ต้องชำระสุทธิ</td><td class="summary-value">${money(q.outstanding_amount)}</td></tr></tbody></table>`;
   const signaturesHtml = `<div class="signatures">${sigCell("ลูกค้า")}${sigCell("ผู้จัดทำเอกสาร", q.created_by_name, creatorSignature, q.issue_date)}${sigCell("ผู้ตรวจสอบ", q.solar_approved_name, solarSignature, q.solar_approved_at)}${sigCell("ผู้ขาย / ผู้ตรวจสอบ", q.approver_name_snapshot || q.approved_by_name, approverSignature, q.approved_at)}</div>`;
 
   /**
@@ -997,6 +1017,17 @@ export async function GET(
     // หัวข้อห้ามค้างท้ายหน้าโดยไม่มีข้อไหนตามมาเลย
     while (blocksOnTable > 0 && legalBlocks[blocksOnTable - 1].isTitle)
       blocksOnTable--;
+    // ★ ใบ O&M (ผู้ใช้ตรวจ PDF 2 ต.ค. 69): เงื่อนไขลงหน้ายอดเงินได้หมด แต่ลายเซ็นไม่พอที่
+    //   ⇒ หน้าท้ายจะมีแต่หัวเอกสาร + ลายเซ็นลอยบนกระดาษเปล่า · ย้ายหัวข้อสุดท้าย (ทั้งหัวข้อ) ไปอยู่กับลายเซ็น
+    //   หน้าท้ายมีเนื้อหา ส่วนหน้าแรกได้แถวว่างเติมกรอบตารางแทน (มีหัวข้อเดียว = ย้ายไปทั้งหมด)
+    //   ใบงานขายไม่แตะ — ชุดเงื่อนไขยาวกว่ามาก แทบไม่เข้าเคสนี้ และหน้าตาเอกสารขายผ่านการตรวจมาแล้ว
+    if (
+      isOm &&
+      blocksOnTable > 0 &&
+      blocksOnTable === legalBlocks.length &&
+      lastPageSlack - legalCost[blocksOnTable - 1] < layout.signaturesCostCompact
+    )
+      blocksOnTable = Math.max(0, legalBlocks.map((block) => block.isTitle).lastIndexOf(true));
     const legalOnTable = legalBlocks.slice(0, blocksOnTable);
     const legalOnTerms = legalBlocks.slice(blocksOnTable);
     const legalUsed = blocksOnTable ? legalCost[blocksOnTable - 1] : 0;

@@ -6,8 +6,8 @@ import { ACTIVE_STATUS, statusLabel } from "@/lib/om/booking";
 import { logBooking } from "@/lib/om/booking-log";
 import { getQuotationActor } from "@/lib/quotation";
 import {
-  OM_PAYMENT_TERMS, canIssueOmQuotation, ensureOmLead, nextOmQuotationDocNo,
-  parseOmQuoteInput, writeOmQuoteBody,
+  OM_MAX_OPTIONS, OM_PAYMENT_TERMS, canIssueOmQuotation, ensureOmLead, nextOmQuotationDocNo,
+  parseOmQuoteInput, readOmQuotes, writeOmQuoteBody,
 } from "@/lib/om/om-quotation";
 
 // ออกใบเสนอราคางานบริการ O&M (แผน docs/plan/20260924-02 เฟส 2)
@@ -17,7 +17,24 @@ import {
 //      ขั้นอื่นที่ค้างอยู่ (นัดแล้ว/เข้างาน…) = ปฏิเสธ ต้องจบงานเดิมก่อน
 //   ② lead เจ้าของบ้าน (มีแล้วใช้ตัวเดิม ไม่มีสร้าง om_only) — lib/om/om-quotation.ts
 //   ③ ใบเสนอราคา draft ผูก om_booking_id + รายการ + ประวัติใบงาน
-// ★ ยังไม่มีปุ่มส่งอนุมัติ — ลำดับ Solar Sup → Sale Sup + ป้าย O&M ในคิวเป็นงานเฟส 3
+// ★ 3 ชุดต่อใบงานแบบฝั่งขาย (แผน 20261002-02): body.option_no 1–3 (ไม่ส่ง = 1)
+//   ใบงานขั้นเสนอราคาเพิ่มชุดได้ · ชุดที่มีใบอยู่แล้ว (ไม่นับยกเลิก) ห้ามออกซ้ำ — แก้/Revision ที่ใบเดิม
+
+/** GET ?booking_id= — ทุกใบ (ทุกชุด ทุก Revision) ของใบงาน · หน้าจอเลือกใบล่าสุดของแต่ละชุดเอง แบบฝั่งขาย
+ *  + บันทึกของขั้นเสนอราคา (om_bookings.quote_note · ช่อง "บันทึกถึงฝ่ายขาย" ใต้การ์ด · แผน 20261002-03) */
+export async function GET(req: NextRequest) {
+  const gate = await requireAuth(req);
+  if (gate.error) return gate.error;
+  const bookingId = Number(req.nextUrl.searchParams.get("booking_id"));
+  if (!bookingId) return NextResponse.json({ error: "ต้องระบุใบงาน" }, { status: 400 });
+  const db = await getOmDb();
+  const [quotes, job] = await Promise.all([
+    readOmQuotes(db, { bookingId }),
+    db.request().input("b", sql.Int, bookingId).query(`SELECT quote_note FROM om_bookings WHERE id = @b`),
+  ]);
+  return NextResponse.json({ quotes, quote_note: job.recordset[0]?.quote_note ?? null });
+}
+
 export async function POST(req: NextRequest) {
   const gate = await requireAuth(req);
   if (gate.error) return gate.error;
@@ -31,6 +48,9 @@ export async function POST(req: NextRequest) {
   if (!houseId) return NextResponse.json({ error: "ต้องระบุบ้าน" }, { status: 400 });
   const input = parseOmQuoteInput(body);
   if (typeof input === "string") return NextResponse.json({ error: input }, { status: 400 });
+  const optionNo = body.option_no == null ? 1 : Number(body.option_no);
+  if (!Number.isInteger(optionNo) || optionNo < 1 || optionNo > OM_MAX_OPTIONS)
+    return NextResponse.json({ error: `ชุดใบเสนอราคาต้องเป็น 1–${OM_MAX_OPTIONS}` }, { status: 400 });
 
   const db = await getOmDb();
   const tx = new sql.Transaction(db);
@@ -55,11 +75,12 @@ export async function POST(req: NextRequest) {
         .query(`UPDATE om_bookings SET status = 'quote', updated_at = SYSDATETIMEOFFSET() WHERE id = @id`);
     } else if (cur.status === "quote") {
       bookingId = cur.id;
-      const has = (await new sql.Request(tx).input("b", sql.Int, bookingId)
-        .query(`SELECT TOP 1 doc_no FROM quotations WHERE om_booking_id = @b`)).recordset[0];
+      const has = (await new sql.Request(tx).input("b", sql.Int, bookingId).input("o", sql.Int, optionNo)
+        .query(`SELECT TOP 1 doc_no FROM quotations WITH (UPDLOCK, HOLDLOCK)
+                 WHERE om_booking_id = @b AND option_no = @o AND status <> 'cancelled'`)).recordset[0];
       if (has) {
         await tx.rollback();
-        return NextResponse.json({ error: `ใบงานนี้มีใบเสนอราคา ${has.doc_no} แล้ว — แก้ที่ใบเดิม` }, { status: 409 });
+        return NextResponse.json({ error: `ชุด ${optionNo} มีใบเสนอราคา ${has.doc_no} แล้ว — แก้ที่ใบเดิม` }, { status: 409 });
       }
     } else {
       await tx.rollback();
@@ -74,17 +95,17 @@ export async function POST(req: NextRequest) {
     const quotationId = (await new sql.Request(tx)
       .input("l", sql.Int, leadId).input("doc", sql.NVarChar(50), docNo)
       .input("terms", sql.NVarChar(sql.MAX), JSON.stringify(OM_PAYMENT_TERMS))
-      .input("u", sql.Int, gate.userId).input("b", sql.Int, bookingId)
+      .input("u", sql.Int, gate.userId).input("b", sql.Int, bookingId).input("o", sql.Int, optionNo)
       .query(`INSERT INTO quotations (lead_id, option_no, revision_no, doc_no, package_name_snapshot,
                 package_price_snapshot, subtotal_incl_vat, contract_total_incl_vat, outstanding_amount,
                 amount_before_vat, vat_amount, payment_terms_json, created_by, updated_by, om_booking_id)
               OUTPUT INSERTED.id
-              VALUES (@l, 1, 0, @doc, N'', 0, 0, 0, 0, 0, 0, @terms, @u, @u, @b)`)).recordset[0].id as number;
+              VALUES (@l, @o, 0, @doc, N'', 0, 0, 0, 0, 0, 0, @terms, @u, @u, @b)`)).recordset[0].id as number;
     const { total } = await writeOmQuoteBody(tx, quotationId, input, gate.userId);
 
     await logBooking(tx, {
       bookingId, houseId, action: "quote", actorUserId: gate.userId,
-      to: { doc_no: docNo, total }, reason: input.note,
+      to: { doc_no: docNo, total, option_no: optionNo }, reason: input.note,
     });
     await tx.commit();
     return NextResponse.json({ id: quotationId, doc_no: docNo, booking_id: bookingId, lead_id: leadId });

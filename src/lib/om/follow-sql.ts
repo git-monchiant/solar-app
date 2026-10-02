@@ -118,12 +118,15 @@ export const OM_FOLLOW_SCOPE_SQL = `
              WHERE c.parent_booking_id = b.id AND c.status <> 'cancelled' ORDER BY c.id DESC) repair_child_id,
            -- ใบซ่อมที่เปิดจากใบนี้แล้วถูกยกเลิก (ลูกค้าไม่ซ่อม) — ถือว่าตัดสินใจแล้ว ไม่เตือนซ้ำ แต่ยังเปิดใหม่ได้
            rc.id repair_cancel_id, rc.cancelled_reason repair_cancel_reason,
-           -- ใบเสนอราคาล่าสุดของใบงาน (แผน 20260924-02 เฟส 2) — มี = งานเส้นเสียเงิน
+           -- ใบเสนอราคาของใบงาน (แผน 20260924-02 เฟส 2) — มี = งานเส้นเสียเงิน
+           -- ★ ได้ 3 ชุดแล้ว (แผน 20261002-02): ใบที่ลูกค้าเลือก (sent_to_customer_at) ก่อน ยังไม่เลือก = ใบล่าสุด
            oq.id q_id, oq.doc_no q_doc_no, oq.status q_status, oq.contract_total_incl_vat q_total,
            -- การรับเงินของใบเสนอราคา (เฟส 4) — มีใบแล้วเท่านั้น (ไม่มีใบ = NULL)
            CASE WHEN oq.id IS NULL THEN NULL ELSE (SELECT CASE
              WHEN EXISTS (SELECT 1 FROM payments op WHERE op.lead_id = oq.lead_id
-                            AND op.slip_field = CONCAT(N'om_quote_', oq.id) AND op.confirmed_at IS NOT NULL) THEN 'paid'
+                            AND op.slip_field = CONCAT(N'om_quote_', oq.id)
+                            -- รับเช็คแล้ว = ทำงานต่อได้ (โทรนัด) แบบฝั่งขาย · เติมสิทธิ์รอยืนยันเงินเข้า (แผน 20261002-11)
+                            AND (op.confirmed_at IS NOT NULL OR op.cheque_received_at IS NOT NULL)) THEN 'paid'
              WHEN EXISTS (SELECT 1 FROM payments op WHERE op.lead_id = oq.lead_id
                             AND op.slip_field = CONCAT(N'om_quote_', oq.id) AND op.confirmed_at IS NULL) THEN 'verifying'
              ELSE 'unpaid' END) END pay_state
@@ -136,7 +139,8 @@ export const OM_FOLLOW_SCOPE_SQL = `
       OUTER APPLY (SELECT TOP 1 c.id, c.cancelled_reason FROM om_bookings c
                     WHERE c.parent_booking_id = b.id AND c.status = 'cancelled' ORDER BY c.id DESC) rc
       OUTER APPLY (SELECT TOP 1 q.id, q.lead_id, q.doc_no, q.status, q.contract_total_incl_vat
-                     FROM quotations q WHERE q.om_booking_id = b.id ORDER BY q.id DESC) oq
+                     FROM quotations q WHERE q.om_booking_id = b.id
+                    ORDER BY CASE WHEN q.sent_to_customer_at IS NOT NULL THEN 0 ELSE 1 END, q.id DESC) oq
      -- ★ ข้ามใบซ่อมที่ถูกยกเลิก (เฟส 5) — ยกเลิกใบซ่อม = ถอยกลับไปสถานะของใบต้นทาง (ปิดงานแล้ว)
      --   ถ้าให้ใบที่ยกเลิกเป็นใบล่าสุด บ้านจะตกไปแท็บติดตามเหมือนต้องโทรนัดล้าง ทั้งที่เพิ่งล้างไป
      --   (ใบล้างที่ยกเลิกยังกลับไปติดตามเหมือนเดิม เพราะล้างไม่ได้เกิดขึ้นจริง)

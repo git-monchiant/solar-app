@@ -256,7 +256,9 @@ export async function GET(req: NextRequest) {
       const qr = await db.request().input("q", sql.Int, qid).input("lead_id", sql.Int, leadId).query(`
         SELECT doc_no, om_package_id, package_name_snapshot, package_price_snapshot, discount_amount, discount_reason
           FROM quotations WHERE id = @q AND lead_id = @lead_id;
-        SELECT item_name_snapshot, quantity, unit, line_total FROM quotation_items WHERE quotation_id = @q ORDER BY sort_order, id;
+        -- ไม่เอาบรรทัดรายละเอียดใต้หัวข้อ (custom_detail · ไม่มียอด · แผน 20261002-05) — ใบเสร็จแสดงเฉพาะหัวข้อที่มีเงิน
+        SELECT item_name_snapshot, quantity, unit, line_total FROM quotation_items
+         WHERE quotation_id = @q AND ISNULL(source_type, '') <> 'custom_detail' ORDER BY sort_order, id;
         SELECT h.house_number, h.address, COALESCE(pj.name_th, h.project_name) project_name
           FROM quotations q JOIN om_bookings b ON b.id = q.om_booking_id JOIN om_houses h ON h.id = b.house_id
           LEFT JOIN om_projects pj ON pj.project_id = h.project_id
@@ -282,6 +284,13 @@ export async function GET(req: NextRequest) {
       if (disc > 0) lineItems.push({ label: `ส่วนลด${q?.discount_reason ? ` (${q.discount_reason})` : ""}`, amount: -disc });
       totalPrice = Number(installmentRow.amount || 0);
       if (lineItems.length === 0) lineItems.push({ label: "ค่าบริการ O&M", amount: totalPrice });
+      // บัตรเครดิต (แผน 20261002-11) — บรรทัดค่าธรรมเนียมแบบใบเสร็จงวดฝั่งขาย
+      const omCcFee = Number(installmentRow.cc_surcharge_amount || 0);
+      if (omCcFee > 0) {
+        const omCcPct = installmentRow.cc_surcharge_pct != null ? Number(installmentRow.cc_surcharge_pct) : null;
+        lineItems.push({ label: `ค่าธรรมเนียมบัตรเครดิต${omCcPct ? ` (${omCcPct}%)` : ""}`, amount: omCcFee });
+        totalPrice += omCcFee;
+      }
       description = lineItems[0].label;
       receiptNumber = `${q?.doc_no || installmentRow.slip_field}-1`;
       receiptDate = installmentRow.confirmed_at || new Date().toISOString();

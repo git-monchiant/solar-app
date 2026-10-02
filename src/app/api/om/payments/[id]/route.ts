@@ -14,6 +14,8 @@ import { notifyOmUser, resolveOmNotifications } from "@/lib/om/notifications";
 // ★ ยืนยัน = confirmed_at + เติมสิทธิ์ที่ซื้อ (grantPurchasedRights) · ใบงานค้างขั้นชำระเงิน (2330 ชำระแล้วรอนัด)
 //   จนกว่า Sale จะโทรตกลงนัด — /api/om/follow ปล่อยให้ตกลงนัดได้เมื่อมีแถวที่ยืนยันแล้ว
 // ★ ปฏิเสธ = ลบแถวทิ้ง (ยังไม่เคยนับเป็นเงินเข้า) เหตุผลเก็บในประวัติใบงาน · ใบงานกลับไป 2310 รอชำระ ให้ Sale แนบใหม่
+// ★ เช็ค (แผน 20261002-11 · แบบฝั่งขาย): cheque_received = รับเช็คแล้ว ทำงานต่อได้ (โทรนัด) · confirm = เงินเข้าแล้ว + เติมสิทธิ์
+//   ยืนยันเงินของเช็คต้องรับเช็คก่อน · ปฏิเสธได้จนกว่าจะยืนยันเงินเข้า
 export async function POST(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const gate = await requireAuth(req);
   if (gate.error) return gate.error;
@@ -27,7 +29,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
   const body = await req.json().catch(() => ({}));
   const action = String(body.action || "");
   const reason = String(body.reason || "").trim().slice(0, 300);
-  if (!["confirm", "reject"].includes(action)) return NextResponse.json({ error: "action ไม่ถูกต้อง" }, { status: 400 });
+  if (!["confirm", "reject", "cheque_received"].includes(action)) return NextResponse.json({ error: "action ไม่ถูกต้อง" }, { status: 400 });
   if (action === "reject" && !reason) return NextResponse.json({ error: "ใส่เหตุผลที่ปฏิเสธด้วย — Sale ใช้แก้ไขก่อนแนบใหม่" }, { status: 400 });
 
   const db = await getOmDb();
@@ -35,7 +37,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
   await tx.begin();
   try {
     const p = (await new sql.Request(tx).input("id", sql.Int, id).query(`
-      SELECT p.id, p.lead_id, p.amount, p.slip_field, p.confirmed_at, p.submitted_by,
+      SELECT p.id, p.lead_id, p.amount, p.slip_field, p.confirmed_at, p.submitted_by, p.payment_method, p.cheque_received_at,
              q.id quotation_id, q.doc_no, q.om_package_id, q.created_by quote_by,
              b.id booking_id, b.house_id, b.status job_status, b.service_type_id, b.owner_user_id,
              h.house_number, l.full_name customer_name
@@ -48,8 +50,20 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
     const fail = async (error: string, status = 409) => { await tx.rollback(); return NextResponse.json({ error }, { status }); };
     if (!p) return fail("ไม่พบรายการค่าบริการ O&M", 404);
     if (p.confirmed_at) return fail("รายการนี้ยืนยันรับเงินไปแล้ว");
+    if (action === "cheque_received" && p.payment_method !== "cheque") return fail("รองรับเฉพาะรายการรับชำระด้วยเช็ค", 400);
+    if (action === "cheque_received" && p.cheque_received_at) return fail("รับเช็คไปแล้ว — รอยืนยันเงินเข้า");
+    if (action === "confirm" && p.payment_method === "cheque" && !p.cheque_received_at) return fail("ยืนยันรับเช็คก่อน แล้วค่อยยืนยันเงินเข้า");
 
-    if (action === "confirm") {
+    if (action === "cheque_received") {
+      // คอลัมน์ชุดเดียวกับ PATCH /api/payments/[id] cheque_received ของฝั่งขาย
+      await new sql.Request(tx).input("id", sql.Int, id).input("by", sql.NVarChar(100), actor.full_name)
+        .query(`UPDATE payments SET cheque_received_at = GETDATE(), cheque_received_by = @by,
+                  cheque_status = 'received', cheque_status_by = @by, cheque_status_at = GETDATE() WHERE id = @id`);
+      await logBooking(tx, {
+        bookingId: p.booking_id, houseId: p.house_id, action: "pay_cheque", actorUserId: gate.userId,
+        to: { payment_id: id, amount: Number(p.amount) },
+      });
+    } else if (action === "confirm") {
       await new sql.Request(tx).input("id", sql.Int, id).input("by", sql.NVarChar(200), actor.full_name)
         .query(`UPDATE payments SET confirmed_at = GETDATE(), confirmed_by = @by WHERE id = @id`);
       const grant = await grantPurchasedRights(tx, {
@@ -70,14 +84,20 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
         from: { payment_id: id, amount: Number(p.amount) }, reason,
       });
     }
-    await resolveAccountingNotifications(tx, { paymentId: id });
+    // รับเช็ค = ยังรอยืนยันเงินเข้า กระดิ่ง Account ค้างไว้ (ปิดตอนยืนยันเงิน/ปฏิเสธ)
+    if (action !== "cheque_received") await resolveAccountingNotifications(tx, { paymentId: id });
 
     // ★ แจ้ง Sale ในกล่องแจ้งเตือนของ O&M (ไม่ใช่กระดิ่งกลาง — ดูเหตุผลใน lib/om/notifications.ts)
     //   ผู้รับ: คนแนบสลิป · Sale ที่ออกใบ · เจ้าของใบงาน (ไม่ซ้ำ · ไม่แจ้งคนที่กดเอง)
     const recipients = [...new Set([p.submitted_by, p.quote_by, p.owner_user_id].filter((u): u is number => !!u))];
     const who = `${p.customer_name}${p.house_number ? ` · บ้าน ${p.house_number}` : ""}`;
     for (const uid of recipients) {
-      await notifyOmUser(tx, action === "confirm"
+      await notifyOmUser(tx, action === "cheque_received"
+        ? { recipientUserId: uid, type: "om_payment_cheque", eventKey: `om_payment_cheque:${id}`,
+            title: `รับเช็คค่าบริการ ${p.doc_no} แล้ว — โทรนัดได้`,
+            message: `${who} · ${Number(p.amount).toLocaleString("th-TH")} บาท · รับโดย ${actor.full_name} · รอ Account ยืนยันเงินเข้า`,
+            houseId: p.house_id, bookingId: p.booking_id, createdBy: gate.userId }
+        : action === "confirm"
         ? { recipientUserId: uid, type: "om_payment_confirmed", eventKey: `om_payment_confirmed:${id}`,
             title: `รับเงินค่าบริการ ${p.doc_no} แล้ว — โทรนัดได้`,
             message: `${who} · ${Number(p.amount).toLocaleString("th-TH")} บาท · ยืนยันโดย ${actor.full_name}`,

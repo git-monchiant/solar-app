@@ -9,7 +9,9 @@ const quote = (xs: readonly string[]) => xs.map((s) => `'${s}'`).join(",");
 
 const PAY_SUB_SQL = `(SELECT CASE
              WHEN EXISTS (SELECT 1 FROM payments op WHERE op.lead_id = oq.lead_id
-                            AND op.slip_field = CONCAT(N'om_quote_', oq.id) AND op.confirmed_at IS NOT NULL) THEN ${OM_PAY_SUB.paid}
+                            AND op.slip_field = CONCAT(N'om_quote_', oq.id)
+                            -- รับเช็คแล้ว = ทำงานต่อได้แบบฝั่งขาย (แผน 20261002-11)
+                            AND (op.confirmed_at IS NOT NULL OR op.cheque_received_at IS NOT NULL)) THEN ${OM_PAY_SUB.paid}
              WHEN EXISTS (SELECT 1 FROM payments op WHERE op.lead_id = oq.lead_id
                             AND op.slip_field = CONCAT(N'om_quote_', oq.id) AND op.confirmed_at IS NULL) THEN ${OM_PAY_SUB.verifying}
              ELSE ${OM_PAY_SUB.unpaid} END)`;
@@ -63,8 +65,10 @@ export const OM_JOURNEY_SUMMARY_SQL = `
                 WHEN b.status = 'payment' THEN ${PAY_SUB_SQL}
                 ELSE ${caseSql("b.status", OM_SUB_BY_STATUS, 0)} END AS journey_sub
       FROM om_bookings b
-      -- ใบเสนอราคาล่าสุดของใบงาน (เฟส 2 แผน 20260924-02) — ใช้แยกขั้นย่อยของเสนอราคา 2210–2250
+      -- ใบเสนอราคาของใบงาน (เฟส 2 แผน 20260924-02) — ใช้แยกขั้นย่อยของเสนอราคา 2210–2250
+      -- ★ 3 ชุด (แผน 20261002-02): ใบที่ลูกค้าเลือกก่อน (ขั้นชำระเงินอ่านเงินของใบนี้) ยังไม่เลือก = ใบล่าสุด
       OUTER APPLY (SELECT TOP 1 q.id, q.lead_id, q.status FROM quotations q
-                    WHERE q.om_booking_id = b.id ORDER BY q.id DESC) oq
+                    WHERE q.om_booking_id = b.id
+                    ORDER BY CASE WHEN q.sent_to_customer_at IS NOT NULL THEN 0 ELSE 1 END, q.id DESC) oq
      WHERE b.status IN (${quote(Object.keys(OM_STEP_BY_STATUS))})
   ) j GROUP BY journey_step, journey_sub`;

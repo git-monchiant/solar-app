@@ -15,10 +15,12 @@ export type BookingAction =
   | "call"
   // ★ 24 ก.ย. 69 แผน 20260924-02 เฟส 2: ใบเสนอราคาของงานเสียเงิน
   | "quote" | "quote_edit"
+  // ★ 2 ต.ค. 69 (แผน 20261002-02): ใบเสนอราคาได้ 3 ชุด — ลบชุดที่ร่างทิ้งไว้ได้
+  | "quote_delete"
   // ★ เฟส 3: ลำดับอนุมัติ Solar Sup → Sale Sup (เขียนจาก /api/quotations/[id]/action)
   | "quote_submit" | "quote_approve" | "quote_return" | "quote_revise"
   // ★ เฟส 4: ส่งใบให้ลูกค้า → ขั้นชำระเงิน · Account ยืนยันรับเงิน (+ เติมสิทธิ์ที่ซื้อ)
-  | "quote_send" | "paid" | "pay_submit" | "pay_reject"
+  | "quote_send" | "paid" | "pay_submit" | "pay_reject" | "pay_cheque"
   // ★ เฟส 5: ทีม O&M เปิดใบงานซ่อมจากใบที่ช่างแจ้งพบงานซ่อม (ผูก parent_booking_id)
   | "repair_open"
   // ★ 28 ก.ย. 69 (แผน 20260928-04 ข้อ 7): ปุ่ม Note ในหน้ารายละเอียด — โน้ตอิสระลงไทม์ไลน์ของบ้าน
@@ -72,11 +74,12 @@ const LABEL: Record<BookingAction, string> = {
   reorder: "สลับลำดับคิว", start: "เริ่มงาน",
   check: "ตรวจงานเสร็จ รอปิด", done: "ปิดงาน", cancel: "ยกเลิกนัด", no_show: "ลูกค้าไม่อยู่บ้าน",
   call: "บันทึกการโทร",
-  quote: "ออกใบเสนอราคา", quote_edit: "แก้ใบเสนอราคา",
+  quote: "ออกใบเสนอราคา", quote_edit: "แก้ใบเสนอราคา", quote_delete: "ลบใบเสนอราคาฉบับร่าง",
   quote_submit: "ส่งใบเสนอราคาขออนุมัติ", quote_approve: "อนุมัติใบเสนอราคา",
   quote_return: "ส่งใบเสนอราคากลับแก้", quote_revise: "สร้าง Revision ใบเสนอราคา",
   quote_send: "ส่งใบเสนอราคาให้ลูกค้า", paid: "ยืนยันรับเงินแล้ว",
   pay_submit: "แนบสลิปค่าบริการ รอ Account ยืนยัน", pay_reject: "Account ปฏิเสธสลิป",
+  pay_cheque: "Account รับเช็คแล้ว รอเงินเข้า",
   repair_open: "เปิดใบงานซ่อม",
   note: "บันทึกโน้ต",
 };
@@ -96,6 +99,13 @@ export function historyLabel(action: string, toJson: string | null | undefined):
   if (action === "call") {
     const ch = /"channel"\s*:\s*"(visit|line|other)"/.exec(toJson ?? "")?.[1];
     if (ch) return `บันทึกการติดตาม · ${{ visit: "เยี่ยม", line: "LINE", other: "อื่นๆ" }[ch]}`;
+  }
+  // ใบเสนอราคา 3 ชุด (แผน 20261002-02): /send = ลูกค้าเลือกชุดนั้น · ประวัติเก่าไม่มี option_no คงป้าย "ส่งให้ลูกค้า"
+  // แผน 20261002-10: ปุ่มขั้น 02 = ส่งให้ทีมขาย (handoff) · เลือก/เปลี่ยนชุดย้ายไปขั้นชำระเงิน (มี option_no)
+  if (action === "quote_send" && /"handoff"\s*:\s*true/.test(toJson ?? "")) return "ส่งใบเสนอราคาให้ทีมขาย";
+  if (action === "quote_send" || action === "quote") {
+    const opt = /"option_no"\s*:\s*(\d+)/.exec(toJson ?? "")?.[1];
+    if (opt) return action === "quote" ? `ออกใบเสนอราคาชุด ${opt}` : `ลูกค้าเลือกใบเสนอราคาชุด ${opt}`;
   }
   return actionLabel(action);
 }

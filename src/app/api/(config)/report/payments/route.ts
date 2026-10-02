@@ -61,6 +61,8 @@ export async function GET(req: NextRequest) {
     const omPendingRes = await db.request().query(`
       SELECT p.id, p.lead_id, p.amount, p.description, p.payment_method, p.submitted_at,
              su.full_name submitted_by_name,
+             -- เช็ค / บัตรเครดิต (แผน 20261002-11): รับเช็คแล้วรอเงินเข้า · ค่าธรรมเนียมบัตร
+             p.cheque_received_at, p.cheque_received_by, p.cc_surcharge_pct, p.cc_surcharge_amount,
              q.id quotation_id, q.doc_no quotation_doc_no, q.package_name_snapshot,
              b.id booking_id, b.house_id, h.house_number,
              COALESCE(pj.name_th, h.project_name) project_name,
@@ -83,7 +85,9 @@ export async function GET(req: NextRequest) {
           slipUrls.push(n === 1 ? `/api/payments/${row.id}` : `/api/payments/${row.id}?slot=${n}`);
         }
       }
-      const out: Record<string, unknown> = { ...row, amount: Number(row.amount || 0), slip_urls: slipUrls };
+      const out: Record<string, unknown> = { ...row, amount: Number(row.amount || 0), slip_urls: slipUrls,
+        cc_surcharge_pct: row.cc_surcharge_pct == null ? null : Number(row.cc_surcharge_pct),
+        cc_surcharge_amount: Number(row.cc_surcharge_amount || 0) };
       for (let n = 1; n <= MAX_SLOTS; n++) delete out[`bytes_${n}`];
       return out;
     });

@@ -339,7 +339,7 @@ export default function ManageOmPackagesPage() {
                   <div className="md:col-span-12">
                     <label className={labelCls}>ขอบเขตงาน</label>
                     <textarea value={editing.scope ?? ""} onChange={e => setEditing({ ...editing, scope: e.target.value || null })} rows={2}
-                      placeholder="เช่น ล้างแผง+ตรวจสอบระบบ+ออกใบงานแจ้งผลการดำเนินงาน"
+                      placeholder="เช่น ล้างแผง+ตรวจสอบระบบ"
                       className="w-full px-3 py-2 rounded-lg border border-gray-200 bg-white text-sm outline-none transition-colors hover:border-gray-300 focus:border-primary focus:ring-2 focus:ring-primary/10 disabled:bg-gray-50 disabled:text-gray-600" />
                   </div>
                 </div>

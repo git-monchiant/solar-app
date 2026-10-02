@@ -95,7 +95,7 @@ export async function POST(
       if (job.recordset[0]?.status !== "quote") {
         await tx.rollback();
         return NextResponse.json(
-          { error: "ใบงานเลยขั้นเสนอราคาแล้ว (ส่งให้ลูกค้าแล้ว) — แก้หรือส่งใบใหม่ไม่ได้" },
+          { error: "ใบงานเลยขั้นเสนอราคาแล้ว (ลูกค้าเลือกชุดแล้ว) — แก้หรือส่งใบใหม่ไม่ได้" },
           { status: 409 },
         );
       }
@@ -123,6 +123,7 @@ export async function POST(
       }
 
       // ใบ O&M นับ Revision ในใบงานของตัวเอง — lead เดียวกันอาจมีใบขายชุด 1 อยู่ด้วย (บ้านที่ใช้ lead ร่วม)
+      // ★ ใบงาน O&M มีได้ 3 ชุด (แผน 20261002-02) ⇒ นับในชุดเดียวกันด้วย ไม่งั้นชุด 2 ที่ใหม่กว่าจะบล็อก Revision ของชุด 1
       const latest = await new sql.Request(tx)
         .input("lead_id", sql.Int, quotation.lead_id)
         .input("option", sql.Int, quotation.option_no)
@@ -131,7 +132,7 @@ export async function POST(
           SELECT MAX(revision_no) revision_no
           FROM quotations WITH (UPDLOCK, HOLDLOCK)
           WHERE ${isOm
-            ? "om_booking_id = @om_booking"
+            ? "om_booking_id = @om_booking AND option_no = @option"
             : "lead_id = @lead_id AND option_no = @option AND om_booking_id IS NULL"}
         `);
       if (

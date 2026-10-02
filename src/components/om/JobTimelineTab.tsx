@@ -74,7 +74,10 @@ function toRow(h: HistoryRow, teamName: (id: unknown) => string): { stage: Stage
         label: `เปิดใบงานซ่อมจากใบงาน #${str(to.from_booking) ?? "-"} · ${to.in_warranty ? "ในประกัน" : "นอกประกัน"}`,
         sub: h.reason ? `อาการ: ${h.reason}` : by } };
     case "quote":
-      return { stage: "quote", row: { ...base, label: `ออกใบเสนอราคา ${str(to.doc_no) ?? ""}`.trim(), sub: withReason(money(to.total) || null) } };
+      // ชุด N (แผน 20261002-02) — ประวัติเก่าก่อนมีหลายชุดไม่มี option_no
+      return { stage: "quote", row: { ...base, label: `ออกใบเสนอราคา${to.option_no ? ` ชุด ${str(to.option_no)}` : ""} ${str(to.doc_no) ?? ""}`.trim(), sub: withReason(money(to.total) || null) } };
+    case "quote_delete":
+      return { stage: "quote", row: { ...base, label: `ลบใบเสนอราคาฉบับร่าง ชุด ${str(from.option_no) ?? "-"} ${str(from.doc_no) ?? ""}`.trim(), tone: "bad", sub: by } };
     case "quote_edit":
       return { stage: "quote", row: { ...base, detail: "quote", label: `แก้ใบเสนอราคา ${str(to.doc_no) ?? ""}`.trim(),
         sub: withReason(from.total !== undefined ? `${money(from.total)} → ${money(to.total)}` : null) } };
@@ -87,9 +90,22 @@ function toRow(h: HistoryRow, teamName: (id: unknown) => string): { stage: Stage
     case "quote_return":
       return { stage: "quote", row: { ...base, label: "ส่งใบเสนอราคากลับแก้", tone: "bad", sub: withReason(by) } };
     case "quote_send":
-      return { stage: "quote", row: { ...base, label: `ส่งใบเสนอราคาให้ลูกค้า ${str(to.doc_no) ?? ""}`.trim(), sub: withReason(by) } };
+      // ตั้งแต่มี 3 ชุด (แผน 20261002-02) ทางนี้ = ลูกค้าเลือกชุดนั้น · ประวัติเก่าไม่มี option_no คงป้ายเดิม
+      // แผน 20261002-10: handoff = ปุ่มขั้น 02 "ส่งใบเสนอราคาให้ทีมขาย" · เปลี่ยนชุดที่ขั้นชำระเงิน = อยู่ขั้นชำระเงิน
+      if (to.handoff)
+        return { stage: "quote", row: { ...base, label: "ส่งใบเสนอราคาให้ทีมขาย", sub: withReason(by) } };
+      return { stage: from.status === "payment" ? "payment" : "quote", row: { ...base, label: to.option_no
+        ? `ลูกค้าเลือกชุด ${str(to.option_no)} ${str(to.doc_no) ?? ""}`.trim()
+        : `ส่งใบเสนอราคาให้ลูกค้า ${str(to.doc_no) ?? ""}`.trim(), sub: withReason(by) } };
     case "pay_submit":
-      return { stage: "payment", row: { ...base, label: `แนบสลิป ${money(to.amount)}`.trim(), tone: "pending", sub: withReason("รอ Account ยืนยันรับเงิน") } };
+      // เช็ค / บัตรเครดิต (แผน 20261002-11) — บัตรแสดงยอดรวมค่าธรรมเนียม
+      return { stage: "payment", row: { ...base, tone: "pending",
+        label: to.method === "cheque" ? `แนบภาพเช็ค ${money(to.amount)}`.trim()
+          : `แนบสลิป ${money(Number(to.amount ?? 0) + Number(to.cc_fee ?? 0))}`.trim(),
+        sub: withReason(to.method === "cheque" ? "รอ Account ยืนยันรับเช็ค"
+          : to.cc_fee ? `บัตรเครดิต +${str(to.cc_pct)}% · รอ Account ยืนยันรับเงิน` : "รอ Account ยืนยันรับเงิน") } };
+    case "pay_cheque":
+      return { stage: "payment", row: { ...base, label: `รับเช็ค ${money(to.amount)}`.trim(), tone: "pending", sub: withReason("รอ Account ยืนยันเงินเข้า") } };
     case "pay_reject":
       return { stage: "payment", row: { ...base, label: "Account ปฏิเสธสลิป", tone: "bad", sub: withReason(null) } };
     case "paid":

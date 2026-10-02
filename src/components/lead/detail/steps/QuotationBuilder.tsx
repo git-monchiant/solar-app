@@ -133,7 +133,7 @@ type ApprovalFlowStepState =
   | "upcoming"
   | "cancelled";
 
-function ApprovalFlowStatus({
+export function ApprovalFlowStatus({
   status,
   returnedByRole,
   submittedByName,
