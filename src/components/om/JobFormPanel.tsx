@@ -193,7 +193,7 @@ function ItemRow({ it, n, disabled, value, num, onPass, onFix, onNum }: {
   // MeasureField ของ InstallChecklist — ป้ายชิดขวา · หน่วยอยู่ในช่อง
   if (it.kind === "num") return (
     <div className="md:col-span-3 flex items-center gap-2">
-      <span className="text-xs text-gray-700 shrink-0 w-36 text-right">{it.label_th}{optional}</span>
+      <span className="text-xs text-gray-700 shrink-0 w-44 text-right">{it.label_th}{optional}</span>
       <div className="relative flex-1">
         <input value={num} disabled={disabled} inputMode="decimal" onChange={(e) => onNum(e.target.value)}
           className="w-full h-8 pl-3 pr-12 rounded-lg border border-gray-200 bg-white text-sm font-mono tabular-nums focus:outline-none focus:border-primary disabled:bg-gray-50" />
@@ -614,7 +614,7 @@ export default function JobFormPanel({ jobId, wrapClass = "h-full overflow-auto 
                         {grouped(list).map((g) => g.items.length > 1 ? (
                           // ข้อวัดค่าที่ group_label เดียวกัน — ป้ายเดียว ช่องกรอกเรียงกัน (หน่วยในช่องของแต่ละข้อ)
                           <div key={g.items.map((x) => x.code).join("+")} className="md:col-span-6 flex items-center gap-2">
-                            <span className="text-xs text-gray-700 shrink-0 w-36 text-right">{g.items[0].group_label}</span>
+                            <span className="text-xs text-gray-700 shrink-0 w-44 text-right">{g.items[0].group_label}</span>
                             {g.items.map((it) => (
                               <div key={it.code} className="relative flex-1 min-w-0">
                                 <input value={measures[it.code] ?? ""} disabled={closed} inputMode="decimal" aria-label={it.label_th}

@@ -3,7 +3,7 @@ import { requireAuth } from "@/lib/auth";
 import { sql } from "@/lib/db";
 import { getOmDb } from "@/lib/om/line";
 import { failCount, jobNo, type Checks } from "@/lib/om/job-form";
-import { loadForm, loadJobReport } from "@/lib/om/job-report";
+import { loadForm, loadJobReport, qcSignerId } from "@/lib/om/job-report";
 import { logBooking } from "@/lib/om/booking-log";
 
 // ใบตรวจรับงาน / ใบบริการ ของงานหน้างาน — ★ ตารางเดียว om_job_report
@@ -47,6 +47,7 @@ export async function PUT(req: NextRequest, ctx: { params: Promise<{ id: string 
   // ใบไหน + ข้อไหนบ้าง — ต้องรู้ก่อนถึงคิด fail_count ได้ และเก็บ form_id ลงใบงานด้วย
   const { head, items } = await loadForm(db, id);
   const fails = failCount(checks, items);
+  const qc = await qcSignerId(db);
 
   const tx = new sql.Transaction(db);
   await tx.begin();
@@ -76,6 +77,7 @@ export async function PUT(req: NextRequest, ctx: { params: Promise<{ id: string 
       .input("ip", sql.NVarChar(45), req.headers.get("x-forwarded-for")?.split(",")[0]?.trim() ?? null)
       .input("dev", sql.NVarChar(200), req.headers.get("user-agent")?.slice(0, 200) ?? null)
       .input("u", sql.Int, gate.userId ?? null)
+      .input("qc", sql.Int, qc)
       .input("hrp", sql.Bit, hasRepair ? 1 : 0)
       .input("rp", sql.Bit, repairNeeded)
       .input("rpd", sql.NVarChar(1000), repairDetail || null);
@@ -94,6 +96,8 @@ export async function PUT(req: NextRequest, ctx: { params: Promise<{ id: string 
         lat = COALESCE(@lat, lat), lng = COALESCE(@lng, lng), gps_accuracy = COALESCE(@acc, gps_accuracy),
         ip = COALESCE(@ip, ip), device = COALESCE(@dev, device),
         tech_user_id = COALESCE(tech_user_id, @u),
+        -- ★ ผู้ลงนาม Q.C. ล็อกตอนลงผลตรวจครั้งแรก แล้วไม่ขยับอีก (ดู qcSignerId)
+        qc_user_id = COALESCE(qc_user_id, CASE WHEN @res IS NOT NULL THEN @qc END),
         finished_at = CASE WHEN @res IS NOT NULL THEN SYSDATETIMEOFFSET() ELSE finished_at END,
         repair_needed = CASE WHEN @hrp = 1 THEN @rp ELSE repair_needed END,
         repair_detail = CASE WHEN @hrp = 1 THEN @rpd ELSE repair_detail END,
@@ -105,10 +109,11 @@ export async function PUT(req: NextRequest, ctx: { params: Promise<{ id: string 
     if (up.rowsAffected[0] === 0)
       await rq().query(`
         INSERT INTO om_job_report (booking_id, form_id, job_no, paper_ref, checks, measures, photos, note,
-          result, fail_count, started_at, finished_at, tech_user_id, tech_sign, cust_sign, cust_name,
+          result, fail_count, started_at, finished_at, tech_user_id, qc_user_id, tech_sign, cust_sign, cust_name,
           close_method, proxy_reason, lat, lng, gps_accuracy, ip, device, repair_needed, repair_detail)
         VALUES (@id, @fid, @no, @paper, @c, @m, @ph, @n, @res, @fc, SYSDATETIMEOFFSET(),
-          CASE WHEN @res IS NOT NULL THEN SYSDATETIMEOFFSET() END, @u, @ts, @cs, @cn,
+          CASE WHEN @res IS NOT NULL THEN SYSDATETIMEOFFSET() END, @u,
+          CASE WHEN @res IS NOT NULL THEN @qc END, @ts, @cs, @cn,
           @cm, @pr, @lat, @lng, @acc, @ip, @dev, @rp, @rpd)`);
 
     await logBooking(tx, {

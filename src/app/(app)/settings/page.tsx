@@ -58,7 +58,7 @@ export default function SettingsPage() {
         <div className="border-b border-gray-200 mb-4 -mx-4 md:mx-0 px-4 md:px-0">
           <div className="flex items-center gap-1 overflow-x-auto scrollbar-hide">
             <TabBtn active={tab === "running_numbers"} onClick={() => setTab("running_numbers")} label="เลขเอกสาร" />
-            <TabBtn active={tab === "warranty_signer"} onClick={() => setTab("warranty_signer")} label="ผู้ลงนามใบรับประกัน" />
+            <TabBtn active={tab === "warranty_signer"} onClick={() => setTab("warranty_signer")} label="ผู้ลงนามใบรับประกัน/O&M" />
             <TabBtn active={tab === "customer_docs"} onClick={() => setTab("customer_docs")} label="เอกสารลูกค้า" />
             <TabBtn active={tab === "channels"} onClick={() => setTab("channels")} label="ช่องทางติดต่อ" />
             <TabBtn active={tab === "gmail"} onClick={() => setTab("gmail")} label="Gmail" />
@@ -391,8 +391,8 @@ function WarrantySignerSection() {
   return (
     <section className="bg-white rounded-xl border border-gray-200 overflow-hidden">
       <div className="px-5 py-4 border-b border-gray-100">
-        <h2 className="text-sm font-bold text-gray-900">ผู้ลงนามใบรับประกัน</h2>
-        <p className="text-xs text-gray-500 mt-1">ตั้งค่า user ที่ชื่อ + ลายเซ็นจะปรากฏบนใบรับประกัน — มีผลกับใบที่ออกใหม่เท่านั้น ใบที่ออกไปแล้วจะล็อกชื่อผู้ลงนาม ณ วันที่ออกไว้ถาวร</p>
+        <h2 className="text-sm font-bold text-gray-900">ผู้ลงนามใบรับประกัน/O&amp;M</h2>
+        <p className="text-xs text-gray-500 mt-1">ตั้งค่า user ที่ชื่อ + ลายเซ็นจะปรากฏบนใบรับประกัน และช่องผู้ตรวจสอบ / Q.C. ของใบบริการ O&amp;M — มีผลกับใบที่ออกใหม่เท่านั้น ใบที่ออกไปแล้วจะล็อกชื่อผู้ลงนาม ณ วันที่ออกไว้ถาวร</p>
       </div>
       {loading ? (
         <div className="p-5 text-sm text-gray-500">กำลังโหลด...</div>

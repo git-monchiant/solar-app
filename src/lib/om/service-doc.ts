@@ -4,8 +4,9 @@ import { formatSlotsRange } from "@/lib/time-slots";
 // ใบบริการ PDF (ใบตรวจรับงาน / ใบบริการ) — สร้าง HTML ฝั่ง server แล้วให้ puppeteer พิมพ์เป็น A4
 // ★ แผน 20260928-04 ข้อ 9 (ผู้ใช้เคาะ "ทำตามแนะนำ" 28 ก.ย. 69)
 // ★ หน้าตายกจากใบส่งมอบงานติดตั้งของฝั่งขาย (src/app/(public)/install-doc/[id]/page.tsx)
-//   แถบหัวสีหลัก · CUSTOMER INFORMATION · กล่องหัวข้อพื้นส้มอ่อน · ช่องติ๊ก SVG · ลายเซ็น · รูปแนบขึ้นหน้าใหม่
+//   แถบหัวสีหลัก · CUSTOMER INFORMATION · กล่องหัวข้อ · ช่องติ๊ก SVG · ลายเซ็น · รูปแนบขึ้นหน้าใหม่
 //   แก้หน้าตาฝั่งนั้นแล้วตามมาแก้ที่นี่ด้วย
+//   ★ ต่างกันแล้ว (2 ต.ค. 69 ผู้ใช้สั่ง): พื้นหัวข้อเทาอ่อนแทนส้มอ่อน · ไม่มีบรรทัด "ปิดงานโดย"
 // ★ ต่างจากฝั่งขายโดยตั้งใจ: ไม่มีหน้าสาธารณะ/API ข้อมูลที่เปิดโดยไม่ล็อกอิน (ใบนี้มีลายเซ็น + รูปบ้านลูกค้า)
 //   route เป็นคนอ่านข้อมูล แล้วเสิร์ฟ HTML/ฟอนต์/รูป ให้ puppeteer ผ่าน origin ภายใน (DOC_ORIGIN) เท่านั้น
 
@@ -40,6 +41,8 @@ export type ServiceDocInput = {
   } | null;
   form: { label_th: string; version: number; items: FormItem[] } | null;
   techName: string | null;
+  /** ผู้ตรวจสอบ / Q.C. = ผู้ลงนามใบรับประกัน · sign เป็น data: URL (route แปลงมาให้) */
+  qc: { name: string | null; sign: string | null };
   /** รูปก่อน/หลัง — src เป็น URL ใต้ DOC_ORIGIN (route ตอบไฟล์จากดิสก์ให้) · heic = Chromium เปิดไม่ได้ */
   photos: { kind: string; src: string; heic: boolean }[];
 };
@@ -63,9 +66,6 @@ const box = (on: boolean, kind: "ok" | "ng") =>
   `<span class="checkbox ${on ? (kind === "ok" ? "checked" : "failed") : ""}">${on ? (kind === "ok" ? CHECK : XMARK) : ""}</span>`;
 
 const SECTION_TH: Record<string, string> = { quality: "คุณภาพงาน", measure: "การทดสอบระบบ", photo: "รูปถ่าย" };
-const CLOSE_TH: Record<string, string> = {
-  onsite_sign: "ลูกค้าเซ็นรับที่หน้างาน", line_otp: "ลูกค้ายืนยันทาง LINE", tech_proxy: "ช่างเซ็นแทนลูกค้า",
-};
 
 function sectionHtml(no: number, sec: string, items: FormItem[], d: ServiceDocInput): string {
   const checks = d.report?.checks ?? {};
@@ -128,13 +128,12 @@ export function renderServiceDocHtml(d: ServiceDocInput): string {
       <span class="label-inline">ผลการตรวจ</span>
       <span>${box(r?.result === "pass", "ok")}ผ่าน</span>
       <span>${box(r?.result === "fail", "ng")}<span class="${r?.result === "fail" ? "ng" : ""}">ไม่ผ่าน</span></span>
-      <span class="label-inline" style="margin-left:18px">ปิดงานโดย</span>
-      <span>${r?.close_method ? esc(CLOSE_TH[r.close_method] ?? r.close_method) : "-"}${proxy && r?.proxy_reason ? ` — ${esc(r.proxy_reason)}` : ""}</span>
     </div>`,
+    // ★ เลิกแสดง "ปิดงานโดย" (2 ต.ค. 69) — กรณีช่างเซ็นแทน ย้ายเหตุผลมาไว้ใต้ลายเซ็นลูกค้าแทน
     `<div class="sigs avoid-break">
-      ${sigBox(proxy ? "ลูกค้า (ช่างเซ็นแทน — ดูเหตุผลด้านบน)" : "ลูกค้า", r?.cust_name ?? d.job.customer_name, r?.cust_sign ?? null)}
+      ${sigBox(proxy ? `ลูกค้า (ช่างเซ็นแทน${r?.proxy_reason ? ` — ${r.proxy_reason}` : ""})` : "ลูกค้า", r?.cust_name ?? d.job.customer_name, r?.cust_sign ?? null)}
       ${sigBox("ช่างผู้ปฏิบัติงาน", d.techName, r?.tech_sign ?? null)}
-      ${sigBox("ผู้ตรวจสอบ / Q.C.", null, r?.qc_sign ?? null)}
+      ${sigBox("ผู้ตรวจสอบ / Q.C.", d.qc.name, r?.qc_sign ?? d.qc.sign)}
     </div>`,
   ].join("");
 
@@ -178,7 +177,7 @@ table.doc td { padding: 0; vertical-align: top; }
 .label-top { font-size: 13px; font-weight: 700; text-transform: uppercase; letter-spacing: .08em; color: #9ca3af; margin-bottom: 1.5mm; }
 .info { display: grid; grid-template-columns: 70px 1fr 90px 1fr; gap: 1mm 3mm; font-size: 16px; }
 .info .k { color: #9ca3af; } .info .v { color: #111827; font-weight: 500; }
-.sec-title { background: #fff5e1; border: 1px solid #e5e7eb; padding: 1mm 3mm; font-weight: 700; font-size: 16px; }
+.sec-title { background: #f3f4f6; border: 1px solid #e5e7eb; padding: 1mm 3mm; font-weight: 700; font-size: 16px; }
 .sec-body { border: 1px solid #e5e7eb; border-top: 0; padding: 2mm 3.5mm; font-size: 16px; }
 .row-check { display: grid; grid-template-columns: 2.2fr 80px 90px 1.4fr; gap: 6px; align-items: center; padding: 1px 0; }
 .grid-num { display: grid; grid-template-columns: 1fr 1fr; gap: 1mm 8mm; padding-top: 1mm; }

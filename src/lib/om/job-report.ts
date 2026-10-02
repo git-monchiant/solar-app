@@ -55,6 +55,17 @@ export async function loadForm(db: sql.ConnectionPool, bookingId: number) {
   };
 }
 
+/**
+ * ผู้ลงนามช่อง "ผู้ตรวจสอบ / Q.C." ของใบบริการ = ผู้ลงนามใบรับประกัน (ตั้งค่า › ผู้ลงนามใบรับประกัน)
+ * ★ ผู้ใช้สั่ง 2 ต.ค. 69 — ใช้คนเดียวกับฝั่งขาย ไม่มีที่ตั้งค่าแยก · ไม่ได้ตั้งไว้ = null (ช่องว่าง)
+ * ★ ใบที่ลงผลตรวจแล้วล็อกคนไว้ที่ om_job_report.qc_user_id (PUT /report) — สูตรเดียวกับ
+ *   leads.warranty_signer_user_id: ใบ PDF สร้างใหม่ทุกครั้งที่เปิด เปลี่ยนผู้ลงนามแล้วใบเก่าต้องไม่เปลี่ยนตาม
+ */
+export async function qcSignerId(db: sql.ConnectionPool): Promise<number | null> {
+  const r = await db.request().query(`SELECT value FROM app_settings WHERE [key] = 'warranty_signer_user_id'`);
+  return parseInt(r.recordset[0]?.value) || null;
+}
+
 /** ใบงาน + ใบตรวจ (แปลง JSON แล้ว) + หัวข้อในใบ — ไม่พบใบงาน = null */
 export async function loadJobReport(db: sql.ConnectionPool, id: number) {
   const r = await db.request().input("id", sql.Int, id).query(`
@@ -83,7 +94,7 @@ export async function loadJobReport(db: sql.ConnectionPool, id: number) {
            CONVERT(varchar(33), started_at, 126) started_at,
            CONVERT(varchar(33), finished_at, 126) finished_at,
            tech_sign, cust_sign, cust_name, qc_sign, close_method, proxy_reason,
-           lat, lng, gps_accuracy, evidence_hash, tech_user_id,
+           lat, lng, gps_accuracy, evidence_hash, tech_user_id, qc_user_id,
            CAST(repair_needed AS int) repair_needed, repair_detail
     FROM om_job_report WHERE booking_id = @id;`);
 
