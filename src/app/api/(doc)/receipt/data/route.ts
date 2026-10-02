@@ -2,7 +2,8 @@ import { NextRequest, NextResponse } from "next/server";
 import { getDb, sql, fixDates } from "@/lib/db";
 import { COMBINED_EXTRA_MARKER, parseCombinedPaymentAllocation } from "@/lib/combined-payment";
 
-type Stage = "deposit" | "order_before" | "order_after" | "installment";
+// om = ค่าบริการงาน O&M (แถว payments slip_field om_quote_<ใบเสนอราคา>) — 2 ต.ค. 69 ผู้ใช้สั่ง "ทำเหมือนฝั่งขาย"
+type Stage = "deposit" | "order_before" | "order_after" | "installment" | "om";
 
 export async function GET(req: NextRequest) {
   const leadIdParam = req.nextUrl.searchParams.get("lead_id");
@@ -22,7 +23,7 @@ export async function GET(req: NextRequest) {
     const leadId = parseInt(leadIdParam);
 
     // Signer = user who confirmed the matching payment stage. Fallback to current viewer.
-    const stageUserCol: Record<Exclude<Stage, "installment">, "payment_confirmed_by" | "order_before_paid_by" | "order_after_paid_by"> = {
+    const stageUserCol: Record<Exclude<Stage, "installment" | "om">, "payment_confirmed_by" | "order_before_paid_by" | "order_after_paid_by"> = {
       deposit: "payment_confirmed_by",
       order_before: "order_before_paid_by",
       order_after: "order_after_paid_by",
@@ -51,7 +52,7 @@ export async function GET(req: NextRequest) {
     // For installment stage, signer comes from payments.confirmed_by; otherwise
     // from the matching lead column.
     let installmentRow: { id: number; slip_field: string; amount: number; confirmed_by: number | null; confirmed_at: string | null; description: string | null; payment_no: string | null; cc_surcharge_pct: number | null; cc_surcharge_amount: number | null } | null = null;
-    if (stageParam === "installment" && paymentIdParam) {
+    if ((stageParam === "installment" || stageParam === "om") && paymentIdParam) {
       const r = await db.request()
         .input("id", sql.Int, parseInt(paymentIdParam))
         .input("lead_id", sql.Int, leadId)
@@ -61,9 +62,9 @@ export async function GET(req: NextRequest) {
     // payments.confirmed_by is nvarchar (accountant name as string), unlike
     // the lead-level *_by columns which are user_ids. Detect by type and
     // look up by name vs id accordingly.
-    const rawSigner: string | number | null = stageParam === "installment"
+    const rawSigner: string | number | null = stageParam === "installment" || stageParam === "om"
       ? (installmentRow?.confirmed_by ?? (userIdParam ? parseInt(userIdParam) : null))
-      : (l[stageUserCol[stageParam as Exclude<Stage, "installment">]] ?? (userIdParam ? parseInt(userIdParam) : null));
+      : (l[stageUserCol[stageParam as Exclude<Stage, "installment" | "om">]] ?? (userIdParam ? parseInt(userIdParam) : null));
     if (rawSigner !== null && rawSigner !== undefined && rawSigner !== "") {
       const asNum = typeof rawSigner === "number" ? rawSigner : (/^\d+$/.test(String(rawSigner)) ? parseInt(String(rawSigner)) : null);
       if (asNum !== null) {
@@ -83,7 +84,8 @@ export async function GET(req: NextRequest) {
     // Prefer the survey-selected package (single). Fall back to pre-survey package
     // or the interested list (only for the deposit stage where multiple options may apply).
     let packages: { id: number; name: string; kwp: number; price: number }[] = [];
-    const selectedId: number | null = l.interested_package_id || l.pre_package_id || null;
+    // งาน O&M ไม่ใช่การขายแพ็กเกจโซลาร์ — ไม่แสดงแพ็กเกจที่ lead เคยสนใจ (บ้านที่ใช้ lead ร่วมกับฝั่งขายจะติดมา)
+    const selectedId: number | null = stageParam === "om" ? null : (l.interested_package_id || l.pre_package_id || null);
     if (selectedId) {
       const r = await db.request().input("id", sql.Int, selectedId).query(
         `SELECT id, name, kwp, price FROM packages WHERE id = @id`
@@ -246,6 +248,42 @@ export async function GET(req: NextRequest) {
         lineItems.push({ label: `ค่าธรรมเนียมบัตรเครดิต${ccPct ? ` (${ccPct}%)` : ""}`, amount: ccFee });
       }
       receiptNumber = `${l.pre_doc_no || fallbackDocNo}-${idx + 1}`;
+      receiptDate = installmentRow.confirmed_at || new Date().toISOString();
+    } else if (stageParam === "om" && installmentRow) {
+      // ค่าบริการ O&M — รายการจากใบเสนอราคา O&M ที่ผูกกับเงินก้อนนี้ (แพ็กเกจ + รายการเพิ่ม + ส่วนลด)
+      //   1 ใบเสนอราคา = เงิน 1 ก้อนเต็มจำนวน ⇒ เลขที่ใบเสร็จ = เลขใบเสนอราคา-1 (แบบ <เลขเอกสาร>-<งวด> ของฝั่งขาย)
+      const qid = parseInt(installmentRow.slip_field.replace(/^om_quote_/, ""));
+      const qr = await db.request().input("q", sql.Int, qid).input("lead_id", sql.Int, leadId).query(`
+        SELECT doc_no, om_package_id, package_name_snapshot, package_price_snapshot, discount_amount, discount_reason
+          FROM quotations WHERE id = @q AND lead_id = @lead_id;
+        SELECT item_name_snapshot, quantity, unit, line_total FROM quotation_items WHERE quotation_id = @q ORDER BY sort_order, id;
+        SELECT h.house_number, h.address, COALESCE(pj.name_th, h.project_name) project_name
+          FROM quotations q JOIN om_bookings b ON b.id = q.om_booking_id JOIN om_houses h ON h.id = b.house_id
+          LEFT JOIN om_projects pj ON pj.project_id = h.project_id
+         WHERE q.id = @q AND q.lead_id = @lead_id;`);
+      const sets = qr.recordsets as unknown as Array<Array<Record<string, unknown>>>;
+      const q = sets[0]?.[0];
+      // lead ของบ้าน O&M (om_only) ไม่มีโครงการฝั่งขาย/ที่อยู่ — เติมจากทะเบียนบ้าน O&M ที่ใบงานนี้ผูกอยู่
+      const h = sets[2]?.[0];
+      if (h) {
+        if (!l.project_name && h.project_name) l.project_name = h.project_name;
+        if (!l.installation_address) {
+          const addr = [h.house_number ? `บ้านเลขที่ ${h.house_number}` : null, h.address].filter(Boolean).join(" ");
+          if (addr) l.installation_address = addr;
+        }
+      }
+      if (q?.om_package_id) lineItems.push({ label: String(q.package_name_snapshot || "Package O&M"), amount: Number(q.package_price_snapshot || 0) });
+      for (const it of q ? sets[1] ?? [] : []) {
+        const qty = Number(it.quantity || 0);
+        const label = String(it.item_name_snapshot || "");
+        lineItems.push({ label: qty !== 1 ? `${label} (${qty}${it.unit ? ` ${it.unit}` : ""})` : label, amount: Number(it.line_total || 0) });
+      }
+      const disc = Number(q?.discount_amount || 0);
+      if (disc > 0) lineItems.push({ label: `ส่วนลด${q?.discount_reason ? ` (${q.discount_reason})` : ""}`, amount: -disc });
+      totalPrice = Number(installmentRow.amount || 0);
+      if (lineItems.length === 0) lineItems.push({ label: "ค่าบริการ O&M", amount: totalPrice });
+      description = lineItems[0].label;
+      receiptNumber = `${q?.doc_no || installmentRow.slip_field}-1`;
       receiptDate = installmentRow.confirmed_at || new Date().toISOString();
     } else if (stageParam === "order_after") {
       // Install-step receipt. With the per-installment system this slot now

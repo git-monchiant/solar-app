@@ -11,9 +11,10 @@ import { apiFetch } from "@/lib/api";
 import { formatTHB } from "@/lib/utils/formatters";
 import { hasRole, useActiveRoles } from "@/lib/roles";
 import { thDT, type Item } from "@/lib/om/service-view";
+import OmReceiptRow from "@/components/om/OmReceiptRow";
 
 type Pay = {
-  id: number; amount: number; payment_method: string | null; description: string | null;
+  id: number; lead_id: number; actual_receipt_url: string | null; amount: number; payment_method: string | null; description: string | null;
   submitted_at: string | null; submitted_by_name: string | null;
   confirmed_at: string | null; confirmed_by: string | null; slip_urls: string[];
 };
@@ -98,6 +99,13 @@ export default function OmPaymentPanel({ item, skip, onSaved, onReload }: {
                   <img src={u} alt="สลิป" className="w-full h-full object-cover" />
                 </a>
               ))}
+            </div>
+          )}
+          {/* ใบเสร็จ — แบบแถวใบเสร็จงวดของฝั่งขาย (ชั่วคราว PDF · แนบตัวจริงโดย Account/admin) */}
+          {current.confirmed_at && (
+            <div className="mt-2.5 md:flex md:items-center md:gap-2">
+              <span className="block mb-1.5 md:mb-0 text-xs font-semibold text-gray-500">ใบเสร็จ</span>
+              <OmReceiptRow pay={current} docNo={item.q_doc_no ?? `om_${item.q_id}`} onChanged={load} />
             </div>
           )}
           {current.confirmed_at && (

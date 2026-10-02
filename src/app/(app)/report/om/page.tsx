@@ -13,9 +13,10 @@ import { formatTHB, formatThaiDate as fmtDate } from "@/lib/utils/formatters";
 import Loading from "@/components/ui/Loading";
 import { hasRole, useActiveRoles } from "@/lib/roles";
 import { OmServiceLink } from "@/components/om/OmServiceLink";
+import OmReceiptRow from "@/components/om/OmReceiptRow";
 
 interface OmPay {
-  id: number; amount: number; payment_method: string | null; submitted_at: string | null;
+  id: number; lead_id: number; actual_receipt_url: string | null; amount: number; payment_method: string | null; submitted_at: string | null;
   confirmed_at: string | null; confirmed_by: string | null; slip_urls: string[];
 }
 interface OmRow {
@@ -57,9 +58,9 @@ export default function OmRevenueReportPage() {
   const [dateFrom, setDateFrom] = useState("");
   const [dateTo, setDateTo] = useState("");
 
-  useEffect(() => {
-    apiFetch("/api/om/report/payments").then(setData).catch(console.error).finally(() => setLoading(false));
-  }, []);
+  // โหลดซ้ำหลังแนบ/ลบใบเสร็จตัวจริง — ไม่ขึ้นหน้าโหลดทับ ตัวกรองที่เลือกไว้อยู่ครบ
+  const load = () => apiFetch("/api/om/report/payments").then(setData).catch(console.error).finally(() => setLoading(false));
+  useEffect(() => { load(); }, []);
 
   if (loading) return <Loading />;
   if (!data) return <div className="text-center py-12 text-gray-400 text-sm">โหลดไม่สำเร็จ</div>;
@@ -103,6 +104,12 @@ export default function OmRevenueReportPage() {
     return urls.slice(0, 3).map((u, k) => (
       <FallbackImage key={u} src={u} alt="" className={`${size} object-cover rounded border border-gray-200`} gallery={gallery} galleryIndex={k} />
     ));
+  };
+  // ใบเสร็จ (2 ต.ค. 69 "ทำเหมือนฝั่งขาย") — มีเฉพาะเงินที่ Account ยืนยันแล้ว · Account แนบใบเสร็จตัวจริงที่หน้านี้
+  //   เพราะเข้าหน้างานบริการ O&M ไม่ได้ (ขั้นชำระเงินของงานบริการแสดงชุดเดียวกัน)
+  const receipt = (r: OmRow) => {
+    const p = r.payments.find((x) => x.confirmed_at);
+    return p ? <OmReceiptRow pay={p} docNo={r.doc_no} onChanged={load} /> : <span className="text-xs text-gray-300">—</span>;
   };
 
   return (
@@ -177,6 +184,7 @@ export default function OmRevenueReportPage() {
                       <th className="text-right px-4 py-2 font-semibold">ค้างรับ</th>
                       <th className="text-left px-4 py-2 font-semibold">ส่งลูกค้า</th>
                       <th className="text-left px-4 py-2 font-semibold">สลิป</th>
+                      <th className="text-left px-4 py-2 font-semibold">ใบเสร็จ</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-gray-100">
@@ -194,6 +202,7 @@ export default function OmRevenueReportPage() {
                           <td className="px-4 py-2 text-right font-mono tabular-nums text-amber-700">{fmt(r.outstanding)}</td>
                           <td className="px-4 py-2 text-xs text-gray-500 whitespace-nowrap">{r.sent_to_customer_at ? fmtDate(r.sent_to_customer_at) : "—"}</td>
                           <td className="px-4 py-2"><div className="flex gap-1">{slips(r, "w-9 h-9")}</div></td>
+                          <td className="px-4 py-2">{receipt(r)}</td>
                         </tr>
                       );
                     })}
@@ -218,6 +227,12 @@ export default function OmRevenueReportPage() {
                         <div><div className="text-gray-400">ค้างรับ</div><div className="font-mono font-semibold text-amber-700">{fmt(r.outstanding)}</div></div>
                       </div>
                       <div className="flex gap-1">{slips(r, "w-12 h-12")}</div>
+                      {r.payments.some((x) => x.confirmed_at) && (
+                        <div>
+                          <div className="text-xs text-gray-400 mb-1">ใบเสร็จ</div>
+                          {receipt(r)}
+                        </div>
+                      )}
                     </div>
                   );
                 })}

@@ -62,6 +62,13 @@ const PASS_BTN = (on: boolean) => `h-8 rounded-lg text-sm font-semibold border t
   ? "bg-emerald-500 text-white border-emerald-500" : "bg-white text-gray-600 border-gray-200 hover:border-emerald-300"}`;
 const FAIL_BTN = (on: boolean) => `h-8 rounded-lg text-sm font-semibold border transition-all ${on
   ? "bg-red-500 text-white border-red-500" : "bg-white text-gray-600 border-gray-200 hover:border-red-300"}`;
+// ช่องวัดค่า (FUNCTION TESTS) รับเฉพาะตัวเลข + จุดทศนิยมจุดเดียว — 2 ต.ค. 69 ผู้ใช้สั่ง
+// ★ เดิมพิมพ์อะไรก็ได้ แล้วตอนบันทึก Number("abc") = NaN กลายเป็นค่าว่างเงียบ ๆ · วาง "279 V" มาก็เหลือ 279
+const numOnly = (v: string) => {
+  const s = v.replace(/[^\d.]/g, "");
+  const i = s.indexOf(".");
+  return i < 0 ? s : s.slice(0, i + 1) + s.slice(i + 1).replace(/\./g, "");
+};
 // ปุ่มเลือก = chipBtn ของ JobDetail (ชุดเดียวกับ PreSurveyForm ฝั่งขาย)
 const chipBtn = (on: boolean) =>
   `h-8 px-3 rounded-lg text-xxs font-semibold border transition-all cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed ${on
@@ -525,7 +532,7 @@ export default function JobFormPanel({ jobId, wrapClass = "h-full overflow-auto 
     <ItemRow key={it.code} it={it} n={n} disabled={closed}
       value={checks[it.code] ?? {}} num={measures[it.code] ?? ""}
       onPass={(p) => setPass(it.code, p)} onFix={(f) => setFix(it.code, f)}
-      onNum={(v) => setMeasures((s) => ({ ...s, [it.code]: v }))} />
+      onNum={(v) => setMeasures((s) => ({ ...s, [it.code]: numOnly(v) }))} />
   );
 
   // หัวใบงาน — ระบบเติมให้ ช่างไม่ต้องเขียนเหมือนกระดาษ · ช่องอ่านอย่างเดียวหน้าตาแบบเลขที่เอกสารของ InstallChecklist
@@ -618,7 +625,7 @@ export default function JobFormPanel({ jobId, wrapClass = "h-full overflow-auto 
                             {g.items.map((it) => (
                               <div key={it.code} className="relative flex-1 min-w-0">
                                 <input value={measures[it.code] ?? ""} disabled={closed} inputMode="decimal" aria-label={it.label_th}
-                                  onChange={(e) => setMeasures((s) => ({ ...s, [it.code]: e.target.value }))}
+                                  onChange={(e) => setMeasures((s) => ({ ...s, [it.code]: numOnly(e.target.value) }))}
                                   className="w-full h-8 pl-3 pr-12 rounded-lg border border-gray-200 bg-white text-sm font-mono tabular-nums focus:outline-none focus:border-primary disabled:bg-gray-50" />
                                 <span className="absolute right-2 top-1/2 -translate-y-1/2 text-[10px] text-gray-400 pointer-events-none">{it.unit ?? ""}</span>
                               </div>
@@ -664,11 +671,12 @@ export default function JobFormPanel({ jobId, wrapClass = "h-full overflow-auto 
                       <button key={t} type="button" disabled={closed} className={chipBtn(repair === k)}
                         onClick={() => {
                           setRepair(k);
-                          // ติ๊กพบครั้งแรก — ดึงข้อที่ไม่ผ่าน (พร้อมรายการที่ต้องแก้) มาเติมให้ ช่างแก้ต่อได้
+                          // ติ๊กพบครั้งแรก — ดึงข้อที่ไม่ผ่านมาเติมให้ ช่างแก้ต่อได้
+                          // ★ 2 ต.ค. 69 ผู้ใช้สั่ง: "ชื่อข้อ + หมายเหตุ" เช่น "อินเวอร์เตอร์ เสียไฟไม่เข้า" (เดิมเติมแค่หมายเหตุ ไม่รู้ว่าข้อไหน)
                           if (k && !repairDetail.trim())
                             setRepairDetail(items
                               .filter((i) => i.kind === "bool" && checks[i.code]?.pass === false)
-                              .map((i) => checks[i.code]?.fix?.trim() || i.label_th).join(" · "));
+                              .map((i) => [i.label_th, checks[i.code]?.fix?.trim()].filter(Boolean).join(" ")).join(" · "));
                         }}>{t}</button>
                     ))}
                   </div>

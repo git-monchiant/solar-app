@@ -30,8 +30,8 @@ export async function GET(req: NextRequest) {
   const db = await getOmDb();
   const slots = Array.from({ length: MAX_FILES }, (_, i) => `DATALENGTH(p.slip_data${i ? `_${i + 1}` : ""}) b${i + 1}`).join(", ");
   const r = await db.request().input("q", sql.Int, qid).input("sf", sql.NVarChar(50), omSlipField(qid)).query(`
-    SELECT p.id, p.amount, p.payment_method, p.description, p.submitted_at, su.full_name submitted_by_name,
-           p.confirmed_at, p.confirmed_by, ${slots}
+    SELECT p.id, p.lead_id, p.amount, p.payment_method, p.description, p.submitted_at, su.full_name submitted_by_name,
+           p.confirmed_at, p.confirmed_by, p.actual_receipt_url, ${slots}
       FROM payments p
       JOIN quotations q ON q.id = @q AND q.lead_id = p.lead_id
       LEFT JOIN users su ON su.id = p.submitted_by

@@ -30,7 +30,8 @@ export async function GET(req: NextRequest) {
        AND (q.sent_to_customer_at IS NOT NULL
             OR EXISTS (SELECT 1 FROM payments p WHERE p.lead_id = q.lead_id AND p.slip_field = CONCAT(N'om_quote_', q.id)))
      ORDER BY COALESCE(q.sent_to_customer_at, q.approved_at) DESC, q.id DESC;
-    SELECT q.id quotation_id, p.id, p.amount, p.payment_method, p.submitted_at, p.confirmed_at, p.confirmed_by, ${slotCols}
+    SELECT q.id quotation_id, p.id, p.lead_id, p.amount, p.payment_method, p.submitted_at, p.confirmed_at, p.confirmed_by,
+           p.actual_receipt_url, ${slotCols}
       FROM payments p
       JOIN quotations q ON q.lead_id = p.lead_id AND p.slip_field = CONCAT(N'om_quote_', q.id)
      WHERE p.slip_field LIKE 'om[_]quote[_]%'

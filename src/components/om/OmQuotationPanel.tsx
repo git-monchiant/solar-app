@@ -413,9 +413,10 @@ function QuoteForm({ item, quote, onCancel, onDone }: {
         {lines.map((x, i) => (
           <div key={i} className="grid grid-cols-[1fr_4.5rem_4.5rem_6.5rem_auto] gap-1.5 items-center">
             <input value={x.item_name} onChange={(e) => setLine(i, { item_name: e.target.value })} placeholder="ชื่อรายการ" className={INPUT} />
-            <input type="number" min={0} value={x.quantity} onChange={(e) => setLine(i, { quantity: Number(e.target.value) })} className={`${INPUT} text-right`} />
+            {/* ค่า 0 = ช่องว่าง + placeholder แบบส่วนลดของ QuotationBuilder ฝั่งขาย — เดิมขึ้น 0 ค้าง พิมพ์ต่อกลายเป็น 01000 / ลบให้ว่างไม่ได้ */}
+            <input type="number" min={0} value={x.quantity || ""} placeholder="0" onChange={(e) => setLine(i, { quantity: Number(e.target.value) || 0 })} className={`${INPUT} text-right`} />
             <input value={x.unit} onChange={(e) => setLine(i, { unit: e.target.value })} placeholder="หน่วย" className={INPUT} />
-            <input type="number" min={0} value={x.unit_price} onChange={(e) => setLine(i, { unit_price: Number(e.target.value) })} className={`${INPUT} text-right`} />
+            <input type="number" min={0} value={x.unit_price || ""} placeholder="0" onChange={(e) => setLine(i, { unit_price: Number(e.target.value) || 0 })} className={`${INPUT} text-right`} />
             <button type="button" style={{ minHeight: 0 }} onClick={() => setLines((xs) => xs.filter((_, j) => j !== i))}
               className="h-9 w-9 rounded-lg text-gray-400 hover:text-red-600 cursor-pointer" aria-label="ลบรายการ">×</button>
           </div>
@@ -427,7 +428,7 @@ function QuoteForm({ item, quote, onCancel, onDone }: {
       <div className="grid gap-3 sm:grid-cols-2">
         <label className="grid gap-1">
           <span className="text-xs font-bold text-gray-600">ส่วนลด (บาท)</span>
-          <input type="number" min={0} value={discount} onChange={(e) => setDiscount(Number(e.target.value))} className={`${INPUT} text-right`} />
+          <input type="number" min={0} value={discount || ""} placeholder="0" onChange={(e) => setDiscount(Number(e.target.value) || 0)} className={`${INPUT} text-right`} />
         </label>
         <label className="grid gap-1">
           <span className="text-xs font-bold text-gray-600">เหตุผลส่วนลด {disc > 0 && <span className="text-danger">*</span>}</span>

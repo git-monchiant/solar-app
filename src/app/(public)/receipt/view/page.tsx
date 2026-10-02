@@ -5,7 +5,7 @@ import { formatSlotsRange } from "@/lib/time-slots";
 import Loading from "@/components/ui/Loading";
 
 interface ReceiptData {
-  stage: "deposit" | "order_before" | "order_after" | "installment";
+  stage: "deposit" | "order_before" | "order_after" | "installment" | "om";
   receipt_no: string;
   created_at: string;
   total_price: number;
@@ -45,6 +45,7 @@ const STAGE_TITLE: Record<string, string> = {
   order_before: "SOLAR ROOFTOP INSTALLATION / PRE-INSTALLATION RECEIPT",
   order_after: "SOLAR ROOFTOP INSTALLATION / FINAL PAYMENT RECEIPT",
   installment: "SOLAR ROOFTOP INSTALLATION / TEMPORARY RECEIPT",
+  om: "SOLAR O&M SERVICE / TEMPORARY RECEIPT",
 };
 
 function ReceiptContent() {

@@ -25,6 +25,7 @@ import OmPaymentPanel from "@/components/om/OmPaymentPanel";
 import OmRescheduler from "@/components/om/OmRescheduler";
 import OmSlotPicker from "@/components/om/OmSlotPicker";
 import OmFollowupModal from "@/components/om/OmFollowupModal";
+import OmCustomerModal from "@/components/om/OmCustomerModal";
 import ServiceDocButton from "@/components/om/ServiceDocButton";
 import { HouseEquipmentTab, HouseInfoTab, JobPhotosTab } from "@/components/om/HouseTabs";
 import JobTimelineTab, { StageEvents, bookingStages, type Row, type StageKey } from "@/components/om/JobTimelineTab";
@@ -118,6 +119,17 @@ export default function JobDetail({ item, history, bookings = [], rules, onBack,
   // ★ แผน 20260929-03 ข้อ 4: มือถือเรียงทุกการ์ดต่อกัน ⇒ แยกพับ/กางรายการ์ด (เดิมตัวเดียวใช้ร่วม)
   //   เริ่มกางเฉพาะขั้นที่เปิดมา — ขั้นก่อนหน้าบนมือถือพับเหลือบรรทัดสรุป ขั้นที่ทำอยู่เลยอยู่บนสุดเอง
   const [openDone, setOpenDone] = useState<Set<number>>(() => new Set([at]));
+  // ★ 2 ต.ค. 69: งานเดินหน้าหลังโหลดใหม่ (เช่นอนุมัติใบเสนอราคาครบ) ขณะเปิดดูขั้นเดิมอยู่ → ไปขั้นใหม่ให้เอง
+  //   แบบโหมด focus ของหน้า lead (visibleStep = focusedStep ?? currentStep) · เดิม step ตั้งครั้งเดียวตอนเปิดหน้า ค้างขั้นที่ปิดแล้ว
+  //   เปิดดูขั้นอื่นค้างไว้ = ไม่ดึงไป · ปรับ state ระหว่าง render ตามแนวทาง React (ไม่ต้องรอ effect แล้วกระพริบ)
+  const [prevAt, setPrevAt] = useState(at);
+  if (at !== prevAt) {
+    setPrevAt(at);
+    if (step === prevAt) {
+      setStep(at);
+      setOpenDone((s) => new Set(s).add(at));
+    }
+  }
   // แท็บบนหน้าแบบ lead ฝั่งขาย (แผน 20260928-04 ข้อ 6) — Workflow · ข้อมูลบ้าน · อุปกรณ์ · รูป
   const [tab, setTab] = useState<"workflow" | "info" | "equipment" | "photos" | "timeline">("workflow");
   // ปุ่ม Note (ข้อ 7) · เลื่อนนัดในขั้นนัดหมาย (ข้อ 8)
@@ -137,6 +149,8 @@ export default function JobDetail({ item, history, bookings = [], rules, onBack,
   const [apSlot, setApSlot] = useState("");
   // ปุ่ม Follow-up — บันทึกติดต่อไม่ได้ (OmFollowupModal)
   const [followOpen, setFollowOpen] = useState(false);
+  // กด avatar หัวหน้า — modal ข้อมูลลูกค้า (OmCustomerModal ตัวเดียวกับหน้า /om/customers)
+  const [profileOpen, setProfileOpen] = useState(false);
   const [teams, setTeams] = useState<Team[]>([]);
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState("");
@@ -330,8 +344,8 @@ export default function JobDetail({ item, history, bookings = [], rules, onBack,
     <Timeline
       items={history}
       renderItem={(h, isLast) => <JobHistoryItem h={h} isLast={isLast} />}
-      labels={{ today: "วันนี้", yesterday: "เมื่อวาน", locale: "th-TH",
-                empty: "ยังไม่มีประวัติ", emptyHint: "บันทึกการโทรหรือสร้างนัดแล้วจะขึ้นที่นี่" }}
+      // หัวกลุ่มวันใช้ค่าเดิมของฝั่งขาย (Today · Yesterday · AUG 6) — 2 ต.ค. 69 ผู้ใช้สั่งรูปแบบเหมือนฝั่งขาย
+      labels={{ empty: "ยังไม่มีประวัติ", emptyHint: "บันทึกการโทรหรือสร้างนัดแล้วจะขึ้นที่นี่" }}
     />
   );
 
@@ -577,11 +591,15 @@ export default function JobDetail({ item, history, bookings = [], rules, onBack,
             </button>
           )}
           <div className="max-md:hidden w-20 shrink-0 border-r border-gray-200 flex items-center justify-center py-2">
-            <div className="w-14 h-14 rounded-full flex items-center justify-center text-gray-600 shrink-0">
+            {/* กดเปิดข้อมูลลูกค้า แบบ avatar หน้า lead เปิด ProfileModal (2 ต.ค. 69) — บ้านที่ยังไม่ผูกลูกค้ากดไม่ได้ */}
+            <button type="button" onClick={() => setProfileOpen(true)} disabled={!item.customer_id}
+              title={item.customer_id ? "ข้อมูลลูกค้า" : "ยังไม่ผูกลูกค้า"}
+              className="w-14 h-14 rounded-full flex items-center justify-center text-gray-600 shrink-0 hover:opacity-80 transition-colors cursor-pointer disabled:cursor-default disabled:hover:opacity-100"
+              style={{ minHeight: 0 }}>
               <svg className="w-12 h-12" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
                 <path strokeLinecap="round" strokeLinejoin="round" d="M17.982 18.725A7.488 7.488 0 0012 15.75a7.488 7.488 0 00-5.982 2.975m11.963 0a9 9 0 10-11.963 0m11.963 0A8.966 8.966 0 0112 21a8.966 8.966 0 01-5.982-2.275M15 9.75a3 3 0 11-6 0 3 3 0 016 0z" />
               </svg>
-            </div>
+            </button>
           </div>
           <div className="flex-1 min-w-0 flex items-center gap-2 pl-1.5 md:pl-3 pr-4 md:pr-5 py-2.5">
             {onBack && (
@@ -1032,6 +1050,11 @@ export default function JobDetail({ item, history, bookings = [], rules, onBack,
           jobActive={!!item.booking_id && cur !== "follow" && cur !== "closed" && !isExit}
           onClose={() => setFollowOpen(false)}
           onSaved={(m) => { setFollowOpen(false); onSaved(m); if (onReload) onReload(); else onDone(); }} />
+      )}
+
+      {profileOpen && item.customer_id && (
+        <OmCustomerModal customerId={item.customer_id} canDelete={false} onClose={() => setProfileOpen(false)}
+          onChanged={onReload} onToast={onSaved} />
       )}
 
       {/* บันทึกโน้ต — หน้าตายกจาก AddActivityModal โหมด note ของหน้า lead ทั้งก้อน (แผน 20260928-04 ข้อ 7) */}
