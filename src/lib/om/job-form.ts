@@ -14,6 +14,8 @@ export type FormItem = {
   unit: string | null;
   required: boolean;
   sort_order: number;
+  /** ข้อที่ค่าเดียวกันและอยู่ติดกัน = แถวเดียว ป้ายนี้ หลายช่องกรอก (เช่น แรงดันไฟฟ้า/กระแสไฟฟ้า DC · 1 ต.ค. 69) */
+  group_label?: string | null;
 };
 
 /** หัวใบ — 1 แถวใน dbo.om_job_form */

@@ -314,7 +314,7 @@ function PhotoBox({ jobId, kind, label, photos, disabled, onChanged }: {
   );
 }
 
-export default function JobFormPanel({ jobId, wrapClass = "h-full overflow-auto bg-gray-50", embedded, intro, onClosed }: {
+export default function JobFormPanel({ jobId, wrapClass = "h-full overflow-auto bg-gray-50", embedded, intro, onClosed, appt }: {
   jobId: string;
   /** กล่องนอกสุด — หน้า /om/field/[id] ใช้ค่า default (เต็มจอ มี scroll ของตัวเอง)
    *  ส่วนตอนฝังในการ์ดขั้นของหน้ารายละเอียด ส่งคลาสที่ไม่สร้าง scroll ซ้อนเข้ามาแทน */
@@ -327,6 +327,20 @@ export default function JobFormPanel({ jobId, wrapClass = "h-full overflow-auto 
   /** ปิดงานสำเร็จ — หน้าที่ฝังต้องโหลดใหม่ ไม่งั้น header/ราง/สิทธิ์/Activity log ค้างที่ "เข้างาน"
    *  (เจอ 28 ก.ย. 69: ใบ #99 ปิดในฐานแล้ว แต่หน้ารายละเอียดยังโชว์เข้างาน สิทธิ์เหลือ 4) */
   onClosed?: () => void;
+  /** ★ 1 ต.ค. 69 ขั้นย่อยแรก "นัด" แบบขั้นย่อยนัดหมายของ InstallStep (ผู้ใช้สั่ง: ขั้น 05 แยกแท็บ · แท็บ 2 = เช็คลิสต์)
+   *  หน้ารายละเอียดส่งมา: แถบนัด + Reschedule · ปุ่มถัดไป = ช่างถึงหน้างาน (เข้างาน) แล้วไปแท็บตรวจ
+   *  ไม่ส่ง (หน้าช่าง /om/field) = ไม่มีแท็บนัด เหมือนเดิม */
+  appt?: {
+    content: React.ReactNode;
+    /** ช่างถึงหน้างานแล้ว (เข้างาน) — แท็บตรวจเป็นต้นไปเปิดได้ */
+    ready: boolean;
+    /** กดถัดไปที่แท็บนัดได้ไหม (นัดแล้ว = ได้ · รอยืนยัน = ยังไม่ได้) */
+    canNext: boolean;
+    /** ช่างถึงหน้างาน — เปลี่ยนสถานะเป็นเข้างาน */
+    onNext: () => Promise<void>;
+    /** ซ่อนปุ่มท้ายของแท็บนัด — ตอนเปิดฟอร์มเลื่อนนัด (มีปุ่มยกเลิก/ยืนยันเลื่อนนัดของตัวเอง · ผู้ใช้สั่ง 1 ต.ค. 69) */
+    hideNav?: boolean;
+  };
 }) {
   const id = jobId;
   const [job, setJob] = useState<Job | null>(null);
@@ -336,7 +350,7 @@ export default function JobFormPanel({ jobId, wrapClass = "h-full overflow-auto 
   const [note, setNote] = useState("");
   const [result, setResult] = useState<"pass" | "fail">("pass");
   const [method, setMethod] = useState<"onsite_sign" | "line_otp" | "tech_proxy">("onsite_sign");
-  const [proxyReason, setProxyReason] = useState(PROXY_REASONS[0]);
+  const [proxyReason] = useState(PROXY_REASONS[0]);   // ไม่มีตัวเลือกช่างเซ็นแทนแล้ว (1 ต.ค. 69) — คงไว้ให้ save ส่งค่าเดิม
   const [techSign, setTechSign] = useState<string | null>(null);
   const [custSign, setCustSign] = useState<string | null>(null);
   const [jobNoTxt, setJobNo] = useState<string | null>(null);
@@ -348,7 +362,11 @@ export default function JobFormPanel({ jobId, wrapClass = "h-full overflow-auto 
   const [err, setErr] = useState("");
   const [toast, setToast] = useState("");
   // ขั้นย่อย — จำไว้ใน localStorage แบบ installSubStep ของฝั่งขาย · หน้าช่างกับหน้ารายละเอียดใช้ key เดียวกัน
-  const [subStep, setSubStep] = useSubStep(`omJobSubStep_${id}`, 0, SUB_STEPS.length);
+  // มีแท็บนัด = เลื่อนขั้นย่อยของใบไป 1 · key แยกจากหน้าช่าง (จำนวนแท็บไม่เท่ากัน)
+  const steps: readonly string[] = appt ? ["นัด", ...SUB_STEPS] : SUB_STEPS;
+  const off = appt ? 1 : 0;
+  const [subStep, setSubStep] = useSubStep(`omJobSubStep_${id}${appt ? "_appt" : ""}`, appt && !appt.ready ? 0 : off, steps.length);
+  const inner = subStep - off;   // ขั้นย่อยของใบตรวจ (0 ตรวจ · 1 รูป · บันทึก · 2 ส่งมอบ · -1 = แท็บนัด)
   const [nextError, setNextError] = useState<string | null>(null);
   const rootRef = useRef<HTMLDivElement>(null);
   const say = (m: string) => { setToast(m); setTimeout(() => setToast(""), 2600); };
@@ -432,12 +450,17 @@ export default function JobFormPanel({ jobId, wrapClass = "h-full overflow-auto 
   const items = form?.items ?? [];
   const fails = failCount(checks, items);
   const closed = job.status === "closed";
-  const last = SUB_STEPS.length - 1;
+  const last = steps.length - 1;
 
   // ประตูเดียวกับปุ่มถัดไป + แท็บขั้นย่อย (แบบ onSubStepChange ของ InstallStep)
   // ★ ข้อมูลที่กรอกไม่หายตอนสลับขั้นย่อย (state อยู่ที่ใบ) · ไม่บันทึกอัตโนมัติ เพราะ PUT เขียน Activity log ทุกครั้ง
   const goSub = (n: number) => {
-    if (!closed && n > subStep && n > 1 && repair && !repairDetail.trim()) {
+    // ยังไม่ถึงหน้างาน — แท็บใบตรวจยังไม่เปิด (แบบขั้นย่อยที่ยังไม่ถึงของฝั่งขาย)
+    if (appt && !appt.ready && n >= off) {
+      setNextError(appt.canNext ? "ช่างยังไม่ถึงหน้างาน — กด ถัดไป ที่แท็บนัดเมื่อถึงหน้างาน" : "ลูกค้ายังไม่ยืนยันนัด — กด ลูกค้ายืนยันแล้ว ที่แท็บนัดก่อน");
+      return;
+    }
+    if (!closed && n > subStep && n - off > 1 && repair && !repairDetail.trim()) {
       setNextError("อาการ / สิ่งที่ต้องซ่อม (ติ๊กพบงานซ่อมไว้)"); return;
     }
     setNextError(null);
@@ -449,6 +472,21 @@ export default function JobFormPanel({ jobId, wrapClass = "h-full overflow-auto 
       if (el.scrollHeight > el.clientHeight) el.scrollTo({ top: 0, behavior: "smooth" });
       else el.scrollIntoView({ behavior: "smooth", block: "start" });
     }, 50);
+  };
+
+  // แท็บนัด: ถัดไป = ช่างถึงหน้างาน (ถ้ายังไม่ได้เข้างาน) แล้วไปแท็บตรวจ
+  const nextFromAppt = async () => {
+    if (!appt) return;
+    if (appt.ready) { goSub(off); return; }
+    if (!appt.canNext) { goSub(off); return; }   // ขึ้นเหตุผลจาก goSub
+    setBusy(true); setErr("");
+    try {
+      await appt.onNext();
+      load();
+      setNextError(null);
+      setSubStep(off);
+    } catch (e) { setErr(e instanceof Error ? e.message : String(e)); }
+    finally { setBusy(false); }
   };
 
   const closeJob = () => {
@@ -469,6 +507,19 @@ export default function JobFormPanel({ jobId, wrapClass = "h-full overflow-auto 
   const sections = [...new Set(["quality", ...items.map((i) => i.section)])]
     .map((sec) => ({ sec, list: items.filter((i) => i.section === sec) }))
     .filter((s) => s.list.length > 0);
+
+  // ข้อวัดค่าที่ group_label เดียวกันและอยู่ติดกัน = แถวเดียว (1 ต.ค. 69 · ข้อมูลในฐาน ไม่ hardcode)
+  //   n = ลำดับข้อเดิมในหมวด (ใช้กับข้อผ่าน/ไม่ผ่าน — กลุ่มมีเฉพาะข้อวัดค่า ลำดับไม่เพี้ยน)
+  const grouped = (list: FormItem[]) => {
+    const out: { items: FormItem[]; n: number }[] = [];
+    list.forEach((it, i) => {
+      const prev = out[out.length - 1];
+      const head = prev?.items[0];
+      if (it.kind === "num" && it.group_label && head?.kind === "num" && head.group_label === it.group_label) prev.items.push(it);
+      else out.push({ items: [it], n: i + 1 });
+    });
+    return out;
+  };
 
   const row = (it: FormItem, n: number) => (
     <ItemRow key={it.code} it={it} n={n} disabled={closed}
@@ -509,8 +560,8 @@ export default function JobFormPanel({ jobId, wrapClass = "h-full overflow-auto 
 
       <div className={embedded ? "" : "p-4 max-w-[1400px] mx-auto"}>
         {/* แถบขั้นย่อย — StepLayout ตัวเดียวกับการ์ด Install ฝั่งขาย (state active เสมอ ใบปิดแล้วยังเปิดอ่านได้ทุกขั้น) */}
-        <StepLayout state="active" doneHeader={null} subSteps={SUB_STEPS} subStep={subStep} onSubStepChange={goSub}>
-          {intro}
+        <StepLayout state="active" doneHeader={null} subSteps={steps} subStep={subStep} onSubStepChange={goSub}>
+          {appt && inner < 0 ? appt.content : intro}
           <div className="space-y-3">
             {/* ใบปิดแล้ว — แถบ lock แบบ InstallChecklist (หน้าช่างเต็มจอมีป้ายที่แถบหัวอยู่แล้ว) */}
             {closed && embedded && (
@@ -521,7 +572,7 @@ export default function JobFormPanel({ jobId, wrapClass = "h-full overflow-auto 
             )}
 
             {/* ── ขั้นย่อย 1: ตรวจ ── */}
-            {subStep === 0 && (
+            {inner === 0 && (
               <>
                 {/* ยังไม่มีใบของชนิดงานนี้ — ยืมใบติดตั้งมาใช้ ต้องบอกช่างให้รู้ ไม่ใช่เงียบ */}
                 {form?.fallback && (
@@ -559,7 +610,22 @@ export default function JobFormPanel({ jobId, wrapClass = "h-full overflow-auto 
                         icon={sec === "quality" ? <DocumentIcon className="w-4 h-4" /> : <CheckIcon className="w-4 h-4" />}
                         en={meta?.en ?? sec} th={meta?.th}
                         right={<>{list.length} ข้อ{sec === "quality" && fails > 0 && <b className="text-red-600"> · ไม่ผ่าน {fails}</b>}</>} />
-                      <div className="grid grid-cols-1 md:grid-cols-6 gap-2">{list.map((it, i) => row(it, i + 1))}</div>
+                      <div className="grid grid-cols-1 md:grid-cols-6 gap-2">
+                        {grouped(list).map((g) => g.items.length > 1 ? (
+                          // ข้อวัดค่าที่ group_label เดียวกัน — ป้ายเดียว ช่องกรอกเรียงกัน (หน่วยในช่องของแต่ละข้อ)
+                          <div key={g.items.map((x) => x.code).join("+")} className="md:col-span-6 flex items-center gap-2">
+                            <span className="text-xs text-gray-700 shrink-0 w-36 text-right">{g.items[0].group_label}</span>
+                            {g.items.map((it) => (
+                              <div key={it.code} className="relative flex-1 min-w-0">
+                                <input value={measures[it.code] ?? ""} disabled={closed} inputMode="decimal" aria-label={it.label_th}
+                                  onChange={(e) => setMeasures((s) => ({ ...s, [it.code]: e.target.value }))}
+                                  className="w-full h-8 pl-3 pr-12 rounded-lg border border-gray-200 bg-white text-sm font-mono tabular-nums focus:outline-none focus:border-primary disabled:bg-gray-50" />
+                                <span className="absolute right-2 top-1/2 -translate-y-1/2 text-[10px] text-gray-400 pointer-events-none">{it.unit ?? ""}</span>
+                              </div>
+                            ))}
+                          </div>
+                        ) : row(g.items[0], g.n))}
+                      </div>
                     </div>
                   );
                 })}
@@ -570,7 +636,7 @@ export default function JobFormPanel({ jobId, wrapClass = "h-full overflow-auto 
             )}
 
             {/* ── ขั้นย่อย 2: รูป · บันทึก ── */}
-            {subStep === 1 && (
+            {inner === 1 && (
               <>
                 {/* รูปก่อน / หลัง — แยกสองกล่องตามที่ผู้ใช้สั่ง · ★ ไม่บังคับ ปิดงานได้โดยไม่มีรูป
                     ชื่อกล่องเป็นกลาง ไม่ผูกกับงานล้าง เพราะใบนี้ใช้กับงาน O&M ทุกชนิด */}
@@ -619,7 +685,7 @@ export default function JobFormPanel({ jobId, wrapClass = "h-full overflow-auto 
             )}
 
             {/* ── ขั้นย่อย 3: ส่งมอบ — ผลการตรวจ · วิธีปิดงาน · ลายเซ็น ── */}
-            {subStep === 2 && (
+            {inner === 2 && (
               <>
                 <div className={SECTION}>
                   <SectionHead icon={<CheckIcon className="w-4 h-4" />} en="Result" th="ผลการตรวจ"
@@ -629,28 +695,9 @@ export default function JobFormPanel({ jobId, wrapClass = "h-full overflow-auto 
                     <button type="button" disabled={closed} onClick={() => setResult("fail")} className={FAIL_BTN(result === "fail")}>ไม่ผ่าน</button>
                   </div>
 
-                  <label className={`${FIELD_LABEL} mt-3`}>ปิดงานด้วยวิธีไหน</label>
-                  <div className="flex gap-2 flex-wrap">
-                    {([["onsite_sign", "ลูกค้าเซ็นที่หน้างาน"], ["line_otp", "ส่งให้ลูกค้ายืนยันทาง LINE"], ["tech_proxy", "ช่างเซ็นแทน"]] as const).map(([k, t]) => (
-                      <button key={k} type="button" disabled={closed} onClick={() => setMethod(k)} className={chipBtn(method === k)}>{t}</button>
-                    ))}
-                  </div>
-                  {method === "tech_proxy" && (
-                    <div className="mt-3 space-y-2">
-                      <div className="rounded-lg bg-amber-50 border border-amber-200 px-3 py-2 text-xs text-amber-900">
-                        ใช้เมื่อติดต่อลูกค้าไม่ได้จริง ๆ เท่านั้น ระบบจะทำเครื่องหมายไว้ว่าไม่ใช่ลายเซ็นลูกค้า
-                      </div>
-                      <select value={proxyReason} onChange={(e) => setProxyReason(e.target.value)} disabled={closed}
-                        className={`${INPUT} max-w-[420px]`}>
-                        {PROXY_REASONS.map((r) => <option key={r}>{r}</option>)}
-                      </select>
-                    </div>
-                  )}
-                  {method === "line_otp" && (
-                    <div className="mt-3 rounded-lg bg-sky-50 border border-sky-200 px-3 py-2 text-xs text-sky-900">
-                      ยังไม่เปิดใช้ — รอเชื่อม LINE OA และ OTP (ตาราง <code>om_otp_requests</code> เตรียมไว้แล้ว)
-                    </div>
-                  )}
+                  {/* ★ 1 ต.ค. 69 ผู้ใช้สั่งเอาตัวเลือก "ปิดงานด้วยวิธีไหน" (ลูกค้าเซ็น / LINE / ช่างเซ็นแทน) ออก
+                      ⇒ ปิดงานแบบลูกค้าเซ็นที่หน้างานอย่างเดียว (method ค่าเริ่มต้น onsite_sign · ต้องมีลายเซ็นลูกค้า)
+                      ใบเก่าที่ปิดด้วยวิธีอื่นยังจำค่าเดิมไว้ (โหลดจาก close_method) */}
                 </div>
 
                 <div className={SECTION}>
@@ -679,17 +726,22 @@ export default function JobFormPanel({ jobId, wrapClass = "h-full overflow-auto 
 
           {/* ปุ่มท้ายการ์ด — แบบ InstallStep: ย้อนกลับชิดซ้าย · ถัดไป/ปิดงานชิดขวา (+ บันทึกร่างข้าง ๆ)
               มือถือ 3 ปุ่มแบ่งเท่ากันในแถวเดียว (กลุ่มขวาเป็น contents) */}
-          <div className="flex gap-2 mt-3 md:justify-between">
+          {!(appt?.hideNav && inner < 0) && <div className="flex gap-2 mt-3 md:justify-between">
             {subStep > 0
               ? <button type="button" onClick={() => goSub(subStep - 1)} className={NAV_BACK}>
                   <ChevronLeftIcon className="w-4 h-4" strokeWidth={2} />ย้อนกลับ
                 </button>
               : <span className="hidden md:block md:w-64" />}
             <div className="contents md:flex md:gap-2">
-              {!closed && (
+              {!closed && inner >= 0 && (
                 <button type="button" disabled={busy} onClick={() => save(false)} className={NAV_DRAFT}>บันทึกร่าง</button>
               )}
-              {subStep < last ? (
+              {inner < 0 ? (
+                // แท็บนัด — ถัดไป = ช่างถึงหน้างาน (นัดแล้ว) · รอยืนยันนัดกดไม่ได้
+                <button type="button" disabled={busy || (!appt?.ready && !appt?.canNext)} onClick={nextFromAppt} className={NAV_NEXT}>
+                  {busy ? "กำลังบันทึก…" : "ถัดไป"}{!busy && <ChevronRightIcon className="w-4 h-4" strokeWidth={2} />}
+                </button>
+              ) : subStep < last ? (
                 <button type="button" onClick={() => goSub(subStep + 1)} className={NAV_NEXT}>
                   ถัดไป<ChevronRightIcon className="w-4 h-4" strokeWidth={2} />
                 </button>
@@ -704,7 +756,7 @@ export default function JobFormPanel({ jobId, wrapClass = "h-full overflow-auto 
                 </button>
               )}
             </div>
-          </div>
+          </div>}
         </StepLayout>
       </div>
 

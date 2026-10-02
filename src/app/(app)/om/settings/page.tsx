@@ -32,7 +32,8 @@ const GROUP: Record<string, { title: string; desc: string }> = {
 
 // ค่าที่เลิกใช้แล้ว — ยังอยู่ใน om_settings (ห้ามลบช่วง 3 เดือนแรก) แต่ไม่แสดง เพราะไม่มีผลกับอะไรแล้ว
 //   ★ 1 ต.ค. 69 เลิกใช้ทีม A/B/C (แผน 20261001-01 เฟส 4): คิวต่อทีม · ปลดทีมเมื่อเลื่อนนัด
-const RETIRED = new Set(["booking.slot_per_team", "reschedule.unassign_team"]);
+//   ★ 1 ต.ค. 69 เลื่อนนัดแล้วไม่กลับเป็นรอยืนยัน (ปุ่ม "ยืนยันและเข้างาน" ยืนยันในสายแล้ว)
+const RETIRED = new Set(["booking.slot_per_team", "reschedule.unassign_team", "reschedule.reset_to_pending"]);
 
 // หน่วยท้ายช่องกรอก — ช่วยให้อ่านออกว่าเลขนี้คืออะไร
 const UNIT: Record<string, string> = {

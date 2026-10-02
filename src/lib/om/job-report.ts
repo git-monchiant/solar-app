@@ -38,7 +38,7 @@ const FORM_SQL = `
     LEFT JOIN om_service_type st ON st.id = f.service_type_id
    WHERE f.id = @form;
 
-  SELECT id, code, section, label_th, kind, unit, required, sort_order
+  SELECT id, code, section, label_th, kind, unit, required, sort_order, group_label
     FROM om_job_form_item
    WHERE form_id = @form AND is_active = 1
    ORDER BY sort_order, id;`;

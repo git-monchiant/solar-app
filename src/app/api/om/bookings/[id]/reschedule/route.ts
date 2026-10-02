@@ -11,7 +11,8 @@ import { formatSlotsRange } from "@/lib/time-slots";
 
 // เลื่อนนัดจากปุ่ม Reschedule ในหน้ารายละเอียด (แผน 20260928-04 · ผู้ใช้เคาะ "ทำตามแนะนำ" ข้อ 4 ข)
 // ★ ใช้กติกาในหน้าตั้งค่า O&M (กลุ่ม "การเลื่อนนัด") กับการเลื่อนโดยทีมงาน:
-//   · ผลที่ตามมา — กลับเป็นรอยืนยัน (reset_to_pending) · แจ้งลูกค้าทาง LINE (notify_line)
+//   · ผลที่ตามมา — แจ้งลูกค้าทาง LINE (notify_line)
+//     (กลับเป็นรอยืนยัน reset_to_pending เลิกแล้ว 1 ต.ค. 69 — ทีมตกลงวันใหม่กับลูกค้าตอนเลื่อน ใบงานยังเป็นนัดแล้ว)
 //     (ปลดทีม unassign_team เลิกแล้ว 1 ต.ค. 69 — เลิกใช้ทีม A/B/C)
 //   · เพดาน (max_times · min_hours_before) ไม่บล็อกทีมงาน แค่เตือน — เพดานมีไว้คุมลูกค้าที่เลื่อนเอง
 // ★ การลากในปฏิทิน / จ่ายงาน ยังใช้ PATCH /api/om/bookings/[id] เหมือนเดิม (เครื่องมือจัดคิวของคนจ่ายงาน)
@@ -45,7 +46,8 @@ async function rules() {
   return {
     max_times: Number(c["reschedule.max_times"]) > 0 ? Number(c["reschedule.max_times"]) : null,   // null = ไม่จำกัด
     min_hours_before: Number(c["reschedule.min_hours_before"]) > 0 ? Number(c["reschedule.min_hours_before"]) : 0,
-    reset_to_pending: c["reschedule.reset_to_pending"] === true,
+    // เลิกแล้ว 1 ต.ค. 69 (ผู้ใช้สั่ง: เลื่อนนัดแล้วหน้าตาเหมือนนัดปกติ ไม่มีปุ่มลูกค้ายืนยัน) — ค่าในหน้าตั้งค่าซ่อนไว้ ไม่อ่าน
+    reset_to_pending: false,
     // เลิกใช้ทีม A/B/C (แผน 20261001-01 เฟส 4) — ไม่มีทีมให้ปลดแล้ว · ค่าในหน้าตั้งค่าซ่อนไว้ ไม่อ่าน
     unassign_team: false,
     notify_line: c["reschedule.notify_line"] === true,

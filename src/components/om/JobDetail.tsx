@@ -71,7 +71,6 @@ const chipBtn = (selected: boolean) =>
   }`;
 // ปุ่มหลักของการ์ด = ปุ่ม "ถัดไป" ของฝั่งขาย · ปุ่มรอง = "ย้อนกลับ"
 const PRIMARY_BTN = "h-11 px-6 rounded-lg text-sm font-semibold text-white bg-active hover:brightness-110 transition-colors flex items-center justify-center gap-1 cursor-pointer disabled:opacity-50";
-const SECONDARY_BTN = "h-11 px-5 rounded-lg text-sm font-semibold border border-gray-200 text-gray-600 bg-white hover:bg-gray-50 transition-colors flex items-center justify-center gap-1 cursor-pointer disabled:opacity-50";
 
 // ผลการโทรในการ์ดขั้นติดตาม — เฉพาะ "ติดต่อได้" ที่ทำให้งานเดินหน้า (แถวแบบ modal Follow-up ฝั่งขาย)
 // ★ 1 ต.ค. 69 (ผู้ใช้เคาะ "ตามแนะนำ"): ติดต่อไม่ได้ (ไม่รับสาย / เบอร์ผิด) ย้ายไปปุ่ม Follow-up ข้าง Note แบบหน้า lead
@@ -256,15 +255,6 @@ export default function JobDetail({ item, history, bookings = [], rules, onBack,
     finally { setBusy(false); }
   };
 
-  const patchJob = async (patch: Record<string, unknown>, msg: string) => {
-    if (!item.booking_id) return;
-    setBusy(true); setErr("");
-    try {
-      await apiFetch(`/api/om/bookings/${item.booking_id}`, { method: "PATCH", body: JSON.stringify(patch) });
-      onSaved(msg); onDone();
-    } catch (e) { setErr(e instanceof Error ? e.message : String(e)); }
-    finally { setBusy(false); }
-  };
 
   // เปิดใบงานซ่อมจากใบนี้ (ปิดแล้ว) — ใบใหม่เริ่มขั้นติดตาม (ในประกัน) หรือเสนอราคา (นอกประกัน)
   const openRepair = async () => {
@@ -520,6 +510,60 @@ export default function JobDetail({ item, history, bookings = [], rules, onBack,
       </div>
     </>
     );
+  };
+
+  // ── แท็บ "นัด" ของขั้น 05 (1 ต.ค. 69 ผู้ใช้สั่ง: ขั้น 05 แยกแท็บแบบขั้นติดตั้งฝั่งขาย · แท็บ 2 = เช็คลิสต์) ──
+  //   แถบนัด + Reschedule (+ ลูกค้ายืนยันแล้ว / กลับไปติดตาม ตอนรอยืนยัน) · ปุ่มถัดไปของใบตรวจ = ช่างถึงหน้างาน
+  const apptBlock = (
+    <div className="space-y-3">
+      {/* ★ 1 ต.ค. 69 ย้ายมาการ์ดขั้น 05 (ผู้ใช้สั่ง: ยืนยันแล้วไปขั้น 5 · Reschedule ทำที่ขั้น 5)
+          ★ แถบนัด + ปุ่ม Reschedule ยกจากขั้นย่อย "นัด" ของ Install ฝั่งขาย (แผน 20260928-04 ข้อ 8)
+          สีม่วง = นัดแล้ว รอยืนยัน · สีเขียว = ลูกค้ายืนยันแล้ว · เลื่อนได้จนกว่าช่างจะเริ่มงาน */}
+      {resched && item.booking_id ? (
+        <OmRescheduler bookingId={item.booking_id} currentAt={item.scheduled_at} currentSlot={item.time_slot} rules={rules}
+          onCancel={() => setResched(false)}
+          onSaved={(m) => { setResched(false); onSaved(m); onDone(); }} />
+      ) : (() => {
+        const confirmed = cur === "confirmed";
+        const canResched = !!item.booking_id && (cur === "pending" || cur === "confirmed");
+        return (
+          <>
+            <div className={`flex items-center gap-2.5 px-3 py-2.5 rounded-lg border ${confirmed ? "bg-emerald-50 border-emerald-600/15" : "bg-active-light border-active/20"}`}>
+              <svg className={`w-4 h-4 shrink-0 ${confirmed ? "text-emerald-600" : "text-active"}`} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                <path strokeLinecap="round" strokeLinejoin="round" d="M6.75 3v2.25M17.25 3v2.25M3 18.75V7.5a2.25 2.25 0 012.25-2.25h13.5A2.25 2.25 0 0121 7.5v11.25" />
+              </svg>
+              <div className="flex-1 flex items-baseline gap-1.5 flex-wrap min-w-0">
+                <span className={`text-xs font-semibold tracking-wider uppercase ${confirmed ? "text-emerald-700/70" : "text-active/70"}`}>
+                  {confirmed ? "ยืนยันแล้ว" : "นัดหมายแล้ว"}
+                </span>
+                {/* ★ ขั้น 01 ปิดแล้วเป็นอ่านอย่างเดียว (แผน 20260929-02) — ทางกลับคือปุ่ม "กลับไปติดตาม" ด้านล่าง */}
+                {item.scheduled_at
+                  ? <span className={`text-sm font-bold ${confirmed ? "text-emerald-900" : "text-active"}`}>{thAppt(item.scheduled_at, item.time_slot)}</span>
+                  : <span className="text-sm text-gray-500 italic">ยังไม่มีวันนัด</span>}
+              </div>
+              {canResched && item.scheduled_at && (
+                <button type="button" onClick={() => setResched(true)} style={{ minHeight: 0 }}
+                  className={`shrink-0 text-xs font-semibold uppercase tracking-wider px-2.5 py-1 rounded-md border transition-colors cursor-pointer ${confirmed ? "border-emerald-600/20 text-emerald-700 hover:bg-emerald-100" : "border-active/30 text-active hover:bg-active/10"}`}>
+                  Reschedule
+                </button>
+              )}
+            </div>
+            {/* ★ 1 ต.ค. 69 ผู้ใช้สั่งเอาปุ่ม "ลูกค้ายืนยันแล้ว / กลับไปติดตาม" ออก — แท็บนัดเหลือแถบนัด + Reschedule + ถัดไป
+                ใบที่ยังค้างรอยืนยัน กดถัดไปได้เลย (startJob ยืนยันให้ก่อนเริ่มงาน) */}
+          </>
+        );
+      })()}
+    </div>
+  );
+  // ช่างถึงหน้างาน — อยู่หน้าเดิมแล้วไปแท็บตรวจ (โหลดข้อมูลบ้านใหม่ ไม่เด้งกลับรายการ)
+  const startJob = async () => {
+    if (!item.booking_id) return;
+    // รอยืนยัน (ใบเก่า/ก่อนเลิกกติกากลับเป็นรอยืนยัน) → ยืนยันก่อน — ลำดับสถานะห้ามข้ามจากรอยืนยันไปเข้างาน
+    if (cur === "pending")
+      await apiFetch(`/api/om/bookings/${item.booking_id}`, { method: "PATCH", body: JSON.stringify({ status: "confirmed" }) });
+    await apiFetch(`/api/om/bookings/${item.booking_id}`, { method: "PATCH", body: JSON.stringify({ status: "progress" }) });
+    onSaved("ช่างถึงหน้างานแล้ว — เริ่มกรอกเช็คลิสต์");
+    if (onReload) onReload(); else onDone();
   };
 
   return (
@@ -835,66 +879,6 @@ export default function JobDetail({ item, history, bookings = [], rules, onBack,
                 </DoneHead>,
                 // ใบที่ปิดแล้วล็อกอ่านอย่างเดียวเอง (ทุกช่อง/ปุ่ม disabled + แถบ lock) — ไล่ดูขั้นย่อยได้ครบ
                 () => <JobFormPanel jobId={String(item.booking_id)} wrapClass="" embedded />,
-              ) : (cur === "pending" || cur === "confirmed") && item.scheduled_at ? (
-              <div className="space-y-3">
-                {/* ★ 1 ต.ค. 69 ย้ายมาการ์ดขั้น 05 (ผู้ใช้สั่ง: ยืนยันแล้วไปขั้น 5 · Reschedule ทำที่ขั้น 5)
-                    ★ แถบนัด + ปุ่ม Reschedule ยกจากขั้นย่อย "นัด" ของ Install ฝั่งขาย (แผน 20260928-04 ข้อ 8)
-                    สีม่วง = นัดแล้ว รอยืนยัน · สีเขียว = ลูกค้ายืนยันแล้ว · เลื่อนได้จนกว่าช่างจะเริ่มงาน */}
-                {resched && item.booking_id ? (
-                  <OmRescheduler bookingId={item.booking_id} currentAt={item.scheduled_at} currentSlot={item.time_slot} rules={rules}
-                    onCancel={() => setResched(false)}
-                    onSaved={(m) => { setResched(false); onSaved(m); onDone(); }} />
-                ) : (() => {
-                  const confirmed = cur === "confirmed";
-                  const canResched = !!item.booking_id && (cur === "pending" || cur === "confirmed");
-                  return (
-                    <>
-                      <div className={`flex items-center gap-2.5 px-3 py-2.5 rounded-lg border ${confirmed ? "bg-emerald-50 border-emerald-600/15" : "bg-active-light border-active/20"}`}>
-                        <svg className={`w-4 h-4 shrink-0 ${confirmed ? "text-emerald-600" : "text-active"}`} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                          <path strokeLinecap="round" strokeLinejoin="round" d="M6.75 3v2.25M17.25 3v2.25M3 18.75V7.5a2.25 2.25 0 012.25-2.25h13.5A2.25 2.25 0 0121 7.5v11.25" />
-                        </svg>
-                        <div className="flex-1 flex items-baseline gap-1.5 flex-wrap min-w-0">
-                          <span className={`text-xs font-semibold tracking-wider uppercase ${confirmed ? "text-emerald-700/70" : "text-active/70"}`}>
-                            {confirmed ? "ยืนยันแล้ว" : "นัดหมายแล้ว"}
-                          </span>
-                          {/* ★ ขั้น 01 ปิดแล้วเป็นอ่านอย่างเดียว (แผน 20260929-02) — ทางกลับคือปุ่ม "กลับไปติดตาม" ด้านล่าง */}
-                          {item.scheduled_at
-                            ? <span className={`text-sm font-bold ${confirmed ? "text-emerald-900" : "text-active"}`}>{thAppt(item.scheduled_at, item.time_slot)}</span>
-                            : <span className="text-sm text-gray-500 italic">ยังไม่มีวันนัด{cur === "pending" && <> — กด &ldquo;กลับไปติดตาม&rdquo; แล้วโทรตกลงนัดใหม่</>}</span>}
-                        </div>
-                        {canResched && item.scheduled_at && (
-                          <button type="button" onClick={() => setResched(true)} style={{ minHeight: 0 }}
-                            className={`shrink-0 text-xs font-semibold uppercase tracking-wider px-2.5 py-1 rounded-md border transition-colors cursor-pointer ${confirmed ? "border-emerald-600/20 text-emerald-700 hover:bg-emerald-100" : "border-active/30 text-active hover:bg-active/10"}`}>
-                            Reschedule
-                          </button>
-                        )}
-                      </div>
-                      {cur === "pending" && (
-                        <div className="flex gap-2 flex-wrap">
-                          {item.scheduled_at && (
-                            <button type="button" disabled={busy || !item.booking_id}
-                              onClick={() => patchJob({ status: "confirmed" }, "ยืนยันนัดแล้ว")}
-                              className={PRIMARY_BTN}>ลูกค้ายืนยันแล้ว</button>
-                          )}
-                          <button type="button" disabled={busy || !item.booking_id}
-                            onClick={() => patchJob({ status: "follow" }, "ย้ายกลับไปติดตาม")}
-                            className={SECONDARY_BTN}>กลับไปติดตาม</button>
-                        </div>
-                      )}
-                    </>
-                  );
-                })()}
-
-                {/* ★ 1 ต.ค. 69 เลิกขั้น "จ่ายทีมช่าง" (ทีมสำรวจ = ทีมล้าง ชุดเดียว · แผน 20261001-01 เฟส 4)
-                    ปุ่มช่างถึงหน้างานขึ้นทันทีที่ลูกค้ายืนยันนัด — API เลิกบังคับทีมแล้ว */}
-                {cur === "confirmed" && (
-                  <div className="flex md:justify-end">
-                    <button type="button" disabled={busy}
-                      onClick={() => patchJob({ status: "progress" }, "เริ่มงานแล้ว")}
-                      className={`${PRIMARY_BTN} flex-1 md:flex-none md:w-64`}>ช่างถึงหน้างานแล้ว</button>
-                  </div>
-                )}
-              </div>
               ) : item.booking_id ? (
                 // ★ เฟส 3: ใบตรวจรับงานฝังมาเลย ไม่ต้องเด้งออกไปหน้าอื่นแล้ว
                 //   ใบเดียวกับ /om/field/[id] เป๊ะ (components/om/JobFormPanel) แก้ที่เดียวได้ทั้งสองที่
@@ -902,6 +886,13 @@ export default function JobDetail({ item, history, bookings = [], rules, onBack,
                 //   ใบมีแถบขั้นย่อย (ตรวจ / รูป · บันทึก / ส่งมอบ) ของตัวเอง · wrapClass ว่าง = ไม่สร้าง scroll ซ้อน
                 <JobFormPanel jobId={String(item.booking_id)} wrapClass="" embedded
                   onClosed={() => { onSaved("ปิดงานเรียบร้อย"); onDone(); }}
+                  appt={["pending", "confirmed", "progress", "checked"].includes(cur) ? {
+                    content: apptBlock,
+                    ready: cur === "progress" || cur === "checked",
+                    canNext: cur === "confirmed" || cur === "pending",
+                    onNext: startJob,
+                    hideNav: resched,   // เปิดฟอร์มเลื่อนนัดอยู่ — ใช้ปุ่มของฟอร์มนั้นอย่างเดียว
+                  } : undefined}
                   intro={
                     <div className="text-xs text-gray-500 mb-3">
                       {/* ตัดสิทธิ์ไหม — เดิมอยู่การ์ดปิดงาน ซึ่งตอนนี้ล็อกจนกว่าจะปิด (แผน 20260929-02) */}

@@ -88,8 +88,8 @@ export async function POST(req: NextRequest) {
     // ก๊อบข้อจากใบต้นทาง (เฉพาะข้อที่ยังเปิดใช้) — เวอร์ชันใหม่เริ่มจากของเดิมเสมอ
     if (b.from_form_id)
       await new sql.Request(tx).input("src", sql.Int, Number(b.from_form_id)).input("dst", sql.Int, newId)
-        .query(`INSERT INTO om_job_form_item (form_id, code, section, label_th, kind, unit, required, sort_order, is_active)
-                SELECT @dst, code, section, label_th, kind, unit, required, sort_order, 1
+        .query(`INSERT INTO om_job_form_item (form_id, code, section, label_th, kind, unit, required, sort_order, is_active, group_label)
+                SELECT @dst, code, section, label_th, kind, unit, required, sort_order, 1, group_label
                   FROM om_job_form_item WHERE form_id = @src AND is_active = 1`);
 
     await tx.commit();
