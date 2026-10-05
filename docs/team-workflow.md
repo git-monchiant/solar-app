@@ -1,6 +1,6 @@
 # ข้อตกลงการทำงานร่วมกัน (v2 บน prod + v3 คู่ขนาน)
 
-อัปเดต 11 ส.ค. 2569 · ไม่มีระบบบังคับ เป็นข้อตกลงที่ตกลงกันในทีม
+อัปเดต 11 ส.ค. 2569 · เพิ่มงาน B2B 5 ต.ค. 2569 · ไม่มีระบบบังคับ เป็นข้อตกลงที่ตกลงกันในทีม
 
 ## ใครทำอะไร
 
@@ -23,7 +23,8 @@ main ─────────────────────────
 
 v3 ─────────────────────────────►  v3 (clone แยก: ../solar-app-v3)
   ├─ v3/<ชื่องานสั้นๆ> ──PR──► v3    ทีมพัฒนาทุกคนทำที่นี่
-  └─ v3/<ชื่องานสั้นๆ> ──PR──► v3
+  ├─ v3/<ชื่องานสั้นๆ> ──PR──► v3
+  └─ v3/b2b ──────────PR──► v3    ทีม B2B (BOQ โรงงาน/ไซต์ใหญ่) — ดูหัวข้อ "งาน B2B"
 ```
 
 **ทีมพัฒนาแตก branch จาก `v3` เสมอ** และเปิด PR กลับเข้า `v3` เท่านั้น
@@ -39,12 +40,12 @@ v3 ─────────────────────────�
 
 ## รู้ได้ยังไงว่ากำลังทำ v ไหน
 
-| ดูจาก | v2 | v3 |
-|---|---|---|
-| **URL ตอน dev** | `localhost:3010` | `localhost:3020` |
-| **หัวหน้าจอในแอป** | `Today v2.0.xx` | `Today v3.0.0-dev` |
-| **โฟลเดอร์** | `solar-app` | `solar-app-v3` |
-| **branch** | `git branch --show-current` → `main` | → `v3` |
+| ดูจาก | v2 | v3 | v3 งาน B2B |
+|---|---|---|---|
+| **URL ตอน dev** | `localhost:3010` | `localhost:3020` | `localhost:3030` |
+| **หัวหน้าจอในแอป** | `Today v2.0.xx` | `Today v3.0.0-dev` | เหมือน v3 — ดูพอร์ตใน URL |
+| **โฟลเดอร์** | `solar-app` | `solar-app-v3` | `solar-app-b2b` |
+| **branch** | `git branch --show-current` → `main` | → `v3` | → `v3/b2b` |
 
 `start.sh` เลือก port ตาม branch ให้อัตโนมัติ จึงเปิดทั้ง v2 และ v3 พร้อมกันได้
 (กำหนดเองได้ด้วย `PORT=3030 ./start.sh`) · ngrok ผูกกับ port 3010 เท่านั้น
@@ -149,6 +150,98 @@ npm install                        # เผื่อมี dependency ใหม�
 ./start.sh                         # ลองใช้งานจริงกับ DB ของตัวเอง
 ```
 เทสผ่านแล้วกลับไปกด merge บน GitHub (อย่า merge ในเครื่องแล้ว push ตรง — PR จะค้าง)
+
+## งาน B2B (BOQ โรงงาน / ไซต์ใหญ่)
+
+เพิ่ม 5 ต.ค. 2569 · ทีม B2B เป็นคนละทีมกับงาน solar rooftop (Sales / O&M) และทำคู่ขนานกัน
+ตั้งต้นแตก `v3/b2b` จาก `v3-ui-consistency` (branch v3 ที่ใหม่ที่สุด ณ วันนั้น)
+
+```
+Sales/O&M (v3-ui-consistency) ──●──●─────●──●──────────►  ──PR──► v3
+                                   \        \   merge ลงได้ตลอด
+B2B (v3/b2b)                        ●──●──M──●──M──●───►  ──PR──► v3
+  └─ v3/b2b-<งานย่อย> ──PR──► v3/b2b
+```
+
+| | Sales / O&M | B2B |
+|---|---|---|
+| branch | `v3-ui-consistency` | `v3/b2b` |
+| โฟลเดอร์ | โฟลเดอร์ v3 หลัก | `../solar-app-b2b` (git worktree) |
+| URL | `localhost:3020` | `localhost:3030` |
+| DB | `solardb_v3` | `solardb_v3` (ใช้ร่วม — B2B สร้างตารางใหม่อย่างเดียว) |
+
+`v3/b2b` เป็น branch หลักของทีม จึงอยู่นานกว่า 1 สัปดาห์ได้ แต่ต้องดึงงาน Sales/O&M
+ลงมาทุกสัปดาห์ และส่ง PR เข้า `v3` เป็นรอบละ 1–2 สัปดาห์ — อย่ารอทำเสร็จทั้งโมดูล
+(บทเรียนจาก `feature/om-module` ที่แยกอยู่ 5 สัปดาห์แล้วรวมทีเดียว)
+ส่งงานที่ยังไม่เสร็จเข้า `v3` ได้ เพราะการ์ด B2B ผูกกับ role ของทีม B2B — คนอื่นไม่เห็น
+
+### กติกา 4 ข้อ
+
+1. **โค้ด B2B อยู่ในที่ของตัวเองทั้งหมด**
+
+   | ส่วน | ที่อยู่ |
+   |---|---|
+   | หน้าเว็บ | `src/app/(app)/b2b/...` |
+   | API | `src/app/api/(b2b)/...` |
+   | logic / component | `src/lib/b2b/...` · `src/components/b2b/...` |
+   | ตาราง | ขึ้นต้น `b2b_*` สร้างใหม่เท่านั้น ไม่แก้ตารางเดิม |
+   | migration | `scripts/migrations-v3/<timestamp>_b2b_xxx.sql` |
+
+   ไฟล์ของ Sales/O&M (`QuotationBuilder.tsx`, `OrderStep.tsx`, `leads/[id]/route.ts`,
+   `src/lib/om/*`) import ไปใช้ได้ แต่ **ไม่แก้ใน `v3/b2b`** — ถ้าต้องแก้ ให้แก้ฝั่ง
+   Sales/O&M (หรือ PR เล็กเข้า `v3`) แล้วรอไหลลงมา
+   ไฟล์กลางที่แตะได้คือ `src/lib/modules.tsx` (กลุ่ม + การ์ด) และไฟล์ role/สิทธิ์ — เพิ่มบรรทัดอย่างเดียว
+2. **merge ทางเดียว Sales/O&M → `v3/b2b`** ห้าม `v3/b2b` → Sales/O&M
+   merge เอามาทั้ง branch เลือกบางส่วนไม่ได้ — ถ้าย้อนทาง BOQ ที่ยังไม่เสร็จ + migration `b2b_*`
+   จะติดไปกับ PR ของ O&M และ revert merge ทีหลังทำให้วันที่เอา BOQ เข้าจริง git ข้ามให้เงียบๆ
+   ถ้า B2B แก้ของกลางที่ O&M ต้องใช้ด้วย → `git cherry-pick <commit>` เฉพาะ commit นั้น
+3. **push Sales/O&M ก่อน `v3/b2b`** — commit ของ O&M จะได้ขึ้นไปใน branch ของมันเอง
+   ไม่ใช่ติดขึ้นไปกับ `v3/b2b`
+4. **ก่อนเปิด PR `v3/b2b` → `v3` ให้ merge `origin/v3` เข้า b2b ก่อนทุกครั้ง**
+   และให้ PR ของ Sales/O&M เข้า `v3` ก่อน — เจ้าของระบบใช้ Squash and merge ซึ่งเปลี่ยน
+   hash ของ commit O&M ถ้าไม่ merge `origin/v3` ลงมาก่อน PR ของ B2B จะโชว์ไฟล์ O&M ปนมา
+
+### ตั้งเครื่อง (ครั้งเดียว)
+
+ใช้ **git worktree** ไม่ใช่ clone ใหม่ — `.git` ตัวเดียวกัน แต่ได้โฟลเดอร์แยก เปิดสองงานพร้อมกันได้
+
+```bash
+# ในโฟลเดอร์ v3 หลัก
+git fetch origin
+git worktree add ../solar-app-b2b v3/b2b     # ยังไม่มีบน origin: git branch v3/b2b v3-ui-consistency ก่อน
+cp .env.local ../solar-app-b2b/
+cd ../solar-app-b2b && npm ci
+
+# ไฟล์ที่อัปโหลดอยู่นอก git — ลิงก์ให้สองโฟลเดอร์ใช้ที่เดียวกัน ไม่งั้นรูปขึ้นกรอบว่าง
+# (DB เดียวกัน แต่ไฟล์อยู่คนละโฟลเดอร์)
+ln -s "<โฟลเดอร์ v3 หลัก>/public/uploads" public/uploads
+ln -s "<โฟลเดอร์ v3 หลัก>/storage" storage
+```
+
+Windows (PowerShell) ใช้ junction แทน `ln -s`:
+
+```powershell
+New-Item -ItemType Junction -Path public\uploads -Target "<โฟลเดอร์ v3 หลัก>\public\uploads"
+New-Item -ItemType Junction -Path storage -Target "<โฟลเดอร์ v3 หลัก>\storage"
+```
+
+### ทำงานประจำวัน
+
+- เปิด VS Code สองหน้าต่าง (โฟลเดอร์ละหน้าต่าง) + แท็บ browser สองแท็บ
+  **สลับงาน = สลับหน้าต่าง** ไม่ต้อง `git checkout` ไม่ต้องหยุด server ไม่ต้องเก็บงานที่ค้าง
+- รันในโฟลเดอร์ b2b ด้วย `npm run dev -- --port 3030`
+  **อย่าใช้ `start.sh`** — สคริปต์แจก `v3/*` → 3020 จะชนกับโฟลเดอร์หลัก
+- login แยกพอร์ตละครั้ง (ผู้ใช้เก็บใน localStorage ซึ่งแยกตามพอร์ต) — ใช้คนละ role ได้
+- งาน B2B อยากได้ของใหม่ฝั่ง O&M: ในโฟลเดอร์ b2b → `git merge v3-ui-consistency`
+- ก่อนเปิด PR: ในโฟลเดอร์ b2b → `git fetch origin && git merge origin/v3 && git push`
+
+### ข้อควรระวัง
+
+- **ห้ามลบไฟล์ใน `public/uploads` / `storage` ของโฟลเดอร์ b2b** — เป็นที่เดียวกับของโฟลเดอร์หลัก
+- จะเลิกใช้ worktree: ถอดลิงก์ก่อน (`rm public/uploads storage` ไม่ใส่ `-r` ·
+  Windows ใช้ `cmd /c rmdir public\uploads` และ `cmd /c rmdir storage` — **อย่าใช้ `Remove-Item -Recurse`**
+  จะไล่ลบไฟล์จริงตาม junction) แล้วค่อย `git worktree remove ../solar-app-b2b`
+- เชื่อมบัญชี Google ให้ทำที่ 3020 — `GOOGLE_OAUTH_REDIRECT_URI` ใน `.env.local` ชี้พอร์ตนั้น
 
 ## วัน cutover ไป v3
 
