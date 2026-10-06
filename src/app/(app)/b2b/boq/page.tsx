@@ -44,6 +44,19 @@ export default function B2bBoqListPage() {
     return (rows ?? []).filter((r) => !q || [r.doc_no, r.project_name, r.customer_name, r.location].some((x) => (x ?? "").toLowerCase().includes(q)));
   }, [rows, search]);
 
+  // โหมดทุก Revision จัดกลุ่มตามลูกค้า — ชื่อเทียบแบบไม่สนตัวพิมพ์/ช่องว่างหัวท้าย (สะกดต่างกันยังแยกกลุ่ม)
+  // ลำดับกลุ่ม = ลูกค้าที่มีใบบันทึกล่าสุดก่อน · ในกลุ่มคงลำดับจาก API (เลขที่เดียวกันติดกัน Rev ใหม่ → เก่า)
+  const groups = useMemo(() => {
+    const map = new Map<string, { name: string; rows: Row[] }>();
+    for (const r of shown) {
+      const name = r.customer_name?.trim() ?? "";
+      const key = name.toLowerCase();
+      if (!map.has(key)) map.set(key, { name, rows: [] });
+      map.get(key)!.rows.push(r);
+    }
+    return [...map.values()];
+  }, [shown]);
+
   const title = item?.label ?? "รายการ BOQ";
   if (activeRoles.length > 0 && !canUse) {
     return (
@@ -71,6 +84,34 @@ export default function B2bBoqListPage() {
   const numCls = "pl-6 pr-3 py-2 text-right tabular-nums whitespace-nowrap";
   // โหมดทุก Revision: "ใบ" = จำนวนเลขที่ ไม่ใช่จำนวนแถว
   const docCount = all ? new Set(shown.map((r) => r.doc_no)).size : shown.length;
+
+  const rowEl = (r: Row) => (
+    // Rev เก่า (โหมดทุก Revision) จางทั้งแถว — อยู่ใต้ Rev ล่าสุดของเลขที่เดียวกัน
+    <tr key={r.id} onClick={() => router.push(`/b2b/boq/${r.id}`)} className={`cursor-pointer border-t border-gray-100 hover:bg-primary/5 ${r.is_latest ? "" : "[&>td]:opacity-50"}`}>
+      {/* ตัวเลขทุกช่องขนาดเดียวกับเนื้อตาราง (text-sm) — ช่อง 2 บรรทัดใช้บรรทัดรองเล็ก แบบช่องโครงการ */}
+      <td className="px-3 py-2 whitespace-nowrap">
+        {r.doc_no}
+        <span className="ml-1.5 text-gray-500">Rev {r.revision}{!r.is_latest && " (เก่า)"}</span>
+      </td>
+      <td className="px-3 py-2 font-semibold text-gray-900">
+        {r.project_name}
+        {r.pending_lines > 0 && <span className="ml-2 rounded-full bg-red-50 px-2 py-0.5 text-xxs font-semibold text-red-600">รอราคา {r.pending_lines}</span>}
+        {r.location && <div className="text-xs font-normal text-gray-400">{r.location}</div>}
+      </td>
+      <td className="px-3 py-2 text-gray-600">{r.customer_name ?? ""}</td>
+      {/* ใบที่ยังไม่มีรายการ (ยอด 0) ขึ้น "—" ทั้ง kWp / บาท/Wp / ราคา ให้เหมือนกัน */}
+      <td className={numCls}>{r.capacity_wp ? formatTHB(r.capacity_wp / 1000, { decimals: 2 }) : "—"}</td>
+      <td className={numCls}>{r.capacity_wp && r.total_sale ? perWp(r.total_sale, r.capacity_wp).toFixed(2) : "—"}</td>
+      {/* medium (500) ไม่ใช่ semibold — ฟอนต์ไม่มี 600 จะกระโดดไปตัวหนา 700 ดูไม่เข้ากับตัวเลขข้างๆ */}
+      {/* ตัวหลัก = ก่อน VAT (ฐานเดียวกับ บาท/Wp · ลูกค้า B2B เทียบราคาก่อน VAT) · บรรทัดรอง = รวม VAT ตาม % ของใบ
+          (ไม่รวมส่วนเพิ่มเติมแบบทางเลือก เหมือน "รวมเงินสุทธิ" ในหน้าทำ BOQ) */}
+      <td className={`${numCls} font-medium`}>
+        {r.total_sale ? formatTHB(r.total_sale, { decimals: 2 }) : "—"}
+        {r.total_sale ? <div className="text-xs font-normal text-gray-400">รวม VAT {formatTHB(r.total_sale * (1 + (r.vat_pct ?? 7) / 100), { decimals: 2 })}</div> : null}
+      </td>
+      <td className="pl-6 pr-3 py-2 text-gray-600 whitespace-nowrap">{formatThaiDate(r.updated_at, { time: true })}{r.updated_by_name ? <div className="text-xs text-gray-400">{r.updated_by_name}</div> : null}</td>
+    </tr>
+  );
 
   return (
     <div>
@@ -105,33 +146,18 @@ export default function B2bBoqListPage() {
                 </tr>
               </thead>
               <tbody>
-                {shown.map((r) => (
-                  // Rev เก่า (โหมดทุก Revision) จางทั้งแถว — อยู่ใต้ Rev ล่าสุดของเลขที่เดียวกัน
-                  <tr key={r.id} onClick={() => router.push(`/b2b/boq/${r.id}`)} className={`cursor-pointer border-t border-gray-100 hover:bg-primary/5 ${r.is_latest ? "" : "[&>td]:opacity-50"}`}>
-                    {/* ตัวเลขทุกช่องขนาดเดียวกับเนื้อตาราง (text-sm) — ช่อง 2 บรรทัดใช้บรรทัดรองเล็ก แบบช่องโครงการ */}
-                    <td className="px-3 py-2 whitespace-nowrap">
-                      {r.doc_no}
-                      <span className="ml-1.5 text-gray-500">Rev {r.revision}{!r.is_latest && " (เก่า)"}</span>
-                    </td>
-                    <td className="px-3 py-2 font-semibold text-gray-900">
-                      {r.project_name}
-                      {r.pending_lines > 0 && <span className="ml-2 rounded-full bg-red-50 px-2 py-0.5 text-xxs font-semibold text-red-600">รอราคา {r.pending_lines}</span>}
-                      {r.location && <div className="text-xs font-normal text-gray-400">{r.location}</div>}
-                    </td>
-                    <td className="px-3 py-2 text-gray-600">{r.customer_name ?? ""}</td>
-                    {/* ใบที่ยังไม่มีรายการ (ยอด 0) ขึ้น "—" ทั้ง kWp / บาท/Wp / ราคา ให้เหมือนกัน */}
-                    <td className={numCls}>{r.capacity_wp ? formatTHB(r.capacity_wp / 1000, { decimals: 2 }) : "—"}</td>
-                    <td className={numCls}>{r.capacity_wp && r.total_sale ? perWp(r.total_sale, r.capacity_wp).toFixed(2) : "—"}</td>
-                    {/* medium (500) ไม่ใช่ semibold — ฟอนต์ไม่มี 600 จะกระโดดไปตัวหนา 700 ดูไม่เข้ากับตัวเลขข้างๆ */}
-                    {/* ตัวหลัก = ก่อน VAT (ฐานเดียวกับ บาท/Wp · ลูกค้า B2B เทียบราคาก่อน VAT) · บรรทัดรอง = รวม VAT ตาม % ของใบ
-                        (ไม่รวมส่วนเพิ่มเติมแบบทางเลือก เหมือน "รวมเงินสุทธิ" ในหน้าทำ BOQ) */}
-                    <td className={`${numCls} font-medium`}>
-                      {r.total_sale ? formatTHB(r.total_sale, { decimals: 2 }) : "—"}
-                      {r.total_sale ? <div className="text-xs font-normal text-gray-400">รวม VAT {formatTHB(r.total_sale * (1 + (r.vat_pct ?? 7) / 100), { decimals: 2 })}</div> : null}
-                    </td>
-                    <td className="pl-6 pr-3 py-2 text-gray-600 whitespace-nowrap">{formatThaiDate(r.updated_at, { time: true })}{r.updated_by_name ? <div className="text-xs text-gray-400">{r.updated_by_name}</div> : null}</td>
-                  </tr>
-                ))}
+                {all
+                  ? groups.flatMap((g) => [
+                      // หัวกลุ่มลูกค้า — แบบแถวกลุ่มย่อยในหน้าวัสดุและราคา
+                      <tr key={`g-${g.name}`} className="border-t border-gray-200 bg-slate-50/70">
+                        <td colSpan={7} className="px-3 py-1.5 text-xs font-bold text-gray-600">
+                          {g.name || "ไม่ระบุลูกค้า"}
+                          <span className="ml-2 font-normal text-gray-400">{new Set(g.rows.map((r) => r.doc_no)).size} ใบ · {g.rows.length} Revision</span>
+                        </td>
+                      </tr>,
+                      ...g.rows.map(rowEl),
+                    ])
+                  : shown.map(rowEl)}
               </tbody>
             </table>
           </div>
