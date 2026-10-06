@@ -17,12 +17,11 @@ import type { B2bCategory } from "./materials";
 const COLS = [
   { key: "A", width: 12 }, { key: "B", width: 46 }, { key: "C", width: 8 }, { key: "D", width: 16 }, { key: "E", width: 28 },
   { key: "F", width: 12 }, { key: "G", width: 9 }, { key: "H", width: 14 }, { key: "I", width: 17 }, { key: "J", width: 14 },
-  { key: "K", width: 17 }, { key: "L", width: 9 },
+  { key: "K", width: 17 },
 ];
 // ศูนย์ (หมวดว่าง / ยังไม่มีราคา) แสดง "-" · ค่าเล็กกว่าที่ 2 ตำแหน่งแสดงได้ขึ้น "<0.01" แบบหน้าจอ — ค่าจริงในช่องไม่เปลี่ยน
 const MONEY = '#,##0.00;-#,##0.00;"-"';
 const PER_WP = '[=0]"-";[<0.005]"<0.01";#,##0.00';
-const SHARE = '[=0]"-";[<0.00005]"<0.01%";0.00%';
 // เลขเต็มไม่มีจุดค้างท้าย ("266." ของ #,##0.###) — เลือก format ตามค่า
 const qtyFmt = (n: number) => (Number.isInteger(n) ? "#,##0" : "#,##0.###");
 const PCT = "0.00%";
@@ -94,17 +93,19 @@ export async function buildBoqWorkbook(input: { header: BoqHeader; lines: BoqLin
   };
   const f = (formula: string, result: number) => ({ formula, result: Number.isFinite(result) ? result : 0 });
   const styleRow = (r: number, opts: { fill?: string; bold?: boolean; border?: boolean; from?: string; to?: string }) => {
-    const from = (opts.from ?? "A").charCodeAt(0); const to = (opts.to ?? "L").charCodeAt(0);
+    const from = (opts.from ?? "A").charCodeAt(0); const to = (opts.to ?? "K").charCodeAt(0);
     for (let c = from; c <= to; c++) {
       const cell = ws.getCell(`${String.fromCharCode(c)}${r}`);
       if (opts.fill) cell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: opts.fill } };
       if (opts.bold) cell.font = { name: "Tahoma", size: 10, bold: true };
       if (opts.border) cell.border = { top: thin, bottom: thin, left: thin, right: thin };
+      // ทุกช่องกึ่งกลางแนวตั้ง — แถวสูงกว่าตัวหนังสือเมื่อไหร่ เลขลำดับ (กึ่งกลาง) กับช่องอื่น (ชิดล่าง) จะเหลื่อมกัน
+      cell.alignment = { ...cell.alignment, vertical: "middle" };
     }
   };
 
   // ── หัวใบ (แถว 1–5) ────────────────────────────────────────────────
-  ws.mergeCells("A1:L1");
+  ws.mergeCells("A1:K1");
   set("A1", `BOQ(S) - ${h.project_name} (${(cap / 1000).toFixed(2)} kWp)`).font = { name: "Tahoma", size: 14, bold: true };
   const label = (addr: string, text: string) => { set(addr, text).font = { name: "Tahoma", size: 10, bold: true }; };
   // ค่าในหัวใบชิดซ้ายทั้งหมด (ตัวเลข Rev / % / Capacity ปกติ Excel ชิดขวา จะลอยห่างจากหัวข้อ)
@@ -129,11 +130,11 @@ export async function buildBoqWorkbook(input: { header: BoqHeader; lines: BoqLin
 
   // ── รายละเอียดทีละหมวด ───────────────────────────────────────────────
   const DET_HEAD = r;
-  ["ลำดับ", "รายการ", "%", "ยี่ห้อ", "รุ่น / ขนาด", "ปริมาณ", "หน่วย", "ต้นทุน/หน่วย", "ต้นทุนรวม", "ขาย/หน่วย", "ราคาขายรวม", "%"]
+  ["ลำดับ", "รายการ", "%", "ยี่ห้อ", "รุ่น / ขนาด", "ปริมาณ", "หน่วย", "ต้นทุน/หน่วย", "ต้นทุนรวม", "ขาย/หน่วย", "ราคาขายรวม"]
     .forEach((t, i) => set(`${String.fromCharCode(65 + i)}${DET_HEAD}`, t));
   styleRow(DET_HEAD, { fill: FILL.head, bold: true, border: true });
   ws.getCell(`A${DET_HEAD}`).alignment = CENTER;
-  for (const col of "CFHIJKL") ws.getCell(`${col}${DET_HEAD}`).alignment = RIGHT;   // หัวคอลัมน์ตัวเลขชิดขวาตามตัวเลข
+  for (const col of "CFHIJK") ws.getCell(`${col}${DET_HEAD}`).alignment = RIGHT;   // หัวคอลัมน์ตัวเลขชิดขวาตามตัวเลข
   // พิมพ์: รายละเอียดขึ้นหน้าใหม่ — หน้าแรกเป็นหัวใบ + สรุป
   // (พิมพ์หัวคอลัมน์ซ้ำทุกหน้าไม่ได้: Excel ตั้งแถวหัวซ้ำได้ชุดเดียวทั้งแผ่น จะไปโผล่บนหน้าสรุปด้วย)
   ws.getRow(DET_HEAD - 1).addPageBreak();
@@ -145,7 +146,6 @@ export async function buildBoqWorkbook(input: { header: BoqHeader; lines: BoqLin
   const wattRows: { row: number; watt: number }[] = [];
   const baseRowsByCat = new Map<number, number[]>();
   const saleBaseRows: number[] = [];
-  const SUBTOTAL_I = `$I$${ROW.subtotal}`;
 
   // ข้ามหมวดที่ไม่มีรายการ — เดิมหมวดว่างกินหมวดละ 3 แถว (หัว + Total 0 + เว้น) จนหน้ารายละเอียดเป็นกล่องเปล่า
   // แถวสรุปของหมวดนั้นยังอยู่ ใส่ 0 แทนการอ้างแถว Total
@@ -155,7 +155,7 @@ export async function buildBoqWorkbook(input: { header: BoqHeader; lines: BoqLin
     const optional = c.is_addon && modeOf(c.id) === "optional";
     if (c.is_addon && !addonBand) {
       addonBand = true;
-      ws.mergeCells(`A${r}:L${r}`);
+      ws.mergeCells(`A${r}:K${r}`);
       set(`A${r}`, "ส่วนเพิ่มเติมจากการเสนอราคาแบบมาตรฐาน (Optional Add-on Services)");
       styleRow(r, { fill: FILL.addon, bold: true }); r++;
     }
@@ -182,7 +182,6 @@ export async function buildBoqWorkbook(input: { header: BoqHeader; lines: BoqLin
       set(`I${r}`, f(`ROUND(F${r}*H${r},2)`, res.cost), MONEY);
       set(`J${r}`, f(`H${r}/(1-$I$5)`, res.sale_unit), MONEY);
       set(`K${r}`, f(`ROUND(I${r}/(1-$I$5),2)`, res.sale), MONEY);
-      if (!optional) set(`L${r}`, f(`IF(${SUBTOTAL_I}=0,0,I${r}/${SUBTOTAL_I})`, res.share), SHARE);
       styleRow(r, { border: true, fill: pending ? FILL.pending : undefined });
       if (l.price_basis !== "pct_category" && l.price_basis !== "pct_sale") {
         baseRowsByCat.set(c.id, [...(baseRowsByCat.get(c.id) ?? []), r]);
@@ -214,10 +213,9 @@ export async function buildBoqWorkbook(input: { header: BoqHeader; lines: BoqLin
   ws.mergeCells(`B${SUM_HEAD}:G${SUM_HEAD + 1}`); set(`B${SUM_HEAD}`, "รายการ");
   ws.mergeCells(`H${SUM_HEAD}:I${SUM_HEAD}`); set(`H${SUM_HEAD}`, "ต้นทุน");
   ws.mergeCells(`J${SUM_HEAD}:K${SUM_HEAD}`); set(`J${SUM_HEAD}`, "ราคาขาย");
-  ws.mergeCells(`L${SUM_HEAD}:L${SUM_HEAD + 1}`); set(`L${SUM_HEAD}`, "%");
   ["บาท/Wp", "บาท", "บาท/Wp", "บาท"].forEach((t, i) => set(`${"HIJK"[i]}${SUM_HEAD + 1}`, t));
   styleRow(SUM_HEAD, { fill: FILL.head, bold: true, border: true }); styleRow(SUM_HEAD + 1, { fill: FILL.head, bold: true, border: true });
-  for (const a of ["A", "H", "J", "L"]) ws.getCell(`${a}${SUM_HEAD}`).alignment = CENTER;
+  for (const a of ["A", "H", "J"]) ws.getCell(`${a}${SUM_HEAD}`).alignment = CENTER;
   ws.getCell(`B${SUM_HEAD}`).alignment = { horizontal: "left", vertical: "middle" };
   for (const a of "HIJK") ws.getCell(`${a}${SUM_HEAD + 1}`).alignment = RIGHT;
   const perWpCell = (col: string, row: number, amount: number) => f(`IF($B$4=0,0,${col}${row}/$B$4)`, perWp(amount, cap));
@@ -229,11 +227,10 @@ export async function buildBoqWorkbook(input: { header: BoqHeader; lines: BoqLin
     // หมวดที่ไม่มีรายการไม่มีแถว Total ในส่วนรายละเอียด → 0 (แสดง "-")
     set(`I${row}`, tot ? f(`I${tot}`, res.cost) : 0, MONEY); set(`K${row}`, tot ? f(`K${tot}`, res.sale) : 0, MONEY);
     set(`H${row}`, perWpCell("I", row, res.cost), PER_WP); set(`J${row}`, perWpCell("K", row, res.sale), PER_WP);
-    if (!optional) set(`L${row}`, f(`IF(${SUBTOTAL_I}=0,0,I${row}/${SUBTOTAL_I})`, res.share), SHARE);
     styleRow(row, { border: true });
   }
   if (addonHeadRow) {
-    ws.mergeCells(`A${addonHeadRow}:L${addonHeadRow}`);
+    ws.mergeCells(`A${addonHeadRow}:K${addonHeadRow}`);
     set(`A${addonHeadRow}`, "ส่วนเพิ่มเติมจากการเสนอราคาแบบมาตรฐาน (Optional Add-on Services)");
     styleRow(addonHeadRow, { fill: FILL.addon, bold: true });
   }
@@ -262,7 +259,7 @@ export async function buildBoqWorkbook(input: { header: BoqHeader; lines: BoqLin
 
   // ★ ห้ามใส่ state "frozen" โดยไม่มี xSplit/ySplit — exceljs เขียน <pane> เปล่า แล้ว Excel เปิดไฟล์ไม่ได้เลย (เจอตอนทดสอบเฟส 4)
   ws.views = [{ showGridLines: false }];
-  const buffer = await ignoreFormulaWarnings(await wb.xlsx.writeBuffer(), `A1:L${ws.rowCount}`);
+  const buffer = await ignoreFormulaWarnings(await wb.xlsx.writeBuffer(), `A1:K${ws.rowCount}`);
   return { buffer, calc };
 }
 

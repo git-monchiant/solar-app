@@ -41,8 +41,6 @@ export type LineResult = {
   cost: number;
   sale_unit: number;
   sale: number;
-  /** % ของต้นทุนรวมทั้งใบ (คอลัมน์ R ของไฟล์) */
-  share: number;
   pending: boolean;
 };
 
@@ -54,7 +52,6 @@ export type CategoryResult = Amount & {
   mode: AddonMode | null;     // หมวดเสริมเท่านั้น
   lines: number;
   pending: number;
-  share: number;
 };
 
 export type CalcResult = {
@@ -100,7 +97,7 @@ export function calcBoq(input: {
   // ต้นทุนรวม / ราคาขายรวม ปัดเป็นสตางค์ (ราคาขายคิดจากต้นทุนที่ปัดแล้ว = เลขที่เห็น) · ต่อหน่วยไม่ปัด (ค่าแรงบาท/Wp ปัดแล้วคูณจะเพี้ยนหลักร้อย)
   const put = (l: CalcLine, eff_qty: number, unit_cost: number) => {
     const cost = round2(eff_qty * unit_cost);
-    res[l.key] = { eff_qty, unit_cost, cost, sale_unit: toSale(unit_cost), sale: round2(toSale(cost)), share: 0, pending: l.unit_cost == null };
+    res[l.key] = { eff_qty, unit_cost, cost, sale_unit: toSale(unit_cost), sale: round2(toSale(cost)), pending: l.unit_cost == null };
   };
 
   // 1) บรรทัดฐาน — ต่อหน่วย / ต่อวัตต์ / ต่อ Wp ของระบบ
@@ -129,7 +126,7 @@ export function calcBoq(input: {
   const categories: Record<number, CategoryResult> = {};
   for (const c of input.categories) {
     categories[c.id] = { id: c.id, is_addon: c.is_addon, // หมวดเสริมที่ยังไม่ตั้งวิธีคิดเงิน = รวมในราคา (ค่าเริ่มต้นที่เคาะ 6 ต.ค. — แบบไฟล์เดิม) ไม่ใช่หายจากยอดเงียบๆ
-      mode: c.is_addon ? (input.addon_modes[c.id] ?? "included") : null, lines: 0, pending: 0, share: 0, ...zero() };
+      mode: c.is_addon ? (input.addon_modes[c.id] ?? "included") : null, lines: 0, pending: 0, ...zero() };
   }
   for (const l of input.lines) {
     const r = res[l.key]; const c = categories[l.category_id];
@@ -147,9 +144,6 @@ export function calcBoq(input: {
   const vatRate = (Number(input.vat_pct) || 0) / 100;
   const vat = { cost: round2(subtotal.cost * vatRate), sale: round2(subtotal.sale * vatRate) };
   const grand = { cost: round2(subtotal.cost + vat.cost), sale: round2(subtotal.sale + vat.sale) };
-
-  for (const r of Object.values(res)) r.share = subtotal.cost > 0 ? r.cost / subtotal.cost : 0;
-  for (const c of Object.values(categories)) c.share = subtotal.cost > 0 ? c.cost / subtotal.cost : 0;
 
   return {
     capacity_wp, lines: res, categories, material, labor, addon_included, addon_optional, subtotal, vat, grand,
