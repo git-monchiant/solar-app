@@ -1,5 +1,6 @@
 import { hasRole, type Role } from "@/lib/roles";
 import { OM_ACTIVE_STEPS, OM_FIELD_STEPS, OM_FIELD_SUBS, OM_PAY_SUB, OM_SCHEDULED_STEPS } from "@/lib/om/journey";
+import { B2B_PENDING_PRICE_SUB } from "@/lib/b2b/materials";
 import {
   BoltIcon, CheckIcon, ClockIcon, DocumentIcon, DownloadIcon, LineIcon, PhoneIcon, XIcon,
 } from "@/components/ui/icons";
@@ -328,8 +329,8 @@ export const MODULES: AppModule[] = [
     roles: ["b2b", "purchase", "admin"],
     menu: [
       { label: "รายการ BOQ", href: "/b2b/boq", icon: <I d={D.lines} />, roles: ["b2b", "admin"] },
-      // Purchase กดการ์ดแล้วลงหน้านี้ — hub เลือกเมนูแรกที่ role เห็น
-      { label: "Master Data วัสดุ", href: "/b2b/materials", icon: <I d={D.archive} />, roles: ["b2b", "purchase", "admin"] },
+      // Purchase กดการ์ดแล้วลงหน้านี้ — hub เลือกเมนูแรกที่ role เห็น · badge = รายการที่รอ Purchase ใส่ราคา
+      { label: "Master Data วัสดุ", href: "/b2b/materials", icon: <I d={D.archive} />, roles: ["b2b", "purchase", "admin"], subs: [B2B_PENDING_PRICE_SUB] },
     ],
   },
   {
