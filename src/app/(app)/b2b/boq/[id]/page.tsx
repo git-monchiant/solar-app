@@ -9,7 +9,7 @@ import { useDialog } from "@/components/ui/Dialog";
 import { apiFetch, getUserContextHeaders } from "@/lib/api";
 import { hasRole, useActiveRoles } from "@/lib/roles";
 import { formatNumber, formatThaiDate, formatTHB } from "@/lib/utils/formatters";
-import { calcBoq, type AddonMode } from "@/lib/b2b/boq-calc";
+import { calcBoq, perWp, type AddonMode } from "@/lib/b2b/boq-calc";
 import { ADDON_MIN_CATEGORY, B2B_BOQ_ROLES, type BoqHeader, type BoqLine, type BoqRevision } from "@/lib/b2b/boq";
 import type { B2bCategory, B2bMaterial } from "@/lib/b2b/materials";
 import BoqSummary from "@/components/b2b/boq/BoqSummary";
@@ -188,10 +188,21 @@ export default function BoqEditorPage({ params }: { params: Promise<{ id: string
   const latest = data.revisions.find((r) => r.is_latest);
   const fieldCls = "w-full h-9 px-3 rounded-lg border border-gray-200 bg-white text-sm outline-none focus:border-primary focus:ring-2 focus:ring-primary/10 disabled:bg-gray-50 disabled:text-gray-600";
   const labelCls = "block text-xs font-semibold text-gray-500 mb-1";
+  // ตัวเลขหลักของใบ — ยอดรวม VAT / บาท/Wp ทั้งใบอยู่ท้ายตารางสรุป (ใต้ 18 หมวด) ต้องเลื่อนลงไปดู เลยยกมาไว้หัวกล่อง
+  const cap = calc.capacity_wp;
+  const perWpText = (n: number) => (cap > 0 ? perWp(n, cap).toFixed(2) : "—");
+  const kpis = [
+    { label: "ราคาขายก่อน VAT", value: formatTHB(calc.subtotal.sale, { decimals: 2 }) },
+    { label: `รวม VAT ${h.vat_pct}%`, value: formatTHB(calc.grand.sale, { decimals: 2 }) },
+    { label: "ขาย บาท/Wp", value: perWpText(calc.subtotal.sale) },
+    { label: "ต้นทุน บาท/Wp", value: perWpText(calc.subtotal.cost) },
+    { label: `กำไร (Margin ${Number(head.margin_pct) || 0}%)`, value: formatTHB(calc.subtotal.sale - calc.subtotal.cost, { decimals: 2 }) },
+  ];
 
   return (
-    <div className="pb-24">
-      <Header title={`${h.doc_no} · Rev ${h.revision}`} subtitle={head.project_name || "COMMERCIAL (B2B)"} backHref="/b2b/boq"
+    <div>
+      {/* หัวเรื่อง = ชื่อโครงการ (subtitle ของ Header เป็นตัวพิมพ์ใหญ่ทั้งหมด จะเปลี่ยนหน้าตาชื่อ) · เลขที่ไว้บรรทัดรอง */}
+      <Header title={head.project_name || "ใบ BOQ"} subtitle={`${h.doc_no} · Rev ${h.revision}`} backHref="/b2b/boq"
         rightContent={data.revisions.length > 1 ? (
           <Dropdown className="w-36" value={String(h.id)} onChange={(v) => { if (v && v !== String(h.id)) router.push(`/b2b/boq/${v}`); }}
             options={data.revisions.map((r) => ({ value: String(r.id), label: `Rev ${r.revision}${r.is_latest ? " (ล่าสุด)" : ""}` }))} />
@@ -238,8 +249,16 @@ export default function BoqEditorPage({ params }: { params: Promise<{ id: string
               <button type="button" onClick={() => changedKeys.forEach(refresh)} style={{ minHeight: 0 }}
                 className="rounded-full bg-amber-100 px-2.5 py-0.5 text-xs font-semibold text-amber-800 hover:bg-amber-200">ราคาใน Master เปลี่ยน {changedKeys.length} บรรทัด · ใช้ราคาใหม่ทั้งหมด</button>
             )}
-            <span className="ml-auto text-sm text-gray-600">ราคาขายก่อน VAT <span className="font-bold text-gray-900 tabular-nums">{formatTHB(calc.subtotal.sale, { decimals: 2 })}</span></span>
           </div>
+          {/* gap-px บนพื้นเทา = เส้นคั่นช่อง · มือถือ 2 คอลัมน์ ช่องแรก (ยอดหลัก) เต็มแถว */}
+          <dl className="grid grid-cols-2 md:grid-cols-5 gap-px bg-gray-100 border-b border-gray-200">
+            {kpis.map((k, i) => (
+              <div key={k.label} className={`bg-white px-4 py-2.5 ${i === 0 ? "max-md:col-span-2" : ""}`}>
+                <dt className="text-xs text-gray-500">{k.label}</dt>
+                <dd className="text-base font-bold text-gray-900">{k.value}</dd>
+              </div>
+            ))}
+          </dl>
           <BoqSummary categories={categories} calc={calc} addonIds={addonIds} addonModes={head.addon_modes} readOnly={readOnly} vatPct={h.vat_pct}
             onMode={(cid, mode) => setH({ addon_modes: { ...head.addon_modes, [cid]: mode } })}
             onJump={(cid) => document.getElementById(`cat-${cid}`)?.scrollIntoView({ behavior: "smooth", block: "start" })} />
@@ -266,23 +285,27 @@ export default function BoqEditorPage({ params }: { params: Promise<{ id: string
         )}
       </div>
 
-      {/* แถบท้าย — บันทึก / ออก Revision */}
-      <div className="fixed bottom-0 inset-x-0 md:left-56 z-40 border-t border-gray-200 bg-white/95 backdrop-blur px-3 md:px-6 py-3">
+      {/* แถบท้าย — บันทึก / ออก Revision · sticky แบบหน้าวัสดุ (fixed + md:left-56 เยื้องตอนย่อเมนู และมือถือโดนแถบล่าง z-50 ทับ)
+          bottom-0 ทุกจอ — main มี pb-20 เผื่อแถบล่างมือถือไว้แล้ว และ sticky นับ padding นั้นด้วย (bottom-20 = ลอยเหนือแถบล่าง 80px) */}
+      <div className="sticky bottom-0 z-30 border-t border-gray-200 bg-white/95 backdrop-blur px-3 md:px-6 py-3">
         <div className="flex flex-wrap items-center gap-2 md:gap-3">
           <span className={`text-sm ${dirty ? "font-semibold text-amber-700" : "text-gray-500"}`}>
             {readOnly ? `Rev ${h.revision} · อ่านอย่างเดียว` : dirty ? "มีการแก้ไขที่ยังไม่บันทึก" : "บันทึกแล้ว"}
           </span>
           {error && <span className="text-sm text-red-600">{error}</span>}
           <div className="ml-auto flex items-center gap-2">
+            {/* มือถือใช้คำสั้น — ชื่อเต็มยาวเกินจอ ตัวหนังสือขึ้นบรรทัดใหม่ล้นปุ่ม */}
             <button type="button" onClick={() => void downloadExcel()} disabled={downloading}
-              className="h-9 rounded-lg border border-emerald-300 bg-emerald-50 px-4 text-sm font-semibold text-emerald-700 hover:bg-emerald-100 disabled:opacity-50">
-              {downloading ? "กำลังสร้างไฟล์…" : "ดาวน์โหลด Excel"}
+              className="h-9 whitespace-nowrap rounded-lg border border-emerald-300 bg-emerald-50 px-4 text-sm font-semibold text-emerald-700 hover:bg-emerald-100 disabled:opacity-50">
+              {downloading ? "กำลังสร้างไฟล์…" : <><span className="md:hidden">Excel</span><span className="max-md:hidden">ดาวน์โหลด Excel</span></>}
             </button>
             {!readOnly && (
               <>
-                <button type="button" onClick={() => void newRevision()} className="h-9 rounded-lg border border-gray-200 px-4 text-sm font-semibold text-gray-600 hover:bg-gray-50">ออก Revision ใหม่</button>
+                <button type="button" onClick={() => void newRevision()} className="h-9 whitespace-nowrap rounded-lg border border-gray-200 px-4 text-sm font-semibold text-gray-600 hover:bg-gray-50">
+                  <span className="max-md:hidden">ออก </span>Revision ใหม่
+                </button>
                 <button type="button" onClick={() => void save()} disabled={saving || !dirty}
-                  className="h-9 rounded-lg bg-primary px-5 text-sm font-semibold text-white hover:bg-primary-dark disabled:opacity-40">{saving ? "กำลังบันทึก…" : "บันทึก"}</button>
+                  className="h-9 whitespace-nowrap rounded-lg bg-primary px-5 text-sm font-semibold text-white hover:bg-primary-dark disabled:opacity-40">{saving ? "กำลังบันทึก…" : "บันทึก"}</button>
               </>
             )}
           </div>

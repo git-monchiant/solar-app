@@ -9,7 +9,12 @@ import type { B2bCategory } from "@/lib/b2b/materials";
 // ท้ายตาราง: ค่าวัสดุ + ค่าแรง + ส่วนเพิ่มเติมที่รวม = ยอดก่อน VAT เสมอ (ไฟล์เดิมขาดส่วนเสริม)
 
 const money = (n: number) => formatTHB(n, { decimals: 2 });
-const wp = (n: number, cap: number) => (cap > 0 ? perWp(n, cap).toFixed(2) : "—");
+// มีเงินแต่น้อยกว่าที่ 2 ตำแหน่งแสดงได้ → "<0.01" ไม่ใช่ "0.00" (ดูเหมือนไม่มีค่าใช้จ่าย)
+const wp = (n: number, cap: number) => {
+  if (cap <= 0) return "—";
+  const v = perWp(n, cap);
+  return v > 0 && v < 0.005 ? "<0.01" : v.toFixed(2);
+};
 
 export default function BoqSummary({ categories, calc, addonIds, addonModes, readOnly, vatPct, onMode, onJump }: {
   categories: B2bCategory[];
@@ -27,7 +32,7 @@ export default function BoqSummary({ categories, calc, addonIds, addonModes, rea
     const r = calc.categories[c.id];
     const empty = !r || r.lines === 0;
     return (
-      <tr key={c.id} className={`border-t border-gray-100 ${empty ? "text-gray-300" : "text-gray-800"}`}>
+      <tr key={c.id} className={`border-t border-gray-100 ${empty ? "text-gray-400" : "text-gray-800"}`}>
         <td className="px-3 py-1.5 w-10 text-right tabular-nums">{c.id}</td>
         <td className="px-3 py-1.5">
           <button type="button" onClick={() => onJump(c.id)} style={{ minHeight: 0 }} className={`text-left hover:underline ${empty ? "" : "text-gray-900"}`}>{c.name}</button>
@@ -43,8 +48,8 @@ export default function BoqSummary({ categories, calc, addonIds, addonModes, rea
         <td className="px-3 py-1.5 text-right tabular-nums">{empty ? "—" : wp(r.cost, cap)}</td>
         <td className="px-3 py-1.5 text-right tabular-nums">{empty ? "—" : money(r.cost)}</td>
         <td className="px-3 py-1.5 text-right tabular-nums">{empty ? "—" : wp(r.sale, cap)}</td>
-        <td className="px-3 py-1.5 text-right tabular-nums font-semibold">{empty ? "—" : money(r.sale)}</td>
-        <td className="px-3 py-1.5 text-right tabular-nums text-gray-500">{empty || (c.is_addon && addonModes[c.id] === "optional") ? "" : `${(r.share * 100).toFixed(2)}%`}</td>
+        {/* medium ไม่ใช่ semibold — ฟอนต์ไม่มี 600 จะกลายเป็นตัวหนา 700 (แบบหน้ารายการ BOQ) */}
+        <td className="px-3 py-1.5 text-right tabular-nums font-medium">{empty ? "—" : money(r.sale)}</td>
       </tr>
     );
   };
@@ -56,7 +61,6 @@ export default function BoqSummary({ categories, calc, addonIds, addonModes, rea
       <td className="px-3 py-2 text-right tabular-nums">{money(a.cost)}</td>
       <td className="px-3 py-2 text-right tabular-nums">{wp(a.sale, cap)}</td>
       <td className="px-3 py-2 text-right tabular-nums">{money(a.sale)}</td>
-      <td />
     </tr>
   );
   const std = categories.filter((c) => !c.is_addon);
@@ -73,13 +77,12 @@ export default function BoqSummary({ categories, calc, addonIds, addonModes, rea
             <th className={th}>ต้นทุน (บาท)</th>
             <th className={th}>ขาย บาท/Wp</th>
             <th className={th}>ราคาขาย (บาท)</th>
-            <th className={th}>%</th>
           </tr>
         </thead>
         <tbody>
           {std.map(row)}
           {addons.length > 0 && (
-            <tr className="border-t border-gray-200"><td /><td colSpan={6} className="px-3 py-2 text-xs font-bold text-amber-700">ส่วนเพิ่มเติมจากการเสนอราคาแบบมาตรฐาน (Optional Add-on Services)</td></tr>
+            <tr className="border-t border-gray-200"><td /><td colSpan={5} className="px-3 py-2 text-xs font-bold text-amber-700">ส่วนเพิ่มเติมจากการเสนอราคาแบบมาตรฐาน (Optional Add-on Services)</td></tr>
           )}
           {addons.map(row)}
           {total("ราคาค่าวัสดุอุปกรณ์", calc.material)}

@@ -1,16 +1,34 @@
 "use client";
 
+import { useState } from "react";
 import { formatNumber, formatTHB } from "@/lib/utils/formatters";
 import type { CalcResult } from "@/lib/b2b/boq-calc";
 import { formatPrice, priceSuffix, type B2bCategory } from "@/lib/b2b/materials";
 import type { BoqLine } from "@/lib/b2b/boq";
 
-// รายละเอียดหมวดหนึ่งของใบ BOQ — ตาราง "ลำดับ · รายการ · ยี่ห้อ · รุ่น · ปริมาณ · หน่วย · ต้นทุน · ราคาขาย · %" ตาม sheet EPCL - BOQS
+// รายละเอียดหมวดหนึ่งของใบ BOQ — ตาราง "ลำดับ · รายการ · ยี่ห้อ · รุ่น · ปริมาณ · หน่วย · ต้นทุน · ราคาขาย" ตาม sheet EPCL - BOQS (คอลัมน์ % มีเฉพาะใน Excel — ผู้ใช้ไม่เอาบนจอ 6 ต.ค. 69)
 // หมวด 1–18: บรรทัดมาจาก Master อย่างเดียว (แก้ได้แค่จำนวน) · หมวดเสริม 19–25: ใส่ราคาเองได้ (เคาะ 6 ต.ค. 69)
 
 const money = (n: number) => formatTHB(n, { decimals: 2 });
 const cell = "px-2 py-1.5";
 const input = "h-8 w-full rounded-md border border-gray-200 bg-white px-2 text-sm outline-none focus:border-primary focus:ring-2 focus:ring-primary/10 disabled:bg-transparent disabled:border-transparent";
+
+/** ช่องปริมาณ — เก็บข้อความที่พิมพ์ไว้เองระหว่างแก้ ไม่งั้นลบจนว่างแล้ว qty = 0 → React เติม "0" กลับทันที (ลบ 0 ไม่ออก / พิมพ์ต่อเป็น "05")
+ *  ว่างระหว่างพิมพ์ = คิดเป็น 0 · ออกจากช่องแล้วแสดงค่าจริง · คลิกเข้าช่อง = เลือกทั้งหมด พิมพ์ทับได้เลย */
+function QtyInput({ value, onChange }: { value: number; onChange: (n: number) => void }) {
+  const [draft, setDraft] = useState<string | null>(null);
+  return (
+    <input type="number" min={0} step="any" inputMode="decimal" className={`${input} text-right tabular-nums`}
+      value={draft ?? (Number.isFinite(value) ? String(value) : "")}
+      onFocus={(e) => e.target.select()}
+      onChange={(e) => {
+        setDraft(e.target.value);
+        const n = Number(e.target.value);
+        onChange(e.target.value === "" || !Number.isFinite(n) ? 0 : n);
+      }}
+      onBlur={() => setDraft(null)} />
+  );
+}
 
 export default function BoqCategorySection({ category, lines, calc, optional = false, readOnly, onChange, onRemove, onRefresh, onPick, onAddManual, onRemoveAddon }: {
   category: B2bCategory;
@@ -34,7 +52,7 @@ export default function BoqCategorySection({ category, lines, calc, optional = f
       <div className={`flex flex-wrap items-center gap-2 px-4 ${empty ? "py-2" : "py-3 border-b border-gray-200"}`}>
         <h3 className={`text-sm font-bold ${empty ? "text-gray-400" : "text-gray-900"}`}>{category.id}. {category.name}</h3>
         {category.is_addon && <span className="rounded-full bg-amber-50 px-2 py-0.5 text-xxs font-bold uppercase tracking-wide text-amber-700">ส่วนเพิ่มเติม{optional ? " · ทางเลือก (ไม่รวมในยอด)" : ""}</span>}
-        {!empty && <span className="text-xs text-gray-500 tabular-nums">ต้นทุน {money(sum.cost)} · ขาย <span className="font-semibold text-gray-800">{money(sum.sale)}</span></span>}
+        {!empty && <span className="text-xs text-gray-500 tabular-nums">ต้นทุน {money(sum.cost)} · ขาย <span className="font-medium text-gray-800">{money(sum.sale)}</span></span>}
         {!readOnly && (
           <div className="ml-auto flex items-center gap-2">
             <button type="button" onClick={onPick} style={{ minHeight: 0 }}
@@ -65,7 +83,6 @@ export default function BoqCategorySection({ category, lines, calc, optional = f
                 <th className={`${cell} w-[112px] text-right`}>ต้นทุนรวม</th>
                 <th className={`${cell} w-[100px] text-right`}>ขาย/หน่วย</th>
                 <th className={`${cell} w-[116px] text-right`}>ราคาขายรวม</th>
-                <th className={`${cell} w-[50px] text-right`}>%</th>
                 <th className={`${cell} w-[32px]`} />
               </tr>
             </thead>
@@ -111,8 +128,7 @@ export default function BoqCategorySection({ category, lines, calc, optional = f
                       ) : readOnly ? (
                         <span className="tabular-nums">{formatNumber(l.qty)}</span>
                       ) : (
-                        <input type="number" min={0} step="any" inputMode="decimal" className={`${input} text-right tabular-nums`}
-                          value={Number.isFinite(l.qty) ? l.qty : ""} onChange={(e) => onChange(l.key, { qty: e.target.value === "" ? 0 : Number(e.target.value) })} />
+                        <QtyInput value={l.qty} onChange={(qty) => onChange(l.key, { qty })} />
                       )}
                     </td>
                     <td className={cell}>
@@ -142,8 +158,7 @@ export default function BoqCategorySection({ category, lines, calc, optional = f
                     </td>
                     <td className={`${cell} text-right tabular-nums`}>{r ? money(r.cost) : "—"}</td>
                     <td className={`${cell} text-right tabular-nums text-gray-600`}>{r && l.unit_cost != null ? money(r.sale_unit) : "—"}</td>
-                    <td className={`${cell} text-right tabular-nums font-semibold`}>{r ? money(r.sale) : "—"}</td>
-                    <td className={`${cell} text-right tabular-nums text-xs text-gray-400`}>{r && !optional ? `${(r.share * 100).toFixed(2)}%` : ""}</td>
+                    <td className={`${cell} text-right tabular-nums font-medium`}>{r ? money(r.sale) : "—"}</td>
                     <td className={cell}>
                       {!readOnly && (
                         <button type="button" title="ลบบรรทัด" onClick={() => onRemove(l.key)} style={{ minHeight: 0 }}
