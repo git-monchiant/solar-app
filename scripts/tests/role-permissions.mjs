@@ -31,4 +31,16 @@ assert.deepEqual(parseActiveRolesHeader('["sales","sales"]'), ["sales"]);
 assert.deepEqual(parseActiveRolesHeader('["not-a-role"]'), []);
 assert.deepEqual(parseActiveRolesHeader("invalid"), []);
 
+// ★ role ทีม B2B (แผน 20261005-01) — ไม่สืบสิทธิ์ข้ามทีม และไม่ได้สิทธิ์ของ rooftop
+assert.equal(grantsRole("b2b", "b2b"), true);
+assert.equal(grantsRole("purchase", "purchase"), true);
+assert.equal(grantsRole("b2b", "purchase"), false);
+assert.equal(grantsRole("purchase", "b2b"), false);
+assert.equal(hasAnyGrantedRole(["b2b"], ["sales", "solar", "sales_sup", "solar_sup", "account"]), false);
+assert.equal(hasAnyGrantedRole(["purchase"], ["sales", "solar", "sales_sup", "solar_sup", "account"]), false);
+assert.equal(hasAnyGrantedRole(["sales_sup", "solar_sup"], ["b2b", "purchase"]), false);
+assert.deepEqual(parseActiveRolesHeader('["b2b","purchase"]'), ["b2b", "purchase"]);
+assert.deepEqual(resolveEffectiveRoles(["admin"], ["purchase"]), ["purchase"]);
+assert.deepEqual(resolveEffectiveRoles(["b2b"], ["purchase"]), []);
+
 console.log("role-permissions tests passed");

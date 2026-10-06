@@ -42,7 +42,8 @@ const D = {
 export type ModuleKey =
   | "seeker" | "sales" | "install" | "warranty" | "om"
   | "quotation"
-  | "account" | "package" | "om_package" | "dashboard" | "setup";
+  | "account" | "package" | "om_package" | "dashboard" | "setup"
+  | "boq";
 
 export type ModuleMenuItem = {
   label: string;
@@ -62,10 +63,12 @@ export type ModuleMenuItem = {
   children?: ModuleMenuItem[];
 };
 
-export type ModuleGroup = "operation" | "setup";
+export type ModuleGroup = "operation" | "b2b" | "setup";
 
 export const MODULE_GROUPS: { key: ModuleGroup; label: string }[] = [
   { key: "operation", label: "Operation" },
+  // งานโรงงาน/ไซต์ใหญ่ — ทีมแยกจาก rooftop · hub ซ่อนหัวข้อนี้เองเมื่อ role ไม่เห็นการ์ดในกลุ่ม
+  { key: "b2b", label: "Commercial (B2B)" },
   { key: "setup", label: "Setup" },
 ];
 
@@ -313,6 +316,20 @@ export const MODULES: AppModule[] = [
       { label: "Dashboard II", href: "/dashboard-dev", icon: <I d={D.chart} /> },
       { label: "Customer", href: "/dashboard-customer", icon: <I d={D.clipboard} /> },
       { label: "Lead Tracking", href: "/lifecycle", icon: <I d={D.checkCircle} /> },
+    ],
+  },
+  {
+    // ★ งาน BOQ โรงงาน/ไซต์ใหญ่ (B2B) — แผน docs/plan/20261005-01-b2b-boq-module.md
+    //   Solar B2B ทำ BOQ + กรอก Master Data · Purchase ใส่ราคาใน Master Data อย่างเดียว (ไม่เห็นหน้า BOQ)
+    //   🏭 = emoji Unicode 6 ฟอนต์ Windows มีแน่ (เหตุผลเดียวกับ 📋 ของ Package O&M)
+    key: "boq", label: "BOQ", emoji: "🏭", tint: "bg-teal-50",
+    group: "b2b",
+    desc: "ทำ BOQ · Master Data วัสดุ · ราคา",
+    roles: ["b2b", "purchase", "admin"],
+    menu: [
+      { label: "รายการ BOQ", href: "/b2b/boq", icon: <I d={D.lines} />, roles: ["b2b", "admin"] },
+      // Purchase กดการ์ดแล้วลงหน้านี้ — hub เลือกเมนูแรกที่ role เห็น
+      { label: "Master Data วัสดุ", href: "/b2b/materials", icon: <I d={D.archive} />, roles: ["b2b", "purchase", "admin"] },
     ],
   },
   {

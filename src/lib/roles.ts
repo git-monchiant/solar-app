@@ -5,7 +5,7 @@ import { apiFetch } from "./api";
 import { hasAnyGrantedRole, type AppRole } from "./role-permissions";
 
 export type Role = AppRole;
-export const ALL_ROLES: Role[] = ["admin", "sales", "solar_sup", "sales_sup", "solar", "leadsseeker", "account"];
+export const ALL_ROLES: Role[] = ["admin", "sales", "solar_sup", "sales_sup", "solar", "leadsseeker", "account", "b2b", "purchase"];
 
 // solar_sup / sales_sup แสดงเป็น "Manager" ทั้งคู่ — key ใต้ฝากยังแยกอยู่เพราะ
 // สายอนุมัติใบเสนอ (Sale → Solar Sup → Sale Sup) ต้องรู้ว่าใครเป็นใคร
@@ -17,6 +17,8 @@ export const ROLE_LABEL: Record<Role, string> = {
   solar: "Solar",
   leadsseeker: "Leads Seeker",
   account: "Account",
+  b2b: "Solar B2B",
+  purchase: "Purchase",
 };
 
 const STORAGE_KEY = "activeRoles";

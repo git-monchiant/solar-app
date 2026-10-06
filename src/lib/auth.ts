@@ -103,4 +103,6 @@ const ALL_ASSIGNABLE_ROLES = [
   "solar",
   "leadsseeker",
   "account",
+  "b2b",
+  "purchase",
 ] as const;

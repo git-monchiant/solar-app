@@ -1,4 +1,5 @@
-export type AppRole = "admin" | "sales" | "solar_sup" | "sales_sup" | "solar" | "leadsseeker" | "account";
+// b2b = Solar B2B · purchase = ฝ่ายจัดซื้อ (ใส่ราคา Master Data ของ BOQ) — แผน docs/plan/20261005-01-b2b-boq-module.md
+export type AppRole = "admin" | "sales" | "solar_sup" | "sales_sup" | "solar" | "leadsseeker" | "account" | "b2b" | "purchase";
 
 export const ACTIVE_ROLES_HEADER = "x-active-roles";
 
@@ -10,6 +11,8 @@ const APP_ROLES = new Set<AppRole>([
   "solar",
   "leadsseeker",
   "account",
+  "b2b",
+  "purchase",
 ]);
 
 export function normalizeAppRoles(roles: readonly string[] | undefined | null): AppRole[] {
