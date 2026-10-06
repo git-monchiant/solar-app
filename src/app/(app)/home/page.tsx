@@ -5,10 +5,10 @@ import { useRouter } from "next/navigation";
 import Header from "@/components/layout/Header";
 import UserMenu from "@/components/layout/UserMenu";
 import { apiFetch } from "@/lib/api";
-import { useActiveRoles } from "@/lib/roles";
+import { hasRole, useActiveRoles } from "@/lib/roles";
 import {
   modulesForRoles, setActiveModule, countForModule, MODULE_GROUPS,
-  type AppModule, type JourneySummaryRow,
+  type AppModule, type JourneySummaryRow, type ModuleMenuItem,
 } from "@/lib/modules";
 
 // Hub — จุดเข้าโมดูล (design: docs/plan/20260813-02-module-base-navigation.md)
@@ -26,7 +26,11 @@ export default function HomePage() {
 
   const enter = (mod: AppModule) => {
     if (mod.soon || mod.menu.length === 0) return;
-    const target = mod.defaultHref ?? mod.menu[0].href ?? mod.menu[0].children?.[0]?.href;
+    // ★ 6 ต.ค. 69: เมนูแรกที่ role นี้เห็น (กติกาเดียวกับ left menu ใน BottomNav) — เดิมพาไป menu[0] ตรงๆ
+    //   การ์ดที่เมนูแรกจำกัดสิทธิ์ (BOQ: Purchase ไม่เห็น "รายการ BOQ") จึงตกหน้าที่ไม่มีสิทธิ์
+    const visible = (mi: ModuleMenuItem) => !mi.roles || hasRole(activeRoles, ...mi.roles);
+    const first = mod.menu.find(visible);
+    const target = mod.defaultHref ?? first?.href ?? first?.children?.find(visible)?.href;
     if (!target) return;
     setActiveModule(mod.key);
     router.push(target);
