@@ -182,7 +182,7 @@ B2B (v3/b2b)                        ●──●──M──●──M──●
    | ส่วน | ที่อยู่ |
    |---|---|
    | หน้าเว็บ | `src/app/(app)/b2b/...` |
-   | API | `src/app/api/(b2b)/...` |
+   | API | `src/app/api/b2b/...` (แบบเดียวกับ `api/om`) |
    | logic / component | `src/lib/b2b/...` · `src/components/b2b/...` |
    | ตาราง | ขึ้นต้น `b2b_*` สร้างใหม่เท่านั้น ไม่แก้ตารางเดิม |
    | migration | `scripts/migrations-v3/<timestamp>_b2b_xxx.sql` |
@@ -191,6 +191,7 @@ B2B (v3/b2b)                        ●──●──M──●──M──●
    `src/lib/om/*`) import ไปใช้ได้ แต่ **ไม่แก้ใน `v3/b2b`** — ถ้าต้องแก้ ให้แก้ฝั่ง
    Sales/O&M (หรือ PR เล็กเข้า `v3`) แล้วรอไหลลงมา
    ไฟล์กลางที่แตะได้คือ `src/lib/modules.tsx` (กลุ่ม + การ์ด) และไฟล์ role/สิทธิ์ — เพิ่มบรรทัดอย่างเดียว
+   (+ `api/(lead)/journey-summary` บล็อกนับ badge ของ B2B เอง แบบเดียวกับบล็อก O&M)
 2. **merge ทางเดียว Sales/O&M → `v3/b2b`** ห้าม `v3/b2b` → Sales/O&M
    merge เอามาทั้ง branch เลือกบางส่วนไม่ได้ — ถ้าย้อนทาง BOQ ที่ยังไม่เสร็จ + migration `b2b_*`
    จะติดไปกับ PR ของ O&M และ revert merge ทีหลังทำให้วันที่เอา BOQ เข้าจริง git ข้ามให้เงียบๆ
