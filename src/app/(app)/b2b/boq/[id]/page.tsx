@@ -6,7 +6,7 @@ import Header from "@/components/layout/Header";
 import Loading from "@/components/ui/Loading";
 import Dropdown from "@/components/ui/Dropdown";
 import { useDialog } from "@/components/ui/Dialog";
-import { apiFetch } from "@/lib/api";
+import { apiFetch, getUserContextHeaders } from "@/lib/api";
 import { hasRole, useActiveRoles } from "@/lib/roles";
 import { formatNumber, formatThaiDate, formatTHB } from "@/lib/utils/formatters";
 import { calcBoq, type AddonMode } from "@/lib/b2b/boq-calc";
@@ -52,6 +52,7 @@ export default function BoqEditorPage({ params }: { params: Promise<{ id: string
   const [materials, setMaterials] = useState<B2bMaterial[] | null>(null);
   const [picker, setPicker] = useState<B2bCategory | null>(null);
   const [addingMaster, setAddingMaster] = useState<B2bCategory | null>(null);
+  const [downloading, setDownloading] = useState(false);
 
   const apply = useCallback((r: Loaded) => {
     setData(r); setHead(toDraft(r.header)); setLines(r.lines); setDirty(false); setError("");
@@ -163,6 +164,27 @@ export default function BoqEditorPage({ params }: { params: Promise<{ id: string
     }
   };
 
+  // ไฟล์ Excel สร้างจากข้อมูลที่บันทึกแล้ว — มีแก้ค้างให้บันทึกก่อน (ยกวิธีดาวน์โหลดจากหน้า Export)
+  const downloadExcel = async () => {
+    if (dirty) { setError("บันทึกการแก้ไขก่อน — ไฟล์ Excel สร้างจากข้อมูลที่บันทึกแล้ว"); return; }
+    setError(""); setDownloading(true);
+    try {
+      const res = await fetch(`/api/b2b/boqs/${h.id}/excel`, { headers: { ...getUserContextHeaders() } });
+      if (!res.ok) throw new Error((await res.json().catch(() => null))?.error || `HTTP ${res.status}`);
+      const cd = res.headers.get("Content-Disposition") ?? "";
+      const name = decodeURIComponent(/filename\*=UTF-8''([^;]+)/.exec(cd)?.[1] ?? `${h.doc_no}_Rev${h.revision}.xlsx`);
+      const url = URL.createObjectURL(await res.blob());
+      const a = document.createElement("a");
+      a.href = url; a.download = name;
+      document.body.appendChild(a); a.click(); a.remove();
+      URL.revokeObjectURL(url);
+    } catch (e) {
+      setError(e instanceof Error && e.message ? e.message : "ดาวน์โหลดไม่สำเร็จ");
+    } finally {
+      setDownloading(false);
+    }
+  };
+
   const latest = data.revisions.find((r) => r.is_latest);
   const fieldCls = "w-full h-9 px-3 rounded-lg border border-gray-200 bg-white text-sm outline-none focus:border-primary focus:ring-2 focus:ring-primary/10 disabled:bg-gray-50 disabled:text-gray-600";
   const labelCls = "block text-xs font-semibold text-gray-500 mb-1";
@@ -252,6 +274,10 @@ export default function BoqEditorPage({ params }: { params: Promise<{ id: string
           </span>
           {error && <span className="text-sm text-red-600">{error}</span>}
           <div className="ml-auto flex items-center gap-2">
+            <button type="button" onClick={() => void downloadExcel()} disabled={downloading}
+              className="h-9 rounded-lg border border-emerald-300 bg-emerald-50 px-4 text-sm font-semibold text-emerald-700 hover:bg-emerald-100 disabled:opacity-50">
+              {downloading ? "กำลังสร้างไฟล์…" : "ดาวน์โหลด Excel"}
+            </button>
             {!readOnly && (
               <>
                 <button type="button" onClick={() => void newRevision()} className="h-9 rounded-lg border border-gray-200 px-4 text-sm font-semibold text-gray-600 hover:bg-gray-50">ออก Revision ใหม่</button>
