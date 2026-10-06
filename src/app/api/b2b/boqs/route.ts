@@ -5,6 +5,7 @@ import { B2B_BOQ_ROLES, readBoqHeader } from "@/lib/b2b/boq";
 import { nextDocNo } from "@/lib/b2b/boq-server";
 
 // รายการใบ BOQ — ค่าเริ่มต้นแสดง Rev ล่าสุดของแต่ละเลขที่ · ?all=1 = ทุก revision
+// ?all=1 จัดกลุ่มตามเลขที่ (Rev ใหม่ → เก่า) · ลำดับใบยังตามเวลาบันทึกล่าสุดของใบนั้นเหมือนโหมดปกติ
 export async function GET(req: NextRequest) {
   const gate = await requireAnyActiveRole(req, B2B_BOQ_ROLES);
   if (gate.error) return gate.error;
@@ -12,16 +13,18 @@ export async function GET(req: NextRequest) {
   const db = await getB2bDb();
   const r = await db.request().query(`
     SELECT b.id, b.doc_no, b.revision, b.is_latest, b.project_name, b.customer_name, b.location,
-           b.capacity_wp, b.total_cost, b.total_sale, b.pending_lines, b.created_at, b.updated_at,
+           b.capacity_wp, b.total_cost, b.total_sale, b.vat_pct, b.pending_lines, b.created_at, b.updated_at,
            cu.full_name AS created_by_name, uu.full_name AS updated_by_name
     FROM b2b_boqs b
     LEFT JOIN users cu ON cu.id = b.created_by
     LEFT JOIN users uu ON uu.id = b.updated_by
-    ${all ? "" : "WHERE b.is_latest = 1"}
-    ORDER BY b.updated_at DESC, b.id DESC`);
+    ${all
+      ? "ORDER BY MAX(b.updated_at) OVER (PARTITION BY b.doc_no) DESC, b.doc_no DESC, b.revision DESC"
+      : "WHERE b.is_latest = 1 ORDER BY b.updated_at DESC, b.id DESC"}`);
   const num = (v: unknown) => (v == null ? null : Number(v));
   return NextResponse.json(r.recordset.map((b) => ({
     ...b, is_latest: !!b.is_latest, capacity_wp: num(b.capacity_wp), total_cost: num(b.total_cost), total_sale: num(b.total_sale),
+    vat_pct: num(b.vat_pct),
   })));
 }
 
