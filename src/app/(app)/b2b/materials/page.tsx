@@ -21,7 +21,10 @@ import {
 // Solar B2B: เพิ่ม/แก้ข้อมูลรายการ (ราคาอ่านอย่างเดียว) · Purchase: ใส่ราคาในตารางต่อเนื่องหลายแถวแล้วบันทึกทีเดียว
 // ตาราง (ไม่ใช่การ์ดแบบหน้า Package) เพราะรายการมีหลายร้อยแถว — จัดกลุ่ม หมวด → หัวข้อย่อย ตามไฟล์ Excel ต้นฉบับ
 
-type StatusFilter = "all" | "pending" | "inactive";
+type StatusFilter = "all" | "pending" | "review" | "inactive";
+
+// รายการที่สคริปต์นำเข้าจาก Excel ติดธง "⚠ ตรวจ: …" ไว้ (ระบบตัดสินใจแทนทีม) — ลบ ⚠ ออกจากหมายเหตุเมื่อตรวจแล้ว
+const needsReview = (m: B2bMaterial) => m.is_active && (m.note ?? "").includes("⚠");
 
 export default function B2bMaterialsPage() {
   const { item } = useActiveMenuItem();   // หัวเรื่อง = ชื่อเมนู (กติกา ui-rules)
@@ -62,6 +65,7 @@ export default function B2bMaterialsPage() {
 
   const pendingCount = materials.filter((m) => m.is_active && m.unit_price == null).length;
   const inactiveCount = materials.filter((m) => !m.is_active).length;
+  const reviewCount = materials.filter(needsReview).length;
   const activeCount = materials.length - inactiveCount;
 
   // ค่าเริ่มต้น: Purchase ที่มีงานค้าง เปิดมาเจอ "รอราคา" ก่อน · คนอื่นเห็นทั้งหมด
@@ -72,8 +76,9 @@ export default function B2bMaterialsPage() {
     return materials.filter((m) => {
       if (effectiveStatus === "pending" && !(m.is_active && m.unit_price == null)) return false;
       if (effectiveStatus === "inactive" && m.is_active) return false;
+      if (effectiveStatus === "review" && !needsReview(m)) return false;
       if (catFilter !== "all" && String(m.category_id) !== catFilter) return false;
-      if (q && ![m.code, m.name, m.brand, m.model, m.subgroup].some((x) => (x ?? "").toLowerCase().includes(q))) return false;
+      if (q && ![m.code, m.name, m.brand, m.model, m.subgroup, m.note].some((x) => (x ?? "").toLowerCase().includes(q))) return false;
       return true;
     });
   }, [materials, effectiveStatus, catFilter, search]);
@@ -153,6 +158,7 @@ export default function B2bMaterialsPage() {
           <div className="flex items-center gap-1.5">
             {chip("all", "ทั้งหมด", materials.length)}
             {chip("pending", "รอราคา", pendingCount, pendingCount > 0 ? "text-red-600" : "")}
+            {reviewCount > 0 && chip("review", "ต้องตรวจ", reviewCount, "text-amber-700")}
             {chip("inactive", "ปิดใช้งาน", inactiveCount)}
           </div>
           {canEditItem && (
@@ -202,7 +208,12 @@ export default function B2bMaterialsPage() {
                       ) : null,
                       <tr key={m.id} className={`border-t border-gray-100 align-middle ${!m.is_active ? "opacity-50" : ""} ${dirty ? "bg-amber-50" : ""}`}>
                         <td className="px-3 py-2 font-mono text-xs text-gray-500">{m.code}</td>
-                        <td className="px-3 py-2 text-gray-900 break-words">{m.name}</td>
+                        <td className="px-3 py-2 text-gray-900 break-words">
+                          {m.name}
+                          {m.note && (
+                            <div title={m.note} className={`mt-0.5 text-xxs leading-snug line-clamp-2 ${m.note.includes("⚠") ? "text-amber-700" : "text-gray-400"}`}>{m.note}</div>
+                          )}
+                        </td>
                         <td className="px-3 py-2 text-gray-600">{m.brand ?? ""}</td>
                         <td className="px-3 py-2 text-gray-600 break-words">{m.model ?? ""}{m.spec_watt ? <span className="text-gray-400"> · {m.spec_watt} W</span> : null}</td>
                         <td className="px-3 py-2 text-gray-600">{m.unit}</td>
