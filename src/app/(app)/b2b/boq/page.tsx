@@ -1,20 +1,154 @@
 "use client";
 
-import B2bPagePlaceholder from "@/components/b2b/B2bPagePlaceholder";
+import { useEffect, useMemo, useState } from "react";
+import { useRouter } from "next/navigation";
+import Header from "@/components/layout/Header";
+import Loading from "@/components/ui/Loading";
+import { XIcon } from "@/components/ui/icons";
+import { apiFetch } from "@/lib/api";
+import { useActiveMenuItem } from "@/lib/hooks/useActiveModule";
+import { hasRole, useActiveRoles } from "@/lib/roles";
+import { formatThaiDate, formatTHB } from "@/lib/utils/formatters";
+import { B2B_BOQ_ROLES } from "@/lib/b2b/boq";
 
-// รายการ BOQ — Solar B2B + admin (Purchase ไม่เห็นหน้านี้ · เคาะ 6 ต.ค. 69)
+// รายการใบ BOQ (โมดูล Commercial B2B) — แผน docs/plan/20261005-01-b2b-boq-module.md เฟส 3
+// ค่าเริ่มต้นแสดง Rev ล่าสุดของแต่ละเลขที่ · ยอดในตาราง = ค่าที่ server คำนวณเก็บไว้ตอนบันทึก (ก่อน VAT)
+
+type Row = {
+  id: number; doc_no: string; revision: number; is_latest: boolean; project_name: string; customer_name: string | null;
+  location: string | null; capacity_wp: number | null; total_sale: number | null; pending_lines: number;
+  updated_at: string; updated_by_name: string | null;
+};
+
 export default function B2bBoqListPage() {
+  const router = useRouter();
+  const { item } = useActiveMenuItem();   // หัวเรื่อง = ชื่อเมนู (กติกา ui-rules)
+  const { activeRoles } = useActiveRoles();
+  const canUse = hasRole(activeRoles, ...B2B_BOQ_ROLES);
+  const [rows, setRows] = useState<Row[] | null>(null);
+  const [all, setAll] = useState(false);
+  const [search, setSearch] = useState("");
+  const [creating, setCreating] = useState(false);
+  const [form, setForm] = useState({ project_name: "", customer_name: "", location: "" });
+  const [error, setError] = useState("");
+  const [saving, setSaving] = useState(false);
+
+  useEffect(() => {
+    if (!canUse) return;
+    apiFetch(`/api/b2b/boqs${all ? "?all=1" : ""}`).then((r: Row[]) => setRows(r)).catch(() => setRows([]));
+  }, [canUse, all]);
+
+  const shown = useMemo(() => {
+    const q = search.trim().toLowerCase();
+    return (rows ?? []).filter((r) => !q || [r.doc_no, r.project_name, r.customer_name, r.location].some((x) => (x ?? "").toLowerCase().includes(q)));
+  }, [rows, search]);
+
+  const title = item?.label ?? "รายการ BOQ";
+  if (activeRoles.length > 0 && !canUse) {
+    return (
+      <div>
+        <Header title={title} subtitle="COMMERCIAL (B2B)" />
+        <main className="p-3 md:p-6"><div className="rounded-lg bg-red-50 border border-red-200 px-4 py-3 text-sm text-red-700">role ที่กำลังใช้งานไม่มีสิทธิ์เปิดหน้านี้</div></main>
+      </div>
+    );
+  }
+  if (!rows) return <Loading />;
+
+  const create = async () => {
+    setError(""); setSaving(true);
+    try {
+      const r = await apiFetch("/api/b2b/boqs", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(form) }) as { id: number };
+      router.push(`/b2b/boq/${r.id}`);
+    } catch (e) {
+      setError(e instanceof Error && e.message ? e.message : "สร้างใบ BOQ ไม่สำเร็จ");
+      setSaving(false);
+    }
+  };
+  const fieldCls = "w-full h-9 px-3 rounded-lg border border-gray-200 bg-white text-sm outline-none focus:border-primary focus:ring-2 focus:ring-primary/10";
+
   return (
-    <B2bPagePlaceholder
-      fallbackTitle="รายการ BOQ"
-      roles={["b2b", "admin"]}
-      phase="เฟส 3"
-      points={[
-        "รายการ BOQ ทุกโครงการ · สร้าง BOQ ใหม่ · ออก Revision",
-        "หน้าทำ BOQ ตาม sheet EPCL - BOQS: หัวใบ · สรุป 25 หมวด · รายละเอียดทีละหมวด",
-        "หมวด 1–18 เลือกรายการจาก Master Data ราคาขึ้นอัตโนมัติ · หมวดเสริม 19–25 ใส่ราคาเองได้",
-        "ดาวน์โหลดเป็นไฟล์ Excel (เฟส 4)",
-      ]}
-    />
+    <div>
+      <Header title={title} subtitle={`COMMERCIAL (B2B) · ${shown.length} ใบ`} />
+      <div className="p-3 md:p-6 space-y-4">
+        <div className="flex flex-wrap items-center gap-2 md:gap-3">
+          <input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="ค้นหา เลขที่ / โครงการ / ลูกค้า / ที่ตั้ง…"
+            className="h-8 px-4 rounded-lg border border-gray-200 text-sm flex-1 min-w-[200px] focus:outline-none focus:border-primary" />
+          <label className="inline-flex items-center gap-1.5 text-sm text-gray-600">
+            <input type="checkbox" checked={all} onChange={(e) => setAll(e.target.checked)} /> แสดงทุก Revision
+          </label>
+          <button type="button" onClick={() => { setError(""); setCreating(true); }}
+            className="h-8 px-5 rounded-lg bg-primary text-white text-sm font-semibold hover:bg-primary-dark transition-colors">+ สร้าง BOQ</button>
+        </div>
+
+        {shown.length === 0 ? (
+          <div className="rounded-xl bg-white border border-gray-300 px-5 py-10 text-center text-sm text-gray-400">
+            {rows.length === 0 ? "ยังไม่มีใบ BOQ — กด \"+ สร้าง BOQ\" เพื่อเริ่ม" : "ไม่พบใบ BOQ ตามคำค้น"}
+          </div>
+        ) : (
+          <div className="rounded-xl bg-white border border-gray-300 overflow-x-auto">
+            <table className="w-full min-w-[900px] text-sm">
+              <thead>
+                <tr className="bg-gray-50 text-left text-xs text-gray-500">
+                  <th className="px-3 py-2 font-semibold">เลขที่</th>
+                  <th className="px-3 py-2 font-semibold">Rev</th>
+                  <th className="px-3 py-2 font-semibold">โครงการ</th>
+                  <th className="px-3 py-2 font-semibold">ลูกค้า</th>
+                  <th className="px-3 py-2 font-semibold text-right">kWp</th>
+                  <th className="px-3 py-2 font-semibold text-right">ราคาขาย (ก่อน VAT)</th>
+                  <th className="px-3 py-2 font-semibold">บันทึกล่าสุด</th>
+                </tr>
+              </thead>
+              <tbody>
+                {shown.map((r) => (
+                  <tr key={r.id} onClick={() => router.push(`/b2b/boq/${r.id}`)} className={`cursor-pointer border-t border-gray-100 hover:bg-primary/5 ${r.is_latest ? "" : "text-gray-400"}`}>
+                    <td className="px-3 py-2 font-mono text-xs">{r.doc_no}</td>
+                    <td className="px-3 py-2">Rev {r.revision}{!r.is_latest && <span className="ml-1 text-xxs">(เก่า)</span>}</td>
+                    <td className="px-3 py-2 font-semibold text-gray-900">
+                      {r.project_name}
+                      {r.pending_lines > 0 && <span className="ml-2 rounded-full bg-red-50 px-2 py-0.5 text-xxs font-semibold text-red-600">รอราคา {r.pending_lines}</span>}
+                      {r.location && <div className="text-xs font-normal text-gray-400">{r.location}</div>}
+                    </td>
+                    <td className="px-3 py-2 text-gray-600">{r.customer_name ?? ""}</td>
+                    <td className="px-3 py-2 text-right tabular-nums">{r.capacity_wp ? (r.capacity_wp / 1000).toFixed(2) : "—"}</td>
+                    <td className="px-3 py-2 text-right tabular-nums font-semibold">{formatTHB(r.total_sale, { decimals: 2 })}</td>
+                    <td className="px-3 py-2 text-xs text-gray-500">{formatThaiDate(r.updated_at, { time: true })}{r.updated_by_name ? <div className="text-gray-400">{r.updated_by_name}</div> : null}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </div>
+
+      {creating && (
+        <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-[1px] z-50 flex items-start justify-center p-3 md:p-6 overflow-y-auto">
+          <div className="bg-white rounded-2xl shadow-2xl shadow-slate-900/20 w-full max-w-lg my-8">
+            <div className="px-6 py-4 border-b border-gray-100 flex items-center justify-between">
+              <div>
+                <h2 className="text-lg font-bold text-gray-900">สร้าง BOQ ใหม่</h2>
+                <p className="text-xs text-gray-400 mt-0.5">ได้เลขที่อัตโนมัติ (Rev 0) แล้วไปเติมรายการต่อในหน้าทำ BOQ</p>
+              </div>
+              <button type="button" onClick={() => setCreating(false)} className="w-9 h-9 rounded-full hover:bg-gray-100 flex items-center justify-center">
+                <XIcon className="w-5 h-5 text-gray-500" strokeWidth={2} />
+              </button>
+            </div>
+            <div className="p-6 space-y-3">
+              <div><label className="block text-xs font-semibold text-gray-500 mb-1">Project <span className="text-red-500">*</span></label>
+                <input autoFocus className={fieldCls} value={form.project_name} onChange={(e) => setForm({ ...form, project_name: e.target.value })} placeholder="ชื่อโครงการ" /></div>
+              <div><label className="block text-xs font-semibold text-gray-500 mb-1">Customer</label>
+                <input className={fieldCls} value={form.customer_name} onChange={(e) => setForm({ ...form, customer_name: e.target.value })} placeholder="บริษัทลูกค้า" /></div>
+              <div><label className="block text-xs font-semibold text-gray-500 mb-1">Location</label>
+                <input className={fieldCls} value={form.location} onChange={(e) => setForm({ ...form, location: e.target.value })} placeholder="ที่ตั้งโครงการ" /></div>
+              {error && <div className="text-sm text-red-600">{error}</div>}
+            </div>
+            <div className="px-6 py-4 border-t border-gray-100 flex justify-end gap-3">
+              <button type="button" onClick={() => setCreating(false)} className="h-9 px-4 rounded-lg border border-gray-200 text-sm font-semibold text-gray-600 hover:bg-gray-50">ยกเลิก</button>
+              <button type="button" onClick={() => void create()} disabled={saving}
+                className="h-9 px-5 rounded-lg bg-primary text-white text-sm font-semibold hover:bg-primary-dark disabled:opacity-50">{saving ? "กำลังสร้าง…" : "สร้าง"}</button>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
   );
 }
