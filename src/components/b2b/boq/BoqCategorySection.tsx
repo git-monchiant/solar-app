@@ -4,7 +4,7 @@ import { useState } from "react";
 import { formatNumber, formatTHB } from "@/lib/utils/formatters";
 import type { CalcResult } from "@/lib/b2b/boq-calc";
 import { formatPrice, priceSuffix, type B2bCategory } from "@/lib/b2b/materials";
-import type { BoqLine } from "@/lib/b2b/boq";
+import { wattInModel, type BoqLine } from "@/lib/b2b/boq";
 
 // รายละเอียดหมวดหนึ่งของใบ BOQ — ตาราง "ลำดับ · รายการ · ยี่ห้อ · รุ่น · ปริมาณ · หน่วย · ต้นทุน · ราคาขาย" ตาม sheet EPCL - BOQS (คอลัมน์ % มีเฉพาะใน Excel — ผู้ใช้ไม่เอาบนจอ 6 ต.ค. 69)
 // หมวด 1–18: บรรทัดมาจาก Master อย่างเดียว (แก้ได้แค่จำนวน) · หมวดเสริม 19–25: ใส่ราคาเองได้ (เคาะ 6 ต.ค. 69)
@@ -120,7 +120,7 @@ export default function BoqCategorySection({ category, lines, calc, optional = f
                     </td>
                     <td className={cell}>
                       {manual && !readOnly ? <input className={input} value={l.model ?? ""} onChange={(e) => onChange(l.key, { model: e.target.value || null })} />
-                        : <span className="text-gray-600 break-words">{l.model ?? ""}{l.spec_watt ? <span className="text-gray-400"> · {l.spec_watt} W</span> : null}</span>}
+                        : <span className="text-gray-600 break-words">{l.model ?? ""}{l.spec_watt && !wattInModel(l.model, l.spec_watt) ? <span className="text-gray-400"> · {l.spec_watt} W</span> : null}</span>}
                     </td>
                     <td className={`${cell} text-right`}>
                       {l.price_basis === "system_wp" ? (

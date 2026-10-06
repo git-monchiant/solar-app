@@ -13,6 +13,10 @@ export const ADDON_MIN_CATEGORY = 19;
 /** ใส่ราคาเองได้ 2 แบบ: ต่อหน่วย / ต่อ Wp ของระบบ (เช่น ค่าแรงรื้อถอนระบบเดิม บาท/Wp) */
 export const MANUAL_PRICE_BASIS: PriceBasis[] = ["unit", "system_wp"];
 
+/** รุ่นแผงส่วนใหญ่มีวัตต์ในชื่ออยู่แล้ว ("Jinko Solar 720W") — ต่อท้าย "· 720 W" เฉพาะรุ่นที่ไม่มี (แบบหน้าวัสดุและราคา) */
+export const wattInModel = (model: string | null, watt: number | null) =>
+  watt != null && (model ?? "").replace(/\s/g, "").toLowerCase().includes(`${watt}w`);
+
 export type BoqHeader = {
   id: number;
   doc_no: string;

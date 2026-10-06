@@ -5,8 +5,17 @@ import type { PriceBasis } from "./materials";
 //   · ราคาขาย = ต้นทุน ÷ (1 − margin) สูตรเดียวทุกบรรทัด (ไฟล์ปน × (1 + margin) 76 แถว)
 //   · ขนาดระบบ = Σ จำนวนแผง × วัตต์ ทุกบรรทัดแบบ "ต่อวัตต์" (ไฟล์ฝัง 730 และนับแค่แถวแรก)
 //   · ยอดสรุปคิดจากบรรทัดจริงทุกหมวด — หมวดเสริมเข้ายอดครบ และ ค่าวัสดุ + ค่าแรง + ส่วนเสริม = ยอดรวมเสมอ
+//   · ปัดเป็นสตางค์ที่บรรทัด (ต้นทุนรวม · ราคาขายรวม) และ VAT แล้วค่อยรวม → ยอดทุกระดับบวกกันลงตัวกับที่แสดง
+//     (เดิมรวมเลขไม่ปัดแล้วปัดตอนแสดง ยอดรวมคลาดจากผลบวกรายหมวด 1 สตางค์ · 6 ต.ค. 69) — Excel ใช้ ROUND ตำแหน่งเดียวกัน
 
 export type AddonMode = "included" | "optional";
+
+/** ปัดเป็นสตางค์แบบ ROUND(x, 2) ของ Excel — ตัดเศษฐานสองที่ 15 หลักก่อน (1.005 → 1.01 ไม่ใช่ 1.00) */
+export function round2(n: number): number {
+  if (!Number.isFinite(n)) return 0;
+  const [m, e] = Math.abs(n).toPrecision(15).split("e");
+  return (Math.sign(n) * Math.round(Number(`${m}e${Number(e ?? 0) + 2}`))) / 100;
+}
 
 /** หมวดค่าแรงติดตั้ง — แยกเป็นบรรทัด "ค่าแรง" ในสรุป (ไฟล์: แถว 26 / 38) */
 export const LABOR_CATEGORY = 17;
@@ -68,7 +77,8 @@ export type CalcResult = {
 };
 
 const zero = (): Amount => ({ cost: 0, sale: 0 });
-const addTo = (a: Amount, b: Amount) => { a.cost += b.cost; a.sale += b.sale; };
+// บวกเลขสตางค์ด้วย float ได้เศษ (0.1 + 0.2) — ปัดทุกครั้งที่รวม
+const addTo = (a: Amount, b: Amount) => { a.cost = round2(a.cost + b.cost); a.sale = round2(a.sale + b.sale); };
 
 export function calcBoq(input: {
   lines: CalcLine[];
@@ -87,9 +97,10 @@ export function calcBoq(input: {
     .reduce((s, l) => s + qtyOf(l) * (l.spec_watt ?? 0), 0);
 
   const res: Record<string, LineResult> = {};
+  // ต้นทุนรวม / ราคาขายรวม ปัดเป็นสตางค์ (ราคาขายคิดจากต้นทุนที่ปัดแล้ว = เลขที่เห็น) · ต่อหน่วยไม่ปัด (ค่าแรงบาท/Wp ปัดแล้วคูณจะเพี้ยนหลักร้อย)
   const put = (l: CalcLine, eff_qty: number, unit_cost: number) => {
-    const cost = eff_qty * unit_cost;
-    res[l.key] = { eff_qty, unit_cost, cost, sale_unit: toSale(unit_cost), sale: toSale(cost), share: 0, pending: l.unit_cost == null };
+    const cost = round2(eff_qty * unit_cost);
+    res[l.key] = { eff_qty, unit_cost, cost, sale_unit: toSale(unit_cost), sale: round2(toSale(cost)), share: 0, pending: l.unit_cost == null };
   };
 
   // 1) บรรทัดฐาน — ต่อหน่วย / ต่อวัตต์ / ต่อ Wp ของระบบ
@@ -101,14 +112,14 @@ export function calcBoq(input: {
   }
   // 2) % ของต้นทุนหมวด — ฐาน = ต้นทุนบรรทัดฐานในหมวดเดียวกัน (Accessories)
   const baseCost = new Map<number, number>();
-  for (const l of input.lines) if (res[l.key]) baseCost.set(l.category_id, (baseCost.get(l.category_id) ?? 0) + res[l.key].cost);
+  for (const l of input.lines) if (res[l.key]) baseCost.set(l.category_id, round2((baseCost.get(l.category_id) ?? 0) + res[l.key].cost));
   for (const l of input.lines) {
     if (l.price_basis === "pct_category") put(l, qtyOf(l), ((l.unit_cost ?? 0) / 100) * (baseCost.get(l.category_id) ?? 0));
   }
   // 3) % ของยอดขาย — ฐาน = ยอดขายหมวดมาตรฐาน 1–17 (ประกันภัยโครงการ · จำนวน = ปี)
   let saleBase = 0;
   for (const l of input.lines) {
-    if (res[l.key] && l.category_id <= PCT_SALE_BASE_MAX_CATEGORY && !isAddon.get(l.category_id)) saleBase += res[l.key].sale;
+    if (res[l.key] && l.category_id <= PCT_SALE_BASE_MAX_CATEGORY && !isAddon.get(l.category_id)) saleBase = round2(saleBase + res[l.key].sale);
   }
   for (const l of input.lines) {
     if (l.price_basis === "pct_sale") put(l, qtyOf(l), ((l.unit_cost ?? 0) / 100) * saleBase);
@@ -123,7 +134,7 @@ export function calcBoq(input: {
   for (const l of input.lines) {
     const r = res[l.key]; const c = categories[l.category_id];
     if (!r || !c) continue;
-    c.cost += r.cost; c.sale += r.sale; c.lines++; if (r.pending) c.pending++;
+    addTo(c, r); c.lines++; if (r.pending) c.pending++;
   }
 
   const material = zero(); const labor = zero(); const addon_included = zero(); const addon_optional = zero();
@@ -134,8 +145,8 @@ export function calcBoq(input: {
   }
   const subtotal = zero(); addTo(subtotal, material); addTo(subtotal, labor); addTo(subtotal, addon_included);
   const vatRate = (Number(input.vat_pct) || 0) / 100;
-  const vat = { cost: subtotal.cost * vatRate, sale: subtotal.sale * vatRate };
-  const grand = { cost: subtotal.cost + vat.cost, sale: subtotal.sale + vat.sale };
+  const vat = { cost: round2(subtotal.cost * vatRate), sale: round2(subtotal.sale * vatRate) };
+  const grand = { cost: round2(subtotal.cost + vat.cost), sale: round2(subtotal.sale + vat.sale) };
 
   for (const r of Object.values(res)) r.share = subtotal.cost > 0 ? r.cost / subtotal.cost : 0;
   for (const c of Object.values(categories)) c.share = subtotal.cost > 0 ? c.cost / subtotal.cost : 0;

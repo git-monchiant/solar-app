@@ -1,5 +1,5 @@
 import { sql } from "./db";
-import { calcBoq, type CalcLine } from "./boq-calc";
+import { calcBoq, round2, type CalcLine } from "./boq-calc";
 import { parseAddonModes, type BoqHeader, type BoqLine, type BoqRevision } from "./boq";
 import type { B2bCategory } from "./materials";
 
@@ -65,7 +65,6 @@ export async function storeTotals(db: Queryable, id: number): Promise<void> {
     key: String(i.id), category_id: i.category_id, price_basis: i.price_basis, unit_cost: num(i.unit_cost), qty: Number(i.qty), spec_watt: num(i.spec_watt),
   }));
   const r = calcBoq({ lines, categories: cats, margin_pct: Number(head.margin_pct), vat_pct: Number(head.vat_pct), addon_modes: parseAddonModes(head.addon_modes) });
-  const round2 = (n: number) => Math.round(n * 100) / 100;
   await db.request().input("id", sql.Int, id)
     .input("cap", sql.Decimal(14, 2), round2(r.capacity_wp))
     .input("cost", sql.Decimal(16, 2), round2(r.subtotal.cost))
