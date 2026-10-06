@@ -330,7 +330,8 @@ export const MODULES: AppModule[] = [
     menu: [
       { label: "รายการ BOQ", href: "/b2b/boq", icon: <I d={D.lines} />, roles: ["b2b", "admin"] },
       // Purchase กดการ์ดแล้วลงหน้านี้ — hub เลือกเมนูแรกที่ role เห็น · badge = รายการที่รอ Purchase ใส่ราคา
-      { label: "Master Data วัสดุ", href: "/b2b/materials", icon: <I d={D.archive} />, roles: ["b2b", "purchase", "admin"], subs: [B2B_PENDING_PRICE_SUB] },
+      // ชื่อเมนู = หัวเรื่องหน้า (หน้า Master Data วัสดุ) — สั้นพอให้อยู่บรรทัดเดียวคู่กับ badge 3 หลัก
+      { label: "วัสดุและราคา", href: "/b2b/materials", icon: <I d={D.archive} />, roles: ["b2b", "purchase", "admin"], subs: [B2B_PENDING_PRICE_SUB] },
     ],
   },
   {

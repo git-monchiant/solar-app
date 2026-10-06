@@ -4,6 +4,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import Header from "@/components/layout/Header";
 import Loading from "@/components/ui/Loading";
 import Dropdown from "@/components/ui/Dropdown";
+import { useDialog } from "@/components/ui/Dialog";
 import { ClockIcon } from "@/components/ui/icons";
 import { apiFetch } from "@/lib/api";
 import { useActiveMenuItem } from "@/lib/hooks/useActiveModule";
@@ -26,12 +27,23 @@ type StatusFilter = "all" | "pending" | "review" | "inactive";
 // รายการที่สคริปต์นำเข้าจาก Excel ติดธง "⚠ ตรวจ: …" ไว้ (ระบบตัดสินใจแทนทีม) — ลบ ⚠ ออกจากหมายเหตุเมื่อตรวจแล้ว
 const needsReview = (m: B2bMaterial) => m.is_active && (m.note ?? "").includes("⚠");
 
+// รุ่นแผงส่วนใหญ่มีวัตต์ในชื่ออยู่แล้ว ("Jinko Solar 700W") — ต่อท้าย "· 700 W" เฉพาะรุ่นที่ไม่มี
+const wattInModel = (m: B2bMaterial) =>
+  m.spec_watt != null && (m.model ?? "").replace(/\s/g, "").toLowerCase().includes(`${m.spec_watt}w`);
+
+// "บาท/หน่วย" กับ "บาท/W" อ่านจากหน่วยท้ายช่องได้เลย — แบบอื่น (Wp ระบบ / % สองแบบ) ต้องมีป้ายบอกใต้ราคา
+const showBasisLabel = (m: B2bMaterial) => m.price_basis !== "unit" && m.price_basis !== "watt";
+
+const statusPill = (active: boolean) =>
+  `shrink-0 w-[72px] inline-flex justify-center whitespace-nowrap text-xxs font-bold uppercase py-1 rounded-full ${active ? "bg-emerald-50 text-emerald-700" : "bg-gray-100 text-gray-500"}`;
+
 export default function B2bMaterialsPage() {
   const { item } = useActiveMenuItem();   // หัวเรื่อง = ชื่อเมนู (กติกา ui-rules)
   const { activeRoles } = useActiveRoles();
   const canView = hasRole(activeRoles, ...B2B_MATERIAL_VIEW_ROLES);
   const canEditItem = hasRole(activeRoles, ...B2B_MATERIAL_EDIT_ROLES);
   const canEditPrice = hasRole(activeRoles, ...B2B_PRICE_EDIT_ROLES);
+  const dialog = useDialog();
 
   const [categories, setCategories] = useState<B2bCategory[]>([]);
   const [materials, setMaterials] = useState<B2bMaterial[]>([]);
@@ -66,7 +78,6 @@ export default function B2bMaterialsPage() {
   const pendingCount = materials.filter((m) => m.is_active && m.unit_price == null).length;
   const inactiveCount = materials.filter((m) => !m.is_active).length;
   const reviewCount = materials.filter(needsReview).length;
-  const activeCount = materials.length - inactiveCount;
 
   // ค่าเริ่มต้น: Purchase ที่มีงานค้าง เปิดมาเจอ "รอราคา" ก่อน · คนอื่นเห็นทั้งหมด
   const effectiveStatus: StatusFilter = status ?? (canEditPrice && !canEditItem && pendingCount > 0 ? "pending" : "all");
@@ -116,13 +127,24 @@ export default function B2bMaterialsPage() {
     }
   };
 
+  // ปิดใช้ต้องยืนยันก่อน (กดพลาดแถวเดียว = รายการหายจากตัวเลือกของทุก BOQ ใหม่) · เปิดกลับไม่ต้องถาม
   const toggleActive = async (m: B2bMaterial) => {
     if (!canEditItem) return;
-    await apiFetch(`/api/b2b/materials/${m.id}`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ is_active: !m.is_active }) });
-    await load();
+    if (m.is_active && !(await dialog.confirm({
+      title: "ปิดใช้งานรายการนี้?",
+      message: `${m.code} · ${m.name}\nปิดแล้วเลือกใส่ BOQ ใหม่ไม่ได้ แต่ BOQ เก่ายังอ้างได้ · เปิดกลับได้ภายหลัง`,
+      variant: "danger", confirmText: "ปิดใช้งาน",
+    }))) return;
+    try {
+      await apiFetch(`/api/b2b/materials/${m.id}`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ is_active: !m.is_active }) });
+      await load();
+      dialog.toast(m.is_active ? `ปิดใช้งาน ${m.code} แล้ว` : `เปิดใช้งาน ${m.code} แล้ว`);
+    } catch (e) {
+      void dialog.alert({ title: "เปลี่ยนสถานะไม่สำเร็จ", message: e instanceof Error && e.message ? e.message : "ลองใหม่อีกครั้ง", variant: "danger" });
+    }
   };
 
-  const title = item?.label ?? "Master Data วัสดุ";
+  const title = item?.label ?? "วัสดุและราคา";
   if (activeRoles.length > 0 && !canView) {
     return (
       <div>
@@ -142,11 +164,14 @@ export default function B2bMaterialsPage() {
     </button>
   );
 
+  // desktop: หน้าสูงเท่าจอ — หัวเรื่อง + toolbar อยู่กับที่ ตารางเลื่อนในกล่องของตัวเอง (กล่องเดียวเลื่อนทั้งแนวตั้ง/แนวนอน
+  // → หัวหมวด + หัวคอลัมน์ sticky ได้ และทุกหมวดเลื่อนซ้ายขวาพร้อมกัน) · mobile: เลื่อนทั้งหน้าแบบเดิม
   return (
-    <div className={dirtyIds.length > 0 ? "pb-28" : ""}>
-      <Header title={title} subtitle={`COMMERCIAL (B2B) · ${activeCount} รายการ · รอราคา ${pendingCount}`} />
+    <div className="md:h-full md:flex md:flex-col">
+      {/* จำนวน = แถวที่เห็นตามตัวกรอง (แบบหน้ารายการ BOQ) — ยอดรอราคา/ต้องตรวจ อยู่ที่ chip แล้ว */}
+      <Header title={title} subtitle={`COMMERCIAL (B2B) · ${filtered.length} รายการ`} />
 
-      <div className="p-3 md:p-6 space-y-4">
+      <div className="shrink-0 px-3 pt-3 md:px-6 md:pt-6 space-y-4">
         {loadError && <div className="rounded-lg bg-red-50 border border-red-200 px-4 py-2 text-sm text-red-700">{loadError}</div>}
 
         {/* Toolbar */}
@@ -154,8 +179,8 @@ export default function B2bMaterialsPage() {
           <input type="text" value={search} onChange={(e) => setSearch(e.target.value)} placeholder="ค้นหา รหัส / รายการ / ยี่ห้อ / รุ่น…"
             className="h-8 px-4 rounded-lg border border-gray-200 text-sm flex-1 min-w-[200px] focus:outline-none focus:border-primary" />
           <Dropdown className="w-full md:w-72" searchable value={catFilter} onChange={(v) => setCatFilter(v || "all")}
-            options={[{ value: "all", label: "ทุกหมวด" }, ...categories.map((c) => ({ value: String(c.id), label: `${c.id}. ${c.name}` }))]} />
-          <div className="flex items-center gap-1.5">
+            options={[{ value: "all", label: "ทุกหมวด" }, ...categories.map((c) => ({ value: String(c.id), label: `${c.id}. ${c.name}${c.is_addon ? " · ส่วนเพิ่มเติม" : ""}` }))]} />
+          <div className="flex items-center gap-1.5 flex-wrap">
             {chip("all", "ทั้งหมด", materials.length)}
             {chip("pending", "รอราคา", pendingCount, pendingCount > 0 ? "text-red-600" : "")}
             {reviewCount > 0 && chip("review", "ต้องตรวจ", reviewCount, "text-amber-700")}
@@ -166,106 +191,132 @@ export default function B2bMaterialsPage() {
               className="h-8 px-5 rounded-lg bg-primary text-white text-sm font-semibold hover:bg-primary-dark transition-colors">+ เพิ่มรายการ</button>
           )}
         </div>
+      </div>
 
+      <div className="overflow-x-auto md:flex-1 md:min-h-0 md:overflow-auto px-3 pt-4 pb-3 md:px-6 md:pb-6">
         {materials.length === 0 ? (
           <div className="rounded-xl bg-white border border-gray-300 px-5 py-10 text-center text-sm text-gray-400">
             ยังไม่มีรายการใน Master Data — ข้อมูลตั้งต้นจะนำเข้าจากไฟล์ Excel (sheet Unit price Material){canEditItem ? " หรือกด \"+ เพิ่มรายการ\"" : ""}
           </div>
         ) : sections.length === 0 ? (
           <div className="rounded-xl bg-white border border-gray-300 px-5 py-10 text-center text-sm text-gray-400">ไม่พบรายการตามเงื่อนไขที่เลือก</div>
-        ) : sections.map(({ cat, items }) => (
-          <section key={cat.id} className="rounded-xl bg-white border border-gray-300 overflow-hidden">
-            <div className="px-4 py-3 border-b border-gray-200 flex items-baseline gap-2 flex-wrap">
-              <h2 className="text-sm font-bold text-gray-900">{cat.id}. {cat.name}</h2>
-              {cat.is_addon && <span className="text-xxs font-bold uppercase tracking-wide px-2 py-0.5 rounded-full bg-amber-50 text-amber-700">ส่วนเพิ่มเติม</span>}
-              <span className="text-xs font-mono text-gray-400">({items.length})</span>
-            </div>
-            <div className="overflow-x-auto">
-              {/* table-fixed + ความกว้างคอลัมน์ตายตัว — ทุกหมวดเป็นตารางแยก คอลัมน์ต้องตรงกันทั้งหน้า */}
-              <table className="w-full text-sm min-w-[1040px] table-fixed">
-                <thead>
-                  <tr className="text-left text-xs text-gray-500 bg-gray-50">
-                    <th className="px-3 py-2 font-semibold w-[72px]">รหัส</th>
-                    <th className="px-3 py-2 font-semibold">รายการ</th>
-                    <th className="px-3 py-2 font-semibold w-[120px]">ยี่ห้อ</th>
-                    <th className="px-3 py-2 font-semibold w-[200px]">รุ่น / ขนาด</th>
-                    <th className="px-3 py-2 font-semibold w-[64px]">หน่วย</th>
-                    <th className="px-3 py-2 font-semibold text-right w-[200px]">ราคา</th>
-                    <th className="px-3 py-2 font-semibold w-[110px]">อัปเดตราคา</th>
-                    <th className="px-3 py-2 w-[150px]" />
-                  </tr>
-                </thead>
-                <tbody>
-                  {items.map((m, i) => {
-                    const newSub = m.subgroup && m.subgroup !== items[i - 1]?.subgroup;
-                    const draft = drafts[m.id];
-                    const dirty = dirtyIds.includes(m.id);
-                    return [
-                      newSub ? (
-                        <tr key={`sg-${m.id}`} className="bg-slate-50/70">
-                          <td colSpan={8} className="px-3 py-1.5 text-xs font-bold text-gray-600">{m.subgroup}</td>
-                        </tr>
-                      ) : null,
-                      <tr key={m.id} className={`border-t border-gray-100 align-middle ${!m.is_active ? "opacity-50" : ""} ${dirty ? "bg-amber-50" : ""}`}>
-                        <td className="px-3 py-2 font-mono text-xs text-gray-500">{m.code}</td>
-                        <td className="px-3 py-2 text-gray-900 break-words">
-                          {m.name}
-                          {m.note && (
-                            <div title={m.note} className={`mt-0.5 text-xxs leading-snug line-clamp-2 ${m.note.includes("⚠") ? "text-amber-700" : "text-gray-400"}`}>{m.note}</div>
-                          )}
-                        </td>
-                        <td className="px-3 py-2 text-gray-600">{m.brand ?? ""}</td>
-                        <td className="px-3 py-2 text-gray-600 break-words">{m.model ?? ""}{m.spec_watt ? <span className="text-gray-400"> · {m.spec_watt} W</span> : null}</td>
-                        <td className="px-3 py-2 text-gray-600">{m.unit}</td>
-                        <td className="px-3 py-1.5 text-right">
-                          {canEditPrice && m.is_active ? (
-                            <div className="flex items-center justify-end gap-1.5">
-                              <input type="number" inputMode="decimal" min={0} step="any"
-                                value={draft ?? (m.unit_price ?? "")}
-                                onChange={(e) => setDrafts((x) => ({ ...x, [m.id]: e.target.value }))}
-                                placeholder="รอราคา"
-                                className={`w-28 h-8 px-2 rounded-lg border text-right font-mono tabular-nums text-sm outline-none focus:border-primary focus:ring-2 focus:ring-primary/10 ${m.unit_price == null && !dirty ? "border-red-300 placeholder:text-red-400" : "border-gray-200"}`} />
-                              <span className="text-xxs text-gray-400 w-12 text-left">{priceSuffix(m.price_basis, m.unit)}</span>
-                            </div>
-                          ) : m.unit_price == null ? (
-                            <span className="inline-flex items-center px-2 py-0.5 rounded-full bg-red-50 text-red-600 text-xs font-semibold">รอราคา</span>
-                          ) : (
-                            <span className="font-mono tabular-nums text-gray-900">{formatPrice(m.unit_price)} <span className="text-xxs text-gray-400">{priceSuffix(m.price_basis, m.unit)}</span></span>
-                          )}
-                          {m.price_basis !== "unit" && <div className="text-xxs text-gray-400 mt-0.5">{priceBasisLabel(m.price_basis)}</div>}
-                        </td>
-                        <td className="px-3 py-2 text-xs text-gray-500">
-                          {m.price_updated_at ? <>{formatThaiDate(m.price_updated_at)}<div className="text-gray-400 truncate max-w-[9rem]">{m.price_updated_by_name ?? ""}</div></> : "—"}
-                        </td>
-                        <td className="px-3 py-2">
-                          <div className="flex items-center justify-end gap-2">
-                            <button type="button" title="ประวัติราคา" onClick={() => setHistoryOf(m)} style={{ minHeight: 0 }}
-                              className="w-8 h-8 rounded-full hover:bg-gray-100 flex items-center justify-center text-gray-500">
-                              <ClockIcon className="w-4 h-4" strokeWidth={2} />
-                            </button>
-                            <button type="button" onClick={() => setEditing({ material: m })} style={{ minHeight: 0 }}
-                              className="text-sm text-primary font-semibold hover:underline">{canEditItem ? "แก้ไข" : "ดู"}</button>
-                            {canEditItem && (
-                              <button type="button" onClick={() => void toggleActive(m)} style={{ minHeight: 0 }}
-                                className={`text-xxs font-bold uppercase px-2 py-1 rounded-full ${m.is_active ? "bg-emerald-50 text-emerald-700" : "bg-gray-100 text-gray-500"}`}>
-                                {m.is_active ? "ACTIVE" : "INACTIVE"}
-                              </button>
+        ) : (
+          <div className="min-w-[1120px] space-y-4">
+            {sections.map(({ cat, items }) => (
+              // overflow-clip (ไม่ใช่ hidden) — ตัดมุมโค้งได้โดยไม่กลายเป็นกล่องเลื่อน ไม่งั้น thead sticky ไม่ทำงาน
+              <section key={cat.id} aria-label={`${cat.id}. ${cat.name}`} className="rounded-xl bg-white border border-gray-300 overflow-clip">
+                {/* table-fixed + colgroup ความกว้างตายตัว — ทุกหมวดเป็นตารางแยก คอลัมน์ต้องตรงกันทั้งหน้า
+                    (ต้องใช้ colgroup: แถวแรกของ thead เป็นหัวหมวด colSpan เต็มแถว table-fixed จะอ่านความกว้างจากแถวนั้นไม่ได้) */}
+                <table className="w-full text-sm table-fixed">
+                  <colgroup>
+                    <col className="w-[72px]" /><col /><col className="w-[120px]" /><col className="w-[200px]" />
+                    <col className="w-[80px]" /><col className="w-[200px]" /><col className="w-[110px]" /><col className="w-[180px]" />
+                  </colgroup>
+                  {/* หัวหมวด + หัวคอลัมน์ค้างด้วยกันตอนเลื่อน (desktop) — เส้นใต้หัวหมวดใช้ inset shadow เพราะ border ของแถว sticky หายใน border-collapse */}
+                  <thead className="md:sticky md:top-0 md:z-10">
+                    <tr className="bg-white">
+                      <th colSpan={8} className="px-4 py-3 text-left font-normal shadow-[inset_0_-1px_0_var(--color-gray-200)]">
+                        <span className="inline-flex items-baseline gap-2 flex-wrap">
+                          <span className="text-sm font-bold text-gray-900">{cat.id}. {cat.name}</span>
+                          {cat.is_addon && <span className="text-xxs font-bold uppercase tracking-wide px-2 py-0.5 rounded-full bg-amber-50 text-amber-700">ส่วนเพิ่มเติม</span>}
+                          <span className="text-xs font-mono text-gray-400">({items.length})</span>
+                        </span>
+                      </th>
+                    </tr>
+                    <tr className="text-left text-xs text-gray-500 bg-gray-50">
+                      <th className="px-3 py-2 font-semibold">รหัส</th>
+                      <th className="px-3 py-2 font-semibold">รายการ</th>
+                      <th className="px-3 py-2 font-semibold">ยี่ห้อ</th>
+                      <th className="px-3 py-2 font-semibold">รุ่น / ขนาด</th>
+                      <th className="px-3 py-2 font-semibold">หน่วย</th>
+                      {/* pr = px-3 + หน่วยท้ายช่อง w-14 + gap + padding ในช่องกรอก → หัว "ราคา" ตรงกับขอบขวาของตัวเลข */}
+                      <th className="pl-3 pr-[83px] py-2 font-semibold text-right">ราคา</th>
+                      <th className="px-3 py-2 font-semibold">อัปเดตราคา</th>
+                      <th className="px-3 py-2" />
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {items.map((m, i) => {
+                      const newSub = m.subgroup && m.subgroup !== items[i - 1]?.subgroup;
+                      const draft = drafts[m.id];
+                      const dirty = dirtyIds.includes(m.id);
+                      return [
+                        newSub ? (
+                          <tr key={`sg-${m.id}`} className="bg-slate-50/70">
+                            <td colSpan={8} className="px-3 py-1.5 text-xs font-bold text-gray-600">{m.subgroup}</td>
+                          </tr>
+                        ) : null,
+                        // แถวที่ปิดใช้ จางทุกช่องยกเว้นช่องปุ่ม — ป้าย INACTIVE ต้องเห็นชัดว่ากดเปิดกลับได้
+                        <tr key={m.id} className={`border-t border-gray-100 align-middle ${!m.is_active ? "[&>td:not(:last-child)]:opacity-50" : ""} ${dirty ? "bg-amber-50" : ""}`}>
+                          <td className="px-3 py-2 font-mono text-xs text-gray-500">{m.code}</td>
+                          <td className="px-3 py-2 text-gray-900 break-words">
+                            {m.name}
+                            {m.note && (
+                              <div title={m.note} className={`mt-0.5 text-xxs leading-snug line-clamp-2 ${m.note.includes("⚠") ? "text-amber-700" : "text-gray-400"}`}>{m.note}</div>
                             )}
-                          </div>
-                        </td>
-                      </tr>,
-                    ];
-                  })}
-                </tbody>
-              </table>
-            </div>
-          </section>
-        ))}
+                          </td>
+                          <td className="px-3 py-2 text-gray-600">{m.brand ?? ""}</td>
+                          <td className="px-3 py-2 text-gray-600 break-words">{m.model ?? ""}{m.spec_watt && !wattInModel(m) ? <span className="text-gray-400"> · {m.spec_watt} W</span> : null}</td>
+                          <td className="px-3 py-2 text-gray-600">{m.unit}</td>
+                          <td className="px-3 py-1.5 text-right">
+                            {/* ช่องตัวเลข w-28 + หน่วย w-14 เท่ากันทุกแถว (ทั้งแบบกรอกและแบบอ่าน) → ตัวเลขเรียงเป็นแนวเดียว */}
+                            <div className="flex items-center justify-end gap-1.5">
+                              {canEditPrice && m.is_active ? (
+                                <input type="number" inputMode="decimal" min={0} step="any"
+                                  value={draft ?? (m.unit_price ?? "")}
+                                  onChange={(e) => setDrafts((x) => ({ ...x, [m.id]: e.target.value }))}
+                                  placeholder="รอราคา"
+                                  className={`w-28 h-8 px-2 rounded-lg border text-right font-mono tabular-nums text-sm outline-none focus:border-primary focus:ring-2 focus:ring-primary/10 ${m.unit_price == null && !dirty ? "border-red-300 placeholder:text-red-400" : "border-gray-200"}`} />
+                              ) : (
+                                <span className="w-28 pr-[9px]">
+                                  {m.unit_price == null
+                                    ? <span className="inline-flex items-center px-2 py-0.5 rounded-full bg-red-50 text-red-600 text-xs font-semibold">รอราคา</span>
+                                    : <span className="font-mono tabular-nums text-gray-900">{formatPrice(m.unit_price)}</span>}
+                                </span>
+                              )}
+                              <span title={priceBasisLabel(m.price_basis)} className="w-14 text-left text-xxs text-gray-400 whitespace-nowrap">{priceSuffix(m.price_basis, m.unit)}</span>
+                            </div>
+                            {showBasisLabel(m) && <div className="text-xxs text-gray-400 mt-0.5">{priceBasisLabel(m.price_basis)}</div>}
+                          </td>
+                          <td className="px-3 py-2 text-xs text-gray-500">
+                            {m.price_updated_at ? <>{formatThaiDate(m.price_updated_at)}<div className="text-gray-400 truncate max-w-[9rem]">{m.price_updated_by_name ?? ""}</div></> : "—"}
+                          </td>
+                          <td className="px-3 py-2">
+                            <div className="flex items-center justify-end gap-2">
+                              <button type="button" title="ประวัติราคา" onClick={() => setHistoryOf(m)} style={{ minHeight: 0 }}
+                                className="shrink-0 w-8 h-8 rounded-full hover:bg-gray-100 flex items-center justify-center text-gray-500">
+                                <ClockIcon className="w-4 h-4" strokeWidth={2} />
+                              </button>
+                              <button type="button" onClick={() => setEditing({ material: m })} style={{ minHeight: 0 }}
+                                className="shrink-0 whitespace-nowrap text-sm text-primary font-semibold hover:underline">{canEditItem ? "แก้ไข" : "ดู"}</button>
+                              {/* ป้ายสถานะ = สีบอกสถานะ (เขียว ACTIVE / เทา INACTIVE) · Solar B2B กดสลับได้ คนอื่นเห็นอย่างเดียว
+                                  กว้างตายตัว + nowrap ให้ ACTIVE/INACTIVE ตรงแนวกันและไม่ตัดบรรทัด */}
+                              {canEditItem ? (
+                                <button type="button" onClick={() => void toggleActive(m)} style={{ minHeight: 0 }}
+                                  title={m.is_active ? "กดเพื่อปิดใช้งาน" : "กดเพื่อเปิดใช้งาน"}
+                                  className={`${statusPill(m.is_active)} ${m.is_active ? "hover:bg-emerald-100" : "hover:bg-gray-200"}`}>
+                                  {m.is_active ? "ACTIVE" : "INACTIVE"}
+                                </button>
+                              ) : (
+                                <span className={statusPill(m.is_active)}>{m.is_active ? "ACTIVE" : "INACTIVE"}</span>
+                              )}
+                            </div>
+                          </td>
+                        </tr>,
+                      ];
+                    })}
+                  </tbody>
+                </table>
+              </section>
+            ))}
+          </div>
+        )}
       </div>
 
-      {/* แถบบันทึกราคาของ Purchase — โผล่เมื่อมีราคาที่แก้แต่ยังไม่บันทึก */}
+      {/* แถบบันทึกราคาของ Purchase — โผล่เมื่อมีราคาที่แก้แต่ยังไม่บันทึก
+          desktop = แถวสุดท้ายของหน้า (ไม่ทับตาราง ไม่ต้องคำนวณความกว้าง sidebar) · mobile = ค้างเหนือแถบเมนูล่าง */}
       {canEditPrice && dirtyIds.length > 0 && (
-        <div className="fixed bottom-0 inset-x-0 md:left-56 z-40 border-t border-gray-200 bg-white/95 backdrop-blur px-3 md:px-6 py-3">
+        <div className="sticky bottom-20 md:bottom-0 z-30 shrink-0 border-t border-gray-200 bg-white/95 backdrop-blur px-3 md:px-6 py-3">
           <div className="flex items-center gap-2 md:gap-3 flex-wrap">
             <span className="text-sm font-semibold text-gray-800">แก้ราคา {dirtyIds.length} รายการ</span>
             <input value={priceNote} onChange={(e) => setPriceNote(e.target.value)} placeholder="หมายเหตุ (ไม่บังคับ) เช่น ราคาใบเสนอ supplier ต.ค. 69"
