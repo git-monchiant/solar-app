@@ -13,6 +13,7 @@ import PhotosTab from "@/components/lead/detail/PhotosTab";
 import AddActivityModal, { ActivityType } from "@/components/lead/detail/AddActivityModal";
 import AssignOwnerButton from "@/components/lead/AssignOwnerButton";
 import LostModal from "@/components/lead/detail/LostModal";
+import ReopenLeadButton from "@/components/lead/detail/ReopenLeadModal";
 import ProfileModal from "@/components/lead/detail/ProfileModal";
 import LinePickerModal from "@/components/modal/LinePickerModal";
 import { getSourceStyle } from "@/lib/source-tag";
@@ -2344,6 +2345,13 @@ export default function LeadDetailPage({ params }: { params: Promise<{ id: strin
                 >
                   Set Revisit Date
                 </button>
+                <ReopenLeadButton
+                  leadId={lead.id}
+                  status={lead.status}
+                  currentGrade={lead.customer_grade ?? null}
+                  lostReason={lead.lost_reason ?? null}
+                  onSaved={refresh}
+                />
               </div>
             )}
 

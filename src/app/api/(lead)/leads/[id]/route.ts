@@ -218,10 +218,13 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
       grid_inspection_date: Date | null;
       grid_approved_date: Date | null;
       grid_meter_changed_date: Date | null;
+      lost_reason: string | null;
     } | null = null;
+    // ข้อความลง Timeline ตอนดึงลีดที่ยกเลิกกลับมาติดตาม — ตั้งค่าในบล็อก reopen ด้านล่าง
+    let reopenNote: string | null = null;
     {
       const current = await db.request().input("id", sql.Int, leadId).query(`
-        SELECT status, payment_confirmed,
+        SELECT status, payment_confirmed, lost_reason,
                survey_date, survey_time_slot, install_date, install_time_slot, next_follow_up,
                survey_ready_at, survey_ready_by, survey_ready_note,
                survey_confirmed, install_confirmed, install_completed_at,
@@ -237,6 +240,48 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
       if (current.recordset.length > 0) {
         oldRow = current.recordset[0];
         oldStatus = oldRow?.status ?? null;
+        // ดึงลีดที่ยกเลิกกลับมาติดตาม — เซลส์ทุกคนกดได้ (sales, หัวหน้าเซลส์, admin)
+        // เดิมลีด lost ไม่มีทางกลับ ปุ่ม Set Revisit Date เก็บวันไว้เฉย ๆ เพราะหน้า Today
+        // ตัดลีด lost ออกทุกคิว จึงต้องบังคับวันติดตามถัดไป ลีดจะกลับเข้าคิวทันที
+        if (body.reopen_from_lost === true) {
+          if (oldStatus !== "lost") {
+            return NextResponse.json({ error: "ลีดนี้ไม่ได้อยู่ในสถานะยกเลิก" }, { status: 400 });
+          }
+          const roleRow = await db.request().input("uid", sql.Int, gate.userId)
+            .query(`SELECT roles FROM users WHERE id = @uid AND is_active = 1`);
+          let assignedRoles: string[] = [];
+          try {
+            const parsed = JSON.parse(roleRow.recordset[0]?.roles || "[]");
+            if (Array.isArray(parsed)) assignedRoles = parsed;
+          } catch { assignedRoles = []; }
+          const actingRoles = getEffectiveRolesFromReq(req, assignedRoles);
+          if (!actingRoles.some(r => r === "admin" || r === "sales" || r === "sales_sup")) {
+            return NextResponse.json({ error: "เฉพาะทีมขายดึงลีดกลับมาติดตามได้" }, { status: 403 });
+          }
+          if (!body.next_follow_up) {
+            return NextResponse.json({ error: "กรุณากำหนดวันติดตามครั้งถัดไป" }, { status: 400 });
+          }
+          // Grade F คือ "ไม่สนใจ — ปิดเคส" ถ้ายังเป็น F ลีดจะถูกนับเป็นยกเลิกซ้ำ
+          const gradeAfter = body.customer_grade !== undefined ? body.customer_grade : oldRow?.customer_grade;
+          if (gradeAfter === "F") {
+            return NextResponse.json({ error: "กรุณาเลือก Grade ใหม่ (Grade F หมายถึงไม่สนใจ)" }, { status: 400 });
+          }
+          // คืนสถานะก่อนยกเลิกจากประวัติ ยกเว้นยกเลิกตอนรออนุมัติ/ชำระ ให้กลับไป
+          // รอใบเสนอราคา เพราะราคาเดิมน่าจะต้องเสนอใหม่ · ไม่มีประวัติถือว่ารอติดตาม
+          const before = await db.request().input("lead_id", sql.Int, leadId).query(`
+            SELECT TOP 1 old_status FROM lead_activities
+            WHERE lead_id = @lead_id AND activity_type = 'status_change'
+              AND new_status = 'lost' AND old_status IS NOT NULL AND old_status <> 'lost'
+            ORDER BY id DESC
+          `);
+          const statusBeforeLost = before.recordset[0]?.old_status as string | undefined;
+          body.status = statusBeforeLost === "order" ? "quote" : (statusBeforeLost || "pre_survey");
+          body.lost_reason = null;
+          body.revisit_date = null;
+          const extra = String(body.reopen_note || "").trim();
+          reopenNote = `ดึงกลับมาติดตาม · เหตุผลที่เคยยกเลิก: ${oldRow?.lost_reason || "ไม่ได้ระบุ"}`
+            + (extra ? ` · หมายเหตุ: ${extra}` : "");
+        }
         // BOOK_SURVEY starts from confirmed payment. The lead PATCH path is
         // used by the zero-baht/free flow; normal payments are stamped by the
         // payments API at the Account confirmation transaction.
@@ -1843,7 +1888,7 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
         // who-when-why instead of just the status delta.
         const lostNote = body.status === "lost" && body.lost_reason
           ? String(body.lost_reason)
-          : null;
+          : reopenNote;
         // Stamp the actual user (was hardcoded 1 = Admin, which broke
         // attribution for seeker-driven status changes via sync).
         await db.request()
