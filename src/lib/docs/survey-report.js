@@ -207,7 +207,7 @@ export function buildSurveyReportHtml(L, D, PKG, options = {}) {
       ["อายุบ้าน", V(HOUSE_AGE[D.house_age],"ต่ำกว่า 5 ปี / 5-10 ปี / 10-20 ปี / มากกว่า 20 ปี")],
       ["ลักษณะหลังคา", V(roofLabel(L.survey_roof_material) || roofLabel(D.roof_shape),"หลังคากระเบื้อง / เมทัลชีท / คอนกรีต")],
       ["มิเตอร์ไฟฟ้า (การไฟฟ้า)", V(meterTxt || (D.meter_size?`${METER[D.meter_size]||D.meter_size}${D.electrical_phase?` ${PHASE[D.electrical_phase]}`:""}`:null),"กฟน. / กฟภ. - ขนาดมิเตอร์ เช่น 15(45)A 1 เฟส")],
-      ["ค่าไฟฟ้าเฉลี่ยต่อเดือน<br/>(ก่อนติดตั้ง)", V(L.survey_monthly_bill?`${baht(L.survey_monthly_bill)} บาท/เดือน`:(D.monthly_bill?`${baht(D.monthly_bill)} บาท/เดือน`:null),"กรอกจากบิลค่าไฟย้อนหลัง")],
+      ["ค่าไฟฟ้าเฉลี่ยต่อเดือน<br/>(ก่อนติดตั้ง)", V(D.monthly_bill?`${baht(D.monthly_bill)} บาท/เดือน`:(L.survey_monthly_bill?`${baht(L.survey_monthly_bill)} บาท/เดือน`:null),"กรอกจากบิลค่าไฟย้อนหลัง")],
       ["วันที่เข้าสำรวจ", V(thDate(L.survey_date),"วว/ดด/ปปปป")],
       ["ผู้สำรวจหน้างาน", V(L.surveyor,"ชื่อทีมสำรวจ")],
     ])}
@@ -390,13 +390,23 @@ export function buildSurveyReportHtml(L, D, PKG, options = {}) {
         `<tr><td class="dev">${String(x.name).trim()}</td><td>${qtyCell(x)}</td><td>ไม่รวมในแพ็กเกจมาตรฐาน</td><td class="rz">${bl()}</td><td class="org">${amtCell(x)}</td></tr>`).join("")
     : `<tr><td class="dev">${ph("อื่นๆ ระบุ")}</td><td>${bl()}</td><td>ไม่รวมในแพ็กเกจมาตรฐาน</td><td class="rz">${ph("__")}</td><td class="org">${bl("บาท")}</td></tr>`;
   const addOnTotal = addOnItems.reduce((sum, x) => sum + (Number(x.amount) > 0 ? Number(x.amount) : 0), 0);
-  const p9 = page(8, `${sect("5","รายการเพิ่มเติมนอกเหนือจากแพ็กเกจมาตรฐาน")}
+  // ใบเสนอราคาที่ไม่มีรายการเสริม: บอกลูกค้าตรง ๆ ว่าไม่มีค่าใช้จ่ายเพิ่ม แทนตารางช่องว่าง
+  // ที่อ่านแล้วเหมือนยังกรอกไม่เสร็จ · รายงานสำรวจแบบแยกเล่ม (ไม่มีใบเสนอราคา) ยังใช้ตาราง
+  // เพราะช่องว่างคือแบบฟอร์มให้ทีมสำรวจกรอกรายการที่เจอหน้างาน
+  const noAddOns = Boolean(quotation.docNo) && addOnItems.length === 0;
+  const p9 = noAddOns ? page(8, `${sect("5","รายการเพิ่มเติมนอกเหนือจากแพ็กเกจมาตรฐาน")}
+    <p class="lead">จากการสำรวจหน้างานจริง ไม่พบรายการที่จำเป็นต้องเพิ่มเติมนอกเหนือจากแพ็กเกจมาตรฐาน (Standard Package)</p>
+    <div class="callout green"><div class="co-h">ไม่มีค่าใช้จ่ายเพิ่มเติม</div><ul>
+      <li>สภาพหน้างาน ณ วันสำรวจสามารถติดตั้งได้ด้วยอุปกรณ์และงานที่รวมอยู่ในแพ็กเกจมาตรฐานทั้งหมด</li>
+      <li>ค่าใช้จ่ายเป็นไปตามใบเสนอราคา (Quotation) เลขที่ ${quotDocNo} ไม่มีค่าใช้จ่ายเพิ่มเติมจากการสำรวจหน้างาน</li>
+      <li>หากสภาพหน้างานเปลี่ยนแปลงก่อนวันติดตั้ง บริษัทขอสงวนสิทธิ์แจ้งรายการเพิ่มเติมให้ลูกค้าทราบล่วงหน้าก่อนดำเนินการทุกครั้ง</li></ul></div>`)
+  : page(8, `${sect("5","รายการเพิ่มเติมนอกเหนือจากแพ็กเกจมาตรฐาน")}
     <p class="lead">จากสภาพหน้างานจริง มีรายการที่จำเป็นต้องเพิ่มเติมนอกเหนือจากแพ็กเกจมาตรฐาน (Standard Package) ดังนี้ พร้อมเหตุผลประกอบและค่าใช้จ่ายที่เพิ่มขึ้น</p>
     <table class="addon"><thead><tr><th style="width:18%">รายการเพิ่มเติม</th><th style="width:9%">จำนวน</th><th style="width:16%">มาตรฐาน Package</th><th>เหตุผลที่ต้องเพิ่ม (จากหน้างานจริง)</th><th style="width:13%">ค่าใช้จ่ายเพิ่มเติม</th></tr></thead>
     <tbody>${fixedRows}
     ${otherRows}
     <tr class="addon-total"><td colspan="4">รวมค่าใช้จ่ายเพิ่มเติมทั้งหมด</td><td class="tot-org">${addOnTotal > 0 ? `${baht(addOnTotal)} บาท` : bl("บาท")}</td></tr></tbody></table>
-    <div class="callout orange"><div class="co-h">ข้อเสนอเพิ่มเติม</div><ul><li>รายการเพิ่มเติมข้างต้นเป็นรายการที่จำเป็นตามสภาพหน้างานจริง ณ วันสำรวจ เพื่อให้ระบบทำงานได้อย่างปลอดภัยและมีประสิทธิภาพสูงสุด</li><li>ค่าใช้จ่ายนำมาจากใบเสนอราคา (Quotation) เลขที่ ${L.pre_doc_no||"—"} หากตัวเลขไม่ตรงกัน ให้ยึดใบเสนอราคาเป็นหลัก</li></ul></div>`);
+    <div class="callout orange"><div class="co-h">ข้อเสนอเพิ่มเติม</div><ul><li>รายการเพิ่มเติมข้างต้นเป็นรายการที่จำเป็นตามสภาพหน้างานจริง ณ วันสำรวจ เพื่อให้ระบบทำงานได้อย่างปลอดภัยและมีประสิทธิภาพสูงสุด</li><li>ค่าใช้จ่ายนำมาจากใบเสนอราคา (Quotation) เลขที่ ${quotDocNo||L.pre_doc_no||"—"} หากตัวเลขไม่ตรงกัน ให้ยึดใบเสนอราคาเป็นหลัก</li></ul></div>`);
 
   // ── PAGE 10 §6 journey ──────────────────────────────────────────────
   const JOURNEY=[["1","วางเงินมัดจำ 20%","เพื่อจองวันติดตั้ง"],["2","ขอสินเชื่อ","สำหรับส่วนที่เหลือ 80% (กรณีเลือกผ่อนชำระ)"],["3","ติดตั้งระบบ","ทีมช่างเข้าดำเนินการติดตั้งตามวันที่นัดหมายหลังจากการมัดจำ"],["4","ขนานไฟ","ยื่นเรื่องขนานไฟกับการไฟฟ้าและเริ่มใช้งานระบบ"]];
@@ -465,8 +475,12 @@ export function buildSurveyReportHtml(L, D, PKG, options = {}) {
   // is credited toward payment but must not make the system price/payback look lower.
   const loanPrice = quotation.contractAmount ?? gross ?? quotation.netAmount ?? PKG?.price ?? 112000;
   const loanKw = PKG?.kwp ?? 3;
-  const loanBill = L.survey_monthly_bill ?? D.monthly_bill ?? 5000;
   const financeInputs = options.financial?.inputs || {};
+  // ค่าไฟของหน้านี้ต้องเป็นตัวเดียวกับที่ใบเสนอราคาใช้คำนวณยอดประหยัดและระยะคืนทุน
+  // (financeOutputs ด้านล่าง) ไม่อย่างนั้นในหน้าเดียวกันจะมีค่าไฟสองชุด — เดิมอ่านจาก
+  // ฟอร์มสำรวจตรง ๆ ซึ่งมีตัวเลขที่ไม่ใช่ค่าจริงปนอยู่ (999,999) ทำให้ "ค่าไฟรวมถ้าไม่ติด"
+  // ขึ้นหลักสิบล้าน · ถ้าใบไม่มีค่า ใช้แบบสอบถามก่อนฟอร์มสำรวจ ตามกติกาเดียวกับใบเสนอราคา
+  const loanBill = Number(financeInputs.current_monthly_bill) || Number(D.monthly_bill) || Number(L.survey_monthly_bill) || 5000;
   const financeOutputs = options.financial?.outputs || {};
   const downPct = Number(financeInputs.down_payment_percent ?? 20);
   const rate1 = Number(financeInputs.interest_rate_year_1_2 ?? 3.5);
@@ -488,6 +502,11 @@ export function buildSurveyReportHtml(L, D, PKG, options = {}) {
     co2Yr: financeOutputs.co2_reduction_tons_per_year ?? C.co2Yr,
     trees: financeOutputs.equivalent_trees ?? C.trees,
   });
+  // ยอดประหยัดรวมตลอดสัญญาต้องคิดจากยอดประหยัดต่อเดือนตัวเดียวกับที่แสดงในหน้านี้
+  // calcLoan คิด save จากกำลังผลิตเต็ม (ไม่จำกัดด้วยค่าไฟจริง) แล้วคูณเป็น saveTot ไว้ก่อน
+  // พอ save ถูกแทนด้วยค่าจากใบเสนอราคา (จำกัดไม่เกินค่าไฟ) saveTot จึงค้างเป็นค่าเดิม
+  // เช่น ประหยัด 9,000/เดือน แต่ยอดรวม 84 เดือนขึ้น 1,008,000 (= 12,000 × 84)
+  C.saveTot = C.save * C.n;
   const CALC_INDEP=[["มูลค่า Solar Package (บาท)",baht(C.price),"in"],["เงินดาวน์ (%)",num(downPct,1)+"%","in"],["ดอกเบี้ย ปีที่ 1-2 (% ต่อปี)",num(rate1,3)+"%","in"],["ดอกเบี้ย ปีที่ 3 เป็นต้นไป (% ต่อปี)",num(rate2,3)+"%","in"],["ระยะเวลากู้",termMonths+" เดือน","in"]];
   const CALC_CALC=[["เงินดาวน์ (บาท)",baht(C.down)],["วงเงินกู้ (บาท)",baht(C.loan)],["ดอกเบี้ยรายเดือน ปีที่ 1-2",num(C.m1*100,4)+"%"],["ดอกเบี้ยรายเดือน ปีที่ 3 เป็นต้นไป",num(C.m2*100,4)+"%"],["จำนวนงวดช่วงที่ 1",C.n1+" งวด"],["จำนวนงวดช่วงที่ 2",C.n2+" งวด"],["ดอกเบี้ยถัวเฉลี่ยถ่วงน้ำหนัก/ปี",num(C.wAvg*100,3)+"%"]];
   const CALC_RESULT=[["ค่างวดผ่อน (บาท/เดือน) — เท่ากันทุกงวด",baht(C.pmt),"big"],["ยอดจ่ายรวมตลอดสัญญา (บาท)",baht(C.total)],["ดอกเบี้ยรวมตลอดสัญญา (บาท)",baht(C.interest)],["ดอกเบี้ยถัวเฉลี่ย EIR / ปี",num(C.eir*100,3)+"%"]];

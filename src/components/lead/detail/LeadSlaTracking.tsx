@@ -18,6 +18,8 @@ import { formatThaiDate, formatThaiTime } from "@/lib/utils/formatters";
 import {
   SLA_POLICY_ORDER,
   SLA_TEAM,
+  slaAnchorDetail,
+  slaAnchorLabel,
   slaTaskLabel,
   slaTeamOf,
 } from "@/lib/sla-display";
@@ -35,6 +37,12 @@ type SlaInstance = {
   breached_at: string | null;
   /** งานประเมิน Grade ของ Lead ที่ Grade ถูกตั้งก่อนมีระบบ เวลาในแถวนี้ไม่ใช่เหตุการณ์จริง */
   legacy_backfill?: boolean;
+  /** กติกาของเวอร์ชันที่จับเวลาแถวนี้จริง — ดูคอมเมนต์ใน slaTargetLines() */
+  policy_version?: number | null;
+  policy_target_minutes?: number | null;
+  policy_warning_minutes?: number | null;
+  policy_deadline_rule?: string | null;
+  policy_config_json?: string | null;
 };
 
 type SlaPolicy = {
@@ -96,12 +104,46 @@ function stamp(value?: string | null): string {
  * ทุก Lead ตามเวลาที่รับเข้ามา เช่น 13.1 ชั่วโมง ซึ่งไม่ใช่ "ข้อตกลง" ที่ใครตั้งไว้
  * นโยบายพวกนี้เก็บกติกาไว้ใน config_json จึงอ่านจากตรงนั้นมาอธิบายแทนตัวเลข
  */
-function slaTargetLines(policy?: SlaPolicy): string[] {
-  if (!policy) return ["—"];
-  if (policy.target_minutes) return [minutesText(policy.target_minutes)];
+type TargetLine = { text: string; title?: string };
+
+/**
+ * แถวที่มีการจับเวลาไปแล้วต้องอธิบายด้วยกติกาของเวอร์ชันที่จับเวลาแถวนั้นจริง
+ *
+ * นโยบายหนึ่งข้อถูกแก้จุดเริ่มนับได้หลายรอบ (BOOK_SURVEY: v5 นับจากวันที่ Lead เข้ามา
+ * v6 นับจากวันยืนยันรับค่าสำรวจ) ถ้าอ่านจากนโยบายที่ active อย่างเดียว แถวเก่าจะเขียนว่า
+ * "นับจากได้รับค่าสำรวจ" ทั้งที่ช่อง เริ่มนับ เป็นวันที่ Lead เข้ามา — ข้อความกับวันที่
+ * ขัดกันเอง ส่วนขั้นที่ Lead รายนี้ยังไม่เริ่ม ไม่มีแถวให้อ้างอิง จึงใช้นโยบายที่ใช้อยู่
+ */
+function effectivePolicy(policy?: SlaPolicy, instance?: SlaInstance): SlaPolicy | undefined {
+  // แถวที่หาเวอร์ชันของตัวเองไม่เจอ (นโยบายเก่าถูกลบทิ้ง) ยังดีกว่าไม่บอกอะไรเลย
+  // จึงถอยไปใช้นโยบายที่ใช้อยู่ แทนที่จะโชว์ "—"
+  if (!instance || (instance.policy_config_json == null && instance.policy_target_minutes == null)) return policy;
+  return {
+    policy_code: instance.policy_code,
+    name_th: policy?.name_th ?? null,
+    target_minutes: instance.policy_target_minutes ?? null,
+    warning_minutes: instance.policy_warning_minutes ?? null,
+    deadline_rule: instance.policy_deadline_rule ?? null,
+    config_json: instance.policy_config_json ?? null,
+  };
+}
+
+function slaTargetLines(policy?: SlaPolicy): TargetLine[] {
+  if (!policy) return [{ text: "—" }];
 
   let config: Record<string, unknown> = {};
   try { config = policy.config_json ? JSON.parse(policy.config_json) : {}; } catch { config = {}; }
+
+  // จุดเริ่มนับต่อท้ายตัวเลขเสมอ — "1 วัน" เฉย ๆ ไม่บอกว่าเริ่มจับเวลาตอนไหน ซึ่งเป็น
+  // สิ่งที่คนอ่านเข้าใจผิดบ่อยที่สุด (ดู SLA_ANCHOR_LABEL ใน sla-display.ts)
+  const anchorKey = typeof config.anchor === "string" ? config.anchor : null;
+  const anchor = slaAnchorLabel(anchorKey);
+  if (policy.target_minutes) {
+    const target: TargetLine = { text: minutesText(policy.target_minutes) };
+    if (!anchor) return [target];
+    const detail = slaAnchorDetail(anchorKey);
+    return [target, { text: anchor, title: detail !== anchor ? detail ?? undefined : undefined }];
+  }
 
   if (policy.deadline_rule === "BANGKOK_CONTACT_WINDOW") {
     const day = String(config.dayWindow ?? "09:00-19:00").replace("-", "–");
@@ -109,15 +151,15 @@ function slaTargetLines(policy?: SlaPolicy): string[] {
     const nightDeadline = String(config.nightDeadline ?? "12:00:00").slice(0, 5);
     // สองเงื่อนไขคนละบรรทัด อ่านทีละข้อได้ ไม่ต้องไล่หาจุดคั่นกลางพืดข้อความ
     return [
-      `${day} ภายใน ${dayDeadline} ของวันเดียวกัน`,
-      `นอกช่วงเวลา ภายใน ${nightDeadline} ของวันถัดไป`,
+      { text: `${day} ภายใน ${dayDeadline} ของวันเดียวกัน` },
+      { text: `นอกช่วงเวลา ภายใน ${nightDeadline} ของวันถัดไป` },
     ];
   }
   if (policy.deadline_rule === "SEQUENTIAL_CALENDAR_DAYS") {
     const days = Array.isArray(config.daysBySequence) ? config.daysBySequence : [];
-    if (days.length) return [`${days.join(" / ")} วัน`, "(ตามรอบที่ติดตาม)"];
+    if (days.length) return [{ text: `${days.join(" / ")} วัน` }, { text: "(ตามรอบที่ติดตาม)" }];
   }
-  return ["—"];
+  return [{ text: "—" }];
 }
 
 /** เกินกำหนดมาแล้วเท่าไร — งานที่ปิดแล้ววัดถึงเวลาปิด งานที่ยังค้างวัดถึงตอนนี้ */
@@ -222,7 +264,11 @@ export default function LeadSlaTracking({ leadId }: { leadId: number }) {
               const muted = result === "not_started" || result === "legacy";
               // แถวข้อมูลก่อนใช้ระบบ: เวลาที่บันทึกคือเวลาที่ migration รัน ไม่ใช่เหตุการณ์จริง
               // จึงไม่แสดงวันเวลาและระยะเวลาใด ๆ ของแถวนี้
-              const timed = result === "legacy" ? undefined : instance;
+              //
+              // แถวที่ถูกยกเลิกก็เช่นกัน — ถูกยกเลิกเพราะเหตุการณ์ที่ใช้เริ่มจับเวลาไม่เกิดขึ้น
+              // (เช่น ยังไม่ได้รับค่าสำรวจ) วันที่ค้างอยู่ในแถวจึงเป็นของกติกาเดิมที่เลิกใช้แล้ว
+              // แสดงต่อไปจะอ่านเหมือนว่านาฬิกาเดินจริง ทั้งที่ขั้นตอนนี้ยังไม่เริ่มนับ
+              const timed = result === "legacy" || result === "cancelled" ? undefined : instance;
               return (
                 <tr key={code} className={`border-b border-gray-100 last:border-0 ${muted ? "bg-gray-50/40" : ""}`}>
                   <td className={`px-2 py-2 text-center tabular-nums ${muted ? "text-gray-300" : "text-gray-400"}`}>
@@ -246,7 +292,14 @@ export default function LeadSlaTracking({ leadId }: { leadId: number }) {
                   <td className={`px-3 py-2 ${muted ? "text-gray-400" : "text-gray-700"}`}>
                     {/* แต่ละเงื่อนไขต้องอยู่บรรทัดเดียวจบ ห้ามตัดคำ คอลัมน์จึงกว้างพอ
                         สำหรับบรรทัดที่ยาวที่สุด */}
-                    {slaTargetLines(policy).map((line, i) => <div key={i} className="whitespace-nowrap">{line}</div>)}
+                    {/* ห้าม whitespace-nowrap — ตารางเป็น table-fixed คอลัมน์นี้กว้างคงที่ 248px
+                        ข้อความที่ยาวกว่านั้น (เช่น จุดเริ่มนับของ Site Survey) จะล้นไปทับคอลัมน์
+                        "เริ่มนับ · ครบกำหนด" แทนที่จะตัดบรรทัดลงมา */}
+                    {/* แถวที่ไม่แสดงเวลาของตัวเอง (ยกเลิก / ข้อมูลก่อนใช้ระบบ) ใช้กติกาที่บังคับ
+                        ใช้อยู่ตอนนี้ ไม่ใช่กติกาของเวอร์ชันเดิม เพราะไม่มีวันที่ให้เทียบแล้ว */}
+                    {slaTargetLines(effectivePolicy(policy, timed)).map((line, i) => (
+                      <div key={i} className="break-words" title={line.title}>{line.text}</div>
+                    ))}
                   </td>
                   {/* เริ่มนับกับครบกำหนดเป็นช่วงเวลาเดียวกัน อยู่คอลัมน์เดียวคนละบรรทัด
                       มีป้ายกำกับในตัว จะได้ไม่ต้องเดาว่าบรรทัดไหนคืออะไร */}

@@ -1282,10 +1282,14 @@ function QuotationEditor({
       rate_source: saved.rate_source || GSB_SOLAR_LOAN_DEFAULTS.rate_source,
       rate_effective_date:
         saved.rate_effective_date || GSB_SOLAR_LOAN_DEFAULTS.rate_effective_date,
+      // ค่าไฟเฉลี่ยต่อเดือนยึดคำตอบของลูกค้าในแบบสอบถามเป็นหลัก (lead_data.monthly_bill
+      // ซึ่ง API ส่งมาในชื่อ pre_monthly_bill) ถ้าลูกค้าไม่ได้ตอบค่อยใช้ค่าจากฟอร์มสำรวจ
+      // ส่วนค่าไฟสูงสุดเป็นตัวสุดท้าย เพราะเป็นคนละตัวชี้วัดกับค่าเฉลี่ย
+      // ใบที่บันทึกไปแล้วคงตัวเลขเดิมไว้ ใบที่ส่งลูกค้าไปแล้วจะได้ไม่เปลี่ยนเอง
       current_monthly_bill: Number(
         saved.current_monthly_bill ||
-          lead.survey_monthly_bill ||
           lead.pre_monthly_bill ||
+          lead.survey_monthly_bill ||
           lead.monthly_bill_max ||
           0,
       ),
@@ -1451,7 +1455,7 @@ function QuotationEditor({
     if (groups.some((g) => !g.title.item_name.trim()))
       return "กรุณาตั้งชื่อหัวข้อให้ครบทุกอัน";
     if (documentInputs.current_monthly_bill <= 0)
-      return "กรุณาระบุค่าไฟปัจจุบันจากข้อมูลจริง";
+      return "ไม่พบค่าไฟเฉลี่ยต่อเดือน — กรุณากรอกในแบบสอบถามลูกค้า (Customer Info) หรือฟอร์มสำรวจ";
     if (termsPercentTotal !== 100)
       return `ยอดรวมงวดชำระเงินต้องเท่ากับ 100% (ปัจจุบัน ${termsPercentTotal}%)`;
     if (issueDate > todayIso()) return "วันที่ใบเสนอราคาต้องไม่เป็นวันที่ล่วงหน้า";
