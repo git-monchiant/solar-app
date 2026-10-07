@@ -5,6 +5,7 @@ import { DUE_WASH_SQL, isCleaning } from "@/lib/om/entitlement";
 import { fixDates, sql } from "@/lib/db";
 import { getOmDb } from "@/lib/om/line";
 import { HIDDEN_GROUPS, bucketSql } from "@/lib/om/house-scope";
+import { houseOriginSql, parseOrigin } from "@/lib/om/house-origin";
 
 // ทะเบียนบ้าน/ระบบติดตั้ง — ค้นหา + กรอง + แบ่งหน้า
 // สิทธิ์ล้างอยู่ที่บ้าน (installations → grants/redemptions) ไม่ใช่ที่คน
@@ -19,6 +20,7 @@ export async function GET(req: NextRequest) {
   const filter = u.get("filter") ?? "";           // vip | nosolar | nowarr | noted | multi | duewash | nophone | noinv | nocust
   const proj = (u.get("project") ?? "").trim();   // project_id | __none__ (ไม่ระบุโครงการ)
   const grp = (u.get("group") ?? "").trim();      // ว่าง/__ALL__ = ลิสต์หลัก (แสดง) | __VIP__ | __NOPJ__ | __CONDO__/__SALES__/__FACILITY__/__UNSOLD__/__DEMO__ (ซ่อน) | project_id
+  const origin = parseOrigin(u.get("origin"));    // ที่มา: sales | registry (แผน 20261007-01) — ต้องส่งให้ /groups ด้วย ตัวเลขบนแท็บจะได้ตรง
   const page = Math.max(1, Number(u.get("page")) || 1);
   const size = Math.min(100, Math.max(10, Number(u.get("size")) || 30));
 
@@ -75,6 +77,7 @@ export async function GET(req: NextRequest) {
         OR sc.bucket = @grp )`;
 
   const where = `WHERE ${showHidden ? "h.om_excluded_reason IS NOT NULL" : "h.is_om = 1"} ${extra}
+      ${houseOriginSql(origin, "h.id")}
       AND (@seg = N'' OR h.segment = @seg)
       AND (@pid = N'' OR (@pid = N'__none__' AND h.project_id IS NULL) OR h.project_id = @pid)
       ${scopeFilter}

@@ -4,6 +4,7 @@ import { sql } from "@/lib/db";
 import { getOmDb } from "@/lib/om/line";
 import { HG, HIDDEN_GROUPS, GROUP_LABEL, bucketSql } from "@/lib/om/house-scope";
 import { CLEANING_CYCLE_SQL, isCleaning } from "@/lib/om/entitlement";
+import { houseOriginSql, parseOrigin } from "@/lib/om/house-origin";
 
 // กลุ่มโครงการสำหรับลิสต์ซ้ายของหน้าบ้าน — logic การจัดกลุ่มอยู่ที่ src/lib/om/house-scope.ts
 // (ใช้ร่วมกับ /api/om/houses เพื่อให้ตัวเลขหัวกลุ่ม = จำนวนที่เปิดเข้าไปเห็นจริง)
@@ -19,6 +20,9 @@ export async function GET(req: NextRequest) {
   const gate = await requireAuth(req);
   if (gate.error) return gate.error;
 
+  // ★ origin = ตัวกรอง "ที่มา" ของหน้าบ้าน (แผน 20261007-01) — เงื่อนไขเดียวกับ /api/om/houses
+  //   ตัวเลขบนแท็บ/dropdown โครงการ ต้องเท่ากับรายการที่เปิดเห็นตอนเลือกที่มาไว้
+  const origin = parseOrigin(req.nextUrl.searchParams.get("origin"));
   const db = await getOmDb();
   // ★ สรุปตารางลูกลง #temp ก่อนแล้วค่อย join — correlated subquery รายบ้าน 6 ตัว
   //   ใช้เวลา 6.7 วินาที (วัดจริง 1 ก.ย.) ส่วนแบบนี้จบใน ~0.3 วินาที
@@ -81,11 +85,11 @@ export async function GET(req: NextRequest) {
       LEFT JOIN #grant gr ON gr.house_id = h.id
       LEFT JOIN #red rd  ON rd.house_id = h.id
       LEFT JOIN #cust c  ON c.house_id = h.id
-      WHERE h.is_om = 1
+      WHERE h.is_om = 1 ${houseOriginSql(origin, "h.id")}
     ) x GROUP BY grp;
 
     -- ★ บ้านที่ "เราสั่งซ่อน" — is_om = 0 แล้ว จึงไม่อยู่ในสรุปข้างบน ต้องนับแยก
-    SELECT COUNT(*) hidden FROM om_houses WHERE om_excluded_reason IS NOT NULL;
+    SELECT COUNT(*) hidden FROM om_houses h WHERE h.om_excluded_reason IS NOT NULL ${houseOriginSql(origin, "h.id")};
 
     DROP TABLE #inst; DROP TABLE #grant; DROP TABLE #red; DROP TABLE #cust;`);
 
