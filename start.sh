@@ -15,11 +15,13 @@
 set -eu
 
 # port แยกตาม branch เพื่อให้รัน v2 กับ v3 พร้อมกันได้ และดูจาก URL ก็รู้ว่าตัวไหน
-#   main → 3010   ·   v3 → 3020   ·   กำหนดเองได้ด้วย PORT=xxxx ./start.sh
+#   main → 3010   ·   v3 / v3-* → 3020   ·   v3-b2b → 3030   ·   กำหนดเองได้ด้วย PORT=xxxx ./start.sh
+#   ★ ชื่อ branch v3 ใช้ขีดกลาง (v3-xxx) — v3/xxx push ขึ้น GitHub ไม่ได้เพราะมี branch v3 อยู่แล้ว
 BRANCH="$(git rev-parse --abbrev-ref HEAD 2>/dev/null || echo main)"
 if [[ -z "${PORT:-}" ]]; then
   case "$BRANCH" in
-    v3|v3/*) PORT=3020 ;;
+    v3-b2b|v3-b2b-*) PORT=3030 ;;
+    v3|v3-*|v3/*)     PORT=3020 ;;
     *)       PORT=3010 ;;
   esac
 fi
