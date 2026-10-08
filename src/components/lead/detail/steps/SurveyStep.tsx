@@ -479,7 +479,9 @@ export default function SurveyStep({ lead, state, refresh, packages, expanded, o
   );
 
   if (state === "done") {
-    const applianceList = (lead.survey_appliances || "").split(",").filter(Boolean).map(v => APPLIANCE_MAP[v] || v);
+    // Customer Info (lead_data.appliances) is the single source since the
+    // survey form's EV checkbox was retired — see migration 200.
+    const applianceList = (lead.pre_appliances || "").split(",").filter(Boolean).map(v => APPLIANCE_MAP[v] || v);
     const pkgIds = (lead.interested_package_ids || "").split(",").map(s => parseInt(s.trim())).filter(n => !isNaN(n));
     const selectedPackages: Package[] = pkgIds.length
       ? pkgIds.map(id => packages.find(p => p.id === id)).filter((p): p is Package => !!p)
@@ -1307,7 +1309,6 @@ export default function SurveyStep({ lead, state, refresh, packages, expanded, o
             "survey_monthly_bill",
             "survey_mdb_brand", "survey_mdb_model", "survey_mdb_slots", "survey_breaker_type",
             "survey_panel_to_inverter_m", "survey_db_distance_m",
-            "survey_appliances",
           ],
           2: [
             "survey_floors", "survey_roof_material",

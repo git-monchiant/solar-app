@@ -10,10 +10,14 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
     const leadResult = await db.request()
       .input("id", sql.Int, parseInt(id))
       .query(`
-        SELECT l.*, p.name as project_official_name, u.full_name as assigned_name
+        SELECT l.*, p.name as project_official_name, u.full_name as assigned_name,
+          -- Appliances (EV charger) live on Customer Info since the survey
+          -- form's checkbox was retired (migration 200).
+          d.appliances AS pre_appliances
         FROM leads l
         LEFT JOIN projects p ON l.project_id = p.id
         LEFT JOIN users u ON l.assigned_user_id = u.id
+        LEFT JOIN lead_data d ON d.lead_id = l.id
         WHERE l.id = @id
       `);
 

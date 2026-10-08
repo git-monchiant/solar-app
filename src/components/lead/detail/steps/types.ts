@@ -57,7 +57,8 @@ export interface Lead {
   pre_bill_photo_url: string | null;
   // questionnaire §1 — also on lead_data
   house_age: string | null;
-  occupant_total: number | null;
+  occupant_total: number | null;   // derived: adults + elderly + kids (pets excluded)
+  occupant_adults: number | null;
   occupant_elderly: number | null;
   occupant_kids: number | null;
   occupant_pets: number | null;
@@ -72,6 +73,7 @@ export interface Lead {
   work_days_per_week: string | null;
   ac_split: string | null;
   ev_charge_period: string | null;
+  load_profile: string | null;     // JSON — see src/lib/load-assumption.ts
   // questionnaire §4 — also on lead_data
   future_ev: string | null;
   future_ev_charger: string | null;
