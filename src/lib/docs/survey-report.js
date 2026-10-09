@@ -1,7 +1,7 @@
 import fs from "fs";
 import path from "path";
 import { LEGACY_PEAK_USAGE, PEAK_USAGE } from "@/lib/customer-questionnaire";
-import { computeLoad, hasEvCharger, loadBillCheck } from "@/lib/load-assumption";
+import { AC_LOAD_FACTOR, computeLoad, hasEvCharger, loadBillCheck } from "@/lib/load-assumption";
 
 // 15-page "รายงานสำรวจหน้างานติดตั้งโซลาร์เซลล์" — ported verbatim from the
 // generator that was tuned against leads 667 / 691 / 727 / 728.
@@ -305,7 +305,13 @@ export function buildSurveyReportHtml(L, D, PKG, options = {}) {
     + (load.nightShare != null ? `สัดส่วนใช้ไฟกลางคืน ≈ <b>${Math.round(load.nightShare * 100)}%</b> · ` : "")
     + `คำนวณจาก ${load.computedRows}/${load.totalRows} รายการ`
     + (coverage != null ? ` · คิดเป็น ≈ <b>${Math.round(coverage * 100)}%</b> ของค่าไฟจริง (${baht(loadBill)} บาท/เดือน)` : "")
-    + ` · กำลังไฟเป็นค่ามาตรฐานโดยประมาณ</p>`;
+    + ` · กำลังไฟเป็นค่ามาตรฐานโดยประมาณ`
+    // AC kW is an average below the rated figure — say why, or 12,000 BTU at
+    // ≈0.6 kW reads as a mistake.
+    + (load.rows.some(r => r.key.startsWith("ac_") && r.qty && r.qty !== "0")
+      ? ` (แอร์คิดภาระเฉลี่ย กลางวัน ${Math.round(AC_LOAD_FACTOR.day * 100)}% · กลางคืน ${Math.round(AC_LOAD_FACTOR.night * 100)}% ของกำลังเต็ม)`
+      : "")
+    + `</p>`;
   // Occupants: people = adults + elderly + kids; pets are listed but never
   // counted as people (migration 199). Built from the parts, not
   // occupant_total, because snapshots frozen before the fix hold a total that

@@ -1,9 +1,12 @@
 import assert from "node:assert/strict";
 import {
+  AC_LOAD_FACTOR,
   AC_TIER_KW,
   computeLoad,
   defaultEvChargerKw,
   hasEvCharger,
+  LOAD_COVERAGE_WARN,
+  loadBillCheck,
   loadBillCoverage,
   loadSummaryText,
   missingLoadAnswers,
@@ -30,8 +33,10 @@ const row = (result, key) => result.rows.find(r => r.key === key);
 
 // ── defaults come from the cited sources (see load-assumption.ts) ────
 {
-  // BTU ÷ EGAT Label No.5 minimum SEER (12.85 ≤ 27,296 BTU; 12.40 above)
-  assert.deepEqual(AC_TIER_KW, { "9000": 0.7, "12000": 0.934, "18000": 1.401, "24000": 1.868, gt24000: 2.419 });
+  // BTU ÷ EGAT Label No.5 fixed-speed minimum SEER, 2024 labels (13.17 ≤ 27,296 BTU; 12.56 above)
+  assert.deepEqual(AC_TIER_KW, { "9000": 0.683, "12000": 0.911, "18000": 1.367, "24000": 1.822, gt24000: 2.389 });
+  // ISO 16358 load line on Bangkok temperatures: ≈0.72 by day, ≈0.54 at night
+  assert.deepEqual(AC_LOAD_FACTOR, { day: 0.7, night: 0.55 });
   // EGAT: a 32 A wallbox needs 1-phase 30(100)A or 3-phase
   assert.equal(defaultEvChargerKw("15_45", "1_phase"), 3.6);
   assert.equal(defaultEvChargerKw("15_45", "3_phase"), 7.4);
@@ -70,12 +75,13 @@ const row = (result, key) => result.rows.find(r => r.key === key);
   const r = computeLoad(input);
   assert.equal(r.asked, true);
   assert.equal(r.computedRows, 9);
-  // AC: day 1.87 kW (2 × 0.934) × 6 h; night 2.34 kW (0.934 + 1.401) × 8 h
-  assert.equal(row(r, "ac_day").dayKwh, 11.2);
+  // AC: day 2 × 0.911 × 0.7 = 1.28 kW × 6 h; night (0.911 + 1.367) × 0.55 = 1.25 kW × 8 h
+  assert.equal(row(r, "ac_day").dayKwh, 7.7);
   assert.equal(row(r, "ac_day").nightApplies, false, "daytime-AC row has no night cells");
-  assert.equal(row(r, "ac_night").nightKwh, 18.7);
+  assert.equal(row(r, "ac_night").nightKwh, 10);
   assert.equal(row(r, "ac_night").qty, "2");
-  assert.match(row(r, "ac_night").size, /12,000 BTU × 1, 18,000 BTU × 1 · ≈2\.34 kW/);
+  assert.equal(row(r, "ac_night").size, "12,000 BTU × 1, 18,000 BTU × 1 · รวมเฉลี่ย ≈1.25 kW",
+    "kW is both units together — 'รวม' so nobody multiplies by จำนวน again");
   assert.equal(row(r, "fridge").dayKwh, 0.6);             // 0.05 kW × 12 h
   assert.equal(row(r, "fridge").nightHours, 12);
   assert.equal(row(r, "water_heater").nightKwh, 3.5);     // 2 × 3.5 kW × 0.5 h
@@ -89,11 +95,11 @@ const row = (result, key) => result.rows.find(r => r.key === key);
   assert.equal(row(r, "ev").nightHours, 1.71);            // 3 × 4 h ÷ 7
   assert.equal(row(r, "ev").nightKwh, 12.7);              // 7.4 kW × 1.71 h
   assert.equal(row(r, "ev").dayKwh, 0);
-  assert.equal(r.dayKwh, 13.6);
-  assert.equal(r.nightKwh, 37.8);
+  assert.equal(r.dayKwh, 10.1);
+  assert.equal(r.nightKwh, 29.1);
   assert.equal(Math.round(r.nightShare * 100), 74);
   assert.equal(missingLoadAnswers(input).length, 0);
-  assert.equal(loadSummaryText(r), "กลางวัน 13.6 kWh · กลางคืน 37.8 kWh/วัน (กลางคืน 74%)");
+  assert.equal(loadSummaryText(r), "กลางวัน 10.1 kWh · กลางคืน 29.1 kWh/วัน (กลางคืน 74%)");
 }
 
 // ── printed figures multiply out (lead 974's answers, 28 Sep 2026) ──
@@ -106,8 +112,8 @@ const row = (result, key) => result.rows.find(r => r.key === key);
   });
   // each printed row: kW × hours (as shown) → the kWh shown, to 1 decimal
   const acN = row(r, "ac_night");
-  assert.match(acN.size, /≈2\.33 kW$/, "2 × 0.70 + 0.934, shown to 2 decimals");
-  assert.equal(acN.nightKwh, 21);                          // 2.33 × 9 = 20.97
+  assert.match(acN.size, /รวมเฉลี่ย ≈1\.25 kW$/, "(2 × 0.683 + 0.911) × 0.55, shown to 2 decimals");
+  assert.equal(acN.nightKwh, 11.3);                        // 1.25 × 9 = 11.25
   assert.equal(row(r, "water_heater").dayHours, 0.17);     // 10 min
   assert.equal(row(r, "water_heater").dayKwh, 1.2);        // 2 × 3.5 × 0.17 = 1.19
   assert.equal(row(r, "washer").dayHours, 0.29);           // 2 ÷ 7
@@ -126,12 +132,13 @@ const row = (result, key) => result.rows.find(r => r.key === key);
   assert.equal(row(r, "fridge").status, "answered");
   assert.equal(row(r, "fridge").dayKwh, 0, "ไม่มี is a real zero");
   assert.equal(row(r, "water_heater").status, "unknown");
-  assert.equal(row(r, "water_heater").dayKwh, null, "ไม่ทราบ prints blank for hand-fill");
+  assert.equal(row(r, "water_heater").dayKwh, null, "ไม่ทราบ computes nothing (the report prints the word)");
   assert.equal(row(r, "water_pump").status, "partial");
   assert.equal(row(r, "water_pump").qty, "1");
   assert.equal(row(r, "water_pump").dayKwh, null);
   assert.equal(row(r, "ac_day").status, "answered", "split exists with no daytime unit → known zero");
   assert.equal(row(r, "ac_night").status, "partial", "machines known, hours not asked");
+  assert.equal(row(r, "ac_night").size, "9,000 BTU × 1 · เฉลี่ย ≈0.38 kW", "one unit → no 'รวม'");
   assert.equal(row(r, "ev").status, "answered", "questions touched and no charger → EV row is 0");
   assert.equal(row(r, "ev").qty, "0");
   assert.deepEqual(
@@ -175,6 +182,26 @@ const row = (result, key) => result.rows.find(r => r.key === key);
   assert.equal(loadBillCoverage(r, 1080, 4), 0.8, "quotation's own ฿/kWh wins over the default");
   assert.equal(loadBillCoverage(r, null, 5), null);
   assert.equal(loadBillCoverage(computeLoad({}), 1080, 5), null);
+}
+
+// ── bill check: warn above 1.5× the bill, name the biggest row ─────
+{
+  assert.equal(LOAD_COVERAGE_WARN, 1.5);
+  // lead 1132 (prod, 9 Oct 2026): EV 7.4 kW × 6 h every night against a 4,000 ฿ bill
+  const ev = computeLoad({
+    appliances: "ev", ev_charge_period: "night",
+    load_profile: { fridge: { unknown: true }, water_heater: { unknown: true }, water_pump: { unknown: true },
+      washer: { unknown: true }, electronics: { unknown: true }, lighting: { unknown: true },
+      ev: { sessions_per_week: 7, hours_per_session: 6 } },
+  });
+  const c = loadBillCheck(ev, 4000, null);
+  assert.equal(c.complete, false, "AC never asked → not complete");
+  assert.equal(c.warn, true, "44.4 kWh × 30 = 1,332 vs 800 kWh billed");
+  assert.deepEqual(c.top, { label: "ที่ชาร์จรถ EV", kwh: 44.4 });
+  const ok = loadBillCheck(computeLoad({ load_profile: { water_pump: { qty: 1, day_h: 12, night_h: 12 } } }), 1080, null);
+  assert.equal(ok.coverage, 1);
+  assert.equal(ok.warn, false);
+  assert.equal(loadBillCheck(ev, null, null), null, "no bill → nothing to compare");
 }
 
 console.log("load-assumption: all tests passed");

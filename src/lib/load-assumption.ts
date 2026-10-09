@@ -36,20 +36,31 @@ export type LoadProfile = Partial<Record<LoadDeviceKey, LoadEntry>>;
 
 export const LOAD_PROFILE_VERSION = 1;
 
-// AC: BTU ÷ the minimum SEER that still earns EGAT's Label No.5 —
-// ≥ 12.85 up to 27,296 BTU, ≥ 12.40 for 27,297–40,944 BTU
-// (https://homeno5.egat.co.th/info/air5/). SEER is seasonal, so this is closer
-// to real consumption than the nameplate (≈ BTU ÷ 11, which we used first and
-// overstated AC — the biggest load in most homes). A more efficient unit uses
-// less, so the estimate errs high, which is the safe side for system sizing.
+// AC rated power: BTU ÷ the minimum SEER that still earns EGAT's Label No.5
+// for a FIXED-speed unit (labels from 1 Jan 2024) — ≥ 13.17 up to 27,296 BTU,
+// ≥ 12.56 for 27,297–40,944 BTU
+// (https://labelno5.egat.co.th/home/wp-content/uploads/2023/12/02_brief_ac.pdf).
+// Inverter units need ≥ 17.06 / 16.04 and use about a quarter less, but the
+// questionnaire doesn't ask which kind, so we stay on the safe (high) side.
 // The ">24,000" tier is costed as a 30,000 BTU unit.
 const AC_TIER_BTU: Record<string, number> = {
   "9000": 9000, "12000": 12000, "18000": 18000, "24000": 24000, gt24000: 30000,
 };
-const labelNo5MinSeer = (btu: number) => (btu <= 27296 ? 12.85 : 12.40);
+const labelNo5MinSeer = (btu: number) => (btu <= 27296 ? 13.17 : 12.56);
 export const AC_TIER_KW: Record<string, number> = Object.fromEntries(
   Object.entries(AC_TIER_BTU).map(([tier, btu]) => [tier, Math.round(btu / labelNo5MinSeer(btu)) / 1000]),
 );
+// Share of that rated power an AC draws on average while switched on. EGAT's
+// own label (capacity ÷ SEER × 8 h/day) runs the unit flat out every hour,
+// which is fine for comparing models but overstated real homes — 6 of the 7
+// leads whose estimate came out above 1.5× their bill were AC-driven
+// (plan 20261009-02). The SEER behind the label (TIS 2714 = ISO 16358-1)
+// assumes the cooling load falls linearly from 100% at 35 °C outdoors to 0%
+// at 20 °C; applying that same line to Bangkok's hourly temperatures (NOAA
+// Engineering Weather Data, Don Muang 1973–1996 bins, shifted +1.4 °C to the
+// 1991–2020 normal mean of 29.5 °C) gives ≈ 31 °C → 0.72 by day (06–18) and
+// ≈ 28 °C → 0.54 at night (18–06). Rounded to the nearest 0.05.
+export const AC_LOAD_FACTOR: Record<LoadPeriod, number> = { day: 0.7, night: 0.55 };
 const AC_TIER_LABEL: Record<string, string> = {
   "9000": "9,000", "12000": "12,000", "18000": "18,000", "24000": "24,000", gt24000: ">24,000",
 };
@@ -249,12 +260,14 @@ function acRows(profile: LoadProfile, acRaw: unknown): LoadRow[] {
     const seg = split?.[period] || {};
     const tiers = Object.entries(seg).filter(([, n]) => n > 0);
     const units = tiers.reduce((a, [, n]) => a + n, 0);
-    const kw = r2(tiers.reduce((a, [k, n]) => a + n * AC_TIER_KW[k], 0));
+    // Average draw while on (rated × AC_LOAD_FACTOR), so the printed kW × the
+    // printed hours still lands on the printed kWh.
+    const kw = r2(tiers.reduce((a, [k, n]) => a + n * AC_TIER_KW[k], 0) * AC_LOAD_FACTOR[period]);
     // kW here is every machine in this period together, so a multi-unit row
     // says "รวม" — otherwise จำนวน × กำลังไฟ × ชม. counts the units twice
     // (4 × 6.16 kW × 8 ชม. read as 197 against a printed 49.3).
     const size = tiers.length
-      ? `${tiers.map(([k, n]) => `${AC_TIER_LABEL[k]} BTU × ${n}`).join(", ")} · ${units > 1 ? "รวม " : ""}≈${fmt(kw)} kW`
+      ? `${tiers.map(([k, n]) => `${AC_TIER_LABEL[k]} BTU × ${n}`).join(", ")} · ${units > 1 ? "รวม" : ""}เฉลี่ย ≈${fmt(kw)} kW`
       : null;
     // ac_split is only stored when some period has a machine, so a split with
     // nothing in THIS period is a known zero. No split and no hours answer →
