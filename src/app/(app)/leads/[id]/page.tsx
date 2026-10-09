@@ -2006,6 +2006,7 @@ export default function LeadDetailPage({ params }: { params: Promise<{ id: strin
                                           evChargePeriod={lead.ev_charge_period}
                                           meterSize={lead.survey_meter_size || lead.meter_size}
                                           electricalPhase={lead.survey_electrical_phase || lead.pre_electrical_phase}
+                                          monthlyBill={lead.pre_monthly_bill || lead.survey_monthly_bill}
                                           onCommit={(json) => updateLeadField("load_profile", json)}
                                         />
                                       </div>

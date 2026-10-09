@@ -1,7 +1,7 @@
 import fs from "fs";
 import path from "path";
 import { LEGACY_PEAK_USAGE, PEAK_USAGE } from "@/lib/customer-questionnaire";
-import { computeLoad, hasEvCharger, loadBillCoverage } from "@/lib/load-assumption";
+import { computeLoad, hasEvCharger, loadBillCheck } from "@/lib/load-assumption";
 
 // 15-page "รายงานสำรวจหน้างานติดตั้งโซลาร์เซลล์" — ported verbatim from the
 // generator that was tuned against leads 667 / 691 / 727 / 728.
@@ -235,7 +235,8 @@ export function buildSurveyReportHtml(L, D, PKG, options = {}) {
   // ── PAGE 6 §3 Load Assumption — every figure comes from computeLoad()
   // (src/lib/load-assumption.ts), the module behind the Customer Info preview,
   // so the report and the form cannot disagree. Rows nobody answered keep the
-  // blank fill-in cells for the surveyor to write by hand; "—" marks a cell
+  // blank fill-in cells for the surveyor to write by hand; "ไม่ทราบ" rows say
+  // so in words (blank cells read as a form nobody finished); "—" marks a cell
   // that doesn't apply (night hours on the daytime-AC row).
   // Table rows are compact so table + summary + battery callout fit one page
   // (the page has a fixed height and the TOC fixed page numbers — never let
@@ -262,7 +263,18 @@ export function buildSurveyReportHtml(L, D, PKG, options = {}) {
   const na = `<span class="muted">—</span>`;
   // unit shown in an empty ขนาด cell, matching what the surveyor would write
   const SIZE_UNIT = { ac_day:"BTU", ac_night:"BTU", electronics:"W", lighting:"W" };
+  const unk = `<span class="unk">ไม่ทราบ</span>`;
+  // "ไม่ทราบ" row: nothing is computed, so kWh is "—". AC/EV may still know
+  // how many and how big (only the hours are unknown) — print those.
+  const unknownRow = r => {
+    const hasQty = r.qty != null;
+    const hrs = applies => !applies ? na : hasQty ? unk : na;
+    return `<tr><td class="dev">${r.label}</td><td>${hasQty ? `<span class="val">${r.qty}</span>` : unk}</td>`
+      + `<td>${hasQty && r.size ? `<span class="val">${keepUnit(r.size)}</span>` : na}</td>`
+      + `<td>${hrs(r.dayApplies)}</td><td>${hrs(r.nightApplies)}</td><td>${na}</td><td>${na}</td></tr>`;
+  };
   const loadRow = r => {
+    if (r.status === "unknown") return unknownRow(r);
     const known = r.status === "answered" || r.status === "partial";
     const size = r.qty === "0" ? na   // "ไม่มี" — nothing to size
       : known && r.size ? `<span class="val">${keepUnit(r.size)}</span>` : bl(SIZE_UNIT[r.key] || "kW");
@@ -287,8 +299,8 @@ export function buildSurveyReportHtml(L, D, PKG, options = {}) {
   // Only once every question was asked — a half-filled table explains a
   // tiny share of the bill and would read as a finding. Same bar the
   // quotation submit gate enforces ("ไม่ทราบ" counts as asked).
-  const allAsked = load.rows.every(r => r.status === "answered" || r.status === "unknown");
-  const coverage = allAsked ? loadBillCoverage(load, loadBill, loadRate) : null;
+  const billCheck = loadBillCheck(load, loadBill, loadRate);
+  const coverage = billCheck?.complete ? billCheck.coverage : null;
   const loadNote = load.dayKwh == null ? "" : `<p class="load-note">`
     + (load.nightShare != null ? `สัดส่วนใช้ไฟกลางคืน ≈ <b>${Math.round(load.nightShare * 100)}%</b> · ` : "")
     + `คำนวณจาก ${load.computedRows}/${load.totalRows} รายการ`
@@ -635,7 +647,7 @@ export function buildSurveyReportHtml(L, D, PKG, options = {}) {
   table.kv td{border:1px solid #c8cfda;padding:7px 10px;vertical-align:middle;font-size:14.5px;}
   table.kv td.k{background:#f4f6f9;font-weight:700;color:${NAVY};width:36%;}
   .ip{color:#9aa3b0;}.ipx{color:#9aa3b0;}.val{color:${INK};font-weight:500;}
-  .muted{color:#b6bcc6;}
+  .muted{color:#b6bcc6;}.unk{color:${GRAY};}
   .toc-row{display:flex;align-items:baseline;font-size:15.5px;padding:7px 0;color:#374151;}
   .toc-t{white-space:nowrap;}.toc-n{white-space:nowrap;font-weight:700;color:${NAVY};}
   .toc-dot{flex:1;border-bottom:1px dotted #b6bdc9;margin:0 6px;transform:translateY(-3px);}

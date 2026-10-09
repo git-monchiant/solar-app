@@ -14,7 +14,7 @@
 // Stored as JSON in lead_data.load_profile. Per device:
 //   key missing        → not asked yet   → report leaves the row blank
 //   { qty: 0 }         → has none        → a real answer, 0 kWh
-//   { unknown: true }  → customer can't say → counts as answered, prints blank
+//   { unknown: true }  → customer can't say → counts as answered, prints "ไม่ทราบ"
 
 export type LoadPeriod = "day" | "night";
 export type LoadDeviceKey = "ac" | "fridge" | "water_heater" | "water_pump" | "washer" | "electronics" | "lighting" | "ev";
@@ -250,8 +250,11 @@ function acRows(profile: LoadProfile, acRaw: unknown): LoadRow[] {
     const tiers = Object.entries(seg).filter(([, n]) => n > 0);
     const units = tiers.reduce((a, [, n]) => a + n, 0);
     const kw = r2(tiers.reduce((a, [k, n]) => a + n * AC_TIER_KW[k], 0));
+    // kW here is every machine in this period together, so a multi-unit row
+    // says "รวม" — otherwise จำนวน × กำลังไฟ × ชม. counts the units twice
+    // (4 × 6.16 kW × 8 ชม. read as 197 against a printed 49.3).
     const size = tiers.length
-      ? `${tiers.map(([k, n]) => `${AC_TIER_LABEL[k]} BTU × ${n}`).join(", ")} · ≈${fmt(kw)} kW`
+      ? `${tiers.map(([k, n]) => `${AC_TIER_LABEL[k]} BTU × ${n}`).join(", ")} · ${units > 1 ? "รวม " : ""}≈${fmt(kw)} kW`
       : null;
     // ac_split is only stored when some period has a machine, so a split with
     // nothing in THIS period is a known zero. No split and no hours answer →
@@ -352,6 +355,38 @@ export function loadBillCoverage(result: LoadResult, monthlyBill: unknown, rate:
   const perDay = (result.dayKwh ?? 0) + (result.nightKwh ?? 0);
   if (!(bill > 0) || !(perDay > 0)) return null;
   return (perDay * 30) / (bill / unit);
+}
+
+// Above this share of the real bill the answers almost certainly overstate
+// someone's hours — usually time plugged in / switched on rather than time
+// actually drawing power (EV, water pump). Warn only, never block: a bill from
+// before the customer bought an EV can be exceeded for real (plan 20261009-01).
+export const LOAD_COVERAGE_WARN = 1.5;
+
+export type LoadBillCheck = {
+  coverage: number;
+  /** every question asked ("ไม่ทราบ" counts) — below that the share is too
+   *  partial to print, though an overshoot is still worth a warning */
+  complete: boolean;
+  warn: boolean;
+  /** the row driving the total, named in the warning */
+  top: { label: string; kwh: number } | null;
+};
+
+export function loadBillCheck(result: LoadResult, monthlyBill: unknown, rate: unknown): LoadBillCheck | null {
+  const coverage = loadBillCoverage(result, monthlyBill, rate);
+  if (coverage === null) return null;
+  let top: LoadBillCheck["top"] = null;
+  for (const r of result.rows) {
+    const kwh = r1((r.dayKwh ?? 0) + (r.nightKwh ?? 0));
+    if (kwh > 0 && (!top || kwh > top.kwh)) top = { label: r.label, kwh };
+  }
+  return {
+    coverage,
+    complete: result.rows.every(r => r.status === "answered" || r.status === "unknown"),
+    warn: coverage > LOAD_COVERAGE_WARN,
+    top,
+  };
 }
 
 // Questions still open, for the quotation submit gate (D4). "ไม่ทราบ" counts

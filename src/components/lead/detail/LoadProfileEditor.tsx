@@ -12,10 +12,11 @@
 import { useState, type ReactNode } from "react";
 import { AC_TIERS } from "@/lib/customer-questionnaire";
 import {
-  computeLoad, defaultEvChargerKw, EV_CHARGER_KW_OPTIONS, LOAD_DEFAULT_KW,
-  parseLoadProfile, serializeLoadProfile,
+  computeLoad, defaultEvChargerKw, EV_CHARGER_KW_OPTIONS, LOAD_COVERAGE_WARN, LOAD_DEFAULT_KW,
+  loadBillCheck, parseLoadProfile, serializeLoadProfile,
   type LoadDeviceKey, type LoadEntry, type LoadProfile,
 } from "@/lib/load-assumption";
+import { formatTHB } from "@/lib/utils/formatters";
 
 interface Props {
   profile: LoadProfile;
@@ -26,6 +27,9 @@ interface Props {
   // Pass the surveyor's measured values when the lead has them.
   meterSize?: string | null;
   electricalPhase?: string | null;
+  // Same bill the report's §3 compares against (questionnaire answer first,
+  // then the survey form). No quotation yet, so the rate is the 5 ฿ default.
+  monthlyBill?: number | null;
   onChange: (next: LoadProfile) => void;
 }
 
@@ -59,7 +63,7 @@ function Stepper({ label, value, onChange, step = 1, max, disabled }: {
   );
 }
 
-export default function LoadProfileEditor({ profile, acSplit, hasEv, evChargePeriod, meterSize, electricalPhase, onChange }: Props) {
+export default function LoadProfileEditor({ profile, acSplit, hasEv, evChargePeriod, meterSize, electricalPhase, monthlyBill, onChange }: Props) {
   const set = (key: LoadDeviceKey, entry: LoadEntry | undefined) => {
     const next = { ...profile };
     if (entry) next[key] = entry; else delete next[key];
@@ -88,6 +92,8 @@ export default function LoadProfileEditor({ profile, acSplit, hasEv, evChargePer
   const evDefaultKw = defaultEvChargerKw(meterSize, electricalPhase);
   const result = computeLoad({ load_profile: profile, ac_split: acSplit, appliances: hasEv ? "ev" : null, ev_charge_period: evChargePeriod, meter_size: meterSize, electrical_phase: electricalPhase });
   const fmt = (n: number | null) => (n ?? 0).toLocaleString("th-TH", { maximumFractionDigits: 1 });
+  const billCheck = loadBillCheck(result, monthlyBill, null);
+  const billPct = billCheck ? Math.round(billCheck.coverage * 100) : null;
 
   const card = (key: LoadDeviceKey, title: string, hint: string, body: ReactNode, opts: { none?: boolean } = {}) => {
     const e = profile[key];
@@ -144,7 +150,7 @@ export default function LoadProfileEditor({ profile, acSplit, hasEv, evChargePer
         {card("fridge", "ตู้เย็น", `เปิด 24 ชม. · ≈${watt(LOAD_DEFAULT_KW.fridge)} เฉลี่ยต่อเครื่อง`,
           <Stepper label="จำนวน (เครื่อง)" value={profile.fridge?.qty} max={20} onChange={v => setField("fridge", "qty", v)} />)}
         {card("water_heater", "เครื่องทำน้ำอุ่น", `≈${watt(LOAD_DEFAULT_KW.water_heater)} ต่อเครื่อง · ถามเวลาใช้รวมต่อวัน`, qtyHours("water_heater", "จำนวน (เครื่อง)", true))}
-        {card("water_pump", "ปั๊มน้ำ", `≈${watt(LOAD_DEFAULT_KW.water_pump)} ต่อเครื่อง`, qtyHours("water_pump", "จำนวน (เครื่อง)"))}
+        {card("water_pump", "ปั๊มน้ำ", `≈${watt(LOAD_DEFAULT_KW.water_pump)} ต่อเครื่อง · นับเวลาที่มอเตอร์ทำงานจริง ไม่ใช่เวลาที่เปิดสวิตช์ไว้`, qtyHours("water_pump", "จำนวน (เครื่อง)"))}
         {card("washer", "เครื่องซักผ้า", `≈${watt(LOAD_DEFAULT_KW.washer)} · 1 ชม. ต่อครั้ง`, (
           <>
             <Stepper label="ซัก (ครั้ง/สัปดาห์)" value={washer.loads_per_week} max={28} onChange={v => setField("washer", "loads_per_week", v)} />
@@ -163,9 +169,9 @@ export default function LoadProfileEditor({ profile, acSplit, hasEv, evChargePer
         {card("electronics", "ทีวี / เครื่องใช้ไฟฟ้าอิเล็กทรอนิกส์", `≈${watt(LOAD_DEFAULT_KW.electronics)} ต่อเครื่อง (ทีวี คอมพิวเตอร์ ฯลฯ)`, qtyHours("electronics", "จำนวน (เครื่อง)"))}
         {card("lighting", "หลอดไฟส่องสว่าง", `≈${watt(LOAD_DEFAULT_KW.lighting)} ต่อหลอด (LED) · นับโดยประมาณ`, qtyHours("lighting", "จำนวน (หลอด)"))}
         {hasEv && card("ev", "ที่ชาร์จรถ EV",
-          evChargePeriod === "day" || evChargePeriod === "night"
+          `${evChargePeriod === "day" || evChargePeriod === "night"
             ? `ชาร์จช่วง${evChargePeriod === "day" ? "กลางวัน" : "กลางคืน"} (จากคำถามด้านบน)`
-            : "ยังไม่ได้เลือกช่วงชาร์จด้านบน",
+            : "ยังไม่ได้เลือกช่วงชาร์จด้านบน"} · นับเวลาที่ชาร์จจริงจนแบตเต็ม ไม่ใช่เวลาที่เสียบสายทิ้งไว้`,
           (
             <>
               <div>
@@ -192,10 +198,22 @@ export default function LoadProfileEditor({ profile, acSplit, hasEv, evChargePer
             <span>กลางวัน <b className="font-mono tabular-nums">{fmt(result.dayKwh)}</b> kWh/วัน</span>
             <span>กลางคืน <b className="font-mono tabular-nums">{fmt(result.nightKwh)}</b> kWh/วัน</span>
             {result.nightShare !== null && <span>ใช้ไฟกลางคืน <b className="font-mono tabular-nums">{Math.round(result.nightShare * 100)}%</b></span>}
+            {billCheck?.complete && <span>≈ <b className="font-mono tabular-nums">{billPct}%</b> ของค่าไฟจริง</span>}
           </>
         )}
         <span className="text-gray-500 ml-auto">คำนวณได้ {result.computedRows}/{result.totalRows} รายการ · กำลังไฟใช้ค่ามาตรฐาน ไม่ต้องถามลูกค้า</span>
       </div>
+      {/* Shown as soon as the total overshoots — more answers only add kWh,
+          so an overshoot on a half-filled form is already real. */}
+      {billCheck?.warn && (
+        <div className="rounded-lg border border-amber-300 bg-amber-50 px-3 py-2 text-xs text-amber-900 space-y-0.5">
+          <div className="font-semibold">
+            ประมาณการใช้ไฟสูงกว่าค่าไฟจริงมาก ≈ {billPct}% (ค่าไฟ {formatTHB(Number(monthlyBill))} บาท/เดือน · เกณฑ์เตือน {Math.round(LOAD_COVERAGE_WARN * 100)}%)
+          </div>
+          {billCheck.top && <div>กินไฟมากสุด: {billCheck.top.label} {fmt(billCheck.top.kwh)} kWh/วัน</div>}
+          <div>ทวนชั่วโมงกับลูกค้าอีกครั้ง — ชั่วโมง = เวลาที่เครื่องทำงานจริง ไม่ใช่เวลาที่เปิดสวิตช์หรือเสียบปลั๊กไว้</div>
+        </div>
+      )}
     </div>
   );
 }

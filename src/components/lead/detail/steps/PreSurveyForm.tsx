@@ -884,6 +884,7 @@ const PreSurveyForm = forwardRef<PreSurveyFormHandle, Props>(function PreSurveyF
               evChargePeriod={evChargePeriod || null}
               meterSize={lead.survey_meter_size || meterSize || null}
               electricalPhase={lead.survey_electrical_phase || electricalPhase || null}
+              monthlyBill={monthlyBill || lead.survey_monthly_bill}
               onChange={setLoadProfile}
             />
           </div>
