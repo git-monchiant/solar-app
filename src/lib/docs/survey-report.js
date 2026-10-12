@@ -1,7 +1,7 @@
 import fs from "fs";
 import path from "path";
 import { LEGACY_PEAK_USAGE, PEAK_USAGE } from "@/lib/customer-questionnaire";
-import { AC_LOAD_FACTOR, computeLoad, hasEvCharger, loadBillCheck } from "@/lib/load-assumption";
+import { computeLoad, DEFAULT_ELECTRICITY_RATE, hasEvCharger, loadBillCheck } from "@/lib/load-assumption";
 
 // 15-page "รายงานสำรวจหน้างานติดตั้งโซลาร์เซลล์" — ported verbatim from the
 // generator that was tuned against leads 667 / 691 / 727 / 728.
@@ -301,17 +301,66 @@ export function buildSurveyReportHtml(L, D, PKG, options = {}) {
   // quotation submit gate enforces ("ไม่ทราบ" counts as asked).
   const billCheck = loadBillCheck(load, loadBill, loadRate);
   const coverage = billCheck?.complete ? billCheck.coverage : null;
-  const loadNote = load.dayKwh == null ? "" : `<p class="load-note">`
-    + (load.nightShare != null ? `สัดส่วนใช้ไฟกลางคืน ≈ <b>${Math.round(load.nightShare * 100)}%</b> · ` : "")
-    + `คำนวณจาก ${load.computedRows}/${load.totalRows} รายการ`
-    + (coverage != null ? ` · คิดเป็น ≈ <b>${Math.round(coverage * 100)}%</b> ของค่าไฟจริง (${baht(loadBill)} บาท/เดือน)` : "")
-    + ` · กำลังไฟเป็นค่ามาตรฐานโดยประมาณ`
-    // AC kW is an average below the rated figure — say why, or 12,000 BTU at
-    // ≈0.6 kW reads as a mistake.
-    + (load.rows.some(r => r.key.startsWith("ac_") && r.qty && r.qty !== "0")
-      ? ` (แอร์คิดภาระเฉลี่ย กลางวัน ${Math.round(AC_LOAD_FACTOR.day * 100)}% · กลางคืน ${Math.round(AC_LOAD_FACTOR.night * 100)}% ของกำลังเต็ม)`
-      : "")
-    + `</p>`;
+  // Rows left out of the total, by name — "7/9 รายการ" made the reader count
+  // the table. The two AC rows collapse to one name.
+  const skipped = unknown => [...new Set(load.rows
+    .filter(r => r.dayKwh == null && r.nightKwh == null && (r.status === "unknown") === unknown)
+    .map(r => r.label.replace(/ \(ใช้.+\)$/, "")))];
+  const skipText = [[skipped(false), "ข้อมูลยังไม่ครบ"], [skipped(true), "ลูกค้าไม่ทราบ"]]
+    .filter(([names]) => names.length).map(([names, why]) => `${names.join(", ")} (${why})`).join(" และ ");
+  // The AC load-factor line (70% / 55%) was dropped at the user's request
+  // (12 Oct) — the AC row's own "เฉลี่ย ≈x kW" already says it's an average.
+  const notes = [
+    skipText && `ยอดรวมยังไม่นับ ${skipText}`,
+    "กำลังไฟใช้ค่ามาตรฐานของอุปกรณ์แต่ละประเภท ไม่ได้วัดจากเครื่องจริง",
+  ].filter(Boolean);
+  // Summary under the table, in two groups (plan 20261012-05):
+  //  · "ใช้ประเมิน Battery" — night share first and emphasised, with a bar
+  //    against the callout's "> 40-50%" rule of thumb, then the daily total
+  //    it comes from. Numbers and the rule only — no verdict (plan
+  //    20260928-01 D3: sales may already have quoted On-Grid).
+  //  · "ตรวจกับบิลค่าไฟ" — monthly vs bill, smaller: it says how far to trust
+  //    the first group, it doesn't decide anything.
+  // Night share is worded like the battery callout ("ของการใช้รวม") so the
+  // reader can match the two.
+  const n0 = v => Math.round(v).toLocaleString("th-TH");
+  const loadSummary = (() => {
+    if (load.dayKwh == null) return "";
+    const day = load.dayKwh, night = load.nightKwh ?? 0;
+    const perDay = Math.round((day + night) * 10) / 10;
+    const share = load.nightShare != null ? Math.round(load.nightShare * 100) : null;
+    // Night (navy) from the left, day (orange) — the totals row's colours.
+    // The band marks 40–50%, where the callout's rule of thumb sits.
+    const bar = share == null ? "" : `<div class="nbar"><div class="nbar-track">`
+      + `<span class="nbar-night" style="width:${share}%"></span><span class="nbar-band" style="left:40%;width:10%"></span></div>`
+      + `<div class="nbar-lbl"><span class="l">กลางคืน ${share}%</span><span class="m" style="left:45%">เกณฑ์ทั่วไป 40–50%</span><span class="r">กลางวัน ${100 - share}%</span></div></div>`;
+    // A table that explains little of the bill gives a share of that little —
+    // say so where the share is, not only in the bill rows.
+    const thin = coverage != null && coverage < 0.7
+      ? `<div class="lsum-warn">ตารางนี้อธิบายการใช้ไฟได้เพียง ≈ ${Math.round(coverage * 100)}% ของบิล สัดส่วนจริงอาจต่างจากนี้</div>` : "";
+    const key = [
+      share != null && ["สัดส่วนใช้ไฟกลางคืน", `กลางคืน ${n1(night)} ÷ รวม ${n1(perDay)} = <b class="big">${share}%</b> ของการใช้รวม${bar}${thin}`, "hi"],
+      ["ใช้ไฟรวมต่อวัน", `กลางวัน ${n1(day)} + กลางคืน ${n1(night)} = <b>${n1(perDay)} kWh/วัน</b>`],
+    ].filter(Boolean);
+    const check = [];
+    if (coverage != null) {
+      const rate = loadRate ?? DEFAULT_ELECTRICITY_RATE;
+      // Told from the bill's side, one line in the cell (user picked, 12 Oct)
+      const meaning = coverage < 0.7 ? "บิลจริงยังมีการใช้ไฟจากเครื่องใช้ไฟฟ้าอื่นที่ไม่ได้อยู่ในตาราง"
+        : coverage <= 1.3 ? "ตัวเลขในตารางใกล้เคียงกับบิลจริง"
+          : "ตัวเลขในตารางสูงกว่าบิลจริง ชั่วโมงใช้งานจริงอาจน้อยกว่าที่ประมาณ";
+      check.push(
+        ["ประมาณการต่อเดือน", `${n1(perDay)} kWh × 30 วัน = <b>${n0(perDay * 30)} kWh/เดือน</b>`],
+        ["ไฟที่ใช้จริงตามบิล", `ค่าไฟ ${baht(loadBill)} บาท ÷ ${n2(rate)} บาท/หน่วย (ค่าไฟเฉลี่ย) ≈ <b>${n0(loadBill / rate)} kWh/เดือน</b>`],
+        ["เทียบกับบิล", `${n0(perDay * 30)} ÷ ${n0(loadBill / rate)} ≈ <b>${Math.round(coverage * 100)}%</b> — ${meaning}`],
+      );
+    }
+    const group = (rows, head, cls) => rows.map(([k, v, rowCls], i) =>
+      `<tr class="${[cls, rowCls].filter(Boolean).join(" ")}">${i === 0 ? `<td class="lsum-h" rowspan="${rows.length}">${head}</td>` : ""}<td class="k">${k}</td><td class="v">${v}</td></tr>`).join("");
+    return `<table class="kv qsum lsum"><tbody>${group(key, "ใช้ประเมิน<br/>Battery", "")}${group(check, "ตรวจกับ<br/>บิลค่าไฟ", "chk")}</tbody></table>`;
+  })();
+  const loadNote = load.dayKwh == null ? ""
+    : loadSummary + `<p class="load-note sub">หมายเหตุ: ${notes.join(" · ")}</p>`;
   // Occupants: people = adults + elderly + kids; pets are listed but never
   // counted as people (migration 199). Built from the parts, not
   // occupant_total, because snapshots frozen before the fix hold a total that
@@ -691,6 +740,26 @@ export function buildSurveyReportHtml(L, D, PKG, options = {}) {
   table.kv.qsum{margin:2px 0 8px;}
   p.load-note{font-size:12px;color:#4b5563;margin:-6px 0 0;line-height:1.45;}
   p.load-note b{color:${INK};}
+  p.load-note.sub{font-size:11px;color:#6b7280;}
+  table.kv.lsum{margin:6px 0 8px;}
+  table.kv.lsum td.k{width:19%;}
+  table.kv.lsum td.v b{color:${INK};font-weight:700;}
+  table.kv.lsum td.lsum-h{width:11%;background:${NAVY};color:#fff;font-weight:700;text-align:center;line-height:1.3;}
+  table.kv.lsum tr.hi td.k,table.kv.lsum tr.hi td.v{background:#eef2f8;}
+  table.kv.lsum b.big{font-size:17px;color:${NAVY};}
+  table.kv.lsum tr.chk td{font-size:12px;color:#4b5563;padding-top:3px;padding-bottom:3px;}
+  table.kv.lsum tr.chk td.k{background:#f8f9fb;color:#4b5563;font-weight:500;}
+  table.kv.lsum tr.chk td.v b{color:#374151;}
+  table.kv.lsum tr.chk td.lsum-h{background:#e5e8ee;color:#4b5563;font-size:12px;}
+  .nbar{margin:5px 0 0;}
+  .nbar-track{position:relative;height:9px;border-radius:5px;background:${ORANGE};}
+  .nbar-night{position:absolute;left:0;top:0;bottom:0;background:${NAVY};border-radius:5px 0 0 5px;}
+  .nbar-band{position:absolute;top:-3px;bottom:-3px;border:1.5px solid ${INK};border-radius:3px;background:rgba(255,255,255,.3);}
+  .nbar-lbl{position:relative;height:16px;font-size:11px;line-height:16px;color:#4b5563;margin-top:2px;}
+  .nbar-lbl span{position:absolute;white-space:nowrap;}
+  .nbar-lbl .l{left:0;color:${NAVY};font-weight:700;}.nbar-lbl .r{right:0;color:#b26f16;font-weight:700;}
+  .nbar-lbl .m{transform:translateX(-50%);}
+  .lsum-warn{font-size:11px;color:#b26f16;margin-top:1px;}
   table.kv.qsum td{padding:4px 9px;font-size:13px;}
   table.kv.qsum td.k{width:20%;}
   .callout.tight{padding:9px 14px;margin:9px 0 0;}
