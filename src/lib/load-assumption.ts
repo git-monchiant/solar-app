@@ -15,6 +15,7 @@
 //   key missing        → not asked yet   → report leaves the row blank
 //   { qty: 0 }         → has none        → a real answer, 0 kWh
 //   { unknown: true }  → customer can't say → counts as answered, prints "ไม่ทราบ"
+//   hours for one period only → the blank period is 0 (not used then)
 
 export type LoadPeriod = "day" | "night";
 export type LoadDeviceKey = "ac" | "fridge" | "water_heater" | "water_pump" | "washer" | "electronics" | "lighting" | "ev";
@@ -231,7 +232,11 @@ function row(key: string, label: string, over: Partial<LoadRow>): LoadRow {
 }
 
 // qty × kW × hours for one device whose answer is qty + hours per period.
-function hoursRow(key: string, label: string, e: LoadEntry | undefined, kw: number, hourKeys: ["day_h", "night_h"] | ["day_min", "night_min"]): LoadRow {
+// `householdTime`: the hours are the whole house added up, so qty doesn't
+// multiply them — the water heater only draws while someone is showering and
+// people rarely shower at once, so the heater count doesn't change the kWh
+// (plan 20261012-01). qty is still asked: 0 is "ไม่มี".
+function hoursRow(key: string, label: string, e: LoadEntry | undefined, kw: number, hourKeys: ["day_h", "night_h"] | ["day_min", "night_min"], householdTime = false): LoadRow {
   if (!e) return row(key, label, { size: kwText(kw) });
   if (e.unknown) return row(key, label, { status: "unknown", size: kwText(kw) });
   const div = hourKeys[0] === "day_min" ? 60 : 1;
@@ -239,20 +244,32 @@ function hoursRow(key: string, label: string, e: LoadEntry | undefined, kw: numb
   const nightH = e[hourKeys[1]] !== undefined ? r2((e[hourKeys[1]] as number) / div) : null;
   const qty = e.qty ?? null;
   if (qty === 0) return row(key, label, { status: "answered", qty: "0", size: kwText(kw), dayHours: 0, nightHours: 0, dayKwh: 0, nightKwh: 0 });
-  const complete = qty !== null && dayH !== null && nightH !== null;
+  // One period's hours is enough — the other left blank means not used then.
+  // Nobody should have to tap − just to record 0 (plan 20261012-04).
+  const complete = qty !== null && (dayH !== null || nightH !== null);
+  const units = householdTime ? 1 : (qty ?? 0);
+  const dH = complete ? dayH ?? 0 : dayH, nH = complete ? nightH ?? 0 : nightH;
   return row(key, label, {
     status: complete ? "answered" : "partial",
     qty: qty !== null ? fmt(qty) : null,
-    size: kwText(kw),
-    dayHours: dayH, nightHours: nightH,
-    dayKwh: complete ? r1(qty * kw * dayH) : null,
-    nightKwh: complete ? r1(qty * kw * nightH) : null,
+    // several heaters sharing one time figure say so — otherwise จำนวน ×
+    // กำลังไฟ × ชม. off the printed row counts the heaters twice
+    size: householdTime && qty !== null && qty > 1 ? `${kwText(kw)} · เวลารวมทั้งบ้าน` : kwText(kw),
+    dayHours: dH, nightHours: nH,
+    dayKwh: complete ? r1(units * kw * (dH ?? 0)) : null,
+    nightKwh: complete ? r1(units * kw * (nH ?? 0)) : null,
   });
 }
 
 function acRows(profile: LoadProfile, acRaw: unknown): LoadRow[] {
   const split = parseAcSplit(acRaw);
   const e = profile.ac;
+  // Hours given for a period that has machines → the other period's blank is
+  // 0, as for every other device. Hours left on a period that no longer has
+  // machines don't count — that answer was about different units.
+  const unitsIn = (p: LoadPeriod) => Object.values(split?.[p] || {}).reduce((a, n) => a + n, 0);
+  const hoursFor = (p: LoadPeriod) => (p === "day" ? e?.day_h : e?.night_h);
+  const anyHours = !!e && !e.unknown && (["day", "night"] as const).some(p => unitsIn(p) > 0 && hoursFor(p) !== undefined);
   return (["day", "night"] as const).map(period => {
     const key = `ac_${period}`;
     const label = `เครื่องปรับอากาศ (ใช้${period === "day" ? "กลางวัน" : "กลางคืน"})`;
@@ -274,7 +291,7 @@ function acRows(profile: LoadProfile, acRaw: unknown): LoadRow[] {
     // nothing is known yet.
     if (!units && !e && !split) return row(key, label, applies);
     if (!units) return row(key, label, { ...applies, status: "answered", qty: "0", dayHours: 0, nightHours: 0, dayKwh: 0, nightKwh: 0 });
-    const hours = e && !e.unknown ? (period === "day" ? e.day_h : e.night_h) : undefined;
+    const hours = e && !e.unknown ? hoursFor(period) ?? (anyHours ? 0 : undefined) : undefined;
     const base = { ...applies, qty: String(units), size };
     if (e?.unknown) return row(key, label, { ...base, status: "unknown" });
     if (hours === undefined) return row(key, label, { ...base, status: "partial" });
@@ -337,7 +354,7 @@ export function computeLoad(input: LoadInput): LoadResult {
     !fridge ? row("fridge", "ตู้เย็น", { size: kwText(LOAD_DEFAULT_KW.fridge) })
       : fridge.unknown ? row("fridge", "ตู้เย็น", { status: "unknown", size: kwText(LOAD_DEFAULT_KW.fridge) })
         : hoursRow("fridge", "ตู้เย็น", { qty: fridge.qty, day_h: 12, night_h: 12 }, LOAD_DEFAULT_KW.fridge, ["day_h", "night_h"]),
-    hoursRow("water_heater", "เครื่องทำน้ำอุ่น", profile.water_heater, LOAD_DEFAULT_KW.water_heater, ["day_min", "night_min"]),
+    hoursRow("water_heater", "เครื่องทำน้ำอุ่น", profile.water_heater, LOAD_DEFAULT_KW.water_heater, ["day_min", "night_min"], true),
     hoursRow("water_pump", "ปั๊มน้ำ", profile.water_pump, LOAD_DEFAULT_KW.water_pump, ["day_h", "night_h"]),
     washerRow(profile.washer),
     hoursRow("electronics", "ทีวี / เครื่องใช้ไฟฟ้าอิเล็กทรอนิกส์", profile.electronics, LOAD_DEFAULT_KW.electronics, ["day_h", "night_h"]),

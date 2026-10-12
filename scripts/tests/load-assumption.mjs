@@ -84,8 +84,9 @@ const row = (result, key) => result.rows.find(r => r.key === key);
     "kW is both units together — 'รวม' so nobody multiplies by จำนวน again");
   assert.equal(row(r, "fridge").dayKwh, 0.6);             // 0.05 kW × 12 h
   assert.equal(row(r, "fridge").nightHours, 12);
-  assert.equal(row(r, "water_heater").nightKwh, 3.5);     // 2 × 3.5 kW × 0.5 h
+  assert.equal(row(r, "water_heater").nightKwh, 1.8);     // 3.5 kW × 0.5 h — 30 min is the house total, not per heater
   assert.equal(row(r, "water_heater").dayKwh, 0);
+  assert.equal(row(r, "water_heater").size, "3.5 kW · เวลารวมทั้งบ้าน", "2 heaters, one time figure — said so on the row");
   assert.equal(row(r, "water_pump").dayKwh, 0.3);
   assert.equal(row(r, "washer").dayHours, 0.57);          // 4 loads × 1 h ÷ 7
   assert.equal(row(r, "washer").dayKwh, 0.3);             // 0.5 kW × 0.57 h
@@ -96,10 +97,10 @@ const row = (result, key) => result.rows.find(r => r.key === key);
   assert.equal(row(r, "ev").nightKwh, 12.7);              // 7.4 kW × 1.71 h
   assert.equal(row(r, "ev").dayKwh, 0);
   assert.equal(r.dayKwh, 10.1);
-  assert.equal(r.nightKwh, 29.1);
-  assert.equal(Math.round(r.nightShare * 100), 74);
+  assert.equal(r.nightKwh, 27.4);
+  assert.equal(Math.round(r.nightShare * 100), 73);
   assert.equal(missingLoadAnswers(input).length, 0);
-  assert.equal(loadSummaryText(r), "กลางวัน 10.1 kWh · กลางคืน 29.1 kWh/วัน (กลางคืน 74%)");
+  assert.equal(loadSummaryText(r), "กลางวัน 10.1 kWh · กลางคืน 27.4 kWh/วัน (กลางคืน 73%)");
 }
 
 // ── printed figures multiply out (lead 974's answers, 28 Sep 2026) ──
@@ -115,11 +116,44 @@ const row = (result, key) => result.rows.find(r => r.key === key);
   assert.match(acN.size, /รวมเฉลี่ย ≈1\.25 kW$/, "(2 × 0.683 + 0.911) × 0.55, shown to 2 decimals");
   assert.equal(acN.nightKwh, 11.3);                        // 1.25 × 9 = 11.25
   assert.equal(row(r, "water_heater").dayHours, 0.17);     // 10 min
-  assert.equal(row(r, "water_heater").dayKwh, 1.2);        // 2 × 3.5 × 0.17 = 1.19
+  assert.equal(row(r, "water_heater").dayKwh, 0.6);        // 3.5 × 0.17 = 0.595 (house total)
   assert.equal(row(r, "washer").dayHours, 0.29);           // 2 ÷ 7
   assert.equal(row(r, "washer").dayKwh, 0.1);              // 0.5 × 0.29 = 0.145
   assert.equal(row(r, "ev").nightHours, 4.29);             // 30 ÷ 7
   assert.equal(row(r, "ev").nightKwh, 15.4);               // 3.6 × 4.29 = 15.44
+}
+
+// ── water heater: minutes are the household total (plan 20261012-01) ─
+{
+  // lead 467 (v3, 12 Oct 2026): 4 heaters, 10 + 20 min — was 4 × 3.5 × 0.5 = 7.0
+  const heater = qty => row(computeLoad({ load_profile: { water_heater: { qty, day_min: 10, night_min: 20 } } }), "water_heater");
+  assert.deepEqual([heater(4).dayKwh, heater(4).nightKwh], [0.6, 1.2], "3.5 kW × 0.17 h / 0.33 h");
+  assert.deepEqual([heater(1).dayKwh, heater(1).nightKwh], [heater(4).dayKwh, heater(4).nightKwh], "heater count doesn't change kWh");
+  assert.equal(heater(4).qty, "4", "count still printed");
+  assert.equal(heater(1).size, "3.5 kW", "one heater → nothing to explain");
+  assert.equal(row(computeLoad({ load_profile: { water_pump: { qty: 2, day_h: 1, night_h: 0 } } }), "water_pump").dayKwh, 0.6,
+    "other devices still multiply by qty (2 × 0.3 kW × 1 h)");
+}
+
+// ── a blank period beside a filled one is 0 (plan 20261012-04) ──────
+{
+  // lead 924 (v3, 12 Oct 2026): heater 1 × 10 min by day, night left "–"
+  const heater = row(computeLoad({ load_profile: { water_heater: { qty: 1, day_min: 10 } } }), "water_heater");
+  assert.equal(heater.status, "answered", "no − tap needed to say 'not at night'");
+  assert.deepEqual([heater.dayKwh, heater.nightHours, heater.nightKwh], [0.6, 0, 0], "night printed as 0 ชม., not a fill-in blank");
+  const pump = row(computeLoad({ load_profile: { water_pump: { qty: 2, night_h: 3 } } }), "water_pump");
+  assert.deepEqual([pump.status, pump.dayHours, pump.nightKwh], ["answered", 0, 1.8]);
+  // still needed: how many, and at least one period
+  assert.equal(row(computeLoad({ load_profile: { water_pump: { day_h: 1 } } }), "water_pump").status, "partial", "hours with no จำนวน");
+  assert.equal(row(computeLoad({ load_profile: { water_pump: { qty: 1 } } }), "water_pump").status, "partial", "จำนวน with no hours at all");
+  // AC: day hours given → night (which has machines) is 0
+  const split = JSON.stringify({ day: { "9000": 1 }, night: { "12000": 1 } });
+  const ac = computeLoad({ ac_split: split, load_profile: { ac: { day_h: 4 } } });
+  assert.deepEqual([row(ac, "ac_night").status, row(ac, "ac_night").nightKwh], ["answered", 0]);
+  assert.equal(missingLoadAnswers({ ac_split: split, load_profile: { ac: { day_h: 4 } } }).includes("ชั่วโมงเปิดแอร์"), false);
+  // …but hours on a period with no machines say nothing about the other one
+  const stale = computeLoad({ ac_split: JSON.stringify({ night: { "12000": 1 } }), load_profile: { ac: { day_h: 4 } } });
+  assert.equal(row(stale, "ac_night").status, "partial");
 }
 
 // ── none / unknown / partial ────────────────────────────────────────
