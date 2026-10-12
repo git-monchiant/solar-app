@@ -19,6 +19,7 @@ import {
   type QuotationTermTree,
 } from "@/lib/quotation-terms";
 import { computeLoad, LOAD_COVERAGE_WARN, loadBillCheck, type LoadBillCheck } from "@/lib/load-assumption";
+import { PAYMENT_INTERESTS } from "@/lib/customer-questionnaire";
 import QuotationTermsEditor from "./QuotationTermsEditor";
 import type { Lead, Package } from "./types";
 
@@ -43,11 +44,19 @@ type Item = {
   // Package id when this add-on line is a package picked from Package Master.
   source_package_id?: number;
 };
+type PaymentMethod = (typeof PAYMENT_INTERESTS)[number]["value"];
+const readPaymentMethod = (value: unknown): PaymentMethod | null =>
+  PAYMENT_INTERESTS.find((o) => o.value === value)?.value ?? null;
 type DocumentInputs = {
   om: QuotationOmSettings;
   // ชุดเงื่อนไข/ข้อกำหนดที่แก้เฉพาะใบนี้ · null = ยังใช้ชุดมาตรฐานในโค้ด
   terms: QuotationTermTree | null;
   recommendation_reason: string;
+  // รูปแบบการชำระที่ใบนี้เสนอ (รหัสเดียวกับ PAYMENT_INTERESTS) · null = ไม่ระบุ
+  // รายงานสำรวจแสดงเฉพาะทางเลือกที่ตรงกัน — แผน 20261012-06
+  payment_method: PaymentMethod | null;
+  // % ค่าธรรมเนียมผ่อนบัตร 10 เดือน · null = ไม่กรอก (รายงานพิมพ์เส้นว่าง)
+  credit_card_fee_percent: number | null;
   loan_enabled: boolean;
   loan_bank: string;
   loan_term_months: number;
@@ -1304,6 +1313,11 @@ function QuotationEditor({
         saved.terms?.profile === "additional_install" ? "additional_install" : "full_install",
       ),
       recommendation_reason: saved.recommendation_reason || "",
+      // ใบใหม่ตั้งตามคำตอบ Pre-Survey · ใบที่บันทึกแล้วยึดค่าในใบ — ใบเก่าที่ไม่มีช่องนี้
+      // = ไม่ระบุ ให้ตรงกับ PDF ที่เรนเดอร์จากใบ (ห้ามดึงจาก lead มาเติม ใบเก่าจะเปลี่ยนเอง)
+      payment_method: readPaymentMethod(quote ? saved.payment_method : lead.payment_interest),
+      credit_card_fee_percent:
+        saved.credit_card_fee_percent == null ? null : Number(saved.credit_card_fee_percent),
       loan_enabled: saved.loan_enabled ?? GSB_SOLAR_LOAN_DEFAULTS.loan_enabled,
       loan_bank:
         saved.loan_bank ||
@@ -2146,6 +2160,79 @@ function QuotationEditor({
                   }`}
                 >
                   รวม {termsPercentTotal}% · งวดสุดท้ายปรับอัตโนมัติ
+                </p>
+              </div>
+
+              {/* รูปแบบการชำระ — คุมว่ารายงานสำรวจแสดงทางเลือกไหน (แผน 20261012-06) */}
+              <div className="order-2 rounded-xl border border-gray-200 bg-white p-2.5">
+                <div className="flex items-baseline justify-between gap-2">
+                  <span className="text-xs font-bold text-gray-800">รูปแบบการชำระเงิน</span>
+                  {readPaymentMethod(lead.payment_interest) && (
+                    <span className="truncate text-xxs text-gray-400">
+                      ลูกค้าสนใจ:{" "}
+                      {PAYMENT_INTERESTS.find((o) => o.value === lead.payment_interest)?.label}
+                    </span>
+                  )}
+                </div>
+                <div className="mt-1.5 grid grid-cols-2 gap-1">
+                  {[{ value: null, label: "ไม่ระบุ" }, ...PAYMENT_INTERESTS].map((option) => {
+                    const active = documentInputs.payment_method === option.value;
+                    return (
+                      <button
+                        key={option.value ?? "none"}
+                        type="button"
+                        onClick={() =>
+                          setDocumentInputs((current) => ({
+                            ...current,
+                            payment_method: option.value,
+                          }))
+                        }
+                        className={`h-8 rounded-md border px-1.5 text-xxs font-semibold transition-colors ${
+                          active
+                            ? "border-primary bg-primary/10 text-primary"
+                            : "border-gray-200 bg-white text-gray-600 hover:border-gray-300"
+                        }`}
+                      >
+                        {option.label}
+                      </button>
+                    );
+                  })}
+                </div>
+                {/* บัตรเครดิตอยู่ในทางเลือกของใบที่ไม่ใช่ "สินเชื่อ" — ไม่กรอก = รายงานเว้นเส้นให้เขียนมือ */}
+                {documentInputs.payment_method !== "loan" && (
+                  <div className="mt-1.5 grid grid-cols-[minmax(0,1fr)_72px] items-center gap-1">
+                    <span className="text-xxs text-gray-500">ค่าธรรมเนียมผ่อนบัตร 10 เดือน</span>
+                    <div className="relative">
+                      <input
+                        type="number"
+                        min="0"
+                        max="100"
+                        step="0.01"
+                        value={documentInputs.credit_card_fee_percent ?? ""}
+                        placeholder="ไม่ระบุ"
+                        onChange={(e) =>
+                          setDocumentInputs((current) => ({
+                            ...current,
+                            credit_card_fee_percent:
+                              e.target.value === ""
+                                ? null
+                                : Math.min(100, Math.max(0, Number(e.target.value))),
+                          }))
+                        }
+                        className="h-8 w-full rounded-md border border-gray-200 bg-white pl-1.5 pr-5 text-right text-xxs font-semibold tabular-nums text-gray-800 outline-none transition-colors placeholder:font-normal placeholder:text-gray-300 hover:border-gray-300 focus:border-primary"
+                      />
+                      <span className="pointer-events-none absolute right-1.5 top-1/2 -translate-y-1/2 text-xxs text-gray-400">
+                        %
+                      </span>
+                    </div>
+                  </div>
+                )}
+                <p className="mt-1 text-xxs text-gray-400">
+                  {documentInputs.payment_method === "loan"
+                    ? "รายงานสำรวจแสดงเฉพาะสินเชื่อ + ตารางผ่อน"
+                    : documentInputs.payment_method
+                      ? "รายงานสำรวจแสดงเงินสด + บัตรเครดิต + ตารางความคุ้มค่า"
+                      : "รายงานสำรวจแสดงทุกทางเลือก"}
                 </p>
               </div>
 

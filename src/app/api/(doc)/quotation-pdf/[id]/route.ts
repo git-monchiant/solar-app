@@ -17,7 +17,7 @@ import {
   QUOTATION_DOCUMENT_VERSION,
   type QuotationDocumentSnapshot,
 } from "@/lib/quotation-document";
-import { buildSurveyReportHtml } from "@/lib/docs/survey-report";
+import { buildSurveyReportHtml, countSurveyReportPages } from "@/lib/docs/survey-report";
 import { buildContentDisposition } from "@/lib/doc-filename";
 import { buildOmPreviewSnapshot, buildOmQuoteSnapshot, parseOmQuoteInput } from "@/lib/om/om-quotation";
 import {
@@ -624,6 +624,8 @@ export async function GET(
       financial: snapshot.financial,
     },
   );
+  // 15 หน้า หรือน้อยกว่าเมื่อใบระบุรูปแบบการชำระ (แผน 20261012-06) — นับจาก HTML จริง
+  const surveyPageCount = countSurveyReportPages(surveyHtml);
 
   const itemRows: QuoteTableRow[] = [
     ...(hasPackage
@@ -1064,9 +1066,9 @@ export async function GET(
         : 0;
 
     const quotationPageCount = rowPages.length + (mergeTermsPage ? 0 : 1);
-    // เลขหน้าอ้างอิงชุดเอกสารเต็ม (รายงานสำรวจ 15 หน้า + ใบเสนอราคา)
+    // เลขหน้าอ้างอิงชุดเอกสารเต็ม (รายงานสำรวจ 13–15 หน้าตามรูปแบบการชำระ + ใบเสนอราคา)
     // ใบ O&M ไม่มีรายงานสำรวจนำหน้า — ตัวใบคือเอกสารทั้งชุด เลขหน้าเริ่มที่ 1
-    const surveyPages = isOm ? 0 : 15;
+    const surveyPages = isOm ? 0 : surveyPageCount;
     const bundleTotal = surveyPages + quotationPageCount;
     const footer = (index: number) =>
       `<div class="footer">หน้า ${surveyPages + 1 + index} / ${bundleTotal} · ใบเสนอราคา ${index + 1} / ${quotationPageCount} · ${esc(q.doc_no)}</div>`;
@@ -1162,9 +1164,9 @@ export async function GET(
         margin: { top: "0", right: "0", bottom: "0", left: "0" },
       });
       surveyPdf = await PDFDocument.load(surveyBytes);
-      if (surveyPdf.getPageCount() !== 15)
+      if (surveyPdf.getPageCount() !== surveyPageCount)
         throw new Error(
-          `จำนวนหน้ารายงานสำรวจไม่ถูกต้อง: ${surveyPdf.getPageCount()}/15 หน้า`,
+          `จำนวนหน้ารายงานสำรวจไม่ถูกต้อง: ${surveyPdf.getPageCount()}/${surveyPageCount} หน้า`,
         );
     }
 
@@ -1217,7 +1219,7 @@ export async function GET(
     );
     const bytes = await mergedPdf.save();
     const pageCount = mergedPdf.getPageCount();
-    const expectedPageCount = 15 + quotationPageCount;
+    const expectedPageCount = surveyPageCount + quotationPageCount;
     if (pageCount !== expectedPageCount)
       throw new Error(
         `จำนวนหน้าเอกสารไม่ถูกต้อง: ${pageCount}/${expectedPageCount} หน้า`,

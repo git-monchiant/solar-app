@@ -14,13 +14,27 @@ import {
 // v5 = snapshot เก็บข้อความเงื่อนไข/ข้อกำหนด (legal) ไว้ในตัวด้วย ก่อนหน้านี้ PDF
 // เรนเดอร์จากข้อความในโค้ดสด ๆ ทุกครั้ง ใบที่อนุมัติไปแล้วจึงเปลี่ยนตามการแก้โค้ด
 export const QUOTATION_DOCUMENT_VERSION = 5;
-export const QUOTATION_FINANCE_FORMULA_VERSION = "contract-price-before-deposit-v2";
+// v3 = จุดคุ้มทุนแบบสินเชื่อนับดอกเบี้ยด้วย + ระยะได้เงินดาวน์คืน (แผน 20261012-06)
+export const QUOTATION_FINANCE_FORMULA_VERSION = "payback-by-payment-method-v3";
+
+// รหัสชุดเดียวกับ PAYMENT_INTERESTS ในแบบสอบถาม — ใบเสนอราคาใช้คำตอบ Pre-Survey
+// เป็นค่าเริ่มต้นได้ตรง ๆ ไม่ต้องแปลงรหัส
+export type QuotationPaymentMethod = "cash" | "loan" | "credit_card";
+const PAYMENT_METHODS: readonly QuotationPaymentMethod[] = ["cash", "loan", "credit_card"];
+export const readPaymentMethod = (value: unknown): QuotationPaymentMethod | null =>
+  PAYMENT_METHODS.includes(value as QuotationPaymentMethod) ? (value as QuotationPaymentMethod) : null;
 
 export type QuotationDocumentInputs = {
   om: QuotationOmSettings;
   // ชุดเงื่อนไข/ข้อกำหนดที่ผู้ใช้แก้ไว้เฉพาะใบนี้ · null = ยังใช้ชุดมาตรฐานในโค้ด
   terms: QuotationTermTree | null;
   recommendation_reason: string;
+  // รูปแบบการชำระที่ใบนี้เสนอ — รายงานสำรวจแสดงเฉพาะทางเลือกที่ตรงกัน
+  // null = ไม่ระบุ แสดงทุกทางเลือกเหมือนก่อนมีช่องนี้
+  payment_method: QuotationPaymentMethod | null;
+  // % ค่าธรรมเนียมผ่อนบัตรเครดิต 10 เดือน · null = ไม่กรอก พิมพ์เส้นว่างให้เขียนมือ
+  // ใช้แสดงในรายงานอย่างเดียว ไม่บวกเข้ายอดใบ (ค่าธรรมเนียมจริงคิดที่ขั้น Order)
+  credit_card_fee_percent: number | null;
   loan_enabled: boolean;
   loan_bank: string;
   loan_term_months: number;
@@ -49,6 +63,11 @@ export type FinancialSnapshot = {
     total_interest: number;
     net_monthly_after_saving: number;
     payback_months: number;
+    // optional เพราะ snapshot ที่ freeze ก่อนสูตร v3 ไม่มี — ผู้อ่าน fallback ไป payback_months
+    // จุดคุ้มทุนแบบสินเชื่อ = (ดาวน์ + ค่างวดรวมทั้งสัญญา) ÷ ประหยัดต่อเดือน
+    payback_months_with_loan?: number;
+    // ได้เงินดาวน์คืนจากส่วนที่ประหยัดเกินค่างวด · null = ประหยัดไม่เกินค่างวด
+    down_recovered_months?: number | null;
     saving_25_years: number;
     co2_reduction_tons_per_year: number;
     equivalent_trees: number;
@@ -171,6 +190,11 @@ export function parseDocumentInputs(raw: unknown, fallback: Partial<QuotationDoc
     parsed = typeof raw === "string" ? JSON.parse(raw || "{}") : (raw as Partial<QuotationDocumentInputs>) || {};
   } catch { /* use fallbacks */ }
   const number = (value: unknown, defaultValue: number) => Number.isFinite(Number(value)) ? Number(value) : defaultValue;
+  const hasOwn = (key: string) => Object.prototype.hasOwnProperty.call(parsed ?? {}, key);
+  // เหมือน terms: ส่ง null มา = ผู้ใช้เลือก "ไม่ระบุ" ต้องไม่ถูก fallback ทับ
+  const paymentMethod = readPaymentMethod(hasOwn("payment_method") ? parsed.payment_method : fallback.payment_method);
+  const feeRaw = hasOwn("credit_card_fee_percent") ? parsed.credit_card_fee_percent : fallback.credit_card_fee_percent;
+  const fee = feeRaw === null || feeRaw === undefined || String(feeRaw).trim() === "" ? Number.NaN : Number(feeRaw);
   return {
     om: parseQuotationOmSettings(parsed.om ?? fallback.om),
     // ต้องแยก "ไม่ได้ส่งมา" ออกจาก "ส่ง null มา" — ปุ่มคืนค่าชุดมาตรฐานส่ง null
@@ -181,7 +205,12 @@ export function parseDocumentInputs(raw: unknown, fallback: Partial<QuotationDoc
         : fallback.terms,
     ),
     recommendation_reason: String(parsed.recommendation_reason ?? fallback.recommendation_reason ?? "").trim(),
-    loan_enabled: Boolean(parsed.loan_enabled ?? fallback.loan_enabled ?? GSB_SOLAR_LOAN_DEFAULTS.loan_enabled),
+    payment_method: paymentMethod,
+    credit_card_fee_percent: Number.isFinite(fee) ? Math.min(100, Math.max(0, fee)) : null,
+    // ระบุรูปแบบแล้ว สินเชื่อเปิดเฉพาะใบที่เลือกผ่อน · ไม่ระบุ = ค่าเดิม (เปิด)
+    loan_enabled: paymentMethod
+      ? paymentMethod === "loan"
+      : Boolean(parsed.loan_enabled ?? fallback.loan_enabled ?? GSB_SOLAR_LOAN_DEFAULTS.loan_enabled),
     loan_bank: String(parsed.loan_bank ?? fallback.loan_bank ?? GSB_SOLAR_LOAN_DEFAULTS.loan_bank).trim(),
     loan_term_months: Math.max(0, Math.round(number(parsed.loan_term_months ?? fallback.loan_term_months, GSB_SOLAR_LOAN_DEFAULTS.loan_term_months))),
     down_payment_percent: Math.min(100, Math.max(0, number(parsed.down_payment_percent ?? fallback.down_payment_percent, GSB_SOLAR_LOAN_DEFAULTS.down_payment_percent))),
@@ -228,6 +257,15 @@ export function calculateFinancialSnapshot(inputs: QuotationDocumentInputs, quot
   let saving25Years = 0;
   for (let year = 0; year < 25; year++) saving25Years += monthlySaving * 12 * Math.pow(degradation, year);
   const annualProduction = monthlyProduction * 12;
+  const paybackMonths = monthlySaving > 0 ? Math.ceil(financedBase / monthlySaving) : 0;
+  // ดอกเบี้ยเป็นเงินที่ลูกค้าจ่ายจริง จุดคุ้มทุนของคนกู้จึงนับยอดที่จ่ายทั้งหมด
+  const paybackWithLoan = inputs.loan_enabled && monthlySaving > 0
+    ? Math.ceil((downPayment + totalLoanPayment) / monthlySaving)
+    : paybackMonths;
+  const savingAfterInstallment = monthlySaving - installment;
+  const downRecoveredMonths = inputs.loan_enabled && downPayment > 0 && savingAfterInstallment > 0
+    ? Math.ceil(downPayment / savingAfterInstallment)
+    : null;
   return {
     formula_version: QUOTATION_FINANCE_FORMULA_VERSION,
     inputs,
@@ -241,7 +279,9 @@ export function calculateFinancialSnapshot(inputs: QuotationDocumentInputs, quot
       total_loan_payment: round2(totalLoanPayment),
       total_interest: round2(Math.max(0, totalLoanPayment - loanAmount)),
       net_monthly_after_saving: round2(installment - monthlySaving),
-      payback_months: monthlySaving > 0 ? Math.ceil(financedBase / monthlySaving) : 0,
+      payback_months: paybackMonths,
+      payback_months_with_loan: paybackWithLoan,
+      down_recovered_months: downRecoveredMonths,
       saving_25_years: round2(saving25Years),
       co2_reduction_tons_per_year: round2(annualProduction * 0.0005),
       equivalent_trees: Math.round(annualProduction * 0.0005 * 100),
