@@ -5,11 +5,13 @@ import {
   ABLE_OR_NOT, AGE_RANGES, BILL_RISE_ACTIONS, BUSINESS_TYPES, DAYTIME_OCCUPANTS,
   DECISION_FACTORS, DECISION_TIMELINES, ELECTRICAL_PHASES, EV_CHARGE_PERIODS,
   EV_READY_OPTIONS, HOUSEHOLD_INCOMES, HOUSE_AGES, METER_SIZES, MONTHLY_BILL_BUCKETS,
-  OCCUPATIONS, OUTAGE_PRIORITIES, PEAK_USAGE, QUESTIONNAIRE_SECTIONS, RESIDENCE_TYPES,
+  OCCUPATIONS, OUTAGE_PRIORITIES, PAYMENT_INTERESTS, PEAK_USAGE, QUESTIONNAIRE_SECTIONS, RESIDENCE_TYPES,
   ROOF_SHAPES, USAGE_TREND_OPTIONS, WORK_DAYS_PER_WEEK, YES_NO, YES_NO_BIN,
-  YES_NO_CONSIDERING, YES_NO_MAYBE, monthlyBillBucket, optionLabel,
+  YES_NO_CONSIDERING, YES_NO_MAYBE, FIELD_LABELS, monthlyBillBucket, optionLabel,
+  LEGACY_PEAK_USAGE as LEGACY_PEAK_USAGE_CODES,
 } from "@/lib/customer-questionnaire";
 import { SALES_LEADS } from "@/lib/lead-scope";
+import { computeLoad, loadSummaryText } from "@/lib/load-assumption";
 import type {
   CountItem, CountSeries, CustomerDashboardData, CustomerDashboardFilters,
   CustomerDrilldownRow,
@@ -18,6 +20,7 @@ import type {
 type QuestionnaireRow = {
   id: number;
   full_name: string;
+  phone: string | null;
   house_number: string | null;
   status: string;
   source: string | null;
@@ -36,6 +39,7 @@ type QuestionnaireRow = {
   roof_shape: string | null;
   house_age: string | null;
   occupant_total: number | null;
+  occupant_adults: number | null;
   occupant_elderly: number | null;
   occupant_kids: number | null;
   occupant_pets: number | null;
@@ -48,6 +52,7 @@ type QuestionnaireRow = {
   work_days_per_week: string | null;
   ac_split: string | null;
   ev_charge_period: string | null;
+  load_profile: string | null;
   future_ev: string | null;
   future_ev_charger: string | null;
   future_extend_home: string | null;
@@ -69,16 +74,13 @@ type QuestionnaireRow = {
   occupation: string | null;
   age_range: string | null;
   household_income: string | null;
+  payment_interest: string | null;
   [key: string]: unknown;
 };
 
-type Option = { value: string; label: string };
+type Option = { value: string; label: string; short?: string };
 
-const LEGACY_PEAK_USAGE: Option[] = [
-  { value: "day", label: "กลางวัน (ข้อมูลเดิม)" },
-  { value: "night", label: "กลางคืน (ข้อมูลเดิม)" },
-  { value: "both", label: "กลางวันและกลางคืน (ข้อมูลเดิม)" },
-];
+const LEGACY_PEAK_USAGE: Option[] = LEGACY_PEAK_USAGE_CODES.map(o => ({ value: o.value, label: `${o.label} (ข้อมูลเดิม)` }));
 
 const LEGACY_ROOF_SHAPES: Option[] = [
   { value: "gable", label: "หน้าจั่ว (ข้อมูลเดิม)" },
@@ -118,7 +120,7 @@ function singleSeries(rows: QuestionnaireRow[], field: string, options: readonly
   const values = rows.map(r => normalizedValue(r[field] as string | null)).filter((v): v is string => !!v);
   const counts = new Map<string, number>();
   values.forEach(v => counts.set(v, (counts.get(v) || 0) + 1));
-  const items: CountItem[] = options.map(o => ({ value: o.value, label: o.label, count: counts.get(o.value) || 0 }));
+  const items: CountItem[] = options.map(o => ({ value: o.value, label: o.label, short: o.short, count: counts.get(o.value) || 0 }));
   if (includeUnknown) {
     for (const [value, count] of counts) {
       if (!options.some(o => o.value === value)) items.push({ value, label: `ข้อมูลเดิม: ${value}`, count });
@@ -229,22 +231,22 @@ async function queryRows(filters: CustomerDashboardFilters): Promise<Questionnai
   if (to) { request.input("to", sql.Date, to); clauses.push("CAST(l.created_at AS DATE) <= @to"); }
   const where = clauses.length ? `WHERE ${clauses.join(" AND ")}` : "";
   const result = await request.query(`
-    SELECT l.id, l.full_name, l.house_number, l.status, l.source,
+    SELECT l.id, l.full_name, l.phone, l.house_number, l.status, l.source,
       l.customer_group, l.customer_grade, l.created_at,
       l.project_id, p.name AS project_name,
       d.updated_at, d.residence_type, d.monthly_bill, d.peak_usage,
       d.electrical_phase, d.wants_battery, d.appliances, d.roof_shape,
-      d.house_age, d.occupant_total, d.occupant_elderly, d.occupant_kids,
+      d.house_age, d.occupant_total, d.occupant_adults, d.occupant_elderly, d.occupant_kids,
       d.occupant_pets, d.monthly_bill_max, d.meter_size, d.home_at_daytime,
       d.daytime_occupants, d.work_at_home, d.business_type,
-      d.work_days_per_week, d.ac_split, d.ev_charge_period, d.future_ev,
+      d.work_days_per_week, d.ac_split, d.ev_charge_period, d.load_profile, d.future_ev,
       d.future_ev_charger, d.future_extend_home, d.future_more_members,
       d.future_smart_home, d.future_battery, d.outage_priorities,
       d.bill_rise_action, d.had_roof_leak, d.did_roof_repair,
       d.had_electrical_issue, d.did_panel_replacement, d.self_generates,
       d.ev_ready, d.blackout_resilient, d.future_usage_trend,
       d.decision_factors, d.decision_timeline,
-      d.occupation, d.age_range, d.household_income
+      d.occupation, d.age_range, d.household_income, d.payment_interest
     FROM ${SALES_LEADS} l
     LEFT JOIN projects p ON p.id = l.project_id
     LEFT JOIN lead_data d ON d.lead_id = l.id
@@ -329,6 +331,8 @@ export async function getCustomerDashboard(filters: CustomerDashboardFilters): P
       medianMonthlyBill: median(monthlyBills),
       monthlyBillAnswered: monthlyBills.length,
       decisionSoon: respondents.filter(r => r.decision_timeline === "1-3m").length,
+      sectionRespondents: Object.fromEntries(QUESTIONNAIRE_SECTIONS.map((section, index) =>
+        [section.key, respondents.filter(row => sectionAnswered(row, index)).length])),
     },
     summary: { customerGroups, salesGrades },
     sections: {
@@ -392,6 +396,7 @@ export async function getCustomerDashboard(filters: CustomerDashboardFilters): P
         occupation: singleSeries(respondents, "occupation", OCCUPATIONS),
         ageRange: singleSeries(respondents, "age_range", AGE_RANGES),
         householdIncome: singleSeries(respondents, "household_income", HOUSEHOLD_INCOMES),
+        paymentInterest: singleSeries(respondents, "payment_interest", PAYMENT_INTERESTS),
       },
     },
   };
@@ -408,6 +413,12 @@ function matches(row: QuestionnaireRow, dimension: string, value: string, score:
   if (dimension === "customer_group") return value === "unclassified" ? !isAnswered(row.customer_group) : row.customer_group === value;
   if (dimension === "sales_grade") return value === "ungraded" ? !isAnswered(row.customer_grade) : row.customer_grade === value;
   if (dimension === "respondent") return respondent(row);
+  // One questionnaire section: answered at least one of its questions. This is
+  // the dimension behind a card's headline figure.
+  if (dimension === "section") {
+    const index = QUESTIONNAIRE_SECTIONS.findIndex(section => section.key === value);
+    return index >= 0 && sectionAnswered(row, index);
+  }
   if (dimension === "complete") return completeAllSections(row);
   if (dimension === "monthly_bill") return monthlyBillBucket(Number(row.monthly_bill)) === value;
   if (dimension === "occupant_elderly" || dimension === "occupant_kids" || dimension === "occupant_pets") return Number(row[dimension]) > 0;
@@ -426,24 +437,15 @@ function matches(row: QuestionnaireRow, dimension: string, value: string, score:
     "future_ev", "future_ev_charger", "future_extend_home", "future_more_members", "future_smart_home", "future_battery",
     "bill_rise_action", "had_roof_leak", "did_roof_repair", "had_electrical_issue", "did_panel_replacement",
     "self_generates", "ev_ready", "blackout_resilient", "future_usage_trend", "decision_timeline",
-    "occupation", "age_range", "household_income",
+    "occupation", "age_range", "household_income", "payment_interest",
   ]);
   return allowed.has(dimension) && normalizedValue(row[dimension] as string | null) === value;
 }
 
-function answerLabel(row: QuestionnaireRow, dimension: string, value: string, score: number | null): string {
-  if (dimension === "questionnaire_status") return value === "complete" ? `ตอบครบทั้ง ${QUESTIONNAIRE_SECTIONS.length} หัวข้อ` : value === "partial" ? "ตอบแบบสอบถามบางส่วน" : "ยังไม่ตอบแบบสอบถาม";
-  if (dimension === "customer_group") return value === "unclassified" ? "ยังไม่ระบุกลุ่มลูกค้า" : optionLabel(CUSTOMER_GROUPS, row.customer_group);
-  if (dimension === "sales_grade") return value === "ungraded" ? "ยังไม่จัด Sales Grade" : `Grade ${row.customer_grade || "—"} · ${optionLabel(SALES_GRADES, row.customer_grade)}`;
-  if (dimension === "decision_timeline" && value === "unanswered") return "ยังไม่ตอบระยะเวลาในการตัดสินใจ";
-  if (dimension === "monthly_bill") return row.monthly_bill ? `${formatTHB(Number(row.monthly_bill))} บาท` : "—";
-  if (dimension === "decision_factor") {
-    const factor = DECISION_FACTORS.find(f => f.key === value);
-    return `${factor?.label || value}: ${score || parseFactors(row.decision_factors)[value] || "—"}/5`;
-  }
-  if (dimension === "occupant_elderly" || dimension === "occupant_kids" || dimension === "occupant_pets") return `${Number(row[dimension]) || 0} คน`;
-  if (dimension === "ac_period") { const ac = parseAcSplit(row.ac_split); return `${value === "day" ? "กลางวัน" : "กลางคืน"} ${ac?.[value as "day" | "night"] || 0} เครื่อง`; }
-  const optionsByField: Record<string, readonly Option[]> = {
+// Decoder table: which option list turns a stored code into Thai. Module scope
+// because two things read it now — answerLabel for a single answer, and
+// fieldAnswer for every answer in a section.
+const OPTIONS_BY_FIELD: Record<string, readonly Option[]> = {
     residence_type: RESIDENCE_TYPES, house_age: HOUSE_AGES, roof_shape: [...ROOF_SHAPES, ...LEGACY_ROOF_SHAPES],
     electrical_phase: ELECTRICAL_PHASES, meter_size: METER_SIZES, peak_usage: [...PEAK_USAGE, ...LEGACY_PEAK_USAGE],
     home_at_daytime: YES_NO, daytime_occupants: DAYTIME_OCCUPANTS, work_at_home: YES_NO,
@@ -458,12 +460,64 @@ function answerLabel(row: QuestionnaireRow, dimension: string, value: string, sc
     self_generates: ABLE_OR_NOT, ev_ready: EV_READY_OPTIONS, blackout_resilient: ABLE_OR_NOT,
     future_usage_trend: USAGE_TREND_OPTIONS, decision_timeline: DECISION_TIMELINES,
     occupation: OCCUPATIONS, age_range: AGE_RANGES, household_income: HOUSEHOLD_INCOMES,
-  };
+    payment_interest: PAYMENT_INTERESTS,
+};
+
+// One person's answer to one question, already decoded — "—" is reserved for
+// "not answered" so a blank cell in the sheet never has to be guessed at.
+function fieldAnswer(row: QuestionnaireRow, field: string): string {
+  const raw = row[field];
+  if (raw === null || raw === undefined || raw === "") return "";
+  if (field === "monthly_bill" || field === "monthly_bill_max") return `${formatTHB(Number(raw))} บาท`;
+  if (field.startsWith("occupant_")) return `${Number(raw)}`;
+  if (field === "ac_split") { const ac = parseAcSplit(row.ac_split); return ac ? `กลางวัน ${ac.day} / กลางคืน ${ac.night}` : ""; }
+  if (field === "load_profile") return loadSummaryText(computeLoad(row));
+  if (field === "decision_factors") { const n = Object.keys(parseFactors(row.decision_factors)).length; return n ? `ให้คะแนน ${n} ปัจจัย` : ""; }
+  if (field === "appliances" || field === "daytime_occupants" || field === "outage_priorities") {
+    const options = OPTIONS_BY_FIELD[field];
+    return csvValues(raw as string).map(v => options ? optionLabel(options, v) : v).join(", ");
+  }
+  const options = OPTIONS_BY_FIELD[field];
+  return options ? optionLabel(options, raw as string) : String(raw);
+}
+
+// Every question in a section, decoded, including the ones this person left
+// blank — a column that disappears whenever nobody answered it would make the
+// sheet's shape depend on the data.
+function sectionAnswers(row: QuestionnaireRow, fields: readonly string[]): { label: string; value: string }[] {
+  return fields.map(field => ({ label: FIELD_LABELS[field] || field, value: fieldAnswer(row, field) }));
+}
+
+function answerLabel(row: QuestionnaireRow, dimension: string, value: string, score: number | null): string {
+  if (dimension === "questionnaire_status") return value === "complete" ? `ตอบครบทั้ง ${QUESTIONNAIRE_SECTIONS.length} หัวข้อ` : value === "partial" ? "ตอบแบบสอบถามบางส่วน" : "ยังไม่ตอบแบบสอบถาม";
+  if (dimension === "customer_group") return value === "unclassified" ? "ยังไม่ระบุกลุ่มลูกค้า" : optionLabel(CUSTOMER_GROUPS, row.customer_group);
+  if (dimension === "sales_grade") return value === "ungraded" ? "ยังไม่จัด Sales Grade" : `Grade ${row.customer_grade || "—"} · ${optionLabel(SALES_GRADES, row.customer_grade)}`;
+  if (dimension === "decision_timeline" && value === "unanswered") return "ยังไม่ตอบระยะเวลาในการตัดสินใจ";
+  if (dimension === "monthly_bill") return row.monthly_bill ? `${formatTHB(Number(row.monthly_bill))} บาท` : "—";
+  if (dimension === "decision_factor") {
+    const factor = DECISION_FACTORS.find(f => f.key === value);
+    return `${factor?.label || value}: ${score || parseFactors(row.decision_factors)[value] || "—"}/5`;
+  }
+  if (dimension === "occupant_elderly" || dimension === "occupant_kids" || dimension === "occupant_pets") return `${Number(row[dimension]) || 0} คน`;
+  if (dimension === "ac_period") { const ac = parseAcSplit(row.ac_split); return `${value === "day" ? "กลางวัน" : "กลางคืน"} ${ac?.[value as "day" | "night"] || 0} เครื่อง`; }
   if (dimension === "respondent") return "มีคำตอบอย่างน้อย 1 หัวข้อ";
+  if (dimension === "section") {
+    const section = QUESTIONNAIRE_SECTIONS.find(item => item.key === value);
+    if (!section) return "ตอบหัวข้อนี้แล้ว";
+    const answered = sectionAnswers(row, section.fields).filter(item => item.value);
+    return answered.length
+      ? answered.map(item => `${item.label}: ${item.value}`).join(" · ")
+      : `ตอบหัวข้อ ${section.subtitle} แล้ว`;
+  }
   if (dimension === "complete") return `ตอบครบทั้ง ${QUESTIONNAIRE_SECTIONS.length} หัวข้อ`;
   if (dimension === "ev_charger") return value === "yes" ? "มีที่ชาร์จรถ EV" : "ไม่มีที่ชาร์จรถ EV";
   if (dimension === "home_health_risk") return "พบประวัติความเสี่ยงด้านหลังคาหรือระบบไฟฟ้า";
-  return optionLabel(optionsByField[dimension] || [], row[dimension] as string | null);
+  // Multi-selects hold a CSV, so decode every code — matching the whole
+  // string against a single option would just echo the raw "a,b" back.
+  if (dimension === "daytime_occupants" || dimension === "outage_priorities") {
+    return csvValues(row[dimension] as string | null).map(v => optionLabel(OPTIONS_BY_FIELD[dimension] || [], v)).join(", ") || "—";
+  }
+  return optionLabel(OPTIONS_BY_FIELD[dimension] || [], row[dimension] as string | null);
 }
 
 export async function getCustomerDrilldown(filters: CustomerDashboardFilters, dimension: string, value: string, score: number | null): Promise<CustomerDrilldownRow[]> {
@@ -471,11 +525,15 @@ export async function getCustomerDrilldown(filters: CustomerDashboardFilters, di
   return rows.map(row => ({
     id: row.id,
     full_name: row.full_name,
+    phone: row.phone,
     house_number: row.house_number,
     status: row.status,
     created_at: iso(row.created_at) || "",
     project_name: row.project_name,
     source: row.source,
     answer: answerLabel(row, dimension, value, score),
+    ...(dimension === "section"
+      ? { answers: sectionAnswers(row, QUESTIONNAIRE_SECTIONS.find(item => item.key === value)?.fields || []) }
+      : {}),
   }));
 }

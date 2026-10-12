@@ -18,6 +18,7 @@ import {
   type QuotationPaymentTerm,
   type QuotationTermTree,
 } from "@/lib/quotation-terms";
+import { computeLoad, LOAD_COVERAGE_WARN, loadBillCheck, type LoadBillCheck } from "@/lib/load-assumption";
 import QuotationTermsEditor from "./QuotationTermsEditor";
 import type { Lead, Package } from "./types";
 
@@ -541,8 +542,53 @@ export default function QuotationBuilder({
       setBusy(false);
     }
   };
+  // The attached survey report prints the load estimate as a share of the real
+  // bill — warn (never block) before that goes out wildly high
+  // (plan 20261009-01). Same inputs as the report's §3; each quote's report
+  // uses its own electricity_rate, so check every one and keep the worst.
+  const loadOvershoot = (): LoadBillCheck | null => {
+    const load = computeLoad({
+      load_profile: lead.load_profile,
+      ac_split: lead.ac_split,
+      appliances: lead.pre_appliances,
+      ev_charge_period: lead.ev_charge_period,
+      meter_size: lead.survey_meter_size || lead.meter_size,
+      electrical_phase: lead.survey_electrical_phase || lead.pre_electrical_phase,
+    });
+    const bill = lead.pre_monthly_bill || lead.survey_monthly_bill;
+    let worst: LoadBillCheck | null = null;
+    for (const q of readyQuotes) {
+      let rate: unknown = null;
+      try {
+        rate = JSON.parse(q.document_inputs_json || "{}").electricity_rate;
+      } catch {
+        // unreadable inputs → loadBillCheck falls back to the default rate
+      }
+      const check = loadBillCheck(load, bill, rate);
+      if (check?.warn && (!worst || check.coverage > worst.coverage)) worst = check;
+    }
+    return worst;
+  };
   const submitAll = async () => {
     if (!readyQuotes.length) return;
+    const overshoot = loadOvershoot();
+    if (overshoot) {
+      const top = overshoot.top
+        ? `\nกินไฟมากสุด: ${overshoot.top.label} ${overshoot.top.kwh.toLocaleString("th-TH", { maximumFractionDigits: 1 })} kWh/วัน`
+        : "";
+      const ok = await dialog.confirm({
+        title: "ประมาณการใช้ไฟสูงผิดปกติ",
+        variant: "warning",
+        confirmText: "ส่งขออนุมัติต่อ",
+        cancelText: "กลับไปแก้",
+        message:
+          `ตาราง Load Assumption ในรายงานสำรวจประมาณการใช้ไฟ ≈ ${Math.round(overshoot.coverage * 100)}% ของค่าไฟจริง ` +
+          `(เกณฑ์เตือน ${Math.round(LOAD_COVERAGE_WARN * 100)}%)${top}\n\n` +
+          "ตัวเลขนี้จะพิมพ์ในเอกสารที่ส่งลูกค้า ควรทวนชั่วโมงในแบบสอบถาม (แท็บ Customer Info) ก่อน " +
+          "— ชั่วโมง = เวลาที่เครื่องทำงานจริง ไม่ใช่เวลาที่เปิดสวิตช์หรือเสียบปลั๊กไว้",
+      });
+      if (!ok) return;
+    }
     setBusy(true);
     setError("");
     try {
@@ -1282,10 +1328,14 @@ function QuotationEditor({
       rate_source: saved.rate_source || GSB_SOLAR_LOAN_DEFAULTS.rate_source,
       rate_effective_date:
         saved.rate_effective_date || GSB_SOLAR_LOAN_DEFAULTS.rate_effective_date,
+      // ค่าไฟเฉลี่ยต่อเดือนยึดคำตอบของลูกค้าในแบบสอบถามเป็นหลัก (lead_data.monthly_bill
+      // ซึ่ง API ส่งมาในชื่อ pre_monthly_bill) ถ้าลูกค้าไม่ได้ตอบค่อยใช้ค่าจากฟอร์มสำรวจ
+      // ส่วนค่าไฟสูงสุดเป็นตัวสุดท้าย เพราะเป็นคนละตัวชี้วัดกับค่าเฉลี่ย
+      // ใบที่บันทึกไปแล้วคงตัวเลขเดิมไว้ ใบที่ส่งลูกค้าไปแล้วจะได้ไม่เปลี่ยนเอง
       current_monthly_bill: Number(
         saved.current_monthly_bill ||
-          lead.survey_monthly_bill ||
           lead.pre_monthly_bill ||
+          lead.survey_monthly_bill ||
           lead.monthly_bill_max ||
           0,
       ),
@@ -1451,7 +1501,7 @@ function QuotationEditor({
     if (groups.some((g) => !g.title.item_name.trim()))
       return "กรุณาตั้งชื่อหัวข้อให้ครบทุกอัน";
     if (documentInputs.current_monthly_bill <= 0)
-      return "กรุณาระบุค่าไฟปัจจุบันจากข้อมูลจริง";
+      return "ไม่พบค่าไฟเฉลี่ยต่อเดือน — กรุณากรอกในแบบสอบถามลูกค้า (Customer Info) หรือฟอร์มสำรวจ";
     if (termsPercentTotal !== 100)
       return `ยอดรวมงวดชำระเงินต้องเท่ากับ 100% (ปัจจุบัน ${termsPercentTotal}%)`;
     if (issueDate > todayIso()) return "วันที่ใบเสนอราคาต้องไม่เป็นวันที่ล่วงหน้า";

@@ -12,6 +12,7 @@ import Loading from "@/components/ui/Loading";
 import { useSearchParams } from "next/navigation";
 import { useOpenOmService } from "@/lib/hooks/useOpenOmService";
 import { SORTS, TABS, type Item } from "@/lib/om/service-view";
+import { ORIGIN_OPTIONS, parseOrigin, type HouseOrigin } from "@/lib/om/house-origin";
 import ListPageHeader from "@/components/layout/ListPageHeader";
 import Dropdown from "@/components/ui/Dropdown";
 import { useActiveMenuItem } from "@/lib/hooks/useActiveModule";
@@ -29,6 +30,8 @@ export default function OmServicesPage() {
   const sp = useSearchParams();
   const [tab, setTab] = useState<string>(() => sp.get("tab") || "follow");
   const [group, setGroup] = useState(() => sp.get("group") || "");
+  // ที่มา (แผน 20261007-01) — ตัวกรองซ้อนบนแท็บแบบ "งานของฉัน" · เลขบนแท็บขยับตาม
+  const [origin, setOrigin] = useState<HouseOrigin>("");
   const [sort, setSort] = useState("wash");
   const [dir, setDir] = useState<"asc" | "desc">("asc");
   const sortDef = SORTS.find((s) => s.k === sort) ?? SORTS[0];
@@ -53,13 +56,14 @@ export default function OmServicesPage() {
     if (group) p.set("group", group);
     if (q.trim()) p.set("q", q.trim());
     if (mineOnly) p.set("mine", "1");
+    if (origin) p.set("origin", origin);
     apiFetch(`/api/om/follow?${p}`)
       .then((d) => {
         setItems(d.items ?? []); setCounts(d.counts ?? {});
         setTotal(d.total ?? 0); setProjects(d.projects ?? []);
       })
       .catch((e) => { setErr(e instanceof Error ? e.message : String(e)); setItems([]); });
-  }, [tab, group, sort, dir, q, mineOnly]);
+  }, [tab, group, sort, dir, q, mineOnly, origin]);
   useEffect(() => { const t = setTimeout(load, q ? 350 : 0); return () => clearTimeout(t); }, [load, q]);
 
   const totalAll = Object.values(counts).reduce((s, n) => s + n, 0);
@@ -96,6 +100,13 @@ export default function OmServicesPage() {
             options={[{ value: "", label: `ทุกโครงการ (${projects.length})` },
               ...projects.map((p) => ({ value: p.project_id, label: `${p.project_name} · ${p.n}` }))]}
             searchable
+          />
+          {/* ที่มา — ยกช่อง "ช่องทาง" ของ Pipeline (แผน 20261007-01) · เลือกซ้ำ = ล้างกลับทุกที่มา */}
+          <Dropdown
+            className="w-44 font-normal"
+            value={origin}
+            onChange={(v) => setOrigin(parseOrigin(v))}
+            options={ORIGIN_OPTIONS}
           />
           <div className="ml-auto flex items-center gap-2">
             <button

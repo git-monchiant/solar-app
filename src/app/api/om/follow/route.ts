@@ -9,6 +9,7 @@ import { historyLabel, logBooking } from "@/lib/om/booking-log";
 import { ACTIVE_STATUS, canMove, statusLabel, toThaiOffset } from "@/lib/om/booking";
 import { OM_BOOKING_PAID_SQL } from "@/lib/om/om-quotation";
 import { omSlotsFor } from "@/lib/om/time-slot";
+import { houseOriginSql, parseOrigin } from "@/lib/om/house-origin";
 
 // แท็บ "ติดตาม" ของงานบริการ — ★ การ์ดคำนวณสด ไม่มีแถวงานรอไว้ล่วงหน้า
 //   เกณฑ์: บ้าน O&M ที่มีระบบติดตั้ง + เลยรอบล้าง (om_service_type.cycle_months)
@@ -48,6 +49,9 @@ export async function GET(req: NextRequest) {
   //   เป็นตัวกรอง "ซ้อนบน" แท็บ/โครงการ/คำค้น ไม่ใช่ตัวแทน — แบบเดียวกับ Pipeline
   //   และต้องกรองตัวเลขบนแท็บด้วย เพราะเลขบนแท็บต้องเท่ากับจำนวนที่กดเข้าไปเห็นจริง
   const mineOnly = u.get("mine") === "1" ? (gate.userId ?? 0) : 0;
+  // ★ origin = ตัวกรอง "ที่มา" (แผน 20261007-01) — ซ้อนบนแท็บเหมือน mine และกรองเลขบนแท็บด้วย
+  //   ไม่กรองโหมดบ้านเดียว (หน้ารายละเอียดต้องได้บ้านเสมอ) · นิยามอยู่ที่ house-origin.ts
+  const origin = parseOrigin(u.get("origin"));
   const page = Math.max(1, Number(u.get("page")) || 1);
   const size = Math.min(100, Math.max(10, Number(u.get("size")) || 30));
 
@@ -73,15 +77,17 @@ export async function GET(req: NextRequest) {
     .query(`
     ${OM_FOLLOW_SCOPE_SQL}
 
-    SELECT bucket, COUNT(*) n FROM #x
+    SELECT bucket, COUNT(*) n FROM #x d
      WHERE (@mine = 0 OR owner_user_id = @mine)
+       ${houseOriginSql(origin, "d.house_id")}
      GROUP BY bucket;
 
     SELECT COUNT(*) total FROM #x d
      WHERE d.bucket = @tab
        AND (@g = '' OR d.project_id = @g)
        AND (@q = '' OR d.house_number LIKE @q OR d.customer_name LIKE @q OR d.phone LIKE @q)
-       AND (@mine = 0 OR d.owner_user_id = @mine);
+       AND (@mine = 0 OR d.owner_user_id = @mine)
+       ${houseOriginSql(origin, "d.house_id")};
 
     SELECT d.* FROM #x d
      WHERE (@house > 0 AND d.house_id = @house)
@@ -89,7 +95,8 @@ export async function GET(req: NextRequest) {
             AND d.bucket = @tab
             AND (@g = '' OR d.project_id = @g)
             AND (@q = '' OR d.house_number LIKE @q OR d.customer_name LIKE @q OR d.phone LIKE @q)
-            AND (@mine = 0 OR d.owner_user_id = @mine))
+            AND (@mine = 0 OR d.owner_user_id = @mine)
+            ${houseOriginSql(origin, "d.house_id")})
      ORDER BY ${sort}
      OFFSET @off ROWS FETCH NEXT @size ROWS ONLY;
 

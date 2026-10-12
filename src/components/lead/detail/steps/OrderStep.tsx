@@ -159,6 +159,8 @@ export default function OrderStep({ lead, state, refresh, expanded, onToggle }: 
     if (pickingQuote) return;
     if (!canSelectQuotation) return;
     if (quoteLocked) return;
+    // เปลี่ยนใบเสนอราคา = เปลี่ยนยอดของทุกงวด จึงล็อกด้วยเงื่อนไขเดียวกับแผนงวด
+    if (planLockedByPending) { setNextError(planLockMessage); return; }
     const opt = quoteOptions[idx];
     if (!opt) return;
     // Clicking the already-accepted quote is a no-op — avoids a needless
@@ -307,6 +309,7 @@ export default function OrderStep({ lead, state, refresh, expanded, onToggle }: 
   // Returns gross amount + credit per row → row.net = gross - credit.
   const setInstallmentCount = (n: number) => {
     if (n === installments.length) return;
+    if (planLockedByPending) { setNextError(planLockMessage); return; }
 
     // Simulate the new array so we can pre-check whether the change would
     // mutate any paid row's persisted pct. Backend rejects 409 anyway, but
@@ -349,6 +352,7 @@ export default function OrderStep({ lead, state, refresh, expanded, onToggle }: 
     setInstallments(newInst);
   };
   const updateInstallment = (i: number, patch: Partial<Installment>) => {
+    if (planLockedByPending) { setNextError(planLockMessage); return; }
     setInstallments(prev => prev.map((r, idx) => idx === i ? { ...r, ...patch } : r));
   };
 
@@ -579,6 +583,18 @@ export default function OrderStep({ lead, state, refresh, expanded, onToggle }: 
     window.setTimeout(() => target.scrollIntoView({ behavior: "smooth", block: "center" }), 120);
   }, [focusedChequeConfirmId, chequePendingPayments.length]);
   const isPaid = (idx: number) => paidIdxSet.has(idx);
+  // แผนงวดล็อกตั้งแต่ส่งสลิป ไม่ต้องรอบัญชียืนยัน — บัญชีกำลังตรวจเงินกับแผนที่เห็นอยู่
+  // ตอนนั้น ถ้าแผนเปลี่ยนระหว่างนี้ ยอดของสลิปที่รอยืนยันจะถูก PATCH ปรับตามไปด้วย
+  // ลีด 1070: มีคนกดเปลี่ยนจำนวนงวด 1→2→1→2→1→2→3 ระหว่างรอยืนยัน แผน 30/60/10
+  // กลายเป็น 30/0/70 เพราะการลดจำนวนงวดตัดแถวทิ้ง และแถวที่เพิ่มกลับมาเริ่มที่ 0%
+  // Admin แก้ได้เสมอ สำหรับกรณีต้องแก้ข้อมูลด้วยมือ (server ตรวจซ้ำอีกชั้น)
+  const pendingPlanIdx = [...new Set([...pendingApprovalIdxSet, ...chequeReceivedIdxSet])]
+    .filter(idx => !paidIdxSet.has(idx))
+    .sort((a, b) => a - b);
+  const planLockedByPending = pendingPlanIdx.length > 0 && !hasRole(activeRoles, "admin");
+  const planLockMessage = planLockedByPending
+    ? `สลิป${pendingPlanIdx.map(idx => `งวดที่ ${idx + 1}`).join(", ")} รอบัญชียืนยัน — แก้แผนงวดได้หลังบัญชียืนยันหรือตีกลับสลิป`
+    : "";
   const [installDate, setInstallDate] = useState(lead.install_date ? String(lead.install_date).slice(0, 10) : "");
   const [installDateEnd, setInstallDateEnd] = useState(lead.install_date_end ? String(lead.install_date_end).slice(0, 10) : "");
 
@@ -1142,11 +1158,12 @@ export default function OrderStep({ lead, state, refresh, expanded, onToggle }: 
                 <button
                   key={n}
                   type="button"
+                  disabled={planLockedByPending}
                   onClick={() => setInstallmentCount(n)}
-                  className={`h-8 px-2 rounded-lg text-sm font-semibold border transition-all ${
+                  className={`h-8 px-2 rounded-lg text-sm font-semibold border transition-all disabled:cursor-not-allowed ${
                     installments.length === n
                       ? "bg-active text-white border-active"
-                      : "bg-white text-gray-600 border-gray-200 hover:border-active/40"
+                      : "bg-white text-gray-600 border-gray-200 hover:border-active/40 disabled:opacity-50 disabled:hover:border-gray-200"
                   }`}
                 >
                   {n} งวด
@@ -1158,6 +1175,11 @@ export default function OrderStep({ lead, state, refresh, expanded, onToggle }: 
               </span>
             </div>
 
+            {planLockedByPending && (
+              <div className="mb-3 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800">
+                {planLockMessage}
+              </div>
+            )}
             {paidMismatches.length > 0 && (
               <div className="mb-3 rounded-lg border border-red-300 bg-red-50 px-3 py-2.5 text-xs text-red-800">
                 <div className="font-bold mb-1">⚠️ ยอดที่รับจริงไม่ตรงกับแผนผ่อน</div>
@@ -1178,14 +1200,16 @@ export default function OrderStep({ lead, state, refresh, expanded, onToggle }: 
               {installments.map((row, i) => {
                 const isAutoRow = i === _autoIdx;
                 const paid = isPaid(i);
+                // paid ใช้แสดงผล (ป้ายชำระแล้ว สีเขียว) ส่วน locked ใช้ปิดช่องแก้ไข
+                const locked = paid || planLockedByPending;
                 const rowAmountValue = rowAmount(i);
                 const rowNetAmount = rowAmount(i);
                 const loanCheckbox = (
-                  <label className={`flex items-center gap-1.5 text-xs text-gray-600 shrink-0 ${paid ? "cursor-default opacity-60" : "cursor-pointer"}`}>
+                  <label className={`flex items-center gap-1.5 text-xs text-gray-600 shrink-0 ${locked ? "cursor-default opacity-60" : "cursor-pointer"}`}>
                     <input
                       type="checkbox"
                       checked={row.method === "loan"}
-                      disabled={paid}
+                      disabled={locked}
                       onChange={(e) => updateInstallment(i, e.target.checked
                         ? { method: "loan", loan_bank: row.loan_bank || LOAN_BANKS[0].value, cc_pct: null }
                         : { method: "transfer", loan_bank: null, cc_pct: null })}
@@ -1195,11 +1219,11 @@ export default function OrderStep({ lead, state, refresh, expanded, onToggle }: 
                   </label>
                 );
                 const ccCheckbox = (
-                  <label className={`flex items-center gap-1.5 text-xs text-gray-600 shrink-0 ${paid ? "cursor-default opacity-60" : "cursor-pointer"}`}>
+                  <label className={`flex items-center gap-1.5 text-xs text-gray-600 shrink-0 ${locked ? "cursor-default opacity-60" : "cursor-pointer"}`}>
                     <input
                       type="checkbox"
                       checked={row.method === "cc"}
-                      disabled={paid}
+                      disabled={locked}
                       onChange={(e) => updateInstallment(i, e.target.checked
                         ? { method: "cc", cc_pct: row.cc_pct ?? CC_DEFAULT, loan_bank: null }
                         : { method: "transfer", cc_pct: null, loan_bank: null })}
@@ -1209,11 +1233,11 @@ export default function OrderStep({ lead, state, refresh, expanded, onToggle }: 
                   </label>
                 );
                 const chequeCheckbox = (
-                  <label className={`flex items-center gap-1.5 text-xs text-gray-600 shrink-0 ${paid ? "cursor-default opacity-60" : "cursor-pointer"}`}>
+                  <label className={`flex items-center gap-1.5 text-xs text-gray-600 shrink-0 ${locked ? "cursor-default opacity-60" : "cursor-pointer"}`}>
                     <input
                       type="checkbox"
                       checked={row.method === "cheque"}
-                      disabled={paid}
+                      disabled={locked}
                       onChange={(e) => updateInstallment(i, e.target.checked
                         ? { method: "cheque", loan_bank: null, cc_pct: null }
                         : { method: "transfer", loan_bank: null, cc_pct: null })}
@@ -1226,7 +1250,7 @@ export default function OrderStep({ lead, state, refresh, expanded, onToggle }: 
                   <Dropdown
                     className="w-full md:w-56"
                     value={row.loan_bank || ""}
-                    disabled={paid}
+                    disabled={locked}
                     onChange={v => updateInstallment(i, { loan_bank: (v || null) as LoanBank | null })}
                     options={LOAN_BANKS}
                   />
@@ -1235,7 +1259,7 @@ export default function OrderStep({ lead, state, refresh, expanded, onToggle }: 
                   <Dropdown
                     className="w-full md:w-24"
                     value={String(row.cc_pct ?? CC_DEFAULT)}
-                    disabled={paid}
+                    disabled={locked}
                     onChange={v => updateInstallment(i, { cc_pct: v ? parseFloat(v) : CC_DEFAULT })}
                     options={CC_RATES.map(r => ({ value: String(r), label: r === 0 ? "0%" : `+${r}%` }))}
                   />
@@ -1338,14 +1362,14 @@ export default function OrderStep({ lead, state, refresh, expanded, onToggle }: 
                             const p = isAutoRow ? lastPct : row.pct;
                             return Number.isInteger(p) ? p : Math.round(p * 100) / 100;
                           })()}
-                          disabled={isAutoRow || paid}
+                          disabled={isAutoRow || locked}
                           onChange={e => {
                             const cleaned = e.target.value.replace(/[^\d.]/g, "");
                             const v = cleaned === "" ? 0 : Math.min(100, parseFloat(cleaned) || 0);
                             // % ใช้คำนวณยอดตรงนี้ครั้งเดียว จากนั้นระบบใช้ยอดเป็นหลัก
                             updateInstallment(i, { pct: v, amount: Math.round((netTotal * v) / 100) });
                           }}
-                          className={`w-full h-8 pl-2 pr-7 rounded-md border text-sm font-mono tabular-nums focus:outline-none ${isAutoRow || paid ? "bg-gray-50 border-gray-200 text-gray-700" : "border-gray-200 focus:border-primary"}`}
+                          className={`w-full h-8 pl-2 pr-7 rounded-md border text-sm font-mono tabular-nums focus:outline-none ${isAutoRow || locked ? "bg-gray-50 border-gray-200 text-gray-700" : "border-gray-200 focus:border-primary"}`}
                         />
                         <span className="absolute right-2 top-1/2 -translate-y-1/2 text-[10px] text-gray-400 pointer-events-none">%</span>
                       </div>
@@ -1363,7 +1387,7 @@ export default function OrderStep({ lead, state, refresh, expanded, onToggle }: 
                               type="text"
                               inputMode="numeric"
                               value={netTotal > 0 ? rowAmountValue : ""}
-                              disabled={isAutoRow || paid}
+                              disabled={isAutoRow || locked}
                               onChange={e => {
                                 const digits = e.target.value.replace(/[^\d]/g, "");
                                 const amt = digits === "" ? 0 : Math.min(netTotal, parseInt(digits));
@@ -1372,7 +1396,7 @@ export default function OrderStep({ lead, state, refresh, expanded, onToggle }: 
                                 updateInstallment(i, { pct, amount: amt });
                               }}
                               placeholder={netTotal > 0 ? "" : "—"}
-                              className={`w-full h-8 pl-2 pr-6 rounded-md border text-sm font-mono tabular-nums text-right focus:outline-none ${isAutoRow || paid ? "bg-gray-50 border-gray-200 text-gray-700" : "border-gray-200 focus:border-primary"}`}
+                              className={`w-full h-8 pl-2 pr-6 rounded-md border text-sm font-mono tabular-nums text-right focus:outline-none ${isAutoRow || locked ? "bg-gray-50 border-gray-200 text-gray-700" : "border-gray-200 focus:border-primary"}`}
                             />
                             <span className="absolute right-2 top-1/2 -translate-y-1/2 text-[10px] text-gray-400 pointer-events-none">฿</span>
                           </div>
@@ -1388,11 +1412,11 @@ export default function OrderStep({ lead, state, refresh, expanded, onToggle }: 
                       </div>
                       {/* "ชำระหลังติดตั้ง" — desktop column (after amount) */}
                       <div className="hidden md:block md:order-4 md:shrink-0">
-                        <label className={`flex items-center gap-1.5 text-xs text-gray-600 h-8 ${paid ? "cursor-default opacity-60" : "cursor-pointer"}`}>
+                        <label className={`flex items-center gap-1.5 text-xs text-gray-600 h-8 ${locked ? "cursor-default opacity-60" : "cursor-pointer"}`}>
                           <input
                             type="checkbox"
                             checked={row.when === "after"}
-                            disabled={paid}
+                            disabled={locked}
                             onChange={(e) => updateInstallment(i, { when: e.target.checked ? "after" : "before" })}
                             className="w-4 h-4 accent-primary"
                           />
@@ -1417,11 +1441,11 @@ export default function OrderStep({ lead, state, refresh, expanded, onToggle }: 
                         {chequeCheckbox}
                         {ccCheckbox}
                         {loanCheckbox}
-                        <label className={`flex items-center gap-1.5 text-xs text-gray-600 ${paid ? "cursor-default opacity-60" : "cursor-pointer"}`}>
+                        <label className={`flex items-center gap-1.5 text-xs text-gray-600 ${locked ? "cursor-default opacity-60" : "cursor-pointer"}`}>
                           <input
                             type="checkbox"
                             checked={row.when === "after"}
-                            disabled={paid}
+                            disabled={locked}
                             onChange={(e) => updateInstallment(i, { when: e.target.checked ? "after" : "before" })}
                             className="w-4 h-4 accent-primary"
                           />
@@ -1908,6 +1932,12 @@ export default function OrderStep({ lead, state, refresh, expanded, onToggle }: 
                     <span>ล็อก · ชำระแล้ว {lead.order_paid_count} งวด</span>
                   </div>
                 )}
+                {!quoteLocked && planLockedByPending && (
+                  <div className="inline-flex items-center gap-1 text-xxs font-bold uppercase tracking-wider text-amber-700 bg-amber-100 border border-amber-200 px-2 py-0.5 rounded-full" title={planLockMessage}>
+                    <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}><path strokeLinecap="round" strokeLinejoin="round" d="M16.5 10.5V6.75a4.5 4.5 0 10-9 0v3.75m-.75 11.25h10.5a2.25 2.25 0 002.25-2.25v-6.75a2.25 2.25 0 00-2.25-2.25H6.75a2.25 2.25 0 00-2.25 2.25v6.75a2.25 2.25 0 002.25 2.25z" /></svg>
+                    <span>ล็อก · สลิปรอบัญชียืนยัน</span>
+                  </div>
+                )}
               </div>
               <div className={`grid gap-2 ${visibleQuoteOptions.length > 1 ? "grid-cols-1 md:grid-cols-3" : "grid-cols-1"}`}>
                 {visibleQuoteOptions.map(({ option: opt, originalIndex: i }) => {
@@ -1915,7 +1945,7 @@ export default function OrderStep({ lead, state, refresh, expanded, onToggle }: 
                   const optHref = quotationHref(opt.url);
                   const isImage = /\.(jpg|jpeg|png|gif|webp)$/i.test(opt.url);
                   const isAccepted = acceptedIdx === i;
-                  const isSelectable = canSelectQuotation && !quoteLocked && !isAccepted;
+                  const isSelectable = canSelectQuotation && !quoteLocked && !planLockedByPending && !isAccepted;
                   return (
                     <div key={i}
                       onClick={isSelectable ? () => pickQuote(i) : undefined}

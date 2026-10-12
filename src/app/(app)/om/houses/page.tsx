@@ -20,6 +20,7 @@ import SyncBar from "@/components/om/SyncBar";
 import { SystemCard, type HouseDetail } from "@/components/om/HouseSystemCard";
 import { formatThaiDate } from "@/lib/utils/formatters";
 import { formatSlotsRange } from "@/lib/time-slots";
+import { ORIGIN_OPTIONS, parseOrigin, type HouseOrigin } from "@/lib/om/house-origin";
 
 interface Row {
   id: number; house_number: string | null; project_name: string | null; project_id: string | null;
@@ -74,6 +75,8 @@ export default function OmHousesPage() {
   const [groups, setGroups] = useState<Group[] | null>(null);
   const [stats, setStats] = useState<Stats | null>(null);
   const [grp, setGrp] = useState("__ALL__");   // เริ่มที่ ทุกโครงการ — กดแท็บงานค้างต้องเห็นทั้งระบบ
+  // ที่มา (แผน 20261007-01) — ส่งทั้งลิสต์และ /groups ตัวเลขบนแท็บ/โครงการจะได้เท่ากับที่เห็น
+  const [origin, setOrigin] = useState<HouseOrigin>("");
   const { me } = useMe();
   const { item: activeItem } = useActiveMenuItem();   // หัวเรื่อง = ชื่อเมนู (กติกา ui-rules)
   const dialog = useDialog();
@@ -100,13 +103,13 @@ export default function OmHousesPage() {
 
   const say = (m: string) => { setToast(m); setTimeout(() => setToast(""), 2600); };
   const loadGroups = useCallback(() => {
-    apiFetch("/api/om/houses/groups")
+    apiFetch(`/api/om/houses/groups${origin ? `?origin=${origin}` : ""}`)
       .then((d) => {
         setGroups(d.groups ?? []);
         setStats(d.stats ?? null);
       })
       .catch((e) => setErr(e instanceof Error ? e.message : String(e)));
-  }, []);
+  }, [origin]);
   useEffect(() => { loadGroups(); }, [loadGroups]);
 
   const load = useCallback(() => {
@@ -114,11 +117,12 @@ export default function OmHousesPage() {
     const u = new URLSearchParams({
       q, filter, page: String(page), size: String(size),
       ...(q ? {} : { group: grp }),
+      ...(origin ? { origin } : {}),
     });
     apiFetch(`/api/om/houses?${u}`)
       .then((d) => { setRows(d.houses ?? []); setTotal(d.total ?? 0); setWashCycle(d.cleaningCycleMonths ?? null); })
       .catch((e) => setErr(e instanceof Error ? e.message : String(e)));
-  }, [q, filter, grp, page, size]);
+  }, [q, filter, grp, page, size, origin]);
   useEffect(() => { const t = setTimeout(load, q ? 300 : 0); return () => clearTimeout(t); }, [load, q]);
 
   const show = async (id: number) => {
@@ -337,6 +341,14 @@ export default function OmHousesPage() {
               searchable
             />
           )}
+          {/* ที่มา — ยกช่อง "ช่องทาง" ของ Pipeline (แผน 20261007-01)
+              เปลี่ยนแล้วกลับทุกโครงการ เหมือนกดแท็บ — โครงการที่เลือกไว้อาจไม่มีบ้านจากที่มานั้น */}
+          <Dropdown
+            className="w-44 font-normal"
+            value={origin}
+            onChange={(v) => { setOrigin(parseOrigin(v)); setGrp("__ALL__"); setPage(1); }}
+            options={ORIGIN_OPTIONS}
+          />
           {canSync && (
             <span className="md:ml-auto max-md:w-full">
               <SyncBar onChanged={() => { load(); loadGroups(); }} />

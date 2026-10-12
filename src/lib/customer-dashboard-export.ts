@@ -6,19 +6,22 @@ import {
   ABLE_OR_NOT, AC_TIERS, AGE_RANGES, BILL_RISE_ACTIONS, BUSINESS_TYPES,
   DAYTIME_OCCUPANTS, DECISION_FACTORS, DECISION_TIMELINES,
   ELECTRICAL_PHASES, EVER_NEVER, EV_CHARGE_PERIODS, EV_READY_OPTIONS,
-  HOUSEHOLD_INCOMES, HOUSE_AGES, METER_SIZES, OCCUPATIONS, OUTAGE_PRIORITIES, PEAK_USAGE,
+  HOUSEHOLD_INCOMES, HOUSE_AGES, METER_SIZES, OCCUPATIONS, OUTAGE_PRIORITIES,
+  LEGACY_PEAK_USAGE, PAYMENT_INTERESTS, PEAK_USAGE,
   QUESTIONNAIRE_SECTIONS, RESIDENCE_TYPES, ROOF_SHAPES,
   USAGE_TREND_OPTIONS, WORK_DAYS_PER_WEEK, YES_NO, YES_NO_BIN,
   YES_NO_CONSIDERING, YES_NO_MAYBE, optionLabel,
 } from "@/lib/customer-questionnaire";
 import type { CustomerDashboardFilters } from "@/lib/customer-dashboard-types";
 import { SALES_LEADS } from "@/lib/lead-scope";
+import { computeLoad } from "@/lib/load-assumption";
 
 type Option = { value: string; label: string };
 
 export type CustomerExportRow = {
   id: number;
   full_name: string;
+  phone: string | null;
   installation_address: string | null;
   house_number: string | null;
   meter_number: string | null;
@@ -40,6 +43,7 @@ export type CustomerExportRow = {
   house_age: string | null;
   roof_shape: string | null;
   occupant_total: number | null;
+  occupant_adults: number | null;
   occupant_elderly: number | null;
   occupant_kids: number | null;
   occupant_pets: number | null;
@@ -56,6 +60,7 @@ export type CustomerExportRow = {
   ac_split: string | null;
   appliances: string | null;
   ev_charge_period: string | null;
+  load_profile: string | null;
   future_ev: string | null;
   future_ev_charger: string | null;
   future_extend_home: string | null;
@@ -77,6 +82,7 @@ export type CustomerExportRow = {
   occupation: string | null;
   age_range: string | null;
   household_income: string | null;
+  payment_interest: string | null;
   [key: string]: unknown;
 };
 
@@ -178,6 +184,10 @@ function column(
 const LEAD_COLUMNS: ExportColumn[] = [
   column("ข้อมูล Lead", "id", "Lead ID", "number", row => row.id, undefined, 10),
   column("ข้อมูล Lead", "full_name", "ชื่อ-นามสกุล", "text", row => safeText(row.full_name), undefined, 24),
+  // Whatever list someone opens, the next thing they do with it is call the
+  // people on it — the same reason every bucket export on Dashboard I carries
+  // the phone. Text, not number: leading zeros are part of a Thai phone number.
+  column("ข้อมูล Lead", "phone", "เบอร์โทร", "text", row => safeText(row.phone), undefined, 14),
   column("ข้อมูล Lead", "installation_address", "ที่อยู่ติดตั้ง", "text", row => safeText(row.installation_address), undefined, 38),
   column("ข้อมูล Lead", "house_number", "บ้านเลขที่", "text", row => safeText(row.house_number), undefined, 14),
   column("ข้อมูล Lead", "meter_number", "เลขมิเตอร์", "text", row => safeText(row.meter_number), undefined, 18),
@@ -200,10 +210,13 @@ const QUESTIONNAIRE_COLUMNS: ExportColumn[] = [
   column("1. Customer Demographics", "occupation", "อาชีพ", "choice", row => optionText(OCCUPATIONS, row.occupation), optionList(OCCUPATIONS), 24),
   column("1. Customer Demographics", "age_range", "อายุ", "choice", row => optionText(AGE_RANGES, row.age_range), optionList(AGE_RANGES), 18),
   column("1. Customer Demographics", "household_income", "รายได้ครัวเรือน/เดือน", "choice", row => optionText(HOUSEHOLD_INCOMES, row.household_income), optionList(HOUSEHOLD_INCOMES), 26),
+  column("1. Customer Demographics", "payment_interest", "รูปแบบการชำระเงินที่สนใจ", "choice", row => optionText(PAYMENT_INTERESTS, row.payment_interest), optionList(PAYMENT_INTERESTS), 30),
   column("2. Customer Profile", "residence_type", "ประเภทที่อยู่อาศัย", "choice", row => optionText(RESIDENCE_TYPES, row.residence_type), optionList(RESIDENCE_TYPES), 22),
   column("2. Customer Profile", "house_age", "อายุบ้าน", "choice", row => optionText(HOUSE_AGES, row.house_age), optionList(HOUSE_AGES), 18),
   column("2. Customer Profile", "roof_shape", "ประเภทหลังคา", "choice", row => optionText(ROOF_SHAPES, row.roof_shape), optionList(ROOF_SHAPES), 28),
-  column("2. Customer Profile", "occupant_total", "จำนวนผู้อยู่อาศัย", "number", row => row.occupant_total, undefined, 16),
+  // ผู้อยู่อาศัย = ผู้ใหญ่ + ผู้สูงอายุ + เด็ก (migration 199) — สัตว์เลี้ยงไม่นับเป็นคน
+  column("2. Customer Profile", "occupant_total", "จำนวนผู้อยู่อาศัย (คน)", "number", row => row.occupant_total, undefined, 18),
+  column("2. Customer Profile", "occupant_adults", "จำนวนผู้ใหญ่", "number", row => row.occupant_adults, undefined, 14),
   column("2. Customer Profile", "occupant_elderly", "จำนวนผู้สูงอายุ", "number", row => row.occupant_elderly, undefined, 16),
   column("2. Customer Profile", "occupant_kids", "จำนวนเด็ก", "number", row => row.occupant_kids, undefined, 14),
   column("2. Customer Profile", "occupant_pets", "จำนวนสัตว์เลี้ยง", "number", row => row.occupant_pets, undefined, 16),
@@ -212,7 +225,7 @@ const QUESTIONNAIRE_COLUMNS: ExportColumn[] = [
   column("3. Energy Profile", "monthly_bill_max", "ค่าไฟสูงสุดต่อเดือน", "currency", row => row.monthly_bill_max, undefined, 18),
   column("3. Energy Profile", "electrical_phase", "ระบบไฟปัจจุบัน", "choice", row => optionText(ELECTRICAL_PHASES, row.electrical_phase), optionList(ELECTRICAL_PHASES), 18),
   column("3. Energy Profile", "meter_size", "ขนาดมิเตอร์", "choice", row => optionText(METER_SIZES, row.meter_size), optionList(METER_SIZES), 18),
-  column("3. Energy Profile", "peak_usage", "ช่วงเวลาที่ใช้ไฟสูงสุด", "choice", row => optionText(PEAK_USAGE, row.peak_usage), optionList(PEAK_USAGE), 22),
+  column("3. Energy Profile", "peak_usage", "ช่วงเวลาที่ใช้ไฟสูงสุด", "choice", row => optionText([...PEAK_USAGE, ...LEGACY_PEAK_USAGE], row.peak_usage), optionList(PEAK_USAGE), 22),
 
   column("4. Lifestyle Assessment", "home_at_daytime", "อยู่บ้านช่วงกลางวัน", "choice", row => optionText(YES_NO, row.home_at_daytime), optionList(YES_NO), 20),
   column("4. Lifestyle Assessment", "daytime_occupants", "ผู้อยู่บ้านช่วงกลางวัน", "multi-choice", row => multiText(DAYTIME_OCCUPANTS, row.daytime_occupants), optionList(DAYTIME_OCCUPANTS), 30),
@@ -223,6 +236,9 @@ const QUESTIONNAIRE_COLUMNS: ExportColumn[] = [
   column("4. Lifestyle Assessment", "ac_split_night", "แอร์ช่วงกลางคืน", "structured text", row => acPeriodText(row.ac_split, "night"), "จำนวนเครื่อง แยกตาม BTU", 34),
   column("4. Lifestyle Assessment", "appliances", "อุปกรณ์/ที่ชาร์จ EV", "multi-choice", row => multiText(APPLIANCE_OPTIONS, row.appliances), optionList(APPLIANCE_OPTIONS), 22),
   column("4. Lifestyle Assessment", "ev_charge_period", "ช่วงเวลาชาร์จ EV", "choice", row => optionText(EV_CHARGE_PERIODS, row.ev_charge_period), optionList(EV_CHARGE_PERIODS), 20),
+  // ประมาณการจากคำตอบเรื่องอุปกรณ์ × กำลังไฟมาตรฐาน (src/lib/load-assumption.ts) — ว่างถ้ายังคำนวณไม่ได้สักแถว
+  column("4. Lifestyle Assessment", "load_day_kwh", "ใช้ไฟกลางวัน (kWh/วัน)", "number", row => computeLoad(row).dayKwh, "ประมาณการ", 20),
+  column("4. Lifestyle Assessment", "load_night_kwh", "ใช้ไฟกลางคืน (kWh/วัน)", "number", row => computeLoad(row).nightKwh, "ประมาณการ", 20),
 
   column("5. Future Home Assessment", "future_ev", "แผนซื้อรถยนต์ EV", "choice", row => optionText(YES_NO_CONSIDERING, row.future_ev), optionList(YES_NO_CONSIDERING), 22),
   column("5. Future Home Assessment", "future_ev_charger", "แผนติดตั้ง EV Charger", "choice", row => optionText(YES_NO_BIN, row.future_ev_charger), optionList(YES_NO_BIN), 22),
@@ -245,6 +261,7 @@ const QUESTIONNAIRE_COLUMNS: ExportColumn[] = [
   column("8. Beyond Question", "future_usage_trend", "แนวโน้มใช้ไฟใน 10 ปี", "choice", row => optionText(USAGE_TREND_OPTIONS, row.future_usage_trend), optionList(USAGE_TREND_OPTIONS), 22),
 
   column("9. Decision Making Factor", "decision_timeline", "ระยะเวลาตัดสินใจ", "choice", row => optionText(DECISION_TIMELINES, row.decision_timeline), optionList(DECISION_TIMELINES), 22),
+
   ...DECISION_FACTORS.map(factor => column("9. Decision Making Factor", `decision_${factor.key}`, factor.label, "score 1-5", row => factorScore(row, factor.key), "1 = สำคัญน้อยที่สุด; 5 = สำคัญมากที่สุด", 38)),
   column("9. Decision Making Factor", "decision_other_text", "ปัจจัยอื่นๆ", "text", row => otherFactor(row).text, undefined, 32),
   column("9. Decision Making Factor", "decision_other_score", "คะแนนปัจจัยอื่นๆ", "score 1-5", row => otherFactor(row).score, "1-5", 18),
@@ -268,7 +285,7 @@ export async function getCustomerExportRows(filters: CustomerDashboardFilters): 
   if (to) { request.input("to", sql.Date, to); clauses.push("CAST(l.created_at AS DATE) <= @to"); }
   const where = clauses.length ? `WHERE ${clauses.join(" AND ")}` : "";
   const result = await request.query(`
-    SELECT l.id, l.full_name, l.installation_address,
+    SELECT l.id, l.full_name, l.phone, l.installation_address,
       l.house_number, l.meter_number,
       l.project_id, COALESCE(NULLIF(l.project_alias, N''), NULLIF(l.project_name, N''), p.name) AS project_name,
       p.district AS project_district, p.province AS project_province,
@@ -276,16 +293,16 @@ export async function getCustomerExportRows(filters: CustomerDashboardFilters): 
       l.customer_grade, u.full_name AS assigned_name, l.created_at,
       l.updated_at AS lead_updated_at, d.updated_at AS questionnaire_updated_at,
       d.residence_type, d.house_age, d.roof_shape,
-      d.occupant_total, d.occupant_elderly, d.occupant_kids, d.occupant_pets,
+      d.occupant_total, d.occupant_adults, d.occupant_elderly, d.occupant_kids, d.occupant_pets,
       d.monthly_bill, d.monthly_bill_max, d.electrical_phase, d.meter_size, d.peak_usage,
       d.home_at_daytime, d.daytime_occupants, d.work_at_home, d.business_type,
-      d.work_days_per_week, d.ac_split, d.appliances, d.ev_charge_period,
+      d.work_days_per_week, d.ac_split, d.appliances, d.ev_charge_period, d.load_profile,
       d.future_ev, d.future_ev_charger, d.future_extend_home, d.future_more_members,
       d.future_smart_home, d.future_battery, d.outage_priorities, d.bill_rise_action,
       d.had_roof_leak, d.did_roof_repair, d.had_electrical_issue, d.did_panel_replacement,
       d.self_generates, d.ev_ready, d.blackout_resilient, d.future_usage_trend,
       d.decision_factors, d.decision_timeline,
-      d.occupation, d.age_range, d.household_income
+      d.occupation, d.age_range, d.household_income, d.payment_interest
     FROM ${SALES_LEADS} l
     LEFT JOIN projects p ON p.id = l.project_id
     LEFT JOIN users u ON u.id = l.assigned_user_id

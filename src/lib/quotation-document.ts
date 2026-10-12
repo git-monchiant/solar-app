@@ -1,6 +1,7 @@
 import "server-only";
 import { getDb, sql } from "@/lib/db";
 import { GSB_SOLAR_LOAN_DEFAULTS } from "@/lib/loan-defaults";
+import { missingLoadAnswers } from "@/lib/load-assumption";
 import {
   getQuotationLegalContent,
   parseQuotationOmSettings,
@@ -263,6 +264,11 @@ export function validateQuotationDocument(snapshot: QuotationDocumentSnapshot): 
   if (finance.inputs.current_monthly_bill <= 0) errors.push("กรุณาระบุค่าไฟปัจจุบันจากข้อมูลจริง");
   if (finance.inputs.electricity_rate <= 0) errors.push("กรุณาระบุค่าไฟต่อหน่วย");
   if (finance.inputs.production_kwh_per_kw_month <= 0) errors.push("กรุณาระบุสมมติฐานผลผลิตไฟต่อ kWp");
+  // The attached survey report's §3 (Load Assumption) is built from these
+  // answers — every appliance question must have been asked before the
+  // customer sees it. "ไม่ทราบ" counts as asked (plan 20260928-01, D4).
+  const loadMissing = missingLoadAnswers(snapshot.lead_data || {});
+  if (loadMissing.length) errors.push(`กรุณากรอกการใช้เครื่องใช้ไฟฟ้าในแบบสอบถามลูกค้า (เลือก "ไม่ทราบ" ได้): ${loadMissing.join(", ")}`);
   // ตารางรายการยาวเกินหน้าไม่ใช่ข้อผิดพลาดอีกต่อไป — ตัวเรนเดอร์ขึ้นตารางหน้าใหม่
   // ให้เอง พร้อมแถวยอดยกไป/ยอดยกมา (ดู paginateQuotationRows)
   if (finance.inputs.loan_enabled) {
@@ -316,7 +322,12 @@ export async function buildQuotationDocumentSnapshot(quotationId: number, transa
     else if (!key.startsWith("approval_") && !key.startsWith("approver_") && !key.startsWith("sent_to_customer_")) lead[key] = value;
   }
   const defaults: Partial<QuotationDocumentInputs> = {
-    current_monthly_bill: Number(row.survey_monthly_bill || row.pre_monthly_bill || row.monthly_bill_max || 0),
+    // ลำดับเดียวกับ QuotationBuilder: คำตอบในแบบสอบถาม (lead_data.monthly_bill) ก่อน
+    // ถ้าลูกค้าไม่ได้ตอบค่อยใช้ค่าจากฟอร์มสำรวจ · row มาจาก leads.* ซึ่งไม่มีคอลัมน์
+    // ค่าไฟของแบบสอบถาม ต้องอ่านจากชุด lead_data แยก (sets[1])
+    current_monthly_bill: Number(
+      sets[1]?.[0]?.monthly_bill || row.survey_monthly_bill || sets[1]?.[0]?.monthly_bill_max || 0,
+    ),
     loan_bank: String(row.finance_loan_bank || row.finance_bank || ""),
     loan_term_months: Number(row.finance_months || 84),
   };

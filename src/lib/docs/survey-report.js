@@ -1,5 +1,7 @@
 import fs from "fs";
 import path from "path";
+import { LEGACY_PEAK_USAGE, PEAK_USAGE } from "@/lib/customer-questionnaire";
+import { AC_LOAD_FACTOR, computeLoad, hasEvCharger, loadBillCheck } from "@/lib/load-assumption";
 
 // 15-page "รายงานสำรวจหน้างานติดตั้งโซลาร์เซลล์" — ported verbatim from the
 // generator that was tuned against leads 667 / 691 / 727 / 728.
@@ -79,22 +81,12 @@ function calcLoan(price, kw, bill, { unit=5, r1=0.035, r2=0.035, downPct=0.20, t
 }
 // §1/§3 questionnaire label maps
 const HOUSE_AGE = { lt5:"ต่ำกว่า 5 ปี", "5_10":"5-10 ปี", "10_20":"10-20 ปี", gt20:"มากกว่า 20 ปี" };
-const APPLIANCE = { water_heater:"เครื่องทำน้ำอุ่น", ev:"ที่ชาร์จรถ EV" };
 const YESNO = { yes:"มี/ใช่", no:"ไม่มี/ไม่ใช่", maybe:"ยังไม่แน่ใจ" };
 const EVPERIOD = { day:"กลางวัน", night:"กลางคืน" };
+// Current + legacy codes from the questionnaire module itself — a private map
+// here once knew only day/night/both/afternoon and printed "—" for 211 leads.
+const PEAK = Object.fromEntries([...PEAK_USAGE, ...LEGACY_PEAK_USAGE].map(o => [o.value, o.label]));
 const has = v => v!==null && v!==undefined && String(v).trim()!=="";
-// ac_split JSON → readable "18,000 BTU × 1" list for a period (day|night)
-const acList = (split, period) => {
-  try {
-    const o = typeof split==="string" ? JSON.parse(split) : split;
-    const seg = o?.[period] || {};
-    const parts = Object.entries(seg).filter(([,n])=>Number(n)>0)
-      .map(([k,n])=>`${k==="gt24000"?">24,000":Number(k).toLocaleString()} BTU × ${n}`);
-    return parts.length ? parts.join(", ") : null;
-  } catch { return null; }
-};
-const acTotal = (split, period) => { try { const o=typeof split==="string"?JSON.parse(split):split; return Object.values(o?.[period]||{}).reduce((a,n)=>a+Number(n||0),0); } catch { return 0; } };
-const trList2 = (map, v) => { if(!has(v)) return null; return String(v).split(",").map(x=>map[x.trim()]||x.trim()).filter(Boolean).join(", "); };
 
 // Uploaded photo (/api/files/<name>) → data URI. A missing file yields null,
 // which the page builders render as an empty hand-draw box, not a broken image.
@@ -193,7 +185,7 @@ export function buildSurveyReportHtml(L, D, PKG, options = {}) {
   </div>`, "cover-page");
 
   // ── PAGE 2 TOC ──────────────────────────────────────────────────────
-  const toc=[["สารบัญ",2],["1. ข้อมูลลูกค้าและโครงการ",3],["2. รูปถ่ายหน้างานจริงและจุดติดตั้งอุปกรณ์",4],["3. ข้อสมมติฐานการใช้ไฟฟ้า (Load Assumption)",6],["4. แพ็กเกจโซลาร์เซลล์ที่นำเสนอ",7],["5. รายการเพิ่มเติมนอกเหนือจากแพ็กเกจมาตรฐาน",8],["6. ขั้นตอนถัดไปสำหรับลูกค้า (Customer Journey)",9],["7. ทางเลือกการชำระเงินมัดจำ 20% (เพื่อจองวันติดตั้ง)",10],["8. ทางเลือกการชำระเงินส่วนที่เหลือ 80%",11],["9. หมายเหตุและเงื่อนไขทั่วไป",14],["ภาคผนวก ก: ใบเสนอราคา (Quotation)",15]];
+  const toc=[["1. ข้อมูลลูกค้าและโครงการ",3],["2. รูปถ่ายหน้างานจริงและจุดติดตั้งอุปกรณ์",4],["3. ข้อสมมติฐานการใช้ไฟฟ้า (Load Assumption)",6],["4. แพ็กเกจโซลาร์เซลล์ที่นำเสนอ",7],["5. รายการเพิ่มเติมนอกเหนือจากแพ็กเกจมาตรฐาน",8],["6. ขั้นตอนถัดไปสำหรับลูกค้า (Customer Journey)",9],["7. ทางเลือกการชำระเงินมัดจำ 20% (เพื่อจองวันติดตั้ง)",10],["8. ทางเลือกการชำระเงินส่วนที่เหลือ 80%",11],["9. หมายเหตุและเงื่อนไขทั่วไป",14],["ภาคผนวก ก: ใบเสนอราคา (Quotation)",15]];
   const p2 = page(2, `${sect("","สารบัญ")}<div class="toc">${toc.map(([t,n])=>`<div class="toc-row"><span class="toc-t">${t}</span><span class="toc-dot"></span><span class="toc-n">${n}</span></div>`).join("")}</div>`);
 
   // ── PAGE 3 §1 ───────────────────────────────────────────────────────
@@ -207,7 +199,7 @@ export function buildSurveyReportHtml(L, D, PKG, options = {}) {
       ["อายุบ้าน", V(HOUSE_AGE[D.house_age],"ต่ำกว่า 5 ปี / 5-10 ปี / 10-20 ปี / มากกว่า 20 ปี")],
       ["ลักษณะหลังคา", V(roofLabel(L.survey_roof_material) || roofLabel(D.roof_shape),"หลังคากระเบื้อง / เมทัลชีท / คอนกรีต")],
       ["มิเตอร์ไฟฟ้า (การไฟฟ้า)", V(meterTxt || (D.meter_size?`${METER[D.meter_size]||D.meter_size}${D.electrical_phase?` ${PHASE[D.electrical_phase]}`:""}`:null),"กฟน. / กฟภ. - ขนาดมิเตอร์ เช่น 15(45)A 1 เฟส")],
-      ["ค่าไฟฟ้าเฉลี่ยต่อเดือน<br/>(ก่อนติดตั้ง)", V(L.survey_monthly_bill?`${baht(L.survey_monthly_bill)} บาท/เดือน`:(D.monthly_bill?`${baht(D.monthly_bill)} บาท/เดือน`:null),"กรอกจากบิลค่าไฟย้อนหลัง")],
+      ["ค่าไฟฟ้าเฉลี่ยต่อเดือน<br/>(ก่อนติดตั้ง)", V(D.monthly_bill?`${baht(D.monthly_bill)} บาท/เดือน`:(L.survey_monthly_bill?`${baht(L.survey_monthly_bill)} บาท/เดือน`:null),"กรอกจากบิลค่าไฟย้อนหลัง")],
       ["วันที่เข้าสำรวจ", V(thDate(L.survey_date),"วว/ดด/ปปปป")],
       ["ผู้สำรวจหน้างาน", V(L.surveyor,"ชื่อทีมสำรวจ")],
     ])}
@@ -240,11 +232,20 @@ export function buildSurveyReportHtml(L, D, PKG, options = {}) {
         : `<div class="sk-note">พื้นที่สำหรับวาดผังร่างด้วยมือ — ระบุ: ตำแหน่งแผงโซลาร์ • แนวสายไฟ DC/AC • ตำแหน่ง Inverter • จุดเชื่อมต่อ MDB • ทิศทาง (N)</div>`}
     </div>`);
 
-  // ── PAGE 6 §3 Load Assumption — HYBRID: AC rows pre-filled from the
-  // questionnaire's ac_split; per-device hours/kWh stay blank for hand-fill.
-  // Table rows are compact so table + summary + battery callout fit one page.
-  const acDay = acList(D.ac_split, "day"), acNight = acList(D.ac_split, "night");
-  const nDay = acTotal(D.ac_split, "day"), nNight = acTotal(D.ac_split, "night");
+  // ── PAGE 6 §3 Load Assumption — every figure comes from computeLoad()
+  // (src/lib/load-assumption.ts), the module behind the Customer Info preview,
+  // so the report and the form cannot disagree. Rows nobody answered keep the
+  // blank fill-in cells for the surveyor to write by hand; "ไม่ทราบ" rows say
+  // so in words (blank cells read as a form nobody finished); "—" marks a cell
+  // that doesn't apply (night hours on the daytime-AC row).
+  // Table rows are compact so table + summary + battery callout fit one page
+  // (the page has a fixed height and the TOC fixed page numbers — never let
+  // this section spill onto page 7).
+  // Meter/phase only steer the EV charger's default kW — the surveyor's
+  // measured values win over the questionnaire's (same order as §1).
+  const load = computeLoad({ ...D,
+    meter_size: L.survey_meter_size || D.meter_size,
+    electrical_phase: L.survey_electrical_phase || D.electrical_phase });
   // blank fill-in cell — no [ __ ] placeholder, just the unit right-aligned
   // (mostly empty so it can be written by hand). bl("") = fully empty cell.
   const bl = (unit="") => `<span class="bl">${unit}</span>`;
@@ -255,36 +256,88 @@ export function buildSurveyReportHtml(L, D, PKG, options = {}) {
     ? String(t).replace(/(\d+(?:[.,]\d+)?)\s+(kWp|kWh|kW|เฟส|ชุด|แผง|เครื่อง|กล่อง|งาน|SET|W)/gi,
         '<span class="nw">$1 $2</span>')
     : t;
-  const acCell = (list, n) => list ? `<span class="val">${n}</span>` : bl();
-  const acSize = (list) => list ? `<span class="val">${list}</span>` : bl("BTU");
-  // rows: [device, qtyCell, sizeCell, dayHrsFixed?, nightHrsFixed?]
-  const LOAD_ROWS = [
-    ["เครื่องปรับอากาศ (ใช้กลางวัน)", acCell(acDay,nDay), acSize(acDay), null, null],
-    ["เครื่องปรับอากาศ (ใช้กลางคืน)", acCell(acNight,nNight), acSize(acNight), null, null],
-    ["ตู้เย็น", "1", bl("kW"), "12 ชม.", "12 ชม."],
-    ["เครื่องทำน้ำอุ่น", bl(), bl("kW"), null, null],
-    ["ปั้มน้ำ", "1", bl("kW"), null, null],
-    ["เครื่องซักผ้า", "1", bl("kW"), null, null],
-    ["ทีวี / เครื่องใช้ไฟฟ้าอิเล็กทรอนิกส์", bl(), bl("W"), null, null],
-    ["หลอดไฟส่องสว่าง", bl(), bl("W"), null, null],
-    ...(has(D.appliances)?[[`เครื่องใช้ไฟฟ้าเด่น: ${trList2(APPLIANCE,D.appliances)}`, `<span class="val">✓</span>`, bl(), null, null]]:[]),
-  ];
-  const hrCell = (fixed) => fixed ? fixed : bl("ชม.");
-  const loadTable = `<table class="load compact"><thead><tr>
-    <th style="width:26%">อุปกรณ์ไฟฟ้า</th><th>จำนวน</th><th>ขนาด /<br/>กำลังไฟ</th><th>ชม.กลางวัน<br/>(06-18)</th><th>ชม.กลางคืน<br/>(18-06)</th><th>kWh/วัน<br/>กลางวัน</th><th>kWh/วัน<br/>กลางคืน</th></tr></thead>
-    <tbody>${LOAD_ROWS.map(r=>`<tr><td class="dev">${r[0]}</td><td>${r[1]}</td><td>${r[2]}</td><td>${hrCell(r[3])}</td><td>${hrCell(r[4])}</td><td>${bl()}</td><td>${bl()}</td></tr>`).join("")}
-    <tr class="load-total"><td colspan="5">รวมพลังงานที่ใช้โดยประมาณ (kWh/วัน)</td><td class="tot-org">${bl("kWh")}</td><td class="tot-navy">${bl("kWh")}</td></tr></tbody></table>`;
-  // occupant/behaviour summary from questionnaire (compact inline)
-  const occ = has(D.occupant_total) ? `${D.occupant_total} คน${(D.occupant_elderly||D.occupant_kids||D.occupant_pets)?` (ผู้สูงอายุ ${D.occupant_elderly||0}, เด็ก ${D.occupant_kids||0}, สัตว์เลี้ยง ${D.occupant_pets||0})`:""}` : null;
+  const n1 = v => Number(v).toLocaleString("th-TH", { maximumFractionDigits: 1 });
+  // hours keep 2 decimals (4.29 ชม.) — the kWh beside them is computed from
+  // exactly this figure, so the printed row multiplies out
+  const n2 = v => Number(v).toLocaleString("th-TH", { maximumFractionDigits: 2 });
+  const na = `<span class="muted">—</span>`;
+  // unit shown in an empty ขนาด cell, matching what the surveyor would write
+  const SIZE_UNIT = { ac_day:"BTU", ac_night:"BTU", electronics:"W", lighting:"W" };
+  const unk = `<span class="unk">ไม่ทราบ</span>`;
+  // "ไม่ทราบ" row: nothing is computed, so kWh is "—". AC/EV may still know
+  // how many and how big (only the hours are unknown) — print those.
+  const unknownRow = r => {
+    const hasQty = r.qty != null;
+    const hrs = applies => !applies ? na : hasQty ? unk : na;
+    return `<tr><td class="dev">${r.label}</td><td>${hasQty ? `<span class="val">${r.qty}</span>` : unk}</td>`
+      + `<td>${hasQty && r.size ? `<span class="val">${keepUnit(r.size)}</span>` : na}</td>`
+      + `<td>${hrs(r.dayApplies)}</td><td>${hrs(r.nightApplies)}</td><td>${na}</td><td>${na}</td></tr>`;
+  };
+  const loadRow = r => {
+    if (r.status === "unknown") return unknownRow(r);
+    const known = r.status === "answered" || r.status === "partial";
+    const size = r.qty === "0" ? na   // "ไม่มี" — nothing to size
+      : known && r.size ? `<span class="val">${keepUnit(r.size)}</span>` : bl(SIZE_UNIT[r.key] || "kW");
+    const hrs = (applies, h) => !applies ? na : h == null ? bl("ชม.") : `<span class="val nw">${n2(h)} ชม.</span>`;
+    const kwh = (applies, k) => !applies ? na : k == null ? bl() : `<span class="val">${n1(k)}</span>`;
+    return `<tr><td class="dev">${r.label}</td><td>${r.qty != null ? `<span class="val">${r.qty}</span>` : bl()}</td><td>${size}</td>`
+      + `<td>${hrs(r.dayApplies, r.dayHours)}</td><td>${hrs(r.nightApplies, r.nightHours)}</td>`
+      + `<td>${kwh(r.dayApplies, r.dayKwh)}</td><td>${kwh(r.nightApplies, r.nightKwh)}</td></tr>`;
+  };
+  const totCell = v => v == null ? bl("kWh") : `<span class="nw">${n1(v)} kWh</span>`;
+  // Fixed layout: a long AC mix ("9,000 BTU × 1, 12,000 BTU × 2 …") must wrap
+  // inside its own column instead of squeezing the hour/kWh headers.
+  const loadTable = `<table class="load compact" style="table-layout:fixed"><thead><tr>
+    <th style="width:24%">อุปกรณ์ไฟฟ้า</th><th style="width:10%">จำนวน</th><th style="width:22%">ขนาด /<br/>กำลังไฟ</th><th style="width:10%">ชม.กลางวัน<br/>(06-18)</th><th style="width:10%">ชม.กลางคืน<br/>(18-06)</th><th style="width:12%">kWh/วัน<br/>กลางวัน</th><th style="width:12%">kWh/วัน<br/>กลางคืน</th></tr></thead>
+    <tbody>${load.rows.map(loadRow).join("")}
+    <tr class="load-total"><td colspan="5">รวมพลังงานที่ใช้โดยประมาณ (kWh/วัน)</td><td class="tot-org">${totCell(load.dayKwh)}</td><td class="tot-navy">${totCell(load.nightKwh)}</td></tr></tbody></table>`;
+  // One line under the table: night share (the battery question) + how much of
+  // the real bill the assumption explains. Numbers only — whether to add a
+  // battery is the package's call, not this page's (plan D3).
+  const loadBill = D.monthly_bill || L.survey_monthly_bill || null;
+  const loadRate = Number(options.financial?.inputs?.electricity_rate) > 0 ? Number(options.financial.inputs.electricity_rate) : null;
+  // Only once every question was asked — a half-filled table explains a
+  // tiny share of the bill and would read as a finding. Same bar the
+  // quotation submit gate enforces ("ไม่ทราบ" counts as asked).
+  const billCheck = loadBillCheck(load, loadBill, loadRate);
+  const coverage = billCheck?.complete ? billCheck.coverage : null;
+  const loadNote = load.dayKwh == null ? "" : `<p class="load-note">`
+    + (load.nightShare != null ? `สัดส่วนใช้ไฟกลางคืน ≈ <b>${Math.round(load.nightShare * 100)}%</b> · ` : "")
+    + `คำนวณจาก ${load.computedRows}/${load.totalRows} รายการ`
+    + (coverage != null ? ` · คิดเป็น ≈ <b>${Math.round(coverage * 100)}%</b> ของค่าไฟจริง (${baht(loadBill)} บาท/เดือน)` : "")
+    + ` · กำลังไฟเป็นค่ามาตรฐานโดยประมาณ`
+    // AC kW is an average below the rated figure — say why, or 12,000 BTU at
+    // ≈0.6 kW reads as a mistake.
+    + (load.rows.some(r => r.key.startsWith("ac_") && r.qty && r.qty !== "0")
+      ? ` (แอร์คิดภาระเฉลี่ย กลางวัน ${Math.round(AC_LOAD_FACTOR.day * 100)}% · กลางคืน ${Math.round(AC_LOAD_FACTOR.night * 100)}% ของกำลังเต็ม)`
+      : "")
+    + `</p>`;
+  // Occupants: people = adults + elderly + kids; pets are listed but never
+  // counted as people (migration 199). Built from the parts, not
+  // occupant_total, because snapshots frozen before the fix hold a total that
+  // still includes pets.
+  const occ = (() => {
+    const a = Number(D.occupant_adults) || 0, e = Number(D.occupant_elderly) || 0, k = Number(D.occupant_kids) || 0, pets = Number(D.occupant_pets) || 0;
+    const parts = [["ผู้ใหญ่", a], ["ผู้สูงอายุ", e], ["เด็ก", k]].filter(([, n]) => n > 0).map(([t, n]) => `${t} ${n}`).join(", ");
+    const people = has(D.occupant_adults) ? `${a + e + k} คน${parts ? ` (${parts})` : ""}` : parts ? `${parts} คน (ไม่ได้ระบุผู้ใหญ่)` : null;
+    const petTxt = pets ? `สัตว์เลี้ยง ${pets} ตัว` : null;
+    return [people, petTxt].filter(Boolean).join(" · ") || null;
+  })();
+  // Charge period only when the customer HAS a charger — 49 leads carried a
+  // period left over from asking about a planned EV (plan D6).
+  const evTxt = hasEvCharger(D.appliances)
+    ? (EVPERIOD[D.ev_charge_period] || null)
+    : (load.asked || has(D.appliances)) ? "ไม่มีที่ชาร์จ EV" : null;
   const p6 = page(6, `${sect("3","ข้อสมมติฐานการใช้ไฟฟ้า (Load Assumption)")}
     <p class="lead">ข้อมูลด้านล่างเป็นข้อสมมติฐานพฤติกรรมการใช้ไฟฟ้าของเจ้าของบ้าน จากการสอบถามเจ้าของบ้านโดยตรงและการสังเกตอุปกรณ์จริงหน้างาน แบ่งเป็นช่วงกลางวัน (06:00-18:00 น. ที่โซลาร์ผลิตไฟได้) และกลางคืน (18:00-06:00 น.) เพื่อประเมินว่าควรติดตั้ง Battery สำรองไฟเพิ่มหรือไม่</p>
     <table class="kv qsum"><tbody>
-      <tr><td class="k">ช่วงเวลาใช้ไฟหลัก</td><td class="v">${Vd(D.peak_usage==="both"?"ทั้งกลางวันและกลางคืน":D.peak_usage==="afternoon"?"ช่วงบ่าย (12-18)":D.peak_usage==="day"?"กลางวัน":D.peak_usage==="night"?"กลางคืน":null)}</td>
+      <tr><td class="k">ช่วงเวลาใช้ไฟหลัก</td><td class="v">${Vd(PEAK[D.peak_usage] || null)}</td>
         <td class="k">อยู่บ้านช่วงกลางวัน</td><td class="v">${Vd(has(D.home_at_daytime)?(D.home_at_daytime==="yes"?"อยู่":"ไม่อยู่"):null)}</td></tr>
       <tr><td class="k">จำนวนผู้อยู่อาศัย</td><td class="v">${Vd(occ)}</td>
-        <td class="k">ช่วงชาร์จ EV</td><td class="v">${Vd(EVPERIOD[D.ev_charge_period])}</td></tr>
+        <td class="k">ช่วงชาร์จ EV</td><td class="v">${Vd(evTxt)}</td></tr>
     </tbody></table>
     ${loadTable}
+    ${loadNote}
     <div class="callout blue tight"><div class="co-h">เข้าใจโซลาร์ : ข้อพิจารณาเรื่องระบบ Battery สำรองไฟ</div><ul>
       <li><b>ระบบโซลาร์รูฟ แบบไม่มี Battery</b> คือ ระบบโซลาร์เซลล์ที่เชื่อมต่อกับสายส่งของการไฟฟ้า ผลิตไฟจากแสงอาทิตย์มาใช้ในเวลากลางวัน และดึงไฟจากการไฟฟ้ามาเสริมอัตโนมัติหากผลิตไม่พอ ไม่ใช้แบตเตอรี่ ดูแลรักษาง่าย คุ้มค่าเมื่อใช้ไฟช่วงกลางวันเป็นหลัก</li><li><b>ระบบโซลาร์รูฟ พร้อม Battery</b> คือ ระบบที่ทำงานร่วมกันระหว่างแผงโซลาร์เซลล์ · แบตเตอรี่เก็บไฟ · และโครงข่ายไฟฟ้าจากการไฟฟ้า ดึงพลังงานแสงอาทิตย์มาใช้เป็นหลัก นำส่วนเกินไปเก็บไว้ในแบตเตอรี่สำหรับใช้ตอนกลางคืน และสลับไปใช้ไฟการไฟฟ้าอัตโนมัติหากพลังงานหมด</li>
       <li>หากสัดส่วนใช้ไฟกลางคืนสูง (ทั่วไป > 40-50% ของการใช้รวม) แนะนำ <b>ระบบโซลาร์รูฟ พร้อม Battery</b> เพื่อเก็บพลังงานส่วนเกินกลางวันไว้ใช้กลางคืน</li>
@@ -390,13 +443,23 @@ export function buildSurveyReportHtml(L, D, PKG, options = {}) {
         `<tr><td class="dev">${String(x.name).trim()}</td><td>${qtyCell(x)}</td><td>ไม่รวมในแพ็กเกจมาตรฐาน</td><td class="rz">${bl()}</td><td class="org">${amtCell(x)}</td></tr>`).join("")
     : `<tr><td class="dev">${ph("อื่นๆ ระบุ")}</td><td>${bl()}</td><td>ไม่รวมในแพ็กเกจมาตรฐาน</td><td class="rz">${ph("__")}</td><td class="org">${bl("บาท")}</td></tr>`;
   const addOnTotal = addOnItems.reduce((sum, x) => sum + (Number(x.amount) > 0 ? Number(x.amount) : 0), 0);
-  const p9 = page(8, `${sect("5","รายการเพิ่มเติมนอกเหนือจากแพ็กเกจมาตรฐาน")}
+  // ใบเสนอราคาที่ไม่มีรายการเสริม: บอกลูกค้าตรง ๆ ว่าไม่มีค่าใช้จ่ายเพิ่ม แทนตารางช่องว่าง
+  // ที่อ่านแล้วเหมือนยังกรอกไม่เสร็จ · รายงานสำรวจแบบแยกเล่ม (ไม่มีใบเสนอราคา) ยังใช้ตาราง
+  // เพราะช่องว่างคือแบบฟอร์มให้ทีมสำรวจกรอกรายการที่เจอหน้างาน
+  const noAddOns = Boolean(quotation.docNo) && addOnItems.length === 0;
+  const p9 = noAddOns ? page(8, `${sect("5","รายการเพิ่มเติมนอกเหนือจากแพ็กเกจมาตรฐาน")}
+    <p class="lead">จากการสำรวจหน้างานจริง ไม่พบรายการที่จำเป็นต้องเพิ่มเติมนอกเหนือจากแพ็กเกจมาตรฐาน (Standard Package)</p>
+    <div class="callout green"><div class="co-h">ไม่มีค่าใช้จ่ายเพิ่มเติม</div><ul>
+      <li>สภาพหน้างาน ณ วันสำรวจสามารถติดตั้งได้ด้วยอุปกรณ์และงานที่รวมอยู่ในแพ็กเกจมาตรฐานทั้งหมด</li>
+      <li>ค่าใช้จ่ายเป็นไปตามใบเสนอราคา (Quotation) เลขที่ ${quotDocNo} ไม่มีค่าใช้จ่ายเพิ่มเติมจากการสำรวจหน้างาน</li>
+      <li>หากสภาพหน้างานเปลี่ยนแปลงก่อนวันติดตั้ง บริษัทขอสงวนสิทธิ์แจ้งรายการเพิ่มเติมให้ลูกค้าทราบล่วงหน้าก่อนดำเนินการทุกครั้ง</li></ul></div>`)
+  : page(8, `${sect("5","รายการเพิ่มเติมนอกเหนือจากแพ็กเกจมาตรฐาน")}
     <p class="lead">จากสภาพหน้างานจริง มีรายการที่จำเป็นต้องเพิ่มเติมนอกเหนือจากแพ็กเกจมาตรฐาน (Standard Package) ดังนี้ พร้อมเหตุผลประกอบและค่าใช้จ่ายที่เพิ่มขึ้น</p>
     <table class="addon"><thead><tr><th style="width:18%">รายการเพิ่มเติม</th><th style="width:9%">จำนวน</th><th style="width:16%">มาตรฐาน Package</th><th>เหตุผลที่ต้องเพิ่ม (จากหน้างานจริง)</th><th style="width:13%">ค่าใช้จ่ายเพิ่มเติม</th></tr></thead>
     <tbody>${fixedRows}
     ${otherRows}
     <tr class="addon-total"><td colspan="4">รวมค่าใช้จ่ายเพิ่มเติมทั้งหมด</td><td class="tot-org">${addOnTotal > 0 ? `${baht(addOnTotal)} บาท` : bl("บาท")}</td></tr></tbody></table>
-    <div class="callout orange"><div class="co-h">ข้อเสนอเพิ่มเติม</div><ul><li>รายการเพิ่มเติมข้างต้นเป็นรายการที่จำเป็นตามสภาพหน้างานจริง ณ วันสำรวจ เพื่อให้ระบบทำงานได้อย่างปลอดภัยและมีประสิทธิภาพสูงสุด</li><li>ค่าใช้จ่ายนำมาจากใบเสนอราคา (Quotation) เลขที่ ${L.pre_doc_no||"—"} หากตัวเลขไม่ตรงกัน ให้ยึดใบเสนอราคาเป็นหลัก</li></ul></div>`);
+    <div class="callout orange"><div class="co-h">ข้อเสนอเพิ่มเติม</div><ul><li>รายการเพิ่มเติมข้างต้นเป็นรายการที่จำเป็นตามสภาพหน้างานจริง ณ วันสำรวจ เพื่อให้ระบบทำงานได้อย่างปลอดภัยและมีประสิทธิภาพสูงสุด</li><li>ค่าใช้จ่ายนำมาจากใบเสนอราคา (Quotation) เลขที่ ${quotDocNo||L.pre_doc_no||"—"} หากตัวเลขไม่ตรงกัน ให้ยึดใบเสนอราคาเป็นหลัก</li></ul></div>`);
 
   // ── PAGE 10 §6 journey ──────────────────────────────────────────────
   const JOURNEY=[["1","วางเงินมัดจำ 20%","เพื่อจองวันติดตั้ง"],["2","ขอสินเชื่อ","สำหรับส่วนที่เหลือ 80% (กรณีเลือกผ่อนชำระ)"],["3","ติดตั้งระบบ","ทีมช่างเข้าดำเนินการติดตั้งตามวันที่นัดหมายหลังจากการมัดจำ"],["4","ขนานไฟ","ยื่นเรื่องขนานไฟกับการไฟฟ้าและเริ่มใช้งานระบบ"]];
@@ -465,8 +528,12 @@ export function buildSurveyReportHtml(L, D, PKG, options = {}) {
   // is credited toward payment but must not make the system price/payback look lower.
   const loanPrice = quotation.contractAmount ?? gross ?? quotation.netAmount ?? PKG?.price ?? 112000;
   const loanKw = PKG?.kwp ?? 3;
-  const loanBill = L.survey_monthly_bill ?? D.monthly_bill ?? 5000;
   const financeInputs = options.financial?.inputs || {};
+  // ค่าไฟของหน้านี้ต้องเป็นตัวเดียวกับที่ใบเสนอราคาใช้คำนวณยอดประหยัดและระยะคืนทุน
+  // (financeOutputs ด้านล่าง) ไม่อย่างนั้นในหน้าเดียวกันจะมีค่าไฟสองชุด — เดิมอ่านจาก
+  // ฟอร์มสำรวจตรง ๆ ซึ่งมีตัวเลขที่ไม่ใช่ค่าจริงปนอยู่ (999,999) ทำให้ "ค่าไฟรวมถ้าไม่ติด"
+  // ขึ้นหลักสิบล้าน · ถ้าใบไม่มีค่า ใช้แบบสอบถามก่อนฟอร์มสำรวจ ตามกติกาเดียวกับใบเสนอราคา
+  const loanBill = Number(financeInputs.current_monthly_bill) || Number(D.monthly_bill) || Number(L.survey_monthly_bill) || 5000;
   const financeOutputs = options.financial?.outputs || {};
   const downPct = Number(financeInputs.down_payment_percent ?? 20);
   const rate1 = Number(financeInputs.interest_rate_year_1_2 ?? 3.5);
@@ -488,6 +555,11 @@ export function buildSurveyReportHtml(L, D, PKG, options = {}) {
     co2Yr: financeOutputs.co2_reduction_tons_per_year ?? C.co2Yr,
     trees: financeOutputs.equivalent_trees ?? C.trees,
   });
+  // ยอดประหยัดรวมตลอดสัญญาต้องคิดจากยอดประหยัดต่อเดือนตัวเดียวกับที่แสดงในหน้านี้
+  // calcLoan คิด save จากกำลังผลิตเต็ม (ไม่จำกัดด้วยค่าไฟจริง) แล้วคูณเป็น saveTot ไว้ก่อน
+  // พอ save ถูกแทนด้วยค่าจากใบเสนอราคา (จำกัดไม่เกินค่าไฟ) saveTot จึงค้างเป็นค่าเดิม
+  // เช่น ประหยัด 9,000/เดือน แต่ยอดรวม 84 เดือนขึ้น 1,008,000 (= 12,000 × 84)
+  C.saveTot = C.save * C.n;
   const CALC_INDEP=[["มูลค่า Solar Package (บาท)",baht(C.price),"in"],["เงินดาวน์ (%)",num(downPct,1)+"%","in"],["ดอกเบี้ย ปีที่ 1-2 (% ต่อปี)",num(rate1,3)+"%","in"],["ดอกเบี้ย ปีที่ 3 เป็นต้นไป (% ต่อปี)",num(rate2,3)+"%","in"],["ระยะเวลากู้",termMonths+" เดือน","in"]];
   const CALC_CALC=[["เงินดาวน์ (บาท)",baht(C.down)],["วงเงินกู้ (บาท)",baht(C.loan)],["ดอกเบี้ยรายเดือน ปีที่ 1-2",num(C.m1*100,4)+"%"],["ดอกเบี้ยรายเดือน ปีที่ 3 เป็นต้นไป",num(C.m2*100,4)+"%"],["จำนวนงวดช่วงที่ 1",C.n1+" งวด"],["จำนวนงวดช่วงที่ 2",C.n2+" งวด"],["ดอกเบี้ยถัวเฉลี่ยถ่วงน้ำหนัก/ปี",num(C.wAvg*100,3)+"%"]];
   const CALC_RESULT=[["ค่างวดผ่อน (บาท/เดือน) — เท่ากันทุกงวด",baht(C.pmt),"big"],["ยอดจ่ายรวมตลอดสัญญา (บาท)",baht(C.total)],["ดอกเบี้ยรวมตลอดสัญญา (บาท)",baht(C.interest)],["ดอกเบี้ยถัวเฉลี่ย EIR / ปี",num(C.eir*100,3)+"%"]];
@@ -581,7 +653,7 @@ export function buildSurveyReportHtml(L, D, PKG, options = {}) {
   table.kv td{border:1px solid #c8cfda;padding:7px 10px;vertical-align:middle;font-size:14.5px;}
   table.kv td.k{background:#f4f6f9;font-weight:700;color:${NAVY};width:36%;}
   .ip{color:#9aa3b0;}.ipx{color:#9aa3b0;}.val{color:${INK};font-weight:500;}
-  .muted{color:#b6bcc6;}
+  .muted{color:#b6bcc6;}.unk{color:${GRAY};}
   .toc-row{display:flex;align-items:baseline;font-size:15.5px;padding:7px 0;color:#374151;}
   .toc-t{white-space:nowrap;}.toc-n{white-space:nowrap;font-weight:700;color:${NAVY};}
   .toc-dot{flex:1;border-bottom:1px dotted #b6bdc9;margin:0 6px;transform:translateY(-3px);}
@@ -617,6 +689,8 @@ export function buildSurveyReportHtml(L, D, PKG, options = {}) {
   tr.load-total .bl{color:#e8eef6;}
   /* questionnaire summary mini-table above the load table */
   table.kv.qsum{margin:2px 0 8px;}
+  p.load-note{font-size:12px;color:#4b5563;margin:-6px 0 0;line-height:1.45;}
+  p.load-note b{color:${INK};}
   table.kv.qsum td{padding:4px 9px;font-size:13px;}
   table.kv.qsum td.k{width:20%;}
   .callout.tight{padding:9px 14px;margin:9px 0 0;}

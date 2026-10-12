@@ -45,8 +45,10 @@ If the user wants a commit, write the commit message in Thai and make it easy to
 |---|---|---|
 | `main` | v2 = สิ่งที่อยู่บน prod | เฉพาะ bug fix / งานด่วน แล้ว deploy |
 | `v3` | release branch ของ v3 (worktree: `../solar-app-v3`) | ทีม v3 |
-| `v3/<feature>` | งานย่อยของ v3 | PR เข้า `v3` |
+| `v3-<feature>` | งานย่อยของ v3 (เช่น `v3-b2b`) | PR เข้า `v3` |
 
+- **ชื่อ branch ใช้ `v3-` ห้ามใช้ `v3/`** — GitHub มี branch `v3` อยู่แล้ว git ไม่ยอมให้มี `v3` คู่กับ `v3/...`
+  (push ไม่ขึ้น `refname conflict` — เจอ 8 ต.ค. 69)
 - **merge ทางเดียว `main → v3` เท่านั้น** ทำทุกครั้งหลัง deploy v2 (อย่างน้อยสัปดาห์ละครั้ง)
   ห้าม merge v3 กลับ main จนถึงวัน cutover — ไม่งั้นบั๊กที่แก้บน v2 จะหายไปตอน v3 ขึ้น
   และ conflict จะบานปลายในไฟล์ที่แก้บ่อย (OrderStep, QuotationBuilder)

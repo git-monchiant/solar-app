@@ -22,14 +22,18 @@ main ─────────────────────────
                                     เจ้าของระบบดูแลคนเดียว (bug fix + deploy)
 
 v3 ─────────────────────────────►  v3 (clone แยก: ../solar-app-v3)
-  ├─ v3/<ชื่องานสั้นๆ> ──PR──► v3    ทีมพัฒนาทุกคนทำที่นี่
-  ├─ v3/<ชื่องานสั้นๆ> ──PR──► v3
-  └─ v3/b2b ──────────PR──► v3    ทีม B2B (BOQ โรงงาน/ไซต์ใหญ่) — ดูหัวข้อ "งาน B2B"
+  ├─ v3-<ชื่องานสั้นๆ> ──PR──► v3    ทีมพัฒนาทุกคนทำที่นี่
+  ├─ v3-<ชื่องานสั้นๆ> ──PR──► v3
+  └─ v3-b2b ──────────PR──► v3    ทีม B2B (BOQ โรงงาน/ไซต์ใหญ่) — ดูหัวข้อ "งาน B2B"
 ```
 
 **ทีมพัฒนาแตก branch จาก `v3` เสมอ** และเปิด PR กลับเข้า `v3` เท่านั้น
 ไม่ต้องยุ่งกับ `main` เลย (ถ้ามี bug บน prod ที่ต้องแก้ด่วน เจ้าของระบบจัดการเอง
 แล้ว merge `main → v3` ลงมาให้)
+
+**ชื่อ branch ขึ้นต้น `v3-` (ขีดกลาง) ห้ามใช้ `v3/` (ทับ)** — บน GitHub มี branch ชื่อ `v3` อยู่แล้ว
+git ไม่ยอมให้มี `v3` คู่กับ `v3/...` ใน repo เดียวกัน push จะโดนปฏิเสธ `refname conflict`
+(แก้ 8 ต.ค. 2569 · เดิมเอกสารนี้สอน `v3/<ชื่องาน>` ซึ่ง push ขึ้นไม่ได้)
 
 - **merge ทางเดียว `main → v3`** ทำทุกครั้งหลัง deploy v2 (อย่างน้อยสัปดาห์ละครั้ง)
   ห้าม merge v3 กลับ main จนถึงวัน cutover
@@ -45,7 +49,7 @@ v3 ─────────────────────────�
 | **URL ตอน dev** | `localhost:3010` | `localhost:3020` | `localhost:3030` |
 | **หัวหน้าจอในแอป** | `Today v2.0.xx` | `Today v3.0.0-dev` | เหมือน v3 — ดูพอร์ตใน URL |
 | **โฟลเดอร์** | `solar-app` | `solar-app-v3` | `solar-app-b2b` |
-| **branch** | `git branch --show-current` → `main` | → `v3` | → `v3/b2b` |
+| **branch** | `git branch --show-current` → `main` | → `v3` | → `v3-b2b` |
 
 `start.sh` เลือก port ตาม branch ให้อัตโนมัติ จึงเปิดทั้ง v2 และ v3 พร้อมกันได้
 (กำหนดเองได้ด้วย `PORT=3030 ./start.sh`) · ngrok ผูกกับ port 3010 เท่านั้น
@@ -62,7 +66,7 @@ git clone https://github.com/git-monchiant/solar-app.git
 cd solar-app
 npm install
 cp .env.example .env.local        # แล้วเติมค่าจริง (ขอจากเจ้าของระบบ)
-./start.sh                        # main → :3010 · v3 → :3020 (เลือกให้อัตโนมัติ)
+./start.sh                        # main → :3010 · v3 / v3-* → :3020 (เลือกให้อัตโนมัติ)
 ```
 
 `git clone` จะได้ **`main` (= v2 บน prod)** เสมอ เพราะเป็น default branch
@@ -72,20 +76,20 @@ cp .env.example .env.local        # แล้วเติมค่าจริ�
 
 ```bash
 git checkout v3 && git pull                # เริ่มจาก v3 ล่าสุดเสมอ
-git checkout -b v3/redesign-lead-list      # ตั้งชื่อตามสิ่งที่ทำ
+git checkout -b v3-redesign-lead-list      # ตั้งชื่อตามสิ่งที่ทำ (v3- ขีดกลาง ไม่ใช่ทับ)
 
 # ...เขียนโค้ด + ทดสอบกับ DB ของตัวเอง...
 
 git add -A && git commit -m "ปรับหน้ารายการ lead"
-git push -u origin v3/redesign-lead-list
+git push -u origin v3-redesign-lead-list
 # เปิด PR บน GitHub → base ต้องเป็น v3 (ไม่ใช่ main)
 ```
 
 รอบถัดไปเริ่มใหม่จากบรรทัดแรกเสมอ — `git checkout v3 && git pull` เพื่อดึงงานของ
 คนอื่นที่ merge เข้าไปแล้ว และงาน v2 ที่ merge forward ลงมา
 
-- **ชื่อ branch ตั้งตามสิ่งที่ทำ** ไม่ต้องแบ่งเป็นโมดูล เช่น `v3/redesign-lead-list`,
-  `v3/new-report-page`, `fix/quotation-vat` — ขอแค่อ่านแล้วรู้ว่าคืองานอะไร
+- **ชื่อ branch ตั้งตามสิ่งที่ทำ** ไม่ต้องแบ่งเป็นโมดูล เช่น `v3-redesign-lead-list`,
+  `v3-new-report-page`, `fix/quotation-vat` (งาน v2 ใช้ทับได้ เพราะไม่มี branch ชื่อ `fix`) — ขอแค่อ่านแล้วรู้ว่าคืองานอะไร
 - 1 branch = 1 เรื่อง อย่ารวมหลายงานไว้ด้วยกัน จะเทสแยกไม่ได้
 - ถ้างานใหญ่จนแบ่งไม่ออกจริงๆ ให้ส่งเป็น PR ย่อยหลายรอบตามลำดับที่ทำเสร็จ
   ดีกว่าเปิด PR เดียวยาว 3 สัปดาห์ที่ไม่มีใครรีวิวไหว
@@ -154,23 +158,23 @@ npm install                        # เผื่อมี dependency ใหม�
 ## งาน B2B (BOQ โรงงาน / ไซต์ใหญ่)
 
 เพิ่ม 5 ต.ค. 2569 · ทีม B2B เป็นคนละทีมกับงาน solar rooftop (Sales / O&M) และทำคู่ขนานกัน
-ตั้งต้นแตก `v3/b2b` จาก `v3-ui-consistency` (branch v3 ที่ใหม่ที่สุด ณ วันนั้น)
+ตั้งต้นแตก `v3-b2b` จาก `v3-ui-consistency` (branch v3 ที่ใหม่ที่สุด ณ วันนั้น)
 
 ```
 Sales/O&M (v3-ui-consistency) ──●──●─────●──●──────────►  ──PR──► v3
                                    \        \   merge ลงได้ตลอด
-B2B (v3/b2b)                        ●──●──M──●──M──●───►  ──PR──► v3
-  └─ v3/b2b-<งานย่อย> ──PR──► v3/b2b
+B2B (v3-b2b)                        ●──●──M──●──M──●───►  ──PR──► v3
+  └─ v3-b2b-<งานย่อย> ──PR──► v3-b2b
 ```
 
 | | Sales / O&M | B2B |
 |---|---|---|
-| branch | `v3-ui-consistency` | `v3/b2b` |
+| branch | `v3-ui-consistency` | `v3-b2b` (เดิม `v3/b2b` เปลี่ยนชื่อ 8 ต.ค. — push ไม่ขึ้น) |
 | โฟลเดอร์ | โฟลเดอร์ v3 หลัก | `../solar-app-b2b` (git worktree) |
 | URL | `localhost:3020` | `localhost:3030` |
 | DB | `solardb_v3` | `solardb_v3` (ใช้ร่วม — B2B สร้างตารางใหม่อย่างเดียว) |
 
-`v3/b2b` เป็น branch หลักของทีม จึงอยู่นานกว่า 1 สัปดาห์ได้ แต่ต้องดึงงาน Sales/O&M
+`v3-b2b` เป็น branch หลักของทีม จึงอยู่นานกว่า 1 สัปดาห์ได้ แต่ต้องดึงงาน Sales/O&M
 ลงมาทุกสัปดาห์ และส่ง PR เข้า `v3` เป็นรอบละ 1–2 สัปดาห์ — อย่ารอทำเสร็จทั้งโมดูล
 (บทเรียนจาก `feature/om-module` ที่แยกอยู่ 5 สัปดาห์แล้วรวมทีเดียว)
 ส่งงานที่ยังไม่เสร็จเข้า `v3` ได้ เพราะการ์ด B2B ผูกกับ role ของทีม B2B — คนอื่นไม่เห็น
@@ -188,17 +192,17 @@ B2B (v3/b2b)                        ●──●──M──●──M──●
    | migration | `scripts/migrations-v3/<timestamp>_b2b_xxx.sql` |
 
    ไฟล์ของ Sales/O&M (`QuotationBuilder.tsx`, `OrderStep.tsx`, `leads/[id]/route.ts`,
-   `src/lib/om/*`) import ไปใช้ได้ แต่ **ไม่แก้ใน `v3/b2b`** — ถ้าต้องแก้ ให้แก้ฝั่ง
+   `src/lib/om/*`) import ไปใช้ได้ แต่ **ไม่แก้ใน `v3-b2b`** — ถ้าต้องแก้ ให้แก้ฝั่ง
    Sales/O&M (หรือ PR เล็กเข้า `v3`) แล้วรอไหลลงมา
    ไฟล์กลางที่แตะได้คือ `src/lib/modules.tsx` (กลุ่ม + การ์ด) และไฟล์ role/สิทธิ์ — เพิ่มบรรทัดอย่างเดียว
    (+ `api/(lead)/journey-summary` บล็อกนับ badge ของ B2B เอง แบบเดียวกับบล็อก O&M)
-2. **merge ทางเดียว Sales/O&M → `v3/b2b`** ห้าม `v3/b2b` → Sales/O&M
+2. **merge ทางเดียว Sales/O&M → `v3-b2b`** ห้าม `v3-b2b` → Sales/O&M
    merge เอามาทั้ง branch เลือกบางส่วนไม่ได้ — ถ้าย้อนทาง BOQ ที่ยังไม่เสร็จ + migration `b2b_*`
    จะติดไปกับ PR ของ O&M และ revert merge ทีหลังทำให้วันที่เอา BOQ เข้าจริง git ข้ามให้เงียบๆ
    ถ้า B2B แก้ของกลางที่ O&M ต้องใช้ด้วย → `git cherry-pick <commit>` เฉพาะ commit นั้น
-3. **push Sales/O&M ก่อน `v3/b2b`** — commit ของ O&M จะได้ขึ้นไปใน branch ของมันเอง
-   ไม่ใช่ติดขึ้นไปกับ `v3/b2b`
-4. **ก่อนเปิด PR `v3/b2b` → `v3` ให้ merge `origin/v3` เข้า b2b ก่อนทุกครั้ง**
+3. **push Sales/O&M ก่อน `v3-b2b`** — commit ของ O&M จะได้ขึ้นไปใน branch ของมันเอง
+   ไม่ใช่ติดขึ้นไปกับ `v3-b2b`
+4. **ก่อนเปิด PR `v3-b2b` → `v3` ให้ merge `origin/v3` เข้า b2b ก่อนทุกครั้ง**
    และให้ PR ของ Sales/O&M เข้า `v3` ก่อน — เจ้าของระบบใช้ Squash and merge ซึ่งเปลี่ยน
    hash ของ commit O&M ถ้าไม่ merge `origin/v3` ลงมาก่อน PR ของ B2B จะโชว์ไฟล์ O&M ปนมา
 
@@ -209,7 +213,7 @@ B2B (v3/b2b)                        ●──●──M──●──M──●
 ```bash
 # ในโฟลเดอร์ v3 หลัก
 git fetch origin
-git worktree add ../solar-app-b2b v3/b2b     # ยังไม่มีบน origin: git branch v3/b2b v3-ui-consistency ก่อน
+git worktree add ../solar-app-b2b v3-b2b     # ยังไม่มีบน origin: git branch v3-b2b v3-ui-consistency ก่อน
 cp .env.local ../solar-app-b2b/
 cd ../solar-app-b2b && npm ci
 
@@ -231,7 +235,8 @@ New-Item -ItemType Junction -Path storage -Target "<โฟลเดอร์ v3 
 - เปิด VS Code สองหน้าต่าง (โฟลเดอร์ละหน้าต่าง) + แท็บ browser สองแท็บ
   **สลับงาน = สลับหน้าต่าง** ไม่ต้อง `git checkout` ไม่ต้องหยุด server ไม่ต้องเก็บงานที่ค้าง
 - รันในโฟลเดอร์ b2b ด้วย `npm run dev -- --port 3030`
-  **อย่าใช้ `start.sh`** — สคริปต์แจก `v3/*` → 3020 จะชนกับโฟลเดอร์หลัก
+  **อย่าใช้ `start.sh`** — `stop.sh` ปิด supervisor ของทุกโฟลเดอร์พร้อมกัน (สั่งปิดฝั่งหนึ่ง อีกฝั่งดับด้วย)
+  (`start.sh` แจก `v3-b2b` → 3030 ให้แล้ว แต่ยังใช้ supervisor ตัวเดียวกัน)
 - login แยกพอร์ตละครั้ง (ผู้ใช้เก็บใน localStorage ซึ่งแยกตามพอร์ต) — ใช้คนละ role ได้
 - งาน B2B อยากได้ของใหม่ฝั่ง O&M: ในโฟลเดอร์ b2b → `git merge v3-ui-consistency`
 - ก่อนเปิด PR: ในโฟลเดอร์ b2b → `git fetch origin && git merge origin/v3 && git push`

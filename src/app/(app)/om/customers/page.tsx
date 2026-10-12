@@ -11,6 +11,8 @@ import Loading from "@/components/ui/Loading";
 import ListPageHeader from "@/components/layout/ListPageHeader";
 import { useActiveMenuItem } from "@/lib/hooks/useActiveModule";
 import OmCustomerModal from "@/components/om/OmCustomerModal";
+import Dropdown from "@/components/ui/Dropdown";
+import { ORIGIN_OPTIONS, parseOrigin, type HouseOrigin } from "@/lib/om/house-origin";
 
 interface Row {
   id: number; full_name: string; title: string | null; first_name: string | null; last_name: string | null;
@@ -30,6 +32,7 @@ export default function OmCustomersPage() {
   const [total, setTotal] = useState(0);
   const [q, setQ] = useState("");
   const [filter, setFilter] = useState("all");
+  const [origin, setOrigin] = useState<HouseOrigin>("");   // ที่มา — นับจากบ้านที่ผูกอยู่ (แผน 20261007-01)
   const [page, setPage] = useState(1);
   const [size, setSize] = useState(30);
   // ลูกค้าที่เปิดดูอยู่ — modal แยกเป็น component กลาง (หน้ารายละเอียดงานบริการใช้ตัวเดียวกัน)
@@ -41,10 +44,11 @@ export default function OmCustomersPage() {
 
   const load = useCallback(() => {
     const u = new URLSearchParams({ q, filter: filter === "all" ? "" : filter, page: String(page), size: String(size) });
+    if (origin) u.set("origin", origin);
     apiFetch(`/api/om/customers?${u}`)
       .then((d) => { setRows(d.customers ?? []); setTotal(d.total ?? 0); })
       .catch((e) => setErr(e instanceof Error ? e.message : String(e)));
-  }, [q, filter, page, size]);
+  }, [q, filter, page, size, origin]);
   useEffect(() => { const t = setTimeout(load, q ? 300 : 0); return () => clearTimeout(t); }, [load, q]);
 
   const show = (id: number) => setSelId(id);
@@ -77,8 +81,18 @@ export default function OmCustomersPage() {
         tabsLeft={rows ? <span className="whitespace-nowrap">{total.toLocaleString("th-TH")} คน</span> : undefined}
       />
 
-      {/* ไม่มีแถวเครื่องมือแบบหน้าบ้าน — ที่นั่นมีไว้วาง dropdown โครงการ · ตรงนี้จะเหลือแค่เลขซ้ำกับ tabsLeft */}
       <div className="p-3 md:p-4 flex flex-col gap-3">
+        {/* แถวเครื่องมือแบบหน้าบ้าน — ★ 7 ต.ค. 69 เพิ่มเพื่อวาง dropdown "ที่มา" (แผน 20261007-01)
+            ไม่ใส่จำนวนซ้ำ — จำนวนคนอยู่ที่ tabsLeft แล้ว */}
+        <div className="flex flex-wrap items-center gap-2 px-1">
+          <Dropdown
+            className="w-44 font-normal"
+            value={origin}
+            onChange={(v) => { setOrigin(parseOrigin(v)); setPage(1); }}
+            options={ORIGIN_OPTIONS}
+          />
+        </div>
+
         {err && <div className="border border-red-200 bg-red-50 p-3 rounded-xl text-sm font-semibold text-red-700">{err}</div>}
 
         <div className="rounded-xl border border-gray-200 bg-white overflow-hidden">
