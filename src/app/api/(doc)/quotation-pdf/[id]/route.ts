@@ -846,15 +846,19 @@ export async function GET(
   // เพราะแถวลงครบหน้าก่อนพอดี → ไม่มีตารางอยู่ข้างบน ต้องมีเส้นขอบบนของตัวเอง
   const paymentBlockHtml = (joined: boolean) =>
     `<table class="quote-table payment-block${joined ? " joined" : ""}"><tbody>${joined ? '<tr class="payment-spacer"><td style="width:12mm"></td><td></td><td style="width:32.5mm"></td></tr>' : ""}<tr class="payment-shell"><td colspan="2" class="payment-cell"${joined ? "" : ' style="width:auto"'}><div class="payment-title">เงื่อนไขการชำระเงิน</div><table class="payment-table"><tbody>${paymentRows}</tbody></table><div class="payment-bank-row"><div class="bank-copy"><b>ธนาคาร${esc(bankName)}</b><br>ชื่อบัญชี : ${esc(bankAccountName)}<br>เลขที่บัญชี : ${esc(bankAccountNumber)} สาขา ${esc(bankBranch)}<div class="payment-notice"><b>โปรดตรวจสอบก่อนโอนเงิน</b> <span class="sep"></span> ชำระเงินเข้าบัญชีบริษัทที่ SENA SOLAR ENERGY กำหนดเท่านั้น <span class="sep"></span> ห้ามโอนเข้าบัญชีส่วนบุคคลของ Agent พนักงาน หรือบุคคลอื่น <span class="sep"></span> การชำระเงินนอกเหนือจากช่องทางที่บริษัทกำหนด บริษัทฯ ขอสงวนสิทธิ์ไม่รับผิดชอบต่อความเสียหายที่เกิดขึ้น</div></div><div class="qr"><img src="${paymentQrDataUrl}" alt="QR Payment"></div></div></td><td class="payment-side" style="width:32.5mm"></td></tr></tbody></table>`;
-  // ★ ใบ O&M (ผู้ใช้เลือกแบบ ก · 14 ต.ค. 69): อ่านจากบนลงล่างแบบใบเสร็จ "ค่าบริการก่อน VAT + VAT = รวมสุทธิ"
-  //   ไม่มีส่วนลด = 3 แถว (เดิม ราคาก่อน/หลังหักส่วนลด เท่ากัน → 2,200 ซ้ำ 3 แถว สับสน) · มีส่วนลด = "ราคารวม" + ส่วนลด นำหน้า
+  // ★ ใบ O&M (ผู้ใช้เลือก 14 ต.ค. 69): ราคารวม → ส่วนลด → ค่าบริการก่อน VAT → VAT → รวมสุทธิ ชุดเดียวทุกใบ
+  //   ไม่มีส่วนลด = แถว "ส่วนลด 0.00" (ผู้ใช้เลือก — ชัดกว่าเว้นว่าง/ขีด · แบบ "หัก เงินจอง 0.00" ใบขาย) — เดิม ราคาก่อน/หลังหักส่วนลด เท่ากัน สับสน
   //   ไม่มีเงินจอง (ไม่มีขั้นจอง/สำรวจ · ผู้ใช้ตรวจ PDF 2 ต.ค.) · "ค่าบริการ" แทน "ราคาสินค้า" · ใบขายคงแถวเดิมทุกตัวอักษร
   //   ความสูงกรอบนี้ตัวจัดหน้าวัดจากของจริง (measureLayout) — จำนวนแถวต่างกันได้
+  const omDiscount = Number(q.discount_amount) > 0;
+  // ป้ายส่วนลด: Sale พิมพ์แค่ชื่อ (เช่น "VIP") ระบบเติม "ส่วนลด" ข้างหน้าให้ · มีคำว่าส่วนลดอยู่แล้วไม่เติมซ้ำ (ผู้ใช้ขอ 14 ต.ค. 69)
+  const omDiscountText = (label: unknown) => {
+    const text = String(label ?? "").trim();
+    return !text ? "ส่วนลด" : text.includes("ส่วนลด") ? text : `ส่วนลด ${text}`;
+  };
   const omFinancialRows = () => [
-    ...(Number(q.discount_amount) > 0
-      ? [`<tr class="strong"><td></td><td class="summary-label">ราคารวม (รวมภาษีมูลค่าเพิ่ม)</td><td class="summary-value">${money(q.subtotal_incl_vat)}</td></tr>`,
-         `<tr><td></td><td class="summary-label">${esc(q.discount_label || "ส่วนลด")}</td><td class="summary-value">-${money(q.discount_amount)}</td></tr>`]
-      : []),
+    `<tr class="strong"><td></td><td class="summary-label">ราคารวม (รวมภาษีมูลค่าเพิ่ม)</td><td class="summary-value">${money(q.subtotal_incl_vat)}</td></tr>`,
+    `<tr><td></td><td class="summary-label">${omDiscount ? esc(omDiscountText(q.discount_label)) : "ส่วนลด"}</td><td class="summary-value">${omDiscount ? `-${money(q.discount_amount)}` : money(0)}</td></tr>`,
     `<tr><td></td><td class="summary-label">ค่าบริการก่อนภาษีมูลค่าเพิ่ม</td><td class="summary-value">${money(q.amount_before_vat)}</td></tr>`,
     `<tr><td></td><td class="summary-label">ภาษีมูลค่าเพิ่ม (VAT) 7%</td><td class="summary-value">${money(q.vat_amount)}</td></tr>`,
   ].join("");
