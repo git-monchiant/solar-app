@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { getDb, fixDates } from "@/lib/db";
 import { requireAuth } from "@/lib/auth";
 import { SALES_LEADS, SALES_PAYMENTS } from "@/lib/lead-scope";
+import { OM_PAY_LIVE_SQL } from "@/lib/om/om-quotation";
 
 // Per-lead transaction rollup for the accounting report.
 // Total value = order_total + install_extra_cost (fallback to pre_total_price when no order yet).
@@ -76,6 +77,8 @@ export async function GET(req: NextRequest) {
         JOIN leads l ON l.id = p.lead_id
         LEFT JOIN users su ON su.id = p.submitted_by
        WHERE p.slip_field LIKE 'om[_]quote[_]%' AND p.confirmed_at IS NULL
+         -- เช็คเด้งเก็บแถวไว้แต่ไม่ใช่งานรอ Account (แผน 20261014-03)
+         AND ${OM_PAY_LIVE_SQL("p")}
        ORDER BY p.id ASC
     `);
     const omPending = (fixDates(omPendingRes.recordset) as Array<Record<string, unknown>>).map((row) => {

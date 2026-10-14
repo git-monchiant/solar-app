@@ -157,6 +157,18 @@ export const OM_BOOKING_PAID_SQL = (b: string) => `EXISTS (
       ON op.lead_id = oq.lead_id AND op.slip_field = CONCAT(N'${OM_SLIP_PREFIX}', oq.id)
    WHERE oq.om_booking_id = ${b}.id AND (op.confirmed_at IS NOT NULL OR op.cheque_received_at IS NOT NULL))`;
 
+/** SQL: แถวเงิน O&M (alias `p`) ที่ยังมีผล — เช็คเด้งเก็บแถวไว้เป็นหลักฐานแบบฝั่งขาย (cheque_status = 'bounced' · แผน 20261014-03)
+ *  แต่ไม่นับเป็นสลิปที่แนบแล้ว/รอตรวจ ⇒ ทุกที่ที่ถาม "มีสลิปค้างไหม" ต้องกรองด้วยตัวนี้
+ *  (ถาม "จ่ายแล้วไหม" ไม่ต้อง — เด้งแล้ว confirmed_at / cheque_received_at เป็น NULL อยู่แล้ว) */
+export const OM_PAY_LIVE_SQL = (p: string) => `ISNULL(${p}.cheque_status, N'') <> N'bounced'`;
+
+/** เช็คเด้งตอนใบงานอยู่ขั้นไหน ทำอะไร (แผน 20261014-03)
+ *  · ยังไม่ถึงหน้างาน (รอยืนยันนัด/นัดแล้ว) = ดึงกลับขั้นชำระเงิน — กติกาเดิม "เก็บค่าบริการก่อนนัด" · หลุดปฏิทินเอง (กรองตามสถานะ)
+ *  · ถึงหน้างานแล้ว (เข้างาน/รอปิด/ปิดงาน) = คงสถานะ งานเกิดไปแล้ว — แต่แนบหลักฐานชำระใหม่ได้ (POST /api/om/payments)
+ *  ★ หน้าจอ (OmPaymentPanel) มีชุดเดียวกัน — ไฟล์นี้ server-only import ฝั่งนั้นไม่ได้ */
+export const OM_BOUNCE_BACK_TO_PAYMENT = ["pending", "confirmed"];
+export const OM_REPAY_AFTER_BOUNCE = ["progress", "checked", "closed"];
+
 /** เลขที่ใบเสนอราคา O&M — แยก prefix จากฝั่งขาย (ผู้ใช้เคาะ 24 ก.ย. ข้อ 8)
  *  ฝั่งขาย SSR-QT-26-0001 · ใบตรวจรับงาน O&M OM-6909-0007 · ของเรา SSR-OM-QT-26-0001 รันแยกชุด
  *  (nextQuotationDocNo ของฝั่งขายค้น LIKE 'SSR-QT-yy-%' ไม่ชนกับ prefix นี้) */

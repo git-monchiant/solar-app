@@ -5,7 +5,7 @@ import { getOmDb } from "@/lib/om/line";
 import { statusLabel } from "@/lib/om/booking";
 import { logBooking } from "@/lib/om/booking-log";
 import { resolveOmNotifications } from "@/lib/om/notifications";
-import { canIssueOmQuotation } from "@/lib/om/om-quotation";
+import { OM_PAY_LIVE_SQL, canIssueOmQuotation } from "@/lib/om/om-quotation";
 import { getQuotationActor } from "@/lib/quotation";
 
 // ลูกค้าไม่เอา — ยกเลิกใบงานก่อนนัด พร้อมใบเสนอราคาของใบงาน (แผน docs/plan/20260924-02 · ทางออก "ไม่เอา (ปฏิเสธราคา)")
@@ -58,7 +58,7 @@ export async function POST(req: NextRequest, ctx: { params: Promise<{ id: string
       const pay = (await new sql.Request(tx).input("id", sql.Int, id).query(`
         SELECT TOP 1 p.id, p.confirmed_at FROM payments p
           JOIN quotations q ON q.lead_id = p.lead_id AND p.slip_field = CONCAT(N'om_quote_', q.id)
-         WHERE q.om_booking_id = @id
+         WHERE q.om_booking_id = @id AND ${OM_PAY_LIVE_SQL("p")}
          ORDER BY CASE WHEN p.confirmed_at IS NOT NULL THEN 0 ELSE 1 END`)).recordset[0];
       if (pay?.confirmed_at) return fail("รับเงินค่าบริการแล้ว — ยกเลิกไม่ได้ ต้องคืนเงินผ่าน Account ก่อน");
       if (pay) return fail("มีสลิปรอ Account ตรวจอยู่ — ให้ Account ปฏิเสธสลิปก่อนแล้วค่อยยกเลิก");

@@ -37,7 +37,11 @@ export const statusTone = (k: string) =>
 const NEXT: Record<string, string[]> = {
   // ★ 1 ต.ค. 69 "ยืนยันและเข้างาน" = ตกลงวันกันในสายแล้ว ⇒ ติดตาม/ชำระแล้ว → นัดแล้ว ได้ตรง (ข้ามรอยืนยัน)
   follow:    ["quote", "pending", "confirmed", "cancelled"],
-  quote:     ["payment", "follow", "cancelled"],
+  // ★ 14 ต.ค. 69 (แผน 20261014-03): ออกจากเสนอราคาไปชำระเงินได้ทาง /api/om/quotations/[id]/send เท่านั้น
+  //   (ตรวจอนุมัติครบทุกชุด + จดชุดที่ลูกค้าเลือก แล้วเขียนสถานะเอง ไม่ผ่านตารางนี้)
+  //   เดิมมี payment / follow ให้ PATCH ใบงานย้ายตรง ๆ = ข้ามการอนุมัติ หรือถอยไปติดตามแล้วตกลงนัดโดยไม่จ่ายเงิน
+  //   ไม่มีหน้าจอไหนใช้สองทางนั้น
+  quote:     ["cancelled"],
   // payment → pending ผ่านการบันทึกโทร "ตกลงนัด" เท่านั้น และต้องรับเงินครบก่อน (ดู /api/om/follow)
   payment:   ["pending", "confirmed", "cancelled"],
   pending:   ["confirmed", "follow", "cancelled", "no_show"],

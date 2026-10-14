@@ -198,6 +198,9 @@ export default function JobDetail({ item, history, bookings = [], rules, onBack,
   const stepState = (i: number): StepState => {
     const f = FLOW[i];
     if (skip && "paid" in f && f.paid) return "skipped";
+    // ★ แผน 20261014-03: เช็คเด้งหลังถึงหน้างาน — ขั้นชำระเงินกลับเป็นงานค้าง (ไม่ใช่ ✓ Paid)
+    //   การ์ดโชว์แถวเช็คเด้ง + ฟอร์มแนบหลักฐานใหม่ทันที แบบขั้นเสนอราคาที่เปิดค้างได้ (quoteOpen)
+    if (i === 2 && item.pay_state === "bounced") return "active";
     if (i < at || cur === "closed") return "done";
     if (i === at || (i === 1 && quoteOpen) || (i === 3 && schedFree)) return "active";
     return "locked";

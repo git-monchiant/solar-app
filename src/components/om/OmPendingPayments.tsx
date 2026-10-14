@@ -8,6 +8,8 @@
 // ★ ปุ่มพาไปหน้างาน O&M มีให้ admin เท่านั้น (Account ไม่มีสิทธิ์โมดูล O&M)
 // ★ เช็ค / บัตรเครดิต แบบฝั่งขาย (แผน 20261002-11): เช็คกด "ยืนยันรับเช็ค" ก่อน (Sale โทรนัดได้) แล้วค่อย "ยืนยันรับเงิน" ตอนเงินเข้า
 //   บัตรเครดิตแสดงยอดรวมค่าธรรมเนียม (amount = ยอดใบ · ค่าธรรมเนียมแยกคอลัมน์)
+// ★ แผน 20261014-03: เช็คที่รับแล้ว ปุ่มแดงเป็น "เช็คเด้ง" แทน "ปฏิเสธ" — แถวเงินเก็บไว้แบบฝั่งขาย
+//   (ปฏิเสธ = ลบแถว · รับเช็คแล้ว Sale โทรนัดไปแล้ว ลบทิ้งใบงานจะเดินต่อโดยไม่มีเงิน)
 
 import { useState } from "react";
 import { apiFetch } from "@/lib/api";
@@ -53,7 +55,7 @@ export default function OmPendingPayments({ items, focusedId, onChanged }: {
 
   if (items.length === 0) return null;
 
-  const act = async (it: OmPendingPayment, action: "confirm" | "reject" | "cheque_received", why = "") => {
+  const act = async (it: OmPendingPayment, action: "confirm" | "reject" | "cheque_received" | "cheque_bounced", why = "") => {
     if (action === "confirm") {
       const ok = await dialog.confirm({
         title: "ยืนยันรับเงินค่าบริการ O&M", confirmText: "ยืนยันรับเงิน", variant: "success",
@@ -92,7 +94,8 @@ export default function OmPendingPayments({ items, focusedId, onChanged }: {
           const actions = (cls = "") => (
             <div className={`flex gap-2 ${cls}`}>
               <button type="button" disabled={busy === it.id} onClick={() => { setReason(""); setRejecting(it); }}
-                className="h-8 px-3 rounded-lg text-sm font-semibold text-red-700 bg-red-50 hover:bg-red-100 disabled:opacity-50 flex-1 md:flex-none">ปฏิเสธ</button>
+                className="h-8 px-3 rounded-lg text-sm font-semibold text-red-700 bg-red-50 hover:bg-red-100 disabled:opacity-50 flex-1 md:flex-none">
+                {it.cheque_received_at ? "เช็คเด้ง" : "ปฏิเสธ"}</button>
               {it.payment_method === "cheque" && !it.cheque_received_at ? (
                 <button type="button" disabled={busy === it.id} onClick={() => act(it, "cheque_received")}
                   className="h-8 px-3 rounded-lg text-sm font-semibold text-white bg-amber-500 hover:bg-amber-600 disabled:opacity-50 flex-1 md:flex-none">
@@ -168,30 +171,32 @@ export default function OmPendingPayments({ items, focusedId, onChanged }: {
         })}
       </div>
 
-      {/* ปฏิเสธต้องมีเหตุผล — กล่องเดียวกับหน้าคิวอนุมัติใบเสนอราคา */}
-      {rejecting && (
+      {/* ปฏิเสธต้องมีเหตุผล — กล่องเดียวกับหน้าคิวอนุมัติใบเสนอราคา · เช็คที่รับแล้ว = กล่องเช็คเด้ง */}
+      {rejecting && (() => { const bounce = !!rejecting.cheque_received_at; return (
         <div className="fixed inset-0 z-[70] flex items-end justify-center bg-black/40 sm:items-center sm:p-4"
           onClick={() => busy !== rejecting.id && setRejecting(null)}>
           <div role="dialog" aria-modal="true" onClick={(e) => e.stopPropagation()}
             className="max-h-[85vh] w-full max-w-md overflow-y-auto rounded-t-2xl bg-white p-5 shadow-2xl sm:rounded-xl">
-            <h3 className="text-base font-bold text-gray-900">ปฏิเสธสลิปค่าบริการ O&amp;M</h3>
+            <h3 className="text-base font-bold text-gray-900">{bounce ? "เช็คเด้ง — ค่าบริการ O&M" : "ปฏิเสธสลิปค่าบริการ O&M"}</h3>
             <p className="mt-1 text-xs text-gray-600">
-              {rejecting.customer_name} · {rejecting.quotation_doc_no} — สลิปนี้จะถูกเอาออกจากคิว Sale ต้องแนบใหม่ กรุณาระบุเหตุผล
+              {rejecting.customer_name} · {rejecting.quotation_doc_no} — {bounce
+                ? "เก็บรายการเช็คไว้เป็นหลักฐาน · ใบงานที่ยังไม่ถึงวันเข้างานกลับไปขั้นชำระเงิน · Sale ต้องแนบหลักฐานชำระใหม่ กรุณาระบุเหตุผล"
+                : "สลิปนี้จะถูกเอาออกจากคิว Sale ต้องแนบใหม่ กรุณาระบุเหตุผล"}
             </p>
             <label className="mt-4 mb-1 block text-xs font-semibold text-gray-700">เหตุผล <span className="text-red-500">*</span></label>
             <textarea value={reason} onChange={(e) => setReason(e.target.value)} rows={4} maxLength={300} autoFocus
-              placeholder="เช่น ยอดในสลิปไม่ตรง / สลิปไม่ชัด / ยังไม่พบเงินเข้าบัญชี"
+              placeholder={bounce ? "เช่น เช็คคืน เงินในบัญชีไม่พอ / ลูกค้ายกเลิกเช็ค" : "เช่น ยอดในสลิปไม่ตรง / สลิปไม่ชัด / ยังไม่พบเงินเข้าบัญชี"}
               className="w-full resize-none rounded-lg border border-gray-200 px-3 py-2 text-sm focus:border-red-400 focus:outline-none" />
             <div className="mt-4 flex items-center justify-end gap-2">
               <button type="button" onClick={() => setRejecting(null)} disabled={busy === rejecting.id}
                 className="h-8 rounded-lg border border-gray-200 px-4 text-sm font-semibold text-gray-700 hover:bg-gray-50 disabled:opacity-50">ยกเลิก</button>
-              <button type="button" onClick={() => act(rejecting, "reject", reason.trim())} disabled={!reason.trim() || busy === rejecting.id}
+              <button type="button" onClick={() => act(rejecting, bounce ? "cheque_bounced" : "reject", reason.trim())} disabled={!reason.trim() || busy === rejecting.id}
                 className="h-8 rounded-lg bg-red-600 px-4 text-sm font-semibold text-white hover:bg-red-700 disabled:cursor-not-allowed disabled:opacity-40">
-                {busy === rejecting.id ? "กำลังส่ง…" : "ยืนยันปฏิเสธ"}</button>
+                {busy === rejecting.id ? "กำลังส่ง…" : bounce ? "ยืนยันเช็คเด้ง" : "ยืนยันปฏิเสธ"}</button>
             </div>
           </div>
         </div>
-      )}
+      ); })()}
     </div>
   );
 }

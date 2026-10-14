@@ -108,6 +108,10 @@ function toRow(h: HistoryRow, teamName: (id: unknown) => string): { stage: Stage
       return { stage: "payment", row: { ...base, label: `รับเช็ค ${money(to.amount)}`.trim(), tone: "pending", sub: withReason("รอ Account ยืนยันเงินเข้า") } };
     case "pay_reject":
       return { stage: "payment", row: { ...base, label: "Account ปฏิเสธสลิป", tone: "bad", sub: withReason(null) } };
+    case "pay_cheque_bounced":
+      // แผน 20261014-03 — ใบงานที่ยังไม่ถึงหน้างานถูกดึงกลับขั้นชำระเงิน
+      return { stage: "payment", row: { ...base, label: `เช็คเด้ง ${money(from.amount)}`.trim(), tone: "bad",
+        sub: withReason(to.status === "payment" && from.status !== "payment" ? "ใบงานกลับขั้นชำระเงิน รอแนบหลักฐานใหม่" : "รอแนบหลักฐานชำระใหม่") } };
     case "paid":
       return { stage: "payment", row: { ...base, label: `ยืนยันรับเงิน ${money(to.amount)}`.trim(), tone: "paid",
         sub: to.grant_qty ? `เติมสิทธิ์ +${str(to.grant_qty)} ครั้ง` : by } };

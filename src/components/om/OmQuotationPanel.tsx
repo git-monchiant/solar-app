@@ -114,6 +114,8 @@ export default function OmQuotationPanel({ item, skip, onSaved, onReload }: {
     try {
       const d = await apiFetch(`/api/om/quotations?booking_id=${bookingId}`);
       setList({ bookingId, quotes: d.quotes });
+      // โหลดได้แล้วล้างกล่องแดงเดิม — ไม่งั้นพลาดครั้งเดียวกล่องแดงบังทั้งแผงจนรีเฟรชหน้า (แผน 20261014-03)
+      setErr("");
       setNote((cur) => (cur && cur.bookingId === bookingId && cur.dirty ? cur
         : { bookingId, text: d.quote_note ?? "", dirty: false }));
     } catch (e) { setErr(e instanceof Error ? e.message : String(e)); }
@@ -155,9 +157,14 @@ export default function OmQuotationPanel({ item, skip, onSaved, onReload }: {
   const canHandoff = canIssue && allApproved && atQuote && !chosen;
 
   const done = (msg: string) => { onSaved(msg); load(); onReload?.(); };
+  // ★ แผน 20261014-03: ไม่สำเร็จก็โหลดใหม่ — งานหลายใบ (ส่งอนุมัติทุกชุด) อาจผ่านไปบางใบแล้ว
+  //   เดิมจอค้างสถานะเก่า กดซ้ำชนใบที่ส่งไปแล้ว (409) ทุกครั้ง ใบที่เหลือไม่ได้ส่งเลย
   const run = async (fn: () => Promise<string>) => {
     setBusy(true); setActErr("");
-    try { done(await fn()); } catch (e) { setActErr(e instanceof Error ? e.message : String(e)); }
+    try { done(await fn()); } catch (e) {
+      setActErr(e instanceof Error ? e.message : String(e));
+      load(); onReload?.();
+    }
     finally { setBusy(false); }
   };
 
@@ -199,8 +206,17 @@ export default function OmQuotationPanel({ item, skip, onSaved, onReload }: {
       message: `ส่ง ${readyQuotes.map((q) => q.doc_no).join(", ")} ให้ Solar Manager ตรวจ แล้วต่อ Sale Manager · ระหว่างรออนุมัติแก้ใบไม่ได้ จนกว่าผู้อนุมัติจะส่งกลับ` });
     if (!ok) return;
     run(async () => {
-      for (const q of readyQuotes)
-        await apiFetch(`/api/quotations/${q.id}/action`, { method: "POST", body: JSON.stringify({ action: "submit" }) });
+      // ส่งทีละใบ — พังกลางทางบอกว่าใบไหนส่งไปแล้ว (จอโหลดใหม่ให้ใน run) ใบที่เหลือกดส่งอีกรอบได้
+      const sent: string[] = [];
+      for (const q of readyQuotes) {
+        try {
+          await apiFetch(`/api/quotations/${q.id}/action`, { method: "POST", body: JSON.stringify({ action: "submit" }) });
+        } catch (e) {
+          const why = e instanceof Error ? e.message : String(e);
+          throw new Error(sent.length ? `ส่ง ${sent.join(", ")} แล้ว แต่ ${q.doc_no} ไม่ผ่าน: ${why}` : `${q.doc_no}: ${why}`);
+        }
+        sent.push(q.doc_no);
+      }
       return `ส่ง ${readyQuotes.length} ฉบับให้ Solar Manager อนุมัติแล้ว`;
     });
   };
@@ -739,6 +755,10 @@ function QuoteEditor({ item, optionNo, quote, onClose, onDone }: {
 }) {
   const [pkgs, setPkgs] = useState<Pkg[]>([]);
   const [notes, setNotes] = useState<string[]>([]);
+  // ★ แผน 20261014-03: ยอด/รายละเอียดแพ็กเกจคิดจากรายการที่โหลดมา — ยังไม่มา (หรือโหลดพลาด) แพ็กเกจเป็น null
+  //   แต่ยังส่ง om_package_id ไป ⇒ ส่วนลดถูกตัดตามยอดที่ขาดแพ็กเกจ + รายละเอียดใต้แพ็กเกจหาย · บันทึก/ดูตัวอย่างได้เมื่อ ready
+  const [pkgLoad, setPkgLoad] = useState<"loading" | "ready" | "error">("loading");
+  const [pkgRetry, setPkgRetry] = useState(0);
   const [pkgId, setPkgId] = useState<number | null>(quote?.om_package_id ?? null);
   // accordion — กางได้ทีละหัวข้อ แบบฝั่งขาย · "pkg" = แถวแพ็กเกจ · อื่น ๆ = key ของหัวข้องานเพิ่ม
   const [openKey, setOpenKey] = useState<string | null>(null);
@@ -764,6 +784,7 @@ function QuoteEditor({ item, optionNo, quote, onClose, onDone }: {
 
   const kw = houseKw(item.kwp_list);
   useEffect(() => {
+    setPkgLoad("loading");
     apiFetch("/api/om/packages").then((d) => {
       const list = (d.packages ?? []) as Pkg[];
       setPkgs(list);
@@ -773,10 +794,14 @@ function QuoteEditor({ item, optionNo, quote, onClose, onDone }: {
         const hit = list.find((p) => p.plan_type === "per_visit" && kw >= p.kw_min && kw <= p.kw_max);
         if (hit) { setPkgId(hit.id); setPkgDetails(scopeDetails(hit)); }
       }
-    }).catch((e) => setErr(e instanceof Error ? e.message : String(e)));
-  }, [quote, kw, isRepair]);
+      setPkgLoad("ready");
+    }).catch((e) => { setPkgLoad("error"); setErr(e instanceof Error ? e.message : String(e)); });
+  }, [quote, kw, isRepair, pkgRetry]);
 
   const pkg = pkgs.find((p) => p.id === pkgId) ?? null;
+  // ใบเดิมผูกแพ็กเกจที่ถูกปิดใช้งานไปแล้ว — ไม่อยู่ในรายการ ต้องเลือกใหม่หรือลบออกก่อนบันทึก (เดิมไม่มีแถวให้ลบ บันทึกได้ 500)
+  const pkgGone = pkgLoad === "ready" && pkgId != null && !pkg;
+  const pkgReady = pkgLoad === "ready";
   const subtotal = (pkg?.price ?? 0) + lines.reduce((s, x) => s + Math.max(0, x.quantity) * Math.max(0, x.unit_price), 0);
   const discountAmount = Math.round(Math.min(subtotal,
     discountType === "percent" ? (subtotal * Math.min(100, discountValue)) / 100 : discountValue) * 100) / 100;
@@ -810,6 +835,8 @@ function QuoteEditor({ item, optionNo, quote, onClose, onDone }: {
   };
 
   const validate = () => {
+    if (!pkgReady) return "รอโหลดรายการแพ็กเกจให้เสร็จก่อน";
+    if (pkgGone) return "แพ็กเกจเดิมของใบนี้ถูกปิดใช้งานแล้ว — เลือกแพ็กเกจใหม่ หรือลบหัวข้อแพ็กเกจออก";
     if (!pkg && lines.length === 0) return "กรุณาเพิ่มแพ็กเกจ หรืองานเพิ่ม อย่างน้อย 1 รายการ";
     if (lines.some((x) => !x.item_name.trim())) return "กรุณาตั้งชื่อหัวข้อให้ครบทุกอัน";
     if (lines.some((x) => !(x.quantity > 0))) return "จำนวนของงานเพิ่มต้องมากกว่า 0";
@@ -927,9 +954,15 @@ function QuoteEditor({ item, optionNo, quote, onClose, onDone }: {
                   <span className="text-xs font-bold text-gray-800">รายการในใบเสนอราคา</span>
                   <span className="text-xxs text-gray-400">{rowCount} หัวข้อ</span>
                   <div className="ml-auto flex items-center gap-2">
-                    <button type="button" onClick={() => setPickerOpen(true)} disabled={!pkgs.length} className={HEAD_BTN}>
-                      {pkgs.length ? "+ เพิ่มแพ็กเกจ" : "กำลังดึงรายการ…"}
-                    </button>
+                    {pkgLoad === "error" ? (
+                      <button type="button" onClick={() => { setErr(""); setPkgRetry((n) => n + 1); }} className={HEAD_BTN}>
+                        โหลดแพ็กเกจไม่สำเร็จ — ลองใหม่
+                      </button>
+                    ) : (
+                      <button type="button" onClick={() => setPickerOpen(true)} disabled={!pkgReady || !pkgs.length} className={HEAD_BTN}>
+                        {pkgReady ? "+ เพิ่มแพ็กเกจ" : "กำลังดึงรายการ…"}
+                      </button>
+                    )}
                     <button type="button" onClick={addLine} className={HEAD_BTN}>+ งานเพิ่ม</button>
                   </div>
                 </div>
@@ -941,6 +974,15 @@ function QuoteEditor({ item, optionNo, quote, onClose, onDone }: {
                     </div>
                   )}
                   <div className="space-y-2">
+                    {/* แพ็กเกจเดิมถูกปิดใช้งาน — แถวเตือนพร้อมปุ่มลบ (แผน 20261014-03) */}
+                    {pkgGone && (
+                      <div className="flex items-center gap-2 rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800">
+                        <span className="min-w-0 flex-1">
+                          แพ็กเกจเดิมของใบนี้ ({quote?.package_name_snapshot || "Package O&M"}) ถูกปิดใช้งานแล้ว — เลือกแพ็กเกจใหม่จาก “+ เพิ่มแพ็กเกจ” หรือลบออก
+                        </span>
+                        <button type="button" onClick={() => { setPkgId(null); setPkgDetails([]); }} aria-label="ลบหัวข้อ" className={CLOSE}>×</button>
+                      </div>
+                    )}
                     {/* แพ็กเกจ = หัวข้อ 1 เสมอ (ชื่อ/ราคามาจาก Package O&M) · ▸ กางรายละเอียด */}
                     {pkg && (
                       <div className="rounded-xl border border-gray-200 bg-white">
@@ -1087,13 +1129,13 @@ function QuoteEditor({ item, optionNo, quote, onClose, onDone }: {
             สีแดง · คลิกหัวข้อเพื่อกาง/หุบ
           </span>
           <div className="ml-auto flex items-center gap-3">
-            <button type="button" disabled={busy} onClick={preview}
+            <button type="button" disabled={busy || !pkgReady} onClick={preview}
               className="rounded-lg border border-gray-200 px-4 py-2 text-sm font-semibold text-gray-700 transition-colors hover:bg-gray-50 disabled:opacity-40">
               ดูตัวอย่าง
             </button>
-            <button type="button" disabled={busy} onClick={save}
+            <button type="button" disabled={busy || !pkgReady} onClick={save}
               className="rounded-lg bg-primary px-6 py-2 text-sm font-semibold text-white shadow-sm transition-all hover:brightness-110 disabled:opacity-50">
-              {busy ? "กำลังบันทึก…" : "บันทึกฉบับร่าง"}
+              {busy ? "กำลังบันทึก…" : pkgLoad === "loading" ? "กำลังโหลดแพ็กเกจ…" : "บันทึกฉบับร่าง"}
             </button>
           </div>
         </footer>

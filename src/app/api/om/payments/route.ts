@@ -5,7 +5,9 @@ import { getOmDb } from "@/lib/om/line";
 import { logBooking } from "@/lib/om/booking-log";
 import { getQuotationActor } from "@/lib/quotation";
 import { notifyAccountingRole } from "@/lib/accounting-notifications";
-import { OM_PAY_STEP_NO, canIssueOmQuotation, omSlipField } from "@/lib/om/om-quotation";
+import {
+  OM_PAY_LIVE_SQL, OM_PAY_STEP_NO, OM_REPAY_AFTER_BOUNCE, OM_SLIP_PREFIX, canIssueOmQuotation, omSlipField,
+} from "@/lib/om/om-quotation";
 
 // ค่าบริการงาน O&M — Sale แนบสลิปของลูกค้า แล้วเข้าคิว Account (แผน docs/plan/20260924-02 เฟส 4)
 //
@@ -35,7 +37,9 @@ export async function GET(req: NextRequest) {
   const r = await db.request().input("q", sql.Int, qid).input("sf", sql.NVarChar(50), omSlipField(qid)).query(`
     SELECT p.id, p.lead_id, p.amount, p.payment_method, p.description, p.submitted_at, su.full_name submitted_by_name,
            p.confirmed_at, p.confirmed_by, p.actual_receipt_url, p.cheque_received_at, p.cheque_received_by,
-           p.cc_surcharge_pct, p.cc_surcharge_amount, ${slots}
+           p.cc_surcharge_pct, p.cc_surcharge_amount,
+           -- เช็คเด้ง (แผน 20261014-03) — แถวเก็บไว้ หน้าจอโชว์เป็นประวัติ ไม่ใช่สลิปปัจจุบัน
+           p.cheque_status, p.cheque_status_note, p.cheque_status_by, p.cheque_status_at, ${slots}
       FROM payments p
       JOIN quotations q ON q.id = @q AND q.lead_id = p.lead_id
       LEFT JOIN users su ON su.id = p.submitted_by
@@ -90,7 +94,9 @@ export async function POST(req: NextRequest) {
       SELECT q.id, q.doc_no, q.status, q.lead_id, q.om_booking_id, q.contract_total_incl_vat total,
              b.status job_status, b.house_id, l.full_name customer_name, q.sent_to_customer_at,
              (SELECT MAX(q2.id) FROM quotations q2
-               WHERE q2.om_booking_id = q.om_booking_id AND q2.option_no = q.option_no) latest_id
+               WHERE q2.om_booking_id = q.om_booking_id AND q2.option_no = q.option_no) latest_id,
+             (SELECT COUNT(*) FROM payments bp WHERE bp.lead_id = q.lead_id
+                 AND bp.slip_field = CONCAT(N'${OM_SLIP_PREFIX}', q.id) AND bp.cheque_status = N'bounced') bounced
         FROM quotations q JOIN om_bookings b WITH (UPDLOCK) ON b.id = q.om_booking_id
         JOIN leads l ON l.id = q.lead_id
        WHERE q.id = @id AND q.om_booking_id IS NOT NULL`)).recordset[0];
@@ -99,13 +105,17 @@ export async function POST(req: NextRequest) {
     if (q.status !== "approved" || q.latest_id !== q.id) return fail("รับเงินได้เฉพาะใบล่าสุดที่อนุมัติแล้ว");
     // 3 ชุดต่อใบงาน (แผน 20261002-02) — เงินเป็นของชุดที่ลูกค้าเลือก (/send จดเวลาไว้) ชุดอื่นห้ามรับเงิน
     if (!q.sent_to_customer_at) return fail("รับเงินได้เฉพาะชุดที่ลูกค้าเลือก");
-    if (q.job_status !== "payment") return fail("ใบงานยังไม่อยู่ขั้นชำระเงิน — ส่งใบเสนอราคาให้ลูกค้าก่อน");
+    // ★ เช็คเด้งหลังงานเดินไปแล้ว (เข้างาน/ปิดงาน · แผน 20261014-03) — ใบงานคงสถานะ แต่ต้องเก็บเงินใหม่ได้
+    //   ใบที่ยังไม่ถึงหน้างาน (รอยืนยันนัด/นัดแล้ว) ถูกดึงกลับขั้นชำระเงินตอนกดเช็คเด้งอยู่แล้ว
+    const repay = OM_REPAY_AFTER_BOUNCE.includes(q.job_status) && !!q.bounced;
+    if (q.job_status !== "payment" && !repay) return fail("ใบงานยังไม่อยู่ขั้นชำระเงิน — ส่งใบเสนอราคาให้ลูกค้าก่อน");
     // เงินก้อนเดียวเต็มจำนวน — กันยอดพิมพ์ผิดแบบเดียวกับที่ฝั่งขายเคยเจอ (lead 686)
     if (Math.round(amount * 100) !== Math.round(Number(q.total) * 100))
       return fail(`ยอดไม่ตรงกับใบเสนอราคา — ต้องเป็น ${Number(q.total).toLocaleString("th-TH")} บาท`, 400);
     const slipField = omSlipField(qid);
     const dup = (await new sql.Request(tx).input("l", sql.Int, q.lead_id).input("sf", sql.NVarChar(50), slipField)
-      .query(`SELECT TOP 1 id, confirmed_at FROM payments WITH (UPDLOCK, HOLDLOCK) WHERE lead_id = @l AND slip_field = @sf`)).recordset[0];
+      .query(`SELECT TOP 1 id, confirmed_at FROM payments p WITH (UPDLOCK, HOLDLOCK)
+               WHERE p.lead_id = @l AND p.slip_field = @sf AND ${OM_PAY_LIVE_SQL("p")}`)).recordset[0];
     if (dup) return fail(dup.confirmed_at ? "ใบนี้รับเงินครบแล้ว" : "มีสลิปรอ Account ยืนยันอยู่แล้ว — รอผลก่อน");
 
     // บัตรเครดิต: ค่าธรรมเนียมคิดจากยอดใบ ปัดเป็นบาท แบบ OrderStep (Math.round(amount * pct / 100))
