@@ -37,7 +37,7 @@ import StepLayout from "@/components/lead/detail/StepLayout";
 import DoneSection from "@/components/lead/detail/steps/DoneSection";
 import ModalBase from "@/components/ui/ModalBase";
 import {
-  BUCKET_LABEL, FLOW, QUOTE_STATUS, TONE, jobAt, skipsPaidSteps, thD, thAppt,
+  BUCKET_LABEL, FLOW, OM_REPAIR_ENABLED, QUOTE_STATUS, TONE, jobAt, skipsPaidSteps, thD, thAppt,
   type BookingSummary, type HistoryRow, type Item, type Team,
 } from "@/lib/om/service-view";
 
@@ -969,7 +969,7 @@ export default function JobDetail({ item, history, bookings = [], rules, onBack,
 
               {/* ใบงานซ่อม (เฟส 5) — ช่างแจ้งในใบตรวจรับงาน ทีม O&M เปิดใบใหม่ต่อจากตรงนี้
                   ★ เปิดได้เฉพาะใบที่ปิดแล้ว (ใบงานนี้คือใบล่าสุดของบ้าน = บ้านไม่มีใบค้าง) · เปิดได้แม้ช่างไม่ได้ติ๊ก */}
-              {cur === "closed" && item.booking_id && !item.repair_child_id && !viewOnly && (
+              {OM_REPAIR_ENABLED && cur === "closed" && item.booking_id && !item.repair_child_id && !viewOnly && (
                 <div className={`rounded-lg border p-3 ${item.repair_needed === 1 && !item.repair_cancel_id ? "bg-amber-50 border-amber-200" : "bg-white/60 border-active/15"}`}>
                   {/* เปิดใบซ่อมแล้วยกเลิก — บอกว่าจบไปแล้วด้วยเหตุผลอะไร · ลูกค้าเปลี่ยนใจเปิดใหม่ได้ */}
                   {item.repair_cancel_id

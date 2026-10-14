@@ -22,7 +22,7 @@ import {
 } from "@/components/ui/icons";
 import { PROXY_REASONS, failCount, type Checks, type FormItem, type JobForm } from "@/lib/om/job-form";
 import { statusLabel } from "@/lib/om/booking";
-import { thAppt } from "@/lib/om/service-view";
+import { OM_REPAIR_ENABLED, thAppt } from "@/lib/om/service-view";
 
 type Job = {
   id: number; house_id: number; status: string; team_name: string | null; scheduled_at: string | null;
@@ -663,8 +663,9 @@ export default function JobFormPanel({ jobId, wrapClass = "h-full overflow-auto 
                 </div>
 
                 {/* ★ เฟส 5 แผน 20260924-02: ช่างแจ้งพบงานซ่อม — ใบงานนี้ปิดตามปกติ (1 ใบงาน = 1 เส้นทาง)
-                    แล้วทีม O&M เปิดใบงานซ่อมต่อที่ขั้นปิดงานของหน้ารายละเอียด พร้อมเลือกในประกัน/นอกประกัน */}
-                <div className={SECTION}>
+                    แล้วทีม O&M เปิดใบงานซ่อมต่อที่ขั้นปิดงานของหน้ารายละเอียด พร้อมเลือกในประกัน/นอกประกัน
+                    ★ 14 ต.ค. 69 พักใบงานซ่อม (OM_REPAIR_ENABLED · แผน 20261014-07) — ซ่อนช่องนี้ ไม่มีใครเปิดใบซ่อมต่อให้ */}
+                {OM_REPAIR_ENABLED && <div className={SECTION}>
                   <SectionHead icon={<WrenchIcon className="w-4 h-4" />} en="Repair" th="พบงานซ่อม · ทีม O&M เปิดใบงานซ่อมต่อให้" />
                   <div className="grid grid-cols-2 md:grid-cols-7 gap-2">
                     {([[false, "ไม่พบ"], [true, "พบ ต้องซ่อม"]] as const).map(([k, t]) => (
@@ -688,7 +689,7 @@ export default function JobFormPanel({ jobId, wrapClass = "h-full overflow-auto 
                         className="w-full px-3 py-2 rounded-lg border border-amber-300 bg-amber-50/40 text-sm focus:outline-none focus:border-amber-500 resize-none" />
                     </div>
                   )}
-                </div>
+                </div>}
               </>
             )}
 

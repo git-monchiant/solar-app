@@ -51,10 +51,15 @@ export const skipsPaidSteps = (r: Pick<Item, "balance" | "job_status"> & { q_id?
   return at > 0 || r.balance > 0;
 };
 
+/** ใบงานซ่อม (เฟส 5 แผน 20260924-02) — ผู้ใช้สั่ง "ยกเลิกงานซ่อมก่อน" 14 ต.ค. 69 (แผน 20261014-07)
+ *  false = ซ่อนทางเข้าบนหน้าจอ: ปุ่มเปิดใบงานซ่อม (ขั้นปิดงาน) · ช่อง "พบงานซ่อม" ในใบตรวจ · ชิปรอเปิดใบซ่อมบนการ์ด
+ *  ข้อมูลเดิม / ใบซ่อมที่เปิดไว้แล้ว / API คงไว้ — เปิดกลับ = เปลี่ยนเป็น true ที่นี่ที่เดียว */
+export const OM_REPAIR_ENABLED = false;
+
 /** ช่างแจ้งพบงานซ่อมในใบงานล่าสุด (ปิดแล้ว) แต่ยังไม่มีใครเปิดใบงานซ่อม — ชิปเตือนบนการ์ด (เฟส 5)
  *  เปิดแล้วยกเลิก (ลูกค้าไม่ซ่อม) = มีคนตัดสินใจแล้ว ไม่เตือนซ้ำ */
 export const repairPending = (r: Pick<Item, "job_status" | "repair_needed" | "repair_child_id" | "repair_cancel_id">) =>
-  r.job_status === "closed" && r.repair_needed === 1 && !r.repair_child_id && !r.repair_cancel_id;
+  OM_REPAIR_ENABLED && r.job_status === "closed" && r.repair_needed === 1 && !r.repair_child_id && !r.repair_cancel_id;
 
 /** สถานะใบเสนอราคา → ป้าย (ชุดเดียวกับลำดับอนุมัติฝั่งขาย แผน 20260730-01) */
 export const QUOTE_STATUS: Record<string, { t: string; tone: string }> = {
