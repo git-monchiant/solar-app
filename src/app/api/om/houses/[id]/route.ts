@@ -248,6 +248,8 @@ export async function DELETE(req: NextRequest, ctx: { params: Promise<{ id: stri
     await rq().query(`DELETE FROM om_house_customers WHERE house_id = @id`);
     await rq().query(`DELETE FROM om_entitlement_history WHERE house_id = @id`);
     await rq().query(`DELETE FROM om_line_user_houses WHERE house_id = @id`);
+    // ที่มาข้อมูลรายช่อง (ไม่มี FK) — บ้านที่เพิ่มเองเขียนตารางนี้ทุกหลัง (แผน 20261014-08) ไม่ลบจะค้างกำพร้า
+    await rq().query(`DELETE FROM om_field_sources WHERE house_id = @id`);
     // FK แบบ nullable — เก็บแถวไว้ แค่ตัดการผูกกับบ้าน
     await rq().query(`UPDATE om_identity_requests SET house_id = NULL WHERE house_id = @id`);
     await rq().query(`UPDATE om_line_users SET house_id = NULL WHERE house_id = @id`);
