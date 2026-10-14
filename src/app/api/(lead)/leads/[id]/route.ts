@@ -7,6 +7,7 @@ import { getGridTieFinalMissing } from "@/lib/gridTie";
 import { installmentAmount, netTotalOf, parseInstallmentRows, type InstallmentRow } from "@/lib/installments";
 import { processGradeChange, syncOperationalSlas } from "@/lib/sla-service";
 import { slaLiveStatusSql } from "@/lib/lead-sla-sql";
+import { resolveAccountingNotifications } from "@/lib/accounting-notifications";
 import { hasEvCharger, parseLoadProfile, serializeLoadProfile } from "@/lib/load-assumption";
 
 type PlanRowLike = { pct?: unknown; amount?: unknown; when?: unknown; method?: unknown; loan_bank?: unknown; cc_pct?: unknown };
@@ -1921,6 +1922,30 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
         note: body.grade_change_reason || null,
         userId: gate.userId,
       });
+    }
+
+    // ค่าสำรวจฟรี = ไม่มีค่าสำรวจให้บัญชียืนยัน สลิปที่เคยส่งไว้ในช่องค่าสำรวจก่อนเปลี่ยน
+    // เป็นฟรีจึงต้องออกจากคิวบัญชี — ลีด 1113: เซลส์แนบสลิปค่าติดตั้ง ฿14,000 ไว้ในช่อง
+    // ค่าสำรวจแล้วเลือกฟรี สลิปค้างในคิวเป็น "ค่าสำรวจ ฿1,000" นานเกือบเดือน ถ้าบัญชีกด
+    // ยืนยันจะบันทึกรับเงินซ้ำกับงวดที่ 1 ที่ยืนยันไปแล้ว
+    // ดึงกลับเป็นฉบับร่าง (submitted_at = NULL) ไม่ลบรูป เผื่อเป็นหลักฐานของรายการอื่น
+    if (body.pre_survey_fee_type === "free" || body.payment_confirmed === true) {
+      const unsubmitted = await db.request().input("lead_id", sql.Int, leadId).query(`
+        UPDATE slip_files SET submitted_at = NULL
+        WHERE lead_id = @lead_id AND slip_field = 'pre_slip_url' AND submitted_at IS NOT NULL
+          AND EXISTS (SELECT 1 FROM leads WHERE id = @lead_id AND pre_survey_fee_type = 'free')
+      `);
+      if (unsubmitted.rowsAffected[0] > 0) {
+        await resolveAccountingNotifications(db, { leadId, slipField: "pre_slip_url" })
+          .catch((error) => console.error("resolve accounting notification failed:", error));
+        await logLeadActivity(db, {
+          leadId,
+          activityType: "note",
+          title: "นำสลิปค่าสำรวจออกจากคิวบัญชี",
+          note: `ค่าสำรวจของลีดนี้ฟรี สลิปที่ส่งไว้ในช่องค่าสำรวจ ${unsubmitted.rowsAffected[0]} รูปจึงไม่ต้องให้บัญชียืนยัน (เก็บรูปไว้เป็นฉบับร่าง)`,
+          userId: gate.userId,
+        });
+      }
     }
 
     await syncOperationalSlas(db, leadId, gate.userId);
