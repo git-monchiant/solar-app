@@ -1,6 +1,6 @@
 import "server-only";
 import { getDb, sql } from "@/lib/db";
-import { GSB_SOLAR_LOAN_DEFAULTS } from "@/lib/loan-defaults";
+import { GSB_SOLAR_LOAN_DEFAULTS, rateForYear, readInterestSchedule, type LoanInterestTier } from "@/lib/loan-defaults";
 import { missingLoadAnswers } from "@/lib/load-assumption";
 import {
   getQuotationLegalContent,
@@ -15,7 +15,8 @@ import {
 // เรนเดอร์จากข้อความในโค้ดสด ๆ ทุกครั้ง ใบที่อนุมัติไปแล้วจึงเปลี่ยนตามการแก้โค้ด
 export const QUOTATION_DOCUMENT_VERSION = 5;
 // v3 = จุดคุ้มทุนแบบสินเชื่อนับดอกเบี้ยด้วย + ระยะได้เงินดาวน์คืน (แผน 20261012-06)
-export const QUOTATION_FINANCE_FORMULA_VERSION = "payback-by-payment-method-v3";
+// v4 = ดอกเบี้ยสินเชื่อเป็นตารางหลายช่วงตามประกาศออมสิน (แผน 20261014-02)
+export const QUOTATION_FINANCE_FORMULA_VERSION = "gsb-tiered-interest-v4";
 
 // รหัสชุดเดียวกับ PAYMENT_INTERESTS ในแบบสอบถาม — ใบเสนอราคาใช้คำตอบ Pre-Survey
 // เป็นค่าเริ่มต้นได้ตรง ๆ ไม่ต้องแปลงรหัส
@@ -39,8 +40,8 @@ export type QuotationDocumentInputs = {
   loan_bank: string;
   loan_term_months: number;
   down_payment_percent: number;
-  interest_rate_year_1_2: number;
-  interest_rate_year_3_plus: number;
+  // ดอกเบี้ยแต่ละช่วงปี (ใบก่อน v4 เก็บเป็น interest_rate_year_1_2 / _3_plus — snapshot เก่ายังมีสองช่องนั้น)
+  interest_schedule: LoanInterestTier[];
   rate_source: string;
   rate_effective_date: string;
   current_monthly_bill: number;
@@ -196,6 +197,7 @@ export function parseDocumentInputs(raw: unknown, fallback: Partial<QuotationDoc
   const paymentMethod = readPaymentMethod(parsed.payment_method) ?? readPaymentMethod(fallback.payment_method);
   const feeRaw = hasOwn("credit_card_fee_percent") ? parsed.credit_card_fee_percent : fallback.credit_card_fee_percent;
   const fee = feeRaw === null || feeRaw === undefined || String(feeRaw).trim() === "" ? Number.NaN : Number(feeRaw);
+  const savedSchedule = readInterestSchedule(parsed.interest_schedule) ?? readInterestSchedule(fallback.interest_schedule);
   return {
     om: parseQuotationOmSettings(parsed.om ?? fallback.om),
     // ต้องแยก "ไม่ได้ส่งมา" ออกจาก "ส่ง null มา" — ปุ่มคืนค่าชุดมาตรฐานส่ง null
@@ -215,10 +217,15 @@ export function parseDocumentInputs(raw: unknown, fallback: Partial<QuotationDoc
     loan_bank: String(parsed.loan_bank ?? fallback.loan_bank ?? GSB_SOLAR_LOAN_DEFAULTS.loan_bank).trim(),
     loan_term_months: Math.max(0, Math.round(number(parsed.loan_term_months ?? fallback.loan_term_months, GSB_SOLAR_LOAN_DEFAULTS.loan_term_months))),
     down_payment_percent: Math.min(100, Math.max(0, number(parsed.down_payment_percent ?? fallback.down_payment_percent, GSB_SOLAR_LOAN_DEFAULTS.down_payment_percent))),
-    interest_rate_year_1_2: Math.max(0, number(parsed.interest_rate_year_1_2 ?? fallback.interest_rate_year_1_2, GSB_SOLAR_LOAN_DEFAULTS.interest_rate_year_1_2)),
-    interest_rate_year_3_plus: Math.max(0, number(parsed.interest_rate_year_3_plus ?? fallback.interest_rate_year_3_plus, GSB_SOLAR_LOAN_DEFAULTS.interest_rate_year_3_plus)),
-    rate_source: String(parsed.rate_source ?? fallback.rate_source ?? GSB_SOLAR_LOAN_DEFAULTS.rate_source).trim(),
-    rate_effective_date: String(parsed.rate_effective_date ?? fallback.rate_effective_date ?? GSB_SOLAR_LOAN_DEFAULTS.rate_effective_date).slice(0, 10),
+    // ใบร่างเก่าที่มีแต่สองช่องเดิม (3.5/3.5 ค่าตั้งต้นที่ไม่มีใครแก้ได้) ใช้ตารางปัจจุบัน
+    // พร้อมที่มา/วันที่มีผลของตารางนั้น — D3 แผน 20261014-02
+    interest_schedule: savedSchedule ?? GSB_SOLAR_LOAN_DEFAULTS.interest_schedule.map((tier) => ({ ...tier })),
+    rate_source: savedSchedule
+      ? String(parsed.rate_source ?? fallback.rate_source ?? GSB_SOLAR_LOAN_DEFAULTS.rate_source).trim()
+      : GSB_SOLAR_LOAN_DEFAULTS.rate_source,
+    rate_effective_date: savedSchedule
+      ? String(parsed.rate_effective_date ?? fallback.rate_effective_date ?? GSB_SOLAR_LOAN_DEFAULTS.rate_effective_date).slice(0, 10)
+      : GSB_SOLAR_LOAN_DEFAULTS.rate_effective_date,
     current_monthly_bill: Math.max(0, number(parsed.current_monthly_bill ?? fallback.current_monthly_bill, 0)),
     electricity_rate: Math.max(0, number(parsed.electricity_rate ?? fallback.electricity_rate, 5)),
     production_kwh_per_kw_month: Math.max(0, number(parsed.production_kwh_per_kw_month ?? fallback.production_kwh_per_kw_month, 120)),
@@ -226,13 +233,13 @@ export function parseDocumentInputs(raw: unknown, fallback: Partial<QuotationDoc
   };
 }
 
-function paymentForVariableRates(principal: number, months: number, firstRate: number, laterRate: number) {
+function paymentForVariableRates(principal: number, months: number, schedule: LoanInterestTier[]) {
   if (principal <= 0 || months <= 0) return 0;
-  const rates = Array.from({ length: months }, (_, index) => (index < 24 ? firstRate : laterRate) / 1200);
+  const rates = Array.from({ length: months }, (_, index) => rateForYear(schedule, Math.floor(index / 12) + 1) / 1200);
   if (rates.every(rate => rate === 0)) return principal / months;
   const endingBalance = (payment: number) => rates.reduce((balance, rate) => Math.max(0, balance * (1 + rate) - payment), principal);
   let low = 0;
-  let high = principal * (1 + Math.max(firstRate, laterRate) / 100) + 1;
+  let high = principal * (1 + Math.max(...rates) * 12) + 1;
   for (let index = 0; index < 80; index++) {
     const middle = (low + high) / 2;
     if (endingBalance(middle) > 0) low = middle; else high = middle;
@@ -252,7 +259,7 @@ export function calculateFinancialSnapshot(inputs: QuotationDocumentInputs, quot
   ));
   const downPayment = inputs.loan_enabled ? financedBase * inputs.down_payment_percent / 100 : financedBase;
   const loanAmount = inputs.loan_enabled ? Math.max(0, financedBase - downPayment) : 0;
-  const installment = inputs.loan_enabled ? paymentForVariableRates(loanAmount, inputs.loan_term_months, inputs.interest_rate_year_1_2, inputs.interest_rate_year_3_plus) : 0;
+  const installment = inputs.loan_enabled ? paymentForVariableRates(loanAmount, inputs.loan_term_months, inputs.interest_schedule) : 0;
   const totalLoanPayment = installment * (inputs.loan_enabled ? inputs.loan_term_months : 0);
   const degradation = 1 - inputs.annual_degradation_percent / 100;
   let saving25Years = 0;

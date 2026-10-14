@@ -1,7 +1,7 @@
 "use client";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { apiFetch, getUserIdHeader } from "@/lib/api";
-import { GSB_SOLAR_LOAN_DEFAULTS } from "@/lib/loan-defaults";
+import { GSB_SOLAR_LOAN_DEFAULTS, readInterestSchedule, type LoanInterestTier } from "@/lib/loan-defaults";
 import { formatTHB, formatThaiDateShort, formatThaiTime } from "@/lib/utils/formatters";
 import { hasRole, useActiveRoles } from "@/lib/roles";
 import { useDialog } from "@/components/ui/Dialog";
@@ -67,8 +67,7 @@ type DocumentInputs = {
   loan_bank: string;
   loan_term_months: number;
   down_payment_percent: number;
-  interest_rate_year_1_2: number;
-  interest_rate_year_3_plus: number;
+  interest_schedule: LoanInterestTier[];
   rate_source: string;
   rate_effective_date: string;
   current_monthly_bill: number;
@@ -1340,16 +1339,17 @@ function QuotationEditor({
       down_payment_percent: Number(
         saved.down_payment_percent ?? GSB_SOLAR_LOAN_DEFAULTS.down_payment_percent,
       ),
-      interest_rate_year_1_2: Number(
-        saved.interest_rate_year_1_2 ?? GSB_SOLAR_LOAN_DEFAULTS.interest_rate_year_1_2,
-      ),
-      interest_rate_year_3_plus: Number(
-        saved.interest_rate_year_3_plus ??
-          GSB_SOLAR_LOAN_DEFAULTS.interest_rate_year_3_plus,
-      ),
-      rate_source: saved.rate_source || GSB_SOLAR_LOAN_DEFAULTS.rate_source,
-      rate_effective_date:
-        saved.rate_effective_date || GSB_SOLAR_LOAN_DEFAULTS.rate_effective_date,
+      // ตารางดอกเบี้ยตามประกาศออมสิน · ใบเก่าที่ยังเก็บแบบ 2 ช่วง (3.5/3.5) ใช้ตารางปัจจุบัน
+      interest_schedule:
+        readInterestSchedule(saved.interest_schedule) ??
+        GSB_SOLAR_LOAN_DEFAULTS.interest_schedule.map((tier) => ({ ...tier })),
+      // ที่มา/วันที่มีผลต้องมาคู่กับตาราง — ใบที่ยังไม่มีตาราง ใช้ของค่าตั้งต้นทั้งชุด
+      rate_source: readInterestSchedule(saved.interest_schedule)
+        ? saved.rate_source || GSB_SOLAR_LOAN_DEFAULTS.rate_source
+        : GSB_SOLAR_LOAN_DEFAULTS.rate_source,
+      rate_effective_date: readInterestSchedule(saved.interest_schedule)
+        ? saved.rate_effective_date || GSB_SOLAR_LOAN_DEFAULTS.rate_effective_date
+        : GSB_SOLAR_LOAN_DEFAULTS.rate_effective_date,
       // ค่าไฟเฉลี่ยต่อเดือนยึดคำตอบของลูกค้าในแบบสอบถามเป็นหลัก (lead_data.monthly_bill
       // ซึ่ง API ส่งมาในชื่อ pre_monthly_bill) ถ้าลูกค้าไม่ได้ตอบค่อยใช้ค่าจากฟอร์มสำรวจ
       // ส่วนค่าไฟสูงสุดเป็นตัวสุดท้าย เพราะเป็นคนละตัวชี้วัดกับค่าเฉลี่ย
