@@ -1,5 +1,5 @@
 import { hasRole, type Role } from "@/lib/roles";
-import { OM_ACTIVE_STEPS, OM_FIELD_STEPS, OM_FIELD_SUBS, OM_PAY_SUB, OM_SCHEDULED_STEPS } from "@/lib/om/journey";
+import { OM_ACTIVE_STEPS, OM_FIELD_STEPS, OM_FIELD_SUBS, OM_PAY_SUB } from "@/lib/om/journey";
 import { OM_WORK_ROLES } from "@/lib/om/om-roles";
 import {
   BoltIcon, CheckIcon, ClockIcon, DocumentIcon, DownloadIcon, LineIcon, PhoneIcon, XIcon,
@@ -229,7 +229,9 @@ export const MODULES: AppModule[] = [
       { label: "งานบริการ", href: "/om/services", icon: <I d={D.wrench} />, steps: OM_ACTIVE_STEPS },
       // ★ 1 ต.ค. 69 ปฏิทินร่วมกับทีมสำรวจ/ติดตั้ง (แผน 20261001-01 เฟส 4) — ใช้หน้า /calendar ฝั่งขาย เปิดมาที่ตัวกรอง O&M
       //   เลิกจ่ายทีม (ทีม A/B/C) ⇒ ไม่มี "จ่ายงาน" แล้ว · /om/calendar เดิม redirect มาที่นี่
-      { label: "ปฏิทิน", href: "/calendar?team=om", icon: <I d={D.calendar} />, steps: OM_SCHEDULED_STEPS },
+      // ★ 14 ต.ค. 69 ไม่มี badge แบบปฏิทินของ Sales / สำรวจ & ติดตั้ง (ผู้ใช้เคาะ) — เดิมนับนัดทุกเดือน
+      //   แต่ตารางเดือนโชว์ทีละเดือน เลขไม่ตรงกับที่เห็น · งานชุดนี้นับอยู่ใน badge งานบริการแล้ว (การ์ดโมดูลไม่ขยับ)
+      { label: "ปฏิทิน", href: "/calendar?team=om", icon: <I d={D.calendar} /> },
       { label: "แชต LINE", href: "/om/inbox", icon: <LineIcon className="w-6 h-6" /> },
       // ★ กล่องแจ้งเตือนของ O&M เอง ไม่ใช่กระดิ่งกลางบน Header (ดูเหตุผลใน src/lib/om/notifications.ts)
       { label: "แจ้งเตือน", href: "/om/notifications", icon: <I d={D.bell} /> },
@@ -462,7 +464,7 @@ const ACCOUNT_BAR: ModuleMenuItem[] = [
 //   เพราะสลับแถบล่าง = เปลี่ยนปุ่มที่ทีมกดทุกวัน)
 export const OM_BAR: ModuleMenuItem[] = [
   { label: "งานบริการ", href: "/om/services", icon: <I d={D.wrench} />, steps: OM_ACTIVE_STEPS },
-  { label: "ปฏิทิน", href: "/calendar?team=om", icon: <I d={D.calendar} />, steps: OM_SCHEDULED_STEPS },
+  { label: "ปฏิทิน", href: "/calendar?team=om", icon: <I d={D.calendar} /> },
   { label: "เช็คลิสต์", href: "/om/field", icon: <I d={D.clipboardCheck} />, steps: OM_FIELD_STEPS, subs: OM_FIELD_SUBS },
   { label: "แชต", href: "/om/inbox", icon: <LineIcon className="w-6 h-6" /> },
 ];

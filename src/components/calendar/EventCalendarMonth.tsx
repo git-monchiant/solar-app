@@ -80,7 +80,8 @@ export default function EventCalendarMonth({ toolbarRight, year: controlledYear,
       : events.filter((e) => {
           if (e.event_type === "block") {
             const t = (e as { team?: string | null }).team;
-            return t == null || t === team;
+            // O&M = ทีมสำรวจชุดเดียวกัน (แผน 20261001-01) — ปิดช่องทีมสำรวจล็อกตัวเลือกนัด O&M ด้วย จึงต้องเห็นในตัวกรอง O&M
+            return t == null || t === team || (team === "om" && t === "survey");
           }
           return e.event_type === team;
         });
