@@ -36,11 +36,12 @@ function MonthLabel({ ym, withYear }: { ym: string; withYear: boolean }) {
 }
 
 /** ชิปตัวเลข — เปลือกเดียวกับ Chip ของ /dashboard · ไม่ใส่ href = ตัวเลขที่ยังไม่มีลิสต์ให้กดดู */
-function Chip({ n: num, l, tone, detail, href }: { n: number | string; l: string; tone: string; detail?: string; href?: string }) {
+function Chip({ n: num, l, tone, detail, href }: { n: number | string; l: React.ReactNode; tone: string; detail?: string; href?: string }) {
   const body = (
     <>
       <div className="text-xl font-bold font-mono tabular-nums leading-none">{num}</div>
-      <div className="text-xxs mt-2 leading-tight truncate opacity-75">{l}</div>
+      {/* ป้ายยาวขึ้น 2 บรรทัดได้ (ชิปรวมแท็บ ติดต่อไม่ได้ · ไม่เอา · สิทธิ์หมด) */}
+      <div className="text-xxs mt-2 leading-tight line-clamp-2 opacity-75">{l}</div>
       {/* รายละเอียดอยู่ใต้ป้าย — ป้ายต้องติดกับเลขที่มันอธิบาย */}
       {detail && <div className="text-xxs font-mono tabular-nums opacity-60 leading-tight truncate">{detail}</div>}
     </>
@@ -87,7 +88,7 @@ export default function OmDashboardPage() {
             <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
               <div className="rounded-2xl bg-white border border-gray-200 p-4 flex flex-col">
                 <div className="flex items-baseline justify-between mb-3">
-                  <span className="text-sm font-bold uppercase tracking-[0.15em] text-gray-500">บ้านในความดูแล</span>
+                  <span className="text-sm font-bold text-gray-500">บ้านในความดูแล</span>
                   <span className="text-xs font-semibold text-gray-400">มีระบบติดตั้งแล้ว</span>
                 </div>
                 <div className="text-3xl font-bold font-mono tabular-nums text-gray-900 leading-none">{n(d.houses.total)}</div>
@@ -103,7 +104,7 @@ export default function OmDashboardPage() {
 
               <div className="rounded-2xl bg-white border border-gray-200 p-4 flex flex-col">
                 <div className="flex items-baseline justify-between mb-3">
-                  <span className="text-sm font-bold uppercase tracking-[0.15em] text-teal-700">สิทธิ์ล้างคงเหลือ</span>
+                  <span className="text-sm font-bold text-teal-700">สิทธิ์ล้างคงเหลือ</span>
                   <span className="text-xs font-semibold text-gray-400">ครั้ง</span>
                 </div>
                 <div className="text-3xl font-bold font-mono tabular-nums text-gray-900 leading-none">{n(d.quota.left)}</div>
@@ -115,20 +116,37 @@ export default function OmDashboardPage() {
 
               <div className="rounded-2xl bg-white border border-gray-200 p-4 flex flex-col">
                 <div className="flex items-baseline justify-between mb-3">
-                  <span className="text-sm font-bold uppercase tracking-[0.15em] text-violet-700">งานในลิสต์บริการ</span>
+                  <span className="text-sm font-bold text-violet-700">งานในลิสต์บริการ</span>
                   <Link href="/om/services" className="text-xs font-semibold text-violet-600 hover:underline">เปิดลิสต์ →</Link>
                 </div>
                 <div className="text-3xl font-bold font-mono tabular-nums text-gray-900 leading-none">{n(d.jobs_total)}</div>
                 <div className="mt-2 text-xxs text-gray-400 leading-relaxed">
                   เลขเดียวกับตัวเลขบนการ์ด O&M หน้าแรก — ทุกแท็บในลิสต์ ยกเว้นปิดงาน
                 </div>
+                {/* 3 กองที่รวมกันได้เลขใหญ่ (ผู้ใช้เคาะ 14 ต.ค. 69 · เดิมการ์ดนี้มีแต่เลขเดียว โล่งกว่าอีก 2 ใบ)
+                    ใบงานเปิดอยู่ = ส่วนที่เหลือ จึงรวมได้เท่าเลขใหญ่เสมอ ไม่ต้องไล่ชื่อแท็บให้ครบ */}
+                {(() => {
+                  const g = (k: string) => d.buckets[k] ?? 0;
+                  const stuck = g("unreachable") + g("declined") + g("noquota");
+                  return (
+                    <div className="mt-auto pt-4 grid grid-cols-3 gap-1.5">
+                      <Chip n={n(g("follow"))} l="ต้องโทร" tone={TONE_SOFT.follow} href="/om/services?tab=follow" />
+                      <Chip n={n(d.jobs_total - g("follow") - stuck)} l="ใบงานเปิดอยู่" tone="bg-violet-50 text-violet-700" />
+                      {/* ตัดบรรทัดได้แค่ตรง · — ปล่อยให้เบราว์เซอร์ตัดเองได้ "สิทธิ์ / หมด" · "ไม่ / เอา" */}
+                      <Chip n={n(stuck)} tone="bg-rose-50 text-rose-700"
+                        l={["ติดต่อไม่ได้", "ไม่เอา", "สิทธิ์หมด"].map((t, i) => (
+                          <span key={t}>{i > 0 && " · "}<span className="whitespace-nowrap">{t}</span></span>
+                        ))} />
+                    </div>
+                  );
+                })()}
               </div>
             </div>
 
             {/* แถว 2 — งานแยกตามแท็บ ชุดเดียวกับหน้ารายการ กดแล้วเด้งไปแท็บนั้นเลย */}
             <div className="rounded-2xl bg-white border border-gray-200 p-4">
               {/* ★ 14 ต.ค. 69 ชื่อเดิม "งานค้างแยกตามขั้น" แต่มีแท็บปิดงานด้วย · 10 แท็บใน 9 คอลัมน์ ช่องสุดท้ายตกไปแถวสองตัวเดียว */}
-              <div className="text-sm font-bold uppercase tracking-[0.15em] text-gray-500 mb-3">งานแยกตามแท็บ</div>
+              <div className="text-sm font-bold text-gray-500 mb-3">งานแยกตามแท็บ</div>
               <div className="grid grid-cols-2 sm:grid-cols-5 lg:grid-cols-10 gap-1.5">
                 {TABS.map((t) => (
                   <Chip key={t.k} n={n(d.buckets[t.k] ?? 0)} l={t.t}
@@ -141,7 +159,7 @@ export default function OmDashboardPage() {
             {/* แถว 3 — โครงการ + งานล้างย้อนหลัง */}
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-3">
               <div className="rounded-2xl bg-white border border-gray-200 p-4">
-                <div className="text-sm font-bold uppercase tracking-[0.15em] text-gray-500 mb-3">โครงการที่ต้องโทรมากที่สุด</div>
+                <div className="text-sm font-bold text-gray-500 mb-3">โครงการที่ต้องโทรมากที่สุด</div>
                 {d.projects.length === 0 ? <div className="text-sm text-gray-400 py-6 text-center">ยังไม่มีข้อมูล</div> : (
                   <div className="space-y-1">
                     {d.projects.map((p) => (
@@ -164,7 +182,7 @@ export default function OmDashboardPage() {
               </div>
 
               <div className="rounded-2xl bg-white border border-gray-200 p-4 flex flex-col">
-                <div className="text-sm font-bold uppercase tracking-[0.15em] text-gray-500 mb-3">งานล้างที่ทำจริง ย้อนหลัง 12 เดือน</div>
+                <div className="text-sm font-bold text-gray-500 mb-3">งานล้างที่ทำจริง ย้อนหลัง 12 เดือน</div>
                 {/* ★ 14 ต.ค. 69 แท่งไม่ขึ้นเลย — คอลัมน์สูงตามเนื้อหา height % ของแท่งเลยเป็น 0
                     ⇒ คอลัมน์ยืดเต็มความสูงกราฟ แท่งเป็น absolute ในราง flex-1 (absolute คิด % จากความสูงจริงเสมอ)
                     API เติมเดือนที่ไม่มีงานเป็น 0 ให้ครบ 12 แท่งแล้ว · แท่งท้ายสุด = เดือนนี้ ยังไม่จบเดือน จึงสีอ่อน */}
@@ -199,7 +217,7 @@ export default function OmDashboardPage() {
                   API ยังส่ง teams มา (ลำดับผลลัพธ์อ้างด้วย index) แต่ไม่แสดงแล้ว */}
             <div className="grid grid-cols-1 gap-3">
               <div className="rounded-2xl bg-white border border-gray-200 p-4">
-                <div className="text-sm font-bold uppercase tracking-[0.15em] text-gray-500 mb-3">เจ้าของเคส · ใบงานที่ยังไม่ปิด</div>
+                <div className="text-sm font-bold text-gray-500 mb-3">เจ้าของเคส · ใบงานที่ยังไม่ปิด</div>
                 {d.owners.length === 0 ? <div className="text-sm text-gray-400 py-6 text-center">ยังไม่มีใบงานค้าง</div> : (
                   <div className="space-y-1">
                     {d.owners.map((o) => (

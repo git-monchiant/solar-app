@@ -204,8 +204,14 @@ export async function PATCH(req: NextRequest, ctx: { params: Promise<{ id: strin
             .input("h", sql.Int, cur.house_id).input("t", sql.Int, cur.service_type_id)
             .query(`SELECT ISNULL(SUM(balance), 0) balance FROM om_entitlement_balance
                     WHERE house_id = @h AND service_type_id = @t`)).recordset[0]?.balance ?? 0;
+          // วันที่ล้าง = วันนัด แต่ไม่เกินวันนี้ (เวลาไทย)
+          //   ★ 14 ต.ค. 69 ปิดงานก่อนถึงวันนัดได้ เดิมลงวันนัดตรง ๆ → วันล้างอยู่ในอนาคต
+          //     กราฟภาพรวมโผล่เดือนที่ยังไม่ถึง และ "ล้างล่าสุด" ของบ้านเลยวันนี้ไป
+          //     (เดิม fallback เป็น toISOString() ซึ่งเป็นเวลา UTC — ก่อน 7 โมงเช้าได้วันของเมื่อวาน)
+          const today = new Date().toLocaleDateString("en-CA", { timeZone: "Asia/Bangkok" });
+          const appt = (when ?? cur.scheduled_at)?.slice(0, 10);
           await new sql.Request(tx).input("i", sql.Int, inst.id).input("b", sql.Int, id)
-            .input("d", sql.Date, (when ?? cur.scheduled_at ?? new Date().toISOString()).slice(0, 10))
+            .input("d", sql.Date, appt && appt < today ? appt : today)
             .input("t", sql.Int, cur.service_type_id)
             .input("n", sql.NVarChar(300), left > 0
               ? "ตัดสิทธิ์อัตโนมัติเมื่อปิดงาน"

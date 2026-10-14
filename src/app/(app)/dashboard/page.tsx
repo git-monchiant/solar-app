@@ -868,7 +868,7 @@ export default function DashboardPage() {
                 {/* Leads */}
                 <div className="rounded-2xl bg-white border border-gray-200 p-4 flex flex-col">
                   <div className="flex items-baseline justify-between mb-3">
-                    <span className="text-sm font-bold uppercase tracking-[0.15em] text-gray-500">Leads ทั้งหมด</span>
+                    <span className="text-sm font-bold text-gray-500">Leads ทั้งหมด</span>
                     <span className="text-xs font-semibold text-emerald-600">+{data.this_month.new_leads || 0} {periodLabel}</span>
                   </div>
                   <button
@@ -887,7 +887,7 @@ export default function DashboardPage() {
                 {/* ติดต่อได้ — ปลายทาง */}
                 <div className="rounded-2xl bg-white border border-gray-200 p-4 flex flex-col">
                   <div className="flex items-baseline justify-between mb-3">
-                    <span className="text-sm font-bold uppercase tracking-[0.15em] text-emerald-700">ติดต่อได้ — ปลายทาง</span>
+                    <span className="text-sm font-bold text-emerald-700">ติดต่อได้ — ปลายทาง</span>
                     <span className="text-xs font-semibold text-gray-500">{pct(contactedYes, filteredLifecycleRows.length)}% reach</span>
                   </div>
                   <button
@@ -912,7 +912,7 @@ export default function DashboardPage() {
                     different months) shows the real cash instead of a fiction. */}
                 <div className="rounded-2xl bg-teal-200 border border-teal-400 p-4 flex flex-col">
                   <div className="flex items-baseline justify-between mb-3">
-                    <span className="text-sm font-bold uppercase tracking-[0.15em] text-teal-800">มูลค่างานที่นัดติดตั้ง</span>
+                    <span className="text-sm font-bold text-teal-800">มูลค่างานที่นัดติดตั้ง</span>
                     <span className="text-xs font-semibold text-teal-700">{periodLabel}</span>
                   </div>
                   {/* Contract value of every job with an install appointment in
@@ -964,7 +964,7 @@ export default function DashboardPage() {
                       onClick={openBucket("ชำระจองสำรวจ", bookingPaidRows.filter(r => r.status !== "lost"))}
                       className={`text-3xl font-bold font-mono tabular-nums text-emerald-700 leading-none ${bigNumCls}`}
                     >{bookingPaidCount - stepLostAfterRows.length}</button>
-                    <span className="text-sm font-bold uppercase tracking-[0.15em] text-emerald-700">ชำระจองสำรวจ</span>
+                    <span className="text-sm font-bold text-emerald-700">ชำระจองสำรวจ</span>
                     {stepLostAfterRows.length > 0 && (
                       <button
                         type="button"
@@ -985,7 +985,7 @@ export default function DashboardPage() {
                       onClick={() => setBucket({ title: s.l, rows: s.rows })}
                       className={`cursor-pointer text-left rounded-xl border p-3 ${s.cardBg} ${s.cardBorder} hover:ring-2 hover:ring-offset-1 hover:ring-gray-300 transition-all`}
                     >
-                      <div className={`text-sm font-bold uppercase tracking-[0.1em] leading-tight ${s.labelColor}`}>{s.l}</div>
+                      <div className={`text-sm font-bold leading-tight ${s.labelColor}`}>{s.l}</div>
                       <div className={`text-2xl font-bold font-mono tabular-nums leading-none mt-1.5 ${s.dark ? "text-white" : "text-gray-900"}`}>{s.rows.length}</div>
                       {s.detail
                         ? <div className={`text-xxs mt-1.5 font-mono tabular-nums leading-tight ${s.dark ? "text-white/85" : "text-gray-500"}`}>{s.detail}</div>
