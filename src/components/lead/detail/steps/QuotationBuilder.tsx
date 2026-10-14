@@ -47,12 +47,18 @@ type Item = {
 type PaymentMethod = (typeof PAYMENT_INTERESTS)[number]["value"];
 const readPaymentMethod = (value: unknown): PaymentMethod | null =>
   PAYMENT_INTERESTS.find((o) => o.value === value)?.value ?? null;
+// ป้ายบนปุ่มในแผงขวา (กว้าง 3 ช่อง) — ชื่อเต็มอยู่ใน title / ป้าย "ลูกค้าสนใจ"
+const PAYMENT_METHOD_SHORT: Record<PaymentMethod, string> = {
+  cash: "เงินสด / โอน",
+  loan: "สินเชื่อ",
+  credit_card: "บัตรเครดิต",
+};
 type DocumentInputs = {
   om: QuotationOmSettings;
   // ชุดเงื่อนไข/ข้อกำหนดที่แก้เฉพาะใบนี้ · null = ยังใช้ชุดมาตรฐานในโค้ด
   terms: QuotationTermTree | null;
   recommendation_reason: string;
-  // รูปแบบการชำระที่ใบนี้เสนอ (รหัสเดียวกับ PAYMENT_INTERESTS) · null = ไม่ระบุ
+  // รูปแบบการชำระที่ใบนี้เสนอ (รหัสเดียวกับ PAYMENT_INTERESTS) · null = ยังไม่เลือก (บันทึกไม่ได้)
   // รายงานสำรวจแสดงเฉพาะทางเลือกที่ตรงกัน — แผน 20261012-06
   payment_method: PaymentMethod | null;
   // % ค่าธรรมเนียมผ่อนบัตร 10 เดือน · null = ไม่กรอก (รายงานพิมพ์เส้นว่าง)
@@ -1313,9 +1319,11 @@ function QuotationEditor({
         saved.terms?.profile === "additional_install" ? "additional_install" : "full_install",
       ),
       recommendation_reason: saved.recommendation_reason || "",
-      // ใบใหม่ตั้งตามคำตอบ Pre-Survey · ใบที่บันทึกแล้วยึดค่าในใบ — ใบเก่าที่ไม่มีช่องนี้
-      // = ไม่ระบุ ให้ตรงกับ PDF ที่เรนเดอร์จากใบ (ห้ามดึงจาก lead มาเติม ใบเก่าจะเปลี่ยนเอง)
-      payment_method: readPaymentMethod(quote ? saved.payment_method : lead.payment_interest),
+      // ใบที่บันทึกแล้วยึดค่าในใบ · ใบใหม่และใบเก่าที่ยังไม่มีค่าตั้งตามคำตอบใน Customer Info
+      // (ไม่มีตัวเลือก "ไม่ระบุ" แล้ว — ลูกค้ายังไม่ตอบ = ว่าง ต้องเลือกก่อนบันทึก ดู validate)
+      payment_method:
+        readPaymentMethod(quote ? saved.payment_method : null) ??
+        readPaymentMethod(lead.payment_interest),
       credit_card_fee_percent:
         saved.credit_card_fee_percent == null ? null : Number(saved.credit_card_fee_percent),
       loan_enabled: saved.loan_enabled ?? GSB_SOLAR_LOAN_DEFAULTS.loan_enabled,
@@ -1518,6 +1526,7 @@ function QuotationEditor({
       return "ไม่พบค่าไฟเฉลี่ยต่อเดือน — กรุณากรอกในแบบสอบถามลูกค้า (Customer Info) หรือฟอร์มสำรวจ";
     if (termsPercentTotal !== 100)
       return `ยอดรวมงวดชำระเงินต้องเท่ากับ 100% (ปัจจุบัน ${termsPercentTotal}%)`;
+    if (!documentInputs.payment_method) return "กรุณาเลือกรูปแบบการชำระเงิน";
     if (issueDate > todayIso()) return "วันที่ใบเสนอราคาต้องไม่เป็นวันที่ล่วงหน้า";
     return "";
   };
@@ -2174,13 +2183,15 @@ function QuotationEditor({
                     </span>
                   )}
                 </div>
-                <div className="mt-1.5 grid grid-cols-2 gap-1">
-                  {[{ value: null, label: "ไม่ระบุ" }, ...PAYMENT_INTERESTS].map((option) => {
+                {/* ต้องเลือก 1 แบบ — ไม่มี "ไม่ระบุ" (ผู้ใช้สั่งตัดออก 14 ต.ค.) · ป้ายสั้นให้พอดี 3 ช่อง */}
+                <div className="mt-1.5 grid grid-cols-3 gap-1">
+                  {PAYMENT_INTERESTS.map((option) => {
                     const active = documentInputs.payment_method === option.value;
                     return (
                       <button
-                        key={option.value ?? "none"}
+                        key={option.value}
                         type="button"
+                        title={option.label}
                         onClick={() =>
                           setDocumentInputs((current) => ({
                             ...current,
@@ -2193,15 +2204,13 @@ function QuotationEditor({
                             : "border-gray-200 bg-white text-gray-600 hover:border-gray-300"
                         }`}
                       >
-                        {option.label}
+                        {PAYMENT_METHOD_SHORT[option.value]}
                       </button>
                     );
                   })}
                 </div>
-                {/* ทางเลือกบัตรเครดิตมีในรายงานเฉพาะใบ "บัตรเครดิต" กับ "ไม่ระบุ" (แสดงครบ)
-                    — ไม่กรอก = รายงานเว้นเส้นให้เขียนมือ */}
-                {(documentInputs.payment_method === "credit_card" ||
-                  documentInputs.payment_method === null) && (
+                {/* ทางเลือกบัตรเครดิตมีในรายงานเฉพาะใบ "บัตรเครดิต" — ไม่กรอก = รายงานเว้นเส้นให้เขียนมือ */}
+                {documentInputs.payment_method === "credit_card" && (
                   <div className="mt-1.5 grid grid-cols-[minmax(0,1fr)_72px] items-center gap-1">
                     <span className="text-xxs text-gray-500">ค่าธรรมเนียมผ่อนบัตร 10 เดือน</span>
                     <div className="relative">
@@ -2229,14 +2238,18 @@ function QuotationEditor({
                     </div>
                   </div>
                 )}
-                <p className="mt-1 text-xxs text-gray-400">
+                <p
+                  className={`mt-1 text-xxs ${
+                    documentInputs.payment_method ? "text-gray-400" : "text-amber-600"
+                  }`}
+                >
                   {documentInputs.payment_method === "loan"
                     ? "รายงานสำรวจแสดงเฉพาะสินเชื่อ + ตารางผ่อน"
                     : documentInputs.payment_method === "cash"
                       ? "รายงานสำรวจแสดงเฉพาะเงินสด + ตารางความคุ้มค่า"
                       : documentInputs.payment_method === "credit_card"
                         ? "รายงานสำรวจแสดงเฉพาะผ่อนบัตร + ตารางความคุ้มค่า"
-                        : "รายงานสำรวจแสดงทุกทางเลือก"}
+                        : "ลูกค้ายังไม่ได้ตอบใน Customer Info — เลือกก่อนบันทึก"}
                 </p>
               </div>
 

@@ -430,7 +430,12 @@ export function buildSurveyReportHtml(L, D, PKG, options = {}) {
   const ccFeeRaw = options.financial?.inputs?.credit_card_fee_percent;
   const ccFee = ccFeeRaw === null || ccFeeRaw === undefined || String(ccFeeRaw).trim() === "" || !Number.isFinite(Number(ccFeeRaw)) ? null : Number(ccFeeRaw);
   const ccBase = quotation.contractAmount ?? gross ?? quotation.netAmount ?? PKG?.price ?? null;
-  const ccRest = ccBase != null ? Math.round(Number(ccBase) * 0.8) : null;
+  // ยอดที่ผ่อนบัตร = งวดสุดท้ายในใบเสนอราคา (หลังหักเงินจอง ตรงกับตารางงวดในใบ)
+  // · รายงานเดี่ยวที่ไม่มีใบ ใช้ 80% ของราคา
+  const lastInst = quotation.lastInstallment;
+  const ccPct = lastInst ? Number(lastInst.percent) : 80;
+  const ccPctTxt = num(ccPct, Number.isInteger(ccPct) ? 0 : 2);
+  const ccRest = lastInst ? Number(lastInst.amount) : ccBase != null ? Math.round(Number(ccBase) * 0.8) : null;
   const ccFeeAmt = ccFee != null && ccRest != null ? Math.round(ccRest * ccFee / 100) : null;
   const ccMonthly = ccFee != null && ccRest != null ? Math.round(ccRest * (1 + ccFee / 100) / 10) : null;
   // ผ่อนบัตร: จุดคุ้มทุนนับค่าธรรมเนียมบัตรด้วย (เหมือนสินเชื่อนับดอกเบี้ย) · ไม่มีค่าธรรมเนียม = แบบเงินสด
@@ -595,7 +600,7 @@ export function buildSurveyReportHtml(L, D, PKG, options = {}) {
     <table class="banks"><thead><tr><th style="width:30%">รายการ</th><th>รายละเอียด</th></tr></thead><tbody>
       <tr><td>ระยะเวลาผ่อนชำระ</td><td>10 เดือน</td></tr>
       <tr><td>ค่าธรรมเนียมบัตรเครดิต (Credit Card Fee)</td><td>${ccFeeTxt} % ของยอดชำระ (เรียกเก็บเพิ่มจากยอดที่ต้องผ่อน ขึ้นอยู่กับธนาคารที่ลูกค้าเลือก)</td></tr>
-      <tr><td>ยอดผ่อนชำระต่อเดือนโดยประมาณ</td><td>${ccMonthlyTxt} บาท/เดือน (คำนวณจากยอด 80% + ค่าธรรมเนียม)</td></tr></tbody></table>`;
+      <tr><td>ยอดผ่อนชำระต่อเดือนโดยประมาณ</td><td>${ccMonthlyTxt} บาท/เดือน (คำนวณจากยอด ${ccPctTxt}% + ค่าธรรมเนียม)</td></tr></tbody></table>`;
   const OPT_LOAN = `${optHead(3, "สินเชื่อธนาคารออมสิน (GSB Solar Soft Loan)")}
     <p class="lead">ลูกค้าสามารถยื่นขอสินเชื่อกับธนาคารออมสิน ภายใต้โครงการ Soft Loan GSB พลิกฟื้นธุรกิจไทย สำหรับติดตั้งระบบโซลาร์เซลล์ (ที่มา: ธนาคารออมสิน gsb.or.th/promotions/gsbsolar4life) โดยมีเงื่อนไขสำคัญโดยสรุปดังนี้</p>
     <table class="banks"><tbody>
@@ -711,7 +716,7 @@ export function buildSurveyReportHtml(L, D, PKG, options = {}) {
   const shownPayback = cardPaybackCalc ?? cashPayback;
   const wr = `<span class="wr"></span>`;
   const CASH_SYSTEM=[["มูลค่า Solar Package (บาท)",baht(C.price),"in"],["ขนาด Solar ที่ติด (kW)",num(C.kw,1),"in"],["หน่วยไฟที่ผลิตได้/เดือน (kWh)",num(C.kwh,1)],["ค่าไฟต่อหน่วย (บาท/kWh)",num(C.unit,2)],["ค่าไฟปัจจุบัน (บาท/เดือน)",baht(C.bill),"in"],["ประหยัดได้หลังติด Solar (บาท/เดือน)",baht(C.save)]];
-  const CASH_CARD=[["ยอดส่วนที่เหลือ 80% (บาท)",ccRest!=null?baht(ccRest):wr],["ค่าธรรมเนียมบัตรเครดิต (%)",ccFee!=null?`${num(ccFee,Number.isInteger(ccFee)?0:2)}%`:`${wr} %`],["ค่าธรรมเนียมบัตรเครดิต (บาท)",ccFeeAmt!=null?baht(ccFeeAmt):wr],["ยอดผ่อนต่อเดือนโดยประมาณ (บาท/เดือน)",ccMonthly!=null?baht(ccMonthly):wr]];
+  const CASH_CARD=[[`ยอดส่วนที่เหลือ ${ccPctTxt}% (บาท)`,ccRest!=null?baht(ccRest):wr],["ค่าธรรมเนียมบัตรเครดิต (%)",ccFee!=null?`${num(ccFee,Number.isInteger(ccFee)?0:2)}%`:`${wr} %`],["ค่าธรรมเนียมบัตรเครดิต (บาท)",ccFeeAmt!=null?baht(ccFeeAmt):wr],["ยอดผ่อนต่อเดือนโดยประมาณ (บาท/เดือน)",ccMonthly!=null?baht(ccMonthly):wr]];
   const CASH_RESULT=[[cardPaybackCalc?"จุดคุ้มทุน รวมค่าธรรมเนียมบัตร (เดือน)":"จุดคุ้มทุน (เดือน)",shownPayback?`${num(shownPayback,0)} (${num(shownPayback/12,1)} ปี)`:"—"],["ค่าไฟรวม 25 ปี ถ้าไม่ติด Solar (บาท)",baht(C.bill*300)],["ถ้าติด 25 ปี ประหยัดค่าไฟได้ (บาท)",baht(Math.round(C.save25))],["ลดการปล่อย CO₂ ต่อปี (ตัน)",num(C.co2Yr,2)],["ลดการปล่อย CO₂ เทียบเท่าปลูกต้นไม้ (ต้น)",baht(C.trees)]];
   const pCash = !noLoan ? "" : page(11, `${P12_HEAD}
     ${isCard ? OPT_CARD : OPT_CASH}
@@ -722,7 +727,7 @@ export function buildSurveyReportHtml(L, D, PKG, options = {}) {
       <div class="calc-cols">
         <div class="calc-col">
           <div class="csec">ข้อมูลระบบและค่าไฟ</div>${ctRows(CASH_SYSTEM)}
-          ${isCard ? `<div class="csec">ผ่อนบัตรเครดิต 10 เดือน (ส่วนที่เหลือ 80%)</div>${ctRows(CASH_CARD)}` : ""}
+          ${isCard ? `<div class="csec">ผ่อนบัตรเครดิต 10 เดือน (ส่วนที่เหลือ ${ccPctTxt}%)</div>${ctRows(CASH_CARD)}` : ""}
         </div>
         <div class="calc-col">
           <div class="csec">ผลการวิเคราะห์</div>${ctRows(CASH_RESULT)}

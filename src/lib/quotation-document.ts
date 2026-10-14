@@ -30,7 +30,7 @@ export type QuotationDocumentInputs = {
   terms: QuotationTermTree | null;
   recommendation_reason: string;
   // รูปแบบการชำระที่ใบนี้เสนอ — รายงานสำรวจแสดงเฉพาะทางเลือกที่ตรงกัน
-  // null = ไม่ระบุ แสดงทุกทางเลือกเหมือนก่อนมีช่องนี้
+  // null = ใบเก่าที่ไม่ได้เลือกและลูกค้าไม่ได้ตอบใน Customer Info → แสดงทุกทางเลือกแบบเดิม
   payment_method: QuotationPaymentMethod | null;
   // % ค่าธรรมเนียมผ่อนบัตรเครดิต 10 เดือน · null = ไม่กรอก พิมพ์เส้นว่างให้เขียนมือ
   // ใช้แสดงในรายงานอย่างเดียว ไม่บวกเข้ายอดใบ (ค่าธรรมเนียมจริงคิดที่ขั้น Order)
@@ -191,8 +191,9 @@ export function parseDocumentInputs(raw: unknown, fallback: Partial<QuotationDoc
   } catch { /* use fallbacks */ }
   const number = (value: unknown, defaultValue: number) => Number.isFinite(Number(value)) ? Number(value) : defaultValue;
   const hasOwn = (key: string) => Object.prototype.hasOwnProperty.call(parsed ?? {}, key);
-  // เหมือน terms: ส่ง null มา = ผู้ใช้เลือก "ไม่ระบุ" ต้องไม่ถูก fallback ทับ
-  const paymentMethod = readPaymentMethod(hasOwn("payment_method") ? parsed.payment_method : fallback.payment_method);
+  // ไม่มีตัวเลือก "ไม่ระบุ" แล้ว (14 ต.ค.) — ใบที่ยังว่างใช้ fallback ซึ่งผู้สร้างเอกสาร
+  // ส่งคำตอบ Customer Info (lead_data.payment_interest) มา · snapshot ที่ freeze แล้วไม่ผ่านตรงนี้
+  const paymentMethod = readPaymentMethod(parsed.payment_method) ?? readPaymentMethod(fallback.payment_method);
   const feeRaw = hasOwn("credit_card_fee_percent") ? parsed.credit_card_fee_percent : fallback.credit_card_fee_percent;
   const fee = feeRaw === null || feeRaw === undefined || String(feeRaw).trim() === "" ? Number.NaN : Number(feeRaw);
   return {
@@ -370,6 +371,8 @@ export async function buildQuotationDocumentSnapshot(quotationId: number, transa
     ),
     loan_bank: String(row.finance_loan_bank || row.finance_bank || ""),
     loan_term_months: Number(row.finance_months || 84),
+    // ใบที่ยังไม่ได้เลือกรูปแบบการชำระ ใช้คำตอบใน Customer Info
+    payment_method: readPaymentMethod(sets[1]?.[0]?.payment_interest),
   };
   const inputs = parseDocumentInputs(row.document_inputs_json, defaults);
   const financial = calculateFinancialSnapshot(inputs, quotation, pkg);

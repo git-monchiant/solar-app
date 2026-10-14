@@ -14,6 +14,7 @@ import {
   calculateFinancialSnapshot,
   expandOtherPackageAddOns,
   parseDocumentInputs,
+  readPaymentMethod,
   QUOTATION_DOCUMENT_VERSION,
   type QuotationDocumentSnapshot,
 } from "@/lib/quotation-document";
@@ -241,7 +242,10 @@ export async function POST(req: NextRequest) {
     terms_text: body.termsText || "",
     created_by_name: "-",
   };
-  const inputs = parseDocumentInputs(body.documentInputs || {});
+  // รูปแบบการชำระที่ยังว่างใช้คำตอบใน Customer Info (เหมือน buildQuotationDocumentSnapshot)
+  const inputs = parseDocumentInputs(body.documentInputs || {}, {
+    payment_method: readPaymentMethod(previewLeadData.payment_interest),
+  });
   const snapshot: QuotationDocumentSnapshot = {
     version: QUOTATION_DOCUMENT_VERSION,
     generated_at: now,
@@ -385,6 +389,18 @@ export async function GET(
   } catch {
     /* keep empty */
   }
+  // ยอดเงินแต่ละงวด (งวดสุดท้ายรับเศษให้รวมเท่ายอดสุทธิพอดี) — ใช้ทั้งตารางงวดในใบ
+  // และยอดผ่อนบัตรใน §8 ของรายงานสำรวจ ให้สองเอกสารบอกยอดเดียวกัน
+  const outstandingAmount = Number(q.outstanding_amount) || 0;
+  const paymentAmounts: number[] = [];
+  terms.forEach((term, index) => {
+    const allocated = paymentAmounts.reduce((sum, amount) => sum + amount, 0);
+    paymentAmounts.push(
+      index === terms.length - 1
+        ? Math.round(Math.max(0, outstandingAmount - allocated) * 100) / 100
+        : Math.round(((outstandingAmount * Number(term.percent || 0)) / 100) * 100) / 100,
+    );
+  });
 
   const settings = snapshot.settings;
   const bankName =
@@ -620,6 +636,13 @@ export async function GET(
         ),
         depositAmount: Number(q.deposit_paid_amount || 0),
         netAmount: Number(q.outstanding_amount || 0),
+        // งวดสุดท้าย = ส่วนที่ผ่อนบัตรได้ใน §8 (ปกติคืองวด 80%)
+        lastInstallment: terms.length
+          ? {
+              percent: Number(terms[terms.length - 1].percent || 0),
+              amount: paymentAmounts[paymentAmounts.length - 1],
+            }
+          : undefined,
       },
       financial: snapshot.financial,
     },
@@ -641,23 +664,13 @@ export async function GET(
     ...addOnRows,
   ];
 
-  let allocatedPaymentAmount = 0;
   const paymentRows = terms
     .map((term, index) => {
       const percent = Number(term.percent || 0);
       const percentText = percent.toLocaleString("th-TH", {
         maximumFractionDigits: 2,
       });
-      const outstandingAmount = Number(q.outstanding_amount) || 0;
-      const calculatedAmount =
-        Math.round(((outstandingAmount * percent) / 100) * 100) / 100;
-      const paymentAmount =
-        index === terms.length - 1
-          ? Math.round(
-              Math.max(0, outstandingAmount - allocatedPaymentAmount) * 100,
-            ) / 100
-          : calculatedAmount;
-      allocatedPaymentAmount += paymentAmount;
+      const paymentAmount = paymentAmounts[index];
       return `<tr><td>${esc(term.label)}</td><td class="center">${percentText}%</td><td>${esc(term.due)}</td><td class="center">เป็นจำนวนเงิน</td><td class="right">${money(paymentAmount)}</td></tr>`;
     })
     .join("");

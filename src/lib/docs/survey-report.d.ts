@@ -12,6 +12,8 @@ type SurveyReportOptions = {
     contractAmount?: number;
     depositAmount?: number;
     netAmount?: number;
+    /** งวดสุดท้ายในใบเสนอราคา (% และยอดเงินจริงหลังหักเงินจอง) — ยอดผ่อนบัตรใน §8 */
+    lastInstallment?: { percent: number; amount: number };
   };
   /** ชื่อแพ็กเกจที่จะแสดงใน §4 — บรรทัดแรกของรายการในใบเสนอราคา */
   packageTitle?: string;
