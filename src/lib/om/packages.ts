@@ -40,9 +40,35 @@ export const omPlanLabel = (p: Pick<OmPackage, "plan_type" | "contract_months" |
     .filter(Boolean).join(" ");
 };
 
-/** ขอบเขตงานเก็บเป็นข้อความคั่นด้วย "+" (แบบตารางราคาต้นฉบับ) → แยกเป็นรายข้อสำหรับ bullet */
-export const omScopeItems = (scope: string | null | undefined) =>
-  (scope ?? "").split("+").map((s) => s.trim()).filter(Boolean);
+/**
+ * ช่วง kW ของแพ็กเกจที่ "ตรงกับบ้าน" (แผน 20261014-05 · ผู้ใช้เคาะ 14 ต.ค. 69) — ใช้เตือนอย่างเดียว ไม่บล็อก
+ *   · ช่วงครอบขนาดบ้าน = ตรง
+ *   · บ้านเล็กกว่าช่วงแรก = ช่วงแรก (ชื่อแพ็กเกจมี "หรือจำนวนแผงไม่เกิน N แผง" — ระบบเล็กกว่านี้แผงไม่เกินแน่นอน)
+ *   · บ้านใหญ่กว่าช่วงสุดท้าย = ช่วงสุดท้าย + over (ใส่ส่วนที่เกินเป็นงานเพิ่ม)
+ * ไม่มีขนาดบ้าน / ไม่มีแพ็กเกจ = null
+ */
+export function omFitTier(pkgs: readonly Pick<OmPackage, "kw_min" | "kw_max">[], kw: number):
+  { kw_min: number; kw_max: number; over: boolean } | null {
+  if (!(kw > 0) || pkgs.length === 0) return null;
+  const tiers = [...pkgs].sort((a, b) => a.kw_max - b.kw_max);
+  const hit = tiers.find((t) => kw <= t.kw_max);
+  const tier = hit ?? tiers[tiers.length - 1];
+  return { kw_min: tier.kw_min, kw_max: tier.kw_max, over: !hit };
+}
+
+/** แพ็กเกจอยู่ช่วง kW เดียวกับช่วงที่ตรงกับบ้านไหม (omFitTier) */
+export const omSameTier = (p: Pick<OmPackage, "kw_min" | "kw_max">, t: Pick<OmPackage, "kw_min" | "kw_max">) =>
+  p.kw_min === t.kw_min && p.kw_max === t.kw_max;
+
+/**
+ * ขอบเขตงาน → รายข้อ (bullet ในแคตตาล็อก · รายละเอียดตั้งต้นใต้แพ็กเกจในใบเสนอราคา)
+ * ★ แผน 20261014-04: บรรทัดละข้อ แบบใบตัวอย่างของบริษัท · ข้อมูลเก่าคั่นด้วย "+" (ตารางราคาต้นฉบับ) ยังอ่านได้
+ *   ตัวเลขครั้ง/เดือนเขียนลงข้อความของแต่ละแพ็กเกจตรง ๆ (ผู้ใช้สั่ง 14 ต.ค. — ไม่ใช้ตัวแทนค่า)
+ */
+export const omScopeItems = (scope: string | null | undefined) => {
+  const text = scope ?? "";
+  return text.split(/\r?\n/.test(text) ? /\r?\n/ : "+").map((s) => s.trim()).filter(Boolean);
+};
 
 type Parsed =Omit<OmPackage, "id">;
 

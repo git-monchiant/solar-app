@@ -134,6 +134,8 @@ export interface Item {
   balance: number; last_wash: string | null; wash_count: number;
   customer_id: number | null; customer_name: string | null; phone: string | null;
   kwp_list: string | null; warranty_start: string | null;
+  /** ยี่ห้ออินเวอร์เตอร์ของบ้าน ("SMA" · "ABB + HUAWEI") — หัวรายการใบเสนอราคา O&M (แผน 20261014-04) · ทะเบียนว่าง = null */
+  inverter_list?: string | null;
   /** วันหมดประกันจากใบรับประกันฝั่งขาย — บ้าน REM ไม่มี (เฟส 5 ใช้เลือก "ในประกัน" ให้ก่อน) */
   warranty_end: string | null;
   calls: number; no_answer: number; last_call_at: string | null; next_call: string | null;

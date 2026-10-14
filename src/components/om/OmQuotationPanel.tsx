@@ -21,7 +21,8 @@ import { useDialog } from "@/components/ui/Dialog";
 import ModalBase from "@/components/ui/ModalBase";
 import { ApprovalFlowStatus } from "@/components/lead/detail/steps/QuotationBuilder";
 import QuotationTermsEditor from "@/components/lead/detail/steps/QuotationTermsEditor";
-import { OM_TERMS_NO_SALES_OM, OM_TERMS_PROFILE, omTermTree } from "@/lib/om/om-terms";
+import { OM_TERMS_NO_SALES_OM, OM_TERMS_PROFILE, omServiceTitle, omTermTree } from "@/lib/om/om-terms";
+import { omFitTier, omSameTier, omScopeItems } from "@/lib/om/packages";
 import type { QuotationTermTree } from "@/lib/quotation-terms";
 import type { Item } from "@/lib/om/service-view";
 
@@ -54,6 +55,8 @@ export type Quote = {
   issue_date: string | null; valid_days: number | null;
   /** เงื่อนไข/ข้อกำหนดที่แก้ไว้ในใบ (แผน 20261002-07) — null = ใช้ชุดจาก Package O&M */
   terms: QuotationTermTree | null;
+  /** หัวรายการแพ็กเกจที่ Sale แก้ (แผน 20261014-04) — null = ยังไม่เคยแก้ */
+  doc_title: string | null;
 };
 
 // เปิด PDF ตรง ๆ (ไม่ใช่ blob) ให้ชื่อไฟล์จาก server ติดไปถึงปุ่มดาวน์โหลด — แบบเดียวกับหน้าคิวอนุมัติ
@@ -614,9 +617,9 @@ const splitItems = (items: Quote["items"]) => {
 
 /** รายละเอียดตั้งต้นของแพ็กเกจ = ขอบเขตงานใน Package O&M ("ล้างแผง+ตรวจสอบระบบ+…" → บรรทัดละข้อ)
  *  แทนรายการอุปกรณ์จาก Package Master ของฝั่งขาย · หน่วยว่าง ⇒ ใบพิมพ์แค่ "- ชื่อ" */
+// ขอบเขตงานบรรทัดละข้อ — ตัวแยกเดียวกับแคตตาล็อก (แผน 20261014-04)
 const scopeDetails = (p: Pkg | null): Detail[] =>
-  (p?.scope ?? "").split(/[+\n]/).map((x) => x.trim()).filter(Boolean)
-    .map((name) => ({ key: lineKey(), item_name: name, quantity: 1, unit: "" }));
+  omScopeItems(p?.scope).map((name) => ({ key: lineKey(), item_name: name, quantity: 1, unit: "" }));
 
 const CELL =
   "h-8 w-full min-w-0 rounded-md border border-transparent bg-transparent px-1.5 text-xxs text-gray-700 outline-none transition-colors placeholder:text-gray-300 hover:border-gray-200 focus:border-primary focus:bg-white";
@@ -668,10 +671,10 @@ function DetailRows({ details, onChange, onRestore }: {
 }
 
 /** ป๊อปอัปเลือก Package O&M — ยก PackagePickerDialog ของ QuotationBuilder ฝั่งขาย (ช่องค้นหา + จัดกลุ่ม) */
-function PackagePickerDialog({ pkgs, kw, replacing, onPick, onClose }: {
+function PackagePickerDialog({ pkgs, fit, replacing, onPick, onClose }: {
   pkgs: Pkg[];
-  /** ขนาดระบบของบ้าน — ป้าย "ตรงกับบ้านนี้" ที่กลุ่มช่วง kW */
-  kw: number;
+  /** ช่วง kW ที่ตรงกับบ้าน (omFitTier · แผน 20261014-05) — ป้าย "ตรงกับบ้านนี้" ที่กลุ่มช่วง kW */
+  fit: { kw_min: number; kw_max: number } | null;
   /** ใบมีแพ็กเกจอยู่แล้ว — ใบ O&M มีแพ็กเกจได้ตัวเดียว เลือกใหม่ = แทนตัวเดิม */
   replacing: boolean;
   onPick: (id: number) => void;
@@ -707,7 +710,7 @@ function PackagePickerDialog({ pkgs, kw, replacing, onPick, onClose }: {
         )}
         <div className="min-h-0 flex-1 overflow-y-auto">
           {groups.map(([tier, ps]) => {
-            const fits = kw > 0 && kw >= ps[0].kw_min && kw <= ps[0].kw_max;
+            const fits = !!fit && omSameTier(ps[0], fit);
             return (
               <div key={tier} className="border-t border-gray-100 first:border-t-0">
                 <div className="sticky top-0 z-10 bg-gray-50/95 px-3 py-1.5 text-xxs font-bold uppercase tracking-wider text-gray-500 backdrop-blur">
@@ -720,7 +723,8 @@ function PackagePickerDialog({ pkgs, kw, replacing, onPick, onClose }: {
                       <span aria-hidden="true" className="shrink-0 text-base">☀️</span>
                       <span className="min-w-0">
                         <span className="block truncate text-sm font-semibold text-gray-800">Package O&amp;M {tier} · {planLabel(p)}</span>
-                        <span className="text-xxs text-gray-400">{p.scope ? `ขอบเขตงาน: ${p.scope}` : planLabel(p)}</span>
+                        {/* ขอบเขตงานยาวหลายบรรทัดแล้ว (แผน 20261014-04) — ตัดเหลือ 2 บรรทัด ให้เทียบแพ็กเกจได้ในจอเดียว */}
+                        <span className="line-clamp-2 text-xxs text-gray-400">{p.scope ? `ขอบเขตงาน: ${omScopeItems(p.scope).join(" · ")}` : planLabel(p)}</span>
                       </span>
                     </span>
                     <span className="shrink-0 text-sm font-bold tabular-nums text-gray-700">{formatTHB(p.price)}</span>
@@ -777,6 +781,8 @@ function QuoteEditor({ item, optionNo, quote, onClose, onDone }: {
   // "ชื่อส่วนลด" = เหตุผลส่วนลดเดิม (บังคับเมื่อมีส่วนลด — Sale Sup ใช้ประกอบการอนุมัติ)
   const [reason, setReason] = useState(quote?.discount_reason ?? "");
   const [issueDate, setIssueDate] = useState(quote?.issue_date ? String(quote.issue_date).slice(0, 10) : todayIso());
+  // หัวรายการแพ็กเกจบนเอกสาร (แผน 20261014-04) — ใบที่ยังไม่เคยแก้ เติมจากข้อมูลบ้าน (กติกาเดียวกับ server)
+  const [title, setTitle] = useState(() => quote?.doc_title ?? omServiceTitle(item.kwp_list, item.inverter_list));
   // เงื่อนไขที่แก้ในใบ — null = ยังไม่แก้ (ใช้ชุด Master ของแพ็กเกจที่เลือกอยู่ ตามแพ็กเกจไปเอง) · แบบ documentInputs.terms ฝั่งขาย
   const [terms, setTerms] = useState<QuotationTermTree | null>(quote?.terms ?? null);
   const [busy, setBusy] = useState(false);
@@ -789,9 +795,11 @@ function QuoteEditor({ item, optionNo, quote, onClose, onDone }: {
       const list = (d.packages ?? []) as Pkg[];
       setPkgs(list);
       setNotes(((d.notes ?? []) as { body: string }[]).map((n) => String(n.body)));
-      // ใบใหม่: เลือกแพ็กเกจรายครั้งของช่วงขนาดบ้านไว้ให้ก่อน (ยังเปลี่ยนได้) — ยกเว้นใบงานซ่อม
-      if (!quote && kw > 0 && !isRepair) {
-        const hit = list.find((p) => p.plan_type === "per_visit" && kw >= p.kw_min && kw <= p.kw_max);
+      // ใบใหม่: เลือกแพ็กเกจรายครั้งของช่วงที่ตรงกับบ้านไว้ให้ก่อน (ยังเปลี่ยนได้) — ยกเว้นใบงานซ่อม
+      // ★ แผน 20261014-05: บ้าน < 2 kW ได้ช่วงเล็กสุด · > 20 kW ได้ช่วงใหญ่สุด (เดิมไม่เลือกให้)
+      const fitNow = omFitTier(list, kw);
+      if (!quote && fitNow && !isRepair) {
+        const hit = list.find((p) => p.plan_type === "per_visit" && omSameTier(p, fitNow));
         if (hit) { setPkgId(hit.id); setPkgDetails(scopeDetails(hit)); }
       }
       setPkgLoad("ready");
@@ -802,6 +810,17 @@ function QuoteEditor({ item, optionNo, quote, onClose, onDone }: {
   // ใบเดิมผูกแพ็กเกจที่ถูกปิดใช้งานไปแล้ว — ไม่อยู่ในรายการ ต้องเลือกใหม่หรือลบออกก่อนบันทึก (เดิมไม่มีแถวให้ลบ บันทึกได้ 500)
   const pkgGone = pkgLoad === "ready" && pkgId != null && !pkg;
   const pkgReady = pkgLoad === "ready";
+  // ช่วงแพ็กเกจที่ตรงกับขนาดบ้าน — เตือนอย่างเดียว ไม่บล็อก (แผน 20261014-05 · ผู้ใช้เคาะ 14 ต.ค.)
+  const fit = useMemo(() => omFitTier(pkgs, kw), [pkgs, kw]);
+  const kwText = `${Number(kw.toFixed(2))} kW`;
+  const fitTierText = fit ? `${fit.kw_min.toFixed(2)}–${fit.kw_max.toFixed(2)} kW` : "";
+  const sizeNote = !pkgReady || !pkg ? null
+    : !fit ? { warn: false, text: "ไม่มีข้อมูลขนาดระบบของบ้านนี้ในทะเบียน — ตรวจขนาดก่อนเลือกแพ็กเกจ" }
+    : !omSameTier(pkg, fit)
+      ? { warn: true, text: `บ้านนี้ขนาด ${kwText} — แพ็กเกจที่ตรงคือ ${fitTierText} (เลือกอยู่ ${tierLabel(pkg)})`
+          + (fit.over ? " · เกินแพ็กเกจใหญ่สุด ใส่ส่วนที่เกินเป็น “งานเพิ่ม”" : "") }
+    : fit.over ? { warn: true, text: `บ้านนี้ขนาด ${kwText} เกินแพ็กเกจใหญ่สุด (${fitTierText}) — ใส่ส่วนที่เกินเป็น “งานเพิ่ม”` }
+    : null;
   const subtotal = (pkg?.price ?? 0) + lines.reduce((s, x) => s + Math.max(0, x.quantity) * Math.max(0, x.unit_price), 0);
   const discountAmount = Math.round(Math.min(subtotal,
     discountType === "percent" ? (subtotal * Math.min(100, discountValue)) / 100 : discountValue) * 100) / 100;
@@ -809,10 +828,10 @@ function QuoteEditor({ item, optionNo, quote, onClose, onDone }: {
   const total = Math.max(0, subtotal - discountAmount);
   const validDays = Number(quote?.valid_days) || 7;
 
-  // ชุด Master ของแท็บเงื่อนไข = ขอบเขตงานของแพ็กเกจที่เลือก + หมายเหตุ Package O&M + อายุใบ (ชุดเดียวกับที่ server ใช้พิมพ์)
+  // ชุด Master ของแท็บเงื่อนไข = หมายเหตุ Package O&M (ชุดเดียวกับที่ server ใช้พิมพ์)
+  // ★ แผน 20261014-04: เลิกมีขอบเขตงาน (อยู่ในตารางแล้ว) และอายุใบ (กล่องยืนราคาที่หัวใบ)
   // ★ useMemo — ตัวแก้เงื่อนไขใช้ identity ของ master เป็น dependency
-  const scope = pkg?.scope ?? null;
-  const masterTerms = useMemo(() => omTermTree(scope ? [scope] : [], notes), [scope, notes]);
+  const masterTerms = useMemo(() => omTermTree(notes), [notes]);
 
   const setLine = (key: string, patch: Partial<Head>) => setLines((xs) => xs.map((x) => (x.key === key ? { ...x, ...patch } : x)));
   const moveLine = (i: number, dir: -1 | 1) => setLines((xs) => {
@@ -846,6 +865,8 @@ function QuoteEditor({ item, optionNo, quote, onClose, onDone }: {
   };
   const payload = () => ({
     house_id: item.house_id, option_no: optionNo, om_package_id: pkgId,
+    // หัวรายการแพ็กเกจ — ว่าง = server ใช้หัวรายการตั้งต้นจากข้อมูลบ้าน (ตัดทิ้งเองเมื่อไม่มีแพ็กเกจ)
+    doc_title: pkg ? title.trim() || null : null,
     // แพ็กเกจไม่ได้เก็บเป็นแถว ⇒ รายละเอียดของแพ็กเกจต้องมาก่อนหัวข้องานเพิ่มตัวแรก (server อ่านกลับตามลำดับนี้)
     items: [
       ...(pkg ? pkgDetails : []).filter((d) => d.item_name.trim())
@@ -975,6 +996,13 @@ function QuoteEditor({ item, optionNo, quote, onClose, onDone }: {
                   )}
                   <div className="space-y-2">
                     {/* แพ็กเกจเดิมถูกปิดใช้งาน — แถวเตือนพร้อมปุ่มลบ (แผน 20261014-03) */}
+                    {/* แพ็กเกจไม่ตรงขนาดบ้าน / บ้านเกินช่วงใหญ่สุด / ไม่มีข้อมูลขนาด — เตือนอย่างเดียว (แผน 20261014-05) */}
+                    {sizeNote && (
+                      <div className={`rounded-xl border px-3 py-2 text-xs ${sizeNote.warn
+                        ? "border-amber-200 bg-amber-50 text-amber-800" : "border-gray-200 bg-gray-50 text-gray-500"}`}>
+                        {sizeNote.warn ? "⚠ " : ""}{sizeNote.text}
+                      </div>
+                    )}
                     {pkgGone && (
                       <div className="flex items-center gap-2 rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800">
                         <span className="min-w-0 flex-1">
@@ -989,9 +1017,14 @@ function QuoteEditor({ item, optionNo, quote, onClose, onDone }: {
                         <div onClick={rowToggle("pkg")} className="flex cursor-pointer items-center gap-1.5 px-2 py-1.5">
                           {caret("pkg")}
                           <span className={`${BADGE} max-md:hidden`}>1</span>
-                          <span className="min-w-0 flex-1 px-1.5 py-1 text-sm font-semibold leading-snug text-gray-800">
-                            Package O&amp;M {tierLabel(pkg)} · {planLabel(pkg)}
-                          </span>
+                          {/* หัวรายการบนเอกสาร แก้ได้ (แผน 20261014-04) · ชื่อแพ็กเกจจริงอยู่บรรทัดเล็กข้างล่าง */}
+                          <div className="min-w-0 flex-1">
+                            <textarea value={title} onChange={(e) => setTitle(e.target.value)} rows={1} maxLength={300}
+                              ref={(el) => { if (!el) return; el.style.height = "auto"; el.style.height = `${el.scrollHeight}px`; }}
+                              placeholder="หัวรายการบนเอกสาร เช่น งานบริการ O&M ระบบโซลาร์เซลล์ ขนาด 5 kW" aria-label="หัวรายการแพ็กเกจบนเอกสาร"
+                              className="w-full resize-none overflow-hidden rounded-md border border-transparent bg-transparent px-1.5 py-1 text-sm font-semibold leading-snug text-gray-800 outline-none transition-colors placeholder:font-normal placeholder:text-gray-300 hover:border-gray-200 focus:border-primary focus:bg-white" />
+                            <div className="px-1.5 text-xxs text-gray-400">Package O&amp;M {tierLabel(pkg)} · {planLabel(pkg)}</div>
+                          </div>
                           <div className="w-14 shrink-0">
                             <input value="1" readOnly tabIndex={-1} title="ใบละ 1 แพ็กเกจ" aria-label="จำนวนของแพ็กเกจนี้"
                               className={`text-center cursor-default text-gray-400 hover:border-transparent ${CELL}`} />
@@ -1141,7 +1174,7 @@ function QuoteEditor({ item, optionNo, quote, onClose, onDone }: {
         </footer>
       </div>
       {pickerOpen && (
-        <PackagePickerDialog pkgs={pkgs} kw={kw} replacing={!!pkg}
+        <PackagePickerDialog pkgs={pkgs} fit={fit} replacing={!!pkg}
           onPick={(id) => { setPickerOpen(false); pickPackage(id); }}
           onClose={() => setPickerOpen(false)} />
       )}
