@@ -4,7 +4,7 @@
 // ★ ยกแถวใบเสร็จของ InstallmentReceiptList ฝั่งขาย (โหมด compact) มาทั้งก้อน
 //   ยังไม่มีใบเสร็จตัวจริง = ปุ่มใบเสร็จรับเงินชั่วคราว (PDF stage om) · แนบตัวจริงแล้วปุ่มชั่วคราวหายแบบฝั่งขาย
 //   แนบ/ลบได้เฉพาะ admin + account (สิทธิ์ใน ActualReceiptUpload) · คนอื่นเห็นไฟล์อย่างเดียว
-// ★ ใช้ที่ขั้นชำระเงินของงานบริการ + หน้ารายรับ O&M (Account เข้าโมดูล O&M ไม่ได้ แนบจากหน้ารายรับแทน)
+// ★ ใช้ที่ขั้นชำระเงินของงานบริการ (Account มาจากคิวรอยืนยันรับเงิน · แผน 20261014-06) + หน้ารายรับ O&M (แนบย้อนหลัง)
 import ReceiptButtons from "@/components/lead/detail/ReceiptButtons";
 import ActualReceiptUpload from "@/components/lead/detail/ActualReceiptUpload";
 

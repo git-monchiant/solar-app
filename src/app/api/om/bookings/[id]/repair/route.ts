@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
-import { requireAuth } from "@/lib/auth";
+import { requireAnyRole } from "@/lib/auth";
+import { OM_WORK_ROLES } from "@/lib/om/om-roles";
 import { sql } from "@/lib/db";
 import { getOmDb } from "@/lib/om/line";
 import { ACTIVE_STATUS, statusLabel } from "@/lib/om/booking";
@@ -18,7 +19,7 @@ import { logBooking } from "@/lib/om/booking-log";
 
 // POST { in_warranty: boolean, detail: string }
 export async function POST(req: NextRequest, ctx: { params: Promise<{ id: string }> }) {
-  const gate = await requireAuth(req);
+  const gate = await requireAnyRole(req, OM_WORK_ROLES);
   if (gate.error) return gate.error;
   const id = Number((await ctx.params).id);
   const b = await req.json().catch(() => ({}));

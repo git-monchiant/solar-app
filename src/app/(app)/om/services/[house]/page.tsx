@@ -20,6 +20,8 @@ import { apiFetch } from "@/lib/api";
 import Loading from "@/components/ui/Loading";
 import JobDetail from "@/components/om/JobDetail";
 import type { BookingSummary, HistoryRow, Item } from "@/lib/om/service-view";
+import { hasRole, useActiveRoles } from "@/lib/roles";
+import { OM_WORK_ROLES } from "@/lib/om/om-roles";
 
 export default function OmServiceDetailPage({ params }: { params: Promise<{ house: string }> }) {
   const { house } = use(params);
@@ -51,7 +53,10 @@ export default function OmServiceDetailPage({ params }: { params: Promise<{ hous
   [house]);
   useEffect(() => { load(); }, [load]);
 
-  const back = () => router.push("/om/services");
+  // Account มาจากคิวรอยืนยันรับเงิน (ไม่มีการ์ดโมดูล O&M) — กลับคิว ไม่ใช่รายการงานบริการ (แผน 20261014-06)
+  const { activeRoles } = useActiveRoles();
+  const viewOnly = activeRoles.length > 0 && !hasRole(activeRoles, ...OM_WORK_ROLES);
+  const back = () => router.push(viewOnly ? "/report/pending" : "/om/services");
   const done = focus ? () => { load().then(() => setVer((v) => v + 1)); } : back;
 
   if (err) return (

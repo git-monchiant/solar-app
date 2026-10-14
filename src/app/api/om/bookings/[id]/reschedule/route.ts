@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
-import { requireAuth } from "@/lib/auth";
+import { requireAnyRole, requireAuth } from "@/lib/auth";
+import { OM_WORK_ROLES } from "@/lib/om/om-roles";
 import { sql } from "@/lib/db";
 import { getOmDb, pushLineMessage, OM_LINE } from "@/lib/om/line";
 import { getSettings } from "@/lib/om/settings";
@@ -92,7 +93,7 @@ export async function GET(req: NextRequest, ctx: { params: Promise<{ id: string 
 // POST { scheduled_at: "YYYY-MM-DDTHH:mm" | "YYYY-MM-DD", time_slot?, reason? }
 //   time_slot = ช่อง 30 นาทีที่จอง (แผน 20261001-01) — ส่งมาแล้ว scheduled_at ใช้แค่วัน เวลาเริ่ม = ช่องแรก
 export async function POST(req: NextRequest, ctx: { params: Promise<{ id: string }> }) {
-  const gate = await requireAuth(req);
+  const gate = await requireAnyRole(req, OM_WORK_ROLES);
   if (gate.error) return gate.error;
   const id = Number((await ctx.params).id);
   const b = await req.json().catch(() => ({}));

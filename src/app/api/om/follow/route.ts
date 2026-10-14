@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { expireOmGrantsIfDue } from "@/lib/om/entitlement-expiry";
-import { requireAuth } from "@/lib/auth";
+import { requireAnyRole, requireAuth } from "@/lib/auth";
+import { OM_WORK_ROLES } from "@/lib/om/om-roles";
 import { fixDates, sql } from "@/lib/db";
 import { getOmDb } from "@/lib/om/line";
 import { OM_FOLLOW_DROP_SQL, OM_FOLLOW_SCOPE_SQL } from "@/lib/om/follow-sql";
@@ -165,7 +166,7 @@ export async function GET(req: NextRequest) {
 //   time_slot = ช่อง 30 นาทีที่จอง (array / JSON) — ส่งมาแล้ว scheduled_at ใช้แค่วัน (แผน 20261001-01)
 // ★ แถวงานเกิดเฉพาะตอน "ตกลงนัด" หรือ "ขอเลื่อน" — ไม่รับสาย/ปฏิเสธ บันทึกประวัติอย่างเดียว
 export async function POST(req: NextRequest) {
-  const gate = await requireAuth(req);
+  const gate = await requireAnyRole(req, OM_WORK_ROLES);
   if (gate.error) return gate.error;
   const b = await req.json().catch(() => ({}));
   const houseId = Number(b.house_id);

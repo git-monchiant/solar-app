@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
-import { requireAuth } from "@/lib/auth";
+import { requireAnyRole, requireAuth } from "@/lib/auth";
+import { OM_WORK_ROLES } from "@/lib/om/om-roles";
 import { fixDates, sql } from "@/lib/db";
 import { getOmDb } from "@/lib/om/line";
 import { actionLabel, logBooking, type BookingAction } from "@/lib/om/booking-log";
@@ -59,7 +60,7 @@ export async function GET(req: NextRequest, ctx: { params: Promise<{ id: string 
 
 // PATCH { status? , scheduled_at?, team_id?, queue_index?, note?, reason? }
 export async function PATCH(req: NextRequest, ctx: { params: Promise<{ id: string }> }) {
-  const gate = await requireAuth(req);
+  const gate = await requireAnyRole(req, OM_WORK_ROLES);
   if (gate.error) return gate.error;
   const id = Number((await ctx.params).id);
   const b = await req.json().catch(() => ({}));

@@ -25,6 +25,7 @@ import { OM_TERMS_NO_SALES_OM, OM_TERMS_PROFILE, omServiceTitle, omTermTree } fr
 import { omFitTier, omSameTier, omScopeItems } from "@/lib/om/packages";
 import type { QuotationTermTree } from "@/lib/quotation-terms";
 import type { Item } from "@/lib/om/service-view";
+import { OM_WORK_ROLES } from "@/lib/om/om-roles";
 
 type Pkg = {
   id: number; kw_min: number; kw_max: number; max_panels: number | null;
@@ -91,6 +92,8 @@ export default function OmQuotationPanel({ item, skip, onSaved, onReload }: {
 }) {
   const { activeRoles } = useActiveRoles();
   const canIssue = hasRole(activeRoles, "admin", "sales", "sales_sup");
+  // บันทึกถึงฝ่ายขายพิมพ์ได้เฉพาะทีม O&M — Account เปิดหน้างานจากคิวรับเงินได้แต่อ่านอย่างเดียว (แผน 20261014-06)
+  const canNote = hasRole(activeRoles, ...OM_WORK_ROLES);
   // ผู้อนุมัติกดที่การ์ดได้เหมือนฝั่งขาย (คิว /quotation-approvals ยังใช้ได้ตามเดิม)
   const canReview = (status: string) =>
     status === "pending_solar_sup"
@@ -374,7 +377,7 @@ export default function OmQuotationPanel({ item, skip, onSaved, onReload }: {
           </label>
           <textarea id="om-quote-note"
             value={noteText}
-            disabled={!bookingId}
+            disabled={!bookingId || !canNote}
             onChange={(e) => bookingId && setNote({ bookingId, text: e.target.value, dirty: true })}
             placeholder={bookingId ? "รายละเอียดใบเสนอราคา, หมายเหตุ..." : "บันทึกได้หลังสร้างใบเสนอราคาชุดแรก"}
             rows={3}

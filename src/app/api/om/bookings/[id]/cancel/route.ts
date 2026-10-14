@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getEffectiveRolesFromReq, requireAuth } from "@/lib/auth";
+import { getEffectiveRolesFromReq, requireAnyRole } from "@/lib/auth";
+import { OM_WORK_ROLES } from "@/lib/om/om-roles";
 import { sql } from "@/lib/db";
 import { getOmDb } from "@/lib/om/line";
 import { statusLabel } from "@/lib/om/booking";
@@ -23,7 +24,7 @@ import { getQuotationActor } from "@/lib/quotation";
 
 // POST { reason }
 export async function POST(req: NextRequest, ctx: { params: Promise<{ id: string }> }) {
-  const gate = await requireAuth(req);
+  const gate = await requireAnyRole(req, OM_WORK_ROLES);
   if (gate.error) return gate.error;
   const id = Number((await ctx.params).id);
   const b = await req.json().catch(() => ({}));

@@ -1,5 +1,6 @@
 import { hasRole, type Role } from "@/lib/roles";
 import { OM_ACTIVE_STEPS, OM_FIELD_STEPS, OM_FIELD_SUBS, OM_PAY_SUB, OM_SCHEDULED_STEPS } from "@/lib/om/journey";
+import { OM_WORK_ROLES } from "@/lib/om/om-roles";
 import {
   BoltIcon, CheckIcon, ClockIcon, DocumentIcon, DownloadIcon, LineIcon, PhoneIcon, XIcon,
 } from "@/components/ui/icons";
@@ -205,7 +206,8 @@ export const MODULES: AppModule[] = [
     key: "om", label: "O&M", emoji: "🛠️", tint: "bg-orange-50",
     group: "operation",
     desc: "ลูกค้า · บ้าน · งานบริการ · ปฏิทิน · เช็คลิสต์ · แชต LINE",
-    roles: ["sales", "solar", "sales_sup", "solar_sup", "admin"],
+    // ชุดเดียวกับที่หน้างาน/API ใช้ตัดสินว่าใครทำงาน O&M ได้ (Account เปิดหน้างานจากคิวรับเงินได้ แต่อ่านอย่างเดียว · แผน 20261014-06)
+    roles: [...OM_WORK_ROLES],
     // จอแรกของโมดูล = งานบริการ (2100–2600) — เท่ากับ badge การ์ดพอดี แบบเดียวกับ Warranty/Quotation
     // ★ แก้ 23 ก.ย. 69: เดิมลง /om/inbox เพราะตอนนั้นยังไม่มีหน้างานบริการ แชตเป็นที่เดียวที่มีงานเข้า
     //   พอการ์ดมีตัวเลขแล้ว (เฟส 1) กดเข้าไปต้องเจองานที่นับให้ดู ไม่ใช่หน้าแชต
@@ -299,7 +301,7 @@ export const MODULES: AppModule[] = [
       { label: "รอออกใบรับประกัน", href: "/pipeline?tab=warranty", icon: <I d={D.shield} />, steps: [800] },
       { label: "รายรับ/ใบแจ้งหนี้", href: "/report", icon: <I d={D.wallet} /> },
       // ★ รายรับค่าบริการ O&M แยกรายงาน (ผู้ใช้เคาะ 24 ก.ย. 69 · แผน 20260924-02 เฟส 4) — Account อยู่โมดูลนี้
-      //   และเข้าโมดูล O&M ไม่ได้ จึงวางไว้ติดรายรับของฝั่งขาย
+      //   และไม่มีการ์ดโมดูล O&M จึงวางไว้ติดรายรับของฝั่งขาย
       { label: "รายรับ O&M", href: "/report/om", icon: <I d={D.wallet} /> },
     ],
   },

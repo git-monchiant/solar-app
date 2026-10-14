@@ -30,6 +30,7 @@ import ServiceDocButton from "@/components/om/ServiceDocButton";
 import { HouseEquipmentTab, HouseInfoTab, JobPhotosTab } from "@/components/om/HouseTabs";
 import JobTimelineTab, { StageEvents, bookingStages, type Row, type StageKey } from "@/components/om/JobTimelineTab";
 import AssignOwnerButton from "@/components/lead/AssignOwnerButton";
+import { OM_WORK_ROLES } from "@/lib/om/om-roles";
 // ★ เนื้อในการ์ดที่ปิดแล้วใช้ของกลางฝั่งขายตรง ๆ (แผน 20260929-02) — StepLayout โหมด done + กล่อง DoneSection
 //   สองตัวนี้เป็น component กลางของทุกขั้นฝั่งขาย ไม่ใช่ไฟล์หน้า lead (ใบตรวจ JobFormPanel ก็ใช้ StepLayout อยู่แล้ว)
 import StepLayout from "@/components/lead/detail/StepLayout";
@@ -114,18 +115,29 @@ export default function JobDetail({ item, history, bookings = [], rules, onBack,
   // ★ บ้านสิทธิ์หมด: ออกใบเสนอราคา (ขั้น 02) ได้ตั้งแต่ยังอยู่ขั้นติดตาม — ขั้น 02 จึงเปิดคู่กับขั้น 01 เฉพาะกรณีนี้
   //   ไม่งั้นล็อกขั้นที่ยังไม่ถึงแล้ว บ้านสิทธิ์หมดจะไปต่อไม่ได้เลย (ตกลงนัดตรงไม่ได้ · ออกใบก็ไม่ได้)
   const quoteOpen = needQuote && at === 0 && !skip;
-  const [step, setStep] = useState(at);
+  // ★ แผน 20261014-06: Account (ไม่มี role ทีม O&M) เปิดหน้านี้จากคิว "รอยืนยันรับเงิน" แบบฝั่งขายเปิดหน้า lead
+  //   ทำได้แค่ขั้น 03 (ยืนยันเงิน · แนบใบเสร็จ) ที่เหลืออ่านอย่างเดียว · API ทางเขียนกันอีกชั้น (OM_WORK_ROLES)
+  //   role ยังไม่โหลด = ถือว่าไม่ใช่ (กันทีม O&M เห็นหน้าอ่านอย่างเดียวแวบหนึ่ง)
+  const { activeRoles } = useActiveRoles();
+  const viewOnly = activeRoles.length > 0 && !hasRole(activeRoles, ...OM_WORK_ROLES);
+  // คิวตั้ง omFocusPay_<บ้าน> = เลขใบงาน ก่อนเปิดหน้า (แบบ leadFocusStep_ ฝั่งขาย) → เปิดการ์ดขั้น 03 แทนขั้นปัจจุบัน
+  //   (รับเช็คแล้ว/ชำระแล้ว ขั้นปัจจุบันเลยไปนัดหมาย) · ใบงานที่หน้านี้แสดงไม่ตรง (บ้านมีใบใหม่กว่า) = เปิดขั้นปัจจุบันตามปกติ
+  //   หน้านี้ขึ้นหลังโหลดข้อมูลบ้านเสร็จเท่านั้น (ไม่ render ฝั่ง server) จึงอ่านตอนตั้งค่าเริ่มได้ · ลบคีย์ใน effect ด้านล่าง
+  const [focusPay] = useState(() => typeof window !== "undefined" && !!item.booking_id
+    && localStorage.getItem(`omFocusPay_${item.house_id}`) === String(item.booking_id));
+  const [step, setStep] = useState(focusPay ? 2 : at);
   // การ์ดขั้นที่ปิดแล้วกาง/พับ — เปิดขั้นไหนจากราง กางให้เลยแบบโหมด focus ของหน้า lead (ดูทีละขั้นอยู่แล้ว)
   // ★ แผน 20260929-03 ข้อ 4: มือถือเรียงทุกการ์ดต่อกัน ⇒ แยกพับ/กางรายการ์ด (เดิมตัวเดียวใช้ร่วม)
   //   เริ่มกางเฉพาะขั้นที่เปิดมา — ขั้นก่อนหน้าบนมือถือพับเหลือบรรทัดสรุป ขั้นที่ทำอยู่เลยอยู่บนสุดเอง
-  const [openDone, setOpenDone] = useState<Set<number>>(() => new Set([at]));
+  const [openDone, setOpenDone] = useState<Set<number>>(() => new Set([focusPay ? 2 : at]));
   // ★ 2 ต.ค. 69: งานเดินหน้าหลังโหลดใหม่ (เช่นอนุมัติใบเสนอราคาครบ) ขณะเปิดดูขั้นเดิมอยู่ → ไปขั้นใหม่ให้เอง
   //   แบบโหมด focus ของหน้า lead (visibleStep = focusedStep ?? currentStep) · เดิม step ตั้งครั้งเดียวตอนเปิดหน้า ค้างขั้นที่ปิดแล้ว
   //   เปิดดูขั้นอื่นค้างไว้ = ไม่ดึงไป · ปรับ state ระหว่าง render ตามแนวทาง React (ไม่ต้องรอ effect แล้วกระพริบ)
+  //   Account ไม่ดึงไป — ยืนยันเงินแล้วต้องแนบใบเสร็จต่อที่ขั้น 03 (ขั้นนัดหมายไม่ใช่งานของ Account)
   const [prevAt, setPrevAt] = useState(at);
   if (at !== prevAt) {
     setPrevAt(at);
-    if (step === prevAt) {
+    if (step === prevAt && !viewOnly) {
       setStep(at);
       setOpenDone((s) => new Set(s).add(at));
     }
@@ -170,10 +182,9 @@ export default function JobDetail({ item, history, bookings = [], rules, onBack,
   // ── ลูกค้าไม่เอา — ยกเลิกใบงานก่อนนัด พร้อมใบเสนอราคา (POST /api/om/bookings/[id]/cancel) ──
   // ใบซ่อมยกเลิกได้ตั้งแต่ขั้นติดตาม · ใบงานทั่วไปเฉพาะขั้นเสนอราคา/ชำระเงิน (ขั้นติดตามบันทึกโทร "ปฏิเสธ" อยู่แล้ว)
   // มีใบเสนอราคาแล้ว = เฉพาะ Sale · เงินเข้าแล้ว/สลิปรอตรวจ = ไม่มีปุ่ม ต้องผ่าน Account ก่อน (API กันซ้ำอีกชั้น)
-  const { activeRoles } = useActiveRoles();
   const canIssue = hasRole(activeRoles, "admin", "sales", "sales_sup");
   const moneyIn = item.pay_state === "verifying" || item.pay_state === "paid";
-  const canDecline = !!item.booking_id && !moneyIn
+  const canDecline = !viewOnly && !!item.booking_id && !moneyIn
     && (isRepairJob ? ["follow", "quote", "payment"] : ["quote", "payment"]).includes(cur)
     && (!item.q_id || canIssue);
 
@@ -234,6 +245,14 @@ export default function JobDetail({ item, history, bookings = [], rules, onBack,
       else el.scrollIntoView({ behavior: "smooth", block: "start" });
     }, 60);
   };
+  // คีย์จากคิวรอยืนยันรับเงินใช้ครั้งเดียว (แบบ leadFocusStep_) · มือถือเรียงการ์ดต่อกัน → เลื่อนไปการ์ดขั้น 03
+  useEffect(() => {
+    localStorage.removeItem(`omFocusPay_${item.house_id}`);
+    if (focusPay) scrollToCard(2);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- ครั้งเดียวตอนเปิดหน้า
+  }, []);
+  // Account อ่านอย่างเดียว — ขั้นที่ไม่ใช่ชำระเงินบอกแค่ว่ารอทีมไหนอยู่ (แผน 20261014-06)
+  const waitNote = (text: React.ReactNode) => <div className={`${SECTION} text-sm text-gray-600`}>{text}</div>;
   // ขั้น 01 ลูกค้าตกลง — งานเสียเงิน (สิทธิ์หมด) ไปขั้น 02 เสนอราคา · งานฟรีไปเลือกวันนัดที่ขั้น 04
   const goAgree = () => {
     if (needQuote) { go(1); scrollToCard(1); return; }
@@ -585,8 +604,9 @@ export default function JobDetail({ item, history, bookings = [], rules, onBack,
           )}
           <div className="max-md:hidden w-20 shrink-0 border-r border-gray-200 flex items-center justify-center py-2">
             {/* กดเปิดข้อมูลลูกค้า แบบ avatar หน้า lead เปิด ProfileModal (2 ต.ค. 69) — บ้านที่ยังไม่ผูกลูกค้ากดไม่ได้ */}
-            <button type="button" onClick={() => setProfileOpen(true)} disabled={!item.customer_id}
-              title={item.customer_id ? "ข้อมูลลูกค้า" : "ยังไม่ผูกลูกค้า"}
+            {/* Account อ่านอย่างเดียว — modal นี้แก้ข้อมูลลูกค้า/เบอร์ได้ จึงกดไม่ได้ (แผน 20261014-06) */}
+            <button type="button" onClick={() => setProfileOpen(true)} disabled={!item.customer_id || viewOnly}
+              title={viewOnly ? undefined : item.customer_id ? "ข้อมูลลูกค้า" : "ยังไม่ผูกลูกค้า"}
               className="w-14 h-14 rounded-full flex items-center justify-center text-gray-600 shrink-0 hover:opacity-80 transition-colors cursor-pointer disabled:cursor-default disabled:hover:opacity-100"
               style={{ minHeight: 0 }}>
               <svg className="w-12 h-12" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
@@ -642,7 +662,9 @@ export default function JobDetail({ item, history, bookings = [], rules, onBack,
             {item.booking_id && (
               <div className="flex items-center gap-1.5 shrink-0">
                 <span className="max-md:hidden text-xxs text-gray-500 whitespace-nowrap">เจ้าของงาน</span>
-                <AssignOwnerButton
+                {viewOnly ? (
+                  <span className="text-xs font-semibold text-gray-700 whitespace-nowrap">{item.owner_name ?? "—"}</span>
+                ) : <AssignOwnerButton
                   size="md"
                   usersRole="solar"
                   title="เจ้าของงานบริการ"
@@ -656,7 +678,7 @@ export default function JobDetail({ item, history, bookings = [], rules, onBack,
                     });
                   }}
                   onChanged={onReload}
-                />
+                />}
               </div>
             )}
             {telNo && (
@@ -696,8 +718,8 @@ export default function JobDetail({ item, history, bookings = [], rules, onBack,
                 <span className={tab === k ? "" : "hidden md:inline"}>{t}</span>
               </button>
             ))}
-            {/* มือถือย้ายไปแถบล่างติดจอ (แผน 20260929-03) — เดิมโดนตัดขอบขวาของแถบแท็บ */}
-            <div className="max-md:hidden ml-auto flex items-center gap-2 pb-2 self-end pl-2 shrink-0">
+            {/* มือถือย้ายไปแถบล่างติดจอ (แผน 20260929-03) — เดิมโดนตัดขอบขวาของแถบแท็บ · Account ไม่มี (อ่านอย่างเดียว) */}
+            {!viewOnly && <div className="max-md:hidden ml-auto flex items-center gap-2 pb-2 self-end pl-2 shrink-0">
               {/* Follow-up = บันทึกติดต่อไม่ได้ (1 ต.ค. 69) — คู่กับ Note แบบหน้า lead ทั้งคลาสและไอคอน */}
               <button type="button" onClick={() => setFollowOpen(true)} title="บันทึกการติดตาม — ยังไม่ได้ข้อสรุป / ติดต่อไม่ได้"
                 className="flex items-center gap-1.5 px-3 h-8 rounded-lg bg-amber-50 text-amber-700 text-sm font-semibold border border-amber-200 hover:bg-amber-100 transition-colors cursor-pointer" style={{ minHeight: 0 }}>
@@ -711,7 +733,7 @@ export default function JobDetail({ item, history, bookings = [], rules, onBack,
                 </svg>
                 <span className="max-md:hidden">Note</span>
               </button>
-            </div>
+            </div>}
           </div>
           <div className="hidden md:flex w-80 border-l border-gray-200 px-4 items-center py-3 text-xs font-semibold uppercase tracking-wider text-gray-500 gap-1.5">
             <ClockIcon className="w-4 h-4" strokeWidth={2} />
@@ -794,6 +816,7 @@ export default function JobDetail({ item, history, bookings = [], rules, onBack,
                         : "ไม่มีบันทึกการโทรของใบงานนี้";
                     })()} />,
                     () => events("follow", "gray", "การโทร · เปิดใบงาน"))
+                : viewOnly ? waitNote("รอทีม O&M โทรติดตามลูกค้า")
                 : callForm("follow")}
             </StepCard>
 
@@ -854,7 +877,7 @@ export default function JobDetail({ item, history, bookings = [], rules, onBack,
                     <CheckIcon className="w-4 h-4 shrink-0 text-emerald-600" strokeWidth={2.5} />
                     <span className="min-w-0">ชำระค่าบริการแล้ว{item.q_doc_no && <> ตามใบ <b className="font-mono">{item.q_doc_no}</b></>} — โทรตกลงวันนัดกับลูกค้า</span>
                   </div>
-                  {callForm("paid")}
+                  {viewOnly ? waitNote("รอ Sale โทรตกลงวันนัดกับลูกค้า") : callForm("paid")}
                 </div>
               ) : schedFree ? (
                 // ★ 1 ต.ค. 69 งานฟรีตกลงที่ขั้น 01 แล้ว — เลือกวันนัดที่นี่ที่เดียวแบบงานที่ชำระเงินแล้ว
@@ -871,7 +894,7 @@ export default function JobDetail({ item, history, bookings = [], rules, onBack,
                     <CheckIcon className="w-4 h-4 shrink-0 text-active" strokeWidth={2.5} />
                     <span className="min-w-0 flex-1">ลูกค้าตกลงแล้ว แต่ยังไม่มีวันนัด — เลือกวันนัดกับลูกค้า</span>
                   </div>
-                  {callForm("paid")}
+                  {viewOnly ? waitNote("รอ Sale โทรตกลงวันนัดกับลูกค้า") : callForm("paid")}
                 </div>
               ) : null}
             </StepCard>
@@ -889,6 +912,11 @@ export default function JobDetail({ item, history, bookings = [], rules, onBack,
                 </DoneHead>,
                 // ใบที่ปิดแล้วล็อกอ่านอย่างเดียวเอง (ทุกช่อง/ปุ่ม disabled + แถบ lock) — ไล่ดูขั้นย่อยได้ครบ
                 () => <JobFormPanel jobId={String(item.booking_id)} wrapClass="" embedded />,
+              ) : item.booking_id && viewOnly ? (
+                // Account อ่านอย่างเดียว — ใบตรวจ/เลื่อนนัด/ช่างถึงหน้างาน เป็นงานทีมช่าง (แผน 20261014-06)
+                waitNote(cur === "pending" || cur === "confirmed"
+                  ? <>นัด <b>{thAppt(item.scheduled_at, item.time_slot)}</b> — รอทีมช่างเข้างาน</>
+                  : "ทีมช่างกำลังทำงาน — รอปิดงาน")
               ) : item.booking_id ? (
                 // ★ เฟส 3: ใบตรวจรับงานฝังมาเลย ไม่ต้องเด้งออกไปหน้าอื่นแล้ว
                 //   ใบเดียวกับ /om/field/[id] เป๊ะ (components/om/JobFormPanel) แก้ที่เดียวได้ทั้งสองที่
@@ -941,7 +969,7 @@ export default function JobDetail({ item, history, bookings = [], rules, onBack,
 
               {/* ใบงานซ่อม (เฟส 5) — ช่างแจ้งในใบตรวจรับงาน ทีม O&M เปิดใบใหม่ต่อจากตรงนี้
                   ★ เปิดได้เฉพาะใบที่ปิดแล้ว (ใบงานนี้คือใบล่าสุดของบ้าน = บ้านไม่มีใบค้าง) · เปิดได้แม้ช่างไม่ได้ติ๊ก */}
-              {cur === "closed" && item.booking_id && !item.repair_child_id && (
+              {cur === "closed" && item.booking_id && !item.repair_child_id && !viewOnly && (
                 <div className={`rounded-lg border p-3 ${item.repair_needed === 1 && !item.repair_cancel_id ? "bg-amber-50 border-amber-200" : "bg-white/60 border-active/15"}`}>
                   {/* เปิดใบซ่อมแล้วยกเลิก — บอกว่าจบไปแล้วด้วยเหตุผลอะไร · ลูกค้าเปลี่ยนใจเปิดใหม่ได้ */}
                   {item.repair_cancel_id
@@ -1019,7 +1047,7 @@ export default function JobDetail({ item, history, bookings = [], rules, onBack,
 
       {/* ปุ่มล่างติดจอ มือถือเท่านั้น — ยกจาก footer quick actions ของหน้า lead (แผน 20260929-03 ข้อ 4)
           ★ 1 ต.ค. 69 มีปุ่ม Follow-up แล้ว (บันทึกติดต่อไม่ได้) ⇒ สองปุ่มแบบหน้า lead */}
-      {(tab === "info" || tab === "workflow") && (
+      {!viewOnly && (tab === "info" || tab === "workflow") && (
         <div className="fixed left-0 right-0 md:hidden above-nav bg-white border-t border-gray-100 z-40 px-3 py-2 flex gap-2">
           <button type="button" onClick={() => setFollowOpen(true)}
             className="flex-1 flex items-center justify-center gap-1.5 py-2.5 rounded-xl bg-amber-50 text-amber-700 text-sm font-semibold active:bg-amber-100 transition-colors cursor-pointer">

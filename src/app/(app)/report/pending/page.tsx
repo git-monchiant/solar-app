@@ -93,7 +93,6 @@ export default function PendingApprovalReport() {
   useEffect(() => {
     apiFetch("/api/report/payments").then(setData).catch(console.error).finally(() => setLoading(false));
   }, []);
-  const reload = () => { apiFetch("/api/report/payments").then(setData).catch(console.error); };
 
   useEffect(() => {
     if (!data) return;
@@ -498,7 +497,7 @@ export default function PendingApprovalReport() {
           </div>
         )}
 
-        <OmPendingPayments items={omItems} focusedId={focusedPaymentId} onChanged={reload} />
+        <OmPendingPayments items={omItems} focusedId={focusedPaymentId} />
 
         {filtered.length > 0 && (
           <div className="text-xs text-gray-400 text-center mt-2">
