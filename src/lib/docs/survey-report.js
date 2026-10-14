@@ -153,9 +153,12 @@ export function buildSurveyReportHtml(L, D, PKG, options = {}) {
 
   // รูปแบบการชำระ (แผน 20261012-06) — ใบเสนอราคาส่งมาใน financial.inputs.payment_method
   // รายงานเดี่ยวที่ไม่มีใบเสนอราคาใช้คำตอบ Pre-Survey ตรง ๆ · snapshot เก่าไม่มีคีย์ = แสดงครบ
-  //   loan = เฉพาะสินเชื่อ (14 หน้า) · cash = เงินสด + บัตรเครดิต (13) · all = ทุกทางเลือก (แบบเดิม 15)
+  //   แสดงเฉพาะแบบที่เลือก: loan = สินเชื่อ (14 หน้า) · cash = เงินสด · card = ผ่อนบัตร (13)
+  //   all = ทุกทางเลือก (แบบเดิม 15)
   const payMethod = options.financial ? options.financial.inputs?.payment_method : D.payment_interest;
-  const payMode = payMethod === "loan" ? "loan" : (payMethod === "cash" || payMethod === "credit_card") ? "cash" : "all";
+  const payMode = payMethod === "loan" ? "loan" : payMethod === "cash" ? "cash" : payMethod === "credit_card" ? "card" : "all";
+  // เงินสด/บัตร ไม่มีส่วนสินเชื่อ — §8 กับตารางความคุ้มค่าอยู่หน้าเดียว (pCash)
+  const noLoan = payMode === "cash" || payMode === "card";
 
   const HEADER = `<div class="run-head">SENA SOLAR ENERGY | รายงานสำรวจหน้างานติดตั้งโซลาร์เซลล์ (Solar Cell Site Survey Report)</div>`;
   // จำนวนหน้าขึ้นกับรูปแบบการชำระ — page(n) รับ "ช่อง" ของหน้า แล้วเลขหน้าจริง/สารบัญ
@@ -417,14 +420,26 @@ export function buildSurveyReportHtml(L, D, PKG, options = {}) {
   // for legacy packages whose solar_panels has never been filled in.
   const panelCount = Number(PKG?.solar_panels || L.survey_panel_count || 0);
   const panelCountTxt = panelCount > 0 ? `<span class="val">${baht(panelCount)}</span>` : '<span class="wr"></span>';
-  // ใบที่เสนอแบบผ่อน: จุดคุ้มทุนนับดอกเบี้ยด้วย (snapshot ก่อนสูตร v3 ไม่มีค่านี้ ใช้ตัวเดิม)
   const finOut = options.financial?.outputs || {};
-  const paybackMonths = Number((payMode === "loan" ? finOut.payback_months_with_loan ?? finOut.payback_months : finOut.payback_months) || 0);
-  const paybackTxt = paybackMonths > 0 ? `${baht(paybackMonths)} เดือน (${num(paybackMonths / 12, 1)} ปี)${payMode === "loan" && finOut.payback_months_with_loan != null ? " · รวมดอกเบี้ย" : ""}` : null;
   // Price = mirror the quotation summary: gross package price − VIP discount −
   // booking deposit = net. Show a breakdown when there's a discount/deposit;
   // otherwise a single price bar. Net matches the quotation's "รวมยอดสุทธิ".
   const gross = quotPrice ?? PKG?.price ?? null;
+  // ค่าธรรมเนียมผ่อนบัตร: เซลส์กรอก % ในใบเสนอราคา · ไม่กรอก = เส้นว่างให้เขียนมือ (แบบเดิม)
+  // ยอดผ่อน/เดือน = ยอด 80% × (1 + %) ÷ 10 ตามคำอธิบายในตาราง §8
+  const ccFeeRaw = options.financial?.inputs?.credit_card_fee_percent;
+  const ccFee = ccFeeRaw === null || ccFeeRaw === undefined || String(ccFeeRaw).trim() === "" || !Number.isFinite(Number(ccFeeRaw)) ? null : Number(ccFeeRaw);
+  const ccBase = quotation.contractAmount ?? gross ?? quotation.netAmount ?? PKG?.price ?? null;
+  const ccRest = ccBase != null ? Math.round(Number(ccBase) * 0.8) : null;
+  const ccFeeAmt = ccFee != null && ccRest != null ? Math.round(ccRest * ccFee / 100) : null;
+  const ccMonthly = ccFee != null && ccRest != null ? Math.round(ccRest * (1 + ccFee / 100) / 10) : null;
+  // ผ่อนบัตร: จุดคุ้มทุนนับค่าธรรมเนียมบัตรด้วย (เหมือนสินเชื่อนับดอกเบี้ย) · ไม่มีค่าธรรมเนียม = แบบเงินสด
+  const cardPayback = (price, save) => ccFeeAmt > 0 && price != null && save > 0 ? Math.ceil((Number(price) + ccFeeAmt) / save) : null;
+  // §4 จุดคุ้มทุนตามแบบที่เสนอ: ผ่อนนับดอกเบี้ย (snapshot ก่อนสูตร v3 ไม่มีค่านี้ ใช้ตัวเดิม) · บัตรนับค่าธรรมเนียม
+  const loanPaybackTxt = payMode === "loan" && finOut.payback_months_with_loan != null;
+  const cardPaybackMonths = payMode === "card" ? cardPayback(ccBase, Number(finOut.monthly_saving)) : null;
+  const paybackMonths = Number(cardPaybackMonths ?? (payMode === "loan" ? finOut.payback_months_with_loan ?? finOut.payback_months : finOut.payback_months) ?? 0);
+  const paybackTxt = paybackMonths > 0 ? `${baht(paybackMonths)} เดือน (${num(paybackMonths / 12, 1)} ปี)${loanPaybackTxt ? " · รวมดอกเบี้ย" : cardPaybackMonths ? " · รวมค่าธรรมเนียมบัตร" : ""}` : null;
   // §4 แสดงราคาของ "แพ็กเกจหลัก" ตัวเดียวเท่านั้น — ไม่รวม package รอง/งานเพิ่ม
   // ที่ไปแสดงแยกใน §5 (เดิมใช้ยอดรวมทั้งใบ ทำให้ชื่อแพ็กเกจกับราคาไม่ใช่ของเดียวกัน
   // เช่น "3 kWp_On" คู่กับ 397,250 ซึ่งเป็นยอดรวมทั้งใบ)
@@ -531,10 +546,14 @@ export function buildSurveyReportHtml(L, D, PKG, options = {}) {
   // ── PAGE 10 §6 journey ──────────────────────────────────────────────
   // ขั้นที่ 2 ตามรูปแบบการชำระ — เงินสด/บัตรไม่มีขั้นขอสินเชื่อ
   const JOURNEY2 = payMode === "cash"
-    ? ["2","ชำระส่วนที่เหลือ 80%","เงินสด/โอนเงิน หรือผ่อนบัตรเครดิต 10 เดือน"]
-    : ["2","ขอสินเชื่อ", payMode === "loan" ? "สำหรับส่วนที่เหลือ 80%" : "สำหรับส่วนที่เหลือ 80% (กรณีเลือกผ่อนชำระ)"];
+    ? ["2","ชำระส่วนที่เหลือ 80%","ด้วยเงินสด/โอนเงิน ก่อนวันติดตั้ง"]
+    : payMode === "card"
+      ? ["2","ผ่อนส่วนที่เหลือ 80%","ผ่านบัตรเครดิต 10 เดือน"]
+      : ["2","ขอสินเชื่อ", payMode === "loan" ? "สำหรับส่วนที่เหลือ 80%" : "สำหรับส่วนที่เหลือ 80% (กรณีเลือกผ่อนชำระ)"];
   const JOURNEY2_TXT = payMode === "cash"
-    ? "ขั้นตอนที่ 2 — ชำระส่วนที่เหลือ 80% ด้วยเงินสด/โอนเงิน หรือผ่อนผ่านบัตรเครดิต 10 เดือน ก่อนวันติดตั้งหรือตามงวดที่ตกลงกับบริษัท (ดูรายละเอียดในหมวดที่ 8)"
+    ? "ขั้นตอนที่ 2 — ชำระส่วนที่เหลือ 80% ด้วยเงินสด/โอนเงิน ก่อนวันติดตั้งหรือตามงวดที่ตกลงกับบริษัท (ดูรายละเอียดในหมวดที่ 8)"
+    : payMode === "card"
+      ? "ขั้นตอนที่ 2 — ผ่อนชำระส่วนที่เหลือ 80% ผ่านบัตรเครดิต 10 เดือน (ดูรายละเอียดในหมวดที่ 8)"
     : payMode === "loan"
       ? "ขั้นตอนที่ 2 — ยื่นขอสินเชื่อสำหรับส่วนที่เหลือ 80% ตั้งแต่ต้นจนได้วงเงินจากธนาคาร (ดูรายละเอียดในหมวดที่ 8)"
       : "ขั้นตอนที่ 2 — ยื่นขอสินเชื่อสำหรับส่วนที่เหลือ 80% ตั้งแต่ต้นจนได้วงเงินจากธนาคาร หากลูกค้าเลือกผ่อนชำระผ่านธนาคาร (ดูรายละเอียดในหมวดที่ 8)";
@@ -559,26 +578,19 @@ export function buildSurveyReportHtml(L, D, PKG, options = {}) {
     <table class="banks"><thead><tr><th>ธนาคาร / ผู้ออกบัตร</th><th>ธนาคาร / ผู้ออกบัตร</th></tr></thead><tbody>${BANKS.map(r=>`<tr><td>${r[0]}</td><td>${r[1]}</td></tr>`).join("")}</tbody></table>
     <div class="callout orange"><div class="co-h">เงื่อนไขชำระเงินมัดจำ 20% ผ่านบัตรเครดิต 0% ระยะเวลา 10 เดือน</div><ul>
       <li>กรณีลูกค้าตัดสินใจซื้อและดำเนินการจนติดตั้งเสร็จสมบูรณ์ บริษัทเป็นผู้รับภาระค่าธรรมเนียมบัตรเครดิตทั้งหมด</li>
-      ${payMode === "cash" ? "" : `<li>กรณีลูกค้ายื่นขอสินเชื่อสำหรับส่วนที่เหลือ 80% แล้ว ไม่ผ่านการอนุมัติ และไม่ประสงค์ดำเนินการต่อ
+      ${noLoan ? "" : `<li>กรณีลูกค้ายื่นขอสินเชื่อสำหรับส่วนที่เหลือ 80% แล้ว ไม่ผ่านการอนุมัติ และไม่ประสงค์ดำเนินการต่อ
         <ul class="sub"><li>กรณีชำระเป็นเงินสด บริษัทจะคืนเงินดาวน์ 20% ให้เต็มจำนวน</li>
         <li>หากชำระเงินดาวน์ด้วยบัตรเครดิตแล้วไม่ผ่านการอนุมัติสินเชื่อ บริษัทจะหักค่าธรรมเนียมบัตรเครดิตที่เกิดขึ้นจริงออกจากเงินที่คืน</li></ul></li>`}
       <li>การคืนเงินทุกกรณีจะโอนเข้าบัญชีธนาคารของลูกค้าเท่านั้น ไม่มีการคืนเป็นเงินสด</li>
       <li>การจองวันติดตั้งจะมีผลสมบูรณ์เมื่อบริษัทได้รับเงินมัดจำและหลักฐานการชำระเรียบร้อยแล้วเท่านั้น</li></ul></div>`);
 
-  // ค่าธรรมเนียมผ่อนบัตร: เซลส์กรอก % ในใบเสนอราคา · ไม่กรอก = เส้นว่างให้เขียนมือ (แบบเดิม)
-  // ยอดผ่อน/เดือน = ยอด 80% × (1 + %) ÷ 10 ตามคำอธิบายในตาราง
-  const ccFeeRaw = options.financial?.inputs?.credit_card_fee_percent;
-  const ccFee = ccFeeRaw === null || ccFeeRaw === undefined || String(ccFeeRaw).trim() === "" || !Number.isFinite(Number(ccFeeRaw)) ? null : Number(ccFeeRaw);
-  const ccBase = quotation.contractAmount ?? gross ?? quotation.netAmount ?? PKG?.price ?? null;
-  const ccRest = ccBase != null ? Math.round(Number(ccBase) * 0.8) : null;
-  const ccMonthly = ccFee != null && ccRest != null ? Math.round(ccRest * (1 + ccFee / 100) / 10) : null;
   const ccFeeTxt = ccFee != null ? `<span class="val">${num(ccFee, Number.isInteger(ccFee) ? 0 : 2)}</span>` : `<span class="wr"></span>`;
   const ccMonthlyTxt = ccMonthly != null ? `<span class="val">${baht(ccMonthly)}</span>` : `<span class="wr"></span>`;
-  // หัวข้อทางเลือก: มีหลายทางใส่เลขลำดับ · เหลือทางเดียว (ผ่อน) ไม่ต้องมีเลข
-  const optHead = (no, title) => `<h3 class="subh">${payMode === "loan" ? "" : `ทางเลือกที่ ${no} — `}${title}</h3>`;
+  // หัวข้อทางเลือก: ไม่ระบุ (ครบ 3 ทาง) ใส่เลขลำดับ · เลือกแบบเดียวแล้วไม่ต้องมีเลข
+  const optHead = (no, title) => `<h3 class="subh">${payMode === "all" ? `ทางเลือกที่ ${no} — ` : ""}${title}</h3>`;
   const OPT_CASH = `${optHead(1, "ชำระเงินสด")}
-    <ul class="reasons"><li>ชำระเต็มจำนวนส่วนที่เหลือ 80% ก่อนวันติดตั้ง หรือตามรอบงวดที่ตกลงกับบริษัท</li><li>เป็นทางเลือกที่มีต้นทุนรวมต่ำที่สุด</li></ul>
-    ${optHead(2, "ผ่อนชำระผ่านบัตรเครดิต 10 เดือน")}
+    <ul class="reasons"><li>ชำระเต็มจำนวนส่วนที่เหลือ 80% ก่อนวันติดตั้ง หรือตามรอบงวดที่ตกลงกับบริษัท</li><li>เป็นทางเลือกที่มีต้นทุนรวมต่ำที่สุด</li></ul>`;
+  const OPT_CARD = `${optHead(2, "ผ่อนชำระผ่านบัตรเครดิต 10 เดือน")}
     <p class="lead">ใช้รายชื่อธนาคารบัตรเครดิตที่ร่วมรายการเดียวกันกับการชำระเงินดาวน์ในหมวดที่ 7 โดยมีเงื่อนไขค่าบริการเพิ่มเติมดังนี้</p>
     <table class="banks"><thead><tr><th style="width:30%">รายการ</th><th>รายละเอียด</th></tr></thead><tbody>
       <tr><td>ระยะเวลาผ่อนชำระ</td><td>10 เดือน</td></tr>
@@ -603,16 +615,17 @@ export function buildSurveyReportHtml(L, D, PKG, options = {}) {
     <li>อัตราดอกเบี้ยและเงื่อนไขข้างต้นอ้างอิงจากโครงการ Soft Loan GSB อาจเปลี่ยนแปลงตามประกาศธนาคารออมสิน</li>
     <li>การอนุมัติสินเชื่อขึ้นอยู่กับดุลยพินิจของธนาคารออมสินแต่เพียงผู้เดียว</li>
     <li>หากยื่นกู้ไม่ผ่าน ลูกค้าเปลี่ยนไปใช้ทางเลือกเงินสดหรือบัตรเครดิตแทนได้ และเงินดาวน์ 20% ได้รับคืนตามเงื่อนไข</li></ul></div>`;
-  const P12_LEAD = payMode === "loan"
-    ? "สำหรับเงินส่วนที่เหลืออีก 80% ของมูลค่าแพ็กเกจ (หลังหักเงินมัดจำ) ลูกค้าชำระผ่านสินเชื่อธนาคาร มีรายละเอียดดังนี้"
-    : `สำหรับเงินส่วนที่เหลืออีก 80% ของมูลค่าแพ็กเกจ (หลังหักเงินมัดจำ) ลูกค้าสามารถเลือกช่องทางการชำระได้ ${payMode === "cash" ? 2 : 3} รูปแบบ ดังนี้`;
+  const P12_PAY = { loan: "ชำระผ่านสินเชื่อธนาคาร", cash: "ชำระเป็นเงินสด/โอนเงิน", card: "ผ่อนชำระผ่านบัตรเครดิต" }[payMode];
+  const P12_LEAD = P12_PAY
+    ? `สำหรับเงินส่วนที่เหลืออีก 80% ของมูลค่าแพ็กเกจ (หลังหักเงินมัดจำ) ลูกค้า${P12_PAY} มีรายละเอียดดังนี้`
+    : "สำหรับเงินส่วนที่เหลืออีก 80% ของมูลค่าแพ็กเกจ (หลังหักเงินมัดจำ) ลูกค้าสามารถเลือกช่องทางการชำระได้ 3 รูปแบบ ดังนี้";
   const P12_HEAD = `${sect("8","ทางเลือกการชำระเงินส่วนที่เหลือ 80%")}
     <p class="lead">${P12_LEAD}</p>`;
   // ผ่อน: ทางเลือกสินเชื่อ + หมายเหตุสินเชื่อรวมหน้าเดียว · ไม่ระบุ: ครบ 3 ทางเลือก
   // หมายเหตุสินเชื่อขึ้นหน้าถัดไปเหมือนเดิม · เงินสด/บัตร: ใช้ pCash ด้านล่างแทน
-  // (ทางเลือก 1–2 + ตารางเงินสด/บัตรในหน้าเดียว ต้องรอตัวเลข C)
-  const p12 = payMode === "cash" ? "" : page(11, `${P12_HEAD}
-    ${payMode === "loan" ? "" : OPT_CASH}
+  // (ทางเลือกที่เลือก + ตารางความคุ้มค่าในหน้าเดียว ต้องรอตัวเลข C)
+  const p12 = noLoan ? "" : page(11, `${P12_HEAD}
+    ${payMode === "loan" ? "" : OPT_CASH + OPT_CARD}
     ${OPT_LOAN}
     ${payMode === "loan" ? LOAN_NOTES : ""}`);
 
@@ -669,7 +682,7 @@ export function buildSurveyReportHtml(L, D, PKG, options = {}) {
   const CALC_ANALYSIS=[["ค่างวดผ่อน (บาท/เดือน)",baht(C.pmt)],["ดอกเบี้ยต่อเดือน (เดือนแรก)",baht(C.mo1Int)],["เงินต้นที่ตัดต่อเดือน (เดือนแรก)",baht(C.mo1Prin)],["ต้นทุนสุทธิ/เดือน (ค่างวด − ประหยัด)",baht(C.netMo),C.netMo<0?"neg":""],["ยอดรวมที่จ่ายตลอดสัญญา (บาท)",baht(C.total)],["ดอกเบี้ยรวม (บาท)",baht(C.interest)],["ค่าไฟรวมถ้าไม่ติด Solar (บาท)",baht(C.billTot)],["ประหยัดค่าไฟรวมตลอดสัญญาเงินกู้ (บาท)",baht(C.saveTot)],["ลดการปล่อย CO₂ ต่อปี (ตัน)",num(C.co2Yr,2)],["ลดการปล่อย CO₂ เทียบเท่าปลูกต้นไม้ (ต้น)",baht(C.trees)],[paybackHasInterest?"จุดคุ้มทุน รวมดอกเบี้ย (เดือน)":"จุดคุ้มทุน (เดือน)",C.paybackLoan?num(C.paybackLoan,0):"—"],...(C.downBack?[["ได้เงินดาวน์คืนภายใน (เดือน)",num(C.downBack,0)]]:[]),["ถ้าติด 25 ปี ประหยัดค่าไฟได้ (บาท)",baht(C.save25)]];
   const loanBank = String(financeInputs.loan_bank || "ธนาคารออมสิน");
   const rateSource = String(financeInputs.rate_source || "ธนาคารออมสิน GSB");
-  const p14 = payMode === "cash" ? "" : page(13, `<h3 class="subh">ตัวอย่างตารางผ่อนชำระสินเชื่อ (Amortization Schedule) — ตัวอย่างประกอบการพิจารณา สำหรับการยื่นกู้กับ ${loanBank}</h3>
+  const p14 = noLoan ? "" : page(13, `<h3 class="subh">ตัวอย่างตารางผ่อนชำระสินเชื่อ (Amortization Schedule) — ตัวอย่างประกอบการพิจารณา สำหรับการยื่นกู้กับ ${loanBank}</h3>
     <div class="calc">
       <div class="calc-head">Solar Loan Calculator — ${loanBank} (ค่างวดเท่ากันทุกเดือน)</div>
       <div class="calc-sub">สินเชื่อพลังงานสะอาด | Source: ${rateSource}</div>
@@ -688,32 +701,38 @@ export function buildSurveyReportHtml(L, D, PKG, options = {}) {
     </div>
     <p class="tiny-note">หมายเหตุ: ตารางนี้เป็นตัวอย่างการคำนวณเพื่อประกอบการตัดสินใจเท่านั้น ตัวเลขจริงให้ยึดตามตารางผ่อนชำระที่ ${loanBank} ออกให้หลังการอนุมัติสินเชื่อ</p>`);
 
-  // ── §8 แบบเงินสด/บัตร: ทางเลือก 1–2 + ตารางเงินสด/บัตรเครดิตในหน้าเดียว ──────────
+  // ── §8 แบบเงินสด / ผ่อนบัตร: ทางเลือกที่เลือก + ตารางความคุ้มค่าในหน้าเดียว ──────────
   // (แทน p12 + หน้าสินเชื่อ) ตารางยกจากฝั่งขวาของ solar_loan_calculator (BTC)
-  // ตัวเลขชุดเดียวกับหน้าสินเชื่อ (C) · ไม่มีดอกเบี้ย จุดคุ้มทุน = ราคา ÷ ประหยัดต่อเดือน (ตัวเดียวกับ §4)
+  // ตัวเลขชุดเดียวกับหน้าสินเชื่อ (C) · จุดคุ้มทุน: เงินสด = ราคา ÷ ประหยัดต่อเดือน (ตัวเดียวกับ §4)
+  // · ผ่อนบัตร = (ราคา + ค่าธรรมเนียมบัตร) ÷ ประหยัดต่อเดือน
+  const isCard = payMode === "card";
   const cashPayback = C.payback ? Math.ceil(C.payback) : null;
+  const cardPaybackCalc = isCard ? cardPayback(C.price, C.save) : null;
+  const shownPayback = cardPaybackCalc ?? cashPayback;
   const wr = `<span class="wr"></span>`;
   const CASH_SYSTEM=[["มูลค่า Solar Package (บาท)",baht(C.price),"in"],["ขนาด Solar ที่ติด (kW)",num(C.kw,1),"in"],["หน่วยไฟที่ผลิตได้/เดือน (kWh)",num(C.kwh,1)],["ค่าไฟต่อหน่วย (บาท/kWh)",num(C.unit,2)],["ค่าไฟปัจจุบัน (บาท/เดือน)",baht(C.bill),"in"],["ประหยัดได้หลังติด Solar (บาท/เดือน)",baht(C.save)]];
-  const CASH_CARD=[["ยอดส่วนที่เหลือ 80% (บาท)",ccRest!=null?baht(ccRest):wr],["ค่าธรรมเนียมบัตรเครดิต (%)",ccFee!=null?`${num(ccFee,Number.isInteger(ccFee)?0:2)}%`:`${wr} %`],["ยอดผ่อนต่อเดือนโดยประมาณ (บาท/เดือน)",ccMonthly!=null?baht(ccMonthly):wr]];
-  const CASH_RESULT=[["จุดคุ้มทุน (เดือน)",cashPayback?`${num(cashPayback,0)} (${num(cashPayback/12,1)} ปี)`:"—"],["ค่าไฟรวม 25 ปี ถ้าไม่ติด Solar (บาท)",baht(C.bill*300)],["ถ้าติด 25 ปี ประหยัดค่าไฟได้ (บาท)",baht(Math.round(C.save25))],["ลดการปล่อย CO₂ ต่อปี (ตัน)",num(C.co2Yr,2)],["ลดการปล่อย CO₂ เทียบเท่าปลูกต้นไม้ (ต้น)",baht(C.trees)]];
-  const pCash = payMode !== "cash" ? "" : page(11, `${P12_HEAD}
-    ${OPT_CASH}
-    <h3 class="subh">ตัวอย่างการคำนวณความคุ้มค่า — ชำระเงินสด / บัตรเครดิต</h3>
+  const CASH_CARD=[["ยอดส่วนที่เหลือ 80% (บาท)",ccRest!=null?baht(ccRest):wr],["ค่าธรรมเนียมบัตรเครดิต (%)",ccFee!=null?`${num(ccFee,Number.isInteger(ccFee)?0:2)}%`:`${wr} %`],["ค่าธรรมเนียมบัตรเครดิต (บาท)",ccFeeAmt!=null?baht(ccFeeAmt):wr],["ยอดผ่อนต่อเดือนโดยประมาณ (บาท/เดือน)",ccMonthly!=null?baht(ccMonthly):wr]];
+  const CASH_RESULT=[[cardPaybackCalc?"จุดคุ้มทุน รวมค่าธรรมเนียมบัตร (เดือน)":"จุดคุ้มทุน (เดือน)",shownPayback?`${num(shownPayback,0)} (${num(shownPayback/12,1)} ปี)`:"—"],["ค่าไฟรวม 25 ปี ถ้าไม่ติด Solar (บาท)",baht(C.bill*300)],["ถ้าติด 25 ปี ประหยัดค่าไฟได้ (บาท)",baht(Math.round(C.save25))],["ลดการปล่อย CO₂ ต่อปี (ตัน)",num(C.co2Yr,2)],["ลดการปล่อย CO₂ เทียบเท่าปลูกต้นไม้ (ต้น)",baht(C.trees)]];
+  const pCash = !noLoan ? "" : page(11, `${P12_HEAD}
+    ${isCard ? OPT_CARD : OPT_CASH}
+    <h3 class="subh">ตัวอย่างการคำนวณความคุ้มค่า — ${isCard ? "ผ่อนบัตรเครดิต" : "ชำระเงินสด"}</h3>
     <div class="calc">
-      <div class="calc-head">Solar Calculator — ชำระเงินสด / บัตรเครดิต</div>
+      <div class="calc-head">Solar Calculator — ${isCard ? "ผ่อนบัตรเครดิต 10 เดือน" : "ชำระเงินสด"}</div>
       <div class="calc-sub">คำนวณจากแพ็กเกจและค่าไฟของลูกค้ารายนี้</div>
       <div class="calc-cols">
         <div class="calc-col">
           <div class="csec">ข้อมูลระบบและค่าไฟ</div>${ctRows(CASH_SYSTEM)}
-          <div class="csec">กรณีผ่อนบัตรเครดิต 10 เดือน (ส่วนที่เหลือ 80%)</div>${ctRows(CASH_CARD)}
+          ${isCard ? `<div class="csec">ผ่อนบัตรเครดิต 10 เดือน (ส่วนที่เหลือ 80%)</div>${ctRows(CASH_CARD)}` : ""}
         </div>
         <div class="calc-col">
           <div class="csec">ผลการวิเคราะห์</div>${ctRows(CASH_RESULT)}
-          <div class="calc-green">▸ ชำระเงินสด ไม่มีดอกเบี้ย — เป็นทางเลือกที่มีต้นทุนรวมต่ำที่สุด<br/><br/>หลังถึงจุดคุ้มทุน ค่าไฟที่ประหยัดได้ทุกเดือนคือเงินที่ลูกค้าได้คืน</div>
+          <div class="calc-green">${isCard
+            ? "▸ ผ่อนบัตรเครดิต 10 เดือน — ไม่ต้องจ่ายส่วนที่เหลือก้อนเดียว"
+            : "▸ ชำระเงินสด ไม่มีดอกเบี้ย — เป็นทางเลือกที่มีต้นทุนรวมต่ำที่สุด"}<br/><br/>หลังถึงจุดคุ้มทุน ค่าไฟที่ประหยัดได้ทุกเดือนคือเงินที่ลูกค้าได้คืน</div>
         </div>
       </div>
     </div>
-    <p class="tiny-note">หมายเหตุ: ตารางนี้เป็นตัวอย่างการคำนวณเพื่อประกอบการตัดสินใจเท่านั้น ค่าธรรมเนียมบัตรเครดิตจริงขึ้นอยู่กับธนาคารผู้ออกบัตร ณ วันทำรายการ</p>`);
+    <p class="tiny-note">หมายเหตุ: ตารางนี้เป็นตัวอย่างการคำนวณเพื่อประกอบการตัดสินใจเท่านั้น${isCard ? " ค่าธรรมเนียมบัตรเครดิตจริงขึ้นอยู่กับธนาคารผู้ออกบัตร ณ วันทำรายการ" : ""}</p>`);
 
   const p15 = page(14, `${sect("9","หมายเหตุและเงื่อนไขทั่วไป")}
     <ul class="reasons">

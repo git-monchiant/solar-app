@@ -2198,8 +2198,10 @@ function QuotationEditor({
                     );
                   })}
                 </div>
-                {/* บัตรเครดิตอยู่ในทางเลือกของใบที่ไม่ใช่ "สินเชื่อ" — ไม่กรอก = รายงานเว้นเส้นให้เขียนมือ */}
-                {documentInputs.payment_method !== "loan" && (
+                {/* ทางเลือกบัตรเครดิตมีในรายงานเฉพาะใบ "บัตรเครดิต" กับ "ไม่ระบุ" (แสดงครบ)
+                    — ไม่กรอก = รายงานเว้นเส้นให้เขียนมือ */}
+                {(documentInputs.payment_method === "credit_card" ||
+                  documentInputs.payment_method === null) && (
                   <div className="mt-1.5 grid grid-cols-[minmax(0,1fr)_72px] items-center gap-1">
                     <span className="text-xxs text-gray-500">ค่าธรรมเนียมผ่อนบัตร 10 เดือน</span>
                     <div className="relative">
@@ -2230,9 +2232,11 @@ function QuotationEditor({
                 <p className="mt-1 text-xxs text-gray-400">
                   {documentInputs.payment_method === "loan"
                     ? "รายงานสำรวจแสดงเฉพาะสินเชื่อ + ตารางผ่อน"
-                    : documentInputs.payment_method
-                      ? "รายงานสำรวจแสดงเงินสด + บัตรเครดิต + ตารางความคุ้มค่า"
-                      : "รายงานสำรวจแสดงทุกทางเลือก"}
+                    : documentInputs.payment_method === "cash"
+                      ? "รายงานสำรวจแสดงเฉพาะเงินสด + ตารางความคุ้มค่า"
+                      : documentInputs.payment_method === "credit_card"
+                        ? "รายงานสำรวจแสดงเฉพาะผ่อนบัตร + ตารางความคุ้มค่า"
+                        : "รายงานสำรวจแสดงทุกทางเลือก"}
                 </p>
               </div>
 
