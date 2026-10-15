@@ -14,6 +14,7 @@ import { statusLabel, statusTone } from "@/lib/om/booking";
 import { thD } from "@/lib/om/service-view";
 import { SystemCard, type HouseDetail } from "@/components/om/HouseSystemCard";
 import { useOmPhotoUrls } from "@/lib/hooks/useOmPhotoUrls";
+import { UploadTile } from "@/components/lead/detail/PhotosTab";
 
 const ROLE: Record<string, string> = { owner: "เจ้าของ", resident: "ผู้อยู่อาศัย", contact: "ผู้ติดต่อ" };
 const SRC: Record<string, string> = { contract_base: "สิทธิ์ตั้งต้น", renewal: "ต่อสัญญา", purchase: "ซื้อเพิ่ม", import: "import", manual_adjust: "ปรับมือ", expire: "หมดอายุ" };
@@ -227,8 +228,13 @@ export function HouseEquipmentTab({ houseId }: { houseId: number }) {
 type JobPhoto = { file: string; kind: string; at: string; size: number };
 type JobPhotos = { id: number; scheduled_at: string | null; service_type: string | null; status: string; photos: JobPhoto[] };
 
+/** ใบงานที่ช่างถึงหน้างานแล้ว — เพิ่มรูปก่อน/หลังจากแท็บนี้ได้ (ยังไม่เข้างาน/ยกเลิก ไม่มีรูปหน้างานให้เพิ่ม) */
+const CAN_ADD = ["progress", "checked", "closed"];
+
 /** รูปทุกใบงานของบ้าน — ไม่มี API ใหม่ อ่าน GET /api/om/jobs/[id]/report ทีละใบ (บ้านหนึ่งมีไม่กี่ใบ)
- *  ★ รูปเสิร์ฟผ่าน /api/om/jobs/<id>/photos/<file> ที่ตรวจสิทธิ์ก่อนเสมอ (ไฟล์อยู่นอก public/) */
+ *  ★ รูปเสิร์ฟผ่าน /api/om/jobs/<id>/photos/<file> ที่ตรวจสิทธิ์ก่อนเสมอ (ไฟล์อยู่นอก public/)
+ *  ★ 15 ต.ค. 69 ผู้ใช้สั่ง "เพิ่มปุ่มเพิ่มรูปเหมือนงานขาย" — ยกช่อง + เพิ่มรูป (UploadTile) ของแท็บ Photos ฝั่งขาย
+ *    เพิ่มได้แม้ปิดงานแล้ว (แบบ "รูปติดตั้งอื่นๆ" ฝั่งขาย) · ลบรูปทำที่ใบตรวจรับงานเท่านั้น */
 export function JobPhotosTab({ bookingIds }: { bookingIds: number[] }) {
   const [jobs, setJobs] = useState<JobPhotos[] | null>(null);
   const [err, setErr] = useState("");
@@ -243,11 +249,24 @@ export function JobPhotosTab({ bookingIds }: { bookingIds: number[] }) {
       .catch((e) => setErr(e instanceof Error ? e.message : String(e)));
   }, [key]);
 
-  const withPhotos = (jobs ?? []).filter((j) => j.photos.length > 0);
+  const [upErr, setUpErr] = useState("");
+  const upload = (jobId: number, kind: string) => async (file: File) => {
+    setUpErr("");
+    try {
+      const fd = new FormData();
+      fd.append("file", file);
+      fd.append("kind", kind);
+      // ★ ห้ามตั้ง Content-Type เอง — เบราว์เซอร์ต้องใส่ boundary ของ multipart ให้
+      const d = await apiFetch(`/api/om/jobs/${jobId}/photos`, { method: "POST", body: fd });
+      setJobs((prev) => prev && prev.map((j) => (j.id === jobId ? { ...j, photos: d.photos ?? j.photos } : j)));
+    } catch (e) { setUpErr(e instanceof Error ? e.message : String(e)); }
+  };
+
+  const shown = (jobs ?? []).filter((j) => j.photos.length > 0 || CAN_ADD.includes(j.status));
   const KINDS = ["before", "after"] as const;
   // แกลเลอรีเดียวทั้งบ้าน — เปิดรูปไหนก็เลื่อนดูต่อได้ทุกใบงาน (แบบ HANDOVER PHOTOS ฝั่งขาย)
   // ★ ลำดับต้องตรงกับที่วาดด้านล่างเป๊ะ (ใบงาน → ก่อน → หลัง) ไม่งั้นกดรูปแล้ว lightbox เปิดผิดรูป
-  const items = withPhotos.flatMap((j) => KINDS.flatMap((kind) => j.photos.filter((p) => p.kind === kind).map((p) => ({
+  const items = shown.flatMap((j) => KINDS.flatMap((kind) => j.photos.filter((p) => p.kind === kind).map((p) => ({
     src: `/api/om/jobs/${j.id}/photos/${p.file}`,
     label: `ใบงาน #${j.id} · ${kind === "before" ? "ก่อนทำงาน" : "หลังทำงาน"}`,
   }))));
@@ -262,12 +281,13 @@ export function JobPhotosTab({ bookingIds }: { bookingIds: number[] }) {
   return (
     <Card icon={ICON.photo} tone="bg-violet-100 text-violet-600" title={`รูปหน้างาน (${gallery.length})`}
       sub="Photos — รูปก่อน / หลังทำงาน จากใบตรวจรับงานทุกใบของบ้านนี้">
-      {!withPhotos.length && (
+      {upErr && <div className="px-4 pt-3"><Err m={upErr} /></div>}
+      {!shown.length && (
         <div className="px-4 py-10 text-center text-sm text-gray-400">
           {jobs.length ? "ยังไม่มีรูปในใบตรวจรับงานของบ้านนี้" : "บ้านนี้ยังไม่มีใบงาน"}
         </div>
       )}
-      {withPhotos.map((j) => (
+      {shown.map((j) => (
         <div key={j.id} className="border-b border-gray-100 last:border-0 px-4 py-3">
           <div className="flex items-center gap-2 flex-wrap mb-2 text-xs">
             <b className="text-gray-800">ใบงาน #{j.id}</b>
@@ -277,7 +297,8 @@ export function JobPhotosTab({ bookingIds }: { bookingIds: number[] }) {
           </div>
           {KINDS.map((kind) => {
             const list = j.photos.filter((p) => p.kind === kind);
-            if (!list.length) return null;
+            const canAdd = CAN_ADD.includes(j.status);
+            if (!list.length && !canAdd) return null;
             return (
               <div key={kind} className="mb-2 last:mb-0">
                 <div className="text-xxs font-semibold uppercase tracking-wide text-gray-400 mb-1">
@@ -292,6 +313,7 @@ export function JobPhotosTab({ bookingIds }: { bookingIds: number[] }) {
                         gallery={gallery} galleryIndex={idx} />
                     ) : <div key={p.file} className="w-full aspect-square rounded-lg border border-gray-200 bg-gray-100 animate-pulse" />;
                   })}
+                  {canAdd && <UploadTile onFile={upload(j.id, kind)} />}
                 </div>
               </div>
             );
