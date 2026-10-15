@@ -332,8 +332,8 @@ export const MODULES: AppModule[] = [
     ],
   },
   // ★ งาน B2B โรงงาน/ไซต์ใหญ่ — แยกการ์ดตามช่วงงานแบบ B2C (เคาะ 15 ต.ค. · แผน docs/plan/20261015-07-b2b-project-flow.md หัวข้อ 6)
-  //   ขาย B2B (3100–3500) · โครงการ B2B (3600–3950) · จัดซื้อ B2B (ราคาวัสดุ + สั่งของ) — พัฒนาแต่ละช่วงแยกกันได้ เมนูไม่ปนกัน
-  //   ทีมเดียวกันเห็นทุกการ์ด · หน้าโครงการ /b2b/projects/[id] หน้าเดียวเห็นครบ 9 ขั้น · หน้ารายการกรองด้วย ?stage= (sales · exec · เลขขั้น)
+  //   ขาย B2B (3100–3500) · สำรวจ & ติดตั้ง B2B (สำรวจ + 3600–3950) · จัดซื้อ B2B (ราคาวัสดุ + สั่งของ) · O&M B2B — พัฒนาแต่ละช่วงแยกกันได้
+  //   ทีมเดียวกันเห็นทุกการ์ด · หน้าโครงการ /b2b/projects/[id] หน้าเดียวเห็นครบ 9 ขั้น · หน้ารายการกรองด้วย ?stage= (sales · site · เลขขั้น)
   //   emoji ใช้ Unicode 6 — ฟอนต์ Windows มีแน่ (เหตุผลเดียวกับ 📋 ของ Package O&M)
   {
     // key "boq" คงไว้ = การ์ดขาย (ค่าโมดูลที่เลือกค้างใน localStorage ตั้งแต่ยังเป็นการ์ด BOQ แผน 20261005-01)
@@ -342,13 +342,14 @@ export const MODULES: AppModule[] = [
     desc: "โอกาสขาย · BOQ · ใบเสนอราคา · ได้งาน",
     roles: B2B_TEAM,
     menu: [
-      { label: "ทั้งหมด", href: "/b2b/projects?stage=sales", icon: <I d={D.lines} />, steps: [3100, 3200, 3300, 3400, 3500] },
+      // badge การ์ดนับเฉพาะงานฝ่ายขาย — สำรวจเป็นงานของการ์ดสำรวจ & ติดตั้ง (เมนูยังอยู่ให้ตามลูกค้าได้แบบ Sales ของ B2C) ⇒ ทั้งหมด/สำรวจ ไม่บวกเข้าการ์ด
+      { label: "ทั้งหมด", href: "/b2b/projects?stage=sales", icon: <I d={D.lines} />, steps: [3100, 3200, 3300, 3400, 3500], noModuleCount: true },
       { label: "โอกาสขาย", href: "/b2b/projects?stage=3100", icon: <PhoneIcon className="w-6 h-6" strokeWidth={2} />, steps: [3100] },
       {
         label: "เสนอราคา", icon: <DocumentIcon className="w-6 h-6" strokeWidth={2} />,
         children: [
           { label: "ราคาประมาณการ", href: "/b2b/projects?stage=3200", icon: <DocumentIcon className="w-6 h-6" strokeWidth={2} />, steps: [3200] },
-          { label: "สำรวจ", href: "/b2b/projects?stage=3300", icon: <I d={D.mapPin} />, steps: [3300] },
+          { label: "สำรวจ", href: "/b2b/projects?stage=3300", icon: <I d={D.mapPin} />, steps: [3300], noModuleCount: true },
           { label: "ราคายืนยัน/ต่อรอง", href: "/b2b/projects?stage=3400", icon: <DocumentIcon className="w-6 h-6" strokeWidth={2} />, steps: [3400] },
         ],
       },
@@ -360,12 +361,16 @@ export const MODULES: AppModule[] = [
     ],
   },
   {
-    key: "b2b_project", label: "โครงการ B2B", emoji: "🏭", tint: "bg-indigo-50",
+    // งานหน้าไซต์แบบการ์ด "สำรวจ & ติดตั้ง" ของ B2C (เคาะ 15 ต.ค. — แยกสำรวจออกจากฝ่ายขาย) · เข้าการ์ดลงรายการทั้งหมด
+    key: "b2b_project", label: "สำรวจ & ติดตั้ง B2B", emoji: "🏭", tint: "bg-indigo-50",
     group: "b2b",
-    desc: "ขออนุญาต · ติดตั้ง · ขนานไฟ · ส่งมอบ",
+    desc: "ปฏิทิน · สำรวจ · ติดตั้ง · ส่งมอบ",
     roles: B2B_TEAM,
+    defaultHref: "/b2b/projects?stage=site",
     menu: [
-      { label: "ทั้งหมด", href: "/b2b/projects?stage=exec", icon: <I d={D.lines} />, steps: [3600, 3700, 3800, 3900] },
+      { label: "ปฏิทิน", href: "/b2b/calendar", icon: <I d={D.calendar} /> },
+      { label: "ทั้งหมด", href: "/b2b/projects?stage=site", icon: <I d={D.lines} />, steps: [3300, 3600, 3700, 3800, 3900] },
+      { label: "สำรวจ", href: "/b2b/projects?stage=3300", icon: <I d={D.mapPin} />, steps: [3300] },
       { label: "ขออนุญาต/จัดซื้อ", href: "/b2b/projects?stage=3600", icon: <I d={D.clipboard} />, steps: [3600] },
       { label: "ติดตั้ง", href: "/b2b/projects?stage=3700", icon: <I d={D.wrench} />, steps: [3700] },
       { label: "ขนานไฟ", href: "/b2b/projects?stage=3800", icon: <BoltIcon className="w-6 h-6" strokeWidth={2} />, steps: [3800] },

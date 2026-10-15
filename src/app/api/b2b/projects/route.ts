@@ -5,7 +5,7 @@ import { B2B_PROJECT_ROLES, B2B_PROJECT_VIEW_ROLES, B2B_STAGE, readProjectBody, 
 import { ensureCustomer, logActivity, nextProjectCode, projectRowSelect, toProjectRow } from "@/lib/b2b/project-server";
 
 // รายการโครงการ B2B — แผน docs/plan/20261015-07-b2b-project-flow.md เฟส 1
-// ?stage= open (ค่าเริ่มต้น = 3100–3900) · sales (3100–3500 การ์ดขาย) · exec (3600–3900 การ์ดโครงการ) · เลขขั้น · lost (แพ้งาน + ยกเลิก) · closed · all
+// ?stage= open (ค่าเริ่มต้น = 3100–3900) · sales (3100–3500 การ์ดขาย) · site (สำรวจ + 3600–3900 การ์ดสำรวจ & ติดตั้ง) · เลขขั้น · lost (แพ้งาน + ยกเลิก) · closed · all
 export async function GET(req: NextRequest) {
   const gate = await requireAnyActiveRole(req, B2B_PROJECT_VIEW_ROLES);
   if (gate.error) return gate.error;

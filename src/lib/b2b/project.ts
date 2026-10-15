@@ -42,17 +42,19 @@ export const B2B_FLOW = [
 ] as const;
 
 export const B2B_OPEN_STAGES = B2B_FLOW.map((s) => s.step);
-/** กลุ่มขั้นของหน้ารายการ (?stage=) — การ์ด "ขาย B2B" = sales · การ์ด "โครงการ B2B" = exec (แยกการ์ดแบบ B2C · 15 ต.ค.) */
+/** กลุ่มขั้นของหน้ารายการ (?stage=) — การ์ด "ขาย B2B" = sales · การ์ด "สำรวจ & ติดตั้ง B2B" = site (แยกการ์ดแบบ B2C · 15 ต.ค.)
+ *  สำรวจ (3300) อยู่ทั้ง 2 กลุ่ม — ฝ่ายขายตามลูกค้าตัวเองได้ทุกขั้นแบบ Sales ของ B2C */
 export const B2B_STAGE_GROUPS: Record<string, readonly number[]> = {
   open: B2B_OPEN_STAGES,
   sales: [3100, 3200, 3300, 3400, 3500],
-  exec: [3600, 3700, 3800, 3900],
+  site: [3300, 3600, 3700, 3800, 3900],
   closed: [3950],
   lost: [3980, 3990],
 };
 export const stageGroupOf = (key: string) => (Object.hasOwn(B2B_STAGE_GROUPS, key) ? B2B_STAGE_GROUPS[key] : null);
-/** ปุ่มกลับจากหน้าโครงการ → รายการของการ์ดที่โครงการอยู่ตอนนี้ */
-export function listHrefOf(stage: number): string {
+/** ปุ่มกลับจากหน้าโครงการ → รายการของการ์ดที่โครงการอยู่ตอนนี้ · สำรวจที่เปิดมาจากการ์ดสำรวจ & ติดตั้ง กลับรายการของการ์ดนั้น */
+export function listHrefOf(stage: number, moduleKey?: string | null): string {
+  if (moduleKey === "b2b_project" && B2B_STAGE_GROUPS.site.includes(stage)) return "/b2b/projects?stage=site";
   const g = Object.keys(B2B_STAGE_GROUPS).find((k) => k !== "open" && B2B_STAGE_GROUPS[k].includes(stage));
   return `/b2b/projects?stage=${g ?? "sales"}`;
 }

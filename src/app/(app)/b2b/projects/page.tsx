@@ -13,7 +13,7 @@ import StageBadge from "@/components/b2b/project/StageBadge";
 import ProjectFormModal from "@/components/b2b/project/ProjectFormModal";
 
 // รายการโครงการ B2B — แผน docs/plan/20261015-07-b2b-project-flow.md เฟส 1
-// ?stage= ตามเมนู (ไม่มี = ทุกโครงการที่ยังเปิด · sales/exec = "ทั้งหมด" ของการ์ดขาย/โครงการ) · สลับ รายการ / กระดานตามขั้น (คำถามข้อ 6 · เคาะ "ตามเสนอ")
+// ?stage= ตามเมนู (ไม่มี = ทุกโครงการที่ยังเปิด · sales/site = "ทั้งหมด" ของการ์ดขาย / สำรวจ & ติดตั้ง) · สลับ รายการ / กระดานตามขั้น (คำถามข้อ 6 · เคาะ "ตามเสนอ")
 // มูลค่า = ราคาขายของ BOQ ที่บันทึกล่าสุด (ก่อน VAT) — ใบเสนอราคา/สัญญามาในเฟส 2–3
 
 // มุมมองที่เลือกจำไว้ในเครื่อง (ของแต่ละคน) — localStorage ใช้ไม่ได้ (โหมดส่วนตัว) ยังสลับได้ด้วยค่าในหน่วยความจำ
@@ -64,7 +64,7 @@ export default function B2bProjectListPage() {
     return (rows ?? []).filter((r) => !q || [r.code, r.name, r.customer_name, r.location, r.owner_name].some((x) => (x ?? "").toLowerCase().includes(q)));
   }, [rows, search]);
 
-  // คอลัมน์กระดาน: กลุ่มของการ์ด (sales/exec/closed/lost) = ทุกขั้นในกลุ่ม · ทั้งหมด = ขั้นขายเสมอ + ขั้นอื่นที่มีโครงการอยู่จริง
+  // คอลัมน์กระดาน: กลุ่มของการ์ด (sales/site/closed/lost) = ทุกขั้นในกลุ่ม · ทั้งหมด = ขั้นขายเสมอ + ขั้นอื่นที่มีโครงการอยู่จริง
   const columns = useMemo(() => {
     const g = stage !== "open" ? stageGroupOf(stage) : null;
     if (g) return [...g];
