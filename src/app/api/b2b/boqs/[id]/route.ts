@@ -1,11 +1,12 @@
 import { NextRequest, NextResponse } from "next/server";
 import { requireAnyActiveRole } from "@/lib/auth";
 import { getB2bDb, sql } from "@/lib/b2b/db";
-import { B2B_BOQ_ROLES, readBoqHeader, readBoqLines } from "@/lib/b2b/boq";
+import { B2B_BOQ_VIEW_ROLES, B2B_BOQ_ROLES, readBoqHeader, readBoqLines } from "@/lib/b2b/boq";
 import { loadBoq, loadCategories, storeTotals } from "@/lib/b2b/boq-server";
+import { boqLockedByQuote } from "@/lib/b2b/quotation-server";
 
 export async function GET(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
-  const gate = await requireAnyActiveRole(req, B2B_BOQ_ROLES);
+  const gate = await requireAnyActiveRole(req, B2B_BOQ_VIEW_ROLES);
   if (gate.error) return gate.error;
   const id = parseInt((await params).id);
   if (!Number.isFinite(id)) return NextResponse.json({ error: "id ไม่ถูกต้อง" }, { status: 400 });
@@ -39,6 +40,9 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
     const row = cur.recordset[0];
     if (!row) { await tx.rollback(); return NextResponse.json({ error: "ไม่พบใบ BOQ" }, { status: 404 }); }
     if (!row.is_latest) { await tx.rollback(); return NextResponse.json({ error: "แก้ได้เฉพาะ Revision ล่าสุด" }, { status: 409 }); }
+    // ใบเสนอราคาที่ส่งอนุมัติแล้วอ้าง Rev นี้ — ตัวเลขที่ผู้ตรวจสอบเห็นต้องไม่เปลี่ยนใต้มือ (แผน 20261015-07 เฟส 2)
+    const lockedBy = await boqLockedByQuote(tx, id);
+    if (lockedBy) { await tx.rollback(); return NextResponse.json({ error: `BOQ Rev นี้ใช้ในใบเสนอราคา ${lockedBy} ที่ส่งอนุมัติแล้ว — ออก Revision ใหม่ก่อนแก้` }, { status: 409 }); }
     if (body.expected_updated_at && new Date(body.expected_updated_at).getTime() !== new Date(row.updated_at).getTime()) {
       await tx.rollback();
       return NextResponse.json({ error: "มีคนบันทึกใบนี้ไปก่อนแล้ว — โหลดหน้าใหม่แล้วแก้อีกครั้ง" }, { status: 409 });

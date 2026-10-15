@@ -9,6 +9,8 @@ const KIND: Record<string, string> = {
   created: "สร้างโครงการ", stage: "เปลี่ยนขั้น", survey_scheduled: "นัดสำรวจ", survey_done: "บันทึกผลสำรวจ",
   boq_created: "เพิ่ม BOQ", boq_revision: "BOQ Revision ใหม่", lost: "แพ้งาน", cancelled: "ยกเลิก", reopened: "เปิดกลับ",
   edited: "แก้ข้อมูล", note: "บันทึก",
+  quote_created: "สร้างใบเสนอราคา", quote_submitted: "ส่งอนุมัติใบเสนอราคา", quote_approved: "อนุมัติใบเสนอราคา",
+  quote_returned: "ส่งกลับแก้ใบเสนอราคา", quote_revision: "ใบเสนอราคา Rev ใหม่", quote_sent: "ส่งใบเสนอราคาให้ลูกค้า",
 };
 
 export default function ActivityList({ activities, onNote, readOnly }: {

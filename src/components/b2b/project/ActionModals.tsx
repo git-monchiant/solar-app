@@ -2,7 +2,8 @@
 
 import { useState } from "react";
 import Dropdown from "@/components/ui/Dropdown";
-import type { B2bCustomer, B2bUserOption } from "@/lib/b2b/project";
+import type { B2bCustomer, B2bProjectBoq, B2bUserOption } from "@/lib/b2b/project";
+import { formatTHB } from "@/lib/utils/formatters";
 import ModalShell, { areaCls, fieldCls, labelCls, Req } from "./ModalShell";
 
 // ป๊อปอัปการกระทำในหน้าโครงการ — ส่งค่าให้หน้าแม่ยิง /api/b2b/projects/[id]/actions (หน้าแม่จัดการ error/saving)
@@ -89,6 +90,29 @@ export function CustomerEditModal({ initial, projectCount, saving, error, onConf
       </div>
       <div><label className={labelCls}>ที่อยู่ (ออกเอกสาร)</label>
         <textarea rows={2} className={areaCls} value={v.address} onChange={(e) => setV({ ...v, address: e.target.value })} /></div>
+    </ModalShell>
+  );
+}
+
+/** ใบเสนอราคาใหม่ — เลือก BOQ ตัวเลือก (Rev ล่าสุด) · ชนิดใบตามขั้นของโครงการ (server ตั้งเอง) */
+export function NewQuoteModal({ boqs, kindLabel, saving, error, onConfirm, onClose }: Common & {
+  boqs: B2bProjectBoq[]; kindLabel: string;
+  onConfirm: (boqId: number) => void;
+}) {
+  const [boqId, setBoqId] = useState(boqs.length === 1 ? String(boqs[0].id) : "");
+  const picked = boqs.find((b) => String(b.id) === boqId);
+  return (
+    <ModalShell title={`สร้างใบเสนอราคา${kindLabel}`} subtitle="รายการเหมา · งวดเงิน · รับประกัน · หมายเหตุ ตั้งต้นตามแม่แบบ SSE แก้ได้ก่อนส่งอนุมัติ"
+      confirmText="สร้างใบเสนอราคา" saving={saving} error={error} onClose={onClose} onConfirm={() => onConfirm(Number(boqId))}>
+      <div><label className={labelCls}>เสนอจาก BOQ <Req /></label>
+        <Dropdown value={boqId} onChange={setBoqId} placeholder={boqs.length ? "เลือก BOQ ตัวเลือก" : "ยังไม่มี BOQ — เพิ่ม BOQ ก่อน"}
+          options={boqs.map((b) => ({ value: String(b.id), label: `${b.option_label || b.doc_no} · ${b.doc_no} Rev ${b.revision}` }))} /></div>
+      {picked && (
+        <div className="rounded-lg bg-gray-50 px-3 py-2 text-sm text-gray-600">
+          {picked.capacity_wp ? `${formatTHB(picked.capacity_wp / 1000, { decimals: 2 })} kWp · ` : ""}ราคาขาย BOQ {picked.total_sale ? formatTHB(picked.total_sale, { decimals: 0 }) : "—"} บาท (ก่อน VAT)
+          {picked.pending_lines > 0 && <div className="mt-1 text-xs font-semibold text-red-600">มีบรรทัดรอราคา {picked.pending_lines} — สร้างใบได้ แต่ส่งอนุมัติไม่ได้จนกว่า Purchase ใส่ราคาครบ</div>}
+        </div>
+      )}
     </ModalShell>
   );
 }

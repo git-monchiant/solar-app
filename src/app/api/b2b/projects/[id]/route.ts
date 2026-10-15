@@ -1,11 +1,11 @@
 import { NextRequest, NextResponse } from "next/server";
 import { requireAnyActiveRole } from "@/lib/auth";
 import { getB2bDb, sql } from "@/lib/b2b/db";
-import { B2B_PROJECT_ROLES, readProjectBody } from "@/lib/b2b/project";
+import { B2B_PROJECT_VIEW_ROLES, B2B_PROJECT_ROLES, readProjectBody } from "@/lib/b2b/project";
 import { ensureCustomer, loadProject, logActivity, syncBoqHeaders } from "@/lib/b2b/project-server";
 
 export async function GET(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
-  const gate = await requireAnyActiveRole(req, B2B_PROJECT_ROLES);
+  const gate = await requireAnyActiveRole(req, B2B_PROJECT_VIEW_ROLES);
   if (gate.error) return gate.error;
   const id = parseInt((await params).id);
   if (!Number.isFinite(id)) return NextResponse.json({ error: "id ไม่ถูกต้อง" }, { status: 400 });

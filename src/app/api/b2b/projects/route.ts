@@ -1,13 +1,13 @@
 import { NextRequest, NextResponse } from "next/server";
 import { requireAnyActiveRole } from "@/lib/auth";
 import { getB2bDb, sql } from "@/lib/b2b/db";
-import { B2B_OPEN_STAGES, B2B_PROJECT_ROLES, B2B_STAGE, readProjectBody } from "@/lib/b2b/project";
+import { B2B_OPEN_STAGES, B2B_PROJECT_ROLES, B2B_PROJECT_VIEW_ROLES, B2B_STAGE, readProjectBody } from "@/lib/b2b/project";
 import { ensureCustomer, logActivity, nextProjectCode, projectRowSelect, toProjectRow } from "@/lib/b2b/project-server";
 
 // รายการโครงการ B2B — แผน docs/plan/20261015-07-b2b-project-flow.md เฟส 1
 // ?stage= open (ค่าเริ่มต้น = 3100–3900) · เลขขั้น · lost (แพ้งาน + ยกเลิก) · closed · all
 export async function GET(req: NextRequest) {
-  const gate = await requireAnyActiveRole(req, B2B_PROJECT_ROLES);
+  const gate = await requireAnyActiveRole(req, B2B_PROJECT_VIEW_ROLES);
   if (gate.error) return gate.error;
   const stage = req.nextUrl.searchParams.get("stage") ?? "open";
   const list = (xs: readonly number[]) => `p.stage IN (${xs.join(",")})`;

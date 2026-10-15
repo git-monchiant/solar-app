@@ -11,7 +11,7 @@ import { apiFetch } from "@/lib/api";
 import { hasRole, useActiveRoles } from "@/lib/roles";
 import { formatThaiDate, formatTHB } from "@/lib/utils/formatters";
 import {
-  B2B_FLOW, B2B_LOSABLE_MAX_STAGE, B2B_PROJECT_ROLES, B2B_STAGE, isClosedStage, stageLabel,
+  B2B_FLOW, B2B_LOSABLE_MAX_STAGE, B2B_PROJECT_ROLES, B2B_PROJECT_VIEW_ROLES, B2B_STAGE, isClosedStage, stageLabel,
   type B2bProject, type B2bUserOption,
 } from "@/lib/b2b/project";
 import StageBadge from "@/components/b2b/project/StageBadge";
@@ -19,14 +19,15 @@ import ProjectStepCard, { type StepState } from "@/components/b2b/project/Projec
 import BoqOptionsTable from "@/components/b2b/project/BoqOptionsTable";
 import ActivityList from "@/components/b2b/project/ActivityList";
 import ProjectFormModal from "@/components/b2b/project/ProjectFormModal";
-import { CustomerEditModal, NewBoqModal, ReasonModal, RecordSurveyModal, ScheduleSurveyModal } from "@/components/b2b/project/ActionModals";
+import { CustomerEditModal, NewBoqModal, NewQuoteModal, ReasonModal, RecordSurveyModal, ScheduleSurveyModal } from "@/components/b2b/project/ActionModals";
+import QuoteList from "@/components/b2b/project/QuoteList";
 
 // หน้าโครงการ B2B — โครงเดียวกับหน้ารายละเอียดลีด (header ติดบน · แท็บ · รางขั้นซ้าย · การ์ดขั้น · Activity Log ขวา)
 // แผน docs/plan/20261015-07-b2b-project-flow.md เฟส 1: เดินได้ 01–04 · 05–09 ล็อกไว้จนเฟส 2–4
 // ขั้นเปลี่ยนผ่าน /actions ที่เดียว (server ตรวจกติกา) · ทุกครั้งได้โครงการทั้งก้อนกลับมาแทนค่าเดิม
 
 type Tab = "workflow" | "info" | "boq" | "timeline";
-type Modal = null | "edit" | "customer" | "lost" | "cancel" | "reopen" | "back_survey" | "schedule" | "record" | "new_boq";
+type Modal = null | "edit" | "customer" | "lost" | "cancel" | "reopen" | "back_survey" | "schedule" | "record" | "new_boq" | "new_quote";
 
 const LOCKED_HINT: Record<number, string> = {
   3500: "ปลดเมื่อมีใบเสนอราคาที่ผ่านอนุมัติ 3 ชั้นและส่งลูกค้าแล้ว (เฟส 2–3)",
@@ -41,7 +42,9 @@ export default function B2bProjectPage({ params }: { params: Promise<{ id: strin
   const router = useRouter();
   const { confirm, toast } = useDialog();
   const { activeRoles } = useActiveRoles();
-  const canUse = hasRole(activeRoles, ...B2B_PROJECT_ROLES);
+  const canUse = hasRole(activeRoles, ...B2B_PROJECT_VIEW_ROLES);
+  // ผู้ตรวจสอบเปิดดูได้อย่างเดียว — ปุ่มเปลี่ยนขั้น/แก้ข้อมูลเห็นเฉพาะ Solar B2B + admin (API ตรวจซ้ำ)
+  const canEdit = hasRole(activeRoles, ...B2B_PROJECT_ROLES);
   const [p, setP] = useState<B2bProject | null>(null);
   const [loadError, setLoadError] = useState("");
   const [users, setUsers] = useState<B2bUserOption[]>([]);
@@ -129,7 +132,7 @@ export default function B2bProjectPage({ params }: { params: Promise<{ id: strin
   const btnGhost = "h-9 px-2 text-sm font-semibold text-active hover:underline whitespace-nowrap";
   const dl = "grid gap-x-6 gap-y-2 text-sm md:grid-cols-2";
   const dt = "text-xs text-gray-400";
-  const canEditBoq = !closed && p.stage <= B2B_STAGE.confirm;
+  const canEditBoq = canEdit && !closed && p.stage <= B2B_STAGE.confirm;
   const mapLink = p.latitude != null && p.longitude != null ? `https://www.google.com/maps?q=${p.latitude},${p.longitude}` : null;
 
   const infoGrid = (
@@ -144,6 +147,15 @@ export default function B2bProjectPage({ params }: { params: Promise<{ id: strin
     <div className="rounded-lg border border-dashed border-gray-300 bg-white/60 px-3 py-2 text-xs text-gray-500">{text}</div>
   );
 
+  // ใบประมาณการอยู่การ์ดขั้น 02 · ใบยืนยันอยู่การ์ดขั้น 04
+  const estimateQuotes = p.quotes.filter((q) => q.kind === "estimate");
+  const confirmQuotes = p.quotes.filter((q) => q.kind === "confirmed");
+  const createQuote = (boqId: number) => run(async () => {
+    if (!boqId) throw new Error("กรุณาเลือก BOQ");
+    const r = await apiFetch("/api/b2b/quotations", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ project_id: p.id, boq_id: boqId }) }) as { id: number };
+    router.push(`/b2b/quotations/${r.id}`);
+  });
+
   // ── การ์ดขั้น ──
   const steps: Record<number, { summary?: ReactNode; body?: ReactNode }> = {
     3100: {
@@ -151,7 +163,7 @@ export default function B2bProjectPage({ params }: { params: Promise<{ id: strin
       body: (
         <>
           {infoGrid}
-          {stateOf(3100) === "active" && (
+          {canEdit && stateOf(3100) === "active" && (
             <div className="flex flex-wrap justify-end gap-2 pt-1">
               <button type="button" className={btn} onClick={() => openModal("schedule")}>ข้ามไปนัดสำรวจ</button>
               <button type="button" className={btnPrimary} onClick={() => void moveTo(B2B_STAGE.estimate, "เริ่มทำ BOQ ราคาประมาณการ (Google Maps) — เพิ่มได้หลายขนาด")}>เริ่มทำราคาประมาณการ</button>
@@ -161,13 +173,14 @@ export default function B2bProjectPage({ params }: { params: Promise<{ id: strin
       ),
     },
     3200: {
-      summary: p.boqs.length ? `BOQ ${p.boqs.length} ตัวเลือก` : "ข้ามขั้นนี้",
+      summary: p.boqs.length ? `BOQ ${p.boqs.length} ตัวเลือก${estimateQuotes.length ? ` · ใบประมาณการ ${estimateQuotes.length} ใบ` : ""}` : "ข้ามขั้นนี้",
       body: (
         <>
           <BoqOptionsTable boqs={p.boqs} canAdd={canEditBoq} onAdd={() => openModal("new_boq")} />
-          {stateOf(3200) === "active" && (
+          <QuoteList quotes={estimateQuotes} canAdd={canEdit && stateOf(3200) === "active"} onAdd={() => openModal("new_quote")} />
+          {canEdit && stateOf(3200) === "active" && (
             <>
-              {phaseNote("ใบเสนอราคา (ผัง SSE) + อนุมัติ 3 ชั้น เปิดใช้ในเฟส 2 — ตอนนี้ส่งราคาจากไฟล์ Excel ของ BOQ ไปก่อน")}
+              {phaseNote("ใบประมาณการต้องผ่านผู้ตรวจสอบ 3 ชั้นก่อนส่งลูกค้า · ลูกค้าสนใจแล้ว → นัดสำรวจเพื่อยืนยันราคา")}
               <div className="flex flex-wrap justify-end gap-2">
                 <button type="button" className={btnGhost} style={{ minHeight: 0 }} onClick={() => void moveTo(B2B_STAGE.confirm, "ข้ามการสำรวจ ไปขั้นราคายืนยัน — ใช้เมื่อมีข้อมูลหน้างานพอแล้ว (เช่น ลูกค้าส่งแบบหลังคา)")}>ข้ามสำรวจ</button>
                 <button type="button" className={btnPrimary} onClick={() => openModal("schedule")}>ลูกค้าสนใจ · นัดสำรวจ</button>
@@ -190,7 +203,7 @@ export default function B2bProjectPage({ params }: { params: Promise<{ id: strin
           {p.survey_done_at && p.survey_note && (
             <div><div className={dt}>ผลสำรวจ</div><p className="text-sm text-gray-800 whitespace-pre-line">{p.survey_note}</p></div>
           )}
-          {stateOf(3300) === "active" && (
+          {canEdit && stateOf(3300) === "active" && (
             <div className="flex flex-wrap justify-end gap-2 pt-1">
               <button type="button" className={btn} onClick={() => openModal("schedule")}>{p.survey_date ? "เลื่อนนัด" : "นัดสำรวจ"}</button>
               <button type="button" className={btnPrimary} disabled={!p.survey_date} title={p.survey_date ? undefined : "นัดวันสำรวจก่อน"} onClick={() => openModal("record")}>บันทึกผลสำรวจ</button>
@@ -200,13 +213,14 @@ export default function B2bProjectPage({ params }: { params: Promise<{ id: strin
       ),
     },
     3400: {
-      summary: `BOQ ${p.boqs.length} ตัวเลือก`,
+      summary: `BOQ ${p.boqs.length} ตัวเลือก${confirmQuotes.length ? ` · ใบยืนยัน ${confirmQuotes.length} ใบ` : ""}`,
       body: (
         <>
           <BoqOptionsTable boqs={p.boqs} canAdd={canEditBoq} onAdd={() => openModal("new_boq")} />
-          {stateOf(3400) === "active" && (
+          <QuoteList quotes={confirmQuotes} canAdd={canEdit && stateOf(3400) === "active"} onAdd={() => openModal("new_quote")} />
+          {canEdit && stateOf(3400) === "active" && (
             <>
-              {phaseNote("ทำ BOQ Rev ใหม่ตามผลสำรวจในหน้าทำ BOQ · ใบเสนอราคา + อนุมัติ 3 ชั้น (เฟส 2) · ปุ่มได้งาน (เฟส 3)")}
+              {phaseNote("ทำ BOQ Rev ใหม่ตามผลสำรวจ แล้วออกใบเสนอราคายืนยัน · ลูกค้าต่อรอง = ออก Rev ใหม่ของใบ · ปุ่มได้งาน (เฟส 3)")}
               <div className="flex flex-wrap justify-end gap-2">
                 <button type="button" className={btnGhost} style={{ minHeight: 0 }} onClick={() => openModal("back_survey")}>ถอยไปสำรวจซ้ำ</button>
                 <button type="button" className={btnPrimary} disabled title="เปิดใช้ในเฟส 3 — ต้องมีใบเสนอราคาที่ส่งลูกค้าแล้ว">ได้งาน</button>
@@ -252,7 +266,7 @@ export default function B2bProjectPage({ params }: { params: Promise<{ id: strin
             </div>
           </div>
           <div className="flex items-center gap-2 px-3 md:px-4 shrink-0">
-            {closed ? (
+            {!canEdit ? null : closed ? (
               p.stage !== B2B_STAGE.closed && <button type="button" className={btnPrimary} onClick={() => openModal("reopen")}>เปิดกลับ</button>
             ) : (
               <>
@@ -318,7 +332,7 @@ export default function B2bProjectPage({ params }: { params: Promise<{ id: strin
               <section className="rounded-xl border border-gray-200 bg-white p-4">
                 <div className="flex items-center gap-2 mb-3">
                   <h2 className="text-sm font-bold text-gray-900">บริษัทลูกค้า</h2>
-                  {!closed && <button type="button" className={`ml-auto ${btn}`} onClick={() => openModal("customer")}>แก้ข้อมูลบริษัท</button>}
+                  {canEdit && !closed && <button type="button" className={`ml-auto ${btn}`} onClick={() => openModal("customer")}>แก้ข้อมูลบริษัท</button>}
                 </div>
                 <dl className={dl}>
                   <div><dt className={dt}>ชื่อบริษัท</dt><dd className="text-gray-800">{p.customer.name}</dd></div>
@@ -329,7 +343,7 @@ export default function B2bProjectPage({ params }: { params: Promise<{ id: strin
               <section className="rounded-xl border border-gray-200 bg-white p-4">
                 <div className="flex items-center gap-2 mb-3">
                   <h2 className="text-sm font-bold text-gray-900">โครงการ</h2>
-                  {!closed && <button type="button" className={`ml-auto ${btn}`} onClick={() => openModal("edit")}>แก้ข้อมูลโครงการ</button>}
+                  {canEdit && !closed && <button type="button" className={`ml-auto ${btn}`} onClick={() => openModal("edit")}>แก้ข้อมูลโครงการ</button>}
                 </div>
                 <dl className={dl}>
                   <div><dt className={dt}>เลขที่ · ชื่อ</dt><dd className="text-gray-800">{p.code} · {p.name}</dd></div>
@@ -341,10 +355,10 @@ export default function B2bProjectPage({ params }: { params: Promise<{ id: strin
                   {p.note && <div className="md:col-span-2"><dt className={dt}>หมายเหตุ</dt><dd className="text-gray-800 whitespace-pre-line">{p.note}</dd></div>}
                 </dl>
               </section>
-              <div className="flex gap-2 md:hidden">
+              {canEdit && <div className="flex gap-2 md:hidden">
                 {!closed && p.stage <= B2B_LOSABLE_MAX_STAGE && <button type="button" className={btn} onClick={() => openModal("lost")}>แพ้งาน</button>}
                 {!closed && <button type="button" className={btn} onClick={() => openModal("cancel")}>ยกเลิกโครงการ</button>}
-              </div>
+              </div>}
             </div>
           )}
 
@@ -352,7 +366,7 @@ export default function B2bProjectPage({ params }: { params: Promise<{ id: strin
 
           {tab === "timeline" && (
             <div className="rounded-xl border border-gray-200 bg-white overflow-hidden lg:hidden">
-              <ActivityList activities={p.activities} onNote={addNote} />
+              <ActivityList activities={p.activities} onNote={canEdit ? addNote : undefined} />
             </div>
           )}
         </main>
@@ -361,7 +375,7 @@ export default function B2bProjectPage({ params }: { params: Promise<{ id: strin
         <aside className="hidden lg:block w-80 shrink-0 border-l border-gray-200 bg-white">
           <div className="sticky overflow-y-auto" style={{ top: hdrH, maxHeight: `calc(100vh - ${hdrH}px)` }}>
             <div className="px-4 py-2.5 text-xs font-semibold uppercase tracking-wider text-gray-500 border-b border-gray-100">Activity Log</div>
-            <ActivityList activities={p.activities} onNote={addNote} />
+            <ActivityList activities={p.activities} onNote={canEdit ? addNote : undefined} />
           </div>
         </aside>
       </div>
@@ -373,6 +387,10 @@ export default function B2bProjectPage({ params }: { params: Promise<{ id: strin
             await apiFetch(`/api/b2b/customers/${p.customer.id}`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify(v) });
             load();
           })} />
+      )}
+      {modal === "new_quote" && (
+        <NewQuoteModal boqs={p.boqs} kindLabel={p.stage === B2B_STAGE.estimate ? "ประมาณการ" : "ยืนยัน"} saving={saving} error={error}
+          onClose={() => setModal(null)} onConfirm={(id) => void createQuote(id)} />
       )}
       {modal === "new_boq" && <NewBoqModal saving={saving} error={error} onClose={() => setModal(null)} onConfirm={(v) => void createBoq(v)} />}
       {modal === "schedule" && (

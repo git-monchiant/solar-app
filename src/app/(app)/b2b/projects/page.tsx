@@ -8,7 +8,7 @@ import { apiFetch } from "@/lib/api";
 import { useActiveMenuItem } from "@/lib/hooks/useActiveModule";
 import { hasRole, useActiveRoles } from "@/lib/roles";
 import { formatThaiDate, formatTHB } from "@/lib/utils/formatters";
-import { B2B_FLOW, B2B_MAX_MOVABLE_STAGE, B2B_PROJECT_ROLES, B2B_STAGE, stageLabel, type B2bProjectRow } from "@/lib/b2b/project";
+import { B2B_FLOW, B2B_MAX_MOVABLE_STAGE, B2B_PROJECT_ROLES, B2B_PROJECT_VIEW_ROLES, B2B_STAGE, stageLabel, type B2bProjectRow } from "@/lib/b2b/project";
 import StageBadge from "@/components/b2b/project/StageBadge";
 import ProjectFormModal from "@/components/b2b/project/ProjectFormModal";
 
@@ -43,7 +43,8 @@ export default function B2bProjectListPage() {
   const stage = searchParams.get("stage") ?? "open";
   const { item } = useActiveMenuItem();
   const { activeRoles } = useActiveRoles();
-  const canUse = hasRole(activeRoles, ...B2B_PROJECT_ROLES);
+  const canUse = hasRole(activeRoles, ...B2B_PROJECT_VIEW_ROLES);
+  const canEdit = hasRole(activeRoles, ...B2B_PROJECT_ROLES);
   // ผลที่โหลดผูกกับขั้นที่ขอ — เปลี่ยนเมนูแล้วยังไม่ได้ผลใหม่ = กำลังโหลด (ไม่โชว์รายการของเมนูเก่าค้าง)
   const [data, setData] = useState<{ stage: string; rows: B2bProjectRow[] } | null>(null);
   const rows = data?.stage === stage ? data.rows : null;
@@ -99,8 +100,10 @@ export default function B2bProjectListPage() {
           <div className="inline-flex rounded-lg border border-gray-200 overflow-hidden divide-x divide-gray-200">
             {toggleBtn("list", "รายการ")}{toggleBtn("board", "กระดาน")}
           </div>
-          <button type="button" onClick={() => setCreating(true)}
-            className="h-8 px-5 rounded-lg bg-primary text-white text-sm font-semibold hover:bg-primary-dark transition-colors">+ สร้างโครงการ</button>
+          {canEdit && (
+            <button type="button" onClick={() => setCreating(true)}
+              className="h-8 px-5 rounded-lg bg-primary text-white text-sm font-semibold hover:bg-primary-dark transition-colors">+ สร้างโครงการ</button>
+          )}
         </div>
 
         {shown.length === 0 ? (

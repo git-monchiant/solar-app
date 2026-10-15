@@ -42,5 +42,11 @@ assert.equal(hasAnyGrantedRole(["sales_sup", "solar_sup"], ["b2b", "purchase"]),
 assert.deepEqual(parseActiveRolesHeader('["b2b","purchase"]'), ["b2b", "purchase"]);
 assert.deepEqual(resolveEffectiveRoles(["admin"], ["purchase"]), ["purchase"]);
 assert.deepEqual(resolveEffectiveRoles(["b2b"], ["purchase"]), []);
+// ผู้ตรวจสอบใบเสนอราคา B2B 3 ชั้น — ไม่สืบทอด b2b และไม่สืบทอดกันเอง (แผน 20261015-07)
+assert.equal(grantsRole("b2b_review1", "b2b"), false);
+assert.equal(grantsRole("b2b_review3", "b2b_review2"), false);
+assert.deepEqual(parseActiveRolesHeader('["b2b_review1","b2b_review2","b2b_review3"]'), ["b2b_review1", "b2b_review2", "b2b_review3"]);
+assert.deepEqual(resolveEffectiveRoles(["b2b_review2"], ["b2b_review2"]), ["b2b_review2"]);
+assert.deepEqual(resolveEffectiveRoles(["b2b_review2"], ["b2b_review1"]), []);
 
 console.log("role-permissions tests passed");

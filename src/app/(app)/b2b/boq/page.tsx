@@ -11,7 +11,7 @@ import { apiFetch } from "@/lib/api";
 import { useActiveMenuItem } from "@/lib/hooks/useActiveModule";
 import { hasRole, useActiveRoles } from "@/lib/roles";
 import { formatThaiDate, formatTHB } from "@/lib/utils/formatters";
-import { B2B_BOQ_ROLES } from "@/lib/b2b/boq";
+import { B2B_BOQ_ROLES, B2B_BOQ_VIEW_ROLES } from "@/lib/b2b/boq";
 import { perWp } from "@/lib/b2b/boq-calc";
 import { B2B_STAGE, type B2bProjectRow } from "@/lib/b2b/project";
 
@@ -30,7 +30,8 @@ export default function B2bBoqListPage() {
   const router = useRouter();
   const { item } = useActiveMenuItem();   // หัวเรื่อง = ชื่อเมนู (กติกา ui-rules)
   const { activeRoles } = useActiveRoles();
-  const canUse = hasRole(activeRoles, ...B2B_BOQ_ROLES);
+  const canUse = hasRole(activeRoles, ...B2B_BOQ_VIEW_ROLES);
+  const canEdit = hasRole(activeRoles, ...B2B_BOQ_ROLES);
   const [rows, setRows] = useState<Row[] | null>(null);
   const [all, setAll] = useState(false);
   const [search, setSearch] = useState("");
@@ -140,8 +141,8 @@ export default function B2bBoqListPage() {
           <label className="inline-flex items-center gap-1.5 text-sm text-gray-600">
             <input type="checkbox" checked={all} onChange={(e) => setAll(e.target.checked)} /> แสดงทุก Revision
           </label>
-          <button type="button" onClick={openCreate}
-            className="h-8 px-5 rounded-lg bg-primary text-white text-sm font-semibold hover:bg-primary-dark transition-colors">+ สร้าง BOQ</button>
+          {canEdit && <button type="button" onClick={openCreate}
+            className="h-8 px-5 rounded-lg bg-primary text-white text-sm font-semibold hover:bg-primary-dark transition-colors">+ สร้าง BOQ</button>}
         </div>
 
         {shown.length === 0 ? (

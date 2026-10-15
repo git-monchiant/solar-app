@@ -1,10 +1,13 @@
 import type { AppRole } from "@/lib/role-permissions";
+import { QUOTE_STATUS_LABEL, QUOTE_SUB_OFFSET, type QuoteKind, type QuoteStatus } from "./quotation";
 
 // โครงการ B2B — ขั้น / ชนิด / สิทธิ์ / ตัวตรวจ body ที่หน้าจอกับ API ใช้ร่วมกัน (ไม่มี mssql ⇒ client import ได้)
 // แผน docs/plan/20261015-07-b2b-project-flow.md · journey สาย 3000 (ขาย B2C = 100–1000 · O&M = 2000)
 
-/** ทำงานโครงการ = Solar B2B + admin (ผู้ตรวจสอบ 3 ชั้นมาในเฟส 2 · Purchase เห็นขั้นจัดซื้อในเฟส 4) */
+/** ทำงานโครงการ (สร้าง/แก้/เปลี่ยนขั้น) = Solar B2B + admin · Purchase เห็นขั้นจัดซื้อในเฟส 4 */
 export const B2B_PROJECT_ROLES = ["b2b", "admin"] as const satisfies readonly AppRole[];
+/** เปิดดูโครงการ = + ผู้ตรวจสอบใบเสนอราคา 3 ชั้น (ต้องเห็นโครงการ/BOQ ที่ตัวเองตรวจ · แก้ไม่ได้) */
+export const B2B_PROJECT_VIEW_ROLES = ["b2b", "b2b_review1", "b2b_review2", "b2b_review3", "admin"] as const satisfies readonly AppRole[];
 
 export const B2B_STAGE = {
   lead: 3100,       // โอกาสขาย
@@ -51,6 +54,11 @@ export function stageLabel(stage: number): string {
 
 /** ป้ายขั้นย่อย (null = ไม่มี) */
 export function subLabel(stage: number, sub: number | null, surveyDate: string | null): string | null {
+  // ราคาประมาณการ/ยืนยัน: หลักสิบ = สถานะใบเสนอราคาที่ขยับล่าสุด
+  if ((stage === B2B_STAGE.estimate || stage === B2B_STAGE.confirm) && sub != null) {
+    const st = (Object.keys(QUOTE_SUB_OFFSET) as QuoteStatus[]).find((k) => stage + QUOTE_SUB_OFFSET[k] === sub);
+    return st ? QUOTE_STATUS_LABEL[st] : null;
+  }
   if (stage !== B2B_STAGE.survey) return null;
   if (sub === B2B_SURVEY_SUB.scheduled) return "นัดสำรวจแล้ว";
   if (sub === B2B_SURVEY_SUB.due) return "ถึงวันสำรวจ · รอบันทึกผล";
@@ -78,6 +86,13 @@ export type B2bProjectBoq = {
   pending_lines: number; updated_at: string; updated_by_name: string | null;
 };
 
+/** ใบเสนอราคาในโครงการ = Rev ล่าสุดของแต่ละเลขที่ */
+export type B2bProjectQuote = {
+  id: number; doc_no: string; revision: number; kind: QuoteKind; status: QuoteStatus;
+  subtotal: number; total: number; updated_at: string; issue_date: string | null; validity_days: number | null;
+  boq_doc_no: string; boq_revision: number; option_label: string | null;
+};
+
 export type B2bActivity = {
   id: number; kind: string; from_stage: number | null; to_stage: number | null; message: string | null;
   created_at: string; created_by_name: string | null;
@@ -100,6 +115,7 @@ export type B2bProject = B2bProjectRow & {
   note: string | null;
   created_at: string; created_by_name: string | null; updated_by_name: string | null;
   boqs: B2bProjectBoq[];
+  quotes: B2bProjectQuote[];
   activities: B2bActivity[];
 };
 

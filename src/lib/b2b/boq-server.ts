@@ -16,7 +16,9 @@ export async function loadCategories(db: Queryable): Promise<B2bCategory[]> {
 
 export async function loadBoq(db: Queryable, id: number): Promise<{ header: BoqHeader; lines: BoqLine[]; revisions: BoqRevision[] } | null> {
   const h = await db.request().input("id", sql.Int, id).query(`
-    SELECT b.*, cu.full_name AS created_by_name, uu.full_name AS updated_by_name, pj.code AS project_code
+    SELECT b.*, cu.full_name AS created_by_name, uu.full_name AS updated_by_name, pj.code AS project_code,
+           (SELECT TOP 1 CONCAT(q.doc_no, ' Rev ', q.revision) FROM b2b_quotations q
+            WHERE q.boq_id = b.id AND q.status NOT IN ('draft', 'changes_required') ORDER BY q.id DESC) AS locked_by_quote
     FROM b2b_boqs b
     LEFT JOIN b2b_projects pj ON pj.id = b.project_id
     LEFT JOIN users cu ON cu.id = b.created_by
@@ -27,6 +29,7 @@ export async function loadBoq(db: Queryable, id: number): Promise<{ header: BoqH
   const header: BoqHeader = {
     id: row.id, doc_no: row.doc_no, revision: row.revision, is_latest: !!row.is_latest,
     project_id: row.project_id ?? null, project_code: row.project_code ?? null, option_label: row.option_label ?? null,
+    locked_by_quote: row.locked_by_quote ?? null,
     project_name: row.project_name, customer_name: row.customer_name, location: row.location,
     latitude: num(row.latitude), longitude: num(row.longitude), margin_pct: Number(row.margin_pct), vat_pct: Number(row.vat_pct),
     addon_modes: parseAddonModes(row.addon_modes), note: row.note,

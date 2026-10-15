@@ -7,6 +7,8 @@ import type { PriceBasis } from "./materials";
 
 /** ทำ BOQ = Solar B2B + admin · Purchase ไม่เห็นหน้า BOQ (เคาะ 6 ต.ค. 69) */
 export const B2B_BOQ_ROLES = ["b2b", "admin"] as const satisfies readonly AppRole[];
+/** เปิดดู/ดาวน์โหลด Excel = + ผู้ตรวจสอบใบเสนอราคา 3 ชั้น (แผน 20261015-07 เฟส 2) */
+export const B2B_BOQ_VIEW_ROLES = ["b2b", "b2b_review1", "b2b_review2", "b2b_review3", "admin"] as const satisfies readonly AppRole[];
 
 /** หมวดเสริม (Optional Add-on) — ใส่ราคาเองได้เฉพาะหมวดเหล่านี้ (เคาะ 6 ต.ค. 69 ตัวเลือก ข.) */
 export const ADDON_MIN_CATEGORY = 19;
@@ -27,6 +29,8 @@ export type BoqHeader = {
   project_code: string | null;
   /** ชื่อตัวเลือกในโครงการ เช่น "998.64 kWp · Jinko 730" */
   option_label: string | null;
+  /** ใบเสนอราคาที่ส่งอนุมัติแล้วอ้าง Rev นี้ ("SSE-… Rev 0") — แก้ไม่ได้ ต้องออก Revision ใหม่ */
+  locked_by_quote: string | null;
   project_name: string;
   customer_name: string | null;
   location: string | null;

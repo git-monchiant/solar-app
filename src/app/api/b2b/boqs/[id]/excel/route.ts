@@ -1,13 +1,13 @@
 import { NextRequest, NextResponse } from "next/server";
 import { requireAnyActiveRole } from "@/lib/auth";
 import { getB2bDb } from "@/lib/b2b/db";
-import { B2B_BOQ_ROLES } from "@/lib/b2b/boq";
+import { B2B_BOQ_VIEW_ROLES } from "@/lib/b2b/boq";
 import { loadBoq, loadCategories } from "@/lib/b2b/boq-server";
 import { boqFileName, buildBoqWorkbook } from "@/lib/b2b/boq-excel";
 
 // ดาวน์โหลดใบ BOQ เป็นไฟล์ Excel — สร้างจากข้อมูลที่บันทึกแล้ว (ไม่ใช่ที่ค้างในหน้าจอ) · ทุก revision ดาวน์โหลดได้
 export async function GET(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
-  const gate = await requireAnyActiveRole(req, B2B_BOQ_ROLES);
+  const gate = await requireAnyActiveRole(req, B2B_BOQ_VIEW_ROLES);
   if (gate.error) return gate.error;
   const id = parseInt((await params).id);
   if (!Number.isFinite(id)) return NextResponse.json({ error: "id ไม่ถูกต้อง" }, { status: 400 });

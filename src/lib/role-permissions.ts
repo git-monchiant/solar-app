@@ -1,5 +1,8 @@
 // b2b = Solar B2B · purchase = ฝ่ายจัดซื้อ (ใส่ราคา Master Data ของ BOQ) — แผน docs/plan/20261005-01-b2b-boq-module.md
-export type AppRole = "admin" | "sales" | "solar_sup" | "sales_sup" | "solar" | "leadsseeker" | "account" | "b2b" | "purchase";
+// b2b_review1–3 = ผู้ตรวจสอบใบเสนอราคา B2B ชั้น 1–3 ตามช่องลงชื่อในแม่แบบ SSE — แผน docs/plan/20261015-07-b2b-project-flow.md
+//   ไม่สืบทอด b2b (ตรวจ/อนุมัติได้ แต่ไม่แก้ BOQ/ใบเสนอราคาเอง)
+export type AppRole = "admin" | "sales" | "solar_sup" | "sales_sup" | "solar" | "leadsseeker" | "account" | "b2b" | "purchase"
+  | "b2b_review1" | "b2b_review2" | "b2b_review3";
 
 export const ACTIVE_ROLES_HEADER = "x-active-roles";
 
@@ -13,6 +16,9 @@ const APP_ROLES = new Set<AppRole>([
   "account",
   "b2b",
   "purchase",
+  "b2b_review1",
+  "b2b_review2",
+  "b2b_review3",
 ]);
 
 export function normalizeAppRoles(roles: readonly string[] | undefined | null): AppRole[] {

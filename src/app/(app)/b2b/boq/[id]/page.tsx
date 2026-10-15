@@ -11,7 +11,7 @@ import { apiFetch, getUserContextHeaders } from "@/lib/api";
 import { hasRole, useActiveRoles } from "@/lib/roles";
 import { formatNumber, formatThaiDate, formatTHB } from "@/lib/utils/formatters";
 import { calcBoq, perWp, type AddonMode } from "@/lib/b2b/boq-calc";
-import { ADDON_MIN_CATEGORY, B2B_BOQ_ROLES, type BoqHeader, type BoqLine, type BoqRevision } from "@/lib/b2b/boq";
+import { ADDON_MIN_CATEGORY, B2B_BOQ_ROLES, B2B_BOQ_VIEW_ROLES, type BoqHeader, type BoqLine, type BoqRevision } from "@/lib/b2b/boq";
 import type { B2bCategory, B2bMaterial } from "@/lib/b2b/materials";
 import BoqSummary from "@/components/b2b/boq/BoqSummary";
 import BoqCategorySection from "@/components/b2b/boq/BoqCategorySection";
@@ -43,7 +43,9 @@ export default function BoqEditorPage({ params }: { params: Promise<{ id: string
   const router = useRouter();
   const { confirm, toast } = useDialog();
   const { activeRoles } = useActiveRoles();
-  const canUse = hasRole(activeRoles, ...B2B_BOQ_ROLES);
+  const canUse = hasRole(activeRoles, ...B2B_BOQ_VIEW_ROLES);
+  // ผู้ตรวจสอบใบเสนอราคาเปิดดู BOQ ได้ (แผน 20261015-07) — แก้ได้เฉพาะ Solar B2B + admin
+  const canEdit = hasRole(activeRoles, ...B2B_BOQ_ROLES);
 
   const [data, setData] = useState<Loaded | null>(null);
   const [loadError, setLoadError] = useState("");
@@ -98,7 +100,7 @@ export default function BoqEditorPage({ params }: { params: Promise<{ id: string
   if (!data || !head) return <Loading />;
 
   const h = data.header;
-  const readOnly = !h.is_latest;
+  const readOnly = !h.is_latest || !canEdit || !!h.locked_by_quote;
   // ใบในโครงการ (แผน 20261015-07): ชื่อโครงการ/ลูกค้า/ที่ตั้ง/พิกัดมาจากโครงการ — แก้ในหน้าโครงการ (server ไม่รับค่าจากหน้านี้)
   const linked = h.project_id != null;
   const backHref = linked ? `/b2b/projects/${h.project_id}` : "/b2b/boq";
@@ -215,7 +217,12 @@ export default function BoqEditorPage({ params }: { params: Promise<{ id: string
         ) : undefined} />
 
       <div className="p-3 md:p-6 space-y-4">
-        {readOnly && (
+        {h.is_latest && h.locked_by_quote && (
+          <div className="rounded-lg border border-amber-200 bg-amber-50 px-4 py-2.5 text-sm text-amber-800">
+            Rev {h.revision} ใช้ในใบเสนอราคา {h.locked_by_quote} ที่ส่งอนุมัติแล้ว — แก้ไม่ได้ · ออก Revision ใหม่เพื่อแก้ตัวเลข
+          </div>
+        )}
+        {!h.is_latest && (
           <div className="rounded-lg border border-amber-200 bg-amber-50 px-4 py-2.5 text-sm text-amber-800">
             กำลังดู Rev {h.revision} — อ่านอย่างเดียว แก้ได้เฉพาะ Revision ล่าสุด
             {latest && <button type="button" onClick={() => router.push(`/b2b/boq/${latest.id}`)} className="ml-2 font-semibold underline" style={{ minHeight: 0 }}>ไป Rev {latest.revision}</button>}
@@ -315,13 +322,13 @@ export default function BoqEditorPage({ params }: { params: Promise<{ id: string
               className="h-9 whitespace-nowrap rounded-lg border border-emerald-300 bg-emerald-50 px-4 text-sm font-semibold text-emerald-700 hover:bg-emerald-100 disabled:opacity-50">
               {downloading ? "กำลังสร้างไฟล์…" : <><span className="md:hidden">Excel</span><span className="max-md:hidden">ดาวน์โหลด Excel</span></>}
             </button>
-            {!readOnly && (
+            {h.is_latest && canEdit && (
               <>
                 <button type="button" onClick={() => void newRevision()} className="h-9 whitespace-nowrap rounded-lg border border-gray-200 px-4 text-sm font-semibold text-gray-600 hover:bg-gray-50">
                   <span className="max-md:hidden">ออก </span>Revision ใหม่
                 </button>
-                <button type="button" onClick={() => void save()} disabled={saving || !dirty}
-                  className="h-9 whitespace-nowrap rounded-lg bg-primary px-5 text-sm font-semibold text-white hover:bg-primary-dark disabled:opacity-40">{saving ? "กำลังบันทึก…" : "บันทึก"}</button>
+                {!readOnly && <button type="button" onClick={() => void save()} disabled={saving || !dirty}
+                  className="h-9 whitespace-nowrap rounded-lg bg-primary px-5 text-sm font-semibold text-white hover:bg-primary-dark disabled:opacity-40">{saving ? "กำลังบันทึก…" : "บันทึก"}</button>}
               </>
             )}
           </div>

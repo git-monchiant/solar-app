@@ -155,6 +155,8 @@ export default function BottomNav({ collapsed = false, onToggle }: BottomNavProp
   const injected = activeModule
     ? INJECTED_MENU_ITEMS.filter((mi) =>
         (!mi.roles || hasRole(activeRoles, ...mi.roles)) && !hasHref(moduleMenuBase, mi.href))
+        // คิวเดียวกันมีหลายตัวตามชั้น (อนุมัติ B2B) — เหลือตัวแรกที่ role เห็น
+        .filter((mi, i, arr) => arr.findIndex((x) => x.href === mi.href) === i)
     : [];
   const moduleMenu = [...moduleMenuBase, ...injected];
   // แถบล่างมือถือ = "ตาม role ที่สวมอยู่" คงที่ทุกหน้า ไม่ผูกกับโมดูลที่เปิด

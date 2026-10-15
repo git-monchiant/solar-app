@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { requireAnyActiveRole } from "@/lib/auth";
 import { getB2bDb, sql } from "@/lib/b2b/db";
-import { B2B_BOQ_ROLES, readBoqHeader } from "@/lib/b2b/boq";
+import { B2B_BOQ_VIEW_ROLES, B2B_BOQ_ROLES, readBoqHeader } from "@/lib/b2b/boq";
 import { nextDocNo } from "@/lib/b2b/boq-server";
 import { isClosedStage } from "@/lib/b2b/project";
 import { logActivity } from "@/lib/b2b/project-server";
@@ -9,7 +9,7 @@ import { logActivity } from "@/lib/b2b/project-server";
 // รายการใบ BOQ — ค่าเริ่มต้นแสดง Rev ล่าสุดของแต่ละเลขที่ · ?all=1 = ทุก revision
 // ?all=1 จัดกลุ่มตามเลขที่ (Rev ใหม่ → เก่า) · ลำดับใบยังตามเวลาบันทึกล่าสุดของใบนั้นเหมือนโหมดปกติ
 export async function GET(req: NextRequest) {
-  const gate = await requireAnyActiveRole(req, B2B_BOQ_ROLES);
+  const gate = await requireAnyActiveRole(req, B2B_BOQ_VIEW_ROLES);
   if (gate.error) return gate.error;
   const all = req.nextUrl.searchParams.get("all") === "1";
   const db = await getB2bDb();

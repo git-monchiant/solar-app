@@ -1,7 +1,7 @@
 // ล้างข้อมูลทดสอบของโมดูล B2B ก่อนทีมใช้งานจริง
 // ผู้ใช้ขอ 6 ต.ค. 69 (หลังลองหน้า BOQ) · เคาะ 15 ต.ค. ให้ลบใบ BOQ ทดสอบก่อนเริ่มเฟส 1 ของแผน docs/plan/20261015-07-b2b-project-flow.md
 //
-//   --projects=all        ลบโครงการทุกโครงการ + timeline + BOQ ของโครงการ + บริษัทลูกค้าที่ไม่เหลือโครงการ
+//   --projects=all        ลบโครงการทุกโครงการ + timeline + ใบเสนอราคา + BOQ ของโครงการ + บริษัทลูกค้าที่ไม่เหลือโครงการ
 //   --projects=test       ลบเฉพาะโครงการที่ชื่อโครงการ/บริษัทมีคำว่า test (บริษัทลบเฉพาะที่ชื่อมี test และไม่เหลือโครงการ)
 //   --boqs=all            ลบใบ BOQ ทุกใบ (ทุก Rev + บรรทัด)
 //   --boqs=test           ลบเฉพาะเลขที่ที่ชื่อโครงการ/ลูกค้า (Rev ไหนก็ได้) มีคำว่า test — ลบทั้งชุด Rev ของเลขที่นั้น
@@ -47,18 +47,21 @@ try {
       : `p.name LIKE N'%test%' OR p.customer_id IN (SELECT id FROM b2b_customers WHERE name LIKE N'%test%')`;
     const rows = (await q(`
       SELECT p.id, p.code, p.name, c.name AS customer_name, p.stage,
-             (SELECT COUNT(*) FROM b2b_boqs b WHERE b.project_id = p.id) AS boqs
+             (SELECT COUNT(*) FROM b2b_boqs b WHERE b.project_id = p.id) AS boqs,
+             (SELECT COUNT(*) FROM b2b_quotations x WHERE x.project_id = p.id) AS quotes
       FROM b2b_projects p JOIN b2b_customers c ON c.id = p.customer_id WHERE ${where} ORDER BY p.id`)).recordset;
     console.log(`
 โครงการที่จะลบ: ${rows.length} · BOQ ของโครงการ ${rows.reduce((s, r) => s + r.boqs, 0)} แถว (ทุก Rev)`);
-    for (const r of rows) console.log(`  ${r.code} · ${r.name} · ${r.customer_name} · ขั้น ${r.stage} · BOQ ${r.boqs} แถว`);
+    for (const r of rows) console.log(`  ${r.code} · ${r.name} · ${r.customer_name} · ขั้น ${r.stage} · BOQ ${r.boqs} แถว · ใบเสนอราคา ${r.quotes} แถว`);
     const ids = rows.length ? rows.map((r) => r.id).join(',') : '0';
     if (execute && rows.length > 0) {
+      // ใบเสนอราคาอ้างทั้งโครงการและ BOQ (FK) — ลบก่อน
+      const qt = await q(`DELETE FROM b2b_quotations WHERE project_id IN (${ids})`);
       const i = await q(`DELETE FROM b2b_boq_items WHERE boq_id IN (SELECT id FROM b2b_boqs WHERE project_id IN (${ids}))`);
       const b = await q(`DELETE FROM b2b_boqs WHERE project_id IN (${ids})`);
       const a = await q(`DELETE FROM b2b_project_activities WHERE project_id IN (${ids})`);
       const p = await q(`DELETE FROM b2b_projects WHERE id IN (${ids})`);
-      console.log(`ลบแล้ว: โครงการ ${p.rowsAffected[0]} · timeline ${a.rowsAffected[0]} · BOQ ${b.rowsAffected[0]} แถว · บรรทัด ${i.rowsAffected[0]}`);
+      console.log(`ลบแล้ว: โครงการ ${p.rowsAffected[0]} · timeline ${a.rowsAffected[0]} · ใบเสนอราคา ${qt.rowsAffected[0]} แถว · BOQ ${b.rowsAffected[0]} แถว · บรรทัด ${i.rowsAffected[0]}`);
     }
     // บริษัทที่ไม่เหลือโครงการ — โหมด test ลบเฉพาะบริษัทที่ชื่อมี test (บริษัทจริงที่เพิ่งพิมพ์ไว้ยังอยู่)
     // คิดจาก "โครงการที่เหลือหลังลบ" (ไม่นับ ids) ⇒ dry-run แสดงตรงกับตอนลบจริง
@@ -80,6 +83,7 @@ try {
     console.log(`\nใบ BOQ ที่จะลบ: ${rows.length} แถว (${new Set(rows.map((r) => r.doc_no)).size} เลขที่) · บรรทัด ${rows.reduce((s, r) => s + r.items, 0)}`);
     for (const r of rows) console.log(`  ${r.doc_no} Rev ${r.revision} · ${r.project_name} · ${r.customer_name ?? '-'} · ${r.items} บรรทัด`);
     if (execute && rows.length > 0) {
+      await q(`DELETE FROM b2b_quotations WHERE boq_id IN (SELECT id FROM b2b_boqs WHERE ${where})`);
       const i = await q(`DELETE FROM b2b_boq_items WHERE boq_id IN (SELECT id FROM b2b_boqs WHERE ${where})`);
       const b = await q(`DELETE FROM b2b_boqs WHERE ${where}`);
       console.log(`ลบแล้ว: ใบ ${b.rowsAffected[0]} แถว · บรรทัด ${i.rowsAffected[0]}`);

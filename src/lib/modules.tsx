@@ -2,6 +2,7 @@ import { hasRole, type Role } from "@/lib/roles";
 import { OM_ACTIVE_STEPS, OM_FIELD_STEPS, OM_FIELD_SUBS, OM_PAY_SUB } from "@/lib/om/journey";
 import { OM_WORK_ROLES } from "@/lib/om/om-roles";
 import { B2B_PENDING_PRICE_SUB } from "@/lib/b2b/materials";
+import { B2B_APPROVAL_SUB } from "@/lib/b2b/quotation";
 import {
   BoltIcon, CheckIcon, ClockIcon, DocumentIcon, DownloadIcon, LineIcon, PhoneIcon, XIcon,
 } from "@/components/ui/icons";
@@ -332,20 +333,20 @@ export const MODULES: AppModule[] = [
     key: "boq", label: "โครงการ B2B", emoji: "🏭", tint: "bg-teal-50",
     group: "b2b",
     desc: "โอกาสขาย → ส่งมอบ · BOQ · วัสดุและราคา",
-    roles: ["b2b", "purchase", "admin"],
+    roles: ["b2b", "purchase", "b2b_review1", "b2b_review2", "b2b_review3", "admin"],
     menu: [
-      { label: "ทั้งหมด", href: "/b2b/projects", icon: <I d={D.lines} />, roles: ["b2b", "admin"], steps: [3100, 3200, 3300, 3400] },
-      { label: "โอกาสขาย", href: "/b2b/projects?stage=3100", icon: <PhoneIcon className="w-6 h-6" strokeWidth={2} />, roles: ["b2b", "admin"], steps: [3100] },
+      { label: "ทั้งหมด", href: "/b2b/projects", icon: <I d={D.lines} />, roles: ["b2b", "b2b_review1", "b2b_review2", "b2b_review3", "admin"], steps: [3100, 3200, 3300, 3400] },
+      { label: "โอกาสขาย", href: "/b2b/projects?stage=3100", icon: <PhoneIcon className="w-6 h-6" strokeWidth={2} />, roles: ["b2b", "b2b_review1", "b2b_review2", "b2b_review3", "admin"], steps: [3100] },
       {
-        label: "เสนอราคา", icon: <DocumentIcon className="w-6 h-6" strokeWidth={2} />, roles: ["b2b", "admin"],
+        label: "เสนอราคา", icon: <DocumentIcon className="w-6 h-6" strokeWidth={2} />, roles: ["b2b", "b2b_review1", "b2b_review2", "b2b_review3", "admin"],
         children: [
           { label: "ราคาประมาณการ", href: "/b2b/projects?stage=3200", icon: <DocumentIcon className="w-6 h-6" strokeWidth={2} />, steps: [3200] },
           { label: "สำรวจ", href: "/b2b/projects?stage=3300", icon: <I d={D.mapPin} />, steps: [3300] },
           { label: "ราคายืนยัน/ต่อรอง", href: "/b2b/projects?stage=3400", icon: <DocumentIcon className="w-6 h-6" strokeWidth={2} />, steps: [3400] },
         ],
       },
-      { label: "แพ้งาน/ยกเลิก", href: "/b2b/projects?stage=lost", icon: <XIcon className="w-6 h-6" strokeWidth={2} />, roles: ["b2b", "admin"], steps: [3980, 3990], noModuleCount: true },
-      { label: "รายการ BOQ", href: "/b2b/boq", icon: <I d={D.clipboard} />, roles: ["b2b", "admin"] },
+      { label: "แพ้งาน/ยกเลิก", href: "/b2b/projects?stage=lost", icon: <XIcon className="w-6 h-6" strokeWidth={2} />, roles: ["b2b", "b2b_review1", "b2b_review2", "b2b_review3", "admin"], steps: [3980, 3990], noModuleCount: true },
+      { label: "รายการ BOQ", href: "/b2b/boq", icon: <I d={D.clipboard} />, roles: ["b2b", "b2b_review1", "b2b_review2", "b2b_review3", "admin"] },
       // Purchase กดการ์ดแล้วลงหน้านี้ — hub เลือกเมนูแรกที่ role เห็น · badge = รายการที่รอ Purchase ใส่ราคา
       // ชื่อเมนู = หัวเรื่องหน้า (หน้า Master Data วัสดุ) — สั้นพอให้อยู่บรรทัดเดียวคู่กับ badge 3 หลัก
       { label: "วัสดุและราคา", href: "/b2b/materials", icon: <I d={D.archive} />, roles: ["b2b", "purchase", "admin"], subs: [B2B_PENDING_PRICE_SUB] },
@@ -466,7 +467,19 @@ export const ACCOUNT_PENDING_MENU_ITEM: ModuleMenuItem = {
 };
 
 /** เมนูงานประจำตัว (ตามสิทธิ์ของ user) ที่ต้องตามไปทุกโมดูล */
-export const INJECTED_MENU_ITEMS: ModuleMenuItem[] = [APPROVAL_MENU_ITEM, ACCOUNT_PENDING_MENU_ITEM];
+// คิวอนุมัติใบเสนอราคา B2B (แผน 20261015-07 เฟส 2) — แยกตัวตามชั้น: badge นับเฉพาะใบที่รอชั้นของ role ที่สวมอยู่
+//   admin เห็นรวมทุกชั้น · BottomNav ตัดตัวซ้ำ href เดียวกันเหลือตัวแรก (คนที่สวมหลายชั้นได้ตัวชั้นแรก)
+const b2bApprovalItem = (roles: Role[], subs: number[]): ModuleMenuItem => ({
+  label: "อนุมัติ B2B", href: "/b2b/approvals", icon: <I d={D.clipboardCheck} />, roles, subs,
+});
+export const B2B_APPROVAL_MENU_ITEMS: ModuleMenuItem[] = [
+  b2bApprovalItem(["admin"], [B2B_APPROVAL_SUB[1], B2B_APPROVAL_SUB[2], B2B_APPROVAL_SUB[3]]),
+  b2bApprovalItem(["b2b_review1"], [B2B_APPROVAL_SUB[1]]),
+  b2bApprovalItem(["b2b_review2"], [B2B_APPROVAL_SUB[2]]),
+  b2bApprovalItem(["b2b_review3"], [B2B_APPROVAL_SUB[3]]),
+];
+
+export const INJECTED_MENU_ITEMS: ModuleMenuItem[] = [APPROVAL_MENU_ITEM, ACCOUNT_PENDING_MENU_ITEM, ...B2B_APPROVAL_MENU_ITEMS];
 
 // ---------- แถบล่างมือถือ: กำหนดตาม "role" ไม่ผูกกับโมดูลที่เปิดอยู่ ----------
 // item ที่มี roles = ปุ่ม gate สิทธิ์ (คนไม่มีสิทธิ์เห็นเป็นสีเทากดไม่ได้ — BottomNav จัดการ)

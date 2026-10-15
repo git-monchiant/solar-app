@@ -1,5 +1,5 @@
 import { sql } from "./db";
-import type { B2bActivity, B2bProject, B2bProjectBoq, B2bProjectRow, ProjectFields } from "./project";
+import type { B2bActivity, B2bProject, B2bProjectBoq, B2bProjectQuote, B2bProjectRow, ProjectFields } from "./project";
 
 // ฝั่ง server ของโครงการ B2B — โหลด / เลขที่ / timeline / ซิงก์หัวใบ BOQ
 // แผน docs/plan/20261015-07-b2b-project-flow.md เฟส 1
@@ -9,9 +9,14 @@ type Queryable = { request(): sql.Request };
 const num = (v: unknown) => (v == null ? null : Number(v));
 
 /** ขั้นย่อยคิดตอนอ่าน (ไม่มีคอลัมน์ให้คอย sync) — สำรวจ: มีวันนัดในอนาคต = 3310 · ถึง/เลยวันนัด = 3320 (เวลาไทย) */
+//  ราคาประมาณการ/ราคายืนยัน: สถานะใบเสนอราคาที่ขยับล่าสุด (Rev ล่าสุดของแต่ละเลขที่) → หลักสิบ (QUOTE_SUB_OFFSET)
 export const PROJECT_SUB_SQL = (p: string) => `
   CASE WHEN ${p}.stage = 3300 AND ${p}.survey_date IS NOT NULL
        THEN CASE WHEN ${p}.survey_date > CAST(DATEADD(HOUR, 7, SYSUTCDATETIME()) AS DATE) THEN 3310 ELSE 3320 END
+       WHEN ${p}.stage IN (3200, 3400)
+       THEN (SELECT TOP 1 ${p}.stage + CASE qq.status WHEN 'draft' THEN 10 WHEN 'pending_review1' THEN 20 WHEN 'pending_review2' THEN 30
+                                                        WHEN 'pending_review3' THEN 40 WHEN 'changes_required' THEN 50 WHEN 'approved' THEN 60 ELSE 70 END
+             FROM b2b_quotations qq WHERE qq.project_id = ${p}.id AND qq.is_latest = 1 ORDER BY qq.updated_at DESC, qq.id DESC)
   END`;
 
 /** แถวรายการโครงการ — BOQ ที่แสดง = ตัวเลือกที่บันทึกล่าสุด (Rev ล่าสุดของแต่ละเลขที่)
@@ -52,7 +57,7 @@ export async function loadProject(db: Queryable, id: number): Promise<B2bProject
     WHERE p.id = @id`);
   const r = h.recordset[0];
   if (!r) return null;
-  const [boqs, acts] = await Promise.all([
+  const [boqs, acts, quotes] = await Promise.all([
     db.request().input("id", sql.Int, id).query(`
       SELECT b.id, b.doc_no, b.revision, b.option_label, b.capacity_wp, b.total_cost, b.total_sale, b.margin_pct, b.pending_lines,
              b.updated_at, uu.full_name AS updated_by_name
@@ -63,6 +68,12 @@ export async function loadProject(db: Queryable, id: number): Promise<B2bProject
       SELECT TOP 300 a.id, a.kind, a.from_stage, a.to_stage, a.message, a.created_at, u.full_name AS created_by_name
       FROM b2b_project_activities a LEFT JOIN users u ON u.id = a.created_by
       WHERE a.project_id = @id ORDER BY a.created_at DESC, a.id DESC`),
+    db.request().input("id", sql.Int, id).query(`
+      SELECT q.id, q.doc_no, q.revision, q.kind, q.status, q.subtotal, q.total, q.updated_at, CONVERT(char(10), q.issue_date, 23) AS issue_date,
+             JSON_VALUE(q.content_json, '$.validity_days') AS validity_days, b.doc_no AS boq_doc_no, b.revision AS boq_revision, b.option_label
+      FROM b2b_quotations q JOIN b2b_boqs b ON b.id = q.boq_id
+      WHERE q.project_id = @id AND q.is_latest = 1
+      ORDER BY q.updated_at DESC, q.id DESC`),
   ]);
   return {
     ...toProjectRow(r),
@@ -76,6 +87,12 @@ export async function loadProject(db: Queryable, id: number): Promise<B2bProject
       id: b.id, doc_no: b.doc_no, revision: b.revision, option_label: b.option_label,
       capacity_wp: num(b.capacity_wp), total_cost: num(b.total_cost), total_sale: num(b.total_sale), margin_pct: Number(b.margin_pct),
       pending_lines: b.pending_lines, updated_at: b.updated_at, updated_by_name: b.updated_by_name,
+    })),
+    quotes: quotes.recordset.map((q): B2bProjectQuote => ({
+      id: q.id, doc_no: q.doc_no, revision: q.revision, kind: q.kind, status: q.status,
+      subtotal: Number(q.subtotal), total: Number(q.total), updated_at: q.updated_at, issue_date: q.issue_date,
+      validity_days: q.validity_days == null ? null : Number(q.validity_days),
+      boq_doc_no: q.boq_doc_no, boq_revision: q.boq_revision, option_label: q.option_label,
     })),
     activities: acts.recordset.map((a): B2bActivity => ({
       id: a.id, kind: a.kind, from_stage: num(a.from_stage), to_stage: num(a.to_stage), message: a.message,
