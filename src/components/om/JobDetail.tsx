@@ -81,7 +81,7 @@ const PRIMARY_BTN = "h-11 px-6 rounded-lg text-sm font-semibold text-white bg-ac
 //   API ยังรับทุกผล (ประวัติเก่ายังแสดงป้ายจาก CALL_OUTCOME)
 const CALL_ROWS = [
   { value: "agreed", label: "ตกลงรับบริการ" },   // ขั้น 01 ไม่เลือกวันแล้ว — วันนัดเลือกที่ขั้น 04
-  { value: "declined", label: "ปฏิเสธ ไม่เอา" },
+  { value: "declined", label: "ปฏิเสธไม่รับบริการ" },   // 15 ต.ค. 69 ผู้ใช้สั่งเปลี่ยนจาก "ปฏิเสธ ไม่เอา"
 ] as const;
 
 export default function JobDetail({ item, history, bookings = [], rules, onBack, onDone, onSaved, onReload }: {
