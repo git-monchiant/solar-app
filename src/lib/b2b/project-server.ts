@@ -32,6 +32,25 @@ export const PROJECT_SUB_SQL = (p: string) => `
                        FROM b2b_project_installments ii WHERE ii.project_id = ${p}.id AND ii.no = 1) END
   END`;
 
+/** งวดเงิน (alias i) + ชื่อคนแนบ/ยืนยัน — หน้าโครงการ + รายรับ B2B ใช้ชุดเดียวกัน (ต่อ WHERE เอง) */
+export const INSTALLMENT_SELECT = `
+  SELECT i.id, i.project_id, i.no, i.pct, i.condition, i.trigger_key, i.amount, i.vat, i.total, i.status, i.due_at,
+         CONVERT(char(10), i.received_date, 23) AS received_date, i.evidence_name,
+         CASE WHEN i.evidence_file IS NULL THEN 0 ELSE 1 END AS has_evidence, i.submit_note,
+         i.submitted_at, su.full_name AS submitted_by_name, i.confirmed_at, cu.full_name AS confirmed_by_name, i.reject_note, i.rejected_at
+  FROM b2b_project_installments i
+  LEFT JOIN users su ON su.id = i.submitted_by
+  LEFT JOIN users cu ON cu.id = i.confirmed_by`;
+/** แถวจาก INSTALLMENT_SELECT — เลขทศนิยม/บิตมาเป็นค่าดิบของ mssql แปลงที่นี่ที่เดียว */
+type InstallmentDbRow = Omit<B2bInstallment, "pct" | "amount" | "vat" | "total" | "has_evidence"> & { pct: unknown; amount: unknown; vat: unknown; total: unknown; has_evidence: unknown };
+export const toInstallment = (i: InstallmentDbRow): B2bInstallment => ({
+  id: i.id, no: i.no, pct: Number(i.pct), condition: i.condition, trigger_key: i.trigger_key,
+  amount: Number(i.amount), vat: Number(i.vat), total: Number(i.total), status: i.status, due_at: i.due_at,
+  received_date: i.received_date, evidence_name: i.evidence_name, has_evidence: !!i.has_evidence, submit_note: i.submit_note,
+  submitted_at: i.submitted_at, submitted_by_name: i.submitted_by_name, confirmed_at: i.confirmed_at, confirmed_by_name: i.confirmed_by_name,
+  reject_note: i.reject_note, rejected_at: i.rejected_at,
+});
+
 /** แถวรายการโครงการ — BOQ ที่แสดง = ตัวเลือกที่บันทึกล่าสุด (Rev ล่าสุดของแต่ละเลขที่)
  *  extraCols / extraJoins = คอลัมน์เพิ่มของหน้ารายละเอียด */
 export const projectRowSelect = (extraCols = "", extraJoins = "") => `
@@ -89,15 +108,7 @@ export async function loadProject(db: Queryable, id: number): Promise<B2bProject
       FROM b2b_quotations q JOIN b2b_boqs b ON b.id = q.boq_id
       WHERE q.project_id = @id AND q.is_latest = 1
       ORDER BY q.updated_at DESC, q.id DESC`),
-    db.request().input("id", sql.Int, id).query(`
-      SELECT i.id, i.no, i.pct, i.condition, i.trigger_key, i.amount, i.vat, i.total, i.status, i.due_at,
-             CONVERT(char(10), i.received_date, 23) AS received_date, i.evidence_name,
-             CASE WHEN i.evidence_file IS NULL THEN 0 ELSE 1 END AS has_evidence, i.submit_note,
-             i.submitted_at, su.full_name AS submitted_by_name, i.confirmed_at, cu.full_name AS confirmed_by_name, i.reject_note, i.rejected_at
-      FROM b2b_project_installments i
-      LEFT JOIN users su ON su.id = i.submitted_by
-      LEFT JOIN users cu ON cu.id = i.confirmed_by
-      WHERE i.project_id = @id ORDER BY i.no`),
+    db.request().input("id", sql.Int, id).query(`${INSTALLMENT_SELECT} WHERE i.project_id = @id ORDER BY i.no`),
     db.request().input("id", sql.Int, id).query(`
       SELECT m.id, m.kind, CONVERT(char(10), m.done_date, 23) AS done_date, m.note, m.files_json, m.stage_before, m.stage_after,
              m.created_at, u.full_name AS created_by_name
@@ -130,13 +141,7 @@ export async function loadProject(db: Queryable, id: number): Promise<B2bProject
     won_quote_id: num(r.won_quote_id), won_boq_id: num(r.won_boq_id), contract_no: r.contract_no, contract_date: r.contract_date,
     contract_value: num(r.contract_value), contract_vat_pct: num(r.contract_vat_pct), won_at: r.won_at,
     om_years: num(r.om_years), om_visits_per_year: num(r.om_visits_per_year),
-    installments: insts.recordset.map((i): B2bInstallment => ({
-      id: i.id, no: i.no, pct: Number(i.pct), condition: i.condition, trigger_key: i.trigger_key,
-      amount: Number(i.amount), vat: Number(i.vat), total: Number(i.total), status: i.status, due_at: i.due_at,
-      received_date: i.received_date, evidence_name: i.evidence_name, has_evidence: !!i.has_evidence, submit_note: i.submit_note,
-      submitted_at: i.submitted_at, submitted_by_name: i.submitted_by_name, confirmed_at: i.confirmed_at, confirmed_by_name: i.confirmed_by_name,
-      reject_note: i.reject_note, rejected_at: i.rejected_at,
-    })),
+    installments: insts.recordset.map(toInstallment),
     milestones: mss.recordset.map((m): B2bMilestone => ({
       id: m.id, kind: m.kind, done_date: m.done_date, note: m.note, files: m.files_json ? JSON.parse(m.files_json) : [],
       stage_before: m.stage_before, stage_after: m.stage_after, created_at: m.created_at, created_by_name: m.created_by_name,
