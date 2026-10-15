@@ -1,5 +1,6 @@
 import type { AppRole } from "@/lib/role-permissions";
 import { QUOTE_STATUS_LABEL, QUOTE_SUB_OFFSET, type QuoteKind, type QuoteStatus } from "./quotation";
+import { EXEC_SUB_LABEL, type B2bMilestone, type B2bPermit } from "./execution";
 
 // โครงการ B2B — ขั้น / ชนิด / สิทธิ์ / ตัวตรวจ body ที่หน้าจอกับ API ใช้ร่วมกัน (ไม่มี mssql ⇒ client import ได้)
 // แผน docs/plan/20261015-07-b2b-project-flow.md · journey สาย 3000 (ขาย B2C = 100–1000 · O&M = 2000)
@@ -62,6 +63,7 @@ export function subLabel(stage: number, sub: number | null, surveyDate: string |
     const st = (Object.keys(QUOTE_SUB_OFFSET) as QuoteStatus[]).find((k) => stage + QUOTE_SUB_OFFSET[k] === sub);
     return st ? QUOTE_STATUS_LABEL[st] : null;
   }
+  if (stage >= B2B_STAGE.permit && stage <= B2B_STAGE.handover) return sub != null ? EXEC_SUB_LABEL[sub] ?? null : null;
   if (stage === B2B_STAGE.won) {
     if (sub === B2B_WON_SUB.unsigned) return "รอเซ็นสัญญา/PO";
     if (sub === B2B_WON_SUB.awaiting_pay) return "รอรับเงินงวด 1";
@@ -152,6 +154,9 @@ export type B2bProject = B2bProjectRow & {
   contract_value: number | null; contract_vat_pct: number | null; won_at: string | null;
   om_years: number | null; om_visits_per_year: number | null;
   installments: B2bInstallment[];
+  // ดำเนินโครงการ (เฟส 4)
+  milestones: B2bMilestone[];
+  permits: B2bPermit[];
   activities: B2bActivity[];
 };
 

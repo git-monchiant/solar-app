@@ -66,13 +66,20 @@ try {
       await q(`UPDATE b2b_projects SET won_quote_id = NULL, won_boq_id = NULL WHERE id IN (${ids})`);
       const files = (await q(`SELECT evidence_file FROM b2b_project_installments WHERE project_id IN (${ids}) AND evidence_file IS NOT NULL`)).recordset;
       filesToRemove.push(...files.map((f) => f.evidence_file));
+      // ดำเนินโครงการ (เฟส 4) — รูป/ไฟล์ milestone + เอกสารขออนุญาต
+      const msFiles = (await q(`SELECT files_json FROM b2b_project_milestones WHERE project_id IN (${ids}) AND files_json IS NOT NULL`)).recordset;
+      for (const r of msFiles) filesToRemove.push(...JSON.parse(r.files_json).map((f) => f.file));
+      const pmFiles = (await q(`SELECT file_name FROM b2b_project_permits WHERE project_id IN (${ids}) AND file_name IS NOT NULL`)).recordset;
+      filesToRemove.push(...pmFiles.map((f) => f.file_name));
+      const ms = await q(`DELETE FROM b2b_project_milestones WHERE project_id IN (${ids})`);
+      const pm = await q(`DELETE FROM b2b_project_permits WHERE project_id IN (${ids})`);
       const ins = await q(`DELETE FROM b2b_project_installments WHERE project_id IN (${ids})`);
       const qt = await q(`DELETE FROM b2b_quotations WHERE project_id IN (${ids})`);
       const i = await q(`DELETE FROM b2b_boq_items WHERE boq_id IN (SELECT id FROM b2b_boqs WHERE project_id IN (${ids}))`);
       const b = await q(`DELETE FROM b2b_boqs WHERE project_id IN (${ids})`);
       const a = await q(`DELETE FROM b2b_project_activities WHERE project_id IN (${ids})`);
       const p = await q(`DELETE FROM b2b_projects WHERE id IN (${ids})`);
-      console.log(`ลบแล้ว: โครงการ ${p.rowsAffected[0]} · timeline ${a.rowsAffected[0]} · งวดเงิน ${ins.rowsAffected[0]} · ใบเสนอราคา ${qt.rowsAffected[0]} แถว · BOQ ${b.rowsAffected[0]} แถว · บรรทัด ${i.rowsAffected[0]}`);
+      console.log(`ลบแล้ว: โครงการ ${p.rowsAffected[0]} · timeline ${a.rowsAffected[0]} · งวดเงิน ${ins.rowsAffected[0]} · หน้างาน ${ms.rowsAffected[0]} · ขออนุญาต ${pm.rowsAffected[0]} · ใบเสนอราคา ${qt.rowsAffected[0]} แถว · BOQ ${b.rowsAffected[0]} แถว · บรรทัด ${i.rowsAffected[0]}`);
     }
     // บริษัทที่ไม่เหลือโครงการ — โหมด test ลบเฉพาะบริษัทที่ชื่อมี test (บริษัทจริงที่เพิ่งพิมพ์ไว้ยังอยู่)
     // คิดจาก "โครงการที่เหลือหลังลบ" (ไม่นับ ids) ⇒ dry-run แสดงตรงกับตอนลบจริง
@@ -123,9 +130,9 @@ try {
 
   if (execute) {
     await tx.commit();
-    // ไฟล์หลักฐาน — ลบหลัง commit (ฐานถอยได้ ไฟล์ถอยไม่ได้)
+    // ไฟล์หลักฐาน/หน้างาน/ขออนุญาต — ลบหลัง commit (ฐานถอยได้ ไฟล์ถอยไม่ได้)
     for (const f of filesToRemove) if (safeName(f)) await unlink(path.join(FILE_DIR, f)).catch(() => {});
-    if (filesToRemove.length) console.log(`ลบไฟล์หลักฐาน ${filesToRemove.length} ไฟล์`);
+    if (filesToRemove.length) console.log(`ลบไฟล์ ${filesToRemove.length} ไฟล์`);
     console.log('\nเสร็จ');
   }
   else { await tx.rollback(); console.log('\nDRY-RUN — ใส่ --yes เพื่อลบจริง'); }

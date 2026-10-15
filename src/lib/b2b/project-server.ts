@@ -1,5 +1,6 @@
 import { sql } from "./db";
 import type { B2bActivity, B2bInstallment, B2bProject, B2bProjectBoq, B2bProjectQuote, B2bProjectRow, ProjectFields } from "./project";
+import { PERMITS, type B2bMilestone, type B2bPermit } from "./execution";
 
 // ฝั่ง server ของโครงการ B2B — โหลด / เลขที่ / timeline / ซิงก์หัวใบ BOQ
 // แผน docs/plan/20261015-07-b2b-project-flow.md เฟส 1
@@ -9,6 +10,7 @@ type Queryable = { request(): sql.Request };
 const num = (v: unknown) => (v == null ? null : Number(v));
 
 /** ขั้นย่อยคิดตอนอ่าน (ไม่มีคอลัมน์ให้คอย sync) — สำรวจ: มีวันนัดในอนาคต = 3310 · ถึง/เลยวันนัด = 3320 (เวลาไทย) */
+const ms = (p: string, kind: string) => `EXISTS (SELECT 1 FROM b2b_project_milestones m WHERE m.project_id = ${p}.id AND m.kind = '${kind}')`;
 //  ราคาประมาณการ/ราคายืนยัน: สถานะใบเสนอราคาที่ขยับล่าสุด (Rev ล่าสุดของแต่ละเลขที่) → หลักสิบ (QUOTE_SUB_OFFSET)
 export const PROJECT_SUB_SQL = (p: string) => `
   CASE WHEN ${p}.stage = 3300 AND ${p}.survey_date IS NOT NULL
@@ -18,6 +20,12 @@ export const PROJECT_SUB_SQL = (p: string) => `
                                                         WHEN 'pending_review3' THEN 40 WHEN 'changes_required' THEN 50 WHEN 'approved' THEN 60 ELSE 70 END
              FROM b2b_quotations qq WHERE qq.project_id = ${p}.id AND qq.is_latest = 1 ORDER BY qq.updated_at DESC, qq.id DESC)
        -- ได้งาน: ยังไม่เซ็น = 3510 · งวด 1 ยังไม่รับ = 3520 · แนบหลักฐานแล้วรอบัญชี = 3530 (รับแล้วโครงการขยับไป 3600 เอง)
+       -- ดำเนินโครงการ (เฟส 4): จาก milestone ที่บันทึกแล้ว
+       WHEN ${p}.stage = 3600 THEN CASE WHEN ${ms(p, "procured")} THEN 3620 ELSE 3610 END
+       WHEN ${p}.stage = 3700 THEN CASE WHEN ${ms(p, "install_done")} THEN 3740 WHEN ${ms(p, "install_started")} THEN 3730
+                                        WHEN ${ms(p, "panels_delivered")} THEN 3720 ELSE 3710 END
+       WHEN ${p}.stage = 3800 THEN CASE WHEN ${ms(p, "cod")} THEN 3820 ELSE 3810 END
+       WHEN ${p}.stage = 3900 THEN CASE WHEN ${ms(p, "handover")} THEN 3920 ELSE 3910 END
        WHEN ${p}.stage = 3500
        THEN CASE WHEN ${p}.contract_date IS NULL THEN 3510
                  ELSE (SELECT CASE ii.status WHEN 'submitted' THEN 3530 WHEN 'paid' THEN NULL ELSE 3520 END
@@ -64,7 +72,7 @@ export async function loadProject(db: Queryable, id: number): Promise<B2bProject
     WHERE p.id = @id`);
   const r = h.recordset[0];
   if (!r) return null;
-  const [boqs, acts, quotes, insts] = await Promise.all([
+  const [boqs, acts, quotes, insts, mss, permits] = await Promise.all([
     db.request().input("id", sql.Int, id).query(`
       SELECT b.id, b.doc_no, b.revision, b.option_label, b.capacity_wp, b.total_cost, b.total_sale, b.margin_pct, b.pending_lines,
              b.updated_at, uu.full_name AS updated_by_name
@@ -90,6 +98,15 @@ export async function loadProject(db: Queryable, id: number): Promise<B2bProject
       LEFT JOIN users su ON su.id = i.submitted_by
       LEFT JOIN users cu ON cu.id = i.confirmed_by
       WHERE i.project_id = @id ORDER BY i.no`),
+    db.request().input("id", sql.Int, id).query(`
+      SELECT m.id, m.kind, CONVERT(char(10), m.done_date, 23) AS done_date, m.note, m.files_json, m.stage_before, m.stage_after,
+             m.created_at, u.full_name AS created_by_name
+      FROM b2b_project_milestones m LEFT JOIN users u ON u.id = m.created_by
+      WHERE m.project_id = @id ORDER BY m.created_at, m.id`),
+    db.request().input("id", sql.Int, id).query(`
+      SELECT id, kind, status, CONVERT(char(10), submitted_date, 23) AS submitted_date, CONVERT(char(10), approved_date, 23) AS approved_date,
+             note, CASE WHEN file_name IS NULL THEN 0 ELSE 1 END AS has_file, file_label, updated_at
+      FROM b2b_project_permits WHERE project_id = @id`),
   ]);
   return {
     ...toProjectRow(r),
@@ -120,6 +137,18 @@ export async function loadProject(db: Queryable, id: number): Promise<B2bProject
       submitted_at: i.submitted_at, submitted_by_name: i.submitted_by_name, confirmed_at: i.confirmed_at, confirmed_by_name: i.confirmed_by_name,
       reject_note: i.reject_note, rejected_at: i.rejected_at,
     })),
+    milestones: mss.recordset.map((m): B2bMilestone => ({
+      id: m.id, kind: m.kind, done_date: m.done_date, note: m.note, files: m.files_json ? JSON.parse(m.files_json) : [],
+      stage_before: m.stage_before, stage_after: m.stage_after, created_at: m.created_at, created_by_name: m.created_by_name,
+    })),
+    // ครบ 3 อย่างเสมอ — แถวที่ยังไม่เคยบันทึก = ยังไม่ยื่น
+    permits: PERMITS.map((d): B2bPermit => {
+      const r = permits.recordset.find((x) => x.kind === d.kind);
+      return r
+        ? { id: r.id, kind: r.kind, status: r.status, submitted_date: r.submitted_date, approved_date: r.approved_date, note: r.note,
+            has_file: !!r.has_file, file_label: r.file_label, updated_at: r.updated_at }
+        : { id: null, kind: d.kind, status: "pending", submitted_date: null, approved_date: null, note: null, has_file: false, file_label: null, updated_at: null };
+    }),
     activities: acts.recordset.map((a): B2bActivity => ({
       id: a.id, kind: a.kind, from_stage: num(a.from_stage), to_stage: num(a.to_stage), message: a.message,
       created_at: a.created_at, created_by_name: a.created_by_name,

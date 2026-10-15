@@ -17,6 +17,7 @@ import { buildInstallments } from "@/lib/b2b/installment";
 //   won              { quote_id, contract_no?, contract_date? }  ได้งาน (เฟส 3) — จากขั้น 3200/3400 · ใบต้องเป็น Rev ล่าสุดที่ส่งลูกค้าแล้ว
 //                    ใบนั้น = สัญญา (won) · ใบอื่นของโครงการปิดเอง (closed) · BOQ ของใบ = งบโครงการ · งวดเงินคัดลอกจากใบ (งวด 1 ถึงกำหนดทันที)
 //   contract         { contract_no?, contract_date }  บันทึก/แก้เลข PO-สัญญา + วันลงนาม (หลังได้งาน)
+//   to_handover      ขนานไฟ → ส่งมอบ (เฟส 4) — ต้องบันทึก COD แล้ว · ขั้นอื่นของงานหน้างานขยับเองตาม milestone
 const text = (v: unknown, max: number) => (typeof v === "string" && v.trim() ? v.trim().slice(0, max) : null);
 
 class UserError extends Error {}
@@ -134,6 +135,13 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
       await new sql.Request(tx).input("id", sql.Int, id).input("cn", sql.NVarChar(100), contractNo).input("cd", sql.Date, b.contract_date).input("u", sql.Int, userId)
         .query(`UPDATE b2b_projects SET contract_no = @cn, contract_date = @cd, updated_by = @u, updated_at = SYSDATETIMEOFFSET() WHERE id = @id`);
       await logActivity(tx, id, "contract", { message: `บันทึกสัญญา${contractNo ? ` ${contractNo}` : ""} ลงนาม ${thaiDateShort(b.contract_date)}`, userId });
+    } else if (action === "to_handover") {
+      if (stage !== B2B_STAGE.gridtie) throw new UserError("เข้าขั้นส่งมอบได้จากขั้นขนานไฟ");
+      const cod = (await new sql.Request(tx).input("p", sql.Int, id)
+        .query(`SELECT COUNT(*) AS n FROM b2b_project_milestones WHERE project_id = @p AND kind = 'cod'`)).recordset[0].n;
+      if (!cod) throw new UserError("บันทึกวันจ่ายไฟ (COD) ก่อน");
+      await setStage(B2B_STAGE.handover);
+      await logActivity(tx, id, "stage", { from: stage, to: B2B_STAGE.handover, message: "ขนานไฟแล้ว — เตรียมส่งมอบงาน + Training", userId });
     } else if (action === "note") {
       const message = text(b.message, 1000);
       if (!message) throw new UserError("กรุณาพิมพ์ข้อความ");

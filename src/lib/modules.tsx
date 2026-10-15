@@ -3,6 +3,7 @@ import { OM_ACTIVE_STEPS, OM_FIELD_STEPS, OM_FIELD_SUBS, OM_PAY_SUB } from "@/li
 import { OM_WORK_ROLES } from "@/lib/om/om-roles";
 import { B2B_PENDING_PRICE_SUB } from "@/lib/b2b/materials";
 import { B2B_APPROVAL_SUB } from "@/lib/b2b/quotation";
+import { B2B_PROCURE_PENDING_SUB } from "@/lib/b2b/execution";
 import {
   BoltIcon, CheckIcon, ClockIcon, DocumentIcon, DownloadIcon, LineIcon, PhoneIcon, XIcon,
 } from "@/components/ui/icons";
@@ -39,6 +40,7 @@ const D = {
   checkCircle: "M9 12.75L11.25 15 15 9.75M21 12a9 9 0 11-18 0 9 9 0 0118 0z",
   wallet: "M21 12a2.25 2.25 0 00-2.25-2.25H15a3 3 0 11-6 0H5.25A2.25 2.25 0 003 12m18 0v6a2.25 2.25 0 01-2.25 2.25H5.25A2.25 2.25 0 013 18v-6m18 0V9M3 12V9m18 0a2.25 2.25 0 00-2.25-2.25H5.25A2.25 2.25 0 003 9m18 0V6a2.25 2.25 0 00-2.25-2.25H5.25A2.25 2.25 0 003 6v3",
   bell: "M14.857 17.082a23.848 23.848 0 005.454-1.31A8.967 8.967 0 0118 9.75V9A6 6 0 006 9v.75a8.967 8.967 0 01-2.312 6.022c1.733.64 3.56 1.085 5.455 1.31m5.714 0a24.255 24.255 0 01-5.714 0m5.714 0a3 3 0 11-5.714 0",
+  truck: "M8.25 18.75a1.5 1.5 0 01-3 0m3 0a1.5 1.5 0 00-3 0m3 0h6m-9 0H3.375a1.125 1.125 0 01-1.125-1.125V14.25m17.25 4.5a1.5 1.5 0 01-3 0m3 0a1.5 1.5 0 00-3 0m3 0h1.125c.621 0 1.129-.504 1.09-1.124a17.902 17.902 0 00-3.213-9.193 2.056 2.056 0 00-1.58-.86H14.25M16.5 18.75h-2.25m0-11.177v-.958c0-.568-.422-1.048-.987-1.106a48.554 48.554 0 00-10.026 0 1.106 1.106 0 00-.987 1.106v7.635m12-6.677v6.677m0 4.5v-4.5m0 0h-12",
   warning: "M12 9v3.75m-9.303 3.376c-.866 1.5.217 3.374 1.948 3.374h14.71c1.73 0 2.813-1.874 1.948-3.374L13.949 3.378c-.866-1.5-3.032-1.5-3.898 0L2.697 16.126zM12 15.75h.007v.008H12v-.008z",
 };
 
@@ -328,14 +330,14 @@ export const MODULES: AppModule[] = [
     // ★ งาน B2B โรงงาน/ไซต์ใหญ่ — การ์ดเดียว "โครงการ B2B" (แผน docs/plan/20261015-07-b2b-project-flow.md · เดิมการ์ด BOQ แผน 20261005-01)
     //   ทีมที่ขายทำหน้างานเองจนส่งมอบ ⇒ ไม่แยกการ์ดตามทีมแบบ B2C · key "boq" คงไว้ (ค่าโมดูลที่เลือกค้างใน localStorage)
     //   Solar B2B ทำโครงการ + BOQ + กรอก Master Data · Purchase ใส่ราคาใน Master Data อย่างเดียว
-    //   เมนูขั้น 3500–3950 (ได้งาน · ดำเนินโครงการ · ปิดโครงการ) เพิ่มตอนทำเฟส 3–4
+    //   Purchase เห็น "จัดซื้อ" (งบต้นทุนจาก BOQ ที่ได้งาน — ไม่เห็นราคาขาย) + "วัสดุและราคา"
     //   🏭 = emoji Unicode 6 ฟอนต์ Windows มีแน่ (เหตุผลเดียวกับ 📋 ของ Package O&M)
     key: "boq", label: "โครงการ B2B", emoji: "🏭", tint: "bg-teal-50",
     group: "b2b",
     desc: "โอกาสขาย → ส่งมอบ · BOQ · วัสดุและราคา",
     roles: ["b2b", "purchase", "b2b_review1", "b2b_review2", "b2b_review3", "admin"],
     menu: [
-      { label: "ทั้งหมด", href: "/b2b/projects", icon: <I d={D.lines} />, roles: ["b2b", "b2b_review1", "b2b_review2", "b2b_review3", "admin"], steps: [3100, 3200, 3300, 3400, 3500, 3600] },
+      { label: "ทั้งหมด", href: "/b2b/projects", icon: <I d={D.lines} />, roles: ["b2b", "b2b_review1", "b2b_review2", "b2b_review3", "admin"], steps: [3100, 3200, 3300, 3400, 3500, 3600, 3700, 3800, 3900] },
       { label: "โอกาสขาย", href: "/b2b/projects?stage=3100", icon: <PhoneIcon className="w-6 h-6" strokeWidth={2} />, roles: ["b2b", "b2b_review1", "b2b_review2", "b2b_review3", "admin"], steps: [3100] },
       {
         label: "เสนอราคา", icon: <DocumentIcon className="w-6 h-6" strokeWidth={2} />, roles: ["b2b", "b2b_review1", "b2b_review2", "b2b_review3", "admin"],
@@ -346,18 +348,23 @@ export const MODULES: AppModule[] = [
         ],
       },
       { label: "ได้งาน", href: "/b2b/projects?stage=3500", icon: <I d={D.checkCircle} />, roles: ["b2b", "b2b_review1", "b2b_review2", "b2b_review3", "admin"], steps: [3500] },
-      // ดำเนินโครงการ — ติดตั้ง/ขนานไฟ/ส่งมอบ เพิ่มในเฟส 4
       {
         label: "ดำเนินโครงการ", icon: <I d={D.wrench} />, roles: ["b2b", "b2b_review1", "b2b_review2", "b2b_review3", "admin"],
         children: [
           { label: "ขออนุญาต/จัดซื้อ", href: "/b2b/projects?stage=3600", icon: <I d={D.clipboard} />, steps: [3600] },
+          { label: "ติดตั้ง", href: "/b2b/projects?stage=3700", icon: <I d={D.wrench} />, steps: [3700] },
+          { label: "ขนานไฟ", href: "/b2b/projects?stage=3800", icon: <BoltIcon className="w-6 h-6" strokeWidth={2} />, steps: [3800] },
+          { label: "ส่งมอบ", href: "/b2b/projects?stage=3900", icon: <I d={D.shield} />, steps: [3900] },
         ],
       },
+      { label: "ปิดโครงการ", href: "/b2b/projects?stage=closed", icon: <CheckIcon className="w-6 h-6" strokeWidth={2} />, roles: ["b2b", "b2b_review1", "b2b_review2", "b2b_review3", "admin"], steps: [3950], noModuleCount: true },
       { label: "แพ้งาน/ยกเลิก", href: "/b2b/projects?stage=lost", icon: <XIcon className="w-6 h-6" strokeWidth={2} />, roles: ["b2b", "b2b_review1", "b2b_review2", "b2b_review3", "admin"], steps: [3980, 3990], noModuleCount: true },
       { label: "รายการ BOQ", href: "/b2b/boq", icon: <I d={D.clipboard} />, roles: ["b2b", "b2b_review1", "b2b_review2", "b2b_review3", "admin"] },
       // Purchase กดการ์ดแล้วลงหน้านี้ — hub เลือกเมนูแรกที่ role เห็น · badge = รายการที่รอ Purchase ใส่ราคา
       // ชื่อเมนู = หัวเรื่องหน้า (หน้า Master Data วัสดุ) — สั้นพอให้อยู่บรรทัดเดียวคู่กับ badge 3 หลัก
       { label: "วัสดุและราคา", href: "/b2b/materials", icon: <I d={D.archive} />, roles: ["b2b", "purchase", "admin"], subs: [B2B_PENDING_PRICE_SUB] },
+      // Purchase (อยู่หลังวัสดุและราคา — กดการ์ดยังลงหน้าราคาเหมือนเดิม): โครงการที่รับงวด 1 แล้ว + งบต้นทุน · badge = ขั้น 3600 ที่ยังไม่บันทึกสั่งของครบ
+      { label: "จัดซื้อ", href: "/b2b/procurement", icon: <I d={D.truck} />, roles: ["b2b", "purchase", "admin"], subs: [B2B_PROCURE_PENDING_SUB] },
     ],
   },
   {

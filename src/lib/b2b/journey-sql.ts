@@ -1,6 +1,7 @@
 import { B2B_PENDING_PRICE_SUB } from "./materials";
 import { PROJECT_SUB_SQL } from "./project-server";
 import { B2B_APPROVAL_SUB } from "./quotation";
+import { B2B_PROCURE_PENDING_SUB } from "./execution";
 
 // แถวสรุปให้ /api/journey-summary — รูปแบบเดียวกับฝั่งขาย ({journey_step, journey_sub, n})
 // รายการ Master ที่ยังใช้งานแต่ Purchase ยังไม่ใส่ราคา · ไม่มีเลย = ไม่คืนแถว (badge ไม่ขึ้น)
@@ -23,6 +24,13 @@ export const B2B_INSTALLMENT_PENDING_SUB = 9030;
 export const B2B_INSTALLMENT_SUMMARY_SQL = `
   SELECT CAST(NULL AS INT) AS journey_step, ${B2B_INSTALLMENT_PENDING_SUB} AS journey_sub, COUNT(*) AS n
   FROM b2b_project_installments WHERE status = 'submitted'
+  HAVING COUNT(*) > 0`;
+
+// โครงการขั้นขออนุญาต/จัดซื้อที่ Purchase ยังไม่บันทึก "สั่งของครบ" → sub 9040 (badge เมนูจัดซื้อ · เฟส 4)
+export const B2B_PROCURE_SUMMARY_SQL = `
+  SELECT CAST(NULL AS INT) AS journey_step, ${B2B_PROCURE_PENDING_SUB} AS journey_sub, COUNT(*) AS n
+  FROM b2b_projects p
+  WHERE p.stage = 3600 AND NOT EXISTS (SELECT 1 FROM b2b_project_milestones m WHERE m.project_id = p.id AND m.kind = 'procured')
   HAVING COUNT(*) > 0`;
 
 // โครงการ B2B ตามขั้น (สาย 3000) + ขั้นย่อย — แผน 20261015-07 · ขั้นย่อยคิดตอนอ่านจึงห่อ subquery ก่อน GROUP BY

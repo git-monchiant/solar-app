@@ -56,6 +56,17 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
           .query(`UPDATE b2b_project_installments SET status = 'paid', confirmed_by = @u, confirmed_at = SYSDATETIMEOFFSET(),
                     updated_at = SYSDATETIMEOFFSET() WHERE id = @id`);
         await log("installment_paid", `บัญชียืนยันรับเงินงวด ${it.no} ${money} บาท`);
+        // ส่งมอบแล้ว + รับเงินครบทุกงวด → ปิดโครงการเอง (เฟส 4)
+        if (it.stage === B2B_STAGE.handover) {
+          const left = (await new sql.Request(tx).input("p", sql.Int, it.project_id).query(`
+            SELECT (SELECT COUNT(*) FROM b2b_project_installments WHERE project_id = @p AND status <> 'paid') AS unpaid,
+                   (SELECT COUNT(*) FROM b2b_project_milestones WHERE project_id = @p AND kind = 'handover') AS handed`)).recordset[0];
+          if (left.unpaid === 0 && left.handed > 0) {
+            await new sql.Request(tx).input("p", sql.Int, it.project_id).input("u", sql.Int, userId)
+              .query(`UPDATE b2b_projects SET stage = ${B2B_STAGE.closed}, closed_at = SYSDATETIMEOFFSET(), updated_by = @u, updated_at = SYSDATETIMEOFFSET() WHERE id = @p`);
+            await log("closed", "ส่งมอบแล้วและรับเงินครบทุกงวด — ปิดโครงการ", { from: B2B_STAGE.handover, to: B2B_STAGE.closed });
+          }
+        }
         // งวด 1 = เริ่มงานได้ → ขั้นขออนุญาต + จัดซื้อ
         if (it.no === 1 && it.stage === B2B_STAGE.won) {
           await new sql.Request(tx).input("p", sql.Int, it.project_id).input("u", sql.Int, userId)

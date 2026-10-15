@@ -13,6 +13,8 @@ const KIND: Record<string, string> = {
   quote_returned: "ส่งกลับแก้ใบเสนอราคา", quote_revision: "ใบเสนอราคา Rev ใหม่", quote_sent: "ส่งใบเสนอราคาให้ลูกค้า",
   won: "ได้งาน", contract: "บันทึกสัญญา", installment_due: "งวดถึงกำหนด", installment_submitted: "แนบหลักฐานรับเงิน",
   installment_rejected: "บัญชีตีกลับหลักฐาน", installment_paid: "บัญชียืนยันรับเงิน",
+  milestone: "บันทึกหน้างาน", milestone_edited: "แก้บันทึกหน้างาน", milestone_undone: "ยกเลิกบันทึกหน้างาน",
+  permit: "ขออนุญาต", closed: "ปิดโครงการ",
 };
 
 export default function ActivityList({ activities, onNote, readOnly }: {

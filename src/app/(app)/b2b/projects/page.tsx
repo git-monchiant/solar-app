@@ -67,6 +67,7 @@ export default function B2bProjectListPage() {
   // คอลัมน์กระดาน: ขั้นที่เดินได้ในเฟสนี้เสมอ + ขั้นอื่นที่มีโครงการอยู่จริง
   const columns = useMemo(() => {
     if (stage === "lost") return [B2B_STAGE.lost, B2B_STAGE.cancelled];
+    if (stage === "closed") return [B2B_STAGE.closed];
     if (/^\d{4}$/.test(stage)) return [Number(stage)];
     const present = new Set(shown.map((r) => r.stage));
     return B2B_FLOW.map((s) => s.step as number).filter((s) => s <= B2B_MAX_MOVABLE_STAGE || present.has(s));

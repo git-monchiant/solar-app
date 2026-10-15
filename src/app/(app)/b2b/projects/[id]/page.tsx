@@ -23,21 +23,25 @@ import { ContractModal, CustomerEditModal, EvidenceModal, NewBoqModal, NewQuoteM
 import InstallmentTable from "@/components/b2b/project/InstallmentTable";
 import { openAuthedFile } from "@/components/b2b/openAuthedFile";
 import QuoteList from "@/components/b2b/project/QuoteList";
+import MilestoneList from "@/components/b2b/project/MilestoneList";
+import PermitChecklist from "@/components/b2b/project/PermitChecklist";
+import { MilestoneModal, PermitModal } from "@/components/b2b/project/ExecutionModals";
+import { PERMITS, milestoneDef, type B2bMilestone, type B2bPermit, type MilestoneFile, type MilestoneKind } from "@/lib/b2b/execution";
 
 // หน้าโครงการ B2B — โครงเดียวกับหน้ารายละเอียดลีด (header ติดบน · แท็บ · รางขั้นซ้าย · การ์ดขั้น · Activity Log ขวา)
-// แผน docs/plan/20261015-07-b2b-project-flow.md เฟส 1: เดินได้ 01–04 · 05–09 ล็อกไว้จนเฟส 2–4
+// แผน docs/plan/20261015-07-b2b-project-flow.md · 01–05 ขาย/ได้งาน · 06–09 ดำเนินโครงการ (milestone + ขออนุญาต — เฟส 4)
 // ขั้นเปลี่ยนผ่าน /actions ที่เดียว (server ตรวจกติกา) · ทุกครั้งได้โครงการทั้งก้อนกลับมาแทนค่าเดิม
 
 type Tab = "workflow" | "info" | "boq" | "installments" | "timeline";
 type Modal = null | "edit" | "customer" | "lost" | "cancel" | "reopen" | "back_survey" | "schedule" | "record" | "new_boq" | "new_quote"
-  | "won" | "contract" | "evidence" | "reject_inst";
+  | "won" | "contract" | "evidence" | "reject_inst" | "milestone" | "milestone_edit" | "permit";
 
 const LOCKED_HINT: Record<number, string> = {
   3500: "ปลดเมื่อกด \"ได้งาน\" — เลือกใบเสนอราคาที่ส่งลูกค้าแล้ว",
   3600: "ปลดเมื่อบัญชียืนยันเงินงวด 1",
-  3700: "milestone หน้างาน + งวด 2–3 (เฟส 4)",
-  3800: "ผลพิจารณาการไฟฟ้า · วันจ่ายไฟ (เฟส 4)",
-  3900: "ใบส่งมอบงาน + Training · งวด 4 (เฟส 4)",
+  3700: "ปลดเมื่อบันทึก \"ของเข้าหน้างาน\"",
+  3800: "ปลดเมื่อติดตั้งเสร็จ 100% แล้วบันทึกยื่นขนานไฟ",
+  3900: "ปลดเมื่อได้วันจ่ายไฟ (COD) แล้วกด \"เข้าขั้นส่งมอบ\"",
 };
 
 export default function B2bProjectPage({ params }: { params: Promise<{ id: string }> }) {
@@ -57,6 +61,9 @@ export default function B2bProjectPage({ params }: { params: Promise<{ id: strin
   const [tab, setTab] = useState<Tab>(() => (searchParams.get("tab") === "installments" ? "installments" : "workflow"));
   const [inst, setInst] = useState<B2bInstallment | null>(null);
   const [instBusy, setInstBusy] = useState<number | null>(null);
+  const [msKind, setMsKind] = useState<MilestoneKind | null>(null);
+  const [msEdit, setMsEdit] = useState<B2bMilestone | null>(null);
+  const [permit, setPermit] = useState<B2bPermit | null>(null);
   const [modal, setModal] = useState<Modal>(null);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
@@ -103,8 +110,10 @@ export default function B2bProjectPage({ params }: { params: Promise<{ id: strin
 
   const closed = isClosedStage(p.stage);
   // ขั้นที่ใช้วาดราง/การ์ด — แพ้/ยกเลิก ใช้ขั้นก่อนปิด: ขั้นนั้น = "หยุดที่ขั้นนี้" (ไม่ใช่ Done) · ไม่มีขั้นไหน active
-  const at = closed ? (p.stage_before_close ?? B2B_STAGE.lead) : p.stage;
-  const stateOf = (step: number): StepState => (step < at ? "done" : step > at ? "locked" : closed ? "stopped" : "active");
+  //   ปิดโครงการ (3950) = ทำครบทุกขั้น → ทุกการ์ด Done
+  const stopped = closed && p.stage !== B2B_STAGE.closed;
+  const at = stopped ? (p.stage_before_close ?? B2B_STAGE.lead) : p.stage;
+  const stateOf = (step: number): StepState => (step < at ? "done" : step > at ? "locked" : stopped ? "stopped" : "active");
 
   const openModal = (m: Modal) => { setError(""); setModal(m); };
   const run = async (fn: () => Promise<void>) => {
@@ -172,11 +181,13 @@ export default function B2bProjectPage({ params }: { params: Promise<{ id: strin
     } finally { setInstBusy(null); }
   };
   const confirmPaid = async (it: B2bInstallment) => {
-    const ok = await confirm({ title: `ยืนยันรับเงินงวด ${it.no}`, message: `${formatTHB(it.total, { decimals: 2 })} บาท (รวม VAT) — ตรวจหลักฐานแล้ว${it.no === 1 ? " · โครงการจะขยับเข้าขั้นขออนุญาต + จัดซื้อ" : ""}`, confirmText: "ยืนยันรับเงิน" });
+    const lastUnpaid = p.installments.every((x) => x.id === it.id || x.status === "paid");
+    const closing = lastUnpaid && p.stage === B2B_STAGE.handover && p.milestones.some((m) => m.kind === "handover");
+    const ok = await confirm({ title: `ยืนยันรับเงินงวด ${it.no}`, message: `${formatTHB(it.total, { decimals: 2 })} บาท (รวม VAT) — ตรวจหลักฐานแล้ว${it.no === 1 && p.stage === B2B_STAGE.won ? " · โครงการจะขยับเข้าขั้นขออนุญาต + จัดซื้อ" : ""}${closing ? " · งวดสุดท้าย — โครงการจะปิดเอง" : ""}`, confirmText: "ยืนยันรับเงิน" });
     if (ok) await instAction(it, "confirm");
   };
   const markDue = async (it: B2bInstallment) => {
-    const ok = await confirm({ title: `งวด ${it.no} ถึงกำหนดวางบิล`, message: "ใช้เมื่อเหตุการณ์ของงวดนี้เกิดแล้ว (ระบบ milestone หน้างานจะทำให้อัตโนมัติในเฟส 4)", confirmText: "ถึงกำหนด" });
+    const ok = await confirm({ title: `งวด ${it.no} ถึงกำหนดวางบิล`, message: "ปกติงวดถึงกำหนดเองเมื่อบันทึกเหตุการณ์หน้างาน — ใช้ปุ่มนี้เมื่อเหตุการณ์ของงวดเกิดแล้วแต่ไม่ได้บันทึกในระบบ", confirmText: "ถึงกำหนด" });
     if (ok) await instAction(it, "due");
   };
   const uploadEvidence = (v: { file: File | null; received_date: string; note: string }) => run(async () => {
@@ -196,6 +207,73 @@ export default function B2bProjectPage({ params }: { params: Promise<{ id: strin
       onDue={(it) => void markDue(it)} onAttach={(it) => { setInst(it); openModal("evidence"); }}
       onConfirm={(it) => void confirmPaid(it)} onReject={(it) => { setInst(it); openModal("reject_inst"); }} onView={viewEvidence} />
   );
+  // ── ดำเนินโครงการ (เฟส 4) ──
+  const canExec = canEdit && !closed;
+  const canPermit = canExec && p.stage >= B2B_STAGE.won;
+  const msOf = (k: MilestoneKind) => p.milestones.find((m) => m.kind === k);
+  const sendForm = async (url: string, fd: FormData, method = "POST") => {
+    const res = await fetch(url, { method, headers: { ...getUserContextHeaders() }, body: fd });
+    if (!res.ok) throw new Error((await res.json().catch(() => null))?.error || `HTTP ${res.status}`);
+  };
+  const openRecord = (k: MilestoneKind) => { setMsKind(k); openModal("milestone"); };
+  const recordMilestone = (v: { done_date: string; note: string; files: File[] }) => run(async () => {
+    if (!msKind) return;
+    const fd = new FormData();
+    fd.append("kind", msKind); fd.append("done_date", v.done_date); fd.append("note", v.note);
+    for (const f of v.files) fd.append("files", f);
+    await sendForm(`/api/b2b/projects/${p.id}/milestones`, fd);
+    load();
+    toast({ message: `บันทึก "${milestoneDef(msKind)!.label}" แล้ว`, variant: "success" });
+  });
+  const editMilestone = (v: { done_date: string; note: string }) => run(async () => {
+    if (!msEdit) return;
+    await apiFetch(`/api/b2b/milestones/${msEdit.id}`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify(v) });
+    load();
+    toast({ message: "แก้ไขแล้ว", variant: "success" });
+  });
+  const undoMilestone = async (m: B2bMilestone) => {
+    const d = milestoneDef(m.kind)!;
+    const ok = await confirm({
+      title: `ยกเลิกการบันทึก "${d.label}"`, variant: "danger", confirmText: "ยกเลิกการบันทึก",
+      message: [m.stage_after !== m.stage_before && `โครงการกลับไปขั้น ${stageLabel(m.stage_before)}`, d.trigger && "งวดที่ถึงกำหนดเพราะเหตุการณ์นี้กลับเป็นยังไม่ถึง",
+        m.files.length > 0 && `ไฟล์ที่แนบ ${m.files.length} ไฟล์จะถูกลบ`].filter(Boolean).join(" · ") || "ใช้เมื่อบันทึกผิด",
+    });
+    if (!ok) return;
+    try {
+      await apiFetch(`/api/b2b/milestones/${m.id}`, { method: "DELETE" });
+      load();
+      toast({ message: `ยกเลิก "${d.label}" แล้ว`, variant: "success" });
+    } catch (e) { toast({ message: e instanceof Error && e.message ? e.message : "ยกเลิกไม่สำเร็จ", variant: "danger" }); }
+  };
+  const viewMilestoneFile = (m: B2bMilestone, f: MilestoneFile) => {
+    void openAuthedFile(`/api/b2b/milestones/${m.id}/files/${encodeURIComponent(f.file)}`).catch((e) => toast({ message: e.message, variant: "danger" }));
+  };
+  const savePermit = (v: { status: string; submitted_date: string; approved_date: string; note: string; file: File | null }) => run(async () => {
+    if (!permit) return;
+    const fd = new FormData();
+    fd.append("status", v.status); fd.append("submitted_date", v.submitted_date); fd.append("approved_date", v.approved_date); fd.append("note", v.note);
+    if (v.file) fd.append("file", v.file);
+    await sendForm(`/api/b2b/projects/${p.id}/permits/${permit.kind}`, fd, "PUT");
+    load();
+    toast({ message: "บันทึกเรื่องขออนุญาตแล้ว", variant: "success" });
+  });
+  const viewPermitFile = (x: B2bPermit) => {
+    void openAuthedFile(`/api/b2b/projects/${p.id}/permits/${x.kind}`).catch((e) => toast({ message: e.message, variant: "danger" }));
+  };
+  const toHandover = async () => {
+    const ok = await confirm({ title: "เข้าขั้นส่งมอบ", message: "ขนานไฟเรียบร้อยแล้ว — ต่อไปนัดส่งมอบงาน + Training ลูกค้า", confirmText: "เข้าขั้นส่งมอบ" });
+    if (ok) await act({ action: "to_handover" }, "โครงการอยู่ขั้นส่งมอบแล้ว");
+  };
+  const milestoneList = (step: number) => (
+    <MilestoneList step={step} milestones={p.milestones} stage={p.stage} canEdit={canExec} onRecord={openRecord}
+      onEdit={(m) => { setMsEdit(m); openModal("milestone_edit"); }} onUndo={(m) => void undoMilestone(m)} onFile={viewMilestoneFile} />
+  );
+  const permitList = (only?: B2bPermit["kind"][]) => (
+    <PermitChecklist permits={p.permits} only={only} canEdit={canPermit} onEdit={(x) => { setPermit(x); openModal("permit"); }} onFile={viewPermitFile} />
+  );
+  const doneOn = (k: MilestoneKind, label: string) => { const m = msOf(k); return m ? `${label} ${formatThaiDate(m.done_date)}` : undefined; };
+  const permitsOk = p.permits.filter((x) => x.status === "approved" || x.status === "not_required").length;
+
   const wonButton = (
     <button type="button" className={btnPrimary} disabled={sentQuotes.length === 0}
       title={sentQuotes.length ? undefined : "ต้องมีใบเสนอราคาที่อนุมัติครบ 3 ชั้นและส่งลูกค้าแล้ว"} onClick={() => openModal("won")}>ได้งาน</button>
@@ -295,7 +373,7 @@ export default function B2bProjectPage({ params }: { params: Promise<{ id: strin
             <div><dt className={dt}>วันลงนาม</dt><dd className={p.contract_date ? "text-gray-800" : "text-amber-700 font-semibold"}>{p.contract_date ? formatThaiDate(p.contract_date) : "ยังไม่ได้บันทึก"}</dd></div>
             {p.om_years != null && <div><dt className={dt}>O&amp;M ที่รวมในราคา</dt><dd className="text-gray-800">{p.om_years} ปี · ปีละ {p.om_visits_per_year ?? "—"} ครั้ง</dd></div>}
           </dl>
-          {installmentTable}
+          {stateOf(3500) === "active" && installmentTable}
           {canEdit && !closed && (
             <div className="flex flex-wrap justify-end gap-2">
               <button type="button" className={btn} onClick={() => openModal("contract")}>{p.contract_date ? "แก้สัญญา / PO" : "บันทึกสัญญา / PO"}</button>
@@ -304,11 +382,70 @@ export default function B2bProjectPage({ params }: { params: Promise<{ id: strin
         </>
       ),
     },
+    // ตารางงวดเงินอยู่การ์ดขั้นปัจจุบันการ์ดเดียว (ดูทั้งหมดได้ที่แท็บงวดเงิน)
     3600: {
+      summary: `${doneOn("procured", "สั่งของครบ") ?? "ยังไม่บันทึกสั่งของครบ"} · ขออนุญาตเรียบร้อย ${permitsOk}/${PERMITS.length}`,
       body: (
         <>
-          {phaseNote("เช็กลิสต์ขออนุญาต 3 อย่าง · Purchase สั่งของตามงบ BOQ · milestone หน้างานที่ทำให้งวด 2–4 ถึงกำหนดเอง — มาในเฟส 4 (ตอนนี้กด \"ถึงกำหนด\" ที่งวดเองได้)")}
-          {installmentTable}
+          {permitList()}
+          {milestoneList(3600)}
+          {stateOf(3600) === "active" && installmentTable}
+          {canExec && stateOf(3600) === "active" && (
+            <>
+              {phaseNote("Purchase บันทึก \"สั่งของครบ\" ได้จากเมนูจัดซื้อ (เห็นงบต้นทุนจาก BOQ ที่ได้งาน) · ขออนุญาตทำคู่ขนานไปได้จนส่งมอบ · ของถึงหน้างานแล้ว → เข้าขั้นติดตั้ง")}
+              <div className="flex justify-end">
+                <button type="button" className={btnPrimary} onClick={() => openRecord("materials_arrived")}>ของเข้าหน้างาน</button>
+              </div>
+            </>
+          )}
+        </>
+      ),
+    },
+    3700: {
+      summary: doneOn("install_done", "ติดตั้งเสร็จ"),
+      body: (
+        <>
+          {milestoneList(3700)}
+          {stateOf(3700) === "active" && installmentTable}
+          {canExec && stateOf(3700) === "active" && (
+            <>
+              {phaseNote("\"แผงส่งครบ 100%\" กับ \"ติดตั้งเสร็จ 100%\" ทำให้งวดที่ผูกไว้ถึงกำหนดวางบิลเอง · ติดตั้งเสร็จแล้ว → ยื่นขนานไฟ")}
+              <div className="flex justify-end">
+                <button type="button" className={btnPrimary} disabled={!msOf("install_done")} title={msOf("install_done") ? undefined : "บันทึกติดตั้งเสร็จ 100% ก่อน"}
+                  onClick={() => openRecord("gridtie_submitted")}>ยื่นขนานไฟ</button>
+              </div>
+            </>
+          )}
+        </>
+      ),
+    },
+    3800: {
+      summary: doneOn("cod", "จ่ายไฟ (COD)"),
+      body: (
+        <>
+          {permitList(["utility"])}
+          {milestoneList(3800)}
+          {stateOf(3800) === "active" && installmentTable}
+          {canExec && stateOf(3800) === "active" && (
+            <div className="flex justify-end">
+              <button type="button" className={btnPrimary} disabled={!msOf("cod")} title={msOf("cod") ? undefined : "บันทึกวันจ่ายไฟ (COD) ก่อน"}
+                onClick={() => void toHandover()}>เข้าขั้นส่งมอบ</button>
+            </div>
+          )}
+        </>
+      ),
+    },
+    3900: {
+      summary: doneOn("handover", "ส่งมอบ"),
+      body: (
+        <>
+          {milestoneList(3900)}
+          <dl className={dl}>
+            <div><dt className={dt}>รับประกันงานติดตั้ง</dt><dd className="text-gray-800">{msOf("handover") ? `เริ่มนับ ${formatThaiDate(msOf("handover")!.done_date)}` : "เริ่มนับจากวันส่งมอบ"}</dd></div>
+            {p.om_years != null && <div><dt className={dt}>O&amp;M ที่รวมในราคา</dt><dd className="text-gray-800">{p.om_years} ปี · ปีละ {p.om_visits_per_year ?? "—"} ครั้ง</dd></div>}
+          </dl>
+          {stateOf(3900) === "active" && installmentTable}
+          {canExec && stateOf(3900) === "active" && phaseNote("โครงการปิดเองเมื่อบันทึกส่งมอบแล้ว และบัญชียืนยันรับเงินครบทุกงวด")}
         </>
       ),
     },
@@ -393,7 +530,12 @@ export default function B2bProjectPage({ params }: { params: Promise<{ id: strin
         )}
 
         <main className="flex-1 min-w-0 p-3 md:p-4 space-y-3 pb-24 md:pb-6">
-          {closed && (
+          {p.stage === B2B_STAGE.closed && (
+            <div className="rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-800">
+              <b>ปิดโครงการแล้ว</b> — ส่งมอบงานและรับเงินครบทุกงวด{p.closed_at ? ` · ${formatThaiDate(p.closed_at)}` : ""}
+            </div>
+          )}
+          {stopped && (
             <div className={`rounded-xl border px-4 py-3 text-sm ${p.stage === B2B_STAGE.lost ? "border-red-200 bg-red-50 text-red-700" : "border-gray-200 bg-white text-gray-600"}`}>
               <b>{stageLabel(p.stage)}</b> ตอนอยู่ขั้น {stageLabel(at)}{p.closed_at ? ` · ${formatThaiDate(p.closed_at)}` : ""}
               {p.close_reason && <div className="mt-0.5">{p.close_reason}</div>}
@@ -514,6 +656,18 @@ export default function B2bProjectPage({ params }: { params: Promise<{ id: strin
           label="เหตุผล" placeholder={modal === "lost" ? "เช่น ราคาสูงกว่าคู่แข่ง · ลูกค้าเลื่อนงบปีหน้า" : "เช่น ลูกค้ายกเลิกแผนลงทุน"}
           confirmText={modal === "lost" ? "บันทึกแพ้งาน" : "ยกเลิกโครงการ"} saving={saving} error={error} onClose={() => setModal(null)}
           onConfirm={(reason) => void act({ action: modal, reason }, modal === "lost" ? "บันทึกแพ้งานแล้ว" : "ยกเลิกโครงการแล้ว")} />
+      )}
+      {modal === "milestone" && msKind && (
+        <MilestoneModal title={`บันทึก "${milestoneDef(msKind)!.label}"`} subtitle={milestoneDef(msKind)!.hint} saving={saving} error={error}
+          onClose={() => setModal(null)} onConfirm={(v) => void recordMilestone(v)} />
+      )}
+      {modal === "milestone_edit" && msEdit && (
+        <MilestoneModal edit title={`แก้ "${milestoneDef(msEdit.kind)!.label}"`} subtitle="แก้วันที่/หมายเหตุ — ไม่เปลี่ยนขั้นหรืองวดเงิน" initial={msEdit}
+          saving={saving} error={error} onClose={() => setModal(null)} onConfirm={(v) => void editMilestone({ done_date: v.done_date, note: v.note })} />
+      )}
+      {modal === "permit" && permit && (
+        <PermitModal title={PERMITS.find((x) => x.kind === permit.kind)!.label} initial={permit} hasFile={permit.has_file}
+          saving={saving} error={error} onClose={() => setModal(null)} onConfirm={(v) => void savePermit(v)} />
       )}
       {modal === "reopen" && (
         <ReasonModal title="เปิดโครงการกลับ" subtitle={`กลับไปขั้น ${stageLabel(at)}`} label="เหตุผล" required={false} placeholder="เช่น ลูกค้ากลับมาขอราคาใหม่"
