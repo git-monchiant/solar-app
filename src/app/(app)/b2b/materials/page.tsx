@@ -5,6 +5,7 @@ import Header from "@/components/layout/Header";
 import Loading from "@/components/ui/Loading";
 import Dropdown from "@/components/ui/Dropdown";
 import { useDialog } from "@/components/ui/Dialog";
+import { useUnsavedGuard } from "@/lib/hooks/useUnsavedGuard";
 import { ClockIcon } from "@/components/ui/icons";
 import { apiFetch } from "@/lib/api";
 import { useActiveMenuItem } from "@/lib/hooks/useActiveModule";
@@ -103,6 +104,11 @@ export default function B2bMaterialsPage() {
     const v = drafts[id];
     return m && v.trim() !== "" && Number(v) !== m.unit_price;
   });
+  // ราคาที่พิมพ์ค้างไว้ — ออกจากหน้า (เมนู/ลิงก์/ปิดแท็บ) เตือนก่อน (ทบทวน BOQ 15 ต.ค.)
+  const askLeave = useCallback(() => dialog.confirm({
+    title: "ออกจากหน้านี้?", message: "มีราคาที่พิมพ์ไว้แต่ยังไม่บันทึก — ออกแล้วราคาที่พิมพ์จะหาย", confirmText: "ออกโดยไม่บันทึก", variant: "danger",
+  }), [dialog]);
+  useUnsavedGuard(dirtyIds.length > 0, askLeave);
 
   const savePrices = async () => {
     setPriceError("");
@@ -316,7 +322,7 @@ export default function B2bMaterialsPage() {
       {/* แถบบันทึกราคาของ Purchase — โผล่เมื่อมีราคาที่แก้แต่ยังไม่บันทึก
           desktop = แถวสุดท้ายของหน้า (ไม่ทับตาราง ไม่ต้องคำนวณความกว้าง sidebar) · mobile = ค้างเหนือแถบเมนูล่าง */}
       {canEditPrice && dirtyIds.length > 0 && (
-        <div className="sticky bottom-20 md:bottom-0 z-30 shrink-0 border-t border-gray-200 bg-white/95 backdrop-blur px-3 md:px-6 py-3">
+        <div className="sticky bottom-0 z-30 shrink-0 border-t border-gray-200 bg-white/95 backdrop-blur px-3 md:px-6 py-3">
           <div className="flex items-center gap-2 md:gap-3 flex-wrap">
             <span className="text-sm font-semibold text-gray-800">แก้ราคา {dirtyIds.length} รายการ</span>
             <input value={priceNote} onChange={(e) => setPriceNote(e.target.value)} placeholder="หมายเหตุ (ไม่บังคับ) เช่น ราคาใบเสนอ supplier ต.ค. 69"

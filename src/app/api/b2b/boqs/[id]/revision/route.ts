@@ -7,6 +7,7 @@ import { logActivity, syncBoqHeaders } from "@/lib/b2b/project-server";
 
 // ออก Revision ใหม่ = copy ทั้งใบเป็น Rev ถัดไป (snapshot ราคาเดิมติดไปด้วย) · Rev เดิมกลายเป็นอ่านอย่างเดียว
 // โครงการผ่านขั้นราคายืนยันแล้ว (ได้งาน/ปิด/แพ้/ยกเลิก) ออก Rev ไม่ได้ — BOQ ที่ได้งานเป็นงบโครงการ
+// คืน line_map { id บรรทัด Rev เดิม: id ใหม่ } — หน้าทำ BOQ ใช้ย้ายงานที่ยังไม่บันทึก (หรือถูกล็อกระหว่างแก้) ไปบันทึกลง Rev ใหม่
 export async function POST(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const gate = await requireAnyActiveRole(req, B2B_BOQ_ROLES);
   if (gate.error) return gate.error;
@@ -35,12 +36,16 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
         FROM b2b_boqs WHERE id = @id;
         UPDATE b2b_boqs SET is_latest = 0 WHERE id = @id;`);
     const newId = ins.recordset[0].id as number;
-    await new sql.Request(tx).input("from", sql.Int, id).input("to", sql.Int, newId).query(`
-      INSERT INTO b2b_boq_items (boq_id, category_id, sort_order, line_type, material_id, subgroup, name, brand, model, unit,
-                                 spec_watt, price_basis, unit_cost, qty, note, price_entered_by)
-      SELECT @to, category_id, sort_order, line_type, material_id, subgroup, name, brand, model, unit,
-             spec_watt, price_basis, unit_cost, qty, note, price_entered_by
-      FROM b2b_boq_items WHERE boq_id = @from ORDER BY category_id, sort_order, id`);
+    // MERGE ... ON 1 = 0 = INSERT ทุกแถว แต่ OUTPUT อ้างคอลัมน์ต้นทางได้ (INSERT...SELECT ทำไม่ได้) → ได้คู่ id เดิม/ใหม่
+    const copied = await new sql.Request(tx).input("from", sql.Int, id).input("to", sql.Int, newId).query(`
+      MERGE b2b_boq_items AS t
+      USING (SELECT * FROM b2b_boq_items WHERE boq_id = @from) AS s ON 1 = 0
+      WHEN NOT MATCHED THEN INSERT (boq_id, category_id, sort_order, line_type, material_id, subgroup, name, brand, model, unit,
+                                    spec_watt, price_basis, unit_cost, qty, note, price_entered_by)
+        VALUES (@to, s.category_id, s.sort_order, s.line_type, s.material_id, s.subgroup, s.name, s.brand, s.model, s.unit,
+                s.spec_watt, s.price_basis, s.unit_cost, s.qty, s.note, s.price_entered_by)
+      OUTPUT s.id AS old_id, inserted.id AS new_id;`);
+    const lineMap = Object.fromEntries(copied.recordset.map((r) => [String(r.old_id), r.new_id as number]));
     const n = ins.recordset[0];
     if (n.project_id) {
       // Rev ใหม่ของใบในโครงการ: หัวใบดึงชื่อ/ที่ตั้งล่าสุดของโครงการ + ลง timeline
@@ -48,7 +53,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
       await logActivity(tx, n.project_id, "boq_revision", { message: `${n.doc_no} ออก Rev ${n.revision}${n.option_label ? ` · ${n.option_label}` : ""}`, userId: gate.userId });
     }
     await tx.commit();
-    return NextResponse.json({ id: newId, revision: ins.recordset[0].revision }, { status: 201 });
+    return NextResponse.json({ id: newId, revision: ins.recordset[0].revision, line_map: lineMap }, { status: 201 });
   } catch (e) {
     try { await tx.rollback(); } catch {}
     console.error("POST /api/b2b/boqs/[id]/revision error:", e);

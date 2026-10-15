@@ -7,6 +7,7 @@ import Header from "@/components/layout/Header";
 import Loading from "@/components/ui/Loading";
 import Dropdown from "@/components/ui/Dropdown";
 import { useDialog } from "@/components/ui/Dialog";
+import { useUnsavedGuard } from "@/lib/hooks/useUnsavedGuard";
 import { apiFetch, getUserContextHeaders } from "@/lib/api";
 import { hasRole, useActiveRoles } from "@/lib/roles";
 import { formatNumber, formatThaiDate, formatTHB } from "@/lib/utils/formatters";
@@ -59,6 +60,7 @@ export default function BoqEditorPage({ params }: { params: Promise<{ id: string
   const [picker, setPicker] = useState<B2bCategory | null>(null);
   const [addingMaster, setAddingMaster] = useState<B2bCategory | null>(null);
   const [downloading, setDownloading] = useState(false);
+  const [revBusy, setRevBusy] = useState(false);
 
   const apply = useCallback((r: Loaded) => {
     setData(r); setHead(toDraft(r.header)); setLines(r.lines); setDirty(false); setError("");
@@ -69,13 +71,11 @@ export default function BoqEditorPage({ params }: { params: Promise<{ id: string
     apiFetch(`/api/b2b/boqs/${id}`).then(apply).catch((e) => setLoadError(e instanceof Error ? e.message : "โหลดใบ BOQ ไม่สำเร็จ"));
   }, [id, canUse, apply]);
 
-  // ออกจากหน้าโดยยังไม่บันทึก — เตือนก่อน
-  useEffect(() => {
-    if (!dirty) return;
-    const h = (e: BeforeUnloadEvent) => { e.preventDefault(); };
-    window.addEventListener("beforeunload", h);
-    return () => window.removeEventListener("beforeunload", h);
-  }, [dirty]);
+  // ออกจากหน้าโดยยังไม่บันทึก — เตือนก่อน (ปิดแท็บ · ลิงก์/เมนูในแอป · เปลี่ยน Rev)
+  const askLeave = useCallback(() => confirm({
+    title: "ออกจากหน้านี้?", message: "มีการแก้ไขที่ยังไม่บันทึก — ออกแล้วงานที่แก้จะหาย", confirmText: "ออกโดยไม่บันทึก", variant: "danger",
+  }), [confirm]);
+  const guardedPush = useUnsavedGuard(dirty, askLeave);
 
   const loadMaterials = useCallback(async () => {
     const r = await apiFetch("/api/b2b/materials") as { materials: B2bMaterial[] };
@@ -141,38 +141,57 @@ export default function BoqEditorPage({ params }: { params: Promise<{ id: string
   ])].sort((a, b) => a - b);
   const addonChoices = categories.filter((c) => c.is_addon && !addonIds.includes(c.id));
 
+  // ข้อมูลที่ส่งบันทึก — idMap = แปลง id บรรทัดของ Rev เดิมเป็นของ Rev ใหม่ (ย้ายงานที่แก้ค้างไป Rev ใหม่)
+  const payload = (idMap?: Record<string, number>, expected?: string) => JSON.stringify({
+    header: { ...head, latitude: head.latitude || null, longitude: head.longitude || null },
+    lines: lines.map((l) => ({
+      id: l.id != null && idMap ? idMap[String(l.id)] : l.id, line_type: l.line_type, category_id: l.category_id, material_id: l.material_id, qty: l.qty, note: l.note,
+      refresh_price: l.refresh_price === true, name: l.name, brand: l.brand, model: l.model, unit: l.unit, unit_cost: l.unit_cost, price_basis: l.price_basis,
+    })),
+    expected_updated_at: expected,
+  });
+
   const save = async () => {
     setError(""); setSaving(true);
     try {
-      const r = await apiFetch(`/api/b2b/boqs/${h.id}`, {
-        method: "PUT", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          header: { ...head, latitude: head.latitude || null, longitude: head.longitude || null },
-          lines: lines.map((l) => ({
-            id: l.id, line_type: l.line_type, category_id: l.category_id, material_id: l.material_id, qty: l.qty, note: l.note,
-            refresh_price: l.refresh_price === true, name: l.name, brand: l.brand, model: l.model, unit: l.unit, unit_cost: l.unit_cost, price_basis: l.price_basis,
-          })),
-          expected_updated_at: h.updated_at,
-        }),
-      });
+      const r = await apiFetch(`/api/b2b/boqs/${h.id}`, { method: "PUT", headers: { "Content-Type": "application/json" }, body: payload(undefined, h.updated_at) });
       apply(r);
       toast({ message: "บันทึกใบ BOQ แล้ว", variant: "success" });
     } catch (e) {
       setError(e instanceof Error && e.message ? e.message : "บันทึกไม่สำเร็จ");
+      // ถูกล็อกระหว่างแก้ (ใบเสนอราคาที่อ้าง Rev นี้ส่งอนุมัติ / โครงการได้งาน / มีคนออก Rev ใหม่) — โหลดหัวใบใหม่ให้เห็นสถานะจริง
+      // งานที่แก้ยังอยู่ในหน้า → กด "Revision ใหม่" ย้ายไป Rev ใหม่ได้
+      apiFetch(`/api/b2b/boqs/${h.id}`).then((r: Loaded) => setData(r)).catch(() => {});
     } finally {
       setSaving(false);
     }
   };
 
+  // มีงานที่ยังไม่บันทึก (หรือถูกล็อกระหว่างแก้) → ออก Rev ใหม่แล้วบันทึกงานที่แก้ลง Rev ใหม่ในคราวเดียว
   const newRevision = async () => {
-    if (dirty) { setError("บันทึกการแก้ไขก่อน แล้วค่อยออก Revision ใหม่"); return; }
-    const ok = await confirm({ title: `ออก Revision ${h.revision + 1}`, message: `คัดลอกใบนี้ทั้งใบเป็น Rev ${h.revision + 1} — Rev ${h.revision} จะกลายเป็นอ่านอย่างเดียว`, confirmText: "ออก Revision ใหม่" });
+    const carry = dirty;
+    const ok = await confirm({
+      title: `ออก Revision ${h.revision + 1}`, confirmText: "ออก Revision ใหม่",
+      message: carry
+        ? `คัดลอกใบนี้เป็น Rev ${h.revision + 1} แล้วย้ายงานที่ยังไม่บันทึกไปบันทึกใน Rev ใหม่ — Rev ${h.revision} คงตัวเลขเดิม (อ่านอย่างเดียว)`
+        : `คัดลอกใบนี้ทั้งใบเป็น Rev ${h.revision + 1} — Rev ${h.revision} จะกลายเป็นอ่านอย่างเดียว`,
+    });
     if (!ok) return;
+    setError(""); setRevBusy(true);
     try {
-      const r = await apiFetch(`/api/b2b/boqs/${h.id}/revision`, { method: "POST" }) as { id: number };
+      const r = await apiFetch(`/api/b2b/boqs/${h.id}/revision`, { method: "POST" }) as { id: number; line_map: Record<string, number> };
+      if (carry) {
+        try {
+          await apiFetch(`/api/b2b/boqs/${r.id}`, { method: "PUT", headers: { "Content-Type": "application/json" }, body: payload(r.line_map) });
+        } catch (e) {
+          toast({ message: `ออก Rev ใหม่แล้ว แต่บันทึกงานที่แก้ลง Rev ใหม่ไม่สำเร็จ — ${e instanceof Error ? e.message : ""}`, variant: "danger" });
+        }
+      }
+      setDirty(false);
       router.push(`/b2b/boq/${r.id}`);
     } catch (e) {
       setError(e instanceof Error && e.message ? e.message : "ออก Revision ใหม่ไม่สำเร็จ");
+      setRevBusy(false);
     }
   };
 
@@ -216,7 +235,7 @@ export default function BoqEditorPage({ params }: { params: Promise<{ id: string
       {/* หัวเรื่อง = ชื่อโครงการ (subtitle ของ Header เป็นตัวพิมพ์ใหญ่ทั้งหมด จะเปลี่ยนหน้าตาชื่อ) · เลขที่ไว้บรรทัดรอง */}
       <Header title={head.project_name || "ใบ BOQ"} subtitle={`${h.doc_no} · Rev ${h.revision}`} backHref={backHref}
         rightContent={data.revisions.length > 1 ? (
-          <Dropdown className="w-36" value={String(h.id)} onChange={(v) => { if (v && v !== String(h.id)) router.push(`/b2b/boq/${v}`); }}
+          <Dropdown className="w-36" value={String(h.id)} onChange={(v) => { if (v && v !== String(h.id)) void guardedPush(`/b2b/boq/${v}`); }}
             options={data.revisions.map((r) => ({ value: String(r.id), label: `Rev ${r.revision}${r.is_latest ? " (ล่าสุด)" : ""}` }))} />
         ) : undefined} />
 
@@ -333,7 +352,8 @@ export default function BoqEditorPage({ params }: { params: Promise<{ id: string
             </button>
             {h.is_latest && canEdit && !stageLocked && (
               <>
-                <button type="button" onClick={() => void newRevision()} className="h-9 whitespace-nowrap rounded-lg border border-gray-200 px-4 text-sm font-semibold text-gray-600 hover:bg-gray-50">
+                <button type="button" onClick={() => void newRevision()} disabled={revBusy || saving}
+                  className="h-9 whitespace-nowrap rounded-lg border border-gray-200 px-4 text-sm font-semibold text-gray-600 hover:bg-gray-50 disabled:opacity-50">
                   <span className="max-md:hidden">ออก </span>Revision ใหม่
                 </button>
                 {!readOnly && <button type="button" onClick={() => void save()} disabled={saving || !dirty}

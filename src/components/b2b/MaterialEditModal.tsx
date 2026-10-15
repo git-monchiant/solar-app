@@ -189,7 +189,7 @@ export default function MaterialEditModal({ initial, defaultCategory, categories
             )}
             {priceMeaningChanged && (
               <p className="mt-2 rounded-lg bg-amber-50 border border-amber-200 px-3 py-2 text-xs text-amber-800">
-                ⚠ เปลี่ยนแบบราคา/หน่วยแล้ว ราคาเดิม {formatPrice(initial?.unit_price)} {oldSuffix} จะกลายเป็น {formatPrice(initial?.unit_price)} {newSuffix} — แจ้ง Purchase ให้ตรวจราคาหลังบันทึก
+                ⚠ เปลี่ยนแบบราคา/หน่วยแล้ว ({oldSuffix} → {newSuffix}) — บันทึกแล้วราคาเดิม {formatPrice(initial?.unit_price)} จะถูกล้าง รายการกลับเป็น &quot;รอราคา&quot; ให้ Purchase ใส่ใหม่ (BOQ ที่ใส่ไปแล้วไม่เปลี่ยน)
               </p>
             )}
           </section>
