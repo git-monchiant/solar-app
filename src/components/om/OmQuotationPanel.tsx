@@ -725,9 +725,8 @@ function PackagePickerDialog({ pkgs, fit, replacing, onPick, onClose }: {
                     <span className="flex min-w-0 items-center gap-2">
                       <span aria-hidden="true" className="shrink-0 text-base">☀️</span>
                       <span className="min-w-0">
+                        {/* หัวข้ออย่างเดียว — ขอบเขตงานยาวหลายบรรทัดแล้ว (แผน 20261014-04) ผู้ใช้สั่งเอาออก 15 ต.ค. ดูได้หลังเลือก (รายละเอียดใต้แพ็กเกจ) */}
                         <span className="block truncate text-sm font-semibold text-gray-800">Package O&amp;M {tier} · {planLabel(p)}</span>
-                        {/* ขอบเขตงานยาวหลายบรรทัดแล้ว (แผน 20261014-04) — ตัดเหลือ 2 บรรทัด ให้เทียบแพ็กเกจได้ในจอเดียว */}
-                        <span className="line-clamp-2 text-xxs text-gray-400">{p.scope ? `ขอบเขตงาน: ${omScopeItems(p.scope).join(" · ")}` : planLabel(p)}</span>
                       </span>
                     </span>
                     <span className="shrink-0 text-sm font-bold tabular-nums text-gray-700">{formatTHB(p.price)}</span>
