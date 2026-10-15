@@ -17,7 +17,6 @@ import ListPageHeader from "@/components/layout/ListPageHeader";
 import Dropdown from "@/components/ui/Dropdown";
 import { useActiveMenuItem } from "@/lib/hooks/useActiveModule";
 import JobCard from "@/components/om/JobCard";
-import { CheckIcon } from "@/components/ui/icons";
 
 export default function OmServicesPage() {
   const { item: activeItem } = useActiveMenuItem();   // หัวเรื่อง = ชื่อเมนู (กติกา ui-rules)
@@ -36,14 +35,8 @@ export default function OmServicesPage() {
   const [dir, setDir] = useState<"asc" | "desc">("asc");
   const sortDef = SORTS.find((s) => s.k === sort) ?? SORTS[0];
   const [q, setQ] = useState("");
-  // ★ ติ๊ก "งานของฉัน" — ยกบล็อกจาก Pipeline ทั้งก้อน (กติกา ui-rules) รวมถึงการจำค่าไว้
-  //   ผู้ใช้เคาะ 24 ก.ย. 69: งาน O&M ให้อยู่ในโมดูล O&M ก่อน ยังไม่ขึ้นหน้า Today
-  //   ⇒ ตอบ "งานของฉัน" ได้โดยไม่ต้องออกจากโมดูล
-  //   กรองที่ฝั่ง server (mine=1) ไม่ใช่ฝั่ง client เพราะลิสต์แบ่งหน้าอยู่
-  const [mineOnly, setMineOnly] = useState(() => {
-    if (typeof window === "undefined") return false;
-    return localStorage.getItem("om.services.mineOnly") === "1";
-  });
+  // ★ 15 ต.ค. 69 ผู้ใช้สั่งเอาติ๊ก "งานของฉัน" ออก — กรองจากเจ้าของงาน ซึ่งเอาช่องตั้งเจ้าของงานออกไปแล้ว
+  //   (API /api/om/follow ยังรับ mine=1 อยู่ ไม่มีหน้าไหนส่งมาแล้ว)
   const [items, setItems] = useState<Item[] | null>(null);
   const [counts, setCounts] = useState<Record<string, number>>({});
   const [projects, setProjects] = useState<{ project_id: string; project_name: string; n: number }[]>([]);
@@ -54,7 +47,6 @@ export default function OmServicesPage() {
     const p = new URLSearchParams({ tab, sort, dir, size: "40" });
     if (group) p.set("group", group);
     if (q.trim()) p.set("q", q.trim());
-    if (mineOnly) p.set("mine", "1");
     if (origin) p.set("origin", origin);
     apiFetch(`/api/om/follow?${p}`)
       .then((d) => {
@@ -69,7 +61,7 @@ export default function OmServicesPage() {
         });
       })
       .catch((e) => { setErr(e instanceof Error ? e.message : String(e)); setItems([]); });
-  }, [tab, group, sort, dir, q, mineOnly, origin]);
+  }, [tab, group, sort, dir, q, origin]);
   useEffect(() => { const t = setTimeout(load, q ? 350 : 0); return () => clearTimeout(t); }, [load, q]);
 
   const totalAll = Object.values(counts).reduce((s, n) => s + n, 0);
@@ -92,7 +84,7 @@ export default function OmServicesPage() {
       />
 
       <div className="p-3 md:p-4">
-        {/* ★ 24 ก.ย. 69 จัดแถวเครื่องมือตามแนว Pipeline: ซ้าย = จำนวน+กรอง · ขวา = งานของฉัน/เรียง
+        {/* ★ 24 ก.ย. 69 จัดแถวเครื่องมือตามแนว Pipeline: ซ้าย = จำนวน+กรอง · ขวา = เรียง (งานของฉัน เอาออก 15 ต.ค. 69)
             ★ 25 ก.ย. 69 ผู้ใช้สั่งยกเลิกมุมมองแบบตาราง — เหลือแบบการ์ดอย่างเดียว
             ★ 1 ต.ค. 69 ผู้ใช้สั่งให้เรียงเหมือน Pipeline เป๊ะ: 2 ช่อง เรียงตามอะไร + ทิศทาง */}
         <div className="mb-3 flex flex-wrap items-center gap-2 px-1">
@@ -113,21 +105,6 @@ export default function OmServicesPage() {
             options={ORIGIN_OPTIONS}
           />
           <div className="ml-auto flex items-center gap-2">
-            <button
-              type="button"
-              style={{ minHeight: 0 }}
-              onClick={() => {
-                const next = !mineOnly;
-                setMineOnly(next);
-                localStorage.setItem("om.services.mineOnly", next ? "1" : "0");
-              }}
-              className="h-7 inline-flex items-center gap-1.5 px-1 text-xxs font-medium text-gray-700 cursor-pointer whitespace-nowrap"
-            >
-              <span className={`w-3.5 h-3.5 rounded border-2 flex items-center justify-center transition-colors ${mineOnly ? "border-gray-800 bg-gray-800" : "border-gray-300"}`}>
-                {mineOnly && <CheckIcon className="w-2 h-2 text-white" strokeWidth={4} />}
-              </span>
-              งานของฉัน
-            </button>
             <Dropdown
               className="w-36"
               value={sort}

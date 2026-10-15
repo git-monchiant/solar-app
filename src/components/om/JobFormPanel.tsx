@@ -461,6 +461,18 @@ export default function JobFormPanel({ jobId, wrapClass = "h-full overflow-auto 
   const fails = failCount(checks, items);
   const closed = job.status === "closed";
   const last = steps.length - 1;
+  // ★ 15 ต.ค. 69 ผู้ใช้สั่ง: ขั้นตรวจกรอกไม่ครบ กดถัดไปไม่ได้ — นับเฉพาะข้อที่ใบตรวจตั้ง required (ใบในฐานตั้งไว้ครบทุกข้อ)
+  //   ผ่าน/ไม่ผ่าน ต้องเลือก · ช่องวัดค่าต้องเป็นตัวเลข · ข้อ text/photo ยังไม่มีที่เก็บคำตอบ ไม่นับ
+  //   API ตรวจซ้ำตอนปิดงาน (PUT /report ที่มีผลตรวจ) — กันข้ามไปขั้นส่งมอบแล้วกดปิด
+  const missingChecks = items.filter((it) => it.required && (
+    it.kind === "bool" ? typeof checks[it.code]?.pass !== "boolean"
+    : it.kind === "num" ? (measures[it.code] ?? "") === "" || !Number.isFinite(Number(measures[it.code]))
+    : false));
+  // ErrorPopup แยกรายการด้วย "," — ไม่เกิน 8 แถว ที่เหลือรวบเป็นบรรทัดเดียว
+  const missingText = missingChecks.length
+    ? [...missingChecks.slice(0, 8).map((it) => it.label_th.replace(/,/g, " ")),
+       ...(missingChecks.length > 8 ? [`และอีก ${missingChecks.length - 8} ข้อ`] : [])].join(",")
+    : null;
 
   // ประตูเดียวกับปุ่มถัดไป + แท็บขั้นย่อย (แบบ onSubStepChange ของ InstallStep)
   // ★ ข้อมูลที่กรอกไม่หายตอนสลับขั้นย่อย (state อยู่ที่ใบ) · ไม่บันทึกอัตโนมัติ เพราะ PUT เขียน Activity log ทุกครั้ง
@@ -470,6 +482,8 @@ export default function JobFormPanel({ jobId, wrapClass = "h-full overflow-auto 
       setNextError(appt.canNext ? "ช่างยังไม่ถึงหน้างาน — กด ถัดไป ที่แท็บนัดเมื่อถึงหน้างาน" : "ลูกค้ายังไม่ยืนยันนัด — กด ลูกค้ายืนยันแล้ว ที่แท็บนัดก่อน");
       return;
     }
+    // ขั้นตรวจยังไม่ครบ — ไปขั้นรูป · บันทึก / ส่งมอบ ไม่ได้ (ทั้งปุ่มถัดไปและกดแถบขั้นย่อยข้ามไป)
+    if (!closed && n > subStep && n - off >= 1 && missingText) { setNextError(missingText); return; }
     if (!closed && n > subStep && n - off > 1 && repair && !repairDetail.trim()) {
       setNextError("อาการ / สิ่งที่ต้องซ่อม (ติ๊กพบงานซ่อมไว้)"); return;
     }
@@ -507,6 +521,7 @@ export default function JobFormPanel({ jobId, wrapClass = "h-full overflow-auto 
       setErr(`ใบงานยังไม่ถึงขั้นเข้างาน (ตอนนี้ "${statusLabel(job.status)}") — ยืนยันนัดที่ขั้นนัดหมายก่อน`);
       return;
     }
+    if (missingText) { setNextError(missingText); return; }   // ใบตรวจไม่ครบ (เช่นใบที่จำขั้นย่อยส่งมอบไว้ก่อนมีกติกานี้)
     const missing = method === "onsite_sign" && !custSign ? "ลายเซ็นลูกค้า"
       : method === "tech_proxy" && !techSign ? "ลายเซ็นช่าง (เซ็นแทนลูกค้า)" : null;
     if (missing) { setNextError(missing); return; }

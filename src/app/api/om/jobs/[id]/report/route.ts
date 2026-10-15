@@ -50,6 +50,18 @@ export async function PUT(req: NextRequest, ctx: { params: Promise<{ id: string 
   // ใบไหน + ข้อไหนบ้าง — ต้องรู้ก่อนถึงคิด fail_count ได้ และเก็บ form_id ลงใบงานด้วย
   const { head, items } = await loadForm(db, id);
   const fails = failCount(checks, items);
+
+  // ★ 15 ต.ค. 69 ผู้ใช้สั่ง: ใบตรวจกรอกไม่ครบห้ามไปต่อ — หน้าจอกันปุ่มถัดไปแล้ว ที่นี่กันตอนลงผลตรวจ (ปิดงาน)
+  //   บันทึกร่าง (ไม่มีผลตรวจ) ยังกรอกค้างไว้ได้ · นับเฉพาะข้อ required ชนิดผ่าน/ไม่ผ่าน + วัดค่า (ชุดเดียวกับหน้าจอ)
+  if (b.result === "pass" || b.result === "fail") {
+    const ms = (b.measures ?? {}) as Record<string, unknown>;
+    const miss = items.filter((it) => it.required && (
+      it.kind === "bool" ? typeof checks[it.code]?.pass !== "boolean"
+      : it.kind === "num" ? !(typeof ms[it.code] === "number" && Number.isFinite(ms[it.code]))
+      : false));
+    if (miss.length)
+      return NextResponse.json({ error: `ใบตรวจยังกรอกไม่ครบ ${miss.length} ข้อ — ${miss.slice(0, 5).map((it) => it.label_th).join(" · ")}${miss.length > 5 ? " …" : ""}` }, { status: 400 });
+  }
   const qc = await qcSignerId(db);
 
   const tx = new sql.Transaction(db);
