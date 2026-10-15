@@ -358,7 +358,7 @@ export default function OmDashboardPage() {
             {/* แถว 3 — โครงการ + งานล้าง · data-pdf-ready = บอกตัวสร้าง PDF ว่าข้อมูลขึ้นครบแล้ว */}
             <div data-pdf-ready className="grid grid-cols-1 lg:grid-cols-2 gap-3">
               <div className="rounded-2xl bg-white border border-gray-200 p-4">
-                <div className="text-sm font-bold text-gray-500 mb-3">โครงการที่ต้องโทรมากที่สุด</div>
+                <div className="text-sm font-bold text-gray-500 mb-3">โครงการที่ต้องติดตาม</div>
                 {d.projects.length === 0 ? <div className="text-sm text-gray-400 py-6 text-center">ยังไม่มีข้อมูล</div> : (
                   <div className="space-y-1">
                     {d.projects.map((p) => (
@@ -382,7 +382,7 @@ export default function OmDashboardPage() {
 
               <div className="rounded-2xl bg-white border border-gray-200 p-4 flex flex-col">
                 <div className="text-sm font-bold text-gray-500 mb-3">
-                  งานล้างที่ทำจริง <span className="font-normal text-gray-400">· {periodLabel}</span>
+                  จำนวนงานล้างแผงรายเดือน <span className="font-normal text-gray-400">· {periodLabel}</span>
                 </div>
                 {/* ★ 14 ต.ค. 69 แท่งไม่ขึ้นเลย — คอลัมน์สูงตามเนื้อหา height % ของแท่งเลยเป็น 0
                     ⇒ คอลัมน์ยืดเต็มความสูงกราฟ แท่งเป็น absolute ในราง flex-1 (absolute คิด % จากความสูงจริงเสมอ)
