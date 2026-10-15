@@ -212,26 +212,10 @@ export default function OmDashboardPage() {
               </div>
             </div>
 
-            {/* แถว 4 — ใครถืองานอยู่
-                ★ 1 ต.ค. 69 เอาการ์ด "ทีมช่าง · งานที่ถืออยู่" ออก — เลิกใช้ทีม A/B/C (แผน 20261001-01 เฟส 4)
-                  API ยังส่ง teams มา (ลำดับผลลัพธ์อ้างด้วย index) แต่ไม่แสดงแล้ว */}
-            <div className="grid grid-cols-1 gap-3">
-              <div className="rounded-2xl bg-white border border-gray-200 p-4">
-                <div className="text-sm font-bold text-gray-500 mb-3">เจ้าของเคส · ใบงานที่ยังไม่ปิด</div>
-                {d.owners.length === 0 ? <div className="text-sm text-gray-400 py-6 text-center">ยังไม่มีใบงานค้าง</div> : (
-                  <div className="space-y-1">
-                    {d.owners.map((o) => (
-                      <div key={o.owner_user_id ?? 0} className="flex items-center gap-3 px-2 py-1.5">
-                        <span className={`flex-1 text-sm ${o.owner_name ? "text-gray-700" : "text-amber-600 font-semibold"}`}>
-                          {o.owner_name || "ยังไม่มีเจ้าของ"}
-                        </span>
-                        <span className="text-sm font-bold font-mono tabular-nums text-gray-900">{n(o.n)}</span>
-                      </div>
-                    ))}
-                  </div>
-                )}
-              </div>
-            </div>
+            {/* แถว 4 (ใครถืองานอยู่) เอาออกทั้งแถวแล้ว
+                ★ 1 ต.ค. 69 การ์ด "ทีมช่าง · งานที่ถืออยู่" — เลิกใช้ทีม A/B/C (แผน 20261001-01 เฟส 4)
+                ★ 15 ต.ค. 69 การ์ด "เจ้าของเคส · ใบงานที่ยังไม่ปิด" — ผู้ใช้สั่งเอาออก
+                  API ยังส่ง owners / teams มา (ลำดับผลลัพธ์อ้างด้วย index) แต่ไม่แสดงแล้ว */}
           </>
         )}
       </main>
