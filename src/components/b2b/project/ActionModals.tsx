@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import Dropdown from "@/components/ui/Dropdown";
-import type { B2bCustomer, B2bProjectBoq, B2bUserOption } from "@/lib/b2b/project";
+import type { B2bCustomer, B2bProjectBoq, B2bProjectQuote, B2bUserOption } from "@/lib/b2b/project";
 import { formatTHB } from "@/lib/utils/formatters";
 import ModalShell, { areaCls, fieldCls, labelCls, Req } from "./ModalShell";
 
@@ -113,6 +113,77 @@ export function NewQuoteModal({ boqs, kindLabel, saving, error, onConfirm, onClo
           {picked.pending_lines > 0 && <div className="mt-1 text-xs font-semibold text-red-600">มีบรรทัดรอราคา {picked.pending_lines} — สร้างใบได้ แต่ส่งอนุมัติไม่ได้จนกว่า Purchase ใส่ราคาครบ</div>}
         </div>
       )}
+    </ModalShell>
+  );
+}
+
+/** ได้งาน — เลือกใบที่ส่งลูกค้าแล้ว 1 ใบ (กลายเป็นสัญญา) · เลข PO/สัญญา + วันลงนาม ใส่ทีหลังได้ (เฟส 3) */
+export function WonModal({ quotes, saving, error, onConfirm, onClose }: Common & {
+  quotes: B2bProjectQuote[];
+  onConfirm: (v: { quote_id: number; contract_no: string; contract_date: string | null }) => void;
+}) {
+  const [quoteId, setQuoteId] = useState(quotes.length === 1 ? String(quotes[0].id) : "");
+  const [no, setNo] = useState("");
+  const [date, setDate] = useState("");
+  const picked = quotes.find((q) => String(q.id) === quoteId);
+  return (
+    <ModalShell title="ได้งาน" subtitle="ใบที่เลือกกลายเป็นสัญญา · BOQ ของใบ = งบโครงการ · ใบอื่นของโครงการปิดเอง · งวด 1 ถึงกำหนดทันที" width="max-w-xl"
+      confirmText="บันทึกได้งาน" saving={saving} error={error} onClose={onClose}
+      onConfirm={() => onConfirm({ quote_id: Number(quoteId), contract_no: no, contract_date: date || null })}>
+      <div><label className={labelCls}>ใบเสนอราคาที่ลูกค้าตอบรับ <Req /></label>
+        <Dropdown value={quoteId} onChange={setQuoteId} placeholder={quotes.length ? "เลือกใบ" : "ยังไม่มีใบที่ส่งลูกค้า"}
+          options={quotes.map((q) => ({ value: String(q.id), label: `${q.doc_no} Rev ${q.revision} · ${q.option_label || q.boq_doc_no} · ${formatTHB(q.subtotal, { decimals: 0 })} บาท` }))} /></div>
+      {picked && <p className="rounded-lg bg-gray-50 px-3 py-2 text-sm text-gray-600">มูลค่าสัญญา {formatTHB(picked.subtotal, { decimals: 2 })} บาท (ก่อน VAT) · รวม VAT {formatTHB(picked.total, { decimals: 2 })}</p>}
+      <div className="grid gap-3 md:grid-cols-2">
+        <div><label className={labelCls}>เลข PO / สัญญา</label>
+          <input className={fieldCls} value={no} onChange={(e) => setNo(e.target.value)} placeholder="ใส่ทีหลังได้" /></div>
+        <div><label className={labelCls}>วันลงนาม</label>
+          <input type="date" className={fieldCls} value={date} max={todayIso()} onChange={(e) => setDate(e.target.value)} /></div>
+      </div>
+    </ModalShell>
+  );
+}
+
+/** บันทึก/แก้สัญญาหลังได้งาน */
+export function ContractModal({ initialNo, initialDate, saving, error, onConfirm, onClose }: Common & {
+  initialNo: string | null; initialDate: string | null;
+  onConfirm: (v: { contract_no: string; contract_date: string }) => void;
+}) {
+  const [no, setNo] = useState(initialNo ?? "");
+  const [date, setDate] = useState(initialDate ?? "");
+  return (
+    <ModalShell title="บันทึกสัญญา / PO" confirmText="บันทึก" saving={saving} error={error} onClose={onClose}
+      onConfirm={() => onConfirm({ contract_no: no, contract_date: date })}>
+      <div className="grid gap-3 md:grid-cols-2">
+        <div><label className={labelCls}>เลข PO / สัญญา</label>
+          <input autoFocus className={fieldCls} value={no} onChange={(e) => setNo(e.target.value)} /></div>
+        <div><label className={labelCls}>วันลงนาม <Req /></label>
+          <input type="date" className={fieldCls} value={date} max={todayIso()} onChange={(e) => setDate(e.target.value)} /></div>
+      </div>
+    </ModalShell>
+  );
+}
+
+/** แนบหลักฐานรับเงินงวด — รูปหรือ PDF ไฟล์เดียว · บัญชียืนยันในหน้าเดียวกัน */
+export function EvidenceModal({ title, saving, error, onConfirm, onClose }: Common & {
+  title: string;
+  onConfirm: (v: { file: File | null; received_date: string; note: string }) => void;
+}) {
+  const [file, setFile] = useState<File | null>(null);
+  const [date, setDate] = useState(todayIso());
+  const [note, setNote] = useState("");
+  return (
+    <ModalShell title={title} subtitle="ส่งให้บัญชียืนยัน — สลิปโอน / หนังสือรับเงิน / ใบรับเช็ค (รูป หรือ PDF ไม่เกิน 15 MB)"
+      confirmText="ส่งให้บัญชี" saving={saving} error={error} onClose={onClose} onConfirm={() => onConfirm({ file, received_date: date, note })}>
+      <div><label className={labelCls}>ไฟล์หลักฐาน <Req /></label>
+        <input type="file" accept="image/jpeg,image/png,image/webp,image/heic,application/pdf" onChange={(e) => setFile(e.target.files?.[0] ?? null)}
+          className="block w-full text-sm file:mr-3 file:h-9 file:px-4 file:rounded-lg file:border-0 file:bg-gray-100 file:text-sm file:font-semibold file:text-gray-700 hover:file:bg-gray-200" /></div>
+      <div className="grid gap-3 md:grid-cols-2">
+        <div><label className={labelCls}>วันที่ลูกค้าชำระ <Req /></label>
+          <input type="date" className={fieldCls} value={date} max={todayIso()} onChange={(e) => setDate(e.target.value)} /></div>
+      </div>
+      <div><label className={labelCls}>หมายเหตุถึงบัญชี</label>
+        <input className={fieldCls} value={note} onChange={(e) => setNote(e.target.value)} placeholder="เช่น โอนเข้าบัญชี TTB · หักภาษี ณ ที่จ่าย 3%" /></div>
     </ModalShell>
   );
 }

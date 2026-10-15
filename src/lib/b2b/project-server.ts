@@ -1,5 +1,5 @@
 import { sql } from "./db";
-import type { B2bActivity, B2bProject, B2bProjectBoq, B2bProjectQuote, B2bProjectRow, ProjectFields } from "./project";
+import type { B2bActivity, B2bInstallment, B2bProject, B2bProjectBoq, B2bProjectQuote, B2bProjectRow, ProjectFields } from "./project";
 
 // ฝั่ง server ของโครงการ B2B — โหลด / เลขที่ / timeline / ซิงก์หัวใบ BOQ
 // แผน docs/plan/20261015-07-b2b-project-flow.md เฟส 1
@@ -17,6 +17,11 @@ export const PROJECT_SUB_SQL = (p: string) => `
        THEN (SELECT TOP 1 ${p}.stage + CASE qq.status WHEN 'draft' THEN 10 WHEN 'pending_review1' THEN 20 WHEN 'pending_review2' THEN 30
                                                         WHEN 'pending_review3' THEN 40 WHEN 'changes_required' THEN 50 WHEN 'approved' THEN 60 ELSE 70 END
              FROM b2b_quotations qq WHERE qq.project_id = ${p}.id AND qq.is_latest = 1 ORDER BY qq.updated_at DESC, qq.id DESC)
+       -- ได้งาน: ยังไม่เซ็น = 3510 · งวด 1 ยังไม่รับ = 3520 · แนบหลักฐานแล้วรอบัญชี = 3530 (รับแล้วโครงการขยับไป 3600 เอง)
+       WHEN ${p}.stage = 3500
+       THEN CASE WHEN ${p}.contract_date IS NULL THEN 3510
+                 ELSE (SELECT CASE ii.status WHEN 'submitted' THEN 3530 WHEN 'paid' THEN NULL ELSE 3520 END
+                       FROM b2b_project_installments ii WHERE ii.project_id = ${p}.id AND ii.no = 1) END
   END`;
 
 /** แถวรายการโครงการ — BOQ ที่แสดง = ตัวเลือกที่บันทึกล่าสุด (Rev ล่าสุดของแต่ละเลขที่)
@@ -49,7 +54,9 @@ export async function loadProject(db: Queryable, id: number): Promise<B2bProject
     ${projectRowSelect(
       `c.tax_id, c.branch, c.address, p.contact_name, p.contact_phone, p.contact_email, p.latitude, p.longitude,
        p.stage_before_close, p.closed_at, p.surveyor_id, su.full_name AS surveyor_name, p.survey_note, p.survey_done_at,
-       p.note, p.created_at, cu.full_name AS created_by_name, uu.full_name AS updated_by_name`,
+       p.note, p.created_at, cu.full_name AS created_by_name, uu.full_name AS updated_by_name,
+       p.won_quote_id, p.won_boq_id, p.contract_no, CONVERT(char(10), p.contract_date, 23) AS contract_date, p.contract_value,
+       p.contract_vat_pct, p.won_at, p.om_years, p.om_visits_per_year`,
       `LEFT JOIN users su ON su.id = p.surveyor_id
        LEFT JOIN users cu ON cu.id = p.created_by
        LEFT JOIN users uu ON uu.id = p.updated_by`,
@@ -57,7 +64,7 @@ export async function loadProject(db: Queryable, id: number): Promise<B2bProject
     WHERE p.id = @id`);
   const r = h.recordset[0];
   if (!r) return null;
-  const [boqs, acts, quotes] = await Promise.all([
+  const [boqs, acts, quotes, insts] = await Promise.all([
     db.request().input("id", sql.Int, id).query(`
       SELECT b.id, b.doc_no, b.revision, b.option_label, b.capacity_wp, b.total_cost, b.total_sale, b.margin_pct, b.pending_lines,
              b.updated_at, uu.full_name AS updated_by_name
@@ -74,6 +81,15 @@ export async function loadProject(db: Queryable, id: number): Promise<B2bProject
       FROM b2b_quotations q JOIN b2b_boqs b ON b.id = q.boq_id
       WHERE q.project_id = @id AND q.is_latest = 1
       ORDER BY q.updated_at DESC, q.id DESC`),
+    db.request().input("id", sql.Int, id).query(`
+      SELECT i.id, i.no, i.pct, i.condition, i.trigger_key, i.amount, i.vat, i.total, i.status, i.due_at,
+             CONVERT(char(10), i.received_date, 23) AS received_date, i.evidence_name,
+             CASE WHEN i.evidence_file IS NULL THEN 0 ELSE 1 END AS has_evidence, i.submit_note,
+             i.submitted_at, su.full_name AS submitted_by_name, i.confirmed_at, cu.full_name AS confirmed_by_name, i.reject_note, i.rejected_at
+      FROM b2b_project_installments i
+      LEFT JOIN users su ON su.id = i.submitted_by
+      LEFT JOIN users cu ON cu.id = i.confirmed_by
+      WHERE i.project_id = @id ORDER BY i.no`),
   ]);
   return {
     ...toProjectRow(r),
@@ -93,6 +109,16 @@ export async function loadProject(db: Queryable, id: number): Promise<B2bProject
       subtotal: Number(q.subtotal), total: Number(q.total), updated_at: q.updated_at, issue_date: q.issue_date,
       validity_days: q.validity_days == null ? null : Number(q.validity_days),
       boq_doc_no: q.boq_doc_no, boq_revision: q.boq_revision, option_label: q.option_label,
+    })),
+    won_quote_id: num(r.won_quote_id), won_boq_id: num(r.won_boq_id), contract_no: r.contract_no, contract_date: r.contract_date,
+    contract_value: num(r.contract_value), contract_vat_pct: num(r.contract_vat_pct), won_at: r.won_at,
+    om_years: num(r.om_years), om_visits_per_year: num(r.om_visits_per_year),
+    installments: insts.recordset.map((i): B2bInstallment => ({
+      id: i.id, no: i.no, pct: Number(i.pct), condition: i.condition, trigger_key: i.trigger_key,
+      amount: Number(i.amount), vat: Number(i.vat), total: Number(i.total), status: i.status, due_at: i.due_at,
+      received_date: i.received_date, evidence_name: i.evidence_name, has_evidence: !!i.has_evidence, submit_note: i.submit_note,
+      submitted_at: i.submitted_at, submitted_by_name: i.submitted_by_name, confirmed_at: i.confirmed_at, confirmed_by_name: i.confirmed_by_name,
+      reject_note: i.reject_note, rejected_at: i.rejected_at,
     })),
     activities: acts.recordset.map((a): B2bActivity => ({
       id: a.id, kind: a.kind, from_stage: num(a.from_stage), to_stage: num(a.to_stage), message: a.message,

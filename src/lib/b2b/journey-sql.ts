@@ -18,6 +18,13 @@ export const B2B_APPROVAL_SUMMARY_SQL = `
   FROM b2b_quotations WHERE is_latest = 1 AND status IN ('pending_review1', 'pending_review2', 'pending_review3')
   GROUP BY status`;
 
+// งวดเงินที่แนบหลักฐานแล้วรอบัญชียืนยัน → sub 9030 (badge "รอยืนยันรับเงิน" ของบัญชี · แผน 20261015-07 เฟส 3)
+export const B2B_INSTALLMENT_PENDING_SUB = 9030;
+export const B2B_INSTALLMENT_SUMMARY_SQL = `
+  SELECT CAST(NULL AS INT) AS journey_step, ${B2B_INSTALLMENT_PENDING_SUB} AS journey_sub, COUNT(*) AS n
+  FROM b2b_project_installments WHERE status = 'submitted'
+  HAVING COUNT(*) > 0`;
+
 // โครงการ B2B ตามขั้น (สาย 3000) + ขั้นย่อย — แผน 20261015-07 · ขั้นย่อยคิดตอนอ่านจึงห่อ subquery ก่อน GROUP BY
 export const B2B_PROJECT_SUMMARY_SQL = `
   SELECT x.stage AS journey_step, x.sub AS journey_sub, COUNT(*) AS n

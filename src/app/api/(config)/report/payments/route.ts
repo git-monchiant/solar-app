@@ -283,7 +283,28 @@ export async function GET(req: NextRequest) {
       { count: rows.length, total_value: 0, received: 0, outstanding: 0 },
     );
 
-    return NextResponse.json({ rows, summary, om_pending: omPending });
+    // ★ งวดเงินโครงการ B2B ที่แนบหลักฐานรอบัญชี (แผน 20261015-07 เฟส 3) — ตาราง b2b_* ของตัวเอง ไม่ปน payments
+    //   ก้อนแยก + try/catch ของตัวเอง: ฐานที่ยังไม่มีตาราง B2B พังแค่ส่วนนี้ คิวฝั่งขาย/O&M ยังขึ้น
+    //   บัญชียืนยัน/ตีกลับในหน้าโครงการ (/b2b/projects/[id]?tab=installments) แบบหน้าลีด/งานบริการ O&M
+    let b2bPending: unknown[] = [];
+    try {
+      b2bPending = fixDates((await db.request().query(`
+        SELECT i.id, i.no, i.pct, i.condition, i.amount, i.vat, i.total, CONVERT(char(10), i.received_date, 23) received_date,
+               i.submitted_at, su.full_name submitted_by_name, i.evidence_name, i.evidence_mime,
+               p.id project_id, p.code project_code, p.name project_name, c.name customer_name, p.contract_no
+          FROM b2b_project_installments i
+          JOIN b2b_projects p ON p.id = i.project_id
+          JOIN b2b_customers c ON c.id = p.customer_id
+          LEFT JOIN users su ON su.id = i.submitted_by
+         WHERE i.status = 'submitted'
+         ORDER BY i.submitted_at, i.id`)).recordset).map((r: Record<string, unknown>) => ({
+        ...r, pct: Number(r.pct), amount: Number(r.amount), vat: Number(r.vat), total: Number(r.total),
+      }));
+    } catch (e) {
+      console.error("GET /api/report/payments (B2B) error:", e);
+    }
+
+    return NextResponse.json({ rows, summary, om_pending: omPending, b2b_pending: b2bPending });
   } catch (error) {
     console.error("GET /api/report/payments error:", error);
     return NextResponse.json({ error: "Failed" }, { status: 500 });

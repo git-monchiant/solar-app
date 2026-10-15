@@ -10,6 +10,7 @@ import ImageLightbox, { type LightboxImage } from "@/components/ui/ImageLightbox
 import { formatTHB } from "@/lib/utils/formatters";
 import Loading from "@/components/ui/Loading";
 import OmPendingPayments, { type OmPendingPayment } from "@/components/om/OmPendingPayments";
+import B2bPendingInstallments, { type B2bPendingInstallment } from "@/components/b2b/B2bPendingInstallments";
 
 interface Installment {
   id: number;
@@ -55,6 +56,7 @@ interface ReportData {
   rows: ReportRow[];
   /** ค่าบริการงาน O&M ที่รอยืนยัน (แผน 20260924-02 เฟส 4) — คิวเดียวกัน แสดงแยกหมวดติดป้าย O&M */
   om_pending?: OmPendingPayment[];
+  b2b_pending?: B2bPendingInstallment[];
 }
 
 const fmt = (n: number) => formatTHB(Math.round(n));
@@ -169,8 +171,18 @@ export default function PendingApprovalReport() {
       || it.quotation_doc_no?.toLowerCase().includes(q)
       || it.project_name?.toLowerCase().includes(q);
   });
+  // งวดเงินโครงการ B2B (แผน 20261015-07 เฟส 3) — ค้นด้วยคำเดียวกัน (ลูกค้า · โครงการ · เลขที่) นับรวมในยอดสรุป (ยอดรวม VAT)
+  const b2bItems = (data.b2b_pending ?? []).filter(it => {
+    if (!search.trim()) return true;
+    const q = search.toLowerCase();
+    return it.customer_name?.toLowerCase().includes(q)
+      || it.project_name?.toLowerCase().includes(q)
+      || it.project_code?.toLowerCase().includes(q)
+      || (it.contract_no ?? "").toLowerCase().includes(q);
+  });
   const totalAmount = filtered.reduce((s, it) => s + it.installment.amount, 0)
-    + omItems.reduce((s, it) => s + it.amount, 0);
+    + omItems.reduce((s, it) => s + it.amount, 0)
+    + b2bItems.reduce((s, it) => s + it.total, 0);
 
   const openSlips = (i: Installment) => {
     if (i.slip_urls.length === 0) return;
@@ -311,7 +323,7 @@ export default function PendingApprovalReport() {
         <div className="grid grid-cols-2 gap-2">
           <div className="rounded-xl bg-white border border-gray-300 p-4">
             <div className="text-xs font-semibold uppercase tracking-wider text-gray-400">รายการรอยืนยัน</div>
-            <div className="text-2xl font-bold font-mono tabular-nums text-gray-900 mt-1">{filtered.length + omItems.length}</div>
+            <div className="text-2xl font-bold font-mono tabular-nums text-gray-900 mt-1">{filtered.length + omItems.length + b2bItems.length}</div>
           </div>
           <div className="rounded-xl bg-gradient-to-br from-amber-500 to-amber-600 text-white p-4">
             <div className="text-xs font-semibold uppercase tracking-wider text-white/70">ยอดรวมรอยืนยัน</div>
@@ -325,7 +337,7 @@ export default function PendingApprovalReport() {
         </div>
 
         {/* List */}
-        {filtered.length === 0 ? (omItems.length > 0 ? null :
+        {filtered.length === 0 ? (omItems.length + b2bItems.length > 0 ? null :
           <div className="bg-white rounded-xl border border-gray-300 p-12 text-center">
             <div className="text-sm text-gray-400">ไม่มีรายการรอยืนยัน</div>
           </div>
@@ -498,6 +510,7 @@ export default function PendingApprovalReport() {
         )}
 
         <OmPendingPayments items={omItems} focusedId={focusedPaymentId} />
+        <B2bPendingInstallments items={b2bItems} />
 
         {filtered.length > 0 && (
           <div className="text-xs text-gray-400 text-center mt-2">

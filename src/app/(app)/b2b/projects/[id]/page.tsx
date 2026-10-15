@@ -2,36 +2,39 @@
 
 import { use, useCallback, useEffect, useRef, useState, type CSSProperties, type ReactNode } from "react";
 import Link from "next/link";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import Header from "@/components/layout/Header";
 import Loading from "@/components/ui/Loading";
 import { useDialog } from "@/components/ui/Dialog";
 import { ChevronLeftIcon } from "@/components/ui/icons";
-import { apiFetch } from "@/lib/api";
+import { apiFetch, getUserContextHeaders } from "@/lib/api";
 import { hasRole, useActiveRoles } from "@/lib/roles";
 import { formatThaiDate, formatTHB } from "@/lib/utils/formatters";
 import {
   B2B_FLOW, B2B_LOSABLE_MAX_STAGE, B2B_PROJECT_ROLES, B2B_PROJECT_VIEW_ROLES, B2B_STAGE, isClosedStage, stageLabel,
-  type B2bProject, type B2bUserOption,
+  type B2bInstallment, type B2bProject, type B2bUserOption,
 } from "@/lib/b2b/project";
 import StageBadge from "@/components/b2b/project/StageBadge";
 import ProjectStepCard, { type StepState } from "@/components/b2b/project/ProjectStepCard";
 import BoqOptionsTable from "@/components/b2b/project/BoqOptionsTable";
 import ActivityList from "@/components/b2b/project/ActivityList";
 import ProjectFormModal from "@/components/b2b/project/ProjectFormModal";
-import { CustomerEditModal, NewBoqModal, NewQuoteModal, ReasonModal, RecordSurveyModal, ScheduleSurveyModal } from "@/components/b2b/project/ActionModals";
+import { ContractModal, CustomerEditModal, EvidenceModal, NewBoqModal, NewQuoteModal, ReasonModal, RecordSurveyModal, ScheduleSurveyModal, WonModal } from "@/components/b2b/project/ActionModals";
+import InstallmentTable from "@/components/b2b/project/InstallmentTable";
+import { openAuthedFile } from "@/components/b2b/openAuthedFile";
 import QuoteList from "@/components/b2b/project/QuoteList";
 
 // หน้าโครงการ B2B — โครงเดียวกับหน้ารายละเอียดลีด (header ติดบน · แท็บ · รางขั้นซ้าย · การ์ดขั้น · Activity Log ขวา)
 // แผน docs/plan/20261015-07-b2b-project-flow.md เฟส 1: เดินได้ 01–04 · 05–09 ล็อกไว้จนเฟส 2–4
 // ขั้นเปลี่ยนผ่าน /actions ที่เดียว (server ตรวจกติกา) · ทุกครั้งได้โครงการทั้งก้อนกลับมาแทนค่าเดิม
 
-type Tab = "workflow" | "info" | "boq" | "timeline";
-type Modal = null | "edit" | "customer" | "lost" | "cancel" | "reopen" | "back_survey" | "schedule" | "record" | "new_boq" | "new_quote";
+type Tab = "workflow" | "info" | "boq" | "installments" | "timeline";
+type Modal = null | "edit" | "customer" | "lost" | "cancel" | "reopen" | "back_survey" | "schedule" | "record" | "new_boq" | "new_quote"
+  | "won" | "contract" | "evidence" | "reject_inst";
 
 const LOCKED_HINT: Record<number, string> = {
-  3500: "ปลดเมื่อมีใบเสนอราคาที่ผ่านอนุมัติ 3 ชั้นและส่งลูกค้าแล้ว (เฟส 2–3)",
-  3600: "ปลดเมื่อบัญชียืนยันเงินงวด 1 (เฟส 3)",
+  3500: "ปลดเมื่อกด \"ได้งาน\" — เลือกใบเสนอราคาที่ส่งลูกค้าแล้ว",
+  3600: "ปลดเมื่อบัญชียืนยันเงินงวด 1",
   3700: "milestone หน้างาน + งวด 2–3 (เฟส 4)",
   3800: "ผลพิจารณาการไฟฟ้า · วันจ่ายไฟ (เฟส 4)",
   3900: "ใบส่งมอบงาน + Training · งวด 4 (เฟส 4)",
@@ -45,10 +48,15 @@ export default function B2bProjectPage({ params }: { params: Promise<{ id: strin
   const canUse = hasRole(activeRoles, ...B2B_PROJECT_VIEW_ROLES);
   // ผู้ตรวจสอบเปิดดูได้อย่างเดียว — ปุ่มเปลี่ยนขั้น/แก้ข้อมูลเห็นเฉพาะ Solar B2B + admin (API ตรวจซ้ำ)
   const canEdit = hasRole(activeRoles, ...B2B_PROJECT_ROLES);
+  // บัญชียืนยัน/ตีกลับงวดเงินในหน้านี้ (เข้าจากหน้ารอยืนยันรับเงิน ?tab=installments) — แบบหน้าลีด/งานบริการ O&M
+  const canConfirm = hasRole(activeRoles, "account", "admin");
+  const searchParams = useSearchParams();
   const [p, setP] = useState<B2bProject | null>(null);
   const [loadError, setLoadError] = useState("");
   const [users, setUsers] = useState<B2bUserOption[]>([]);
-  const [tab, setTab] = useState<Tab>("workflow");
+  const [tab, setTab] = useState<Tab>(() => (searchParams.get("tab") === "installments" ? "installments" : "workflow"));
+  const [inst, setInst] = useState<B2bInstallment | null>(null);
+  const [instBusy, setInstBusy] = useState<number | null>(null);
   const [modal, setModal] = useState<Modal>(null);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
@@ -150,6 +158,49 @@ export default function B2bProjectPage({ params }: { params: Promise<{ id: strin
   // ใบประมาณการอยู่การ์ดขั้น 02 · ใบยืนยันอยู่การ์ดขั้น 04
   const estimateQuotes = p.quotes.filter((q) => q.kind === "estimate");
   const confirmQuotes = p.quotes.filter((q) => q.kind === "confirmed");
+  // ── งวดเงิน (เฟส 3) ──
+  const sentQuotes = p.quotes.filter((q) => q.status === "sent");
+  const instAction = async (it: B2bInstallment, action: "due" | "confirm" | "reject", reason?: string) => {
+    setError(""); setInstBusy(it.id);
+    try {
+      await apiFetch(`/api/b2b/installments/${it.id}`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ action, reason }) });
+      load(); setModal(null);
+      toast({ message: action === "confirm" ? `ยืนยันรับเงินงวด ${it.no} แล้ว` : action === "reject" ? "ตีกลับหลักฐานแล้ว" : `งวด ${it.no} ถึงกำหนดแล้ว`, variant: "success" });
+    } catch (e) {
+      const m = e instanceof Error && e.message ? e.message : "บันทึกไม่สำเร็จ";
+      if (action === "reject") setError(m); else toast({ message: m, variant: "danger" });
+    } finally { setInstBusy(null); }
+  };
+  const confirmPaid = async (it: B2bInstallment) => {
+    const ok = await confirm({ title: `ยืนยันรับเงินงวด ${it.no}`, message: `${formatTHB(it.total, { decimals: 2 })} บาท (รวม VAT) — ตรวจหลักฐานแล้ว${it.no === 1 ? " · โครงการจะขยับเข้าขั้นขออนุญาต + จัดซื้อ" : ""}`, confirmText: "ยืนยันรับเงิน" });
+    if (ok) await instAction(it, "confirm");
+  };
+  const markDue = async (it: B2bInstallment) => {
+    const ok = await confirm({ title: `งวด ${it.no} ถึงกำหนดวางบิล`, message: "ใช้เมื่อเหตุการณ์ของงวดนี้เกิดแล้ว (ระบบ milestone หน้างานจะทำให้อัตโนมัติในเฟส 4)", confirmText: "ถึงกำหนด" });
+    if (ok) await instAction(it, "due");
+  };
+  const uploadEvidence = (v: { file: File | null; received_date: string; note: string }) => run(async () => {
+    if (!inst) return;
+    if (!v.file) throw new Error("กรุณาเลือกไฟล์หลักฐาน");
+    const fd = new FormData();
+    fd.append("file", v.file); fd.append("received_date", v.received_date); fd.append("note", v.note);
+    const res = await fetch(`/api/b2b/installments/${inst.id}/evidence`, { method: "POST", headers: { ...getUserContextHeaders() }, body: fd });
+    if (!res.ok) throw new Error((await res.json().catch(() => null))?.error || `HTTP ${res.status}`);
+    load();
+    toast({ message: `ส่งหลักฐานงวด ${inst.no} ให้บัญชีแล้ว`, variant: "success" });
+  });
+  const viewEvidence = (it: B2bInstallment) => { void openAuthedFile(`/api/b2b/installments/${it.id}/evidence`).catch((e) => toast({ message: e.message, variant: "danger" })); };
+  const installmentTable = (
+    <InstallmentTable items={p.installments} contractValue={p.contract_value} vatPct={p.contract_vat_pct}
+      canEdit={canEdit && !closed} canConfirm={canConfirm && !closed} busyId={instBusy}
+      onDue={(it) => void markDue(it)} onAttach={(it) => { setInst(it); openModal("evidence"); }}
+      onConfirm={(it) => void confirmPaid(it)} onReject={(it) => { setInst(it); openModal("reject_inst"); }} onView={viewEvidence} />
+  );
+  const wonButton = (
+    <button type="button" className={btnPrimary} disabled={sentQuotes.length === 0}
+      title={sentQuotes.length ? undefined : "ต้องมีใบเสนอราคาที่อนุมัติครบ 3 ชั้นและส่งลูกค้าแล้ว"} onClick={() => openModal("won")}>ได้งาน</button>
+  );
+
   const createQuote = (boqId: number) => run(async () => {
     if (!boqId) throw new Error("กรุณาเลือก BOQ");
     const r = await apiFetch("/api/b2b/quotations", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ project_id: p.id, boq_id: boqId }) }) as { id: number };
@@ -183,6 +234,7 @@ export default function B2bProjectPage({ params }: { params: Promise<{ id: strin
               {phaseNote("ใบประมาณการต้องผ่านผู้ตรวจสอบ 3 ชั้นก่อนส่งลูกค้า · ลูกค้าสนใจแล้ว → นัดสำรวจเพื่อยืนยันราคา")}
               <div className="flex flex-wrap justify-end gap-2">
                 <button type="button" className={btnGhost} style={{ minHeight: 0 }} onClick={() => void moveTo(B2B_STAGE.confirm, "ข้ามการสำรวจ ไปขั้นราคายืนยัน — ใช้เมื่อมีข้อมูลหน้างานพอแล้ว (เช่น ลูกค้าส่งแบบหลังคา)")}>ข้ามสำรวจ</button>
+                {sentQuotes.length > 0 && <button type="button" className={btn} onClick={() => openModal("won")}>ได้งานจากใบประมาณการ</button>}
                 <button type="button" className={btnPrimary} onClick={() => openModal("schedule")}>ลูกค้าสนใจ · นัดสำรวจ</button>
               </div>
             </>
@@ -220,13 +272,43 @@ export default function B2bProjectPage({ params }: { params: Promise<{ id: strin
           <QuoteList quotes={confirmQuotes} canAdd={canEdit && stateOf(3400) === "active"} onAdd={() => openModal("new_quote")} />
           {canEdit && stateOf(3400) === "active" && (
             <>
-              {phaseNote("ทำ BOQ Rev ใหม่ตามผลสำรวจ แล้วออกใบเสนอราคายืนยัน · ลูกค้าต่อรอง = ออก Rev ใหม่ของใบ · ปุ่มได้งาน (เฟส 3)")}
+              {phaseNote("ทำ BOQ Rev ใหม่ตามผลสำรวจ แล้วออกใบเสนอราคายืนยัน · ลูกค้าต่อรอง = ออก Rev ใหม่ของใบ · ลูกค้าตอบรับใบที่ส่งแล้ว → ได้งาน")}
               <div className="flex flex-wrap justify-end gap-2">
                 <button type="button" className={btnGhost} style={{ minHeight: 0 }} onClick={() => openModal("back_survey")}>ถอยไปสำรวจซ้ำ</button>
-                <button type="button" className={btnPrimary} disabled title="เปิดใช้ในเฟส 3 — ต้องมีใบเสนอราคาที่ส่งลูกค้าแล้ว">ได้งาน</button>
+                {wonButton}
               </div>
             </>
           )}
+        </>
+      ),
+    },
+    3500: {
+      summary: p.contract_value != null
+        ? `สัญญา${p.contract_no ? ` ${p.contract_no}` : ""} · ${formatTHB(p.contract_value, { decimals: 0 })} บาท (ก่อน VAT)${p.contract_date ? ` · ลงนาม ${formatThaiDate(p.contract_date)}` : ""}`
+        : undefined,
+      body: (
+        <>
+          <dl className={dl}>
+            <div><dt className={dt}>ใบที่ได้งาน</dt><dd className="text-gray-800">{(() => { const q = p.quotes.find((x) => x.id === p.won_quote_id); return q ? <Link href={`/b2b/quotations/${q.id}`} className="text-primary hover:underline">{q.doc_no} Rev {q.revision}</Link> : "—"; })()}</dd></div>
+            <div><dt className={dt}>มูลค่าสัญญา</dt><dd className="text-gray-800 tabular-nums">{p.contract_value != null ? `${formatTHB(p.contract_value, { decimals: 2 })} บาท (ก่อน VAT)` : "—"}</dd></div>
+            <div><dt className={dt}>เลข PO / สัญญา</dt><dd className="text-gray-800">{p.contract_no ?? "—"}</dd></div>
+            <div><dt className={dt}>วันลงนาม</dt><dd className={p.contract_date ? "text-gray-800" : "text-amber-700 font-semibold"}>{p.contract_date ? formatThaiDate(p.contract_date) : "ยังไม่ได้บันทึก"}</dd></div>
+            {p.om_years != null && <div><dt className={dt}>O&amp;M ที่รวมในราคา</dt><dd className="text-gray-800">{p.om_years} ปี · ปีละ {p.om_visits_per_year ?? "—"} ครั้ง</dd></div>}
+          </dl>
+          {installmentTable}
+          {canEdit && !closed && (
+            <div className="flex flex-wrap justify-end gap-2">
+              <button type="button" className={btn} onClick={() => openModal("contract")}>{p.contract_date ? "แก้สัญญา / PO" : "บันทึกสัญญา / PO"}</button>
+            </div>
+          )}
+        </>
+      ),
+    },
+    3600: {
+      body: (
+        <>
+          {phaseNote("เช็กลิสต์ขออนุญาต 3 อย่าง · Purchase สั่งของตามงบ BOQ · milestone หน้างานที่ทำให้งวด 2–4 ถึงกำหนดเอง — มาในเฟส 4 (ตอนนี้กด \"ถึงกำหนด\" ที่งวดเองได้)")}
+          {installmentTable}
         </>
       ),
     },
@@ -280,6 +362,7 @@ export default function B2bProjectPage({ params }: { params: Promise<{ id: strin
           {tabBtn("workflow", "Workflow")}
           {tabBtn("info", "ข้อมูลโครงการ")}
           {tabBtn("boq", `BOQ (${p.boqs.length})`)}
+          {p.installments.length > 0 && tabBtn("installments", "งวดเงิน")}
           {tabBtn("timeline", "Timeline", "lg:hidden")}
         </div>
       </div>
@@ -363,6 +446,7 @@ export default function B2bProjectPage({ params }: { params: Promise<{ id: strin
           )}
 
           {tab === "boq" && <BoqOptionsTable boqs={p.boqs} canAdd={canEditBoq} onAdd={() => openModal("new_boq")} />}
+          {tab === "installments" && installmentTable}
 
           {tab === "timeline" && (
             <div className="rounded-xl border border-gray-200 bg-white overflow-hidden lg:hidden">
@@ -387,6 +471,23 @@ export default function B2bProjectPage({ params }: { params: Promise<{ id: strin
             await apiFetch(`/api/b2b/customers/${p.customer.id}`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify(v) });
             load();
           })} />
+      )}
+      {modal === "won" && (
+        <WonModal quotes={sentQuotes} saving={saving} error={error} onClose={() => setModal(null)}
+          onConfirm={(v) => void act({ action: "won", ...v }, "บันทึกได้งานแล้ว — งวด 1 ถึงกำหนดวางบิล")} />
+      )}
+      {modal === "contract" && (
+        <ContractModal initialNo={p.contract_no} initialDate={p.contract_date} saving={saving} error={error} onClose={() => setModal(null)}
+          onConfirm={(v) => void act({ action: "contract", ...v }, "บันทึกสัญญาแล้ว")} />
+      )}
+      {modal === "evidence" && inst && (
+        <EvidenceModal title={`แนบหลักฐานรับเงินงวด ${inst.no} · ${formatTHB(inst.total, { decimals: 2 })} บาท`} saving={saving} error={error}
+          onClose={() => setModal(null)} onConfirm={(v) => void uploadEvidence(v)} />
+      )}
+      {modal === "reject_inst" && inst && (
+        <ReasonModal title={`ตีกลับหลักฐานงวด ${inst.no}`} subtitle="งวดกลับเป็น &quot;ถึงกำหนด&quot; ให้ Solar B2B แนบใหม่" label="เหตุผล" danger
+          placeholder="เช่น ยอดในสลิปไม่ตรง · ยังไม่เห็นเงินเข้าบัญชี" confirmText="ตีกลับ" saving={instBusy === inst.id} error={error}
+          onClose={() => setModal(null)} onConfirm={(reason) => void instAction(inst, "reject", reason)} />
       )}
       {modal === "new_quote" && (
         <NewQuoteModal boqs={p.boqs} kindLabel={p.stage === B2B_STAGE.estimate ? "ประมาณการ" : "ยืนยัน"} saving={saving} error={error}

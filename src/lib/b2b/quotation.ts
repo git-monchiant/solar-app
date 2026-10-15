@@ -4,7 +4,8 @@ import type { AppRole } from "@/lib/role-permissions";
 // แผน docs/plan/20261015-07-b2b-project-flow.md เฟส 2 · ผังตาม sheet "SSE (2)" ใน BOQ Solar rooftop.xlsx
 // อนุมัติ 3 ชั้นตามช่องลงชื่อในแม่แบบ: ผู้ตรวจสอบ 1 (แถว 2 ซ้าย) → 2 (แถว 2 ขวา) → 3 (แถว 3)
 
-export type QuoteStatus = "draft" | "pending_review1" | "pending_review2" | "pending_review3" | "changes_required" | "approved" | "sent";
+/** won = ใบที่ได้งาน (สัญญา) · closed = ใบอื่นของโครงการที่ปิดเองตอนได้งาน (เฟส 3) */
+export type QuoteStatus = "draft" | "pending_review1" | "pending_review2" | "pending_review3" | "changes_required" | "approved" | "sent" | "won" | "closed";
 export type QuoteKind = "estimate" | "confirmed";
 export type ReviewTier = 1 | 2 | 3;
 
@@ -28,6 +29,8 @@ export const QUOTE_STATUS_LABEL: Record<QuoteStatus, string> = {
   changes_required: "ส่งกลับแก้",
   approved: "อนุมัติแล้ว · รอส่งลูกค้า",
   sent: "ส่งลูกค้าแล้ว",
+  won: "ได้งาน (สัญญา)",
+  closed: "ปิด (เลือกใบอื่น)",
 };
 export const QUOTE_STATUS_TONE: Record<QuoteStatus, string> = {
   draft: "bg-gray-100 text-gray-600",
@@ -37,12 +40,16 @@ export const QUOTE_STATUS_TONE: Record<QuoteStatus, string> = {
   changes_required: "bg-amber-50 text-amber-700",
   approved: "bg-emerald-50 text-emerald-700",
   sent: "bg-blue-50 text-blue-700",
+  won: "bg-emerald-100 text-emerald-800",
+  closed: "bg-gray-100 text-gray-400",
 };
 export const QUOTE_KIND_LABEL: Record<QuoteKind, string> = { estimate: "ประมาณการ", confirmed: "ยืนยัน" };
 
 /** ขั้นย่อยของขั้น 3200 / 3400 จากสถานะใบล่าสุด (หลักสิบ) — คิดตอนอ่านใน journey-sql แบบสำรวจ */
 export const QUOTE_SUB_OFFSET: Record<QuoteStatus, number> = {
   draft: 10, pending_review1: 20, pending_review2: 30, pending_review3: 40, changes_required: 50, approved: 60, sent: 70,
+  // ได้งานแล้วโครงการย้ายไปขั้น 3500 — ไม่ได้ใช้คิดขั้นย่อย 3200/3400 แต่ต้องมีครบทุกสถานะ
+  won: 70, closed: 70,
 };
 export const editableStatus = (s: QuoteStatus) => s === "draft" || s === "changes_required";
 

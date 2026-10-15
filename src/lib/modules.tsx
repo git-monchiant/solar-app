@@ -335,7 +335,7 @@ export const MODULES: AppModule[] = [
     desc: "โอกาสขาย → ส่งมอบ · BOQ · วัสดุและราคา",
     roles: ["b2b", "purchase", "b2b_review1", "b2b_review2", "b2b_review3", "admin"],
     menu: [
-      { label: "ทั้งหมด", href: "/b2b/projects", icon: <I d={D.lines} />, roles: ["b2b", "b2b_review1", "b2b_review2", "b2b_review3", "admin"], steps: [3100, 3200, 3300, 3400] },
+      { label: "ทั้งหมด", href: "/b2b/projects", icon: <I d={D.lines} />, roles: ["b2b", "b2b_review1", "b2b_review2", "b2b_review3", "admin"], steps: [3100, 3200, 3300, 3400, 3500, 3600] },
       { label: "โอกาสขาย", href: "/b2b/projects?stage=3100", icon: <PhoneIcon className="w-6 h-6" strokeWidth={2} />, roles: ["b2b", "b2b_review1", "b2b_review2", "b2b_review3", "admin"], steps: [3100] },
       {
         label: "เสนอราคา", icon: <DocumentIcon className="w-6 h-6" strokeWidth={2} />, roles: ["b2b", "b2b_review1", "b2b_review2", "b2b_review3", "admin"],
@@ -343,6 +343,14 @@ export const MODULES: AppModule[] = [
           { label: "ราคาประมาณการ", href: "/b2b/projects?stage=3200", icon: <DocumentIcon className="w-6 h-6" strokeWidth={2} />, steps: [3200] },
           { label: "สำรวจ", href: "/b2b/projects?stage=3300", icon: <I d={D.mapPin} />, steps: [3300] },
           { label: "ราคายืนยัน/ต่อรอง", href: "/b2b/projects?stage=3400", icon: <DocumentIcon className="w-6 h-6" strokeWidth={2} />, steps: [3400] },
+        ],
+      },
+      { label: "ได้งาน", href: "/b2b/projects?stage=3500", icon: <I d={D.checkCircle} />, roles: ["b2b", "b2b_review1", "b2b_review2", "b2b_review3", "admin"], steps: [3500] },
+      // ดำเนินโครงการ — ติดตั้ง/ขนานไฟ/ส่งมอบ เพิ่มในเฟส 4
+      {
+        label: "ดำเนินโครงการ", icon: <I d={D.wrench} />, roles: ["b2b", "b2b_review1", "b2b_review2", "b2b_review3", "admin"],
+        children: [
+          { label: "ขออนุญาต/จัดซื้อ", href: "/b2b/projects?stage=3600", icon: <I d={D.clipboard} />, steps: [3600] },
         ],
       },
       { label: "แพ้งาน/ยกเลิก", href: "/b2b/projects?stage=lost", icon: <XIcon className="w-6 h-6" strokeWidth={2} />, roles: ["b2b", "b2b_review1", "b2b_review2", "b2b_review3", "admin"], steps: [3980, 3990], noModuleCount: true },
@@ -462,7 +470,8 @@ export const APPROVAL_MENU_ITEM: ModuleMenuItem = {
 export const ACCOUNT_PENDING_MENU_ITEM: ModuleMenuItem = {
   label: "รอยืนยันรับเงิน", href: "/report/pending", icon: <I d={D.banknotes} />,
   // + ค่าบริการ O&M ที่รอ Account ยืนยัน (2320) — หน้าเดียวกันแสดงรวม (แผน 20260924-02 เฟส 4)
-  subs: [210, 520, OM_PAY_SUB.verifying],
+  // + งวดเงิน B2B ที่รอบัญชียืนยัน (9030) — หน้าเดียวกันแสดงเป็นส่วน B2B (แผน 20261015-07 เฟส 3)
+  subs: [210, 520, OM_PAY_SUB.verifying, 9030],
   roles: ["admin", "account"],
 };
 
@@ -503,7 +512,7 @@ const SOLAR_BAR: ModuleMenuItem[] = [
 const ACCOUNT_BAR: ModuleMenuItem[] = [
   { label: "ทั้งหมด", href: "/pipeline?tab=all", icon: <I d={D.lines} />, steps: [100, 200, 300, 400, 500, 600, 700, 800, 900, 1000, 9800, 9900] },
   { label: "รายรับ", href: "/report", icon: <I d={D.wallet} /> },
-  { label: "ยืนยันรับเงิน", href: "/report/pending", icon: <I d={D.banknotes} />, subs: [210, 520, OM_PAY_SUB.verifying] },
+  { label: "ยืนยันรับเงิน", href: "/report/pending", icon: <I d={D.banknotes} />, subs: [210, 520, OM_PAY_SUB.verifying, 9030] },
 ];
 // ★ แถบล่างของทีม O&M (เฟส 4 แผน 20260922-01) — ยังไม่ผูกกับ role ไหน
 //   เพราะ solar ใช้ SOLAR_BAR เป็นหลักอยู่ และยังไม่มี role om แยก
