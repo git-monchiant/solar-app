@@ -9,6 +9,7 @@ import { useRouter } from "next/navigation";
 import { apiFetch, getUserContextHeaders } from "@/lib/api";
 import ModalBase from "@/components/ui/ModalBase";
 import Dropdown from "@/components/ui/Dropdown";
+import { isPlaceholderPhone } from "@/lib/utils/formatters";
 import type { HouseConflict } from "@/lib/om/manual-house";
 
 const EMPTY = {
@@ -50,10 +51,11 @@ export default function OmNewHouseModal({ onClose, onOpenHouse }: {
 
   // เช็คซ้ำเมื่อข้อมูลครบพอ: เบอร์ 10 หลัก · เลขบัตร 13 หลัก · โครงการ + บ้านเลขที่
   const phone = digits(f.phone), idCard = digits(f.id_card);
+  const fakePhone = isPlaceholderPhone(phone);   // 0000000000 ฯลฯ — ไม่รับ (แผน 20261015-05)
   const houseNumber = f.house_number.trim();
   useEffect(() => {
     const q = new URLSearchParams();
-    if (/^0\d{9}$/.test(phone)) q.set("phone", phone);
+    if (/^0\d{9}$/.test(phone) && !isPlaceholderPhone(phone)) q.set("phone", phone);
     if (/^\d{13}$/.test(idCard)) q.set("id_card", idCard);
     if (f.project_id && houseNumber) { q.set("project", f.project_id); q.set("house_number", houseNumber); }
     if (![...q.keys()].length) { setConflicts([]); return; }
@@ -85,6 +87,7 @@ export default function OmNewHouseModal({ onClose, onOpenHouse }: {
     !pick && !f.first_name.trim() && "ชื่อลูกค้า",
     !pick && !/^0\d{9}$/.test(phone) && "เบอร์โทร 10 หลัก",
     pick && phone && !/^0\d{9}$/.test(phone) && "เบอร์โทร 10 หลัก",
+    fakePhone && "เบอร์จริง (เลขซ้ำ/เรียงกันใช้ไม่ได้)",
     idCard && !/^\d{13}$/.test(idCard) && "เลขบัตร 13 หลัก",
     !houseNumber && "บ้านเลขที่",
     !f.project_id && !f.address.trim() && "ที่อยู่ (บ้านนอกโครงการ)",
@@ -178,7 +181,8 @@ export default function OmNewHouseModal({ onClose, onOpenHouse }: {
         )}
         <div className="grid gap-3 sm:grid-cols-2">
           <label className="grid gap-1"><span className="text-xs font-bold text-gray-700">เบอร์โทร {pick ? "" : "*"}</span>
-            <input value={f.phone} onChange={set("phone")} inputMode="tel" placeholder="08xxxxxxxx" className={INPUT} /></label>
+            <input value={f.phone} onChange={set("phone")} inputMode="tel" placeholder="08xxxxxxxx" className={INPUT} />
+            {fakePhone && <span className="text-xs text-red-600">เบอร์นี้ไม่ใช่เบอร์จริง — ใส่เบอร์ที่ติดต่อลูกค้าได้</span>}</label>
           <label className="grid gap-1"><span className="text-xs font-bold text-gray-700">เลขบัตร ปชช.</span>
             <input value={f.id_card} onChange={set("id_card")} inputMode="numeric" placeholder="ไม่บังคับ — ช่วยกันลูกค้าซ้ำ" className={INPUT} /></label>
         </div>

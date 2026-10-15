@@ -105,9 +105,11 @@ export default function JobCard({ r, onOpen }: { r: Item; onOpen: () => void }) 
         </div>
         {/* ข้อมูลสิทธิ์/การล้าง/นัด เป็นชิปเรียงแถวเดียว อ่านเทียบกันข้ามการ์ดได้ */}
         <div className="flex flex-wrap items-center gap-1.5 text-xs">
+          {/* ★ บ้านที่ทีมเพิ่มเองที่ยังไม่เคยมีสิทธิ์ = "ลูกค้าทั่วไป" (ผู้ใช้สั่ง 15 ต.ค. 69 · ไม่เคยมีสิทธิ์ จะเรียกว่าหมดไม่ได้)
+              ยังต้องเสนอราคาก่อนนัดเหมือนสิทธิ์หมด — กติกานั้นดู balance ไม่ใช่ป้ายนี้ */}
           {r.balance > 0
             ? <span className="px-2 py-0.5 rounded-md bg-teal-50 text-gray-700">สิทธิ์เหลือ <b className="text-primary-dark">{r.balance}</b> ครั้ง</span>
-            : <span className="px-2 py-0.5 rounded-md bg-amber-50 text-amber-700 font-bold">สิทธิ์หมด</span>}
+            : <span className="px-2 py-0.5 rounded-md bg-amber-50 text-amber-700 font-bold">{r.new_manual ? "ลูกค้าทั่วไป" : "สิทธิ์หมด"}</span>}
           {r.last_wash
             ? <span className="px-2 py-0.5 rounded-md bg-gray-100 text-gray-700">ล้างล่าสุด <b>{thD(r.last_wash)}</b> <span className="text-gray-400">({m} เดือน)</span></span>
             : <span className="px-2 py-0.5 rounded-md bg-amber-50 text-amber-700 font-bold">ยังไม่เคยล้าง</span>}

@@ -59,7 +59,14 @@ export default function OmServicesPage() {
     apiFetch(`/api/om/follow?${p}`)
       .then((d) => {
         setItems(d.items ?? []); setCounts(d.counts ?? {});
-        setProjects(d.projects ?? []);
+        // ★ รายชื่อโครงการนับตามแท็บที่เปิด (แผน 20261015-05) — เลือกโครงการไว้แล้วสลับไปแท็บที่ไม่มีบ้านของโครงการนั้น
+        //   ให้คงชื่อไว้ "· 0" ไม่หายไปเฉย ๆ (ช่องจะว่างทั้งที่ยังกรองอยู่)
+        setProjects((prev) => {
+          const next: typeof prev = d.projects ?? [];
+          if (!group || next.some((x) => x.project_id === group)) return next;
+          const old = prev.find((x) => x.project_id === group);
+          return old ? [...next, { ...old, n: 0 }] : next;
+        });
       })
       .catch((e) => { setErr(e instanceof Error ? e.message : String(e)); setItems([]); });
   }, [tab, group, sort, dir, q, mineOnly, origin]);
@@ -94,7 +101,7 @@ export default function OmServicesPage() {
             className="w-full md:w-72 font-normal"
             value={group}
             onChange={(v) => setGroup(v)}
-            options={[{ value: "", label: `ทุกโครงการ (${projects.length})` },
+            options={[{ value: "", label: `ทุกโครงการ (${projects.filter((p) => p.n > 0).length})` },
               ...projects.map((p) => ({ value: p.project_id, label: `${p.project_name} · ${p.n}` }))]}
             searchable
           />

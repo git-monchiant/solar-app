@@ -1,5 +1,6 @@
 import { sql } from "@/lib/db";
 import { MANUAL_HOUSE_SOURCE } from "@/lib/om/house-origin";
+import { isPlaceholderPhone } from "@/lib/utils/formatters";
 
 // เพิ่มบ้าน/ลูกค้า O&M เองจากหน้าจอ (แผน 20261014-08) — ลูกค้าที่ไม่ได้มาจาก REM / งานขาย
 //   (ติดตั้งโดยเจ้าอื่น · นอกโครงการเสนา) เดิมเข้าระบบไม่ได้เลย ต้องรันสคริปต์ลงฐานเอง
@@ -42,7 +43,8 @@ export async function findHouseConflicts(
 ): Promise<HouseConflict[]> {
   const hint = lock ? "WITH (UPDLOCK, HOLDLOCK)" : "";
   const r = await req()
-    .input("ph", sql.NVarChar(20), /^0\d{9}$/.test(x.phone) ? x.phone : "")
+    // เบอร์ปลอม (0000000000 ฯลฯ) ไม่เอามาเทียบ — ไม่งั้นคนที่ไม่เกี่ยวกันจะชนกันเอง
+    .input("ph", sql.NVarChar(20), /^0\d{9}$/.test(x.phone) && !isPlaceholderPhone(x.phone) ? x.phone : "")
     .input("cid", sql.NVarChar(20), /^\d{13}$/.test(x.idCard) ? x.idCard : "")
     .input("p", sql.NVarChar(20), x.projectId ?? "")
     .input("hk", sql.NVarChar(50), x.houseNumber.replace(/\s/g, ""))
@@ -114,6 +116,7 @@ export function parseManualHouseInput(b: Record<string, unknown>): ManualHouseIn
   if (!customerId && !firstName) return "ต้องระบุชื่อลูกค้า";
   if (!customerId && !phone) return "ต้องระบุเบอร์โทร";
   if (phone && !/^0\d{9}$/.test(phone)) return "เบอร์ต้องเป็น 10 หลักขึ้นต้นด้วย 0";
+  if (phone && isPlaceholderPhone(phone)) return "เบอร์นี้ไม่ใช่เบอร์จริง (เลขซ้ำ/เรียงกัน) — ใส่เบอร์ที่ติดต่อลูกค้าได้";
   if (idCard && !/^\d{13}$/.test(idCard)) return "เลขบัตรประชาชนต้องมี 13 หลัก";
 
   const projectId = txt(b.project_id, 20);

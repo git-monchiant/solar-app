@@ -11,6 +11,7 @@ import { ACTIVE_STATUS, canMove, statusLabel, toThaiOffset } from "@/lib/om/book
 import { OM_BOOKING_PAID_SQL } from "@/lib/om/om-quotation";
 import { omSlotsFor } from "@/lib/om/time-slot";
 import { houseOriginSql, parseOrigin } from "@/lib/om/house-origin";
+import { GROUP_LABEL, HG } from "@/lib/om/house-scope";
 
 // แท็บ "ติดตาม" ของงานบริการ — ★ การ์ดคำนวณสด ไม่มีแถวงานรอไว้ล่วงหน้า
 //   เกณฑ์: บ้าน O&M ที่มีระบบติดตั้ง + เลยรอบล้าง (om_service_type.cycle_months)
@@ -63,6 +64,10 @@ export async function GET(req: NextRequest) {
   const cfg = { ...callCfg, ...bookingCfg };
   const maxAttempts = Number(cfg["call.max_attempts"] ?? 3);
 
+  // ★ ตัวกรองโครงการ (แผน 20261015-05): __NOPJ__ = บ้านไม่มีรหัสโครงการ (นอกโครงการ · บ้านที่ทีมเพิ่มเอง)
+  //   คีย์/ป้ายชุดเดียวกับกลุ่มของหน้าบ้าน / ระบบติดตั้ง (house-scope.ts)
+  const groupSql = `(@g = '' OR d.project_id = @g OR (@g = N'${HG.NOPJ}' AND d.project_id IS NULL))`;
+
   const db = await getOmDb();
   await expireOmGrantsIfDue(db);   // สิทธิ์ที่หมดอายุตัดวันละครั้ง ก่อนอ่านยอด (แผน 20260924-02 เฟส 4)
   try {
@@ -70,6 +75,7 @@ export async function GET(req: NextRequest) {
     .input("house", sql.Int, houseOnly)
     .input("mine", sql.Int, mineOnly)
     .input("g", sql.NVarChar(20), group)
+    .input("nopj", sql.NVarChar(60), GROUP_LABEL[HG.NOPJ])
     .input("tab", sql.VarChar(20), tab)
     .input("q", sql.NVarChar(80), q ? `%${q}%` : "")
     .input("max", sql.Int, maxAttempts)
@@ -85,7 +91,7 @@ export async function GET(req: NextRequest) {
 
     SELECT COUNT(*) total FROM #x d
      WHERE d.bucket = @tab
-       AND (@g = '' OR d.project_id = @g)
+       AND ${groupSql}
        AND (@q = '' OR d.house_number LIKE @q OR d.customer_name LIKE @q OR d.phone LIKE @q)
        AND (@mine = 0 OR d.owner_user_id = @mine)
        ${houseOriginSql(origin, "d.house_id")};
@@ -94,15 +100,26 @@ export async function GET(req: NextRequest) {
      WHERE (@house > 0 AND d.house_id = @house)
         OR (@house = 0
             AND d.bucket = @tab
-            AND (@g = '' OR d.project_id = @g)
+            AND ${groupSql}
             AND (@q = '' OR d.house_number LIKE @q OR d.customer_name LIKE @q OR d.phone LIKE @q)
             AND (@mine = 0 OR d.owner_user_id = @mine)
             ${houseOriginSql(origin, "d.house_id")})
      ORDER BY ${sort}
      OFFSET @off ROWS FETCH NEXT @size ROWS ONLY;
 
-    SELECT d.project_id, MAX(d.project_name) project_name, COUNT(*) n
-      FROM #x d WHERE d.bucket = 'follow' GROUP BY d.project_id ORDER BY n DESC;
+    -- ★ รายชื่อโครงการ (แผน 20261015-05): นับจาก "แท็บที่เปิดอยู่" + งานของฉัน + ที่มา — ชุดเดียวกับเลขบนแท็บ
+    --   เลขข้างชื่อ = จำนวนที่กดเข้าไปเห็นจริง (กติกา ui-rules) · ไม่นับคำค้น เหมือนเลขบนแท็บ
+    --   เดิมนับเฉพาะแท็บติดตามเสมอ: 46 จาก 98 โครงการไม่ขึ้น (เช่น วิลล่า รามอินทรา 22 หลังอยู่แท็บอื่นหมด)
+    --   และบ้านไม่มีรหัสโครงการรวมเป็นแถวเดียวที่ได้ชื่อบ้านหลังหนึ่งไปเป็นป้าย ("บ้านอาจารย์บุญสม · 17") กดกรองไม่ได้
+    SELECT ISNULL(d.project_id, N'${HG.NOPJ}') project_id,
+           CASE WHEN d.project_id IS NULL THEN @nopj ELSE MAX(d.project_name) END project_name, COUNT(*) n
+      FROM #x d
+     WHERE d.bucket = @tab
+       AND (@mine = 0 OR d.owner_user_id = @mine)
+       ${houseOriginSql(origin, "d.house_id")}
+     GROUP BY d.project_id
+     -- นอกโครงการขึ้นบนสุด ต่อจาก "ทุกโครงการ" (ผู้ใช้สั่ง 15 ต.ค. 69) · ที่เหลือเรียงตามจำนวนบ้าน
+     ORDER BY CASE WHEN d.project_id IS NULL THEN 0 ELSE 1 END, n DESC, project_name;
 
     -- ประวัติของบ้านหลังนี้ (โหมดบ้านเดียว) — รวมทั้งที่ผูกกับบ้านตรง ๆ (การโทรก่อนมีใบงาน)
     -- และที่ผูกกับใบงานของบ้านหลังนี้ทุกใบ ⇒ ไทม์ไลน์เส้นเดียวไม่ขาดตอน
