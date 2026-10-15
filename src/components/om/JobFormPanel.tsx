@@ -355,7 +355,6 @@ export default function JobFormPanel({ jobId, wrapClass = "h-full overflow-auto 
   const [checks, setChecks] = useState<Checks>({});
   const [measures, setMeasures] = useState<Record<string, string>>({});
   const [note, setNote] = useState("");
-  const [result, setResult] = useState<"pass" | "fail">("pass");
   const [method, setMethod] = useState<"onsite_sign" | "line_otp" | "tech_proxy">("onsite_sign");
   const [proxyReason] = useState(PROXY_REASONS[0]);   // ไม่มีตัวเลือกช่างเซ็นแทนแล้ว (1 ต.ค. 69) — คงไว้ให้ save ส่งค่าเดิม
   const [techSign, setTechSign] = useState<string | null>(null);
@@ -390,7 +389,6 @@ export default function JobFormPanel({ jobId, wrapClass = "h-full overflow-auto 
           setChecks(d.report.checks ?? {});
           setMeasures(Object.fromEntries(Object.entries(d.report.measures ?? {}).map(([k, v]) => [k, v == null ? "" : String(v)])));
           setNote(d.report.note ?? "");
-          if (d.report.result === "fail") setResult("fail");
           setTechSign(d.report.tech_sign ?? null);
           setCustSign(d.report.cust_sign ?? null);
           setJobNo(d.report.job_no ?? null);
@@ -426,7 +424,8 @@ export default function JobFormPanel({ jobId, wrapClass = "h-full overflow-auto 
         checks, note,
         repair_needed: repair, repair_detail: repair ? repairDetail.trim() : null,
         measures: Object.fromEntries(Object.entries(measures).map(([k, v]) => [k, v === "" ? null : Number(v)])),
-        result: close ? result : null,
+        // ★ 15 ต.ค. 69 ผลตรวจคิดจากข้อที่ติ๊ก (ไม่มีปุ่มเลือกแล้ว) — API คิดซ้ำเองอยู่ดี ค่านี้แค่บอกว่า "ปิดงาน"
+        result: close ? ((form?.items ?? []).some((it) => it.kind === "bool" && checks[it.code]?.pass === false) ? "fail" : "pass") : null,
         tech_sign: techSign, cust_sign: custSign,
         cust_name: job?.customer_name ?? null,
         close_method: close ? method : null,
@@ -714,19 +713,9 @@ export default function JobFormPanel({ jobId, wrapClass = "h-full overflow-auto 
             {/* ── ขั้นย่อย 3: ส่งมอบ — ผลการตรวจ · วิธีปิดงาน · ลายเซ็น ── */}
             {inner === 2 && (
               <>
-                <div className={SECTION}>
-                  <SectionHead icon={<CheckIcon className="w-4 h-4" />} en="Result" th="ผลการตรวจ"
-                    right={fails > 0 ? <span className="text-red-600 font-semibold">ไม่ผ่าน {fails} ข้อ</span> : undefined} />
-                  <div className="grid grid-cols-2 md:grid-cols-7 gap-2">
-                    <button type="button" disabled={closed} onClick={() => setResult("pass")} className={PASS_BTN(result === "pass")}>ผ่าน</button>
-                    <button type="button" disabled={closed} onClick={() => setResult("fail")} className={FAIL_BTN(result === "fail")}>ไม่ผ่าน</button>
-                  </div>
-
-                  {/* ★ 1 ต.ค. 69 ผู้ใช้สั่งเอาตัวเลือก "ปิดงานด้วยวิธีไหน" (ลูกค้าเซ็น / LINE / ช่างเซ็นแทน) ออก
-                      ⇒ ปิดงานแบบลูกค้าเซ็นที่หน้างานอย่างเดียว (method ค่าเริ่มต้น onsite_sign · ต้องมีลายเซ็นลูกค้า)
-                      ใบเก่าที่ปิดด้วยวิธีอื่นยังจำค่าเดิมไว้ (โหลดจาก close_method) */}
-                </div>
-
+                {/* ★ 15 ต.ค. 69 ผู้ใช้สั่งเอากล่อง "RESULT ผลการตรวจ" (ปุ่มผ่าน/ไม่ผ่าน) ออก — เลือกเองแล้วขัดกับหน้าตรวจได้
+                    (เจอ 2 ใบ: เลือก "ผ่าน" ทั้งที่ติ๊กไม่ผ่าน 1–2 ข้อ) ⇒ ผลตรวจคิดจากข้อที่ติ๊ก: มีข้อไม่ผ่าน = ไม่ผ่าน
+                    PDF / หน้าสรุป / Timeline ยังแสดงผลตรวจเหมือนเดิม · ปิดงานแบบลูกค้าเซ็นที่หน้างานอย่างเดียว (1 ต.ค. 69) */}
                 <div className={SECTION}>
                   <SectionHead icon={<UserIcon className="w-4 h-4" />} en="Signatures" th="ลายเซ็น" />
                   <div className="grid gap-3 md:grid-cols-3">
