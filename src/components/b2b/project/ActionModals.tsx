@@ -51,22 +51,49 @@ export function ScheduleSurveyModal({ initialDate, initialSurveyor, users, savin
   );
 }
 
-/** บันทึกผลสำรวจ → ขั้นราคายืนยัน */
+const FILE_ACCEPT = "image/jpeg,image/png,image/webp,image/heic,application/pdf";
+const fileCls = "block w-full text-sm file:mr-3 file:h-9 file:px-4 file:rounded-lg file:border-0 file:bg-gray-100 file:text-sm file:font-semibold file:text-gray-700 hover:file:bg-gray-200";
+
+/** บันทึกผลสำรวจ → ขั้นราคายืนยัน · แนบรูป/ไฟล์ไปพร้อมกันได้ (แผน 20261015-10 — แนบเพิ่มทีหลังที่การ์ดขั้น 03 ได้) */
 export function RecordSurveyModal({ initialDate, saving, error, onConfirm, onClose }: Common & {
   initialDate: string | null;
-  onConfirm: (v: { survey_date: string; note: string }) => void;
+  onConfirm: (v: { survey_date: string; note: string; files: File[] }) => void;
 }) {
   const [date, setDate] = useState(initialDate && initialDate <= todayIso() ? initialDate : todayIso());
   const [note, setNote] = useState("");
+  const [files, setFiles] = useState<File[]>([]);
   return (
     <ModalShell title="บันทึกผลสำรวจ" subtitle="บันทึกแล้วโครงการไปขั้นราคายืนยัน — ทำ BOQ Rev ใหม่ตามหน้างานจริง" width="max-w-2xl"
-      confirmText="บันทึกผล" saving={saving} error={error} onClose={onClose} onConfirm={() => onConfirm({ survey_date: date, note })}>
+      confirmText="บันทึกผล" saving={saving} error={error} onClose={onClose} onConfirm={() => onConfirm({ survey_date: date, note, files })}>
       <div className="max-w-xs"><label className={labelCls}>วันที่สำรวจจริง <Req /></label>
         <input type="date" className={fieldCls} value={date} max={todayIso()} onChange={(e) => setDate(e.target.value)} /></div>
       <div><label className={labelCls}>สรุปผลสำรวจ <Req /></label>
         <textarea autoFocus rows={5} className={areaCls} value={note} onChange={(e) => setNote(e.target.value)}
           placeholder="ชนิดหลังคา · พื้นที่ใช้ได้ · จุดเชื่อมต่อ/ตู้ MDB · อุปสรรคหน้างาน · สิ่งที่ต้องแก้ใน BOQ" /></div>
-      <p className="text-xs text-gray-400">รูป/ไฟล์ผลสำรวจ — แนบในขั้นถัดไปของงาน (ยังไม่มีในเฟสนี้)</p>
+      <div><label className={labelCls}>รูป/ไฟล์ผลสำรวจ (รูป หรือ PDF ไม่เกิน 20 ไฟล์ ไฟล์ละ 15 MB)</label>
+        <input type="file" multiple accept={FILE_ACCEPT} onChange={(e) => setFiles(Array.from(e.target.files ?? []))} className={fileCls} />
+        {files.length > 0 && <div className="mt-1 text-xs text-gray-500">เลือกแล้ว {files.length} ไฟล์</div>}
+      </div>
+    </ModalShell>
+  );
+}
+
+/** แนบรูป/ไฟล์ของโครงการ (ผลสำรวจ) — ต่อท้ายไฟล์เดิม */
+export function AttachFilesModal({ title, saving, error, onConfirm, onClose }: Common & {
+  title: string;
+  onConfirm: (v: { files: File[]; note: string }) => void;
+}) {
+  const [files, setFiles] = useState<File[]>([]);
+  const [note, setNote] = useState("");
+  return (
+    <ModalShell title={title} subtitle="รูป หรือ PDF ไม่เกิน 20 ไฟล์ ไฟล์ละ 15 MB — ต่อท้ายไฟล์เดิม" confirmText="แนบไฟล์" saving={saving} error={error}
+      onClose={onClose} onConfirm={() => onConfirm({ files, note })}>
+      <div><label className={labelCls}>ไฟล์ <Req /></label>
+        <input type="file" multiple accept={FILE_ACCEPT} onChange={(e) => setFiles(Array.from(e.target.files ?? []))} className={fileCls} />
+        {files.length > 0 && <div className="mt-1 text-xs text-gray-500">เลือกแล้ว {files.length} ไฟล์</div>}
+      </div>
+      <div><label className={labelCls}>หมายเหตุ</label>
+        <input className={fieldCls} value={note} onChange={(e) => setNote(e.target.value)} placeholder="เช่น แบบหลังคาจากลูกค้า · รูปตู้ MDB อาคาร B" /></div>
     </ModalShell>
   );
 }

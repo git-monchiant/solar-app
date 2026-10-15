@@ -102,6 +102,12 @@ export function stageTone(stage: number): string {
 
 export const isClosedStage = (stage: number) => stage >= B2B_STAGE.closed;
 
+/** ไฟล์ของโครงการ (แผน 20261015-10) — เปิดผ่าน /api/b2b/projects/[id]/files/[fileId] */
+export type B2bProjectFileKind = "survey";
+export type B2bProjectFile = {
+  id: number; kind: B2bProjectFileKind; label: string; mime: string; note: string | null; created_at: string; created_by_name: string | null;
+};
+
 export type B2bCustomer = { id: number; name: string; tax_id: string | null; branch: string | null; address: string | null };
 
 export type B2bUserOption = { id: number; full_name: string };
@@ -174,6 +180,8 @@ export type B2bProject = B2bProjectRow & {
   milestones: B2bMilestone[];
   /** สัญญา O&M B2B ล่าสุด (แผน 20261015-09) — สร้างเองตอนปิดโครงการ */
   om_contract_id: number | null;
+  /** รูป/ไฟล์ของโครงการ — ผลสำรวจ (แผน 20261015-10) */
+  files: B2bProjectFile[];
   permits: B2bPermit[];
   activities: B2bActivity[];
 };

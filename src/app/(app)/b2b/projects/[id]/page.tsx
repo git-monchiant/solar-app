@@ -13,14 +13,15 @@ import { hasRole, useActiveRoles } from "@/lib/roles";
 import { formatThaiDate, formatTHB } from "@/lib/utils/formatters";
 import {
   B2B_FLOW, B2B_LOSABLE_MAX_STAGE, B2B_PROJECT_ROLES, B2B_PROJECT_VIEW_ROLES, B2B_STAGE, isClosedStage, listHrefOf, stageLabel,
-  type B2bInstallment, type B2bProject, type B2bUserOption,
+  type B2bInstallment, type B2bProject, type B2bProjectFile, type B2bUserOption,
 } from "@/lib/b2b/project";
 import StageBadge from "@/components/b2b/project/StageBadge";
 import ProjectStepCard, { type StepState } from "@/components/b2b/project/ProjectStepCard";
 import BoqOptionsTable from "@/components/b2b/project/BoqOptionsTable";
 import ActivityList from "@/components/b2b/project/ActivityList";
 import ProjectFormModal from "@/components/b2b/project/ProjectFormModal";
-import { ContractModal, CustomerEditModal, EvidenceModal, NewBoqModal, NewQuoteModal, ReasonModal, RecordSurveyModal, ScheduleSurveyModal, WonModal } from "@/components/b2b/project/ActionModals";
+import { AttachFilesModal, ContractModal, CustomerEditModal, EvidenceModal, NewBoqModal, NewQuoteModal, ReasonModal, RecordSurveyModal, ScheduleSurveyModal, WonModal } from "@/components/b2b/project/ActionModals";
+import ProjectFileList from "@/components/b2b/project/ProjectFileList";
 import InstallmentTable from "@/components/b2b/project/InstallmentTable";
 import { openAuthedFile } from "@/components/b2b/openAuthedFile";
 import QuoteList from "@/components/b2b/project/QuoteList";
@@ -36,7 +37,7 @@ import { PERMITS, milestoneDef, type B2bMilestone, type B2bPermit, type Mileston
 
 type Tab = "workflow" | "info" | "boq" | "installments" | "timeline";
 type Modal = null | "edit" | "customer" | "lost" | "cancel" | "reopen" | "back_survey" | "schedule" | "record" | "new_boq" | "new_quote"
-  | "won" | "contract" | "evidence" | "reject_inst" | "milestone" | "milestone_edit" | "permit" | "om_contract";
+  | "won" | "contract" | "evidence" | "reject_inst" | "milestone" | "milestone_edit" | "permit" | "om_contract" | "survey_files";
 
 const LOCKED_HINT: Record<number, string> = {
   3500: "ปลดเมื่อกด \"ได้งาน\" — เลือกใบเสนอราคาที่ส่งลูกค้าแล้ว",
@@ -291,6 +292,41 @@ export default function B2bProjectPage({ params }: { params: Promise<{ id: strin
     </div>
   );
 
+  // ── รูป/ไฟล์ผลสำรวจ (แผน 20261015-10) ──
+  const surveyFiles = p.files.filter((f) => f.kind === "survey");
+  const uploadFiles = async (kind: string, files: File[], note = "") => {
+    const fd = new FormData();
+    fd.append("kind", kind); fd.append("note", note);
+    for (const f of files) fd.append("files", f);
+    await sendForm(`/api/b2b/projects/${p.id}/files`, fd);
+  };
+  const attachSurvey = (v: { files: File[]; note: string }) => run(async () => {
+    if (v.files.length === 0) throw new Error("กรุณาเลือกไฟล์");
+    await uploadFiles("survey", v.files, v.note);
+    load();
+    toast({ message: `แนบไฟล์สำรวจ ${v.files.length} ไฟล์แล้ว`, variant: "success" });
+  });
+  // บันทึกผล (ขยับขั้น) ก่อน แล้วค่อยอัปโหลดไฟล์ — ไฟล์ไม่ผ่าน ผลสำรวจยังอยู่ แนบซ้ำที่การ์ดขั้น 03 ได้
+  const recordSurvey = (v: { survey_date: string; note: string; files: File[] }) => run(async () => {
+    const r = await apiFetch(`/api/b2b/projects/${p.id}/actions`, { method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ action: "record_survey", survey_date: v.survey_date, note: v.note }) });
+    setP(r);
+    if (v.files.length) {
+      try { await uploadFiles("survey", v.files); load(); }
+      catch (e) { toast({ message: `บันทึกผลสำรวจแล้ว แต่แนบไฟล์ไม่สำเร็จ — ${e instanceof Error ? e.message : ""} แนบใหม่ที่ขั้นสำรวจ`, variant: "danger" }); return; }
+    }
+    toast({ message: "บันทึกผลสำรวจแล้ว — ไปขั้นราคายืนยัน", variant: "success" });
+  });
+  const viewProjectFile = (f: B2bProjectFile) => {
+    void openAuthedFile(`/api/b2b/projects/${p.id}/files/${f.id}`).catch((e) => toast({ message: e.message, variant: "danger" }));
+  };
+  const removeProjectFile = async (f: B2bProjectFile) => {
+    const ok = await confirm({ title: "ลบไฟล์", message: `"${f.label}" จะถูกลบถาวร`, confirmText: "ลบไฟล์", variant: "danger" });
+    if (!ok) return;
+    try { await apiFetch(`/api/b2b/projects/${p.id}/files/${f.id}`, { method: "DELETE" }); load(); toast({ message: "ลบไฟล์แล้ว", variant: "success" }); }
+    catch (e) { toast({ message: e instanceof Error && e.message ? e.message : "ลบไม่สำเร็จ", variant: "danger" }); }
+  };
+
   const wonButton = (
     <button type="button" className={btnPrimary} disabled={sentQuotes.length === 0}
       title={sentQuotes.length ? undefined : "ต้องมีใบเสนอราคาที่อนุมัติครบ 3 ชั้นและส่งลูกค้าแล้ว"} onClick={() => openModal("won")}>ได้งาน</button>
@@ -339,7 +375,7 @@ export default function B2bProjectPage({ params }: { params: Promise<{ id: strin
     },
     3300: {
       summary: p.survey_done_at
-        ? `สำรวจ ${formatThaiDate(p.survey_date)}${p.surveyor_name ? ` โดย ${p.surveyor_name}` : ""}${p.survey_note ? ` · ${p.survey_note}` : ""}`
+        ? `สำรวจ ${formatThaiDate(p.survey_date)}${p.surveyor_name ? ` โดย ${p.surveyor_name}` : ""}${surveyFiles.length ? ` · ไฟล์ ${surveyFiles.length}` : ""}${p.survey_note ? ` · ${p.survey_note}` : ""}`
         : "ข้ามขั้นนี้",
       body: (
         <>
@@ -350,6 +386,8 @@ export default function B2bProjectPage({ params }: { params: Promise<{ id: strin
           {p.survey_done_at && p.survey_note && (
             <div><div className={dt}>ผลสำรวจ</div><p className="text-sm text-gray-800 whitespace-pre-line">{p.survey_note}</p></div>
           )}
+          <ProjectFileList title="รูป/ไฟล์ผลสำรวจ" files={surveyFiles} canEdit={canEdit && !closed}
+            onAdd={() => openModal("survey_files")} onView={viewProjectFile} onRemove={(f) => void removeProjectFile(f)} />
           {canEdit && stateOf(3300) === "active" && (
             <div className="flex flex-wrap justify-end gap-2 pt-1">
               <button type="button" className={btn} onClick={() => openModal("schedule")}>{p.survey_date ? "เลื่อนนัด" : "นัดสำรวจ"}</button>
@@ -662,7 +700,7 @@ export default function B2bProjectPage({ params }: { params: Promise<{ id: strin
       )}
       {modal === "record" && (
         <RecordSurveyModal initialDate={p.survey_date} saving={saving} error={error} onClose={() => setModal(null)}
-          onConfirm={(v) => void act({ action: "record_survey", ...v }, "บันทึกผลสำรวจแล้ว — ไปขั้นราคายืนยัน")} />
+          onConfirm={(v) => void recordSurvey(v)} />
       )}
       {modal === "back_survey" && (
         <ReasonModal title="ถอยไปสำรวจซ้ำ" subtitle="โครงการกลับไปขั้นสำรวจ แล้วนัดวันใหม่" label="เหตุผล" placeholder="เช่น ลูกค้าเพิ่มอาคาร B · ต้องวัดหลังคาใหม่"
@@ -691,6 +729,9 @@ export default function B2bProjectPage({ params }: { params: Promise<{ id: strin
       {modal === "om_contract" && (
         <CreateContractModal initial={{ years: p.om_years, visits_per_year: p.om_visits_per_year, start_date: msOf("handover")?.done_date ?? null }}
           saving={saving} error={error} onClose={() => setModal(null)} onConfirm={(v) => void createOm(v)} />
+      )}
+      {modal === "survey_files" && (
+        <AttachFilesModal title="แนบรูป/ไฟล์ผลสำรวจ" saving={saving} error={error} onClose={() => setModal(null)} onConfirm={(v) => void attachSurvey(v)} />
       )}
       {modal === "reopen" && (
         <ReasonModal title="เปิดโครงการกลับ" subtitle={`กลับไปขั้น ${stageLabel(at)}`} label="เหตุผล" required={false} placeholder="เช่น ลูกค้ากลับมาขอราคาใหม่"

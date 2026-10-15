@@ -71,6 +71,10 @@ try {
       for (const r of msFiles) filesToRemove.push(...JSON.parse(r.files_json).map((f) => f.file));
       const pmFiles = (await q(`SELECT file_name FROM b2b_project_permits WHERE project_id IN (${ids}) AND file_name IS NOT NULL`)).recordset;
       filesToRemove.push(...pmFiles.map((f) => f.file_name));
+      // รูป/ไฟล์ของโครงการ (ผลสำรวจ · แผน 20261015-10)
+      const pFiles = (await q(`SELECT file_name FROM b2b_project_files WHERE project_id IN (${ids})`)).recordset;
+      filesToRemove.push(...pFiles.map((f) => f.file_name));
+      const pf = await q(`DELETE FROM b2b_project_files WHERE project_id IN (${ids})`);
       // O&M B2B (แผน 20261015-09) — timeline → ครั้งเข้างาน (+ ไฟล์รายงาน) → สัญญา
       const omFiles = (await q(`SELECT files_json FROM b2b_om_visits WHERE project_id IN (${ids}) AND files_json IS NOT NULL`)).recordset;
       for (const r of omFiles) filesToRemove.push(...JSON.parse(r.files_json).map((f) => f.file));
@@ -85,7 +89,7 @@ try {
       const b = await q(`DELETE FROM b2b_boqs WHERE project_id IN (${ids})`);
       const a = await q(`DELETE FROM b2b_project_activities WHERE project_id IN (${ids})`);
       const p = await q(`DELETE FROM b2b_projects WHERE id IN (${ids})`);
-      console.log(`ลบแล้ว: โครงการ ${p.rowsAffected[0]} · timeline ${a.rowsAffected[0]} · งวดเงิน ${ins.rowsAffected[0]} · หน้างาน ${ms.rowsAffected[0]} · สัญญา O&M ${omc.rowsAffected[0]} (${omv.rowsAffected[0]} ครั้ง) · ขออนุญาต ${pm.rowsAffected[0]} · ใบเสนอราคา ${qt.rowsAffected[0]} แถว · BOQ ${b.rowsAffected[0]} แถว · บรรทัด ${i.rowsAffected[0]}`);
+      console.log(`ลบแล้ว: โครงการ ${p.rowsAffected[0]} · timeline ${a.rowsAffected[0]} · งวดเงิน ${ins.rowsAffected[0]} · หน้างาน ${ms.rowsAffected[0]} · สัญญา O&M ${omc.rowsAffected[0]} (${omv.rowsAffected[0]} ครั้ง) · ไฟล์โครงการ ${pf.rowsAffected[0]} · ขออนุญาต ${pm.rowsAffected[0]} · ใบเสนอราคา ${qt.rowsAffected[0]} แถว · BOQ ${b.rowsAffected[0]} แถว · บรรทัด ${i.rowsAffected[0]}`);
     }
     // บริษัทที่ไม่เหลือโครงการ — โหมด test ลบเฉพาะบริษัทที่ชื่อมี test (บริษัทจริงที่เพิ่งพิมพ์ไว้ยังอยู่)
     // คิดจาก "โครงการที่เหลือหลังลบ" (ไม่นับ ids) ⇒ dry-run แสดงตรงกับตอนลบจริง
