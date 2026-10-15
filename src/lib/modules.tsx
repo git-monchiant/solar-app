@@ -48,7 +48,7 @@ export type ModuleKey =
   | "seeker" | "sales" | "install" | "warranty" | "om"
   | "quotation"
   | "account" | "package" | "om_package" | "dashboard" | "setup"
-  | "boq";
+  | "boq" | "b2b_project" | "b2b_purchase";
 
 export type ModuleMenuItem = {
   label: string;
@@ -95,6 +95,9 @@ export type AppModule = {
   mobileOnly?: boolean;
   menu: ModuleMenuItem[];
 };
+
+/** ทีม B2B ที่เห็นการ์ดขาย/โครงการ — ผู้ตรวจสอบ 1–3 เปิดดูได้ แก้ไม่ได้ (API ตรวจซ้ำ) */
+const B2B_TEAM: Role[] = ["b2b", "b2b_review1", "b2b_review2", "b2b_review3", "admin"];
 
 export const MODULES: AppModule[] = [
   {
@@ -326,45 +329,59 @@ export const MODULES: AppModule[] = [
       { label: "Lead Tracking", href: "/lifecycle", icon: <I d={D.checkCircle} /> },
     ],
   },
+  // ★ งาน B2B โรงงาน/ไซต์ใหญ่ — แยกการ์ดตามช่วงงานแบบ B2C (เคาะ 15 ต.ค. · แผน docs/plan/20261015-07-b2b-project-flow.md หัวข้อ 6)
+  //   ขาย B2B (3100–3500) · โครงการ B2B (3600–3950) · จัดซื้อ B2B (ราคาวัสดุ + สั่งของ) — พัฒนาแต่ละช่วงแยกกันได้ เมนูไม่ปนกัน
+  //   ทีมเดียวกันเห็นทุกการ์ด · หน้าโครงการ /b2b/projects/[id] หน้าเดียวเห็นครบ 9 ขั้น · หน้ารายการกรองด้วย ?stage= (sales · exec · เลขขั้น)
+  //   emoji ใช้ Unicode 6 — ฟอนต์ Windows มีแน่ (เหตุผลเดียวกับ 📋 ของ Package O&M)
   {
-    // ★ งาน B2B โรงงาน/ไซต์ใหญ่ — การ์ดเดียว "โครงการ B2B" (แผน docs/plan/20261015-07-b2b-project-flow.md · เดิมการ์ด BOQ แผน 20261005-01)
-    //   ทีมที่ขายทำหน้างานเองจนส่งมอบ ⇒ ไม่แยกการ์ดตามทีมแบบ B2C · key "boq" คงไว้ (ค่าโมดูลที่เลือกค้างใน localStorage)
-    //   Solar B2B ทำโครงการ + BOQ + กรอก Master Data · Purchase ใส่ราคาใน Master Data อย่างเดียว
-    //   Purchase เห็น "จัดซื้อ" (งบต้นทุนจาก BOQ ที่ได้งาน — ไม่เห็นราคาขาย) + "วัสดุและราคา"
-    //   🏭 = emoji Unicode 6 ฟอนต์ Windows มีแน่ (เหตุผลเดียวกับ 📋 ของ Package O&M)
-    key: "boq", label: "โครงการ B2B", emoji: "🏭", tint: "bg-teal-50",
+    // key "boq" คงไว้ = การ์ดขาย (ค่าโมดูลที่เลือกค้างใน localStorage ตั้งแต่ยังเป็นการ์ด BOQ แผน 20261005-01)
+    key: "boq", label: "ขาย B2B", emoji: "💼", tint: "bg-teal-50",
     group: "b2b",
-    desc: "โอกาสขาย → ส่งมอบ · BOQ · วัสดุและราคา",
-    roles: ["b2b", "purchase", "b2b_review1", "b2b_review2", "b2b_review3", "admin"],
+    desc: "โอกาสขาย · BOQ · ใบเสนอราคา · ได้งาน",
+    roles: B2B_TEAM,
     menu: [
-      { label: "ทั้งหมด", href: "/b2b/projects", icon: <I d={D.lines} />, roles: ["b2b", "b2b_review1", "b2b_review2", "b2b_review3", "admin"], steps: [3100, 3200, 3300, 3400, 3500, 3600, 3700, 3800, 3900] },
-      { label: "โอกาสขาย", href: "/b2b/projects?stage=3100", icon: <PhoneIcon className="w-6 h-6" strokeWidth={2} />, roles: ["b2b", "b2b_review1", "b2b_review2", "b2b_review3", "admin"], steps: [3100] },
+      { label: "ทั้งหมด", href: "/b2b/projects?stage=sales", icon: <I d={D.lines} />, steps: [3100, 3200, 3300, 3400, 3500] },
+      { label: "โอกาสขาย", href: "/b2b/projects?stage=3100", icon: <PhoneIcon className="w-6 h-6" strokeWidth={2} />, steps: [3100] },
       {
-        label: "เสนอราคา", icon: <DocumentIcon className="w-6 h-6" strokeWidth={2} />, roles: ["b2b", "b2b_review1", "b2b_review2", "b2b_review3", "admin"],
+        label: "เสนอราคา", icon: <DocumentIcon className="w-6 h-6" strokeWidth={2} />,
         children: [
           { label: "ราคาประมาณการ", href: "/b2b/projects?stage=3200", icon: <DocumentIcon className="w-6 h-6" strokeWidth={2} />, steps: [3200] },
           { label: "สำรวจ", href: "/b2b/projects?stage=3300", icon: <I d={D.mapPin} />, steps: [3300] },
           { label: "ราคายืนยัน/ต่อรอง", href: "/b2b/projects?stage=3400", icon: <DocumentIcon className="w-6 h-6" strokeWidth={2} />, steps: [3400] },
         ],
       },
-      { label: "ได้งาน", href: "/b2b/projects?stage=3500", icon: <I d={D.checkCircle} />, roles: ["b2b", "b2b_review1", "b2b_review2", "b2b_review3", "admin"], steps: [3500] },
-      {
-        label: "ดำเนินโครงการ", icon: <I d={D.wrench} />, roles: ["b2b", "b2b_review1", "b2b_review2", "b2b_review3", "admin"],
-        children: [
-          { label: "ขออนุญาต/จัดซื้อ", href: "/b2b/projects?stage=3600", icon: <I d={D.clipboard} />, steps: [3600] },
-          { label: "ติดตั้ง", href: "/b2b/projects?stage=3700", icon: <I d={D.wrench} />, steps: [3700] },
-          { label: "ขนานไฟ", href: "/b2b/projects?stage=3800", icon: <BoltIcon className="w-6 h-6" strokeWidth={2} />, steps: [3800] },
-          { label: "ส่งมอบ", href: "/b2b/projects?stage=3900", icon: <I d={D.shield} />, steps: [3900] },
-        ],
-      },
-      { label: "ปิดโครงการ", href: "/b2b/projects?stage=closed", icon: <CheckIcon className="w-6 h-6" strokeWidth={2} />, roles: ["b2b", "b2b_review1", "b2b_review2", "b2b_review3", "admin"], steps: [3950], noModuleCount: true },
-      { label: "แพ้งาน/ยกเลิก", href: "/b2b/projects?stage=lost", icon: <XIcon className="w-6 h-6" strokeWidth={2} />, roles: ["b2b", "b2b_review1", "b2b_review2", "b2b_review3", "admin"], steps: [3980, 3990], noModuleCount: true },
-      { label: "รายการ BOQ", href: "/b2b/boq", icon: <I d={D.clipboard} />, roles: ["b2b", "b2b_review1", "b2b_review2", "b2b_review3", "admin"] },
-      // Purchase กดการ์ดแล้วลงหน้านี้ — hub เลือกเมนูแรกที่ role เห็น · badge = รายการที่รอ Purchase ใส่ราคา
-      // ชื่อเมนู = หัวเรื่องหน้า (หน้า Master Data วัสดุ) — สั้นพอให้อยู่บรรทัดเดียวคู่กับ badge 3 หลัก
-      { label: "วัสดุและราคา", href: "/b2b/materials", icon: <I d={D.archive} />, roles: ["b2b", "purchase", "admin"], subs: [B2B_PENDING_PRICE_SUB] },
-      // Purchase (อยู่หลังวัสดุและราคา — กดการ์ดยังลงหน้าราคาเหมือนเดิม): โครงการที่รับงวด 1 แล้ว + งบต้นทุน · badge = ขั้น 3600 ที่ยังไม่บันทึกสั่งของครบ
-      { label: "จัดซื้อ", href: "/b2b/procurement", icon: <I d={D.truck} />, roles: ["b2b", "purchase", "admin"], subs: [B2B_PROCURE_PENDING_SUB] },
+      { label: "ได้งาน", href: "/b2b/projects?stage=3500", icon: <I d={D.checkCircle} />, steps: [3500] },
+      { label: "แพ้งาน/ยกเลิก", href: "/b2b/projects?stage=lost", icon: <XIcon className="w-6 h-6" strokeWidth={2} />, steps: [3980, 3990], noModuleCount: true },
+      { label: "รายการ BOQ", href: "/b2b/boq", icon: <I d={D.clipboard} /> },
+      // Solar B2B กรอก Master Data ระหว่างทำ BOQ — badge รอราคาเป็นงานของ Purchase จึงไม่นับเข้าการ์ดนี้ (นับที่การ์ดจัดซื้อ)
+      { label: "วัสดุและราคา", href: "/b2b/materials", icon: <I d={D.archive} />, roles: ["b2b", "admin"], subs: [B2B_PENDING_PRICE_SUB], noModuleCount: true },
+    ],
+  },
+  {
+    key: "b2b_project", label: "โครงการ B2B", emoji: "🏭", tint: "bg-indigo-50",
+    group: "b2b",
+    desc: "ขออนุญาต · ติดตั้ง · ขนานไฟ · ส่งมอบ",
+    roles: B2B_TEAM,
+    menu: [
+      { label: "ทั้งหมด", href: "/b2b/projects?stage=exec", icon: <I d={D.lines} />, steps: [3600, 3700, 3800, 3900] },
+      { label: "ขออนุญาต/จัดซื้อ", href: "/b2b/projects?stage=3600", icon: <I d={D.clipboard} />, steps: [3600] },
+      { label: "ติดตั้ง", href: "/b2b/projects?stage=3700", icon: <I d={D.wrench} />, steps: [3700] },
+      { label: "ขนานไฟ", href: "/b2b/projects?stage=3800", icon: <BoltIcon className="w-6 h-6" strokeWidth={2} />, steps: [3800] },
+      { label: "ส่งมอบ", href: "/b2b/projects?stage=3900", icon: <I d={D.shield} />, steps: [3900] },
+      { label: "ปิดโครงการ", href: "/b2b/projects?stage=closed", icon: <CheckIcon className="w-6 h-6" strokeWidth={2} />, steps: [3950], noModuleCount: true },
+    ],
+  },
+  {
+    // Purchase เห็นการ์ดนี้การ์ดเดียว — ใส่ราคาใน Master Data + สั่งของตามงบต้นทุน BOQ ที่ได้งาน (ไม่เห็นราคาขาย)
+    key: "b2b_purchase", label: "จัดซื้อ B2B", emoji: "🚚", tint: "bg-lime-50",
+    group: "b2b",
+    desc: "ราคาวัสดุ · สั่งของตามงบ BOQ",
+    roles: ["purchase", "b2b", "admin"],
+    menu: [
+      // กดการ์ดแล้วลงหน้านี้ · badge = รายการที่รอ Purchase ใส่ราคา · ชื่อเมนู = หัวเรื่องหน้า สั้นพอให้อยู่บรรทัดเดียวคู่กับ badge 3 หลัก
+      { label: "วัสดุและราคา", href: "/b2b/materials", icon: <I d={D.archive} />, subs: [B2B_PENDING_PRICE_SUB] },
+      // โครงการที่รับงวด 1 แล้ว + งบต้นทุน · badge = ขั้น 3600 ที่ยังไม่บันทึกสั่งของครบ
+      { label: "จัดซื้อ", href: "/b2b/procurement", icon: <I d={D.truck} />, subs: [B2B_PROCURE_PENDING_SUB] },
     ],
   },
   {

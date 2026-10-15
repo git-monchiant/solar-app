@@ -8,12 +8,12 @@ import { apiFetch } from "@/lib/api";
 import { useActiveMenuItem } from "@/lib/hooks/useActiveModule";
 import { hasRole, useActiveRoles } from "@/lib/roles";
 import { formatThaiDate, formatTHB } from "@/lib/utils/formatters";
-import { B2B_FLOW, B2B_MAX_MOVABLE_STAGE, B2B_PROJECT_ROLES, B2B_PROJECT_VIEW_ROLES, B2B_STAGE, stageLabel, type B2bProjectRow } from "@/lib/b2b/project";
+import { B2B_FLOW, B2B_MAX_MOVABLE_STAGE, B2B_PROJECT_ROLES, B2B_PROJECT_VIEW_ROLES, B2B_STAGE, stageGroupOf, stageLabel, type B2bProjectRow } from "@/lib/b2b/project";
 import StageBadge from "@/components/b2b/project/StageBadge";
 import ProjectFormModal from "@/components/b2b/project/ProjectFormModal";
 
 // รายการโครงการ B2B — แผน docs/plan/20261015-07-b2b-project-flow.md เฟส 1
-// ?stage= ตามเมนู (ไม่มี = ทุกโครงการที่ยังเปิด) · สลับ รายการ / กระดานตามขั้น (คำถามข้อ 6 · เคาะ "ตามเสนอ")
+// ?stage= ตามเมนู (ไม่มี = ทุกโครงการที่ยังเปิด · sales/exec = "ทั้งหมด" ของการ์ดขาย/โครงการ) · สลับ รายการ / กระดานตามขั้น (คำถามข้อ 6 · เคาะ "ตามเสนอ")
 // มูลค่า = ราคาขายของ BOQ ที่บันทึกล่าสุด (ก่อน VAT) — ใบเสนอราคา/สัญญามาในเฟส 2–3
 
 // มุมมองที่เลือกจำไว้ในเครื่อง (ของแต่ละคน) — localStorage ใช้ไม่ได้ (โหมดส่วนตัว) ยังสลับได้ด้วยค่าในหน่วยความจำ
@@ -64,10 +64,10 @@ export default function B2bProjectListPage() {
     return (rows ?? []).filter((r) => !q || [r.code, r.name, r.customer_name, r.location, r.owner_name].some((x) => (x ?? "").toLowerCase().includes(q)));
   }, [rows, search]);
 
-  // คอลัมน์กระดาน: ขั้นที่เดินได้ในเฟสนี้เสมอ + ขั้นอื่นที่มีโครงการอยู่จริง
+  // คอลัมน์กระดาน: กลุ่มของการ์ด (sales/exec/closed/lost) = ทุกขั้นในกลุ่ม · ทั้งหมด = ขั้นขายเสมอ + ขั้นอื่นที่มีโครงการอยู่จริง
   const columns = useMemo(() => {
-    if (stage === "lost") return [B2B_STAGE.lost, B2B_STAGE.cancelled];
-    if (stage === "closed") return [B2B_STAGE.closed];
+    const g = stage !== "open" ? stageGroupOf(stage) : null;
+    if (g) return [...g];
     if (/^\d{4}$/.test(stage)) return [Number(stage)];
     const present = new Set(shown.map((r) => r.stage));
     return B2B_FLOW.map((s) => s.step as number).filter((s) => s <= B2B_MAX_MOVABLE_STAGE || present.has(s));
@@ -85,6 +85,8 @@ export default function B2bProjectListPage() {
   if (!rows) return <Loading />;
 
   const open = (r: B2bProjectRow) => router.push(`/b2b/projects/${r.id}`);
+  // สร้างโครงการ = ขั้นโอกาสขาย → ปุ่มอยู่เฉพาะรายการฝั่งขาย (การ์ดโครงการ/ปิด/แพ้ ไม่มี)
+  const canCreateHere = stage === "open" || stage === "sales" || stage === "3100";
   const num = "px-3 py-2 text-right tabular-nums whitespace-nowrap";
   const toggleBtn = (v: View, text: string) => (
     <button type="button" onClick={() => pickView(v)} style={{ minHeight: 0 }} aria-pressed={view === v}
@@ -101,7 +103,7 @@ export default function B2bProjectListPage() {
           <div className="inline-flex rounded-lg border border-gray-200 overflow-hidden divide-x divide-gray-200">
             {toggleBtn("list", "รายการ")}{toggleBtn("board", "กระดาน")}
           </div>
-          {canEdit && (
+          {canEdit && canCreateHere && (
             <button type="button" onClick={() => setCreating(true)}
               className="h-8 px-5 rounded-lg bg-primary text-white text-sm font-semibold hover:bg-primary-dark transition-colors">+ สร้างโครงการ</button>
           )}
@@ -109,7 +111,7 @@ export default function B2bProjectListPage() {
 
         {shown.length === 0 ? (
           <div className="rounded-xl bg-white border border-gray-300 px-5 py-10 text-center text-sm text-gray-400">
-            {rows.length === 0 ? (stage === "open" ? "ยังไม่มีโครงการ — กด \"+ สร้างโครงการ\" เพื่อเริ่ม" : "ไม่มีโครงการในขั้นนี้") : "ไม่พบโครงการตามคำค้น"}
+            {rows.length === 0 ? (canEdit && canCreateHere ? "ยังไม่มีโครงการ — กด \"+ สร้างโครงการ\" เพื่อเริ่ม" : "ไม่มีโครงการในขั้นนี้") : "ไม่พบโครงการตามคำค้น"}
           </div>
         ) : view === "list" ? (
           <div className="rounded-xl bg-white border border-gray-300 overflow-x-auto">

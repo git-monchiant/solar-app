@@ -42,6 +42,20 @@ export const B2B_FLOW = [
 ] as const;
 
 export const B2B_OPEN_STAGES = B2B_FLOW.map((s) => s.step);
+/** กลุ่มขั้นของหน้ารายการ (?stage=) — การ์ด "ขาย B2B" = sales · การ์ด "โครงการ B2B" = exec (แยกการ์ดแบบ B2C · 15 ต.ค.) */
+export const B2B_STAGE_GROUPS: Record<string, readonly number[]> = {
+  open: B2B_OPEN_STAGES,
+  sales: [3100, 3200, 3300, 3400, 3500],
+  exec: [3600, 3700, 3800, 3900],
+  closed: [3950],
+  lost: [3980, 3990],
+};
+export const stageGroupOf = (key: string) => (Object.hasOwn(B2B_STAGE_GROUPS, key) ? B2B_STAGE_GROUPS[key] : null);
+/** ปุ่มกลับจากหน้าโครงการ → รายการของการ์ดที่โครงการอยู่ตอนนี้ */
+export function listHrefOf(stage: number): string {
+  const g = Object.keys(B2B_STAGE_GROUPS).find((k) => k !== "open" && B2B_STAGE_GROUPS[k].includes(stage));
+  return `/b2b/projects?stage=${g ?? "sales"}`;
+}
 /** ปุ่ม "ย้ายขั้น" เดินได้ถึงขั้นนี้ — ได้งาน (3500) ผ่านปุ่มได้งานเท่านั้น (เลือกใบที่ส่งลูกค้าแล้ว) · 3600 ขึ้นไปขยับเองตามงวดเงิน/milestone */
 export const B2B_MAX_MOVABLE_STAGE = B2B_STAGE.confirm;
 /** ขั้นที่กด "แพ้งาน" ได้ — หลังได้งานแล้วใช้ "ยกเลิก" */

@@ -199,7 +199,7 @@ export default function B2bBoqListPage() {
                 <Dropdown searchable value={form.project_id} onChange={(v) => setForm({ ...form, project_id: v })}
                   placeholder={projects ? (projects.length ? "เลือกโครงการ" : "ยังไม่มีโครงการที่เปิดอยู่") : "กำลังโหลด…"}
                   options={(projects ?? []).filter((x) => x.stage <= B2B_STAGE.confirm).map((x) => ({ value: String(x.id), label: `${x.code} · ${x.name} · ${x.customer_name}` }))} />
-                <p className="mt-1 text-xs text-gray-400">ยังไม่มีโครงการ? <Link href="/b2b/projects" className="text-primary hover:underline">สร้างโครงการก่อน</Link></p></div>
+                <p className="mt-1 text-xs text-gray-400">ยังไม่มีโครงการ? <Link href="/b2b/projects?stage=sales" className="text-primary hover:underline">สร้างโครงการก่อน</Link></p></div>
               <div><label className="block text-xs font-semibold text-gray-500 mb-1">ชื่อตัวเลือก</label>
                 <input className={fieldCls} value={form.option_label} onChange={(e) => setForm({ ...form, option_label: e.target.value })} placeholder="เช่น 998.64 kWp · Jinko 730" /></div>
               <div className="max-w-[12rem]"><label className="block text-xs font-semibold text-gray-500 mb-1">Margin (% ของราคาขาย)</label>

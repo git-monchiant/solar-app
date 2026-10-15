@@ -11,7 +11,7 @@ import { apiFetch, getUserContextHeaders } from "@/lib/api";
 import { hasRole, useActiveRoles } from "@/lib/roles";
 import { formatThaiDate, formatTHB } from "@/lib/utils/formatters";
 import {
-  B2B_FLOW, B2B_LOSABLE_MAX_STAGE, B2B_PROJECT_ROLES, B2B_PROJECT_VIEW_ROLES, B2B_STAGE, isClosedStage, stageLabel,
+  B2B_FLOW, B2B_LOSABLE_MAX_STAGE, B2B_PROJECT_ROLES, B2B_PROJECT_VIEW_ROLES, B2B_STAGE, isClosedStage, listHrefOf, stageLabel,
   type B2bInstallment, type B2bProject, type B2bUserOption,
 } from "@/lib/b2b/project";
 import StageBadge from "@/components/b2b/project/StageBadge";
@@ -463,7 +463,7 @@ export default function B2bProjectPage({ params }: { params: Promise<{ id: strin
       {/* header ติดบน — แบบหน้าลีด: คอลัมน์ไอคอนกว้างเท่ารางขั้น (เส้นแนวตั้งต่อกัน) | ชื่อ + ป้ายขั้น + ข้อมูลย่อ | ปุ่ม */}
       <div ref={headerRef} className="bg-white border-b border-gray-200 sticky top-0 z-40" style={{ paddingTop: "env(safe-area-inset-top, 0px)" }}>
         <div className="flex items-stretch">
-          <button type="button" onClick={() => router.push("/b2b/projects")} style={{ minHeight: 0 }}
+          <button type="button" onClick={() => router.push(listHrefOf(p.stage))} style={{ minHeight: 0 }}
             className="md:hidden self-center ml-1 p-1.5 rounded-full text-gray-600 hover:bg-gray-200 shrink-0" aria-label="กลับ">
             <ChevronLeftIcon className="w-5 h-5" strokeWidth={2.5} />
           </button>
@@ -472,7 +472,7 @@ export default function B2bProjectPage({ params }: { params: Promise<{ id: strin
           </div>
           <div className="flex-1 min-w-0 px-3 md:px-4 py-2.5">
             <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
-              <Link href="/b2b/projects" className="max-md:hidden text-gray-400 hover:text-gray-600" aria-label="กลับ"><ChevronLeftIcon className="w-5 h-5" strokeWidth={2.5} /></Link>
+              <Link href={listHrefOf(p.stage)} className="max-md:hidden text-gray-400 hover:text-gray-600" aria-label="กลับ"><ChevronLeftIcon className="w-5 h-5" strokeWidth={2.5} /></Link>
               <h1 className="text-lg font-bold text-gray-900 leading-tight">{p.name}</h1>
               <StageBadge stage={p.stage} sub={p.sub} surveyDate={p.survey_date} />
             </div>
