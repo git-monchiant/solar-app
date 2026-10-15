@@ -13,8 +13,8 @@ import { formatSlotsRange } from "@/lib/time-slots";
 /** origin ภายในที่ puppeteer ใช้โหลดเอกสาร — ไม่มีอยู่จริง route ดักคำขอแล้วตอบเองทั้งหมด */
 export const DOC_ORIGIN = "https://om-service-doc.local";
 
-// ข้อมูลบริษัท — ชุดเดียวกับใบส่งมอบงานติดตั้ง (CO ใน install-doc)
-const CO = {
+// ข้อมูลบริษัท — ชุดเดียวกับใบส่งมอบงานติดตั้ง (CO ใน install-doc) · หน้าสรุปของไฟล์รวม (service-doc-pdf.ts) ใช้ด้วย
+export const CO = {
   name: "SENA SOLAR ENERGY CO., LTD.",
   nameTh: "บริษัท เสนาโซลาร์ เอนเนอร์ยี่ จำกัด",
   address: "448 RATCHADAPHISEK RD., SAM SEN NOK, HUAI KHWANG, BANGKOK 10310",

@@ -4,7 +4,7 @@
 // ★ ยก bucket popup ของ /dashboard (Dashboard I) ทั้งก้อน: หัว = ชื่อ (จำนวน) · Excel · ✕ · แถบสรุปเงิน · แถวกดเปิดแท็บใหม่
 //   ต่างแค่เนื้อแถว (บ้าน/ใบงาน O&M) และโหลดรายชื่อตอนกดเปิด (บางตัวเลขเป็นพันหลัง ไม่โหลดรอทั้งหน้า)
 import { useEffect, useState } from "react";
-import { apiFetch } from "@/lib/api";
+import { apiFetch, getUserContextHeaders } from "@/lib/api";
 import { DownloadIcon } from "@/components/ui/icons";
 import { formatTHB } from "@/lib/utils/formatters";
 import { downloadSheet, type SheetCol } from "@/lib/utils/xlsx-sheet";
@@ -31,6 +31,64 @@ type Row = {
 };
 
 const PAGE = 300;
+/** PDF รวมใบบริการ — ชุดเดียวกับ MAX_DOCS ของ /api/om/jobs/docs */
+const MAX_DOCS = 50;
+
+/**
+ * ปุ่ม "PDF รวม" — ใบบริการทุกใบในรายชื่อเป็นไฟล์เดียว (แผน 20261015-03 · ผู้ใช้เคาะ: แท็บปิดงานอย่างเดียว)
+ * ★ API ตรวจสิทธิ์ด้วย header — fetch แล้วดาวน์โหลดเป็น blob (แบบปุ่ม PDF ของ Dashboard I)
+ */
+function BundlePdfButton({ ids, title }: { ids: number[]; title: string }) {
+  const [busy, setBusy] = useState(false);
+  const [msg, setMsg] = useState<{ ok: boolean; text: string } | null>(null);
+  const tooMany = ids.length > MAX_DOCS;
+  const run = async () => {
+    setBusy(true); setMsg(null);
+    try {
+      const qs = new URLSearchParams({ ids: ids.join(","), title: `ใบบริการ O&M · ${title}` });
+      const r = await fetch(`/api/om/jobs/docs?${qs}`, { headers: getUserContextHeaders() });
+      if (!r.ok) throw new Error((await r.json().catch(() => null))?.error ?? `สร้าง PDF รวมไม่สำเร็จ (${r.status})`);
+      const skipped = Number(r.headers.get("X-Om-Docs-Skipped") ?? 0);
+      const url = URL.createObjectURL(await r.blob());
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `ใบบริการ_${title.replace(/[\\/:*?"<>|]/g, "-")}_${new Date().toISOString().slice(0, 10)}.pdf`;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      setTimeout(() => URL.revokeObjectURL(url), 60_000);
+      setMsg({ ok: true, text: skipped
+        ? `รวม ${Number(r.headers.get("X-Om-Docs-Included") ?? 0)} ใบ · ข้าม ${skipped} ใบที่ไม่มีใบตรวจรับงาน (ดูท้ายหน้าแรก)`
+        : `รวม ${ids.length} ใบแล้ว` });
+    } catch (e) {
+      setMsg({ ok: false, text: e instanceof Error ? e.message : String(e) });
+    } finally { setBusy(false); }
+  };
+  return (
+    <span className="relative">
+      <button type="button" onClick={run} disabled={busy || tooMany}
+        title={tooMany ? `รวมได้ครั้งละไม่เกิน ${MAX_DOCS} ใบ` : `รวมใบบริการ ${ids.length} ใบเป็น PDF ไฟล์เดียว (หน้าแรกเป็นหน้าสรุปรายการ)`}
+        className="cursor-pointer inline-flex items-center gap-1.5 h-8 px-3 rounded-lg bg-white border border-gray-200 text-xs font-semibold text-gray-700 hover:border-gray-300 disabled:opacity-60 disabled:cursor-not-allowed transition-colors whitespace-nowrap">
+        {busy ? (
+          <>
+            <div className="w-3.5 h-3.5 border-2 border-gray-300 border-t-gray-600 rounded-full animate-spin" />
+            <span>กำลังรวม {ids.length} ใบ…</span>
+          </>
+        ) : (
+          <>
+            <DownloadIcon className="w-3.5 h-3.5 text-gray-400" strokeWidth={2} />
+            <span>PDF รวม</span>
+          </>
+        )}
+      </button>
+      {msg && (
+        <span className={`absolute right-0 top-full mt-1 z-10 whitespace-nowrap rounded-md px-2 py-1 text-xxs shadow-sm ${msg.ok ? "bg-emerald-50 text-emerald-700 border border-emerald-200" : "bg-red-50 text-red-700 border border-red-200"}`}>
+          {msg.text}
+        </span>
+      )}
+    </span>
+  );
+}
 const thDate = (v: string | null | undefined) =>
   v ? new Date(v).toLocaleDateString("th-TH", { day: "numeric", month: "short", year: "2-digit" }) : "";
 const fmtBaht = (v: number) => `฿${formatTHB(Math.round(v))}`;
@@ -127,6 +185,11 @@ export default function OmDashBucketModal({ spec, onClose }: { spec: BucketSpec 
             {spec.title} {rows && <span className="text-base font-normal text-gray-500 ml-1">({n(rows.length)})</span>}
           </h3>
           <div className="flex items-center gap-2 shrink-0">
+            {/* PDF รวมใบบริการ — แท็บปิดงานอย่างเดียว (ผู้ใช้เคาะ 15 ต.ค. 69) · เรียงตามลำดับในรายชื่อ */}
+            {spec.kind === "tab" && spec.params.k === "closed" && !!rows?.some((r) => r.booking_id) && (
+              <BundlePdfButton title={spec.title}
+                ids={rows.map((r) => r.booking_id).filter((x): x is number => !!x)} />
+            )}
             {!!rows?.length && (
               <button type="button" onClick={() => downloadSheet(COLS[spec.kind], rows, "O&M", spec.title)}
                 className="cursor-pointer inline-flex items-center gap-1.5 h-8 px-3 rounded-lg bg-white border border-gray-200 text-xs font-semibold text-gray-700 hover:border-gray-300 transition-colors"
