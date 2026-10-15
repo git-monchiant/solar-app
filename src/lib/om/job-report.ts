@@ -66,6 +66,24 @@ export async function qcSignerId(db: sql.ConnectionPool): Promise<number | null>
   return parseInt(r.recordset[0]?.value) || null;
 }
 
+/**
+ * ชื่อ + ลายเซ็นของผู้ตรวจสอบ / Q.C. — ใช้ร่วม 2 ที่ ข้อมูลตรงกันเสมอ
+ *   · ใบบริการ PDF (/doc) · ช่อง Q.C. ในใบตรวจรับงานบนหน้าจอ (GET /report)
+ * ใบที่ลงผลแล้วใช้คนที่ล็อกไว้ (qc_user_id) · ยังไม่ลงใช้คนที่ตั้งไว้ตอนนี้
+ * ★ ลายเซ็นเป็น data: URL — puppeteer ตัดคำขอออกนอก DOC_ORIGIN ทั้งหมด (โหลด /api/users/../signature ไม่ได้)
+ */
+export async function loadQcSigner(db: sql.ConnectionPool, lockedId?: number | null) {
+  const qc = { name: null as string | null, sign: null as string | null };
+  const qcId = lockedId ?? await qcSignerId(db);
+  if (!qcId) return qc;
+  const u = (await db.request().input("u", sql.Int, qcId)
+    .query(`SELECT full_name, signature_data, signature_mime FROM users WHERE id = @u`)).recordset[0];
+  qc.name = u?.full_name ?? null;
+  if (u?.signature_data)
+    qc.sign = `data:${u.signature_mime || "image/png"};base64,${Buffer.from(u.signature_data).toString("base64")}`;
+  return qc;
+}
+
 /** ใบงาน + ใบตรวจ (แปลง JSON แล้ว) + หัวข้อในใบ — ไม่พบใบงาน = null */
 export async function loadJobReport(db: sql.ConnectionPool, id: number) {
   const r = await db.request().input("id", sql.Int, id).query(`

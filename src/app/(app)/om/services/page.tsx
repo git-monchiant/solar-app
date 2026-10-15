@@ -17,7 +17,6 @@ import ListPageHeader from "@/components/layout/ListPageHeader";
 import Dropdown from "@/components/ui/Dropdown";
 import { useActiveMenuItem } from "@/lib/hooks/useActiveModule";
 import JobCard from "@/components/om/JobCard";
-import { CheckIcon } from "@/components/ui/icons";
 
 export default function OmServicesPage() {
   const { item: activeItem } = useActiveMenuItem();   // หัวเรื่อง = ชื่อเมนู (กติกา ui-rules)
@@ -36,18 +35,11 @@ export default function OmServicesPage() {
   const [dir, setDir] = useState<"asc" | "desc">("asc");
   const sortDef = SORTS.find((s) => s.k === sort) ?? SORTS[0];
   const [q, setQ] = useState("");
-  // ★ ติ๊ก "งานของฉัน" — ยกบล็อกจาก Pipeline ทั้งก้อน (กติกา ui-rules) รวมถึงการจำค่าไว้
-  //   ผู้ใช้เคาะ 24 ก.ย. 69: งาน O&M ให้อยู่ในโมดูล O&M ก่อน ยังไม่ขึ้นหน้า Today
-  //   ⇒ ตอบ "งานของฉัน" ได้โดยไม่ต้องออกจากโมดูล
-  //   กรองที่ฝั่ง server (mine=1) ไม่ใช่ฝั่ง client เพราะลิสต์แบ่งหน้าอยู่
-  const [mineOnly, setMineOnly] = useState(() => {
-    if (typeof window === "undefined") return false;
-    return localStorage.getItem("om.services.mineOnly") === "1";
-  });
+  // ★ 15 ต.ค. 69 ผู้ใช้สั่งเอาติ๊ก "งานของฉัน" ออก — กรองจากเจ้าของงาน ซึ่งเอาช่องตั้งเจ้าของงานออกไปแล้ว
+  //   (API /api/om/follow ยังรับ mine=1 อยู่ ไม่มีหน้าไหนส่งมาแล้ว)
   const [items, setItems] = useState<Item[] | null>(null);
   const [counts, setCounts] = useState<Record<string, number>>({});
   const [projects, setProjects] = useState<{ project_id: string; project_name: string; n: number }[]>([]);
-  const [total, setTotal] = useState(0);
   const [err, setErr] = useState("");
 
   const load = useCallback(() => {
@@ -55,15 +47,21 @@ export default function OmServicesPage() {
     const p = new URLSearchParams({ tab, sort, dir, size: "40" });
     if (group) p.set("group", group);
     if (q.trim()) p.set("q", q.trim());
-    if (mineOnly) p.set("mine", "1");
     if (origin) p.set("origin", origin);
     apiFetch(`/api/om/follow?${p}`)
       .then((d) => {
         setItems(d.items ?? []); setCounts(d.counts ?? {});
-        setTotal(d.total ?? 0); setProjects(d.projects ?? []);
+        // ★ รายชื่อโครงการนับตามแท็บที่เปิด (แผน 20261015-05) — เลือกโครงการไว้แล้วสลับไปแท็บที่ไม่มีบ้านของโครงการนั้น
+        //   ให้คงชื่อไว้ "· 0" ไม่หายไปเฉย ๆ (ช่องจะว่างทั้งที่ยังกรองอยู่)
+        setProjects((prev) => {
+          const next: typeof prev = d.projects ?? [];
+          if (!group || next.some((x) => x.project_id === group)) return next;
+          const old = prev.find((x) => x.project_id === group);
+          return old ? [...next, { ...old, n: 0 }] : next;
+        });
       })
       .catch((e) => { setErr(e instanceof Error ? e.message : String(e)); setItems([]); });
-  }, [tab, group, sort, dir, q, mineOnly, origin]);
+  }, [tab, group, sort, dir, q, origin]);
   useEffect(() => { const t = setTimeout(load, q ? 350 : 0); return () => clearTimeout(t); }, [load, q]);
 
   const totalAll = Object.values(counts).reduce((s, n) => s + n, 0);
@@ -76,7 +74,6 @@ export default function OmServicesPage() {
             (tabsRight ซ่อนบนจอแคบ ของพวกนี้ต้องใช้บนมือถือได้) */}
       <ListPageHeader
         title={activeItem?.label ?? "งานบริการ"}
-        subtitle="O&M · ติดตาม → (เสนอราคา → ชำระเงิน) → นัดหมาย → เข้างาน → ปิดงาน"
         search={q}
         onSearchChange={setQ}
         searchPlaceholder="ค้นบ้านเลขที่ · ชื่อลูกค้า · เบอร์โทร"
@@ -87,17 +84,16 @@ export default function OmServicesPage() {
       />
 
       <div className="p-3 md:p-4">
-        {/* ★ 24 ก.ย. 69 จัดแถวเครื่องมือตามแนว Pipeline: ซ้าย = จำนวน+กรอง · ขวา = งานของฉัน/เรียง
+        {/* ★ 24 ก.ย. 69 จัดแถวเครื่องมือตามแนว Pipeline: ซ้าย = จำนวน+กรอง · ขวา = เรียง (งานของฉัน เอาออก 15 ต.ค. 69)
             ★ 25 ก.ย. 69 ผู้ใช้สั่งยกเลิกมุมมองแบบตาราง — เหลือแบบการ์ดอย่างเดียว
             ★ 1 ต.ค. 69 ผู้ใช้สั่งให้เรียงเหมือน Pipeline เป๊ะ: 2 ช่อง เรียงตามอะไร + ทิศทาง */}
         <div className="mb-3 flex flex-wrap items-center gap-2 px-1">
-          <span className="text-sm font-bold text-gray-700 whitespace-nowrap">{total.toLocaleString("th-TH")} หลังในแท็บนี้</span>
           {/* ★ 1 ต.ค. 69 ผู้ใช้ขอพิมพ์ค้นได้ + กว้างขึ้น — ขนาด/searchable ชุดเดียวกับช่องโครงการหน้ารายชื่อบ้าน O&M */}
           <Dropdown
             className="w-full md:w-72 font-normal"
             value={group}
             onChange={(v) => setGroup(v)}
-            options={[{ value: "", label: `ทุกโครงการ (${projects.length})` },
+            options={[{ value: "", label: `ทุกโครงการ (${projects.filter((p) => p.n > 0).length})` },
               ...projects.map((p) => ({ value: p.project_id, label: `${p.project_name} · ${p.n}` }))]}
             searchable
           />
@@ -109,21 +105,6 @@ export default function OmServicesPage() {
             options={ORIGIN_OPTIONS}
           />
           <div className="ml-auto flex items-center gap-2">
-            <button
-              type="button"
-              style={{ minHeight: 0 }}
-              onClick={() => {
-                const next = !mineOnly;
-                setMineOnly(next);
-                localStorage.setItem("om.services.mineOnly", next ? "1" : "0");
-              }}
-              className="h-7 inline-flex items-center gap-1.5 px-1 text-xxs font-medium text-gray-700 cursor-pointer whitespace-nowrap"
-            >
-              <span className={`w-3.5 h-3.5 rounded border-2 flex items-center justify-center transition-colors ${mineOnly ? "border-gray-800 bg-gray-800" : "border-gray-300"}`}>
-                {mineOnly && <CheckIcon className="w-2 h-2 text-white" strokeWidth={4} />}
-              </span>
-              งานของฉัน
-            </button>
             <Dropdown
               className="w-36"
               value={sort}
@@ -147,14 +128,6 @@ export default function OmServicesPage() {
         </div>
 
         {err && <div className="mb-3 rounded-lg bg-red-50 border border-red-200 px-4 py-2 text-sm text-red-700">{err}</div>}
-        {tab === "follow" && (
-          // เดิมเป็นกล่องเหลืองเต็มแถว แย่งสายตาจากการ์ด — ย่อเป็นบรรทัดหมายเหตุ
-          <p className="mb-2.5 px-1 flex items-start gap-1.5 text-xxs text-gray-500 leading-relaxed">
-            <span className="shrink-0 w-3.5 h-3.5 mt-px rounded-full border border-gray-400 text-[9px] font-bold flex items-center justify-center">i</span>
-            <span>แท็บนี้<b className="text-gray-700">คำนวณสดจากฐาน</b> (มีระบบติดตั้งและเลยรอบล้างแล้ว) ·
-              แถวงานจะเกิดเมื่อโทรแล้วลูกค้า<b className="text-gray-700">ตกลงนัด</b>หรือ<b className="text-gray-700">ขอเลื่อน</b>เท่านั้น</span>
-          </p>
-        )}
         {items === null ? <Loading /> : items.length === 0 ? (
           <div className="text-center text-gray-400 py-16 text-sm">ไม่มีรายการในแท็บนี้</div>
         ) : (

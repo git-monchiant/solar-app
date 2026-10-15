@@ -16,6 +16,7 @@
 import { DUE_WASH_SQL, isCleaning } from "@/lib/om/entitlement";
 import { ACTIVE_STATUS } from "@/lib/om/booking";
 import { OM_PAY_LIVE_SQL, omHouseSystemSql } from "@/lib/om/om-quotation";
+import { MANUAL_HOUSE_SOURCE } from "@/lib/om/house-origin";
 
 // รายการสถานะงานค้างชุดเดียวกับ booking.ts — เดิมเขียนตายตัวในคิวรี พอเพิ่มสถานะ quote แล้วตกหล่น
 const ACTIVE_SQL = ACTIVE_STATUS.map((s) => `'${s}'`).join(",");
@@ -30,6 +31,12 @@ export const OM_FOLLOW_SCOPE_SQL = `
            - (SELECT COUNT(*) FROM om_redemptions rd
                JOIN om_installations i ON i.id = rd.installation_id
               WHERE i.house_id = h.id AND rd.status <> 'void' AND ${isCleaning("rd")}) balance,
+           -- บ้านที่ทีมเพิ่มเอง (แผน 20261014-08) ที่ยังไม่เคยมีสิทธิ์ล้างเลย = ลูกค้าใหม่ที่ติดต่อเข้ามา
+           --   → อยู่แท็บติดตาม ไม่ใช่สิทธิ์หมด (ผู้ใช้เลือก 15 ต.ค. 69) · ซื้อแพ็กเกจแล้วใช้หมด = สิทธิ์หมดตามปกติ
+           CASE WHEN h.project_map_source = N'${MANUAL_HOUSE_SOURCE}' AND NOT EXISTS (
+                  SELECT 1 FROM om_entitlement_grants g JOIN om_installations i ON i.id = g.installation_id
+                   WHERE i.house_id = h.id AND ${isCleaning("g")})
+                THEN 1 ELSE 0 END new_manual,
            (SELECT CONVERT(char(10), MAX(rd.service_date), 23) FROM om_redemptions rd
              JOIN om_installations i ON i.id = rd.installation_id
             WHERE i.house_id = h.id AND rd.status <> 'void' AND ${isCleaning("rd")}) last_wash,
@@ -176,7 +183,8 @@ export const OM_FOLLOW_SCOPE_SQL = `
              WHEN l.outcome = 'declined'                      THEN 'declined'
              WHEN d.phone IS NULL OR l.outcome = 'wrong_number' THEN 'unreachable'
              WHEN ISNULL(c.no_answer, 0) >= @max              THEN 'unreachable'
-             WHEN d.balance <= 0                              THEN 'noquota'
+             -- ★ กติกา "ต้องเสนอราคาก่อนนัด" ดูจาก balance ไม่ใช่แท็บ (JobDetail · /api/om/follow) — ย้ายแท็บแล้วยังกันนัดฟรีเหมือนเดิม
+             WHEN d.balance <= 0 AND d.new_manual = 0         THEN 'noquota'
              ELSE 'follow'
            END bucket
       INTO #x

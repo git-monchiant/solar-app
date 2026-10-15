@@ -113,6 +113,13 @@ export function normalizePhone(s: string | null | undefined): string | null {
   return null;
 }
 
+// เบอร์ที่คนพิมพ์แทน "ไม่รู้เบอร์" (0000000000 · 0999999999 · 0123456789) — ติดต่อไม่ได้ และถ้าใช้เป็นตัวกันลูกค้าซ้ำ
+// คนที่ไม่เกี่ยวกันจะถูกผูกเป็นคนเดียว (เจอ 15 ต.ค. 69 · ฟอร์มเพิ่มบ้าน O&M แผน 20261015-05)
+export function isPlaceholderPhone(s: string | null | undefined): boolean {
+  const digits = String(s ?? "").replace(/\D/g, "");
+  return /^0(\d)\1{8}$/.test(digits) || digits === "0123456789";
+}
+
 export function formatThaiId(s: string | null | undefined): string {
   if (!s) return DASH;
   const digits = String(s).replace(/\D/g, "");

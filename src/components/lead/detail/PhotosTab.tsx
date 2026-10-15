@@ -376,8 +376,11 @@ function PhotoGrid({ items, upload, emptyPlaceholderCount }: {
 }
 
 // Pick → compress → /api/upload → callback with the canonical URL.
-function UploadTile({ onUploaded, label = "เพิ่มรูป" }: {
-  onUploaded: (url: string) => void | Promise<void>;
+// ★ export ให้แท็บรูปของงานบริการ O&M ใช้ช่องเดียวกัน — ส่ง onFile มาแทน (รูป O&M เก็บนอก public/
+//   ต้องอัปผ่าน /api/om/jobs/<id>/photos ไม่ใช่ /api/upload)
+export function UploadTile({ onUploaded, onFile, label = "เพิ่มรูป" }: {
+  onUploaded?: (url: string) => void | Promise<void>;
+  onFile?: (file: File) => Promise<void>;
   label?: string;
 }) {
   const [busy, setBusy] = useState(false);
@@ -389,10 +392,11 @@ function UploadTile({ onUploaded, label = "เพิ่มรูป" }: {
     setBusy(true);
     try {
       const compressed = await compressSlipFile(file);
+      if (onFile) { await onFile(compressed); return; }
       const fd = new FormData();
       fd.append("file", compressed);
       const up = await apiFetch("/api/upload", { method: "POST", body: fd, headers: { ...getUserIdHeader() } }) as { url: string };
-      await onUploaded(up.url);
+      await onUploaded?.(up.url);
     } catch (e) {
       console.error("upload failed:", e);
     } finally {

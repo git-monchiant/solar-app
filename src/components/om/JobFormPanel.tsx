@@ -355,13 +355,14 @@ export default function JobFormPanel({ jobId, wrapClass = "h-full overflow-auto 
   const [checks, setChecks] = useState<Checks>({});
   const [measures, setMeasures] = useState<Record<string, string>>({});
   const [note, setNote] = useState("");
-  const [result, setResult] = useState<"pass" | "fail">("pass");
   const [method, setMethod] = useState<"onsite_sign" | "line_otp" | "tech_proxy">("onsite_sign");
   const [proxyReason] = useState(PROXY_REASONS[0]);   // ไม่มีตัวเลือกช่างเซ็นแทนแล้ว (1 ต.ค. 69) — คงไว้ให้ save ส่งค่าเดิม
   const [techSign, setTechSign] = useState<string | null>(null);
   const [custSign, setCustSign] = useState<string | null>(null);
   const [jobNoTxt, setJobNo] = useState<string | null>(null);
   const [photos, setPhotos] = useState<JobPhoto[]>([]);
+  // ผู้ตรวจสอบ / Q.C. — ชื่อ + ลายเซ็นมาจาก GET /report (ลงอัตโนมัติ ไม่ต้องเซ็น)
+  const [qc, setQc] = useState<{ name: string | null; sign: string | null } | null>(null);
   // พบงานซ่อม (แผน 20260924-02 เฟส 5) — ช่างแจ้ง ทีม O&M เปิดใบงานซ่อมต่อจากหน้ารายละเอียด
   const [repair, setRepair] = useState(false);
   const [repairDetail, setRepairDetail] = useState("");
@@ -380,14 +381,14 @@ export default function JobFormPanel({ jobId, wrapClass = "h-full overflow-auto 
 
   const load = useCallback(() => {
     apiFetch(`/api/om/jobs/${id}/report`)
-      .then((d: { job: Job; report: Report | null; form: FormWithItems | null }) => {
+      .then((d: { job: Job; report: Report | null; form: FormWithItems | null; qc?: { name: string | null; sign: string | null } }) => {
         setJob(d.job);
         setForm(d.form);
+        setQc(d.qc ?? null);
         if (d.report) {
           setChecks(d.report.checks ?? {});
           setMeasures(Object.fromEntries(Object.entries(d.report.measures ?? {}).map(([k, v]) => [k, v == null ? "" : String(v)])));
           setNote(d.report.note ?? "");
-          if (d.report.result === "fail") setResult("fail");
           setTechSign(d.report.tech_sign ?? null);
           setCustSign(d.report.cust_sign ?? null);
           setJobNo(d.report.job_no ?? null);
@@ -423,7 +424,8 @@ export default function JobFormPanel({ jobId, wrapClass = "h-full overflow-auto 
         checks, note,
         repair_needed: repair, repair_detail: repair ? repairDetail.trim() : null,
         measures: Object.fromEntries(Object.entries(measures).map(([k, v]) => [k, v === "" ? null : Number(v)])),
-        result: close ? result : null,
+        // ★ 15 ต.ค. 69 ผลตรวจคิดจากข้อที่ติ๊ก (ไม่มีปุ่มเลือกแล้ว) — API คิดซ้ำเองอยู่ดี ค่านี้แค่บอกว่า "ปิดงาน"
+        result: close ? ((form?.items ?? []).some((it) => it.kind === "bool" && checks[it.code]?.pass === false) ? "fail" : "pass") : null,
         tech_sign: techSign, cust_sign: custSign,
         cust_name: job?.customer_name ?? null,
         close_method: close ? method : null,
@@ -458,6 +460,18 @@ export default function JobFormPanel({ jobId, wrapClass = "h-full overflow-auto 
   const fails = failCount(checks, items);
   const closed = job.status === "closed";
   const last = steps.length - 1;
+  // ★ 15 ต.ค. 69 ผู้ใช้สั่ง: ขั้นตรวจกรอกไม่ครบ กดถัดไปไม่ได้ — นับเฉพาะข้อที่ใบตรวจตั้ง required (ใบในฐานตั้งไว้ครบทุกข้อ)
+  //   ผ่าน/ไม่ผ่าน ต้องเลือก · ช่องวัดค่าต้องเป็นตัวเลข · ข้อ text/photo ยังไม่มีที่เก็บคำตอบ ไม่นับ
+  //   API ตรวจซ้ำตอนปิดงาน (PUT /report ที่มีผลตรวจ) — กันข้ามไปขั้นส่งมอบแล้วกดปิด
+  const missingChecks = items.filter((it) => it.required && (
+    it.kind === "bool" ? typeof checks[it.code]?.pass !== "boolean"
+    : it.kind === "num" ? (measures[it.code] ?? "") === "" || !Number.isFinite(Number(measures[it.code]))
+    : false));
+  // ErrorPopup แยกรายการด้วย "," — ไม่เกิน 8 แถว ที่เหลือรวบเป็นบรรทัดเดียว
+  const missingText = missingChecks.length
+    ? [...missingChecks.slice(0, 8).map((it) => it.label_th.replace(/,/g, " ")),
+       ...(missingChecks.length > 8 ? [`และอีก ${missingChecks.length - 8} ข้อ`] : [])].join(",")
+    : null;
 
   // ประตูเดียวกับปุ่มถัดไป + แท็บขั้นย่อย (แบบ onSubStepChange ของ InstallStep)
   // ★ ข้อมูลที่กรอกไม่หายตอนสลับขั้นย่อย (state อยู่ที่ใบ) · ไม่บันทึกอัตโนมัติ เพราะ PUT เขียน Activity log ทุกครั้ง
@@ -467,6 +481,8 @@ export default function JobFormPanel({ jobId, wrapClass = "h-full overflow-auto 
       setNextError(appt.canNext ? "ช่างยังไม่ถึงหน้างาน — กด ถัดไป ที่แท็บนัดเมื่อถึงหน้างาน" : "ลูกค้ายังไม่ยืนยันนัด — กด ลูกค้ายืนยันแล้ว ที่แท็บนัดก่อน");
       return;
     }
+    // ขั้นตรวจยังไม่ครบ — ไปขั้นรูป · บันทึก / ส่งมอบ ไม่ได้ (ทั้งปุ่มถัดไปและกดแถบขั้นย่อยข้ามไป)
+    if (!closed && n > subStep && n - off >= 1 && missingText) { setNextError(missingText); return; }
     if (!closed && n > subStep && n - off > 1 && repair && !repairDetail.trim()) {
       setNextError("อาการ / สิ่งที่ต้องซ่อม (ติ๊กพบงานซ่อมไว้)"); return;
     }
@@ -504,6 +520,7 @@ export default function JobFormPanel({ jobId, wrapClass = "h-full overflow-auto 
       setErr(`ใบงานยังไม่ถึงขั้นเข้างาน (ตอนนี้ "${statusLabel(job.status)}") — ยืนยันนัดที่ขั้นนัดหมายก่อน`);
       return;
     }
+    if (missingText) { setNextError(missingText); return; }   // ใบตรวจไม่ครบ (เช่นใบที่จำขั้นย่อยส่งมอบไว้ก่อนมีกติกานี้)
     const missing = method === "onsite_sign" && !custSign ? "ลายเซ็นลูกค้า"
       : method === "tech_proxy" && !techSign ? "ลายเซ็นช่าง (เซ็นแทนลูกค้า)" : null;
     if (missing) { setNextError(missing); return; }
@@ -696,19 +713,9 @@ export default function JobFormPanel({ jobId, wrapClass = "h-full overflow-auto 
             {/* ── ขั้นย่อย 3: ส่งมอบ — ผลการตรวจ · วิธีปิดงาน · ลายเซ็น ── */}
             {inner === 2 && (
               <>
-                <div className={SECTION}>
-                  <SectionHead icon={<CheckIcon className="w-4 h-4" />} en="Result" th="ผลการตรวจ"
-                    right={fails > 0 ? <span className="text-red-600 font-semibold">ไม่ผ่าน {fails} ข้อ</span> : undefined} />
-                  <div className="grid grid-cols-2 md:grid-cols-7 gap-2">
-                    <button type="button" disabled={closed} onClick={() => setResult("pass")} className={PASS_BTN(result === "pass")}>ผ่าน</button>
-                    <button type="button" disabled={closed} onClick={() => setResult("fail")} className={FAIL_BTN(result === "fail")}>ไม่ผ่าน</button>
-                  </div>
-
-                  {/* ★ 1 ต.ค. 69 ผู้ใช้สั่งเอาตัวเลือก "ปิดงานด้วยวิธีไหน" (ลูกค้าเซ็น / LINE / ช่างเซ็นแทน) ออก
-                      ⇒ ปิดงานแบบลูกค้าเซ็นที่หน้างานอย่างเดียว (method ค่าเริ่มต้น onsite_sign · ต้องมีลายเซ็นลูกค้า)
-                      ใบเก่าที่ปิดด้วยวิธีอื่นยังจำค่าเดิมไว้ (โหลดจาก close_method) */}
-                </div>
-
+                {/* ★ 15 ต.ค. 69 ผู้ใช้สั่งเอากล่อง "RESULT ผลการตรวจ" (ปุ่มผ่าน/ไม่ผ่าน) ออก — เลือกเองแล้วขัดกับหน้าตรวจได้
+                    (เจอ 2 ใบ: เลือก "ผ่าน" ทั้งที่ติ๊กไม่ผ่าน 1–2 ข้อ) ⇒ ผลตรวจคิดจากข้อที่ติ๊ก: มีข้อไม่ผ่าน = ไม่ผ่าน
+                    PDF / หน้าสรุป / Timeline ยังแสดงผลตรวจเหมือนเดิม · ปิดงานแบบลูกค้าเซ็นที่หน้างานอย่างเดียว (1 ต.ค. 69) */}
                 <div className={SECTION}>
                   <SectionHead icon={<UserIcon className="w-4 h-4" />} en="Signatures" th="ลายเซ็น" />
                   <div className="grid gap-3 md:grid-cols-3">
@@ -716,13 +723,19 @@ export default function JobFormPanel({ jobId, wrapClass = "h-full overflow-auto 
                       required={method === "tech_proxy"} disabled={closed} />
                     <SignPad label="ลูกค้า" value={custSign} onChange={setCustSign}
                       required={method === "onsite_sign"} disabled={closed} />
+                    {/* ★ 15 ต.ค. 69 ผู้ใช้สั่งแสดงลายเซ็นอัตโนมัติ — ผู้ลงนามใบรับประกัน/O&M (ตั้งค่า)
+                        คนเดียวกับในใบบริการ PDF · ไม่ต้องเซ็นที่หน้างาน */}
                     <div className="space-y-2">
-                      <label className={FIELD_LABEL}>
-                        ผู้ตรวจสอบ / Q.C. <span className="text-xxs px-2 py-0.5 rounded-full bg-amber-100 text-amber-800">ยังไม่บังคับ</span>
-                      </label>
-                      <div className="h-32 rounded-lg border border-dashed border-gray-300 bg-white flex items-center justify-center text-sm text-gray-300">
-                        เว้นไว้ก่อน
+                      <label className={FIELD_LABEL}>ผู้ตรวจสอบ / Q.C.</label>
+                      <div className={`h-32 rounded-lg border bg-white flex items-center justify-center overflow-hidden ${qc?.sign ? "border-gray-200" : "border-dashed border-gray-300"}`}>
+                        {qc?.sign
+                          // eslint-disable-next-line @next/next/no-img-element
+                          ? <img src={qc.sign} alt="ลายเซ็นผู้ตรวจสอบ" className="max-h-full max-w-full object-contain" />
+                          : <span className="px-3 text-center text-sm text-gray-300">
+                              {qc?.name ? "ผู้ลงนามยังไม่มีลายเซ็น" : "ยังไม่ได้ตั้งผู้ลงนาม (ตั้งค่า › ผู้ลงนามใบรับประกัน/O&M)"}
+                            </span>}
                       </div>
+                      {qc?.name && <div className="h-8 flex items-center justify-center text-xs font-semibold text-gray-600">{qc.name}</div>}
                     </div>
                   </div>
                   {!closed && <div className="mt-3 text-xxs text-gray-500">บันทึกพิกัดและเวลาอัตโนมัติตอนกดปิดงาน</div>}

@@ -7,6 +7,7 @@ import * as XLSX from "xlsx-js-style";
 
 import { apiFetch, getUserIdHeader } from "@/lib/api";
 import { getWithTtl, setWithTtl, TWO_HOURS_MS } from "@/lib/storage-ttl";
+import { sheetOf, type SheetCol } from "@/lib/utils/xlsx-sheet";
 import { useEffect, useMemo, useState } from "react";
 import { useOpenLead } from "@/lib/hooks/useOpenLead";
 import { LeadLink } from "@/components/lead/LeadLink";
@@ -90,35 +91,9 @@ type ProspectRow = {
   interest_reasons: string | null; lead_id: number | null; created_at: string | null;
 };
 
-// Both popup exports describe their sheet as a column spec, then hand it here.
-// A column with nothing in it for this particular bucket is dropped instead of
-// shipping an empty strip: the ยังไม่จอง list has no order yet, so six money
-// columns and เหตุผลที่ยกเลิก would all be blank. `always` pins the few columns
-// that identify a row even when they happen to be empty.
-type SheetCol<T> = { label: string; wch: number; always?: boolean; value: (row: T) => string | number };
-
-function sheetOf<T>(cols: SheetCol<T>[], rows: T[], sheetName: string) {
-  const cells = rows.map(r => cols.map(c => c.value(r)));
-  const used = cols.filter((c, i) => c.always || cells.some(row => row[i] !== ""));
-  const keep = cols.map((c, i) => c.always || cells.some(row => row[i] !== ""));
-  const aoa: (string | number)[][] = [
-    used.map(c => c.label),
-    ...cells.map(row => row.filter((_, i) => keep[i])),
-  ];
-  const ws = XLSX.utils.aoa_to_sheet(aoa);
-  ws["!cols"] = used.map(c => ({ wch: c.wch }));
-  // Frozen panes aren't in this library's writer — ws["!freeze"] silently did
-  // nothing — so the header row gets filter dropdowns instead, which is what
-  // the frozen row was meant to help with anyway.
-  ws["!autofilter"] = { ref: XLSX.utils.encode_range({ s: { r: 0, c: 0 }, e: { r: rows.length, c: Math.max(used.length - 1, 0) } }) };
-  used.forEach((_, c) => {
-    const ref = XLSX.utils.encode_cell({ r: 0, c });
-    if (ws[ref]) ws[ref].s = { font: { bold: true }, fill: { fgColor: { rgb: "F3F4F6" } } };
-  });
-  const wb = XLSX.utils.book_new();
-  XLSX.utils.book_append_sheet(wb, ws, sheetName);
-  return wb;
-}
+// Both popup exports describe their sheet as a column spec (SheetCol) and hand
+// it to sheetOf — moved to src/lib/utils/xlsx-sheet.ts so the O&M overview can
+// share it (แผน 20261015-02).
 
 // interest_reasons is a CSV of reason codes ("save_bill,has_ev"). The card,
 // the popup and the export all split it the same way through these two.

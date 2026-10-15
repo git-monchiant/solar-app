@@ -23,7 +23,9 @@ export interface HouseDetail {
     rem_checked_at: string | null; source_batch_id: number | null; batch_file: string | null;
     batch_note: string | null; batch_at: string | null; po_number: string | null; created_at: string | null }[];
   grants: { id: number; qty: number; source: string; reason: string | null; created_at: string;
-    service_type_id: number; service_type: string; contract_term?: string | null }[];
+    service_type_id: number; service_type: string; contract_term?: string | null;
+    /** ใครเพิ่ม/ลด + เมื่อไร (15 ต.ค. 69) — แถวนำเข้าไม่มีคนสร้าง = null */
+    created_by_name?: string | null; created_dt?: string | null }[];
   redemptions: { id: number; service_date: string; note?: string | null;
     service_type_id: number; service_type: string }[];
   // ★ ยอดสิทธิ์คงเหลือแยกตามประเภทงาน (9 ก.ย. 69) — ล้างแผงเป็นแค่ชนิดหนึ่ง ไม่ใช่ทั้งหมด

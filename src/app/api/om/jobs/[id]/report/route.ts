@@ -4,7 +4,7 @@ import { OM_WORK_ROLES } from "@/lib/om/om-roles";
 import { sql } from "@/lib/db";
 import { getOmDb } from "@/lib/om/line";
 import { failCount, jobNo, type Checks } from "@/lib/om/job-form";
-import { loadForm, loadJobReport, qcSignerId } from "@/lib/om/job-report";
+import { loadForm, loadJobReport, loadQcSigner, qcSignerId } from "@/lib/om/job-report";
 import { logBooking } from "@/lib/om/booking-log";
 
 // ใบตรวจรับงาน / ใบบริการ ของงานหน้างาน — ★ ตารางเดียว om_job_report
@@ -21,7 +21,9 @@ export async function GET(req: NextRequest, ctx: { params: Promise<{ id: string 
   const db = await getOmDb();
   const data = await loadJobReport(db, id);
   if (!data) return NextResponse.json({ error: "ไม่พบใบงานนี้" }, { status: 404 });
-  return NextResponse.json(data);
+  // ★ 15 ต.ค. 69 ผู้ใช้สั่งให้ช่อง Q.C. แสดงลายเซ็นอัตโนมัติ — ชุดเดียวกับที่ใบบริการ PDF ใช้
+  const qc = await loadQcSigner(db, (data.report as { qc_user_id?: number | null } | null)?.qc_user_id);
+  return NextResponse.json({ ...data, qc });
 }
 
 // PUT — บันทึกใบตรวจรับงาน (สร้างถ้ายังไม่มี) · ส่ง close: true เพื่อปิดงานไปเลย
@@ -48,6 +50,24 @@ export async function PUT(req: NextRequest, ctx: { params: Promise<{ id: string 
   // ใบไหน + ข้อไหนบ้าง — ต้องรู้ก่อนถึงคิด fail_count ได้ และเก็บ form_id ลงใบงานด้วย
   const { head, items } = await loadForm(db, id);
   const fails = failCount(checks, items);
+
+  // ★ 15 ต.ค. 69 ผู้ใช้สั่ง: ใบตรวจกรอกไม่ครบห้ามไปต่อ — หน้าจอกันปุ่มถัดไปแล้ว ที่นี่กันตอนลงผลตรวจ (ปิดงาน)
+  //   บันทึกร่าง (ไม่มีผลตรวจ) ยังกรอกค้างไว้ได้ · นับเฉพาะข้อ required ชนิดผ่าน/ไม่ผ่าน + วัดค่า (ชุดเดียวกับหน้าจอ)
+  if (b.result === "pass" || b.result === "fail") {
+    const ms = (b.measures ?? {}) as Record<string, unknown>;
+    const miss = items.filter((it) => it.required && (
+      it.kind === "bool" ? typeof checks[it.code]?.pass !== "boolean"
+      : it.kind === "num" ? !(typeof ms[it.code] === "number" && Number.isFinite(ms[it.code]))
+      : false));
+    if (miss.length)
+      return NextResponse.json({ error: `ใบตรวจยังกรอกไม่ครบ ${miss.length} ข้อ — ${miss.slice(0, 5).map((it) => it.label_th).join(" · ")}${miss.length > 5 ? " …" : ""}` }, { status: 400 });
+  }
+  // ★ 15 ต.ค. 69 ผลตรวจคิดจากข้อที่ติ๊ก ไม่เชื่อค่าที่ส่งมา (เอาปุ่มผ่าน/ไม่ผ่านของขั้นส่งมอบออกแล้ว)
+  //   มีข้อผ่าน/ไม่ผ่านที่ติ๊ก "ไม่ผ่าน" แม้ข้อเดียว = ไม่ผ่าน · ส่ง result มา = กำลังลงผล (ปิดงาน) · ไม่ส่ง = บันทึกร่าง
+  //   เดิมเลือกเองแล้วขัดกันได้ (เจอ 2 ใบ: "ผ่าน" ทั้งที่ติ๊กไม่ผ่าน 1–2 ข้อ)
+  const result = b.result === "pass" || b.result === "fail"
+    ? (items.some((it) => it.kind === "bool" && checks[it.code]?.pass === false) ? "fail" : "pass")
+    : null;
   const qc = await qcSignerId(db);
 
   const tx = new sql.Transaction(db);
@@ -65,7 +85,7 @@ export async function PUT(req: NextRequest, ctx: { params: Promise<{ id: string 
       .input("ph", sql.NVarChar(sql.MAX),
         Object.prototype.hasOwnProperty.call(b, "photos") ? JSON.stringify(b.photos ?? []) : null)
       .input("n", sql.NVarChar(sql.MAX), typeof b.note === "string" ? b.note.trim() || null : null)
-      .input("res", sql.NVarChar(10), b.result === "fail" ? "fail" : b.result === "pass" ? "pass" : null)
+      .input("res", sql.NVarChar(10), result)
       .input("fc", sql.Int, fails)
       .input("ts", sql.NVarChar(sql.MAX), b.tech_sign ?? null)
       .input("cs", sql.NVarChar(sql.MAX), b.cust_sign ?? null)
@@ -119,7 +139,7 @@ export async function PUT(req: NextRequest, ctx: { params: Promise<{ id: string 
 
     await logBooking(tx, {
       bookingId: id, action: "check", actorUserId: gate.userId ?? null, actorRole: "technician",
-      to: { result: b.result ?? null, fail: fails, close_method: b.close_method ?? null,
+      to: { result, fail: fails, close_method: b.close_method ?? null,
             ...(repairNeeded ? { repair: repairDetail } : {}) },
       reason: typeof b.note === "string" ? b.note.trim() || null : null,
     });

@@ -5,7 +5,7 @@ import { useEffect, useState } from "react";
 import ListPageHeader from "@/components/layout/ListPageHeader";
 import { formatTHB } from "@/lib/utils/formatters";
 import Loading from "@/components/ui/Loading";
-import { CheckIcon } from "@/components/ui/icons";
+import { CheckIcon, ChevronRightIcon } from "@/components/ui/icons";
 import {
   omPlanLabel, omScopeItems, omTierKey, omTierKw, omTierLabel,
   type OmPackage, type OmPlanType,
@@ -21,6 +21,23 @@ export default function OmPackagesPage() {
   const [tab, setTab] = useState<TabKey>("all");
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState("");
+  // ★ 15 ต.ค. 69 ผู้ใช้สั่งเพิ่มปุ่มย่อรายละเอียด แล้วสั่งต่อให้อยู่ใต้ราคาของแต่ละตัวเลือก (เดิมปุ่มเดียวมุมขวาบน)
+  //   ย่อแล้วเหลือป้ายรายครั้ง/สัญญา + ราคา · ★ ผู้ใช้สั่งต่อ: ค่าเริ่มต้น = ย่อทุกตัวเลือก
+  //   จำไว้ในเครื่องเป็นรายการ id แพ็กเกจที่ "กาง" แบบ "งานของฉัน" หน้างานบริการ (แพ็กเกจใหม่จึงย่อมาเสมอ)
+  //   (เนื้อการ์ดขึ้นหลังโหลดเสร็จ ค่าแรกจึงไม่ชนกับหน้าที่ render จาก server)
+  const [expanded, setExpanded] = useState<number[]>(() => {
+    if (typeof window === "undefined") return [];
+    try {
+      const v = JSON.parse(localStorage.getItem("om.packages.expanded") ?? "[]");
+      return Array.isArray(v) ? v.filter((x): x is number => typeof x === "number") : [];
+    } catch { return []; }
+  });
+  // ต่อจากค่าล่าสุดเสมอ — กดหลายปุ่มติดกันเร็ว ๆ แล้วค่าไม่ทับกัน (เขียนซ้ำได้ ค่าเดิมเสมอ)
+  const toggle = (id: number) => setExpanded((cur) => {
+    const next = cur.includes(id) ? cur.filter((x) => x !== id) : [...cur, id];
+    try { localStorage.setItem("om.packages.expanded", JSON.stringify(next)); } catch { /* โหมดส่วนตัว — ไม่จำก็ได้ */ }
+    return next;
+  });
 
   useEffect(() => {
     apiFetch("/api/om/packages")
@@ -96,18 +113,38 @@ export default function OmPackagesPage() {
                             <span className="text-sm font-semibold text-gray-400 ml-1">THB</span>
                           </div>
                         </div>
-                        {p.scope && (
-                          <ul className="mt-2.5 space-y-1.5">
-                            {omScopeItems(p.scope).map((s) => (
-                              <li key={s} className="flex items-start gap-2 text-sm leading-snug">
-                                <span className="mt-0.5 w-4 h-4 shrink-0 rounded-full flex items-center justify-center bg-emerald-50 text-emerald-600">
-                                  <CheckIcon className="w-2.5 h-2.5" strokeWidth={3} />
-                                </span>
-                                <span className="text-gray-700">{s}</span>
-                              </li>
-                            ))}
-                          </ul>
-                        )}
+                        {p.scope && (() => {
+                          const list = omScopeItems(p.scope);
+                          const shut = !expanded.includes(p.id);
+                          // ปุ่มลอยขวา (float) — บรรทัดแรกของรายการหลบให้ บรรทัดถัดไปเต็มความกว้าง · flow-root ให้กล่องสูงพอตอนย่อ
+                          const btn = (
+                            <button type="button" onClick={() => toggle(p.id)} style={{ minHeight: 0 }}
+                              aria-expanded={!shut}
+                              className="float-right ml-2 h-6 px-2 inline-flex items-center gap-1 rounded-md text-xs font-semibold text-gray-500 hover:text-primary hover:bg-gray-50 transition-colors cursor-pointer">
+                              <ChevronRightIcon className={`w-3 h-3 ${shut ? "rotate-90" : "-rotate-90"}`} strokeWidth={2.5} />
+                              {shut ? "แสดงรายละเอียด" : "ย่อ"}
+                            </button>
+                          );
+                          return (
+                            <div className="mt-2.5 flow-root">
+                              {btn}
+                              {shut ? (
+                                <div className="h-6 flex items-center text-xs text-gray-400">ขอบเขตงาน {list.length} รายการ</div>
+                              ) : (
+                                <ul className="space-y-1.5">
+                                  {list.map((s) => (
+                                    <li key={s} className="flex items-start gap-2 text-sm leading-snug">
+                                      <span className="mt-0.5 w-4 h-4 shrink-0 rounded-full flex items-center justify-center bg-emerald-50 text-emerald-600">
+                                        <CheckIcon className="w-2.5 h-2.5" strokeWidth={3} />
+                                      </span>
+                                      <span className="text-gray-700">{s}</span>
+                                    </li>
+                                  ))}
+                                </ul>
+                              )}
+                            </div>
+                          );
+                        })()}
                       </div>
                     ))}
                   </div>

@@ -7,7 +7,7 @@
 //   (ไม่มีขั้นงานให้โชว์ การ์ดอยู่หน้างานบริการแล้ว) · มือถือเป็นการ์ด · กดทั้งแถวเปิดบ้าน ไม่มีปุ่มแก้ไข
 import { useCallback, useEffect, useState } from "react";
 import { useSearchParams } from "next/navigation";
-import { apiFetch, getUserContextHeaders } from "@/lib/api";
+import { apiFetch } from "@/lib/api";
 import { useMe } from "@/lib/roles";
 import { hasAnyGrantedRole } from "@/lib/role-permissions";
 import { useActiveMenuItem } from "@/lib/hooks/useActiveModule";
@@ -15,13 +15,13 @@ import ListPageHeader from "@/components/layout/ListPageHeader";
 import Dropdown from "@/components/ui/Dropdown";
 import Loading from "@/components/ui/Loading";
 import ModalBase from "@/components/ui/ModalBase";
-import { useDialog } from "@/components/ui/Dialog";
 import SyncBar from "@/components/om/SyncBar";
 import { SystemCard, type HouseDetail } from "@/components/om/HouseSystemCard";
 import { formatThaiDate } from "@/lib/utils/formatters";
+import { thDT } from "@/lib/om/service-view";
 import { formatSlotsRange } from "@/lib/time-slots";
 import { ORIGIN_OPTIONS, parseOrigin, type HouseOrigin } from "@/lib/om/house-origin";
-import { OM_WORK_ROLES } from "@/lib/om/om-roles";
+import { HOUSE_MANAGE_ROLES, OM_WORK_ROLES } from "@/lib/om/om-roles";
 import OmNewHouseModal from "@/components/om/OmNewHouseModal";
 
 interface Row {
@@ -44,6 +44,7 @@ interface Stats { total: number; nophone: number; nowarr: number; noinv: number;
 type Detail = HouseDetail;
 const ROLE: Record<string, string> = { owner: "เจ้าของ", resident: "ผู้อยู่อาศัย", contact: "ผู้ติดต่อ" };
 const SRC: Record<string, string> = { contract_base: "สิทธิ์ตั้งต้น", renewal: "ต่อสัญญา", purchase: "ซื้อเพิ่ม", import: "import", manual_adjust: "ปรับมือ", expire: "หมดอายุ" };
+
 // แท็บกรอง — key ตรงกับทั้ง /api/om/houses?filter= และธงใน /api/om/houses/groups
 const TABS: { k: string; t: string; s: keyof Stats }[] = [
   { k: "", t: "ทั้งหมด", s: "total" },
@@ -81,13 +82,14 @@ export default function OmHousesPage() {
   const [origin, setOrigin] = useState<HouseOrigin>("");
   const { me } = useMe();
   const { item: activeItem } = useActiveMenuItem();   // หัวเรื่อง = ชื่อเมนู (กติกา ui-rules)
-  const dialog = useDialog();
-  const isAdmin = !!me?.roles?.includes("admin");   // ★ ลบบ้านถาวรได้เฉพาะแอดมินสูงสุด
   // ★ สถานะ sync — API อ่านได้เฉพาะ 3 role นี้ (เช็กแบบเดียวกับ requireAnyRole ฝั่ง server)
   //   เดิมทุกคนเห็นกล่อง แต่ role อื่นได้ค่าว่าง "0 unit · รอบล่าสุด —" มาตลอด
   const canSync = hasAnyGrantedRole(me?.roles, ["admin", "solar_sup", "sales_sup"]);
   // ★ "+ เพิ่มบ้าน" (แผน 20261014-08) — role ทีม O&M ชุดเดียวกับ POST /api/om/houses (ผู้ใช้เลือก D5 = A)
   const canAdd = hasAnyGrantedRole(me?.roles, OM_WORK_ROLES);
+  // ★ 15 ต.ค. 69 เอากลับเข้าระบบ — admin / หัวหน้า (ชุดเดียวกับ PATCH exclude/restore)
+  //   ปุ่ม "ซ่อนจาก O&M" / "ลบถาวร" ผู้ใช้สั่งเอาออกจากหน้าบ้านแล้ว (API ยังอยู่ · ลบถาวร admin อย่างเดียว)
+  const canManage = hasAnyGrantedRole(me?.roles, HOUSE_MANAGE_ROLES);
   const [adding, setAdding] = useState(false);
   const [filter, setFilter] = useState("");
   const [page, setPage] = useState(1);
@@ -95,13 +97,13 @@ export default function OmHousesPage() {
   const [sel, setSel] = useState<Detail | null>(null);
   const [open, setOpen] = useState(false);
   const [busy, setBusy] = useState(false);
-  const [entForm, setEntForm] = useState<"" | "wash" | "grant">("");
-  const [washDate, setWashDate] = useState("");
-  const [washNote, setWashNote] = useState("");
+  // grant = เพิ่มสิทธิ์ · cut = ลดสิทธิ์ (15 ต.ค. 69 แยกจากปุ่ม "± ปรับสิทธิ์" เดิมที่ต้องพิมพ์เลขลบเอง)
+  //   ★ 15 ต.ค. 69 ผู้ใช้สั่งเอาปุ่ม "+ บันทึกล้างแผง" ออก — ซ้ำกับการปิดงานในงานบริการ (ปิดงานตัดสิทธิ์ให้เอง)
+  //     กดซ้ำแล้วบ้านโดนตัด 2 ครั้ง · การล้างทุกครั้งต้องผ่านงานบริการ · ช่วงที่ขาดเติมด้วยการนำเข้า
+  const [entForm, setEntForm] = useState<"" | "grant" | "cut">("");
+  // ★ 15 ต.ค. 69 ไม่มีปุ่มลบ (×) แล้ว — บันทึกผิดแก้ด้วยการเพิ่ม/ลดกลับ · แถวมี "โดย … · วันเวลา" ลิสต์จึงเป็น log ในตัว
+  //   (ส่วนดูประวัติการแก้ไข ผู้ใช้สั่งเอาออกวันเดียวกัน · ประวัติยังเก็บใน om_entitlement_history)
   const [grantQty, setGrantQty] = useState("1");
-  const [grantSrc, setGrantSrc] = useState("renewal");
-  const [washType, setWashType] = useState("");    // ชนิดงานของใบตัดสิทธิ์ (ว่าง = ล้างแผง)
-  const [grantType, setGrantType] = useState("");  // ชนิดงานของสิทธิ์ที่จะเพิ่ม (ว่าง = ล้างแผง)
   const [grantWhy, setGrantWhy] = useState("");
   const [err, setErr] = useState("");
   const [toast, setToast] = useState("");
@@ -157,6 +159,8 @@ export default function OmHousesPage() {
           note: h.note, is_vip: h.is_vip, has_solar: h.has_solar }),
       });
       say("บันทึกแล้ว"); load(); loadGroups();
+      // ★ 15 ต.ค. 69 ผู้ใช้สั่ง: บันทึกสำเร็จแล้วปิดหน้าต่างเลย (บันทึกไม่ผ่าน = ค้างไว้ให้เห็น error)
+      setOpen(false);
     } catch (e) { setErr(e instanceof Error ? e.message : String(e)); }
     finally { setBusy(false); }
   };
@@ -178,36 +182,6 @@ export default function OmHousesPage() {
     finally { setBusy(false); }
   };
 
-  // ★ ลบบ้านถาวร — เฉพาะแอดมินสูงสุด · ปกติ server กันบ้านมีประวัติ (409) → เสนอ "force" ลบทั้งประวัติ
-  //   ใช้ raw fetch (ไม่ใช่ apiFetch) เพราะต้องอ่าน status 409 + จำนวนประวัติ เพื่อถามยืนยันซ้ำ
-  // ★ 28 ก.ย. 69 (แผน 20260928-04 ข้อ 4): confirm() ของเบราว์เซอร์ → useDialog แบบมี title (กติกา ui-rules)
-  const del = async (force = false) => {
-    if (!sel) return;
-    const label = sel.house.house_number || sel.house.project_name || `#${sel.house.id}`;
-    if (!force && !(await dialog.confirm({
-      title: "ลบบ้านถาวร", variant: "danger", confirmText: "ลบถาวร",
-      message: `ลบบ้าน "${label}" ถาวร?\n\nข้อมูลระบบติดตั้ง · ลูกค้า · สิทธิ์ ของบ้านหลังนี้จะถูกลบทั้งหมด กู้คืนไม่ได้\n(บ้านที่เคยล้างแผง / มีนัด / ผูก LINE จะขึ้นให้ยืนยันซ้ำก่อนลบ)`,
-    }))) return;
-    setBusy(true); setErr("");
-    try {
-      const res = await fetch(`/api/om/houses/${sel.house.id}${force ? "?force=1" : ""}`,
-        { method: "DELETE", headers: { ...getUserContextHeaders() } });
-      const body = await res.json().catch(() => ({}));
-      if (res.status === 409 && body.locked) {
-        setBusy(false);
-        if (await dialog.confirm({
-          title: "บ้านนี้มีประวัติงานจริง", variant: "danger", confirmText: "ลบทั้งประวัติ",
-          message: `ล้างแผง ${body.washes} · นัด ${body.bookings} · LINE ${body.lineLinks}\n\nลบทั้งประวัติเลยไหม? (force — ลบถาวร กู้คืนไม่ได้ ประวัติล้าง/นัดจะหายด้วย)`,
-        })) return del(true);
-        return;
-      }
-      if (!res.ok) throw new Error(body.error || `ลบไม่สำเร็จ (${res.status})`);
-      say(force ? "ลบบ้านถาวรแล้ว (รวมประวัติ)" : "ลบบ้านถาวรแล้ว");
-      setOpen(false); setSel(null); load(); loadGroups();
-    } catch (e) { setErr(e instanceof Error ? e.message : String(e)); }
-    finally { setBusy(false); }
-  };
-
   const entCall = async (init: RequestInit, path = "") => {
     if (!sel) return;
     setBusy(true); setErr("");
@@ -215,28 +189,23 @@ export default function OmHousesPage() {
       await apiFetch(`/api/om/houses/${sel.house.id}/entitlements${path}`, init);
       setSel(await apiFetch(`/api/om/houses/${sel.house.id}`));
       load(); loadGroups();
-      setEntForm(""); setWashNote(""); setGrantWhy(""); setGrantQty("1");
+      setEntForm(""); setGrantWhy(""); setGrantQty("1");
       say("บันทึกแล้ว");
     } catch (e) { setErr(e instanceof Error ? e.message : String(e)); }
     finally { setBusy(false); }
   };
-  const addWash = () => entCall({ method: "POST", body: JSON.stringify({ kind: "redemption", service_date: washDate, note: washNote || null, service_type_id: washType || null }) });
-  const addGrant = () => entCall({ method: "POST", body: JSON.stringify({ kind: "grant", qty: Number(grantQty), source: grantSrc, reason: grantWhy || null, service_type_id: grantType || null }) });
-  const delEnt = async (kind: "grant" | "redemption", ref: number, label: string) => {
-    if (!(await dialog.confirm({
-      title: "ลบรายการสิทธิ์", variant: "danger", confirmText: "ลบ",
-      message: `ลบ "${label}" ออกจากสิทธิ์บ้านหลังนี้?`,
-    }))) return;
-    entCall({ method: "DELETE" }, `?kind=${kind}&ref=${ref}`);
-  };
-
+  // ช่องจำนวนรับเลขบวกเสมอ — ลดสิทธิ์ส่ง qty ติดลบ (API เดิม · qty ±)
+  // ★ 15 ต.ค. 69 ผู้ใช้สั่ง: สิทธิ์ล้างแผงอย่างเดียว + เอาช่อง "ที่มา" ออก ⇒ ไม่ส่ง service_type_id (= ล้างแผง)
+  //   และที่มา = "ปรับมือ" ทั้งเพิ่มและลด (ซื้อเพิ่มจริงเติมให้เองตอน Account ยืนยันรับเงินอยู่แล้ว)
+  const addGrant = () => entCall({ method: "POST", body: JSON.stringify({
+    kind: "grant", qty: entForm === "cut" ? -Number(grantQty) : Number(grantQty),
+    source: "manual_adjust", reason: grantWhy || null }) });
   // ★ ยอดคงเหลือมาจากวิว om_entitlement_balance ซึ่งแยกตามประเภทงานแล้ว
   //   "balance" ตัวเดียวหมายถึงล้างแผงเสมอ (เลขใหญ่บนหัวข้อ) ชนิดอื่นโชว์เป็นชิปข้าง ๆ
   const bals = sel?.balances ?? [];
   const balance = Math.max(0, bals.find((b) => b.service_type_code === "cleaning")?.balance ?? 0);
   const otherBals = bals.filter((b) => b.service_type_code !== "cleaning" && b.total_granted !== 0);
   const types = sel?.serviceTypes ?? [];
-  const quotaTypes = types.filter((t) => t.consumes_quota === 1);
   const cleaningId = types.find((t) => t.code === "cleaning")?.id ?? 0;
   const cleaningCycle = types.find((t) => t.code === "cleaning")?.cycle_months ?? null;
   // สัญญาที่มีเทอม (ปี) → บอกที่มาของเลขสิทธิ์ "4 = 2 ครั้ง/ปี × 2 ปี" · ไม่มีเทอม/หารไม่ลงตัว = ไม่เดา
@@ -512,25 +481,6 @@ export default function OmHousesPage() {
           }
           footer={sel && (
             <div className="flex gap-2 flex-wrap">
-              {(!sel.house.om_excluded_reason || isAdmin) && (
-                // mobile: ปุ่มจัดการบ้านอยู่แถวบน · ปิด/บันทึก อยู่แถวล่าง
-                <div className="flex gap-2 max-md:w-full">
-                  {/* ★ ซ่อนออกจาก O&M — ซ่อน ไม่ใช่ลบ ข้อมูลทุกอย่างยังอยู่ครบ
-                      ถูกซ่อนอยู่แล้ว → ปุ่มคืนอยู่แถบเหลืองบนสุดของ modal แทน */}
-                  {!sel.house.om_excluded_reason && (
-                    <button type="button" style={{ minHeight: 0 }} disabled={busy} title="ซ่อน ไม่ใช่ลบ — ข้อมูลอยู่ครบ กดคืนได้ทุกเมื่อ"
-                      onClick={() => { const r = window.prompt("ซ่อนบ้านหลังนี้ออกจากงาน O&M เพราะอะไร?\n(ข้อมูลไม่ถูกลบ กดคืนได้ทุกเมื่อ)", "ไม่ได้ติดโซลาร์"); if (r) setOm(false, r); }}
-                      className="py-3 px-4 rounded-xl border border-gray-200 text-sm font-semibold text-gray-600 bg-white disabled:opacity-50 cursor-pointer max-md:flex-1">
-                      ซ่อนจาก O&amp;M</button>
-                  )}
-                  {/* ★ ลบบ้านถาวร — เฉพาะแอดมินสูงสุด · สำหรับข้อมูลขยะจริง (บ้านมีประวัติลบไม่ได้ ให้ใช้ซ่อน) */}
-                  {isAdmin && (
-                    <button type="button" style={{ minHeight: 0 }} disabled={busy} onClick={() => del()}
-                      className="py-3 px-4 rounded-xl border border-red-200 text-sm font-semibold text-red-600 bg-white hover:bg-red-50 disabled:opacity-50 cursor-pointer max-md:flex-1">
-                      ลบถาวร</button>
-                  )}
-                </div>
-              )}
               <button type="button" style={{ minHeight: 0 }} onClick={() => setOpen(false)}
                 className="flex-1 py-3 rounded-xl border border-gray-200 text-sm font-semibold text-gray-700 bg-white cursor-pointer">ปิด</button>
               <button type="button" style={{ minHeight: 0 }} disabled={busy} onClick={save}
@@ -552,10 +502,13 @@ export default function OmHousesPage() {
                       <div className="text-xxs text-amber-800">{sel.house.om_excluded_reason}</div>
                       <div className="text-xxs text-amber-700">ข้อมูลบ้าน · ลูกค้า · สิทธิ์ · ประวัติล้าง ยังอยู่ครบ</div>
                     </div>
-                    <button type="button" style={{ minHeight: 0 }} disabled={busy} onClick={() => setOm(true)}
-                      className="h-8 px-3 rounded-full bg-primary text-white text-xs font-bold cursor-pointer disabled:opacity-50">
-                      ↩ เอากลับเข้าระบบ
-                    </button>
+                    {/* เอากลับ = สิทธิ์ชุดเดียวกับการซ่อน (admin / หัวหน้า) */}
+                    {canManage ? (
+                      <button type="button" style={{ minHeight: 0 }} disabled={busy} onClick={() => setOm(true)}
+                        className="h-8 px-3 rounded-full bg-primary text-white text-xs font-bold cursor-pointer disabled:opacity-50">
+                        ↩ เอากลับเข้าระบบ
+                      </button>
+                    ) : <span className="text-xxs text-amber-700">เอากลับเข้าระบบได้โดย admin / หัวหน้า</span>}
                   </div>
                 )}
 
@@ -658,17 +611,18 @@ export default function OmHousesPage() {
                       </div>
                     )}
 
-                    {/* ปุ่มแก้ไข — ข้อมูล import ถึงแค่ มิ.ย. 69 ต้องเติมของใหม่เองได้
+                    {/* ปุ่มปรับสิทธิ์ — การล้างไม่บันทึกที่นี่แล้ว (ผ่านการปิดงานในงานบริการเท่านั้น · 15 ต.ค. 69)
                         ★ สิทธิ์ชนิดอื่นที่ขายเป็นครั้ง (แพ็คตรวจเช็ก ฯลฯ) ยอดแยกกันคนละใบ — ชิปอยู่แถวเดียวกับปุ่ม */}
                     <div className="flex flex-wrap items-center gap-2 px-5 py-2 border-b border-gray-100">
+                      {/* ★ 15 ต.ค. 69 ผู้ใช้สั่ง (ตามแนะนำ): แยก "± ปรับสิทธิ์" เป็น เพิ่ม / ลด — ไม่ต้องพิมพ์เลขลบเอง */}
                       <button type="button" style={{ minHeight: 0 }} disabled={!sel.systems.length}
-                        onClick={() => { setEntForm(entForm === "wash" ? "" : "wash"); setWashDate(new Date().toISOString().slice(0, 10)); }}
-                        className="h-8 px-3 rounded-lg border border-gray-200 text-xs font-bold text-gray-700 hover:bg-gray-50 cursor-pointer disabled:opacity-40">
-                        {quotaTypes.length > 1 ? "+ บันทึกใช้สิทธิ์" : "+ บันทึกล้างแผง"}</button>
+                        onClick={() => { setEntForm(entForm === "grant" ? "" : "grant"); setGrantQty("1"); }}
+                        className={`h-8 px-3 rounded-lg border text-xs font-bold cursor-pointer disabled:opacity-40 ${entForm === "grant" ? "border-emerald-300 bg-emerald-50 text-emerald-700" : "border-gray-200 text-gray-700 hover:bg-gray-50"}`}>
+                        + เพิ่มสิทธิ์</button>
                       <button type="button" style={{ minHeight: 0 }} disabled={!sel.systems.length}
-                        onClick={() => setEntForm(entForm === "grant" ? "" : "grant")}
-                        className="h-8 px-3 rounded-lg border border-gray-200 text-xs font-bold text-gray-700 hover:bg-gray-50 cursor-pointer disabled:opacity-40">
-                        ± ปรับสิทธิ์</button>
+                        onClick={() => { setEntForm(entForm === "cut" ? "" : "cut"); setGrantQty("1"); }}
+                        className={`h-8 px-3 rounded-lg border text-xs font-bold cursor-pointer disabled:opacity-40 ${entForm === "cut" ? "border-red-300 bg-red-50 text-red-700" : "border-gray-200 text-gray-700 hover:bg-gray-50"}`}>
+                        − ลดสิทธิ์</button>
                       {!sel.systems.length && <span className="text-xxs text-gray-400">ต้องมีระบบติดตั้งก่อน</span>}
                       {otherBals.map((b) => (
                         <span key={b.service_type_id} className="text-xxs font-bold px-2 py-0.5 rounded-full bg-sky-50 text-sky-700">
@@ -677,76 +631,64 @@ export default function OmHousesPage() {
                       ))}
                     </div>
 
-                    {entForm === "wash" && (
-                      <div className="px-5 py-3 border-b border-gray-100 bg-gray-50 grid gap-2">
+                    {(entForm === "grant" || entForm === "cut") && (() => {
+                      const cut = entForm === "cut";
+                      // ★ สิทธิ์ล้างแผงอย่างเดียว (ผู้ใช้สั่ง 15 ต.ค. 69) — ลดได้ไม่เกินที่เหลือ ยอดไม่ติดลบจากการกดลดเอง
+                      const typeLabel = "ล้างแผง";
+                      const left = balance;
+                      const qty = Number(grantQty);
+                      const okQty = Number.isInteger(qty) && qty >= 1 && qty <= (cut ? Math.min(99, left) : 99);
+                      return (
+                      <div className={`px-5 py-3 border-b border-gray-100 grid gap-2 ${cut ? "bg-red-50/40" : "bg-gray-50"}`}>
                         <div className="flex gap-2 flex-wrap">
-                          {quotaTypes.length > 1 && (
-                            <label className="grid gap-1"><span className="text-xxs font-bold text-gray-600">งานที่ทำ</span>
-                              <select value={washType || String(cleaningId)} onChange={(e) => setWashType(e.target.value)}
-                                className="h-9 rounded-lg border border-gray-200 px-2 text-sm font-semibold bg-white outline-none focus:border-primary">
-                                {quotaTypes.map((t) => <option key={t.id} value={String(t.id)}>{t.label_th}</option>)}
-                              </select></label>
-                          )}
-                          <label className="grid gap-1"><span className="text-xxs font-bold text-gray-600">วันที่</span>
-                            <input type="date" value={washDate} onChange={(e) => setWashDate(e.target.value)}
+                          <label className="grid gap-1 w-24"><span className="text-xxs font-bold text-gray-600">{cut ? "ลด (ครั้ง)" : "เพิ่ม (ครั้ง)"}</span>
+                            <input type="number" min={1} max={cut ? left : 99} step={1} value={grantQty}
+                              onChange={(e) => setGrantQty(e.target.value.replace(/[^\d]/g, ""))}
                               className="h-9 rounded-lg border border-gray-200 px-2 text-sm font-semibold bg-white outline-none focus:border-primary" /></label>
-                          <label className="grid gap-1 flex-1 min-w-[160px]"><span className="text-xxs font-bold text-gray-600">หมายเหตุ</span>
-                            <input value={washNote} onChange={(e) => setWashNote(e.target.value)} placeholder="เช่น ทีม A ล้างรอบประจำปี"
-                              className="h-9 rounded-lg border border-gray-200 px-3 text-sm font-semibold bg-white outline-none focus:border-primary" /></label>
-                        </div>
-                        <div className="flex gap-2">
-                          <button type="button" style={{ minHeight: 0 }} disabled={busy || !washDate} onClick={addWash}
-                            className="h-9 px-4 rounded-lg bg-primary text-white text-sm font-bold cursor-pointer disabled:opacity-50">บันทึก (หักสิทธิ์ 1)</button>
-                          <button type="button" style={{ minHeight: 0 }} onClick={() => setEntForm("")}
-                            className="h-9 px-3 rounded-lg border border-gray-200 bg-white text-sm font-semibold text-gray-600 cursor-pointer">ยกเลิก</button>
-                        </div>
-                      </div>
-                    )}
-
-                    {entForm === "grant" && (
-                      <div className="px-5 py-3 border-b border-gray-100 bg-gray-50 grid gap-2">
-                        <div className="flex gap-2 flex-wrap">
-                          <label className="grid gap-1 w-24"><span className="text-xxs font-bold text-gray-600">จำนวน (+/−)</span>
-                            <input type="number" value={grantQty} onChange={(e) => setGrantQty(e.target.value)}
-                              className="h-9 rounded-lg border border-gray-200 px-2 text-sm font-semibold bg-white outline-none focus:border-primary" /></label>
-                          <label className="grid gap-1"><span className="text-xxs font-bold text-gray-600">สิทธิ์ของงาน</span>
-                            <select value={grantType || String(cleaningId)} onChange={(e) => setGrantType(e.target.value)}
-                              className="h-9 rounded-lg border border-gray-200 px-2 text-sm font-semibold bg-white outline-none focus:border-primary">
-                              {types.map((t) => <option key={t.id} value={String(t.id)}>{t.label_th}</option>)}
-                            </select></label>
-                          <label className="grid gap-1"><span className="text-xxs font-bold text-gray-600">ที่มา</span>
-                            <select value={grantSrc} onChange={(e) => setGrantSrc(e.target.value)}
-                              className="h-9 rounded-lg border border-gray-200 px-2 text-sm font-semibold bg-white outline-none focus:border-primary">
-                              <option value="renewal">ต่อสัญญา</option>
-                              <option value="purchase">ซื้อเพิ่ม</option>
-                              <option value="manual_adjust">ปรับมือ / หมดสิทธิ์</option>
-                            </select></label>
                           <label className="grid gap-1 flex-1 min-w-[160px]"><span className="text-xxs font-bold text-gray-600">เหตุผล</span>
-                            <input value={grantWhy} onChange={(e) => setGrantWhy(e.target.value)} placeholder="เช่น ต่อสัญญา 2 ปี / หมดอายุ 31 ธ.ค. 69"
+                            <input value={grantWhy} onChange={(e) => setGrantWhy(e.target.value)}
+                              placeholder={cut ? "เช่น หมดอายุ 31 ธ.ค. 69 / บันทึกสิทธิ์เกิน" : "เช่น ต่อสัญญา 2 ปี / ซื้อแพ็กเกจเพิ่ม"}
                               className="h-9 rounded-lg border border-gray-200 px-3 text-sm font-semibold bg-white outline-none focus:border-primary" /></label>
                         </div>
                         <div className="flex gap-2 items-center flex-wrap">
-                          <button type="button" style={{ minHeight: 0 }} disabled={busy || !Number(grantQty)} onClick={addGrant}
-                            className="h-9 px-4 rounded-lg bg-primary text-white text-sm font-bold cursor-pointer disabled:opacity-50">บันทึก</button>
+                          <button type="button" style={{ minHeight: 0 }} disabled={busy || !okQty} onClick={addGrant}
+                            className={`h-9 px-4 rounded-lg text-white text-sm font-bold cursor-pointer disabled:opacity-50 ${cut ? "bg-red-600" : "bg-primary"}`}>
+                            {/* 15 ต.ค. 69 ผู้ใช้สั่งเปลี่ยนคำเป็น "ยืนยัน" (เดิม "เพิ่ม/ลดสิทธิ์ N ครั้ง") — จำนวนดูได้จากช่องกับบรรทัดคงเหลือข้าง ๆ */}
+                            ยืนยัน</button>
                           <button type="button" style={{ minHeight: 0 }} onClick={() => setEntForm("")}
                             className="h-9 px-3 rounded-lg border border-gray-200 bg-white text-sm font-semibold text-gray-600 cursor-pointer">ยกเลิก</button>
-                          <span className="text-xxs text-gray-500">ใส่เลขติดลบเพื่อตัดสิทธิ์ เช่น −{Math.max(1, balance)} = ตัดให้เหลือ 0</span>
+                          {cut ? (
+                            left > 0 ? (
+                              <span className="text-xxs text-gray-500">
+                                สิทธิ์{typeLabel}คงเหลือ {left} ครั้ง · ลดได้ไม่เกิน {left}
+                                <button type="button" style={{ minHeight: 0 }} onClick={() => setGrantQty(String(Math.min(99, left)))}
+                                  className="ml-2 font-bold text-red-600 hover:underline cursor-pointer">ลดทั้งหมด</button>
+                              </span>
+                            ) : <span className="text-xxs font-bold text-gray-500">ไม่มีสิทธิ์{typeLabel}คงเหลือให้ลด</span>
+                          ) : <span className="text-xxs text-gray-500">สิทธิ์{typeLabel}คงเหลือ {left} → {left + (okQty ? qty : 0)} ครั้ง</span>}
                         </div>
                       </div>
-                    )}
+                      );
+                    })()}
 
                     {sel.grants.map((g) => (
                       <div key={`g${g.id}`} className="flex items-center gap-2.5 px-5 py-1.5 border-b border-gray-100 text-xxs text-gray-500">
                         <b className={`min-w-[38px] ${g.qty < 0 ? "text-red-600" : "text-gray-700"}`}>{g.qty > 0 ? "+" : ""}{g.qty}</b>
-                        <span className="text-xxs font-bold px-2 rounded-full bg-emerald-50 text-emerald-700">{SRC[g.source] ?? g.source}</span>
+                        {/* ★ 15 ต.ค. 69 ผู้ใช้สั่ง: แถวเพิ่ม/ลด (ปรับมือ) ไม่ต้องมีป้าย โชว์แค่เหตุผล · แถวที่มาอื่นยังมีป้ายเหมือนเดิม */}
+                        {g.source !== "manual_adjust" && (
+                          <span className="text-xxs font-bold px-2 rounded-full bg-emerald-50 text-emerald-700">{SRC[g.source] ?? g.source}</span>
+                        )}
                         {g.service_type_id !== cleaningId && (
                           <span className="text-xxs font-bold px-2 rounded-full bg-sky-50 text-sky-700">{g.service_type}</span>
                         )}
                         <span className="flex-1 truncate">
-                          {termText(g) && <b className="text-gray-700">{termText(g)} · </b>}{g.reason || ""}</span>
-                        <button type="button" style={{ minHeight: 0 }} disabled={busy}
-                          onClick={() => delEnt("grant", g.id, `${g.qty > 0 ? "+" : ""}${g.qty} ${SRC[g.source] ?? g.source}`)}
-                          className="w-6 h-6 rounded-md text-gray-400 hover:bg-red-50 hover:text-red-600 cursor-pointer shrink-0">×</button>
+                          {termText(g) && <b className="text-gray-700">{termText(g)} · </b>}
+                          {g.reason || (g.source === "manual_adjust" ? <span className="text-gray-400">ไม่ระบุเหตุผล</span> : "")}</span>
+                        {/* ใครปรับ เมื่อไร — แถวเพิ่ม/ลด (ปรับมือ) · ผู้ใช้สั่ง 15 ต.ค. 69 */}
+                        {g.source === "manual_adjust" && (g.created_by_name || g.created_dt) && (
+                          <span className="shrink-0 text-gray-400 whitespace-nowrap">
+                            โดย {g.created_by_name ?? "—"}{g.created_dt ? ` · ${thDT(g.created_dt)}` : ""}</span>
+                        )}
                       </div>
                     ))}
                     {sel.redemptions.map((r) => (
@@ -755,9 +697,6 @@ export default function OmHousesPage() {
                         <span className={`text-xxs font-bold px-2 rounded-full ${r.service_type_id === cleaningId ? "bg-gray-100 text-gray-500" : "bg-sky-50 text-sky-700"}`}>
                           {r.service_type_id === cleaningId ? `ล้างครั้งที่ ${redIndex.get(r.id)}` : `${r.service_type} ครั้งที่ ${redIndex.get(r.id)}`}</span>
                         <span className="flex-1 truncate">{r.service_date}{r.note ? ` · ${r.note}` : ""}</span>
-                        <button type="button" style={{ minHeight: 0 }} disabled={busy}
-                          onClick={() => delEnt("redemption", r.id, `${r.service_type} วันที่ ${r.service_date}`)}
-                          className="w-6 h-6 rounded-md text-gray-400 hover:bg-red-50 hover:text-red-600 cursor-pointer shrink-0">×</button>
                       </div>
                     ))}
 

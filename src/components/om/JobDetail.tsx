@@ -21,7 +21,7 @@ import NotificationBell from "@/components/layout/NotificationBell";
 import JobHistoryItem from "@/components/om/JobHistoryItem";
 import JobFormPanel from "@/components/om/JobFormPanel";
 import OmQuotationPanel, { openQuotationPdf } from "@/components/om/OmQuotationPanel";
-import OmPaymentPanel from "@/components/om/OmPaymentPanel";
+import OmPaymentPanel, { OmReceiptHead } from "@/components/om/OmPaymentPanel";
 import OmRescheduler from "@/components/om/OmRescheduler";
 import OmSlotPicker from "@/components/om/OmSlotPicker";
 import OmFollowupModal from "@/components/om/OmFollowupModal";
@@ -29,12 +29,12 @@ import OmCustomerModal from "@/components/om/OmCustomerModal";
 import ServiceDocButton from "@/components/om/ServiceDocButton";
 import { HouseEquipmentTab, HouseInfoTab, JobPhotosTab } from "@/components/om/HouseTabs";
 import JobTimelineTab, { StageEvents, bookingStages, type Row, type StageKey } from "@/components/om/JobTimelineTab";
-import AssignOwnerButton from "@/components/lead/AssignOwnerButton";
 import { OM_WORK_ROLES } from "@/lib/om/om-roles";
 // ★ เนื้อในการ์ดที่ปิดแล้วใช้ของกลางฝั่งขายตรง ๆ (แผน 20260929-02) — StepLayout โหมด done + กล่อง DoneSection
 //   สองตัวนี้เป็น component กลางของทุกขั้นฝั่งขาย ไม่ใช่ไฟล์หน้า lead (ใบตรวจ JobFormPanel ก็ใช้ StepLayout อยู่แล้ว)
 import StepLayout from "@/components/lead/detail/StepLayout";
 import DoneSection from "@/components/lead/detail/steps/DoneSection";
+import JobReportSummary from "@/components/om/JobReportSummary";
 import ModalBase from "@/components/ui/ModalBase";
 import {
   BUCKET_LABEL, FLOW, OM_REPAIR_ENABLED, QUOTE_STATUS, TONE, jobAt, skipsPaidSteps, thD, thAppt,
@@ -80,7 +80,7 @@ const PRIMARY_BTN = "h-11 px-6 rounded-lg text-sm font-semibold text-white bg-ac
 //   API ยังรับทุกผล (ประวัติเก่ายังแสดงป้ายจาก CALL_OUTCOME)
 const CALL_ROWS = [
   { value: "agreed", label: "ตกลงรับบริการ" },   // ขั้น 01 ไม่เลือกวันแล้ว — วันนัดเลือกที่ขั้น 04
-  { value: "declined", label: "ปฏิเสธ ไม่เอา" },
+  { value: "declined", label: "ปฏิเสธไม่รับบริการ" },   // 15 ต.ค. 69 ผู้ใช้สั่งเปลี่ยนจาก "ปฏิเสธ ไม่เอา"
 ] as const;
 
 export default function JobDetail({ item, history, bookings = [], rules, onBack, onDone, onSaved, onReload }: {
@@ -656,31 +656,8 @@ export default function JobDetail({ item, history, bookings = [], rules, onBack,
               </div>
             </div>
             <NotificationBell />
-            {/* เจ้าของเคส (เฟส 4) — ปุ่มตัวเดียวกับฝั่งขาย ต่างแค่ endpoint ที่บันทึกกับ role ที่ดึงมาเลือก
-                ★ ว่างไว้ได้ ไม่ใช่ประตูล็อก — ใครเปิดหน้านี้ก็ยังทำงานต่อได้ (ผู้ใช้เคาะ 10 ก.ย.)
-                มีไว้ให้หน้า Today ตอบได้ว่า "งาน O&M ของฉัน" คืออะไร */}
-            {item.booking_id && (
-              <div className="flex items-center gap-1.5 shrink-0">
-                <span className="max-md:hidden text-xxs text-gray-500 whitespace-nowrap">เจ้าของงาน</span>
-                {viewOnly ? (
-                  <span className="text-xs font-semibold text-gray-700 whitespace-nowrap">{item.owner_name ?? "—"}</span>
-                ) : <AssignOwnerButton
-                  size="md"
-                  usersRole="solar"
-                  title="เจ้าของงานบริการ"
-                  assignedUserId={item.owner_user_id}
-                  assignedName={item.owner_name}
-                  onAssign={async (userId) => {
-                    await apiFetch(`/api/om/bookings/${item.booking_id}`, {
-                      method: "PATCH",
-                      headers: { "Content-Type": "application/json" },
-                      body: JSON.stringify({ owner_user_id: userId }),
-                    });
-                  }}
-                  onChanged={onReload}
-                />}
-              </div>
-            )}
+            {/* ★ 15 ต.ค. 69 ผู้ใช้สั่งเอาช่อง "เจ้าของงาน" (ปุ่มเลือกคนแบบฝั่งขาย) ออกจากหัวหน้างานบริการ
+                เดิม (เฟส 4) ใช้ตั้งเจ้าของเคสให้ "งานของฉัน" / เตือนก่อนวันนัด — ข้อมูล owner_user_id เดิมยังอยู่ในฐาน */}
             {telNo && (
               <a
                 href={`tel:${telNo}`}
@@ -847,10 +824,13 @@ export default function JobDetail({ item, history, bookings = [], rules, onBack,
             <StepCard n={2} className={cardWrap(2)} state={stepState(2)} title="ชำระเงิน" doneTitle="ชำระเงินแล้ว" onHeaderClick={() => toggleDone(2)}>
               {stepState(2) === "done"
                 ? doneView(2,
-                    <DoneHead text={`${item.pay_state === "paid" ? "ชำระแล้ว" : "ชำระเงิน"} ${formatTHB(Number(item.q_total ?? 0))} บาท${item.q_doc_no ? ` · ตามใบ ${item.q_doc_no}` : ""}`} />,
+                    // ★ 15 ต.ค. 69 ผู้ใช้สั่งย้ายใบเสร็จขึ้นบรรทัดสรุปแบบขั้นอื่น (เดิมอยู่ในกล่องสถานะเงินข้างใน)
+                    <DoneHead text={`${item.pay_state === "paid" ? "ชำระแล้ว" : "ชำระเงิน"} ${formatTHB(Number(item.q_total ?? 0))} บาท${item.q_doc_no ? ` · ตามใบ ${item.q_doc_no}` : ""}`}>
+                      {item.q_id && <OmReceiptHead item={item} />}
+                    </DoneHead>,
                     () => (
                       <DoneSection color="indigo" title="ชำระเงิน">
-                        <OmPaymentPanel item={item} skip={skip} onSaved={onSaved} onReload={onReload} />
+                        <OmPaymentPanel item={item} skip={skip} onSaved={onSaved} onReload={onReload} receiptInHeader />
                       </DoneSection>
                     ))
                 // ★ แผน 20261002-10: ขั้นที่กำลังทำ = ขั้นย่อยแบบ Order ฝั่งขาย วางบนพื้นการ์ดตรง ๆ (ไม่ห่อ SECTION แบบ OrderStep)
@@ -910,8 +890,9 @@ export default function JobDetail({ item, history, bookings = [], rules, onBack,
                 </>}>
                   <ServiceDocButton bookingId={item.booking_id} />
                 </DoneHead>,
-                // ใบที่ปิดแล้วล็อกอ่านอย่างเดียวเอง (ทุกช่อง/ปุ่ม disabled + แถบ lock) — ไล่ดูขั้นย่อยได้ครบ
-                () => <JobFormPanel jobId={String(item.booking_id)} wrapClass="" embedded />,
+                // ★ 15 ต.ค. 69 ผู้ใช้สั่งสรุปหน้าเดียวเหมือนขั้นอื่น (แผน 20261015-01) — เดิมเป็นใบตรวจตัวเต็ม 3 แท็บย่อยแบบอ่านอย่างเดียว
+                () => <JobReportSummary bookingId={item.booking_id!}
+                  startedAt={rowsOf("progress").find((r) => r.action === "start")?.at ?? null} />,
               ) : item.booking_id && viewOnly ? (
                 // Account อ่านอย่างเดียว — ใบตรวจ/เลื่อนนัด/ช่างถึงหน้างาน เป็นงานทีมช่าง (แผน 20261014-06)
                 waitNote(cur === "pending" || cur === "confirmed"
@@ -931,18 +912,11 @@ export default function JobDetail({ item, history, bookings = [], rules, onBack,
                     onNext: startJob,
                     hideNav: resched,   // เปิดฟอร์มเลื่อนนัดอยู่ — ใช้ปุ่มของฟอร์มนั้นอย่างเดียว
                   } : undefined}
-                  intro={
-                    <div className="text-xs text-gray-500 mb-3">
-                      {/* ตัดสิทธิ์ไหม — เดิมอยู่การ์ดปิดงาน ซึ่งตอนนี้ล็อกจนกว่าจะปิด (แผน 20260929-02) */}
-                      กรอกใบตรวจ ให้ลูกค้าเซ็นรับ แล้วกด<b>ปิดงาน</b>ที่ขั้นส่งมอบ · {quotaNote} · ช่างกรอกจากมือถือได้ ใบเดียวกัน
-                      <a href={`/om/field/${item.booking_id}`}
-                        className="ml-2 text-active font-semibold no-underline hover:underline">เปิดเต็มจอ ›</a>
-                      {/* ใบเก่าที่ค้างสถานะรอปิด (ก่อนตัดขั้น) — บอกให้ปิดต่อจากใบนี้ได้เลย */}
-                      {cur === "checked" && (
-                        <div className="mt-1 text-teal-700 font-semibold">ช่างทำงานเสร็จแล้ว รอปิดงาน — ปิดต่อได้ที่ขั้นส่งมอบ</div>
-                      )}
-                    </div>
-                  } />
+                  // ★ 15 ต.ค. 69 ผู้ใช้สั่งเอาบรรทัดคำอธิบาย "กรอกใบตรวจ ให้ลูกค้าเซ็นรับ … · ตัดสิทธิ์ … · เปิดเต็มจอ ›" ออก
+                  //   เหลือแค่ป้ายของใบเก่าที่ค้างสถานะรอปิด (ก่อนตัดขั้น) — บอกให้ปิดต่อจากใบนี้ได้เลย
+                  intro={cur === "checked" ? (
+                    <div className="mb-3 text-xs text-teal-700 font-semibold">ช่างทำงานเสร็จแล้ว รอปิดงาน — ปิดต่อได้ที่ขั้นส่งมอบ</div>
+                  ) : undefined} />
               ) : (
                 <div className={`${SECTION} text-sm text-gray-500`}>ยังไม่มีใบงาน — ใบตรวจรับงานจะขึ้นเมื่อสร้างนัดแล้ว</div>
               )}

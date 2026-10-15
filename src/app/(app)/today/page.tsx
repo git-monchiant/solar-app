@@ -752,11 +752,6 @@ export default function TodayPage() {
         tabs={moduleMode ? [] : allTabs}
         activeTab={visibleTab}
         onTabChange={(k) => setTab(k as TodayTab)}
-        tabsLeft={(() => {
-          const n = allTabs.find(t => t.key === visibleTab)?.count;
-          return n != null ? `${n} รายการ` : undefined;
-        })()}
-        tabsRight={visibleTab !== "calendar" ? sortControls : undefined}
       />
 
       {/* Content */}

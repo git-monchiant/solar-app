@@ -70,7 +70,7 @@ export const CALL_OUTCOME: Record<string, { t: string; tone: string }> = {
   agreed:       { t: "รับสาย · ตกลงนัด",   tone: "bg-emerald-600" },
   postponed:    { t: "รับสาย · ขอเลื่อน",  tone: "bg-amber-500" },
   no_answer:    { t: "ไม่รับสาย",          tone: "bg-gray-500" },
-  declined:     { t: "ปฏิเสธ ไม่เอา",      tone: "bg-red-500" },
+  declined:     { t: "ปฏิเสธไม่รับบริการ", tone: "bg-red-500" },   // 15 ต.ค. 69 ผู้ใช้สั่ง — ชุดเดียวกับปุ่มในขั้น 01 (CALL_ROWS)
   wrong_number: { t: "ข้อมูลติดต่อไม่ถูกต้อง", tone: "bg-rose-500" },   // เดิม "เบอร์ผิด" — ชื่อตามหน้าต่าง Follow-up ฝั่งขาย
   // ★ 1 ต.ค. 69 ปุ่ม Follow-up แบบหน้า lead (OmFollowupModal) — ติดต่อแล้วยังไม่มีข้อสรุป · จดประวัติอย่างเดียว ไม่ย้ายแท็บ
   informed:     { t: "แจ้งรอบล้างแล้ว",      tone: "bg-emerald-500" },

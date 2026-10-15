@@ -3,6 +3,7 @@ import { expireOmGrantsIfDue } from "@/lib/om/entitlement-expiry";
 import { requireAuth, requireAnyRole } from "@/lib/auth";
 import { fixDates, sql } from "@/lib/db";
 import { getOmDb } from "@/lib/om/line";
+import { HOUSE_MANAGE_ROLES } from "@/lib/om/om-roles";
 import { CLEANING_ID_SQL, DUE_WASH_SQL, NEXT_WASH_SQL } from "@/lib/om/entitlement";
 import { finishSync, logSync } from "@/lib/om/rem-sync";
 
@@ -51,9 +52,12 @@ export async function GET(req: NextRequest, ctx: { params: Promise<{ id: string 
     SELECT g.id, g.qty, g.source, g.reason, g.installation_id, g.contract_term,
            ISNULL(g.service_type_id, ${CLEANING_ID_SQL}) service_type_id,
            ISNULL(gst.label_th, N'ล้างแผง') service_type,
-           CONVERT(char(10), g.created_at, 23) created_at
+           CONVERT(char(10), g.created_at, 23) created_at,
+           -- ★ 15 ต.ค. 69 ผู้ใช้สั่ง: แถวเพิ่ม/ลดสิทธิ์ต้องบอกว่าใครปรับ เมื่อไร
+           cu.full_name created_by_name, CONVERT(varchar(33), g.created_at, 126) created_dt
     FROM om_entitlement_grants g JOIN om_installations i ON i.id = g.installation_id
     LEFT JOIN om_service_type gst ON gst.id = g.service_type_id
+    LEFT JOIN users cu ON cu.id = g.created_by
     WHERE i.house_id = @id ORDER BY g.id;
 
     SELECT rd.id, CONVERT(char(10), rd.service_date, 23) service_date, rd.status, rd.installation_id,
@@ -162,7 +166,10 @@ export async function PATCH(req: NextRequest, ctx: { params: Promise<{ id: strin
   if (!old) return NextResponse.json({ error: "ไม่พบบ้าน" }, { status: 404 });
 
   // เอากลับเข้าระบบ / สั่งซ่อน — ทำแยกจากการแก้ฟิลด์ปกติ
+  // ★ 15 ต.ค. 69 ผู้ใช้เคาะ: ซ่อน/เอากลับ เฉพาะ admin / หัวหน้า (ปุ่มย้ายเข้าเมนู "⋯" ของหน้าบ้าน) — กันที่ API ด้วย
   if (b.restore === true || typeof b.exclude === "string") {
+    const mg = await requireAnyRole(req, HOUSE_MANAGE_ROLES);
+    if (mg.error) return NextResponse.json({ error: "ซ่อน / เอากลับเข้าระบบ ได้เฉพาะ admin และหัวหน้า" }, { status: 403 });
     const on = b.restore === true;
     await db.request().input("id", sql.Int, id).input("u", sql.Int, gate.userId ?? null)
       .input("r", sql.NVarChar(300), on ? null : String(b.exclude).slice(0, 300))

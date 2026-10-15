@@ -314,12 +314,12 @@ export const MODULES: AppModule[] = [
   {
     key: "dashboard", label: "Dashboard", emoji: "📊", tint: "bg-sky-50",
     group: "operation",
-    desc: "ภาพรวม · Customer · Lifecycle",
+    desc: "Dashboard I · II · III · Lead Tracking",
     roles: ["admin", "sales", "solar", "account", "sales_sup", "solar_sup"],
     menu: [
-      { label: "ภาพรวม", href: "/dashboard", icon: <I d={D.chart} /> },
+      { label: "Dashboard I", href: "/dashboard", icon: <I d={D.chart} /> },
       { label: "Dashboard II", href: "/dashboard-dev", icon: <I d={D.chart} /> },
-      { label: "Customer", href: "/dashboard-customer", icon: <I d={D.clipboard} /> },
+      { label: "Dashboard III", href: "/dashboard-customer", icon: <I d={D.clipboard} /> },
       { label: "Lead Tracking", href: "/lifecycle", icon: <I d={D.checkCircle} /> },
     ],
   },

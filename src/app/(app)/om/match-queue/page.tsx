@@ -93,10 +93,7 @@ export default function MatchQueuePage() {
         </Link>
       </div>
 
-      <div className="rounded-xl border border-amber-200 bg-amber-50 px-4 py-2.5 text-sm text-amber-900">
-        ระบบจะ<b>ไม่เดาให้</b> และจะ<b>ไม่ทิ้งเงียบ ๆ</b> — ของที่ไม่มั่นใจมากองตรงนี้
-        · <b>กดรับ</b> = สร้างบ้าน+ลูกค้า+สิทธิ์ให้ทันที เหมือนที่ระบบทำอัตโนมัติ
-      </div>
+      {/* ★ 15 ต.ค. 69 ผู้ใช้สั่งเอากล่องเหลืองอธิบาย ("ระบบจะไม่เดาให้ … กดรับ = สร้างบ้าน+ลูกค้า+สิทธิ์") ออก */}
 
       <div className="rounded-xl border border-gray-200 bg-white overflow-hidden">
         <div className="flex items-center px-4 border-b border-gray-200 overflow-x-auto">
