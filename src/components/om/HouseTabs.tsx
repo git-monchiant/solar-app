@@ -11,7 +11,7 @@ import Loading from "@/components/ui/Loading";
 import FallbackImage from "@/components/ui/FallbackImage";
 import { formatThaiDate } from "@/lib/utils/formatters";
 import { statusLabel, statusTone } from "@/lib/om/booking";
-import { thD } from "@/lib/om/service-view";
+import { thD, thDT } from "@/lib/om/service-view";
 import { SystemCard, type HouseDetail } from "@/components/om/HouseSystemCard";
 import { useOmPhotoUrls } from "@/lib/hooks/useOmPhotoUrls";
 import { UploadTile } from "@/components/lead/detail/PhotosTab";
@@ -177,9 +177,14 @@ export function HouseInfoTab({ houseId }: { houseId: number }) {
         {d.grants.map((g) => (
           <div key={`g${g.id}`} className="flex items-center gap-2.5 px-4 py-1.5 border-b border-gray-100 text-xxs text-gray-500">
             <b className={`min-w-[38px] ${g.qty < 0 ? "text-red-600" : "text-gray-700"}`}>{g.qty > 0 ? "+" : ""}{g.qty}</b>
-            <span className="font-bold px-2 rounded-full bg-emerald-50 text-emerald-700">{SRC[g.source] ?? g.source}</span>
+            {/* แถวเพิ่ม/ลด (ปรับมือ) โชว์แค่เหตุผล — ชุดเดียวกับหน้าบ้าน / ระบบติดตั้ง (15 ต.ค. 69) */}
+            {g.source !== "manual_adjust" && <span className="font-bold px-2 rounded-full bg-emerald-50 text-emerald-700">{SRC[g.source] ?? g.source}</span>}
             {g.service_type_id !== cleaningId && <span className="font-bold px-2 rounded-full bg-sky-50 text-sky-700">{g.service_type}</span>}
-            <span className="flex-1 truncate">{termText(g) && <b className="text-gray-700">{termText(g)} · </b>}{g.reason || ""}</span>
+            <span className="flex-1 truncate">{termText(g) && <b className="text-gray-700">{termText(g)} · </b>}
+              {g.reason || (g.source === "manual_adjust" ? <span className="text-gray-400">ไม่ระบุเหตุผล</span> : "")}</span>
+            {g.source === "manual_adjust" && (g.created_by_name || g.created_dt) && (
+              <span className="shrink-0 text-gray-400 whitespace-nowrap">โดย {g.created_by_name ?? "—"}{g.created_dt ? ` · ${thDT(g.created_dt)}` : ""}</span>
+            )}
           </div>
         ))}
         {d.redemptions.map((r) => (
