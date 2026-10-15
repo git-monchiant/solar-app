@@ -31,6 +31,8 @@ export type ServiceDocInput = {
     time_slot?: string | null;
     house_number: string | null; project_name: string | null; customer_name: string | null;
     phone: string | null; kwp_list: string | null;
+    /** ครั้งที่ / คงเหลือหลังตัด ที่จดไว้ตอนปิดงาน (om_redemptions · แผน 20261015-04) — ไม่ตัดสิทธิ์ = null */
+    quota_seq?: number | null; quota_left?: number | null;
   };
   report: {
     job_no: string | null; checks: Record<string, { pass?: boolean; fix?: string }>;
@@ -117,6 +119,11 @@ export function renderServiceDocHtml(d: ServiceDocInput): string {
       ? `${thDate(d.job.scheduled_at)} เวลา ${formatSlotsRange(d.job.time_slot)} น.`   // ช่วงที่จอง (แผน 20261001-01)
       : thDate(d.job.scheduled_at, true)],
   ];
+  // ★ แผน 20261015-04 (ผู้ใช้เคาะ 15 ต.ค. 69): ครั้งที่ / คงเหลือ ณ วันปิดงาน — ช่องขวาของ "วันนัด" ว่างอยู่ ใบไม่สูงขึ้น
+  //   ติดลบ (ทำงานเกินสิทธิ์) แสดง 0 · ฉบับร่างยังไม่ตัดสิทธิ์ · งานซ่อมไม่ตัดสิทธิ์ ⇒ ไม่มีบรรทัดนี้
+  if (closed && d.job.quota_seq != null)
+    info.push([`สิทธิ์${esc(d.job.service_type ?? "")}`,
+      `ครั้งที่ ${d.job.quota_seq} · คงเหลือ ${Math.max(0, d.job.quota_left ?? 0)} ครั้ง`]);
 
   let n = 0;
   const body = [

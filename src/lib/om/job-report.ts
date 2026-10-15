@@ -100,12 +100,16 @@ export async function loadJobReport(db: sql.ConnectionPool, id: number) {
             ORDER BY p.is_primary DESC, p.id) phone,
            (SELECT STRING_AGG(CAST(COALESCE(i.rem_size_kwp, i.promo_size_kw) AS varchar(12)), ' + ')
               FROM om_installations i WHERE i.house_id = b.house_id
-               AND COALESCE(i.rem_size_kwp, i.promo_size_kw) IS NOT NULL) kwp_list
+               AND COALESCE(i.rem_size_kwp, i.promo_size_kw) IS NOT NULL) kwp_list,
+           rq.seq_no quota_seq, rq.balance_after quota_left
     FROM om_bookings b
     JOIN om_houses h ON h.id = b.house_id
     LEFT JOIN om_projects pj ON pj.project_id = h.project_id
     LEFT JOIN om_service_type st ON st.id = b.service_type_id
     LEFT JOIN om_teams t ON t.id = b.team_id
+    -- ครั้งที่ / คงเหลือ ที่จดไว้ตอนปิดงาน (แผน 20261015-04) — ยังไม่ปิด / งานไม่ตัดสิทธิ์ / ย้อนสถานะแล้ว = NULL
+    OUTER APPLY (SELECT TOP 1 rd.seq_no, rd.balance_after FROM om_redemptions rd
+                  WHERE rd.booking_id = b.id AND rd.status = 'used' ORDER BY rd.id DESC) rq
     WHERE b.id = @id;
 
     SELECT id, booking_id, form_id, job_no, paper_ref, checks, measures, photos, note, result, fail_count,

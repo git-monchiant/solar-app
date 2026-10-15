@@ -200,10 +200,11 @@ export async function PATCH(req: NextRequest, ctx: { params: Promise<{ id: strin
         if (!dup) {
           // ยอดคงเหลือของชนิดนี้ก่อนตัด — งานเกิดขึ้นจริงแล้วจึงต้องตัดเสมอ ถึงจะติดลบ
           // แต่ต้องจดไว้ในโน้ตให้คนตามเก็บเงิน/เติมสิทธิ์เห็น ไม่ใช่ปล่อยเงียบ
-          const left = (await new sql.Request(tx)
+          const bal = (await new sql.Request(tx)
             .input("h", sql.Int, cur.house_id).input("t", sql.Int, cur.service_type_id)
-            .query(`SELECT ISNULL(SUM(balance), 0) balance FROM om_entitlement_balance
-                    WHERE house_id = @h AND service_type_id = @t`)).recordset[0]?.balance ?? 0;
+            .query(`SELECT ISNULL(SUM(balance), 0) balance, ISNULL(SUM(total_used), 0) used FROM om_entitlement_balance
+                    WHERE house_id = @h AND service_type_id = @t`)).recordset[0];
+          const left: number = bal?.balance ?? 0;
           // วันที่ล้าง = วันนัด แต่ไม่เกินวันนี้ (เวลาไทย)
           //   ★ 14 ต.ค. 69 ปิดงานก่อนถึงวันนัดได้ เดิมลงวันนัดตรง ๆ → วันล้างอยู่ในอนาคต
           //     กราฟภาพรวมโผล่เดือนที่ยังไม่ถึง และ "ล้างล่าสุด" ของบ้านเลยวันนี้ไป
@@ -217,8 +218,13 @@ export async function PATCH(req: NextRequest, ctx: { params: Promise<{ id: strin
               ? "ตัดสิทธิ์อัตโนมัติเมื่อปิดงาน"
               : "ตัดสิทธิ์อัตโนมัติเมื่อปิดงาน · ★ ไม่มีสิทธิ์คงเหลือ ยอดติดลบ")
             .input("u", sql.Int, gate.userId ?? null)
-            .query(`INSERT INTO om_redemptions (installation_id, booking_id, service_date, status, note, created_by, service_type_id)
-                    VALUES (@i, @b, @d, 'used', @n, @u, @t)`);
+            // ★ แผน 20261015-04: จด "ครั้งที่ / คงเหลือหลังตัด" ไว้กับแถวนี้ ให้ใบบริการ PDF อ่าน
+            //   ใบสร้างใหม่ทุกครั้งที่เปิด — คิดยอดตอนเปิดใบ เลขในใบเก่าจะเปลี่ยนตามการล้าง/ซื้อเพิ่มครั้งหลัง ๆ
+            .input("sq", sql.Int, (bal?.used ?? 0) + 1)
+            .input("ba", sql.Int, left - 1)
+            .query(`INSERT INTO om_redemptions (installation_id, booking_id, service_date, status, note, created_by, service_type_id,
+                                                seq_no, balance_after)
+                    VALUES (@i, @b, @d, 'used', @n, @u, @t, @sq, @ba)`);
         }
       }
     }
