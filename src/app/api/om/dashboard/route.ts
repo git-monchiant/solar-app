@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { expireOmGrantsIfDue } from "@/lib/om/entitlement-expiry";
-import { requireAuth } from "@/lib/auth";
+import { requireAnyActiveRole, requireAuth } from "@/lib/auth";
 import { sql } from "@/lib/db";
 import { getOmDb } from "@/lib/om/line";
 import { DUE_WASH_SQL, isCleaning } from "@/lib/om/entitlement";
@@ -8,6 +8,9 @@ import { OM_FOLLOW_DROP_SQL, OM_FOLLOW_SCOPE_SQL } from "@/lib/om/follow-sql";
 import { ACTIVE_STATUS } from "@/lib/om/booking";
 import { getSettings } from "@/lib/om/settings";
 import { countOmUnread } from "@/lib/om/notifications";
+import {
+  EVER_WASHED_SQL, OM_CARED_HOUSE_SQL, OM_MONEY_ROLES, dashRange, inRange, loadOmQuoteMoney,
+} from "@/lib/om/dashboard-sql";
 
 // ภาพรวม O&M (เฟส 6 ของแผน 20260922-01) — ตัวเลขหน้าเดียวที่ตอบว่า "งานกองอยู่ตรงไหน"
 //
@@ -20,11 +23,6 @@ import { countOmUnread } from "@/lib/om/notifications";
 
 const ALIVE = ACTIVE_STATUS.map((s) => `'${s}'`).join(",");
 
-/** เคยล้างอย่างน้อย 1 ครั้ง — คู่ตรงข้ามของ "ไม่เคยล้างเลย" ในการ์ดทะเบียนบ้าน (alias บ้านชื่อ h) */
-const EVER_WASHED_SQL = `EXISTS (
-        SELECT 1 FROM om_redemptions rd JOIN om_installations i ON i.id = rd.installation_id
-         WHERE i.house_id = h.id AND rd.status <> 'void' AND ${isCleaning("rd")})`;
-
 export async function GET(req: NextRequest) {
   const gate = await requireAuth(req);
   if (gate.error) return gate.error;
@@ -32,21 +30,18 @@ export async function GET(req: NextRequest) {
   const cfg = await getSettings("call.");
   const maxAttempts = Number(cfg["call.max_attempts"] ?? 3);
 
-  // 12 เดือนล่าสุดตามเวลาไทย (เดือนนี้อยู่ท้ายสุด) — คิดฝั่งนี้แล้วส่งช่วงให้คิวรี
+  // ★ แผน 20261015-02: ช่วงวันที่ (?from&to) มีผลกับกราฟงานล้าง + การ์ดมูลค่างานเท่านั้น
+  //   ที่เหลือเป็นสถานะ ณ วันนี้ · ไม่ส่ง = 12 เดือนล่าสุด (เดือนนี้ท้ายสุด) หน้าตากราฟเหมือนเดิม
   //   เดือนที่ไม่มีงานต้องขึ้นเป็น 0 ไม่ใช่หายไป (GROUP BY ทิ้งเดือนว่างเอง กราฟเลยข้ามเดือนเงียบ ๆ)
-  const [ty, tm] = new Date().toLocaleDateString("en-CA", { timeZone: "Asia/Bangkok" }).split("-").map(Number);
-  const ymOf = (i: number) => {
-    const x = new Date(Date.UTC(ty, tm - 1 + i, 1));
-    return `${x.getUTCFullYear()}-${String(x.getUTCMonth() + 1).padStart(2, "0")}`;
-  };
-  const ymKeys = Array.from({ length: 12 }, (_, i) => ymOf(i - 11));
+  const range = dashRange(req.nextUrl.searchParams);
+  const ymKeys = range.months;
 
   const db = await getOmDb();
   await expireOmGrantsIfDue(db);   // สิทธิ์ที่หมดอายุตัดวันละครั้ง ก่อนอ่านยอด (แผน 20260924-02 เฟส 4)
   const r = await db.request()
     .input("max", sql.Int, maxAttempts)
-    .input("from", sql.Date, `${ymKeys[0]}-01`)
-    .input("to", sql.Date, `${ymOf(1)}-01`)
+    .input("from", sql.Date, range.from)
+    .input("to", sql.Date, range.to)
     .query(`
     ${OM_FOLLOW_SCOPE_SQL}
 
@@ -80,7 +75,7 @@ export async function GET(req: NextRequest) {
       SELECT CASE WHEN ${DUE_WASH_SQL} THEN 1 ELSE 0 END due,
              CASE WHEN ${DUE_WASH_SQL} AND NOT ${EVER_WASHED_SQL} THEN 1 ELSE 0 END never_washed
         FROM om_houses h
-       WHERE h.is_om = 1 AND EXISTS (SELECT 1 FROM om_installations i WHERE i.house_id = h.id)) a;
+       WHERE ${OM_CARED_HOUSE_SQL}) a;
 
     -- ⑥ สิทธิ์ล้างแผง — ให้ไว้เท่าไร ใช้ไปเท่าไร (เฉพาะบ้านที่ยังอยู่ใน O&M)
     SELECT
@@ -93,13 +88,14 @@ export async function GET(req: NextRequest) {
          JOIN om_houses h ON h.id = i.house_id
         WHERE h.is_om = 1 AND rd.status <> 'void' AND ${isCleaning("rd")}) used;
 
-    -- ⑦ งานล้างที่ทำจริงย้อนหลัง 12 เดือน — เส้นวัดกำลังการผลิตของทีม
+    -- ⑦ งานล้างที่ทำจริงตามช่วงวันที่ — เส้นวัดกำลังการผลิตของทีม
     --   ★ ต้องมีขอบบน: ปิดงานก่อนถึงวันนัดได้ แล้ว service_date = วันนัด
     --     (14 ต.ค. 69 มีแท่ง พ.ย. 69 โผล่ท้ายกราฟ จากใบงาน #129 ที่นัด 10 พ.ย.)
+    --   เกณฑ์เดียวกับรายชื่อแท่ง (/api/om/dashboard/rows kind=washed) — รวมทั้งสองขอบ
     SELECT FORMAT(rd.service_date, 'yyyy-MM') ym, COUNT(*) n
       FROM om_redemptions rd
      WHERE rd.status <> 'void' AND ${isCleaning("rd")}
-       AND rd.service_date >= @from AND rd.service_date < @to
+       AND rd.service_date >= @from AND rd.service_date <= @to
      GROUP BY FORMAT(rd.service_date, 'yyyy-MM');`);
 
   // แจ้งเตือนที่ยังไม่อ่านของคนที่เปิดหน้านี้ — กล่องของ O&M เอง ไม่ใช่กระดิ่งกลางของฝั่งขาย
@@ -115,7 +111,24 @@ export async function GET(req: NextRequest) {
   const quota = rs[5][0] ?? {};
   const washed = new Map(rs[6].map((x) => [String(x.ym), num(x.n)]));
 
+  // มูลค่างาน O&M (แผน 20261015-02) — เห็นเฉพาะ OM_MONEY_ROLES (ชุดรายรับ O&M + sales · ไม่มี solar) · คนอื่นได้ null (การ์ดไม่ขึ้น)
+  //   มูลค่า/รับแล้ว = ใบที่ลูกค้ารับในช่วง · ค้างรับ = ทุกใบไม่จำกัดช่วง แบบ "ยังค้างรับ (ทั้งหมด)" ของ Dashboard I
+  let value: null | { count: number; total: number; received: number; received_count: number; outstanding: number; outstanding_count: number } = null;
+  if (!(await requireAnyActiveRole(req, OM_MONEY_ROLES)).error) {
+    const all = await loadOmQuoteMoney(db);
+    const inR = all.filter((x) => inRange(x.at, range.from, range.to));
+    const got = inR.filter((x) => x.received > 0);
+    const owe = all.filter((x) => x.outstanding > 0);
+    value = {
+      count: inR.length, total: inR.reduce((s, x) => s + x.total, 0),
+      received: got.reduce((s, x) => s + x.received, 0), received_count: got.length,
+      outstanding: owe.reduce((s, x) => s + x.outstanding, 0), outstanding_count: owe.length,
+    };
+  }
+
   return NextResponse.json({
+    range: { from: range.from, to: range.to, today: range.today },
+    value,
     unread,
     buckets,
     // = badge การ์ด O&M หน้าแรก (journey 2100–2600) = ทุกแท็บยกเว้นปิดงาน
