@@ -41,8 +41,8 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
     await tx.begin();
     const q = (await new sql.Request(tx).input("id", sql.Int, id).query(`
       SELECT q.id, q.project_id, q.boq_id, q.doc_no, q.revision, q.root_id, q.is_latest, q.status, q.kind,
-             q.r1_by, q.r2_by, b.pending_lines
-      FROM b2b_quotations q WITH (UPDLOCK, ROWLOCK) JOIN b2b_boqs b ON b.id = q.boq_id WHERE q.id = @id`)).recordset[0];
+             q.r1_by, q.r2_by, b.pending_lines, b.is_latest AS boq_latest, b.doc_no AS boq_doc_no, b.revision AS boq_revision
+      FROM b2b_quotations q WITH (UPDLOCK, ROWLOCK) JOIN b2b_boqs b WITH (UPDLOCK, ROWLOCK) ON b.id = q.boq_id WHERE q.id = @id`)).recordset[0];
     if (!q) throw new UserError("ไม่พบใบเสนอราคา");
     const status = q.status as QuoteStatus;
     const label = `${q.doc_no} Rev ${q.revision}`;
@@ -56,6 +56,8 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
     if (action === "submit") {
       if (!canEdit) throw new UserError("ส่งอนุมัติได้เฉพาะ Solar B2B");
       if (!q.is_latest || !editableStatus(status)) throw new UserError("ส่งอนุมัติได้เฉพาะใบร่าง/ส่งกลับแก้ของ Revision ล่าสุด");
+      // ★ ใบร่างที่ทำจาก BOQ Rev เก่า — ผู้ตรวจสอบจะอนุมัติตัวเลขเก่า (ทบทวน BOQ 15 ต.ค.) · ล็อกแถว BOQ ข้างบนกันชนกับการบันทึก BOQ
+      if (!q.boq_latest) throw new UserError(`BOQ ที่ใบนี้ใช้ (${q.boq_doc_no} Rev ${q.boq_revision}) มี Revision ใหม่แล้ว — เลือก BOQ Rev ล่าสุดในใบแล้วบันทึกก่อนส่งอนุมัติ`);
       if (q.pending_lines > 0) throw new UserError(`BOQ ที่ใช้ยังมีบรรทัดรอราคา ${q.pending_lines} บรรทัด — รอ Purchase ใส่ราคาก่อนส่งอนุมัติ`);
       // วันที่บนใบ = วันส่ง — ตั้งก่อนสร้าง snapshot ให้ snapshot มีวันที่ด้วย
       await new sql.Request(tx).input("id", sql.Int, id).input("d", sql.Date, todayBangkok()).query(`UPDATE b2b_quotations SET issue_date = @d WHERE id = @id`);

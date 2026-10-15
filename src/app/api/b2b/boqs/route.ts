@@ -49,7 +49,7 @@ export async function POST(req: NextRequest) {
       FROM b2b_projects p JOIN b2b_customers c ON c.id = p.customer_id WHERE p.id = @p`)).recordset[0];
     if (!p) { await tx.rollback(); return NextResponse.json({ error: "ไม่พบโครงการ" }, { status: 404 }); }
     if (isClosedStage(p.stage)) { await tx.rollback(); return NextResponse.json({ error: "โครงการปิดอยู่ — เปิดกลับก่อนจึงเพิ่ม BOQ ได้" }, { status: 409 }); }
-    const parsed = readBoqHeader({ ...body, project_name: p.name });
+    const parsed = readBoqHeader({ ...body, project_name: p.name }, { create: true });
     if ("error" in parsed) { await tx.rollback(); return NextResponse.json({ error: parsed.error }, { status: 400 }); }
     const h = parsed.value;
     const docNo = await nextDocNo(tx);

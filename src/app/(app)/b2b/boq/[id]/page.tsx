@@ -11,7 +11,8 @@ import { apiFetch, getUserContextHeaders } from "@/lib/api";
 import { hasRole, useActiveRoles } from "@/lib/roles";
 import { formatNumber, formatThaiDate, formatTHB } from "@/lib/utils/formatters";
 import { calcBoq, perWp, type AddonMode } from "@/lib/b2b/boq-calc";
-import { ADDON_MIN_CATEGORY, B2B_BOQ_ROLES, B2B_BOQ_VIEW_ROLES, type BoqHeader, type BoqLine, type BoqRevision } from "@/lib/b2b/boq";
+import { ADDON_MIN_CATEGORY, B2B_BOQ_ROLES, B2B_BOQ_VIEW_ROLES, boqStageLocked, type BoqHeader, type BoqLine, type BoqRevision } from "@/lib/b2b/boq";
+import { stageLabel } from "@/lib/b2b/project";
 import type { B2bCategory, B2bMaterial } from "@/lib/b2b/materials";
 import BoqSummary from "@/components/b2b/boq/BoqSummary";
 import BoqCategorySection from "@/components/b2b/boq/BoqCategorySection";
@@ -100,7 +101,9 @@ export default function BoqEditorPage({ params }: { params: Promise<{ id: string
   if (!data || !head) return <Loading />;
 
   const h = data.header;
-  const readOnly = !h.is_latest || !canEdit || !!h.locked_by_quote;
+  // ผ่านขั้นราคายืนยันแล้ว (ได้งาน/ปิด/แพ้/ยกเลิก) แก้/ออก Rev ไม่ได้ — API ตรวจซ้ำ
+  const stageLocked = boqStageLocked(h.project_stage);
+  const readOnly = !h.is_latest || !canEdit || !!h.locked_by_quote || stageLocked;
   // ใบในโครงการ (แผน 20261015-07): ชื่อโครงการ/ลูกค้า/ที่ตั้ง/พิกัดมาจากโครงการ — แก้ในหน้าโครงการ (server ไม่รับค่าจากหน้านี้)
   const linked = h.project_id != null;
   const backHref = linked ? `/b2b/projects/${h.project_id}` : "/b2b/boq";
@@ -111,7 +114,8 @@ export default function BoqEditorPage({ params }: { params: Promise<{ id: string
   const refresh = (key: string) => {
     setLines((ls) => ls.map((l) => (l.key === key ? { ...l, unit_cost: l.current_unit_price ?? l.unit_cost, refresh_price: true } : l))); touch();
   };
-  const changedKeys = lines.filter((l) => l.line_type === "material" && l.current_unit_price != null && l.unit_cost != null && l.current_unit_price !== l.unit_cost).map((l) => l.key);
+  // ราคาใน Master เปลี่ยน + บรรทัดรอราคาที่ Purchase ใส่ราคาแล้ว (ปกติเติมให้เองตอน Purchase บันทึกราคา — กรณีเปิดหน้าค้างไว้)
+  const changedKeys = lines.filter((l) => l.line_type === "material" && l.current_unit_price != null && l.current_unit_price !== l.unit_cost).map((l) => l.key);
 
   const openPicker = async (c: B2bCategory) => {
     if (!materials) await loadMaterials().catch(() => setError("โหลดรายการ Master ไม่สำเร็จ"));
@@ -217,7 +221,12 @@ export default function BoqEditorPage({ params }: { params: Promise<{ id: string
         ) : undefined} />
 
       <div className="p-3 md:p-6 space-y-4">
-        {h.is_latest && h.locked_by_quote && (
+        {h.is_latest && stageLocked && (
+          <div className="rounded-lg border border-amber-200 bg-amber-50 px-4 py-2.5 text-sm text-amber-800">
+            โครงการอยู่ขั้น &quot;{stageLabel(h.project_stage!)}&quot; แล้ว — BOQ แก้/ออก Revision ไม่ได้ (BOQ ที่ได้งานเป็นงบโครงการ)
+          </div>
+        )}
+        {h.is_latest && !stageLocked && h.locked_by_quote && (
           <div className="rounded-lg border border-amber-200 bg-amber-50 px-4 py-2.5 text-sm text-amber-800">
             Rev {h.revision} ใช้ในใบเสนอราคา {h.locked_by_quote} ที่ส่งอนุมัติแล้ว — แก้ไม่ได้ · ออก Revision ใหม่เพื่อแก้ตัวเลข
           </div>
@@ -270,7 +279,7 @@ export default function BoqEditorPage({ params }: { params: Promise<{ id: string
             {calc.pending_lines > 0 && <span className="rounded-full bg-red-50 px-2 py-0.5 text-xs font-semibold text-red-600">รอราคา {calc.pending_lines} บรรทัด — ยอดยังไม่ครบ</span>}
             {changedKeys.length > 0 && !readOnly && (
               <button type="button" onClick={() => changedKeys.forEach(refresh)} style={{ minHeight: 0 }}
-                className="rounded-full bg-amber-100 px-2.5 py-0.5 text-xs font-semibold text-amber-800 hover:bg-amber-200">ราคาใน Master เปลี่ยน {changedKeys.length} บรรทัด · ใช้ราคาใหม่ทั้งหมด</button>
+                className="rounded-full bg-amber-100 px-2.5 py-0.5 text-xs font-semibold text-amber-800 hover:bg-amber-200">ราคาใน Master เปลี่ยน/มาแล้ว {changedKeys.length} บรรทัด · ใช้ราคาใหม่ทั้งหมด</button>
             )}
           </div>
           {/* gap-px บนพื้นเทา = เส้นคั่นช่อง · มือถือ 2 คอลัมน์ ช่องแรก (ยอดหลัก) เต็มแถว */}
@@ -322,7 +331,7 @@ export default function BoqEditorPage({ params }: { params: Promise<{ id: string
               className="h-9 whitespace-nowrap rounded-lg border border-emerald-300 bg-emerald-50 px-4 text-sm font-semibold text-emerald-700 hover:bg-emerald-100 disabled:opacity-50">
               {downloading ? "กำลังสร้างไฟล์…" : <><span className="md:hidden">Excel</span><span className="max-md:hidden">ดาวน์โหลด Excel</span></>}
             </button>
-            {h.is_latest && canEdit && (
+            {h.is_latest && canEdit && !stageLocked && (
               <>
                 <button type="button" onClick={() => void newRevision()} className="h-9 whitespace-nowrap rounded-lg border border-gray-200 px-4 text-sm font-semibold text-gray-600 hover:bg-gray-50">
                   <span className="max-md:hidden">ออก </span>Revision ใหม่

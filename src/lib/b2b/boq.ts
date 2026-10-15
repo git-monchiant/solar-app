@@ -31,6 +31,8 @@ export type BoqHeader = {
   option_label: string | null;
   /** ใบเสนอราคาที่ส่งอนุมัติแล้วอ้าง Rev นี้ ("SSE-… Rev 0") — แก้ไม่ได้ ต้องออก Revision ใหม่ */
   locked_by_quote: string | null;
+  /** ขั้นของโครงการ — ผ่านราคายืนยันแล้ว (ได้งาน/ปิด/แพ้/ยกเลิก) BOQ แก้/ออก Rev ไม่ได้ (boqStageLocked) */
+  project_stage: number | null;
   project_name: string;
   customer_name: string | null;
   location: string | null;
@@ -49,6 +51,11 @@ export type BoqHeader = {
   updated_at: string;
   updated_by_name: string | null;
 };
+
+/** BOQ ของโครงการแก้/ออก Revision ได้เฉพาะตอนโครงการยังอยู่ขั้นขาย (โอกาสขาย → ราคายืนยัน) — กติกาเดียวกับ canEditBoq ของหน้าโครงการ
+ *  ได้งานแล้ว BOQ ที่ได้งาน = งบโครงการ (Purchase/บัญชีอ้าง) · แพ้/ยกเลิก ให้เปิดโครงการกลับก่อน (ทบทวน BOQ 15 ต.ค.) */
+export const BOQ_EDITABLE_MAX_STAGE = 3400;
+export const boqStageLocked = (projectStage: number | null | undefined) => projectStage != null && projectStage > BOQ_EDITABLE_MAX_STAGE;
 
 export type BoqLine = {
   id?: number;
@@ -100,11 +107,15 @@ export type HeaderFields = {
   addon_modes: Record<number, AddonMode>;
 };
 
-/** ตรวจหัวใบ (POST สร้าง / PUT บันทึก) */
-export function readBoqHeader(b: Record<string, unknown>): { value: HeaderFields } | { error: string } {
+/** ตรวจหัวใบ (POST สร้าง / PUT บันทึก)
+ *  Margin ว่าง: สร้างใบ = ค่าเริ่มต้น 15% · บันทึก = ต้องระบุ (เดิมกลายเป็น 15% เงียบๆ ขณะหน้าจอคิด 0% — ทบทวน BOQ 15 ต.ค.)
+ *  ตรวจหลังปัด 3 ตำแหน่ง (99.9996 → 100 ทำ Excel หารศูนย์) */
+export function readBoqHeader(b: Record<string, unknown>, opts: { create?: boolean } = {}): { value: HeaderFields } | { error: string } {
   const project_name = text(b.project_name, 300);
   if (!project_name) return { error: "กรุณาระบุชื่อโครงการ" };
-  const margin = b.margin_pct == null || b.margin_pct === "" ? 15 : Number(b.margin_pct);
+  const empty = b.margin_pct == null || b.margin_pct === "";
+  if (empty && !opts.create) return { error: "กรุณาระบุ Margin" };
+  const margin = empty ? 15 : Math.round(Number(b.margin_pct) * 1000) / 1000;
   if (!Number.isFinite(margin) || margin < 0 || margin >= 100) return { error: "Margin ต้องอยู่ระหว่าง 0 ถึงน้อยกว่า 100%" };
   const lat = numOrNull(b.latitude); const lng = numOrNull(b.longitude);
   if (Number.isNaN(lat) || (lat != null && Math.abs(lat) > 90)) return { error: "Latitude ไม่ถูกต้อง" };
@@ -113,7 +124,7 @@ export function readBoqHeader(b: Record<string, unknown>): { value: HeaderFields
     value: {
       option_label: text(b.option_label, 100),
       project_name, customer_name: text(b.customer_name, 300), location: text(b.location, 500),
-      latitude: lat, longitude: lng, margin_pct: Math.round(margin * 1000) / 1000, note: text(b.note, 1000),
+      latitude: lat, longitude: lng, margin_pct: margin, note: text(b.note, 1000),
       addon_modes: parseAddonModes(b.addon_modes),
     },
   };

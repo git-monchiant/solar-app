@@ -88,7 +88,7 @@ export default function B2bProcurementPage() {
         <div className="flex flex-wrap items-center gap-2">
           <button type="button" className={chip(onlyPending)} onClick={() => setOnlyPending(true)}>รอสั่งของ ({pending.length})</button>
           <button type="button" className={chip(!onlyPending)} onClick={() => setOnlyPending(false)}>ทั้งหมด ({rows.length})</button>
-          <span className="text-xs text-gray-400">โครงการที่รับเงินงวด 1 แล้ว · งบ = ต้นทุนใน BOQ ที่ได้งาน (ไม่รวมส่วนเสริมแบบทางเลือก)</span>
+          <span className="text-xs text-gray-400">โครงการที่รับเงินงวด 1 แล้ว · งบ = ต้นทุนใน BOQ ที่ได้งาน (ไม่รวมส่วนเสริมแบบทางเลือก และรายการที่คิดเป็น % ของยอดขาย เช่น ประกันภัย)</span>
         </div>
         {shown.length === 0 && <div className="rounded-xl border border-gray-200 bg-white px-4 py-10 text-center text-sm text-gray-400">{onlyPending ? "ไม่มีโครงการที่รอสั่งของ" : "ยังไม่มีโครงการในขั้นจัดซื้อ"}</div>}
         {shown.map((r) => (

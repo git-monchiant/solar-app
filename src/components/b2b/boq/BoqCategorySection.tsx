@@ -92,6 +92,8 @@ export default function BoqCategorySection({ category, lines, calc, optional = f
                 const manual = l.line_type === "manual";
                 const pct = l.price_basis === "pct_category" || l.price_basis === "pct_sale";
                 const changed = !manual && l.current_unit_price != null && l.unit_cost != null && l.current_unit_price !== l.unit_cost;
+                // รอราคาแต่ Purchase ใส่ราคาใน Master แล้ว (หน้านี้เปิดค้างไว้ตอน Purchase บันทึก) — กดใช้ได้เลย
+                const arrived = !manual && l.unit_cost == null && l.current_unit_price != null;
                 return (
                   <tr key={l.key} className={`border-t border-gray-100 align-top ${l.unit_cost == null ? "bg-red-50/40" : changed ? "bg-amber-50/50" : ""}`}>
                     <td className={`${cell} text-right tabular-nums text-gray-400`}>{i + 1}</td>
@@ -103,7 +105,15 @@ export default function BoqCategorySection({ category, lines, calc, optional = f
                       )}
                       <div className="mt-0.5 flex flex-wrap gap-1">
                         {l.subgroup && <span title={l.subgroup} className="max-w-full truncate text-xxs text-gray-400">{l.subgroup}</span>}
-                        {l.unit_cost == null && <span className="rounded-full bg-red-50 px-1.5 text-xxs font-semibold text-red-600">รอราคา (Purchase)</span>}
+                        {l.unit_cost == null && !arrived && (
+                          <span className="rounded-full bg-red-50 px-1.5 text-xxs font-semibold text-red-600">{manual ? "ยังไม่ใส่ราคา" : "รอราคา (Purchase)"}</span>
+                        )}
+                        {arrived && (
+                          <span className="rounded-full bg-amber-100 px-1.5 text-xxs font-semibold text-amber-800">
+                            Purchase ใส่ราคาแล้ว {formatPrice(l.current_unit_price)}
+                            {!readOnly && <button type="button" onClick={() => onRefresh(l.key)} style={{ minHeight: 0 }} className="ml-1 underline">ใช้ราคานี้</button>}
+                          </span>
+                        )}
                         {changed && (
                           <span className="rounded-full bg-amber-100 px-1.5 text-xxs font-semibold text-amber-800">
                             ราคาใน Master เปลี่ยนเป็น {formatPrice(l.current_unit_price)}

@@ -149,6 +149,9 @@ export default function B2bQuotePage({ params }: { params: Promise<{ id: string 
                 <div><dt className="text-xs text-gray-400">ราคาขาย BOQ</dt><dd className="font-medium tabular-nums">{(boq?.total_sale ?? q.boq.total_sale) != null ? formatTHB((boq?.total_sale ?? q.boq.total_sale)!, { decimals: 0 }) : "—"}</dd></div>
               </dl>
             </div>
+            {project && editable && !project.boqs.some((b) => b.id === d.boq_id) && (
+              <p className="mt-2 text-sm font-semibold text-red-600">BOQ ที่เลือกเป็น Revision เก่า — เลือก BOQ Rev ล่าสุดแล้วบันทึก ก่อนส่งอนุมัติ</p>
+            )}
             {(boq?.pending_lines ?? q.boq.pending_lines) > 0 && (
               <p className="mt-2 text-sm font-semibold text-red-600">BOQ ยังมีบรรทัดรอราคา {boq?.pending_lines ?? q.boq.pending_lines} — ส่งอนุมัติไม่ได้จนกว่า Purchase ใส่ราคาครบ</p>
             )}

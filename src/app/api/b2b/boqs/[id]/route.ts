@@ -1,7 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { requireAnyActiveRole } from "@/lib/auth";
 import { getB2bDb, sql } from "@/lib/b2b/db";
-import { B2B_BOQ_VIEW_ROLES, B2B_BOQ_ROLES, readBoqHeader, readBoqLines } from "@/lib/b2b/boq";
+import { B2B_BOQ_VIEW_ROLES, B2B_BOQ_ROLES, boqStageLocked, readBoqHeader, readBoqLines } from "@/lib/b2b/boq";
+import { stageLabel } from "@/lib/b2b/project";
 import { loadBoq, loadCategories, storeTotals } from "@/lib/b2b/boq-server";
 import { boqLockedByQuote } from "@/lib/b2b/quotation-server";
 
@@ -36,10 +37,15 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
   try {
     await tx.begin();
     const cur = await new sql.Request(tx).input("id", sql.Int, id)
-      .query(`SELECT is_latest, updated_at, project_id, doc_no FROM b2b_boqs WITH (UPDLOCK, ROWLOCK) WHERE id = @id`);
+      .query(`SELECT b.is_latest, b.updated_at, b.project_id, b.doc_no, (SELECT stage FROM b2b_projects p WHERE p.id = b.project_id) AS project_stage
+              FROM b2b_boqs b WITH (UPDLOCK, ROWLOCK) WHERE b.id = @id`);
     const row = cur.recordset[0];
     if (!row) { await tx.rollback(); return NextResponse.json({ error: "ไม่พบใบ BOQ" }, { status: 404 }); }
     if (!row.is_latest) { await tx.rollback(); return NextResponse.json({ error: "แก้ได้เฉพาะ Revision ล่าสุด" }, { status: 409 }); }
+    if (boqStageLocked(row.project_stage)) {
+      await tx.rollback();
+      return NextResponse.json({ error: `โครงการอยู่ขั้น "${stageLabel(row.project_stage)}" แล้ว — BOQ แก้ไม่ได้` }, { status: 409 });
+    }
     // ใบเสนอราคาที่ส่งอนุมัติแล้วอ้าง Rev นี้ — ตัวเลขที่ผู้ตรวจสอบเห็นต้องไม่เปลี่ยนใต้มือ (แผน 20261015-07 เฟส 2)
     const lockedBy = await boqLockedByQuote(tx, id);
     if (lockedBy) { await tx.rollback(); return NextResponse.json({ error: `BOQ Rev นี้ใช้ในใบเสนอราคา ${lockedBy} ที่ส่งอนุมัติแล้ว — ออก Revision ใหม่ก่อนแก้` }, { status: 409 }); }
