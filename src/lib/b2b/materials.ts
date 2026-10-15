@@ -25,6 +25,29 @@ export const PRICE_BASIS: { key: PriceBasis; label: string; hint: string }[] = [
 
 export const priceBasisLabel = (b: PriceBasis) => PRICE_BASIS.find((x) => x.key === b)?.label ?? b;
 
+/** แบบราคาที่แต่ละหมวดใช้ได้ — ตัวแรก = ค่าเริ่มต้นตอนเพิ่มรายการ
+ *  ตามข้อมูลที่นำเข้าจาก Excel (ผู้ใช้สั่งให้ล็อกตามหมวด 6 ต.ค. 69):
+ *  ส่วนใหญ่ = ต่อหน่วย + บรรทัด Accessories คิด % ต้นทุนหมวด · หมวด 3 มี PV Mounting ต่อ Wp ระบบ · หมวด 18 มีประกันภัย % ยอดขาย
+ *  หมวดที่ไม่อยู่ในนี้ (19–25 ส่วนเพิ่มเติม ยังไม่มีรายการ Master) = เลือกได้ทุกแบบ
+ *  ★ หมวดไหนต้องใช้แบบใหม่ เพิ่มที่นี่ที่เดียว — ฟอร์มกับ API อ่านจากตัวนี้ */
+const UNIT_PLUS_ACC: PriceBasis[] = ["unit", "pct_category"];
+export const CATEGORY_PRICE_BASES: Partial<Record<number, PriceBasis[]>> = {
+  1: ["watt"],
+  2: ["unit"], 11: ["unit"], 12: ["unit"], 13: ["unit"],
+  3: ["unit", "pct_category", "system_wp"],
+  4: UNIT_PLUS_ACC, 5: UNIT_PLUS_ACC, 6: UNIT_PLUS_ACC, 7: UNIT_PLUS_ACC, 8: UNIT_PLUS_ACC,
+  9: UNIT_PLUS_ACC, 10: UNIT_PLUS_ACC, 14: UNIT_PLUS_ACC, 15: UNIT_PLUS_ACC, 16: UNIT_PLUS_ACC,
+  17: ["system_wp"],
+  18: ["unit", "pct_sale"],
+};
+
+/** แบบราคาที่หมวดนี้เลือกได้ เรียงตาม PRICE_BASIS (ตัวเริ่มต้นดูที่ defaultBasis) */
+export const allowedBases = (categoryId: number): PriceBasis[] => {
+  const allowed = CATEGORY_PRICE_BASES[categoryId];
+  return allowed ? PRICE_BASIS.map((b) => b.key).filter((k) => allowed.includes(k)) : PRICE_BASIS.map((b) => b.key);
+};
+export const defaultBasis = (categoryId: number): PriceBasis => CATEGORY_PRICE_BASES[categoryId]?.[0] ?? "unit";
+
 /** หน่วยของตัวเลขราคา — "บาท/ม้วน" · "บาท/W" · "%" */
 export function priceSuffix(basis: PriceBasis, unit: string): string {
   if (basis === "watt") return "บาท/W";
@@ -95,6 +118,8 @@ export function readMaterialBody(b: Record<string, unknown>): { value: MaterialF
   if (!unit) return { error: "กรุณาระบุหน่วย" };
   const price_basis = PRICE_BASIS.some((x) => x.key === b.price_basis) ? (b.price_basis as PriceBasis) : null;
   if (!price_basis) return { error: "กรุณาเลือกแบบราคา" };
+  const allowed = allowedBases(category_id);
+  if (!allowed.includes(price_basis)) return { error: `หมวด ${category_id} ใช้ได้เฉพาะแบบราคา: ${allowed.map(priceBasisLabel).join(" / ")}` };
   const watt = b.spec_watt === "" || b.spec_watt == null ? null : Number(b.spec_watt);
   if (price_basis === "watt" && !(watt != null && watt > 0)) return { error: "แบบราคาต่อวัตต์ต้องระบุวัตต์ต่อแผง" };
   const sort = Number(b.sort_order);

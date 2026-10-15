@@ -179,7 +179,7 @@ export default function B2bMaterialsPage() {
           <input type="text" value={search} onChange={(e) => setSearch(e.target.value)} placeholder="ค้นหา รหัส / รายการ / ยี่ห้อ / รุ่น…"
             className="h-8 px-4 rounded-lg border border-gray-200 text-sm flex-1 min-w-[200px] focus:outline-none focus:border-primary" />
           <Dropdown className="w-full md:w-72" searchable value={catFilter} onChange={(v) => setCatFilter(v || "all")}
-            options={[{ value: "all", label: "ทุกหมวด" }, ...categories.map((c) => ({ value: String(c.id), label: `${c.id}. ${c.name}${c.is_addon ? " · ส่วนเพิ่มเติม" : ""}` }))]} />
+            options={[{ value: "all", label: "ทุกหมวด" }, ...categories.map((c) => ({ value: String(c.id), label: `${c.id}. ${c.name}${c.is_addon ? " (ส่วนเพิ่มเติม)" : ""}` }))]} />
           <div className="flex items-center gap-1.5 flex-wrap">
             {chip("all", "ทั้งหมด", materials.length)}
             {chip("pending", "รอราคา", pendingCount, pendingCount > 0 ? "text-red-600" : "")}
