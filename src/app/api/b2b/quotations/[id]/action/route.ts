@@ -7,6 +7,7 @@ import {
   type QuoteStatus, type ReviewTier,
 } from "@/lib/b2b/quotation";
 import { buildSnapshot, loadQuote, todayBangkok } from "@/lib/b2b/quotation-server";
+import { notifyB2bRole, notifyB2bUser, resolveB2bQuoteNotifications } from "@/lib/b2b/notifications";
 
 // ทางเดียวที่สถานะใบเสนอราคา B2B เปลี่ยน — ยกกลไกจากใบเสนอราคา B2C (api/(lead)/quotations/[id]/action)
 //   submit   ร่าง/ส่งกลับแก้ → รอผู้ตรวจสอบ 1 · แช่ snapshot + ลายเซ็นผู้เสนอราคา · ล้างการอนุมัติรอบก่อน
@@ -17,6 +18,7 @@ import { buildSnapshot, loadQuote, todayBangkok } from "@/lib/b2b/quotation-serv
 //   revise   อนุมัติแล้ว/ส่งลูกค้าแล้ว → Rev ใหม่ (ร่าง) — ลูกค้าต่อรอง
 //   send     อนุมัติแล้ว → ส่งลูกค้าแล้ว
 // ทุกการกระทำล็อกแถวใบ (UPDLOCK) กันสองคนกดพร้อมกัน · ลง timeline ของโครงการ
+// แจ้งเตือนในกระดิ่ง (แผน 20261015-11): ส่ง/อนุมัติ → ผู้ตรวจสอบชั้นถัดไป · ครบ 3 ชั้น/ส่งกลับ → คนส่งใบ · ชั้นที่กดแล้วปิดของคนอื่นในชั้น
 class UserError extends Error {}
 
 export async function POST(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
@@ -45,6 +47,11 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
     const status = q.status as QuoteStatus;
     const label = `${q.doc_no} Rev ${q.revision}`;
     const log = (kind: string, message: string) => logActivity(tx, q.project_id, kind, { message, userId });
+    // ข้อมูลข้อความแจ้งเตือน — อ่านหลังอัปเดตสถานะ (submitted_by ของรอบนี้)
+    const info = async () => (await new sql.Request(tx).input("id", sql.Int, id).input("u", sql.Int, userId).query(`
+      SELECT q.total, q.submitted_by, p.name AS project_name, c.name AS customer_name, (SELECT full_name FROM users WHERE id = @u) AS actor
+      FROM b2b_quotations q JOIN b2b_projects p ON p.id = q.project_id JOIN b2b_customers c ON c.id = p.customer_id WHERE q.id = @id`)).recordset[0];
+    const notice = { projectId: q.project_id as number, quotationId: id, createdBy: userId };
 
     if (action === "submit") {
       if (!canEdit) throw new UserError("ส่งอนุมัติได้เฉพาะ Solar B2B");
@@ -69,6 +76,11 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
             updated_by = @u, updated_at = SYSDATETIMEOFFSET()
           WHERE id = @id`);
       await log("quote_submitted", `ส่งอนุมัติ ${label} — รอผู้ตรวจสอบ 1`);
+      const i = await info();
+      await resolveB2bQuoteNotifications(tx, id);   // รอบก่อน (ส่งกลับแก้แล้วส่งใหม่) ไม่ค้าง
+      await notifyB2bRole(tx, REVIEW_ROLE[1], { ...notice, kind: "approval_requested", tier: 1,
+        title: `B2B รออนุมัติ ผู้ตรวจสอบ 1 · ${i.project_name}`,
+        message: `${i.actor ?? "Solar B2B"} ส่งอนุมัติ · ${i.customer_name} · ${Number(i.total).toLocaleString("th-TH", { maximumFractionDigits: 2 })} บาท` });
     } else if (action === "approve" || action === "return") {
       const tier = tierOfStatus(status);
       if (!tier) throw new UserError("ใบนี้ไม่ได้รออนุมัติ");
@@ -79,6 +91,10 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
           .query(`UPDATE b2b_quotations SET status = 'changes_required', returned_tier = @t, returned_by = @u, returned_at = SYSDATETIMEOFFSET(),
                     return_note = @n, updated_by = @u, updated_at = SYSDATETIMEOFFSET() WHERE id = @id`);
         await log("quote_returned", `ผู้ตรวจสอบ ${tier} ส่งกลับแก้ ${label} — ${note}`);
+        const i = await info();
+        await resolveB2bQuoteNotifications(tx, id, tier);
+        await notifyB2bUser(tx, i.submitted_by, { ...notice, kind: "changes_required",
+          title: `B2B ส่งกลับแก้ (ผู้ตรวจสอบ ${tier}) · ${i.project_name}`, message: `${i.actor ?? ""}: ${note}` });
       } else {
         if (b.certify !== true) throw new UserError("กรุณาติ๊กยืนยันว่าตรวจสอบเอกสารแล้วก่อนอนุมัติ");
         if (!isAdmin && [q.r1_by, q.r2_by].includes(userId)) throw new UserError("อนุมัติชั้นก่อนหน้าของใบนี้ไปแล้ว — คนเดียวกันอนุมัติ 2 ชั้นไม่ได้");
@@ -94,6 +110,16 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
                     ${c}_name = @name, ${c}_sig = @sig, ${c}_sig_mime = @mime, updated_by = @u, updated_at = SYSDATETIMEOFFSET()
                   WHERE id = @id`);
         await log("quote_approved", `ผู้ตรวจสอบ ${tier} อนุมัติ ${label}${tier === 3 ? " — ครบ 3 ชั้น พร้อมส่งลูกค้า" : ` — รอผู้ตรวจสอบ ${tier + 1}`}${note ? ` · ${note}` : ""}`);
+        const i = await info();
+        await resolveB2bQuoteNotifications(tx, id, tier);
+        if (tier < 3) {
+          const nt = (tier + 1) as ReviewTier;
+          await notifyB2bRole(tx, REVIEW_ROLE[nt], { ...notice, kind: "approval_requested", tier: nt,
+            title: `B2B รออนุมัติ ผู้ตรวจสอบ ${nt} · ${i.project_name}`, message: `ผู้ตรวจสอบ ${tier} (${i.actor ?? ""}) อนุมัติแล้ว · ${i.customer_name}` });
+        } else {
+          await notifyB2bUser(tx, i.submitted_by, { ...notice, kind: "approval_completed",
+            title: `B2B อนุมัติครบ 3 ชั้น · ${i.project_name}`, message: `ส่งลูกค้าได้ · ${i.customer_name}` });
+        }
       }
     } else if (action === "revise") {
       if (!canEdit) throw new UserError("ออก Revision ใหม่ได้เฉพาะ Solar B2B");

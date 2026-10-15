@@ -84,6 +84,7 @@ try {
       const ms = await q(`DELETE FROM b2b_project_milestones WHERE project_id IN (${ids})`);
       const pm = await q(`DELETE FROM b2b_project_permits WHERE project_id IN (${ids})`);
       const ins = await q(`DELETE FROM b2b_project_installments WHERE project_id IN (${ids})`);
+      await q(`DELETE FROM b2b_notifications WHERE project_id IN (${ids}) OR quotation_id IN (SELECT id FROM b2b_quotations WHERE project_id IN (${ids}))`);
       const qt = await q(`DELETE FROM b2b_quotations WHERE project_id IN (${ids})`);
       const i = await q(`DELETE FROM b2b_boq_items WHERE boq_id IN (SELECT id FROM b2b_boqs WHERE project_id IN (${ids}))`);
       const b = await q(`DELETE FROM b2b_boqs WHERE project_id IN (${ids})`);
@@ -113,6 +114,7 @@ try {
     if (execute && rows.length > 0) {
       await q(`UPDATE b2b_projects SET won_quote_id = NULL WHERE won_quote_id IN (SELECT id FROM b2b_quotations WHERE boq_id IN (SELECT id FROM b2b_boqs WHERE ${where}))`);
       await q(`UPDATE b2b_projects SET won_boq_id = NULL WHERE won_boq_id IN (SELECT id FROM b2b_boqs WHERE ${where})`);
+      await q(`DELETE FROM b2b_notifications WHERE quotation_id IN (SELECT id FROM b2b_quotations WHERE boq_id IN (SELECT id FROM b2b_boqs WHERE ${where}))`);
       await q(`DELETE FROM b2b_quotations WHERE boq_id IN (SELECT id FROM b2b_boqs WHERE ${where})`);
       const i = await q(`DELETE FROM b2b_boq_items WHERE boq_id IN (SELECT id FROM b2b_boqs WHERE ${where})`);
       const b = await q(`DELETE FROM b2b_boqs WHERE ${where}`);

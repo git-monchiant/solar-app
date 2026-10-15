@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
+import { useSearchParams } from "next/navigation";
 import Header from "@/components/layout/Header";
 import Loading from "@/components/ui/Loading";
 import { useDialog } from "@/components/ui/Dialog";
@@ -44,7 +45,9 @@ export default function B2bApprovalsPage() {
     setRows(r);
     setSelected(keep != null && r.some((x) => x.id === keep) ? keep : r[0]?.id ?? null);
   }, []);
-  useEffect(() => { if (canUse) loadQueue().catch(() => setRows([])); }, [canUse, loadQueue]);
+  // ?quote= จากกระดิ่งแจ้งเตือน (แผน 20261015-11) — เลือกใบนั้นถ้ายังอยู่ในคิวของชั้นเรา ไม่งั้นใบแรก
+  const focusQuote = Number(useSearchParams().get("quote")) || null;
+  useEffect(() => { if (canUse) loadQueue(focusQuote).catch(() => setRows([])); }, [canUse, loadQueue, focusQuote]);
 
   useEffect(() => {
     if (selected == null) return;
