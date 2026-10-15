@@ -324,15 +324,28 @@ export const MODULES: AppModule[] = [
     ],
   },
   {
-    // ★ งาน BOQ โรงงาน/ไซต์ใหญ่ (B2B) — แผน docs/plan/20261005-01-b2b-boq-module.md
-    //   Solar B2B ทำ BOQ + กรอก Master Data · Purchase ใส่ราคาใน Master Data อย่างเดียว (ไม่เห็นหน้า BOQ)
+    // ★ งาน B2B โรงงาน/ไซต์ใหญ่ — การ์ดเดียว "โครงการ B2B" (แผน docs/plan/20261015-07-b2b-project-flow.md · เดิมการ์ด BOQ แผน 20261005-01)
+    //   ทีมที่ขายทำหน้างานเองจนส่งมอบ ⇒ ไม่แยกการ์ดตามทีมแบบ B2C · key "boq" คงไว้ (ค่าโมดูลที่เลือกค้างใน localStorage)
+    //   Solar B2B ทำโครงการ + BOQ + กรอก Master Data · Purchase ใส่ราคาใน Master Data อย่างเดียว
+    //   เมนูขั้น 3500–3950 (ได้งาน · ดำเนินโครงการ · ปิดโครงการ) เพิ่มตอนทำเฟส 3–4
     //   🏭 = emoji Unicode 6 ฟอนต์ Windows มีแน่ (เหตุผลเดียวกับ 📋 ของ Package O&M)
-    key: "boq", label: "BOQ", emoji: "🏭", tint: "bg-teal-50",
+    key: "boq", label: "โครงการ B2B", emoji: "🏭", tint: "bg-teal-50",
     group: "b2b",
-    desc: "ทำ BOQ · Master Data วัสดุ · ราคา",
+    desc: "โอกาสขาย → ส่งมอบ · BOQ · วัสดุและราคา",
     roles: ["b2b", "purchase", "admin"],
     menu: [
-      { label: "รายการ BOQ", href: "/b2b/boq", icon: <I d={D.lines} />, roles: ["b2b", "admin"] },
+      { label: "ทั้งหมด", href: "/b2b/projects", icon: <I d={D.lines} />, roles: ["b2b", "admin"], steps: [3100, 3200, 3300, 3400] },
+      { label: "โอกาสขาย", href: "/b2b/projects?stage=3100", icon: <PhoneIcon className="w-6 h-6" strokeWidth={2} />, roles: ["b2b", "admin"], steps: [3100] },
+      {
+        label: "เสนอราคา", icon: <DocumentIcon className="w-6 h-6" strokeWidth={2} />, roles: ["b2b", "admin"],
+        children: [
+          { label: "ราคาประมาณการ", href: "/b2b/projects?stage=3200", icon: <DocumentIcon className="w-6 h-6" strokeWidth={2} />, steps: [3200] },
+          { label: "สำรวจ", href: "/b2b/projects?stage=3300", icon: <I d={D.mapPin} />, steps: [3300] },
+          { label: "ราคายืนยัน/ต่อรอง", href: "/b2b/projects?stage=3400", icon: <DocumentIcon className="w-6 h-6" strokeWidth={2} />, steps: [3400] },
+        ],
+      },
+      { label: "แพ้งาน/ยกเลิก", href: "/b2b/projects?stage=lost", icon: <XIcon className="w-6 h-6" strokeWidth={2} />, roles: ["b2b", "admin"], steps: [3980, 3990], noModuleCount: true },
+      { label: "รายการ BOQ", href: "/b2b/boq", icon: <I d={D.clipboard} />, roles: ["b2b", "admin"] },
       // Purchase กดการ์ดแล้วลงหน้านี้ — hub เลือกเมนูแรกที่ role เห็น · badge = รายการที่รอ Purchase ใส่ราคา
       // ชื่อเมนู = หัวเรื่องหน้า (หน้า Master Data วัสดุ) — สั้นพอให้อยู่บรรทัดเดียวคู่กับ badge 3 หลัก
       { label: "วัสดุและราคา", href: "/b2b/materials", icon: <I d={D.archive} />, roles: ["b2b", "purchase", "admin"], subs: [B2B_PENDING_PRICE_SUB] },
@@ -412,12 +425,14 @@ export function countForMenuItem(item: ModuleMenuItem, rows: JourneySummaryRow[]
 /** badge รวมของการ์ดโมดูลใน hub — นับจาก "เซ็ต step/sub ไม่ซ้ำ" ของทุกเมนูรวมกัน
  * (บวกเลขรายเมนูตรงๆ ไม่ได้ เพราะเมนูรวมอย่าง "ทั้งหมด"/"ใบเสนอราคา" ทับกับเมนูรายขั้น
  * แล้วลูกค้าคนเดียวถูกนับหลายรอบ — การ์ดต้องเท่าจำนวนลูกค้าจริง) */
-export function countForModule(mod: AppModule, rows: JourneySummaryRow[]): number | null {
+export function countForModule(mod: AppModule, rows: JourneySummaryRow[], activeRoles?: Role[]): number | null {
   const steps = new Set<number>();
   const subs = new Set<number>();
   const collect = (items: ModuleMenuItem[]) => {
     for (const mi of items) {
       if (mi.noModuleCount) continue;
+      // เมนูที่ role นี้ไม่เห็น ไม่นับ (badge = จำนวนที่กดเข้าไปเห็นจริง) — เช่น Purchase ไม่เห็นเมนูโครงการ B2B
+      if (activeRoles && mi.roles && !hasRole(activeRoles, ...mi.roles)) continue;
       mi.steps?.forEach((v) => steps.add(v));
       mi.subs?.forEach((v) => subs.add(v));
       if (mi.children) collect(mi.children);

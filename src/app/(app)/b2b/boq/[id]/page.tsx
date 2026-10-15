@@ -1,6 +1,7 @@
 "use client";
 
 import { use, useCallback, useEffect, useMemo, useState } from "react";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import Header from "@/components/layout/Header";
 import Loading from "@/components/ui/Loading";
@@ -23,11 +24,13 @@ import MaterialEditModal from "@/components/b2b/MaterialEditModal";
 
 type Loaded = { header: BoqHeader; lines: BoqLine[]; revisions: BoqRevision[]; categories: B2bCategory[] };
 type HeadDraft = {
+  option_label: string;
   project_name: string; customer_name: string; location: string; latitude: string; longitude: string;
   margin_pct: string; note: string; addon_modes: Record<number, AddonMode>;
 };
 
 const toDraft = (h: BoqHeader): HeadDraft => ({
+  option_label: h.option_label ?? "",
   project_name: h.project_name, customer_name: h.customer_name ?? "", location: h.location ?? "",
   latitude: h.latitude?.toString() ?? "", longitude: h.longitude?.toString() ?? "",
   margin_pct: String(h.margin_pct), note: h.note ?? "", addon_modes: { ...h.addon_modes },
@@ -91,11 +94,14 @@ export default function BoqEditorPage({ params }: { params: Promise<{ id: string
       </div>
     );
   }
-  if (loadError) return <div><Header title="ใบ BOQ" backHref="/b2b/boq" /><main className="p-3 md:p-6"><div className="rounded-lg bg-red-50 border border-red-200 px-4 py-3 text-sm text-red-700">{loadError}</div></main></div>;
+  if (loadError) return <div><Header title="ใบ BOQ" backHref="/b2b/projects" /><main className="p-3 md:p-6"><div className="rounded-lg bg-red-50 border border-red-200 px-4 py-3 text-sm text-red-700">{loadError}</div></main></div>;
   if (!data || !head) return <Loading />;
 
   const h = data.header;
   const readOnly = !h.is_latest;
+  // ใบในโครงการ (แผน 20261015-07): ชื่อโครงการ/ลูกค้า/ที่ตั้ง/พิกัดมาจากโครงการ — แก้ในหน้าโครงการ (server ไม่รับค่าจากหน้านี้)
+  const linked = h.project_id != null;
+  const backHref = linked ? `/b2b/projects/${h.project_id}` : "/b2b/boq";
   const touch = () => setDirty(true);
   const setH = (patch: Partial<HeadDraft>) => { setHead((x) => (x ? { ...x, ...patch } : x)); touch(); };
   const change = (key: string, patch: Partial<BoqLine>) => { setLines((ls) => ls.map((l) => (l.key === key ? { ...l, ...patch } : l))); touch(); };
@@ -202,7 +208,7 @@ export default function BoqEditorPage({ params }: { params: Promise<{ id: string
   return (
     <div>
       {/* หัวเรื่อง = ชื่อโครงการ (subtitle ของ Header เป็นตัวพิมพ์ใหญ่ทั้งหมด จะเปลี่ยนหน้าตาชื่อ) · เลขที่ไว้บรรทัดรอง */}
-      <Header title={head.project_name || "ใบ BOQ"} subtitle={`${h.doc_no} · Rev ${h.revision}`} backHref="/b2b/boq"
+      <Header title={head.project_name || "ใบ BOQ"} subtitle={`${h.doc_no} · Rev ${h.revision}`} backHref={backHref}
         rightContent={data.revisions.length > 1 ? (
           <Dropdown className="w-36" value={String(h.id)} onChange={(v) => { if (v && v !== String(h.id)) router.push(`/b2b/boq/${v}`); }}
             options={data.revisions.map((r) => ({ value: String(r.id), label: `Rev ${r.revision}${r.is_latest ? " (ล่าสุด)" : ""}` }))} />
@@ -218,19 +224,29 @@ export default function BoqEditorPage({ params }: { params: Promise<{ id: string
 
         {/* หัวใบ (แถว 1–8 ของ sheet) */}
         <section className="rounded-xl border border-gray-300 bg-white p-4">
+          {linked && (
+            <div className="mb-3 flex flex-wrap items-center gap-x-3 gap-y-1 rounded-lg bg-gray-50 px-3 py-2 text-sm text-gray-600">
+              <span>โครงการ <Link href={backHref} className="font-semibold text-primary hover:underline">{h.project_code} · {head.project_name}</Link></span>
+              <span className="text-xs text-gray-400">ชื่อโครงการ · ลูกค้า · ที่ตั้ง แก้ในหน้าโครงการ</span>
+            </div>
+          )}
           <fieldset disabled={readOnly} className="grid gap-3 md:grid-cols-12">
+            {linked && (
+              <div className="md:col-span-12"><label className={labelCls}>ชื่อตัวเลือก (ขนาด / รุ่นแผง)</label>
+                <input className={fieldCls} value={head.option_label} onChange={(e) => setH({ option_label: e.target.value })} placeholder="เช่น 998.64 kWp · Jinko 730" /></div>
+            )}
             <div className="md:col-span-5"><label className={labelCls}>Project <span className="text-red-500">*</span></label>
-              <input className={fieldCls} value={head.project_name} onChange={(e) => setH({ project_name: e.target.value })} /></div>
+              <input className={fieldCls} disabled={linked} value={head.project_name} onChange={(e) => setH({ project_name: e.target.value })} /></div>
             <div className="md:col-span-4"><label className={labelCls}>Customer</label>
-              <input className={fieldCls} value={head.customer_name} onChange={(e) => setH({ customer_name: e.target.value })} /></div>
+              <input className={fieldCls} disabled={linked} value={head.customer_name} onChange={(e) => setH({ customer_name: e.target.value })} /></div>
             <div className="md:col-span-3"><label className={labelCls}>Margin (% ของราคาขาย)</label>
               <input type="number" step="0.01" min={0} max={99} className={`${fieldCls} text-right`} value={head.margin_pct} onChange={(e) => setH({ margin_pct: e.target.value })} /></div>
             <div className="md:col-span-6"><label className={labelCls}>Location</label>
-              <input className={fieldCls} value={head.location} onChange={(e) => setH({ location: e.target.value })} /></div>
+              <input className={fieldCls} disabled={linked} value={head.location} onChange={(e) => setH({ location: e.target.value })} /></div>
             <div className="md:col-span-3"><label className={labelCls}>Latitude</label>
-              <input className={fieldCls} value={head.latitude} onChange={(e) => setH({ latitude: e.target.value })} placeholder="13.xxxxxx" /></div>
+              <input className={fieldCls} disabled={linked} value={head.latitude} onChange={(e) => setH({ latitude: e.target.value })} placeholder="13.xxxxxx" /></div>
             <div className="md:col-span-3"><label className={labelCls}>Longitude</label>
-              <input className={fieldCls} value={head.longitude} onChange={(e) => setH({ longitude: e.target.value })} placeholder="100.xxxxxx" /></div>
+              <input className={fieldCls} disabled={linked} value={head.longitude} onChange={(e) => setH({ longitude: e.target.value })} placeholder="100.xxxxxx" /></div>
           </fieldset>
           <div className="mt-3 flex flex-wrap gap-x-6 gap-y-1 text-sm text-gray-600">
             <span>Capacity: <span className="font-bold text-gray-900 tabular-nums">{formatNumber(calc.capacity_wp)}</span> Wp ({(calc.capacity_wp / 1000).toFixed(2)} kWp)</span>

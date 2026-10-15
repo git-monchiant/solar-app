@@ -22,6 +22,11 @@ export type BoqHeader = {
   doc_no: string;
   revision: number;
   is_latest: boolean;
+  /** โครงการที่ใบนี้อยู่ (แผน 20261015-07) — มีแล้ว ชื่อโครงการ/ลูกค้า/ที่ตั้งมาจากโครงการ แก้ในหน้าโครงการ */
+  project_id: number | null;
+  project_code: string | null;
+  /** ชื่อตัวเลือกในโครงการ เช่น "998.64 kWp · Jinko 730" */
+  option_label: string | null;
   project_name: string;
   customer_name: string | null;
   location: string | null;
@@ -85,6 +90,7 @@ const text = (v: unknown, max: number) => (typeof v === "string" && v.trim() ? v
 const numOrNull = (v: unknown) => (v === "" || v == null ? null : Number.isFinite(Number(v)) ? Number(v) : NaN);
 
 export type HeaderFields = {
+  option_label: string | null;
   project_name: string; customer_name: string | null; location: string | null;
   latitude: number | null; longitude: number | null; margin_pct: number; note: string | null;
   addon_modes: Record<number, AddonMode>;
@@ -101,6 +107,7 @@ export function readBoqHeader(b: Record<string, unknown>): { value: HeaderFields
   if (Number.isNaN(lng) || (lng != null && Math.abs(lng) > 180)) return { error: "Longitude ไม่ถูกต้อง" };
   return {
     value: {
+      option_label: text(b.option_label, 100),
       project_name, customer_name: text(b.customer_name, 300), location: text(b.location, 500),
       latitude: lat, longitude: lng, margin_pct: Math.round(margin * 1000) / 1000, note: text(b.note, 1000),
       addon_modes: parseAddonModes(b.addon_modes),

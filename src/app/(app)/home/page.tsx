@@ -51,7 +51,7 @@ export default function HomePage() {
             md+ = การ์ดตารางแบบเดิม */}
         <div className="grid grid-cols-1 md:grid-cols-3 lg:grid-cols-4 gap-2.5 md:gap-4">
           {mods.map((mod) => {
-            const count = countForModule(mod, summary);
+            const count = countForModule(mod, summary, activeRoles);
             return (
               <button
                 key={mod.key}

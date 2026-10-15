@@ -35,7 +35,7 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
   try {
     await tx.begin();
     const cur = await new sql.Request(tx).input("id", sql.Int, id)
-      .query(`SELECT is_latest, updated_at FROM b2b_boqs WITH (UPDLOCK, ROWLOCK) WHERE id = @id`);
+      .query(`SELECT is_latest, updated_at, project_id, doc_no FROM b2b_boqs WITH (UPDLOCK, ROWLOCK) WHERE id = @id`);
     const row = cur.recordset[0];
     if (!row) { await tx.rollback(); return NextResponse.json({ error: "ไม่พบใบ BOQ" }, { status: 404 }); }
     if (!row.is_latest) { await tx.rollback(); return NextResponse.json({ error: "แก้ได้เฉพาะ Revision ล่าสุด" }, { status: 409 }); }
@@ -92,7 +92,18 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
                 VALUES (@boq, @cat, @sort, @type, @mat, @subgroup, @name, @brand, @model, @unit, @watt, @basis, @cost, @qty, @note, @by)`);
     }
 
+    // ใบในโครงการ: ชื่อโครงการ/ลูกค้า/ที่ตั้งมาจากโครงการเสมอ (แก้ในหน้าโครงการ) — ไม่เชื่อค่าจากหน้าจอ
     const h = head.value;
+    if (row.project_id) {
+      const pj = (await new sql.Request(tx).input("p", sql.Int, row.project_id).query(`
+        SELECT p.name, p.location, p.latitude, p.longitude, c.name AS customer_name
+        FROM b2b_projects p JOIN b2b_customers c ON c.id = p.customer_id WHERE p.id = @p`)).recordset[0];
+      if (pj) Object.assign(h, { project_name: pj.name, customer_name: pj.customer_name, location: pj.location,
+        latitude: pj.latitude == null ? null : Number(pj.latitude), longitude: pj.longitude == null ? null : Number(pj.longitude) });
+    }
+    // ชื่อตัวเลือกใช้ร่วมทุก Rev ของเลขที่เดียวกัน
+    await new sql.Request(tx).input("doc", sql.NVarChar(30), row.doc_no).input("label", sql.NVarChar(100), h.option_label)
+      .query(`UPDATE b2b_boqs SET option_label = @label WHERE doc_no = @doc`);
     await new sql.Request(tx).input("id", sql.Int, id)
       .input("project", sql.NVarChar(300), h.project_name).input("customer", sql.NVarChar(300), h.customer_name)
       .input("location", sql.NVarChar(500), h.location).input("lat", sql.Decimal(9, 6), h.latitude).input("lng", sql.Decimal(9, 6), h.longitude)
