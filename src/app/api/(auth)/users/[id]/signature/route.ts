@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getDb, sql } from "@/lib/db";
-import { requireAuth } from "@/lib/auth";
+import { requireAnyRole, requireAuth } from "@/lib/auth";
 
 export const runtime = "nodejs";
 
@@ -11,6 +11,12 @@ export const runtime = "nodejs";
 // Stores binary in users.signature_data + users.signature_mime, and points
 // users.signature_url at this same endpoint so existing <img src={url}> sites
 // keep working without code changes.
+//
+// ★ 15 ต.ค. 69 (แผน 20261015-07): ลายเซ็นนี้ถูกแช่ลงใบเสนอราคา B2B ตอนผู้ตรวจสอบกดอนุมัติ
+//   PUT ได้เฉพาะเจ้าของ (ไม่มีใครวางลายเซ็นแทนคนอื่นได้ แม้ admin) · DELETE เจ้าของหรือ admin (ล้างรูปผิด)
+//   GET คงเปิดไว้ — แท็ก <img> ส่ง header ตัวตนไม่ได้
+const SIGNATURE_MIMES = new Set(["image/png", "image/jpeg", "image/webp"]);
+const SIGNATURE_MAX_BYTES = 2 * 1024 * 1024;
 
 export async function GET(_req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
@@ -40,10 +46,13 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
   const { id } = await params;
   const userId = parseInt(id);
   if (!userId) return NextResponse.json({ error: "invalid id" }, { status: 400 });
+  if (gate.userId !== userId) return NextResponse.json({ error: "บันทึกได้เฉพาะลายเซ็นของตัวเอง" }, { status: 403 });
   try {
+    const mime = (req.headers.get("content-type") || "image/png").split(";")[0].trim().toLowerCase();
+    if (!SIGNATURE_MIMES.has(mime)) return NextResponse.json({ error: "ลายเซ็นต้องเป็นไฟล์รูป PNG / JPEG / WebP" }, { status: 400 });
     const buf = Buffer.from(await req.arrayBuffer());
     if (buf.length === 0) return NextResponse.json({ error: "empty body" }, { status: 400 });
-    const mime = req.headers.get("content-type") || "image/png";
+    if (buf.length > SIGNATURE_MAX_BYTES) return NextResponse.json({ error: "ไฟล์ลายเซ็นใหญ่เกิน 2 MB" }, { status: 413 });
     // Bust the public URL with a timestamp so any cached <img> reload — the
     // endpoint itself is stable but browsers/Puppeteer may cache the bytes.
     const url = `/api/users/${userId}/signature?v=${Date.now()}`;
@@ -67,6 +76,11 @@ export async function DELETE(req: NextRequest, { params }: { params: Promise<{ i
   const { id } = await params;
   const userId = parseInt(id);
   if (!userId) return NextResponse.json({ error: "invalid id" }, { status: 400 });
+  if (gate.userId !== userId) {
+    // admin ล้างรูปให้คนอื่นได้ (เช่นอัปโหลดผิดรูป) — ตรวจ role จากฐาน ไม่ใช่ role ที่สวมอยู่
+    const admin = await requireAnyRole(req, ["admin"]);
+    if (admin.error) return NextResponse.json({ error: "ลบได้เฉพาะลายเซ็นของตัวเอง" }, { status: 403 });
+  }
   try {
     const db = await getDb();
     await db.request().input("id", sql.Int, userId)
