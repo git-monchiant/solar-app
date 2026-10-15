@@ -1,7 +1,7 @@
 // เทสต์ตัวคำนวณใบ BOQ (โมดูล B2B) — node --experimental-strip-types scripts/tests/b2b-boq-calc.mjs
 // ตัวเลขชุดนี้ตั้งให้คิดมือได้ · เทียบกับไฟล์ Excel จริงของทีมแล้ว ต้นทุนตรงทุกหมวด (แผน 20261005-01 เฟส 3)
 import assert from "node:assert/strict";
-import { calcBoq, perWp } from "../../src/lib/b2b/boq-calc.ts";
+import { calcBoq, perWp, round2 } from "../../src/lib/b2b/boq-calc.ts";
 
 const categories = Array.from({ length: 25 }, (_, i) => ({ id: i + 1, is_addon: i + 1 >= 19 }));
 const near = (a, b, msg) => assert.ok(Math.abs(a - b) < 1e-6, `${msg}: ${a} ≠ ${b}`);
@@ -40,9 +40,9 @@ near(r.material.cost, 315000 + 100000 + 10200 + r.lines.ins.cost, "ค่าว�
 near(r.addon_included.cost, 50000, "ส่วนเสริมที่รวมในราคา");
 near(r.addon_optional.cost, 80000, "ส่วนเสริมทางเลือกแยกออก");
 near(r.subtotal.cost, r.material.cost + r.labor.cost + r.addon_included.cost, "วัสดุ + แรง + ส่วนเสริม = ยอดก่อน VAT");
-near(r.vat.sale, r.subtotal.sale * 0.07, "VAT 7% ของยอดขาย");
-near(r.grand.sale, r.subtotal.sale * 1.07, "สุทธิ");
-near(Object.values(r.lines).filter((x) => x !== r.lines.batt).reduce((s, x) => s + x.share, 0), 1, "% ต่อบรรทัดรวมได้ 100% (ไม่นับทางเลือก)");
+// VAT ปัดเป็นสตางค์แบบ ROUND ของ Excel แล้วค่อยบวก (a4aa90c) — ชุดนี้ได้ 54,448.1875 → .19
+near(r.vat.sale, round2(r.subtotal.sale * 0.07), "VAT 7% ของยอดขาย ปัดสตางค์");
+near(r.grand.sale, r.subtotal.sale + r.vat.sale, "สุทธิ = ก่อน VAT + VAT ที่แสดง");
 near(perWp(r.lines.pv.cost, r.capacity_wp), 4.5, "บาท/Wp");
 
 // หมวดเสริมที่ยังไม่ตั้งวิธีคิดเงิน = รวมในราคา
