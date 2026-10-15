@@ -1,5 +1,5 @@
 "use client";
-import { XIcon } from "@/components/ui/icons";
+import { ChevronRightIcon, XIcon } from "@/components/ui/icons";
 import Dropdown from "@/components/ui/Dropdown";
 
 import { apiFetch } from "@/lib/api";
@@ -81,6 +81,21 @@ export default function ManageOmPackagesPage() {
   const [search, setSearch] = useState("");
   const [filter, setFilter] = useState<"all" | "active" | "inactive">("all");
   const [filterPlan, setFilterPlan] = useState<"all" | "per_visit" | "contract">("all");
+  // ★ 15 ต.ค. 69 ผู้ใช้เคาะ "ทำตามแนะนำ" — ขอบเขตงานย่อเป็นค่าเริ่มต้นแบบหน้าแคตตาล็อก (ขอบเขตเต็มอยู่ในหน้าต่างแก้ไขอยู่แล้ว)
+  //   จำ id แพ็กเกจที่ "กาง" ไว้ในเครื่อง · ค้นแล้วตรงในขอบเขตงาน = กางให้เอง ลบคำค้นแล้วกลับไปย่อ
+  //   (หน้านี้ขึ้น Loading ก่อนเสมอ ค่าแรกจึงไม่ชนกับหน้าที่ render จาก server)
+  const [expanded, setExpanded] = useState<number[]>(() => {
+    if (typeof window === "undefined") return [];
+    try {
+      const v = JSON.parse(localStorage.getItem("om.packages.manage.expanded") ?? "[]");
+      return Array.isArray(v) ? v.filter((x): x is number => typeof x === "number") : [];
+    } catch { return []; }
+  });
+  const toggleScope = (id: number) => setExpanded(cur => {
+    const next = cur.includes(id) ? cur.filter(x => x !== id) : [...cur, id];
+    try { localStorage.setItem("om.packages.manage.expanded", JSON.stringify(next)); } catch { /* โหมดส่วนตัว — ไม่จำก็ได้ */ }
+    return next;
+  });
 
   const load = () => {
     apiFetch("/api/om/packages?all=1")
@@ -223,13 +238,34 @@ export default function ManageOmPackagesPage() {
                           ★ แผน 20261014-04: ขอบเขตงานเป็นประโยคเต็มบรรทัดละข้อ (แบบใบเสนอราคาตัวอย่าง) ชิปยาวเกิน ⇒ รายการทีละบรรทัด */}
                       <div className="mb-2">
                         <span className="text-xl font-bold font-mono tabular-nums text-gray-900">{fmt(pkg.price)} <span className="text-sm text-gray-400">THB</span></span>
-                        {pkg.scope && (
-                          <ul className="mt-1 space-y-0.5">
-                            {omScopeItems(pkg.scope).map(s => (
-                              <li key={s} className="text-xs leading-snug text-emerald-800">· {s}</li>
-                            ))}
-                          </ul>
-                        )}
+                        {pkg.scope && (() => {
+                          const list = omScopeItems(pkg.scope);
+                          const q = search.trim().toLowerCase();
+                          const hit = !!q && pkg.scope.includes(q);   // สูตรเดียวกับตัวกรองด้านบน
+                          const open = hit || expanded.includes(pkg.id);
+                          return (
+                            <>
+                              <div className="mt-1 flex items-center gap-2 text-xs text-gray-400">
+                                <span>ขอบเขตงาน {list.length} รายการ</span>
+                                {/* ตรงคำค้น = กางค้างไว้ ไม่มีปุ่ม (กดย่อแล้วไม่ย่อจะงง) */}
+                                {!hit && (
+                                  <button type="button" onClick={() => toggleScope(pkg.id)} style={{ minHeight: 0 }} aria-expanded={open}
+                                    className="h-6 px-2 inline-flex items-center gap-1 rounded-md font-semibold text-gray-500 hover:text-primary hover:bg-gray-50 transition-colors cursor-pointer">
+                                    <ChevronRightIcon className={`w-3 h-3 ${open ? "-rotate-90" : "rotate-90"}`} strokeWidth={2.5} />
+                                    {open ? "ย่อ" : "แสดงรายละเอียด"}
+                                  </button>
+                                )}
+                              </div>
+                              {open && (
+                                <ul className="mt-1 space-y-0.5">
+                                  {list.map(s => (
+                                    <li key={s} className="text-xs leading-snug text-emerald-800">· {s}</li>
+                                  ))}
+                                </ul>
+                              )}
+                            </>
+                          );
+                        })()}
                       </div>
 
                       {/* Row 3: ช่วงราคาที่ใช้อยู่ */}
