@@ -15,6 +15,7 @@
 
 import { DUE_WASH_SQL, isCleaning } from "@/lib/om/entitlement";
 import { ACTIVE_STATUS } from "@/lib/om/booking";
+import { OM_PAY_LIVE_SQL, omHouseSystemSql } from "@/lib/om/om-quotation";
 
 // รายการสถานะงานค้างชุดเดียวกับ booking.ts — เดิมเขียนตายตัวในคิวรี พอเพิ่มสถานะ quote แล้วตกหล่น
 const ACTIVE_SQL = ACTIVE_STATUS.map((s) => `'${s}'`).join(",");
@@ -45,9 +46,8 @@ export const OM_FOLLOW_SCOPE_SQL = `
              JOIN om_customer_phones p ON p.customer_id = hc.customer_id
             WHERE hc.house_id = h.id AND hc.is_current = 1 AND p.status <> 'invalid'
             ORDER BY p.is_primary DESC, p.id) phone,
-           (SELECT STRING_AGG(CAST(COALESCE(i.rem_size_kwp, i.promo_size_kw) AS varchar(12)), ' + ')
-              FROM om_installations i WHERE i.house_id = h.id
-               AND COALESCE(i.rem_size_kwp, i.promo_size_kw) IS NOT NULL) kwp_list,
+           -- ขนาดระบบ + ยี่ห้ออินเวอร์เตอร์ — ชุดเดียวกับตัวสร้างใบเสนอราคา O&M (หัวรายการ · แผน 20261014-04)
+           ${omHouseSystemSql("h")},
            (SELECT MIN(CONVERT(char(10), i.warranty_start, 23)) FROM om_installations i
              WHERE i.house_id = h.id AND i.warranty_start IS NOT NULL) warranty_start,
            -- วันหมดประกันจากใบรับประกันฝั่งขาย (แผน 20260925-01) — ใช้เลือก "ในประกัน" ให้ก่อนตอนเปิดใบซ่อม
@@ -128,7 +128,11 @@ export const OM_FOLLOW_SCOPE_SQL = `
                             -- รับเช็คแล้ว = ทำงานต่อได้ (โทรนัด) แบบฝั่งขาย · เติมสิทธิ์รอยืนยันเงินเข้า (แผน 20261002-11)
                             AND (op.confirmed_at IS NOT NULL OR op.cheque_received_at IS NOT NULL)) THEN 'paid'
              WHEN EXISTS (SELECT 1 FROM payments op WHERE op.lead_id = oq.lead_id
-                            AND op.slip_field = CONCAT(N'om_quote_', oq.id) AND op.confirmed_at IS NULL) THEN 'verifying'
+                            AND op.slip_field = CONCAT(N'om_quote_', oq.id) AND op.confirmed_at IS NULL
+                            AND ${OM_PAY_LIVE_SQL("op")}) THEN 'verifying'
+             -- เช็คเด้ง (แผน 20261014-03) — แถวเก็บไว้แบบฝั่งขาย ไม่มีแถวอื่นที่ยังมีผล = รอชำระใหม่
+             WHEN EXISTS (SELECT 1 FROM payments op WHERE op.lead_id = oq.lead_id
+                            AND op.slip_field = CONCAT(N'om_quote_', oq.id) AND op.cheque_status = N'bounced') THEN 'bounced'
              ELSE 'unpaid' END) END pay_state
       INTO #job
       FROM om_bookings b

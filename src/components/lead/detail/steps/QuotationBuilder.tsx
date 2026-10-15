@@ -1,7 +1,7 @@
 "use client";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { apiFetch, getUserIdHeader } from "@/lib/api";
-import { GSB_SOLAR_LOAN_DEFAULTS } from "@/lib/loan-defaults";
+import { GSB_SOLAR_LOAN_DEFAULTS, readInterestSchedule, type LoanInterestTier } from "@/lib/loan-defaults";
 import { formatTHB, formatThaiDateShort, formatThaiTime } from "@/lib/utils/formatters";
 import { hasRole, useActiveRoles } from "@/lib/roles";
 import { useDialog } from "@/components/ui/Dialog";
@@ -19,6 +19,7 @@ import {
   type QuotationTermTree,
 } from "@/lib/quotation-terms";
 import { computeLoad, LOAD_COVERAGE_WARN, loadBillCheck, type LoadBillCheck } from "@/lib/load-assumption";
+import { PAYMENT_INTERESTS } from "@/lib/customer-questionnaire";
 import QuotationTermsEditor from "./QuotationTermsEditor";
 import type { Lead, Package } from "./types";
 
@@ -43,17 +44,30 @@ type Item = {
   // Package id when this add-on line is a package picked from Package Master.
   source_package_id?: number;
 };
+type PaymentMethod = (typeof PAYMENT_INTERESTS)[number]["value"];
+const readPaymentMethod = (value: unknown): PaymentMethod | null =>
+  PAYMENT_INTERESTS.find((o) => o.value === value)?.value ?? null;
+// ป้ายบนปุ่มในแผงขวา (กว้าง 3 ช่อง) — ชื่อเต็มอยู่ใน title / ป้าย "ลูกค้าสนใจ"
+const PAYMENT_METHOD_SHORT: Record<PaymentMethod, string> = {
+  cash: "เงินสด / โอน",
+  loan: "สินเชื่อ",
+  credit_card: "บัตรเครดิต",
+};
 type DocumentInputs = {
   om: QuotationOmSettings;
   // ชุดเงื่อนไข/ข้อกำหนดที่แก้เฉพาะใบนี้ · null = ยังใช้ชุดมาตรฐานในโค้ด
   terms: QuotationTermTree | null;
   recommendation_reason: string;
+  // รูปแบบการชำระที่ใบนี้เสนอ (รหัสเดียวกับ PAYMENT_INTERESTS) · null = ยังไม่เลือก (บันทึกไม่ได้)
+  // รายงานสำรวจแสดงเฉพาะทางเลือกที่ตรงกัน — แผน 20261012-06
+  payment_method: PaymentMethod | null;
+  // % ค่าธรรมเนียมผ่อนบัตร 10 เดือน · null = ไม่กรอก (รายงานพิมพ์เส้นว่าง)
+  credit_card_fee_percent: number | null;
   loan_enabled: boolean;
   loan_bank: string;
   loan_term_months: number;
   down_payment_percent: number;
-  interest_rate_year_1_2: number;
-  interest_rate_year_3_plus: number;
+  interest_schedule: LoanInterestTier[];
   rate_source: string;
   rate_effective_date: string;
   current_monthly_bill: number;
@@ -1304,6 +1318,13 @@ function QuotationEditor({
         saved.terms?.profile === "additional_install" ? "additional_install" : "full_install",
       ),
       recommendation_reason: saved.recommendation_reason || "",
+      // ใบที่บันทึกแล้วยึดค่าในใบ · ใบใหม่และใบเก่าที่ยังไม่มีค่าตั้งตามคำตอบใน Customer Info
+      // (ไม่มีตัวเลือก "ไม่ระบุ" แล้ว — ลูกค้ายังไม่ตอบ = ว่าง ต้องเลือกก่อนบันทึก ดู validate)
+      payment_method:
+        readPaymentMethod(quote ? saved.payment_method : null) ??
+        readPaymentMethod(lead.payment_interest),
+      credit_card_fee_percent:
+        saved.credit_card_fee_percent == null ? null : Number(saved.credit_card_fee_percent),
       loan_enabled: saved.loan_enabled ?? GSB_SOLAR_LOAN_DEFAULTS.loan_enabled,
       loan_bank:
         saved.loan_bank ||
@@ -1318,16 +1339,17 @@ function QuotationEditor({
       down_payment_percent: Number(
         saved.down_payment_percent ?? GSB_SOLAR_LOAN_DEFAULTS.down_payment_percent,
       ),
-      interest_rate_year_1_2: Number(
-        saved.interest_rate_year_1_2 ?? GSB_SOLAR_LOAN_DEFAULTS.interest_rate_year_1_2,
-      ),
-      interest_rate_year_3_plus: Number(
-        saved.interest_rate_year_3_plus ??
-          GSB_SOLAR_LOAN_DEFAULTS.interest_rate_year_3_plus,
-      ),
-      rate_source: saved.rate_source || GSB_SOLAR_LOAN_DEFAULTS.rate_source,
-      rate_effective_date:
-        saved.rate_effective_date || GSB_SOLAR_LOAN_DEFAULTS.rate_effective_date,
+      // ตารางดอกเบี้ยตามประกาศออมสิน · ใบเก่าที่ยังเก็บแบบ 2 ช่วง (3.5/3.5) ใช้ตารางปัจจุบัน
+      interest_schedule:
+        readInterestSchedule(saved.interest_schedule) ??
+        GSB_SOLAR_LOAN_DEFAULTS.interest_schedule.map((tier) => ({ ...tier })),
+      // ที่มา/วันที่มีผลต้องมาคู่กับตาราง — ใบที่ยังไม่มีตาราง ใช้ของค่าตั้งต้นทั้งชุด
+      rate_source: readInterestSchedule(saved.interest_schedule)
+        ? saved.rate_source || GSB_SOLAR_LOAN_DEFAULTS.rate_source
+        : GSB_SOLAR_LOAN_DEFAULTS.rate_source,
+      rate_effective_date: readInterestSchedule(saved.interest_schedule)
+        ? saved.rate_effective_date || GSB_SOLAR_LOAN_DEFAULTS.rate_effective_date
+        : GSB_SOLAR_LOAN_DEFAULTS.rate_effective_date,
       // ค่าไฟเฉลี่ยต่อเดือนยึดคำตอบของลูกค้าในแบบสอบถามเป็นหลัก (lead_data.monthly_bill
       // ซึ่ง API ส่งมาในชื่อ pre_monthly_bill) ถ้าลูกค้าไม่ได้ตอบค่อยใช้ค่าจากฟอร์มสำรวจ
       // ส่วนค่าไฟสูงสุดเป็นตัวสุดท้าย เพราะเป็นคนละตัวชี้วัดกับค่าเฉลี่ย
@@ -1504,6 +1526,7 @@ function QuotationEditor({
       return "ไม่พบค่าไฟเฉลี่ยต่อเดือน — กรุณากรอกในแบบสอบถามลูกค้า (Customer Info) หรือฟอร์มสำรวจ";
     if (termsPercentTotal !== 100)
       return `ยอดรวมงวดชำระเงินต้องเท่ากับ 100% (ปัจจุบัน ${termsPercentTotal}%)`;
+    if (!documentInputs.payment_method) return "กรุณาเลือกรูปแบบการชำระเงิน";
     if (issueDate > todayIso()) return "วันที่ใบเสนอราคาต้องไม่เป็นวันที่ล่วงหน้า";
     return "";
   };
@@ -2146,6 +2169,87 @@ function QuotationEditor({
                   }`}
                 >
                   รวม {termsPercentTotal}% · งวดสุดท้ายปรับอัตโนมัติ
+                </p>
+              </div>
+
+              {/* รูปแบบการชำระ — คุมว่ารายงานสำรวจแสดงทางเลือกไหน (แผน 20261012-06) */}
+              <div className="order-2 rounded-xl border border-gray-200 bg-white p-2.5">
+                <div className="flex items-baseline justify-between gap-2">
+                  <span className="text-xs font-bold text-gray-800">รูปแบบการชำระเงิน</span>
+                  {readPaymentMethod(lead.payment_interest) && (
+                    <span className="truncate text-xxs text-gray-400">
+                      ลูกค้าสนใจ:{" "}
+                      {PAYMENT_INTERESTS.find((o) => o.value === lead.payment_interest)?.label}
+                    </span>
+                  )}
+                </div>
+                {/* ต้องเลือก 1 แบบ — ไม่มี "ไม่ระบุ" (ผู้ใช้สั่งตัดออก 14 ต.ค.) · ป้ายสั้นให้พอดี 3 ช่อง */}
+                <div className="mt-1.5 grid grid-cols-3 gap-1">
+                  {PAYMENT_INTERESTS.map((option) => {
+                    const active = documentInputs.payment_method === option.value;
+                    return (
+                      <button
+                        key={option.value}
+                        type="button"
+                        title={option.label}
+                        onClick={() =>
+                          setDocumentInputs((current) => ({
+                            ...current,
+                            payment_method: option.value,
+                          }))
+                        }
+                        className={`h-8 rounded-md border px-1.5 text-xxs font-semibold transition-colors ${
+                          active
+                            ? "border-primary bg-primary/10 text-primary"
+                            : "border-gray-200 bg-white text-gray-600 hover:border-gray-300"
+                        }`}
+                      >
+                        {PAYMENT_METHOD_SHORT[option.value]}
+                      </button>
+                    );
+                  })}
+                </div>
+                {/* ทางเลือกบัตรเครดิตมีในรายงานเฉพาะใบ "บัตรเครดิต" — ไม่กรอก = รายงานเว้นเส้นให้เขียนมือ */}
+                {documentInputs.payment_method === "credit_card" && (
+                  <div className="mt-1.5 grid grid-cols-[minmax(0,1fr)_72px] items-center gap-1">
+                    <span className="text-xxs text-gray-500">ค่าธรรมเนียมผ่อนบัตร 10 เดือน</span>
+                    <div className="relative">
+                      <input
+                        type="number"
+                        min="0"
+                        max="100"
+                        step="0.01"
+                        value={documentInputs.credit_card_fee_percent ?? ""}
+                        placeholder="ไม่ระบุ"
+                        onChange={(e) =>
+                          setDocumentInputs((current) => ({
+                            ...current,
+                            credit_card_fee_percent:
+                              e.target.value === ""
+                                ? null
+                                : Math.min(100, Math.max(0, Number(e.target.value))),
+                          }))
+                        }
+                        className="h-8 w-full rounded-md border border-gray-200 bg-white pl-1.5 pr-5 text-right text-xxs font-semibold tabular-nums text-gray-800 outline-none transition-colors placeholder:font-normal placeholder:text-gray-300 hover:border-gray-300 focus:border-primary"
+                      />
+                      <span className="pointer-events-none absolute right-1.5 top-1/2 -translate-y-1/2 text-xxs text-gray-400">
+                        %
+                      </span>
+                    </div>
+                  </div>
+                )}
+                <p
+                  className={`mt-1 text-xxs ${
+                    documentInputs.payment_method ? "text-gray-400" : "text-amber-600"
+                  }`}
+                >
+                  {documentInputs.payment_method === "loan"
+                    ? "รายงานสำรวจแสดงเฉพาะสินเชื่อ + ตารางผ่อน"
+                    : documentInputs.payment_method === "cash"
+                      ? "รายงานสำรวจแสดงเฉพาะเงินสด + ตารางความคุ้มค่า"
+                      : documentInputs.payment_method === "credit_card"
+                        ? "รายงานสำรวจแสดงเฉพาะผ่อนบัตร + ตารางความคุ้มค่า"
+                        : "ลูกค้ายังไม่ได้ตอบใน Customer Info — เลือกก่อนบันทึก"}
                 </p>
               </div>
 

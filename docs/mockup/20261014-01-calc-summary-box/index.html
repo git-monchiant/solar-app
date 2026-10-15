@@ -1,0 +1,209 @@
+<!doctype html>
+<html lang="th">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Mockup: กล่องสรุปใต้ตารางความคุ้มค่า</title>
+<style>
+  /* ฟอนต์เดียวกับรายงานสำรวจ (public/fonts) — เปิดไฟล์นี้จากในโปรเจกต์ */
+  @font-face{font-family:'DB Heavent';src:url(../../../public/fonts/db_heavent_li_v3.2-webfont.woff) format('woff');font-weight:300}
+  @font-face{font-family:'DB Heavent';src:url(../../../public/fonts/db_heavent_v3.2-webfont.woff) format('woff');font-weight:400}
+  @font-face{font-family:'DB Heavent';src:url(../../../public/fonts/db_heavent_med_v3.2-webfont.woff) format('woff');font-weight:500}
+  @font-face{font-family:'DB Heavent';src:url(../../../public/fonts/db_heavent_bd_v3.2-webfont.woff) format('woff');font-weight:700}
+  *{margin:0;padding:0;box-sizing:border-box}
+  body{background:#e5e7eb;font-family:'DB Heavent',sans-serif;color:#1f2a3a;font-size:16px;line-height:1.5;padding:24px 16px 48px}
+  .intro{max-width:210mm;margin:0 auto 18px;background:#fff;border-radius:8px;padding:14px 18px}
+  .intro h1{font-size:22px;color:#243b5c}
+  .intro p{font-size:15px;color:#4b5563}
+  .tag{display:inline-block;background:#243b5c;color:#fff;border-radius:999px;padding:0 10px;font-size:13px;margin-right:6px}
+  .rec{background:#e8912a}
+  .variant{max-width:210mm;margin:0 auto 22px}
+  .variant > h2{font-size:18px;color:#243b5c;margin:0 0 6px}
+  .variant > h2 small{font-size:14px;color:#6b7280;font-weight:400}
+  /* ส่วนของหน้า A4 (ล่างของ §8) — CSS ยกจาก survey-report.js */
+  .sheet{background:#fff;padding:10mm 15mm 8mm;box-shadow:0 1px 3px rgba(0,0,0,.12)}
+  h3.subh{font-size:17px;font-weight:700;color:#243b5c;margin:0 0 7px}
+  .calc{border:1px solid #cfd5de;margin:4px 0 8px}
+  .calc-head{background:#2f8f5b;color:#fff;font-weight:700;font-size:14px;text-align:center;padding:6px}
+  .calc-sub{background:#3fa86c;color:#eafff3;font-style:italic;font-size:11px;text-align:center;padding:3px 6px}
+  .calc-cols{display:flex}.calc-col{flex:1}.calc-col:first-child{border-right:1px solid #d3d8e0}
+  .csec{background:#243b5c;color:#fff;font-weight:700;font-size:10.5px;padding:3px 8px}
+  table.ct{width:100%;border-collapse:collapse;font-size:10px}
+  table.ct td{border-bottom:1px solid #eceff3;padding:2.5px 8px}
+  table.ct td:last-child{text-align:right;font-weight:600;white-space:nowrap;width:34%}
+  table.ct tr:nth-child(even) td{background:#f6f8fa}
+  .calc-green{background:#2f8f5b;color:#eafff3;font-size:10.5px;font-weight:600;line-height:1.4;padding:9px 11px;margin:6px;border-radius:2px}
+  .tiny-note{font-size:12px;color:#6b7280;font-style:italic;line-height:1.5}
+  .new{outline:2px dashed #e8912a;outline-offset:3px}
+  /* ── แบบ A: 3 ตัวเลขหลัก ── */
+  .sumA{border:1px solid #cfd5de;border-radius:3px;margin:10px 0 8px}
+  .sumA .row{display:flex}
+  .sumA .cell{flex:1;padding:8px 10px;text-align:center;border-right:1px solid #e5e8ec}
+  .sumA .cell:last-child{border-right:0}
+  .sumA .k{font-size:12px;color:#4b5563}
+  .sumA .v{font-size:20px;font-weight:700;color:#243b5c;line-height:1.25}
+  .sumA .v.go{color:#2f8f5b}
+  .sumA .u{font-size:12px;color:#6b7280}
+  .sumA .foot{background:#eef6ef;border-top:1px solid #d6e9da;color:#2e4633;font-size:13.5px;padding:5px 10px;text-align:center}
+  /* ── แบบ B: ประโยคเดียว ── */
+  .sumB{background:#eef6ef;border-left:4px solid #4a915a;color:#2e4633;font-size:14.5px;padding:9px 14px;margin:10px 0 8px;border-radius:3px}
+  .sumB b{color:#2f6b3d}
+  /* ── แบบ C: 3 บรรทัด ── */
+  .sumC{background:#eef2f8;border-left:4px solid #243b5c;color:#2f3b4d;font-size:14px;padding:9px 14px 9px 30px;margin:10px 0 8px;border-radius:3px}
+  .sumC .h{font-weight:700;color:#243b5c;margin-left:-16px;margin-bottom:2px;font-size:15px}
+  .sumC li{margin:2px 0}
+  /* ── แบบ D: เส้นเวลา ── */
+  .sumD{display:flex;align-items:stretch;margin:10px 0 8px;gap:0}
+  .sumD .st{flex:1;background:#243b5c;color:#fff;padding:7px 10px;text-align:center}
+  .sumD .st:nth-child(3){background:#2f8f5b}.sumD .st:nth-child(5){background:#e8912a}
+  .sumD .ar{display:flex;align-items:center;color:#9aa4b2;font-size:20px;padding:0 4px;background:#fff}
+  .sumD .t{font-size:12px;opacity:.85}.sumD .n{font-size:17px;font-weight:700;line-height:1.25}
+  .extra{font-size:13px;color:#4a3a22;background:#fdf4e6;border-left:4px solid #e8912a;padding:5px 12px;margin:-4px 0 8px;border-radius:3px}
+  .others{max-width:210mm;margin:0 auto}
+  .others h2{font-size:18px;color:#243b5c;margin:0 0 6px}
+  .others .lbl{font-size:13px;color:#6b7280;margin:10px 0 2px}
+</style>
+</head>
+<body>
+
+<div class="intro">
+  <h1>กล่องสรุปใต้ตารางความคุ้มค่า (รายงานสำรวจ §8)</h1>
+  <p>ตัวเลขจากใบ SSR-QT-26-0020 (#132) · 10 kW · 229,000 บาท · ค่าไฟ 4,200 บาท/เดือน · ชำระเงินสด</p>
+  <p>กรอบเส้นประสีส้ม = ส่วนที่เพิ่มใหม่ · ส่วนอื่นเหมือนหน้าจริง · เลือก 1 แบบ แล้วใบผ่อนบัตร/สินเชื่อจะใช้รูปแบบเดียวกัน (ตัวอย่างท้ายหน้า)</p>
+  <p style="margin-top:6px"><span class="tag">แถบส้มเล็ก</span>บรรทัดเสริม (ทุกแบบ) แสดงเฉพาะเมื่อระบบผลิตไฟได้เกินค่าไฟของบ้าน</p>
+</div>
+
+<!-- ตาราง (เหมือนหน้าจริง) ใช้ซ้ำในทุกแบบ -->
+<template id="calc">
+  <h3 class="subh">ตัวอย่างการคำนวณความคุ้มค่า — ชำระเงินสด</h3>
+  <div class="calc">
+    <div class="calc-head">Solar Calculator — ชำระเงินสด</div>
+    <div class="calc-sub">คำนวณจากแพ็กเกจและค่าไฟของลูกค้ารายนี้</div>
+    <div class="calc-cols">
+      <div class="calc-col">
+        <div class="csec">ข้อมูลระบบและค่าไฟ</div>
+        <table class="ct">
+          <tr><td>มูลค่า Solar Package (บาท)</td><td>229,000</td></tr>
+          <tr><td>ขนาด Solar ที่ติด (kW)</td><td>10.0</td></tr>
+          <tr><td>หน่วยไฟที่ผลิตได้/เดือน (kWh)</td><td>1,200.0</td></tr>
+          <tr><td>ค่าไฟต่อหน่วย (บาท/kWh)</td><td>5.00</td></tr>
+          <tr><td>ค่าไฟปัจจุบัน (บาท/เดือน)</td><td>4,200</td></tr>
+          <tr><td>ประหยัดได้หลังติด Solar (บาท/เดือน)</td><td>4,200</td></tr>
+        </table>
+      </div>
+      <div class="calc-col">
+        <div class="csec">ผลการวิเคราะห์</div>
+        <table class="ct">
+          <tr><td>จุดคุ้มทุน (เดือน)</td><td>55 (4.6 ปี)</td></tr>
+          <tr><td>ค่าไฟรวม 25 ปี ถ้าไม่ติด Solar (บาท)</td><td>1,260,000</td></tr>
+          <tr><td>ถ้าติด 25 ปี ประหยัดค่าไฟได้ (บาท)</td><td>1,187,220</td></tr>
+          <tr><td>ลดการปล่อย CO₂ ต่อปี (ตัน)</td><td>7.20</td></tr>
+          <tr><td>ลดการปล่อย CO₂ เทียบเท่าปลูกต้นไม้ (ต้น)</td><td>720</td></tr>
+        </table>
+        <div class="calc-green">▸ ชำระเงินสด ไม่มีดอกเบี้ย — เป็นทางเลือกที่มีต้นทุนรวมต่ำที่สุด<br><br>หลังถึงจุดคุ้มทุน ค่าไฟที่ประหยัดได้ทุกเดือนคือเงินที่ลูกค้าได้คืน</div>
+      </div>
+    </div>
+  </div>
+</template>
+
+<section class="variant">
+  <h2><span class="tag rec">แนะนำ</span>แบบ A — 3 ตัวเลขหลัก <small>อ่านจบในหนึ่งแวบ · ตัวเลขใหญ่เท่ากันทุกใบ</small></h2>
+  <div class="sheet">
+    <div data-calc></div>
+    <div class="new">
+      <div class="sumA">
+        <div class="row">
+          <div class="cell"><div class="k">จ่ายครั้งเดียว</div><div class="v">229,000</div><div class="u">บาท</div></div>
+          <div class="cell"><div class="k">ประหยัดค่าไฟ</div><div class="v go">4,200</div><div class="u">บาท/เดือน</div></div>
+          <div class="cell"><div class="k">คืนทุนใน</div><div class="v">4 ปี 7 เดือน</div><div class="u">(55 เดือน)</div></div>
+        </div>
+        <div class="foot">ใช้ครบ 25 ปี ประหยัดได้ราว 1.19 ล้านบาท · หักค่าระบบแล้วเหลือราว 9.6 แสนบาท</div>
+      </div>
+      <div class="extra">ระบบผลิตไฟได้มากกว่าที่บ้านใช้ราว 1,800 บาท/เดือน — ถ้าใช้ไฟเพิ่ม (เช่น รถ EV, แอร์) จะคืนทุนเร็วขึ้น</div>
+    </div>
+    <p class="tiny-note">หมายเหตุ: ตารางนี้เป็นตัวอย่างการคำนวณเพื่อประกอบการตัดสินใจเท่านั้น</p>
+  </div>
+</section>
+
+<section class="variant">
+  <h2>แบบ B — ประโยคเดียว <small>สั้นที่สุด · กินพื้นที่น้อย</small></h2>
+  <div class="sheet">
+    <div data-calc></div>
+    <div class="new">
+      <div class="sumB"><b>สรุป:</b> จ่าย <b>229,000 บาท</b> ครั้งเดียว ประหยัดค่าไฟเดือนละ <b>4,200 บาท</b> คืนทุนใน <b>4 ปี 7 เดือน</b> หลังจากนั้นเป็นกำไรของลูกค้า</div>
+      <div class="extra">ระบบผลิตไฟได้มากกว่าที่บ้านใช้ราว 1,800 บาท/เดือน — ถ้าใช้ไฟเพิ่ม (เช่น รถ EV, แอร์) จะคืนทุนเร็วขึ้น</div>
+    </div>
+    <p class="tiny-note">หมายเหตุ: ตารางนี้เป็นตัวอย่างการคำนวณเพื่อประกอบการตัดสินใจเท่านั้น</p>
+  </div>
+</section>
+
+<section class="variant">
+  <h2>แบบ C — 3 บรรทัด <small>แบบกล่องหมายเหตุที่รายงานใช้อยู่แล้ว</small></h2>
+  <div class="sheet">
+    <div data-calc></div>
+    <div class="new">
+      <div class="sumC">
+        <div class="h">สรุปง่าย ๆ</div>
+        <ul>
+          <li>จ่ายครั้งเดียว 229,000 บาท ไม่มีดอกเบี้ย</li>
+          <li>ประหยัดค่าไฟเดือนละ 4,200 บาท → คืนทุนใน 4 ปี 7 เดือน</li>
+          <li>ใช้ครบ 25 ปี หักค่าระบบแล้วเหลือเงินที่ประหยัดได้ราว 9.6 แสนบาท</li>
+        </ul>
+      </div>
+      <div class="extra">ระบบผลิตไฟได้มากกว่าที่บ้านใช้ราว 1,800 บาท/เดือน — ถ้าใช้ไฟเพิ่ม (เช่น รถ EV, แอร์) จะคืนทุนเร็วขึ้น</div>
+    </div>
+    <p class="tiny-note">หมายเหตุ: ตารางนี้เป็นตัวอย่างการคำนวณเพื่อประกอบการตัดสินใจเท่านั้น</p>
+  </div>
+</section>
+
+<section class="variant">
+  <h2>แบบ D — เส้นเวลา <small>เห็นลำดับ จ่าย → คืนทุน → ระยะยาว</small></h2>
+  <div class="sheet">
+    <div data-calc></div>
+    <div class="new">
+      <div class="sumD">
+        <div class="st"><div class="t">วันติดตั้ง</div><div class="n">จ่าย 229,000</div></div>
+        <div class="ar">›</div>
+        <div class="st"><div class="t">ทุกเดือน</div><div class="n">ประหยัด 4,200</div></div>
+        <div class="ar">›</div>
+        <div class="st"><div class="t">ปีที่ 4 เดือนที่ 7</div><div class="n">คืนทุน</div></div>
+        <div class="ar">›</div>
+        <div class="st"><div class="t">ครบ 25 ปี</div><div class="n">เหลือ ≈ 9.6 แสน</div></div>
+      </div>
+      <div class="extra">ระบบผลิตไฟได้มากกว่าที่บ้านใช้ราว 1,800 บาท/เดือน — ถ้าใช้ไฟเพิ่ม (เช่น รถ EV, แอร์) จะคืนทุนเร็วขึ้น</div>
+    </div>
+    <p class="tiny-note">หมายเหตุ: ตารางนี้เป็นตัวอย่างการคำนวณเพื่อประกอบการตัดสินใจเท่านั้น</p>
+  </div>
+</section>
+
+<section class="others">
+  <h2>ถ้าเลือกแบบ A — ใบผ่อนบัตร / สินเชื่อ จะเขียนว่า</h2>
+  <div class="sheet">
+    <div class="lbl">ผ่อนบัตรเครดิต (ใบ #128 · 229,000 · ค่าไฟ 2,500 · ค่าธรรมเนียม 3%)</div>
+    <div class="sumA">
+      <div class="row">
+        <div class="cell"><div class="k">ผ่อนบัตร 10 เดือน</div><div class="v">18,787</div><div class="u">บาท/เดือน</div></div>
+        <div class="cell"><div class="k">ประหยัดค่าไฟ</div><div class="v go">2,500</div><div class="u">บาท/เดือน</div></div>
+        <div class="cell"><div class="k">คืนทุนใน</div><div class="v">7 ปี 10 เดือน</div><div class="u">(94 เดือน รวมค่าธรรมเนียม)</div></div>
+      </div>
+      <div class="foot">ใช้ครบ 25 ปี ประหยัดได้ราว 7.1 แสนบาท · หักค่าระบบและค่าธรรมเนียมแล้วเหลือราว 4.7 แสนบาท</div>
+    </div>
+    <div class="lbl">สินเชื่อออมสิน (ใบ #125 · 142,000 · ค่าไฟ 2,500 · 3.5% 84 เดือน)</div>
+    <div class="sumA">
+      <div class="row">
+        <div class="cell"><div class="k">ผ่อนธนาคาร</div><div class="v">1,527</div><div class="u">บาท/เดือน</div></div>
+        <div class="cell"><div class="k">ประหยัดค่าไฟ</div><div class="v go">2,500</div><div class="u">บาท/เดือน</div></div>
+        <div class="cell"><div class="k">ได้เงินดาวน์คืนใน</div><div class="v">2 ปี 6 เดือน</div><div class="u">(30 เดือน)</div></div>
+      </div>
+      <div class="foot">ค่าผ่อนน้อยกว่าค่าไฟที่ประหยัด — เหลือเงินเดือนละ 973 บาทตั้งแต่เดือนแรก</div>
+    </div>
+  </div>
+</section>
+
+<script>
+  // วางตารางเดิมในทุกแบบ (มีแค่กล่องใหม่ที่ต่างกัน)
+  const tpl = document.getElementById("calc");
+  document.querySelectorAll("[data-calc]").forEach((slot) => slot.replaceWith(tpl.content.cloneNode(true)));
+</script>
+</body>
+</html>

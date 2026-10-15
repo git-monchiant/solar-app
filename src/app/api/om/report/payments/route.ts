@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { requireAnyActiveRole } from "@/lib/auth";
 import { fixDates } from "@/lib/db";
 import { getOmDb } from "@/lib/om/line";
+import { OM_PAY_LIVE_SQL } from "@/lib/om/om-quotation";
 
 // รายงานรายรับค่าบริการงาน O&M (แผน docs/plan/20260924-02 เฟส 4 · ผู้ใช้เคาะ 24 ก.ย. ข้อ 9 "แยกรายงาน")
 // ★ 1 แถว = ใบเสนอราคา O&M 1 ใบที่ส่งให้ลูกค้าแล้ว หรือมีเงินผูกอยู่ (แถว payments slip_field = om_quote_<id>)
@@ -35,6 +36,8 @@ export async function GET(req: NextRequest) {
       FROM payments p
       JOIN quotations q ON q.lead_id = p.lead_id AND p.slip_field = CONCAT(N'om_quote_', q.id)
      WHERE p.slip_field LIKE 'om[_]quote[_]%'
+       -- เช็คเด้งไม่ใช่เงินเข้า/รอยืนยัน (แผน 20261014-03) — ไม่งั้นยอด "รอยืนยัน" ค้างตลอด
+       AND ${OM_PAY_LIVE_SQL("p")}
      ORDER BY p.id;`);
   const sets = r.recordsets as unknown as Array<Array<Record<string, unknown>>>;
   const byQuote = new Map<number, Array<Record<string, unknown>>>();

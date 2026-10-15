@@ -3,6 +3,8 @@
 // ขั้น 03 ชำระเงิน ของหน้ารายละเอียดงานบริการ (แผน docs/plan/20260924-02 เฟส 4)
 // ★ Sale แนบสลิปของลูกค้า → เข้าคิว "รอยืนยันรับเงิน" ของ Account (คิวเดียวกับฝั่งขาย ติดป้าย O&M)
 //   Account ยืนยันแล้วระบบเติมสิทธิ์ที่ซื้อให้บ้าน แล้ว Sale โทรตกลงนัดได้ (เก็บค่าบริการก่อนนัดหมาย)
+// ★ แผน 20261014-06: ปุ่มในคิวพา Account มายืนยันที่แผงนี้ แบบฝั่งขายพาไป PaymentSection บนหน้า lead
+//   ยืนยันแล้วแนบใบเสร็จตัวจริงต่อในกล่องเดิม (PayStatus → OmReceiptRow)
 // ★ ไม่ใช้ PaymentSection ของฝั่งขาย — ตัวนั้นเขียน pay token / ใบแจ้งหนี้ / สถานะลงตัว lead
 //   บ้านที่ใช้ lead ร่วมกับฝั่งขายจะเสียลิงก์จ่ายเงินที่ส่งลูกค้าไปแล้ว (ดู /api/om/payments)
 // ★ แผน 20261002-10: ขั้นที่กำลังทำ (steps) หน้าตาแบบขั้น Order ฝั่งขาย (OrderStep)
@@ -12,6 +14,8 @@
 // ★ แผน 20261002-11: ขั้นย่อย "ชำระเงิน" หน้าตาแบบงวดชำระเงินของ OrderStep + PaymentSection
 //   ล็อก 1 งวด 100% (ผู้ใช้เคาะ) · เช็ค / บัตรเครดิตแบบฝั่งขายเต็ม · ไม่มีสินเชื่อ / ชำระหลังติดตั้ง / LINE / ใบแจ้งชำระเงิน
 //   แท็บ Thai QR · Bank Account · อื่นๆ ตามค่าใน /api/settings ชุดเดียวกับฝั่งขาย (ไม่มี Payment Link — ต้องใช้ pay token ของ lead)
+// ★ แผน 20261014-03: เช็คที่รับแล้วเด้ง — แถวเงินเก็บไว้ (cheque_status = 'bounced') โชว์เป็นประวัติสีแดง ไม่ใช่สลิปปัจจุบัน
+//   ใบงานที่ยังไม่ถึงหน้างานถูกดึงกลับขั้นชำระเงิน (ขั้นย่อยปกติ) · ถึงหน้างานแล้ว = แนบใหม่จากขั้นที่ปิดแล้ว (late)
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { apiFetch } from "@/lib/api";
@@ -34,6 +38,8 @@ type Pay = {
   confirmed_at: string | null; confirmed_by: string | null; slip_urls: string[];
   cheque_received_at: string | null; cheque_received_by: string | null;
   cc_surcharge_pct: number | null; cc_surcharge_amount: number;
+  /** เช็คเด้ง (แผน 20261014-03) — 'bounced' = แถวประวัติ ไม่นับเป็นสลิปที่แนบแล้ว */
+  cheque_status: string | null; cheque_status_note: string | null; cheque_status_by: string | null; cheque_status_at: string | null;
 };
 type Settings = Record<string, string | undefined>;
 
@@ -44,6 +50,10 @@ const SUB_STEPS = ["เลือกใบเสนอราคา", "ชำร�
 const CC_RATES = [0, 1.5, 2, 2.5, 3] as const;
 const CC_DEFAULT = 3;
 const MAX_FILES = 5;
+/** ใบงานที่ถึงหน้างานแล้ว — เช็คเด้งไม่ดึงกลับขั้นชำระเงิน แต่แนบหลักฐานใหม่ได้
+ *  ชุดเดียวกับ OM_REPAY_AFTER_BOUNCE ใน lib/om/om-quotation.ts (ไฟล์นั้น server-only import ฝั่งนี้ไม่ได้) */
+const REPAY_AFTER_BOUNCE = ["progress", "checked", "closed"];
+const isBounced = (p: Pay) => p.cheque_status === "bounced";
 // ปุ่มล่าง — คลาสเดียวกับปุ่ม ย้อนกลับ / ถัดไป ของ OrderStep
 const BACK_BTN = "flex-1 md:flex-none md:w-64 h-11 rounded-lg text-sm font-semibold border border-gray-200 text-gray-600 hover:bg-gray-50 transition-colors flex items-center justify-center gap-1 cursor-pointer";
 const NEXT_BTN = "flex-1 md:flex-none md:w-64 h-11 rounded-lg text-sm font-semibold text-white bg-active hover:brightness-110 disabled:opacity-60 disabled:cursor-not-allowed transition-colors flex items-center justify-center gap-1 cursor-pointer";
@@ -69,6 +79,7 @@ export default function OmPaymentPanel({ item, skip, onSaved, onReload, steps = 
 }) {
   const { activeRoles } = useActiveRoles();
   const canSubmit = hasRole(activeRoles, "admin", "sales", "sales_sup");
+  const canAccount = hasRole(activeRoles, "admin", "account");
   const [pays, setPays] = useState<Pay[] | null>(null);
   const [err, setErr] = useState("");
 
@@ -99,17 +110,42 @@ export default function OmPaymentPanel({ item, skip, onSaved, onReload, steps = 
     ? <div className="rounded-lg bg-red-50 border border-red-200 px-3 py-2 text-sm text-red-700">{err}</div>
     : <div className="text-sm text-gray-400">กำลังโหลด…</div>;
 
-  const current = pays[0];
+  const current = pays.find((p) => !isBounced(p));
+  const bounced = pays.filter(isBounced);
+  // เช็คเด้งหลังถึงหน้างาน — ขั้นนี้ปิดไปแล้วแต่ต้องเก็บเงินใหม่ ⇒ ใช้ขั้นย่อยชำระเงินตัวเดียวกัน (ล็อกการเปลี่ยนชุด)
+  if (!current && bounced.length && canSubmit && item.booking_id && REPAY_AFTER_BOUNCE.includes(item.job_status ?? ""))
+    return <PaySteps item={item} bookingId={item.booking_id} canSubmit={canSubmit} onSaved={onSaved} onReload={onReload} late />;
   const fee = current ? Number(current.cc_surcharge_amount || 0) : 0;
   return (
-    <div>
-      <div className="flex items-baseline gap-2 flex-wrap mb-3">
+    <div className="space-y-3">
+      <div className="flex items-baseline gap-2 flex-wrap">
         <span className="text-sm text-gray-600">ค่าบริการตามใบ <b className="font-mono">{item.q_doc_no}</b></span>
         <span className="ml-auto text-lg font-bold tabular-nums">{formatTHB(Number(item.q_total || 0) + fee)} บาท</span>
       </div>
       {current
         ? <PayStatus pay={current} docNo={item.q_doc_no ?? `om_${item.q_id}`} onChanged={load} />
-        : <div className="text-sm text-gray-600">ยังไม่มีสลิปค่าบริการ</div>}
+        : <div className="text-sm text-gray-600">{bounced.length ? "เช็คเด้ง — รอ Sale แนบหลักฐานชำระใหม่" : "ยังไม่มีสลิปค่าบริการ"}</div>}
+      {/* ขั้น 03 ปิดแล้วแต่เงินยังไม่ยืนยัน (รับเช็คแล้วรอเงินเข้า ฯลฯ) — Account ยืนยันต่อที่นี่ได้ (แผน 20261014-06) */}
+      {current && canAccount && !current.confirmed_at && (
+        <AccountActions pay={current} onSaved={onSaved} onChanged={() => { load(); onReload?.(); }} />
+      )}
+      <BouncedRows rows={bounced} />
+    </div>
+  );
+}
+
+/** เช็คที่เด้ง (แผน 20261014-03) — ประวัติสีแดง: ยอด · ผู้บันทึก · เวลา · เหตุผล */
+function BouncedRows({ rows }: { rows: Pay[] }) {
+  if (!rows.length) return null;
+  return (
+    <div className="rounded-xl border border-red-200 bg-red-50 px-3.5 py-2.5 space-y-1.5">
+      {rows.map((p) => (
+        <div key={p.id} className="text-xs text-red-800 leading-relaxed">
+          <b>✗ เช็คเด้ง</b> {formatTHB(Number(p.amount) + Number(p.cc_surcharge_amount || 0))} บาท
+          {" "}· แนบโดย {p.submitted_by_name ?? "—"} · บันทึกเด้งโดย {p.cheque_status_by ?? "—"} · {thDT(p.cheque_status_at)}
+          {p.cheque_status_note && <div className="text-red-700">เหตุผล: {p.cheque_status_note}</div>}
+        </div>
+      ))}
     </div>
   );
 }
@@ -160,15 +196,87 @@ function PayStatus({ pay: current, docNo, onChanged }: { pay: Pay; docNo: string
   );
 }
 
+/** ปุ่มของ Account/admin — รับเช็ค / ยืนยันเงิน / ไม่อนุมัติ / เช็คเด้ง (POST /api/om/payments/[id])
+ *  ★ แผน 20261014-06: แยกออกจาก PaySteps มาใช้ 2 ที่ — ขั้นย่อยชำระเงิน (ขั้นที่กำลังทำ) + การ์ดขั้น 03 ที่ปิดแล้ว
+ *    (รับเช็คแล้วรอเงินเข้า · แนบใหม่หลังเช็คเด้งตอนถึงหน้างาน) เดิมขั้นที่ปิดแล้วไม่มีปุ่ม ต้องไปกดในคิว */
+function AccountActions({ pay, onSaved, onChanged }: { pay: Pay; onSaved: (msg: string) => void; onChanged: () => void }) {
+  const dialog = useDialog();
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState("");
+  // bounce = เช็คที่รับแล้ว → กล่อง "เช็คเด้ง" (เก็บแถวไว้) แทนปฏิเสธ (ลบแถว)
+  const [rejecting, setRejecting] = useState<{ reason: string; bounce: boolean } | null>(null);
+  const chequeWaitingMoney = !pay.confirmed_at && !!pay.cheque_received_at;
+  const chequeFirst = pay.payment_method === "cheque" && !chequeWaitingMoney;
+  const toCharge = Number(pay.amount) + Number(pay.cc_surcharge_amount || 0);
+
+  const act = async (action: "confirm" | "cheque_received" | "reject" | "cheque_bounced", reason = "") => {
+    if (action === "confirm" || action === "cheque_received") {
+      const ok = await dialog.confirm(action === "cheque_received"
+        ? { title: "ยืนยันรับเช็ค", confirmText: "ยืนยันรับเช็ค",
+            message: "รับเช็คแล้ว Sale โทรนัดได้ · ยืนยันรับเงินอีกครั้งเมื่อเงินเข้าจริง (ตอนนั้นจึงเติมสิทธิ์)" }
+        : { title: "ยืนยันรับเงินค่าบริการ", confirmText: "ยืนยันรับเงิน", variant: "success",
+            message: `${formatTHB(toCharge)} บาท — ยืนยันแล้วระบบเติมสิทธิ์ที่ลูกค้าซื้อให้บ้าน` });
+      if (!ok) return;
+    }
+    setBusy(true); setErr("");
+    try {
+      await apiFetch(`/api/om/payments/${pay.id}`, { method: "POST", body: JSON.stringify({ action, reason }) });
+      setRejecting(null);
+      onSaved(action === "cheque_received" ? "รับเช็คแล้ว — Sale โทรนัดได้" : action === "confirm" ? "ยืนยันรับเงินแล้ว"
+        : action === "cheque_bounced" ? "บันทึกเช็คเด้งแล้ว — รอ Sale แนบหลักฐานชำระใหม่" : "ส่งกลับให้แนบสลิปใหม่แล้ว");
+      onChanged();
+    } catch (e) { setErr(e instanceof Error ? e.message : String(e)); }
+    finally { setBusy(false); }
+  };
+
+  if (pay.confirmed_at) return null;
+  return (
+    <>
+      {err && <div className="rounded-lg bg-red-50 border border-red-200 px-3 py-2 text-sm text-red-700">{err}</div>}
+      <button type="button" disabled={busy} onClick={() => act(chequeFirst ? "cheque_received" : "confirm")}
+        className={`w-full h-11 rounded-lg text-sm font-semibold transition-colors flex items-center justify-center gap-1.5 text-white disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer ${
+          chequeFirst ? "bg-amber-500 hover:bg-amber-600" : "bg-gradient-to-r from-primary to-primary-dark hover:brightness-110"}`}>
+        {busy ? "กำลังยืนยัน…" : chequeFirst ? "ยืนยันรับเช็ค" : "ยืนยันการชำระเงิน 2"}
+      </button>
+      <button type="button" disabled={busy} onClick={() => setRejecting({ reason: "", bounce: chequeWaitingMoney })}
+        className="w-full h-8 rounded-lg text-sm font-semibold text-red-600 border border-red-300 bg-white hover:bg-red-50 flex items-center justify-center gap-1.5 cursor-pointer disabled:opacity-40">
+        {/* รับเช็คแล้ว = ปฏิเสธ (ลบแถว) ไม่ได้ ใช้เช็คเด้งแทน — API กันซ้ำ (แผน 20261014-03) */}
+        {chequeWaitingMoney ? "✗ เช็คเด้ง / ยกเลิกเช็ค" : "✗ ไม่อนุมัติ / ส่งกลับให้ upload ใหม่"}
+      </button>
+      {rejecting && (
+        <ModalBase title={rejecting.bounce ? "เช็คเด้ง — ค่าบริการ" : "ไม่อนุมัติสลิปค่าบริการ"} size="md" onClose={() => setRejecting(null)}
+          footer={
+            <div className="flex justify-end gap-2">
+              <button type="button" disabled={busy} onClick={() => setRejecting(null)}
+                className="h-9 px-4 rounded-lg text-sm font-semibold text-gray-700 border border-gray-200 hover:bg-gray-50 disabled:opacity-50">ยกเลิก</button>
+              <button type="button" disabled={!rejecting.reason.trim() || busy} onClick={() => act(rejecting.bounce ? "cheque_bounced" : "reject", rejecting.reason.trim())}
+                className="h-9 px-4 rounded-lg text-sm font-semibold text-white bg-red-600 hover:bg-red-700 disabled:opacity-40 disabled:cursor-not-allowed">
+                {rejecting.bounce ? "ยืนยันเช็คเด้ง" : "ส่งกลับ"}</button>
+            </div>
+          }>
+          <p className="text-xs text-gray-600">{rejecting.bounce
+            ? "เก็บรายการเช็คไว้เป็นหลักฐาน · ใบงานที่ยังไม่ถึงวันเข้างานกลับไปขั้นชำระเงิน · Sale ต้องแนบหลักฐานชำระใหม่ กรุณาระบุเหตุผล"
+            : "สลิปนี้จะถูกเอาออก Sale ต้องแนบใหม่ กรุณาระบุเหตุผล"}</p>
+          <label className="block text-xs font-semibold text-gray-700 mt-4 mb-1">เหตุผล <span className="text-red-500">*</span></label>
+          <textarea value={rejecting.reason} onChange={(e) => setRejecting({ ...rejecting, reason: e.target.value })} rows={3} autoFocus maxLength={300}
+            placeholder={rejecting.bounce ? "เช่น เช็คคืน เงินในบัญชีไม่พอ / ลูกค้ายกเลิกเช็ค" : "เช่น ยอดในสลิปไม่ตรง / สลิปไม่ชัด / ยังไม่พบเงินเข้าบัญชี"}
+            className="w-full px-3 py-2 rounded-lg border border-gray-200 text-sm focus:outline-none focus:border-red-400 resize-none" />
+        </ModalBase>
+      )}
+    </>
+  );
+}
+
 // ── ขั้นที่กำลังทำ: ขั้นย่อยแบบ OrderStep ฝั่งขาย (แผน 20261002-10 / 11) ──
-function PaySteps({ item, bookingId, canSubmit, onSaved, onReload }: {
+function PaySteps({ item, bookingId, canSubmit, onSaved, onReload, late = false }: {
   item: Item; bookingId: number; canSubmit: boolean;
   onSaved: (msg: string) => void; onReload?: () => void;
+  /** เช็คเด้งหลังใบงานถึงหน้างานแล้ว (แผน 20261014-03) — แนบหลักฐานใหม่ได้ แต่เปลี่ยนชุดไม่ได้ (/send รับเฉพาะขั้นเสนอราคา/ชำระเงิน) */
+  late?: boolean;
 }) {
   const { activeRoles } = useActiveRoles();
-  // ยืนยันในแผงได้แบบ "ยืนยันการชำระเงิน 2" ของ PaymentSection — คิว /report/pending ยังใช้ได้ตามเดิม
+  // ยืนยันในแผงแบบ "ยืนยันการชำระเงิน 2" ของ PaymentSection — คิว /report/pending พามาที่นี่ (แผน 20261014-06)
   const canAccount = hasRole(activeRoles, "admin", "account");
-  const dialog = useDialog();
   const [sub, setSub] = useSubStep(`omPaySubStep_${bookingId}`, 0, SUB_STEPS.length);
   // ทุกใบของใบงาน + บันทึกถึงฝ่ายขาย — ผูกเลขใบงานไว้ กันโชว์ของบ้านก่อนหน้าค้างตอนเปลี่ยนบ้าน
   const [list, setList] = useState<{ bookingId: number; quotes: Quote[]; note: string } | null>(null);
@@ -186,7 +294,6 @@ function PaySteps({ item, bookingId, canSubmit, onSaved, onReload }: {
   const [qr, setQr] = useState<{ amount: number; url: string | null; mode: string; error?: string } | null>(null);
   const [copied, setCopied] = useState(false);
   const [busy, setBusy] = useState(false);
-  const [rejecting, setRejecting] = useState<{ id: number; reason: string } | null>(null);
   const [err, setErr] = useState("");
 
   const loadQuotes = useCallback(() => apiFetch(`/api/om/quotations?booking_id=${bookingId}`)
@@ -222,15 +329,19 @@ function PaySteps({ item, bookingId, canSubmit, onSaved, onReload }: {
   }, [chosen]);
   useEffect(() => { loadPays(); }, [loadPays]);
   const payRows = pays && chosen && pays.qid === chosen.id ? pays.rows : null;
-  const current = payRows?.[0] ?? null;
-  // แนบสลิปแล้ว = ล็อกชุด (สลิปผูกเลขใบ) แบบ quoteLocked ฝั่งขาย · Account ปฏิเสธสลิป = ลบแถว เปลี่ยนได้อีก
-  const locked = !!current;
+  // แถวเช็คเด้งเป็นประวัติ ไม่ใช่สลิปปัจจุบัน (แผน 20261014-03)
+  const current = payRows?.find((p) => !isBounced(p)) ?? null;
+  const bouncedRows = useMemo(() => (payRows ?? []).filter(isBounced), [payRows]);
+  // แนบสลิปแล้ว = ล็อกชุด (สลิปผูกเลขใบ) แบบ quoteLocked ฝั่งขาย · Account ปฏิเสธสลิป = ลบแถว / เช็คเด้ง = เปลี่ยนได้อีก
+  //   late = ใบงานเลยขั้นชำระเงินไปแล้ว เปลี่ยนชุดไม่ได้
+  const locked = !!current || late;
 
-  // เปิดใบงานที่แนบสลิปแล้ว — ไปขั้นย่อยชำระเงินให้เลย (ครั้งเดียวต่อใบงาน กดย้อนกลับไปดูชุดได้)
+  // เปิดใบงานที่แนบสลิปแล้ว (หรือเช็คเด้งรอแนบใหม่) — ไปขั้นย่อยชำระเงินให้เลย (ครั้งเดียวต่อใบงาน กดย้อนกลับไปดูชุดได้)
   const jumped = useRef<number | null>(null);
+  const hasHistory = !!current || bouncedRows.length > 0;
   useEffect(() => {
-    if (current && jumped.current !== bookingId) { jumped.current = bookingId; setSub(1); }
-  }, [current, bookingId, setSub]);
+    if (hasHistory && jumped.current !== bookingId) { jumped.current = bookingId; setSub(1); }
+  }, [hasHistory, bookingId, setSub]);
 
   // ยอด — แถวที่แนบแล้วใช้วิธี/ค่าธรรมเนียมที่บันทึกไว้ · ยังไม่แนบใช้ที่ติ๊กอยู่
   const subtotal = Number(chosen?.subtotal_incl_vat ?? 0);
@@ -297,27 +408,6 @@ function PaySteps({ item, bookingId, canSubmit, onSaved, onReload }: {
       for (const f of files) URL.revokeObjectURL(f.url);
       setFiles([]); setOtherDetail("");
       onSaved(rowMethod === "cheque" ? "แนบภาพเช็คแล้ว — รอฝ่ายบัญชียืนยันรับเช็ค" : "แนบสลิปแล้ว — รอ Account ยืนยันรับเงิน");
-      loadPays(); onReload?.();
-    } catch (e) { setErr(e instanceof Error ? e.message : String(e)); }
-    finally { setBusy(false); }
-  };
-
-  /** Account/admin ในแผง — รับเช็ค / ยืนยันเงิน / ไม่อนุมัติ (ทาง /api/om/payments/[id] ตัวเดียวกับคิว) */
-  const account = async (action: "confirm" | "cheque_received" | "reject", reason = "") => {
-    if (!current) return;
-    if (action !== "reject") {
-      const ok = await dialog.confirm(action === "cheque_received"
-        ? { title: "ยืนยันรับเช็ค", confirmText: "ยืนยันรับเช็ค",
-            message: "รับเช็คแล้ว Sale โทรนัดได้ · ยืนยันรับเงินอีกครั้งเมื่อเงินเข้าจริง (ตอนนั้นจึงเติมสิทธิ์)" }
-        : { title: "ยืนยันรับเงินค่าบริการ", confirmText: "ยืนยันรับเงิน", variant: "success",
-            message: `${formatTHB(toCharge)} บาท — ยืนยันแล้วระบบเติมสิทธิ์ที่ลูกค้าซื้อให้บ้าน` });
-      if (!ok) return;
-    }
-    setBusy(true); setErr("");
-    try {
-      await apiFetch(`/api/om/payments/${current.id}`, { method: "POST", body: JSON.stringify({ action, reason }) });
-      setRejecting(null);
-      onSaved(action === "cheque_received" ? "รับเช็คแล้ว — Sale โทรนัดได้" : action === "confirm" ? "ยืนยันรับเงินแล้ว" : "ส่งกลับให้แนบสลิปใหม่แล้ว");
       loadPays(); onReload?.();
     } catch (e) { setErr(e instanceof Error ? e.message : String(e)); }
     finally { setBusy(false); }
@@ -423,18 +513,9 @@ function PaySteps({ item, bookingId, canSubmit, onSaved, onReload }: {
   const payPanel = current ? (
     <div className="space-y-3">
       <PayStatus pay={current} docNo={chosen?.doc_no ?? ""} onChanged={loadPays} />
+      <BouncedRows rows={bouncedRows} />
       {!paid && (canAccount ? (
-        <>
-          <button type="button" disabled={busy} onClick={() => account(chequeWaitingMoney || current.payment_method !== "cheque" ? "confirm" : "cheque_received")}
-            className={`w-full h-11 rounded-lg text-sm font-semibold transition-colors flex items-center justify-center gap-1.5 text-white disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer ${
-              current.payment_method === "cheque" && !chequeWaitingMoney ? "bg-amber-500 hover:bg-amber-600" : "bg-gradient-to-r from-primary to-primary-dark hover:brightness-110"}`}>
-            {busy ? "กำลังยืนยัน…" : current.payment_method === "cheque" && !chequeWaitingMoney ? "ยืนยันรับเช็ค" : "ยืนยันการชำระเงิน 2"}
-          </button>
-          <button type="button" disabled={busy} onClick={() => setRejecting({ id: current.id, reason: "" })}
-            className="w-full h-8 rounded-lg text-sm font-semibold text-red-600 border border-red-300 bg-white hover:bg-red-50 flex items-center justify-center gap-1.5 cursor-pointer disabled:opacity-40">
-            ✗ ไม่อนุมัติ / ส่งกลับให้ upload ใหม่
-          </button>
-        </>
+        <AccountActions pay={current} onSaved={onSaved} onChanged={() => { loadPays(); onReload?.(); }} />
       ) : (
         <button type="button" disabled
           className="w-full h-11 rounded-lg text-sm font-semibold text-amber-700 bg-amber-50 border border-amber-200 cursor-not-allowed flex items-center justify-center gap-1.5">
@@ -443,9 +524,16 @@ function PaySteps({ item, bookingId, canSubmit, onSaved, onReload }: {
       ))}
     </div>
   ) : !canSubmit ? (
-    <div className="text-sm text-gray-600">รอ Sale แนบสลิปค่าบริการ</div>
+    <div className="space-y-3">
+      <BouncedRows rows={bouncedRows} />
+      <div className="text-sm text-gray-600">รอ Sale แนบสลิปค่าบริการ{bouncedRows.length ? "ใหม่" : ""}</div>
+    </div>
   ) : (
     <div className="space-y-3">
+      {bouncedRows.length > 0 && (<>
+        <BouncedRows rows={bouncedRows} />
+        <div className="text-xs font-semibold text-red-700">แนบหลักฐานชำระใหม่ด้านล่าง</div>
+      </>)}
       {method === "cheque" ? (
         <div className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-3 text-sm text-amber-800">
           <div className="font-semibold">ชำระด้วยเช็ค</div>
@@ -751,23 +839,6 @@ function PaySteps({ item, bookingId, canSubmit, onSaved, onReload }: {
       )}
 
       <ErrorPopup message={nextError} onClose={() => setNextError(null)} />
-      {rejecting && (
-        <ModalBase title="ไม่อนุมัติสลิปค่าบริการ" size="md" onClose={() => setRejecting(null)}
-          footer={
-            <div className="flex justify-end gap-2">
-              <button type="button" disabled={busy} onClick={() => setRejecting(null)}
-                className="h-9 px-4 rounded-lg text-sm font-semibold text-gray-700 border border-gray-200 hover:bg-gray-50 disabled:opacity-50">ยกเลิก</button>
-              <button type="button" disabled={!rejecting.reason.trim() || busy} onClick={() => account("reject", rejecting.reason.trim())}
-                className="h-9 px-4 rounded-lg text-sm font-semibold text-white bg-red-600 hover:bg-red-700 disabled:opacity-40 disabled:cursor-not-allowed">ส่งกลับ</button>
-            </div>
-          }>
-          <p className="text-xs text-gray-600">สลิปนี้จะถูกเอาออก Sale ต้องแนบใหม่ กรุณาระบุเหตุผล</p>
-          <label className="block text-xs font-semibold text-gray-700 mt-4 mb-1">เหตุผล <span className="text-red-500">*</span></label>
-          <textarea value={rejecting.reason} onChange={(e) => setRejecting({ ...rejecting, reason: e.target.value })} rows={3} autoFocus maxLength={300}
-            placeholder="เช่น ยอดในสลิปไม่ตรง / สลิปไม่ชัด / ยังไม่พบเงินเข้าบัญชี"
-            className="w-full px-3 py-2 rounded-lg border border-gray-200 text-sm focus:outline-none focus:border-red-400 resize-none" />
-        </ModalBase>
-      )}
     </StepLayout>
   );
 }

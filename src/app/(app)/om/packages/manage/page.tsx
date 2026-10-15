@@ -219,14 +219,17 @@ export default function ManageOmPackagesPage() {
                         <span className="text-sm font-mono text-gray-500 shrink-0">{omTierKw(pkg)}{pkg.max_panels != null ? ` · ≤${pkg.max_panels} แผง` : ""}</span>
                       </div>
 
-                      {/* Row 2: ค่าบริการ + ขอบเขตงานเป็นชิป (ตำแหน่งเดียวกับชิป Panel/Inv) */}
-                      <div className="flex items-center gap-x-4 gap-y-1.5 mb-2 flex-wrap">
+                      {/* Row 2: ค่าบริการ + ขอบเขตงาน
+                          ★ แผน 20261014-04: ขอบเขตงานเป็นประโยคเต็มบรรทัดละข้อ (แบบใบเสนอราคาตัวอย่าง) ชิปยาวเกิน ⇒ รายการทีละบรรทัด */}
+                      <div className="mb-2">
                         <span className="text-xl font-bold font-mono tabular-nums text-gray-900">{fmt(pkg.price)} <span className="text-sm text-gray-400">THB</span></span>
-                        <div className="flex items-center gap-1.5 flex-wrap">
-                          {omScopeItems(pkg.scope).map(s => (
-                            <span key={s} className="text-xs px-2 py-0.5 rounded bg-emerald-50 text-emerald-700 font-semibold">{s}</span>
-                          ))}
-                        </div>
+                        {pkg.scope && (
+                          <ul className="mt-1 space-y-0.5">
+                            {omScopeItems(pkg.scope).map(s => (
+                              <li key={s} className="text-xs leading-snug text-emerald-800">· {s}</li>
+                            ))}
+                          </ul>
+                        )}
                       </div>
 
                       {/* Row 3: ช่วงราคาที่ใช้อยู่ */}
@@ -337,10 +340,14 @@ export default function ManageOmPackagesPage() {
                     </>
                   )}
                   <div className="md:col-span-12">
-                    <label className={labelCls}>ขอบเขตงาน</label>
-                    <textarea value={editing.scope ?? ""} onChange={e => setEditing({ ...editing, scope: e.target.value || null })} rows={2}
-                      placeholder="เช่น ล้างแผง+ตรวจสอบระบบ"
+                    <label className={labelCls}>ขอบเขตงาน · รายละเอียดใต้แพ็กเกจในใบเสนอราคา</label>
+                    <textarea value={editing.scope ?? ""} onChange={e => setEditing({ ...editing, scope: e.target.value || null })} rows={6}
+                      maxLength={500}
+                      placeholder={"บรรทัดละ 1 ข้อ เช่น\nงานล้างทำความสะอาดแผงโซลาร์เซลล์ (Solar Panel Cleaning) จำนวน 2 ครั้ง ภายในระยะเวลา 12 เดือน"}
                       className="w-full px-3 py-2 rounded-lg border border-gray-200 bg-white text-sm outline-none transition-colors hover:border-gray-300 focus:border-primary focus:ring-2 focus:ring-primary/10 disabled:bg-gray-50 disabled:text-gray-600" />
+                    <p className="mt-1 text-xs text-gray-400">
+                      บรรทัดละ 1 ข้อ — เป็นรายละเอียดตั้งต้นใต้แพ็กเกจในใบเสนอราคา · แก้จำนวนครั้ง/อายุสัญญาแล้ว แก้ตัวเลขในข้อความด้วย
+                    </p>
                   </div>
                 </div>
               </section>

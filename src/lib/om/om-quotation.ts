@@ -7,7 +7,7 @@ import {
   type QuotationDocumentSnapshot,
 } from "@/lib/quotation-document";
 import type { QuotationPaymentTerm, QuotationTermTree } from "@/lib/quotation-terms";
-import { omLegal, parseOmTerms } from "@/lib/om/om-terms";
+import { omLegal, omServiceTitle, parseOmTerms, parseOmTitle } from "@/lib/om/om-terms";
 
 // ใบเสนอราคางานบริการ O&M (แผน docs/plan/20260924-02-om-quotation-approval-flow.md เฟส 2)
 //
@@ -77,6 +77,8 @@ export async function readOmQuotes(db: ConnectionPool, by: { id: number } | { bo
     ...q,
     // เงื่อนไขที่แก้ในใบ (แผน 20261002-07) — ส่งเป็นต้นไม้ที่ล้างแล้ว ไม่ส่ง JSON ดิบ
     terms: parseOmTerms(di),
+    // หัวรายการแพ็กเกจที่ Sale แก้ (แผน 20261014-04) — null = ยังไม่เคยแก้ หน้าจอเติมจากข้อมูลบ้าน
+    doc_title: parseOmTitle(di),
     items: items.filter((x) => x.quotation_id === q.id).map(({ quotation_id: _, ...x }) => x),
   }));
 }
@@ -157,6 +159,27 @@ export const OM_BOOKING_PAID_SQL = (b: string) => `EXISTS (
       ON op.lead_id = oq.lead_id AND op.slip_field = CONCAT(N'${OM_SLIP_PREFIX}', oq.id)
    WHERE oq.om_booking_id = ${b}.id AND (op.confirmed_at IS NOT NULL OR op.cheque_received_at IS NOT NULL))`;
 
+/** SQL: แถวเงิน O&M (alias `p`) ที่ยังมีผล — เช็คเด้งเก็บแถวไว้เป็นหลักฐานแบบฝั่งขาย (cheque_status = 'bounced' · แผน 20261014-03)
+ *  แต่ไม่นับเป็นสลิปที่แนบแล้ว/รอตรวจ ⇒ ทุกที่ที่ถาม "มีสลิปค้างไหม" ต้องกรองด้วยตัวนี้
+ *  (ถาม "จ่ายแล้วไหม" ไม่ต้อง — เด้งแล้ว confirmed_at / cheque_received_at เป็น NULL อยู่แล้ว) */
+export const OM_PAY_LIVE_SQL = (p: string) => `ISNULL(${p}.cheque_status, N'') <> N'bounced'`;
+
+/** เช็คเด้งตอนใบงานอยู่ขั้นไหน ทำอะไร (แผน 20261014-03)
+ *  · ยังไม่ถึงหน้างาน (รอยืนยันนัด/นัดแล้ว) = ดึงกลับขั้นชำระเงิน — กติกาเดิม "เก็บค่าบริการก่อนนัด" · หลุดปฏิทินเอง (กรองตามสถานะ)
+ *  · ถึงหน้างานแล้ว (เข้างาน/รอปิด/ปิดงาน) = คงสถานะ งานเกิดไปแล้ว — แต่แนบหลักฐานชำระใหม่ได้ (POST /api/om/payments)
+ *  ★ หน้าจอ (OmPaymentPanel) มีชุดเดียวกัน — ไฟล์นี้ server-only import ฝั่งนั้นไม่ได้ */
+export const OM_BOUNCE_BACK_TO_PAYMENT = ["pending", "confirmed"];
+export const OM_REPAY_AFTER_BOUNCE = ["progress", "checked", "closed"];
+
+/** SQL: ขนาดระบบ + ยี่ห้ออินเวอร์เตอร์ของบ้าน alias `h` เป็นคอลัมน์ kwp_list / inverter_list
+ *  ใช้ทั้งรายการงานบริการ (follow-sql → หน้าจอเติมหัวรายการ) และตัวสร้างเอกสาร (หัวรายการตั้งต้น · แผน 20261014-04) */
+export const omHouseSystemSql = (h: string) => `
+           (SELECT STRING_AGG(CAST(COALESCE(i.rem_size_kwp, i.promo_size_kw) AS varchar(12)), ' + ')
+              FROM om_installations i WHERE i.house_id = ${h}.id
+               AND COALESCE(i.rem_size_kwp, i.promo_size_kw) IS NOT NULL) kwp_list,
+           (SELECT STRING_AGG(x.brand, ' + ') FROM (SELECT DISTINCT LTRIM(RTRIM(i.inverter_brand)) brand
+              FROM om_installations i WHERE i.house_id = ${h}.id AND NULLIF(LTRIM(RTRIM(i.inverter_brand)), '') IS NOT NULL) x) inverter_list`;
+
 /** เลขที่ใบเสนอราคา O&M — แยก prefix จากฝั่งขาย (ผู้ใช้เคาะ 24 ก.ย. ข้อ 8)
  *  ฝั่งขาย SSR-QT-26-0001 · ใบตรวจรับงาน O&M OM-6909-0007 · ของเรา SSR-OM-QT-26-0001 รันแยกชุด
  *  (nextQuotationDocNo ของฝั่งขายค้น LIKE 'SSR-QT-yy-%' ไม่ชนกับ prefix นี้) */
@@ -229,6 +252,9 @@ export type OmQuoteInput = {
   issue_date: string | null;
   /** เงื่อนไข/ข้อกำหนดที่แก้ในใบ (แท็บเงื่อนไขของ popup · แผน 20261002-07) — null = ใช้ชุดจาก Package O&M */
   terms: QuotationTermTree | null;
+  /** หัวรายการแพ็กเกจบนเอกสาร (แผน 20261014-04 · "งานบริการ O&M ระบบโซลาร์เซลล์ อินเวอร์เตอร์ … ขนาด … kW")
+   *  null = พิมพ์ชื่อแพ็กเกจแบบเดิม · package_name_snapshot คงเป็นชื่อแพ็กเกจเสมอ (คิว Account / รายงาน / ประวัติใช้) */
+  title: string | null;
 };
 
 /** วันนี้ตามเวลาไทย YYYY-MM-DD — ใช้กันวันที่ใบล่วงหน้า (ฝั่งขายกันที่หน้าจอด้วยเวลาเครื่อง) */
@@ -262,8 +288,15 @@ export function parseOmQuoteInput(body: Record<string, unknown>): OmQuoteInput |
   if (issueDate && issueDate > todayBangkok()) return "วันที่ใบเสนอราคาต้องไม่เป็นวันที่ล่วงหน้า";
   return { om_package_id: pkg, items, discount_value: discount, discount_reason: reason,
            note: String(body.note ?? "").trim().slice(0, 2000) || null, issue_date: issueDate,
-           terms: parseOmTerms(body.terms) };
+           terms: parseOmTerms(body.terms),
+           title: pkg ? String(body.doc_title ?? "").trim().slice(0, 300) || null : null };
 }
+
+/** document_inputs_json ของใบ O&M — เงื่อนไขที่แก้ + หัวรายการ · ไม่มีทั้งสองอย่าง = NULL */
+const omDocInputsJson = (input: Pick<OmQuoteInput, "terms" | "title">) =>
+  input.terms || input.title
+    ? JSON.stringify({ ...(input.terms ? { terms: input.terms } : {}), ...(input.title ? { title: input.title } : {}) })
+    : null;
 
 /**
  * ป้ายแถวส่วนลดบนใบ (quotations.discount_label — ตัวพิมพ์ใบใช้แทนคำว่า "ส่วนลด" แบบฝั่งขาย · ผู้ใช้ขอ 2 ต.ค. 69)
@@ -273,15 +306,14 @@ export function parseOmQuoteInput(body: Record<string, unknown>): OmQuoteInput |
 const omDiscountLabel = (input: Pick<OmQuoteInput, "discount_reason">, discountAmount: number) =>
   discountAmount > 0 && input.discount_reason ? input.discount_reason.slice(0, 200) : null;
 
-/** terms_text ที่แช่ในใบ = ขอบเขตงานของแพ็กเกจ + หมายเหตุ Package O&M (omLegalContent อ่านกลับเป็นหัวข้อ) */
-const omTermsText = (scope: string | null | undefined, notes: string[]) => {
-  const lines = notes.map((b, i) => `${i + 1}. ${b}`).join("\n");
-  return scope ? `ขอบเขตงาน: ${scope}\n${lines}` : lines;
-};
+/** terms_text ที่แช่ในใบ = หมายเหตุ Package O&M ทีละบรรทัด (omTermTreeFromText อ่านกลับเป็นหัวข้อ "หมายเหตุ")
+ *  ★ แผน 20261014-04: เลิกต่อ "ขอบเขตงาน: …" — ขอบเขตงานอยู่เป็นรายละเอียดใต้แพ็กเกจในตารางแล้ว */
+const omTermsText = (notes: string[]) => notes.map((b, i) => `${i + 1}. ${b}`).join("\n");
 
 /**
  * แถวรายการบนเอกสาร O&M — ใช้ทั้งใบจริง (buildOmQuoteSnapshot) และตัวอย่างก่อนบันทึก (buildOmPreviewSnapshot)
  *   ① แพ็กเกจ O&M เป็นแถวแรก — ใบ O&M ไม่มี package_id ตัวเรนเดอร์จึงไม่วาดแถวแพ็กเกจให้
+ *      ชื่อแถว = หัวรายการที่ Sale แก้ (แผน 20261014-04) ไม่มี = หัวรายการตั้งต้นจากข้อมูลบ้าน (omServiceTitle)
  *   ② จำนวน/หน่วยต่อท้ายชื่อรายการ — ตัวเรนเดอร์พิมพ์รายการเพิ่มแค่ชื่อ + ยอด ("เปลี่ยนสาย MC4 2 จุด")
  *   ③ บรรทัดรายละเอียด (custom_detail) ไม่ต่อท้าย — ตัวเรนเดอร์ต่อ "- ชื่อ จำนวน หน่วย" ให้เองอยู่แล้ว (แผน 20261002-05)
  */
@@ -361,11 +393,11 @@ export async function writeOmQuoteBody(tx: Transaction, quotationId: number, inp
     .input("before_vat", sql.Decimal(12, 2), t.beforeVat)
     .input("vat", sql.Decimal(12, 2), t.vatAmount)
     .input("terms", sql.NVarChar(sql.MAX), JSON.stringify(OM_PAYMENT_TERMS))
-    .input("terms_text", sql.NVarChar(sql.MAX), omTermsText(pkg?.scope, notes))
+    .input("terms_text", sql.NVarChar(sql.MAX), omTermsText(notes))
     .input("note", sql.NVarChar(sql.MAX), input.note)
     .input("idate", sql.NVarChar(10), input.issue_date)
-    // ที่เดียวกับที่ฝั่งขายเก็บเงื่อนไขที่แก้ (document_inputs_json.terms) · ไม่แก้ = NULL
-    .input("di", sql.NVarChar(sql.MAX), input.terms ? JSON.stringify({ terms: input.terms }) : null)
+    // ที่เดียวกับที่ฝั่งขายเก็บเงื่อนไขที่แก้ (document_inputs_json.terms) + หัวรายการ (.title) · ไม่มีทั้งคู่ = NULL
+    .input("di", sql.NVarChar(sql.MAX), omDocInputsJson(input))
     .input("u", sql.Int, actorUserId)
     .query(`UPDATE quotations SET
               issue_date = COALESCE(CAST(@idate AS DATE), issue_date, CAST(GETDATE() AS DATE)),
@@ -437,7 +469,7 @@ export async function buildOmQuoteSnapshot(quotationId: number, tx?: Transaction
     SELECT source_type, package_item_id, item_name_snapshot, quantity, unit, unit_price, line_total, sort_order
       FROM quotation_items WHERE quotation_id = @id ORDER BY sort_order, id;
     ${OM_BANK_SETTINGS_SQL};
-    SELECT h.house_number, h.address, COALESCE(pj.name_th, h.project_name) project_name
+    SELECT h.house_number, h.address, COALESCE(pj.name_th, h.project_name) project_name, ${omHouseSystemSql("h")}
       FROM quotations q JOIN om_bookings b ON b.id = q.om_booking_id JOIN om_houses h ON h.id = b.house_id
       LEFT JOIN om_projects pj ON pj.project_id = h.project_id
      WHERE q.id = @id;`);
@@ -451,7 +483,8 @@ export async function buildOmQuoteSnapshot(quotationId: number, tx?: Transaction
     if (QUOTE_KEYS.has(key)) q[key] = value;
     else if (!key.startsWith("approval_") && !key.startsWith("approver_") && !key.startsWith("sent_to_customer_")) lead[key] = value;
   }
-  fillFromHouse(q, lead, sets[4]?.[0]);
+  const house = sets[4]?.[0];
+  fillFromHouse(q, lead, house);
   return {
     version: QUOTATION_DOCUMENT_VERSION,
     generated_at: new Date().toISOString(),
@@ -459,7 +492,9 @@ export async function buildOmQuoteSnapshot(quotationId: number, tx?: Transaction
     lead,
     lead_data: sets[1]?.[0] || {},
     package: {},
-    items: omDocumentItems(q.package_name_snapshot, Number(q.package_price_snapshot) || 0, sets[2] || []),
+    // ใบที่ไม่มีหัวรายการ (หน้าจอเปิดค้างก่อนแผน 20261014-04 / ใบร่างเก่า) = หัวรายการตั้งต้นจากข้อมูลบ้าน
+    items: omDocumentItems(parseOmTitle(row.document_inputs_json) ?? omServiceTitle(house?.kwp_list, house?.inverter_list),
+      Number(q.package_price_snapshot) || 0, sets[2] || []),
     settings: Object.fromEntries((sets[3] || []).map((s) => [String(s.key), String(s.value || "")])),
     financial: calculateFinancialSnapshot(parseDocumentInputs(null), q, {}),
     legal: omLegal(q.terms_text, q.valid_days, row.document_inputs_json),
@@ -495,7 +530,7 @@ export async function buildOmPreviewSnapshot(houseId: number, input: OmQuoteInpu
            (SELECT TOP 1 p.phone FROM om_house_customers hc
              JOIN om_customer_phones p ON p.customer_id = hc.customer_id
             WHERE hc.house_id = h.id AND hc.is_current = 1 AND p.status <> 'invalid'
-            ORDER BY p.is_primary DESC, p.id) phone
+            ORDER BY p.is_primary DESC, p.id) phone, ${omHouseSystemSql("h")}
       FROM om_houses h LEFT JOIN om_projects pj ON pj.project_id = h.project_id
      WHERE h.id = @h;
     SELECT body FROM om_package_notes ORDER BY sort_order, id;
@@ -526,7 +561,7 @@ export async function buildOmPreviewSnapshot(houseId: number, input: OmQuoteInpu
     }
   }
 
-  const termsText = omTermsText(pkg?.scope, (sets[1] || []).map((x) => String(x.body)));
+  const termsText = omTermsText((sets[1] || []).map((x) => String(x.body)));
   const validDays = Number(opts.validDays) || 7;
   const user = sets[3]?.[0] ?? {};
   const q: Record<string, unknown> = {
@@ -550,7 +585,7 @@ export async function buildOmPreviewSnapshot(houseId: number, input: OmQuoteInpu
     lead,
     lead_data: leadData,
     package: {},
-    items: omDocumentItems(q.package_name_snapshot, pkgPrice, lines.map((x, i) => ({
+    items: omDocumentItems(input.title ?? omServiceTitle(h.kwp_list, h.inverter_list), pkgPrice, lines.map((x, i) => ({
       source_type: x.source_type, package_item_id: null, item_name_snapshot: x.item_name,
       quantity: x.quantity, unit: x.unit ?? null, unit_price: x.unit_price,
       line_total: Math.round(x.quantity * x.unit_price * 100) / 100, sort_order: i + 1,

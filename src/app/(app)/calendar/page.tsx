@@ -8,6 +8,7 @@ import EventCalendarList from "@/components/calendar/EventCalendarList";
 import EventCalendarMonth from "@/components/calendar/EventCalendarMonth";
 import NewAppointmentModal from "@/components/calendar/NewAppointmentModal";
 import { useMe } from "@/lib/roles";
+import { useActiveModuleKey } from "@/lib/hooks/useActiveModule";
 
 // Calendar page — open to every authenticated role. Toggles between a
 // month-grid and a list view; both back the same data source as Today's
@@ -37,6 +38,12 @@ export default function CalendarPage() {
     return t === "survey" || t === "install" || t === "om" || t === "block" ? t : "all";
   });
   const team = followupMode ? ("followup" as const) : selectedTeam;
+  // ★ 14 ต.ค. 69 ซ่อน "สร้างนัด" + ปุ่มกรอง "งานอื่น" (ปิดช่อง) ในโมดูล O&M ไว้ก่อน (ผู้ใช้เคาะ) — ชื่อปุ่มชวนเข้าใจว่าสร้างนัดล้างได้
+  //   แต่นัด O&M ต้องทำจากหน้างานบริการ · ฝั่งขายยังใช้อยู่ (prod มีปิดช่อง 10 ครั้ง) จึงซ่อนเฉพาะโมดูล O&M
+  //   ดูจากโมดูลที่เลือก ไม่ใช่ตัวกรอง — กดเปลี่ยนเป็น "ทั้งหมด" ในโมดูล O&M ก็ยังไม่โผล่
+  //   ปิดช่องที่ล็อกงาน O&M (ทีมสำรวจ/ทั้ง 2 ทีม) ยังเห็นในตัวกรอง O&M — ดู EventCalendarMonth/List
+  const omModule = useActiveModuleKey() === "om";
+  const canCreate = !followupMode && !omModule;
 
   // เลื่อนไปแถววันนี้: วัดความสูง sticky header สดๆ แล้ว scroll เอง — offset
   // ตายตัว (scroll-mt) ทำแถวมุดใต้ header เพราะความสูง header เปลี่ยนตามโหมด/จอ
@@ -160,7 +167,7 @@ export default function CalendarPage() {
                 { value: "install" as const, label: "ทีมติดตั้ง", dot: "bg-orange-500", activeCls: "bg-orange-500 text-white border-orange-500" },
                 { value: "om" as const, label: "O&M", dot: "bg-teal-600", activeCls: "bg-teal-600 text-white border-teal-600" },
                 { value: "block" as const, label: "งานอื่น", dot: "bg-gray-400", activeCls: "bg-gray-500 text-white border-gray-500" },
-              ].map((opt) => {
+              ].filter((opt) => !(omModule && opt.value === "block")).map((opt) => {
                 const active = selectedTeam === opt.value;
                 return (
                   <button key={opt.value} type="button" onClick={() => setSelectedTeam(opt.value)}
@@ -174,7 +181,7 @@ export default function CalendarPage() {
             </span>
           )}
           <div className="flex-1" />
-          {!followupMode && (
+          {canCreate && (
             <button type="button" onClick={() => { setNewPrefillDate(undefined); setNewOpen(true); }}
               className="h-8 px-3 rounded-lg bg-primary text-white text-xs font-semibold hover:bg-primary-dark inline-flex items-center gap-1">
               <PlusIcon className="w-4 h-4" strokeWidth={2.5} />
@@ -194,7 +201,7 @@ export default function CalendarPage() {
               year={monthAnchor.y}
               month={monthAnchor.m}
               hideNav
-              onEmptyDayClick={followupMode ? undefined : (dk) => { setNewPrefillDate(dk); setNewOpen(true); }}
+              onEmptyDayClick={!canCreate ? undefined : (dk) => { setNewPrefillDate(dk); setNewOpen(true); }}
             />
           : <EventCalendarList
               key={refreshKey}

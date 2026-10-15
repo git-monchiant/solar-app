@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
-import { requireAuth } from "@/lib/auth";
+import { requireAnyRole, requireAuth } from "@/lib/auth";
+import { OM_WORK_ROLES } from "@/lib/om/om-roles";
 import { fixDates, sql } from "@/lib/db";
 import { getOmDb } from "@/lib/om/line";
 import { actionLabel, logBooking, type BookingAction } from "@/lib/om/booking-log";
@@ -8,6 +9,7 @@ import { omSlotsFor, shiftSlots, thaiLocal } from "@/lib/om/time-slot";
 import { serializeSlots } from "@/lib/time-slots";
 import { notifyOmUser, resolveOmNotifications } from "@/lib/om/notifications";
 import { getSettings } from "@/lib/om/settings";
+import { OM_BOOKING_PAID_SQL } from "@/lib/om/om-quotation";
 
 // งานบริการรายชิ้น — ดูรายละเอียด + ประวัติ · เปลี่ยนสถานะ/วันนัด/ทีม/ลำดับคิว
 // ★ ทุกการเปลี่ยนต้องลง om_booking_history ในทรานแซกชันเดียวกัน (booking-log.ts)
@@ -58,7 +60,7 @@ export async function GET(req: NextRequest, ctx: { params: Promise<{ id: string 
 
 // PATCH { status? , scheduled_at?, team_id?, queue_index?, note?, reason? }
 export async function PATCH(req: NextRequest, ctx: { params: Promise<{ id: string }> }) {
-  const gate = await requireAuth(req);
+  const gate = await requireAnyRole(req, OM_WORK_ROLES);
   if (gate.error) return gate.error;
   const id = Number((await ctx.params).id);
   const b = await req.json().catch(() => ({}));
@@ -104,6 +106,15 @@ export async function PATCH(req: NextRequest, ctx: { params: Promise<{ id: strin
   if (newStatus && newStatus !== cur.status) {
     if (!canMove(String(cur.status), newStatus))
       return NextResponse.json({ error: `เปลี่ยนจาก ${cur.status} ไป ${newStatus} ไม่ได้` }, { status: 400 });
+    // ★ แผน 20261014-03: ขั้นชำระเงิน → นัดหมาย ต้องรับเงินแล้ว (กติกาเดียวกับ /api/om/follow "เก็บค่าบริการก่อนนัด")
+    //   เดิม PATCH ตรวจแค่ลำดับสถานะ ใครล็อกอินก็ย้ายใบที่ยังไม่จ่ายไปนัดแล้วได้
+    if (cur.status === "payment" && ["pending", "confirmed"].includes(newStatus)) {
+      const paid = (await db.request().input("id", sql.Int, id)
+        .query(`SELECT CASE WHEN ${OM_BOOKING_PAID_SQL("bk")} THEN 1 ELSE 0 END paid FROM om_bookings bk WHERE bk.id = @id`))
+        .recordset[0]?.paid;
+      if (!paid)
+        return NextResponse.json({ error: "ยังไม่ได้รับเงินค่าบริการ — นัดได้หลัง Account ยืนยันรับเงินแล้ว" }, { status: 409 });
+    }
     set.push("status = @st");
     from.status = cur.status; to.status = newStatus;
     action = newStatus === "confirmed" ? "confirm" : newStatus === "progress" ? "start"
@@ -193,8 +204,14 @@ export async function PATCH(req: NextRequest, ctx: { params: Promise<{ id: strin
             .input("h", sql.Int, cur.house_id).input("t", sql.Int, cur.service_type_id)
             .query(`SELECT ISNULL(SUM(balance), 0) balance FROM om_entitlement_balance
                     WHERE house_id = @h AND service_type_id = @t`)).recordset[0]?.balance ?? 0;
+          // วันที่ล้าง = วันนัด แต่ไม่เกินวันนี้ (เวลาไทย)
+          //   ★ 14 ต.ค. 69 ปิดงานก่อนถึงวันนัดได้ เดิมลงวันนัดตรง ๆ → วันล้างอยู่ในอนาคต
+          //     กราฟภาพรวมโผล่เดือนที่ยังไม่ถึง และ "ล้างล่าสุด" ของบ้านเลยวันนี้ไป
+          //     (เดิม fallback เป็น toISOString() ซึ่งเป็นเวลา UTC — ก่อน 7 โมงเช้าได้วันของเมื่อวาน)
+          const today = new Date().toLocaleDateString("en-CA", { timeZone: "Asia/Bangkok" });
+          const appt = (when ?? cur.scheduled_at)?.slice(0, 10);
           await new sql.Request(tx).input("i", sql.Int, inst.id).input("b", sql.Int, id)
-            .input("d", sql.Date, (when ?? cur.scheduled_at ?? new Date().toISOString()).slice(0, 10))
+            .input("d", sql.Date, appt && appt < today ? appt : today)
             .input("t", sql.Int, cur.service_type_id)
             .input("n", sql.NVarChar(300), left > 0
               ? "ตัดสิทธิ์อัตโนมัติเมื่อปิดงาน"

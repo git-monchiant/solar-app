@@ -3,6 +3,7 @@
 
 import { DUE_WASH_SQL } from "./entitlement";
 import { ACTIVE_STATUS } from "./booking";
+import { OM_PAY_LIVE_SQL } from "./om-quotation";
 import { OM_FOLLOW_STEP, OM_PAY_SUB, OM_QUOTE_SUB_BY_STATUS, OM_STEP_BY_STATUS, OM_SUB_BY_STATUS } from "./journey";
 
 const quote = (xs: readonly string[]) => xs.map((s) => `'${s}'`).join(",");
@@ -13,7 +14,9 @@ const PAY_SUB_SQL = `(SELECT CASE
                             -- รับเช็คแล้ว = ทำงานต่อได้แบบฝั่งขาย (แผน 20261002-11)
                             AND (op.confirmed_at IS NOT NULL OR op.cheque_received_at IS NOT NULL)) THEN ${OM_PAY_SUB.paid}
              WHEN EXISTS (SELECT 1 FROM payments op WHERE op.lead_id = oq.lead_id
-                            AND op.slip_field = CONCAT(N'om_quote_', oq.id) AND op.confirmed_at IS NULL) THEN ${OM_PAY_SUB.verifying}
+                            AND op.slip_field = CONCAT(N'om_quote_', oq.id) AND op.confirmed_at IS NULL
+                            -- เช็คเด้งเก็บแถวไว้แต่ไม่ใช่สลิปรอตรวจ = กลับไปรอชำระ (แผน 20261014-03)
+                            AND ${OM_PAY_LIVE_SQL("op")}) THEN ${OM_PAY_SUB.verifying}
              ELSE ${OM_PAY_SUB.unpaid} END)`;
 
 const caseSql = (col: string, map: Record<string, number>, fallback?: number) =>

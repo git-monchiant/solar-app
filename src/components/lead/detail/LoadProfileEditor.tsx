@@ -7,12 +7,13 @@
 //
 // null in a stepper means "not answered", which is different from 0. "ไม่มี"
 // stores qty 0; "ไม่ทราบ" stores { unknown: true } — both count as answered
-// for the quotation submit gate, but only real numbers produce kWh.
+// for the quotation submit gate, but only real numbers produce kWh. The one
+// exception is a blank day/night period beside a filled one: that's 0.
 
 import { useState, type ReactNode } from "react";
 import { AC_TIERS } from "@/lib/customer-questionnaire";
 import {
-  computeLoad, defaultEvChargerKw, EV_CHARGER_KW_OPTIONS, LOAD_COVERAGE_WARN, LOAD_DEFAULT_KW,
+  computeLoad, defaultEvChargerKw, EV_CHARGER_KW_OPTIONS, LOAD_COVERAGE_WARN, LOAD_DEFAULT_KW, LOAD_DEVICES,
   loadBillCheck, parseLoadProfile, serializeLoadProfile,
   type LoadDeviceKey, type LoadEntry, type LoadProfile,
 } from "@/lib/load-assumption";
@@ -45,18 +46,21 @@ const stepBtn = "w-8 h-8 rounded-lg border border-gray-200 bg-white text-gray-60
 // and the labels came out at half the size of every other question.
 const watt = (kw: number) => (kw < 1 ? `${Math.round(kw * 1000)} W` : `${kw} kW`);
 
-function Stepper({ label, value, onChange, step = 1, max, disabled }: {
+function Stepper({ label, value, onChange, step = 1, max, disabled, warn }: {
   label: string; value: number | undefined; onChange: (v: number) => void; step?: number; max: number; disabled?: boolean;
+  /** the card was started and this is one of the blanks keeping it out of the total */
+  warn?: boolean;
 }) {
   const has = value !== undefined;
+  const flag = warn && !has;
   return (
     <div className={disabled ? "opacity-40 pointer-events-none" : ""}>
-      <div className="text-xs text-gray-500 mb-1">{label}</div>
+      <div className={`text-xs mb-1 ${flag ? "text-amber-700 font-semibold" : "text-gray-500"}`}>{label}</div>
       <div className="flex items-center gap-1">
         {/* From "–" (not answered) the − button records 0 — "not used" in one
             tap, instead of + then −. */}
         <button type="button" disabled={value === 0} onClick={() => onChange(has ? Math.max(0, value - step) : 0)} className={stepBtn}>−</button>
-        <span className={`w-10 text-center text-sm font-mono tabular-nums ${has ? "text-gray-800" : "text-gray-400"}`}>{has ? value : "–"}</span>
+        <span className={`w-10 text-center text-sm font-mono tabular-nums ${has ? "text-gray-800" : flag ? "text-amber-600 font-semibold" : "text-gray-400"}`}>{has ? value : "–"}</span>
         <button type="button" disabled={has && value >= max} onClick={() => onChange(Math.min(max, has ? value + step : step))} className={stepBtn}>+</button>
       </div>
     </div>
@@ -95,10 +99,36 @@ export default function LoadProfileEditor({ profile, acSplit, hasEv, evChargePer
   const billCheck = loadBillCheck(result, monthlyBill, null);
   const billPct = billCheck ? Math.round(billCheck.coverage * 100) : null;
 
+  // A card that was started but has a blank left is "partial" in computeLoad
+  // and silently drops out of the total — e.g. hours typed with no จำนวน.
+  // Name the blanks on the card so the number not moving has a reason.
+  // Untouched cards stay quiet; the quotation gate catches those. Mirrors
+  // computeLoad: one period's hours is enough (the blank one counts as 0).
+  const missing = (key: LoadDeviceKey): string[] => {
+    const e = profile[key];
+    if (!e || e.unknown || isNone(key)) return [];
+    const need = (v: unknown, label: string) => (v === undefined ? [label] : []);
+    const noHours = (day: unknown, night: unknown, label: string) => (day === undefined && night === undefined ? [label] : []);
+    switch (key) {
+      case "ac": return (acDay > 0 && e.day_h !== undefined) || (acNight > 0 && e.night_h !== undefined) ? [] : ["ชั่วโมง"];
+      case "fridge": return need(e.qty, "จำนวน");
+      case "water_heater": return [...need(e.qty, "จำนวน"), ...noHours(e.day_min, e.night_min, "นาที")];
+      case "washer": return [...need(e.loads_per_week, "ครั้ง/สัปดาห์"), ...need(e.period, "ช่วงที่ซัก")];
+      case "ev": return [
+        ...need(e.sessions_per_week, "ครั้ง/สัปดาห์"), ...need(e.hours_per_session, "ชม. ต่อครั้ง"),
+        ...(evChargePeriod === "day" || evChargePeriod === "night" ? [] : ["ช่วงชาร์จ (คำถามด้านบน)"]),
+      ];
+      default: return [...need(e.qty, "จำนวน"), ...noHours(e.day_h, e.night_h, "ชั่วโมง")];
+    }
+  };
+  const incomplete = LOAD_DEVICES.filter(d => (d.key !== "ev" || hasEv) && missing(d.key).length > 0).map(d => d.label);
+  const warnIf = (key: LoadDeviceKey) => missing(key).length > 0;
+
   const card = (key: LoadDeviceKey, title: string, hint: string, body: ReactNode, opts: { none?: boolean } = {}) => {
     const e = profile[key];
+    const miss = missing(key);
     return (
-      <div key={key} className="rounded-lg border border-gray-200 bg-white/50 p-3">
+      <div key={key} className={`rounded-lg border p-3 ${miss.length ? "border-amber-300 bg-amber-50/40" : "border-gray-200 bg-white/50"}`}>
         <div className="flex items-start justify-between gap-2 mb-2">
           <div className="min-w-0">
             <div className="text-sm font-semibold text-gray-700">{title}</div>
@@ -110,23 +140,31 @@ export default function LoadProfileEditor({ profile, acSplit, hasEv, evChargePer
           </div>
         </div>
         {!e?.unknown && !isNone(key) && <div className="flex flex-wrap gap-x-4 gap-y-2">{body}</div>}
+        {miss.length > 0 && (
+          <div className="mt-2 text-xxs text-amber-800">
+            ยังไม่นับในยอดรวม — ยังไม่ได้ใส่ <b>{miss.join(" · ")}</b>
+          </div>
+        )}
       </div>
     );
   };
   const qtyHours = (key: LoadDeviceKey, qtyLabel: string, minutes = false) => {
     const e = profile[key] || {};
+    const miss = missing(key);
+    // only the blanks that block the total light up — a lone blank period is 0
+    const warnTime = miss.includes(minutes ? "นาที" : "ชั่วโมง");
     return (
       <>
-        <Stepper label={qtyLabel} value={e.qty} max={200} onChange={v => setField(key, "qty", v)} />
+        <Stepper label={qtyLabel} value={e.qty} max={200} warn={miss.includes("จำนวน")} onChange={v => setField(key, "qty", v)} />
         {minutes ? (
           <>
-            <Stepper label="กลางวัน (นาที/วัน)" value={e.day_min} step={10} max={720} onChange={v => setField(key, "day_min", v)} />
-            <Stepper label="กลางคืน (นาที/วัน)" value={e.night_min} step={10} max={720} onChange={v => setField(key, "night_min", v)} />
+            <Stepper label="กลางวัน (นาทีรวม/วัน)" value={e.day_min} step={10} max={720} warn={warnTime} onChange={v => setField(key, "day_min", v)} />
+            <Stepper label="กลางคืน (นาทีรวม/วัน)" value={e.night_min} step={10} max={720} warn={warnTime} onChange={v => setField(key, "night_min", v)} />
           </>
         ) : (
           <>
-            <Stepper label="กลางวัน (ชม./วัน)" value={e.day_h} max={12} onChange={v => setField(key, "day_h", v)} />
-            <Stepper label="กลางคืน (ชม./วัน)" value={e.night_h} max={12} onChange={v => setField(key, "night_h", v)} />
+            <Stepper label="กลางวัน (ชม./วัน)" value={e.day_h} max={12} warn={warnTime} onChange={v => setField(key, "day_h", v)} />
+            <Stepper label="กลางคืน (ชม./วัน)" value={e.night_h} max={12} warn={warnTime} onChange={v => setField(key, "night_h", v)} />
           </>
         )}
       </>
@@ -142,20 +180,20 @@ export default function LoadProfileEditor({ profile, acSplit, hasEv, evChargePer
           acDay + acNight > 0 ? `กลางวัน ${acDay} เครื่อง · กลางคืน ${acNight} เครื่อง (จากจำนวนแอร์ด้านบน)` : "ระบุจำนวนแอร์ด้านบนก่อน",
           acDay + acNight > 0 ? (
             <>
-              <Stepper label="กลางวัน (ชม./วัน)" value={profile.ac?.day_h} max={12} disabled={acDay === 0} onChange={v => setField("ac", "day_h", v)} />
-              <Stepper label="กลางคืน (ชม./วัน)" value={profile.ac?.night_h} max={12} disabled={acNight === 0} onChange={v => setField("ac", "night_h", v)} />
+              <Stepper label="กลางวัน (ชม./วัน)" value={profile.ac?.day_h} max={12} disabled={acDay === 0} warn={warnIf("ac")} onChange={v => setField("ac", "day_h", v)} />
+              <Stepper label="กลางคืน (ชม./วัน)" value={profile.ac?.night_h} max={12} disabled={acNight === 0} warn={warnIf("ac")} onChange={v => setField("ac", "night_h", v)} />
             </>
           ) : null,
           { none: false })}
         {card("fridge", "ตู้เย็น", `เปิด 24 ชม. · ≈${watt(LOAD_DEFAULT_KW.fridge)} เฉลี่ยต่อเครื่อง`,
           <Stepper label="จำนวน (เครื่อง)" value={profile.fridge?.qty} max={20} onChange={v => setField("fridge", "qty", v)} />)}
-        {card("water_heater", "เครื่องทำน้ำอุ่น", `≈${watt(LOAD_DEFAULT_KW.water_heater)} ต่อเครื่อง · ถามเวลาใช้รวมต่อวัน`, qtyHours("water_heater", "จำนวน (เครื่อง)", true))}
+        {card("water_heater", "เครื่องทำน้ำอุ่น", `≈${watt(LOAD_DEFAULT_KW.water_heater)} ต่อเครื่อง · นับนาทีที่อาบน้ำอุ่นรวมทุกคนในบ้าน ไม่ต้องคูณจำนวนเครื่อง`, qtyHours("water_heater", "จำนวน (เครื่อง)", true))}
         {card("water_pump", "ปั๊มน้ำ", `≈${watt(LOAD_DEFAULT_KW.water_pump)} ต่อเครื่อง · นับเวลาที่มอเตอร์ทำงานจริง ไม่ใช่เวลาที่เปิดสวิตช์ไว้`, qtyHours("water_pump", "จำนวน (เครื่อง)"))}
         {card("washer", "เครื่องซักผ้า", `≈${watt(LOAD_DEFAULT_KW.washer)} · 1 ชม. ต่อครั้ง`, (
           <>
-            <Stepper label="ซัก (ครั้ง/สัปดาห์)" value={washer.loads_per_week} max={28} onChange={v => setField("washer", "loads_per_week", v)} />
+            <Stepper label="ซัก (ครั้ง/สัปดาห์)" value={washer.loads_per_week} max={28} warn={warnIf("washer")} onChange={v => setField("washer", "loads_per_week", v)} />
             <div>
-              <div className="text-xs text-gray-500 mb-1">ซักช่วงไหน</div>
+              <div className={`text-xs mb-1 ${warnIf("washer") && !washer.period ? "text-amber-700 font-semibold" : "text-gray-500"}`}>ซักช่วงไหน</div>
               <div className="flex gap-1">
                 {(["day", "night"] as const).map(p => (
                   <button key={p} type="button" onClick={() => setField("washer", "period", p)} className={chipBtn(washer.period === p)}>
@@ -183,8 +221,8 @@ export default function LoadProfileEditor({ profile, acSplit, hasEv, evChargePer
                   ))}
                 </div>
               </div>
-              <Stepper label="ชาร์จ (ครั้ง/สัปดาห์)" value={ev.sessions_per_week} max={14} onChange={v => setField("ev", "sessions_per_week", v)} />
-              <Stepper label="ครั้งละ (ชม.)" value={ev.hours_per_session} max={24} onChange={v => setField("ev", "hours_per_session", v)} />
+              <Stepper label="ชาร์จ (ครั้ง/สัปดาห์)" value={ev.sessions_per_week} max={14} warn={warnIf("ev")} onChange={v => setField("ev", "sessions_per_week", v)} />
+              <Stepper label="ครั้งละ (ชม.)" value={ev.hours_per_session} max={24} warn={warnIf("ev")} onChange={v => setField("ev", "hours_per_session", v)} />
             </>
           ),
           { none: false })}
@@ -201,7 +239,8 @@ export default function LoadProfileEditor({ profile, acSplit, hasEv, evChargePer
             {billCheck?.complete && <span>≈ <b className="font-mono tabular-nums">{billPct}%</b> ของค่าไฟจริง</span>}
           </>
         )}
-        <span className="text-gray-500 ml-auto">คำนวณได้ {result.computedRows}/{result.totalRows} รายการ · กำลังไฟใช้ค่ามาตรฐาน ไม่ต้องถามลูกค้า</span>
+        {incomplete.length > 0 && <span className="font-semibold text-amber-800">ยังไม่นับ: {incomplete.join(", ")} (กรอกไม่ครบ)</span>}
+        <span className="text-gray-500 ml-auto">คำนวณได้ {result.computedRows}/{result.totalRows} รายการ · ช่วงที่เว้นว่าง = ไม่ได้ใช้ · กำลังไฟใช้ค่ามาตรฐาน ไม่ต้องถามลูกค้า</span>
       </div>
       {/* Shown as soon as the total overshoots — more answers only add kWh,
           so an overshoot on a half-filled form is already real. */}

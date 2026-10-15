@@ -21,6 +21,8 @@ import { SystemCard, type HouseDetail } from "@/components/om/HouseSystemCard";
 import { formatThaiDate } from "@/lib/utils/formatters";
 import { formatSlotsRange } from "@/lib/time-slots";
 import { ORIGIN_OPTIONS, parseOrigin, type HouseOrigin } from "@/lib/om/house-origin";
+import { OM_WORK_ROLES } from "@/lib/om/om-roles";
+import OmNewHouseModal from "@/components/om/OmNewHouseModal";
 
 interface Row {
   id: number; house_number: string | null; project_name: string | null; project_id: string | null;
@@ -84,6 +86,9 @@ export default function OmHousesPage() {
   // ★ สถานะ sync — API อ่านได้เฉพาะ 3 role นี้ (เช็กแบบเดียวกับ requireAnyRole ฝั่ง server)
   //   เดิมทุกคนเห็นกล่อง แต่ role อื่นได้ค่าว่าง "0 unit · รอบล่าสุด —" มาตลอด
   const canSync = hasAnyGrantedRole(me?.roles, ["admin", "solar_sup", "sales_sup"]);
+  // ★ "+ เพิ่มบ้าน" (แผน 20261014-08) — role ทีม O&M ชุดเดียวกับ POST /api/om/houses (ผู้ใช้เลือก D5 = A)
+  const canAdd = hasAnyGrantedRole(me?.roles, OM_WORK_ROLES);
+  const [adding, setAdding] = useState(false);
   const [filter, setFilter] = useState("");
   const [page, setPage] = useState(1);
   const [size, setSize] = useState(30);
@@ -311,8 +316,8 @@ export default function OmHousesPage() {
   return (
     <div>
       {/* หัวจอกลางชุดเดียวกับ Pipeline/Today/งานบริการ — หัวเรื่อง = ชื่อเมนูที่ active
-          ★ 25 ก.ย. 69 เอาปุ่ม "+ เพิ่มบ้าน" ออก (ผู้ใช้เลือก C1) — ปุ่มไม่เคยผูกคำสั่ง กดแล้วไม่มีอะไรเกิดขึ้น
-            บ้านเข้าระบบเอง 3 ทาง: ทะเบียน REM · งานขายที่ติดตั้งเสร็จ · คิวจับคู่ที่แอดมินตัดสิน
+          ★ 14 ต.ค. 69 ปุ่ม "+ เพิ่มบ้าน" กลับมาแบบทำงานจริง (แผน 20261014-08 · เดิมถอดออก 25 ก.ย. เพราะไม่เคยผูกคำสั่ง)
+            บ้านเข้าระบบ 4 ทาง: ทะเบียน REM · งานขายที่ติดตั้งเสร็จ · คิวจับคู่ที่แอดมินตัดสิน · ทีม O&M เพิ่มเอง (OmNewHouseModal)
           ★ ตัดแถบสรุปใต้แท็บ ("ทุกโครงการ 1,713 หลัง · ไม่มีเบอร์ …") — ซ้ำกับตัวเลขบนแท็บ */}
       <ListPageHeader
         title={activeItem?.label ?? "บ้าน / ระบบติดตั้ง"}
@@ -324,7 +329,13 @@ export default function OmHousesPage() {
         activeTab={filter}
         onTabChange={(k) => { setFilter(k); setGrp("__ALL__"); setPage(1); setQ(""); }}
         tabsLeft={shownStats ? <span className="whitespace-nowrap">{shownStats.total.toLocaleString("th-TH")} หลัง</span> : undefined}
+        actionLabel={canAdd ? "+ เพิ่มบ้าน" : undefined}
+        onAction={canAdd ? () => setAdding(true) : undefined}
       />
+      {adding && (
+        <OmNewHouseModal onClose={() => setAdding(false)}
+          onOpenHouse={(id) => { setAdding(false); show(id); }} />
+      )}
 
       <div className="p-3 md:p-4 flex flex-col gap-3">
         {/* แถวเครื่องมือ — ยกจากหน้างานบริการ: ซ้าย = จำนวน+โครงการ · ขวา = สถานะ sync (A1) */}

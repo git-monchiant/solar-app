@@ -22,7 +22,8 @@ export type OmNotificationType =
   // ★ แผน 20260924-02 เฟส 4: ผลการตรวจสลิปค่าบริการของ Account → แจ้ง Sale ในกล่อง O&M
   | "om_payment_confirmed"  // รับเงินแล้ว — โทรนัดได้
   | "om_payment_rejected"   // Account ปฏิเสธสลิป — แนบใหม่
-  | "om_payment_cheque";   // Account รับเช็คแล้ว — โทรนัดได้ (รอเงินเข้า · แผน 20261002-11)
+  | "om_payment_cheque"    // Account รับเช็คแล้ว — โทรนัดได้ (รอเงินเข้า · แผน 20261002-11)
+  | "om_payment_cheque_bounced"; // เช็คที่รับแล้วเด้ง — แนบหลักฐานชำระใหม่ (แผน 20261014-03)
 
 export interface OmNotificationInput {
   recipientUserId: number;

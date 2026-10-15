@@ -21,6 +21,8 @@ export type BookingAction =
   | "quote_submit" | "quote_approve" | "quote_return" | "quote_revise"
   // ★ เฟส 4: ส่งใบให้ลูกค้า → ขั้นชำระเงิน · Account ยืนยันรับเงิน (+ เติมสิทธิ์ที่ซื้อ)
   | "quote_send" | "paid" | "pay_submit" | "pay_reject" | "pay_cheque"
+  // ★ 14 ต.ค. 69 (แผน 20261014-03): เช็คที่รับแล้วเด้ง — แถวเงินเก็บไว้ ใบงานที่ยังไม่ถึงหน้างานกลับขั้นชำระเงิน
+  | "pay_cheque_bounced"
   // ★ เฟส 5: ทีม O&M เปิดใบงานซ่อมจากใบที่ช่างแจ้งพบงานซ่อม (ผูก parent_booking_id)
   | "repair_open"
   // ★ 28 ก.ย. 69 (แผน 20260928-04 ข้อ 7): ปุ่ม Note ในหน้ารายละเอียด — โน้ตอิสระลงไทม์ไลน์ของบ้าน
@@ -79,7 +81,7 @@ const LABEL: Record<BookingAction, string> = {
   quote_return: "ส่งใบเสนอราคากลับแก้", quote_revise: "สร้าง Revision ใบเสนอราคา",
   quote_send: "ส่งใบเสนอราคาให้ลูกค้า", paid: "ยืนยันรับเงินแล้ว",
   pay_submit: "แนบสลิปค่าบริการ รอ Account ยืนยัน", pay_reject: "Account ปฏิเสธสลิป",
-  pay_cheque: "Account รับเช็คแล้ว รอเงินเข้า",
+  pay_cheque: "Account รับเช็คแล้ว รอเงินเข้า", pay_cheque_bounced: "เช็คเด้ง รอชำระใหม่",
   repair_open: "เปิดใบงานซ่อม",
   note: "บันทึกโน้ต",
 };

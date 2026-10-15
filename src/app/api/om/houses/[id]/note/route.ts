@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
-import { requireAuth } from "@/lib/auth";
+import { requireAnyRole } from "@/lib/auth";
+import { OM_WORK_ROLES } from "@/lib/om/om-roles";
 import { sql } from "@/lib/db";
 import { getOmDb } from "@/lib/om/line";
 import { logBooking } from "@/lib/om/booking-log";
@@ -11,7 +12,7 @@ import { logBooking } from "@/lib/om/booking-log";
 const MAX = 300;   // ความยาวช่อง reason ของ om_booking_history
 
 export async function POST(req: NextRequest, ctx: { params: Promise<{ id: string }> }) {
-  const gate = await requireAuth(req);
+  const gate = await requireAnyRole(req, OM_WORK_ROLES);
   if (gate.error) return gate.error;
   const houseId = Number((await ctx.params).id);
   const b = await req.json().catch(() => ({}));

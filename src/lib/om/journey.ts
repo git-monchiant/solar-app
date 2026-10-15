@@ -66,8 +66,6 @@ export const OM_PAY_SUB = { unpaid: 2310, verifying: 2320, paid: 2330 } as const
 
 /** งานที่ยังค้างอยู่ = badge การ์ดโมดูล · ไม่รวมปิดงาน/ยกเลิก/ไม่อยู่บ้าน */
 export const OM_ACTIVE_STEPS = [2100, 2200, 2300, 2400, 2500, 2600];
-/** ขั้นที่ขึ้นปฏิทิน (มีวันนัดแล้ว) — ตรงกับ onCal ของ BOOKING_STATUS */
-export const OM_SCHEDULED_STEPS = [2400, 2500, 2600];
 /** ขั้นที่ช่างต้องกรอกใบตรวจรับงาน — ตรงกับ FIELD_STATUS ของหน้า /om/field
  *  (นัดแล้ว 2420 · เข้างาน · รอปิด — "รอยืนยันนัด" 2410 ยังไม่ถึงคิวช่าง จึงต้องแยกด้วย sub) */
 export const OM_FIELD_STEPS = [2500, 2600];

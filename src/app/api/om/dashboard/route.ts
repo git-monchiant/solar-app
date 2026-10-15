@@ -32,10 +32,21 @@ export async function GET(req: NextRequest) {
   const cfg = await getSettings("call.");
   const maxAttempts = Number(cfg["call.max_attempts"] ?? 3);
 
+  // 12 เดือนล่าสุดตามเวลาไทย (เดือนนี้อยู่ท้ายสุด) — คิดฝั่งนี้แล้วส่งช่วงให้คิวรี
+  //   เดือนที่ไม่มีงานต้องขึ้นเป็น 0 ไม่ใช่หายไป (GROUP BY ทิ้งเดือนว่างเอง กราฟเลยข้ามเดือนเงียบ ๆ)
+  const [ty, tm] = new Date().toLocaleDateString("en-CA", { timeZone: "Asia/Bangkok" }).split("-").map(Number);
+  const ymOf = (i: number) => {
+    const x = new Date(Date.UTC(ty, tm - 1 + i, 1));
+    return `${x.getUTCFullYear()}-${String(x.getUTCMonth() + 1).padStart(2, "0")}`;
+  };
+  const ymKeys = Array.from({ length: 12 }, (_, i) => ymOf(i - 11));
+
   const db = await getOmDb();
   await expireOmGrantsIfDue(db);   // สิทธิ์ที่หมดอายุตัดวันละครั้ง ก่อนอ่านยอด (แผน 20260924-02 เฟส 4)
   const r = await db.request()
     .input("max", sql.Int, maxAttempts)
+    .input("from", sql.Date, `${ymKeys[0]}-01`)
+    .input("to", sql.Date, `${ymOf(1)}-01`)
     .query(`
     ${OM_FOLLOW_SCOPE_SQL}
 
@@ -83,11 +94,13 @@ export async function GET(req: NextRequest) {
         WHERE h.is_om = 1 AND rd.status <> 'void' AND ${isCleaning("rd")}) used;
 
     -- ⑦ งานล้างที่ทำจริงย้อนหลัง 12 เดือน — เส้นวัดกำลังการผลิตของทีม
+    --   ★ ต้องมีขอบบน: ปิดงานก่อนถึงวันนัดได้ แล้ว service_date = วันนัด
+    --     (14 ต.ค. 69 มีแท่ง พ.ย. 69 โผล่ท้ายกราฟ จากใบงาน #129 ที่นัด 10 พ.ย.)
     SELECT FORMAT(rd.service_date, 'yyyy-MM') ym, COUNT(*) n
       FROM om_redemptions rd
      WHERE rd.status <> 'void' AND ${isCleaning("rd")}
-       AND rd.service_date >= DATEADD(month, -11, DATEFROMPARTS(YEAR(SYSDATETIMEOFFSET()), MONTH(SYSDATETIMEOFFSET()), 1))
-     GROUP BY FORMAT(rd.service_date, 'yyyy-MM') ORDER BY ym;`);
+       AND rd.service_date >= @from AND rd.service_date < @to
+     GROUP BY FORMAT(rd.service_date, 'yyyy-MM');`);
 
   // แจ้งเตือนที่ยังไม่อ่านของคนที่เปิดหน้านี้ — กล่องของ O&M เอง ไม่ใช่กระดิ่งกลางของฝั่งขาย
   const unread = await countOmUnread(db, gate.userId);
@@ -100,11 +113,14 @@ export async function GET(req: NextRequest) {
 
   const houses = rs[4][0] ?? {};
   const quota = rs[5][0] ?? {};
+  const washed = new Map(rs[6].map((x) => [String(x.ym), num(x.n)]));
 
   return NextResponse.json({
     unread,
     buckets,
-    jobs_total: Object.values(buckets).reduce((a, b) => a + b, 0),
+    // = badge การ์ด O&M หน้าแรก (journey 2100–2600) = ทุกแท็บยกเว้นปิดงาน
+    //   ★ 14 ต.ค. 69 เดิมบวกปิดงานด้วย ได้ 1,711 ขณะที่การ์ด/เมนูขึ้น 1,695 ทั้งที่หน้าเขียนว่า "เลขเดียวกัน"
+    jobs_total: Object.entries(buckets).reduce((a, [k, v]) => (k === "closed" ? a : a + v), 0),
     houses: {
       total: num(houses.houses),
       due: num(houses.due),
@@ -127,6 +143,6 @@ export async function GET(req: NextRequest) {
       n: num(x.n),
     })),
     teams: rs[3].map((x) => ({ team_id: num(x.team_id), team_name: String(x.team_name), n: num(x.n) })),
-    months: rs[6].map((x) => ({ ym: String(x.ym), n: num(x.n) })),
+    months: ymKeys.map((ym) => ({ ym, n: washed.get(ym) ?? 0 })),
   });
 }

@@ -167,7 +167,8 @@ export default function EventCalendarList({ monthsBack, monthsForward, days, zon
           // their type. Blocks carry an explicit team (null = both teams).
           if (s.event_type === "block") {
             const t = (s as { team?: string | null }).team;
-            return t == null || t === controlledTeam;
+            // O&M = ทีมสำรวจชุดเดียวกัน (แผน 20261001-01) — ปิดช่องทีมสำรวจล็อกตัวเลือกนัด O&M ด้วย จึงต้องเห็นในตัวกรอง O&M
+            return t == null || t === controlledTeam || (controlledTeam === "om" && t === "survey");
           }
           return s.event_type === controlledTeam;
         });

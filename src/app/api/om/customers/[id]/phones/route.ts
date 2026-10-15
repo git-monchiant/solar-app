@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
-import { requireAuth } from "@/lib/auth";
+import { requireAnyRole } from "@/lib/auth";
+import { OM_WORK_ROLES } from "@/lib/om/om-roles";
 import { sql } from "@/lib/db";
 import { getOmDb } from "@/lib/om/line";
 
@@ -15,7 +16,7 @@ async function log(tx: sql.Transaction, cid: number, uid: number, action: string
 
 // POST { phone, primary? } — เพิ่มเบอร์
 export async function POST(req: NextRequest, ctx: { params: Promise<{ id: string }> }) {
-  const gate = await requireAuth(req);
+  const gate = await requireAnyRole(req, OM_WORK_ROLES);
   if (gate.error) return gate.error;
   const id = Number((await ctx.params).id);
   const b = await req.json().catch(() => ({}));
@@ -50,7 +51,7 @@ export async function POST(req: NextRequest, ctx: { params: Promise<{ id: string
 
 // PATCH { phone } — ตั้งเป็นเบอร์หลัก
 export async function PATCH(req: NextRequest, ctx: { params: Promise<{ id: string }> }) {
-  const gate = await requireAuth(req);
+  const gate = await requireAnyRole(req, OM_WORK_ROLES);
   if (gate.error) return gate.error;
   const id = Number((await ctx.params).id);
   const phone = norm((await req.json().catch(() => ({}))).phone);
@@ -75,7 +76,7 @@ export async function PATCH(req: NextRequest, ctx: { params: Promise<{ id: strin
 
 // DELETE { phone } — ลบเบอร์ (ถ้าลบเบอร์หลัก เบอร์ถัดไปขึ้นเป็นหลักแทน)
 export async function DELETE(req: NextRequest, ctx: { params: Promise<{ id: string }> }) {
-  const gate = await requireAuth(req);
+  const gate = await requireAnyRole(req, OM_WORK_ROLES);
   if (gate.error) return gate.error;
   const id = Number((await ctx.params).id);
   const phone = norm((await req.json().catch(() => ({}))).phone);

@@ -1,10 +1,14 @@
 import fs from "fs";
 import path from "path";
 import { LEGACY_PEAK_USAGE, PEAK_USAGE } from "@/lib/customer-questionnaire";
-import { AC_LOAD_FACTOR, computeLoad, hasEvCharger, loadBillCheck } from "@/lib/load-assumption";
+import { computeLoad, DEFAULT_ELECTRICITY_RATE, hasEvCharger, loadBillCheck } from "@/lib/load-assumption";
+import { GSB_SOLAR_LOAN_DEFAULTS, rateForYear, readInterestSchedule } from "@/lib/loan-defaults";
 
 // 15-page "รายงานสำรวจหน้างานติดตั้งโซลาร์เซลล์" — ported verbatim from the
 // generator that was tuned against leads 667 / 691 / 727 / 728.
+// Fewer pages when the quotation names a payment method (plan 20261012-06): the
+// payment section keeps only that method's options (loan 14, cash/card 13) — count with
+// countSurveyReportPages(), never assume 15.
 //
 // Plain JS on purpose: tsconfig has checkJs off, so the ~500 lines of template
 // building came across unchanged instead of being sprinkled with `any`. Types
@@ -46,38 +50,54 @@ const baht = n => n==null?"":Number(n).toLocaleString("th-TH");
 const num = (n,d=0) => Number(n).toLocaleString("th-TH",{minimumFractionDigits:d,maximumFractionDigits:d});
 // ── GSB Solar Soft Loan calculator ──────────────────────────────────
 // Reverse-engineered from the shared sheet. Inputs (red boxes) → derived.
-// Assumptions (GSB Soft Loan defaults): down 20%, term 7y, conservative
-// no-collateral starting rate 3.5% throughout, 4 peak-sun-hours/day, 5฿/kWh,
-// CO₂ 0.5 kg/kWh, 1 ton CO₂ ≈ 100 trees/yr.
+// Assumptions (GSB Soft Loan defaults): down 20%, term 7y, no-collateral
+// tiered rate from GSB_SOLAR_LOAN_DEFAULTS.interest_schedule (yr1-2 3.5%,
+// yr3-5 5%, yr6+ MRR), 4 peak-sun-hours/day, 5฿/kWh, CO₂ 0.5 kg/kWh,
+// 1 ton CO₂ ≈ 100 trees/yr.
 //   down      = price × downPct
 //   loan      = price − down
-//   m1,m2     = annualRate / 12                     (monthly rates)
-//   n1        = 24  (yr1-2) ; n2 = (term−2)×12 ; n = n1+n2
-//   wAvg      = (r1·n1 + r2·n2) / n                 (weighted avg/yr)
-//   PMT       = equal installment solved so a two-phase reducing-balance
+//   rates     = monthly rate of each month = rate of that loan year / 12
+//   tiers     = each schedule range inside the term + its number of months
+//   wAvg      = Σ monthly rates × 12 / n             (weighted avg/yr)
+//   PMT       = equal installment solved so a multi-rate reducing-balance
 //               loan amortises to 0 at month n (bisection)
 //   total     = PMT × n ; interest = total − loan ; EIR = interest/loan/term
-//   mo1Int    = loan × m1 ; mo1Prin = PMT − mo1Int  (reducing balance)
+//   mo1Int    = loan × first month's rate ; mo1Prin = PMT − mo1Int
 //   kwh       = kW × 4 × 30 ; save = kwh × unit ; netMo = PMT − save
 //   billTot   = bill × n ; saveTot = save × n
 //   co2Yr     = kwh × 12 × 0.0005 (ton) ; trees = co2Yr × 100
 //   payback   = price / save (months) ; save25 = save × 12 × 25
-function calcLoan(price, kw, bill, { unit=5, r1=0.035, r2=0.035, downPct=0.20, term=7 } = {}) {
+// ช่วงดอกเบี้ยเป็นช่วงปี: [{from, to (null = จนจบสัญญา), rate (%/ปี), note}] — ใช้ทั้ง §8 และตารางผ่อน
+function scheduleRanges(schedule) {
+  return schedule.map((t, i) => ({ from: t.from_year, to: schedule[i+1] ? schedule[i+1].from_year - 1 : null, rate: Number(t.rate), note: t.note }));
+}
+const tierYears = t => t.to == null ? `ปีที่ ${t.from} เป็นต้นไป` : t.to === t.from ? `ปีที่ ${t.from}` : `ปีที่ ${t.from}-${t.to}`;
+// schedule = ตารางดอกเบี้ยตามประกาศธนาคาร (loan-defaults · แผน 20261014-02) แทนอัตราปี 1-2 / ปี 3+ เดิม
+function calcLoan(price, kw, bill, { unit=5, schedule=GSB_SOLAR_LOAN_DEFAULTS.interest_schedule, downPct=0.20, term=7 } = {}) {
   const down = Math.round(price * downPct), loan = price - down;
-  const m1 = r1/12, m2 = r2/12, n1 = 24, n2 = (term-2)*12, n = n1+n2;
-  const wAvg = (r1*n1 + r2*n2)/n;
-  const balEnd = pmt => { let b=loan; for (let mo=1; mo<=n; mo++) b += b*(mo<=n1?m1:m2) - pmt; return b; };
+  const n = Math.max(1, Math.round(term*12));
+  const rates = Array.from({ length: n }, (_, i) => rateForYear(schedule, Math.floor(i/12) + 1) / 1200);
+  // จำนวนงวดของแต่ละช่วงภายในระยะกู้ — ช่วงที่เลยระยะกู้ไม่แสดง
+  const tiers = scheduleRanges(schedule)
+    .map(t => ({ ...t, n: Math.max(0, Math.min(n, t.to == null ? n : t.to*12) - (t.from-1)*12) }))
+    .filter(t => t.n > 0);
+  const wAvg = rates.reduce((sum, r) => sum + r, 0) * 12 / n;   // ถัวเฉลี่ยถ่วงน้ำหนักต่อปี (สัดส่วน)
+  const balEnd = pmt => rates.reduce((b, r) => b + b*r - pmt, loan);
   let lo=0, hi=price;                     // bisection for equal payment
   for (let i=0;i<80;i++){ const mid=(lo+hi)/2; if (balEnd(mid)>0) lo=mid; else hi=mid; }
   const pmt = Math.round((lo+hi)/2);
   const total = pmt*n, interest = total-loan, eir = interest/loan/term;
-  const mo1Int = Math.round(loan*m1), mo1Prin = pmt-mo1Int;
+  const mo1Int = Math.round(loan*rates[0]), mo1Prin = pmt-mo1Int;
   const kwh = kw*4*30, save = Math.round(kwh*unit), netMo = pmt-save;
   const billTot = bill*n, saveTot = save*n;
   const co2Yr = kwh*12*0.0005, trees = Math.round(co2Yr*100);
   const payback = save>0 ? price/save : null, save25 = save*12*25;
-  return { price, down, loan, r1, r2, m1, m2, n1, n2, n, wAvg, pmt, total, interest, eir,
-           mo1Int, mo1Prin, kw, unit, bill, kwh, save, netMo, billTot, saveTot, co2Yr, trees, payback, save25 };
+  // แบบกู้: นับดอกเบี้ยด้วย (ยอดที่จ่ายจริงทั้งหมด) · downBack = ได้เงินดาวน์คืนจากส่วนที่ประหยัดเกินค่างวด
+  const paybackLoan = save>0 ? Math.ceil((down+total)/save) : null;
+  const downBack = down>0 && save>pmt ? Math.ceil(down/(save-pmt)) : null;
+  return { price, down, loan, tiers, n, wAvg, pmt, total, interest, eir,
+           mo1Int, mo1Prin, kw, unit, bill, kwh, save, netMo, billTot, saveTot, co2Yr, trees, payback, save25,
+           paybackLoan, downBack };
 }
 // §1/§3 questionnaire label maps
 const HOUSE_AGE = { lt5:"ต่ำกว่า 5 ปี", "5_10":"5-10 ปี", "10_20":"10-20 ปี", gt20:"มากกว่า 20 ปี" };
@@ -144,10 +164,35 @@ export function buildSurveyReportHtml(L, D, PKG, options = {}) {
   // quotationPdfPath so the page text and the merge decision can't disagree.
   const quotPdfPath = options.quotationAttached === true ? "attached-by-caller" : quotationPdfPath(L);
 
+  // รูปแบบการชำระ (แผน 20261012-06) — ใบเสนอราคาส่งมาใน financial.inputs.payment_method
+  // รายงานเดี่ยวที่ไม่มีใบเสนอราคาใช้คำตอบ Pre-Survey ตรง ๆ · snapshot เก่าไม่มีคีย์ = แสดงครบ
+  //   แสดงเฉพาะแบบที่เลือก: loan = สินเชื่อ (14 หน้า) · cash = เงินสด · card = ผ่อนบัตร (13)
+  //   all = ทุกทางเลือก (แบบเดิม 15)
+  const payMethod = options.financial ? options.financial.inputs?.payment_method : D.payment_interest;
+  const payMode = payMethod === "loan" ? "loan" : payMethod === "cash" ? "cash" : payMethod === "credit_card" ? "card" : "all";
+  // เงินสด/บัตร ไม่มีส่วนสินเชื่อ — §8 กับตารางความคุ้มค่าอยู่หน้าเดียว (pCash)
+  const noLoan = payMode === "cash" || payMode === "card";
+
+  // ตารางดอกเบี้ยสินเชื่อ (แผน 20261014-02): ใบสูตร v4 ขึ้นไปมี interest_schedule · snapshot เก่ามีแค่
+  // ปี 1-2 / ปี 3 ขึ้นไป → ทำเป็น 2 ช่วงให้หน้าตาเหมือนเดิม · รายงานเดี่ยวใช้ค่าตั้งต้นของออมสิน
+  const finIn = options.financial?.inputs || {};
+  const savedSchedule = readInterestSchedule(finIn.interest_schedule);
+  const legacyRates = !savedSchedule && finIn.interest_rate_year_1_2 != null;
+  const loanSchedule = savedSchedule
+    ?? (legacyRates ? [{ from_year: 1, rate: Number(finIn.interest_rate_year_1_2) }, { from_year: 3, rate: Number(finIn.interest_rate_year_3_plus ?? finIn.interest_rate_year_1_2) }] : null)
+    ?? GSB_SOLAR_LOAN_DEFAULTS.interest_schedule;
+  // §8 แถวอัตราดอกเบี้ย สร้างจากตารางเดียวกับที่คำนวณ ข้อความกับตัวเลขจึงตรงกันเสมอ
+  const GSB_RATE_TXT = legacyRates
+    ? "เริ่มต้น 3.25% - 3.50% ต่อปี แบบลดต้นลดดอก (Effective Rate) — อัตราจริงขึ้นอยู่กับเงื่อนไขที่ธนาคารอนุมัติ ณ วันยื่นกู้"
+    : `${scheduleRanges(loanSchedule).map(t => `${tierYears(t)}: ${t.note ? `${t.note} (${num(t.rate, 3)}%)` : `${num(t.rate, 2)}%`}`).join(" · ")} ต่อปี แบบลดต้นลดดอก (Effective Rate) — กรณีไม่มีหลักประกัน อัตราจริงขึ้นอยู่กับที่ธนาคารอนุมัติ ณ วันยื่นกู้`;
+
   const HEADER = `<div class="run-head">SENA SOLAR ENERGY | รายงานสำรวจหน้างานติดตั้งโซลาร์เซลล์ (Solar Cell Site Survey Report)</div>`;
-  const foot = n => `<div class="run-foot">หน้า ${n} / 15</div>`;
+  // จำนวนหน้าขึ้นกับรูปแบบการชำระ — page(n) รับ "ช่อง" ของหน้า แล้วเลขหน้าจริง/สารบัญ
+  // เป็นโทเคน @@PG:<ช่อง>@@ ที่แทนค่าตอนประกอบเล่ม (ท้ายฟังก์ชัน) หลังรู้ว่ามีหน้าไหนบ้าง
+  const pg = slot => `@@PG:${slot}@@`;
+  const foot = n => `<div class="run-foot">หน้า ${pg(n)} / @@PGTOTAL@@</div>`;
   const reportWatermark = String(options.watermark || "").replace(/[&<>"']/g, "");
-  const page = (n,b,cls="") => `<section class="page ${cls}">${reportWatermark?`<div class="report-watermark">${reportWatermark}</div>`:""}${HEADER}<div class="body">${b}</div>${foot(n)}</section>`;
+  const page = (n,b,cls="") => `<section class="page ${cls}" data-pg="${n}">${reportWatermark?`<div class="report-watermark">${reportWatermark}</div>`:""}${HEADER}<div class="body">${b}</div>${foot(n)}</section>`;
   const sect = (num,th,en) => `<h2 class="sect">${num?`<span class="num">${num}.</span> `:""}${th}${en?` <span class="en">${en}</span>`:""}</h2>`;
   const ph = t => `<span class="ip">[ ${t} ]</span>`;
   const V = (v, ptxt) => (v!==null && v!==undefined && String(v).trim()!=="") ? `<span class="val">${v}</span>` : ph(ptxt);
@@ -186,7 +231,7 @@ export function buildSurveyReportHtml(L, D, PKG, options = {}) {
 
   // ── PAGE 2 TOC ──────────────────────────────────────────────────────
   const toc=[["1. ข้อมูลลูกค้าและโครงการ",3],["2. รูปถ่ายหน้างานจริงและจุดติดตั้งอุปกรณ์",4],["3. ข้อสมมติฐานการใช้ไฟฟ้า (Load Assumption)",6],["4. แพ็กเกจโซลาร์เซลล์ที่นำเสนอ",7],["5. รายการเพิ่มเติมนอกเหนือจากแพ็กเกจมาตรฐาน",8],["6. ขั้นตอนถัดไปสำหรับลูกค้า (Customer Journey)",9],["7. ทางเลือกการชำระเงินมัดจำ 20% (เพื่อจองวันติดตั้ง)",10],["8. ทางเลือกการชำระเงินส่วนที่เหลือ 80%",11],["9. หมายเหตุและเงื่อนไขทั่วไป",14],["ภาคผนวก ก: ใบเสนอราคา (Quotation)",15]];
-  const p2 = page(2, `${sect("","สารบัญ")}<div class="toc">${toc.map(([t,n])=>`<div class="toc-row"><span class="toc-t">${t}</span><span class="toc-dot"></span><span class="toc-n">${n}</span></div>`).join("")}</div>`);
+  const p2 = page(2, `${sect("","สารบัญ")}<div class="toc">${toc.map(([t,n])=>`<div class="toc-row"><span class="toc-t">${t}</span><span class="toc-dot"></span><span class="toc-n">${pg(n)}</span></div>`).join("")}</div>`);
 
   // ── PAGE 3 §1 ───────────────────────────────────────────────────────
   const meterTxt = L.survey_meter_size ? `${METER[L.survey_meter_size]||L.survey_meter_size}${L.survey_electrical_phase?` ${PHASE[L.survey_electrical_phase]}`:""}` : null;
@@ -301,17 +346,66 @@ export function buildSurveyReportHtml(L, D, PKG, options = {}) {
   // quotation submit gate enforces ("ไม่ทราบ" counts as asked).
   const billCheck = loadBillCheck(load, loadBill, loadRate);
   const coverage = billCheck?.complete ? billCheck.coverage : null;
-  const loadNote = load.dayKwh == null ? "" : `<p class="load-note">`
-    + (load.nightShare != null ? `สัดส่วนใช้ไฟกลางคืน ≈ <b>${Math.round(load.nightShare * 100)}%</b> · ` : "")
-    + `คำนวณจาก ${load.computedRows}/${load.totalRows} รายการ`
-    + (coverage != null ? ` · คิดเป็น ≈ <b>${Math.round(coverage * 100)}%</b> ของค่าไฟจริง (${baht(loadBill)} บาท/เดือน)` : "")
-    + ` · กำลังไฟเป็นค่ามาตรฐานโดยประมาณ`
-    // AC kW is an average below the rated figure — say why, or 12,000 BTU at
-    // ≈0.6 kW reads as a mistake.
-    + (load.rows.some(r => r.key.startsWith("ac_") && r.qty && r.qty !== "0")
-      ? ` (แอร์คิดภาระเฉลี่ย กลางวัน ${Math.round(AC_LOAD_FACTOR.day * 100)}% · กลางคืน ${Math.round(AC_LOAD_FACTOR.night * 100)}% ของกำลังเต็ม)`
-      : "")
-    + `</p>`;
+  // Rows left out of the total, by name — "7/9 รายการ" made the reader count
+  // the table. The two AC rows collapse to one name.
+  const skipped = unknown => [...new Set(load.rows
+    .filter(r => r.dayKwh == null && r.nightKwh == null && (r.status === "unknown") === unknown)
+    .map(r => r.label.replace(/ \(ใช้.+\)$/, "")))];
+  const skipText = [[skipped(false), "ข้อมูลยังไม่ครบ"], [skipped(true), "ลูกค้าไม่ทราบ"]]
+    .filter(([names]) => names.length).map(([names, why]) => `${names.join(", ")} (${why})`).join(" และ ");
+  // The AC load-factor line (70% / 55%) was dropped at the user's request
+  // (12 Oct) — the AC row's own "เฉลี่ย ≈x kW" already says it's an average.
+  const notes = [
+    skipText && `ยอดรวมยังไม่นับ ${skipText}`,
+    "กำลังไฟใช้ค่ามาตรฐานของอุปกรณ์แต่ละประเภท ไม่ได้วัดจากเครื่องจริง",
+  ].filter(Boolean);
+  // Summary under the table, in two groups (plan 20261012-05):
+  //  · "ใช้ประเมิน Battery" — night share first and emphasised, with a bar
+  //    against the callout's "> 40-50%" rule of thumb, then the daily total
+  //    it comes from. Numbers and the rule only — no verdict (plan
+  //    20260928-01 D3: sales may already have quoted On-Grid).
+  //  · "ตรวจกับบิลค่าไฟ" — monthly vs bill, smaller: it says how far to trust
+  //    the first group, it doesn't decide anything.
+  // Night share is worded like the battery callout ("ของการใช้รวม") so the
+  // reader can match the two.
+  const n0 = v => Math.round(v).toLocaleString("th-TH");
+  const loadSummary = (() => {
+    if (load.dayKwh == null) return "";
+    const day = load.dayKwh, night = load.nightKwh ?? 0;
+    const perDay = Math.round((day + night) * 10) / 10;
+    const share = load.nightShare != null ? Math.round(load.nightShare * 100) : null;
+    // Night (navy) from the left, day (orange) — the totals row's colours.
+    // The band marks 40–50%, where the callout's rule of thumb sits.
+    const bar = share == null ? "" : `<div class="nbar"><div class="nbar-track">`
+      + `<span class="nbar-night" style="width:${share}%"></span><span class="nbar-band" style="left:40%;width:10%"></span></div>`
+      + `<div class="nbar-lbl"><span class="l">กลางคืน ${share}%</span><span class="m" style="left:45%">เกณฑ์ทั่วไป 40–50%</span><span class="r">กลางวัน ${100 - share}%</span></div></div>`;
+    // A table that explains little of the bill gives a share of that little —
+    // say so where the share is, not only in the bill rows.
+    const thin = coverage != null && coverage < 0.7
+      ? `<div class="lsum-warn">ตารางนี้อธิบายการใช้ไฟได้เพียง ≈ ${Math.round(coverage * 100)}% ของบิล สัดส่วนจริงอาจต่างจากนี้</div>` : "";
+    const key = [
+      share != null && ["สัดส่วนใช้ไฟกลางคืน", `กลางคืน ${n1(night)} ÷ รวม ${n1(perDay)} = <b class="big">${share}%</b> ของการใช้รวม${bar}${thin}`, "hi"],
+      ["ใช้ไฟรวมต่อวัน", `กลางวัน ${n1(day)} + กลางคืน ${n1(night)} = <b>${n1(perDay)} kWh/วัน</b>`],
+    ].filter(Boolean);
+    const check = [];
+    if (coverage != null) {
+      const rate = loadRate ?? DEFAULT_ELECTRICITY_RATE;
+      // Told from the bill's side, one line in the cell (user picked, 12 Oct)
+      const meaning = coverage < 0.7 ? "บิลจริงยังมีการใช้ไฟจากเครื่องใช้ไฟฟ้าอื่นที่ไม่ได้อยู่ในตาราง"
+        : coverage <= 1.3 ? "ตัวเลขในตารางใกล้เคียงกับบิลจริง"
+          : "ตัวเลขในตารางสูงกว่าบิลจริง ชั่วโมงใช้งานจริงอาจน้อยกว่าที่ประมาณ";
+      check.push(
+        ["ประมาณการต่อเดือน", `${n1(perDay)} kWh × 30 วัน = <b>${n0(perDay * 30)} kWh/เดือน</b>`],
+        ["ไฟที่ใช้จริงตามบิล", `ค่าไฟ ${baht(loadBill)} บาท ÷ ${n2(rate)} บาท/หน่วย (ค่าไฟเฉลี่ย) ≈ <b>${n0(loadBill / rate)} kWh/เดือน</b>`],
+        ["เทียบกับบิล", `${n0(perDay * 30)} ÷ ${n0(loadBill / rate)} ≈ <b>${Math.round(coverage * 100)}%</b> — ${meaning}`],
+      );
+    }
+    const group = (rows, head, cls) => rows.map(([k, v, rowCls], i) =>
+      `<tr class="${[cls, rowCls].filter(Boolean).join(" ")}">${i === 0 ? `<td class="lsum-h" rowspan="${rows.length}">${head}</td>` : ""}<td class="k">${k}</td><td class="v">${v}</td></tr>`).join("");
+    return `<table class="kv qsum lsum"><tbody>${group(key, "ใช้ประเมิน<br/>Battery", "")}${group(check, "ตรวจกับ<br/>บิลค่าไฟ", "chk")}</tbody></table>`;
+  })();
+  const loadNote = load.dayKwh == null ? ""
+    : loadSummary + `<p class="load-note sub">หมายเหตุ: ${notes.join(" · ")}</p>`;
   // Occupants: people = adults + elderly + kids; pets are listed but never
   // counted as people (migration 199). Built from the parts, not
   // occupant_total, because snapshots frozen before the fix hold a total that
@@ -352,12 +446,31 @@ export function buildSurveyReportHtml(L, D, PKG, options = {}) {
   // for legacy packages whose solar_panels has never been filled in.
   const panelCount = Number(PKG?.solar_panels || L.survey_panel_count || 0);
   const panelCountTxt = panelCount > 0 ? `<span class="val">${baht(panelCount)}</span>` : '<span class="wr"></span>';
-  const paybackMonths = Number(options.financial?.outputs?.payback_months || 0);
-  const paybackTxt = paybackMonths > 0 ? `${baht(paybackMonths)} เดือน (${num(paybackMonths / 12, 1)} ปี)` : null;
+  const finOut = options.financial?.outputs || {};
   // Price = mirror the quotation summary: gross package price − VIP discount −
   // booking deposit = net. Show a breakdown when there's a discount/deposit;
   // otherwise a single price bar. Net matches the quotation's "รวมยอดสุทธิ".
   const gross = quotPrice ?? PKG?.price ?? null;
+  // ค่าธรรมเนียมผ่อนบัตร: เซลส์กรอก % ในใบเสนอราคา · ไม่กรอก = เส้นว่างให้เขียนมือ (แบบเดิม)
+  // ยอดผ่อน/เดือน = ยอด 80% × (1 + %) ÷ 10 ตามคำอธิบายในตาราง §8
+  const ccFeeRaw = options.financial?.inputs?.credit_card_fee_percent;
+  const ccFee = ccFeeRaw === null || ccFeeRaw === undefined || String(ccFeeRaw).trim() === "" || !Number.isFinite(Number(ccFeeRaw)) ? null : Number(ccFeeRaw);
+  const ccBase = quotation.contractAmount ?? gross ?? quotation.netAmount ?? PKG?.price ?? null;
+  // ยอดที่ผ่อนบัตร = งวดสุดท้ายในใบเสนอราคา (หลังหักเงินจอง ตรงกับตารางงวดในใบ)
+  // · รายงานเดี่ยวที่ไม่มีใบ ใช้ 80% ของราคา
+  const lastInst = quotation.lastInstallment;
+  const ccPct = lastInst ? Number(lastInst.percent) : 80;
+  const ccPctTxt = num(ccPct, Number.isInteger(ccPct) ? 0 : 2);
+  const ccRest = lastInst ? Number(lastInst.amount) : ccBase != null ? Math.round(Number(ccBase) * 0.8) : null;
+  const ccFeeAmt = ccFee != null && ccRest != null ? Math.round(ccRest * ccFee / 100) : null;
+  const ccMonthly = ccFee != null && ccRest != null ? Math.round(ccRest * (1 + ccFee / 100) / 10) : null;
+  // ผ่อนบัตร: จุดคุ้มทุนนับค่าธรรมเนียมบัตรด้วย (เหมือนสินเชื่อนับดอกเบี้ย) · ไม่มีค่าธรรมเนียม = แบบเงินสด
+  const cardPayback = (price, save) => ccFeeAmt > 0 && price != null && save > 0 ? Math.ceil((Number(price) + ccFeeAmt) / save) : null;
+  // §4 จุดคุ้มทุนตามแบบที่เสนอ: ผ่อนนับดอกเบี้ย (snapshot ก่อนสูตร v3 ไม่มีค่านี้ ใช้ตัวเดิม) · บัตรนับค่าธรรมเนียม
+  const loanPaybackTxt = payMode === "loan" && finOut.payback_months_with_loan != null;
+  const cardPaybackMonths = payMode === "card" ? cardPayback(ccBase, Number(finOut.monthly_saving)) : null;
+  const paybackMonths = Number(cardPaybackMonths ?? (payMode === "loan" ? finOut.payback_months_with_loan ?? finOut.payback_months : finOut.payback_months) ?? 0);
+  const paybackTxt = paybackMonths > 0 ? `${baht(paybackMonths)} เดือน (${num(paybackMonths / 12, 1)} ปี)${loanPaybackTxt ? " · รวมดอกเบี้ย" : cardPaybackMonths ? " · รวมค่าธรรมเนียมบัตร" : ""}` : null;
   // §4 แสดงราคาของ "แพ็กเกจหลัก" ตัวเดียวเท่านั้น — ไม่รวม package รอง/งานเพิ่ม
   // ที่ไปแสดงแยกใน §5 (เดิมใช้ยอดรวมทั้งใบ ทำให้ชื่อแพ็กเกจกับราคาไม่ใช่ของเดียวกัน
   // เช่น "3 kWp_On" คู่กับ 397,250 ซึ่งเป็นยอดรวมทั้งใบ)
@@ -462,17 +575,30 @@ export function buildSurveyReportHtml(L, D, PKG, options = {}) {
     <div class="callout orange"><div class="co-h">ข้อเสนอเพิ่มเติม</div><ul><li>รายการเพิ่มเติมข้างต้นเป็นรายการที่จำเป็นตามสภาพหน้างานจริง ณ วันสำรวจ เพื่อให้ระบบทำงานได้อย่างปลอดภัยและมีประสิทธิภาพสูงสุด</li><li>ค่าใช้จ่ายนำมาจากใบเสนอราคา (Quotation) เลขที่ ${quotDocNo||L.pre_doc_no||"—"} หากตัวเลขไม่ตรงกัน ให้ยึดใบเสนอราคาเป็นหลัก</li></ul></div>`);
 
   // ── PAGE 10 §6 journey ──────────────────────────────────────────────
-  const JOURNEY=[["1","วางเงินมัดจำ 20%","เพื่อจองวันติดตั้ง"],["2","ขอสินเชื่อ","สำหรับส่วนที่เหลือ 80% (กรณีเลือกผ่อนชำระ)"],["3","ติดตั้งระบบ","ทีมช่างเข้าดำเนินการติดตั้งตามวันที่นัดหมายหลังจากการมัดจำ"],["4","ขนานไฟ","ยื่นเรื่องขนานไฟกับการไฟฟ้าและเริ่มใช้งานระบบ"]];
+  // ขั้นที่ 2 ตามรูปแบบการชำระ — เงินสด/บัตรไม่มีขั้นขอสินเชื่อ
+  const JOURNEY2 = payMode === "cash"
+    ? ["2","ชำระส่วนที่เหลือ 80%","ด้วยเงินสด/โอนเงิน ก่อนวันติดตั้ง"]
+    : payMode === "card"
+      ? ["2","ผ่อนส่วนที่เหลือ 80%","ผ่านบัตรเครดิต 10 เดือน"]
+      : ["2","ขอสินเชื่อ", payMode === "loan" ? "สำหรับส่วนที่เหลือ 80%" : "สำหรับส่วนที่เหลือ 80% (กรณีเลือกผ่อนชำระ)"];
+  const JOURNEY2_TXT = payMode === "cash"
+    ? "ขั้นตอนที่ 2 — ชำระส่วนที่เหลือ 80% ด้วยเงินสด/โอนเงิน ก่อนวันติดตั้งหรือตามงวดที่ตกลงกับบริษัท (ดูรายละเอียดในหมวดที่ 8)"
+    : payMode === "card"
+      ? "ขั้นตอนที่ 2 — ผ่อนชำระส่วนที่เหลือ 80% ผ่านบัตรเครดิต 10 เดือน (ดูรายละเอียดในหมวดที่ 8)"
+    : payMode === "loan"
+      ? "ขั้นตอนที่ 2 — ยื่นขอสินเชื่อสำหรับส่วนที่เหลือ 80% ตั้งแต่ต้นจนได้วงเงินจากธนาคาร (ดูรายละเอียดในหมวดที่ 8)"
+      : "ขั้นตอนที่ 2 — ยื่นขอสินเชื่อสำหรับส่วนที่เหลือ 80% ตั้งแต่ต้นจนได้วงเงินจากธนาคาร หากลูกค้าเลือกผ่อนชำระผ่านธนาคาร (ดูรายละเอียดในหมวดที่ 8)";
+  const JOURNEY=[["1","วางเงินมัดจำ 20%","เพื่อจองวันติดตั้ง"],JOURNEY2,["3","ติดตั้งระบบ","ทีมช่างเข้าดำเนินการติดตั้งตามวันที่นัดหมายหลังจากการมัดจำ"],["4","ขนานไฟ","ยื่นเรื่องขนานไฟกับการไฟฟ้าและเริ่มใช้งานระบบ"]];
   const p10 = page(9, `${sect("6","ขั้นตอนถัดไปสำหรับลูกค้า (Customer Journey)")}
     <p class="lead"><b>บริการ ONE STOP SERVICE ตั้งแต่ต้นจนจบขบวนการ</b> — หากลูกค้าสนใจดำเนินการต่อจากรายงานสำรวจฉบับนี้ มีขั้นตอนดังนี้</p>
     <div class="journey">${JOURNEY.map((s,i)=>`<div class="jstep"><div class="jnum">${s[0]}</div><div class="jt">${s[1]}</div><div class="js">${s[2]}</div></div>${i<3?'<div class="jarrow">›</div>':""}`).join("")}</div>
     <div class="callout green"><div class="co-h">สรุปขั้นตอน</div><ul>
       <li>ขั้นตอนที่ 1 — วางเงินมัดจำ 20% ของมูลค่าแพ็กเกจ เพื่อยืนยันและจองคิววันติดตั้ง</li>
-      <li>ขั้นตอนที่ 2 — ยื่นขอสินเชื่อสำหรับส่วนที่เหลือ 80% ตั้งแต่ต้นจนได้วงเงินจากธนาคาร หากลูกค้าเลือกผ่อนชำระผ่านธนาคาร (ดูรายละเอียดในหมวดที่ 8)</li>
+      <li>${JOURNEY2_TXT}</li>
       <li>ขั้นตอนที่ 3 — ทีมช่างเข้าติดตั้งระบบตามวันที่นัดหมาย ใช้เวลาโดยประมาณ <span class="val">1-2 วันทำการ</span></li>
       <li>ขั้นตอนที่ 4 — บริษัทดำเนินการยื่นขนานไฟกับการไฟฟ้าให้ลูกค้า</li></ul></div>`);
 
-  // ── PAGE 11-14 static (payment terms — same for everyone) ───────────
+  // ── PAGE 11-14 payment terms — เลือกส่วนที่แสดงตาม payMode ────────────
   const BANKS=[["ธนาคารกสิกรไทย (KBank)","ธนาคารกรุงศรีอยุธยา (Krungsri)"],["ธนาคารกรุงไทย (Krungthai)","ธนาคารทหารไทยธนชาต (ttb)"]];
   const p11 = page(10, `${sect("7","ทางเลือกการชำระเงินมัดจำ 20% (เพื่อจองวันติดตั้ง)")}
     <p class="lead">ลูกค้าสามารถเลือกชำระเงินมัดจำ 20% ของมูลค่าแพ็กเกจ เพื่อยืนยันและจองคิววันติดตั้งได้ 2 ช่องทาง ดังนี้</p>
@@ -483,42 +609,58 @@ export function buildSurveyReportHtml(L, D, PKG, options = {}) {
     <table class="banks"><thead><tr><th>ธนาคาร / ผู้ออกบัตร</th><th>ธนาคาร / ผู้ออกบัตร</th></tr></thead><tbody>${BANKS.map(r=>`<tr><td>${r[0]}</td><td>${r[1]}</td></tr>`).join("")}</tbody></table>
     <div class="callout orange"><div class="co-h">เงื่อนไขชำระเงินมัดจำ 20% ผ่านบัตรเครดิต 0% ระยะเวลา 10 เดือน</div><ul>
       <li>กรณีลูกค้าตัดสินใจซื้อและดำเนินการจนติดตั้งเสร็จสมบูรณ์ บริษัทเป็นผู้รับภาระค่าธรรมเนียมบัตรเครดิตทั้งหมด</li>
-      <li>กรณีลูกค้ายื่นขอสินเชื่อสำหรับส่วนที่เหลือ 80% แล้ว ไม่ผ่านการอนุมัติ และไม่ประสงค์ดำเนินการต่อ
+      ${noLoan ? "" : `<li>กรณีลูกค้ายื่นขอสินเชื่อสำหรับส่วนที่เหลือ 80% แล้ว ไม่ผ่านการอนุมัติ และไม่ประสงค์ดำเนินการต่อ
         <ul class="sub"><li>กรณีชำระเป็นเงินสด บริษัทจะคืนเงินดาวน์ 20% ให้เต็มจำนวน</li>
-        <li>หากชำระเงินดาวน์ด้วยบัตรเครดิตแล้วไม่ผ่านการอนุมัติสินเชื่อ บริษัทจะหักค่าธรรมเนียมบัตรเครดิตที่เกิดขึ้นจริงออกจากเงินที่คืน</li></ul></li>
+        <li>หากชำระเงินดาวน์ด้วยบัตรเครดิตแล้วไม่ผ่านการอนุมัติสินเชื่อ บริษัทจะหักค่าธรรมเนียมบัตรเครดิตที่เกิดขึ้นจริงออกจากเงินที่คืน</li></ul></li>`}
       <li>การคืนเงินทุกกรณีจะโอนเข้าบัญชีธนาคารของลูกค้าเท่านั้น ไม่มีการคืนเป็นเงินสด</li>
       <li>การจองวันติดตั้งจะมีผลสมบูรณ์เมื่อบริษัทได้รับเงินมัดจำและหลักฐานการชำระเรียบร้อยแล้วเท่านั้น</li></ul></div>`);
 
-  const p12 = page(11, `${sect("8","ทางเลือกการชำระเงินส่วนที่เหลือ 80%")}
-    <p class="lead">สำหรับเงินส่วนที่เหลืออีก 80% ของมูลค่าแพ็กเกจ (หลังหักเงินมัดจำ) ลูกค้าสามารถเลือกช่องทางการชำระได้ 3 รูปแบบ ดังนี้</p>
-    <h3 class="subh">ทางเลือกที่ 1 — ชำระเงินสด</h3>
-    <ul class="reasons"><li>ชำระเต็มจำนวนส่วนที่เหลือ 80% ก่อนวันติดตั้ง หรือตามรอบงวดที่ตกลงกับบริษัท</li><li>เป็นทางเลือกที่มีต้นทุนรวมต่ำที่สุด</li></ul>
-    <h3 class="subh">ทางเลือกที่ 2 — ผ่อนชำระผ่านบัตรเครดิต 10 เดือน</h3>
+  const ccFeeTxt = ccFee != null ? `<span class="val">${num(ccFee, Number.isInteger(ccFee) ? 0 : 2)}</span>` : `<span class="wr"></span>`;
+  const ccMonthlyTxt = ccMonthly != null ? `<span class="val">${baht(ccMonthly)}</span>` : `<span class="wr"></span>`;
+  // หัวข้อทางเลือก: ไม่ระบุ (ครบ 3 ทาง) ใส่เลขลำดับ · เลือกแบบเดียวแล้วไม่ต้องมีเลข
+  const optHead = (no, title) => `<h3 class="subh">${payMode === "all" ? `ทางเลือกที่ ${no} — ` : ""}${title}</h3>`;
+  const OPT_CASH = `${optHead(1, "ชำระเงินสด")}
+    <ul class="reasons"><li>ชำระเต็มจำนวนส่วนที่เหลือ 80% ก่อนวันติดตั้ง หรือตามรอบงวดที่ตกลงกับบริษัท</li><li>เป็นทางเลือกที่มีต้นทุนรวมต่ำที่สุด</li></ul>`;
+  const OPT_CARD = `${optHead(2, "ผ่อนชำระผ่านบัตรเครดิต 10 เดือน")}
     <p class="lead">ใช้รายชื่อธนาคารบัตรเครดิตที่ร่วมรายการเดียวกันกับการชำระเงินดาวน์ในหมวดที่ 7 โดยมีเงื่อนไขค่าบริการเพิ่มเติมดังนี้</p>
     <table class="banks"><thead><tr><th style="width:30%">รายการ</th><th>รายละเอียด</th></tr></thead><tbody>
       <tr><td>ระยะเวลาผ่อนชำระ</td><td>10 เดือน</td></tr>
-      <tr><td>ค่าธรรมเนียมบัตรเครดิต (Credit Card Fee)</td><td><span class="wr"></span> % ของยอดชำระ (เรียกเก็บเพิ่มจากยอดที่ต้องผ่อน ขึ้นอยู่กับธนาคารที่ลูกค้าเลือก)</td></tr>
-      <tr><td>ยอดผ่อนชำระต่อเดือนโดยประมาณ</td><td><span class="wr"></span> บาท/เดือน (คำนวณจากยอด 80% + ค่าธรรมเนียม)</td></tr></tbody></table>
-    <h3 class="subh">ทางเลือกที่ 3 — สินเชื่อธนาคารออมสิน (GSB Solar Soft Loan)</h3>
+      <tr><td>ค่าธรรมเนียมบัตรเครดิต (Credit Card Fee)</td><td>${ccFeeTxt} % ของยอดชำระ (เรียกเก็บเพิ่มจากยอดที่ต้องผ่อน ขึ้นอยู่กับธนาคารที่ลูกค้าเลือก)</td></tr>
+      <tr><td>ยอดผ่อนชำระต่อเดือนโดยประมาณ</td><td>${ccMonthlyTxt} บาท/เดือน (คำนวณจากยอด ${ccPctTxt}% + ค่าธรรมเนียม)</td></tr></tbody></table>`;
+  const OPT_LOAN = `${optHead(3, "สินเชื่อธนาคารออมสิน (GSB Solar Soft Loan)")}
     <p class="lead">ลูกค้าสามารถยื่นขอสินเชื่อกับธนาคารออมสิน ภายใต้โครงการ Soft Loan GSB พลิกฟื้นธุรกิจไทย สำหรับติดตั้งระบบโซลาร์เซลล์ (ที่มา: ธนาคารออมสิน gsb.or.th/promotions/gsbsolar4life) โดยมีเงื่อนไขสำคัญโดยสรุปดังนี้</p>
     <table class="banks"><tbody>
-      <tr><td style="width:30%">อัตราดอกเบี้ย</td><td>เริ่มต้น 3.25% - 3.50% ต่อปี แบบลดต้นลดดอก (Effective Rate) — อัตราจริงขึ้นอยู่กับเงื่อนไขที่ธนาคารอนุมัติ ณ วันยื่นกู้</td></tr>
+      <tr><td style="width:30%">อัตราดอกเบี้ย</td><td>${GSB_RATE_TXT}</td></tr>
       <tr><td>เงินดาวน์ขั้นต่ำตามเงื่อนไขธนาคาร</td><td>20% ของวงเงินกู้</td></tr>
       <tr><td>วงเงินกู้</td><td>ให้กู้ตามความจำเป็นและความสามารถในการชำระหนี้ ไม่เกิน 10 เท่าของรายได้ และไม่เกิน 500,000 บาทต่อราย</td></tr>
       <tr><td>ระยะเวลาผ่อนชำระ</td><td>สูงสุดไม่เกิน 7 ปี (84 งวด)</td></tr>
       <tr><td>คุณสมบัติผู้กู้</td><td>อายุครบ 20 ปีบริบูรณ์ (อายุผู้กู้รวมระยะเวลาผ่อนไม่เกิน 60 ปี) · อายุงานปัจจุบันไม่ต่ำกว่า 1 ปี · เงินเดือนตั้งแต่ 18,000 บาทขึ้นไป</td></tr>
       <tr><td>เอกสารประกอบการยื่นกู้</td><td>บัตรประชาชน / ทะเบียนบ้าน / สลิปเงินเดือนหรือหนังสือรับรองรายได้ / สเตทเมนต์บัญชีย้อนหลัง 6 เดือน / ใบเสนอราคาและรายงานสำรวจฉบับนี้</td></tr>
       <tr><td>ระยะเวลาโครงการ</td><td>ยื่นกู้ได้ถึงวันที่ 31 มีนาคม 2570 หรือจนกว่าวงเงินโครงการจะเต็ม</td></tr>
-      <tr><td>สิทธิประโยชน์เพิ่มเติม</td><td>สามารถใช้สิทธิลดหย่อนภาษีตามมาตรการภาครัฐได้ (เงื่อนไขเป็นไปตามที่กรมสรรพากรกำหนด)</td></tr></tbody></table>`);
-
-  const p13 = page(12, `<div class="callout blue"><div class="co-h">ประเมินโอกาสอนุมัติเบื้องต้นก่อนยื่นกู้จริง</div><ul>
+      <tr><td>สิทธิประโยชน์เพิ่มเติม</td><td>สามารถใช้สิทธิลดหย่อนภาษีตามมาตรการภาครัฐได้ (เงื่อนไขเป็นไปตามที่กรมสรรพากรกำหนด)</td></tr></tbody></table>`;
+  const LOAN_NOTES = `<div class="callout blue"><div class="co-h">ประเมินโอกาสอนุมัติเบื้องต้นก่อนยื่นกู้จริง</div><ul>
     <li>ลูกค้าสามารถติดต่อ Sale ผู้ดูแลเพื่อขอให้ช่วยประเมินเบื้องต้น (Pre-screen) ก่อนยื่นกู้จริงได้ฟรี</li>
     <li>หากคุณสมบัติยังไม่ผ่านเกณฑ์ Sale จะให้คำแนะนำแนวทางเพิ่มโอกาส เช่น การหาผู้กู้ร่วม หรือปรับลดวงเงินกู้</li>
     <li>การประเมินเบื้องต้นเป็นเพียงการคาดการณ์ ไม่ใช่การอนุมัติหรือรับประกันผลการพิจารณาของธนาคาร</li></ul></div>
     <div class="callout orange"><div class="co-h">หมายเหตุสำคัญ</div><ul>
     <li>อัตราดอกเบี้ยและเงื่อนไขข้างต้นอ้างอิงจากโครงการ Soft Loan GSB อาจเปลี่ยนแปลงตามประกาศธนาคารออมสิน</li>
     <li>การอนุมัติสินเชื่อขึ้นอยู่กับดุลยพินิจของธนาคารออมสินแต่เพียงผู้เดียว</li>
-    <li>หากยื่นกู้ไม่ผ่าน ลูกค้าเปลี่ยนไปใช้ทางเลือกเงินสดหรือบัตรเครดิตแทนได้ และเงินดาวน์ 20% ได้รับคืนตามเงื่อนไข</li></ul></div>`);
+    <li>หากยื่นกู้ไม่ผ่าน ลูกค้าเปลี่ยนไปใช้ทางเลือกเงินสดหรือบัตรเครดิตแทนได้ และเงินดาวน์ 20% ได้รับคืนตามเงื่อนไข</li></ul></div>`;
+  const P12_PAY = { loan: "ชำระผ่านสินเชื่อธนาคาร", cash: "ชำระเป็นเงินสด/โอนเงิน", card: "ผ่อนชำระผ่านบัตรเครดิต" }[payMode];
+  const P12_LEAD = P12_PAY
+    ? `สำหรับเงินส่วนที่เหลืออีก 80% ของมูลค่าแพ็กเกจ (หลังหักเงินมัดจำ) ลูกค้า${P12_PAY} มีรายละเอียดดังนี้`
+    : "สำหรับเงินส่วนที่เหลืออีก 80% ของมูลค่าแพ็กเกจ (หลังหักเงินมัดจำ) ลูกค้าสามารถเลือกช่องทางการชำระได้ 3 รูปแบบ ดังนี้";
+  const P12_HEAD = `${sect("8","ทางเลือกการชำระเงินส่วนที่เหลือ 80%")}
+    <p class="lead">${P12_LEAD}</p>`;
+  // ผ่อน: ทางเลือกสินเชื่อ + หมายเหตุสินเชื่อรวมหน้าเดียว · ไม่ระบุ: ครบ 3 ทางเลือก
+  // หมายเหตุสินเชื่อขึ้นหน้าถัดไปเหมือนเดิม · เงินสด/บัตร: ใช้ pCash ด้านล่างแทน
+  // (ทางเลือกที่เลือก + ตารางความคุ้มค่าในหน้าเดียว ต้องรอตัวเลข C)
+  const p12 = noLoan ? "" : page(11, `${P12_HEAD}
+    ${payMode === "loan" ? "" : OPT_CASH + OPT_CARD}
+    ${OPT_LOAN}
+    ${payMode === "loan" ? LOAN_NOTES : ""}`);
+
+  const p13 = payMode === "all" ? page(12, LOAN_NOTES) : "";
 
   // GSB Solar Loan Calculator — computed from THIS lead's package price / kW /
   // monthly bill. Falls back to the sheet's example (112,000 · 3kW · 5,000)
@@ -536,11 +678,9 @@ export function buildSurveyReportHtml(L, D, PKG, options = {}) {
   const loanBill = Number(financeInputs.current_monthly_bill) || Number(D.monthly_bill) || Number(L.survey_monthly_bill) || 5000;
   const financeOutputs = options.financial?.outputs || {};
   const downPct = Number(financeInputs.down_payment_percent ?? 20);
-  const rate1 = Number(financeInputs.interest_rate_year_1_2 ?? 3.5);
-  const rate2 = Number(financeInputs.interest_rate_year_3_plus ?? 3.5);
   const termMonths = Number(financeInputs.loan_term_months ?? 84);
   const electricityRate = Number(financeInputs.electricity_rate ?? 5);
-  const C = calcLoan(loanPrice, loanKw, loanBill, { unit:electricityRate, r1:rate1/100, r2:rate2/100, downPct:downPct/100, term:termMonths/12 });
+  const C = calcLoan(loanPrice, loanKw, loanBill, { unit:electricityRate, schedule:loanSchedule, downPct:downPct/100, term:termMonths/12 });
   Object.assign(C, {
     down: financeOutputs.down_payment_amount ?? C.down,
     loan: financeOutputs.loan_amount ?? C.loan,
@@ -554,20 +694,49 @@ export function buildSurveyReportHtml(L, D, PKG, options = {}) {
     save25: financeOutputs.saving_25_years ?? C.save25,
     co2Yr: financeOutputs.co2_reduction_tons_per_year ?? C.co2Yr,
     trees: financeOutputs.equivalent_trees ?? C.trees,
+    // จุดคุ้มทุนแบบกู้นับดอกเบี้ย (สูตร v3) — snapshot ก่อน v3 ไม่มีค่านี้ ใช้ตัวเดิมให้เอกสารไม่เปลี่ยน
+    paybackLoan: (options.financial ? financeOutputs.payback_months_with_loan ?? financeOutputs.payback_months : null) ?? C.paybackLoan,
+    downBack: options.financial ? financeOutputs.down_recovered_months ?? null : C.downBack,
   });
+  const paybackHasInterest = !options.financial || financeOutputs.payback_months_with_loan != null;
   // ยอดประหยัดรวมตลอดสัญญาต้องคิดจากยอดประหยัดต่อเดือนตัวเดียวกับที่แสดงในหน้านี้
   // calcLoan คิด save จากกำลังผลิตเต็ม (ไม่จำกัดด้วยค่าไฟจริง) แล้วคูณเป็น saveTot ไว้ก่อน
   // พอ save ถูกแทนด้วยค่าจากใบเสนอราคา (จำกัดไม่เกินค่าไฟ) saveTot จึงค้างเป็นค่าเดิม
   // เช่น ประหยัด 9,000/เดือน แต่ยอดรวม 84 เดือนขึ้น 1,008,000 (= 12,000 × 84)
   C.saveTot = C.save * C.n;
-  const CALC_INDEP=[["มูลค่า Solar Package (บาท)",baht(C.price),"in"],["เงินดาวน์ (%)",num(downPct,1)+"%","in"],["ดอกเบี้ย ปีที่ 1-2 (% ต่อปี)",num(rate1,3)+"%","in"],["ดอกเบี้ย ปีที่ 3 เป็นต้นไป (% ต่อปี)",num(rate2,3)+"%","in"],["ระยะเวลากู้",termMonths+" เดือน","in"]];
-  const CALC_CALC=[["เงินดาวน์ (บาท)",baht(C.down)],["วงเงินกู้ (บาท)",baht(C.loan)],["ดอกเบี้ยรายเดือน ปีที่ 1-2",num(C.m1*100,4)+"%"],["ดอกเบี้ยรายเดือน ปีที่ 3 เป็นต้นไป",num(C.m2*100,4)+"%"],["จำนวนงวดช่วงที่ 1",C.n1+" งวด"],["จำนวนงวดช่วงที่ 2",C.n2+" งวด"],["ดอกเบี้ยถัวเฉลี่ยถ่วงน้ำหนัก/ปี",num(C.wAvg*100,3)+"%"]];
-  const CALC_RESULT=[["ค่างวดผ่อน (บาท/เดือน) — เท่ากันทุกงวด",baht(C.pmt),"big"],["ยอดจ่ายรวมตลอดสัญญา (บาท)",baht(C.total)],["ดอกเบี้ยรวมตลอดสัญญา (บาท)",baht(C.interest)],["ดอกเบี้ยถัวเฉลี่ย EIR / ปี",num(C.eir*100,3)+"%"]];
+  const CALC_INDEP=[["มูลค่า Solar Package (บาท)",baht(C.price),"in"],["เงินดาวน์ (%)",num(downPct,1)+"%","in"],...C.tiers.map(t=>[`ดอกเบี้ย ${tierYears(t)} (% ต่อปี)`,`${num(t.rate,3)}%${t.note?` (${t.note})`:""}`,"in"]),["ระยะเวลากู้",termMonths+" เดือน","in"]];
+  const CALC_CALC=[["เงินดาวน์ (บาท)",baht(C.down)],["วงเงินกู้ (บาท)",baht(C.loan)],...C.tiers.map(t=>[`ดอกเบี้ยรายเดือน ${tierYears(t)}`,num(t.rate/12,4)+"%"]),...C.tiers.map((t,i)=>[`จำนวนงวดช่วงที่ ${i+1}`,t.n+" งวด"]),["ดอกเบี้ยถัวเฉลี่ยถ่วงน้ำหนัก/ปี",num(C.wAvg*100,3)+"%"]];
+  // ไม่แสดง "ดอกเบี้ยถัวเฉลี่ย EIR" (C.eir = ดอกเบี้ยรวม ÷ วงเงิน ÷ ปี เป็นอัตราแบบเงินต้นคงที่ ไม่ใช่ EIR จริง)
+  // ซ้อนกับ "ดอกเบี้ยถัวเฉลี่ยถ่วงน้ำหนัก/ปี" แล้วตัวเลขต่างกันเกือบเท่าตัว — ผู้ใช้สั่งตัด 14 ต.ค.
+  const CALC_RESULT=[["ค่างวดผ่อน (บาท/เดือน) — เท่ากันทุกงวด",baht(C.pmt),"big"],["ยอดจ่ายรวมตลอดสัญญา (บาท)",baht(C.total)],["ดอกเบี้ยรวมตลอดสัญญา (บาท)",baht(C.interest)]];
   const CALC_COMPARE=[["ค่าไฟปัจจุบัน (บาท/เดือน)",baht(C.bill),"in"],["ขนาด Solar ที่ติด (kW)",num(C.kw,1),"in"],["ค่าไฟต่อหน่วย (บาท/kWh)",num(C.unit,2)],["หน่วยไฟที่ผลิตได้/เดือน (kWh)",num(C.kwh,1)],["ประหยัดได้หลังติด Solar (บาท/เดือน)",baht(C.save)]];
-  const CALC_ANALYSIS=[["ค่างวดผ่อน (บาท/เดือน)",baht(C.pmt)],["ดอกเบี้ยต่อเดือน (เดือนแรก)",baht(C.mo1Int)],["เงินต้นที่ตัดต่อเดือน (เดือนแรก)",baht(C.mo1Prin)],["ต้นทุนสุทธิ/เดือน (ค่างวด − ประหยัด)",baht(C.netMo),C.netMo<0?"neg":""],["ยอดรวมที่จ่ายตลอดสัญญา (บาท)",baht(C.total)],["ดอกเบี้ยรวม (บาท)",baht(C.interest)],["ค่าไฟรวมถ้าไม่ติด Solar (บาท)",baht(C.billTot)],["ประหยัดค่าไฟรวมตลอดสัญญาเงินกู้ (บาท)",baht(C.saveTot)],["ลดการปล่อย CO₂ ต่อปี (ตัน)",num(C.co2Yr,2)],["ลดการปล่อย CO₂ เทียบเท่าปลูกต้นไม้ (ต้น)",baht(C.trees)],["จุดคุ้มทุน (เดือน)",C.payback?num(C.payback,0):"—"],["ถ้าติด 25 ปี ประหยัดค่าไฟได้ (บาท)",baht(C.save25)]];
+  const CALC_ANALYSIS=[["ค่างวดผ่อน (บาท/เดือน)",baht(C.pmt)],["ดอกเบี้ยต่อเดือน (เดือนแรก)",baht(C.mo1Int)],["เงินต้นที่ตัดต่อเดือน (เดือนแรก)",baht(C.mo1Prin)],["ต้นทุนสุทธิ/เดือน (ค่างวด − ประหยัด)",baht(C.netMo),C.netMo<0?"neg":""],["ยอดรวมที่จ่ายตลอดสัญญา (บาท)",baht(C.total)],["ดอกเบี้ยรวม (บาท)",baht(C.interest)],["ค่าไฟรวมถ้าไม่ติด Solar (บาท)",baht(C.billTot)],["ประหยัดค่าไฟรวมตลอดสัญญาเงินกู้ (บาท)",baht(C.saveTot)],["ลดการปล่อย CO₂ ต่อปี (ตัน)",num(C.co2Yr,2)],["ลดการปล่อย CO₂ เทียบเท่าปลูกต้นไม้ (ต้น)",baht(C.trees)],[paybackHasInterest?"จุดคุ้มทุน รวมดอกเบี้ย (เดือน)":"จุดคุ้มทุน (เดือน)",C.paybackLoan?num(C.paybackLoan,0):"—"],...(C.downBack?[["ได้เงินดาวน์คืนภายใน (เดือน)",num(C.downBack,0)]]:[]),["ถ้าติด 25 ปี ประหยัดค่าไฟได้ (บาท)",baht(C.save25)]];
+  // ── กล่องสรุปใต้ตาราง (แผน 20261014-01 · แบบ A) — 3 ตัวเลขหลัก + บรรทัดล่าง ──────────
+  // แสดงเฉพาะใบที่เลือกรูปแบบการชำระ · ใบเก่าที่แสดงทุกทางเลือก (all) หน้าตาเหมือนเดิม
+  const ym = n => { const y = Math.floor(n / 12), m = n % 12; return y ? `${y} ปี${m ? ` ${m} เดือน` : ""}` : `${m} เดือน`; };
+  const approx = n => n >= 1e6 ? `${num(n / 1e6, 2)} ล้านบาท` : n >= 1e5 ? `${num(n / 1e5, 1)} แสนบาท` : `${baht(Math.round(n))} บาท`;
+  const sumBox = (tiles, foot) => `<div class="sum"><div class="sum-row">${tiles.map(([k, v, u, go]) =>
+    `<div class="sum-cell"><div class="sum-k">${k}</div><div class="sum-v${go ? " go" : ""}">${v}${u ? ` <span class="sum-u">${u}</span>` : ""}</div></div>`).join("")}</div>${foot ? `<div class="sum-foot">${foot}</div>` : ""}</div>`;
+  // เงินประหยัดนับไม่เกินค่าไฟ (สูตรเพดานค่าไฟ) — ไฟส่วนที่ผลิตเกินบอกลูกค้าว่าใช้ไฟเพิ่มจะคุ้มขึ้น
+  const overMonthly = Math.round(Number(C.kwh) * Number(C.unit) - Number(C.bill));
+  const overLine = Number(C.bill) > 0 && overMonthly > 0
+    ? `<div class="sum-extra">ระบบผลิตไฟได้มากกว่าที่บ้านใช้ราว ${baht(overMonthly)} บาท/เดือน — ถ้าใช้ไฟเพิ่ม (เช่น รถ EV, แอร์) จะคืนทุนเร็วขึ้น</div>`
+    : "";
+  const loanSave = Math.round(Number(C.save) || 0), loanPmt = Math.round(Number(C.pmt) || 0);
+  // ไม่มีราคา/ค่าไฟ (ข้อมูลไม่ครบ) ไม่ต้องแสดงกล่อง — กันเอกสารลูกค้าขึ้น "0 บาท"
+  const loanSummary = payMode !== "loan" || loanSave <= 0 ? "" : sumBox([
+    ["ผ่อนธนาคาร", baht(loanPmt), "บาท/เดือน"],
+    ["ประหยัดค่าไฟ", baht(loanSave), "บาท/เดือน", true],
+    C.downBack
+      ? ["ได้เงินดาวน์คืนใน", ym(C.downBack), `(${num(C.downBack, 0)} เดือน)`]
+      : ["คืนทุนใน", C.paybackLoan ? ym(C.paybackLoan) : "—", C.paybackLoan ? `(${num(C.paybackLoan, 0)} เดือน รวมดอกเบี้ย)` : ""],
+  ], loanSave > loanPmt
+    ? `ค่าผ่อนน้อยกว่าค่าไฟที่ประหยัด — เหลือเงินเดือนละ ${baht(loanSave - loanPmt)} บาทตั้งแต่เดือนแรก`
+    : `ช่วงผ่อน ${termMonths} เดือน จ่ายเพิ่มจากค่าไฟเดิมเดือนละ ${baht(loanPmt - loanSave)} บาท · ผ่อนครบแล้วประหยัดเต็ม ${baht(loanSave)} บาท/เดือน`) + overLine;
+
   const loanBank = String(financeInputs.loan_bank || "ธนาคารออมสิน");
   const rateSource = String(financeInputs.rate_source || "ธนาคารออมสิน GSB");
-  const p14 = page(13, `<h3 class="subh">ตัวอย่างตารางผ่อนชำระสินเชื่อ (Amortization Schedule) — ตัวอย่างประกอบการพิจารณา สำหรับการยื่นกู้กับ ${loanBank}</h3>
+  const p14 = noLoan ? "" : page(13, `<h3 class="subh">ตัวอย่างตารางผ่อนชำระสินเชื่อ (Amortization Schedule) — ตัวอย่างประกอบการพิจารณา สำหรับการยื่นกู้กับ ${loanBank}</h3>
     <div class="calc">
       <div class="calc-head">Solar Loan Calculator — ${loanBank} (ค่างวดเท่ากันทุกเดือน)</div>
       <div class="calc-sub">สินเชื่อพลังงานสะอาด | Source: ${rateSource}</div>
@@ -584,7 +753,52 @@ export function buildSurveyReportHtml(L, D, PKG, options = {}) {
         </div>
       </div>
     </div>
+    ${loanSummary}
     <p class="tiny-note">หมายเหตุ: ตารางนี้เป็นตัวอย่างการคำนวณเพื่อประกอบการตัดสินใจเท่านั้น ตัวเลขจริงให้ยึดตามตารางผ่อนชำระที่ ${loanBank} ออกให้หลังการอนุมัติสินเชื่อ</p>`);
+
+  // ── §8 แบบเงินสด / ผ่อนบัตร: ทางเลือกที่เลือก + ตารางความคุ้มค่าในหน้าเดียว ──────────
+  // (แทน p12 + หน้าสินเชื่อ) ตารางยกจากฝั่งขวาของ solar_loan_calculator (BTC)
+  // ตัวเลขชุดเดียวกับหน้าสินเชื่อ (C) · จุดคุ้มทุน: เงินสด = ราคา ÷ ประหยัดต่อเดือน (ตัวเดียวกับ §4)
+  // · ผ่อนบัตร = (ราคา + ค่าธรรมเนียมบัตร) ÷ ประหยัดต่อเดือน
+  const isCard = payMode === "card";
+  const cashPayback = C.payback ? Math.ceil(C.payback) : null;
+  const cardPaybackCalc = isCard ? cardPayback(C.price, C.save) : null;
+  const shownPayback = cardPaybackCalc ?? cashPayback;
+  const wr = `<span class="wr"></span>`;
+  const CASH_SYSTEM=[["มูลค่า Solar Package (บาท)",baht(C.price),"in"],["ขนาด Solar ที่ติด (kW)",num(C.kw,1),"in"],["หน่วยไฟที่ผลิตได้/เดือน (kWh)",num(C.kwh,1)],["ค่าไฟต่อหน่วย (บาท/kWh)",num(C.unit,2)],["ค่าไฟปัจจุบัน (บาท/เดือน)",baht(C.bill),"in"],["ประหยัดได้หลังติด Solar (บาท/เดือน)",baht(C.save)]];
+  const CASH_CARD=[[`ยอดส่วนที่เหลือ ${ccPctTxt}% (บาท)`,ccRest!=null?baht(ccRest):wr],["ค่าธรรมเนียมบัตรเครดิต (%)",ccFee!=null?`${num(ccFee,Number.isInteger(ccFee)?0:2)}%`:`${wr} %`],["ค่าธรรมเนียมบัตรเครดิต (บาท)",ccFeeAmt!=null?baht(ccFeeAmt):wr],["ยอดผ่อนต่อเดือนโดยประมาณ (บาท/เดือน)",ccMonthly!=null?baht(ccMonthly):wr]];
+  const CASH_RESULT=[[cardPaybackCalc?"จุดคุ้มทุน รวมค่าธรรมเนียมบัตร (เดือน)":"จุดคุ้มทุน (เดือน)",shownPayback?`${num(shownPayback,0)} (${num(shownPayback/12,1)} ปี)`:"—"],["ค่าไฟรวม 25 ปี ถ้าไม่ติด Solar (บาท)",baht(C.bill*300)],["ถ้าติด 25 ปี ประหยัดค่าไฟได้ (บาท)",baht(Math.round(C.save25))],["ลดการปล่อย CO₂ ต่อปี (ตัน)",num(C.co2Yr,2)],["ลดการปล่อย CO₂ เทียบเท่าปลูกต้นไม้ (ต้น)",baht(C.trees)]];
+  // กล่องสรุป: ผ่อนบัตรที่ไม่ได้กรอก % ไม่มียอดผ่อนต่อเดือน → ช่องแรกแสดงราคาระบบแทน
+  const cardFeeCost = isCard && ccFeeAmt ? ccFeeAmt : 0;
+  const cashLeft25 = Number(C.save25) - Number(C.price) - cardFeeCost;
+  const cashSummary = !noLoan || !(Number(C.save) > 0) || !(Number(C.price) > 0) ? "" : sumBox([
+    isCard && ccMonthly != null
+      ? ["ผ่อนบัตร 10 เดือน", baht(ccMonthly), "บาท/เดือน"]
+      : [isCard ? "ราคาระบบ" : "จ่ายครั้งเดียว", baht(C.price), "บาท"],
+    ["ประหยัดค่าไฟ", baht(Math.round(Number(C.save) || 0)), "บาท/เดือน", true],
+    ["คืนทุนใน", shownPayback ? ym(shownPayback) : "—", shownPayback ? `(${num(shownPayback, 0)} เดือน${cardPaybackCalc ? " รวมค่าธรรมเนียม" : ""})` : ""],
+  ], `ใช้ครบ 25 ปี ประหยัดได้ราว ${approx(Number(C.save25))}${cashLeft25 > 0 ? ` · หักค่าระบบ${cardFeeCost ? "และค่าธรรมเนียม" : ""}แล้วเหลือราว ${approx(cashLeft25)}` : ""}`) + overLine;
+  const pCash = !noLoan ? "" : page(11, `${P12_HEAD}
+    ${isCard ? OPT_CARD : OPT_CASH}
+    <h3 class="subh">ตัวอย่างการคำนวณความคุ้มค่า — ${isCard ? "ผ่อนบัตรเครดิต" : "ชำระเงินสด"}</h3>
+    <div class="calc">
+      <div class="calc-head">Solar Calculator — ${isCard ? "ผ่อนบัตรเครดิต 10 เดือน" : "ชำระเงินสด"}</div>
+      <div class="calc-sub">คำนวณจากแพ็กเกจและค่าไฟของลูกค้ารายนี้</div>
+      <div class="calc-cols">
+        <div class="calc-col">
+          <div class="csec">ข้อมูลระบบและค่าไฟ</div>${ctRows(CASH_SYSTEM)}
+          ${isCard ? `<div class="csec">ผ่อนบัตรเครดิต 10 เดือน (ส่วนที่เหลือ ${ccPctTxt}%)</div>${ctRows(CASH_CARD)}` : ""}
+        </div>
+        <div class="calc-col">
+          <div class="csec">ผลการวิเคราะห์</div>${ctRows(CASH_RESULT)}
+          <div class="calc-green">${isCard
+            ? "▸ ผ่อนบัตรเครดิต 10 เดือน — ไม่ต้องจ่ายส่วนที่เหลือก้อนเดียว"
+            : "▸ ชำระเงินสด ไม่มีดอกเบี้ย — เป็นทางเลือกที่มีต้นทุนรวมต่ำที่สุด"}<br/><br/>หลังถึงจุดคุ้มทุน ค่าไฟที่ประหยัดได้ทุกเดือนคือเงินที่ลูกค้าได้คืน</div>
+        </div>
+      </div>
+    </div>
+    ${cashSummary}
+    <p class="tiny-note">หมายเหตุ: ตารางนี้เป็นตัวอย่างการคำนวณเพื่อประกอบการตัดสินใจเท่านั้น${isCard ? " ค่าธรรมเนียมบัตรเครดิตจริงขึ้นอยู่กับธนาคารผู้ออกบัตร ณ วันทำรายการ" : ""}</p>`);
 
   const p15 = page(14, `${sect("9","หมายเหตุและเงื่อนไขทั่วไป")}
     <ul class="reasons">
@@ -614,6 +828,14 @@ export function buildSurveyReportHtml(L, D, PKG, options = {}) {
     ${emptyBox(`แนบไฟล์ใบเสนอราคา (Quotation) เลขที่ ${quotDocNo||""} — หน้า 1`,"วาง/แทรกไฟล์ PDF หรือรูปภาพใบเสนอราคาฉบับล่าสุด",150)}
     ${emptyBox("หน้า 2 ของใบเสนอราคา (หากมี)","รายละเอียดรายการอุปกรณ์ / เงื่อนไขการชำระเงิน / อายุใบเสนอราคา",150)}`}
     <div class="callout blue"><div class="co-h">หมายเหตุ</div><ul><li>เลขที่ใบเสนอราคาที่แนบต้องตรงกับเลขที่เอกสาร (${quotDocNo||"—"}) ที่ระบุไว้ในหน้าปกของรายงานฉบับนี้</li><li>ใบเสนอราคามีอายุตามระยะเวลาที่ระบุในเอกสาร หากเกินกำหนด กรุณาติดต่อบริษัทเพื่อขอใบเสนอราคาฉบับใหม่</li></ul></div>`);
+  // ประกอบเล่ม: หน้าที่ไม่ใช้ในรูปแบบการชำระนี้เป็น "" ถูกข้าม แล้วแทนโทเคนเลขหน้า
+  // (ท้ายกระดาษ + สารบัญ) ด้วยลำดับจริง — "ช่อง" ของแต่ละหน้าอ่านจาก data-pg
+  const pageList = [p1,p2,p3,p4,p5,p6,p8,p9,p10,p11,p12,p13,p14,pCash,p15,p16].filter(Boolean);
+  const pageNo = Object.fromEntries(pageList.map((h, i) => [h.match(/data-pg="(\w+)"/)[1], i + 1]));
+  const pagesHtml = pageList.join("")
+    .replace(/@@PG:(\w+)@@/g, (_, slot) => String(pageNo[slot] ?? ""))
+    .replace(/@@PGTOTAL@@/g, String(pageList.length));
+
   const html = `<!DOCTYPE html><html lang="th"><head><meta charset="utf-8"/><style>
   ${font("li",300)}${font("rg",400)}${font("md",500)}${font("bd",700)}
   /* ระบุขนาดกระดาษเป็นมิลลิเมตรตรง ๆ ให้เท่ากับ .page เป๊ะ — ใบเสนอราคาที่ถูก merge
@@ -691,6 +913,26 @@ export function buildSurveyReportHtml(L, D, PKG, options = {}) {
   table.kv.qsum{margin:2px 0 8px;}
   p.load-note{font-size:12px;color:#4b5563;margin:-6px 0 0;line-height:1.45;}
   p.load-note b{color:${INK};}
+  p.load-note.sub{font-size:11px;color:#6b7280;}
+  table.kv.lsum{margin:6px 0 8px;}
+  table.kv.lsum td.k{width:19%;}
+  table.kv.lsum td.v b{color:${INK};font-weight:700;}
+  table.kv.lsum td.lsum-h{width:11%;background:${NAVY};color:#fff;font-weight:700;text-align:center;line-height:1.3;}
+  table.kv.lsum tr.hi td.k,table.kv.lsum tr.hi td.v{background:#eef2f8;}
+  table.kv.lsum b.big{font-size:17px;color:${NAVY};}
+  table.kv.lsum tr.chk td{font-size:12px;color:#4b5563;padding-top:3px;padding-bottom:3px;}
+  table.kv.lsum tr.chk td.k{background:#f8f9fb;color:#4b5563;font-weight:500;}
+  table.kv.lsum tr.chk td.v b{color:#374151;}
+  table.kv.lsum tr.chk td.lsum-h{background:#e5e8ee;color:#4b5563;font-size:12px;}
+  .nbar{margin:5px 0 0;}
+  .nbar-track{position:relative;height:9px;border-radius:5px;background:${ORANGE};}
+  .nbar-night{position:absolute;left:0;top:0;bottom:0;background:${NAVY};border-radius:5px 0 0 5px;}
+  .nbar-band{position:absolute;top:-3px;bottom:-3px;border:1.5px solid ${INK};border-radius:3px;background:rgba(255,255,255,.3);}
+  .nbar-lbl{position:relative;height:16px;font-size:11px;line-height:16px;color:#4b5563;margin-top:2px;}
+  .nbar-lbl span{position:absolute;white-space:nowrap;}
+  .nbar-lbl .l{left:0;color:${NAVY};font-weight:700;}.nbar-lbl .r{right:0;color:#b26f16;font-weight:700;}
+  .nbar-lbl .m{transform:translateX(-50%);}
+  .lsum-warn{font-size:11px;color:#b26f16;margin-top:1px;}
   table.kv.qsum td{padding:4px 9px;font-size:13px;}
   table.kv.qsum td.k{width:20%;}
   .callout.tight{padding:9px 14px;margin:9px 0 0;}
@@ -747,8 +989,25 @@ export function buildSurveyReportHtml(L, D, PKG, options = {}) {
   table.ct td.big{font-size:15px;font-weight:700;color:${NAVY};}
   table.ct td.neg{background:#fde2e2!important;color:#c0392b;}
   .calc-green{background:#2f8f5b;color:#eafff3;font-size:10.5px;font-weight:600;line-height:1.4;padding:9px 11px;margin:6px 6px 6px;border-radius:2px;}
+  /* กล่องสรุปใต้ตารางความคุ้มค่า (แผน 20261014-01) */
+  .sum{border:1px solid #cfd5de;border-radius:3px;margin:8px 0 6px;}
+  .sum-row{display:flex;}
+  .sum-cell{flex:1;padding:4px 8px;text-align:center;border-right:1px solid #e5e8ec;}
+  .sum-cell:last-child{border-right:0;}
+  .sum-k{font-size:11px;color:#4b5563;line-height:1.35;}
+  .sum-v{font-size:15px;font-weight:700;color:${NAVY};line-height:1.35;}
+  .sum-v.go{color:#2f8f5b;}
+  .sum-u{font-size:11px;font-weight:400;color:${GRAY};}
+  .sum-foot{background:#eef6ef;border-top:1px solid #d6e9da;color:#2e4633;font-size:12px;padding:3px 8px;text-align:center;}
+  .sum-extra{font-size:12px;color:#4a3a22;background:#fdf4e6;border-left:4px solid ${ORANGE};padding:3px 10px;margin:-2px 0 6px;border-radius:3px;}
   .banner-dk{background:${NAVY_DK};color:#dfe6f0;padding:12px 16px;margin-top:14px;border-radius:2px;}
   .bd-h{font-weight:700;color:#fff;font-size:15px;margin-bottom:3px;}.bd-l{font-size:13px;line-height:1.5;}
-  </style></head><body>${p1}${p2}${p3}${p4}${p5}${p6}${p8}${p9}${p10}${p11}${p12}${p13}${p14}${p15}${p16}</body></html>`;
+  </style></head><body>${pagesHtml}</body></html>`;
   return html;
+}
+
+// จำนวนหน้าของรายงานที่สร้างแล้ว (13–15 ตามรูปแบบการชำระ) — ตัวรวมเล่มกับใบเสนอราคา
+// ใช้นับเลขหน้าต่อและตรวจว่า PDF ไม่มีหน้าหาย/เกิน
+export function countSurveyReportPages(html) {
+  return (String(html).match(/<section class="page[ "]/g) || []).length;
 }

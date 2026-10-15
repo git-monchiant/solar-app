@@ -4,7 +4,7 @@ import { sql } from "@/lib/db";
 import { getOmDb } from "@/lib/om/line";
 import { logBooking } from "@/lib/om/booking-log";
 import { getQuotationActor } from "@/lib/quotation";
-import { OM_SLIP_PREFIX, canIssueOmQuotation } from "@/lib/om/om-quotation";
+import { OM_PAY_LIVE_SQL, OM_SLIP_PREFIX, canIssueOmQuotation } from "@/lib/om/om-quotation";
 
 // ส่งใบเสนอราคา O&M ที่อนุมัติครบแล้วให้ลูกค้า → ใบงานเข้าขั้นชำระเงิน (แผน docs/plan/20260924-02 เฟส 4)
 // ★ เทียบกับฝั่งขาย: อนุมัติครบ → ส่งให้ลูกค้า → ขั้นชำระเงิน (ของขายคือ handoff_to_sales ที่ตั้ง lead เป็น order)
@@ -41,9 +41,10 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
              -- ชุดที่เลือกอยู่ตอนนี้ (ขั้นชำระเงิน) · สลิปของใบไหนก็ได้ในใบงาน = ล็อกการเปลี่ยนชุด
              (SELECT TOP 1 q5.doc_no FROM quotations q5
                WHERE q5.om_booking_id = q.om_booking_id AND q5.sent_to_customer_at IS NOT NULL ORDER BY q5.id DESC) chosen_doc_no,
+             -- เช็คเด้งเก็บแถวไว้แต่ไม่ล็อกชุด (แผน 20261014-03) — เหมือนสลิปที่ถูกปฏิเสธ
              (SELECT COUNT(*) FROM quotations q6 JOIN payments p
                  ON p.lead_id = q6.lead_id AND p.slip_field = CONCAT(N'${OM_SLIP_PREFIX}', q6.id)
-               WHERE q6.om_booking_id = q.om_booking_id) pay_rows,
+               WHERE q6.om_booking_id = q.om_booking_id AND ${OM_PAY_LIVE_SQL("p")}) pay_rows,
              q.sent_to_customer_at
         FROM quotations q WITH (UPDLOCK) JOIN om_bookings b WITH (UPDLOCK) ON b.id = q.om_booking_id
        WHERE q.id = @id AND q.om_booking_id IS NOT NULL`)).recordset[0];

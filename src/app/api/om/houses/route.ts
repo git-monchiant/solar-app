@@ -1,13 +1,15 @@
 import { NextRequest, NextResponse } from "next/server";
 import { expireOmGrantsIfDue } from "@/lib/om/entitlement-expiry";
-import { requireAuth } from "@/lib/auth";
+import { requireAnyRole, requireAuth } from "@/lib/auth";
 import { DUE_WASH_SQL, isCleaning } from "@/lib/om/entitlement";
 import { fixDates, sql } from "@/lib/db";
 import { getOmDb } from "@/lib/om/line";
 import { HIDDEN_GROUPS, bucketSql } from "@/lib/om/house-scope";
 import { houseOriginSql, parseOrigin } from "@/lib/om/house-origin";
+import { OM_WORK_ROLES } from "@/lib/om/om-roles";
+import { createManualHouse, parseManualHouseInput } from "@/lib/om/manual-house";
 
-// ทะเบียนบ้าน/ระบบติดตั้ง — ค้นหา + กรอง + แบ่งหน้า
+// ทะเบียนบ้าน/ระบบติดตั้ง — ค้นหา + กรอง + แบ่งหน้า · เพิ่มบ้านเอง (POST)
 // สิทธิ์ล้างอยู่ที่บ้าน (installations → grants/redemptions) ไม่ใช่ที่คน
 
 export async function GET(req: NextRequest) {
@@ -163,4 +165,26 @@ export async function GET(req: NextRequest) {
     `SELECT TOP 1 cycle_months FROM om_service_type WHERE code = N'cleaning'`);
   return NextResponse.json({ houses: fixDates(rs[1]), total: rs[0][0].total, page, size,
     cleaningCycleMonths: (cyc.recordset[0]?.cycle_months as number | null) ?? null });
+}
+
+// POST — ปุ่ม "+ เพิ่มบ้าน" (แผน 20261014-08): บ้าน + ลูกค้า + ระบบติดตั้ง ใน transaction เดียว
+//   ลูกค้าที่ไม่ได้มาจาก REM / งานขาย (ติดตั้งเจ้าอื่น · นอกโครงการเสนา) — รายละเอียดใน lib/om/manual-house.ts
+// body: { title?, first_name, last_name?, phone, id_card?, customer_id?,
+//         project_id?, house_number, address?, latitude?, longitude?, note?, house_id?,
+//         inverter_brand?, inverter_kw?, size_kwp?, battery_brand?, battery_kwh?, install_date? }
+//   customer_id = ใช้ลูกค้าเดิม (เบอร์/เลขบัตรชน) · house_id = เปิดใช้บ้านเดิมที่ยังไม่เปิดงาน O&M
+// 409 { error, conflicts } = ชนบ้าน/คนที่มีอยู่ → ฟอร์มให้เลือก แล้วส่งใหม่พร้อม customer_id / house_id
+export async function POST(req: NextRequest) {
+  const gate = await requireAnyRole(req, OM_WORK_ROLES);
+  if (gate.error) return gate.error;
+
+  const input = parseManualHouseInput(await req.json().catch(() => ({})));
+  if (typeof input === "string") return NextResponse.json({ error: input }, { status: 400 });
+  try {
+    const r = await createManualHouse(await getOmDb(), input, gate.userId);
+    if (!r.ok) return NextResponse.json({ error: r.error, conflicts: r.conflicts }, { status: r.status });
+    return NextResponse.json(r);
+  } catch (e) {
+    return NextResponse.json({ error: e instanceof Error ? e.message : "บันทึกไม่สำเร็จ" }, { status: 500 });
+  }
 }

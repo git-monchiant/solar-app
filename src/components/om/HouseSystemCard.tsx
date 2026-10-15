@@ -52,12 +52,14 @@ export interface HouseDetail {
 function sourceLabel(kind: string, batchFile: string | null): { text: string; cls: string } {
   if (kind === "rem") return { text: "REM", cls: "bg-blue-50 text-blue-700" };
   if (kind === "sales") return { text: "ระบบขาย", cls: "bg-active-light text-active" };
+  if (kind === "manual") return { text: "กรอกเอง", cls: "bg-amber-50 text-amber-700" };   // ฟอร์มเพิ่มบ้าน (แผน 20261014-08)
   if (batchFile && /^สรุป บ้านเสนาติดตั้ง solar ส่ง/.test(batchFile)) return { text: "ข้อมูลจากบัญชี", cls: "bg-emerald-50 text-emerald-700" };
   return { text: "ข้อมูล O&M_Solar", cls: "bg-gray-200 text-gray-600" };
 }
 const FIELD_LABEL: Record<string, string> = {
   install_date: "วันติดตั้ง", inverter_kw: "อินเวอร์เตอร์ kW", po_number: "เลข PO",
   warranty_start: "วันเริ่มประกัน", transfer_date: "วันโอน", inverter_brand: "ยี่ห้ออินเวอร์เตอร์",
+  rem_size_kwp: "ขนาดระบบ kWp", battery_brand: "ยี่ห้อแบตเตอรี่", battery_kwh: "แบตเตอรี่ kWh", house_number: "บ้านเลขที่",
 };
 
 // ★ ที่มาข้อมูลรายช่องของระบบติดตั้ง 1 ระบบ (mockup 20260909_01 · ผู้ใช้เคาะ 9 ก.ย. 69)

@@ -51,10 +51,15 @@ export const skipsPaidSteps = (r: Pick<Item, "balance" | "job_status"> & { q_id?
   return at > 0 || r.balance > 0;
 };
 
+/** ใบงานซ่อม (เฟส 5 แผน 20260924-02) — ผู้ใช้สั่ง "ยกเลิกงานซ่อมก่อน" 14 ต.ค. 69 (แผน 20261014-07)
+ *  false = ซ่อนทางเข้าบนหน้าจอ: ปุ่มเปิดใบงานซ่อม (ขั้นปิดงาน) · ช่อง "พบงานซ่อม" ในใบตรวจ · ชิปรอเปิดใบซ่อมบนการ์ด
+ *  ข้อมูลเดิม / ใบซ่อมที่เปิดไว้แล้ว / API คงไว้ — เปิดกลับ = เปลี่ยนเป็น true ที่นี่ที่เดียว */
+export const OM_REPAIR_ENABLED = false;
+
 /** ช่างแจ้งพบงานซ่อมในใบงานล่าสุด (ปิดแล้ว) แต่ยังไม่มีใครเปิดใบงานซ่อม — ชิปเตือนบนการ์ด (เฟส 5)
  *  เปิดแล้วยกเลิก (ลูกค้าไม่ซ่อม) = มีคนตัดสินใจแล้ว ไม่เตือนซ้ำ */
 export const repairPending = (r: Pick<Item, "job_status" | "repair_needed" | "repair_child_id" | "repair_cancel_id">) =>
-  r.job_status === "closed" && r.repair_needed === 1 && !r.repair_child_id && !r.repair_cancel_id;
+  OM_REPAIR_ENABLED && r.job_status === "closed" && r.repair_needed === 1 && !r.repair_child_id && !r.repair_cancel_id;
 
 /** สถานะใบเสนอราคา → ป้าย (ชุดเดียวกับลำดับอนุมัติฝั่งขาย แผน 20260730-01) */
 export const QUOTE_STATUS: Record<string, { t: string; tone: string }> = {
@@ -69,8 +74,10 @@ export const QUOTE_STATUS: Record<string, { t: string; tone: string }> = {
 };
 
 /** สถานะเงินของใบงานขั้นชำระเงิน (เฟส 4) — ชุดเดียวกับขั้นย่อย journey 2310/2320/2330 */
-export const PAY_STATE: Record<"unpaid" | "verifying" | "paid", { t: string; tone: string }> = {
+export const PAY_STATE: Record<NonNullable<Item["pay_state"]>, { t: string; tone: string }> = {
   unpaid: { t: "รอชำระ", tone: "bg-fuchsia-50 text-fuchsia-800" },
+  // แผน 20261014-03 — เช็คที่รับแล้วเด้ง แถวเก็บไว้ · ต้องแนบหลักฐานชำระใหม่
+  bounced: { t: "เช็คเด้ง · รอชำระใหม่", tone: "bg-red-50 text-red-700" },
   verifying: { t: "รอ Account ยืนยันรับเงิน", tone: "bg-amber-50 text-amber-800" },
   paid: { t: "ชำระแล้ว · รอโทรนัด", tone: "bg-emerald-50 text-emerald-800" },
 };
@@ -132,6 +139,8 @@ export interface Item {
   balance: number; last_wash: string | null; wash_count: number;
   customer_id: number | null; customer_name: string | null; phone: string | null;
   kwp_list: string | null; warranty_start: string | null;
+  /** ยี่ห้ออินเวอร์เตอร์ของบ้าน ("SMA" · "ABB + HUAWEI") — หัวรายการใบเสนอราคา O&M (แผน 20261014-04) · ทะเบียนว่าง = null */
+  inverter_list?: string | null;
   /** วันหมดประกันจากใบรับประกันฝั่งขาย — บ้าน REM ไม่มี (เฟส 5 ใช้เลือก "ในประกัน" ให้ก่อน) */
   warranty_end: string | null;
   calls: number; no_answer: number; last_call_at: string | null; next_call: string | null;
@@ -144,8 +153,9 @@ export interface Item {
   owner_user_id: number | null; owner_name: string | null;
   /** ใบเสนอราคาล่าสุดของใบงาน (เฟส 2 แผน 20260924-02) — ว่าง = ยังไม่เคยออกใบ */
   q_id: number | null; q_doc_no: string | null; q_status: string | null; q_total: number | null;
-  /** การรับเงินของใบเสนอราคา (เฟส 4) — unpaid ยังไม่มีสลิป · verifying รอ Account ยืนยัน · paid รับเงินแล้ว */
-  pay_state: "unpaid" | "verifying" | "paid" | null;
+  /** การรับเงินของใบเสนอราคา (เฟส 4) — unpaid ยังไม่มีสลิป · verifying รอ Account ยืนยัน · paid รับเงินแล้ว
+   *  · bounced เช็คที่รับแล้วเด้ง ยังไม่มีสลิปใหม่ (แผน 20261014-03) */
+  pay_state: "unpaid" | "verifying" | "paid" | "bounced" | null;
   /** ชนิดงานของใบงานล่าสุด — cleaning / repair / … · consumes_quota 1 = ปิดงานแล้วตัดสิทธิ์ */
   service_code: string | null; consumes_quota: number | null;
   /** ใบงานซ่อม (เฟส 5 แผน 20260924-02) — มาจากใบงานไหน · ในประกันไหม (1 ฟรี / 0 เสียเงิน) · อาการ */

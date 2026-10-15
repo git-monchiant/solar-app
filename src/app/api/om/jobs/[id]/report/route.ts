@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
-import { requireAuth } from "@/lib/auth";
+import { requireAnyRole, requireAuth } from "@/lib/auth";
+import { OM_WORK_ROLES } from "@/lib/om/om-roles";
 import { sql } from "@/lib/db";
 import { getOmDb } from "@/lib/om/line";
 import { failCount, jobNo, type Checks } from "@/lib/om/job-form";
@@ -25,7 +26,7 @@ export async function GET(req: NextRequest, ctx: { params: Promise<{ id: string 
 
 // PUT — บันทึกใบตรวจรับงาน (สร้างถ้ายังไม่มี) · ส่ง close: true เพื่อปิดงานไปเลย
 export async function PUT(req: NextRequest, ctx: { params: Promise<{ id: string }> }) {
-  const gate = await requireAuth(req);
+  const gate = await requireAnyRole(req, OM_WORK_ROLES);
   if (gate.error) return gate.error;
   const id = Number((await ctx.params).id);
   const b = await req.json().catch(() => ({}));
