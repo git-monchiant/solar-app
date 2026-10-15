@@ -4,7 +4,7 @@ import { OM_WORK_ROLES } from "@/lib/om/om-roles";
 import { sql } from "@/lib/db";
 import { getOmDb } from "@/lib/om/line";
 import { failCount, jobNo, type Checks } from "@/lib/om/job-form";
-import { loadForm, loadJobReport, qcSignerId } from "@/lib/om/job-report";
+import { loadForm, loadJobReport, loadQcSigner, qcSignerId } from "@/lib/om/job-report";
 import { logBooking } from "@/lib/om/booking-log";
 
 // ใบตรวจรับงาน / ใบบริการ ของงานหน้างาน — ★ ตารางเดียว om_job_report
@@ -21,7 +21,9 @@ export async function GET(req: NextRequest, ctx: { params: Promise<{ id: string 
   const db = await getOmDb();
   const data = await loadJobReport(db, id);
   if (!data) return NextResponse.json({ error: "ไม่พบใบงานนี้" }, { status: 404 });
-  return NextResponse.json(data);
+  // ★ 15 ต.ค. 69 ผู้ใช้สั่งให้ช่อง Q.C. แสดงลายเซ็นอัตโนมัติ — ชุดเดียวกับที่ใบบริการ PDF ใช้
+  const qc = await loadQcSigner(db, (data.report as { qc_user_id?: number | null } | null)?.qc_user_id);
+  return NextResponse.json({ ...data, qc });
 }
 
 // PUT — บันทึกใบตรวจรับงาน (สร้างถ้ายังไม่มี) · ส่ง close: true เพื่อปิดงานไปเลย

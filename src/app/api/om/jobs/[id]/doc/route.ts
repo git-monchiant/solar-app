@@ -5,7 +5,7 @@ import puppeteer from "puppeteer";
 import { requireAuth } from "@/lib/auth";
 import { sql } from "@/lib/db";
 import { getOmDb } from "@/lib/om/line";
-import { loadJobReport, qcSignerId } from "@/lib/om/job-report";
+import { loadJobReport, loadQcSigner } from "@/lib/om/job-report";
 import { isSafeName, mimeOfName, photoPath } from "@/lib/om/photo-store";
 import { DOC_ORIGIN, renderServiceDocHtml, type ServiceDocInput } from "@/lib/om/service-doc";
 import { buildContentDisposition } from "@/lib/doc-filename";
@@ -46,16 +46,7 @@ export async function GET(req: NextRequest, ctx: { params: Promise<{ id: string 
   }
 
   // ผู้ตรวจสอบ / Q.C. = ผู้ลงนามใบรับประกัน — ใบที่ลงผลแล้วใช้คนที่ล็อกไว้ ยังไม่ลงใช้คนที่ตั้งไว้ตอนนี้
-  // ★ ลายเซ็นฝังเป็น data: URL — puppeteer ตัดคำขอออกนอก DOC_ORIGIN ทั้งหมด (โหลด /api/users/../signature ไม่ได้)
-  const qc = { name: null as string | null, sign: null as string | null };
-  const qcId = rep?.qc_user_id ?? await qcSignerId(db);
-  if (qcId) {
-    const u = (await db.request().input("u", sql.Int, qcId)
-      .query(`SELECT full_name, signature_data, signature_mime FROM users WHERE id = @u`)).recordset[0];
-    qc.name = u?.full_name ?? null;
-    if (u?.signature_data)
-      qc.sign = `data:${u.signature_mime || "image/png"};base64,${Buffer.from(u.signature_data).toString("base64")}`;
-  }
+  const qc = await loadQcSigner(db, rep?.qc_user_id);
 
   const photos = (rep?.photos ?? []).filter((p) => isSafeName(p.file)).map((p) => ({
     kind: p.kind, src: `${DOC_ORIGIN}/photo/${p.file}`, heic: /heic$/i.test(mimeOfName(p.file)),

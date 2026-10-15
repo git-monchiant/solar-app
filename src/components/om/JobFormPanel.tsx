@@ -362,6 +362,8 @@ export default function JobFormPanel({ jobId, wrapClass = "h-full overflow-auto 
   const [custSign, setCustSign] = useState<string | null>(null);
   const [jobNoTxt, setJobNo] = useState<string | null>(null);
   const [photos, setPhotos] = useState<JobPhoto[]>([]);
+  // ผู้ตรวจสอบ / Q.C. — ชื่อ + ลายเซ็นมาจาก GET /report (ลงอัตโนมัติ ไม่ต้องเซ็น)
+  const [qc, setQc] = useState<{ name: string | null; sign: string | null } | null>(null);
   // พบงานซ่อม (แผน 20260924-02 เฟส 5) — ช่างแจ้ง ทีม O&M เปิดใบงานซ่อมต่อจากหน้ารายละเอียด
   const [repair, setRepair] = useState(false);
   const [repairDetail, setRepairDetail] = useState("");
@@ -380,9 +382,10 @@ export default function JobFormPanel({ jobId, wrapClass = "h-full overflow-auto 
 
   const load = useCallback(() => {
     apiFetch(`/api/om/jobs/${id}/report`)
-      .then((d: { job: Job; report: Report | null; form: FormWithItems | null }) => {
+      .then((d: { job: Job; report: Report | null; form: FormWithItems | null; qc?: { name: string | null; sign: string | null } }) => {
         setJob(d.job);
         setForm(d.form);
+        setQc(d.qc ?? null);
         if (d.report) {
           setChecks(d.report.checks ?? {});
           setMeasures(Object.fromEntries(Object.entries(d.report.measures ?? {}).map(([k, v]) => [k, v == null ? "" : String(v)])));
@@ -716,13 +719,19 @@ export default function JobFormPanel({ jobId, wrapClass = "h-full overflow-auto 
                       required={method === "tech_proxy"} disabled={closed} />
                     <SignPad label="ลูกค้า" value={custSign} onChange={setCustSign}
                       required={method === "onsite_sign"} disabled={closed} />
+                    {/* ★ 15 ต.ค. 69 ผู้ใช้สั่งแสดงลายเซ็นอัตโนมัติ — ผู้ลงนามใบรับประกัน/O&M (ตั้งค่า)
+                        คนเดียวกับในใบบริการ PDF · ไม่ต้องเซ็นที่หน้างาน */}
                     <div className="space-y-2">
-                      <label className={FIELD_LABEL}>
-                        ผู้ตรวจสอบ / Q.C. <span className="text-xxs px-2 py-0.5 rounded-full bg-amber-100 text-amber-800">ยังไม่บังคับ</span>
-                      </label>
-                      <div className="h-32 rounded-lg border border-dashed border-gray-300 bg-white flex items-center justify-center text-sm text-gray-300">
-                        เว้นไว้ก่อน
+                      <label className={FIELD_LABEL}>ผู้ตรวจสอบ / Q.C.</label>
+                      <div className={`h-32 rounded-lg border bg-white flex items-center justify-center overflow-hidden ${qc?.sign ? "border-gray-200" : "border-dashed border-gray-300"}`}>
+                        {qc?.sign
+                          // eslint-disable-next-line @next/next/no-img-element
+                          ? <img src={qc.sign} alt="ลายเซ็นผู้ตรวจสอบ" className="max-h-full max-w-full object-contain" />
+                          : <span className="px-3 text-center text-sm text-gray-300">
+                              {qc?.name ? "ผู้ลงนามยังไม่มีลายเซ็น" : "ยังไม่ได้ตั้งผู้ลงนาม (ตั้งค่า › ผู้ลงนามใบรับประกัน/O&M)"}
+                            </span>}
                       </div>
+                      {qc?.name && <div className="h-8 flex items-center justify-center text-xs font-semibold text-gray-600">{qc.name}</div>}
                     </div>
                   </div>
                   {!closed && <div className="mt-3 text-xxs text-gray-500">บันทึกพิกัดและเวลาอัตโนมัติตอนกดปิดงาน</div>}
