@@ -21,7 +21,7 @@ import NotificationBell from "@/components/layout/NotificationBell";
 import JobHistoryItem from "@/components/om/JobHistoryItem";
 import JobFormPanel from "@/components/om/JobFormPanel";
 import OmQuotationPanel, { openQuotationPdf } from "@/components/om/OmQuotationPanel";
-import OmPaymentPanel from "@/components/om/OmPaymentPanel";
+import OmPaymentPanel, { OmReceiptHead } from "@/components/om/OmPaymentPanel";
 import OmRescheduler from "@/components/om/OmRescheduler";
 import OmSlotPicker from "@/components/om/OmSlotPicker";
 import OmFollowupModal from "@/components/om/OmFollowupModal";
@@ -35,6 +35,7 @@ import { OM_WORK_ROLES } from "@/lib/om/om-roles";
 //   สองตัวนี้เป็น component กลางของทุกขั้นฝั่งขาย ไม่ใช่ไฟล์หน้า lead (ใบตรวจ JobFormPanel ก็ใช้ StepLayout อยู่แล้ว)
 import StepLayout from "@/components/lead/detail/StepLayout";
 import DoneSection from "@/components/lead/detail/steps/DoneSection";
+import JobReportSummary from "@/components/om/JobReportSummary";
 import ModalBase from "@/components/ui/ModalBase";
 import {
   BUCKET_LABEL, FLOW, OM_REPAIR_ENABLED, QUOTE_STATUS, TONE, jobAt, skipsPaidSteps, thD, thAppt,
@@ -847,10 +848,13 @@ export default function JobDetail({ item, history, bookings = [], rules, onBack,
             <StepCard n={2} className={cardWrap(2)} state={stepState(2)} title="ชำระเงิน" doneTitle="ชำระเงินแล้ว" onHeaderClick={() => toggleDone(2)}>
               {stepState(2) === "done"
                 ? doneView(2,
-                    <DoneHead text={`${item.pay_state === "paid" ? "ชำระแล้ว" : "ชำระเงิน"} ${formatTHB(Number(item.q_total ?? 0))} บาท${item.q_doc_no ? ` · ตามใบ ${item.q_doc_no}` : ""}`} />,
+                    // ★ 15 ต.ค. 69 ผู้ใช้สั่งย้ายใบเสร็จขึ้นบรรทัดสรุปแบบขั้นอื่น (เดิมอยู่ในกล่องสถานะเงินข้างใน)
+                    <DoneHead text={`${item.pay_state === "paid" ? "ชำระแล้ว" : "ชำระเงิน"} ${formatTHB(Number(item.q_total ?? 0))} บาท${item.q_doc_no ? ` · ตามใบ ${item.q_doc_no}` : ""}`}>
+                      {item.q_id && <OmReceiptHead item={item} />}
+                    </DoneHead>,
                     () => (
                       <DoneSection color="indigo" title="ชำระเงิน">
-                        <OmPaymentPanel item={item} skip={skip} onSaved={onSaved} onReload={onReload} />
+                        <OmPaymentPanel item={item} skip={skip} onSaved={onSaved} onReload={onReload} receiptInHeader />
                       </DoneSection>
                     ))
                 // ★ แผน 20261002-10: ขั้นที่กำลังทำ = ขั้นย่อยแบบ Order ฝั่งขาย วางบนพื้นการ์ดตรง ๆ (ไม่ห่อ SECTION แบบ OrderStep)
@@ -910,8 +914,9 @@ export default function JobDetail({ item, history, bookings = [], rules, onBack,
                 </>}>
                   <ServiceDocButton bookingId={item.booking_id} />
                 </DoneHead>,
-                // ใบที่ปิดแล้วล็อกอ่านอย่างเดียวเอง (ทุกช่อง/ปุ่ม disabled + แถบ lock) — ไล่ดูขั้นย่อยได้ครบ
-                () => <JobFormPanel jobId={String(item.booking_id)} wrapClass="" embedded />,
+                // ★ 15 ต.ค. 69 ผู้ใช้สั่งสรุปหน้าเดียวเหมือนขั้นอื่น (แผน 20261015-01) — เดิมเป็นใบตรวจตัวเต็ม 3 แท็บย่อยแบบอ่านอย่างเดียว
+                () => <JobReportSummary bookingId={item.booking_id!}
+                  startedAt={rowsOf("progress").find((r) => r.action === "start")?.at ?? null} />,
               ) : item.booking_id && viewOnly ? (
                 // Account อ่านอย่างเดียว — ใบตรวจ/เลื่อนนัด/ช่างถึงหน้างาน เป็นงานทีมช่าง (แผน 20261014-06)
                 waitNote(cur === "pending" || cur === "confirmed"

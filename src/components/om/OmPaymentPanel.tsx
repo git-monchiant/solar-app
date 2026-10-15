@@ -69,13 +69,31 @@ const pdfName = (docNo: string, customer: string | null) => {
 const methodText = (p: Pay) => (METHOD[p.payment_method ?? ""] ?? p.payment_method ?? "—")
   + (p.cc_surcharge_amount > 0 ? ` +${p.cc_surcharge_pct}%` : "");
 
-export default function OmPaymentPanel({ item, skip, onSaved, onReload, steps = false }: {
+/** ใบเสร็จบนบรรทัดสรุปของขั้น 03 ที่ปิดแล้ว — ★ 15 ต.ค. 69 ผู้ใช้สั่งย้ายมาแสดงแบบขั้นอื่น
+ *  (ตำแหน่งเดียวกับปุ่มใบเสนอราคา/ใบบริการ · ฝั่งขายวางใบเสร็จไว้หัวขั้น Pre-Survey/Order ที่เสร็จแล้ว)
+ *  เงินยังไม่ยืนยัน = ไม่มีอะไรแสดง · แนบใบเสร็จตัวจริงได้จากตรงนี้เลย (admin/account) */
+export function OmReceiptHead({ item }: { item: Item }) {
+  const [pay, setPay] = useState<Pay | null>(null);
+  const load = useCallback(() => {
+    if (!item.q_id) return;
+    apiFetch(`/api/om/payments?quotation_id=${item.q_id}`)
+      .then((rows: Pay[]) => setPay(rows.find((p) => !isBounced(p)) ?? null))
+      .catch(() => setPay(null));
+  }, [item.q_id]);
+  useEffect(() => { load(); }, [load]);
+  if (!pay?.confirmed_at) return null;
+  return <OmReceiptRow pay={pay} docNo={item.q_doc_no ?? `om_${item.q_id}`} onChanged={load} />;
+}
+
+export default function OmPaymentPanel({ item, skip, onSaved, onReload, steps = false, receiptInHeader = false }: {
   item: Item;
   skip: boolean;
   onSaved: (msg: string) => void;
   onReload?: () => void;
   /** การ์ดขั้นที่กำลังทำ — ใบงานขั้นชำระเงินแสดงแบบขั้นย่อยของ Order ฝั่งขาย (แผน 20261002-10) */
   steps?: boolean;
+  /** ใบเสร็จอยู่บนบรรทัดสรุปของการ์ดแล้ว (OmReceiptHead) — ไม่ต้องโชว์ซ้ำในกล่องสถานะเงิน */
+  receiptInHeader?: boolean;
 }) {
   const { activeRoles } = useActiveRoles();
   const canSubmit = hasRole(activeRoles, "admin", "sales", "sales_sup");
@@ -123,7 +141,7 @@ export default function OmPaymentPanel({ item, skip, onSaved, onReload, steps = 
         <span className="ml-auto text-lg font-bold tabular-nums">{formatTHB(Number(item.q_total || 0) + fee)} บาท</span>
       </div>
       {current
-        ? <PayStatus pay={current} docNo={item.q_doc_no ?? `om_${item.q_id}`} onChanged={load} />
+        ? <PayStatus pay={current} docNo={item.q_doc_no ?? `om_${item.q_id}`} onChanged={load} showReceipt={!receiptInHeader} />
         : <div className="text-sm text-gray-600">{bounced.length ? "เช็คเด้ง — รอ Sale แนบหลักฐานชำระใหม่" : "ยังไม่มีสลิปค่าบริการ"}</div>}
       {/* ขั้น 03 ปิดแล้วแต่เงินยังไม่ยืนยัน (รับเช็คแล้วรอเงินเข้า ฯลฯ) — Account ยืนยันต่อที่นี่ได้ (แผน 20261014-06) */}
       {current && canAccount && !current.confirmed_at && (
@@ -151,7 +169,9 @@ function BouncedRows({ rows }: { rows: Pay[] }) {
 }
 
 /** สลิปที่แนบแล้ว — รอ Account / รับเช็คแล้วรอเงินเข้า / ยืนยันแล้ว + ใบเสร็จ */
-function PayStatus({ pay: current, docNo, onChanged }: { pay: Pay; docNo: string; onChanged: () => void }) {
+function PayStatus({ pay: current, docNo, onChanged, showReceipt = true }: {
+  pay: Pay; docNo: string; onChanged: () => void; showReceipt?: boolean;
+}) {
   const chequeWaitingMoney = !current.confirmed_at && !!current.cheque_received_at;
   return (
     <div className={`rounded-xl border px-3.5 py-3 ${current.confirmed_at ? "border-emerald-200 bg-emerald-50/60" : "border-amber-200 bg-amber-50"}`}>
@@ -179,7 +199,7 @@ function PayStatus({ pay: current, docNo, onChanged }: { pay: Pay; docNo: string
         </div>
       )}
       {/* ใบเสร็จ — แบบแถวใบเสร็จงวดของฝั่งขาย (ชั่วคราว PDF · แนบตัวจริงโดย Account/admin) */}
-      {current.confirmed_at && (
+      {current.confirmed_at && showReceipt && (
         <div className="mt-2.5 md:flex md:items-center md:gap-2">
           <span className="block mb-1.5 md:mb-0 text-xs font-semibold text-gray-500">ใบเสร็จ</span>
           <OmReceiptRow pay={current} docNo={docNo} onChanged={onChanged} />
