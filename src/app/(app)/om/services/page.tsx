@@ -47,7 +47,6 @@ export default function OmServicesPage() {
   const [items, setItems] = useState<Item[] | null>(null);
   const [counts, setCounts] = useState<Record<string, number>>({});
   const [projects, setProjects] = useState<{ project_id: string; project_name: string; n: number }[]>([]);
-  const [total, setTotal] = useState(0);
   const [err, setErr] = useState("");
 
   const load = useCallback(() => {
@@ -60,7 +59,7 @@ export default function OmServicesPage() {
     apiFetch(`/api/om/follow?${p}`)
       .then((d) => {
         setItems(d.items ?? []); setCounts(d.counts ?? {});
-        setTotal(d.total ?? 0); setProjects(d.projects ?? []);
+        setProjects(d.projects ?? []);
       })
       .catch((e) => { setErr(e instanceof Error ? e.message : String(e)); setItems([]); });
   }, [tab, group, sort, dir, q, mineOnly, origin]);
@@ -76,7 +75,6 @@ export default function OmServicesPage() {
             (tabsRight ซ่อนบนจอแคบ ของพวกนี้ต้องใช้บนมือถือได้) */}
       <ListPageHeader
         title={activeItem?.label ?? "งานบริการ"}
-        subtitle="O&M · ติดตาม → (เสนอราคา → ชำระเงิน) → นัดหมาย → เข้างาน → ปิดงาน"
         search={q}
         onSearchChange={setQ}
         searchPlaceholder="ค้นบ้านเลขที่ · ชื่อลูกค้า · เบอร์โทร"
@@ -91,7 +89,6 @@ export default function OmServicesPage() {
             ★ 25 ก.ย. 69 ผู้ใช้สั่งยกเลิกมุมมองแบบตาราง — เหลือแบบการ์ดอย่างเดียว
             ★ 1 ต.ค. 69 ผู้ใช้สั่งให้เรียงเหมือน Pipeline เป๊ะ: 2 ช่อง เรียงตามอะไร + ทิศทาง */}
         <div className="mb-3 flex flex-wrap items-center gap-2 px-1">
-          <span className="text-sm font-bold text-gray-700 whitespace-nowrap">{total.toLocaleString("th-TH")} หลังในแท็บนี้</span>
           {/* ★ 1 ต.ค. 69 ผู้ใช้ขอพิมพ์ค้นได้ + กว้างขึ้น — ขนาด/searchable ชุดเดียวกับช่องโครงการหน้ารายชื่อบ้าน O&M */}
           <Dropdown
             className="w-full md:w-72 font-normal"
@@ -147,14 +144,6 @@ export default function OmServicesPage() {
         </div>
 
         {err && <div className="mb-3 rounded-lg bg-red-50 border border-red-200 px-4 py-2 text-sm text-red-700">{err}</div>}
-        {tab === "follow" && (
-          // เดิมเป็นกล่องเหลืองเต็มแถว แย่งสายตาจากการ์ด — ย่อเป็นบรรทัดหมายเหตุ
-          <p className="mb-2.5 px-1 flex items-start gap-1.5 text-xxs text-gray-500 leading-relaxed">
-            <span className="shrink-0 w-3.5 h-3.5 mt-px rounded-full border border-gray-400 text-[9px] font-bold flex items-center justify-center">i</span>
-            <span>แท็บนี้<b className="text-gray-700">คำนวณสดจากฐาน</b> (มีระบบติดตั้งและเลยรอบล้างแล้ว) ·
-              แถวงานจะเกิดเมื่อโทรแล้วลูกค้า<b className="text-gray-700">ตกลงนัด</b>หรือ<b className="text-gray-700">ขอเลื่อน</b>เท่านั้น</span>
-          </p>
-        )}
         {items === null ? <Loading /> : items.length === 0 ? (
           <div className="text-center text-gray-400 py-16 text-sm">ไม่มีรายการในแท็บนี้</div>
         ) : (

@@ -94,9 +94,6 @@ export default function JobCard({ r, onOpen }: { r: Item; onOpen: () => void }) 
           <Flow r={r} />
           <div className="ml-auto shrink-0 flex flex-col items-end gap-1">
             <span className={`text-xs font-semibold px-2.5 py-0.5 rounded-full text-white ${TONE[r.bucket] ?? "bg-gray-400"}`}>{BUCKET_LABEL[r.bucket] ?? r.bucket}</span>
-            {!r.booking_id && r.bucket === "follow" && (
-              <span className="text-xxs px-2 py-0.5 rounded-full bg-active-light text-active-dark font-bold max-md:hidden">คำนวณสด</span>
-            )}
             {r.job_status && EXIT_KEYS.includes(r.job_status) && (
               <span className={`text-xxs px-2 py-0.5 rounded-full text-white font-bold ${statusTone(r.job_status)}`}
                 title="ใบงานล่าสุดของบ้านนี้จบแบบนี้ — บ้านกลับมารอติดตามใหม่">งานล่าสุด {statusLabel(r.job_status)}</span>
@@ -146,7 +143,7 @@ export default function JobCard({ r, onOpen }: { r: Item; onOpen: () => void }) 
             โทรล่าสุด <b>{r.last_by ?? "—"}</b> · <i className="not-italic text-gray-500 font-normal">
               ครั้งที่ {r.calls} {CALL_OUTCOME[r.last_outcome]?.t ?? r.last_outcome} {thDT(r.last_call_at)}</i>
           </span>
-        ) : <span>ยังไม่มีใครโทร</span>}
+        ) : <span>รอติดต่อครั้งแรก</span>}
         {r.next_call && <span className="ml-auto font-semibold text-gray-500">นัดโทรใหม่ {thD(r.next_call)}</span>}
         {!r.next_call && r.no_answer > 0 && <span className="ml-auto font-bold text-danger">ไม่รับสายแล้ว {r.no_answer} ครั้ง</span>}
       </div>
