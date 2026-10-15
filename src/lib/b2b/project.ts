@@ -170,6 +170,8 @@ export type B2bProject = B2bProjectRow & {
   installments: B2bInstallment[];
   // ดำเนินโครงการ (เฟส 4)
   milestones: B2bMilestone[];
+  /** สัญญา O&M B2B ล่าสุด (แผน 20261015-09) — สร้างเองตอนปิดโครงการ */
+  om_contract_id: number | null;
   permits: B2bPermit[];
   activities: B2bActivity[];
 };

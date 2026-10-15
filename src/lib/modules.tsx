@@ -48,7 +48,7 @@ export type ModuleKey =
   | "seeker" | "sales" | "install" | "warranty" | "om"
   | "quotation"
   | "account" | "package" | "om_package" | "dashboard" | "setup"
-  | "boq" | "b2b_project" | "b2b_purchase";
+  | "boq" | "b2b_project" | "b2b_purchase" | "b2b_om";
 
 export type ModuleMenuItem = {
   label: string;
@@ -384,6 +384,23 @@ export const MODULES: AppModule[] = [
       { label: "วัสดุและราคา", href: "/b2b/materials", icon: <I d={D.archive} />, subs: [B2B_PENDING_PRICE_SUB] },
       // โครงการที่รับงวด 1 แล้ว + งบต้นทุน · badge = ขั้น 3600 ที่ยังไม่บันทึกสั่งของครบ
       { label: "จัดซื้อ", href: "/b2b/procurement", icon: <I d={D.truck} />, subs: [B2B_PROCURE_PENDING_SUB] },
+    ],
+  },
+  {
+    // O&M B2B (แผน 20261015-09) — สัญญาสร้างเองตอนปิดโครงการ · ตารางเข้างานล่วงหน้าทั้งสัญญา · journey สาย 4000
+    //   เคาะ 15 ต.ค.: Solar B2B ทำเอง (ไม่มี role ใหม่) · ปฏิทินแยกจาก O&M บ้าน · ⚡ = Unicode 4 ฟอนต์ Windows มีแน่
+    key: "b2b_om", label: "O&M B2B", emoji: "⚡", tint: "bg-yellow-50",
+    group: "b2b",
+    desc: "นัดล้างแผง · ตรวจระบบ · สัญญา O&M",
+    roles: ["b2b", "admin"],
+    menu: [
+      { label: "ถึงรอบ", href: "/b2b/om?tab=due", icon: <ClockIcon className="w-6 h-6" strokeWidth={2} />, steps: [4100] },
+      { label: "นัดแล้ว", href: "/b2b/om?tab=scheduled", icon: <I d={D.calendar} />, steps: [4200] },
+      { label: "เข้างาน/รอปิด", href: "/b2b/om?tab=onsite", icon: <I d={D.wrench} />, steps: [4300] },
+      { label: "ปฏิทิน", href: "/b2b/om/calendar", icon: <I d={D.calendar} /> },
+      { label: "สัญญา O&M", href: "/b2b/om/contracts", icon: <I d={D.clipboard} /> },
+      { label: "ยังไม่ถึงรอบ", href: "/b2b/om?tab=upcoming", icon: <I d={D.lines} /> },
+      { label: "ปิดงานแล้ว", href: "/b2b/om?tab=done", icon: <CheckIcon className="w-6 h-6" strokeWidth={2} />, steps: [4500, 4900], noModuleCount: true },
     ],
   },
   {

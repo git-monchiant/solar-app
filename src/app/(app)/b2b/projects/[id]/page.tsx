@@ -26,6 +26,7 @@ import QuoteList from "@/components/b2b/project/QuoteList";
 import MilestoneList from "@/components/b2b/project/MilestoneList";
 import PermitChecklist from "@/components/b2b/project/PermitChecklist";
 import { MilestoneModal, PermitModal } from "@/components/b2b/project/ExecutionModals";
+import { CreateContractModal } from "@/components/b2b/om/VisitModals";
 import { PERMITS, milestoneDef, type B2bMilestone, type B2bPermit, type MilestoneFile, type MilestoneKind } from "@/lib/b2b/execution";
 
 // หน้าโครงการ B2B — โครงเดียวกับหน้ารายละเอียดลีด (header ติดบน · แท็บ · รางขั้นซ้าย · การ์ดขั้น · Activity Log ขวา)
@@ -34,7 +35,7 @@ import { PERMITS, milestoneDef, type B2bMilestone, type B2bPermit, type Mileston
 
 type Tab = "workflow" | "info" | "boq" | "installments" | "timeline";
 type Modal = null | "edit" | "customer" | "lost" | "cancel" | "reopen" | "back_survey" | "schedule" | "record" | "new_boq" | "new_quote"
-  | "won" | "contract" | "evidence" | "reject_inst" | "milestone" | "milestone_edit" | "permit";
+  | "won" | "contract" | "evidence" | "reject_inst" | "milestone" | "milestone_edit" | "permit" | "om_contract";
 
 const LOCKED_HINT: Record<number, string> = {
   3500: "ปลดเมื่อกด \"ได้งาน\" — เลือกใบเสนอราคาที่ส่งลูกค้าแล้ว",
@@ -273,6 +274,20 @@ export default function B2bProjectPage({ params }: { params: Promise<{ id: strin
   );
   const doneOn = (k: MilestoneKind, label: string) => { const m = msOf(k); return m ? `${label} ${formatThaiDate(m.done_date)}` : undefined; };
   const permitsOk = p.permits.filter((x) => x.status === "approved" || x.status === "not_required").length;
+  // สัญญา O&M (แผน 20261015-09) — สร้างเองตอนปิดโครงการ · กดสร้างเองได้หลังบันทึกส่งมอบ (ใบไม่มี O&M / งวดสุดท้ายยังค้าง)
+  const canCreateOm = canEdit && p.om_contract_id == null && (p.stage === B2B_STAGE.closed || (p.stage === B2B_STAGE.handover && !!msOf("handover")));
+  const createOm = (v: { years: number; visits_per_year: number; start_date: string }) => run(async () => {
+    const r = await apiFetch("/api/b2b/om/contracts", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ project_id: p.id, ...v }) }) as { id: number };
+    router.push(`/b2b/om/contracts/${r.id}`);
+  });
+  const omBlock = (p.om_contract_id != null || canCreateOm) && (
+    <div className="flex flex-wrap items-center gap-2 rounded-lg border border-yellow-200 bg-yellow-50/60 px-3 py-2 text-sm">
+      <span className="text-gray-700">⚡ O&amp;M B2B</span>
+      {p.om_contract_id != null
+        ? <Link href={`/b2b/om/contracts/${p.om_contract_id}`} className="ml-auto font-semibold text-primary hover:underline">ดูสัญญา O&amp;M + ตารางเข้างาน →</Link>
+        : <button type="button" className={`ml-auto ${btn}`} onClick={() => openModal("om_contract")}>สร้างสัญญา O&amp;M</button>}
+    </div>
+  );
 
   const wonButton = (
     <button type="button" className={btnPrimary} disabled={sentQuotes.length === 0}
@@ -444,8 +459,9 @@ export default function B2bProjectPage({ params }: { params: Promise<{ id: strin
             <div><dt className={dt}>รับประกันงานติดตั้ง</dt><dd className="text-gray-800">{msOf("handover") ? `เริ่มนับ ${formatThaiDate(msOf("handover")!.done_date)}` : "เริ่มนับจากวันส่งมอบ"}</dd></div>
             {p.om_years != null && <div><dt className={dt}>O&amp;M ที่รวมในราคา</dt><dd className="text-gray-800">{p.om_years} ปี · ปีละ {p.om_visits_per_year ?? "—"} ครั้ง</dd></div>}
           </dl>
+          {omBlock}
           {stateOf(3900) === "active" && installmentTable}
-          {canExec && stateOf(3900) === "active" && phaseNote("โครงการปิดเองเมื่อบันทึกส่งมอบแล้ว และบัญชียืนยันรับเงินครบทุกงวด")}
+          {canExec && stateOf(3900) === "active" && phaseNote("โครงการปิดเองเมื่อบันทึกส่งมอบแล้ว และบัญชียืนยันรับเงินครบทุกงวด — สัญญา O&M + ตารางเข้างานสร้างเองตอนปิด")}
         </>
       ),
     },
@@ -533,6 +549,7 @@ export default function B2bProjectPage({ params }: { params: Promise<{ id: strin
           {p.stage === B2B_STAGE.closed && (
             <div className="rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-800">
               <b>ปิดโครงการแล้ว</b> — ส่งมอบงานและรับเงินครบทุกงวด{p.closed_at ? ` · ${formatThaiDate(p.closed_at)}` : ""}
+              {p.om_contract_id != null && <> · <Link href={`/b2b/om/contracts/${p.om_contract_id}`} className="font-semibold underline">สัญญา O&amp;M →</Link></>}
             </div>
           )}
           {stopped && (
@@ -668,6 +685,10 @@ export default function B2bProjectPage({ params }: { params: Promise<{ id: strin
       {modal === "permit" && permit && (
         <PermitModal title={PERMITS.find((x) => x.kind === permit.kind)!.label} initial={permit} hasFile={permit.has_file}
           saving={saving} error={error} onClose={() => setModal(null)} onConfirm={(v) => void savePermit(v)} />
+      )}
+      {modal === "om_contract" && (
+        <CreateContractModal initial={{ years: p.om_years, visits_per_year: p.om_visits_per_year, start_date: msOf("handover")?.done_date ?? null }}
+          saving={saving} error={error} onClose={() => setModal(null)} onConfirm={(v) => void createOm(v)} />
       )}
       {modal === "reopen" && (
         <ReasonModal title="เปิดโครงการกลับ" subtitle={`กลับไปขั้น ${stageLabel(at)}`} label="เหตุผล" required={false} placeholder="เช่น ลูกค้ากลับมาขอราคาใหม่"

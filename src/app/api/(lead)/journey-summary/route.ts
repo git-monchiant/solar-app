@@ -3,7 +3,7 @@ import { getDb } from "@/lib/db";
 import { requireAuth } from "@/lib/auth";
 import { flipJourneyDatesIfDue } from "@/lib/journey";
 import { OM_JOURNEY_SUMMARY_SQL } from "@/lib/om/journey-sql";
-import { B2B_APPROVAL_SUMMARY_SQL, B2B_INSTALLMENT_SUMMARY_SQL, B2B_JOURNEY_SUMMARY_SQL, B2B_PROCURE_SUMMARY_SQL, B2B_PROJECT_SUMMARY_SQL } from "@/lib/b2b/journey-sql";
+import { B2B_APPROVAL_SUMMARY_SQL, B2B_INSTALLMENT_SUMMARY_SQL, B2B_JOURNEY_SUMMARY_SQL, B2B_OM_SUMMARY_SQL, B2B_PROCURE_SUMMARY_SQL, B2B_PROJECT_SUMMARY_SQL } from "@/lib/b2b/journey-sql";
 
 // จำนวน lead ต่อ journey code — ใช้ทำ badge ของ hub/เมนูโมดูล (query เบามาก มี IX_leads_journey)
 export async function GET(req: NextRequest) {
@@ -51,7 +51,15 @@ export async function GET(req: NextRequest) {
       console.error("GET /api/journey-summary (B2B projects) error:", e);
     }
 
-    return NextResponse.json([...r.recordset, ...om, ...b2b, ...b2bProjects]);
+    // O&M B2B (สาย 4000 · แผน 20261015-09) — แยก try: ตาราง b2b_om_* มาทีหลัง ฐานที่ยังไม่รัน migration พังแค่ส่วนนี้
+    let b2bOm: unknown[] = [];
+    try {
+      b2bOm = (await db.request().query(B2B_OM_SUMMARY_SQL)).recordset;
+    } catch (e) {
+      console.error("GET /api/journey-summary (B2B O&M) error:", e);
+    }
+
+    return NextResponse.json([...r.recordset, ...om, ...b2b, ...b2bProjects, ...b2bOm]);
   } catch (e) {
     console.error("GET /api/journey-summary error:", e);
     return NextResponse.json({ error: "Failed" }, { status: 500 });

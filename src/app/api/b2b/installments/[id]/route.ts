@@ -3,6 +3,7 @@ import { requireAnyActiveRole } from "@/lib/auth";
 import { getB2bDb, sql } from "@/lib/b2b/db";
 import { B2B_INSTALLMENT_VIEW_ROLES, B2B_STAGE } from "@/lib/b2b/project";
 import { logActivity } from "@/lib/b2b/project-server";
+import { createOmContract } from "@/lib/b2b/om-server";
 
 // สถานะงวดเงิน B2B (แผน 20261015-07 เฟส 3) — แนบหลักฐานไปที่ /evidence
 //   due      Solar B2B กด "ถึงกำหนด" เอง (งวดที่ยังไม่ถึง — milestone อัตโนมัติมาในเฟส 4)
@@ -65,6 +66,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
             await new sql.Request(tx).input("p", sql.Int, it.project_id).input("u", sql.Int, userId)
               .query(`UPDATE b2b_projects SET stage = ${B2B_STAGE.closed}, closed_at = SYSDATETIMEOFFSET(), updated_by = @u, updated_at = SYSDATETIMEOFFSET() WHERE id = @p`);
             await log("closed", "ส่งมอบแล้วและรับเงินครบทุกงวด — ปิดโครงการ", { from: B2B_STAGE.handover, to: B2B_STAGE.closed });
+            await createOmContract(tx, it.project_id, userId);   // สัญญา O&M + ตารางเข้างาน (แผน 20261015-09)
           }
         }
         // งวด 1 = เริ่มงานได้ → ขั้นขออนุญาต + จัดซื้อ

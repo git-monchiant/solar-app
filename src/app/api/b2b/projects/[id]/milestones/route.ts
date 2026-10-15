@@ -4,6 +4,7 @@ import { getB2bDb, sql } from "@/lib/b2b/db";
 import { B2B_STAGE, isIsoDate, stageLabel, thaiDateShort } from "@/lib/b2b/project";
 import { MILESTONE_MIN_STAGE, isMilestoneKind, milestoneDef, type MilestoneFile } from "@/lib/b2b/execution";
 import { logActivity } from "@/lib/b2b/project-server";
+import { createOmContract } from "@/lib/b2b/om-server";
 import { ALLOWED_B2B_FILE_MIME, MAX_B2B_FILE_BYTES, buildB2bFileName, removeB2bFile, saveB2bFile } from "@/lib/b2b/file-store";
 
 // บันทึก milestone หน้างาน (แผน 20261015-07 เฟส 4) — multipart: kind · done_date · note · files (รูป/PDF ≤ 10 ไฟล์)
@@ -90,7 +91,10 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
       from: after !== stage ? stage : null, to: after !== stage ? after : null, userId: gate.userId,
       message: `${def.label} ${thaiDateShort(doneDate)}${note ? ` — ${note}` : ""}${saved.length ? ` · ไฟล์ ${saved.length}` : ""}${dueText}${after !== stage ? ` · เข้าขั้น ${stageLabel(after)}` : ""}`,
     });
-    if (closedNow) await logActivity(tx, id, "closed", { from: after, to: B2B_STAGE.closed, message: "ส่งมอบแล้วและรับเงินครบทุกงวด — ปิดโครงการ", userId: gate.userId });
+    if (closedNow) {
+      await logActivity(tx, id, "closed", { from: after, to: B2B_STAGE.closed, message: "ส่งมอบแล้วและรับเงินครบทุกงวด — ปิดโครงการ", userId: gate.userId });
+      await createOmContract(tx, id, gate.userId);   // สัญญา O&M + ตารางเข้างาน (แผน 20261015-09)
+    }
     await tx.commit();
     return NextResponse.json({ ok: true }, { status: 201 });
   } catch (e) {

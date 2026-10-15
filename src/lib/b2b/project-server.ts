@@ -91,7 +91,7 @@ export async function loadProject(db: Queryable, id: number): Promise<B2bProject
     WHERE p.id = @id`);
   const r = h.recordset[0];
   if (!r) return null;
-  const [boqs, acts, quotes, insts, mss, permits] = await Promise.all([
+  const [boqs, acts, quotes, insts, mss, permits, omc] = await Promise.all([
     db.request().input("id", sql.Int, id).query(`
       SELECT b.id, b.doc_no, b.revision, b.option_label, b.capacity_wp, b.total_cost, b.total_sale, b.margin_pct, b.pending_lines,
              b.updated_at, uu.full_name AS updated_by_name
@@ -118,6 +118,7 @@ export async function loadProject(db: Queryable, id: number): Promise<B2bProject
       SELECT id, kind, status, CONVERT(char(10), submitted_date, 23) AS submitted_date, CONVERT(char(10), approved_date, 23) AS approved_date,
              note, CASE WHEN file_name IS NULL THEN 0 ELSE 1 END AS has_file, file_label, updated_at
       FROM b2b_project_permits WHERE project_id = @id`),
+    db.request().input("id", sql.Int, id).query(`SELECT TOP 1 id FROM b2b_om_contracts WHERE project_id = @id ORDER BY seq DESC`),
   ]);
   return {
     ...toProjectRow(r),
@@ -142,6 +143,7 @@ export async function loadProject(db: Queryable, id: number): Promise<B2bProject
     contract_value: num(r.contract_value), contract_vat_pct: num(r.contract_vat_pct), won_at: r.won_at,
     om_years: num(r.om_years), om_visits_per_year: num(r.om_visits_per_year),
     installments: insts.recordset.map(toInstallment),
+    om_contract_id: omc.recordset[0]?.id ?? null,
     milestones: mss.recordset.map((m): B2bMilestone => ({
       id: m.id, kind: m.kind, done_date: m.done_date, note: m.note, files: m.files_json ? JSON.parse(m.files_json) : [],
       stage_before: m.stage_before, stage_after: m.stage_after, created_at: m.created_at, created_by_name: m.created_by_name,
